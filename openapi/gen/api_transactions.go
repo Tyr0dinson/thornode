@@ -141,11 +141,18 @@ type ApiTxSignersRequest struct {
 	ApiService *TransactionsApiService
 	hash string
 	height *int64
+	outbound *bool
 }
 
 // optional block height, defaults to current tip
 func (r ApiTxSignersRequest) Height(height int64) ApiTxSignersRequest {
 	r.height = &height
+	return r
+}
+
+// Select only the outbound voter. By default, prefer the inbound voter and fall back to the outbound voter when no inbound observations exist.
+func (r ApiTxSignersRequest) Outbound(outbound bool) ApiTxSignersRequest {
+	r.outbound = &outbound
 	return r
 }
 
@@ -194,6 +201,9 @@ func (a *TransactionsApiService) TxSignersExecute(r ApiTxSignersRequest) (*TxDet
 
 	if r.height != nil {
 		localVarQueryParams.Add("height", parameterToString(*r.height, ""))
+	}
+	if r.outbound != nil {
+		localVarQueryParams.Add("outbound", parameterToString(*r.outbound, ""))
 	}
 	// to determine the Content-Type header
 	localVarHTTPContentTypes := []string{}
@@ -254,11 +264,18 @@ type ApiTxSignersOldRequest struct {
 	ApiService *TransactionsApiService
 	hash string
 	height *int64
+	outbound *bool
 }
 
 // optional block height, defaults to current tip
 func (r ApiTxSignersOldRequest) Height(height int64) ApiTxSignersOldRequest {
 	r.height = &height
+	return r
+}
+
+// Select only the outbound voter. By default, prefer the inbound voter and fall back to the outbound voter when no inbound observations exist.
+func (r ApiTxSignersOldRequest) Outbound(outbound bool) ApiTxSignersOldRequest {
+	r.outbound = &outbound
 	return r
 }
 
@@ -307,6 +324,9 @@ func (a *TransactionsApiService) TxSignersOldExecute(r ApiTxSignersOldRequest) (
 
 	if r.height != nil {
 		localVarQueryParams.Add("height", parameterToString(*r.height, ""))
+	}
+	if r.outbound != nil {
+		localVarQueryParams.Add("outbound", parameterToString(*r.outbound, ""))
 	}
 	// to determine the Content-Type header
 	localVarHTTPContentTypes := []string{}

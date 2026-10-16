@@ -4,7 +4,7 @@ info:
     email: devs@thorchain.org
   description: Thornode REST API.
   title: Thornode API
-  version: 3.20.3
+  version: 3.21.0
 servers:
 - url: /
 paths:
@@ -751,6 +751,17 @@ paths:
           example: CF524818D42B63D25BBA0CCC4909F127CAA645C0F9CD07324F2824CC151A64C7
           type: string
         style: simple
+      - description: "Select only the outbound voter. By default, prefer the inbound\
+          \ voter and fall back to the outbound voter when no inbound observations\
+          \ exist."
+        explode: true
+        in: query
+        name: outbound
+        required: false
+        schema:
+          default: false
+          type: boolean
+        style: form
       responses:
         "200":
           content:
@@ -783,6 +794,17 @@ paths:
           example: CF524818D42B63D25BBA0CCC4909F127CAA645C0F9CD07324F2824CC151A64C7
           type: string
         style: simple
+      - description: "Select only the outbound voter. By default, prefer the inbound\
+          \ voter and fall back to the outbound voter when no inbound observations\
+          \ exist."
+        explode: true
+        in: query
+        name: outbound
+        required: false
+        schema:
+          default: false
+          type: boolean
+        style: form
       responses:
         "200":
           content:
@@ -1396,6 +1418,81 @@ paths:
               schema:
                 example: false
                 type: boolean
+          description: OK
+      tags:
+      - Network
+  /thorchain/logs:
+    get:
+      description: "Returns the module log lines this node captured while executing\
+        \ the\nrequested blocks. Node-local, never consensus data, and only available\
+        \ when\nthe operator has set thor.api.logs.retain_blocks above zero. start\
+        \ and end\ndefault to the last block capture closed, which this route reads\
+        \ from the\ncapture store rather than from consensus, so it can briefly trail\
+        \ the last\ncommitted height; both are clamped to the blocks still on disk,\
+        \ so a range outside that window returns an empty array rather than an\nerror.\
+        \ A block can be absent for three reasons: it fell out of\nretain_blocks,\
+        \ it was dropped oldest-first to keep the log directory under\nits 1 GiB ceiling,\
+        \ or writing it failed and the rest of that block was\nskipped. An empty result\
+        \ therefore does not mean the node logged nothing at\nthat level. Unauthenticated\
+        \ like every other endpoint here.\n"
+      operationId: logs
+      parameters:
+      - description: "first block height to include, defaults to the last block capture\
+          \ closed"
+        explode: true
+        in: query
+        name: start
+        required: false
+        schema:
+          format: int64
+          minimum: 1
+          type: integer
+        style: form
+      - description: "last block height to include, defaults to the last block capture\
+          \ closed"
+        explode: true
+        in: query
+        name: end
+        required: false
+        schema:
+          format: int64
+          minimum: 1
+          type: integer
+        style: form
+      - description: "lowest log level to include, along with every more severe level,\
+          \ defaults to info"
+        explode: true
+        in: query
+        name: level
+        required: false
+        schema:
+          enum:
+          - debug
+          - info
+          - warn
+          - error
+          type: string
+        style: form
+      - description: "modules to include, repeat the parameter for more than one (x/thorchain,\
+          \ x/bank, x/wasm, x/upgrade, ...), defaults to x/thorchain, pass * for every\
+          \ module"
+        explode: true
+        in: query
+        name: modules
+        required: false
+        schema:
+          items:
+            type: string
+          type: array
+        style: form
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/LogEntry'
+                type: array
           description: OK
       tags:
       - Network
@@ -2556,7 +2653,9 @@ paths:
           example: 0x1c7b17362c84287bd1184447e6dfeaf920c31bbe
           type: string
         style: form
-      - description: "the refund address, refunds will be sent here if the swap fails"
+      - description: "the source-chain refund address; required when the source chain\
+          \ cannot observe senders (currently XMR), and otherwise optional; when provided,\
+          \ it must be valid for the configured network"
         explode: true
         in: query
         name: refund_address
@@ -2687,7 +2786,9 @@ paths:
           example: 0x1c7b17362c84287bd1184447e6dfeaf920c31bbe
           type: string
         style: form
-      - description: "the refund address, refunds will be sent here if the swap fails"
+      - description: "the source-chain refund address; required when the source chain\
+          \ cannot observe senders (currently XMR), and otherwise optional; when provided,\
+          \ it must be valid for the configured network"
         explode: true
         in: query
         name: refund_address
@@ -3064,6 +3165,17 @@ paths:
       - Dynamic L1 Fees
 components:
   parameters:
+    queryOutboundVoter:
+      description: "Select only the outbound voter. By default, prefer the inbound\
+        \ voter and fall back to the outbound voter when no inbound observations exist."
+      explode: true
+      in: query
+      name: outbound
+      required: false
+      schema:
+        default: false
+        type: boolean
+      style: form
     queryHeight:
       description: "optional block height, defaults to current tip"
       explode: true
@@ -3189,6 +3301,48 @@ components:
         type: string
       style: form
   schemas:
+    LogEntry:
+      example:
+        msg: msg
+        level: debug
+        module: module
+        time: time
+        fields:
+          key: ""
+        height: 0
+      properties:
+        height:
+          description: block height the line was emitted during
+          format: int64
+          type: integer
+        time:
+          description: RFC3339 wall-clock time on this node
+          type: string
+        level:
+          enum:
+          - debug
+          - info
+          - warn
+          - error
+          type: string
+        module:
+          description: "module that emitted the line (x/thorchain, x/bank, x/wasm,\
+            \ ...)"
+          type: string
+        msg:
+          type: string
+        fields:
+          additionalProperties: true
+          description: structured key/value context attached to the line
+          type: object
+      required:
+      - fields
+      - height
+      - level
+      - module
+      - msg
+      - time
+      type: object
     Pool:
       example:
         rolling_pool_liquidity_fee_rune: "12345678"
@@ -4361,6 +4515,7 @@ components:
         - E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
         - E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
         external_observed_height: 7581334
+        xmr_mined_height: 7581328
         status: done
       properties:
         tx:
@@ -4419,6 +4574,12 @@ components:
             recipient outputs.
           example: "1111111111111111111111111111111111111111111111111111111111111111"
           type: string
+        xmr_mined_height:
+          description: "Original XMR mined height, retained when observation height\
+            \ changes at finalization. Zero means unavailable or pre-mining."
+          example: 7581328
+          format: int64
+          type: integer
         status:
           enum:
           - done
@@ -4837,8 +4998,12 @@ components:
           node_operator_fee: node_operator_fee
           providers:
           - bond_address: bond_address
+            bps: 5000
+            payout_target: alice
             bond: bond
           - bond_address: bond_address
+            bps: 5000
+            payout_target: alice
             bond: bond
         node_operator_address: thor1f3s7q037eancht7sg0aj995dht25rwrnu4ats5
         maintenance: false
@@ -5415,6 +5580,7 @@ components:
           - E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
           - E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
           external_observed_height: 7581334
+          xmr_mined_height: 7581328
           status: done
         keysign_metric:
           tx_id: tx_id
@@ -5494,6 +5660,7 @@ components:
           - E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
           - E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
           external_observed_height: 7581334
+          xmr_mined_height: 7581328
           status: done
         out_txs:
         - chain: BTC
@@ -5636,6 +5803,7 @@ components:
           - E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
           - E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
           external_observed_height: 7581334
+          xmr_mined_height: 7581328
           status: done
         - tx:
             chain: BTC
@@ -5681,6 +5849,7 @@ components:
           - E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
           - E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
           external_observed_height: 7581334
+          xmr_mined_height: 7581328
           status: done
         finalised_height: 7581334
         reverted: false
@@ -5776,6 +5945,7 @@ components:
           - E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
           - E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
           external_observed_height: 7581334
+          xmr_mined_height: 7581328
           status: done
         out_txs:
         - chain: BTC
@@ -5918,6 +6088,7 @@ components:
           - E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
           - E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
           external_observed_height: 7581334
+          xmr_mined_height: 7581328
           status: done
         - tx:
             chain: BTC
@@ -5963,6 +6134,7 @@ components:
           - E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
           - E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
           external_observed_height: 7581334
+          xmr_mined_height: 7581328
           status: done
         finalised_height: 7581334
         reverted: false
@@ -8651,11 +8823,23 @@ components:
     NodeBondProvider:
       example:
         bond_address: bond_address
+        bps: 5000
+        payout_target: alice
         bond: bond
       properties:
         bond_address:
           type: string
         bond:
+          type: string
+        bps:
+          description: the share of provider rewards to pay out automatically - `0`
+            means no reward split
+          example: 5000
+          format: int64
+          type: integer
+        payout_target:
+          description: "either empty, a THORChain address, or a THORName"
+          example: alice
           type: string
       title: NodeBondProvider
       type: object
@@ -8664,8 +8848,12 @@ components:
         node_operator_fee: node_operator_fee
         providers:
         - bond_address: bond_address
+          bps: 5000
+          payout_target: alice
           bond: bond
         - bond_address: bond_address
+          bps: 5000
+          payout_target: alice
           bond: bond
       properties:
         node_operator_fee:

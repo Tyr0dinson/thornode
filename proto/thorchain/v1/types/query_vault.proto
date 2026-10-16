@@ -91,6 +91,21 @@ message QueryXMRSpentOutputRefsResponse {
   repeated common.OutputRef spent_output_refs = 1;
 }
 
+message QuerySolVaultNonceRequest {
+  string vault_pub_key = 1;
+  string height = 2;
+}
+
+// QuerySolVaultNonceResponse is empty (all fields zero) when the vault has no
+// committed durable nonce.
+message QuerySolVaultNonceResponse {
+  string nonce_account = 1 [ (gogoproto.jsontag) = "nonce_account" ];
+  string nonce = 2 [ (gogoproto.jsontag) = "nonce" ];
+  int64 slot = 3 [ (gogoproto.jsontag) = "slot" ];
+  int64 updated_height = 4 [ (gogoproto.jsontag) = "updated_height" ];
+  string set_by_tx = 5 [ (gogoproto.jsontag) = "set_by_tx" ];
+}
+
 message VaultRouter {
   string chain = 1;
   string router = 2;

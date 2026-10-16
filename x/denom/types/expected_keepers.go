@@ -21,3 +21,9 @@ type BankKeeper interface {
 type AccountKeeper interface {
 	SetModuleAccount(ctx context.Context, macc sdk.ModuleAccountI)
 }
+
+// ContractKeeper reports whether an address belongs to an instantiated CosmWasm
+// contract. x/denom messages are only valid when dispatched by one.
+type ContractKeeper interface {
+	HasContractInfo(ctx context.Context, contractAddress sdk.AccAddress) bool
+}

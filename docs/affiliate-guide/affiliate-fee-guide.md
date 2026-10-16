@@ -52,6 +52,8 @@ If the affiliate fee amount is too small and the resulting swap to RUNE would no
 Interfaces can define up to a limit set by [MultipleAffiliatesMaxCount](../mimir.md) for valid affiliate and affiliate basis points pairs in a swap memo. This is used if more than one affiliate needs to be paid, e.g. an interface and implementation partner.
 The network deducts a fee for each valid affiliate defined in the memo. Alternatively, up to 5 valid affiliates and exactly one valid basis point value can be defined, and the network will attempt to skim the same basis point fee for each affiliate.
 
+Each THORName has its own collector, even when several THORNames share an owner. Its collected affiliate fees and REVSHARE remain separate from other THORNames' balances, and its preferred-asset payouts use its own alias. The [collector upgrade](./thorname-guide.md#upgrade-from-shared-owner-collectors) moves an owner's legacy balance to their THORName's collector when they have exactly one stored THORName that meets current THORName validation. Otherwise, it pays the balance directly to the owner in RUNE. Module-owned legacy balances go to Reserve.
+
 ```admonish warning
 The total affiliate fee across all affiliates cannot exceed 1,000 basis points (10%). If the sum of all affiliate fees exceeds this limit, the transaction will be rejected.
 ```

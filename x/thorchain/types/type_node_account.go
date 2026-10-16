@@ -12,6 +12,7 @@ import (
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/constants"
 )
 
 // Valid check whether the node status is valid or not
@@ -55,8 +56,9 @@ func NewBondProviders(acc cosmos.AccAddress) BondProviders {
 
 func NewBondProvider(acc cosmos.AccAddress) BondProvider {
 	return BondProvider{
-		BondAddress: acc,
-		Bond:        cosmos.ZeroUint(),
+		BondAddress:  acc,
+		Bond:         cosmos.ZeroUint(),
+		PayoutTarget: "",
 	}
 }
 
@@ -287,6 +289,24 @@ func (bp *BondProviders) Unbond(bond cosmos.Uint, acc cosmos.AccAddress) {
 	}
 }
 
+// SetAutoClaim stores the provider's automatic bond yield claim settings.
+func (bp *BondProviders) SetAutoClaim(acc cosmos.AccAddress, bps uint64, payoutTarget string) bool {
+	for i, provider := range bp.Providers {
+		if provider.BondAddress.Equals(acc) {
+			bp.Providers[i].Bps = bps
+			// Bond yield follows the payout target: raw THORChain addresses
+			// receive RUNE, while THORNames are resolved at payout time.
+			if bps == 0 {
+				bp.Providers[i].PayoutTarget = ""
+			} else if strings.TrimSpace(payoutTarget) != "" {
+				bp.Providers[i].PayoutTarget = payoutTarget
+			}
+			return true
+		}
+	}
+	return false
+}
+
 // remove provider (only if bond is zero)
 func (bp *BondProviders) Remove(acc cosmos.AccAddress) bool {
 	for i, provider := range bp.Providers {
@@ -323,7 +343,7 @@ func (bp *BondProviders) Adjust(nodeBond cosmos.Uint) {
 	fee := cosmos.ZeroUint()
 	if totalBond.LT(nodeBond) {
 		surplus := common.SafeSub(nodeBond, totalBond)
-		fee = common.GetSafeShare(bp.NodeOperatorFee, cosmos.NewUint(10000), surplus)
+		fee = common.GetSafeShare(bp.NodeOperatorFee, cosmos.NewUint(constants.MaxBasisPts), surplus)
 	}
 	nodeBond = common.SafeSub(nodeBond, fee)
 

@@ -106,6 +106,7 @@ docs/LiquidityProvider.md
 docs/LiquidityProviderSummary.md
 docs/LiquidityProvidersApi.md
 docs/LockedSupply.md
+docs/LogEntry.md
 docs/MetricsResponse.md
 docs/MimirApi.md
 docs/MimirNodesResponse.md
@@ -271,6 +272,7 @@ model_limit_swaps_summary_response.go
 model_liquidity_provider.go
 model_liquidity_provider_summary.go
 model_locked_supply.go
+model_log_entry.go
 model_metrics_response.go
 model_mimir_nodes_response.go
 model_mimir_vote.go

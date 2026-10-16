@@ -74,7 +74,25 @@ type ChainClient interface {
 // before returning success. Observer currently requires this hook for XMR,
 // whose transactions do not expire, and leaves other chains unchanged.
 type PermanentErrataQuarantiner interface {
+	// BlockPermanentErrataBroadcast persists the exact hash fence without the
+	// broader logical-owner/alias/scanner cleanup performed by quarantine.
+	BlockPermanentErrataBroadcast(errata common.ErrataTx) error
 	QuarantinePermanentErrata(errata common.ErrataTx, orphanHeight int64) error
+}
+
+// SpentOutputRefsImport keeps the semantic observation separate from the exact
+// wire metadata authenticated by a chain client. WireMemo may be explicitly
+// empty for vault-certified imports. ChainCommitted internal transactions
+// derive their exact wire memo from Tx because internal memos are never
+// stripped; other committed transactions remain accounting-only imports.
+type SpentOutputRefsImport struct {
+	Tx             common.ObservedTx
+	WireMemo       string
+	ChainCommitted bool
+	// ReplaySource transfers a peer-certified mined payout to the scanner's
+	// durable receipt queue before the import is acknowledged. Local signing
+	// imports leave this false because they run before broadcast.
+	ReplaySource bool
 }
 
 // SpentOutputRefsApplier is the optional XMR durability hook used after a
@@ -82,16 +100,15 @@ type PermanentErrataQuarantiner interface {
 // the final import outcome exactly once, including after any bounded retries.
 // Callers must retain the outbound until the callback reports success.
 type SpentOutputRefsApplier interface {
-	ApplySpentOutputRefsWithOutcome(tx common.ObservedTx, onOutcome func(applied bool))
+	ApplySpentOutputRefsWithOutcome(request SpentOutputRefsImport, onOutcome func(applied bool))
 }
 
 // CustomKeygenRequest carries common keygen context for chain-specific hooks.
 type CustomKeygenRequest struct {
-	Members          []string
-	BlockHeight      int64
-	ThorchainVersion string
-	PoolPubKey       common.PubKey
-	PoolPubKeyEddsa  common.PubKey
+	Members         []string
+	BlockHeight     int64
+	PoolPubKey      common.PubKey
+	PoolPubKeyEddsa common.PubKey
 }
 
 // CustomKeygenResult carries the chain-specific outputs from a custom keygen

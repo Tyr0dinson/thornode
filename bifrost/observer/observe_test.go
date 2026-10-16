@@ -42,10 +42,12 @@ import (
 func TestPackage(t *testing.T) { TestingT(t) }
 
 type ObserverSuite struct {
-	metrics  *metrics.Metrics
-	thorKeys *thorclient.Keys
-	bridge   thorclient.ThorchainBridge
-	client   *evm.EVMClient
+	metrics    *metrics.Metrics
+	thorKeys   *thorclient.Keys
+	bridge     thorclient.ThorchainBridge
+	client     *evm.EVMClient
+	rpcServer  *httptest.Server
+	thorServer *httptest.Server
 }
 
 var _ = Suite(&ObserverSuite{})
@@ -57,9 +59,13 @@ type blockingConfirmationChainClient struct {
 	once    sync.Once
 }
 
-func (c *blockingConfirmationChainClient) GetConfirmationCount(types.TxIn) int64 {
+func (c *blockingConfirmationChainClient) ConfirmationCountReady(types.TxIn) bool {
 	c.once.Do(func() { close(c.started) })
 	<-c.release
+	return false
+}
+
+func (c *blockingConfirmationChainClient) GetConfirmationCount(types.TxIn) int64 {
 	return 0
 }
 
@@ -153,12 +159,11 @@ func (s *ObserverSuite) ResetMockClient(c *C) {
 	c.Assert(err, IsNil)
 	poolMgr := thorclient.NewPoolMgr(s.bridge)
 
-	mockEvmRPC := httptest.NewServer(
+	s.rpcServer = httptest.NewServer(
 		http.HandlerFunc(
 			func(rw http.ResponseWriter, req *http.Request) {
-				var body []byte
-				body, err = io.ReadAll(req.Body)
-				c.Assert(err, IsNil)
+				body, readErr := io.ReadAll(req.Body)
+				c.Assert(readErr, IsNil)
 				type RPCRequest struct {
 					JSONRPC string          `json:"jsonrpc"`
 					ID      interface{}     `json:"id"`
@@ -166,29 +171,27 @@ func (s *ObserverSuite) ResetMockClient(c *C) {
 					Params  json.RawMessage `json:"params"`
 				}
 				var rpcRequest RPCRequest
-				err = json.Unmarshal(body, &rpcRequest)
-				c.Assert(err, IsNil)
+				c.Assert(json.Unmarshal(body, &rpcRequest), IsNil)
 				if rpcRequest.Method == "eth_chainId" {
-					_, err = rw.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":"0xf"}`))
-					c.Assert(err, IsNil)
+					_, writeErr := rw.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":"0xf"}`))
+					c.Assert(writeErr, IsNil)
 				}
 				if rpcRequest.Method == "eth_blockNumber" {
-					_, err = rw.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":"0x7"}`))
-					c.Assert(err, IsNil)
+					_, writeErr := rw.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":"0x7"}`))
+					c.Assert(writeErr, IsNil)
 				}
 			},
 		),
 	)
 
-	httpRequestTimeout, _ := time.ParseDuration("5s")
-
 	s.client, err = evm.NewEVMClient(
 		s.thorKeys,
 		config.BifrostChainConfiguration{
-			RPCHost:        mockEvmRPC.URL,
+			RPCHost:        s.rpcServer.URL,
 			SolvencyBlocks: 10,
 			BlockScanner: config.BifrostBlockScannerConfiguration{
-				HTTPRequestTimeout:  httpRequestTimeout,
+				// These tests exercise observer behavior, not RPC latency.
+				HTTPRequestTimeout:  30 * time.Second,
 				BlockScanProcessors: 1,
 				ChainID:             common.AVAXChain,
 				MaxHTTPRequestRetry: 10,
@@ -214,7 +217,7 @@ func (s *ObserverSuite) ResetMockClient(c *C) {
 func (s *ObserverSuite) SetUpSuite(c *C) {
 	setupMocknetThorConfig()
 
-	server := httptest.NewServer(
+	s.thorServer = httptest.NewServer(
 		http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 			switch {
 			case strings.HasPrefix(req.RequestURI, thorclient.MimirEndpoint):
@@ -266,8 +269,8 @@ func (s *ObserverSuite) SetUpSuite(c *C) {
 	var err error
 	cfg := config.BifrostClientConfiguration{
 		ChainID:      "thorchain",
-		ChainHost:    server.Listener.Addr().String(),
-		ChainRPC:     server.Listener.Addr().String(),
+		ChainHost:    s.thorServer.Listener.Addr().String(),
+		ChainRPC:     s.thorServer.Listener.Addr().String(),
 		SignerName:   "bob",
 		SignerPasswd: "password",
 	}
@@ -292,6 +295,17 @@ func (s *ObserverSuite) SetUpSuite(c *C) {
 	c.Assert(err, IsNil)
 
 	s.ResetMockClient(c)
+}
+
+func (s *ObserverSuite) TearDownSuite(_ *C) {
+	if s.rpcServer != nil {
+		s.rpcServer.Close()
+		s.rpcServer = nil
+	}
+	if s.thorServer != nil {
+		s.thorServer.Close()
+		s.thorServer = nil
+	}
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////

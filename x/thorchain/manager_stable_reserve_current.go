@@ -8,6 +8,9 @@ import (
 	"math/big"
 	"strings"
 
+	"github.com/cosmos/cosmos-sdk/telemetry"
+	"github.com/hashicorp/go-metrics"
+
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/constants"
@@ -133,6 +136,15 @@ func (s *StableReserveMgr) Withdraw(ctx cosmos.Context, asset common.Asset, amou
 
 	withdrawAmount := cosmos.MinUint(cosmos.MinUint(amount, credit), inventory)
 	if withdrawAmount.IsZero() {
+		// A successful-looking no-op: the contributor asked for their money back
+		// and got nothing, i.e. the credit-vs-inventory invariant has already
+		// broken for a real user. Asset only - the contributor address would be
+		// an unbounded label.
+		telemetry.IncrCounterWithLabels(
+			[]string{"thornode", "stable_reserve", "withdraw_unfilled"},
+			float32(1),
+			[]metrics.Label{telemetry.NewLabel("asset", asset.GetLayer1Asset().String())},
+		)
 		_ = s.eventMgr.EmitEvent(ctx, newStableReserveEvent(
 			"stable_reserve_withdraw_unfilled",
 			"asset", asset.GetLayer1Asset().String(),
@@ -422,6 +434,14 @@ func (s *StableReserveMgr) scheduleDepegRescue(ctx cosmos.Context, mgr Manager) 
 			}
 		}
 
+		// Note this also fires when the ORACLE breaks (IsEligibleStable rejects on
+		// missing/unhealthy oracle or pool price), not only on a real depeg, and it
+		// re-fires every block until the rescue swap settles.
+		telemetry.IncrCounterWithLabels(
+			[]string{"thornode", "stable_reserve", "depeg_detected"},
+			float32(1),
+			[]metrics.Label{telemetry.NewLabel("asset", asset.String())},
+		)
 		if err := s.eventMgr.EmitEvent(ctx, newStableReserveEvent(
 			"stable_reserve_depeg_detected",
 			"asset", asset.String(),

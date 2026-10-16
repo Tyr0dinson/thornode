@@ -27,7 +27,20 @@ var (
 		sdk.AccAddress([]byte("addr1_______________")),
 		sdk.AccAddress([]byte("addr2_______________")),
 	}
+	// eoaAddr is an externally owned account - not a contract - and so is never
+	// allowed to send x/denom Msgs.
+	eoaAddr = sdk.AccAddress([]byte("eoa1________________"))
 )
+
+// mockContractKeeper treats every address in contracts as an instantiated
+// CosmWasm contract.
+type mockContractKeeper struct {
+	contracts map[string]bool
+}
+
+func (m mockContractKeeper) HasContractInfo(_ context.Context, addr sdk.AccAddress) bool {
+	return m.contracts[addr.String()]
+}
 
 type KeeperTestSuite struct {
 	suite.Suite
@@ -84,6 +97,10 @@ func (suite *KeeperTestSuite) SetupTest() {
 		runtime.NewKVStoreService(keys[types.StoreKey]),
 		authKeeper,
 		bankKeeper,
+		mockContractKeeper{contracts: map[string]bool{
+			accAddrs[0].String(): true,
+			accAddrs[1].String(): true,
+		}},
 		authAcc.String(),
 	)
 

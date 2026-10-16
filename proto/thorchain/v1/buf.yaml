@@ -6,6 +6,12 @@ deps:
   - buf.build/googleapis/googleapis
   - buf.build/cosmwasm/wasmd
 
+breaking:
+  ignore_only:
+    FILE_NO_DELETE:
+      # Intentional schema removal; retain compatibility checks for all other files.
+      - types/msg_wasm_exec.proto
+
 lint:
   use:
     - DEFAULT

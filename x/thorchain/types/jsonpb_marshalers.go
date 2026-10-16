@@ -42,6 +42,7 @@ var (
 	_ jsonpb.JSONPBMarshaler = &QueryObservedTxVoter{}
 	_ jsonpb.JSONPBMarshaler = &QueryOutboundFeesResponse{}
 	_ jsonpb.JSONPBMarshaler = &QueryOutboundResponse{}
+	_ jsonpb.JSONPBMarshaler = &QuerySolVaultNonceResponse{}
 	_ jsonpb.JSONPBMarshaler = &QueryPoolResponse{}
 	_ jsonpb.JSONPBMarshaler = &QueryPoolSlipsResponse{}
 	_ jsonpb.JSONPBMarshaler = &QueryPoolsResponse{}
@@ -91,6 +92,12 @@ func jsonify(r any) ([]byte, error) {
 		return nil, fmt.Errorf("fail to marshal response to json: %w", err)
 	}
 	return res, nil
+}
+
+// QuerySolVaultNonceResponse renders with plain encoding/json (int64 as numbers,
+// the json tags as field names), which is the shape bifrost decodes.
+func (m *QuerySolVaultNonceResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, error) {
+	return jsonify(m)
 }
 
 func (m *QueryAsgardVaultsResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, error) {

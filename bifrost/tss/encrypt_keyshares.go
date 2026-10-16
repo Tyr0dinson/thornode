@@ -35,6 +35,12 @@ const (
 	SaltChaCha = 3
 )
 
+// ageWorkFactor is the scrypt work factor EncryptKeyshares and
+// EncryptRawKeyshares use: AgeWorkFactor, except in this package's tests,
+// which lower it because every encryption also decrypts to verify the
+// round trip.
+var ageWorkFactor = AgeWorkFactor
+
 // EncryptKeyshares encrypts the keyshares at the provided path using the passphrase.
 func EncryptKeyshares(path, passphrase string) ([]byte, error) {
 	// verify the passphrase is provided and a mnemonic
@@ -90,7 +96,7 @@ func EncryptKeyshares(path, passphrase string) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed keyshare encrypt - cannot create recipient: %w", err)
 	}
-	recipient.SetWorkFactor(AgeWorkFactor)
+	recipient.SetWorkFactor(ageWorkFactor)
 
 	// encrypt keyshares with age
 	encryptedBytes := new(bytes.Buffer)
@@ -203,7 +209,7 @@ func EncryptRawKeyshares(raw []byte, passphrase string) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed keyshare encrypt - cannot create recipient: %w", err)
 	}
-	recipient.SetWorkFactor(AgeWorkFactor)
+	recipient.SetWorkFactor(ageWorkFactor)
 
 	encryptedBytes := new(bytes.Buffer)
 	enc, err := age.Encrypt(encryptedBytes, recipient)

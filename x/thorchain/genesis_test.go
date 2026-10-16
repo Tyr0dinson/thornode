@@ -1,6 +1,7 @@
 package thorchain
 
 import (
+	"fmt"
 	"os"
 	"regexp"
 	"strings"
@@ -11,6 +12,8 @@ import (
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/common/tcysmartcontract"
+	"gitlab.com/thorchain/thornode/v3/constants"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
@@ -298,4 +301,135 @@ func (GenesisTestSuite) TestGenesisDynamicFeeRoundtrip(c *C) {
 	c.Check(len(reExported.DynamicFeeRecords), Equals, 1)
 	c.Check(len(reExported.DynamicFeeAccumulators), Equals, 1)
 	c.Check(reExported.LastObservedDynamicFeeEpochBlocks, Equals, int64(1337))
+}
+
+func (GenesisTestSuite) TestGenesisReferenceMemoWindowRoundTrip(c *C) {
+	SetupConfigForTest()
+
+	srcCtx, srcMgr := setupManagerForTest(c)
+	srcCtx = srcCtx.WithBlockHeight(1000)
+	ttl := srcMgr.Keeper().GetConfigInt64(srcCtx, constants.MemolessTxnTTL)
+
+	for i := 1; i <= 3; i++ {
+		srcMgr.Keeper().SetReferenceMemo(srcCtx, types.ReferenceMemo{
+			Asset:     common.BTCAsset,
+			Reference: fmt.Sprintf("0000%d", i),
+			Memo:      "+:BTC.BTC",
+			Height:    srcCtx.BlockHeight(),
+		})
+	}
+	srcMgr.Keeper().SetReferenceMemo(srcCtx, types.ReferenceMemo{
+		Asset:     common.ETHAsset,
+		Reference: "00001",
+		Memo:      "+:ETH.ETH",
+		Height:    srcCtx.BlockHeight(),
+	})
+
+	exported := ExportGenesis(srcCtx, srcMgr.Keeper())
+
+	dstCtx, dstMgr := setupManagerForTest(c)
+	dstCtx = dstCtx.WithBlockHeight(srcCtx.BlockHeight())
+	InitGenesis(dstCtx, dstMgr.Keeper(), exported)
+
+	// the window is not a genesis field, it is rebuilt from the imported memos so
+	// the congestion price does not reset to "empty ring" across a fork
+	c.Check(memolessLiveRefs(dstCtx, dstMgr.Keeper(), common.BTCAsset, ttl), Equals, int64(3))
+	c.Check(memolessLiveRefs(dstCtx, dstMgr.Keeper(), common.ETHAsset, ttl), Equals, int64(1))
+
+	// and it decays away as the imported memos expire
+	c.Check(memolessLiveRefs(dstCtx.WithBlockHeight(dstCtx.BlockHeight()+ttl), dstMgr.Keeper(), common.BTCAsset, ttl), Equals, int64(0))
+}
+
+// TCY smart contract addresses are surfaced by ListTCYStakers as synthetic stakers whose
+// amount is the contract's own TCY balance. That balance is exported by the bank module,
+// so exporting it again as a staker record would double count it and, if the smart
+// contract address list ever changed, import as real TCYStake module backed stake.
+func (GenesisTestSuite) TestGenesisExportSkipsTCYSmartContractStakers(c *C) {
+	SetupConfigForTest()
+	ctx, mgr := setupManagerForTest(c)
+	k := mgr.Keeper()
+
+	scAddr, _ := tcySmartContractStaker(c, ctx, k, cosmos.NewUint(1234))
+
+	staker := GetRandomRUNEAddress()
+	c.Assert(k.SetTCYStaker(ctx, types.NewTCYStaker(staker, cosmos.NewUint(500))), IsNil)
+
+	// the synthetic staker is visible through the keeper
+	stakers, err := k.ListTCYStakers(ctx)
+	c.Assert(err, IsNil)
+	foundSC := false
+	for _, s := range stakers {
+		if s.Address.Equals(scAddr) {
+			foundSC = true
+		}
+	}
+	c.Assert(foundSC, Equals, true)
+
+	// ...but not through the genesis export
+	exported := ExportGenesis(ctx, k)
+	foundStaker := false
+	for _, s := range exported.TcyStakers {
+		c.Assert(tcysmartcontract.IsTCYSmartContractAddress(s.Address), Equals, false)
+		if s.Address.Equals(staker) {
+			foundStaker = true
+			c.Assert(s.Amount.Equal(cosmos.NewUint(500)), Equals, true)
+		}
+	}
+	c.Assert(foundStaker, Equals, true)
+}
+
+// TestGenesisSolVaultNonceRoundTrip: a vault's committed durable nonce survives
+// export/import (case-sensitive base58 values intact), so the vault is not treated as
+// legacy afterwards; invalid records fail genesis validation.
+func (GenesisTestSuite) TestGenesisSolVaultNonceRoundTrip(c *C) {
+	SetupConfigForTest()
+
+	srcCtx, srcMgr := setupManagerForTest(c)
+	vaultPK := GetRandomPubKey()
+	record := SolVaultNonce{
+		VaultPubKey:   vaultPK,
+		NonceAccount:  "9rAtxuhtKn8qagc3UtZFyhLrw5zkh6etv43TibaXuSKo",
+		Nonce:         "C8976AEb5Q4QFVZQQZ7rNY3u2j4n83PPHNagHeJLeCkH",
+		Slot:          1000,
+		UpdatedHeight: 42,
+		SetByTx:       GetRandomTxHash(),
+	}
+	srcMgr.Keeper().SetSolVaultNonce(srcCtx, record)
+
+	exported := ExportGenesis(srcCtx, srcMgr.Keeper())
+	c.Assert(exported.SolVaultNonces, HasLen, 1)
+	c.Assert(ValidateGenesis(exported), IsNil)
+	bz, err := exported.Marshal()
+	c.Assert(err, IsNil)
+	var decoded GenesisState
+	c.Assert(decoded.Unmarshal(bz), IsNil)
+
+	dstCtx, dstMgr := setupManagerForTest(c)
+	InitGenesis(dstCtx, dstMgr.Keeper(), decoded)
+	got, found, err := dstMgr.Keeper().GetSolVaultNonce(dstCtx, vaultPK)
+	c.Assert(err, IsNil)
+	c.Assert(found, Equals, true)
+	c.Check(got.NonceAccount, Equals, record.NonceAccount)
+	c.Check(got.Nonce, Equals, record.Nonce)
+	c.Check(got.Slot, Equals, record.Slot)
+	c.Check(got.UpdatedHeight, Equals, record.UpdatedHeight)
+	c.Check(got.SetByTx.Equals(record.SetByTx), Equals, true)
+
+	bad := decoded
+	bad.SolVaultNonces = []SolVaultNonce{{VaultPubKey: vaultPK, NonceAccount: record.NonceAccount, Slot: 1}}
+	c.Assert(ValidateGenesis(bad), NotNil)
+}
+
+func (GenesisTestSuite) TestExportSwapperCloutBase58(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	transparent, _, _, _ := zecTxOutAddresses()
+	clout := NewSwapperClout(transparent)
+	clout.Score = cosmos.NewUint(1000)
+	c.Assert(mgr.Keeper().SetSwapperClout(ctx, clout), IsNil)
+
+	// Store keys are uppercased, so the export must not rebuild base58 addresses from them.
+	gs := ExportGenesis(ctx, mgr.Keeper())
+	c.Assert(gs.SwapperClout, HasLen, 1)
+	c.Check(gs.SwapperClout[0].Address, Equals, transparent)
+	c.Check(gs.SwapperClout[0].Score.String(), Equals, "1000")
 }

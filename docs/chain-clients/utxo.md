@@ -1,6 +1,6 @@
 # UTXO Chain Clients
 
-THORChain supports several UTXO-based chains such as Bitcoin, Litecoin, Bitcoin Cash, and Dogecoin. These chains share a common implementation based on `utxo/client.go`, which handles block scanning, mempool observations, signing, consolidation, and solvency reporting.
+THORChain supports several UTXO-based chains: Bitcoin, Litecoin, Bitcoin Cash, Dogecoin, and Zcash. These chains share a common implementation based on `utxo/client.go`, which handles block scanning, mempool observations, signing, consolidation, and solvency reporting.
 
 ## Shared Architecture
 
@@ -10,11 +10,14 @@ UTXO chains use a shared client located at:
 /bifrost/pkg/chainclients/utxo/client.go
 ```
 
-Each chain (e.g. BTC, LTC) wraps this logic with minimal overrides:
+Each chain has a per-chain configuration file within the `utxo/` directory:
 
 ```text
-/bifrost/pkg/chainclients/bitcoin/client.go
-/bifrost/pkg/chainclients/litecoin/client.go
+/bifrost/pkg/chainclients/utxo/bitcoin.go
+/bifrost/pkg/chainclients/utxo/litecoin.go
+/bifrost/pkg/chainclients/utxo/bitcoincash.go
+/bifrost/pkg/chainclients/utxo/dogecoin.go
+/bifrost/pkg/chainclients/utxo/zcash.go
 ```
 
 The shared logic handles:
@@ -102,6 +105,22 @@ Consolidation is **initiated by Bifrost** but **validated by THORChain**. This l
 ## RBF Handling
 
 Replace-by-fee (RBF) is supported for user-initiated deposits to Asgard vaults. This allows users to bump the fee on a stuck transaction by rebroadcasting it with a higher fee. Vault-generated transactions do not use RBF. Instead, fee bumping (if required) is handled via other mechanisms such as child-pays-for-parent (CPFP).
+
+## Zcash Network Upgrades
+
+Matching Zebra upgrade schedules are an operator requirement. Before the agreed ZEC signing height reaches `activation height - 40`, operators must ensure their daemons report the same schedule. Different schedules can produce different transaction expiries and prevent a signing party from forming, even before activation. Update comfortably before this boundary; identical Zebra versions are not required if their schedules match.
+
+### Transparent transaction version switch (v5 → v6)
+
+The vault signs fresh transparent outbounds as **v6 (ZIP-229)**, the standard format on mainnet since NU6.3. v5 and v6 produce **different** ZIP-244 signing digests (the version/version-group id is committed in the header digest and the empty-shielded digest uses v6 personalizations), so a fleet running a mix of v5-signing and v6-signing builds **cannot form a keysign party** for ZEC.
+
+Any release that changes the signed transaction version is therefore a coordinated switch gated operationally by `HALTSIGNINGZEC`:
+
+1. Set `HALTSIGNINGZEC=1` **before** any node upgrades.
+2. Roll the new build out to the whole fleet.
+3. Release the halt (`HALTSIGNINGZEC=0`) **only after the last node** is on the new build.
+
+In-flight v5 checkpoints signed before the switch are still accepted and finished as v5 on resume (the version is pinned in the checkpoint, not re-chosen), but over a multi-block halt they will reach their `ZecTxExpiry` (40 blocks) and be retired and rebuilt as v6. The v5 resume support is a short-lived safety net, not something the rollout depends on.
 
 ## Related Pages
 

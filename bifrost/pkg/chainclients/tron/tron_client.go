@@ -188,7 +188,7 @@ type TronClient struct {
 	whitelist           map[string]tokenlist.ERC20Token
 	bridge              thorclient.ThorchainBridge
 	globalSolvencyQueue chan types.Solvency
-	// Serializes ReportSolvency when FetchTxs prefetch callbacks and SolvencyCheckRunner can both enter.
+	// Serializes ReportSolvency when ordered scan callbacks and SolvencyCheckRunner can both enter.
 	solvencyLock sync.Mutex
 	wg           *sync.WaitGroup
 	stopchan     chan struct{}
@@ -774,7 +774,7 @@ func (c *TronClient) ShouldReportSolvency(height int64) bool {
 }
 
 func (c *TronClient) ReportSolvency(height int64) error {
-	// FetchTxs may call this from prefetch goroutines; SolvencyCheckRunner also calls it while halted.
+	// The ordered scan loop and SolvencyCheckRunner can both call this.
 	c.solvencyLock.Lock()
 	defer c.solvencyLock.Unlock()
 
@@ -783,7 +783,7 @@ func (c *TronClient) ReportSolvency(height int64) error {
 	}
 
 	// when block scanner is not healthy, only report from auto-unhalt SolvencyCheckRunner
-	// (FetchTxs passes PreviousHeight + 1 from scanBlocks, while SolvencyCheckRunner passes chainHeight)
+	// TRON passes chainHeight from both callers; at the tip this is PreviousHeight + 1.
 	if !c.IsBlockScannerHealthy() && height == c.blockScanner.PreviousHeight()+1 {
 		return nil
 	}

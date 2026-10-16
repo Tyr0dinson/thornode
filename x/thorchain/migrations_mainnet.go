@@ -10,6 +10,7 @@ import (
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/constants"
 	v2 "gitlab.com/thorchain/thornode/v3/x/thorchain/migrations/v2"
 )
 
@@ -2598,3 +2599,1192 @@ func (m *Migrator) adr028ZeroSavers(ctx cosmos.Context, synthAsset common.Asset)
 		"old_balance_asset", oldBA, "old_lp_units", oldLPUnits)
 	return nil
 }
+
+// mainnetDonationSpecComplete must be set to true only once the pinned amounts
+// in the 19->20 steps have been re-pinned at the release cut. Until then
+// Migrate19to20 logs and SKIPS (returns nil): the module version still advances
+// to 20, so a release shipped with this false drops the migration permanently
+// (the slash refund, donations, ETH.THOR restore, synth retirement and the
+// h28181638 ZEC slash refund would then need a new 20->21 migration).
+const mainnetDonationSpecComplete = true
+
+// mainnetDonationSpec19to20 is the 3.21.0 donation spec.
+func mainnetDonationSpec19to20() (donationMigrationSpec, error) {
+	// Three LP positions keyed by the Secured Ops RUNE address. Each is pinned by its
+	// EXACT unit count (price-independent): applyDonationMigration aborts if the live units
+	// differ at all. Any pre-upgrade add OR withdrawal on one of these records therefore
+	// requires re-pinning its Units (and the treasury Amount) at the cut — the units are NOT
+	// donated "as they stand". Values read from live mainnet (h28,216,334; unchanged since
+	// the adds at h28,021,7xx, no withdrawals). RuneDepositValue/AssetDepositValue are 0 on
+	// the two BSC records (the pools were Staged at add, so deposit values were never
+	// written), which is why units — not deposit value — are the drift signal. Re-pin at the cut.
+	const securedOps = "thor1gkvvzfnkyqv8dfhk0593tfhgr03a3ndgjqdalf"
+	pinnedUnits := map[string]uint64{
+		"BSC.USDC-0X8AC76A51CC950D9822D68B83FE1AD97B32CD580D": 38747498669916,
+		"BSC.USDT-0X55D398326F99059FF775485246999027B3197955": 9273374739774,
+		"BASE.ETH": 12450028028812,
+	}
+	donations := make([]lpDonation, 0, 3)
+	for _, pool := range []string{
+		"BSC.USDC-0X8AC76A51CC950D9822D68B83FE1AD97B32CD580D",
+		"BSC.USDT-0X55D398326F99059FF775485246999027B3197955",
+		"BASE.ETH",
+	} {
+		asset, err := common.NewAsset(pool)
+		if err != nil {
+			return donationMigrationSpec{}, err
+		}
+		donations = append(donations, lpDonation{Asset: asset, Address: common.Address(securedOps), Units: cosmos.NewUint(pinnedUnits[pool])})
+	}
+	// The Reserve repays New Dawn Treasury the RUNE value of these donated positions
+	// (BSC.USDC/USDT + BASE.ETH): pinned 247,622.29462483 RUNE. The binding is one-sided
+	// (see effectivePayment): the Reserve pays min(pinned, live value), so it never over-pays
+	// and a market price move of the donated assets no longer aborts the step. Position drift
+	// is caught by the per-record Units pin above. Re-pin the Amount at the cut with the
+	// current LP+synth unit formula. ETH.THOR is donated AND depth-restored in its own step
+	// (see runEthThorRestore19to20); its RUNE capital is repaid there.
+	return donationMigrationSpec{
+		Donations: donations,
+		Payments: []reservePayment{{
+			To:      "thor1lhufh0mwasa0lk9udppdegmvnkgqt08f0m9p5g",
+			Amount:  cosmos.NewUint(24_762_229_462_483),
+			Reason:  "repay New Dawn Treasury for donated LP positions",
+			ValueOf: donations,
+		}},
+		Pairings: nil,
+	}, nil
+}
+
+// runSlashRefund19to20 reverses the rzxslmgc bond slash (block 27999003) and
+// refunds each bond provider from the Reserve, following the 3.18 Migrate14to15
+// (DOGE) model. It applies atomically or not at all: if the BTC pool or Reserve
+// no longer matches the pinned figures, it skips and logs rather than halting
+// the upgrade.
+func runSlashRefund19to20(ctx cosmos.Context, mgr *Mgrs) {
+	cacheCtx, commit := ctx.CacheContext()
+	if err := applySlashRefund19to20(cacheCtx, mgr); err != nil {
+		ctx.Logger().Error("slash refund skipped: state does not match the pinned figures", "error", err)
+		return
+	}
+	commit()
+}
+
+// applySlashRefund19to20 reverses the BTC pool slash, moves the freed RUNE
+// Asgard->Reserve, and refunds the 218 bond providers. Pinned from slash block
+// 27999003 (pre 27999002): BTC pool -0.53258717 asset / +56,773.63556220 RUNE;
+// refund total 113,547.27112439 RUNE.
+func applySlashRefund19to20(ctx cosmos.Context, mgr *Mgrs) error {
+	k := mgr.Keeper()
+	const (
+		// +0.53257717 BTC back into the pool: the outbound COIN ONLY, NOT the 1,000-sat gas.
+		// The rzxslmgc slash was a re-observed REAL spend (BTC tx 8FC9BAB735B9…1DB8, confirmed
+		// on-chain: recipient bc1qd9sny… received 53,257,717 sats, miner fee 1,000 sats), not a
+		// phantom — so the 1,000-sat fee was genuinely consumed. The slash debited the pool the
+		// full 53,258,717 (send + fee); on a normal matched outbound the pool bears the gas too,
+		// so leaving the 1,000 gas debited keeps pool depth == vault backing (ZEC/TRON parity).
+		btcPoolAssetCredit = uint64(53_257_717)        // +0.53257717 BTC (send only; 1,000-sat gas left debited)
+		btcPoolRuneDebit   = uint64(5_677_363_556_220) // -56,773.63556220 RUNE (reverse the slash credit)
+		asgardToReserve    = uint64(5_677_363_556_220) // move the freed RUNE Asgard->Reserve for the refund
+	)
+	pool, err := k.GetPool(ctx, common.BTCAsset)
+	if err != nil {
+		return fmt.Errorf("get BTC pool: %w", err)
+	}
+	if pool.IsEmpty() {
+		return fmt.Errorf("BTC pool is empty")
+	}
+	// Hold the slash reversal to the same bar as every other asset credit in this
+	// migration (ETH.THOR surplus, the Pairings branch): credit the BTC back into
+	// the pool only if the active vaults demonstrably hold it free of every
+	// liability. The slashed BTC was judged lost, and the rzxslmgc replay that
+	// caused the slash also produced dropped outbounds now paid by hand — so the
+	// 0.53 BTC is not guaranteed back in an active vault. If it is not unaccounted
+	// (or solvency cannot be computed, e.g. mid-churn), skip for a re-pin rather
+	// than claim BTC the vaults do not hold while the Reserve still pays 218 refunds.
+	freeBTC, err := unaccountedVaultAsset19to20(ctx, mgr, common.BTCAsset)
+	if err != nil {
+		return fmt.Errorf("btc solvency: %w", err)
+	}
+	if freeBTC.LT(cosmos.NewUint(btcPoolAssetCredit)) {
+		return fmt.Errorf("unaccounted BTC %s below slash credit %d; vaults do not hold the reversed BTC", freeBTC, btcPoolAssetCredit)
+	}
+	runeDebit := cosmos.NewUint(btcPoolRuneDebit)
+	if pool.BalanceRune.LT(runeDebit) {
+		return fmt.Errorf("BTC pool BalanceRune %s below slash credit %d; pool drifted", pool.BalanceRune, btcPoolRuneDebit)
+	}
+	pool.BalanceAsset = pool.BalanceAsset.Add(cosmos.NewUint(btcPoolAssetCredit))
+	pool.BalanceRune = pool.BalanceRune.Sub(runeDebit)
+	if err := k.SetPool(ctx, pool); err != nil {
+		return fmt.Errorf("set BTC pool: %w", err)
+	}
+	poolSlashAmt := []PoolAmt{
+		{Asset: common.BTCAsset, Amount: int64(btcPoolAssetCredit)},
+		{Asset: common.RuneAsset(), Amount: -int64(btcPoolRuneDebit)},
+	}
+	if err := mgr.EventMgr().EmitEvent(ctx, NewEventSlash(common.BTCAsset, poolSlashAmt)); err != nil {
+		ctx.Logger().Error("emit slash reversal event", "error", err)
+	}
+	asgardCoin := common.NewCoin(common.RuneAsset(), cosmos.NewUint(asgardToReserve))
+	if err := k.SendFromModuleToModule(ctx, AsgardName, ReserveName, common.NewCoins(asgardCoin)); err != nil {
+		return fmt.Errorf("asgard->reserve: %w", err)
+	}
+	total := cosmos.NewUint(mainnetSlashRefunds19to20Total)
+	// The rows actually paid must sum to the pinned total that the Reserve gate + the
+	// Asgard->Reserve top-up are sized against; otherwise a re-pin that edits the 218-row
+	// table without the constant could draw more RUNE than was funded. Mirror the ZEC/TRON
+	// siblings' runtime sum check (the mainnet-tagged sum test never runs under mocknet CI).
+	rowSum := cosmos.ZeroUint()
+	for _, r := range mainnetSlashRefunds19to20 {
+		rowSum = rowSum.Add(cosmos.NewUint(r.amount))
+	}
+	if !rowSum.Equal(total) {
+		return fmt.Errorf("slash-refund row sum %s != pinned total %s (re-pin)", rowSum, total)
+	}
+	if bal := k.GetRuneBalanceOfModule(ctx, ReserveName); bal.LT(total) {
+		return fmt.Errorf("reserve %s below slash refund total %s", bal, total)
+	}
+	// Atomic (per the doc): any bad address or failed send returns an error so
+	// the caller's cache context discards the whole step — never a partial
+	// refund set.
+	for _, r := range mainnetSlashRefunds19to20 {
+		to, err := cosmos.AccAddressFromBech32(r.address)
+		if err != nil {
+			return fmt.Errorf("bad slash-refund address %s: %w", r.address, err)
+		}
+		coins := common.NewCoins(common.NewCoin(common.RuneAsset(), cosmos.NewUint(r.amount)))
+		if err := k.SendFromModuleToAccount(ctx, ReserveName, to, coins); err != nil {
+			return fmt.Errorf("slash refund send to %s (%d) failed: %w", r.address, r.amount, err)
+		}
+	}
+	return nil
+}
+
+// --- Step 5: erroneous ZEC slash refund (issue 3393) ---------------------------
+//
+// At block 28181638 the signing members of active vault gqr5qzgg were slashed for a
+// "missing tx out" on ZEC outbound 9218AB74. The outbound was in fact paid on-chain;
+// it was stored with a tex1-encoded recipient and observed as the equivalent t1
+// address, so it failed the txout match and tripped the unauthorized-outbound slash.
+// Following the precedent of Migrate5to6/12to13/14to15 and the step-1 BTC slash
+// refund above, the remediation reverses the pool half and pays the affected bond
+// providers liquid RUNE from the Reserve (not a bond restore): the slash reduced each
+// node's aggregate bond, so each provider's loss is its proportional share of its
+// node's bond_cost. Pinned from the h28181638 block events; re-pin from live at the cut.
+const (
+	zecSlashPoolAssetCredit = uint64(3_909_313)      // +0.03909313 ZEC back into the pool: the outbound COIN only, NOT the 25,000-zat gas. The slash debited the pool coin+gas (3,934,313); on a normal matched outbound the pool bears the gas too (debited via GasMgr), so leaving the 25,000 gas debited keeps pool depth == vault backing. (We omit the ~0.0004 RUNE gas reimbursement the normal path pays the pool from the Reserve — immaterial.)
+	zecSlashPoolRuneDebit   = uint64(6_996_306_929)  // -69.96306929 RUNE (reverse the slash's pool credit)
+	zecSlashAsgardToReserve = uint64(6_996_306_929)  // move the freed pool-reimburse RUNE Asgard->Reserve to fund the refund (= the pool RUNE debit; mirrors step 1 / !4798)
+	zecSlashBondRefundTotal = uint64(13_992_613_798) // sum of the per-provider refunds (= the 18 bond_cost slashes 13,992,613,858 less 60 floor-dust across 98 providers)
+	// The parked outbound is located by in_hash + recipient across the WHOLE outbound
+	// queue, NOT a fixed height/vault: signing is halted, so LackSigning keeps
+	// rescheduling it to new heights and vaults. (It was at h28181627/gqr5qzgg when
+	// pinned; already rescheduled since.) Re-verify the in_hash at the cut.
+	zecSlashInHash    = "9218AB740258CB52897D95C19A0F27D2F3BB37748652B61DF129B2E5D89B5240"
+	zecSlashToAddress = "tex1lc6d7rnkhh0lpdmpyxk6nycjch7rxdj0333w7k"
+)
+
+// zecSlashBondRefunds19to20 — the 98 bond providers of the 18 slashed members, each
+// paid its share (provider bond / node total bond at h28181637 * node bond_cost,
+// floored) of its node's slash as liquid RUNE. Sum == zecSlashBondRefundTotal.
+var zecSlashBondRefunds19to20 = []struct {
+	address string
+	amount  uint64
+}{
+	{"thor1n9gcud325e25ywe9sycwwh6pqgalq03e5mj7dg", 9266},
+	{"thor1qq3k97p98edy0mpx9vlareaneg2tfnqqs28kam", 772475480},
+	{"thor10ugnd7vk29g887ymycw9wu3m242fp84u35803v", 884679774},
+	{"thor1zmp5dkczl96tqlj0d5qaptyg4frqt5rqt3dpwz", 8300},
+	{"thor1s7w78use8jq3eeyjlhpx4v7kkgc5xm7feqc294", 908523151},
+	{"thor1upuw8yvg96uf4nd6jfuq9s25284dzr45kyzarc", 933},
+	{"thor1h4rdr7y2mxr9f7mrnl40kx7s8wjx99kk0nfu0r", 108128612},
+	{"thor1f8zgw59dt9tzhyu620fpdgs5s7hte7vy3lefqr", 5357448},
+	{"thor12pvaukh88f4fjxx4q76dzsamnpuk3pnwus7wgd", 8883465},
+	{"thor1q0zjmlacrm44h0ru5t8t0jn2lm7vfy4x6fznem", 34064197},
+	{"thor16wjfedsp5tnqqaw9nd465nmyfgwjml68nr7eqv", 6946046},
+	{"thor1c3mxxtjksx8l7c3sjuzjelsdw34qsfj5vnzcp9", 70942041},
+	{"thor120vexx8hq06d5nc38e5up9m92jc6hflaum6dfu", 88433755},
+	{"thor1rl8xfsq9p22tkm539r3394xsyuzjd579xmuy7h", 212378724},
+	{"thor12swpcch3nuc8g3mz00v57fd8ys2uph6s0lzvz2", 107688703},
+	{"thor1twp6pat08q8ye3j7cyzmz729mlcmjmcxs4quw8", 10376281},
+	{"thor1chfgr7hw88thn8s9sj59260mmjwpl65t0jxtd7", 12649181},
+	{"thor1smwz0hxflsx2haqs7fqyjpdpg94d4ml2c7rs70", 115780697},
+	{"thor1flrs4nkhjhg0yz4hsqmwfn7tm9zuj8qa2z2jcq", 11189457},
+	{"thor1d2pe9ep5d3ectgqdjjmhv7ne95hrhy8nv9jhn9", 5189001},
+	{"thor13nsa9gc8svlnqpxdns64dwq5zlvhhhwq8j3cus", 9552859},
+	{"thor1c20a2h0c66yrefw7dx90dfz8k4hanlylshh4pw", 25075180},
+	{"thor1enhmz57mpn4umspa8hqgqwwqpe02q4hpqmqr0k2zftxr8fu3nxmqjy3tqx", 427366674},
+	{"thor1thc237kme006k5qey0mys07x855atz0690hrh7", 31061733},
+	{"thor14x9q0dvrelvl0ulneq4aea2sl7yp7v7vvgg77w", 28832235},
+	{"thor17fvsxqvz4u2wxw3rarayej58c84zch4aym2fkn", 20571076},
+	{"thor145j86em232hwuh7h483eqe5shamnwp2wwqsg5j", 420280663},
+	{"thor1m24nuaxr5g42qec3mc73ucdk7zwf9qsrmkjhx6", 24771522},
+	{"thor17xn4e53auf4xla7g84ln2f4vjv2ks30fz6s7sa", 17692},
+	{"thor1qjv2qgc8wj5kz5mpdls8pe7tchnl5q44lky3sw", 65648552},
+	{"thor1tc9sydznys0nu0tp5x5glf54cmc7zsj80eam9m", 91322873},
+	{"thor13g7v9wu2sehp3ec8cl7mzds4dydzq7qvypmxzt", 886111},
+	{"thor1f4xsyqwn3e0k8kca94pd090k3gxpushzua2mtk", 8776},
+	{"thor1ewpf8uwamtrndrvhtrn90a2rmhgw0lquw90ewl", 86532291},
+	{"thor1c5q3j23rvjjwkududg9ah2krrjt4emtzzvwj0m", 16809238},
+	{"thor1uzq9cvjrpvmky2d04ku3xplpz9p276904g3rhc", 106163664},
+	{"thor17vngul7c990n0umzj8qjjf5exng6xxpte0pqx8", 13003807},
+	{"thor12p854ms0fatcmpz5ht5pmkntlvvry3z97mz6d9", 48627879},
+	{"thor1ayysyz3rz5stve7mfvcslvaek76upwet0vkgj9", 12021068},
+	{"thor1s9hht2uwpq3ucpf05ed5aqlf9rfu5y99w72dhq", 14916005},
+	{"thor1tvzrpkh7hy2avkd6rw9nk07f4qwwyftv4l8gkf", 940433},
+	{"thor1224jdtz8fvq6nt65g8ff23nslzpv372q4ghxff", 881122963},
+	{"thor1x0fjxheq7tmlz38plstwn55tptwh9gwa7msfsf", 11951515},
+	{"thor1ys4eqwefvhj0n5ycs83gjuvnjup3vwscrm5u7l", 21259488},
+	{"thor1phv3czcucg4wz3au9hhva2psmvsx9yjpnkkmgx", 8430139},
+	{"thor1hftu6pxar7z52257vztmt669nmkctltfwxhtyh", 4496208},
+	{"thor1e0hj0p6trsrw8v5dnfjgmsgeu77mnk34qkgfur", 77146929},
+	{"thor1f47wux64gfn7m68jusqxke3k2scmqrtatyzl24", 329085973},
+	{"thor1ktx5xk5wqs0vzsmdkcrysxmtvssp0zrsgdmv6w", 20362585},
+	{"thor1unrtm2agxlkrv6jfzse469petlqty99y9tfdmg", 4810695},
+	{"thor1hxrydan0eypp5eutah2dt63swnqwzuvc0elgmd", 334989847},
+	{"thor16hw3da67jrctj6cjn9lrz4vwrwtap73um2m2p7", 281279},
+	{"thor15cfg979ye9m9v4pcrjyju6t9y7raz8uv38mw4c", 65782},
+	{"thor13xlp4yrlwp2a8k462z0287ft3swjxz8zlf3ms5", 412},
+	{"thor1lxnrvguwcsw4hqehu33vrr6784tgv28gsdc34l", 16629241},
+	{"thor15930gld787mvxz8cq2y0pqa9lh6d4npmyq2rny", 7630974},
+	{"thor1ea4se3lufe7jaydls255dfhyw3th90zhqyzntk", 87118219},
+	{"thor1x8smkm7lpp3ga8sxwsz5nf6y8wradpugyh66wd", 40020388},
+	{"thor1n4vn336ws9jz75428ds9tw8hxhmwpa2zc2lzlh", 35029898},
+	{"thor1t0wc9j6jsut6g4chhzxp5ledqd3wx53thxq73l", 248},
+	{"thor1rgecczkvgpw233t2caxd6ucv457dsasf6p9yt7", 2183935},
+	{"thor1n0cxg33alsh88zqwjq35dx2xujkzezxu24rs6h", 24417747},
+	{"thor13nuhnmkx0zddwu4z0u4d0au9rzkmknc7tsdk46", 4},
+	{"thor132243hqt4uv5zpkls98dk662nn73067wha2ech", 24671459},
+	{"thor1kqn5vjvv4tmk9pfecve8tjhm77jnk6sv2y4dve", 4},
+	{"thor1yes8zxhq4p3r5rp9vt6rk9fdxqf2mnm43apumu", 328478451},
+	{"thor1gq936peael6u22pxkaawcvuf4y8555j0yusae9", 947089},
+	{"thor10nev8r4xv67jgpg05w5fgamhagt5e0cwwylfma", 8400965},
+	{"thor19c70xjhlgal42hq4mm5xem7nx5x36eyk4pwatz", 448121},
+	{"thor1de8m2hvw9dc9rvptscvd3fexfj3u75aa3r54k2", 1151129},
+	{"thor1tkn7706tp2js0j4lsgemttmgwt2jym8kngs7en", 927815},
+	{"thor1glytzlz0zllugdsl3yt4cc0mejw83fq9u7mrh0", 485718663},
+	{"thor1k8kmz5h7dfjthp56dducr9yxq4jjg9teju3n3a", 1006033913},
+	{"thor1eyw2et0yt6kphjvcdf5nlh5pn5szssunx3gpkx", 12999},
+	{"thor1fwya3q0lvr4fufqhn5x94p4cuyvsejwqg9wk94", 313482465},
+	{"thor1mpdccj4wr88v2jw28cw2cqluqqcrkux6n45n2m", 9566},
+	{"thor1jnnep660vqjkkyjxguw84sstvawew25cs6dw5x", 705342501},
+	{"thor1456ja57j5wasf23mhgjpskq8mwhxzxejplh0z5", 797017915},
+	{"thor1drm88nvzn8qclrddac876ectt548cscgukm62d", 50},
+	{"thor19tl4glhxgh57x4s6ua85n7etahws3r4kzgnyp9", 1020407537},
+	{"thor1tfm4q8u57qzsznpvh02s8j483aga63cl02k6jt", 8980092},
+	{"thor1gldel9ltf7tlmfrtuual8f05z20ds00kwpmr7a", 506},
+	{"thor1f52jx7hnwmds290xpak5v6nteaw65txxz0jsr7", 2},
+	{"thor1aypu43w55w88xfw7ygq7xplkq6yuepfydpqctx", 23694605},
+	{"thor1hxcdgn43pyz58ajdqd0hl3rfl3avwdd5y27whf", 39982019},
+	{"thor1mryd47d6ydk2m26m43k8xhp3v65hgegxtyzhf7", 1658975},
+	{"thor1uvus0fxnjjut5v25cz3s4rrmlmkkl69qnu35qr", 5502761},
+	{"thor186u9lhrnypjd3pv0rlykytj5a2rke0azu5q3lg", 637},
+	{"thor1sdxjkhx2arzyspwe3l5twe90sc7gghvpd4m6hk", 5244269},
+	{"thor18zg6y8ylus8n3tpzu5xxge3yyquj03vylstrl3", 1086409635},
+	{"thor17u5tc7q2scaysfpq87gqevzuxu4f7ca27q0rez", 56146522},
+	{"thor1k7tnkjlgfdwylcp3xdh6kcpw3n3h6zp79sul07", 250187870},
+	{"thor100lvyqpq7mrfsu44w882wqe8y60r2dkw57kcan", 15531161},
+	{"thor12kyfj7uvzs8e8jx2hq9pxc5ruyx07d47kuajan", 80120932},
+	{"thor13ammr8d4pjgspskj95m9wxz5ujg0ym0r2fa2m4", 17387},
+	{"thor1rkpukrhljr72sxww2t0nwvng84zegp59805e03", 5246},
+	{"thor1uwpshu52te8n36mk8hfy3ejjr64jma2s6wsmfq", 5307},
+	{"thor142s5raq6jtes359hmy8jte9r34lj8gqs5dx5uk", 1010925918},
+}
+
+// Step 6 — erroneous TRON slash refund (board note 942, h28172517, security event
+// "missing tx out in=EB30B73E…"). The TRON.USDT outbound was paid EXACTLY ONCE on-chain
+// (tx 37509f3d…c702, exact amount/recipient match) but from gqr5qzgg while the txout
+// action was assigned to cwcsrz9r — the vault match failed during a TRON signing stall
+// and it was slashed as an unauthorized outbound. Same class as the ZEC step-5 refund,
+// but the item already COMPLETED (confirmed: tx/status completed, out_txs=1, 0 copies in
+// queue/outbound or scheduled), so the refund is gated on the canonical solvency check
+// (the slash double-debited the USDT pool, leaving ~tronSlashUsdtAssetCredit of unaccounted
+// USDT in the vaults) rather than on cancelling a still-parked copy. Pinned from the
+// h28172517 block events; re-verify at the cut. HaltSigningTRON / HaltTRONTrading must stay
+// set until the upgrade height.
+const (
+	tronSlashUsdtAssetCredit = uint64(860_873_585_100)   // +8,608.735851 TRON.USDT back into the pool (reverse the slash's double-debit of the outbound coin)
+	tronSlashUsdtRuneDebit   = uint64(1_260_287_094_381) // -12,602.87094381 RUNE (reverse the slash's USDT-pool credit)
+	tronSlashTrxRuneDebit    = uint64(678_673_582)       // -6.78673582 RUNE (reverse the slash's TRX-pool credit); the 14.0285 TRX is real gas, so NO TRX coin is credited back (leave the gas debited, same as ZEC)
+	tronSlashAsgardToReserve = uint64(1_260_965_767_963) // move the freed pool-reimburse RUNE Asgard->Reserve to fund the refund (= usdtRuneDebit + trxRuneDebit)
+	tronSlashBondRefundTotal = uint64(2_521_929_371_268) // sum of the per-node bond_cost refunds from the h28172517 slash events (validated against the table sum at apply time). NOT 2× the pool credit: that is 2,521,931,535,926, 2,164,658 higher — the refund basis is the actual bond_cost, not a derived double.
+	tronSlashInHash          = "EB30B73ED730E2C8E2CB55C07780B437AEC2BAAE0AB0BBA8124B68DBBBA6F7AD"
+	tronSlashToAddress       = "TJFbQUsxR6HHPo58TH5FnBaWJ6ZmEj37f3"
+	// tronSlashCompletedOutHash is the TRON tx hash of the ONE legitimate completed send
+	// (tx/status out_txs[0]). The cancel scan carves it out so the already-paid copy is not
+	// mistaken for a second settled retry; any OTHER real OutHash on a copy = a second pay.
+	tronSlashCompletedOutHash = "37509F3D6ACEE8EF0C6E809185B2DC1D3CEB46610ADEFA694A4E5D6D5167C702"
+)
+
+// tronSlashUsdtAsset / tronSlashTrxAsset — the two slashed TRON pools (verified live).
+var (
+	tronSlashUsdtAsset = "TRON.USDT-TR7NHQJEKQXGTCI8Q8ZY4PL8OTSZGJLJ6T"
+	tronSlashTrxAsset  = "TRON.TRX"
+)
+
+// tronSlashBondRefunds19to20 — the bond PROVIDERS of the 18 slashed members (gqr5qzgg vault
+// at h28172517), each paid its share of its node's slash as liquid RUNE (ZEC-parity, NOT a
+// per-node operator payment). Share = floor(node_bond_cost * provider_bond / node_total_bond)
+// using the PRE-slash bonds at h28172516; each node's floor remainder goes to that node's
+// largest-bond provider so every per-node subtotal equals its bond_cost exactly. Providers
+// backing more than one node are summed into one row. Sum == tronSlashBondRefundTotal.
+// Re-pin from the h28172517 bond_cost events + h28172516 bond_providers at the cut.
+var tronSlashBondRefunds19to20 = []struct {
+	address string
+	amount  uint64
+}{
+	{"thor1n9gcud325e25ywe9sycwwh6pqgalq03e5mj7dg", 1671374},
+	{"thor1qq3k97p98edy0mpx9vlareaneg2tfnqqs28kam", 139322553537},
+	{"thor10ugnd7vk29g887ymycw9wu3m242fp84u35803v", 159559556777},
+	{"thor1zmp5dkczl96tqlj0d5qaptyg4frqt5rqt3dpwz", 1497108},
+	{"thor1s7w78use8jq3eeyjlhpx4v7kkgc5xm7feqc294", 163859916771},
+	{"thor1upuw8yvg96uf4nd6jfuq9s25284dzr45kyzarc", 168414},
+	{"thor1h4rdr7y2mxr9f7mrnl40kx7s8wjx99kk0nfu0r", 19501919207},
+	{"thor1f8zgw59dt9tzhyu620fpdgs5s7hte7vy3lefqr", 966261540},
+	{"thor12pvaukh88f4fjxx4q76dzsamnpuk3pnwus7wgd", 1602208979},
+	{"thor1q0zjmlacrm44h0ru5t8t0jn2lm7vfy4x6fznem", 6143769226},
+	{"thor16wjfedsp5tnqqaw9nd465nmyfgwjml68nr7eqv", 1252778832},
+	{"thor1c3mxxtjksx8l7c3sjuzjelsdw34qsfj5vnzcp9", 12795003320},
+	{"thor120vexx8hq06d5nc38e5up9m92jc6hflaum6dfu", 15949783404},
+	{"thor1rl8xfsq9p22tkm539r3394xsyuzjd579xmuy7h", 38304317687},
+	{"thor12swpcch3nuc8g3mz00v57fd8ys2uph6s0lzvz2", 19422577807},
+	{"thor1twp6pat08q8ye3j7cyzmz729mlcmjmcxs4quw8", 1871451022},
+	{"thor1chfgr7hw88thn8s9sj59260mmjwpl65t0jxtd7", 2281387913},
+	{"thor1smwz0hxflsx2haqs7fqyjpdpg94d4ml2c7rs70", 20882038180},
+	{"thor1flrs4nkhjhg0yz4hsqmwfn7tm9zuj8qa2z2jcq", 2018114221},
+	{"thor1d2pe9ep5d3ectgqdjjmhv7ne95hrhy8nv9jhn9", 935880790},
+	{"thor13nsa9gc8svlnqpxdns64dwq5zlvhhhwq8j3cus", 1722939874},
+	{"thor1c20a2h0c66yrefw7dx90dfz8k4hanlylshh4pw", 4522523058},
+	{"thor1enhmz57mpn4umspa8hqgqwwqpe02q4hpqmqr0k2zftxr8fu3nxmqjy3tqx", 77079231833},
+	{"thor1thc237kme006k5qey0mys07x855atz0690hrh7", 5602249141},
+	{"thor14x9q0dvrelvl0ulneq4aea2sl7yp7v7vvgg77w", 5200140016},
+	{"thor17fvsxqvz4u2wxw3rarayej58c84zch4aym2fkn", 3710169354},
+	{"thor145j86em232hwuh7h483eqe5shamnwp2wwqsg5j", 75801235765},
+	{"thor1m24nuaxr5g42qec3mc73ucdk7zwf9qsrmkjhx6", 4467757398},
+	{"thor17xn4e53auf4xla7g84ln2f4vjv2ks30fz6s7sa", 3191255},
+	{"thor1qjv2qgc8wj5kz5mpdls8pe7tchnl5q44lky3sw", 11840281563},
+	{"thor1tc9sydznys0nu0tp5x5glf54cmc7zsj80eam9m", 16470866338},
+	{"thor1f4xsyqwn3e0k8kca94pd090k3gxpushzua2mtk", 1582860},
+	{"thor1ewpf8uwamtrndrvhtrn90a2rmhgw0lquw90ewl", 15606838266},
+	{"thor1c5q3j23rvjjwkududg9ah2krrjt4emtzzvwj0m", 3031689732},
+	{"thor1uzq9cvjrpvmky2d04ku3xplpz9p276904g3rhc", 19147524135},
+	{"thor17vngul7c990n0umzj8qjjf5exng6xxpte0pqx8", 2345347977},
+	{"thor12p854ms0fatcmpz5ht5pmkntlvvry3z97mz6d9", 7172122367},
+	{"thor1ayysyz3rz5stve7mfvcslvaek76upwet0vkgj9", 2168102513},
+	{"thor1s9hht2uwpq3ucpf05ed5aqlf9rfu5y99w72dhq", 2690229123},
+	{"thor1tvzrpkh7hy2avkd6rw9nk07f4qwwyftv4l8gkf", 169615265},
+	{"thor1224jdtz8fvq6nt65g8ff23nslzpv372q4ghxff", 158918055610},
+	{"thor1x0fjxheq7tmlz38plstwn55tptwh9gwa7msfsf", 2155557958},
+	{"thor1ys4eqwefvhj0n5ycs83gjuvnjup3vwscrm5u7l", 3834330436},
+	{"thor1phv3czcucg4wz3au9hhva2psmvsx9yjpnkkmgx", 1520447680},
+	{"thor1hftu6pxar7z52257vztmt669nmkctltfwxhtyh", 810929697},
+	{"thor1e0hj0p6trsrw8v5dnfjgmsgeu77mnk34qkgfur", 13914107956},
+	{"thor1f47wux64gfn7m68jusqxke3k2scmqrtatyzl24", 59353467416},
+	{"thor1ktx5xk5wqs0vzsmdkcrysxmtvssp0zrsgdmv6w", 3672566339},
+	{"thor1unrtm2agxlkrv6jfzse469petlqty99y9tfdmg", 867650085},
+	{"thor1hxrydan0eypp5eutah2dt63swnqwzuvc0elgmd", 60418281716},
+	{"thor16hw3da67jrctj6cjn9lrz4vwrwtap73um2m2p7", 50731174},
+	{"thor15cfg979ye9m9v4pcrjyju6t9y7raz8uv38mw4c", 11864425},
+	{"thor13xlp4yrlwp2a8k462z0287ft3swjxz8zlf3ms5", 74440},
+	{"thor1lxnrvguwcsw4hqehu33vrr6784tgv28gsdc34l", 2999225860},
+	{"thor15930gld787mvxz8cq2y0pqa9lh6d4npmyq2rny", 1376311462},
+	{"thor1ea4se3lufe7jaydls255dfhyw3th90zhqyzntk", 15712515359},
+	{"thor1x8smkm7lpp3ga8sxwsz5nf6y8wradpugyh66wd", 7218019058},
+	{"thor1n4vn336ws9jz75428ds9tw8hxhmwpa2zc2lzlh", 6317941435},
+	{"thor1t0wc9j6jsut6g4chhzxp5ledqd3wx53thxq73l", 44860},
+	{"thor1rgecczkvgpw233t2caxd6ucv457dsasf6p9yt7", 393891428},
+	{"thor1n0cxg33alsh88zqwjq35dx2xujkzezxu24rs6h", 4403949391},
+	{"thor13nuhnmkx0zddwu4z0u4d0au9rzkmknc7tsdk46", 754},
+	{"thor132243hqt4uv5zpkls98dk662nn73067wha2ech", 4449708606},
+	{"thor1kqn5vjvv4tmk9pfecve8tjhm77jnk6sv2y4dve", 871},
+	{"thor1yes8zxhq4p3r5rp9vt6rk9fdxqf2mnm43apumu", 59243895645},
+	{"thor1gq936peael6u22pxkaawcvuf4y8555j0yusae9", 170815770},
+	{"thor10nev8r4xv67jgpg05w5fgamhagt5e0cwwylfma", 1515185945},
+	{"thor19c70xjhlgal42hq4mm5xem7nx5x36eyk4pwatz", 80822596},
+	{"thor1de8m2hvw9dc9rvptscvd3fexfj3u75aa3r54k2", 207616016},
+	{"thor1tkn7706tp2js0j4lsgemttmgwt2jym8kngs7en", 167339425},
+	{"thor1glytzlz0zllugdsl3yt4cc0mejw83fq9u7mrh0", 87603511404},
+	{"thor1k8kmz5h7dfjthp56dducr9yxq4jjg9teju3n3a", 181446812693},
+	{"thor1eyw2et0yt6kphjvcdf5nlh5pn5szssunx3gpkx", 2344597},
+	{"thor1fwya3q0lvr4fufqhn5x94p4cuyvsejwqg9wk94", 56539244526},
+	{"thor1mpdccj4wr88v2jw28cw2cqluqqcrkux6n45n2m", 1725372},
+	{"thor1jnnep660vqjkkyjxguw84sstvawew25cs6dw5x", 127214547345},
+	{"thor1456ja57j5wasf23mhgjpskq8mwhxzxejplh0z5", 143748991510},
+	{"thor1drm88nvzn8qclrddac876ectt548cscgukm62d", 9104},
+	{"thor19tl4glhxgh57x4s6ua85n7etahws3r4kzgnyp9", 184039218662},
+	{"thor1tfm4q8u57qzsznpvh02s8j483aga63cl02k6jt", 1619636465},
+	{"thor1gldel9ltf7tlmfrtuual8f05z20ds00kwpmr7a", 91440},
+	{"thor1f52jx7hnwmds290xpak5v6nteaw65txxz0jsr7", 517},
+	{"thor1aypu43w55w88xfw7ygq7xplkq6yuepfydpqctx", 4273524521},
+	{"thor1hxcdgn43pyz58ajdqd0hl3rfl3avwdd5y27whf", 7211098935},
+	{"thor1mryd47d6ydk2m26m43k8xhp3v65hgegxtyzhf7", 299210484},
+	{"thor1uvus0fxnjjut5v25cz3s4rrmlmkkl69qnu35qr", 992470088},
+	{"thor186u9lhrnypjd3pv0rlykytj5a2rke0azu5q3lg", 114956},
+	{"thor1sdxjkhx2arzyspwe3l5twe90sc7gghvpd4m6hk", 945848882},
+	{"thor18zg6y8ylus8n3tpzu5xxge3yyquj03vylstrl3", 195943261244},
+	{"thor17u5tc7q2scaysfpq87gqevzuxu4f7ca27q0rez", 10126505026},
+	{"thor1k7tnkjlgfdwylcp3xdh6kcpw3n3h6zp79sul07", 45123520377},
+	{"thor100lvyqpq7mrfsu44w882wqe8y60r2dkw57kcan", 2801177749},
+	{"thor12kyfj7uvzs8e8jx2hq9pxc5ruyx07d47kuajan", 14450494857},
+	{"thor13ammr8d4pjgspskj95m9wxz5ujg0ym0r2fa2m4", 3135908},
+	{"thor1rkpukrhljr72sxww2t0nwvng84zegp59805e03", 946319},
+	{"thor1uwpshu52te8n36mk8hfy3ejjr64jma2s6wsmfq", 957201},
+	{"thor142s5raq6jtes359hmy8jte9r34lj8gqs5dx5uk", 182329127731},
+}
+
+// signingHalted19to20 reports whether <chain> signing is halted at the current height. The
+// slash refunds credit a pool back on the premise that no SECOND outbound of the slashed
+// item can still be signed. The canonical solvency gate only catches an ALREADY-OBSERVED
+// double-pay (keeper vault balances move on observation, not on signing/broadcast), so a
+// signed-but-unobserved retry would slip past it — HaltSigning<chain> is the only true
+// guard for that case. It is therefore ENFORCED here, not merely documented: if signing is
+// not halted, the refund soft-skips and is redone post-cut.
+func signingHalted19to20(ctx cosmos.Context, mgr *Mgrs, chain common.Chain) bool {
+	h, err := mgr.Keeper().GetMimir(ctx, fmt.Sprintf(constants.MimirTemplateHaltSigning, chain))
+	return err == nil && h > 0 && h <= ctx.BlockHeight()
+}
+
+func runZecSlashRefund19to20(ctx cosmos.Context, mgr *Mgrs) {
+	// HaltSigningZEC MUST be set: it is the only guard against a signed-but-unobserved
+	// second pay (the solvency gate below sees vault balances, which move only on
+	// observation). Without it, skip and re-pin at the cut.
+	if !signingHalted19to20(ctx, mgr, common.ZECChain) {
+		ctx.Logger().Error("zec slash refund skipped: HaltSigningZEC not set; an unobserved retry could double-pay", "in_hash", zecSlashInHash)
+		return
+	}
+	// Cancel the already-paid parked outbound FIRST, in its OWN cache context, so the
+	// double-pay safety lands even if the financial refund below soft-skips on a drift.
+	cancelCtx, cancelCommit := ctx.CacheContext()
+	cancelled, settled, scanErr := cancelZecParkedOutbound19to20(cancelCtx, mgr)
+	if scanErr != nil {
+		// The window could not be fully inspected (a txout read/write failed): the
+		// cancel cache is discarded (not committed) and the refund is skipped, since an
+		// uninspected batch could hold another live copy or a settled retry. Re-pin at
+		// the cut once the store is readable.
+		ctx.Logger().Error("zec slash refund skipped: parked-outbound scan incomplete", "in_hash", zecSlashInHash, "error", scanErr)
+		return
+	}
+	if cancelled {
+		cancelCommit()
+	}
+	// The pool ZEC credit below assumes the vault still holds the parked outbound's
+	// backing, i.e. no retry ever settled. Only a live, still-unsent copy proves that
+	// (an observed retry would have stamped its OutHash on the live copy). If a retry
+	// already settled, or the item is gone/outside the window so it cannot be proven,
+	// the slash's pool debit may be real: skip the refund and re-pin at the cut.
+	if !cancelled || settled {
+		ctx.Logger().Error("zec slash refund skipped: parked outbound not found unsent; a retry may have settled",
+			"in_hash", zecSlashInHash, "cancelled", cancelled, "settled", settled)
+		return
+	}
+	// The financial refund soft-skips on drift (re-pin at the cut).
+	refundCtx, refundCommit := ctx.CacheContext()
+	if err := applyZecSlashRefund19to20(refundCtx, mgr); err != nil {
+		ctx.Logger().Error("zec slash refund skipped: state does not match the pinned figures", "error", err)
+		return
+	}
+	refundCommit()
+}
+
+// applyZecSlashRefund19to20 reverses the erroneous h28181638 ZEC slash and refunds the
+// affected bond providers, mirroring the step-1 BTC slash refund: credit the pool ZEC
+// back, remove the RUNE the slash added, move that freed RUNE Asgard->Reserve, then pay
+// each provider its share of the slash as liquid RUNE from the Reserve. The parked
+// outbound is cancelled separately (cancelZecParkedOutbound19to20, own cache context).
+// The observed-txout handler already debited the vault once, so the vault is correct and
+// is left untouched.
+func applyZecSlashRefund19to20(ctx cosmos.Context, mgr *Mgrs) error {
+	k := mgr.Keeper()
+	zec, err := common.NewAsset("ZEC.ZEC")
+	if err != nil {
+		return fmt.Errorf("parse ZEC.ZEC: %w", err)
+	}
+
+	// Validate every refund address + sum up front so a bad row aborts before any write.
+	total := cosmos.ZeroUint()
+	for _, r := range zecSlashBondRefunds19to20 {
+		if _, err := cosmos.AccAddressFromBech32(r.address); err != nil {
+			return fmt.Errorf("bad zec-slash refund address %s: %w", r.address, err)
+		}
+		total = total.Add(cosmos.NewUint(r.amount))
+	}
+	if !total.Equal(cosmos.NewUint(zecSlashBondRefundTotal)) {
+		return fmt.Errorf("zec-slash refund sum %s != pinned %d", total, zecSlashBondRefundTotal)
+	}
+
+	// Reverse the pool deltas: credit the ZEC back, remove the RUNE the slash added. This
+	// reverses an erroneous DOUBLE debit of the pool ZEC (the swap debited it once for the
+	// paid outbound, then the slash debited it again), so the pool is currently under-booked
+	// by the slash's extra coin debit while the vault already paid exactly one outbound.
+	// That under-booking shows up as ~zecSlashPoolAssetCredit of unaccounted ZEC in the
+	// vaults, so the SAME canonical solvency gate as step 1 catches an ALREADY-OBSERVED
+	// second pay (which has reduced vault holdings): the headroom is gone, solvency drops,
+	// and the credit skips. TWO caveats this gate does NOT cover, handled elsewhere:
+	//  - it only catches an OBSERVED retry; a signed-but-unobserved one leaves vault balances
+	//    unchanged, so runZecSlashRefund19to20 ENFORCES HaltSigningZEC (signingHalted19to20)
+	//    as the real guard for that case. HaltSigningZEC MUST stay set until the upgrade.
+	//  - the gate is zero-margin (freeZEC >= X), and calculateNetworkSolvency subtracts the
+	//    MaxGas of every OTHER in-window unsigned ZEC outbound — for ZEC the gas asset IS the
+	//    pool asset, so a backlog can drag freeZEC below X and SKIP the honest refund (safe
+	//    direction, no loss). Re-measure freeZEC against the live ZEC outbound backlog at the
+	//    cut and re-pin if the drag is material. (TRON.USDT is immune: its gas is TRX.)
+	pool, err := k.GetPool(ctx, zec)
+	if err != nil {
+		return fmt.Errorf("get ZEC pool: %w", err)
+	}
+	if pool.IsEmpty() {
+		return fmt.Errorf("ZEC pool is empty")
+	}
+	freeZEC, err := unaccountedVaultAsset19to20(ctx, mgr, zec)
+	if err != nil {
+		return fmt.Errorf("zec solvency: %w", err)
+	}
+	if freeZEC.LT(cosmos.NewUint(zecSlashPoolAssetCredit)) {
+		return fmt.Errorf("unaccounted ZEC %s below slash credit %d; vaults do not hold the reversed ZEC (a retry may have paid)", freeZEC, zecSlashPoolAssetCredit)
+	}
+	runeDebit := cosmos.NewUint(zecSlashPoolRuneDebit)
+	if pool.BalanceRune.LT(runeDebit) {
+		return fmt.Errorf("ZEC pool BalanceRune %s below slash credit %d; pool drifted", pool.BalanceRune, zecSlashPoolRuneDebit)
+	}
+	pool.BalanceAsset = pool.BalanceAsset.Add(cosmos.NewUint(zecSlashPoolAssetCredit))
+	pool.BalanceRune = pool.BalanceRune.Sub(runeDebit)
+	if err := k.SetPool(ctx, pool); err != nil {
+		return fmt.Errorf("set ZEC pool: %w", err)
+	}
+	poolSlashAmt := []PoolAmt{
+		{Asset: zec, Amount: int64(zecSlashPoolAssetCredit)},
+		{Asset: common.RuneAsset(), Amount: -int64(zecSlashPoolRuneDebit)},
+	}
+	if err := mgr.EventMgr().EmitEvent(ctx, NewEventSlash(zec, poolSlashAmt)); err != nil {
+		ctx.Logger().Error("emit zec slash reversal event", "error", err)
+	}
+
+	// Move the freed pool-reimburse RUNE Asgard->Reserve to fund the refund (step 1 / !4798).
+	if err := k.SendFromModuleToModule(ctx, AsgardName, ReserveName, common.NewCoins(common.NewCoin(common.RuneAsset(), cosmos.NewUint(zecSlashAsgardToReserve)))); err != nil {
+		return fmt.Errorf("asgard->reserve: %w", err)
+	}
+
+	// Pay each affected bond provider its share as liquid RUNE from the Reserve, which
+	// now holds the slash's penalty half plus the freed pool-reimburse half. Atomic: any
+	// bad address or failed send returns an error so the cache context discards the step.
+	if bal := k.GetRuneBalanceOfModule(ctx, ReserveName); bal.LT(total) {
+		return fmt.Errorf("reserve %s below zec-slash refund total %s", bal, total)
+	}
+	for _, r := range zecSlashBondRefunds19to20 {
+		to, err := cosmos.AccAddressFromBech32(r.address)
+		if err != nil {
+			return fmt.Errorf("bad zec-slash refund address %s: %w", r.address, err)
+		}
+		coins := common.NewCoins(common.NewCoin(common.RuneAsset(), cosmos.NewUint(r.amount)))
+		if err := k.SendFromModuleToAccount(ctx, ReserveName, to, coins); err != nil {
+			return fmt.Errorf("zec-slash refund to %s (%d): %w", r.address, r.amount, err)
+		}
+	}
+
+	ctx.Logger().Info("refunded erroneous zec slash at h28181638",
+		"refund_total", zecSlashBondRefundTotal, "providers", len(zecSlashBondRefunds19to20),
+		"pool_rune_removed", zecSlashPoolRuneDebit, "pool_zec_restored", zecSlashPoolAssetCredit)
+	return nil
+}
+
+// cancelZecParkedOutbound19to20 cancels the already-paid parked ZEC outbound so it can
+// never re-sign. It returns cancelled=true if it found + cancelled a live item, and
+// settled=true if it saw a copy carrying a real OutHash (a retry that was signed and
+// observed, i.e. the vault paid a second time). Signing is halted, so
+// LackSigning keeps rescheduling it forward to new heights/vaults; it is located by
+// in_hash + recipient (NOT a fixed height/vault). The scan is BOUNDED to the live
+// outbound window [h-max(TxOutDelayMax,SigningTransactionPeriod), h+TxOutDelayMax] —
+// mirroring calculateNetworkSolvency rather than walking the whole txout keyspace
+// (completed blocks are never pruned) — and scans the WHOLE window (no early exit) so a
+// settled copy at a LOWER height than the live one is still seen. The backward bound takes
+// the larger of TxOutDelayMax and SigningTransactionPeriod because a still-unsent copy
+// stays signable for the signing period, which GetConfigInt64 does not constrain to be
+// <= TxOutDelayMax. BlankTxID (not
+// SetDone): the outbound is already on-chain; marking it done would re-run completion
+// accounting and double-count. If it is already gone (sent/cancelled/never present) the
+// cancel is a no-op and the caller skips the refund. It returns a non-nil error if any
+// batch in the window could not be read or written (a decode failure or a failed cancel
+// write): the window was only partially inspected, so the caller MUST discard the cache
+// and skip the refund rather than act on an incomplete scan (mirroring
+// calculateNetworkSolvency, which also propagates GetTxOut errors). Committed in its OWN
+// cache context so the double-pay fix lands even if the financial refund soft-skips on drift.
+func cancelZecParkedOutbound19to20(ctx cosmos.Context, mgr *Mgrs) (cancelled, settled bool, err error) {
+	k := mgr.Keeper()
+	delay := k.GetConfigInt64(ctx, constants.TxOutDelayMax)
+	// A still-unsent copy stays signable for SigningTransactionPeriod blocks, which
+	// GetConfigInt64 does not constrain to be <= TxOutDelayMax; bound the BACKWARD search
+	// by the larger of the two so a signable copy can never fall below the window and
+	// re-sign after the refund. Forward reschedules move at most TxOutDelayMax.
+	back := delay
+	if sp := k.GetConfigInt64(ctx, constants.SigningTransactionPeriod); sp > back {
+		back = sp
+	}
+	lo := ctx.BlockHeight() - back
+	// A window around the UPGRADE height assumes LackSigning keeps rescheduling the item
+	// forward. With HaltSigningZEC set that never happens: the item sits at its ORIGINAL
+	// scheduled outbound height, which on mainnet is ~30k blocks below the window and would
+	// be missed, leaving the paid outbound uncancelled and the refund wrongly skipped. Pull
+	// the floor down to the inbound voter's OutboundHeight so the stuck copy is always
+	// reached. Extend-only: never shrinks the window, so a rescheduled-forward copy is still
+	// covered. A decode error on the voter is corruption → propagate (skip the refund).
+	voter, vErr := k.GetObservedTxInVoter(ctx, common.TxID(zecSlashInHash))
+	if vErr != nil {
+		return false, false, fmt.Errorf("zec slash: get inbound voter %s: %w", zecSlashInHash, vErr)
+	}
+	if voter.OutboundHeight > 0 && voter.OutboundHeight < lo {
+		lo = voter.OutboundHeight
+	}
+	if lo < 1 {
+		lo = 1
+	}
+	hi := ctx.BlockHeight() + delay
+	// Scan the WHOLE window before returning (no early exit on the first live copy):
+	// a settled retry (a copy carrying a real OutHash) can sit at a LOWER height than
+	// the live, still-unsent copy, so returning early would miss it and wrongly let the
+	// refund proceed against backing a second real send already consumed. Blank every
+	// live copy (none may stay signable) and report settled=true if ANY copy was signed
+	// + observed anywhere in the window.
+	for h := hi; h >= lo; h-- {
+		blk, gErr := k.GetTxOut(ctx, h)
+		if gErr != nil {
+			// A read error (a TxOut record the codec cannot decode) is NOT an empty
+			// height: the window was only partially inspected, so a live or settled
+			// copy at this height may be invisible. Do not swallow it as absent —
+			// propagate so the caller skips the cancel commit AND the financial refund
+			// (mirroring calculateNetworkSolvency, which also propagates GetTxOut errors).
+			return false, settled, fmt.Errorf("zec slash: scan txout height %d: %w", h, gErr)
+		}
+		if blk == nil {
+			continue
+		}
+		dirty := false
+		for i := range blk.TxArray {
+			it := blk.TxArray[i]
+			if it.InHash.String() != zecSlashInHash || it.ToAddress.String() != zecSlashToAddress {
+				continue
+			}
+			if !it.OutHash.IsEmpty() && !it.OutHash.Equals(common.BlankTxID) {
+				ctx.Logger().Error("zec slash: parked outbound retry already settled", "height", h, "out_hash", it.OutHash)
+				settled = true
+				continue
+			}
+			if it.OutHash.IsEmpty() {
+				blk.TxArray[i].OutHash = common.BlankTxID
+				dirty = true
+			}
+		}
+		if dirty {
+			if sErr := k.SetTxOut(ctx, blk); sErr != nil {
+				// Cannot guarantee the cancel persisted: propagate so the caller discards
+				// this cache context (cancelled=false) and skips the refund.
+				return false, settled, fmt.Errorf("zec slash: set txout for cancel height %d: %w", h, sErr)
+			}
+			cancelled = true
+			ctx.Logger().Info("zec slash: cancelled parked outbound copy", "height", h, "in_hash", zecSlashInHash)
+		}
+	}
+	if !cancelled {
+		ctx.Logger().Info("zec slash: no live parked outbound to cancel", "in_hash", zecSlashInHash)
+	}
+	return cancelled, settled, nil
+}
+
+// runTronSlashRefund19to20 applies the h28172517 TRON slash refund atomically or not at
+// all. The item already completed on-chain, so (unlike ZEC) the refund is gated on the
+// canonical solvency check plus HaltSigningTRON, not on cancelling a parked copy; a
+// defensive scan still blanks any still-live reschedule copy so it can never pay a second
+// time, and reports a SECOND settled copy (a real OutHash other than the known completed one).
+func runTronSlashRefund19to20(ctx cosmos.Context, mgr *Mgrs) {
+	// HaltSigningTRON MUST be set: it is the only guard against a signed-but-unobserved
+	// second pay (the solvency gate sees vault balances, which move only on observation).
+	if !signingHalted19to20(ctx, mgr, common.TRONChain) {
+		ctx.Logger().Error("tron slash refund skipped: HaltSigningTRON not set; an unobserved retry could double-pay", "in_hash", tronSlashInHash)
+		return
+	}
+	cancelCtx, cancelCommit := ctx.CacheContext()
+	blanked, settled, err := cancelTronParkedOutbound19to20(cancelCtx, mgr)
+	if err != nil {
+		ctx.Logger().Error("tron slash refund skipped: parked-outbound scan incomplete", "in_hash", tronSlashInHash, "error", err)
+		return
+	}
+	if settled {
+		// A second copy carries a real OutHash distinct from the completed send: the vault
+		// paid twice, so the slash's pool debit is partly real. Skip the refund and re-pin at
+		// the cut. But STILL commit the defensive blank of any live empty-OutHash copy — a
+		// settled retry does not make the live duplicate safe; it stays signable and could pay
+		// a THIRD time. Blanking a duplicate of an already-paid send is always safe.
+		if blanked {
+			cancelCommit()
+		}
+		ctx.Logger().Error("tron slash refund skipped: a settled retry copy was found", "in_hash", tronSlashInHash)
+		return
+	}
+	// Branch the refund context from ctx BEFORE committing the blank, so the refund's
+	// solvency gate still counts the in-flight (empty-OutHash, still-a-liability) copy via
+	// calculateNetworkSolvency: a blank visible to the solvency read would restore phantom
+	// headroom and wrongly pass. The blank and the refund touch disjoint keys — the cancel
+	// writes only the duplicate copy's txout (SetTxOut), the refund writes pools / module
+	// balances / accounts — so the two commits into ctx are independent.
+	refundCtx, refundCommit := ctx.CacheContext()
+	refundErr := applyTronSlashRefund19to20(refundCtx, mgr)
+
+	// Commit the defensive blank UNCONDITIONALLY (huginn Major): it stops a second signing of
+	// the duplicate parked outbound and MUST land even when the refund below is skipped on a
+	// state-drift / solvency mismatch. Leaving the re-signable copy live on a refund failure
+	// (the prior behaviour) was the double-pay exposure; the standalone blank is strictly
+	// safer, and committing the refund afterwards does not clobber it (disjoint keys).
+	if blanked {
+		cancelCommit()
+	}
+	if refundErr != nil {
+		ctx.Logger().Error("tron slash refund skipped: state does not match the pinned figures", "error", refundErr)
+		return
+	}
+	refundCommit()
+}
+
+func applyTronSlashRefund19to20(ctx cosmos.Context, mgr *Mgrs) error {
+	k := mgr.Keeper()
+	usdt, err := common.NewAsset(tronSlashUsdtAsset)
+	if err != nil {
+		return fmt.Errorf("parse %s: %w", tronSlashUsdtAsset, err)
+	}
+	trx, err := common.NewAsset(tronSlashTrxAsset)
+	if err != nil {
+		return fmt.Errorf("parse %s: %w", tronSlashTrxAsset, err)
+	}
+
+	// Validate every refund address + sum up front so a bad row aborts before any write.
+	total := cosmos.ZeroUint()
+	for _, r := range tronSlashBondRefunds19to20 {
+		if _, err := cosmos.AccAddressFromBech32(r.address); err != nil {
+			return fmt.Errorf("bad tron-slash refund address %s: %w", r.address, err)
+		}
+		total = total.Add(cosmos.NewUint(r.amount))
+	}
+	if !total.Equal(cosmos.NewUint(tronSlashBondRefundTotal)) {
+		return fmt.Errorf("tron-slash refund sum %s != pinned %d", total, tronSlashBondRefundTotal)
+	}
+
+	// USDT pool: credit the double-debited coin back and reverse the slash's RUNE credit.
+	// Solvency-gated like step 1 / ZEC: the slash double-debited the USDT pool while the
+	// vault paid exactly one outbound, so ~tronSlashUsdtAssetCredit of unaccounted USDT sits
+	// in the vaults. The gate passes in the normal single-paid case and fails (skips) if a
+	// retry was also paid.
+	usdtPool, err := k.GetPool(ctx, usdt)
+	if err != nil {
+		return fmt.Errorf("get TRON.USDT pool: %w", err)
+	}
+	if usdtPool.IsEmpty() {
+		return fmt.Errorf("TRON.USDT pool is empty")
+	}
+	freeUSDT, err := unaccountedVaultAsset19to20(ctx, mgr, usdt)
+	if err != nil {
+		return fmt.Errorf("tron usdt solvency: %w", err)
+	}
+	if freeUSDT.LT(cosmos.NewUint(tronSlashUsdtAssetCredit)) {
+		return fmt.Errorf("unaccounted TRON.USDT %s below slash credit %d; vaults do not hold the reversed USDT (a retry may have paid)", freeUSDT, tronSlashUsdtAssetCredit)
+	}
+	usdtRuneDebit := cosmos.NewUint(tronSlashUsdtRuneDebit)
+	if usdtPool.BalanceRune.LT(usdtRuneDebit) {
+		return fmt.Errorf("TRON.USDT pool BalanceRune %s below slash credit %d; pool drifted", usdtPool.BalanceRune, tronSlashUsdtRuneDebit)
+	}
+	usdtPool.BalanceAsset = usdtPool.BalanceAsset.Add(cosmos.NewUint(tronSlashUsdtAssetCredit))
+	usdtPool.BalanceRune = usdtPool.BalanceRune.Sub(usdtRuneDebit)
+	if err := k.SetPool(ctx, usdtPool); err != nil {
+		return fmt.Errorf("set TRON.USDT pool: %w", err)
+	}
+
+	// TRX pool: reverse only the slash's RUNE credit. The 14.0285 TRX is real gas spend (the
+	// pool bears gas on a normal outbound too), so NO TRX coin is credited back — leaving the
+	// gas debited keeps pool depth == vault backing, same treatment as the ZEC 25,000-zat gas.
+	trxPool, err := k.GetPool(ctx, trx)
+	if err != nil {
+		return fmt.Errorf("get TRON.TRX pool: %w", err)
+	}
+	if trxPool.IsEmpty() {
+		return fmt.Errorf("TRON.TRX pool is empty")
+	}
+	trxRuneDebit := cosmos.NewUint(tronSlashTrxRuneDebit)
+	if trxPool.BalanceRune.LT(trxRuneDebit) {
+		return fmt.Errorf("TRON.TRX pool BalanceRune %s below slash credit %d; pool drifted", trxPool.BalanceRune, tronSlashTrxRuneDebit)
+	}
+	trxPool.BalanceRune = trxPool.BalanceRune.Sub(trxRuneDebit)
+	if err := k.SetPool(ctx, trxPool); err != nil {
+		return fmt.Errorf("set TRON.TRX pool: %w", err)
+	}
+
+	// Emit the pool reversals as slash events for Midgard depth tracking (mirrors step 1 / ZEC).
+	if err := mgr.EventMgr().EmitEvent(ctx, NewEventSlash(usdt, []PoolAmt{
+		{Asset: usdt, Amount: int64(tronSlashUsdtAssetCredit)},
+		{Asset: common.RuneAsset(), Amount: -int64(tronSlashUsdtRuneDebit)},
+	})); err != nil {
+		ctx.Logger().Error("emit tron usdt slash reversal event", "error", err)
+	}
+	if err := mgr.EventMgr().EmitEvent(ctx, NewEventSlash(trx, []PoolAmt{
+		{Asset: common.RuneAsset(), Amount: -int64(tronSlashTrxRuneDebit)},
+	})); err != nil {
+		ctx.Logger().Error("emit tron trx slash reversal event", "error", err)
+	}
+
+	// Move the freed pool-reimburse RUNE Asgard->Reserve to fund the refund (step 1 / !4798).
+	if err := k.SendFromModuleToModule(ctx, AsgardName, ReserveName, common.NewCoins(common.NewCoin(common.RuneAsset(), cosmos.NewUint(tronSlashAsgardToReserve)))); err != nil {
+		return fmt.Errorf("asgard->reserve: %w", err)
+	}
+
+	// Pay each affected bond provider its share as liquid RUNE from the Reserve, which now
+	// holds the slash's penalty half plus the freed pool-reimburse half. Atomic.
+	if bal := k.GetRuneBalanceOfModule(ctx, ReserveName); bal.LT(total) {
+		return fmt.Errorf("reserve %s below tron-slash refund total %s", bal, total)
+	}
+	for _, r := range tronSlashBondRefunds19to20 {
+		to, err := cosmos.AccAddressFromBech32(r.address)
+		if err != nil {
+			return fmt.Errorf("bad tron-slash refund address %s: %w", r.address, err)
+		}
+		coins := common.NewCoins(common.NewCoin(common.RuneAsset(), cosmos.NewUint(r.amount)))
+		if err := k.SendFromModuleToAccount(ctx, ReserveName, to, coins); err != nil {
+			return fmt.Errorf("tron-slash refund to %s (%d): %w", r.address, r.amount, err)
+		}
+	}
+
+	ctx.Logger().Info("refunded erroneous tron slash at h28172517",
+		"refund_total", tronSlashBondRefundTotal, "providers", len(tronSlashBondRefunds19to20),
+		"usdt_restored", tronSlashUsdtAssetCredit, "usdt_rune_removed", tronSlashUsdtRuneDebit, "trx_rune_removed", tronSlashTrxRuneDebit)
+	return nil
+}
+
+// cancelTronParkedOutbound19to20 blanks any still-live (empty-OutHash) copy of the paid
+// TRON outbound so it can never be signed a second time, and reports settled=true if it
+// finds a copy carrying a real OutHash OTHER than the known completed send
+// (tronSlashCompletedOutHash) — i.e. a second, retried payment. It is located by in_hash +
+// recipient across the live outbound window, with the backward floor pulled down to the
+// inbound voter's OutboundHeight (as in the ZEC cancel). The one legitimate completed copy
+// carries tronSlashCompletedOutHash and is left untouched and NOT treated as settled.
+// Returns a non-nil error if any batch could not be read or written, so the caller discards
+// the cache and skips the refund.
+func cancelTronParkedOutbound19to20(ctx cosmos.Context, mgr *Mgrs) (blanked, settled bool, err error) {
+	k := mgr.Keeper()
+	delay := k.GetConfigInt64(ctx, constants.TxOutDelayMax)
+	back := delay
+	if sp := k.GetConfigInt64(ctx, constants.SigningTransactionPeriod); sp > back {
+		back = sp
+	}
+	lo := ctx.BlockHeight() - back
+	voter, vErr := k.GetObservedTxInVoter(ctx, common.TxID(tronSlashInHash))
+	if vErr != nil {
+		return false, false, fmt.Errorf("tron slash: get inbound voter %s: %w", tronSlashInHash, vErr)
+	}
+	if voter.OutboundHeight > 0 && voter.OutboundHeight < lo {
+		lo = voter.OutboundHeight
+	}
+	if lo < 1 {
+		lo = 1
+	}
+	hi := ctx.BlockHeight() + delay
+	for h := hi; h >= lo; h-- {
+		blk, gErr := k.GetTxOut(ctx, h)
+		if gErr != nil {
+			return false, false, fmt.Errorf("tron slash: scan txout height %d: %w", h, gErr)
+		}
+		if blk == nil {
+			continue
+		}
+		dirty := false
+		for i := range blk.TxArray {
+			it := blk.TxArray[i]
+			if it.InHash.String() != tronSlashInHash || it.ToAddress.String() != tronSlashToAddress {
+				continue
+			}
+			if it.OutHash.IsEmpty() {
+				blk.TxArray[i].OutHash = common.BlankTxID
+				dirty = true
+				continue
+			}
+			// A real OutHash that is NOT the one legitimate completed send, and not an
+			// already-blanked copy, means a SECOND payment settled — the vault paid twice.
+			if !it.OutHash.Equals(common.BlankTxID) && it.OutHash.String() != tronSlashCompletedOutHash {
+				settled = true
+				ctx.Logger().Error("tron slash: a settled retry copy found", "height", h, "out_hash", it.OutHash)
+			}
+		}
+		if dirty {
+			if sErr := k.SetTxOut(ctx, blk); sErr != nil {
+				return false, settled, fmt.Errorf("tron slash: set txout for cancel height %d: %w", h, sErr)
+			}
+			blanked = true
+			ctx.Logger().Info("tron slash: cancelled live parked outbound copy", "height", h, "in_hash", tronSlashInHash)
+		}
+	}
+	return blanked, settled, nil
+}
+
+// migrate19to20Mainnet runs the seven mainnet-only soft-skip steps folded into Migrate19to20
+// (migrations_common.go, after the TEX clout merge): it reverses the rzxslmgc bond slash
+// (+ refunds the 218 bond providers), donates the Secured-Ops LP positions and repays NDT
+// from the Reserve, restores ETH.THOR depth (donate + Reserve-paired surplus credit + NDT
+// capital refund), retires the residual synths of the low-synth-% pools (uncompensated
+// burn), refunds the erroneous h28181638 ZEC slash, refunds the erroneous h28172517 TRON
+// slash, and restores the phantom-insolvency SOL bond slash at h27591961. Each step
+// soft-skips on a drift, so one does not drop the others.
+func (m Migrator) migrate19to20Mainnet(ctx sdk.Context) error {
+	if !mainnetDonationSpecComplete {
+		// Ships guarded: the pinned amounts are completed + the flag flipped at
+		// the release cut. Until then, log and SKIP (return nil) rather than
+		// returning an error, so a build that reaches an upgrade height before
+		// the cut no-ops instead of halting the chain.
+		ctx.Logger().Info("migrate19to20Mainnet skipped: mainnet donation spec not complete")
+		return nil
+	}
+	if err := m.mgr.LoadManagerIfNecessary(ctx); err != nil {
+		return err
+	}
+	// Step 1: reverse the bond slash and refund bond providers (soft-skip).
+	runSlashRefund19to20(ctx, m.mgr)
+	// Step 2: donate the BSC.USDC/USDT + BASE.ETH LP positions + repay NDT (own soft-skip).
+	spec, err := mainnetDonationSpec19to20()
+	if err != nil {
+		return err
+	}
+	runDonationMigration(ctx, m.mgr, spec)
+	// Step 3: ETH.THOR donate + depth restore + NDT capital refund (own soft-skip).
+	runEthThorRestore19to20(ctx, m.mgr)
+	// Step 4: retire residual synths from the low-synth-% pools (own soft-skip).
+	runLowSynthBurn19to20(ctx, m.mgr)
+	// Step 5: refund the erroneous h28181638 ZEC "missing tx out" slash and clear
+	// the already-paid parked outbound (own soft-skip). See issue 3393.
+	runZecSlashRefund19to20(ctx, m.mgr)
+	// Step 6: refund the erroneous h28172517 TRON "missing tx out" slash (own soft-skip).
+	// The outbound completed once on-chain; the refund is solvency-gated. See issue 3393.
+	runTronSlashRefund19to20(ctx, m.mgr)
+	// Step 7: restore the phantom-insolvency SOL bond slash at h27591961 per bond provider
+	// (own soft-skip, per-node best-effort; pool leg is a one-line A/C switch). See issue 3393.
+	runSolSlashRefund19to20(ctx, m.mgr)
+	return nil
+}
+
+// mainnetSlashRefunds19to20 — 218 bond-provider refunds, sum = 11354727112439 (113,547.27112439 RUNE)
+var mainnetSlashRefunds19to20 = []struct {
+	address string
+	amount  uint64
+}{
+	{address: "thor1yes8zxhq4p3r5rp9vt6rk9fdxqf2mnm43apumu", amount: 1106619530928},
+	{address: "thor18zg6y8ylus8n3tpzu5xxge3yyquj03vylstrl3", amount: 842787757163},
+	{address: "thor120mpler6mkgdszaz6pah65crjenmjr74futj97", amount: 717616192571},
+	{address: "thor1k8kmz5h7dfjthp56dducr9yxq4jjg9teju3n3a", amount: 678107705940},
+	{address: "thor10ttxj3vfjyav0t8398zmpkdz7x902qa4wlwa46", amount: 618617490659},
+	{address: "thor1456ja57j5wasf23mhgjpskq8mwhxzxejplh0z5", amount: 611477233862},
+	{address: "thor1grzsp2ywwr2f0ank2wdjc6zwu3ell2etjerll5", amount: 605080916680},
+	{address: "thor1enhmz57mpn4umspa8hqgqwwqpe02q4hpqmqr0k2zftxr8fu3nxmqjy3tqx", amount: 590189473762},
+	{address: "thor1hxrydan0eypp5eutah2dt63swnqwzuvc0elgmd", amount: 451993550613},
+	{address: "thor1jnnep660vqjkkyjxguw84sstvawew25cs6dw5x", amount: 448543609119},
+	{address: "thor1tqz4wssqavawkc23zykjljz76h8sq84l35607t", amount: 363398776647},
+	{address: "thor1tl96h6xy56snwh7w5zp5agd02swkywxpeg7ksu", amount: 358272543776},
+	{address: "thor1vwuyfwk85a247ett40j7uwk3k0s8cm5qaxevwl", amount: 257381979579},
+	{address: "thor1fd2288t5cgmzp9arc8lgk43acqyjx2lfe893u4", amount: 250329571011},
+	{address: "thor158qequwhhnggm4ch4psv55yqpxsugf67n62dy2", amount: 239436927186},
+	{address: "thor1eftvlx5glrrcnjqj2lvlyz4l5a0teradh4dvfz", amount: 190549893795},
+	{address: "thor1xcqsns97anwd5nx685cuknza7lk3mr5hvm3uwp", amount: 169029641337},
+	{address: "thor12sj00sl4mv2ht260kll4tqcj6afqymzvs97u90", amount: 162604179998},
+	{address: "thor1ysqwqmcnl3lc886l2u0pqwkrxa9uhywn0jtqcq", amount: 147957379358},
+	{address: "thor1fdzkfyf9p4f32kwgn70cfs4555m6lu8n5n5yka", amount: 134408211366},
+	{address: "thor1aafq8u4jwavy8fur6cc87khym9nmurrq0l9cvz", amount: 92213781851},
+	{address: "thor1glytzlz0zllugdsl3yt4cc0mejw83fq9u7mrh0", amount: 91394021732},
+	{address: "thor1mge39hjzfr7uhxkr6ve829jsvytnzafwse5y65", amount: 77248685289},
+	{address: "thor1nmnq0r99fwfkp3pg8sdj4wlj2l96hx73m6835y", amount: 71150959771},
+	{address: "thor1qvmeavyusxyet7szr2azjzut7tamw4ycfg08ss", amount: 69340694317},
+	{address: "thor1v2z9k2ef268n3tjtpfyr3hf95uzp7rkj7d2lnc", amount: 67432714889},
+	{address: "thor1628cc4m75t37canvm4nkpdejswvnlgyy3c2u2r", amount: 65967340068},
+	{address: "thor1m4hc3fmtmw4sxprh7jxl63hjf2zfz7eagr4t22", amount: 65950492882},
+	{address: "thor1sayaegqgmehfyk5qw67r0es9aa65st25kuem5p", amount: 64406903456},
+	{address: "thor1u3z82a2j6jge3xq2qdxpgk536h4x3xsc3a30qn", amount: 64224907582},
+	{address: "thor1qk52yas6gty2z6js7y564geh3pqq324ht08nzk", amount: 63403364250},
+	{address: "thor19tl4glhxgh57x4s6ua85n7etahws3r4kzgnyp9", amount: 62468750903},
+	{address: "thor170kk2ww8cra7la9lf4czwhhp3lld5xpp94ujsn", amount: 53149067258},
+	{address: "thor10d0q4ectnwjc773cy8jm3jxn9248qaaxj5h7mp", amount: 52669011811},
+	{address: "thor1swrnsj9uazq6m928pux302yfyddvm2s9qf8m87", amount: 49768886726},
+	{address: "thor1kwvp4z2dqsqwy42ah4a83gnw8ww9nqwawq93zr", amount: 47128101879},
+	{address: "thor12rtakf762ez8wad2ljz80hx3475ajqmdm6vxyu", amount: 47061289414},
+	{address: "thor1ezk4udl9e3hr80lahytds8dwgf0jqregccm9nf", amount: 43316076711},
+	{address: "thor1qt7xkl7vl708dwgqfag7995x6534jsmvsr8y75", amount: 39031633959},
+	{address: "thor1rdljlrleylnv37c4adqg9hyjd0q3atuuj793gp", amount: 38072362612},
+	{address: "thor10m98fvvg54zrz8dex4k5yc2cdzvp7hx2p5tz4u", amount: 36414582484},
+	{address: "thor1p8y207hu3r6rz56u4urecdx6mcg6q6dvnthamy", amount: 35928724056},
+	{address: "thor1glhq7vc4kjrml0mx3440k6ax5pxhkn63vtuyed", amount: 34594018418},
+	{address: "thor1a9xxp66632zgf57gm84f67mwyr8q4atcl6f3ky", amount: 33087318029},
+	{address: "thor1gyfuajr3emvnggf4z6ykvxq8yaueex40vk4nvk", amount: 32288955440},
+	{address: "thor1zm34fnl4n0w7qjx82xprhlfyx3hfa78ye0nhjp", amount: 29376560659},
+	{address: "thor1rxq5tkxtknevncqghgvkjvg2n7ulenlh008976", amount: 27337553062},
+	{address: "thor1ahvyf66fxc605xvkkdkmndvhux3gg84glxhd0d", amount: 27158763936},
+	{address: "thor1eza2ea44y6whndge7uswc20twtvge408ul3xew", amount: 26449317579},
+	{address: "thor1e0hj0p6trsrw8v5dnfjgmsgeu77mnk34qkgfur", amount: 26247658543},
+	{address: "thor1ny39rjaf5v4c39u2krev4zlqxc8hdqgu6wfy58", amount: 25592578051},
+	{address: "thor1qjc9j2pf00ryneq9evg2cmr44zszex8arwxfhj", amount: 25333871601},
+	{address: "thor1n3dc8j6x4762jkhw39gtqx8exx59p6huld9u43", amount: 23840584616},
+	{address: "thor1c09hscv76wtv5w7zh7rhlmv6mxuwzs3h2mfklx", amount: 23594454775},
+	{address: "thor1jfma6rrhyx7p9qg4hezu4m70e5ckq5jzeq8wkj", amount: 21680633441},
+	{address: "thor1ys4eqwefvhj0n5ycs83gjuvnjup3vwscrm5u7l", amount: 21128494746},
+	{address: "thor160h8g80xyjtvj5vdwnyd9qgzv6kdjsyly44dxu", amount: 20355039748},
+	{address: "thor1xwqj94q8nwuajwkurv3h6cvwuqe6exy7448yd0", amount: 20262113141},
+	{address: "thor1v02x3dww72jwqz8seux9jka8z08e8nq84y3vtg", amount: 20044187516},
+	{address: "thor1vknzp0vd4gm3yxgmc2dvctupr2jtxpt4qv8ur0", amount: 18378515716},
+	{address: "thor17ykncdkyf50ms6xgtwlyqkqhymh3pmlhyvqtur", amount: 17899407546},
+	{address: "thor1rjcuffd5e2qdqdsy0x2ewdrr3pcsx0wmxym9at", amount: 17779841146},
+	{address: "thor14k5l4lkzn9qt3vpq0ym9whavrahl2whumq3u2q", amount: 16734826373},
+	{address: "thor17dhu5eceyenzv2vvyvaas6h93tuzm5azdgh3e9", amount: 16237534908},
+	{address: "thor140dt2w7zm0elwcgfafg5d0y759ktvkkkfrh7al", amount: 16112063598},
+	{address: "thor1lle55s4wvmgws9vzrrk944es5ratt0m6dp36xa", amount: 15692149342},
+	{address: "thor1vnnj5zfpefsxp677xpjzjt3sjzekrjptqpd6wv", amount: 15492558376},
+	{address: "thor1nh4vz0spt9l05pe3vhx4a8pyryta7td35lhy4a", amount: 14901088322},
+	{address: "thor1jmfwwgtgtdcrd494hke9q84h3ndkptxg02lplc", amount: 14835194097},
+	{address: "thor1sgg3zwudf9egf7xse484lty9l0rqp89lc8p5pn", amount: 14683255547},
+	{address: "thor10aa9ksnvra2ah8yy8e509gd8u46m493xtjq90f", amount: 14624330315},
+	{address: "thor1stgurhwxy7h2z85nwe6cvwz4gtwzzjfdxk460x", amount: 14274857992},
+	{address: "thor1nvxu2d6pj0f40us04vlwv2g7qeey6c33f9fu6s", amount: 13960816765},
+	{address: "thor19wrcwsaat3se7fmrmadntyzsxhr7m63e8a96wq", amount: 13749559489},
+	{address: "thor16krhuvh6nr2z8mpsrmm7n637d5slwsfqn6w0tq", amount: 13425052599},
+	{address: "thor1sarruusl0dgynw674tqv22q464x8vnjhk8klky", amount: 13420156041},
+	{address: "thor1j28cscdr0v3e2x6q02q6w7pp958a9quq2uwmj5", amount: 12936428656},
+	{address: "thor1ermk3wyrytu5jpt6vd5u7pr9h6r4g2ftyrpvte", amount: 10815655546},
+	{address: "thor1yw5l6z2yrvvdnzrqfckw0tx5l9wa58pu8z0a58", amount: 10216164275},
+	{address: "thor1k2r3rj5hxk89zmj2pltex0t0uyd5dvhv4klmex", amount: 9044928953},
+	{address: "thor1d8s0mpr55m3x2qydx7z07cv4whl0cdret7zjqv", amount: 8689575783},
+	{address: "thor1g6y726lv7xmjlpnpu7avjs40epr47dp30xd76u", amount: 8368432695},
+	{address: "thor18sjyu3gtledfmzjendjk57nvdc2nnpm44sgkup", amount: 8288049790},
+	{address: "thor1qm4n0lqtceq92deysxd7z3avaptwpn3fk2m8m0", amount: 8279381797},
+	{address: "thor1xxfmgsglhat0w32rpr3nstrf7vnrxt8w6w0y8u", amount: 8143229385},
+	{address: "thor1n2pv2t03pn7kr7ypsvkyp2nce9p57v0pcv39tp", amount: 8099961599},
+	{address: "thor1dvfnvrwy7lf049yfcqutcf7pgf7zxg5ydnq7jm", amount: 8055544787},
+	{address: "thor1t25s4s9flvw8yed2anlr3wjepj4wtvwnv0f8c7", amount: 7641063398},
+	{address: "thor1atfrhw6ldw9rsa4dp0agfdkfmgdc4n53hz7lr9", amount: 7472472880},
+	{address: "thor193yv4v40w4s53gphh20r93c74mvurfhmv93kp8", amount: 7229905212},
+	{address: "thor12axd9kfjhv2fmzjyudtvcxy9zuv4n5zxrv6f2p", amount: 7207618595},
+	{address: "thor195tj2rmnmfg3nu6g9wyf3uu9lrr49duydduadz", amount: 7174484270},
+	{address: "thor1fzav6wrppld4vclqjpadmw0wr9n763nnutwwxd", amount: 7012745524},
+	{address: "thor1uee88s7uu9mc9q4f5acpgdk6wnjz7ztak45fw9", amount: 6997580232},
+	{address: "thor16v5heheenrdcpx9dzqk04d9txsvznv5gaz8zay", amount: 6874633555},
+	{address: "thor1d7js5mrfguf7aj7djsm5wekk9620utr3z3uy08", amount: 6848478300},
+	{address: "thor1puua7z3gffejwel3e08exe26pdr2mkf67ujp82", amount: 6761511841},
+	{address: "thor1hxdtc70azpesae2gg37wwlwk6c8ljdcxh43l87", amount: 6700350391},
+	{address: "thor1wk8x2kk6gftkyn7psukktux02acak06y8wfpk5", amount: 6663826889},
+	{address: "thor1hj3ts525ehk9e64thckl89lc5pfw6g0p6kh6uc", amount: 6586375996},
+	{address: "thor1276tnclzurjfl4pq98rzgv8unh4384xw9keckg", amount: 6194868109},
+	{address: "thor16sv556dqy3u6llu9nyr8l0pqj7uqf2mf4u82ur", amount: 6123226243},
+	{address: "thor16ltxavn8v2e8uwkc368wf0f4pv68kzv8ltf9rd", amount: 5939873455},
+	{address: "thor1nv6l96t53evvkj850f9rf9fpqeewrqtrk8wwnp", amount: 5707413737},
+	{address: "thor1nmrau8950uvs80n80p3r5hrs2n0welvz5qnee4", amount: 5684095430},
+	{address: "thor1qmag2ln8htpqpkg263pcs0spxdcjjthznz77wh", amount: 5637579998},
+	{address: "thor1tkunqcw7mgupa3n2vyz79ymv6f98nf5anq64m4", amount: 5217217284},
+	{address: "thor1nk0rc3s2v9szgnaaprguwyg53msp49yr28v62l", amount: 5208646464},
+	{address: "thor1pxktgvrh6cm2f2y2dwu7n0hw6x8z32wj2wxkmw", amount: 5173658927},
+	{address: "thor1843x94m7qvr3vzg9mhwj5en2zz2fwearxzvz8z", amount: 5094487149},
+	{address: "thor1gjk09ghsu07cplc9ztj64z37mvqj3qwxpu9rfq", amount: 4802468812},
+	{address: "thor1guupnvedns0te5jppzwc0ncwdp7j883edxv7v5", amount: 4008106847},
+	{address: "thor1gutscy5a6t7ehfr06p089ch97fy9zyrylp6f6c", amount: 3960267143},
+	{address: "thor17kxkpzkxw6cgewq4hzkr6hd6f72e7wguxugmpp", amount: 3924592408},
+	{address: "thor1sdqjuvq77x89glt4n3jjajxclyk8v3z0s6l0zh", amount: 3833876646},
+	{address: "thor196u2z6allf0ylgfa2053crvwqkcwrlmnsv3nn5", amount: 3809563324},
+	{address: "thor1cru3ux6qjfaz6anfc7s9jef64qye0vmp88f08c", amount: 3708798524},
+	{address: "thor1lvylqr4t4362x4z4felcnm9he5tmkawf9uq00f", amount: 3708798524},
+	{address: "thor1ujw5u5fys3yrpnf765jxptjwnnkc7aln4l4aev", amount: 3701729061},
+	{address: "thor1qqd2wxt20w44h3m472f9v8hccfuuhzh28jzxgx", amount: 3698379966},
+	{address: "thor1hwk7m7snhfq8dyg0wzsl3m4cpsz0pfh2klra67", amount: 3678044172},
+	{address: "thor1c7pcyruzga8wgaezku6c2lct9vckhkmh5huyxf", amount: 3669075768},
+	{address: "thor12mrysuw7ryjhkynn3w7lftp5t3z5g7f59wsz26", amount: 3656082579},
+	{address: "thor1fkwmkl96zpl93a547arcc8e00n5zh7eegdq5tv", amount: 3656082579},
+	{address: "thor12ekyxdflyrdl8wy2cp3sjj4czcyvytv27e9095", amount: 3635109557},
+	{address: "thor1sx6pj92nsr2u8hlknde2w8f38hrjj2jketg2q4", amount: 3588181580},
+	{address: "thor1sd8lwwedynx0ysnkmt7ajudelj6rkr5h45469d", amount: 3293258531},
+	{address: "thor19qaa3welgj2fmplwha2jnhwm36lktwxedcjkgw", amount: 3137538977},
+	{address: "thor1f47n9fth6xy7jhpnyk9rts0p8fygax4dyykzu9", amount: 2948416553},
+	{address: "thor160922xp5qahs0mgv8ppzdre6lcxzzexmm43en6", amount: 2924866063},
+	{address: "thor16wjfedsp5tnqqaw9nd465nmyfgwjml68nr7eqv", amount: 2804926427},
+	{address: "thor15q0ayttll0s7j03atrvead656wdr4wm68ngquc", amount: 2757218636},
+	{address: "thor1dgj302ks55k3tmu0cv7uh8cemn0pxp2j2a069a", amount: 2641370534},
+	{address: "thor1p86hcrxydywm07tzrqytrsftqcj72rrcvvxjjt", amount: 2535089001},
+	{address: "thor17xnq4phyl76pr0e4n08wj6920mmsnf2jnn3tdj", amount: 2487632028},
+	{address: "thor1kal4tylc9ameqmk430q8j044edfxg0xf7mkp8t", amount: 2255061438},
+	{address: "thor1cns3mynul4mqs6mrp0wjke5pv5ya0yz0kl6mwv", amount: 2249041935},
+	{address: "thor1cffnl990rc25zq28memthrgw8wjl6xkryz0rle", amount: 2233411312},
+	{address: "thor1upwg9x2mndnhmrptckv4hs7gfy9eysev0gjq0h", amount: 2198768063},
+	{address: "thor1q44tshquqqzga8vqaalam60asyt09um5w94f2a", amount: 2197471591},
+	{address: "thor133g0mey8dh7wpc4ax7pc6hp4dappgq405t845y", amount: 2191099371},
+	{address: "thor12ptyq5336rfjdmasuv63gr4lqtnsdnp65l0sss", amount: 2154250561},
+	{address: "thor10hzccmfhhyjj37j0wnrk2mlkz72ky5fs97vt85", amount: 2115796925},
+	{address: "thor1zqwpphzyz2wetpelzkt8na3szyr3fttrtmwm4n", amount: 1998999225},
+	{address: "thor1qwrnltz2dz6djhdf57n0n9hk75zpnk5dafl8zn", amount: 1970225922},
+	{address: "thor1tsqwwpzwzw2j2eet3vek6p8f5lvcwuprh69g6x", amount: 1958102854},
+	{address: "thor133rp2lldnyphw6g7340yw58q45tal5mwxc0j8u", amount: 1913212811},
+	{address: "thor1nzdk2qn9v2g52dnreyk2sd2hdtw58cnek3qtzz", amount: 1733467307},
+	{address: "thor13f2f8rryrjrk4pacyq8pl45m8432npr306trc8", amount: 1707901203},
+	{address: "thor122gdxpn255dy0mgh27cehvl3t4f75gr9gthmv7", amount: 1675518718},
+	{address: "thor1p2xm606cx6rem24x906wv839v2wh20sjzr5m4l", amount: 1666204805},
+	{address: "thor1vpsdc5dku6nmd05uh8nxdxyy7x002yhedyp5pe", amount: 1640849861},
+	{address: "thor12qc72x2eueqq7tkdcwlgu8j5ypvsrhnzsesrnl", amount: 1594203499},
+	{address: "thor1m46xz9v224v4ng5ka3wrwnc8n5qnk0fw8rgq2a", amount: 1531857610},
+	{address: "thor107mf2ddmfux260yxnz8ejnqk2dpjjgslj9r4cu", amount: 1497140637},
+	{address: "thor1nyuf4478qs055rnud9jpszy5qxa8z7mz8wjdqn", amount: 1494100582},
+	{address: "thor1r9eashc2m2c62fxqhk6vkr4ff95gdyrn0ph6sx", amount: 1490633510},
+	{address: "thor1enj8nn562ne7tq7duvsu5g20xh4nkhghn6j7rg", amount: 1482529685},
+	{address: "thor1z88v4lfwnxkz2n3ch7fp63jdq3c42vmrghran7", amount: 1470941717},
+	{address: "thor1zrgffn6r06q0gdze2fxsvxlgycypunr90q65d8", amount: 1468234320},
+	{address: "thor1clk59pvw4hgww53xg2kdncpg7ffd28re7wtw0u", amount: 1452922736},
+	{address: "thor1xu25l5cqg6ymtamvfk0sh5nttdhtxd78mt899t", amount: 1421709542},
+	{address: "thor1xk5t4w6fqgnkkg6knuggz00cajmmnkmlepepfr", amount: 1381267998},
+	{address: "thor1fxf5lduvas2wha7gxmwdnerren6u2r25gzqaqz", amount: 1380859500},
+	{address: "thor1hwz2yn6uqg9ws4mvcfpqgsvlxjuyd9e696asj8", amount: 1327826004},
+	{address: "thor1x4vsmyyg288al325czuk6fsnkkva5kp4s4q9g8", amount: 1293484626},
+	{address: "thor19te78fx7s5zazuugy0nd7xxhnx68kuzps3v2cr", amount: 1189250754},
+	{address: "thor1sd2a3jfm05pds2tyuxpgy6kv8gqqq8leh5y90m", amount: 1169946425},
+	{address: "thor1wxsekaaftys8d6amklrupnja3sufjrvpkaeey0", amount: 1167199727},
+	{address: "thor1c6utwdvav243vvp6pt3tljfqtm89ttw4jgjega", amount: 1084266616},
+	{address: "thor1zwvx53qgaehsdwtw95jgnmdlvp8sm2s8haqlfy", amount: 964416741},
+	{address: "thor1xcvtqtuug5u3txjyqhmck9hl8pf0dmqavdaamh", amount: 906708480},
+	{address: "thor1mcw5rzya7uml0wt3zwmj6xvr3nsev05e22uqmh", amount: 877459819},
+	{address: "thor19yhlwuuxyvanksjhsee7rwu9wt9eqs0egpvxu8", amount: 815935675},
+	{address: "thor1s955zjphxl6r3lj24358s4ukryzmmjrn23jdxk", amount: 787588470},
+	{address: "thor1qxxmvhz4ruw8r38yasy752w2zk9dhr4uygtley", amount: 782582593},
+	{address: "thor1rwaamxsva8tz4nz83ghm8hta2uznctnyrv0nzn", amount: 753366554},
+	{address: "thor16qvzrjpdccp3hrhl46ty4k2ngexav466tlq88n", amount: 753116583},
+	{address: "thor102cq5acm89g3lrj9vea3egq256uc5akmeh0086", amount: 753116482},
+	{address: "thor19ceemm5xnuhusg0vuy9rwqr7dpfz935tk7nc5x", amount: 753116482},
+	{address: "thor1h4pgv3wnzzh9e3c8xtl2da7ywmcsa6k0vsuqvc", amount: 753116482},
+	{address: "thor165u6emtswrd25xju64mgf0r5h8gyzx53adae5s", amount: 752477888},
+	{address: "thor1nh9e499j7scns300atewsnlp590x6k7u7g5pgk", amount: 752477888},
+	{address: "thor1q7qlqecwf0y4t4hcfqr966y0ggzgfvhwadp00a", amount: 751231190},
+	{address: "thor1wzesj9ch3l07nmz0jgnsl9k2mapm7kq7jquyaz", amount: 751231190},
+	{address: "thor17vu7spm4r5rcefjrwq5sng3lmnfpmqvgucqqmj", amount: 748143901},
+	{address: "thor1u42u4nfpcszgt7d6e072g4mk8h28rccqv3lvdv", amount: 746244808},
+	{address: "thor14hpzqlm0tarv9p8mqxu9hg0qt4ecleyzmt2stw", amount: 741759705},
+	{address: "thor120vexx8hq06d5nc38e5up9m92jc6hflaum6dfu", amount: 731947732},
+	{address: "thor1app08t8svfhkpsrdpg2us959psuqfxuhf59n8c", amount: 731216516},
+	{address: "thor1j8k9syzszvmh9hecar0hd9f0k95xahshyh33wa", amount: 712274083},
+	{address: "thor1tkn7706tp2js0j4lsgemttmgwt2jym8kngs7en", amount: 709209528},
+	{address: "thor1v83nu92g8eu586afxvgvfj74wy9jh6d4wqnk9h", amount: 701433239},
+	{address: "thor1ktx5xk5wqs0vzsmdkcrysxmtvssp0zrsgdmv6w", amount: 389917261},
+	{address: "thor1dpc3jzxg0jwp5q4rzk0xp334stuas2t47vncc0", amount: 328361012},
+	{address: "thor1n9gcud325e25ywe9sycwwh6pqgalq03e5mj7dg", amount: 92971812},
+	{address: "thor1tfm4q8u57qzsznpvh02s8j483aga63cl02k6jt", amount: 17019944},
+	{address: "thor15ath5vmj35ggjen9n56a9q4pscgj8pt4d8l5t2", amount: 8546644},
+	{address: "thor16sa3k77lffrdqm854djjr9lgzv777sadrhpgtt", amount: 7189497},
+	{address: "thor1mpdccj4wr88v2jw28cw2cqluqqcrkux6n45n2m", amount: 6451276},
+	{address: "thor1uwpshu52te8n36mk8hfy3ejjr64jma2s6wsmfq", amount: 5041410},
+	{address: "thor1yxkdmxt2cu5syjx408gahym8k0qcyp50cyzk28", amount: 3632836},
+	{address: "thor1wmrse405fdq8yk3xa5alxnfw6yjndk3mvn87dp", amount: 1600732},
+	{address: "thor1e2xrqpxuy2qxg2eeukqahlkwxrjjlkewyqlwp2", amount: 460470},
+	{address: "thor1wrc6754h83d9eg00vpt5a9l0r7eq273aed9tcy", amount: 304128},
+	{address: "thor1ewpf8uwamtrndrvhtrn90a2rmhgw0lquw90ewl", amount: 266897},
+	{address: "thor1upuw8yvg96uf4nd6jfuq9s25284dzr45kyzarc", amount: 121632},
+	{address: "thor1drm88nvzn8qclrddac876ectt548cscgukm62d", amount: 41279},
+	{address: "thor1sns9plez7g9p4k04am0jqz2lgy5ast2x8pv2j5", amount: 34362},
+	{address: "thor1fnu8jh8knfhjyaf462jadw0cd2pd876nyp0qjn", amount: 21027},
+	{address: "thor1ss9txkzallwm83u5ey6wh4a559v5j8q6df3xz7", amount: 10800},
+	{address: "thor1s37zclh4rg0aguyy26sxqh5qn8zlj7yhvedvys", amount: 6155},
+	{address: "thor1rz8qq9aqakytxp9e00sdvc5zzv9dehvv2z67z4", amount: 3780},
+	{address: "thor1l330td7tk2uckx3gmyryr7gsxs45q2tk3vxm7q", amount: 3123},
+	{address: "thor18uquyh2nl9chgxe63erhf68e0v9mwwwwqv9g3l", amount: 2300},
+	{address: "thor1692vpzvunjqn5hj82g28r925e4t6lec482zrhh", amount: 433},
+	{address: "thor19yufynkuf8n9385xh4pjge6faxc0dtlacj8fnu", amount: 95},
+	{address: "thor147l32hkwev7vnv506q5sepazr6zt88zt3eylyt", amount: 7},
+}
+
+const mainnetSlashRefunds19to20Total = uint64(11354727112439)

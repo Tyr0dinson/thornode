@@ -221,7 +221,7 @@ func (e *ETHScanner) FetchTxs(height, chainHeight int64) (stypes.TxIn, error) {
 		}()
 	}
 
-	// skip reporting network fee and solvency if block more than flexibility blocks from tip
+	// skip reporting network fee if block more than flexibility blocks from tip
 	if chainHeight-height > e.cfg.ObservationFlexibilityBlocks {
 		return txIn, nil
 	}
@@ -256,12 +256,15 @@ func (e *ETHScanner) FetchTxs(height, chainHeight int64) (stypes.TxIn, error) {
 		e.globalNetworkFeeQueue <- networkFee
 	}
 
-	if e.solvencyReporter != nil {
-		if err := e.solvencyReporter(height); err != nil {
-			e.logger.Err(err).Msg("fail to report Solvency info to THORNode")
-		}
-	}
 	return txIn, nil
+}
+
+// ReportSolvency runs after the shared scanner has recomputed health.
+func (e *ETHScanner) ReportSolvency(height, chainHeight int64) error {
+	if chainHeight-height > e.cfg.ObservationFlexibilityBlocks || e.solvencyReporter == nil {
+		return nil
+	}
+	return e.solvencyReporter(height)
 }
 
 func (e *ETHScanner) getCurrentBlockHeight() int64 {

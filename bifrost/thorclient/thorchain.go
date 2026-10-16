@@ -53,6 +53,7 @@ const (
 	XMRSpentOutputRefsEndpoint  = "/thorchain/xmr/spent_refs/%s"
 	AsgardVault                 = "/thorchain/vaults/asgard"
 	PubKeysEndpoint             = "/thorchain/vaults/pubkeys"
+	PendingOutboundEndpoint     = "/thorchain/queue/outbound"
 	ThorchainConstants          = "/thorchain/constants"
 	RagnarokEndpoint            = "/thorchain/ragnarok"
 	MimirEndpoint               = "/thorchain/mimir"
@@ -66,6 +67,15 @@ const (
 )
 
 var errThorchainTransport = errors.New("thornode transport error")
+
+// Retry policy for bridge HTTP requests to THORNode; the defaults are
+// retryablehttp's. Exposed so tests that point a bridge at an unreachable
+// node can keep the retries but skip the real waiting.
+var (
+	BridgeRetryMax     = 4
+	BridgeRetryWaitMin = 1 * time.Second
+	BridgeRetryWaitMax = 30 * time.Second
+)
 
 // thorchainBridge will be used to send tx to THORChain
 type thorchainBridge struct {
@@ -102,6 +112,7 @@ type ThorchainBridge interface {
 	GetAsgards() (stypes.Vaults, error)
 	GetVault(pubkey string) (stypes.Vault, error)
 	GetXMRSpentOutputRefs(vaultPubKey common.PubKey) ([]*common.OutputRef, error)
+	GetXMRSpentOutputRefsUncached(ctx context.Context, vaultPubKey common.PubKey) ([]*common.OutputRef, error)
 	GetConfig() config.BifrostClientConfiguration
 	GetConstants() (map[string]int64, error)
 	GetContext() client.Context
@@ -140,6 +151,8 @@ type ThorchainBridge interface {
 	GetReferenceMemo(chain common.Chain, ref string) (string, error)
 	GetReferenceMemoByTxHash(hash string) (string, error)
 	GetObservedTxVoter(txID string) (*stypes.QueryObservedTxVoter, error)
+	GetObservedTxOutVoter(txID string) (*stypes.QueryObservedTxVoter, error)
+	GetObservedTxOutVoterUncached(ctx context.Context, txID string) (*stypes.QueryObservedTxVoter, bool, error)
 }
 
 // httpResponseCache used for caching HTTP responses for less frequent querying
@@ -168,6 +181,9 @@ func NewThorchainBridge(cfg config.BifrostClientConfiguration, m *metrics.Metric
 
 	httpClient := retryablehttp.NewClient()
 	httpClient.Logger = nil
+	httpClient.RetryMax = BridgeRetryMax
+	httpClient.RetryWaitMin = BridgeRetryWaitMin
+	httpClient.RetryWaitMax = BridgeRetryWaitMax
 
 	return &thorchainBridge{
 		logger:        logger,
@@ -276,7 +292,11 @@ func (b *thorchainBridge) getRetryable(url string) ([]byte, int, error) {
 // single raw request is preferable here: it preserves the body of Cosmos query
 // errors, which is needed to distinguish an absent voter from a server outage.
 func (b *thorchainBridge) getUncached(url string) ([]byte, int, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), constants.ThorchainBlockTime)
+	return b.getUncachedContext(context.Background(), url)
+}
+
+func (b *thorchainBridge) getUncachedContext(ctx context.Context, url string) ([]byte, int, error) {
+	ctx, cancel := context.WithTimeout(ctx, constants.ThorchainBlockTime)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
@@ -372,6 +392,20 @@ func (b *thorchainBridge) PostKeysignFailure(blame stypes.Blame, height int64, m
 	msg, err := stypes.NewMsgTssKeysignFail(height, blame, memo, coins, signerAddr, pubkey)
 	if err != nil {
 		return common.BlankTxID, fmt.Errorf("fail to create keysign fail message: %w", err)
+	}
+	return b.Broadcast(msg)
+}
+
+// PostSolNonceAttest broadcasts this validator's re-attestation of a Solana vault's
+// durable-nonce account (see MsgSolNonceAttest).
+func (b *thorchainBridge) PostSolNonceAttest(vaultPubKey common.PubKey, nonceAccount, nonce string, slot int64, lastTx common.TxID) (common.TxID, error) {
+	signerAddr, err := b.keys.GetSignerInfo().GetAddress()
+	if err != nil {
+		return common.BlankTxID, fmt.Errorf("failed to get signer address: %w", err)
+	}
+	msg := stypes.NewMsgSolNonceAttest(vaultPubKey, nonceAccount, nonce, slot, lastTx, signerAddr)
+	if err := msg.ValidateBasic(); err != nil {
+		return common.BlankTxID, fmt.Errorf("invalid sol nonce attestation: %w", err)
 	}
 	return b.Broadcast(msg)
 }
@@ -859,12 +893,23 @@ func (b *thorchainBridge) GetVault(pubkey string) (stypes.Vault, error) {
 }
 
 func (b *thorchainBridge) GetXMRSpentOutputRefs(vaultPubKey common.PubKey) ([]*common.OutputRef, error) {
-	buf, s, err := b.getWithPath(fmt.Sprintf(XMRSpentOutputRefsEndpoint, vaultPubKey.String()))
+	return parseXMRSpentOutputRefsResponse(b.getWithPath(fmt.Sprintf(XMRSpentOutputRefsEndpoint, vaultPubKey.String())))
+}
+
+// GetXMRSpentOutputRefsUncached bounds both the HTTP request and response body
+// read by the caller's context and one block. It neither waits on nor updates
+// the shared cache, so a stalled cached query cannot block committed recovery.
+func (b *thorchainBridge) GetXMRSpentOutputRefsUncached(ctx context.Context, vaultPubKey common.PubKey) ([]*common.OutputRef, error) {
+	endpoint := b.getThorChainURL(fmt.Sprintf(XMRSpentOutputRefsEndpoint, vaultPubKey.String()))
+	return parseXMRSpentOutputRefsResponse(b.getUncachedContext(ctx, endpoint))
+}
+
+func parseXMRSpentOutputRefsResponse(buf []byte, status int, err error) ([]*common.OutputRef, error) {
 	if err != nil {
 		return nil, fmt.Errorf("fail to get xmr spent output refs: %w", err)
 	}
-	if s != http.StatusOK {
-		return nil, fmt.Errorf("unexpected status code %d", s)
+	if status != http.StatusOK {
+		return nil, fmt.Errorf("unexpected status code %d", status)
 	}
 	var resp struct {
 		SpentOutputRefs []*common.OutputRef `json:"spent_output_refs"`
@@ -876,7 +921,19 @@ func (b *thorchainBridge) GetXMRSpentOutputRefs(vaultPubKey common.PubKey) ([]*c
 }
 
 func (b *thorchainBridge) GetObservedTxVoter(txID string) (*stypes.QueryObservedTxVoter, error) {
-	buf, s, err := b.getWithPath(fmt.Sprintf(TxDetailEndpoint, txID))
+	return b.getObservedTxVoter(txID, b.getThorChainURL(fmt.Sprintf(TxDetailEndpoint, txID)))
+}
+
+// GetObservedTxOutVoter selects source-side consensus even when a migration's
+// destination has an inbound voter with the same ID. Its cache key is distinct.
+func (b *thorchainBridge) GetObservedTxOutVoter(txID string) (*stypes.QueryObservedTxVoter, error) {
+	// Append the query after URL construction: a host without a scheme uses
+	// url.URL.Path, which would otherwise escape '?' as part of the path.
+	return b.getObservedTxVoter(txID, b.getThorChainURL(fmt.Sprintf(TxDetailEndpoint, txID))+"?outbound=true")
+}
+
+func (b *thorchainBridge) getObservedTxVoter(txID, endpoint string) (*stypes.QueryObservedTxVoter, error) {
+	buf, s, err := b.get(endpoint)
 	if err != nil {
 		return nil, fmt.Errorf("fail to get observed tx voter: %w", err)
 	}
@@ -895,7 +952,18 @@ func (b *thorchainBridge) GetObservedTxVoter(txID string) (*stypes.QueryObserved
 // fresh HTTP response. A missing voter is not an endpoint failure and is
 // reported as found=false; transport and server failures remain errors.
 func (b *thorchainBridge) GetObservedTxVoterUncached(txID string) (*stypes.QueryObservedTxVoter, bool, error) {
-	buf, status, err := b.getWithPathUncached(fmt.Sprintf(TxDetailEndpoint, txID))
+	return b.getObservedTxVoterUncached(context.Background(), txID, b.getThorChainURL(fmt.Sprintf(TxDetailEndpoint, txID)))
+}
+
+// GetObservedTxOutVoterUncached preserves the commit-race lookup's freshness
+// without allowing an inbound voter to hide a missing or pending outbound.
+// The caller's context bounds both the request and response body read.
+func (b *thorchainBridge) GetObservedTxOutVoterUncached(ctx context.Context, txID string) (*stypes.QueryObservedTxVoter, bool, error) {
+	return b.getObservedTxVoterUncached(ctx, txID, b.getThorChainURL(fmt.Sprintf(TxDetailEndpoint, txID))+"?outbound=true")
+}
+
+func (b *thorchainBridge) getObservedTxVoterUncached(ctx context.Context, txID, endpoint string) (*stypes.QueryObservedTxVoter, bool, error) {
+	buf, status, err := b.getUncachedContext(ctx, endpoint)
 	if missingObservedTxVoterResponse(buf, status, txID) {
 		return nil, false, nil
 	}
@@ -1146,6 +1214,125 @@ func (b *thorchainBridge) GetMimir(key string) (int64, error) {
 		return 0, fmt.Errorf("fail to unmarshal mimir: %w", err)
 	}
 	return value, nil
+}
+
+// PendingOutbound is the minimal view of a not-yet-observed scheduled outbound
+// the SOL durable-nonce signer needs to serialize one durable tx per vault (durable-nonce,
+// N2): its chain, vault pubkeys, and scheduled height.
+type PendingOutbound struct {
+	Chain            string              `json:"chain"`
+	ToAddress        string              `json:"to_address"`
+	VaultPubKey      string              `json:"vault_pub_key"`
+	VaultPubKeyEddsa string              `json:"vault_pub_key_eddsa"`
+	Coin             PendingOutboundCoin `json:"coin"`
+	Memo             string              `json:"memo"`
+	InHash           string              `json:"in_hash"`
+	Height           int64               `json:"height"`
+}
+
+// PendingOutboundCoin is the coin of a queued outbound as the queue endpoint serves it.
+type PendingOutboundCoin struct {
+	Asset  string `json:"asset"`
+	Amount string `json:"amount"`
+}
+
+// GetPendingOutbounds returns the outbounds currently in the outbound queue that
+// have NOT yet been observed (thornode's /thorchain/queue/outbound, which filters to
+// items whose OutHash is empty). height>0 queries the queue AS OF that consensus
+// height (?height=), so every node evaluating the same height observes the identical
+// set — used by the provisioning create-skip at its boundary height (a one-shot,
+// idempotent decision that must be deterministic across members). height==0 reads the
+// LIVE queue, used by the SignTx serialization gate, which must see the queue shrink
+// over retries to release a waiting sibling (a fixed-height snapshot would deadlock
+// it). The endpoint serialises as a BARE JSON array (QueryOutboundResponse
+// .MarshalJSONPB emits its TxOutItems slice directly), so the body decodes into a
+// slice, not a wrapping object.
+func (b *thorchainBridge) GetPendingOutbounds(height int64) ([]PendingOutbound, error) {
+	var items []PendingOutbound
+	if height > 0 {
+		// The ?height= query must be appended AFTER the path (getKeysignStateAtHeight
+		// builds it that way, uncached); embedding it in the path string makes
+		// getThorChainURL escape the '?' to %3F when ChainHost has no scheme.
+		if err := b.getKeysignStateAtHeight(PendingOutboundEndpoint, height, &items); err != nil {
+			return nil, fmt.Errorf("fail to get pending outbounds at height %d: %w", height, err)
+		}
+		return items, nil
+	}
+	buf, s, err := b.getWithPath(PendingOutboundEndpoint)
+	if err != nil {
+		return nil, fmt.Errorf("fail to get pending outbounds: %w", err)
+	}
+	if s != http.StatusOK {
+		return nil, fmt.Errorf("unexpected status code %d", s)
+	}
+	if err := json.Unmarshal(buf, &items); err != nil {
+		return nil, fmt.Errorf("fail to unmarshal pending outbounds: %w", err)
+	}
+	return items, nil
+}
+
+// SolVaultNonce is a Solana vault's durable nonce as committed on THORChain by
+// observer supermajority. Empty (Nonce == "") when the vault has none.
+type SolVaultNonce struct {
+	NonceAccount  string `json:"nonce_account"`
+	Nonce         string `json:"nonce"`
+	Slot          int64  `json:"slot"`
+	UpdatedHeight int64  `json:"updated_height"`
+	SetByTx       string `json:"set_by_tx"`
+}
+
+// IsEmpty reports whether no durable nonce is committed.
+func (n SolVaultNonce) IsEmpty() bool { return n.Nonce == "" || n.NonceAccount == "" }
+
+// SolVaultNonceEndpoint is formatted with the vault pubkey.
+const SolVaultNonceEndpoint = "/thorchain/vault/%s/sol_nonce"
+
+// GetSolVaultNonce returns a vault's committed durable nonce. height>0 reads it AS OF
+// that consensus height (?height=, uncached), so every keysign party evaluating the
+// same height builds from the identical value; height<=0 reads the latest committed
+// value (uncached). An empty result means the vault has no committed nonce; an error
+// means the value is unknown and the caller must not guess.
+func (b *thorchainBridge) GetSolVaultNonce(vaultPubKey string, height int64) (SolVaultNonce, error) {
+	var out SolVaultNonce
+	path := fmt.Sprintf(SolVaultNonceEndpoint, vaultPubKey)
+	if height > 0 {
+		if err := b.getKeysignStateAtHeight(path, height, &out); err != nil {
+			return SolVaultNonce{}, fmt.Errorf("fail to get sol vault nonce at height %d: %w", height, err)
+		}
+		return out, nil
+	}
+	buf, s, err := b.getWithPathUncached(path)
+	if err != nil {
+		return SolVaultNonce{}, fmt.Errorf("fail to get sol vault nonce: %w", err)
+	}
+	if s != http.StatusOK {
+		return SolVaultNonce{}, fmt.Errorf("unexpected status code %d", s)
+	}
+	if err := json.Unmarshal(buf, &out); err != nil {
+		return SolVaultNonce{}, fmt.Errorf("fail to unmarshal sol vault nonce: %w", err)
+	}
+	return out, nil
+}
+
+// GetMimirAtHeight reads a mimir value as of a specific consensus height via the
+// ?height= state query (bypassing the live one-block cache), so every keysign party
+// evaluating the same height observes the identical value. It gates the SOL
+// durable-nonce path deterministically instead of a divergent live GetMimir
+// read that could fragment a keysign across a governance flip. Unlike
+// getKeysignMimirAtHeight (a safety control where null must NOT read as disabled), a
+// feature gate treats a missing/null mimir as 0 (off).
+func (b *thorchainBridge) GetMimirAtHeight(key string, height int64) (int64, error) {
+	if height <= 0 {
+		return 0, fmt.Errorf("mimir-at-height requires a positive height: %d", height)
+	}
+	var value *int64
+	if err := b.getKeysignStateAtHeight(MimirEndpoint+"/key/"+key, height, &value); err != nil {
+		return 0, err
+	}
+	if value == nil {
+		return 0, nil // unset/null mimir = feature disabled
+	}
+	return *value, nil
 }
 
 // GetMimirWithRef is a helper function to more readably insert references (such as Asset MimirString or Chain) into Mimir key templates.

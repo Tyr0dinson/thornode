@@ -23,10 +23,10 @@ func (s *KeeperTestSuite) TestStoreMsgs(c *C) {
 
 	c.Assert(err, IsNil)
 
-	res, err = s.keeper.GetSchedule(sdkCtx, 1001)
+	res, err = s.keeper.GetSchedule(sdkCtx, 1000)
 
 	c.Assert(err, IsNil)
-	c.Assert(res.Height, Equals, uint64(0x3e9))
+	c.Assert(res.Height, Equals, uint64(0x3e8))
 	c.Assert(res.Msgs, HasLen, 1)
 	c.Assert(res.Msgs[0].Sender, Equals, accAddrs[0].String())
 	c.Assert(res.Msgs[0].Msg, DeepEquals, []byte(`{"do":"something"}`))
@@ -38,10 +38,10 @@ func (s *KeeperTestSuite) TestStoreMsgs(c *C) {
 	})
 	c.Assert(err, IsNil)
 
-	res, err = s.keeper.GetSchedule(sdkCtx, 1001)
+	res, err = s.keeper.GetSchedule(sdkCtx, 1000)
 
 	c.Assert(err, IsNil)
-	c.Assert(res.Height, Equals, uint64(0x3e9))
+	c.Assert(res.Height, Equals, uint64(0x3e8))
 	c.Assert(res.Msgs, HasLen, 2)
 	c.Assert(res.Msgs[0].Sender, Equals, accAddrs[0].String())
 	c.Assert(res.Msgs[0].Msg, DeepEquals, []byte(`{"do":"something"}`))

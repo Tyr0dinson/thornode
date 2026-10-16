@@ -425,3 +425,40 @@ func TestSwapMemolessBroadcastSwapUsesPresignedPayloadForBtc(t *testing.T) {
 		t.Fatalf("expected BTC swap txid to be recorded, got %s", actor.swapTxID)
 	}
 }
+
+func TestSwapMemolessStopsAfterUncertainTronBroadcast(t *testing.T) {
+	for _, message := range []string{"confirmation unavailable", "insufficient funds in a failed receipt lookup"} {
+		t.Run(message, func(t *testing.T) {
+			client := &memolessBroadcastClient{broadcastErr: fmt.Errorf("%w: %s", simtypes.ErrSimTxUncertain, message)}
+			user := newTestSwapUser(t, "selected", common.TRXAsset, sdkmath.NewUint(100), common.BTCAsset, sdkmath.ZeroUint())
+			user.ChainClients[common.TRONChain] = client
+			if !user.Acquire() {
+				t.Fatal("expected to lock selected user")
+			}
+			t.Cleanup(func() {
+				if user.IsLocked() {
+					user.Release()
+				}
+			})
+			a := &SwapMemolessActor{
+				SwapActor: SwapActor{
+					Actor: *simtypes.NewActor("uncertain TRON swap", newSwapTimeoutTestRNG(1, 2)),
+					user:  user,
+					from:  common.TRXAsset,
+				},
+				swapTx: simtypes.SimTx{Chain: common.TRONChain},
+			}
+			a.Timeout = time.Millisecond
+			a.Interval = time.Millisecond
+			verified := false
+			a.Ops = []simtypes.Op{
+				a.broadcastSwap,
+				func(*simtypes.OpConfig) simtypes.OpResult { verified = true; return simtypes.OpResult{Finish: true} },
+			}
+			err := a.Execute(nil)
+			if !errors.Is(err, simtypes.ErrSimTxUncertain) || client.signCalls != 1 || client.broadcastCalls != 1 || verified {
+				t.Fatalf("uncertain swap retried, skipped or reached verification: signs=%d broadcasts=%d verified=%v err=%v", client.signCalls, client.broadcastCalls, verified, err)
+			}
+		})
+	}
+}

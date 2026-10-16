@@ -7748,6 +7748,1134 @@ func (x *fastReflection_QueryXMRSpentOutputRefsResponse) ProtoMethods() *protoif
 }
 
 var (
+	md_QuerySolVaultNonceRequest               protoreflect.MessageDescriptor
+	fd_QuerySolVaultNonceRequest_vault_pub_key protoreflect.FieldDescriptor
+	fd_QuerySolVaultNonceRequest_height        protoreflect.FieldDescriptor
+)
+
+func init() {
+	file_types_query_vault_proto_init()
+	md_QuerySolVaultNonceRequest = File_types_query_vault_proto.Messages().ByName("QuerySolVaultNonceRequest")
+	fd_QuerySolVaultNonceRequest_vault_pub_key = md_QuerySolVaultNonceRequest.Fields().ByName("vault_pub_key")
+	fd_QuerySolVaultNonceRequest_height = md_QuerySolVaultNonceRequest.Fields().ByName("height")
+}
+
+var _ protoreflect.Message = (*fastReflection_QuerySolVaultNonceRequest)(nil)
+
+type fastReflection_QuerySolVaultNonceRequest QuerySolVaultNonceRequest
+
+func (x *QuerySolVaultNonceRequest) ProtoReflect() protoreflect.Message {
+	return (*fastReflection_QuerySolVaultNonceRequest)(x)
+}
+
+func (x *QuerySolVaultNonceRequest) slowProtoReflect() protoreflect.Message {
+	mi := &file_types_query_vault_proto_msgTypes[11]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+var _fastReflection_QuerySolVaultNonceRequest_messageType fastReflection_QuerySolVaultNonceRequest_messageType
+var _ protoreflect.MessageType = fastReflection_QuerySolVaultNonceRequest_messageType{}
+
+type fastReflection_QuerySolVaultNonceRequest_messageType struct{}
+
+func (x fastReflection_QuerySolVaultNonceRequest_messageType) Zero() protoreflect.Message {
+	return (*fastReflection_QuerySolVaultNonceRequest)(nil)
+}
+func (x fastReflection_QuerySolVaultNonceRequest_messageType) New() protoreflect.Message {
+	return new(fastReflection_QuerySolVaultNonceRequest)
+}
+func (x fastReflection_QuerySolVaultNonceRequest_messageType) Descriptor() protoreflect.MessageDescriptor {
+	return md_QuerySolVaultNonceRequest
+}
+
+// Descriptor returns message descriptor, which contains only the protobuf
+// type information for the message.
+func (x *fastReflection_QuerySolVaultNonceRequest) Descriptor() protoreflect.MessageDescriptor {
+	return md_QuerySolVaultNonceRequest
+}
+
+// Type returns the message type, which encapsulates both Go and protobuf
+// type information. If the Go type information is not needed,
+// it is recommended that the message descriptor be used instead.
+func (x *fastReflection_QuerySolVaultNonceRequest) Type() protoreflect.MessageType {
+	return _fastReflection_QuerySolVaultNonceRequest_messageType
+}
+
+// New returns a newly allocated and mutable empty message.
+func (x *fastReflection_QuerySolVaultNonceRequest) New() protoreflect.Message {
+	return new(fastReflection_QuerySolVaultNonceRequest)
+}
+
+// Interface unwraps the message reflection interface and
+// returns the underlying ProtoMessage interface.
+func (x *fastReflection_QuerySolVaultNonceRequest) Interface() protoreflect.ProtoMessage {
+	return (*QuerySolVaultNonceRequest)(x)
+}
+
+// Range iterates over every populated field in an undefined order,
+// calling f for each field descriptor and value encountered.
+// Range returns immediately if f returns false.
+// While iterating, mutating operations may only be performed
+// on the current field descriptor.
+func (x *fastReflection_QuerySolVaultNonceRequest) Range(f func(protoreflect.FieldDescriptor, protoreflect.Value) bool) {
+	if x.VaultPubKey != "" {
+		value := protoreflect.ValueOfString(x.VaultPubKey)
+		if !f(fd_QuerySolVaultNonceRequest_vault_pub_key, value) {
+			return
+		}
+	}
+	if x.Height != "" {
+		value := protoreflect.ValueOfString(x.Height)
+		if !f(fd_QuerySolVaultNonceRequest_height, value) {
+			return
+		}
+	}
+}
+
+// Has reports whether a field is populated.
+//
+// Some fields have the property of nullability where it is possible to
+// distinguish between the default value of a field and whether the field
+// was explicitly populated with the default value. Singular message fields,
+// member fields of a oneof, and proto2 scalar fields are nullable. Such
+// fields are populated only if explicitly set.
+//
+// In other cases (aside from the nullable cases above),
+// a proto3 scalar field is populated if it contains a non-zero value, and
+// a repeated field is populated if it is non-empty.
+func (x *fastReflection_QuerySolVaultNonceRequest) Has(fd protoreflect.FieldDescriptor) bool {
+	switch fd.FullName() {
+	case "types.QuerySolVaultNonceRequest.vault_pub_key":
+		return x.VaultPubKey != ""
+	case "types.QuerySolVaultNonceRequest.height":
+		return x.Height != ""
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.QuerySolVaultNonceRequest"))
+		}
+		panic(fmt.Errorf("message types.QuerySolVaultNonceRequest does not contain field %s", fd.FullName()))
+	}
+}
+
+// Clear clears the field such that a subsequent Has call reports false.
+//
+// Clearing an extension field clears both the extension type and value
+// associated with the given field number.
+//
+// Clear is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_QuerySolVaultNonceRequest) Clear(fd protoreflect.FieldDescriptor) {
+	switch fd.FullName() {
+	case "types.QuerySolVaultNonceRequest.vault_pub_key":
+		x.VaultPubKey = ""
+	case "types.QuerySolVaultNonceRequest.height":
+		x.Height = ""
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.QuerySolVaultNonceRequest"))
+		}
+		panic(fmt.Errorf("message types.QuerySolVaultNonceRequest does not contain field %s", fd.FullName()))
+	}
+}
+
+// Get retrieves the value for a field.
+//
+// For unpopulated scalars, it returns the default value, where
+// the default value of a bytes scalar is guaranteed to be a copy.
+// For unpopulated composite types, it returns an empty, read-only view
+// of the value; to obtain a mutable reference, use Mutable.
+func (x *fastReflection_QuerySolVaultNonceRequest) Get(descriptor protoreflect.FieldDescriptor) protoreflect.Value {
+	switch descriptor.FullName() {
+	case "types.QuerySolVaultNonceRequest.vault_pub_key":
+		value := x.VaultPubKey
+		return protoreflect.ValueOfString(value)
+	case "types.QuerySolVaultNonceRequest.height":
+		value := x.Height
+		return protoreflect.ValueOfString(value)
+	default:
+		if descriptor.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.QuerySolVaultNonceRequest"))
+		}
+		panic(fmt.Errorf("message types.QuerySolVaultNonceRequest does not contain field %s", descriptor.FullName()))
+	}
+}
+
+// Set stores the value for a field.
+//
+// For a field belonging to a oneof, it implicitly clears any other field
+// that may be currently set within the same oneof.
+// For extension fields, it implicitly stores the provided ExtensionType.
+// When setting a composite type, it is unspecified whether the stored value
+// aliases the source's memory in any way. If the composite value is an
+// empty, read-only value, then it panics.
+//
+// Set is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_QuerySolVaultNonceRequest) Set(fd protoreflect.FieldDescriptor, value protoreflect.Value) {
+	switch fd.FullName() {
+	case "types.QuerySolVaultNonceRequest.vault_pub_key":
+		x.VaultPubKey = value.Interface().(string)
+	case "types.QuerySolVaultNonceRequest.height":
+		x.Height = value.Interface().(string)
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.QuerySolVaultNonceRequest"))
+		}
+		panic(fmt.Errorf("message types.QuerySolVaultNonceRequest does not contain field %s", fd.FullName()))
+	}
+}
+
+// Mutable returns a mutable reference to a composite type.
+//
+// If the field is unpopulated, it may allocate a composite value.
+// For a field belonging to a oneof, it implicitly clears any other field
+// that may be currently set within the same oneof.
+// For extension fields, it implicitly stores the provided ExtensionType
+// if not already stored.
+// It panics if the field does not contain a composite type.
+//
+// Mutable is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_QuerySolVaultNonceRequest) Mutable(fd protoreflect.FieldDescriptor) protoreflect.Value {
+	switch fd.FullName() {
+	case "types.QuerySolVaultNonceRequest.vault_pub_key":
+		panic(fmt.Errorf("field vault_pub_key of message types.QuerySolVaultNonceRequest is not mutable"))
+	case "types.QuerySolVaultNonceRequest.height":
+		panic(fmt.Errorf("field height of message types.QuerySolVaultNonceRequest is not mutable"))
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.QuerySolVaultNonceRequest"))
+		}
+		panic(fmt.Errorf("message types.QuerySolVaultNonceRequest does not contain field %s", fd.FullName()))
+	}
+}
+
+// NewField returns a new value that is assignable to the field
+// for the given descriptor. For scalars, this returns the default value.
+// For lists, maps, and messages, this returns a new, empty, mutable value.
+func (x *fastReflection_QuerySolVaultNonceRequest) NewField(fd protoreflect.FieldDescriptor) protoreflect.Value {
+	switch fd.FullName() {
+	case "types.QuerySolVaultNonceRequest.vault_pub_key":
+		return protoreflect.ValueOfString("")
+	case "types.QuerySolVaultNonceRequest.height":
+		return protoreflect.ValueOfString("")
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.QuerySolVaultNonceRequest"))
+		}
+		panic(fmt.Errorf("message types.QuerySolVaultNonceRequest does not contain field %s", fd.FullName()))
+	}
+}
+
+// WhichOneof reports which field within the oneof is populated,
+// returning nil if none are populated.
+// It panics if the oneof descriptor does not belong to this message.
+func (x *fastReflection_QuerySolVaultNonceRequest) WhichOneof(d protoreflect.OneofDescriptor) protoreflect.FieldDescriptor {
+	switch d.FullName() {
+	default:
+		panic(fmt.Errorf("%s is not a oneof field in types.QuerySolVaultNonceRequest", d.FullName()))
+	}
+	panic("unreachable")
+}
+
+// GetUnknown retrieves the entire list of unknown fields.
+// The caller may only mutate the contents of the RawFields
+// if the mutated bytes are stored back into the message with SetUnknown.
+func (x *fastReflection_QuerySolVaultNonceRequest) GetUnknown() protoreflect.RawFields {
+	return x.unknownFields
+}
+
+// SetUnknown stores an entire list of unknown fields.
+// The raw fields must be syntactically valid according to the wire format.
+// An implementation may panic if this is not the case.
+// Once stored, the caller must not mutate the content of the RawFields.
+// An empty RawFields may be passed to clear the fields.
+//
+// SetUnknown is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_QuerySolVaultNonceRequest) SetUnknown(fields protoreflect.RawFields) {
+	x.unknownFields = fields
+}
+
+// IsValid reports whether the message is valid.
+//
+// An invalid message is an empty, read-only value.
+//
+// An invalid message often corresponds to a nil pointer of the concrete
+// message type, but the details are implementation dependent.
+// Validity is not part of the protobuf data model, and may not
+// be preserved in marshaling or other operations.
+func (x *fastReflection_QuerySolVaultNonceRequest) IsValid() bool {
+	return x != nil
+}
+
+// ProtoMethods returns optional fastReflectionFeature-path implementations of various operations.
+// This method may return nil.
+//
+// The returned methods type is identical to
+// "google.golang.org/protobuf/runtime/protoiface".Methods.
+// Consult the protoiface package documentation for details.
+func (x *fastReflection_QuerySolVaultNonceRequest) ProtoMethods() *protoiface.Methods {
+	size := func(input protoiface.SizeInput) protoiface.SizeOutput {
+		x := input.Message.Interface().(*QuerySolVaultNonceRequest)
+		if x == nil {
+			return protoiface.SizeOutput{
+				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+				Size:              0,
+			}
+		}
+		options := runtime.SizeInputToOptions(input)
+		_ = options
+		var n int
+		var l int
+		_ = l
+		l = len(x.VaultPubKey)
+		if l > 0 {
+			n += 1 + l + runtime.Sov(uint64(l))
+		}
+		l = len(x.Height)
+		if l > 0 {
+			n += 1 + l + runtime.Sov(uint64(l))
+		}
+		if x.unknownFields != nil {
+			n += len(x.unknownFields)
+		}
+		return protoiface.SizeOutput{
+			NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+			Size:              n,
+		}
+	}
+
+	marshal := func(input protoiface.MarshalInput) (protoiface.MarshalOutput, error) {
+		x := input.Message.Interface().(*QuerySolVaultNonceRequest)
+		if x == nil {
+			return protoiface.MarshalOutput{
+				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+				Buf:               input.Buf,
+			}, nil
+		}
+		options := runtime.MarshalInputToOptions(input)
+		_ = options
+		size := options.Size(x)
+		dAtA := make([]byte, size)
+		i := len(dAtA)
+		_ = i
+		var l int
+		_ = l
+		if x.unknownFields != nil {
+			i -= len(x.unknownFields)
+			copy(dAtA[i:], x.unknownFields)
+		}
+		if len(x.Height) > 0 {
+			i -= len(x.Height)
+			copy(dAtA[i:], x.Height)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.Height)))
+			i--
+			dAtA[i] = 0x12
+		}
+		if len(x.VaultPubKey) > 0 {
+			i -= len(x.VaultPubKey)
+			copy(dAtA[i:], x.VaultPubKey)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.VaultPubKey)))
+			i--
+			dAtA[i] = 0xa
+		}
+		if input.Buf != nil {
+			input.Buf = append(input.Buf, dAtA...)
+		} else {
+			input.Buf = dAtA
+		}
+		return protoiface.MarshalOutput{
+			NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+			Buf:               input.Buf,
+		}, nil
+	}
+	unmarshal := func(input protoiface.UnmarshalInput) (protoiface.UnmarshalOutput, error) {
+		x := input.Message.Interface().(*QuerySolVaultNonceRequest)
+		if x == nil {
+			return protoiface.UnmarshalOutput{
+				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+				Flags:             input.Flags,
+			}, nil
+		}
+		options := runtime.UnmarshalInputToOptions(input)
+		_ = options
+		dAtA := input.Buf
+		l := len(dAtA)
+		iNdEx := 0
+		for iNdEx < l {
+			preIndex := iNdEx
+			var wire uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				wire |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			fieldNum := int32(wire >> 3)
+			wireType := int(wire & 0x7)
+			if wireType == 4 {
+				return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: QuerySolVaultNonceRequest: wiretype end group for non-group")
+			}
+			if fieldNum <= 0 {
+				return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: QuerySolVaultNonceRequest: illegal tag %d (wire type %d)", fieldNum, wire)
+			}
+			switch fieldNum {
+			case 1:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field VaultPubKey", wireType)
+				}
+				var stringLen uint64
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					stringLen |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				intStringLen := int(stringLen)
+				if intStringLen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + intStringLen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.VaultPubKey = string(dAtA[iNdEx:postIndex])
+				iNdEx = postIndex
+			case 2:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field Height", wireType)
+				}
+				var stringLen uint64
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					stringLen |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				intStringLen := int(stringLen)
+				if intStringLen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + intStringLen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.Height = string(dAtA[iNdEx:postIndex])
+				iNdEx = postIndex
+			default:
+				iNdEx = preIndex
+				skippy, err := runtime.Skip(dAtA[iNdEx:])
+				if err != nil {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, err
+				}
+				if (skippy < 0) || (iNdEx+skippy) < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if (iNdEx + skippy) > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				if !options.DiscardUnknown {
+					x.unknownFields = append(x.unknownFields, dAtA[iNdEx:iNdEx+skippy]...)
+				}
+				iNdEx += skippy
+			}
+		}
+
+		if iNdEx > l {
+			return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+		}
+		return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, nil
+	}
+	return &protoiface.Methods{
+		NoUnkeyedLiterals: struct{}{},
+		Flags:             protoiface.SupportMarshalDeterministic | protoiface.SupportUnmarshalDiscardUnknown,
+		Size:              size,
+		Marshal:           marshal,
+		Unmarshal:         unmarshal,
+		Merge:             nil,
+		CheckInitialized:  nil,
+	}
+}
+
+var (
+	md_QuerySolVaultNonceResponse                protoreflect.MessageDescriptor
+	fd_QuerySolVaultNonceResponse_nonce_account  protoreflect.FieldDescriptor
+	fd_QuerySolVaultNonceResponse_nonce          protoreflect.FieldDescriptor
+	fd_QuerySolVaultNonceResponse_slot           protoreflect.FieldDescriptor
+	fd_QuerySolVaultNonceResponse_updated_height protoreflect.FieldDescriptor
+	fd_QuerySolVaultNonceResponse_set_by_tx      protoreflect.FieldDescriptor
+)
+
+func init() {
+	file_types_query_vault_proto_init()
+	md_QuerySolVaultNonceResponse = File_types_query_vault_proto.Messages().ByName("QuerySolVaultNonceResponse")
+	fd_QuerySolVaultNonceResponse_nonce_account = md_QuerySolVaultNonceResponse.Fields().ByName("nonce_account")
+	fd_QuerySolVaultNonceResponse_nonce = md_QuerySolVaultNonceResponse.Fields().ByName("nonce")
+	fd_QuerySolVaultNonceResponse_slot = md_QuerySolVaultNonceResponse.Fields().ByName("slot")
+	fd_QuerySolVaultNonceResponse_updated_height = md_QuerySolVaultNonceResponse.Fields().ByName("updated_height")
+	fd_QuerySolVaultNonceResponse_set_by_tx = md_QuerySolVaultNonceResponse.Fields().ByName("set_by_tx")
+}
+
+var _ protoreflect.Message = (*fastReflection_QuerySolVaultNonceResponse)(nil)
+
+type fastReflection_QuerySolVaultNonceResponse QuerySolVaultNonceResponse
+
+func (x *QuerySolVaultNonceResponse) ProtoReflect() protoreflect.Message {
+	return (*fastReflection_QuerySolVaultNonceResponse)(x)
+}
+
+func (x *QuerySolVaultNonceResponse) slowProtoReflect() protoreflect.Message {
+	mi := &file_types_query_vault_proto_msgTypes[12]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+var _fastReflection_QuerySolVaultNonceResponse_messageType fastReflection_QuerySolVaultNonceResponse_messageType
+var _ protoreflect.MessageType = fastReflection_QuerySolVaultNonceResponse_messageType{}
+
+type fastReflection_QuerySolVaultNonceResponse_messageType struct{}
+
+func (x fastReflection_QuerySolVaultNonceResponse_messageType) Zero() protoreflect.Message {
+	return (*fastReflection_QuerySolVaultNonceResponse)(nil)
+}
+func (x fastReflection_QuerySolVaultNonceResponse_messageType) New() protoreflect.Message {
+	return new(fastReflection_QuerySolVaultNonceResponse)
+}
+func (x fastReflection_QuerySolVaultNonceResponse_messageType) Descriptor() protoreflect.MessageDescriptor {
+	return md_QuerySolVaultNonceResponse
+}
+
+// Descriptor returns message descriptor, which contains only the protobuf
+// type information for the message.
+func (x *fastReflection_QuerySolVaultNonceResponse) Descriptor() protoreflect.MessageDescriptor {
+	return md_QuerySolVaultNonceResponse
+}
+
+// Type returns the message type, which encapsulates both Go and protobuf
+// type information. If the Go type information is not needed,
+// it is recommended that the message descriptor be used instead.
+func (x *fastReflection_QuerySolVaultNonceResponse) Type() protoreflect.MessageType {
+	return _fastReflection_QuerySolVaultNonceResponse_messageType
+}
+
+// New returns a newly allocated and mutable empty message.
+func (x *fastReflection_QuerySolVaultNonceResponse) New() protoreflect.Message {
+	return new(fastReflection_QuerySolVaultNonceResponse)
+}
+
+// Interface unwraps the message reflection interface and
+// returns the underlying ProtoMessage interface.
+func (x *fastReflection_QuerySolVaultNonceResponse) Interface() protoreflect.ProtoMessage {
+	return (*QuerySolVaultNonceResponse)(x)
+}
+
+// Range iterates over every populated field in an undefined order,
+// calling f for each field descriptor and value encountered.
+// Range returns immediately if f returns false.
+// While iterating, mutating operations may only be performed
+// on the current field descriptor.
+func (x *fastReflection_QuerySolVaultNonceResponse) Range(f func(protoreflect.FieldDescriptor, protoreflect.Value) bool) {
+	if x.NonceAccount != "" {
+		value := protoreflect.ValueOfString(x.NonceAccount)
+		if !f(fd_QuerySolVaultNonceResponse_nonce_account, value) {
+			return
+		}
+	}
+	if x.Nonce != "" {
+		value := protoreflect.ValueOfString(x.Nonce)
+		if !f(fd_QuerySolVaultNonceResponse_nonce, value) {
+			return
+		}
+	}
+	if x.Slot != int64(0) {
+		value := protoreflect.ValueOfInt64(x.Slot)
+		if !f(fd_QuerySolVaultNonceResponse_slot, value) {
+			return
+		}
+	}
+	if x.UpdatedHeight != int64(0) {
+		value := protoreflect.ValueOfInt64(x.UpdatedHeight)
+		if !f(fd_QuerySolVaultNonceResponse_updated_height, value) {
+			return
+		}
+	}
+	if x.SetByTx != "" {
+		value := protoreflect.ValueOfString(x.SetByTx)
+		if !f(fd_QuerySolVaultNonceResponse_set_by_tx, value) {
+			return
+		}
+	}
+}
+
+// Has reports whether a field is populated.
+//
+// Some fields have the property of nullability where it is possible to
+// distinguish between the default value of a field and whether the field
+// was explicitly populated with the default value. Singular message fields,
+// member fields of a oneof, and proto2 scalar fields are nullable. Such
+// fields are populated only if explicitly set.
+//
+// In other cases (aside from the nullable cases above),
+// a proto3 scalar field is populated if it contains a non-zero value, and
+// a repeated field is populated if it is non-empty.
+func (x *fastReflection_QuerySolVaultNonceResponse) Has(fd protoreflect.FieldDescriptor) bool {
+	switch fd.FullName() {
+	case "types.QuerySolVaultNonceResponse.nonce_account":
+		return x.NonceAccount != ""
+	case "types.QuerySolVaultNonceResponse.nonce":
+		return x.Nonce != ""
+	case "types.QuerySolVaultNonceResponse.slot":
+		return x.Slot != int64(0)
+	case "types.QuerySolVaultNonceResponse.updated_height":
+		return x.UpdatedHeight != int64(0)
+	case "types.QuerySolVaultNonceResponse.set_by_tx":
+		return x.SetByTx != ""
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.QuerySolVaultNonceResponse"))
+		}
+		panic(fmt.Errorf("message types.QuerySolVaultNonceResponse does not contain field %s", fd.FullName()))
+	}
+}
+
+// Clear clears the field such that a subsequent Has call reports false.
+//
+// Clearing an extension field clears both the extension type and value
+// associated with the given field number.
+//
+// Clear is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_QuerySolVaultNonceResponse) Clear(fd protoreflect.FieldDescriptor) {
+	switch fd.FullName() {
+	case "types.QuerySolVaultNonceResponse.nonce_account":
+		x.NonceAccount = ""
+	case "types.QuerySolVaultNonceResponse.nonce":
+		x.Nonce = ""
+	case "types.QuerySolVaultNonceResponse.slot":
+		x.Slot = int64(0)
+	case "types.QuerySolVaultNonceResponse.updated_height":
+		x.UpdatedHeight = int64(0)
+	case "types.QuerySolVaultNonceResponse.set_by_tx":
+		x.SetByTx = ""
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.QuerySolVaultNonceResponse"))
+		}
+		panic(fmt.Errorf("message types.QuerySolVaultNonceResponse does not contain field %s", fd.FullName()))
+	}
+}
+
+// Get retrieves the value for a field.
+//
+// For unpopulated scalars, it returns the default value, where
+// the default value of a bytes scalar is guaranteed to be a copy.
+// For unpopulated composite types, it returns an empty, read-only view
+// of the value; to obtain a mutable reference, use Mutable.
+func (x *fastReflection_QuerySolVaultNonceResponse) Get(descriptor protoreflect.FieldDescriptor) protoreflect.Value {
+	switch descriptor.FullName() {
+	case "types.QuerySolVaultNonceResponse.nonce_account":
+		value := x.NonceAccount
+		return protoreflect.ValueOfString(value)
+	case "types.QuerySolVaultNonceResponse.nonce":
+		value := x.Nonce
+		return protoreflect.ValueOfString(value)
+	case "types.QuerySolVaultNonceResponse.slot":
+		value := x.Slot
+		return protoreflect.ValueOfInt64(value)
+	case "types.QuerySolVaultNonceResponse.updated_height":
+		value := x.UpdatedHeight
+		return protoreflect.ValueOfInt64(value)
+	case "types.QuerySolVaultNonceResponse.set_by_tx":
+		value := x.SetByTx
+		return protoreflect.ValueOfString(value)
+	default:
+		if descriptor.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.QuerySolVaultNonceResponse"))
+		}
+		panic(fmt.Errorf("message types.QuerySolVaultNonceResponse does not contain field %s", descriptor.FullName()))
+	}
+}
+
+// Set stores the value for a field.
+//
+// For a field belonging to a oneof, it implicitly clears any other field
+// that may be currently set within the same oneof.
+// For extension fields, it implicitly stores the provided ExtensionType.
+// When setting a composite type, it is unspecified whether the stored value
+// aliases the source's memory in any way. If the composite value is an
+// empty, read-only value, then it panics.
+//
+// Set is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_QuerySolVaultNonceResponse) Set(fd protoreflect.FieldDescriptor, value protoreflect.Value) {
+	switch fd.FullName() {
+	case "types.QuerySolVaultNonceResponse.nonce_account":
+		x.NonceAccount = value.Interface().(string)
+	case "types.QuerySolVaultNonceResponse.nonce":
+		x.Nonce = value.Interface().(string)
+	case "types.QuerySolVaultNonceResponse.slot":
+		x.Slot = value.Int()
+	case "types.QuerySolVaultNonceResponse.updated_height":
+		x.UpdatedHeight = value.Int()
+	case "types.QuerySolVaultNonceResponse.set_by_tx":
+		x.SetByTx = value.Interface().(string)
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.QuerySolVaultNonceResponse"))
+		}
+		panic(fmt.Errorf("message types.QuerySolVaultNonceResponse does not contain field %s", fd.FullName()))
+	}
+}
+
+// Mutable returns a mutable reference to a composite type.
+//
+// If the field is unpopulated, it may allocate a composite value.
+// For a field belonging to a oneof, it implicitly clears any other field
+// that may be currently set within the same oneof.
+// For extension fields, it implicitly stores the provided ExtensionType
+// if not already stored.
+// It panics if the field does not contain a composite type.
+//
+// Mutable is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_QuerySolVaultNonceResponse) Mutable(fd protoreflect.FieldDescriptor) protoreflect.Value {
+	switch fd.FullName() {
+	case "types.QuerySolVaultNonceResponse.nonce_account":
+		panic(fmt.Errorf("field nonce_account of message types.QuerySolVaultNonceResponse is not mutable"))
+	case "types.QuerySolVaultNonceResponse.nonce":
+		panic(fmt.Errorf("field nonce of message types.QuerySolVaultNonceResponse is not mutable"))
+	case "types.QuerySolVaultNonceResponse.slot":
+		panic(fmt.Errorf("field slot of message types.QuerySolVaultNonceResponse is not mutable"))
+	case "types.QuerySolVaultNonceResponse.updated_height":
+		panic(fmt.Errorf("field updated_height of message types.QuerySolVaultNonceResponse is not mutable"))
+	case "types.QuerySolVaultNonceResponse.set_by_tx":
+		panic(fmt.Errorf("field set_by_tx of message types.QuerySolVaultNonceResponse is not mutable"))
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.QuerySolVaultNonceResponse"))
+		}
+		panic(fmt.Errorf("message types.QuerySolVaultNonceResponse does not contain field %s", fd.FullName()))
+	}
+}
+
+// NewField returns a new value that is assignable to the field
+// for the given descriptor. For scalars, this returns the default value.
+// For lists, maps, and messages, this returns a new, empty, mutable value.
+func (x *fastReflection_QuerySolVaultNonceResponse) NewField(fd protoreflect.FieldDescriptor) protoreflect.Value {
+	switch fd.FullName() {
+	case "types.QuerySolVaultNonceResponse.nonce_account":
+		return protoreflect.ValueOfString("")
+	case "types.QuerySolVaultNonceResponse.nonce":
+		return protoreflect.ValueOfString("")
+	case "types.QuerySolVaultNonceResponse.slot":
+		return protoreflect.ValueOfInt64(int64(0))
+	case "types.QuerySolVaultNonceResponse.updated_height":
+		return protoreflect.ValueOfInt64(int64(0))
+	case "types.QuerySolVaultNonceResponse.set_by_tx":
+		return protoreflect.ValueOfString("")
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.QuerySolVaultNonceResponse"))
+		}
+		panic(fmt.Errorf("message types.QuerySolVaultNonceResponse does not contain field %s", fd.FullName()))
+	}
+}
+
+// WhichOneof reports which field within the oneof is populated,
+// returning nil if none are populated.
+// It panics if the oneof descriptor does not belong to this message.
+func (x *fastReflection_QuerySolVaultNonceResponse) WhichOneof(d protoreflect.OneofDescriptor) protoreflect.FieldDescriptor {
+	switch d.FullName() {
+	default:
+		panic(fmt.Errorf("%s is not a oneof field in types.QuerySolVaultNonceResponse", d.FullName()))
+	}
+	panic("unreachable")
+}
+
+// GetUnknown retrieves the entire list of unknown fields.
+// The caller may only mutate the contents of the RawFields
+// if the mutated bytes are stored back into the message with SetUnknown.
+func (x *fastReflection_QuerySolVaultNonceResponse) GetUnknown() protoreflect.RawFields {
+	return x.unknownFields
+}
+
+// SetUnknown stores an entire list of unknown fields.
+// The raw fields must be syntactically valid according to the wire format.
+// An implementation may panic if this is not the case.
+// Once stored, the caller must not mutate the content of the RawFields.
+// An empty RawFields may be passed to clear the fields.
+//
+// SetUnknown is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_QuerySolVaultNonceResponse) SetUnknown(fields protoreflect.RawFields) {
+	x.unknownFields = fields
+}
+
+// IsValid reports whether the message is valid.
+//
+// An invalid message is an empty, read-only value.
+//
+// An invalid message often corresponds to a nil pointer of the concrete
+// message type, but the details are implementation dependent.
+// Validity is not part of the protobuf data model, and may not
+// be preserved in marshaling or other operations.
+func (x *fastReflection_QuerySolVaultNonceResponse) IsValid() bool {
+	return x != nil
+}
+
+// ProtoMethods returns optional fastReflectionFeature-path implementations of various operations.
+// This method may return nil.
+//
+// The returned methods type is identical to
+// "google.golang.org/protobuf/runtime/protoiface".Methods.
+// Consult the protoiface package documentation for details.
+func (x *fastReflection_QuerySolVaultNonceResponse) ProtoMethods() *protoiface.Methods {
+	size := func(input protoiface.SizeInput) protoiface.SizeOutput {
+		x := input.Message.Interface().(*QuerySolVaultNonceResponse)
+		if x == nil {
+			return protoiface.SizeOutput{
+				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+				Size:              0,
+			}
+		}
+		options := runtime.SizeInputToOptions(input)
+		_ = options
+		var n int
+		var l int
+		_ = l
+		l = len(x.NonceAccount)
+		if l > 0 {
+			n += 1 + l + runtime.Sov(uint64(l))
+		}
+		l = len(x.Nonce)
+		if l > 0 {
+			n += 1 + l + runtime.Sov(uint64(l))
+		}
+		if x.Slot != 0 {
+			n += 1 + runtime.Sov(uint64(x.Slot))
+		}
+		if x.UpdatedHeight != 0 {
+			n += 1 + runtime.Sov(uint64(x.UpdatedHeight))
+		}
+		l = len(x.SetByTx)
+		if l > 0 {
+			n += 1 + l + runtime.Sov(uint64(l))
+		}
+		if x.unknownFields != nil {
+			n += len(x.unknownFields)
+		}
+		return protoiface.SizeOutput{
+			NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+			Size:              n,
+		}
+	}
+
+	marshal := func(input protoiface.MarshalInput) (protoiface.MarshalOutput, error) {
+		x := input.Message.Interface().(*QuerySolVaultNonceResponse)
+		if x == nil {
+			return protoiface.MarshalOutput{
+				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+				Buf:               input.Buf,
+			}, nil
+		}
+		options := runtime.MarshalInputToOptions(input)
+		_ = options
+		size := options.Size(x)
+		dAtA := make([]byte, size)
+		i := len(dAtA)
+		_ = i
+		var l int
+		_ = l
+		if x.unknownFields != nil {
+			i -= len(x.unknownFields)
+			copy(dAtA[i:], x.unknownFields)
+		}
+		if len(x.SetByTx) > 0 {
+			i -= len(x.SetByTx)
+			copy(dAtA[i:], x.SetByTx)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.SetByTx)))
+			i--
+			dAtA[i] = 0x2a
+		}
+		if x.UpdatedHeight != 0 {
+			i = runtime.EncodeVarint(dAtA, i, uint64(x.UpdatedHeight))
+			i--
+			dAtA[i] = 0x20
+		}
+		if x.Slot != 0 {
+			i = runtime.EncodeVarint(dAtA, i, uint64(x.Slot))
+			i--
+			dAtA[i] = 0x18
+		}
+		if len(x.Nonce) > 0 {
+			i -= len(x.Nonce)
+			copy(dAtA[i:], x.Nonce)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.Nonce)))
+			i--
+			dAtA[i] = 0x12
+		}
+		if len(x.NonceAccount) > 0 {
+			i -= len(x.NonceAccount)
+			copy(dAtA[i:], x.NonceAccount)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.NonceAccount)))
+			i--
+			dAtA[i] = 0xa
+		}
+		if input.Buf != nil {
+			input.Buf = append(input.Buf, dAtA...)
+		} else {
+			input.Buf = dAtA
+		}
+		return protoiface.MarshalOutput{
+			NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+			Buf:               input.Buf,
+		}, nil
+	}
+	unmarshal := func(input protoiface.UnmarshalInput) (protoiface.UnmarshalOutput, error) {
+		x := input.Message.Interface().(*QuerySolVaultNonceResponse)
+		if x == nil {
+			return protoiface.UnmarshalOutput{
+				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+				Flags:             input.Flags,
+			}, nil
+		}
+		options := runtime.UnmarshalInputToOptions(input)
+		_ = options
+		dAtA := input.Buf
+		l := len(dAtA)
+		iNdEx := 0
+		for iNdEx < l {
+			preIndex := iNdEx
+			var wire uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				wire |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			fieldNum := int32(wire >> 3)
+			wireType := int(wire & 0x7)
+			if wireType == 4 {
+				return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: QuerySolVaultNonceResponse: wiretype end group for non-group")
+			}
+			if fieldNum <= 0 {
+				return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: QuerySolVaultNonceResponse: illegal tag %d (wire type %d)", fieldNum, wire)
+			}
+			switch fieldNum {
+			case 1:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field NonceAccount", wireType)
+				}
+				var stringLen uint64
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					stringLen |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				intStringLen := int(stringLen)
+				if intStringLen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + intStringLen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.NonceAccount = string(dAtA[iNdEx:postIndex])
+				iNdEx = postIndex
+			case 2:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field Nonce", wireType)
+				}
+				var stringLen uint64
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					stringLen |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				intStringLen := int(stringLen)
+				if intStringLen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + intStringLen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.Nonce = string(dAtA[iNdEx:postIndex])
+				iNdEx = postIndex
+			case 3:
+				if wireType != 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field Slot", wireType)
+				}
+				x.Slot = 0
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					x.Slot |= int64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+			case 4:
+				if wireType != 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field UpdatedHeight", wireType)
+				}
+				x.UpdatedHeight = 0
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					x.UpdatedHeight |= int64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+			case 5:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field SetByTx", wireType)
+				}
+				var stringLen uint64
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					stringLen |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				intStringLen := int(stringLen)
+				if intStringLen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + intStringLen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.SetByTx = string(dAtA[iNdEx:postIndex])
+				iNdEx = postIndex
+			default:
+				iNdEx = preIndex
+				skippy, err := runtime.Skip(dAtA[iNdEx:])
+				if err != nil {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, err
+				}
+				if (skippy < 0) || (iNdEx+skippy) < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if (iNdEx + skippy) > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				if !options.DiscardUnknown {
+					x.unknownFields = append(x.unknownFields, dAtA[iNdEx:iNdEx+skippy]...)
+				}
+				iNdEx += skippy
+			}
+		}
+
+		if iNdEx > l {
+			return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+		}
+		return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, nil
+	}
+	return &protoiface.Methods{
+		NoUnkeyedLiterals: struct{}{},
+		Flags:             protoiface.SupportMarshalDeterministic | protoiface.SupportUnmarshalDiscardUnknown,
+		Size:              size,
+		Marshal:           marshal,
+		Unmarshal:         unmarshal,
+		Merge:             nil,
+		CheckInitialized:  nil,
+	}
+}
+
+var (
 	md_VaultRouter        protoreflect.MessageDescriptor
 	fd_VaultRouter_chain  protoreflect.FieldDescriptor
 	fd_VaultRouter_router protoreflect.FieldDescriptor
@@ -7769,7 +8897,7 @@ func (x *VaultRouter) ProtoReflect() protoreflect.Message {
 }
 
 func (x *VaultRouter) slowProtoReflect() protoreflect.Message {
-	mi := &file_types_query_vault_proto_msgTypes[11]
+	mi := &file_types_query_vault_proto_msgTypes[13]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8253,7 +9381,7 @@ func (x *VaultAddress) ProtoReflect() protoreflect.Message {
 }
 
 func (x *VaultAddress) slowProtoReflect() protoreflect.Message {
-	mi := &file_types_query_vault_proto_msgTypes[12]
+	mi := &file_types_query_vault_proto_msgTypes[14]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8735,7 +9863,7 @@ func (x *QueryVaultSolvencyRequest) ProtoReflect() protoreflect.Message {
 }
 
 func (x *QueryVaultSolvencyRequest) slowProtoReflect() protoreflect.Message {
-	mi := &file_types_query_vault_proto_msgTypes[13]
+	mi := &file_types_query_vault_proto_msgTypes[15]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -9157,7 +10285,7 @@ func (x *VaultSolvencyAsset) ProtoReflect() protoreflect.Message {
 }
 
 func (x *VaultSolvencyAsset) slowProtoReflect() protoreflect.Message {
-	mi := &file_types_query_vault_proto_msgTypes[14]
+	mi := &file_types_query_vault_proto_msgTypes[16]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -9705,7 +10833,7 @@ func (x *QueryVaultSolvencyResponse) ProtoReflect() protoreflect.Message {
 }
 
 func (x *QueryVaultSolvencyResponse) slowProtoReflect() protoreflect.Message {
-	mi := &file_types_query_vault_proto_msgTypes[15]
+	mi := &file_types_query_vault_proto_msgTypes[17]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -10783,6 +11911,118 @@ func (x *QueryXMRSpentOutputRefsResponse) GetSpentOutputRefs() []*common.OutputR
 	return nil
 }
 
+type QuerySolVaultNonceRequest struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	VaultPubKey string `protobuf:"bytes,1,opt,name=vault_pub_key,json=vaultPubKey,proto3" json:"vault_pub_key,omitempty"`
+	Height      string `protobuf:"bytes,2,opt,name=height,proto3" json:"height,omitempty"`
+}
+
+func (x *QuerySolVaultNonceRequest) Reset() {
+	*x = QuerySolVaultNonceRequest{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_types_query_vault_proto_msgTypes[11]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *QuerySolVaultNonceRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*QuerySolVaultNonceRequest) ProtoMessage() {}
+
+// Deprecated: Use QuerySolVaultNonceRequest.ProtoReflect.Descriptor instead.
+func (*QuerySolVaultNonceRequest) Descriptor() ([]byte, []int) {
+	return file_types_query_vault_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *QuerySolVaultNonceRequest) GetVaultPubKey() string {
+	if x != nil {
+		return x.VaultPubKey
+	}
+	return ""
+}
+
+func (x *QuerySolVaultNonceRequest) GetHeight() string {
+	if x != nil {
+		return x.Height
+	}
+	return ""
+}
+
+// QuerySolVaultNonceResponse is empty (all fields zero) when the vault has no
+// committed durable nonce.
+type QuerySolVaultNonceResponse struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	NonceAccount  string `protobuf:"bytes,1,opt,name=nonce_account,json=nonceAccount,proto3" json:"nonce_account,omitempty"`
+	Nonce         string `protobuf:"bytes,2,opt,name=nonce,proto3" json:"nonce,omitempty"`
+	Slot          int64  `protobuf:"varint,3,opt,name=slot,proto3" json:"slot,omitempty"`
+	UpdatedHeight int64  `protobuf:"varint,4,opt,name=updated_height,json=updatedHeight,proto3" json:"updated_height,omitempty"`
+	SetByTx       string `protobuf:"bytes,5,opt,name=set_by_tx,json=setByTx,proto3" json:"set_by_tx,omitempty"`
+}
+
+func (x *QuerySolVaultNonceResponse) Reset() {
+	*x = QuerySolVaultNonceResponse{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_types_query_vault_proto_msgTypes[12]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *QuerySolVaultNonceResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*QuerySolVaultNonceResponse) ProtoMessage() {}
+
+// Deprecated: Use QuerySolVaultNonceResponse.ProtoReflect.Descriptor instead.
+func (*QuerySolVaultNonceResponse) Descriptor() ([]byte, []int) {
+	return file_types_query_vault_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *QuerySolVaultNonceResponse) GetNonceAccount() string {
+	if x != nil {
+		return x.NonceAccount
+	}
+	return ""
+}
+
+func (x *QuerySolVaultNonceResponse) GetNonce() string {
+	if x != nil {
+		return x.Nonce
+	}
+	return ""
+}
+
+func (x *QuerySolVaultNonceResponse) GetSlot() int64 {
+	if x != nil {
+		return x.Slot
+	}
+	return 0
+}
+
+func (x *QuerySolVaultNonceResponse) GetUpdatedHeight() int64 {
+	if x != nil {
+		return x.UpdatedHeight
+	}
+	return 0
+}
+
+func (x *QuerySolVaultNonceResponse) GetSetByTx() string {
+	if x != nil {
+		return x.SetByTx
+	}
+	return ""
+}
+
 type VaultRouter struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
@@ -10795,7 +12035,7 @@ type VaultRouter struct {
 func (x *VaultRouter) Reset() {
 	*x = VaultRouter{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_types_query_vault_proto_msgTypes[11]
+		mi := &file_types_query_vault_proto_msgTypes[13]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -10809,7 +12049,7 @@ func (*VaultRouter) ProtoMessage() {}
 
 // Deprecated: Use VaultRouter.ProtoReflect.Descriptor instead.
 func (*VaultRouter) Descriptor() ([]byte, []int) {
-	return file_types_query_vault_proto_rawDescGZIP(), []int{11}
+	return file_types_query_vault_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *VaultRouter) GetChain() string {
@@ -10838,7 +12078,7 @@ type VaultAddress struct {
 func (x *VaultAddress) Reset() {
 	*x = VaultAddress{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_types_query_vault_proto_msgTypes[12]
+		mi := &file_types_query_vault_proto_msgTypes[14]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -10852,7 +12092,7 @@ func (*VaultAddress) ProtoMessage() {}
 
 // Deprecated: Use VaultAddress.ProtoReflect.Descriptor instead.
 func (*VaultAddress) Descriptor() ([]byte, []int) {
-	return file_types_query_vault_proto_rawDescGZIP(), []int{12}
+	return file_types_query_vault_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *VaultAddress) GetChain() string {
@@ -10880,7 +12120,7 @@ type QueryVaultSolvencyRequest struct {
 func (x *QueryVaultSolvencyRequest) Reset() {
 	*x = QueryVaultSolvencyRequest{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_types_query_vault_proto_msgTypes[13]
+		mi := &file_types_query_vault_proto_msgTypes[15]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -10894,7 +12134,7 @@ func (*QueryVaultSolvencyRequest) ProtoMessage() {}
 
 // Deprecated: Use QueryVaultSolvencyRequest.ProtoReflect.Descriptor instead.
 func (*QueryVaultSolvencyRequest) Descriptor() ([]byte, []int) {
-	return file_types_query_vault_proto_rawDescGZIP(), []int{13}
+	return file_types_query_vault_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *QueryVaultSolvencyRequest) GetHeight() string {
@@ -10916,7 +12156,7 @@ type VaultSolvencyAsset struct {
 func (x *VaultSolvencyAsset) Reset() {
 	*x = VaultSolvencyAsset{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_types_query_vault_proto_msgTypes[14]
+		mi := &file_types_query_vault_proto_msgTypes[16]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -10930,7 +12170,7 @@ func (*VaultSolvencyAsset) ProtoMessage() {}
 
 // Deprecated: Use VaultSolvencyAsset.ProtoReflect.Descriptor instead.
 func (*VaultSolvencyAsset) Descriptor() ([]byte, []int) {
-	return file_types_query_vault_proto_rawDescGZIP(), []int{14}
+	return file_types_query_vault_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *VaultSolvencyAsset) GetAsset() *common.Asset {
@@ -10958,7 +12198,7 @@ type QueryVaultSolvencyResponse struct {
 func (x *QueryVaultSolvencyResponse) Reset() {
 	*x = QueryVaultSolvencyResponse{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_types_query_vault_proto_msgTypes[15]
+		mi := &file_types_query_vault_proto_msgTypes[17]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -10972,7 +12212,7 @@ func (*QueryVaultSolvencyResponse) ProtoMessage() {}
 
 // Deprecated: Use QueryVaultSolvencyResponse.ProtoReflect.Descriptor instead.
 func (*QueryVaultSolvencyResponse) Descriptor() ([]byte, []int) {
-	return file_types_query_vault_proto_rawDescGZIP(), []int{15}
+	return file_types_query_vault_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *QueryVaultSolvencyResponse) GetAssets() []*VaultSolvencyAsset {
@@ -11125,46 +12365,67 @@ var file_types_query_vault_proto_rawDesc = []byte{
 	0x75, 0x74, 0x70, 0x75, 0x74, 0x5f, 0x72, 0x65, 0x66, 0x73, 0x18, 0x01, 0x20, 0x03, 0x28, 0x0b,
 	0x32, 0x11, 0x2e, 0x63, 0x6f, 0x6d, 0x6d, 0x6f, 0x6e, 0x2e, 0x4f, 0x75, 0x74, 0x70, 0x75, 0x74,
 	0x52, 0x65, 0x66, 0x52, 0x0f, 0x73, 0x70, 0x65, 0x6e, 0x74, 0x4f, 0x75, 0x74, 0x70, 0x75, 0x74,
-	0x52, 0x65, 0x66, 0x73, 0x22, 0x3b, 0x0a, 0x0b, 0x56, 0x61, 0x75, 0x6c, 0x74, 0x52, 0x6f, 0x75,
-	0x74, 0x65, 0x72, 0x12, 0x14, 0x0a, 0x05, 0x63, 0x68, 0x61, 0x69, 0x6e, 0x18, 0x01, 0x20, 0x01,
-	0x28, 0x09, 0x52, 0x05, 0x63, 0x68, 0x61, 0x69, 0x6e, 0x12, 0x16, 0x0a, 0x06, 0x72, 0x6f, 0x75,
-	0x74, 0x65, 0x72, 0x18, 0x02, 0x20, 0x01, 0x28, 0x09, 0x52, 0x06, 0x72, 0x6f, 0x75, 0x74, 0x65,
-	0x72, 0x22, 0x56, 0x0a, 0x0c, 0x56, 0x61, 0x75, 0x6c, 0x74, 0x41, 0x64, 0x64, 0x72, 0x65, 0x73,
-	0x73, 0x12, 0x1f, 0x0a, 0x05, 0x63, 0x68, 0x61, 0x69, 0x6e, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09,
-	0x42, 0x09, 0xea, 0xde, 0x1f, 0x05, 0x63, 0x68, 0x61, 0x69, 0x6e, 0x52, 0x05, 0x63, 0x68, 0x61,
-	0x69, 0x6e, 0x12, 0x25, 0x0a, 0x07, 0x61, 0x64, 0x64, 0x72, 0x65, 0x73, 0x73, 0x18, 0x02, 0x20,
-	0x01, 0x28, 0x09, 0x42, 0x0b, 0xea, 0xde, 0x1f, 0x07, 0x61, 0x64, 0x64, 0x72, 0x65, 0x73, 0x73,
-	0x52, 0x07, 0x61, 0x64, 0x64, 0x72, 0x65, 0x73, 0x73, 0x22, 0x33, 0x0a, 0x19, 0x51, 0x75, 0x65,
-	0x72, 0x79, 0x56, 0x61, 0x75, 0x6c, 0x74, 0x53, 0x6f, 0x6c, 0x76, 0x65, 0x6e, 0x63, 0x79, 0x52,
-	0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x12, 0x16, 0x0a, 0x06, 0x68, 0x65, 0x69, 0x67, 0x68, 0x74,
-	0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x06, 0x68, 0x65, 0x69, 0x67, 0x68, 0x74, 0x22, 0xba,
-	0x01, 0x0a, 0x12, 0x56, 0x61, 0x75, 0x6c, 0x74, 0x53, 0x6f, 0x6c, 0x76, 0x65, 0x6e, 0x63, 0x79,
-	0x41, 0x73, 0x73, 0x65, 0x74, 0x12, 0x63, 0x0a, 0x05, 0x61, 0x73, 0x73, 0x65, 0x74, 0x18, 0x01,
-	0x20, 0x01, 0x28, 0x0b, 0x32, 0x0d, 0x2e, 0x63, 0x6f, 0x6d, 0x6d, 0x6f, 0x6e, 0x2e, 0x41, 0x73,
-	0x73, 0x65, 0x74, 0x42, 0x3e, 0xc8, 0xde, 0x1f, 0x00, 0xda, 0xde, 0x1f, 0x2d, 0x67, 0x69, 0x74,
-	0x6c, 0x61, 0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x74, 0x68, 0x6f, 0x72, 0x63, 0x68, 0x61, 0x69,
-	0x6e, 0x2f, 0x74, 0x68, 0x6f, 0x72, 0x6e, 0x6f, 0x64, 0x65, 0x2f, 0x76, 0x33, 0x2f, 0x63, 0x6f,
-	0x6d, 0x6d, 0x6f, 0x6e, 0x2e, 0x41, 0x73, 0x73, 0x65, 0x74, 0xea, 0xde, 0x1f, 0x05, 0x61, 0x73,
-	0x73, 0x65, 0x74, 0x52, 0x05, 0x61, 0x73, 0x73, 0x65, 0x74, 0x12, 0x3f, 0x0a, 0x06, 0x61, 0x6d,
-	0x6f, 0x75, 0x6e, 0x74, 0x18, 0x02, 0x20, 0x01, 0x28, 0x09, 0x42, 0x27, 0xc8, 0xde, 0x1f, 0x00,
-	0xda, 0xde, 0x1f, 0x15, 0x63, 0x6f, 0x73, 0x6d, 0x6f, 0x73, 0x73, 0x64, 0x6b, 0x2e, 0x69, 0x6f,
-	0x2f, 0x6d, 0x61, 0x74, 0x68, 0x2e, 0x49, 0x6e, 0x74, 0xea, 0xde, 0x1f, 0x06, 0x61, 0x6d, 0x6f,
-	0x75, 0x6e, 0x74, 0x52, 0x06, 0x61, 0x6d, 0x6f, 0x75, 0x6e, 0x74, 0x22, 0x5b, 0x0a, 0x1a, 0x51,
-	0x75, 0x65, 0x72, 0x79, 0x56, 0x61, 0x75, 0x6c, 0x74, 0x53, 0x6f, 0x6c, 0x76, 0x65, 0x6e, 0x63,
-	0x79, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x12, 0x3d, 0x0a, 0x06, 0x61, 0x73, 0x73,
-	0x65, 0x74, 0x73, 0x18, 0x01, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x19, 0x2e, 0x74, 0x79, 0x70, 0x65,
-	0x73, 0x2e, 0x56, 0x61, 0x75, 0x6c, 0x74, 0x53, 0x6f, 0x6c, 0x76, 0x65, 0x6e, 0x63, 0x79, 0x41,
-	0x73, 0x73, 0x65, 0x74, 0x42, 0x0a, 0xea, 0xde, 0x1f, 0x06, 0x61, 0x73, 0x73, 0x65, 0x74, 0x73,
-	0x52, 0x06, 0x61, 0x73, 0x73, 0x65, 0x74, 0x73, 0x42, 0x80, 0x01, 0x0a, 0x09, 0x63, 0x6f, 0x6d,
-	0x2e, 0x74, 0x79, 0x70, 0x65, 0x73, 0x42, 0x0f, 0x51, 0x75, 0x65, 0x72, 0x79, 0x56, 0x61, 0x75,
-	0x6c, 0x74, 0x50, 0x72, 0x6f, 0x74, 0x6f, 0x50, 0x01, 0x5a, 0x2a, 0x67, 0x69, 0x74, 0x6c, 0x61,
-	0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x74, 0x68, 0x6f, 0x72, 0x63, 0x68, 0x61, 0x69, 0x6e, 0x2f,
-	0x74, 0x68, 0x6f, 0x72, 0x6e, 0x6f, 0x64, 0x65, 0x2f, 0x76, 0x33, 0x2f, 0x61, 0x70, 0x69, 0x2f,
-	0x74, 0x79, 0x70, 0x65, 0x73, 0xa2, 0x02, 0x03, 0x54, 0x58, 0x58, 0xaa, 0x02, 0x05, 0x54, 0x79,
-	0x70, 0x65, 0x73, 0xca, 0x02, 0x05, 0x54, 0x79, 0x70, 0x65, 0x73, 0xe2, 0x02, 0x11, 0x54, 0x79,
-	0x70, 0x65, 0x73, 0x5c, 0x47, 0x50, 0x42, 0x4d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0xea,
-	0x02, 0x05, 0x54, 0x79, 0x70, 0x65, 0x73, 0xc8, 0xe2, 0x1e, 0x01, 0x62, 0x06, 0x70, 0x72, 0x6f,
-	0x74, 0x6f, 0x33,
+	0x52, 0x65, 0x66, 0x73, 0x22, 0x57, 0x0a, 0x19, 0x51, 0x75, 0x65, 0x72, 0x79, 0x53, 0x6f, 0x6c,
+	0x56, 0x61, 0x75, 0x6c, 0x74, 0x4e, 0x6f, 0x6e, 0x63, 0x65, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73,
+	0x74, 0x12, 0x22, 0x0a, 0x0d, 0x76, 0x61, 0x75, 0x6c, 0x74, 0x5f, 0x70, 0x75, 0x62, 0x5f, 0x6b,
+	0x65, 0x79, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x0b, 0x76, 0x61, 0x75, 0x6c, 0x74, 0x50,
+	0x75, 0x62, 0x4b, 0x65, 0x79, 0x12, 0x16, 0x0a, 0x06, 0x68, 0x65, 0x69, 0x67, 0x68, 0x74, 0x18,
+	0x02, 0x20, 0x01, 0x28, 0x09, 0x52, 0x06, 0x68, 0x65, 0x69, 0x67, 0x68, 0x74, 0x22, 0xf9, 0x01,
+	0x0a, 0x1a, 0x51, 0x75, 0x65, 0x72, 0x79, 0x53, 0x6f, 0x6c, 0x56, 0x61, 0x75, 0x6c, 0x74, 0x4e,
+	0x6f, 0x6e, 0x63, 0x65, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x12, 0x36, 0x0a, 0x0d,
+	0x6e, 0x6f, 0x6e, 0x63, 0x65, 0x5f, 0x61, 0x63, 0x63, 0x6f, 0x75, 0x6e, 0x74, 0x18, 0x01, 0x20,
+	0x01, 0x28, 0x09, 0x42, 0x11, 0xea, 0xde, 0x1f, 0x0d, 0x6e, 0x6f, 0x6e, 0x63, 0x65, 0x5f, 0x61,
+	0x63, 0x63, 0x6f, 0x75, 0x6e, 0x74, 0x52, 0x0c, 0x6e, 0x6f, 0x6e, 0x63, 0x65, 0x41, 0x63, 0x63,
+	0x6f, 0x75, 0x6e, 0x74, 0x12, 0x1f, 0x0a, 0x05, 0x6e, 0x6f, 0x6e, 0x63, 0x65, 0x18, 0x02, 0x20,
+	0x01, 0x28, 0x09, 0x42, 0x09, 0xea, 0xde, 0x1f, 0x05, 0x6e, 0x6f, 0x6e, 0x63, 0x65, 0x52, 0x05,
+	0x6e, 0x6f, 0x6e, 0x63, 0x65, 0x12, 0x1c, 0x0a, 0x04, 0x73, 0x6c, 0x6f, 0x74, 0x18, 0x03, 0x20,
+	0x01, 0x28, 0x03, 0x42, 0x08, 0xea, 0xde, 0x1f, 0x04, 0x73, 0x6c, 0x6f, 0x74, 0x52, 0x04, 0x73,
+	0x6c, 0x6f, 0x74, 0x12, 0x39, 0x0a, 0x0e, 0x75, 0x70, 0x64, 0x61, 0x74, 0x65, 0x64, 0x5f, 0x68,
+	0x65, 0x69, 0x67, 0x68, 0x74, 0x18, 0x04, 0x20, 0x01, 0x28, 0x03, 0x42, 0x12, 0xea, 0xde, 0x1f,
+	0x0e, 0x75, 0x70, 0x64, 0x61, 0x74, 0x65, 0x64, 0x5f, 0x68, 0x65, 0x69, 0x67, 0x68, 0x74, 0x52,
+	0x0d, 0x75, 0x70, 0x64, 0x61, 0x74, 0x65, 0x64, 0x48, 0x65, 0x69, 0x67, 0x68, 0x74, 0x12, 0x29,
+	0x0a, 0x09, 0x73, 0x65, 0x74, 0x5f, 0x62, 0x79, 0x5f, 0x74, 0x78, 0x18, 0x05, 0x20, 0x01, 0x28,
+	0x09, 0x42, 0x0d, 0xea, 0xde, 0x1f, 0x09, 0x73, 0x65, 0x74, 0x5f, 0x62, 0x79, 0x5f, 0x74, 0x78,
+	0x52, 0x07, 0x73, 0x65, 0x74, 0x42, 0x79, 0x54, 0x78, 0x22, 0x3b, 0x0a, 0x0b, 0x56, 0x61, 0x75,
+	0x6c, 0x74, 0x52, 0x6f, 0x75, 0x74, 0x65, 0x72, 0x12, 0x14, 0x0a, 0x05, 0x63, 0x68, 0x61, 0x69,
+	0x6e, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x05, 0x63, 0x68, 0x61, 0x69, 0x6e, 0x12, 0x16,
+	0x0a, 0x06, 0x72, 0x6f, 0x75, 0x74, 0x65, 0x72, 0x18, 0x02, 0x20, 0x01, 0x28, 0x09, 0x52, 0x06,
+	0x72, 0x6f, 0x75, 0x74, 0x65, 0x72, 0x22, 0x56, 0x0a, 0x0c, 0x56, 0x61, 0x75, 0x6c, 0x74, 0x41,
+	0x64, 0x64, 0x72, 0x65, 0x73, 0x73, 0x12, 0x1f, 0x0a, 0x05, 0x63, 0x68, 0x61, 0x69, 0x6e, 0x18,
+	0x01, 0x20, 0x01, 0x28, 0x09, 0x42, 0x09, 0xea, 0xde, 0x1f, 0x05, 0x63, 0x68, 0x61, 0x69, 0x6e,
+	0x52, 0x05, 0x63, 0x68, 0x61, 0x69, 0x6e, 0x12, 0x25, 0x0a, 0x07, 0x61, 0x64, 0x64, 0x72, 0x65,
+	0x73, 0x73, 0x18, 0x02, 0x20, 0x01, 0x28, 0x09, 0x42, 0x0b, 0xea, 0xde, 0x1f, 0x07, 0x61, 0x64,
+	0x64, 0x72, 0x65, 0x73, 0x73, 0x52, 0x07, 0x61, 0x64, 0x64, 0x72, 0x65, 0x73, 0x73, 0x22, 0x33,
+	0x0a, 0x19, 0x51, 0x75, 0x65, 0x72, 0x79, 0x56, 0x61, 0x75, 0x6c, 0x74, 0x53, 0x6f, 0x6c, 0x76,
+	0x65, 0x6e, 0x63, 0x79, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x12, 0x16, 0x0a, 0x06, 0x68,
+	0x65, 0x69, 0x67, 0x68, 0x74, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x06, 0x68, 0x65, 0x69,
+	0x67, 0x68, 0x74, 0x22, 0xba, 0x01, 0x0a, 0x12, 0x56, 0x61, 0x75, 0x6c, 0x74, 0x53, 0x6f, 0x6c,
+	0x76, 0x65, 0x6e, 0x63, 0x79, 0x41, 0x73, 0x73, 0x65, 0x74, 0x12, 0x63, 0x0a, 0x05, 0x61, 0x73,
+	0x73, 0x65, 0x74, 0x18, 0x01, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x0d, 0x2e, 0x63, 0x6f, 0x6d, 0x6d,
+	0x6f, 0x6e, 0x2e, 0x41, 0x73, 0x73, 0x65, 0x74, 0x42, 0x3e, 0xc8, 0xde, 0x1f, 0x00, 0xda, 0xde,
+	0x1f, 0x2d, 0x67, 0x69, 0x74, 0x6c, 0x61, 0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x74, 0x68, 0x6f,
+	0x72, 0x63, 0x68, 0x61, 0x69, 0x6e, 0x2f, 0x74, 0x68, 0x6f, 0x72, 0x6e, 0x6f, 0x64, 0x65, 0x2f,
+	0x76, 0x33, 0x2f, 0x63, 0x6f, 0x6d, 0x6d, 0x6f, 0x6e, 0x2e, 0x41, 0x73, 0x73, 0x65, 0x74, 0xea,
+	0xde, 0x1f, 0x05, 0x61, 0x73, 0x73, 0x65, 0x74, 0x52, 0x05, 0x61, 0x73, 0x73, 0x65, 0x74, 0x12,
+	0x3f, 0x0a, 0x06, 0x61, 0x6d, 0x6f, 0x75, 0x6e, 0x74, 0x18, 0x02, 0x20, 0x01, 0x28, 0x09, 0x42,
+	0x27, 0xc8, 0xde, 0x1f, 0x00, 0xda, 0xde, 0x1f, 0x15, 0x63, 0x6f, 0x73, 0x6d, 0x6f, 0x73, 0x73,
+	0x64, 0x6b, 0x2e, 0x69, 0x6f, 0x2f, 0x6d, 0x61, 0x74, 0x68, 0x2e, 0x49, 0x6e, 0x74, 0xea, 0xde,
+	0x1f, 0x06, 0x61, 0x6d, 0x6f, 0x75, 0x6e, 0x74, 0x52, 0x06, 0x61, 0x6d, 0x6f, 0x75, 0x6e, 0x74,
+	0x22, 0x5b, 0x0a, 0x1a, 0x51, 0x75, 0x65, 0x72, 0x79, 0x56, 0x61, 0x75, 0x6c, 0x74, 0x53, 0x6f,
+	0x6c, 0x76, 0x65, 0x6e, 0x63, 0x79, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x12, 0x3d,
+	0x0a, 0x06, 0x61, 0x73, 0x73, 0x65, 0x74, 0x73, 0x18, 0x01, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x19,
+	0x2e, 0x74, 0x79, 0x70, 0x65, 0x73, 0x2e, 0x56, 0x61, 0x75, 0x6c, 0x74, 0x53, 0x6f, 0x6c, 0x76,
+	0x65, 0x6e, 0x63, 0x79, 0x41, 0x73, 0x73, 0x65, 0x74, 0x42, 0x0a, 0xea, 0xde, 0x1f, 0x06, 0x61,
+	0x73, 0x73, 0x65, 0x74, 0x73, 0x52, 0x06, 0x61, 0x73, 0x73, 0x65, 0x74, 0x73, 0x42, 0x80, 0x01,
+	0x0a, 0x09, 0x63, 0x6f, 0x6d, 0x2e, 0x74, 0x79, 0x70, 0x65, 0x73, 0x42, 0x0f, 0x51, 0x75, 0x65,
+	0x72, 0x79, 0x56, 0x61, 0x75, 0x6c, 0x74, 0x50, 0x72, 0x6f, 0x74, 0x6f, 0x50, 0x01, 0x5a, 0x2a,
+	0x67, 0x69, 0x74, 0x6c, 0x61, 0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x74, 0x68, 0x6f, 0x72, 0x63,
+	0x68, 0x61, 0x69, 0x6e, 0x2f, 0x74, 0x68, 0x6f, 0x72, 0x6e, 0x6f, 0x64, 0x65, 0x2f, 0x76, 0x33,
+	0x2f, 0x61, 0x70, 0x69, 0x2f, 0x74, 0x79, 0x70, 0x65, 0x73, 0xa2, 0x02, 0x03, 0x54, 0x58, 0x58,
+	0xaa, 0x02, 0x05, 0x54, 0x79, 0x70, 0x65, 0x73, 0xca, 0x02, 0x05, 0x54, 0x79, 0x70, 0x65, 0x73,
+	0xe2, 0x02, 0x11, 0x54, 0x79, 0x70, 0x65, 0x73, 0x5c, 0x47, 0x50, 0x42, 0x4d, 0x65, 0x74, 0x61,
+	0x64, 0x61, 0x74, 0x61, 0xea, 0x02, 0x05, 0x54, 0x79, 0x70, 0x65, 0x73, 0xc8, 0xe2, 0x1e, 0x01,
+	0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
 }
 
 var (
@@ -11179,7 +12440,7 @@ func file_types_query_vault_proto_rawDescGZIP() []byte {
 	return file_types_query_vault_proto_rawDescData
 }
 
-var file_types_query_vault_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
+var file_types_query_vault_proto_msgTypes = make([]protoimpl.MessageInfo, 18)
 var file_types_query_vault_proto_goTypes = []interface{}{
 	(*QueryVaultRequest)(nil),               // 0: types.QueryVaultRequest
 	(*QueryVaultResponse)(nil),              // 1: types.QueryVaultResponse
@@ -11192,27 +12453,29 @@ var file_types_query_vault_proto_goTypes = []interface{}{
 	(*VaultInfo)(nil),                       // 8: types.VaultInfo
 	(*QueryXMRSpentOutputRefsRequest)(nil),  // 9: types.QueryXMRSpentOutputRefsRequest
 	(*QueryXMRSpentOutputRefsResponse)(nil), // 10: types.QueryXMRSpentOutputRefsResponse
-	(*VaultRouter)(nil),                     // 11: types.VaultRouter
-	(*VaultAddress)(nil),                    // 12: types.VaultAddress
-	(*QueryVaultSolvencyRequest)(nil),       // 13: types.QueryVaultSolvencyRequest
-	(*VaultSolvencyAsset)(nil),              // 14: types.VaultSolvencyAsset
-	(*QueryVaultSolvencyResponse)(nil),      // 15: types.QueryVaultSolvencyResponse
-	(*common.Coin)(nil),                     // 16: common.Coin
-	(*common.OutputRef)(nil),                // 17: common.OutputRef
-	(*common.Asset)(nil),                    // 18: common.Asset
+	(*QuerySolVaultNonceRequest)(nil),       // 11: types.QuerySolVaultNonceRequest
+	(*QuerySolVaultNonceResponse)(nil),      // 12: types.QuerySolVaultNonceResponse
+	(*VaultRouter)(nil),                     // 13: types.VaultRouter
+	(*VaultAddress)(nil),                    // 14: types.VaultAddress
+	(*QueryVaultSolvencyRequest)(nil),       // 15: types.QueryVaultSolvencyRequest
+	(*VaultSolvencyAsset)(nil),              // 16: types.VaultSolvencyAsset
+	(*QueryVaultSolvencyResponse)(nil),      // 17: types.QueryVaultSolvencyResponse
+	(*common.Coin)(nil),                     // 18: common.Coin
+	(*common.OutputRef)(nil),                // 19: common.OutputRef
+	(*common.Asset)(nil),                    // 20: common.Asset
 }
 var file_types_query_vault_proto_depIdxs = []int32{
-	16, // 0: types.QueryVaultResponse.coins:type_name -> common.Coin
-	11, // 1: types.QueryVaultResponse.routers:type_name -> types.VaultRouter
-	12, // 2: types.QueryVaultResponse.addresses:type_name -> types.VaultAddress
-	16, // 3: types.QueryVaultResponse.deficit:type_name -> common.Coin
+	18, // 0: types.QueryVaultResponse.coins:type_name -> common.Coin
+	13, // 1: types.QueryVaultResponse.routers:type_name -> types.VaultRouter
+	14, // 2: types.QueryVaultResponse.addresses:type_name -> types.VaultAddress
+	18, // 3: types.QueryVaultResponse.deficit:type_name -> common.Coin
 	1,  // 4: types.QueryAsgardVaultsResponse.asgard_vaults:type_name -> types.QueryVaultResponse
 	8,  // 5: types.QueryVaultsPubkeysResponse.asgard:type_name -> types.VaultInfo
 	8,  // 6: types.QueryVaultsPubkeysResponse.inactive:type_name -> types.VaultInfo
-	11, // 7: types.VaultInfo.routers:type_name -> types.VaultRouter
-	17, // 8: types.QueryXMRSpentOutputRefsResponse.spent_output_refs:type_name -> common.OutputRef
-	18, // 9: types.VaultSolvencyAsset.asset:type_name -> common.Asset
-	14, // 10: types.QueryVaultSolvencyResponse.assets:type_name -> types.VaultSolvencyAsset
+	13, // 7: types.VaultInfo.routers:type_name -> types.VaultRouter
+	19, // 8: types.QueryXMRSpentOutputRefsResponse.spent_output_refs:type_name -> common.OutputRef
+	20, // 9: types.VaultSolvencyAsset.asset:type_name -> common.Asset
+	16, // 10: types.QueryVaultSolvencyResponse.assets:type_name -> types.VaultSolvencyAsset
 	11, // [11:11] is the sub-list for method output_type
 	11, // [11:11] is the sub-list for method input_type
 	11, // [11:11] is the sub-list for extension type_name
@@ -11359,7 +12622,7 @@ func file_types_query_vault_proto_init() {
 			}
 		}
 		file_types_query_vault_proto_msgTypes[11].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*VaultRouter); i {
+			switch v := v.(*QuerySolVaultNonceRequest); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -11371,7 +12634,7 @@ func file_types_query_vault_proto_init() {
 			}
 		}
 		file_types_query_vault_proto_msgTypes[12].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*VaultAddress); i {
+			switch v := v.(*QuerySolVaultNonceResponse); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -11383,7 +12646,7 @@ func file_types_query_vault_proto_init() {
 			}
 		}
 		file_types_query_vault_proto_msgTypes[13].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*QueryVaultSolvencyRequest); i {
+			switch v := v.(*VaultRouter); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -11395,7 +12658,7 @@ func file_types_query_vault_proto_init() {
 			}
 		}
 		file_types_query_vault_proto_msgTypes[14].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*VaultSolvencyAsset); i {
+			switch v := v.(*VaultAddress); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -11407,6 +12670,30 @@ func file_types_query_vault_proto_init() {
 			}
 		}
 		file_types_query_vault_proto_msgTypes[15].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*QueryVaultSolvencyRequest); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_types_query_vault_proto_msgTypes[16].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*VaultSolvencyAsset); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_types_query_vault_proto_msgTypes[17].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*QueryVaultSolvencyResponse); i {
 			case 0:
 				return &v.state
@@ -11425,7 +12712,7 @@ func file_types_query_vault_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: file_types_query_vault_proto_rawDesc,
 			NumEnums:      0,
-			NumMessages:   16,
+			NumMessages:   18,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

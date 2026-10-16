@@ -15,6 +15,7 @@ import (
 
 	storetypes "cosmossdk.io/store/types"
 
+	thorlog "gitlab.com/thorchain/thornode/v3/log"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/ebifrost"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
@@ -59,7 +60,11 @@ func NewAnteHandler(options HandlerOptions) (sdk.AnteHandler, error) {
 	}
 
 	anteDecorators := []sdk.AnteDecorator{
-		// must be first to ensure that injected txs bypass the remaining ante handlers, as they do not have gas.
+		// before the injected tx bypass so those txs are captured too; the
+		// returned ctx is what baseapp runs the messages with
+		blockLogDecorator{},
+
+		// must precede everything below to ensure that injected txs bypass the remaining ante handlers, as they do not have gas.
 		ebifrost.NewInjectedTxDecorator(),
 
 		ante.NewSetUpContextDecorator(), // outermost AnteDecorator. SetUpContext must be called first
@@ -103,4 +108,12 @@ func SigGasConsumer(
 	default:
 		return ante.DefaultSigVerificationGasConsumer(meter, sig, params)
 	}
+}
+
+// blockLogDecorator installs node-local block log capture on the tx context
+// logger in finalize mode. See log.CaptureContext.
+type blockLogDecorator struct{}
+
+func (blockLogDecorator) AnteHandle(ctx sdk.Context, tx sdk.Tx, simulate bool, next sdk.AnteHandler) (sdk.Context, error) {
+	return next(thorlog.CaptureContext(ctx), tx, simulate)
 }

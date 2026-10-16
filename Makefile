@@ -31,11 +31,19 @@ BRANCH?=$(shell git rev-parse --abbrev-ref HEAD 2>/dev/null)
 GITREF?=$(shell git rev-parse --short HEAD 2>/dev/null)
 BUILDTAG?=$(shell git rev-parse --abbrev-ref HEAD 2>/dev/null)
 
-# Forward CI_JOB_TOKEN into docker builds as a BuildKit secret so the
-# in-image `go mod download` can fetch tss-lib-private. Empty when running
-# locally without the token (Dockerfile mount is required=false).
+# Forward a gitlab.com credential ("user:token") into docker builds as the
+# go_private_auth BuildKit secret so the in-image `go mod download` can fetch
+# tss-lib-private. CI picks it with scripts/ci-go-private-auth.sh; without that,
+# fall back to CI_JOB_TOKEN. Empty when running locally without either
+# (Dockerfile mount is required=false).
+ifeq ($(strip $(GO_PRIVATE_GIT_CREDENTIAL)),)
 ifneq ($(strip $(CI_JOB_TOKEN)),)
-DOCKER_BUILD_SECRETS := --secret id=ci_job_token,env=CI_JOB_TOKEN
+GO_PRIVATE_GIT_CREDENTIAL := gitlab-ci-token:$(CI_JOB_TOKEN)
+endif
+endif
+export GO_PRIVATE_GIT_CREDENTIAL
+ifneq ($(strip $(GO_PRIVATE_GIT_CREDENTIAL)),)
+DOCKER_BUILD_SECRETS := --secret id=go_private_auth,env=GO_PRIVATE_GIT_CREDENTIAL
 else
 DOCKER_BUILD_SECRETS :=
 endif
@@ -121,10 +129,16 @@ generate-abi:
 	@cp chain/evm/router-abi.json test/simulation/pkg/evm/abi/router.json
 
 openapi:
-	@docker run --rm \
+	@image='$(DOCKER_MIRROR)openapitools/openapi-generator-cli:v6.0.0@sha256:310bd0353c11863c0e51e5cb46035c9e0778d4b9c6fe6a7fc8307b3b41997a35'; \
+	if ! docker image inspect "$$image" >/dev/null 2>&1 && ! docker pull -q "$$image" >/dev/null; then \
+		if [ -z '$(DOCKER_MIRROR)' ]; then exit 1; fi; \
+		image='openapitools/openapi-generator-cli:v6.0.0@sha256:310bd0353c11863c0e51e5cb46035c9e0778d4b9c6fe6a7fc8307b3b41997a35'; \
+		docker pull -q "$$image" >/dev/null || exit 1; \
+	fi; \
+	docker run --rm \
 		--user $(shell id -u):$(shell id -g) \
 		-v $$PWD/openapi:/mnt \
-		openapitools/openapi-generator-cli:v6.0.0@sha256:310bd0353c11863c0e51e5cb46035c9e0778d4b9c6fe6a7fc8307b3b41997a35 \
+		"$$image" \
 		generate -i /mnt/openapi.yaml -g go -o /mnt/gen
 	@rm openapi/gen/go.mod openapi/gen/go.sum
 	@find ./openapi/gen -type f -print0 | xargs -0 sed -i.bak \
@@ -136,8 +150,27 @@ openapi:
 	@find ./openapi/gen -type f -name '*.bak' -delete
 
 protoVer=0.13.2
-protoImageName=ghcr.io/cosmos/proto-builder:$(protoVer)
-protoImage=docker run --rm -v $(CURDIR):/workspace --workdir /workspace $(protoImageName)
+# Index digest of ghcr.io/cosmos/proto-builder:$(protoVer); bump it with protoVer.
+protoDigest=sha256:05f5ccdc37d6ac6856d035d37bde91d31d36cfebe3c82ac771a40c7ff2a5c4c6
+# CI sets PROTO_BUILDER_REPO to its registry mirror. The digest pins the image
+# from either repository, so a tag replaced in the mirror fails to pull rather
+# than running.
+protoImageName=$(or $(PROTO_BUILDER_REPO),ghcr.io/cosmos/proto-builder):$(protoVer)@$(protoDigest)
+
+# buf resolves its BSR dependencies from buf.build at generate/lint/breaking
+# time. When the machine running these targets is blocked by buf.build (the
+# Finland CI runner's egress IP is served HTTP 403 at their edge), set BUF_PROXY
+# to a proxy with clean egress and it is forwarded into the container. Unset by
+# default, so local development and unaffected runners are untouched. In CI,
+# .buf-egress drops BUF_PROXY on runners that can reach buf.build directly.
+BUF_PROXY ?=
+ifneq ($(strip $(BUF_PROXY)),)
+protoProxyEnv := -e HTTPS_PROXY=$(BUF_PROXY) -e HTTP_PROXY=$(BUF_PROXY) -e NO_PROXY=localhost,127.0.0.1
+else
+protoProxyEnv :=
+endif
+
+protoImage=docker run --rm -v $(CURDIR):/workspace $(protoProxyEnv) --workdir /workspace $(protoImageName)
 
 proto-all: proto-format proto-lint proto-gen format
 
@@ -151,18 +184,13 @@ proto-format:
 
 proto-format-check:
 	@echo "Checking Protobuf formatting"
-	@find ./ -name "*.proto" -print0 | xargs -0L1 $(protoImage) clang-format --dry-run -Werror
+	@$(protoImage) find ./ -name "*.proto" -exec clang-format --dry-run -Werror {} +
 
 proto-lint:
 	@$(protoImage) sh -c "cd proto/thorchain/v1 && buf lint --error-format=json"
 
-# Baseline branch for `buf breaking`. Defaults to develop; CI overrides it with the
-# MR target branch so mainnet/stagenet/chainnet release MRs check against the branch
-# they merge into (which intentionally lags develop) instead of develop itself.
-PROTO_BREAKING_BRANCH ?= develop
-
 proto-check-breaking:
-	@$(protoImage) sh -c "cd proto/thorchain/v1 && buf breaking --against $(HTTPS_GIT)#branch=$(PROTO_BREAKING_BRANCH),subdir=proto/thorchain/v1"
+	@$(protoImage) sh -c "cd proto/thorchain/v1 && buf breaking --against $(HTTPS_GIT)#branch=develop,subdir=proto/thorchain/v1"
 
 # ------------------------------ Docs ------------------------------
 
@@ -212,8 +240,17 @@ lint:
 	@./scripts/lint.sh
 	@./scripts/trunk check --no-fix --show-existing --upstream origin/develop
 
+# The three checks are independent; run them at once, each one's output kept together.
 lint-ci:
+	@$(MAKE) --no-print-directory -j3 --output-sync=target lint-ci-scripts lint-ci-golangci lint-ci-trunk
+
+lint-ci-scripts:
 	@./scripts/lint.sh
+
+lint-ci-golangci:
+	@./scripts/golangci-ci.sh
+
+lint-ci-trunk:
 	@./scripts/trunk-ci.sh
 
 # ------------------------------ Unit Tests ------------------------------
@@ -228,8 +265,16 @@ coverage-report: test-coverage
 
 # only print the coverage total: the full per-function dump pushed the CI job log
 # past GitLab's 4MB cap, truncating the "total:" line the coverage regex reads
-test-coverage-sum: test-network-specific
-	@go run gotest.tools/gotestsum@v1.13.0 --junitfile report.xml --format testname -- ${TEST_BUILD_FLAGS} -v -coverprofile=coverage.txt -covermode count ${TEST_DIR}
+# test-network-specific runs alongside the main suite: its five sequential
+# `go test` runs took 95-130s in a 6-CPU CI slot, mostly waiting on tests, and
+# no longer hold up the main suite. Its output is printed when both finish, so
+# the main suite's output still streams.
+test-coverage-sum:
+	@$(MAKE) --no-print-directory test-network-specific > network-specific.log 2>&1 & ns=$$!; \
+	go run gotest.tools/gotestsum@v1.13.0 --junitfile report.xml --format testname -- ${TEST_BUILD_FLAGS} -v -coverprofile=coverage.txt -covermode count ${TEST_DIR}; main=$$?; \
+	wait $$ns; ns=$$?; \
+	echo "--- test-network-specific (exit $$ns)"; cat network-specific.log; \
+	[ $$main -eq 0 ] && [ $$ns -eq 0 ]
 	sed -i.bak '/\.pb\.go:/d' coverage.txt
 	@rm -f coverage.txt.bak
 	@GOFLAGS='${TEST_BUILD_FLAGS}' go run github.com/boumenot/gocover-cobertura@v1.4.0 < coverage.txt > coverage.xml
@@ -237,8 +282,10 @@ test-coverage-sum: test-network-specific
 	@go tool cover -html=coverage.txt -o coverage.html
 
 test:
+ifneq ($(filter test,$(MAKECMDGOALS)),)
 ifeq ($(TEST_DIR),$(TEST_PATHS))
 	@$(MAKE) test-network-specific
+endif
 endif
 	@go test ${TEST_BUILD_FLAGS} ${RUN_FLAG} ${TEST_DIR}
 	@TAG=stagenet $(MAKE) build
@@ -247,24 +294,39 @@ test-all: test-network-specific
 	@go test ${TEST_BUILD_FLAGS} ${RUN_FLAG} "./..."
 
 test-go-tss:
-	@go test ${TEST_BUILD_FLAGS} ${RUN_FLAG} --race "./bifrost/tss/go-tss/..."
+	@python3 scripts/test-quality-run.py --tags mocknet --race --parallel $(PARALLELISM) --run '$(RUN)' --max-skips 0 --report-dir test-quality-reports/root-mocknet-go-tss ./bifrost/tss/go-tss/...
 
 test-xmr-e2e:
 	@go test -count=1 ./bifrost/pkg/chainclients/monero -run '${XMR_E2E_RUN}'
 
 test-network-specific:
-	@go test -tags stagenet ${RUN_FLAG} ./common
-	@go test -tags chainnet ${RUN_FLAG} ./common
-	@go test -tags mainnet ${RUN_FLAG} ./common ./bifrost/pkg/chainclients/utxo/...
-	@go test -tags mainnet ./x/thorchain -run TestPackage -check.f Migrate # mainnet store-migration tests are mainnet-tagged; otherwise they never run in CI (unit-tests job is mocknet-only)
-	@go test -tags mocknet ${RUN_FLAG} ./common ./bifrost/pkg/chainclients/utxo/...
+	@python3 scripts/test-quality-run.py --tags stagenet --run '$(RUN)' --report-dir test-quality-reports/network-stagenet ./common
+	@python3 scripts/test-quality-run.py --tags chainnet --run '$(RUN)' --report-dir test-quality-reports/network-chainnet ./common
+	@python3 scripts/test-quality-run.py --tags mainnet --run '$(RUN)' --report-dir test-quality-reports/network-mainnet ./common ./bifrost/pkg/chainclients/utxo/...
+	@python3 scripts/test-quality-run.py --tags mainnet --run TestPackage --test-arg=-check.f --test-arg='Migrate|Migration19to20Suite|EthThorRestoreSuite' --report-dir test-quality-reports/network-mainnet-migration ./x/thorchain # mainnet store-migration tests run under the gocheck TestPackage entrypoint (CI unit-tests is mocknet-only). The suites Migration19to20Suite/EthThorRestoreSuite lack the substring "Migrate", so -check.f names them explicitly; this filter must stay in sync with scripts/test-quality-inventory.py SELECTIONS (enforced by test_selection_filters_match_the_makefile).
+	@python3 scripts/test-quality-run.py --tags mocknet --run '$(RUN)' --report-dir test-quality-reports/network-mocknet ./common ./bifrost/pkg/chainclients/utxo/...
 
 test-race:
 	@go test -race ${TEST_BUILD_FLAGS} ${RUN_FLAG} ${TEST_DIR}
 
 # bifrost is the concurrent half of the system; go-tss is covered by test-go-tss.
+# ebifrost processes concurrent Bifrost callbacks on the thornode side.
 test-race-bifrost:
-	@go test -race -timeout 20m ${TEST_BUILD_FLAGS} ${RUN_FLAG} $$(go list ./bifrost/... | grep -v bifrost/tss/go-tss)
+	@python3 scripts/test-quality-run.py --tags mocknet --race --parallel $(PARALLELISM) --run '$(RUN)' --timeout 20m $(if $(RUN),,--require-package-tests /x/thorchain/ebifrost) --forbid-skip-package /x/thorchain/ebifrost --exclude-prefix gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss --report-dir test-quality-reports/root-mocknet-race-bifrost ./bifrost/... ./x/thorchain/ebifrost
+
+# Each command emits inventory, JSON events, JUnit, and filtered coverage in a
+# separate directory so a skipped security test cannot pass unnoticed.
+.PHONY: test-quality-simulation test-quality-mainnet
+test-quality-simulation:
+	@python3 scripts/test-quality-run.py --module test/simulation --tags mocknet --fresh \
+		--allow-skip-test TestDogeStalledBroadcastIsNotDuplicated \
+		--allow-skip-test TestZecIsolatedFunding \
+		--require-gocheck /actors/core:1 --require-gocheck /pkg/solana:1 \
+		--require-gocheck /pkg/types:7 \
+		--report-dir test-quality-reports/simulation-mocknet ./...
+
+test-quality-mainnet:
+	@python3 scripts/test-quality-run.py --tags mainnet --fresh --run '^TestNewClientRejectsNonMainnetDaemonOnMainnet$$' --require-test TestNewClientRejectsNonMainnetDaemonOnMainnet --report-dir test-quality-reports/root-mainnet-monero ./bifrost/pkg/chainclients/monero
 
 # ------------------------------ Performance Tests ------------------------------
 
@@ -382,13 +444,30 @@ _test-regression:
 
 test-simulation: build-mocknet reset-mocknet test-simulation-no-reset
 
-TEST_SIMULATION_STAGES ?= seed,bootstrap,xmr-coverage,arb,swaps,memoless-swaps,consolidate,inactive-vault-refunds,memoless-refunds,solvency,ragnarok
-TEST_SIMULATION_CLUSTER_STAGES ?= seed,bootstrap,swaps,memoless-swaps,inactive-vault-refunds,memoless-refunds,solvency,xmr-post-churn,ragnarok
+TEST_SIMULATION_STAGES ?= seed,bootstrap,xmr-coverage,arb,swaps,memoless-swaps,consolidate,memoless-refunds,solvency,ragnarok
+TEST_SIMULATION_CLUSTER_STAGES ?= seed,bootstrap,xmr-coverage,xmr-spent-refs,swaps,memoless-swaps,inactive-vault-refunds,memoless-refunds,cluster-churn,solvency,xmr-post-churn,ragnarok
+# A full cluster run must fail rather than silently omit unavailable XMR coverage.
+TEST_SIMULATION_REQUIRE_XMR ?= 1
 
-test-simulation-cluster: build-test-simulation build-mocknet-cluster reset-mocknet-cluster
+.PHONY: test-mocknet-startup test-xmr-readiness-config test-simulation-xmr-readiness
+test-mocknet-startup:
+	@python3 -m unittest discover -s build/scripts/tests -v
+
+# Render every XMR profile and check deployment contracts and reset authentication.
+test-xmr-readiness-config:
+	@python3 -m unittest discover -s build/docker/tests -p 'test_xmr_readiness.py' -v
+
+# Exercise initial-vault creation, churn, funding, and a real BTC-to-XMR swap.
+# Requires enabled XMR keygen; see docs/xmr-readiness-baseline.md.
+test-simulation-xmr-readiness: TEST_SIMULATION_CLUSTER_STAGES=seed,bootstrap,xmr-post-churn
+test-simulation-xmr-readiness: override TEST_SIMULATION_REQUIRE_XMR=1
+test-simulation-xmr-readiness: test-simulation-cluster
+
+test-simulation-cluster: test-mocknet-startup test-xmr-readiness-config prepare-mocknet-cluster
 	@docker stop docker-midgard-1 docker-midgard-db-1 >/dev/null 2>&1 || true
 	@STAGES=$(TEST_SIMULATION_CLUSTER_STAGES) docker run --rm ${DOCKER_TTY_ARGS} \
 		-e PARALLELISM=$(PARALLELISM) -e STAGES \
+		-e XMR_POST_CHURN_REQUIRED=$(TEST_SIMULATION_REQUIRE_XMR) \
 		-e RANDOM_SEED_HEX \
 		-e SIMULATION_PPROF_ADDRESS \
 		-e XMR_SIM_HELPER_ENDPOINT -e XMR_SIM_HELPER_AUTH_BEARER \
@@ -426,7 +505,7 @@ test-simulation-keygen-jail: build-test-simulation build-mocknet-cluster reset-m
 		--network host -w /app \
 		thornode-simtest sh -c 'make _test-simulation'
 	@echo "applying netem delay $(XMR_KEYGEN_JAIL_NETEM_DELAY_MS)ms to bifrost p2p (port 5040)"
-	@for c in docker-bifrost-1 docker-bifrost-cat-1 docker-bifrost-fox-1 docker-bifrost-pig-1; do \
+	@for c in docker-bifrost-1 docker-bifrost-cat-1 docker-bifrost-fox-1 docker-bifrost-pig-1 docker-bifrost-frog-1; do \
 		docker run --rm --net container:$$c --cap-add NET_ADMIN alpine:3.20 sh -c "\
 			apk add -q iproute2 && \
 			tc qdisc replace dev eth0 root handle 1: prio bands 4 priomap 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 && \
@@ -517,13 +596,17 @@ reset-mocknet-fork-%: stop-mocknet
 
 # ------------------------------ Multi Node Mocknet ------------------------------
 
+# test-simulation-cluster stops midgard before the sim starts; the CI path
+# (test-simulation-cluster-native) empties this so midgard is never pulled.
+MOCKNET_CLUSTER_MIDGARD ?= --profile midgard
+
 run-mocknet-cluster:
 	@docker compose $(DOCKER_COMPOSE_FILES) --profile mocknet-cluster \
-		--profile midgard up -d
+		$(MOCKNET_CLUSTER_MIDGARD) up -d
 	@# Compose can leave dependent validator thornodes in Created under detached
 	@# startup when the primary thornode healthcheck is not yet satisfied.
 	@docker compose $(DOCKER_COMPOSE_FILES) --profile mocknet-cluster \
-		--profile midgard up -d thornode-cat thornode-fox thornode-pig
+		$(MOCKNET_CLUSTER_MIDGARD) up -d thornode-cat thornode-fox thornode-pig thornode-frog
 
 stop-mocknet-cluster:
 	@docker compose $(DOCKER_COMPOSE_FILES) --profile mocknet-cluster --profile midgard down -v
@@ -539,6 +622,123 @@ ps-mocknet-cluster:
 	@docker compose $(DOCKER_COMPOSE_FILES) --profile mocknet-cluster --profile midgard ps
 
 reset-mocknet-cluster: stop-mocknet-cluster build-mocknet-cluster run-mocknet-cluster
+
+# L1 chains of the cluster that run a released image, so they can start before
+# the thornode and simtest images are built.
+MOCKNET_CLUSTER_L1_SERVICES := gaia noble bitcoin bitcoin-cash dogecoin litecoin \
+	ethereum base xrp binance-smart avalanche tron-supernode tron-fullnode solana \
+	polygon zcash
+
+run-mocknet-cluster-l1:
+	@docker compose $(DOCKER_COMPOSE_FILES) --profile mocknet-cluster \
+		up -d $(MOCKNET_CLUSTER_L1_SERVICES)
+
+# reset-mocknet-cluster plus the simtest image, with the L1 chains starting in
+# the background while the images build. Their image pulls and warm-up (the sim
+# waits for tron and solana to advance blocks) then overlap the build instead of
+# following it. run-mocknet-cluster finds them running and leaves them as is.
+prepare-mocknet-cluster: stop-mocknet-cluster
+	@$(MAKE) --no-print-directory run-mocknet-cluster-l1 & l1_pid=$$!; \
+	$(MAKE) --no-print-directory build-test-simulation build-mocknet-cluster; build_rc=$$?; \
+	wait $$l1_pid; l1_rc=$$?; \
+	[ $$build_rc -eq 0 ] && [ $$l1_rc -eq 0 ]
+	@$(MAKE) --no-print-directory run-mocknet-cluster
+
+# ------------------------------ CI: native sim build ------------------------------
+#
+# CI's test-simulation builds the Go binaries in the job container, with the
+# runner's warm Go caches, and only copies them into thin images
+# (build/docker/Dockerfile.native). The in-image builds started from an empty
+# dind every run: `go mod download` (the tss-lib-private fetch) plus a cold
+# compile of simtest, thornode and events, 6-8 min before the cluster could
+# start. The job must run on golang:1.26.4-bookworm, the build stage of
+# build/docker/Dockerfile, so the binaries link against the same glibc as the
+# bookworm runtime. Local `make test-simulation-cluster` is unchanged.
+NATIVE_SIM_DIR ?= $(CURDIR)/tmp/native-sim
+
+# Same flags as `make install` in build/docker/Dockerfile. That build has no .git
+# and takes COMMIT from its `ARG COMMIT=unknown`, so match it.
+_build-native-thornode: COMMIT=unknown
+_build-native-thornode: TAG=mocknet
+_build-native-thornode:
+	@go build -ldflags '$(ldflags)' -tags mocknet -trimpath -buildmode=pie \
+		-o $(NATIVE_SIM_DIR)/ $(BINARIES)
+	@# Same as tools/events/Dockerfile: `go install -tags $$TAG ./tools/events`.
+	@go build -tags mocknet -o $(NATIVE_SIM_DIR)/events ./tools/events
+
+# Same as _build-test-simulation in ci/Dockerfile.simtest, whose context has no
+# .git, so COMMIT is empty there.
+_build-native-simtest: COMMIT=
+_build-native-simtest: TAG=mocknet
+_build-native-simtest:
+	@cd test/simulation && \
+		go build -ldflags '$(ldflags)' -tags mocknet -o $(NATIVE_SIM_DIR)/simtest ./cmd
+
+# XMR signer services of the cluster, which run a released image.
+MOCKNET_CLUSTER_XMR_SIGNER_SERVICES := xmr-frost-signer xmr-frost-signer-cat \
+	xmr-frost-signer-fox xmr-frost-signer-frog xmr-frost-signer-pig xmr-sim-helper
+
+# Images that do not need the Go binaries. The runtime image (apt and pip in an
+# empty dind), the monero image and the signer pulls took ~1.5 min after the Go
+# build; build-mocknet-cluster-native runs them alongside it, and each other.
+_build-native-base-images:
+	@DOCKER_BUILDKIT=1 docker build build/docker -f build/docker/Dockerfile \
+		--target runtime -t thornode-runtime:mocknet --build-arg DOCKER_MIRROR & runtime_pid=$$!; \
+	docker compose $(DOCKER_COMPOSE_FILES) --profile mocknet-cluster build monero-daemon & monero_pid=$$!; \
+	docker compose $(DOCKER_COMPOSE_FILES) --profile mocknet-cluster \
+		pull $(MOCKNET_CLUSTER_XMR_SIGNER_SERVICES); pull_rc=$$?; \
+	wait $$runtime_pid; runtime_rc=$$?; wait $$monero_pid; monero_rc=$$?; \
+	[ $$pull_rc -eq 0 ] && [ $$runtime_rc -eq 0 ] && [ $$monero_rc -eq 0 ]
+
+build-mocknet-cluster-native:
+	@rm -rf $(NATIVE_SIM_DIR) && mkdir -p $(NATIVE_SIM_DIR)
+	@$(MAKE) --no-print-directory _build-native-base-images & images_pid=$$!; \
+	$(MAKE) --no-print-directory -j2 _build-native-thornode _build-native-simtest; build_rc=$$?; \
+	wait $$images_pid; images_rc=$$?; \
+	[ $$build_rc -eq 0 ] && [ $$images_rc -eq 0 ]
+	@cp $$(go list -m -f '{{.Dir}}' github.com/CosmWasm/wasmvm/v2)/internal/api/libwasmvm.*.so $(NATIVE_SIM_DIR)/
+	@chmod u+w $(NATIVE_SIM_DIR)/libwasmvm.*.so
+	@cp -r build/scripts $(NATIVE_SIM_DIR)/scripts
+	@pids=; for t in thornode:thornode:mocknet events:docker-events simtest:thornode-simtest-native; do \
+		DOCKER_BUILDKIT=1 docker build $(NATIVE_SIM_DIR) -f build/docker/Dockerfile.native \
+			--target $${t%%:*} -t $${t#*:} & pids="$$pids $$!"; \
+	done; rc=0; for p in $$pids; do wait $$p || rc=1; done; exit $$rc
+
+# Base images of the runtime and monero builds, read from their Dockerfiles.
+NATIVE_SIM_BASE_IMAGES = \
+	$(shell sed -n 's/^FROM \$${DOCKER_MIRROR}\(\S*\) AS runtime$$/\1/p' build/docker/Dockerfile) \
+	$(shell sed -n 's/^FROM \$${DOCKER_MIRROR}\(\S*\)$$/\1/p' build/docker/mocknet/monero/Dockerfile)
+
+# Pulled before the L1 chains start, so they do not share bandwidth with ~16 L1
+# image pulls: the debian base took ~60s on the critical path that way, against
+# ~4s on its own. A failed pull is left to the build, which pulls it again.
+_pull-native-base-images:
+	@for ref in $(NATIVE_SIM_BASE_IMAGES); do \
+		docker pull -q "$${DOCKER_MIRROR}$$ref" >/dev/null & \
+	done; wait; true
+
+# prepare-mocknet-cluster with the native build, and without midgard.
+prepare-mocknet-cluster-native: stop-mocknet-cluster
+	@$(MAKE) --no-print-directory _pull-native-base-images
+	@$(MAKE) --no-print-directory run-mocknet-cluster-l1 & l1_pid=$$!; \
+	$(MAKE) --no-print-directory build-mocknet-cluster-native; build_rc=$$?; \
+	wait $$l1_pid; l1_rc=$$?; \
+	[ $$build_rc -eq 0 ] && [ $$l1_rc -eq 0 ]
+	@$(MAKE) --no-print-directory run-mocknet-cluster MOCKNET_CLUSTER_MIDGARD=
+
+# test-simulation-cluster for CI: same stages, PARALLELISM and environment. The
+# mocknet startup unit tests are left to CI's test-mocknet-scripts job, which
+# runs the same suite; the XMR readiness config test still runs here.
+test-simulation-cluster-native: test-xmr-readiness-config prepare-mocknet-cluster-native
+	@STAGES=$(TEST_SIMULATION_CLUSTER_STAGES) docker run --rm ${DOCKER_TTY_ARGS} \
+		-e PARALLELISM=$(PARALLELISM) -e STAGES \
+		-e XMR_POST_CHURN_REQUIRED=$(TEST_SIMULATION_REQUIRE_XMR) \
+		-e RANDOM_SEED_HEX \
+		-e SIMULATION_PPROF_ADDRESS \
+		-e XMR_SIM_HELPER_ENDPOINT -e XMR_SIM_HELPER_AUTH_BEARER \
+		-e XMR_FROST_ENDPOINT -e XMR_FROST_AUTH_BEARER \
+		--network host \
+		thornode-simtest-native
 
 # ------------------------------ Test Sync ------------------------------
 

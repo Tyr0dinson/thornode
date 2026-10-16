@@ -93,12 +93,13 @@ func TestRegisterVaultRespDecodesContinuity(t *testing.T) {
 	var resp RegisterVaultResp
 	if err := json.Unmarshal([]byte(`{
 		"registered": true,
+		"effective_birthday": 40,
 		"reset_epoch": 3,
 		"expected_next_height": 42
 	}`), &resp); err != nil {
 		t.Fatalf("decode register response: %v", err)
 	}
-	if !resp.Registered || resp.ResetEpoch != 3 ||
+	if !resp.Registered || resp.EffectiveBirthday != 40 || resp.ResetEpoch != 3 ||
 		resp.ExpectedNextHeight == nil || *resp.ExpectedNextHeight != 42 {
 		t.Fatalf("unexpected register continuity: %+v", resp)
 	}
@@ -108,8 +109,21 @@ func TestRegisterVaultRespRejectsMissingRequiredContinuity(t *testing.T) {
 	t.Parallel()
 
 	var resp RegisterVaultResp
-	if err := json.Unmarshal([]byte(`{"registered":true}`), &resp); err == nil {
+	if err := json.Unmarshal([]byte(`{"registered":true,"effective_birthday":40}`), &resp); err == nil {
 		t.Fatal("expected missing reset_epoch to fail closed")
+	}
+}
+
+func TestRegisterVaultRespRejectsMissingEffectiveBirthday(t *testing.T) {
+	t.Parallel()
+
+	var resp RegisterVaultResp
+	if err := json.Unmarshal([]byte(`{
+		"registered":true,
+		"reset_epoch":0,
+		"expected_next_height":42
+	}`), &resp); err == nil {
+		t.Fatal("expected missing effective_birthday to fail closed")
 	}
 }
 

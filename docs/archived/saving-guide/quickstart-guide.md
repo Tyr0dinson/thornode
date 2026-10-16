@@ -128,7 +128,7 @@ curl -SL https://gateway.liquify.com/chain/thorchain_api/thorchain/pools | jq '.
 
 #### 3. Send memoless savers transactions
 
-Both Saver **Deposit** and **Withdraw** transactions can be done without memos _(optional memos can be included if a wallet wishes, see_ [_`Transaction Memos`_](../concepts/memos.md)_, since there is a marginal transaction cost savings to including memos)._
+Both Saver **Deposit** and **Withdraw** transactions can be done without memos _(optional memos can be included if a wallet wishes, see_ [_`Transaction Memos`_](../../concepts/memos.md)_, since there is a marginal transaction cost savings to including memos)._
 
 To **deposit**, users should send any amount of asset they wish (avoiding dust amounts). The network will read the deposit and user address, then add them into the Saver Vault automatically.
 

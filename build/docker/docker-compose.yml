@@ -5,14 +5,16 @@
 # tss-lib-private is a private GitLab subgroup repo. The Dockerfiles that fetch
 # Go modules (build/docker/Dockerfile, build/docker/cli/Dockerfile,
 # tools/events/Dockerfile, ci/Dockerfile.simtest, ci/Dockerfile.regtest) use
-# `--mount=type=secret,id=ci_job_token,required=false`. Pipe CI_JOB_TOKEN
-# through to every `docker compose build` here so cache-miss rebuilds work in
-# CI. Local builds without CI_JOB_TOKEN set will still work because the mount
-# is optional and falls back to anonymous fetch (which is fine for non-private
-# repos, and the dev presumably has their own git auth for the private one).
+# `--mount=type=secret,id=go_private_auth,required=false`. Pipe
+# GO_PRIVATE_GIT_CREDENTIAL ("user:token", set by the Makefile or
+# scripts/ci-go-private-auth.sh) through to every `docker compose build` here
+# so cache-miss rebuilds work in CI. Local builds without it still work because
+# the mount is optional and falls back to anonymous fetch (which is fine for
+# non-private repos, and the dev presumably has their own git auth for the
+# private one).
 secrets:
-  ci_job_token:
-    environment: CI_JOB_TOKEN
+  go_private_auth:
+    environment: GO_PRIVATE_GIT_CREDENTIAL
 
 volumes:
   cli: {}
@@ -20,16 +22,19 @@ volumes:
   thornode-cat: {}
   thornode-fox: {}
   thornode-pig: {}
+  thornode-frog: {}
   bifrost: {}
   bifrost-cat: {}
   bifrost-fox: {}
   bifrost-pig: {}
+  bifrost-frog: {}
   monero-daemon: {}
   monero-wallet: {}
   xmr-frost-data: {}
   xmr-frost-data-cat: {}
   xmr-frost-data-fox: {}
   xmr-frost-data-pig: {}
+  xmr-frost-data-frog: {}
   xmr-sim-data: {}
 
 ########################################################################################
@@ -48,6 +53,9 @@ services:
       SIGNER_NAME: thorchain
       SIGNER_PASSWD: password
       THOR_COSMOS_GRPC_ENABLE: true
+      # Mocknet uses one-second blocks; keep jail longer than the 45s signing timeout.
+      # THORNode and Bifrost must use the same mocknet constant override.
+      JAIL_TIME_KEYSIGN: "${JAIL_TIME_KEYSIGN:-60}"
     logging: &logging
       driver: "json-file"
       options:
@@ -69,7 +77,7 @@ services:
       args:
         DOCKER_MIRROR: ${DOCKER_MIRROR:-}
       secrets:
-        - ci_job_token
+        - go_private_auth
     environment:
       <<: *thorchain-environment
     entrypoint: /bin/bash
@@ -91,7 +99,7 @@ services:
         TAG: mocknet
         DOCKER_MIRROR: ${DOCKER_MIRROR:-}
       secrets:
-        - ci_job_token
+        - go_private_auth
     environment:
       CONSOLE: 1
       ENDPOINTS_THORNODE: http://thornode:1317
@@ -126,7 +134,13 @@ services:
       HARDFORK_BLOCK_HEIGHT: ${HARDFORK_BLOCK_HEIGHT:-}
       NEW_GENESIS_TIME: ${NEW_GENESIS_TIME:-}
       CHURN_MIGRATE_ROUNDS: 2
-      FUND_MIGRATION_INTERVAL: 30
+      # Migration rounds (and ragnarok) run every FUND_MIGRATION_INTERVAL blocks.
+      # Chains with a migrate still unobserved skip a round (per-chain pending
+      # gate), so a short interval keeps multi-round migration without racing.
+      FUND_MIGRATION_INTERVAL: 15
+      # The genesis XMR keygen waits for bifrost to scan THOR blocks. 128 (the
+      # default) gated the simulation start; bifrost scans by about block 6.
+      XMR_MONOVAULT_GENESIS_DELAY_BLOCKS: 64
       SIGNING_TRANSACTION_PERIOD: 120
       EMISSION_CURVE: 100000
       AVAX_HOST: ${AVAX_HOST:-http://avalanche:9650/ext/bc/C/rpc}
@@ -138,6 +152,9 @@ services:
 
       # mimir default overrides
       HALT_CHURNING: 1
+      # This opt-in requires S00; develop still skips XMR keygen unconditionally.
+      # Production must leave it unset until the reviewed fleet is homogeneous.
+      ENABLE_MONOVAULT_KEYGEN: 1
       EVM_ALLOWANCE_CHECK_AVAX: 1
       EVM_ALLOWANCE_CHECK_BASE: 1
       EVM_ALLOWANCE_CHECK_BSC: 1
@@ -179,7 +196,7 @@ services:
         TAG: mocknet
         DOCKER_MIRROR: ${DOCKER_MIRROR:-}
       secrets:
-        - ci_job_token
+        - go_private_auth
     profiles:
       - thornode
       - mocknet
@@ -233,7 +250,8 @@ services:
       BIFROST_SIGNER_AUTO_OBSERVE: "false"
       BIFROST_SIGNER_KEYGEN_TIMEOUT: 20s
       BIFROST_SIGNER_FROST_KEYGEN_TIMEOUT: 300s
-      BIFROST_SIGNER_KEYSIGN_TIMEOUT: 6s
+      # Match config/default.yaml; cluster signing can exceed 6s under load.
+      BIFROST_SIGNER_KEYSIGN_TIMEOUT: 45s
       BIFROST_CHAINS_AVAX_BLOCK_SCANNER_OBSERVATION_FLEXIBILITY_BLOCKS: "5"
       BIFROST_CHAINS_BCH_BLOCK_SCANNER_OBSERVATION_FLEXIBILITY_BLOCKS: "5"
       BIFROST_CHAINS_BTC_BLOCK_SCANNER_OBSERVATION_FLEXIBILITY_BLOCKS: "5"
@@ -287,8 +305,14 @@ services:
       BIFROST_CHAINS_XMR_CHAIN_HOST: http://monero-wallet-rpc:18082
       BIFROST_CHAINS_XMR_CHAIN_NETWORK: "mocknet"
       BIFROST_CHAINS_XMR_DISABLE_TLS: "true"
+      # Follow fast mocknet blocks and retry signer throttling without a 30s pause.
+      BIFROST_CHAINS_XMR_BLOCK_SCANNER_BLOCK_HEIGHT_DISCOVER_BACK_OFF: "${BLOCK_SCANNER_BACKOFF:-1s}"
       BIFROST_CHAINS_XMR_SIGNER_ENDPOINT: "http://xmr-frost-signer:8283"
-      BIFROST_CHAINS_XMR_AUTHORIZATION_BEARER: "${XMR_FROST_AUTH_BEARER:-xmr-frost-mocknet-token}"
+      # Fixed credentials are confined to loopback-only local mocknet services.
+      # Production-like XMR Compose files require an explicit random bearer.
+      BIFROST_CHAINS_XMR_SIGNER_AUTHORIZATION_BEARER: "${XMR_FROST_AUTH_BEARER:-xmr-frost-mocknet-token}"
+      BIFROST_CHAINS_XMR_SIGNER_EXPECTED_NETWORK: "mocknet"
+      BIFROST_CHAINS_XMR_SIGNER_ALLOW_INSECURE_HTTP: "true"
 
       # enable tron
       BIFROST_CHAINS_TRON_DISABLED: "${BIFROST_CHAINS_TRON_DISABLED:-false}"
@@ -431,6 +455,26 @@ services:
       - thornode-fox:/root/.thornode
     entrypoint: /docker/scripts/validator.sh
 
+  thornode-frog:
+    <<: *thornode
+    profiles:
+      - mocknet-cluster
+    depends_on:
+      thornode:
+        condition: service_healthy
+    ports: []
+    hostname: thornode-frog
+    environment:
+      <<: *thornode-environment
+      PEER: thornode
+      SEED: thornode-frog
+      SEEDS: thornode,thornode-cat,thornode-fox,thornode-pig
+      SIGNER_SEED_PHRASE: "frog frog frog frog frog frog frog frog frog frog frog frog frog frog frog frog frog frog frog frog frog frog frog blossom"
+    volumes:
+      - "../scripts:/docker/scripts"
+      - thornode-frog:/root/.thornode
+    entrypoint: /docker/scripts/validator.sh
+
   thornode-pig:
     <<: *thornode
     profiles:
@@ -523,6 +567,42 @@ services:
       - "../scripts:/docker/scripts"
       - bifrost-fox:/var/data/bifrost
       - thornode-fox:/root/.thornode
+    command: ["bifrost"]
+
+  bifrost-frog:
+    <<: *bifrost
+    profiles:
+      - mocknet-cluster
+    depends_on:
+      - bitcoin
+      - bitcoin-cash
+      - dogecoin
+      - gaia
+      - litecoin
+      - monero-daemon
+      - monero-wallet-rpc
+      - xmr-frost-signer
+      - xmr-frost-signer-frog
+      - tron-supernode
+      - tron-fullnode
+      - thornode
+      - solana
+      - polygon
+    environment:
+      <<: *bifrost-environment
+      PEER: bifrost
+      CHAIN_API: thornode-frog:1317
+      CHAIN_RPC: thornode-frog:26657
+      BIFROST_THORCHAIN_CHAIN_EBIFROST: thornode-frog:50051
+      BIFROST_CHAINS_XMR_SIGNER_ENDPOINT: "http://xmr-frost-signer-frog:8283"
+      SIGNER_SEED_PHRASE: "frog frog frog frog frog frog frog frog frog frog frog frog frog frog frog frog frog frog frog frog frog frog frog blossom"
+    ports:
+      - 5040
+      - 6044:6040 # host-side simulation readiness probe
+    volumes:
+      - "../scripts:/docker/scripts"
+      - bifrost-frog:/var/data/bifrost
+      - thornode-frog:/root/.thornode
     command: ["bifrost"]
 
   bifrost-pig:
@@ -647,6 +727,8 @@ services:
       - mocknet-cluster
     image: registry.gitlab.com/thorchain/devops/node-launcher:dogecoin-daemon-1.14.9
     restart: unless-stopped
+    # the entrypoint forwards SIGTERM so dogecoind can flush the chain on stop
+    stop_grace_period: 1m
     volumes:
       - "./mocknet:/mocknet"
     environment:
@@ -733,6 +815,8 @@ services:
     build:
       context: ./mocknet/monero
       dockerfile: Dockerfile
+      args:
+        DOCKER_MIRROR: ${DOCKER_MIRROR:-}
     image: thornode-monero-mocknet:latest
     restart: unless-stopped
     entrypoint: /usr/local/bin/daemon-entrypoint.sh
@@ -800,7 +884,7 @@ services:
     profiles:
       - mocknet
       - mocknet-cluster
-    image: ${XMR_FROST_SIGNER_IMAGE:-registry.gitlab.com/thorchain/devops/serai/xmr-frost-signer:b1a1859e@sha256:183d9a00308504fe3e66239aa147a1a23cc502b9881ddf30064cd738799fc220}
+    image: ${XMR_FROST_SIGNER_IMAGE:-registry.gitlab.com/thorchain/devops/serai/xmr-frost-signer:392adbc0@sha256:10adec2de86f35a53fc8c75413d7d08c9151ee6891c7de009a2f65523b2e21c9}
     restart: unless-stopped
     user: root
     entrypoint:
@@ -815,23 +899,21 @@ services:
     depends_on:
       monero-daemon:
         condition: service_healthy
-    environment:
+    environment: &xmr-frost-signer-environment
       XMR_FROST_LISTEN_ADDR: "0.0.0.0:8283"
       XMR_FROST_DAEMON_URL: "http://monero-daemon:18081"
       XMR_FROST_DATA_DIR: "/home/serai/xmr-frost"
       XMR_FROST_CHAIN_NETWORK: "mocknet"
       XMR_FROST_MAX_SIGN_SCAN_LAG_BLOCKS: "32"
-      XMR_FROST_RATE_LIMIT_GLOBAL_RPS: "500"
-      XMR_FROST_RATE_LIMIT_GLOBAL_BURST: "5000"
-      XMR_FROST_RATE_LIMIT_PER_IP_RPS: "500"
-      XMR_FROST_RATE_LIMIT_PER_IP_BURST: "5000"
-      XMR_FROST_ADMIN_ALLOW_NON_LOOPBACK: "true"
+      XMR_FROST_MAX_REQUESTS_PER_SECOND: "256"
+      XMR_FROST_MAX_REQUESTS_PER_IP_SECOND: "64"
       SIGNER_SEED_PHRASE: "dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog fossil"
+      # Must match Bifrost's local-only default above.
       XMR_FROST_AUTH_BEARER: "${XMR_FROST_AUTH_BEARER:-xmr-frost-mocknet-token}"
     volumes:
       - xmr-frost-data:/home/serai/xmr-frost
     ports:
-      - 8283:8283
+      - "127.0.0.1:8283:8283"
     healthcheck:
       test:
         [
@@ -847,28 +929,51 @@ services:
     <<: *xmr-frost-signer
     profiles:
       - mocknet-cluster
+    # Service-level YAML merges do not merge nested environment maps. Reapply
+    # the shared signer contract before overriding this node's identity.
+    environment:
+      <<: *xmr-frost-signer-environment
+      SIGNER_SEED_PHRASE: "cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat crawl"
     volumes:
       - xmr-frost-data-cat:/home/serai/xmr-frost
     ports:
-      - 8285:8283 # host-side simulation readiness probe
+      - "127.0.0.1:8285:8283" # host-side simulation readiness probe
 
   xmr-frost-signer-fox:
     <<: *xmr-frost-signer
     profiles:
       - mocknet-cluster
+    environment:
+      <<: *xmr-frost-signer-environment
+      SIGNER_SEED_PHRASE: "fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox filter"
     volumes:
       - xmr-frost-data-fox:/home/serai/xmr-frost
     ports:
-      - 8286:8283 # host-side simulation readiness probe
+      - "127.0.0.1:8286:8283" # host-side simulation readiness probe
+
+  xmr-frost-signer-frog:
+    <<: *xmr-frost-signer
+    environment:
+      <<: *xmr-frost-signer-environment
+      SIGNER_SEED_PHRASE: "frog frog frog frog frog frog frog frog frog frog frog frog frog frog frog frog frog frog frog frog frog frog frog blossom"
+    profiles:
+      - mocknet-cluster
+    volumes:
+      - xmr-frost-data-frog:/home/serai/xmr-frost
+    ports:
+      - "127.0.0.1:8288:8283" # host-side simulation readiness probe
 
   xmr-frost-signer-pig:
     <<: *xmr-frost-signer
     profiles:
       - mocknet-cluster
+    environment:
+      <<: *xmr-frost-signer-environment
+      SIGNER_SEED_PHRASE: "pig pig pig pig pig pig pig pig pig pig pig pig pig pig pig pig pig pig pig pig pig pig pig quick"
     volumes:
       - xmr-frost-data-pig:/home/serai/xmr-frost
     ports:
-      - 8287:8283 # host-side simulation readiness probe
+      - "127.0.0.1:8287:8283" # host-side simulation readiness probe
 
   xmr-sim-helper:
     profiles:
@@ -902,6 +1007,8 @@ services:
       XMR_FROST_DATA_DIR: "/home/serai/xmr-sim"
       XMR_FROST_CHAIN_NETWORK: "mocknet"
       XMR_FROST_MAX_SIGN_SCAN_LAG_BLOCKS: "32"
+      # This older faucet-helper pin implements the legacy RATE_LIMIT contract;
+      # keep it independent until S07 consolidates signer image references.
       XMR_FROST_RATE_LIMIT_GLOBAL_RPS: "500"
       XMR_FROST_RATE_LIMIT_GLOBAL_BURST: "5000"
       XMR_FROST_RATE_LIMIT_PER_IP_RPS: "500"
@@ -913,7 +1020,7 @@ services:
     volumes:
       - xmr-sim-data:/home/serai/xmr-sim
     ports:
-      - 8284:8284
+      - "127.0.0.1:8284:8284"
     healthcheck:
       test:
         [
@@ -1100,7 +1207,7 @@ services:
     profiles:
       - mocknet
       - mocknet-cluster
-    image: ${DOCKER_MIRROR:-}zfnd/zebra:6.2.1
+    image: ${DOCKER_MIRROR:-}zfnd/zebra:6.4.2
     restart: unless-stopped
     entrypoint: ["/etc/entrypoint.sh"]
     environment:

@@ -57,7 +57,7 @@ func (s *BitcoinSuite) SetUpSuite(c *C) {
 
 var btcChainRPCs = map[string]map[string]interface{}{}
 
-func init() {
+func loadBTCFixtures() {
 	// map the method and params to the loaded fixture
 	loadFixture := func(path string) map[string]interface{} {
 		f, err := os.Open(path)

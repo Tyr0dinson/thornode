@@ -27,7 +27,7 @@ func processNetworkFeeAttestation(
 
 	slashCtx := ctx.WithContext(context.WithValue(ctx.Context(), constants.CtxMetricLabels, []metrics.Label{
 		telemetry.NewLabel("reason", "failed_observe_network_fee"),
-		telemetry.NewLabel("chain", string(nf.Chain)),
+		telemetry.NewLabel("chain", telemChain(nf.Chain)),
 	}))
 
 	if !voter.Sign(attester) {
@@ -56,6 +56,14 @@ func processNetworkFeeAttestation(
 	}
 
 	voter.BlockHeight = ctx.BlockHeight()
+
+	// Record the height at which this chain's network fee last reached consensus.
+	// A frozen fee value is otherwise indistinguishable from a stable one.
+	telemetry.SetGaugeWithLabels(
+		[]string{"thornode", "network_fee", "last_consensus_height"},
+		float32(ctx.BlockHeight()),
+		[]metrics.Label{telemetry.NewLabel("chain", telemChain(nf.Chain))},
+	)
 
 	// This signer brings the voter to consensus; increment the signer's slash points like the before-consensus signers,
 	// then decrement all the signers' slash points and increment the non-signers' slash points.

@@ -475,7 +475,8 @@ func (s *BackfillSuite) TestGetTxIn(c *C) {
 	scanner.cfg.ChainID = common.SOLChain
 
 	// empty transactions
-	txIn := scanner.getTxIn(100, nil)
+	txIn, err := scanner.getTxIn(100, nil)
+	c.Assert(err, IsNil)
 	c.Assert(len(txIn.TxArray), Equals, 0)
 	c.Assert(txIn.Chain, Equals, common.SOLChain)
 
@@ -486,7 +487,8 @@ func (s *BackfillSuite) TestGetTxIn(c *C) {
 			Meta:        rpc.RPCMeta{Fee: 5000},
 		},
 	}
-	txIn = scanner.getTxIn(100, txns)
+	txIn, err = scanner.getTxIn(100, txns)
+	c.Assert(err, IsNil)
 	c.Assert(len(txIn.TxArray), Equals, 0)
 
 	// tx with no fee - skipped
@@ -496,7 +498,8 @@ func (s *BackfillSuite) TestGetTxIn(c *C) {
 			Meta:        rpc.RPCMeta{Fee: 0},
 		},
 	}
-	txIn = scanner.getTxIn(100, txns)
+	txIn, err = scanner.getTxIn(100, txns)
+	c.Assert(err, IsNil)
 	c.Assert(len(txIn.TxArray), Equals, 0)
 
 	// valid transfer
@@ -516,7 +519,8 @@ func (s *BackfillSuite) TestGetTxIn(c *C) {
 			Meta: rpc.RPCMeta{Fee: 5000},
 		},
 	}
-	txIn = scanner.getTxIn(100, txns)
+	txIn, err = scanner.getTxIn(100, txns)
+	c.Assert(err, IsNil)
 	c.Assert(len(txIn.TxArray), Equals, 1)
 	c.Assert(txIn.TxArray[0].Memo, Equals, "test memo")
 }
@@ -1208,6 +1212,31 @@ func (s *ClientBackfillSuite) TestReportSolvencyUnhealthyScannerRunnerHeight(c *
 	}
 }
 
+// TestReportSolvencyIgnoresNonceAccount: the durable-nonce account rent is booked as
+// vault gas on-chain when its create tx is observed, so ReportSolvency reads only the
+// vault balance. A failing getAccountInfo (the nonce account RPC) must not drop the
+// vault from solvency reporting.
+func (s *ClientBackfillSuite) TestReportSolvencyIgnoresNonceAccount(c *C) {
+	server := makeSolRPCServer(c, map[string]string{
+		"getSlot":        `{"jsonrpc":"2.0","result":111,"id":1}`,
+		"getBalance":     `{"jsonrpc":"2.0","result":{"context":{"slot":111},"value":10000000000},"id":1}`,
+		"getAccountInfo": `{"jsonrpc":"2.0","error":{"code":-32005,"message":"node is behind"},"id":1}`,
+	})
+	defer server.Close()
+	client := s.makeClient(c, server)
+	client.cfg.SolvencyBlocks = 50
+	client.globalSolvencyQueue = make(chan stypes.Solvency, 10)
+	client.solScanner.healthy.Store(false)
+	client.solScanner.lastFeeRate.Store(1)
+	client.bridge = &mockSOLSolvencyBridge{asgards: types2.Vaults{{
+		PubKey:      types2.GetRandomPubKey(),
+		PubKeyEddsa: types2.GetRandomEd25519PubKey(),
+		Coins:       common.NewCoins(common.NewCoin(common.SOLAsset, cosmos.NewUint(1_000_000_000))),
+	}}}
+	c.Assert(client.ReportSolvency(111), IsNil)
+	c.Assert(len(client.globalSolvencyQueue), Equals, 1) // enqueued synchronously before return
+}
+
 func (s *ClientBackfillSuite) TestReportSolvencyAllSolventIgnoresUnrelatedVaults(c *C) {
 	server := makeSolRPCServer(c, map[string]string{
 		"getSlot":    `{"jsonrpc":"2.0","result":111,"id":1}`,
@@ -1330,8 +1359,19 @@ func (s *ClientBackfillSuite) TestReportSolvencyConcurrentNoRace(c *C) {
 	}
 	wg.Wait()
 
-	// height == steps*SolvencyBlocks sits exactly on boundary `steps`, which is not
-	// yet crossed, so the highest reportable multiple is steps-1.
+	// TryLock intentionally drops overlapping report attempts, so the concurrent
+	// burst need not visit every cadence boundary. Once contention ends, repeated
+	// scanner passes at the same height must catch up without regressing.
+	last := client.getSolvencySlotMultiple()
+	c.Assert(last >= 1 && last <= steps-1, Equals, true)
+	for last < steps-1 {
+		c.Assert(client.ReportSolvency(int64(steps)*client.cfg.SolvencyBlocks), IsNil)
+		next := client.getSolvencySlotMultiple()
+		c.Assert(next > last, Equals, true)
+		last = next
+	}
+	// height == steps*SolvencyBlocks sits exactly on boundary `steps`, which is
+	// not yet crossed, so the highest reportable multiple is steps-1.
 	c.Assert(client.getSolvencySlotMultiple(), Equals, int64(steps-1))
 }
 

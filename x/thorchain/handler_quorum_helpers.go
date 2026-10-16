@@ -4,6 +4,8 @@ import (
 	"fmt"
 
 	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
+	"github.com/cosmos/cosmos-sdk/telemetry"
+	"github.com/hashicorp/go-metrics"
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
@@ -37,12 +39,27 @@ func deduplicateAttestations(attestations []*common.Attestation, maxCount int) [
 
 func verifyQuorumAttestation(activeNodeAccounts NodeAccounts, signBz []byte, att *common.Attestation) (cosmos.AccAddress, error) {
 	if att == nil {
+		telemetry.IncrCounterWithLabels(
+			[]string{"thornode", "quorum", "attestation_rejected"},
+			1,
+			[]metrics.Label{telemetry.NewLabel("reason", "nil")},
+		)
 		return nil, fmt.Errorf("attestation is nil")
 	}
 	if len(att.PubKey) == 0 {
+		telemetry.IncrCounterWithLabels(
+			[]string{"thornode", "quorum", "attestation_rejected"},
+			1,
+			[]metrics.Label{telemetry.NewLabel("reason", "empty_pubkey")},
+		)
 		return nil, fmt.Errorf("pubkey is empty")
 	}
 	if len(att.Signature) == 0 {
+		telemetry.IncrCounterWithLabels(
+			[]string{"thornode", "quorum", "attestation_rejected"},
+			1,
+			[]metrics.Label{telemetry.NewLabel("reason", "empty_signature")},
+		)
 		return nil, fmt.Errorf("signature is empty")
 	}
 
@@ -50,6 +67,11 @@ func verifyQuorumAttestation(activeNodeAccounts NodeAccounts, signBz []byte, att
 
 	bech32Pub, err := cosmos.Bech32ifyPubKey(cosmos.Bech32PubKeyTypeAccPub, &pk)
 	if err != nil {
+		telemetry.IncrCounterWithLabels(
+			[]string{"thornode", "quorum", "attestation_rejected"},
+			1,
+			[]metrics.Label{telemetry.NewLabel("reason", "bech32_fail")},
+		)
 		return nil, fmt.Errorf("fail to get bech32 pub key: %w", err)
 	}
 
@@ -63,10 +85,22 @@ func verifyQuorumAttestation(activeNodeAccounts NodeAccounts, signBz []byte, att
 	}
 	if !found {
 		// can occur if a node account churns out before the tx is processed.
+		telemetry.IncrCounterWithLabels(
+			[]string{"thornode", "quorum", "attestation_rejected"},
+			1,
+			[]metrics.Label{telemetry.NewLabel("reason", "not_active_node")},
+		)
 		return nil, fmt.Errorf("signer is not an active node account: %s", pk.String())
 	}
 
 	if !pk.VerifySignature(signBz, att.Signature) {
+		// A node signing payloads the rest of the network cannot verify is on a
+		// mismatched build or malfunctioning; its observations are discarded.
+		telemetry.IncrCounterWithLabels(
+			[]string{"thornode", "quorum", "attestation_rejected"},
+			1,
+			[]metrics.Label{telemetry.NewLabel("reason", "bad_signature")},
+		)
 		return nil, fmt.Errorf("failed to verify signature: %s", pk.String())
 	}
 

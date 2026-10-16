@@ -55,7 +55,7 @@ func fundModuleBench(b testing.TB, ctx cosmos.Context, k keeper.Keeper, name str
 
 // setupBenchmarkManager creates a test context and manager for benchmarking
 // This is a standalone version of setupManagerForTest that works with testing.B
-func setupBenchmarkManager(b *testing.B) (cosmos.Context, *Mgrs) {
+func setupBenchmarkManager(b testing.TB) (cosmos.Context, *Mgrs) {
 	b.Helper()
 
 	// Ensure we're using mocknet and have proper version set
@@ -70,10 +70,13 @@ func setupBenchmarkManager(b *testing.B) (cosmos.Context, *Mgrs) {
 
 	db := dbm.NewMemDB()
 	ms := store.NewCommitMultiStore(db, sdklog.NewNopLogger(), storemetrics.NewNoOpMetrics())
-	ms.MountStoreWithDB(keyAcc, cosmos.StoreTypeIAVL, db)
-	ms.MountStoreWithDB(keyThornodeBench, cosmos.StoreTypeIAVL, db)
-	ms.MountStoreWithDB(keyBank, cosmos.StoreTypeIAVL, db)
-	ms.MountStoreWithDB(keyWasm, cosmos.StoreTypeIAVL, db)
+	// nil db: rootmulti prefixes its own db per store. Handing every store the
+	// same raw memdb makes their IAVL versions collide, so Commit() panics and
+	// the fixture can never be measured on a committed tree.
+	ms.MountStoreWithDB(keyAcc, cosmos.StoreTypeIAVL, nil)
+	ms.MountStoreWithDB(keyThornodeBench, cosmos.StoreTypeIAVL, nil)
+	ms.MountStoreWithDB(keyBank, cosmos.StoreTypeIAVL, nil)
+	ms.MountStoreWithDB(keyWasm, cosmos.StoreTypeIAVL, nil)
 
 	err := ms.LoadLatestVersion()
 	if err != nil {

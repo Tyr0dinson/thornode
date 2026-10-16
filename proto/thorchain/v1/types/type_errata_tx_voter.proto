@@ -7,6 +7,7 @@ option (gogoproto.stringer_all) = false;
 option (gogoproto.goproto_getters_all) = false;
 
 import "gogoproto/gogo.proto";
+import "common/common.proto";
 
 message ErrataTxVoter {
   string tx_id = 1 [
@@ -17,4 +18,7 @@ message ErrataTxVoter {
                          "gitlab.com/thorchain/thornode/v3/common.Chain" ];
   int64 block_height = 3;
   repeated string signers = 4;
+  // Terminal handler result. block_height separately records quorum/slash
+  // settlement, so an UNSPECIFIED outcome can retry without settling twice.
+  common.ErrataTxOutcome outcome = 5;
 }

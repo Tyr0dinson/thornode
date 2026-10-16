@@ -77,6 +77,7 @@ const (
 	Query_Vault_FullMethodName                    = "/types.Query/Vault"
 	Query_KeysignParty_FullMethodName             = "/types.Query/KeysignParty"
 	Query_XMRSpentOutputRefs_FullMethodName       = "/types.Query/XMRSpentOutputRefs"
+	Query_SolVaultNonce_FullMethodName            = "/types.Query/SolVaultNonce"
 	Query_AsgardVaults_FullMethodName             = "/types.Query/AsgardVaults"
 	Query_VaultsPubkeys_FullMethodName            = "/types.Query/VaultsPubkeys"
 	Query_VaultSolvency_FullMethodName            = "/types.Query/VaultSolvency"
@@ -188,6 +189,7 @@ type QueryClient interface {
 	Vault(ctx context.Context, in *QueryVaultRequest, opts ...grpc.CallOption) (*QueryVaultResponse, error)
 	KeysignParty(ctx context.Context, in *QueryKeysignPartyRequest, opts ...grpc.CallOption) (*QueryKeysignPartyResponse, error)
 	XMRSpentOutputRefs(ctx context.Context, in *QueryXMRSpentOutputRefsRequest, opts ...grpc.CallOption) (*QueryXMRSpentOutputRefsResponse, error)
+	SolVaultNonce(ctx context.Context, in *QuerySolVaultNonceRequest, opts ...grpc.CallOption) (*QuerySolVaultNonceResponse, error)
 	AsgardVaults(ctx context.Context, in *QueryAsgardVaultsRequest, opts ...grpc.CallOption) (*QueryAsgardVaultsResponse, error)
 	VaultsPubkeys(ctx context.Context, in *QueryVaultsPubkeysRequest, opts ...grpc.CallOption) (*QueryVaultsPubkeysResponse, error)
 	VaultSolvency(ctx context.Context, in *QueryVaultSolvencyRequest, opts ...grpc.CallOption) (*QueryVaultSolvencyResponse, error)
@@ -758,6 +760,15 @@ func (c *queryClient) XMRSpentOutputRefs(ctx context.Context, in *QueryXMRSpentO
 	return out, nil
 }
 
+func (c *queryClient) SolVaultNonce(ctx context.Context, in *QuerySolVaultNonceRequest, opts ...grpc.CallOption) (*QuerySolVaultNonceResponse, error) {
+	out := new(QuerySolVaultNonceResponse)
+	err := c.cc.Invoke(ctx, Query_SolVaultNonce_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *queryClient) AsgardVaults(ctx context.Context, in *QueryAsgardVaultsRequest, opts ...grpc.CallOption) (*QueryAsgardVaultsResponse, error) {
 	out := new(QueryAsgardVaultsResponse)
 	err := c.cc.Invoke(ctx, Query_AsgardVaults_FullMethodName, in, out, opts...)
@@ -1171,6 +1182,7 @@ type QueryServer interface {
 	Vault(context.Context, *QueryVaultRequest) (*QueryVaultResponse, error)
 	KeysignParty(context.Context, *QueryKeysignPartyRequest) (*QueryKeysignPartyResponse, error)
 	XMRSpentOutputRefs(context.Context, *QueryXMRSpentOutputRefsRequest) (*QueryXMRSpentOutputRefsResponse, error)
+	SolVaultNonce(context.Context, *QuerySolVaultNonceRequest) (*QuerySolVaultNonceResponse, error)
 	AsgardVaults(context.Context, *QueryAsgardVaultsRequest) (*QueryAsgardVaultsResponse, error)
 	VaultsPubkeys(context.Context, *QueryVaultsPubkeysRequest) (*QueryVaultsPubkeysResponse, error)
 	VaultSolvency(context.Context, *QueryVaultSolvencyRequest) (*QueryVaultSolvencyResponse, error)
@@ -1389,6 +1401,9 @@ func (UnimplementedQueryServer) KeysignParty(context.Context, *QueryKeysignParty
 }
 func (UnimplementedQueryServer) XMRSpentOutputRefs(context.Context, *QueryXMRSpentOutputRefsRequest) (*QueryXMRSpentOutputRefsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method XMRSpentOutputRefs not implemented")
+}
+func (UnimplementedQueryServer) SolVaultNonce(context.Context, *QuerySolVaultNonceRequest) (*QuerySolVaultNonceResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SolVaultNonce not implemented")
 }
 func (UnimplementedQueryServer) AsgardVaults(context.Context, *QueryAsgardVaultsRequest) (*QueryAsgardVaultsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method AsgardVaults not implemented")
@@ -2561,6 +2576,24 @@ func _Query_XMRSpentOutputRefs_Handler(srv interface{}, ctx context.Context, dec
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Query_SolVaultNonce_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(QuerySolVaultNonceRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(QueryServer).SolVaultNonce(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Query_SolVaultNonce_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(QueryServer).SolVaultNonce(ctx, req.(*QuerySolVaultNonceRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _Query_AsgardVaults_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(QueryAsgardVaultsRequest)
 	if err := dec(in); err != nil {
@@ -3483,6 +3516,10 @@ var Query_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "XMRSpentOutputRefs",
 			Handler:    _Query_XMRSpentOutputRefs_Handler,
+		},
+		{
+			MethodName: "SolVaultNonce",
+			Handler:    _Query_SolVaultNonce_Handler,
 		},
 		{
 			MethodName: "AsgardVaults",

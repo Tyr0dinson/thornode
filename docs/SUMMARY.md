@@ -81,6 +81,7 @@
 
   - [EVM Whitelist Procedure](evm_whitelist_procedure.md)
   - [Upgrade Router](upgrade_router.md)
+  - [Consensus Determinism Replay](test-consensus-determinism.md)
   - [Architecture Decision Records (ADR)](architecture/README.md)
     - [ADR Creation Process](architecture/PROCESS.md)
     - [ADR {ADR-NUMBER}: {TITLE}](architecture/TEMPLATE.md)
@@ -110,6 +111,7 @@
     - [ADR 026: Dynamic L1 Min Swap Fee Per Thorname & Pair](architecture/adr-026-dynamic-l1-min-fee-per-thorname.md)
     - [ADR 027: Affiliate Revenue Share (REVSHARE)](architecture/adr-027-affiliate-revshare.md)
     - [ADR 028: Exploit Conciliation](architecture/adr-028-exploit-conciliation.md)
+    - [ADR 029: Bond Yield Reward-Time Payouts](architecture/adr-029-bond-yield-payouts.md)
 
 - [Archived](archived/archived.md)
 

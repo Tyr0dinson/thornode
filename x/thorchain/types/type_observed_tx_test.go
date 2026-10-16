@@ -343,6 +343,40 @@ func (TypeObservedTxSuite) TestAddOutTx(c *C) {
 	c.Assert(voter.GetTx(activeNodes).Equals(voter.Tx), Equals, true)
 }
 
+func (TypeObservedTxSuite) TestMatchActionItemZecTex(c *C) {
+	p2pkhAddr, err := GetRandomPubKey().GetAddress(common.ZECChain)
+	c.Assert(err, IsNil)
+	otherAddr, err := GetRandomPubKey().GetAddress(common.ZECChain)
+	c.Assert(err, IsNil)
+	texAddr, err := p2pkhAddr.ToTexAddress()
+	c.Assert(err, IsNil)
+	c.Assert(p2pkhAddr.Equals(texAddr), Equals, false)
+
+	coin := common.NewCoin(common.ZECAsset, cosmos.NewUint(common.One))
+	outboundTx := common.NewTx(
+		GetRandomTxHash(),
+		otherAddr,
+		p2pkhAddr,
+		common.Coins{coin},
+		common.Gas{{Asset: common.ZECAsset, Amount: cosmos.NewUint(1000)}},
+		"OUT:"+GetRandomTxHash().String(),
+	)
+
+	voter := NewObservedTxVoter(GetRandomTxHash(), nil)
+	voter.Actions = []TxOutItem{{
+		Chain:     common.ZECChain,
+		ToAddress: texAddr,
+		Coin:      coin,
+		Memo:      outboundTx.Memo,
+	}}
+	c.Check(voter.matchActionItem(outboundTx), Equals, true)
+
+	// An unrelated Zcash destination still fails to match.
+	strangerTx := outboundTx
+	strangerTx.ToAddress = otherAddr
+	c.Check(voter.matchActionItem(strangerTx), Equals, false)
+}
+
 func (TypeObservedTxSuite) TestObservedTxEquals(c *C) {
 	coins1 := common.Coins{
 		common.NewCoin(common.ETHAsset, cosmos.NewUint(100*common.One)),
@@ -787,6 +821,10 @@ func (TypeObservedTxSuite) TestShouldRefundRedundantObservationXMRSpentRefJoker(
 	tx.Memo = "OUT:xmr-ref-joker"
 
 	signer := GetRandomBech32Addr()
+	assertRefund := func(voter *ObservedTxVoter, observation common.ObservedTx, want bool) {
+		c.Assert(voter.ShouldRefundRedundantInboundObservation(observation, signer), Equals, want, Commentf("inbound"))
+		c.Assert(voter.ShouldRefundRedundantOutboundObservation(observation, signer), Equals, want, Commentf("outbound"))
+	}
 	observedPubKey := GetRandomPubKey()
 	voter := NewObservedTxVoter(txID, nil)
 
@@ -801,7 +839,7 @@ func (TypeObservedTxSuite) TestShouldRefundRedundantObservationXMRSpentRefJoker(
 	}
 	// The optional-ref transition remains in the same cap class, but it does not
 	// receive an immediate refund; consensus/flex accounting credits it normally.
-	c.Assert(voter.ShouldRefundRedundantObservation(variantA, signer), Equals, false)
+	assertRefund(&voter, variantA, false)
 	c.Assert(voter.Add(variantA, signer), Equals, true)
 
 	variantB := common.NewObservedTx(tx, 1, observedPubKey, 1)
@@ -810,7 +848,7 @@ func (TypeObservedTxSuite) TestShouldRefundRedundantObservationXMRSpentRefJoker(
 	}
 	// Although variant A and B conflict with each other, both belong to the
 	// same refund class. The joker must not keep the count at 1.
-	c.Assert(voter.ShouldRefundRedundantObservation(variantB, signer), Equals, false)
+	assertRefund(&voter, variantB, false)
 
 	// Even a gas-only variant with variant A's exact refs is no longer eligible:
 	// both the joker and variant A occupy the transitive refund class, so the
@@ -819,7 +857,7 @@ func (TypeObservedTxSuite) TestShouldRefundRedundantObservationXMRSpentRefJoker(
 	sameRefsDifferentGas.Tx.Gas = common.Gas{
 		common.NewCoin(common.XMRAsset, cosmos.NewUint(1234)),
 	}
-	c.Assert(voter.ShouldRefundRedundantObservation(sameRefsDifferentGas, signer), Equals, false)
+	assertRefund(&voter, sameRefsDifferentGas, false)
 
 	// Without the joker, one conflicting non-empty ref set is in the same
 	// transitive refund class but is not consensus-compatible. It must not make
@@ -827,11 +865,11 @@ func (TypeObservedTxSuite) TestShouldRefundRedundantObservationXMRSpentRefJoker(
 	// observation can also receive the flex-window refund.
 	conflictingOnly := NewObservedTxVoter(txID, nil)
 	c.Assert(conflictingOnly.Add(variantA, signer), Equals, true)
-	c.Assert(conflictingOnly.ShouldRefundRedundantObservation(variantB, signer), Equals, false)
+	assertRefund(&conflictingOnly, variantB, false)
 
 	// A normal gas-only variant with the same canonical refs remains eligible for
 	// the intended one-time redundant-observation refund.
-	c.Assert(conflictingOnly.ShouldRefundRedundantObservation(sameRefsDifferentGas, signer), Equals, true)
+	assertRefund(&conflictingOnly, sameRefsDifferentGas, true)
 }
 
 func (TypeObservedTxSuite) TestGetConsensusSignersStayScopedToObservedVault(c *C) {

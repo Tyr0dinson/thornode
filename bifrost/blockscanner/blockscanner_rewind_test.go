@@ -45,6 +45,116 @@ func newCursorRewindUnitScanner(storage ScannerStorage, previousHeight, floor in
 	}
 }
 
+type rejectingRollbackFetcher struct {
+	DummyFetcher
+	nextHeight int64
+}
+
+func (f *rejectingRollbackFetcher) ValidateScannerRollback(nextHeight int64) error {
+	f.nextHeight = nextHeight
+	return errors.New("history requires operator recovery")
+}
+
+func (s *BlockScannerExtraSuite) TestRollbackValidationPrecedesDurableCursorChange(c *C) {
+	storage := NewMockScannerStorage()
+	c.Assert(storage.SetScanPos(1774), IsNil)
+	scanner := newCursorRewindUnitScanner(storage, 1774, 0)
+	fetcher := &rejectingRollbackFetcher{}
+	scanner.chainScanner = fetcher
+
+	c.Assert(scanner.rollback(814), ErrorMatches, ".*requested history not replayed.*operator recovery")
+	c.Check(fetcher.nextHeight, Equals, int64(815))
+	c.Check(scanner.PreviousHeight(), Equals, int64(1774))
+	position, err := storage.GetScanPos()
+	c.Assert(err, IsNil)
+	c.Check(position, Equals, int64(1774))
+
+	// The hook sees the actual, floor-clamped next height.
+	scanner.cfg.FloorBlockHeight = 1700
+	c.Assert(scanner.rollback(814), NotNil)
+	c.Check(fetcher.nextHeight, Equals, int64(1701))
+	c.Check(scanner.PreviousHeight(), Equals, int64(1774))
+}
+
+type unavailableRollbackFetcher struct {
+	DummyFetcher
+	validated chan int64
+}
+
+func (f *unavailableRollbackFetcher) ValidateScannerRollback(nextHeight int64) error {
+	f.validated <- nextHeight
+	return fmt.Errorf("state request failed: %w", btypes.ErrRollbackValidationUnavailable)
+}
+
+type rollbackWaitBridge struct{ thorclient.ThorchainBridge }
+
+func (rollbackWaitBridge) GetLastObservedInHeight(common.Chain) (int64, error) {
+	return 9, nil
+}
+
+func (rollbackWaitBridge) GetConstants() (map[string]int64, error) {
+	return map[string]int64{}, nil
+}
+
+func (s *BlockScannerExtraSuite) TestRollbackValidationWaitStopsWithoutMovingCursor(c *C) {
+	server, bridge := s.newRewindTestBridge(c)
+	defer server.Close()
+	storage := NewMockScannerStorage()
+	c.Assert(storage.SetScanPos(10), IsNil)
+	fetcher := &unavailableRollbackFetcher{validated: make(chan int64, 1)}
+	scanner, err := NewBlockScanner(config.BifrostBlockScannerConfiguration{
+		StartBlockHeight: 10, FloorBlockHeight: 8, ChainID: common.ETHChain,
+		BlockHeightDiscoverBackoff: time.Hour,
+	}, storage, m, rollbackWaitBridge{bridge}, fetcher)
+	c.Assert(err, IsNil)
+	scanner.healthy.Store(true)
+	// Queue before starting so the test cannot enter the ordinary at-tip wait.
+	scanner.rollbackChan = make(chan int64, 1)
+	scanner.rollbackChan <- 7
+	scanner.Start(make(chan stypes.TxIn, 1), make(chan common.NetworkFee, 1))
+	var stopOnce sync.Once
+	stopped := make(chan struct{})
+	stop := func() {
+		stopOnce.Do(func() {
+			go func() {
+				scanner.Stop()
+				close(stopped)
+			}()
+		})
+	}
+	defer stop()
+	select {
+	case height := <-fetcher.validated:
+		c.Check(height, Equals, int64(9), Commentf("validation must respect the configured floor"))
+	case <-time.After(3 * time.Second):
+		c.Fatal("rollback validation did not start")
+	}
+	// Add more requests while validation waits. They may be accepted before
+	// shutdown; otherwise shutdown must release the callers and retry backoff.
+	scanner.rollbackChan <- 6
+	queued := make(chan error, 1)
+	go func() { queued <- scanner.RollbackToLastObserved() }()
+	stop()
+	select {
+	case <-stopped:
+	case <-time.After(3 * time.Second):
+		c.Fatal("shutdown waited for the rollback retry backoff")
+	}
+	select {
+	case err = <-queued:
+		if err != nil {
+			c.Check(err, ErrorMatches, ".*stopped before rollback.*")
+		}
+	case <-time.After(3 * time.Second):
+		c.Fatal("shutdown left a rollback caller blocked")
+	}
+	c.Check(scanner.IsHealthy(), Equals, false)
+	c.Check(scanner.PreviousHeight(), Equals, int64(10))
+	position, err := storage.GetScanPos()
+	c.Assert(err, IsNil)
+	c.Check(position, Equals, int64(10))
+}
+
 func (s *BlockScannerExtraSuite) TestCursorRewindUsesNextHeightMinusOne(c *C) {
 	storage := NewMockScannerStorage()
 	c.Assert(storage.SetScanPos(199), IsNil)

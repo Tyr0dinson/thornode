@@ -33,6 +33,9 @@ const (
 	SignToThorchainDuration MetricName = `sign_to_thorchain_duration`
 	SendToThorchainDuration MetricName = `send_to_thorchain_duration`
 
+	XMRPendingCertificates         MetricName = `xmr_pending_certificates`
+	XMROldestPendingCertificateAge MetricName = `xmr_oldest_pending_certificate_age`
+
 	ObserverError MetricName = `observer_error`
 	SignerError   MetricName = `signer_error`
 
@@ -47,7 +50,16 @@ const (
 	// SolKeysignAbstain counts SOL keysign abstentions by reason. A fleet-wide spike
 	// (every node failing IsBlockhashValid, or finalization lag exceeding the margin)
 	// is otherwise invisible — the signer logs an abstain like routine non-selection.
+	// A sustained anchor_expired_dropped rate means outbounds keep outliving Solana's
+	// MAX_PROCESSING_AGE before they can be signed — most often because the RPCs no
+	// longer retain finalized blocks back to the keysign height's target.
 	SolKeysignAbstain MetricName = `sol_keysign_abstain`
+
+	// UTXOKeysignPartyNotFormed counts UTXO outbounds whose unsigned tx was
+	// discarded because the keysign party never formed. A sustained rate means
+	// vault members keep building different txs (their bitcoind views of the
+	// vault UTXOs differ) and the vault is not signing outbounds.
+	UTXOKeysignPartyNotFormed MetricName = `utxo_keysign_party_not_formed`
 )
 
 // Metrics used to provide promethus metrics
@@ -154,6 +166,14 @@ var (
 		}, []string{
 			"reason",
 		}),
+		UTXOKeysignPartyNotFormed: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Namespace: "bifrost",
+			Subsystem: "utxo",
+			Name:      "keysign_party_not_formed_total",
+			Help:      "UTXO unsigned txs discarded because the keysign party never formed",
+		}, []string{
+			"chain",
+		}),
 		PubKeyManagerError: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Namespace: "pubkey_manager",
 			Subsystem: "pubkey_manager",
@@ -205,7 +225,16 @@ var (
 		}),
 	}
 
-	gauges = map[MetricName]prometheus.Gauge{}
+	gauges = map[MetricName]prometheus.Gauge{
+		XMRPendingCertificates: prometheus.NewGauge(prometheus.GaugeOpts{
+			Namespace: "observer", Subsystem: "xmr_certificate_outbox", Name: "pending",
+			Help: "Pending certificates at the last successful bounded reconciliation scan, including retries in backoff.",
+		}),
+		XMROldestPendingCertificateAge: prometheus.NewGauge(prometheus.GaugeOpts{
+			Namespace: "observer", Subsystem: "xmr_certificate_outbox", Name: "oldest_pending_age_seconds",
+			Help: "Oldest pending certificate age at the last successful reconciliation scan; 0 if empty, -1 if any enqueue time is unknown.",
+		}),
+	}
 )
 
 // NewMetrics create a new instance of Metrics

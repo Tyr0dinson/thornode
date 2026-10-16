@@ -325,9 +325,9 @@ func TestXMRMemolessLogicalIdentitySurvivesVaultReschedule(t *testing.T) {
 		),
 		100,
 		newVault,
-		110,
+		100, // Peer-provided final-looking heights are not authoritative finality.
 	)
-	if err = client.markImportedXMROutboundSigned(winner); err != nil {
+	if err = client.markImportedXMROutboundSigned(winner, false); err != nil {
 		t.Fatalf("record verified new-vault fulfillment: %v", err)
 	}
 	if _, _, err = store.GetOwned(plan.CacheVault, plan.CacheHash, plan.LogicalHash); !errors.Is(err, errXMRSigningClaimCommitted) {
@@ -351,7 +351,7 @@ func TestXMRMemolessLogicalIdentitySurvivesVaultReschedule(t *testing.T) {
 	}
 }
 
-func TestXMRRagnarokSpentRefImportSuspendsClaimWithoutInboundTxID(t *testing.T) {
+func TestXMRRagnarokSpentRefImportRetainsExactClaimWithoutInboundTxID(t *testing.T) {
 	t.Parallel()
 
 	vaultPubKey, vaultAddress := testVaultPubKeyAndAddress(t)
@@ -407,11 +407,11 @@ func TestXMRRagnarokSpentRefImportSuspendsClaimWithoutInboundTxID(t *testing.T) 
 		vaultPubKey,
 		110,
 	)
-	if err = client.markImportedXMROutboundSigned(observed); err != nil {
+	if err = client.markImportedXMROutboundSigned(observed, false); err != nil {
 		t.Fatalf("record verified RAGNAROK fulfillment: %v", err)
 	}
-	if _, _, err = store.GetOwned(plan.CacheVault, plan.CacheHash, plan.LogicalHash); !errors.Is(err, errXMRSigningClaimCommitted) {
-		t.Fatalf("expected pre-final RAGNAROK fulfillment without an inbound tx id to suspend its claim, got %v", err)
+	if _, found, getErr := store.GetOwned(plan.CacheVault, plan.CacheHash, plan.LogicalHash); getErr != nil || !found {
+		t.Fatalf("expected imported RAGNAROK fulfillment without an inbound tx id to retain exact recovery, found=%t err=%v", found, getErr)
 	}
 }
 
@@ -441,7 +441,7 @@ func TestXMRSigningCacheIdentityKeepsScheduledMigrationGlobal(t *testing.T) {
 	}
 }
 
-func TestMemolessRecoveryAliasesIgnoreCanonicalStoreOrder(t *testing.T) {
+func TestXMRMemolessPlanUsesOnlySemanticObservationKey(t *testing.T) {
 	t.Parallel()
 
 	vault := testVaultPubKey(t, "memoless-recovery-alias-vault")
@@ -459,10 +459,19 @@ func TestMemolessRecoveryAliasesIgnoreCanonicalStoreOrder(t *testing.T) {
 	if err != nil {
 		t.Fatalf("derive memoless recovery identity: %v", err)
 	}
-	if len(identity.ObserveKeys) != 2 {
-		t.Fatalf("expected wire and semantic memoless aliases, got %d", len(identity.ObserveKeys))
+	if len(identity.ObserveKeys) != 1 {
+		t.Fatalf("expected only the on-chain semantic memo alias, got %d", len(identity.ObserveKeys))
 	}
 
+	other := tx
+	other.OriginalMemo = "OUT:" + testXMRHash("another-inbound")
+	otherIdentity, err := xmrSigningCacheIdentity(other)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if slicesEqualStrings(identity.ObserveKeys, otherIdentity.ObserveKeys) {
+		t.Fatal("distinct memoless planned payouts must not share an empty-memo claim")
+	}
 	// Reserve canonicalization sorts and lower-cases aliases. Reverse that
 	// canonical order to model the construction order recovered from TxOutJSON;
 	// recovery must compare alias sets, not slice positions.

@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
@@ -188,5 +189,40 @@ func (s *ApiTestSuite) TestConvertAddress(c *C) {
 		}
 		c.Assert(err, IsNil)
 		c.Assert(address, Equals, tc.Out)
+	}
+}
+
+func TestGetTransactionInfoRejectsErrorResponses(t *testing.T) {
+	for _, tc := range []struct {
+		name, body string
+		wantError  bool
+		wantID     string
+	}{
+		{"absent", `{}`, false, ""},
+		{"included", `{"id":"original-tx","blockNumber":86}`, false, "original-tx"},
+		{"rate limited", `{"Error":"class java.lang.IllegalAccessException : lack of computing resources"}`, true, ""},
+		{"error with receipt", `{"Error":"lookup failed","id":"original-tx","blockNumber":86}`, true, ""},
+		{"empty error", `{"Error":""}`, true, ""},
+		{"null response", `null`, true, ""},
+		{"malformed response", `{`, true, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != "/wallet/gettransactioninfobyid" {
+					t.Errorf("unexpected path %s", r.URL.Path)
+				}
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(tc.body))
+			}))
+			defer server.Close()
+			client := NewTronApi(server.URL, time.Second)
+			info, err := client.GetTransactionInfo("original-tx")
+			if (err != nil) != tc.wantError {
+				t.Fatalf("receipt error = %v, want error %v", err, tc.wantError)
+			}
+			if info.ID != tc.wantID {
+				t.Fatalf("receipt ID = %q, want %q", info.ID, tc.wantID)
+			}
+		})
 	}
 }

@@ -14,16 +14,42 @@ resolve_signer_seed_phrase
 PEER="${PEER:=none}"          # the hostname of a seed node set as tendermint persistent peer
 PEER_API="${PEER_API:=$PEER}" # the hostname of a seed node API if different
 
-if [ ! -f ~/.thornode/config/genesis.json ]; then
+# Inspect registration before init_chain can create a temporary genesis file.
+# Existing initialized volumes without a marker retain their normal startup. An
+# incomplete registration resumes from the state already committed on chain.
+registration_state=""
+registration_state_file="$HOME/.thornode/mocknet-registration.state"
+if [ "$NET" = "mocknet" ] && [ -e "$registration_state_file" ]; then
+  registration_state=$(cat "$registration_state_file") || exit 1
+  case "$registration_state" in
+  registered) ;;
+  registering)
+    echo "Resuming incomplete mocknet registration from committed chain state"
+    ;;
+  *)
+    echo "Invalid mocknet registration state in $registration_state_file; inspect it before recovery." >&2
+    exit 1
+    ;;
+  esac
+fi
+
+if { [ ! -f ~/.thornode/config/genesis.json ] && [ "$registration_state" != "registered" ]; } ||
+  [ "$registration_state" = "registering" ]; then
+  if [ "$NET" = "mocknet" ]; then
+    write_mocknet_registration_state "$registration_state_file" registering || exit 1
+    # A restart can leave the temporary genesis file that init_chain refuses to overwrite.
+    rm -f ~/.thornode/config/genesis.json
+  fi
   echo "Setting THORNode as Validator node"
 
   create_thor_user "$SIGNER_NAME" "$SIGNER_PASSWD" "$SIGNER_SEED_PHRASE"
 
-  init_chain
+  init_chain || exit 1
   rm -rf ~/.thornode/config/genesis.json # set in thornode render-config
 
   if [ "$NET" = "mocknet" ]; then
-    init_mocknet
+    init_mocknet || exit 1
+    write_mocknet_registration_state "$registration_state_file" registered || exit 1
   else
     NODE_ADDRESS=$(echo "$SIGNER_PASSWD" | thornode keys show "$SIGNER_NAME" -a --keyring-backend file)
     echo "Your THORNode address: $NODE_ADDRESS"
@@ -64,7 +90,7 @@ if [ ! -f ~/.thornode/config/genesis.json ]; then
 fi
 
 # render tendermint and cosmos configuration files
-thornode render-config
+thornode render-config || exit 1
 
 export SIGNER_NAME
 export SIGNER_PASSWD

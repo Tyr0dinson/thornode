@@ -50,7 +50,7 @@ func (h SecuredAssetWithdrawHandler) validate(ctx cosmos.Context, msg MsgSecured
 	}
 
 	// Validate that the address network matches the current chain network
-	if !common.CurrentChainNetwork.SoftEquals(msg.AssetAddress.GetNetwork(msg.AssetAddress.GetChain())) {
+	if !msg.AssetAddress.IsCurrentNetwork(msg.AssetAddress.GetChain()) {
 		return fmt.Errorf("address(%s) is not same network", msg.AssetAddress)
 	}
 

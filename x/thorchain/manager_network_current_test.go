@@ -691,6 +691,134 @@ func (*NetworkManagerTestSuite) TestProcessGenesisSetup(c *C) {
 	helper.failGetActiveAsgardVault = false
 }
 
+func (*NetworkManagerTestSuite) TestProcessGenesisSetupExistingVaultSkipsDelayedXMRKeygen(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	ctx = ctx.WithBlockHeight(genesisBlockHeight)
+	networkMgr := newNetworkMgr(mgr.Keeper(), mgr.TxOutStore(), mgr.EventMgr())
+
+	existing := NewVault(
+		genesisBlockHeight,
+		ActiveVault,
+		AsgardVault,
+		GetRandomPubKey(),
+		common.Chains{common.THORChain, common.BTCChain}.Strings(),
+		nil,
+	)
+	c.Assert(mgr.Keeper().SetVault(ctx, existing), IsNil)
+
+	c.Assert(networkMgr.processGenesisSetup(ctx), IsNil)
+
+	keygenBlock, err := mgr.Keeper().GetKeygenBlock(ctx, xmrMonovaultGenesisKeygenHeight(ctx.BlockHeight()))
+	c.Assert(err, IsNil)
+	c.Assert(keygenBlock.Keygens, HasLen, 0)
+
+	vaults, err := mgr.Keeper().GetAsgardVaults(ctx)
+	c.Assert(err, IsNil)
+	c.Assert(vaults, HasLen, 1)
+	c.Assert(vaults[0].PubKey.Equals(existing.PubKey), Equals, true)
+}
+
+// TestFreshGenesisEarlyXMRKeygensRotateSequentially characterizes a fresh
+// mocknet chain where churn at height 61 can schedule XMR before the delayed
+// genesis keygen at height 129. The records are in distinct keygen blocks, so
+// the TSS activation boundary evaluates and rotates each generation on its own.
+// This pins the current fresh-chain behavior, not a requirement to retain two
+// generations: if future pending-keygen suppression is added, replace the
+// early-generation assertions with the new single-generation contract.
+func (*NetworkManagerTestSuite) TestFreshGenesisEarlyXMRKeygensRotateSequentially(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	ctx = ctx.WithBlockHeight(genesisBlockHeight)
+	networkMgr := newNetworkMgr(mgr.Keeper(), mgr.TxOutStore(), mgr.EventMgr())
+
+	membership := make(common.PubKeys, 0, 4)
+	for i := 0; i < 4; i++ {
+		na := GetRandomValidatorNode(NodeActive)
+		c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
+		membership = append(membership, na.PubKeySet.Secp256k1)
+	}
+
+	c.Assert(networkMgr.processGenesisSetup(ctx), IsNil)
+	delayedHeight := xmrMonovaultGenesisKeygenHeight(ctx.BlockHeight())
+	delayedBlock, err := mgr.Keeper().GetKeygenBlock(ctx, delayedHeight)
+	c.Assert(err, IsNil)
+	c.Assert(delayedBlock.Keygens, HasLen, 1)
+	c.Assert(delayedBlock.Keygens[0].Type, Equals, XMRMonovaultKeygen)
+
+	regular := NewVault(
+		genesisBlockHeight,
+		ActiveVault,
+		AsgardVault,
+		GetRandomPubKey(),
+		common.Chains{common.THORChain, common.BTCChain}.Strings(),
+		nil,
+	)
+	regular.Membership = membership.Strings()
+	c.Assert(mgr.Keeper().SetVault(ctx, regular), IsNil)
+
+	earlyCtx := ctx.WithBlockHeight(61)
+	mgr.Keeper().SetMimir(earlyCtx, constants.ChurnInterval.String(), 60)
+	mgr.Keeper().SetMimir(earlyCtx, constants.DesiredValidatorSet.String(), 4)
+	mgr.Keeper().SetMimir(earlyCtx, constants.AsgardSize.String(), 10)
+	c.Assert(mgr.ValidatorMgr().BeginBlock(earlyCtx, mgr, nil), IsNil)
+	earlyBlock, err := mgr.Keeper().GetKeygenBlock(earlyCtx, earlyCtx.BlockHeight())
+	c.Assert(err, IsNil)
+	c.Assert(earlyBlock.Keygens, HasLen, 1)
+	c.Assert(earlyBlock.Keygens[0].Type, Equals, XMRMonovaultKeygen)
+	c.Assert(earlyBlock.Keygens[0].ID, Not(Equals), delayedBlock.Keygens[0].ID)
+
+	handler := NewTssHandler(mgr)
+	earlyVault := NewVaultV2(
+		earlyCtx.BlockHeight(),
+		InitVault,
+		AsgardVault,
+		GetRandomPubKey(),
+		xmrMonovaultChains().Strings(),
+		nil,
+		common.EmptyPubKey,
+	)
+	earlyVault.Membership = earlyBlock.Keygens[0].Members
+	earlyVault.PubKeyFrost = GetRandomEd25519PubKey()
+	c.Assert(mgr.Keeper().SetVault(earlyCtx, earlyVault), IsNil)
+	c.Assert(handler.rotateReadyKeygenVaultFamilies(earlyCtx, earlyBlock), IsNil)
+
+	earlyVault, err = mgr.Keeper().GetVault(earlyCtx, earlyVault.PubKey)
+	c.Assert(err, IsNil)
+	c.Assert(earlyVault.Status, Equals, ActiveVault)
+
+	delayedCtx := ctx.WithBlockHeight(delayedHeight)
+	delayedVault := NewVaultV2(
+		delayedCtx.BlockHeight(),
+		InitVault,
+		AsgardVault,
+		GetRandomPubKey(),
+		xmrMonovaultChains().Strings(),
+		nil,
+		common.EmptyPubKey,
+	)
+	delayedVault.Membership = delayedBlock.Keygens[0].Members
+	delayedVault.PubKeyFrost = GetRandomEd25519PubKey()
+	c.Assert(mgr.Keeper().SetVault(delayedCtx, delayedVault), IsNil)
+	c.Assert(handler.rotateReadyKeygenVaultFamilies(delayedCtx, delayedBlock), IsNil)
+
+	activeVaults, err := mgr.Keeper().GetAsgardVaultsByStatus(delayedCtx, ActiveVault)
+	c.Assert(err, IsNil)
+	c.Assert(activeVaults, HasLen, 2)
+	activeXMR := filterVaultsByChain(activeVaults, common.XMRChain)
+	c.Assert(activeXMR, HasLen, 1)
+	c.Assert(activeXMR[0].PubKey.Equals(delayedVault.PubKey), Equals, true)
+
+	initVaults, err := mgr.Keeper().GetAsgardVaultsByStatus(delayedCtx, InitVault)
+	c.Assert(err, IsNil)
+	c.Assert(filterVaultsByChain(initVaults, common.XMRChain), HasLen, 0)
+
+	earlyVault, err = mgr.Keeper().GetVault(delayedCtx, earlyVault.PubKey)
+	c.Assert(err, IsNil)
+	c.Assert(earlyVault.Status, Equals, RetiringVault)
+	delayedVault, err = mgr.Keeper().GetVault(delayedCtx, delayedVault.PubKey)
+	c.Assert(err, IsNil)
+	c.Assert(delayedVault.Status, Equals, ActiveVault)
+}
+
 func (*NetworkManagerTestSuite) TestMigrateFundsPropagatesVaultPubKeyFrost(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	networkMgr := newNetworkMgr(mgr.Keeper(), mgr.TxOutStore(), mgr.EventMgr())
@@ -810,7 +938,7 @@ func (*NetworkManagerTestSuite) TestMigrateFundsInactivatesDeficitOnlyRetiringVa
 	c.Assert(items, HasLen, 0)
 }
 
-func (*NetworkManagerTestSuite) TestMigrateFundsSkipsVaultWithPendingMigrateTx(c *C) {
+func (*NetworkManagerTestSuite) TestMigrateFundsSkipsChainWithPendingMigrateTx(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	mgr.txOutStore = NewTxStoreDummy()
 	networkMgr := newNetworkMgr(mgr.Keeper(), mgr.TxOutStore(), mgr.EventMgr())
@@ -856,7 +984,7 @@ func (*NetworkManagerTestSuite) TestMigrateFundsSkipsVaultWithPendingMigrateTx(c
 	c.Assert(items, HasLen, 0)
 }
 
-func (*NetworkManagerTestSuite) TestMigrateFundsSkipsVaultWithUnexpiredStalePendingMigrateTx(c *C) {
+func (*NetworkManagerTestSuite) TestMigrateFundsSkipsChainWithUnexpiredStalePendingMigrateTx(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	ctx = ctx.WithBlockHeight(400)
 	mgr.txOutStore = NewTxStoreDummy()
@@ -973,6 +1101,438 @@ func (*NetworkManagerTestSuite) TestMigrateFundsReissuesExpiredStalePendingMigra
 	c.Assert(updatedTxOut.TxArray, HasLen, 2)
 	c.Assert(updatedTxOut.TxArray[0].OutHash.Equals(common.BlankTxID), Equals, true)
 	c.Assert(updatedTxOut.TxArray[1].OutHash.Equals(common.BlankTxID), Equals, true)
+}
+
+// TestMigrateFundsPendingMigrateHoldsOnlyItsChain covers issue #3350: a stuck
+// GAIA token migrate holds the whole GAIA chain, including its gas asset before
+// the final round, while BASE keeps migrating from the same RetiringVault.
+func (*NetworkManagerTestSuite) TestMigrateFundsPendingMigrateHoldsOnlyItsChain(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	mgr.txOutStore = NewTxStoreDummy()
+	networkMgr := newNetworkMgr(mgr.Keeper(), mgr.TxOutStore(), mgr.EventMgr())
+
+	mgr.Keeper().SetMimir(ctx, constants.FundMigrationInterval.String(), 1)
+	chains := common.Chains{common.GAIAChain, common.BASEChain}
+	for _, chain := range chains {
+		c.Assert(mgr.Keeper().SaveNetworkFee(ctx, chain, NetworkFee{
+			Chain:              chain,
+			TransactionSize:    1,
+			TransactionFeeRate: 1,
+		}), IsNil)
+	}
+
+	target := NewVaultV2(ctx.BlockHeight()-1, ActiveVault, AsgardVault, GetRandomPubKey(), chains.Strings(), nil, GetRandomEd25519PubKey())
+	c.Assert(mgr.Keeper().SetVault(ctx, target), IsNil)
+
+	gaiaToken, err := common.NewAsset("GAIA.LQDY")
+	c.Assert(err, IsNil)
+	pendingHeight := ctx.BlockHeight() - 1
+	retiring := NewVaultV2(ctx.BlockHeight()-1, RetiringVault, AsgardVault, GetRandomPubKey(), chains.Strings(), nil, GetRandomEd25519PubKey())
+	retiring.AddFunds(common.NewCoins(
+		common.NewCoin(common.ATOMAsset, cosmos.NewUint(100*common.One)),
+		common.NewCoin(gaiaToken, cosmos.NewUint(100*common.One)),
+		common.NewCoin(common.BaseETHAsset, cosmos.NewUint(100*common.One)),
+	))
+	retiring.PendingTxBlockHeights = []int64{pendingHeight}
+	c.Assert(mgr.Keeper().SetVault(ctx, retiring), IsNil)
+
+	gaiaAddress, err := target.GetAddress(common.GAIAChain)
+	c.Assert(err, IsNil)
+	c.Assert(mgr.Keeper().SetTxOut(ctx, &TxOut{
+		Height: pendingHeight,
+		TxArray: []TxOutItem{
+			{
+				Chain:       common.GAIAChain,
+				ToAddress:   gaiaAddress,
+				VaultPubKey: retiring.PubKey,
+				Coin:        common.NewCoin(gaiaToken, cosmos.NewUint(20*common.One)),
+				Memo:        NewMigrateMemo(pendingHeight).String(),
+			},
+		},
+	}), IsNil)
+
+	c.Assert(networkMgr.migrateFunds(ctx, mgr), IsNil)
+
+	// Only BASE is scheduled: neither the stuck GAIA token nor GAIA's gas asset.
+	items, err := mgr.TxOutStore().GetOutboundItems(ctx)
+	c.Assert(err, IsNil)
+	c.Assert(items, HasLen, 1)
+	c.Assert(items[0].Chain.Equals(common.BASEChain), Equals, true)
+	c.Assert(items[0].Coin.Asset.Equals(common.BaseETHAsset), Equals, true)
+	c.Assert(items[0].VaultPubKey.Equals(retiring.PubKey), Equals, true)
+	c.Assert(items[0].Memo, Equals, NewMigrateMemo(ctx.BlockHeight()).String())
+
+	updatedRetiring, err := mgr.Keeper().GetVault(ctx, retiring.PubKey)
+	c.Assert(err, IsNil)
+	c.Assert(updatedRetiring.PendingTxBlockHeights, DeepEquals, []int64{ctx.BlockHeight(), pendingHeight})
+}
+
+// TestMigrateFundsUnexpiredStalePendingMigrateHoldsOnlyItsChain checks that a
+// migrate older than the signing window, tracked only through the vault's
+// pending heights, still holds its chain but no longer holds other chains.
+func (*NetworkManagerTestSuite) TestMigrateFundsUnexpiredStalePendingMigrateHoldsOnlyItsChain(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	ctx = ctx.WithBlockHeight(400)
+	mgr.txOutStore = NewTxStoreDummy()
+	networkMgr := newNetworkMgr(mgr.Keeper(), mgr.TxOutStore(), mgr.EventMgr())
+
+	mgr.Keeper().SetMimir(ctx, constants.FundMigrationInterval.String(), 1)
+	mgr.Keeper().SetMimir(ctx, constants.ChurnMigrateRounds.String(), 2)
+	chains := common.Chains{common.XRPChain, common.BTCChain}
+	c.Assert(mgr.Keeper().SaveNetworkFee(ctx, common.XRPChain, NetworkFee{
+		Chain:              common.XRPChain,
+		TransactionSize:    1,
+		TransactionFeeRate: 15,
+	}), IsNil)
+	c.Assert(mgr.Keeper().SaveNetworkFee(ctx, common.BTCChain, NetworkFee{
+		Chain:              common.BTCChain,
+		TransactionSize:    1,
+		TransactionFeeRate: 1,
+	}), IsNil)
+
+	target := NewVaultV2(ctx.BlockHeight()-1, ActiveVault, AsgardVault, GetRandomPubKey(), chains.Strings(), nil, GetRandomEd25519PubKey())
+	c.Assert(mgr.Keeper().SetVault(ctx, target), IsNil)
+
+	staleHeight := ctx.BlockHeight() - mgr.GetConstants().GetInt64Value(constants.SigningTransactionPeriod) - 1
+	retiring := NewVaultV2(ctx.BlockHeight()-1, RetiringVault, AsgardVault, GetRandomPubKey(), chains.Strings(), nil, GetRandomEd25519PubKey())
+	// Enough XRP that, without the guard, the remainder would clear the reserve
+	// and be migrated again.
+	retiring.AddFunds(common.NewCoins(
+		common.NewCoin(common.XRPAsset, cosmos.NewUint(10*common.One)),
+		common.NewCoin(common.BTCAsset, cosmos.NewUint(2*common.One)),
+	))
+	retiring.PendingTxBlockHeights = []int64{staleHeight}
+	c.Assert(mgr.Keeper().SetVault(ctx, retiring), IsNil)
+
+	xrpAddress, err := target.GetAddress(common.XRPChain)
+	c.Assert(err, IsNil)
+	c.Assert(mgr.Keeper().SetTxOut(ctx, &TxOut{
+		Height: staleHeight,
+		TxArray: []TxOutItem{
+			{
+				Chain:       common.XRPChain,
+				ToAddress:   xrpAddress,
+				VaultPubKey: retiring.PubKey,
+				Coin:        common.NewCoin(common.XRPAsset, cosmos.NewUint(common.One)),
+				Memo:        NewMigrateMemo(staleHeight).String(),
+			},
+		},
+	}), IsNil)
+
+	c.Assert(networkMgr.migrateFunds(ctx, mgr), IsNil)
+
+	items, err := mgr.TxOutStore().GetOutboundItems(ctx)
+	c.Assert(err, IsNil)
+	c.Assert(items, HasLen, 1)
+	c.Assert(items[0].Chain.Equals(common.BTCChain), Equals, true)
+	c.Assert(items[0].VaultPubKey.Equals(retiring.PubKey), Equals, true)
+
+	// The unexpired XRP migrate stays tracked and signable next to the new BTC one.
+	updatedRetiring, err := mgr.Keeper().GetVault(ctx, retiring.PubKey)
+	c.Assert(err, IsNil)
+	c.Assert(updatedRetiring.PendingTxBlockHeights, DeepEquals, []int64{ctx.BlockHeight(), staleHeight})
+	staleTxOut, err := mgr.Keeper().GetTxOut(ctx, staleHeight)
+	c.Assert(err, IsNil)
+	c.Assert(staleTxOut.TxArray[0].OutHash.IsEmpty(), Equals, true)
+}
+
+// TestMigrateFundsExpiredPendingMigrateResumesItsChainWhileAnotherChainIsPending
+// checks that stale expiry releases only the expired chain: XRP is reissued
+// while a recent GAIA migrate from the same RetiringVault still holds GAIA.
+func (*NetworkManagerTestSuite) TestMigrateFundsExpiredPendingMigrateResumesItsChainWhileAnotherChainIsPending(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	ctx = ctx.WithBlockHeight(5000)
+	mgr.txOutStore = NewTxStoreDummy()
+	networkMgr := newNetworkMgr(mgr.Keeper(), mgr.TxOutStore(), mgr.EventMgr())
+
+	mgr.Keeper().SetMimir(ctx, constants.FundMigrationInterval.String(), 1)
+	mgr.Keeper().SetMimir(ctx, constants.ChurnMigrateRounds.String(), 2)
+	chains := common.Chains{common.XRPChain, common.GAIAChain}
+	c.Assert(mgr.Keeper().SaveNetworkFee(ctx, common.XRPChain, NetworkFee{
+		Chain:              common.XRPChain,
+		TransactionSize:    1,
+		TransactionFeeRate: 15,
+	}), IsNil)
+	c.Assert(mgr.Keeper().SaveNetworkFee(ctx, common.GAIAChain, NetworkFee{
+		Chain:              common.GAIAChain,
+		TransactionSize:    1,
+		TransactionFeeRate: 1,
+	}), IsNil)
+
+	target := NewVaultV2(ctx.BlockHeight()-1, ActiveVault, AsgardVault, GetRandomPubKey(), chains.Strings(), nil, GetRandomEd25519PubKey())
+	c.Assert(mgr.Keeper().SetVault(ctx, target), IsNil)
+
+	staleHeight := ctx.BlockHeight() - mgr.GetConstants().GetInt64Value(constants.SigningTransactionPeriod)*constants.StaleMigratePendingSigningPeriodMultiplier - 1
+	gaiaHeight := ctx.BlockHeight() - 1
+	retiring := NewVaultV2(ctx.BlockHeight()-1, RetiringVault, AsgardVault, GetRandomPubKey(), chains.Strings(), nil, GetRandomEd25519PubKey())
+	retiring.AddFunds(common.NewCoins(
+		common.NewCoin(common.XRPAsset, cosmos.NewUint(10*common.One)),
+		common.NewCoin(common.ATOMAsset, cosmos.NewUint(100*common.One)),
+	))
+	retiring.PendingTxBlockHeights = []int64{staleHeight, gaiaHeight}
+	c.Assert(mgr.Keeper().SetVault(ctx, retiring), IsNil)
+
+	xrpAddress, err := target.GetAddress(common.XRPChain)
+	c.Assert(err, IsNil)
+	c.Assert(mgr.Keeper().SetTxOut(ctx, &TxOut{
+		Height: staleHeight,
+		TxArray: []TxOutItem{
+			{
+				Chain:       common.XRPChain,
+				ToAddress:   xrpAddress,
+				VaultPubKey: retiring.PubKey,
+				Coin:        common.NewCoin(common.XRPAsset, cosmos.NewUint(common.One)),
+				Memo:        NewMigrateMemo(staleHeight).String(),
+			},
+		},
+	}), IsNil)
+	gaiaAddress, err := target.GetAddress(common.GAIAChain)
+	c.Assert(err, IsNil)
+	c.Assert(mgr.Keeper().SetTxOut(ctx, &TxOut{
+		Height: gaiaHeight,
+		TxArray: []TxOutItem{
+			{
+				Chain:       common.GAIAChain,
+				ToAddress:   gaiaAddress,
+				VaultPubKey: retiring.PubKey,
+				Coin:        common.NewCoin(common.ATOMAsset, cosmos.NewUint(20*common.One)),
+				Memo:        NewMigrateMemo(gaiaHeight).String(),
+			},
+		},
+	}), IsNil)
+
+	c.Assert(networkMgr.migrateFunds(ctx, mgr), IsNil)
+
+	items, err := mgr.TxOutStore().GetOutboundItems(ctx)
+	c.Assert(err, IsNil)
+	c.Assert(items, HasLen, 1)
+	c.Assert(items[0].Chain.Equals(common.XRPChain), Equals, true)
+	c.Assert(items[0].Memo, Equals, NewMigrateMemo(ctx.BlockHeight()).String())
+
+	staleTxOut, err := mgr.Keeper().GetTxOut(ctx, staleHeight)
+	c.Assert(err, IsNil)
+	c.Assert(staleTxOut.TxArray[0].OutHash.Equals(common.BlankTxID), Equals, true)
+	updatedRetiring, err := mgr.Keeper().GetVault(ctx, retiring.PubKey)
+	c.Assert(err, IsNil)
+	c.Assert(updatedRetiring.PendingTxBlockHeights, DeepEquals, []int64{ctx.BlockHeight(), gaiaHeight})
+}
+
+// TestMigrateFundsObservedMigrateResumesItsChainWhileAnotherChainIsPending
+// walks the hold across two migration ticks: GAIA waits while its migrate is
+// pending, then resumes once it is observed, while the BASE migrate scheduled
+// on the first tick is still pending and now holds BASE.
+func (*NetworkManagerTestSuite) TestMigrateFundsObservedMigrateResumesItsChainWhileAnotherChainIsPending(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	ctx = ctx.WithBlockHeight(100)
+	mgr.txOutStore = NewTxStoreDummy()
+	networkMgr := newNetworkMgr(mgr.Keeper(), mgr.TxOutStore(), mgr.EventMgr())
+
+	mgr.Keeper().SetMimir(ctx, constants.FundMigrationInterval.String(), 1)
+	mgr.Keeper().SetMimir(ctx, constants.ChurnMigrateRounds.String(), 5)
+	chains := common.Chains{common.GAIAChain, common.BASEChain}
+	for _, chain := range chains {
+		c.Assert(mgr.Keeper().SaveNetworkFee(ctx, chain, NetworkFee{
+			Chain:              chain,
+			TransactionSize:    1,
+			TransactionFeeRate: 1,
+		}), IsNil)
+	}
+
+	target := NewVaultV2(ctx.BlockHeight()-1, ActiveVault, AsgardVault, GetRandomPubKey(), chains.Strings(), nil, GetRandomEd25519PubKey())
+	c.Assert(mgr.Keeper().SetVault(ctx, target), IsNil)
+
+	gaiaToken, err := common.NewAsset("GAIA.LQDY")
+	c.Assert(err, IsNil)
+	gaiaHeight := ctx.BlockHeight() - 1
+	retiring := NewVaultV2(ctx.BlockHeight()-1, RetiringVault, AsgardVault, GetRandomPubKey(), chains.Strings(), nil, GetRandomEd25519PubKey())
+	retiring.AddFunds(common.NewCoins(
+		common.NewCoin(common.ATOMAsset, cosmos.NewUint(100*common.One)),
+		common.NewCoin(gaiaToken, cosmos.NewUint(100*common.One)),
+		common.NewCoin(common.BaseETHAsset, cosmos.NewUint(100*common.One)),
+	))
+	retiring.PendingTxBlockHeights = []int64{gaiaHeight}
+	c.Assert(mgr.Keeper().SetVault(ctx, retiring), IsNil)
+
+	gaiaAddress, err := target.GetAddress(common.GAIAChain)
+	c.Assert(err, IsNil)
+	gaiaMigrate := common.NewCoin(gaiaToken, cosmos.NewUint(20*common.One))
+	c.Assert(mgr.Keeper().SetTxOut(ctx, &TxOut{
+		Height: gaiaHeight,
+		TxArray: []TxOutItem{
+			{
+				Chain:       common.GAIAChain,
+				ToAddress:   gaiaAddress,
+				VaultPubKey: retiring.PubKey,
+				Coin:        gaiaMigrate,
+				Memo:        NewMigrateMemo(gaiaHeight).String(),
+			},
+		},
+	}), IsNil)
+
+	// First tick: GAIA is held, BASE migrates.
+	c.Assert(networkMgr.migrateFunds(ctx, mgr), IsNil)
+	items, err := mgr.TxOutStore().GetOutboundItems(ctx)
+	c.Assert(err, IsNil)
+	c.Assert(items, HasLen, 1)
+	c.Assert(items[0].Chain.Equals(common.BASEChain), Equals, true)
+
+	// Persist the BASE migrate as a still-unsigned txout, as the real store would.
+	baseHeight := ctx.BlockHeight()
+	c.Assert(mgr.Keeper().SetTxOut(ctx, &TxOut{Height: baseHeight, TxArray: items}), IsNil)
+	mgr.TxOutStore().ClearOutboundItems(ctx)
+
+	// Simulate the persisted effects of observing the GAIA migrate: mark its
+	// txout sent, clear its pending height and debit the migrated funds.
+	gaiaTxOut, err := mgr.Keeper().GetTxOut(ctx, gaiaHeight)
+	c.Assert(err, IsNil)
+	gaiaTxOut.TxArray[0].OutHash = GetRandomTxHash()
+	c.Assert(mgr.Keeper().SetTxOut(ctx, gaiaTxOut), IsNil)
+	retiring, err = mgr.Keeper().GetVault(ctx, retiring.PubKey)
+	c.Assert(err, IsNil)
+	retiring.RemovePendingTxBlockHeights(gaiaHeight)
+	retiring.SubFundsWithClamping(common.Coins{gaiaMigrate})
+	c.Assert(mgr.Keeper().SetVault(ctx, retiring), IsNil)
+
+	// Second tick: GAIA resumes (gas and token), BASE is held by its own pending migrate.
+	ctx = ctx.WithBlockHeight(baseHeight + 1)
+	c.Assert(networkMgr.migrateFunds(ctx, mgr), IsNil)
+	items, err = mgr.TxOutStore().GetOutboundItems(ctx)
+	c.Assert(err, IsNil)
+	c.Assert(items, HasLen, 2)
+	scheduled := common.Coins{}
+	for _, item := range items {
+		c.Assert(item.Chain.Equals(common.GAIAChain), Equals, true)
+		c.Assert(item.Memo, Equals, NewMigrateMemo(ctx.BlockHeight()).String())
+		scheduled = append(scheduled, item.Coin)
+	}
+	c.Assert(scheduled.GetCoin(common.ATOMAsset).Amount.IsZero(), Equals, false)
+	c.Assert(scheduled.GetCoin(gaiaToken).Amount.IsZero(), Equals, false)
+
+	updatedRetiring, err := mgr.Keeper().GetVault(ctx, retiring.PubKey)
+	c.Assert(err, IsNil)
+	c.Assert(updatedRetiring.PendingTxBlockHeights, DeepEquals, []int64{ctx.BlockHeight(), ctx.BlockHeight(), baseHeight})
+}
+
+func (*NetworkManagerTestSuite) TestMigrateFundsExpiresEveryPendingHeight(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	ctx = ctx.WithBlockHeight(5000)
+	mgr.txOutStore = NewTxStoreDummy()
+	networkMgr := newNetworkMgr(mgr.Keeper(), mgr.TxOutStore(), mgr.EventMgr())
+	mgr.Keeper().SetMimir(ctx, constants.FundMigrationInterval.String(), 1)
+
+	chains := common.Chains{common.GAIAChain, common.BASEChain, common.BTCChain}
+	target := NewVaultV2(1000, ActiveVault, AsgardVault, GetRandomPubKey(), chains.Strings(), nil, GetRandomEd25519PubKey())
+	c.Assert(mgr.Keeper().SetVault(ctx, target), IsNil)
+	retiring := NewVaultV2(1000, RetiringVault, AsgardVault, GetRandomPubKey(), chains.Strings(), nil, GetRandomEd25519PubKey())
+	staleHeight := ctx.BlockHeight() - mgr.GetConstants().GetInt64Value(constants.SigningTransactionPeriod)*constants.StaleMigratePendingSigningPeriodMultiplier - 1
+	for i, chain := range chains {
+		c.Assert(mgr.Keeper().SaveNetworkFee(ctx, chain, NetworkFee{
+			Chain:              chain,
+			TransactionSize:    1,
+			TransactionFeeRate: 1,
+		}), IsNil)
+		asset := chain.GetGasAsset()
+		retiring.AddFunds(common.NewCoins(common.NewCoin(asset, cosmos.NewUint(100*common.One))))
+		height := staleHeight - int64(i)
+		retiring.PendingTxBlockHeights = append(retiring.PendingTxBlockHeights, height)
+		address, err := target.GetAddress(chain)
+		c.Assert(err, IsNil)
+		c.Assert(mgr.Keeper().SetTxOut(ctx, &TxOut{
+			Height: height,
+			TxArray: []TxOutItem{{
+				Chain:       chain,
+				ToAddress:   address,
+				VaultPubKey: retiring.PubKey,
+				Coin:        common.NewCoin(asset, cosmos.NewUint(20*common.One)),
+				Memo:        NewMigrateMemo(height).String(),
+			}},
+		}), IsNil)
+	}
+	c.Assert(mgr.Keeper().SetVault(ctx, retiring), IsNil)
+
+	// Several chains can expire together after migration was paused. Removing
+	// the newest pending height must not skip the next entry in the same slice.
+	c.Assert(networkMgr.migrateFunds(ctx, mgr), IsNil)
+	items, err := mgr.TxOutStore().GetOutboundItems(ctx)
+	c.Assert(err, IsNil)
+	c.Assert(items, HasLen, len(chains))
+	for _, chain := range chains {
+		count := 0
+		for _, item := range items {
+			if item.Chain.Equals(chain) {
+				count++
+				c.Assert(item.VaultPubKey.Equals(retiring.PubKey), Equals, true)
+				c.Assert(item.Memo, Equals, NewMigrateMemo(ctx.BlockHeight()).String())
+			}
+		}
+		c.Check(count, Equals, 1)
+	}
+	// Every old request must be made unsignable before its replacement is queued.
+	for _, height := range retiring.PendingTxBlockHeights {
+		oldTxOut, getErr := mgr.Keeper().GetTxOut(ctx, height)
+		c.Assert(getErr, IsNil)
+		c.Check(oldTxOut.TxArray[0].OutHash.Equals(common.BlankTxID), Equals, true, Commentf("height %d", height))
+	}
+	updated, err := mgr.Keeper().GetVault(ctx, retiring.PubKey)
+	c.Assert(err, IsNil)
+	c.Assert(updated.PendingTxBlockHeights, DeepEquals, []int64{ctx.BlockHeight(), ctx.BlockHeight(), ctx.BlockHeight()})
+}
+
+func (*NetworkManagerTestSuite) TestMigrateFundsHoldsEveryPendingChain(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	ctx = ctx.WithBlockHeight(400)
+	mgr.txOutStore = NewTxStoreDummy()
+	networkMgr := newNetworkMgr(mgr.Keeper(), mgr.TxOutStore(), mgr.EventMgr())
+	mgr.Keeper().SetMimir(ctx, constants.FundMigrationInterval.String(), 1)
+
+	chains := common.Chains{common.GAIAChain, common.BASEChain, common.BTCChain}
+	target := NewVaultV2(1, ActiveVault, AsgardVault, GetRandomPubKey(), chains.Strings(), nil, GetRandomEd25519PubKey())
+	c.Assert(mgr.Keeper().SetVault(ctx, target), IsNil)
+	retiring := NewVaultV2(1, RetiringVault, AsgardVault, GetRandomPubKey(), chains.Strings(), nil, GetRandomEd25519PubKey())
+	for _, chain := range chains {
+		c.Assert(mgr.Keeper().SaveNetworkFee(ctx, chain, NetworkFee{
+			Chain:              chain,
+			TransactionSize:    1,
+			TransactionFeeRate: 1,
+		}), IsNil)
+		retiring.AddFunds(common.NewCoins(common.NewCoin(chain.GetGasAsset(), cosmos.NewUint(100*common.One))))
+	}
+	// BASE is found in the rolling window; GAIA is found only through its older
+	// durable pending height. Both must be held while the third chain progresses.
+	heights := []int64{ctx.BlockHeight() - 1, ctx.BlockHeight() - mgr.GetConstants().GetInt64Value(constants.SigningTransactionPeriod) - 1}
+	retiring.PendingTxBlockHeights = heights
+	c.Assert(mgr.Keeper().SetVault(ctx, retiring), IsNil)
+	pendingChains := common.Chains{common.BASEChain, common.GAIAChain}
+	for i, chain := range pendingChains {
+		address, err := target.GetAddress(chain)
+		c.Assert(err, IsNil)
+		c.Assert(mgr.Keeper().SetTxOut(ctx, &TxOut{
+			Height: heights[i],
+			TxArray: []TxOutItem{{
+				Chain:       chain,
+				ToAddress:   address,
+				VaultPubKey: retiring.PubKey,
+				Coin:        common.NewCoin(chain.GetGasAsset(), cosmos.NewUint(20*common.One)),
+				Memo:        NewMigrateMemo(heights[i]).String(),
+			}},
+		}), IsNil)
+	}
+
+	c.Assert(networkMgr.migrateFunds(ctx, mgr), IsNil)
+	items, err := mgr.TxOutStore().GetOutboundItems(ctx)
+	c.Assert(err, IsNil)
+	c.Assert(items, HasLen, 1)
+	c.Assert(items[0].Chain.Equals(common.BTCChain), Equals, true)
+	c.Assert(items[0].VaultPubKey.Equals(retiring.PubKey), Equals, true)
+	c.Assert(items[0].Memo, Equals, NewMigrateMemo(ctx.BlockHeight()).String())
+	updated, err := mgr.Keeper().GetVault(ctx, retiring.PubKey)
+	c.Assert(err, IsNil)
+	c.Assert(updated.PendingTxBlockHeights, DeepEquals, []int64{ctx.BlockHeight(), heights[0], heights[1]})
+	for _, height := range heights {
+		pending, getErr := mgr.Keeper().GetTxOut(ctx, height)
+		c.Assert(getErr, IsNil)
+		c.Assert(pending.TxArray[0].OutHash.IsEmpty(), Equals, true)
+	}
 }
 
 func (*NetworkManagerTestSuite) TestMigrateFundsLeavesXMRDustBufferForFinalRound(c *C) {
@@ -1324,6 +1884,542 @@ func (s *NetworkManagerTestSuite) TestRagnarokPool(c *C) {
 	tempPool, err = k.GetPool(ctx, common.ETHAsset)
 	c.Assert(err, IsNil)
 	c.Assert(tempPool.Status, Equals, PoolAvailable)
+}
+
+// TestWithdrawLPsRetainsLPOnTransientError verifies that a ragnarok LP
+// withdrawal which fails for a transient reason (here a halted chain) does NOT
+// delete the LP's claim; the record is retained and retried once the condition
+// clears. Regression for issues #2972 / #2971.
+func (s *NetworkManagerTestSuite) TestWithdrawLPsRetainsLPOnTransientError(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	ctx = ctx.WithBlockHeight(100000)
+	na := GetRandomValidatorNode(NodeActive)
+	c.Assert(k.SetNodeAccount(ctx, na), IsNil)
+
+	pool := NewPool()
+	pool.Asset = common.BTCAsset
+	pool.BalanceRune = cosmos.NewUint(1000 * common.One)
+	pool.BalanceAsset = cosmos.NewUint(10 * common.One)
+	pool.LPUnits = cosmos.NewUint(1600)
+	pool.Status = PoolAvailable
+	c.Assert(k.SetPool(ctx, pool), IsNil)
+
+	lp := LiquidityProvider{
+		Asset:             common.BTCAsset,
+		RuneAddress:       GetRandomRUNEAddress(),
+		AssetAddress:      GetRandomBTCAddress(),
+		LastAddHeight:     5,
+		Units:             cosmos.NewUint(1600),
+		PendingRune:       cosmos.ZeroUint(),
+		PendingAsset:      cosmos.ZeroUint(),
+		AssetDepositValue: cosmos.ZeroUint(),
+		RuneDepositValue:  cosmos.ZeroUint(),
+	}
+	k.SetLiquidityProvider(ctx, lp)
+
+	mgr := NewDummyMgrWithKeeper(k)
+	networkMgr := newNetworkMgr(k, mgr.TxOutStore(), mgr.EventMgr())
+
+	// Halt the chain so the internal withdraw handler fails validation with a
+	// transient error, exercising the retain-on-error path.
+	k.SetMimir(ctx, "HaltBTCChain", 1)
+
+	done := networkMgr.withdrawLPs(ctx, pool, na, mgr)
+	// Not done: the LP could not be withdrawn and must be retried later.
+	c.Assert(done, Equals, false)
+
+	// The LP record must NOT be deleted when the withdraw fails transiently.
+	got, err := k.GetLiquidityProvider(ctx, common.BTCAsset, lp.RuneAddress)
+	c.Assert(err, IsNil)
+	c.Assert(got.Units.IsZero(), Equals, false, Commentf("LP claim must be retained on transient error"))
+
+	// Once the halt clears, the LP is withdrawn and its record removed.
+	k.SetMimir(ctx, "HaltBTCChain", 0)
+	done = networkMgr.withdrawLPs(ctx, pool, na, mgr)
+	c.Assert(done, Equals, true)
+	got, err = k.GetLiquidityProvider(ctx, common.BTCAsset, lp.RuneAddress)
+	c.Assert(err, IsNil)
+	c.Assert(got.Units.IsZero(), Equals, true, Commentf("LP should be withdrawn once the halt clears"))
+}
+
+// TestWithdrawLPsRetainsPendingClaim verifies that an LP holding both units and
+// staged pending liquidity is not reported as done after the unit withdrawal:
+// the pending claim survives that withdraw untouched, so finalizing the pool at
+// that point would sweep the pending accounting to the Reserve and orphan the
+// provider's claim. Regression for issues #2972 / #2971.
+func (s *NetworkManagerTestSuite) TestWithdrawLPsRetainsPendingClaim(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	ctx = ctx.WithBlockHeight(100000)
+	na := GetRandomValidatorNode(NodeActive)
+	c.Assert(k.SetNodeAccount(ctx, na), IsNil)
+
+	pendingRune := cosmos.NewUint(30 * common.One)
+
+	pool := NewPool()
+	pool.Asset = common.BTCAsset
+	pool.BalanceRune = cosmos.NewUint(1000 * common.One)
+	pool.BalanceAsset = cosmos.NewUint(10 * common.One)
+	pool.LPUnits = cosmos.NewUint(1600)
+	pool.PendingInboundRune = pendingRune
+	pool.Status = PoolStaged
+	c.Assert(k.SetPool(ctx, pool), IsNil)
+
+	// A dual-address LP which has units AND a staged single-sided RUNE add that
+	// never found its asset pair.
+	lp := LiquidityProvider{
+		Asset:             common.BTCAsset,
+		RuneAddress:       GetRandomRUNEAddress(),
+		AssetAddress:      GetRandomBTCAddress(),
+		LastAddHeight:     5,
+		Units:             cosmos.NewUint(1600),
+		PendingRune:       pendingRune,
+		PendingAsset:      cosmos.ZeroUint(),
+		AssetDepositValue: cosmos.ZeroUint(),
+		RuneDepositValue:  cosmos.ZeroUint(),
+	}
+	k.SetLiquidityProvider(ctx, lp)
+
+	mgr := NewDummyMgrWithKeeper(k)
+	networkMgr := newNetworkMgr(k, mgr.TxOutStore(), mgr.EventMgr())
+
+	// First pass: the units are withdrawn, but the pending RUNE is deliberately
+	// left on the record - the pool must NOT be reported as ready to finalize.
+	done := networkMgr.withdrawLPs(ctx, pool, na, mgr)
+	got, err := k.GetLiquidityProvider(ctx, common.BTCAsset, lp.RuneAddress)
+	c.Assert(err, IsNil)
+	c.Assert(got.PendingRune.Equal(pendingRune), Equals, true, Commentf("pending claim must survive the unit withdraw, got %s", got.PendingRune))
+	c.Assert(done, Equals, false, Commentf("pool must not finalize while a pending LP claim is unpaid"))
+
+	// Second pass: the now zero-unit record takes the pending branch of the
+	// withdraw handler, the claim is paid out and the record removed.
+	pool, err = k.GetPool(ctx, common.BTCAsset)
+	c.Assert(err, IsNil)
+	done = networkMgr.withdrawLPs(ctx, pool, na, mgr)
+	c.Assert(done, Equals, true)
+
+	got, err = k.GetLiquidityProvider(ctx, common.BTCAsset, lp.RuneAddress)
+	c.Assert(err, IsNil)
+	c.Assert(got.Units.IsZero(), Equals, true)
+	c.Assert(got.PendingRune.IsZero(), Equals, true, Commentf("pending claim must be paid out, got %s", got.PendingRune))
+
+	// And the pool level pending accounting is cleared with it, so finalization
+	// sweeps nothing that still belongs to a provider.
+	pool, err = k.GetPool(ctx, common.BTCAsset)
+	c.Assert(err, IsNil)
+	c.Assert(pool.PendingInboundRune.IsZero(), Equals, true, Commentf("pool pending inbound rune should be settled, got %s", pool.PendingInboundRune))
+}
+
+// TestWithdrawSaversRetainsOnTransientError verifies that a ragnarok saver
+// withdrawal which fails for a transient reason (here BurnSynths disabling
+// saver withdrawals outside of ragnarok) does NOT delete the saver's claim.
+// Regression for issues #3006 / #2970 / #3007.
+func (s *NetworkManagerTestSuite) TestWithdrawSaversRetainsOnTransientError(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	ctx = ctx.WithBlockHeight(100000)
+	na := GetRandomValidatorNode(NodeActive)
+	c.Assert(k.SetNodeAccount(ctx, na), IsNil)
+
+	pool := NewPool()
+	pool.Asset = common.BTCAsset
+	pool.BalanceRune = cosmos.NewUint(1000 * common.One)
+	pool.BalanceAsset = cosmos.NewUint(10 * common.One)
+	pool.LPUnits = cosmos.NewUint(1600)
+	pool.Status = PoolAvailable
+	c.Assert(k.SetPool(ctx, pool), IsNil)
+
+	synthAsset := common.BTCAsset.GetSyntheticAsset()
+	saver := LiquidityProvider{
+		Asset:             synthAsset,
+		RuneAddress:       common.NoAddress,
+		AssetAddress:      GetRandomBTCAddress(),
+		LastAddHeight:     5,
+		Units:             cosmos.NewUint(100 * common.One),
+		PendingRune:       cosmos.ZeroUint(),
+		PendingAsset:      cosmos.ZeroUint(),
+		AssetDepositValue: cosmos.ZeroUint(),
+		RuneDepositValue:  cosmos.ZeroUint(),
+	}
+	k.SetLiquidityProvider(ctx, saver)
+
+	mgr := NewDummyMgrWithKeeper(k)
+	networkMgr := newNetworkMgr(k, mgr.TxOutStore(), mgr.EventMgr())
+
+	// Enable BurnSynths without putting the pool into ragnarok; the internal
+	// saver withdraw fails validation ("burning synths is disabled").
+	k.SetMimir(ctx, constants.BurnSynths.String(), 1)
+
+	done, err := networkMgr.withdrawSavers(ctx, pool, na, mgr)
+	c.Assert(err, IsNil)
+	c.Assert(done, Equals, false)
+
+	// The saver record must be retained (not deleted without a payout).
+	got, err := k.GetLiquidityProvider(ctx, synthAsset, saver.AssetAddress)
+	c.Assert(err, IsNil)
+	c.Assert(got.Units.IsZero(), Equals, false, Commentf("saver claim must be retained on transient error"))
+}
+
+// TestWithdrawLiquidityFatalOnRemainingRuneTransferFailure verifies that if the
+// leftover pool RUNE cannot be moved to the Reserve during ragnarok
+// finalization, the pool is NOT removed; the error is propagated so the
+// interval is rolled back and retried. Regression for issue #3008.
+func (s *NetworkManagerTestSuite) TestWithdrawLiquidityFatalOnRemainingRuneTransferFailure(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	ctx = ctx.WithBlockHeight(100000)
+	na := GetRandomValidatorNode(NodeActive)
+	c.Assert(k.SetNodeAccount(ctx, na), IsNil)
+
+	// A token (non-gas) pool with leftover RUNE but no LPs/savers to withdraw.
+	usdcAsset, err := common.NewAsset("ETH.USDC-0X9999999999999999999999999999999999999999")
+	c.Assert(err, IsNil)
+	pool := NewPool()
+	pool.Asset = usdcAsset
+	pool.BalanceRune = cosmos.NewUint(500 * common.One)
+	pool.BalanceAsset = cosmos.NewUint(500 * common.One)
+	pool.LPUnits = cosmos.ZeroUint()
+	pool.Status = PoolStaged
+	c.Assert(k.SetPool(ctx, pool), IsNil)
+
+	mgr := NewDummyMgrWithKeeper(k)
+	networkMgr := newNetworkMgr(k, mgr.TxOutStore(), mgr.EventMgr())
+
+	// The Asgard module is unfunded, so moving remaining RUNE to the Reserve
+	// fails. withdrawLiquidity must surface the error rather than removing the
+	// pool while its RUNE is unaccounted for.
+	err = networkMgr.withdrawLiquidity(ctx, pool, na, mgr)
+	c.Assert(err, NotNil)
+	c.Assert(k.PoolExist(ctx, usdcAsset), Equals, true, Commentf("pool must not be removed when remaining RUNE cannot be moved"))
+}
+
+// TestRagnarokLastRuneOnlyLPFinalizes covers a ragnarok whose last remaining
+// liquidity provider is RUNE-address-only: withdrawing it necessarily drains
+// 100% of the RUNE side while the asset side has no address to be paid to.
+// Outside of ragnarok that is rejected ("cannot withdraw 100% of only one side
+// of the pool"), which used to strand the LP forever - the record was retained
+// on every interval and the pool never finalized. During ragnarok the provider
+// must instead be paid everything it has an address for, the LP record cleared
+// and the pool finalized, leaving the unreachable L1 remainder orphaned in the
+// vault for the nodes to dispose of.
+func (s *NetworkManagerTestSuite) TestRagnarokLastRuneOnlyLPFinalizes(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	ctx = ctx.WithBlockHeight(100000)
+	k := mgr.Keeper()
+	na := GetRandomValidatorNode(NodeActive)
+	c.Assert(k.SetNodeAccount(ctx, na), IsNil)
+
+	poolRune := cosmos.NewUint(1000 * common.One)
+	poolAsset := cosmos.NewUint(10 * common.One)
+	pool := NewPool()
+	pool.Asset = common.BTCAsset
+	pool.BalanceRune = poolRune
+	pool.BalanceAsset = poolAsset
+	pool.LPUnits = cosmos.NewUint(1600)
+	pool.Status = PoolStaged
+	c.Assert(k.SetPool(ctx, pool), IsNil)
+
+	// the RUNE payout is a native txout, which needs an active vault to route on
+	vault := GetRandomVault()
+	vault.StatusSince = ctx.BlockHeight() - 10
+	c.Assert(k.SetVault(ctx, vault), IsNil)
+
+	runeAddr := GetRandomRUNEAddress()
+	lp := LiquidityProvider{
+		Asset:             common.BTCAsset,
+		RuneAddress:       runeAddr,
+		AssetAddress:      common.NoAddress,
+		LastAddHeight:     5,
+		Units:             pool.LPUnits,
+		PendingRune:       cosmos.ZeroUint(),
+		PendingAsset:      cosmos.ZeroUint(),
+		AssetDepositValue: cosmos.ZeroUint(),
+		RuneDepositValue:  cosmos.ZeroUint(),
+	}
+	k.SetLiquidityProvider(ctx, lp)
+
+	k.SetMimir(ctx, "RAGNAROK-BTC-BTC", 1)
+
+	networkMgr := newNetworkMgr(k, mgr.TxOutStore(), mgr.EventMgr())
+	c.Assert(networkMgr.withdrawLiquidity(ctx, pool, na, mgr), IsNil)
+
+	// the provider is paid every RUNE it is owed, at the address it does have
+	lpAcc, err := runeAddr.AccAddress()
+	c.Assert(err, IsNil)
+	c.Check(k.GetBalance(ctx, lpAcc).AmountOf(common.RuneNative.Native()).String(), Equals, poolRune.String(),
+		Commentf("the RUNE-address-only provider should be paid the whole RUNE side"))
+
+	// the LP record clears
+	got, err := k.GetLiquidityProvider(ctx, common.BTCAsset, runeAddr)
+	c.Assert(err, IsNil)
+	c.Check(got.Units.IsZero(), Equals, true, Commentf("LP record should be cleared once paid"))
+
+	// and ragnarok finalizes: BTC is a gas asset, so the pool is suspended
+	finalPool, err := k.GetPool(ctx, common.BTCAsset)
+	c.Assert(err, IsNil)
+	c.Check(finalPool.Status, Equals, PoolSuspended, Commentf("ragnarok should finalize the pool"))
+	c.Check(finalPool.BalanceRune.IsZero(), Equals, true)
+	c.Check(finalPool.LPUnits.IsZero(), Equals, true)
+	// the L1 remainder the provider has no address for is left orphaned
+	c.Check(finalPool.BalanceAsset.String(), Equals, poolAsset.String(),
+		Commentf("the unreachable L1 remainder should be left for manual disposition"))
+}
+
+// TestRagnarokLastAssetOnlyLPFinalizes is the mirror of
+// TestRagnarokLastRuneOnlyLPFinalizes: the last provider is asset-address-only,
+// so withdrawing it drains 100% of the asset side and leaves RUNE behind. The
+// provider is paid its L1 asset and the leftover RUNE - a THORChain asset with
+// nowhere to go - is swept to the Reserve as the pool finalizes.
+func (s *NetworkManagerTestSuite) TestRagnarokLastAssetOnlyLPFinalizes(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	ctx = ctx.WithBlockHeight(100000)
+	na := GetRandomValidatorNode(NodeActive)
+	c.Assert(k.SetNodeAccount(ctx, na), IsNil)
+
+	poolRune := cosmos.NewUint(1000 * common.One)
+	poolAsset := cosmos.NewUint(10 * common.One)
+	pool := NewPool()
+	pool.Asset = common.BTCAsset
+	pool.BalanceRune = poolRune
+	pool.BalanceAsset = poolAsset
+	pool.LPUnits = cosmos.NewUint(1600)
+	pool.Status = PoolStaged
+	c.Assert(k.SetPool(ctx, pool), IsNil)
+
+	// the leftover RUNE is moved from Asgard to the Reserve on finalization
+	FundModule(c, ctx, k, AsgardName, poolRune.Uint64())
+
+	assetAddr := GetRandomBTCAddress()
+	lp := LiquidityProvider{
+		Asset:             common.BTCAsset,
+		RuneAddress:       common.NoAddress,
+		AssetAddress:      assetAddr,
+		LastAddHeight:     5,
+		Units:             pool.LPUnits,
+		PendingRune:       cosmos.ZeroUint(),
+		PendingAsset:      cosmos.ZeroUint(),
+		AssetDepositValue: cosmos.ZeroUint(),
+		RuneDepositValue:  cosmos.ZeroUint(),
+	}
+	k.SetLiquidityProvider(ctx, lp)
+
+	k.SetMimir(ctx, "RAGNAROK-BTC-BTC", 1)
+
+	mgr := NewDummyMgrWithKeeper(k)
+	networkMgr := newNetworkMgr(k, mgr.TxOutStore(), mgr.EventMgr())
+
+	reserveBefore := k.GetRuneBalanceOfModule(ctx, ReserveName)
+	c.Assert(networkMgr.withdrawLiquidity(ctx, pool, na, mgr), IsNil)
+
+	// the provider is paid the asset side (less the gas reserved for the outbound)
+	items, err := mgr.TxOutStore().GetOutboundItems(ctx)
+	c.Assert(err, IsNil)
+	c.Assert(items, HasLen, 1, Commentf("%d", len(items)))
+	c.Check(items[0].ToAddress.Equals(assetAddr), Equals, true)
+	c.Check(items[0].Coin.Asset.Equals(common.BTCAsset), Equals, true)
+	c.Check(items[0].Coin.Amount.IsZero(), Equals, false)
+
+	// the LP record clears
+	got, err := k.GetLiquidityProvider(ctx, common.BTCAsset, assetAddr)
+	c.Assert(err, IsNil)
+	c.Check(got.Units.IsZero(), Equals, true, Commentf("LP record should be cleared once paid"))
+
+	// the leftover THORChain asset goes to the Reserve
+	reserveAfter := k.GetRuneBalanceOfModule(ctx, ReserveName)
+	c.Check(common.SafeSub(reserveAfter, reserveBefore).String(), Equals, poolRune.String(),
+		Commentf("remaining pool RUNE should be swept to the Reserve"))
+
+	// and ragnarok finalizes
+	finalPool, err := k.GetPool(ctx, common.BTCAsset)
+	c.Assert(err, IsNil)
+	c.Check(finalPool.Status, Equals, PoolSuspended, Commentf("ragnarok should finalize the pool"))
+	c.Check(finalPool.BalanceRune.IsZero(), Equals, true)
+	c.Check(finalPool.LPUnits.IsZero(), Equals, true)
+}
+
+// TestRagnarokSweepsRemainingNativePoolAssetToReserve covers the finalization of
+// a pool whose asset is itself a THORChain asset backed by the Pool Module (TCY
+// and whitelisted base-layer pools). Any leftover - as when the last provider
+// was RUNE-address-only - has to reach the Reserve, exactly as the leftover pool
+// RUNE does; orphaning it behind a removed pool would leave the Pool Module
+// oversolvent. An external L1 remainder has no module balance to reconcile and
+// is instead left in the vault for the nodes to dispose of.
+func (s *NetworkManagerTestSuite) TestRagnarokSweepsRemainingNativePoolAssetToReserve(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	ctx = ctx.WithBlockHeight(100000)
+	na := GetRandomValidatorNode(NodeActive)
+	c.Assert(k.SetNodeAccount(ctx, na), IsNil)
+
+	remaining := cosmos.NewUint(100 * common.One)
+	pool := NewPool()
+	pool.Asset = common.TCY
+	pool.BalanceRune = cosmos.ZeroUint()
+	pool.BalanceAsset = remaining
+	pool.LPUnits = cosmos.ZeroUint()
+	pool.Status = PoolStaged
+	c.Assert(k.SetPool(ctx, pool), IsNil)
+
+	// the pool asset is held by the Asgard (Pool) module
+	coin := common.NewCoin(common.TCY, remaining)
+	c.Assert(k.MintToModule(ctx, ModuleName, coin), IsNil)
+	c.Assert(k.SendFromModuleToModule(ctx, ModuleName, AsgardName, common.NewCoins(coin)), IsNil)
+
+	k.SetMimir(ctx, "RAGNAROK-TCY-TCY", 1)
+
+	mgr := NewDummyMgrWithKeeper(k)
+	networkMgr := newNetworkMgr(k, mgr.TxOutStore(), mgr.EventMgr())
+	c.Assert(networkMgr.withdrawLiquidity(ctx, pool, na, mgr), IsNil)
+
+	c.Check(k.GetBalanceOfModule(ctx, ReserveName, common.TCY.Native()).String(), Equals, remaining.String(),
+		Commentf("leftover THORChain pool asset should be swept to the Reserve"))
+	c.Check(k.GetBalanceOfModule(ctx, AsgardName, common.TCY.Native()).IsZero(), Equals, true,
+		Commentf("no pool asset should be left behind in the Pool Module"))
+	c.Check(k.PoolExist(ctx, common.TCY), Equals, false, Commentf("ragnarok should finalize the pool"))
+}
+
+// TestRagnarokDualSidedLPDustAssetLegKeepsRuneClaim covers a dual-address LP
+// whose asset leg is too small to cover the outbound it would need, while its
+// RUNE leg is perfectly payable. The withdraw handler schedules the asset
+// outbound first and runs inside a CacheContext, so the dust asset leg rolls the
+// whole withdraw back - the RUNE leg is never even attempted. Removing the LP on
+// that error would delete a payable claim and let the pool finalize with it
+// unpaid, so the ragnarok has to fall back to a RUNE-only withdraw instead.
+func (s *NetworkManagerTestSuite) TestRagnarokDualSidedLPDustAssetLegKeepsRuneClaim(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	ctx = ctx.WithBlockHeight(100000)
+	k := mgr.Keeper()
+	na := GetRandomValidatorNode(NodeActive)
+	c.Assert(k.SetNodeAccount(ctx, na), IsNil)
+
+	// 1.5 * 10 * 1000 = 15000 sats of max gas for a BTC outbound
+	c.Assert(k.SaveNetworkFee(ctx, common.BTCChain, NewNetworkFee(common.BTCChain, 1000, 10)), IsNil)
+
+	// The pool holds barely more asset than a single outbound costs in gas, so
+	// the asset leg of the withdraw cannot be paid out - but the RUNE side is
+	// substantial and has an address to be paid to.
+	poolRune := cosmos.NewUint(100 * common.One)
+	poolAsset := cosmos.NewUint(20000)
+	pool := NewPool()
+	pool.Asset = common.BTCAsset
+	pool.BalanceRune = poolRune
+	pool.BalanceAsset = poolAsset
+	pool.LPUnits = cosmos.NewUint(1600)
+	pool.Status = PoolStaged
+	c.Assert(k.SetPool(ctx, pool), IsNil)
+
+	vault := GetRandomVault()
+	vault.StatusSince = ctx.BlockHeight() - 10
+	vault.Chains = common.Chains{common.THORChain, common.BTCChain}.Strings()
+	vault.Coins = common.NewCoins(common.NewCoin(common.BTCAsset, poolAsset))
+	c.Assert(k.SetVault(ctx, vault), IsNil)
+	FundModule(c, ctx, k, AsgardName, poolRune.Uint64())
+
+	runeAddr := GetRandomRUNEAddress()
+	lp := LiquidityProvider{
+		Asset:             common.BTCAsset,
+		RuneAddress:       runeAddr,
+		AssetAddress:      GetRandomBTCAddress(),
+		LastAddHeight:     5,
+		Units:             pool.LPUnits,
+		PendingRune:       cosmos.ZeroUint(),
+		PendingAsset:      cosmos.ZeroUint(),
+		AssetDepositValue: cosmos.ZeroUint(),
+		RuneDepositValue:  cosmos.ZeroUint(),
+	}
+	k.SetLiquidityProvider(ctx, lp)
+
+	k.SetMimir(ctx, "RAGNAROK-BTC-BTC", 1)
+
+	networkMgr := newNetworkMgr(k, mgr.TxOutStore(), mgr.EventMgr())
+	c.Assert(networkMgr.withdrawLiquidity(ctx, pool, na, mgr), IsNil)
+
+	// The payable RUNE claim is paid out rather than deleted with the dust.
+	lpAcc, err := runeAddr.AccAddress()
+	c.Assert(err, IsNil)
+	c.Check(k.GetBalance(ctx, lpAcc).AmountOf(common.RuneNative.Native()).String(), Equals, poolRune.String(),
+		Commentf("the RUNE leg must be paid out, not rolled back with the dust asset leg"))
+
+	// Only once it is paid does the LP record clear...
+	got, err := k.GetLiquidityProvider(ctx, common.BTCAsset, runeAddr)
+	c.Assert(err, IsNil)
+	c.Check(got.Units.IsZero(), Equals, true, Commentf("LP record should be cleared once paid"))
+
+	// ...and the pool finalize; the asset dust is left orphaned in the vault.
+	finalPool, err := k.GetPool(ctx, common.BTCAsset)
+	c.Assert(err, IsNil)
+	c.Check(finalPool.Status, Equals, PoolSuspended, Commentf("ragnarok should finalize the pool"))
+	c.Check(finalPool.BalanceRune.IsZero(), Equals, true)
+	c.Check(finalPool.LPUnits.IsZero(), Equals, true)
+}
+
+// TestRagnarokDualSidedLPDustAssetLegPausedAsymRetainsLP is the counterpart of
+// TestRagnarokDualSidedLPDustAssetLegKeepsRuneClaim: while asymmetric withdraws
+// are paused for the chain, the RUNE-only fallback would be turned straight back
+// into a symmetric withdraw and prove nothing about the RUNE leg. The LP must
+// then be retained - never deleted unpaid - and the pool must not finalize.
+func (s *NetworkManagerTestSuite) TestRagnarokDualSidedLPDustAssetLegPausedAsymRetainsLP(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	ctx = ctx.WithBlockHeight(100000)
+	k := mgr.Keeper()
+	na := GetRandomValidatorNode(NodeActive)
+	c.Assert(k.SetNodeAccount(ctx, na), IsNil)
+
+	c.Assert(k.SaveNetworkFee(ctx, common.BTCChain, NewNetworkFee(common.BTCChain, 1000, 10)), IsNil)
+
+	poolRune := cosmos.NewUint(100 * common.One)
+	poolAsset := cosmos.NewUint(20000)
+	pool := NewPool()
+	pool.Asset = common.BTCAsset
+	pool.BalanceRune = poolRune
+	pool.BalanceAsset = poolAsset
+	pool.LPUnits = cosmos.NewUint(1600)
+	pool.Status = PoolStaged
+	c.Assert(k.SetPool(ctx, pool), IsNil)
+
+	vault := GetRandomVault()
+	vault.StatusSince = ctx.BlockHeight() - 10
+	vault.Chains = common.Chains{common.THORChain, common.BTCChain}.Strings()
+	vault.Coins = common.NewCoins(common.NewCoin(common.BTCAsset, poolAsset))
+	c.Assert(k.SetVault(ctx, vault), IsNil)
+	FundModule(c, ctx, k, AsgardName, poolRune.Uint64())
+
+	runeAddr := GetRandomRUNEAddress()
+	lp := LiquidityProvider{
+		Asset:             common.BTCAsset,
+		RuneAddress:       runeAddr,
+		AssetAddress:      GetRandomBTCAddress(),
+		LastAddHeight:     5,
+		Units:             pool.LPUnits,
+		PendingRune:       cosmos.ZeroUint(),
+		PendingAsset:      cosmos.ZeroUint(),
+		AssetDepositValue: cosmos.ZeroUint(),
+		RuneDepositValue:  cosmos.ZeroUint(),
+	}
+	k.SetLiquidityProvider(ctx, lp)
+
+	k.SetMimir(ctx, "RAGNAROK-BTC-BTC", 1)
+	k.SetMimir(ctx, "PauseAsymWithdrawal-BTC", 1)
+
+	networkMgr := newNetworkMgr(k, mgr.TxOutStore(), mgr.EventMgr())
+	c.Assert(networkMgr.withdrawLiquidity(ctx, pool, na, mgr), IsNil)
+
+	// The claim survives, unpaid but intact, to be retried in a later interval.
+	got, err := k.GetLiquidityProvider(ctx, common.BTCAsset, runeAddr)
+	c.Assert(err, IsNil)
+	c.Check(got.Units.IsZero(), Equals, false, Commentf("LP claim must be retained while it cannot be paid"))
+
+	// And the pool does not finalize while that claim is outstanding.
+	finalPool, err := k.GetPool(ctx, common.BTCAsset)
+	c.Assert(err, IsNil)
+	c.Check(finalPool.Status, Equals, PoolStaged, Commentf("pool must not finalize with an unpaid claim"))
+	c.Check(finalPool.BalanceRune.String(), Equals, poolRune.String())
+
+	// Once the pause lifts, the RUNE-only fallback pays the provider out.
+	k.SetMimir(ctx, "PauseAsymWithdrawal-BTC", 0)
+	finalPool, err = k.GetPool(ctx, common.BTCAsset)
+	c.Assert(err, IsNil)
+	c.Assert(networkMgr.withdrawLiquidity(ctx, finalPool, na, mgr), IsNil)
+	lpAcc, err := runeAddr.AccAddress()
+	c.Assert(err, IsNil)
+	c.Check(k.GetBalance(ctx, lpAcc).AmountOf(common.RuneNative.Native()).String(), Equals, poolRune.String(),
+		Commentf("the retained claim should be paid once the pause lifts"))
 }
 
 func (s *NetworkManagerTestSuite) TestCleanupAsgardIndex(c *C) {
@@ -2473,6 +3569,90 @@ func (s *NetworkManagerTestSuite) TestCalculateNetworkSolvencyWithStreamingSwaps
 		Commentf("Streaming swap with no progress should deduct full amount, expected 25, got %s", solvency[0].Amount))
 }
 
+func (s *NetworkManagerTestSuite) TestSolvencyAdvancedSwapInputProgress(c *C) {
+	for _, tc := range []struct {
+		name      string
+		deposit   uint64
+		processed uint64
+		quantity  uint64
+	}{
+		{name: "unprocessed single swap", deposit: 10, quantity: 1},
+		{name: "completed single swap", deposit: 10, processed: 10, quantity: 1},
+		{name: "partly processed stream", deposit: 10, processed: 4, quantity: 5},
+		{name: "single swap without deposit state", quantity: 1},
+		{name: "stream without deposit state or legacy record", quantity: 5},
+	} {
+		ctx, mgr := setupManagerForTest(c)
+		k := mgr.Keeper()
+		pool := NewPool()
+		pool.Asset = common.BTCAsset
+		pool.Status = PoolAvailable
+		pool.BalanceRune = cosmos.NewUint(100 * common.One)
+		pool.BalanceAsset = cosmos.NewUint((100 + tc.processed) * common.One)
+		c.Assert(k.SetPool(ctx, pool), IsNil)
+		vault := GetRandomVault()
+		// All 10 BTC of input has arrived; only processed input belongs to the pool.
+		vault.Coins = common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(110*common.One)))
+		c.Assert(k.SetVault(ctx, vault), IsNil)
+		msg := types.MsgSwap{
+			Tx: common.Tx{
+				ID:    GetRandomTxHash(),
+				Chain: common.BTCChain,
+				Coins: common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(10*common.One))),
+			},
+			TargetAsset: common.RuneAsset(),
+			Version:     types.SwapVersion_v2,
+			State: &types.SwapState{
+				Quantity: tc.quantity,
+				Deposit:  cosmos.NewUint(tc.deposit * common.One),
+				In:       cosmos.NewUint(tc.processed * common.One),
+				Out:      cosmos.ZeroUint(),
+			},
+		}
+		c.Assert(k.SetAdvSwapQueueItem(ctx, msg), IsNil)
+		nmgr := newNetworkMgr(k, mgr.TxOutStore(), mgr.EventMgr())
+		solvency, err := nmgr.calculateNetworkSolvency(ctx, mgr)
+		c.Assert(err, IsNil, Commentf("%s", tc.name))
+		c.Assert(solvency, HasLen, 1)
+		c.Assert(solvency[0].Asset.Equals(common.BTCAsset), Equals, true)
+		c.Assert(solvency[0].Amount.IsZero(), Equals, true, Commentf("%s: got %s", tc.name, solvency[0].Amount))
+	}
+}
+
+func (s *NetworkManagerTestSuite) TestSolvencyAdvancedSwapMissingState(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	ctx = ctx.WithBlockHeight(432000)
+	k := mgr.Keeper()
+	k.SetMimir(ctx, constants.OverSolvencyCheckInterval.String(), 432000)
+	k.SetMimir(ctx, constants.OverSolvencyToTreasuryBps.String(), int64(constants.MaxBasisPts))
+	pool := NewPool()
+	pool.Asset = common.BTCAsset
+	pool.Status = PoolAvailable
+	pool.BalanceRune = cosmos.NewUint(100 * common.One)
+	pool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	c.Assert(k.SetPool(ctx, pool), IsNil)
+	vault := GetRandomVault()
+	vault.Coins = common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(110*common.One)))
+	c.Assert(k.SetVault(ctx, vault), IsNil)
+	msg := types.MsgSwap{
+		Tx: common.Tx{
+			ID:    GetRandomTxHash(),
+			Chain: common.BTCChain,
+			Coins: common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(common.One))),
+		},
+		TargetAsset: common.RuneAsset(),
+		Version:     types.SwapVersion_v2,
+	}
+	// A decodable record can omit State. Do not guess its liabilities or panic.
+	c.Assert(k.SetAdvSwapQueueItem(ctx, msg), IsNil)
+	nmgr := newNetworkMgr(k, mgr.TxOutStore(), mgr.EventMgr())
+	solvency, err := nmgr.calculateNetworkSolvency(ctx, mgr)
+	c.Assert(err, ErrorMatches, "missing state for advanced swap .*/0")
+	c.Assert(solvency, IsNil)
+	c.Assert(nmgr.processOverSolvency(ctx, mgr), ErrorMatches, "failed to calculate network solvency: missing state for advanced swap .*/0")
+	c.Assert(affiliateIntegrationQueuedSwaps(c, ctx, k), HasLen, 1)
+}
+
 func (s *NetworkManagerTestSuite) TestSolvencyStreamingSwapTargetOutput(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	nmgr := newNetworkMgr(mgr.Keeper(), NewTxStoreDummy(), NewDummyEventMgr())
@@ -2606,6 +3786,20 @@ func (s *NetworkManagerTestSuite) TestSolvencyStreamingSwapTargetOutputFromNativ
 	// BTC: Vault 100 - Pool 80 - StreamingOutput 20 = 0
 	c.Assert(solvency[0].Amount.Equal(math.ZeroInt()), Equals, true,
 		Commentf("BTC solvency: expected 0 when native-source streaming output is deducted, got %s", solvency[0].Amount))
+
+	// Older advanced streams may have all progress in the legacy record. Its
+	// output must still be counted before the native source asset is skipped.
+	legacy := types.NewStreamingSwap(streamingTxID, 10, 5, cosmos.ZeroUint(), streamingSwapMsg.State.Deposit)
+	legacy.In, legacy.Out = streamingSwapMsg.State.In, streamingSwapMsg.State.Out
+	mgr.Keeper().SetStreamingSwap(ctx, legacy)
+	streamingSwapMsg.State.Deposit = cosmos.ZeroUint()
+	streamingSwapMsg.State.In = cosmos.ZeroUint()
+	streamingSwapMsg.State.Out = cosmos.ZeroUint()
+	c.Assert(mgr.Keeper().SetAdvSwapQueueItem(ctx, streamingSwapMsg), IsNil)
+	solvency, err = nmgr.calculateNetworkSolvency(ctx, mgr)
+	c.Assert(err, IsNil)
+	c.Assert(solvency, HasLen, 1)
+	c.Assert(solvency[0].Amount.IsZero(), Equals, true)
 }
 
 // TestSolvencyStreamingSwapTargetSynthOutput reproduces the case where a
@@ -3755,6 +4949,141 @@ func (s *NetworkManagerTestSuite) TestPOLSystemIncomeShareFundsStableReserve(c *
 		Commentf("POL reserve delta %s should receive the remainder after stable reserve share %s", polDelta, expectedStable))
 }
 
+// updateNetworkModuleBalances snapshots every module RUNE balance that
+// UpdateNetwork can move, so a test can assert value conservation on success
+// and a complete rollback on failure.
+type updateNetworkModuleBalances struct {
+	reserve       cosmos.Uint
+	stableReserve cosmos.Uint
+	polReserve    cosmos.Uint
+	tcyStake      cosmos.Uint
+	bond          cosmos.Uint
+	asgard        cosmos.Uint
+}
+
+func snapshotUpdateNetworkModuleBalances(ctx cosmos.Context, k keeper.Keeper) updateNetworkModuleBalances {
+	return updateNetworkModuleBalances{
+		reserve:       k.GetRuneBalanceOfModule(ctx, ReserveName),
+		stableReserve: k.GetRuneBalanceOfModule(ctx, StableReserveName),
+		polReserve:    k.GetRuneBalanceOfModule(ctx, POLReserveName),
+		tcyStake:      k.GetRuneBalanceOfModule(ctx, TCYStakeName),
+		bond:          k.GetRuneBalanceOfModule(ctx, BondName),
+		asgard:        k.GetRuneBalanceOfModule(ctx, AsgardName),
+	}
+}
+
+// setupUpdateNetworkStableReserveTest builds a network where UpdateNetwork
+// makes a Stable Reserve deduction, a POL Reserve deduction and a third
+// (TCY stake) deduction in the same call, on a keeper whose SetNetwork - the
+// very last write of UpdateNetwork - can be made to fail on demand.
+func setupUpdateNetworkStableReserveTest(c *C) (cosmos.Context, *Mgrs, *VaultManagerTestHelpKeeper, *NetworkMgr) {
+	ctx, mgr := setupManagerForTest(c)
+	helper := NewVaultGenesisSetupTestHelper(mgr.Keeper())
+	mgr.K = helper
+	networkMgr := newNetworkMgr(helper, mgr.TxOutStore(), mgr.EventMgr())
+	c.Assert(helper.SetNetwork(ctx, NewNetwork()), IsNil)
+
+	pool := NewPool()
+	pool.Asset = common.ETHAsset
+	pool.BalanceRune = cosmos.NewUint(100 * common.One)
+	pool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	pool.LPUnits = cosmos.NewUint(100)
+	pool.Status = PoolAvailable
+	c.Assert(helper.SetPool(ctx, pool), IsNil)
+
+	vault := NewVault(0, ActiveVault, AsgardVault, GetRandomPubKey(), []string{pool.Asset.GetChain().String()}, []ChainContract{})
+	vault.Coins = common.NewCoins(common.NewCoin(pool.Asset, pool.BalanceAsset))
+	c.Assert(helper.SetVault(ctx, vault), IsNil)
+
+	c.Assert(helper.SetNodeAccount(ctx, GetRandomValidatorNode(NodeActive)), IsNil)
+	c.Assert(helper.SetNodeAccount(ctx, GetRandomValidatorNode(NodeActive)), IsNil)
+	c.Assert(helper.AddToLiquidityFees(ctx, pool.Asset, cosmos.NewUint(50*common.One)), IsNil)
+
+	// Three deductions in the same call: TCY stake, POL Reserve and - carved out
+	// of the POL share - the Stable Reserve. Dev fund / marketing / burn are off
+	// so every RUNE that leaves the Reserve lands in a module we snapshot.
+	helper.SetMimir(ctx, constants.DevFundSystemIncomeBps.String(), 0)
+	helper.SetMimir(ctx, constants.MarketingFundSystemIncomeBps.String(), 0)
+	helper.SetMimir(ctx, constants.SystemIncomeBurnRateBps.String(), 0)
+	helper.SetMimir(ctx, constants.TCYStakeSystemIncomeBps.String(), 1_000)
+	helper.SetMimir(ctx, constants.POLReserveSystemIncomeBps.String(), 2_000)
+	helper.SetMimir(ctx, constants.StableReserveEnabled.String(), 1)
+	helper.SetMimir(ctx, constants.StableReservePOLShareBps.String(), 2_500)
+
+	return ctx, mgr, helper, networkMgr
+}
+
+// TestUpdateNetworkStableReserveDeductionCommitsAtomically pins the Stable
+// Reserve transfer to the same CacheContext as the other Reserve deductions.
+// Running it on the parent ctx made the Reserve debit disappear when the cache
+// committed (the cached, pre-transfer Reserve balance overwrote it), minting
+// the Stable Reserve credit out of thin air.
+func (s *NetworkManagerTestSuite) TestUpdateNetworkStableReserveDeductionCommitsAtomically(c *C) {
+	ctx, mgr, helper, networkMgr := setupUpdateNetworkStableReserveTest(c)
+
+	before := snapshotUpdateNetworkModuleBalances(ctx, helper)
+	c.Assert(networkMgr.UpdateNetwork(ctx, mgr), IsNil)
+	after := snapshotUpdateNetworkModuleBalances(ctx, helper)
+
+	// All three deductions plus the bond reward must have been paid.
+	stableDelta := common.SafeSub(after.stableReserve, before.stableReserve)
+	polDelta := common.SafeSub(after.polReserve, before.polReserve)
+	tcyDelta := common.SafeSub(after.tcyStake, before.tcyStake)
+	bondDelta := common.SafeSub(after.bond, before.bond)
+	asgardDelta := common.SafeSub(after.asgard, before.asgard)
+	c.Assert(stableDelta.IsZero(), Equals, false, Commentf("stable reserve should be credited"))
+	c.Assert(polDelta.IsZero(), Equals, false, Commentf("pol reserve should be credited"))
+	c.Assert(tcyDelta.IsZero(), Equals, false, Commentf("tcy stake should be credited"))
+	c.Assert(bondDelta.IsZero(), Equals, false, Commentf("bond module should be credited"))
+
+	// Value conservation: every RUNE credited must have been debited from the
+	// Reserve. With the Stable Reserve transfer on the parent ctx the commit
+	// restored the stale Reserve balance, so the debit came up short by exactly
+	// the Stable Reserve credit.
+	reserveDebit := common.SafeSub(before.reserve, after.reserve)
+	credits := stableDelta.Add(polDelta).Add(tcyDelta).Add(bondDelta).Add(asgardDelta)
+	c.Check(reserveDebit.Equal(credits), Equals, true,
+		Commentf("reserve debit %s should equal total module credits %s (stable %s, pol %s, tcy %s, bond %s, asgard %s)",
+			reserveDebit, credits, stableDelta, polDelta, tcyDelta, bondDelta, asgardDelta))
+}
+
+// TestUpdateNetworkStableReserveDeductionRollsBack verifies that when a later
+// step of UpdateNetwork fails, the Stable Reserve transfer is discarded along
+// with every other Reserve deduction. On the parent ctx it survived the
+// rollback, leaving a Stable Reserve credit with a Reserve debit and no
+// matching network bookkeeping.
+func (s *NetworkManagerTestSuite) TestUpdateNetworkStableReserveDeductionRollsBack(c *C) {
+	ctx, mgr, helper, networkMgr := setupUpdateNetworkStableReserveTest(c)
+
+	before := snapshotUpdateNetworkModuleBalances(ctx, helper)
+	networkBefore, err := helper.GetNetwork(ctx)
+	c.Assert(err, IsNil)
+
+	// Fail the final SetNetwork, after every deduction and reward transfer.
+	helper.failSetNetwork = true
+	c.Assert(networkMgr.UpdateNetwork(ctx, mgr), NotNil)
+	helper.failSetNetwork = false
+
+	after := snapshotUpdateNetworkModuleBalances(ctx, helper)
+	c.Check(after.stableReserve.Equal(before.stableReserve), Equals, true,
+		Commentf("stable reserve %s should be rolled back to %s", after.stableReserve, before.stableReserve))
+	c.Check(after.reserve.Equal(before.reserve), Equals, true,
+		Commentf("reserve %s should be rolled back to %s", after.reserve, before.reserve))
+	c.Check(after.polReserve.Equal(before.polReserve), Equals, true,
+		Commentf("pol reserve %s should be rolled back to %s", after.polReserve, before.polReserve))
+	c.Check(after.tcyStake.Equal(before.tcyStake), Equals, true,
+		Commentf("tcy stake %s should be rolled back to %s", after.tcyStake, before.tcyStake))
+	c.Check(after.bond.Equal(before.bond), Equals, true,
+		Commentf("bond %s should be rolled back to %s", after.bond, before.bond))
+	c.Check(after.asgard.Equal(before.asgard), Equals, true,
+		Commentf("asgard %s should be rolled back to %s", after.asgard, before.asgard))
+
+	networkAfter, err := helper.GetNetwork(ctx)
+	c.Assert(err, IsNil)
+	c.Check(networkAfter.BondRewardRune.Equal(networkBefore.BondRewardRune), Equals, true,
+		Commentf("bond reward bookkeeping should not persist when UpdateNetwork fails"))
+}
+
 func (s *NetworkManagerTestSuite) TestPOLReserveCycleDisabled(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	networkMgr := newNetworkMgr(mgr.Keeper(), mgr.TxOutStore(), mgr.EventMgr())
@@ -4325,7 +5654,7 @@ func (s *NetworkManagerTestSuite) TestRevShareDeductionBeforeSplits(c *C) {
 	// ensure reserve has enough for the payout.
 	FundModule(c, ctx, k, ReserveName, 10_000)
 
-	affcolBefore, err := k.GetAffiliateCollector(ctx, ownerAddr)
+	affcolBefore, err := k.GetAffiliateCollector(ctx, name.Name)
 	c.Assert(err, IsNil)
 	reserveBefore := k.GetRuneBalanceOfModule(ctx, ReserveName)
 
@@ -4337,7 +5666,7 @@ func (s *NetworkManagerTestSuite) TestRevShareDeductionBeforeSplits(c *C) {
 	c.Check(totalRevShare.Equal(expectedPayout), Equals, true,
 		Commentf("totalRevShare = %s, want %s", totalRevShare.String(), expectedPayout.String()))
 
-	affcolAfter, err := k.GetAffiliateCollector(ctx, ownerAddr)
+	affcolAfter, err := k.GetAffiliateCollector(ctx, name.Name)
 	c.Assert(err, IsNil)
 	c.Check(affcolAfter.RuneAmount.Sub(affcolBefore.RuneAmount).Equal(expectedPayout), Equals, true,
 		Commentf("affiliate collector delta = %s, want %s",
@@ -4400,7 +5729,7 @@ func (s *NetworkManagerTestSuite) TestRevShareEventEvenWhenNoMimirSet(c *C) {
 
 	FundModule(c, ctx, k, ReserveName, 10_000)
 
-	affcolBefore, err := k.GetAffiliateCollector(ctx, ownerAddr)
+	affcolBefore, err := k.GetAffiliateCollector(ctx, name.Name)
 	c.Assert(err, IsNil)
 
 	totalRevShare := networkMgr.processRevShare(ctx, mgr)
@@ -4408,7 +5737,7 @@ func (s *NetworkManagerTestSuite) TestRevShareEventEvenWhenNoMimirSet(c *C) {
 		Commentf("totalRevShare must be zero when no REVSHARE mimir is set, got %s", totalRevShare.String()))
 
 	// collector must NOT have changed (no bps set -> no payout).
-	affcolAfter, err := k.GetAffiliateCollector(ctx, ownerAddr)
+	affcolAfter, err := k.GetAffiliateCollector(ctx, name.Name)
 	c.Assert(err, IsNil)
 	c.Check(affcolAfter.RuneAmount.Equal(affcolBefore.RuneAmount), Equals, true,
 		Commentf("collector changed when no REVSHARE mimir was set: before=%s after=%s",
@@ -4468,7 +5797,7 @@ func (s *NetworkManagerTestSuite) TestRevShareExpiredThornameNoPayoutButEventEmi
 
 	FundModule(c, ctx, k, ReserveName, 10_000)
 
-	collectorBefore, err := k.GetAffiliateCollector(ctx, ownerAddr)
+	collectorBefore, err := k.GetAffiliateCollector(ctx, name.Name)
 	c.Assert(err, IsNil)
 	reserveBefore := k.GetRuneBalanceOfModule(ctx, ReserveName)
 
@@ -4476,7 +5805,7 @@ func (s *NetworkManagerTestSuite) TestRevShareExpiredThornameNoPayoutButEventEmi
 	c.Check(totalRevShare.IsZero(), Equals, true,
 		Commentf("expired thorname must not contribute to totalRevShare, got %s", totalRevShare.String()))
 
-	collectorAfter, err := k.GetAffiliateCollector(ctx, ownerAddr)
+	collectorAfter, err := k.GetAffiliateCollector(ctx, name.Name)
 	c.Assert(err, IsNil)
 	c.Check(collectorAfter.RuneAmount.Equal(collectorBefore.RuneAmount), Equals, true,
 		Commentf("expired thorname must not receive payout"))
@@ -4541,7 +5870,7 @@ func (s *NetworkManagerTestSuite) TestRevShareExplicitlyDisabledNoPayoutButEvent
 	c.Assert(k.AddAffiliateLiquidityFee(ctx, "affd", cosmos.NewUint(1000)), IsNil)
 
 	FundModule(c, ctx, k, ReserveName, 10_000)
-	collectorBefore, err := k.GetAffiliateCollector(ctx, ownerAddr)
+	collectorBefore, err := k.GetAffiliateCollector(ctx, name.Name)
 	c.Assert(err, IsNil)
 	reserveBefore := k.GetRuneBalanceOfModule(ctx, ReserveName)
 
@@ -4550,7 +5879,7 @@ func (s *NetworkManagerTestSuite) TestRevShareExplicitlyDisabledNoPayoutButEvent
 		Commentf("explicit bps=0 must not contribute to totalRevShare, got %s",
 			totalRevShare.String()))
 
-	collectorAfter, err := k.GetAffiliateCollector(ctx, ownerAddr)
+	collectorAfter, err := k.GetAffiliateCollector(ctx, name.Name)
 	c.Assert(err, IsNil)
 	c.Check(collectorAfter.RuneAmount.Equal(collectorBefore.RuneAmount), Equals, true,
 		Commentf("collector must not change for explicit bps=0"))
@@ -4612,7 +5941,7 @@ func (s *NetworkManagerTestSuite) TestRevShareRoundedToZeroPayoutEventEmitted(c 
 	c.Assert(k.AddAffiliateLiquidityFee(ctx, "affr", cosmos.NewUint(1)), IsNil)
 
 	FundModule(c, ctx, k, ReserveName, 10_000)
-	collectorBefore, err := k.GetAffiliateCollector(ctx, ownerAddr)
+	collectorBefore, err := k.GetAffiliateCollector(ctx, name.Name)
 	c.Assert(err, IsNil)
 	reserveBefore := k.GetRuneBalanceOfModule(ctx, ReserveName)
 
@@ -4621,7 +5950,7 @@ func (s *NetworkManagerTestSuite) TestRevShareRoundedToZeroPayoutEventEmitted(c 
 		Commentf("rounded-to-zero payout must not contribute to totalRevShare, got %s",
 			totalRevShare.String()))
 
-	collectorAfter, err := k.GetAffiliateCollector(ctx, ownerAddr)
+	collectorAfter, err := k.GetAffiliateCollector(ctx, name.Name)
 	c.Assert(err, IsNil)
 	c.Check(collectorAfter.RuneAmount.Equal(collectorBefore.RuneAmount), Equals, true,
 		Commentf("collector must not change when payout rounds to zero"))
@@ -4662,12 +5991,7 @@ func (s *NetworkManagerTestSuite) TestRevShareRoundedToZeroPayoutEventEmitted(c 
 		Commentf("accrued_fee must reflect gross attribution even when payout rounds to zero"))
 }
 
-// TestRevShareMultiThornameSameOwner asserts that two distinct thornames
-// resolving to the same Owner address compound their payouts into the
-// owner's single AffiliateCollector entry. processRevShare reads
-// GetAffiliateCollector once per accumulator entry; the second iteration
-// must observe the post-mutation state from the first or payouts will
-// silently overwrite each other instead of summing.
+// THORNames sharing an owner retain separate REVSHARE balances.
 func (s *NetworkManagerTestSuite) TestRevShareMultiThornameSameOwner(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	k := mgr.Keeper()
@@ -4683,38 +6007,36 @@ func (s *NetworkManagerTestSuite) TestRevShareMultiThornameSameOwner(c *C) {
 	nameB.Owner = ownerAddr
 	k.SetTHORName(ctx, nameB)
 
-	// Different bps so a shadowing-bug regression would surface as the
-	// second value clobbering the first rather than summing with it.
 	k.SetMimir(ctx, "REVSHARE-AFFA", 2500) // 25%
-	k.SetMimir(ctx, "REVSHARE-AFFB", 1000) // 10%
+	k.SetMimir(ctx, "REVSHARE-AFFB", 2000) // 20%
 
 	c.Assert(k.AddAffiliateLiquidityFee(ctx, "affa", cosmos.NewUint(2000)), IsNil)
 	c.Assert(k.AddAffiliateLiquidityFee(ctx, "affb", cosmos.NewUint(5000)), IsNil)
 
 	FundModule(c, ctx, k, ReserveName, 100_000)
 
-	collectorBefore, err := k.GetAffiliateCollector(ctx, ownerAddr)
+	collectorBefore, err := k.GetAffiliateCollector(ctx, nameA.Name)
+	c.Assert(err, IsNil)
+	collectorBBefore, err := k.GetAffiliateCollector(ctx, nameB.Name)
 	c.Assert(err, IsNil)
 	reserveBefore := k.GetRuneBalanceOfModule(ctx, ReserveName)
 
 	totalRevShare := networkMgr.processRevShare(ctx, mgr)
 
 	// Expected: AFFA payout = 2000 * 2500 / 10000 = 500
-	//           AFFB payout = 5000 * 1000 / 10000 = 500
-	expectedTotal := cosmos.NewUint(1000)
+	//           AFFB payout = 5000 * 2000 / 10000 = 1000
+	expectedTotal := cosmos.NewUint(1500)
 	c.Check(totalRevShare.Equal(expectedTotal), Equals, true,
 		Commentf("totalRevShare = %s, want %s (sum of both thornames)",
 			totalRevShare.String(), expectedTotal.String()))
 
-	// The collector must hold the SUM of both payouts; if the second
-	// iteration's read shadowed the first iteration's write the delta
-	// would equal only one of the two payouts.
-	collectorAfter, err := k.GetAffiliateCollector(ctx, ownerAddr)
+	collectorAfter, err := k.GetAffiliateCollector(ctx, nameA.Name)
 	c.Assert(err, IsNil)
 	collectorDelta := collectorAfter.RuneAmount.Sub(collectorBefore.RuneAmount)
-	c.Check(collectorDelta.Equal(expectedTotal), Equals, true,
-		Commentf("collector delta = %s, want %s — second iteration must observe first iteration's write",
-			collectorDelta.String(), expectedTotal.String()))
+	c.Check(collectorDelta.Equal(cosmos.NewUint(500)), Equals, true)
+	collectorBAfter, err := k.GetAffiliateCollector(ctx, nameB.Name)
+	c.Assert(err, IsNil)
+	c.Check(collectorBAfter.RuneAmount.Sub(collectorBBefore.RuneAmount).Equal(cosmos.NewUint(1000)), Equals, true)
 
 	reserveAfter := k.GetRuneBalanceOfModule(ctx, ReserveName)
 	c.Check(reserveBefore.Sub(reserveAfter).Equal(expectedTotal), Equals, true,
@@ -4784,9 +6106,9 @@ func (s *NetworkManagerTestSuite) TestRevShareReserveInsufficientRollback(c *C) 
 	c.Assert(k.GetRuneBalanceOfModule(ctx, ReserveName).Equal(cosmos.NewUint(250)), Equals, true,
 		Commentf("Reserve balance should be exactly 250 after drain"))
 
-	collectorABefore, err := k.GetAffiliateCollector(ctx, ownerA)
+	collectorABefore, err := k.GetAffiliateCollector(ctx, nameA.Name)
 	c.Assert(err, IsNil)
-	collectorBBefore, err := k.GetAffiliateCollector(ctx, ownerB)
+	collectorBBefore, err := k.GetAffiliateCollector(ctx, nameB.Name)
 	c.Assert(err, IsNil)
 
 	totalRevShare := networkMgr.processRevShare(ctx, mgr)
@@ -4798,7 +6120,7 @@ func (s *NetworkManagerTestSuite) TestRevShareReserveInsufficientRollback(c *C) 
 			totalRevShare.String()))
 
 	// Successful entry: collector grew by the payout amount.
-	collectorAAfter, err := k.GetAffiliateCollector(ctx, ownerA)
+	collectorAAfter, err := k.GetAffiliateCollector(ctx, nameA.Name)
 	c.Assert(err, IsNil)
 	c.Check(collectorAAfter.RuneAmount.Sub(collectorABefore.RuneAmount).Equal(cosmos.NewUint(250)),
 		Equals, true,
@@ -4806,7 +6128,7 @@ func (s *NetworkManagerTestSuite) TestRevShareReserveInsufficientRollback(c *C) 
 			collectorAAfter.RuneAmount.Sub(collectorABefore.RuneAmount).String()))
 
 	// Rolled-back entry: collector unchanged from the pre-call state.
-	collectorBAfter, err := k.GetAffiliateCollector(ctx, ownerB)
+	collectorBAfter, err := k.GetAffiliateCollector(ctx, nameB.Name)
 	c.Assert(err, IsNil)
 	c.Check(collectorBAfter.RuneAmount.Equal(collectorBBefore.RuneAmount), Equals, true,
 		Commentf("AFFB collector must be rolled back to %s after failed send, got %s",
@@ -5060,7 +6382,7 @@ func (s *NetworkManagerTestSuite) TestProcessRevShareTriggersPreferredAssetFlush
 	// triggerPreferredAssetSwap zeroes the AffiliateCollector RuneAmount as
 	// part of its successful flush. If our threshold trigger ran, the
 	// collector should be empty.
-	col, err := k.GetAffiliateCollector(ctx, ownerAddr)
+	col, err := k.GetAffiliateCollector(ctx, name.Name)
 	c.Assert(err, IsNil)
 	c.Check(col.RuneAmount.IsZero(), Equals, true,
 		Commentf("AffiliateCollector.RuneAmount should be zero after preferred-asset flush, got %s",
@@ -5116,7 +6438,7 @@ func (s *NetworkManagerTestSuite) TestProcessRevShareNoPreferredAssetSkipsFlush(
 
 	// The collector retains the credit since there's no preferred asset to
 	// flush to.
-	col, err := k.GetAffiliateCollector(ctx, ownerAddr)
+	col, err := k.GetAffiliateCollector(ctx, name.Name)
 	c.Assert(err, IsNil)
 	c.Check(col.RuneAmount.Equal(cosmos.NewUint(50*common.One)), Equals, true,
 		Commentf("AffiliateCollector should retain its credit when no preferred asset, got %s",
@@ -5125,6 +6447,27 @@ func (s *NetworkManagerTestSuite) TestProcessRevShareNoPreferredAssetSkipsFlush(
 	// No swap should have been queued.
 	c.Check(countQueuedSwaps(k, ctx), Equals, 0,
 		Commentf("no preferred-asset swap should be queued when thorname has no preferred asset"))
+}
+
+func (s *NetworkManagerTestSuite) TestProcessRevShareCollectorErrorsLeaveBalancesUnchanged(c *C) {
+	for _, failure := range []string{"read", "write", "transfer"} {
+		ctx, mgr, _, _ := setupAffiliateCollectorPartners(c)
+		k := mgr.Keeper()
+		fundNamedCollector(c, ctx, k, "few", 20)
+		FundModule(c, ctx, k, ReserveName, 100)
+		k.SetMimir(ctx, "REVSHARE-FEW", 5000)
+		c.Assert(k.AddAffiliateLiquidityFee(ctx, "few", cosmos.NewUint(20)), IsNil)
+		beforeReserve := k.GetRuneBalanceOfModule(ctx, ReserveName)
+		fault := &collectorFailKeeper{Keeper: k, failRead: failure == "read", failWrite: failure == "write", failTransfer: failure == "transfer"}
+		mgr.K = fault
+		networkMgr := newNetworkMgr(fault, mgr.TxOutStore(), mgr.EventMgr())
+		c.Assert(networkMgr.processRevShare(ctx, mgr).IsZero(), Equals, true)
+		c.Check(k.GetRuneBalanceOfModule(ctx, ReserveName).Equal(beforeReserve), Equals, true)
+		assertNamedAffiliateBalance(c, ctx, k, "few", 20)
+		assertAffiliateIntegrationInvariant(c, ctx, k)
+		c.Check(k.GetAffiliateLiquidityFees(ctx), HasLen, 0)
+		c.Check(countQueuedSwaps(k, ctx), Equals, 0)
+	}
 }
 
 // TestProcessRevShareBelowThresholdNoFlush asserts that a REVSHARE credit
@@ -5167,7 +6510,7 @@ func (s *NetworkManagerTestSuite) TestProcessRevShareBelowThresholdNoFlush(c *C)
 	c.Check(totalRevShare.Equal(cosmos.NewUint(500)), Equals, true)
 
 	// Collector retained the credit (no flush).
-	col, err := k.GetAffiliateCollector(ctx, ownerAddr)
+	col, err := k.GetAffiliateCollector(ctx, name.Name)
 	c.Assert(err, IsNil)
 	c.Check(col.RuneAmount.Equal(cosmos.NewUint(500)), Equals, true,
 		Commentf("collector should retain credit below threshold, got %s",
@@ -5176,4 +6519,116 @@ func (s *NetworkManagerTestSuite) TestProcessRevShareBelowThresholdNoFlush(c *C)
 	// No swap queued.
 	c.Check(countQueuedSwaps(k, ctx), Equals, 0,
 		Commentf("no swap should be queued below threshold"))
+}
+
+// txOutStoreDustDummy fails every outbound with ErrNotEnoughToPayFee while
+// `dust` is set, so the ragnarok dust path can be exercised without standing up
+// a real vault/gas setup.
+type txOutStoreDustDummy struct {
+	*TxOutStoreDummy
+	dust bool
+}
+
+func (tos *txOutStoreDustDummy) TryAddTxOutItem(ctx cosmos.Context, mgr Manager, toi TxOutItem, minOut cosmos.Uint) (bool, error) {
+	if tos.dust {
+		return false, ErrNotEnoughToPayFee
+	}
+	return tos.TxOutStoreDummy.TryAddTxOutItem(ctx, mgr, toi, minOut)
+}
+
+// setupDustLPRagnarok builds a pool plus a dual-address LP holding both units
+// and a staged pending RUNE add, with a tx out store that reports every outbound
+// as dust.
+func setupDustLPRagnarok(c *C) (cosmos.Context, keeper.Keeper, Pool, LiquidityProvider, NodeAccount, *DummyMgr, *txOutStoreDustDummy, cosmos.Uint) {
+	ctx, k := setupKeeperForTest(c)
+	ctx = ctx.WithBlockHeight(100000)
+	na := GetRandomValidatorNode(NodeActive)
+	c.Assert(k.SetNodeAccount(ctx, na), IsNil)
+
+	pendingRune := cosmos.NewUint(30 * common.One)
+
+	pool := NewPool()
+	pool.Asset = common.BTCAsset
+	pool.BalanceRune = cosmos.NewUint(1000 * common.One)
+	pool.BalanceAsset = cosmos.NewUint(10 * common.One)
+	// More pool units than this LP holds, so the RUNE-only retry is not a 100%
+	// one-sided drain of the pool (which withdraw() rejects outright) and the
+	// dust path is what is actually exercised.
+	pool.LPUnits = cosmos.NewUint(3200)
+	pool.PendingInboundRune = pendingRune
+	pool.Status = PoolStaged
+	c.Assert(k.SetPool(ctx, pool), IsNil)
+
+	lp := LiquidityProvider{
+		Asset:             common.BTCAsset,
+		RuneAddress:       GetRandomRUNEAddress(),
+		AssetAddress:      GetRandomBTCAddress(),
+		LastAddHeight:     5,
+		Units:             cosmos.NewUint(1600),
+		PendingRune:       pendingRune,
+		PendingAsset:      cosmos.ZeroUint(),
+		AssetDepositValue: cosmos.ZeroUint(),
+		RuneDepositValue:  cosmos.ZeroUint(),
+	}
+	k.SetLiquidityProvider(ctx, lp)
+
+	mgr := NewDummyMgrWithKeeper(k)
+	dustStore := &txOutStoreDustDummy{TxOutStoreDummy: NewTxStoreDummy(), dust: true}
+	mgr.txOutStore = dustStore
+
+	return ctx, k, pool, lp, na, mgr, dustStore, pendingRune
+}
+
+// TestWithdrawLPsDustUnitsRetainsPendingClaim verifies that when the unit
+// withdrawal of an LP which also holds staged pending liquidity is dust, the
+// record is not deleted: only the unpayable units are dropped, so the pending
+// claim survives and is paid on a later pass. Regression for issue #2972.
+func (s *NetworkManagerTestSuite) TestWithdrawLPsDustUnitsRetainsPendingClaim(c *C) {
+	ctx, k, pool, lp, na, mgr, dustStore, pendingRune := setupDustLPRagnarok(c)
+	networkMgr := newNetworkMgr(k, mgr.TxOutStore(), mgr.EventMgr())
+
+	// First pass: every outbound is dust, so the unit withdraw fails. The pending
+	// claim was never attempted and must not be forfeited with the record.
+	done := networkMgr.withdrawLPs(ctx, pool, na, mgr)
+	c.Assert(done, Equals, false, Commentf("pool must not finalize while a pending LP claim is unpaid"))
+	got, err := k.GetLiquidityProvider(ctx, common.BTCAsset, lp.RuneAddress)
+	c.Assert(err, IsNil)
+	c.Assert(got.PendingRune.Equal(pendingRune), Equals, true, Commentf("pending claim must survive the dust unit withdraw, got %s", got.PendingRune))
+	// The dust units are dropped so the next pass takes withdraw()'s pending
+	// branch instead of failing identically forever.
+	c.Assert(got.Units.IsZero(), Equals, true, Commentf("dust units should be zeroed, got %s", got.Units))
+
+	// Second pass, outbounds payable again: the pending claim is paid out and the
+	// record removed.
+	dustStore.dust = false
+	pool, err = k.GetPool(ctx, common.BTCAsset)
+	c.Assert(err, IsNil)
+	done = networkMgr.withdrawLPs(ctx, pool, na, mgr)
+	c.Assert(done, Equals, true)
+	got, err = k.GetLiquidityProvider(ctx, common.BTCAsset, lp.RuneAddress)
+	c.Assert(err, IsNil)
+	c.Assert(got.PendingRune.IsZero(), Equals, true, Commentf("pending claim must be paid out, got %s", got.PendingRune))
+
+	pool, err = k.GetPool(ctx, common.BTCAsset)
+	c.Assert(err, IsNil)
+	c.Assert(pool.PendingInboundRune.IsZero(), Equals, true, Commentf("pool pending inbound rune should be settled, got %s", pool.PendingInboundRune))
+}
+
+// TestWithdrawLPsDustPendingRemovesLP verifies the dust path still terminates:
+// once the pending claim itself is proven unpayable the record is removed, so
+// retaining it above cannot livelock ragnarok.
+func (s *NetworkManagerTestSuite) TestWithdrawLPsDustPendingRemovesLP(c *C) {
+	ctx, k, pool, lp, na, mgr, _, _ := setupDustLPRagnarok(c)
+	networkMgr := newNetworkMgr(k, mgr.TxOutStore(), mgr.EventMgr())
+
+	c.Assert(networkMgr.withdrawLPs(ctx, pool, na, mgr), Equals, false)
+
+	// Second pass with everything still dust: the pending leg is now attempted
+	// and proven unpayable too, so the record is removed and the pool finalizes.
+	pool, err := k.GetPool(ctx, common.BTCAsset)
+	c.Assert(err, IsNil)
+	c.Assert(networkMgr.withdrawLPs(ctx, pool, na, mgr), Equals, true)
+	got, err := k.GetLiquidityProvider(ctx, common.BTCAsset, lp.RuneAddress)
+	c.Assert(err, IsNil)
+	c.Assert(got.PendingRune.IsZero(), Equals, true, Commentf("dust pending record should be removed, got %s", got.PendingRune))
 }

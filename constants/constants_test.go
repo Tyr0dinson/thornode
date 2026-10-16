@@ -5,6 +5,8 @@ package constants
 
 import (
 	"encoding/json"
+	"sort"
+	"strings"
 
 	. "gopkg.in/check.v1"
 )
@@ -57,9 +59,17 @@ func (s *ConstantsSuite) TestConstantValsGetInt64ValueOverride(c *C) {
 func (s *ConstantsSuite) TestConstantValsString(c *C) {
 	consts := NewConstantValue()
 	result := consts.String()
-	c.Assert(len(result) > 0, Equals, true)
-	// Should contain some constant names
-	c.Check(result, Not(Equals), "")
+	lines := strings.Split(strings.TrimSuffix(result, "\n"), "\n")
+	c.Assert(lines, HasLen, len(consts.int64values)+len(consts.boolValues))
+
+	names := make([]string, len(lines))
+	for i, line := range lines {
+		name, _, ok := strings.Cut(line, ":")
+		c.Assert(ok, Equals, true)
+		names[i] = name
+	}
+	c.Check(sort.StringsAreSorted(names[:len(consts.int64values)]), Equals, true)
+	c.Check(sort.StringsAreSorted(names[len(consts.int64values):]), Equals, true)
 }
 
 // TestConstantValsGetConstantValsByKeyname tests GetConstantValsByKeyname

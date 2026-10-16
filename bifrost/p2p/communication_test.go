@@ -49,23 +49,32 @@ func testSecp256k1RawKey(c *C) []byte {
 	return raw
 }
 
-func testFreeTCPPort(c *C) int {
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	c.Assert(err, IsNil)
-	defer func() {
-		c.Assert(listener.Close(), IsNil)
-	}()
-	tcpAddr, ok := listener.Addr().(*net.TCPAddr)
-	c.Assert(ok, Equals, true)
-	return tcpAddr.Port
-}
-
 func (CommunicationTestSuite) TestEstablishP2pCommunication(c *C) {
-	bootstrapPort := testFreeTCPPort(c)
-	comm2Port := testFreeTCPPort(c)
-	comm3Port := testFreeTCPPort(c)
-	comm4Port := testFreeTCPPort(c)
-	invalidPort := testFreeTCPPort(c)
+	// Reserve every port before releasing any so the OS cannot assign the same
+	// port to two participants. Cleanup also covers partial allocation failures.
+	listeners := make([]net.Listener, 5)
+	releasePort := func(index int) {
+		if listeners[index] != nil {
+			listener := listeners[index]
+			listeners[index] = nil
+			c.Check(listener.Close(), IsNil)
+		}
+	}
+	defer func() {
+		for i := range listeners {
+			releasePort(i)
+		}
+	}()
+	ports := make([]int, len(listeners))
+	for i := range listeners {
+		listener, listenErr := net.Listen("tcp", "127.0.0.1:0")
+		c.Assert(listenErr, IsNil)
+		listeners[i] = listener
+		tcpAddr, ok := listener.Addr().(*net.TCPAddr)
+		c.Assert(ok, Equals, true)
+		ports[i] = tcpAddr.Port
+	}
+	bootstrapPort, comm2Port, comm3Port, comm4Port, invalidPort := ports[0], ports[1], ports[2], ports[3], ports[4]
 	bootstrapPeer := fmt.Sprintf("/ip4/127.0.0.1/tcp/%d/p2p/16Uiu2HAm4TmEzUqy3q3Dv7HvdoSboHk5sFj2FH3npiN5vDbJC6gh", bootstrapPort)
 	bootstrapPrivKey := "6LABmWB4iXqkqOJ9H0YFEA2CSSx6bA7XAKGyI/TDtas="
 	fakeExternalIP := "11.22.33.44"
@@ -76,6 +85,7 @@ func (CommunicationTestSuite) TestEstablishP2pCommunication(c *C) {
 	c.Assert(err, IsNil)
 	comm, err := NewCommunication(&Config{Port: bootstrapPort, RendezvousString: "commTest", ExternalIP: fakeExternalIP}, nil, nil)
 	c.Assert(err, IsNil)
+	releasePort(0)
 	c.Assert(comm.Start(privKey), IsNil)
 
 	defer func() {
@@ -84,6 +94,7 @@ func (CommunicationTestSuite) TestEstablishP2pCommunication(c *C) {
 	}()
 	comm2, err := NewCommunication(&Config{Port: comm2Port, RendezvousString: "commTest", BootstrapPeers: []maddr.Multiaddr{validMultiAddr}}, nil, nil)
 	c.Assert(err, IsNil)
+	releasePort(1)
 	err = comm2.Start(testSecp256k1RawKey(c))
 	c.Assert(err, IsNil)
 	defer func() {
@@ -102,6 +113,9 @@ func (CommunicationTestSuite) TestEstablishP2pCommunication(c *C) {
 	c.Assert(err, IsNil)
 	comm3, err := NewCommunication(&Config{Port: comm3Port, RendezvousString: "commTest", BootstrapPeers: []maddr.Multiaddr{invalidMultiAddr}}, nil, nil)
 	c.Assert(err, IsNil)
+	releasePort(2)
+	// The invalid peer must be unreachable, not a listening TCP socket.
+	releasePort(4)
 	err = comm3.Start(testSecp256k1RawKey(c))
 	if allowUnreachableConfiguredBootstrapPeers {
 		c.Assert(err, IsNil)
@@ -117,6 +131,7 @@ func (CommunicationTestSuite) TestEstablishP2pCommunication(c *C) {
 	// we connect to one invalid and one valid address
 	comm4, err := NewCommunication(&Config{Port: comm4Port, RendezvousString: "commTest", BootstrapPeers: []maddr.Multiaddr{invalidMultiAddr, validMultiAddr}}, nil, nil)
 	c.Assert(err, IsNil)
+	releasePort(3)
 	err = comm4.Start(testSecp256k1RawKey(c))
 	c.Assert(err, IsNil)
 	defer func() {

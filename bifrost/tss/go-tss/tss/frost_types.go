@@ -88,7 +88,6 @@ type FrostKeygenRequest struct {
 	VaultPubKey   string
 	SignerPubKeys []string
 	BlockHeight   int64
-	Version       string
 	ExpectedAddr  string
 }
 
@@ -233,6 +232,13 @@ type FrostVerifyPayload struct {
 	PayloadHash            string `json:"payload_hash"`
 	TargetSignature        []byte `json:"target_signature,omitempty"`
 	AttesterSignature      []byte `json:"attester_signature,omitempty"`
+}
+
+// FrostVerifyBatchPayload is the homogeneous keysign verification wire format.
+// Every entry remains independently validated and accounted. Keygen uses its
+// separate whole-round transcript vote format.
+type FrostVerifyBatchPayload struct {
+	Verifications []FrostVerifyPayload `json:"verifications"`
 }
 
 type FrostResultPayload struct {

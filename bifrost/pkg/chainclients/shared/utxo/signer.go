@@ -16,9 +16,10 @@ import (
 type SignCheckpoint struct {
 	UnsignedTx        []byte           `json:"unsigned_tx"`
 	IndividualAmounts map[string]int64 `json:"individual_amounts"`
-	// The Bitcoin wire encoding above does not include Zcash's expiry height.
-	// Preserve it separately because it is part of the Zcash signature digest.
-	ZecExpiryHeight uint32 `json:"zec_expiry_height,omitempty"`
+	// Bitcoin wire encoding omits Zcash's expiry and consensus branch.
+	// Preserve both so retries sign the original digest.
+	ZecExpiryHeight      uint32 `json:"zec_expiry_height,omitempty"`
+	ZecConsensusBranchID uint32 `json:"zec_consensus_branch_id,omitempty"`
 }
 
 func PostKeysignFailure(

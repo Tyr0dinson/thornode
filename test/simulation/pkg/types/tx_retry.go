@@ -1,11 +1,23 @@
 package types
 
 import (
+	"errors"
+	"fmt"
 	"strings"
 	"time"
 
 	"gitlab.com/thorchain/thornode/v3/common"
 )
+
+// ErrSimTxUncertain means transaction inclusion could not be established
+// within the client's polling budget. Callers must stop, not sign another tx.
+var ErrSimTxUncertain = errors.New("simulation transaction outcome remains uncertain")
+
+// SimTxErrorResult stops an actor if retrying would discard an unresolved
+// signed transaction. Other failures retain the actor's normal retry behavior.
+func SimTxErrorResult(err error) OpResult {
+	return OpResult{Finish: errors.Is(err, ErrSimTxUncertain), Error: err}
+}
 
 var (
 	tronSimTxMaxBroadcastAttempts   = 4
@@ -17,8 +29,8 @@ var (
 )
 
 // SignAndBroadcastTx retries transient failures with each chain's payload policy.
-// ZEC must reuse signed bytes: a cancelled verification or transport error may
-// still result in acceptance, so signing another transfer can pay twice.
+// ZEC and TRON reuse signed bytes. A TRON transaction ID with an error stops
+// the operation: confirmation belongs to the client, not another signing cycle.
 func SignAndBroadcastTx(client LiteChainClient, tx SimTx) (string, error) {
 	attempts, retryDelay := simTxRetryConfig(tx.Chain)
 
@@ -26,7 +38,7 @@ func SignAndBroadcastTx(client LiteChainClient, tx SimTx) (string, error) {
 	var signed []byte
 	for attempt := 1; attempt <= attempts; attempt++ {
 		var err error
-		if signed == nil || !tx.Chain.Equals(common.ZECChain) {
+		if signed == nil || (!tx.Chain.Equals(common.ZECChain) && !tx.Chain.Equals(common.TRONChain)) {
 			signed, err = client.SignTx(tx)
 		}
 		if err != nil {
@@ -44,6 +56,14 @@ func SignAndBroadcastTx(client LiteChainClient, tx SimTx) (string, error) {
 		}
 
 		lastErr = err
+		if errors.Is(err, ErrSimTxUncertain) {
+			return txid, err
+		}
+		if tx.Chain.Equals(common.TRONChain) && txid != "" {
+			// The TRON client owns confirmation polling. Never discard a known
+			// transaction with an unresolved outcome or report it as confirmed.
+			return txid, fmt.Errorf("%w: %w", ErrSimTxUncertain, err)
+		}
 		// A returned txid plus a known submitted-but-unconfirmed error is the
 		// safety condition here. This deliberately applies beyond OneShotMemo:
 		// once the chain client has submitted a tx, replacing it can create a
@@ -104,14 +124,6 @@ func isSubmittedButUnconfirmedSimTxBroadcast(chain common.Chain, err error) bool
 
 	message := strings.ToLower(err.Error())
 	switch {
-	case chain.Equals(common.TRONChain):
-		// TRON "not confirmed" means the fullnode could query the tx but it
-		// did not mine it before the local wait expired. Keep that txid to
-		// avoid replacing a possibly-valid inbound with another transfer.
-		// "Not observed" is different: the fullnode never returned the tx, so
-		// reporting it as broadcasted leaves the swap actor waiting on a txid
-		// Bifrost cannot observe.
-		return strings.Contains(message, "not confirmed on tron node")
 	case chain.Equals(common.SOLChain):
 		return strings.Contains(message, "not confirmed on solana node")
 	default:

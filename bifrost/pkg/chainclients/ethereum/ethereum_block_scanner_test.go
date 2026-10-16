@@ -137,11 +137,12 @@ func (s *BlockScannerTestSuite) SetUpSuite(c *C) {
 	c.Assert(err, IsNil)
 }
 
+// Functional scanner tests must allow for scheduling delays during CI coverage.
 func getConfigForTest() config.BifrostBlockScannerConfiguration {
 	return config.BifrostBlockScannerConfiguration{
 		StartBlockHeight:           1, // avoids querying thorchain for block height
 		BlockScanProcessors:        1,
-		HTTPRequestTimeout:         time.Second,
+		HTTPRequestTimeout:         30 * time.Second,
 		HTTPRequestReadTimeout:     time.Second * 30,
 		HTTPRequestWriteTimeout:    time.Second * 30,
 		MaxHTTPRequestRetry:        3,
@@ -204,10 +205,13 @@ func (s *BlockScannerTestSuite) TestNewBlockScanner(c *C) {
 			c.Assert(err, IsNil)
 		}
 	}))
+	defer server.Close()
 	storage, err := blockscanner.NewBlockScannerStorage("", config.LevelDBOptions{})
 	c.Assert(err, IsNil)
+	defer func() { c.Check(storage.Close(), IsNil) }()
 	ethClient, err := ethclient.Dial(server.URL)
 	c.Assert(err, IsNil)
+	defer ethClient.Close()
 	pubKeyManager, err := pubkeymanager.NewPubKeyManager(s.bridge, s.m)
 	c.Assert(err, IsNil)
 	solvencyReporter := func(height int64) error {
@@ -291,11 +295,14 @@ func (s *BlockScannerTestSuite) TestProcessBlock(c *C) {
 			}
 		}
 	}))
+	defer server.Close()
 	ethClient, err := ethclient.Dial(server.URL)
 	c.Assert(err, IsNil)
+	defer ethClient.Close()
 	c.Assert(ethClient, NotNil)
 	storage, err := blockscanner.NewBlockScannerStorage("", config.LevelDBOptions{})
 	c.Assert(err, IsNil)
+	defer func() { c.Check(storage.Close(), IsNil) }()
 	u, err := url.Parse(server.URL)
 	c.Assert(err, IsNil)
 	bridge, err := thorclient.NewThorchainBridge(config.BifrostClientConfiguration{
@@ -450,11 +457,14 @@ func (s *BlockScannerTestSuite) TestFromTxToTxIn(c *C) {
 			}
 		}
 	}))
+	defer server.Close()
 	ethClient, err := ethclient.Dial(server.URL)
 	c.Assert(err, IsNil)
+	defer ethClient.Close()
 	c.Assert(ethClient, NotNil)
 	storage, err := blockscanner.NewBlockScannerStorage("", config.LevelDBOptions{})
 	c.Assert(err, IsNil)
+	defer func() { c.Check(storage.Close(), IsNil) }()
 	c.Assert(storage, NotNil)
 	u, err := url.Parse(server.URL)
 	c.Assert(err, IsNil)
@@ -790,6 +800,7 @@ func (s *BlockScannerTestSuite) TestDirectERC20TransferFeatureFlag(c *C) {
 
 	ethClient, err := ethclient.Dial(server.URL)
 	c.Assert(err, IsNil)
+	defer ethClient.Close()
 	bridge := testMimirBridge{
 		getMimir: func(key string) (int64, error) {
 			switch key {
@@ -951,8 +962,10 @@ func (s *BlockScannerTestSuite) TestRouterValidation(c *C) {
 
 	ethClient, err := ethclient.Dial(server.URL)
 	c.Assert(err, IsNil)
+	defer ethClient.Close()
 	storage, err := blockscanner.NewBlockScannerStorage("", config.LevelDBOptions{})
 	c.Assert(err, IsNil)
+	defer func() { c.Check(storage.Close(), IsNil) }()
 	u, err := url.Parse(server.URL)
 	c.Assert(err, IsNil)
 	cfg := config.BifrostClientConfiguration{
@@ -1085,11 +1098,14 @@ func (s *BlockScannerTestSuite) TestProcessReOrg(c *C) {
 			}
 		}
 	}))
+	defer server.Close()
 	ethClient, err := ethclient.Dial(server.URL)
 	c.Assert(err, IsNil)
+	defer ethClient.Close()
 	c.Assert(ethClient, NotNil)
 	storage, err := blockscanner.NewBlockScannerStorage("", config.LevelDBOptions{})
 	c.Assert(err, IsNil)
+	defer func() { c.Check(storage.Close(), IsNil) }()
 	bridge, err := thorclient.NewThorchainBridge(config.BifrostClientConfiguration{
 		ChainID:         "thorchain",
 		ChainHost:       server.Listener.Addr().String(),
@@ -1157,10 +1173,13 @@ func (s *BlockScannerTestSuite) TestGasPrice(c *C) {
 			c.Assert(err, IsNil)
 		}
 	}))
+	defer server.Close()
 	storage, err := blockscanner.NewBlockScannerStorage("", config.LevelDBOptions{})
 	c.Assert(err, IsNil)
+	defer func() { c.Check(storage.Close(), IsNil) }()
 	ethClient, err := ethclient.Dial(server.URL)
 	c.Assert(err, IsNil)
+	defer ethClient.Close()
 	pubKeyManager, err := pubkeymanager.NewPubKeyManager(s.bridge, s.m)
 	c.Assert(err, IsNil)
 	solvencyReporter := func(height int64) error {

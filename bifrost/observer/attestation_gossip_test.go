@@ -149,6 +149,9 @@ func setupTestGossip(t *testing.T) (*AttestationGossip, *MockHost, *MockKeys, *M
 
 	// Set active validators
 	ag.setActiveValidators([]common.PubKey{common.PubKey(pubKey), pubkey2, pubkey3})
+	storage, tempDir := setupTestDB(t)
+	t.Cleanup(func() { cleanupTestDB(t, storage, tempDir) })
+	ag.SetObserverStorage(storage)
 
 	return ag, host, keys, grpcClient, bridge, eventClient
 }
@@ -964,8 +967,8 @@ func TestXMRSpentOutputRefsCallback(t *testing.T) {
 
 	t.Run("callback does not fire for lone local XMR attestation", func(t *testing.T) {
 		var callbackTx *common.ObservedTx
-		ag.SetObserverApplySpentOutputRefs(func(tx common.ObservedTx, onOutcome func(applied bool)) {
-			callbackTx = &tx
+		ag.SetObserverApplySpentOutputRefs(func(request spentOutputRefsImport, onOutcome func(applied bool)) {
+			callbackTx = &request.Tx
 			if onOutcome != nil {
 				onOutcome(true)
 			}
@@ -995,7 +998,7 @@ func TestXMRSpentOutputRefsCallback(t *testing.T) {
 
 	t.Run("callback skips unauthorized peer XMR outbound spent refs", func(t *testing.T) {
 		var called bool
-		ag.SetObserverApplySpentOutputRefs(func(tx common.ObservedTx, onOutcome func(applied bool)) {
+		ag.SetObserverApplySpentOutputRefs(func(_ spentOutputRefsImport, onOutcome func(applied bool)) {
 			called = true
 			if onOutcome != nil {
 				onOutcome(true)
@@ -1024,7 +1027,7 @@ func TestXMRSpentOutputRefsCallback(t *testing.T) {
 
 	t.Run("callback does not fire for non-XMR chain", func(t *testing.T) {
 		var called bool
-		ag.SetObserverApplySpentOutputRefs(func(tx common.ObservedTx, onOutcome func(applied bool)) {
+		ag.SetObserverApplySpentOutputRefs(func(_ spentOutputRefsImport, onOutcome func(applied bool)) {
 			called = true
 			if onOutcome != nil {
 				onOutcome(true)
@@ -1050,7 +1053,7 @@ func TestXMRSpentOutputRefsCallback(t *testing.T) {
 
 	t.Run("callback does not fire for inbound XMR", func(t *testing.T) {
 		var called bool
-		ag.SetObserverApplySpentOutputRefs(func(tx common.ObservedTx, onOutcome func(applied bool)) {
+		ag.SetObserverApplySpentOutputRefs(func(_ spentOutputRefsImport, onOutcome func(applied bool)) {
 			called = true
 			if onOutcome != nil {
 				onOutcome(true)
@@ -1076,7 +1079,7 @@ func TestXMRSpentOutputRefsCallback(t *testing.T) {
 
 	t.Run("callback does not fire when refs exceed cap", func(t *testing.T) {
 		var called bool
-		ag.SetObserverApplySpentOutputRefs(func(tx common.ObservedTx, onOutcome func(applied bool)) {
+		ag.SetObserverApplySpentOutputRefs(func(_ spentOutputRefsImport, onOutcome func(applied bool)) {
 			called = true
 			if onOutcome != nil {
 				onOutcome(true)

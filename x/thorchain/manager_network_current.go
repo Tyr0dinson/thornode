@@ -38,8 +38,6 @@ type overSolvencyEventGroup struct {
 	assets []types.AssetOverSolvency
 }
 
-const xmrMonovaultGenesisBootstrapDelayBlocks int64 = 128
-
 func xmrMonovaultGenesisKeygenHeight(currentHeight int64) int64 {
 	if currentHeight < 1 {
 		currentHeight = 1
@@ -570,7 +568,10 @@ func (vm *NetworkMgr) migrateFunds(ctx cosmos.Context, mgr Manager) error {
 	}
 
 	vaultsAvailableCoins := map[common.PubKey]common.Coins{}
-	vaultsWithPendingMigrate := map[common.PubKey]bool{}
+	// Chains with a migrate still pending from each RetiringVault. Only those
+	// chains wait for the pending migrate; the vault's other chains keep
+	// migrating on schedule.
+	vaultsPendingMigrateChains := map[common.PubKey]common.Chains{}
 	for _, vault := range retiring {
 		// Copy the RetiringVault Coins for deduction.
 		vaultsAvailableCoins[vault.PubKey] = common.NewCoins(vault.Coins...)
@@ -608,7 +609,10 @@ func (vm *NetworkMgr) migrateFunds(ctx cosmos.Context, mgr Manager) error {
 				continue
 			}
 			if memo, memoErr := ParseMemo(mgr.GetVersion(), toi.Memo); memoErr == nil && memo.IsType(TxMigrate) {
-				vaultsWithPendingMigrate[toi.VaultPubKey] = true
+				chain := toi.Coin.Asset.GetChain()
+				if pendingChains := vaultsPendingMigrateChains[toi.VaultPubKey]; !pendingChains.Has(chain) {
+					vaultsPendingMigrateChains[toi.VaultPubKey] = append(pendingChains, chain)
+				}
 			}
 			// Deduct from the available Coins all pending outbounds and their MaxGas.
 			for _, coin := range append(common.Coins{toi.Coin}, toi.MaxGas...) {
@@ -640,7 +644,9 @@ func (vm *NetworkMgr) migrateFunds(ctx cosmos.Context, mgr Manager) error {
 	stalePendingHeights := make([]int64, 0)
 	for vaultIdx := range retiring {
 		vault := retiring[vaultIdx]
-		for _, height := range vault.PendingTxBlockHeights {
+		// Expiry removes entries in place. Iterate a snapshot so those removals
+		// cannot shift a still-unprocessed height past the range cursor.
+		for _, height := range append([]int64(nil), vault.PendingTxBlockHeights...) {
 			if height < 1 || height >= startHeight {
 				continue
 			}
@@ -688,6 +694,14 @@ func (vm *NetworkMgr) migrateFunds(ctx cosmos.Context, mgr Manager) error {
 						"height", height,
 						"age", ctx.BlockHeight()-height,
 						"chain", toi.Chain)
+					// A sustained per-chain rate is a direct "migration keeps failing
+					// on chain X" signal; the retry loop can otherwise spin
+					// indefinitely with churn blocked and no metric at all.
+					telemetry.IncrCounterWithLabels(
+						[]string{"thornode", "churn", "migration_stale_pruned"},
+						float32(1),
+						[]metrics.Label{telemetry.NewLabel("chain", toi.Chain.String())},
+					)
 					// Mark the old request as replaced so bifrost will not sign it after
 					// the pending height is cleared and a fresh migrate is scheduled.
 					toi.OutHash = common.BlankTxID
@@ -744,10 +758,7 @@ func (vm *NetworkMgr) migrateFunds(ctx cosmos.Context, mgr Manager) error {
 			ctx.Logger().Error("RetiringVault Coins not found in map", "vault_pubkey", vault.PubKey)
 			continue
 		}
-		if vaultsWithPendingMigrate[vault.PubKey] {
-			ctx.Logger().Info("Skipping migration scheduling while migrate transactions are still pending", "vault_pubkey", vault.PubKey)
-			continue
-		}
+		pendingMigrateChains := vaultsPendingMigrateChains[vault.PubKey]
 
 		// move partial funds every 30 minutes
 		if (ctx.BlockHeight()-vault.StatusSince)%migrateInterval == 0 {
@@ -767,6 +778,13 @@ func (vm *NetworkMgr) migrateFunds(ctx cosmos.Context, mgr Manager) error {
 				}
 
 				chain := coin.Asset.GetChain()
+				// Pause this chain until its previously scheduled migrates are observed
+				// or expired. This preserves its gas and scheduling behavior while
+				// allowing other chains to progress using their unreserved balances.
+				if pendingMigrateChains.Has(chain) {
+					ctx.Logger().Info("Skipping migration scheduling while a migrate transaction is still pending on this chain", "vault_pubkey", vault.PubKey, "chain", chain)
+					continue
+				}
 				targetVaults := filterVaultsByChain(active, chain)
 				if len(targetVaults) == 0 && !chain.Equals(common.XMRChain) {
 					// Some churn/bootstrap paths still materialize regular Asgards without a
@@ -781,6 +799,14 @@ func (vm *NetworkMgr) migrateFunds(ctx cosmos.Context, mgr Manager) error {
 				}
 				if len(targetVaults) == 0 {
 					ctx.Logger().Error("no active target vault for migration chain", "chain", chain.String())
+					// A post-churn topology failure: the retiring vault keeps its
+					// funds for this chain indefinitely, and nothing else in the
+					// metric surface separates that from "migration is just slow".
+					telemetry.IncrCounterWithLabels(
+						[]string{"thornode", "churn", "migration_no_target_vault"},
+						float32(1),
+						[]metrics.Label{telemetry.NewLabel("chain", chain.String())},
+					)
 					continue
 				}
 
@@ -966,8 +992,8 @@ func (vm *NetworkMgr) migrateFunds(ctx cosmos.Context, mgr Manager) error {
 					// Migration scheduling having been successful, add a zero Amount of this Asset to the target ActiveVault
 					// (which will not be set)
 					// to prioritise target vaults without it for this block's migrations from other RetiringVaults.
-					// There is no need to initially add outbound queue migration Assets,
-					// since new migrations are skipped when there is a pending outbound (including migrations) from any RetiringVault.
+					// These markers cover only migrations scheduled in this call; earlier queued
+					// migrations from other RetiringVaults are not represented here.
 					active[targetVaultIndex].AddFunds(common.NewCoins(common.NewCoin(coin.Asset, cosmos.ZeroUint())))
 
 					vault.AppendPendingTxBlockHeights(ctx.BlockHeight(), mgr.GetConstants())
@@ -1566,6 +1592,19 @@ func (vm *NetworkMgr) scheduleKeygen(ctx cosmos.Context, nas NodeAccounts, keyge
 		return err
 	}
 	if err = validateKeygenEligibleThreshold(nas, eligible); err != nil {
+		// An error here aborts the entire churn (all-or-nothing under the churn
+		// CacheContext), so a handful of ForcedToLeave nodes shrinking a group
+		// below threshold+1 can deadlock churn indefinitely with no metric.
+		// The reason is derived from the closed set of eligibility outcomes, not
+		// from the error text.
+		reason := "below_eligible_threshold"
+		if len(eligible) == 0 {
+			reason = "no_eligible_members"
+		}
+		telemetry.IncrCounterWithLabels(
+			[]string{"thornode", "churn", "keygen_schedule_failed"}, 1,
+			[]metrics.Label{telemetry.NewLabel("reason", reason)},
+		)
 		return err
 	}
 	nas = eligible
@@ -1610,6 +1649,13 @@ func (vm *NetworkMgr) scheduleKeygen(ctx cosmos.Context, nas NodeAccounts, keyge
 	}
 
 	vm.k.SetKeygenBlock(ctx, keygenBlock)
+	// The denominator for keygen failure: churn actually reached the point of
+	// asking the nodes to do work. Separates the regular Asgard path from the
+	// independent XMR monovault path.
+	telemetry.IncrCounterWithLabels(
+		[]string{"thornode", "churn", "keygen_scheduled"}, 1,
+		[]metrics.Label{telemetry.NewLabel("keygen_type", keygenType.String())},
+	)
 	// clear the init vault
 	initVaults, err := vm.k.GetAsgardVaultsByStatus(ctx, InitVault)
 	if err != nil {
@@ -1731,6 +1777,14 @@ func (vm *NetworkMgr) withdrawSavers(ctx cosmos.Context, pool Pool, na NodeAccou
 			return false, fmt.Errorf("fail to unmarshal liquidity provider, err: %w", err)
 		}
 
+		// A record with no units and no pending balances has nothing to claim,
+		// so it is safe to remove without a payout. This also cleans up any
+		// zero-unit records left behind by a prior successful withdraw.
+		if lp.Units.IsZero() && lp.PendingAsset.IsZero() && lp.PendingRune.IsZero() {
+			vm.k.RemoveLiquidityProvider(ctx, lp)
+			continue
+		}
+
 		// create the saver withdraw message
 		tx := common.GetRagnarokTx(pool.Asset.GetChain(), lp.AssetAddress, lp.AssetAddress)
 		tx.ID, err = common.NewTxID(tx.Hash(ctx.BlockHeight()))
@@ -1749,10 +1803,22 @@ func (vm *NetworkMgr) withdrawSavers(ctx cosmos.Context, pool Pool, na NodeAccou
 
 		// best effort to process the withdraw
 		ctx.Logger().Info("ragnarok saver", "pool", pool.Asset, "saver", lp.AssetAddress, "txid", tx.ID)
-		_, err = handler(ctx, withdrawMsg)
-		if err != nil {
-			ctx.Logger().Error("saver withdraw failed", "address", lp.AssetAddress, "error", err)
-			vm.k.RemoveLiquidityProvider(ctx, lp)
+		_, herr := handler(ctx, withdrawMsg)
+		if herr != nil {
+			// The internal handler runs in a CacheContext that is discarded on
+			// error, so a failed withdraw commits neither a payout nor any pool
+			// accounting. Only remove the saver record when the position is
+			// unrecoverable dust (payout below the outbound fee); for any other
+			// (potentially transient) error keep the record so it is retried in a
+			// later interval rather than deleting a saver's claim without paying
+			// them. Because such a record remains in the iterator, totalCount
+			// stays non-zero and the pool is not finalized until it clears.
+			if errors.Is(herr, ErrNotEnoughToPayFee) {
+				ctx.Logger().Info("saver withdraw below outbound fee, removing dust saver", "address", lp.AssetAddress, "error", herr)
+				vm.k.RemoveLiquidityProvider(ctx, lp)
+			} else {
+				ctx.Logger().Error("saver withdraw failed, will retry", "address", lp.AssetAddress, "error", herr)
+			}
 		}
 
 		// only process up to the max per iteration of savers per fund migration interval
@@ -1762,7 +1828,9 @@ func (vm *NetworkMgr) withdrawSavers(ctx cosmos.Context, pool Pool, na NodeAccou
 		}
 	}
 
-	// return false if there were any savers withdrawn
+	// return false if there were any savers processed this round; a later round
+	// that processes zero savers confirms all have been withdrawn (or removed)
+	// and lets queued saver swaps settle before synth redemption proceeds.
 	if totalCount > 0 {
 		ctx.Logger().Info("savers withdrawn", "count", totalCount, "pool", pool.Asset)
 		return false, nil
@@ -1776,6 +1844,17 @@ func (vm *NetworkMgr) withdrawLPs(ctx cosmos.Context, pool Pool, na NodeAccount,
 	handler := NewInternalHandler(mgr)
 	lpPerIteration := mgr.Keeper().GetConfigInt64(ctx, constants.RagnarokProcessNumOfLPPerIteration)
 	totalCount := int64(0)
+	// retryRemaining tracks whether any LP could not be withdrawn for a
+	// potentially transient/recoverable reason and must be retried in a later
+	// interval rather than being deleted without a payout.
+	retryRemaining := false
+	// A dual-address LP is withdrawn symmetrically, and the handler schedules the
+	// asset outbound before the RUNE one - so an asset leg that cannot cover its
+	// own outbound fee rolls the whole withdraw back, RUNE leg included. The
+	// RUNE-only retry below is the escape hatch, but assetToWithdraw() turns an
+	// asymmetric withdraw back into a symmetric one while it is paused for the
+	// chain, which would prove nothing about the RUNE leg.
+	pauseAsym, _ := vm.k.GetMimir(ctx, fmt.Sprintf("PauseAsymWithdrawal-%s", pool.Asset.GetChain()))
 
 	iterator := vm.k.GetLiquidityProviderIterator(ctx, pool.Asset)
 	defer iterator.Close()
@@ -1811,17 +1890,101 @@ func (vm *NetworkMgr) withdrawLPs(ctx cosmos.Context, pool Pool, na NodeAccount,
 			na.NodeAddress,
 		)
 
-		// withdraw is best effort only, fails and deletes LP if vault has insufficient gas
+		// withdraw is best effort only
 		ctx.Logger().Info("ragnarok LP", "pool", pool.Asset, "rune_address", lp.RuneAddress, "asset_address", lp.AssetAddress)
 		_, err := handler(ctx, withdrawMsg)
+		if errors.Is(err, ErrNotEnoughToPayFee) && !lp.RuneAddress.IsEmpty() && !lp.AssetAddress.IsEmpty() {
+			// Dust on one leg of a symmetric withdraw does not prove the position
+			// as a whole is unpayable: the asset outbound is scheduled first, so
+			// its failure rolls back a RUNE leg that was never even attempted.
+			// Retry RUNE-only, which converts the asset side in the pool and emits
+			// a single native outbound - nothing is forfeited, and reaching
+			// ErrNotEnoughToPayFee again then does mean every remaining leg is
+			// individually unpayable.
+			if pauseAsym > 0 {
+				// Deliberately not wrapped: this must NOT satisfy errors.Is for
+				// ErrNotEnoughToPayFee below, since the RUNE leg is unproven and
+				// the LP has to be retained rather than removed.
+				err = fmt.Errorf("asymmetric withdraw paused for %s, cannot pay out the RUNE leg (%s)", pool.Asset.GetChain(), err)
+			} else {
+				ctx.Logger().Info(
+					"LP asset leg below outbound fee, retrying RUNE-only",
+					"liquidity provider", lp.RuneAddress,
+					"asset address", lp.AssetAddress,
+					"error", err,
+				)
+				runeOnlyMsg := NewMsgWithdrawLiquidity(
+					common.GetRagnarokTx(pool.Asset.GetChain(), withdrawAddr, withdrawAddr),
+					withdrawAddr,
+					cosmos.NewUint(uint64(MaxWithdrawBasisPoints)),
+					pool.Asset,
+					common.RuneAsset(),
+					na.NodeAddress,
+				)
+				_, err = handler(ctx, runeOnlyMsg)
+			}
+		}
 		if err != nil {
-			ctx.Logger().Error(
-				"fail to withdraw, remove LP",
-				"liquidity provider", lp.RuneAddress,
-				"asset address", lp.AssetAddress,
-				"error", err,
-			)
-			vm.k.RemoveLiquidityProvider(ctx, lp)
+			// The internal handler runs in a CacheContext that is discarded on
+			// error, so a failed withdraw commits neither a payout nor any pool
+			// accounting. Only remove the LP record when the position is
+			// unrecoverable dust (payout below the outbound fee, i.e. the vault
+			// has insufficient gas to pay it out); for any other (potentially
+			// transient) error - chain halt, LP pause, etc. - keep the record so
+			// it is retried in a later interval rather than deleting the LP's
+			// claim without paying them. A retained record keeps the iterator
+			// non-empty so the pool is not finalized until it clears.
+			if errors.Is(err, ErrNotEnoughToPayFee) {
+				if !lp.Units.IsZero() && (!lp.PendingRune.IsZero() || !lp.PendingAsset.IsZero()) {
+					// The failed withdraw only proves the leg it attempted is dust.
+					// withdraw() takes its unit branch whenever Units > 0, so a record
+					// holding both units and staged pending liquidity has had its
+					// pending claim untested - deleting it here would forfeit a claim
+					// that may well be payable. Zero the (proven unpayable) units and
+					// retain the record: the next pass takes withdraw()'s pending
+					// branch and either pays the claim or proves it dust too, at which
+					// point the zero-unit record falls through to removal below.
+					// Retaining rather than zeroing would livelock - every pass would
+					// re-take the unit branch and fail identically, so the pool could
+					// never finalize. Zeroing orphans the units in the pool exactly as
+					// removal already does, so the pool accounting is unchanged.
+					ctx.Logger().Info(
+						"LP unit withdraw below outbound fee, retaining pending claim",
+						"liquidity provider", lp.RuneAddress,
+						"asset address", lp.AssetAddress,
+						"error", err,
+					)
+					lp.Units = cosmos.ZeroUint()
+					vm.k.SetLiquidityProvider(ctx, lp)
+					retryRemaining = true
+				} else {
+					ctx.Logger().Info(
+						"LP withdraw below outbound fee, removing dust LP",
+						"liquidity provider", lp.RuneAddress,
+						"asset address", lp.AssetAddress,
+						"error", err,
+					)
+					vm.k.RemoveLiquidityProvider(ctx, lp)
+				}
+			} else {
+				ctx.Logger().Error(
+					"fail to withdraw, will retry",
+					"liquidity provider", lp.RuneAddress,
+					"asset address", lp.AssetAddress,
+					"error", err,
+				)
+				retryRemaining = true
+			}
+		} else if vm.lpClaimRemains(ctx, pool.Asset, lp) {
+			// A successful withdraw does not always clear the whole position: a
+			// full unit withdrawal pays out only the unit-derived share and
+			// deliberately leaves any staged pending liquidity (PendingRune /
+			// PendingAsset) untouched on a retained record. That claim is paid on
+			// a later pass, when the now zero-unit record takes the pending
+			// branch of withdraw(). Report not-done so the pool cannot be
+			// finalized - and its pending accounting swept to the Reserve -
+			// before the provider has been paid.
+			retryRemaining = true
 		}
 		totalCount++
 		if totalCount >= lpPerIteration {
@@ -1829,8 +1992,28 @@ func (vm *NetworkMgr) withdrawLPs(ctx cosmos.Context, pool Pool, na NodeAccount,
 		}
 	}
 
-	// return true (done) if there are no more LPs to withdraw
-	return totalCount < lpPerIteration
+	// return true (done) only if the full set of LPs has been processed and none
+	// still need to be retried in a later interval
+	return totalCount < lpPerIteration && !retryRemaining
+}
+
+// lpClaimRemains re-reads an LP record after a withdraw was handled and reports
+// whether the provider still has anything owed to them - units or pending
+// (staged, not-yet-paired) liquidity. A record which no longer exists reads back
+// as all-zero and correctly reports false.
+func (vm *NetworkMgr) lpClaimRemains(ctx cosmos.Context, asset common.Asset, lp LiquidityProvider) bool {
+	post, err := vm.k.GetLiquidityProvider(ctx, asset, lp.GetAddress())
+	if err != nil {
+		// Unable to prove the claim was settled - retry rather than finalize.
+		ctx.Logger().Error(
+			"fail to re-read liquidity provider after withdraw",
+			"liquidity provider", lp.RuneAddress,
+			"asset address", lp.AssetAddress,
+			"error", err,
+		)
+		return true
+	}
+	return !post.Units.IsZero() || !post.PendingRune.IsZero() || !post.PendingAsset.IsZero()
 }
 
 // withdrawLiquidity will process a batch of LP per iteration, the batch size is defined by constants.RagnarokProcessNumOfLPPerIteration
@@ -1888,11 +2071,32 @@ func (vm *NetworkMgr) withdrawLiquidity(ctx cosmos.Context, pool Pool, na NodeAc
 	remainingRune := common.NewCoin(common.RuneAsset(), pool.BalanceRune.Add(pool.PendingInboundRune))
 	if !remainingRune.IsEmpty() {
 		if err = vm.k.SendFromModuleToModule(ctx, AsgardName, ReserveName, common.NewCoins(remainingRune)); err != nil {
-			// Still proceed to suspend the pool, but log the error.
-			ctx.Logger().Error("fail to transfer remaining pool ragnarok rune from asgard to reserve", "error", err)
-		} else {
-			pool.BalanceRune = cosmos.ZeroUint()
-			pool.PendingInboundRune = cosmos.ZeroUint()
+			// The remaining RUNE could not be moved to the Reserve. Do NOT proceed
+			// to suspend/remove the pool: removing it here would delete the pool
+			// accounting while the RUNE was never credited to the Reserve. Return
+			// the error so this interval's ragnarok cache is rolled back and the
+			// finalization is retried in a later interval once the transfer can
+			// succeed.
+			return fmt.Errorf("fail to transfer remaining pool ragnarok rune from asgard to reserve: %w", err)
+		}
+		pool.BalanceRune = cosmos.ZeroUint()
+		pool.PendingInboundRune = cosmos.ZeroUint()
+	}
+
+	// The same applies to a pool asset which is itself a THORChain asset backed by
+	// the Pool Module (TCY and whitelisted base-layer pools): if any remains - such
+	// as if the last withdraw were RUNE-address-only - it has to be moved to the
+	// Reserve rather than left behind a removed pool. An external L1 remainder has
+	// no module balance to reconcile and is instead left orphaned in the vault for
+	// the nodes to dispose of.
+	if pool.Asset.IsTCY() || pool.Asset.IsWhitelisted() {
+		remainingAsset := common.NewCoin(pool.Asset, pool.BalanceAsset.Add(pool.PendingInboundAsset))
+		if !remainingAsset.IsEmpty() {
+			if err = vm.k.SendFromModuleToModule(ctx, AsgardName, ReserveName, common.NewCoins(remainingAsset)); err != nil {
+				return fmt.Errorf("fail to transfer remaining pool ragnarok asset from asgard to reserve: %w", err)
+			}
+			pool.BalanceAsset = cosmos.ZeroUint()
+			pool.PendingInboundAsset = cosmos.ZeroUint()
 		}
 	}
 
@@ -1960,6 +2164,12 @@ func (vm *NetworkMgr) UpdateNetwork(ctx cosmos.Context, mgr Manager) error {
 
 	// when total reserve is zero , can't pay reward
 	if totalReserve.IsZero() {
+		// UpdateNetwork's caller only logs non-nil errors, so this silent
+		// nil-return produces no output at all today.
+		telemetry.IncrCounterWithLabels(
+			[]string{"thornode", "network", "block_rewards_skipped"}, 1,
+			[]metrics.Label{telemetry.NewLabel("reason", "reserve_empty")},
+		)
 		return nil
 	}
 	availablePools, availablePoolsRune, err := getAvailablePoolsRune(ctx, vm.k)
@@ -1973,6 +2183,10 @@ func (vm *NetworkMgr) UpdateNetwork(ctx cosmos.Context, mgr Manager) error {
 
 	// If no Rune is in Available pools, then don't give out block rewards.
 	if availablePoolsRune.IsZero() {
+		telemetry.IncrCounterWithLabels(
+			[]string{"thornode", "network", "block_rewards_skipped"}, 1,
+			[]metrics.Label{telemetry.NewLabel("reason", "no_available_pool_rune")},
+		)
 		return nil // If no Rune is in available pools, then don't give out block rewards.
 	}
 
@@ -2013,6 +2227,14 @@ func (vm *NetworkMgr) UpdateNetwork(ctx cosmos.Context, mgr Manager) error {
 		totalEffectiveBond, totalReserve, totalLiquidityFees, totalRevShare, emissionCurve,
 		blocksPerYear, devFundSystemIncomeBps, systemIncomeBurnRateBps, tcyStakeSystemIncomeBps, marketingFundSystemIncomeBps, polReserveSystemIncomeBps)
 
+	// Use CacheContext for atomicity: the Reserve deductions, reward transfers,
+	// mimir/burn updates and the final SetNetwork bookkeeping must either all
+	// persist or none of them. Committing directly on ctx risks debiting the
+	// Reserve (dev/marketing/burn/tcy/pol/bond) while a later error skips
+	// SetNetwork, leaving RUNE moved but BondRewardRune/TotalBondUnits/income
+	// splits unpersisted. commit() is only reached after every step succeeds.
+	cacheCtx, commit := ctx.CacheContext()
+
 	if !devFundDeduct.IsZero() {
 		// Send to dev fund address
 		devFundAddressConst := vm.k.GetConstants().GetStringValue(constants.DevFundAddress)
@@ -2022,7 +2244,7 @@ func (vm *NetworkMgr) UpdateNetwork(ctx cosmos.Context, mgr Manager) error {
 			return fmt.Errorf("fail to AccAddressFromBech32(devFundAddressConst)")
 		}
 		coin := common.NewCoin(common.RuneNative, devFundDeduct)
-		if err = vm.k.SendFromModuleToAccount(ctx, ReserveName, devFundAddress, common.NewCoins(coin)); err != nil {
+		if err = vm.k.SendFromModuleToAccount(cacheCtx, ReserveName, devFundAddress, common.NewCoins(coin)); err != nil {
 			return fmt.Errorf("fail to transfer funds from reserve to devFundAddress: %w", err)
 		}
 	}
@@ -2036,7 +2258,7 @@ func (vm *NetworkMgr) UpdateNetwork(ctx cosmos.Context, mgr Manager) error {
 			return fmt.Errorf("fail to AccAddressFromBech32(marketingFundAddressConst)")
 		}
 		coin := common.NewCoin(common.RuneNative, marketingFundDeduct)
-		if err = vm.k.SendFromModuleToAccount(ctx, ReserveName, marketingFundAddress, common.NewCoins(coin)); err != nil {
+		if err = vm.k.SendFromModuleToAccount(cacheCtx, ReserveName, marketingFundAddress, common.NewCoins(coin)); err != nil {
 			return fmt.Errorf("fail to transfer funds from reserve to marketingFundAddress: %w", err)
 		}
 	}
@@ -2045,25 +2267,25 @@ func (vm *NetworkMgr) UpdateNetwork(ctx cosmos.Context, mgr Manager) error {
 		coin := common.NewCoin(common.RuneNative, systemIncomeBurnDeduct)
 		// Burn system income
 		// Send to THORCHain module first, then burn
-		if err = vm.k.SendFromModuleToModule(ctx, ReserveName, ModuleName, common.NewCoins(coin)); err != nil {
+		if err = vm.k.SendFromModuleToModule(cacheCtx, ReserveName, ModuleName, common.NewCoins(coin)); err != nil {
 			return fmt.Errorf("fail to transfer funds from reserve to devFundAddress: %w", err)
 		}
-		if err = vm.k.BurnFromModule(ctx, ModuleName, coin); err != nil {
+		if err = vm.k.BurnFromModule(cacheCtx, ModuleName, coin); err != nil {
 			return fmt.Errorf("fail to burn system income from reserve: %w", err)
 		}
 		burnEvt := NewEventMintBurn(BurnSupplyType, coin.Asset.Native(), coin.Amount, "burn_system_income")
-		if err = vm.eventMgr.EmitEvent(ctx, burnEvt); err != nil {
-			ctx.Logger().Error("fail to emit burn event", "error", err)
+		if err = vm.eventMgr.EmitEvent(cacheCtx, burnEvt); err != nil {
+			cacheCtx.Logger().Error("fail to emit burn event", "error", err)
 		}
 		// Decrement the MaxRuneSupply mimir by the amount of RUNE burnt
-		currentMaxRuneSupply := cosmos.SafeUintFromInt64(vm.k.GetConfigInt64(ctx, constants.MaxRuneSupply))
+		currentMaxRuneSupply := cosmos.SafeUintFromInt64(vm.k.GetConfigInt64(cacheCtx, constants.MaxRuneSupply))
 		currentMaxRuneSupply = common.SafeSub(currentMaxRuneSupply, systemIncomeBurnDeduct)
-		vm.k.SetMimir(ctx, constants.MaxRuneSupply.String(), int64(currentMaxRuneSupply.Uint64()))
+		vm.k.SetMimir(cacheCtx, constants.MaxRuneSupply.String(), int64(currentMaxRuneSupply.Uint64()))
 	}
 
 	if !tcyStakeDeduct.IsZero() {
 		coin := common.NewCoin(common.RuneNative, tcyStakeDeduct)
-		if err = vm.k.SendFromModuleToModule(ctx, ReserveName, TCYStakeName, common.NewCoins(coin)); err != nil {
+		if err = vm.k.SendFromModuleToModule(cacheCtx, ReserveName, TCYStakeName, common.NewCoins(coin)); err != nil {
 			return fmt.Errorf("fail to transfer funds from reserve to tcy fund: %w", err)
 		}
 	}
@@ -2073,8 +2295,8 @@ func (vm *NetworkMgr) UpdateNetwork(ctx cosmos.Context, mgr Manager) error {
 	// module. Gating here keeps the StableReservePOLShareBps and
 	// StableReserveEnabled mimirs from silently disagreeing. When disabled, the
 	// share flows to POLReserve via the remainder below.
-	if !polReserveDeduct.IsZero() && vm.k.GetConfigInt64(ctx, constants.StableReserveEnabled) > 0 {
-		stableReservePOLShareBps := vm.k.GetConfigInt64(ctx, constants.StableReservePOLShareBps)
+	if !polReserveDeduct.IsZero() && vm.k.GetConfigInt64(cacheCtx, constants.StableReserveEnabled) > 0 {
+		stableReservePOLShareBps := vm.k.GetConfigInt64(cacheCtx, constants.StableReservePOLShareBps)
 		if stableReservePOLShareBps < 0 {
 			stableReservePOLShareBps = 0
 		}
@@ -2085,7 +2307,7 @@ func (vm *NetworkMgr) UpdateNetwork(ctx cosmos.Context, mgr Manager) error {
 		stableReserveDeduct := common.GetSafeShare(cosmos.NewUint(uint64(stableReservePOLShareBps)), cosmos.NewUint(10_000), polReserveDeduct)
 		if !stableReserveDeduct.IsZero() {
 			coin := common.NewCoin(common.RuneNative, stableReserveDeduct)
-			if err = vm.k.SendFromModuleToModule(ctx, ReserveName, StableReserveName, common.NewCoins(coin)); err != nil {
+			if err = vm.k.SendFromModuleToModule(cacheCtx, ReserveName, StableReserveName, common.NewCoins(coin)); err != nil {
 				return fmt.Errorf("fail to transfer funds from reserve to stable_reserve: %w", err)
 			}
 			polReserveDeduct = common.SafeSub(polReserveDeduct, stableReserveDeduct)
@@ -2094,7 +2316,7 @@ func (vm *NetworkMgr) UpdateNetwork(ctx cosmos.Context, mgr Manager) error {
 
 	if !polReserveDeduct.IsZero() {
 		coin := common.NewCoin(common.RuneNative, polReserveDeduct)
-		if err = vm.k.SendFromModuleToModule(ctx, ReserveName, POLReserveName, common.NewCoins(coin)); err != nil {
+		if err = vm.k.SendFromModuleToModule(cacheCtx, ReserveName, POLReserveName, common.NewCoins(coin)); err != nil {
 			return fmt.Errorf("fail to transfer funds from reserve to pol_reserve: %w", err)
 		}
 	}
@@ -2119,14 +2341,14 @@ func (vm *NetworkMgr) UpdateNetwork(ctx cosmos.Context, mgr Manager) error {
 				amt = common.GetSafeShare(pool.BalanceRune, availablePoolsRune, totalPoolRewards)
 				fees = cosmos.ZeroUint()
 			} else {
-				fees, err = vm.k.GetPoolLiquidityFees(ctx, currentHeight, pool.Asset)
+				fees, err = vm.k.GetPoolLiquidityFees(cacheCtx, currentHeight, pool.Asset)
 				if err != nil {
-					ctx.Logger().Error("fail to get fees", "error", err)
+					cacheCtx.Logger().Error("fail to get fees", "error", err)
 					continue
 				}
 				amt = common.GetSafeShare(fees, totalLiquidityFees, totalPoolRewards)
 			}
-			if err = vm.paySaverYield(ctx, pool.Asset, amt.Add(fees)); err != nil {
+			if err = vm.paySaverYield(cacheCtx, pool.Asset, amt.Add(fees)); err != nil {
 				return fmt.Errorf("fail to pay saver yield: %w", err)
 			}
 			// when pool reward is zero, don't emit it
@@ -2139,7 +2361,7 @@ func (vm *NetworkMgr) UpdateNetwork(ctx cosmos.Context, mgr Manager) error {
 
 		}
 		// Pay out
-		if err = vm.payPoolRewards(ctx, rewardAmts, rewardPools); err != nil {
+		if err = vm.payPoolRewards(cacheCtx, rewardAmts, rewardPools); err != nil {
 			return err
 		}
 
@@ -2147,29 +2369,35 @@ func (vm *NetworkMgr) UpdateNetwork(ctx cosmos.Context, mgr Manager) error {
 
 	if !bondReward.IsZero() {
 		coin := common.NewCoin(common.RuneNative, bondReward)
-		if err = vm.k.SendFromModuleToModule(ctx, ReserveName, BondName, common.NewCoins(coin)); err != nil {
-			ctx.Logger().Error("fail to transfer funds from reserve to bond", "error", err)
+		if err = vm.k.SendFromModuleToModule(cacheCtx, ReserveName, BondName, common.NewCoins(coin)); err != nil {
+			cacheCtx.Logger().Error("fail to transfer funds from reserve to bond", "error", err)
 			return fmt.Errorf("fail to transfer funds from reserve to bond: %w", err)
 		}
 	}
 	network.BondRewardRune = network.BondRewardRune.Add(bondReward) // Add here for individual Node collection later
 
 	rewardEvt := NewEventRewards(bondReward, evtPools, devFundDeduct, systemIncomeBurnDeduct, tcyStakeDeduct, marketingFundDeduct, polReserveDeduct)
-	if err = eventMgr.EmitEvent(ctx, rewardEvt); err != nil {
+	if err = eventMgr.EmitEvent(cacheCtx, rewardEvt); err != nil {
 		return fmt.Errorf("fail to emit reward event: %w", err)
 	}
-	i, err := getTotalActiveNodeWithBond(ctx, vm.k)
+	i, err := getTotalActiveNodeWithBond(cacheCtx, vm.k)
 	if err != nil {
 		return fmt.Errorf("fail to get total active node account: %w", err)
 	}
 	network.TotalBondUnits = network.TotalBondUnits.Add(cosmos.NewUint(uint64(i))) // Add 1 unit for each active Node
 
-	return vm.k.SetNetwork(ctx, network)
+	if err = vm.k.SetNetwork(cacheCtx, network); err != nil {
+		return err
+	}
+
+	// All reward transfers and network bookkeeping succeeded; commit atomically.
+	commit()
+	return nil
 }
 
 // processRevShare drains the per-block affiliate liquidity fee accumulator,
 // paying out REVSHARE_bps * accrued / 10_000 from the Reserve to the
-// AffiliateCollector module (credited to the thorname owner's collector entry)
+// AffiliateCollector module (credited to the thorname's collector entry)
 // and emitting a rev_share event per thorname. Returns the total RUNE paid
 // out, which the caller subtracts from systemIncome before splits.
 //
@@ -2203,17 +2431,22 @@ func (vm *NetworkMgr) processRevShare(ctx cosmos.Context, mgr Manager) cosmos.Ui
 		if canPay && bps > 0 {
 			payout = common.GetSafeShare(cosmos.NewUint(uint64(bps)), cosmos.NewUint(10_000), entry.Fee)
 			if !payout.IsZero() {
-				col, _ = vm.k.GetAffiliateCollector(ctx, owner)
-				col.RuneAmount = col.RuneAmount.Add(payout)
-				vm.k.SetAffiliateCollector(ctx, col)
-				if sendErr := vm.k.SendFromModuleToModule(ctx, ReserveName, AffiliateCollectorName,
-					common.NewCoins(common.NewCoin(common.RuneAsset(), payout))); sendErr != nil {
-					ctx.Logger().Error("fail to transfer revshare", "thorname", entry.Thorname, "error", sendErr)
-					// roll back the collector change so state stays consistent.
-					col.RuneAmount = common.SafeSub(col.RuneAmount, payout)
-					vm.k.SetAffiliateCollector(ctx, col)
+				// A failed read, write or transfer must leave both balances unchanged.
+				cacheCtx, commit := ctx.CacheContext()
+				col, err = vm.k.GetAffiliateCollector(cacheCtx, tn.Name)
+				if err == nil {
+					col.RuneAmount = col.RuneAmount.Add(payout)
+					err = vm.k.SetAffiliateCollector(cacheCtx, col)
+				}
+				if err == nil {
+					err = vm.k.SendFromModuleToModule(cacheCtx, ReserveName, AffiliateCollectorName,
+						common.NewCoins(common.NewCoin(common.RuneAsset(), payout)))
+				}
+				if err != nil {
+					ctx.Logger().Error("fail to credit revshare", "thorname", entry.Thorname, "error", err)
 					payout = cosmos.ZeroUint()
 				} else {
+					commit()
 					totalRevShare = totalRevShare.Add(payout)
 				}
 			}
@@ -2238,7 +2471,7 @@ func (vm *NetworkMgr) processRevShare(ctx cosmos.Context, mgr Manager) cosmos.Ui
 					// already unique per thorname per block, so queueIndex=0 is
 					// safe and cannot collide with skim-path items (which use
 					// the user-tx ID).
-					if triggerErr := triggerPreferredAssetSwap(ctx, mgr, common.NoAddress, "", tn, col, 0); triggerErr != nil {
+					if triggerErr := triggerPreferredAssetSwap(ctx, mgr, tn, col, 0); triggerErr != nil {
 						ctx.Logger().Error("fail to trigger preferred asset swap from revshare",
 							"thorname", entry.Thorname, "err", triggerErr)
 					}
@@ -2627,6 +2860,10 @@ func (vm *NetworkMgr) distributeTCYStake(ctx cosmos.Context, mgr Manager) {
 		if err != nil {
 			// We will just log error but continue distributing funds
 			ctx.Logger().Error("fail to send rune distribution", "amount", accRuneCoin.Amount.Uint64(), "account", dist.Account.String(), "error", err)
+			// The payout is skipped and the RUNE stays in the TCYStake module with
+			// no event and no retry. Unlabelled on purpose: the only natural label
+			// (dist.Account) is an unbounded address.
+			telemetry.IncrCounter(1, "thornode", "tcy", "distribution_failed")
 		} else {
 			evt := types.NewEventTCYDistribution(dist.Account, accRuneCoin.Amount)
 			if err := mgr.EventMgr().EmitEvent(ctx, evt); err != nil {
@@ -2919,27 +3156,27 @@ func (vm *NetworkMgr) calculateNetworkSolvency(ctx cosmos.Context, mgr Manager) 
 			ctx.Logger().Error("fail to unmarshal adv swap queue item", "error", err)
 			continue
 		}
+		if msg.State == nil {
+			return nil, fmt.Errorf("missing state for advanced swap %s/%d", msg.Tx.ID, msg.Index)
+		}
 		// Subtract the source asset coin from the calculation
 		if !msg.Tx.Coins.IsEmpty() {
 			coin := msg.Tx.Coins[0]
-
-			// For streaming swaps, subtract accumulated output from the TARGET asset
-			// regardless of the source asset. The pool has already emitted these assets
-			// (reducing pool.BalanceAsset), but no outbound exists until settleSwap runs.
-			// Skip only synth targets: synths are minted without reducing the L1 pool
-			// balance. Trade and secured targets DO reduce the underlying L1 pool balance
-			// (only synths bypass the BalanceAsset subtraction in swapOne), yet their
-			// trade/secured depth is not credited until settlement, so the in-flight
-			// output is a real liability that must be subtracted here to avoid the
-			// reduced pool balance appearing as excess vault funds.
-			if msg.IsStreaming() && !msg.TargetAsset.IsSyntheticAsset() {
-				stateOut := msg.State.Out
-				if msg.State.Deposit.IsZero() {
-					swp, err := vm.k.GetStreamingSwap(ctx, msg.Tx.ID)
-					if err == nil && swp.TxID.Equals(msg.Tx.ID) {
-						stateOut = swp.Out
-					}
+			stateDeposit, stateIn, stateOut := msg.State.Deposit, msg.State.In, msg.State.Out
+			// Older streaming swaps can keep their progress in a separate record.
+			if stateDeposit.IsZero() && msg.IsStreaming() {
+				swp, err := vm.k.GetStreamingSwap(ctx, msg.Tx.ID)
+				if err == nil && swp.TxID.Equals(msg.Tx.ID) {
+					stateDeposit, stateIn, stateOut = swp.Deposit, swp.In, swp.Out
 				}
+			}
+
+			// Output has left the pool but is still owed until settlement. Include
+			// completed single swaps retained after a failed payout, as well as
+			// streaming swaps, before skipping native inputs such as RUNE.
+			// Synth output does not reduce the L1 pool; trade and secured output
+			// does, and their account balances are only credited at settlement.
+			if !msg.TargetAsset.IsSyntheticAsset() {
 				if !stateOut.IsZero() {
 					targetAsset := msg.TargetAsset.GetLayer1Asset()
 					if !targetAsset.IsNative() {
@@ -2959,25 +3196,11 @@ func (vm *NetworkMgr) calculateNetworkSolvency(ctx cosmos.Context, mgr Manager) 
 				return nil, fmt.Errorf("unexpected asset %s not found in tracking map (advanced swap queue)", coin.Asset)
 			}
 			coinAmount := math.NewIntFromBigInt(coin.Amount.BigInt())
-			// For streaming swaps, only deduct the remaining (unprocessed) amount
-			// to avoid double-counting with pool balance which already includes processed amounts
-			if msg.IsStreaming() {
-				stateDeposit := msg.State.Deposit
-				stateIn := msg.State.In
-
-				if stateDeposit.IsZero() {
-					swp, err := vm.k.GetStreamingSwap(ctx, msg.Tx.ID)
-					if err == nil && swp.TxID.Equals(msg.Tx.ID) {
-						stateDeposit = swp.Deposit
-						stateIn = swp.In
-					}
-				}
-
-				// Remaining = Deposit - In (what hasn't been swapped yet)
-				if !stateDeposit.IsZero() {
-					remaining := common.SafeSub(stateDeposit, stateIn)
-					coinAmount = math.NewIntFromBigInt(remaining.BigInt())
-				}
+			// Processed input is already in the pool, including completed single
+			// swaps awaiting settlement. Only the unspent deposit remains owed.
+			if !stateDeposit.IsZero() {
+				remaining := common.SafeSub(stateDeposit, stateIn)
+				coinAmount = math.NewIntFromBigInt(remaining.BigInt())
 			}
 			assetAmounts[coin.Asset] = assetAmounts[coin.Asset].Sub(coinAmount)
 		}
@@ -3156,6 +3379,10 @@ func (vm *NetworkMgr) calculateNetworkSolvency(ctx cosmos.Context, mgr Manager) 
 func (vm *NetworkMgr) processOverSolvency(ctx cosmos.Context, mgr Manager) error {
 	// Check interval configuration first - skip if not configured or invalid
 	overSolvencyInterval := vm.k.GetConfigInt64(ctx, constants.OverSolvencyCheckInterval)
+	// "is the solvency calculation switched on at all" - a gauge, not a counter:
+	// this branch returns before the IsPeriodLastBlock gate, so a counter here
+	// would tick every block while the feature is simply off.
+	telemetry.SetGauge(boolTelem(overSolvencyInterval > 0), "thornode", "solvency", "network_check_enabled")
 	if overSolvencyInterval <= 0 {
 		return nil // Interval not configured, skip processing
 	}
@@ -3169,16 +3396,38 @@ func (vm *NetworkMgr) processOverSolvency(ctx cosmos.Context, mgr Manager) error
 	// to avoid calculations during vault migration
 	retiringVaults, err := vm.k.GetAsgardVaultsByStatus(ctx, RetiringVault)
 	if err != nil {
+		telemetry.IncrCounterWithLabels(
+			[]string{"thornode", "solvency", "network_check_skipped"}, 1,
+			[]metrics.Label{telemetry.NewLabel("reason", "vault_error")},
+		)
 		return fmt.Errorf("failed to get retiring vaults: %w", err)
 	}
 	if len(retiringVaults) > 0 {
+		telemetry.IncrCounterWithLabels(
+			[]string{"thornode", "solvency", "network_check_skipped"}, 1,
+			[]metrics.Label{telemetry.NewLabel("reason", "churn_in_progress")},
+		)
 		return nil // Churn in progress, skip processing
 	}
 
 	// Calculate network solvency (both over and under-solvency)
 	solvencyAmounts, err := vm.calculateNetworkSolvency(ctx, mgr)
 	if err != nil {
+		telemetry.IncrCounterWithLabels(
+			[]string{"thornode", "solvency", "network_check_skipped"}, 1,
+			[]metrics.Label{telemetry.NewLabel("reason", "calc_error")},
+		)
 		return fmt.Errorf("failed to calculate network solvency: %w", err)
+	}
+
+	// The over-solvent filter below discards every negative amount, which is the
+	// funds-are-missing half. Export the full signed set before it is thrown away.
+	for _, solvencyAmt := range solvencyAmounts {
+		telemetry.SetGaugeWithLabels(
+			[]string{"thornode", "solvency", "network_delta"},
+			telemInt(solvencyAmt.Amount),
+			[]metrics.Label{telemetry.NewLabel("asset", solvencyAmt.Asset.String())},
+		)
 	}
 
 	// Filter to only process Available-pool assets with positive amounts (over-solvent).

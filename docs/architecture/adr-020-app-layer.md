@@ -49,10 +49,6 @@ WASMPERMISSIONLESS
 // Enable permissionless WASM contracts
 ```
 
-4. Layer1 Callable - where a deposit can be made by an L1 account with an `X:ADDR:PAYLOAD` memo to directly call an app.
-
-Implemented as per https://gitlab.com/thorchain/thornode/-/merge_requests/3829
-
 ### Secured Assets
 
 Contracts can move Secured Assets, which are wrapped L1 assets, represented in THORChain's state as native `x/bank` assets:

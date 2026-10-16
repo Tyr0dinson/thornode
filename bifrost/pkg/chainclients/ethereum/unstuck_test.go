@@ -279,6 +279,10 @@ func (s *UnstuckTestSuite) SetUpTest(c *C) {
 }
 
 func (s *UnstuckTestSuite) TearDownTest(c *C) {
+	if s.server != nil {
+		s.server.Close()
+		s.server = nil
+	}
 	c.Assert(os.Unsetenv("NET"), IsNil)
 }
 

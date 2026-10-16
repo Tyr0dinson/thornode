@@ -144,6 +144,8 @@ type (
 	THORNameAlias            = types.THORNameAlias
 	AffiliateFeeCollector    = types.AffiliateFeeCollector
 	SolvencyVoter            = types.SolvencyVoter
+	SolVaultNonce            = types.SolVaultNonce
+	SolNonceAttestVoter      = types.SolNonceAttestVoter
 	MinJoinLast              = types.MinJoinLast
 	NodeMimir                = types.NodeMimir
 	NodeMimirs               = types.NodeMimirs

@@ -33,7 +33,7 @@ func processSolvencyAttestation(
 
 	slashCtx := ctx.WithContext(context.WithValue(ctx.Context(), constants.CtxMetricLabels, []metrics.Label{
 		telemetry.NewLabel("reason", "failed_observe_solvency"),
-		telemetry.NewLabel("chain", string(s.Chain)),
+		telemetry.NewLabel("chain", telemChain(s.Chain)),
 	}))
 
 	slasher := mgr.Slasher()
@@ -69,6 +69,17 @@ func processSolvencyAttestation(
 	}
 
 	voter.ConsensusBlockHeight = ctx.BlockHeight()
+
+	// If solvency stops reaching consensus for a chain, insolvencyCheck never runs
+	// for it again and a drained wallet goes undetected. This gauge going flat
+	// while the block height advances is the only signal of that.
+	telemetry.SetGaugeWithLabels(
+		[]string{"thornode", "solvency", "last_consensus_height"},
+		float32(ctx.BlockHeight()),
+		// Voters are per vault: without the pubkey a retiring vault that stops
+		// reaching consensus is hidden behind the active one's updates.
+		[]metrics.Label{telemetry.NewLabel("chain", telemChain(voter.Chain)), telemetry.NewLabel("pubkey", voter.PubKey.String())},
+	)
 
 	// This signer brings the voter to consensus; increment the signer's slash points like the before-consensus signers,
 	// then decrement all the signers' slash points and increment the non-signers' slash points.
@@ -109,6 +120,14 @@ func processSolvencyAttestation(
 	}
 	// According to the validate msg.Id check, the Height is consistent for all the voter's messages.
 	if s.Height < lastChainHeight {
+		// A chain whose solvency scanner persistently lags observation hits this
+		// branch every cycle, which means its insolvency detection is entirely
+		// inert. Today that is only an Info log.
+		telemetry.IncrCounterWithLabels(
+			[]string{"thornode", "solvency", "report_stale"},
+			1,
+			[]metrics.Label{telemetry.NewLabel("chain", telemChain(voter.Chain))},
+		)
 		ctx.Logger().Info("solvency message consensus for height before last chain height inbound supermajority observation", "chain", voter.Chain, "vault pubkey", voter.PubKey, "last chain height", lastChainHeight, "solvency message height", s.Height)
 		return nil
 	}
@@ -143,6 +162,14 @@ func processSolvencyAttestation(
 	// from unhalting the chain while this vault remains insolvent.
 	if isInsolvent {
 		if haltChain <= 0 {
+			// Attribute the halt to the automatic solvency checker. Transition only:
+			// the refresh branch below re-fires every cycle while a vault stays
+			// insolvent. thornode_chain_halted carries no cause.
+			telemetry.IncrCounterWithLabels(
+				[]string{"thornode", "solvency", "chain_halt"},
+				1,
+				[]metrics.Label{telemetry.NewLabel("chain", telemChain(voter.Chain))},
+			)
 			k.SetMimir(ctx, haltChainKey, ctx.BlockHeight())
 			mimirEvent := NewEventSetMimir(strings.ToUpper(haltChainKey), strconv.FormatInt(ctx.BlockHeight(), 10))
 			if err := mgr.EventMgr().EmitEvent(ctx, mimirEvent); err != nil {
@@ -195,6 +222,17 @@ func flagVaultInsolvent(ctx cosmos.Context, k keeper.Keeper, pubKey common.PubKe
 	if flagged, err := k.GetMimir(ctx, key); err == nil && flagged > 0 {
 		return
 	}
+	// Transition into insolvency only - the guard above makes the steady state
+	// free. This is the moment a vault stops being advertised for deposits, which
+	// no existing metric exposes.
+	telemetry.IncrCounterWithLabels(
+		[]string{"thornode", "vault", "insolvent_flagged"},
+		1,
+		[]metrics.Label{
+			telemetry.NewLabel("chain", telemChain(chain)),
+			telemetry.NewLabel("pubkey", pubKey.String()),
+		},
+	)
 	k.SetMimir(ctx, key, ctx.BlockHeight())
 }
 
@@ -257,6 +295,23 @@ func insolvencyCheck(ctx cosmos.Context, mgr Manager, vault Vault, coins common.
 		if c.IsEmpty() {
 			// Pending outbounds can fully cover, or intentionally over-cover,
 			// the vault balance while outbound recovery handles the liability.
+			// The asset is still a real asset in this vault, and its adjusted
+			// balance reaching zero is exactly how a gap resolves, so write the
+			// zero here too: skipping it leaves a previously positive
+			// solvency_gap_rune pinned at its last value until retention expires,
+			// while insolvencyCheck returns false and the caller clears the flag.
+			// Guarded on the asset rather than the coin so a malformed coin with
+			// an empty asset never becomes a label value.
+			if !c.Asset.IsEmpty() {
+				telemetry.SetGaugeWithLabels(
+					[]string{"thornode", "solvency", "gap_rune"},
+					0,
+					[]metrics.Label{
+						telemetry.NewLabel("asset", c.Asset.String()),
+						telemetry.NewLabel("pubkey", vault.PubKey.String()),
+					},
+				)
+			}
 			continue
 		}
 		walletCoin := coins.GetCoin(c.Asset)
@@ -271,6 +326,19 @@ func insolvencyCheck(ctx cosmos.Context, mgr Manager, vault Vault, coins common.
 			gap = c.Amount.Sub(walletCoin.Amount)
 		}
 		if gap.IsZero() {
+			// Write the zero: without it a resolved gap leaves the series pinned at
+			// its last non-zero value and the alert never clears. Labelled by vault
+			// as well as asset: insolvencyCheck runs once per reporting vault, so
+			// without the pubkey a solvent retiring vault would zero out the active
+			// vault's real gap on the same asset during churn.
+			telemetry.SetGaugeWithLabels(
+				[]string{"thornode", "solvency", "gap_rune"},
+				0,
+				[]metrics.Label{
+					telemetry.NewLabel("asset", c.Asset.String()),
+					telemetry.NewLabel("pubkey", vault.PubKey.String()),
+				},
+			)
 			continue
 		}
 
@@ -293,6 +361,19 @@ func insolvencyCheck(ctx cosmos.Context, mgr Manager, vault Vault, coins common.
 			return true
 		}
 		gapInRune := pool.AssetValueInRune(gap)
+		// Export the gap itself, not just the bool insolvencyCheck reduces it to.
+		// A gap growing but still under PermittedSolvencyGapUSD is the earliest
+		// warning of a slow leak, hours before the automatic chain halt. Same
+		// {asset, pubkey} label set as the zero-write above - one series per
+		// reporting vault, so vaults cannot overwrite each other's gap.
+		telemetry.SetGaugeWithLabels(
+			[]string{"thornode", "solvency", "gap_rune"},
+			telem(gapInRune),
+			[]metrics.Label{
+				telemetry.NewLabel("asset", c.Asset.String()),
+				telemetry.NewLabel("pubkey", vault.PubKey.String()),
+			},
+		)
 		// If pool has no liquidity, we can't value the gap in RUNE.
 		// Treat as insolvent to be conservative: a zero-liquidity pool should not
 		// allow a real insolvency to go undetected.

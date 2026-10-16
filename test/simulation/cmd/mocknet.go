@@ -61,6 +61,7 @@ var (
 		strings.Repeat("cat ", 23) + "crawl",
 		strings.Repeat("fox ", 23) + "filter",
 		strings.Repeat("pig ", 23) + "quick",
+		strings.Repeat("frog ", 23) + "blossom",
 	}
 
 	mocknetUserMnemonics = [...]string{
@@ -371,11 +372,22 @@ func InitConfig(parallelism int, seed bool, rng *rand.Rand) *OpConfig {
 		}
 
 		if chain.Equals(common.XMRChain) {
-			fundUserXMRAccounts(master, funded, chainSeedAmount)
+			// In its own goroutine like the other chains: it waits for the
+			// faucet outputs to unlock, and inline it held back every chain
+			// after XMR in SimChains (POL, ZEC) for ~30s.
+			wg.Add(1)
+			go func(amount sdkmath.Uint) {
+				defer wg.Done()
+				fundUserXMRAccounts(master, funded, amount)
+			}(chainSeedAmount)
 			continue
 		}
 		if chain.Equals(common.ZECChain) {
-			fundUserZecAccounts(master, funded, chainSeedAmount.QuoUint64(uint64(chainSeedTxs)), chainSeedTxs)
+			wg.Add(1)
+			go func(amount sdkmath.Uint, txs int) {
+				defer wg.Done()
+				fundUserZecAccounts(master, funded, amount, txs)
+			}(chainSeedAmount.QuoUint64(uint64(chainSeedTxs)), chainSeedTxs)
 			continue
 		}
 
@@ -413,24 +425,113 @@ func waitForZecFunding(client LiteChainClient, target sdkmath.Uint, now func() t
 
 // nolint:typecheck
 func fundUserChainAccounts(master *User, users []*User, chain common.Chain, amount sdkmath.Uint) {
+	// Solana transfers carry no account nonce, so the master funds every user
+	// at once; one at a time, each waited ~13s for finalized confirmation.
+	if chain.Equals(common.SOLChain) {
+		wg := &sync.WaitGroup{}
+		for _, user := range users {
+			wg.Add(1)
+			go func(user *User) {
+				defer wg.Done()
+				fundUserChainAccount(master, user, chain, amount)
+			}(user)
+		}
+		wg.Wait()
+		return
+	}
+	// EVM funding sends every user's transfers back to back and then waits for
+	// the receipts; one receipt at a time it took ~4s per transfer (2 per user)
+	// and made POL the last chain to finish.
+	if client, ok := master.ChainClients[chain].(*evm.Client); ok {
+		client.DeferReceipts()
+		for _, user := range users {
+			fundUserChainAccount(master, user, chain, amount)
+		}
+		if err := client.FlushReceipts(); err != nil {
+			log.Fatal().Err(err).Stringer("chain", chain).Msg("funding tx failed")
+		}
+		return
+	}
 	for _, user := range users {
 		fundUserChainAccount(master, user, chain, amount)
 	}
 }
 
+// zecFundingTransfers splits what a user still needs to reach txs*amount into
+// transfers of at most amount each, so a fresh user ends up with txs UTXOs.
+func zecFundingTransfers(current, amount sdkmath.Uint, txs int) []sdkmath.Uint {
+	target := amount.MulUint64(uint64(txs))
+	if amount.IsZero() || current.GTE(target) {
+		return nil
+	}
+	var transfers []sdkmath.Uint
+	for missing := target.Sub(current); !missing.IsZero(); {
+		send := sdkmath.MinUint(amount, missing)
+		transfers = append(transfers, send)
+		missing = missing.Sub(send)
+	}
+	return transfers
+}
+
+// fundUserZecAccounts broadcasts every transfer for every user, then waits for
+// the balances once. The ZEC client keeps the master's inputs reserved until
+// each payload is accepted, so transfers in flight never share a UTXO. The
+// plan is computed from the balance before any transfer, and the only wait is
+// at the end, so an unmined transfer is never paid twice.
 func fundUserZecAccounts(master *User, users []*User, amount sdkmath.Uint, txs int) {
-	for i := 0; i < txs; i++ {
-		cumulativeAmount := amount.MulUint64(uint64(i + 1))
-		for _, user := range users {
-			fundUserChainAccount(master, user, common.ZECChain, cumulativeAmount)
-			// The container owns mining. Wait for the balance before calculating
-			// another cumulative funding delta, so an unmined transfer cannot
-			// cause the next iteration to pay it again.
-			if err := waitForZecFunding(user.ChainClients[common.ZECChain], cumulativeAmount, time.Now, time.Sleep, 2*time.Minute); err != nil {
-				log.Fatal().Err(err).Str("user", user.Name()).Msg("failed waiting for zec funding confirmation")
-			}
+	target := amount.MulUint64(uint64(txs))
+	for _, user := range users {
+		account, err := user.ChainClients[common.ZECChain].GetAccount(nil)
+		if err != nil {
+			log.Fatal().Err(err).Str("user", user.Name()).Msg("failed to get user zec account")
+		}
+		current := account.Coins.GetCoin(common.ZECAsset).Amount
+		transfers := zecFundingTransfers(current, amount, txs)
+		if len(transfers) == 0 {
+			log.Info().
+				Str("user", user.Name()).
+				Stringer("balance", current).
+				Stringer("target", target).
+				Msg("zec account already funded")
+			continue
+		}
+		for _, transfer := range transfers {
+			broadcastFunding(master, user, common.ZECChain, transfer)
 		}
 	}
+	for _, user := range users {
+		if err := waitForZecFunding(user.ChainClients[common.ZECChain], target, time.Now, time.Sleep, 2*time.Minute); err != nil {
+			log.Fatal().Err(err).Str("user", user.Name()).Msg("failed waiting for zec funding confirmation")
+		}
+	}
+}
+
+// broadcastFunding sends fundingAmount of the chain's gas asset from master to user.
+func broadcastFunding(master, user *User, chain common.Chain, fundingAmount sdkmath.Uint) {
+	addr, err := user.PubKey(chain).GetAddress(chain)
+	if err != nil {
+		log.Fatal().Err(err).Msg("failed to get address")
+	}
+	tx := SimTx{
+		Chain:     chain,
+		ToAddress: addr,
+		Coin:      common.NewCoin(chain.GetGasAsset(), fundingAmount),
+		Memo:      fmt.Sprintf("SIMULATION:%s", user.Name()),
+	}
+
+	txid, err := SignAndBroadcastTx(master.ChainClients[chain], tx)
+	if err != nil {
+		log.Fatal().Err(err).Interface("tx", tx).Msg("failed to broadcast funding tx")
+	}
+
+	amountFloat := float64(fundingAmount.Uint64()) / float64(common.One)
+	log.Info().
+		Str("txid", txid).
+		Str("user", user.Name()).
+		Stringer("chain", chain).
+		Stringer("address", addr).
+		Str("amount", fmt.Sprintf("%08f", amountFloat)).
+		Msg("account funded")
 }
 
 // nolint:typecheck
@@ -455,27 +556,7 @@ func fundUserChainAccount(master, user *User, chain common.Chain, amount sdkmath
 			Stringer("target", amount).
 			Msg("account already funded")
 	} else {
-		fundingAmount := amount.Sub(currentAmount)
-		tx := SimTx{
-			Chain:     chain,
-			ToAddress: addr,
-			Coin:      common.NewCoin(chain.GetGasAsset(), fundingAmount),
-			Memo:      fmt.Sprintf("SIMULATION:%s", user.Name()),
-		}
-
-		txid, err := SignAndBroadcastTx(master.ChainClients[chain], tx)
-		if err != nil {
-			log.Fatal().Err(err).Interface("tx", tx).Msg("failed to broadcast funding tx")
-		}
-
-		amountFloat := float64(fundingAmount.Uint64()) / float64(common.One)
-		log.Info().
-			Str("txid", txid).
-			Str("user", user.Name()).
-			Stringer("chain", chain).
-			Stringer("address", addr).
-			Str("amount", fmt.Sprintf("%08f", amountFloat)).
-			Msg("account funded")
+		broadcastFunding(master, user, chain, amount.Sub(currentAmount))
 	}
 
 	// if this is an EVM chain also fund token balances
