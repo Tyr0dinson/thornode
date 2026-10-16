@@ -884,7 +884,7 @@ func (e *ETHScanner) getTxInFromSmartContract(tx *etypes.Transaction, receipt *e
 	txInItem := &stypes.TxInItem{
 		Tx: tx.Hash().Hex()[2:],
 	}
-	sender, err := e.eipSigner.Sender(tx)
+	sender, err := etypes.Sender(e.eipSigner, tx)
 	if err != nil {
 		return nil, fmt.Errorf("fail to get sender: %w", err)
 	}
@@ -957,7 +957,7 @@ func (e *ETHScanner) getTxInFromTransaction(tx *etypes.Transaction, receipt *ety
 		Tx: tx.Hash().Hex()[2:],
 	}
 	asset := common.ETHAsset
-	sender, err := e.eipSigner.Sender(tx)
+	sender, err := etypes.Sender(e.eipSigner, tx)
 	if err != nil {
 		return nil, fmt.Errorf("fail to get sender: %w", err)
 	}
@@ -1049,7 +1049,7 @@ func (e *ETHScanner) fromTxToTxIn(tx *etypes.Transaction) (*stypes.TxInItem, err
 		isToVault, _ := e.pubkeyMgr.IsValidPoolAddress(destination.String(), e.cfg.ChainID)
 
 		// resolve sender upfront to check vault outbounds (approvals, cancels, etc.)
-		sender, senderErr := e.eipSigner.Sender(tx)
+		sender, senderErr := etypes.Sender(e.eipSigner, tx)
 		var isFromVault bool
 		if senderErr == nil {
 			isFromVault, _ = e.pubkeyMgr.IsValidPoolAddress(sender.String(), e.cfg.ChainID)
@@ -1098,7 +1098,7 @@ func (e *ETHScanner) fromTxToTxIn(tx *etypes.Transaction) (*stypes.TxInItem, err
 			return e.getTxInFromSmartContract(tx, receipt, 0)
 		}
 		// check if tx is to or from a vault
-		sender, err := e.eipSigner.Sender(tx)
+		sender, err := etypes.Sender(e.eipSigner, tx)
 		if err != nil {
 			return nil, nil // ignore tx if we cannot determine sender
 		}
@@ -1136,7 +1136,7 @@ func (e *ETHScanner) getTxInFromFailedTransaction(tx *etypes.Transaction, receip
 		e.logger.Info().Str("hash", tx.Hash().String()).Msg("success transaction should not get into getTxInFromFailedTransaction")
 		return nil
 	}
-	fromAddr, err := e.eipSigner.Sender(tx)
+	fromAddr, err := etypes.Sender(e.eipSigner, tx)
 	if err != nil {
 		e.logger.Err(err).Msg("fail to get from address")
 		return nil
