@@ -120,7 +120,7 @@ func TestStartupStateSyncServingMembershipRefresh(t *testing.T) {
 						done := make(chan struct{})
 						attempts <- attempt{stream, done}
 						go func() {
-							serveStateWithMembership(servers[id].attestationGossip, stream)
+							servers[id].attestationGossip.handleStreamAttestationState(stream)
 							close(done)
 						}()
 						return client, nil
@@ -141,7 +141,6 @@ func TestStartupStateSyncServingMembershipRefresh(t *testing.T) {
 							}
 						}
 						for _, server := range servers {
-							require.Zero(t, stateSyncExportCount(server.attestationGossip))
 							require.Zero(t, stateSyncExportCount(server.attestationGossip))
 						}
 					}
@@ -175,7 +174,7 @@ func TestStartupStateSyncServingMembershipRefresh(t *testing.T) {
 						server.sendDeck(context.Background())
 						require.True(t, server.attestationGossip.isActiveValidator(requesterID))
 						inactive := newStateBoundsStream("inactive", prefixSendState)
-						serveStateWithMembership(server.attestationGossip, inactive)
+						server.attestationGossip.handleStreamAttestationState(inactive)
 						require.Zero(t, inactive.readBytes.Load())
 						require.EqualValues(t, 1, inactive.resets.Load(), "refresh must not admit genuinely inactive requesters")
 					}
@@ -280,7 +279,7 @@ func TestStartupStateSyncServingNodesResponseCacheRefresh(t *testing.T) {
 		done := make(chan struct{})
 		exits <- done
 		go func() {
-			serveStateWithMembership(servers[id].attestationGossip, server)
+			servers[id].attestationGossip.handleStreamAttestationState(server)
 			close(done)
 		}()
 		return client, nil
@@ -334,15 +333,4 @@ func TestStartupStateSyncServingNodesResponseCacheRefresh(t *testing.T) {
 	require.Equal(t, attestationStateGroupResult{failed: 2, nonEmpty: 2}, g.startupState.result)
 	require.Equal(t, 4, g.startupState.requests)
 	require.Equal(t, 1, g.networkFees[*fee].AttestationCount())
-}
-
-// Model the membership gate of a later S14 serving peer. S14a/S15 deliberately
-// retain their existing sender admission policy; retries treat either reset as
-// a failed request without guessing its cause or fetching membership on demand.
-func serveStateWithMembership(sender *AttestationGossip, stream network.Stream) {
-	if !sender.isActiveValidator(stream.Conn().RemotePeer()) {
-		_ = stream.Reset()
-		return
-	}
-	sender.handleStreamAttestationState(stream)
 }

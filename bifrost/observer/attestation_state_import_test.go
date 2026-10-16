@@ -4,22 +4,22 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"fmt"
 	"sync"
 	"testing"
 	"time"
+	"unsafe"
 
 	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
 	"github.com/libp2p/go-libp2p-core/network"
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/libp2p/go-libp2p-core/protocol"
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
-	"google.golang.org/grpc"
-
 	"gitlab.com/thorchain/thornode/v3/bifrost/p2p"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/ebifrost"
 	thortypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
+	"google.golang.org/grpc"
 )
 
 // WithTimeout computes its child deadline before consulting parent.Deadline.
@@ -49,7 +49,7 @@ func stateImportFrames(t *testing.T, batches ...common.QuorumState) [][]byte {
 }
 
 type stateImportCompletionStream struct {
-	*stateImportRetentionStream
+	*stateBoundsStream
 	doneWriteErr error
 }
 
@@ -86,11 +86,7 @@ func TestStateImportIncompleteClosesFinishedExchange(t *testing.T) {
 				frames[len(frames)-1] = []byte{0xff}
 			}
 			base := newStateBoundsStream("peer", frames...)
-			var retained *common.NetworkFee
-			if tc.retainFee {
-				retained = fee
-			}
-			stream := &stateImportCompletionStream{stateImportRetentionStream: stateImportAfterRetention(g, retained, base)}
+			stream := &stateImportCompletionStream{stateBoundsStream: base}
 			writeErr := errors.New("final acknowledgement write failed")
 			if tc.failFinalACK {
 				stream.doneWriteErr = writeErr
@@ -395,74 +391,21 @@ func TestStateImportSpentRefQueryFailureKeepsAcceptedEvidence(t *testing.T) {
 	require.False(t, state.spentRefsApplied)
 }
 
-// Delay the terminal/error frame until the first async batch has retained its
-// evidence. Otherwise a buffered fixture can cancel it before it ever starts.
-type stateImportRetentionStream struct {
-	*stateBoundsStream
-	gossip  *AttestationGossip
-	fee     *common.NetworkFee
-	after   int64
-	once    sync.Once
-	waitErr error
-}
-
-func stateImportAfterRetention(g *AttestationGossip, fee *common.NetworkFee, stream *stateBoundsStream) *stateImportRetentionStream {
-	return &stateImportRetentionStream{stateBoundsStream: stream, gossip: g, fee: fee, after: stream.frameEnds[len(stream.frameEnds)-2]}
-}
-
-func (s *stateImportRetentionStream) Read(p []byte) (int, error) {
-	if s.fee != nil && s.readBytes.Load() >= s.after {
-		s.once.Do(func() {
-			timeout := time.NewTimer(time.Second)
-			defer timeout.Stop()
-			tick := time.NewTicker(time.Millisecond)
-			defer tick.Stop()
-			for {
-				s.gossip.mu.Lock()
-				state := s.gossip.networkFees[*s.fee]
-				retained := false
-				if state != nil {
-					state.mu.Lock()
-					retained = state.AttestationCount() > 0
-					state.mu.Unlock()
-				}
-				s.gossip.mu.Unlock()
-				if retained {
-					return
-				}
-				select {
-				case <-s.stopped:
-					s.waitErr = fmt.Errorf("stream stopped before retention")
-					return
-				case <-timeout.C:
-					s.waitErr = fmt.Errorf("batch did not retain evidence")
-					return
-				case <-tick.C:
-				}
-			}
-		})
-	}
-	if s.waitErr != nil {
-		return 0, s.waitErr
-	}
-	return s.stateBoundsStream.Read(p)
-}
-
-func TestStateImportAsyncWorkerFailureKeepsOtherBatches(t *testing.T) {
+func TestStateImportMalformedBatchStopsBeforeFollowingBatch(t *testing.T) {
 	g, _, _, _, _, _ := setupTestGossip(t)
 	fee, atts := stateSyncSignedFee(t, 790, 1)
 	valid := common.QuorumState{QuoNetworkFees: []*common.QuorumNetworkFee{{NetworkFee: fee, Attestations: atts}}}
 	malformed := common.QuorumState{QuoNetworkFees: []*common.QuorumNetworkFee{{}}}
-	for _, batches := range [][]common.QuorumState{{malformed, valid}, {valid, malformed}} {
+	for expected, batches := range [][]common.QuorumState{{malformed, valid}, {valid, malformed}} {
 		frames := append([][]byte{append([]byte{prefixBatchBegin[0]}, stateBoundsCount(2)...)}, stateImportFrames(t, batches...)...)
 		stream := newStateBoundsStream("peer", frames...)
 		result := g.askStreamForState(stream)
-		require.False(t, result.completed, "worker failure must survive a complete wire exchange")
+		require.False(t, result.completed, "malformed input must fail the transfer")
 		require.ErrorContains(t, result.err, "network fee[0] or payload is nil")
-		require.Equal(t, 1, result.items, "other workers still retain evidence, including duplicates")
-		require.EqualValues(t, 1, stream.closes.Load())
-		require.Zero(t, stream.resets.Load())
-		require.Contains(t, ParseMessages(stream.output.Bytes()), []byte(p2p.StreamMsgDone))
+		require.Equal(t, expected, result.items, "only batches before the malformed input can retain evidence")
+		require.Zero(t, stream.closes.Load())
+		require.EqualValues(t, 1, stream.resets.Load())
+		require.NotContains(t, ParseMessages(stream.output.Bytes()), []byte(p2p.StreamMsgDone))
 	}
 	require.Equal(t, 1, g.networkFees[*fee].AttestationCount())
 }
@@ -490,15 +433,312 @@ func TestStateImportIncompleteBatchSequenceRetries(t *testing.T) {
 	}
 }
 
-func TestStateImportRetainsLegacySignatureCounts(t *testing.T) {
+func TestStateImportRejectsOversizedSignatureCount(t *testing.T) {
 	g, _ := startupRetryGossip(t, "peer")
 	fee, atts := stateSyncSignedFee(t, 791, 129)
 	stateSyncTrustAttestors(t, g, atts)
 	data, err := (&common.QuorumState{QuoNetworkFees: []*common.QuorumNetworkFee{{NetworkFee: fee, Attestations: atts}}}).Marshal()
 	require.NoError(t, err)
 	result := g.askStreamForState(stateSyncImportStream(t, "peer", data))
-	require.NoError(t, result.err)
-	require.True(t, result.completed)
-	require.Equal(t, 1, result.items)
-	require.Equal(t, 129, g.networkFees[*fee].AttestationCount(), "do not pull the later receiver's 128-share limit into this release")
+	require.ErrorContains(t, result.err, "attestations count 129 exceeds maximum 128")
+	require.False(t, result.completed)
+	require.Zero(t, result.items)
+	require.Empty(t, g.networkFees, "preflight rejects before publishing any evidence")
+}
+
+func TestStateBoundsInvalidSequence(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		count  uint32
+		frames [][]byte
+	}{
+		{"too many batches", 1001, [][]byte{prefixBatchEnd}},
+		{"early end", 1, [][]byte{prefixBatchEnd}},
+		{"wrong number", 1, [][]byte{stateBoundsHeader(1, 0), prefixBatchData, prefixBatchEnd}},
+		{"repeated number", 2, [][]byte{stateBoundsHeader(0, 0), prefixBatchData, stateBoundsHeader(0, 0), prefixBatchData, prefixBatchEnd}},
+		{"extra batch", 1, [][]byte{stateBoundsHeader(0, 0), prefixBatchData, stateBoundsHeader(1, 0), prefixBatchData, prefixBatchEnd}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := newStateBoundsGossip()
+			stream := newStateBoundsStream("active", tc.frames...)
+			require.Error(t, s.receiveBatchedAttestationState(stream, stateBoundsCount(tc.count)))
+		})
+	}
+}
+
+func stateBoundsCategories() map[string]func([]*common.Attestation) common.QuorumState {
+	return map[string]func([]*common.Attestation) common.QuorumState{
+		"tx": func(a []*common.Attestation) common.QuorumState {
+			return common.QuorumState{QuoTxs: []*common.QuorumTx{{Attestations: a}}}
+		},
+		"fee": func(a []*common.Attestation) common.QuorumState {
+			return common.QuorumState{QuoNetworkFees: []*common.QuorumNetworkFee{{NetworkFee: &common.NetworkFee{}, Attestations: a}}}
+		},
+		"solvency": func(a []*common.Attestation) common.QuorumState {
+			return common.QuorumState{QuoSolvencies: []*common.QuorumSolvency{{Solvency: &common.Solvency{}, Attestations: a}}}
+		},
+		"errata": func(a []*common.Attestation) common.QuorumState {
+			return common.QuorumState{QuoErrataTxs: []*common.QuorumErrataTx{{ErrataTx: &common.ErrataTx{}, Attestations: a}}}
+		},
+		"price": func(a []*common.Attestation) common.QuorumState {
+			return common.QuorumState{QuoPriceFeeds: []*common.QuorumPriceFeed{{PriceFeed: &common.PriceFeed{}, Attestations: a}}}
+		},
+	}
+}
+
+func TestStateBoundsAllNestedCategories(t *testing.T) {
+	for name, makeBatch := range stateBoundsCategories() {
+		t.Run(name, func(t *testing.T) {
+			for _, count := range []int{0, 128, 129} {
+				atts := make([]*common.Attestation, count)
+				for i := range atts {
+					atts[i] = &common.Attestation{}
+				}
+				batch := makeBatch(atts)
+				err := validateAttestationStateBatch(batch)
+				if count <= 128 {
+					require.NoError(t, err)
+				} else {
+					require.ErrorContains(t, err, "attestations count 129 exceeds maximum 128")
+					// An early valid item must not dispatch before a later category's
+					// oversized item. Nil runtime dependencies catch any dispatch.
+					batch.QuoTxs = append([]*common.QuorumTx{{Attestations: []*common.Attestation{{}}}}, batch.QuoTxs...)
+					require.Error(t, newStateBoundsGossip().processAttestationStateBatch(zerolog.Nop(), batch))
+				}
+			}
+			require.ErrorContains(t, validateAttestationStateBatch(makeBatch([]*common.Attestation{nil})), "is nil")
+		})
+	}
+	for _, batch := range []common.QuorumState{
+		{QuoTxs: []*common.QuorumTx{nil}},
+		{QuoNetworkFees: []*common.QuorumNetworkFee{nil}},
+		{QuoNetworkFees: []*common.QuorumNetworkFee{{}}},
+		{QuoSolvencies: []*common.QuorumSolvency{nil}},
+		{QuoSolvencies: []*common.QuorumSolvency{{}}},
+		{QuoErrataTxs: []*common.QuorumErrataTx{nil}},
+		{QuoErrataTxs: []*common.QuorumErrataTx{{}}},
+		{QuoPriceFeeds: []*common.QuorumPriceFeed{nil}},
+		{QuoPriceFeeds: []*common.QuorumPriceFeed{{}}},
+		{QuoPriceFeeds: []*common.QuorumPriceFeed{{PriceFeed: &common.PriceFeed{Rates: []*common.OraclePrice{nil}}}}},
+	} {
+		require.Error(t, validateAttestationStateBatch(batch))
+	}
+}
+
+func TestStateBoundsTransferCounts(t *testing.T) {
+	batch := common.QuorumState{QuoTxs: make([]*common.QuorumTx, 2000), QuoNetworkFees: make([]*common.QuorumNetworkFee, 2000), QuoSolvencies: make([]*common.QuorumSolvency, 2000), QuoErrataTxs: make([]*common.QuorumErrataTx, 2000), QuoPriceFeeds: make([]*common.QuorumPriceFeed, 2000)}
+	next, err := validateAttestationStateTransferCount(0, batch)
+	require.NoError(t, err)
+	require.Equal(t, 10000, next)
+	next, err = validateAttestationStateTransferCount(1, batch)
+	require.Error(t, err)
+	require.Equal(t, 1, next)
+	batch.QuoTxs = append(batch.QuoTxs, nil)
+	require.ErrorContains(t, validateAttestationStateBatch(batch), "transfer maximum")
+}
+
+func TestStateBoundsWirePreflight(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		first []byte
+		raw   []byte
+		read  int64
+	}{
+		{"header", nil, append(stateBoundsCount(10), bytes.Repeat([]byte{0}, 10)...), 4},
+		{"data declaration", stateBoundsHeader(0, p2p.MaxPayload), nil, 13},
+		{"data frame", stateBoundsHeader(0, 1), append(stateBoundsCount(p2p.MaxPayload), []byte{1, 2, 3}...), 17},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			stream := newStateBoundsStream("active")
+			input := tc.raw
+			if tc.first != nil {
+				input = append(encodeStreamMsg(tc.first), input...)
+			}
+			stream.input = bytes.NewReader(input)
+			require.Error(t, newStateBoundsGossip().receiveBatchedAttestationState(stream, stateBoundsCount(1)))
+			require.Equal(t, tc.read, stream.readBytes.Load())
+		})
+	}
+	stream := newStateBoundsStream("active", bytes.Repeat([]byte{1}, 11))
+	require.Error(t, newStateBoundsGossip().sendAttestationState(stream, time.Now().Add(defaultStateSyncTimeout)))
+	require.EqualValues(t, 4, stream.readBytes.Load(), "ACK is capped before body read")
+	stream = newStateBoundsStream("active", bytes.Repeat([]byte{2}, 6))
+	newStateBoundsGossip().askStreamForState(stream)
+	require.EqualValues(t, 4, stream.readBytes.Load(), "BatchBegin response is capped before body read")
+	require.EqualValues(t, 1, stream.resets.Load())
+	require.Zero(t, stream.closes.Load())
+}
+
+func TestStateBoundsSignaturesAndPartialRetention(t *testing.T) {
+	s, _, _, _, _, _ := setupTestGossip(t)
+	s.logger = zerolog.Nop()
+	fee := &common.NetworkFee{Chain: common.BTCChain, Height: 123, TransactionSize: 100, TransactionRate: 2}
+	payload, err := fee.GetSignablePayload()
+	require.NoError(t, err)
+	atts := make([]*common.Attestation, 129)
+	for i := range atts {
+		key := secp256k1.GenPrivKey()
+		sig, signErr := key.Sign(payload)
+		require.NoError(t, signErr)
+		atts[i] = &common.Attestation{PubKey: key.PubKey().Bytes(), Signature: sig}
+	}
+	original := verifySignature
+	calls := 0
+	verifySignature = func(p, sig, key []byte) error { calls++; return original(p, sig, key) }
+	defer func() { verifySignature = original }()
+	batch := common.QuorumState{QuoNetworkFees: []*common.QuorumNetworkFee{{NetworkFee: fee, Attestations: atts}}}
+	require.Error(t, s.processAttestationStateBatch(zerolog.Nop(), batch))
+	require.Zero(t, calls)
+	require.Empty(t, s.networkFees)
+	batch.QuoNetworkFees[0].Attestations = atts[:128]
+	data, err := batch.Marshal()
+	require.NoError(t, err)
+	stream := newStateBoundsStream("active", stateBoundsHeader(0, uint32(len(data))), append([]byte{4}, data...), []byte{0xff})
+	// A later framing failure does not roll back accepted earlier batches.
+	require.Error(t, s.receiveBatchedAttestationState(stream, stateBoundsCount(2)))
+	require.Equal(t, 128, calls)
+	require.Equal(t, 128, s.networkFees[*fee].AttestationCount())
+	// Existing dedup ignores identical signatures without re-verifying them.
+	require.NoError(t, s.processAttestationStateBatch(zerolog.Nop(), batch))
+	require.Equal(t, 128, calls)
+	require.Equal(t, 128, s.networkFees[*fee].AttestationCount())
+	t.Logf("128 distinct BTC signatures: encoded batch=%d bytes, Attestation=%d bytes, retained slot=%d bytes; 128 verifications, 8128 existing-entry visits on initial linear dedup", len(data), unsafe.Sizeof(common.Attestation{}), unsafe.Sizeof(attestationSentState{}))
+}
+
+func TestStateSyncCumulativeImportLimitAndRecovery(t *testing.T) {
+	fee, atts := stateSyncSignedFee(t, 123, 2)
+	unrelated, unrelatedAtts := stateSyncSignedFee(t, 124, 1)
+	first := common.QuorumState{QuoNetworkFees: make([]*common.QuorumNetworkFee, maxAttestationStateItemsPerTransfer-1)}
+	for i := range first.QuoNetworkFees {
+		// Wire items count even when they repeat the same valid evidence.
+		first.QuoNetworkFees[i] = &common.QuorumNetworkFee{NetworkFee: fee, Attestations: atts[:1]}
+	}
+	firstData, err := first.Marshal()
+	require.NoError(t, err)
+	recovery := common.QuorumState{QuoNetworkFees: []*common.QuorumNetworkFee{
+		{NetworkFee: fee, Attestations: atts[1:]},
+		{NetworkFee: unrelated, Attestations: unrelatedAtts},
+	}}
+	recoveryData, err := recovery.Marshal()
+	require.NoError(t, err)
+
+	for _, overflow := range []bool{false, true} {
+		name := "exact limit"
+		if overflow {
+			name = "one item over"
+		}
+		t.Run(name, func(t *testing.T) {
+			s, _, _, _, _, _ := setupTestGossip(t)
+			s.logger = zerolog.Nop()
+			stateSyncTrustAttestors(t, s, append(atts, unrelatedAtts...))
+			original := verifySignature
+			verified := 0
+			verifySignature = func(payload, signature, pubkey []byte) error {
+				verified++
+				return original(payload, signature, pubkey)
+			}
+			defer func() { verifySignature = original }()
+
+			second := recovery
+			if !overflow {
+				second.QuoNetworkFees = second.QuoNetworkFees[:1]
+			}
+			secondData, err := second.Marshal()
+			require.NoError(t, err)
+			stream := stateSyncImportStream(t, "first peer", firstData, secondData)
+			s.askStreamForState(stream)
+
+			wantAtts := atts
+			wantACKs := [][]byte{prefixSendState, []byte(streamAckBegin), []byte(streamAckHeader), []byte(streamAckData), []byte(streamAckHeader)}
+			if overflow {
+				require.EqualValues(t, 1, stream.resets.Load())
+				require.Zero(t, stream.closes.Load())
+				wantAtts = atts[:1]
+			} else {
+				require.Zero(t, stream.resets.Load())
+				require.EqualValues(t, 1, stream.closes.Load())
+				wantACKs = append(wantACKs, []byte(streamAckData), []byte(p2p.StreamMsgDone))
+			}
+			require.Equal(t, wantACKs, ParseMessages(stream.output.Bytes()))
+			require.Equal(t, len(wantAtts), verified, "an over-limit batch must not verify or publish even its first item")
+			require.Len(t, s.networkFees, 1)
+			require.ElementsMatch(t, wantAtts, s.networkFees[*fee].AttestationsCopy())
+			require.Equal(t, []*common.QuorumNetworkFee{{NetworkFee: fee, Attestations: wantAtts}}, stateSyncExportForTest(t, s, 1).QuoNetworkFees)
+
+			// A rejected transfer must not consume the next transfer's budget.
+			// Replaying accepted evidence must not grow the retained signer set.
+			for range 2 {
+				next := stateSyncImportStream(t, "next peer", recoveryData)
+				s.askStreamForState(next)
+				require.Zero(t, next.resets.Load())
+				require.EqualValues(t, 1, next.closes.Load())
+				require.Equal(t, 3, verified)
+				require.Len(t, s.networkFees, 2)
+				require.ElementsMatch(t, atts, s.networkFees[*fee].AttestationsCopy())
+				require.Equal(t, unrelatedAtts, s.networkFees[*unrelated].AttestationsCopy())
+			}
+			require.ElementsMatch(t, []*common.QuorumNetworkFee{
+				{NetworkFee: fee, Attestations: atts},
+				{NetworkFee: unrelated, Attestations: unrelatedAtts},
+			}, stateSyncExportForTest(t, s, 2).QuoNetworkFees)
+		})
+	}
+}
+
+func TestStateSyncMalformedImportDoesNotPublish(t *testing.T) {
+	fee, atts := stateSyncSignedFee(t, 123, 1)
+	valid := common.QuorumState{QuoNetworkFees: []*common.QuorumNetworkFee{{NetworkFee: fee, Attestations: atts}}}
+	validData, err := valid.Marshal()
+	require.NoError(t, err)
+	oversized := make([]*common.Attestation, maxAttestationStateAttestationsPerItem+1)
+	for i := range oversized {
+		oversized[i] = atts[0]
+	}
+	for _, name := range []string{"truncated protobuf", "missing payload", "too many attestations"} {
+		t.Run(name, func(t *testing.T) {
+			s, _, _, _, _, _ := setupTestGossip(t)
+			s.logger = zerolog.Nop()
+			stateSyncTrustAttestors(t, s, atts)
+			original := verifySignature
+			verified := 0
+			verifySignature = func(payload, signature, pubkey []byte) error {
+				verified++
+				return original(payload, signature, pubkey)
+			}
+			defer func() { verifySignature = original }()
+
+			batch := valid
+			var malformed []byte
+			if name == "truncated protobuf" {
+				// Decoding has already seen the valid item before the bad tag.
+				malformed = append(append([]byte(nil), validData...), 0x80)
+			} else {
+				bad := &common.QuorumSolvency{}
+				if name == "too many attestations" {
+					bad.Solvency = &common.Solvency{Chain: common.BTCChain}
+					bad.Attestations = oversized
+				}
+				// Solvencies dispatch after fees. Whole-batch preflight must
+				// reject this before the earlier valid fee reaches its handler.
+				batch.QuoSolvencies = []*common.QuorumSolvency{bad}
+				malformed, err = batch.Marshal()
+				require.NoError(t, err)
+			}
+			stream := stateSyncImportStream(t, "bad peer", malformed)
+			s.askStreamForState(stream)
+			require.EqualValues(t, 1, stream.resets.Load())
+			require.Zero(t, stream.closes.Load())
+			require.Equal(t, [][]byte{prefixSendState, []byte(streamAckBegin), []byte(streamAckHeader)}, ParseMessages(stream.output.Bytes()))
+			require.Zero(t, verified)
+			require.Empty(t, s.networkFees)
+			require.Empty(t, s.solvencies)
+
+			next := stateSyncImportStream(t, "good peer", validData)
+			s.askStreamForState(next)
+			require.Zero(t, next.resets.Load())
+			require.EqualValues(t, 1, next.closes.Load())
+			require.Equal(t, 1, verified)
+			require.Equal(t, valid.QuoNetworkFees, stateSyncExportForTest(t, s, 1).QuoNetworkFees)
+		})
+	}
 }

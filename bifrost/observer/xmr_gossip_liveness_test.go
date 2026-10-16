@@ -139,7 +139,8 @@ func TestStateExportRejectsQuarantinedOrUnreadableSnapshot(t *testing.T) {
 			stream := newPausedAttestationStateStream(prefixBatchBegin)
 			defer func() { require.NoError(t, stream.Reset()) }()
 			done := make(chan struct{})
-			go func() { g.sendAttestationState(stream); close(done) }()
+			var sendErr error
+			go func() { sendErr = g.sendAttestationState(stream, time.Now().Add(defaultStateSyncTimeout)); close(done) }()
 			waitForObserverTest(t, stream.ready)
 			switch mode {
 			case "permanent", "all_removed":
@@ -154,6 +155,7 @@ func TestStateExportRejectsQuarantinedOrUnreadableSnapshot(t *testing.T) {
 			}
 			close(stream.resume)
 			waitForObserverTest(t, done)
+			require.NoError(t, sendErr)
 			batches := readExportedAttestationBatches(t, stream)
 			var count int
 			for _, batch := range batches {
@@ -236,7 +238,8 @@ func TestStateExportCanExceedOneBlock(t *testing.T) {
 	stream := newPausedAttestationStateStream(prefixBatchBegin)
 	defer func() { require.NoError(t, stream.Reset()) }()
 	done := make(chan struct{})
-	go func() { g.sendAttestationState(stream); close(done) }()
+	var sendErr error
+	go func() { sendErr = g.sendAttestationState(stream, time.Now().Add(defaultStateSyncTimeout)); close(done) }()
 	waitForObserverTest(t, stream.ready)
 	select {
 	case <-done:
@@ -245,6 +248,7 @@ func TestStateExportCanExceedOneBlock(t *testing.T) {
 	}
 	close(stream.resume)
 	waitForObserverTest(t, done)
+	require.NoError(t, sendErr)
 	batches := readExportedAttestationBatches(t, stream)
 	var count int
 	for _, batch := range batches {
@@ -276,7 +280,8 @@ func TestStateExportRevalidatesBetweenFrames(t *testing.T) {
 			stream := newPausedAttestationStateStream(prefix)
 			defer func() { require.NoError(t, stream.Reset()) }()
 			done := make(chan struct{})
-			go func() { g.sendAttestationState(stream); close(done) }()
+			var sendErr error
+			go func() { sendErr = g.sendAttestationState(stream, time.Now().Add(defaultStateSyncTimeout)); close(done) }()
 			waitForObserverTest(t, stream.ready)
 			cleaned := make(chan struct{})
 			var cleanupErr error
@@ -296,6 +301,7 @@ func TestStateExportRevalidatesBetweenFrames(t *testing.T) {
 			}
 			close(stream.resume)
 			waitForObserverTest(t, done)
+			require.NoError(t, sendErr)
 			batches := readExportedAttestationBatches(t, stream)
 			var btc, remined bool
 			for i, batch := range batches {
@@ -323,7 +329,8 @@ func TestCleanupPersistsWhileStateHeaderACKStalls(t *testing.T) {
 	stream := newPausedAttestationStateStream(prefixBatchHeader)
 	defer func() { require.NoError(t, stream.Reset()) }()
 	done := make(chan struct{})
-	go func() { g.sendAttestationState(stream); close(done) }()
+	var sendErr error
+	go func() { sendErr = g.sendAttestationState(stream, time.Now().Add(defaultStateSyncTimeout)); close(done) }()
 	waitForObserverTest(t, stream.ready)
 	var writtenAtCleanup atomic.Bool
 	o.storage.beforeErrataWrite = func() error {
@@ -345,6 +352,7 @@ func TestCleanupPersistsWhileStateHeaderACKStalls(t *testing.T) {
 	}
 	close(stream.resume)
 	waitForObserverTest(t, done)
+	require.NoError(t, sendErr)
 	require.False(t, writtenAtCleanup.Load())
 	require.Len(t, readExportedAttestationBatches(t, stream)[0].QuoTxs, 1, "a prepared frame can still arrive after cleanup")
 	require.Empty(t, g.observedTxs)

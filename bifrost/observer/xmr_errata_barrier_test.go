@@ -496,7 +496,8 @@ func TestStateExportBeginACKDoesNotHoldCleanup(t *testing.T) {
 	stream := &stalledAttestationStateStream{started: make(chan struct{}), reset: make(chan struct{})}
 	defer func() { require.NoError(t, stream.Reset()) }()
 	done := make(chan struct{})
-	go func() { g.sendAttestationState(stream); close(done) }()
+	var sendErr error
+	go func() { sendErr = g.sendAttestationState(stream, time.Now().Add(defaultStateSyncTimeout)); close(done) }()
 	waitForObserverTest(t, stream.started)
 	cleaned := make(chan struct{})
 	var cleanupErr error
@@ -514,6 +515,7 @@ func TestStateExportBeginACKDoesNotHoldCleanup(t *testing.T) {
 	}
 	require.NoError(t, stream.Reset())
 	waitForObserverTest(t, done)
+	require.ErrorIs(t, sendErr, io.EOF)
 }
 
 func TestCleanupWriteFailurePreservesRetryableObservation(t *testing.T) {
@@ -539,8 +541,10 @@ func TestEmptyStateExportDoesNotTakeXMRBarrier(t *testing.T) {
 	stream := NewMockStream(bytes.NewReader([]byte{4, 0, 0, 0, 'd', 'o', 'n', 'e'}), &bytes.Buffer{}, "peer")
 	g.xmrErrataBarrier.Lock()
 	done := make(chan struct{})
-	go func() { g.sendAttestationState(stream); close(done) }()
+	var sendErr error
+	go func() { sendErr = g.sendAttestationState(stream, time.Now().Add(defaultStateSyncTimeout)); close(done) }()
 	waitForObserverTest(t, done)
+	require.NoError(t, sendErr)
 	g.xmrErrataBarrier.Unlock()
 }
 

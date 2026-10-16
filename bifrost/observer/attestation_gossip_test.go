@@ -17,8 +17,6 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"google.golang.org/grpc"
-
 	"gitlab.com/thorchain/thornode/v3/bifrost/p2p"
 	"gitlab.com/thorchain/thornode/v3/bifrost/p2p/conversion"
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -26,6 +24,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/config"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/ebifrost"
+	"google.golang.org/grpc"
 )
 
 // TestLogWriter is a custom writer that writes to testing.T.Log
@@ -509,8 +508,10 @@ func TestHandleNetworkFeeAttestation(t *testing.T) {
 
 		// Create a test network fee
 		networkFee := common.NetworkFee{
-			Chain:  common.BSCChain,
-			Height: 200,
+			Chain:           common.BSCChain,
+			Height:          200,
+			TransactionSize: 100,
+			TransactionRate: 2,
 		}
 
 		pub1, err := cosmos.Bech32ifyPubKey(cosmos.Bech32PubKeyTypeAccPub, privKey1.PubKey())
@@ -1137,4 +1138,140 @@ func TestGetSignablePayloadConsistency(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.NotEqual(t, payload1, payloadNoRefs, "payload with refs should differ from without")
+}
+
+func TestStateBoundsRejectBeforeRead(t *testing.T) {
+	t.Run("inactive peer", func(t *testing.T) {
+		s := newStateBoundsGossip()
+		stream := newStateBoundsStream("inactive", []byte{0xff})
+		s.handleStreamAttestationState(stream)
+		require.Zero(t, stream.readBytes.Load())
+		require.EqualValues(t, 1, stream.resets.Load())
+	})
+	t.Run("declared oversize control", func(t *testing.T) {
+		s := newStateBoundsGossip("active")
+		stream := newStateBoundsStream("active", bytes.Repeat([]byte{1}, 64))
+		s.handleStreamAttestationState(stream)
+		require.EqualValues(t, p2p.LengthHeader, stream.readBytes.Load())
+		require.EqualValues(t, 1, stream.resets.Load())
+	})
+}
+
+func TestStateBoundsAdmissionLifecycle(t *testing.T) {
+	s := newStateBoundsGossip()
+	for i := range 11 {
+		s.activeVals[peer.ID(fmt.Sprint(i))] = true
+	}
+	var done []chan struct{}
+	var streams []*stateBoundsStream
+	for i := range 10 {
+		stream := newStateBoundsStream(peer.ID(fmt.Sprint(i)))
+		if i == 0 {
+			stream = newStateBoundsStream("0", prefixSendState)
+		}
+		// One sender waits for an ACK; the rest hold pre-frame admission only.
+		stream.block = true
+		finished := make(chan struct{})
+		go func() { s.handleStreamAttestationState(stream); close(finished) }()
+		waitStateBounds(t, stream.blocked)
+		streams = append(streams, stream)
+		done = append(done, finished)
+	}
+	requireStateRequestCount(t, s, 10)
+	for _, remote := range []peer.ID{"0", "10"} {
+		stream := newStateBoundsStream(remote, prefixSendState)
+		s.handleStreamAttestationState(stream)
+		require.Zero(t, stream.readBytes.Load(), "busy peer/global admission must not read")
+		require.EqualValues(t, 1, stream.resets.Load())
+		requireStateRequestCount(t, s, 10)
+	}
+	// A failed owner releases one slot; a rejected sibling cannot release it.
+	require.NoError(t, streams[0].Reset())
+	waitStateBounds(t, done[0])
+	requireStateRequestCount(t, s, 9)
+	valid := newStateBoundsStream("0", prefixSendState, []byte(p2p.StreamMsgDone))
+	s.handleStreamAttestationState(valid)
+	require.EqualValues(t, 1, valid.closes.Load())
+	requireStateRequestCount(t, s, 9)
+	// Shutdown resets all admitted streams, but only handler exits free slots.
+	s.stopAttestationStateRequests()
+	for _, finished := range done {
+		waitStateBounds(t, finished)
+	}
+	requireStateRequestCount(t, s, 0)
+	require.Zero(t, s.stateSnapshotsActive.Load())
+	rejected := newStateBoundsStream("10", prefixSendState)
+	s.handleStreamAttestationState(rejected)
+	require.Zero(t, rejected.readBytes.Load())
+}
+
+func TestStateBoundsHandlerFailureAndTimeout(t *testing.T) {
+	for _, first := range [][]byte{nil, {0xff}, {1, 0}, {2}, {2, 0, 0, 0, 0}, {3}, {4}, {5}} {
+		s := newStateBoundsGossip("active")
+		stream := newStateBoundsStream("active", first)
+		s.handleStreamAttestationState(stream)
+		requireStateRequestCount(t, s, 0)
+		require.EqualValues(t, 1, stream.resets.Load())
+		require.Zero(t, stream.output.Len())
+	}
+	for _, frames := range [][][]byte{nil, {prefixSendState}} {
+		s := newStateBoundsGossip("active")
+		s.config.StateSyncTimeout = 20 * time.Millisecond
+		stream := newStateBoundsStream("active", frames...)
+		stream.block = true
+		done := make(chan struct{})
+		go func() { s.handleStreamAttestationState(stream); close(done) }()
+		waitStateBounds(t, done)
+		requireStateRequestCount(t, s, 0)
+		require.Positive(t, stream.resets.Load())
+	}
+}
+
+func TestStateBoundsConcurrentAdmissionAndChurn(t *testing.T) {
+	s := newStateBoundsGossip("active")
+	var wg sync.WaitGroup
+	for range 24 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for range 20 {
+				stream := newStateBoundsStream("active", []byte{0xff})
+				s.handleStreamAttestationState(stream)
+			}
+		}()
+	}
+	for range 40 {
+		s.avMu.Lock()
+		s.activeVals["active"] = !s.activeVals["active"]
+		s.avMu.Unlock()
+	}
+	wg.Wait()
+	requireStateRequestCount(t, s, 0)
+}
+
+func TestStateSyncTimeoutConfiguration(t *testing.T) {
+	var cfg config.BifrostAttestationGossipConfig
+	normalizeConfig(&cfg)
+	require.Equal(t, defaultPeerTimeout, cfg.PeerTimeout)
+	require.Equal(t, defaultStateSyncTimeout, cfg.StateSyncTimeout)
+	cfg.PeerTimeout = 7 * time.Second
+	cfg.StateSyncTimeout = 3 * time.Minute
+	normalizeConfig(&cfg)
+	require.Equal(t, 7*time.Second, cfg.PeerTimeout)
+	require.Equal(t, 3*time.Minute, cfg.StateSyncTimeout)
+	for _, value := range []time.Duration{0, -1} {
+		cfg.StateSyncTimeout = value
+		normalizeConfig(&cfg)
+		require.Equal(t, defaultStateSyncTimeout, cfg.StateSyncTimeout)
+	}
+	s := newStateBoundsGossip()
+	s.config.StateSyncTimeout = 20 * time.Millisecond
+	stream := newStateBoundsStream("peer")
+	stream.block = true
+	_, stop := s.stateExchangeDeadline(context.Background(), stream)
+	defer stop()
+	done := make(chan struct{})
+	go func() { _, _ = stream.Read(make([]byte, 1)); close(done) }()
+	waitStateBounds(t, done)
+	require.Positive(t, stream.resets.Load())
 }

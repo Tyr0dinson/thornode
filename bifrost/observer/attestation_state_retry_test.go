@@ -228,10 +228,10 @@ func TestStartupStateSyncPartialImportPreservedAndDeduplicated(t *testing.T) {
 		return data
 	}
 	firstData, fullData := payload(atts[:1]), payload(atts)
-	partial := stateImportAfterRetention(g, fee, newStateBoundsStream("peer",
+	partial := newStateBoundsStream("peer",
 		append(prefixBatchBegin[:1:1], stateBoundsCount(2)...),
 		stateBoundsHeader(0, uint32(len(firstData))), append(prefixBatchData[:1:1], firstData...),
-		stateBoundsHeader(3, 0)))
+		stateBoundsHeader(3, 0))
 	var calls atomic.Int32
 	h.streamFunc = func(_ context.Context, id peer.ID, _ ...protocol.ID) (network.Stream, error) {
 		if calls.Add(1) == 1 {
@@ -465,7 +465,7 @@ func TestStartupStateSyncExhaustionReportsTransferOutcomes(t *testing.T) {
 				ids = append(ids, "two")
 			}
 			g, h := startupRetryGossip(t, ids...)
-			fee, data := startupRetryFee(t, g, 120)
+			_, data := startupRetryFee(t, g, 120)
 			var logs stateSyncLogBuffer
 			g.logger = zerolog.New(&logs).Level(zerolog.InfoLevel)
 			h.streamFunc = func(_ context.Context, id peer.ID, _ ...protocol.ID) (network.Stream, error) {
@@ -477,10 +477,10 @@ func TestStartupStateSyncExhaustionReportsTransferOutcomes(t *testing.T) {
 				case "failed":
 					return nil, fmt.Errorf("busy")
 				case "partial":
-					return stateImportAfterRetention(g, fee, newStateBoundsStream(id,
+					return newStateBoundsStream(id,
 						append(prefixBatchBegin[:1:1], stateBoundsCount(2)...),
 						stateBoundsHeader(0, uint32(len(data))), append(prefixBatchData[:1:1], data...),
-						stateBoundsHeader(3, 0))), nil
+						stateBoundsHeader(3, 0)), nil
 				default:
 					return newStateBoundsStream(id, append(prefixBatchBegin[:1:1], stateBoundsCount(0)...)), nil
 				}

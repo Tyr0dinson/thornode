@@ -2,6 +2,7 @@ package observer
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -210,15 +211,13 @@ func TestStateCancellationKeepsOrdinaryLocksBlocking(t *testing.T) {
 	}
 }
 
-// Model an old sender: every frame ACK uses the ordinary read deadline.
-// The first import remains blocked longer than that deadline while the next
-// batch arrives; only the final acknowledgement waits for processing.
-func TestStateCancellationAsyncReceiverACKsWhileProcessing(t *testing.T) {
-	for _, finish := range []string{"success", "cancel", "transport error"} {
+// A compatible sender waits on the exchange deadline for the next header ACK.
+// S14 must not read that header or retain its batch while the first import runs.
+func TestStateCancellationBoundedReceiverWaitsForProcessing(t *testing.T) {
+	for _, finish := range []string{"success", "cancel"} {
 		t.Run(finish, func(t *testing.T) {
 			stateSyncDeadlineTestSettings(t)
 			receiver, _, _, rpc, _, _ := setupTestGossip(t)
-			// Delayed stream cleanup can log after this subtest has finished.
 			receiver.logger = zerolog.Nop()
 			receiver.config.StateSyncTimeout = 10 * time.Second
 			key := secp256k1.GenPrivKey()
@@ -237,8 +236,7 @@ func TestStateCancellationAsyncReceiverACKsWhileProcessing(t *testing.T) {
 					case <-ctx.Done():
 						return nil, ctx.Err()
 					}
-				}
-				if fee.NetworkFee.Height == 101 {
+				} else {
 					close(second)
 				}
 				return &ebifrost.SendQuorumNetworkFeeResult{}, nil
@@ -252,7 +250,7 @@ func TestStateCancellationAsyncReceiverACKsWhileProcessing(t *testing.T) {
 			t.Cleanup(func() { cancel(); unblock(); _ = server.transport.Close(); waitStateBounds(t, returned) })
 			read := func(expected []byte) {
 				message, err := p2p.ReadStreamWithBuffer(server)
-				require.NoError(t, err, "ordinary ACK must not wait for batch processing")
+				require.NoError(t, err)
 				require.Equal(t, expected, message)
 			}
 			write := func(data []byte) { require.NoError(t, p2p.WriteStreamWithBuffer(data, server)) }
@@ -269,48 +267,68 @@ func TestStateCancellationAsyncReceiverACKsWhileProcessing(t *testing.T) {
 				data, err := batch.Marshal()
 				require.NoError(t, err)
 				write(stateBoundsHeader(uint32(i), uint32(len(data))))
-				read([]byte(streamAckHeader))
+				if i == 0 {
+					read([]byte(streamAckHeader))
+				} else {
+					ack := make(chan error, 1)
+					go func() {
+						message, readErr := p2p.ReadStreamWithBufferLimitAndDeadline(server, uint32(len(streamAckHeader)), time.Now().Add(8*time.Second))
+						if readErr == nil && string(message) != streamAckHeader {
+							readErr = fmt.Errorf("unexpected header acknowledgement: %q", message)
+						}
+						ack <- readErr
+					}()
+					select {
+					case err := <-ack:
+						t.Fatalf("next header advanced while the first batch still owned processing: %v", err)
+					case <-time.After(2 * stateSyncTestFrameTimeout):
+					}
+					select {
+					case <-second:
+						t.Fatal("a second import started behind the blocked first batch")
+					default:
+					}
+					if finish == "cancel" {
+						cancel()
+					} else {
+						unblock()
+					}
+					select {
+					case err := <-ack:
+						if finish == "cancel" {
+							require.Error(t, err)
+						} else {
+							require.NoError(t, err)
+						}
+					case <-time.After(2 * time.Second):
+						t.Fatal("header wait did not settle after processing or cancellation")
+					}
+					if finish == "cancel" {
+						break
+					}
+				}
 				write(append([]byte{prefixBatchData[0]}, data...))
 				read([]byte(streamAckData))
 				if i == 0 {
 					waitStateBounds(t, started)
-					time.Sleep(2 * stateSyncTestFrameTimeout)
 				}
 			}
-			select {
-			case <-done:
-				t.Fatal("transfer returned before joining its blocked worker")
-			default:
-			}
-			waitStateBounds(t, second)
-			switch finish {
-			case "success":
+			wantItems := 1
+			if finish == "success" {
+				wantItems = 2
 				write(prefixBatchEnd)
-				select {
-				case <-done:
-					t.Fatal("transfer completed before final batch processing")
-				case <-time.After(50 * time.Millisecond):
-				}
-				unblock()
 				read([]byte(p2p.StreamMsgDone))
-			case "cancel":
-				write(prefixBatchEnd)
-				cancel()
-			case "transport error":
-				require.NoError(t, server.transport.Close())
+				waitStateBounds(t, second)
 			}
 			select {
-			case success := <-done:
-				require.Equal(t, finish == "success", success.completed)
-				require.Equal(t, 2, success.items)
+			case result := <-done:
+				require.Equal(t, finish == "success", result.completed)
+				require.Equal(t, wantItems, result.items)
 			case <-time.After(2 * time.Second):
-				t.Fatal("async receive did not cancel and join workers")
+				t.Fatal("bounded receiver did not finish its owned processing")
 			}
 			waitStateBounds(t, exited)
-			require.Len(t, receiver.networkFees, 2, "both batches must arrive before the blocked import finishes")
-			for _, bucket := range receiver.networkFees {
-				require.Equal(t, 1, bucket.AttestationCount())
-			}
+			require.Len(t, receiver.networkFees, wantItems)
 		})
 	}
 }

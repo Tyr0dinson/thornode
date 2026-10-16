@@ -38,14 +38,20 @@ I/O, import processing, cancellation-aware lock waits and queries. It is capped
 by the collection deadline. Ordinary P2P frame timeouts still apply. The
 processing-dependent header/final ACKs use the original transfer deadline. A
 serving node admits at most two copied export snapshots, with one per peer.
-The receiver acknowledges each frame promptly and processes batches asynchronously,
-so a slow import does not delay the next frame ACK from an older sender. The final
-ACK waits for all batch workers. On transport failure or cancellation, workers are
-cancelled and joined before returning the import result or closing observer storage.
+The receiver decodes, preflights and processes one batch at a time. It sends the
+data ACK before processing, then finishes that batch before reading the next
+header. Serving peers must already support processing-dependent ACK deadlines;
+deploy the sender compatibility release to all intended serving peers before
+this bounded receiver. A merge alone does not establish that rollout prerequisite.
 
-This version does not impose the later bounded receiver's batch, item or signature
-count limits. Asynchronous workers and retained payloads can still grow with the
-snapshot size. The request and export-slot limits are not total memory bounds.
+Each transfer allows at most 1,000 batches, 10,000 wire items across all categories,
+and 128 attestations per item. Framing rejects oversized or out-of-order messages
+before their body is read; decoded structure is checked before signature work or
+publication. Exports split accumulated evidence into bounded items and fail before
+announcing a snapshot that exceeds the transfer limits. Incoming requests require
+current active membership and have ten admission slots, one per peer; only two
+can own copied snapshots. These limits do not bound protobuf allocation before
+structural validation or the total accumulated local state.
 
 For N restarting nodes, outgoing requests are bounded by 50N per activation,
 with default per-node concurrency ten. Imports still perform the existing signature
@@ -90,14 +96,14 @@ mixed empty/failed, partial-only and no completed snapshot have distinct outcome
 No completed response establishes globally complete evidence, and live gossip
 need not replay every missing historical attestation.
 
-A later bounded-receiver serving peer also resets requests when its local active-validator list does not
-yet include the requester. This can happen after the serving peer restarts or
-while membership refresh lags behind the requester's activation. These resets
-count as failed attempts under the same group-level retry rules. A later
-successful membership refresh can let another bounded round import evidence;
-refresh timing and recovery before exhaustion are not guaranteed. Genuinely
-inactive requesters remain rejected by those peers. This version retains S14a's
-export admission policy and does not add that membership gate.
+A serving peer resets requests when its local active-validator list does not yet
+include the requester. This can happen after the serving peer restarts or while
+membership refresh lags behind the requester's activation. These resets count as
+failed attempts under the same group-level retry rules. A later successful
+membership refresh can let another bounded round import evidence; refresh timing
+and recovery before exhaustion are not guaranteed. Genuinely inactive requesters
+remain rejected. Unsolicited incoming state pushes are rejected; imports run on
+the outgoing streams owned and joined by the startup group.
 
 ## Deliberate recovery after exhaustion
 

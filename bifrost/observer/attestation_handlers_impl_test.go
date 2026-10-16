@@ -3,17 +3,18 @@ package observer
 import (
 	"context"
 	"fmt"
+	"math"
 	"testing"
 	"time"
 
 	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"google.golang.org/grpc"
-
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/ebifrost"
+	"google.golang.org/grpc"
 )
 
 // Test the AttestMessage interface implementations
@@ -521,8 +522,10 @@ func TestRefactoredHandlersIntegration(t *testing.T) {
 		}
 
 		networkFee := common.NetworkFee{
-			Chain:  common.BTCChain,
-			Height: 100,
+			Chain:           common.BTCChain,
+			Height:          100,
+			TransactionSize: 100,
+			TransactionRate: 2,
 		}
 
 		solvency := common.Solvency{
@@ -923,4 +926,125 @@ func TestXMRObservedTxAttestationsWithDifferentSpentRefsUseDifferentBuckets(t *t
 	assert.NotEqual(t, keyA.UniqueHash, keyB.UniqueHash)
 	assert.Equal(t, 1, stateA.AttestationCount())
 	assert.Equal(t, 1, stateB.AttestationCount())
+}
+
+func TestNetworkFeeInvalidFieldsDoNotPublish(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		fee  *common.NetworkFee
+	}{
+		{name: "nil"},
+		{name: "negative height", fee: &common.NetworkFee{Chain: common.BTCChain, Height: -1, TransactionSize: 100, TransactionRate: 2}},
+		{name: "zero height", fee: &common.NetworkFee{Chain: common.BTCChain, TransactionSize: 100, TransactionRate: 2}},
+		{name: "empty chain", fee: &common.NetworkFee{Height: 1, TransactionSize: 100, TransactionRate: 2}},
+		{name: "zero transaction size", fee: &common.NetworkFee{Chain: common.BTCChain, Height: 1, TransactionRate: 2}},
+		{name: "zero transaction rate", fee: &common.NetworkFee{Chain: common.BTCChain, Height: 1, TransactionSize: 100}},
+		{name: "transaction size above int64 max", fee: &common.NetworkFee{Chain: common.BTCChain, Height: 1, TransactionSize: uint64(math.MaxInt64) + 1, TransactionRate: 2}},
+		{name: "transaction rate above int64 max", fee: &common.NetworkFee{Chain: common.BTCChain, Height: 1, TransactionSize: 100, TransactionRate: uint64(math.MaxInt64) + 1}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s, _, _, _, _, _ := setupTestGossip(t)
+			s.logger = zerolog.Nop()
+			var att *common.Attestation
+			if tc.fee != nil {
+				payload, err := tc.fee.GetSignablePayload()
+				require.NoError(t, err)
+				sig, err := s.privKey.Sign(payload)
+				require.NoError(t, err)
+				att = &common.Attestation{PubKey: s.pubKey, Signature: sig}
+			}
+			s.handleNetworkFeeAttestation(context.Background(), common.AttestNetworkFee{
+				NetworkFee: tc.fee, Attestation: att,
+			})
+			require.Empty(t, s.networkFees, "invalid fields must be rejected before publishing a bucket")
+
+			if tc.fee != nil {
+				// State imports reach the same semantic admission check.
+				require.NoError(t, s.processAttestationStateBatch(s.logger, common.QuorumState{
+					QuoNetworkFees: []*common.QuorumNetworkFee{{NetworkFee: tc.fee, Attestations: []*common.Attestation{att}}},
+				}))
+				require.Empty(t, s.networkFees)
+			}
+		})
+	}
+}
+
+func TestNetworkFeeInt64BoundaryAccepted(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		fee  *common.NetworkFee
+	}{
+		{name: "transaction size", fee: &common.NetworkFee{Chain: common.BTCChain, Height: 1, TransactionSize: uint64(math.MaxInt64), TransactionRate: 2}},
+		{name: "transaction rate", fee: &common.NetworkFee{Chain: common.BTCChain, Height: 1, TransactionSize: 100, TransactionRate: uint64(math.MaxInt64)}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, ingress := range []string{"gossip", "state import"} {
+				t.Run(ingress, func(t *testing.T) {
+					s, _, _, _, _, _ := setupTestGossip(t)
+					s.logger = zerolog.Nop()
+					payload, err := tc.fee.GetSignablePayload()
+					require.NoError(t, err)
+					sig, err := s.privKey.Sign(payload)
+					require.NoError(t, err)
+					att := &common.Attestation{PubKey: s.pubKey, Signature: sig}
+					item := &common.QuorumNetworkFee{NetworkFee: tc.fee, Attestations: []*common.Attestation{att}}
+					if ingress == "gossip" {
+						batch := common.AttestationBatch{AttestNetworkFees: []*common.AttestNetworkFee{{NetworkFee: tc.fee, Attestation: att}}}
+						data, marshalErr := batch.Marshal()
+						require.NoError(t, marshalErr)
+						s.handleStreamBatchedAttestations(newStateBoundsStream(s.host.ID(), data))
+					} else {
+						require.NoError(t, s.processAttestationStateBatch(s.logger, common.QuorumState{QuoNetworkFees: []*common.QuorumNetworkFee{item}}))
+					}
+					exported := stateSyncExportForTest(t, s, 1)
+					require.Equal(t, []*common.QuorumNetworkFee{item}, exported.QuoNetworkFees)
+				})
+			}
+		})
+	}
+}
+
+func TestStateSyncSignedInvalidFeesDoNotBlockExport(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		makeInvalid func(*common.NetworkFee)
+	}{
+		{name: "negative height", makeInvalid: func(fee *common.NetworkFee) { fee.Height = -fee.Height }},
+		{name: "transaction size above int64 max", makeInvalid: func(fee *common.NetworkFee) { fee.TransactionSize = uint64(math.MaxInt64) + 1 }},
+		{name: "transaction rate above int64 max", makeInvalid: func(fee *common.NetworkFee) { fee.TransactionRate = uint64(math.MaxInt64) + 1 }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s, _, _, _, _, _ := setupTestGossip(t)
+			s.logger = zerolog.Nop()
+			require.True(t, s.isActiveValidator(s.host.ID()))
+
+			fee, atts := stateSyncSignedFee(t, 123456, 1)
+			s.handleNetworkFeeAttestation(context.Background(), common.AttestNetworkFee{NetworkFee: fee, Attestation: atts[0]})
+
+			// Use a real active signer's valid signatures through ordinary gossip.
+			// Per-message limits must not hide the cumulative 10,001-item attack.
+			var batch common.AttestationBatch
+			for i := range maxAttestationStateItemsPerTransfer + 1 {
+				invalid := &common.NetworkFee{Chain: common.BTCChain, Height: int64(i + 1), TransactionSize: 100, TransactionRate: 2}
+				tc.makeInvalid(invalid)
+				payload, err := invalid.GetSignablePayload()
+				require.NoError(t, err)
+				sig, err := s.privKey.Sign(payload)
+				require.NoError(t, err)
+				batch.AttestNetworkFees = append(batch.AttestNetworkFees, &common.AttestNetworkFee{
+					NetworkFee: invalid, Attestation: &common.Attestation{PubKey: s.pubKey, Signature: sig},
+				})
+				if int64(len(batch.AttestNetworkFees)) == s.config.MaxBatchSize || i == maxAttestationStateItemsPerTransfer {
+					data, marshalErr := batch.Marshal()
+					require.NoError(t, marshalErr)
+					s.handleStreamBatchedAttestations(newStateBoundsStream(s.host.ID(), data))
+					batch.AttestNetworkFees = nil
+				}
+			}
+
+			exported := stateSyncExportForTest(t, s, 1)
+			require.Equal(t, []*common.QuorumNetworkFee{{NetworkFee: fee, Attestations: atts}}, exported.QuoNetworkFees)
+			require.Len(t, s.networkFees, 1, "invalid fees must not leave empty buckets")
+		})
+	}
 }

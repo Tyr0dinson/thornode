@@ -1,34 +1,27 @@
 package observer
 
 import (
-	"bytes"
 	"context"
-	"encoding/binary"
 	"fmt"
-	"io"
 	"net"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
-	"gitlab.com/thorchain/thornode/v3/bifrost/p2p/conversion"
-
-	"github.com/rs/zerolog"
-
 	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
 	"github.com/libp2p/go-libp2p-core/network"
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/libp2p/go-libp2p-core/protocol"
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
-	"google.golang.org/grpc"
-
 	"gitlab.com/thorchain/thornode/v3/bifrost/p2p"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	tctypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/ebifrost"
 	thortypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
+	"google.golang.org/grpc"
 )
 
 // Only these tests need the optional query capability. Legacy mocks retain
@@ -528,120 +521,6 @@ func TestStateCancellationLockLeavesNoWorkerAndLegacyBlocks(t *testing.T) {
 	mu.Unlock()
 }
 
-// This stream preserves unread bytes and exposes the precise preflight read
-// boundary. A blocked read is released only by reset, like a stopped transport.
-type stateBoundsStream struct {
-	MockStream
-	input     *bytes.Reader
-	frameEnds []int64
-	output    bytes.Buffer
-	readBytes atomic.Int64
-	resets    atomic.Int32
-	closes    atomic.Int32
-	block     bool
-	blocked   chan struct{}
-	stopped   chan struct{}
-	blockOnce sync.Once
-	stopOnce  sync.Once
-}
-
-func newStateBoundsStream(remote peer.ID, frames ...[]byte) *stateBoundsStream {
-	var input []byte
-	var ends []int64
-	for _, frame := range frames {
-		input = append(input, encodeStreamMsg(frame)...)
-		ends = append(ends, int64(len(input)))
-	}
-	return &stateBoundsStream{
-		MockStream: MockStream{peer: remote, mu: new(sync.Mutex)},
-		input:      bytes.NewReader(input), frameEnds: ends, blocked: make(chan struct{}), stopped: make(chan struct{}),
-	}
-}
-
-func (s *stateBoundsStream) Read(p []byte) (int, error) {
-	if s.block && s.input.Len() == 0 {
-		s.blockOnce.Do(func() { close(s.blocked) })
-		<-s.stopped
-		return 0, io.ErrClosedPipe
-	}
-	// Older readers use a fresh bufio.Reader per frame. Model the handshake
-	// by exposing one frame at a time, as a sender waiting for an ACK does.
-	read := s.readBytes.Load()
-	for len(s.frameEnds) > 0 && s.frameEnds[0] <= read {
-		s.frameEnds = s.frameEnds[1:]
-	}
-	if len(s.frameEnds) > 0 {
-		p = p[:min(len(p), int(s.frameEnds[0]-read))]
-	}
-	n, err := s.input.Read(p)
-	s.readBytes.Add(int64(n))
-	return n, err
-}
-
-func (s *stateBoundsStream) Write(p []byte) (int, error) { return s.output.Write(p) }
-func (s *stateBoundsStream) Reset() error {
-	s.resets.Add(1)
-	s.stopOnce.Do(func() { close(s.stopped) })
-	return nil
-}
-func (s *stateBoundsStream) Close() error                     { s.closes.Add(1); return nil }
-func (s *stateBoundsStream) SetReadDeadline(time.Time) error  { return nil }
-func (s *stateBoundsStream) SetWriteDeadline(time.Time) error { return nil }
-
-func stateBoundsCount(n uint32) []byte {
-	b := make([]byte, 4)
-	binary.LittleEndian.PutUint32(b, n)
-	return b
-}
-
-func stateBoundsHeader(n, size uint32) []byte {
-	return append(append([]byte{prefixBatchHeader[0]}, stateBoundsCount(n)...), stateBoundsCount(size)...)
-}
-
-func newStateBoundsGossip(peers ...peer.ID) *AttestationGossip {
-	s := &AttestationGossip{logger: zerolog.Nop(), activeVals: make(map[peer.ID]bool)}
-	for _, p := range peers {
-		s.activeVals[p] = true
-	}
-	return s
-}
-
-type stateBoundsPipeStream struct {
-	MockStream
-	pipe net.Conn
-}
-
-func (s *stateBoundsPipeStream) Read(p []byte) (int, error)  { return s.pipe.Read(p) }
-func (s *stateBoundsPipeStream) Write(p []byte) (int, error) { return s.pipe.Write(p) }
-func (s *stateBoundsPipeStream) Reset() error                { return s.pipe.Close() }
-func (s *stateBoundsPipeStream) Close() error                { return s.pipe.Close() }
-
-func waitStateBounds(t *testing.T, done <-chan struct{}) {
-	t.Helper()
-	select {
-	case <-done:
-	case <-time.After(2 * time.Second):
-		t.Fatal("state handler did not finish")
-	}
-}
-
-func stateSyncSignedFee(t *testing.T, height int64, count int) (*common.NetworkFee, []*common.Attestation) {
-	t.Helper()
-	fee := &common.NetworkFee{Chain: common.BTCChain, Height: height, TransactionSize: 100, TransactionRate: 2}
-	payload, err := fee.GetSignablePayload()
-	require.NoError(t, err)
-	atts := make([]*common.Attestation, count)
-	for i := range atts {
-		key := secp256k1.GenPrivKey()
-		sig, err := key.Sign(payload)
-		require.NoError(t, err)
-		atts[i] = &common.Attestation{PubKey: key.PubKey().Bytes(), Signature: sig}
-	}
-	return fee, atts
-}
-
-// Include BatchBegin so imports exercise the requester's reset/close decision.
-
 func TestStateCancellationVersionedPriceFeedRoundTrip(t *testing.T) {
 	sender, _, _, _, _, _ := setupTestGossip(t)
 	receiver, _, _, _, _, _ := setupTestGossip(t)
@@ -695,29 +574,47 @@ func TestStateCancellationVersionedPriceFeedRoundTrip(t *testing.T) {
 	require.NoError(t, verifySignature(importedPayload, att.Signature, att.PubKey))
 }
 
-func stateSyncTrustAttestors(t *testing.T, s *AttestationGossip, atts []*common.Attestation) {
-	t.Helper()
-	for _, att := range atts {
-		id, err := conversion.GetPeerIDFromSecp256PubKey(att.PubKey)
-		require.NoError(t, err)
-		s.activeVals[id] = true
-	}
+func TestStateBoundsOutgoingCancellation(t *testing.T) {
+	s := newStateBoundsGossip("one")
+	outgoing := newStateBoundsStream("one")
+	outgoing.block = true
+	host := NewMockHost([]peer.ID{"self", "one"})
+	host.streamFunc = func(context.Context, peer.ID, ...protocol.ID) (network.Stream, error) { return outgoing, nil }
+	s.host = host
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		s.askPeerForState(ctx, "one")
+	}()
+	waitStateBounds(t, outgoing.blocked)
+	cancel()
+	finished := make(chan struct{})
+	go func() { wg.Wait(); close(finished) }()
+	waitStateBounds(t, finished)
+	require.Positive(t, outgoing.resets.Load())
+	require.Zero(t, outgoing.closes.Load())
 }
 
-func stateBoundsPipe(t *testing.T, first, second peer.ID) (*stateBoundsPipeStream, *stateBoundsPipeStream) {
-	t.Helper()
-	a, b := net.Pipe()
-	require.NoError(t, a.SetDeadline(time.Now().Add(5*time.Second)))
-	require.NoError(t, b.SetDeadline(time.Now().Add(5*time.Second)))
-	t.Cleanup(func() { _ = a.Close(); _ = b.Close() })
-	return &stateBoundsPipeStream{MockStream: MockStream{peer: first}, pipe: a}, &stateBoundsPipeStream{MockStream: MockStream{peer: second}, pipe: b}
-}
-
-func stateSyncImportStream(t *testing.T, remote peer.ID, payloads ...[]byte) *stateBoundsStream {
-	t.Helper()
-	frames := [][]byte{append([]byte{prefixBatchBegin[0]}, stateBoundsCount(uint32(len(payloads)))...)}
-	for i, data := range payloads {
-		frames = append(frames, stateBoundsHeader(uint32(i), uint32(len(data))), append([]byte{prefixBatchData[0]}, data...))
-	}
-	return newStateBoundsStream(remote, append(frames, prefixBatchEnd)...)
+func TestStateBoundsShutdownHook(t *testing.T) {
+	s, _, _, _, _, _ := setupTestGossip(t)
+	s.logger = zerolog.Nop()
+	s.avMu.Lock()
+	s.activeVals["active"] = true
+	s.avMu.Unlock()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	started := make(chan struct{})
+	go func() { s.Start(ctx); close(started) }()
+	stream := newStateBoundsStream("active")
+	stream.block = true
+	done := make(chan struct{})
+	go func() { s.handleStreamAttestationState(stream); close(done) }()
+	waitStateBounds(t, stream.blocked)
+	cancel()
+	waitStateBounds(t, started)
+	waitStateBounds(t, done)
+	requireStateRequestCount(t, s, 0)
 }

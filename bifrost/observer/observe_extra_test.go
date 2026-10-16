@@ -2814,12 +2814,12 @@ func (s *ObserveExtraSuite) TestHandleStreamAttestationStateSendStateWrongLen(c 
 }
 
 // ---------------------------------------------------------------------------
-// handleStreamAttestationState - prefixBatchBegin with nil stateInitPeers
+// handleStreamAttestationState - unsolicited prefixBatchBegin
 // ---------------------------------------------------------------------------
 
 func (s *ObserveExtraSuite) TestHandleStreamAttestationStateBatchBeginNoInit(c *C) {
 	ag, _ := newTestAttestationGossip(c, []peer.ID{"self"})
-	// stateInitPeers is nil by default, so this should hit "not asking for attestation state"
+	// State responses are only accepted on the opened SendState stream.
 	data := make([]byte, 5)
 	data[0] = 0x02 // prefixBatchBegin
 	binary.LittleEndian.PutUint32(data[1:], 1)
@@ -2833,31 +2833,27 @@ func (s *ObserveExtraSuite) TestHandleStreamAttestationStateBatchBeginNoInit(c *
 
 func (s *ObserveExtraSuite) TestHandleStreamAttestationStateBatchBeginUnauthorized(c *C) {
 	ag, _ := newTestAttestationGossip(c, []peer.ID{"self"})
-	ag.stateInitMu.Lock()
-	ag.stateInitContext = context.Background()
-	ag.stateInitWorkers = new(sync.WaitGroup)
-	ag.stateInitPeers = map[peer.ID]bool{"authorized_peer": true}
-	ag.stateInitMu.Unlock()
+	ag.avMu.Lock()
+	ag.activeVals = map[peer.ID]bool{"authorized_peer": true}
+	ag.avMu.Unlock()
 
 	data := make([]byte, 5)
 	data[0] = 0x02 // prefixBatchBegin
 	binary.LittleEndian.PutUint32(data[1:], 1)
-	// "peer1" is not in stateInitPeers
+	// "peer1" is not active.
 	stream := NewMockStreamWithData(data, "peer1")
 	ag.handleStreamAttestationState(stream)
 }
 
 // ---------------------------------------------------------------------------
-// handleStreamAttestationState - prefixBatchBegin with authorized peer (0 batches)
+// handleStreamAttestationState - even an active peer cannot open a response stream
 // ---------------------------------------------------------------------------
 
-func (s *ObserveExtraSuite) TestHandleStreamAttestationStateBatchBeginAuthorized(c *C) {
+func (s *ObserveExtraSuite) TestHandleStreamAttestationStateBatchBeginActivePeer(c *C) {
 	ag, _ := newTestAttestationGossip(c, []peer.ID{"self"})
-	ag.stateInitMu.Lock()
-	ag.stateInitContext = context.Background()
-	ag.stateInitWorkers = new(sync.WaitGroup)
-	ag.stateInitPeers = map[peer.ID]bool{"peer1": true}
-	ag.stateInitMu.Unlock()
+	ag.avMu.Lock()
+	ag.activeVals = map[peer.ID]bool{"peer1": true}
+	ag.avMu.Unlock()
 
 	data := make([]byte, 5)
 	data[0] = 0x02                             // prefixBatchBegin
@@ -2989,12 +2985,15 @@ func (s *ObserveExtraSuite) TestSendAttestationStateWithData(c *C) {
 	obsTx := &common.ObservedTx{Tx: common.Tx{ID: "tx1"}}
 	pool := NewAttestationStatePool[*attestableObservedTx]()
 	state := pool.NewAttestationState(&attestableObservedTx{ObservedTx: obsTx})
+	att := &common.Attestation{PubKey: []byte("pk1"), Signature: []byte("sig1")}
+	state.attestations = []attestationSentState{{attestation: att}}
 	key := txKey{ID: "tx1"}
 	ag.observedTxs[key] = state
 
 	nf := &common.NetworkFee{Chain: common.BTCChain, Height: 100}
 	nfPool := NewAttestationStatePool[*common.NetworkFee]()
 	nfState := nfPool.NewAttestationState(nf)
+	nfState.attestations = []attestationSentState{{attestation: att}}
 	ag.networkFees[*nf] = nfState
 	ag.mu.Unlock()
 
@@ -3004,7 +3003,7 @@ func (s *ObserveExtraSuite) TestSendAttestationStateWithData(c *C) {
 
 	// sendAttestationState will write batch begin, then try to read ack.
 	// Since readBuf is empty, it'll get EOF and return early.
-	ag.sendAttestationState(stream)
+	c.Assert(ag.sendAttestationState(stream, time.Now().Add(defaultStateSyncTimeout)), ErrorMatches, ".*EOF.*")
 
 	// Both items fit one frame, so batch begin announced a single batch.
 	c.Assert(writeBuf.Bytes(), DeepEquals, encodeStreamMsg(append(append([]byte{}, prefixBatchBegin...), 1, 0, 0, 0)))

@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -22,9 +23,9 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
 	"gitlab.com/thorchain/thornode/v3/bifrost/p2p"
+	"gitlab.com/thorchain/thornode/v3/bifrost/p2p/conversion"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pubkeymanager"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -43,20 +44,19 @@ func TestSendAttestationStateEmpty(t *testing.T) {
 	// Create a test instance with empty state
 	ag, _, _, _, _, _ := setupTestGossip(t)
 
-	// Create the auto-responder stream
-	stream := NewAutoResponderStream("test-peer")
+	// Empty transfers finish with a done response, not ack_begin.
+	stream := newDoneResponderStream("test-peer")
 
 	// Call the method with a timeout
-	done := make(chan struct{})
+	done := make(chan error, 1)
 	go func() {
-		ag.sendAttestationState(stream)
-		close(done)
+		done <- ag.sendAttestationState(stream, time.Now().Add(defaultStateSyncTimeout))
 	}()
 
 	// Wait for completion or timeout
 	select {
-	case <-done:
-		// Method completed
+	case err := <-done:
+		require.NoError(t, err)
 	case <-time.After(500 * time.Millisecond):
 		t.Fatal("Method timed out")
 	}
@@ -176,16 +176,15 @@ func TestSendAttestationStateSingleBatch(t *testing.T) {
 	stream := NewAutoResponderStream("test-peer")
 
 	// Call the method with a timeout
-	done := make(chan struct{})
+	done := make(chan error, 1)
 	go func() {
-		ag.sendAttestationState(stream)
-		close(done)
+		done <- ag.sendAttestationState(stream, time.Now().Add(defaultStateSyncTimeout))
 	}()
 
 	// Wait for completion or timeout
 	select {
-	case <-done:
-		// Method completed
+	case err := <-done:
+		require.NoError(t, err)
 	case <-time.After(500 * time.Millisecond):
 		t.Fatal("Method timed out")
 	}
@@ -333,16 +332,15 @@ func TestSendAttestationStateMultipleBatches(t *testing.T) {
 	stream := NewAutoResponderStream("test-peer")
 
 	// Call the method with a timeout
-	done := make(chan struct{})
+	done := make(chan error, 1)
 	go func() {
-		ag.sendAttestationState(stream)
-		close(done)
+		done <- ag.sendAttestationState(stream, time.Now().Add(defaultStateSyncTimeout))
 	}()
 
 	// Wait for completion or timeout
 	select {
-	case <-done:
-		// Method completed
+	case err := <-done:
+		require.NoError(t, err)
 	case <-time.After(1 * time.Second):
 		t.Fatal("Method timed out")
 	}
@@ -540,27 +538,9 @@ func TestReceiveBatchedAttestationState(t *testing.T) {
 
 	// Create a simulated peer to send these transactions
 	// Create stream pair for testing
-	clientReader := bytes.NewBuffer(nil)
-	clientWriter := &bytes.Buffer{}
-
-	serverReader := clientWriter
-	serverWriter := clientReader
-
-	var sharedMu sync.Mutex
-
-	peerStream := &MockStream{
-		reader: serverReader,
-		writer: serverWriter,
-		peer:   "test-peer",
-		mu:     &sharedMu,
-	}
-
-	ourStream := &MockStream{
-		reader: clientReader,
-		writer: clientWriter,
-		peer:   ag.host.ID(),
-		mu:     &sharedMu,
-	}
+	// Real blocking reads preserve backpressure without the old mock's
+	// half-second polling-to-EOF race against synchronous batch processing.
+	peerStream, ourStream := stateBoundsPipe(t, "test-peer", ag.host.ID())
 
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -726,6 +706,10 @@ func TestSendReceiveBatchedAttestationState(t *testing.T) {
 	// Set active validators
 	agSender.setActiveValidators(valPubs)
 	agReceiver.setActiveValidators(valPubs)
+	// The requesting transport identity is also an active validator.
+	agSender.avMu.Lock()
+	agSender.activeVals[agReceiver.host.ID()] = true
+	agSender.avMu.Unlock()
 
 	// Set attestation state on sender
 	for i := 0; i < numTxs; i++ {
@@ -1017,10 +1001,10 @@ func ParseMessages(data []byte) [][]byte {
 // TestSendAttestationStateEmptyProtocolCorrect is a regression test for the
 // totalBatches==0 fallthrough bug in sendAttestationState.
 //
-// The existing TestSendAttestationStateEmpty uses AutoResponderStream which
-// always responds "ack_begin" to prefixBatchBegin regardless of totalBatches.
-// That hides the bug because the buggy code falls through and (eventually)
-// fails on a different check.
+// AutoResponderStream always responds "ack_begin" to prefixBatchBegin,
+// regardless of totalBatches. That can hide the bug because the buggy sender
+// falls through and eventually fails on a different check. Empty-state tests
+// therefore use the protocol-correct doneResponderStream instead.
 //
 // In the real wire protocol, when the sender writes prefixBatchBegin with
 // totalBatches=0, the receiver replies with StreamMsgDone (see
@@ -1039,14 +1023,14 @@ func TestSendAttestationStateEmptyProtocolCorrect(t *testing.T) {
 
 	stream := newDoneResponderStream("test-peer")
 
-	done := make(chan struct{})
+	done := make(chan error, 1)
 	go func() {
-		ag.sendAttestationState(stream)
-		close(done)
+		done <- ag.sendAttestationState(stream, time.Now().Add(defaultStateSyncTimeout))
 	}()
 
 	select {
-	case <-done:
+	case err := <-done:
+		require.NoError(t, err)
 	case <-time.After(500 * time.Millisecond):
 		t.Fatal("sendAttestationState did not return after StreamMsgDone ack")
 	}
@@ -1179,9 +1163,9 @@ func TestAskStreamForStateEmptyState(t *testing.T) {
 	agReceiver, _, _, _, _, _ := setupTestGossip(t)
 
 	// Authorize the receiver to ask agSender for state.
-	agSender.stateInitMu.Lock()
-	agSender.stateInitPeers = map[peer.ID]bool{agReceiver.host.ID(): true}
-	agSender.stateInitMu.Unlock()
+	agSender.avMu.Lock()
+	agSender.activeVals = map[peer.ID]bool{agReceiver.host.ID(): true}
+	agSender.avMu.Unlock()
 
 	// Buffered stream pair: what one writes the other reads.
 	senderReader := bytes.NewBuffer(nil)
@@ -1339,6 +1323,7 @@ func stateSyncDeadlineFixture(t *testing.T, count int) *AttestationGossip {
 	t.Helper()
 	sender, _, _, _, _, _ := setupTestGossip(t)
 	sender.logger = zerolog.Nop()
+	sender.activeVals["receiver"] = true
 	sender.config.StateSyncTimeout = 15 * time.Second
 	for i := range count {
 		fee := &common.NetworkFee{Chain: common.BTCChain, Height: int64(123 + i), TransactionSize: 100, TransactionRate: 42}
@@ -1430,7 +1415,7 @@ func TestStateSyncSenderProcessingACKDeadlines(t *testing.T) {
 	}{
 		{"inline middle batch", 2},
 		{"inline final batch", 3},
-		{"legacy receiver", 0},
+		{"current receiver", 0},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			sender := stateSyncDeadlineFixture(t, 3)
@@ -1629,15 +1614,16 @@ func TestStateSyncSenderDeadlineCancellationAndFallback(t *testing.T) {
 }
 
 func stateSyncExportCount(s *AttestationGossip) int {
-	s.stateExportMu.Lock()
-	defer s.stateExportMu.Unlock()
-	return len(s.stateExports)
+	return int(s.stateSnapshotsActive.Load())
 }
 
 func startStateSyncExport(t *testing.T, sender *AttestationGossip, remote peer.ID) (*stateSyncDeadlineStream, *stateSyncDeadlineStream, <-chan struct{}) {
 	t.Helper()
 	server, client := stateSyncDeadlinePair(t)
 	server.peer = remote
+	sender.avMu.Lock()
+	sender.activeVals[remote] = true
+	sender.avMu.Unlock()
 	done := make(chan struct{})
 	go func() { sender.handleStreamAttestationState(server); close(done) }()
 	t.Cleanup(func() { _ = server.transport.Close(); waitStateSyncDeadlineHandler(t, done) })
@@ -1788,6 +1774,7 @@ func (s *startupRetryStream) Read(p []byte) (int, error) {
 }
 
 func (s *startupRetryStream) Write(p []byte) (int, error) { return len(p), nil }
+
 func (s *startupRetryStream) Reset() error {
 	s.resets.Add(1)
 	s.stopOnce.Do(func() { close(s.stopped) })
@@ -1819,6 +1806,9 @@ func TestStartupStateSyncBusyThenRecovers(t *testing.T) {
 		for range 5 {
 			server, client := stateSyncDeadlinePair(t)
 			server.peer = peer.ID(fmt.Sprintf("requester-%d", i))
+			sender.avMu.Lock()
+			sender.activeVals[server.peer] = true
+			sender.avMu.Unlock()
 			pairs <- [2]*stateSyncDeadlineStream{server, client}
 		}
 		h.streamFunc = func(context.Context, peer.ID, ...protocol.ID) (network.Stream, error) {
@@ -2068,7 +2058,7 @@ func TestStartupStateSyncNoPeersAndJitter(t *testing.T) {
 // Exercise the actual startup group and Observer.Stop, including the production
 // bridge's HTTP cancellation and its wait behind a legacy cached request.
 func TestStartupStateSyncObserverStopCancelsVaultLookup(t *testing.T) {
-	for _, phase := range []string{"request", "cache wait", "inbound request"} {
+	for _, phase := range []string{"request", "cache wait"} {
 		t.Run(phase, func(t *testing.T) {
 			g, h, _, _, legacy, _ := setupTestGossip(t)
 			g.config.AskPeers = 1
@@ -2079,13 +2069,7 @@ func TestStartupStateSyncObserverStopCancelsVaultLookup(t *testing.T) {
 			data, err := batch.Marshal()
 			require.NoError(t, err)
 			stream := newStateBoundsStream(h.peers[1], append([]byte{prefixBatchBegin[0]}, stateBoundsCount(1)...), stateBoundsHeader(0, uint32(len(data))), append([]byte{prefixBatchData[0]}, data...), prefixBatchEnd)
-			dialStarted := make(chan struct{})
 			h.streamFunc = func(ctx context.Context, _ peer.ID, _ ...protocol.ID) (network.Stream, error) {
-				if phase == "inbound request" {
-					close(dialStarted)
-					<-ctx.Done()
-					return nil, ctx.Err()
-				}
 				return stream, nil
 			}
 
@@ -2112,18 +2096,10 @@ func TestStartupStateSyncObserverStopCancelsVaultLookup(t *testing.T) {
 			queries, ok := bridge.(thorclient.ContextQueryBridge)
 			require.True(t, ok)
 			lookupStarted, lookupExited := make(chan struct{}), make(chan struct{})
-			lookupCancelled, releaseLookup := make(chan struct{}), make(chan struct{})
-			var releaseLookupOnce sync.Once
-			finishLookup := func() { releaseLookupOnce.Do(func() { close(releaseLookup) }) }
-			t.Cleanup(finishLookup)
 			g.bridge = &cancellationQueryBridge{MockThorchainBridge: legacy, vault: func(ctx context.Context, key string) (thortypes.Vault, error) {
 				close(lookupStarted)
 				defer close(lookupExited)
 				vault, queryErr := queries.GetVaultWithContext(ctx, key)
-				if phase == "inbound request" {
-					close(lookupCancelled)
-					<-releaseLookup
-				}
 				return vault, queryErr
 			}}
 			// If state processing regresses to the legacy API, it must hit the same
@@ -2149,31 +2125,13 @@ func TestStartupStateSyncObserverStopCancelsVaultLookup(t *testing.T) {
 			var stopOnce sync.Once
 			var stopErr error
 			stop := func() { stopOnce.Do(func() { go func() { stopErr = o.Stop(); close(stopped) }() }) }
-			t.Cleanup(func() { unblock(); finishLookup(); stop(); waitStateBounds(t, stopped) })
+			t.Cleanup(func() { unblock(); stop(); waitStateBounds(t, stopped) })
 			g.tickAttestationStateSync(context.Background(), true, true, time.Now())
 			group := g.startupState.group
 			require.NotNil(t, group)
-			var inboundDone chan struct{}
-			if phase == "inbound request" {
-				waitStateBounds(t, dialStarted)
-				inboundDone = make(chan struct{})
-				go func() { g.handleStreamAttestationState(stream); close(inboundDone) }()
-				t.Cleanup(func() { unblock(); finishLookup(); stop(); waitStateBounds(t, inboundDone) })
-			}
 			waitStateBounds(t, lookupStarted)
 			waitStateBounds(t, requestStarted)
 			stop()
-			if inboundDone != nil {
-				waitStateBounds(t, lookupCancelled)
-				select {
-				case <-stopped:
-					t.Fatal("observer stopped before joining its inbound import")
-				case <-time.After(50 * time.Millisecond):
-				}
-				_, err = o.storage.db.Has([]byte("open-until-inbound-join"), nil)
-				require.NoError(t, err)
-				finishLookup()
-			}
 			select {
 			case <-stopped:
 				require.NoError(t, stopErr)
@@ -2182,9 +2140,6 @@ func TestStartupStateSyncObserverStopCancelsVaultLookup(t *testing.T) {
 			}
 			waitStateBounds(t, lookupExited)
 			waitStateBounds(t, group.done)
-			if inboundDone != nil {
-				waitStateBounds(t, inboundDone)
-			}
 			require.True(t, g.startupState.finished)
 			require.True(t, g.startupStateStopped)
 			require.Zero(t, group.result.nonEmpty)
@@ -2203,6 +2158,1034 @@ func TestStartupStateSyncObserverStopCancelsVaultLookup(t *testing.T) {
 				}
 			}
 			require.EqualValues(t, 1, requests.Load(), "cache wait cancellation must not launch a second request")
+		})
+	}
+}
+
+func TestStateSyncSlowProcessingACKDeadlines(t *testing.T) {
+	stateSyncDeadlineTestSettings(t)
+	for _, tc := range []struct {
+		name string
+		slow int32
+	}{
+		{"middle batch", 2},
+		{"final batch", 3},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			sender := stateSyncDeadlineFixture(t, 3)
+			receiver, _, _, _, _, _ := setupTestGossip(t)
+			var senderLogs, receiverLogs stateSyncLogBuffer
+			sender.logger = zerolog.New(&senderLogs)
+			receiver.logger = zerolog.New(&receiverLogs)
+			receiver.config.StateSyncTimeout = sender.config.StateSyncTimeout
+			for _, state := range sender.networkFees {
+				stateSyncTrustAttestors(t, receiver, []*common.Attestation{state.attestations[0].attestation})
+			}
+			originalVerify := verifySignature
+			var verified atomic.Int32
+			verifySignature = func(payload, signature, pubkey []byte) error {
+				if verified.Add(1) == tc.slow {
+					time.Sleep(2 * stateSyncTestFrameTimeout)
+				}
+				return originalVerify(payload, signature, pubkey)
+			}
+			t.Cleanup(func() { verifySignature = originalVerify })
+			server, client := stateSyncDeadlinePair(t)
+			serverDone, clientDone := make(chan struct{}), make(chan struct{})
+			go func() { sender.handleStreamAttestationState(server); close(serverDone) }()
+			go func() { receiver.askStreamForState(client); close(clientDone) }()
+			t.Cleanup(func() {
+				_ = server.transport.Close()
+				_ = client.transport.Close()
+				waitStateSyncDeadlineHandler(t, serverDone)
+				waitStateSyncDeadlineHandler(t, clientDone)
+			})
+			waitStateSyncDeadlineHandler(t, serverDone)
+			waitStateSyncDeadlineHandler(t, clientDone)
+			require.Zero(t, server.resets.Load(), "sender: %s; receiver: %s", senderLogs.String(), receiverLogs.String())
+			require.Zero(t, client.resets.Load())
+			require.EqualValues(t, 1, server.closes.Load())
+			require.EqualValues(t, 1, client.closes.Load())
+			require.Len(t, receiver.networkFees, 3)
+			for fee := range sender.networkFees {
+				require.Equal(t, 1, receiver.networkFees[fee].AttestationCount())
+			}
+			require.Zero(t, sender.stateSnapshotsActive.Load())
+			requireStateRequestCount(t, sender, 0)
+
+			// Request, begin, first header and all data ACKs keep frame deadlines.
+			// Later header ACKs and the final ACK share one original deadline.
+			var exchangeDeadline time.Time
+			for _, ordinary := range []bool{true, true, true, true, false, true, false, true, false} {
+				got := stateSyncNextReadDeadline(t, server)
+				require.Equal(t, ordinary, got.ordinary)
+				if !ordinary {
+					if exchangeDeadline.IsZero() {
+						exchangeDeadline = got.deadline
+					}
+					require.Equal(t, exchangeDeadline, got.deadline, "processing must not restart the budget")
+				}
+			}
+		})
+	}
+}
+
+func TestStateSyncOrdinaryACKDeadlines(t *testing.T) {
+	stateSyncDeadlineTestSettings(t)
+	for _, tc := range []struct {
+		phase string
+		reads int
+		log   string
+	}{
+		{"begin", 2, "failed to read ack after batch begin"},
+		{"first header", 3, "read state batch header ACK"},
+		{"data", 4, "read state batch data ACK"},
+	} {
+		t.Run(tc.phase, func(t *testing.T) {
+			sender := stateSyncDeadlineFixture(t, 1)
+			var logs stateSyncLogBuffer
+			sender.logger = zerolog.New(&logs)
+			server, client := stateSyncDeadlinePair(t)
+			done := make(chan struct{})
+			go func() { sender.handleStreamAttestationState(server); close(done) }()
+			t.Cleanup(func() { _ = server.transport.Close(); waitStateSyncDeadlineHandler(t, done) })
+			stateSyncStallAtACK(t, client, tc.phase)
+			var got stateSyncReadDeadline
+			for range tc.reads {
+				got = stateSyncNextReadDeadline(t, server)
+				require.True(t, got.ordinary)
+				require.InDelta(t, float64(p2p.TimeoutReadPayload), float64(got.deadline.Sub(got.at)), float64(time.Second))
+			}
+			waitStateSyncDeadlineHandler(t, done)
+			require.GreaterOrEqual(t, time.Since(got.at), stateSyncTestFrameTimeout)
+			require.Contains(t, logs.String(), tc.log)
+			require.Contains(t, logs.String(), "i/o timeout")
+			require.Positive(t, server.resets.Load())
+			require.Zero(t, server.closes.Load())
+			require.Zero(t, sender.stateSnapshotsActive.Load())
+			requireStateRequestCount(t, sender, 0)
+		})
+	}
+}
+
+func TestStateSyncProcessingACKExpiryAndShutdown(t *testing.T) {
+	stateSyncDeadlineTestSettings(t)
+	for _, phase := range []string{"next header", "final"} {
+		for _, shutdown := range []bool{false, true} {
+			name := phase + "/expiry"
+			if shutdown {
+				name = phase + "/shutdown"
+			}
+			t.Run(name, func(t *testing.T) {
+				count := 1
+				if phase == "next header" {
+					count = 2
+				}
+				sender := stateSyncDeadlineFixture(t, count)
+				if !shutdown {
+					sender.config.StateSyncTimeout = 3 * stateSyncTestFrameTimeout
+				}
+				server, client := stateSyncDeadlinePair(t)
+				done := make(chan struct{})
+				started := time.Now()
+				go func() { sender.handleStreamAttestationState(server); close(done) }()
+				t.Cleanup(func() { _ = server.transport.Close(); waitStateSyncDeadlineHandler(t, done) })
+				stateSyncStallAtACK(t, client, phase)
+				requestRead := stateSyncNextReadDeadline(t, server)
+				for range 3 {
+					require.True(t, stateSyncNextReadDeadline(t, server).ordinary)
+				}
+				processingRead := stateSyncNextReadDeadline(t, server)
+				require.False(t, processingRead.ordinary)
+				require.False(t, processingRead.deadline.Before(started.Add(sender.config.StateSyncTimeout)))
+				require.False(t, processingRead.deadline.After(requestRead.at.Add(sender.config.StateSyncTimeout)),
+					"deadline must start before the request and snapshot construction")
+				require.EqualValues(t, 1, sender.stateSnapshotsActive.Load())
+				if shutdown {
+					sender.stopAttestationStateRequests()
+				}
+				waitStateSyncDeadlineHandler(t, done)
+				if !shutdown {
+					require.False(t, time.Now().Before(processingRead.deadline))
+				}
+				require.Positive(t, server.resets.Load())
+				require.Zero(t, server.closes.Load())
+				require.Zero(t, sender.stateSnapshotsActive.Load())
+				requireStateRequestCount(t, sender, 0)
+				if !shutdown {
+					// Expiry releases both admission and snapshot ownership.
+					frames := [][]byte{prefixSendState, []byte(streamAckBegin)}
+					for range count {
+						frames = append(frames, []byte(streamAckHeader), []byte(streamAckData))
+					}
+					frames = append(frames, []byte(p2p.StreamMsgDone))
+					next := newStateBoundsStream("receiver", frames...)
+					sender.handleStreamAttestationState(next)
+					require.EqualValues(t, 1, next.closes.Load())
+					requireStateRequestCount(t, sender, 0)
+				}
+			})
+		}
+	}
+}
+
+func TestStartupStateSyncBoundedImportRejectionThenRecovers(t *testing.T) {
+	stateSyncDeadlineTestSettings(t)
+	requester, host := startupRetryGossip(t, "sender")
+	sender := stateSyncDeadlineFixture(t, 1)
+	server, client := stateSyncDeadlinePair(t)
+	done := make(chan struct{})
+	// A complete header with the wrong batch number must fail collection,
+	// even though the peer supplied a valid begin frame.
+	bad := newStateBoundsStream("sender",
+		append(append([]byte(nil), prefixBatchBegin...), stateBoundsCount(1)...),
+		stateBoundsHeader(1, 1))
+	var attempts atomic.Int32
+	host.streamFunc = func(context.Context, peer.ID, ...protocol.ID) (network.Stream, error) {
+		if attempts.Add(1) == 1 {
+			return bad, nil
+		}
+		go func() { sender.handleStreamAttestationState(server); close(done) }()
+		return client, nil
+	}
+	t.Cleanup(func() {
+		_ = server.transport.Close()
+		if attempts.Load() > 1 {
+			waitStateSyncDeadlineHandler(t, done)
+		}
+	})
+	now := time.Now()
+	requester.tickAttestationStateSync(context.Background(), true, true, now)
+	settleStartupRetry(t, requester, now)
+	require.Equal(t, attestationStateGroupResult{failed: 1}, requester.startupState.result)
+	require.False(t, requester.startupState.finished)
+	require.Positive(t, bad.resets.Load())
+	require.Empty(t, requester.networkFees)
+
+	dispatch := requester.startupState.next
+	requester.tickAttestationStateSync(context.Background(), true, false, dispatch)
+	settleStartupRetry(t, requester, dispatch)
+	waitStateSyncDeadlineHandler(t, done)
+	require.True(t, requester.startupState.finished)
+	require.Equal(t, attestationStateGroupResult{failed: 1, nonEmpty: 1}, requester.startupState.result)
+	require.Equal(t, 2, requester.startupState.requests)
+	require.Len(t, requester.networkFees, 1)
+	for _, state := range requester.networkFees {
+		require.Equal(t, 1, state.AttestationCount())
+	}
+	require.Zero(t, sender.stateSnapshotsActive.Load())
+	requireStateRequestCount(t, sender, 0)
+}
+
+func stateSyncExportForTest(t *testing.T, s *AttestationGossip, wantItems int) common.QuorumState {
+	t.Helper()
+	stream := newStateBoundsStream("receiver", []byte(streamAckBegin), []byte(streamAckHeader), []byte(streamAckData), []byte(p2p.StreamMsgDone))
+	if wantItems == 0 {
+		stream = newStateBoundsStream("receiver", []byte(p2p.StreamMsgDone))
+	}
+	require.NoError(t, s.sendAttestationState(stream, time.Now().Add(defaultStateSyncTimeout)))
+	frames := ParseMessages(stream.output.Bytes())
+	require.NotEmpty(t, frames)
+	require.Len(t, frames[0], 5)
+	require.Equal(t, prefixBatchBegin[0], frames[0][0])
+	count := int(binary.LittleEndian.Uint32(frames[0][1:]))
+	var all common.QuorumState
+	if wantItems == 0 {
+		require.Zero(t, count)
+		require.Len(t, frames, 1)
+		return all
+	}
+	require.Equal(t, 1, count, "the test fixture fits in one batch")
+	require.Len(t, frames, 2*count+2)
+	require.Equal(t, prefixBatchEnd, frames[len(frames)-1])
+	for i := range count {
+		data := frames[2+2*i]
+		require.Equal(t, prefixBatchData[0], data[0])
+		require.LessOrEqual(t, len(data), p2p.MaxPayload)
+		var batch common.QuorumState
+		require.NoError(t, batch.Unmarshal(data[1:]))
+		require.NoError(t, validateAttestationStateBatch(batch))
+		all.QuoTxs = append(all.QuoTxs, batch.QuoTxs...)
+		all.QuoNetworkFees = append(all.QuoNetworkFees, batch.QuoNetworkFees...)
+		all.QuoSolvencies = append(all.QuoSolvencies, batch.QuoSolvencies...)
+		all.QuoErrataTxs = append(all.QuoErrataTxs, batch.QuoErrataTxs...)
+		all.QuoPriceFeeds = append(all.QuoPriceFeeds, batch.QuoPriceFeeds...)
+	}
+	require.Equal(t, wantItems, attestationStateBatchItemCount(all))
+	return all
+}
+
+func TestStateSyncRejectedAttestationsDoNotBlockExport(t *testing.T) {
+	s, _, _, _, _, _ := setupTestGossip(t)
+	s.logger = zerolog.Nop()
+	fee, atts := stateSyncSignedFee(t, 123456, 1)
+	invalid := &common.Attestation{PubKey: atts[0].PubKey, Signature: make([]byte, 64)}
+	for i := range maxAttestationStateItemsPerTransfer + 1 {
+		item := &common.NetworkFee{Chain: common.BTCChain, Height: int64(i + 1), TransactionSize: 100, TransactionRate: 2}
+		s.handleNetworkFeeAttestation(context.Background(), common.AttestNetworkFee{
+			NetworkFee: item, Attestation: invalid,
+		})
+	}
+	// Retaining rejected buckets is a separate ingress/cleanup issue. They
+	// must not consume the export budget or prevent unrelated valid evidence.
+	require.Len(t, s.networkFees, maxAttestationStateItemsPerTransfer+1)
+	for _, state := range s.networkFees {
+		require.Zero(t, state.AttestationCount())
+	}
+	s.handleNetworkFeeAttestation(context.Background(), common.AttestNetworkFee{
+		NetworkFee: fee, Attestation: atts[0],
+	})
+	exported := stateSyncExportForTest(t, s, 1)
+	require.Equal(t, 1, attestationStateBatchItemCount(exported))
+	require.Equal(t, []*common.QuorumNetworkFee{{NetworkFee: fee, Attestations: atts}}, exported.QuoNetworkFees)
+}
+
+func TestStateSyncEmptyBucketsAfterFullExport(t *testing.T) {
+	for _, committed := range []bool{false, true} {
+		name := "empty"
+		if committed {
+			name = "fully committed"
+		}
+		t.Run(name, func(t *testing.T) {
+			s, _, _, _, _, _ := setupTestGossip(t)
+			s.logger = zerolog.Nop()
+			s.priceFeeds = make(map[string]*AttestationState[*common.PriceFeed])
+			// These bytes exercise export accounting only, not signature checks.
+			att := &common.Attestation{PubKey: []byte{1}, Signature: []byte{2}}
+			for i := range maxAttestationStateItemsPerTransfer {
+				fee := &common.NetworkFee{Chain: common.BTCChain, Height: int64(i)}
+				s.networkFees[*fee] = &AttestationState[*common.NetworkFee]{
+					Item: fee, attestations: []attestationSentState{{attestation: att}},
+				}
+			}
+			var inactive []attestationSentState
+			if committed {
+				inactive = []attestationSentState{{attestation: att, committed: true}}
+			}
+			tx := &common.ObservedTx{Tx: common.Tx{Chain: common.BTCChain, ID: "inactive-tx"}}
+			s.observedTxs[txKey{Chain: common.BTCChain, ID: tx.Tx.ID}] = &AttestationState[*attestableObservedTx]{
+				Item: &attestableObservedTx{ObservedTx: tx}, attestations: inactive,
+			}
+			// Fees precede these categories, so the full budget is always
+			// spent before visiting these buckets, regardless of map order.
+			solvency := &common.Solvency{Chain: common.BTCChain, Id: "inactive-solvency"}
+			s.solvencies[solvency.Id] = &AttestationState[*common.Solvency]{Item: solvency, attestations: inactive}
+			errata := &common.ErrataTx{Chain: common.BTCChain, Id: "inactive-errata"}
+			s.errataTxs[*errata] = &AttestationState[*common.ErrataTx]{Item: errata, attestations: inactive}
+			s.priceFeeds["inactive-price"] = &AttestationState[*common.PriceFeed]{Item: &common.PriceFeed{Time: 1}, attestations: inactive}
+
+			exported := stateSyncExportForTest(t, s, maxAttestationStateItemsPerTransfer)
+			require.Equal(t, maxAttestationStateItemsPerTransfer, attestationStateBatchItemCount(exported))
+			require.Len(t, exported.QuoNetworkFees, maxAttestationStateItemsPerTransfer)
+			seen := make(map[int64]bool)
+			for _, item := range exported.QuoNetworkFees {
+				require.False(t, seen[item.NetworkFee.Height], "duplicate exported fee")
+				seen[item.NetworkFee.Height] = true
+				require.Equal(t, []*common.Attestation{att}, item.Attestations)
+			}
+			// The same non-exportable categories must also produce a valid
+			// empty transfer once the only exportable category is removed.
+			clear(s.networkFees)
+			require.Zero(t, attestationStateBatchItemCount(stateSyncExportForTest(t, s, 0)))
+		})
+	}
+}
+
+func TestStateSyncSnapshotSlots(t *testing.T) {
+	stateSyncDeadlineTestSettings(t)
+	for _, exit := range []string{"reset", "expiry", "shutdown"} {
+		t.Run(exit, func(t *testing.T) {
+			sender := stateSyncDeadlineFixture(t, 1)
+			sender.activeVals["second"] = true
+			sender.activeVals["third"] = true
+			if exit == "expiry" {
+				sender.config.StateSyncTimeout = 3 * stateSyncTestFrameTimeout
+			}
+			first, firstClient := stateSyncDeadlinePair(t)
+			firstDone := make(chan struct{})
+			go func() { sender.handleStreamAttestationState(first); close(firstDone) }()
+			t.Cleanup(func() { _ = first.Reset(); waitStateSyncDeadlineHandler(t, firstDone) })
+			stateSyncStallAtACK(t, firstClient, "final")
+			require.EqualValues(t, 1, sender.stateSnapshotsActive.Load())
+
+			duplicate := newStateBoundsStream("receiver", prefixSendState)
+			sender.handleStreamAttestationState(duplicate)
+			require.Zero(t, duplicate.readBytes.Load(), "duplicate peer must be rejected before reading")
+			require.EqualValues(t, 1, duplicate.resets.Load())
+			require.EqualValues(t, 1, sender.stateSnapshotsActive.Load())
+
+			// Another peer can finish while the first peer withholds its ACK.
+			successful := newStateBoundsStream("second", prefixSendState, []byte(streamAckBegin), []byte(streamAckHeader), []byte(streamAckData), []byte(p2p.StreamMsgDone))
+			sender.handleStreamAttestationState(successful)
+			frames := ParseMessages(successful.output.Bytes())
+			require.Len(t, frames, 4)
+			require.Equal(t, prefixBatchEnd, frames[3])
+			var batch common.QuorumState
+			require.NoError(t, batch.Unmarshal(frames[2][1:]))
+			require.Len(t, batch.QuoNetworkFees, 1)
+			require.EqualValues(t, 1, sender.stateSnapshotsActive.Load())
+			requireStateRequestCount(t, sender, 1)
+
+			second, secondClient := stateSyncDeadlinePair(t)
+			second.peer = "second"
+			secondDone := make(chan struct{})
+			go func() { sender.handleStreamAttestationState(second); close(secondDone) }()
+			t.Cleanup(func() { _ = second.Reset(); waitStateSyncDeadlineHandler(t, secondDone) })
+			stateSyncStallAtACK(t, secondClient, "final")
+			require.EqualValues(t, 2, sender.stateSnapshotsActive.Load())
+
+			third := newStateBoundsStream("third", prefixSendState)
+			sender.handleStreamAttestationState(third)
+			require.EqualValues(t, 5, third.readBytes.Load())
+			require.Zero(t, third.output.Len(), "a third snapshot must not be built")
+			require.EqualValues(t, 1, third.resets.Load())
+			require.EqualValues(t, 2, sender.stateSnapshotsActive.Load())
+			requireStateRequestCount(t, sender, 2)
+
+			switch exit {
+			case "reset":
+				require.NoError(t, first.Reset())
+				waitStateSyncDeadlineHandler(t, firstDone)
+				require.EqualValues(t, 1, sender.stateSnapshotsActive.Load())
+				require.NoError(t, second.Reset())
+			case "shutdown":
+				sender.stopAttestationStateRequests()
+			}
+			waitStateSyncDeadlineHandler(t, firstDone)
+			waitStateSyncDeadlineHandler(t, secondDone)
+			require.Zero(t, sender.stateSnapshotsActive.Load())
+			requireStateRequestCount(t, sender, 0)
+			if exit != "shutdown" {
+				recovered := newStateBoundsStream("third", prefixSendState, []byte(streamAckBegin), []byte(streamAckHeader), []byte(streamAckData), []byte(p2p.StreamMsgDone))
+				sender.handleStreamAttestationState(recovered)
+				require.Len(t, ParseMessages(recovered.output.Bytes()), 4)
+				require.Zero(t, sender.stateSnapshotsActive.Load())
+				requireStateRequestCount(t, sender, 0)
+			}
+		})
+	}
+}
+
+// This stream preserves unread bytes and exposes the precise preflight read
+// boundary. A blocked read is released only by reset, like a stopped transport.
+type stateBoundsStream struct {
+	MockStream
+	input     *bytes.Reader
+	output    bytes.Buffer
+	readBytes atomic.Int64
+	resets    atomic.Int32
+	closes    atomic.Int32
+	block     bool
+	blocked   chan struct{}
+	stopped   chan struct{}
+	blockOnce sync.Once
+	stopOnce  sync.Once
+}
+
+func newStateBoundsStream(remote peer.ID, frames ...[]byte) *stateBoundsStream {
+	var input []byte
+	for _, frame := range frames {
+		input = append(input, encodeStreamMsg(frame)...)
+	}
+	return &stateBoundsStream{
+		MockStream: MockStream{peer: remote, mu: new(sync.Mutex)},
+		input:      bytes.NewReader(input), blocked: make(chan struct{}), stopped: make(chan struct{}),
+	}
+}
+
+func (s *stateBoundsStream) Read(p []byte) (int, error) {
+	if s.block && s.input.Len() == 0 {
+		s.blockOnce.Do(func() { close(s.blocked) })
+		<-s.stopped
+		return 0, io.ErrClosedPipe
+	}
+	n, err := s.input.Read(p)
+	s.readBytes.Add(int64(n))
+	return n, err
+}
+
+func (s *stateBoundsStream) Write(p []byte) (int, error) { return s.output.Write(p) }
+
+func (s *stateBoundsStream) Reset() error {
+	s.resets.Add(1)
+	s.stopOnce.Do(func() { close(s.stopped) })
+	return nil
+}
+
+func (s *stateBoundsStream) Close() error { s.closes.Add(1); return nil }
+
+func (s *stateBoundsStream) SetReadDeadline(time.Time) error { return nil }
+
+func (s *stateBoundsStream) SetWriteDeadline(time.Time) error { return nil }
+
+func stateBoundsCount(n uint32) []byte {
+	b := make([]byte, 4)
+	binary.LittleEndian.PutUint32(b, n)
+	return b
+}
+
+func stateBoundsHeader(n, size uint32) []byte {
+	return append(append([]byte{prefixBatchHeader[0]}, stateBoundsCount(n)...), stateBoundsCount(size)...)
+}
+
+func newStateBoundsGossip(peers ...peer.ID) *AttestationGossip {
+	s := &AttestationGossip{logger: zerolog.Nop(), activeVals: make(map[peer.ID]bool)}
+	for _, p := range peers {
+		s.activeVals[p] = true
+	}
+	return s
+}
+
+type stateBoundsPipeStream struct {
+	MockStream
+	pipe net.Conn
+}
+
+func (s *stateBoundsPipeStream) Read(p []byte) (int, error) { return s.pipe.Read(p) }
+
+func (s *stateBoundsPipeStream) Write(p []byte) (int, error) { return s.pipe.Write(p) }
+
+func (s *stateBoundsPipeStream) Reset() error { return s.pipe.Close() }
+
+func (s *stateBoundsPipeStream) Close() error { return s.pipe.Close() }
+
+func stateBoundsPipe(t *testing.T, first, second peer.ID) (*stateBoundsPipeStream, *stateBoundsPipeStream) {
+	t.Helper()
+	a, b := net.Pipe()
+	require.NoError(t, a.SetDeadline(time.Now().Add(5*time.Second)))
+	require.NoError(t, b.SetDeadline(time.Now().Add(5*time.Second)))
+	t.Cleanup(func() { _ = a.Close(); _ = b.Close() })
+	return &stateBoundsPipeStream{MockStream: MockStream{peer: first}, pipe: a}, &stateBoundsPipeStream{MockStream: MockStream{peer: second}, pipe: b}
+}
+
+func requireStateRequestCount(t *testing.T, s *AttestationGossip, count int) {
+	t.Helper()
+	s.stateRequestMu.Lock()
+	defer s.stateRequestMu.Unlock()
+	require.Len(t, s.stateRequests, count)
+}
+
+func waitStateBounds(t *testing.T, done <-chan struct{}) {
+	t.Helper()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("state handler did not finish")
+	}
+}
+
+func TestStateBoundsLocalExportCeilings(t *testing.T) {
+	s := newStateBoundsGossip()
+	s.networkFees = make(map[common.NetworkFee]*AttestationState[*common.NetworkFee])
+	for i := range 10000 {
+		fee := &common.NetworkFee{Chain: common.BTCChain, Height: int64(i)}
+		s.networkFees[*fee] = &AttestationState[*common.NetworkFee]{Item: fee, attestations: []attestationSentState{{attestation: &common.Attestation{}}}}
+	}
+	stream := newStateBoundsStream("active", []byte(streamAckBegin), []byte(streamAckHeader), []byte(streamAckData), []byte(p2p.StreamMsgDone))
+	require.NoError(t, s.sendAttestationState(stream, time.Now().Add(defaultStateSyncTimeout)))
+	frames := ParseMessages(stream.output.Bytes())
+	require.Len(t, frames, 4)
+	var batch common.QuorumState
+	require.NoError(t, batch.Unmarshal(frames[2][1:]))
+	require.Len(t, batch.QuoNetworkFees, 10000, "the byte packer must not truncate to the old 100/category limit")
+	fee := &common.NetworkFee{Height: 10001}
+	s.networkFees[*fee] = &AttestationState[*common.NetworkFee]{Item: fee, attestations: []attestationSentState{{attestation: &common.Attestation{}}}}
+	stream = newStateBoundsStream("active")
+	require.ErrorContains(t, s.sendAttestationState(stream, time.Now().Add(defaultStateSyncTimeout)), "transfer maximum")
+	require.Zero(t, stream.output.Len(), "oversized local export must fail before BatchBegin")
+	delete(s.networkFees, *fee)
+	oldBytes := maxAttestationBatchBytes
+	maxAttestationBatchBytes = 1
+	defer func() { maxAttestationBatchBytes = oldBytes }()
+	stream = newStateBoundsStream("active")
+	require.ErrorContains(t, s.sendAttestationState(stream, time.Now().Add(defaultStateSyncTimeout)), "batches")
+	require.Zero(t, stream.output.Len())
+	maxAttestationBatchBytes = oldBytes
+	s.networkFees = map[common.NetworkFee]*AttestationState[*common.NetworkFee]{*fee: {Item: fee, attestations: make([]attestationSentState, 129)}}
+	for i := range s.networkFees[*fee].attestations {
+		s.networkFees[*fee].attestations[i].attestation = &common.Attestation{}
+	}
+	stream = newStateBoundsStream("active", []byte(streamAckBegin), []byte(streamAckHeader), []byte(streamAckData), []byte(p2p.StreamMsgDone))
+	require.NoError(t, s.sendAttestationState(stream, time.Now().Add(defaultStateSyncTimeout)))
+	frames = ParseMessages(stream.output.Bytes())
+	batch = common.QuorumState{}
+	require.NoError(t, batch.Unmarshal(frames[2][1:]))
+	require.Len(t, batch.QuoNetworkFees, 2)
+	require.Equal(t, 128, len(batch.QuoNetworkFees[0].Attestations))
+	require.Equal(t, 1, len(batch.QuoNetworkFees[1].Attestations))
+	// Committed entries were never exported and must not consume wire items.
+	s.networkFees[*fee].attestations[0].committed = true
+	chunks, err := copyStateSyncAttestations(s.networkFees[*fee], 1)
+	require.NoError(t, err)
+	require.Len(t, chunks, 1)
+	require.Len(t, chunks[0], 128)
+}
+
+func stateSyncSignedFee(t *testing.T, height int64, count int) (*common.NetworkFee, []*common.Attestation) {
+	t.Helper()
+	fee := &common.NetworkFee{Chain: common.BTCChain, Height: height, TransactionSize: 100, TransactionRate: 2}
+	payload, err := fee.GetSignablePayload()
+	require.NoError(t, err)
+	atts := make([]*common.Attestation, count)
+	for i := range atts {
+		key := secp256k1.GenPrivKey()
+		sig, err := key.Sign(payload)
+		require.NoError(t, err)
+		atts[i] = &common.Attestation{PubKey: key.PubKey().Bytes(), Signature: sig}
+	}
+	return fee, atts
+}
+
+// Include BatchBegin so imports exercise the requester's reset/close decision.
+func stateSyncImportStream(t *testing.T, remote peer.ID, payloads ...[]byte) *stateBoundsStream {
+	t.Helper()
+	frames := [][]byte{append([]byte{prefixBatchBegin[0]}, stateBoundsCount(uint32(len(payloads)))...)}
+	for i, data := range payloads {
+		frames = append(frames, stateBoundsHeader(uint32(i), uint32(len(data))), append([]byte{prefixBatchData[0]}, data...))
+	}
+	return newStateBoundsStream(remote, append(frames, prefixBatchEnd)...)
+}
+
+type stateSyncRecordingStream struct {
+	*stateBoundsPipeStream
+	resets atomic.Int32
+	closes atomic.Int32
+}
+
+func (s *stateSyncRecordingStream) Reset() error {
+	s.resets.Add(1)
+	return s.stateBoundsPipeStream.Reset()
+}
+
+func (s *stateSyncRecordingStream) Close() error {
+	s.closes.Add(1)
+	return s.stateBoundsPipeStream.Close()
+}
+
+func TestStateSyncTransferOutlivesPeerTimeout(t *testing.T) {
+	sender, _, _, _, _, _ := setupTestGossip(t)
+	receiver, _, _, _, _, _ := setupTestGossip(t)
+	sender.logger, receiver.logger = zerolog.Nop(), zerolog.Nop()
+	sender.activeVals["receiver"] = true
+	sender.config.PeerTimeout = 20 * time.Millisecond
+	receiver.config.PeerTimeout = 20 * time.Millisecond
+	fee, atts := stateSyncSignedFee(t, 123, 1)
+	stateSyncTrustAttestors(t, receiver, atts)
+	sender.networkFees[*fee] = &AttestationState[*common.NetworkFee]{
+		Item: fee, attestations: []attestationSentState{{attestation: atts[0]}},
+	}
+	original := verifySignature
+	verifySignature = func(payload, signature, pubkey []byte) error {
+		time.Sleep(3 * sender.config.PeerTimeout)
+		return original(payload, signature, pubkey)
+	}
+	defer func() { verifySignature = original }()
+	a, b := stateBoundsPipe(t, "receiver", "sender")
+	server := &stateSyncRecordingStream{stateBoundsPipeStream: a}
+	client := &stateSyncRecordingStream{stateBoundsPipeStream: b}
+	done := make(chan struct{})
+	go func() { sender.handleStreamAttestationState(server); close(done) }()
+	receiver.askStreamForState(client)
+	waitStateBounds(t, done)
+	require.Zero(t, server.resets.Load(), "completed snapshot must outlive the single-message budget")
+	require.Zero(t, client.resets.Load(), "receiver must finish processing and the final handshake")
+	require.EqualValues(t, 1, server.closes.Load())
+	require.EqualValues(t, 1, client.closes.Load())
+	require.Equal(t, 1, receiver.networkFees[*fee].AttestationCount())
+}
+
+func TestStateSyncAccumulatedBucketRoundTrip(t *testing.T) {
+	relay, _, _, _, _, _ := setupTestGossip(t)
+	relay.logger = zerolog.Nop()
+	fee, atts := stateSyncSignedFee(t, 123, 129)
+	unrelated, unrelatedAtts := stateSyncSignedFee(t, 124, 1)
+	stateSyncTrustAttestors(t, relay, append(atts, unrelatedAtts...))
+	input := common.QuorumState{QuoNetworkFees: []*common.QuorumNetworkFee{
+		{NetworkFee: fee, Attestations: atts[:128]},
+		{NetworkFee: fee, Attestations: atts[128:]},
+		{NetworkFee: unrelated, Attestations: unrelatedAtts},
+	}}
+	data, err := input.Marshal()
+	require.NoError(t, err)
+	incoming := newStateBoundsStream("sender", stateBoundsHeader(0, uint32(len(data))), append([]byte{prefixBatchData[0]}, data...), prefixBatchEnd)
+	require.NoError(t, relay.receiveBatchedAttestationState(incoming, stateBoundsCount(1)))
+	require.Equal(t, 129, relay.networkFees[*fee].AttestationCount())
+
+	outgoing := newStateBoundsStream("receiver", []byte(streamAckBegin), []byte(streamAckHeader), []byte(streamAckData), []byte(p2p.StreamMsgDone))
+	require.NoError(t, relay.sendAttestationState(outgoing, time.Now().Add(defaultStateSyncTimeout)))
+	frames := ParseMessages(outgoing.output.Bytes())
+	require.Len(t, frames, 4)
+	var exported common.QuorumState
+	require.NoError(t, exported.Unmarshal(frames[2][1:]))
+	require.Len(t, exported.QuoNetworkFees, 3)
+	for _, item := range exported.QuoNetworkFees {
+		require.LessOrEqual(t, len(item.Attestations), 128)
+	}
+
+	restored, _, _, _, _, _ := setupTestGossip(t)
+	restored.logger = zerolog.Nop()
+	stateSyncTrustAttestors(t, restored, append(atts, unrelatedAtts...))
+	transfer := newStateBoundsStream("relay", frames[1:]...)
+	require.NoError(t, restored.receiveBatchedAttestationState(transfer, frames[0][1:]))
+	for _, want := range []*common.NetworkFee{fee, unrelated} {
+		got := restored.networkFees[*want]
+		require.NotNil(t, got)
+		require.ElementsMatch(t, relay.networkFees[*want].AttestationsCopy(), got.AttestationsCopy())
+	}
+	require.True(t, bytes.Equal(frames[3], prefixBatchEnd))
+}
+
+func TestStateSyncChunkBoundaries(t *testing.T) {
+	for _, count := range []int{0, 1, 128, 129, 256, 257} {
+		t.Run(fmt.Sprint(count), func(t *testing.T) {
+			state := &AttestationState[*common.NetworkFee]{Item: &common.NetworkFee{}}
+			for i := range count {
+				state.attestations = append(state.attestations, attestationSentState{
+					attestation: &common.Attestation{PubKey: []byte{byte(i)}, Signature: []byte{byte(i >> 8), byte(i)}},
+				})
+			}
+			// Committed entries must not increase exported slice capacity.
+			for range 1000 {
+				state.attestations = append(state.attestations, attestationSentState{committed: true})
+			}
+			wantChunks := (count + 127) / 128
+			chunks, err := copyStateSyncAttestations(state, wantChunks)
+			require.NoError(t, err)
+			require.Len(t, chunks, wantChunks)
+			var copied []*common.Attestation
+			for _, chunk := range chunks {
+				require.LessOrEqual(t, len(chunk), 128)
+				require.LessOrEqual(t, cap(chunk), 128)
+				copied = append(copied, chunk...)
+			}
+			require.Len(t, copied, count)
+			for i, att := range copied {
+				require.Equal(t, state.attestations[i].attestation, att)
+			}
+			if count > 0 {
+				copied[0].PubKey[0] = 255
+				require.EqualValues(t, 0, state.attestations[0].attestation.PubKey[0])
+			}
+			if wantChunks > 1 {
+				rejected, err := copyStateSyncAttestations(state, wantChunks-1)
+				require.ErrorContains(t, err, "transfer maximum")
+				require.Nil(t, rejected)
+			}
+		})
+	}
+}
+
+func TestStateSyncChunkAllCategoriesAndBytePacking(t *testing.T) {
+	for _, splitFrames := range []bool{false, true} {
+		t.Run(fmt.Sprint(splitFrames), func(t *testing.T) {
+			s, _, _, _, _, _ := setupTestGossip(t)
+			s.logger = zerolog.Nop()
+			entries := make([]attestationSentState, 129)
+			for i := range entries {
+				entries[i].attestation = &common.Attestation{PubKey: []byte{byte(i)}, Signature: []byte{byte(i)}}
+			}
+			tx := &common.ObservedTx{Tx: common.Tx{Chain: common.BTCChain, ID: "chunked-tx"}}
+			key := txKey{Chain: common.BTCChain, ID: tx.Tx.ID, Inbound: true, AllowFutureObservation: true}
+			s.observedTxs[key] = &AttestationState[*attestableObservedTx]{Item: &attestableObservedTx{ObservedTx: tx, inbound: true}, attestations: entries}
+			fee := &common.NetworkFee{Chain: common.BTCChain, Height: 123}
+			s.networkFees[*fee] = &AttestationState[*common.NetworkFee]{Item: fee, attestations: entries}
+			solvency := &common.Solvency{Chain: common.BTCChain, Id: "chunked-solvency"}
+			s.solvencies[solvency.Id] = &AttestationState[*common.Solvency]{Item: solvency, attestations: entries}
+			errata := &common.ErrataTx{Chain: common.BTCChain, Id: "chunked-errata"}
+			s.errataTxs[*errata] = &AttestationState[*common.ErrataTx]{Item: errata, attestations: entries}
+			price := &common.PriceFeed{Time: 123}
+			s.priceFeeds = make(map[string]*AttestationState[*common.PriceFeed])
+			s.priceFeeds["price"] = &AttestationState[*common.PriceFeed]{Item: price, attestations: entries}
+
+			batchCount := 1
+			if splitFrames {
+				old := maxAttestationBatchBytes
+				maxAttestationBatchBytes = 1
+				defer func() { maxAttestationBatchBytes = old }()
+				batchCount = 10
+			}
+			acks := [][]byte{[]byte(streamAckBegin)}
+			for range batchCount {
+				acks = append(acks, []byte(streamAckHeader), []byte(streamAckData))
+			}
+			acks = append(acks, []byte(p2p.StreamMsgDone))
+			stream := newStateBoundsStream("receiver", acks...)
+			require.NoError(t, s.sendAttestationState(stream, time.Now().Add(defaultStateSyncTimeout)))
+			frames := ParseMessages(stream.output.Bytes())
+			require.Len(t, frames, 2+2*batchCount)
+			var all common.QuorumState
+			for i := 0; i < batchCount; i++ {
+				var batch common.QuorumState
+				require.NoError(t, batch.Unmarshal(frames[2+2*i][1:]))
+				require.NoError(t, validateAttestationStateBatch(batch))
+				all.QuoTxs = append(all.QuoTxs, batch.QuoTxs...)
+				all.QuoNetworkFees = append(all.QuoNetworkFees, batch.QuoNetworkFees...)
+				all.QuoSolvencies = append(all.QuoSolvencies, batch.QuoSolvencies...)
+				all.QuoErrataTxs = append(all.QuoErrataTxs, batch.QuoErrataTxs...)
+				all.QuoPriceFeeds = append(all.QuoPriceFeeds, batch.QuoPriceFeeds...)
+			}
+			require.Len(t, all.QuoTxs, 2)
+			require.Len(t, all.QuoNetworkFees, 2)
+			require.Len(t, all.QuoSolvencies, 2)
+			require.Len(t, all.QuoErrataTxs, 2)
+			require.Len(t, all.QuoPriceFeeds, 2)
+			groups := [][]*common.Attestation{
+				append(all.QuoTxs[0].Attestations, all.QuoTxs[1].Attestations...),
+				append(all.QuoNetworkFees[0].Attestations, all.QuoNetworkFees[1].Attestations...),
+				append(all.QuoSolvencies[0].Attestations, all.QuoSolvencies[1].Attestations...),
+				append(all.QuoErrataTxs[0].Attestations, all.QuoErrataTxs[1].Attestations...),
+				append(all.QuoPriceFeeds[0].Attestations, all.QuoPriceFeeds[1].Attestations...),
+			}
+			for _, group := range groups {
+				require.Len(t, group, 129)
+				for i := range group {
+					require.Equal(t, entries[i].attestation, group[i])
+				}
+			}
+			for i := range 2 {
+				require.True(t, all.QuoTxs[i].Inbound)
+				require.True(t, all.QuoTxs[i].AllowFutureObservation)
+				require.Equal(t, tx.Tx.ID, all.QuoTxs[i].ObsTx.Tx.ID)
+				require.Equal(t, fee, all.QuoNetworkFees[i].NetworkFee)
+				require.Equal(t, solvency.Id, all.QuoSolvencies[i].Solvency.Id)
+				require.Equal(t, errata.Id, all.QuoErrataTxs[i].ErrataTx.Id)
+				require.Equal(t, price.Time, all.QuoPriceFeeds[i].PriceFeed.Time)
+			}
+		})
+	}
+}
+
+func TestStateSyncSplitTransferCeilingAndWarnings(t *testing.T) {
+	s, _, _, _, _, _ := setupTestGossip(t)
+	var logs bytes.Buffer
+	s.logger = zerolog.New(zerolog.SyncWriter(&logs))
+	for i := range maxAttestationStateItemsPerTransfer {
+		fee := &common.NetworkFee{Chain: common.BTCChain, Height: int64(i)}
+		s.networkFees[*fee] = &AttestationState[*common.NetworkFee]{Item: fee, attestations: []attestationSentState{{attestation: &common.Attestation{}}}}
+	}
+	fee := common.NetworkFee{Chain: common.BTCChain, Height: 0}
+	for range 128 {
+		s.networkFees[fee].attestations = append(s.networkFees[fee].attestations, attestationSentState{attestation: &common.Attestation{}})
+	}
+	for range 2 {
+		stream := newStateBoundsStream("receiver")
+		require.ErrorContains(t, s.sendAttestationState(stream, time.Now().Add(defaultStateSyncTimeout)), "transfer maximum")
+		require.Empty(t, stream.output.Bytes())
+	}
+	require.Equal(t, 1, bytes.Count(logs.Bytes(), []byte(`"level":"warn"`)))
+	require.Contains(t, logs.String(), "network fee BTC/")
+	s.stateRequestMu.Lock()
+	s.stateExportWarnAt = time.Now().Add(-2 * time.Minute)
+	s.stateRequestMu.Unlock()
+	var wg sync.WaitGroup
+	for range 20 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if err := s.stateExportError(fmt.Errorf("still too large")); err == nil {
+				t.Error("expected export error")
+			}
+		}()
+	}
+	wg.Wait()
+	require.Equal(t, 2, bytes.Count(logs.Bytes(), []byte(`"level":"warn"`)))
+}
+
+// Explicit opt-in measurement; not a timing threshold in the ordinary suite.
+// Exercises real signatures, byte-packed frames, inline imports and final ACK.
+func TestStateSyncBudgetWorkload(t *testing.T) {
+	if os.Getenv("STATE_SYNC_BUDGET_PROBE") != "1" {
+		t.Skip("set STATE_SYNC_BUDGET_PROBE=1 to measure the complete 4000-item transfer")
+	}
+	sender, _, _, _, _, _ := setupTestGossip(t)
+	sender.logger = zerolog.Nop()
+	sender.activeVals["receiver"] = true
+	keys := make([]*secp256k1.PrivKey, 70)
+	for i := range keys {
+		keys[i] = secp256k1.GenPrivKey()
+	}
+	for i := range 4000 {
+		fee := &common.NetworkFee{Chain: common.BTCChain, Height: int64(i), TransactionSize: 100, TransactionRate: 2}
+		payload, err := fee.GetSignablePayload()
+		require.NoError(t, err)
+		state := &AttestationState[*common.NetworkFee]{Item: fee}
+		for _, key := range keys {
+			sig, err := key.Sign(payload)
+			require.NoError(t, err)
+			state.attestations = append(state.attestations, attestationSentState{attestation: &common.Attestation{PubKey: key.PubKey().Bytes(), Signature: sig}})
+		}
+		sender.networkFees[*fee] = state
+	}
+	for _, oldBudget := range []bool{true, false} {
+		t.Run(fmt.Sprint(oldBudget), func(t *testing.T) {
+			receiver, _, _, _, _, _ := setupTestGossip(t)
+			receiver.logger = zerolog.Nop()
+			// Keep the benchmark on signature/import work, with 70 eligible slots
+			// and the same no-op quorum RPC mock as the normal fixtures.
+			receiver.activeVals = make(map[peer.ID]bool)
+			for _, key := range keys {
+				id, err := conversion.GetPeerIDFromSecp256PubKey(key.PubKey().Bytes())
+				require.NoError(t, err)
+				receiver.activeVals[id] = true
+			}
+			sender.config.StateSyncTimeout = 0
+			receiver.config.StateSyncTimeout = 0
+			if oldBudget {
+				sender.config.StateSyncTimeout = defaultPeerTimeout
+				receiver.config.StateSyncTimeout = defaultPeerTimeout
+			}
+			a, b := stateBoundsPipe(t, "receiver", "sender")
+			require.NoError(t, a.pipe.SetDeadline(time.Now().Add(3*time.Minute)))
+			require.NoError(t, b.pipe.SetDeadline(time.Now().Add(3*time.Minute)))
+			server := &stateSyncRecordingStream{stateBoundsPipeStream: a}
+			client := &stateSyncRecordingStream{stateBoundsPipeStream: b}
+			done := make(chan struct{})
+			start := time.Now()
+			go func() { sender.handleStreamAttestationState(server); close(done) }()
+			receiver.askStreamForState(client)
+			waitStateBounds(t, done)
+			elapsed := time.Since(start)
+			retained := 0
+			for _, state := range receiver.networkFees {
+				retained += state.AttestationCount()
+			}
+			t.Logf("old_20s_budget=%t items=%d/4000 signatures=%d/280000 elapsed=%s effective_time_per_signature=%s resets=%d/%d",
+				oldBudget, len(receiver.networkFees), retained, elapsed, elapsed/time.Duration(max(1, retained)), server.resets.Load(), client.resets.Load())
+			if !oldBudget {
+				require.Zero(t, server.resets.Load())
+				require.Zero(t, client.resets.Load())
+				require.Equal(t, 4000, len(receiver.networkFees))
+				require.Equal(t, 280000, retained)
+			}
+		})
+	}
+}
+
+func stateSyncTrustAttestors(t *testing.T, s *AttestationGossip, atts []*common.Attestation) {
+	t.Helper()
+	for _, att := range atts {
+		id, err := conversion.GetPeerIDFromSecp256PubKey(att.PubKey)
+		require.NoError(t, err)
+		s.activeVals[id] = true
+	}
+}
+
+func TestSendAttestationStateUnevenCategoriesRoundTrip(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		counts [5]int // transactions, network fees, solvencies, errata, price feeds
+		budget int
+	}{
+		{"no transactions, single batch", [5]int{0, 1, 1, 1, 1}, maxAttestationBatchBytes},
+		{"no transactions, uneven batches", [5]int{0, 3, 4, 5, 6}, 256},
+		{"all five categories, uneven batches", [5]int{3, 9, 5, 7, 4}, 256},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			// These tests stay serial because the byte budget is package-wide.
+			originalBudget := maxAttestationBatchBytes
+			maxAttestationBatchBytes = tc.budget
+			t.Cleanup(func() { maxAttestationBatchBytes = originalBudget })
+
+			s := newStateBoundsGossip()
+			s.observedTxs = make(map[txKey]*AttestationState[*attestableObservedTx])
+			s.networkFees = make(map[common.NetworkFee]*AttestationState[*common.NetworkFee])
+			s.solvencies = make(map[common.TxID]*AttestationState[*common.Solvency])
+			s.errataTxs = make(map[common.ErrataTx]*AttestationState[*common.ErrataTx])
+			s.priceFeeds = make(map[string]*AttestationState[*common.PriceFeed])
+
+			// Representative attestation bytes exercise export/serialization only;
+			// signature validation and receiver admission have separate tests.
+			atts := []*common.Attestation{{PubKey: bytes.Repeat([]byte{1}, 33), Signature: bytes.Repeat([]byte{2}, 64)}}
+			storedAtts := []attestationSentState{{attestation: atts[0]}}
+			var expected common.QuorumState
+			for i := range tc.counts[0] {
+				tx := &common.ObservedTx{Tx: common.Tx{ID: common.TxID(fmt.Sprintf("tx-%d", i)), Chain: common.BTCChain}}
+				s.observedTxs[txKey{Chain: tx.Tx.Chain, ID: tx.Tx.ID, Inbound: true}] = &AttestationState[*attestableObservedTx]{
+					Item: &attestableObservedTx{ObservedTx: tx}, attestations: storedAtts,
+				}
+				expected.QuoTxs = append(expected.QuoTxs, &common.QuorumTx{ObsTx: *tx, Inbound: true, Attestations: atts})
+			}
+			for i := range tc.counts[1] {
+				fee := &common.NetworkFee{Chain: common.BTCChain, Height: int64(i + 1), TransactionSize: 100, TransactionRate: 2}
+				s.networkFees[*fee] = &AttestationState[*common.NetworkFee]{Item: fee, attestations: storedAtts}
+				expected.QuoNetworkFees = append(expected.QuoNetworkFees, &common.QuorumNetworkFee{NetworkFee: fee, Attestations: atts})
+			}
+			for i := range tc.counts[2] {
+				solvency := &common.Solvency{Id: common.TxID(fmt.Sprintf("solvency-%d", i)), Chain: common.BTCChain, Height: int64(i + 1)}
+				s.solvencies[solvency.Id] = &AttestationState[*common.Solvency]{Item: solvency, attestations: storedAtts}
+				expected.QuoSolvencies = append(expected.QuoSolvencies, &common.QuorumSolvency{Solvency: solvency, Attestations: atts})
+			}
+			for i := range tc.counts[3] {
+				errata := &common.ErrataTx{Id: common.TxID(fmt.Sprintf("errata-%d", i)), Chain: common.BTCChain}
+				s.errataTxs[*errata] = &AttestationState[*common.ErrataTx]{Item: errata, attestations: storedAtts}
+				expected.QuoErrataTxs = append(expected.QuoErrataTxs, &common.QuorumErrataTx{ErrataTx: errata, Attestations: atts})
+			}
+			for i := range tc.counts[4] {
+				priceFeed := &common.PriceFeed{Time: int64(i + 1)}
+				s.priceFeeds[fmt.Sprintf("price-%d", i)] = &AttestationState[*common.PriceFeed]{Item: priceFeed, attestations: storedAtts}
+				expected.QuoPriceFeeds = append(expected.QuoPriceFeeds, &common.QuorumPriceFeed{PriceFeed: priceFeed, Attestations: atts})
+			}
+
+			stream := NewAutoResponderStream("active")
+			require.NoError(t, s.sendAttestationState(stream, time.Now().Add(defaultStateSyncTimeout)))
+			frames := ParseMessages(stream.GetWrittenData())
+			require.NotEmpty(t, frames)
+			require.Len(t, frames[0], 5)
+			require.Equal(t, prefixBatchBegin, frames[0][:1])
+			batchCount := int(binary.LittleEndian.Uint32(frames[0][1:]))
+			require.Positive(t, batchCount)
+			require.Len(t, frames, 2*batchCount+2, "one header/data pair per announced batch, then end")
+			require.Equal(t, prefixBatchEnd, frames[len(frames)-1])
+
+			var reconstructed, last common.QuorumState
+			var categoryBatches [5]int
+			for i := range batchCount {
+				header, data := frames[1+2*i], frames[2+2*i]
+				require.Len(t, header, 9)
+				require.Equal(t, prefixBatchHeader, header[:1])
+				require.EqualValues(t, i, binary.LittleEndian.Uint32(header[1:5]))
+				require.Greater(t, len(data), 1, "no empty data frame")
+				require.Equal(t, prefixBatchData, data[:1])
+				require.EqualValues(t, len(data)-1, binary.LittleEndian.Uint32(header[5:9]))
+				require.LessOrEqual(t, len(data)-1, tc.budget)
+				require.LessOrEqual(t, len(data), p2p.MaxPayload)
+
+				var decoded common.QuorumState
+				require.NoError(t, decoded.Unmarshal(data[1:]))
+				reconstructed.QuoTxs = append(reconstructed.QuoTxs, decoded.QuoTxs...)
+				reconstructed.QuoNetworkFees = append(reconstructed.QuoNetworkFees, decoded.QuoNetworkFees...)
+				reconstructed.QuoSolvencies = append(reconstructed.QuoSolvencies, decoded.QuoSolvencies...)
+				reconstructed.QuoErrataTxs = append(reconstructed.QuoErrataTxs, decoded.QuoErrataTxs...)
+				reconstructed.QuoPriceFeeds = append(reconstructed.QuoPriceFeeds, decoded.QuoPriceFeeds...)
+				for category, count := range [5]int{len(decoded.QuoTxs), len(decoded.QuoNetworkFees), len(decoded.QuoSolvencies), len(decoded.QuoErrataTxs), len(decoded.QuoPriceFeeds)} {
+					if count > 0 {
+						categoryBatches[category]++
+					}
+				}
+				last = decoded
+			}
+
+			// ElementsMatch checks multiplicity as well as complete values, without
+			// depending on map iteration order or hiding duplicates in a map.
+			require.ElementsMatch(t, expected.QuoTxs, reconstructed.QuoTxs)
+			require.ElementsMatch(t, expected.QuoNetworkFees, reconstructed.QuoNetworkFees)
+			require.ElementsMatch(t, expected.QuoSolvencies, reconstructed.QuoSolvencies)
+			require.ElementsMatch(t, expected.QuoErrataTxs, reconstructed.QuoErrataTxs)
+			require.ElementsMatch(t, expected.QuoPriceFeeds, reconstructed.QuoPriceFeeds)
+			if tc.budget == 256 {
+				for category, count := range tc.counts {
+					if count > 0 {
+						require.Greater(t, categoryBatches[category], 1, "category %d must span multiple batches", category)
+					}
+				}
+				require.Empty(t, last.QuoTxs)
+				require.Empty(t, last.QuoNetworkFees)
+				require.Empty(t, last.QuoSolvencies)
+				require.Empty(t, last.QuoErrataTxs)
+				require.NotEmpty(t, last.QuoPriceFeeds, "retain the final price-feed-only batch")
+			} else {
+				require.Equal(t, 1, batchCount)
+			}
 		})
 	}
 }

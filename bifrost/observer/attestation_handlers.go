@@ -275,87 +275,47 @@ func (s *AttestationGossip) AttestPriceFeed(ctx context.Context, priceFeed commo
 	return nil
 }
 
-// handleStreamAttestationState handles incoming observed transaction streams
+// handleStreamAttestationState serves only requests on fresh inbound streams.
+// Honest replies are read on the stream already opened by askPeerForState.
 func (s *AttestationGossip) handleStreamAttestationState(stream network.Stream) {
-	remotePeer := stream.Conn().RemotePeer()
-
-	logger := s.logger.With().Str("remote_peer", remotePeer.String()).Logger()
-	logger.Debug().Msg("reading attestation state message")
-
-	defer closeStream(logger, stream)
-
-	// Read and process the message
-	data, err := p2p.ReadStreamWithBuffer(stream)
+	remote := stream.Conn().RemotePeer()
+	logger := s.logger.With().Str("remote_peer", remote.String()).Logger()
+	if !s.admitAttestationState(stream) {
+		_ = stream.Reset()
+		return
+	}
+	defer s.releaseAttestationState(remote)
+	ctx, stopDeadline := s.stateExchangeDeadline(context.Background(), stream)
+	defer stopDeadline()
+	success := false
+	defer func() {
+		if success {
+			closeStream(logger, stream)
+		} else {
+			_ = stream.Reset()
+		}
+	}()
+	// SendState is exactly one byte; even a fresh BatchBegin is unsolicited.
+	data, err := p2p.ReadStreamWithBufferLimit(stream, 1)
 	if err != nil {
-		if err != io.EOF {
-			logger.Error().Err(err).Msg("fail to read payload from stream")
-		}
+		logger.Debug().Err(err).Msg("rejected attestation state request")
 		return
 	}
-
-	// Check message type and handle accordingly
-	if len(data) == 0 {
-		logger.Error().Msg("empty payload")
+	if len(data) != 1 || data[0] != prefixSendState[0] {
+		logger.Debug().Msg("unexpected attestation state request")
 		return
 	}
-
-	// Handle based on prefix
-	switch {
-	case data[0] == prefixSendState[0]:
-		// Send state request
-		if len(data) != 1 {
-			logger.Error().Msg("unexpected payload length for send state request")
-			return
-		}
-		logger.Debug().Msg("handling send state request")
-		s.sendAttestationState(stream)
-
-	case data[0] == prefixBatchBegin[0]:
-
-		s.stateInitMu.Lock()
-		if s.stateInitPeers == nil || s.stateInitContext == nil {
-			// we are not asking for attestation state
-			s.stateInitMu.Unlock()
-			s.logger.Warn().Msg("skipping attestation state stream, not asking for it")
-			err := p2p.WriteStreamWithBuffer([]byte("error: not asking for attestation state"), stream)
-			if err != nil {
-				logger.Error().Err(err).Msgf("fail to write error reply to peer: %s", remotePeer)
-			}
-			return
-		}
-		_, ok := s.stateInitPeers[remotePeer]
-		ctx, workers := s.stateInitContext, s.stateInitWorkers
-		if ok {
-			workers.Add(1)
-		}
-		s.stateInitMu.Unlock()
-		if !ok {
-			// unauthorized peer
-			s.logger.Warn().Msg("skipping attestation state stream from unexpected peer")
-			err := p2p.WriteStreamWithBuffer([]byte("error: unauthorized peer for attestation state"), stream)
-			if err != nil {
-				logger.Error().Err(err).Msgf("fail to write error reply to peer: %s", remotePeer)
-			}
-			return
-		}
-
-		// Registration and closing admission share stateInitMu, so the group
-		// can cancel and join these imports without racing WaitGroup.Add.
-		defer workers.Done()
-		// Batched state transmission
-		logger.Debug().Msg("handling batched attestation state")
-		err := s.receiveBatchedAttestationStateWithContext(ctx, stream, data[1:])
-		if err != nil {
-			logger.Error().Err(err).Msg("failed to receive batched attestation state")
-		}
-
-	default:
-		logger.Error().Msgf("unknown message type: %d", data[0])
-		err := p2p.WriteStreamWithBuffer([]byte("error: unknown message type"), stream)
-		if err != nil {
-			logger.Error().Err(err).Msgf("fail to write error reply to peer: %s", remotePeer)
-		}
+	// A slow ACK retains a complete copied snapshot. Bound that independently
+	// from pre-frame admission, without queuing more snapshots behind it.
+	if !s.acquireAttestationStateSnapshot() {
+		return
 	}
+	defer s.stateSnapshotsActive.Add(-1)
+	if err := s.sendAttestationStateWithContext(ctx, stream); err != nil {
+		logger.Debug().Err(err).Msg("failed to send attestation state")
+		return
+	}
+	success = true
 }
 
 func (s *AttestationGossip) handleStreamBatchedAttestations(stream network.Stream) {

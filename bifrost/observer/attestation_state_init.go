@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
-	"sync"
 	"time"
 
 	"github.com/libp2p/go-libp2p-core/network"
@@ -16,78 +15,9 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common"
 )
 
-// Match the processing budget used by bounded state-sync receivers. This is
-// operational headroom, not a bound on signature work, lock waits or RPCs.
-const (
-	defaultStateSyncTimeout = 30 * time.Minute
-	// Match S14: a single stalled peer cannot own both copies. This bounds
-	// simultaneous copies, not the size of the legacy snapshot itself.
-	maxConcurrentAttestationStateSnapshots = 2
-)
-
-func (s *AttestationGossip) stateSyncTimeout() time.Duration {
-	if s.config.StateSyncTimeout > 0 {
-		return s.config.StateSyncTimeout
-	}
-	return defaultStateSyncTimeout
-}
-
-func (s *AttestationGossip) acquireAttestationStateExport(remote peer.ID) bool {
-	s.stateExportMu.Lock()
-	defer s.stateExportMu.Unlock()
-	if _, exists := s.stateExports[remote]; exists || len(s.stateExports) >= maxConcurrentAttestationStateSnapshots {
-		return false
-	}
-	if s.stateExports == nil {
-		s.stateExports = make(map[peer.ID]struct{})
-	}
-	s.stateExports[remote] = struct{}{}
-	return true
-}
-
-// The owning handler releases capacity only when its work has returned.
-// Cancellation interrupts lock waits; capacity is released after the owner exits.
-func (s *AttestationGossip) releaseAttestationStateExport(remote peer.ID) {
-	s.stateExportMu.Lock()
-	defer s.stateExportMu.Unlock()
-	delete(s.stateExports, remote)
-}
-
-// One absolute budget covers transport, processing and queries. Reset interrupts
-// caller-owned stream I/O; processing and lock waits use the same context.
-func (s *AttestationGossip) stateExchangeContext(parent context.Context) (context.Context, context.CancelFunc) {
-	return context.WithTimeout(parent, s.stateSyncTimeout())
-}
-
-func (s *AttestationGossip) stateExchangeDeadline(parent context.Context, stream network.Stream) (context.Context, context.CancelFunc) {
-	ctx, cancel := s.stateExchangeContext(parent)
-	stop := context.AfterFunc(ctx, func() { _ = stream.Reset() })
-	return ctx, func() { stop(); cancel() }
-}
-
 // askForAttestationState collects one parallel group. A failed peer never
 // cancels other imports; the owner waits for the whole group before retrying.
 func (s *AttestationGossip) askForAttestationState(ctx context.Context, peers ...peer.ID) attestationStateGroupResult {
-	ctx, cancel := context.WithCancel(ctx)
-	var inbound sync.WaitGroup
-	s.stateInitMu.Lock()
-	s.stateInitContext = ctx
-	s.stateInitWorkers = &inbound
-	s.stateInitPeers = make(map[peer.ID]bool, len(peers))
-	for _, remote := range peers {
-		s.stateInitPeers[remote] = true
-	}
-	s.stateInitMu.Unlock()
-	defer func() {
-		s.stateInitMu.Lock()
-		s.stateInitPeers = nil
-		s.stateInitContext = nil
-		s.stateInitWorkers = nil
-		s.stateInitMu.Unlock()
-		cancel()
-		inbound.Wait()
-	}()
-
 	outcomes := make(chan attestationStateTransferResult, len(peers))
 	for _, id := range peers {
 		go func() { outcomes <- s.askPeerForState(ctx, id) }()
@@ -114,49 +44,75 @@ func (s *AttestationGossip) askForAttestationState(ctx context.Context, peers ..
 	return group
 }
 
-func (s *AttestationGossip) sendAttestationState(stream network.Stream) {
-	remotePeer := stream.Conn().RemotePeer()
-	if !s.acquireAttestationStateExport(remotePeer) {
-		s.logger.Debug().Str("peer", remotePeer.String()).Msg("state export capacity exhausted")
-		_ = stream.Reset()
-		return
-	}
-	defer s.releaseAttestationStateExport(remotePeer)
-	ctx, stopDeadline := s.stateExchangeDeadline(context.Background(), stream)
+func (s *AttestationGossip) sendAttestationState(stream network.Stream, deadline time.Time) error {
+	ctx, cancel := context.WithDeadline(context.Background(), deadline)
+	defer cancel()
+	return s.sendAttestationStateWithContext(ctx, stream)
+}
+
+func (s *AttestationGossip) sendAttestationStateWithContext(ctx context.Context, stream network.Stream) error {
 	deadline, _ := ctx.Deadline()
-	defer stopDeadline()
+	remotePeer := stream.Conn().RemotePeer()
 
 	s.logger.Debug().Str("peer", remotePeer.String()).Msg("sending attestation state")
 	// Snapshot under the map/state locks. Each frame revalidates durable XMR
 	// admission later; no transport operation holds a cleanup reader.
 	if err := lockAttestationContext(ctx, &s.mu); err != nil {
-		return
+		return err
 	}
+	// Count exported chunks, not stored buckets: empty and fully committed
+	// state carries no evidence for the receiver and does not use the budget.
+	remainingItems := maxAttestationStateItemsPerTransfer
 
 	// Collect all QuorumTxs
-	allQuorumTxs := make([]*common.QuorumTx, 0, len(s.observedTxs))
+	allQuorumTxs := make([]*common.QuorumTx, 0, min(len(s.observedTxs), remainingItems))
 	for k, ots := range s.observedTxs {
 		if err := lockAttestationContext(ctx, &ots.mu); err != nil {
 			s.mu.Unlock()
-			return
+			return err
+		}
+		chunks, err := copyStateSyncAttestations(ots, remainingItems)
+		if err != nil {
+			exportErr := fmt.Errorf("transaction %s/%s: %w", ots.Item.ObservedTx.Tx.Chain, ots.Item.ObservedTx.Tx.ID, err)
+			ots.mu.Unlock()
+			s.mu.Unlock()
+			return s.stateExportError(exportErr)
+		}
+		if len(chunks) == 0 {
+			ots.mu.Unlock()
+			continue
 		}
 
-		quorumTxs := &common.QuorumTx{
-			ObsTx:                  *ots.Item.ObservedTx,
-			Inbound:                k.Inbound,
-			AllowFutureObservation: k.AllowFutureObservation,
-			Attestations:           ots.AttestationsCopy(),
+		for _, attestations := range chunks {
+			quorumTxs := &common.QuorumTx{
+				ObsTx:                  *ots.Item.ObservedTx,
+				Inbound:                k.Inbound,
+				AllowFutureObservation: k.AllowFutureObservation,
+				Attestations:           attestations,
+			}
+			allQuorumTxs = append(allQuorumTxs, quorumTxs)
 		}
-		allQuorumTxs = append(allQuorumTxs, quorumTxs)
 
+		remainingItems -= len(chunks)
 		ots.mu.Unlock()
 	}
 
-	allNetworkFees := make([]*common.QuorumNetworkFee, 0, len(s.networkFees))
+	allNetworkFees := make([]*common.QuorumNetworkFee, 0, min(len(s.networkFees), remainingItems))
 	for _, nf := range s.networkFees {
 		if err := lockAttestationContext(ctx, &nf.mu); err != nil {
 			s.mu.Unlock()
-			return
+			return err
+		}
+		chunks, err := copyStateSyncAttestations(nf, remainingItems)
+		if err != nil {
+			exportErr := fmt.Errorf("network fee %s/%d: %w", nf.Item.Chain, nf.Item.Height, err)
+			nf.mu.Unlock()
+			s.mu.Unlock()
+			return s.stateExportError(exportErr)
+		}
+		if len(chunks) == 0 {
+			nf.mu.Unlock()
+			continue
 		}
 		nfCopy := &common.NetworkFee{
 			Chain:           nf.Item.Chain,
@@ -164,18 +120,33 @@ func (s *AttestationGossip) sendAttestationState(stream network.Stream) {
 			TransactionSize: nf.Item.TransactionSize,
 			TransactionRate: nf.Item.TransactionRate,
 		}
-		allNetworkFees = append(allNetworkFees, &common.QuorumNetworkFee{
-			NetworkFee:   nfCopy,
-			Attestations: nf.AttestationsCopy(),
-		})
+		for _, attestations := range chunks {
+			allNetworkFees = append(allNetworkFees, &common.QuorumNetworkFee{
+				NetworkFee:   nfCopy,
+				Attestations: attestations,
+			})
+		}
+
+		remainingItems -= len(chunks)
 		nf.mu.Unlock()
 	}
 
-	allSolvencies := make([]*common.QuorumSolvency, 0, len(s.solvencies))
+	allSolvencies := make([]*common.QuorumSolvency, 0, min(len(s.solvencies), remainingItems))
 	for _, solvency := range s.solvencies {
 		if err := lockAttestationContext(ctx, &solvency.mu); err != nil {
 			s.mu.Unlock()
-			return
+			return err
+		}
+		chunks, err := copyStateSyncAttestations(solvency, remainingItems)
+		if err != nil {
+			exportErr := fmt.Errorf("solvency %s/%s: %w", solvency.Item.Chain, solvency.Item.Id, err)
+			solvency.mu.Unlock()
+			s.mu.Unlock()
+			return s.stateExportError(exportErr)
+		}
+		if len(chunks) == 0 {
+			solvency.mu.Unlock()
+			continue
 		}
 		sCopy := &common.Solvency{
 			Id:     solvency.Item.Id,
@@ -184,45 +155,79 @@ func (s *AttestationGossip) sendAttestationState(stream network.Stream) {
 			PubKey: solvency.Item.PubKey,
 			Coins:  solvency.Item.Coins.Copy(),
 		}
-		allSolvencies = append(allSolvencies, &common.QuorumSolvency{
-			Solvency:     sCopy,
-			Attestations: solvency.AttestationsCopy(),
-		})
+		for _, attestations := range chunks {
+			allSolvencies = append(allSolvencies, &common.QuorumSolvency{
+				Solvency:     sCopy,
+				Attestations: attestations,
+			})
+		}
+
+		remainingItems -= len(chunks)
 		solvency.mu.Unlock()
 	}
 
-	allErrataTxs := make([]*common.QuorumErrataTx, 0, len(s.errataTxs))
+	allErrataTxs := make([]*common.QuorumErrataTx, 0, min(len(s.errataTxs), remainingItems))
 	for _, errataTx := range s.errataTxs {
 		if err := lockAttestationContext(ctx, &errataTx.mu); err != nil {
 			s.mu.Unlock()
-			return
+			return err
+		}
+		chunks, err := copyStateSyncAttestations(errataTx, remainingItems)
+		if err != nil {
+			exportErr := fmt.Errorf("errata %s/%s: %w", errataTx.Item.Chain, errataTx.Item.Id, err)
+			errataTx.mu.Unlock()
+			s.mu.Unlock()
+			return s.stateExportError(exportErr)
+		}
+		if len(chunks) == 0 {
+			errataTx.mu.Unlock()
+			continue
 		}
 		eTxCopy := &common.ErrataTx{
 			Chain: errataTx.Item.Chain,
 			Id:    errataTx.Item.Id,
 		}
-		allErrataTxs = append(allErrataTxs, &common.QuorumErrataTx{
-			ErrataTx:     eTxCopy,
-			Attestations: errataTx.AttestationsCopy(),
-		})
+		for _, attestations := range chunks {
+			allErrataTxs = append(allErrataTxs, &common.QuorumErrataTx{
+				ErrataTx:     eTxCopy,
+				Attestations: attestations,
+			})
+		}
+
+		remainingItems -= len(chunks)
 		errataTx.mu.Unlock()
 	}
 
-	allPriceFeeds := make([]*common.QuorumPriceFeed, 0, len(s.priceFeeds))
+	allPriceFeeds := make([]*common.QuorumPriceFeed, 0, min(len(s.priceFeeds), remainingItems))
 	for _, priceFeed := range s.priceFeeds {
 		if err := lockAttestationContext(ctx, &priceFeed.mu); err != nil {
 			s.mu.Unlock()
-			return
+			return err
+		}
+		chunks, err := copyStateSyncAttestations(priceFeed, remainingItems)
+		if err != nil {
+			exportErr := fmt.Errorf("price feed %d: %w", priceFeed.Item.Time, err)
+			priceFeed.mu.Unlock()
+			s.mu.Unlock()
+			return s.stateExportError(exportErr)
+		}
+		if len(chunks) == 0 {
+			priceFeed.mu.Unlock()
+			continue
 		}
 		pfCopy := &common.PriceFeed{
 			Time:    priceFeed.Item.Time,
 			Rates:   priceFeed.Item.Rates,
 			Version: bytes.Clone(priceFeed.Item.Version),
 		}
-		allPriceFeeds = append(allPriceFeeds, &common.QuorumPriceFeed{
-			PriceFeed:    pfCopy,
-			Attestations: priceFeed.AttestationsCopy(),
-		})
+		for _, attestations := range chunks {
+			allPriceFeeds = append(allPriceFeeds, &common.QuorumPriceFeed{
+				PriceFeed:    pfCopy,
+				Attestations: attestations,
+			})
+		}
+
+		remainingItems -= len(chunks)
 		priceFeed.mu.Unlock()
 	}
 
@@ -249,6 +254,19 @@ func (s *AttestationGossip) sendAttestationState(stream network.Stream) {
 	}
 	qb.flush()
 	batches := qb.batches
+	if len(batches) > maxAttestationStateBatches {
+		return s.stateExportError(fmt.Errorf("local state has %d batches, maximum %d", len(batches), maxAttestationStateBatches))
+	}
+	// Validate the complete export before announcing it. The receiver accepts
+	// these same bounds; nothing is dropped to make an oversized snapshot fit.
+	for i, batch := range batches {
+		if batch.Size() > p2p.MaxPayload-1 {
+			return s.stateExportError(fmt.Errorf("local state batch %d exceeds wire payload maximum", i))
+		}
+		if err := validateAttestationStateBatch(batch); err != nil {
+			return s.stateExportError(fmt.Errorf("local state batch %d: %w", i, err))
+		}
+	}
 
 	totalTxs := len(allQuorumTxs)
 	totalNfs := len(allNetworkFees)
@@ -272,14 +290,14 @@ func (s *AttestationGossip) sendAttestationState(stream network.Stream) {
 	binary.LittleEndian.PutUint32(beginInfo, uint32(totalBatches))
 	if err := p2p.WriteStreamWithBuffer(append(prefixBatchBegin, beginInfo...), stream); err != nil {
 		s.logger.Error().Err(err).Msg("failed to send batch begin signal")
-		return
+		return err
 	}
 
 	// Wait for acknowledgment
 	ack, err := p2p.ReadStreamWithBufferLimit(stream, uint32(len(streamAckHeader)))
 	if err != nil {
 		s.logger.Error().Err(err).Msg("failed to read ack after batch begin")
-		return
+		return err
 	}
 
 	if totalBatches == 0 {
@@ -288,21 +306,21 @@ func (s *AttestationGossip) sendAttestationState(stream network.Stream) {
 		// check below would log a false "unexpected response to batch begin"
 		// error in this success path.
 		if string(ack) != p2p.StreamMsgDone {
-			s.logger.Error().Str("response", string(ack)).Msg("unexpected final response")
+			return fmt.Errorf("unexpected final response: %q", ack)
 		}
-		return
+		return nil
 	}
 
 	if string(ack) != streamAckBegin {
 		s.logger.Error().Str("response", string(ack)).Msg("unexpected response to batch begin")
-		return
+		return fmt.Errorf("unexpected state acknowledgement: %q", ack)
 	}
 
 	// Send batches
 	for batchNum, batch := range batches {
 		if err = s.sendAttestationStateBatchWithContext(ctx, stream, batchNum, batch, deadline); err != nil {
 			s.logger.Error().Err(err).Int("batch", batchNum+1).Msg("failed to send state batch")
-			return
+			return err
 		}
 
 		s.logger.Debug().
@@ -314,7 +332,7 @@ func (s *AttestationGossip) sendAttestationState(stream network.Stream) {
 	// Send batch end signal
 	if err = p2p.WriteStreamWithBuffer(prefixBatchEnd, stream); err != nil {
 		s.logger.Error().Err(err).Msg("failed to send batch end signal")
-		return
+		return err
 	}
 
 	// The receiver sends done only after processing the final batch.
@@ -322,11 +340,11 @@ func (s *AttestationGossip) sendAttestationState(stream network.Stream) {
 	endAck, err = p2p.ReadStreamWithBufferLimitAndDeadline(stream, uint32(len(streamAckHeader)), deadline)
 	if err != nil {
 		s.logger.Error().Err(err).Msg("failed to read final ack")
-		return
+		return err
 	}
 	if string(endAck) != p2p.StreamMsgDone {
 		s.logger.Error().Str("response", string(endAck)).Msg("unexpected final response")
-		return
+		return fmt.Errorf("unexpected state acknowledgement: %q", endAck)
 	}
 
 	s.logger.Debug().
@@ -337,6 +355,7 @@ func (s *AttestationGossip) sendAttestationState(stream network.Stream) {
 		Int("total_price_feeds", totalPriceFeeds).
 		Int("total_batches", totalBatches).
 		Msg("successfully sent attestation state in batches")
+	return nil
 }
 
 // sendAttestationStateBatch rechecks durable XMR admission for each frame.
@@ -418,7 +437,6 @@ func (s *AttestationGossip) sendAttestationStateBatchWithContext(ctx context.Con
 	return nil
 }
 
-// Keep asynchronous processing so older senders receive frame ACKs promptly.
 func (s *AttestationGossip) receiveBatchedAttestationState(stream network.Stream, initialData []byte) error {
 	return s.receiveBatchedAttestationStateWithContext(context.Background(), stream, initialData)
 }
@@ -431,170 +449,94 @@ func (s *AttestationGossip) receiveBatchedAttestationStateWithContext(ctx contex
 	return result.incomplete
 }
 
+// Decode, preflight and import one bounded batch at a time. The same absolute
+// deadline cancels transport, lock waits and queries; no batch workers outlive it.
 func (s *AttestationGossip) receiveAttestationStateTransfer(parent context.Context, stream network.Stream, initialData []byte) (result attestationStateImportResult, receiveErr error) {
 	ctx, stopDeadline := s.stateExchangeDeadline(parent, stream)
 	defer stopDeadline()
-	ctx, cancel := context.WithCancel(ctx)
-	var batchWG sync.WaitGroup
-	var importsMu sync.Mutex
-	var imports attestationStateImportResult
-	// On a transport error, cancel processing before joining workers. Returning
-	// with a worker alive would let shutdown close storage underneath it.
-	defer func() {
-		cancel()
-		batchWG.Wait()
-		// Workers never write the named return value. Publish their aggregate only
-		// after joining, including evidence retained before a transport failure.
-		result = imports
-	}()
 	if err := ctx.Err(); err != nil {
 		return result, err
 	}
-
-	remotePeer := stream.Conn().RemotePeer()
-	logger := s.logger.With().Str("peer", remotePeer.String()).Str("who", "receiver").Logger()
-
-	// Process batch begin
-	if len(initialData) < 4 {
+	logger := s.logger.With().Str("peer", stream.Conn().RemotePeer().String()).Logger()
+	if len(initialData) != 4 {
 		return result, fmt.Errorf("invalid batch begin format")
 	}
-
-	totalBatches := int(binary.LittleEndian.Uint32(initialData[:4]))
-	logger.Debug().Int("total_batches", totalBatches).Msg("receiving batched attestation state")
-
+	totalBatches := binary.LittleEndian.Uint32(initialData)
+	if totalBatches > maxAttestationStateBatches {
+		return result, fmt.Errorf("batch count %d exceeds maximum %d", totalBatches, maxAttestationStateBatches)
+	}
 	if totalBatches == 0 {
-		// If there are no transactions, we still need to send the end signal
-		if err := p2p.WriteStreamWithBuffer([]byte(p2p.StreamMsgDone), stream); err != nil {
-			return result, fmt.Errorf("failed to send final ack: %w", err)
-		}
-		return result, nil
+		return result, p2p.WriteStreamWithBuffer([]byte(p2p.StreamMsgDone), stream)
 	}
-
-	// Acknowledge receipt of begin signal
 	if err := p2p.WriteStreamWithBuffer([]byte(streamAckBegin), stream); err != nil {
-		return result, fmt.Errorf("failed to acknowledge batch begin: %w", err)
+		return result, err
 	}
-
-	total := 0
-	received := 0
-	// Receive all batches
-	for {
+	totalItems := 0
+	for expected := uint32(0); expected < totalBatches; expected++ {
 		if err := ctx.Err(); err != nil {
 			return result, err
 		}
-		// Read next message
-		message, err := p2p.ReadStreamWithBuffer(stream)
+		message, err := p2p.ReadStreamWithBufferLimit(stream, 9)
 		if err != nil {
-			return result, fmt.Errorf("failed to read batch message: %w", err)
+			return result, fmt.Errorf("read batch header: %w", err)
 		}
-
-		// Check if this is the end marker
-		if len(message) >= 1 && bytes.Equal(message[:1], prefixBatchEnd) {
-			if received != totalBatches {
-				return result, fmt.Errorf("expected %d batches before batch end, got %d", totalBatches, received)
-			}
-			batchWG.Wait()
-			if contextErr := ctx.Err(); contextErr != nil {
-				return result, contextErr
-			}
-			// Send final acknowledgment
-			if err = p2p.WriteStreamWithBuffer([]byte(p2p.StreamMsgDone), stream); err != nil {
-				return result, fmt.Errorf("failed to send final ack: %w", err)
-			}
-			break
-		}
-
-		if received == totalBatches {
-			return result, fmt.Errorf("expected batch end after %d batches", totalBatches)
-		}
-
-		// Must be a batch data header
-		if len(message) < 9 || !bytes.Equal(message[:1], prefixBatchHeader) {
+		if len(message) != 9 || message[0] != prefixBatchHeader[0] {
 			return result, fmt.Errorf("invalid batch header format")
 		}
-
-		// Extract batch information
-		batchNum := int(binary.LittleEndian.Uint32(message[1:5]))
-		if batchNum != received || received >= totalBatches {
-			return result, fmt.Errorf("unexpected batch number %d after %d of %d batches", batchNum, received, totalBatches)
+		if number := binary.LittleEndian.Uint32(message[1:5]); number != expected {
+			return result, fmt.Errorf("unexpected batch number: expected %d, got %d", expected, number)
 		}
-		dataSize := int(binary.LittleEndian.Uint32(message[5:9]))
-
-		logger.Debug().
-			Int("batch", batchNum+1).
-			Int("total_batches", totalBatches).
-			Int("data_size_bytes", dataSize).
-			Msg("receiving batch")
-
-		// Acknowledge the batch header
+		dataSize := binary.LittleEndian.Uint32(message[5:9])
+		if dataSize > p2p.MaxPayload-1 {
+			return result, fmt.Errorf("batch data size %d exceeds maximum %d", dataSize, p2p.MaxPayload-1)
+		}
 		if err = p2p.WriteStreamWithBuffer([]byte(streamAckHeader), stream); err != nil {
-			return result, fmt.Errorf("failed to acknowledge batch header: %w", err)
+			return result, err
 		}
-
-		// Read the batch data
-		message, err = p2p.ReadStreamWithBuffer(stream)
+		// Enforce the declared size before allocating the framed data as well.
+		message, err = p2p.ReadStreamWithBufferLimit(stream, dataSize+1)
 		if err != nil {
-			return result, fmt.Errorf("failed to read batch data: %w", err)
+			return result, fmt.Errorf("read batch data: %w", err)
 		}
-		if !bytes.HasPrefix(message, prefixBatchData) {
-			return result, fmt.Errorf("invalid batch data format")
+		if len(message) != int(dataSize)+1 || message[0] != prefixBatchData[0] {
+			return result, fmt.Errorf("invalid batch data format or size")
 		}
-		batchData := message[1:]
-
-		logger.Debug().Int("len_bz", len(batchData)).Msg("received batch data")
-
-		if len(batchData) != dataSize {
-			return result, fmt.Errorf("batch data size mismatch: expected %d, got %d", dataSize, len(batchData))
-		}
-
-		// Acknowledge the batch data
-		if err := p2p.WriteStreamWithBuffer([]byte(streamAckData), stream); err != nil {
-			return result, fmt.Errorf("failed to acknowledge batch data: %w", err)
-		}
-
-		received++
-
-		// Empty frames still count toward the declared transfer.
-		if len(batchData) == 0 {
-			// This is an empty batch, no need to unmarshal
-			continue
-		}
-
-		// Unmarshal the batch
 		var batch common.QuorumState
-		if err := batch.Unmarshal(batchData); err != nil {
-			return result, fmt.Errorf("failed to unmarshal batch: %w", err)
+		if err = batch.Unmarshal(message[1:]); err != nil {
+			return result, fmt.Errorf("unmarshal state batch: %w", err)
 		}
-
-		// Add the QuorumTxs to our collection
-		batchWG.Add(1)
-		go func(batch common.QuorumState) {
-			defer batchWG.Done()
-			imported, importErr := s.importAttestationStateBatch(ctx, logger, batch)
-			importsMu.Lock()
-			imports.items += imported.items
-			if imports.incomplete == nil {
-				imports.incomplete = imported.incomplete
-				if imports.incomplete == nil {
-					imports.incomplete = importErr
-				}
-			}
-			importsMu.Unlock()
-		}(batch)
-
-		total += len(batch.QuoTxs)
-
-		logger.Debug().
-			Int("batch", batchNum+1).
-			Int("total_batches", totalBatches).
-			Int("batch_size", len(batch.QuoTxs)).
-			Int("total_collected", total).
-			Msg("batch received")
+		totalItems, err = validateAttestationStateTransferCount(totalItems, batch)
+		if err != nil {
+			return result, err
+		}
+		if err = validateAttestationStateBatch(batch); err != nil {
+			return result, err
+		}
+		if err = p2p.WriteStreamWithBuffer([]byte(streamAckData), stream); err != nil {
+			return result, err
+		}
+		// Preserve the data-ACK timing of honest senders. The processor also
+		// preflights to protect direct callers; neither check verifies signatures.
+		imported, err := s.importAttestationStateBatch(ctx, logger, batch)
+		result.items += imported.items
+		if result.incomplete == nil {
+			result.incomplete = imported.incomplete
+		}
+		if err != nil {
+			return result, err
+		}
 	}
-
-	logger.Debug().Int("total_txs", total).Msg("finished receiving attestation state")
-
-	return result, nil
+	end, err := p2p.ReadStreamWithBufferLimit(stream, 1)
+	if err != nil {
+		return result, fmt.Errorf("read batch end: %w", err)
+	}
+	if !bytes.Equal(end, prefixBatchEnd) {
+		return result, fmt.Errorf("expected batch end after %d batches", totalBatches)
+	}
+	if err := ctx.Err(); err != nil {
+		return result, err
+	}
+	return result, p2p.WriteStreamWithBuffer([]byte(p2p.StreamMsgDone), stream)
 }
 
 func (s *AttestationGossip) processAttestationStateBatch(logger zerolog.Logger, batch common.QuorumState) error {
@@ -614,7 +556,7 @@ func (s *AttestationGossip) importAttestationStateBatch(ctx context.Context, log
 	if err := ctx.Err(); err != nil {
 		return result, err
 	}
-	if err := validateAttestationStateImport(batch); err != nil {
+	if err := validateAttestationStateBatch(batch); err != nil {
 		return result, err
 	}
 	for _, qt := range batch.QuoTxs {
@@ -732,7 +674,7 @@ func (s *AttestationGossip) askStreamForStateWithContext(parent context.Context,
 	if result.err = p2p.WriteStreamWithBuffer(prefixSendState, stream); result.err != nil {
 		return
 	}
-	initialData, err := p2p.ReadStreamWithBuffer(stream)
+	initialData, err := p2p.ReadStreamWithBufferLimit(stream, 5)
 	if err != nil {
 		result.err = err
 		return

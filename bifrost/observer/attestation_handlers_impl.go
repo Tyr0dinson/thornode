@@ -382,18 +382,18 @@ func (s *AttestationGossip) handleNetworkFeeAttestation(ctx context.Context, anf
 
 func (s *AttestationGossip) handleNetworkFeeAttestationWithStateSyncCancellation(ctx context.Context, anf common.AttestNetworkFee, stateSync bool) (result attestationImportOutcome) {
 	lockCtx := attestationLockContext(ctx, stateSync)
-	// State-sync completion counts only admissible evidence. Keep these checks
-	// local to import admission; the later S14 change also guards live gossip.
-	if stateSync {
-		if anf.NetworkFee == nil {
-			return
-		}
-		if err := anf.NetworkFee.Valid(); err != nil {
-			return
-		}
-		if anf.NetworkFee.TransactionRate > uint64(math.MaxInt64) || anf.NetworkFee.TransactionSize > uint64(math.MaxInt64) {
-			return
-		}
+	if anf.NetworkFee == nil {
+		s.logger.Error().Msg("fail to add network fee attestation: network fee is nil")
+		return
+	}
+	// Reject fields THORNode cannot accept before publishing a state bucket.
+	if err := anf.NetworkFee.Valid(); err != nil {
+		s.logger.Error().Err(err).Msg("fail to add network fee attestation")
+		return
+	}
+	if anf.NetworkFee.TransactionRate > uint64(math.MaxInt64) || anf.NetworkFee.TransactionSize > uint64(math.MaxInt64) {
+		s.logger.Error().Msg("fail to add network fee attestation: transaction rate or size exceeds int64 max")
+		return
 	}
 	// Use the network fee as the map key
 	k := *anf.NetworkFee

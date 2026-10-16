@@ -6,11 +6,13 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
 	cryptotypes "github.com/cosmos/cosmos-sdk/crypto/types"
 	"github.com/libp2p/go-libp2p-core/host"
+	"github.com/libp2p/go-libp2p-core/network"
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/libp2p/go-libp2p-core/protocol"
 	"github.com/rs/zerolog"
@@ -259,20 +261,16 @@ type AttestationGossip struct {
 	// peerManager is used to limit the number of concurrent receives from a peer
 	peerMgr *peerManager
 
-	// Export admission is separate from ordinary gossip concurrency. Own one
-	// copied snapshot per peer, with a fixed total before any snapshot work.
-	stateExportMu sync.Mutex
-	stateExports  map[peer.ID]struct{}
-
 	startupStateMu      sync.Mutex
 	startupState        *attestationStateCollection
 	startupStatePending time.Time
 	startupStateStopped bool
 
-	stateInitPeers   map[peer.ID]bool // peers that we have asked for their attestation state
-	stateInitContext context.Context
-	stateInitWorkers *sync.WaitGroup
-	stateInitMu      sync.Mutex
+	stateRequestMu       sync.Mutex
+	stateRequests        map[peer.ID]network.Stream
+	stateRequestsStopped bool
+	stateSnapshotsActive atomic.Int32
+	stateExportWarnAt    time.Time // protected by stateRequestMu
 }
 
 // NewAttestationGossip create a new instance of AttestationGossip
@@ -388,6 +386,9 @@ func normalizeConfig(config *config.BifrostAttestationGossipConfig) {
 	}
 	if config.PeerTimeout == 0 {
 		config.PeerTimeout = defaultPeerTimeout
+	}
+	if config.StateSyncTimeout <= 0 {
+		config.StateSyncTimeout = defaultStateSyncTimeout
 	}
 	if config.MaxBatchSize == 0 {
 		config.MaxBatchSize = defaultMaxBatchSize
@@ -869,6 +870,9 @@ func (s *AttestationGossip) Start(ctx context.Context) {
 	s.runCtx = ctx
 	s.runCtxMu.Unlock()
 
+	stopStateRequests := context.AfterFunc(ctx, s.stopAttestationStateRequests)
+	defer stopStateRequests()
+	defer s.stopAttestationStateRequests()
 	ticker := time.NewTicker(s.config.ObserveReconcileInterval)
 
 	startupDelay := s.config.AskPeersDelay
