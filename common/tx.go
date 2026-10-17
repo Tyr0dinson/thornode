@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
@@ -142,9 +143,23 @@ func NewTx(txID TxID, from, to Address, coins Coins, gas Gas, memo string) Tx {
 }
 
 // Hash calculates an internal hash based on chain, from address, coins, to address and block height.
+//
+// The result is byte-for-byte fmt.Sprintf("%X", sha256.Sum256([]byte(
+// fmt.Sprintf("%s|%s|%s|%s|%d", tx.Chain, tx.FromAddress, tx.Coins, tx.ToAddress, blockHeight)))),
+// built without fmt: %s calls each field's value-receiver String (none of the
+// types implements Formatter or error, and none of the String methods can
+// panic), %d is base-10 FormatInt, and %X of a byte array is uppercase hex.
 func (tx Tx) Hash(blockHeight int64) string {
-	str := fmt.Sprintf("%s|%s|%s|%s|%d", tx.Chain, tx.FromAddress, tx.Coins, tx.ToAddress, blockHeight)
-	return fmt.Sprintf("%X", sha256.Sum256([]byte(str)))
+	str := tx.Chain.String() + "|" + tx.FromAddress.String() + "|" + tx.Coins.String() + "|" +
+		tx.ToAddress.String() + "|" + strconv.FormatInt(blockHeight, 10)
+	sum := sha256.Sum256([]byte(str))
+	const upperHexDigits = "0123456789ABCDEF"
+	var out [2 * sha256.Size]byte
+	for i, b := range sum {
+		out[2*i] = upperHexDigits[b>>4]
+		out[2*i+1] = upperHexDigits[b&0x0f]
+	}
+	return string(out[:])
 }
 
 // String implement fmt.Stringer return a string representation of the tx
