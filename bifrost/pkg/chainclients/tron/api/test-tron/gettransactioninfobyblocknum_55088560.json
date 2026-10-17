@@ -30,9 +30,7 @@
         "hash": "d267551d5b79393974ba04a85b0cea13ba70da2cc9063c3a62b83d685f0aa2e9",
         "caller_address": "4192205c62a77b98db639b9c1dee0401c591fae2af",
         "transferTo_address": "4137995dd9cbcbf862bf1ac5b5f326439f1f70fcef",
-        "callValueInfo": [
-          {}
-        ],
+        "callValueInfo": [{}],
         "note": "637265617465"
       }
     ]
