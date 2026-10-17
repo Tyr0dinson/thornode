@@ -2,6 +2,7 @@ package evm
 
 import (
 	"bytes"
+	"encoding/hex"
 
 	ecommon "github.com/ethereum/go-ethereum/common"
 	etypes "github.com/ethereum/go-ethereum/core/types"
@@ -68,4 +69,14 @@ func DepositEventRouter(logs []*etypes.Log) *ecommon.Address {
 		}
 	}
 	return nil
+}
+
+// LowerHexAddress returns strings.ToLower(addr.Hex()), the 0x-prefixed
+// lowercase hex address, without computing the EIP-55 checksum that Hex and
+// String derive with a keccak256 on every call.
+func LowerHexAddress(addr ecommon.Address) string {
+	var buf [2 + 2*ecommon.AddressLength]byte
+	buf[0], buf[1] = '0', 'x'
+	hex.Encode(buf[2:], addr[:])
+	return string(buf[:])
 }

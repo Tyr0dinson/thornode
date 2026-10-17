@@ -1043,15 +1043,20 @@ func (e *EVMScanner) isToValidContractAddress(addr *ecommon.Address, includeWhit
 	}
 	// get the smart contract used by thornode
 	contractAddresses := e.pubkeyMgr.GetContracts(e.cfg.ChainID, false)
-	if includeWhiteList {
-		contractAddresses = append(contractAddresses, e.whitelistContracts...)
-	}
 
-	// combine the whitelist smart contract address
-	addrString := addr.String() // this hashes internally so do it once
+	// EqualFold-equal to the checksummed addr.String(), without its keccak256
+	addrString := evm.LowerHexAddress(*addr)
 	for _, item := range contractAddresses {
 		if strings.EqualFold(item.String(), addrString) {
 			return true
+		}
+	}
+	// combine the whitelist smart contract address
+	if includeWhiteList {
+		for _, item := range e.whitelistContracts {
+			if strings.EqualFold(item.String(), addrString) {
+				return true
+			}
 		}
 	}
 	return false

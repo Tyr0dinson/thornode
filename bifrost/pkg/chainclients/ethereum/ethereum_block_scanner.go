@@ -735,13 +735,29 @@ func (e *ETHScanner) getSymbol(token string) (string, error) {
 func (e *ETHScanner) isToValidContractAddress(addr *ecommon.Address, includeWhiteList bool) bool {
 	// get the smart contract used by thornode
 	contractAddresses := e.pubkeyMgr.GetContracts(common.ETHChain, false)
-	if includeWhiteList || useWhitelistSmartContract {
-		contractAddresses = append(contractAddresses, whitelistSmartContractAddress...)
+	includeWhiteList = includeWhiteList || useWhitelistSmartContract
+
+	// addrString is EqualFold-equal to the checksummed addr.String(), without
+	// a keccak256 per comparison. Like addr.String() before, it is derived
+	// only once there is something to compare against.
+	var addrString string
+	for _, item := range contractAddresses {
+		if addrString == "" {
+			addrString = evm.LowerHexAddress(*addr)
+		}
+		if strings.EqualFold(item.String(), addrString) {
+			return true
+		}
 	}
 	// combine the whitelist smart contract address
-	for _, item := range contractAddresses {
-		if strings.EqualFold(item.String(), addr.String()) {
-			return true
+	if includeWhiteList {
+		for _, item := range whitelistSmartContractAddress {
+			if addrString == "" {
+				addrString = evm.LowerHexAddress(*addr)
+			}
+			if strings.EqualFold(item.String(), addrString) {
+				return true
+			}
 		}
 	}
 	return false
