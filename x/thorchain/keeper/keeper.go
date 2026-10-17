@@ -383,6 +383,8 @@ type KeeperTss interface {
 	GetLatestTssKeysignMetric(_ cosmos.Context) (*TssKeysignMetric, error)
 	SetLastKeygenChains(_ cosmos.Context, _ cosmos.AccAddress, _ common.Chains, _ int64)
 	GetLastKeygenChains(_ cosmos.Context, _ cosmos.AccAddress) (int64, common.Chains, error)
+	SetChainSetStall(_ cosmos.Context, _ common.Chain, _ int64)
+	GetChainSetStalls(_ cosmos.Context, _ int64) (common.Chains, error)
 }
 
 type KeeperTssKeysignFail interface {

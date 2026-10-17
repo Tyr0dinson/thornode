@@ -432,6 +432,12 @@ func (k KVStoreDummy) GetLastKeygenChains(_ cosmos.Context, _ cosmos.AccAddress)
 	return 0, nil, kaboom
 }
 
+func (k KVStoreDummy) SetChainSetStall(_ cosmos.Context, _ common.Chain, _ int64) {}
+
+func (k KVStoreDummy) GetChainSetStalls(_ cosmos.Context, _ int64) (common.Chains, error) {
+	return nil, kaboom
+}
+
 func (k KVStoreDummy) GetKeygenBlock(_ cosmos.Context, _ int64) (KeygenBlock, error) {
 	return KeygenBlock{}, kaboom
 }

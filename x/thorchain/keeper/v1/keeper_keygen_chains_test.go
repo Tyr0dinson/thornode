@@ -126,3 +126,23 @@ func (s *KeeperKeygenChainsSuite) TestLastKeygenChains_NewerHeightReplaces(c *C)
 	}
 	c.Check(stored, Equals, 1)
 }
+
+func (s *KeeperKeygenChainsSuite) TestChainSetStalls_PerCycle(c *C) {
+	ctx, k := setupKeeperForTest(c)
+
+	chains, err := k.GetChainSetStalls(ctx, 500)
+	c.Assert(err, IsNil)
+	c.Check(chains, HasLen, 0)
+
+	k.SetChainSetStall(ctx, common.ETHChain, 400)
+	k.SetChainSetStall(ctx, common.BTCChain, 500)
+	chains, err = k.GetChainSetStalls(ctx, 500)
+	c.Assert(err, IsNil)
+	c.Check(chains, DeepEquals, common.Chains{common.BTCChain}, Commentf("a record from an earlier cycle does not count"))
+
+	// A stall in the current cycle supersedes the old record; results are in chain order.
+	k.SetChainSetStall(ctx, common.ETHChain, 500)
+	chains, err = k.GetChainSetStalls(ctx, 500)
+	c.Assert(err, IsNil)
+	c.Check(chains, DeepEquals, common.Chains{common.BTCChain, common.ETHChain})
+}

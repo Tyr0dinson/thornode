@@ -48,6 +48,7 @@ const (
 	prefixLastObserveHeight         types.DbPrefix = "last_observe_height/"
 	prefixLastKeygenChain           types.DbPrefix = "last_keygen_chain/"
 	prefixLastKeygenReport          types.DbPrefix = "last_keygen_report/"
+	prefixChainSetStall             types.DbPrefix = "chain_set_stall/"
 	prefixNodeAccount               types.DbPrefix = "node_account/"
 	prefixBondProviders             types.DbPrefix = "bond_providers/"
 	prefixVault                     types.DbPrefix = "vault/"
