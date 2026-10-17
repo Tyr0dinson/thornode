@@ -109,7 +109,7 @@ func (s *BlockScannerTestSuite) TestGetMaxEnergy(c *C) {
 // ok, error (an HTTP-200 Error object), empty ({}), or an HTTP status code.
 type headReplies struct {
 	head                         int64
-	header, full                 atomic.Value
+	header, full                 atomic.Pointer[string]
 	headerRequests, fullRequests atomic.Int64
 }
 
@@ -120,10 +120,10 @@ func (n *headReplies) serve(t *testing.T) *httptest.Server {
 		switch r.URL.Path {
 		case "/wallet/getblock":
 			n.headerRequests.Add(1)
-			reply = n.header.Load().(string)
+			reply = *n.header.Load()
 		case "/wallet/getnowblock":
 			n.fullRequests.Add(1)
-			reply = n.full.Load().(string)
+			reply = *n.full.Load()
 		default:
 			http.NotFound(w, r)
 			return
@@ -197,8 +197,8 @@ func TestTRONGetHeightHeadQuery(t *testing.T) {
 				api:    api.NewTronApi(server.URL, time.Second),
 			}
 			for i, step := range tc.steps {
-				node.header.Store(step.header)
-				node.full.Store(step.full)
+				node.header.Store(&step.header)
+				node.full.Store(&step.full)
 				height, err := scanner.GetHeight()
 				if (err != nil) != step.wantErr {
 					t.Fatalf("step %d: err = %v, want error %v", i, err, step.wantErr)
