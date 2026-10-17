@@ -42,13 +42,13 @@ The following functions can be put into a memo:
 1. [**WITHDRAW Trade Account**](memos.md#withdraw-trade-account)
 1. [**ADD Secured Asset**](memos.md#add-secured-asset)
 1. [**WITHDRAW Secured Asset**](memos.md#withdraw-secured-asset)
-1. [**EXECUTE Smart Contract**](memos.md#execute-smart-contract)
 1. [**SWITCH Asset**](memos.md#switch-asset)
 1. [**DEPOSIT** **Savers**](memos.md#deposit-savers)
 1. [**WITHDRAW Savers**](memos.md#withdraw-savers)
 1. [**DEPOSIT RUNEPool**](memos.md#deposit-runepool)
 1. [**WITHDRAW RUNEPool**](memos.md#withdraw-runepool)
 1. [**BOND**, **UNBOND**, **REBOND** & **LEAVE**](memos.md#bond-unbond-rebond-and-leave)
+1. [**BONDYIELD**](memos.md#bond-yield)
 1. [**MAINT** (Maintenance Mode)](memos.md#maintenance-mode)
 1. [**OPERATOR Rotate**](memos.md#operator-rotate)
 1. [**DONATE** & **RESERVE**](memos.md#donate--reserve)
@@ -151,7 +151,7 @@ Add liquidity to a pool.
 
 **`ADD:POOL:PAIREDADDR:AFFILIATE:FEE`**
 
-There are rules for adding liquidity, see [the rules here](https://docs.thorchain.org/learn/getting-started#entering-and-leaving-a-pool).
+There are rules for adding liquidity, see [the rules here](https://docs.thorchain.org/thornodes/frequently-asked-questions/liquidity-providers#entering-and-leaving-a-pool).
 
 | Parameter     | Notes                                                                                                                                                                                                                                  | Conditions                                                                  |
 | ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
@@ -299,29 +299,6 @@ Converts a Secured Asset to a L1 Asset.
 Note: Secured Assets and amount are determined by the `coins` within the `MsgDeposit`. Transaction fee in `RUNE` does apply.
 
 **Example:** `SECURE-:bc1qp8278yutn09r2wu3jrc8xg2a7hgdgwv2gvsdyw` - Convert 0.1 BTC from a Secured Asset to a L1 and send to `bc1qp8278yutn09r2wu3jrc8xg2a7hgdgwv2gvsdyw`
-
-### Execute Smart Contract
-
-Execute a Smart Contract from a base layer transaction.
-
-**`X:ADDR:MSG`**
-
-| Parameter | Notes                                                                                                                          | Conditions                                       |
-| --------- | ------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------ |
-| Payload   | The asset to sent to the smart contract. L1 asset will be converted into a [Secured Asset](./asset-notation.md#secured-assets) | [Dust thresholds](#dust-thresholds) must be met. |
-| `x`       | The Wasm Execute handler. Also `exec`.                                                                                         | Must be a THORChain address                      |
-| `ADDR`    | The THORChain Wasm smart contract address                                                                                      | Must be a thor address                           |
-| `MSG`     | Payload send as `msg` to the Smart Contract, encoded as a base64 byte string.                                                  |                                                  |
-
-Example: `x:tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f:AA==`
-
-The above example creates a `MsgWasmExec` object for a smart contract execution and calls the contract with the following parameters:
-
-1. Contract Address: The address specified in the ADDR field `tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f`.
-2. Sender Address: Derived from the Layer 1 transaction's sender (e.g., the Bitcoin address).
-3. Msg Payload: The arguments provided in the MSG field (AA== in the example, decoded into the expected input for the smart contract).
-4. Funds: The Layer 1 asset (e.g., BTC amount sent in) is converted into a Secured Asset and included in the smart contract call.
-5. The smart contract will be executed via the following Cosmos SDK function: `ExecuteContract(ctx, contractAddr, senderAddr, msg.Msg, msg.Funds)`
 
 ### Switch Asset
 
@@ -513,7 +490,7 @@ See [Memoless Swaps](../swap-guide/memoless-swaps.md) for detailed information.
 
 - **TTL (Time To Live)**: `MemolessTxnTTL` - Reference memos expire after a configurable number of blocks (default: 3600 blocks ≈ 6 hours)
 - **Reference Range**: `MemolessTxnRefCount` - Reference numbers range from 1 to this value (default: 99999). **CAUTION:** Changing this value changes the zero-padding normalization of reference keys. Existing non-expired references become inaccessible. Only change after all references have expired or with a coordinated migration.
-- **Cost**: `MemolessTxnCost` - Additional protocol-level fee, currently set to 0
+- **Cost**: `MemolessTxnCost` - Additional protocol-level fee, currently set to 0. Scaled up by `MemolessTxnCostSlopeBPS` as the asset's reference slots fill, so registering into a congested ring costs more (see [Mimir](../mimir.md))
 - **Max Usage**: `MemolessTxnMaxUse` - Maximum number of times a reference can be used (default: 1)
 - **HaltMemoless**: Operational mimir to emergency halt all memoless functionality
 
@@ -625,6 +602,44 @@ Migrate bonded RUNE to a different whitelisted address on the same node
 - `UNBOND:thor1x2whgc2nt665y0kc44uywhynazvp0l8tp0vtu6:750000000000`
 - `LEAVE:thor1hlhdm0ngr2j4lt8tt8wuvqxz6aus58j57nxnps`
 
+### Bond Yield
+
+Configure automatic payouts from a bond provider's future reward share. Bond Yield does not withdraw existing bond or pay accrued yield when the memo is submitted. At reward distribution, the configured share is paid out and the remainder is added to the provider's bond. The feature must be enabled by the `BondYieldEnabled` Mimir.
+
+**`BONDYIELD:NODEADDR:BPS:PAYOUTTARGET`**
+
+| Parameter       | Notes                                                                  | Conditions                                                                                                                                           |
+| --------------- | ---------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Payload         | None required.                                                         | Use `MsgDeposit`; a non-zero coin amount is rejected.                                                                                                |
+| `BONDYIELD`     | The Bond Yield configuration handler.                                  |                                                                                                                                                      |
+| `:NODEADDR`     | The node whose provider payout configuration is being changed.         | The node must be `Active`, `Standby`, or `Ready`.                                                                                                    |
+| `:BPS`          | Basis-point share of future provider rewards to pay out automatically. | Required integer from `0` to `10000`. For example, `4000` pays out 40% and rebonds 60%. `0` disables Bond Yield and clears the stored payout target. |
+| `:PAYOUTTARGET` | A THORChain address or THORName used for the automatic payout.         | Optional. The transaction must be sent by an existing bond provider for the node. THORNames must exist and be owned by that provider.                |
+
+The node operator fee is deducted before rewards are allocated among bond providers. Bond Yield then applies to the submitting provider's allocated reward:
+
+- `payout amount = provider reward share × BPS / 10000`
+- `rebonded amount = provider reward share - payout amount`
+
+If a payout fails, its amount is rebonded during the same reward distribution cycle.
+
+Payout targets behave as follows:
+
+- No stored target pays native RUNE directly to the bond provider.
+- A THORChain address pays native RUNE to that address. Network module addresses are not allowed.
+- A THORName without a preferred asset pays native RUNE to its THORChain alias, or to its owner when no THORChain alias is set.
+- A THORName with a preferred asset credits that THORName's affiliate collector; conversion and delivery then follow the preferred-asset collector rules.
+- THORName ownership is checked both when configuring the target and when making a payout.
+
+For a non-zero BPS, omitting `PAYOUTTARGET` or leaving it empty preserves the currently stored target. If no target was previously stored, the payout goes directly to the provider. To clear an existing target while keeping Bond Yield enabled, send two transactions: first `BONDYIELD:NODEADDR:0`, then `BONDYIELD:NODEADDR:BPS` with the desired non-zero BPS. A target supplied with BPS `0` is ignored and cleared.
+
+**Examples:**
+
+- `BONDYIELD:thor19m4kqulyqvya339jfja84h6qp8tkjgxuxa4n4a:4000` &mdash; pay out 40% while preserving the current target; use the provider address when no target is stored.
+- `BONDYIELD:thor19m4kqulyqvya339jfja84h6qp8tkjgxuxa4n4a:4000:thor1x2whgc2nt665y0kc44uywhynazvp0l8tp0vtu6` &mdash; pay 40% as native RUNE to a THORChain address.
+- `BONDYIELD:thor19m4kqulyqvya339jfja84h6qp8tkjgxuxa4n4a:4000:yieldname` &mdash; pay 40% through a provider-owned THORName.
+- `BONDYIELD:thor19m4kqulyqvya339jfja84h6qp8tkjgxuxa4n4a:0` &mdash; disable automatic payouts and clear the stored target.
+
 ### Maintenance Mode
 
 Toggle a node's maintenance flag. When in maintenance mode, the node is excluded from churn cycles and will not be slashed for not signing. The node operator sends this as a `MsgDeposit`.
@@ -646,6 +661,8 @@ Toggle a node's maintenance flag. When in maintenance mode, the node is excluded
 **`OPERATOR:NEWOPADDR`**
 
 The operator address can send a `OPERATOR` memo to change the operator address for all their nodes. No nodes for the old or new operator can be active at the time of operator rotation. Operator rotation can only occur in the first half of churn cycle.
+
+Operator rotation changes the controlling address but preserves the existing bond-provider record, including any Bond Yield BPS and payout target. Review and update those settings from the new operator address before the node becomes active again when the payout destination should also change.
 
 | Parameter    | Notes                        | Extra             |
 | ------------ | ---------------------------- | ----------------- |
@@ -684,6 +701,8 @@ May cause loss of funds if not performed correctly and at the right time.
 | Payload    | The asset to credit to a vault. | Must be ASSET or RUNE.                                   |
 | `NOOP`     | The no-op handler.              | Adds to the vault balance, but does not add to the pool. |
 | `:NOVAULT` | Do not credit the vault.        | Optional. Just fix the insolvency issue.                 |
+
+The `:NOVAULT` debit only applies while the operational mimir `AllowNoVault-<CHAIN>` is `1` (or a block height greater than or equal to the current height). Prefer the block-height form: it is the only variant that closes itself. When the gate is closed the vault is credited as with a plain `NOOP`.
 
 ## Refunds
 

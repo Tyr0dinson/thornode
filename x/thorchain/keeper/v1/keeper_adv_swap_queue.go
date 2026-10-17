@@ -52,6 +52,22 @@ func (k KVStore) SetAdvSwapQueueItem(ctx cosmos.Context, msg MsgSwap) error {
 	return nil
 }
 
+// SetAdvSwapQueueItemState updates an existing queue item's mutable state
+// without re-reading and scanning its queue index. Use only when fields that
+// determine the index key are unchanged; mocknet builds (including unit tests)
+// panic if the item is not indexed under its current key.
+func (k KVStore) SetAdvSwapQueueItemState(ctx cosmos.Context, msg MsgSwap) error {
+	if msg.Tx.Coins == nil || len(msg.Tx.Coins) != 1 {
+		return fmt.Errorf("want exactly 1 coin, got %d", len(msg.Tx.Coins))
+	}
+	if msg.Tx.ID.IsEmpty() {
+		return fmt.Errorf("invalid tx hash")
+	}
+	k.assertAdvSwapQueueIndexUnchanged(ctx, msg)
+	k.setMsgSwap(ctx, k.GetKey(prefixAdvSwapQueueItem, formatSwapQueueItemKey(msg.Tx.ID, int(msg.Index))), msg)
+	return nil
+}
+
 // GetAdvSwapQueueItemIterator iterate adv swap queue items
 func (k KVStore) GetAdvSwapQueueItemIterator(ctx cosmos.Context) cosmos.Iterator {
 	return k.getIterator(ctx, prefixAdvSwapQueueItem)
@@ -83,6 +99,15 @@ func (k KVStore) RemoveAdvSwapQueueItem(ctx cosmos.Context, txID common.TxID, in
 		err = k.RemoveAdvSwapQueueIndex(ctx, msg)
 	}
 	k.del(ctx, k.GetKey(prefixAdvSwapQueueItem, formatSwapQueueItemKey(txID, index)))
+	return err
+}
+
+// RemoveAdvSwapQueueItemMsg removes an item and its index entry using the
+// caller's current message, avoiding a store read whose only purpose is to
+// reconstruct the index key.
+func (k KVStore) RemoveAdvSwapQueueItemMsg(ctx cosmos.Context, msg MsgSwap) error {
+	err := k.RemoveAdvSwapQueueIndex(ctx, msg)
+	k.del(ctx, k.GetKey(prefixAdvSwapQueueItem, formatSwapQueueItemKey(msg.Tx.ID, int(msg.Index))))
 	return err
 }
 
@@ -127,6 +152,13 @@ func (k KVStore) GetAdvSwapQueueIndexIterator(ctx cosmos.Context, swapType types
 	default:
 		return nil
 	}
+}
+
+// GetAdvSwapQueueLimitIndexIterator iterates populated limit-index buckets.
+// Callers can use it to identify active pairs without probing every possible
+// directional pool pair.
+func (k KVStore) GetAdvSwapQueueLimitIndexIterator(ctx cosmos.Context) cosmos.Iterator {
+	return k.getIterator(ctx, prefixAdvSwapQueueLimitIndex)
 }
 
 // GetAdvSwapQueueIndex - read the given adv swap queue index information from key values tore

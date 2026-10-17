@@ -145,6 +145,10 @@ func (k KVStoreDummy) GetModuleAccAddress(module string) cosmos.AccAddress {
 	return nil
 }
 
+func (k KVStoreDummy) IsModuleAccount(ctx cosmos.Context, addr cosmos.AccAddress) bool {
+	return false
+}
+
 func (k KVStoreDummy) GetAccount(ctx cosmos.Context, addr cosmos.AccAddress) cosmos.Account {
 	return nil
 }
@@ -161,6 +165,22 @@ func (k KVStoreDummy) SetXMRSpentOutputRefs(_ cosmos.Context, _ common.PubKey, _
 
 func (k KVStoreDummy) GetXMRSpentOutputRefs(_ cosmos.Context, _ common.PubKey) ([]common.OutputRef, error) {
 	return nil, nil
+}
+
+func (k KVStoreDummy) SetSolVaultNonce(_ cosmos.Context, _ SolVaultNonce) {}
+
+func (k KVStoreDummy) GetSolVaultNonce(_ cosmos.Context, _ common.PubKey) (SolVaultNonce, bool, error) {
+	return SolVaultNonce{}, false, nil
+}
+
+func (k KVStoreDummy) GetSolVaultNonceIterator(_ cosmos.Context) cosmos.Iterator {
+	return nil
+}
+
+func (k KVStoreDummy) SetSolNonceAttestVoter(_ cosmos.Context, _ SolNonceAttestVoter) {}
+
+func (k KVStoreDummy) GetSolNonceAttestVoter(_ cosmos.Context, _ common.PubKey, _, _ string, _ common.TxID, _ int64) (SolNonceAttestVoter, error) {
+	return SolNonceAttestVoter{}, kaboom
 }
 
 func (k KVStoreDummy) GetBalanceOf(ctx cosmos.Context, addr cosmos.AccAddress, asset common.Asset) cosmos.Coin {
@@ -401,6 +421,13 @@ func (k KVStoreDummy) GetTssVoter(_ cosmos.Context, _ string) (TssVoter, error) 
 	return TssVoter{}, kaboom
 }
 
+func (k KVStoreDummy) SetLastKeygenChains(_ cosmos.Context, _ cosmos.AccAddress, _ common.Chains, _ int64) {
+}
+
+func (k KVStoreDummy) GetLastKeygenChains(_ cosmos.Context, _ cosmos.AccAddress) (int64, common.Chains, error) {
+	return 0, nil, kaboom
+}
+
 func (k KVStoreDummy) GetKeygenBlock(_ cosmos.Context, _ int64) (KeygenBlock, error) {
 	return KeygenBlock{}, kaboom
 }
@@ -570,10 +597,7 @@ func (k KVStoreDummy) GetStableReserveCreditIterator(_ cosmos.Context) cosmos.It
 	return nil
 }
 
-func (k KVStoreDummy) SetTssKeysignFailVoter(_ cosmos.Context, tss TssKeysignFailVoter) {
-}
-
-func (k KVStoreDummy) GetTssKeysignFailVoterIterator(_ cosmos.Context) cosmos.Iterator {
+func (k KVStoreDummy) SetTssKeysignFailVoter(_ cosmos.Context, _ TssKeysignFailVoter) error {
 	return nil
 }
 
@@ -616,9 +640,15 @@ func (k KVStoreDummy) AdvSwapQueueEnabled(ctx cosmos.Context) bool {
 	return false
 }
 
-func (k KVStoreDummy) SetAdvSwapQueueItem(ctx cosmos.Context, msg MsgSwap) error      { return kaboom }
+func (k KVStoreDummy) SetAdvSwapQueueItem(ctx cosmos.Context, msg MsgSwap) error { return kaboom }
+
+func (k KVStoreDummy) SetAdvSwapQueueItemState(ctx cosmos.Context, msg MsgSwap) error { return kaboom }
 func (k KVStoreDummy) GetAdvSwapQueueItemIterator(ctx cosmos.Context) cosmos.Iterator { return nil }
 func (k KVStoreDummy) RemoveAdvSwapQueueItem(ctx cosmos.Context, _ common.TxID, _ int) error {
+	return kaboom
+}
+
+func (k KVStoreDummy) RemoveAdvSwapQueueItemMsg(ctx cosmos.Context, _ MsgSwap) error {
 	return kaboom
 }
 
@@ -631,6 +661,10 @@ func (k KVStoreDummy) HasAdvSwapQueueItem(ctx cosmos.Context, txID common.TxID, 
 }
 
 func (k KVStoreDummy) GetAdvSwapQueueIndexIterator(_ cosmos.Context, _ types.SwapType, _, _ common.Asset) cosmos.Iterator {
+	return nil
+}
+
+func (k KVStoreDummy) GetAdvSwapQueueLimitIndexIterator(ctx cosmos.Context) cosmos.Iterator {
 	return nil
 }
 
@@ -828,12 +862,19 @@ func (k KVStoreDummy) THORNameExists(ctx cosmos.Context, _ string) bool { return
 func (k KVStoreDummy) GetTHORName(ctx cosmos.Context, _ string) (THORName, error) {
 	return THORName{}, kaboom
 }
+
+func (k KVStoreDummy) GetTHORNameRecord(ctx cosmos.Context, _ string) (THORName, error) {
+	return THORName{}, kaboom
+}
 func (k KVStoreDummy) SetTHORName(ctx cosmos.Context, name THORName)          {}
 func (k KVStoreDummy) GetTHORNameIterator(ctx cosmos.Context) cosmos.Iterator { return nil }
 func (k KVStoreDummy) DeleteTHORName(ctx cosmos.Context, _ string) error      { return kaboom }
 
-func (k KVStoreDummy) SetAffiliateCollector(_ cosmos.Context, _ AffiliateFeeCollector) {}
-func (k KVStoreDummy) GetAffiliateCollector(_ cosmos.Context, _ cosmos.AccAddress) (AffiliateFeeCollector, error) {
+func (k KVStoreDummy) SetAffiliateCollector(_ cosmos.Context, _ AffiliateFeeCollector) error {
+	return nil
+}
+
+func (k KVStoreDummy) GetAffiliateCollector(_ cosmos.Context, _ string) (AffiliateFeeCollector, error) {
 	return AffiliateFeeCollector{}, kaboom
 }
 
@@ -953,6 +994,12 @@ func (k KVStoreDummy) GetLastReferenceNumber(ctx cosmos.Context, asset common.As
 }
 
 func (k KVStoreDummy) SetLastReferenceNumber(ctx cosmos.Context, asset common.Asset, ref string) {}
+
+func (k KVStoreDummy) GetReferenceMemoWindow(ctx cosmos.Context, _ common.Asset) (int64, int64, int64, int64) {
+	return 0, 0, 0, 0
+}
+
+func (k KVStoreDummy) SetReferenceMemoWindow(ctx cosmos.Context, _ common.Asset, _, _, _, _ int64) {}
 
 func (k KVStoreDummy) GetSwapperCloutIterator(ctx cosmos.Context) cosmos.Iterator    { return nil }
 func (k KVStoreDummy) SetSwapperClout(ctx cosmos.Context, record SwapperClout) error { return kaboom }

@@ -1550,24 +1550,20 @@ func (s *ObserveExtraSuite) TestHandleQuorumTxCommittedWithOurAttestation(c *C) 
 }
 
 // ---------------------------------------------------------------------------
-// sendToQuorumChecker basic test
+// sendObservedTxs basic test
 // ---------------------------------------------------------------------------
 
-func (s *ObserveExtraSuite) TestSendToQuorumCheckerEmptyDeck(c *C) {
+func (s *ObserveExtraSuite) TestSendObservedTxsEmpty(c *C) {
 	obs := &Observer{
 		logger:              log.Logger,
 		errCounter:          s.m.GetCounterVec(metrics.ObserverError),
 		tssKeysignMetricMgr: metrics.NewTssKeysignMetricMgr(),
 	}
 
-	// Empty deck - should return no invalid indices
-	deck := &types.TxIn{
-		Chain:   common.BTCChain,
-		TxArray: []*types.TxInItem{},
+	obs.sendObservedTxsFn = func(common.ObservedTxs, bool) {
+		c.Fatal("empty observations must not be submitted")
 	}
-
-	invalidIndices := obs.sendToQuorumChecker(deck, false, 100)
-	c.Assert(len(invalidIndices), Equals, 0)
+	obs.sendObservedTxs(nil, false)
 }
 
 // ---------------------------------------------------------------------------

@@ -698,3 +698,52 @@ func (s *SolRPCTestSuite) TestIsBlockhashValidLaggingBackend(c *C) {
 	c.Assert(err, NotNil) // lagging backend -> error -> caller retains
 	c.Assert(valid, Equals, false)
 }
+
+// --- GetFirstAvailableBlock ---
+
+// The consensus-blockhash search treats this floor as PROOF that widening its lookback
+// is pointless, so the call must take no params and surface the slot verbatim.
+func (s *SolRPCTestSuite) TestGetFirstAvailableBlock(c *C) {
+	server, rpc := newTestServer(func(w http.ResponseWriter, r *http.Request) {
+		var payload struct {
+			Method string        `json:"method"`
+			Params []interface{} `json:"params"`
+		}
+		c.Assert(json.NewDecoder(r.Body).Decode(&payload), IsNil)
+		c.Assert(payload.Method, Equals, "getFirstAvailableBlock")
+		c.Assert(payload.Params, HasLen, 0)
+
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":250000}`))
+	})
+	defer server.Close()
+
+	slot, err := rpc.GetFirstAvailableBlock()
+	c.Assert(err, IsNil)
+	c.Assert(slot, Equals, uint64(250000))
+}
+
+// A provider that does not serve the method must ERROR rather than report slot 0: the
+// caller reads 0 as "retains everything" and would stop galloping at the first window.
+func (s *SolRPCTestSuite) TestGetFirstAvailableBlockRPCError(c *C) {
+	server, rpc := newTestServer(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"error":{"code":-32601,"message":"Method not found"}}`))
+	})
+	defer server.Close()
+
+	_, err := rpc.GetFirstAvailableBlock()
+	c.Assert(err, NotNil)
+	c.Assert(err, ErrorMatches, ".*Method not found.*")
+}
+
+func (s *SolRPCTestSuite) TestGetFirstAvailableBlockPostError(c *C) {
+	server, rpc := newTestServer(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	})
+	defer server.Close()
+
+	_, err := rpc.GetFirstAvailableBlock()
+	c.Assert(err, NotNil)
+	c.Assert(err, ErrorMatches, ".*failed to call getFirstAvailableBlock.*")
+}

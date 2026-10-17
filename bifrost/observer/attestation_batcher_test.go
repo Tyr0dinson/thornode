@@ -264,24 +264,13 @@ func TestAttestationBatcher(t *testing.T) {
 	})
 
 	t.Run("handles batch clearing properly", func(t *testing.T) {
-		// Create mock host
-		mockHost := NewBatcherMockHost([]peer.ID{"peer1"})
+		// This test covers queue clearing; ticker and peer delivery are tested
+		// above. Avoid background work and wall-clock scheduling assumptions.
+		mockHost := NewBatcherMockHost(nil)
 
 		// Create batcher
 		batcher := NewAttestationBatcher(mockHost, logger, nil, 100*time.Millisecond, 10, 1*time.Second, 4)
-
-		// Set active validator getter
-		batcher.setActiveValGetter(func() map[peer.ID]bool {
-			return map[peer.ID]bool{
-				"peer1": true,
-			}
-		})
-
-		// Start the batcher
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
-
-		go batcher.Start(ctx)
+		batcher.setActiveValGetter(func() map[peer.ID]bool { return map[peer.ID]bool{} })
 
 		// Add a mix of attestation types
 		for i := 0; i < 3; i++ {
@@ -310,17 +299,11 @@ func TestAttestationBatcher(t *testing.T) {
 			})
 		}
 
-		// Wait for batch to be processed
-		time.Sleep(200 * time.Millisecond)
-
-		// Check if batches are cleared
-		batcher.mu.Lock()
-		txBatchLen := len(batcher.observedTxBatch)
-		nfBatchLen := len(batcher.networkFeeBatch)
-		batcher.mu.Unlock()
-
-		assert.Equal(t, 0, txBatchLen, "Observed tx batch should be cleared after sending")
-		assert.Equal(t, 0, nfBatchLen, "Network fee batch should be cleared after sending")
+		assert.Len(t, batcher.observedTxBatch, 3)
+		assert.Len(t, batcher.networkFeeBatch, 3)
+		batcher.sendBatches(context.Background(), false)
+		assert.Empty(t, batcher.observedTxBatch, "Observed tx batch should be cleared after sending")
+		assert.Empty(t, batcher.networkFeeBatch, "Network fee batch should be cleared after sending")
 
 		// Check batch clears metric
 		// batchClears := m.GetCounter(metrics.BatchClears)

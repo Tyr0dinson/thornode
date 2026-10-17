@@ -3,21 +3,29 @@ package main
 import (
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"testing"
 )
+
+// runMainEnv makes the test binary run thornode's main instead of the tests.
+const runMainEnv = "THORNODE_TEST_RUN_MAIN"
+
+func TestMain(m *testing.M) {
+	if os.Getenv(runMainEnv) == "1" {
+		main()
+		os.Exit(0)
+	}
+	os.Exit(m.Run())
+}
 
 func TestValidateSeedPhraseIgnoresUnrelatedConfig(t *testing.T) {
 	const validMnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon " +
 		"abandon abandon abandon abandon abandon abandon abandon abandon " +
 		"abandon abandon abandon abandon abandon abandon abandon art"
 
-	binary := filepath.Join(t.TempDir(), "thornode")
-	build := exec.Command("go", "build", "-o", binary, ".")
-	if output, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("build thornode: %v\n%s", err, output)
-	}
+	// This test binary runs as thornode when runMainEnv is set (see TestMain),
+	// which saves building and linking a second binary (~20s).
+	binary := os.Args[0]
 
 	tests := []struct {
 		name       string
@@ -68,6 +76,7 @@ func TestValidateSeedPhraseIgnoresUnrelatedConfig(t *testing.T) {
 			validate.Stdin = strings.NewReader(test.mnemonic)
 			validate.Env = append(
 				os.Environ(),
+				runMainEnv+"=1",
 				"HOME="+t.TempDir(),
 				"BIFROST_CHAINS_BSC_BLOCK_SCANNER_START_BLOCK_HEIGHT="+test.config,
 			)

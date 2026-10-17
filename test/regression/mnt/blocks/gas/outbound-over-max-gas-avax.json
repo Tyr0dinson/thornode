@@ -632,6 +632,7 @@
                     "observed_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
                     "out_hashes": [],
                     "signers": [],
+                    "sol_nonce": null,
                     "status": "incomplete",
                     "tx": {
                       "chain": "AVAX",
@@ -653,7 +654,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000001",
                       "memo": "OUT:1B74E0284BE1A4225C038967046F2AF379FB171E057A6E5EBFBF98C954D315D3",
                       "to_address": "0x1b03d088612a00df0049634e9cc8684d622cada2"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }
@@ -1181,6 +1183,7 @@
                     "observed_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
                     "out_hashes": [],
                     "signers": [],
+                    "sol_nonce": null,
                     "status": "incomplete",
                     "tx": {
                       "chain": "AVAX",
@@ -1202,7 +1205,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000002",
                       "memo": "OUT:3166B385F1182E2AF55E42B963924CC216E1FD750D7519AFFED0D63E96E6C90F",
                       "to_address": "0x1b03d088612a00df0049634e9cc8684d622cada2"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }

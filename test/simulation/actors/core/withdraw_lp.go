@@ -51,25 +51,11 @@ func findCompletedLP(
 	thorAddress common.Address,
 	assetAddress common.Address,
 ) *openapi.LiquidityProvider {
-	for _, lp := range liquidityProviders {
-		if lp.PendingAsset != "0" || lp.PendingRune != "0" || lp.Units == "" || lp.Units == "0" {
-			continue
-		}
-		if lp.RuneAddress == nil || lp.AssetAddress == nil {
-			continue
-		}
-		if !common.Address(*lp.RuneAddress).Equals(thorAddress) {
-			continue
-		}
-		if !common.Address(*lp.AssetAddress).Equals(assetAddress) {
-			continue
-		}
-
-		lpCopy := lp
-		return &lpCopy
+	lp := findLP(liquidityProviders, thorAddress, assetAddress)
+	if lp == nil || lp.PendingAsset != "0" || lp.PendingRune != "0" || lp.Units == "" || lp.Units == "0" {
+		return nil
 	}
-
-	return nil
+	return lp
 }
 
 func (a *WithdrawLPActor) acquireUser(config *OpConfig) OpResult {

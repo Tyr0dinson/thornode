@@ -189,3 +189,32 @@ func (s *HandlerTCYUnstake) TestHandle(c *C) {
 	c.Assert(staker.Address.Equals(fromAddr), Equals, true)
 	c.Assert(staker.Amount.Equal(amount.Mul(math.NewUint(2))), Equals, true)
 }
+
+func (s *HandlerTCYStake) TestValidateRejectsSmartContractAddress(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	k.SetMimir(ctx, "TCYStakingHalt", 0)
+
+	scAddr, scAcc := tcySmartContractStaker(c, ctx, k, cosmos.ZeroUint())
+
+	tx := common.NewTx(
+		common.BlankTxID,
+		scAddr,
+		GetRandomRUNEAddress(),
+		common.NewCoins(common.NewCoin(common.TCY, cosmos.NewUint(100))),
+		common.Gas{},
+		"",
+	)
+	msg := NewMsgTCYStake(tx, scAcc)
+	handler := NewTCYStakeHandler(NewDummyMgrWithKeeper(k))
+
+	err := handler.validate(ctx, *msg)
+	c.Assert(err, NotNil)
+	c.Assert(err.Error(), Equals, "cannot stake from TCY smart contract address: "+scAddr.String())
+
+	// the keeper refuses the credit too, rather than reporting a success it dropped
+	_, err = handler.handle(ctx, *msg)
+	c.Assert(err, NotNil)
+	staker, err := k.GetTCYStaker(ctx, scAddr)
+	c.Assert(err, IsNil)
+	c.Assert(staker.Amount.IsZero(), Equals, true)
+}

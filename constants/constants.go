@@ -5,6 +5,8 @@ package constants
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 
 	"github.com/blang/semver"
@@ -139,23 +141,27 @@ func (cv *ConstantVals) GetStringValue(name ConstantName) string {
 	return ""
 }
 
+func sortedConstantNames[T any](values map[ConstantName]T) []ConstantName {
+	return slices.SortedFunc(maps.Keys(values), func(a, b ConstantName) int {
+		return strings.Compare(a.String(), b.String())
+	})
+}
+
 func (cv *ConstantVals) String() string {
 	sb := strings.Builder{}
-	// analyze-ignore(map-iteration)
-	for k, v := range cv.int64values {
+	for _, k := range sortedConstantNames(cv.int64values) {
 		if overrideValue, ok := int64Overrides[k]; ok {
-			sb.WriteString(fmt.Sprintf("%s:%d\n", k, overrideValue))
+			fmt.Fprintf(&sb, "%s:%d\n", k, overrideValue)
 			continue
 		}
-		sb.WriteString(fmt.Sprintf("%s:%d\n", k, v))
+		fmt.Fprintf(&sb, "%s:%d\n", k, cv.int64values[k])
 	}
-	// analyze-ignore(map-iteration)
-	for k, v := range cv.boolValues {
+	for _, k := range sortedConstantNames(cv.boolValues) {
 		if overrideValue, ok := boolOverrides[k]; ok {
 			sb.WriteString(fmt.Sprintf("%s:%v\n", k, overrideValue))
 			continue
 		}
-		sb.WriteString(fmt.Sprintf("%s:%v\n", k, v))
+		fmt.Fprintf(&sb, "%s:%v\n", k, cv.boolValues[k])
 	}
 	return sb.String()
 }

@@ -65,6 +65,7 @@ var (
 	fd_TssKeysignFailVoter_height           protoreflect.FieldDescriptor
 	fd_TssKeysignFailVoter_signers          protoreflect.FieldDescriptor
 	fd_TssKeysignFailVoter_last_round_count protoreflect.FieldDescriptor
+	fd_TssKeysignFailVoter_state            protoreflect.FieldDescriptor
 )
 
 func init() {
@@ -74,6 +75,7 @@ func init() {
 	fd_TssKeysignFailVoter_height = md_TssKeysignFailVoter.Fields().ByName("height")
 	fd_TssKeysignFailVoter_signers = md_TssKeysignFailVoter.Fields().ByName("signers")
 	fd_TssKeysignFailVoter_last_round_count = md_TssKeysignFailVoter.Fields().ByName("last_round_count")
+	fd_TssKeysignFailVoter_state = md_TssKeysignFailVoter.Fields().ByName("state")
 }
 
 var _ protoreflect.Message = (*fastReflection_TssKeysignFailVoter)(nil)
@@ -165,6 +167,12 @@ func (x *fastReflection_TssKeysignFailVoter) Range(f func(protoreflect.FieldDesc
 			return
 		}
 	}
+	if x.State != 0 {
+		value := protoreflect.ValueOfEnum((protoreflect.EnumNumber)(x.State))
+		if !f(fd_TssKeysignFailVoter_state, value) {
+			return
+		}
+	}
 }
 
 // Has reports whether a field is populated.
@@ -188,6 +196,8 @@ func (x *fastReflection_TssKeysignFailVoter) Has(fd protoreflect.FieldDescriptor
 		return len(x.Signers) != 0
 	case "types.TssKeysignFailVoter.last_round_count":
 		return x.LastRoundCount != int64(0)
+	case "types.TssKeysignFailVoter.state":
+		return x.State != 0
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.TssKeysignFailVoter"))
@@ -212,6 +222,8 @@ func (x *fastReflection_TssKeysignFailVoter) Clear(fd protoreflect.FieldDescript
 		x.Signers = nil
 	case "types.TssKeysignFailVoter.last_round_count":
 		x.LastRoundCount = int64(0)
+	case "types.TssKeysignFailVoter.state":
+		x.State = 0
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.TssKeysignFailVoter"))
@@ -243,6 +255,9 @@ func (x *fastReflection_TssKeysignFailVoter) Get(descriptor protoreflect.FieldDe
 	case "types.TssKeysignFailVoter.last_round_count":
 		value := x.LastRoundCount
 		return protoreflect.ValueOfInt64(value)
+	case "types.TssKeysignFailVoter.state":
+		value := x.State
+		return protoreflect.ValueOfEnum((protoreflect.EnumNumber)(value))
 	default:
 		if descriptor.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.TssKeysignFailVoter"))
@@ -273,6 +288,8 @@ func (x *fastReflection_TssKeysignFailVoter) Set(fd protoreflect.FieldDescriptor
 		x.Signers = *clv.list
 	case "types.TssKeysignFailVoter.last_round_count":
 		x.LastRoundCount = value.Int()
+	case "types.TssKeysignFailVoter.state":
+		x.State = (TssKeysignFailVoterState)(value.Enum())
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.TssKeysignFailVoter"))
@@ -305,6 +322,8 @@ func (x *fastReflection_TssKeysignFailVoter) Mutable(fd protoreflect.FieldDescri
 		panic(fmt.Errorf("field height of message types.TssKeysignFailVoter is not mutable"))
 	case "types.TssKeysignFailVoter.last_round_count":
 		panic(fmt.Errorf("field last_round_count of message types.TssKeysignFailVoter is not mutable"))
+	case "types.TssKeysignFailVoter.state":
+		panic(fmt.Errorf("field state of message types.TssKeysignFailVoter is not mutable"))
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.TssKeysignFailVoter"))
@@ -327,6 +346,8 @@ func (x *fastReflection_TssKeysignFailVoter) NewField(fd protoreflect.FieldDescr
 		return protoreflect.ValueOfList(&_TssKeysignFailVoter_6_list{list: &list})
 	case "types.TssKeysignFailVoter.last_round_count":
 		return protoreflect.ValueOfInt64(int64(0))
+	case "types.TssKeysignFailVoter.state":
+		return protoreflect.ValueOfEnum(0)
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.TssKeysignFailVoter"))
@@ -412,6 +433,9 @@ func (x *fastReflection_TssKeysignFailVoter) ProtoMethods() *protoiface.Methods 
 		if x.LastRoundCount != 0 {
 			n += 1 + runtime.Sov(uint64(x.LastRoundCount))
 		}
+		if x.State != 0 {
+			n += 1 + runtime.Sov(uint64(x.State))
+		}
 		if x.unknownFields != nil {
 			n += len(x.unknownFields)
 		}
@@ -440,6 +464,11 @@ func (x *fastReflection_TssKeysignFailVoter) ProtoMethods() *protoiface.Methods 
 		if x.unknownFields != nil {
 			i -= len(x.unknownFields)
 			copy(dAtA[i:], x.unknownFields)
+		}
+		if x.State != 0 {
+			i = runtime.EncodeVarint(dAtA, i, uint64(x.State))
+			i--
+			dAtA[i] = 0x40
 		}
 		if x.LastRoundCount != 0 {
 			i = runtime.EncodeVarint(dAtA, i, uint64(x.LastRoundCount))
@@ -618,6 +647,25 @@ func (x *fastReflection_TssKeysignFailVoter) ProtoMethods() *protoiface.Methods 
 						break
 					}
 				}
+			case 8:
+				if wireType != 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field State", wireType)
+				}
+				x.State = 0
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					x.State |= TssKeysignFailVoterState(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
 			default:
 				iNdEx = preIndex
 				skippy, err := runtime.Skip(dAtA[iNdEx:])
@@ -666,15 +714,69 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// State zero is the legacy terminal representation because voters written
+// before explicit replay protection have no state field. Missing voters are
+// created explicitly as pending, so a stored legacy voter remains
+// distinguishable from every current voter.
+type TssKeysignFailVoterState int32
+
+const (
+	TssKeysignFailVoterState_LegacyVoter    TssKeysignFailVoterState = 0
+	TssKeysignFailVoterState_PendingVoter   TssKeysignFailVoterState = 1
+	TssKeysignFailVoterState_CompletedVoter TssKeysignFailVoterState = 2
+)
+
+// Enum value maps for TssKeysignFailVoterState.
+var (
+	TssKeysignFailVoterState_name = map[int32]string{
+		0: "LegacyVoter",
+		1: "PendingVoter",
+		2: "CompletedVoter",
+	}
+	TssKeysignFailVoterState_value = map[string]int32{
+		"LegacyVoter":    0,
+		"PendingVoter":   1,
+		"CompletedVoter": 2,
+	}
+)
+
+func (x TssKeysignFailVoterState) Enum() *TssKeysignFailVoterState {
+	p := new(TssKeysignFailVoterState)
+	*p = x
+	return p
+}
+
+func (x TssKeysignFailVoterState) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (TssKeysignFailVoterState) Descriptor() protoreflect.EnumDescriptor {
+	return file_types_type_tss_keysign_proto_enumTypes[0].Descriptor()
+}
+
+func (TssKeysignFailVoterState) Type() protoreflect.EnumType {
+	return &file_types_type_tss_keysign_proto_enumTypes[0]
+}
+
+func (x TssKeysignFailVoterState) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use TssKeysignFailVoterState.Descriptor instead.
+func (TssKeysignFailVoterState) EnumDescriptor() ([]byte, []int) {
+	return file_types_type_tss_keysign_proto_rawDescGZIP(), []int{0}
+}
+
 type TssKeysignFailVoter struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	Id             string   `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	Height         int64    `protobuf:"varint,4,opt,name=height,proto3" json:"height,omitempty"`
-	Signers        []string `protobuf:"bytes,6,rep,name=signers,proto3" json:"signers,omitempty"`
-	LastRoundCount int64    `protobuf:"varint,7,opt,name=last_round_count,json=lastRoundCount,proto3" json:"last_round_count,omitempty"`
+	Id             string                   `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Height         int64                    `protobuf:"varint,4,opt,name=height,proto3" json:"height,omitempty"`
+	Signers        []string                 `protobuf:"bytes,6,rep,name=signers,proto3" json:"signers,omitempty"`
+	LastRoundCount int64                    `protobuf:"varint,7,opt,name=last_round_count,json=lastRoundCount,proto3" json:"last_round_count,omitempty"`
+	State          TssKeysignFailVoterState `protobuf:"varint,8,opt,name=state,proto3,enum=types.TssKeysignFailVoterState" json:"state,omitempty"`
 }
 
 func (x *TssKeysignFailVoter) Reset() {
@@ -725,13 +827,20 @@ func (x *TssKeysignFailVoter) GetLastRoundCount() int64 {
 	return 0
 }
 
+func (x *TssKeysignFailVoter) GetState() TssKeysignFailVoterState {
+	if x != nil {
+		return x.State
+	}
+	return TssKeysignFailVoterState_LegacyVoter
+}
+
 var File_types_type_tss_keysign_proto protoreflect.FileDescriptor
 
 var file_types_type_tss_keysign_proto_rawDesc = []byte{
 	0x0a, 0x1c, 0x74, 0x79, 0x70, 0x65, 0x73, 0x2f, 0x74, 0x79, 0x70, 0x65, 0x5f, 0x74, 0x73, 0x73,
 	0x5f, 0x6b, 0x65, 0x79, 0x73, 0x69, 0x67, 0x6e, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x12, 0x05,
 	0x74, 0x79, 0x70, 0x65, 0x73, 0x1a, 0x14, 0x67, 0x6f, 0x67, 0x6f, 0x70, 0x72, 0x6f, 0x74, 0x6f,
-	0x2f, 0x67, 0x6f, 0x67, 0x6f, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x22, 0x89, 0x01, 0x0a, 0x13,
+	0x2f, 0x67, 0x6f, 0x67, 0x6f, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x22, 0xc0, 0x01, 0x0a, 0x13,
 	0x54, 0x73, 0x73, 0x4b, 0x65, 0x79, 0x73, 0x69, 0x67, 0x6e, 0x46, 0x61, 0x69, 0x6c, 0x56, 0x6f,
 	0x74, 0x65, 0x72, 0x12, 0x16, 0x0a, 0x02, 0x69, 0x64, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x42,
 	0x06, 0xe2, 0xde, 0x1f, 0x02, 0x49, 0x44, 0x52, 0x02, 0x69, 0x64, 0x12, 0x16, 0x0a, 0x06, 0x68,
@@ -740,16 +849,25 @@ var file_types_type_tss_keysign_proto_rawDesc = []byte{
 	0x20, 0x03, 0x28, 0x09, 0x52, 0x07, 0x73, 0x69, 0x67, 0x6e, 0x65, 0x72, 0x73, 0x12, 0x28, 0x0a,
 	0x10, 0x6c, 0x61, 0x73, 0x74, 0x5f, 0x72, 0x6f, 0x75, 0x6e, 0x64, 0x5f, 0x63, 0x6f, 0x75, 0x6e,
 	0x74, 0x18, 0x07, 0x20, 0x01, 0x28, 0x03, 0x52, 0x0e, 0x6c, 0x61, 0x73, 0x74, 0x52, 0x6f, 0x75,
-	0x6e, 0x64, 0x43, 0x6f, 0x75, 0x6e, 0x74, 0x42, 0x8c, 0x01, 0x0a, 0x09, 0x63, 0x6f, 0x6d, 0x2e,
-	0x74, 0x79, 0x70, 0x65, 0x73, 0x42, 0x13, 0x54, 0x79, 0x70, 0x65, 0x54, 0x73, 0x73, 0x4b, 0x65,
-	0x79, 0x73, 0x69, 0x67, 0x6e, 0x50, 0x72, 0x6f, 0x74, 0x6f, 0x50, 0x01, 0x5a, 0x2a, 0x67, 0x69,
-	0x74, 0x6c, 0x61, 0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x74, 0x68, 0x6f, 0x72, 0x63, 0x68, 0x61,
-	0x69, 0x6e, 0x2f, 0x74, 0x68, 0x6f, 0x72, 0x6e, 0x6f, 0x64, 0x65, 0x2f, 0x76, 0x33, 0x2f, 0x61,
-	0x70, 0x69, 0x2f, 0x74, 0x79, 0x70, 0x65, 0x73, 0xa2, 0x02, 0x03, 0x54, 0x58, 0x58, 0xaa, 0x02,
-	0x05, 0x54, 0x79, 0x70, 0x65, 0x73, 0xca, 0x02, 0x05, 0x54, 0x79, 0x70, 0x65, 0x73, 0xe2, 0x02,
-	0x11, 0x54, 0x79, 0x70, 0x65, 0x73, 0x5c, 0x47, 0x50, 0x42, 0x4d, 0x65, 0x74, 0x61, 0x64, 0x61,
-	0x74, 0x61, 0xea, 0x02, 0x05, 0x54, 0x79, 0x70, 0x65, 0x73, 0xc8, 0xe1, 0x1e, 0x00, 0xd8, 0xe1,
-	0x1e, 0x00, 0x80, 0xe2, 0x1e, 0x00, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
+	0x6e, 0x64, 0x43, 0x6f, 0x75, 0x6e, 0x74, 0x12, 0x35, 0x0a, 0x05, 0x73, 0x74, 0x61, 0x74, 0x65,
+	0x18, 0x08, 0x20, 0x01, 0x28, 0x0e, 0x32, 0x1f, 0x2e, 0x74, 0x79, 0x70, 0x65, 0x73, 0x2e, 0x54,
+	0x73, 0x73, 0x4b, 0x65, 0x79, 0x73, 0x69, 0x67, 0x6e, 0x46, 0x61, 0x69, 0x6c, 0x56, 0x6f, 0x74,
+	0x65, 0x72, 0x53, 0x74, 0x61, 0x74, 0x65, 0x52, 0x05, 0x73, 0x74, 0x61, 0x74, 0x65, 0x2a, 0x51,
+	0x0a, 0x18, 0x54, 0x73, 0x73, 0x4b, 0x65, 0x79, 0x73, 0x69, 0x67, 0x6e, 0x46, 0x61, 0x69, 0x6c,
+	0x56, 0x6f, 0x74, 0x65, 0x72, 0x53, 0x74, 0x61, 0x74, 0x65, 0x12, 0x0f, 0x0a, 0x0b, 0x4c, 0x65,
+	0x67, 0x61, 0x63, 0x79, 0x56, 0x6f, 0x74, 0x65, 0x72, 0x10, 0x00, 0x12, 0x10, 0x0a, 0x0c, 0x50,
+	0x65, 0x6e, 0x64, 0x69, 0x6e, 0x67, 0x56, 0x6f, 0x74, 0x65, 0x72, 0x10, 0x01, 0x12, 0x12, 0x0a,
+	0x0e, 0x43, 0x6f, 0x6d, 0x70, 0x6c, 0x65, 0x74, 0x65, 0x64, 0x56, 0x6f, 0x74, 0x65, 0x72, 0x10,
+	0x02, 0x42, 0x8c, 0x01, 0x0a, 0x09, 0x63, 0x6f, 0x6d, 0x2e, 0x74, 0x79, 0x70, 0x65, 0x73, 0x42,
+	0x13, 0x54, 0x79, 0x70, 0x65, 0x54, 0x73, 0x73, 0x4b, 0x65, 0x79, 0x73, 0x69, 0x67, 0x6e, 0x50,
+	0x72, 0x6f, 0x74, 0x6f, 0x50, 0x01, 0x5a, 0x2a, 0x67, 0x69, 0x74, 0x6c, 0x61, 0x62, 0x2e, 0x63,
+	0x6f, 0x6d, 0x2f, 0x74, 0x68, 0x6f, 0x72, 0x63, 0x68, 0x61, 0x69, 0x6e, 0x2f, 0x74, 0x68, 0x6f,
+	0x72, 0x6e, 0x6f, 0x64, 0x65, 0x2f, 0x76, 0x33, 0x2f, 0x61, 0x70, 0x69, 0x2f, 0x74, 0x79, 0x70,
+	0x65, 0x73, 0xa2, 0x02, 0x03, 0x54, 0x58, 0x58, 0xaa, 0x02, 0x05, 0x54, 0x79, 0x70, 0x65, 0x73,
+	0xca, 0x02, 0x05, 0x54, 0x79, 0x70, 0x65, 0x73, 0xe2, 0x02, 0x11, 0x54, 0x79, 0x70, 0x65, 0x73,
+	0x5c, 0x47, 0x50, 0x42, 0x4d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0xea, 0x02, 0x05, 0x54,
+	0x79, 0x70, 0x65, 0x73, 0xc8, 0xe1, 0x1e, 0x00, 0xd8, 0xe1, 0x1e, 0x00, 0x80, 0xe2, 0x1e, 0x00,
+	0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
 }
 
 var (
@@ -764,16 +882,19 @@ func file_types_type_tss_keysign_proto_rawDescGZIP() []byte {
 	return file_types_type_tss_keysign_proto_rawDescData
 }
 
+var file_types_type_tss_keysign_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
 var file_types_type_tss_keysign_proto_msgTypes = make([]protoimpl.MessageInfo, 1)
 var file_types_type_tss_keysign_proto_goTypes = []interface{}{
-	(*TssKeysignFailVoter)(nil), // 0: types.TssKeysignFailVoter
+	(TssKeysignFailVoterState)(0), // 0: types.TssKeysignFailVoterState
+	(*TssKeysignFailVoter)(nil),   // 1: types.TssKeysignFailVoter
 }
 var file_types_type_tss_keysign_proto_depIdxs = []int32{
-	0, // [0:0] is the sub-list for method output_type
-	0, // [0:0] is the sub-list for method input_type
-	0, // [0:0] is the sub-list for extension type_name
-	0, // [0:0] is the sub-list for extension extendee
-	0, // [0:0] is the sub-list for field type_name
+	0, // 0: types.TssKeysignFailVoter.state:type_name -> types.TssKeysignFailVoterState
+	1, // [1:1] is the sub-list for method output_type
+	1, // [1:1] is the sub-list for method input_type
+	1, // [1:1] is the sub-list for extension type_name
+	1, // [1:1] is the sub-list for extension extendee
+	0, // [0:1] is the sub-list for field type_name
 }
 
 func init() { file_types_type_tss_keysign_proto_init() }
@@ -800,13 +921,14 @@ func file_types_type_tss_keysign_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: file_types_type_tss_keysign_proto_rawDesc,
-			NumEnums:      0,
+			NumEnums:      1,
 			NumMessages:   1,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
 		GoTypes:           file_types_type_tss_keysign_proto_goTypes,
 		DependencyIndexes: file_types_type_tss_keysign_proto_depIdxs,
+		EnumInfos:         file_types_type_tss_keysign_proto_enumTypes,
 		MessageInfos:      file_types_type_tss_keysign_proto_msgTypes,
 	}.Build()
 	File_types_type_tss_keysign_proto = out.File

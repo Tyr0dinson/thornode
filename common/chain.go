@@ -346,6 +346,19 @@ func (c Chain) GetGasAssetDecimal() int64 {
 	}
 }
 
+// RequiresTerminalErrataOutcome reports whether delivery alone is insufficient
+// to retire errata retries, including transactions with no known observation.
+func (c Chain) RequiresTerminalErrataOutcome() bool {
+	return c.Equals(XMRChain)
+}
+
+// UsesHeightScopedErrata reports whether local orphan-location barriers need
+// explicit mined-height observation identity. It does not change the chain's
+// consensus errata voter or permanent TxID reversal policy.
+func (c Chain) UsesHeightScopedErrata() bool {
+	return c.Equals(XMRChain)
+}
+
 // RequiresExplicitRefundAddress reports whether an inbound observation may be
 // unable to provide a usable sender address. Higher layers use this capability
 // to require an explicit asset-chain address before funds arrive.
@@ -612,7 +625,7 @@ func (c Chain) ApproximateBlockMilliseconds() int64 {
 	case NOBLEChain:
 		return 1_500
 	case SOLChain:
-		return 400
+		return 300 // ~265-300ms measured since SIMD-0525 (was 400)
 	case TAOChain:
 		return 12_000
 	case DOTChain:

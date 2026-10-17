@@ -2,9 +2,12 @@
 # Private THORChain 2-of-3 cluster + real Monero mainnet (chainnet build)
 #
 # Usage:
+#   export XMR_FROST_AUTH_BEARER="$(openssl rand -hex 32)"
 #   docker compose -f docker-compose.xmr-chainnet.yml build --no-cache
 #   docker compose -f docker-compose.xmr-chainnet.yml up -d
 #   bash xmr-chainnet-post-deploy.sh
+# Generate this deployment-specific secret once, store it securely, and reuse
+# it across restarts. Do not reuse a node mnemonic or keystore password.
 #
 # Three validators (dog/cat/fox) with FROST threshold signing against a real
 # monerod syncing Monero mainnet. Dog is genesis, cat and fox join via validator.sh.
@@ -24,9 +27,8 @@
 #   ChurnRetryInterval=10    - retry churn every 10 blocks
 #   MinimumBondInRune=1      - prevent "low bond" churn-out noise
 #
-# Auth: bifrost <-> frost-signer uses a seed-derived bearer token.
-# Both Go and Rust must be built from the same commit. Mismatched auth causes
-# silent scan failure (txs=0 on every block). Always rebuild BOTH together.
+# Auth: set XMR_FROST_AUTH_BEARER to a strong random token before running Compose.
+# The shared environment anchors pass the same token to every Bifrost/signer pair.
 ########################################################################################
 
 volumes:
@@ -111,19 +113,21 @@ x-bifrost-env: &bifrost-env
   BIFROST_CHAINS_XMR_RPC_HOST: "http://monero-daemon:18081"
   BIFROST_CHAINS_XMR_CHAIN_NETWORK: "mainnet"
   BIFROST_CHAINS_XMR_DISABLE_TLS: "true"
+  BIFROST_CHAINS_XMR_SIGNER_AUTHORIZATION_BEARER: "${XMR_FROST_AUTH_BEARER:?set XMR_FROST_AUTH_BEARER to a strong random token}"
+  # HTTP is permitted for Bifrost-to-signer traffic on this isolated Compose network.
+  BIFROST_CHAINS_XMR_SIGNER_ALLOW_INSECURE_HTTP: "true"
+  BIFROST_CHAINS_XMR_SIGNER_EXPECTED_NETWORK: "chainnet"
 
 x-frost-env: &frost-env
   XMR_FROST_LISTEN_ADDR: "0.0.0.0:8283"
   XMR_FROST_DAEMON_URL: "http://monero-daemon:18081"
-  XMR_FROST_DAEMON_DISABLE_TLS: "true"
   XMR_FROST_DATA_DIR: "/home/serai/xmr-frost"
   XMR_FROST_CHAIN_NETWORK: "chainnet"
+  XMR_FROST_AUTH_BEARER: "${XMR_FROST_AUTH_BEARER:?set XMR_FROST_AUTH_BEARER to a strong random token}"
+  SIGNER_SEED_PHRASE_FILE: "/run/thornode/seed_phrase"
   XMR_FROST_MAX_SIGN_SCAN_LAG_BLOCKS: "32"
-  XMR_FROST_RATE_LIMIT_GLOBAL_RPS: "500"
-  XMR_FROST_RATE_LIMIT_GLOBAL_BURST: "5000"
-  XMR_FROST_RATE_LIMIT_PER_IP_RPS: "500"
-  XMR_FROST_RATE_LIMIT_PER_IP_BURST: "5000"
-  XMR_FROST_ADMIN_ALLOW_NON_LOOPBACK: "true"
+  XMR_FROST_MAX_REQUESTS_PER_SECOND: "256"
+  XMR_FROST_MAX_REQUESTS_PER_IP_SECOND: "64"
 
 x-frost-healthcheck: &frost-healthcheck
   test:
@@ -181,7 +185,7 @@ services:
   # ================================ FROST signers =================================
 
   xmr-frost-signer: &frost-signer
-    image: ${XMR_FROST_SIGNER_IMAGE:-registry.gitlab.com/thorchain/devops/serai/xmr-frost-signer:16f06497@sha256:5224d4fc192ead39ab313b7f96282994204e895c0f06c8af65ed9dc7abe599f1}
+    image: ${XMR_FROST_SIGNER_IMAGE:-registry.gitlab.com/thorchain/devops/serai/xmr-frost-signer:392adbc0@sha256:10adec2de86f35a53fc8c75413d7d08c9151ee6891c7de009a2f65523b2e21c9}
     restart: unless-stopped
     user: root
     entrypoint:
@@ -198,11 +202,13 @@ services:
         condition: service_healthy
     environment:
       <<: *frost-env
-      SIGNER_SEED_PHRASE: "dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog fossil"
+    configs:
+      - source: seed-dog
+        target: /run/thornode/seed_phrase
     volumes:
       - xmr-frost-data:/home/serai/xmr-frost
     ports:
-      - "8283:8283"
+      - "127.0.0.1:8283:8283"
     healthcheck: *frost-healthcheck
     logging: *logging
 
@@ -210,7 +216,9 @@ services:
     <<: *frost-signer
     environment:
       <<: *frost-env
-      SIGNER_SEED_PHRASE: "cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat crawl"
+    configs:
+      - source: seed-cat
+        target: /run/thornode/seed_phrase
     volumes:
       - xmr-frost-data-cat:/home/serai/xmr-frost
     ports: []
@@ -219,7 +227,9 @@ services:
     <<: *frost-signer
     environment:
       <<: *frost-env
-      SIGNER_SEED_PHRASE: "fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox filter"
+    configs:
+      - source: seed-fox
+        target: /run/thornode/seed_phrase
     volumes:
       - xmr-frost-data-fox:/home/serai/xmr-frost
     ports: []

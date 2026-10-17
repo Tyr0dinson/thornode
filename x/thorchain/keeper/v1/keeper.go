@@ -9,6 +9,8 @@ import (
 	"github.com/blang/semver"
 	"github.com/cosmos/cosmos-sdk/codec"
 	"github.com/cosmos/cosmos-sdk/runtime"
+	"github.com/cosmos/cosmos-sdk/telemetry"
+	sdk "github.com/cosmos/cosmos-sdk/types"
 	authkeeper "github.com/cosmos/cosmos-sdk/x/auth/keeper"
 	bankkeeper "github.com/cosmos/cosmos-sdk/x/bank/keeper"
 
@@ -44,6 +46,8 @@ const (
 	prefixLastChainHeight           types.DbPrefix = "last_chain_height/"
 	prefixLastSignedHeight          types.DbPrefix = "last_signed_height/"
 	prefixLastObserveHeight         types.DbPrefix = "last_observe_height/"
+	prefixLastKeygenChain           types.DbPrefix = "last_keygen_chain/"
+	prefixLastKeygenReport          types.DbPrefix = "last_keygen_report/"
 	prefixNodeAccount               types.DbPrefix = "node_account/"
 	prefixBondProviders             types.DbPrefix = "bond_providers/"
 	prefixVault                     types.DbPrefix = "vault/"
@@ -51,6 +55,8 @@ const (
 	prefixVaultAsgardEDDSAIndex     types.DbPrefix = "vault_asgard_eddsa_index/"
 	prefixVaultAsgardFrostIndex     types.DbPrefix = "vault_asgard_frost_index/"
 	prefixXMRSpentOutputRef         types.DbPrefix = "xmr_spent_refs/"
+	prefixSolVaultNonce             types.DbPrefix = "sol_vault_nonce/"
+	prefixSolNonceAttestVoter       types.DbPrefix = "sol_nonce_attest/"
 	prefixNetwork                   types.DbPrefix = "network/"
 	prefixSwapperClout              types.DbPrefix = "sclout/"
 	prefixPOL                       types.DbPrefix = "pol/"
@@ -94,11 +100,12 @@ const (
 	prefixChainContract             types.DbPrefix = "chain_contract/"
 	prefixSolvencyVoter             types.DbPrefix = "solvency_voter/"
 	prefixTHORName                  types.DbPrefix = "thorname/"
-	prefixAffiliateCollector        types.DbPrefix = "affcol/"
+	prefixAffiliateCollector        types.DbPrefix = "affcol_name/"
 	prefixAffiliateLiquidityFee     types.DbPrefix = "affiliate_liquidity_fee/"
 	prefixReferenceMemo             types.DbPrefix = "refm/"
 	prefixReferenceMemoIndex        types.DbPrefix = "refmi/"
 	prefixReferenceMemoHash         types.DbPrefix = "refmh/"
+	prefixReferenceMemoWindow       types.DbPrefix = "refmw/"
 	prefixRollingPoolLiquidityFee   types.DbPrefix = "rolling_pool_liquidity_fee/"
 	prefixPrevCyclePoolLiquidityFee types.DbPrefix = "prev_cycle_pool_liquidity_fee/"
 	prefixVersion                   types.DbPrefix = "version/"
@@ -467,6 +474,20 @@ func (k KVStore) MintToModule(ctx cosmos.Context, module string, coin common.Coi
 				ctx.Logger().Error("fail to move coins during circuit breaker", "error", err)
 				return err
 			}
+
+			// The supply cap has begun converting minting into Reserve drainage.
+			// Guard the uint64 conversion: this is a handler path with no
+			// recover(), and cosmos.Uint.Uint64() panics when out of range.
+			borrowTelem := float32(0)
+			if borrowReserveAmt.BigInt().IsUint64() {
+				borrowTelem = float32(borrowReserveAmt.Uint64()) / 100000000
+			}
+			// Quote simulation reaches this through synth->RUNE swaps; counters
+			// are process-local, so API traffic must not count as borrowing.
+			if sim, _ := ctx.Value(constants.CtxSimulationMode).(bool); !sim {
+				telemetry.IncrCounter(1, "thornode", "rune_supply", "reserve_borrow")
+				telemetry.IncrCounter(borrowTelem, "thornode", "rune_supply", "reserve_borrow_amount")
+			}
 		}
 	}
 	if coin.Amount.IsZero() {
@@ -514,6 +535,22 @@ func (k KVStore) GetModuleAddress(module string) (common.Address, error) {
 
 func (k KVStore) GetModuleAccAddress(module string) cosmos.AccAddress {
 	return k.accountKeeper.GetModuleAddress(module)
+}
+
+// IsModuleAccount includes configured modules whose accounts are not yet created.
+func (k KVStore) IsModuleAccount(ctx cosmos.Context, addr cosmos.AccAddress) bool {
+	if addr.Empty() {
+		return false
+	}
+	// This loop and the methods it calls perform no gas-metered operations.
+	// analyze-ignore(map-iteration) - membership only; order cannot change the result or gas usage.
+	for _, permissions := range k.accountKeeper.GetModulePermissions() {
+		if permissions.GetAddress().Equals(addr) {
+			return true
+		}
+	}
+	_, module := k.accountKeeper.GetAccount(ctx, addr).(sdk.ModuleAccountI)
+	return module
 }
 
 func (k KVStore) GetBalance(ctx cosmos.Context, addr cosmos.AccAddress) cosmos.Coins {

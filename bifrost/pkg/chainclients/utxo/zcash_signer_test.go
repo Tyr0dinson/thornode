@@ -1,8 +1,9 @@
 package utxo
 
 import (
-	"crypto/sha256"
+	"bytes"
 	"encoding/hex"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -24,6 +25,7 @@ import (
 	"github.com/syndtr/goleveldb/leveldb/storage"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/mock"
 	utxorpcc "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/rpc"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/zcash"
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
@@ -269,7 +271,7 @@ func (s *ZcashSignerSuite) TestVinsUnspentRejectsSpentCachedZECInput(c *C) {
 }
 
 // TestBroadcastTx tests transaction broadcasting behavior.
-// Empty and malformed payloads must fail before RPC; valid payloads are forwarded.
+// Empty and malformed payloads must fail before submission.
 func (s *ZcashSignerSuite) TestBroadcastTx(c *C) {
 	txOutItem := stypes.TxOutItem{
 		Chain:       common.ZECChain,
@@ -292,25 +294,20 @@ func (s *ZcashSignerSuite) TestBroadcastTx(c *C) {
 
 	// Malformed payloads cannot bypass the expiry check.
 	_, err = s.client.BroadcastTx(txOutItem, []byte("invalid payload"))
-	c.Assert(err, ErrorMatches, "fail to deserialize ZEC payload: .*")
-
-	// A valid non-expiring payload sends to RPC (mock returns success).
-	somePayload := zecExpiryPayload(c, 0)
-	txid, err := s.client.BroadcastTx(txOutItem, somePayload)
-	c.Assert(err, IsNil, Commentf("Non-empty payload should be forwarded to RPC"))
-	c.Assert(txid, Not(Equals), "", Commentf("Should return txid from RPC"))
+	c.Assert(err, ErrorMatches, "invalid ZEC payload: .*")
 }
 
-// zecPayloadTxID mirrors the ZEC fallback txid derivation used by BroadcastTx when
-// RPC returns "already in block chain" without a txid in the response.
+// zecPayloadTxID computes the native ID used by retry and cache assertions.
 func zecPayloadTxID(payload []byte) string {
-	hash1 := sha256.Sum256(payload)
-	hash2 := sha256.Sum256(hash1[:])
-	final := hash2[:]
-	for i, j := 0, len(final)-1; i < j; i, j = i+1, j-1 {
-		final[i], final[j] = final[j], final[i]
+	tx, err := zcash.ParseTx(payload)
+	if err != nil {
+		panic(err)
 	}
-	return hex.EncodeToString(final)
+	id, err := tx.ID()
+	if err != nil {
+		panic(err)
+	}
+	return id.String()
 }
 
 // TestBroadcastTxAlreadyInBlockChainMarksSignerCache verifies that the
@@ -329,7 +326,7 @@ func (s *ZcashSignerSuite) TestBroadcastTxAlreadyInBlockChainMarksSignerCache(c 
 		InHash: thorchain.GetRandomTxHash(),
 		Memo:   "OUT:" + thorchain.GetRandomTxHash().String(),
 	}
-	payload := zecExpiryPayload(c, 20000)
+	payload := zecExpiryPayload(c, 6, 20000)
 
 	rpcServer := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 		body, err := io.ReadAll(req.Body)
@@ -446,5 +443,77 @@ func (s *ZcashSignerSuite) TestGetGasCoinZEC(c *C) {
 
 		gas := s.client.getGasCoinZEC(tx, tc.Memo)
 		c.Assert(gas.Amount.Uint64(), Equals, tc.ExpectedGas, Commentf("vin=%d, memo=%d => %s, got: %d", len(tx.TxIn), len(tc.Memo), tc.Info, gas.Amount.Uint64()))
+	}
+}
+
+func (s *ZcashSignerSuite) TestZECNilMaxGasPolicyVetoDoesNotChangeSigningPlan(c *C) {
+	fixture := s.newZecExpiryFixture(c)
+	defer fixture.rpcServer.Close()
+	makeCandidate, view, restore := s.zecInputSelectionCandidates(c, fixture)
+	defer restore()
+	const fee = uint64(15000) // Two payment/change actions plus one memo action.
+	tx := fixture.tx
+	tx.MaxGas = nil
+	tx.Memo = "MIGRATE:1237"
+	reference := fixture.bridge.observedHeight
+	fixture.localHeight.Store(reference + 5)
+	first := makeCandidate(strings.Repeat("aa", 32), reference+2, 0, 100000000+fee)
+	alternate := makeCandidate(strings.Repeat("bb", 32), reference+3, 0, 200000000)
+	view.Store([]zecInputSelectionCandidate{alternate, first})
+
+	// Confirmed change above the saved reference funds the payment and fee.
+	// Keep the signing failure so repeated fresh attempts can be compared.
+	s.client.minRelayFeeSats.Store(0)
+	s.client.cfg.UTXO.MaxSatsPerVByte = 1000
+	_, baseline, _, err := s.client.SignTx(tx, 1237)
+	c.Assert(err, ErrorMatches, "(?s).*injected signing failure.*")
+	c.Assert(fixture.signer.digests, HasLen, 1)
+	var checkpoint utxo.SignCheckpoint
+	c.Assert(json.Unmarshal(baseline, &checkpoint), IsNil)
+	unsigned := &wire.MsgTx{}
+	c.Assert(unsigned.Deserialize(bytes.NewReader(checkpoint.UnsignedTx)), IsNil)
+	c.Assert(unsigned.TxIn, HasLen, 1)
+	c.Assert(unsigned.TxIn[0].PreviousOutPoint.Hash.String(), Equals, first.TxID)
+	c.Assert(checkpoint.IndividualAmounts, DeepEquals, map[string]int64{formatUtxoKey(first.TxID, 0): int64(first.Satoshis)})
+	var paid int64
+	for _, output := range unsigned.TxOut {
+		paid += output.Value
+	}
+	c.Assert(int64(first.Satoshis)-paid, Equals, int64(fee))
+
+	for _, policy := range []struct {
+		name  string
+		relay uint64
+		cap   int64
+		error string
+	}{
+		{"relay", fee + 1, 1000, ".*below local relay minimum.*"},
+		{"cap", 0, 1, ".*exceeds configured cap.*"},
+	} {
+		s.client.minRelayFeeSats.Store(policy.relay)
+		s.client.cfg.UTXO.MaxSatsPerVByte = policy.cap
+		digestCount := len(fixture.signer.digests)
+		raw, rejectedCheckpoint, observation, signErr := s.client.SignTx(tx, 1237)
+		c.Assert(signErr, ErrorMatches, policy.error, Commentf("%s policy", policy.name))
+		c.Assert(raw, IsNil)
+		c.Assert(rejectedCheckpoint, IsNil)
+		c.Assert(observation, IsNil)
+		c.Assert(fixture.signer.digests, HasLen, digestCount)
+		for _, candidate := range []zecInputSelectionCandidate{first, alternate} {
+			spent, spendErr := s.client.temporalStorage.HasSpentUtxo(formatUtxoKey(candidate.TxID, candidate.Index))
+			c.Assert(spendErr, IsNil)
+			c.Assert(spent, Equals, false)
+		}
+
+		// Once local policy allows the same conventional fee, the attempt must
+		// use identical bytes and digest without selecting the larger alternate.
+		s.client.minRelayFeeSats.Store(fee)
+		s.client.cfg.UTXO.MaxSatsPerVByte = 1000
+		s.client.lastFeeRate.Store(999999)
+		_, resumedCheckpoint, _, signErr := s.client.SignTx(tx, 1237)
+		c.Assert(signErr, ErrorMatches, "(?s).*injected signing failure.*")
+		c.Assert(resumedCheckpoint, DeepEquals, baseline)
+		c.Assert(fixture.signer.digests, HasLen, digestCount+1)
+		c.Assert(fixture.signer.digests[digestCount], DeepEquals, fixture.signer.digests[0])
 	}
 }

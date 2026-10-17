@@ -9,6 +9,7 @@ import (
 	abci "github.com/cometbft/cometbft/abci/types"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/common/tcysmartcontract"
 	"gitlab.com/thorchain/thornode/v3/constants"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
@@ -16,6 +17,12 @@ import (
 
 // ValidateGenesis validate genesis is valid or not
 func ValidateGenesis(data GenesisState) error {
+	for i := range data.SolVaultNonces {
+		if err := data.SolVaultNonces[i].Valid(); err != nil {
+			return err
+		}
+	}
+
 	for _, record := range data.Pools {
 		if err := record.Valid(); err != nil {
 			return err
@@ -105,6 +112,19 @@ func ValidateGenesis(data GenesisState) error {
 			return errors.New("invalid THORName")
 		}
 	}
+	// Collector keys can contain historical spellings. Compare the keys used by
+	// the keeper so duplicate records cannot overwrite a balance during import.
+	collectorNames := make(map[string]bool)
+	for _, collector := range data.AffiliateCollectors {
+		name := strings.ToUpper(strings.ToLower(collector.Name))
+		if name == "" || collector.RuneAmount.IsNil() {
+			return fmt.Errorf("invalid affiliate collector %q", collector.Name)
+		}
+		if collectorNames[name] {
+			return fmt.Errorf("duplicate affiliate collector %q", collector.Name)
+		}
+		collectorNames[name] = true
+	}
 
 	return nil
 }
@@ -145,6 +165,7 @@ func DefaultGenesisState() GenesisState {
 		DynamicFeeRecords:       make([]types.DynamicFeeRecord, 0),
 		DynamicFeeAccumulators:  make([]types.DynamicFeeAccumulator, 0),
 		StableReserveCredits:    make([]StableReserveCredit, 0),
+		SolVaultNonces:          make([]types.SolVaultNonce, 0),
 	}
 }
 
@@ -296,11 +317,25 @@ func initGenesis(ctx cosmos.Context, keeper keeper.Keeper, data GenesisState) []
 		keeper.SetSecuredAsset(ctx, a)
 	}
 
+	// The reference memo occupancy window is derived state rather than a genesis
+	// field: it is rebuilt from the imported memos so the congestion price does not
+	// reset to "empty ring" across a fork. The count goes in the previous bucket,
+	// since every imported memo expires within one TTL of here. Assets are applied
+	// in first-seen order rather than by ranging the tally, to keep it deterministic.
 	ttl := keeper.GetConfigInt64(ctx, constants.MemolessTxnTTL)
+	liveRefs := make(map[common.Asset]int64)
+	refAssets := make([]common.Asset, 0)
 	for _, ref := range data.ReferenceMemos {
 		if !ref.IsExpired(ctx.BlockHeight(), ttl) {
 			keeper.SetReferenceMemo(ctx, ref)
+			if _, ok := liveRefs[ref.Asset]; !ok {
+				refAssets = append(refAssets, ref.Asset)
+			}
+			liveRefs[ref.Asset]++
 		}
+	}
+	for _, asset := range refAssets {
+		keeper.SetReferenceMemoWindow(ctx, asset, ctx.BlockHeight(), 0, liveRefs[asset], ttl)
 	}
 
 	// Mint coins into the reserve
@@ -331,7 +366,9 @@ func initGenesis(ctx cosmos.Context, keeper keeper.Keeper, data GenesisState) []
 	}
 
 	for _, item := range data.AffiliateCollectors {
-		keeper.SetAffiliateCollector(ctx, item)
+		if err := keeper.SetAffiliateCollector(ctx, item); err != nil {
+			panic(err)
+		}
 	}
 
 	for _, item := range data.TcyClaimers {
@@ -385,6 +422,14 @@ func initGenesis(ctx cosmos.Context, keeper keeper.Keeper, data GenesisState) []
 		if err := keeper.SetStableReserveCredit(ctx, asset, addr, cosmos.NewUintFromString(credit.Amount)); err != nil {
 			panic(err)
 		}
+	}
+
+	// Restore committed SOL durable nonces. Without them a vault that signs durable
+	// outbounds would look legacy after import: signers could fall back to recent
+	// blockhashes and LackSigning could reassign an outbound whose durable copy can
+	// still land (double pay).
+	for _, record := range data.SolVaultNonces {
+		keeper.SetSolVaultNonce(ctx, record)
 	}
 
 	reserveAddr, _ := keeper.GetModuleAddress(ReserveName)
@@ -518,6 +563,14 @@ func ExportGenesis(ctx cosmos.Context, k keeper.Keeper) GenesisState {
 			continue
 		}
 		if staker.Amount.IsZero() {
+			continue
+		}
+		// ListTCYStakers synthesises an entry for every TCY smart contract address whose
+		// amount is that contract's own TCY balance, already exported by the bank module,
+		// rather than stake held by the TCYStake module. Exporting it as a staker record
+		// double counts the balance, and would import as a real module backed record
+		// should the smart contract address list ever change.
+		if tcysmartcontract.IsTCYSmartContractAddress(staker.Address) {
 			continue
 		}
 
@@ -718,15 +771,9 @@ func ExportGenesis(ctx cosmos.Context, k keeper.Keeper) GenesisState {
 	iterClouts := k.GetSwapperCloutIterator(ctx)
 	defer iterClouts.Close()
 	for ; iterClouts.Valid(); iterClouts.Next() {
-		var addr common.Address
-		parts := strings.Split(string(iterClouts.Key()), "/")
-		addr, err = common.NewAddress(parts[len(parts)-1])
-		if err != nil {
-			continue
-		}
-		var clout SwapperClout
-		clout, err = k.GetSwapperClout(ctx, addr)
-		if err != nil {
+		// Read the stored record: keys are uppercased, which breaks base58 addresses.
+		clout := NewSwapperClout(common.NoAddress)
+		if err = k.Cdc().Unmarshal(iterClouts.Value(), &clout); err != nil {
 			continue
 		}
 		clouts = append(clouts, clout)
@@ -877,6 +924,15 @@ func ExportGenesis(ctx cosmos.Context, k keeper.Keeper) GenesisState {
 		})
 	}
 
+	solVaultNonces := make([]types.SolVaultNonce, 0)
+	iterSolVaultNonce := k.GetSolVaultNonceIterator(ctx)
+	defer iterSolVaultNonce.Close()
+	for ; iterSolVaultNonce.Valid(); iterSolVaultNonce.Next() {
+		var record types.SolVaultNonce
+		k.Cdc().MustUnmarshal(iterSolVaultNonce.Value(), &record)
+		solVaultNonces = append(solVaultNonces, record)
+	}
+
 	return GenesisState{
 		Pools:                             pools,
 		LiquidityProviders:                liquidityProviders,
@@ -914,5 +970,6 @@ func ExportGenesis(ctx cosmos.Context, k keeper.Keeper) GenesisState {
 		DynamicFeeAccumulators:            dynamicFeeAccumulators,
 		LastObservedDynamicFeeEpochBlocks: lastObservedDynamicFeeEpochBlocks,
 		StableReserveCredits:              stableReserveCredits,
+		SolVaultNonces:                    solVaultNonces,
 	}
 }

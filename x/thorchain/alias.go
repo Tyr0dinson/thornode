@@ -86,6 +86,7 @@ const (
 	TxModifyLimitSwap   = mem.TxModifyLimitSwap
 	TxAdd               = mem.TxAdd
 	TxBond              = mem.TxBond
+	TxBondYield         = mem.TxBondYield
 	TxMigrate           = mem.TxMigrate
 	TxRagnarok          = mem.TxRagnarok
 	TxReserve           = mem.TxReserve
@@ -153,6 +154,7 @@ var (
 	NewEventDonate                 = types.NewEventDonate
 	NewEventSwap                   = types.NewEventSwap
 	NewEventAffiliateFee           = types.NewEventAffiliateFee
+	NewEventBondYield              = types.NewEventBondYield
 	NewEventStreamingSwap          = types.NewEventStreamingSwap
 	NewEventLimitSwap              = types.NewEventLimitSwap
 	NewEventModifyLimitSwap        = types.NewEventModifyLimitSwap
@@ -208,6 +210,7 @@ var (
 	NewReserveContributor          = types.NewReserveContributor
 	NewMsgReserveContributor       = types.NewMsgReserveContributor
 	NewMsgBond                     = types.NewMsgBond
+	NewMsgBondYield                = types.NewMsgBondYield
 	NewMsgUnBond                   = types.NewMsgUnBond
 	NewMsgReBond                   = types.NewMsgReBond
 	NewMsgErrataTx                 = types.NewMsgErrataTx
@@ -219,7 +222,6 @@ var (
 	NewMsgRejectUpgrade            = types.NewMsgRejectUpgrade
 	NewMsgSetIPAddress             = types.NewMsgSetIPAddress
 	NewMsgNetworkFee               = types.NewMsgNetworkFee
-	NewMsgWasmExec                 = types.NewMsgWasmExec
 	NewNetworkFee                  = types.NewNetworkFee
 	NewTHORName                    = types.NewTHORName
 	NewReferenceMemo               = types.NewReferenceMemo
@@ -254,21 +256,24 @@ var (
 	DefaultGenesis                 = types.DefaultGenesis
 	NewSolvencyVoter               = types.NewSolvencyVoter
 	NewMsgSolvency                 = types.NewMsgSolvency
+	NewMsgSolNonceAttest           = types.NewMsgSolNonceAttest
 	NewSwapperClout                = types.NewSwapperClout
 	NewMsgTCYClaim                 = types.NewMsgTCYClaim
 	NewMsgTCYStake                 = types.NewMsgTCYStake
 	NewMsgTCYUnstake               = types.NewMsgTCYUnstake
 
 	// Memo
-	ParseMemo              = mem.ParseMemo
-	ParseMemoWithTHORNames = mem.ParseMemoWithTHORNames
-	StringToTxType         = mem.StringToTxType
-	FetchAddress           = mem.FetchAddress
-	NewRefundMemo          = mem.NewRefundMemo
-	NewOutboundMemo        = mem.NewOutboundMemo
-	NewRagnarokMemo        = mem.NewRagnarokMemo
-	NewMigrateMemo         = mem.NewMigrateMemo
-	NewReferenceReadMemo   = mem.NewReferenceReadMemo
+	ParseMemo                    = mem.ParseMemo
+	ParseMemoWithTHORNames       = mem.ParseMemoWithTHORNames
+	ParseMemoWithTHORNamesCached = mem.ParseMemoWithTHORNamesCached
+	WithMemoCache                = mem.WithMemoCache
+	StringToTxType               = mem.StringToTxType
+	FetchAddress                 = mem.FetchAddress
+	NewRefundMemo                = mem.NewRefundMemo
+	NewOutboundMemo              = mem.NewOutboundMemo
+	NewRagnarokMemo              = mem.NewRagnarokMemo
+	NewMigrateMemo               = mem.NewMigrateMemo
+	NewReferenceReadMemo         = mem.NewReferenceReadMemo
 
 	FetchDexAggregator         = aggregators.FetchDexAggregator
 	FetchDexAggregatorGasLimit = aggregators.FetchDexAggregatorGasLimit
@@ -279,6 +284,7 @@ type (
 	MsgSend                   = types.MsgSend
 	MsgDeposit                = types.MsgDeposit
 	MsgBond                   = types.MsgBond
+	MsgBondYield              = types.MsgBondYield
 	MsgUnBond                 = types.MsgUnBond
 	MsgReBond                 = types.MsgReBond
 	MsgNoOp                   = types.MsgNoOp
@@ -317,9 +323,9 @@ type (
 	MsgManageTHORName         = types.MsgManageTHORName
 	MsgReferenceMemo          = types.MsgReferenceMemo
 	MsgSolvency               = types.MsgSolvency
+	MsgSolNonceAttest         = types.MsgSolNonceAttest
 	MsgRunePoolDeposit        = types.MsgRunePoolDeposit
 	MsgRunePoolWithdraw       = types.MsgRunePoolWithdraw
-	MsgWasmExec               = types.MsgWasmExec
 	MsgSwitch                 = types.MsgSwitch
 	MsgTCYClaim               = types.MsgTCYClaim
 	MsgTCYStake               = types.MsgTCYStake
@@ -337,6 +343,8 @@ type (
 	ObservedTxs              = common.ObservedTxs
 	ObservedTx               = common.ObservedTx
 	ObservedTxVoter          = types.ObservedTxVoter
+	SolVaultNonce            = types.SolVaultNonce
+	SolNonceAttestVoter      = types.SolNonceAttestVoter
 	ObservedTxVoters         = types.ObservedTxVoters
 	BanVoter                 = types.BanVoter
 	ErrataTxVoter            = types.ErrataTxVoter
@@ -348,6 +356,7 @@ type (
 	KeygenBlock              = types.KeygenBlock
 	EventSwap                = types.EventSwap
 	EventAffiliateFee        = types.EventAffiliateFee
+	EventBondYield           = types.EventBondYield
 	EventAddLiquidity        = types.EventAddLiquidity
 	EventWithdraw            = types.EventWithdraw
 	EventDonate              = types.EventDonate
@@ -414,6 +423,7 @@ type (
 	MigrateMemo                = mem.MigrateMemo
 	RagnarokMemo               = mem.RagnarokMemo
 	BondMemo                   = mem.BondMemo
+	BondYieldMemo              = mem.BondYieldMemo
 	UnbondMemo                 = mem.UnbondMemo
 	RebondMemo                 = mem.RebondMemo
 	OutboundMemo               = mem.OutboundMemo
@@ -433,7 +443,6 @@ type (
 	StableReserveWithdrawMemo  = mem.StableReserveWithdrawMemo
 	RunePoolDepositMemo        = mem.RunePoolDepositMemo
 	RunePoolWithdrawMemo       = mem.RunePoolWithdrawMemo
-	ExecMemo                   = mem.ExecMemo
 	SwitchMemo                 = mem.SwitchMemo
 	TCYClaimMemo               = mem.TCYClaimMemo
 	TCYStakeMemo               = mem.TCYStakeMemo

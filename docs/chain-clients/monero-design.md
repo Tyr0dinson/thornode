@@ -178,6 +178,10 @@ Design choices:
   - clean sidecar data directory required for cutover upgrade.
 - `XMR_FROST_CHAIN_NETWORK` must be explicit (`mocknet`, `chainnet`, `stagenet`, or `mainnet`).
 - Sidecar protected routes require configured auth (`XMR_FROST_AUTH_BEARER` or basic auth vars).
+  Generate an independent random bearer for each validator deployment, give the same value to its
+  Bifrost and signer, and never reuse a node mnemonic or keystore password. The bundled private
+  chainnet and stagenet Compose clusters require an explicit deployment bearer and fail if it is
+  unset or empty.
 - In mainnet mode, sidecar daemon endpoint hardening is stricter (TLS/auth requirements).
 - In mainnet mode, `XMR_FROST_STORE_SECRET` must be strong (32-byte hex/base64 equivalent).
 - `XMR_FROST_MAX_SIGN_SCAN_LAG_BLOCKS` controls fail-closed signing when scan state is stale (default `3`).
@@ -281,6 +285,20 @@ capability contract (protocol, API major, state schema, source revision, and eve
 required capability) over `/v1/monero/info`. An old or partially-featured signer image
 is rejected at construction rather than at first use, so the signer image must be
 upgraded in lockstep with Bifrost.
+
+The deployment label above is not the Monero daemon identity. Bifrost separately maps
+the XMR chain's `chain_network` to the canonical daemon nettype and genesis block:
+`mocknet` expects `fakechain`, `mainnet` expects `mainnet`, `stagenet` expects
+`stagenet`, and `testnet` expects `testnet`. The signer queries `get_info` and
+block height zero for `/v1/monero/info` and reports `monero_nettype` plus
+`monero_genesis_hash`. Bifrost requires both values and the
+`monero-network-identity-v1` capability, so a matching deployment label cannot hide
+a signer connected to the wrong Monero chain.
+
+This compatibility and daemon-identity check is one-shot during XMR client
+construction. Replacing the signer or changing its daemon while Bifrost is running is
+unsupported; restart Bifrost to re-run the startup contract before scanning or signing.
+There is no compatibility cache, periodic poller, or background revalidation worker.
 
 One capability is optional rather than required: `durable-sign-result-recovery-v1`.
 It asserts that the signer durably replays combine by `(msg_id, session_id,

@@ -19,11 +19,22 @@ import (
 // ChurnActor assumes that the mocknet was started with multiple nodes.
 type ChurnActor struct {
 	Actor
+	skipReason func() string
 }
 
 func NewChurnActor(rng *rand.Rand) *Actor {
+	return newChurnActor(rng, nil)
+}
+
+// NewChurnActorWithSkip creates a churn actor with a caller-specific skip gate.
+func NewChurnActorWithSkip(rng *rand.Rand, skipReason func() string) *Actor {
+	return newChurnActor(rng, skipReason)
+}
+
+func newChurnActor(rng *rand.Rand, skipReason func() string) *Actor {
 	a := &ChurnActor{
-		Actor: *NewActor("Churn", rng),
+		Actor:      *NewActor("Churn", rng),
+		skipReason: skipReason,
 	}
 	a.Timeout = 35 * time.Minute // Match XMR post-churn timeout. FROST keygen can take up to 300s plus churn/vault rotation time.
 
@@ -38,12 +49,26 @@ func NewChurnActor(rng *rand.Rand) *Actor {
 ////////////////////////////////////////////////////////////////////////////////////////
 
 func (a *ChurnActor) startChurn(config *OpConfig) OpResult {
+	if a.skipReason != nil {
+		if reason := a.skipReason(); reason != "" {
+			a.Log().Info().Str("reason", reason).Msg("skipping churn by caller request")
+			return OpResult{Finish: true}
+		}
+	}
+
 	// should be one active node
 	nodes, err := thornode.GetNodes()
 	if err != nil {
 		a.Log().Error().Err(err).Msg("failed to get nodes")
 		return OpResult{
 			Continue: false,
+		}
+	}
+	if err = churnNodeCountError(len(nodes)); err != nil {
+		a.Log().Error().Err(err).Msg("not enough thornode nodes for churn")
+		return OpResult{
+			Finish: true,
+			Error:  err,
 		}
 	}
 	activeNodes := map[string]bool{}
@@ -83,6 +108,13 @@ func (a *ChurnActor) startChurn(config *OpConfig) OpResult {
 		}
 	}
 
+	if _, err = ScheduleChurn(a.Log(), config); err != nil {
+		a.Log().Error().Err(err).Msg("failed to schedule churn")
+		return OpResult{
+			Continue: false,
+		}
+	}
+
 	for _, item := range []struct {
 		key   string
 		value int64
@@ -109,6 +141,13 @@ func (a *ChurnActor) startChurn(config *OpConfig) OpResult {
 	return OpResult{
 		Continue: true,
 	}
+}
+
+func churnNodeCountError(nodeCount int) error {
+	if nodeCount < 2 {
+		return fmt.Errorf("churn requires at least two thornode nodes: got %d", nodeCount)
+	}
+	return nil
 }
 
 func (a *ChurnActor) waitForChurnComplete(config *OpConfig) OpResult {

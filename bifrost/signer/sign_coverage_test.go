@@ -1439,6 +1439,61 @@ func (s *SignCoverageSuite) TestSignAndBroadcast_DropsStaleSignedTxBeforeDiffere
 	c.Assert(cc.signedTx.VaultPubKey.Equals(replacementVault), Equals, true)
 }
 
+// XMR remains live on THORChain for three signing periods. A failed join must
+// still be retried during that window, but must stop at the buffered cutoff or
+// when THORChain has already completed/replaced the exact request.
+func (s *SignCoverageSuite) TestSignAndBroadcast_XMRUnsignedSigningWindow(c *C) {
+	vaultPubKey, err := common.NewPubKey(pubkeymanager.MockPubkey)
+	c.Assert(err, IsNil)
+	for _, tc := range []struct {
+		name           string
+		chain          common.Chain
+		age            int64
+		outHash        common.TxID
+		wantBroadcasts int
+	}{
+		{"migration retry after delayed scanner recovery", common.XMRChain, 168, common.TxID(""), 1},
+		{"last block before XMR cutoff", common.XMRChain, 350, common.TxID(""), 1},
+		{"XMR buffered cutoff", common.XMRChain, 351, common.TxID(""), 0},
+		{"XMR beyond extended period", common.XMRChain, 361, common.TxID(""), 0},
+		{"replaced migration remains discarded", common.XMRChain, 168, common.BlankTxID, 0},
+		{"other chains retain original cutoff", common.ETHChain, 168, common.TxID(""), 0},
+	} {
+		coin := common.NewCoin(tc.chain.GetGasAsset(), cosmos.NewUint(1000))
+		tx := types.TxArrayItem{
+			Chain: tc.chain, VaultPubKey: vaultPubKey,
+			ToAddress: "48A1xmr-destination", Coin: coin, Memo: "MIGRATE:1856",
+		}
+		bridge := &mockSignBridge{
+			blockHeight: 1856 + tc.age,
+			constants: map[string]int64{
+				constants.SigningTransactionPeriod.String(): 120,
+				constants.ChurnInterval.String():            43200,
+			},
+			mimirs: map[string]int64{},
+		}
+		item := TxOutStoreItem{TxOutItem: tx.TxOutItem(1856), Height: 1856}
+		tx.OutHash = tc.outHash
+		bridge.keysign = types.TxOut{Height: 1856, TxArray: []types.TxArrayItem{tx}}
+		storage, storeErr := NewSignerStore("", config.LevelDBOptions{}, "")
+		c.Assert(storeErr, IsNil)
+		cc := &MockCaptureSignChainClient{}
+		sign := &Signer{
+			logger:          log.With().Str("module", "test").Logger(),
+			cfg:             config.Bifrost{Signer: config.BifrostSignerConfiguration{RescheduleBufferBlocks: 10}},
+			thorchainBridge: bridge, constantsProvider: NewConstantsProvider(bridge),
+			chains:    map[common.Chain]chainclients.ChainClient{tc.chain: cc},
+			pubkeyMgr: pubkeymanager.NewMockPoolAddressValidator(),
+			m:         GetMetricForTest(c), storage: storage, localPubKeyECDSA: vaultPubKey,
+			tssKeysignMetricMgr: metrics.NewTssKeysignMetricMgr(),
+		}
+		_, _, signErr := sign.signAndBroadcast(item)
+		c.Check(signErr, IsNil, Commentf(tc.name))
+		c.Check(cc.broadcastCount, Equals, tc.wantBroadcasts, Commentf(tc.name))
+		c.Assert(storage.Close(), IsNil)
+	}
+}
+
 func (s *SignCoverageSuite) TestSignAndBroadcast_RebroadcastsStaleXMRSignedTx(c *C) {
 	vaultPubKey, _ := common.NewPubKey(pubkeymanager.MockPubkey)
 	bridge := &mockSignBridge{
@@ -1914,8 +1969,11 @@ func (s *SignCoverageSuite) TestScheduleKeygenRetry_MimirErrors(c *C) {
 		thorchainBridge: bridge,
 	}
 
-	result := sign.scheduleKeygenRetry(ttypes.KeygenBlock{Height: 100})
-	c.Assert(result, Equals, false)
+	sign.stopChan = make(chan struct{})
+	defer sign.keygenWorkerWG.Wait()
+	defer close(sign.stopChan)
+	result := sign.scheduleKeygenRetry(ttypes.KeygenBlock{Height: 100}, ttypes.Keygen{})
+	c.Assert(result, Equals, true)
 }
 
 func (s *SignCoverageSuite) TestScheduleKeygenRetry_KeygenRetryIntervalZero(c *C) {
@@ -1931,7 +1989,7 @@ func (s *SignCoverageSuite) TestScheduleKeygenRetry_KeygenRetryIntervalZero(c *C
 		thorchainBridge: bridge,
 	}
 
-	result := sign.scheduleKeygenRetry(ttypes.KeygenBlock{Height: 100})
+	result := sign.scheduleKeygenRetry(ttypes.KeygenBlock{Height: 100}, ttypes.Keygen{})
 	c.Assert(result, Equals, false)
 }
 
@@ -1953,7 +2011,7 @@ func (s *SignCoverageSuite) TestScheduleKeygenRetry_RetryIntervalTooShort(c *C) 
 		thorchainBridge: bridge,
 	}
 
-	result := sign.scheduleKeygenRetry(ttypes.KeygenBlock{Height: 100})
+	result := sign.scheduleKeygenRetry(ttypes.KeygenBlock{Height: 100}, ttypes.Keygen{})
 	c.Assert(result, Equals, false)
 }
 
@@ -1976,8 +2034,11 @@ func (s *SignCoverageSuite) TestScheduleKeygenRetry_BlockHeightError(c *C) {
 		thorchainBridge: bridge,
 	}
 
-	result := sign.scheduleKeygenRetry(ttypes.KeygenBlock{Height: 100})
-	c.Assert(result, Equals, false)
+	sign.stopChan = make(chan struct{})
+	defer sign.keygenWorkerWG.Wait()
+	defer close(sign.stopChan)
+	result := sign.scheduleKeygenRetry(ttypes.KeygenBlock{Height: 100}, ttypes.Keygen{})
+	c.Assert(result, Equals, true)
 }
 
 func (s *SignCoverageSuite) TestScheduleKeygenRetry_CloseToChurnRetry(c *C) {
@@ -2002,7 +2063,7 @@ func (s *SignCoverageSuite) TestScheduleKeygenRetry_CloseToChurnRetry(c *C) {
 	// keygenBlock at height 100, current at 990
 	// targetRetryHeight = (100 - ((990-100)%100)) + 990 = 1000
 	// condition: 1000 > 100 + 500 - 100 = 500 => true => return false
-	result := sign.scheduleKeygenRetry(ttypes.KeygenBlock{Height: 100})
+	result := sign.scheduleKeygenRetry(ttypes.KeygenBlock{Height: 100}, ttypes.Keygen{})
 	c.Assert(result, Equals, false)
 }
 
@@ -2280,7 +2341,7 @@ func (s *SignCoverageSuite) TestScheduleKeygenRetry_ChurnRetryIntervalDefault(c 
 	bridge := &mockSignBridge{
 		blockHeight: 200,
 		mimirs: map[string]int64{
-			constants.ChurnRetryInterval.String():  0, // will use default
+			constants.ChurnRetryInterval.String():  -1, // use default; zero disables retries
 			constants.KeygenRetryInterval.String(): 100,
 		},
 	}
@@ -2295,13 +2356,11 @@ func (s *SignCoverageSuite) TestScheduleKeygenRetry_ChurnRetryIntervalDefault(c 
 		thorchainBridge: bridge,
 	}
 
-	// When churnRetryInterval <= 0, it uses the default from constants
-	// The default ChurnRetryInterval is typically large, so the retry should
-	// either succeed (schedule) or fail depending on whether close to churn retry
-	result := sign.scheduleKeygenRetry(ttypes.KeygenBlock{Height: 100})
-	// The result depends on the default ChurnRetryInterval value, but we at least
-	// exercise the code path
-	_ = result
+	sign.stopChan = make(chan struct{})
+	defer close(sign.stopChan)
+	// An unset Mimir uses the constant default and permits this retry.
+	result := sign.scheduleKeygenRetry(ttypes.KeygenBlock{Height: 100}, ttypes.Keygen{})
+	c.Assert(result, Equals, true)
 }
 
 func (s *SignCoverageSuite) TestScheduleKeygenRetry_SecondMimirError(c *C) {
@@ -2323,8 +2382,11 @@ func (s *SignCoverageSuite) TestScheduleKeygenRetry_SecondMimirError(c *C) {
 		thorchainBridge: bridge,
 	}
 
-	result := sign.scheduleKeygenRetry(ttypes.KeygenBlock{Height: 100})
-	c.Assert(result, Equals, false)
+	sign.stopChan = make(chan struct{})
+	defer sign.keygenWorkerWG.Wait()
+	defer close(sign.stopChan)
+	result := sign.scheduleKeygenRetry(ttypes.KeygenBlock{Height: 100}, ttypes.Keygen{})
+	c.Assert(result, Equals, true)
 }
 
 func (s *SignCoverageSuite) TestSemaphore(c *C) {
@@ -2677,9 +2739,9 @@ func (s *SignCoverageSuite) TestProcessTransaction_Round7StorageError(c *C) {
 	sign.processTransaction(item)
 }
 
-// ----- signAndBroadcast: broadcast failure with storage error -----
+// ----- signAndBroadcast: storage failure prevents broadcast -----
 
-func (s *SignCoverageSuite) TestSignAndBroadcast_BroadcastError_StoreError(c *C) {
+func (s *SignCoverageSuite) TestSignAndBroadcast_StoreErrorPreventsBroadcast(c *C) {
 	vaultPubKey, _ := common.NewPubKey(pubkeymanager.MockPubkey)
 	bridge := &mockSignBridge{
 		blockHeight: 200,
@@ -2720,9 +2782,8 @@ func (s *SignCoverageSuite) TestSignAndBroadcast_BroadcastError_StoreError(c *C)
 		Height: 190,
 	}
 	_, _, err = sign.signAndBroadcast(item)
-	// Broadcast fails, and Set also fails but that's logged, the broadcast error is returned
-	c.Assert(err, NotNil)
-	c.Assert(err.Error(), Matches, ".*broadcast failed.*")
+	c.Assert(err, ErrorMatches, "persist signed tx before broadcast:.*leveldb: closed")
+	c.Assert(cc.broadcastTxs, Equals, 0)
 }
 
 // ----- storage error tests -----

@@ -6,10 +6,16 @@ import (
 	"testing"
 	"time"
 
+	"gitlab.com/thorchain/thornode/v3/config"
 	. "gitlab.com/thorchain/thornode/v3/test/simulation/pkg/types"
 )
 
 func TestExecute(t *testing.T) {
+	// NewUser reads the Bifrost chain ID from the loaded config.
+	t.Cleanup(config.Init) // t.Setenv restores CHAIN_ID before this cleanup runs.
+	t.Setenv("CHAIN_ID", "thorchain-mocknet-v1")
+	config.Init()
+
 	rng := rand.New(rand.NewPCG(1, 2))
 
 	// bump count once on each operation

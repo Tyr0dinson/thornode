@@ -1,12 +1,16 @@
 package tron
 
 import (
+	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -458,4 +462,197 @@ func newTestKeys(t *testing.T, name, mnemonic string) *thorclient.Keys {
 	}
 
 	return thorclient.NewKeysWithKeybase(kr, name, "")
+}
+
+func TestSignAndBroadcastRetainsOriginalTronSubmission(t *testing.T) {
+	for _, scenario := range []string{
+		"lost reply", "malformed reply", "empty reply", "application error", "unknown code",
+		"other error", "duplicate", "accepted then disconnected", "different response ID", "different rejection ID",
+		"lost reply then busy", "lost reply then validation error", "wrong receipt",
+		"receipt lookup error", "expired original", "pending original",
+	} {
+		t.Run(scenario, func(t *testing.T) {
+			restore := overrideBroadcastObservationTimings(100*time.Millisecond, time.Millisecond)
+			defer restore()
+			var creates, broadcasts atomic.Int32
+			var mu sync.Mutex
+			var payloads []string
+			unresolved := scenario == "lost reply then busy" || scenario == "lost reply then validation error" ||
+				scenario == "wrong receipt" || scenario == "receipt lookup error" || scenario == "expired original" || scenario == "pending original"
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				switch req.URL.Path {
+				case "/wallet/createtransaction":
+					n := creates.Add(1)
+					expiry := int64(0)
+					if scenario == "expired original" {
+						expiry = time.Now().Add(-time.Minute).UnixMilli()
+					}
+					_, _ = fmt.Fprintf(w, `{"txID":"%064x","raw_data":{"contract":[],"expiration":%d}}`, n, expiry)
+				case "/wallet/broadcasttransaction":
+					body, err := io.ReadAll(req.Body)
+					if err != nil {
+						t.Error(err)
+						return
+					}
+					mu.Lock()
+					payloads = append(payloads, string(body))
+					mu.Unlock()
+					n := broadcasts.Add(1)
+					if n == 1 {
+						switch scenario {
+						case "lost reply", "lost reply then busy", "lost reply then validation error":
+							conn, _, hijackErr := w.(http.Hijacker).Hijack()
+							if hijackErr != nil {
+								t.Error(hijackErr)
+								return
+							}
+							_ = conn.Close()
+							return
+						case "malformed reply":
+							_, _ = w.Write([]byte(`{`))
+							return
+						case "empty reply":
+							_, _ = w.Write([]byte(`{}`))
+							return
+						case "application error":
+							_, _ = w.Write([]byte(`{"Error":"unavailable"}`))
+							return
+						case "unknown code":
+							_, _ = w.Write([]byte(`{"result":false,"code":"NEW_ERROR"}`))
+							return
+						case "other error":
+							_, _ = w.Write([]byte(`{"result":false,"code":"OTHER_ERROR"}`))
+							return
+						case "duplicate":
+							_, _ = w.Write([]byte(`{"result":false,"code":"DUP_TRANSACTION_ERROR"}`))
+							return
+						case "accepted then disconnected":
+							_, _ = w.Write([]byte(`{"result":false,"code":"NOT_ENOUGH_EFFECTIVE_CONNECTION","message":"P2P broadcast failed."}`))
+							return
+						case "different rejection ID":
+							_, _ = fmt.Fprintf(w, `{"result":false,"code":"SIGERROR","txid":"%064x"}`, 99)
+							return
+						case "different response ID":
+							_, _ = fmt.Fprintf(w, `{"result":true,"txid":"%064x"}`, 99)
+							return
+						}
+					}
+					if scenario == "lost reply then busy" {
+						_, _ = w.Write([]byte(`{"result":false,"code":"SERVER_BUSY"}`))
+						return
+					}
+					if scenario == "lost reply then validation error" {
+						_, _ = w.Write([]byte(`{"result":false,"code":"CONTRACT_VALIDATE_ERROR"}`))
+						return
+					}
+					_, _ = fmt.Fprintf(w, `{"result":true,"txid":"%064x"}`, 1)
+				case "/wallet/gettransactioninfobyid":
+					var lookup struct {
+						Value string `json:"value"`
+					}
+					if err := json.NewDecoder(req.Body).Decode(&lookup); err != nil {
+						t.Error(err)
+						return
+					}
+					if lookup.Value != fmt.Sprintf("%064x", 1) {
+						t.Errorf("queried a different transaction: %s", lookup.Value)
+					}
+					if scenario == "wrong receipt" {
+						_, _ = fmt.Fprintf(w, `{"id":"%064x","blockNumber":100}`, 99)
+						return
+					}
+					if scenario == "receipt lookup error" {
+						_, _ = w.Write([]byte(`{"Error":"lookup unavailable"}`))
+						return
+					}
+					if !unresolved && broadcasts.Load() >= 2 {
+						_, _ = fmt.Fprintf(w, `{"id":%q,"blockNumber":100}`, lookup.Value)
+					} else {
+						_, _ = w.Write([]byte(`{}`))
+					}
+				case "/wallet/gettransactionbyid":
+					if scenario == "pending original" {
+						_, _ = fmt.Fprintf(w, `{"txID":"%064x"}`, 1)
+					} else {
+						_, _ = w.Write([]byte(`{}`))
+					}
+				default:
+					t.Errorf("unexpected request %s", req.URL.Path)
+					http.NotFound(w, req)
+				}
+			}))
+			defer server.Close()
+			client := newTestClient(t, server.URL)
+			txID, err := SignAndBroadcastTx(client, newTestSimTx(client.address))
+			if unresolved {
+				if !errors.Is(err, ErrSimTxUncertain) {
+					t.Fatalf("unresolved submission must stop: %v", err)
+				}
+			} else if err != nil {
+				t.Fatal(err)
+			}
+			if creates.Load() != 1 || txID != fmt.Sprintf("%064x", 1) {
+				t.Fatalf("lost original identity: signs=%d tx=%s err=%v", creates.Load(), txID, err)
+			}
+			mu.Lock()
+			defer mu.Unlock()
+			for _, payload := range payloads {
+				if payload != payloads[0] {
+					t.Fatal("rebroadcast replaced the signed payload")
+				}
+			}
+			if scenario == "expired original" {
+				if broadcasts.Load() != 1 {
+					t.Fatal("rebroadcast an expired transaction")
+				}
+			} else if broadcasts.Load() < 2 {
+				t.Fatal("did not exercise same-payload rebroadcast")
+			}
+		})
+	}
+}
+
+func TestSignAndBroadcastCanRetryDefiniteFirstTronRejection(t *testing.T) {
+	restore := overrideBroadcastObservationTimings(100*time.Millisecond, time.Millisecond)
+	defer restore()
+	var creates, broadcasts atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch req.URL.Path {
+		case "/wallet/createtransaction":
+			_, _ = fmt.Fprintf(w, `{"txID":"%064x","raw_data":{"contract":[]}}`, creates.Add(1))
+		case "/wallet/broadcasttransaction":
+			if broadcasts.Add(1) == 1 {
+				_, _ = w.Write([]byte(`{"result":false,"code":"SERVER_BUSY"}`))
+				return
+			}
+			_, _ = fmt.Fprintf(w, `{"result":true,"txid":"%064x"}`, 2)
+		case "/wallet/gettransactioninfobyid":
+			var lookup struct {
+				Value string `json:"value"`
+			}
+			if err := json.NewDecoder(req.Body).Decode(&lookup); err != nil {
+				t.Error(err)
+				return
+			}
+			if lookup.Value != fmt.Sprintf("%064x", 2) {
+				t.Errorf("polled rejected transaction: %s", lookup.Value)
+			}
+			_, _ = fmt.Fprintf(w, `{"id":%q,"blockNumber":100}`, lookup.Value)
+		default:
+			t.Errorf("unexpected request %s", req.URL.Path)
+			http.NotFound(w, req)
+		}
+	}))
+	defer server.Close()
+	client := newTestClient(t, server.URL)
+	id, err := SignAndBroadcastTx(client, newTestSimTx(client.address))
+	if err == nil || errors.Is(err, ErrSimTxUncertain) || id != "" || creates.Load() != 1 || broadcasts.Load() != 1 {
+		t.Fatalf("first rejection must return without uncertainty: signs=%d broadcasts=%d id=%s err=%v", creates.Load(), broadcasts.Load(), id, err)
+	}
+	id, err = SignAndBroadcastTx(client, newTestSimTx(client.address))
+	if err != nil || id != fmt.Sprintf("%064x", 2) || creates.Load() != 2 || broadcasts.Load() != 2 {
+		t.Fatalf("definitely rejected transfer could not retry: signs=%d broadcasts=%d id=%s err=%v", creates.Load(), broadcasts.Load(), id, err)
+	}
 }

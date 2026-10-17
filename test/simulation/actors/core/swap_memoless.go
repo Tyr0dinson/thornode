@@ -319,7 +319,7 @@ func (a *SwapMemolessActor) prepareSwapMemolessByRef(config *OpConfig) OpResult 
 }
 
 func (a *SwapMemolessActor) requotePreparedSwap(config *OpConfig) OpResult {
-	quote, quoteAmount, err := getSwapQuoteWithRecommendedMin(a.from, a.to, a.swapAmount, a.fromBalance, a.toAddress, a.from.Chain.IsUTXO())
+	quote, quoteAmount, err := getSwapQuoteWithRecommendedMin(a.from, a.to, a.swapAmount, a.fromBalance, a.toAddress, a.fromAddress, a.from.Chain.IsUTXO())
 	if err != nil {
 		a.Log().Error().Err(err).Str("amount", a.swapAmount.String()).Msg("failed to get quote for prepared memoless swap")
 		return OpResult{
@@ -372,7 +372,7 @@ func (a *SwapMemolessActor) prepareSwapMemolessByAmount(config *OpConfig) OpResu
 
 func (a *SwapMemolessActor) requoteEncodedSwap(config *OpConfig) OpResult {
 	for attempt := 0; attempt < 4; attempt++ {
-		quote, quoteAmount, err := getSwapQuoteWithRecommendedMin(a.from, a.to, a.swapAmount, a.fromBalance, a.toAddress, a.from.Chain.IsUTXO())
+		quote, quoteAmount, err := getSwapQuoteWithRecommendedMin(a.from, a.to, a.swapAmount, a.fromBalance, a.toAddress, a.fromAddress, a.from.Chain.IsUTXO())
 		if err != nil {
 			a.Log().Error().Err(err).Str("amount", a.swapAmount.String()).Msg("failed to get quote for encoded memoless swap amount")
 			return OpResult{
@@ -634,9 +634,7 @@ func (a *SwapMemolessActor) broadcastSwap(config *OpConfig) OpResult {
 			return result
 		}
 		a.Log().Error().Err(err).Msg("failed to broadcast tx")
-		return OpResult{
-			Continue: false,
-		}
+		return SimTxErrorResult(err)
 	}
 
 	a.Log().Info().

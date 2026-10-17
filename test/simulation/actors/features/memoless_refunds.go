@@ -67,7 +67,7 @@ func MemolessRefunds(rng *rand.Rand) *Actor {
 
 	ttlKey := constants.MemolessTxnTTL.String()
 	lowerTTL := NewActor("Memoless Refund Lower TTL", rng)
-	lowerTTL.Children[newMultiNodeMimirActor(ttlKey, 10, rng)] = true
+	lowerTTL.Children[NewMultiNodeMimirActor(ttlKey, 10, rng)] = true
 
 	refundActors := NewActor("Memoless Refund Actors", rng)
 	for _, chain := range acommon.SimChains {
@@ -92,7 +92,7 @@ func MemolessRefunds(rng *rand.Rand) *Actor {
 	}
 
 	restoreTTL := NewActor("Memoless Refund Restore TTL", rng)
-	restoreTTL.Children[newMultiNodeMimirActor(ttlKey, 100, rng)] = true
+	restoreTTL.Children[NewMultiNodeMimirActor(ttlKey, 100, rng)] = true
 
 	a.Append(lowerTTL)
 	a.Append(refundActors)
@@ -101,11 +101,12 @@ func MemolessRefunds(rng *rand.Rand) *Actor {
 	return a
 }
 
-// newMultiNodeMimirActor broadcasts a MsgMimir from every active node so that
-// an economic mimir reaches supermajority. Single-node MimirActor is insufficient
+// NewMultiNodeMimirActor broadcasts a MsgMimir from every active node so that
+// an economic mimir reaches supermajority. Its op ends with Continue, so callers
+// may append ops, such as waiting for the value to take effect. Single-node MimirActor is insufficient
 // on the mocknet-cluster where MEMOLESSTXNTTL stays at its default if only one
 // vote is cast. Pattern borrowed from core.RagnarokPoolActor.sendMimir.
-func newMultiNodeMimirActor(key string, value int64, rng *rand.Rand) *Actor {
+func NewMultiNodeMimirActor(key string, value int64, rng *rand.Rand) *Actor {
 	a := NewActor(fmt.Sprintf("Mimir(all) %s=%d", key, value), rng)
 	a.Timeout = 2 * time.Minute
 	a.Ops = append(a.Ops, func(config *OpConfig) OpResult {
@@ -139,7 +140,7 @@ func newMultiNodeMimirActor(key string, value int64, rng *rand.Rand) *Actor {
 			}
 			a.Log().Info().Stringer("signer", accAddr).Stringer("txid", txid).Msg("broadcasted mimir vote")
 		}
-		return OpResult{Finish: true}
+		return OpResult{Continue: true}
 	})
 	return a
 }
@@ -220,9 +221,12 @@ func (a *MemolessRefundActor) acquireUser(config *OpConfig) OpResult {
 		return OpResult{Continue: false}
 	}
 
-	// 1% of pool depth keeps inbound well above outbound fee while avoiding
-	// depletion; mirrors InactiveVaultRefundActor.acquireUser sizing.
-	a.amount = cosmos.NewUintFromString(pool.BalanceAsset).QuoUint64(100)
+	fee, err := thornode.GetOutboundFee(a.asset)
+	if err != nil {
+		a.Log().Error().Err(err).Msg("failed to get refund outbound fee")
+		return OpResult{Continue: false}
+	}
+	a.amount = refundAmount(cosmos.NewUintFromString(pool.BalanceAsset), fee)
 
 	for _, user := range config.Users {
 		if !user.Acquire() {

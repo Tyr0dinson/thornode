@@ -490,7 +490,12 @@ func (s *SOLScanner) scanVault(
 					return nil
 				}
 
-				s.globalTxsQueue <- s.getTxIn(sig.Slot, []*rpc.TransactionResult{tx})
+				txIn, err := s.getTxIn(sig.Slot, []*rpc.TransactionResult{tx})
+				if err != nil {
+					// Leave the cursor where it is: the scan fails and this tx is re-read.
+					return fmt.Errorf("failed to observe transaction %s: %w", sig.Signature, err)
+				}
+				s.globalTxsQueue <- txIn
 				return nil
 			})
 		}
@@ -690,7 +695,7 @@ func (s *SOLScanner) sendNetworkFeeIfNecessary(height uint64) {
 // --------------------------------- extraction ---------------------------------
 
 // Gets the TxIn struct for a block
-func (s *SOLScanner) getTxIn(slot uint64, transactions []*rpc.TransactionResult) stypes.TxIn {
+func (s *SOLScanner) getTxIn(slot uint64, transactions []*rpc.TransactionResult) (stypes.TxIn, error) {
 	txIn := stypes.TxIn{
 		Chain:                s.cfg.ChainID,
 		TxArray:              make([]*stypes.TxInItem, 0),
@@ -704,7 +709,10 @@ func (s *SOLScanner) getTxIn(slot uint64, transactions []*rpc.TransactionResult)
 			continue
 		}
 
-		txItem := s.getTxInItem(txn, int64(slot))
+		txItem, err := s.txInItem(txn, int64(slot))
+		if err != nil {
+			return stypes.TxIn{}, err
+		}
 		if txItem == nil {
 			continue
 		}
@@ -712,7 +720,7 @@ func (s *SOLScanner) getTxIn(slot uint64, transactions []*rpc.TransactionResult)
 		txIn.TxArray = append(txIn.TxArray, txItem)
 	}
 
-	return txIn
+	return txIn, nil
 }
 
 // Calculates the median of a slice of uint64.
@@ -781,9 +789,20 @@ func (s *SOLScanner) calculateFeeRatesFromTransactions(transactions []*rpc.Trans
 // TxInItem if the transaction contains exactly one SOL transfer instruction to the vault.
 // Otherwise, it will return nil.
 func (s *SOLScanner) getTxInItem(txn *rpc.TransactionResult, blockHeight int64) *stypes.TxInItem {
+	item, _ := s.txInItem(txn, blockHeight)
+	return item
+}
+
+// txInItem is getTxInItem that also reports a transient RPC failure that must not
+// drop the observation: the caller fails the scan so the cursor is not advanced
+// and the transaction is re-read on the next pass.
+func (s *SOLScanner) txInItem(txn *rpc.TransactionResult, blockHeight int64) (*stypes.TxInItem, error) {
 	memo := ""
 	var transferCount int
 	var fromAccount, toAccount string
+	// advancedNonceAcct is the account an AdvanceNonceAccount instruction advanced,
+	// if any; attested below when it is the sender vault's own nonce account.
+	var advancedNonceAcct string
 	var amountMoved uint64
 	fee := txn.Meta.Fee
 
@@ -799,6 +818,15 @@ func (s *SOLScanner) getTxInItem(txn *rpc.TransactionResult, blockHeight int64) 
 			return ""
 		}
 		return accounts[i]
+	}
+
+	// A bare durable-nonce account creation (rent into the vault's fresh nonce
+	// account, no transfer, no memo) is observed as its own shape so THORChain can book
+	// the rent and fee as vault gas and commit the vault's initial nonce. The classifier
+	// is strict enough that a real outbound (which always carries a transfer) can never
+	// match, so it can never swallow a genuine outbound observation.
+	if isDurableNonceCreateTx(instructions, accountByIndex) {
+		return s.nonceCreateTxInItem(txn, blockHeight, instructions, accountByIndex)
 	}
 
 	for _, instruction := range instructions {
@@ -827,6 +855,12 @@ func (s *SOLScanner) getTxInItem(txn *rpc.TransactionResult, blockHeight int64) 
 			continue
 		}
 
+		// AdvanceNonceAccount (u32 LE 4): accounts[0] is the nonce account.
+		if len(data) >= 4 && binary.LittleEndian.Uint32(data[:4]) == solSysAdvanceNonce && len(instruction.Accounts) >= 1 {
+			advancedNonceAcct = accountByIndex(instruction.Accounts[0])
+			continue
+		}
+
 		// Check for transfer instruction
 		if len(data) >= 1 && data[0] == 2 { // `2` indicates a System Program transfer instruction
 			transferCount++
@@ -835,12 +869,12 @@ func (s *SOLScanner) getTxInItem(txn *rpc.TransactionResult, blockHeight int64) 
 					Int("transferCount", transferCount).
 					Str("txID", txn.Transaction.Signatures[0]).
 					Msg("Rejected transaction with multiple transfer instructions")
-				return nil
+				return nil, nil
 			}
 
 			if len(instruction.Accounts) < 2 {
 				s.logger.Debug().Msg("Instruction does not contain enough accounts for transfer")
-				return nil
+				return nil, nil
 			}
 
 			fromIdx := instruction.Accounts[0]
@@ -849,14 +883,14 @@ func (s *SOLScanner) getTxInItem(txn *rpc.TransactionResult, blockHeight int64) 
 			// (versioned txs); accounts (built above) already includes them.
 			if fromIdx < 0 || toIdx < 0 || fromIdx >= len(accounts) || toIdx >= len(accounts) {
 				s.logger.Debug().Msg("Account index out of range")
-				return nil
+				return nil, nil
 			}
 			fromAccount = accounts[fromIdx]
 			toAccount = accounts[toIdx]
 
 			if len(data) < 12 {
 				s.logger.Debug().Msg("Transfer instruction data too short")
-				return nil
+				return nil, nil
 			}
 			amountMoved = binary.LittleEndian.Uint64(data[4:12])
 		}
@@ -867,7 +901,7 @@ func (s *SOLScanner) getTxInItem(txn *rpc.TransactionResult, blockHeight int64) 
 		s.logger.Debug().
 			Str("txID", txn.Transaction.Signatures[0]).
 			Msg("No valid transfer found or amount is zero")
-		return nil
+		return nil, nil
 	}
 
 	solAmount := convertLamportsToTHORChain(amountMoved)
@@ -877,7 +911,7 @@ func (s *SOLScanner) getTxInItem(txn *rpc.TransactionResult, blockHeight int64) 
 			Str("amount", solAmount.String()).
 			Str("dustThreshold", s.cfg.ChainID.DustThreshold().String()).
 			Msg("Transfer amount below dust threshold")
-		return nil
+		return nil, nil
 	}
 
 	solCoin := common.NewCoin(common.SOLAsset, solAmount)
@@ -893,6 +927,211 @@ func (s *SOLScanner) getTxInItem(txn *rpc.TransactionResult, blockHeight int64) 
 		To:          toAccount,
 		Coins:       []common.Coin{solCoin},
 		Gas:         common.Gas{gasCoin},
+		SolNonce:    s.observedSolNonce(advancedNonceAcct, fromAccount, blockHeight, txn.Transaction.Signatures[0]),
+	}, nil
+}
+
+// observedSolNonce returns the post-tx durable-nonce state to attest with this
+// observation when the tx advanced the SENDING vault's own seed-derived nonce
+// account (authority == sender), or nil. THORChain commits it as the vault's current
+// nonce once a supermajority of final observations agree on it exactly.
+//
+// The read is deterministic across observers even though each reads its own RPC:
+// only the vault's TSS can advance its nonce (the authority must sign), and the
+// vault signs durable txs only with the value committed on THORChain, which changes
+// only when THIS observation is committed. So between this tx's slot and that commit
+// no other tx can advance the account, and every honest observer reading at a slot
+// >= this one (minContextSlot) sees the same value.
+func (s *SOLScanner) observedSolNonce(nonceAcct, sender string, slot int64, txID string) *common.SolNonceUpdate {
+	nonce, err := s.readSolNonce(nonceAcct, sender, slot)
+	if err != nil {
+		s.logger.Warn().Err(err).Str("txID", txID).Str("nonce_account", nonceAcct).
+			Msg("fail to read advanced durable nonce; observing without it")
+		return nil
+	}
+	return nonce
+}
+
+// readSolNonce reads sender's own seed-derived nonce account at slot. It returns
+// (nil, nil) when the account is not sender's own nonce account (wrong address or
+// authority), and an error only when the RPC read itself failed.
+func (s *SOLScanner) readSolNonce(nonceAcct, sender string, slot int64) (*common.SolNonceUpdate, error) {
+	if nonceAcct == "" || sender == "" || slot <= 0 || s.solRpc == nil {
+		return nil, nil
+	}
+	expected, err := common.SolNonceAccountAddress(sender)
+	if err != nil || expected != nonceAcct {
+		return nil, nil
+	}
+	nonce, authority, err := s.solRpc.GetNonceAccount(nonceAcct, uint64(slot))
+	if err != nil {
+		return nil, err
+	}
+	if authority != sender {
+		return nil, nil
+	}
+	return &common.SolNonceUpdate{NonceAccount: nonceAcct, Nonce: nonce, Slot: slot}, nil
+}
+
+// SystemProgram instruction discriminators (u32 little-endian, first 4 data bytes).
+const (
+	solSysCreateAccount         = 0
+	solSysTransfer              = 2
+	solSysCreateAccountWithSeed = 3
+	solSysAdvanceNonce          = 4
+	solSysInitializeNonce       = 6
+	solSysAllocateWithSeed      = 9
+)
+
+// nonceCreateTxInItem observes a vault's durable-nonce account creation (see
+// isDurableNonceCreateTx): the funding vault sends the rent into its nonce account.
+// THORChain books the rent and fee as vault gas and commits the vault's initial
+// durable nonce from it. It is observed ONLY when the created account is the funding
+// vault's own seed-derived nonce account and its post-creation nonce (authority ==
+// funder) can be read; otherwise it is not observed at all, because without an
+// attested nonce it would reach THORChain as an unmatched vault outflow.
+func (s *SOLScanner) nonceCreateTxInItem(txn *rpc.TransactionResult, blockHeight int64, instructions []rpc.RPCInstruction, accountByIndex func(int) string) (*stypes.TxInItem, error) {
+	var funder, created string
+	var rent uint64
+	creates := 0
+	for _, ins := range instructions {
+		data, err := base58.Decode(ins.Data)
+		if err != nil || len(data) < 4 || len(ins.Accounts) < 2 {
+			continue
+		}
+		switch binary.LittleEndian.Uint32(data[:4]) {
+		case solSysCreateAccountWithSeed:
+			// disc | base(32) | seed len(u64) | seed | lamports(u64) | space(u64) | owner(32)
+			if len(data) < 44 {
+				return nil, nil
+			}
+			seedLen := binary.LittleEndian.Uint64(data[36:44])
+			if seedLen > types.MaxSeedLength || len(data) < 44+int(seedLen)+8 {
+				return nil, nil
+			}
+			off := 44 + int(seedLen)
+			rent = binary.LittleEndian.Uint64(data[off : off+8])
+		case solSysCreateAccount:
+			// disc | lamports(u64) | space(u64) | owner(32)
+			if len(data) < 12 {
+				return nil, nil
+			}
+			rent = binary.LittleEndian.Uint64(data[4:12])
+		case solSysTransfer:
+			// the adopt shape's funding transfer: disc | lamports(u64)
+			if len(data) < 12 {
+				return nil, nil
+			}
+			rent = binary.LittleEndian.Uint64(data[4:12])
+		default:
+			continue
+		}
+		funder = accountByIndex(ins.Accounts[0])
+		created = accountByIndex(ins.Accounts[1])
+		creates++
+	}
+	// Exactly one funding instruction (the create, or the adopt shape's transfer): a
+	// second would move rent this item does not book.
+	if creates != 1 || funder == "" || created == "" || rent == 0 || len(txn.Transaction.Signatures) == 0 {
+		return nil, nil
+	}
+	txID := txn.Transaction.Signatures[0]
+	nonce, err := s.readSolNonce(created, funder, blockHeight)
+	if err != nil {
+		// A transient read failure must not drop the creation: without it the vault's
+		// nonce never commits and its rent is never booked. Fail the scan instead.
+		return nil, fmt.Errorf("fail to read durable nonce of created account %s: %w", created, err)
+	}
+	if nonce == nil {
+		s.logger.Warn().Str("txID", txID).Str("nonce_account", created).
+			Msg("not observing durable-nonce account creation: not the funder's own nonce account, or its nonce is unreadable")
+		return nil, nil
+	}
+	rentCoin := common.NewCoin(common.SOLAsset, convertLamportsToTHORChain(rent))
+	gasCoin := common.NewCoin(common.SOLAsset, convertLamportsToTHORChain(txn.Meta.Fee))
+	rentCoin.Decimals = 9
+	gasCoin.Decimals = 9
+	return &stypes.TxInItem{
+		BlockHeight: blockHeight,
+		Tx:          txID,
+		Memo:        "",
+		Sender:      funder,
+		To:          created,
+		Coins:       []common.Coin{rentCoin},
+		Gas:         common.Gas{gasCoin},
+		SolNonce:    nonce,
+	}, nil
+}
+
+// isDurableNonceCreateTx reports whether the transaction is EXACTLY a durable-nonce
+// account creation: only SystemProgram CreateAccount(WithSeed) + InitializeNonceAccount
+// instructions, where the created account IS the initialized nonce account, with NO
+// transfer, NO memo, and no other program's instructions. Such a tx moves only rent
+// into a fresh network-owned nonce account and carries no observable outbound.
+//
+// STRICT by construction so it can NEVER match a real outbound: any SystemProgram
+// Transfer (disc 2), any memo, any non-SystemProgram instruction, any other system
+// instruction, a missing create or initialize, or a mismatch between the created and
+// initialized account each make it return false — the tx is then observed normally.
+func isDurableNonceCreateTx(instructions []rpc.RPCInstruction, accountByIndex func(int) string) bool {
+	createdAccount, nonceAccount, allocated, transferTo := -1, -1, -1, -1
+	creates, allocates, transfers, inits := 0, 0, 0, 0
+	for _, ins := range instructions {
+		programID := accountByIndex(ins.ProgramIdIndex)
+		if types.MemoProgramID.EqualsString(programID) {
+			return false // a memo -> not a bare create-nonce tx
+		}
+		if !types.SystemProgramID.EqualsString(programID) {
+			return false // any non-SystemProgram instruction
+		}
+		data, err := base58.Decode(ins.Data)
+		if err != nil || len(data) < 4 {
+			return false
+		}
+		switch binary.LittleEndian.Uint32(data[:4]) {
+		case solSysCreateAccount, solSysCreateAccountWithSeed:
+			// accounts: [funder, created, (base)] — the created account is index 1.
+			if len(ins.Accounts) < 2 {
+				return false
+			}
+			createdAccount = ins.Accounts[1]
+			creates++
+		case solSysAllocateWithSeed:
+			// accounts: [allocated, base] — a pre-funded address adopted in place.
+			if len(ins.Accounts) < 1 {
+				return false
+			}
+			allocated = ins.Accounts[0]
+			allocates++
+		case solSysTransfer:
+			// Only the adopt shape funds the account with a transfer.
+			if len(ins.Accounts) < 2 {
+				return false
+			}
+			transferTo = ins.Accounts[1]
+			transfers++
+		case solSysInitializeNonce:
+			// accounts: [nonce, recentblockhashes sysvar, rent sysvar].
+			if len(ins.Accounts) < 1 {
+				return false
+			}
+			nonceAccount = ins.Accounts[0]
+			inits++
+		default:
+			return false // any other system instruction -> not this shape
+		}
+	}
+	if inits != 1 || nonceAccount < 0 {
+		return false
+	}
+	switch {
+	case creates == 1 && allocates == 0 && transfers == 0:
+		return createdAccount == nonceAccount
+	case creates == 0 && allocates == 1 && transfers == 1:
+		// the transfer must fund the adopted account, nothing else
+		return allocated == nonceAccount && transferTo == nonceAccount
+	default:
+		return false
 	}
 }
 

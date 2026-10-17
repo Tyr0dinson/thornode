@@ -518,6 +518,7 @@ func TestAuthenticatedMigrationReplayObserverAckRejectAndReorg(t *testing.T) {
 	locationHash := blockHash
 	locationParent := parentHash
 	var historicalSyncCalls atomic.Int32
+	var markObservedCalls atomic.Int32
 	var failMarkObserved atomic.Bool
 	failMarkObserved.Store(true)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -526,7 +527,17 @@ func TestAuthenticatedMigrationReplayObserverAckRejectAndReorg(t *testing.T) {
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/monero/vaults/register":
 			// Registration must carry scanner continuity, otherwise the vault is
 			// silently skipped during lookup refresh and later reads as unregistered.
-			_ = json.NewEncoder(w).Encode(testRegisterVaultResponse(uint64(locationHeight) + 1))
+			var req sidecar.RegisterVaultReq
+			if decodeErr := json.NewDecoder(r.Body).Decode(&req); decodeErr != nil {
+				http.Error(w, decodeErr.Error(), http.StatusBadRequest)
+				return
+			}
+			nextHeight := uint64(locationHeight) + 1
+			_ = json.NewEncoder(w).Encode(sidecar.RegisterVaultResp{
+				Registered:         true,
+				EffectiveBirthday:  uint64(req.VaultCreationHeight),
+				ExpectedNextHeight: &nextHeight,
+			})
 		case r.Method == http.MethodGet && (r.URL.Path == "/v1/monero/chain/block/100" || r.URL.Path == "/v1/monero/chain/block/104"):
 			canonicalMu.RLock()
 			height := int64(100)
@@ -555,6 +566,7 @@ func TestAuthenticatedMigrationReplayObserverAckRejectAndReorg(t *testing.T) {
 			canonicalMu.RUnlock()
 			_ = json.NewEncoder(w).Encode(resp)
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/monero/outputs/mark-observed":
+			markObservedCalls.Add(1)
 			if failMarkObserved.Load() {
 				http.Error(w, "temporary reconciliation failure", http.StatusServiceUnavailable)
 				return
@@ -690,7 +702,30 @@ func TestAuthenticatedMigrationReplayObserverAckRejectAndReorg(t *testing.T) {
 	locationHash = relocatedBlockHash
 	locationParent = reorgHash
 	canonicalMu.Unlock()
+	marksBeforeFutureReplay := markObservedCalls.Load()
 	items, claims, err = scanner.replayAuthenticatedInternalInbounds(103, 103)
+	if err != nil || len(items) != 0 || len(claims) != 0 {
+		t.Fatalf("future migration must wait for its block: items=%d claims=%d err=%v", len(items), len(claims), err)
+	}
+	if markObservedCalls.Load() != marksBeforeFutureReplay {
+		t.Fatal("future migration crossed MarkObserved before its block was scanned")
+	}
+	count, err = store.Count()
+	if err != nil || count != 1 {
+		t.Fatalf("future migration was not retained: count=%d err=%v", count, err)
+	}
+	futureMeta, futureErr := reorgStore.Get(int64(relocatedHeight))
+	if futureErr != nil || futureMeta != nil {
+		t.Fatalf("future migration advanced the journal: meta=%+v err=%v", futureMeta, futureErr)
+	}
+	// Ordinary scanning has now reached the canonical replacement block.
+	if err = reorgStore.Set(&reorgBlockMeta{
+		Height: int64(relocatedHeight), BlockHash: relocatedBlockHash, PreviousHash: reorgHash,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	scanner.setCurrentHeight(int64(relocatedHeight))
+	items, claims, err = scanner.replayAuthenticatedInternalInbounds(int64(relocatedHeight), int64(relocatedHeight))
 	if err != nil || len(items) != 1 || len(claims) != 1 {
 		t.Fatalf("relocated replay must remain deliverable: items=%d claims=%d err=%v", len(items), len(claims), err)
 	}
@@ -887,8 +922,14 @@ func TestFetchTxsSkipsDelayedIncomingChangeForPreviouslyObservedOutgoingSameVaul
 		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/monero/addresses/"):
 			_ = json.NewEncoder(w).Encode(sidecar.Addresses{Addresses: []string{vaultAddress}})
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/monero/vaults/register":
+			var req sidecar.RegisterVaultReq
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
 			_ = json.NewEncoder(w).Encode(sidecar.RegisterVaultResp{
 				Registered:         true,
+				EffectiveBirthday:  uint64(req.VaultCreationHeight),
 				ExpectedNextHeight: uint64Ptr(scannerNextHeight.Load()),
 			})
 		default:

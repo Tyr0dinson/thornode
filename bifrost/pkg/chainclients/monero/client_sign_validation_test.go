@@ -428,3 +428,11 @@ func newFrostBalanceServer(t *testing.T, balanceByPubKey map[string]sidecar.Bala
 func uint64Ptr(v uint64) *uint64 {
 	return &v
 }
+
+func TestValidateXMRSignTxRequiresOriginalMemoForNewPayout(t *testing.T) {
+	client := &Client{chain: common.XMRChain}
+	_, err := client.validateSignTx(stypes.TxOutItem{Chain: common.XMRChain, ToAddress: testOutboundXMRDestination()}, 100, true)
+	if err == nil || !strings.Contains(err.Error(), "requires its original memo") {
+		t.Fatalf("missing memo admitted: %v", err)
+	}
+}

@@ -265,9 +265,46 @@ func TestProcessTxInsInactiveRejects(t *testing.T) {
 
 	select {
 	case err := <-rejected:
-		assert.ErrorIs(t, err, errObservedTxInactive)
+		assert.ErrorIs(t, err, types.ErrObservedTxNotApplicable)
 	case <-time.After(time.Second):
 		t.Fatal("observer did not reject inactive observation")
 	}
 	close(observer.stopChan)
+}
+
+func TestXMRUnknownNodeStatusRetriesPersistenceHandoff(t *testing.T) {
+	observer, _, cleanup := newPersistenceCallbackObserver(t)
+	defer cleanup()
+	done := make(chan struct{})
+	go func() { observer.processTxIns(); close(done) }()
+	for _, callbacks := range []bool{false, true} {
+		rejected := make(chan error, 1)
+		tx := persistenceCallbackTxIn(nil, nil)
+		if callbacks {
+			tx.TxArray[0].OnObservedTxRejected = func(err error) { rejected <- err }
+		}
+		tx.Persisted = make(chan error, 1)
+		observer.globalTxsQueue <- tx
+		select {
+		case err := <-tx.Persisted:
+			require.ErrorContains(t, err, "status is not known")
+			require.NotErrorIs(t, err, types.ErrObservedTxNotApplicable)
+		case <-time.After(time.Second):
+			t.Fatal("missing retry acknowledgement")
+		}
+		if callbacks {
+			require.Error(t, <-rejected)
+		}
+	}
+	require.Empty(t, observer.onDeck)
+	observer.lastNodeStatusMu.Lock()
+	observer.lastNodeStatus = stypes.NodeStatus_Active
+	observer.lastNodeStatusMu.Unlock()
+	tx := persistenceCallbackTxIn(nil, nil)
+	tx.Persisted = make(chan error, 1)
+	observer.globalTxsQueue <- tx
+	require.NoError(t, <-tx.Persisted)
+	require.Len(t, observer.onDeck, 1)
+	close(observer.stopChan)
+	<-done
 }

@@ -28,7 +28,7 @@ func (s *MemoParserSuite) TestTxTypeIsInbound(c *C) {
 	inboundTypes := []TxType{
 		TxAdd, TxWithdraw, TxSwap, TxLimitSwap, TxModifyLimitSwap,
 		TxDonate, TxBond, TxUnbond, TxRebond, TxLeave, TxMaint,
-		TxReserve, TxNoOp, TxTHORName, TxExec, TxSwitch,
+		TxReserve, TxNoOp, TxTHORName, TxSwitch,
 		TxTradeAccountDeposit, TxTradeAccountWithdrawal,
 		TxRunePoolDeposit, TxRunePoolWithdraw,
 		TxSecuredAssetDeposit, TxSecuredAssetWithdraw,
@@ -73,7 +73,7 @@ func (s *MemoParserSuite) TestTxTypeIsInternal(c *C) {
 
 func (s *MemoParserSuite) TestTxTypeHasOutbound(c *C) {
 	// Types without outbound
-	noOutbound := []TxType{TxAdd, TxBond, TxTradeAccountDeposit, TxSecuredAssetDeposit, TxStableReserveDeposit, TxRunePoolDeposit, TxDonate, TxReserve, TxMigrate, TxMaint, TxRagnarok}
+	noOutbound := []TxType{TxAdd, TxBond, TxTradeAccountDeposit, TxSecuredAssetDeposit, TxStableReserveDeposit, TxRunePoolDeposit, TxDonate, TxReserve, TxMigrate, TxMaint, TxBondYield, TxRagnarok}
 	for _, tt := range noOutbound {
 		c.Check(tt.HasOutbound(), Equals, false, Commentf("%s should not have outbound", tt.String()))
 	}
@@ -133,13 +133,12 @@ func (s *MemoParserSuite) TestStringToTxType(c *C) {
 		"secure-":   TxSecuredAssetWithdraw,
 		"pool+":     TxRunePoolDeposit,
 		"pool-":     TxRunePoolWithdraw,
-		"x":         TxExec, "exec": TxExec,
-		"switch":   TxSwitch,
-		"tcy":      TxTCYClaim,
-		"tcy+":     TxTCYStake,
-		"tcy-":     TxTCYUnstake,
-		"maint":    TxMaint,
-		"operator": TxOperatorRotate,
+		"switch":    TxSwitch,
+		"tcy":       TxTCYClaim,
+		"tcy+":      TxTCYStake,
+		"tcy-":      TxTCYUnstake,
+		"maint":     TxMaint,
+		"operator":  TxOperatorRotate,
 	}
 	for s, expected := range tests {
 		result, err := StringToTxType(s)
@@ -322,24 +321,6 @@ func (s *MemoParserSuite) TestParserGetTxID(c *C) {
 	c.Check(len(p.errs), Equals, 0)
 }
 
-func (s *MemoParserSuite) TestParserGetBase64Bytes(c *C) {
-	p := parser{parts: []string{"SGVsbG8=", "not_base64!!!"}, errs: make([]error, 0)}
-
-	result := p.getBase64Bytes(0, false, nil)
-	c.Check(string(result), Equals, "Hello")
-
-	p.errs = make([]error, 0)
-	result = p.getBase64Bytes(1, true, []byte("default"))
-	c.Check(string(result), Equals, "default")
-	c.Check(len(p.errs), Equals, 1)
-
-	// Out of bounds: get(5) returns "", base64.DecodeString("") returns empty []byte
-	p.errs = make([]error, 0)
-	result = p.getBase64Bytes(5, false, []byte("def"))
-	c.Check(len(result), Equals, 0) // empty base64 decodes to empty bytes
-	c.Check(len(p.errs), Equals, 0)
-}
-
 func (s *MemoParserSuite) TestParserGetAccAddress(c *C) {
 	types.SetupConfigForTest()
 	addr := types.GetRandomBech32Addr()
@@ -499,6 +480,19 @@ func (s *MemoParserSuite) TestParseTradeTarget(c *C) {
 	c.Assert(err, NotNil)
 
 	_, err = parseTradeTarget("1e300000000")
+	c.Assert(err, NotNil)
+
+	// overflow guard: an exponent past int32 parses to +Inf without error, and
+	// big.Float.Int leaves the destination at zero for Inf. That must be an
+	// error, not a silent zero limit (zero means "no price protection").
+	_, err = parseTradeTarget("1e700000000")
+	c.Assert(err, NotNil)
+
+	// sign guard: NewUintFromBigInt panics on negatives; reject them as an error.
+	_, err = parseTradeTarget("-1")
+	c.Assert(err, NotNil)
+
+	_, err = parseTradeTarget("-1e80")
 	c.Assert(err, NotNil)
 }
 
@@ -669,11 +663,6 @@ func (s *MemoParserSuite) TestParseMemoWithoutKeeper(c *C) {
 	memo, err = ParseMemo(v, fmt.Sprintf("switch:%s", addr))
 	c.Assert(err, IsNil)
 	c.Check(memo.IsType(TxSwitch), Equals, true)
-
-	// Exec
-	memo, err = ParseMemo(v, "x:"+addr.String()+":AA==")
-	c.Assert(err, IsNil)
-	c.Check(memo.IsType(TxExec), Equals, true)
 
 	// TCY claim
 	memo, err = ParseMemo(v, fmt.Sprintf("tcy:%s", thorAddr))
@@ -935,15 +924,6 @@ func (s *MemoParserSuite) TestManageTHORNameMemoGetters(c *C) {
 	c.Check(m.GetChain(), Equals, common.BTCChain)
 	c.Check(m.GetAddress(), Equals, addr)
 	c.Check(m.GetBlockExpire(), Equals, int64(100))
-}
-
-func (s *MemoParserSuite) TestExecMemoGetters(c *C) {
-	types.SetupConfigForTest()
-	addr := types.GetRandomBech32Addr()
-	msg := []byte("hello")
-	m := NewExecMemo(addr, msg)
-	c.Check(m.GetAccAddress().String(), Equals, addr.String())
-	c.Check(m.String(), Matches, "x:.*:aGVsbG8=")
 }
 
 func (s *MemoParserSuite) TestSwitchMemoGetter(c *C) {

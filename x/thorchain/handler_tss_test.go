@@ -672,7 +672,11 @@ func (s *HandlerTssSuite) TestTssHandler(c *C) {
 	}
 }
 
-func (s *HandlerTssSuite) TestTssHandlerAcceptsKeygenAtRetryBoundary(c *C) {
+// A keygen result expires exactly at the retry boundary (age == ChurnRetryInterval),
+// the same block the churn retry schedules a replacement keygen. Accepting it there
+// would let a stale result finalize a vault the retry is replacing; it must be
+// accepted only up to the block before the boundary.
+func (s *HandlerTssSuite) TestTssHandlerRejectsKeygenAtRetryBoundary(c *C) {
 	helper := newTssHandlerTestHelper(c)
 	handler := NewTssHandler(NewDummyMgrWithKeeper(helper.keeper))
 
@@ -697,8 +701,13 @@ func (s *HandlerTssSuite) TestTssHandlerAcceptsKeygenAtRetryBoundary(c *C) {
 	)
 	c.Assert(err, IsNil)
 
+	// One block before the boundary: still accepted.
+	lastValidCtx := helper.ctx.WithBlockHeight(helper.ctx.BlockHeight() + retryBlocks - 1)
+	c.Assert(handler.validate(lastValidCtx, msg), IsNil)
+
+	// At the retry boundary: rejected (was accepted before the off-by-one fix).
 	boundaryCtx := helper.ctx.WithBlockHeight(helper.ctx.BlockHeight() + retryBlocks)
-	c.Assert(handler.validate(boundaryCtx, msg), IsNil)
+	c.Assert(handler.validate(boundaryCtx, msg), ErrorMatches, "invalid keygen block: unknown request")
 
 	expiredCtx := helper.ctx.WithBlockHeight(helper.ctx.BlockHeight() + retryBlocks + 1)
 	c.Assert(handler.validate(expiredCtx, msg), ErrorMatches, "invalid keygen block: unknown request")
@@ -2224,34 +2233,6 @@ func (s *HandlerTssSuite) TestInitVaultsAgreeOnChains(c *C) {
 	}), Equals, false)
 }
 
-func (s *HandlerTssSuite) TestInitVaultsForKeygenBlock(c *C) {
-	groupA := common.PubKeys{GetRandomPubKey(), GetRandomPubKey(), GetRandomPubKey()}
-	groupB := common.PubKeys{GetRandomPubKey(), GetRandomPubKey(), GetRandomPubKey()}
-	otherGroup := common.PubKeys{GetRandomPubKey(), GetRandomPubKey(), GetRandomPubKey()}
-	chains := []string{common.BTCChain.String(), common.ETHChain.String()}
-
-	keygenBlock := KeygenBlock{
-		Height: 1000,
-		Keygens: []Keygen{
-			{Members: groupA.Strings()},
-			{Members: groupB.Strings()},
-		},
-	}
-
-	currentA := makeInitVaultAt(1010, groupA, chains)
-	currentB := makeInitVaultAt(1015, groupB, chains)
-	staleByHeight := makeInitVaultAt(900, groupA, chains)
-	foreignByMembership := makeInitVaultAt(1010, otherGroup, chains)
-
-	filtered := initVaultsForKeygenBlock(Vaults{staleByHeight, currentA, foreignByMembership, currentB}, keygenBlock)
-	c.Assert(filtered, HasLen, 2)
-	c.Assert(filtered[0].PubKey.Equals(currentA.PubKey), Equals, true)
-	c.Assert(filtered[1].PubKey.Equals(currentB.PubKey), Equals, true)
-
-	c.Assert(initVaultsForKeygenBlock(Vaults{}, keygenBlock), HasLen, 0)
-	c.Assert(initVaultsForKeygenBlock(Vaults{currentA}, KeygenBlock{Height: 1000}), HasLen, 0)
-}
-
 func (s *HandlerTssSuite) TestRotateInitVaultsGuardrail(c *C) {
 	helper := newTssHandlerTestHelper(c)
 	mgr := NewDummyMgrWithKeeper(helper.keeper)
@@ -2331,4 +2312,131 @@ func (s *HandlerTssSuite) TestVaultCreationHeightXmrSetForXMRChain(c *C) {
 		common.Chains{common.BTCChain}.Strings(), nil, GetRandomPubKey())
 	c.Assert(nonXmrVault.GetChains().Has(common.XMRChain), Equals, false)
 	c.Assert(nonXmrVault.VaultCreationHeightXmr, Equals, int64(0))
+}
+
+// TestLateKeygenReportWidensInitVaultChains reproduces the mainnet churn stall at
+// block 27820568. A churn that promotes Ready nodes finalizes the vault at first
+// supermajority, so the chain set is computed from only 2/3 of the reports and a
+// single member running with a chain disabled leaves that chain one vote short.
+// The later reports all carry it, and must be allowed to repair the vault and
+// unblock rotation.
+func (s *HandlerTssSuite) TestLateKeygenReportWidensInitVaultChains(c *C) {
+	verifySecp256K1Signature = func(_ common.PubKey, _ []byte) error { return nil }
+
+	helper := newTssHandlerTestHelper(c)
+	mgr := NewDummyMgrWithKeeper(helper.keeper)
+	// DummyEventMgr.EmitEvent is a no-op, which would mask the security event.
+	mgr.eventMgr = newEventMgr()
+	handler := NewTssHandler(mgr)
+	netMgr, ok := mgr.NetworkMgr().(*NetworkMgrDummy)
+	c.Assert(ok, Equals, true)
+	ctx := helper.ctx.WithEventManager(cosmos.NewEventManager())
+
+	// ETH is the dropped chain so the test also covers routers: they are derived
+	// from the same chain slice at vault creation.
+	fullChains := common.Chains{common.BTCChain, common.ETHChain, common.THORChain}.Strings()
+	dropped := common.Chains{common.BTCChain, common.THORChain}.Strings()
+	router := ChainContract{Chain: common.ETHChain, Router: GetRandomETHAddress()}
+	helper.keeper.SetChainContract(ctx, router)
+
+	// One non-Active member is what makes asgardKeygenRequiresCompleteConsensus
+	// false and so arms the finalize-on-first-supermajority path.
+	for i, member := range helper.members {
+		status := NodeActive
+		if i == 0 {
+			status = NodeReady
+		}
+		setKeygenMemberNodeAccount(c, helper, member, status)
+	}
+
+	// A second keygen group is required. With a single group, keygenTypeReady is
+	// satisfied the moment its vault finalizes and rotation succeeds immediately
+	// with the wrong chain set, so the late-report path would never be reached.
+	membersB := common.PubKeys{GetRandomPubKey(), GetRandomPubKey(), GetRandomPubKey()}
+	vaultB := makeInitVaultAt(ctx.BlockHeight(), membersB, fullChains)
+	c.Assert(helper.keeper.SetVault(ctx, vaultB), IsNil)
+
+	keygenBlock := NewKeygenBlock(ctx.BlockHeight())
+	keygenBlock.Keygens = []Keygen{
+		{Type: AsgardKeygen, Members: helper.members.Strings()},
+		{Type: AsgardKeygen, Members: membersB.Strings()},
+	}
+	helper.keeper.SetKeygenBlock(ctx, keygenBlock)
+
+	poolPubKey := GetRandomPubKey()
+	poolEddsaPubKey := GetRandomPubKey()
+	report := func(i int, chains []string) {
+		addr, err := helper.members[i].GetThorAddress()
+		c.Assert(err, IsNil)
+		msg, err := NewMsgTssPoolV2(helper.members.Strings(), poolPubKey, keygenCheckSig, nil, AsgardKeygen, ctx.BlockHeight(), nil, chains, addr, int64(1024), poolEddsaPubKey, nil, nil, common.EmptyPubKey)
+		c.Assert(err, IsNil)
+		c.Assert(handler.handle(ctx, msg), IsNil)
+	}
+
+	// Supermajority of 8 is 6. Member 1 reports without ETH, so ETH reaches only
+	// 5 of the required 6 by the time the vault finalizes.
+	supermajority := 6
+	for i := 0; i < supermajority; i++ {
+		chains := fullChains
+		if i == 1 {
+			chains = dropped
+		}
+		report(i, chains)
+	}
+
+	vault, err := helper.keeper.GetVault(ctx, poolPubKey)
+	c.Assert(err, IsNil)
+	c.Assert(vault.Status, Equals, InitVault)
+	c.Assert(vault.Chains, DeepEquals, dropped, Commentf("one dissenter in the early reports must still drop the chain"))
+	c.Assert(vault.Routers, HasLen, 0)
+	c.Assert(netMgr.rotated, HasLen, 0, Commentf("asymmetric chain sets must not rotate"))
+	c.Assert(securityEventMsg(ctx), Matches, "init vault chain set mismatch.*")
+
+	// The next report pushes ETH to 6 of 8, repairing the vault and unblocking
+	// the churn.
+	report(supermajority, fullChains)
+
+	vault, err = helper.keeper.GetVault(ctx, poolPubKey)
+	c.Assert(err, IsNil)
+	c.Assert(vault.Chains, DeepEquals, fullChains)
+	c.Assert(vault.Routers, DeepEquals, []ChainContract{router}, Commentf("a late-added chain must pick up its router"))
+	c.Assert(netMgr.rotated, HasLen, 2)
+
+	// A further report changes nothing, so it must not write or re-rotate.
+	report(supermajority+1, fullChains)
+	c.Assert(netMgr.rotated, HasLen, 2)
+
+	// Once the vault is Active the refresh must be inert even when the chain
+	// sets do differ. NetworkMgrDummy leaves the status at InitVault, so drive
+	// this directly: RotateVault is not idempotent, and a second call would
+	// match the Active vault against its own membership and retire it.
+	addr, err := helper.members[0].GetThorAddress()
+	c.Assert(err, IsNil)
+	msg, err := NewMsgTssPoolV2(helper.members.Strings(), poolPubKey, keygenCheckSig, nil, AsgardKeygen, ctx.BlockHeight(), nil, fullChains, addr, int64(1024), poolEddsaPubKey, nil, nil, common.EmptyPubKey)
+	c.Assert(err, IsNil)
+	voter, err := helper.keeper.GetTssVoter(ctx, msg.ID)
+	c.Assert(err, IsNil)
+	vault.Status = ActiveVault
+	vault.Chains = dropped
+	c.Assert(helper.keeper.SetVault(ctx, vault), IsNil)
+
+	c.Assert(handler.refreshInitVaultChains(ctx, msg, voter), IsNil)
+	vault, err = helper.keeper.GetVault(ctx, poolPubKey)
+	c.Assert(err, IsNil)
+	c.Assert(vault.Chains, DeepEquals, dropped, Commentf("an active vault's chain set must not be rewritten"))
+	c.Assert(netMgr.rotated, HasLen, 2)
+}
+
+func securityEventMsg(ctx cosmos.Context) string {
+	for _, evt := range ctx.EventManager().Events() {
+		if evt.Type != "security" {
+			continue
+		}
+		for _, attr := range evt.Attributes {
+			if attr.Key == "msg" {
+				return attr.Value
+			}
+		}
+	}
+	return ""
 }

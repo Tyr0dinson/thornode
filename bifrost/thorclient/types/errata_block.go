@@ -10,6 +10,8 @@ type ErrataBlock struct {
 	// reorg journal waits until ObserverStorage has persisted both the errata
 	// outbox record and its local on-deck cleanup, and the local errata
 	// attestation has been accepted, before advancing delivery.
+	// Producers must provide a buffered channel with room for one result.
+	// Observer does not block if the acknowledgement receiver is unavailable.
 	Persisted chan error
 
 	// Local-only durable handoff callbacks, an alternative to Persisted for

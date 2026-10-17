@@ -677,6 +677,134 @@ func (s *WithdrawSuite) TestWithdrawPendingLiquidityShouldRoundToPoolDecimals(c 
 	c.Assert(unitsClaimed.IsZero(), Equals, true)
 }
 
+// TestWithdrawOneSidedRagnarokIsProtocolOnly pins the scope of the ragnarok
+// exception to the "cannot withdraw 100% of only one side of the pool" guard: it
+// is granted to the protocol's own ragnarok withdraw (a blank tx ID) so a
+// one-sided last provider can be paid out and the pool finalized, but a
+// user-submitted withdraw is still rejected rather than silently forfeiting the
+// opposite side of the pool.
+func (s *WithdrawSuite) TestWithdrawOneSidedRagnarokIsProtocolOnly(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	accountAddr := GetRandomValidatorNode(NodeActive).NodeAddress
+
+	pool := Pool{
+		BalanceRune:  cosmos.NewUint(100 * common.One),
+		BalanceAsset: cosmos.NewUint(100 * common.One),
+		Asset:        common.BTCAsset,
+		LPUnits:      cosmos.NewUint(100 * common.One),
+		Status:       PoolStaged,
+	}
+	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+
+	// the sole provider is RUNE-address-only, so a full withdraw drains 100% of
+	// the RUNE side and none of the asset side
+	runeAddr := GetRandomRUNEAddress()
+	mgr.Keeper().SetLiquidityProvider(ctx, LiquidityProvider{
+		Asset:             common.BTCAsset,
+		RuneAddress:       runeAddr,
+		AssetAddress:      common.NoAddress,
+		Units:             pool.LPUnits,
+		PendingRune:       cosmos.ZeroUint(),
+		PendingAsset:      cosmos.ZeroUint(),
+		AssetDepositValue: cosmos.ZeroUint(),
+		RuneDepositValue:  cosmos.ZeroUint(),
+	})
+	mgr.Keeper().SetMimir(ctx, "RAGNAROK-BTC-BTC", 1)
+
+	userMsg := MsgWithdrawLiquidity{
+		WithdrawAddress: runeAddr,
+		BasisPoints:     cosmos.NewUint(MaxWithdrawBasisPoints),
+		Asset:           common.BTCAsset,
+		Tx:              common.Tx{ID: GetRandomTxHash()},
+		Signer:          accountAddr,
+	}
+	_, _, _, _, err := withdraw(ctx, userMsg, mgr)
+	c.Assert(err, NotNil, Commentf("a user withdraw must not drain one side of the pool"))
+	c.Check(errors.Is(err, errWithdrawFail), Equals, true, Commentf("%s", err))
+
+	// the protocol's ragnarok withdraw of the same position is allowed through
+	ragnarokMsg := userMsg
+	ragnarokMsg.Tx = common.GetRagnarokTx(common.BTCChain, runeAddr, runeAddr)
+	runeAmt, assetAmt, units, _, err := withdraw(ctx, ragnarokMsg, mgr)
+	c.Assert(err, IsNil)
+	c.Check(runeAmt.String(), Equals, pool.BalanceRune.String())
+	c.Check(assetAmt.IsZero(), Equals, true)
+	c.Check(units.String(), Equals, pool.LPUnits.String())
+}
+
+// TestWithdrawOneSidedGlobalRagnarok covers the network-wide ragnarok path,
+// which winds every pool down through ValidatorMgr.ragnarokPools without setting
+// any per-asset RAGNAROK-* mimir. The one-sided last provider must still be paid
+// out there, otherwise the guard rejects the protocol's withdraw on every
+// interval forever and the pool never finalizes.
+func (s *WithdrawSuite) TestWithdrawOneSidedGlobalRagnarok(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	accountAddr := GetRandomValidatorNode(NodeActive).NodeAddress
+
+	pool := Pool{
+		BalanceRune:  cosmos.NewUint(100 * common.One),
+		BalanceAsset: cosmos.NewUint(100 * common.One),
+		Asset:        common.BTCAsset,
+		LPUnits:      cosmos.NewUint(100 * common.One),
+		Status:       PoolStaged,
+	}
+	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+
+	runeAddr := GetRandomRUNEAddress()
+	mgr.Keeper().SetLiquidityProvider(ctx, LiquidityProvider{
+		Asset:             common.BTCAsset,
+		RuneAddress:       runeAddr,
+		AssetAddress:      common.NoAddress,
+		Units:             pool.LPUnits,
+		PendingRune:       cosmos.ZeroUint(),
+		PendingAsset:      cosmos.ZeroUint(),
+		AssetDepositValue: cosmos.ZeroUint(),
+		RuneDepositValue:  cosmos.ZeroUint(),
+	})
+
+	msg := MsgWithdrawLiquidity{
+		WithdrawAddress: runeAddr,
+		BasisPoints:     cosmos.NewUint(MaxWithdrawBasisPoints),
+		Asset:           common.BTCAsset,
+		Tx:              common.GetRagnarokTx(common.BTCChain, runeAddr, runeAddr),
+		Signer:          accountAddr,
+	}
+
+	// no per-asset mimir and no global ragnarok: the guard still applies
+	c.Assert(mgr.Keeper().IsRagnarok(ctx, []common.Asset{common.BTCAsset}), Equals, false)
+	c.Assert(mgr.Keeper().RagnarokInProgress(ctx), Equals, false)
+	_, _, _, _, err := withdraw(ctx, msg, mgr)
+	c.Assert(err, NotNil)
+	c.Check(errors.Is(err, errWithdrawFail), Equals, true, Commentf("%s", err))
+
+	// network-wide ragnarok, still no per-asset mimir: the withdraw is paid out
+	mgr.Keeper().SetRagnarokBlockHeight(ctx, ctx.BlockHeight())
+	c.Assert(mgr.Keeper().IsRagnarok(ctx, []common.Asset{common.BTCAsset}), Equals, false)
+	runeAmt, assetAmt, units, _, err := withdraw(ctx, msg, mgr)
+	c.Assert(err, IsNil)
+	c.Check(runeAmt.String(), Equals, pool.BalanceRune.String())
+	c.Check(assetAmt.IsZero(), Equals, true)
+	c.Check(units.String(), Equals, pool.LPUnits.String())
+
+	// and a user-submitted withdraw is still rejected during global ragnarok
+	userMsg := msg
+	userMsg.Tx = common.Tx{ID: GetRandomTxHash()}
+	mgr.Keeper().SetLiquidityProvider(ctx, LiquidityProvider{
+		Asset:             common.BTCAsset,
+		RuneAddress:       runeAddr,
+		AssetAddress:      common.NoAddress,
+		Units:             pool.LPUnits,
+		PendingRune:       cosmos.ZeroUint(),
+		PendingAsset:      cosmos.ZeroUint(),
+		AssetDepositValue: cosmos.ZeroUint(),
+		RuneDepositValue:  cosmos.ZeroUint(),
+	})
+	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+	_, _, _, _, err = withdraw(ctx, userMsg, mgr)
+	c.Assert(err, NotNil, Commentf("a user withdraw must not drain one side of the pool"))
+	c.Check(errors.Is(err, errWithdrawFail), Equals, true, Commentf("%s", err))
+}
+
 func getWithdrawTestKeeper(c *C, ctx cosmos.Context, k keeper.Keeper, runeAddress common.Address) keeper.Keeper {
 	store := NewWithdrawTestKeeper(k)
 	pool := Pool{

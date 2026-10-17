@@ -32,10 +32,11 @@ import (
 // Config
 // -------------------------------------------------------------------------------------
 
-const (
-	MaxRetries   = 3
-	RetryBackoff = time.Second * 5
-)
+const MaxRetries = 3
+
+// RetryBackoff is the wait between seed/genesis fetch attempts. A variable so
+// tests of the failure paths need not sleep for real.
+var RetryBackoff = time.Second * 5
 
 var (
 	//go:embed default.yaml
@@ -510,6 +511,16 @@ type Thornode struct {
 			// MaxPageSize is the maximum page size for paginated endpoints.
 			MaxPageSize uint64 `mapstructure:"max_page_size"`
 		} `mapstructure:"pagination"`
+
+		// Logs configures the /thorchain/logs endpoint.
+		Logs struct {
+			// RetainBlocks is how many blocks of thorchain module logs to keep on disk
+			// under <home>/data/thorchain_logs. Zero (default) disables capture and the
+			// endpoint. Capture is synchronous on the block-execution goroutine and
+			// records every level regardless of --log_level, so this is not free on a
+			// validator; the endpoint is also unauthenticated. See default.yaml.
+			RetainBlocks int64 `mapstructure:"retain_blocks"`
+		} `mapstructure:"logs"`
 	} `mapstructure:"api"`
 
 	// Telemetry contains THORnode-specific telemetry configuration.

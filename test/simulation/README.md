@@ -8,6 +8,32 @@ The initial implementation will leverage a static actor DAG that runs to complet
 
 ## Running Simulation Tests
 
+### Hermetic unit suite
+
+The simulation code is a separate Go module, so a root `go test ./...` does not
+run its unit tests. From the repository root, run:
+
+```bash
+scripts/test-simulation-unit.sh /tmp/simulation-unit.jsonl
+```
+
+The script runs every package in `test/simulation` with the `mocknet` build tag,
+Go 1.26.9, limited build parallelism, and the shared test-quality build lock.
+The JSON Lines report contains per-test results for CI or local inspection. It
+rejects unexpected skips and clears integration RPC settings, so it never
+connects to a live chain. `TestDogeStalledBroadcastIsNotDuplicated` and
+`TestZecIsolatedFunding` require separately provisioned isolated daemons and
+are the only expected skips. To check test order isolation, run from
+`test/simulation` with the same build lock:
+
+```bash
+flock -w 1200 /tmp/thornode-test-quality-build.lock env GOMAXPROCS=4 GOTOOLCHAIN=go1.26.9 go test -p 2 -tags mocknet -count=5 -shuffle=on ./pkg/types ./pkg/dag ./pkg/solana
+flock -w 1200 /tmp/thornode-test-quality-build.lock env GOMAXPROCS=4 GOTOOLCHAIN=go1.26.9 go test -p 2 -tags mocknet -count=5 -run '^Test$' -v ./pkg/types -check.f NewUser
+```
+
+These commands use only local fixtures. The second command exercises the
+gocheck account case by itself, without depending on other suite tests.
+
 Simulation tests can be run with the following command from the repo root:
 
 ```bash
@@ -15,6 +41,61 @@ make test-simulation
 ```
 
 This will internally build the simulation framework image, start mocknet, and run the tests from a Docker container with host mode networking to reach the local mocknet.
+
+The `swaps` stage always schedules two required swaps to ZEC: one with a normal
+transparent destination and one with a TEX destination. Mocknet uses `tm` and
+`textest` in place of mainnet's `t1` and `tex`. Both swaps must complete, and their
+outbound actions and observations must use the normal transparent address.
+
+### Inactive-vault refunds
+
+The cluster profile runs `inactive-vault-refunds` after churn, when eligible
+retired vaults exist. The scenario uses the same inactive-vault discovery as
+Bifrost and fails if a selected chain has no eligible destination. The single-node
+profile does not create retired vaults, so it excludes this scenario. To run it
+explicitly, include `cluster-churn` or use a cluster that has already churned.
+XMR registers a reference memo with an explicit refund address before depositing.
+
+### XMR certificate recovery after churn
+
+The optional `xmr-historical-refund` stage uses the five-node cluster after
+`cluster-churn`. It selects a four-member inactive XMR vault with one departed
+member, then temporarily jails one of its three active members using synthetic
+keysign-failure votes. All five Bifrosts and XMR signers keep scanning. This leaves
+an exact three-member signing party containing the departed member. The actor
+checks the historical signing policy at the refund's actual outbound height,
+finalized outbound bookkeeping, and absence of an inbound vault credit for the
+refund transaction. A run with an all-active party fails the evidence check.
+
+For a **fresh, dedicated cluster** (this command resets mocknet data):
+
+```bash
+JAIL_TIME_KEYSIGN=600 make test-simulation-cluster \
+  TEST_SIMULATION_REQUIRE_XMR=1 \
+  TEST_SIMULATION_CLUSTER_STAGES=seed,bootstrap,cluster-churn,xmr-post-churn,xmr-historical-refund,solvency
+```
+
+The longer jail is a mocknet-only environment override shared by THORNode and
+Bifrost. The actor requires at least 120 blocks remaining before sending the
+deposit, and verifies that the jail still selected the required party at the
+payout height. It never stops a signer process or changes production selection.
+Churning is halted for this isolated recovery scenario; use a fresh cluster for
+subsequent churn scenarios. Other chains' jail fallback tests should run separately.
+
+Save the actor's `signing_members` and `member_statuses` log fields. For the same
+refund hash, preserve one non-signing Bifrost's logs showing, in order:
+
+1. `skip incoming monero output carrying an outbound memo` (`txid`);
+2. `applied spent output refs import` (`tx_hash`, with no missing refs);
+3. `durably queued authenticated xmr payout source replay` (`txid`);
+4. its outbound observation submission, followed by THORChain finalization.
+
+A completed refund alone does not prove the late replay path: if proof arrived
+before scanning, the filter/replay ordering was not exercised. Report that
+separately. S29's focused tests force this ordering, disable the filter as a
+negative control, cover Active/Retiring/Inactive source vaults, restart before
+certificate delivery, high-value batches, pruned journals, and queue saturation.
+The cluster supplements those tests; it does not replace their crash injection.
 
 ### Faster reruns
 

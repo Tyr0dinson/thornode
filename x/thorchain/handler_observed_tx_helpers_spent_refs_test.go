@@ -231,17 +231,30 @@ func (s *SpentOutputRefsFlowSuite) TestSaveXMRSpentOutputRefsWithQuorumMatchesCo
 	txID := GetRandomTxHash()
 	refs := []common.OutputRef{
 		{TxHash: "aaaa", OutputIndex: 0, KeyImage: "ki_aaaa", SpendTxHash: txID.String()},
+		{TxHash: "bbbb", OutputIndex: 1, KeyImage: "ki_bbbb", SpendTxHash: txID.String()},
 	}
 
-	consensus := xmrSpentRefsObservedTx(txID, vaultPubKey, nil, nas[0], nas[1], nas[2])
-	// Ref-bearing late observations should still attach to the same consensus
-	// outbound when the consensus observation was missing refs.
-	lateWithRefs := xmrSpentRefsObservedTx(txID, vaultPubKey, refs, nas[0], nas[1], nas[2])
+	consensus := xmrSpentRefsObservedTx(txID, vaultPubKey, nil, nas[0])
+	// The first observation has no refs. Two more nodes agree on the outbound,
+	// but their ref set has not yet reached its own supermajority.
+	lateWithRefs := xmrSpentRefsObservedTx(txID, vaultPubKey, refs, nas[1], nas[2])
 	voter := NewObservedTxVoter(txID, []common.ObservedTx{consensus, lateWithRefs})
 	voter.Height = 10
+	c.Assert(voter.GetTx(nas).IsEmpty(), Equals, false)
+	c.Assert(voter.GetTx(nas).SpentOutputRefs, HasLen, 0)
 	saveXMRSpentOutputRefsWithQuorum(ctx, mgr, voter, lateWithRefs, nas)
 
 	stored, err := mgr.Keeper().GetXMRSpentOutputRefs(ctx, vaultPubKey)
+	c.Assert(err, IsNil)
+	c.Assert(stored, HasLen, 0)
+
+	// With all four nodes, the selected consensus observation still has no
+	// refs, while the three ref-bearing nodes can persist their complete set.
+	lateWithRefs = xmrSpentRefsObservedTx(txID, vaultPubKey, refs, nas[1], nas[2], nas[3])
+	voter.Txs[1] = lateWithRefs
+	c.Assert(voter.GetTx(nas).SpentOutputRefs, HasLen, 0)
+	saveXMRSpentOutputRefsWithQuorum(ctx, mgr, voter, lateWithRefs, nas)
+	stored, err = mgr.Keeper().GetXMRSpentOutputRefs(ctx, vaultPubKey)
 	c.Assert(err, IsNil)
 	c.Assert(stored, HasLen, len(refs))
 	c.Assert(common.SpentOutputRefsEqual(stored, refs), Equals, true)

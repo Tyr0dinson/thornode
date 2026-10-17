@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	tssMessages "gitlab.com/thorchain/thornode/v3/bifrost/p2p/messages"
+	"gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/blame"
 
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
@@ -26,6 +27,18 @@ func NewKeysignError(blame types.Blame) KeysignError {
 // Error implement error interface
 func (k KeysignError) Error() string {
 	return fmt.Sprintf("fail to complete TSS keysign, reason:%s, round:%s, culprit:%+v", k.Blame.FailReason, k.Blame.Round, k.Blame.BlameNodes)
+}
+
+// IsJoinPartyFailure reports whether the keysign failed while forming the
+// party, before any TSS round ran. No signature share has been produced, so
+// the caller has not signed anything for this attempt.
+//
+// go-tss reports a join-party failure as TssSyncFail with no round. Every
+// member computes the party leader from a hash of the messages, so members
+// that built different messages wait on different leaders and all fail this
+// way. That split can only heal if the members rebuild their messages.
+func (k KeysignError) IsJoinPartyFailure() bool {
+	return k.Blame.FailReason == blame.TssSyncFail && k.Blame.Round == ""
 }
 
 // IsTerminalRound reports whether a blame round has crossed the terminal

@@ -58,10 +58,22 @@ func (h RunePoolWithdrawHandler) validate(ctx cosmos.Context, msg MsgRunePoolWit
 	}
 	runePoolEnabled := h.mgr.Keeper().GetConfigInt64(ctx, constants.RUNEPoolEnabled)
 	if runePoolEnabled <= 0 {
+		// thornode_rune_pool_withdraw_count only counts successes, so a total
+		// withdraw outage is otherwise indistinguishable from no demand.
+		telemetry.IncrCounterWithLabels(
+			[]string{"thornode", "rune_pool", "withdraw_rejected"},
+			float32(1),
+			[]metrics.Label{telemetry.NewLabel("reason", "disabled")},
+		)
 		return fmt.Errorf("RUNEPool disabled")
 	}
 	runePoolWithdrawPaused := h.mgr.Keeper().GetConfigInt64(ctx, constants.RUNEPoolHaltWithdraw)
 	if runePoolWithdrawPaused > 0 && ctx.BlockHeight() >= runePoolWithdrawPaused {
+		telemetry.IncrCounterWithLabels(
+			[]string{"thornode", "rune_pool", "withdraw_rejected"},
+			float32(1),
+			[]metrics.Label{telemetry.NewLabel("reason", "paused")},
+		)
 		return fmt.Errorf("RUNEPool withdraw paused")
 	}
 	maxAffBasisPts := h.mgr.Keeper().GetConfigInt64(ctx, constants.MaxAffiliateFeeBasisPoints)
@@ -86,6 +98,11 @@ func (h RunePoolWithdrawHandler) handle(ctx cosmos.Context, msg MsgRunePoolWithd
 	currentBlockHeight := ctx.BlockHeight()
 	blocksSinceLastDeposit := currentBlockHeight - runeProvider.LastDepositHeight
 	if blocksSinceLastDeposit < depositMaturity {
+		telemetry.IncrCounterWithLabels(
+			[]string{"thornode", "rune_pool", "withdraw_rejected"},
+			float32(1),
+			[]metrics.Label{telemetry.NewLabel("reason", "immature")},
+		)
 		return fmt.Errorf("deposit reaches maturity in %d blocks", depositMaturity-blocksSinceLastDeposit)
 	}
 
@@ -150,6 +167,13 @@ func (h RunePoolWithdrawHandler) handle(ctx cosmos.Context, msg MsgRunePoolWithd
 			Add(cosmos.NewIntFromBigInt(pendingRune.BigInt()))
 		newReserveDeposit := currentReserveDeposit.Add(cosmos.NewIntFromBigInt(reserveEnterRune.BigInt()))
 		if newReserveDeposit.GT(maxReserveUsage) {
+			// The documented circuit breaker: once tripped every withdraw for
+			// every provider fails, with no event and no metric until now.
+			telemetry.IncrCounterWithLabels(
+				[]string{"thornode", "rune_pool", "withdraw_rejected"},
+				float32(1),
+				[]metrics.Label{telemetry.NewLabel("reason", "reserve_backstop")},
+			)
 			return fmt.Errorf("reserve enter %d rune exceeds backstop", reserveEnterRune.Uint64())
 		}
 

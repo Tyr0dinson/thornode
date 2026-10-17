@@ -23,7 +23,7 @@ import (
 	ltcchaincfg "github.com/ltcsuite/ltcd/chaincfg"
 	"github.com/ltcsuite/ltcutil"
 	"github.com/mr-tron/base58"
-	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/zecutil"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/zcash"
 	"golang.org/x/crypto/blake2b"
 
 	adacommon "github.com/blinklabs-io/gouroboros/ledger/common"
@@ -275,18 +275,14 @@ func (p PubKey) GetAddress(chain Chain) (Address, error) {
 			return NoAddress, fmt.Errorf("fail to get pubkey from bech32: %w", err)
 		}
 
-		var prefix string
-		switch chainNetwork {
-		case MockNet:
-			prefix = "testnet3"
-		case MainNet, StageNet, ChainNet:
-			prefix = "mainnet"
-		}
-
 		var bz [20]byte
 		copy(bz[:], pk.Address().Bytes())
 
-		addressString = zecutil.NewAddressPubKeyHash(bz, prefix).String()
+		address, err := zcash.NewAddressPubKeyHash(bz, ZECNetworkName())
+		if err != nil {
+			return NoAddress, err
+		}
+		addressString = address.String()
 	case SUIChain:
 		pk, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, p.String())
 		if err != nil {

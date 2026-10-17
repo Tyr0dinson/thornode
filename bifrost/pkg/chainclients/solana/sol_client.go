@@ -50,8 +50,8 @@ var signerCacheExpiryOverride time.Duration
 // invalidates, because thorchain observation consensus can lag actual Solana
 // inclusion and re-signing a landed-but-not-yet-observed tx would double-spend.
 //
-// The configured 2h (config signer_cache_expiry) is well past Solana's ~60s
-// blockhash validity (MAX_PROCESSING_AGE = 150 slots) and generous against
+// The configured 2h (config signer_cache_expiry) is well past Solana's ~45s
+// blockhash validity (MAX_PROCESSING_AGE = 150 blocks at ~300ms) and generous against
 // prolonged scanner or consensus lag.
 func (c *SOLClient) getSignerCacheExpiry() time.Duration {
 	if signerCacheExpiryOverride > 0 {
@@ -91,6 +91,26 @@ type SOLClient struct {
 	// txOut.Height. Guarded by the mutex since the loop reads and writes it.
 	keepAliveThorMultipleMu sync.Mutex
 	keepAliveThorMultiple   int64
+
+	// nonceProvisionThorMultiple is the last durable-nonce provisioning cadence
+	// boundary this node acted on (its own, finer cadence than keep-alive). Same
+	// shared-THORChain-height convergence discipline. Guarded by its mutex.
+	nonceProvisionThorMultipleMu sync.Mutex
+	nonceProvisionThorMultiple   int64
+
+	// vaultLocks holds a per-vault mutex, shared by the outbound signer (via the
+	// GetVaultLock hook) and durable-nonce create/close, so this node never runs an
+	// outbound keysign and a nonce keysign for the same vault concurrently (no local
+	// TSS-party contention). Mirrors the UTXO consolidate vault lock.
+	vaultLocks sync.Map // map[string]*sync.Mutex, keyed by vault pubkey
+
+	// durableRejects remembers outbounds this node's pre-sign filters refused to sign
+	// (key -> expiry), so the serialize gate does not hold later siblings behind them.
+	durableRejects sync.Map
+
+	// nonceReader overrides the chain reads of durable-nonce re-attestation (tests);
+	// nil uses rpcClient.
+	nonceReader solNonceAccountReader
 
 	// solvencySlotMultiple is the last reported solvency cadence boundary. It is
 	// read and written from two goroutines — the block scanner's solvency reporter
@@ -345,6 +365,16 @@ func (c *SOLClient) GetAccountByAddress(addr string, height *big.Int) (common.Ac
 
 // --------------------------------- solvency ---------------------------------
 
+// GetVaultLock returns the per-vault mutex the outbound signer (sign.go's vaultLocker
+// hook) acquires around sign+broadcast. Durable-nonce create/close acquire the SAME
+// mutex, so an outbound and a nonce keysign for one vault never run concurrently on
+// this node — no local TSS-party contention (mirrors the UTXO consolidate vault lock).
+func (c *SOLClient) GetVaultLock(vaultPubKey string) *sync.Mutex {
+	v, _ := c.vaultLocks.LoadOrStore(vaultPubKey, &sync.Mutex{})
+	mu, _ := v.(*sync.Mutex)
+	return mu
+}
+
 // GetGasEstimateForSolvency returns the current gas fee estimate used by solvency checks.
 func (c *SOLClient) GetGasEstimateForSolvency() cosmos.Uint {
 	nativeCurrentFee := cosmos.NewUint(3).
@@ -502,6 +532,21 @@ func (c *SOLClient) advanceSolvencySlotMultiple(v int64) {
 
 // --------------------------------- sign ---------------------------------
 
+// dropForReschedule abandons an outbound whose blockhash can never be usable at this
+// keysign height, counting the reason and logging ev. The (nil,nil,nil,nil) no-op is
+// read by sign.go as "nothing to broadcast", so the signer clears the item and
+// THORChain reschedules it at a FRESH height. Returning an ERROR instead would RETAIN
+// it, and a retained item stays the lowest-height SOL outbound for its vault: the
+// signer pipeline (lowest-height-first, one item per {vault,chain} per pass) would let
+// it re-claim the vault's single signing slot every pass and starve every later SOL
+// outbound for that vault. Callers pass a partially-built event so each drop can carry
+// its own fields; tx and the abstain metric are attached here.
+func (c *SOLClient) dropForReschedule(tx stypes.TxOutItem, reason string, ev *zerolog.Event, msg string) ([]byte, []byte, *stypes.TxInItem, error) {
+	ev.Interface("tx", tx).Msg(msg)
+	c.countAbstain(reason)
+	return nil, nil, nil, nil
+}
+
 // countAbstain increments the SOL keysign-abstain metric by reason, so a fleet-wide
 // stall (all nodes failing the blockhash gate) is observable rather than looking like
 // routine keysign non-selection. Nil-safe: directly-constructed test clients omit m.
@@ -530,7 +575,7 @@ func (c *SOLClient) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *
 	// the EVM/UTXO/Cosmos/TRON/XRP clients (which gate the verification path
 	// behind a SkipSignerCache<Chain> mimir), Solana enables verification
 	// unconditionally because the broadcast's blockhash already constrains
-	// re-sign safety to a tight window (~60s).
+	// re-sign safety to a tight window (~45s).
 	verifyFn := func(sig string) signercache.LookupResult {
 		result, lookupErr := c.rpcClient.GetTransactionConfirmed(sig)
 		switch {
@@ -572,6 +617,71 @@ func (c *SOLClient) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *
 	// For truly memoless transactions (no Memo or OriginalMemo), default to TxOutbound
 	memoForParsing := tx.GetMemo()
 
+	// Durable-nonce path. A vault whose durable nonce is committed on THORChain signs
+	// every non-excluded SOL outbound durably (AdvanceNonceAccount as instruction[0],
+	// the stored nonce baked in place of a recent blockhash), so it cannot expire
+	// during the multi-party TSS keysign+broadcast window. The nonce is read from the
+	// value THORChain committed, at the keysign height — no mimir gate and no Solana
+	// account read at sign time — so every keysign party builds identical bytes. (The
+	// SOLDurableNonce mimir gates only the provisioning of new nonce accounts.)
+	//
+	// Invariant I (no mixing): once a vault's nonce is committed, never fall back to a
+	// recent blockhash for it. A legacy copy does not consume the nonce, so a legacy
+	// copy and a still-valid durable copy of the same outbound could BOTH land. An
+	// unreadable committed value therefore RETAINS the outbound instead. A vault with
+	// no committed nonce (never provisioned) uses the recent-blockhash path below, as
+	// do excluded recipients (self-send, the vault's own nonce account — see
+	// durableDestinationExcluded), which are never durable so never mix.
+	if useSolDurableNonce && !c.durableDestinationExcluded(tx) {
+		committed, known, cErr := c.committedSolVaultNonce(tx, height)
+		if cErr != nil {
+			c.countAbstain("durable_nonce_read_error")
+			return nil, nil, nil, fmt.Errorf("fail to read committed durable nonce; retaining outbound: %w", cErr)
+		}
+		if known {
+			// Consumed-nonce recovery (B5). If the vault's committed nonce advanced
+			// AFTER this outbound's keysign height, the value committed at that height —
+			// the only one this outbound can be signed with here — is already consumed,
+			// so any copy signed now, or a stored signed copy being retried, is dead.
+			// Drop it for reschedule instead of retrying dead bytes and head-of-line
+			// blocking the vault's later SOL outbounds. THORChain re-issues it at a new
+			// height (signed with the advanced nonce) once LackSigning proves no copy of
+			// it landed (solDurableReissue). The drop never re-signs, so it cannot pay
+			// twice. The latest read is per node and liveness-only: a failed read just
+			// proceeds (a dead copy cannot land either).
+			if c.committedNonceAdvancedSince(tx, height) {
+				return c.dropForReschedule(tx, "durable_nonce_consumed",
+					c.logger.Warn(),
+					"committed durable nonce advanced after this outbound's keysign height, dropping for reschedule")
+			}
+			// Serialize-with-finality (N2): only the lowest-height not-yet-observed
+			// SOL outbound for this vault may sign durable, so at most one durable tx
+			// is in flight per vault. A higher-height sibling WAITS (retain + retry)
+			// until the earlier one is observed and the committed nonce advances.
+			if !c.durableSerializeAllows(tx, height) {
+				c.countAbstain("durable_nonce_serialize_wait")
+				return nil, nil, nil, errors.New("durable-nonce serialize: waiting for a lower-height in-flight SOL outbound for this vault to be observed")
+			}
+			nonceAccount, nonceAuthority, kErr := c.committedNonceKeys(tx, committed)
+			if kErr != nil {
+				c.countAbstain("durable_nonce_error")
+				return nil, nil, nil, fmt.Errorf("invalid committed durable nonce; retaining outbound: %w", kErr)
+			}
+			solTx, buildErr := c.CreateTxWithNonce(tx, memoForParsing, committed.Nonce, nonceAccount, nonceAuthority)
+			if buildErr != nil {
+				return nil, nil, nil, fmt.Errorf("fail to create durable-nonce tx: %w", buildErr)
+			}
+			// Pre-sign filters: never sign a durable tx that would land and fail (it
+			// would consume the nonce unobserved and wedge the vault).
+			if reason := c.durablePreSignReject(tx, solTx); reason != "" {
+				c.markDurableRejected(tx, height)
+				return c.dropForReschedule(tx, reason, c.logger.Warn(),
+					"durable outbound would fail on-chain; not signing, dropping for reschedule")
+			}
+			return c.finishSign(solTx, tx, memoForParsing, height)
+		}
+	}
+
 	// Deterministic blockhash: derive it from the CONSENSUS keysign height (txOut.Height
 	// for scheduled outbounds, the shared keep-alive anchor otherwise) instead of the
 	// per-node scanner, so every member signs identical bytes and converges on ONE TSS
@@ -582,6 +692,16 @@ func (c *SOLClient) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *
 	// TxOut, retries, other vaults and the keep-alive share one RPC derivation.
 	recentBlockhash, anchorSlot, err := c.cachedConsensusBlockHash(height)
 	if err != nil {
+		if errors.Is(err, errAnchorExpired) {
+			// This height's anchor is provably past MAX_PROCESSING_AGE, so no derivation
+			// at it can produce a hash that lands — including the case where the search
+			// cannot complete at all and so never reaches the IsBlockhashValid gate
+			// below (#3344). Escalate to a fresh-height reschedule instead of retrying
+			// for the rest of the signing window.
+			return c.dropForReschedule(tx, "anchor_expired_dropped",
+				c.logger.Warn().Err(err),
+				"SOL consensus anchor is past MAX_PROCESSING_AGE, dropping for reschedule")
+		}
 		// RPC failures / probe exhaustion land here — the most likely abstain trigger,
 		// so count it too (the signer retains + retries on this error).
 		c.countAbstain("derive_error")
@@ -593,8 +713,9 @@ func (c *SOLClient) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *
 		// CreateTx-error behaviour). A (nil,nil,nil,nil) no-op is read as a successful
 		// broadcast (sign.go:signAndBroadcast len(signedTx)==0 -> nil err) and the item
 		// is Remove()d from the store, so a transient miss would DROP the outbound until
-		// THORChain reschedules ~300 blocks later. The slasher reschedule stays the
-		// eventual fallback; retaining+retrying is the fast path.
+		// THORChain reschedules ~300 blocks later. Retaining+retrying is the fast path;
+		// once consensusBlockHash can PROVE the anchor is past MAX_PROCESSING_AGE it
+		// returns errAnchorExpired above and the retry loop ends in a drop instead.
 		c.logger.Info().Interface("tx", tx).Msg("no consensus blockhash for SOL sign yet, retaining outbound for retry")
 		c.countAbstain("no_consensus_blockhash")
 		return nil, nil, nil, errors.New("no consensus blockhash for SOL height yet; retaining outbound for retry until reschedule")
@@ -603,10 +724,9 @@ func (c *SOLClient) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *
 	// rejection alone may come from a lagging backend and must not suppress
 	// participation in other outbounds that share the same consensus hash.
 	if c.isResignDeadHash(recentBlockhash) {
-		c.logger.Warn().Str("blockhash", recentBlockhash).Interface("tx", tx).
-			Msg("consensus blockhash expiry already confirmed; dropping for reschedule")
-		c.countAbstain("blockhash_dead_resign_dropped")
-		return nil, nil, nil, nil
+		return c.dropForReschedule(tx, "blockhash_dead_resign_dropped",
+			c.logger.Warn().Str("blockhash", recentBlockhash),
+			"consensus blockhash expiry already confirmed, dropping for reschedule")
 	}
 	// Per-node participation gate (never touches the signed bytes — the blockhash
 	// above is deterministic): is the derived blockhash still usable against the
@@ -639,10 +759,9 @@ func (c *SOLClient) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *
 		// (nil,nil,nil,nil) no-op so the signer clears it; THORChain reschedules at a
 		// FRESH height where a live hash derives. (The transient-blip drop the earlier
 		// review flagged is the IsBlockhashValid-ERROR path above — that stays retained.)
-		c.logger.Warn().Int64("anchor_slot", anchorSlot).Interface("tx", tx).
-			Msg("consensus blockhash expired at processed tip (permanent for this height), dropping for reschedule")
-		c.countAbstain("blockhash_expired_dropped")
-		return nil, nil, nil, nil
+		return c.dropForReschedule(tx, "blockhash_expired_dropped",
+			c.logger.Warn().Int64("anchor_slot", anchorSlot),
+			"consensus blockhash expired at processed tip (permanent for this height), dropping for reschedule")
 	}
 
 	solTx, err := c.CreateTx(tx, memoForParsing, recentBlockhash)
@@ -650,6 +769,15 @@ func (c *SOLClient) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *
 		return nil, nil, nil, fmt.Errorf("fail to create tx: %w", err)
 	}
 
+	return c.finishSign(solTx, tx, memoForParsing, height)
+}
+
+// finishSign serializes the checkpoint, runs the multi-party TSS keysign, and
+// assembles the observation. It is shared by the recent-blockhash path and the
+// durable-nonce path so both produce identical downstream behaviour; the
+// only difference between the two is how solTx was built (recent blockhash vs.
+// AdvanceNonceAccount + stored durable nonce).
+func (c *SOLClient) finishSign(solTx types.Transaction, tx stypes.TxOutItem, memoForParsing string, height int64) ([]byte, []byte, *stypes.TxInItem, error) {
 	checkPointBytes, err := solTx.Message.Serialize()
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("fail to serialize checkpoint bytes: %w", err)
@@ -757,9 +885,22 @@ const (
 	// drops below the finalization lag, target is newer than the finalization
 	// frontier on EVERY node -> all abstain -> the outbound stalls. 15s = ~13s
 	// finalization + ~2s fleet-lag spread, and frees ~5s vs the prior 20s toward the
-	// ~60s blockhash-liveness budget for keysign (tc-vals timing, 2026-08-31). Do NOT
+	// ~45s blockhash-liveness budget for keysign (tc-vals timing, 2026-08-31). Do NOT
 	// go below ~15s without first measuring the fleet's real p95 finalization lag.
+	//
+	// This is the DEFAULT; MimirKeySOLAnchorMarginSeconds overrides it at the keysign
+	// height (see anchorMarginAtHeight), clamped to
+	// [solAnchorMarginMinSeconds, solAnchorMarginMaxSeconds].
 	solFinalizationMarginSeconds = int64(15)
+
+	// solAnchorMarginMinSeconds floors the mimir override. At ~300ms slots the
+	// ~32-slot finalization lag is ~9-10s, plus ~2s fleet spread; below that every
+	// node abstains and SOL outbounds stall.
+	solAnchorMarginMinSeconds = int64(12)
+
+	// solAnchorMarginMaxSeconds caps the mimir override: a larger margin only eats the
+	// 150-block (~40-45s) blockhash validity budget left for keysign + broadcast.
+	solAnchorMarginMaxSeconds = int64(30)
 
 	// solConsensusInitialLookbackSlots is the first getBlocks lookback below the
 	// finalized tip. It only has to reach a slot OLDER than the target time; it is
@@ -779,13 +920,31 @@ const (
 	// solConsensusCacheWindow bounds the consensus-blockhash memo: entries more than
 	// this many THORChain heights behind the newest stored height are evicted on
 	// insert. Keysign heights only move forward and a derived hash is only usable
-	// for ~60s (~10 heights), so 128 heights (~13 min) is ample while keeping the
+	// for ~45s at ~300ms slots (~7-8 heights), so 128 heights (~13 min) is ample while keeping the
 	// map to at most window+1 entries.
 	solConsensusCacheWindow = int64(128)
+
+	// solMaxProcessingAgeBlocks mirrors Solana's MAX_PROCESSING_AGE: a transaction is
+	// rejected once more than this many BLOCKS have been produced after the block whose
+	// blockhash it carries. The unit is load-bearing and is neither seconds nor slots.
+	// At the nominal ~300ms slot 150 blocks is ~45s, but a cluster slowdown stretches the
+	// same 150 blocks over several minutes, and skipped slots stretch them over more
+	// than 150 slots. A wall-clock or slot-count stand-in therefore drifts from the real
+	// rule in one direction or the other; the expiry proof in consensusBlockHash counts
+	// blocks and nothing else.
+	solMaxProcessingAgeBlocks = 150
 )
 
 // errTooManyProbes caps the getBlockTime fan-out inside consensusBlockHash.
 var errTooManyProbes = errors.New("consensus blockhash search exceeded probe budget")
+
+// errAnchorExpired reports a keysign height whose anchor slot S* is PROVABLY past
+// Solana's MAX_PROCESSING_AGE: more than solMaxProcessingAgeBlocks finalized blocks
+// have been produced after it, so no blockhash derived at this height can ever land.
+// SignTx drops the outbound for a fresh-height reschedule instead of retrying for the
+// rest of the signing window (#3344). Errors are never memoized, so the proof is
+// re-established from live RPC data on every attempt.
+var errAnchorExpired = errors.New("SOL consensus anchor is past MAX_PROCESSING_AGE")
 
 // cachedConsensusBlockHash is consensusBlockHash memoized by keysign height. A
 // successful derivation is immutable, so it is returned from memory on every later
@@ -904,14 +1063,29 @@ func (c *SOLClient) isResignDeadHash(blockhash string) bool {
 //     exact failure mode that would reintroduce the per-node divergence this fix removes.
 //
 // No slot-rate constant is used: the lookback is only an initial guess, galloped wider
-// until target is bracketed. Only slots returned by getBlocks (finalized listing) are
-// ever probed/fetched, so no unvetted raw slot hits getBlockTime/getBlock.
+// until target is bracketed, and cut short only once getFirstAvailableBlock proves the
+// window already reaches the RPC's retained history. Only slots returned by getBlocks
+// (finalized listing) are ever probed/fetched, so no unvetted raw slot hits
+// getBlockTime/getBlock.
+//
+// Abandoning a height is likewise decided on Solana evidence, never on a clock: only
+// when the finalized listing PROVES more than solMaxProcessingAgeBlocks blocks have been
+// produced after S* does this return errAnchorExpired, telling SignTx to reschedule
+// rather than keep searching (#3344). Everything else stays ("",0,nil) — retry.
 func (c *SOLClient) consensusBlockHash(height int64) (string, int64, error) {
+	// The margin is read FIRST, at the keysign height and on every derivation: it is
+	// a pure function of height (mimir-at-height is immutable), so the per-height memo
+	// in cachedConsensusBlockHash stays valid across a governance flip, and nodes that
+	// retry an old height keep that height's margin.
+	margin, err := c.anchorMarginAtHeight(height)
+	if err != nil {
+		return "", 0, fmt.Errorf("fail to get %s at height %d: %w", constants.MimirKeySOLAnchorMarginSeconds, height, err)
+	}
 	t, err := c.bridge.GetBlockTimestamp(height)
 	if err != nil {
 		return "", 0, fmt.Errorf("fail to get consensus block timestamp: %w", err)
 	}
-	target := t.Unix() - solFinalizationMarginSeconds
+	target := t.Unix() - margin
 
 	tip, err := c.rpcClient.GetSlot()
 	if err != nil {
@@ -943,6 +1117,13 @@ func (c *SOLClient) consensusBlockHash(height int64) (string, int64, error) {
 	}
 
 	lookback := solConsensusInitialLookbackSlots
+	// historyFloor memoizes getFirstAvailableBlock — the oldest slot this RPC has NOT
+	// purged. Fetched lazily (only when a window fails to reach target) and at most
+	// once per derivation, since it cannot move backwards while we search.
+	var (
+		historyFloor     uint64
+		haveHistoryFloor bool
+	)
 	for {
 		startI := int64(tip) - lookback
 		if startI < 0 {
@@ -955,21 +1136,21 @@ func (c *SOLClient) consensusBlockHash(height int64) (string, int64, error) {
 		if len(slots) == 0 {
 			// No finalized blocks in a wide window below tip -> RPC badly behind.
 			if lookback >= solConsensusMaxLookbackSlots {
-				return "", 0, nil // give up this round -> reschedule
+				return "", 0, nil // give up this round -> retry
 			}
 			lookback *= 2
 			continue
 		}
 
 		// Upper witness (bracket guard): the newest finalized slot must be strictly
-		// PAST target, else this node hasn't caught up -> reschedule, don't guess.
+		// PAST target, else this node hasn't caught up -> retry, don't guess.
 		newest := slots[len(slots)-1]
 		newestTime, ok, err := blockTimeAt(newest)
 		if err != nil {
 			return "", 0, err
 		}
 		if !ok || newestTime <= target {
-			return "", 0, nil // not finalized past target yet -> reschedule
+			return "", 0, nil // not finalized past target yet -> retry
 		}
 
 		// Lower witness: the window must reach back to <= target, else gallop wider.
@@ -979,8 +1160,54 @@ func (c *SOLClient) consensusBlockHash(height int64) (string, int64, error) {
 			return "", 0, err
 		}
 		if !ok || oldestTime > target {
-			if lookback >= solConsensusMaxLookbackSlots {
-				return "", 0, nil // can't bracket within cap -> reschedule
+			// Stop early only when widening is PROVABLY pointless: the window already
+			// reaches the oldest slot the RPC retains, so no wider one can return
+			// anything older. Without this, an outbound whose target had dropped below a
+			// pruning RPC's history floor climbed the whole 400->6400 ladder on every
+			// retry pass (#3344).
+			//
+			// The floor must come from getFirstAvailableBlock, never from the shape of
+			// the getBlocks listing: a window whose oldest slot sits above startI — even
+			// one that repeats across two widenings — is equally explained by a long run
+			// of SKIPPED slots, below which the blocks are still served. Guessing pruning
+			// there abandons a target the very next widening would have bracketed.
+			if !haveHistoryFloor {
+				floor, floorErr := c.rpcClient.GetFirstAvailableBlock()
+				if floorErr != nil {
+					// Unproven, so keep searching: the cap still bounds the work, and a
+					// wrong "pruned" call would strand a reachable target.
+					c.logger.Debug().Err(floorErr).Msg("fail to get SOL first available block, continuing bounded search")
+					floor = 0
+				}
+				historyFloor, haveHistoryFloor = floor, true
+			}
+			// startI == 0 satisfies this too: nothing is older than genesis.
+			atHistoryFloor := uint64(startI) <= historyFloor
+			if atHistoryFloor || lookback >= solConsensusMaxLookbackSlots {
+				// The search is over; decide retry-vs-drop on evidence already in hand,
+				// denominated in BLOCKS exactly like Solana's rule:
+				//
+				//   ok (the oldest listed block has a timestamp) and oldestTime > target,
+				//   and blockTime is monotonic in slot, so S* lies strictly below
+				//   slots[0] and every one of the len(slots) finalized blocks listed here
+				//   was produced AFTER S*. More than solMaxProcessingAgeBlocks of them
+				//   means S*'s blockhash has already aged out of the recent-blockhash
+				//   queue — whatever the slot cadence was and however many slots were
+				//   skipped. A slow cluster stretches those blocks over more wall-clock
+				//   time; it does not make the count smaller, so a slowdown can never
+				//   manufacture this verdict.
+				//
+				// The ok term is load-bearing: a null timestamp on the oldest slot leaves
+				// it unordered against target, and without oldestTime > target the listed
+				// blocks are not known to postdate S* at all. Unproven -> retry.
+				//
+				// tip is the FINALIZED tip, ~32 slots behind the processing bank a tx is
+				// really validated against, so the count under-reports the true age: this
+				// test can only ever be too cautious, never too eager.
+				if ok && len(slots) > solMaxProcessingAgeBlocks {
+					return "", 0, fmt.Errorf("%w: keysign height %d anchors below the %d finalized blocks at or under slot tip %d", errAnchorExpired, height, len(slots), tip)
+				}
+				return "", 0, nil // can't bracket, expiry unproven -> retry
 			}
 			lookback *= 2
 			continue
@@ -1012,7 +1239,7 @@ func (c *SOLClient) consensusBlockHash(height int64) (string, int64, error) {
 		}
 
 		// Blockhash only: the full block body (transaction list) is megabytes on
-		// mainnet and would be downloaded inside the ~60s liveness budget and dropped.
+		// mainnet and would be downloaded inside the ~45s liveness budget and dropped.
 		blockhash, err := c.rpcClient.GetBlockhashAtSlot(best)
 		if err != nil {
 			return "", 0, fmt.Errorf("fail to fetch consensus blockhash for slot %d: %w", best, err)
@@ -1078,6 +1305,399 @@ func (c *SOLClient) CreateTx(tx stypes.TxOutItem, memoForParsing, recentBlockhas
 	return types.NewTransferTransaction(vaultPubKey, toPubkey, tx.Coins[0].Amount.Uint64(), tx.Memo, recentBlockhash), nil
 }
 
+// useSolDurableNonce enables the durable-nonce durable-nonce outbound branch in SignTx.
+// When on, SignTx anchors a SOL outbound on the vault's stored nonce IF a usable
+// nonce account exists (durableNonceForVault ok); otherwise it falls through to the
+// recent-blockhash path unchanged. It is therefore SAFE to leave on in every build:
+// the effective rollout gate is MimirKeySOLDurableNonce, which controls whether the
+// provisioning loop ever creates the nonce accounts. With provisioning off, no
+// account exists, durableNonceForVault returns ok=false, and behaviour is identical
+// to the pre-durable-nonce path — including during a mixed-version fleet rollout, since both
+// on and off builds produce the recent-blockhash tx when no nonce account exists.
+// SignTx reads MimirKeySOLDurableNonce at the CONSENSUS keysign height
+// (durableNonceMimirAtHeight → the bridge GetMimirAtHeight ?height= query), so every
+// party evaluating an outbound observes the same gate value and a governance flip
+// cannot split the party between the durable and legacy paths (N3/N10). It then
+// branches on nonce-account existence read at the consensus anchor slot. HaltSigningSOL
+// remains the emergency stop.
+const useSolDurableNonce = true
+
+// solNonceSeed is the fixed create_with_seed seed that fixes a vault's durable-nonce
+// account address as a pure function of the vault pubkey (CreateWithSeed(vault,
+// solNonceSeed, SystemProgram)). Every keysign party derives the identical address
+// with no shared state, and a churn-in vault's account is deterministic from its own
+// pubkey. Changing this string orphans every existing nonce account, so it is
+// versioned and never edited in place.
+const solNonceSeed = "thornode-durable-nonce-v1"
+
+// nonceAccountRentLamports funds a new nonce account. It must be >= the rent-exempt
+// minimum for an 80-byte (types.NonceAccountSize) account — 1,447,680 lamports under
+// the current Solana rent schedule — and is a FIXED constant (not an RPC read) so
+// every keysign party funds the identical amount and the create tx bytes converge.
+// Rounded up to 1,500,000 for headroom against a rent-schedule tweak; any surplus is
+// reclaimed when the account is closed at churn.
+const nonceAccountRentLamports = uint64(1_500_000)
+
+// nonceAddressForVault derives the deterministic durable-nonce account address for a
+// vault: CreateWithSeed(vaultPubKey, solNonceSeed, SystemProgram). It is a pure
+// function of the vault pubkey, so every keysign party — and the provisioning loop —
+// compute the identical address with no shared state or coordination.
+func (c *SOLClient) nonceAddressForVault(vaultPubKey types.PublicKey) (types.PublicKey, error) {
+	return types.CreateWithSeed(vaultPubKey, solNonceSeed, types.SystemProgramID)
+}
+
+// durableDestinationExcluded reports whether an outbound's recipient rules out the
+// durable-nonce path. It is a pure function of the tx and vault, so every keysign
+// party reaches the same answer. Excluded recipients take the recent-blockhash path:
+//   - a self-send (vault keep-alive / consolidate): a nonce tx lists the vault once as
+//     fee-payer+source+authority and cannot also be the distinct recipient. Keeping
+//     it off the durable path keeps the keep-alive working when the mimir is on
+//     (otherwise the -32020 scanner prune-wedge re-opens);
+//   - a send TO the vault's own durable-nonce account: the account would appear twice
+//     in the key list (recipient + nonce account), which Solana rejects, so the
+//     retained signed bytes would fail forever and head-of-line block the vault's
+//     later SOL outbounds. The nonce address is a public, deterministic function of
+//     the vault, so anyone could route an outbound there.
+func (c *SOLClient) durableDestinationExcluded(tx stypes.TxOutItem) bool {
+	vaultAddr, err := tx.VaultPubKeyEddsa.GetAddress(common.SOLChain)
+	if err != nil {
+		return false
+	}
+	if tx.ToAddress.Equals(vaultAddr) {
+		return true
+	}
+	vaultPubKey, err := types.PublicKeyFromString(vaultAddr.String())
+	if err != nil {
+		return false
+	}
+	nonceAddr, err := c.nonceAddressForVault(vaultPubKey)
+	if err != nil {
+		return false
+	}
+	return tx.ToAddress.String() == nonceAddr.String()
+}
+
+// recentBlockhashDestinations returns the addresses durableDestinationExcluded sends
+// on the recent-blockhash path for tx's vault: its own SOL address and nonce account.
+func (c *SOLClient) recentBlockhashDestinations(tx stypes.TxOutItem) map[string]bool {
+	out := map[string]bool{}
+	if tx.VaultPubKeyEddsa.IsEmpty() {
+		return out
+	}
+	vaultAddr, err := tx.VaultPubKeyEddsa.GetAddress(common.SOLChain)
+	if err != nil || vaultAddr.IsEmpty() {
+		return out
+	}
+	out[vaultAddr.String()] = true
+	vaultPubKey, err := types.PublicKeyFromString(vaultAddr.String())
+	if err != nil {
+		return out
+	}
+	if nonceAddr, err := c.nonceAddressForVault(vaultPubKey); err == nil {
+		out[nonceAddr.String()] = true
+	}
+	return out
+}
+
+// mimirHeightReader is implemented by the production thorchain bridge (see
+// thorclient GetMimirAtHeight): it reads a mimir as of a consensus height so every
+// keysign party observes the same value. Test bridges that do not implement it fall
+// back to the live read.
+type mimirHeightReader interface {
+	GetMimirAtHeight(key string, height int64) (int64, error)
+}
+
+// durableNonceMimirAtHeight reads the SOLDurableNonce gate at the consensus keysign
+// height so the durable-vs-legacy choice is identical across all parties, not a
+// divergent per-node live read that could fragment a keysign across a governance flip
+// (N3/N10). Falls back to the live GetMimir only for test bridges that do not
+// implement the height-anchored read; production always uses the concrete bridge.
+func (c *SOLClient) durableNonceMimirAtHeight(height int64) (int64, error) {
+	if r, ok := c.bridge.(mimirHeightReader); ok {
+		return r.GetMimirAtHeight(constants.MimirKeySOLDurableNonce, height)
+	}
+	return c.bridge.GetMimir(constants.MimirKeySOLDurableNonce)
+}
+
+// anchorMarginAtHeight returns the consensus-blockhash anchor margin in seconds,
+// read from MimirKeySOLAnchorMarginSeconds at the consensus keysign height so every
+// party derives the same target. Unset reads as 0 (null) or -1 (deleted): any value
+// <= 0 maps to the solFinalizationMarginSeconds default BEFORE clamping, so an unset
+// or reset mimir never lands on the clamp floor. Positive values are clamped to
+// [solAnchorMarginMinSeconds, solAnchorMarginMaxSeconds]. A read error is returned
+// so the caller retains the outbound instead of guessing a margin.
+func (c *SOLClient) anchorMarginAtHeight(height int64) (int64, error) {
+	var v int64
+	var err error
+	if r, ok := c.bridge.(mimirHeightReader); ok {
+		v, err = r.GetMimirAtHeight(constants.MimirKeySOLAnchorMarginSeconds, height)
+	} else {
+		v, err = c.bridge.GetMimir(constants.MimirKeySOLAnchorMarginSeconds)
+	}
+	if err != nil {
+		return 0, err
+	}
+	return clampAnchorMargin(v), nil
+}
+
+// clampAnchorMargin maps a raw SOLAnchorMarginSeconds mimir value to the margin used.
+func clampAnchorMargin(v int64) int64 {
+	switch {
+	case v <= 0:
+		return solFinalizationMarginSeconds
+	case v < solAnchorMarginMinSeconds:
+		return solAnchorMarginMinSeconds
+	case v > solAnchorMarginMaxSeconds:
+		return solAnchorMarginMaxSeconds
+	default:
+		return v
+	}
+}
+
+// pendingOutboundReader is implemented by the production thorchain bridge; it lists
+// the not-yet-observed outbound queue so the durable-nonce path can serialize one
+// tx per vault (N2). Test bridges may not implement it (the gate then fails open).
+type pendingOutboundReader interface {
+	GetPendingOutbounds(height int64) ([]thorclient.PendingOutbound, error)
+}
+
+// durableSerializeAllows reports whether tx may take the durable-nonce path now
+// under serialize-with-finality (N2): only the LOWEST-height not-yet-observed SOL
+// outbound for its vault may sign durable, so at most one durable tx is in flight
+// per vault and the stored nonce is stable during its keysign. Higher-height siblings,
+// and same-height siblings later in the signer's (Height, Index) order, must WAIT
+// until the earlier one is observed (drops from the pending queue) and the nonce
+// advances.
+//
+// The queue is read AT THE KEYSIGN HEIGHT, so every signer of the vault decides from
+// the same snapshot (no per-node timing split of the keysign party). A waiter is never
+// released by that fixed snapshot; it is released because THORChain re-issues it at the
+// height where the earlier sibling's nonce commits (reissueSupersededSolDurable), and at
+// that new height the earlier sibling is no longer pending. A query error returns false
+// (retain and retry), never a guess. A test bridge without the reader fails open.
+func (c *SOLClient) durableSerializeAllows(tx stypes.TxOutItem, height int64) bool {
+	r, ok := c.bridge.(pendingOutboundReader)
+	if !ok {
+		return true
+	}
+	pending, err := r.GetPendingOutbounds(height)
+	if err != nil {
+		c.logger.Err(err).Int64("height", height).Msg("fail to read pending outbounds for durable-nonce serialization; retaining")
+		return false
+	}
+	sol := common.SOLChain.String()
+	vault := tx.VaultPubKey.String()
+	vaultEddsa := tx.VaultPubKeyEddsa.String()
+	// Siblings issued below the vault's latest commit height are dead (see
+	// committedNonceAdvancedSince); 0 when unknown, which skips nothing.
+	deadBelow := c.latestCommittedNonceHeight(tx)
+	// Siblings paying the vault's own address or nonce account sign on the
+	// recent-blockhash path (durableDestinationExcluded) and never consume the nonce,
+	// so they must not hold a durable outbound behind them.
+	recentOnly := c.recentBlockhashDestinations(tx)
+
+	// Same-height siblings must be ordered exactly as the signer orders them, or the
+	// vault can deadlock: pipeline.SpawnSignings sorts by (Height, Index) and, holding
+	// the vault/chain lock, attempts only the first item per vault each pass. If this
+	// gate deferred that head-of-line item behind a sibling the signer never reaches,
+	// the vault would never progress. /thorchain/queue/outbound lists heights ascending
+	// and each height's items in TxArray order (the OutHash-empty filter keeps relative
+	// order), so position within a height is the same order as Index. Locate this
+	// outbound in the list; a same-height sibling waits only if it comes earlier. If
+	// this outbound cannot be located, do not defer on same-height siblings at all —
+	// waiting without a consistent order is what deadlocks.
+	self := -1
+	for i, p := range pending {
+		if p.Height == height && pendingMatchesTx(p, tx) {
+			self = i
+			break
+		}
+	}
+	for i, p := range pending {
+		if i == self || p.Chain != sol {
+			continue
+		}
+		// Belongs to this vault if EITHER non-empty pubkey matches; empty fields never
+		// match (else two different vaults with an empty eddsa would collide).
+		belongs := (vault != "" && p.VaultPubKey == vault) ||
+			(vaultEddsa != "" && p.VaultPubKeyEddsa == vaultEddsa)
+		if !belongs || c.durableRejected(p) {
+			// A sibling this node's pre-sign filters refused to sign will not be
+			// signed here, so it must not hold this one up.
+			continue
+		}
+		if recentOnly[p.ToAddress] {
+			continue
+		}
+		if deadBelow > 0 && p.Height < deadBelow {
+			// The vault's nonce was committed after this sibling's keysign height, so
+			// the only nonce it can be signed with is consumed: SignTx drops it and it
+			// waits for LackSigning to re-issue it at a new height. It stays OutHash-
+			// empty in the queue meanwhile, and must not hold later siblings behind it.
+			continue
+		}
+		// A strictly-earlier sibling (lower height, or same height and earlier in the
+		// signer's order) is still in flight -> this one waits.
+		if p.Height < height || (p.Height == height && self >= 0 && i < self) {
+			return false
+		}
+	}
+	return true
+}
+
+// pendingMatchesTx reports whether a queued outbound is this outbound, by the fields
+// the queue endpoint and the signer both carry. The coin is compared when the outbound
+// carries exactly one (always true for a SOL outbound).
+func pendingMatchesTx(p thorclient.PendingOutbound, tx stypes.TxOutItem) bool {
+	if p.InHash != tx.InHash.String() || p.ToAddress != tx.ToAddress.String() || p.Memo != tx.Memo {
+		return false
+	}
+	if len(tx.Coins) == 1 {
+		return p.Coin.Asset == tx.Coins[0].Asset.String() && p.Coin.Amount == tx.Coins[0].Amount.String()
+	}
+	return true
+}
+
+// solVaultNonceReader is implemented by the production thorchain bridge; it reads a
+// vault's durable nonce as committed on THORChain. Test bridges may not implement it,
+// in which case no vault has a committed nonce (recent-blockhash path).
+type solVaultNonceReader interface {
+	GetSolVaultNonce(vaultPubKey string, height int64) (thorclient.SolVaultNonce, error)
+}
+
+// committedSolVaultNonce returns the vault's durable nonce as committed on THORChain
+// at keysign height, whether one is committed (known), or an error when the value
+// cannot be determined. The read is pinned to the consensus height (?height=), so
+// every keysign party evaluating this outbound sees the identical value — the nonce
+// is agreed by observer supermajority on-chain, not read per node from Solana.
+func (c *SOLClient) committedSolVaultNonce(tx stypes.TxOutItem, height int64) (thorclient.SolVaultNonce, bool, error) {
+	r, ok := c.bridge.(solVaultNonceReader)
+	if !ok || tx.VaultPubKey.IsEmpty() {
+		return thorclient.SolVaultNonce{}, false, nil
+	}
+	committed, err := r.GetSolVaultNonce(tx.VaultPubKey.String(), height)
+	if err != nil {
+		return thorclient.SolVaultNonce{}, false, err
+	}
+	if committed.IsEmpty() {
+		return thorclient.SolVaultNonce{}, false, nil
+	}
+	return committed, true, nil
+}
+
+// latestCommittedNonceHeight returns the THORChain height at which the vault's latest
+// durable nonce was committed, or 0 when there is none or it cannot be read.
+func (c *SOLClient) latestCommittedNonceHeight(tx stypes.TxOutItem) int64 {
+	r, ok := c.bridge.(solVaultNonceReader)
+	if !ok || tx.VaultPubKey.IsEmpty() {
+		return 0
+	}
+	latest, err := r.GetSolVaultNonce(tx.VaultPubKey.String(), 0)
+	if err != nil || latest.IsEmpty() {
+		return 0
+	}
+	return latest.UpdatedHeight
+}
+
+// committedNonceAdvancedSince reports whether the vault's LATEST committed durable
+// nonce was committed after keysign height, i.e. the value committed at that height
+// has since been consumed. Liveness-only (see SignTx): a read failure reports false.
+func (c *SOLClient) committedNonceAdvancedSince(tx stypes.TxOutItem, height int64) bool {
+	r, ok := c.bridge.(solVaultNonceReader)
+	if !ok || tx.VaultPubKey.IsEmpty() {
+		return false
+	}
+	latest, err := r.GetSolVaultNonce(tx.VaultPubKey.String(), 0)
+	if err != nil {
+		c.logger.Warn().Err(err).Msg("fail to read latest committed durable nonce; proceeding")
+		return false
+	}
+	return !latest.IsEmpty() && latest.UpdatedHeight > height
+}
+
+// committedNonceKeys resolves the nonce account and authority to sign a durable tx
+// with, re-checking that the committed account is the vault's own seed-derived one
+// (THORChain already enforces this at commit; this is defence in depth). The vault is
+// the nonce authority in the signing model, so it signs AdvanceNonceAccount itself.
+func (c *SOLClient) committedNonceKeys(tx stypes.TxOutItem, committed thorclient.SolVaultNonce) (nonceAccount, nonceAuthority types.PublicKey, err error) {
+	vaultAddr, err := tx.VaultPubKeyEddsa.GetAddress(c.GetChain())
+	if err != nil {
+		return types.PublicKey{}, types.PublicKey{}, fmt.Errorf("fail to get vault address: %w", err)
+	}
+	vaultPubKey, err := types.PublicKeyFromString(vaultAddr.String())
+	if err != nil {
+		return types.PublicKey{}, types.PublicKey{}, fmt.Errorf("fail to parse vault pubkey: %w", err)
+	}
+	expected, err := c.nonceAddressForVault(vaultPubKey)
+	if err != nil {
+		return types.PublicKey{}, types.PublicKey{}, fmt.Errorf("fail to derive nonce address: %w", err)
+	}
+	if expected.String() != committed.NonceAccount {
+		return types.PublicKey{}, types.PublicKey{}, fmt.Errorf("committed nonce account %s is not the vault's %s", committed.NonceAccount, expected)
+	}
+	return expected, vaultPubKey, nil
+}
+
+// CreateTxWithNonce builds an outbound SOL transfer anchored on a durable nonce
+// rather than a recent blockhash. It mirrors CreateTx's validation; the
+// difference is the transaction it emits (NewNonceTransferTransaction, with
+// AdvanceNonceAccount as instruction[0] and the message's recentBlockhash field set
+// to nonceValue). Because a durable nonce does not expire, the SignTx nonce path
+// skips the recent-blockhash derivation and expiry gating entirely.
+func (c *SOLClient) CreateTxWithNonce(tx stypes.TxOutItem, memoForParsing, nonceValue string, nonceAccount, nonceAuthority types.PublicKey) (types.Transaction, error) {
+	if nonceValue == "" {
+		return types.Transaction{}, errors.New("durable nonce value is empty")
+	}
+
+	// Validation - identical to CreateTx: memoForParsing may be OriginalMemo for
+	// memoless outbounds; truly memoless defaults to TxOutbound.
+	var memo mem.Memo
+	if memoForParsing == "" {
+		memo = mem.NewOutboundMemo(tx.InHash)
+	} else {
+		var err error
+		memo, err = mem.ParseMemo(common.LatestVersion, memoForParsing)
+		if err != nil {
+			return types.Transaction{}, fmt.Errorf("fail to parse memo(%s):%w", memoForParsing, err)
+		}
+		if memo.IsInbound() {
+			return types.Transaction{}, errors.New("inbound memo should not be used for outbound tx")
+		}
+	}
+	if len(tx.Coins) != 1 {
+		return types.Transaction{}, fmt.Errorf("only support one coin per transaction, received: %d", len(tx.Coins))
+	}
+
+	solTx := types.Transaction{}
+
+	vaultAddr, err := tx.VaultPubKeyEddsa.GetAddress(c.GetChain())
+	if err != nil {
+		return types.Transaction{}, fmt.Errorf("fail to get vault address: %w", err)
+	}
+	vaultPubKey, err := types.PublicKeyFromString(vaultAddr.String())
+	if err != nil {
+		return solTx, fmt.Errorf("fail to create vault public key: %w", err)
+	}
+	toPubkey, err := types.PublicKeyFromString(tx.ToAddress.String())
+	if err != nil {
+		return solTx, fmt.Errorf("fail to create to public key: %w", err)
+	}
+
+	solValue := convertToLamports(tx.Coins[0].Amount)
+	if solValue.Int64() == 0 {
+		return solTx, errors.New("sol value is zero")
+	}
+
+	// The vault->self keep-alive under a durable nonce needs a builder that lists the
+	// vault once (as NewSelfTransferTransaction does for the blockhash path); that is
+	// not required for scheduled outbounds and is out of scope for the initial draft.
+	if toPubkey == vaultPubKey {
+		return solTx, errors.New("durable-nonce self-transfer not supported yet")
+	}
+
+	return types.NewNonceTransferTransaction(vaultPubKey, toPubkey, tx.Coins[0].Amount.Uint64(), tx.Memo, nonceValue, nonceAccount, nonceAuthority), nil
+}
+
 // --------------------------------- sign ---------------------------------
 
 func convertToLamports(amount cosmos.Uint) *big.Int {
@@ -1118,11 +1738,28 @@ func (c *SOLClient) BroadcastTx(txOutItem stypes.TxOutItem, rawTx []byte) (strin
 		// A lagging backend can reject a still-valid hash. Keep the signed bytes
 		// unless a caught-up processing bank confirms that their hash expired.
 		if isBlockhashNotFound(err) {
+			// A durable-nonce tx reports "Blockhash not found" once its nonce has been
+			// consumed. Its baked value is the committed nonce, not a consensus anchor,
+			// so the recent-blockhash expiry check below cannot confirm it and would
+			// retain the dead bytes forever (head-of-line blocking the vault). If these
+			// bytes carry the nonce committed at the signing height and the committed
+			// nonce has since advanced, they are dead: hand back for re-sign, where
+			// SignTx drops the outbound for reschedule (B5) — never re-signing it.
+			if c.durableTxConsumed(txOutItem, rawTx) {
+				c.logger.Warn().Err(err).Str("memo", txOutItem.Memo).
+					Msg("SOL durable nonce consumed; dropping signed tx for reschedule")
+				return "", fmt.Errorf("%w: %v", stypes.ErrResignRequired, err)
+			}
 			blockhash, expiryErr := c.confirmedExpiredBlockhash(txOutItem, rawTx)
-			if expiryErr != nil {
+			switch {
+			case expiryErr != nil:
+				// This includes errAnchorExpired: an expired anchor for the signing
+				// height says nothing about the hash these bytes carry. Signed txs
+				// persisted before the consensus-anchor upgrade used the scanner's
+				// recent hash, which can be newer and still live, so retain them.
 				c.logger.Warn().Err(expiryErr).Str("memo", txOutItem.Memo).
 					Msg("cannot confirm SOL blockhash expiry; retaining signed tx for retry")
-			} else if blockhash != "" {
+			case blockhash != "":
 				c.logger.Warn().Err(err).Str("memo", txOutItem.Memo).
 					Msg("SOL blockhash expiry confirmed; dropping signed tx for reschedule")
 				c.markResignDead(blockhash)
@@ -1143,6 +1780,21 @@ func (c *SOLClient) BroadcastTx(txOutItem stypes.TxOutItem, rawTx []byte) (strin
 	}
 
 	return txSig, nil
+}
+
+// durableTxConsumed reports whether rawTx is a durable-nonce tx signed with the
+// vault's committed nonce at its signing height, and that committed nonce has since
+// advanced (so the nonce these bytes carry is consumed and they can never land).
+func (c *SOLClient) durableTxConsumed(txOutItem stypes.TxOutItem, rawTx []byte) bool {
+	baked, ok := txBlockhashFromRawTx(rawTx)
+	if !ok || txOutItem.Height <= 0 {
+		return false
+	}
+	committed, known, err := c.committedSolVaultNonce(txOutItem, txOutItem.Height)
+	if err != nil || !known || committed.Nonce != baked {
+		return false
+	}
+	return c.committedNonceAdvancedSince(txOutItem, txOutItem.Height)
 }
 
 // confirmedExpiredBlockhash returns the signed transaction's hash only when

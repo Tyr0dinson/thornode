@@ -9,7 +9,7 @@ import (
 	"github.com/btcsuite/btcd/btcjson"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
-	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/zecutil"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/zcash"
 
 	"github.com/eager7/dogutil"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/signing"
@@ -73,12 +73,14 @@ func (c *Client) getUtxoToSpend(pubkey common.PubKey, total btcutil.Amount) ([]b
 
 	var result []btcjson.ListUnspentResult
 	var toSpend btcutil.Amount
+	var excluded utxoExclusions
 	minUTXOAmt := btcutil.Amount(c.cfg.ChainID.DustThreshold().Uint64()).ToBTC()
 	utxosToSpend := c.getMaximumUtxosToSpend() // can be set by mimir
 
 	for _, item := range utxos {
 		if !c.isValidUTXO(item.ScriptPubKey) {
 			c.log.Warn().Str("script", item.ScriptPubKey).Msgf("invalid utxo, unable to spend")
+			excluded.invalidScript++
 			continue
 		}
 
@@ -92,6 +94,7 @@ func (c *Client) getUtxoToSpend(pubkey common.PubKey, total btcutil.Amount) ([]b
 				isSelfTx = c.isFromAsgard(item.TxID)
 			}
 			if !isSelfTx {
+				excluded.unconfirmedOrDust++
 				continue
 			}
 
@@ -114,6 +117,7 @@ func (c *Client) getUtxoToSpend(pubkey common.PubKey, total btcutil.Amount) ([]b
 						Int64("descendant_count", entry.DescendantCount).
 						Int64("max_allowed", c.cfg.UTXO.MaxMempoolAncestors).
 						Msg("skipping UTXO with too many ancestors/descendants to avoid mempool chain limit")
+					excluded.mempoolChainLimit++
 					continue
 				}
 			}
@@ -126,10 +130,12 @@ func (c *Client) getUtxoToSpend(pubkey common.PubKey, total btcutil.Amount) ([]b
 			found, err = c.temporalStorage.HasSpentUtxo(id)
 			if err != nil {
 				c.log.Err(err).Msg("failed to check spent utxo")
+				excluded.spentCheckFailed++
 				continue
 			}
 
 			if found {
+				excluded.alreadySpent++
 				continue
 			}
 		}
@@ -153,10 +159,49 @@ func (c *Client) getUtxoToSpend(pubkey common.PubKey, total btcutil.Amount) ([]b
 	// If we couldn't collect enough UTXOs to cover the required amount, return an error
 	// to avoid confusing downstream errors about negative balance
 	if toSpend < total {
-		return nil, fmt.Errorf("insufficient available UTXOs: need %d, only have %d available from %d UTXOs", total, toSpend, len(result))
+		return nil, insufficientUTXOsError(addr, total, toSpend, len(result), utxos, excluded)
 	}
 
 	return result, nil
+}
+
+// utxoExclusions counts listed UTXOs that getUtxoToSpend skipped, by reason.
+type utxoExclusions struct {
+	invalidScript     int
+	unconfirmedOrDust int
+	mempoolChainLimit int
+	spentCheckFailed  int
+	alreadySpent      int
+}
+
+// insufficientUTXOsError reports whether the daemon listed no UTXOs for the
+// vault, meaning the coins are absent from the node's view, or listed UTXOs that
+// selection excluded. The two cases need different investigations.
+func insufficientUTXOsError(
+	addr common.Address,
+	need, selectedAmount btcutil.Amount,
+	selectedCount int,
+	listed []btcjson.ListUnspentResult,
+	excluded utxoExclusions,
+) error {
+	if len(listed) == 0 {
+		return fmt.Errorf("insufficient available UTXOs: need %d, node lists no UTXOs for %s "+
+			"(coins absent from the node view: unfunded, not imported, or removed by a reorg)", need, addr)
+	}
+
+	var listedAmount btcutil.Amount
+	for _, item := range listed {
+		// best effort for diagnostics, an unparsable amount is left out of the total
+		if amt, err := btcutil.NewAmount(item.Amount); err == nil {
+			listedAmount += amt
+		}
+	}
+	return fmt.Errorf("insufficient available UTXOs: need %d, only have %d available from %d UTXOs; "+
+		"node lists %d UTXOs worth %d for %s, excluded: invalid script=%d, "+
+		"unconfirmed or dust not from asgard=%d, mempool chain limit=%d, spent check failed=%d, already spent=%d",
+		need, selectedAmount, selectedCount, len(listed), listedAmount, addr,
+		excluded.invalidScript, excluded.unconfirmedOrDust, excluded.mempoolChainLimit,
+		excluded.spentCheckFailed, excluded.alreadySpent)
 }
 
 func formatUtxoKey(txID string, vout uint32) string {
@@ -283,12 +328,11 @@ func (c *Client) getSourceScript(tx stypes.TxOutItem) ([]byte, error) {
 		return btctxscript.PayToAddrScript(addr)
 	case common.ZECChain:
 		params := c.getChainCfgZEC()
-		var addr btcutil.Address
-		addr, err := zecutil.DecodeAddress(sourceAddr.String(), params.Name)
+		addr, err := zcash.DecodeAddress(sourceAddr.String(), params.Name)
 		if err != nil {
 			return nil, fmt.Errorf("fail to decode source address(%s): %w", sourceAddr.String(), err)
 		}
-		return zecutil.PayToAddrScript(addr)
+		return addr.Script()
 	default:
 		c.log.Fatal().Msg("unsupported chain")
 		return nil, nil
@@ -299,10 +343,41 @@ func (c *Client) getSourceScript(tx stypes.TxOutItem) ([]byte, error) {
 // Build Transaction
 ////////////////////////////////////////////////////////////////////////////////////////
 
+const (
+	// estimateSigLen is the signature length (DER encoding plus the sighash type byte)
+	// assumed when estimating the fee. A low-S secp256k1 signature is at most 72 bytes.
+	estimateSigLen = 72
+
+	// feeCapSigLen is the shortest signature length assumed when capping the fee rate.
+	// DER drops leading zero bytes, so small r or s values shorten a signature by a byte
+	// each (probability ~1/256 per byte). 67 bytes allows r and s to lose five bytes
+	// between them, which leaves a negligible (~2^-38) chance per signature that the
+	// signed transaction is smaller than the capped estimate.
+	feeCapSigLen = 67
+)
+
 // estimateTxSize builds a dummy transaction with the given inputs and outputs and
 // returns the exact virtual size (vbytes) according to BIP141.
 // For non-segwit chains, it returns the actual serialized size.
+// A nil changeScript estimates a transaction without a change output.
 func (c *Client) estimateTxSize(txes []btcjson.ListUnspentResult, memoScripts [][]byte, customerScript, changeScript []byte) int64 {
+	return c.estimateTxSizeWithSigLen(txes, memoScripts, customerScript, changeScript, estimateSigLen)
+}
+
+// maxFeeSats returns the largest fee that keeps the signed transaction within
+// MaxSatsPerVByte. It sizes the transaction with the outputs it will contain and the
+// shortest expected signatures, so the cap still holds against the final signed size.
+func (c *Client) maxFeeSats(txes []btcjson.ListUnspentResult, memoScripts [][]byte, customerScript, changeScript []byte) int64 {
+	satsPerVByte := c.cfg.UTXO.MaxSatsPerVByte
+	switch c.cfg.ChainID {
+	case common.BTCChain, common.LTCChain:
+		// never exceed the maxfeerate BroadcastTx asks the daemon to enforce
+		satsPerVByte = min(satsPerVByte, broadcastMaxSatsPerVByte)
+	}
+	return c.estimateTxSizeWithSigLen(txes, memoScripts, customerScript, changeScript, feeCapSigLen) * satsPerVByte
+}
+
+func (c *Client) estimateTxSizeWithSigLen(txes []btcjson.ListUnspentResult, memoScripts [][]byte, customerScript, changeScript []byte, sigLen int) int64 {
 	tx := wire.NewMsgTx(wire.TxVersion)
 
 	// Add inputs with realistic witness/scriptSig data for size estimation
@@ -318,15 +393,14 @@ func (c *Client) estimateTxSize(txes []btcjson.ListUnspentResult, memoScripts []
 		// Add realistic scriptSig/witness data for accurate size estimation
 		if c.isSegwitChain() {
 			// For segwit chains (BTC, LTC), inputs have empty scriptSig but witness data
-			// Typical P2WPKH witness: [signature (71-73 bytes), pubkey (33 bytes)]
+			// P2WPKH witness: [signature, compressed pubkey (33 bytes)]
 			txIn.Witness = make([][]byte, 2)
-			txIn.Witness[0] = make([]byte, 72) // signature
-			txIn.Witness[1] = make([]byte, 33) // pubkey
+			txIn.Witness[0] = make([]byte, sigLen) // signature
+			txIn.Witness[1] = make([]byte, 33)     // pubkey
 		} else {
 			// For non-segwit chains (DOGE, BCH), inputs have scriptSig
-			// Typical P2PKH scriptSig: [signature (71-73 bytes), pubkey (33 bytes)]
-			// Script format: <sig> <pubkey>
-			txIn.SignatureScript = make([]byte, 107) // ~72 + 33 + 2 bytes overhead
+			// P2PKH scriptSig: <sig> <pubkey>, each with a one byte push opcode
+			txIn.SignatureScript = make([]byte, 1+sigLen+1+33)
 		}
 
 		tx.AddTxIn(txIn)
@@ -336,7 +410,9 @@ func (c *Client) estimateTxSize(txes []btcjson.ListUnspentResult, memoScripts []
 	tx.AddTxOut(wire.NewTxOut(0, customerScript))
 
 	// Add change output (will be added if balance > 0)
-	tx.AddTxOut(wire.NewTxOut(0, changeScript))
+	if changeScript != nil {
+		tx.AddTxOut(wire.NewTxOut(0, changeScript))
+	}
 
 	// Add memo outputs
 	if len(memoScripts) > 0 {
@@ -406,6 +482,10 @@ func (c *Client) getGasCoin(tx stypes.TxOutItem, vSize int64) common.Coin {
 }
 
 func (c *Client) getGasCoinZEC(tx *wire.MsgTx, memo string) common.Coin {
+	return common.NewCoin(common.ZECAsset, cosmos.NewUint(uint64(zecFeeForInputCount(len(tx.TxIn), memo))))
+}
+
+func zecFeeForInputCount(inputCount int, memo string) btcutil.Amount {
 	// https://zips.z.cash/zip-0317
 	// 8 bytes value + 1 byte length + OP_RETURN + OP_PUSHBYTES/DATA
 	// -> 8 + 1 + 1 + 2 (using two bytes for OP_PUSHDATA2 for simplicity)
@@ -416,38 +496,20 @@ func (c *Client) getGasCoinZEC(tx *wire.MsgTx, memo string) common.Coin {
 	}
 
 	// assume 2 tx out: one to customer + one back to self
-	amount := 5000*max(len(tx.TxIn), 2+actionsMemo) + ZecExtraFee
+	amount := 5000*max(inputCount, 2+actionsMemo) + ZecExtraFee
 
-	return common.NewCoin(common.ZECAsset, cosmos.NewUint(uint64(amount)))
+	return btcutil.Amount(amount)
 }
 
-func (c *Client) buildTx(tx stypes.TxOutItem, sourceScript []byte) (*wire.MsgTx, map[string]int64, error) {
-	txes, err := c.getUtxoToSpend(tx.VaultPubKey, c.getPaymentAmount(tx))
-	if err != nil {
-		return nil, nil, fmt.Errorf("fail to get unspent UTXO: %w", err)
-	}
-	redeemTx := wire.NewMsgTx(wire.TxVersion)
-	totalAmt := int64(0)
-	individualAmounts := make(map[string]int64, len(txes))
-	for _, item := range txes {
-		var txID *chainhash.Hash
-		txID, err = chainhash.NewHashFromStr(item.TxID)
+func (c *Client) buildTx(tx stypes.TxOutItem, sourceScript []byte, zecReference int64) (*wire.MsgTx, map[string]int64, error) {
+	var txes []btcjson.ListUnspentResult
+	var err error
+	if c.cfg.ChainID != common.ZECChain {
+		txes, err = c.getUtxoToSpend(tx.VaultPubKey, c.getPaymentAmount(tx))
 		if err != nil {
-			return nil, nil, fmt.Errorf("fail to parse txID(%s): %w", item.TxID, err)
+			return nil, nil, fmt.Errorf("fail to get unspent UTXO: %w", err)
 		}
-		// double check that the utxo is still valid
-		outputPoint := wire.NewOutPoint(txID, item.Vout)
-		sourceTxIn := wire.NewTxIn(outputPoint, nil, nil)
-		redeemTx.AddTxIn(sourceTxIn)
-		var amt btcutil.Amount
-		amt, err = btcutil.NewAmount(item.Amount)
-		if err != nil {
-			return nil, nil, fmt.Errorf("fail to parse amount(%f): %w", item.Amount, err)
-		}
-		individualAmounts[formatUtxoKey(txID.String(), item.Vout)] = int64(amt)
-		totalAmt += int64(amt)
 	}
-
 	var buf []byte
 	var nullDataScripts [][]byte
 	switch c.cfg.ChainID {
@@ -508,16 +570,16 @@ func (c *Client) buildTx(tx stypes.TxOutItem, sourceScript []byte) (*wire.MsgTx,
 			return nil, nil, fmt.Errorf("fail to generate null data script: %w", err)
 		}
 	case common.ZECChain:
-		var outputAddr btcutil.Address
-		outputAddr, err = zecutil.DecodeAddress(tx.ToAddress.String(), c.getChainCfgZEC().Name)
+		var outputAddr *zcash.Address
+		outputAddr, err = zcash.DecodeAddress(tx.ToAddress.String(), c.getChainCfgZEC().Name)
 		if err != nil {
 			return nil, nil, fmt.Errorf("fail to decode next address: %w", err)
 		}
-		buf, err = zecutil.PayToAddrScript(outputAddr)
+		buf, err = outputAddr.Script()
 		if err != nil {
 			return nil, nil, fmt.Errorf("fail to get pay to address script: %w", err)
 		}
-		nullDataScripts, err = MemoToScripts(tx.Memo, btctxscript.MaxDataCarrierSize, btctxscript.NullDataScript, zecutil.PayToPubKeyHashScript)
+		nullDataScripts, err = MemoToScripts(tx.Memo, btctxscript.MaxDataCarrierSize, btctxscript.NullDataScript, zcash.PayToPubKeyHashScript)
 		if err != nil {
 			return nil, nil, fmt.Errorf("fail to generate null data script: %w", err)
 		}
@@ -543,6 +605,53 @@ func (c *Client) buildTx(tx stypes.TxOutItem, sourceScript []byte) (*wire.MsgTx,
 		}
 	}
 
+	if c.cfg.ChainID == common.ZECChain {
+		consolidate := memo.GetType() == mem.TxConsolidate
+		target := tx.Coins.GetCoin(common.ZECAsset).Amount
+		if !tx.MaxGas.IsEmpty() {
+			target = target.Add(tx.MaxGas.ToCoins().GetCoin(common.ZECAsset).Amount)
+		}
+		if len(nullDataScripts) > 1 {
+			target = target.AddUint64(uint64(len(nullDataScripts)-1) * uint64(tx.Chain.P2WPKHOutputValue()))
+		}
+		if !target.BigInt().IsInt64() {
+			return nil, nil, fmt.Errorf("ZEC input target exceeds the supported amount range")
+		}
+		amount := btcutil.Amount(target.BigInt().Int64())
+		if !consolidate && tx.MaxGas.IsEmpty() {
+			txes, err = c.selectZecUtxos(tx.VaultPubKey, amount, zecReference, false, func(inputCount int) btcutil.Amount {
+				return zecFeeForInputCount(inputCount, memo.String())
+			})
+		} else {
+			txes, err = c.getZecUtxoToSpend(tx.VaultPubKey, amount, zecReference, consolidate)
+		}
+		if err != nil {
+			return nil, nil, fmt.Errorf("fail to get confirmed ZEC inputs: %w", err)
+		}
+	}
+
+	redeemTx := wire.NewMsgTx(wire.TxVersion)
+	totalAmt := int64(0)
+	individualAmounts := make(map[string]int64, len(txes))
+	for _, item := range txes {
+		var txID *chainhash.Hash
+		txID, err = chainhash.NewHashFromStr(item.TxID)
+		if err != nil {
+			return nil, nil, fmt.Errorf("fail to parse txID(%s): %w", item.TxID, err)
+		}
+		// double check that the utxo is still valid
+		outputPoint := wire.NewOutPoint(txID, item.Vout)
+		sourceTxIn := wire.NewTxIn(outputPoint, nil, nil)
+		redeemTx.AddTxIn(sourceTxIn)
+		var amt btcutil.Amount
+		amt, err = btcutil.NewAmount(item.Amount)
+		if err != nil {
+			return nil, nil, fmt.Errorf("fail to parse amount(%f): %w", item.Amount, err)
+		}
+		individualAmounts[formatUtxoKey(txID.String(), item.Vout)] = int64(amt)
+		totalAmt += int64(amt)
+	}
+
 	totalSize := c.estimateTxSize(txes, nullDataScripts, buf, sourceScript)
 
 	coinToCustomer := tx.Coins.GetCoin(c.cfg.ChainID.GetGasAsset())
@@ -555,10 +664,83 @@ func (c *Client) buildTx(tx stypes.TxOutItem, sourceScript []byte) (*wire.MsgTx,
 		gasCoin = c.getGasCoin(tx, totalSize)
 	}
 
-	// maxFee in sats
-	maxFeeSats := totalSize * c.cfg.UTXO.MaxSatsPerVByte
-	gasAmtSats := gasCoin.Amount.Uint64()
+	// Calculate the total cost of P2WPKH outputs for extended memos
+	p2wpkhOutputsCost := int64(0)
+	if len(nullDataScripts) > 1 {
+		// Each P2WPKH output (nullDataScripts[1:]) costs P2WPKHOutputValue()
+		p2wpkhOutputsCost = int64(len(nullDataScripts)-1) * tx.Chain.P2WPKHOutputValue()
+	}
 
+	var gasAmtSats, toCustomer uint64
+	var balance int64
+	if c.cfg.ChainID == common.ZECChain && tx.MaxGas.IsEmpty() && memo.GetType() != mem.TxConsolidate {
+		// There is no committed fee allowance. Use the same ZIP-317 fee as input
+		// selection; local relay policy can veto it but cannot change the digest.
+		gasAmtSats, toCustomer = gasCoin.Amount.Uint64(), coinToCustomer.Amount.Uint64()
+		balance = totalAmt - int64(toCustomer) - int64(gasAmtSats) - p2wpkhOutputsCost
+		changeScript := sourceScript
+		if balance == 0 {
+			changeScript = nil
+		}
+		maxFeeSats := c.maxFeeSats(txes, nullDataScripts, buf, changeScript)
+		if maxFeeSats < 0 || gasAmtSats > uint64(maxFeeSats) {
+			return nil, nil, fmt.Errorf("ZEC conventional fee %d exceeds configured cap %d", gasAmtSats, maxFeeSats)
+		}
+		if relay := c.minRelayFeeSats.Load(); gasAmtSats < relay {
+			return nil, nil, fmt.Errorf("ZEC conventional fee %d is below local relay minimum %d", gasAmtSats, relay)
+		}
+	} else {
+		settleFee := func(changeScript []byte) (gasAmtSats, toCustomer uint64, balance int64) {
+			gasAmtSats, toCustomer = c.applyFeeLimits(tx, memo, gasCoin.Amount.Uint64(), coinToCustomer.Amount.Uint64(),
+				c.maxFeeSats(txes, nullDataScripts, buf, changeScript))
+			return gasAmtSats, toCustomer, totalAmt - int64(toCustomer) - int64(gasAmtSats) - p2wpkhOutputsCost
+		}
+
+		// Cap the fee assuming a change output first. When no balance is left for change
+		// (e.g. a migration that sends everything), the signed transaction is smaller, so
+		// re-cap against the size without the change output to stay within the fee rate.
+		gasAmtSats, toCustomer, balance = settleFee(sourceScript)
+		if balance == 0 {
+			c.log.Info().Msg("no change output, capping fee against the transaction without change")
+			gasAmtSats, toCustomer, balance = settleFee(nil)
+		}
+	}
+
+	gasAmt := btcutil.Amount(gasAmtSats)
+	if err = c.temporalStorage.UpsertTransactionFee(gasAmt.ToBTC(), int32(totalSize)); err != nil {
+		c.log.Err(err).Msg("fail to save gas info to UTXO storage")
+	}
+
+	// pay to customer
+	redeemTxOut := wire.NewTxOut(int64(toCustomer), buf)
+	redeemTx.AddTxOut(redeemTxOut)
+
+	// balance to ourselves
+	// add output to pay the balance back ourselves
+	// Now properly account for P2WPKH outputs cost
+	c.log.Info().Msgf("total: %d, to customer: %d, gas: %d, p2wpkh_outputs_cost: %d", totalAmt, redeemTxOut.Value, int64(gasAmt), p2wpkhOutputsCost)
+	if balance < 0 {
+		return nil, nil, fmt.Errorf("not enough balance to pay customer: %d", balance)
+	}
+	if balance > 0 {
+		c.log.Info().Msgf("send %d back to self", balance)
+		redeemTx.AddTxOut(wire.NewTxOut(balance, sourceScript))
+	}
+
+	// memo
+	if len(tx.Memo) != 0 {
+		redeemTx.AddTxOut(wire.NewTxOut(0, nullDataScripts[0]))
+		for _, script := range nullDataScripts[1:] {
+			redeemTx.AddTxOut(wire.NewTxOut(tx.Chain.P2WPKHOutputValue(), script))
+		}
+	}
+
+	return redeemTx, individualAmounts, nil
+}
+
+// applyFeeLimits bounds the estimated gas by maxFeeSats, the min relay fee and the
+// outbound's MaxGas, and returns the gas and the amount to pay the customer.
+func (c *Client) applyFeeLimits(tx stypes.TxOutItem, memo mem.Memo, gasAmtSats, toCustomer uint64, maxFeeSats int64) (uint64, uint64) {
 	// make sure the transaction fee is not more than the max, otherwise it might reject the transaction
 	if gasAmtSats > uint64(maxFeeSats) {
 		diffSats := gasAmtSats - uint64(maxFeeSats) // in sats
@@ -583,52 +765,15 @@ func (c *Client) buildTx(tx stypes.TxOutItem, sourceScript []byte) (*wire.MsgTx,
 			// if the tx spend less gas then the estimated MaxGas , then the extra can be added to the coinToCustomer
 			gap := maxGasCoin.Amount.Uint64() - gasAmtSats
 			c.log.Info().Msgf("max gas is: %s, however only: %d is required, gap: %d goes to the vault migrated to", tx.MaxGas, gasAmtSats, gap)
-			coinToCustomer.Amount = coinToCustomer.Amount.Add(cosmos.NewUint(gap))
+			toCustomer += gap
 		}
 	} else if memo.GetType() == mem.TxConsolidate {
 		gap := gasAmtSats
 		c.log.Info().Msgf("consolidate tx, need gas: %d", gap)
-		coinToCustomer.Amount = common.SafeSub(coinToCustomer.Amount, cosmos.NewUint(gap))
+		toCustomer -= min(gap, toCustomer)
 	}
 
-	gasAmt := btcutil.Amount(gasAmtSats)
-	if err = c.temporalStorage.UpsertTransactionFee(gasAmt.ToBTC(), int32(totalSize)); err != nil {
-		c.log.Err(err).Msg("fail to save gas info to UTXO storage")
-	}
-
-	// pay to customer
-	redeemTxOut := wire.NewTxOut(int64(coinToCustomer.Amount.Uint64()), buf)
-	redeemTx.AddTxOut(redeemTxOut)
-
-	// Calculate the total cost of P2WPKH outputs for extended memos
-	p2wpkhOutputsCost := int64(0)
-	if len(nullDataScripts) > 1 {
-		// Each P2WPKH output (nullDataScripts[1:]) costs P2WPKHOutputValue()
-		p2wpkhOutputsCost = int64(len(nullDataScripts)-1) * tx.Chain.P2WPKHOutputValue()
-	}
-
-	// balance to ourselves
-	// add output to pay the balance back ourselves
-	// Now properly account for P2WPKH outputs cost
-	balance := totalAmt - redeemTxOut.Value - int64(gasAmt) - p2wpkhOutputsCost
-	c.log.Info().Msgf("total: %d, to customer: %d, gas: %d, p2wpkh_outputs_cost: %d", totalAmt, redeemTxOut.Value, int64(gasAmt), p2wpkhOutputsCost)
-	if balance < 0 {
-		return nil, nil, fmt.Errorf("not enough balance to pay customer: %d", balance)
-	}
-	if balance > 0 {
-		c.log.Info().Msgf("send %d back to self", balance)
-		redeemTx.AddTxOut(wire.NewTxOut(balance, sourceScript))
-	}
-
-	// memo
-	if len(tx.Memo) != 0 {
-		redeemTx.AddTxOut(wire.NewTxOut(0, nullDataScripts[0]))
-		for _, script := range nullDataScripts[1:] {
-			redeemTx.AddTxOut(wire.NewTxOut(tx.Chain.P2WPKHOutputValue(), script))
-		}
-	}
-
-	return redeemTx, individualAmounts, nil
+	return gasAmtSats, toCustomer
 }
 
 // MemoToScripts converts a memo to UTXO scripts.
@@ -703,6 +848,27 @@ func MemoToScripts(memo string, maxDataCarrierSize int, nullDataScript, payToCon
 // UTXO Consolidation
 ////////////////////////////////////////////////////////////////////////////////////////
 
+// consolidateKeysignBlockCadence is the spacing, in THORChain blocks, of the
+// shared boundaries that UTXO-consolidation keysigns anchor on (~5 min at
+// 6s/block). A consolidation signed anywhere within one cadence window hands
+// go-tss boundary×cadence as its signing height, so every vault member converges
+// on one leader and one keysign session instead of splitting across per-node
+// tips. Matches keepAliveThorBlockCadence used by the SOL keep-alive anchor.
+const consolidateKeysignBlockCadence = 50
+
+// anchorConsolidateHeight quantizes a raw THORChain tip to the shared cadence
+// boundary that every vault member converges on for a consolidation keysign. The
+// result is ≤ height (so it stays a valid signing_height the keysign-party query
+// accepts — future heights are rejected) and equal for any two tips in the same
+// cadence window. Below one cadence it returns the height unchanged so an early
+// chain cannot anchor to 0.
+func anchorConsolidateHeight(height int64) int64 {
+	if height < consolidateKeysignBlockCadence {
+		return height
+	}
+	return height / consolidateKeysignBlockCadence * consolidateKeysignBlockCadence
+}
+
 func (c *Client) consolidateVaultUTXOs(vault types.Vault, utxosToSpend, scannedHeight int64) error {
 	lock := c.GetVaultLock(vault.PubKey.String())
 
@@ -710,9 +876,27 @@ func (c *Client) consolidateVaultUTXOs(vault types.Vault, utxosToSpend, scannedH
 	lock.Lock()
 	defer lock.Unlock()
 
-	// Probe UTXO availability for consolidation.
-	// The amount used here doesn't matter , just to see whether there are more than 15 UTXO available or not
-	utxos, err := c.getUtxoToSpend(vault.PubKey, 0)
+	var height int64
+	var utxos []btcjson.ListUnspentResult
+	var err error
+	if c.GetChain() == common.ZECChain {
+		height, err = c.bridge.GetBlockHeight()
+		if err != nil {
+			return fmt.Errorf("get THORChain block height: %w", err)
+		}
+		height, err = c.getZecConsolidationHeight(scannedHeight, height, vault.BlockHeight)
+		if err != nil {
+			return fmt.Errorf("get ZEC consolidation signing height: %w", err)
+		}
+		expiry, expiryErr := c.getZecExpiryHeight(height)
+		if expiryErr != nil {
+			return fmt.Errorf("get ZEC consolidation expiry: %w", expiryErr)
+		}
+		utxos, err = c.getZecUtxoToSpend(vault.PubKey, 0, int64(expiry)-int64(ZecTxExpiry), true)
+	} else {
+		// Probe the existing consolidation input target on other UTXO chains.
+		utxos, err = c.getUtxoToSpend(vault.PubKey, 0)
+	}
 	if err != nil {
 		return fmt.Errorf("get utxos to spend: %w", err)
 	}
@@ -727,15 +911,22 @@ func (c *Client) consolidateVaultUTXOs(vault types.Vault, utxosToSpend, scannedH
 		return err
 	}
 
-	height, err := c.bridge.GetBlockHeight()
-	if err != nil {
-		return fmt.Errorf("get THORChain block height: %w", err)
-	}
-	if c.GetChain() == common.ZECChain {
-		height, err = c.getZecConsolidationHeight(scannedHeight, height, vault.BlockHeight)
+	if c.GetChain() != common.ZECChain {
+		height, err = c.bridge.GetBlockHeight()
 		if err != nil {
-			return fmt.Errorf("get ZEC consolidation signing height: %w", err)
+			return fmt.Errorf("get THORChain block height: %w", err)
 		}
+		// A consolidation is not a consensus txOut, so unlike a scheduled outbound
+		// it carries no agreed signing height — every vault member reads its own
+		// tip here, which differs by a few blocks across the fleet. The keysign
+		// leader is derived from this height (sha256(msgID‖height‖peer)) and go-tss
+		// batches keysign tasks by {algo, height}, so a per-node tip splits members
+		// across different leaders and keysign sessions: the consolidate
+		// leader-blame race that jails whichever node a sub-party elects. Anchoring
+		// to the shared cadence boundary gives every member the same, valid height,
+		// exactly the convergence a scheduled outbound gets from its consensus
+		// txOut.Height. (ZEC derives its height from the expiry window above.)
+		height = anchorConsolidateHeight(height)
 	}
 
 	rawTx, _, _, err := c.SignTx(txOutItem, height)

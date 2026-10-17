@@ -7,7 +7,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"math/big"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -55,8 +57,9 @@ var (
 	queryExport = func(_ sdk.Context, _ *Mgrs) ([]byte, error) {
 		return nil, fmt.Errorf("export query not supported")
 	}
-	tendermintClient   *tmhttp.HTTP
-	initTendermintOnce = sync.Once{}
+	tendermintClient    *tmhttp.HTTP
+	tendermintClientErr error
+	initTendermintOnce  = sync.Once{}
 )
 
 func initTendermint() {
@@ -68,7 +71,10 @@ func initTendermint() {
 	var err error
 	tendermintClient, err = tmhttp.New(fmt.Sprintf("tcp://localhost:%s", port), "/websocket")
 	if err != nil {
-		log.Fatal().Err(err).Msg("fail to create tendermint client")
+		// reachable from a query - return the error to the caller rather than
+		// taking the process down
+		tendermintClientErr = fmt.Errorf("fail to create tendermint client: %w", err)
+		log.Error().Err(err).Msg("fail to create tendermint client")
 	}
 }
 
@@ -110,7 +116,7 @@ func (qs queryServer) queryTHORName(ctx cosmos.Context, req *types.QueryThorname
 	}
 
 	affRune := cosmos.ZeroUint()
-	affCol, err := qs.mgr.Keeper().GetAffiliateCollector(ctx, name.Owner)
+	affCol, err := qs.mgr.Keeper().GetAffiliateCollector(ctx, name.Name)
 	if err == nil {
 		affRune = affCol.RuneAmount
 	}
@@ -489,6 +495,37 @@ func (qs queryServer) queryXMRSpentOutputRefs(ctx cosmos.Context, req *types.Que
 		return nil, fmt.Errorf("fail to get xmr spent refs for vault(%s),err:%w", pubkey, err)
 	}
 	return &types.QueryXMRSpentOutputRefsResponse{SpentOutputRefs: castOutputRefs(refs)}, nil
+}
+
+// querySolVaultNonce returns a Solana vault's committed durable nonce, or an empty
+// response when it has none. Bifrost reads it at the keysign height (?height=) so
+// every keysign party builds from the same value.
+func (qs queryServer) querySolVaultNonce(ctx cosmos.Context, req *types.QuerySolVaultNonceRequest) (*types.QuerySolVaultNonceResponse, error) {
+	if len(req.VaultPubKey) < 1 {
+		return nil, errors.New("missing vault_pub_key parameter")
+	}
+	pubkey, err := common.NewPubKey(req.VaultPubKey)
+	if err != nil {
+		return nil, fmt.Errorf("%s is invalid pubkey", req.VaultPubKey)
+	}
+	// Records are keyed by the vault's canonical pubkey; accept its EdDSA key too.
+	if vault, vErr := qs.mgr.Keeper().GetVault(ctx, pubkey); vErr == nil && !vault.PubKey.IsEmpty() {
+		pubkey = vault.PubKey
+	}
+	record, found, err := activeSolVaultNonce(ctx, qs.mgr.Keeper(), pubkey)
+	if err != nil {
+		return nil, fmt.Errorf("fail to get sol vault nonce for vault(%s),err:%w", pubkey, err)
+	}
+	if !found {
+		return &types.QuerySolVaultNonceResponse{}, nil
+	}
+	return &types.QuerySolVaultNonceResponse{
+		NonceAccount:  record.NonceAccount,
+		Nonce:         record.Nonce,
+		Slot:          record.Slot,
+		UpdatedHeight: record.UpdatedHeight,
+		SetByTx:       record.SetByTx.String(),
+	}, nil
 }
 
 func getVaultChainAddresses(ctx cosmos.Context, vault Vault) []*types.VaultAddress {
@@ -1102,8 +1139,10 @@ func (qs queryServer) queryNode(ctx cosmos.Context, req *types.QueryNodeRequest)
 		providers = make([]*types.NodeBondProvider, len(bp.Providers))
 		for i, p := range bp.Providers {
 			providers[i] = &types.NodeBondProvider{
-				BondAddress: p.BondAddress.String(),
-				Bond:        p.Bond.String(),
+				BondAddress:  p.BondAddress.String(),
+				Bond:         p.Bond.String(),
+				Bps:          p.Bps,
+				PayoutTarget: p.PayoutTarget,
 			}
 		}
 	}
@@ -1321,8 +1360,10 @@ func (qs queryServer) queryNodes(ctx cosmos.Context, _ *types.QueryNodesRequest)
 			providers = make([]*types.NodeBondProvider, len(bp.Providers))
 			for i := range bp.Providers {
 				providers[i] = &types.NodeBondProvider{
-					BondAddress: bp.Providers[i].BondAddress.String(),
-					Bond:        bp.Providers[i].Bond.String(),
+					BondAddress:  bp.Providers[i].BondAddress.String(),
+					Bond:         bp.Providers[i].Bond.String(),
+					Bps:          bp.Providers[i].Bps,
+					PayoutTarget: bp.Providers[i].PayoutTarget,
 				}
 			}
 		}
@@ -2380,12 +2421,7 @@ func (qs queryServer) queryStableReserve(ctx cosmos.Context, _ *types.QueryStabl
 		assets[asset.String()] = asset
 	}
 
-	keys := make([]string, 0, len(assets))
-	// analyze-ignore(map-iteration) - extracting keys to sort them immediately after
-	for key := range assets {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
+	keys := slices.Sorted(maps.Keys(assets))
 
 	inventory := make([]*types.QueryStableReserveInventory, 0, len(keys))
 	for _, key := range keys {
@@ -2462,7 +2498,7 @@ func (qs queryServer) queryStableReserveActiveSwaps(ctx cosmos.Context) []*types
 	appendActive(qs.mgr.Keeper().GetSwapQueueIterator(ctx))
 	appendActive(qs.mgr.Keeper().GetAdvSwapQueueItemIterator(ctx))
 
-	sort.Slice(active, func(i, j int) bool {
+	sort.SliceStable(active, func(i, j int) bool {
 		if active[i].Purpose != active[j].Purpose {
 			return active[i].Purpose < active[j].Purpose
 		}
@@ -2520,7 +2556,7 @@ func (qs queryServer) queryStableReserveContributor(ctx cosmos.Context, req *typ
 	}, nil
 }
 
-func extractVoter(ctx cosmos.Context, tx_id string, mgr *Mgrs) (common.TxID, ObservedTxVoter, error) {
+func extractVoter(ctx cosmos.Context, tx_id string, mgr *Mgrs, outbound bool) (common.TxID, ObservedTxVoter, error) {
 	if len(tx_id) == 0 {
 		return "", ObservedTxVoter{}, errors.New("tx id not provided")
 	}
@@ -2529,7 +2565,12 @@ func extractVoter(ctx cosmos.Context, tx_id string, mgr *Mgrs) (common.TxID, Obs
 		ctx.Logger().Error("fail to parse tx id", "error", err)
 		return "", ObservedTxVoter{}, fmt.Errorf("fail to parse tx id: %w", err)
 	}
-	voter, err := mgr.Keeper().GetObservedTxInVoter(ctx, hash)
+	var voter ObservedTxVoter
+	if outbound {
+		voter, err = mgr.Keeper().GetObservedTxOutVoter(ctx, hash)
+	} else {
+		voter, err = mgr.Keeper().GetObservedTxInVoter(ctx, hash)
+	}
 	if err != nil {
 		ctx.Logger().Error("fail to get observed tx voter", "error", err)
 		return "", ObservedTxVoter{}, fmt.Errorf("fail to get observed tx voter: %w", err)
@@ -2538,19 +2579,20 @@ func extractVoter(ctx cosmos.Context, tx_id string, mgr *Mgrs) (common.TxID, Obs
 }
 
 func (qs queryServer) queryTxVoters(ctx cosmos.Context, req *types.QueryTxVotersRequest) (*types.QueryObservedTxVoter, error) {
-	hash, voter, err := extractVoter(ctx, req.TxId, qs.mgr)
+	hash, voter, err := extractVoter(ctx, req.TxId, qs.mgr, req.Outbound)
 	if err != nil {
 		return nil, err
 	}
-	// when tx in voter doesn't exist , double check tx out voter
-	if len(voter.Txs) == 0 {
+	// Migrations can have both voters under one tx ID. Explicit outbound
+	// queries must never fall back to destination-side observation metadata.
+	if !req.Outbound && len(voter.Txs) == 0 {
 		voter, err = qs.mgr.Keeper().GetObservedTxOutVoter(ctx, hash)
 		if err != nil {
 			return nil, fmt.Errorf("fail to get observed tx out voter: %w", err)
 		}
-		if len(voter.Txs) == 0 {
-			return nil, fmt.Errorf("tx: %s doesn't exist", hash)
-		}
+	}
+	if len(voter.Txs) == 0 {
+		return nil, fmt.Errorf("tx: %s doesn't exist", hash)
 	}
 
 	var txs []types.QueryObservedTx
@@ -2779,7 +2821,7 @@ func newTxStagesResponse(ctx cosmos.Context, voter ObservedTxVoter, isSwap, isPe
 
 func (qs queryServer) queryTxStages(ctx cosmos.Context, req *types.QueryTxStagesRequest) (*types.QueryTxStagesResponse, error) {
 	// First, get the ObservedTxVoter of interest.
-	_, voter, err := extractVoter(ctx, req.TxId, qs.mgr)
+	_, voter, err := extractVoter(ctx, req.TxId, qs.mgr, false)
 	if err != nil {
 		return nil, err
 	}
@@ -2795,7 +2837,7 @@ func (qs queryServer) queryTxStages(ctx cosmos.Context, req *types.QueryTxStages
 
 func (qs queryServer) queryTxStatus(ctx cosmos.Context, req *types.QueryTxStatusRequest) (*types.QueryTxStatusResponse, error) {
 	// First, get the ObservedTxVoter of interest.
-	_, voter, err := extractVoter(ctx, req.TxId, qs.mgr)
+	_, voter, err := extractVoter(ctx, req.TxId, qs.mgr, false)
 	if err != nil {
 		return nil, err
 	}
@@ -2840,7 +2882,7 @@ func (qs queryServer) queryTxStatus(ctx cosmos.Context, req *types.QueryTxStatus
 }
 
 func (qs queryServer) queryTx(ctx cosmos.Context, req *types.QueryTxRequest) (*types.QueryTxResponse, error) {
-	hash, voter, err := extractVoter(ctx, req.TxId, qs.mgr)
+	hash, voter, err := extractVoter(ctx, req.TxId, qs.mgr, false)
 	if err != nil {
 		return nil, err
 	}
@@ -3138,25 +3180,22 @@ func (qs queryServer) queryConstantValues(_ cosmos.Context, _ *types.QueryConsta
 	cv := constAccessor.GetConstantValsByKeyname()
 
 	proto := types.QueryConstantValuesResponse{}
-	// analyze-ignore(map-iteration)
-	for k, v := range cv.Int64Values {
+	for _, k := range slices.Sorted(maps.Keys(cv.Int64Values)) {
 		proto.Int_64Values = append(proto.Int_64Values, &types.Int64Constants{
 			Name:  k,
-			Value: v,
+			Value: cv.Int64Values[k],
 		})
 	}
-	// analyze-ignore(map-iteration)
-	for k, v := range cv.BoolValues {
+	for _, k := range slices.Sorted(maps.Keys(cv.BoolValues)) {
 		proto.BoolValues = append(proto.BoolValues, &types.BoolConstants{
 			Name:  k,
-			Value: v,
+			Value: cv.BoolValues[k],
 		})
 	}
-	// analyze-ignore(map-iteration)
-	for k, v := range cv.StringValues {
+	for _, k := range slices.Sorted(maps.Keys(cv.StringValues)) {
 		proto.StringValues = append(proto.StringValues, &types.StringConstants{
 			Name:  k,
-			Value: v,
+			Value: cv.StringValues[k],
 		})
 	}
 
@@ -3851,6 +3890,9 @@ func (qs queryServer) queryInvariant(ctx cosmos.Context, req *types.QueryInvaria
 
 func (qs queryServer) queryBlock(ctx cosmos.Context, req *types.QueryBlockRequest) (*types.QueryBlockResponse, error) {
 	initTendermintOnce.Do(initTendermint)
+	if tendermintClientErr != nil {
+		return nil, tendermintClientErr
+	}
 	height := ctx.BlockHeight()
 	if parsed, err := strconv.ParseInt(req.Height, 10, 64); err == nil {
 		height = parsed
@@ -4013,6 +4055,7 @@ func castObservedTx(observedTx ObservedTx) types.QueryObservedTx {
 		AggregatorTargetLimit: observedTx.AggregatorTargetLimit,
 		SpentOutputRefs:       castOutputRefs(observedTx.SpentOutputRefs),
 		XmrTxKey:              observedTx.XmrTxKey,
+		XmrMinedHeight:        observedTx.XmrMinedHeight,
 	}
 }
 

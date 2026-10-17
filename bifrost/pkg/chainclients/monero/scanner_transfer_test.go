@@ -1,11 +1,14 @@
 package monero
 
 import (
+	"bytes"
+	"encoding/json"
 	"strings"
 	"testing"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/monero/sidecar"
 
+	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"go.uber.org/atomic"
 
@@ -339,5 +342,45 @@ func TestResolveOutgoingSenderRejectsSenderVaultMismatch(t *testing.T) {
 	})
 	if sender != "" || !pk.IsEmpty() {
 		t.Fatalf("expected sender/vault mismatch to fail closed, got sender=%q pk=%s", sender, pk.String())
+	}
+}
+
+// Reserved memos are rejected without proving vault origin, so the same policy
+// applies to external transfers while ordinary deposit instructions still pass.
+func TestIncomingXMRRejectsReservedOutboundMemosWithoutSenderProof(t *testing.T) {
+	vault, address := testVaultPubKeyAndAddress(t)
+	for _, memoText := range []string{"OUT:" + strings.Repeat("a", 64), "REFUND:" + strings.Repeat("b", 64), "RAGNAROK:42"} {
+		t.Run(memoText, func(t *testing.T) {
+			var logs bytes.Buffer
+			scanner := NewScanner(zerolog.New(&logs).Level(zerolog.InfoLevel), nil, nil, common.XMRChain, common.EmptyPubKey, 72)
+			scanner.asgardLookup = map[string]common.PubKey{address.String(): vault}
+			reservedTransfer := sidecar.Transfer{TxID: testXMRHash("external-reserved-memo"), Address: address.String(), VaultPubKey: vault.String(), Amount: 100000000, Height: 100, Note: memoText}
+			deposit := reservedTransfer
+			deposit.TxID = testXMRHash("ordinary-deposit")
+			deposit.Note = "SWAP:BTC.BTC:bc1qdeposit"
+			// Both transfers target a known vault, but neither has an outgoing record,
+			// spend proof or certificate establishing the sender's identity.
+			items, err := scanner.transfersToTxInItems(sidecar.Transfers{Incoming: []sidecar.Transfer{reservedTransfer, deposit}}, 100)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(items) != 1 || !strings.EqualFold(items[0].Tx, deposit.TxID) {
+				t.Fatalf("must reject reserved memo while retaining ordinary deposit: %#v", items)
+			}
+
+			var entry struct {
+				Level          string `json:"level"`
+				TxID           string `json:"txid"`
+				VaultPubKey    string `json:"vault_pub_key"`
+				AmountPiconero uint64 `json:"amount_piconero"`
+			}
+			if err = json.Unmarshal(logs.Bytes(), &entry); err != nil {
+				t.Fatalf("decode filtered-output log: %v", err)
+			}
+			if entry.Level != "info" || entry.TxID != reservedTransfer.TxID ||
+				entry.VaultPubKey != vault.String() || entry.AmountPiconero != reservedTransfer.Amount {
+				t.Fatalf("filtered-output log must identify the vault, transaction and atomic amount at Info: %+v", entry)
+			}
+		})
 	}
 }

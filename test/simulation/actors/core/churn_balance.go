@@ -136,7 +136,10 @@ func (a *ChurnBalanceActor) capturePreChurnBalance(config *OpConfig) OpResult {
 	return OpResult{Continue: true}
 }
 
-// triggerChurn initiates a vault rotation by clearing the HALTCHURNING mimir.
+// triggerChurn schedules a vault rotation and clears the HALTCHURNING mimir. A
+// preceding churn stage can leave CHURNINTERVAL far behind the current height,
+// so unhalting alone would wait for the next ChurnRetryInterval tick, past this
+// actor's timeout.
 func (a *ChurnBalanceActor) triggerChurn(config *OpConfig) OpResult {
 	node := config.NodeUsers[0]
 	if !node.Acquire() {
@@ -148,6 +151,11 @@ func (a *ChurnBalanceActor) triggerChurn(config *OpConfig) OpResult {
 	accAddr, err := node.PubKey(common.THORChain).GetThorAddress()
 	if err != nil {
 		a.Log().Error().Err(err).Msg("failed to get thor address")
+		return OpResult{Continue: false}
+	}
+
+	if _, err = ScheduleChurn(a.Log(), config); err != nil {
+		a.Log().Error().Err(err).Msg("failed to schedule churn")
 		return OpResult{Continue: false}
 	}
 

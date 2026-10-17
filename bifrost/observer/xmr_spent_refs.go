@@ -64,6 +64,7 @@ type plannedXMROutbound struct {
 	vaultPubKeyFrost common.PubKey
 	coins            common.Coins
 	memo             string
+	wireMemo         string
 	maxGas           common.Gas
 }
 
@@ -80,14 +81,14 @@ type plannedXMROutbound struct {
 // from a supermajority of the source vault's historical membership, not the
 // current active set: a retiring vault must remain able to certify its spend
 // after churn, while one member (including this node) must never get a bypass.
-func (s *AttestationGossip) shouldApplyXMRSpentRefsFromAttestations(obsTx common.ObservedTx, attestations []*common.Attestation) bool {
+func (s *AttestationGossip) shouldApplyXMRSpentRefsFromAttestations(obsTx common.ObservedTx, attestations []*common.Attestation) (string, bool) {
 	if len(attestations) == 0 {
-		return false
+		return "", false
 	}
 	// Avoid repeating the vault and plan RPCs after this outbound has already
 	// reserved an import or established authoritative sidecar bindings.
 	if s.hasPendingOrConfirmedXMRSpentRefs(obsTx) {
-		return false
+		return "", false
 	}
 	memberAttestations, membershipSize, ok := s.sourceVaultAttestationQuorum(obsTx.ObservedPubKey, attestations)
 	if !ok {
@@ -97,19 +98,20 @@ func (s *AttestationGossip) shouldApplyXMRSpentRefsFromAttestations(obsTx common
 			Int("source_vault_attestations", memberAttestations).
 			Int("source_vault_members", membershipSize).
 			Msg("skip peer xmr spent refs: source vault quorum not reached")
-		return false
+		return "", false
 	}
-	if !s.observedXMRMatchesPlannedOutbound(obsTx) {
+	wireMemo, ok := s.plannedXMRWireMemo(obsTx)
+	if !ok {
 		s.logger.Debug().
 			Str("tx_id", obsTx.Tx.ID.String()).
 			Str("memo", obsTx.Tx.Memo).
 			Msg("skip peer xmr spent refs: observed outbound does not match planned txout")
-		return false
+		return "", false
 	}
 	if !s.rememberAuthorizedXMRSpentRefs(obsTx) {
-		return false
+		return "", false
 	}
-	return true
+	return wireMemo, true
 }
 
 // hasPendingOrConfirmedXMRSpentRefs is the cheap guard in front of Thornode
@@ -310,18 +312,19 @@ func xmrSpentRefsIdentity(refs []common.OutputRef) string {
 	return strings.Join(ids, "|")
 }
 
-// observedXMRMatchesPlannedOutbound checks THORChain intent before importing
-// peer refs. This is the Bifrost-side counterpart to sidecar verification:
-// Bifrost proves the tx was scheduled by THORChain, while the sidecar proves the
+// plannedXMRWireMemo checks THORChain intent before importing peer refs and
+// returns the exact memo authorized for the Monero wire transaction. The
+// observation keeps THORChain's semantic memo, which may be an OriginalMemo
+// even when the planned wire memo is empty. The sidecar separately proves the
 // Monero spend really contains the claimed spent outputs.
-func (s *AttestationGossip) observedXMRMatchesPlannedOutbound(obsTx common.ObservedTx) bool {
+func (s *AttestationGossip) plannedXMRWireMemo(obsTx common.ObservedTx) (string, bool) {
 	if s.bridge == nil {
-		return false
+		return "", false
 	}
 	parsed, err := memo.ParseMemo(common.LatestVersion, obsTx.Tx.Memo)
 	if err != nil {
 		s.logger.Debug().Err(err).Str("memo", obsTx.Tx.Memo).Msg("skip peer xmr spent refs: cannot parse memo")
-		return false
+		return "", false
 	}
 
 	switch {
@@ -329,21 +332,21 @@ func (s *AttestationGossip) observedXMRMatchesPlannedOutbound(obsTx common.Obser
 		// Migration/ragnarok memos carry the keysign height. Load the whole
 		// public txout for that height because a newly churned-in validator may
 		// not have the old vault pubkey in its local signer-key list.
-		return s.observedXMRMatchesKeysignHeight(obsTx, parsed.GetBlockHeight())
+		return s.plannedXMRWireMemoAtKeysignHeight(obsTx, parsed.GetBlockHeight())
 	case parsed.IsType(memo.TxOutbound), parsed.IsType(memo.TxRefund):
 		// Regular outbounds/refunds are tied back to the inbound voter actions,
 		// which are THORChain's planned txouts for that inbound.
-		return s.observedXMRMatchesInboundVoterAction(obsTx, parsed.GetTxID())
+		return s.plannedXMRWireMemoFromInboundVoterAction(obsTx, parsed.GetTxID())
 	default:
-		return false
+		return "", false
 	}
 }
 
-// observedXMRMatchesKeysignHeight matches a migration/ragnarok observation
+// plannedXMRWireMemoAtKeysignHeight matches a migration/ragnarok observation
 // against one of the planned txouts in the keysign block referenced by the memo.
-func (s *AttestationGossip) observedXMRMatchesKeysignHeight(obsTx common.ObservedTx, height int64) bool {
+func (s *AttestationGossip) plannedXMRWireMemoAtKeysignHeight(obsTx common.ObservedTx, height int64) (string, bool) {
 	if height <= 0 {
-		return false
+		return "", false
 	}
 	// Empty pubkey selects /thorchain/keysign/{height}. This is intentionally
 	// broader than /thorchain/keysign/{height}/{pubkey} so validators outside
@@ -351,37 +354,38 @@ func (s *AttestationGossip) observedXMRMatchesKeysignHeight(obsTx common.Observe
 	txOut, err := s.bridge.GetKeysign(height, "")
 	if err != nil {
 		s.logger.Debug().Err(err).Int64("height", height).Msg("skip peer xmr spent refs: cannot load keysign block")
-		return false
+		return "", false
 	}
 	for _, item := range txOut.TxArray {
 		planned := plannedXMROutboundFromThorclient(item.TxOutItem(txOut.Height))
 		if xmrObservedTxMatchesPlanned(obsTx, planned) {
-			return true
+			return planned.wireMemo, true
 		}
 	}
-	return false
+	return "", false
 }
 
-// observedXMRMatchesInboundVoterAction matches non-migration XMR outbounds
+// plannedXMRWireMemoFromInboundVoterAction matches non-migration XMR outbounds
 // against the actions recorded on the inbound observed-tx voter.
-func (s *AttestationGossip) observedXMRMatchesInboundVoterAction(obsTx common.ObservedTx, inboundID common.TxID) bool {
+func (s *AttestationGossip) plannedXMRWireMemoFromInboundVoterAction(obsTx common.ObservedTx, inboundID common.TxID) (string, bool) {
 	if inboundID.IsEmpty() {
-		return false
+		return "", false
 	}
 	voter, err := s.bridge.GetObservedTxVoter(inboundID.String())
 	if err != nil {
 		s.logger.Debug().Err(err).Str("inbound_id", inboundID.String()).Msg("skip peer xmr spent refs: cannot load observed tx voter")
-		return false
+		return "", false
 	}
 	if voter == nil {
-		return false
+		return "", false
 	}
 	for _, item := range voter.GetActions() {
-		if xmrObservedTxMatchesPlanned(obsTx, plannedXMROutboundFromThorchain(item)) {
-			return true
+		planned := plannedXMROutboundFromThorchain(item)
+		if xmrObservedTxMatchesPlanned(obsTx, planned) {
+			return planned.wireMemo, true
 		}
 	}
-	return false
+	return "", false
 }
 
 // plannedXMROutboundFromThorclient normalizes the bifrost thorclient txout
@@ -394,6 +398,7 @@ func plannedXMROutboundFromThorclient(item tctypes.TxOutItem) plannedXMROutbound
 		vaultPubKeyFrost: item.VaultPubKeyFrost,
 		coins:            item.Coins,
 		memo:             item.GetMemo(),
+		wireMemo:         tctypes.XMRWireMemo(item.Memo, item.OriginalMemo),
 		maxGas:           item.MaxGas,
 	}
 }
@@ -408,6 +413,7 @@ func plannedXMROutboundFromThorchain(item thortypes.TxOutItem) plannedXMROutboun
 		vaultPubKeyFrost: item.VaultPubKeyFrost,
 		coins:            common.NewCoins(item.Coin),
 		memo:             item.GetMemo(),
+		wireMemo:         tctypes.XMRWireMemo(item.Memo, item.OriginalMemo),
 		maxGas:           item.MaxGas,
 	}
 }

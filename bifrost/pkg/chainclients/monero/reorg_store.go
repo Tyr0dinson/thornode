@@ -45,8 +45,8 @@ type reorgBlockMeta struct {
 	ProvenanceComplete      bool     `json:"provenance_complete,omitempty"`
 }
 
-// scannerCatchupMarker is written before a registration-triggered historical
-// scan advances the sidecar. StartHeight is advanced only in the same synced
+// scannerCatchupMarker is written before registration or churn recovery
+// mutates the sidecar. StartHeight is advanced only in the same synced
 // LevelDB batch which checkpoints that height's observation receipt and reorg
 // journal entry. Receipts from earlier chunks remain until Observer fsyncs the
 // complete mixed-height TxIn.
@@ -55,6 +55,10 @@ type scannerCatchupMarker struct {
 	TargetHeight int64  `json:"target_height"`
 	AnchorHeight int64  `json:"anchor_height"`
 	AnchorHash   string `json:"anchor_hash"`
+	// ChurnRollback preserves the recovery's rewind allowance across restarts
+	// and lets a later Bifrost request extend it without skipping unfinished work.
+	// Older and registration-only markers keep their existing recovery policy.
+	ChurnRollback bool `json:"churn_rollback,omitempty"`
 }
 
 func (m scannerCatchupMarker) valid() bool {
@@ -69,7 +73,8 @@ func (m scannerCatchupMarker) completed() bool {
 
 func (m scannerCatchupMarker) equal(other scannerCatchupMarker) bool {
 	return m.StartHeight == other.StartHeight && m.TargetHeight == other.TargetHeight &&
-		m.AnchorHeight == other.AnchorHeight && strings.EqualFold(m.AnchorHash, other.AnchorHash)
+		m.AnchorHeight == other.AnchorHeight && strings.EqualFold(m.AnchorHash, other.AnchorHash) &&
+		m.ChurnRollback == other.ChurnRollback
 }
 
 type scannerObservationReceipt struct {
@@ -136,6 +141,30 @@ type ReorgStore struct {
 
 func NewReorgStore(db *leveldb.DB) *ReorgStore {
 	return &ReorgStore{db: db}
+}
+
+// LatestHeight returns the highest retained journal height, or -1 if empty.
+// Journal keys are not zero-padded, so compare their numeric heights.
+func (s *ReorgStore) LatestHeight() (int64, error) {
+	if s == nil || s.db == nil {
+		return -1, nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	latest := int64(-1)
+	iter := s.db.NewIterator(util.BytesPrefix([]byte(reorgBlockMetaPrefix)), nil)
+	defer iter.Release()
+	for iter.Next() {
+		height, err := strconv.ParseInt(strings.TrimPrefix(string(iter.Key()), reorgBlockMetaPrefix), 10, 64)
+		if err != nil || height < 0 {
+			return -1, fmt.Errorf("invalid xmr reorg journal key %q", iter.Key())
+		}
+		latest = max(latest, height)
+	}
+	if err := iter.Error(); err != nil {
+		return -1, fmt.Errorf("find latest xmr reorg journal height: %w", err)
+	}
+	return latest, nil
 }
 
 func (s *ReorgStore) Get(height int64) (*reorgBlockMeta, error) {
@@ -318,6 +347,84 @@ func (s *ReorgStore) putScannerObservationReceipt(
 	return nil
 }
 
+// PutAuthenticatedObservation atomically binds a late source observation to
+// its canonical journal, including old heights whose entries were pruned.
+// The caller holds scanMu so canonical scanning cannot race the binding.
+func (s *ReorgStore) PutAuthenticatedObservation(meta *reorgBlockMeta, item *stypes.TxInItem) error {
+	if item == nil {
+		return errors.New("authenticated xmr observation requires durable storage")
+	}
+	return s.putAuthenticatedOutbound(meta, item.Tx, item)
+}
+
+// PutAuthenticatedOutbound binds accounting-only evidence to the reorg
+// journal without creating or acknowledging any observation receipt.
+// The caller holds scanMu and has independently authenticated the spend.
+func (s *ReorgStore) PutAuthenticatedOutbound(meta *reorgBlockMeta, txID string) error {
+	return s.putAuthenticatedOutbound(meta, txID, nil)
+}
+
+func (s *ReorgStore) putAuthenticatedOutbound(meta *reorgBlockMeta, txID string, item *stypes.TxInItem) error {
+	if s == nil || s.db == nil || meta == nil || normalizeTxID(txID) == "" {
+		return errors.New("authenticated xmr outbound requires durable storage")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	reverted, err := s.IsRevertedTx(txID)
+	if err != nil {
+		return err
+	}
+	if reverted {
+		return errors.New("authenticated xmr observation is permanently reverted")
+	}
+	existing, err := s.Get(meta.Height)
+	if err != nil {
+		return err
+	}
+	if existing != nil {
+		if !strings.EqualFold(existing.BlockHash, meta.BlockHash) || !strings.EqualFold(existing.PreviousHash, meta.PreviousHash) {
+			return errors.New("authenticated xmr observation conflicts with canonical journal")
+		}
+		meta = existing
+	}
+	id := normalizeTxID(txID)
+	if !slices.ContainsFunc(meta.CustomerTransactions, func(tx string) bool { return normalizeTxID(tx) == id }) {
+		meta.CustomerTransactions = append(meta.CustomerTransactions, id)
+	}
+	addVaultOriginToMeta(meta, id)
+	value, err := json.Marshal(meta)
+	if err != nil {
+		return err
+	}
+	batch := new(leveldb.Batch)
+	if item != nil {
+		if err = s.putScannerObservationReceipt(batch, meta, []*stypes.TxInItem{item}); err != nil {
+			return err
+		}
+	}
+	batch.Put([]byte(reorgBlockMetaKey(meta.Height)), value)
+	// A relocation watch may predate the authenticated provenance. Upgrade it
+	// in the same commit so a crash cannot later classify this spend as a deposit.
+	watchKey := []byte(scannerRelocationWatchPrefix + id)
+	watchValue, watchErr := s.db.Get(watchKey, nil)
+	switch {
+	case watchErr == nil:
+		var watch scannerRelocationWatch
+		if err = json.Unmarshal(watchValue, &watch); err != nil || !watch.valid() {
+			return errors.New("existing xmr scanner relocation watch is malformed")
+		}
+		watch.VaultOrigin = true
+		watchValue, err = json.Marshal(watch)
+		if err != nil {
+			return err
+		}
+		batch.Put(watchKey, watchValue)
+	case !errors.Is(watchErr, leveldb.ErrNotFound):
+		return watchErr
+	}
+	return s.db.Write(batch, syncScannerWrite)
+}
+
 // PutObservationReceipt fsyncs sidecar observations before the scanner can
 // commit a journal which would otherwise make them unreplayable after a crash.
 func (s *ReorgStore) PutObservationReceipt(meta *reorgBlockMeta, items []*stypes.TxInItem) error {
@@ -390,9 +497,37 @@ func (s *ReorgStore) CheckpointCatchup(next scannerCatchupMarker, meta *reorgBlo
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err := validateReorgBlockMeta(meta); err != nil {
+		return err
+	}
 	if !next.valid() || next.AnchorHeight != meta.Height || next.StartHeight != meta.Height+1 ||
 		!strings.EqualFold(next.AnchorHash, meta.BlockHash) {
 		return fmt.Errorf("invalid xmr scanner catch-up checkpoint at height %d", meta.Height)
+	}
+	existing, err := s.Get(meta.Height)
+	if err != nil {
+		return err
+	}
+	if existing != nil {
+		if err = validateReorgBlockMeta(existing); err != nil {
+			return err
+		}
+		if existing.Height != meta.Height {
+			return fmt.Errorf("xmr reorg journal height mismatch at height %d", meta.Height)
+		}
+		if strings.EqualFold(existing.BlockHash, meta.BlockHash) {
+			if !strings.EqualFold(existing.PreviousHash, meta.PreviousHash) {
+				return fmt.Errorf("xmr reorg journal parent mismatch at height %d", meta.Height)
+			}
+			// Registration catch-up returns only the newly enrolled vault's delta.
+			// Preserve all prior evidence for this block, including on empty retries.
+			merged := *meta
+			merged.CustomerTransactions = mergeReorgJournalTxIDs(existing.CustomerTransactions, meta.CustomerTransactions)
+			merged.VaultOriginTransactions = mergeReorgJournalTxIDs(existing.VaultOriginTransactions, meta.VaultOriginTransactions)
+			// A partial delta cannot establish the provenance of older entries.
+			merged.ProvenanceComplete = existing.ProvenanceComplete && meta.ProvenanceComplete
+			meta = &merged
+		}
 	}
 	markerValue, err := json.Marshal(next)
 	if err != nil {
@@ -412,6 +547,16 @@ func (s *ReorgStore) CheckpointCatchup(next scannerCatchupMarker, meta *reorgBlo
 		return fmt.Errorf("checkpoint xmr scanner catch-up at height %d: %w", meta.Height, err)
 	}
 	return nil
+}
+
+// mergeReorgJournalTxIDs unions already-validated normalized IDs without
+// modifying either input. Sorted unique IDs make retries byte-stable.
+func mergeReorgJournalTxIDs(existing, incoming []string) []string {
+	merged := make([]string, 0, len(existing)+len(incoming))
+	merged = append(merged, existing...)
+	merged = append(merged, incoming...)
+	slices.Sort(merged)
+	return slices.Compact(merged)
 }
 
 func (s *ReorgStore) ListObservationReceipts() ([]scannerObservationReceiptClaim, error) {

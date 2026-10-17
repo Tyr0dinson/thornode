@@ -5,6 +5,7 @@ import (
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/common/tcysmartcontract"
 	"gitlab.com/thorchain/thornode/v3/constants"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
@@ -49,10 +50,27 @@ func (h TCYUnstakeHandler) validate(ctx cosmos.Context, msg MsgTCYUnstake) error
 	if unstakingHalt > 0 {
 		return fmt.Errorf("tcy unstaking is halt")
 	}
+
+	// A TCY smart contract address is not a module backed staker: GetTCYStaker
+	// synthesises its stake from the TCY in the contract's own account, none of which
+	// was ever deposited into the TCYStake module, and SetTCYStaker/DeleteTCYStaker keep
+	// no record to decrement afterwards. Unstaking would pay out other stakers' funds.
+	if tcysmartcontract.IsTCYSmartContractAddress(msg.Tx.FromAddress) {
+		return fmt.Errorf("cannot unstake from TCY smart contract address: %s", msg.Tx.FromAddress)
+	}
+
 	return nil
 }
 
 func (h TCYUnstakeHandler) handle(ctx cosmos.Context, msg MsgTCYUnstake) (*cosmos.Result, error) {
+	// Backstop for the fund moving half of the path: validate() rejects these addresses
+	// first, but handle() must not depend on that. GetTCYStaker below synthesises a
+	// stake from the contract's own TCY balance, and the payout would come out of the
+	// TCYStake module, which holds only the regular stakers' deposits.
+	if tcysmartcontract.IsTCYSmartContractAddress(msg.Tx.FromAddress) {
+		return &cosmos.Result{}, fmt.Errorf("cannot unstake from TCY smart contract address: %s", msg.Tx.FromAddress)
+	}
+
 	staker, err := h.mgr.Keeper().GetTCYStaker(ctx, msg.Tx.FromAddress)
 	if err != nil {
 		return &cosmos.Result{}, err

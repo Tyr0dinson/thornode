@@ -1,16 +1,13 @@
 # EVM Chain Clients
 
-THORChain supports a variety of EVM-compatible chains including Ethereum, BNB Chain, Avalanche, Arbitrum, Optimism, and Base. These clients share a common implementation that handles observation, signing, broadcasting, nonce management, and gas tracking.
+THORChain supports several EVM-compatible chains: Ethereum, Avalanche, BNB Chain (BSC), Base, and Polygon (POL). There are two EVM client implementations:
+
+- **Ethereum** has a dedicated client at `/bifrost/pkg/chainclients/ethereum/ethereum.go` with custom logic for gas estimation, smart contract detection, and dynamic confirmation counting.
+- **Other EVM chains** (AVAX, BSC, BASE, POL) use the shared generic client at `/bifrost/pkg/chainclients/evm/client.go`.
 
 ## Shared Architecture
 
-All EVM clients reuse a shared implementation located at:
-
-```text
-/bifrost/pkg/chainclients/evm/client.go
-```
-
-This core logic includes:
+The shared EVM client (`evm/client.go`) provides:
 
 - ABI-based decoding of inbound Router events
 - EIP-55 address formatting
@@ -18,7 +15,7 @@ This core logic includes:
 - Router interaction for ERC-20 deposits
 - Mempool scanning and reorg detection
 
-Each EVM chain (e.g. ETH, BSC, AVAX, BASE) wraps this logic with its own chain ID, router address, gas asset, and fee tuning in its own subdirectory (e.g. `ethereum/`, `bsc/`).
+Shared utilities used by both the Ethereum and generic EVM clients live in `bifrost/pkg/chainclients/shared/evm/`, including the `KeySignWrapper` (TSS-to-EVM signature formatting), `TokenManager`, `SmartContractLogParser`, and `BlockMetaAccessor`.
 
 ## Router Design
 
@@ -50,11 +47,23 @@ See:
 
 EVM transactions require **delayed finality** due to frequent re-orgs. THORChain uses dynamic confirmation logic.
 
-### EVM Specifics
+### Ethereum
 
-- Confirmation count is based on token value converted to ETH
+- Ethereum uses dynamic confirmation counting based on transaction value, similar to UTXO chains
 - Pool pricing from THORChain is used to estimate value
-- Finality is typically reached at `MAXCONFIRMATIONS-ETH = 14`
+- Maximum confirmations are governed by `MAXCONFIRMATIONS-ETH` in Mimir
+- Minimum of 2 confirmations enforced (PoS)
+
+### Other EVM Chains
+
+The generic EVM client uses hard-coded confirmation counts per chain:
+
+| Chain     | Confirmations | Reason                            |
+| --------- | ------------- | --------------------------------- |
+| Avalanche | 0             | Instant finality                  |
+| BSC       | 3             | ~2.5 blocks required for finality |
+| Base      | 12            | ~2 Ethereum blocks for L1 parity  |
+| Polygon   | 15            | Finality threshold                |
 
 See [Finality & Confirmation Counting](../bifrost/how-bifrost-works.md#finality--pre-confirmation).
 

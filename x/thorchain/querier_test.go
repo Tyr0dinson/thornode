@@ -831,6 +831,29 @@ func (s *QuerierSuite) TestQueryConstantValues(c *C) {
 	queryConstantValResp, err := s.queryServer.ConstantValues(s.ctx, &types.QueryConstantValuesRequest{})
 	c.Assert(queryConstantValResp, NotNil)
 	c.Assert(err, IsNil)
+	c.Assert(sort.SliceIsSorted(queryConstantValResp.Int_64Values, func(i, j int) bool {
+		return queryConstantValResp.Int_64Values[i].Name < queryConstantValResp.Int_64Values[j].Name
+	}), Equals, true)
+	c.Assert(sort.SliceIsSorted(queryConstantValResp.BoolValues, func(i, j int) bool {
+		return queryConstantValResp.BoolValues[i].Name < queryConstantValResp.BoolValues[j].Name
+	}), Equals, true)
+	c.Assert(sort.SliceIsSorted(queryConstantValResp.StringValues, func(i, j int) bool {
+		return queryConstantValResp.StringValues[i].Name < queryConstantValResp.StringValues[j].Name
+	}), Equals, true)
+
+	cv := s.mgr.GetConstants().GetConstantValsByKeyname()
+	c.Assert(queryConstantValResp.Int_64Values, HasLen, len(cv.Int64Values))
+	c.Assert(queryConstantValResp.BoolValues, HasLen, len(cv.BoolValues))
+	c.Assert(queryConstantValResp.StringValues, HasLen, len(cv.StringValues))
+	for _, kv := range queryConstantValResp.Int_64Values {
+		c.Assert(kv.Value, Equals, cv.Int64Values[kv.Name])
+	}
+	for _, kv := range queryConstantValResp.BoolValues {
+		c.Assert(kv.Value, Equals, cv.BoolValues[kv.Name])
+	}
+	for _, kv := range queryConstantValResp.StringValues {
+		c.Assert(kv.Value, Equals, cv.StringValues[kv.Name])
+	}
 
 	_, err = queryConstantValResp.MarshalJSONPB(nil)
 	c.Assert(err, IsNil)
@@ -2251,13 +2274,12 @@ func (s *QuerierSuite) TestQuerySwap(c *C) {
 	c.Assert(queryPoolsResp.Memo, Equals, "")
 
 	longDest := "43hSSzguniAQWhHnwk1rcYH51z2thnf6AVfNaMwg9t99S78LtMrjrKdJZCnLTnFVzS9hQNjVXdJi3hUxMwmPrPDkRY3YMUb"
-	longRefund := "46QDeeLcyrEGkn7NyaJCsD3NJbDgjJk1BXiopzvU6aejK5g6JTU2K5uJZCnLTnFVzS9hQNjVXdJi3hUxMwmPrPDkRXBN2hK"
 	queryPoolsResp, err = s.queryServer.QuoteSwap(s.ctx, &types.QueryQuoteSwapRequest{
 		FromAsset:         common.BTCAsset.String(),
 		ToAsset:           common.XMRAsset.String(),
 		Amount:            "100000000",
 		Destination:       longDest,
-		RefundAddress:     longRefund,
+		RefundAddress:     addressBTC,
 		Affiliate:         GetRandomTHORAddress().String() + "/" + GetRandomTHORAddress().String() + "/" + GetRandomTHORAddress().String(),
 		AffiliateBps:      "10/10/10",
 		StreamingInterval: "2",

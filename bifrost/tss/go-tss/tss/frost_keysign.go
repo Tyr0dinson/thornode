@@ -24,8 +24,10 @@ import (
 )
 
 const (
-	frostWireProtocolVersion     = messages.FrostProtocolVersion
-	frostMsgIDDomain             = "thorchain-frost-keysign-msgid-v6"
+	frostWireProtocolVersion = messages.FrostProtocolVersion
+	// Batch-only and single-echo builds must derive different join IDs so they
+	// cannot discover their wire incompatibility after releasing partial shares.
+	frostMsgIDDomain             = "thorchain-frost-keysign-msgid-v7"
 	frostDecoyContextDomain      = "thorchain-frost-decoy-context-v1"
 	frostPlanHashDomain          = "thorchain-frost-eventuality-plan-v2"
 	frostEventualityIDDomain     = "thorchain-frost-eventuality-id-v2"
@@ -47,19 +49,165 @@ const (
 
 var errFrostResultTimeout = errors.New("timeout waiting for frost result")
 
+// frostSignInbox keeps phase skew from turning into message loss. Payloads and
+// terminal results remain on bounded per-topic channels until their consumer;
+// future verification entries move to bounded round state without being
+// semantically applied before their tagged phase.
+type frostSignInbox struct {
+	preprocess chan *p2p.Message
+	share      chan *p2p.Message
+	verify     chan *p2p.Message
+	result     chan *p2p.Message
+}
+
+// frostSignSubscription is the total topic-to-inbox setup table for one
+// keysign session. Registration, peer narrowing, and cancellation all derive
+// from this table so no switch can panic or silently omit a topic.
+type frostSignSubscription struct {
+	msgType         messages.THORChainTSSMessageType
+	messageChan     chan *p2p.Message
+	narrowAfterJoin bool
+}
+
+func newFrostSignInbox() *frostSignInbox {
+	return &frostSignInbox{
+		preprocess: make(chan *p2p.Message, p2p.FrostSessionQueueSize),
+		share:      make(chan *p2p.Message, p2p.FrostSessionQueueSize),
+		verify:     make(chan *p2p.Message, p2p.FrostSessionQueueSize),
+		result:     make(chan *p2p.Message, p2p.FrostSessionQueueSize),
+	}
+}
+
+func (i *frostSignInbox) subscriptions() []frostSignSubscription {
+	return []frostSignSubscription{
+		{msgType: messages.TSSFrostPreprocessMsg, messageChan: i.preprocess, narrowAfterJoin: true},
+		{msgType: messages.TSSFrostShareMsg, messageChan: i.share, narrowAfterJoin: true},
+		{msgType: messages.TSSFrostVerifyMsg, messageChan: i.verify, narrowAfterJoin: true},
+		{msgType: messages.TSSFrostResultMsg, messageChan: i.result},
+	}
+}
+
+func (i *frostSignInbox) messageChannel(msgType messages.THORChainTSSMessageType) (chan *p2p.Message, bool) {
+	if i == nil {
+		return nil, false
+	}
+	for _, subscription := range i.subscriptions() {
+		if subscription.msgType == msgType {
+			return subscription.messageChan, true
+		}
+	}
+	return nil, false
+}
+
+func frostSignRoundOrder(round string) int {
+	switch strings.TrimSpace(round) {
+	case frostRoundPreprocess:
+		return 1
+	case frostRoundShare:
+		return 2
+	default:
+		return 0
+	}
+}
+
+type frostDeferredVerification struct {
+	msgPeer peer.ID
+	payload FrostVerifyPayload
+}
+
+type frostSignRoundState struct {
+	activePeers           map[peer.ID]struct{}
+	verifiers             map[string]*frostTranscriptVerifier
+	deferredVerifications map[string][]frostDeferredVerification
+}
+
+func newFrostSignRoundState(
+	activeSet *activeSignerSet,
+	participantIndexMap map[string]uint32,
+	vaultPubKey string,
+	network string,
+) (*frostSignRoundState, error) {
+	if activeSet == nil {
+		return nil, fmt.Errorf("active signer set is empty")
+	}
+	state := &frostSignRoundState{
+		activePeers:           make(map[peer.ID]struct{}, len(activeSet.originalByNormalized)),
+		verifiers:             make(map[string]*frostTranscriptVerifier, 2),
+		deferredVerifications: make(map[string][]frostDeferredVerification, 1),
+	}
+	// Subscription narrowing cannot remove already queued frames. Retain the
+	// active peer set to reject those frames before decoding or phase routing.
+	for _, pubKey := range activeSet.originalByNormalized {
+		id, err := conversion.GetPeerIDFromPubKey(pubKey)
+		if err != nil {
+			return nil, fmt.Errorf("active signer peer: %w", err)
+		}
+		state.activePeers[id] = struct{}{}
+	}
+	for _, round := range []string{frostRoundPreprocess, frostRoundShare} {
+		verifier, err := newFrostTranscriptVerifier(round, activeSet, participantIndexMap, vaultPubKey, network)
+		if err != nil {
+			return nil, fmt.Errorf("initialize %s transcript verifier: %w", round, err)
+		}
+		state.verifiers[round] = verifier
+	}
+	return state, nil
+}
+
+func (s *frostSignRoundState) verifier(round string) (*frostTranscriptVerifier, error) {
+	if s == nil {
+		return nil, fmt.Errorf("FROST keysign round state is not initialized")
+	}
+	verifier := s.verifiers[round]
+	if verifier == nil {
+		return nil, fmt.Errorf("unsupported FROST keysign round %q", round)
+	}
+	return verifier, nil
+}
+
+func (s *frostSignRoundState) deferVerification(
+	round string,
+	msgPeer peer.ID,
+	payload FrostVerifyPayload,
+) error {
+	if _, err := s.verifier(round); err != nil {
+		return err
+	}
+	if s.deferredVerifications == nil {
+		s.deferredVerifications = make(map[string][]frostDeferredVerification, 1)
+	}
+	s.deferredVerifications[round] = append(
+		s.deferredVerifications[round],
+		frostDeferredVerification{msgPeer: msgPeer, payload: payload},
+	)
+	return nil
+}
+
+func (s *frostSignRoundState) takeDeferredVerifications(round string) ([]frostDeferredVerification, error) {
+	if _, err := s.verifier(round); err != nil {
+		return nil, err
+	}
+	deferred := s.deferredVerifications[round]
+	delete(s.deferredVerifications, round)
+	return deferred, nil
+}
+
 type FrostSignCoordinator struct {
-	logger           zerolog.Logger
-	p2pCommunication *p2p.Communication
-	sidecar          FrostSidecarClient
-	localPubKey      string
-	msgID            string
-	vaultPubKey      string
-	network          string
-	expectedPlanHash string
-	msgChan          chan *p2p.Message
-	timeout          time.Duration
-	privateKey       tcrypto.PrivKey
-	strictTranscript bool
+	logger                    zerolog.Logger
+	p2pCommunication          *p2p.Communication
+	sidecar                   FrostSidecarClient
+	localPubKey               string
+	msgID                     string
+	vaultPubKey               string
+	network                   string
+	expectedPlanHash          string
+	inbox                     *frostSignInbox
+	roundState                *frostSignRoundState
+	verificationEntriesByPeer map[peer.ID]uint32
+	verificationEntryLimit    uint32
+	timeout                   time.Duration
+	privateKey                tcrypto.PrivKey
+	strictTranscript          bool
 }
 
 func NewFrostSignCoordinator(
@@ -68,25 +216,189 @@ func NewFrostSignCoordinator(
 	localPubKey string,
 	msgID string,
 	expectedPlanHash string,
-	msgChan chan *p2p.Message,
+	inbox *frostSignInbox,
 	timeout time.Duration,
 	privateKey tcrypto.PrivKey,
 ) *FrostSignCoordinator {
 	if timeout <= 0 {
 		timeout = 90 * time.Second
 	}
-	return &FrostSignCoordinator{
-		logger:           log.With().Str("module", "frost_keysign").Str("msg_id", msgID).Logger(),
-		p2pCommunication: comm,
-		sidecar:          sidecar,
-		localPubKey:      strings.TrimSpace(localPubKey),
-		msgID:            strings.TrimSpace(msgID),
-		expectedPlanHash: strings.TrimSpace(expectedPlanHash),
-		msgChan:          msgChan,
-		timeout:          timeout,
-		privateKey:       privateKey,
-		strictTranscript: privateKey != nil,
+	if inbox == nil {
+		inbox = newFrostSignInbox()
 	}
+	return &FrostSignCoordinator{
+		logger:                    log.With().Str("module", "frost_keysign").Str("msg_id", msgID).Logger(),
+		p2pCommunication:          comm,
+		sidecar:                   sidecar,
+		localPubKey:               strings.TrimSpace(localPubKey),
+		msgID:                     strings.TrimSpace(msgID),
+		expectedPlanHash:          strings.TrimSpace(expectedPlanHash),
+		inbox:                     inbox,
+		verificationEntriesByPeer: make(map[peer.ID]uint32),
+		timeout:                   timeout,
+		privateKey:                privateKey,
+		strictTranscript:          privateKey != nil,
+	}
+}
+
+func (c *FrostSignCoordinator) routeVerificationMessage(
+	msg *p2p.Message,
+	currentRound string,
+) *FrostKeySignResponse {
+	if msg == nil || c.roundState == nil {
+		return nil
+	}
+	if _, active := c.roundState.activePeers[msg.PeerID]; !active {
+		return nil
+	}
+	wrapped, ok := parseWrappedMessage(msg.Payload)
+	if !ok || wrapped.MessageType != messages.TSSFrostVerifyMsg || strings.TrimSpace(wrapped.MsgID) != c.msgID {
+		return nil
+	}
+	entries, err := decodeFrostVerificationBatch(wrapped.Payload)
+	if err != nil {
+		c.logger.Warn().Err(err).Str("peer", msg.PeerID.String()).Msg("ignoring invalid FROST verification batch")
+		return nil
+	}
+	for i := range entries {
+		if err := c.reserveVerificationEntry(msg.PeerID); err != nil {
+			c.logger.Warn().Err(err).Str("peer", msg.PeerID.String()).Msg("ignoring excess FROST verification entries")
+			return nil
+		}
+		if response := c.routeVerificationPayload(msg.PeerID, currentRound, entries[i]); response != nil {
+			return response
+		}
+	}
+	return nil
+}
+
+func (c *FrostSignCoordinator) routeVerificationPayload(
+	msgPeer peer.ID,
+	currentRound string,
+	incoming FrostVerifyPayload,
+) *FrostKeySignResponse {
+	incomingOrder := frostSignRoundOrder(incoming.Round)
+	currentOrder := frostSignRoundOrder(currentRound)
+	if incomingOrder == 0 || currentOrder == 0 || incomingOrder < currentOrder {
+		return nil
+	}
+	incomingRound := strings.TrimSpace(incoming.Round)
+	if incomingOrder > currentOrder {
+		// The libp2p peer is authenticated and this logical entry is charged on
+		// receipt. Binding the claimed sender to that peer, plus transcript
+		// signatures, membership, and equivocation, are phase semantics. Deferring
+		// them prevents an early share echo from changing preprocess state.
+		if err := c.roundState.deferVerification(incomingRound, msgPeer, incoming); err != nil {
+			response := c.failForPubKeys(err.Error(), currentRound, nil)
+			return &response
+		}
+		return nil
+	}
+	verifier, err := c.roundState.verifier(incomingRound)
+	if err != nil {
+		response := c.failForPubKeys(err.Error(), currentRound, nil)
+		return &response
+	}
+	return c.applyVerification(msgPeer, incomingRound, incoming, verifier)
+}
+
+func (c *FrostSignCoordinator) activateDeferredVerifications(round string) *FrostKeySignResponse {
+	deferred, err := c.roundState.takeDeferredVerifications(round)
+	if err != nil {
+		response := c.failForPubKeys(err.Error(), round, nil)
+		return &response
+	}
+	verifier, err := c.roundState.verifier(round)
+	if err != nil {
+		response := c.failForPubKeys(err.Error(), round, nil)
+		return &response
+	}
+	for _, incoming := range deferred {
+		if response := c.applyVerification(incoming.msgPeer, round, incoming.payload, verifier); response != nil {
+			return response
+		}
+	}
+	return nil
+}
+
+func (c *FrostSignCoordinator) drainQueuedVerifications(round string) *FrostKeySignResponse {
+	if c == nil || c.inbox == nil || c.inbox.verify == nil {
+		return nil
+	}
+	for {
+		select {
+		case msg, ok := <-c.inbox.verify:
+			if !ok {
+				return nil
+			}
+			if response := c.routeVerificationMessage(msg, round); response != nil {
+				return response
+			}
+		default:
+			return nil
+		}
+	}
+}
+
+func (c *FrostSignCoordinator) reserveVerificationEntry(msgPeer peer.ID) error {
+	// Charge decoded entries before phase routing. Otherwise a peer could move
+	// unbounded work out of the transport queue merely by tagging it as future.
+	limit := c.verificationEntryLimit
+	if limit == 0 {
+		limit = p2p.FrostMaxMessagesPerPeer
+	}
+	if c.verificationEntriesByPeer == nil {
+		c.verificationEntriesByPeer = make(map[peer.ID]uint32)
+	}
+	if c.verificationEntriesByPeer[msgPeer] >= limit {
+		return fmt.Errorf("transcript verification entry limit exceeded")
+	}
+	c.verificationEntriesByPeer[msgPeer]++
+	return nil
+}
+
+// applyVerification validates each keysign batch entry with signed-envelope
+// and equivocation checks. Keygen uses separate whole-round transcript votes.
+func (c *FrostSignCoordinator) applyVerification(
+	msgPeer peer.ID,
+	round string,
+	incoming FrostVerifyPayload,
+	verifier *frostTranscriptVerifier,
+) *FrostKeySignResponse {
+	attesterNorm := normalizePubKey(incoming.SenderPubKey)
+	if attesterNorm == "" {
+		return nil
+	}
+	if _, ok := verifier.activeSet.originalByNormalized[attesterNorm]; !ok {
+		return nil
+	}
+	if err := c.validateSenderPeerBinding(msgPeer, incoming.SenderPubKey); err != nil {
+		return nil
+	}
+	if c.strictTranscript {
+		echo := frostEchoFromVerify(c.msgID, c.vaultPubKey, c.network, incoming)
+		if err := verifyFrostSignedEcho(echo); err != nil {
+			c.logger.Warn().Err(err).Str("peer", msgPeer.String()).Str("round", round).Msg("ignoring invalid signed FROST echo")
+			return nil
+		}
+		evidence, err := verifier.recordSignedEnvelope(echo.Target)
+		if err != nil {
+			return nil
+		}
+		if evidence != nil {
+			response := c.failForEquivocation(*evidence)
+			return &response
+		}
+	}
+	if _, failure := verifier.recordVerification(
+		incoming.SenderPubKey,
+		incoming.TargetSenderPubKey,
+		incoming.TargetParticipantIndex,
+		incoming.PayloadHash,
+	); failure != nil {
+		c.logger.Warn().Err(failure).Str("peer", msgPeer.String()).Str("round", round).Msg("ignoring invalid FROST verification")
+	}
+	return nil
 }
 
 func FrostKeySignMsgID(req FrostKeySignRequest) (string, error) {
@@ -720,19 +1032,29 @@ func (t *TssServer) FrostKeySign(req FrostKeySignRequest, sidecar FrostSidecarCl
 	if err != nil {
 		return FrostKeySignResponse{}, fmt.Errorf("fail to resolve FROST session peers: %w", err)
 	}
-	msgChan := make(chan *p2p.Message, p2p.FrostSessionQueueSize)
+	inbox := newFrostSignInbox()
+	subscriptions := inbox.subscriptions()
 	sigChan := make(chan string, 2)
 	verificationMessageLimit := p2p.FrostVerificationMessagesPerPeer(len(activeSignerPubKeys), 2)
 
-	t.p2pCommunication.SetSubscribeWithPeers(messages.TSSFrostPreprocessMsg, msgID, msgChan, allowedPeerIDs, p2p.FrostMaxSessionPayload, p2p.FrostMaxMessagesPerPeer)
-	t.p2pCommunication.SetSubscribeWithPeers(messages.TSSFrostShareMsg, msgID, msgChan, allowedPeerIDs, p2p.FrostMaxSessionPayload, p2p.FrostMaxMessagesPerPeer)
-	t.p2pCommunication.SetSubscribeWithPeers(messages.TSSFrostVerifyMsg, msgID, msgChan, allowedPeerIDs, p2p.FrostMaxSessionPayload, verificationMessageLimit)
-	t.p2pCommunication.SetSubscribeWithPeers(messages.TSSFrostResultMsg, msgID, msgChan, allowedPeerIDs, p2p.FrostMaxSessionPayload, p2p.FrostMaxMessagesPerPeer)
+	for _, subscription := range subscriptions {
+		messageLimit := p2p.FrostMaxMessagesPerPeer
+		if subscription.msgType == messages.TSSFrostVerifyMsg {
+			messageLimit = verificationMessageLimit
+		}
+		t.p2pCommunication.SetSubscribeWithPeers(
+			subscription.msgType,
+			msgID,
+			subscription.messageChan,
+			allowedPeerIDs,
+			p2p.FrostMaxSessionPayload,
+			messageLimit,
+		)
+	}
 	defer func() {
-		t.p2pCommunication.CancelSubscribe(messages.TSSFrostPreprocessMsg, msgID)
-		t.p2pCommunication.CancelSubscribe(messages.TSSFrostShareMsg, msgID)
-		t.p2pCommunication.CancelSubscribe(messages.TSSFrostVerifyMsg, msgID)
-		t.p2pCommunication.CancelSubscribe(messages.TSSFrostResultMsg, msgID)
+		for _, subscription := range subscriptions {
+			t.p2pCommunication.CancelSubscribe(subscription.msgType, msgID)
+		}
 		t.p2pCommunication.ReleaseStream(msgID)
 		t.partyCoordinator.ReleaseStream(msgID)
 		close(sigChan)
@@ -744,10 +1066,13 @@ func (t *TssServer) FrostKeySign(req FrostKeySignRequest, sidecar FrostSidecarCl
 		t.localNodePubKey,
 		msgID,
 		planHash,
-		msgChan,
+		inbox,
 		t.conf.KeySignTimeout,
 		t.privateKey,
 	)
+	// Batching preserves the logical echo count. Charge each decoded entry;
+	// the subscription's same count remains a looser ceiling on whole frames.
+	coordinator.verificationEntryLimit = verificationMessageLimit
 
 	// Nodes outside the filtered active set must not join the FROST ceremony,
 	// but they can still import a quorum-verified result broadcast by signers.
@@ -801,9 +1126,19 @@ func (t *TssServer) FrostKeySign(req FrostKeySignRequest, sidecar FrostSidecarCl
 	// the authenticated join response forms a smaller party, narrow all round
 	// traffic to that exact set. Result gossip stays on the eligible set so
 	// stand-by members can adopt a quorum result.
-	t.p2pCommunication.UpdateSubscribePeers(messages.TSSFrostPreprocessMsg, msgID, onlinePeers)
-	t.p2pCommunication.UpdateSubscribePeers(messages.TSSFrostShareMsg, msgID, onlinePeers)
-	t.p2pCommunication.UpdateSubscribePeers(messages.TSSFrostVerifyMsg, msgID, onlinePeers)
+	for _, subscription := range subscriptions {
+		if !subscription.narrowAfterJoin {
+			continue
+		}
+		if !t.p2pCommunication.NarrowSubscribePeers(subscription.msgType, msgID, onlinePeers) {
+			reason := fmt.Sprintf("failed to narrow FROST keysign %s subscription", subscription.msgType)
+			t.logger.Error().Str("msg_id", msgID).Str("message_type", subscription.msgType.String()).Msg(reason)
+			return FrostKeySignResponse{
+				Status: tcommon.Fail,
+				Blame:  blame.NewBlame(reason, nil),
+			}, nil
+		}
+	}
 	allPeerIDs, peerErr := conversion.GetPeerIDsFromPubKeys(req.SignerPubKeys)
 	if peerErr != nil {
 		t.logger.Warn().Err(peerErr).Msg("fail to resolve all peer IDs for frost result broadcast, fallback to active peers")
@@ -886,19 +1221,18 @@ func shouldAdoptFrostFailureResult(local, candidate FrostKeySignResponse) bool {
 	if candidate.Status != tcommon.Fail || len(candidate.Blame.BlameNodes) == 0 || len(local.Blame.BlameNodes) > 0 {
 		return false
 	}
-	// Once the local signature share has escaped, never replace that terminal
+	// Once the local signature share may have escaped, never replace that terminal
 	// state with a failure attributed to an earlier or non-terminal phase. A
 	// terminal-phase quorum failure is safe to adopt because it preserves the
 	// same vault-stick/checkpoint semantics while adding actionable peer blame.
 	return !isFrostExposureRound(local.Blame.Round) || isFrostExposureRound(candidate.Blame.Round)
 }
 
-// isFrostExposureRound reports whether a FROST blame round sits past the point
-// where the local signature share has been broadcast. exchangeShares emits the
-// local share before it can report a frost_share failure, and frost_result is
-// strictly later in the ceremony, so both rounds must retain the terminal
-// vault-stick semantics. frost_preprocess is not an exposure round — no
-// signature share has escaped yet.
+// isFrostExposureRound reports whether a FROST blame round must retain the
+// signing claim after the partial-sign RPC begins. FrostSignPartial runs before
+// exchangeShares, so frost_share failures remain past the exposure boundary even
+// when retained evidence prevents local-share broadcast. frost_result is later
+// in the ceremony; frost_preprocess precedes the partial-sign RPC.
 func isFrostExposureRound(round string) bool {
 	switch strings.TrimSpace(round) {
 	case frostRoundShare, frostRoundResult:
@@ -1005,6 +1339,18 @@ func (c *FrostSignCoordinator) Execute(
 		return FrostKeySignResponse{
 			Status: tcommon.Fail,
 			Blame:  blame.NewBlame("local signer is not in active signer set", nil),
+		}
+	}
+	c.roundState, err = newFrostSignRoundState(
+		activeSet,
+		participantIndexMap,
+		c.vaultPubKey,
+		c.network,
+	)
+	if err != nil {
+		return FrostKeySignResponse{
+			Status: tcommon.Fail,
+			Blame:  blame.NewBlame(fmt.Sprintf("failed to initialize FROST keysign transcript state: %v", err), nil),
 		}
 	}
 	decoyContext, err := FrostDecoyContext(c.msgID)
@@ -1131,7 +1477,13 @@ func (c *FrostSignCoordinator) exchangePreprocess(
 	participantIndexMap map[string]uint32,
 	activePeerIDs []peer.ID,
 	local FrostPreprocessPayload,
-) (map[string]string, *FrostKeySignResponse) {
+) (values map[string]string, failure *FrostKeySignResponse) {
+	verifier, verifierErr := c.roundState.verifier(frostRoundPreprocess)
+	if verifierErr != nil {
+		resp := c.failForPubKeys(verifierErr.Error(), frostRoundPreprocess, nil)
+		return nil, &resp
+	}
+	activePeers := c.roundState.activePeers
 	localHash, err := FrostTranscriptPreprocessHash(c.msgID, local)
 	if err != nil {
 		resp := c.failForPubKeys(fmt.Sprintf("failed to hash local preprocess payload: %v", err), frostRoundPreprocess, nil)
@@ -1162,11 +1514,6 @@ func (c *FrostSignCoordinator) exchangePreprocess(
 		}
 		return nil, &resp
 	}
-	verifier, err := newFrostTranscriptVerifier(frostRoundPreprocess, activeSet, participantIndexMap, c.vaultPubKey, c.network)
-	if err != nil {
-		resp := c.failForPubKeys(fmt.Sprintf("failed to initialize preprocess transcript verifier: %v", err), messages.FROSTKEYSIGNPREPROCESS, nil)
-		return nil, &resp
-	}
 	if _, failure := verifier.recordPayload(local.SenderPubKey, local.ParticipantIndex, localHash); failure != nil {
 		resp := c.failForPubKeys(failure.reason, messages.FROSTKEYSIGNPREPROCESS, failure.blamePubKey)
 		return nil, &resp
@@ -1177,7 +1524,15 @@ func (c *FrostSignCoordinator) exchangePreprocess(
 			return nil, &resp
 		}
 	}
-	if err := c.broadcastSignedTranscriptVerification(localEnvelope, activePeerIDs); err != nil {
+	verificationBatch := newFrostVerificationBatcher(frostRoundPreprocess, c.localPubKey, len(activeSet.originalByNormalized))
+	defer func() {
+		if err := c.flushTranscriptVerifications(verificationBatch, activePeerIDs); err != nil && failure == nil {
+			values = nil
+			response := c.failForPubKeys(fmt.Sprintf("failed to broadcast preprocess verification: %v", err), frostRoundPreprocess, nil)
+			failure = &response
+		}
+	}()
+	if err := c.queueSignedTranscriptVerification(verificationBatch, localEnvelope, activePeerIDs); err != nil {
 		resp := c.failForPubKeys(fmt.Sprintf("failed to broadcast preprocess verification: %v", err), frostRoundPreprocess, nil)
 		return nil, &resp
 	}
@@ -1186,15 +1541,24 @@ func (c *FrostSignCoordinator) exchangePreprocess(
 		return nil, &resp
 	}
 
-	values := map[string]string{
+	values = map[string]string{
 		strconv.FormatUint(uint64(local.ParticipantIndex), 10): local.PreprocessHex,
 	}
 	timer := time.NewTimer(c.timeout)
 	defer timer.Stop()
+	flushTicker := time.NewTicker(frostVerificationBatchInterval)
+	defer flushTicker.Stop()
 
 	for !verifier.isComplete() {
 		select {
-		case msg := <-c.msgChan:
+		case msg := <-c.inbox.preprocess:
+			if msg == nil {
+				continue
+			}
+			// Narrowing leaves queued frames from removed peers; discard them before parsing.
+			if _, active := activePeers[msg.PeerID]; !active {
+				continue
+			}
 			wrapped, ok := parseWrappedMessage(msg.Payload)
 			if !ok {
 				continue
@@ -1253,7 +1617,7 @@ func (c *FrostSignCoordinator) exchangePreprocess(
 					continue
 				}
 				values[strconv.FormatUint(uint64(incoming.ParticipantIndex), 10)] = incoming.PreprocessHex
-				if err := c.broadcastSignedTranscriptVerification(incomingEnvelope, activePeerIDs); err != nil {
+				if err := c.queueSignedTranscriptVerification(verificationBatch, incomingEnvelope, activePeerIDs); err != nil {
 					resp := c.failForPubKeys(fmt.Sprintf("failed to broadcast preprocess verification: %v", err), frostRoundPreprocess, nil)
 					return nil, &resp
 				}
@@ -1261,46 +1625,15 @@ func (c *FrostSignCoordinator) exchangePreprocess(
 					resp := c.failForPubKeys(failure.reason, messages.FROSTKEYSIGNPREPROCESS, failure.blamePubKey)
 					return nil, &resp
 				}
-			case messages.TSSFrostVerifyMsg:
-				var incoming FrostVerifyPayload
-				if err := json.Unmarshal(wrapped.Payload, &incoming); err != nil {
-					continue
-				}
-				if strings.TrimSpace(incoming.Round) != messages.FROSTKEYSIGNPREPROCESS {
-					continue
-				}
-				attesterNorm := normalizePubKey(incoming.SenderPubKey)
-				if attesterNorm == "" {
-					continue
-				}
-				if _, ok := activeSet.originalByNormalized[attesterNorm]; !ok {
-					continue
-				}
-				if err := c.validateSenderPeerBinding(msg.PeerID, incoming.SenderPubKey); err != nil {
-					continue
-				}
-				if c.strictTranscript {
-					echo := frostEchoFromVerify(c.msgID, c.vaultPubKey, c.network, incoming)
-					if err := verifyFrostSignedEcho(echo); err != nil {
-						c.logger.Warn().Err(err).Str("peer", msg.PeerID.String()).Msg("ignoring invalid signed preprocess echo")
-						continue
-					}
-					if evidence, err := verifier.recordSignedEnvelope(echo.Target); err != nil {
-						continue
-					} else if evidence != nil {
-						resp := c.failForEquivocation(*evidence)
-						return nil, &resp
-					}
-				}
-				if _, failure := verifier.recordVerification(
-					incoming.SenderPubKey,
-					incoming.TargetSenderPubKey,
-					incoming.TargetParticipantIndex,
-					incoming.PayloadHash,
-				); failure != nil {
-					c.logger.Warn().Err(failure).Str("peer", msg.PeerID.String()).Msg("ignoring invalid preprocess verification")
-					continue
-				}
+			}
+		case msg := <-c.inbox.verify:
+			if response := c.routeVerificationMessage(msg, frostRoundPreprocess); response != nil {
+				return nil, response
+			}
+		case <-flushTicker.C:
+			if err := c.flushTranscriptVerifications(verificationBatch, activePeerIDs); err != nil {
+				resp := c.failForPubKeys(fmt.Sprintf("failed to broadcast preprocess verification: %v", err), frostRoundPreprocess, nil)
+				return nil, &resp
 			}
 		case <-timer.C:
 			missingPayloads := verifier.missingPayloadPubKeys()
@@ -1322,7 +1655,23 @@ func (c *FrostSignCoordinator) exchangeShares(
 	participantIndexMap map[string]uint32,
 	activePeerIDs []peer.ID,
 	local FrostSharePayload,
-) (map[string]string, *FrostKeySignResponse) {
+) (values map[string]string, failure *FrostKeySignResponse) {
+	verifier, verifierErr := c.roundState.verifier(frostRoundShare)
+	if verifierErr != nil {
+		resp := c.failForPubKeys(verifierErr.Error(), frostRoundShare, nil)
+		return nil, &resp
+	}
+	// FrostSignPartial has already run, so the signing claim is sticky. Apply
+	// every retained or already-queued share echo at the share boundary before
+	// constructing the local envelope; portable equivocation must terminate the
+	// ceremony without letting another local share escape.
+	if response := c.activateDeferredVerifications(frostRoundShare); response != nil {
+		return nil, response
+	}
+	if response := c.drainQueuedVerifications(frostRoundShare); response != nil {
+		return nil, response
+	}
+	activePeers := c.roundState.activePeers
 	localHash, err := FrostTranscriptShareHash(c.msgID, local)
 	if err != nil {
 		resp := c.failForPubKeys(fmt.Sprintf("failed to hash local share payload: %v", err), frostRoundShare, nil)
@@ -1353,11 +1702,6 @@ func (c *FrostSignCoordinator) exchangeShares(
 		}
 		return nil, &resp
 	}
-	verifier, err := newFrostTranscriptVerifier(frostRoundShare, activeSet, participantIndexMap, c.vaultPubKey, c.network)
-	if err != nil {
-		resp := c.failForPubKeys(fmt.Sprintf("failed to initialize share transcript verifier: %v", err), messages.FROSTKEYSIGNSHARE, nil)
-		return nil, &resp
-	}
 	if _, failure := verifier.recordPayload(local.SenderPubKey, local.ParticipantIndex, localHash); failure != nil {
 		resp := c.failForPubKeys(failure.reason, messages.FROSTKEYSIGNSHARE, failure.blamePubKey)
 		return nil, &resp
@@ -1368,7 +1712,15 @@ func (c *FrostSignCoordinator) exchangeShares(
 			return nil, &resp
 		}
 	}
-	if err := c.broadcastSignedTranscriptVerification(localEnvelope, activePeerIDs); err != nil {
+	verificationBatch := newFrostVerificationBatcher(frostRoundShare, c.localPubKey, len(activeSet.originalByNormalized))
+	defer func() {
+		if err := c.flushTranscriptVerifications(verificationBatch, activePeerIDs); err != nil && failure == nil {
+			values = nil
+			response := c.failForPubKeys(fmt.Sprintf("failed to broadcast share verification: %v", err), frostRoundShare, nil)
+			failure = &response
+		}
+	}()
+	if err := c.queueSignedTranscriptVerification(verificationBatch, localEnvelope, activePeerIDs); err != nil {
 		resp := c.failForPubKeys(fmt.Sprintf("failed to broadcast share verification: %v", err), frostRoundShare, nil)
 		return nil, &resp
 	}
@@ -1377,15 +1729,24 @@ func (c *FrostSignCoordinator) exchangeShares(
 		return nil, &resp
 	}
 
-	values := map[string]string{
+	values = map[string]string{
 		strconv.FormatUint(uint64(local.ParticipantIndex), 10): local.ShareHex,
 	}
 	timer := time.NewTimer(c.timeout)
 	defer timer.Stop()
+	flushTicker := time.NewTicker(frostVerificationBatchInterval)
+	defer flushTicker.Stop()
 
 	for !verifier.isComplete() {
 		select {
-		case msg := <-c.msgChan:
+		case msg := <-c.inbox.share:
+			if msg == nil {
+				continue
+			}
+			// Narrowing leaves queued frames from removed peers; discard them before parsing.
+			if _, active := activePeers[msg.PeerID]; !active {
+				continue
+			}
 			wrapped, ok := parseWrappedMessage(msg.Payload)
 			if !ok {
 				continue
@@ -1442,7 +1803,7 @@ func (c *FrostSignCoordinator) exchangeShares(
 					continue
 				}
 				values[strconv.FormatUint(uint64(incoming.ParticipantIndex), 10)] = incoming.ShareHex
-				if err := c.broadcastSignedTranscriptVerification(incomingEnvelope, activePeerIDs); err != nil {
+				if err := c.queueSignedTranscriptVerification(verificationBatch, incomingEnvelope, activePeerIDs); err != nil {
 					resp := c.failForPubKeys(fmt.Sprintf("failed to broadcast share verification: %v", err), frostRoundShare, nil)
 					return nil, &resp
 				}
@@ -1450,46 +1811,15 @@ func (c *FrostSignCoordinator) exchangeShares(
 					resp := c.failForPubKeys(failure.reason, messages.FROSTKEYSIGNSHARE, failure.blamePubKey)
 					return nil, &resp
 				}
-			case messages.TSSFrostVerifyMsg:
-				var incoming FrostVerifyPayload
-				if err := json.Unmarshal(wrapped.Payload, &incoming); err != nil {
-					continue
-				}
-				if strings.TrimSpace(incoming.Round) != messages.FROSTKEYSIGNSHARE {
-					continue
-				}
-				attesterNorm := normalizePubKey(incoming.SenderPubKey)
-				if attesterNorm == "" {
-					continue
-				}
-				if _, ok := activeSet.originalByNormalized[attesterNorm]; !ok {
-					continue
-				}
-				if err := c.validateSenderPeerBinding(msg.PeerID, incoming.SenderPubKey); err != nil {
-					continue
-				}
-				if c.strictTranscript {
-					echo := frostEchoFromVerify(c.msgID, c.vaultPubKey, c.network, incoming)
-					if err := verifyFrostSignedEcho(echo); err != nil {
-						c.logger.Warn().Err(err).Str("peer", msg.PeerID.String()).Msg("ignoring invalid signed share echo")
-						continue
-					}
-					if evidence, err := verifier.recordSignedEnvelope(echo.Target); err != nil {
-						continue
-					} else if evidence != nil {
-						resp := c.failForEquivocation(*evidence)
-						return nil, &resp
-					}
-				}
-				if _, failure := verifier.recordVerification(
-					incoming.SenderPubKey,
-					incoming.TargetSenderPubKey,
-					incoming.TargetParticipantIndex,
-					incoming.PayloadHash,
-				); failure != nil {
-					c.logger.Warn().Err(failure).Str("peer", msg.PeerID.String()).Msg("ignoring invalid share verification")
-					continue
-				}
+			}
+		case msg := <-c.inbox.verify:
+			if response := c.routeVerificationMessage(msg, frostRoundShare); response != nil {
+				return nil, response
+			}
+		case <-flushTicker.C:
+			if err := c.flushTranscriptVerifications(verificationBatch, activePeerIDs); err != nil {
+				resp := c.failForPubKeys(fmt.Sprintf("failed to broadcast share verification: %v", err), frostRoundShare, nil)
+				return nil, &resp
 			}
 		case <-timer.C:
 			missingPayloads := verifier.missingPayloadPubKeys()
@@ -1532,6 +1862,15 @@ func (c *FrostSignCoordinator) WaitForResult(activeParticipants []string, quorum
 		timeout = c.timeout
 	}
 
+	// Votes count only from active signers bound to their peer, so frames
+	// from any other peer are dropped before parsing. After narrowing, the
+	// result queue can still hold large frames from removed peers.
+	activePeers := make(map[peer.ID]struct{}, len(activeByNormalized))
+	for _, pubKey := range activeByNormalized {
+		if id, idErr := conversion.GetPeerIDFromPubKey(pubKey); idErr == nil {
+			activePeers[id] = struct{}{}
+		}
+	}
 	buckets := make(map[string]*resultVoteBucket, len(activeByNormalized))
 	malformedBuckets := make(map[string]*malformedResultVoteBucket, len(activeByNormalized))
 	senderVotes := make(map[string]senderResultVote, len(activeByNormalized))
@@ -1540,7 +1879,14 @@ func (c *FrostSignCoordinator) WaitForResult(activeParticipants []string, quorum
 	defer timer.Stop()
 	for {
 		select {
-		case msg := <-c.msgChan:
+		case msg := <-c.inbox.result:
+			if msg == nil {
+				continue
+			}
+			// Narrowing leaves queued frames from removed peers; discard them before parsing.
+			if _, active := activePeers[msg.PeerID]; !active {
+				continue
+			}
 			wrapped, ok := parseWrappedMessage(msg.Payload)
 			if !ok || wrapped.MessageType != messages.TSSFrostResultMsg {
 				continue
@@ -1649,6 +1995,13 @@ func (c *FrostSignCoordinator) WaitForResult(activeParticipants []string, quorum
 			if len(bucket.voters) >= quorum {
 				return bucket.response, nil
 			}
+		// The caller never resumes keysign phases after entering this waiter: an
+		// active signer has a terminal local outcome, while an observer never ran
+		// them. Keep consuming their dedicated queues because bounded delivery on
+		// a full queue would otherwise park stream handlers until result timeout.
+		case <-c.inbox.preprocess:
+		case <-c.inbox.share:
+		case <-c.inbox.verify:
 		case <-timer.C:
 			return FrostKeySignResponse{}, errFrostResultTimeout
 		}
@@ -1689,59 +2042,70 @@ func (c *FrostSignCoordinator) broadcast(msgType messages.THORChainTSSMessageTyp
 	return nil
 }
 
-func (c *FrostSignCoordinator) broadcastTranscriptVerification(
-	round string,
-	targetSenderPubKey string,
-	targetParticipantIndex uint32,
-	payloadHash string,
-	peers []peer.ID,
-) error {
-	payload := FrostVerifyPayload{
-		SenderPubKey:           c.localPubKey,
-		Round:                  round,
-		TargetSenderPubKey:     targetSenderPubKey,
-		TargetParticipantIndex: targetParticipantIndex,
-		PayloadHash:            payloadHash,
-	}
-	buf, err := json.Marshal(payload)
-	if err != nil {
-		return fmt.Errorf("failed to marshal transcript verification payload: %w", err)
-	}
-	return c.broadcast(messages.TSSFrostVerifyMsg, buf, peers)
-}
-
-func (c *FrostSignCoordinator) broadcastSignedTranscriptVerification(
+func (c *FrostSignCoordinator) queueSignedTranscriptVerification(
+	batch *frostVerificationBatcher,
 	target messages.FrostSignedEnvelope,
 	peers []peer.ID,
 ) error {
-	if !c.strictTranscript {
-		return c.broadcastTranscriptVerification(
-			target.Round,
-			target.SenderPubKey,
-			target.ParticipantIndex,
-			target.PayloadHash,
-			peers,
-		)
+	if c == nil {
+		return fmt.Errorf("FROST keysign coordinator is not initialized")
 	}
-	echo, err := newFrostSignedEcho(c.privateKey, c.localPubKey, target)
-	if err != nil {
-		return err
+	if batch == nil {
+		return fmt.Errorf("FROST keysign verification batch is not initialized")
 	}
 	payload := FrostVerifyPayload{
-		ProtocolVersion:        echo.ProtocolVersion,
-		SenderPubKey:           echo.AttesterPubKey,
-		Round:                  echo.Target.Round,
-		TargetSenderPubKey:     echo.Target.SenderPubKey,
-		TargetParticipantIndex: echo.Target.ParticipantIndex,
-		PayloadHash:            echo.Target.PayloadHash,
-		TargetSignature:        echo.Target.Signature,
-		AttesterSignature:      echo.Signature,
+		SenderPubKey:           c.localPubKey,
+		Round:                  target.Round,
+		TargetSenderPubKey:     target.SenderPubKey,
+		TargetParticipantIndex: target.ParticipantIndex,
+		PayloadHash:            target.PayloadHash,
 	}
-	buf, err := json.Marshal(payload)
+	if !c.strictTranscript {
+		if err := batch.add(payload); err != nil {
+			return err
+		}
+	} else {
+		echo, err := newFrostSignedEcho(c.privateKey, c.localPubKey, target)
+		if err != nil {
+			return err
+		}
+		payload.ProtocolVersion = echo.ProtocolVersion
+		payload.SenderPubKey = echo.AttesterPubKey
+		payload.Round = echo.Target.Round
+		payload.TargetSenderPubKey = echo.Target.SenderPubKey
+		payload.TargetParticipantIndex = echo.Target.ParticipantIndex
+		payload.PayloadHash = echo.Target.PayloadHash
+		payload.TargetSignature = echo.Target.Signature
+		payload.AttesterSignature = echo.Signature
+		if err := batch.add(payload); err != nil {
+			return err
+		}
+	}
+	if batch.shouldFlush() {
+		return c.flushTranscriptVerifications(batch, peers)
+	}
+	return nil
+}
+
+func (c *FrostSignCoordinator) flushTranscriptVerifications(
+	batch *frostVerificationBatcher,
+	peers []peer.ID,
+) error {
+	if batch == nil || len(batch.entries) == 0 {
+		return nil
+	}
+	if c == nil || c.p2pCommunication == nil {
+		return fmt.Errorf("FROST keysign communication is not initialized")
+	}
+	buf, err := json.Marshal(FrostVerifyBatchPayload{Verifications: batch.entries})
 	if err != nil {
-		return fmt.Errorf("failed to marshal signed transcript verification payload: %w", err)
+		return fmt.Errorf("failed to marshal transcript verification batch: %w", err)
 	}
-	return c.broadcast(messages.TSSFrostVerifyMsg, buf, peers)
+	if err := c.broadcast(messages.TSSFrostVerifyMsg, buf, peers); err != nil {
+		return err
+	}
+	batch.reset()
+	return nil
 }
 
 func (c *FrostSignCoordinator) validateSenderPeerBinding(msgPeer peer.ID, senderPubKey string) error {

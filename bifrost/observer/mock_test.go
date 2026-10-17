@@ -301,6 +301,17 @@ func (m *MockThorchainBridge) GetObservedTxVoter(txID string) (*stypes.QueryObse
 	return nil, nil
 }
 
+func (m *MockThorchainBridge) GetObservedTxOutVoter(txID string) (*stypes.QueryObservedTxVoter, error) {
+	return m.GetObservedTxVoter(txID)
+}
+
+func (m *MockThorchainBridge) GetObservedTxOutVoterUncached(ctx context.Context, txID string) (*stypes.QueryObservedTxVoter, bool, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, false, err
+	}
+	return m.GetObservedTxVoterUncached(txID)
+}
+
 func (m *MockThorchainBridge) GetObservedTxVoterUncached(txID string) (*stypes.QueryObservedTxVoter, bool, error) {
 	if m.getObservedTxVoterFreshFunc != nil {
 		return m.getObservedTxVoterFreshFunc(txID)
@@ -332,8 +343,10 @@ func (m *MockStream) Read(p []byte) (n int, err error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	// Perform the read
-	for range 5 {
+	// Perform the read. A bytes.Buffer returns EOF whenever it is momentarily
+	// empty, so poll for up to 5s: a loaded CI runner can starve the peer
+	// goroutine past a few hundred ms and turn "not written yet" into a fake EOF.
+	for range 50 {
 		n, err = m.reader.Read(p)
 		if err == nil {
 			break
@@ -490,6 +503,17 @@ func (m *MockThorchainBridge2) GetObservedTxVoter(txID string) (*stypes.QueryObs
 		return m.getObservedTxVoterFunc(txID)
 	}
 	return nil, nil
+}
+
+func (m *MockThorchainBridge2) GetObservedTxOutVoter(txID string) (*stypes.QueryObservedTxVoter, error) {
+	return m.GetObservedTxVoter(txID)
+}
+
+func (m *MockThorchainBridge2) GetObservedTxOutVoterUncached(ctx context.Context, txID string) (*stypes.QueryObservedTxVoter, bool, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, false, err
+	}
+	return m.GetObservedTxVoterUncached(txID)
 }
 
 func (m *MockThorchainBridge2) GetObservedTxVoterUncached(txID string) (*stypes.QueryObservedTxVoter, bool, error) {

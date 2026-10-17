@@ -127,9 +127,6 @@
         "tx_size_cost_per_byte": "10"
       }
     },
-    "authz": {
-      "authorization": []
-    },
     "bank": {
       "balances": [
         {
@@ -200,7 +197,7 @@
     "scheduler": {
       "schedules": [
         {
-          "height": "12",
+          "height": "10",
           "msgs": [
             {
               "after": "1",
@@ -279,6 +276,7 @@
       },
       "rune_providers": [],
       "secured_assets": [],
+      "sol_vault_nonces": [],
       "streaming_swaps": [],
       "swap_queue_items": [],
       "swapper_clout": [],
@@ -309,7 +307,6 @@
             "ZEC"
           ],
           "coins": null,
-          "deficit": null,
           "membership": [
             "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4"
           ],
@@ -416,5 +413,5 @@
       }
     }
   },
-  "initial_height": 11
+  "initial_height": 10
 }

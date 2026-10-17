@@ -10,10 +10,12 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/rs/zerolog/log"
+	"github.com/stretchr/testify/require"
 	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/syndtr/goleveldb/leveldb/storage"
 
@@ -23,6 +25,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/config"
+	ttypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
 func newScannerReceiptStore(t *testing.T) *ReorgStore {
@@ -43,6 +46,37 @@ func scannerReceiptItem(seed string, height int64) *stypes.TxInItem {
 		Sender:      "receipt-source",
 		To:          "receipt-destination",
 		Coins:       common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(5))),
+	}
+}
+
+func TestCommittedAccountingJournalPreservesPendingObservationReceipt(t *testing.T) {
+	store := newScannerReceiptStore(t)
+	meta := &reorgBlockMeta{Height: 100, BlockHash: testXMRHash("accounting-block"), PreviousHash: testXMRHash("accounting-parent"), ProvenanceComplete: true}
+	pending := scannerReceiptItem("unrelated-pending-observation", 100)
+	if err := store.PutAuthenticatedObservation(meta, pending); err != nil {
+		t.Fatal(err)
+	}
+	before, err := store.ListObservationReceipts()
+	if err != nil {
+		t.Fatal(err)
+	}
+	committedTxID := testXMRHash("accounting-only-outbound")
+	if err = store.PutAuthenticatedOutbound(meta, committedTxID); err != nil {
+		t.Fatal(err)
+	}
+	after, err := store.ListObservationReceipts()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(before) != 1 || len(after) != 1 || !reflect.DeepEqual(before[0].entry, after[0].entry) {
+		t.Fatal("accounting reconciliation changed or acknowledged an unrelated pending receipt")
+	}
+	journal, err := store.Get(100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reorgMetaHasVaultOrigin(journal, committedTxID) || !reorgMetaHasVaultOrigin(journal, pending.Tx) {
+		t.Fatal("journal lost authenticated source provenance")
 	}
 }
 
@@ -128,6 +162,52 @@ func TestScannerReceiptOldCallbackCannotDeleteReplacement(t *testing.T) {
 	claims, err := store.ListObservationReceipts()
 	if err != nil || len(claims) != 1 || claims[0].entry.BlockHash != "new20" || claims[0].entry.Items[0].Tx != newItem.Tx {
 		t.Fatalf("stale callback deleted replacement receipt: %#v err=%v", claims, err)
+	}
+}
+
+func TestScannerReceiptOldAcknowledgementCannotClearChurnMarker(t *testing.T) {
+	store := newScannerReceiptStore(t)
+	completed := scannerCatchupMarker{StartHeight: 11, TargetHeight: 10, AnchorHeight: 10, AnchorHash: "h10"}
+	meta := &reorgBlockMeta{Height: 10, BlockHash: "h10", PreviousHash: "h9"}
+	if err := store.CheckpointCatchup(completed, meta, []*stypes.TxInItem{scannerReceiptItem("churn-marker", 10)}); err != nil {
+		t.Fatal(err)
+	}
+	oldClaims, err := store.ListObservationReceipts()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(oldClaims) != 1 {
+		t.Fatalf("expected one pending receipt, got %d", len(oldClaims))
+	}
+
+	// Recovery can return to the same height and hash before the original
+	// acknowledgement arrives. The churn flag still identifies a new marker.
+	churnCompleted := completed
+	churnCompleted.ChurnRollback = true
+	if err = store.CheckpointCatchup(churnCompleted, meta, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err = store.AckObservationReceipts(oldClaims, &completed); err == nil ||
+		!strings.Contains(err.Error(), "catch-up marker changed before acknowledgement") {
+		t.Fatalf("old acknowledgement did not reject the changed churn flag: %v", err)
+	}
+	claims, err := store.ListObservationReceipts()
+	if err != nil || !reflect.DeepEqual(oldClaims, claims) {
+		t.Fatalf("old acknowledgement changed pending receipts: claims=%#v err=%v", claims, err)
+	}
+	if got, markerErr := store.GetCatchupMarker(); markerErr != nil || got == nil || *got != churnCompleted {
+		t.Fatalf("old acknowledgement changed the churn marker: marker=%#v err=%v", got, markerErr)
+	}
+
+	if err = store.AckObservationReceipts(claims, &churnCompleted); err != nil {
+		t.Fatal(err)
+	}
+	claims, err = store.ListObservationReceipts()
+	if err != nil || len(claims) != 0 {
+		t.Fatalf("matching acknowledgement did not clear receipts: claims=%d err=%v", len(claims), err)
+	}
+	if got, markerErr := store.GetCatchupMarker(); markerErr != nil || got != nil {
+		t.Fatalf("matching acknowledgement did not clear the churn marker: marker=%#v err=%v", got, markerErr)
 	}
 }
 
@@ -568,6 +648,14 @@ func TestRelocatedDedupeNeverSumsAndOrdersHighestFirst(t *testing.T) {
 
 func TestAdvanceSidecarCatchupChunksAndRecoversAmbiguousAdvance(t *testing.T) {
 	store := newScannerReceiptStore(t)
+	// These heights were already scanned for the retiring vault. The newly
+	// enrolled vault returns empty deltas, even across a lost response/retry.
+	for height := int64(10); height <= 15; height++ {
+		if err := store.Set(terminalReorgMeta(height, testBlockHash(height), testBlockHash(height-1),
+			testXMRHash(fmt.Sprintf("retiring-vault-%d", height)), true)); err != nil {
+			t.Fatal(err)
+		}
+	}
 	var stateMu sync.Mutex
 	nextHeight := uint64(10)
 	lastHeight := uint64(9)
@@ -609,6 +697,10 @@ func TestAdvanceSidecarCatchupChunksAndRecoversAmbiguousAdvance(t *testing.T) {
 			var req sidecar.ScannerRewindReq
 			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			if req.Network != "mocknet" {
+				http.Error(w, "unexpected scanner rewind network", http.StatusBadRequest)
 				return
 			}
 			stateMu.Lock()
@@ -671,7 +763,9 @@ func TestAdvanceSidecarCatchupChunksAndRecoversAmbiguousAdvance(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client, err := sidecar.NewClientWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
+	client, err := sidecar.NewClientWithEndpoint(config.BifrostChainConfiguration{
+		SignerExpectedNetwork: "mocknet",
+	}, server.URL)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -720,8 +814,302 @@ func TestAdvanceSidecarCatchupChunksAndRecoversAmbiguousAdvance(t *testing.T) {
 		if metaErr != nil || meta == nil || meta.BlockHash != testBlockHash(height) {
 			t.Fatalf("height %d missing from accumulated journal: meta=%#v err=%v", height, meta, metaErr)
 		}
+		wantTx := testXMRHash(fmt.Sprintf("retiring-vault-%d", height))
+		if !reflect.DeepEqual(meta.CustomerTransactions, []string{wantTx}) ||
+			!reflect.DeepEqual(meta.VaultOriginTransactions, []string{wantTx}) || !meta.ProvenanceComplete {
+			t.Fatalf("partial catch-up lost retiring-vault evidence at height %d: %#v", height, meta)
+		}
 	}
 	if err = store.ClearCompletedCatchupMarker(*completed); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestFetchTxsRecoveryFailurePreservesCheckpointAcrossReopen(t *testing.T) {
+	for _, test := range []struct {
+		name           string
+		stateBody      string
+		stateStatus    int
+		registerStatus int
+		syncStatus     int
+		disabled       bool
+		closedStorage  bool
+		closeAfterSync bool
+		wantError      string
+	}{
+		{name: "missing state", stateBody: `{}`, wantError: "omitted reset_epoch"},
+		{name: "unknown cursor", stateBody: `{"reset_epoch":0,"next_height":null,"strict_after_reset":false}`, wantError: "next_height is nil"},
+		{name: "invalid state", stateBody: `{"reset_epoch":1,"next_height":10,"strict_after_reset":false}`, wantError: "inconsistent"},
+		{name: "state policy rejection", stateStatus: http.StatusForbidden, wantError: "403"},
+		{name: "registration policy rejection", registerStatus: http.StatusBadRequest},
+		{name: "registration unavailable", registerStatus: http.StatusServiceUnavailable},
+		{name: "sync unavailable", syncStatus: http.StatusServiceUnavailable, wantError: "503"},
+		{name: "historical replay disabled", disabled: true, wantError: "catch-up is disabled"},
+		{name: "storage unavailable", closedStorage: true},
+		{name: "storage lost after sidecar advance", closeAfterSync: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			// This is registration recovery, not a churn rollback or a journal
+			// merge. Start from a canonical checkpoint with one unacked receipt.
+			dbPath := t.TempDir()
+			db, err := leveldb.OpenFile(dbPath, nil)
+			require.NoError(t, err)
+			t.Cleanup(func() {
+				if db != nil {
+					_ = db.Close()
+				}
+			})
+			store := NewReorgStore(db)
+			pending := scannerReceiptItem("recovery-before-failure", 9)
+			meta := &reorgBlockMeta{
+				Height: 9, BlockHash: testBlockHash(9), PreviousHash: testBlockHash(8),
+				CustomerTransactions: []string{pending.Tx}, ProvenanceComplete: true,
+			}
+			require.NoError(t, store.PutObservationReceipt(meta, []*stypes.TxInItem{pending}))
+			require.NoError(t, store.Set(meta))
+			marker := scannerCatchupMarker{StartHeight: 10, TargetHeight: 10, AnchorHeight: 9, AnchorHash: meta.BlockHash}
+			require.NoError(t, store.BeginCatchup(marker))
+			snapshot := func() map[string]string {
+				iter := db.NewIterator(nil, nil)
+				defer iter.Release()
+				values := make(map[string]string)
+				for iter.Next() {
+					values[string(iter.Key())] = string(iter.Value())
+				}
+				require.NoError(t, iter.Error())
+				return values
+			}
+			before := snapshot()
+			var failing atomic.Bool
+			failing.Store(true)
+			var nextHeight atomic.Uint64
+			nextHeight.Store(10)
+			var resetEpoch atomic.Uint64
+			var syncCalls, registerCalls, stateReads, rewindCalls atomic.Int32
+			checkpointDB := db
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				switch {
+				case r.URL.Path == "/v1/monero/vaults/register":
+					registerCalls.Add(1)
+					var req sidecar.RegisterVaultReq
+					if decodeErr := json.NewDecoder(r.Body).Decode(&req); decodeErr != nil || req.VaultCreationHeight != 10 {
+						http.Error(w, "birthday was not bounded by the requested height", http.StatusBadRequest)
+						return
+					}
+					if failing.Load() && test.registerStatus != 0 {
+						http.Error(w, "registration rejected", test.registerStatus)
+						return
+					}
+					next := nextHeight.Load()
+					_ = json.NewEncoder(w).Encode(sidecar.RegisterVaultResp{
+						EffectiveBirthday: 10, ExpectedNextHeight: &next, ResetEpoch: resetEpoch.Load(),
+					})
+				case r.URL.Path == "/v1/monero/scanner/state":
+					stateReads.Add(1)
+					if failing.Load() && test.stateStatus != 0 {
+						http.Error(w, "scanner state rejected", test.stateStatus)
+						return
+					}
+					if failing.Load() && test.stateBody != "" {
+						_, _ = w.Write([]byte(test.stateBody))
+						return
+					}
+					next := nextHeight.Load()
+					last := next - 1
+					_ = json.NewEncoder(w).Encode(sidecar.ScannerState{
+						NextHeight: &next, LastHeight: &last,
+						LastBlockHash: testBlockHash(int64(last)), LastParentHash: testBlockHash(int64(last) - 1),
+						ResetEpoch: resetEpoch.Load(), StrictAfterReset: resetEpoch.Load() > 0,
+					})
+				case r.URL.Path == "/v1/monero/scanner/rewind":
+					rewindCalls.Add(1)
+					var req sidecar.ScannerRewindReq
+					if decodeErr := json.NewDecoder(r.Body).Decode(&req); decodeErr != nil || req.Network != "mocknet" ||
+						req.ExpectedResetEpoch != 0 || req.ExpectedNextHeight != 11 || req.TargetNextHeight != 10 ||
+						req.AnchorHeight != 9 || req.AnchorHash != testBlockHash(9) || nextHeight.Load() != 11 {
+						http.Error(w, "rewind was not bound to the durable checkpoint", http.StatusConflict)
+						return
+					}
+					nextHeight.Store(10)
+					resetEpoch.Store(1)
+					_ = json.NewEncoder(w).Encode(sidecar.ScannerRewindResp{
+						Rewound: true, PreviousNextHeight: 11, NextHeight: 10, ResetEpoch: 1,
+					})
+				case strings.HasPrefix(r.URL.Path, "/v1/monero/chain/block/"):
+					height, parseErr := strconv.ParseInt(strings.TrimPrefix(r.URL.Path, "/v1/monero/chain/block/"), 10, 64)
+					if parseErr != nil || height < 9 || height > 10 {
+						http.NotFound(w, r)
+						return
+					}
+					_ = json.NewEncoder(w).Encode(sidecar.ChainBlockResp{
+						Height: height, Hash: testBlockHash(height), PreviousHash: testBlockHash(height - 1),
+					})
+				case r.URL.Path == "/v1/monero/scanner/sync":
+					syncCalls.Add(1)
+					var req sidecar.SyncReq
+					if decodeErr := json.NewDecoder(r.Body).Decode(&req); decodeErr != nil || req.Height != 10 ||
+						req.ResetEpoch == nil || *req.ResetEpoch != resetEpoch.Load() || req.ExpectedNextHeight == nil ||
+						*req.ExpectedNextHeight != 10 || req.BlockHash != testBlockHash(10) || req.ParentHash != testBlockHash(9) {
+						http.Error(w, "sync was not bound to the canonical checkpoint", http.StatusConflict)
+						return
+					}
+					if failing.Load() && test.syncStatus != 0 {
+						http.Error(w, "scanner sync unavailable", test.syncStatus)
+						return
+					}
+					nextHeight.Store(11)
+					if failing.Load() && test.closeAfterSync {
+						if closeErr := checkpointDB.Close(); closeErr != nil {
+							http.Error(w, closeErr.Error(), http.StatusInternalServerError)
+							return
+						}
+					}
+					_ = json.NewEncoder(w).Encode(sidecar.Transfers{})
+				default:
+					http.NotFound(w, r)
+				}
+			}))
+			defer server.Close()
+			bridge := &scannerMemoBridge{asgards: ttypes.Vaults{{
+				PubKey: testVaultPubKey(t, "recovery-secp"), PubKeyFrost: testVaultPubKey(t, "recovery-frost"),
+				VaultCreationHeightXmr: 100,
+			}}}
+			newScanner := func(limit int64) *Scanner {
+				client, clientErr := sidecar.NewClientWithEndpoint(config.BifrostChainConfiguration{
+					SignerExpectedNetwork: "mocknet",
+				}, server.URL)
+				require.NoError(t, clientErr)
+				scanner := NewScanner(testLogger(), client, bridge, common.XMRChain, common.EmptyPubKey, limit)
+				scanner.SetReorgStore(store)
+				scanner.setCurrentHeight(9)
+				return scanner
+			}
+			limit := int64(72)
+			if test.disabled {
+				limit = 0
+			}
+			scanner := newScanner(limit)
+			if test.closedStorage {
+				require.NoError(t, db.Close())
+			}
+			txIn, fetchErr := scanner.FetchTxs(10, 10)
+			require.Error(t, fetchErr)
+			require.Empty(t, txIn.TxArray, "failed recovery must not hand off a partial result")
+			require.Equal(t, int64(9), scanner.CurrentHeight())
+			wantNext := uint64(10)
+			if test.closeAfterSync {
+				wantNext = 11
+			}
+			require.Equal(t, wantNext, nextHeight.Load())
+			if test.closedStorage || test.closeAfterSync {
+				require.ErrorIs(t, fetchErr, leveldb.ErrClosed)
+			} else {
+				require.NoError(t, db.Close())
+			}
+			if test.registerStatus != 0 {
+				require.ErrorIs(t, fetchErr, btypes.ErrUnavailableBlock)
+			} else if test.wantError != "" {
+				require.ErrorContains(t, fetchErr, test.wantError)
+			}
+			if test.stateBody != "" || test.stateStatus != 0 {
+				require.Positive(t, stateReads.Load(), "the invalid state must be fetched")
+			}
+			failedSyncs := int32(0)
+			if test.syncStatus != 0 || test.closeAfterSync {
+				failedSyncs = 1
+			}
+			require.Equal(t, failedSyncs, syncCalls.Load())
+			require.Equal(t, int32(1), registerCalls.Load(), "failed refresh must remain retryable")
+			db, err = leveldb.OpenFile(dbPath, nil)
+			require.NoError(t, err)
+			store = NewReorgStore(db)
+			require.Equal(t, before, snapshot(), "failure/reopen must preserve every durable recovery key")
+
+			// Remove the injected dependency/configuration failure, then use a
+			// fresh production client and scanner against the reopened database.
+			failing.Store(false)
+			restarted := newScanner(72)
+			txIn, err = restarted.FetchTxs(10, 10)
+			require.NoError(t, err)
+			require.Equal(t, failedSyncs+1, syncCalls.Load())
+			wantRewinds := int32(0)
+			if test.closeAfterSync {
+				wantRewinds = 1
+			}
+			require.Equal(t, wantRewinds, rewindCalls.Load(), "only an uncheckpointed sidecar advance needs a rewind")
+			require.Equal(t, int32(2), registerCalls.Load())
+			require.Equal(t, int64(10), restarted.CurrentHeight())
+			require.Len(t, txIn.TxArray, 1)
+			require.Equal(t, pending.Tx, txIn.TxArray[0].Tx, "the pre-failure observation must be redelivered")
+			completed, markerErr := store.GetCatchupMarker()
+			require.NoError(t, markerErr)
+			require.Equal(t, &scannerCatchupMarker{StartHeight: 11, TargetHeight: 10, AnchorHeight: 10, AnchorHash: testBlockHash(10)}, completed)
+			journal, journalErr := store.Get(10)
+			require.NoError(t, journalErr)
+			require.NotNil(t, journal, "replayed height must have a durable canonical checkpoint")
+			require.Equal(t, testBlockHash(10), journal.BlockHash)
+			require.Equal(t, testBlockHash(9), journal.PreviousHash)
+			require.NotNil(t, txIn.TxArray[0].OnObservedTxStored)
+			txIn.TxArray[0].OnObservedTxStored()
+			completed, markerErr = store.GetCatchupMarker()
+			require.NoError(t, markerErr)
+			require.Nil(t, completed)
+			receipts, receiptErr := store.ListObservationReceipts()
+			require.NoError(t, receiptErr)
+			require.Empty(t, receipts)
+		})
+	}
+}
+
+func TestLateObservationReceiptBacklogProgressAndJournalMerge(t *testing.T) {
+	store := newScannerReceiptStore(t)
+	scanner := NewScanner(log.Logger, nil, nil, common.XMRChain, common.EmptyPubKey, 72)
+	scanner.SetReorgStore(store)
+	for i := int64(1); i <= 80; i++ {
+		meta := &reorgBlockMeta{Height: i, BlockHash: fmt.Sprintf("h%d", i), PreviousHash: fmt.Sprintf("h%d", i-1), CustomerTransactions: []string{testXMRHash("existing")}}
+		if err := store.Set(meta); err != nil {
+			t.Fatal(err)
+		}
+		if err := store.PutAuthenticatedObservation(meta, scannerReceiptItem(fmt.Sprintf("late-%d", i), i)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	claims, err := scanner.canonicalObservationReceipts()
+	if err != nil || len(claims) != 64 {
+		t.Fatalf("first bounded fetch: %d %v", len(claims), err)
+	}
+	items := make([]*stypes.TxInItem, 0, len(claims))
+	for _, claim := range claims {
+		items = append(items, claim.entry.Items...)
+	}
+	scanner.attachObservationReceiptBarrier(items, claims, nil)
+	items[0].OnObservedTxRejected(errors.New("temporary observer failure"))
+	for _, item := range items[1:] {
+		item.OnObservedTxStored()
+	}
+	claims, err = scanner.canonicalObservationReceipts()
+	if err != nil || len(claims) != 64 {
+		t.Fatalf("retry lost receipts: %d %v", len(claims), err)
+	}
+	items = nil
+	for _, claim := range claims {
+		items = append(items, claim.entry.Items...)
+	}
+	scanner.attachObservationReceiptBarrier(items, claims, nil)
+	for _, item := range items {
+		item.OnObservedTxStored()
+	}
+	claims, err = scanner.canonicalObservationReceipts()
+	if err != nil || len(claims) != 16 {
+		t.Fatalf("later receipts did not progress: %d %v", len(claims), err)
+	}
+	meta, err := store.Get(80)
+	if err != nil || len(meta.CustomerTransactions) != 2 || len(meta.VaultOriginTransactions) != 1 {
+		t.Fatalf("late write erased journal evidence: %+v %v", meta, err)
+	}
+	conflict := &reorgBlockMeta{Height: 80, BlockHash: "different", PreviousHash: "h79"}
+	if err = store.PutAuthenticatedObservation(conflict, scannerReceiptItem("bad-fork", 80)); err == nil {
+		t.Fatal("conflicting fork accepted")
 	}
 }

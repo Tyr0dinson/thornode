@@ -120,9 +120,6 @@
         "tx_size_cost_per_byte": "10"
       }
     },
-    "authz": {
-      "authorization": []
-    },
     "bank": {
       "balances": [
         {
@@ -428,6 +425,7 @@
           "depth": "0"
         }
       ],
+      "sol_vault_nonces": [],
       "stable_reserve_credits": [
         {
           "address": "0xe3c64974c78f5693bd2bc68b3221d58df5c6e877",
@@ -438,6 +436,12 @@
       "streaming_swaps": [],
       "swap_queue_items": [],
       "swapper_clout": [
+        {
+          "address": "noop",
+          "reclaimed": "0",
+          "score": "492394",
+          "spent": "0"
+        },
         {
           "address": "tthor102ae04vpk6v2tvjgzdsc2s7ncnptj6pwz0pg2k",
           "reclaimed": "0",

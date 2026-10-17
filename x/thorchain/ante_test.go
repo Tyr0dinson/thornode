@@ -7,6 +7,10 @@ import (
 
 	. "gopkg.in/check.v1"
 
+	cryptotypes "github.com/cosmos/cosmos-sdk/crypto/types"
+	sdk "github.com/cosmos/cosmos-sdk/types"
+	"github.com/cosmos/cosmos-sdk/types/tx/signing"
+	"github.com/cosmos/cosmos-sdk/x/authz"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 
@@ -159,6 +163,14 @@ func (s *AnteTestSuite) TestAnteHandleMessage(c *C) {
 	_, err = ad.anteHandleMessage(ctx, version, &badMsg)
 	c.Assert(err, NotNil)
 
+	// authz msgs must be rejected - the module is unwired, and MsgExec in
+	// particular would dispatch its inner msgs straight to the msg service
+	// router, bypassing every ante check in this switch
+	for _, m := range []cosmos.Msg{&authz.MsgGrant{}, &authz.MsgRevoke{}, &authz.MsgExec{}} {
+		_, err = ad.anteHandleMessage(ctx, version, m)
+		c.Assert(err, NotNil)
+	}
+
 	activeNodeAccount := GetRandomValidatorNode(NodeActive)
 	c.Assert(k.SetNodeAccount(ctx, activeNodeAccount), IsNil)
 
@@ -171,4 +183,76 @@ func (s *AnteTestSuite) TestAnteHandleMessage(c *C) {
 	newCtx, err = ad.anteHandleMessage(ctx, version, &priorityMsg)
 	c.Assert(err, IsNil)
 	c.Assert(newCtx.Priority(), Equals, int64(math.MaxInt64))
+}
+
+// fakeSigVerifiableTx is a minimal tx implementation for exercising the ante
+// decorator, which needs the signers and memo of the transaction body.
+type fakeSigVerifiableTx struct {
+	sdk.Tx
+
+	msgs    []cosmos.Msg
+	signers [][]byte
+	memo    string
+}
+
+func (t fakeSigVerifiableTx) GetMsgs() []cosmos.Msg                     { return t.msgs }
+func (t fakeSigVerifiableTx) GetSigners() ([][]byte, error)             { return t.signers, nil }
+func (t fakeSigVerifiableTx) GetPubKeys() ([]cryptotypes.PubKey, error) { return nil, nil }
+func (t fakeSigVerifiableTx) GetMemo() string                           { return t.memo }
+
+func (t fakeSigVerifiableTx) GetSignaturesV2() ([]signing.SignatureV2, error) {
+	return nil, nil
+}
+
+func (s *AnteTestSuite) TestAnteHandleRecordsTxSigners(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	ad := AnteDecorator{keeper: k}
+
+	nodeAccount := GetRandomValidatorNode(NodeActive)
+	c.Assert(k.SetNodeAccount(ctx, nodeAccount), IsNil)
+
+	signer := GetRandomBech32Addr()
+	other := GetRandomBech32Addr()
+
+	tx := fakeSigVerifiableTx{
+		msgs:    []cosmos.Msg{&types.MsgMimir{Signer: nodeAccount.NodeAddress}},
+		signers: [][]byte{signer},
+		memo:    "SWAP:BTC.BTC",
+	}
+
+	reached := false
+	_, err := ad.AnteHandle(ctx, tx, false, func(innerCtx cosmos.Context, _ sdk.Tx, _ bool) (cosmos.Context, error) {
+		reached = true
+		// the sender of a msg dispatched on behalf of another account is not a
+		// signer of the tx body, and so cannot inherit what it authorises
+		c.Assert(TxSignedBy(innerCtx, signer), Equals, true)
+		c.Assert(TxSignedBy(innerCtx, other), Equals, false)
+		return innerCtx, nil
+	})
+	c.Assert(err, IsNil)
+	c.Assert(reached, Equals, true)
+
+	// without a recorded signer set there is nothing to check against
+	c.Assert(TxSignedBy(ctx, other), Equals, true)
+}
+
+func (s *AnteTestSuite) TestAnteHandleRejectsAuthzMsgs(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	ad := AnteDecorator{keeper: k}
+
+	// authz is unwired, and MsgExec would dispatch its inner msgs straight to
+	// the msg service router, bypassing every check in the ante handler
+	for _, m := range []cosmos.Msg{&authz.MsgGrant{}, &authz.MsgRevoke{}, &authz.MsgExec{}} {
+		tx := fakeSigVerifiableTx{
+			msgs:    []cosmos.Msg{m},
+			signers: [][]byte{GetRandomBech32Addr()},
+		}
+		reached := false
+		_, err := ad.AnteHandle(ctx, tx, false, func(innerCtx cosmos.Context, _ sdk.Tx, _ bool) (cosmos.Context, error) {
+			reached = true
+			return innerCtx, nil
+		})
+		c.Assert(err, NotNil)
+		c.Assert(reached, Equals, false)
+	}
 }

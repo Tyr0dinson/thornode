@@ -106,3 +106,24 @@ func (s *SolRPC) GetBlockHeights(startSlot, endSlot uint64) ([]uint64, error) {
 
 	return response.Result, nil
 }
+
+// GetFirstAvailableBlock returns the slot of the lowest confirmed block the node has
+// not purged from its ledger — its retained-history floor. The consensus-blockhash
+// search uses it as the ONLY proof that widening the lookback is pointless: getBlocks
+// omitting a range cannot distinguish pruned history from a run of skipped slots, but
+// this floor says where the ledger genuinely begins.
+func (s *SolRPC) GetFirstAvailableBlock() (uint64, error) {
+	var response struct {
+		Result uint64    `json:"result"`
+		Error  *RPCError `json:"error"`
+	}
+	if err := s.post("getFirstAvailableBlock", []interface{}{}, &response); err != nil {
+		return 0, fmt.Errorf("failed to call getFirstAvailableBlock: %w", err)
+	}
+
+	if response.Error != nil && response.Error.Code != 0 {
+		return 0, fmt.Errorf("RPC Error %d: %s", response.Error.Code, response.Error.Message)
+	}
+
+	return response.Result, nil
+}

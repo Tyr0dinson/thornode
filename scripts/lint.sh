@@ -24,6 +24,7 @@ go mod verify
 
 ./scripts/lint-handlers.bash
 ./scripts/lint-tokens.bash
+./scripts/lint-skill-chain-client.sh
 
 go run tools/analyze/main.go -rand -map_iteration ./common/... ./constants/... ./x/...
 

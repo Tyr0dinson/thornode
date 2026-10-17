@@ -71,6 +71,8 @@ func (s *AttestationGossip) askForAttestationState(ctx context.Context) {
 func (s *AttestationGossip) sendAttestationState(stream network.Stream) {
 	remotePeer := stream.Conn().RemotePeer()
 	s.logger.Debug().Str("peer", remotePeer.String()).Msg("sending attestation state")
+	// Snapshot under the map/state locks. Each frame revalidates durable XMR
+	// admission later; no transport operation holds a cleanup reader.
 	s.mu.Lock()
 
 	// Collect all QuorumTxs
@@ -224,59 +226,14 @@ func (s *AttestationGossip) sendAttestationState(stream network.Stream) {
 
 	// Send batches
 	for batchNum, batch := range batches {
-		var batchData []byte
-		batchData, err = batch.Marshal()
-		if err != nil {
-			s.logger.Error().Err(err).Int("batch", batchNum+1).Msg("failed to marshal batch")
-			return
-		}
-
-		// Send batch info (batch number and data size)
-		batchInfo := make([]byte, 8) // 4 bytes for batch number, 4 bytes for data size
-		binary.LittleEndian.PutUint32(batchInfo[0:4], uint32(batchNum))
-		binary.LittleEndian.PutUint32(batchInfo[4:8], uint32(len(batchData)))
-
-		// Send the batch data header
-		if err = p2p.WriteStreamWithBuffer(append(prefixBatchHeader, batchInfo...), stream); err != nil {
-			s.logger.Error().Err(err).Int("batch", batchNum+1).Msg("failed to send batch header")
-			return
-		}
-
-		// Wait for acknowledgment of batch header
-		var headerAck []byte
-		headerAck, err = p2p.ReadStreamWithBuffer(stream)
-		if err != nil {
-			s.logger.Error().Err(err).Int("batch", batchNum+1).Msg("failed to read ack after batch header")
-			return
-		}
-		if string(headerAck) != streamAckHeader {
-			s.logger.Error().Str("response", string(headerAck)).Int("batch", batchNum+1).Msg("unexpected response to batch header")
-			return
-		}
-
-		// Send the actual batch data
-		if err = p2p.WriteStreamWithBuffer(append(prefixBatchData, batchData...), stream); err != nil {
-			s.logger.Error().Err(err).Int("batch", batchNum+1).Msg("failed to send batch data")
-			return
-		}
-
-		// Wait for acknowledgment of batch data
-		var dataAck []byte
-		dataAck, err = p2p.ReadStreamWithBuffer(stream)
-		if err != nil {
-			s.logger.Error().Err(err).Int("batch", batchNum+1).Msg("failed to read ack after batch data")
-			return
-		}
-		if string(dataAck) != streamAckData {
-			s.logger.Error().Str("response", string(dataAck)).Int("batch", batchNum+1).Msg("unexpected response to batch data")
+		if err = s.sendAttestationStateBatch(stream, batchNum, batch); err != nil {
+			s.logger.Error().Err(err).Int("batch", batchNum+1).Msg("failed to send state batch")
 			return
 		}
 
 		s.logger.Debug().
 			Int("batch", batchNum+1).
 			Int("total_batches", totalBatches).
-			Int("batch_size", len(batch.QuoTxs)).
-			Int("data_size_bytes", len(batchData)).
 			Msg("batch sent")
 	}
 
@@ -306,6 +263,67 @@ func (s *AttestationGossip) sendAttestationState(stream network.Stream) {
 		Int("total_price_feeds", totalPriceFeeds).
 		Int("total_batches", totalBatches).
 		Msg("successfully sent attestation state in batches")
+}
+
+// sendAttestationStateBatch rechecks durable XMR admission for each frame.
+// Transport and ACK waits hold no cleanup reader. A frame already prepared
+// may arrive after cleanup; the receiving peer applies its own admission check.
+// Existing per-operation framing deadlines apply without a whole-transfer cap.
+func (s *AttestationGossip) sendAttestationStateBatch(stream network.Stream, batchNum int, batch common.QuorumState) error {
+	hasXMR := false
+	for _, tx := range batch.QuoTxs {
+		if tx.ObsTx.Tx.Chain.Equals(common.XMRChain) {
+			hasXMR = true
+			break
+		}
+	}
+	if hasXMR {
+		s.mu.Lock()
+		kept := batch.QuoTxs[:0]
+		for _, tx := range batch.QuoTxs {
+			if tx.ObsTx.Tx.Chain.Equals(common.XMRChain) {
+				if !s.admitXMRObservationLocked(tx.ObsTx) {
+					continue
+				}
+			}
+			kept = append(kept, tx)
+		}
+		clear(batch.QuoTxs[len(kept):])
+		batch.QuoTxs = kept
+		s.mu.Unlock()
+	}
+
+	// Preserve announced frame count and numbering even if cleanup emptied a
+	// frame. The receiver already accepts an empty QuorumState payload.
+	batchData, err := batch.Marshal()
+	if err != nil {
+		return fmt.Errorf("marshal state batch: %w", err)
+	}
+	batchInfo := make([]byte, 8)
+	binary.LittleEndian.PutUint32(batchInfo[0:4], uint32(batchNum))
+	binary.LittleEndian.PutUint32(batchInfo[4:8], uint32(len(batchData)))
+	if err = p2p.WriteStreamWithBuffer(append(prefixBatchHeader, batchInfo...), stream); err != nil {
+		return fmt.Errorf("write state batch header: %w", err)
+	}
+	headerAck, err := p2p.ReadStreamWithBuffer(stream)
+	if err != nil {
+		return fmt.Errorf("read state batch header ACK: %w", err)
+	}
+	if string(headerAck) != streamAckHeader {
+		return fmt.Errorf("unexpected state batch header ACK: %q", headerAck)
+	}
+	if err = p2p.WriteStreamWithBuffer(append(prefixBatchData, batchData...), stream); err != nil {
+		return fmt.Errorf("write state batch data: %w", err)
+	}
+
+	dataAck, err := p2p.ReadStreamWithBuffer(stream)
+	if err != nil {
+		return fmt.Errorf("read state batch data ACK: %w", err)
+	}
+	if string(dataAck) != streamAckData {
+		return fmt.Errorf("unexpected state batch data ACK: %q", dataAck)
+	}
+	return nil
 }
 
 // Add a function to handle receiving batched attestation state

@@ -25,17 +25,29 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients"
 	tctypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
+	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/config"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/ebifrost"
 	thortypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
 type historicalXMRConfirmationChain struct {
 	mockChainClient
-	confirmations int64
+	confirmations     int64
+	ready             bool
+	height            int64
+	confirmationCount func(tctypes.TxIn) int64
 }
 
-func (c *historicalXMRConfirmationChain) GetConfirmationCount(tctypes.TxIn) int64 {
+func (c *historicalXMRConfirmationChain) GetConfirmationCount(tx tctypes.TxIn) int64 {
+	if c.confirmationCount != nil {
+		return c.confirmationCount(tx)
+	}
 	return c.confirmations
+}
+
+func (c *historicalXMRConfirmationChain) ConfirmationCountReady(tctypes.TxIn) bool {
+	return c.ready
 }
 
 // TestObservedXMRPayloadLookupMatchesAllLiveKeys verifies that ordinary
@@ -154,60 +166,81 @@ func observedXMRPayloadApplied(t *testing.T, ag *AttestationGossip, k txKey) boo
 }
 
 func TestHistoricalXMRSpentRefCertificateInactiveQuorumIsCertificateOnly(t *testing.T) {
-	ag, _, keys, _, bridge, _ := setupTestGossip(t)
-	obsTx, planned := observerTestXMRPlan(t)
-	second := secp256k1.GenPrivKey()
-	third := secp256k1.GenPrivKey()
-	members := common.PubKeys{
-		observerTestPubKey(t, keys.privKey),
-		observerTestPubKey(t, second),
-		observerTestPubKey(t, third),
+	for _, status := range []thortypes.VaultStatus{thortypes.VaultStatus_ActiveVault, thortypes.VaultStatus_RetiringVault, thortypes.VaultStatus_InactiveVault} {
+		t.Run(status.String(), func(t *testing.T) {
+			ag, _, keys, _, bridge, _ := setupTestGossip(t)
+			obsTx, planned := observerTestXMRPlan(t)
+			second := secp256k1.GenPrivKey()
+			third := secp256k1.GenPrivKey()
+			members := common.PubKeys{
+				observerTestPubKey(t, keys.privKey),
+				observerTestPubKey(t, second),
+				observerTestPubKey(t, third),
+			}
+			ag.setActiveValidators(nil)
+			vaultLookup := observerTestRetiringVaultFunc(obsTx.ObservedPubKey, members...)
+			bridge.getVaultFunc = func(key string) (thortypes.Vault, error) {
+				vault, err := vaultLookup(key)
+				vault.Status = status
+				return vault, err
+			}
+			bridge.getKeysignFunc = observerTestKeysignFunc(planned)
+			if status == thortypes.VaultStatus_ActiveVault {
+				inboundID := common.TxID(observerTestHash("stale-active-outbound"))
+				obsTx.Tx.Memo = "OUT:" + inboundID.String()
+				planned.memo, planned.wireMemo = obsTx.Tx.Memo, obsTx.Tx.Memo
+				bridge.getObservedTxVoterFunc = observerTestObservedTxVoterFunc(inboundID, planned)
+			}
+
+			applied := make(chan common.ObservedTx, 1)
+			wireMemos := make(chan string, 1)
+			ag.SetObserverApplySpentOutputRefs(func(request spentOutputRefsImport, onOutcome func(bool)) {
+				if onOutcome != nil {
+					onOutcome(true)
+				}
+				applied <- request.Tx
+				wireMemos <- request.WireMemo
+			})
+
+			// A departed producer transfers ownership durably before any local import.
+			producer := wireHistoricalXMRCertificateProducer(t, ag, bridge)
+			require.NoError(t, ag.AttestObservedTx(context.Background(), &obsTx, false, false))
+			require.Empty(t, ag.historicalXMRSpentRefCertificates)
+			producer.retryPendingXMRCertificates(context.Background())
+			assertNoSpentRefImportDuring(t, applied, 100*time.Millisecond)
+			ag.mu.Lock()
+			observedCount := len(ag.observedTxs)
+			certificateCount := len(ag.historicalXMRSpentRefCertificates)
+			ag.mu.Unlock()
+			assert.Zero(t, observedCount)
+			require.Equal(t, 1, certificateCount)
+
+			// A second historical member reaches the two-of-three source-vault quorum.
+			secondCertificate := observerTestSignedHistoricalXMRCertificate(t, obsTx, second)
+			secondPeer := observerTestPeerID(t, second)
+			require.NoError(t, ag.acceptHistoricalXMRSpentRefCertificate(secondCertificate, secondPeer))
+			select {
+			case got := <-applied:
+				assert.Equal(t, obsTx.Tx.ID, got.Tx.ID)
+				assert.Equal(t, obsTx.SpentOutputRefs, got.SpentOutputRefs)
+				assert.Equal(t, obsTx.Tx.Memo, got.Tx.Memo)
+				assert.Equal(t, obsTx.Tx.Memo, <-wireMemos)
+			case <-time.After(time.Second):
+				t.Fatal("timed out waiting for historical certificate quorum import")
+			}
+
+			ag.mu.Lock()
+			assert.Empty(t, ag.observedTxs, "inactive certificate shares must never become observation votes")
+			for _, bucket := range ag.historicalXMRSpentRefCertificates {
+				assert.True(t, bucket.applied)
+				assert.Len(t, bucket.attestations, 2)
+			}
+			ag.mu.Unlock()
+		})
 	}
-	ag.setActiveValidators(nil)
-	bridge.getVaultFunc = observerTestRetiringVaultFunc(obsTx.ObservedPubKey, members...)
-	bridge.getKeysignFunc = observerTestKeysignFunc(planned)
-
-	applied := make(chan common.ObservedTx, 1)
-	ag.SetObserverApplySpentOutputRefs(func(tx common.ObservedTx, onOutcome func(bool)) {
-		if onOutcome != nil {
-			onOutcome(true)
-		}
-		applied <- tx
-	})
-
-	// The local process has churned out, but remains a member of the retiring
-	// source vault. Its share is retained only in the certificate store.
-	require.NoError(t, ag.AttestObservedTx(context.Background(), &obsTx, false, false))
-	assertNoSpentRefImportDuring(t, applied, 100*time.Millisecond)
-	ag.mu.Lock()
-	observedCount := len(ag.observedTxs)
-	certificateCount := len(ag.historicalXMRSpentRefCertificates)
-	ag.mu.Unlock()
-	assert.Zero(t, observedCount)
-	require.Equal(t, 1, certificateCount)
-
-	// A second historical member reaches the two-of-three source-vault quorum.
-	secondCertificate := observerTestSignedHistoricalXMRCertificate(t, obsTx, second)
-	secondPeer := observerTestPeerID(t, second)
-	require.NoError(t, ag.acceptHistoricalXMRSpentRefCertificate(secondCertificate, secondPeer))
-	select {
-	case got := <-applied:
-		assert.Equal(t, obsTx.Tx.ID, got.Tx.ID)
-		assert.Equal(t, obsTx.SpentOutputRefs, got.SpentOutputRefs)
-	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for historical certificate quorum import")
-	}
-
-	ag.mu.Lock()
-	assert.Empty(t, ag.observedTxs, "inactive certificate shares must never become observation votes")
-	for _, bucket := range ag.historicalXMRSpentRefCertificates {
-		assert.True(t, bucket.applied)
-		assert.Len(t, bucket.attestations, 2)
-	}
-	ag.mu.Unlock()
 }
 
-func TestHistoricalXMRCertificateRetainsScannerReceiptUntilApplied(t *testing.T) {
+func TestHistoricalXMRCertificateTransfersScannerReceiptToDurableOutbox(t *testing.T) {
 	ag, _, keys, _, bridge, _ := setupTestGossip(t)
 	obsTx, planned := observerTestXMRPlan(t)
 	// The scanner enters this path through common.NewTxID, which canonicalizes
@@ -226,7 +259,7 @@ func TestHistoricalXMRCertificateRetainsScannerReceiptUntilApplied(t *testing.T)
 	ag.setActiveValidators(nil)
 	bridge.getVaultFunc = observerTestRetiringVaultFunc(obsTx.ObservedPubKey, members...)
 	bridge.getKeysignFunc = observerTestKeysignFunc(planned)
-	ag.SetObserverApplySpentOutputRefs(func(_ common.ObservedTx, onOutcome func(bool)) {
+	ag.SetObserverApplySpentOutputRefs(func(_ spentOutputRefsImport, onOutcome func(bool)) {
 		if onOutcome != nil {
 			onOutcome(true)
 		}
@@ -241,8 +274,9 @@ func TestHistoricalXMRCertificateRetainsScannerReceiptUntilApplied(t *testing.T)
 		stored := false
 		var rejected error
 		return tctypes.TxIn{
-			Chain:    common.XMRChain,
-			Filtered: true,
+			Chain:                common.XMRChain,
+			Filtered:             true,
+			ConfirmationRequired: obsTx.FinaliseHeight - obsTx.BlockHeight,
 			TxArray: []*tctypes.TxInItem{{
 				BlockHeight:         obsTx.BlockHeight,
 				Tx:                  obsTx.Tx.ID.String(),
@@ -271,22 +305,24 @@ func TestHistoricalXMRCertificateRetainsScannerReceiptUntilApplied(t *testing.T)
 		tssKeysignMetricMgr: metrics.NewTssKeysignMetricMgr(),
 		attestationGossip:   ag,
 	}
+	store, path := setupTestDB(t)
+	defer cleanupTestDB(t, store, path)
+	observer.storage = store
+	ag.certificateObserver = observer
 	first, stored, rejected := newTxIn()
-	err := observer.attestHistoricalXMRSpentRefCertificates(first)
-	require.ErrorIs(t, err, errHistoricalXMRCertificatePending)
+	store.beforeCertificateWrite = func() error { return fmt.Errorf("disk unavailable") }
+	require.Error(t, observer.attestHistoricalXMRSpentRefCertificates(first))
 	require.False(t, *stored)
-	require.ErrorIs(t, *rejected, errHistoricalXMRCertificatePending)
-
-	// A second retiring-vault member reaches source-vault quorum and the local
-	// sidecar reports the exact spent refs applied.
-	require.NoError(t, ag.acceptHistoricalXMRSpentRefCertificate(
-		observerTestSignedHistoricalXMRCertificate(t, obsTx, second),
-		observerTestPeerID(t, second),
-	))
-	require.Eventually(t, func() bool {
-		return ag.historicalXMRSpentRefCertificateApplied(obsTx)
-	}, time.Second, 10*time.Millisecond)
-
+	require.Error(t, *rejected)
+	store.beforeCertificateWrite = nil
+	first, stored, rejected = newTxIn()
+	require.NoError(t, observer.attestHistoricalXMRSpentRefCertificates(first))
+	require.True(t, *stored)
+	require.NoError(t, *rejected)
+	records, _, err := store.pendingXMRCertificates(time.Now().Add(time.Second), 16)
+	require.NoError(t, err)
+	require.Len(t, records, 1)
+	require.False(t, ag.historicalXMRSpentRefCertificateApplied(obsTx), "local application is not the handoff boundary")
 	replay, stored, rejected := newTxIn()
 	require.NoError(t, observer.attestHistoricalXMRSpentRefCertificates(replay))
 	require.True(t, *stored)
@@ -347,18 +383,11 @@ func TestHistoricalXMRCertificateMixedBatchHandlesEachItemIndependently(t *testi
 		}}, nil
 	}
 	ag.setActiveValidators(nil)
-	ag.SetObserverApplySpentOutputRefs(func(_ common.ObservedTx, onOutcome func(bool)) {
+	ag.SetObserverApplySpentOutputRefs(func(_ spentOutputRefsImport, onOutcome func(bool)) {
 		if onOutcome != nil {
 			onOutcome(true)
 		}
 	})
-
-	// Pre-apply the authorized member certificate so the mixed handoff has one
-	// stored terminal and one permanently inapplicable terminal.
-	require.NoError(t, ag.AttestObservedTx(context.Background(), &memberObs, false, false))
-	require.Eventually(t, func() bool {
-		return ag.historicalXMRSpentRefCertificateApplied(memberObs)
-	}, time.Second, 10*time.Millisecond)
 
 	toItem := func(obs common.ObservedTx, stored *bool, rejected *error) *tctypes.TxInItem {
 		spentRefs := make([]*common.OutputRef, 0, len(obs.SpentOutputRefs))
@@ -385,22 +414,17 @@ func TestHistoricalXMRCertificateMixedBatchHandlesEachItemIndependently(t *testi
 	memberStored, nonmemberStored := false, false
 	var memberRejected, nonmemberRejected error
 	txIn := tctypes.TxIn{
-		Chain:    common.XMRChain,
-		Filtered: true,
+		Chain:                common.XMRChain,
+		Filtered:             true,
+		ConfirmationRequired: memberObs.FinaliseHeight - memberObs.BlockHeight,
 		TxArray: []*tctypes.TxInItem{
 			toItem(memberObs, &memberStored, &memberRejected),
 			toItem(nonmemberObs, &nonmemberStored, &nonmemberRejected),
 		},
 	}
-	observer := &Observer{
-		logger: ag.logger,
-		chains: map[common.Chain]chainclients.ChainClient{
-			common.XMRChain: &historicalXMRConfirmationChain{
-				confirmations: memberObs.FinaliseHeight - memberObs.BlockHeight,
-			},
-		},
-		tssKeysignMetricMgr: metrics.NewTssKeysignMetricMgr(),
-		attestationGossip:   ag,
+	observer := wireHistoricalXMRCertificateProducer(t, ag, bridge)
+	observer.chains[common.XMRChain] = &historicalXMRConfirmationChain{
+		confirmations: memberObs.FinaliseHeight - memberObs.BlockHeight,
 	}
 
 	require.NoError(t, observer.attestHistoricalXMRSpentRefCertificates(txIn))
@@ -466,12 +490,12 @@ func TestHistoricalXMRSpentRefCertificateRejectsUnauthorizedVariants(t *testing.
 			contains: "not a source-vault member",
 		},
 		{
-			name: "non-retiring vault",
+			name: "missing source vault",
 			configure: func(_ *AttestationGossip, bridge *MockThorchainBridge, obs common.ObservedTx, _ plannedXMROutbound, signer *secp256k1.PrivKey) (common.AttestTx, peer.ID) {
-				bridge.getVaultFunc = observerTestVaultFunc(obs.ObservedPubKey, observerTestPubKey(t, signer))
+				bridge.getVaultFunc = func(string) (thortypes.Vault, error) { return thortypes.Vault{}, nil }
 				return observerTestSignedHistoricalXMRCertificate(t, obs, signer), observerTestPeerID(t, signer)
 			},
-			contains: "source vault is not retiring",
+			contains: "source vault is empty",
 		},
 		{
 			name: "unplanned outbound",
@@ -752,7 +776,8 @@ func TestXMRSpentRefImportRetriesAfterBoundedSaturation(t *testing.T) {
 		first.Tx.ID:  make(chan struct{}),
 		second.Tx.ID: make(chan struct{}),
 	}
-	ag.SetObserverApplySpentOutputRefs(func(tx common.ObservedTx, onOutcome func(bool)) {
+	ag.SetObserverApplySpentOutputRefs(func(request spentOutputRefsImport, onOutcome func(bool)) {
+		tx := request.Tx
 		started <- tx.Tx.ID
 		<-releases[tx.Tx.ID]
 		if onOutcome != nil {
@@ -760,10 +785,10 @@ func TestXMRSpentRefImportRetriesAfterBoundedSaturation(t *testing.T) {
 		}
 	})
 
-	ag.applySpentRefsAsync(first, nil)
+	ag.applySpentRefsAsync(spentOutputRefsImport{Tx: first}, nil)
 	require.Equal(t, first.Tx.ID, <-started)
 	rejected := make(chan bool, 1)
-	ag.applySpentRefsAsync(second, func(applied bool) { rejected <- applied })
+	ag.applySpentRefsAsync(spentOutputRefsImport{Tx: second}, func(applied bool) { rejected <- applied })
 	require.False(t, <-rejected, "saturation must resolve the callback without leaking a waiter")
 
 	close(releases[first.Tx.ID])
@@ -772,7 +797,7 @@ func TestXMRSpentRefImportRetriesAfterBoundedSaturation(t *testing.T) {
 	// The same exact work can be resubmitted after the overload callback. This
 	// is the path used by a duplicate attestation/reconciliation tick.
 	retried := make(chan bool, 1)
-	ag.applySpentRefsAsync(second, func(applied bool) { retried <- applied })
+	ag.applySpentRefsAsync(spentOutputRefsImport{Tx: second}, func(applied bool) { retried <- applied })
 	require.Equal(t, second.Tx.ID, <-started)
 	close(releases[second.Tx.ID])
 	require.True(t, <-retried)
@@ -799,7 +824,8 @@ func TestObservedXMRSpentRefsReconcileAfterCapacityRejection(t *testing.T) {
 	ag.applySpentRefsSem = make(chan struct{}, 1)
 	ag.applySpentRefsSem <- struct{}{}
 	applied := make(chan common.ObservedTx, 1)
-	ag.SetObserverApplySpentOutputRefs(func(tx common.ObservedTx, onOutcome func(bool)) {
+	ag.SetObserverApplySpentOutputRefs(func(request spentOutputRefsImport, onOutcome func(bool)) {
+		tx := request.Tx
 		applied <- tx
 		if onOutcome != nil {
 			onOutcome(true)
@@ -847,10 +873,8 @@ func TestCommittedXMRSpentRefsLatchExactPayload(t *testing.T) {
 	}
 	ag.mu.Unlock()
 
-	ag.SetObserverApplySpentOutputRefs(func(_ common.ObservedTx, onOutcome func(bool)) {
-		if onOutcome != nil {
-			onOutcome(true)
-		}
+	ag.SetObserverApplyCommittedSpentRefs(func(context.Context, common.PubKey, common.TxID) (common.ObservedTx, bool) {
+		return exact, true
 	})
 	committed := common.QuorumTx{
 		ObsTx:        exact,
@@ -873,9 +897,13 @@ func TestCommittedXMRSpentRefsLatchExactPayload(t *testing.T) {
 		state, ok := observerTestConflictState(ag, exact)
 		return ok && state == xmrSpentRefsImportConfirmed
 	}, time.Second, 10*time.Millisecond)
-	ag.mu.Lock()
-	assert.True(t, ag.historicalXMRSpentRefCertificates[exactPayloadHash].applied)
-	ag.mu.Unlock()
+	// The committed callback marks the historical bucket after the live state
+	// and conflict entry, so wait for that final write rather than racing it.
+	require.Eventually(t, func() bool {
+		ag.mu.Lock()
+		defer ag.mu.Unlock()
+		return ag.historicalXMRSpentRefCertificates[exactPayloadHash].applied
+	}, time.Second, 10*time.Millisecond)
 
 	var vaultCalls atomic.Int32
 	bridge.getVaultFunc = func(string) (thortypes.Vault, error) {
@@ -909,7 +937,8 @@ func TestObservedXMRSpentRefsReconcileBacksOff(t *testing.T) {
 	bridge.getKeysignFunc = observerTestKeysignFunc(planned)
 
 	applied := make(chan common.ObservedTx, 1)
-	ag.SetObserverApplySpentOutputRefs(func(tx common.ObservedTx, onOutcome func(bool)) {
+	ag.SetObserverApplySpentOutputRefs(func(request spentOutputRefsImport, onOutcome func(bool)) {
+		tx := request.Tx
 		applied <- tx
 		if onOutcome != nil {
 			onOutcome(true)
@@ -959,7 +988,7 @@ func TestObservedXMRSpentRefsReconcileBacksOff(t *testing.T) {
 // eligible states are claimed first.
 func TestObservedXMRSpentRefsReconcileCapsPostFilterWork(t *testing.T) {
 	ag, _, _, _, bridge, _ := setupTestGossip(t)
-	ag.SetObserverApplySpentOutputRefs(func(common.ObservedTx, func(bool)) {})
+	ag.SetObserverApplySpentOutputRefs(func(spentOutputRefsImport, func(bool)) {})
 	base, _ := observerTestXMRPlan(t)
 	signer := secp256k1.GenPrivKey()
 	members := common.PubKeys{
@@ -1027,7 +1056,7 @@ func TestObservedXMRSpentRefsReconcileCapsPostFilterWork(t *testing.T) {
 // cannot accumulate another reconciliation goroutine on the next trigger.
 func TestObservedXMRSpentRefsReconcileSingleFlight(t *testing.T) {
 	ag, _, _, _, bridge, _ := setupTestGossip(t)
-	ag.SetObserverApplySpentOutputRefs(func(common.ObservedTx, func(bool)) {})
+	ag.SetObserverApplySpentOutputRefs(func(spentOutputRefsImport, func(bool)) {})
 	base, _ := observerTestXMRPlan(t)
 	signer := secp256k1.GenPrivKey()
 	members := common.PubKeys{
@@ -1244,15 +1273,18 @@ func TestHistoricalXMRCertificateBroadcastCancellation(t *testing.T) {
 // TestHistoricalXMRCertificateReconcileSingleFlight verifies that a full-peer
 // fanout cannot accumulate overlapping reconciliation passes on later ticks.
 func TestHistoricalXMRCertificateReconcileSingleFlight(t *testing.T) {
-	ag, host, keys, _, _, _ := setupTestGossip(t)
+	ag, host, keys, _, bridge, _ := setupTestGossip(t)
 	remotePeers := configureHistoricalXMRCertificateBroadcastTestPeers(
 		t,
 		ag,
 		host,
 		historicalXMRCertificateSendConcurrency+1,
 	)
-	firstObsTx, _ := observerTestXMRPlan(t)
-	addDueHistoricalXMRCertificateTestBucket(t, ag, firstObsTx, keys.privKey)
+	firstObsTx, plan := observerTestXMRPlan(t)
+	producer := wireHistoricalXMRCertificateProducer(t, ag, bridge)
+	bridge.getVaultFunc = observerTestRetiringVaultFunc(firstObsTx.ObservedPubKey, observerTestPubKey(t, keys.privKey))
+	bridge.getKeysignFunc = observerTestKeysignFunc(plan)
+	require.NoError(t, ag.AttestObservedTx(context.Background(), &firstObsTx, false, false))
 
 	release := make(chan struct{})
 	var releaseOnce sync.Once
@@ -1284,15 +1316,17 @@ func TestHistoricalXMRCertificateReconcileSingleFlight(t *testing.T) {
 	secondObsTx.SpentOutputRefs = []common.OutputRef{
 		observerTestOutputRef("historical-reconcile-single-flight-ref", secondObsTx.Tx.ID.String()),
 	}
-	secondHash := addDueHistoricalXMRCertificateTestBucket(t, ag, secondObsTx, keys.privKey)
+	require.NoError(t, ag.AttestObservedTx(context.Background(), &secondObsTx, false, false))
 	ag.triggerHistoricalXMRSpentRefCertificateReconcile(context.Background())
 	time.Sleep(50 * time.Millisecond)
 	ag.mu.Lock()
 	reconcileRunning := ag.historicalXMRCertificateReconcileRunning
-	secondNextRetryAt := ag.historicalXMRSpentRefCertificates[secondHash].nextRetryAt
 	ag.mu.Unlock()
 	assert.True(t, reconcileRunning)
-	assert.True(t, secondNextRetryAt.IsZero(), "overlapping trigger must not claim newly due work")
+	pending, _, err := producer.storage.pendingXMRCertificates(time.Now(), 16)
+	require.NoError(t, err)
+	require.Len(t, pending, 1, "overlapping trigger must not claim newly queued work")
+	require.Zero(t, pending[0].RetryDelay)
 	assert.EqualValues(t, historicalXMRCertificateSendConcurrency, attempts.Load())
 
 	releaseOnce.Do(func() { close(release) })
@@ -1308,6 +1342,11 @@ func TestHistoricalXMRCertificateReconcileSingleFlight(t *testing.T) {
 	ag.triggerHistoricalXMRSpentRefCertificateReconcile(context.Background())
 	require.Eventually(t, func() bool {
 		return attempts.Load() == int32(len(remotePeers)*2)
+	}, time.Second, 10*time.Millisecond)
+	require.Eventually(t, func() bool {
+		ag.mu.Lock()
+		defer ag.mu.Unlock()
+		return !ag.historicalXMRCertificateReconcileRunning
 	}, time.Second, 10*time.Millisecond)
 }
 
@@ -1330,7 +1369,7 @@ func TestHistoricalXMRCertificateReconcileBacksOffRPCs(t *testing.T) {
 		return loadVault(pubKey)
 	}
 	bridge.getKeysignFunc = observerTestKeysignFunc(planned)
-	ag.SetObserverApplySpentOutputRefs(func(common.ObservedTx, func(bool)) {})
+	ag.SetObserverApplySpentOutputRefs(func(spentOutputRefsImport, func(bool)) {})
 
 	require.NoError(t, ag.acceptHistoricalXMRSpentRefCertificate(
 		observerTestSignedHistoricalXMRCertificate(t, obsTx, signer),
@@ -1388,7 +1427,8 @@ func TestHistoricalXMRCertificateActiveReceiverReconcilesAfterCapacityRejection(
 	ag.applySpentRefsSem = make(chan struct{}, 1)
 	ag.applySpentRefsSem <- struct{}{}
 	applied := make(chan common.ObservedTx, 1)
-	ag.SetObserverApplySpentOutputRefs(func(tx common.ObservedTx, onOutcome func(bool)) {
+	ag.SetObserverApplySpentOutputRefs(func(request spentOutputRefsImport, onOutcome func(bool)) {
+		tx := request.Tx
 		applied <- tx
 		if onOutcome != nil {
 			onOutcome(true)
@@ -1479,34 +1519,18 @@ func configureHistoricalXMRCertificateBroadcastTestPeers(
 	return remotePeers
 }
 
-func addDueHistoricalXMRCertificateTestBucket(
-	t *testing.T,
-	ag *AttestationGossip,
-	obsTx common.ObservedTx,
-	signer *secp256k1.PrivKey,
-) [sha256.Size]byte {
+func wireHistoricalXMRCertificateProducer(t *testing.T, ag *AttestationGossip, bridge *MockThorchainBridge) *Observer {
 	t.Helper()
-	certificate := observerTestSignedHistoricalXMRCertificate(t, obsTx, signer)
-	payload, err := obsTx.GetSignablePayloadWithInbound(false)
-	require.NoError(t, err)
-	payloadHash := sha256.Sum256(payload)
-	attestation := *certificate.Attestation
-	attestation.PubKey = append([]byte(nil), certificate.Attestation.PubKey...)
-	attestation.Signature = append([]byte(nil), certificate.Attestation.Signature...)
-
-	ag.mu.Lock()
-	if ag.historicalXMRSpentRefCertificates == nil {
-		ag.historicalXMRSpentRefCertificates = make(map[[sha256.Size]byte]*historicalXMRSpentRefCertificateBucket)
+	store, path := setupTestDB(t)
+	t.Cleanup(func() { cleanupTestDB(t, store, path) })
+	o := &Observer{
+		logger: ag.logger, storage: store, attestationGossip: ag, thorchainBridge: bridge,
+		lastNodeStatus:      thortypes.NodeStatus_Standby,
+		chains:              map[common.Chain]chainclients.ChainClient{common.XMRChain: &historicalXMRConfirmationChain{}},
+		tssKeysignMetricMgr: metrics.NewTssKeysignMetricMgr(),
 	}
-	ag.historicalXMRSpentRefCertificates[payloadHash] = &historicalXMRSpentRefCertificateBucket{
-		observedTx: obsTx,
-		attestations: map[string]*common.Attestation{
-			string(ag.pubKey): &attestation,
-		},
-		updatedAt: time.Now(),
-	}
-	ag.mu.Unlock()
-	return payloadHash
+	ag.certificateObserver = o
+	return o
 }
 
 func addPendingObservedXMRSpentRefsTestState(
@@ -1536,4 +1560,283 @@ func observerTestRetiringVaultFunc(vaultPubKey common.PubKey, members ...common.
 		vault.Status = thortypes.VaultStatus_RetiringVault
 		return vault, err
 	}
+}
+
+// A signing committee can contain two current validators and one churned-out
+// member. Its certificate must bind exactly the same observation bytes as the
+// current members, including the finalization heights and instant-signing path.
+func TestHistoricalXMRCertificateMatchesActiveObservationPhase(t *testing.T) {
+	for _, tc := range []struct {
+		name                     string
+		filtered, mempool, ready bool
+		confirmations            int64
+	}{
+		{name: "instant signing", filtered: true, mempool: true, ready: true},
+		{name: "canonical finalized", ready: true, confirmations: 10},
+		{name: "canonical awaiting confirmations", confirmations: 10},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ag, _, keys, _, bridge, _ := setupTestGossip(t)
+			obs, planned := observerTestXMRPlan(t)
+			var err error
+			obs.Tx.ID, err = common.NewTxID(obs.Tx.ID.String())
+			require.NoError(t, err)
+			obs.SpentOutputRefs[0].SpendTxHash = obs.Tx.ID.String()
+			obs.BlockHeight = 1732
+			obs.XmrMinedHeight = obs.BlockHeight
+			if tc.mempool {
+				obs.XmrMinedHeight = 0
+			}
+			obs.FinaliseHeight = obs.BlockHeight + tc.confirmations
+			second, third, fourth := secp256k1.GenPrivKey(), secp256k1.GenPrivKey(), secp256k1.GenPrivKey()
+			ag.setActiveValidators(nil)
+			bridge.getVaultFunc = observerTestRetiringVaultFunc(obs.ObservedPubKey,
+				observerTestPubKey(t, keys.privKey), observerTestPubKey(t, second),
+				observerTestPubKey(t, third), observerTestPubKey(t, fourth))
+			bridge.getKeysignFunc = observerTestKeysignFunc(planned)
+			item := &tctypes.TxInItem{
+				BlockHeight: obs.BlockHeight, Tx: obs.Tx.ID.String(), Memo: obs.Tx.Memo,
+				Sender: obs.Tx.FromAddress.String(), To: obs.Tx.ToAddress.String(),
+				Coins: obs.Tx.Coins, Gas: obs.Tx.Gas, ObservedVaultPubKey: obs.ObservedPubKey,
+				SpentOutputRefs: []*common.OutputRef{&obs.SpentOutputRefs[0]},
+			}
+			expected := obs
+			if tc.ready && !tc.mempool {
+				expected.BlockHeight = expected.FinaliseHeight
+			}
+			// Two ordinary source-member signatures are insufficient by themselves.
+			ag.handleObservedTxAttestation(context.Background(), observerTestSignedHistoricalXMRCertificate(t, expected, second))
+			ag.handleObservedTxAttestation(context.Background(), observerTestSignedHistoricalXMRCertificate(t, expected, third))
+			applied := make(chan spentOutputRefsImport, 1)
+			ag.SetObserverApplySpentOutputRefs(func(request spentOutputRefsImport, outcome func(bool)) {
+				applied <- request
+				outcome(true)
+			})
+			observer := wireHistoricalXMRCertificateProducer(t, ag, bridge)
+			observer.chains[common.XMRChain] = &historicalXMRConfirmationChain{confirmations: 10, ready: tc.ready}
+			txIn := tctypes.TxIn{
+				Chain: common.XMRChain, Filtered: tc.filtered, MemPool: tc.mempool,
+				ConfirmationRequired: tc.confirmations, TxArray: []*tctypes.TxInItem{item},
+			}
+			require.NoError(t, observer.attestHistoricalXMRSpentRefCertificates(txIn))
+			observer.retryPendingXMRCertificates(context.Background())
+			select {
+			case got := <-applied:
+				wantBytes, payloadErr := expected.GetSignablePayloadWithInbound(false)
+				require.NoError(t, payloadErr)
+				gotBytes, payloadErr := got.Tx.GetSignablePayloadWithInbound(false)
+				require.NoError(t, payloadErr)
+				require.Equal(t, wantBytes, gotBytes)
+				require.False(t, got.ChainCommitted)
+			case <-time.After(time.Second):
+				t.Fatal("historical member did not complete the exact source-vault certificate")
+			}
+			payload, err := expected.GetSignablePayloadWithInbound(false)
+			require.NoError(t, err)
+			require.Len(t, ag.observedXMRPayloadAttestations(expected, sha256.Sum256(payload)), 2,
+				"the inactive member must not become an ordinary observation vote")
+		})
+	}
+}
+
+func TestHistoricalXMRCertificateIgnoresUnfilteredMempool(t *testing.T) {
+	ag, _, _, _, _, _ := setupTestGossip(t)
+	ag.setActiveValidators(nil)
+	observer := &Observer{attestationGossip: ag}
+	require.NoError(t, observer.attestHistoricalXMRSpentRefCertificates(tctypes.TxIn{
+		Chain: common.XMRChain, MemPool: true, TxArray: []*tctypes.TxInItem{{}},
+	}))
+	ag.mu.Lock()
+	defer ag.mu.Unlock()
+	require.Empty(t, ag.historicalXMRSpentRefCertificates)
+	require.Empty(t, ag.observedTxs)
+}
+
+func TestHistoricalXMRCertificateVaultStatusDoesNotGrantAuthority(t *testing.T) {
+	obs, _ := observerTestXMRPlan(t)
+	for _, status := range []thortypes.VaultStatus{thortypes.VaultStatus_ActiveVault, thortypes.VaultStatus_RetiringVault, thortypes.VaultStatus_InactiveVault} {
+		vault := thortypes.Vault{PubKey: obs.ObservedPubKey, Status: status}
+		require.NoError(t, validateHistoricalXMRCertificateVault(obs.ObservedPubKey, vault))
+		require.Error(t, validateHistoricalXMRCertificateVault(common.PubKey("wrong-vault"), vault))
+	}
+	require.Error(t, validateHistoricalXMRCertificateVault(obs.ObservedPubKey, thortypes.Vault{}))
+}
+
+func (c *historicalXMRConfirmationChain) GetHeight() (int64, error) { return c.height, nil }
+
+func TestHistoricalXMRCertificateUsesFullBatchAndSurvivesProducerRestart(t *testing.T) {
+	for _, prefix := range []string{"MIGRATE:", "OUT:", "REFUND:"} {
+		for _, finalized := range []bool{false, true} {
+			t.Run(prefix+fmt.Sprint(finalized), func(t *testing.T) {
+				ag, _, keys, _, bridge, _ := setupTestGossip(t)
+				obs, plan := observerTestXMRPlan(t)
+				obs.Tx.ID, _ = common.NewTxID(obs.Tx.ID.String())
+				obs.SpentOutputRefs[0].SpendTxHash = obs.Tx.ID.String()
+				ag.setActiveValidators(nil)
+				bridge.getVaultFunc = observerTestRetiringVaultFunc(obs.ObservedPubKey, observerTestPubKey(t, keys.privKey))
+				bridge.getKeysignFunc = observerTestKeysignFunc(plan)
+				if prefix != "MIGRATE:" {
+					inboundID := common.TxID(observerTestHash("restart-inbound"))
+					obs.Tx.Memo = prefix + inboundID.String()
+					plan.memo, plan.wireMemo = obs.Tx.Memo, obs.Tx.Memo
+					bridge.getObservedTxVoterFunc = observerTestObservedTxVoterFunc(inboundID, plan)
+				}
+				store, path := setupTestDB(t)
+				chain := &historicalXMRConfirmationChain{ready: finalized, height: 237}
+				countCalls := 0
+				chain.confirmationCount = func(batch tctypes.TxIn) int64 {
+					countCalls++
+					require.Len(t, batch.TxArray, 2, "confirmation calculation must include the deposit")
+					require.Equal(t, int64(200), batch.TxArray[0].BlockHeight, "keep the active path's first-item anchor")
+					return 37
+				}
+				o := &Observer{
+					logger: ag.logger, storage: store, attestationGossip: ag, thorchainBridge: bridge,
+					lastNodeStatus: thortypes.NodeStatus_Standby,
+					chains:         map[common.Chain]chainclients.ChainClient{common.XMRChain: chain}, tssKeysignMetricMgr: metrics.NewTssKeysignMetricMgr(),
+				}
+				ag.certificateObserver = o
+				payout := &tctypes.TxInItem{
+					BlockHeight: 190, Tx: obs.Tx.ID.String(), Memo: obs.Tx.Memo,
+					Sender: obs.Tx.FromAddress.String(), To: obs.Tx.ToAddress.String(), Coins: obs.Tx.Coins, Gas: obs.Tx.Gas,
+					ObservedVaultPubKey: obs.ObservedPubKey, SpentOutputRefs: []*common.OutputRef{&obs.SpentOutputRefs[0]}, TxKey: obs.XmrTxKey,
+				}
+				deposit := payout.Copy()
+				deposit.BlockHeight, deposit.Tx = 200, observerTestHash("large-deposit")
+				deposit.Sender, deposit.To = "unknown-sender", obs.Tx.FromAddress.String()
+				deposit.Memo, deposit.SpentOutputRefs, deposit.TxKey = "SWAP:BTC.BTC", nil, ""
+				deposit.Coins = common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(2220000000)))
+				batch := tctypes.TxIn{Chain: common.XMRChain, TxArray: []*tctypes.TxInItem{deposit, payout}}
+				ag.setActiveValidators(common.PubKeys{observerTestPubKey(t, keys.privKey)})
+				require.ErrorContains(t, o.attestHistoricalXMRSpentRefCertificates(batch), "waiting for node status")
+				before, _, err := store.pendingXMRCertificates(time.Now().Add(time.Second), 16)
+				require.NoError(t, err)
+				require.Empty(t, before)
+				ag.setActiveValidators(nil)
+				countCalls = 0
+				require.NoError(t, o.attestHistoricalXMRSpentRefCertificates(batch))
+				require.Equal(t, 1, countCalls)
+				records, _, err := store.pendingXMRCertificates(time.Now().Add(time.Second), 16)
+				require.NoError(t, err)
+				require.Len(t, records, 1)
+				var got common.AttestTx
+				require.NoError(t, got.Unmarshal(records[0].Payload))
+				expected := obs
+				expected.BlockHeight, expected.FinaliseHeight = 190, 237
+				expected.XmrMinedHeight = payout.BlockHeight
+				if finalized {
+					expected.BlockHeight = 237
+				}
+				wantBytes, err := expected.GetSignablePayloadWithInbound(false)
+				require.NoError(t, err)
+				gotBytes, err := got.ObsTx.GetSignablePayloadWithInbound(false)
+				require.NoError(t, err)
+				require.Equal(t, wantBytes, gotBytes)
+				require.NoError(t, verifySignature(gotBytes, got.Attestation.Signature, got.Attestation.PubKey))
+				// Crash after durable handoff, before sending. Opening only the persisted
+				// store is sufficient; no scanner receipt or in-memory certificate exists.
+				require.NoError(t, store.Close())
+				store, err = NewObserverStorage(path, config.LevelDBOptions{})
+				require.NoError(t, err)
+				defer cleanupTestDB(t, store, path)
+				o.storage = store
+				o.retryPendingXMRCertificates(context.Background())
+				records, _, err = store.pendingXMRCertificates(time.Now().Add(time.Hour), 16)
+				require.NoError(t, err)
+				require.Len(t, records, 1, "local import must not complete durable recovery")
+				got = common.AttestTx{}
+				require.NoError(t, got.Unmarshal(records[0].Payload))
+				require.Equal(t, int64(237), got.ObsTx.BlockHeight, "saved full-batch finalization threshold survives restart")
+				require.Equal(t, int64(237), got.ObsTx.FinaliseHeight)
+				require.Equal(t, payout.BlockHeight, got.ObsTx.XmrMinedHeight, "original mined height survives restart")
+				finalBytes, err := got.ObsTx.GetSignablePayloadWithInbound(false)
+				require.NoError(t, err)
+				require.NoError(t, verifySignature(finalBytes, got.Attestation.Signature, got.Attestation.PubKey))
+			})
+		}
+	}
+}
+
+func TestPendingXMRCertificateCompletionRequiresCanonicalFinality(t *testing.T) {
+	obs, _ := observerTestXMRPlan(t)
+	voter := &thortypes.QueryObservedTxVoter{TxID: obs.Tx.ID, Height: 123}
+	require.False(t, pendingXMRCertificateComplete(obs, nil))
+	require.False(t, pendingXMRCertificateComplete(obs, voter))
+	voter.FinalisedHeight = 124
+	voter.Tx = thortypes.QueryObservedTx{Tx: obs.Tx, ObservedPubKey: obs.ObservedPubKey, BlockHeight: 10, FinaliseHeight: 20, XmrTxKey: obs.XmrTxKey}
+	require.False(t, pendingXMRCertificateComplete(obs, voter))
+	voter.Tx.BlockHeight = 20
+	require.False(t, pendingXMRCertificateComplete(obs, voter), "missing spend proof cannot complete recovery")
+	voter.Tx.SpentOutputRefs = []*common.OutputRef{&obs.SpentOutputRefs[0]}
+	require.True(t, pendingXMRCertificateComplete(obs, voter))
+	voter.Tx.Tx.ID = common.TxID(observerTestHash("different"))
+	require.False(t, pendingXMRCertificateComplete(obs, voter))
+	voter.Reverted = true
+	require.True(t, pendingXMRCertificateComplete(obs, voter))
+	voter.TxID = common.TxID(observerTestHash("different"))
+	require.False(t, pendingXMRCertificateComplete(obs, voter))
+}
+
+func TestHistoricalXMRCertificateCapacityReclaimsOnlyAppliedReceipts(t *testing.T) {
+	ag, _, _, _, _, _ := setupTestGossip(t)
+	signer := "historical-member"
+	ag.historicalXMRSpentRefCertificates = make(map[[sha256.Size]byte]*historicalXMRSpentRefCertificateBucket)
+	ag.historicalXMRCertificateSignerUse = map[string]int{signer: maxHistoricalXMRCertificateBucketsPerSigner}
+	for i := 0; i < maxHistoricalXMRCertificateBucketsPerSigner; i++ {
+		hash := sha256.Sum256([]byte(fmt.Sprint(i)))
+		ag.historicalXMRSpentRefCertificates[hash] = &historicalXMRSpentRefCertificateBucket{attestations: map[string]*common.Attestation{signer: {}}, updatedAt: time.Now()}
+	}
+	incoming := sha256.Sum256([]byte("new-payout"))
+	require.Error(t, ag.checkHistoricalXMRCertificateCapacity(incoming, signer), "unapplied signatures must not be evicted")
+	completed := sha256.Sum256([]byte("0"))
+	ag.historicalXMRSpentRefCertificates[completed].applied = true
+	require.NoError(t, ag.checkHistoricalXMRCertificateCapacity(incoming, signer))
+	require.NotContains(t, ag.historicalXMRSpentRefCertificates, completed)
+	require.Equal(t, maxHistoricalXMRCertificateBucketsPerSigner-1, ag.historicalXMRCertificateSignerUse[signer])
+}
+
+func TestHistoricalXMRCertificateRequiresDurableOwner(t *testing.T) {
+	ag, _, keys, _, bridge, _ := setupTestGossip(t)
+	obs, plan := observerTestXMRPlan(t)
+	ag.setActiveValidators(nil)
+	bridge.getVaultFunc = observerTestRetiringVaultFunc(obs.ObservedPubKey, observerTestPubKey(t, keys.privKey))
+	bridge.getKeysignFunc = observerTestKeysignFunc(plan)
+	require.ErrorContains(t, ag.AttestObservedTx(context.Background(), &obs, false, false), "durable storage is unavailable")
+	require.Empty(t, ag.historicalXMRSpentRefCertificates)
+	ag.certificateObserver = &Observer{}
+	require.ErrorContains(t, ag.AttestObservedTx(context.Background(), &obs, false, false), "durable storage is unavailable")
+	producer := wireHistoricalXMRCertificateProducer(t, ag, bridge)
+	require.NoError(t, ag.AttestObservedTx(context.Background(), &obs, false, false))
+	records, _, err := producer.storage.pendingXMRCertificates(time.Now().Add(time.Second), 16)
+	require.NoError(t, err)
+	require.Len(t, records, 1)
+	require.Empty(t, ag.historicalXMRSpentRefCertificates, "producer admission must not create non-durable delivery state")
+}
+
+func TestHistoricalXMRCertificateReceiverNeverOwnsProducerDelivery(t *testing.T) {
+	ag, host, keys, _, bridge, _ := setupTestGossip(t)
+	obs, plan := observerTestXMRPlan(t)
+	configureHistoricalXMRCertificateBroadcastTestPeers(t, ag, host, 1)
+	bridge.getVaultFunc = observerTestRetiringVaultFunc(obs.ObservedPubKey, observerTestPubKey(t, keys.privKey))
+	bridge.getKeysignFunc = observerTestKeysignFunc(plan)
+	var sends atomic.Int32
+	host.streamFunc = func(context.Context, peer.ID, ...protocol.ID) (network.Stream, error) {
+		sends.Add(1)
+		return nil, fmt.Errorf("unexpected receiver broadcast")
+	}
+	require.NoError(t, ag.acceptHistoricalXMRSpentRefCertificate(observerTestSignedHistoricalXMRCertificate(t, obs, keys.privKey), ""))
+	ag.mu.Lock()
+	for _, bucket := range ag.historicalXMRSpentRefCertificates {
+		bucket.nextRetryAt = time.Time{}
+	}
+	ag.mu.Unlock()
+	ag.reconcileHistoricalXMRSpentRefCertificates(context.Background())
+	// A removed fallback used asynchronous sends. Wait for any claimed send
+	// slots to drain so this assertion also catches that implementation.
+	ag.mu.Lock()
+	sendSem := ag.historicalXMRCertificateSendSem
+	ag.mu.Unlock()
+	require.Eventually(t, func() bool { return len(sendSem) == 0 }, time.Second, time.Millisecond)
+	require.Zero(t, sends.Load(), "only the durable producer may retransmit")
+	require.NotEmpty(t, ag.historicalXMRSpentRefCertificates, "receiver proof and local retries are retained")
 }

@@ -137,9 +137,6 @@
         "tx_size_cost_per_byte": "10"
       }
     },
-    "authz": {
-      "authorization": []
-    },
     "bank": {
       "balances": [
         {
@@ -288,7 +285,7 @@
       ],
       "affiliate_collectors": [
         {
-          "owner_address": "tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej",
+          "name": "t",
           "rune_amount": "451711461"
         }
       ],
@@ -588,6 +585,7 @@
       },
       "rune_providers": [],
       "secured_assets": [],
+      "sol_vault_nonces": [],
       "streaming_swaps": [],
       "swap_queue_items": [],
       "swapper_clout": [
@@ -693,7 +691,6 @@
               "decimals": "8"
             }
           ],
-          "deficit": null,
           "inbound_tx_count": "2",
           "membership": [
             "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4"

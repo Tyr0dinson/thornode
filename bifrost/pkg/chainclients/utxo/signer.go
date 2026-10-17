@@ -2,12 +2,10 @@ package utxo
 
 import (
 	"bytes"
-	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -17,7 +15,7 @@ import (
 	"github.com/hashicorp/go-multierror"
 	ltcwire "github.com/ltcsuite/ltcd/wire"
 	"github.com/ltcsuite/ltcutil"
-	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/zecutil"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/zcash"
 
 	ltctxscript "gitlab.com/thorchain/thornode/v3/bifrost/txscript/ltcd-txscript"
 
@@ -27,6 +25,7 @@ import (
 	dogewire "github.com/eager7/dogd/wire"
 	"github.com/eager7/dogutil"
 
+	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/signercache"
 	chainclienttypes "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/types"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/utxo"
@@ -55,6 +54,15 @@ import (
 const ZecTxExpiry = uint32(40)
 
 const zecHeightReportInterval = int64(ZecTxExpiry) / 4
+
+// broadcastMaxFeeRate is the "maxfeerate" passed to sendrawtransaction for BTC and
+// LTC. It is denominated in BTC/kvB, not sats - Core multiplies by 1e8 itself and
+// rejects anything >= 1 BTC/kvB. 0.1 is Core's own default (10,000 sat/vB); the fee
+// cap in buildTx must keep the signed transaction within it (see maxFeeSats).
+const broadcastMaxFeeRate = 0.1
+
+// broadcastMaxSatsPerVByte is broadcastMaxFeeRate in sats per vbyte (1e8 / 1000).
+const broadcastMaxSatsPerVByte = int64(broadcastMaxFeeRate * 1e5)
 
 // ZecExtraFee (in Zats) is added to the calculated gas costs
 const ZecExtraFee = int(0)
@@ -157,7 +165,7 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []b
 		}
 		outputAddrStr = btcAddr.String()
 	case common.ZECChain:
-		outputAddr, err = zecutil.DecodeAddress(tx.ToAddress.String(), c.getChainCfgZEC().Name)
+		outputAddr, err = zcash.DecodeAddress(tx.ToAddress.String(), c.getChainCfgZEC().Name)
 		if err != nil {
 			return nil, nil, nil, fmt.Errorf("fail to decode next address: %w", err)
 		}
@@ -211,9 +219,60 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []b
 		}
 
 	} else {
-		redeemTx, checkpoint.IndividualAmounts, err = c.buildTx(tx, sourceScript)
+		var zecReference int64
+		var zecVersion int32
+		if c.cfg.ChainID == common.ZECChain {
+			checkpoint.ZecExpiryHeight, err = c.getZecExpiryHeight(thorchainHeight)
+			if err != nil {
+				return nil, nil, nil, err
+			}
+			// Keep the agreed reference even when an upgrade shortens expiry.
+			agreedHeight := checkpoint.ZecExpiryHeight - ZecTxExpiry
+			zecReference = int64(agreedHeight)
+			var consensus zcash.ConsensusState
+			if err = c.rpc.Call(&consensus, "getblockchaininfo"); err != nil {
+				return nil, nil, nil, fmt.Errorf("get ZEC upgrades: %w", err)
+			}
+			branch, expiry, stateErr := consensus.PaymentState(agreedHeight, ZecTxExpiry)
+			if stateErr != nil {
+				return nil, nil, nil, stateErr
+			}
+			checkpoint.ZecConsensusBranchID = branch
+			checkpoint.ZecExpiryHeight = expiry
+			// Choose the transaction version from the daemon's upgrade schedule: v6
+			// (ZIP-229) once the agreed height is at or past NU6.3, else v5. Fixed by the
+			// consensus-agreed height + branch schedule, so every signer picks the same
+			// version, and it is committed in the checkpoint's UnsignedTx for retries.
+			if consensus.V6Active(agreedHeight) {
+				zecVersion = 6
+			} else {
+				zecVersion = 5
+			}
+			tip, tipErr := c.rpc.GetBlockCount()
+			if tipErr != nil {
+				return nil, nil, nil, fmt.Errorf("get ZEC tip before input selection: %w", tipErr)
+			}
+			if err = checkZecExpiry(checkpoint.ZecExpiryHeight, tip); err != nil {
+				return nil, nil, nil, err
+			}
+		}
+		redeemTx, checkpoint.IndividualAmounts, err = c.buildTx(tx, sourceScript, zecReference)
 		if err != nil {
 			return nil, nil, nil, err
+		}
+		if c.cfg.ChainID == common.ZECChain {
+			// Sign transparent payments as v6 (ZIP-229) once NU6.3 is active at the agreed
+			// height, else v5 (the daemon rejects a v6 tx under a pre-NU6.3 branch). v6 is the
+			// standard transparent format on mainnet since NU6.3 (block 3,428,143) and stays
+			// valid under NU7; v5 is valid on every branch since NU5. zecVersion was fixed above
+			// from the consensus-agreed height + daemon schedule, so every signer picks the same
+			// version. The transparent code path (input selection, serialization, the transparent
+			// sub-digest) is identical for v5 and v6; the full ZIP-244 SIGHASH differs, because
+			// the header digest commits the version/version-group id and the empty-shielded digest
+			// uses v6 personalizations. A mixed-version signer set therefore cannot form a keysign
+			// party, so a version switch is gated operationally by HALTSIGNINGZEC (held until every
+			// bifrost runs the new build, then unhalted).
+			redeemTx.Version = zecVersion
 		}
 		buf := bytes.NewBuffer([]byte{})
 		err = redeemTx.Serialize(buf)
@@ -221,13 +280,6 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []b
 			return nil, nil, nil, fmt.Errorf("fail to serialize tx: %w", err)
 		}
 		checkpoint.UnsignedTx = buf.Bytes()
-	}
-
-	if c.cfg.ChainID == common.ZECChain && checkpoint.ZecExpiryHeight == 0 {
-		checkpoint.ZecExpiryHeight, err = c.getZecExpiryHeight(thorchainHeight)
-		if err != nil {
-			return nil, nil, nil, err
-		}
 	}
 
 	// serialize the checkpoint for later
@@ -278,19 +330,41 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []b
 	}
 
 	// only used for zcash
-	var zecTx *zecutil.MsgTx
+	var zecTx *zcash.Tx
+	var zecHashes *zcash.SigHashes
 	if c.cfg.ChainID == common.ZECChain {
+		// Retire expired attempts even if their format cannot be signed.
 		if err = checkZecExpiry(checkpoint.ZecExpiryHeight, chainHeight); err != nil {
 			return nil, checkpointBytes, nil, err
 		}
-		// WARNING: v4 (Sapling) is assumed by both BroadcastTx (double-SHA256 txid)
-		// and zecutil signing (Blake2b sighash). Upgrading to v5 requires updating
-		// txid calculation per ZIP-244 and the signing algorithm.
-		redeemTx.Version = 4
-
-		zecTx = &zecutil.MsgTx{
-			MsgTx:        redeemTx,
-			ExpiryHeight: checkpoint.ZecExpiryHeight,
+		// Accept v5 and v6: both are chain-valid under the current branch and the version
+		// is pinned in the checkpoint bytes (not re-chosen here), so a signer that holds a
+		// v5 checkpoint resumes it as v5 instead of burning its expiry window on
+		// "unsupported Zcash checkpoint". Checkpoints are per-signer local storage, not
+		// shared: a member without the checkpoint rebuilds via the else-branch as v6, so a
+		// fleet with in-flight v5 signings at the flip still cannot form a party until those
+		// retire — stagenet must drain or halt ZEC signing before the switch. Moot on
+		// mainnet, which is HALTSIGNINGZEC-halted and has never signed a ZEC outbound.
+		if (redeemTx.Version != 5 && redeemTx.Version != 6) || checkpoint.ZecConsensusBranchID == 0 {
+			return nil, checkpointBytes, nil, errors.New("unsupported Zcash checkpoint")
+		}
+		zecTx = &zcash.Tx{
+			MsgTx:             redeemTx,
+			ExpiryHeight:      checkpoint.ZecExpiryHeight,
+			ConsensusBranchID: checkpoint.ZecConsensusBranchID,
+		}
+		inputs := make([]*btcwire.TxOut, len(redeemTx.TxIn))
+		for i, input := range redeemTx.TxIn {
+			key := formatUtxoKey(input.PreviousOutPoint.Hash.String(), input.PreviousOutPoint.Index)
+			amount, exists := checkpoint.IndividualAmounts[key]
+			if !exists || amount <= 0 {
+				return nil, checkpointBytes, nil, fmt.Errorf("invalid ZEC input amount: %s", key)
+			}
+			inputs[i] = btcwire.NewTxOut(amount, sourceScript)
+		}
+		zecHashes, err = zcash.NewSigHashes(zecTx, inputs)
+		if err != nil {
+			return nil, checkpointBytes, nil, err
 		}
 	}
 
@@ -336,7 +410,7 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []b
 				}
 				signErr = c.signUTXOBTC(msgTx, tx, amount, sourceScript, i, thorchainHeight)
 			case common.ZECChain:
-				signErr = c.signUTXOZEC(zecTx, tx, amount, sourceScript, i, thorchainHeight)
+				signErr = c.signUTXOZEC(zecTx, zecHashes, tx, i, thorchainHeight)
 			default:
 				c.log.Fatal().Msg("unsupported chain")
 			}
@@ -353,7 +427,24 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []b
 		if allNotSelectedForKeysign(utxoErr) {
 			return nil, nil, nil, nil
 		}
+		// Classify before posting: PostKeysignFailure appends to utxoErr in place.
+		partyNeverFormed := allJoinPartyFailures(utxoErr, len(signings))
 		err = utxo.PostKeysignFailure(c.bridge, tx, c.log, thorchainHeight, utxoErr)
+
+		// The checkpoint pins this outbound to one tx, so a vault never signs
+		// two different txs for it. That only matters once signing may have
+		// produced a signature. If the party never formed for any input, no
+		// signing round ran, so keep no checkpoint and rebuild next attempt.
+		// Members that built different txs (their bitcoind views of the vault
+		// UTXOs differ) otherwise keep retrying their own tx and never form a
+		// party until THORChain reschedules the outbound.
+		if tx.Checkpoint == nil && partyNeverFormed {
+			c.log.Warn().
+				Stringer("in_hash", tx.InHash).
+				Msg("keysign party did not form, discarding unsigned tx so the next attempt rebuilds it")
+			c.countPartyNotFormed()
+			return nil, nil, nil, fmt.Errorf("fail to sign the message: %w", err)
+		}
 		return nil, checkpointBytes, nil, fmt.Errorf("fail to sign the message: %w", err)
 	}
 
@@ -412,7 +503,7 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []b
 
 	switch c.cfg.ChainID {
 	case common.ZECChain:
-		err = zecTx.ZecEncode(&signedTx, 0, btcwire.BaseEncoding)
+		err = zecTx.Serialize(&signedTx)
 	default:
 		// calculate the final transaction size
 		finalSize := redeemTx.SerializeSize()
@@ -436,7 +527,11 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []b
 	// ZEC hash is computed from zecTx instead of redeemTx
 	txHash := redeemTx.TxHash().String()
 	if c.cfg.ChainID == common.ZECChain {
-		txHash = zecTx.TxHash().String()
+		hash, hashErr := zecTx.ID()
+		if hashErr != nil {
+			return nil, checkpointBytes, nil, hashErr
+		}
+		txHash = hash.String()
 	}
 
 	var txIn *stypes.TxInItem
@@ -496,6 +591,34 @@ func allNotSelectedForKeysign(err error) bool {
 	}
 	for _, item := range merr.Errors {
 		if !errors.Is(item, tss.ErrNotSelectedForKeysign) {
+			return false
+		}
+	}
+	return true
+}
+
+// countPartyNotFormed increments the party-not-formed metric for this chain.
+// Nil-safe: directly-constructed test clients omit m.
+func (c *Client) countPartyNotFormed() {
+	if c.m == nil {
+		return
+	}
+	if cv := c.m.GetCounterVec(metrics.UTXOKeysignPartyNotFormed); cv != nil {
+		cv.WithLabelValues(c.cfg.ChainID.String()).Inc()
+	}
+}
+
+// allJoinPartyFailures reports whether every one of the inputs failed to form
+// a keysign party. An input that signed, or that failed after the party
+// formed, may have exposed a signature, so any such input returns false.
+func allJoinPartyFailures(err error, inputs int) bool {
+	var merr *multierror.Error
+	if !errors.As(err, &merr) || inputs == 0 || len(merr.Errors) != inputs {
+		return false
+	}
+	for _, item := range merr.Errors {
+		ksErr := tss.KeysignError{}
+		if !errors.As(item, &ksErr) || !ksErr.IsJoinPartyFailure() {
 			return false
 		}
 	}
@@ -598,12 +721,22 @@ func (c *Client) BroadcastTx(txOut stypes.TxOutItem, payload []byte) (string, er
 
 	// broadcast tx
 	var txid string
+	var zecTxID string
 	switch c.cfg.ChainID {
 	case common.ZECChain:
 		if len(payload) == 0 {
 			return "", fmt.Errorf("payload is empty")
 		}
-		txid, err = c.checkZecBroadcastExpiry(payload, height)
+		zecTx, decodeErr := zcash.ParseTx(payload)
+		if decodeErr != nil {
+			return "", fmt.Errorf("invalid ZEC payload: %w", decodeErr)
+		}
+		hash, hashErr := zecTx.ID()
+		if hashErr != nil {
+			return "", hashErr
+		}
+		zecTxID = hash.String()
+		txid, err = c.checkZecBroadcastExpiry(zecTx.ExpiryHeight, zecTxID, height)
 		if err != nil {
 			return "", err
 		}
@@ -629,9 +762,7 @@ func (c *Client) BroadcastTx(txOut stypes.TxOutItem, payload []byte) (string, er
 		case common.DOGEChain, common.BCHChain:
 			maxFee = true // "allowHighFees"
 		case common.LTCChain, common.BTCChain:
-			// "maxfeerate" is denominated in BTC/kvB, not sats - Core multiplies by 1e8
-			// itself and rejects anything >= 1 BTC/kvB. 0.1 is Core's own default.
-			maxFee = 0.1
+			maxFee = broadcastMaxFeeRate
 		}
 
 		txid, err = c.rpc.SendRawTransaction(redeemTx, maxFee)
@@ -646,13 +777,7 @@ func (c *Client) BroadcastTx(txOut stypes.TxOutItem, payload []byte) (string, er
 	if err != nil {
 		switch c.cfg.ChainID {
 		case common.ZECChain:
-			hash1 := sha256.Sum256(payload)
-			hash2 := sha256.Sum256(hash1[:])
-			final := hash2[:]
-
-			slices.Reverse(final)
-
-			txid = hex.EncodeToString(final)
+			txid = zecTxID
 
 			// zebrad specific messages
 			msgs = append(msgs, []string{

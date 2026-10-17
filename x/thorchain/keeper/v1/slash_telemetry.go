@@ -36,8 +36,28 @@ func initSlashTelemetry() {
 func getSlashCaller(fn string) string {
 	stackBuf := make([]byte, 4096)
 	written := runtime.Stack(stackBuf, false)
-	stack := stackBuf[:written]
+	return getSlashCallerFromStack(stackBuf[:written], fn)
+}
+
+func getSlashCallerFromStack(stack []byte, fn string) string {
 	lines := strings.Split(string(stack), "\n")
+	if caller := findSlashCaller(lines, fn); caller != "" {
+		return caller
+	}
+
+	// Most call sites route slash-point accounting through SlasherImpl's
+	// IncSlashPoints/DecSlashPoints wrappers. Consensus handlers which must
+	// propagate keeper persistence errors call the keeper directly instead.
+	// Retain caller attribution for those error-aware paths by falling back to
+	// the corresponding concrete keeper frame.
+	keeperFn := strings.Replace(fn, "SlashPoints", "NodeAccountSlashPoints", 1)
+	if keeperFn == fn {
+		return ""
+	}
+	return findSlashCaller(lines, keeperFn)
+}
+
+func findSlashCaller(lines []string, fn string) string {
 	for i, line := range lines {
 		if strings.Contains(line, fn) && len(lines) > i+3 {
 			return strings.Fields(strings.TrimSpace(lines[i+3]))[0]

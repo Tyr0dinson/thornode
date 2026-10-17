@@ -111,8 +111,7 @@ func TestAppImportExport(t *testing.T) {
 
 	t.Log("importing genesis...\n")
 
-	// trunk-ignore(golangci-lint/staticcheck): deprecated TODO: SDK 0.53 cleanup
-	newDB, newDir, _, _, err := simtestutil.SetupSimulation(config, "leveldb-app-sim-2", "Simulation-2", simcli.FlagVerboseValue, simcli.FlagEnabledValue)
+	newDB, newDir, _, _, err := simtestutil.SetupSimulation(config, "leveldb-app-sim-2", "Simulation-2", simcli.FlagVerboseValue, simcli.FlagEnabledValue) //nolint:staticcheck // deprecated TODO: SDK 0.53 cleanup
 	require.NoError(t, err, "simulation setup failed")
 
 	defer func() {
@@ -222,8 +221,7 @@ func TestAppSimulationAfterImport(t *testing.T) {
 
 	fmt.Printf("importing genesis...\n")
 
-	// trunk-ignore(golangci-lint/staticcheck): deprecated TODO: SDK 0.53 cleanup
-	newDB, newDir, _, _, err := simtestutil.SetupSimulation(config, "leveldb-app-sim-2", "Simulation-2", simcli.FlagVerboseValue, simcli.FlagEnabledValue)
+	newDB, newDir, _, _, err := simtestutil.SetupSimulation(config, "leveldb-app-sim-2", "Simulation-2", simcli.FlagVerboseValue, simcli.FlagEnabledValue) //nolint:staticcheck // deprecated TODO: SDK 0.53 cleanup
 	require.NoError(t, err, "simulation setup failed")
 
 	defer func() {
@@ -257,8 +255,7 @@ func setupSimulationApp(t *testing.T, msg string) (simtypes.Config, dbm.DB, simt
 	config := simcli.NewConfigFromFlags()
 	config.ChainID = SimAppChainID
 
-	// trunk-ignore(golangci-lint/staticcheck): deprecated TODO: SDK 0.53 cleanup
-	db, dir, logger, skip, err := simtestutil.SetupSimulation(config, "leveldb-app-sim", "Simulation", simcli.FlagVerboseValue, simcli.FlagEnabledValue)
+	db, dir, logger, skip, err := simtestutil.SetupSimulation(config, "leveldb-app-sim", "Simulation", simcli.FlagVerboseValue, simcli.FlagEnabledValue) //nolint:staticcheck // deprecated TODO: SDK 0.53 cleanup
 	if skip {
 		t.Skip(msg)
 	}
@@ -270,9 +267,8 @@ func setupSimulationApp(t *testing.T, msg string) (simtypes.Config, dbm.DB, simt
 	})
 
 	appOptions := make(simtestutil.AppOptionsMap, 0)
-	appOptions[flags.FlagHome] = dir // ensure a unique folder
-	// trunk-ignore(golangci-lint/staticcheck): deprecated TODO: SDK 0.53 cleanup
-	appOptions[server.FlagInvCheckPeriod] = simcli.FlagPeriodValue
+	appOptions[flags.FlagHome] = dir                               // ensure a unique folder
+	appOptions[server.FlagInvCheckPeriod] = simcli.FlagPeriodValue //nolint:staticcheck // deprecated TODO: SDK 0.53 cleanup
 
 	app := NewChainApp(logger, db, nil, true, appOptions, nil, fauxMerkleModeOpt, baseapp.SetChainID(SimAppChainID))
 	return config, db, appOptions, app
@@ -289,10 +285,8 @@ func TestAppStateDeterminism(t *testing.T) {
 	config := simcli.NewConfigFromFlags()
 	config.InitialBlockHeight = 1
 	config.ExportParamsPath = ""
-	// trunk-ignore(golangci-lint/staticcheck): deprecated TODO: SDK 0.53 cleanup
-	config.OnOperation = false
-	// trunk-ignore(golangci-lint/staticcheck): deprecated TODO: SDK 0.53 cleanup
-	config.AllInvariants = false
+	config.OnOperation = false   //nolint:staticcheck // deprecated TODO: SDK 0.53 cleanup
+	config.AllInvariants = false //nolint:staticcheck // deprecated TODO: SDK 0.53 cleanup
 	config.ChainID = SimAppChainID
 
 	numSeeds := 3
@@ -314,9 +308,8 @@ func TestAppStateDeterminism(t *testing.T) {
 			appOptions.SetDefault(key, value)
 		}
 	}
-	appOptions.SetDefault(flags.FlagHome, t.TempDir()) // ensure a unique folder
-	// trunk-ignore(golangci-lint/staticcheck): deprecated TODO: SDK 0.53 cleanup
-	appOptions.SetDefault(server.FlagInvCheckPeriod, simcli.FlagPeriodValue)
+	appOptions.SetDefault(flags.FlagHome, t.TempDir())                       // ensure a unique folder
+	appOptions.SetDefault(server.FlagInvCheckPeriod, simcli.FlagPeriodValue) //nolint:staticcheck // deprecated TODO: SDK 0.53 cleanup
 
 	for i := 0; i < numSeeds; i++ {
 		config.Seed += int64(i)

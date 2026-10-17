@@ -47,6 +47,7 @@ genesis_init() {
     add_account tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m rune 200000000000000 # dog
     add_account tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr rune 200000000000000 # fox
     add_account tthor1qk8c8sfrmfm0tkncs0zxeutc8v5mx3pjj07k4u rune 200000000000000 # pig
+    add_account tthor1necf5u8h6eeazm4449pxwhrr5h46eg7hc6zuq5 rune 200000000000000 # frog
 
     # simulation master
     add_account tthor1f4l5dlqhaujgkxxqmug4stfvmvt58vx2tspx4g rune 100000000000000 # master

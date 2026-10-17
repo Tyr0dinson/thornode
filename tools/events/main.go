@@ -24,6 +24,19 @@ var (
 	reMemoRefund    = regexp.MustCompile(`REFUND:(.+)`)
 )
 
+// testMemoInactiveVaultRefund is sent by the simulation framework's
+// InactiveVaultRefundActor (test/simulation/actors/features).
+const testMemoInactiveVaultRefund = "TEST-INACTIVE-VAULT-REFUND"
+
+// isTestMemo reports whether the memo marks simulation-framework test traffic
+// that should not alert. The simulation runs only against mocknet, and memos
+// are sender-controlled input on live networks, so the exemption requires
+// both the mocknet environment and exact memo equality — on mainnet and
+// stagenet the marker never suppresses monitoring.
+func isTestMemo(memo string) bool {
+	return config.Get().Network == "mocknet" && memo == testMemoInactiveVaultRefund
+}
+
 ////////////////////////////////////////////////////////////////////////////////////////
 // ScanBlock
 ////////////////////////////////////////////////////////////////////////////////////////

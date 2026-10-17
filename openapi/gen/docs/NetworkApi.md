@@ -9,6 +9,7 @@ Method | HTTP request | Description
 [**InboundAddresses**](NetworkApi.md#InboundAddresses) | **Get** /thorchain/inbound_addresses | 
 [**Lastblock**](NetworkApi.md#Lastblock) | **Get** /thorchain/lastblock | 
 [**LastblockChain**](NetworkApi.md#LastblockChain) | **Get** /thorchain/lastblock/{chain} | 
+[**Logs**](NetworkApi.md#Logs) | **Get** /thorchain/logs | 
 [**Network**](NetworkApi.md#Network) | **Get** /thorchain/network | 
 [**OutboundFeeAsset**](NetworkApi.md#OutboundFeeAsset) | **Get** /thorchain/outbound_fee/{asset} | 
 [**OutboundFees**](NetworkApi.md#OutboundFees) | **Get** /thorchain/outbound_fees | 
@@ -347,6 +348,78 @@ Name | Type | Description  | Notes
 ### Return type
 
 [**[]LastBlock**](LastBlock.md)
+
+### Authorization
+
+No authorization required
+
+### HTTP request headers
+
+- **Content-Type**: Not defined
+- **Accept**: application/json
+
+[[Back to top]](#) [[Back to API list]](../README.md#documentation-for-api-endpoints)
+[[Back to Model list]](../README.md#documentation-for-models)
+[[Back to README]](../README.md)
+
+
+## Logs
+
+> []LogEntry Logs(ctx).Start(start).End(end).Level(level).Modules(modules).Execute()
+
+
+
+
+
+### Example
+
+```go
+package main
+
+import (
+    "context"
+    "fmt"
+    "os"
+    openapiclient "./openapi"
+)
+
+func main() {
+    start := int64(789) // int64 | first block height to include, defaults to the last block capture closed (optional)
+    end := int64(789) // int64 | last block height to include, defaults to the last block capture closed (optional)
+    level := "level_example" // string | lowest log level to include, along with every more severe level, defaults to info (optional)
+    modules := []string{"Inner_example"} // []string | modules to include, repeat the parameter for more than one (x/thorchain, x/bank, x/wasm, x/upgrade, ...), defaults to x/thorchain, pass * for every module (optional)
+
+    configuration := openapiclient.NewConfiguration()
+    apiClient := openapiclient.NewAPIClient(configuration)
+    resp, r, err := apiClient.NetworkApi.Logs(context.Background()).Start(start).End(end).Level(level).Modules(modules).Execute()
+    if err != nil {
+        fmt.Fprintf(os.Stderr, "Error when calling `NetworkApi.Logs``: %v\n", err)
+        fmt.Fprintf(os.Stderr, "Full HTTP response: %v\n", r)
+    }
+    // response from `Logs`: []LogEntry
+    fmt.Fprintf(os.Stdout, "Response from `NetworkApi.Logs`: %v\n", resp)
+}
+```
+
+### Path Parameters
+
+
+
+### Other Parameters
+
+Other parameters are passed through a pointer to a apiLogsRequest struct via the builder pattern
+
+
+Name | Type | Description  | Notes
+------------- | ------------- | ------------- | -------------
+ **start** | **int64** | first block height to include, defaults to the last block capture closed | 
+ **end** | **int64** | last block height to include, defaults to the last block capture closed | 
+ **level** | **string** | lowest log level to include, along with every more severe level, defaults to info | 
+ **modules** | **[]string** | modules to include, repeat the parameter for more than one (x/thorchain, x/bank, x/wasm, x/upgrade, ...), defaults to x/thorchain, pass * for every module | 
+
+### Return type
+
+[**[]LogEntry**](LogEntry.md)
 
 ### Authorization
 

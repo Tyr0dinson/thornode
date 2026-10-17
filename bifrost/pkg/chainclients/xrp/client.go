@@ -60,7 +60,7 @@ type Client struct {
 	signerCacheManager  *signercache.CacheManager
 	xrpScanner          *XrpBlockScanner
 	globalSolvencyQueue chan stypes.Solvency
-	// Serializes ReportSolvency when FetchTxs prefetch callbacks and SolvencyCheckRunner can both enter.
+	// Serializes ReportSolvency when ordered scan callbacks and SolvencyCheckRunner can both enter.
 	solvencyLock sync.Mutex
 	wg           *sync.WaitGroup
 	stopchan     chan struct{}
@@ -700,7 +700,7 @@ func (c *Client) GetGasEstimateForSolvency() cosmos.Uint {
 }
 
 func (c *Client) ReportSolvency(blockHeight int64) error {
-	// FetchTxs may call this from prefetch goroutines; SolvencyCheckRunner also calls it while halted.
+	// The ordered scan loop and SolvencyCheckRunner can both call this.
 	c.solvencyLock.Lock()
 	defer c.solvencyLock.Unlock()
 
@@ -709,7 +709,7 @@ func (c *Client) ReportSolvency(blockHeight int64) error {
 	}
 
 	// when block scanner is not healthy, only report from auto-unhalt SolvencyCheckRunner
-	// (FetchTxs passes PreviousHeight + 1 from scanBlocks, while SolvencyCheckRunner passes chainHeight)
+	// (the scan hook passes PreviousHeight + 1, while SolvencyCheckRunner passes chainHeight)
 	if !c.IsBlockScannerHealthy() && blockHeight == c.blockScanner.PreviousHeight()+1 {
 		return nil
 	}

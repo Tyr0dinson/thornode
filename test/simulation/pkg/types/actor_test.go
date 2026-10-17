@@ -1,10 +1,15 @@
 package types
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
 	rand "math/rand/v2"
+	"strings"
 	"testing"
+	"time"
 
+	"github.com/rs/zerolog"
 	. "gopkg.in/check.v1"
 )
 
@@ -147,4 +152,35 @@ func (s *ActorSuite) TestWalkDepthFirstVisitsDAGNodeOnce(c *C) {
 	c.Assert(visits, DeepEquals, expected)
 	c.Assert(shared.parents, DeepEquals, map[*Actor]bool{parent1: true, parent2: true})
 	c.Assert(child.parents, DeepEquals, map[*Actor]bool{shared: true})
+}
+
+// TestTimeoutReportsTimeSpentPerOp checks that a timeout log shows how much of
+// the budget the stalled op used, separating slow setup from slow verification.
+func (s *ActorSuite) TestTimeoutReportsTimeSpentPerOp(c *C) {
+	actor := NewActor("timeout", testRNG())
+	actor.Timeout = 30 * time.Millisecond
+	actor.Interval = time.Millisecond
+	var buf bytes.Buffer
+	actor.SetLogger(zerolog.New(&buf))
+
+	setup := func(*OpConfig) OpResult {
+		time.Sleep(20 * time.Millisecond)
+		return OpResult{Continue: true}
+	}
+	verify := func(*OpConfig) OpResult { return OpResult{} }
+	actor.Ops = []Op{setup, verify}
+
+	c.Assert(actor.Execute(&OpConfig{}), Equals, ErrTimeout)
+
+	var entry struct {
+		Op        string  `json:"op"`
+		OpElapsed float64 `json:"op_elapsed"`
+		Elapsed   float64 `json:"elapsed"`
+		Timeout   float64 `json:"timeout"`
+	}
+	c.Assert(json.Unmarshal(buf.Bytes(), &entry), IsNil)
+	c.Assert(strings.Contains(entry.Op, "TestTimeoutReportsTimeSpentPerOp"), Equals, true)
+	c.Assert(entry.Timeout, Equals, float64(30))
+	c.Assert(entry.Elapsed > entry.Timeout, Equals, true)
+	c.Assert(entry.OpElapsed < entry.Elapsed-15, Equals, true)
 }

@@ -94,13 +94,28 @@ const (
 
 type solRPCScenario struct {
 	tip       uint64 // finalized tip this node's RPC reports (getSlot)
-	floorSlot uint64 // oldest slot that has a block (older slots are "missing")
+	floorSlot uint64 // oldest slot the ledger retains (older slots are PRUNED away)
 	alignSlot int64  // slot whose blockTime == target
 	target    int64  // t - margin (from the mock bridge time)
 	blockTime func(slot uint64) (value int64, ok bool)
+	// skipFrom/skipTo (inclusive, ignored when skipTo == 0) model a run of SKIPPED
+	// slots inside RETAINED history: no leader produced a block, so getBlocks omits
+	// them, but every block BELOW the run is still served and
+	// getFirstAvailableBlock still reports floorSlot. Pruning and a skipped run look
+	// identical in a getBlocks listing, which is why the consensus search may only
+	// conclude "pruned" from the reported floor.
+	skipFrom, skipTo uint64
+	// noHistoryFloor makes getFirstAvailableBlock ERROR, modelling a provider that
+	// does not serve it. Pruning is then unproven and the search must gallop on.
+	noHistoryFloor bool
 	// isBlockhashValidResp drives the per-node participation gate so SignTx abstain
 	// branches can be exercised (see blockhashValidity).
 	isBlockhashValidResp blockhashValidity
+	// Pre-sign filter reads. accounts maps an address to its getAccountInfo value
+	// JSON ("null" = missing); an unlisted address is a funded plain System account.
+	// simErr is the simulateTransaction err JSON ("" = success).
+	accounts map[string]string
+	simErr   string
 }
 
 func (sc solRPCScenario) blockTimeOf(slot uint64) int64 {
@@ -111,7 +126,21 @@ func (sc solRPCScenario) blockTimeAt(slot uint64) (int64, bool) {
 	if sc.blockTime != nil {
 		return sc.blockTime(slot)
 	}
+	if !sc.hasBlock(slot) {
+		return 0, false // pruned or skipped -> getBlockTime reports null
+	}
 	return sc.blockTimeOf(slot), true
+}
+
+// skipped reports whether slot falls in this scenario's skipped-slot run.
+func (sc solRPCScenario) skipped(slot uint64) bool {
+	return sc.skipTo != 0 && slot >= sc.skipFrom && slot <= sc.skipTo
+}
+
+// hasBlock reports whether the node can serve a block at slot: it must be retained
+// (>= floorSlot), at or below the finalized tip, and not a skipped slot.
+func (sc solRPCScenario) hasBlock(slot uint64) bool {
+	return slot >= sc.floorSlot && slot <= sc.tip && !sc.skipped(slot)
 }
 
 // presentSlots returns the finalized slots in [start,end] this node can see.
@@ -123,10 +152,33 @@ func (sc solRPCScenario) presentSlots(start, end uint64) []uint64 {
 		start = sc.floorSlot
 	}
 	out := []uint64{}
-	for s := start; s <= end && s >= sc.floorSlot; s++ {
+	for s := start; s <= end; s++ {
+		if !sc.hasBlock(s) {
+			continue
+		}
 		out = append(out, s)
 	}
 	return out
+}
+
+// blockhashValidResponse renders the isBlockhashValid reply this scenario's
+// participation-gate setting implies: the per-node gate checks the derived hash is
+// still usable at the processed tip, and context.slot reports the answering bank so a
+// below-min-context (lagging) backend is detectable. ok is false when the scenario
+// wants a JSON-RPC ERROR envelope rather than a result. Shared by both mock servers so
+// they cannot drift apart on what a scenario means.
+func (sc solRPCScenario) blockhashValidResponse() (body string, ok bool) {
+	switch sc.isBlockhashValidResp {
+	case blockhashInvalid:
+		return fmt.Sprintf(`{"context":{"slot":%d},"value":false}`, sc.tip), true
+	case blockhashRPCError:
+		return `{"jsonrpc":"2.0","id":1,"error":{"code":-32000,"message":"node unavailable"}}`, false
+	case blockhashLagging:
+		// answers from a bank far below the anchor -> defensive guard errors
+		return `{"context":{"slot":1},"value":false}`, true
+	default:
+		return fmt.Sprintf(`{"context":{"slot":%d},"value":true}`, sc.tip), true
+	}
 }
 
 func (sc solRPCScenario) server(c *C) *httptest.Server {
@@ -145,6 +197,13 @@ func (sc solRPCScenario) server(c *C) *httptest.Server {
 		switch rpcReq.Method {
 		case "getSlot":
 			write(fmt.Sprintf("%d", sc.tip))
+		case "getFirstAvailableBlock":
+			if sc.noHistoryFloor {
+				_, err := rw.Write([]byte(`{"jsonrpc":"2.0","id":1,"error":{"code":-32601,"message":"Method not found"}}`))
+				c.Assert(err, IsNil)
+				break
+			}
+			write(fmt.Sprintf("%d", sc.floorSlot))
 		case "getBlocks":
 			var p []json.RawMessage
 			c.Assert(json.Unmarshal(rpcReq.Params, &p), IsNil)
@@ -176,25 +235,50 @@ func (sc solRPCScenario) server(c *C) *httptest.Server {
 			// A per-slot blockhash so a test can prove WHICH slot was chosen.
 			write(fmt.Sprintf(`{"blockhash":%q,"previousBlockhash":"","parentSlot":%d}`, mockBlockhashForSlot(slot), slot-1))
 		case "isBlockhashValid":
-			// The per-node participation gate checks the derived hash is still usable
-			// at the processed tip; context.slot reports the answering bank so a
-			// below-min-context (lagging) backend is detectable.
-			switch sc.isBlockhashValidResp {
-			case blockhashInvalid:
-				write(fmt.Sprintf(`{"context":{"slot":%d},"value":false}`, sc.tip))
-			case blockhashRPCError:
-				_, err := rw.Write([]byte(`{"jsonrpc":"2.0","id":1,"error":{"code":-32000,"message":"node unavailable"}}`))
+			result, ok := sc.blockhashValidResponse()
+			if !ok {
+				_, err := rw.Write([]byte(result))
 				c.Assert(err, IsNil)
-			case blockhashLagging:
-				// answers from a bank far below the anchor -> defensive guard errors
-				write(`{"context":{"slot":1},"value":false}`)
-			default:
-				write(fmt.Sprintf(`{"context":{"slot":%d},"value":true}`, sc.tip))
+				break
 			}
+			write(result)
+		case "getMinimumBalanceForRentExemption":
+			write("890880")
+		case "getAccountInfo":
+			var p []json.RawMessage
+			c.Assert(json.Unmarshal(rpcReq.Params, &p), IsNil)
+			var addr string
+			c.Assert(json.Unmarshal(p[0], &addr), IsNil)
+			value, ok := sc.accounts[addr]
+			if value == "rpcerror" {
+				_, err := rw.Write([]byte(`{"jsonrpc":"2.0","id":1,"error":{"code":-32005,"message":"node is behind"}}`))
+				c.Assert(err, IsNil)
+				break
+			}
+			if !ok {
+				value = `{"owner":"11111111111111111111111111111111","executable":false,"lamports":100000000000,"data":["","base64"]}`
+			}
+			write(fmt.Sprintf(`{"context":{"slot":1},"value":%s}`, value))
+		case "simulateTransaction":
+			simErr := sc.simErr
+			if simErr == "rpcerror" {
+				_, err := rw.Write([]byte(`{"jsonrpc":"2.0","id":1,"error":{"code":-32005,"message":"node is behind"}}`))
+				c.Assert(err, IsNil)
+				break
+			}
+			if simErr == "" {
+				simErr = "null"
+			}
+			write(fmt.Sprintf(`{"context":{"slot":1},"value":{"err":%s,"logs":[]}}`, simErr))
 		default:
 			c.Fatalf("unexpected RPC method %q", rpcReq.Method)
 		}
 	}))
+}
+
+// newSolRPCForServer wires a SOL RPC client to an already-started scenario server.
+func newSolRPCForServer(server *httptest.Server) *rpc.SolRPC {
+	return rpc.NewSolRPC("http://"+server.Listener.Addr().String(), time.Second)
 }
 
 // newDeterministicSOLRPC returns a SOL RPC client backed by a happy-path
@@ -206,7 +290,7 @@ func newDeterministicSOLRPC(c *C) (*httptest.Server, *rpc.SolRPC) {
 	target := testConsensusBlockTimeUnix - solFinalizationMarginSeconds
 	sc := solRPCScenario{tip: 1000, floorSlot: 1, alignSlot: 950, target: target}
 	server := sc.server(c)
-	return server, rpc.NewSolRPC("http://"+server.Listener.Addr().String(), time.Second)
+	return server, newSolRPCForServer(server)
 }
 
 // newSOLRPCBlockhashInvalid brackets + derives a hash like the happy path, but the
@@ -216,7 +300,7 @@ func newSOLRPCBlockhashInvalid(c *C) (*httptest.Server, *rpc.SolRPC) {
 	target := testConsensusBlockTimeUnix - solFinalizationMarginSeconds
 	sc := solRPCScenario{tip: 1000, floorSlot: 1, alignSlot: 950, target: target, isBlockhashValidResp: blockhashInvalid}
 	server := sc.server(c)
-	return server, rpc.NewSolRPC("http://"+server.Listener.Addr().String(), time.Second)
+	return server, newSolRPCForServer(server)
 }
 
 // newSOLRPCBlockhashValidError brackets + derives a hash like the happy path, but the
@@ -226,7 +310,7 @@ func newSOLRPCBlockhashValidError(c *C) (*httptest.Server, *rpc.SolRPC) {
 	target := testConsensusBlockTimeUnix - solFinalizationMarginSeconds
 	sc := solRPCScenario{tip: 1000, floorSlot: 1, alignSlot: 950, target: target, isBlockhashValidResp: blockhashRPCError}
 	server := sc.server(c)
-	return server, rpc.NewSolRPC("http://"+server.Listener.Addr().String(), time.Second)
+	return server, newSolRPCForServer(server)
 }
 
 // newSOLRPCBlockhashLagging brackets + derives a hash, but the participation gate
@@ -236,5 +320,5 @@ func newSOLRPCBlockhashLagging(c *C) (*httptest.Server, *rpc.SolRPC) {
 	target := testConsensusBlockTimeUnix - solFinalizationMarginSeconds
 	sc := solRPCScenario{tip: 1000, floorSlot: 1, alignSlot: 950, target: target, isBlockhashValidResp: blockhashLagging}
 	server := sc.server(c)
-	return server, rpc.NewSolRPC("http://"+server.Listener.Addr().String(), time.Second)
+	return server, newSolRPCForServer(server)
 }

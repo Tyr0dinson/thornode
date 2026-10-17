@@ -53,9 +53,6 @@ import (
 	authtx "github.com/cosmos/cosmos-sdk/x/auth/tx"
 	txmodule "github.com/cosmos/cosmos-sdk/x/auth/tx/config"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
-	authz "github.com/cosmos/cosmos-sdk/x/authz"
-	authzkeeper "github.com/cosmos/cosmos-sdk/x/authz/keeper"
-	authzmodule "github.com/cosmos/cosmos-sdk/x/authz/module"
 	"github.com/cosmos/cosmos-sdk/x/bank"
 	bankkeeper "github.com/cosmos/cosmos-sdk/x/bank/keeper"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
@@ -80,6 +77,7 @@ import (
 	wasmtypes "github.com/CosmWasm/wasmd/x/wasm/types"
 	appparams "gitlab.com/thorchain/thornode/v3/app/params"
 	"gitlab.com/thorchain/thornode/v3/constants"
+	thorlog "gitlab.com/thorchain/thornode/v3/log"
 	"gitlab.com/thorchain/thornode/v3/openapi"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/ebifrost"
@@ -154,14 +152,12 @@ type THORChainApp struct {
 	tkeys map[string]*storetypes.TransientStoreKey
 
 	// keepers
-	AccountKeeper authkeeper.AccountKeeper
-	AuthzKeeper   authzkeeper.Keeper
-	BankKeeper    bankkeeper.BaseKeeper
-	StakingKeeper *stakingkeeper.Keeper
-	MintKeeper    mintkeeper.Keeper
-	UpgradeKeeper *upgradekeeper.Keeper
-	// trunk-ignore(golangci-lint/staticcheck): deprecated TODO: SDK 0.53 cleanup
-	ParamsKeeper          paramskeeper.Keeper
+	AccountKeeper         authkeeper.AccountKeeper
+	BankKeeper            bankkeeper.BaseKeeper
+	StakingKeeper         *stakingkeeper.Keeper
+	MintKeeper            mintkeeper.Keeper
+	UpgradeKeeper         *upgradekeeper.Keeper
+	ParamsKeeper          paramskeeper.Keeper //nolint:staticcheck // deprecated TODO: SDK 0.53 cleanup
 	ConsensusParamsKeeper consensusparamkeeper.Keeper
 
 	ThorchainKeeper  thorchainkeeper.Keeper
@@ -254,7 +250,6 @@ func NewChainApp(
 
 	keys := storetypes.NewKVStoreKeys(
 		authtypes.StoreKey,
-		authzkeeper.StoreKey,
 		banktypes.StoreKey,
 		stakingtypes.StoreKey,
 		minttypes.StoreKey,
@@ -314,19 +309,13 @@ func NewChainApp(
 		sdk.GetConfig().GetBech32AccountAddrPrefix(),
 		authtypes.NewModuleAddress(thorchain.ModuleName).String(),
 	)
-	app.AuthzKeeper = authzkeeper.NewKeeper(
-		runtime.NewKVStoreService(keys[authzkeeper.StoreKey]),
-		app.appCodec,
-		app.MsgServiceRouter(),
-		app.AccountKeeper,
-	)
 	app.BankKeeper = bankkeeper.NewBaseKeeper(
 		app.appCodec,
 		runtime.NewKVStoreService(keys[banktypes.StoreKey]),
 		app.AccountKeeper,
 		BlockedAddresses(),
 		authtypes.NewModuleAddress(thorchain.ModuleName).String(),
-		logger,
+		thorlog.WithWindowCapture(logger), // bank logs via this, not ctx.Logger()
 	)
 
 	txSigningOptions, err := tx.NewDefaultSigningOptions()
@@ -429,6 +418,9 @@ func NewChainApp(
 		runtime.NewKVStoreService(keys[denomtypes.StoreKey]),
 		app.AccountKeeper,
 		app.BankKeeper.WithMintCoinsRestriction(denomtypes.NewDenomMintCoinsRestriction()),
+		// x/denom Msgs are only valid when dispatched by an approved CosmWasm
+		// contract, which the Msg server verifies with the wasm keeper.
+		&app.WasmKeeper,
 		authtypes.NewModuleAddress(thorchain.ModuleName).String(),
 	)
 
@@ -466,18 +458,17 @@ func NewChainApp(
 		defaultProposalHandler.ProcessProposalHandler(),
 	)
 
-	bApp.SetPrepareProposal(eBifrostProposalHandler.PrepareProposal)
+	bApp.SetPrepareProposal(wrapPrepareProposal(eBifrostProposalHandler.PrepareProposal))
 	bApp.SetProcessProposal(eBifrostProposalHandler.ProcessProposal)
+	setPrepareCheckStater(bApp)
 
 	// NOTE: Any module instantiated in the module manager that is later modified
 	// must be passed by reference here.
 	authModule := auth.NewAppModule(app.appCodec, app.AccountKeeper, authsims.RandomGenesisAccounts, app.GetSubspace(authtypes.ModuleName))
-	authzModule := authzmodule.NewAppModule(app.appCodec, app.AuthzKeeper, app.AccountKeeper, app.BankKeeper, app.InterfaceRegistry())
 	bankModule := bank.NewAppModule(app.appCodec, app.BankKeeper, app.AccountKeeper, app.GetSubspace(banktypes.ModuleName))
 	consensusModule := consensus.NewAppModule(app.appCodec, app.ConsensusParamsKeeper)
 	genutilModule := genutil.NewAppModule(app.AccountKeeper, app.StakingKeeper, app, txConfig)
-	// trunk-ignore(golangci-lint/staticcheck): deprecated TODO: SDK 0.53 cleanup
-	paramsModule := params.NewAppModule(app.ParamsKeeper)
+	paramsModule := params.NewAppModule(app.ParamsKeeper) //nolint:staticcheck // deprecated TODO: SDK 0.53 cleanup
 	upgradeModule := upgrade.NewAppModule(app.UpgradeKeeper, app.AccountKeeper.AddressCodec())
 	wasmModule := wasm.NewAppModule(
 		app.appCodec,
@@ -495,7 +486,6 @@ func NewChainApp(
 	app.ModuleManager = module.NewManager(
 		genutilModule,
 		authModule,
-		authzModule,
 		bankModule,
 		upgradeModule,
 		paramsModule,
@@ -514,7 +504,6 @@ func NewChainApp(
 	app.BasicModuleManager = module.NewBasicManager(
 		genutil.NewAppModuleBasic(genutiltypes.DefaultMessageValidator),
 		authModule,
-		authzModule,
 		bankModule,
 		upgradeModule,
 		paramsModule,
@@ -537,7 +526,6 @@ func NewChainApp(
 	// NOTE: staking module is required if HistoricalEntries param > 0
 	app.ModuleManager.SetOrderBeginBlockers(
 		genutiltypes.ModuleName,
-		authz.ModuleName,
 
 		// additional non simd modules
 		thorchaintypes.ModuleName,
@@ -546,7 +534,6 @@ func NewChainApp(
 
 	app.ModuleManager.SetOrderEndBlockers(
 		genutiltypes.ModuleName,
-		authz.ModuleName,
 
 		// additional non simd modules
 		schedulertypes.ModuleName,
@@ -565,7 +552,6 @@ func NewChainApp(
 	genesisModuleOrder := []string{
 		// simd modules
 		authtypes.ModuleName,
-		authz.ModuleName,
 		banktypes.ModuleName,
 		genutiltypes.ModuleName,
 		paramstypes.ModuleName,
@@ -620,9 +606,20 @@ func NewChainApp(
 
 	// initialize BaseApp
 	app.SetInitChainer(app.InitChainer)
-	app.SetPreBlocker(app.PreBlocker)
-	app.SetBeginBlocker(app.BeginBlocker)
-	app.SetEndBlocker(app.EndBlocker)
+	// node-local block log capture for /thorchain/logs: these three plus the
+	// ante handler are the finalize-mode entry points, so every module's
+	// ctx.Logger() lines reach the store
+	app.SetPreBlocker(func(ctx sdk.Context, req *abci.RequestFinalizeBlock) (*sdk.ResponsePreBlock, error) {
+		thorlog.BeginBlock(ctx.BlockHeight())
+		return app.PreBlocker(thorlog.CaptureContext(ctx), req)
+	})
+	app.SetBeginBlocker(func(ctx sdk.Context) (sdk.BeginBlock, error) {
+		return app.BeginBlocker(thorlog.CaptureContext(ctx))
+	})
+	app.SetEndBlocker(func(ctx sdk.Context) (sdk.EndBlock, error) {
+		defer thorlog.EndBlock(ctx.BlockHeight())
+		return app.EndBlocker(thorlog.CaptureContext(ctx))
+	})
 
 	anteHandler, err := NewAnteHandler(
 		HandlerOptions{
@@ -874,6 +871,10 @@ func (app *THORChainApp) RegisterAPIRoutes(apiSvr *api.Server, apiConfig config.
 	// Register plain-text supply/cmc route (must be before catch-all gRPC gateway).
 	thorchain.RegisterSupplyCMCRoute(apiSvr.Router, clientCtx)
 
+	// Register the node-local block log route (must be before catch-all gRPC
+	// gateway). Plain HTTP by design: see RegisterLogsRoute.
+	thorchain.RegisterLogsRoute(apiSvr.Router)
+
 	// register thorchain-specific swagger API from root so that other applications can override easily
 	if err := RegisterSwaggerAPI(apiSvr.Router, apiConfig.Swagger); err != nil {
 		panic(err)
@@ -980,10 +981,8 @@ func (app *THORChainApp) SetInterfaceRegistry(registry types.InterfaceRegistry) 
 	app.BaseApp.SetInterfaceRegistry(registry)
 }
 
-// trunk-ignore(golangci-lint/staticcheck): deprecated TODO: SDK 0.53 cleanup
-func initParamsKeeper(appCodec codec.BinaryCodec, legacyAmino *codec.LegacyAmino, key, tkey storetypes.StoreKey) paramskeeper.Keeper {
-	// trunk-ignore(golangci-lint/staticcheck): deprecated TODO: SDK 0.53 cleanup
-	paramsKeeper := paramskeeper.NewKeeper(appCodec, legacyAmino, key, tkey)
+func initParamsKeeper(appCodec codec.BinaryCodec, legacyAmino *codec.LegacyAmino, key, tkey storetypes.StoreKey) paramskeeper.Keeper { //nolint:staticcheck // deprecated TODO: SDK 0.53 cleanup
+	paramsKeeper := paramskeeper.NewKeeper(appCodec, legacyAmino, key, tkey) //nolint:staticcheck // deprecated TODO: SDK 0.53 cleanup
 
 	// required for testing finalized block migration
 	paramsKeeper.Subspace(baseapp.Paramspace)

@@ -522,3 +522,48 @@ func setTestSwapUserFieldC(c *C, user *simtypes.User, field string, value interf
 	}
 	reflect.NewAt(v.Type(), unsafe.Pointer(v.UnsafeAddr())).Elem().Set(reflect.ValueOf(value))
 }
+
+func TestXMRReadinessFailsWhenSwapCannotBeFunded(t *testing.T) {
+	for _, mode := range []string{"balance", "submission"} {
+		t.Run(mode, func(t *testing.T) {
+			drainXMRSwapSlotForTest()
+			defer drainXMRSwapSlotForTest()
+			actor := newXMRPostChurnActor(rand.New(rand.NewPCG(1, 2)))
+			user := newTestSwapUser(t, "poor", common.BTCAsset, sdkmath.NewUint(common.One), common.XMRAsset, sdkmath.ZeroUint())
+			config := &simtypes.OpConfig{Users: []*simtypes.User{user}}
+			verified := false
+			actor.Ops = []simtypes.Op{
+				func(c *simtypes.OpConfig) simtypes.OpResult {
+					if result := actor.acquireXMRSwapSlot(c); !result.Continue {
+						t.Fatal("failed to acquire XMR slot")
+					}
+					if mode == "balance" {
+						return actor.acquireUserForAmount(c, sdkmath.NewUint(2*common.One), false)
+					}
+					if !user.Acquire() {
+						t.Fatal("failed to acquire user")
+					}
+					actor.user = user
+					return actor.finishAfterPostSelectionFundingError(errors.New("insufficient funds"))
+				},
+				func(_ *simtypes.OpConfig) simtypes.OpResult {
+					verified = true
+					return simtypes.OpResult{Continue: true}
+				},
+			}
+			if err := actor.Execute(config); err == nil {
+				t.Fatal("required readiness actor succeeded without a funded swap")
+			}
+			if verified {
+				t.Fatal("verification ran after failed funding")
+			}
+			if actor.xmrSwapSlotAcquired || len(xmrSwapSlot) != 0 {
+				t.Fatal("funding failure retained XMR slot")
+			}
+			if !user.Acquire() {
+				t.Fatal("funding failure retained user")
+			}
+			user.Release()
+		})
+	}
+}

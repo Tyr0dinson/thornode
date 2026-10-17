@@ -55,7 +55,7 @@ func (r *retryLiteChainClient) BroadcastTx(payload []byte) (string, error) {
 	return "ok", nil
 }
 
-func TestSignAndBroadcastTxRetriesTronConfirmationFailures(t *testing.T) {
+func TestSignAndBroadcastTxReusesTronPayloadOnUncertainFailures(t *testing.T) {
 	prevDelay := tronSimTxBroadcastRetryDelay
 	prevAttempts := tronSimTxMaxBroadcastAttempts
 	tronSimTxBroadcastRetryDelay = 0
@@ -67,6 +67,7 @@ func TestSignAndBroadcastTxRetriesTronConfirmationFailures(t *testing.T) {
 
 	client := &retryLiteChainClient{
 		broadcastErrs: []error{
+			errors.New("unexpected EOF"),
 			errors.New("broadcasted tx a not confirmed on tron node"),
 			errors.New("broadcasted tx b not observed on tron node"),
 			nil,
@@ -80,55 +81,31 @@ func TestSignAndBroadcastTxRetriesTronConfirmationFailures(t *testing.T) {
 	if txid != "ok" {
 		t.Fatalf("expected successful txid, got %s", txid)
 	}
-	if client.signCalls != 3 {
-		t.Fatalf("expected 3 sign attempts, got %d", client.signCalls)
+	if client.signCalls != 1 {
+		t.Fatalf("expected 1 sign attempt, got %d", client.signCalls)
 	}
-	if client.broadcastCalls != 3 {
-		t.Fatalf("expected 3 broadcast attempts, got %d", client.broadcastCalls)
+	for _, payload := range client.broadcastPayloads {
+		if !bytes.Equal(payload, client.broadcastPayloads[0]) {
+			t.Fatal("uncertain TRON retry replaced signed payload")
+		}
+	}
+	if client.broadcastCalls != 4 {
+		t.Fatalf("expected 4 broadcast attempts, got %d", client.broadcastCalls)
 	}
 }
 
-// TestSignAndBroadcastTxRetriesTronUnobservedTxID covers the failure mode
-// where the TRON node accepts a broadcast response shape but the transaction
-// never becomes queryable by txid. Treating that as submitted makes the
-// simulation wait for an inbound Bifrost can never observe.
-func TestSignAndBroadcastTxRetriesTronUnobservedTxID(t *testing.T) {
-	prevDelay := tronSimTxBroadcastRetryDelay
-	prevAttempts := tronSimTxMaxBroadcastAttempts
-	tronSimTxBroadcastRetryDelay = 0
-	tronSimTxMaxBroadcastAttempts = 4
-	defer func() {
-		tronSimTxBroadcastRetryDelay = prevDelay
-		tronSimTxMaxBroadcastAttempts = prevAttempts
-	}()
-
-	// The first attempt returns a txid, but the TRON client reported that the
-	// tx never materialized on the fullnode. The retry helper should build and
-	// broadcast a replacement instead of exposing that invisible txid.
+func TestSignAndBroadcastTxDoesNotReplaceUnconfirmedTron(t *testing.T) {
 	client := &retryLiteChainClient{
-		broadcastTxIDs: []string{"invisible", "confirmed"},
-		broadcastErrs: []error{
-			errors.New("broadcasted tx invisible not observed on tron node"),
-			nil,
-		},
+		broadcastTxIDs: []string{"invisible", "duplicate"},
+		broadcastErrs:  []error{errors.New("broadcasted tx invisible not observed on tron node"), nil},
 	}
-
 	txid, err := SignAndBroadcastTx(client, SimTx{Chain: common.TRONChain})
-	if err != nil {
-		t.Fatalf("expected tron retry helper to recover from unobserved txid, got %v", err)
-	}
-	if txid != "confirmed" {
-		t.Fatalf("expected replacement txid, got %s", txid)
-	}
-	if client.signCalls != 2 {
-		t.Fatalf("expected 2 sign attempts, got %d", client.signCalls)
-	}
-	if client.broadcastCalls != 2 {
-		t.Fatalf("expected 2 broadcast attempts, got %d", client.broadcastCalls)
+	if !errors.Is(err, ErrSimTxUncertain) || txid != "invisible" || client.signCalls != 1 || client.broadcastCalls != 1 {
+		t.Fatalf("uncertain TRON transaction must retain its identity: id=%s err=%v signs=%d broadcasts=%d", txid, err, client.signCalls, client.broadcastCalls)
 	}
 }
 
-func TestSignAndBroadcastTxDoesNotReplaceSubmittedOneShotMemo(t *testing.T) {
+func TestSignAndBroadcastTxFailsUncertainOneShotMemo(t *testing.T) {
 	prevDelay := tronSimTxBroadcastRetryDelay
 	prevAttempts := tronSimTxMaxBroadcastAttempts
 	tronSimTxBroadcastRetryDelay = 0
@@ -150,8 +127,8 @@ func TestSignAndBroadcastTxDoesNotReplaceSubmittedOneShotMemo(t *testing.T) {
 		Memo:        "r:00001",
 		OneShotMemo: true,
 	})
-	if err != nil {
-		t.Fatalf("expected submitted one-shot txid to be accepted, got %v", err)
+	if !errors.Is(err, ErrSimTxUncertain) {
+		t.Fatalf("expected uncertain one-shot transfer to stop with an error, got %v", err)
 	}
 	if txid != "submitted" {
 		t.Fatalf("expected submitted txid, got %s", txid)
@@ -214,8 +191,11 @@ func TestSignAndBroadcastTxRetriesTronTransportFailures(t *testing.T) {
 	if txid != "ok" {
 		t.Fatalf("expected successful txid, got %s", txid)
 	}
-	if client.signCalls != 2 {
-		t.Fatalf("expected 2 sign attempts, got %d", client.signCalls)
+	if client.signCalls != 1 {
+		t.Fatalf("expected 1 sign attempt, got %d", client.signCalls)
+	}
+	if !bytes.Equal(client.broadcastPayloads[0], client.broadcastPayloads[1]) {
+		t.Fatal("transport retry changed the signed TRON payload")
 	}
 	if client.broadcastCalls != 2 {
 		t.Fatalf("expected 2 broadcast attempts, got %d", client.broadcastCalls)
@@ -465,6 +445,49 @@ func TestZecBroadcastRetryKeepsOriginalPayload(t *testing.T) {
 				if !bytes.Equal(payload, []byte("signed-1")) {
 					t.Fatalf("replacement payload: %q", payload)
 				}
+			}
+		})
+	}
+}
+
+func TestSignAndBroadcastTxPreservesTerminalUncertainty(t *testing.T) {
+	client := &retryLiteChainClient{
+		broadcastTxIDs: []string{"unresolved", "unsafe-replacement"},
+		broadcastErrs:  []error{fmt.Errorf("%w: not observed on tron node", ErrSimTxUncertain), nil},
+	}
+	txid, err := SignAndBroadcastTx(client, SimTx{Chain: common.TRONChain})
+	if !errors.Is(err, ErrSimTxUncertain) || txid != "unresolved" || client.signCalls != 1 || client.broadcastCalls != 1 {
+		t.Fatalf("uncertain submission was retried or accepted: id=%s err=%v signs=%d broadcasts=%d", txid, err, client.signCalls, client.broadcastCalls)
+	}
+}
+
+func TestSimTxErrorResultStopsUncertainActor(t *testing.T) {
+	for _, uncertain := range []bool{false, true} {
+		t.Run(fmt.Sprintf("uncertain=%v", uncertain), func(t *testing.T) {
+			a := NewActor("broadcast failure", testRNG())
+			attempts := 0
+			completed := false
+			a.Ops = []Op{
+				func(*OpConfig) OpResult {
+					attempts++
+					if attempts > 1 {
+						return OpResult{Continue: true}
+					}
+					err := errors.New("temporary lookup failure")
+					if uncertain {
+						err = fmt.Errorf("%w: %w", ErrSimTxUncertain, err)
+					}
+					return SimTxErrorResult(err)
+				},
+				func(*OpConfig) OpResult { completed = true; return OpResult{Finish: true} },
+			}
+			err := a.Execute(nil)
+			if uncertain {
+				if !errors.Is(err, ErrSimTxUncertain) || attempts != 1 || completed {
+					t.Fatalf("uncertain actor retried or completed: attempts=%d completed=%v err=%v", attempts, completed, err)
+				}
+			} else if err != nil || attempts != 2 || !completed {
+				t.Fatalf("ordinary failure did not retry: attempts=%d completed=%v err=%v", attempts, completed, err)
 			}
 		})
 	}

@@ -19,6 +19,7 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/msgservice"
 	"github.com/cosmos/cosmos-sdk/types/tx/signing"
+	"github.com/cosmos/cosmos-sdk/x/authz"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 	"github.com/cosmos/evm/crypto/ethsecp256k1"
 	"github.com/cosmos/evm/ethereum/eip712"
@@ -271,5 +272,41 @@ func TestProcessProposal(t *testing.T) {
 		} else {
 			require.Equal(t, abci.ResponseProcessProposal_ACCEPT, res.Status)
 		}
+	}
+}
+
+// TestAuthzMsgsNotRoutable asserts that the authz module stays unwired.
+//
+// authz executes the messages wrapped in a MsgExec by dispatching them straight
+// to the msg service router - and, when the granter is the grantee, without so
+// much as a grant. Those inner messages never reach the THORChain ante handler,
+// which is the only place a number of messages are authorized (its allowlist
+// rejects everything not listed, confining x/denom to CosmWasm contracts),
+// gated (BankSendEnabled, one deposit per tx) and charged the native tx fee.
+// Giving authz the application router would bypass all of it.
+func TestAuthzMsgsNotRoutable(t *testing.T) {
+	tempDir := t.TempDir()
+
+	appOpts := &appOptionsWrapper{
+		EmptyAppOptions: simtestutil.EmptyAppOptions{},
+		homeDir:         tempDir,
+	}
+
+	tcApp := NewChainApp(
+		log.NewNopLogger(),
+		dbm.NewMemDB(),
+		nil,
+		true,
+		appOpts,
+		[]wasmkeeper.Option{},
+	)
+
+	for _, msg := range []sdk.Msg{&authz.MsgGrant{}, &authz.MsgExec{}, &authz.MsgRevoke{}} {
+		typeURL := sdk.MsgTypeURL(msg)
+		require.Nil(
+			t,
+			tcApp.MsgServiceRouter().HandlerByTypeURL(typeURL),
+			"%s must not be routable", typeURL,
+		)
 	}
 }

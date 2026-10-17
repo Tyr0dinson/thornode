@@ -92,7 +92,15 @@ Summary follows.
 New keyspace `AffiliateLiquidityFee/<thorname> → sdk.Uint` (RUNE, 1e8).
 Per-block accumulator only; cleared at end of block after payouts.
 Distinct from `AffiliateCollector` (which holds paid-out, cross-block
-balances awaiting preferred-asset conversion).
+balances awaiting preferred-asset conversion for each THORName).
+
+Collectors are keyed by THORName, so THORNames sharing an owner keep separate
+balances. [Module migration 18 to 19](../affiliate-guide/thorname-guide.md#upgrade-from-shared-owner-collectors)
+moves each legacy balance to the owner's THORName collector if they have exactly
+one stored THORName whose spelling meets current registration rules, even if expired.
+Otherwise, it pays the owner in RUNE. Module-owned legacy balances go to Reserve.
+This changes collector storage and settlement; REVSHARE attribution and
+rate calculation remain the same.
 
 ```go
 AddAffiliateLiquidityFee(ctx, thorname, fee) error
@@ -154,7 +162,7 @@ any other split:
      the `NewEventRevShare` constructor so indexers never see a
      negative `bps` attribute.
    - If `bps > 0`: `payout = bps × accrued / 10_000`, transfer from
-     reserve to `AffiliateCollector` for the thorname owner, and
+     reserve to `AffiliateCollector` for that THORName's collector entry, and
      accumulate into `totalRevShare`.
    - Always emit a `rev_share` event with `(thorname, owner, accrued,
 bps, payout)`, even when `bps == 0` or the thorname is missing.

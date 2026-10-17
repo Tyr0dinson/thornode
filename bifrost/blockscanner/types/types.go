@@ -7,6 +7,11 @@ var (
 	ErrFailOutputMatchCriteria = fmt.Errorf("fail to get output matching criteria")
 )
 
+// ErrRollbackValidationUnavailable keeps a rollback pending when a temporary
+// failure prevents the chain client from validating it. It does not authorize
+// a cursor change or reject the requested replay.
+var ErrRollbackValidationUnavailable = fmt.Errorf("rollback validation temporarily unavailable")
+
 // MaxCursorRewindBlocks is the largest chain-client-directed cursor rewind the
 // shared block scanner will apply automatically. Larger discontinuities need
 // explicit operator recovery so a compromised or corrupt chain client cannot

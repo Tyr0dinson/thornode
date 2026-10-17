@@ -42,6 +42,13 @@ func (m *MsgObservedTxIn) ValidateBasic() error {
 		if err := tx.Valid(); err != nil {
 			return cosmos.ErrUnknownRequest(err.Error())
 		}
+		// Reject before voter/slash writes: the legacy handler logs downstream
+		// quorum errors without rolling its per-observation state back.
+		if tx.Tx.Chain.UsesHeightScopedErrata() {
+			if _, err := tx.CanonicalMinedHeight(); err != nil {
+				return cosmos.ErrUnknownRequest(err.Error())
+			}
+		}
 		if len(tx.SpentOutputRefs) > 0 {
 			return cosmos.ErrUnknownRequest("spent output refs are only valid for outbound observed transactions")
 		}

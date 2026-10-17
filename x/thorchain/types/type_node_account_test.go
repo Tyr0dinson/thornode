@@ -238,3 +238,32 @@ func (s *NodeAccountSuite) TestBondProviders(c *C) {
 	c.Assert(bp.Providers[0].Bond.Equal(nodeBond), Equals, true)
 	// The sole provider's bond equals the node bond after adjustment.
 }
+
+func (s *NodeAccountSuite) TestBondProviderSetAutoClaimZeroClearsPayoutTarget(c *C) {
+	acc := GetRandomBech32Addr()
+	bp := NewBondProviders(acc)
+	bp.Providers = []BondProvider{NewBondProvider(acc)}
+
+	c.Assert(bp.SetAutoClaim(acc, 2500, "yieldname"), Equals, true)
+	provider := bp.Get(acc)
+	c.Check(provider.Bps, Equals, uint64(2500))
+	c.Check(provider.PayoutTarget, Equals, "yieldname")
+
+	c.Assert(bp.SetAutoClaim(acc, 0, "yieldname"), Equals, true)
+	provider = bp.Get(acc)
+	c.Check(provider.Bps, Equals, uint64(0))
+	c.Check(provider.PayoutTarget, Equals, "")
+}
+
+func (s *NodeAccountSuite) TestBondProviderSetAutoClaimPreservesPayoutTargetOnBpsOnlyUpdate(c *C) {
+	acc := GetRandomBech32Addr()
+	bp := NewBondProviders(acc)
+	bp.Providers = []BondProvider{NewBondProvider(acc)}
+
+	c.Assert(bp.SetAutoClaim(acc, 5000, "yieldname"), Equals, true)
+	c.Assert(bp.SetAutoClaim(acc, 7000, ""), Equals, true)
+
+	provider := bp.Get(acc)
+	c.Check(provider.Bps, Equals, uint64(7000))
+	c.Check(provider.PayoutTarget, Equals, "yieldname")
+}
