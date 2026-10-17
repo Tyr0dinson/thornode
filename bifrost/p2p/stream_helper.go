@@ -113,6 +113,36 @@ func closeStreamAndDrain(stream network.Stream) error {
 	return nil
 }
 
+// Pools for the default-size (4 KiB) bufio readers and writers the stream
+// helpers wrap each stream in for a single message. Reset gives a pooled one
+// exactly the state of bufio.NewReader / bufio.NewWriter on that stream.
+var (
+	streamReaderPool = sync.Pool{New: func() any { return bufio.NewReader(nil) }}
+	streamWriterPool = sync.Pool{New: func() any { return bufio.NewWriter(nil) }}
+)
+
+func getStreamReader(stream io.Reader) *bufio.Reader {
+	r, _ := streamReaderPool.Get().(*bufio.Reader)
+	r.Reset(stream)
+	return r
+}
+
+func putStreamReader(r *bufio.Reader) {
+	r.Reset(nil) // drop the stream and any read-ahead
+	streamReaderPool.Put(r)
+}
+
+func getStreamWriter(stream io.Writer) *bufio.Writer {
+	w, _ := streamWriterPool.Get().(*bufio.Writer)
+	w.Reset(stream)
+	return w
+}
+
+func putStreamWriter(w *bufio.Writer) {
+	w.Reset(nil) // drop the stream and any unflushed bytes
+	streamWriterPool.Put(w)
+}
+
 // ReadStreamWithBuffer read data from the given stream
 func ReadStreamWithBuffer(stream network.Stream) ([]byte, error) {
 	if ApplyDeadline.Load() {
@@ -123,7 +153,8 @@ func ReadStreamWithBuffer(stream network.Stream) ([]byte, error) {
 			return nil, err
 		}
 	}
-	streamReader := bufio.NewReader(stream)
+	streamReader := getStreamReader(stream)
+	defer putStreamReader(streamReader)
 	lengthBytes := make([]byte, LengthHeader)
 	n, err := io.ReadFull(streamReader, lengthBytes)
 	if n != LengthHeader || err != nil {
@@ -234,7 +265,8 @@ func writeStreamWithBuffer(msg []byte, stream network.Stream, resetDeadlineError
 			return err
 		}
 	}
-	streamWrite := bufio.NewWriter(stream)
+	streamWrite := getStreamWriter(stream)
+	defer putStreamWriter(streamWrite)
 	n, err := streamWrite.Write(lengthBytes)
 	if n != LengthHeader || err != nil {
 		return fmt.Errorf("fail to write head: %w", err)
@@ -279,7 +311,10 @@ func ReadStreamWithBufferWithContext(ctx context.Context, stream network.Stream)
 
 	// Perform the read operation in a separate goroutine
 	go func() {
-		streamReader := bufio.NewReader(stream)
+		// released only when this goroutine ends, which may be after the
+		// caller has returned on context cancellation
+		streamReader := getStreamReader(stream)
+		defer putStreamReader(streamReader)
 		lengthBytes := make([]byte, LengthHeader)
 		n, err := io.ReadFull(streamReader, lengthBytes)
 		if n != LengthHeader || err != nil {
@@ -342,7 +377,10 @@ func WriteStreamWithBufferWithContext(ctx context.Context, msg []byte, stream ne
 
 	// Perform the write operation in a separate goroutine
 	go func() {
-		streamWrite := bufio.NewWriter(stream)
+		// released only when this goroutine ends, which may be after the
+		// caller has returned on context cancellation
+		streamWrite := getStreamWriter(stream)
+		defer putStreamWriter(streamWrite)
 		length := uint32(len(msg))
 		lengthBytes := make([]byte, LengthHeader)
 		binary.LittleEndian.PutUint32(lengthBytes, length)
