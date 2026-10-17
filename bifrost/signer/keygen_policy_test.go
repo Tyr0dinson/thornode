@@ -2,11 +2,15 @@ package signer
 
 import (
 	"errors"
+	"fmt"
 	"slices"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/rs/zerolog"
+
+	"gitlab.com/thorchain/thornode/v3/bifrost/blockscanner"
 	"gitlab.com/thorchain/thornode/v3/bifrost/tss"
 	"gitlab.com/thorchain/thornode/v3/constants"
 	ttypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
@@ -224,5 +228,45 @@ func TestKeygenRetryInitialFailureDeduplicatesAndRendezvous(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+type scannerPolicyKeygenBridge struct{ *singleFlightKeygenBridge }
+
+func (b *scannerPolicyKeygenBridge) GetMimirWithRef(template, ref string) (int64, error) {
+	return b.GetMimir(fmt.Sprintf(template, ref))
+}
+
+func TestXMRScannerPolicyDoesNotControlKeygen(t *testing.T) {
+	for _, scenario := range []string{"scanner halted", "scanner policy unreadable", "keygen disabled"} {
+		t.Run(scenario, func(t *testing.T) {
+			signer, bridge, client := replacementTestSigner(t, nil)
+			signer.thorchainBridge = &scannerPolicyKeygenBridge{bridge}
+			client.releaseFirst()
+			bridge.setMimir(constants.MimirKeyEnableMonovaultKeygen, 1)
+			bridge.setMimir(constants.MimirKeyHaltMonovaultKeygen, 0)
+			bridge.setMimir("HaltScannerXMR", 1)
+			wantKeygens := 1
+			wantPaused := true
+			if scenario == "scanner policy unreadable" {
+				bridge.setLookupFailure("HaltScannerXMR", errors.New("scanner policy unavailable"))
+			}
+			if scenario == "keygen disabled" {
+				bridge.setMimir("HaltScannerXMR", 0)
+				bridge.setMimir(constants.MimirKeyEnableMonovaultKeygen, 0)
+				wantKeygens, wantPaused = 0, false
+			}
+			if paused := blockscanner.IsXMRScannerPaused(zerolog.Nop(), bridge); paused != wantPaused {
+				t.Fatalf("scanner paused=%t, want %t", paused, wantPaused)
+			}
+			reads := bridge.mimirReadCount("HaltScannerXMR")
+			signer.processKeygenBlock(newSingleFlightXMRKeygen(t, 2700))
+			if client.callCount() != wantKeygens || bridge.broadcastCount() != wantKeygens {
+				t.Fatalf("keygen execution/broadcast=%d/%d, want %d", client.callCount(), bridge.broadcastCount(), wantKeygens)
+			}
+			if bridge.mimirReadCount("HaltScannerXMR") != reads {
+				t.Fatal("keygen consulted economic scanner policy")
+			}
+		})
 	}
 }

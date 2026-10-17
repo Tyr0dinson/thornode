@@ -378,6 +378,7 @@ func TestApplyCommittedSpentOutputRefsCancellationAfterMarkSpentPreservesSignerS
 			spentRefsByVaultKey: map[string][]*common.OutputRef{vault.String(): refs},
 			observedByTx:        map[string]*ttypes.QueryObservedTxVoter{txHash: voter},
 			pubKeys:             []thorclient.PubKeyContractAddressPair{{PubKey: vault, Algo: common.SigningAlgoEd25519}},
+			mimirValues:         map[string]int64{"HaltScannerXMR": 0},
 		},
 	}
 	ctx, cancel := context.WithCancel(context.Background())

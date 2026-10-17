@@ -155,6 +155,7 @@ services:
       # This opt-in requires S00; develop still skips XMR keygen unconditionally.
       # Production must leave it unset until the reviewed fleet is homogeneous.
       ENABLE_MONOVAULT_KEYGEN: 1
+      HALT_SCANNER_XMR: "${HALT_SCANNER_XMR:-0}"
       EVM_ALLOWANCE_CHECK_AVAX: 1
       EVM_ALLOWANCE_CHECK_BASE: 1
       EVM_ALLOWANCE_CHECK_BSC: 1

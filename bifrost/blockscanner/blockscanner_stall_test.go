@@ -364,6 +364,8 @@ func (s *BlockScannerExtraSuite) TestNetworkFeeAfterAvailabilityRetries(c *C) {
 			reportHeight := ((60 * 60 * 1000) + ms - 1) / ms
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 				switch {
+				case strings.HasPrefix(req.RequestURI, thorclient.MimirEndpoint+"/key/HaltScannerXMR"):
+					_, _ = w.Write([]byte(`0`))
 				case strings.HasPrefix(req.RequestURI, thorclient.MimirEndpoint):
 					_, _ = w.Write([]byte(`-1`))
 				case strings.HasPrefix(req.RequestURI, "/thorchain/inbound_addresses"):

@@ -278,6 +278,20 @@ func TestMocknetExplicitlyEnablesXMRMonovaultKeygen(t *testing.T) {
 	}
 }
 
+func TestStandaloneXMRDeploymentsExplicitlyEnableScanner(t *testing.T) {
+	stagenetCompose := readRepoFile(t, "build/docker/docker-compose.xmr-stagenet.yml")
+	if !strings.Contains(stagenetCompose, `HALT_SCANNER_XMR: "${HALT_SCANNER_XMR:-0}"`) {
+		t.Fatal("standalone XMR stagenet compose must explicitly enable the fail-closed XMR scanner")
+	}
+
+	chainnetRunbook := readRepoFile(t, "build/docker/xmr-chainnet-post-deploy.sh")
+	enableScannerAt := strings.Index(chainnetRunbook, "mimir HaltScannerXMR 0")
+	waitForObservationsAt := strings.Index(chainnetRunbook, "Waiting for dog bifrost to report XMR fee + chain tip")
+	if enableScannerAt < 0 || waitForObservationsAt < 0 || enableScannerAt > waitForObservationsAt {
+		t.Fatal("standalone XMR chainnet post-deploy must enable the scanner before waiting for XMR observations")
+	}
+}
+
 func TestMocknetBifrostDoesNotWaitForSolanaRPC(t *testing.T) {
 	entrypoint := readRepoFile(t, "build/scripts/bifrost.sh")
 	// The SOL scanner owns initial-slot retries; its tests cover recovery and stop.

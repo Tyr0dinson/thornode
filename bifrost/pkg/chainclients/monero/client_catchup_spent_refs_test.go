@@ -3,12 +3,14 @@ package monero
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -336,6 +338,7 @@ func TestCatchupSpentOutputRefsReadsFromQueryAndCallsSidecar(t *testing.T) {
 			spentRefsByVaultKey: map[string][]*common.OutputRef{frostKey.String(): refs},
 			observedByTx:        map[string]*ttypes.QueryObservedTxVoter{spendTxHash: voter},
 			pubKeys:             []thorclient.PubKeyContractAddressPair{{PubKey: frostKey, Algo: common.SigningAlgoEd25519}},
+			mimirValues:         map[string]int64{"HaltScannerXMR": 0},
 		},
 	}
 
@@ -449,6 +452,7 @@ func TestCatchupSpentOutputRefsRecoversMigrationFromEmptySidecarRecord(t *testin
 			spentRefsByVaultKey: map[string][]*common.OutputRef{sourceVault.String(): refs},
 			observedByTx:        map[string]*ttypes.QueryObservedTxVoter{spendTxHash: voter},
 			pubKeys:             []thorclient.PubKeyContractAddressPair{{PubKey: sourceVault, Algo: common.SigningAlgoEd25519}},
+			mimirValues:         map[string]int64{"HaltScannerXMR": 0},
 		},
 	}
 
@@ -519,6 +523,7 @@ func TestCatchupSpentOutputRefsDefersReplayAfterSignedStatePersistenceFailure(t 
 			spentRefsByVaultKey: map[string][]*common.OutputRef{sourceVault.String(): refs},
 			observedByTx:        map[string]*ttypes.QueryObservedTxVoter{spendTxHash: voter},
 			pubKeys:             []thorclient.PubKeyContractAddressPair{{PubKey: sourceVault, Algo: common.SigningAlgoEd25519}},
+			mimirValues:         map[string]int64{"HaltScannerXMR": 0},
 		},
 	}
 
@@ -587,6 +592,7 @@ func TestCatchupSpentOutputRefsIncludesInactiveVaultFromPubkeys(t *testing.T) {
 			spentRefsByVaultKey: map[string][]*common.OutputRef{frostKey.String(): refs},
 			observedByTx:        map[string]*ttypes.QueryObservedTxVoter{spendTxHash: voter},
 			pubKeys:             []thorclient.PubKeyContractAddressPair{{PubKey: frostKey, Algo: common.SigningAlgoEd25519, Inactive: true}},
+			mimirValues:         map[string]int64{"HaltScannerXMR": 0},
 		},
 	}
 
@@ -613,7 +619,8 @@ func TestCatchupSpentOutputRefsSkipsVaultsWithoutFrost(t *testing.T) {
 		sidecar: signer,
 		logger:  testLogger(),
 		thorchainBridge: &mockMoneroBridge{
-			pubKeys: []thorclient.PubKeyContractAddressPair{{PubKey: testVaultPubKey(t, "secp-only-catchup"), Algo: common.SigningAlgoSecp256k1}},
+			pubKeys:     []thorclient.PubKeyContractAddressPair{{PubKey: testVaultPubKey(t, "secp-only-catchup"), Algo: common.SigningAlgoSecp256k1}},
+			mimirValues: map[string]int64{"HaltScannerXMR": 0},
 		},
 	}
 
@@ -640,7 +647,8 @@ func TestCatchupSpentOutputRefsSkipsVaultsWithNoRefs(t *testing.T) {
 		sidecar: signer,
 		logger:  testLogger(),
 		thorchainBridge: &mockMoneroBridge{
-			pubKeys: []thorclient.PubKeyContractAddressPair{{PubKey: testVaultPubKey(t, "frost-norefs"), Algo: common.SigningAlgoEd25519}},
+			pubKeys:     []thorclient.PubKeyContractAddressPair{{PubKey: testVaultPubKey(t, "frost-norefs"), Algo: common.SigningAlgoEd25519}},
+			mimirValues: map[string]int64{"HaltScannerXMR": 0},
 		},
 	}
 
@@ -710,4 +718,91 @@ func newXMRCatchupReplayScanner(
 	scanner.SetAuthenticatedInternalInboundReplayStore(replayStore)
 	scanner.SetReorgStore(reorgStore)
 	return scanner, replayStore, reorgStore
+}
+
+type spentRefsScannerGateBridge struct {
+	thorclient.ThorchainBridge
+
+	mimirValue  int64
+	mimirErr    error
+	mimirCalls  atomic.Int32
+	pubKeyCalls atomic.Int32
+	mimirKey    string
+}
+
+func (b *spentRefsScannerGateBridge) GetMimir(key string) (int64, error) {
+	b.mimirCalls.Add(1)
+	b.mimirKey = key
+	return b.mimirValue, b.mimirErr
+}
+
+func (b *spentRefsScannerGateBridge) GetPubKeys() ([]thorclient.PubKeyContractAddressPair, error) {
+	b.pubKeyCalls.Add(1)
+	return nil, nil
+}
+
+func TestCatchupSpentOutputRefsHonorsScannerHalt(t *testing.T) {
+	tests := []struct {
+		name            string
+		mimirValue      int64
+		mimirErr        error
+		wantPubKeyCalls int32
+	}{
+		{name: "unset fails closed", mimirValue: -1},
+		{name: "other negative values fail closed", mimirValue: -7},
+		{name: "zero opens catch-up", wantPubKeyCalls: 1},
+		{name: "positive value halts", mimirValue: 1},
+		{name: "all positive values halt", mimirValue: 101},
+		{name: "mimir query error fails closed", mimirErr: errors.New("mimir unavailable")},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var sidecarCalls atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				sidecarCalls.Add(1)
+				_ = json.NewEncoder(w).Encode(sidecar.MarkSpentResp{})
+			}))
+			t.Cleanup(server.Close)
+			signer, err := sidecar.NewClientWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
+			require.NoError(t, err)
+
+			bridge := &spentRefsScannerGateBridge{
+				mimirValue: test.mimirValue,
+				mimirErr:   test.mimirErr,
+			}
+			client := &Client{
+				chain:           common.XMRChain,
+				sidecar:         signer,
+				logger:          testLogger(),
+				thorchainBridge: bridge,
+			}
+
+			client.catchupSpentOutputRefs()
+
+			assert.Equal(t, int32(1), bridge.mimirCalls.Load())
+			assert.Equal(t, "HaltScannerXMR", bridge.mimirKey)
+			assert.Equal(t, test.wantPubKeyCalls, bridge.pubKeyCalls.Load())
+			assert.Zero(t, sidecarCalls.Load())
+		})
+	}
+}
+
+func TestCatchupSpentOutputRefsRetriesScannerPolicyAfterFailure(t *testing.T) {
+	bridge := &spentRefsScannerGateBridge{mimirErr: errors.New("scanner policy unavailable")}
+	server := httptest.NewServer(http.NotFoundHandler())
+	t.Cleanup(server.Close)
+	signer, err := sidecar.NewClientWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
+	require.NoError(t, err)
+	client := &Client{chain: common.XMRChain, sidecar: signer, logger: testLogger(), thorchainBridge: bridge}
+
+	client.catchupSpentOutputRefs()
+	assert.Zero(t, bridge.pubKeyCalls.Load())
+	bridge.mimirErr = nil
+	client.catchupSpentOutputRefs()
+	assert.Equal(t, int32(1), bridge.pubKeyCalls.Load(), "the next catch-up must re-read policy and resume")
+	bridge.mimirValue = 1
+	client.catchupSpentOutputRefs()
+	assert.Equal(t, int32(1), bridge.pubKeyCalls.Load(), "renewed halt must stop catch-up before vault discovery")
+	assert.Equal(t, int32(3), bridge.mimirCalls.Load())
 }

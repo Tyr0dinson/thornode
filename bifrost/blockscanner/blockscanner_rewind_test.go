@@ -403,6 +403,8 @@ func (f *rollbackPrefetchFetcher) callCount(height int64) int {
 func (s *BlockScannerExtraSuite) newRewindTestBridge(c *C) (*httptest.Server, thorclient.ThorchainBridge) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
+		case strings.HasSuffix(r.RequestURI, "/key/HaltScannerXMR"):
+			_, _ = w.Write([]byte(`0`))
 		case strings.HasPrefix(r.RequestURI, thorclient.MimirEndpoint):
 			_, _ = w.Write([]byte(`-1`))
 		case strings.HasPrefix(r.RequestURI, "/thorchain/lastblock"):

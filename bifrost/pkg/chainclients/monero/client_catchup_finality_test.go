@@ -67,6 +67,7 @@ func TestCatchupReusableAliasFinalityTransitions(t *testing.T) {
 							spentRefsByVaultKey: map[string][]*common.OutputRef{vault.String(): {ref}},
 							observedByTx:        map[string]*ttypes.QueryObservedTxVoter{txHash: voter},
 							pubKeys:             []thorclient.PubKeyContractAddressPair{{PubKey: vault, Algo: common.SigningAlgoEd25519}},
+							mimirValues:         map[string]int64{"HaltScannerXMR": 0},
 						},
 					}
 					alias := xmrScheduledObserveKey(vault, tx.ToAddress.String(), tx.Coins, memoText)

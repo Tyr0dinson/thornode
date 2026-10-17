@@ -26,6 +26,10 @@
 #   ChurnInterval=10         - chainnet default is 43200 (3 days), too slow for testing
 #   ChurnRetryInterval=10    - retry churn every 10 blocks
 #   MinimumBondInRune=1      - prevent "low bond" churn-out noise
+#   HaltScannerXMR=0         - explicitly enable XMR scanning; unset fails closed
+#
+# Scanner activation is visible as XMR healthy=true from Bifrost /status/scanner.
+# An unset HaltScannerXMR key is logged only at Debug level.
 #
 # Auth: set XMR_FROST_AUTH_BEARER to a strong random token before running Compose.
 # The shared environment anchors pass the same token to every Bifrost/signer pair.
