@@ -46,6 +46,10 @@ func TestFetchTxsRetriesReceiptFailure(t *testing.T) {
 	transaction := func(id, result string) string {
 		return fmt.Sprintf(`{"txID":%q,"raw_data":{"contract":[{"type":"TransferContract","parameter":{"value":{"owner_address":%q,"to_address":%q,"amount":5000000}}}]},"ret":[{"contractRet":%q}]}`, id, address, address, result)
 	}
+	// Receipt IDs are matched case-insensitively. TRON omits a zero fee, which
+	// is valid when bandwidth covers the transfer.
+	firstReceipt := fmt.Sprintf(`{"id":%q,"blockNumber":100,"fee":100}`, strings.ToUpper(firstID))
+	targetReceipt := fmt.Sprintf(`{"id":%q,"blockNumber":100}`, strings.ToUpper(targetID))
 
 	for _, result := range []string{"SUCCESS", "REVERT"} {
 		for _, failure := range []struct {
@@ -55,16 +59,18 @@ func TestFetchTxsRetriesReceiptFailure(t *testing.T) {
 		}{
 			{"application", http.StatusOK, `{"Error":"lack of computing resources"}`},
 			{"http", http.StatusServiceUnavailable, `unavailable`},
-			{"malformed", http.StatusOK, `{`},
-			{"empty", http.StatusOK, `{}`},
-			{"missing height", http.StatusOK, fmt.Sprintf(`{"id":%q}`, targetID)},
-			{"missing identity", http.StatusOK, `{"blockNumber":100}`},
-			{"wrong identity", http.StatusOK, fmt.Sprintf(`{"id":%q,"blockNumber":100,"fee":700}`, firstID)},
-			{"wrong height", http.StatusOK, fmt.Sprintf(`{"id":%q,"blockNumber":101,"fee":700}`, targetID)},
+			{"malformed", http.StatusOK, `[`},
+			{"empty object", http.StatusOK, `{}`},
+			{"block not indexed", http.StatusOK, `[]`},
+			{"missing height", http.StatusOK, fmt.Sprintf(`[%s,{"id":%q}]`, firstReceipt, targetID)},
+			{"missing identity", http.StatusOK, fmt.Sprintf(`[%s,{"blockNumber":100}]`, firstReceipt)},
+			{"missing receipt", http.StatusOK, fmt.Sprintf(`[%s]`, firstReceipt)},
+			{"wrong height", http.StatusOK, fmt.Sprintf(`[%s,{"id":%q,"blockNumber":101,"fee":700}]`, firstReceipt, targetID)},
 		} {
 			t.Run(result+"/"+failure.name, func(t *testing.T) {
 				var failReceipt atomic.Bool
 				failReceipt.Store(true)
+				var requests atomic.Int64
 				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					switch r.URL.Path {
 					case "/wallet/getblockbynum":
@@ -72,25 +78,21 @@ func TestFetchTxsRetriesReceiptFailure(t *testing.T) {
 						// Retrying must recover both, without emitting a partial block.
 						_, _ = fmt.Fprintf(w, `{"block_header":{"raw_data":{"number":100,"timestamp":1000}},"transactions":[%s,%s]}`,
 							transaction(firstID, "SUCCESS"), transaction(targetID, result))
-					case "/wallet/gettransactioninfobyid":
+					case "/wallet/gettransactioninfobyblocknum":
+						requests.Add(1)
 						var request struct {
-							Value string `json:"value"`
+							Num int64 `json:"num"`
 						}
-						if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-							http.Error(w, err.Error(), http.StatusBadRequest)
+						if err := json.NewDecoder(r.Body).Decode(&request); err != nil || request.Num != 100 {
+							http.Error(w, fmt.Sprintf("unexpected block %d: %v", request.Num, err), http.StatusBadRequest)
 							return
 						}
-						if request.Value == targetID && failReceipt.Load() {
+						if failReceipt.Load() {
 							w.WriteHeader(failure.status)
 							_, _ = w.Write([]byte(failure.body))
 							return
 						}
-						// Zero fees are valid when bandwidth covers the transfer.
-						fee := 100
-						if request.Value == targetID {
-							fee = 0
-						}
-						_, _ = fmt.Fprintf(w, `{"id":%q,"blockNumber":100,"fee":%d}`, strings.ToUpper(request.Value), fee)
+						_, _ = fmt.Fprintf(w, `[%s,%s]`, firstReceipt, targetReceipt)
 					default:
 						http.NotFound(w, r)
 					}
@@ -121,6 +123,9 @@ func TestFetchTxsRetriesReceiptFailure(t *testing.T) {
 				}
 				if len(txIn.TxArray) != 2 {
 					t.Fatalf("retry recovered %d observations, want 2", len(txIn.TxArray))
+				}
+				if got := requests.Load(); got != 2 {
+					t.Fatalf("receipt requests = %d, want one per block attempt", got)
 				}
 				for i, id := range []string{firstID, targetID} {
 					item := txIn.TxArray[i]

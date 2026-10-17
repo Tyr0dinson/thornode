@@ -1055,7 +1055,7 @@ func (s *ScannerBackfillSuite) TestGetTxInFromFailedTransactionNotVault(c *C) {
 		},
 	}
 
-	result, err := s.scanner.getTxInFromFailedTransaction(tx, 100)
+	result, err := s.scanner.getTxInFromFailedTransaction(tx, &blockReceipts{api: s.scanner.api, height: 100})
 	c.Assert(err, IsNil)
 	// MockPoolAddressValidator returns false for unknown addresses
 	c.Assert(result, IsNil)
@@ -1085,7 +1085,7 @@ func (s *ScannerBackfillSuite) TestGetTxInFromFailedTransactionBadOwner(c *C) {
 		},
 	}
 
-	result, err := s.scanner.getTxInFromFailedTransaction(tx, 100)
+	result, err := s.scanner.getTxInFromFailedTransaction(tx, &blockReceipts{api: s.scanner.api, height: 100})
 	c.Assert(err, IsNil)
 	c.Assert(result, IsNil)
 }
@@ -1113,7 +1113,7 @@ func (s *ScannerBackfillSuite) TestGetTxInFromFailedTransactionUnknownType(c *C)
 		},
 	}
 
-	result, err := s.scanner.getTxInFromFailedTransaction(tx, 100)
+	result, err := s.scanner.getTxInFromFailedTransaction(tx, &blockReceipts{api: s.scanner.api, height: 100})
 	c.Assert(err, IsNil)
 	// The sender address conversion will succeed but the mock validator returns false
 	c.Assert(result, IsNil)

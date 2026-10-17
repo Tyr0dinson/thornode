@@ -160,19 +160,19 @@ func TestFetchTxsFiltersReceiptsToVaults(t *testing.T) {
 					switch r.URL.Path {
 					case "/wallet/getblockbynum":
 						_ = json.NewEncoder(w).Encode(block)
-					case "/wallet/gettransactioninfobyid":
+					case "/wallet/gettransactioninfobyblocknum":
 						calls.Add(1)
-						var request struct{ Value string }
-						if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-							http.Error(w, err.Error(), http.StatusBadRequest)
+						var request struct{ Num int64 }
+						if err := json.NewDecoder(r.Body).Decode(&request); err != nil || request.Num != 100 {
+							http.Error(w, fmt.Sprintf("unexpected block %d: %v", request.Num, err), http.StatusBadRequest)
 							return
 						}
 						if tc.wantReceipts == 0 {
-							// This broken unrelated receipt must never stall the scanner.
+							// These broken unrelated receipts must never stall the scanner.
 							_, _ = fmt.Fprint(w, `{"Error":"receipt unavailable"}`)
 							return
 						}
-						_, _ = fmt.Fprintf(w, `{"id":%q,"blockNumber":100,"fee":700}`, request.Value)
+						_, _ = fmt.Fprintf(w, `[{"id":%q,"blockNumber":100,"fee":700}]`, targetID)
 					default:
 						http.NotFound(w, r)
 					}
@@ -234,13 +234,14 @@ func TestFetchTxsVaultReceiptRetry(t *testing.T) {
 			server := httptestServerForReceiptRetry(t, block, firstID, targetID, &failReceipt, &calls)
 			defer server.Close()
 			scanner := receiptFilterScanner(t, server.URL, manager)
+			// Both vault transfers share one receipt request per attempt.
 			txIn, err := scanner.FetchTxs(100, 1000)
-			if !errors.Is(err, btypes.ErrUnavailableBlock) || len(txIn.TxArray) != 0 || calls.Load() != 2 {
+			if !errors.Is(err, btypes.ErrUnavailableBlock) || len(txIn.TxArray) != 0 || calls.Load() != 1 {
 				t.Fatalf("failed vault receipt must retry the full block: err=%v, observations=%d, requests=%d", err, len(txIn.TxArray), calls.Load())
 			}
 			failReceipt.Store(false)
 			txIn, err = scanner.FetchTxs(100, 1000)
-			if err != nil || len(txIn.TxArray) != 2 || calls.Load() != 4 {
+			if err != nil || len(txIn.TxArray) != 2 || calls.Load() != 2 {
 				t.Fatalf("retry must recover both vault transfers: err=%v, observations=%d, requests=%d", err, len(txIn.TxArray), calls.Load())
 			}
 			for i, id := range []string{firstID, targetID} {
@@ -259,23 +260,21 @@ func httptestServerForReceiptRetry(t *testing.T, block api.Block, firstID, targe
 		switch r.URL.Path {
 		case "/wallet/getblockbynum":
 			_ = json.NewEncoder(w).Encode(block)
-		case "/wallet/gettransactioninfobyid":
+		case "/wallet/gettransactioninfobyblocknum":
 			calls.Add(1)
-			var request struct{ Value string }
-			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
-				return
-			}
-			if request.Value != firstID && request.Value != targetID {
-				t.Error("unrelated receipt was requested")
+			var request struct{ Num int64 }
+			if err := json.NewDecoder(r.Body).Decode(&request); err != nil || request.Num != 100 {
+				t.Errorf("unexpected receipt request for block %d: %v", request.Num, err)
 				http.Error(w, "unavailable", http.StatusServiceUnavailable)
 				return
 			}
-			if request.Value == targetID && failReceipt.Load() {
-				_, _ = fmt.Fprintf(w, `{"id":%q,"blockNumber":101,"fee":700}`, request.Value)
-				return
+			targetHeight := 100
+			if failReceipt.Load() {
+				targetHeight = 101
 			}
-			_, _ = fmt.Fprintf(w, `{"id":%q,"blockNumber":100,"fee":700}`, request.Value)
+			// The unrelated transfer's receipt arrives too, but is never used.
+			_, _ = fmt.Fprintf(w, `[{"id":%q,"blockNumber":100},{"id":%q,"blockNumber":100,"fee":700},{"id":%q,"blockNumber":%d,"fee":700}]`,
+				strings.Repeat("d", 64), firstID, targetID, targetHeight)
 		default:
 			http.NotFound(w, r)
 		}

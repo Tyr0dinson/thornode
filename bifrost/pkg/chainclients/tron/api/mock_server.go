@@ -77,6 +77,25 @@ func NewMockServer() *httptest.Server {
 			w.WriteHeader(http.StatusNotFound)
 			_, _ = w.Write(nil)
 
+		case "gettransactioninfobyblocknum":
+			var height int64
+			if v, ok := params["num"].(float64); ok {
+				height = int64(v)
+			}
+
+			switch height {
+			case 55088560, 69351239, 72822854:
+				filename := fmt.Sprintf("test-tron/gettransactioninfobyblocknum_%d.json", height)
+				data, _ := responses.ReadFile(filename)
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write(data)
+				return
+			}
+
+			// java-tron answers blocks it does not have with an empty list
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("[]"))
+
 		case "gettransactionbyid":
 			value, found := params["value"]
 

@@ -104,6 +104,43 @@ func (api *TronApi) GetTransactionInfo(
 	return response.TransactionInfo, nil
 }
 
+// GetTransactionInfoByBlockNum returns the receipts of every transaction in a
+// block with a single request. Java-TRON answers a block it does not have yet
+// with an empty list, so callers must not treat a missing receipt as final.
+func (api *TronApi) GetTransactionInfoByBlockNum(
+	height int64,
+) ([]TransactionInfo, error) {
+	params := map[string]any{
+		"num": height,
+	}
+
+	data, err := api.post("gettransactioninfobyblocknum", params)
+	if err != nil {
+		return nil, err
+	}
+
+	// Receipts arrive as an array. Errors arrive as an object with HTTP 200, as
+	// does a request without a positive block number.
+	var infos []TransactionInfo
+	if err = json.Unmarshal(data, &infos); err == nil {
+		if infos == nil {
+			return nil, fmt.Errorf("empty transaction info list response")
+		}
+		return infos, nil
+	}
+
+	var response struct {
+		Error json.RawMessage `json:"Error"`
+	}
+	if json.Unmarshal(data, &response) != nil {
+		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
+	}
+	if len(response.Error) != 0 {
+		return nil, fmt.Errorf("transaction info list lookup failed: %s", response.Error)
+	}
+	return nil, fmt.Errorf("unexpected transaction info list response: %s", data)
+}
+
 func (api *TronApi) GetTransaction(
 	hash string,
 ) (Transaction, error) {

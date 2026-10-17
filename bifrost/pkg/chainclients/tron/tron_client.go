@@ -770,7 +770,7 @@ func (c *TronClient) GetGasEstimateForSolvency() cosmos.Uint {
 }
 
 func (c *TronClient) ShouldReportSolvency(height int64) bool {
-	return height%10 == 0
+	return height%solvencyReportInterval == 0
 }
 
 func (c *TronClient) ReportSolvency(height int64) error {

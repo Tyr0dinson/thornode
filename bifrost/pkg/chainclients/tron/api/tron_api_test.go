@@ -226,3 +226,97 @@ func TestGetTransactionInfoRejectsErrorResponses(t *testing.T) {
 		})
 	}
 }
+
+func (s *ApiTestSuite) TestGetTransactionInfoByBlockNum(c *C) {
+	// Shasta block 55088560, matching getblockbynum_55088560.json.
+	infos, err := s.api.GetTransactionInfoByBlockNum(55088560)
+	c.Assert(err, IsNil)
+	c.Assert(infos, HasLen, 3)
+	for i, want := range []struct {
+		id  string
+		fee uint64
+	}{
+		{"38c2a1a0d1b44e48856fa5243f2fe546d9dfa4b0846411ca34abc091afe1f532", 115300080},
+		{"5dc72e2c21570e725311e7142e99ea2523faa31007b8a9e36fa0057c98268910", 637240},
+		{"e61784f0dfe732730e31fbf4e3aa8b62f027f6318729bd1860522c11f4fcfe34", 637240},
+	} {
+		c.Assert(infos[i].ID, Equals, want.id)
+		c.Assert(infos[i].Fee, Equals, want.fee)
+		c.Assert(infos[i].BlockNumber, Equals, int64(55088560))
+	}
+
+	// a block the node does not have yet is an empty list, not an error
+	infos, err = s.api.GetTransactionInfoByBlockNum(55088561)
+	c.Assert(err, IsNil)
+	c.Assert(infos, HasLen, 0)
+}
+
+func (s *ApiTestSuite) TestGetTransactionInfoByBlockNumMatchesSingleLookup(c *C) {
+	// The scanner's gas comes from these receipts; both endpoints must agree.
+	for _, height := range []int64{69351239, 72822854} {
+		infos, err := s.api.GetTransactionInfoByBlockNum(height)
+		c.Assert(err, IsNil)
+		c.Assert(len(infos) > 0, Equals, true)
+		for _, info := range infos {
+			single, err := s.api.GetTransactionInfo(info.ID)
+			c.Assert(err, IsNil)
+			c.Assert(info, DeepEquals, single)
+			c.Assert(info.BlockNumber, Equals, height)
+		}
+	}
+}
+
+func TestGetTransactionInfoByBlockNumRejectsErrorResponses(t *testing.T) {
+	for _, tc := range []struct {
+		name, body string
+		status     int
+		wantError  bool
+		wantIDs    []string
+	}{
+		{"empty block", `[]`, http.StatusOK, false, []string{}},
+		{"receipts", `[{"id":"a","blockNumber":86,"fee":700},{"id":"b","blockNumber":86}]`, http.StatusOK, false, []string{"a", "b"}},
+		{"rate limited", `{"Error":"class java.lang.IllegalAccessException : lack of computing resources"}`, http.StatusOK, true, nil},
+		{"empty error", `{"Error":""}`, http.StatusOK, true, nil},
+		{"non-positive height", `{}`, http.StatusOK, true, nil},
+		{"null response", `null`, http.StatusOK, true, nil},
+		{"malformed response", `[`, http.StatusOK, true, nil},
+		{"http error", `unavailable`, http.StatusServiceUnavailable, true, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != "/wallet/gettransactioninfobyblocknum" {
+					t.Errorf("unexpected path %s", r.URL.Path)
+				}
+				var request struct {
+					Num int64 `json:"num"`
+				}
+				if err := json.NewDecoder(r.Body).Decode(&request); err != nil || request.Num != 86 {
+					t.Errorf("unexpected request num %d: %v", request.Num, err)
+				}
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(tc.status)
+				_, _ = w.Write([]byte(tc.body))
+			}))
+			defer server.Close()
+			client := NewTronApi(server.URL, time.Second)
+			infos, err := client.GetTransactionInfoByBlockNum(86)
+			if (err != nil) != tc.wantError {
+				t.Fatalf("receipt list error = %v, want error %v", err, tc.wantError)
+			}
+			if tc.wantError {
+				if infos != nil {
+					t.Fatalf("failed lookup returned receipts %+v", infos)
+				}
+				return
+			}
+			if len(infos) != len(tc.wantIDs) {
+				t.Fatalf("receipts = %+v, want ids %v", infos, tc.wantIDs)
+			}
+			for i, id := range tc.wantIDs {
+				if infos[i].ID != id || infos[i].BlockNumber != 86 {
+					t.Fatalf("receipt %d = %+v, want id %q at height 86", i, infos[i], id)
+				}
+			}
+		})
+	}
+}

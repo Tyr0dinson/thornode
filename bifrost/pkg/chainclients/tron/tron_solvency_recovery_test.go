@@ -2,6 +2,7 @@ package tron
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -57,13 +58,13 @@ func TestTRONSolvencyAfterReceiptRecovery(t *testing.T) {
 				return
 			}
 			_, _ = fmt.Fprintf(w, `{"block_header":{"raw_data":{"number":100,"timestamp":1000}},"transactions":[{"txID":%q,"raw_data":{"contract":[{"type":"TransferContract","parameter":{"value":{"owner_address":%q,"to_address":%q,"amount":5000000}}}]},"ret":[{"contractRet":"SUCCESS"}]}]}`, txID, address, address)
-		case "/wallet/gettransactioninfobyid":
+		case "/wallet/gettransactioninfobyblocknum":
 			if !receiptReady.Load() {
 				failedReceipts.Add(1)
 				_, _ = fmt.Fprint(w, `{"Error":"receipt unavailable"}`)
 				return
 			}
-			_, _ = fmt.Fprintf(w, `{"id":%q,"blockNumber":100,"fee":700}`, txID)
+			_, _ = fmt.Fprintf(w, `[{"id":%q,"blockNumber":100,"fee":700}]`, txID)
 		case "/wallet/getaccount":
 			_, _ = fmt.Fprint(w, `{"balance":1}`)
 		default:
@@ -104,6 +105,16 @@ func TestTRONSolvencyAfterReceiptRecovery(t *testing.T) {
 		}
 	}
 	wait(func() bool { return shared.PreviousHeight() == height-1 && shared.IsHealthy() })
+	// The first healthy scan checks the cycle current at startup, labelled with
+	// its boundary, before the block that completed it is persisted.
+	select {
+	case report := <-reports:
+		if report.Height != height-solvencyReportInterval-FinalityBlocks {
+			t.Fatalf("unexpected startup report height %d", report.Height)
+		}
+	default:
+		t.Fatal("startup cycle was not checked")
+	}
 	tip.Store(height)
 	wait(func() bool { return failedReceipts.Load() >= 3 && !shared.IsHealthy() })
 	if shared.PreviousHeight() != height-1 || len(reports) != 0 {
@@ -134,24 +145,78 @@ func TestTRONSolvencyAfterReceiptRecovery(t *testing.T) {
 	}
 }
 
-func TestTRONSolvencyHookUsesTipAndFlexibility(t *testing.T) {
+func TestTRONSolvencyHookReportsEachCycleOnce(t *testing.T) {
 	client := &TronClient{}
+	// tip is the head GetHeight returns when the hook refreshes it.
+	var tip, headRequests atomic.Int64
+	var failHead atomic.Bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/wallet/getnowblock" {
+			http.NotFound(w, r)
+			return
+		}
+		headRequests.Add(1)
+		if failHead.Load() {
+			http.Error(w, "unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		_, _ = fmt.Fprintf(w, `{"block_header":{"raw_data":{"number":%d}}}`, tip.Load()+ConfirmationBlocks)
+	}))
+	defer server.Close()
+
 	var reported []int64
+	var failReport bool
 	scanner := &TronBlockScanner{
 		config: config.BifrostBlockScannerConfiguration{ObservationFlexibilityBlocks: 2},
+		logger: zerolog.Nop(),
+		api:    api.NewTronApi(server.URL, time.Second),
 		reportSolvency: func(height int64) error {
-			if client.ShouldReportSolvency(height) {
-				reported = append(reported, height)
+			if !client.ShouldReportSolvency(height) {
+				t.Errorf("hook reported off-cadence height %d", height)
 			}
+			if failReport {
+				return errors.New("asgards unavailable")
+			}
+			reported = append(reported, height)
 			return nil
 		},
 	}
-	for _, pair := range [][2]int64{{97, 100}, {99, 101}, {98, 100}} {
-		if err := scanner.ReportSolvency(pair[0], pair[1]); err != nil {
-			t.Fatal(err)
+	for _, step := range []struct {
+		name                     string
+		fetchHeight, chainHeight int64
+		tip                      int64
+		failHead, failReport     bool
+		wantErr                  bool
+		wantHeadRequests         int64
+		want                     []int64
+	}{
+		{"behind the tip", 97, 100, 100, false, false, false, 0, nil},
+		{"startup cycle", 98, 99, 99, false, false, false, 1, []int64{90}},
+		{"same cycle", 99, 99, 99, false, false, false, 1, []int64{90}},
+		// The loop's head skipped 100; the cycle is still checked once.
+		{"crossed boundary", 100, 101, 101, false, false, false, 2, []int64{90, 100}},
+		{"same cycle again", 101, 101, 102, false, false, false, 2, []int64{90, 100}},
+		// The loop's head is a block stale; the label follows the fresh head.
+		{"head moved during fetch", 109, 110, 120, false, false, false, 3, []int64{90, 100, 120}},
+		{"coalesced cycle stays done", 120, 120, 120, false, false, false, 3, []int64{90, 100, 120}},
+		// A lagging load-balanced endpoint must not move the cycle backwards.
+		{"stale endpoint", 130, 131, 128, false, false, false, 4, []int64{90, 100, 120, 130}},
+		{"head unavailable", 140, 140, 140, true, false, true, 5, []int64{90, 100, 120, 130}},
+		{"report failed", 140, 140, 140, false, true, true, 6, []int64{90, 100, 120, 130}},
+		{"retry", 141, 141, 141, false, false, false, 7, []int64{90, 100, 120, 130, 140}},
+	} {
+		tip.Store(step.tip)
+		failHead.Store(step.failHead)
+		failReport = step.failReport
+		err := scanner.ReportSolvency(step.fetchHeight, step.chainHeight)
+		if (err != nil) != step.wantErr {
+			t.Fatalf("%s: err = %v, want error %v", step.name, err, step.wantErr)
 		}
-	}
-	if len(reported) != 1 || reported[0] != 100 {
-		t.Fatalf("unexpected tip-based solvency heights: %v", reported)
+		if got := headRequests.Load(); got != step.wantHeadRequests {
+			t.Fatalf("%s: head requests = %d, want %d", step.name, got, step.wantHeadRequests)
+		}
+		if fmt.Sprint(reported) != fmt.Sprint(step.want) {
+			t.Fatalf("%s: reported %v, want %v", step.name, reported, step.want)
+		}
 	}
 }

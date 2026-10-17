@@ -29,6 +29,10 @@ import (
 
 var updateGasInterval int64 = 30
 
+// solvencyReportInterval is the head cadence of solvency reports. Peers only
+// agree on a report when they label it with the same boundary height.
+const solvencyReportInterval int64 = 10
+
 type ReportSolvency func(int64) error
 
 type RefBlock struct {
@@ -53,6 +57,9 @@ type TronBlockScanner struct {
 	currentFee            stdatomic.Uint64
 	reportSolvency        ReportSolvency
 	globalNetworkFeeQueue chan common.NetworkFee
+	// Serializes ReportSolvency and guards the last head cycle it reported.
+	solvencyMu        sync.Mutex
+	lastSolvencyCycle int64
 }
 
 func NewTronBlockScanner(
@@ -166,13 +173,54 @@ func (s *TronBlockScanner) FetchTxs(
 	return txIn, nil
 }
 
-// ReportSolvency runs after the shared scanner has recomputed health. TRON
-// retains its existing tip-height reporting cadence while scanning near the tip.
+// ReportSolvency runs after the shared scanner has recomputed health. While
+// scanning near the tip it reports once per solvencyReportInterval head cycle,
+// labelled with the cycle's boundary height as peers that see every head do.
+//
+// chainHeight was read before this block was fetched, which on a remote node
+// can be seconds stale. The balances are read now, so the cycle is chosen from
+// a head read now too. A cycle that passed without a check is reported late
+// rather than skipped, since a matching late report still earns consensus.
 func (s *TronBlockScanner) ReportSolvency(fetchHeight, chainHeight int64) error {
 	if chainHeight-fetchHeight > s.config.ObservationFlexibilityBlocks || s.reportSolvency == nil {
 		return nil
 	}
-	return s.reportSolvency(chainHeight)
+
+	s.solvencyMu.Lock()
+	defer s.solvencyMu.Unlock()
+
+	// Only pay for a fresh head once the scan loop's head enters a new cycle.
+	if chainHeight/solvencyReportInterval <= s.lastSolvencyCycle {
+		return nil
+	}
+	head, err := s.GetHeight()
+	if err != nil {
+		return fmt.Errorf("fail to refresh tip for solvency: %w", err)
+	}
+	// load-balanced endpoints can briefly answer with an older head
+	head = max(head, chainHeight)
+
+	cycle := head / solvencyReportInterval
+	if skipped := cycle - s.lastSolvencyCycle - 1; s.lastSolvencyCycle > 0 && skipped > 0 {
+		s.logger.Warn().
+			Int64("head", head).
+			Int64("skipped_cycles", skipped).
+			Msg("solvency cycles passed without a report")
+	}
+	height := cycle * solvencyReportInterval
+	s.logger.Debug().
+		Int64("head", head).
+		Int64("height", height).
+		Int64("scan_height", fetchHeight).
+		Msg("checking solvency")
+
+	// A nil result marks the cycle done even if some vault balances could not be
+	// read: a same-cycle retry would resend every vault with later balances.
+	if err = s.reportSolvency(height); err != nil {
+		return err
+	}
+	s.lastSolvencyCycle = cycle
+	return nil
 }
 
 func (s *TronBlockScanner) addRefBlock(refBlock RefBlock) {
@@ -226,6 +274,9 @@ func (s *TronBlockScanner) processTxs(
 
 	height := block.Header.RawData.Number
 
+	// Receipts only supply gas for vault transfers, which most blocks lack.
+	receipts := &blockReceipts{api: s.api, height: height}
+
 	contracts := map[string]struct{}{}
 
 	for _, rawTx := range block.Transactions {
@@ -248,7 +299,7 @@ func (s *TronBlockScanner) processTxs(
 		// check for failed outbound transactions from vaults
 		if rawTx.Ret[0].ContractRet != "SUCCESS" {
 			// process failed transactions that originated from a vault
-			txInItem, err := s.getTxInFromFailedTransaction(&rawTx, height)
+			txInItem, err := s.getTxInFromFailedTransaction(&rawTx, receipts)
 			if err != nil {
 				return nil, err
 			}
@@ -380,7 +431,7 @@ func (s *TronBlockScanner) processTxs(
 		}
 
 		// get fee
-		info, err := s.getBlockReceipt(rawTx.TxId, height)
+		info, err := receipts.get(rawTx.TxId)
 		if err != nil {
 			return nil, err
 		}
@@ -409,15 +460,37 @@ func (s *TronBlockScanner) processTxs(
 	return txInItems, nil
 }
 
-// getBlockReceipt requires inclusion in the block being scanned. The shared API
-// still permits empty lookups for transactions not yet included in a block.
-func (s *TronBlockScanner) getBlockReceipt(txID string, height int64) (api.TransactionInfo, error) {
-	info, err := s.api.GetTransactionInfo(txID)
-	if err != nil {
-		return api.TransactionInfo{}, fmt.Errorf("%w: transaction %s receipt: %w", btypes.ErrUnavailableBlock, txID, err)
+// blockReceipts loads every receipt of one block with a single request, the
+// first time a transaction needs one, so a block costs at most one round trip
+// however many vault transfers it holds.
+type blockReceipts struct {
+	api    *api.TronApi
+	height int64
+	byID   map[string]api.TransactionInfo
+}
+
+// get requires inclusion in the block being scanned. A node can answer before
+// it has indexed the block, so a missing receipt retries the whole block.
+func (r *blockReceipts) get(txID string) (api.TransactionInfo, error) {
+	if txID == "" || r.height <= 0 {
+		return api.TransactionInfo{}, fmt.Errorf("%w: transaction %q at height %d has no receipt", btypes.ErrUnavailableBlock, txID, r.height)
 	}
-	if txID == "" || !strings.EqualFold(info.ID, txID) || info.BlockNumber != height || height <= 0 {
-		return api.TransactionInfo{}, fmt.Errorf("%w: transaction %s at height %d has receipt id %q at height %d", btypes.ErrUnavailableBlock, txID, height, info.ID, info.BlockNumber)
+	if r.byID == nil {
+		infos, err := r.api.GetTransactionInfoByBlockNum(r.height)
+		if err != nil {
+			return api.TransactionInfo{}, fmt.Errorf("%w: block %d receipts: %w", btypes.ErrUnavailableBlock, r.height, err)
+		}
+		r.byID = make(map[string]api.TransactionInfo, len(infos))
+		for _, info := range infos {
+			r.byID[strings.ToLower(info.ID)] = info
+		}
+	}
+	info, ok := r.byID[strings.ToLower(txID)]
+	if !ok {
+		return api.TransactionInfo{}, fmt.Errorf("%w: transaction %s has no receipt among %d at height %d", btypes.ErrUnavailableBlock, txID, len(r.byID), r.height)
+	}
+	if info.BlockNumber != r.height {
+		return api.TransactionInfo{}, fmt.Errorf("%w: transaction %s at height %d has receipt at height %d", btypes.ErrUnavailableBlock, txID, r.height, info.BlockNumber)
 	}
 	return info, nil
 }
@@ -427,8 +500,10 @@ func (s *TronBlockScanner) getBlockReceipt(txID string, height int64) (api.Trans
 // failed outbound transactions.
 func (s *TronBlockScanner) getTxInFromFailedTransaction(
 	rawTx *api.Transaction,
-	height int64,
+	receipts *blockReceipts,
 ) (*types.TxInItem, error) {
+	height := receipts.height
+
 	raw := rawTx.RawData.Contract[0]
 
 	// get sender address
@@ -464,7 +539,7 @@ func (s *TronBlockScanner) getTxInFromFailedTransaction(
 	}
 
 	// get fee
-	info, err := s.getBlockReceipt(rawTx.TxId, height)
+	info, err := receipts.get(rawTx.TxId)
 	if err != nil {
 		return nil, err
 	}
