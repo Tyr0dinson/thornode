@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -41,6 +42,74 @@ func (s *ApiTestSuite) TestGetLatestBlock(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(block.Header.RawData.Number, Equals, int64(55088560))
 	c.Assert(len(block.Transactions), Equals, 3)
+}
+
+func (s *ApiTestSuite) TestGetLatestBlockHeader(c *C) {
+	// Shasta block 55088560 from getblock, matching getblockbynum_55088560.json.
+	header, err := s.api.GetLatestBlockHeader()
+	c.Assert(err, IsNil)
+	c.Assert(header.Header.RawData.Number, Equals, int64(55088560))
+	c.Assert(header.Transactions, HasLen, 0)
+
+	// the same head as getnowblock, without its transactions
+	block, err := s.api.GetLatestBlock()
+	c.Assert(err, IsNil)
+	c.Assert(header.BlockId, Equals, block.BlockId)
+	c.Assert(header.Header, DeepEquals, block.Header)
+}
+
+func TestGetLatestBlockHeaderRejectsErrorResponses(t *testing.T) {
+	// a TronGrid mainnet response, 542 bytes
+	const mainnetHeader = `{"blockID":"0000000005324dca252a89849c9924ce43a0f0b28cd4a615dcc159764789b77a","block_header":{"raw_data":{"timestamp":1792221360000,"txTrieRoot":"77c8e63371669a4175b13bde34328840c4b14f6e5e66c9bb68740c9b7ffb1f78","parentHash":"0000000005324dc91642aec1eebf5912ad7077482ee9bc278b5ef2577b15b15a","number":87182794,"witness_address":"41beab998551416b02f6721129bb01b51fceceba08","version":38},"witness_signature":"a7288f8fdc3b3129f7c127ffba3c6dc6edd2c1fcbe54d720fdb6f32ab71ab6cb04febfae01076d8490b4ab70e10720e51e4b46ab49b1922f8397fb4c1f60539400"}}`
+	for _, tc := range []struct {
+		name, body string
+		status     int
+		wantError  bool
+		wantNumber int64
+	}{
+		{"header", mainnetHeader, http.StatusOK, false, 87182794},
+		// protobuf JSON omits a zero number; the block ID marks a real head
+		{"head at genesis", `{"blockID":"0000000000000000a1b2","block_header":{"raw_data":{"timestamp":0}}}`, http.StatusOK, false, 0},
+		{"rate limited", `{"Error":"class java.lang.IllegalAccessException : lack of computing resources"}`, http.StatusOK, true, 0},
+		{"error with header", `{"Error":"lookup failed","blockID":"00ab","block_header":{"raw_data":{"number":86}}}`, http.StatusOK, true, 0},
+		{"empty error", `{"Error":""}`, http.StatusOK, true, 0},
+		{"no block", `{}`, http.StatusOK, true, 0},
+		{"header without block ID", `{"block_header":{"raw_data":{"number":86}}}`, http.StatusOK, true, 0},
+		{"null response", `null`, http.StatusOK, true, 0},
+		{"malformed response", `{`, http.StatusOK, true, 0},
+		{"not served", `404 page not found`, http.StatusNotFound, true, 0},
+		{"http error", `unavailable`, http.StatusServiceUnavailable, true, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != "/wallet/getblock" || r.Method != http.MethodPost {
+					t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+				}
+				body, err := io.ReadAll(r.Body)
+				if err != nil || string(body) != `{"detail":false}` {
+					t.Errorf("unexpected request body %s: %v", body, err)
+				}
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(tc.status)
+				_, _ = w.Write([]byte(tc.body))
+			}))
+			defer server.Close()
+			client := NewTronApi(server.URL, time.Second)
+			header, err := client.GetLatestBlockHeader()
+			if (err != nil) != tc.wantError {
+				t.Fatalf("header error = %v, want error %v", err, tc.wantError)
+			}
+			if tc.wantError {
+				if header.BlockId != "" || header.Header.RawData.Number != 0 {
+					t.Fatalf("failed lookup returned header %+v", header)
+				}
+				return
+			}
+			if header.BlockId == "" || header.Header.RawData.Number != tc.wantNumber {
+				t.Fatalf("header = %+v, want number %d", header, tc.wantNumber)
+			}
+		})
+	}
 }
 
 func (s *ApiTestSuite) TestGetBlock(c *C) {

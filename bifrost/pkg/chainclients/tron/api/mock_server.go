@@ -29,6 +29,17 @@ func NewMockServer() *httptest.Server {
 			w.WriteHeader(http.StatusOK)
 			data, _ := responses.ReadFile("test-tron/getblockbynum_55088560.json")
 			_, _ = w.Write(data)
+		case "getblock":
+			// only the header-only head query is mocked
+			if _, found := params["id_or_num"]; found || params["detail"] != false {
+				w.WriteHeader(http.StatusNotFound)
+				_, _ = w.Write(nil)
+				return
+			}
+
+			w.WriteHeader(http.StatusOK)
+			data, _ := responses.ReadFile("test-tron/getblock_55088560.json")
+			_, _ = w.Write(data)
 		case "getblockbynum":
 			var height int64
 

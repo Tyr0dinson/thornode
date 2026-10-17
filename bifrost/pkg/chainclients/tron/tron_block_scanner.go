@@ -4,6 +4,7 @@ import (
 	"bytes"
 	_ "embed"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"math/big"
 	"sort"
@@ -29,6 +30,14 @@ import (
 
 var updateGasInterval int64 = 30
 
+// How GetHeight reads the head: undecided until a query answers, then the
+// header-only getblock query, or getnowblock where getblock is not served.
+const (
+	headQueryUnknown int32 = iota
+	headQueryHeader
+	headQueryFullBlock
+)
+
 type ReportSolvency func(int64) error
 
 type RefBlock struct {
@@ -53,6 +62,7 @@ type TronBlockScanner struct {
 	currentFee            stdatomic.Uint64
 	reportSolvency        ReportSolvency
 	globalNetworkFeeQueue chan common.NetworkFee
+	headQuery             stdatomic.Int32
 }
 
 func NewTronBlockScanner(
@@ -107,18 +117,52 @@ func NewTronBlockScanner(
 }
 
 func (s *TronBlockScanner) GetHeight() (int64, error) {
-	block, err := s.api.GetLatestBlock()
+	number, err := s.latestBlockNumber()
 	if err != nil {
 		s.logger.Err(err).Msg("failed to get latest block")
 		return 0, err
 	}
 
-	height := block.Header.RawData.Number - ConfirmationBlocks
+	height := number - ConfirmationBlocks
 	if height < 0 {
 		height = 0
 	}
 
 	return height, nil
+}
+
+// latestBlockNumber reads the head with the header-only query. Until that query
+// has answered once, a failure is retried with getnowblock. If getnowblock
+// answers, the node or its proxy does not serve the header query, and
+// getnowblock is used until restart. Once the header query has answered, its
+// failures are outages or rate limits that a full-block request would only
+// make worse, so they are returned.
+func (s *TronBlockScanner) latestBlockNumber() (int64, error) {
+	mode := s.headQuery.Load()
+	var headerErr error
+	if mode != headQueryFullBlock {
+		header, err := s.api.GetLatestBlockHeader()
+		if err == nil {
+			s.headQuery.CompareAndSwap(headQueryUnknown, headQueryHeader)
+			return header.Header.RawData.Number, nil
+		}
+		if mode == headQueryHeader {
+			return 0, err
+		}
+		headerErr = err
+	}
+
+	block, err := s.api.GetLatestBlock()
+	if err == nil && block.BlockId == "" {
+		err = errors.New("latest block response has no block")
+	}
+	if err != nil {
+		return 0, errors.Join(headerErr, err)
+	}
+	if headerErr != nil && s.headQuery.CompareAndSwap(headQueryUnknown, headQueryFullBlock) {
+		s.logger.Warn().Err(headerErr).Msg("header-only head query unavailable, polling full blocks with getnowblock")
+	}
+	return block.Header.RawData.Number, nil
 }
 
 func (s *TronBlockScanner) FetchMemPool(_ int64) (types.TxIn, error) {

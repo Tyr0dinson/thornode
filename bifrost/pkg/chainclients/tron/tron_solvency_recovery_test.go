@@ -42,8 +42,9 @@ func TestTRONSolvencyAfterReceiptRecovery(t *testing.T) {
 	tip.Store(height - 1)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/wallet/getnowblock":
-			_, _ = fmt.Fprintf(w, `{"block_header":{"raw_data":{"number":%d}}}`, tip.Load()+ConfirmationBlocks)
+		case "/wallet/getblock":
+			head := tip.Load() + ConfirmationBlocks
+			_, _ = fmt.Fprintf(w, `{"blockID":"%064x","block_header":{"raw_data":{"number":%d}}}`, head, head)
 		case "/wallet/getblockbynum":
 			var request struct {
 				Num int64 `json:"num"`

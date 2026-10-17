@@ -53,6 +53,42 @@ func (api *TronApi) GetLatestBlock() (Block, error) {
 	return block, nil
 }
 
+// GetLatestBlockHeader returns the head block without its transactions. That
+// is about 0.5 KB, where getnowblock returns the whole block (hundreds of KB on
+// mainnet). Java-TRON serves getblock since GreatVoyage-v4.5.2; without an
+// id_or_num it answers with the same head block as getnowblock.
+func (api *TronApi) GetLatestBlockHeader() (Block, error) {
+	params := map[string]any{
+		"detail": false,
+	}
+
+	data, err := api.post("getblock", params)
+	if err != nil {
+		return Block{}, err
+	}
+
+	// Java-TRON reports an application error with HTTP 200, and answers {} when
+	// it has no block. Neither may pass as a head at height zero.
+	var response *struct {
+		Block
+		Error json.RawMessage `json:"Error"`
+	}
+	if err = json.Unmarshal(data, &response); err != nil {
+		return Block{}, fmt.Errorf("failed to unmarshal response: %w", err)
+	}
+	if response == nil {
+		return Block{}, fmt.Errorf("empty block header response")
+	}
+	if len(response.Error) != 0 {
+		return Block{}, fmt.Errorf("block header lookup failed: %s", response.Error)
+	}
+	if response.BlockId == "" {
+		return Block{}, fmt.Errorf("block header response has no block")
+	}
+
+	return response.Block, nil
+}
+
 func (api *TronApi) GetBlock(height int64) (Block, error) {
 	params := map[string]any{
 		"num": height,
