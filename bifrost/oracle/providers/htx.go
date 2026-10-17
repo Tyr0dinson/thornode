@@ -38,6 +38,10 @@ type HtxWsPingMsg struct {
 
 type HtxProvider struct {
 	*websocketProvider
+
+	// gzipReader is reused across websocket messages, which the provider's
+	// single read loop hands to HandleWsMessage one at a time.
+	gzipReader *gzip.Reader
 }
 
 func NewHtxProvider(
@@ -54,7 +58,7 @@ func NewHtxProvider(
 	// restart if we haven't received any ping in the last 30s
 	wsProvider.keepaliveTimeout = time.Second * 30
 
-	provider := HtxProvider{wsProvider}
+	provider := HtxProvider{websocketProvider: wsProvider}
 	err = provider.init(&provider)
 	if err != nil {
 		return nil, err
@@ -142,8 +146,14 @@ func (p *HtxProvider) GetSubscriptionMsgs() ([]map[string]any, error) {
 func (p *HtxProvider) HandleWsMessage(msg []byte) error {
 	var limit int64 = 10240 // 10 KB
 
-	// ws data from htx is compressed with GZIP
-	gzipReader, err := gzip.NewReader(bytes.NewReader(msg))
+	// ws data from htx is compressed with GZIP. gzip.NewReader is new(Reader)
+	// plus Reset, and Reset reinitialises all state, so reusing one reader
+	// behaves exactly like a new one while keeping its 32 KB window.
+	if p.gzipReader == nil {
+		p.gzipReader = new(gzip.Reader)
+	}
+	gzipReader := p.gzipReader
+	err := gzipReader.Reset(bytes.NewReader(msg))
 	if err != nil {
 		p.logger.Err(err).Msg("fail to create gzip reader")
 		return err
