@@ -525,6 +525,12 @@ func (k KVStoreDummy) GetEffectivePoolLiquidityFee(ctx cosmos.Context, asset com
 	return 0, kaboom
 }
 
+func (k KVStoreDummy) GetPOLCycleLiquidityFee(ctx cosmos.Context, asset common.Asset) (uint64, error) {
+	return 0, kaboom
+}
+
+func (k KVStoreDummy) ResetPOLCycleLiquidityFees(ctx cosmos.Context) {}
+
 func (k KVStoreDummy) AddAffiliateLiquidityFee(ctx cosmos.Context, thorname string, fee cosmos.Uint) error {
 	return kaboom
 }
@@ -635,6 +641,22 @@ func (k KVStoreDummy) IsPOLReserveEligiblePool(_ cosmos.Context, _ common.Asset)
 func (k KVStoreDummy) GetPOLReserveDepositIterator(_ cosmos.Context) cosmos.Iterator {
 	return nil
 }
+
+func (k KVStoreDummy) GetPOLReserveTarget(_ cosmos.Context) (common.Asset, bool, error) {
+	return common.EmptyAsset, false, kaboom
+}
+
+func (k KVStoreDummy) SetPOLReserveTarget(_ cosmos.Context, _ common.Asset) {}
+
+func (k KVStoreDummy) ClearPOLReserveTarget(_ cosmos.Context) {}
+
+func (k KVStoreDummy) GetPOLReserveDrainState(_ cosmos.Context) (common.Asset, cosmos.Uint, bool, error) {
+	return common.EmptyAsset, cosmos.ZeroUint(), false, kaboom
+}
+
+func (k KVStoreDummy) SetPOLReserveDrainState(_ cosmos.Context, _ common.Asset, _ cosmos.Uint) {}
+
+func (k KVStoreDummy) ClearPOLReserveDrainState(_ cosmos.Context) {}
 
 func (k KVStoreDummy) GetStableReserveCredit(_ cosmos.Context, _ common.Asset, _ common.Address) (cosmos.Uint, error) {
 	return cosmos.ZeroUint(), kaboom
@@ -828,10 +850,13 @@ func (k KVStoreDummy) GetNodeMimirs(ctx cosmos.Context, key string) (NodeMimirs,
 func (k KVStoreDummy) SetNodeMimir(_ cosmos.Context, key string, value int64, acc cosmos.AccAddress) error {
 	return kaboom
 }
-func (k KVStoreDummy) DeleteNodeMimirs(_ cosmos.Context, key string)           {}
-func (k KVStoreDummy) PurgeOperationalNodeMimirs(_ cosmos.Context)             {}
-func (k KVStoreDummy) DeleteMimir(_ cosmos.Context, key string) error          { return kaboom }
-func (k KVStoreDummy) GetMimirIterator(ctx cosmos.Context) cosmos.Iterator     { return nil }
+func (k KVStoreDummy) DeleteNodeMimirs(_ cosmos.Context, key string)       {}
+func (k KVStoreDummy) PurgeOperationalNodeMimirs(_ cosmos.Context)         {}
+func (k KVStoreDummy) DeleteMimir(_ cosmos.Context, key string) error      { return kaboom }
+func (k KVStoreDummy) GetMimirIterator(ctx cosmos.Context) cosmos.Iterator { return nil }
+func (k KVStoreDummy) ListMimirsWithPrefix(_ cosmos.Context, _ string) ([]Mimir, error) {
+	return nil, kaboom
+}
 func (k KVStoreDummy) GetNodeMimirIterator(ctx cosmos.Context) cosmos.Iterator { return nil }
 func (k KVStoreDummy) GetNodePauseChain(ctx cosmos.Context, acc cosmos.AccAddress) int64 {
 	return int64(-1)

@@ -59,6 +59,7 @@ type (
 	NodeAccount              = types.NodeAccount
 	NodeAccounts             = types.NodeAccounts
 	NodeMimirs               = types.NodeMimirs
+	Mimir                    = types.Mimir
 	NodeStatus               = types.NodeStatus
 	Network                  = types.Network
 	ProtocolOwnedLiquidity   = types.ProtocolOwnedLiquidity

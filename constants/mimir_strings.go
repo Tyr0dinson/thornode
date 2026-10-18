@@ -123,6 +123,8 @@ const (
 	MimirTemplateSwitch                    = "EnableSwitch-%s-%s"           // Use with Chain, Symbol
 	MimirTemplatePauseLPDeposit            = "PauseLPDeposit-%s"            // Use with Asset MimirString
 	MimirTemplateOverSolvencyToTreasuryBps = "OverSolvencyToTreasuryBps-%s" // Use with Asset MimirString
+	MimirTemplateSystemIncomePOLPool       = "SystemIncomePOLPool-%s"       // Use with Asset MimirString; POL Reserve target when POLSelectAlgo = 2
+	MimirTemplateDrainPOLPool              = "DrainPOLPool-%s"              // Use with Asset MimirString; POL Reserve position drained while DrainPOLOn = 1
 	MimirTemplateHaltSigning               = "HaltSigning%s"                // Use with Chain (mixed case, e.g., HaltSigningETH)
 	MimirTemplateHaltTrading               = "Halt%sTrading"                // Use with Chain (mixed case, e.g., HaltETHTrading)
 	MimirTemplateSkipSignerCache           = "SkipSignerCache%s"            // Use with Chain (e.g., SkipSignerCacheBTC). Operational flag to allow signer cache bypass on expiry.
@@ -158,6 +160,10 @@ func IsOperationalMimir(key string) bool {
 		P2PGateDisabled.String(),
 		EnableMemolessOutbound.String(),
 		POLReserveSystemIncomeBps.String(),
+		POLSelectAlgo.String(),
+		POLCycle.String(),
+		DrainPOLOn.String(),
+		DrainRunePerBlock.String(),
 		StableReserveOraclePricing.String(),
 		MimirKeyPreflightChainSetDisabled,
 	}
@@ -193,6 +199,12 @@ func IsOperationalMimir(key string) bool {
 	// locks vault liquidity for Monero's 10-block spend lock, so operators must
 	// be able to tune or disable it quickly rather than wait for a supermajority.
 	if strings.HasPrefix(key, "XMRCONSOLIDATION") {
+		return true
+	}
+	// SystemIncomePOLPool-<asset> and DrainPOLPool-<asset> pick the POL Reserve
+	// deployment and drain pools, which nodes steer alongside POLSelectAlgo and
+	// DrainPOLOn.
+	if strings.HasPrefix(key, "SYSTEMINCOMEPOLPOOL-") || strings.HasPrefix(key, "DRAINPOLPOOL-") {
 		return true
 	}
 	partialMatches := []string{

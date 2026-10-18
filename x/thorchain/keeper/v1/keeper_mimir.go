@@ -85,6 +85,27 @@ func (k KVStore) GetMimirIterator(ctx cosmos.Context) cosmos.Iterator {
 	return k.getIterator(ctx, prefixMimir)
 }
 
+// ListMimirsWithPrefix returns the stored mimirs whose key starts with prefix
+// (case-insensitive), in store order.
+func (k KVStore) ListMimirsWithPrefix(ctx cosmos.Context, prefix string) ([]Mimir, error) {
+	store := k.kvStore(ctx)
+	iter := cosmos.KVStorePrefixIterator(store, k.GetKey(prefixMimir, prefix))
+	defer iter.Close()
+	keyPrefix := string(k.GetKey(prefixMimir, ""))
+	var mimirs []Mimir
+	for ; iter.Valid(); iter.Next() {
+		var value ProtoInt64
+		if err := k.cdc.Unmarshal(iter.Value(), &value); err != nil {
+			return nil, dbError(ctx, fmt.Sprintf("Unmarshal kvstore: (%T) %s", value, iter.Key()), err)
+		}
+		mimirs = append(mimirs, Mimir{
+			Key:   strings.TrimPrefix(string(iter.Key()), keyPrefix),
+			Value: value.GetValue(),
+		})
+	}
+	return mimirs, nil
+}
+
 // GetNodeMimirIterator iterate gas units
 func (k KVStore) GetNodeMimirIterator(ctx cosmos.Context) cosmos.Iterator {
 	return k.getIterator(ctx, prefixNodeMimir)

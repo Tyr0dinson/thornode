@@ -221,6 +221,11 @@ const (
 
 	LUVIOverhangGuard
 	LUVIGuard
+
+	POLSelectAlgo
+	POLCycle
+	DrainPOLOn
+	DrainRunePerBlock
 )
 
 // ConstantValues define methods used to get constant values

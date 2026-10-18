@@ -162,6 +162,10 @@ func NewConstantValue() *ConstantVals {
 			ModifyLimitSwapMaxIterations:        100,                // maximum iterations when searching for a user's swap in a ratio-grouped index
 			POLReserveSystemIncomeBps:           0,                  // basis points of system income routed to POL reserve, 0 = disabled
 			POLReserveMaxDeployment:             10_000_000_000,     // maximum RUNE deployed per pool per block (100 RUNE in 1e8 units)
+			POLSelectAlgo:                       1,                  // POL Reserve pool selection: 1 = POLCycle fees/depth winner, 2 = SystemIncomePOLPool-<asset>
+			POLCycle:                            14400,              // blocks per POL Reserve fee/depth snapshot (~1 day)
+			DrainPOLOn:                          0,                  // 1 = withdraw RUNE from the DrainPOLPool-<asset> POL Reserve position back to pol_reserve
+			DrainRunePerBlock:                   0,                  // RUNE (1e8 units) owed to pol_reserve per block while DrainPOLOn = 1
 			StableReserveEnabled:                0,                  // enable/disable Stable Reserve
 			StableReserveDepegToleranceBps:      100,                // maximum stable oracle deviation from $1 in basis points
 			StableReservePOLShareBps:            0,                  // share of POLReserveSystemIncomeBps routed to Stable Reserve

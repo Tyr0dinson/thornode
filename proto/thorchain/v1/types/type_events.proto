@@ -874,3 +874,33 @@ message EventLuviReward {
   // why the check failed, empty when ok
   string reason = 10;
 }
+
+message EventPOLReserveSelect {
+  common.Asset pool = 1 [
+    (gogoproto.nullable) = false,
+    (gogoproto.customtype) = "gitlab.com/thorchain/thornode/v3/common.Asset"
+  ];
+  string liquidity_fee = 2 [
+    (gogoproto.customtype) = "cosmossdk.io/math.Uint",
+    (gogoproto.nullable) = false
+  ];
+  string rune_depth = 3 [
+    (gogoproto.customtype) = "cosmossdk.io/math.Uint",
+    (gogoproto.nullable) = false
+  ];
+}
+
+message EventPOLReserveDrain {
+  common.Asset pool = 1 [
+    (gogoproto.nullable) = false,
+    (gogoproto.customtype) = "gitlab.com/thorchain/thornode/v3/common.Asset"
+  ];
+  string basis_points = 2 [
+    (gogoproto.customtype) = "cosmossdk.io/math.Uint",
+    (gogoproto.nullable) = false
+  ];
+  string rune_amount = 3 [
+    (gogoproto.customtype) = "cosmossdk.io/math.Uint",
+    (gogoproto.nullable) = false
+  ];
+}

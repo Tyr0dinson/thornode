@@ -5150,6 +5150,58 @@ func (s *NetworkManagerTestSuite) TestUpdateNetworkStableReserveDeductionRollsBa
 		Commentf("bond reward bookkeeping should not persist when UpdateNetwork fails"))
 }
 
+// polReserveSetPool stores an Available pool with the given RUNE and asset depths.
+func polReserveSetPool(c *C, ctx cosmos.Context, mgr Manager, asset common.Asset, runeDepth, assetDepth uint64) {
+	pool := NewPool()
+	pool.Asset = asset
+	pool.Status = PoolAvailable
+	pool.BalanceRune = cosmos.NewUint(runeDepth * common.One)
+	pool.BalanceAsset = cosmos.NewUint(assetDepth * common.One)
+	pool.LPUnits = cosmos.NewUint(runeDepth * common.One)
+	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+}
+
+// polReserveSnapshotNow runs the POL Reserve snapshot with ctx's height as a
+// POLCycle boundary.
+func polReserveSnapshotNow(c *C, ctx cosmos.Context, mgr Manager, networkMgr *NetworkMgr) {
+	mgr.Keeper().SetMimir(ctx, constants.POLCycle.String(), ctx.BlockHeight())
+	c.Assert(networkMgr.POLReserveSnapshot(ctx, mgr), IsNil)
+}
+
+// polReserveSnapshotAndDeploy picks a target and runs one deployment block.
+func polReserveSnapshotAndDeploy(c *C, ctx cosmos.Context, mgr Manager, networkMgr *NetworkMgr) {
+	polReserveSnapshotNow(c, ctx, mgr, networkMgr)
+	c.Assert(networkMgr.POLReserveCycle(ctx, mgr), IsNil)
+}
+
+func polReserveDeposited(c *C, ctx cosmos.Context, mgr Manager, asset common.Asset) cosmos.Uint {
+	deposit, err := mgr.Keeper().GetPOLReserveDeposit(ctx, asset)
+	c.Assert(err, IsNil)
+	return deposit.RuneDeposited
+}
+
+func polReserveTarget(c *C, ctx cosmos.Context, mgr Manager) (common.Asset, bool) {
+	asset, found, err := mgr.Keeper().GetPOLReserveTarget(ctx)
+	c.Assert(err, IsNil)
+	return asset, found
+}
+
+// polReserveEventAttr returns the attribute of the last event of evtType.
+func polReserveEventAttr(ctx cosmos.Context, evtType, key string) (string, bool) {
+	value, found := "", false
+	for _, evt := range ctx.EventManager().Events() {
+		if evt.Type != evtType {
+			continue
+		}
+		for _, attr := range evt.Attributes {
+			if attr.Key == key {
+				value, found = attr.Value, true
+			}
+		}
+	}
+	return value, found
+}
+
 func (s *NetworkManagerTestSuite) TestPOLReserveCycleDisabled(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	networkMgr := newNetworkMgr(mgr.Keeper(), mgr.TxOutStore(), mgr.EventMgr())
@@ -5177,42 +5229,23 @@ func (s *NetworkManagerTestSuite) TestPOLReserveCycleBestPool(c *C) {
 	na := GetRandomValidatorNode(NodeActive)
 	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
 
-	poolBTC := NewPool()
-	poolBTC.Asset = common.BTCAsset
-	poolBTC.Status = PoolAvailable
-	poolBTC.BalanceRune = cosmos.NewUint(1000 * common.One)
-	poolBTC.BalanceAsset = cosmos.NewUint(10 * common.One)
-	poolBTC.LPUnits = cosmos.NewUint(1000 * common.One)
-	c.Assert(mgr.Keeper().SetPool(ctx, poolBTC), IsNil)
+	polReserveSetPool(c, ctx, mgr, common.BTCAsset, 1000, 10)
+	polReserveSetPool(c, ctx, mgr, common.ETHAsset, 500, 50)
 
-	poolETH := NewPool()
-	poolETH.Asset = common.ETHAsset
-	poolETH.Status = PoolAvailable
-	poolETH.BalanceRune = cosmos.NewUint(500 * common.One)
-	poolETH.BalanceAsset = cosmos.NewUint(50 * common.One)
-	poolETH.LPUnits = cosmos.NewUint(500 * common.One)
-	c.Assert(mgr.Keeper().SetPool(ctx, poolETH), IsNil)
-
-	// BTC score = 100 / 100000000000 ~= 0
-	// ETH score = 200 / 50000000000 ~= 0 but higher ratio
+	// BTC score = 100 / 1000 RUNE, ETH score = 200 / 500 RUNE: ETH wins
 	c.Assert(mgr.Keeper().AddToLiquidityFees(ctx, common.BTCAsset, cosmos.NewUint(100)), IsNil)
 	c.Assert(mgr.Keeper().AddToLiquidityFees(ctx, common.ETHAsset, cosmos.NewUint(200)), IsNil)
 
 	FundModule(c, ctx, mgr.Keeper(), POLReserveName, 50*common.One)
 	mgr.Keeper().SetMimir(ctx, constants.POLReserveMaxDeployment.String(), int64(100*common.One))
 
-	err := networkMgr.POLReserveCycle(ctx, mgr)
-	c.Assert(err, IsNil)
+	polReserveSnapshotAndDeploy(c, ctx, mgr, networkMgr)
 
-	// ETH pool should have received LP since it has higher fees/depth
-	deposit, err := mgr.Keeper().GetPOLReserveDeposit(ctx, common.ETHAsset)
-	c.Assert(err, IsNil)
-	c.Check(deposit.RuneDeposited.String(), Equals, cosmos.NewUint(50*common.One).String())
-
-	// BTC pool should have no deposit
-	depositBTC, err := mgr.Keeper().GetPOLReserveDeposit(ctx, common.BTCAsset)
-	c.Assert(err, IsNil)
-	c.Check(depositBTC.RuneDeposited.IsZero(), Equals, true)
+	target, found := polReserveTarget(c, ctx, mgr)
+	c.Assert(found, Equals, true)
+	c.Check(target.Equals(common.ETHAsset), Equals, true)
+	c.Check(polReserveDeposited(c, ctx, mgr, common.ETHAsset).String(), Equals, cosmos.NewUint(50*common.One).String())
+	c.Check(polReserveDeposited(c, ctx, mgr, common.BTCAsset).IsZero(), Equals, true)
 }
 
 func (s *NetworkManagerTestSuite) TestPOLReserveCycleCapEnforced(c *C) {
@@ -5222,26 +5255,15 @@ func (s *NetworkManagerTestSuite) TestPOLReserveCycleCapEnforced(c *C) {
 	na := GetRandomValidatorNode(NodeActive)
 	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
 
-	pool := NewPool()
-	pool.Asset = common.BTCAsset
-	pool.Status = PoolAvailable
-	pool.BalanceRune = cosmos.NewUint(1000 * common.One)
-	pool.BalanceAsset = cosmos.NewUint(10 * common.One)
-	pool.LPUnits = cosmos.NewUint(1000 * common.One)
-	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
-
+	polReserveSetPool(c, ctx, mgr, common.BTCAsset, 1000, 10)
 	c.Assert(mgr.Keeper().AddToLiquidityFees(ctx, common.BTCAsset, cosmos.NewUint(100)), IsNil)
 
 	FundModule(c, ctx, mgr.Keeper(), POLReserveName, 500*common.One)
 	mgr.Keeper().SetMimir(ctx, constants.POLReserveMaxDeployment.String(), int64(100*common.One))
 
-	err := networkMgr.POLReserveCycle(ctx, mgr)
-	c.Assert(err, IsNil)
+	polReserveSnapshotAndDeploy(c, ctx, mgr, networkMgr)
 
-	deposit, err := mgr.Keeper().GetPOLReserveDeposit(ctx, common.BTCAsset)
-	c.Assert(err, IsNil)
-	c.Check(deposit.RuneDeposited.String(), Equals, cosmos.NewUint(100*common.One).String())
-
+	c.Check(polReserveDeposited(c, ctx, mgr, common.BTCAsset).String(), Equals, cosmos.NewUint(100*common.One).String())
 	remaining := mgr.Keeper().GetRuneBalanceOfModule(ctx, POLReserveName)
 	c.Check(remaining.String(), Equals, cosmos.NewUint(400*common.One).String())
 }
@@ -5253,14 +5275,7 @@ func (s *NetworkManagerTestSuite) TestPOLReserveCycleSkipsPausedPools(c *C) {
 	na := GetRandomValidatorNode(NodeActive)
 	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
 
-	pool := NewPool()
-	pool.Asset = common.BTCAsset
-	pool.Status = PoolAvailable
-	pool.BalanceRune = cosmos.NewUint(1000 * common.One)
-	pool.BalanceAsset = cosmos.NewUint(10 * common.One)
-	pool.LPUnits = cosmos.NewUint(1000 * common.One)
-	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
-
+	polReserveSetPool(c, ctx, mgr, common.BTCAsset, 1000, 10)
 	c.Assert(mgr.Keeper().AddToLiquidityFees(ctx, common.BTCAsset, cosmos.NewUint(100)), IsNil)
 
 	FundModule(c, ctx, mgr.Keeper(), POLReserveName, 50*common.One)
@@ -5268,13 +5283,11 @@ func (s *NetworkManagerTestSuite) TestPOLReserveCycleSkipsPausedPools(c *C) {
 
 	mgr.Keeper().SetMimir(ctx, "PauseLPBTC", ctx.BlockHeight())
 
-	err := networkMgr.POLReserveCycle(ctx, mgr)
-	c.Assert(err, IsNil)
+	polReserveSnapshotAndDeploy(c, ctx, mgr, networkMgr)
 
-	deposit, err := mgr.Keeper().GetPOLReserveDeposit(ctx, common.BTCAsset)
-	c.Assert(err, IsNil)
-	c.Check(deposit.RuneDeposited.IsZero(), Equals, true)
-
+	_, found := polReserveTarget(c, ctx, mgr)
+	c.Check(found, Equals, false)
+	c.Check(polReserveDeposited(c, ctx, mgr, common.BTCAsset).IsZero(), Equals, true)
 	remaining := mgr.Keeper().GetRuneBalanceOfModule(ctx, POLReserveName)
 	c.Check(remaining.String(), Equals, cosmos.NewUint(50*common.One).String())
 }
@@ -5286,27 +5299,20 @@ func (s *NetworkManagerTestSuite) TestPOLReserveCycleSkipsGlobalTradingHalt(c *C
 	na := GetRandomValidatorNode(NodeActive)
 	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
 
-	pool := NewPool()
-	pool.Asset = common.BTCAsset
-	pool.Status = PoolAvailable
-	pool.BalanceRune = cosmos.NewUint(1000 * common.One)
-	pool.BalanceAsset = cosmos.NewUint(10 * common.One)
-	pool.LPUnits = cosmos.NewUint(1000 * common.One)
-	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
-
+	polReserveSetPool(c, ctx, mgr, common.BTCAsset, 1000, 10)
 	c.Assert(mgr.Keeper().AddToLiquidityFees(ctx, common.BTCAsset, cosmos.NewUint(100)), IsNil)
 
 	FundModule(c, ctx, mgr.Keeper(), POLReserveName, 50*common.One)
 	mgr.Keeper().SetMimir(ctx, constants.POLReserveMaxDeployment.String(), int64(100*common.One))
 	mgr.Keeper().SetMimir(ctx, "HaltTrading", ctx.BlockHeight())
 
-	err := networkMgr.POLReserveCycle(ctx, mgr)
-	c.Assert(err, IsNil)
+	polReserveSnapshotAndDeploy(c, ctx, mgr, networkMgr)
 
-	deposit, err := mgr.Keeper().GetPOLReserveDeposit(ctx, common.BTCAsset)
-	c.Assert(err, IsNil)
-	c.Check(deposit.RuneDeposited.IsZero(), Equals, true)
-
+	// the snapshot still picks BTC, but nothing deploys while trading is halted
+	target, found := polReserveTarget(c, ctx, mgr)
+	c.Assert(found, Equals, true)
+	c.Check(target.Equals(common.BTCAsset), Equals, true)
+	c.Check(polReserveDeposited(c, ctx, mgr, common.BTCAsset).IsZero(), Equals, true)
 	remaining := mgr.Keeper().GetRuneBalanceOfModule(ctx, POLReserveName)
 	c.Check(remaining.String(), Equals, cosmos.NewUint(50*common.One).String())
 }
@@ -5318,27 +5324,16 @@ func (s *NetworkManagerTestSuite) TestPOLReserveCycleSkipsChainTradingHalt(c *C)
 	na := GetRandomValidatorNode(NodeActive)
 	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
 
-	pool := NewPool()
-	pool.Asset = common.BTCAsset
-	pool.Status = PoolAvailable
-	pool.BalanceRune = cosmos.NewUint(1000 * common.One)
-	pool.BalanceAsset = cosmos.NewUint(10 * common.One)
-	pool.LPUnits = cosmos.NewUint(1000 * common.One)
-	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
-
+	polReserveSetPool(c, ctx, mgr, common.BTCAsset, 1000, 10)
 	c.Assert(mgr.Keeper().AddToLiquidityFees(ctx, common.BTCAsset, cosmos.NewUint(100)), IsNil)
 
 	FundModule(c, ctx, mgr.Keeper(), POLReserveName, 50*common.One)
 	mgr.Keeper().SetMimir(ctx, constants.POLReserveMaxDeployment.String(), int64(100*common.One))
 	mgr.Keeper().SetMimir(ctx, "HaltBTCTrading", ctx.BlockHeight())
 
-	err := networkMgr.POLReserveCycle(ctx, mgr)
-	c.Assert(err, IsNil)
+	polReserveSnapshotAndDeploy(c, ctx, mgr, networkMgr)
 
-	deposit, err := mgr.Keeper().GetPOLReserveDeposit(ctx, common.BTCAsset)
-	c.Assert(err, IsNil)
-	c.Check(deposit.RuneDeposited.IsZero(), Equals, true)
-
+	c.Check(polReserveDeposited(c, ctx, mgr, common.BTCAsset).IsZero(), Equals, true)
 	remaining := mgr.Keeper().GetRuneBalanceOfModule(ctx, POLReserveName)
 	c.Check(remaining.String(), Equals, cosmos.NewUint(50*common.One).String())
 }
@@ -5353,8 +5348,7 @@ func (s *NetworkManagerTestSuite) TestPOLReserveCycleNoEligiblePools(c *C) {
 	FundModule(c, ctx, mgr.Keeper(), POLReserveName, 50*common.One)
 	mgr.Keeper().SetMimir(ctx, constants.POLReserveMaxDeployment.String(), int64(100*common.One))
 
-	err := networkMgr.POLReserveCycle(ctx, mgr)
-	c.Assert(err, IsNil)
+	polReserveSnapshotAndDeploy(c, ctx, mgr, networkMgr)
 
 	remaining := mgr.Keeper().GetRuneBalanceOfModule(ctx, POLReserveName)
 	c.Check(remaining.String(), Equals, cosmos.NewUint(50*common.One).String())
@@ -5367,14 +5361,7 @@ func (s *NetworkManagerTestSuite) TestPOLReserveCycleSkipsRagnarokedPools(c *C) 
 	na := GetRandomValidatorNode(NodeActive)
 	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
 
-	pool := NewPool()
-	pool.Asset = common.BTCAsset
-	pool.Status = PoolAvailable
-	pool.BalanceRune = cosmos.NewUint(1000 * common.One)
-	pool.BalanceAsset = cosmos.NewUint(10 * common.One)
-	pool.LPUnits = cosmos.NewUint(1000 * common.One)
-	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
-
+	polReserveSetPool(c, ctx, mgr, common.BTCAsset, 1000, 10)
 	c.Assert(mgr.Keeper().AddToLiquidityFees(ctx, common.BTCAsset, cosmos.NewUint(100)), IsNil)
 
 	FundModule(c, ctx, mgr.Keeper(), POLReserveName, 50*common.One)
@@ -5382,15 +5369,11 @@ func (s *NetworkManagerTestSuite) TestPOLReserveCycleSkipsRagnarokedPools(c *C) 
 
 	mgr.Keeper().SetMimir(ctx, "RAGNAROK-BTC-BTC", 1)
 
-	err := networkMgr.POLReserveCycle(ctx, mgr)
-	c.Assert(err, IsNil)
+	polReserveSnapshotAndDeploy(c, ctx, mgr, networkMgr)
 
 	remaining := mgr.Keeper().GetRuneBalanceOfModule(ctx, POLReserveName)
 	c.Check(remaining.String(), Equals, cosmos.NewUint(50*common.One).String())
-
-	deposit, err := mgr.Keeper().GetPOLReserveDeposit(ctx, common.BTCAsset)
-	c.Assert(err, IsNil)
-	c.Check(deposit.RuneDeposited.IsZero(), Equals, true)
+	c.Check(polReserveDeposited(c, ctx, mgr, common.BTCAsset).IsZero(), Equals, true)
 }
 
 func (s *NetworkManagerTestSuite) TestPOLReserveCycleNegativeMimir(c *C) {
@@ -5417,40 +5400,20 @@ func polReserveNonGasAsset(c *C) common.Asset {
 // sets POLReserveMaxDeployment. Without any other mimirs the filter's
 // default set (gas + TOR anchor) restricts deployment to BTC.BTC.
 //
-// An ETH.ETH pool is also created (with no rolling fees so it never scores)
+// An ETH.ETH pool is also created (with no fees so it never scores)
 // because the add-liquidity handler requires the ERC20 asset's gas-asset
 // pool to exist before it will accept a deposit into ETH.USDC.
 func polReserveSetupTwoPoolCycle(c *C, ctx cosmos.Context, mgr Manager) (common.Asset, common.Asset) {
 	na := GetRandomValidatorNode(NodeActive)
 	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
 
-	poolBTC := NewPool()
-	poolBTC.Asset = common.BTCAsset
-	poolBTC.Status = PoolAvailable
-	poolBTC.BalanceRune = cosmos.NewUint(1000 * common.One)
-	poolBTC.BalanceAsset = cosmos.NewUint(10 * common.One)
-	poolBTC.LPUnits = cosmos.NewUint(1000 * common.One)
-	c.Assert(mgr.Keeper().SetPool(ctx, poolBTC), IsNil)
-
+	polReserveSetPool(c, ctx, mgr, common.BTCAsset, 1000, 10)
 	// ETH.ETH exists solely to satisfy the add-liquidity handler's gas-pool
-	// requirement for ERC20 deposits. It gets no rolling fees, so it never
-	// scores in POLReserveCycle's selection.
-	poolETH := NewPool()
-	poolETH.Asset = common.ETHAsset
-	poolETH.Status = PoolAvailable
-	poolETH.BalanceRune = cosmos.NewUint(1000 * common.One)
-	poolETH.BalanceAsset = cosmos.NewUint(10 * common.One)
-	poolETH.LPUnits = cosmos.NewUint(1000 * common.One)
-	c.Assert(mgr.Keeper().SetPool(ctx, poolETH), IsNil)
+	// requirement for ERC20 deposits.
+	polReserveSetPool(c, ctx, mgr, common.ETHAsset, 1000, 10)
 
 	usdc := polReserveNonGasAsset(c)
-	poolUSDC := NewPool()
-	poolUSDC.Asset = usdc
-	poolUSDC.Status = PoolAvailable
-	poolUSDC.BalanceRune = cosmos.NewUint(500 * common.One)
-	poolUSDC.BalanceAsset = cosmos.NewUint(50 * common.One)
-	poolUSDC.LPUnits = cosmos.NewUint(500 * common.One)
-	c.Assert(mgr.Keeper().SetPool(ctx, poolUSDC), IsNil)
+	polReserveSetPool(c, ctx, mgr, usdc, 500, 50)
 
 	// USDC has the higher score (more fees on a smaller pool), so without the
 	// eligibility filter it would win the deployment.
@@ -5469,18 +5432,12 @@ func (s *NetworkManagerTestSuite) TestPOLReserveCycleDefaultEligibleSet(c *C) {
 
 	btc, usdc := polReserveSetupTwoPoolCycle(c, ctx, mgr)
 
-	err := networkMgr.POLReserveCycle(ctx, mgr)
-	c.Assert(err, IsNil)
+	polReserveSnapshotAndDeploy(c, ctx, mgr, networkMgr)
 
 	// BTC is a gas asset => eligible and funded despite having the lower score.
-	depositBTC, err := mgr.Keeper().GetPOLReserveDeposit(ctx, btc)
-	c.Assert(err, IsNil)
-	c.Check(depositBTC.RuneDeposited.String(), Equals, cosmos.NewUint(50*common.One).String())
-
+	c.Check(polReserveDeposited(c, ctx, mgr, btc).String(), Equals, cosmos.NewUint(50*common.One).String())
 	// USDC is neither a gas asset nor a TOR anchor => excluded by default.
-	depositUSDC, err := mgr.Keeper().GetPOLReserveDeposit(ctx, usdc)
-	c.Assert(err, IsNil)
-	c.Check(depositUSDC.RuneDeposited.IsZero(), Equals, true)
+	c.Check(polReserveDeposited(c, ctx, mgr, usdc).IsZero(), Equals, true)
 }
 
 func (s *NetworkManagerTestSuite) TestPOLReserveCycleTorAnchorEligible(c *C) {
@@ -5492,17 +5449,11 @@ func (s *NetworkManagerTestSuite) TestPOLReserveCycleTorAnchorEligible(c *C) {
 	// Promote USDC into the default set via the TorAnchor mimir.
 	mgr.Keeper().SetMimir(ctx, "TorAnchor-ETH-USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48", 1)
 
-	err := networkMgr.POLReserveCycle(ctx, mgr)
-	c.Assert(err, IsNil)
+	polReserveSnapshotAndDeploy(c, ctx, mgr, networkMgr)
 
 	// USDC is now eligible and its higher score beats BTC.
-	depositUSDC, err := mgr.Keeper().GetPOLReserveDeposit(ctx, usdc)
-	c.Assert(err, IsNil)
-	c.Check(depositUSDC.RuneDeposited.String(), Equals, cosmos.NewUint(50*common.One).String())
-
-	depositBTC, err := mgr.Keeper().GetPOLReserveDeposit(ctx, btc)
-	c.Assert(err, IsNil)
-	c.Check(depositBTC.RuneDeposited.IsZero(), Equals, true)
+	c.Check(polReserveDeposited(c, ctx, mgr, usdc).String(), Equals, cosmos.NewUint(50*common.One).String())
+	c.Check(polReserveDeposited(c, ctx, mgr, btc).IsZero(), Equals, true)
 }
 
 func (s *NetworkManagerTestSuite) TestPOLReserveCycleWhitelistOverride(c *C) {
@@ -5514,16 +5465,10 @@ func (s *NetworkManagerTestSuite) TestPOLReserveCycleWhitelistOverride(c *C) {
 	// Force-include USDC without setting a TorAnchor mimir.
 	mgr.Keeper().SetMimir(ctx, "POLReserveWhitelist-ETH-USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48", 1)
 
-	err := networkMgr.POLReserveCycle(ctx, mgr)
-	c.Assert(err, IsNil)
+	polReserveSnapshotAndDeploy(c, ctx, mgr, networkMgr)
 
-	depositUSDC, err := mgr.Keeper().GetPOLReserveDeposit(ctx, usdc)
-	c.Assert(err, IsNil)
-	c.Check(depositUSDC.RuneDeposited.String(), Equals, cosmos.NewUint(50*common.One).String())
-
-	depositBTC, err := mgr.Keeper().GetPOLReserveDeposit(ctx, btc)
-	c.Assert(err, IsNil)
-	c.Check(depositBTC.RuneDeposited.IsZero(), Equals, true)
+	c.Check(polReserveDeposited(c, ctx, mgr, usdc).String(), Equals, cosmos.NewUint(50*common.One).String())
+	c.Check(polReserveDeposited(c, ctx, mgr, btc).IsZero(), Equals, true)
 }
 
 func (s *NetworkManagerTestSuite) TestPOLReserveCycleBlacklistOverridesDefault(c *C) {
@@ -5533,14 +5478,7 @@ func (s *NetworkManagerTestSuite) TestPOLReserveCycleBlacklistOverridesDefault(c
 	na := GetRandomValidatorNode(NodeActive)
 	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
 
-	pool := NewPool()
-	pool.Asset = common.BTCAsset
-	pool.Status = PoolAvailable
-	pool.BalanceRune = cosmos.NewUint(1000 * common.One)
-	pool.BalanceAsset = cosmos.NewUint(10 * common.One)
-	pool.LPUnits = cosmos.NewUint(1000 * common.One)
-	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
-
+	polReserveSetPool(c, ctx, mgr, common.BTCAsset, 1000, 10)
 	c.Assert(mgr.Keeper().AddToLiquidityFees(ctx, common.BTCAsset, cosmos.NewUint(100)), IsNil)
 
 	FundModule(c, ctx, mgr.Keeper(), POLReserveName, 50*common.One)
@@ -5549,13 +5487,9 @@ func (s *NetworkManagerTestSuite) TestPOLReserveCycleBlacklistOverridesDefault(c
 	// Blacklist the only gas-asset pool.
 	mgr.Keeper().SetMimir(ctx, "POLReserveBlacklist-BTC-BTC", 1)
 
-	err := networkMgr.POLReserveCycle(ctx, mgr)
-	c.Assert(err, IsNil)
+	polReserveSnapshotAndDeploy(c, ctx, mgr, networkMgr)
 
-	deposit, err := mgr.Keeper().GetPOLReserveDeposit(ctx, common.BTCAsset)
-	c.Assert(err, IsNil)
-	c.Check(deposit.RuneDeposited.IsZero(), Equals, true)
-
+	c.Check(polReserveDeposited(c, ctx, mgr, common.BTCAsset).IsZero(), Equals, true)
 	remaining := mgr.Keeper().GetRuneBalanceOfModule(ctx, POLReserveName)
 	c.Check(remaining.String(), Equals, cosmos.NewUint(50*common.One).String())
 }
@@ -5570,17 +5504,432 @@ func (s *NetworkManagerTestSuite) TestPOLReserveCycleBlacklistOverridesWhitelist
 	mgr.Keeper().SetMimir(ctx, "POLReserveWhitelist-ETH-USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48", 1)
 	mgr.Keeper().SetMimir(ctx, "POLReserveBlacklist-ETH-USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48", 1)
 
-	err := networkMgr.POLReserveCycle(ctx, mgr)
-	c.Assert(err, IsNil)
+	polReserveSnapshotAndDeploy(c, ctx, mgr, networkMgr)
 
 	// USDC blocked; BTC (gas asset) is the only remaining candidate and gets funded.
-	depositUSDC, err := mgr.Keeper().GetPOLReserveDeposit(ctx, usdc)
-	c.Assert(err, IsNil)
-	c.Check(depositUSDC.RuneDeposited.IsZero(), Equals, true)
+	c.Check(polReserveDeposited(c, ctx, mgr, usdc).IsZero(), Equals, true)
+	c.Check(polReserveDeposited(c, ctx, mgr, btc).String(), Equals, cosmos.NewUint(50*common.One).String())
+}
 
-	depositBTC, err := mgr.Keeper().GetPOLReserveDeposit(ctx, btc)
+func (s *NetworkManagerTestSuite) TestPOLReserveSnapshotOnlyAtCycleBoundary(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	networkMgr := newNetworkMgr(mgr.Keeper(), mgr.TxOutStore(), mgr.EventMgr())
+
+	polReserveSetPool(c, ctx, mgr, common.BTCAsset, 1000, 10)
+	c.Assert(mgr.Keeper().AddToLiquidityFees(ctx, common.BTCAsset, cosmos.NewUint(100)), IsNil)
+
+	// height 18 is not a multiple of POLCycle 19: nothing happens
+	mgr.Keeper().SetMimir(ctx, constants.POLCycle.String(), ctx.BlockHeight()+1)
+	c.Assert(networkMgr.POLReserveSnapshot(ctx, mgr), IsNil)
+	_, found := polReserveTarget(c, ctx, mgr)
+	c.Check(found, Equals, false)
+	fee, err := mgr.Keeper().GetPOLCycleLiquidityFee(ctx, common.BTCAsset)
 	c.Assert(err, IsNil)
-	c.Check(depositBTC.RuneDeposited.String(), Equals, cosmos.NewUint(50*common.One).String())
+	c.Check(fee, Equals, uint64(100))
+
+	// at height 19 the snapshot picks BTC and resets the cycle's fees
+	boundaryCtx := ctx.WithBlockHeight(ctx.BlockHeight() + 1)
+	c.Assert(networkMgr.POLReserveSnapshot(boundaryCtx, mgr), IsNil)
+	target, found := polReserveTarget(c, boundaryCtx, mgr)
+	c.Assert(found, Equals, true)
+	c.Check(target.Equals(common.BTCAsset), Equals, true)
+	fee, err = mgr.Keeper().GetPOLCycleLiquidityFee(boundaryCtx, common.BTCAsset)
+	c.Assert(err, IsNil)
+	c.Check(fee, Equals, uint64(0))
+}
+
+func (s *NetworkManagerTestSuite) TestPOLReserveSnapshotDefaultCycle(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	networkMgr := newNetworkMgr(mgr.Keeper(), mgr.TxOutStore(), mgr.EventMgr())
+
+	polReserveSetPool(c, ctx, mgr, common.BTCAsset, 1000, 10)
+	c.Assert(mgr.Keeper().AddToLiquidityFees(ctx, common.BTCAsset, cosmos.NewUint(100)), IsNil)
+
+	// POLCycle defaults to 14400 blocks
+	c.Assert(networkMgr.POLReserveSnapshot(ctx.WithBlockHeight(14401), mgr), IsNil)
+	_, found := polReserveTarget(c, ctx, mgr)
+	c.Check(found, Equals, false)
+
+	c.Assert(networkMgr.POLReserveSnapshot(ctx.WithBlockHeight(14400), mgr), IsNil)
+	target, found := polReserveTarget(c, ctx, mgr)
+	c.Assert(found, Equals, true)
+	c.Check(target.Equals(common.BTCAsset), Equals, true)
+}
+
+func (s *NetworkManagerTestSuite) TestPOLReserveSnapshotEmitsSelectEvent(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	networkMgr := newNetworkMgr(mgr.Keeper(), mgr.TxOutStore(), mgr.EventMgr())
+
+	polReserveSetPool(c, ctx, mgr, common.BTCAsset, 1000, 10)
+	polReserveSetPool(c, ctx, mgr, common.ETHAsset, 500, 50)
+	c.Assert(mgr.Keeper().AddToLiquidityFees(ctx, common.BTCAsset, cosmos.NewUint(100)), IsNil)
+	c.Assert(mgr.Keeper().AddToLiquidityFees(ctx, common.ETHAsset, cosmos.NewUint(200)), IsNil)
+
+	polReserveSnapshotNow(c, ctx, mgr, networkMgr)
+
+	pool, found := polReserveEventAttr(ctx, types.POLReserveSelectEventType, "pool")
+	c.Assert(found, Equals, true)
+	c.Check(pool, Equals, common.ETHAsset.String())
+	fee, _ := polReserveEventAttr(ctx, types.POLReserveSelectEventType, "liquidity_fee")
+	c.Check(fee, Equals, "200")
+	depth, _ := polReserveEventAttr(ctx, types.POLReserveSelectEventType, "rune_depth")
+	c.Check(depth, Equals, cosmos.NewUint(500*common.One).String())
+}
+
+func (s *NetworkManagerTestSuite) TestPOLReserveSnapshotNoWinnerClearsTarget(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	networkMgr := newNetworkMgr(mgr.Keeper(), mgr.TxOutStore(), mgr.EventMgr())
+
+	polReserveSetPool(c, ctx, mgr, common.BTCAsset, 1000, 10)
+	mgr.Keeper().SetPOLReserveTarget(ctx, common.BTCAsset)
+
+	// no pool earned fees this cycle
+	polReserveSnapshotNow(c, ctx, mgr, networkMgr)
+
+	_, found := polReserveTarget(c, ctx, mgr)
+	c.Check(found, Equals, false)
+	_, found = polReserveEventAttr(ctx, types.POLReserveSelectEventType, "pool")
+	c.Check(found, Equals, false)
+}
+
+func (s *NetworkManagerTestSuite) TestPOLReserveCycleHoldsWithoutTarget(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	networkMgr := newNetworkMgr(mgr.Keeper(), mgr.TxOutStore(), mgr.EventMgr())
+
+	na := GetRandomValidatorNode(NodeActive)
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
+
+	polReserveSetPool(c, ctx, mgr, common.BTCAsset, 1000, 10)
+	c.Assert(mgr.Keeper().AddToLiquidityFees(ctx, common.BTCAsset, cosmos.NewUint(100)), IsNil)
+	FundModule(c, ctx, mgr.Keeper(), POLReserveName, 50*common.One)
+
+	// no snapshot has run yet, so the deployment does not scan pools itself
+	c.Assert(networkMgr.POLReserveCycle(ctx, mgr), IsNil)
+
+	c.Check(polReserveDeposited(c, ctx, mgr, common.BTCAsset).IsZero(), Equals, true)
+	remaining := mgr.Keeper().GetRuneBalanceOfModule(ctx, POLReserveName)
+	c.Check(remaining.String(), Equals, cosmos.NewUint(50*common.One).String())
+}
+
+func (s *NetworkManagerTestSuite) TestPOLReserveCycleKeepsTargetMidCycle(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	networkMgr := newNetworkMgr(mgr.Keeper(), mgr.TxOutStore(), mgr.EventMgr())
+
+	na := GetRandomValidatorNode(NodeActive)
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
+
+	polReserveSetPool(c, ctx, mgr, common.BTCAsset, 1000, 10)
+	polReserveSetPool(c, ctx, mgr, common.ETHAsset, 500, 50)
+	c.Assert(mgr.Keeper().AddToLiquidityFees(ctx, common.BTCAsset, cosmos.NewUint(100)), IsNil)
+	c.Assert(mgr.Keeper().AddToLiquidityFees(ctx, common.ETHAsset, cosmos.NewUint(200)), IsNil)
+	FundModule(c, ctx, mgr.Keeper(), POLReserveName, 10*common.One)
+
+	polReserveSnapshotAndDeploy(c, ctx, mgr, networkMgr)
+	c.Check(polReserveDeposited(c, ctx, mgr, common.ETHAsset).String(), Equals, cosmos.NewUint(10*common.One).String())
+
+	// BTC out-earns ETH for the rest of the cycle; the target does not move
+	nextCtx := ctx.WithBlockHeight(ctx.BlockHeight() + 1)
+	c.Assert(mgr.Keeper().AddToLiquidityFees(nextCtx, common.BTCAsset, cosmos.NewUint(1_000_000)), IsNil)
+	FundModule(c, nextCtx, mgr.Keeper(), POLReserveName, 10*common.One)
+	c.Assert(networkMgr.POLReserveSnapshot(nextCtx, mgr), IsNil)
+	c.Assert(networkMgr.POLReserveCycle(nextCtx, mgr), IsNil)
+
+	c.Check(polReserveDeposited(c, nextCtx, mgr, common.ETHAsset).String(), Equals, cosmos.NewUint(20*common.One).String())
+	c.Check(polReserveDeposited(c, nextCtx, mgr, common.BTCAsset).IsZero(), Equals, true)
+}
+
+func (s *NetworkManagerTestSuite) TestPOLReserveCycleHoldsWhileTargetPaused(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	networkMgr := newNetworkMgr(mgr.Keeper(), mgr.TxOutStore(), mgr.EventMgr())
+
+	na := GetRandomValidatorNode(NodeActive)
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
+
+	polReserveSetPool(c, ctx, mgr, common.BTCAsset, 1000, 10)
+	polReserveSetPool(c, ctx, mgr, common.ETHAsset, 1000, 10)
+	c.Assert(mgr.Keeper().AddToLiquidityFees(ctx, common.BTCAsset, cosmos.NewUint(100)), IsNil)
+	c.Assert(mgr.Keeper().AddToLiquidityFees(ctx, common.ETHAsset, cosmos.NewUint(50)), IsNil)
+	polReserveSnapshotNow(c, ctx, mgr, networkMgr)
+	FundModule(c, ctx, mgr.Keeper(), POLReserveName, 10*common.One)
+
+	// BTC deposits are paused: the RUNE waits in pol_reserve instead of moving to ETH
+	mgr.Keeper().SetMimir(ctx, "PauseLPDeposit-BTC-BTC", 1)
+	c.Assert(networkMgr.POLReserveCycle(ctx, mgr), IsNil)
+	c.Check(polReserveDeposited(c, ctx, mgr, common.BTCAsset).IsZero(), Equals, true)
+	c.Check(polReserveDeposited(c, ctx, mgr, common.ETHAsset).IsZero(), Equals, true)
+	c.Check(mgr.Keeper().GetRuneBalanceOfModule(ctx, POLReserveName).String(), Equals, cosmos.NewUint(10*common.One).String())
+
+	mgr.Keeper().SetMimir(ctx, "PauseLPDeposit-BTC-BTC", 0)
+	c.Assert(networkMgr.POLReserveCycle(ctx, mgr), IsNil)
+	c.Check(polReserveDeposited(c, ctx, mgr, common.BTCAsset).String(), Equals, cosmos.NewUint(10*common.One).String())
+}
+
+func (s *NetworkManagerTestSuite) TestPOLReserveAlgo2DeploysToSelectedPool(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	networkMgr := newNetworkMgr(mgr.Keeper(), mgr.TxOutStore(), mgr.EventMgr())
+
+	na := GetRandomValidatorNode(NodeActive)
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
+
+	polReserveSetPool(c, ctx, mgr, common.BTCAsset, 1000, 10)
+	polReserveSetPool(c, ctx, mgr, common.ETHAsset, 500, 50)
+	c.Assert(mgr.Keeper().AddToLiquidityFees(ctx, common.BTCAsset, cosmos.NewUint(100)), IsNil)
+	c.Assert(mgr.Keeper().AddToLiquidityFees(ctx, common.ETHAsset, cosmos.NewUint(200)), IsNil)
+	FundModule(c, ctx, mgr.Keeper(), POLReserveName, 10*common.One)
+
+	mgr.Keeper().SetMimir(ctx, constants.POLSelectAlgo.String(), 2)
+	mgr.Keeper().SetMimir(ctx, "SystemIncomePOLPool-BTC-BTC", 1)
+
+	polReserveSnapshotAndDeploy(c, ctx, mgr, networkMgr)
+
+	// the snapshot still ran (ETH wins on fees/depth), but algo 2 deploys into BTC
+	target, found := polReserveTarget(c, ctx, mgr)
+	c.Assert(found, Equals, true)
+	c.Check(target.Equals(common.ETHAsset), Equals, true)
+	c.Check(polReserveDeposited(c, ctx, mgr, common.BTCAsset).String(), Equals, cosmos.NewUint(10*common.One).String())
+	c.Check(polReserveDeposited(c, ctx, mgr, common.ETHAsset).IsZero(), Equals, true)
+
+	// switching back to algo 1 uses the snapshot's pick straight away
+	mgr.Keeper().SetMimir(ctx, constants.POLSelectAlgo.String(), 1)
+	FundModule(c, ctx, mgr.Keeper(), POLReserveName, 10*common.One)
+	c.Assert(networkMgr.POLReserveCycle(ctx, mgr), IsNil)
+	c.Check(polReserveDeposited(c, ctx, mgr, common.ETHAsset).String(), Equals, cosmos.NewUint(10*common.One).String())
+}
+
+func (s *NetworkManagerTestSuite) TestPOLReserveAlgo2HoldsWithoutSingleSelectedPool(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	networkMgr := newNetworkMgr(mgr.Keeper(), mgr.TxOutStore(), mgr.EventMgr())
+
+	na := GetRandomValidatorNode(NodeActive)
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
+
+	polReserveSetPool(c, ctx, mgr, common.BTCAsset, 1000, 10)
+	polReserveSetPool(c, ctx, mgr, common.ETHAsset, 1000, 10)
+	c.Assert(mgr.Keeper().AddToLiquidityFees(ctx, common.BTCAsset, cosmos.NewUint(100)), IsNil)
+	FundModule(c, ctx, mgr.Keeper(), POLReserveName, 10*common.One)
+	mgr.Keeper().SetMimir(ctx, constants.POLSelectAlgo.String(), 2)
+
+	// no SystemIncomePOLPool set
+	polReserveSnapshotAndDeploy(c, ctx, mgr, networkMgr)
+	c.Check(polReserveDeposited(c, ctx, mgr, common.BTCAsset).IsZero(), Equals, true)
+
+	// two pools set is ambiguous, so nothing deploys either
+	mgr.Keeper().SetMimir(ctx, "SystemIncomePOLPool-BTC-BTC", 1)
+	mgr.Keeper().SetMimir(ctx, "SystemIncomePOLPool-ETH-ETH", 1)
+	c.Assert(networkMgr.POLReserveCycle(ctx, mgr), IsNil)
+	c.Check(polReserveDeposited(c, ctx, mgr, common.BTCAsset).IsZero(), Equals, true)
+	c.Check(polReserveDeposited(c, ctx, mgr, common.ETHAsset).IsZero(), Equals, true)
+	c.Check(mgr.Keeper().GetRuneBalanceOfModule(ctx, POLReserveName).String(), Equals, cosmos.NewUint(10*common.One).String())
+}
+
+// polReserveSetupDrainPosition deploys 50 RUNE of POL Reserve liquidity into a
+// BTC pool and returns the pol_reserve address. ETH.ETH also exists, with no fees.
+func polReserveSetupDrainPosition(c *C, ctx cosmos.Context, mgr Manager, networkMgr *NetworkMgr) common.Address {
+	na := GetRandomValidatorNode(NodeActive)
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
+	// native outbounds (the drained RUNE) need an active vault to attribute to
+	c.Assert(mgr.Keeper().SetVault(ctx, GetRandomVault()), IsNil)
+
+	polReserveSetPool(c, ctx, mgr, common.BTCAsset, 1000, 10)
+	polReserveSetPool(c, ctx, mgr, common.ETHAsset, 1000, 10)
+	c.Assert(mgr.Keeper().AddToLiquidityFees(ctx, common.BTCAsset, cosmos.NewUint(100)), IsNil)
+	FundModule(c, ctx, mgr.Keeper(), POLReserveName, 50*common.One)
+
+	polReserveSnapshotAndDeploy(c, ctx, mgr, networkMgr)
+	c.Assert(polReserveDeposited(c, ctx, mgr, common.BTCAsset).String(), Equals, cosmos.NewUint(50*common.One).String())
+	c.Assert(mgr.Keeper().GetRuneBalanceOfModule(ctx, POLReserveName).IsZero(), Equals, true)
+
+	polAddress, err := mgr.Keeper().GetModuleAddress(POLReserveName)
+	c.Assert(err, IsNil)
+	lp, err := mgr.Keeper().GetLiquidityProvider(ctx, common.BTCAsset, polAddress)
+	c.Assert(err, IsNil)
+	c.Assert(lp.Units.IsZero(), Equals, false)
+	return polAddress
+}
+
+func polReserveStartDrain(ctx cosmos.Context, mgr Manager, poolKey string, rate int64) {
+	mgr.Keeper().SetMimir(ctx, "DrainPOLPool-"+poolKey, 1)
+	mgr.Keeper().SetMimir(ctx, constants.DrainRunePerBlock.String(), rate)
+	mgr.Keeper().SetMimir(ctx, constants.DrainPOLOn.String(), 1)
+}
+
+func polReserveDrainOwed(c *C, ctx cosmos.Context, mgr Manager) (common.Asset, cosmos.Uint, bool) {
+	asset, owed, found, err := mgr.Keeper().GetPOLReserveDrainState(ctx)
+	c.Assert(err, IsNil)
+	return asset, owed, found
+}
+
+func (s *NetworkManagerTestSuite) TestPOLReserveDrainStartsNextBlockAndWithdraws(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	networkMgr := newNetworkMgr(mgr.Keeper(), mgr.TxOutStore(), mgr.EventMgr())
+	polAddress := polReserveSetupDrainPosition(c, ctx, mgr, networkMgr)
+	lpBefore, err := mgr.Keeper().GetLiquidityProvider(ctx, common.BTCAsset, polAddress)
+	c.Assert(err, IsNil)
+
+	rate := cosmos.NewUint(10 * common.One)
+	polReserveStartDrain(ctx, mgr, "BTC-BTC", int64(rate.Uint64()))
+
+	// the block the drain is switched on only records it
+	c.Assert(networkMgr.POLReserveDrain(ctx, mgr), IsNil)
+	asset, owed, found := polReserveDrainOwed(c, ctx, mgr)
+	c.Assert(found, Equals, true)
+	c.Check(asset.Equals(common.BTCAsset), Equals, true)
+	c.Check(owed.IsZero(), Equals, true)
+	c.Check(mgr.Keeper().GetRuneBalanceOfModule(ctx, POLReserveName).IsZero(), Equals, true)
+
+	// the next block withdraws ~10 RUNE (whole basis points) back into pol_reserve
+	nextCtx := ctx.WithBlockHeight(ctx.BlockHeight() + 1)
+	c.Assert(networkMgr.POLReserveDrain(nextCtx, mgr), IsNil)
+
+	received := mgr.Keeper().GetRuneBalanceOfModule(nextCtx, POLReserveName)
+	c.Assert(received.IsZero(), Equals, false)
+	c.Check(received.LTE(rate), Equals, true, Commentf("received %s", received))
+	_, owed, found = polReserveDrainOwed(c, nextCtx, mgr)
+	c.Assert(found, Equals, true)
+	c.Check(owed.Add(received).Equal(rate), Equals, true, Commentf("owed %s received %s", owed, received))
+	c.Check(polReserveDeposited(c, nextCtx, mgr, common.BTCAsset).Equal(cosmos.NewUint(50*common.One).Sub(received)), Equals, true)
+
+	lpAfter, err := mgr.Keeper().GetLiquidityProvider(nextCtx, common.BTCAsset, polAddress)
+	c.Assert(err, IsNil)
+	c.Check(lpAfter.Units.LT(lpBefore.Units), Equals, true)
+
+	amount, found := polReserveEventAttr(nextCtx, types.POLReserveDrainEventType, "rune_amount")
+	c.Assert(found, Equals, true)
+	c.Check(amount, Equals, received.String())
+}
+
+func (s *NetworkManagerTestSuite) TestPOLReserveDrainAccruesBelowOneBasisPoint(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	networkMgr := newNetworkMgr(mgr.Keeper(), mgr.TxOutStore(), mgr.EventMgr())
+	polAddress := polReserveSetupDrainPosition(c, ctx, mgr, networkMgr)
+
+	pool, err := mgr.Keeper().GetPool(ctx, common.BTCAsset)
+	c.Assert(err, IsNil)
+	lp, err := mgr.Keeper().GetLiquidityProvider(ctx, common.BTCAsset, polAddress)
+	c.Assert(err, IsNil)
+	lpValue := common.GetSafeShare(lp.Units, pool.GetPoolUnits(), pool.BalanceRune).MulUint64(2)
+	oneBasisPoint := lpValue.QuoUint64(constants.MaxBasisPts)
+	// three blocks of accrual cover one basis point, two do not
+	rate := oneBasisPoint.QuoUint64(3).AddUint64(1)
+
+	polReserveStartDrain(ctx, mgr, "BTC-BTC", int64(rate.Uint64()))
+	c.Assert(networkMgr.POLReserveDrain(ctx, mgr), IsNil)
+
+	for i := int64(1); i <= 2; i++ {
+		blockCtx := ctx.WithBlockHeight(ctx.BlockHeight() + i)
+		c.Assert(networkMgr.POLReserveDrain(blockCtx, mgr), IsNil)
+		_, owed, found := polReserveDrainOwed(c, blockCtx, mgr)
+		c.Assert(found, Equals, true)
+		c.Check(owed.Equal(rate.MulUint64(uint64(i))), Equals, true, Commentf("block %d owed %s", i, owed))
+		c.Check(mgr.Keeper().GetRuneBalanceOfModule(blockCtx, POLReserveName).IsZero(), Equals, true)
+	}
+
+	blockCtx := ctx.WithBlockHeight(ctx.BlockHeight() + 3)
+	c.Assert(networkMgr.POLReserveDrain(blockCtx, mgr), IsNil)
+	received := mgr.Keeper().GetRuneBalanceOfModule(blockCtx, POLReserveName)
+	c.Check(received.IsZero(), Equals, false)
+	bps, found := polReserveEventAttr(blockCtx, types.POLReserveDrainEventType, "basis_points")
+	c.Assert(found, Equals, true)
+	c.Check(bps, Equals, "1")
+	_, owed, _ := polReserveDrainOwed(c, blockCtx, mgr)
+	// withdrawal rounding can return a few base units more than owed; owed floors at zero
+	c.Check(owed.Equal(common.SafeSub(rate.MulUint64(3), received)), Equals, true,
+		Commentf("owed %s received %s", owed, received))
+}
+
+func (s *NetworkManagerTestSuite) TestPOLReserveDrainWaitsForLockup(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	networkMgr := newNetworkMgr(mgr.Keeper(), mgr.TxOutStore(), mgr.EventMgr())
+	polAddress := polReserveSetupDrainPosition(c, ctx, mgr, networkMgr)
+	lp, err := mgr.Keeper().GetLiquidityProvider(ctx, common.BTCAsset, polAddress)
+	c.Assert(err, IsNil)
+
+	mgr.Keeper().SetMimir(ctx, constants.LiquidityLockUpBlocks.String(), 100)
+	polReserveStartDrain(ctx, mgr, "BTC-BTC", 10*common.One)
+	c.Assert(networkMgr.POLReserveDrain(ctx, mgr), IsNil)
+
+	// inside the lockup nothing accrues or withdraws
+	lockedCtx := ctx.WithBlockHeight(lp.LastAddHeight + 99)
+	c.Assert(networkMgr.POLReserveDrain(lockedCtx, mgr), IsNil)
+	_, owed, found := polReserveDrainOwed(c, lockedCtx, mgr)
+	c.Assert(found, Equals, true)
+	c.Check(owed.IsZero(), Equals, true)
+	c.Check(mgr.Keeper().GetRuneBalanceOfModule(lockedCtx, POLReserveName).IsZero(), Equals, true)
+
+	unlockedCtx := ctx.WithBlockHeight(lp.LastAddHeight + 100)
+	c.Assert(networkMgr.POLReserveDrain(unlockedCtx, mgr), IsNil)
+	c.Check(mgr.Keeper().GetRuneBalanceOfModule(unlockedCtx, POLReserveName).IsZero(), Equals, false)
+}
+
+func (s *NetworkManagerTestSuite) TestPOLReserveDrainOffClearsState(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	networkMgr := newNetworkMgr(mgr.Keeper(), mgr.TxOutStore(), mgr.EventMgr())
+	polReserveSetupDrainPosition(c, ctx, mgr, networkMgr)
+
+	polReserveStartDrain(ctx, mgr, "BTC-BTC", 1)
+	c.Assert(networkMgr.POLReserveDrain(ctx, mgr), IsNil)
+	nextCtx := ctx.WithBlockHeight(ctx.BlockHeight() + 1)
+	c.Assert(networkMgr.POLReserveDrain(nextCtx, mgr), IsNil)
+	_, owed, found := polReserveDrainOwed(c, nextCtx, mgr)
+	c.Assert(found, Equals, true)
+	c.Check(owed.Uint64(), Equals, uint64(1))
+
+	mgr.Keeper().SetMimir(nextCtx, constants.DrainPOLOn.String(), 0)
+	c.Assert(networkMgr.POLReserveDrain(nextCtx.WithBlockHeight(nextCtx.BlockHeight()+1), mgr), IsNil)
+	_, _, found = polReserveDrainOwed(c, nextCtx, mgr)
+	c.Check(found, Equals, false)
+}
+
+func (s *NetworkManagerTestSuite) TestPOLReserveDrainPoolSwitchResetsOwed(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	networkMgr := newNetworkMgr(mgr.Keeper(), mgr.TxOutStore(), mgr.EventMgr())
+	polReserveSetupDrainPosition(c, ctx, mgr, networkMgr)
+
+	polReserveStartDrain(ctx, mgr, "BTC-BTC", 1)
+	c.Assert(networkMgr.POLReserveDrain(ctx, mgr), IsNil)
+	nextCtx := ctx.WithBlockHeight(ctx.BlockHeight() + 1)
+	c.Assert(networkMgr.POLReserveDrain(nextCtx, mgr), IsNil)
+	_, owed, _ := polReserveDrainOwed(c, nextCtx, mgr)
+	c.Check(owed.Uint64(), Equals, uint64(1))
+
+	mgr.Keeper().SetMimir(nextCtx, "DrainPOLPool-BTC-BTC", 0)
+	mgr.Keeper().SetMimir(nextCtx, "DrainPOLPool-ETH-ETH", 1)
+	switchCtx := nextCtx.WithBlockHeight(nextCtx.BlockHeight() + 1)
+	c.Assert(networkMgr.POLReserveDrain(switchCtx, mgr), IsNil)
+	asset, owed, found := polReserveDrainOwed(c, switchCtx, mgr)
+	c.Assert(found, Equals, true)
+	c.Check(asset.Equals(common.ETHAsset), Equals, true)
+	c.Check(owed.IsZero(), Equals, true)
+
+	// ETH holds no POL Reserve liquidity, so draining it is a no-op
+	c.Assert(networkMgr.POLReserveDrain(switchCtx.WithBlockHeight(switchCtx.BlockHeight()+1), mgr), IsNil)
+	_, owed, _ = polReserveDrainOwed(c, switchCtx, mgr)
+	c.Check(owed.IsZero(), Equals, true)
+	c.Check(mgr.Keeper().GetRuneBalanceOfModule(switchCtx, POLReserveName).IsZero(), Equals, true)
+}
+
+func (s *NetworkManagerTestSuite) TestPOLReserveDrainPoolExcludedFromDeployment(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	networkMgr := newNetworkMgr(mgr.Keeper(), mgr.TxOutStore(), mgr.EventMgr())
+	polReserveSetupDrainPosition(c, ctx, mgr, networkMgr)
+	polReserveStartDrain(ctx, mgr, "BTC-BTC", 1)
+
+	// BTC out-earns ETH, but the drain pool cannot be the next snapshot's pick
+	nextCtx := ctx.WithBlockHeight(ctx.BlockHeight() + 1)
+	c.Assert(mgr.Keeper().AddToLiquidityFees(nextCtx, common.BTCAsset, cosmos.NewUint(1_000_000)), IsNil)
+	c.Assert(mgr.Keeper().AddToLiquidityFees(nextCtx, common.ETHAsset, cosmos.NewUint(10)), IsNil)
+	polReserveSnapshotNow(c, nextCtx, mgr, networkMgr)
+	target, found := polReserveTarget(c, nextCtx, mgr)
+	c.Assert(found, Equals, true)
+	c.Check(target.Equals(common.ETHAsset), Equals, true)
+
+	// algo 2 pointed at the drain pool holds instead of depositing
+	mgr.Keeper().SetMimir(nextCtx, constants.POLSelectAlgo.String(), 2)
+	mgr.Keeper().SetMimir(nextCtx, "SystemIncomePOLPool-BTC-BTC", 1)
+	FundModule(c, nextCtx, mgr.Keeper(), POLReserveName, 10*common.One)
+	c.Assert(networkMgr.POLReserveCycle(nextCtx, mgr), IsNil)
+	c.Check(polReserveDeposited(c, nextCtx, mgr, common.BTCAsset).String(), Equals, cosmos.NewUint(50*common.One).String())
+	c.Check(mgr.Keeper().GetRuneBalanceOfModule(nextCtx, POLReserveName).String(), Equals, cosmos.NewUint(10*common.One).String())
 }
 
 func (s *NetworkManagerTestSuite) TestCalcBlockRewardsPOLReserveHighBPSClamping(c *C) {

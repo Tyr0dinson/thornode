@@ -150,6 +150,8 @@ var (
 	NewEventRewards                = types.NewEventRewards
 	NewEventRevShare               = types.NewEventRevShare
 	NewEventPOLReserveDeploy       = types.NewEventPOLReserveDeploy
+	NewEventPOLReserveSelect       = types.NewEventPOLReserveSelect
+	NewEventPOLReserveDrain        = types.NewEventPOLReserveDrain
 	NewEventPool                   = types.NewEventPool
 	NewEventDonate                 = types.NewEventDonate
 	NewEventSwap                   = types.NewEventSwap
