@@ -121,7 +121,6 @@ func (s *KeeperMimirSuite) TestIsOperationalMimirPOLReserveSelection(c *C) {
 	for _, key := range []string{
 		constants.POLSelectAlgo.String(),
 		constants.POLCycle.String(),
-		constants.DrainPOLOn.String(),
 		constants.DrainRunePerBlock.String(),
 		"POLSELECTALGO",
 		"SystemIncomePOLPool-SOL-SOL",
@@ -130,6 +129,8 @@ func (s *KeeperMimirSuite) TestIsOperationalMimirPOLReserveSelection(c *C) {
 	} {
 		c.Check(constants.IsOperationalMimir(key), Equals, true, Commentf("%s", key))
 	}
-	// POLReserveMaxDeployment stays an economic mimir
-	c.Check(constants.IsOperationalMimir(constants.POLReserveMaxDeployment.String()), Equals, false)
+	// switching the drain on and POLReserveMaxDeployment take the economic supermajority
+	for _, key := range []string{constants.DrainPOLOn.String(), "DRAINPOLON", constants.POLReserveMaxDeployment.String()} {
+		c.Check(constants.IsOperationalMimir(key), Equals, false, Commentf("%s", key))
+	}
 }

@@ -8,6 +8,9 @@ import (
 	"gitlab.com/thorchain/thornode/v3/constants"
 )
 
+// polReserveMaxDrainRunePerBlock caps DrainRunePerBlock at 100 RUNE.
+const polReserveMaxDrainRunePerBlock = 100 * common.One
+
 // Upper-case key prefixes of the per-pool POL Reserve mimirs, e.g.
 // SYSTEMINCOMEPOLPOOL-SOL-SOL.
 var (
@@ -104,6 +107,9 @@ func activePOLDrain(ctx cosmos.Context, mgr Manager) (Pool, cosmos.Uint, bool) {
 	if rate <= 0 {
 		return Pool{}, cosmos.ZeroUint(), false
 	}
+	if rate > polReserveMaxDrainRunePerBlock {
+		rate = polReserveMaxDrainRunePerBlock
+	}
 	pool, ok := resolvePOLPoolMimir(ctx, mgr, drainPOLPoolMimirPrefix)
 	if !ok {
 		return Pool{}, cosmos.ZeroUint(), false
@@ -133,6 +139,10 @@ func validatePOLReserveMimirVote(ctx cosmos.Context, mgr Manager, upperKey strin
 	case strings.EqualFold(upperKey, constants.POLCycle.String()):
 		if value < 1 {
 			return cosmos.ErrUnknownRequest("POLCycle must be at least 1")
+		}
+	case strings.EqualFold(upperKey, constants.DrainRunePerBlock.String()):
+		if value > polReserveMaxDrainRunePerBlock {
+			return cosmos.ErrUnknownRequest("DrainRunePerBlock cannot exceed 100 RUNE (10000000000)")
 		}
 	case strings.EqualFold(upperKey, constants.DrainPOLOn.String()):
 		if value != 0 && value != 1 {

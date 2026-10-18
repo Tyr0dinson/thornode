@@ -162,7 +162,6 @@ func IsOperationalMimir(key string) bool {
 		POLReserveSystemIncomeBps.String(),
 		POLSelectAlgo.String(),
 		POLCycle.String(),
-		DrainPOLOn.String(),
 		DrainRunePerBlock.String(),
 		StableReserveOraclePricing.String(),
 		MimirKeyPreflightChainSetDisabled,

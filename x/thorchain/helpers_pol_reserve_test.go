@@ -70,6 +70,12 @@ func (s *HelpersPOLReserveSuite) TestActivePOLDrain(c *C) {
 	c.Check(pool.Asset.Equals(common.BTCAsset), Equals, true)
 	c.Check(rate.Uint64(), Equals, uint64(250))
 
+	// a stored rate above the cap (e.g. set before it existed) is clamped to 100 RUNE
+	mgr.Keeper().SetMimir(ctx, constants.DrainRunePerBlock.String(), 1_000*common.One)
+	_, rate, active = activePOLDrain(ctx, mgr)
+	c.Assert(active, Equals, true)
+	c.Check(rate.Uint64(), Equals, uint64(100*common.One))
+
 	mgr.Keeper().SetMimir(ctx, constants.DrainPOLOn.String(), 0)
 	_, _, active = activePOLDrain(ctx, mgr)
 	c.Check(active, Equals, false)
@@ -102,6 +108,8 @@ func (s *HelpersPOLReserveSuite) TestValidatePOLCycleAndRateVotes(c *C) {
 	c.Check(validatePOLReserveMimirVote(ctx, mgr, "POLCYCLE", 14400), IsNil)
 	c.Check(validatePOLReserveMimirVote(ctx, mgr, "DRAINRUNEPERBLOCK", 0), IsNil)
 	c.Check(validatePOLReserveMimirVote(ctx, mgr, "DRAINRUNEPERBLOCK", 100*common.One), IsNil)
+	c.Check(validatePOLReserveMimirVote(ctx, mgr, "DRAINRUNEPERBLOCK", 100*common.One+1), NotNil, Commentf("above the 100 RUNE cap"))
+	c.Check(validatePOLReserveMimirVote(ctx, mgr, "DRAINRUNEPERBLOCK", -1), IsNil, Commentf("vote withdrawal"))
 }
 
 func (s *HelpersPOLReserveSuite) TestValidateSystemIncomePOLPoolVote(c *C) {

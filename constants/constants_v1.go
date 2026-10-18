@@ -165,7 +165,7 @@ func NewConstantValue() *ConstantVals {
 			POLSelectAlgo:                       1,                  // POL Reserve pool selection: 1 = POLCycle fees/depth winner, 2 = SystemIncomePOLPool-<asset>
 			POLCycle:                            14400,              // blocks per POL Reserve fee/depth snapshot (~1 day)
 			DrainPOLOn:                          0,                  // 1 = withdraw RUNE from the DrainPOLPool-<asset> POL Reserve position back to pol_reserve
-			DrainRunePerBlock:                   0,                  // RUNE (1e8 units) owed to pol_reserve per block while DrainPOLOn = 1
+			DrainRunePerBlock:                   0,                  // RUNE (1e8 units) owed to pol_reserve per block while DrainPOLOn = 1, at most 100 RUNE
 			StableReserveEnabled:                0,                  // enable/disable Stable Reserve
 			StableReserveDepegToleranceBps:      100,                // maximum stable oracle deviation from $1 in basis points
 			StableReservePOLShareBps:            0,                  // share of POLReserveSystemIncomeBps routed to Stable Reserve
