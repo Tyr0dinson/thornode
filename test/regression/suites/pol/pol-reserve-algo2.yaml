@@ -1,0 +1,273 @@
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-eth-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pools
+asserts:
+  - .|length == 2
+---
+########################################################################################
+# Enable POL Reserve system income at 1000 bps (10%) and snapshot every 10 blocks.
+# POLSelectAlgo stays at its default (1), so no RUNE deploys before a snapshot.
+########################################################################################
+type: tx-mimir
+key: POLReserveSystemIncomeBps
+value: 1000
+signer: {{ addr_thor_dog }}
+sequence: 0
+---
+type: tx-mimir
+key: POLReserveMaxDeployment
+value: 10000000000
+signer: {{ addr_thor_dog }}
+sequence: 1
+---
+type: tx-mimir
+key: POLCycle
+value: 10
+signer: {{ addr_thor_dog }}
+sequence: 2
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .header.height == 2
+  - .. | select(.type? == "rewards").pol_reserve_reward == "${BLOCK_POL_REWARD=110984}"
+  - .|[..|select(.type?=="pol_reserve_deploy")] | length == 0
+---
+########################################################################################
+# POLSelectAlgo=2 is rejected until SystemIncomePOLPool names one eligible pool
+########################################################################################
+type: tx-mimir
+key: POLSelectAlgo
+value: 2
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/mimir/key/POLSelectAlgo
+asserts:
+  - . == -1
+---
+# SystemIncomePOLPool must name an existing pool
+type: tx-mimir
+key: SystemIncomePOLPool-DOGE-DOGE
+value: 1
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/mimir/key/SystemIncomePOLPool-DOGE-DOGE
+asserts:
+  - . == -1
+---
+type: tx-mimir
+key: SystemIncomePOLPool-ETH-ETH
+value: 1
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/mimir/key/SystemIncomePOLPool-ETH-ETH
+asserts:
+  - . == 1
+---
+# setting the pool alone does not deploy while POLSelectAlgo is 1
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .header.height == 5
+  - .|[..|select(.type?=="pol_reserve_deploy")] | length == 0
+---
+# only one SystemIncomePOLPool may be set at a time
+type: tx-mimir
+key: SystemIncomePOLPool-BTC-BTC
+value: 1
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/mimir/key/SystemIncomePOLPool-BTC-BTC
+asserts:
+  - . == -1
+---
+# POLSelectAlgo only accepts 1 or 2
+type: tx-mimir
+key: POLSelectAlgo
+value: 3
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/mimir/key/POLSelectAlgo
+asserts:
+  - . == -1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/balance/module/pol_reserve
+asserts:
+  - '[.coins[] | select(.denom == "rune") | .amount | tonumber] | add // 0 | . == 6 * ${BLOCK_POL_REWARD}'
+---
+########################################################################################
+# POLSelectAlgo=2 deploys into SystemIncomePOLPool at once, without a snapshot
+########################################################################################
+type: tx-mimir
+key: POLSelectAlgo
+value: 2
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/mimir/key/POLSelectAlgo
+asserts:
+  - . == 2
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .header.height == 8
+  - .|[..|select(.type?=="pol_reserve_select")] | length == 0
+  - .|[..|select(.type?=="pol_reserve_deploy")] | length == 1
+  - ..|select(.type?=="pol_reserve_deploy").pool == "ETH.ETH"
+  - ..|select(.type?=="pol_reserve_deploy").rune_amount == "${FIRST_DEPLOY=776888}"
+  - ${FIRST_DEPLOY} == 7 * ${BLOCK_POL_REWARD}
+---
+########################################################################################
+# Only BTC earns fees, but algo 2 keeps deploying into ETH
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+- tx:
+    id: '{{ observe_txid 1 }}'
+    chain: BTC
+    from_address: {{ addr_btc_fox }}
+    to_address: {{ addr_btc_dog }}
+    coins:
+      - amount: "5000000"
+        asset: "BTC.BTC"
+        decimals: 8
+    gas:
+      - amount: "10000"
+        asset: "BTC.BTC"
+    memo: "=:THOR.RUNE:{{ addr_thor_fox }}"
+  block_height: 2
+  finalise_height: 2
+  observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .header.height == 9
+  - .|[..|select(.type? == "swap" and .pool == "BTC.BTC")] | length == 1
+  - ..|select(.type? == "swap" and .pool == "BTC.BTC").liquidity_fee_in_rune == "${BTC_FEE=226766187}"
+  - .. | select(.type? == "rewards").pol_reserve_reward == "${SWAP_POL_REWARD=22787604}"
+  - .|[..|select(.type?=="pol_reserve_deploy")] | length == 1
+  - ..|select(.type?=="pol_reserve_deploy").pool == "ETH.ETH"
+  - ..|select(.type?=="pol_reserve_deploy").rune_amount == "${SWAP_POL_REWARD}"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pool/BTC.BTC
+asserts:
+  - .pol_reserve_rune_deposited == "0"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pool/ETH.ETH
+asserts:
+  - .pol_reserve_rune_deposited | tonumber == ${FIRST_DEPLOY} + ${SWAP_POL_REWARD}
+---
+########################################################################################
+# Height 10: the snapshot still runs under algo 2 and picks BTC, but deployment
+# stays on SystemIncomePOLPool.
+########################################################################################
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .header.height == 10
+  - .|[..|select(.type?=="pol_reserve_select")] | length == 1
+  - ..|select(.type?=="pol_reserve_select").pool == "BTC.BTC"
+  - ..|select(.type?=="pol_reserve_select").liquidity_fee == "${BTC_FEE}"
+  - .|[..|select(.type?=="pol_reserve_deploy")] | length == 1
+  - ..|select(.type?=="pol_reserve_deploy").pool == "ETH.ETH"
+  - ..|select(.type?=="pol_reserve_deploy").rune_amount == "${BLOCK_POL_REWARD}"
+---
+########################################################################################
+# Unsetting SystemIncomePOLPool under algo 2 leaves no target, so the RUNE stays in
+# pol_reserve
+########################################################################################
+type: tx-mimir
+key: SystemIncomePOLPool-ETH-ETH
+value: 0
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .header.height == 11
+  - .|[..|select(.type?=="pol_reserve_deploy")] | length == 0
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .header.height == 12
+  - .|[..|select(.type?=="pol_reserve_deploy")] | length == 0
+---
+type: check
+endpoint: http://localhost:1317/thorchain/balance/module/pol_reserve
+asserts:
+  - '[.coins[] | select(.denom == "rune") | .amount | tonumber] | add // 0 | . == 2 * ${BLOCK_POL_REWARD}'
+---
+########################################################################################
+# Switching back to algo 1 deploys into the pool the height-10 snapshot picked
+########################################################################################
+type: tx-mimir
+key: POLSelectAlgo
+value: 1
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .header.height == 13
+  - .|[..|select(.type?=="pol_reserve_deploy")] | length == 1
+  - ..|select(.type?=="pol_reserve_deploy").pool == "BTC.BTC"
+  - ..|select(.type?=="pol_reserve_deploy").rune_amount | tonumber == 3 * ${BLOCK_POL_REWARD}
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pool/BTC.BTC
+asserts:
+  - .pol_reserve_rune_deposited | tonumber == 3 * ${BLOCK_POL_REWARD}

@@ -19,7 +19,9 @@ asserts:
   - .. | select(.type? == "rewards").pol_reserve_reward == "0"
 ---
 ########################################################################################
-# Enable POL Reserve system income at 1000 bps (10%)
+# Enable POL Reserve system income at 1000 bps (10%) and snapshot pools every 5 blocks.
+# Snapshots run at heights 5, 10, 15, 20 and 25; between snapshots the POL Reserve
+# deploys into the pool the last snapshot picked.
 ########################################################################################
 type: tx-mimir
 key: POLReserveSystemIncomeBps
@@ -33,8 +35,28 @@ value: 10000000000
 signer: {{ addr_thor_dog }}
 sequence: 1
 ---
+type: tx-mimir
+key: POLCycle
+value: 5
+signer: {{ addr_thor_dog }}
+sequence: 2
+---
 type: create-blocks
 count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/mimir/key/POLCycle
+asserts:
+  - . == 5
+---
+# height 2: income flows to pol_reserve, but no snapshot has picked a pool yet
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .header.height == 2
+  - .. | select(.type? == "rewards").pol_reserve_reward == "${BLOCK_POL_REWARD=110984}"
+  - .|[..|select(.type?=="pol_reserve_select")] | length == 0
+  - .|[..|select(.type?=="pol_reserve_deploy")] | length == 0
 ---
 ########################################################################################
 # Generate liquidity fees via a swap (BTC -> RUNE)
@@ -68,6 +90,7 @@ count: 1
 type: check
 endpoint: http://localhost:1317/thorchain/block
 asserts:
+  - .header.height == 3
   - .|[.. | select(.type? == "swap").liquidity_fee_in_rune | tonumber] | add // 0 | . == ${LIQFEES=226759664}
   - .. | select(.type? == "rewards") | [.[] | tonumber?] | add - ${LIQFEES} == ${BLOCK_REWARD=1109850}
   - .. | select(.type? == "rewards").pol_reserve_reward == "${POL_RESERVE_REWARD=22786951}"
@@ -82,30 +105,22 @@ asserts:
   - .|[..|select(.type?=="transfer")] | [.[] | select(.recipient == "{{ addr_module_pol_reserve }}")][0].amount == "${POL_RESERVE_REWARD}rune"
 ---
 ########################################################################################
-# Verify POL Reserve deploys capital to the best pool (BTC has fees, ETH does not)
+# Without a snapshot there is no target pool, so the RUNE stays in pol_reserve
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/block
 asserts:
-  - .|[..|select(.type?=="pol_reserve_deploy")] | length == 1
-  - ..|select(.type?=="pol_reserve_deploy").pool == "BTC.BTC"
-  - ..|select(.type?=="pol_reserve_deploy").rune_amount == "${POL_TOTAL_DEPLOYED=22897935}"
+  - .|[..|select(.type?=="pol_reserve_select")] | length == 0
+  - .|[..|select(.type?=="pol_reserve_deploy")] | length == 0
 ---
-# Verify pool API shows pol_reserve_rune_deposited for BTC
 type: check
-endpoint: http://localhost:1317/thorchain/pool/BTC.BTC
+endpoint: http://localhost:1317/thorchain/balance/module/pol_reserve
 asserts:
-  - .pol_reserve_rune_deposited == "${POL_TOTAL_DEPLOYED}"
----
-# Verify ETH pool has no POL Reserve deposits
-type: check
-endpoint: http://localhost:1317/thorchain/pool/ETH.ETH
-asserts:
-  - .pol_reserve_rune_deposited == "0"
+  - '[.coins[] | select(.denom == "rune") | .amount | tonumber] | add // 0 | . == ${BLOCK_POL_REWARD} + ${POL_RESERVE_REWARD}'
 ---
 ########################################################################################
-# Generate ETH fees so ETH is eligible for deployment (rolling fees > 0 required).
-# Use a small swap so BTC remains the higher-yield pool.
+# Generate a small amount of ETH fees in the same cycle. BTC earned far more fees per
+# unit of RUNE depth, so the first snapshot should still pick BTC.
 ########################################################################################
 type: tx-observed-in
 signer: {{ addr_thor_dog }}
@@ -130,16 +145,92 @@ txs:
 type: create-blocks
 count: 1
 ---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .header.height == 4
+  - .|[..|select(.type? == "swap" and .pool == "ETH.ETH")] | length == 1
+  - .. | select(.type? == "rewards").pol_reserve_reward == "${ETH_SWAP_POL_REWARD=120964}"
+  - .|[..|select(.type?=="pol_reserve_deploy")] | length == 0
+---
 ########################################################################################
-# Verify POL Reserve blacklist prevents deployment to a pool
-# Both pools now have fees, but BTC has higher yield. Blacklisting BTC forces
-# deployment to fall back to ETH (the next eligible pool with fees).
+# Height 5: first snapshot picks BTC (fees this cycle / RUNE depth) and the POL Reserve
+# deploys its whole balance into BTC in the same block.
+########################################################################################
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .header.height == 5
+  - .|[..|select(.type?=="pol_reserve_select")] | length == 1
+  - ..|select(.type?=="pol_reserve_select").pool == "BTC.BTC"
+  - ..|select(.type?=="pol_reserve_select").liquidity_fee == "${LIQFEES}"
+  - ..|select(.type?=="pol_reserve_select").rune_depth == "${BTC_RUNE_DEPTH=95436602650}"
+  - .|[..|select(.type?=="pol_reserve_deploy")] | length == 1
+  - ..|select(.type?=="pol_reserve_deploy").pool == "BTC.BTC"
+  - ..|select(.type?=="pol_reserve_deploy").rune_amount == "${POL_TOTAL_DEPLOYED=23129883}"
+  - ${POL_TOTAL_DEPLOYED} == ${BLOCK_POL_REWARD} + ${POL_RESERVE_REWARD} + ${ETH_SWAP_POL_REWARD} + ${BLOCK_POL_REWARD}
+---
+# Verify pool API shows pol_reserve_rune_deposited for BTC, and that the snapshot scored
+# the RUNE depth the deployment landed on
+type: check
+endpoint: http://localhost:1317/thorchain/pool/BTC.BTC
+asserts:
+  - .pol_reserve_rune_deposited == "${POL_TOTAL_DEPLOYED}"
+  - .balance_rune | tonumber == ${BTC_RUNE_DEPTH} + ${POL_TOTAL_DEPLOYED}
+---
+# Verify ETH pool has no POL Reserve deposits
+type: check
+endpoint: http://localhost:1317/thorchain/pool/ETH.ETH
+asserts:
+  - .pol_reserve_rune_deposited == "0"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/balance/module/pol_reserve
+asserts:
+  - '[.coins[] | select(.denom == "rune") | .amount | tonumber] | add // 0 | . == 0'
+---
+########################################################################################
+# Between snapshots the POL Reserve keeps deploying into the stored target
+########################################################################################
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .header.height == 6
+  - .|[..|select(.type?=="pol_reserve_select")] | length == 0
+  - .|[..|select(.type?=="pol_reserve_deploy")] | length == 1
+  - ..|select(.type?=="pol_reserve_deploy").pool == "BTC.BTC"
+  - ..|select(.type?=="pol_reserve_deploy").rune_amount == "${BLOCK_POL_REWARD}"
+---
+########################################################################################
+# Blacklisting the stored target stops deployment at once; the RUNE waits in
+# pol_reserve until the next snapshot picks an eligible pool.
 ########################################################################################
 type: tx-mimir
 key: POLReserveBlacklist-BTC-BTC
 value: 1
 signer: {{ addr_thor_dog }}
 ---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .header.height == 7
+  - .|[..|select(.type?=="pol_reserve_deploy")] | length == 0
+---
+type: check
+endpoint: http://localhost:1317/thorchain/balance/module/pol_reserve
+asserts:
+  - '[.coins[] | select(.denom == "rune") | .amount | tonumber] | add // 0 | . == ${BLOCK_POL_REWARD}'
+---
+# BTC and ETH both earn fees this cycle, and BTC earns more per unit of RUNE depth
 type: tx-observed-in
 signer: {{ addr_thor_dog }}
 txs:
@@ -159,24 +250,77 @@ txs:
   block_height: 4
   finalise_height: 4
   observed_pub_key: {{ pubkey_dog }}
+- tx:
+    id: '{{ observe_txid 4 }}'
+    chain: ETH
+    from_address: {{ addr_eth_fox }}
+    to_address: {{ addr_eth_dog }}
+    coins:
+      - amount: "1000000"
+        asset: "ETH.ETH"
+        decimals: 8
+    gas:
+      - amount: "10000"
+        asset: "ETH.ETH"
+    memo: "=:THOR.RUNE:{{ addr_thor_fox }}"
+  block_height: 4
+  finalise_height: 4
+  observed_pub_key: {{ pubkey_dog }}
 ---
 type: create-blocks
 count: 1
 ---
-# BTC is blacklisted and would otherwise be the best pool, so deployment should go to ETH
 type: check
 endpoint: http://localhost:1317/thorchain/block
 asserts:
+  - .header.height == 8
+  - .|[..|select(.type? == "swap" and .pool == "BTC.BTC")] | length == 1
+  - .|[..|select(.type? == "swap" and .pool == "ETH.ETH")] | length == 1
+  - .|[..|select(.type? == "swap" and .pool == "ETH.ETH")][0].liquidity_fee_in_rune == "${ETH_CYCLE_FEE=99505}"
+  - .. | select(.type? == "rewards").pol_reserve_reward == "${SWAPS_POL_REWARD=19844237}"
+  - .|[..|select(.type?=="pol_reserve_deploy")] | length == 0
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .header.height == 9
+  - .|[..|select(.type?=="pol_reserve_deploy")] | length == 0
+---
+type: check
+endpoint: http://localhost:1317/thorchain/balance/module/pol_reserve
+asserts:
+  - '[.coins[] | select(.denom == "rune") | .amount | tonumber] | add // 0 | . == ${HELD_BALANCE=20066205}'
+  - ${HELD_BALANCE} == 2 * ${BLOCK_POL_REWARD} + ${SWAPS_POL_REWARD}
+---
+########################################################################################
+# Height 10: BTC is blacklisted, so the snapshot falls back to ETH even though BTC
+# earned more this cycle, and the held RUNE deploys into ETH.
+########################################################################################
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .header.height == 10
+  - ..|select(.type?=="pol_reserve_select").pool == "ETH.ETH"
+  - ..|select(.type?=="pol_reserve_select").liquidity_fee == "${ETH_CYCLE_FEE}"
   - .|[..|select(.type?=="pol_reserve_deploy")] | length == 1
   - ..|select(.type?=="pol_reserve_deploy").pool == "ETH.ETH"
+  - ..|select(.type?=="pol_reserve_deploy").rune_amount == "${ETH_DEPLOYED=20177189}"
+  - ${ETH_DEPLOYED} == ${HELD_BALANCE} + ${BLOCK_POL_REWARD}
 ---
-# ETH pool should now have deposits since BTC was blacklisted, forcing deployment to ETH
 type: check
 endpoint: http://localhost:1317/thorchain/pool/ETH.ETH
 asserts:
-  - .pol_reserve_rune_deposited | tonumber > 0
+  - .pol_reserve_rune_deposited == "${ETH_DEPLOYED}"
 ---
-# Remove blacklist for subsequent tests
+########################################################################################
+# Lifting the blacklist does not move the target before the next snapshot
+########################################################################################
 type: tx-mimir
 key: POLReserveBlacklist-BTC-BTC
 value: 0
@@ -185,16 +329,96 @@ signer: {{ addr_thor_dog }}
 type: create-blocks
 count: 1
 ---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .header.height == 11
+  - .|[..|select(.type?=="pol_reserve_deploy")] | length == 1
+  - ..|select(.type?=="pol_reserve_deploy").pool == "ETH.ETH"
+  - ..|select(.type?=="pol_reserve_deploy").rune_amount == "${BLOCK_POL_REWARD}"
+---
+# Only BTC earns fees this cycle
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+- tx:
+    id: '{{ observe_txid 5 }}'
+    chain: BTC
+    from_address: {{ addr_btc_fox }}
+    to_address: {{ addr_btc_dog }}
+    coins:
+      - amount: "5000000"
+        asset: "BTC.BTC"
+        decimals: 8
+    gas:
+      - amount: "10000"
+        asset: "BTC.BTC"
+    memo: "=:THOR.RUNE:{{ addr_thor_fox }}"
+  block_height: 5
+  finalise_height: 5
+  observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .header.height == 12
+  - .|[..|select(.type? == "swap" and .pool == "BTC.BTC")] | length == 1
+  - ..|select(.type?=="pol_reserve_deploy").pool == "ETH.ETH"
+---
+type: create-blocks
+count: 2
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .header.height == 14
+  - ..|select(.type?=="pol_reserve_deploy").pool == "ETH.ETH"
+---
 ########################################################################################
-# Swap enough through ETH pool to make it the best yield pool, then verify deployment
-# goes to ETH. A large swap (50% of pool depth) generates significantly more fees than
-# the earlier BTC swap, making ETH the highest fee-yield pool.
+# Height 15: counters reset at every snapshot, so ETH's fees from the last cycle no
+# longer count and the snapshot moves the target back to BTC.
+########################################################################################
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .header.height == 15
+  - .|[..|select(.type?=="pol_reserve_select")] | length == 1
+  - ..|select(.type?=="pol_reserve_select").pool == "BTC.BTC"
+  - .|[..|select(.type?=="pol_reserve_deploy")] | length == 1
+  - ..|select(.type?=="pol_reserve_deploy").pool == "BTC.BTC"
+  - ..|select(.type?=="pol_reserve_deploy").rune_amount == "${BLOCK_POL_REWARD}"
+---
+########################################################################################
+# Both pools earn fees, but a large ETH swap gives ETH far more fees per unit of RUNE
+# depth, so the snapshot at height 20 picks ETH.
 ########################################################################################
 type: tx-observed-in
 signer: {{ addr_thor_dog }}
 txs:
 - tx:
-    id: '{{ observe_txid 4 }}'
+    id: '{{ observe_txid 6 }}'
+    chain: BTC
+    from_address: {{ addr_btc_fox }}
+    to_address: {{ addr_btc_dog }}
+    coins:
+      - amount: "5000000"
+        asset: "BTC.BTC"
+        decimals: 8
+    gas:
+      - amount: "10000"
+        asset: "BTC.BTC"
+    memo: "=:THOR.RUNE:{{ addr_thor_fox }}"
+  block_height: 6
+  finalise_height: 6
+  observed_pub_key: {{ pubkey_dog }}
+- tx:
+    id: '{{ observe_txid 7 }}'
     chain: ETH
     from_address: {{ addr_eth_fox }}
     to_address: {{ addr_eth_dog }}
@@ -216,9 +440,30 @@ count: 1
 type: check
 endpoint: http://localhost:1317/thorchain/block
 asserts:
+  - .header.height == 16
+  - .|[..|select(.type? == "swap")] | length == 2
   - .. | select(.type? == "rewards").pol_reserve_reward | tonumber > 0
-  - .|[..|select(.type?=="pol_reserve_deploy")] | length == 1
+  - ..|select(.type?=="pol_reserve_deploy").pool == "BTC.BTC"
+---
+type: create-blocks
+count: 3
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .header.height == 19
+  - ..|select(.type?=="pol_reserve_deploy").pool == "BTC.BTC"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .header.height == 20
+  - ..|select(.type?=="pol_reserve_select").pool == "ETH.ETH"
   - ..|select(.type?=="pol_reserve_deploy").pool == "ETH.ETH"
+  - ..|select(.type?=="pol_reserve_deploy").rune_amount == "${BLOCK_POL_REWARD}"
 ---
 ########################################################################################
 # Verify POL Reserve respects POLReserveMaxDeployment cap
@@ -228,63 +473,43 @@ key: POLReserveMaxDeployment
 value: 1000
 signer: {{ addr_thor_dog }}
 ---
-type: tx-observed-in
-signer: {{ addr_thor_dog }}
-txs:
-- tx:
-    id: '{{ observe_txid 5 }}'
-    chain: BTC
-    from_address: {{ addr_btc_fox }}
-    to_address: {{ addr_btc_dog }}
-    coins:
-      - amount: "5000000"
-        asset: "BTC.BTC"
-        decimals: 8
-    gas:
-      - amount: "10000"
-        asset: "BTC.BTC"
-    memo: "=:THOR.RUNE:{{ addr_thor_fox }}"
-  block_height: 7
-  finalise_height: 7
-  observed_pub_key: {{ pubkey_dog }}
----
 type: create-blocks
 count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
 asserts:
+  - .header.height == 21
   - .|[..|select(.type?=="pol_reserve_deploy")] | length == 1
   - .. | select(.type? == "rewards").pol_reserve_reward | tonumber > 1000
+  - ..|select(.type?=="pol_reserve_deploy").pool == "ETH.ETH"
   - ..|select(.type?=="pol_reserve_deploy").rune_amount == "1000"
 ---
 ########################################################################################
-# Disable POL Reserve and verify no further deployments
+# POLReserveMaxDeployment=0 pauses deployment while income keeps accruing
 ########################################################################################
 type: tx-mimir
 key: POLReserveMaxDeployment
 value: 0
 signer: {{ addr_thor_dog }}
 ---
-type: tx-observed-in
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .header.height == 22
+  # System income still routed to pol_reserve module
+  - .. | select(.type? == "rewards").pol_reserve_reward | tonumber > 0
+  # But no deployment since MaxDeployment=0
+  - .|[..|select(.type?=="pol_reserve_deploy")] | length == 0
+---
+# Restoring the cap deploys everything held back into the stored target
+type: tx-mimir
+key: POLReserveMaxDeployment
+value: 10000000000
 signer: {{ addr_thor_dog }}
-txs:
-- tx:
-    id: '{{ observe_txid 6 }}'
-    chain: BTC
-    from_address: {{ addr_btc_fox }}
-    to_address: {{ addr_btc_dog }}
-    coins:
-      - amount: "5000000"
-        asset: "BTC.BTC"
-        decimals: 8
-    gas:
-      - amount: "10000"
-        asset: "BTC.BTC"
-    memo: "=:THOR.RUNE:{{ addr_thor_fox }}"
-  block_height: 8
-  finalise_height: 8
-  observed_pub_key: {{ pubkey_dog }}
 ---
 type: create-blocks
 count: 1
@@ -292,7 +517,44 @@ count: 1
 type: check
 endpoint: http://localhost:1317/thorchain/block
 asserts:
-  # System income still routed to pol_reserve module
-  - .. | select(.type? == "rewards").pol_reserve_reward | tonumber > 0
-  # But no deployment since MaxDeployment=0
+  - .header.height == 23
+  - ..|select(.type?=="pol_reserve_deploy").pool == "ETH.ETH"
+  - ..|select(.type?=="pol_reserve_deploy").rune_amount == "${RESUMED_DEPLOY=331952}"
+  - ${RESUMED_DEPLOY} == 3 * ${BLOCK_POL_REWARD} - 1000
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .header.height == 24
+  - ..|select(.type?=="pol_reserve_deploy").pool == "ETH.ETH"
+---
+########################################################################################
+# Height 25: no pool earned fees this cycle, so the snapshot clears the target and the
+# RUNE stays in pol_reserve until a later snapshot finds one.
+########################################################################################
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .header.height == 25
+  - .|[..|select(.type?=="pol_reserve_select")] | length == 0
   - .|[..|select(.type?=="pol_reserve_deploy")] | length == 0
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .header.height == 26
+  - .|[..|select(.type?=="pol_reserve_deploy")] | length == 0
+---
+type: check
+endpoint: http://localhost:1317/thorchain/balance/module/pol_reserve
+asserts:
+  - '[.coins[] | select(.denom == "rune") | .amount | tonumber] | add // 0 | . == 2 * ${BLOCK_POL_REWARD}'
