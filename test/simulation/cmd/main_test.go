@@ -328,10 +328,10 @@ func TestMocknetClusterPublishesBifrostAndXMRFrostReadinessPorts(t *testing.T) {
 		"- 6042:6040",
 		"- 6043:6040",
 		"- 6044:6040",
-		`- "127.0.0.1:8285:8283"`,
-		`- "127.0.0.1:8286:8283"`,
-		`- "127.0.0.1:8287:8283"`,
-		`- "127.0.0.1:8288:8283"`,
+		"- 8285:8283",
+		"- 8286:8283",
+		"- 8287:8283",
+		"- 8288:8283",
 	} {
 		if !strings.Contains(compose, snippet) {
 			t.Fatalf("mocknet cluster compose must publish %q so simulation can gate churn on all Bifrost and XMR FROST readiness endpoints", snippet)

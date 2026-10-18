@@ -61,7 +61,6 @@ func TestClientVaultRegistrationSerializesWithScanner(t *testing.T) {
 		requestSeen <- struct{}{}
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"registered":           true,
-			"effective_birthday":   100,
 			"reset_epoch":          1,
 			"expected_next_height": 100,
 		})

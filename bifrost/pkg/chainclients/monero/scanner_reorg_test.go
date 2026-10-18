@@ -107,8 +107,7 @@ func TestScannerFetchTxsDetectsReorgAfterEmptyCatchupAndRestart(t *testing.T) {
 				http.Error(w, decodeErr.Error(), http.StatusBadRequest)
 				return
 			}
-			if rewindReq.Network != "mocknet" ||
-				rewindReq.ExpectedResetEpoch != resetEpoch ||
+			if rewindReq.ExpectedResetEpoch != resetEpoch ||
 				rewindReq.ExpectedNextHeight != nextHeight ||
 				rewindReq.TargetNextHeight != 99 ||
 				rewindReq.AnchorHeight != 98 ||

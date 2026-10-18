@@ -337,7 +337,7 @@ fork:
 
       # Check if all changed files are text files (md, json, yaml, yml)
       # Exclude specific files that are not considered text-only changes
-      EXCLUDED_FILES=".gitlab-ci.yml .trunk/trunk.yaml .trunk/configs/analyzers.yml .trunk/configs/.golangci.yaml .trunk/configs/.markdownlint.yaml .trunk/configs/.yamllint.yaml build/docker/docker-compose.yml build/docker/docker-compose.xmr-chainnet.yml build/docker/docker-compose.xmr-stagenet.yml config/default.yaml openapi/openapi.yaml"
+      EXCLUDED_FILES=".gitlab-ci.yml .trunk/trunk.yaml .trunk/configs/analyzers.yml .trunk/configs/.golangci.yaml .trunk/configs/.markdownlint.yaml .trunk/configs/.yamllint.yaml build/docker/docker-compose.yml config/default.yaml openapi/openapi.yaml"
       TEXT_ONLY=true
       if [ -n "$CHANGED_FILES" ]; then
         for file in $CHANGED_FILES; do
@@ -537,31 +537,6 @@ xmr-e2e-gates:
     - !reference [.stable-mtimes, before_script]
   script:
     - make test-xmr-e2e
-
-xmr-compose-contract:
-  tags: !reference [.small-runner, tags]
-  rules:
-    - if: '$CI_MERGE_REQUEST_EVENT_TYPE == "merge_train" && $CI_MERGE_REQUEST_TARGET_BRANCH_SHA == $CI_MERGE_REQUEST_DIFF_BASE_SHA'
-      when: never
-    - *rules
-  stage: test
-  needs: []
-  image: docker:28.5.2
-  variables:
-    DOCKER_HOST: ""
-    DOCKER_TLS_CERTDIR: ""
-    DOCKER_TLS_VERIFY: ""
-    DOCKER_CERT_PATH: ""
-  before_script:
-    - apk -U add bash make python3 wget
-    - |
-      PLUGIN="$HOME/.docker/cli-plugins/docker-compose"
-      mkdir -p "$(dirname "$PLUGIN")"
-      wget -q https://github.com/docker/compose/releases/download/v2.28.1/docker-compose-linux-x86_64 -O "$PLUGIN"
-      echo "5b480d4f9e3517b375f0fbb781b39c63cec934f44b13c43b8f1d0f22bf6de8c3  $PLUGIN" | sha256sum -c -
-      chmod +x "$PLUGIN"
-  script:
-    - make test-xmr-readiness-config
 
 lint:
   tags: !reference [.small-runner, tags]

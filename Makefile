@@ -453,7 +453,7 @@ TEST_SIMULATION_REQUIRE_XMR ?= 1
 test-mocknet-startup:
 	@python3 -m unittest discover -s build/scripts/tests -v
 
-# Render every XMR profile and check deployment contracts and reset authentication.
+# Render every XMR profile and check the effective per-validator settings.
 test-xmr-readiness-config:
 	@python3 -m unittest discover -s build/docker/tests -p 'test_xmr_readiness.py' -v
 

@@ -93,9 +93,6 @@ func TestCleanupRejectsLocalPeerAndRestartState(t *testing.T) {
 	require.Equal(t, int64(250), g.batcher.observedTxBatch[0].ObsTx.BlockHeight)
 
 	require.NoError(t, o.handleErrataTxCommitted(common.ErrataTx{Chain: common.XMRChain, Id: old.Tx.ID}, common.ErrataTxOutcome_ERRATA_TX_OUTCOME_REVERTED))
-	unresolved, err := o.reconcileCommittedXMRErrata()
-	require.NoError(t, err)
-	require.Zero(t, unresolved)
 	require.Empty(t, g.observedTxs)
 	require.Empty(t, g.batcher.observedTxBatch)
 	require.NoError(t, g.AttestObservedTx(context.Background(), &remine, true, false))

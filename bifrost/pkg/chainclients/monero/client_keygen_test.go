@@ -90,14 +90,8 @@ func newTestSidecarClient(t *testing.T) *sidecar.Client {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
 		case "/v1/monero/vaults/register":
-			var req sidecar.RegisterVaultReq
-			if decodeErr := json.NewDecoder(r.Body).Decode(&req); decodeErr != nil {
-				http.Error(w, decodeErr.Error(), http.StatusBadRequest)
-				return
-			}
 			_ = json.NewEncoder(w).Encode(sidecar.RegisterVaultResp{
 				Registered:         true,
-				EffectiveBirthday:  uint64(req.VaultCreationHeight),
 				ExpectedNextHeight: uint64Ptr(0),
 			})
 		case "/v1/monero/chain/height":
@@ -303,7 +297,6 @@ func TestClientKeygenRegistersObservedMoneroHeightAsBirthday(t *testing.T) {
 			registerReqCh <- req
 			_ = json.NewEncoder(w).Encode(sidecar.RegisterVaultResp{
 				Registered:         true,
-				EffectiveBirthday:  777,
 				ExpectedNextHeight: uint64Ptr(777),
 			})
 		case "/v1/monero/chain/height":
@@ -383,7 +376,6 @@ func TestClientKeygenAlignsFirstVaultRegistrationWithLiveBlockScanner(t *testing
 			registerReqCh <- req
 			_ = json.NewEncoder(w).Encode(sidecar.RegisterVaultResp{
 				Registered:         true,
-				EffectiveBirthday:  uint64(req.VaultCreationHeight),
 				ExpectedNextHeight: uint64Ptr(uint64(signerNextHeight)),
 			})
 		case "/v1/monero/chain/height":

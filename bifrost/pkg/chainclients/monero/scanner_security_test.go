@@ -527,17 +527,7 @@ func TestAuthenticatedMigrationReplayObserverAckRejectAndReorg(t *testing.T) {
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/monero/vaults/register":
 			// Registration must carry scanner continuity, otherwise the vault is
 			// silently skipped during lookup refresh and later reads as unregistered.
-			var req sidecar.RegisterVaultReq
-			if decodeErr := json.NewDecoder(r.Body).Decode(&req); decodeErr != nil {
-				http.Error(w, decodeErr.Error(), http.StatusBadRequest)
-				return
-			}
-			nextHeight := uint64(locationHeight) + 1
-			_ = json.NewEncoder(w).Encode(sidecar.RegisterVaultResp{
-				Registered:         true,
-				EffectiveBirthday:  uint64(req.VaultCreationHeight),
-				ExpectedNextHeight: &nextHeight,
-			})
+			_ = json.NewEncoder(w).Encode(testRegisterVaultResponse(uint64(locationHeight) + 1))
 		case r.Method == http.MethodGet && (r.URL.Path == "/v1/monero/chain/block/100" || r.URL.Path == "/v1/monero/chain/block/104"):
 			canonicalMu.RLock()
 			height := int64(100)
@@ -922,14 +912,8 @@ func TestFetchTxsSkipsDelayedIncomingChangeForPreviouslyObservedOutgoingSameVaul
 		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/monero/addresses/"):
 			_ = json.NewEncoder(w).Encode(sidecar.Addresses{Addresses: []string{vaultAddress}})
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/monero/vaults/register":
-			var req sidecar.RegisterVaultReq
-			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
-				return
-			}
 			_ = json.NewEncoder(w).Encode(sidecar.RegisterVaultResp{
 				Registered:         true,
-				EffectiveBirthday:  uint64(req.VaultCreationHeight),
 				ExpectedNextHeight: uint64Ptr(scannerNextHeight.Load()),
 			})
 		default:

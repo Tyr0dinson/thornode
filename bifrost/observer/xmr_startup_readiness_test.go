@@ -39,9 +39,7 @@ func TestXMRStartupMissingClientKeepsOtherChainsAvailable(t *testing.T) {
 	require.True(t, deferred)
 	require.True(t, o.IsChainClientStarted(common.BTCChain))
 	require.False(t, o.IsChainClientStarted(common.XMRChain))
-	o.wg = &sync.WaitGroup{}
-	o.startXMRErrataMaintenance(context.Background(), deferred) // No configured XMR client: no worker.
-	o.wg.Wait()
+	o.startDeferredXMRChain(context.Background()) // No configured XMR client: no retry loop.
 	after, err := storage.db.Get([]byte(errataTombstoneKey(er.Chain, er.Id.String())), nil)
 	require.NoError(t, err)
 	require.Equal(t, before, after)
@@ -81,38 +79,21 @@ func TestXMRStartupRestoresCompletedQuarantineAfterRestart(t *testing.T) {
 		onDeck: make(map[txInKey]*types.TxIn), stopChan: make(chan struct{}),
 		chains: map[common.Chain]chainclients.ChainClient{common.XMRChain: xmr, common.BTCChain: btc},
 	}
-	runtimeErrata := common.ErrataTx{Chain: common.XMRChain, Id: "reverted-after-startup"}
-	calls := make(map[common.TxID]int)
-	o.permanentErrataBroadcastBlockFn = func(common.ErrataTx) error { return nil }
+	replayed := false
 	o.permanentErrataQuarantineFn = func(restored common.ErrataTx, _ int64) error {
-		calls[restored.Id]++
-		if restored == er {
-			require.False(t, o.IsChainClientStarted(common.XMRChain))
-		} else {
-			require.Equal(t, runtimeErrata, restored)
-			require.True(t, o.IsChainClientStarted(common.XMRChain))
-		}
+		require.Equal(t, er, restored)
+		require.False(t, o.IsChainClientStarted(common.XMRChain))
 		require.True(t, o.IsChainClientStarted(common.BTCChain))
+		replayed = true
 		return nil
 	}
 	deferred, err := o.startRestoredChainClients()
 	require.NoError(t, err)
 	require.True(t, deferred)
-	o.wg = &sync.WaitGroup{}
-	o.startXMRErrataMaintenance(context.Background(), deferred)
-	t.Cleanup(func() { o.stopStartedChainClients(); o.wg.Wait() })
-	require.Eventually(t, func() bool { return o.IsChainClientStarted(common.XMRChain) }, time.Second, time.Millisecond)
-	// The same worker must stay alive for later receipts without replaying
-	// completed startup history on every maintenance pass.
-	require.NoError(t, o.handleErrataTxCommitted(runtimeErrata, common.ErrataTxOutcome_ERRATA_TX_OUTCOME_REVERTED))
-	require.Eventually(t, func() bool {
-		tombstone, readErr := storage.getErrataTombstone(runtimeErrata.Chain, runtimeErrata.Id.String())
-		return readErr == nil && tombstone != nil && tombstone.isPermanentlyReverted()
-	}, 2*constants.ThorchainBlockTime, time.Millisecond)
+	o.startDeferredXMRChain(context.Background())
+	require.True(t, replayed, "completed history must still restore the client stores on restart")
+	require.True(t, o.IsChainClientStarted(common.XMRChain))
 	o.stopStartedChainClients()
-	o.wg.Wait()
-	require.Equal(t, map[common.TxID]int{er.Id: 1, runtimeErrata.Id: 1}, calls)
-	require.Equal(t, 1, xmr.starts)
 }
 
 func TestXMRStartupSharedStorageCorruptionRemainsFatal(t *testing.T) {
@@ -169,7 +150,7 @@ func TestXMRStartupRetriesReplayAndChecksNewReceipts(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
-	go func() { defer close(done); o.maintainXMRErrata(ctx, deferred) }()
+	go func() { defer close(done); o.startDeferredXMRChain(ctx) }()
 	t.Cleanup(func() { cancel(); <-done; o.stopStartedChainClients() })
 	select {
 	case <-firstFailure:
@@ -177,10 +158,11 @@ func TestXMRStartupRetriesReplayAndChecksNewReceipts(t *testing.T) {
 		t.Fatal("quarantine replay did not start")
 	}
 	require.False(t, o.IsChainClientStarted(common.XMRChain))
-	require.Eventually(t, func() bool { return o.IsChainClientStarted(common.XMRChain) },
-		4*constants.ThorchainBlockTime, time.Millisecond)
-	cancel()
-	<-done
+	select {
+	case <-done:
+	case <-time.After(4 * constants.ThorchainBlockTime):
+		t.Fatal("quarantine recovery did not complete")
+	}
 	require.True(t, o.IsChainClientStarted(common.XMRChain))
 	require.Equal(t, 2, replayed, "successful historical replay should not repeat on every pending-receipt pass")
 	require.Equal(t, 2, applied, "new receipt must be applied before readiness")
@@ -211,7 +193,8 @@ func (s *ObserverSuite) TestXMRStartupJoinsQuarantineBeforeStorageClose(c *check
 		_, readErr := o.storage.getErrataTombstones()
 		return readErr
 	}
-	o.startXMRErrataMaintenance(context.Background(), true)
+	o.wg.Add(1)
+	go func() { defer o.wg.Done(); o.startDeferredXMRChain(context.Background()) }()
 	select {
 	case <-entered:
 	case <-time.After(time.Second):

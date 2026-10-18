@@ -35,7 +35,6 @@ func TestStaleScannerSyncCannotOverwriteRegistrationRewind(t *testing.T) {
 			next := uint64(50)
 			_ = json.NewEncoder(w).Encode(RegisterVaultResp{
 				Registered:         true,
-				EffectiveBirthday:  50,
 				ExpectedNextHeight: &next,
 				ResetEpoch:         2,
 			})

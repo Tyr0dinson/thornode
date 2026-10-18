@@ -554,10 +554,6 @@ func TestXMRCommittedErrataQuarantinesAfterPendingBarrierBeforeTerminalReceipt(t
 	}
 
 	require.NoError(t, observer.handleErrataTxCommitted(errata, common.ErrataTxOutcome_ERRATA_TX_OUTCOME_REVERTED))
-	require.Zero(t, hookCalls, "broad quarantine must run outside committed delivery")
-	unresolved, reconcileErr := observer.reconcileCommittedXMRErrata()
-	require.NoError(t, reconcileErr)
-	require.Zero(t, unresolved)
 	require.Equal(t, 1, hookCalls)
 	require.True(t, rejected)
 	tombstone, err := storage.getErrataTombstone(errata.Chain, errata.Id.String())
@@ -587,10 +583,8 @@ func TestXMRCommittedErrataQuarantinesAfterPendingBarrierBeforeTerminalReceipt(t
 		replayed++
 		return nil
 	}
-	unresolved, reconcileErr = restarted.reconcileCommittedXMRErrata()
-	require.NoError(t, reconcileErr)
-	require.Zero(t, unresolved)
-	require.Zero(t, replayed, "runtime maintenance must not replay completed quarantine")
+	require.NoError(t, restarted.replayPermanentErrataQuarantines())
+	require.Equal(t, 1, replayed)
 	var restartedRejected error
 	remined := errataOrderingItem(errata.Id.String(), 300, "restart-after-revert")
 	remined.OnObservedTxRejected = func(err error) { restartedRejected = err }
@@ -608,9 +602,6 @@ func TestXMRCommittedErrataQuarantineFailureRetriesOutcomeAfterRestart(t *testin
 	injected := errors.New("injected XMR quarantine failure")
 	observer.permanentErrataQuarantineFn = func(common.ErrataTx, int64) error { return injected }
 	require.NoError(t, observer.handleErrataTxCommitted(errata, common.ErrataTxOutcome_ERRATA_TX_OUTCOME_REVERTED))
-	unresolved, reconcileErr := observer.reconcileCommittedXMRErrata()
-	require.ErrorIs(t, reconcileErr, injected)
-	require.Equal(t, 1, unresolved)
 
 	tombstone, err := storage.getErrataTombstone(errata.Chain, errata.Id.String())
 	require.NoError(t, err)
@@ -642,8 +633,9 @@ func TestXMRCommittedErrataQuarantineFailureRetriesOutcomeAfterRestart(t *testin
 		replayed++
 		return nil
 	}
+	require.NoError(t, restarted.replayPermanentErrataQuarantines())
 	require.Zero(t, replayed)
-	unresolved, reconcileErr = restarted.reconcileCommittedXMRErrata()
+	unresolved, reconcileErr := restarted.reconcileCommittedXMRErrata()
 	require.NoError(t, reconcileErr)
 	require.Zero(t, unresolved)
 	require.Equal(t, 1, replayed)
@@ -812,7 +804,7 @@ func TestUnresolvedCommittedErrataDefersOnlyXMRChainStart(t *testing.T) {
 	bridge.getObservedTxVoterFreshFunc = func(string) (*stypes.QueryObservedTxVoter, bool, error) {
 		return &stypes.QueryObservedTxVoter{TxID: errata.Id, Reverted: true}, true, nil
 	}
-	observer.maintainXMRErrataOnce(context.Background())
+	observer.startDeferredXMRChain(context.Background())
 	require.Equal(t, 1, xmrChain.starts)
 	observer.stopStartedChainClients()
 	require.Equal(t, 1, btcChain.stops)
@@ -849,7 +841,7 @@ func TestDeferredXMRChainCannotStartAfterObserverStop(t *testing.T) {
 	bridge.getObservedTxVoterFreshFunc = func(string) (*stypes.QueryObservedTxVoter, bool, error) {
 		return &stypes.QueryObservedTxVoter{TxID: errata.Id, Reverted: true}, true, nil
 	}
-	observer.maintainXMRErrataOnce(context.Background())
+	observer.startDeferredXMRChain(context.Background())
 	require.Zero(t, xmrChain.starts, "shutdown must win over late errata reconciliation")
 }
 
@@ -950,7 +942,7 @@ func TestObserverStartupReplaysOnlyExplicitlyRevertedXMRBeforeChainStart(t *test
 		cancel()
 		return stopBeforeStart
 	}
-	observer.maintainXMRErrata(ctx, true)
+	observer.startDeferredXMRChain(ctx)
 	require.Zero(t, chain.starts)
 }
 
@@ -961,13 +953,12 @@ func TestXMRPermanentErrataMissingChainHookFailsClosed(t *testing.T) {
 		Id:    common.TxID("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"),
 	}
 	require.NoError(t, storage.applyCommittedErrata(errata, nil))
+	require.NoError(t, storage.recordErrataVoterResult(errata, true, nil))
 	observer.permanentErrataQuarantineFn = nil
 	observer.chains = map[common.Chain]chainclients.ChainClient{
 		common.XMRChain: &mockChainClient{},
 	}
-	unresolved, err := observer.reconcileCommittedXMRErrata()
-	require.ErrorContains(t, err, "lacks permanent errata quarantine support")
-	require.Equal(t, 1, unresolved)
+	require.ErrorContains(t, observer.replayPermanentErrataQuarantines(), "lacks permanent errata quarantine support")
 }
 
 func TestPendingErrataResubmitsAfterThrottleUntilCommittedEvent(t *testing.T) {

@@ -39,8 +39,6 @@ const (
 	maxScannerReorgRewind            = uint64(730)
 )
 
-var errSignerRedirect = errors.New("sidecar redirects are not allowed")
-
 type scannerContinuityCache struct {
 	resetEpoch       uint64
 	nextHeight       uint64
@@ -182,12 +180,6 @@ func NewClientWithEndpoint(cfg config.BifrostChainConfiguration, endpoint string
 		}
 	}
 
-	// Signer routes are fixed. Redirects must not bypass endpoint policy or
-	// be accepted as successful responses by the JSON helpers.
-	rejectRedirect := func(_ *http.Request, _ []*http.Request) error {
-		return errSignerRedirect
-	}
-
 	return &Client{
 		endpoint:       endpoint,
 		daemonEndpoint: daemonEndpoint,
@@ -215,9 +207,9 @@ func NewClientWithEndpoint(cfg config.BifrostChainConfiguration, endpoint string
 		chainBlockPath:    "/v1/monero/chain/block",
 		chainTxPath:       "/v1/monero/chain/tx",
 
-		client:                    &http.Client{Timeout: timeout, CheckRedirect: rejectRedirect},
+		client:                    &http.Client{Timeout: timeout},
 		daemonClient:              &http.Client{Timeout: timeout},
-		signClient:                &http.Client{Timeout: signTimeout, CheckRedirect: rejectRedirect},
+		signClient:                &http.Client{Timeout: signTimeout},
 		signerUsername:            signerUsername,
 		signerPassword:            signerPassword,
 		signerBearer:              signerBearer,
@@ -570,29 +562,6 @@ func (c *Client) RegisterVaultContext(ctx context.Context, req RegisterVaultReq)
 	var out RegisterVaultResp
 	if err := c.callContext(ctx, http.MethodPost, c.registerPath, req, &out); err != nil {
 		return RegisterVaultResp{}, fmt.Errorf("fail to call register vault endpoint: %w", err)
-	}
-	if out.EffectiveBirthday > math.MaxInt64 {
-		return RegisterVaultResp{}, fmt.Errorf("register vault endpoint returned effective birthday outside the int64 scanner range")
-	}
-	// A positive candidate is the newest safe enrollment height. The sidecar
-	// may retain an earlier birthday on retry, but moving it later could skip
-	// vault history that Bifrost has not scanned.
-	if req.VaultCreationHeight > 0 {
-		if out.EffectiveBirthday == 0 {
-			return RegisterVaultResp{}, fmt.Errorf("register vault endpoint returned zero effective birthday for requested birthday %d", req.VaultCreationHeight)
-		}
-		if out.EffectiveBirthday > uint64(req.VaultCreationHeight) {
-			return RegisterVaultResp{}, fmt.Errorf(
-				"register vault endpoint returned effective birthday %d after requested birthday %d",
-				out.EffectiveBirthday,
-				req.VaultCreationHeight,
-			)
-		}
-	}
-	// A key-recovery registration with no birthday does not enroll the scanner.
-	// Once a birthday or reset exists, durable cursor continuity is mandatory.
-	if out.ExpectedNextHeight == nil && out.EffectiveBirthday == 0 && out.ResetEpoch == 0 {
-		return out, nil
 	}
 	// New sidecars return their cursor on every registration, including the
 	// idempotent already-registered case. A newly discovered older vault may
@@ -1358,7 +1327,7 @@ func (c *Client) ChainBlock(height int64) (ChainBlock, error) {
 	if c.hasDaemonRPC() {
 		block, err := c.daemonBlock(height)
 		if err == nil {
-			return validateChainBlockHeight(height, block)
+			return block, nil
 		}
 		if isUnavailableBlock(err) {
 			return ChainBlock{}, err
@@ -1377,17 +1346,7 @@ func (c *Client) ChainBlock(height int64) (ChainBlock, error) {
 		}
 		return ChainBlock{}, fmt.Errorf("fail to call sidecar chain-block endpoint: %w", err)
 	}
-	return validateChainBlockHeight(height, ChainBlock(out))
-}
-
-func validateChainBlockHeight(requestedHeight int64, block ChainBlock) (ChainBlock, error) {
-	if block.Height != requestedHeight {
-		return ChainBlock{}, &ChainBlockHeightMismatchError{
-			RequestedHeight: requestedHeight,
-			ReturnedHeight:  block.Height,
-		}
-	}
-	return block, nil
+	return ChainBlock(out), nil
 }
 
 func (c *Client) TxExists(txHash string) (bool, error) {
@@ -1648,15 +1607,6 @@ func (c *Client) RestoreKeysContext(ctx context.Context, vaultPubKey string, key
 
 // --- HTTP helpers ---
 
-func sidecarCallError(path string, err error) error {
-	if errors.Is(err, errSignerRedirect) {
-		// net/http wraps redirect rejection with the untrusted Location value,
-		// which may contain credentials. Keep only the local rejection reason.
-		err = errSignerRedirect
-	}
-	return fmt.Errorf("fail to call sidecar endpoint %s: %w", path, err)
-}
-
 func (c *Client) callGet(path string, out any) error {
 	return c.callGetContext(context.Background(), path, out)
 }
@@ -1670,7 +1620,7 @@ func (c *Client) callGetContext(ctx context.Context, path string, out any) error
 
 	resp, err := c.client.Do(req)
 	if err != nil {
-		return sidecarCallError(path, err)
+		return fmt.Errorf("fail to call sidecar endpoint %s: %w", path, err)
 	}
 	defer func() {
 		if resp != nil && resp.Body != nil {
@@ -1678,8 +1628,7 @@ func (c *Client) callGetContext(ctx context.Context, path string, out any) error
 		}
 	}()
 
-	// net/http skips CheckRedirect when a redirect has no Location header.
-	if resp.StatusCode >= http.StatusMultipleChoices {
+	if resp.StatusCode >= http.StatusBadRequest {
 		respBody, truncated, readErr := readBoundedErrorBody(resp.Body)
 		if readErr != nil {
 			return fmt.Errorf("fail to read sidecar error response: %w", readErr)
@@ -1740,7 +1689,7 @@ func (c *Client) callJSONContext(ctx context.Context, method, path string, body 
 	}
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		return sidecarCallError(path, err)
+		return fmt.Errorf("fail to call sidecar endpoint %s: %w", path, err)
 	}
 	defer func() {
 		if resp != nil && resp.Body != nil {
@@ -1748,8 +1697,7 @@ func (c *Client) callJSONContext(ctx context.Context, method, path string, body 
 		}
 	}()
 
-	// net/http skips CheckRedirect when a redirect has no Location header.
-	if resp.StatusCode >= http.StatusMultipleChoices {
+	if resp.StatusCode >= http.StatusBadRequest {
 		respBody, truncated, readErr := readBoundedErrorBody(resp.Body)
 		if readErr != nil {
 			return fmt.Errorf("fail to read sidecar error response: %w", readErr)

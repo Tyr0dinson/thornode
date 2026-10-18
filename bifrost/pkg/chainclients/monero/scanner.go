@@ -244,31 +244,6 @@ func isRetryableScannerStateError(err error) bool {
 }
 
 func (s *Scanner) FetchTxs(fetchHeight, chainHeight int64) (stypes.TxIn, error) {
-	txIn, err := s.fetchTxs(fetchHeight, chainHeight)
-	if errors.Is(err, sidecar.ErrUnavailableBlock) {
-		return txIn, btypes.ErrUnavailableBlock
-	}
-	if errors.Is(err, btypes.ErrUnavailableBlock) {
-		return txIn, err
-	}
-	// All block reads, including prefetch, reorg and catch-up reads, leave through
-	// this boundary. A structural height mismatch must never become a generic
-	// stall error that BlockScanner can use to skip the durable cursor forward.
-	if _, ok := errors.AsType[*sidecar.ChainBlockHeightMismatchError](err); !ok {
-		return txIn, err
-	}
-	nextHeight := fetchHeight
-	if state, known := s.sidecar.CachedScannerState(); known && state.NextHeight != nil {
-		nextHeight = int64(*state.NextHeight)
-	}
-	return txIn, &btypes.ScannerRecoveryRequiredError{
-		CurrentHeight: fetchHeight,
-		NextHeight:    nextHeight,
-		Reason:        err.Error(),
-	}
-}
-
-func (s *Scanner) fetchTxs(fetchHeight, chainHeight int64) (stypes.TxIn, error) {
 	txIn := stypes.TxIn{Chain: common.XMRChain}
 	if s.sidecar == nil {
 		return txIn, fmt.Errorf("monero scanner requires sidecar for chain queries")
@@ -2243,11 +2218,6 @@ func (s *Scanner) discoverReorgReplacement(
 		}
 		canonical, err := s.sidecar.ChainBlock(height)
 		if err != nil {
-			if recoveryErr := reorgHeightMismatchRecoveryError(
-				err, previousHeight+1, height, "reorg check",
-			); recoveryErr != nil {
-				return sidecar.ChainBlock{}, nil, nil, recoveryErr
-			}
 			return sidecar.ChainBlock{}, nil, nil, fmt.Errorf(
 				"fail to fetch monero block %d during reorg check: %w", height, err,
 			)
@@ -2274,11 +2244,6 @@ func (s *Scanner) discoverReorgReplacement(
 	for height := anchor.Height + 1; height <= previousHeight; height++ {
 		canonical, err := s.sidecar.ChainBlock(height)
 		if err != nil {
-			if recoveryErr := reorgHeightMismatchRecoveryError(
-				err, previousHeight+1, anchor.Height+1, "reorg replay",
-			); recoveryErr != nil {
-				return sidecar.ChainBlock{}, nil, nil, recoveryErr
-			}
 			return sidecar.ChainBlock{}, nil, nil, fmt.Errorf(
 				"fail to fetch monero replacement block %d: %w", height, err,
 			)
@@ -2291,30 +2256,6 @@ func (s *Scanner) discoverReorgReplacement(
 		oldMetas[height] = meta
 	}
 	return anchor, replacements, oldMetas, nil
-}
-
-// reorgHeightMismatchRecoveryError maps the shared typed height mismatch to
-// terminal reorg recovery before any rewind or journal mutation.
-func reorgHeightMismatchRecoveryError(
-	err error,
-	currentHeight,
-	nextHeight int64,
-	phase string,
-) error {
-	var mismatch *sidecar.ChainBlockHeightMismatchError
-	if !errors.As(err, &mismatch) {
-		return nil
-	}
-	return &btypes.ScannerRecoveryRequiredError{
-		CurrentHeight: currentHeight,
-		NextHeight:    nextHeight,
-		Reason: fmt.Sprintf(
-			"monero %s requested height %d but the chain query returned height %d",
-			phase,
-			mismatch.RequestedHeight,
-			mismatch.ReturnedHeight,
-		),
-	}
 }
 
 func (s *Scanner) emitReorgErrata(
@@ -2671,7 +2612,8 @@ func (s *Scanner) refreshAsgardLookup(nextScanHeight int64) error {
 			vault.PubKeyFrost,
 			xmrVaultRegistrationBirthday(vault.VaultCreationHeightXmr, nextScanHeight),
 		); addErr != nil {
-			return fmt.Errorf("fail to refresh active xmr vault %s: %w", vault.PubKey.String(), addErr)
+			s.logger.Debug().Err(addErr).Str("vault_pubkey", vault.PubKey.String()).Msg("skip xmr vault during asgard lookup refresh")
+			continue
 		}
 	}
 
@@ -2688,13 +2630,14 @@ func (s *Scanner) refreshAsgardLookup(nextScanHeight int64) error {
 			s.logger.Debug().Err(vaultErr).Str("vault_pubkey", pair.PubKey.String()).Msg("skip xmr pubkey during asgard lookup refresh")
 			continue
 		}
-		if addErr := s.addFrostVaultToLookup(
+		if err := s.addFrostVaultToLookup(
 			lookup,
 			seenVaults,
 			vault.PubKeyFrost,
 			xmrVaultRegistrationBirthday(vault.VaultCreationHeightXmr, nextScanHeight),
-		); addErr != nil {
-			return fmt.Errorf("fail to refresh xmr vault %s from pubkey lookup: %w", vault.PubKey.String(), addErr)
+		); err != nil {
+			s.logger.Debug().Err(err).Str("vault_pubkey", vault.PubKey.String()).Msg("skip xmr vault during pubkey lookup refresh")
+			continue
 		}
 	}
 

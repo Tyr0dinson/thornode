@@ -3,8 +3,6 @@ package sidecar
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
-	"math"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -126,29 +124,6 @@ func TestClientChainBlockMapsConflictToUnavailable(t *testing.T) {
 	}
 }
 
-func TestClientChainBlockRejectsMismatchedSidecarHeight(t *testing.T) {
-	t.Parallel()
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		_ = json.NewEncoder(w).Encode(ChainBlockResp{Height: 43})
-	}))
-	defer server.Close()
-
-	client, err := NewClientWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
-	if err != nil {
-		t.Fatalf("new sidecar client: %v", err)
-	}
-
-	_, err = client.ChainBlock(42)
-	var mismatch *ChainBlockHeightMismatchError
-	if !errors.As(err, &mismatch) {
-		t.Fatalf("expected typed height mismatch, got %v", err)
-	}
-	if mismatch.RequestedHeight != 42 || mismatch.ReturnedHeight != 43 {
-		t.Fatalf("unexpected height mismatch: %+v", mismatch)
-	}
-}
-
 func TestClientChainBlockPrefersDaemonRPC(t *testing.T) {
 	t.Parallel()
 
@@ -221,61 +196,6 @@ func TestClientChainBlockPrefersDaemonRPC(t *testing.T) {
 	}
 	if sidecarCalls.Load() != 0 {
 		t.Fatalf("expected daemon path to avoid sidecar, got %d sidecar calls", sidecarCalls.Load())
-	}
-}
-
-func TestClientChainBlockRejectsMismatchedDaemonHeightWithoutFallback(t *testing.T) {
-	t.Parallel()
-
-	var sidecarCalls atomic.Int32
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		sidecarCalls.Add(1)
-		http.Error(w, "unexpected sidecar fallback", http.StatusServiceUnavailable)
-	}))
-	defer server.Close()
-
-	daemon := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var req struct {
-			Method string `json:"method"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		switch req.Method {
-		case "get_info":
-			_ = json.NewEncoder(w).Encode(map[string]any{
-				"result": map[string]any{"height": 100},
-			})
-		case "get_block":
-			_ = json.NewEncoder(w).Encode(map[string]any{
-				"result": map[string]any{
-					"block_header": map[string]any{"height": 43},
-				},
-			})
-		default:
-			http.Error(w, "unexpected method: "+req.Method, http.StatusBadRequest)
-		}
-	}))
-	defer daemon.Close()
-
-	client, err := NewClientWithEndpoint(config.BifrostChainConfiguration{
-		RPCHost: daemon.URL,
-	}, server.URL)
-	if err != nil {
-		t.Fatalf("new daemon-backed client: %v", err)
-	}
-
-	_, err = client.ChainBlock(42)
-	var mismatch *ChainBlockHeightMismatchError
-	if !errors.As(err, &mismatch) {
-		t.Fatalf("expected typed height mismatch, got %v", err)
-	}
-	if mismatch.RequestedHeight != 42 || mismatch.ReturnedHeight != 43 {
-		t.Fatalf("unexpected height mismatch: %+v", mismatch)
-	}
-	if sidecarCalls.Load() != 0 {
-		t.Fatalf("daemon height mismatch fell back to sidecar: %d calls", sidecarCalls.Load())
 	}
 }
 
@@ -691,7 +611,6 @@ func TestConcurrentStaleRegistrationCannotDowngradeContinuity(t *testing.T) {
 				next := uint64(100)
 				_ = json.NewEncoder(w).Encode(RegisterVaultResp{
 					Registered:         true,
-					EffectiveBirthday:  100,
 					ResetEpoch:         1,
 					ExpectedNextHeight: &next,
 				})
@@ -700,7 +619,6 @@ func TestConcurrentStaleRegistrationCannotDowngradeContinuity(t *testing.T) {
 			next := uint64(40)
 			_ = json.NewEncoder(w).Encode(RegisterVaultResp{
 				Registered:         true,
-				EffectiveBirthday:  40,
 				ResetEpoch:         2,
 				ExpectedNextHeight: &next,
 			})
@@ -859,7 +777,7 @@ func TestRegisterVaultRejectsNilContinuityCursor(t *testing.T) {
 			http.NotFound(w, r)
 			return
 		}
-		_, _ = w.Write([]byte(`{"registered":true,"effective_birthday":1,"reset_epoch":0}`))
+		_, _ = w.Write([]byte(`{"registered":true,"reset_epoch":0}`))
 	}))
 	defer server.Close()
 
@@ -872,272 +790,6 @@ func TestRegisterVaultRejectsNilContinuityCursor(t *testing.T) {
 	}
 	if _, ok := client.cachedScannerContinuity(); ok {
 		t.Fatal("invalid registration response must not populate continuity cache")
-	}
-}
-
-func TestRegisterVaultRestoresRetainedBirthdayAfterRestart(t *testing.T) {
-	t.Parallel()
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var req RegisterVaultReq
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		if req.VaultCreationHeight != 559 {
-			http.Error(w, "unexpected birthday", http.StatusBadRequest)
-			return
-		}
-		_, _ = w.Write([]byte(`{
-			"registered":false,
-			"effective_birthday":504,
-			"reset_epoch":2,
-			"expected_next_height":504
-		}`))
-	}))
-	defer server.Close()
-
-	for attempt := 0; attempt < 2; attempt++ {
-		// A fresh client models Bifrost restarting with no in-memory continuity.
-		client, err := NewClientWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
-		if err != nil {
-			t.Fatalf("new client after restart %d: %v", attempt, err)
-		}
-		resp, err := client.RegisterVault(RegisterVaultReq{
-			VaultPubKey:         "vault",
-			VaultCreationHeight: 559,
-		})
-		if err != nil {
-			t.Fatalf("restore registration after restart %d: %v", attempt, err)
-		}
-		if resp.EffectiveBirthday != 504 {
-			t.Fatalf("effective birthday = %d, want 504", resp.EffectiveBirthday)
-		}
-		state, ok := client.CachedScannerState()
-		if !ok || state.NextHeight == nil || *state.NextHeight != 504 ||
-			state.ResetEpoch != 2 || !state.StrictAfterReset {
-			t.Fatalf("restart did not restore retained continuity: %+v present=%t", state, ok)
-		}
-	}
-}
-
-func TestRegisterVaultRejectsUnsafeEffectiveBirthday(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name     string
-		birthday int64
-		body     string
-	}{
-		{
-			name:     "missing",
-			birthday: 559,
-			body:     `{"registered":false,"reset_epoch":0,"expected_next_height":600}`,
-		},
-		{
-			name:     "zero",
-			birthday: 559,
-			body:     `{"registered":false,"effective_birthday":0,"reset_epoch":0,"expected_next_height":600}`,
-		},
-		{
-			name:     "later than candidate",
-			birthday: 559,
-			body:     `{"registered":false,"effective_birthday":560,"reset_epoch":0,"expected_next_height":600}`,
-		},
-		{
-			name:     "outside int64 scanner range",
-			birthday: 559,
-			body:     `{"registered":false,"effective_birthday":9223372036854775808,"reset_epoch":0,"expected_next_height":600}`,
-		},
-		{
-			name:     "reset without cursor",
-			birthday: 0,
-			body:     `{"registered":false,"effective_birthday":0,"reset_epoch":1}`,
-		},
-		{
-			name:     "null birthday",
-			birthday: 559,
-			body:     `{"registered":false,"effective_birthday":null,"reset_epoch":0,"expected_next_height":600}`,
-		},
-		{
-			name:     "null reset epoch",
-			birthday: 559,
-			body:     `{"registered":false,"effective_birthday":504,"reset_epoch":null,"expected_next_height":600}`,
-		},
-		{
-			name:     "cursor outside int64 scanner range",
-			birthday: 559,
-			body:     `{"registered":false,"effective_birthday":504,"reset_epoch":0,"expected_next_height":9223372036854775808}`,
-		},
-		{
-			name:     "negative requested birthday",
-			birthday: -1,
-			body:     `{"registered":false,"effective_birthday":504,"reset_epoch":0,"expected_next_height":600}`,
-		},
-	}
-
-	for _, test := range tests {
-		test := test
-		t.Run(test.name, func(t *testing.T) {
-			t.Parallel()
-			var calls atomic.Int32
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-				calls.Add(1)
-				_, _ = w.Write([]byte(test.body))
-			}))
-			defer server.Close()
-
-			client, err := NewClientWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
-			if err != nil {
-				t.Fatalf("new client: %v", err)
-			}
-			if _, err = client.RegisterVault(RegisterVaultReq{
-				VaultPubKey:         "vault",
-				VaultCreationHeight: test.birthday,
-			}); err == nil {
-				t.Fatal("expected unsafe effective birthday to fail closed")
-			}
-			if _, ok := client.cachedScannerContinuity(); ok {
-				t.Fatal("unsafe registration response populated continuity cache")
-			}
-			wantCalls := int32(1)
-			if test.birthday < 0 {
-				wantCalls = 0
-			}
-			if got := calls.Load(); got != wantCalls {
-				t.Fatalf("registration calls = %d, want %d", got, wantCalls)
-			}
-		})
-	}
-}
-
-func TestRegisterVaultAcceptsBoundaryBirthdays(t *testing.T) {
-	for _, birthday := range []int64{1, math.MaxInt64} {
-		t.Run(fmt.Sprintf("birthday_%d", birthday), func(t *testing.T) {
-			t.Parallel()
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				var req RegisterVaultReq
-				if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.VaultCreationHeight != birthday {
-					http.Error(w, "unexpected registration birthday", http.StatusBadRequest)
-					return
-				}
-				next := uint64(birthday)
-				_ = json.NewEncoder(w).Encode(RegisterVaultResp{
-					EffectiveBirthday: next, ExpectedNextHeight: &next,
-				})
-			}))
-			defer server.Close()
-			client, err := NewClientWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
-			if err != nil {
-				t.Fatal(err)
-			}
-			resp, err := client.RegisterVault(RegisterVaultReq{VaultPubKey: "vault", VaultCreationHeight: birthday})
-			if err != nil || resp.EffectiveBirthday != uint64(birthday) {
-				t.Fatalf("valid boundary birthday rejected: resp=%+v err=%v", resp, err)
-			}
-			state, known := client.CachedScannerState()
-			if !known || state.NextHeight == nil || *state.NextHeight != uint64(birthday) {
-				t.Fatalf("boundary registration did not seed continuity: %+v known=%t", state, known)
-			}
-		})
-	}
-}
-
-func TestScannerStateRejectsInvalidRefreshWithoutLosingContinuity(t *testing.T) {
-	for _, test := range []struct {
-		name string
-		body string
-	}{
-		{"missing epoch", `{"next_height":50,"strict_after_reset":false}`},
-		{"missing strict mode", `{"reset_epoch":0,"next_height":50}`},
-		{"missing cursor", `{"reset_epoch":1,"strict_after_reset":true}`},
-		{"overflow cursor", `{"reset_epoch":1,"next_height":9223372036854775808,"strict_after_reset":true}`},
-		{"inconsistent reset", `{"reset_epoch":1,"next_height":50,"strict_after_reset":false}`},
-		{"unbound hash", `{"reset_epoch":1,"next_height":50,"last_block_hash":"` + strings.Repeat("a", 64) + `","strict_after_reset":true}`},
-		{"noncontiguous height", `{"reset_epoch":1,"next_height":50,"last_height":48,"strict_after_reset":true}`},
-		{"invalid block hash", `{"reset_epoch":1,"next_height":50,"last_height":49,"last_block_hash":"` + strings.Repeat("z", 64) + `","last_parent_hash":"` + strings.Repeat("b", 64) + `","strict_after_reset":true}`},
-		{"missing parent hash", `{"reset_epoch":1,"next_height":50,"last_height":49,"last_block_hash":"` + strings.Repeat("a", 64) + `","strict_after_reset":true}`},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			t.Parallel()
-			var stateReads, syncCalls atomic.Int32
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				switch r.URL.Path {
-				case scannerStatePath:
-					if stateReads.Add(1) == 2 {
-						_, _ = w.Write([]byte(test.body))
-						return
-					}
-					next, last := uint64(50), uint64(49)
-					_ = json.NewEncoder(w).Encode(ScannerState{
-						NextHeight: &next, LastHeight: &last,
-						LastBlockHash: strings.Repeat("a", 64), LastParentHash: strings.Repeat("b", 64),
-					})
-				case "/v1/monero/scanner/sync":
-					syncCalls.Add(1)
-					var req SyncReq
-					if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.ResetEpoch == nil ||
-						*req.ResetEpoch != 0 || req.ExpectedNextHeight == nil || *req.ExpectedNextHeight != 50 {
-						http.Error(w, "invalid continuity binding", http.StatusConflict)
-						return
-					}
-					_ = json.NewEncoder(w).Encode(Transfers{})
-				default:
-					http.NotFound(w, r)
-				}
-			}))
-			defer server.Close()
-			client, err := NewClientWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if _, err = client.ScannerState(); err != nil {
-				t.Fatal(err)
-			}
-			before, known := client.cachedScannerContinuity()
-			if !known {
-				t.Fatal("valid state did not seed continuity")
-			}
-			if _, err = client.ScannerState(); err == nil {
-				t.Fatal("invalid state refresh was accepted")
-			}
-			if after, ok := client.cachedScannerContinuity(); !ok || after != before {
-				t.Fatalf("invalid refresh replaced validated continuity: before=%+v after=%+v", before, after)
-			}
-			if _, err = client.ScannerState(); err != nil {
-				t.Fatalf("repaired state could not be retried: %v", err)
-			}
-			if _, err = client.SyncAt(50, 60, strings.Repeat("c", 64), strings.Repeat("a", 64), 10); err != nil {
-				t.Fatalf("repaired continuity could not resume scanning: %v", err)
-			}
-			if stateReads.Load() != 3 || syncCalls.Load() != 1 {
-				t.Fatalf("unexpected retry work: state=%d sync=%d", stateReads.Load(), syncCalls.Load())
-			}
-		})
-	}
-}
-
-func TestRegisterVaultAllowsRecoveryOnlyRegistrationWithoutCursor(t *testing.T) {
-	t.Parallel()
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = w.Write([]byte(`{
-			"registered":true,
-			"effective_birthday":0,
-			"reset_epoch":0
-		}`))
-	}))
-	defer server.Close()
-
-	client, err := NewClientWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
-	if err != nil {
-		t.Fatalf("new client: %v", err)
-	}
-	if _, err = client.RegisterVault(RegisterVaultReq{VaultPubKey: "recovery-vault"}); err != nil {
-		t.Fatalf("recovery-only registration: %v", err)
-	}
-	if _, ok := client.cachedScannerContinuity(); ok {
-		t.Fatal("recovery-only registration invented scanner continuity")
 	}
 }
 

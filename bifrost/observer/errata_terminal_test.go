@@ -148,10 +148,6 @@ func TestErrataRevertedReceiptSurvivesQuarantineAndPersistenceFailures(t *testin
 				return errors.New("sidecar unavailable")
 			}
 			commitTerminalErrataEvent(t, g, state, common.ErrataTxOutcome_ERRATA_TX_OUTCOME_REVERTED)
-			require.Zero(t, calls, "committed delivery does not perform broad quarantine")
-			unresolved, err := o.reconcileCommittedXMRErrata()
-			require.Error(t, err)
-			require.Equal(t, 1, unresolved)
 			require.Equal(t, 1, calls)
 			for _, att := range state.attestations {
 				require.True(t, att.committed, "terminal consensus receipt already persisted")
@@ -165,7 +161,7 @@ func TestErrataRevertedReceiptSurvivesQuarantineAndPersistenceFailures(t *testin
 			require.Nil(t, tombstone.VoterReverted, "local completion remains deferred")
 			reopen()
 			o.permanentErrataQuarantineFn = func(common.ErrataTx, int64) error { calls++; return nil }
-			unresolved, err = o.reconcileCommittedXMRErrata()
+			unresolved, err := o.reconcileCommittedXMRErrata()
 			require.NoError(t, err)
 			require.Zero(t, unresolved)
 			require.Equal(t, 2, calls)
