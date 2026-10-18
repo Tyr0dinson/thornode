@@ -73,6 +73,11 @@ func (h MimirHandler) validate(ctx cosmos.Context, msg MsgMimir) error {
 		return err
 	}
 
+	// POL Reserve selection and drain mimirs depend on each other's values.
+	if err := validatePOLReserveMimirVote(ctx, h.mgr, upperKey, msg.Value); err != nil {
+		return err
+	}
+
 	// REVSHARE-<thorname> operational mimir validation.
 	if isRevShare {
 		// Resolve any Mimir-safe alias (e.g. SWAPKIT -> "-_") back to the real

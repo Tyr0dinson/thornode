@@ -508,6 +508,14 @@ func (vm *NetworkMgr) EndBlock(ctx cosmos.Context, mgr Manager) error {
 		ctx.Logger().Error("fail to process POL liquidity", "error", err)
 	}
 
+	if err := vm.POLReserveSnapshot(ctx, mgr); err != nil {
+		ctx.Logger().Error("fail to snapshot POL Reserve pools", "error", err)
+	}
+
+	if err := vm.POLReserveDrain(ctx, mgr); err != nil {
+		ctx.Logger().Error("fail to drain POL Reserve liquidity", "error", err)
+	}
+
 	if err := vm.POLReserveCycle(ctx, mgr); err != nil {
 		ctx.Logger().Error("fail to process POL Reserve liquidity", "error", err)
 	}
@@ -1189,7 +1197,100 @@ func (vm *NetworkMgr) POLCycle(ctx cosmos.Context, mgr Manager) error {
 	return nil
 }
 
-// POLReserveCycle deploys RUNE from the pol_reserve module into the best-performing L1 pool each block.
+// POLReserveSnapshot picks the POL Reserve target once per POLCycle: the
+// eligible pool that earned the most liquidity fees this cycle per unit of RUNE
+// depth. It runs whatever POLSelectAlgo is set to, so switching back to algo 1
+// finds a fresh target, and it resets the cycle's fee counters.
+func (vm *NetworkMgr) POLReserveSnapshot(ctx cosmos.Context, mgr Manager) error {
+	polCycle := mgr.Keeper().GetConfigInt64(ctx, constants.POLCycle)
+	if polCycle <= 0 || ctx.BlockHeight()%polCycle != 0 {
+		return nil
+	}
+
+	drainPool, _, draining := activePOLDrain(ctx, mgr)
+
+	iterator := mgr.Keeper().GetPoolIterator(ctx)
+	var bestPool Pool
+	var bestFee uint64
+	var bestScore cosmos.Uint
+	bestFound := false
+
+	for ; iterator.Valid(); iterator.Next() {
+		var pool Pool
+		if err := mgr.Keeper().Cdc().Unmarshal(iterator.Value(), &pool); err != nil {
+			ctx.Logger().Error("fail to unmarshal pool", "error", err)
+			continue
+		}
+		if !polReserveDeployable(ctx, mgr, pool) {
+			continue
+		}
+		// a pool being drained cannot take deposits (LP lockup)
+		if draining && pool.Asset.Equals(drainPool.Asset) {
+			continue
+		}
+
+		fee, err := mgr.Keeper().GetPOLCycleLiquidityFee(ctx, pool.Asset)
+		if err != nil || fee == 0 {
+			continue
+		}
+
+		score := common.GetUncappedShare(cosmos.NewUint(fee), pool.BalanceRune, cosmos.NewUint(1e18))
+		if !bestFound || score.GT(bestScore) {
+			bestPool = pool
+			bestFee = fee
+			bestScore = score
+			bestFound = true
+		}
+	}
+	iterator.Close()
+
+	if bestFound {
+		mgr.Keeper().SetPOLReserveTarget(ctx, bestPool.Asset)
+		selectEvt := NewEventPOLReserveSelect(bestPool.Asset, cosmos.NewUint(bestFee), bestPool.BalanceRune)
+		if err := mgr.EventMgr().EmitEvent(ctx, selectEvt); err != nil {
+			ctx.Logger().Error("fail to emit pol reserve select event", "error", err)
+		}
+		ctx.Logger().Info(
+			"POL Reserve snapshot selected pool",
+			"pool", bestPool.Asset.String(),
+			"liquidity_fee", bestFee,
+			"rune_depth", bestPool.BalanceRune.String(),
+		)
+	} else {
+		mgr.Keeper().ClearPOLReserveTarget(ctx)
+		ctx.Logger().Info("POL Reserve snapshot found no eligible pool with fees")
+	}
+
+	mgr.Keeper().ResetPOLCycleLiquidityFees(ctx)
+	return nil
+}
+
+// polReserveTargetPool returns the pool the POL Reserve deploys into: the
+// SystemIncomePOLPool pool when POLSelectAlgo is 2, otherwise the last
+// snapshot's pick.
+func (vm *NetworkMgr) polReserveTargetPool(ctx cosmos.Context, mgr Manager) (Pool, bool) {
+	if mgr.Keeper().GetConfigInt64(ctx, constants.POLSelectAlgo) == 2 {
+		return resolvePOLPoolMimir(ctx, mgr, systemIncomePOLPoolMimirPrefix)
+	}
+
+	asset, found, err := mgr.Keeper().GetPOLReserveTarget(ctx)
+	if err != nil {
+		ctx.Logger().Error("fail to get pol reserve target", "error", err)
+		return Pool{}, false
+	}
+	if !found {
+		return Pool{}, false
+	}
+	pool, err := mgr.Keeper().GetPool(ctx, asset)
+	if err != nil || pool.IsEmpty() {
+		return Pool{}, false
+	}
+	return pool, true
+}
+
+// POLReserveCycle deploys RUNE from the pol_reserve module into the current
+// target pool each block. When the target cannot take deposits the RUNE stays
+// in pol_reserve until it can, or until a new target is picked.
 func (vm *NetworkMgr) POLReserveCycle(ctx cosmos.Context, mgr Manager) error {
 	maxDeployment := cosmos.SafeUintFromInt64(mgr.Keeper().GetConfigInt64(ctx, constants.POLReserveMaxDeployment))
 	if maxDeployment.IsZero() {
@@ -1204,61 +1305,11 @@ func (vm *NetworkMgr) POLReserveCycle(ctx cosmos.Context, mgr Manager) error {
 		return nil
 	}
 
-	// Find the best L1 pool by rolling fees / pool depth
-	iterator := mgr.Keeper().GetPoolIterator(ctx)
-	defer iterator.Close()
-
-	var bestPool Pool
-	var bestScore cosmos.Uint
-	bestFound := false
-
-	for ; iterator.Valid(); iterator.Next() {
-		var pool Pool
-		if err := mgr.Keeper().Cdc().Unmarshal(iterator.Value(), &pool); err != nil {
-			ctx.Logger().Error("fail to unmarshal pool", "error", err)
-			continue
-		}
-
-		if !pool.Asset.IsExternalL1Asset() {
-			continue
-		}
-		if pool.Status != PoolAvailable {
-			continue
-		}
-		if pool.BalanceRune.IsZero() {
-			continue
-		}
-		if mgr.Keeper().IsChainTradingHalted(ctx, pool.Asset.GetChain()) {
-			continue
-		}
-		if mgr.Keeper().IsRagnarok(ctx, []common.Asset{pool.Asset}) {
-			continue
-		}
-		if mgr.Keeper().IsLPPaused(ctx, pool.Asset.GetChain()) {
-			continue
-		}
-		if mgr.Keeper().IsPoolDepositPaused(ctx, pool.Asset) {
-			continue
-		}
-		if !mgr.Keeper().IsPOLReserveEligiblePool(ctx, pool.Asset) {
-			continue
-		}
-
-		rollingFees, err := mgr.Keeper().GetEffectivePoolLiquidityFee(ctx, pool.Asset)
-		if err != nil || rollingFees == 0 {
-			continue
-		}
-
-		score := common.GetUncappedShare(cosmos.NewUint(rollingFees), pool.BalanceRune, cosmos.NewUint(1e18))
-
-		if !bestFound || score.GT(bestScore) {
-			bestPool = pool
-			bestScore = score
-			bestFound = true
-		}
+	targetPool, found := vm.polReserveTargetPool(ctx, mgr)
+	if !found || !polReserveDeployable(ctx, mgr, targetPool) {
+		return nil
 	}
-
-	if !bestFound {
+	if drainPool, _, draining := activePOLDrain(ctx, mgr); draining && drainPool.Asset.Equals(targetPool.Asset) {
 		return nil
 	}
 
@@ -1297,13 +1348,13 @@ func (vm *NetworkMgr) POLReserveCycle(ctx cosmos.Context, mgr Manager) error {
 	}
 
 	tx := common.NewTx(common.BlankTxID, polAddress, asgardAddress, coins, nil, "THOR-POL-RESERVE-ADD")
-	msg := NewMsgAddLiquidity(tx, bestPool.Asset, runeAmt, cosmos.ZeroUint(), polAddress, common.NoAddress, common.NoAddress, cosmos.ZeroUint(), signer)
+	msg := NewMsgAddLiquidity(tx, targetPool.Asset, runeAmt, cosmos.ZeroUint(), polAddress, common.NoAddress, common.NoAddress, cosmos.ZeroUint(), signer)
 	if _, err = handler(cacheCtx, msg); err != nil {
-		return fmt.Errorf("fail to add POL Reserve liquidity to %s: %w", bestPool.Asset.String(), err)
+		return fmt.Errorf("fail to add POL Reserve liquidity to %s: %w", targetPool.Asset.String(), err)
 	}
 
 	// Update per-pool deposit tracking
-	deposit, err := mgr.Keeper().GetPOLReserveDeposit(cacheCtx, bestPool.Asset)
+	deposit, err := mgr.Keeper().GetPOLReserveDeposit(cacheCtx, targetPool.Asset)
 	if err != nil {
 		return fmt.Errorf("fail to get pol reserve deposit: %w", err)
 	}
@@ -1313,7 +1364,7 @@ func (vm *NetworkMgr) POLReserveCycle(ctx cosmos.Context, mgr Manager) error {
 	}
 
 	// Emit deployment event
-	deployEvt := NewEventPOLReserveDeploy(bestPool.Asset, runeAmt)
+	deployEvt := NewEventPOLReserveDeploy(targetPool.Asset, runeAmt)
 	if err = mgr.EventMgr().EmitEvent(cacheCtx, deployEvt); err != nil {
 		ctx.Logger().Error("fail to emit pol reserve deploy event", "error", err)
 	}
@@ -1322,8 +1373,131 @@ func (vm *NetworkMgr) POLReserveCycle(ctx cosmos.Context, mgr Manager) error {
 
 	ctx.Logger().Info(
 		"POL Reserve deployed",
-		"pool", bestPool.Asset.String(),
+		"pool", targetPool.Asset.String(),
 		"amount", runeAmt.String(),
+	)
+
+	return nil
+}
+
+// POLReserveDrain withdraws RUNE from the DrainPOLPool POL Reserve position back
+// into pol_reserve at DrainRunePerBlock, starting the block after the drain is
+// switched on. Withdrawals are whole basis points of the position, so RUNE owed
+// below one basis point accrues until it covers one. Blocks where the position
+// cannot be withdrawn (halts, pauses, LP lockup) accrue nothing.
+func (vm *NetworkMgr) POLReserveDrain(ctx cosmos.Context, mgr Manager) error {
+	k := mgr.Keeper()
+	drainPool, rate, active := activePOLDrain(ctx, mgr)
+	stateAsset, owed, found, err := k.GetPOLReserveDrainState(ctx)
+	if err != nil {
+		return fmt.Errorf("fail to get pol reserve drain state: %w", err)
+	}
+	if !active {
+		if found {
+			k.ClearPOLReserveDrainState(ctx)
+		}
+		return nil
+	}
+	asset := drainPool.Asset
+	if !found || !stateAsset.Equals(asset) {
+		// start owing from the next block; switching pools drops the old balance
+		k.SetPOLReserveDrainState(ctx, asset, cosmos.ZeroUint())
+		return nil
+	}
+
+	polAddress, err := k.GetModuleAddress(POLReserveName)
+	if err != nil {
+		return err
+	}
+	lp, err := k.GetLiquidityProvider(ctx, asset, polAddress)
+	if err != nil {
+		return fmt.Errorf("fail to get pol reserve liquidity provider: %w", err)
+	}
+	if lp.Units.IsZero() {
+		if !owed.IsZero() {
+			k.SetPOLReserveDrainState(ctx, asset, cosmos.ZeroUint())
+		}
+		return nil
+	}
+	if !polReserveDrainable(ctx, mgr, drainPool, lp) {
+		return nil
+	}
+
+	newOwed := owed.Add(rate)
+
+	// value the position in RUNE, as removePOLLiquidity does
+	pool := drainPool
+	pool.CalcUnits(k.GetTotalSupply(ctx, asset.GetSyntheticAsset()))
+	lpValue := common.GetSafeShare(lp.Units, pool.GetPoolUnits(), pool.BalanceRune).MulUint64(2)
+	if lpValue.IsZero() {
+		return nil
+	}
+	// round down to whole basis points covered by the RUNE owed
+	basisPts := newOwed.MulUint64(constants.MaxBasisPts).Quo(lpValue)
+	if basisPts.GT(cosmos.NewUint(constants.MaxBasisPts)) {
+		basisPts = cosmos.NewUint(constants.MaxBasisPts)
+	}
+	if basisPts.IsZero() {
+		k.SetPOLReserveDrainState(ctx, asset, newOwed)
+		return nil
+	}
+
+	nodeAccounts, err := k.ListActiveValidators(ctx)
+	if err != nil {
+		return err
+	}
+	if len(nodeAccounts) == 0 {
+		return fmt.Errorf("dev err: no active node accounts")
+	}
+	signer := nodeAccounts[0].NodeAddress
+	asgardAddress, err := k.GetModuleAddress(AsgardName)
+	if err != nil {
+		return err
+	}
+
+	// Use CacheContext for atomicity: a failed withdraw keeps this block's accrual out too
+	cacheCtx, commit := ctx.CacheContext()
+
+	balBefore := k.GetRuneBalanceOfModule(cacheCtx, POLReserveName)
+	coins := common.NewCoins(common.NewCoin(common.RuneAsset(), cosmos.ZeroUint()))
+	tx := common.NewTx(common.BlankTxID, polAddress, asgardAddress, coins, nil, "THOR-POL-RESERVE-DRAIN")
+	msg := NewMsgWithdrawLiquidity(tx, polAddress, basisPts, asset, common.RuneAsset(), signer)
+	if _, err = NewInternalHandler(mgr)(cacheCtx, msg); err != nil {
+		return fmt.Errorf("fail to drain POL Reserve liquidity from %s: %w", asset.String(), err)
+	}
+	received := common.SafeSub(k.GetRuneBalanceOfModule(cacheCtx, POLReserveName), balBefore)
+
+	deposit, err := k.GetPOLReserveDeposit(cacheCtx, asset)
+	if err != nil {
+		return fmt.Errorf("fail to get pol reserve deposit: %w", err)
+	}
+	deposit.RuneDeposited = common.SafeSub(deposit.RuneDeposited, received)
+	if err = k.SetPOLReserveDeposit(cacheCtx, deposit); err != nil {
+		return fmt.Errorf("fail to set pol reserve deposit: %w", err)
+	}
+
+	lpAfter, err := k.GetLiquidityProvider(cacheCtx, asset, polAddress)
+	if err != nil {
+		return fmt.Errorf("fail to get pol reserve liquidity provider: %w", err)
+	}
+	owedAfter := common.SafeSub(newOwed, received)
+	if lpAfter.Units.IsZero() {
+		owedAfter = cosmos.ZeroUint()
+	}
+	k.SetPOLReserveDrainState(cacheCtx, asset, owedAfter)
+
+	drainEvt := NewEventPOLReserveDrain(asset, basisPts, received)
+	if err = mgr.EventMgr().EmitEvent(cacheCtx, drainEvt); err != nil {
+		ctx.Logger().Error("fail to emit pol reserve drain event", "error", err)
+	}
+
+	commit()
+
+	ctx.Logger().Info(
+		"POL Reserve drained",
+		"pool", asset.String(),
+		"basis_points", basisPts.String(),
+		"amount", received.String(),
 	)
 
 	return nil

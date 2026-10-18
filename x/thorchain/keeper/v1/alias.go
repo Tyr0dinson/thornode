@@ -149,6 +149,7 @@ type (
 	MinJoinLast              = types.MinJoinLast
 	NodeMimir                = types.NodeMimir
 	NodeMimirs               = types.NodeMimirs
+	Mimir                    = types.Mimir
 	ProtocolOwnedLiquidity   = types.ProtocolOwnedLiquidity
 	POLReserveDeposit        = types.POLReserveDeposit
 	SwapperClout             = types.SwapperClout

@@ -92,6 +92,8 @@ const (
 	MimirTemplateSwitch                    = "EnableSwitch-%s-%s"           // Use with Chain, Symbol
 	MimirTemplatePauseLPDeposit            = "PauseLPDeposit-%s"            // Use with Asset MimirString
 	MimirTemplateOverSolvencyToTreasuryBps = "OverSolvencyToTreasuryBps-%s" // Use with Asset MimirString
+	MimirTemplateSystemIncomePOLPool       = "SystemIncomePOLPool-%s"       // Use with Asset MimirString; POL Reserve target when POLSelectAlgo = 2
+	MimirTemplateDrainPOLPool              = "DrainPOLPool-%s"              // Use with Asset MimirString; POL Reserve position drained while DrainPOLOn = 1
 	MimirTemplateHaltSigning               = "HaltSigning%s"                // Use with Chain (mixed case, e.g., HaltSigningETH)
 	MimirTemplateHaltTrading               = "Halt%sTrading"                // Use with Chain (mixed case, e.g., HaltETHTrading)
 	MimirTemplateSkipSignerCache           = "SkipSignerCache%s"            // Use with Chain (e.g., SkipSignerCacheBTC). Operational flag to allow signer cache bypass on expiry.

@@ -30,6 +30,14 @@ func (k KVStore) AddToLiquidityFees(ctx cosmos.Context, asset common.Asset, fee 
 	// update pool liquidity
 	k.setUint64(ctx, k.GetKey(prefixPoolLiquidityFee, fmt.Sprintf("%d-%s", currentHeight, asset.String())), poolFees.Uint64())
 
+	// accumulate the pool's fees for the POL Reserve fee/depth snapshot
+	polCycleFee, polErr := k.GetPOLCycleLiquidityFee(ctx, asset)
+	if polErr != nil {
+		ctx.Logger().Error("fail to get pol cycle liquidity fee", "error", polErr)
+	} else {
+		k.setUint64(ctx, k.GetKey(prefixPOLCycleLiquidityFee, asset.String()), polCycleFee+fee.Uint64())
+	}
+
 	var currentValue uint64
 	currentValue, err = k.GetRollingPoolLiquidityFee(ctx, asset)
 	if err != nil {
@@ -68,6 +76,29 @@ func (k KVStore) GetPrevCyclePoolLiquidityFee(ctx cosmos.Context, asset common.A
 	var record uint64
 	_, err := k.getUint64(ctx, key, &record)
 	return record, err
+}
+
+// GetPOLCycleLiquidityFee returns the liquidity fees the pool earned since the
+// last POL Reserve snapshot (see POLCycle).
+func (k KVStore) GetPOLCycleLiquidityFee(ctx cosmos.Context, asset common.Asset) (uint64, error) {
+	key := k.GetKey(prefixPOLCycleLiquidityFee, asset.String())
+	var record uint64
+	_, err := k.getUint64(ctx, key, &record)
+	return record, err
+}
+
+// ResetPOLCycleLiquidityFees clears every pool's POL cycle liquidity fee, so the
+// next POL Reserve snapshot only sees fees earned after this point.
+func (k KVStore) ResetPOLCycleLiquidityFees(ctx cosmos.Context) {
+	iter := k.getIterator(ctx, prefixPOLCycleLiquidityFee)
+	var keys [][]byte
+	for ; iter.Valid(); iter.Next() {
+		keys = append(keys, append([]byte(nil), iter.Key()...))
+	}
+	iter.Close()
+	for _, key := range keys {
+		k.del(ctx, key)
+	}
 }
 
 // GetEffectivePoolLiquidityFee returns the prev-cycle fee if available, falling back to the current rolling fee

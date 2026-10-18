@@ -1420,6 +1420,13 @@ func (tos *TxOutStorage) nativeTxOut(ctx cosmos.Context, mgr Manager, toi TxOutI
 		return err
 	}
 
+	// pol_reserve is a blocked bank recipient; POL Reserve drain withdrawals reach it module to module
+	polReserveAddress, err := tos.keeper.GetModuleAddress(POLReserveName)
+	if err != nil {
+		ctx.Logger().Error("fail to get from address", "err", err)
+		return err
+	}
+
 	// send funds to/from modules
 	var sdkErr error
 
@@ -1442,6 +1449,8 @@ func (tos *TxOutStorage) nativeTxOut(ctx cosmos.Context, mgr Manager, toi TxOutI
 		sdkErr = tos.keeper.SendFromModuleToModule(ctx, toi.ModuleName, AffiliateCollectorName, common.NewCoins(toi.Coin))
 	case claimingAddress.Equals(toi.ToAddress):
 		sdkErr = tos.keeper.SendFromModuleToModule(ctx, toi.ModuleName, TCYClaimingName, common.NewCoins(toi.Coin))
+	case polReserveAddress.Equals(toi.ToAddress):
+		sdkErr = tos.keeper.SendFromModuleToModule(ctx, toi.ModuleName, POLReserveName, common.NewCoins(toi.Coin))
 	default:
 		sdkErr = tos.keeper.SendFromModuleToAccount(ctx, toi.ModuleName, addr, common.NewCoins(toi.Coin))
 	}

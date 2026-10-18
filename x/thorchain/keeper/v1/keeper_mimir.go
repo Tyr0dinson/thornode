@@ -85,6 +85,27 @@ func (k KVStore) GetMimirIterator(ctx cosmos.Context) cosmos.Iterator {
 	return k.getIterator(ctx, prefixMimir)
 }
 
+// ListMimirsWithPrefix returns the stored mimirs whose key starts with prefix
+// (case-insensitive), in store order.
+func (k KVStore) ListMimirsWithPrefix(ctx cosmos.Context, prefix string) ([]Mimir, error) {
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	iter := cosmos.KVStorePrefixIterator(store, k.GetKey(prefixMimir, prefix))
+	defer iter.Close()
+	keyPrefix := string(k.GetKey(prefixMimir, ""))
+	var mimirs []Mimir
+	for ; iter.Valid(); iter.Next() {
+		var value ProtoInt64
+		if err := k.cdc.Unmarshal(iter.Value(), &value); err != nil {
+			return nil, dbError(ctx, fmt.Sprintf("Unmarshal kvstore: (%T) %s", value, iter.Key()), err)
+		}
+		mimirs = append(mimirs, Mimir{
+			Key:   strings.TrimPrefix(string(iter.Key()), keyPrefix),
+			Value: value.GetValue(),
+		})
+	}
+	return mimirs, nil
+}
+
 // GetNodeMimirIterator iterate gas units
 func (k KVStore) GetNodeMimirIterator(ctx cosmos.Context) cosmos.Iterator {
 	return k.getIterator(ctx, prefixNodeMimir)
@@ -124,6 +145,10 @@ func (k KVStore) IsOperationalMimir(key string) bool {
 		constants.P2PGateDisabled.String(),
 		constants.EnableMemolessOutbound.String(),
 		constants.POLReserveSystemIncomeBps.String(),
+		constants.POLSelectAlgo.String(),
+		constants.POLCycle.String(),
+		constants.DrainPOLOn.String(),
+		constants.DrainRunePerBlock.String(),
 		constants.StableReserveOraclePricing.String(),
 		constants.MimirKeyPreflightChainSetDisabled,
 	}
@@ -159,6 +184,12 @@ func (k KVStore) IsOperationalMimir(key string) bool {
 	// locks vault liquidity for Monero's 10-block spend lock, so operators must
 	// be able to tune or disable it quickly rather than wait for a supermajority.
 	if strings.HasPrefix(key, "XMRCONSOLIDATION") {
+		return true
+	}
+	// SystemIncomePOLPool-<asset> and DrainPOLPool-<asset> pick the POL Reserve
+	// deployment and drain pools, which nodes steer alongside POLSelectAlgo and
+	// DrainPOLOn.
+	if strings.HasPrefix(key, "SYSTEMINCOMEPOLPOOL-") || strings.HasPrefix(key, "DRAINPOLPOOL-") {
 		return true
 	}
 	partialMatches := []string{

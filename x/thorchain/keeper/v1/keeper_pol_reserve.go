@@ -78,3 +78,70 @@ func (k KVStore) IsPOLReserveEligiblePool(ctx cosmos.Context, asset common.Asset
 	}
 	return false
 }
+
+// GetPOLReserveTarget returns the pool picked by the last POL Reserve snapshot.
+func (k KVStore) GetPOLReserveTarget(ctx cosmos.Context) (common.Asset, bool, error) {
+	var record string
+	found, err := k.getString(ctx, string(k.GetKey(prefixPOLReserveTarget, "")), &record)
+	if err != nil || !found {
+		return common.EmptyAsset, false, err
+	}
+	asset, err := common.NewAsset(record)
+	if err != nil {
+		return common.EmptyAsset, false, err
+	}
+	return asset, true, nil
+}
+
+// SetPOLReserveTarget saves the pool picked by a POL Reserve snapshot.
+func (k KVStore) SetPOLReserveTarget(ctx cosmos.Context, asset common.Asset) {
+	k.setString(ctx, string(k.GetKey(prefixPOLReserveTarget, "")), asset.String())
+}
+
+// ClearPOLReserveTarget removes the stored POL Reserve snapshot pool.
+func (k KVStore) ClearPOLReserveTarget(ctx cosmos.Context) {
+	k.del(ctx, k.GetKey(prefixPOLReserveTarget, ""))
+}
+
+// GetPOLReserveDrainState returns the pool being drained and the RUNE owed to
+// pol_reserve that has not been withdrawn yet. found is false when no drain is
+// in progress.
+func (k KVStore) GetPOLReserveDrainState(ctx cosmos.Context) (common.Asset, cosmos.Uint, bool, error) {
+	var record string
+	found, err := k.getString(ctx, string(k.GetKey(prefixPOLReserveDrainAsset, "")), &record)
+	if err != nil || !found {
+		return common.EmptyAsset, cosmos.ZeroUint(), false, err
+	}
+	asset, err := common.NewAsset(record)
+	if err != nil {
+		return common.EmptyAsset, cosmos.ZeroUint(), false, err
+	}
+	var owed uint64
+	if _, err = k.getUint64(ctx, k.GetKey(prefixPOLReserveDrainOwed, ""), &owed); err != nil {
+		return common.EmptyAsset, cosmos.ZeroUint(), false, err
+	}
+	return asset, cosmos.NewUint(owed), true, nil
+}
+
+// SetPOLReserveDrainState saves the pool being drained and the RUNE still owed
+// to pol_reserve, writing only the values that changed.
+func (k KVStore) SetPOLReserveDrainState(ctx cosmos.Context, asset common.Asset, owed cosmos.Uint) {
+	current, currentOwed, found, err := k.GetPOLReserveDrainState(ctx)
+	if err != nil || !found || !current.Equals(asset) {
+		k.setString(ctx, string(k.GetKey(prefixPOLReserveDrainAsset, "")), asset.String())
+	}
+	if err == nil && found && currentOwed.Equal(owed) {
+		return
+	}
+	if owed.IsZero() {
+		k.del(ctx, k.GetKey(prefixPOLReserveDrainOwed, ""))
+		return
+	}
+	k.setUint64(ctx, k.GetKey(prefixPOLReserveDrainOwed, ""), owed.Uint64())
+}
+
+// ClearPOLReserveDrainState removes any stored drain progress.
+func (k KVStore) ClearPOLReserveDrainState(ctx cosmos.Context) {
+	k.del(ctx, k.GetKey(prefixPOLReserveDrainAsset, ""))
+	k.del(ctx, k.GetKey(prefixPOLReserveDrainOwed, ""))
+}

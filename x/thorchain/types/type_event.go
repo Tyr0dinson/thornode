@@ -66,6 +66,8 @@ const (
 	FailedOutboundRecoveryEventType = "failed_outbound_recovery"
 	VaultOverSolvencyEventType      = "vault_over_solvency"
 	POLReserveDeployEventType       = "pol_reserve_deploy"
+	POLReserveSelectEventType       = "pol_reserve_select"
+	POLReserveDrainEventType        = "pol_reserve_drain"
 	DynamicL1FeeUpdateEventType     = "dynamic_l1_fee_update"
 )
 
@@ -1599,6 +1601,58 @@ func (m *EventPOLReserveDeploy) Events() (cosmos.Events, error) {
 		cosmos.NewEvent(
 			m.Type(),
 			cosmos.NewAttribute("pool", m.Pool.String()),
+			cosmos.NewAttribute("rune_amount", m.RuneAmount.String()),
+		),
+	}, nil
+}
+
+// NewEventPOLReserveSelect create a new POL reserve snapshot selection event
+func NewEventPOLReserveSelect(pool common.Asset, liquidityFee, runeDepth cosmos.Uint) *EventPOLReserveSelect {
+	return &EventPOLReserveSelect{
+		Pool:         pool,
+		LiquidityFee: liquidityFee,
+		RuneDepth:    runeDepth,
+	}
+}
+
+// Type return POL reserve select event type
+func (m *EventPOLReserveSelect) Type() string {
+	return POLReserveSelectEventType
+}
+
+// Events convert EventPOLReserveSelect to key value pairs used in cosmos
+func (m *EventPOLReserveSelect) Events() (cosmos.Events, error) {
+	return cosmos.Events{
+		cosmos.NewEvent(
+			m.Type(),
+			cosmos.NewAttribute("pool", m.Pool.String()),
+			cosmos.NewAttribute("liquidity_fee", m.LiquidityFee.String()),
+			cosmos.NewAttribute("rune_depth", m.RuneDepth.String()),
+		),
+	}, nil
+}
+
+// NewEventPOLReserveDrain create a new POL reserve drain event
+func NewEventPOLReserveDrain(pool common.Asset, basisPoints, runeAmount cosmos.Uint) *EventPOLReserveDrain {
+	return &EventPOLReserveDrain{
+		Pool:        pool,
+		BasisPoints: basisPoints,
+		RuneAmount:  runeAmount,
+	}
+}
+
+// Type return POL reserve drain event type
+func (m *EventPOLReserveDrain) Type() string {
+	return POLReserveDrainEventType
+}
+
+// Events convert EventPOLReserveDrain to key value pairs used in cosmos
+func (m *EventPOLReserveDrain) Events() (cosmos.Events, error) {
+	return cosmos.Events{
+		cosmos.NewEvent(
+			m.Type(),
+			cosmos.NewAttribute("pool", m.Pool.String()),
+			cosmos.NewAttribute("basis_points", m.BasisPoints.String()),
 			cosmos.NewAttribute("rune_amount", m.RuneAmount.String()),
 		),
 	}, nil

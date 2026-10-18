@@ -239,6 +239,8 @@ type KeeperLiquidityFees interface {
 	SavePrevCyclePoolLiquidityFee(ctx cosmos.Context, asset common.Asset, fee uint64)
 	GetPrevCyclePoolLiquidityFee(ctx cosmos.Context, asset common.Asset) (uint64, error)
 	GetEffectivePoolLiquidityFee(ctx cosmos.Context, asset common.Asset) (uint64, error)
+	GetPOLCycleLiquidityFee(ctx cosmos.Context, asset common.Asset) (uint64, error)
+	ResetPOLCycleLiquidityFees(ctx cosmos.Context)
 }
 
 // AffiliateLiquidityFee is a single accumulator entry returned by
@@ -363,6 +365,12 @@ type KeeperPOLReserve interface {
 	SetPOLReserveDeposit(ctx cosmos.Context, data POLReserveDeposit) error
 	GetPOLReserveDepositIterator(ctx cosmos.Context) cosmos.Iterator
 	IsPOLReserveEligiblePool(ctx cosmos.Context, asset common.Asset) bool
+	GetPOLReserveTarget(ctx cosmos.Context) (common.Asset, bool, error)
+	SetPOLReserveTarget(ctx cosmos.Context, asset common.Asset)
+	ClearPOLReserveTarget(ctx cosmos.Context)
+	GetPOLReserveDrainState(ctx cosmos.Context) (common.Asset, cosmos.Uint, bool, error)
+	SetPOLReserveDrainState(ctx cosmos.Context, asset common.Asset, owed cosmos.Uint)
+	ClearPOLReserveDrainState(ctx cosmos.Context)
 }
 
 type KeeperStableReserve interface {
@@ -463,6 +471,7 @@ type KeeperMimir interface {
 	DeleteNodeMimirs(ctx cosmos.Context, key string)
 	PurgeOperationalNodeMimirs(ctx cosmos.Context)
 	GetMimirIterator(ctx cosmos.Context) cosmos.Iterator
+	ListMimirsWithPrefix(ctx cosmos.Context, prefix string) ([]Mimir, error)
 	GetNodeMimirIterator(ctx cosmos.Context) cosmos.Iterator
 	DeleteMimir(_ cosmos.Context, key string) error
 	GetNodePauseChain(ctx cosmos.Context, acc cosmos.AccAddress) int64
