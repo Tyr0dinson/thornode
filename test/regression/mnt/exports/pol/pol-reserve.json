@@ -12,7 +12,7 @@
             "@type": "/cosmos.crypto.secp256k1.PubKey",
             "key": "AmF4AUTWZEUSBtgqiR5n2Lgic/Yrr1mWupMo5TAubNRO"
           },
-          "sequence": "9"
+          "sequence": "13"
         },
         {
           "@type": "/cosmos.auth.v1beta1.ModuleAccount",
@@ -146,7 +146,7 @@
           "address": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
           "coins": [
             {
-              "amount": "172849712340",
+              "amount": "161364167210",
               "denom": "rune"
             }
           ]
@@ -155,7 +155,7 @@
           "address": "tthor1fns25sytpf2gsdlg76g45620u5axm4mk8nss6j",
           "coins": [
             {
-              "amount": "220968",
+              "amount": "221968",
               "denom": "rune"
             }
           ]
@@ -164,7 +164,7 @@
           "address": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
           "coins": [
             {
-              "amount": "35000002011054",
+              "amount": "34999987143718",
               "denom": "rune"
             }
           ]
@@ -173,7 +173,7 @@
           "address": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
           "coins": [
             {
-              "amount": "2526828316557",
+              "amount": "2538339237791",
               "denom": "rune"
             }
           ]
@@ -191,7 +191,7 @@
           "address": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
           "coins": [
             {
-              "amount": "5000319739081",
+              "amount": "5000309229313",
               "denom": "rune"
             }
           ]
@@ -240,7 +240,7 @@
       "last_chain_heights": [
         {
           "chain": "BTC",
-          "height": "2"
+          "height": "6"
         },
         {
           "chain": "ETH",
@@ -250,13 +250,13 @@
       "liquidity_providers": [
         {
           "asset": "BTC.BTC",
-          "asset_deposit_value": "12721",
-          "last_add_height": "6",
+          "asset_deposit_value": "804094",
+          "last_add_height": "19",
           "pending_asset": "0",
           "pending_rune": "0",
           "rune_address": "tthor1fns25sytpf2gsdlg76g45620u5axm4mk8nss6j",
-          "rune_deposit_value": "11564940",
-          "units": "12116535"
+          "rune_deposit_value": "572709271",
+          "units": "676060790"
         },
         {
           "asset": "BTC.BTC",
@@ -271,13 +271,13 @@
         },
         {
           "asset": "ETH.ETH",
-          "asset_deposit_value": "10752365",
-          "last_add_height": "8",
+          "asset_deposit_value": "195556",
+          "last_add_height": "24",
           "pending_asset": "0",
           "pending_rune": "0",
           "rune_address": "tthor1fns25sytpf2gsdlg76g45620u5axm4mk8nss6j",
-          "rune_deposit_value": "554390270",
-          "units": "721533694"
+          "rune_deposit_value": "19217011",
+          "units": "19337672"
         },
         {
           "asset": "ETH.ETH",
@@ -293,10 +293,15 @@
       ],
       "mimirs": [
         {
+          "key": "POLCYCLE",
+          "value": "5"
+        },
+        {
           "key": "POLRESERVEBLACKLIST-BTC-BTC"
         },
         {
-          "key": "POLRESERVEMAXDEPLOYMENT"
+          "key": "POLRESERVEMAXDEPLOYMENT",
+          "value": "10000000000"
         },
         {
           "key": "POLRESERVESYSTEMINCOMEBPS",
@@ -304,10 +309,10 @@
         }
       ],
       "network": {
-        "LPIncomeSplit": "9654",
-        "NodeIncomeSplit": "346",
-        "bond_reward_rune": "331739081",
-        "total_bond_units": "9"
+        "LPIncomeSplit": "9677",
+        "NodeIncomeSplit": "323",
+        "bond_reward_rune": "325229313",
+        "total_bond_units": "26"
       },
       "network_fees": [
         {
@@ -323,12 +328,18 @@
       ],
       "nodeMimirs": [
         {
+          "key": "POLCYCLE",
+          "signer": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
+          "value": "5"
+        },
+        {
           "key": "POLRESERVEBLACKLIST-BTC-BTC",
           "signer": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m"
         },
         {
           "key": "POLRESERVEMAXDEPLOYMENT",
-          "signer": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m"
+          "signer": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
+          "value": "10000000000"
         },
         {
           "key": "POLRESERVESYSTEMINCOMEBPS",
@@ -339,7 +350,7 @@
       "node_accounts": [
         {
           "active_block_height": "1",
-          "bond": "4999988000000",
+          "bond": "4999984000000",
           "bond_address": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
           "ip_address": "1.1.1.1",
           "node_address": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
@@ -358,19 +369,19 @@
       "pol_reserve_deposits": [
         {
           "asset": "BTC.BTC",
-          "rune_deposited": "23129883"
+          "rune_deposited": "1145418549"
         },
         {
           "asset": "ETH.ETH",
-          "rune_deposited": "1108780543"
+          "rune_deposited": "38434028"
         }
       ],
       "pools": [
         {
-          "LP_units": "100012116535",
+          "LP_units": "100676060790",
           "asset": "BTC.BTC",
-          "balance_asset": "105000000",
-          "balance_rune": "95461266750",
+          "balance_asset": "120000000",
+          "balance_rune": "85092175042",
           "decimals": "8",
           "pending_inbound_asset": "0",
           "pending_inbound_rune": "0",
@@ -378,10 +389,10 @@
           "synth_units": "0"
         },
         {
-          "LP_units": "100721533694",
+          "LP_units": "100019337672",
           "asset": "ETH.ETH",
-          "balance_asset": "1501000000",
-          "balance_rune": "77388445590",
+          "balance_asset": "1502000000",
+          "balance_rune": "76271992168",
           "decimals": "8",
           "pending_inbound_asset": "0",
           "pending_inbound_rune": "0",
@@ -406,19 +417,19 @@
         {
           "address": "0xe3c64974c78f5693bd2bc68b3221d58df5c6e877",
           "reclaimed": "0",
-          "score": "5542837600",
+          "score": "5532278112",
           "spent": "0"
         },
         {
           "address": "bcrt1q3wrmhnh2qe98rjse30pl7u6jxszjjwl44ls6uw",
           "reclaimed": "0",
-          "score": "113379832",
+          "score": "374221418",
           "spent": "0"
         },
         {
           "address": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
           "reclaimed": "0",
-          "score": "5656217433",
+          "score": "5906499536",
           "spent": "0"
         }
       ],
@@ -442,17 +453,17 @@
           ],
           "coins": [
             {
-              "amount": "105000000",
+              "amount": "120000000",
               "asset": "BTC.BTC",
               "decimals": "8"
             },
             {
-              "amount": "1501000000",
+              "amount": "1502000000",
               "asset": "ETH.ETH",
               "decimals": "8"
             }
           ],
-          "inbound_tx_count": "5",
+          "inbound_tx_count": "9",
           "membership": [
             "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4"
           ],
@@ -511,5 +522,5 @@
       }
     }
   },
-  "initial_height": 10
+  "initial_height": 27
 }

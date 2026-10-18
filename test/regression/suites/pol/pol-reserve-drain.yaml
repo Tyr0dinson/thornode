@@ -1,0 +1,300 @@
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-eth-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pools
+asserts:
+  - .|length == 2
+---
+########################################################################################
+# Build a POL Reserve position in BTC: route 10% of system income to pol_reserve and
+# deploy it into BTC with POLSelectAlgo=2.
+########################################################################################
+type: tx-mimir
+key: POLReserveSystemIncomeBps
+value: 1000
+signer: {{ addr_thor_dog }}
+sequence: 0
+---
+type: tx-mimir
+key: POLReserveMaxDeployment
+value: 10000000000
+signer: {{ addr_thor_dog }}
+sequence: 1
+---
+type: tx-mimir
+key: SystemIncomePOLPool-BTC-BTC
+value: 1
+signer: {{ addr_thor_dog }}
+sequence: 2
+---
+type: create-blocks
+count: 1
+---
+type: tx-mimir
+key: POLSelectAlgo
+value: 2
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .header.height == 3
+  - ..|select(.type?=="pol_reserve_deploy").pool == "BTC.BTC"
+  - ..|select(.type?=="pol_reserve_deploy").rune_amount == "${FIRST_DEPLOY=221968}"
+---
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+- tx:
+    id: '{{ observe_txid 1 }}'
+    chain: BTC
+    from_address: {{ addr_btc_fox }}
+    to_address: {{ addr_btc_dog }}
+    coins:
+      - amount: "5000000"
+        asset: "BTC.BTC"
+        decimals: 8
+    gas:
+      - amount: "10000"
+        asset: "BTC.BTC"
+    memo: "=:THOR.RUNE:{{ addr_thor_fox }}"
+  block_height: 2
+  finalise_height: 2
+  observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .header.height == 4
+  - ..|select(.type?=="pol_reserve_deploy").pool == "BTC.BTC"
+  - ..|select(.type?=="pol_reserve_deploy").rune_amount | tonumber > 20000000
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/liquidity_provider/{{ addr_module_pol_reserve }}
+asserts:
+  - .units | tonumber > 0
+---
+########################################################################################
+# Drain mimir votes are rejected until their preconditions hold
+########################################################################################
+# DrainPOLOn needs a DrainPOLPool
+type: tx-mimir
+key: DrainPOLOn
+value: 1
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/mimir/key/DrainPOLOn
+asserts:
+  - . == -1
+---
+# DrainPOLPool must hold a POL Reserve position
+type: tx-mimir
+key: DrainPOLPool-ETH-ETH
+value: 1
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/mimir/key/DrainPOLPool-ETH-ETH
+asserts:
+  - . == -1
+---
+type: tx-mimir
+key: DrainPOLPool-BTC-BTC
+value: 1
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/mimir/key/DrainPOLPool-BTC-BTC
+asserts:
+  - . == 1
+---
+# choosing the pool alone does not drain, and deployment into BTC continues
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .header.height == 7
+  - .|[..|select(.type?=="pol_reserve_drain")] | length == 0
+  - ..|select(.type?=="pol_reserve_deploy").pool == "BTC.BTC"
+---
+# DrainPOLOn needs DrainRunePerBlock
+type: tx-mimir
+key: DrainPOLOn
+value: 1
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/mimir/key/DrainPOLOn
+asserts:
+  - . == -1
+---
+type: tx-mimir
+key: DrainRunePerBlock
+value: 500000
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Lock LP withdrawals for 3 blocks after the last deposit. The last POL Reserve deposit
+# lands at height 10, so the position can be withdrawn from height 13.
+########################################################################################
+type: tx-mimir
+key: LiquidityLockUpBlocks
+value: 3
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .header.height == 10
+  - ..|select(.type?=="pol_reserve_deploy").pool == "BTC.BTC"
+  - ..|select(.type?=="pol_reserve_deploy").rune_amount == "${BLOCK_POL_REWARD=110984}"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pool/BTC.BTC
+asserts:
+  - .pol_reserve_rune_deposited == "${DEPOSITED=23674983}"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/liquidity_provider/{{ addr_module_pol_reserve }}
+asserts:
+  - .last_add_height == 10
+---
+########################################################################################
+# Height 11: DrainPOLOn=1. The drain starts owing RUNE from the next block, and the
+# POL Reserve stops depositing into the pool it is draining.
+########################################################################################
+type: tx-mimir
+key: DrainPOLOn
+value: 1
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/mimir/key/DrainPOLOn
+asserts:
+  - . == 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .header.height == 11
+  - .|[..|select(.type?=="pol_reserve_drain")] | length == 0
+  - .|[..|select(.type?=="pol_reserve_deploy")] | length == 0
+---
+# Height 12: still inside LiquidityLockUpBlocks, so nothing is withdrawn or owed yet
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .header.height == 12
+  - .|[..|select(.type?=="pol_reserve_drain")] | length == 0
+  - .|[..|select(.type?=="pol_reserve_deploy")] | length == 0
+---
+########################################################################################
+# Height 13: the lockup has passed. DrainRunePerBlock of RUNE is owed, and the drain
+# withdraws the whole basis points of the position that it covers back to pol_reserve.
+########################################################################################
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .header.height == 13
+  - .|[..|select(.type?=="pol_reserve_drain")] | length == 1
+  - ..|select(.type?=="pol_reserve_drain").pool == "BTC.BTC"
+  - ..|select(.type?=="pol_reserve_drain").basis_points == "211"
+  - ..|select(.type?=="pol_reserve_drain").rune_amount == "${DRAINED=499700}"
+  - ${DRAINED} <= 500000
+  # the drain is an internal RUNE-side withdrawal of the same basis points
+  - .|[..|select(.type?=="withdraw")] | length == 1
+  - ..|select(.type?=="withdraw").basis_points == "211"
+  - ..|select(.type?=="withdraw").emit_rune == "${DRAINED}"
+  - .|[..|select(.type?=="pol_reserve_deploy")] | length == 0
+---
+# the drained RUNE is back in pol_reserve next to three blocks of income
+type: check
+endpoint: http://localhost:1317/thorchain/balance/module/pol_reserve
+asserts:
+  - '[.coins[] | select(.denom == "rune") | .amount | tonumber] | add // 0 | . == 3 * ${BLOCK_POL_REWARD} + ${DRAINED}'
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pool/BTC.BTC
+asserts:
+  - .pol_reserve_rune_deposited | tonumber == ${DEPOSITED} - ${DRAINED}
+---
+# Height 14: the drain keeps withdrawing each block
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .header.height == 14
+  - ..|select(.type?=="pol_reserve_drain").pool == "BTC.BTC"
+  - ..|select(.type?=="pol_reserve_drain").basis_points == "215"
+  - ..|select(.type?=="pol_reserve_drain").rune_amount == "${DRAINED_2=498157}"
+  - .|[..|select(.type?=="pol_reserve_deploy")] | length == 0
+---
+type: check
+endpoint: http://localhost:1317/thorchain/balance/module/pol_reserve
+asserts:
+  - '[.coins[] | select(.denom == "rune") | .amount | tonumber] | add // 0 | . == ${HELD=1441793}'
+  - ${HELD} == 4 * ${BLOCK_POL_REWARD} + ${DRAINED} + ${DRAINED_2}
+---
+########################################################################################
+# Height 15: DrainPOLOn=0 stops the drain, and the held RUNE deploys into BTC again
+########################################################################################
+type: tx-mimir
+key: DrainPOLOn
+value: 0
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .header.height == 15
+  - .|[..|select(.type?=="pol_reserve_drain")] | length == 0
+  - ..|select(.type?=="pol_reserve_deploy").pool == "BTC.BTC"
+  - ..|select(.type?=="pol_reserve_deploy").rune_amount | tonumber == ${HELD} + ${BLOCK_POL_REWARD}
+---
+type: check
+endpoint: http://localhost:1317/thorchain/balance/module/pol_reserve
+asserts:
+  - '[.coins[] | select(.denom == "rune") | .amount | tonumber] | add // 0 | . == 0'
