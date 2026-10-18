@@ -45,8 +45,10 @@ deploy the sender compatibility release to all intended serving peers before
 this bounded receiver. A merge alone does not establish that rollout prerequisite.
 
 Each transfer allows at most 1,000 batches, 10,000 wire items across all categories,
-and 128 attestations per item. Framing rejects oversized or out-of-order messages
-before their body is read; decoded structure is checked before signature work or
+and 128 attestations per item. Framing rejects oversized frames before allocating
+or reading their payload. Each batch header is read whole (nine bytes) and its type
+and sequence number are checked before its data frame is read, whose size is bounded
+by the declared length; decoded structure is checked before signature work or
 publication. Exports split accumulated evidence into bounded items and fail before
 announcing a snapshot that exceeds the transfer limits. Incoming requests require
 current active membership and have ten admission slots, one per peer; only two
