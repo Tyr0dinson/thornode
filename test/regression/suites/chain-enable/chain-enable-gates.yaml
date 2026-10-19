@@ -1,0 +1,305 @@
+{{ template "default-state.yaml" }}
+---
+########################################################################################
+# a DOT pool exists before the chain is served, so a pre-activation deposit has a pool
+# it could wrongly reach, and errata has a pool it could wrongly unwind. The vault backs
+# the pool's DOT without carrying the chain - the held-but-not-carried state a pre-upgrade
+# chainless migration leaves - so DOT is still not advertised.
+########################################################################################
+type: state
+genesis:
+  app_state:
+    bank:
+      balances:
+        - address: {{ addr_module_asgard }}
+          coins:
+            - amount: "100000000000"
+              denom: rune
+    thorchain:
+      liquidity_providers:
+        - asset: DOT.DOT
+          asset_address: {{ addr_dot_cat }}
+          asset_deposit_value: "10000000000"
+          last_add_height: "1"
+          pending_asset: "0"
+          pending_rune: "0"
+          rune_address: {{ addr_thor_cat }}
+          rune_deposit_value: "100000000000"
+          units: "100000000000"
+      pools:
+        - LP_units: "100000000000"
+          asset: DOT.DOT
+          balance_asset: "10000000000"
+          balance_rune: "100000000000"
+          decimals: "8"
+          pending_inbound_asset: "0"
+          pending_inbound_rune: "0"
+          status: Available
+          synth_units: "0"
+      vaults:
+        - block_height: "0"
+          chains:
+            - THOR
+            - BTC
+            - ETH
+          coins:
+            - amount: "10000000000"
+              asset: DOT.DOT
+              decimals: "8"
+          inbound_tx_count: "1"
+          membership:
+            - {{ pubkey_dog }}
+          pub_key: {{ pubkey_dog }}
+          pub_key_eddsa: {{ pubkey_dog_eddsa }}
+          status: ActiveVault
+          type: AsgardVault
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/inbound_addresses
+asserts:
+  - '[.[]|select(.chain == "DOT")]|length == 0'
+---
+########################################################################################
+# a deposit into the DOT pool before activation is no-oped: the vault is not credited,
+# the pool is untouched, and a security event names the vault so operators can find it
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 1 }}"
+      chain: DOT
+      from_address: {{ addr_dot_fox }}
+      to_address: {{ addr_dot_dog }}
+      coins:
+        - amount: "500000000"
+          asset: "DOT.DOT"
+          decimals: 8
+      gas:
+        - amount: "10000"
+          asset: "DOT.DOT"
+      memo: "+:DOT.DOT"
+    block_height: 1
+    finalise_height: 1
+    observed_pub_key: {{ pubkey_dog_eddsa }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - '[.txs[].result.events[]|select(.type == "security")]|length == 1'
+  - '.txs[].result.events[]|select(.type == "security")|.msg == "inbound for unsupported chain no-oped: vault={{ pubkey_dog }}"'
+  - '.txs[].result.events[]|select(.type == "security")|.id == "{{ observe_txid 1 }}"'
+---
+type: check
+endpoint: http://localhost:1317/thorchain/vault/{{ pubkey_dog }}
+asserts:
+  - .coins[]|select(.asset=="DOT.DOT")|.amount == "10000000000"
+  - '[.chains[]|select(. == "DOT")]|length == 0'
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pool/DOT.DOT
+asserts:
+  - .balance_asset == "10000000000"
+  - .LP_units == "100000000000"
+---
+########################################################################################
+# errata of that never-credited deposit reverts it but leaves the pool alone: nothing
+# reached the pool, so unwinding it would take the deposit out of the other LPs
+########################################################################################
+type: tx-errata-tx
+signer: {{ addr_thor_dog }}
+tx_id: "{{ observe_txid 1 }}"
+chain: "DOT"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/tx/{{ observe_txid 1 }}
+asserts:
+  - .observed_tx.status == "reverted"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pool/DOT.DOT
+asserts:
+  - .balance_asset == "10000000000"
+  - .LP_units == "100000000000"
+---
+########################################################################################
+# the readiness proof is in place from here on, so each check below isolates one gate
+########################################################################################
+type: tx-network-fee
+signer: {{ addr_thor_dog }}
+block_height: 1
+chain: DOT
+transaction_size: 1000
+transaction_rate: 10
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# an enable mimir whose effective height is still in the future does nothing yet
+########################################################################################
+type: tx-mimir
+key: "EnableDOTChain"
+value: 1000000
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 2
+---
+type: check
+endpoint: http://localhost:1317/thorchain/mimir
+asserts:
+  - .ENABLEDOTCHAIN == 1000000
+---
+type: check
+endpoint: http://localhost:1317/thorchain/inbound_addresses
+asserts:
+  - '[.[]|select(.chain == "DOT")]|length == 0'
+---
+########################################################################################
+# a halted chain is never stamped: it would hand the chain a network-wide churn stop
+########################################################################################
+type: tx-mimir
+key: "HaltDOTChain"
+value: 1
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: tx-mimir
+key: "EnableDOTChain"
+value: 1
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 2
+---
+type: check
+endpoint: http://localhost:1317/thorchain/mimir
+asserts:
+  - .ENABLEDOTCHAIN == 1
+  - .HALTDOTCHAIN == 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/inbound_addresses
+asserts:
+  - '[.[]|select(.chain == "DOT")]|length == 0'
+---
+type: check
+endpoint: http://localhost:1317/thorchain/vault/{{ pubkey_dog }}
+asserts:
+  - '[.chains[]|select(. == "DOT")]|length == 0'
+---
+########################################################################################
+# unhalting is the only change, and the chain goes live
+########################################################################################
+type: tx-mimir
+key: "HaltDOTChain"
+value: 0
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 2
+---
+type: check
+endpoint: http://localhost:1317/thorchain/inbound_addresses
+asserts:
+  - '[.[]|select(.chain == "DOT")]|length == 1'
+  - '[.[]|select(.chain == "DOT")][0].pub_key == "{{ pubkey_dog_eddsa }}"'
+  - '[.[]|select(.chain == "DOT")][0].halted == false'
+---
+########################################################################################
+# a deposit after activation is credited to the vault and reaches the pool
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 2 }}"
+      chain: DOT
+      from_address: {{ addr_dot_fox }}
+      to_address: {{ addr_dot_dog }}
+      coins:
+        - amount: "500000000"
+          asset: "DOT.DOT"
+          decimals: 8
+      gas:
+        - amount: "10000"
+          asset: "DOT.DOT"
+      memo: "+:DOT.DOT"
+    block_height: 2
+    finalise_height: 2
+    observed_pub_key: {{ pubkey_dog_eddsa }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/vault/{{ pubkey_dog }}
+asserts:
+  - .coins[]|select(.asset=="DOT.DOT")|.amount == "10500000000"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pool/DOT.DOT
+asserts:
+  - .balance_asset == "10500000000"
+---
+########################################################################################
+# and the chain works outbound too: a swap to DOT is signed by the vault's eddsa key,
+# priced by the fee that proved the chain observable
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "1000000000"
+    asset: "rune"
+memo: "=:DOT.DOT:{{ addr_dot_fox }}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 1
+  - .[0].chain == "DOT"
+  - .[0].to_address == "{{ addr_dot_fox }}"
+  - .[0].coin.asset == "DOT.DOT"
+  - .[0].vault_pub_key_eddsa == "{{ pubkey_dog_eddsa }}"
+  - .[0].max_gas[0].asset == "DOT.DOT"
+---
+########################################################################################
+# unsetting the mimir after activation, as the runbook says to, keeps the chain stamped
+########################################################################################
+type: tx-mimir
+key: "EnableDOTChain"
+value: 0
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 2
+---
+type: check
+endpoint: http://localhost:1317/thorchain/mimir
+asserts:
+  - .ENABLEDOTCHAIN == 0
+---
+type: check
+endpoint: http://localhost:1317/thorchain/inbound_addresses
+asserts:
+  - '[.[]|select(.chain == "DOT")]|length == 1'
+---
+type: check
+endpoint: http://localhost:1317/thorchain/vault/{{ pubkey_dog }}
+asserts:
+  - '[.chains[]|select(. == "DOT")]|length == 1'
