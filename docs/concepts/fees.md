@@ -85,9 +85,9 @@ When a swap generates less slip than the applicable minimum, the liquidity fee i
 
 ### Dynamic L1 Minimum Fee
 
-For L1 pairs carrying an enrolled THORName affiliate, the minimum is set per THORName and trading pair rather than by the network-wide `L1SlipMinBps`, and increases or decreases with the fee revenue that affiliate generates on the pair.
+For L1 pairs carrying an enrolled THORName affiliate, the minimum is set per THORName — either per trading pair or, in global mode, once across all of its L1 pairs — rather than by the network-wide `L1SlipMinBps`, and is tuned to the fee revenue that affiliate generates.
 
-At the end of each epoch (~24h) the network totals the fee income that THORName produced on the pair, expresses it as a share of the pool's total volume over the same period, and compares that with the period before its last floor change. Income share up, the floor continues in the same direction; down, it reverses. Each step is one basis point, so the floor settles higher where THORChain is the only venue and lower where it competes.
+At the end of each epoch (~24h) the network totals the fee income that THORName produced, expressed as a share of the pool's total volume over the same period (all L1 pools in global mode). A new THORName first searches the allowed range in large jumps — the lowest floor, then the highest, then the midpoint, then halving towards whichever did best — so each test changes the price enough to show up in the income. Once the search settles, the floor moves one basis point at a time: income share up after a change, it continues in the same direction; down, it reverses. The floor settles higher where THORChain is the only venue and lower where it competes.
 
 An epoch only decides anything if it is large enough to carry signal — at least `L1DynamicFeeMinSwaps` swaps and `L1DynamicFeeMinVolumeUSD` of volume. Thinner epochs roll into the next one and the floor does not move, so a small integration simply never steps. See [ADR 026](../architecture/adr-026-dynamic-l1-min-fee-per-thorname.md) for the rule, bounds and events.
 
@@ -95,11 +95,14 @@ This only affects the liquidity fee charged to the swapper. The affiliate's own 
 
 Enrollment is per-THORName, set by node operators via the operational mimir `DYNAMICFEE-WHITELIST-<thorname>`:
 
-| Value        | State        | Effect                                                                             |
-| ------------ | ------------ | ---------------------------------------------------------------------------------- |
-| `1`          | Active       | The dynamic floor is applied to the THORName's swaps.                              |
-| `2`          | Monitor      | The floor is calculated and stored but **not** applied — swaps use `L1SlipMinBps`. |
-| `0` / absent | Not enrolled | Swaps use `L1SlipMinBps`.                                                          |
+| Value        | State        | Effect                                                                            |
+| ------------ | ------------ | --------------------------------------------------------------------------------- |
+| `1`          | Per-pair     | A floor per trading pair is applied to the THORName's swaps.                      |
+| `2`          | Global       | One floor, tuned across all the THORName's L1 pairs, is applied to every L1 pair. |
+| `3` / `4`    | Monitor      | As `1` / `2`, but the floor is **not** applied — swaps use `L1SlipMinBps`.        |
+| `0` / absent | Not enrolled | Swaps use `L1SlipMinBps`.                                                         |
+
+Changing the value restarts that THORName's floor from scratch, including the search. To restart a THORName without changing its mode, set it to `0` and back.
 
 THORNames containing `_` or `+` cannot currently be enrolled via `DYNAMICFEE-WHITELIST-<thorname>` because of mimir key charset restrictions. ([REVSHARE](../affiliate-guide/affiliate-fee-guide.md#revenue-share-revshare) solved the same issue with an explicit alias; dynamic fee does not.)
 

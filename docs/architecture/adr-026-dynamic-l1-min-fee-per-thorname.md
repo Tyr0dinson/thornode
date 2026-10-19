@@ -2,6 +2,37 @@
 
 ## Changelog
 
+- 2026-10-19: **Bracket search, global mode, reset on change.** Three
+  changes:
+
+  1. **Bracket search.** A ±1 bps step moves the floor too little for
+     the volume response to stand out from noise, so a record now
+     starts by searching `[floor, ceiling]` in large jumps: it measures
+     its starting bps, then the ceiling, then the midpoint, then keeps
+     halving the gap next to the best value measured so far (1 → 20 →
+     10 → … on defaults; about 7-9 tests to converge on `[1, 20]`).
+     Each test holds for `L1DynamicFeeProbeEpochs` sealed (gated)
+     epochs, default 1. Once the gaps beside the best value are empty
+     the record hands off to the existing ±step controller at that
+     value, which follows drift from there. See "Search rule" below.
+  2. **Global mode.** The whitelist value now also selects the mode:
+     `1` = per-pair (unchanged), `2` = global — one floor per thorname,
+     tuned on all its L1 pairs together and applied on every L1 pair.
+     Global mode pools a thorname's thin pairs into one signal, so it
+     clears the liquidity gate far sooner. Monitor mode moves from `2`
+     to `3` (per-pair) and `4` (global). No mainnet thorname used `2`.
+  3. **Reset on change.** Any change to a thorname's effective
+     `DYNAMICFEE-WHITELIST-{thorname}` value — enabling it, switching
+     mode, entering or leaving monitor, or removing it — immediately
+     deletes all of its dynamic-fee state, so it rediscovers its floor
+     from scratch. This is also how to unstick a record: vote it to
+     `0`, then back.
+
+  Adds `search_done` and `probes` to records, `phase` to both REST
+  record endpoints, and `probes` to the per-thorname endpoint. Records
+  that exist at the upgrade keep their current `dynamic_bps` and start
+  a search from it.
+
 - 2026-09-19: **Noise reduction.** Two changes, driven by live data from
   a small integration whose epochs held a median of 4 swaps against a
   noise-crossover near 70:
@@ -92,11 +123,15 @@ Implemented
 ## TL;DR
 
 Replace the single network-wide `L1SlipMinBPS` with a per-`(thorname, pair)`
-dynamic floor tuned by an on-chain **closed-loop revenue gradient**. Each
-24h epoch, the controller asks a single question for each tracked record:
-**did the previous floor change increase or decrease `fees_tor` for this
-pair?** Fees up → continue in the same direction. Fees down → reverse.
-Within `[1, 100]` bps bounds and a configurable percentage deadband.
+(or, in global mode, per-thorname) dynamic floor tuned on-chain. A new
+record first runs a **bracket search** over `[floor, ceiling]` in large
+jumps to find the bps that earns the most fee revenue, then hands off
+to a **closed-loop revenue gradient** that follows drift. Each 24h
+epoch, that controller asks a single question for each tracked record:
+**did the previous floor change increase or decrease the fee signal
+for this pair?** Fees up → continue in the same direction. Fees down →
+reverse. Within `[floor, ceiling]` bps bounds and a configurable
+percentage deadband.
 
 Tracking is denominated in **TOR** (THORChain Oracle Rune — the on-chain
 USD-pegged unit, 1e8-precision). The swap-completion hook converts
@@ -104,8 +139,8 @@ RUNE-denominated volume and fees to TOR via `DollarsPerRune` so the
 controller signal is independent of RUNE/USD price movements.
 
 Participation is governance-curated: a thorname is enrolled via the
-operational Mimir `DYNAMICFEE-WHITELIST-{thorname}` with two on-states —
-active and monitor. Scope: L1↔L1 swaps only; registered thornames only.
+operational Mimir `DYNAMICFEE-WHITELIST-{thorname}`, whose value picks
+per-pair or global mode, each either live or monitor-only. Scope: L1↔L1 swaps only; registered thornames only.
 A master Mimir (`L1DynamicFeeEnabled`) cleanly disables the entire
 mechanism. Goal: charge more where demand is inelastic, less where it is
 competitive — directly optimizing the protocol's fee-revenue objective.
@@ -182,16 +217,21 @@ or reverses when fees responded negatively.
   whitelisted via Mimir (`DYNAMICFEE-WHITELIST-{thorname}`). Raw-address
   affiliates, unregistered thornames, and registered-but-unwhitelisted
   thornames receive `L1SlipMinBPS` and are not tracked.
-- **Whitelist states:** `1` = active (dynamic floor applied at swap time),
-  `2` = monitor (state computed but not applied — swaps use
-  `L1SlipMinBPS`), `0` or absent = not enrolled.
+- **Whitelist states:** `1` = per-pair (dynamic floor per L1 pair,
+  applied at swap time), `2` = global (one dynamic floor across all of
+  the thorname's L1 pairs, applied at swap time), `3` / `4` = monitor
+  for per-pair / global (state computed but not applied — swaps use
+  `L1SlipMinBPS`), `0` or absent = not enrolled. Any change to the
+  value resets the thorname's state.
 - **Signal:** `fees_tor` (TOR-denominated, 1e8-precision USD value)
   accumulated per `(thorname, pair)` per epoch, compared across the most
   recent bps change via window averaging. RUNE-denominated values are
   converted at the swap-completion hook via `DollarsPerRune`. Skipped
   entirely when `DollarsPerRune == 0` (no TOR anchors).
 - **Epoch:** block-count based, default ~14,400 blocks (≈24h at 6s blocks).
-- **Movement:** ±1 bps per epoch within `[1, 100]` bps bounds, with a
+- **Movement:** a bracket search in large jumps (floor or starting bps,
+  ceiling, midpoint, then halving) until it converges, then ±1 bps per
+  epoch, all within `[floor, ceiling]` bps bounds and with a
   configurable percentage deadband on the fee delta (default 10%).
 - **Objective:** directly maximize protocol fee revenue per record,
   measured in USD-equivalent terms (TOR). Volume matters only
@@ -215,17 +255,24 @@ or reverses when fees responded negatively.
   field(s). Raw-address affiliates are ignored by this mechanism.
 - **Whitelist state**: The value of the operational Mimir
   `DYNAMICFEE-WHITELIST-{thorname}`. Values:
-  - `1` = **active**: the thorname participates fully. Accumulators
-    run, `dynamic_bps` is maintained each epoch, and the value is
-    applied at swap-time.
-  - `2` = **monitor**: the thorname participates _in data collection
-    only_. Accumulators run and `dynamic_bps` is maintained as if
-    active, but at swap-time the swap still uses `L1SlipMinBPS`.
-    Intended for previewing a thorname's behaviour before promoting
-    to active.
-  - `0` or absent = **not enrolled**: no tracking, no state, no
-    dynamic floor. Swaps use `L1SlipMinBPS`.
-- **Dynamic bps**: The per-`(thorname, pair)` minimum slip floor, in
+  - `1` = **per-pair**: the thorname participates fully, with one
+    record per L1 pair. Accumulators run, `dynamic_bps` is maintained
+    each epoch, and the value is applied at swap-time.
+  - `2` = **global**: as `1`, but with a single record for the
+    thorname, keyed by the pair placeholder `*|*`. Every in-scope swap
+    on any L1 pair credits it, and its `dynamic_bps` applies to every
+    L1 pair. Its normalization denominator is the epoch's volume
+    across all L1 pairs.
+  - `3` / `4` = **monitor** (per-pair / global): the thorname
+    participates _in data collection only_. Accumulators run and
+    `dynamic_bps` is maintained as in `1` / `2`, but at swap-time the
+    swap still uses `L1SlipMinBPS`. Intended for previewing a
+    thorname's behaviour. Note the signal measured in monitor mode is
+    the response to `L1SlipMinBPS`, not to the computed floor.
+  - `0`, absent, or any other value = **not enrolled**: no tracking,
+    no state, no dynamic floor. Swaps use `L1SlipMinBPS`.
+- **Dynamic bps**: The per-`(thorname, pair)` (or per-thorname, in
+  global mode) minimum slip floor, in
   basis points, maintained by the algorithm. Starts at
   `L1DynamicFeeFloorBPS` (default 1 bps) when a record is created,
   and is bounded by `L1DynamicFeeFloorBPS` and
@@ -244,37 +291,51 @@ or reverses when fees responded negatively.
 
 ### Record lifecycle
 
-- A per-`(thorname, pair)` record is created lazily on the first
-  in-scope swap carrying that thorname _while the thorname's whitelist
-  state is `1` (active) or `2` (monitor)_. At creation, the
+- A per-`(thorname, pair)` record (one `*|*` record in global mode) is
+  created lazily on the first in-scope swap carrying that thorname
+  _while the thorname's whitelist state is `1`-`4`_. At creation, the
   accumulator is zero and `dynamic_bps` is initialized to
-  `L1DynamicFeeFloorBPS`. Starting at the floor means the algorithm's
-  first real move is always **up** — a probe into the pricing
-  landscape to generate the first gradient datapoint.
-- The first epoch with activity seals a history entry at
-  `bps_at_close = floor`. The second consecutive epoch with activity
-  probes up to `floor + step`; from that point onward there is a prior
-  bps change to evaluate, and subsequent moves follow the gradient
-  rule.
-- When a thorname's whitelist state is changed to `0` or the key is
-  removed, **all** state for that thorname is deleted immediately:
-  every `(thorname, pair)` record and every in-progress accumulator.
-  Re-adding the thorname to the whitelist is a cold start.
-- While a thorname is in `2` (monitor), `dynamic_bps` is still
+  `L1DynamicFeeFloorBPS`.
+- A new record is in the **search** phase. Each sealed epoch is
+  credited to the probe for the bps that governed it; once a probe
+  holds `L1DynamicFeeProbeEpochs` epochs the record jumps to the next
+  value per the search rule. From the floor that is the ceiling, then
+  the midpoint, then halving around the best value. When the search
+  converges, the record moves to the **track** phase at the best
+  value: its history is cleared and the gradient rule takes over from
+  a cold start there. The probes stay on the record for inspection.
+- When a thorname's effective whitelist value **changes** — to `0`,
+  between `1` and `2`, into or out of monitor — **all** state for that
+  thorname is deleted immediately (in the Mimir handler, not at the
+  next epoch): every record and every in-progress accumulator. The
+  next swap starts a fresh record at the floor and a fresh search. A
+  vote that leaves the effective value unchanged does nothing; to
+  reset a live thorname, vote it to `0`, then back. A key deleted
+  outright (rather than set to `0`) is not a change the handler sees;
+  its records are pruned after 30 idle epochs.
+- While a thorname is in `3` or `4` (monitor), `dynamic_bps` is still
   computed and stored each epoch but is **not** applied at swap
-  time. Promoting from `2` to `1` lets the current stored
-  `dynamic_bps` take effect on the next swap, without re-learning.
+  time. Promoting to `1` or `2` is a change, so it resets the thorname
+  and the live controller starts from scratch.
 - After 30 consecutive epochs with no activity (while still
   whitelisted), the record is pruned in full (see Epoch-boundary
   algorithm §3).
 
 ### State
 
-**Per `(thorname, pair)` record:**
+**Per `(thorname, pair)` record** (pair `*|*` in global mode):
 
 - `dynamic_bps: uint64` — current floor maintained by the algorithm.
   Only consulted at swap-time when the owning thorname is in
-  whitelist state `1`.
+  whitelist state `1` or `2`.
+- `search_done: bool` — `false` while the bracket search runs, `true`
+  once it has converged and the gradient rule is in charge. The zero
+  value means "searching", so records that predate the search start
+  one from their current `dynamic_bps`.
+- `probes: []Probe` — one entry per bps value the search has tested:
+  `bps`, `signal_sum` (sum of the per-epoch normalized signal) and
+  `epochs` (sealed epochs measured). The probe's mean is
+  `signal_sum / epochs`.
 - `last_active_epoch: uint64` — most recent epoch in which the
   thorname had any in-scope activity on this pair. Used for the
   30-epoch prune rule.
@@ -319,7 +380,7 @@ denominator is meant to measure market activity.
 | --------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `L1DynamicFeeEnabled`             | 0       | Master on/off. 0 disables the entire mechanism.                                                                                                   |
 | `L1DynamicFeeEpochBlocks`         | 14400   | Epoch length in blocks (~24h at 6s).                                                                                                              |
-| `DYNAMICFEE-WHITELIST-{thorname}` | absent  | Per-thorname enrollment: `1` = active, `2` = monitor (collect only), `0`/absent = not enrolled.                                                   |
+| `DYNAMICFEE-WHITELIST-{thorname}` | absent  | Per-thorname enrollment and mode: `1` = per-pair, `2` = global, `3`/`4` = per-pair/global monitor (collect only), other = not enrolled.           |
 | `L1DynamicFeeFloorBPS`            | 1       | Lower bound of dynamic bps.                                                                                                                       |
 | `L1DynamicFeeCeilingBPS`          | 20      | Upper bound of dynamic bps.                                                                                                                       |
 | `L1DynamicFeeStepBPS`             | 1       | Magnitude of movement per epoch.                                                                                                                  |
@@ -327,6 +388,7 @@ denominator is meant to measure market activity.
 | `L1DynamicFeeWindowEpochs`        | 3       | Epochs averaged on each side of the last bps change when measuring the gradient. Clamped into `[1, 30]` at read time.                             |
 | `L1DynamicFeeMinSwaps`            | 30      | Swaps an epoch must hold before it may seal a decision. Below this the accumulator rolls into the next epoch. `0` disables this half of the gate. |
 | `L1DynamicFeeMinVolumeUSD`        | 50000   | Whole USD of affiliate volume an epoch must hold before it may seal. Converted to TOR internally. `0` disables this half of the gate.             |
+| `L1DynamicFeeProbeEpochs`         | 1       | Sealed epochs the bracket search measures at each tested bps before choosing the next one. Values below 1 read as 1.                              |
 
 The whitelist key's `{thorname}` suffix is the registered thorname
 name, normalized per thornode's existing Mimir-key conventions
@@ -366,9 +428,10 @@ DollarsPerRune / 1e8`). When `DollarsPerRune == 0` (no TOR anchor
    spurious controller reversals.
 4. **Thorname credit.** For each affiliate entry in the memo:
    - If the entry is a registered thorname whose whitelist state is
-     `1` (active) or `2` (monitor), add the swap's full `volume_tor`
-     and `fees_tor` to the `(thorname, pair)` current-epoch
-     accumulator. (Multi-affiliate memos credit each eligible listed
+     `1`-`4`, add the swap's full `volume_tor` and `fees_tor` to the
+     thorname's current-epoch accumulator: `(thorname, pair)` in
+     per-pair mode (`1`, `3`), `(thorname, *|*)` in global mode
+     (`2`, `4`). (Multi-affiliate memos credit each eligible listed
      thorname in full — no proportional split.)
    - Otherwise (raw address, unregistered thorname, or a registered
      thorname with whitelist state `0` / absent), no thorname-level
@@ -389,12 +452,13 @@ For an in-scope L1 swap, at the point slip fees are computed:
 2. If the swap has no affiliate, or the affiliate is a raw address, or
    the affiliate thorname is not registered → use `L1SlipMinBPS`.
 3. Look up the affiliate thorname's whitelist state:
-   - State `1` (active): if a `(thorname, pair)` record exists →
+   - State `1` (per-pair) or `2` (global): if the thorname's record
+     for this pair (`*|*` in global mode) exists →
      use `record.dynamic_bps`. Otherwise → use `L1SlipMinBPS` (the
      first in-scope swap for this pair creates the record but the
      dynamic floor is not applied until after the first completed
      epoch, per Record lifecycle).
-   - State `2` (monitor): use `L1SlipMinBPS`. Attribution still
+   - State `3` or `4` (monitor): use `L1SlipMinBPS`. Attribution still
      runs (step 3 of Attribution rules) so the thorname's
      `dynamic_bps` continues to be computed each epoch, but it is
      **not** applied to the swap.
@@ -405,7 +469,7 @@ For an in-scope L1 swap, at the point slip fees are computed:
    an integrator co-lists an active thorname as a token secondary to
    inherit its discount — to benefit from a thorname's dynamic bps,
    you must give that thorname the largest share of the affiliate
-   revenue. If the largest-split thorname is in state `2` or
+   revenue. If the largest-split thorname is in a monitor state or
    unenrolled, step 3 falls through to `L1SlipMinBPS` for this
    swap — secondary listed thornames do not "rescue" the floor.
    Attribution credit to all eligible listed thornames is unchanged
@@ -415,15 +479,17 @@ For an in-scope L1 swap, at the point slip fees are computed:
 
 At block heights where `block_height % L1DynamicFeeEpochBlocks == 0`:
 
-1. **Cleanup removed thornames.** For every thorname with records
-   whose `DYNAMICFEE-WHITELIST-{thorname}` is now `0` / absent, delete
-   all dynamic-fee state for that thorname.
+1. **Cleanup removed thornames.** For every thorname whose
+   `DYNAMICFEE-WHITELIST-{thorname}` holds a value outside `1`-`4`,
+   delete all dynamic-fee state for that thorname. (A change of value
+   already did this in the Mimir handler; this is the backstop.)
 
 2. **Seal accumulators.** Iterate all `(thorname, pair)` accumulators
    from this epoch. For each:
 
    - Fold the pair's pool accumulator into
-     `accumulator.pool_volume_tor`.
+     `accumulator.pool_volume_tor` — for a global (`*|*`) accumulator,
+     the sum of every pair's pool accumulator.
    - **Liquidity gate.** If `accumulator.swap_count < MinSwaps` or
      `accumulator.volume_tor < MinVolumeUSD * 1e8`, the epoch is too
      thin to carry signal: set `record.last_active_epoch =
@@ -438,11 +504,13 @@ current_epoch` (so a permanently-gated record is not pruned out from
    - Load the record; append a new history entry
      `{epoch, volume_tor=accumulator.volume_tor,
 fees_tor=fees_now, bps_at_close=TBD}`.
-   - Compute the next `bps` via the gradient rule below.
+   - Compute the next `bps`: via the search rule below while
+     `search_done` is false, otherwise via the gradient rule.
    - Write `bps_at_close = new_bps` into the just-appended entry.
    - Set `record.dynamic_bps = new_bps`,
      `record.last_active_epoch = current_epoch`.
-   - If `new_bps != old_bps`, emit `dynamic_l1_fee_update`.
+   - If `new_bps != old_bps`, or the search just converged, emit
+     `dynamic_l1_fee_update`.
    - Delete the accumulator.
 
    After the loop, delete every pool accumulator: they are per-epoch by
@@ -486,6 +554,44 @@ if dir == -1 and feesIncreased:  return "continue_down", clamp(old_bps - step, f
 if dir == -1 and not feesIncreased: return "reverse_up",   clamp(old_bps + step, floor, ceiling)
 ```
 
+**Search rule** (step 2, while `search_done` is false):
+
+```text
+signal = signal(newest history entry)       # skip (hold) if pool volume is 0
+probes[old_bps].signal_sum += signal; probes[old_bps].epochs += 1
+if probes[old_bps].epochs < ProbeEpochs:
+    return "search_measure", old_bps
+
+P    = completed probes with floor <= bps <= ceiling, sorted by bps
+best = P[0]; for p in P[1:]:                # a higher bps must win by more
+    if mean(p) > mean(best) * (1 + deadband): best = p   # than the deadband
+
+left  = untested ints between best and the nearest tested bps below it,
+        or [floor, best) if none is below (test the floor itself first)
+right = untested ints between best and the nearest tested bps above it,
+        or (best, ceiling] if none is above (test the ceiling itself first)
+
+if left and right are both empty:
+    search_done = true; history = []
+    return "search_converged", best.bps
+next = the larger side (ties → left): its untested floor/ceiling if
+       open-ended, else the midpoint (lo + hi) / 2
+return "search_probe", next
+```
+
+Assuming revenue is unimodal in bps, the optimum lies between the best
+value's nearest tested neighbours, so only those two gaps are searched
+and each test roughly halves one. The deadband preference means a
+higher fee is only adopted when it is clearly better; on a near-tie the
+lower fee stands. Every test is a single noisy reading and a losing
+side is discarded for good, which is why the gradient rule takes over
+after convergence — and why a governance reset (vote `0`, then back)
+exists for a search that settled badly. If the floor or ceiling moves
+mid-search, probes outside the new range are ignored.
+
+Worked example on `[1, 20]` with revenue `b * (30 - b)` (peak at 15):
+tests 1, 20, 10, 15, 12, 17, 13, 14, 16, then converges on 15.
+
 The window averaging handles the case where the most recent bps change
 is several epochs behind the current epoch: `feesBefore` draws up to 3
 epochs ending just before the change, `feesAfter` draws up to 3 of the
@@ -528,9 +634,15 @@ change at an epoch boundary:
   "pool_volume_tor": "980000000000",
   "delta_pct_bps": "2500",
   "reason":        "cold_start_probe" | "continue_up" | "continue_down" |
-                   "reverse_up" | "reverse_down"
+                   "reverse_up" | "reverse_down" | "search_probe" |
+                   "search_converged"
 }
 ```
+
+For the search reasons, `fees_before` is the best probe's mean signal,
+`fees_after` the mean of the probe just completed, and `delta_pct_bps`
+is `0`. `search_converged` is emitted even when the best value equals
+the bps just tested, so indexers see the hand-off.
 
 `fees_before` and `fees_after` are **normalized signals**
 (`fees_tor * 1e12 / pool_volume_tor`), not TOR fee levels. The
@@ -557,17 +669,27 @@ real gradient is evaluated, costing one spurious step. Store migration
 accumulator at the upgrade height, so the first sealed epoch measures
 fees and pool volume over the same span. Records are left alone.
 
+The bracket search needs no store migration either. `search_done`
+unmarshals as `false` on records that predate it, so each existing
+record starts a search from its current `dynamic_bps` (testing it
+first, then the larger untested side) rather than dropping back to the
+floor, and the cold-start probes above never run. Whitelist value `2`
+changes meaning from monitor to global; no mainnet thorname held `2`
+at the upgrade, so no record changes mode.
+
 ### REST endpoints
 
 - `GET /thorchain/dynamic_l1_fees`
   Returns all currently-tracked `(thorname, pair)` records with their
-  current `dynamic_bps`, whitelist state (`1` or `2`),
-  `last_active_epoch`, and the latest epoch's `fees_tor`
-  (1e8-precision USD value).
+  current `dynamic_bps`, whitelist state (`1`-`4`), `phase`
+  (`search` or `track`), `last_active_epoch`, and the latest epoch's
+  `fees_tor` (1e8-precision USD value). A global-mode record's pair is
+  `*|*`.
 
 - `GET /thorchain/dynamic_l1_fees/{thorname}`
   Returns the thorname's whitelist state and all pairs tracked for
-  it, each with up to 30 epochs of history
+  it, each with its `phase`, its search `probes` (`bps`, mean
+  `signal`, `epochs`), and up to 30 epochs of history
   (`volume_tor`, `fees_tor`, `bps_at_close`).
 
 - `GET /thorchain/dynamic_l1_fees_current`
@@ -633,8 +755,9 @@ is used anywhere in the algorithm.
   controller sees fees drop and reverses. Additional mitigations:
   (a) **governance-curated whitelisting** — a thorname cannot
   participate at all without being explicitly added via Mimir,
-  (b) **monitor mode** (`2`) which lets operators observe a thorname's
-  behaviour before promoting to active, (c) slow ±1 bps step,
+  (b) **monitor mode** (`3` / `4`) which lets operators observe a
+  thorname's behaviour before promoting it, (c) the deadband preference
+  for the lower fee in the search, and the slow ±1 bps step after it,
   (d) the percentage deadband, and (e) the configurable window
   averaging (`L1DynamicFeeWindowEpochs`) which smooths single-epoch
   spikes.
@@ -654,20 +777,25 @@ is used anywhere in the algorithm.
 - Unit tests on attribution: L1-only filtering, pair normalization,
   RUNE-endpoint handling, multi-affiliate credit, streaming sub-swap
   crediting, raw-address / unregistered-thorname exclusion,
-  whitelist state gating (state `0`/absent, `1`, `2`).
+  whitelist state gating (state `0`/absent, `1`-`4`), and global-mode
+  crediting into one `*|*` record.
 - Unit tests on epoch rollover: sealing into history, floor/ceiling
   clamping at either bound, pruning at 30 epochs, cold start,
   whitelist removal deleting state.
 - Unit test confirming the solo-on-pair regression: a thorname that
   is the only affiliate active on its pair still sees its floor
   move, unlike the previous share-based design.
-- Unit tests on fee-floor selection: whitelist state `1` applies
-  `dynamic_bps`, state `2` uses `L1SlipMinBPS` but still collects,
-  largest-bps-split selection in multi-affiliate memos.
-- Regression tests covering a multi-epoch scenario where a thorname
-  is added to the whitelist as `2` (monitor), observed, promoted to
-  `1` (active), earns a bps reduction, is demoted back to `2`, and
-  finally removed.
+- Unit tests on fee-floor selection: whitelist states `1` and `2`
+  apply `dynamic_bps` (per pair / from the `*|*` record), states `3`
+  and `4` use `L1SlipMinBPS` but still collect, largest-bps-split
+  selection in multi-affiliate memos.
+- Unit tests on the search: the next-value rule over every gap shape,
+  the deadband's lower-fee preference, a full run converging on a
+  unimodal curve, `L1DynamicFeeProbeEpochs`, and a pre-existing
+  record searching from its current bps.
+- A Mimir-handler test that a change of effective whitelist value
+  wipes the thorname's state, while a sub-threshold vote, a re-vote of
+  the value in effect, and other thornames' state are left alone.
 
 ### Rollout
 
@@ -676,13 +804,13 @@ is used anywhere in the algorithm.
 2. Tune operational Mimir defaults if needed in stagenet.
 3. Flip `L1DynamicFeeEnabled = 1`. Still no effect: no thornames
    are whitelisted.
-4. Add a small set of thornames to the whitelist in state `2`
-   (monitor). Observe their computed `dynamic_bps` via events and
-   REST over a few epochs to validate the algorithm against real
-   flow.
-5. Promote selected thornames to state `1` (active). The
-   monitor-mode history is preserved, so the first floor decision
-   under active mode can draw on epochs already observed.
+4. Optionally add a small set of thornames to the whitelist in state
+   `3` or `4` (monitor). Observe their accrual via events and REST
+   over a few epochs to validate attribution against real flow.
+5. Set selected thornames to `1` (per-pair) or `2` (global). This
+   resets them, so the live search starts from the floor. Prefer `2`
+   for a thorname whose individual pairs are too thin to clear the
+   liquidity gate.
 6. Adjust bounds / step / deadband as needed based on observed
    behavior.
 
