@@ -146,11 +146,14 @@ def main():
     parser.add_argument("--budget-seconds", type=positive_int, default=1800)
     args = parser.parse_args()
     data = json.loads(MANIFEST.read_text())
-    toolchain = next(
-        line.split()[1]
+    # go mod tidy drops a toolchain line equal to the go directive, so fall
+    # back to that directive.
+    directives = {
+        line.split()[0]: line.split()[1]
         for line in (ROOT / "go.mod").read_text().splitlines()
-        if line.startswith("toolchain ")
-    )
+        if line.startswith(("toolchain ", "go "))
+    }
+    toolchain = directives.get("toolchain") or "go" + directives["go"]
     mutants = [m for m in data["mutants"] if args.mode == "deep" or m["mode"] == "fast"]
     summary = {
         "schema": 1,
