@@ -35,6 +35,7 @@ type AttestationBatcher struct {
 	maxBatchSize   int64
 	maxBatchSizeMu sync.Mutex
 	peerTimeout    time.Duration // Timeout for peer send
+	ackTimeout     time.Duration // Short deadline for the post-write ACK read
 
 	getActiveValidators func() map[peer.ID]bool
 
@@ -91,6 +92,7 @@ func NewAttestationBatcher(
 		batchInterval: batchInterval,
 		maxBatchSize:  maxBatchSize,
 		peerTimeout:   peerTimeout,
+		ackTimeout:    attestationAckTimeout,
 
 		peerMgr: newPeerManager(logger, peerConcurrentSends),
 
@@ -531,10 +533,26 @@ func (b *AttestationBatcher) broadcastToAllPeers(ctx context.Context, batch comm
 }
 
 func (b *AttestationBatcher) broadcastToPeer(ctx context.Context, peer peer.ID, payload []byte) {
+	// Skip a peer whose send circuit breaker is open (repeatedly unresponsive):
+	// don't even acquire a token, so one black-hole peer can't keep the per-peer
+	// semaphore saturated for everyone else.
+	if b.peerMgr.shouldSkipPeer(peer) {
+		b.logger.Debug().Msgf("skipping peer in send-breaker cooldown: %s", peer)
+		return
+	}
+	// shouldSkipPeer may have admitted a half-open trial (set trialInFlight).
+	// Guarantee that flag is cleared on every exit path — including the ones
+	// below that intentionally do not record a result (acquire timeout, parent
+	// context expiry) — so a trial can never get stuck and blacklist the peer.
+	defer b.peerMgr.finishTrial(peer)
+
 	// Limit the number of concurrent sends to this peer
 	sem, err := b.peerMgr.acquireContext(ctx, peer)
 	if err != nil {
-		b.logger.Error().Err(err).Msgf("fail to acquire semaphore for peer: %s", peer)
+		// Backpressure, not a peer-health signal: the tokens are tied up locally
+		// (a legitimate send burst can exhaust them in <50ms). Do NOT count it
+		// toward the breaker, or a healthy peer would false-trip. Debug, not error.
+		b.logger.Debug().Err(err).Msgf("skipping send, peer semaphore busy: %s", peer)
 		return
 	}
 
@@ -551,16 +569,29 @@ func (b *AttestationBatcher) broadcastToPeer(ctx context.Context, peer peer.ID, 
 	defer cancel()
 	stream, err := b.host.NewStream(peerCtx, peer, batchedAttestationProtocol)
 	if err != nil {
+		// Only a genuine per-peer failure (parent context still alive) counts;
+		// a shutdown/global-deadline cancel is not the peer's fault.
+		if ctx.Err() == nil {
+			b.peerMgr.recordSendResult(peer, false)
+		}
 		b.logger.Error().Err(err).Msgf("fail to create stream to peer: %s", peer)
 		return
 	}
 
-	b.sendPayloadToStream(peerCtx, stream, payload)
+	ok := b.sendPayloadToStream(peerCtx, stream, payload)
+	// A failure only indicts the peer when our side wasn't cancelled.
+	if ok || ctx.Err() == nil {
+		b.peerMgr.recordSendResult(peer, ok)
+	}
 
 	b.logger.Debug().Msgf("completed attestation send to peer: %s", peer)
 }
 
-func (b *AttestationBatcher) sendPayloadToStream(ctx context.Context, stream network.Stream, payload []byte) {
+// sendPayloadToStream writes payload and waits for the peer's ACK. It returns
+// true only on a clean, acknowledged send. The ACK read uses a short, dedicated
+// deadline (attestationAckTimeout) rather than the full peer timeout, so a peer
+// that accepts the stream but never replies releases the send token quickly.
+func (b *AttestationBatcher) sendPayloadToStream(ctx context.Context, stream network.Stream, payload []byte) bool {
 	peer := stream.Conn().RemotePeer()
 	logger := b.logger.With().Str("remote_peer", peer.String()).Logger()
 
@@ -568,20 +599,33 @@ func (b *AttestationBatcher) sendPayloadToStream(ctx context.Context, stream net
 
 	if err := p2p.WriteStreamWithBufferWithContext(ctx, payload, stream); err != nil {
 		b.logger.Error().Err(err).Msgf("fail to write payload to peer: %s", peer)
-		return
+		return false
 	}
 
-	// Wait for acknowledgment
-	reply, err := p2p.ReadStreamWithBufferWithContext(ctx, stream)
+	// Wait for acknowledgment under a short deadline: the write has already
+	// landed in the peer's buffer, so a missing ACK means the peer is not
+	// processing. Bound it well under the peer timeout to free the token fast.
+	ackTimeout := b.ackTimeout
+	if ackTimeout <= 0 {
+		ackTimeout = attestationAckTimeout
+	}
+	if b.peerTimeout > 0 && ackTimeout > b.peerTimeout {
+		ackTimeout = b.peerTimeout
+	}
+	ackCtx, cancel := context.WithTimeout(ctx, ackTimeout)
+	defer cancel()
+
+	reply, err := p2p.ReadStreamWithBufferWithContext(ackCtx, stream)
 	if err != nil {
 		b.logger.Error().Err(err).Msgf("fail to read reply from peer: %s", peer)
-		return
+		return false
 	}
 
 	if string(reply) != p2p.StreamMsgDone {
 		b.logger.Error().Msgf("unexpected reply from peer: %s", peer)
-		return
+		return false
 	}
 
 	b.logger.Debug().Msgf("attestation sent to peer: %s", peer)
+	return true
 }

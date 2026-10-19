@@ -54,6 +54,12 @@ const (
 
 	defaultPeerTimeout = 20 * time.Second
 
+	// attestationAckTimeout bounds only the wait for a peer's ACK after the batch
+	// is already written. Kept well under defaultPeerTimeout so a peer that
+	// accepts the stream but never replies frees its send token quickly instead
+	// of tying it up for the full peer timeout.
+	attestationAckTimeout = 5 * time.Second
+
 	defaultPeerConcurrentSends    = 4
 	defaultPeerConcurrentReceives = 5
 	defaultMaxBatchSize           = 100
