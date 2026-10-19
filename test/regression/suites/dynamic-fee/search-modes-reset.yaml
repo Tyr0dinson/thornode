@@ -405,9 +405,10 @@ asserts:
   - .pairs[0].history[1].blocks|tonumber == 15
   - .pairs[0].history[1].swap_count|tonumber == 1
   - .pairs[0].history[1].volume_tor == "1000000000"
-  # Revenue fell after the step down; the controller's second cold-start probe
-  # goes back up.
-  - .pairs[0].dynamic_bps|tonumber == 8
+  - .pairs[0].history[1].capped == true
+  # A capped span is too thin to justify a higher fee: the controller's
+  # cold-start probe goes down instead of back up.
+  - .pairs[0].dynamic_bps|tonumber == 6
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/dynamic_l1_fees_current

@@ -8293,7 +8293,7 @@
         "fees_after": "0",
         "fees_before": "0",
         "mode": "EndBlock",
-        "new_bps": "8",
+        "new_bps": "6",
         "old_bps": "7",
         "pair": "ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48|THOR.RUNE",
         "pool_volume_tor": "11000000000",
