@@ -40,6 +40,15 @@ const (
 	// (mean) fee price to use for outbound transactions. Note that only transactions
 	// using the chain fee asset will be considered.
 	FeeCacheTransactions = 200
+
+	// LedgerNotFoundRetryLimit is how many consecutive lgrNotFound responses for
+	// one height are treated as a transient retry before escalating. FetchTxs only
+	// runs for heights at or below the validated tip, so a real "not yet there"
+	// race clears within a ledger or two; at the default 5s discover backoff this
+	// allows about a minute (~15 ledgers). Past it the ledger is most likely pruned
+	// from the server's history, and the raw error lets the generic scanner's
+	// MaxResumeBlockLag stall clock start, so it can skip ahead.
+	LedgerNotFoundRetryLimit = 12
 )
 
 var (
@@ -66,6 +75,12 @@ type XrpBlockScanner struct {
 	networkFeeMu sync.Mutex
 	feeCache     []sdkmath.Uint
 	lastFee      sdkmath.Uint
+
+	// Consecutive lgrNotFound responses for one height. Guarded because
+	// prefetch goroutines may call FetchTxs concurrently.
+	lgrNotFoundMu     sync.Mutex
+	lgrNotFoundHeight int64
+	lgrNotFoundCount  int
 }
 
 // NewXrpBlockScanner create a new instance of BlockScan
@@ -85,7 +100,11 @@ func NewXrpBlockScanner(rpcHost string,
 
 	logger := log.Logger.With().Str("module", "blockscanner").Str("chain", cfg.ChainID.String()).Logger()
 
-	rpcConfig, err := rpc.NewClientConfig(rpcHost)
+	// Override the library's default HTTP client (a hard 1s timeout, no
+	// transport retries) with the configured block-scanner timeout and
+	// transient-error retry policy — see retryHTTPClient.
+	rpcConfig, err := rpc.NewClientConfig(rpcHost,
+		rpc.WithHTTPClient(newRetryHTTPClient(cfg.HTTPRequestTimeout, cfg.MaxHTTPRequestRetry, logger)))
 	if err != nil {
 		return nil, fmt.Errorf("unable to create rpc config, %w", err)
 	}
@@ -349,6 +368,47 @@ type LedgerResponseWithTxHashes struct {
 	Validated   bool                   `json:"validated,omitempty"`
 }
 
+// ledgerNotFound maps a rippled lgrNotFound for height to the error the generic
+// scanner should see. ErrUnavailableBlock still marks the scanner unhealthy (so
+// the signer refuses XRP outbounds) but is never passed to skipAheadIfStalled,
+// so returning it forever for a ledger the server no longer has (pruned by
+// online_delete, or a start height below its history) wedges the scanner with no
+// recovery. Short runs are a tip race and stay ErrUnavailableBlock; once one
+// height has failed LedgerNotFoundRetryLimit times in a row the original error
+// is returned on every retry, which starts and keeps the stall clock running.
+func (c *XrpBlockScanner) ledgerNotFound(height int64, err error) error {
+	c.lgrNotFoundMu.Lock()
+	defer c.lgrNotFoundMu.Unlock()
+
+	if c.lgrNotFoundHeight != height {
+		c.lgrNotFoundHeight, c.lgrNotFoundCount = height, 0
+	}
+	c.lgrNotFoundCount++
+
+	switch {
+	case c.lgrNotFoundCount == 1:
+		c.logger.Warn().Int64("height", height).Msg("ledger not found on xrp server (lgrNotFound), retrying")
+	case c.lgrNotFoundCount == LedgerNotFoundRetryLimit:
+		c.logger.Warn().Int64("height", height).Int("attempts", c.lgrNotFoundCount).
+			Msg("ledger still not found on xrp server, likely pruned history; reporting as scan failure")
+	}
+
+	if c.lgrNotFoundCount < LedgerNotFoundRetryLimit {
+		return btypes.ErrUnavailableBlock
+	}
+	return fmt.Errorf("ledger %d not found after %d attempts (pruned or missing history): %w",
+		height, c.lgrNotFoundCount, err)
+}
+
+// resetLedgerNotFound clears the lgrNotFound streak once height is fetched.
+func (c *XrpBlockScanner) resetLedgerNotFound(height int64) {
+	c.lgrNotFoundMu.Lock()
+	defer c.lgrNotFoundMu.Unlock()
+	if c.lgrNotFoundHeight == height {
+		c.lgrNotFoundHeight, c.lgrNotFoundCount = 0, 0
+	}
+}
+
 func (c *XrpBlockScanner) FetchTxs(height, chainHeight int64) (types.TxIn, error) {
 	// First retrieve all transaction hashes in block
 	res, err := c.rpcClient.Request(&ledger.Request{
@@ -357,6 +417,9 @@ func (c *XrpBlockScanner) FetchTxs(height, chainHeight int64) (types.TxIn, error
 		Expand:       false,
 	})
 	if err != nil {
+		if isLedgerNotFound(err) {
+			return types.TxIn{}, c.ledgerNotFound(height, err)
+		}
 		return types.TxIn{}, err
 	}
 	var ledgerTxHashes LedgerResponseWithTxHashes
@@ -379,6 +442,9 @@ func (c *XrpBlockScanner) FetchTxs(height, chainHeight int64) (types.TxIn, error
 		Binary:       false,
 	})
 	if err != nil {
+		if isLedgerNotFound(err) {
+			return types.TxIn{}, c.ledgerNotFound(height, err)
+		}
 		return types.TxIn{}, err
 	}
 
@@ -386,6 +452,7 @@ func (c *XrpBlockScanner) FetchTxs(height, chainHeight int64) (types.TxIn, error
 	if !ledger.Validated {
 		return types.TxIn{}, btypes.ErrUnavailableBlock
 	}
+	c.resetLedgerNotFound(height)
 
 	// Verify that we could fetch all transactions, if not, fetch remaining individually.
 	flatTransactions := ledger.Ledger.Transactions

@@ -471,6 +471,12 @@ bifrost:
         chain_id: XRP
         gas_price_resolution: 100 # drops
         observation_flexibility_blocks: 40
+        # XRP closes a ledger every ~4s, so retry/timeout budgets are kept far
+        # tighter than the 30s/10 defaults inherited by slower chains. 5s also
+        # matches the xrpl-go rpc client's internal per-request context
+        # deadline, which caps any larger configured value.
+        http_request_timeout: 5s
+        max_http_request_retry: 3
       mempool_tx_id_cache_size: 0
       scanner_leveldb: *default-leveldb
 
