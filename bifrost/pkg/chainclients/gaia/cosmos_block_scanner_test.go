@@ -1,16 +1,10 @@
 package gaia
 
 import (
-	"context"
+	"encoding/hex"
 	"fmt"
-	"sort"
 
-	ctypesrpc "github.com/cometbft/cometbft/rpc/core/types"
-	ibctransfertypes "github.com/cosmos/ibc-go/v8/modules/apps/transfer/types"
-	ibccoretypes "github.com/cosmos/ibc-go/v8/modules/core/02-client/types"
-	ibcchanneltypes "github.com/cosmos/ibc-go/v8/modules/core/04-channel/types"
-	ibccoreeventtypes "github.com/cosmos/ibc-go/v8/modules/core/types"
-	ibclightclient "github.com/cosmos/ibc-go/v8/modules/light-clients/07-tendermint"
+	"github.com/cometbft/cometbft/crypto/tmhash"
 
 	sdkmath "cosmossdk.io/math"
 	"github.com/cosmos/cosmos-sdk/codec"
@@ -20,12 +14,17 @@ import (
 	cKeys "github.com/cosmos/cosmos-sdk/crypto/keyring"
 	ctypes "github.com/cosmos/cosmos-sdk/types"
 	btypes "github.com/cosmos/cosmos-sdk/x/bank/types"
+	ibccoretypes "github.com/cosmos/ibc-go/v8/modules/core/02-client/types"
+	ibcchanneltypes "github.com/cosmos/ibc-go/v8/modules/core/04-channel/types"
+	ibclightclient "github.com/cosmos/ibc-go/v8/modules/light-clients/07-tendermint"
 
 	protov2 "google.golang.org/protobuf/proto"
 
 	"github.com/rs/zerolog/log"
+	"gitlab.com/thorchain/thornode/v3/bifrost/blockscanner"
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
+	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/config"
 
@@ -84,45 +83,14 @@ type BlockScannerTestSuite struct {
 
 var _ = Suite(&BlockScannerTestSuite{})
 
-type mockTendermintRPCWithFailedSecondIBCReceive struct {
-	mockTendermintRPC
-}
-
-func (m *mockTendermintRPCWithFailedSecondIBCReceive) BlockResults(ctx context.Context, height *int64) (*ctypesrpc.ResultBlockResults, error) {
-	results, err := m.mockTendermintRPC.BlockResults(ctx, height)
-	if err != nil {
-		return nil, err
-	}
-
-	for _, txResult := range results.TxsResults {
-		for eventIndex := range txResult.Events {
-			event := &txResult.Events[eventIndex]
-			if event.Type != ibctransfertypes.EventTypePacket {
-				continue
-			}
-
-			matchesSecondMessage := false
-			for _, attr := range event.Attributes {
-				if attr.Key == "msg_index" && attr.Value == "2" {
-					matchesSecondMessage = true
-					break
-				}
-			}
-			if !matchesSecondMessage {
-				continue
-			}
-
-			event.Type = ibccoreeventtypes.ErrorAttributeKeyPrefix + event.Type
-			for attrIndex := range event.Attributes {
-				if event.Attributes[attrIndex].Key == ibctransfertypes.AttributeKeyAckSuccess {
-					event.Attributes[attrIndex].Value = "false"
-				}
-				event.Attributes[attrIndex].Key = ibccoreeventtypes.ErrorAttributeKeyPrefix + event.Attributes[attrIndex].Key
-			}
-		}
-	}
-
-	return results, nil
+func assertTxInItem(c *C, item *stypes.TxInItem, tx, sender, to, memo string, amount uint64) {
+	c.Assert(item.Tx, Equals, tx)
+	c.Assert(item.Sender, Equals, sender)
+	c.Assert(item.To, Equals, to)
+	c.Assert(item.Memo, Equals, memo)
+	c.Assert(item.Coins, HasLen, 1)
+	c.Assert(item.Coins[0].Asset.Equals(common.ATOMAsset), Equals, true)
+	c.Assert(item.Coins[0].Amount.Uint64(), Equals, amount)
 }
 
 func (s *BlockScannerTestSuite) SetUpSuite(c *C) {
@@ -274,49 +242,30 @@ func (s *BlockScannerTestSuite) TestProcessTxs(c *C) {
 
 	// proccessTxs should filter out everything besides the valid MsgSend
 	c.Assert(len(txInItems), Equals, 1)
+	assertTxInItem(c, txInItems[0],
+		"712c71e7eb9636aaf6112eaa3cd002a37fdf63c04b9b8e3eb096f265fca9a52c",
+		"cosmos1q5mpsyzzh09e9p3rs72e5hqwsfkdv4zwwrspaz",
+		"cosmos1c39nmn8nze5cqf8dqmqdq7ue3x98kyqv35gc0t",
+		"test",
+		100000000000,
+	)
 
-	// single tx in single ibc message
+	// ibc deposits are not observed, even for whitelisted denoms
 	// ------------------------------------------------------------------------
 
-	block, err = blockScanner.GetBlock(11350886)
-	c.Assert(err, IsNil)
+	for _, height := range []int64{
+		11350886, // single deposit via ibc
+		11350935, // two deposits in single ibc transaction
+		26750027, // two ibc txs sending atom back to gaia (from osmosis & secret)
+	} {
+		block, err = blockScanner.GetBlock(height)
+		c.Assert(err, IsNil)
 
-	txInItems, err = blockScanner.processTxs(11350886, block.Data.Txs)
-	c.Assert(err, IsNil)
+		txInItems, err = blockScanner.processTxs(height, block.Data.Txs)
+		c.Assert(err, IsNil)
 
-	c.Assert(len(txInItems), Equals, 1)
-	c.Assert(txInItems[0].Tx, Equals, "935638acbd9be5ae7861ad6932d1967a35db0e682f602a275611e5ed62d70cae")
-
-	// multiple tx in single ibc message
-	// ------------------------------------------------------------------------
-
-	block, err = blockScanner.GetBlock(11350935)
-	c.Assert(err, IsNil)
-
-	txInItems, err = blockScanner.processTxs(11350935, block.Data.Txs)
-	c.Assert(err, IsNil)
-
-	c.Assert(len(txInItems), Equals, 2)
-	c.Assert(txInItems[0].Tx, Equals, "17471479c1cb868818dfdfde25711f13ec448ffe08893cb47b4c7b60b1429b25-0")
-	c.Assert(txInItems[1].Tx, Equals, "17471479c1cb868818dfdfde25711f13ec448ffe08893cb47b4c7b60b1429b25-1")
-
-	// two ibc txs sending atom back to gaia (from osmosis & secret)
-	// ------------------------------------------------------------------------
-
-	block, err = blockScanner.GetBlock(26750027)
-	c.Assert(err, IsNil)
-
-	txInItems, err = blockScanner.processTxs(26750027, block.Data.Txs)
-	c.Assert(err, IsNil)
-
-	c.Assert(len(txInItems), Equals, 2)
-
-	sort.Slice(txInItems, func(i, j int) bool {
-		return txInItems[i].Tx < txInItems[j].Tx
-	})
-
-	c.Assert(txInItems[0].Tx, Equals, "5a9eedadf67048dc569eec2fa312a8f85393afdf5f0e84b629ffd2587abad73e")
-	c.Assert(txInItems[1].Tx, Equals, "7144c5fc683482e93d373783832a0cd460b21e1d4dfc2770b3cb76732edf6897")
+		c.Assert(txInItems, HasLen, 0, Commentf("height %d", height))
+	}
 
 	// ibc usdc from noble to gaia + atom transfer
 	// ------------------------------------------------------------------------
@@ -327,41 +276,61 @@ func (s *BlockScannerTestSuite) TestProcessTxs(c *C) {
 	txInItems, err = blockScanner.processTxs(26757930, block.Data.Txs)
 	c.Assert(err, IsNil)
 
-	// only reports atom tx, usdc is not whitelisted
+	// only reports the atom transfer
 	c.Assert(len(txInItems), Equals, 1)
-
-	c.Assert(txInItems[0].Tx, Equals, "d1490eb0303aa7f4612f46826230b14102ab6d3ee77645c3710ed53be31ad230")
+	assertTxInItem(c, txInItems[0],
+		"d1490eb0303aa7f4612f46826230b14102ab6d3ee77645c3710ed53be31ad230",
+		"cosmos1t5u0jfg3ljsjrh2m9e47d4ny2hea7eehxrzdgd",
+		"cosmos1l0vnemk4q9kcvhyh2vxnn4d8pl7v42ym4rfehl",
+		"",
+		29886400,
+	)
 }
 
-func (s *BlockScannerTestSuite) TestProcessTxsIgnoresFailedIBCPacketAcknowledgements(c *C) {
+func (s *BlockScannerTestSuite) TestProcessTxsMsgSendWithIBCMessage(c *C) {
 	cfg := config.BifrostBlockScannerConfiguration{
 		ChainID: common.GAIAChain,
 		WhitelistCosmosAssets: []config.WhitelistCosmosAsset{
 			{Denom: "uatom", Decimals: 6, THORChainSymbol: "ATOM"},
-			{Denom: "ibc/5DB84693CB3F67A2D25D133C177B06786F423D6D1AFF2B8E080F0753B2E4D585", Decimals: 6, THORChainSymbol: "NTRN"},
 		},
 	}
-	registry := s.bridge.GetContext().InterfaceRegistry
-	btypes.RegisterInterfaces(registry)
-	ibcchanneltypes.RegisterInterfaces(registry)
-	ibccoretypes.RegisterInterfaces(registry)
-	ibclightclient.RegisterInterfaces(registry)
-
-	cdc := codec.NewProtoCodec(registry)
-
-	blockScanner := CosmosBlockScanner{
-		cfg:    cfg,
-		rpc:    &mockTendermintRPCWithFailedSecondIBCReceive{},
-		cdc:    cdc,
-		logger: log.Logger.With().Str("module", "blockscanner").Str("chain", common.GAIAChain.String()).Logger(),
-	}
-
-	block, err := blockScanner.GetBlock(11350935)
+	storage, err := blockscanner.NewBlockScannerStorage("", config.LevelDBOptions{})
 	c.Assert(err, IsNil)
 
-	txInItems, err := blockScanner.processTxs(11350935, block.Data.Txs)
+	// use the production codec so the test covers its interface registrations
+	blockScanner, err := NewCosmosBlockScanner("http://localhost:26657", cfg, storage, s.bridge, s.m, nil, nil)
 	c.Assert(err, IsNil)
+	blockScanner.rpc = &mockTendermintRPC{}
 
-	c.Assert(len(txInItems), Equals, 1)
-	c.Assert(txInItems[0].Tx, Equals, "17471479c1cb868818dfdfde25711f13ec448ffe08893cb47b4c7b60b1429b25")
+	// take the MsgUpdateClient from a real relayer tx and batch it with a MsgSend
+	block, err := blockScanner.GetBlock(11350886)
+	c.Assert(err, IsNil)
+	c.Assert(block.Data.Txs, HasLen, 1)
+	relayerTx, err := blockScanner.txConfig.TxDecoder()(block.Data.Txs[0])
+	c.Assert(err, IsNil)
+	updateClient, ok := relayerTx.GetMsgs()[0].(*ibccoretypes.MsgUpdateClient)
+	c.Assert(ok, Equals, true)
+
+	sender := "cosmos1q5mpsyzzh09e9p3rs72e5hqwsfkdv4zwwrspaz"
+	vault := "cosmos1c39nmn8nze5cqf8dqmqdq7ue3x98kyqv35gc0t"
+	builder := blockScanner.txConfig.NewTxBuilder()
+	err = builder.SetMsgs(updateClient, &btypes.MsgSend{
+		FromAddress: sender,
+		ToAddress:   vault,
+		Amount:      ctypes.NewCoins(ctypes.NewCoin("uatom", sdkmath.NewInt(1000000))),
+	})
+	c.Assert(err, IsNil)
+	builder.SetMemo("test")
+	builder.SetGasLimit(GasLimit)
+	builder.SetFeeAmount(ctypes.NewCoins(ctypes.NewCoin("uatom", sdkmath.NewInt(10000))))
+	rawTx, err := blockScanner.txConfig.TxEncoder()(builder.GetTx())
+	c.Assert(err, IsNil)
+	block.Data.Txs[0] = rawTx
+
+	txInItems, err := blockScanner.processTxs(11350886, block.Data.Txs)
+	c.Assert(err, IsNil)
+	c.Assert(txInItems, HasLen, 1)
+	assertTxInItem(c, txInItems[0],
+		hex.EncodeToString(tmhash.Sum(rawTx)), sender, vault, "test", 100000000,
+	)
 }
