@@ -1976,7 +1976,9 @@ func (s *HandlerObservedTxOutSuite) TestHandleBounceReversedOnFinalisationAtLowe
 // TestHandleBounceReversedOnFinalisationAtLowerHeight. A Bounced finalised
 // consensus below a delivered non-final one may be a superseded receipt
 // late-sent after the newer one, so the hand-off keeps the delivery rather than
-// credit back coins that may have left.
+// credit back coins that may have left. The bounce is an earlier inclusion (12)
+// filed as bifrost files it at finality, at its FinaliseHeight 15: above the
+// delivery's inclusion height 13 but below its FinaliseHeight 16.
 func (s *HandlerObservedTxOutSuite) TestHandleBounceFinalisationBelowDeliveryKeepsDebit(c *C) {
 	const untouched = uint64(20000000000) // 200 ETH
 	const gas = uint64(37500)             // the fixture tx's gas
@@ -1987,12 +1989,13 @@ func (s *HandlerObservedTxOutSuite) TestHandleBounceFinalisationBelowDeliveryKee
 	}
 	c.Assert(f.ethBalance(c), Equals, untouched-gas-1)
 
-	for i := 0; i < 4; i++ {
-		f.voteAt(c, i, true, 12, 12)
+	for i := 0; i < 6; i++ {
+		f.voteAt(c, i, true, 15, 15)
 	}
 	c.Check(f.keeper.voter.FinalisedHeight > 0, Equals, true)
 	c.Check(f.keeper.voter.Tx.Bounced, Equals, false)
-	c.Check(f.keeper.voter.Tx.BlockHeight, Equals, int64(13))
+	c.Check(f.keeper.voter.Tx.BlockHeight, Equals, int64(16))
+	c.Check(f.keeper.voter.Tx.FinaliseHeight, Equals, int64(16))
 	c.Check(f.ethBalance(c), Equals, untouched-gas-1)
 }
 
@@ -2038,30 +2041,32 @@ func (s *HandlerObservedTxOutSuite) TestHandleBounceStaleBounceAfterLowerDeliver
 }
 
 // TestHandleBounceStaleBounceAfterLowerDeliveryCannotCreditOnFinalisation: the
-// same sequence through the non-final to final hand-off. The non-final Bounced
-// verdict at 13 is debited by a finalised delivery at 12, and a finalised
-// consensus of the superseded height-13 bounce (still above the delivery's
-// height) must not credit the coins back.
+// same sequence through the non-final to final hand-off, at the heights bifrost
+// files them. The non-final Bounced verdict (inclusion 1000, FinaliseHeight 1002)
+// is debited by a depth-2 reorg's finalised delivery at 999 (filed at 1001). The
+// superseded fork's final attestations of the bounce, filed at its
+// FinaliseHeight 1002, clear the delivery's height but not the floor, which is
+// kept in FinaliseHeight, so the coins are not credited back.
 func (s *HandlerObservedTxOutSuite) TestHandleBounceStaleBounceAfterLowerDeliveryCannotCreditOnFinalisation(c *C) {
 	const untouched = uint64(20000000000) // 200 ETH
 	const gas = uint64(37500)             // the fixture tx's gas
 
 	f := newBouncedOutboundFixture(c, 6)
 	for i := 0; i < 4; i++ {
-		f.voteAt(c, i, true, 13, 16) // unfinalised: bounced, coins retained
+		f.voteAt(c, i, true, 1000, 1002) // unfinalised: bounced, coins retained
 	}
 	c.Assert(f.ethBalance(c), Equals, untouched-gas)
 
 	for i := 2; i < 6; i++ {
-		f.voteAt(c, i, false, 12, 12)
+		f.voteAt(c, i, false, 1001, 1001)
 	}
 	c.Assert(f.keeper.voter.FinalisedHeight > 0, Equals, true)
 	c.Assert(f.keeper.voter.Tx.Bounced, Equals, false)
-	c.Assert(f.keeper.voter.BounceCreditFloor, Equals, int64(13))
+	c.Assert(f.keeper.voter.BounceCreditFloor, Equals, int64(1002))
 	c.Assert(f.ethBalance(c), Equals, untouched-gas-1)
 
 	for i := 0; i < 6; i++ {
-		f.voteAt(c, i, true, 13, 13)
+		f.voteAt(c, i, true, 1002, 1002)
 	}
 	c.Check(f.keeper.voter.Tx.Bounced, Equals, false)
 	c.Check(f.ethBalance(c), Equals, untouched-gas-1)

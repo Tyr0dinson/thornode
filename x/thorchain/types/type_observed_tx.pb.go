@@ -52,7 +52,7 @@ type ObservedTxVoter struct {
 	// second entry at a finality level, so inbound (Add-only) voters never
 	// populate it and their consensus is unchanged.
 	LatestVotes []ObservedTxVote `protobuf:"bytes,13,rep,name=latest_votes,json=latestVotes,proto3" json:"latest_votes,omitempty"`
-	// bounce_credit_floor is the highest external height of a Bounced verdict
+	// bounce_credit_floor is the highest external finalise height of a Bounced verdict
 	// that a correction to delivered has superseded. A later correction back to
 	// Bounced (crediting the coins again) must be at a strictly greater height:
 	// otherwise the superseded receipt's own late-sent attestations, from nodes

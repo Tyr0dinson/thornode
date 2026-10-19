@@ -148,8 +148,8 @@ func (m *ObservedTxVote) String() string {
 }
 
 // RaiseBounceCreditFloor records that a correction to delivered superseded a
-// Bounced verdict at external height h, so no later correction may credit the
-// coins back at or below h (see BounceCreditFloor).
+// Bounced verdict with external FinaliseHeight h, so no later correction may
+// credit the coins back at a FinaliseHeight at or below h (see BounceCreditFloor).
 func (m *ObservedTxVoter) RaiseBounceCreditFloor(h int64) {
 	if h > m.BounceCreditFloor {
 		m.BounceCreditFloor = h

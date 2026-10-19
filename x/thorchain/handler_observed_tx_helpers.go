@@ -851,15 +851,19 @@ func applyTxOutAttestation(
 				// receipt's verdict, gas and height rather than reconcile onto it. A
 				// lower delivered consensus is reconciled: it may be a reorg's earlier
 				// re-inclusion, and debiting errs safe (see correctOutboundObservation).
-				if voter.Tx.Bounced && (voter.Tx.BlockHeight < prevConsensusTx.BlockHeight ||
-					voter.Tx.BlockHeight <= voter.BounceCreditFloor) {
+				// Heights are compared by FinaliseHeight: bifrost files a receipt's
+				// non-final attestation at its inclusion height and the final one at
+				// FinaliseHeight, which both carry, so only FinaliseHeight puts a
+				// final and a non-final observation of one receipt on the same scale.
+				if voter.Tx.Bounced && (voter.Tx.FinaliseHeight < prevConsensusTx.FinaliseHeight ||
+					voter.Tx.FinaliseHeight <= voter.BounceCreditFloor) {
 					voter.Tx.Bounced = prevConsensusTx.Bounced
 					voter.Tx.Tx.Gas = prevConsensusTx.Tx.Gas
-					voter.Tx.BlockHeight = prevConsensusTx.BlockHeight
-					voter.Tx.FinaliseHeight = prevConsensusTx.BlockHeight
+					voter.Tx.BlockHeight = prevConsensusTx.FinaliseHeight
+					voter.Tx.FinaliseHeight = prevConsensusTx.FinaliseHeight
 				} else {
 					if !voter.Tx.Bounced {
-						voter.RaiseBounceCreditFloor(prevConsensusTx.BlockHeight)
+						voter.RaiseBounceCreditFloor(prevConsensusTx.FinaliseHeight)
 					}
 					reconcileBounceCorrection(ctx, mgr, voter.Tx, voter.Tx.Bounced)
 				}
@@ -1111,10 +1115,12 @@ func correctOutboundObservation(ctx cosmos.Context, mgr Manager, voter *Observed
 	// that left. A credit must also land strictly above every Bounced verdict a
 	// debit has superseded (BounceCreditFloor). A canonical receipt at or below
 	// that height (a reorg back to the original fork) is refused too - again the
-	// recoverable direction.
+	// recoverable direction. The floor is kept in FinaliseHeight, which a
+	// receipt's non-final and final attestations share, so a Bounced verdict
+	// superseded before finality also floors its own later final attestations.
 	minHeight := int64(0)
 	if bounceChanged && tx.Bounced {
-		if tx.BlockHeight <= voter.BounceCreditFloor {
+		if tx.FinaliseHeight <= voter.BounceCreditFloor {
 			return
 		}
 		minHeight = voter.Tx.BlockHeight
@@ -1131,7 +1137,7 @@ func correctOutboundObservation(ctx cosmos.Context, mgr Manager, voter *Observed
 		// keyed off the empty observed memo, not the memo recovered from the
 		// scheduled TxOutItem that handleObservedTxOutQuorum wrote onto voter.Tx.
 		if !tx.Bounced {
-			voter.RaiseBounceCreditFloor(voter.Tx.BlockHeight)
+			voter.RaiseBounceCreditFloor(voter.Tx.FinaliseHeight)
 		}
 		reconcileBounceCorrection(ctx, mgr, consensus, tx.Bounced)
 		voter.Tx.Bounced = tx.Bounced
