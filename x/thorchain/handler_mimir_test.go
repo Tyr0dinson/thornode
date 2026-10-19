@@ -6,6 +6,7 @@ import (
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/v3/common"
+	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/constants"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
@@ -369,4 +370,66 @@ func (s *HandlerMimirSuite) TestXMRConsolidationOperationalVoting(c *C) {
 		c.Assert(err, IsNil)
 		c.Assert(actual, Equals, value, Commentf("key=%s", key))
 	}
+}
+
+// TestDynamicFeeWhitelistChangeResetsState pins ADR-026's reset: a change to
+// a thorname's effective DYNAMICFEE-WHITELIST value wipes that thorname's
+// records and accumulators (so it rediscovers its fee from scratch), while a
+// vote that leaves the effective value unchanged, and other thornames' state,
+// are left alone.
+func (s *HandlerMimirSuite) TestDynamicFeeWhitelistChangeResetsState(c *C) {
+	ctx, keeper := setupKeeperForTest(c)
+	handler := NewMimirHandler(NewDummyMgrWithKeeper(keeper))
+	FundModule(c, ctx, keeper, BondName, 100*common.One)
+
+	nodes := make(NodeAccounts, 3)
+	for i := range nodes {
+		nodes[i] = GetRandomValidatorNode(NodeActive)
+		c.Assert(keeper.SetNodeAccount(ctx, nodes[i]), IsNil)
+	}
+	keeper.SetMimir(ctx, constants.OperationalVotesMin.String(), 3)
+	key := "DYNAMICFEE-WHITELIST-FOO"
+	keeper.SetMimir(ctx, key, types.DynamicFeeStatePerPair)
+
+	seed := func(thorname string) {
+		c.Assert(keeper.SetDynamicFeeRecord(ctx, types.DynamicFeeRecord{
+			Thorname: thorname, PairAssetA: "BTC.BTC", PairAssetB: "THOR.RUNE", DynamicBps: 7, SearchDone: true,
+		}), IsNil)
+		acc := types.NewDynamicFeeAccumulator(thorname, "BTC.BTC", "THOR.RUNE")
+		acc.VolumeTor = cosmos.NewUint(100)
+		c.Assert(keeper.SetDynamicFeeAccumulator(ctx, acc), IsNil)
+	}
+	bps := func(thorname string) uint64 {
+		rec, err := keeper.GetDynamicFeeRecord(ctx, thorname, "BTC.BTC", "THOR.RUNE")
+		c.Assert(err, IsNil)
+		return rec.DynamicBps
+	}
+	vote := func(value int64, voters NodeAccounts) {
+		for _, node := range voters {
+			_, err := handler.Run(ctx, NewMsgMimir(key, value, node.NodeAddress))
+			c.Assert(err, IsNil)
+		}
+	}
+	seed("foo")
+	seed("bar")
+
+	// Below the operational minimum the effective value is unchanged.
+	vote(types.DynamicFeeStateGlobal, nodes[:2])
+	c.Check(bps("foo"), Equals, uint64(7), Commentf("no effective change, no reset"))
+
+	// The third vote switches FOO to global mode and resets it.
+	vote(types.DynamicFeeStateGlobal, nodes[2:])
+	val, err := keeper.GetMimir(ctx, key)
+	c.Assert(err, IsNil)
+	c.Assert(val, Equals, types.DynamicFeeStateGlobal)
+	c.Check(bps("foo"), Equals, uint64(0), Commentf("mode change wipes the record"))
+	acc, err := keeper.GetDynamicFeeAccumulator(ctx, "foo", "BTC.BTC", "THOR.RUNE")
+	c.Assert(err, IsNil)
+	c.Check(acc.VolumeTor.IsZero(), Equals, true, Commentf("mode change wipes the accumulator"))
+	c.Check(bps("bar"), Equals, uint64(7), Commentf("other thornames are untouched"))
+
+	// Re-voting the value already in effect is not a change.
+	seed("foo")
+	vote(types.DynamicFeeStateGlobal, nodes)
+	c.Check(bps("foo"), Equals, uint64(7))
 }

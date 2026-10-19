@@ -190,6 +190,16 @@ func (h MimirHandler) handle(ctx cosmos.Context, msg MsgMimir) error {
 	}
 	// Reaching this point indicates a new mimir value is to be set.
 	h.mgr.Keeper().SetMimir(ctx, msg.Key, effectiveValue)
+	// Any change to a thorname's dynamic-fee whitelist state (enabling it,
+	// switching between per-pair and global, moving in or out of monitor, or
+	// removing it) restarts its dynamic fee from scratch: the next swap
+	// recreates its record at the floor and the bps search starts over. This
+	// is also the way to unstick a record: vote it to 0, then back.
+	if thorname, ok := strings.CutPrefix(strings.ToUpper(msg.Key), "DYNAMICFEE-WHITELIST-"); ok && thorname != "" {
+		if err = h.mgr.Keeper().DeleteAllDynamicFeeStateForThorname(ctx, thorname); err != nil {
+			ctx.Logger().Error("fail to reset dynamic fee state", "thorname", thorname, "error", err)
+		}
+	}
 	// A deliberate governance change, as opposed to an automatic halt set by the
 	// slasher or the solvency checker. The thornode_mimir_value gauge shows the
 	// resulting value, but a change reverted inside one scrape interval is only
