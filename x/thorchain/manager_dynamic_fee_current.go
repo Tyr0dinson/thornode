@@ -686,23 +686,23 @@ func nextSearchBps(probes []types.DynamicFeeProbe, floorBps, ceilingBps uint64, 
 	// rather than taking the adjacent indices keeps the gap arithmetic from
 	// underflowing should two probes ever share a bps.
 	var lo, hi uint64
-	hasLo, hasHi := false, false
+	foundLo, foundHi := false, false
 	for _, pr := range inRange {
 		if pr.Bps < best {
-			lo, hasLo = pr.Bps, true
+			lo, foundLo = pr.Bps, true
 		}
-		if pr.Bps > best && !hasHi {
-			hi, hasHi = pr.Bps, true
+		if pr.Bps > best && !foundHi {
+			hi, foundHi = pr.Bps, true
 		}
 	}
 
 	var leftCount, leftNext, rightCount, rightNext uint64
-	if hasLo {
+	if foundLo {
 		leftCount, leftNext = best-lo-1, (lo+best)/2
 	} else if best > floorBps {
 		leftCount, leftNext = best-floorBps, floorBps
 	}
-	if hasHi {
+	if foundHi {
 		rightCount, rightNext = hi-best-1, (best+hi)/2
 	} else if best < ceilingBps {
 		rightCount, rightNext = ceilingBps-best, ceilingBps
