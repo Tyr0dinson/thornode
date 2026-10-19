@@ -5812,6 +5812,13 @@ components:
             liquidity gate rolls into the next epoch, up to
             L1DynamicFeeMaxEpochBlocks, after which it is sealed regardless
           example: 14400
+        capped:
+          type: boolean
+          description: |
+            the span was sealed by L1DynamicFeeMaxEpochBlocks below the
+            liquidity gate (or with no swaps). Such a reading may lower the
+            fee but never raise it
+          example: false
 
     DynamicL1FeePairDetail:
       type: object
@@ -5874,6 +5881,12 @@ components:
           format: uint64
           description: sealed epochs measured at this bps
           example: 1
+        capped:
+          type: boolean
+          description: |
+            at least one reading at this bps was a capped span; a capped
+            probe never displaces a lower-fee best
+          example: false
 
     DynamicL1FeesByThornameResponse:
       type: object

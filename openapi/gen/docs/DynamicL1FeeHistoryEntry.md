@@ -12,6 +12,7 @@ Name | Type | Description | Notes
 **PoolVolumeTor** | **string** | TOR-denominated (1e8-precision USD value) total volume through the pair (for a global \&quot;*|*\&quot; record, through the pairs the thorname traded) over the same span, regardless of affiliate  | 
 **OwnPoolVolumeTor** | Pointer to **string** | the thorname&#39;s own share of pool_volume_tor, counting every swap leg. The signal is fees_tor / (pool_volume_tor - own_pool_volume_tor): fee revenue against other swappers&#39; volume. An epoch whose other flow is under L1DynamicFeeMinOtherFlowBPS of the pool is recorded but not used as a measurement  | [optional] 
 **Blocks** | Pointer to **int64** | length of the span this entry covers, in blocks. A span below the liquidity gate rolls into the next epoch, up to L1DynamicFeeMaxEpochBlocks, after which it is sealed regardless  | [optional] 
+**Capped** | Pointer to **bool** | the span was sealed by L1DynamicFeeMaxEpochBlocks below the liquidity gate (or with no swaps). Such a reading may lower the fee but never raise it  | [optional] 
 
 ## Methods
 
@@ -201,6 +202,31 @@ SetBlocks sets Blocks field to given value.
 `func (o *DynamicL1FeeHistoryEntry) HasBlocks() bool`
 
 HasBlocks returns a boolean if a field has been set.
+
+### GetCapped
+
+`func (o *DynamicL1FeeHistoryEntry) GetCapped() bool`
+
+GetCapped returns the Capped field if non-nil, zero value otherwise.
+
+### GetCappedOk
+
+`func (o *DynamicL1FeeHistoryEntry) GetCappedOk() (*bool, bool)`
+
+GetCappedOk returns a tuple with the Capped field if it's non-nil, zero value otherwise
+and a boolean to check if the value has been set.
+
+### SetCapped
+
+`func (o *DynamicL1FeeHistoryEntry) SetCapped(v bool)`
+
+SetCapped sets Capped field to given value.
+
+### HasCapped
+
+`func (o *DynamicL1FeeHistoryEntry) HasCapped() bool`
+
+HasCapped returns a boolean if a field has been set.
 
 
 [[Back to Model list]](../README.md#documentation-for-models) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to README]](../README.md)

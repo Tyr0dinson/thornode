@@ -32,6 +32,10 @@ message DynamicFeeEpochRecord {
   // below the liquidity gate rolls into the next, up to
   // L1DynamicFeeMaxEpochBlocks.
   int64 blocks = 8;
+  // capped marks a span sealed by L1DynamicFeeMaxEpochBlocks below the
+  // liquidity gate (or with no swaps): too thin to justify raising the fee,
+  // so it may only lower it.
+  bool capped = 9;
 }
 
 message DynamicFeeRecord {
@@ -66,6 +70,9 @@ message DynamicFeeProbe {
     (gogoproto.nullable) = false
   ];
   uint64 epochs = 3;
+  // capped is set when any epoch measured at bps was a capped span; such a
+  // probe never displaces a lower-fee best.
+  bool capped = 4;
 }
 
 message DynamicFeeAccumulator {

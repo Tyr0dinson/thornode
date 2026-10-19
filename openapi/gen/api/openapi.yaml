@@ -8887,6 +8887,7 @@ components:
       example:
         pool_volume_tor: "900000000000"
         blocks: 14400
+        capped: false
         volume_tor: "10000000000"
         epoch: 41
         fees_tor: "12345678"
@@ -8942,6 +8943,13 @@ components:
           example: 14400
           format: int64
           type: integer
+        capped:
+          description: |
+            the span was sealed by L1DynamicFeeMaxEpochBlocks below the
+            liquidity gate (or with no swaps). Such a reading may lower the
+            fee but never raise it
+          example: false
+          type: boolean
       required:
       - bps_at_close
       - epoch
@@ -8956,14 +8964,17 @@ components:
         last_active_epoch: 42
         probes:
         - bps: 10
+          capped: false
           signal: "1234567"
           epochs: 1
         - bps: 10
+          capped: false
           signal: "1234567"
           epochs: 1
         history:
         - pool_volume_tor: "900000000000"
           blocks: 14400
+          capped: false
           volume_tor: "10000000000"
           epoch: 41
           fees_tor: "12345678"
@@ -8972,6 +8983,7 @@ components:
           bps_at_close: 12
         - pool_volume_tor: "900000000000"
           blocks: 14400
+          capped: false
           volume_tor: "10000000000"
           epoch: 41
           fees_tor: "12345678"
@@ -9021,6 +9033,7 @@ components:
     DynamicL1FeeProbe:
       example:
         bps: 10
+        capped: false
         signal: "1234567"
         epochs: 1
       properties:
@@ -9039,6 +9052,12 @@ components:
           example: 1
           format: uint64
           type: integer
+        capped:
+          description: |
+            at least one reading at this bps was a capped span; a capped
+            probe never displaces a lower-fee best
+          example: false
+          type: boolean
       required:
       - bps
       - epochs
@@ -9053,14 +9072,17 @@ components:
           last_active_epoch: 42
           probes:
           - bps: 10
+            capped: false
             signal: "1234567"
             epochs: 1
           - bps: 10
+            capped: false
             signal: "1234567"
             epochs: 1
           history:
           - pool_volume_tor: "900000000000"
             blocks: 14400
+            capped: false
             volume_tor: "10000000000"
             epoch: 41
             fees_tor: "12345678"
@@ -9069,6 +9091,7 @@ components:
             bps_at_close: 12
           - pool_volume_tor: "900000000000"
             blocks: 14400
+            capped: false
             volume_tor: "10000000000"
             epoch: 41
             fees_tor: "12345678"
@@ -9081,14 +9104,17 @@ components:
           last_active_epoch: 42
           probes:
           - bps: 10
+            capped: false
             signal: "1234567"
             epochs: 1
           - bps: 10
+            capped: false
             signal: "1234567"
             epochs: 1
           history:
           - pool_volume_tor: "900000000000"
             blocks: 14400
+            capped: false
             volume_tor: "10000000000"
             epoch: 41
             fees_tor: "12345678"
@@ -9097,6 +9123,7 @@ components:
             bps_at_close: 12
           - pool_volume_tor: "900000000000"
             blocks: 14400
+            capped: false
             volume_tor: "10000000000"
             epoch: 41
             fees_tor: "12345678"

@@ -7,6 +7,7 @@ Name | Type | Description | Notes
 **Bps** | **int32** | the tested dynamic_bps value | 
 **Signal** | **string** | mean normalized fee signal (fees_tor / pool_volume_tor, scaled by 1e12) over the sealed epochs measured at this bps  | 
 **Epochs** | **int32** | sealed epochs measured at this bps | 
+**Capped** | Pointer to **bool** | at least one reading at this bps was a capped span; a capped probe never displaces a lower-fee best  | [optional] 
 
 ## Methods
 
@@ -86,6 +87,31 @@ and a boolean to check if the value has been set.
 
 SetEpochs sets Epochs field to given value.
 
+
+### GetCapped
+
+`func (o *DynamicL1FeeProbe) GetCapped() bool`
+
+GetCapped returns the Capped field if non-nil, zero value otherwise.
+
+### GetCappedOk
+
+`func (o *DynamicL1FeeProbe) GetCappedOk() (*bool, bool)`
+
+GetCappedOk returns a tuple with the Capped field if it's non-nil, zero value otherwise
+and a boolean to check if the value has been set.
+
+### SetCapped
+
+`func (o *DynamicL1FeeProbe) SetCapped(v bool)`
+
+SetCapped sets Capped field to given value.
+
+### HasCapped
+
+`func (o *DynamicL1FeeProbe) HasCapped() bool`
+
+HasCapped returns a boolean if a field has been set.
 
 
 [[Back to Model list]](../README.md#documentation-for-models) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to README]](../README.md)

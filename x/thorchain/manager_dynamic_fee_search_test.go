@@ -477,6 +477,8 @@ func (s *DynamicFeeMgrSuite) TestSpanCapSealsBelowGate(c *C) {
 	c.Assert(rec.History, HasLen, 1, Commentf("30 blocks reached: sealed below the gate"))
 	c.Check(rec.History[0].Blocks, Equals, int64(30))
 	c.Check(rec.History[0].SwapCount, Equals, uint64(1))
+	c.Check(rec.History[0].Capped, Equals, true, Commentf("sealed by the cap below the gate"))
+	c.Check(rec.Probes[0].Capped, Equals, true)
 	c.Check(rec.SpanStartHeight, Equals, int64(40), Commentf("the next span starts at the seal"))
 	c.Check(rec.Probes, HasLen, 1)
 	acc, err := k.GetDynamicFeeAccumulator(ctx, "tn", pairA, pairB)
@@ -573,4 +575,55 @@ func (s *DynamicFeeMgrSuite) TestSpanStartsForRecordsWithoutOne(c *C) {
 	c.Check(rec.SpanStartHeight, Equals, int64(100))
 	c.Check(rec.History, HasLen, 0)
 	c.Check(rec.DynamicBps, Equals, uint64(9))
+}
+
+// TestCappedReadingsOnlyLower pins that a span sealed by the time cap below the
+// liquidity gate is too thin to raise the fee: in the search it never
+// displaces a lower-fee best (though it counts as tested), and in the +/-step
+// controller a raise becomes capped_hold and a cold start probes down. Lowering
+// the fee on a capped reading is allowed.
+func (s *DynamicFeeMgrSuite) TestCappedReadingsOnlyLower(c *C) {
+	tenK, zero := cosmos.NewUint(10_000), cosmos.ZeroUint()
+
+	// Search: the capped 20 reads far better than 1 but cannot win.
+	probes := []types.DynamicFeeProbe{
+		{Bps: 1, SignalSum: cosmos.NewUint(100), Epochs: 1},
+		{Bps: 20, SignalSum: cosmos.NewUint(900), Epochs: 1, Capped: true},
+	}
+	best, next, done := nextSearchBps(probes, 1, 20, zero, tenK)
+	c.Check(best, Equals, uint64(1))
+	c.Check(done, Equals, false)
+	c.Check(next, Equals, uint64(10), Commentf("20 counts as tested: the gap (1, 20) is next"))
+	// A capped lower reading that looks better may keep the fee low.
+	probes = []types.DynamicFeeProbe{
+		{Bps: 4, SignalSum: cosmos.NewUint(900), Epochs: 1, Capped: true},
+		{Bps: 8, SignalSum: cosmos.NewUint(100), Epochs: 1},
+	}
+	best, _, _ = nextSearchBps(probes, 1, 20, zero, tenK)
+	c.Check(best, Equals, uint64(4))
+
+	// Tracker.
+	hist := func(capped bool, bps []uint64, fees []uint64) types.DynamicFeeRecord {
+		rec := types.DynamicFeeRecord{SearchDone: true}
+		for i := range bps {
+			rec.History = append(rec.History, types.DynamicFeeEpochRecord{BpsAtClose: bps[i], FeesTor: cosmos.NewUint(fees[i]), PoolVolumeTor: types.SignalScale})
+		}
+		rec.History[len(rec.History)-1].Capped = capped
+		return rec
+	}
+	// Up 5 -> 6 and revenue rose: continue_up normally, held when capped.
+	reason, bps, _, _, _ := decideNextBps(hist(false, []uint64{5, 6, 6}, []uint64{100, 200, 200}), 6, 1, 20, 1, 3, zero, tenK, 0)
+	c.Check(reason, Equals, "continue_up")
+	c.Check(bps, Equals, uint64(7))
+	reason, bps, _, _, _ = decideNextBps(hist(true, []uint64{5, 6, 6}, []uint64{100, 200, 200}), 6, 1, 20, 1, 3, zero, tenK, 0)
+	c.Check(reason, Equals, "capped_hold")
+	c.Check(bps, Equals, uint64(6))
+	// Up 5 -> 6 and revenue fell: reverse_down is allowed when capped.
+	reason, bps, _, _, _ = decideNextBps(hist(true, []uint64{5, 6, 6}, []uint64{200, 100, 100}), 6, 1, 20, 1, 3, zero, tenK, 0)
+	c.Check(reason, Equals, "reverse_down")
+	c.Check(bps, Equals, uint64(5))
+	// Cold start on a capped reading probes down.
+	reason, bps, _, _, _ = decideNextBps(hist(true, []uint64{6}, []uint64{100}), 6, 1, 20, 1, 3, zero, tenK, 0)
+	c.Check(reason, Equals, "cold_start_probe")
+	c.Check(bps, Equals, uint64(5))
 }

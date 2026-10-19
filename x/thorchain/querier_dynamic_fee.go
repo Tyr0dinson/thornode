@@ -89,6 +89,7 @@ func (qs queryServer) queryDynamicL1FeesByThorname(ctx cosmos.Context, req *type
 				Bps:    pr.Bps,
 				Signal: pr.Mean().String(),
 				Epochs: pr.Epochs,
+				Capped: pr.Capped,
 			})
 		}
 		for _, h := range rec.History {
@@ -101,6 +102,7 @@ func (qs queryServer) queryDynamicL1FeesByThorname(ctx cosmos.Context, req *type
 				PoolVolumeTor:    uintOrZero(h.PoolVolumeTor).String(),
 				OwnPoolVolumeTor: uintOrZero(h.OwnPoolVolumeTor).String(),
 				Blocks:           h.Blocks,
+				Capped:           h.Capped,
 			})
 		}
 		resp.Pairs = append(resp.Pairs, detail)

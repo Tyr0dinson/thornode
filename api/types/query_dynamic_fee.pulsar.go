@@ -3028,6 +3028,7 @@ var (
 	fd_DynamicL1FeeProbe_bps    protoreflect.FieldDescriptor
 	fd_DynamicL1FeeProbe_signal protoreflect.FieldDescriptor
 	fd_DynamicL1FeeProbe_epochs protoreflect.FieldDescriptor
+	fd_DynamicL1FeeProbe_capped protoreflect.FieldDescriptor
 )
 
 func init() {
@@ -3036,6 +3037,7 @@ func init() {
 	fd_DynamicL1FeeProbe_bps = md_DynamicL1FeeProbe.Fields().ByName("bps")
 	fd_DynamicL1FeeProbe_signal = md_DynamicL1FeeProbe.Fields().ByName("signal")
 	fd_DynamicL1FeeProbe_epochs = md_DynamicL1FeeProbe.Fields().ByName("epochs")
+	fd_DynamicL1FeeProbe_capped = md_DynamicL1FeeProbe.Fields().ByName("capped")
 }
 
 var _ protoreflect.Message = (*fastReflection_DynamicL1FeeProbe)(nil)
@@ -3121,6 +3123,12 @@ func (x *fastReflection_DynamicL1FeeProbe) Range(f func(protoreflect.FieldDescri
 			return
 		}
 	}
+	if x.Capped != false {
+		value := protoreflect.ValueOfBool(x.Capped)
+		if !f(fd_DynamicL1FeeProbe_capped, value) {
+			return
+		}
+	}
 }
 
 // Has reports whether a field is populated.
@@ -3142,6 +3150,8 @@ func (x *fastReflection_DynamicL1FeeProbe) Has(fd protoreflect.FieldDescriptor) 
 		return x.Signal != ""
 	case "types.DynamicL1FeeProbe.epochs":
 		return x.Epochs != uint64(0)
+	case "types.DynamicL1FeeProbe.capped":
+		return x.Capped != false
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.DynamicL1FeeProbe"))
@@ -3164,6 +3174,8 @@ func (x *fastReflection_DynamicL1FeeProbe) Clear(fd protoreflect.FieldDescriptor
 		x.Signal = ""
 	case "types.DynamicL1FeeProbe.epochs":
 		x.Epochs = uint64(0)
+	case "types.DynamicL1FeeProbe.capped":
+		x.Capped = false
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.DynamicL1FeeProbe"))
@@ -3189,6 +3201,9 @@ func (x *fastReflection_DynamicL1FeeProbe) Get(descriptor protoreflect.FieldDesc
 	case "types.DynamicL1FeeProbe.epochs":
 		value := x.Epochs
 		return protoreflect.ValueOfUint64(value)
+	case "types.DynamicL1FeeProbe.capped":
+		value := x.Capped
+		return protoreflect.ValueOfBool(value)
 	default:
 		if descriptor.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.DynamicL1FeeProbe"))
@@ -3215,6 +3230,8 @@ func (x *fastReflection_DynamicL1FeeProbe) Set(fd protoreflect.FieldDescriptor, 
 		x.Signal = value.Interface().(string)
 	case "types.DynamicL1FeeProbe.epochs":
 		x.Epochs = value.Uint()
+	case "types.DynamicL1FeeProbe.capped":
+		x.Capped = value.Bool()
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.DynamicL1FeeProbe"))
@@ -3241,6 +3258,8 @@ func (x *fastReflection_DynamicL1FeeProbe) Mutable(fd protoreflect.FieldDescript
 		panic(fmt.Errorf("field signal of message types.DynamicL1FeeProbe is not mutable"))
 	case "types.DynamicL1FeeProbe.epochs":
 		panic(fmt.Errorf("field epochs of message types.DynamicL1FeeProbe is not mutable"))
+	case "types.DynamicL1FeeProbe.capped":
+		panic(fmt.Errorf("field capped of message types.DynamicL1FeeProbe is not mutable"))
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.DynamicL1FeeProbe"))
@@ -3260,6 +3279,8 @@ func (x *fastReflection_DynamicL1FeeProbe) NewField(fd protoreflect.FieldDescrip
 		return protoreflect.ValueOfString("")
 	case "types.DynamicL1FeeProbe.epochs":
 		return protoreflect.ValueOfUint64(uint64(0))
+	case "types.DynamicL1FeeProbe.capped":
+		return protoreflect.ValueOfBool(false)
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.DynamicL1FeeProbe"))
@@ -3339,6 +3360,9 @@ func (x *fastReflection_DynamicL1FeeProbe) ProtoMethods() *protoiface.Methods {
 		if x.Epochs != 0 {
 			n += 1 + runtime.Sov(uint64(x.Epochs))
 		}
+		if x.Capped {
+			n += 2
+		}
 		if x.unknownFields != nil {
 			n += len(x.unknownFields)
 		}
@@ -3367,6 +3391,16 @@ func (x *fastReflection_DynamicL1FeeProbe) ProtoMethods() *protoiface.Methods {
 		if x.unknownFields != nil {
 			i -= len(x.unknownFields)
 			copy(dAtA[i:], x.unknownFields)
+		}
+		if x.Capped {
+			i--
+			if x.Capped {
+				dAtA[i] = 1
+			} else {
+				dAtA[i] = 0
+			}
+			i--
+			dAtA[i] = 0x20
 		}
 		if x.Epochs != 0 {
 			i = runtime.EncodeVarint(dAtA, i, uint64(x.Epochs))
@@ -3504,6 +3538,26 @@ func (x *fastReflection_DynamicL1FeeProbe) ProtoMethods() *protoiface.Methods {
 						break
 					}
 				}
+			case 4:
+				if wireType != 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field Capped", wireType)
+				}
+				var v int
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					v |= int(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				x.Capped = bool(v != 0)
 			default:
 				iNdEx = preIndex
 				skippy, err := runtime.Skip(dAtA[iNdEx:])
@@ -3549,6 +3603,7 @@ var (
 	fd_DynamicL1FeeHistoryEntry_pool_volume_tor     protoreflect.FieldDescriptor
 	fd_DynamicL1FeeHistoryEntry_own_pool_volume_tor protoreflect.FieldDescriptor
 	fd_DynamicL1FeeHistoryEntry_blocks              protoreflect.FieldDescriptor
+	fd_DynamicL1FeeHistoryEntry_capped              protoreflect.FieldDescriptor
 )
 
 func init() {
@@ -3562,6 +3617,7 @@ func init() {
 	fd_DynamicL1FeeHistoryEntry_pool_volume_tor = md_DynamicL1FeeHistoryEntry.Fields().ByName("pool_volume_tor")
 	fd_DynamicL1FeeHistoryEntry_own_pool_volume_tor = md_DynamicL1FeeHistoryEntry.Fields().ByName("own_pool_volume_tor")
 	fd_DynamicL1FeeHistoryEntry_blocks = md_DynamicL1FeeHistoryEntry.Fields().ByName("blocks")
+	fd_DynamicL1FeeHistoryEntry_capped = md_DynamicL1FeeHistoryEntry.Fields().ByName("capped")
 }
 
 var _ protoreflect.Message = (*fastReflection_DynamicL1FeeHistoryEntry)(nil)
@@ -3677,6 +3733,12 @@ func (x *fastReflection_DynamicL1FeeHistoryEntry) Range(f func(protoreflect.Fiel
 			return
 		}
 	}
+	if x.Capped != false {
+		value := protoreflect.ValueOfBool(x.Capped)
+		if !f(fd_DynamicL1FeeHistoryEntry_capped, value) {
+			return
+		}
+	}
 }
 
 // Has reports whether a field is populated.
@@ -3708,6 +3770,8 @@ func (x *fastReflection_DynamicL1FeeHistoryEntry) Has(fd protoreflect.FieldDescr
 		return x.OwnPoolVolumeTor != ""
 	case "types.DynamicL1FeeHistoryEntry.blocks":
 		return x.Blocks != int64(0)
+	case "types.DynamicL1FeeHistoryEntry.capped":
+		return x.Capped != false
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.DynamicL1FeeHistoryEntry"))
@@ -3740,6 +3804,8 @@ func (x *fastReflection_DynamicL1FeeHistoryEntry) Clear(fd protoreflect.FieldDes
 		x.OwnPoolVolumeTor = ""
 	case "types.DynamicL1FeeHistoryEntry.blocks":
 		x.Blocks = int64(0)
+	case "types.DynamicL1FeeHistoryEntry.capped":
+		x.Capped = false
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.DynamicL1FeeHistoryEntry"))
@@ -3780,6 +3846,9 @@ func (x *fastReflection_DynamicL1FeeHistoryEntry) Get(descriptor protoreflect.Fi
 	case "types.DynamicL1FeeHistoryEntry.blocks":
 		value := x.Blocks
 		return protoreflect.ValueOfInt64(value)
+	case "types.DynamicL1FeeHistoryEntry.capped":
+		value := x.Capped
+		return protoreflect.ValueOfBool(value)
 	default:
 		if descriptor.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.DynamicL1FeeHistoryEntry"))
@@ -3816,6 +3885,8 @@ func (x *fastReflection_DynamicL1FeeHistoryEntry) Set(fd protoreflect.FieldDescr
 		x.OwnPoolVolumeTor = value.Interface().(string)
 	case "types.DynamicL1FeeHistoryEntry.blocks":
 		x.Blocks = value.Int()
+	case "types.DynamicL1FeeHistoryEntry.capped":
+		x.Capped = value.Bool()
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.DynamicL1FeeHistoryEntry"))
@@ -3852,6 +3923,8 @@ func (x *fastReflection_DynamicL1FeeHistoryEntry) Mutable(fd protoreflect.FieldD
 		panic(fmt.Errorf("field own_pool_volume_tor of message types.DynamicL1FeeHistoryEntry is not mutable"))
 	case "types.DynamicL1FeeHistoryEntry.blocks":
 		panic(fmt.Errorf("field blocks of message types.DynamicL1FeeHistoryEntry is not mutable"))
+	case "types.DynamicL1FeeHistoryEntry.capped":
+		panic(fmt.Errorf("field capped of message types.DynamicL1FeeHistoryEntry is not mutable"))
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.DynamicL1FeeHistoryEntry"))
@@ -3881,6 +3954,8 @@ func (x *fastReflection_DynamicL1FeeHistoryEntry) NewField(fd protoreflect.Field
 		return protoreflect.ValueOfString("")
 	case "types.DynamicL1FeeHistoryEntry.blocks":
 		return protoreflect.ValueOfInt64(int64(0))
+	case "types.DynamicL1FeeHistoryEntry.capped":
+		return protoreflect.ValueOfBool(false)
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.DynamicL1FeeHistoryEntry"))
@@ -3978,6 +4053,9 @@ func (x *fastReflection_DynamicL1FeeHistoryEntry) ProtoMethods() *protoiface.Met
 		if x.Blocks != 0 {
 			n += 1 + runtime.Sov(uint64(x.Blocks))
 		}
+		if x.Capped {
+			n += 2
+		}
 		if x.unknownFields != nil {
 			n += len(x.unknownFields)
 		}
@@ -4006,6 +4084,16 @@ func (x *fastReflection_DynamicL1FeeHistoryEntry) ProtoMethods() *protoiface.Met
 		if x.unknownFields != nil {
 			i -= len(x.unknownFields)
 			copy(dAtA[i:], x.unknownFields)
+		}
+		if x.Capped {
+			i--
+			if x.Capped {
+				dAtA[i] = 1
+			} else {
+				dAtA[i] = 0
+			}
+			i--
+			dAtA[i] = 0x48
 		}
 		if x.Blocks != 0 {
 			i = runtime.EncodeVarint(dAtA, i, uint64(x.Blocks))
@@ -4308,6 +4396,26 @@ func (x *fastReflection_DynamicL1FeeHistoryEntry) ProtoMethods() *protoiface.Met
 						break
 					}
 				}
+			case 9:
+				if wireType != 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field Capped", wireType)
+				}
+				var v int
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					v |= int(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				x.Capped = bool(v != 0)
 			default:
 				iNdEx = preIndex
 				skippy, err := runtime.Skip(dAtA[iNdEx:])
@@ -7087,6 +7195,7 @@ type DynamicL1FeeProbe struct {
 	Bps    uint64 `protobuf:"varint,1,opt,name=bps,proto3" json:"bps,omitempty"`
 	Signal string `protobuf:"bytes,2,opt,name=signal,proto3" json:"signal,omitempty"`
 	Epochs uint64 `protobuf:"varint,3,opt,name=epochs,proto3" json:"epochs,omitempty"`
+	Capped bool   `protobuf:"varint,4,opt,name=capped,proto3" json:"capped,omitempty"`
 }
 
 func (x *DynamicL1FeeProbe) Reset() {
@@ -7130,6 +7239,13 @@ func (x *DynamicL1FeeProbe) GetEpochs() uint64 {
 	return 0
 }
 
+func (x *DynamicL1FeeProbe) GetCapped() bool {
+	if x != nil {
+		return x.Capped
+	}
+	return false
+}
+
 type DynamicL1FeeHistoryEntry struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
@@ -7143,6 +7259,7 @@ type DynamicL1FeeHistoryEntry struct {
 	PoolVolumeTor    string `protobuf:"bytes,6,opt,name=pool_volume_tor,json=poolVolumeTor,proto3" json:"pool_volume_tor,omitempty"`
 	OwnPoolVolumeTor string `protobuf:"bytes,7,opt,name=own_pool_volume_tor,json=ownPoolVolumeTor,proto3" json:"own_pool_volume_tor,omitempty"`
 	Blocks           int64  `protobuf:"varint,8,opt,name=blocks,proto3" json:"blocks,omitempty"`
+	Capped           bool   `protobuf:"varint,9,opt,name=capped,proto3" json:"capped,omitempty"`
 }
 
 func (x *DynamicL1FeeHistoryEntry) Reset() {
@@ -7219,6 +7336,13 @@ func (x *DynamicL1FeeHistoryEntry) GetBlocks() int64 {
 		return x.Blocks
 	}
 	return 0
+}
+
+func (x *DynamicL1FeeHistoryEntry) GetCapped() bool {
+	if x != nil {
+		return x.Capped
+	}
+	return false
 }
 
 type QueryDynamicL1FeesByThornameResponse struct {
@@ -7502,30 +7626,33 @@ var file_types_query_dynamic_fee_proto_rawDesc = []byte{
 	0x65, 0x12, 0x36, 0x0a, 0x06, 0x70, 0x72, 0x6f, 0x62, 0x65, 0x73, 0x18, 0x06, 0x20, 0x03, 0x28,
 	0x0b, 0x32, 0x18, 0x2e, 0x74, 0x79, 0x70, 0x65, 0x73, 0x2e, 0x44, 0x79, 0x6e, 0x61, 0x6d, 0x69,
 	0x63, 0x4c, 0x31, 0x46, 0x65, 0x65, 0x50, 0x72, 0x6f, 0x62, 0x65, 0x42, 0x04, 0xc8, 0xde, 0x1f,
-	0x00, 0x52, 0x06, 0x70, 0x72, 0x6f, 0x62, 0x65, 0x73, 0x22, 0x55, 0x0a, 0x11, 0x44, 0x79, 0x6e,
+	0x00, 0x52, 0x06, 0x70, 0x72, 0x6f, 0x62, 0x65, 0x73, 0x22, 0x6d, 0x0a, 0x11, 0x44, 0x79, 0x6e,
 	0x61, 0x6d, 0x69, 0x63, 0x4c, 0x31, 0x46, 0x65, 0x65, 0x50, 0x72, 0x6f, 0x62, 0x65, 0x12, 0x10,
 	0x0a, 0x03, 0x62, 0x70, 0x73, 0x18, 0x01, 0x20, 0x01, 0x28, 0x04, 0x52, 0x03, 0x62, 0x70, 0x73,
 	0x12, 0x16, 0x0a, 0x06, 0x73, 0x69, 0x67, 0x6e, 0x61, 0x6c, 0x18, 0x02, 0x20, 0x01, 0x28, 0x09,
 	0x52, 0x06, 0x73, 0x69, 0x67, 0x6e, 0x61, 0x6c, 0x12, 0x16, 0x0a, 0x06, 0x65, 0x70, 0x6f, 0x63,
 	0x68, 0x73, 0x18, 0x03, 0x20, 0x01, 0x28, 0x04, 0x52, 0x06, 0x65, 0x70, 0x6f, 0x63, 0x68, 0x73,
-	0x22, 0x9a, 0x02, 0x0a, 0x18, 0x44, 0x79, 0x6e, 0x61, 0x6d, 0x69, 0x63, 0x4c, 0x31, 0x46, 0x65,
-	0x65, 0x48, 0x69, 0x73, 0x74, 0x6f, 0x72, 0x79, 0x45, 0x6e, 0x74, 0x72, 0x79, 0x12, 0x14, 0x0a,
-	0x05, 0x65, 0x70, 0x6f, 0x63, 0x68, 0x18, 0x01, 0x20, 0x01, 0x28, 0x04, 0x52, 0x05, 0x65, 0x70,
-	0x6f, 0x63, 0x68, 0x12, 0x1d, 0x0a, 0x0a, 0x76, 0x6f, 0x6c, 0x75, 0x6d, 0x65, 0x5f, 0x74, 0x6f,
-	0x72, 0x18, 0x02, 0x20, 0x01, 0x28, 0x09, 0x52, 0x09, 0x76, 0x6f, 0x6c, 0x75, 0x6d, 0x65, 0x54,
-	0x6f, 0x72, 0x12, 0x19, 0x0a, 0x08, 0x66, 0x65, 0x65, 0x73, 0x5f, 0x74, 0x6f, 0x72, 0x18, 0x03,
-	0x20, 0x01, 0x28, 0x09, 0x52, 0x07, 0x66, 0x65, 0x65, 0x73, 0x54, 0x6f, 0x72, 0x12, 0x20, 0x0a,
-	0x0c, 0x62, 0x70, 0x73, 0x5f, 0x61, 0x74, 0x5f, 0x63, 0x6c, 0x6f, 0x73, 0x65, 0x18, 0x04, 0x20,
-	0x01, 0x28, 0x04, 0x52, 0x0a, 0x62, 0x70, 0x73, 0x41, 0x74, 0x43, 0x6c, 0x6f, 0x73, 0x65, 0x12,
-	0x1d, 0x0a, 0x0a, 0x73, 0x77, 0x61, 0x70, 0x5f, 0x63, 0x6f, 0x75, 0x6e, 0x74, 0x18, 0x05, 0x20,
-	0x01, 0x28, 0x04, 0x52, 0x09, 0x73, 0x77, 0x61, 0x70, 0x43, 0x6f, 0x75, 0x6e, 0x74, 0x12, 0x26,
-	0x0a, 0x0f, 0x70, 0x6f, 0x6f, 0x6c, 0x5f, 0x76, 0x6f, 0x6c, 0x75, 0x6d, 0x65, 0x5f, 0x74, 0x6f,
-	0x72, 0x18, 0x06, 0x20, 0x01, 0x28, 0x09, 0x52, 0x0d, 0x70, 0x6f, 0x6f, 0x6c, 0x56, 0x6f, 0x6c,
-	0x75, 0x6d, 0x65, 0x54, 0x6f, 0x72, 0x12, 0x2d, 0x0a, 0x13, 0x6f, 0x77, 0x6e, 0x5f, 0x70, 0x6f,
-	0x6f, 0x6c, 0x5f, 0x76, 0x6f, 0x6c, 0x75, 0x6d, 0x65, 0x5f, 0x74, 0x6f, 0x72, 0x18, 0x07, 0x20,
-	0x01, 0x28, 0x09, 0x52, 0x10, 0x6f, 0x77, 0x6e, 0x50, 0x6f, 0x6f, 0x6c, 0x56, 0x6f, 0x6c, 0x75,
-	0x6d, 0x65, 0x54, 0x6f, 0x72, 0x12, 0x16, 0x0a, 0x06, 0x62, 0x6c, 0x6f, 0x63, 0x6b, 0x73, 0x18,
-	0x08, 0x20, 0x01, 0x28, 0x03, 0x52, 0x06, 0x62, 0x6c, 0x6f, 0x63, 0x6b, 0x73, 0x22, 0xa6, 0x01,
+	0x12, 0x16, 0x0a, 0x06, 0x63, 0x61, 0x70, 0x70, 0x65, 0x64, 0x18, 0x04, 0x20, 0x01, 0x28, 0x08,
+	0x52, 0x06, 0x63, 0x61, 0x70, 0x70, 0x65, 0x64, 0x22, 0xb2, 0x02, 0x0a, 0x18, 0x44, 0x79, 0x6e,
+	0x61, 0x6d, 0x69, 0x63, 0x4c, 0x31, 0x46, 0x65, 0x65, 0x48, 0x69, 0x73, 0x74, 0x6f, 0x72, 0x79,
+	0x45, 0x6e, 0x74, 0x72, 0x79, 0x12, 0x14, 0x0a, 0x05, 0x65, 0x70, 0x6f, 0x63, 0x68, 0x18, 0x01,
+	0x20, 0x01, 0x28, 0x04, 0x52, 0x05, 0x65, 0x70, 0x6f, 0x63, 0x68, 0x12, 0x1d, 0x0a, 0x0a, 0x76,
+	0x6f, 0x6c, 0x75, 0x6d, 0x65, 0x5f, 0x74, 0x6f, 0x72, 0x18, 0x02, 0x20, 0x01, 0x28, 0x09, 0x52,
+	0x09, 0x76, 0x6f, 0x6c, 0x75, 0x6d, 0x65, 0x54, 0x6f, 0x72, 0x12, 0x19, 0x0a, 0x08, 0x66, 0x65,
+	0x65, 0x73, 0x5f, 0x74, 0x6f, 0x72, 0x18, 0x03, 0x20, 0x01, 0x28, 0x09, 0x52, 0x07, 0x66, 0x65,
+	0x65, 0x73, 0x54, 0x6f, 0x72, 0x12, 0x20, 0x0a, 0x0c, 0x62, 0x70, 0x73, 0x5f, 0x61, 0x74, 0x5f,
+	0x63, 0x6c, 0x6f, 0x73, 0x65, 0x18, 0x04, 0x20, 0x01, 0x28, 0x04, 0x52, 0x0a, 0x62, 0x70, 0x73,
+	0x41, 0x74, 0x43, 0x6c, 0x6f, 0x73, 0x65, 0x12, 0x1d, 0x0a, 0x0a, 0x73, 0x77, 0x61, 0x70, 0x5f,
+	0x63, 0x6f, 0x75, 0x6e, 0x74, 0x18, 0x05, 0x20, 0x01, 0x28, 0x04, 0x52, 0x09, 0x73, 0x77, 0x61,
+	0x70, 0x43, 0x6f, 0x75, 0x6e, 0x74, 0x12, 0x26, 0x0a, 0x0f, 0x70, 0x6f, 0x6f, 0x6c, 0x5f, 0x76,
+	0x6f, 0x6c, 0x75, 0x6d, 0x65, 0x5f, 0x74, 0x6f, 0x72, 0x18, 0x06, 0x20, 0x01, 0x28, 0x09, 0x52,
+	0x0d, 0x70, 0x6f, 0x6f, 0x6c, 0x56, 0x6f, 0x6c, 0x75, 0x6d, 0x65, 0x54, 0x6f, 0x72, 0x12, 0x2d,
+	0x0a, 0x13, 0x6f, 0x77, 0x6e, 0x5f, 0x70, 0x6f, 0x6f, 0x6c, 0x5f, 0x76, 0x6f, 0x6c, 0x75, 0x6d,
+	0x65, 0x5f, 0x74, 0x6f, 0x72, 0x18, 0x07, 0x20, 0x01, 0x28, 0x09, 0x52, 0x10, 0x6f, 0x77, 0x6e,
+	0x50, 0x6f, 0x6f, 0x6c, 0x56, 0x6f, 0x6c, 0x75, 0x6d, 0x65, 0x54, 0x6f, 0x72, 0x12, 0x16, 0x0a,
+	0x06, 0x62, 0x6c, 0x6f, 0x63, 0x6b, 0x73, 0x18, 0x08, 0x20, 0x01, 0x28, 0x03, 0x52, 0x06, 0x62,
+	0x6c, 0x6f, 0x63, 0x6b, 0x73, 0x12, 0x16, 0x0a, 0x06, 0x63, 0x61, 0x70, 0x70, 0x65, 0x64, 0x18,
+	0x09, 0x20, 0x01, 0x28, 0x08, 0x52, 0x06, 0x63, 0x61, 0x70, 0x70, 0x65, 0x64, 0x22, 0xa6, 0x01,
 	0x0a, 0x24, 0x51, 0x75, 0x65, 0x72, 0x79, 0x44, 0x79, 0x6e, 0x61, 0x6d, 0x69, 0x63, 0x4c, 0x31,
 	0x46, 0x65, 0x65, 0x73, 0x42, 0x79, 0x54, 0x68, 0x6f, 0x72, 0x6e, 0x61, 0x6d, 0x65, 0x52, 0x65,
 	0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x12, 0x1a, 0x0a, 0x08, 0x74, 0x68, 0x6f, 0x72, 0x6e, 0x61,

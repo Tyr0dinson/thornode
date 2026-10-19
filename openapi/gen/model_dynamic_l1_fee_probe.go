@@ -22,6 +22,8 @@ type DynamicL1FeeProbe struct {
 	Signal string `json:"signal"`
 	// sealed epochs measured at this bps
 	Epochs int32 `json:"epochs"`
+	// at least one reading at this bps was a capped span; a capped probe never displaces a lower-fee best 
+	Capped *bool `json:"capped,omitempty"`
 }
 
 // NewDynamicL1FeeProbe instantiates a new DynamicL1FeeProbe object
@@ -116,6 +118,38 @@ func (o *DynamicL1FeeProbe) SetEpochs(v int32) {
 	o.Epochs = v
 }
 
+// GetCapped returns the Capped field value if set, zero value otherwise.
+func (o *DynamicL1FeeProbe) GetCapped() bool {
+	if o == nil || o.Capped == nil {
+		var ret bool
+		return ret
+	}
+	return *o.Capped
+}
+
+// GetCappedOk returns a tuple with the Capped field value if set, nil otherwise
+// and a boolean to check if the value has been set.
+func (o *DynamicL1FeeProbe) GetCappedOk() (*bool, bool) {
+	if o == nil || o.Capped == nil {
+		return nil, false
+	}
+	return o.Capped, true
+}
+
+// HasCapped returns a boolean if a field has been set.
+func (o *DynamicL1FeeProbe) HasCapped() bool {
+	if o != nil && o.Capped != nil {
+		return true
+	}
+
+	return false
+}
+
+// SetCapped gets a reference to the given bool and assigns it to the Capped field.
+func (o *DynamicL1FeeProbe) SetCapped(v bool) {
+	o.Capped = &v
+}
+
 func (o DynamicL1FeeProbe) MarshalJSON_deprecated() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if true {
@@ -126,6 +160,9 @@ func (o DynamicL1FeeProbe) MarshalJSON_deprecated() ([]byte, error) {
 	}
 	if true {
 		toSerialize["epochs"] = o.Epochs
+	}
+	if o.Capped != nil {
+		toSerialize["capped"] = o.Capped
 	}
 	return json.Marshal(toSerialize)
 }

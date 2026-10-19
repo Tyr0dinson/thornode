@@ -497,7 +497,8 @@ func (m *DynamicFeeMgr) endEpochForRecord(ctx cosmos.Context, rec types.DynamicF
 		}
 	}
 
-	if acc.SwapCount < p.minSwaps || acc.VolumeTor.LT(p.minVolumeTor) {
+	thin := acc.SwapCount < p.minSwaps || acc.VolumeTor.LT(p.minVolumeTor)
+	if thin {
 		if !capped {
 			// Too thin to carry signal: roll into the next epoch. Keep the
 			// record alive while it rolls, otherwise it could be pruned out
@@ -510,7 +511,7 @@ func (m *DynamicFeeMgr) endEpochForRecord(ctx cosmos.Context, rec types.DynamicF
 		}
 	}
 
-	if err := m.sealEpochForRecord(ctx, rec, acc, currentEpoch, spanBlocks, capped, hasSwaps, monitor, p); err != nil {
+	if err := m.sealEpochForRecord(ctx, rec, acc, currentEpoch, spanBlocks, thin, hasSwaps, monitor, p); err != nil {
 		return err
 	}
 	if hasSwaps {
@@ -522,9 +523,10 @@ func (m *DynamicFeeMgr) endEpochForRecord(ctx cosmos.Context, rec types.DynamicF
 // sealEpochForRecord appends the span's entry, decides the next dynamic_bps
 // (via the bracket search until it converges, then the closed-loop revenue
 // gradient), and emits a dynamic_l1_fee_update event on a bps change or when
-// the search converges. capped marks a span sealed by the time cap rather
-// than the liquidity gate. An empty span (no swaps) does not count as
-// activity, so a thorname that stops trading is still pruned.
+// the search converges. capped marks a span sealed by the time cap below the
+// liquidity gate: too thin to justify raising the fee, so the decision rules
+// only let it lower it. An empty span (no swaps) does not count as activity,
+// so a thorname that stops trading is still pruned.
 func (m *DynamicFeeMgr) sealEpochForRecord(ctx cosmos.Context, rec types.DynamicFeeRecord, acc types.DynamicFeeAccumulator, currentEpoch uint64, spanBlocks int64, capped, hasSwaps, monitor bool, p dynamicFeeParams) error {
 	// Drop history written before pool volume was tracked: those entries hold
 	// raw fee levels, which are not comparable with the normalized signal.
@@ -550,6 +552,7 @@ func (m *DynamicFeeMgr) sealEpochForRecord(ctx cosmos.Context, rec types.Dynamic
 		PoolVolumeTor:    acc.PoolVolumeTor,
 		OwnPoolVolumeTor: acc.OwnPoolVolumeTor,
 		Blocks:           spanBlocks,
+		Capped:           capped,
 	})
 	if hasSwaps {
 		rec.LastActiveEpoch = currentEpoch
@@ -618,7 +621,23 @@ func (m *DynamicFeeMgr) sealEpochForRecord(ctx cosmos.Context, rec types.Dynamic
 //   - Previous direction == -1 and fees went up → continue_down (lower).
 //   - Previous direction == -1 and fees went down → reverse_up (raise).
 //   - |Δ%| below deadband → hold.
+//
+// When the newest entry is capped (sealed by the time cap below the liquidity
+// gate) it may only lower the fee: a cold start probes down instead of up, and
+// any other raise becomes capped_hold.
 func decideNextBps(rec types.DynamicFeeRecord, oldBps, floorBps, ceilingBps, stepBps uint64, windowEpochs int, deadbandBps, tenK cosmos.Uint, minOtherBps uint64) (reason string, newBps uint64, feesBefore, feesAfter, deltaPctBps cosmos.Uint) {
+	reason, newBps, feesBefore, feesAfter, deltaPctBps = gradientNextBps(rec, oldBps, floorBps, ceilingBps, stepBps, windowEpochs, deadbandBps, tenK, minOtherBps)
+	if latest, ok := rec.LatestHistory(); ok && latest.Capped && newBps > oldBps {
+		if reason == "cold_start_probe" {
+			return reason, clampBpsDown(oldBps, stepBps, floorBps), feesBefore, feesAfter, deltaPctBps
+		}
+		return "capped_hold", oldBps, feesBefore, feesAfter, deltaPctBps
+	}
+	return reason, newBps, feesBefore, feesAfter, deltaPctBps
+}
+
+// gradientNextBps is the gradient rule itself; see decideNextBps.
+func gradientNextBps(rec types.DynamicFeeRecord, oldBps, floorBps, ceilingBps, stepBps uint64, windowEpochs int, deadbandBps, tenK cosmos.Uint, minOtherBps uint64) (reason string, newBps uint64, feesBefore, feesAfter, deltaPctBps cosmos.Uint) {
 	changeIdx, hasChange := lastBpsChangeBefore(rec.History, len(rec.History)-1)
 	if !hasChange {
 		// Probe up. A record already at the ceiling cannot, and a clamped
@@ -697,6 +716,9 @@ func searchStep(rec *types.DynamicFeeRecord, oldBps uint64, p dynamicFeeParams) 
 		idx = len(rec.Probes) - 1
 	}
 	rec.Probes[idx].Add(signal)
+	if latest.Capped {
+		rec.Probes[idx].Capped = true
+	}
 	probe := rec.Probes[idx]
 	currentMean = probe.Mean()
 	if probe.Epochs < p.probeEpochs {
@@ -720,7 +742,7 @@ func searchStep(rec *types.DynamicFeeRecord, oldBps uint64, p dynamicFeeParams) 
 //
 // The best probe is the one with the highest mean signal, except that a
 // higher bps only displaces a lower one when it beats it by more than the
-// deadband: on a near-tie the lower fee wins. Assuming revenue is unimodal in
+// deadband (on a near-tie the lower fee wins) and was not capped. Assuming revenue is unimodal in
 // bps, the optimum lies between the best probe's nearest tested neighbours, so
 // only those two gaps are searched. The larger gap is tested next (ties go to
 // the lower side): an untested floor or ceiling at the edge of a gap is tested
@@ -754,6 +776,11 @@ func nextSearchBps(probes []types.DynamicFeeProbe, floorBps, ceilingBps uint64, 
 	bestIdx := 0
 	hurdle := tenK.Add(deadbandBps)
 	for i := 1; i < len(inRange); i++ {
+		// A capped probe was too thin to justify a higher fee, so it never
+		// displaces a lower one; it still counts as tested.
+		if inRange[i].Capped {
+			continue
+		}
 		// mean_i > mean_best * (1 + deadband), kept in integers.
 		if inRange[i].Mean().Mul(tenK).GT(inRange[bestIdx].Mean().Mul(hurdle)) {
 			bestIdx = i

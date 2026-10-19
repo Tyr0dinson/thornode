@@ -42,6 +42,7 @@ message DynamicL1FeeProbe {
   uint64 bps = 1;
   string signal = 2;
   uint64 epochs = 3;
+  bool capped = 4;
 }
 
 message DynamicL1FeeHistoryEntry {
@@ -53,6 +54,7 @@ message DynamicL1FeeHistoryEntry {
   string pool_volume_tor = 6;
   string own_pool_volume_tor = 7;
   int64 blocks = 8;
+  bool capped = 9;
 }
 
 message QueryDynamicL1FeesByThornameResponse {
