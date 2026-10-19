@@ -17,6 +17,15 @@ func uintOrZero(u cosmos.Uint) cosmos.Uint {
 	return u
 }
 
+// dynamicFeePhase names where a record is in its controller lifecycle: the
+// bracket search, or the +/-step tracking that follows it.
+func dynamicFeePhase(rec types.DynamicFeeRecord) string {
+	if rec.SearchDone {
+		return "track"
+	}
+	return "search"
+}
+
 func (qs queryServer) queryDynamicL1Fees(ctx cosmos.Context, req *types.QueryDynamicL1FeesRequest) (*types.QueryDynamicL1FeesResponse, error) {
 	resp := &types.QueryDynamicL1FeesResponse{}
 
@@ -36,6 +45,7 @@ func (qs queryServer) queryDynamicL1Fees(ctx cosmos.Context, req *types.QueryDyn
 			DynamicBps:      rec.DynamicBps,
 			WhitelistState:  state,
 			LastActiveEpoch: rec.LastActiveEpoch,
+			Phase:           dynamicFeePhase(rec),
 		}
 		if latest, ok := rec.LatestHistory(); ok {
 			entry.LatestFeesTor = latest.FeesTor.String()
@@ -68,6 +78,14 @@ func (qs queryServer) queryDynamicL1FeesByThorname(ctx cosmos.Context, req *type
 			Pair:            fmt.Sprintf("%s|%s", rec.PairAssetA, rec.PairAssetB),
 			DynamicBps:      rec.DynamicBps,
 			LastActiveEpoch: rec.LastActiveEpoch,
+			Phase:           dynamicFeePhase(rec),
+		}
+		for _, pr := range rec.Probes {
+			detail.Probes = append(detail.Probes, types.DynamicL1FeeProbe{
+				Bps:    pr.Bps,
+				Signal: pr.Mean().String(),
+				Epochs: pr.Epochs,
+			})
 		}
 		for _, h := range rec.History {
 			detail.History = append(detail.History, types.DynamicL1FeeHistoryEntry{
@@ -109,7 +127,9 @@ func (qs queryServer) queryDynamicL1FeesCurrent(ctx cosmos.Context, req *types.Q
 		// Together with swap_count this is the answer to "why hasn't the
 		// controller moved" for a gated integration.
 		poolVolumeTor := uintOrZero(acc.PoolVolumeTor)
-		if poolAcc, err := qs.mgr.Keeper().GetDynamicFeePoolAccumulator(ctx, acc.PairAssetA, acc.PairAssetB); err == nil {
+		if acc.PairAssetA == types.DynamicFeeGlobalPair {
+			poolVolumeTor = poolVolumeTor.Add(dynamicFeeTotalPoolVolume(ctx, qs.mgr.Keeper()))
+		} else if poolAcc, err := qs.mgr.Keeper().GetDynamicFeePoolAccumulator(ctx, acc.PairAssetA, acc.PairAssetB); err == nil {
 			poolVolumeTor = poolVolumeTor.Add(poolAcc.VolumeTor)
 		}
 		resp.Entries = append(resp.Entries, types.DynamicL1FeeCurrentEntry{

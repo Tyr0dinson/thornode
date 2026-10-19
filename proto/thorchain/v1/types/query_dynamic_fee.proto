@@ -16,6 +16,7 @@ message DynamicL1FeeEntry {
   int64 whitelist_state = 4;
   uint64 last_active_epoch = 5;
   string latest_fees_tor = 6;
+  string phase = 7;
 }
 
 message QueryDynamicL1FeesResponse {
@@ -33,6 +34,14 @@ message DynamicL1FeePairDetail {
   uint64 last_active_epoch = 3;
   repeated DynamicL1FeeHistoryEntry history = 4
       [ (gogoproto.nullable) = false ];
+  string phase = 5;
+  repeated DynamicL1FeeProbe probes = 6 [ (gogoproto.nullable) = false ];
+}
+
+message DynamicL1FeeProbe {
+  uint64 bps = 1;
+  string signal = 2;
+  uint64 epochs = 3;
 }
 
 message DynamicL1FeeHistoryEntry {

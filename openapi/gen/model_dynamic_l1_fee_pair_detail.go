@@ -20,6 +20,10 @@ type DynamicL1FeePairDetail struct {
 	DynamicBps int32 `json:"dynamic_bps"`
 	LastActiveEpoch int32 `json:"last_active_epoch"`
 	History []DynamicL1FeeHistoryEntry `json:"history"`
+	// `search` while the bracket search is still testing bps values, `track` once it has converged and the +/-step controller follows drift from the best value found 
+	Phase *string `json:"phase,omitempty"`
+	// one entry per bps value tested by the current search
+	Probes []DynamicL1FeeProbe `json:"probes,omitempty"`
 }
 
 // NewDynamicL1FeePairDetail instantiates a new DynamicL1FeePairDetail object
@@ -139,6 +143,70 @@ func (o *DynamicL1FeePairDetail) SetHistory(v []DynamicL1FeeHistoryEntry) {
 	o.History = v
 }
 
+// GetPhase returns the Phase field value if set, zero value otherwise.
+func (o *DynamicL1FeePairDetail) GetPhase() string {
+	if o == nil || o.Phase == nil {
+		var ret string
+		return ret
+	}
+	return *o.Phase
+}
+
+// GetPhaseOk returns a tuple with the Phase field value if set, nil otherwise
+// and a boolean to check if the value has been set.
+func (o *DynamicL1FeePairDetail) GetPhaseOk() (*string, bool) {
+	if o == nil || o.Phase == nil {
+		return nil, false
+	}
+	return o.Phase, true
+}
+
+// HasPhase returns a boolean if a field has been set.
+func (o *DynamicL1FeePairDetail) HasPhase() bool {
+	if o != nil && o.Phase != nil {
+		return true
+	}
+
+	return false
+}
+
+// SetPhase gets a reference to the given string and assigns it to the Phase field.
+func (o *DynamicL1FeePairDetail) SetPhase(v string) {
+	o.Phase = &v
+}
+
+// GetProbes returns the Probes field value if set, zero value otherwise.
+func (o *DynamicL1FeePairDetail) GetProbes() []DynamicL1FeeProbe {
+	if o == nil || o.Probes == nil {
+		var ret []DynamicL1FeeProbe
+		return ret
+	}
+	return o.Probes
+}
+
+// GetProbesOk returns a tuple with the Probes field value if set, nil otherwise
+// and a boolean to check if the value has been set.
+func (o *DynamicL1FeePairDetail) GetProbesOk() ([]DynamicL1FeeProbe, bool) {
+	if o == nil || o.Probes == nil {
+		return nil, false
+	}
+	return o.Probes, true
+}
+
+// HasProbes returns a boolean if a field has been set.
+func (o *DynamicL1FeePairDetail) HasProbes() bool {
+	if o != nil && o.Probes != nil {
+		return true
+	}
+
+	return false
+}
+
+// SetProbes gets a reference to the given []DynamicL1FeeProbe and assigns it to the Probes field.
+func (o *DynamicL1FeePairDetail) SetProbes(v []DynamicL1FeeProbe) {
+	o.Probes = v
+}
+
 func (o DynamicL1FeePairDetail) MarshalJSON_deprecated() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if true {
@@ -152,6 +220,12 @@ func (o DynamicL1FeePairDetail) MarshalJSON_deprecated() ([]byte, error) {
 	}
 	if true {
 		toSerialize["history"] = o.History
+	}
+	if o.Phase != nil {
+		toSerialize["phase"] = o.Phase
+	}
+	if o.Probes != nil {
+		toSerialize["probes"] = o.Probes
 	}
 	return json.Marshal(toSerialize)
 }

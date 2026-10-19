@@ -8,6 +8,8 @@ Name | Type | Description | Notes
 **DynamicBps** | **int32** |  | 
 **LastActiveEpoch** | **int32** |  | 
 **History** | [**[]DynamicL1FeeHistoryEntry**](DynamicL1FeeHistoryEntry.md) |  | 
+**Phase** | Pointer to **string** | &#x60;search&#x60; while the bracket search is still testing bps values, &#x60;track&#x60; once it has converged and the +/-step controller follows drift from the best value found  | [optional] 
+**Probes** | Pointer to [**[]DynamicL1FeeProbe**](DynamicL1FeeProbe.md) | one entry per bps value tested by the current search | [optional] 
 
 ## Methods
 
@@ -107,6 +109,56 @@ and a boolean to check if the value has been set.
 
 SetHistory sets History field to given value.
 
+
+### GetPhase
+
+`func (o *DynamicL1FeePairDetail) GetPhase() string`
+
+GetPhase returns the Phase field if non-nil, zero value otherwise.
+
+### GetPhaseOk
+
+`func (o *DynamicL1FeePairDetail) GetPhaseOk() (*string, bool)`
+
+GetPhaseOk returns a tuple with the Phase field if it's non-nil, zero value otherwise
+and a boolean to check if the value has been set.
+
+### SetPhase
+
+`func (o *DynamicL1FeePairDetail) SetPhase(v string)`
+
+SetPhase sets Phase field to given value.
+
+### HasPhase
+
+`func (o *DynamicL1FeePairDetail) HasPhase() bool`
+
+HasPhase returns a boolean if a field has been set.
+
+### GetProbes
+
+`func (o *DynamicL1FeePairDetail) GetProbes() []DynamicL1FeeProbe`
+
+GetProbes returns the Probes field if non-nil, zero value otherwise.
+
+### GetProbesOk
+
+`func (o *DynamicL1FeePairDetail) GetProbesOk() (*[]DynamicL1FeeProbe, bool)`
+
+GetProbesOk returns a tuple with the Probes field if it's non-nil, zero value otherwise
+and a boolean to check if the value has been set.
+
+### SetProbes
+
+`func (o *DynamicL1FeePairDetail) SetProbes(v []DynamicL1FeeProbe)`
+
+SetProbes sets Probes field to given value.
+
+### HasProbes
+
+`func (o *DynamicL1FeePairDetail) HasProbes() bool`
+
+HasProbes returns a boolean if a field has been set.
 
 
 [[Back to Model list]](../README.md#documentation-for-models) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to README]](../README.md)

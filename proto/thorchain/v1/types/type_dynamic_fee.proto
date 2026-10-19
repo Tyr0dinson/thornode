@@ -30,6 +30,24 @@ message DynamicFeeRecord {
   uint64 dynamic_bps = 4;
   uint64 last_active_epoch = 5;
   repeated DynamicFeeEpochRecord history = 6 [ (gogoproto.nullable) = false ];
+  // search_done is false while the bracket search is still testing bps values
+  // and true once it has converged and handed off to the +/-step controller.
+  // The zero value is deliberate: a record written before the search existed
+  // starts a search from its current dynamic_bps.
+  bool search_done = 7;
+  // probes holds one entry per bps value tested by the current search.
+  repeated DynamicFeeProbe probes = 8 [ (gogoproto.nullable) = false ];
+}
+
+// DynamicFeeProbe is the measured fee signal at one tested bps value.
+message DynamicFeeProbe {
+  uint64 bps = 1;
+  // Sum of the normalized fee signal over the sealed epochs measured at bps.
+  string signal_sum = 2 [
+    (gogoproto.customtype) = "cosmossdk.io/math.Uint",
+    (gogoproto.nullable) = false
+  ];
+  uint64 epochs = 3;
 }
 
 message DynamicFeeAccumulator {

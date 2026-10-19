@@ -11,6 +11,39 @@ import (
 
 const MaxDynamicFeeHistory = 30
 
+// Values of the DYNAMICFEE-WHITELIST-<THORNAME> mimir. Any other value marks
+// the thorname for state reclamation.
+const (
+	// DynamicFeeStatePerPair charges a dynamic floor tuned per L1 pair.
+	DynamicFeeStatePerPair int64 = 1
+	// DynamicFeeStateGlobal charges one dynamic floor, tuned across all of the
+	// thorname's L1 pairs together, on every L1 pair.
+	DynamicFeeStateGlobal int64 = 2
+	// DynamicFeeStatePerPairMonitor runs the per-pair controller without
+	// charging its floor.
+	DynamicFeeStatePerPairMonitor int64 = 3
+	// DynamicFeeStateGlobalMonitor runs the global controller without charging
+	// its floor.
+	DynamicFeeStateGlobalMonitor int64 = 4
+)
+
+// DynamicFeeGlobalPair stands in for both pair assets on the record and
+// accumulator of a thorname in global mode, so global state shares the
+// per-pair key space and per-thorname cleanup.
+const DynamicFeeGlobalPair = "*"
+
+// IsValidDynamicFeeState reports whether a whitelist mimir value enrolls the
+// thorname in dynamic fees (charging or monitoring).
+func IsValidDynamicFeeState(state int64) bool {
+	return state >= DynamicFeeStatePerPair && state <= DynamicFeeStateGlobalMonitor
+}
+
+// IsGlobalDynamicFeeState reports whether a whitelist mimir value selects the
+// global (one record across all pairs) controller.
+func IsGlobalDynamicFeeState(state int64) bool {
+	return state == DynamicFeeStateGlobal || state == DynamicFeeStateGlobalMonitor
+}
+
 // SignalScale is the fixed-point scale of the normalized fee signal
 // (fees_tor / pool_volume_tor). The ratio is on the order of 1e-5, so 1e8
 // would truncate it to a few hundred units and quantize the gradient; 1e12
@@ -80,4 +113,12 @@ func (m *DynamicFeeEpochRecord) NormalizedSignal() (math.Uint, bool) {
 		return math.ZeroUint(), false
 	}
 	return common.GetSafeShare(m.FeesTor, m.PoolVolumeTor, SignalScale), true
+}
+
+// Mean returns the probe's average normalized fee signal per measured epoch.
+func (m *DynamicFeeProbe) Mean() math.Uint {
+	if m.Epochs == 0 || m.SignalSum.IsNil() {
+		return math.ZeroUint()
+	}
+	return m.SignalSum.QuoUint64(m.Epochs)
 }

@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
 // --- DynamicFeeRecord ---
@@ -210,12 +211,12 @@ func (k KVStore) SetLastObservedDynamicFeeEpochBlocks(ctx cosmos.Context, value 
 }
 
 // GetRemovedDynamicFeeWhitelistThornames returns thornames whose
-// DYNAMICFEE-WHITELIST mimir entry exists but holds a state other than 1
-// (active) or 2 (accrual-only) — i.e. thornames whose dynamic-fee state
+// DYNAMICFEE-WHITELIST mimir entry exists but holds a state outside 1-4
+// (per-pair, global, and their monitor variants) — i.e. thornames whose dynamic-fee state
 // should be reclaimed. Uses a prefix iterator over the mimir store scoped
 // to DYNAMICFEE-WHITELIST-* keys, avoiding a full scan of the record store.
 //
-// Invariant: only mimir entries that *exist* with state ∉ {1, 2} are
+// Invariant: only mimir entries that *exist* with state ∉ {1, 2, 3, 4} are
 // reported. Entries removed via DeleteMimir (i.e. absent keys) are NOT
 // surfaced here and so will not trigger active cleanup — operators must
 // SetMimir(..., 0) to enrol a thorname for reclamation. Records left
@@ -237,8 +238,7 @@ func (k KVStore) GetRemovedDynamicFeeWhitelistThornames(ctx cosmos.Context) []st
 		if err := k.cdc.Unmarshal(iter.Value(), &value); err != nil {
 			continue
 		}
-		state := value.GetValue()
-		if state == 1 || state == 2 {
+		if types.IsValidDynamicFeeState(value.GetValue()) {
 			continue
 		}
 		thorname := strings.TrimPrefix(string(iter.Key()), prefix)

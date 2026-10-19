@@ -58,13 +58,15 @@ func dynamicFeeWhitelistState(ctx cosmos.Context, k keeper.Keeper, thorname stri
 // to static — see ADR §4 free-rider discussion. First-wins on ties matches
 // the prior largest-bps-only behavior.
 //
-// Returns "", false when the inputs are malformed, empty, or no affiliate
-// satisfies the eligibility predicate.
-func (m *DynamicFeeMgr) dominantEligibleAffiliate(ctx cosmos.Context, affiliates []string, affiliateBps []cosmos.Uint, allowedStates ...int64) (string, bool) {
+// It also returns the winner's whitelist state, which selects the per-pair or
+// global controller. Returns "", 0, false when the inputs are malformed, empty,
+// or no affiliate satisfies the eligibility predicate.
+func (m *DynamicFeeMgr) dominantEligibleAffiliate(ctx cosmos.Context, affiliates []string, affiliateBps []cosmos.Uint, allowedStates ...int64) (string, int64, bool) {
 	if len(affiliates) == 0 || len(affiliates) != len(affiliateBps) {
-		return "", false
+		return "", 0, false
 	}
 	bestIdx := -1
+	bestState := int64(0)
 	bestBps := cosmos.ZeroUint()
 	for i, bps := range affiliateBps {
 		aff := affiliates[i]
@@ -74,18 +76,30 @@ func (m *DynamicFeeMgr) dominantEligibleAffiliate(ctx cosmos.Context, affiliates
 		if !m.keeper.THORNameExists(ctx, aff) {
 			continue
 		}
-		if !slices.Contains(allowedStates, dynamicFeeWhitelistState(ctx, m.keeper, aff)) {
+		state := dynamicFeeWhitelistState(ctx, m.keeper, aff)
+		if !slices.Contains(allowedStates, state) {
 			continue
 		}
 		if bps.GT(bestBps) {
 			bestBps = bps
 			bestIdx = i
+			bestState = state
 		}
 	}
 	if bestIdx < 0 {
-		return "", false
+		return "", 0, false
 	}
-	return affiliates[bestIdx], true
+	return affiliates[bestIdx], bestState, true
+}
+
+// dynamicFeeRecordPair maps an L1 pair to the record key for a whitelist
+// state: the pair itself in per-pair mode, the global placeholder in global
+// mode.
+func dynamicFeeRecordPair(state int64, pairA, pairB string) (string, string) {
+	if types.IsGlobalDynamicFeeState(state) {
+		return types.DynamicFeeGlobalPair, types.DynamicFeeGlobalPair
+	}
+	return pairA, pairB
 }
 
 // CreditSwap accumulates volume and fees for a (thorname, pair) into the
@@ -107,13 +121,15 @@ func (m *DynamicFeeMgr) CreditSwap(ctx cosmos.Context, affiliates []string, affi
 		return
 	}
 
-	// Allow whitelist state 1 (active) or 2 (monitor) so monitor-mode
-	// thornames still accumulate the revenue signal without affecting
-	// live fee charging.
-	aff, ok := m.dominantEligibleAffiliate(ctx, affiliates, affiliateBps, 1, 2)
+	// Monitor states (3, 4) accumulate the revenue signal too, without
+	// affecting live fee charging.
+	aff, state, ok := m.dominantEligibleAffiliate(ctx, affiliates, affiliateBps,
+		types.DynamicFeeStatePerPair, types.DynamicFeeStateGlobal,
+		types.DynamicFeeStatePerPairMonitor, types.DynamicFeeStateGlobalMonitor)
 	if !ok {
 		return
 	}
+	pairA, pairB = dynamicFeeRecordPair(state, pairA, pairB)
 
 	// Lazily create DynamicFeeRecord first, then write the accumulator —
 	// DeleteAllDynamicFeeStateForThorname iterates records only and relies
@@ -240,12 +256,14 @@ func (m *DynamicFeeMgr) GetDynamicBps(ctx cosmos.Context, affiliates []string, a
 		return 0
 	}
 
-	// Only state 1 (active) thornames govern live fees; monitor-mode
-	// (state 2) entries are excluded so they do not drive the floor.
-	thorname, ok := m.dominantEligibleAffiliate(ctx, affiliates, affiliateBps, 1)
+	// Only the charging states govern live fees; monitor states (3, 4) are
+	// excluded so they do not drive the floor.
+	thorname, state, ok := m.dominantEligibleAffiliate(ctx, affiliates, affiliateBps,
+		types.DynamicFeeStatePerPair, types.DynamicFeeStateGlobal)
 	if !ok {
 		return 0
 	}
+	pairA, pairB = dynamicFeeRecordPair(state, pairA, pairB)
 
 	rec, err := m.keeper.GetDynamicFeeRecord(ctx, thorname, pairA, pairB)
 	if err != nil {
@@ -305,6 +323,17 @@ func (m *DynamicFeeMgr) EndBlock(ctx cosmos.Context) error {
 	// Mimir carries whole USD; widen in Uint so a fat-fingered value cannot
 	// overflow uint64 on the way to TOR (1e8) precision.
 	minVolumeTor := cosmos.NewUint(nonNegUint64(m.keeper.GetConfigInt64(ctx, constants.L1DynamicFeeMinVolumeUSD))).MulUint64(common.One)
+	params := dynamicFeeParams{
+		floorBps:     floorBps,
+		ceilingBps:   ceilingBps,
+		stepBps:      stepBps,
+		windowEpochs: windowEpochs,
+		deadbandBps:  deadbandBps,
+		tenK:         tenK,
+		minSwaps:     minSwaps,
+		minVolumeTor: minVolumeTor,
+		probeEpochs:  max(1, nonNegUint64(m.keeper.GetConfigInt64(ctx, constants.L1DynamicFeeProbeEpochs))),
+	}
 
 	// Seal all accumulators. Only thorname-keyed accumulators exist under the
 	// revenue-gradient algorithm; the pair-wide accumulator used by the older
@@ -325,19 +354,27 @@ func (m *DynamicFeeMgr) EndBlock(ctx cosmos.Context) error {
 	}
 	accIter.Close()
 
+	// A global-mode accumulator spans every L1 pair, so its denominator is
+	// the epoch's volume across all of them.
+	totalPoolVolumeTor := dynamicFeeTotalPoolVolume(ctx, m.keeper)
+
 	for _, acc := range thornameAccs {
 		// Fold this epoch's pair-wide volume into the thorname accumulator
 		// before deciding. A rolled accumulator then carries a pool volume
 		// spanning exactly the same epochs as its fees, which keeps the
 		// normalized signal comparable across merged epochs.
-		poolAcc, err := m.keeper.GetDynamicFeePoolAccumulator(ctx, acc.PairAssetA, acc.PairAssetB)
-		if err != nil {
-			ctx.Logger().Error("fail to get dynamic fee pool accumulator", "error", err)
+		if acc.PairAssetA == types.DynamicFeeGlobalPair {
+			acc.PoolVolumeTor = acc.PoolVolumeTor.Add(totalPoolVolumeTor)
 		} else {
-			acc.PoolVolumeTor = acc.PoolVolumeTor.Add(poolAcc.VolumeTor)
+			poolAcc, err := m.keeper.GetDynamicFeePoolAccumulator(ctx, acc.PairAssetA, acc.PairAssetB)
+			if err != nil {
+				ctx.Logger().Error("fail to get dynamic fee pool accumulator", "error", err)
+			} else {
+				acc.PoolVolumeTor = acc.PoolVolumeTor.Add(poolAcc.VolumeTor)
+			}
 		}
 
-		sealed, err := m.sealEpochForRecord(ctx, acc, currentEpoch, floorBps, ceilingBps, stepBps, windowEpochs, deadbandBps, tenK, minSwaps, minVolumeTor)
+		sealed, err := m.sealEpochForRecord(ctx, acc, currentEpoch, params)
 		if err != nil {
 			ctx.Logger().Error("fail to seal dynamic fee epoch", "error", err, "thorname", acc.Thorname)
 			continue
@@ -390,9 +427,21 @@ func (m *DynamicFeeMgr) EndBlock(ctx cosmos.Context) error {
 	return nil
 }
 
+// dynamicFeeParams carries the governance-controlled controller settings,
+// read once per epoch boundary.
+type dynamicFeeParams struct {
+	floorBps, ceilingBps, stepBps uint64
+	windowEpochs                  int
+	deadbandBps, tenK             cosmos.Uint
+	minSwaps                      uint64
+	minVolumeTor                  cosmos.Uint
+	probeEpochs                   uint64
+}
+
 // sealEpochForRecord appends this epoch's entry, decides the next
-// dynamic_bps via the closed-loop revenue gradient, and emits a
-// dynamic_l1_fee_update event on a bps change.
+// dynamic_bps (via the bracket search until it converges, then the
+// closed-loop revenue gradient), and emits a dynamic_l1_fee_update event on a
+// bps change or when the search converges.
 //
 // It returns sealed=false when the epoch is too thin to carry signal (below
 // the minimum swap count or volume). The caller then keeps the accumulator so
@@ -401,13 +450,13 @@ func (m *DynamicFeeMgr) EndBlock(ctx cosmos.Context) error {
 // should never step the floor, which is the whole point of the gate. It is
 // safe because the decision signal is normalized against pool volume and so is
 // comparable across spans of different length.
-func (m *DynamicFeeMgr) sealEpochForRecord(ctx cosmos.Context, acc types.DynamicFeeAccumulator, currentEpoch, floorBps, ceilingBps, stepBps uint64, windowEpochs int, deadbandBps, tenK cosmos.Uint, minSwaps uint64, minVolumeTor cosmos.Uint) (bool, error) {
+func (m *DynamicFeeMgr) sealEpochForRecord(ctx cosmos.Context, acc types.DynamicFeeAccumulator, currentEpoch uint64, p dynamicFeeParams) (bool, error) {
 	rec, err := m.keeper.GetDynamicFeeRecord(ctx, acc.Thorname, acc.PairAssetA, acc.PairAssetB)
 	if err != nil {
 		return false, err
 	}
 
-	if acc.SwapCount < minSwaps || acc.VolumeTor.LT(minVolumeTor) {
+	if acc.SwapCount < p.minSwaps || acc.VolumeTor.LT(p.minVolumeTor) {
 		// Keep the record alive while it rolls, otherwise a permanently
 		// sub-threshold record is pruned after MaxDynamicFeeHistory idle
 		// epochs and leaves its accumulator orphaned.
@@ -445,7 +494,15 @@ func (m *DynamicFeeMgr) sealEpochForRecord(ctx cosmos.Context, acc types.Dynamic
 		PoolVolumeTor: acc.PoolVolumeTor,
 	})
 
-	reason, newBps, feesBefore, feesAfter, deltaPctBps := decideNextBps(rec, oldBps, floorBps, ceilingBps, stepBps, windowEpochs, deadbandBps, tenK)
+	var reason string
+	var newBps uint64
+	var feesBefore, feesAfter, deltaPctBps cosmos.Uint
+	if rec.SearchDone {
+		reason, newBps, feesBefore, feesAfter, deltaPctBps = decideNextBps(rec, oldBps, p.floorBps, p.ceilingBps, p.stepBps, p.windowEpochs, p.deadbandBps, p.tenK)
+	} else {
+		reason, newBps, feesBefore, feesAfter = searchStep(&rec, oldBps, p)
+		deltaPctBps = cosmos.ZeroUint()
+	}
 	rec.DynamicBps = newBps
 	rec.LastActiveEpoch = currentEpoch
 
@@ -453,7 +510,7 @@ func (m *DynamicFeeMgr) sealEpochForRecord(ctx cosmos.Context, acc types.Dynamic
 		return false, err
 	}
 
-	if newBps != oldBps {
+	if newBps != oldBps || reason == "search_converged" {
 		ctx.EventManager().EmitEvent(
 			cosmos.NewEvent(
 				types.DynamicL1FeeUpdateEventType,
@@ -526,6 +583,145 @@ func decideNextBps(rec types.DynamicFeeRecord, oldBps, floorBps, ceilingBps, ste
 	default:
 		return "reverse_up", clampBps(oldBps+stepBps, floorBps, ceilingBps), feesBefore, feesAfter, deltaPctBps
 	}
+}
+
+// searchStep runs one epoch of the bracket search for a record whose newest
+// history entry was governed by oldBps. It credits that epoch's signal to the
+// probe for oldBps; once the probe holds probeEpochs epochs it moves to the
+// next untested bps, or converges. It returns the reason, the next bps, and
+// the best and current probe means (for event emission).
+//
+// On convergence the record switches to the +/-step controller at the best
+// bps. Its history is cleared so that controller starts fresh there instead of
+// reading the search's jumps as its own steps; the probes are kept so queries
+// still show what the search measured.
+func searchStep(rec *types.DynamicFeeRecord, oldBps uint64, p dynamicFeeParams) (reason string, newBps uint64, bestMean, currentMean cosmos.Uint) {
+	bestMean, currentMean = cosmos.ZeroUint(), cosmos.ZeroUint()
+	latest, ok := rec.LatestHistory()
+	if !ok {
+		return "hold", oldBps, bestMean, currentMean
+	}
+	signal, ok := latest.NormalizedSignal()
+	if !ok {
+		// No pool volume to normalize against: this epoch says nothing about
+		// oldBps, so measure it again.
+		return "hold", oldBps, bestMean, currentMean
+	}
+
+	idx := slices.IndexFunc(rec.Probes, func(pr types.DynamicFeeProbe) bool { return pr.Bps == oldBps })
+	if idx < 0 {
+		rec.Probes = append(rec.Probes, types.DynamicFeeProbe{Bps: oldBps, SignalSum: cosmos.ZeroUint()})
+		idx = len(rec.Probes) - 1
+	}
+	probe := &rec.Probes[idx]
+	if probe.SignalSum.IsNil() {
+		probe.SignalSum = cosmos.ZeroUint()
+	}
+	probe.SignalSum = probe.SignalSum.Add(signal)
+	probe.Epochs++
+	currentMean = probe.Mean()
+	if probe.Epochs < p.probeEpochs {
+		return "search_measure", oldBps, bestMean, currentMean
+	}
+
+	best, next, done := nextSearchBps(rec.Probes, p.floorBps, p.ceilingBps, p.deadbandBps, p.tenK)
+	if bi := slices.IndexFunc(rec.Probes, func(pr types.DynamicFeeProbe) bool { return pr.Bps == best }); bi >= 0 {
+		bestMean = rec.Probes[bi].Mean()
+	}
+	if done {
+		rec.SearchDone = true
+		rec.History = nil
+		return "search_converged", best, bestMean, currentMean
+	}
+	return "search_probe", next, bestMean, currentMean
+}
+
+// nextSearchBps picks the next bps for the bracket search from the completed
+// probes within [floorBps, ceilingBps].
+//
+// The best probe is the one with the highest mean signal, except that a
+// higher bps only displaces a lower one when it beats it by more than the
+// deadband: on a near-tie the lower fee wins. Assuming revenue is unimodal in
+// bps, the optimum lies between the best probe's nearest tested neighbours, so
+// only those two gaps are searched. The larger gap is tested next (ties go to
+// the lower side): an untested floor or ceiling at the edge of a gap is tested
+// first, otherwise the gap's midpoint. From a fresh record at the floor this
+// tests the floor, the ceiling, then the midpoint (1, 20, 10 on defaults),
+// then halves the gap around the best value. When both gaps are empty the
+// search is done and best is the answer.
+//
+// With no completed probe in range (the range moved under the search), it
+// starts again from the floor.
+func nextSearchBps(probes []types.DynamicFeeProbe, floorBps, ceilingBps uint64, deadbandBps, tenK cosmos.Uint) (best, next uint64, done bool) {
+	inRange := make([]types.DynamicFeeProbe, 0, len(probes))
+	for _, pr := range probes {
+		if pr.Epochs > 0 && pr.Bps >= floorBps && pr.Bps <= ceilingBps {
+			inRange = append(inRange, pr)
+		}
+	}
+	if len(inRange) == 0 {
+		return floorBps, floorBps, false
+	}
+	slices.SortFunc(inRange, func(a, b types.DynamicFeeProbe) int {
+		switch {
+		case a.Bps < b.Bps:
+			return -1
+		case a.Bps > b.Bps:
+			return 1
+		}
+		return 0
+	})
+
+	bestIdx := 0
+	hurdle := tenK.Add(deadbandBps)
+	for i := 1; i < len(inRange); i++ {
+		// mean_i > mean_best * (1 + deadband), kept in integers.
+		if inRange[i].Mean().Mul(tenK).GT(inRange[bestIdx].Mean().Mul(hurdle)) {
+			bestIdx = i
+		}
+	}
+	best = inRange[bestIdx].Bps
+
+	var leftCount, leftNext, rightCount, rightNext uint64
+	if bestIdx > 0 {
+		lo := inRange[bestIdx-1].Bps
+		leftCount, leftNext = best-lo-1, (lo+best)/2
+	} else if best > floorBps {
+		leftCount, leftNext = best-floorBps, floorBps
+	}
+	if bestIdx < len(inRange)-1 {
+		hi := inRange[bestIdx+1].Bps
+		rightCount, rightNext = hi-best-1, (best+hi)/2
+	} else if best < ceilingBps {
+		rightCount, rightNext = ceilingBps-best, ceilingBps
+	}
+
+	switch {
+	case leftCount == 0 && rightCount == 0:
+		return best, best, true
+	case rightCount > leftCount:
+		return best, rightNext, false
+	default:
+		return best, leftNext, false
+	}
+}
+
+// dynamicFeeTotalPoolVolume sums this epoch's pool accumulators across every
+// L1 pair: the denominator of a global-mode record.
+func dynamicFeeTotalPoolVolume(ctx cosmos.Context, k keeper.Keeper) cosmos.Uint {
+	total := cosmos.ZeroUint()
+	iter := k.GetDynamicFeePoolAccumulatorIterator(ctx)
+	defer iter.Close()
+	for ; iter.Valid(); iter.Next() {
+		var acc types.DynamicFeePoolAccumulator
+		if err := k.Cdc().Unmarshal(iter.Value(), &acc); err != nil {
+			continue
+		}
+		if !acc.VolumeTor.IsNil() {
+			total = total.Add(acc.VolumeTor)
+		}
+	}
+	return total
 }
 
 // lastBpsChangeBefore walks history backward before upToExclusive and returns

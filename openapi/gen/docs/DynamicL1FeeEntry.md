@@ -5,11 +5,12 @@
 Name | Type | Description | Notes
 ------------ | ------------- | ------------- | -------------
 **Thorname** | **string** | the registered thorname this record is attributed to | 
-**Pair** | **string** | normalized asset pair encoded as \&quot;assetA|assetB\&quot; | 
+**Pair** | **string** | normalized asset pair encoded as \&quot;assetA|assetB\&quot;, or \&quot;*|*\&quot; for a thorname in global mode  | 
 **DynamicBps** | **int32** | current dynamic outbound fee floor in basis points | 
-**WhitelistState** | **int64** | DYNAMICFEE-WHITELIST-{thorname} Mimir value. &#x60;0&#x60;/absent &#x3D; not enrolled, &#x60;1&#x60; &#x3D; active (applied at swap time), &#x60;2&#x60; &#x3D; monitor (computed but not applied).  | 
+**WhitelistState** | **int64** | DYNAMICFEE-WHITELIST-{thorname} Mimir value. &#x60;0&#x60;/absent &#x3D; not enrolled, &#x60;1&#x60; &#x3D; per-pair (applied at swap time), &#x60;2&#x60; &#x3D; global (one floor across all of the thorname&#39;s L1 pairs, applied at swap time), &#x60;3&#x60; &#x3D; per-pair monitor and &#x60;4&#x60; &#x3D; global monitor (computed but not applied).  | 
 **LastActiveEpoch** | **int32** | last epoch index in which this pair accrued activity | 
 **LatestFeesTor** | Pointer to **string** | fees in TOR (1e8-precision USD value) recorded in the most recent sealed history entry, if any  | [optional] 
+**Phase** | Pointer to **string** | &#x60;search&#x60; while the bracket search is still testing bps values, &#x60;track&#x60; once it has converged and the +/-step controller follows drift from the best value found  | [optional] 
 
 ## Methods
 
@@ -154,6 +155,31 @@ SetLatestFeesTor sets LatestFeesTor field to given value.
 `func (o *DynamicL1FeeEntry) HasLatestFeesTor() bool`
 
 HasLatestFeesTor returns a boolean if a field has been set.
+
+### GetPhase
+
+`func (o *DynamicL1FeeEntry) GetPhase() string`
+
+GetPhase returns the Phase field if non-nil, zero value otherwise.
+
+### GetPhaseOk
+
+`func (o *DynamicL1FeeEntry) GetPhaseOk() (*string, bool)`
+
+GetPhaseOk returns a tuple with the Phase field if it's non-nil, zero value otherwise
+and a boolean to check if the value has been set.
+
+### SetPhase
+
+`func (o *DynamicL1FeeEntry) SetPhase(v string)`
+
+SetPhase sets Phase field to given value.
+
+### HasPhase
+
+`func (o *DynamicL1FeeEntry) HasPhase() bool`
+
+HasPhase returns a boolean if a field has been set.
 
 
 [[Back to Model list]](../README.md#documentation-for-models) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to README]](../README.md)

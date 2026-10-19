@@ -236,7 +236,7 @@ func (s *DynamicFeeMgrSuite) TestGetDynamicBpsInactiveWithoutRecordReturnsZero(c
 	dfm := newDynamicFeeMgr(k)
 
 	registerThorname(ctx, k, "rando", 0)
-	registerThorname(ctx, k, "monitor", 2)
+	registerThorname(ctx, k, "monitor", types.DynamicFeeStatePerPairMonitor)
 
 	for _, tc := range []struct {
 		name      string
@@ -254,7 +254,7 @@ func (s *DynamicFeeMgrSuite) TestGetDynamicBpsInactiveWithoutRecordReturnsZero(c
 	}
 }
 
-// TestGetDynamicBpsMonitorMode verifies that monitor mode (state=2) causes GetDynamicBps to
+// TestGetDynamicBpsMonitorMode verifies that monitor mode (state=3) causes GetDynamicBps to
 // return 0 (monitoring only, no fee adjustment applied), while CreditSwap still accumulates.
 func (s *DynamicFeeMgrSuite) TestGetDynamicBpsMonitorMode(c *C) {
 	ctx, mgr := setupManagerForTest(c)
@@ -262,7 +262,7 @@ func (s *DynamicFeeMgrSuite) TestGetDynamicBpsMonitorMode(c *C) {
 	setDynamicFeeTestMimirs(ctx, k)
 	dfm := newDynamicFeeMgr(k)
 
-	registerThorname(ctx, k, "montn", 2)
+	registerThorname(ctx, k, "montn", types.DynamicFeeStatePerPairMonitor)
 
 	pairA, pairB, ok := dynamicFeePairKey(common.BTCAsset, common.RuneAsset())
 	c.Assert(ok, Equals, true)
@@ -369,9 +369,10 @@ func (s *DynamicFeeMgrSuite) TestEndBlockEpochBoundary(c *C) {
 	c.Assert(rec.History[0].FeesTor.Equal(cosmos.NewUint(10_000)), Equals, true)
 }
 
-// TestEndBlockColdStartProbesUp verifies that the second epoch for a record
-// probes upward by one step from the floor — the algorithm has no prior move
-// to evaluate, so it probes to generate data for the third-epoch gradient.
+// TestEndBlockColdStartProbesUp verifies that once the search has handed off,
+// the +/-step controller's first two epochs probe upward by one step — it has
+// no prior move of its own to evaluate, so it probes to generate data for the
+// third-epoch gradient.
 func (s *DynamicFeeMgrSuite) TestEndBlockColdStartProbesUp(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	k := mgr.Keeper()
@@ -382,6 +383,11 @@ func (s *DynamicFeeMgrSuite) TestEndBlockColdStartProbesUp(c *C) {
 
 	pairA, pairB, ok := dynamicFeePairKey(common.BTCAsset, common.RuneAsset())
 	c.Assert(ok, Equals, true)
+	c.Assert(k.SetDynamicFeeRecord(ctx, types.DynamicFeeRecord{
+		Thorname: "mytn", PairAssetA: pairA, PairAssetB: pairB,
+		DynamicBps: 1,
+		SearchDone: true,
+	}), IsNil)
 
 	// --- Epoch 1 at block 20 ---
 	dfm.CreditSwap(
@@ -427,6 +433,7 @@ func (s *DynamicFeeMgrSuite) TestEndBlockContinueUpOnFeeRise(c *C) {
 	pre := types.DynamicFeeRecord{
 		Thorname: "mytn", PairAssetA: pairA, PairAssetB: pairB,
 		DynamicBps: 6,
+		SearchDone: true,
 		History: []types.DynamicFeeEpochRecord{
 			{Epoch: 9, FeesTor: cosmos.NewUint(100), BpsAtClose: 5, PoolVolumeTor: types.SignalScale},
 			{Epoch: 10, FeesTor: cosmos.NewUint(100), BpsAtClose: 6, PoolVolumeTor: types.SignalScale},
@@ -464,6 +471,7 @@ func (s *DynamicFeeMgrSuite) TestEndBlockReverseDownOnFeeFall(c *C) {
 	pre := types.DynamicFeeRecord{
 		Thorname: "mytn", PairAssetA: pairA, PairAssetB: pairB,
 		DynamicBps: 8,
+		SearchDone: true,
 		History: []types.DynamicFeeEpochRecord{
 			{Epoch: 9, FeesTor: cosmos.NewUint(200), BpsAtClose: 5, PoolVolumeTor: types.SignalScale},
 			{Epoch: 10, FeesTor: cosmos.NewUint(200), BpsAtClose: 8, PoolVolumeTor: types.SignalScale},
@@ -500,6 +508,7 @@ func (s *DynamicFeeMgrSuite) TestEndBlockContinueDownOnFeeRise(c *C) {
 	pre := types.DynamicFeeRecord{
 		Thorname: "mytn", PairAssetA: pairA, PairAssetB: pairB,
 		DynamicBps: 5,
+		SearchDone: true,
 		History: []types.DynamicFeeEpochRecord{
 			{Epoch: 9, FeesTor: cosmos.NewUint(100), BpsAtClose: 8, PoolVolumeTor: types.SignalScale},
 			{Epoch: 10, FeesTor: cosmos.NewUint(100), BpsAtClose: 5, PoolVolumeTor: types.SignalScale},
@@ -537,6 +546,7 @@ func (s *DynamicFeeMgrSuite) TestEndBlockHoldInDeadband(c *C) {
 	pre := types.DynamicFeeRecord{
 		Thorname: "mytn", PairAssetA: pairA, PairAssetB: pairB,
 		DynamicBps: 6,
+		SearchDone: true,
 		History: []types.DynamicFeeEpochRecord{
 			{Epoch: 9, FeesTor: cosmos.NewUint(100), BpsAtClose: 5, PoolVolumeTor: types.SignalScale},
 			{Epoch: 10, FeesTor: cosmos.NewUint(100), BpsAtClose: 6, PoolVolumeTor: types.SignalScale},
@@ -579,6 +589,7 @@ func (s *DynamicFeeMgrSuite) TestEndBlockZeroVolumeAccumulator(c *C) {
 	pre := types.DynamicFeeRecord{
 		Thorname: "mytn", PairAssetA: pairA, PairAssetB: pairB,
 		DynamicBps: 5,
+		SearchDone: true,
 		History: []types.DynamicFeeEpochRecord{
 			{Epoch: 9, FeesTor: cosmos.ZeroUint(), BpsAtClose: 8, PoolVolumeTor: types.SignalScale},
 			{Epoch: 10, FeesTor: cosmos.ZeroUint(), BpsAtClose: 5, PoolVolumeTor: types.SignalScale},
@@ -632,6 +643,7 @@ func (s *DynamicFeeMgrSuite) TestEndBlockFloorClamp(c *C) {
 	pre := types.DynamicFeeRecord{
 		Thorname: "mytn", PairAssetA: pairA, PairAssetB: pairB,
 		DynamicBps: 1,
+		SearchDone: true,
 		History: []types.DynamicFeeEpochRecord{
 			{Epoch: 9, FeesTor: cosmos.NewUint(100), BpsAtClose: 2, PoolVolumeTor: types.SignalScale},
 			{Epoch: 10, FeesTor: cosmos.NewUint(100), BpsAtClose: 1, PoolVolumeTor: types.SignalScale},
@@ -669,6 +681,7 @@ func (s *DynamicFeeMgrSuite) TestEndBlockCeilingClamp(c *C) {
 	pre := types.DynamicFeeRecord{
 		Thorname: "mytn", PairAssetA: pairA, PairAssetB: pairB,
 		DynamicBps: 10,
+		SearchDone: true,
 		History: []types.DynamicFeeEpochRecord{
 			{Epoch: 9, FeesTor: cosmos.NewUint(100), BpsAtClose: 9, PoolVolumeTor: types.SignalScale},
 			{Epoch: 10, FeesTor: cosmos.NewUint(100), BpsAtClose: 10, PoolVolumeTor: types.SignalScale},
@@ -1014,7 +1027,7 @@ func (s *DynamicFeeMgrSuite) TestDominantEligibleAffiliateMonitorVsActive(c *C) 
 	dfm := newDynamicFeeMgr(k)
 
 	registerThorname(ctx, k, "active", 1)
-	registerThorname(ctx, k, "monitor", 2)
+	registerThorname(ctx, k, "monitor", types.DynamicFeeStatePerPairMonitor)
 
 	pairA, pairB, ok := dynamicFeePairKey(common.BTCAsset, common.RuneAsset())
 	c.Assert(ok, Equals, true)
@@ -1037,7 +1050,7 @@ func (s *DynamicFeeMgrSuite) TestDominantEligibleAffiliateMonitorVsActive(c *C) 
 	)
 	c.Assert(bps, Equals, uint64(17))
 
-	// CreditSwap allows state 1 or 2 → picks "monitor" by largest bps.
+	// CreditSwap allows the monitor states too → picks "monitor" by largest bps.
 	dfm.CreditSwap(
 		ctx,
 		[]string{"active", "monitor"},
@@ -1675,7 +1688,7 @@ func (s *DynamicFeeMgrSuite) TestEndBlockGateSealsSummedRolledEpochs(c *C) {
 	c.Check(h.VolumeTor.Equal(volume.MulUint64(3)), Equals, true)
 	c.Check(h.FeesTor.Equal(fees.MulUint64(3)), Equals, true)
 	c.Check(h.PoolVolumeTor.Equal(poolVolume.MulUint64(3)), Equals, true)
-	c.Check(rec.DynamicBps, Equals, uint64(2), Commentf("first sealed epoch is a cold-start probe"))
+	c.Check(rec.DynamicBps, Equals, uint64(100), Commentf("first sealed epoch sends the search to the ceiling"))
 
 	// Sealing consumes the accumulator; the next epoch starts from zero.
 	acc, err := k.GetDynamicFeeAccumulator(ctx, "ss", pairA, pairB)
@@ -1774,6 +1787,7 @@ func (s *DynamicFeeMgrSuite) TestEndBlockDropsPreUpgradeHistory(c *C) {
 	c.Assert(k.SetDynamicFeeRecord(ctx, types.DynamicFeeRecord{
 		Thorname: "ss", PairAssetA: pairA, PairAssetB: pairB,
 		DynamicBps: 8,
+		SearchDone: true,
 		History: []types.DynamicFeeEpochRecord{
 			{Epoch: 9, FeesTor: cosmos.NewUint(100), BpsAtClose: 7},
 			{Epoch: 10, FeesTor: cosmos.NewUint(100), BpsAtClose: 8},

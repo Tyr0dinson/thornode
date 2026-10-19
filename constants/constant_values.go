@@ -210,6 +210,7 @@ const (
 	L1DynamicFeeWindowEpochs
 	L1DynamicFeeMinSwaps
 	L1DynamicFeeMinVolumeUSD
+	L1DynamicFeeProbeEpochs
 	VaultDeficitGasHaltMaxGasMultiplier
 
 	BondYieldEnabled

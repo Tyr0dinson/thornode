@@ -71,6 +71,7 @@ Mimirs have a maximum length of 128 bytes (see MaxMimirLength in THORNode code).
 - `L1DynamicFeeWindowEpochs`: Epochs averaged either side of the last change when measuring the fee response
 - `L1DynamicFeeMinSwaps`: Swaps an epoch must contain before it may seal a decision; below this it rolls into the next epoch (0 disables)
 - `L1DynamicFeeMinVolumeUSD`: Whole USD of affiliate volume an epoch must contain before it may seal a decision (0 disables)
+- `L1DynamicFeeProbeEpochs`: Sealed epochs measured at each bps value the bracket search tests before it moves on (minimum 1)
 
 ## Memoless Transactions
 

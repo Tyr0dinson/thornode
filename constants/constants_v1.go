@@ -176,6 +176,7 @@ func NewConstantValue() *ConstantVals {
 			L1DynamicFeeWindowEpochs:            3,                  // epochs averaged on each side of the last bps change when measuring the fee-signal gradient (clamped into [1, MaxDynamicFeeHistory])
 			L1DynamicFeeMinSwaps:                30,                 // swaps a dynamic fee epoch must contain before it may seal a decision; below this it rolls into the next epoch (0 disables)
 			L1DynamicFeeMinVolumeUSD:            50_000,             // whole USD of affiliate volume a dynamic fee epoch must contain before it may seal a decision (0 disables)
+			L1DynamicFeeProbeEpochs:             1,                  // sealed epochs measured at each bps value the bracket search tests before it picks the next one (minimum 1)
 			VaultDeficitGasHaltMaxGasMultiplier: 30,                 // multiple of current max gas at which gas-related vault deficits halt signing and trading
 			MaxAbsentKeygenReporters:            1,                  // number of keygen members allowed to skip MsgTssPool reporting before a successful keygen finalizes (mainnet default)
 			BondYieldEnabled:                    0,                  // enable/disable automatic bond-yield payouts

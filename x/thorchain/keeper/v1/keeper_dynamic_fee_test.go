@@ -176,12 +176,16 @@ func (s *KeeperDynamicFeeSuite) TestDeleteAllDynamicFeeStateForThornameRecordWit
 func (s *KeeperDynamicFeeSuite) TestGetRemovedDynamicFeeWhitelistThornames(c *C) {
 	ctx, k := setupKeeperForTest(c)
 
-	// Seed whitelist mimirs: two active, one accrual-only, two removed (state 0, -1).
+	// Seed whitelist mimirs: every enrolled state (1 per-pair, 2 global,
+	// 3 per-pair monitor, 4 global monitor), and three removed (0, -1, 5).
 	k.SetMimir(ctx, "DYNAMICFEE-WHITELIST-ACTIVEA", 1)
 	k.SetMimir(ctx, "DYNAMICFEE-WHITELIST-ACTIVEB", 1)
-	k.SetMimir(ctx, "DYNAMICFEE-WHITELIST-ACCRUING", 2)
+	k.SetMimir(ctx, "DYNAMICFEE-WHITELIST-GLOBAL", 2)
+	k.SetMimir(ctx, "DYNAMICFEE-WHITELIST-ACCRUING", 3)
+	k.SetMimir(ctx, "DYNAMICFEE-WHITELIST-ACCRUINGGLOBAL", 4)
 	k.SetMimir(ctx, "DYNAMICFEE-WHITELIST-REMOVED1", 0)
 	k.SetMimir(ctx, "DYNAMICFEE-WHITELIST-REMOVED2", -1)
+	k.SetMimir(ctx, "DYNAMICFEE-WHITELIST-REMOVED3", 5)
 
 	// Seed unrelated DynamicFee mimirs that must NOT be matched by the prefix.
 	k.SetMimir(ctx, "L1DynamicFeeEnabled", 1)
@@ -195,9 +199,10 @@ func (s *KeeperDynamicFeeSuite) TestGetRemovedDynamicFeeWhitelistThornames(c *C)
 	for _, tn := range got {
 		gotSet[tn] = true
 	}
-	c.Check(len(got), Equals, 2, Commentf("expected exactly the two removed entries, got %v", got))
+	c.Check(len(got), Equals, 3, Commentf("expected exactly the three removed entries, got %v", got))
 	c.Check(gotSet["REMOVED1"], Equals, true)
 	c.Check(gotSet["REMOVED2"], Equals, true)
+	c.Check(gotSet["REMOVED3"], Equals, true)
 	c.Check(gotSet["ACTIVEA"], Equals, false)
 	c.Check(gotSet["ACTIVEB"], Equals, false)
 	c.Check(gotSet["ACCRUING"], Equals, false)

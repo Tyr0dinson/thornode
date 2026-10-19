@@ -942,8 +942,8 @@ func (s *HandlerSwapSuite) TestSwapDynamicFeeIntegration(c *C) {
 
 	rec1, err := k.GetDynamicFeeRecord(ctx, "bentley", pairA, pairB)
 	c.Assert(err, IsNil)
-	c.Check(rec1.DynamicBps, Equals, uint64(2),
-		Commentf("epoch 1 seals as cold_start_probe from floor=1"))
+	c.Check(rec1.DynamicBps, Equals, uint64(100),
+		Commentf("epoch 1 measures the floor, then the search tests the ceiling"))
 
 	// --- Epoch 2 (block 20) ---
 	mgr.DynamicFeeMgr().CreditSwap(
@@ -957,8 +957,8 @@ func (s *HandlerSwapSuite) TestSwapDynamicFeeIntegration(c *C) {
 
 	rec2, err := k.GetDynamicFeeRecord(ctx, "bentley", pairA, pairB)
 	c.Assert(err, IsNil)
-	c.Check(rec2.DynamicBps, Equals, uint64(3),
-		Commentf("epoch 2 seals again as cold_start_probe from 2→3"))
+	c.Check(rec2.DynamicBps, Equals, uint64(50),
+		Commentf("epoch 2 measures the ceiling, then the search tests the midpoint"))
 
 	// --- Assert the dynamic floor visibly reshapes next-swap pricing ---
 	swp := StreamingSwap{

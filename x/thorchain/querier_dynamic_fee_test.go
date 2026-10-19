@@ -95,7 +95,7 @@ func (s *QuerierDynamicFeeSuite) TestQueryDynamicL1FeesMonitorWhitelistState(c *
 	k := mgr.Keeper()
 	qs := &queryServer{mgr: mgr}
 
-	registerThorname(ctx, k, "watcher", 2) // accrual-only
+	registerThorname(ctx, k, "watcher", types.DynamicFeeStatePerPairMonitor) // accrual-only
 
 	rec := types.DynamicFeeRecord{
 		Thorname:   "watcher",
@@ -108,7 +108,7 @@ func (s *QuerierDynamicFeeSuite) TestQueryDynamicL1FeesMonitorWhitelistState(c *
 	resp, err := qs.queryDynamicL1Fees(ctx, &types.QueryDynamicL1FeesRequest{})
 	c.Assert(err, IsNil)
 	c.Assert(len(resp.Entries), Equals, 1)
-	c.Check(resp.Entries[0].WhitelistState, Equals, int64(2))
+	c.Check(resp.Entries[0].WhitelistState, Equals, types.DynamicFeeStatePerPairMonitor)
 }
 
 func (s *QuerierDynamicFeeSuite) TestQueryDynamicL1FeesByThornameEmpty(c *C) {

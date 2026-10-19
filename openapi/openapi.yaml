@@ -5699,7 +5699,9 @@ components:
           example: "alice"
         pair:
           type: string
-          description: normalized asset pair encoded as "assetA|assetB"
+          description: |
+            normalized asset pair encoded as "assetA|assetB", or "*|*" for a
+            thorname in global mode
           example: "BTC.BTC|THOR.RUNE"
         dynamic_bps:
           type: integer
@@ -5711,8 +5713,10 @@ components:
           format: int64
           description: |
             DYNAMICFEE-WHITELIST-{thorname} Mimir value. `0`/absent = not
-            enrolled, `1` = active (applied at swap time), `2` = monitor
-            (computed but not applied).
+            enrolled, `1` = per-pair (applied at swap time), `2` = global (one
+            floor across all of the thorname's L1 pairs, applied at swap time),
+            `3` = per-pair monitor and `4` = global monitor (computed but not
+            applied).
           example: 1
         last_active_epoch:
           type: integer
@@ -5725,6 +5729,14 @@ components:
             fees in TOR (1e8-precision USD value) recorded in the most recent
             sealed history entry, if any
           example: "12345678"
+        phase:
+          type: string
+          enum: ["search", "track"]
+          description: |
+            `search` while the bracket search is still testing bps values,
+            `track` once it has converged and the +/-step controller follows
+            drift from the best value found
+          example: "search"
 
     DynamicL1FeesResponse:
       type: object
@@ -5805,6 +5817,43 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/DynamicL1FeeHistoryEntry"
+        phase:
+          type: string
+          enum: ["search", "track"]
+          description: |
+            `search` while the bracket search is still testing bps values,
+            `track` once it has converged and the +/-step controller follows
+            drift from the best value found
+          example: "search"
+        probes:
+          type: array
+          description: one entry per bps value tested by the current search
+          items:
+            $ref: "#/components/schemas/DynamicL1FeeProbe"
+
+    DynamicL1FeeProbe:
+      type: object
+      required:
+        - bps
+        - signal
+        - epochs
+      properties:
+        bps:
+          type: integer
+          format: uint64
+          description: the tested dynamic_bps value
+          example: 10
+        signal:
+          type: string
+          description: |
+            mean normalized fee signal (fees_tor / pool_volume_tor, scaled by
+            1e12) over the sealed epochs measured at this bps
+          example: "1234567"
+        epochs:
+          type: integer
+          format: uint64
+          description: sealed epochs measured at this bps
+          example: 1
 
     DynamicL1FeesByThornameResponse:
       type: object

@@ -208,6 +208,7 @@ Class | Method | HTTP request | Description
  - [DynamicL1FeeEntry](docs/DynamicL1FeeEntry.md)
  - [DynamicL1FeeHistoryEntry](docs/DynamicL1FeeHistoryEntry.md)
  - [DynamicL1FeePairDetail](docs/DynamicL1FeePairDetail.md)
+ - [DynamicL1FeeProbe](docs/DynamicL1FeeProbe.md)
  - [DynamicL1FeesByThornameResponse](docs/DynamicL1FeesByThornameResponse.md)
  - [DynamicL1FeesCurrentResponse](docs/DynamicL1FeesCurrentResponse.md)
  - [DynamicL1FeesResponse](docs/DynamicL1FeesResponse.md)
