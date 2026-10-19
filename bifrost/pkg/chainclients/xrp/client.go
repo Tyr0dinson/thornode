@@ -105,7 +105,11 @@ func NewClient(
 		}
 	}
 
-	rpcConfig, err := rpc.NewClientConfig(cfg.RPCHost)
+	// Override the library's default HTTP client (a hard 1s timeout, no
+	// transport retries) with the chain's configured block-scanner timeout and
+	// transient-error retry policy — see retryHTTPClient.
+	rpcConfig, err := rpc.NewClientConfig(cfg.RPCHost,
+		rpc.WithHTTPClient(newRetryHTTPClient(cfg.BlockScanner.HTTPRequestTimeout, cfg.BlockScanner.MaxHTTPRequestRetry, logger)))
 	if err != nil {
 		return nil, fmt.Errorf("unable to create rpc config for client, %w", err)
 	}
@@ -644,7 +648,9 @@ func (c *Client) broadcastTx(txBlob string) error {
 	// Only add the transaction to signer cache when it is sure the transaction has been broadcast successfully.
 	// So for other scenario , like transaction already in mempool , invalid account sequence # , the transaction can be rescheduled , and retried
 	// If we get tefPAST_SEQ, tx is already in current ledger, most likely by another validator.
-	if response.EngineResult != "tesSUCCESS" && response.EngineResult != "tefPAST_SEQ" {
+	// tefALREADY means this exact tx was already applied, e.g. a retried submit.
+	if response.EngineResult != "tesSUCCESS" && response.EngineResult != "tefPAST_SEQ" &&
+		response.EngineResult != "tefALREADY" {
 		c.logger.Info().Interface("broadcastRes", response).Msg("XRP BroadcastTx failed")
 		return fmt.Errorf("transaction failed to submit with engine result: %s", response.EngineResult)
 	}
