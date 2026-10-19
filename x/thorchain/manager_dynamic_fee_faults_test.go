@@ -483,3 +483,34 @@ func (s *DynamicFeeMgrSuite) TestGlobalEmptySpanUsesLastPairs(c *C) {
 	c.Check(rec.History[0].PoolVolumeTor.Equal(cosmos.NewUint(4_000)), Equals, true, Commentf("BTC only: the pair it traded"))
 	c.Check(rec.History[0].FeesTor.IsZero(), Equals, true)
 }
+
+// TestCreditSwapFaultsCreditNothing: a memo whose affiliates all carry zero
+// bps selects nobody, and a failed record or accumulator read or write leaves
+// no partial credit behind.
+func (s *DynamicFeeMgrSuite) TestCreditSwapFaultsCreditNothing(c *C) {
+	pairA, pairB, _ := dynamicFeePairKey(common.BTCAsset, common.RuneAsset())
+	for _, tc := range []struct {
+		name  string
+		bps   uint64
+		fault func(*faultyDynFeeKeeper)
+	}{
+		{name: "zero affiliate bps", bps: 0, fault: func(*faultyDynFeeKeeper) {}},
+		{name: "record read fails", bps: 100, fault: func(f *faultyDynFeeKeeper) { f.failGetRecord = true }},
+		{name: "record create fails", bps: 100, fault: func(f *faultyDynFeeKeeper) { f.failSetRecord = true }},
+		{name: "accumulator read fails", bps: 100, fault: func(f *faultyDynFeeKeeper) { f.failGetAcc = true }},
+		{name: "accumulator write fails", bps: 100, fault: func(f *faultyDynFeeKeeper) { f.failSetAcc = true }},
+	} {
+		ctx, mgr := setupManagerForTest(c)
+		k := mgr.Keeper()
+		setDynamicFeeTestMimirs(ctx, k)
+		registerThorname(ctx, k, "tn", types.DynamicFeeStatePerPair)
+		fk := &faultyDynFeeKeeper{Keeper: k}
+		tc.fault(fk)
+		global := newDynamicFeeMgr(fk).CreditSwap(ctx, []string{"tn"}, []cosmos.Uint{cosmos.NewUint(tc.bps)},
+			common.BTCAsset, common.RuneAsset(), cosmos.NewUint(1_000), cosmos.NewUint(10), true)
+		c.Check(global, Equals, false, Commentf(tc.name))
+		acc, err := k.GetDynamicFeeAccumulator(ctx, "tn", pairA, pairB)
+		c.Assert(err, IsNil)
+		c.Check(acc.VolumeTor.IsZero(), Equals, true, Commentf(tc.name))
+	}
+}
