@@ -13,7 +13,7 @@ import (
 )
 
 func TestGetAccountUsesFinalizedCommitment(t *testing.T) {
-	var balanceCommitment string
+	var balanceCommitment, splCommitment string
 	var tokenCommitments []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
@@ -41,6 +41,13 @@ func TestGetAccountUsesFinalizedCommitment(t *testing.T) {
 			}); err != nil {
 				t.Fatalf("failed to encode response: %v", err)
 			}
+		case "getAccountInfo":
+			var opts map[string]any
+			if err := json.Unmarshal(req.Params[1], &opts); err != nil {
+				t.Fatalf("failed to decode account info params: %v", err)
+			}
+			splCommitment, _ = opts["commitment"].(string)
+			writeMissingAccount(t, w)
 		case "getTokenAccountsByOwner":
 			var opts map[string]any
 			if err := json.Unmarshal(req.Params[2], &opts); err != nil {
@@ -67,7 +74,7 @@ func TestGetAccountUsesFinalizedCommitment(t *testing.T) {
 	client := &Client{
 		chain:   common.SOLChain,
 		rpc:     rpc.NewSolRPC(server.URL, time.Second),
-		address: common.Address("sol-test-address"),
+		address: common.Address(MocknetMasterAddress),
 	}
 
 	account, err := client.GetAccount(nil)
@@ -76,6 +83,9 @@ func TestGetAccountUsesFinalizedCommitment(t *testing.T) {
 	}
 	if balanceCommitment != solanaAccountCommitment {
 		t.Fatalf("expected balance lookup commitment %q, got %q", solanaAccountCommitment, balanceCommitment)
+	}
+	if splCommitment != solanaAccountCommitment {
+		t.Fatalf("expected SPL token account lookup commitment %q, got %q", solanaAccountCommitment, splCommitment)
 	}
 	if len(tokenCommitments) != 2 {
 		t.Fatalf("expected two token-account commitment lookups, got %d", len(tokenCommitments))
@@ -144,6 +154,8 @@ func TestGetAccountIncludesOwnedTokenAccountLamports(t *testing.T) {
 			}); err != nil {
 				t.Fatalf("failed to encode response: %v", err)
 			}
+		case "getAccountInfo":
+			writeMissingAccount(t, w)
 		default:
 			t.Fatalf("unexpected method %s", req.Method)
 		}
@@ -153,7 +165,7 @@ func TestGetAccountIncludesOwnedTokenAccountLamports(t *testing.T) {
 	client := &Client{
 		chain:   common.SOLChain,
 		rpc:     rpc.NewSolRPC(server.URL, time.Second),
-		address: common.Address("sol-test-address"),
+		address: common.Address(MocknetMasterAddress),
 	}
 
 	account, err := client.GetAccount(nil)
@@ -316,5 +328,17 @@ func TestBroadcastTxReturnsErrorWhenTransactionNeverConfirms(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "not confirmed on solana node") {
 		t.Fatalf("expected confirmation failure, got %v", err)
+	}
+}
+
+// writeMissingAccount answers getAccountInfo for an account that does not exist.
+func writeMissingAccount(t *testing.T, w http.ResponseWriter) {
+	t.Helper()
+	if err := json.NewEncoder(w).Encode(map[string]any{
+		"jsonrpc": "2.0",
+		"id":      1,
+		"result":  map[string]any{"context": map[string]any{"slot": 1}, "value": nil},
+	}); err != nil {
+		t.Fatalf("failed to encode response: %v", err)
 	}
 }

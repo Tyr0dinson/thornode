@@ -22,6 +22,7 @@ import (
 	acommon "gitlab.com/thorchain/thornode/v3/test/simulation/actors/common"
 	"gitlab.com/thorchain/thornode/v3/test/simulation/pkg/evm"
 	"gitlab.com/thorchain/thornode/v3/test/simulation/pkg/monero"
+	"gitlab.com/thorchain/thornode/v3/test/simulation/pkg/solana"
 	"gitlab.com/thorchain/thornode/v3/test/simulation/pkg/thornode"
 	. "gitlab.com/thorchain/thornode/v3/test/simulation/pkg/types"
 	ttypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
@@ -559,6 +560,12 @@ func fundUserChainAccount(master, user *User, chain common.Chain, amount sdkmath
 		broadcastFunding(master, user, chain, amount.Sub(currentAmount))
 	}
 
+	// on Solana also fund SPL token balances from the master's genesis supply
+	if chain.Equals(common.SOLChain) {
+		fundUserSPLTokens(master, user, userAccount, addr, amount)
+		return
+	}
+
 	// if this is an EVM chain also fund token balances
 	if !chain.IsEVM() {
 		return
@@ -618,6 +625,46 @@ func fundUserChainAccount(master, user *User, chain common.Chain, amount sdkmath
 			Stringer("address", addr).
 			Str("token", token.Address).
 			Str("amount", fmt.Sprintf("%08f", amountFloat)).
+			Msg("token balance funded")
+	}
+}
+
+// fundUserSPLTokens tops up the user's balance of every simulation SPL token to the
+// same 5,000-unit target (capped at the SOL seed amount) the EVM token seeding uses.
+// The master holds the whole supply from genesis; the transfer creates the user's
+// associated token account.
+func fundUserSPLTokens(master, user *User, userAccount *common.Account, addr common.Address, amount sdkmath.Uint) {
+	for asset := range solana.Tokens() {
+		target := sdkmath.NewUint(5_000 * common.One)
+		if amount.LT(target) {
+			target = amount
+		}
+		current := userAccount.Coins.GetCoin(asset).Amount
+		if current.GTE(target) {
+			log.Info().
+				Str("account", user.Name()).
+				Stringer("asset", asset).
+				Stringer("balance", current).
+				Stringer("target", target).
+				Msg("token balance already funded")
+			continue
+		}
+		tx := SimTx{
+			Chain:     common.SOLChain,
+			ToAddress: addr,
+			Coin:      common.NewCoin(asset, target.Sub(current)),
+			Memo:      fmt.Sprintf("SIMULATION:%s", user.Name()),
+		}
+		txid, err := SignAndBroadcastTx(master.ChainClients[common.SOLChain], tx)
+		if err != nil {
+			log.Fatal().Err(err).Interface("tx", tx).Msg("failed to broadcast funding token tx")
+		}
+		log.Info().
+			Str("txid", txid).
+			Str("account", user.Name()).
+			Stringer("asset", asset).
+			Stringer("address", addr).
+			Stringer("amount", tx.Coin.Amount).
 			Msg("token balance funded")
 	}
 }

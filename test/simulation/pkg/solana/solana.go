@@ -3,6 +3,7 @@ package solana
 import (
 	"encoding/base64"
 	"fmt"
+	"math/big"
 	"time"
 
 	btypes "github.com/blocto/solana-go-sdk/types"
@@ -98,7 +99,12 @@ func (c *Client) GetAccount(pk *common.PubKey) (*common.Account, error) {
 			return nil, fmt.Errorf("fail to get address from pubkey(%s): %w", pk, err)
 		}
 	}
+	return c.GetAccountByAddress(address)
+}
 
+// GetAccountByAddress returns the SOL balance of address and its balance of every
+// simulation SPL token (see Tokens), read from its associated token accounts.
+func (c *Client) GetAccountByAddress(address common.Address) (*common.Account, error) {
 	lamportsBalance, err := c.rpc.GetBalance(address.String(), solanaAccountCommitment, 0)
 	if err != nil {
 		return nil, fmt.Errorf("fail to get balance: %w", err)
@@ -117,9 +123,49 @@ func (c *Client) GetAccount(pk *common.PubKey) (*common.Account, error) {
 		common.NewCoin(common.SOLAsset, amount),
 	}
 
+	tokenCoins, err := c.tokenCoins(address)
+	if err != nil {
+		return nil, err
+	}
+	coins = append(coins, tokenCoins...)
+
 	return &common.Account{
 		Coins: coins,
 	}, nil
+}
+
+// tokenCoins returns address's balance of every simulation SPL token, in 1e8 units.
+// A missing token account is a zero balance.
+func (c *Client) tokenCoins(address common.Address) (common.Coins, error) {
+	owner, err := stypes.PublicKeyFromStringStrict(address.String())
+	if err != nil {
+		return nil, fmt.Errorf("invalid solana address %s: %w", address, err)
+	}
+	coins := common.Coins{}
+	for asset, token := range Tokens() {
+		_, mint, ok := tokenByAsset(asset)
+		if !ok {
+			return nil, fmt.Errorf("invalid simulation token %s", asset)
+		}
+		ata, err := stypes.FindAssociatedTokenAddress(owner, mint)
+		if err != nil {
+			return nil, fmt.Errorf("fail to derive %s token account: %w", asset, err)
+		}
+		acct, err := c.rpc.GetTokenAccount(ata.String(), solanaAccountCommitment)
+		if err != nil {
+			return nil, fmt.Errorf("fail to get %s token account: %w", asset, err)
+		}
+		balance := big.NewInt(0)
+		if acct.Exists && acct.Mint == token.Address {
+			balance = acct.Amount
+		}
+		converted, err := common.ConvertDecimals(balance, token.Decimals, common.THORChainDecimals)
+		if err != nil {
+			return nil, err
+		}
+		coins = append(coins, common.NewCoin(asset, cosmos.NewUintFromBigInt(converted)))
+	}
+	return coins, nil
 }
 
 func (c *Client) SignTx(tx SimTx) ([]byte, error) {
@@ -134,7 +180,15 @@ func (c *Client) SignTx(tx SimTx) ([]byte, error) {
 	toPubKey := stypes.MustPublicKeyFromString(tx.ToAddress.String())
 
 	// create transaction
-	transaction := stypes.NewTransferTransaction(fromPubKey, toPubKey, tx.Coin.Amount.Uint64(), tx.Memo, blockhash)
+	var transaction stypes.Transaction
+	if tx.Coin.Asset.Equals(common.SOLAsset) {
+		transaction = stypes.NewTransferTransaction(fromPubKey, toPubKey, tx.Coin.Amount.Uint64(), tx.Memo, blockhash)
+	} else {
+		transaction, err = tokenTransferTransaction(fromPubKey, toPubKey, tx, blockhash)
+		if err != nil {
+			return nil, err
+		}
+	}
 	rawMessage, err := transaction.Message.Serialize()
 	if err != nil {
 		return nil, fmt.Errorf("fail to serialize transaction: %w", err)
@@ -155,6 +209,43 @@ func (c *Client) SignTx(tx SimTx) ([]byte, error) {
 	}
 
 	return signedTx, nil
+}
+
+// tokenTransferTransaction builds an SPL token transfer the way wallets send one:
+// CreateIdempotent for the recipient's associated token account (the sender pays
+// rent if it is missing), then TransferChecked from the sender's associated token
+// account, with the memo in a Memo instruction. A deposit to a vault therefore
+// credits the vault's associated token account, which Bifrost scans.
+func tokenTransferTransaction(from, to stypes.PublicKey, tx SimTx, blockhash string) (stypes.Transaction, error) {
+	token, mint, ok := tokenByAsset(tx.Coin.Asset)
+	if !ok {
+		return stypes.Transaction{}, fmt.Errorf("unsupported solana asset %s", tx.Coin.Asset)
+	}
+	amount, err := common.ConvertDecimals(tx.Coin.Amount.BigInt(), common.THORChainDecimals, token.Decimals)
+	if err != nil {
+		return stypes.Transaction{}, err
+	}
+	if amount.Sign() <= 0 || !amount.IsUint64() {
+		return stypes.Transaction{}, fmt.Errorf("invalid %s amount %s", tx.Coin.Asset, tx.Coin.Amount)
+	}
+	source, err := stypes.FindAssociatedTokenAddress(from, mint)
+	if err != nil {
+		return stypes.Transaction{}, err
+	}
+	dest, err := stypes.FindAssociatedTokenAddress(to, mint)
+	if err != nil {
+		return stypes.Transaction{}, err
+	}
+	return stypes.NewSPLTransferTransaction(stypes.SPLTransferParams{
+		Vault:     from, // the builder's fee payer and transfer authority: here the sender
+		Recipient: to,
+		Mint:      mint,
+		SourceATA: source,
+		DestATA:   dest,
+		Amount:    amount.Uint64(),
+		Decimals:  uint8(token.Decimals),
+		Memo:      tx.Memo,
+	}, blockhash), nil
 }
 
 func (c *Client) sign(msg []byte) ([]byte, error) {

@@ -9,6 +9,7 @@ import (
 	acommon "gitlab.com/thorchain/thornode/v3/test/simulation/actors/common"
 	"gitlab.com/thorchain/thornode/v3/test/simulation/actors/core"
 	"gitlab.com/thorchain/thornode/v3/test/simulation/pkg/evm"
+	"gitlab.com/thorchain/thornode/v3/test/simulation/pkg/solana"
 	. "gitlab.com/thorchain/thornode/v3/test/simulation/pkg/types"
 )
 
@@ -73,6 +74,17 @@ func Swaps(rng *rand.Rand) *Actor {
 	swapPools := []common.Asset{}
 	for _, chain := range acommon.SimChains {
 		swapPools = append(swapPools, chain.GetGasAsset())
+
+		// add SPL tokens to swap pools, plus SPL-specific coverage: a swap out to
+		// a wallet with no token account (created by the vault, rent charged) and
+		// a refund of an unparseable SPL deposit
+		if chain.Equals(common.SOLChain) {
+			for asset := range solana.Tokens() {
+				swapPools = append(swapPools, asset)
+				a.Children[core.NewSPLFreshRecipientSwapActor(common.BTCAsset, asset, rng)] = true
+				a.Children[core.NewSPLRefundActor(asset, rng)] = true
+			}
+		}
 
 		// add tokens to swap pools
 		if !chain.IsEVM() {

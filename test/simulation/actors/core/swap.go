@@ -53,6 +53,9 @@ type SwapActor struct {
 	// Required verification actors must fail rather than skip an unfunded swap.
 	requireOutbound bool
 	useTexAddress   bool
+	// toAddressOverride, when set, receives the outbound instead of the user's own
+	// address (for example a fresh Solana wallet with no token account yet).
+	toAddressOverride common.Address
 
 	xmrSwapSlotAcquired bool
 
@@ -539,6 +542,11 @@ func (a *SwapActor) acquireUserForAmount(config *OpConfig, targetAmount sdkmath.
 
 		// get to asset balance for tracking
 		a.toBalance = accountAssetAmount(toAcct, a.to)
+		if !a.toAddressOverride.IsEmpty() {
+			// The outbound goes to an address outside the user's accounts.
+			a.toAddress = a.toAddressOverride
+			a.toBalance = sdkmath.ZeroUint()
+		}
 
 		if err := a.updateSwapAmount(selectedSwapAmount, "available user balance"); err != nil {
 			a.releaseUserSelection()

@@ -10,6 +10,7 @@ import (
 	acommon "gitlab.com/thorchain/thornode/v3/test/simulation/actors/common"
 	"gitlab.com/thorchain/thornode/v3/test/simulation/actors/core"
 	"gitlab.com/thorchain/thornode/v3/test/simulation/pkg/evm"
+	"gitlab.com/thorchain/thornode/v3/test/simulation/pkg/solana"
 	"gitlab.com/thorchain/thornode/v3/test/simulation/pkg/thornode"
 	. "gitlab.com/thorchain/thornode/v3/test/simulation/pkg/types"
 )
@@ -48,6 +49,16 @@ func Bootstrap(rng *rand.Rand) *Actor {
 		count++
 
 		for asset := range evm.Tokens(chain) {
+			tokenPools.Children[core.NewDualLPActor(asset, rng)] = true
+		}
+	}
+	// Solana SPL token pools, one pool per token
+	for _, chain := range acommon.SimChains {
+		if !chain.Equals(common.SOLChain) {
+			continue
+		}
+		for asset := range solana.Tokens() {
+			count++
 			tokenPools.Children[core.NewDualLPActor(asset, rng)] = true
 		}
 	}

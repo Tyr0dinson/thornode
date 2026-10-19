@@ -86,7 +86,7 @@ func solvencyMismatchRetryable(mismatches []solvencyMismatch) bool {
 		return false
 	}
 	for _, mismatch := range mismatches {
-		if !mismatch.asset.Equals(common.XMRAsset) && !mismatch.asset.Equals(common.SOLAsset) {
+		if !mismatch.asset.Equals(common.XMRAsset) && !mismatch.asset.Chain.Equals(common.SOLChain) {
 			return false
 		}
 	}
@@ -238,7 +238,9 @@ func (a *SolvencyCheckActor) checkSolvency(config *OpConfig) OpResult {
 				}
 
 				switch {
-				case asset.IsGasAsset():
+				// SPL tokens sit in the vault's associated token accounts, which the
+				// Solana client reports with the vault's SOL balance.
+				case asset.IsGasAsset() || asset.Chain.Equals(common.SOLChain):
 					switch asset.Chain.GetSigningAlgo() {
 					case common.SigningAlgoEd25519:
 						algoPubKey := ed25519SolvencyPubKey(asset, vaultPubKeyEddsa, vaultPubKeyFrost)

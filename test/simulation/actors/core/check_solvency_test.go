@@ -128,6 +128,14 @@ func TestSolvencyMismatchRetryable(t *testing.T) {
 			retryable: true,
 		},
 		{
+			name: "sol spl token mismatch is retryable",
+			mismatches: []solvencyMismatch{
+				{asset: common.SOLAsset},
+				{asset: common.Asset{Chain: common.SOLChain, Symbol: "TKN-55HZVPDVGF3VYJ6DUSKU4NMBWXCSU2PABKDSNSS8BWZT", Ticker: "TKN"}},
+			},
+			retryable: true,
+		},
+		{
 			name: "non xmr mismatch is not retryable",
 			mismatches: []solvencyMismatch{
 				{asset: common.BTCAsset},

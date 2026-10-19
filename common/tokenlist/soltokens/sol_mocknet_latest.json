@@ -1,16 +1,10 @@
 {
-  "name": "THORChain Solana Tokenlist",
+  "name": "THORChain Solana Mocknet Tokenlist",
   "tokens": [
     {
-      "name": "USD Coin",
-      "symbol": "USDC",
-      "address": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
-      "decimals": 6
-    },
-    {
-      "name": "Tether USD",
-      "symbol": "USDT",
-      "address": "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",
+      "name": "Mocknet Token",
+      "symbol": "TKN",
+      "address": "55HzVPDvgf3VyJ6DuSkU4NMbwXCSu2pAbkdsnSS8BWzt",
       "decimals": 6
     }
   ]

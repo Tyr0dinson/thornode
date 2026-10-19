@@ -45,7 +45,13 @@ func clusterChurn(rng *rand.Rand, verifyXMR bool, actors ...*Actor) *Actor {
 		a.Append(actor)
 	}
 	a.Append(features.NewBondYieldSelectTargetActor(state, rng))
-	a.Append(features.NewBondYieldTargetAutoClaimActor(state, rng))
+	autoClaim := features.NewBondYieldTargetAutoClaimActor(state, rng)
+	a.Append(autoClaim)
+	// SPL tokens must follow the Solana vault rotation of the churn-out. The SPL
+	// snapshot runs beside the auto-claim setup, so the next step (the XMR capture or
+	// the leave) still waits on both directly.
+	splCapture, splVerify := core.NewSPLChurnChecks(rng, state.SkipReason)
+	alongside(autoClaim, splCapture)
 	var verify *Actor
 	if verifyXMR {
 		capture, after := core.NewXMRChurnOutChecks(rng)
@@ -53,10 +59,29 @@ func clusterChurn(rng *rand.Rand, verifyXMR bool, actors ...*Actor) *Actor {
 		verify = after
 	}
 	a.Append(features.NewBondYieldChurnOutActor(state, rng))
-	a.Append(features.NewBondYieldCleanupActor(rng))
+	cleanup := features.NewBondYieldCleanupActor(rng)
+	a.Append(cleanup)
+	// The SPL migration check waits for the rotation itself, so it runs beside the
+	// cleanup and finishes before the cleanup's last Mimir restore: the next stage
+	// still waits on that restore alone.
+	alongside(cleanup, splVerify)
+	cleanup.WalkDepthFirst(func(actor *Actor) bool {
+		if len(actor.Children) == 0 {
+			splVerify.Children[actor] = true
+		}
+		return true
+	})
 	if verify != nil {
 		a.Append(verify)
 	}
 
 	return a
+}
+
+// alongside schedules b beside sibling, after the same parents. Append must already
+// have placed sibling.
+func alongside(sibling, b *Actor) {
+	for parent := range sibling.Parents() {
+		parent.Children[b] = true
+	}
 }
