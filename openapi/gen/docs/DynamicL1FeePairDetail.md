@@ -8,7 +8,7 @@ Name | Type | Description | Notes
 **DynamicBps** | **int32** |  | 
 **LastActiveEpoch** | **int32** |  | 
 **History** | [**[]DynamicL1FeeHistoryEntry**](DynamicL1FeeHistoryEntry.md) |  | 
-**Phase** | Pointer to **string** | &#x60;search&#x60; while the bracket search is still testing bps values, &#x60;track&#x60; once it has converged and the +/-step controller follows drift from the best value found  | [optional] 
+**Phase** | Pointer to **string** | &#x60;search&#x60; while the bracket search is still testing bps values, &#x60;track&#x60; once it has converged and the +/-step controller follows drift from the best value found, &#x60;monitor&#x60; for a thorname in a monitor whitelist state (history is collected, no fee decisions)  | [optional] 
 **Probes** | Pointer to [**[]DynamicL1FeeProbe**](DynamicL1FeeProbe.md) | one entry per bps value tested by the current search | [optional] 
 
 ## Methods

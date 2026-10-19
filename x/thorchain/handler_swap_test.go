@@ -926,11 +926,11 @@ func (s *HandlerSwapSuite) TestSwapDynamicFeeIntegration(c *C) {
 	affiliateBps := []cosmos.Uint{cosmos.NewUint(100)}
 
 	// --- Epoch 1 (block 10) ---
-	mgr.DynamicFeeMgr().CreditSwap(
+	mgr.DynamicFeeMgr().CreditSwapLeg(
 		ctx, affiliates, affiliateBps,
 		common.BTCAsset, common.RuneAsset(),
 		cosmos.NewUint(10*common.One), cosmos.NewUint(100),
-		true,
+		true, true,
 	)
 	acc1, err := k.GetDynamicFeeAccumulator(ctx, "bentley", pairA, pairB)
 	c.Assert(err, IsNil)
@@ -946,11 +946,11 @@ func (s *HandlerSwapSuite) TestSwapDynamicFeeIntegration(c *C) {
 		Commentf("epoch 1 measures the floor, then the search tests the ceiling"))
 
 	// --- Epoch 2 (block 20) ---
-	mgr.DynamicFeeMgr().CreditSwap(
+	mgr.DynamicFeeMgr().CreditSwapLeg(
 		ctx, affiliates, affiliateBps,
 		common.BTCAsset, common.RuneAsset(),
 		cosmos.NewUint(20*common.One), cosmos.NewUint(300),
-		true,
+		true, true,
 	)
 	ctx = ctx.WithBlockHeight(20)
 	c.Assert(endBlockT(ctx, k, mgr.DynamicFeeMgr()), IsNil)

@@ -2,6 +2,7 @@ package thorchain
 
 import (
 	"errors"
+	"math/big"
 
 	"github.com/cosmos/cosmos-sdk/codec"
 	"github.com/cosmos/gogoproto/proto"
@@ -25,6 +26,17 @@ type faultyDynFeeKeeper struct {
 	failGetRecord, failSetRecord, failSetAcc bool
 	failDeleteAcc, failGetPool, failSetPool  bool
 	failDeletePool, failDeleteAll            bool
+	// nilOwnVolume returns accumulators as written before own pool volume
+	// existed (a nil Uint).
+	nilOwnVolume bool
+}
+
+func (k *faultyDynFeeKeeper) GetDynamicFeeAccumulator(ctx cosmos.Context, thorname, a, b string) (types.DynamicFeeAccumulator, error) {
+	acc, err := k.Keeper.GetDynamicFeeAccumulator(ctx, thorname, a, b)
+	if k.nilOwnVolume {
+		acc.OwnPoolVolumeTor = cosmos.Uint{}
+	}
+	return acc, err
 }
 
 func (k *faultyDynFeeKeeper) Cdc() codec.BinaryCodec {
@@ -137,7 +149,9 @@ func (s *DynamicFeeMgrSuite) TestCreditPoolVolumeSkipsAndFaults(c *C) {
 	synthBTC, err := common.NewAsset("BTC/BTC")
 	c.Assert(err, IsNil)
 	newDynamicFeeMgr(k).CreditPoolVolume(ctx, synthBTC, common.RuneAsset(), cosmos.NewUint(100))
-	c.Check(dynamicFeeTotalPoolVolume(ctx, k).IsZero(), Equals, true, Commentf("non-L1 legs carry no pool volume"))
+	synthA, synthB, ok := dynamicFeePairKey(synthBTC, common.RuneAsset())
+	c.Check(ok, Equals, false, Commentf("non-L1 legs have no pair"))
+	c.Check(dynamicFeePairsPoolVolume(ctx, k, []string{synthA + "|" + synthB, btcA + "|" + btcB}).IsZero(), Equals, true, Commentf("non-L1 legs carry no pool volume"))
 
 	for _, fk := range []*faultyDynFeeKeeper{{Keeper: k, failGetPool: true}, {Keeper: k, failSetPool: true}} {
 		newDynamicFeeMgr(fk).CreditPoolVolume(ctx, common.BTCAsset, common.RuneAsset(), cosmos.NewUint(100))
@@ -222,10 +236,10 @@ func (s *DynamicFeeMgrSuite) TestEndBlockCodecFaults(c *C) {
 		mutate: func(m proto.Message) {
 			if acc, ok := m.(*types.DynamicFeeAccumulator); ok {
 				acc.PoolVolumeTor = cosmos.Uint{}
+				acc.OwnPoolVolumeTor = cosmos.Uint{}
 			}
 		},
 	}}
-	c.Check(dynamicFeeTotalPoolVolume(ctx, fk).IsZero(), Equals, true)
 
 	ctx = ctx.WithBlockHeight(20)
 	c.Assert(newDynamicFeeMgr(fk).EndBlock(ctx), IsNil)
@@ -278,8 +292,8 @@ func (s *DynamicFeeMgrSuite) TestWindowMeanSignalSkipsUnnormalizedEntries(c *C) 
 		{FeesTor: cosmos.NewUint(300), PoolVolumeTor: types.SignalScale},
 		{FeesTor: cosmos.NewUint(500), PoolVolumeTor: cosmos.ZeroUint()},
 	}
-	c.Check(windowMeanSignal(history, 0, 3).Equal(cosmos.NewUint(300)), Equals, true)
-	c.Check(windowMeanSignal(history, 0, 1).IsZero(), Equals, true, Commentf("no normalizable entry"))
+	c.Check(meanSignal(windowSignals(history, 0, 3, 0)).Equal(cosmos.NewUint(300)), Equals, true)
+	c.Check(meanSignal(windowSignals(history, 0, 1, 0)).IsZero(), Equals, true, Commentf("no normalizable entry"))
 }
 
 func (s *DynamicFeeMgrSuite) TestMimirResetFaultIsLogged(c *C) {
@@ -376,4 +390,44 @@ func (s *DynamicFeeMgrSuite) TestQueryDynamicFeeSearchFields(c *C) {
 	current, err = qs.queryDynamicL1FeesCurrent(ctx, &types.QueryDynamicL1FeesCurrentRequest{})
 	c.Assert(err, IsNil)
 	c.Check(current.Entries[0].PoolVolumeTor, Equals, "5000")
+}
+
+// TestCreditSwapOldAccumulator: an accumulator written before own pool volume
+// existed (nil Uint) is credited rather than panicking.
+func (s *DynamicFeeMgrSuite) TestCreditSwapOldAccumulator(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	k := mgr.Keeper()
+	setDynamicFeeTestMimirs(ctx, k)
+	registerThorname(ctx, k, "tn", types.DynamicFeeStatePerPair)
+	newDynamicFeeMgr(&faultyDynFeeKeeper{Keeper: k, nilOwnVolume: true}).CreditSwap(ctx, []string{"tn"}, []cosmos.Uint{cosmos.NewUint(100)},
+		common.BTCAsset, common.RuneAsset(), cosmos.NewUint(1_000), cosmos.NewUint(10), true)
+	pairA, pairB, _ := dynamicFeePairKey(common.BTCAsset, common.RuneAsset())
+	acc, err := k.GetDynamicFeeAccumulator(ctx, "tn", pairA, pairB)
+	c.Assert(err, IsNil)
+	c.Check(acc.OwnPoolVolumeTor.Equal(cosmos.NewUint(1_000)), Equals, true)
+}
+
+// TestPairsPoolVolumeSkipsBadPairs: a malformed pair key or an unreadable
+// pool accumulator contributes nothing instead of failing the seal.
+func (s *DynamicFeeMgrSuite) TestPairsPoolVolumeSkipsBadPairs(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	k := mgr.Keeper()
+	setDynamicFeeTestMimirs(ctx, k)
+	newDynamicFeeMgr(k).CreditPoolVolume(ctx, common.BTCAsset, common.RuneAsset(), cosmos.NewUint(700))
+	btcA, btcB, _ := dynamicFeePairKey(common.BTCAsset, common.RuneAsset())
+	pair := btcA + "|" + btcB
+	c.Check(dynamicFeePairsPoolVolume(ctx, k, []string{"no-separator", pair}).Equal(cosmos.NewUint(700)), Equals, true)
+	c.Check(dynamicFeePairsPoolVolume(ctx, &faultyDynFeeKeeper{Keeper: k, failGetPool: true}, []string{pair}).IsZero(), Equals, true)
+}
+
+// TestProbeStatsEdges: probes with missing sums (old rows) read as zero, and
+// sums that are inconsistent (a sum of squares too small for the sum) give a
+// zero spread instead of a negative one.
+func (s *DynamicFeeMgrSuite) TestProbeStatsEdges(c *C) {
+	st := newProbeStats(types.DynamicFeeProbe{Epochs: 2})
+	c.Check(st.mean.Sign(), Equals, 0)
+	c.Check(st.varOfMean.Sign(), Equals, 0)
+	st = newProbeStats(types.DynamicFeeProbe{SignalSum: cosmos.NewUint(10), SignalSqSum: cosmos.ZeroUint(), Epochs: 2})
+	c.Check(st.mean.Cmp(big.NewRat(5, 1)), Equals, 0)
+	c.Check(st.varOfMean.Sign(), Equals, 0)
 }

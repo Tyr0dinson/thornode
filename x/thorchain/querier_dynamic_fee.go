@@ -18,8 +18,12 @@ func uintOrZero(u cosmos.Uint) cosmos.Uint {
 }
 
 // dynamicFeePhase names where a record is in its controller lifecycle: the
-// bracket search, or the +/-step tracking that follows it.
-func dynamicFeePhase(rec types.DynamicFeeRecord) string {
+// bracket search, the +/-step tracking that follows it, or monitor (history
+// only, no fee decisions) for a thorname in a monitor state.
+func dynamicFeePhase(rec types.DynamicFeeRecord, state int64) string {
+	if state == types.DynamicFeeStatePerPairMonitor || state == types.DynamicFeeStateGlobalMonitor {
+		return "monitor"
+	}
 	if rec.SearchDone {
 		return "track"
 	}
@@ -45,7 +49,7 @@ func (qs queryServer) queryDynamicL1Fees(ctx cosmos.Context, req *types.QueryDyn
 			DynamicBps:      rec.DynamicBps,
 			WhitelistState:  state,
 			LastActiveEpoch: rec.LastActiveEpoch,
-			Phase:           dynamicFeePhase(rec),
+			Phase:           dynamicFeePhase(rec, state),
 		}
 		if latest, ok := rec.LatestHistory(); ok {
 			entry.LatestFeesTor = latest.FeesTor.String()
@@ -78,7 +82,7 @@ func (qs queryServer) queryDynamicL1FeesByThorname(ctx cosmos.Context, req *type
 			Pair:            fmt.Sprintf("%s|%s", rec.PairAssetA, rec.PairAssetB),
 			DynamicBps:      rec.DynamicBps,
 			LastActiveEpoch: rec.LastActiveEpoch,
-			Phase:           dynamicFeePhase(rec),
+			Phase:           dynamicFeePhase(rec, state),
 		}
 		for _, pr := range rec.Probes {
 			detail.Probes = append(detail.Probes, types.DynamicL1FeeProbe{
@@ -89,12 +93,13 @@ func (qs queryServer) queryDynamicL1FeesByThorname(ctx cosmos.Context, req *type
 		}
 		for _, h := range rec.History {
 			detail.History = append(detail.History, types.DynamicL1FeeHistoryEntry{
-				Epoch:         h.Epoch,
-				VolumeTor:     h.VolumeTor.String(),
-				FeesTor:       h.FeesTor.String(),
-				BpsAtClose:    h.BpsAtClose,
-				SwapCount:     h.SwapCount,
-				PoolVolumeTor: uintOrZero(h.PoolVolumeTor).String(),
+				Epoch:            h.Epoch,
+				VolumeTor:        h.VolumeTor.String(),
+				FeesTor:          h.FeesTor.String(),
+				BpsAtClose:       h.BpsAtClose,
+				SwapCount:        h.SwapCount,
+				PoolVolumeTor:    uintOrZero(h.PoolVolumeTor).String(),
+				OwnPoolVolumeTor: uintOrZero(h.OwnPoolVolumeTor).String(),
 			})
 		}
 		resp.Pairs = append(resp.Pairs, detail)
@@ -128,18 +133,19 @@ func (qs queryServer) queryDynamicL1FeesCurrent(ctx cosmos.Context, req *types.Q
 		// controller moved" for a gated integration.
 		poolVolumeTor := uintOrZero(acc.PoolVolumeTor)
 		if acc.PairAssetA == types.DynamicFeeGlobalPair {
-			poolVolumeTor = poolVolumeTor.Add(dynamicFeeTotalPoolVolume(ctx, qs.mgr.Keeper()))
+			poolVolumeTor = poolVolumeTor.Add(dynamicFeePairsPoolVolume(ctx, qs.mgr.Keeper(), acc.Pairs))
 		} else if poolAcc, err := qs.mgr.Keeper().GetDynamicFeePoolAccumulator(ctx, acc.PairAssetA, acc.PairAssetB); err == nil {
 			poolVolumeTor = poolVolumeTor.Add(poolAcc.VolumeTor)
 		}
 		resp.Entries = append(resp.Entries, types.DynamicL1FeeCurrentEntry{
-			Thorname:      acc.Thorname,
-			Pair:          fmt.Sprintf("%s|%s", acc.PairAssetA, acc.PairAssetB),
-			VolumeTor:     acc.VolumeTor.String(),
-			FeesTor:       acc.FeesTor.String(),
-			Epoch:         resp.Epoch,
-			SwapCount:     acc.SwapCount,
-			PoolVolumeTor: poolVolumeTor.String(),
+			Thorname:         acc.Thorname,
+			Pair:             fmt.Sprintf("%s|%s", acc.PairAssetA, acc.PairAssetB),
+			VolumeTor:        acc.VolumeTor.String(),
+			FeesTor:          acc.FeesTor.String(),
+			Epoch:            resp.Epoch,
+			SwapCount:        acc.SwapCount,
+			PoolVolumeTor:    poolVolumeTor.String(),
+			OwnPoolVolumeTor: uintOrZero(acc.OwnPoolVolumeTor).String(),
 		})
 	}
 

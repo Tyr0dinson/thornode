@@ -211,6 +211,8 @@ const (
 	L1DynamicFeeMinSwaps
 	L1DynamicFeeMinVolumeUSD
 	L1DynamicFeeProbeEpochs
+	L1DynamicFeeProbeMaxEpochs
+	L1DynamicFeeMinOtherFlowBPS
 	VaultDeficitGasHaltMaxGasMultiplier
 
 	BondYieldEnabled

@@ -271,7 +271,7 @@ type VolumeManager interface {
 }
 
 type DynamicFeeManager interface {
-	CreditSwap(ctx cosmos.Context, affiliates []string, affiliateBps []cosmos.Uint, sourceAsset, targetAsset common.Asset, volumeTor, feesTor cosmos.Uint, countAsSwap bool) bool
+	CreditSwapLeg(ctx cosmos.Context, affiliates []string, affiliateBps []cosmos.Uint, sourceAsset, targetAsset common.Asset, legVolumeTor, feesTor cosmos.Uint, countAsSwap, countVolume bool) bool
 	CreditPoolVolume(ctx cosmos.Context, sourceAsset, targetAsset common.Asset, volumeTor cosmos.Uint)
 	GetDynamicBps(ctx cosmos.Context, affiliates []string, affiliateBps []cosmos.Uint, sourceAsset, targetAsset common.Asset) uint64
 	EndBlock(ctx cosmos.Context) error

@@ -9,7 +9,8 @@ Name | Type | Description | Notes
 **FeesTor** | **string** | TOR-denominated (1e8-precision USD value) fees accrued in this epoch  | 
 **BpsAtClose** | **int32** | dynamic_bps value at the close of the epoch | 
 **SwapCount** | **int32** | user swaps counted in this epoch; a streaming swap counts once, not once per sub-swap. Epochs below L1DynamicFeeMinSwaps swaps or L1DynamicFeeMinVolumeUSD of volume do not seal and roll into the next one, so this may span several epochs  | 
-**PoolVolumeTor** | **string** | TOR-denominated (1e8-precision USD value) total volume through the pair over the same span, regardless of affiliate. It is the denominator that normalizes fees_tor against market-wide activity  | 
+**PoolVolumeTor** | **string** | TOR-denominated (1e8-precision USD value) total volume through the pair (for a global \&quot;*|*\&quot; record, through the pairs the thorname traded) over the same span, regardless of affiliate  | 
+**OwnPoolVolumeTor** | Pointer to **string** | the thorname&#39;s own share of pool_volume_tor, counting every swap leg. The signal is fees_tor / (pool_volume_tor - own_pool_volume_tor): fee revenue against other swappers&#39; volume. An epoch whose other flow is under L1DynamicFeeMinOtherFlowBPS of the pool is recorded but not used as a measurement  | [optional] 
 
 ## Methods
 
@@ -149,6 +150,31 @@ and a boolean to check if the value has been set.
 
 SetPoolVolumeTor sets PoolVolumeTor field to given value.
 
+
+### GetOwnPoolVolumeTor
+
+`func (o *DynamicL1FeeHistoryEntry) GetOwnPoolVolumeTor() string`
+
+GetOwnPoolVolumeTor returns the OwnPoolVolumeTor field if non-nil, zero value otherwise.
+
+### GetOwnPoolVolumeTorOk
+
+`func (o *DynamicL1FeeHistoryEntry) GetOwnPoolVolumeTorOk() (*string, bool)`
+
+GetOwnPoolVolumeTorOk returns a tuple with the OwnPoolVolumeTor field if it's non-nil, zero value otherwise
+and a boolean to check if the value has been set.
+
+### SetOwnPoolVolumeTor
+
+`func (o *DynamicL1FeeHistoryEntry) SetOwnPoolVolumeTor(v string)`
+
+SetOwnPoolVolumeTor sets OwnPoolVolumeTor field to given value.
+
+### HasOwnPoolVolumeTor
+
+`func (o *DynamicL1FeeHistoryEntry) HasOwnPoolVolumeTor() bool`
+
+HasOwnPoolVolumeTor returns a boolean if a field has been set.
 
 
 [[Back to Model list]](../README.md#documentation-for-models) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to README]](../README.md)

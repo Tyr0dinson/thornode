@@ -25,8 +25,10 @@ type DynamicL1FeeHistoryEntry struct {
 	BpsAtClose int32 `json:"bps_at_close"`
 	// user swaps counted in this epoch; a streaming swap counts once, not once per sub-swap. Epochs below L1DynamicFeeMinSwaps swaps or L1DynamicFeeMinVolumeUSD of volume do not seal and roll into the next one, so this may span several epochs 
 	SwapCount int32 `json:"swap_count"`
-	// TOR-denominated (1e8-precision USD value) total volume through the pair over the same span, regardless of affiliate. It is the denominator that normalizes fees_tor against market-wide activity 
+	// TOR-denominated (1e8-precision USD value) total volume through the pair (for a global \"*|*\" record, through the pairs the thorname traded) over the same span, regardless of affiliate 
 	PoolVolumeTor string `json:"pool_volume_tor"`
+	// the thorname's own share of pool_volume_tor, counting every swap leg. The signal is fees_tor / (pool_volume_tor - own_pool_volume_tor): fee revenue against other swappers' volume. An epoch whose other flow is under L1DynamicFeeMinOtherFlowBPS of the pool is recorded but not used as a measurement 
+	OwnPoolVolumeTor *string `json:"own_pool_volume_tor,omitempty"`
 }
 
 // NewDynamicL1FeeHistoryEntry instantiates a new DynamicL1FeeHistoryEntry object
@@ -196,6 +198,38 @@ func (o *DynamicL1FeeHistoryEntry) SetPoolVolumeTor(v string) {
 	o.PoolVolumeTor = v
 }
 
+// GetOwnPoolVolumeTor returns the OwnPoolVolumeTor field value if set, zero value otherwise.
+func (o *DynamicL1FeeHistoryEntry) GetOwnPoolVolumeTor() string {
+	if o == nil || o.OwnPoolVolumeTor == nil {
+		var ret string
+		return ret
+	}
+	return *o.OwnPoolVolumeTor
+}
+
+// GetOwnPoolVolumeTorOk returns a tuple with the OwnPoolVolumeTor field value if set, nil otherwise
+// and a boolean to check if the value has been set.
+func (o *DynamicL1FeeHistoryEntry) GetOwnPoolVolumeTorOk() (*string, bool) {
+	if o == nil || o.OwnPoolVolumeTor == nil {
+		return nil, false
+	}
+	return o.OwnPoolVolumeTor, true
+}
+
+// HasOwnPoolVolumeTor returns a boolean if a field has been set.
+func (o *DynamicL1FeeHistoryEntry) HasOwnPoolVolumeTor() bool {
+	if o != nil && o.OwnPoolVolumeTor != nil {
+		return true
+	}
+
+	return false
+}
+
+// SetOwnPoolVolumeTor gets a reference to the given string and assigns it to the OwnPoolVolumeTor field.
+func (o *DynamicL1FeeHistoryEntry) SetOwnPoolVolumeTor(v string) {
+	o.OwnPoolVolumeTor = &v
+}
+
 func (o DynamicL1FeeHistoryEntry) MarshalJSON_deprecated() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if true {
@@ -215,6 +249,9 @@ func (o DynamicL1FeeHistoryEntry) MarshalJSON_deprecated() ([]byte, error) {
 	}
 	if true {
 		toSerialize["pool_volume_tor"] = o.PoolVolumeTor
+	}
+	if o.OwnPoolVolumeTor != nil {
+		toSerialize["own_pool_volume_tor"] = o.OwnPoolVolumeTor
 	}
 	return json.Marshal(toSerialize)
 }

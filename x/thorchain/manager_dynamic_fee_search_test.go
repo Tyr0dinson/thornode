@@ -1,6 +1,8 @@
 package thorchain
 
 import (
+	"math"
+
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -195,26 +197,37 @@ func (s *DynamicFeeMgrSuite) TestGlobalModeSharesOneRecordAcrossPairs(c *C) {
 	c.Check(dfm.GetDynamicBps(ctx, monAff, affBps, common.BTCAsset, common.RuneAsset()), Equals, uint64(0))
 }
 
-// TestGlobalModeSealUsesTotalPoolVolume pins the global denominator: the
-// epoch's volume across every L1 pair, not any single pair's.
-func (s *DynamicFeeMgrSuite) TestGlobalModeSealUsesTotalPoolVolume(c *C) {
+// TestGlobalModeSealUsesTradedPairsPoolVolume pins the global denominator:
+// the epoch's volume on the pairs the thorname traded, less its own volume.
+// Volume on a pair it never touched (LTC here) must not move its signal.
+func (s *DynamicFeeMgrSuite) TestGlobalModeSealUsesTradedPairsPoolVolume(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	k := mgr.Keeper()
 	setDynamicFeeTestMimirs(ctx, k)
 	dfm := newDynamicFeeMgr(k)
 	registerThorname(ctx, k, "glob", types.DynamicFeeStateGlobal)
 	g := types.DynamicFeeGlobalPair
+	aff, affBps := []string{"glob"}, []cosmos.Uint{cosmos.NewUint(100)}
 
 	dfm.CreditPoolVolume(ctx, common.BTCAsset, common.RuneAsset(), cosmos.NewUint(3_000))
 	dfm.CreditPoolVolume(ctx, common.ETHAsset, common.RuneAsset(), cosmos.NewUint(2_000))
-	dfm.CreditSwap(ctx, []string{"glob"}, []cosmos.Uint{cosmos.NewUint(100)},
-		common.BTCAsset, common.RuneAsset(), cosmos.NewUint(1_000), cosmos.NewUint(10), true)
+	dfm.CreditPoolVolume(ctx, common.LTCAsset, common.RuneAsset(), cosmos.NewUint(10_000))
+	dfm.CreditSwap(ctx, aff, affBps, common.BTCAsset, common.RuneAsset(), cosmos.NewUint(1_000), cosmos.NewUint(10), true)
+	dfm.CreditSwap(ctx, aff, affBps, common.RuneAsset(), common.ETHAsset, cosmos.NewUint(500), cosmos.NewUint(5), true)
+
+	acc, err := k.GetDynamicFeeAccumulator(ctx, "glob", g, g)
+	c.Assert(err, IsNil)
+	btcA, btcB, _ := dynamicFeePairKey(common.BTCAsset, common.RuneAsset())
+	ethA, ethB, _ := dynamicFeePairKey(common.ETHAsset, common.RuneAsset())
+	c.Check(acc.Pairs, DeepEquals, []string{btcA + "|" + btcB, ethA + "|" + ethB})
+	c.Check(acc.OwnPoolVolumeTor.Equal(cosmos.NewUint(1_500)), Equals, true)
 
 	resp, err := queryServer{mgr: mgr}.queryDynamicL1FeesCurrent(ctx, &types.QueryDynamicL1FeesCurrentRequest{})
 	c.Assert(err, IsNil)
 	c.Assert(resp.Entries, HasLen, 1)
 	c.Check(resp.Entries[0].Pair, Equals, "*|*")
-	c.Check(resp.Entries[0].PoolVolumeTor, Equals, "5000")
+	c.Check(resp.Entries[0].PoolVolumeTor, Equals, "5000", Commentf("BTC and ETH only, not LTC"))
+	c.Check(resp.Entries[0].OwnPoolVolumeTor, Equals, "1500")
 
 	ctx = ctx.WithBlockHeight(20)
 	c.Assert(dfm.EndBlock(ctx), IsNil)
@@ -223,7 +236,11 @@ func (s *DynamicFeeMgrSuite) TestGlobalModeSealUsesTotalPoolVolume(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(rec.History, HasLen, 1)
 	c.Check(rec.History[0].PoolVolumeTor.Equal(cosmos.NewUint(5_000)), Equals, true)
+	c.Check(rec.History[0].OwnPoolVolumeTor.Equal(cosmos.NewUint(1_500)), Equals, true)
 	c.Assert(rec.Probes, HasLen, 1)
+	// 15 fees over 3,500 of other swappers' volume, scaled by 1e12 and
+	// rounded half up.
+	c.Check(rec.Probes[0].SignalSum.Equal(cosmos.NewUint(4_285_714_286)), Equals, true)
 }
 
 // TestColdStartAtCeilingProbesDown pins that a record which converged at (or
@@ -244,7 +261,7 @@ func (s *DynamicFeeMgrSuite) TestColdStartAtCeilingProbesDown(c *C) {
 		{name: "above a lowered ceiling clamps to it", old: 20, floor: 1, ceiling: 8, expect: 8},
 		{name: "floor == ceiling cannot move", old: 4, floor: 4, ceiling: 4, expect: 4},
 	} {
-		reason, bps, _, _, _ := decideNextBps(at(tc.old), tc.old, tc.floor, tc.ceiling, 1, 3, zero, tenK)
+		reason, bps, _, _, _ := decideNextBps(at(tc.old), tc.old, tc.floor, tc.ceiling, 1, 3, zero, tenK, 0)
 		c.Check(reason, Equals, "cold_start_probe", Commentf(tc.name))
 		c.Check(bps, Equals, tc.expect, Commentf(tc.name))
 	}
@@ -323,4 +340,197 @@ func (s *DynamicFeeMgrSuite) TestGlobalModeMultiLegSwapCountsOnce(c *C) {
 	c.Check(eth.SwapCount, Equals, uint64(1))
 	c.Check(acc.VolumeTor.Equal(btc.VolumeTor), Equals, true, Commentf("global volume is the first leg's"))
 	c.Check(acc.FeesTor.Equal(btc.FeesTor.Add(eth.FeesTor)), Equals, true, Commentf("global fees are both legs'"))
+	c.Check(acc.OwnPoolVolumeTor.Equal(btc.OwnPoolVolumeTor.Add(eth.OwnPoolVolumeTor)), Equals, true,
+		Commentf("own pool volume counts every leg, matching the per-leg pool volume it is subtracted from"))
+}
+
+// sealWith seals one epoch for "tn" on BTC|RUNE with the given own volume,
+// other swappers' volume and fees.
+func sealWith(c *C, ctx cosmos.Context, dfm *DynamicFeeMgr, height int64, own, other, fees uint64) cosmos.Context {
+	dfm.CreditPoolVolume(ctx, common.BTCAsset, common.RuneAsset(), cosmos.NewUint(own+other))
+	creditOneSwap(ctx, dfm, "tn", cosmos.NewUint(own), cosmos.NewUint(fees))
+	ctx = ctx.WithBlockHeight(height)
+	c.Assert(dfm.EndBlock(ctx), IsNil)
+	return ctx
+}
+
+// TestSearchHoldsWithoutOtherFlow: when the thorname is (nearly) the whole
+// pool there is no outside reference to normalize against, so an epoch is
+// recorded but not counted as a measurement of the fee.
+func (s *DynamicFeeMgrSuite) TestSearchHoldsWithoutOtherFlow(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	k := mgr.Keeper()
+	setDynamicFeeTestMimirs(ctx, k)
+	dfm := newDynamicFeeMgr(k)
+	registerThorname(ctx, k, "tn", types.DynamicFeeStatePerPair)
+	pairA, pairB, _ := dynamicFeePairKey(common.BTCAsset, common.RuneAsset())
+
+	// Other flow is 5% of the pool, under the 10% default.
+	ctx = sealWith(c, ctx, dfm, 20, 950_000, 50_000, 100)
+	rec, err := k.GetDynamicFeeRecord(ctx, "tn", pairA, pairB)
+	c.Assert(err, IsNil)
+	c.Check(rec.History, HasLen, 1, Commentf("the epoch is recorded"))
+	c.Check(rec.Probes, HasLen, 0, Commentf("but it is not a measurement"))
+	c.Check(rec.DynamicBps, Equals, uint64(1))
+
+	// At 20% other flow it counts.
+	ctx = sealWith(c, ctx, dfm, 30, 800_000, 200_000, 100)
+	rec, err = k.GetDynamicFeeRecord(ctx, "tn", pairA, pairB)
+	c.Assert(err, IsNil)
+	c.Assert(rec.Probes, HasLen, 1)
+	c.Check(rec.DynamicBps, Equals, uint64(100), Commentf("measured at the floor; on to the ceiling"))
+}
+
+// TestSearchFindsPeakForDominantAffiliate drives the whole search for an
+// affiliate that is 90% of its pair's flow, with demand that falls with the
+// fee so revenue peaks at 7 bps. Dividing by the whole pool's volume would
+// reward the fee rate itself and settle near 15; dividing by other swappers'
+// volume tracks revenue.
+func (s *DynamicFeeMgrSuite) TestSearchFindsPeakForDominantAffiliate(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	k := mgr.Keeper()
+	setDynamicFeeTestMimirs(ctx, k)
+	k.SetMimir(ctx, "L1DynamicFeeCeilingBPS", 20)
+	dfm := newDynamicFeeMgr(k)
+	registerThorname(ctx, k, "tn", types.DynamicFeeStatePerPair)
+	pairA, pairB, _ := dynamicFeePairKey(common.BTCAsset, common.RuneAsset())
+
+	const other = 1_000_000 // 10% of the pair at 1 bps
+	volume := func(b uint64) uint64 { return uint64(9_000_000 * math.Exp(-float64(b-1)/7)) }
+	height := int64(10)
+	for epoch := 0; epoch < 30; epoch++ {
+		b := dfm.GetDynamicBps(ctx, []string{"tn"}, []cosmos.Uint{cosmos.NewUint(100)}, common.BTCAsset, common.RuneAsset())
+		v := volume(b)
+		height += 10
+		ctx = sealWith(c, ctx, dfm, height, v, other, v*b/10_000)
+		rec, err := k.GetDynamicFeeRecord(ctx, "tn", pairA, pairB)
+		c.Assert(err, IsNil)
+		if rec.SearchDone {
+			c.Check(rec.DynamicBps >= 6 && rec.DynamicBps <= 8, Equals, true, Commentf("settled on %d", rec.DynamicBps))
+			return
+		}
+	}
+	c.Fatal("search did not converge")
+}
+
+func (s *DynamicFeeMgrSuite) TestSignificance(c *C) {
+	u := func(xs ...uint64) []cosmos.Uint {
+		out := make([]cosmos.Uint, len(xs))
+		for i, x := range xs {
+			out[i] = cosmos.NewUint(x)
+		}
+		return out
+	}
+	// No spread: any gap is real.
+	c.Check(significantlyDifferent(newSignalStats(u(101, 101)), newSignalStats(u(100, 100))), Equals, true)
+	c.Check(significantlyDifferent(newSignalStats(u(100, 100)), newSignalStats(u(100, 100))), Equals, false)
+	// Means 115 vs 100 with a spread of +/-60: inside the noise.
+	c.Check(significantlyDifferent(newSignalStats(u(55, 175)), newSignalStats(u(40, 160))), Equals, false)
+	// Same means with a spread of +/-2: clearly different.
+	c.Check(significantlyDifferent(newSignalStats(u(113, 117)), newSignalStats(u(98, 102))), Equals, true)
+
+	// Probe stats match the same values passed directly.
+	p := types.DynamicFeeProbe{}
+	for _, x := range u(113, 117) {
+		p.Add(x)
+	}
+	c.Check(newProbeStats(p).mean.Cmp(newSignalStats(u(113, 117)).mean), Equals, 0)
+	c.Check(newProbeStats(p).varOfMean.Cmp(newSignalStats(u(113, 117)).varOfMean), Equals, 0)
+}
+
+// TestSearchMeasuresLongerWhenNoisy pins the noise-aware measurement: a
+// tested fee keeps being measured, up to L1DynamicFeeProbeMaxEpochs, while
+// its gap to the best is inside the epoch-to-epoch spread, and a noisy higher
+// fee does not displace a lower one.
+func (s *DynamicFeeMgrSuite) TestSearchMeasuresLongerWhenNoisy(c *C) {
+	p := dynamicFeeParams{
+		floorBps: 1, ceilingBps: 20, deadbandBps: cosmos.ZeroUint(), tenK: cosmos.NewUint(10_000),
+		probeEpochs: 2, probeMaxEpochs: 4, minOtherBps: 1000,
+	}
+	entry := func(fees uint64) types.DynamicFeeEpochRecord {
+		return types.DynamicFeeEpochRecord{FeesTor: cosmos.NewUint(fees), PoolVolumeTor: types.SignalScale, OwnPoolVolumeTor: cosmos.ZeroUint()}
+	}
+	run := func(floorReads, ceilingReads []uint64) (reasons []string, rec types.DynamicFeeRecord) {
+		rec = types.DynamicFeeRecord{DynamicBps: 1}
+		for _, reads := range [][]uint64{floorReads, ceilingReads} {
+			for _, f := range reads {
+				rec.History = append(rec.History, entry(f))
+				var reason string
+				reason, rec.DynamicBps, _, _ = searchStep(&rec, rec.DynamicBps, p)
+				reasons = append(reasons, reason)
+			}
+		}
+		return reasons, rec
+	}
+
+	// Clean readings: two epochs at each fee are enough.
+	reasons, rec := run([]uint64{100, 100}, []uint64{150, 150})
+	c.Check(reasons, DeepEquals, []string{"search_measure", "search_probe", "search_measure", "search_probe"})
+	c.Check(rec.DynamicBps, Equals, uint64(10), Commentf("20 beat 1, so test the midpoint"))
+
+	// Noisy readings: the ceiling's higher mean is inside the noise, so it is
+	// measured to the cap and then loses to the lower fee.
+	reasons, rec = run([]uint64{60, 140}, []uint64{40, 260, 90, 210})
+	c.Check(reasons, DeepEquals, []string{"search_measure", "search_probe", "search_measure", "search_measure", "search_measure", "search_probe"})
+	c.Check(rec.Probes[1].Epochs, Equals, uint64(4))
+	c.Check(rec.DynamicBps, Equals, uint64(10), Commentf("1 stays best; the gap (1, 20) is next"))
+	best, _, _ := nextSearchBps(rec.Probes, 1, 20, cosmos.ZeroUint(), cosmos.NewUint(10_000))
+	c.Check(best, Equals, uint64(1), Commentf("a noisy higher fee does not displace a lower one"))
+}
+
+// TestTrackerUsesSignificance: with two or more epochs on each side of the
+// last change, the +/-step controller moves on a significant change even
+// below the deadband, and holds on a large but noisy one.
+func (s *DynamicFeeMgrSuite) TestTrackerUsesSignificance(c *C) {
+	tenK, deadband := cosmos.NewUint(10_000), cosmos.NewUint(1000) // 10%
+	hist := func(bps []uint64, fees []uint64) types.DynamicFeeRecord {
+		rec := types.DynamicFeeRecord{SearchDone: true}
+		for i := range bps {
+			rec.History = append(rec.History, types.DynamicFeeEpochRecord{BpsAtClose: bps[i], FeesTor: cosmos.NewUint(fees[i]), PoolVolumeTor: types.SignalScale})
+		}
+		return rec
+	}
+	// Up from 5 to 6; revenue 1000,1000 -> 1030,1030: a 3% rise, below the
+	// deadband, but with no spread it is real.
+	reason, bps, _, _, _ := decideNextBps(hist([]uint64{5, 5, 6, 6, 6}, []uint64{1000, 1000, 1030, 1030, 1030}), 6, 1, 20, 1, 3, deadband, tenK, 0)
+	c.Check(reason, Equals, "continue_up")
+	c.Check(bps, Equals, uint64(7))
+
+	// Up from 5 to 6; means 1000 -> 1500, a 50% rise, but the readings swing
+	// by +/-60%: hold.
+	reason, bps, _, _, _ = decideNextBps(hist([]uint64{5, 5, 6, 6, 6}, []uint64{400, 1600, 600, 2400, 1500}), 6, 1, 20, 1, 3, deadband, tenK, 0)
+	c.Check(reason, Equals, "hold")
+	c.Check(bps, Equals, uint64(6))
+}
+
+// TestMonitorRecordsHistoryOnly: a monitor thorname's swaps pay the static
+// minimum, so its record collects history but never searches or steps.
+func (s *DynamicFeeMgrSuite) TestMonitorRecordsHistoryOnly(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	k := mgr.Keeper()
+	setDynamicFeeTestMimirs(ctx, k)
+	dfm := newDynamicFeeMgr(k)
+	registerThorname(ctx, k, "tn", types.DynamicFeeStatePerPairMonitor)
+	pairA, pairB, _ := dynamicFeePairKey(common.BTCAsset, common.RuneAsset())
+
+	for i := int64(0); i < 3; i++ {
+		ctx = sealWith(c, ctx, dfm, 20+10*i, 1_000, 1_000_000, 100)
+	}
+	rec, err := k.GetDynamicFeeRecord(ctx, "tn", pairA, pairB)
+	c.Assert(err, IsNil)
+	c.Check(rec.History, HasLen, 3)
+	c.Check(rec.Probes, HasLen, 0)
+	c.Check(rec.DynamicBps, Equals, uint64(1))
+	c.Check(rec.SearchDone, Equals, false)
+	for _, evt := range ctx.EventManager().Events() {
+		c.Check(evt.Type, Not(Equals), types.DynamicL1FeeUpdateEventType)
+	}
+
+	qs := queryServer{mgr: mgr}
+	byName, err := qs.queryDynamicL1FeesByThorname(ctx, &types.QueryDynamicL1FeesByThornameRequest{Thorname: "tn"})
+	c.Assert(err, IsNil)
+	c.Check(byName.Pairs[0].Phase, Equals, "monitor")
+	all, err := qs.queryDynamicL1Fees(ctx, &types.QueryDynamicL1FeesRequest{})
+	c.Assert(err, IsNil)
+	c.Check(all.Entries[0].Phase, Equals, "monitor")
 }

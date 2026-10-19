@@ -2,6 +2,7 @@ package types
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"cosmossdk.io/math"
@@ -81,13 +82,27 @@ func (m *DynamicFeeAccumulator) Key() string {
 
 func NewDynamicFeeAccumulator(thorname, pairAssetA, pairAssetB string) DynamicFeeAccumulator {
 	return DynamicFeeAccumulator{
-		Thorname:      thorname,
-		PairAssetA:    pairAssetA,
-		PairAssetB:    pairAssetB,
-		VolumeTor:     math.ZeroUint(),
-		FeesTor:       math.ZeroUint(),
-		PoolVolumeTor: math.ZeroUint(),
+		Thorname:         thorname,
+		PairAssetA:       pairAssetA,
+		PairAssetB:       pairAssetB,
+		VolumeTor:        math.ZeroUint(),
+		FeesTor:          math.ZeroUint(),
+		PoolVolumeTor:    math.ZeroUint(),
+		OwnPoolVolumeTor: math.ZeroUint(),
 	}
+}
+
+// AddPair records an L1 pair a global-mode accumulator was credited on,
+// keeping the list sorted and unique so it is deterministic.
+func (m *DynamicFeeAccumulator) AddPair(pairAssetA, pairAssetB string) {
+	key := pairAssetA + "|" + pairAssetB
+	i := sort.SearchStrings(m.Pairs, key)
+	if i < len(m.Pairs) && m.Pairs[i] == key {
+		return
+	}
+	m.Pairs = append(m.Pairs, "")
+	copy(m.Pairs[i+1:], m.Pairs[i:])
+	m.Pairs[i] = key
 }
 
 func (m *DynamicFeePoolAccumulator) Key() string {
@@ -102,17 +117,49 @@ func NewDynamicFeePoolAccumulator(pairAssetA, pairAssetB string) DynamicFeePoolA
 	}
 }
 
-// NormalizedSignal returns the epoch's fee revenue expressed as a share of the
-// pool's total volume for the same span, scaled by SignalScale. Normalizing
-// against pool volume (rather than the affiliate's own volume, which is
-// degenerate at f/10^4 while the floor binds) cancels market-wide activity out
-// of the gradient. Returns (0, false) when the pool volume is unknown, which is
-// the case for history entries written before pool volume was tracked.
-func (m *DynamicFeeEpochRecord) NormalizedSignal() (math.Uint, bool) {
+// NormalizedSignal returns the epoch's fee revenue as a share of the volume
+// the rest of the market put through the same pools over the same span,
+// scaled by SignalScale: fees_tor / (pool_volume_tor - own_pool_volume_tor).
+//
+// Excluding the thorname's own volume matters. When it is most of a pair's
+// flow, dividing by the whole pool volume makes the ratio approach the fee
+// rate itself, which always reads higher at a higher fee: the controller
+// would price a dominant integrator up to the ceiling whatever its demand did.
+// Other swappers' volume is an outside index of market activity that the
+// thorname's own fee does not move.
+//
+// Returns (0, false) when the epoch cannot be normalized: no pool volume
+// (history written before pool volume was tracked), or other flow below
+// minOtherBps of the pool's volume, where there is no outside reference.
+func (m *DynamicFeeEpochRecord) NormalizedSignal(minOtherBps uint64) (math.Uint, bool) {
 	if m.PoolVolumeTor.IsNil() || m.PoolVolumeTor.IsZero() {
 		return math.ZeroUint(), false
 	}
-	return common.GetSafeShare(m.FeesTor, m.PoolVolumeTor, SignalScale), true
+	own := m.OwnPoolVolumeTor
+	if own.IsNil() {
+		own = math.ZeroUint()
+	}
+	if own.GTE(m.PoolVolumeTor) {
+		return math.ZeroUint(), false
+	}
+	other := m.PoolVolumeTor.Sub(own)
+	if other.MulUint64(10_000).LT(m.PoolVolumeTor.MulUint64(minOtherBps)) {
+		return math.ZeroUint(), false
+	}
+	return common.GetSafeShare(m.FeesTor, other, SignalScale), true
+}
+
+// Add records one more measured epoch at the probe's bps.
+func (m *DynamicFeeProbe) Add(signal math.Uint) {
+	if m.SignalSum.IsNil() {
+		m.SignalSum = math.ZeroUint()
+	}
+	if m.SignalSqSum.IsNil() {
+		m.SignalSqSum = math.ZeroUint()
+	}
+	m.SignalSum = m.SignalSum.Add(signal)
+	m.SignalSqSum = m.SignalSqSum.Add(signal.Mul(signal))
+	m.Epochs++
 }
 
 // Mean returns the probe's average normalized fee signal per measured epoch.

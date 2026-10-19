@@ -8824,7 +8824,9 @@ components:
           description: "DYNAMICFEE-WHITELIST-{thorname} Mimir value. `0`/absent =\
             \ not\nenrolled, `1` = per-pair (applied at swap time), `2` = global (one\n\
             floor across all of the thorname's L1 pairs, applied at swap time),\n\
-            `3` = per-pair monitor and `4` = global monitor (computed but not\napplied).\n"
+            `3` = per-pair monitor and `4` = global monitor (history collected,\n\
+            no floor computed or applied). In a memo with several affiliates,\nonly\
+            \ the one with the largest affiliate bps is charged or credited.\n"
           example: 1
           format: int64
           type: integer
@@ -8841,10 +8843,12 @@ components:
         phase:
           description: "`search` while the bracket search is still testing bps values,\n\
             `track` once it has converged and the +/-step controller follows\ndrift\
-            \ from the best value found\n"
+            \ from the best value found, `monitor` for a thorname in a\nmonitor whitelist\
+            \ state (history is collected, no fee decisions)\n"
           enum:
           - search
           - track
+          - monitor
           example: search
           type: string
       required:
@@ -8886,6 +8890,7 @@ components:
         epoch: 41
         fees_tor: "12345678"
         swap_count: 42
+        own_pool_volume_tor: "300000000000"
         bps_at_close: 12
       properties:
         epoch:
@@ -8917,9 +8922,17 @@ components:
           type: integer
         pool_volume_tor:
           description: "TOR-denominated (1e8-precision USD value) total volume through\
-            \ the\npair over the same span, regardless of affiliate. It is the\ndenominator\
-            \ that normalizes fees_tor against market-wide activity\n"
+            \ the\npair (for a global \"*|*\" record, through the pairs the thorname\n\
+            traded) over the same span, regardless of affiliate\n"
           example: "900000000000"
+          type: string
+        own_pool_volume_tor:
+          description: "the thorname's own share of pool_volume_tor, counting every\
+            \ swap\nleg. The signal is fees_tor / (pool_volume_tor -\nown_pool_volume_tor):\
+            \ fee revenue against other swappers' volume.\nAn epoch whose other flow\
+            \ is under L1DynamicFeeMinOtherFlowBPS of\nthe pool is recorded but not\
+            \ used as a measurement\n"
+          example: "300000000000"
           type: string
       required:
       - bps_at_close
@@ -8946,12 +8959,14 @@ components:
           epoch: 41
           fees_tor: "12345678"
           swap_count: 42
+          own_pool_volume_tor: "300000000000"
           bps_at_close: 12
         - pool_volume_tor: "900000000000"
           volume_tor: "10000000000"
           epoch: 41
           fees_tor: "12345678"
           swap_count: 42
+          own_pool_volume_tor: "300000000000"
           bps_at_close: 12
         dynamic_bps: 12
         pair: BTC.BTC|THOR.RUNE
@@ -8974,10 +8989,12 @@ components:
         phase:
           description: "`search` while the bracket search is still testing bps values,\n\
             `track` once it has converged and the +/-step controller follows\ndrift\
-            \ from the best value found\n"
+            \ from the best value found, `monitor` for a thorname in a\nmonitor whitelist\
+            \ state (history is collected, no fee decisions)\n"
           enum:
           - search
           - track
+          - monitor
           example: search
           type: string
         probes:
@@ -9037,12 +9054,14 @@ components:
             epoch: 41
             fees_tor: "12345678"
             swap_count: 42
+            own_pool_volume_tor: "300000000000"
             bps_at_close: 12
           - pool_volume_tor: "900000000000"
             volume_tor: "10000000000"
             epoch: 41
             fees_tor: "12345678"
             swap_count: 42
+            own_pool_volume_tor: "300000000000"
             bps_at_close: 12
           dynamic_bps: 12
           pair: BTC.BTC|THOR.RUNE
@@ -9061,12 +9080,14 @@ components:
             epoch: 41
             fees_tor: "12345678"
             swap_count: 42
+            own_pool_volume_tor: "300000000000"
             bps_at_close: 12
           - pool_volume_tor: "900000000000"
             volume_tor: "10000000000"
             epoch: 41
             fees_tor: "12345678"
             swap_count: 42
+            own_pool_volume_tor: "300000000000"
             bps_at_close: 12
           dynamic_bps: 12
           pair: BTC.BTC|THOR.RUNE
@@ -9097,6 +9118,7 @@ components:
         fees_tor: "12345678"
         pair: BTC.BTC|THOR.RUNE
         swap_count: 4
+        own_pool_volume_tor: "300000000000"
       properties:
         thorname:
           example: alice
@@ -9129,9 +9151,15 @@ components:
           format: uint64
           type: integer
         pool_volume_tor:
-          description: "running TOR-denominated total volume through the pair, including\
-            \ the\npair's in-progress slice that is only folded in at the seal\n"
+          description: "running TOR-denominated total volume through the pair (for\
+            \ a global\n\"*|*\" accumulator, through the pairs the thorname traded),\n\
+            including the in-progress slice that is only folded in at the seal\n"
           example: "900000000000"
+          type: string
+        own_pool_volume_tor:
+          description: "the thorname's own share of pool_volume_tor so far, counting\
+            \ every\nswap leg\n"
+          example: "300000000000"
           type: string
       required:
       - epoch
@@ -9152,6 +9180,7 @@ components:
           fees_tor: "12345678"
           pair: BTC.BTC|THOR.RUNE
           swap_count: 4
+          own_pool_volume_tor: "300000000000"
         - thorname: alice
           pool_volume_tor: "900000000000"
           volume_tor: "10000000000"
@@ -9159,6 +9188,7 @@ components:
           fees_tor: "12345678"
           pair: BTC.BTC|THOR.RUNE
           swap_count: 4
+          own_pool_volume_tor: "300000000000"
         epoch: 42
       properties:
         epoch:

@@ -22,13 +22,13 @@ type DynamicL1FeeEntry struct {
 	Pair string `json:"pair"`
 	// current dynamic outbound fee floor in basis points
 	DynamicBps int32 `json:"dynamic_bps"`
-	// DYNAMICFEE-WHITELIST-{thorname} Mimir value. `0`/absent = not enrolled, `1` = per-pair (applied at swap time), `2` = global (one floor across all of the thorname's L1 pairs, applied at swap time), `3` = per-pair monitor and `4` = global monitor (computed but not applied). 
+	// DYNAMICFEE-WHITELIST-{thorname} Mimir value. `0`/absent = not enrolled, `1` = per-pair (applied at swap time), `2` = global (one floor across all of the thorname's L1 pairs, applied at swap time), `3` = per-pair monitor and `4` = global monitor (history collected, no floor computed or applied). In a memo with several affiliates, only the one with the largest affiliate bps is charged or credited. 
 	WhitelistState int64 `json:"whitelist_state"`
 	// last epoch index in which this pair accrued activity
 	LastActiveEpoch int32 `json:"last_active_epoch"`
 	// fees in TOR (1e8-precision USD value) recorded in the most recent sealed history entry, if any 
 	LatestFeesTor *string `json:"latest_fees_tor,omitempty"`
-	// `search` while the bracket search is still testing bps values, `track` once it has converged and the +/-step controller follows drift from the best value found 
+	// `search` while the bracket search is still testing bps values, `track` once it has converged and the +/-step controller follows drift from the best value found, `monitor` for a thorname in a monitor whitelist state (history is collected, no fee decisions) 
 	Phase *string `json:"phase,omitempty"`
 }
 

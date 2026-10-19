@@ -27,8 +27,10 @@ type DynamicL1FeeCurrentEntry struct {
 	Epoch int32 `json:"epoch"`
 	// running count of user swaps for this accumulator, summed across any epochs it has rolled over. The epoch seals only if swap_count >= L1DynamicFeeMinSwaps and volume_tor >= L1DynamicFeeMinVolumeUSD * 1e8; if either falls short, the accumulator rolls into the next epoch 
 	SwapCount int32 `json:"swap_count"`
-	// running TOR-denominated total volume through the pair, including the pair's in-progress slice that is only folded in at the seal 
+	// running TOR-denominated total volume through the pair (for a global \"*|*\" accumulator, through the pairs the thorname traded), including the in-progress slice that is only folded in at the seal 
 	PoolVolumeTor string `json:"pool_volume_tor"`
+	// the thorname's own share of pool_volume_tor so far, counting every swap leg 
+	OwnPoolVolumeTor *string `json:"own_pool_volume_tor,omitempty"`
 }
 
 // NewDynamicL1FeeCurrentEntry instantiates a new DynamicL1FeeCurrentEntry object
@@ -223,6 +225,38 @@ func (o *DynamicL1FeeCurrentEntry) SetPoolVolumeTor(v string) {
 	o.PoolVolumeTor = v
 }
 
+// GetOwnPoolVolumeTor returns the OwnPoolVolumeTor field value if set, zero value otherwise.
+func (o *DynamicL1FeeCurrentEntry) GetOwnPoolVolumeTor() string {
+	if o == nil || o.OwnPoolVolumeTor == nil {
+		var ret string
+		return ret
+	}
+	return *o.OwnPoolVolumeTor
+}
+
+// GetOwnPoolVolumeTorOk returns a tuple with the OwnPoolVolumeTor field value if set, nil otherwise
+// and a boolean to check if the value has been set.
+func (o *DynamicL1FeeCurrentEntry) GetOwnPoolVolumeTorOk() (*string, bool) {
+	if o == nil || o.OwnPoolVolumeTor == nil {
+		return nil, false
+	}
+	return o.OwnPoolVolumeTor, true
+}
+
+// HasOwnPoolVolumeTor returns a boolean if a field has been set.
+func (o *DynamicL1FeeCurrentEntry) HasOwnPoolVolumeTor() bool {
+	if o != nil && o.OwnPoolVolumeTor != nil {
+		return true
+	}
+
+	return false
+}
+
+// SetOwnPoolVolumeTor gets a reference to the given string and assigns it to the OwnPoolVolumeTor field.
+func (o *DynamicL1FeeCurrentEntry) SetOwnPoolVolumeTor(v string) {
+	o.OwnPoolVolumeTor = &v
+}
+
 func (o DynamicL1FeeCurrentEntry) MarshalJSON_deprecated() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if true {
@@ -245,6 +279,9 @@ func (o DynamicL1FeeCurrentEntry) MarshalJSON_deprecated() ([]byte, error) {
 	}
 	if true {
 		toSerialize["pool_volume_tor"] = o.PoolVolumeTor
+	}
+	if o.OwnPoolVolumeTor != nil {
+		toSerialize["own_pool_volume_tor"] = o.OwnPoolVolumeTor
 	}
 	return json.Marshal(toSerialize)
 }

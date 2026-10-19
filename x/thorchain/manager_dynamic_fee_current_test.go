@@ -32,12 +32,17 @@ func setDynamicFeeTestMimirs(ctx cosmos.Context, k keeper.Keeper) {
 	// Liquidity gate off by default; the gate tests set it explicitly.
 	k.SetMimir(ctx, "L1DynamicFeeMinSwaps", 0)
 	k.SetMimir(ctx, "L1DynamicFeeMinVolumeUSD", 0)
+	// One epoch per tested bps, as the search tests were written against;
+	// the noise-aware measurement tests set these explicitly.
+	k.SetMimir(ctx, "L1DynamicFeeProbeEpochs", 1)
+	k.SetMimir(ctx, "L1DynamicFeeProbeMaxEpochs", 1)
 }
 
 // endBlockT seals an epoch in tests. It first gives every live accumulator's pair
-// a pool volume of exactly SignalScale, which makes NormalizedSignal() return
-// FeesTor unchanged -- so tests written against the raw-fee signal keep their
-// arithmetic, and no sealed entry looks like pre-upgrade history.
+// a pool volume of SignalScale on top of the thorname's own volume, so other
+// swappers' volume is exactly SignalScale and NormalizedSignal returns FeesTor
+// unchanged -- tests written against the raw-fee signal keep their arithmetic,
+// and no sealed entry looks like pre-upgrade history.
 func endBlockT(ctx cosmos.Context, k keeper.Keeper, dfm DynamicFeeManager) error {
 	var accs []types.DynamicFeeAccumulator
 	iter := k.GetDynamicFeeAccumulatorIterator(ctx)
@@ -54,7 +59,11 @@ func endBlockT(ctx cosmos.Context, k keeper.Keeper, dfm DynamicFeeManager) error
 		if err != nil {
 			continue
 		}
-		poolAcc.VolumeTor = types.SignalScale
+		own := acc.OwnPoolVolumeTor
+		if own.IsNil() {
+			own = cosmos.ZeroUint()
+		}
+		poolAcc.VolumeTor = types.SignalScale.Add(own)
 		if err := k.SetDynamicFeePoolAccumulator(ctx, poolAcc); err != nil {
 			continue
 		}
@@ -896,177 +905,64 @@ func (s *DynamicFeeMgrSuite) TestCreditSwapDominantOnly(c *C) {
 		Commentf("non-dominant affiliate must not be credited"))
 }
 
-// TestDominantEligibleAffiliateBypass exercises the floor-collapse bypass:
-// a memo such as `xdefi/qqqqqq:1/500` lists an unparsable secondary
-// affiliate at higher bps than the real whitelisted affiliate. Strict
-// largest-bps selection would pick `qqqqqq`, fail the THORName/whitelist
-// gate, and short-circuit both CreditSwap and GetDynamicBps — letting the
-// floor collapse to static and starving xdefi's revenue accumulator.
-// dominantEligibleAffiliate must filter the ineligible entry out of the
-// selection so xdefi continues to govern the floor and accrue credit.
-func (s *DynamicFeeMgrSuite) TestDominantEligibleAffiliateBypass(c *C) {
-	ctx, mgr := setupManagerForTest(c)
-	k := mgr.Keeper()
-	setDynamicFeeTestMimirs(ctx, k)
-	dfm := newDynamicFeeMgr(k)
-
-	registerThorname(ctx, k, "xdefi", 1)
-
+// TestDominantAffiliateOnlyLargestCounts pins the multi-affiliate rule: the
+// dynamic fee belongs to the memo affiliate with the largest bps alone. It is
+// charged that thorname's floor when the thorname charges (1, 2) and credited
+// when it is enrolled (1-4); otherwise the swap pays the static minimum and
+// nothing is credited. A smaller enrolled affiliate never stands in, so the
+// thorname that sets the fee is always the one whose record measures it.
+func (s *DynamicFeeMgrSuite) TestDominantAffiliateOnlyLargestCounts(c *C) {
 	pairA, pairB, ok := dynamicFeePairKey(common.BTCAsset, common.RuneAsset())
 	c.Assert(ok, Equals, true)
-	rec := types.DynamicFeeRecord{
-		Thorname:   "xdefi",
-		PairAssetA: pairA,
-		PairAssetB: pairB,
-		DynamicBps: 50,
-		History:    []types.DynamicFeeEpochRecord{{Epoch: 1, FeesTor: cosmos.NewUint(100), BpsAtClose: 50, PoolVolumeTor: types.SignalScale}},
-	}
-	c.Assert(k.SetDynamicFeeRecord(ctx, rec), IsNil)
-
-	// `qqqqqq` is neither a registered THORName nor a parseable address, but
-	// its 500 bps would dominate strict largest-bps selection.
-	bps := dfm.GetDynamicBps(
-		ctx,
-		[]string{"xdefi", "qqqqqq"},
-		[]cosmos.Uint{cosmos.NewUint(1), cosmos.NewUint(500)},
-		common.BTCAsset, common.RuneAsset(),
-	)
-	c.Assert(bps, Equals, uint64(50),
-		Commentf("ineligible high-bps secondary must not collapse the floor to static"))
-
-	dfm.CreditSwap(
-		ctx,
-		[]string{"xdefi", "qqqqqq"},
-		[]cosmos.Uint{cosmos.NewUint(1), cosmos.NewUint(500)},
-		common.BTCAsset, common.RuneAsset(),
-		cosmos.NewUint(1_000_000), cosmos.NewUint(10_000),
-		true,
-	)
-	xdefiAcc, err := k.GetDynamicFeeAccumulator(ctx, "xdefi", pairA, pairB)
-	c.Assert(err, IsNil)
-	c.Assert(xdefiAcc.VolumeTor.Equal(cosmos.NewUint(1_000_000)), Equals, true,
-		Commentf("eligible affiliate must accrue credit despite higher-bps ineligible secondary"))
-}
-
-// TestDominantEligibleAffiliateAddressForm covers the address-form variant of
-// the bypass: a valid THORChain address listed at higher bps is also not a
-// THORName, so it must not steer dynamic-fee selection.
-func (s *DynamicFeeMgrSuite) TestDominantEligibleAffiliateAddressForm(c *C) {
-	ctx, mgr := setupManagerForTest(c)
-	k := mgr.Keeper()
-	setDynamicFeeTestMimirs(ctx, k)
-	dfm := newDynamicFeeMgr(k)
-
-	registerThorname(ctx, k, "xdefi", 1)
-
-	pairA, pairB, ok := dynamicFeePairKey(common.BTCAsset, common.RuneAsset())
-	c.Assert(ok, Equals, true)
-	rec := types.DynamicFeeRecord{
-		Thorname:   "xdefi",
-		PairAssetA: pairA,
-		PairAssetB: pairB,
-		DynamicBps: 33,
-		History:    []types.DynamicFeeEpochRecord{{Epoch: 1, FeesTor: cosmos.NewUint(100), BpsAtClose: 33, PoolVolumeTor: types.SignalScale}},
-	}
-	c.Assert(k.SetDynamicFeeRecord(ctx, rec), IsNil)
-
 	addr := GetRandomTHORAddress().String()
-	bps := dfm.GetDynamicBps(
-		ctx,
-		[]string{"xdefi", addr},
-		[]cosmos.Uint{cosmos.NewUint(50), cosmos.NewUint(450)},
-		common.BTCAsset, common.RuneAsset(),
-	)
-	c.Assert(bps, Equals, uint64(33),
-		Commentf("address-form secondary must not steer fee selection"))
-}
+	for _, tc := range []struct {
+		name       string
+		affiliates []string
+		bps        []uint64
+		charged    uint64 // GetDynamicBps
+		credited   string // thorname whose accumulator receives the swap, "" for none
+	}{
+		{name: "largest is live", affiliates: []string{"small", "live"}, bps: []uint64{10, 90}, charged: 17, credited: "live"},
+		{name: "largest is live, listed first", affiliates: []string{"live", "small"}, bps: []uint64{90, 10}, charged: 17, credited: "live"},
+		{name: "tie goes to the first listed", affiliates: []string{"live", "other"}, bps: []uint64{50, 50}, charged: 17, credited: "live"},
+		{name: "largest is monitor: credited, not charged", affiliates: []string{"live", "monitor"}, bps: []uint64{10, 90}, charged: 0, credited: "monitor"},
+		{name: "largest is unwhitelisted", affiliates: []string{"live", "rando"}, bps: []uint64{10, 90}, charged: 0, credited: ""},
+		{name: "largest is an address", affiliates: []string{"live", addr}, bps: []uint64{10, 90}, charged: 0, credited: ""},
+		{name: "largest is unparsable", affiliates: []string{"live", "qqqqqq"}, bps: []uint64{1, 500}, charged: 0, credited: ""},
+	} {
+		ctx, mgr := setupManagerForTest(c)
+		k := mgr.Keeper()
+		setDynamicFeeTestMimirs(ctx, k)
+		dfm := newDynamicFeeMgr(k)
+		registerThorname(ctx, k, "live", types.DynamicFeeStatePerPair)
+		registerThorname(ctx, k, "small", types.DynamicFeeStatePerPair)
+		registerThorname(ctx, k, "other", types.DynamicFeeStatePerPair)
+		registerThorname(ctx, k, "monitor", types.DynamicFeeStatePerPairMonitor)
+		registerThorname(ctx, k, "rando", 0)
+		for _, tn := range []string{"live", "small", "other"} {
+			bps := uint64(17)
+			if tn != "live" {
+				bps = 3
+			}
+			c.Assert(k.SetDynamicFeeRecord(ctx, types.DynamicFeeRecord{
+				Thorname: tn, PairAssetA: pairA, PairAssetB: pairB, DynamicBps: bps, SearchDone: true,
+				History: []types.DynamicFeeEpochRecord{{Epoch: 1, FeesTor: cosmos.NewUint(100), BpsAtClose: bps, PoolVolumeTor: types.SignalScale}},
+			}), IsNil)
+		}
+		affBps := make([]cosmos.Uint, len(tc.bps))
+		for i, b := range tc.bps {
+			affBps[i] = cosmos.NewUint(b)
+		}
 
-// TestDominantEligibleAffiliateUnwhitelisted ensures a registered THORName
-// that is not whitelisted (state 0) is also filtered out of selection so it
-// cannot steer dynamic-fee selection away from a whitelisted peer.
-func (s *DynamicFeeMgrSuite) TestDominantEligibleAffiliateUnwhitelisted(c *C) {
-	ctx, mgr := setupManagerForTest(c)
-	k := mgr.Keeper()
-	setDynamicFeeTestMimirs(ctx, k)
-	dfm := newDynamicFeeMgr(k)
+		c.Check(dfm.GetDynamicBps(ctx, tc.affiliates, affBps, common.BTCAsset, common.RuneAsset()), Equals, tc.charged, Commentf(tc.name))
 
-	registerThorname(ctx, k, "xdefi", 1)
-	registerThorname(ctx, k, "rando", 0) // exists but not whitelisted
-
-	pairA, pairB, ok := dynamicFeePairKey(common.BTCAsset, common.RuneAsset())
-	c.Assert(ok, Equals, true)
-	rec := types.DynamicFeeRecord{
-		Thorname:   "xdefi",
-		PairAssetA: pairA,
-		PairAssetB: pairB,
-		DynamicBps: 25,
-		History:    []types.DynamicFeeEpochRecord{{Epoch: 1, FeesTor: cosmos.NewUint(100), BpsAtClose: 25, PoolVolumeTor: types.SignalScale}},
+		dfm.CreditSwap(ctx, tc.affiliates, affBps, common.BTCAsset, common.RuneAsset(), cosmos.NewUint(1_000_000), cosmos.NewUint(10_000), true)
+		for _, tn := range []string{"live", "small", "other", "monitor", "rando"} {
+			acc, err := k.GetDynamicFeeAccumulator(ctx, tn, pairA, pairB)
+			c.Assert(err, IsNil)
+			c.Check(acc.VolumeTor.IsZero(), Equals, tn != tc.credited, Commentf("%s: %s credited", tc.name, tn))
+		}
 	}
-	c.Assert(k.SetDynamicFeeRecord(ctx, rec), IsNil)
-
-	bps := dfm.GetDynamicBps(
-		ctx,
-		[]string{"xdefi", "rando"},
-		[]cosmos.Uint{cosmos.NewUint(10), cosmos.NewUint(900)},
-		common.BTCAsset, common.RuneAsset(),
-	)
-	c.Assert(bps, Equals, uint64(25),
-		Commentf("unwhitelisted THORName must not dominate dynamic-fee selection"))
-}
-
-// TestDominantEligibleAffiliateMonitorVsActive verifies the asymmetric
-// allowed-state sets between CreditSwap and GetDynamicBps. CreditSwap admits
-// state 1 or 2, GetDynamicBps admits only state 1. With a higher-bps
-// monitor-mode peer present alongside an active whitelisted thorname, the
-// active thorname must govern live fees, while the monitor-mode thorname
-// receives the credit signal.
-func (s *DynamicFeeMgrSuite) TestDominantEligibleAffiliateMonitorVsActive(c *C) {
-	ctx, mgr := setupManagerForTest(c)
-	k := mgr.Keeper()
-	setDynamicFeeTestMimirs(ctx, k)
-	dfm := newDynamicFeeMgr(k)
-
-	registerThorname(ctx, k, "active", 1)
-	registerThorname(ctx, k, "monitor", types.DynamicFeeStatePerPairMonitor)
-
-	pairA, pairB, ok := dynamicFeePairKey(common.BTCAsset, common.RuneAsset())
-	c.Assert(ok, Equals, true)
-	rec := types.DynamicFeeRecord{
-		Thorname:   "active",
-		PairAssetA: pairA,
-		PairAssetB: pairB,
-		DynamicBps: 17,
-		History:    []types.DynamicFeeEpochRecord{{Epoch: 1, FeesTor: cosmos.NewUint(100), BpsAtClose: 17, PoolVolumeTor: types.SignalScale}},
-	}
-	c.Assert(k.SetDynamicFeeRecord(ctx, rec), IsNil)
-
-	// GetDynamicBps allows only state 1 → picks "active" even though
-	// "monitor" has higher bps.
-	bps := dfm.GetDynamicBps(
-		ctx,
-		[]string{"active", "monitor"},
-		[]cosmos.Uint{cosmos.NewUint(100), cosmos.NewUint(900)},
-		common.BTCAsset, common.RuneAsset(),
-	)
-	c.Assert(bps, Equals, uint64(17))
-
-	// CreditSwap allows the monitor states too → picks "monitor" by largest bps.
-	dfm.CreditSwap(
-		ctx,
-		[]string{"active", "monitor"},
-		[]cosmos.Uint{cosmos.NewUint(100), cosmos.NewUint(900)},
-		common.BTCAsset, common.RuneAsset(),
-		cosmos.NewUint(1_000_000), cosmos.NewUint(10_000),
-		true,
-	)
-	monitorAcc, err := k.GetDynamicFeeAccumulator(ctx, "monitor", pairA, pairB)
-	c.Assert(err, IsNil)
-	c.Assert(monitorAcc.VolumeTor.Equal(cosmos.NewUint(1_000_000)), Equals, true,
-		Commentf("monitor-mode dominant peer must accumulate"))
-	activeAcc, err := k.GetDynamicFeeAccumulator(ctx, "active", pairA, pairB)
-	c.Assert(err, IsNil)
-	c.Assert(activeAcc.VolumeTor.IsZero(), Equals, true,
-		Commentf("non-dominant active peer must not be credited"))
 }
 
 // TestCreditSwapMismatchedAffiliateLengths verifies that CreditSwap is a no-op
@@ -1310,7 +1206,7 @@ func (s *DynamicFeeMgrSuite) TestDecideNextBpsPureUnit(c *C) {
 
 	// Cold start: single entry, no prior bps change.
 	rec := mkRec(types.DynamicFeeEpochRecord{FeesTor: cosmos.NewUint(100), BpsAtClose: 1, PoolVolumeTor: types.SignalScale})
-	reason, newBps, _, _, _ := decideNextBps(rec, 1, 1, 20, 1, 3, deadband, tenK)
+	reason, newBps, _, _, _ := decideNextBps(rec, 1, 1, 20, 1, 3, deadband, tenK, 0)
 	c.Check(reason, Equals, "cold_start_probe")
 	c.Check(newBps, Equals, uint64(2))
 
@@ -1320,7 +1216,7 @@ func (s *DynamicFeeMgrSuite) TestDecideNextBpsPureUnit(c *C) {
 		types.DynamicFeeEpochRecord{FeesTor: cosmos.NewUint(100), BpsAtClose: 4, PoolVolumeTor: types.SignalScale}, // change here
 		types.DynamicFeeEpochRecord{FeesTor: cosmos.NewUint(200), BpsAtClose: 4, PoolVolumeTor: types.SignalScale}, // now
 	)
-	reason, newBps, _, _, _ = decideNextBps(rec, 4, 1, 20, 1, 3, deadband, tenK)
+	reason, newBps, _, _, _ = decideNextBps(rec, 4, 1, 20, 1, 3, deadband, tenK, 0)
 	c.Check(reason, Equals, "continue_up")
 	c.Check(newBps, Equals, uint64(5))
 
@@ -1330,7 +1226,7 @@ func (s *DynamicFeeMgrSuite) TestDecideNextBpsPureUnit(c *C) {
 		types.DynamicFeeEpochRecord{FeesTor: cosmos.NewUint(200), BpsAtClose: 4, PoolVolumeTor: types.SignalScale},
 		types.DynamicFeeEpochRecord{FeesTor: cosmos.NewUint(50), BpsAtClose: 4, PoolVolumeTor: types.SignalScale},
 	)
-	reason, newBps, _, _, _ = decideNextBps(rec, 4, 1, 20, 1, 3, deadband, tenK)
+	reason, newBps, _, _, _ = decideNextBps(rec, 4, 1, 20, 1, 3, deadband, tenK, 0)
 	c.Check(reason, Equals, "reverse_down")
 	c.Check(newBps, Equals, uint64(3))
 
@@ -1340,7 +1236,7 @@ func (s *DynamicFeeMgrSuite) TestDecideNextBpsPureUnit(c *C) {
 		types.DynamicFeeEpochRecord{FeesTor: cosmos.NewUint(100), BpsAtClose: 7, PoolVolumeTor: types.SignalScale},
 		types.DynamicFeeEpochRecord{FeesTor: cosmos.NewUint(200), BpsAtClose: 7, PoolVolumeTor: types.SignalScale},
 	)
-	reason, newBps, _, _, _ = decideNextBps(rec, 7, 1, 20, 1, 3, deadband, tenK)
+	reason, newBps, _, _, _ = decideNextBps(rec, 7, 1, 20, 1, 3, deadband, tenK, 0)
 	c.Check(reason, Equals, "continue_down")
 	c.Check(newBps, Equals, uint64(6))
 
@@ -1350,7 +1246,7 @@ func (s *DynamicFeeMgrSuite) TestDecideNextBpsPureUnit(c *C) {
 		types.DynamicFeeEpochRecord{FeesTor: cosmos.NewUint(200), BpsAtClose: 7, PoolVolumeTor: types.SignalScale},
 		types.DynamicFeeEpochRecord{FeesTor: cosmos.NewUint(50), BpsAtClose: 7, PoolVolumeTor: types.SignalScale},
 	)
-	reason, newBps, _, _, _ = decideNextBps(rec, 7, 1, 20, 1, 3, deadband, tenK)
+	reason, newBps, _, _, _ = decideNextBps(rec, 7, 1, 20, 1, 3, deadband, tenK, 0)
 	c.Check(reason, Equals, "reverse_up")
 	c.Check(newBps, Equals, uint64(8))
 
@@ -1360,7 +1256,7 @@ func (s *DynamicFeeMgrSuite) TestDecideNextBpsPureUnit(c *C) {
 		types.DynamicFeeEpochRecord{FeesTor: cosmos.NewUint(100), BpsAtClose: 4, PoolVolumeTor: types.SignalScale},
 		types.DynamicFeeEpochRecord{FeesTor: cosmos.NewUint(101), BpsAtClose: 4, PoolVolumeTor: types.SignalScale},
 	)
-	reason, newBps, _, _, _ = decideNextBps(rec, 4, 1, 20, 1, 3, deadband, tenK)
+	reason, newBps, _, _, _ = decideNextBps(rec, 4, 1, 20, 1, 3, deadband, tenK, 0)
 	c.Check(reason, Equals, "hold")
 	c.Check(newBps, Equals, uint64(4))
 }
@@ -1760,14 +1656,14 @@ func (s *DynamicFeeMgrSuite) TestDecideNextBpsNormalizesPoolVolume(c *C) {
 		{FeesTor: fees, BpsAtClose: 4, PoolVolumeTor: pool}, // moved up here
 		{FeesTor: fees, BpsAtClose: 4, PoolVolumeTor: pool.MulUint64(2)},
 	}}
-	reason, newBps, _, _, _ := decideNextBps(rec, 4, 1, 20, 1, 3, deadband, tenK)
+	reason, newBps, _, _, _ := decideNextBps(rec, 4, 1, 20, 1, 3, deadband, tenK, 0)
 	c.Check(reason, Equals, "reverse_down",
 		Commentf("flat fees against double the pool volume is a 50%% fall in signal"))
 	c.Check(newBps, Equals, uint64(3))
 
 	// Control: hold the pool volume flat and the same history is a hold.
 	rec.History[2].PoolVolumeTor = pool
-	reason, _, _, _, _ = decideNextBps(rec, 4, 1, 20, 1, 3, deadband, tenK)
+	reason, _, _, _, _ = decideNextBps(rec, 4, 1, 20, 1, 3, deadband, tenK, 0)
 	c.Check(reason, Equals, "hold")
 }
 

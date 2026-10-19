@@ -20,7 +20,7 @@ type DynamicL1FeePairDetail struct {
 	DynamicBps int32 `json:"dynamic_bps"`
 	LastActiveEpoch int32 `json:"last_active_epoch"`
 	History []DynamicL1FeeHistoryEntry `json:"history"`
-	// `search` while the bracket search is still testing bps values, `track` once it has converged and the +/-step controller follows drift from the best value found 
+	// `search` while the bracket search is still testing bps values, `track` once it has converged and the +/-step controller follows drift from the best value found, `monitor` for a thorname in a monitor whitelist state (history is collected, no fee decisions) 
 	Phase *string `json:"phase,omitempty"`
 	// one entry per bps value tested by the current search
 	Probes []DynamicL1FeeProbe `json:"probes,omitempty"`

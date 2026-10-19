@@ -103,15 +103,48 @@ func (s *DynamicFeeTypesSuite) TestDynamicFeeStates(c *C) {
 
 func (s *DynamicFeeTypesSuite) TestNormalizedSignal(c *C) {
 	e := DynamicFeeEpochRecord{FeesTor: math.NewUint(5)}
-	_, ok := e.NormalizedSignal()
+	_, ok := e.NormalizedSignal(0)
 	c.Check(ok, Equals, false, Commentf("nil pool volume: entry predates pool tracking"))
 	e.PoolVolumeTor = math.ZeroUint()
-	_, ok = e.NormalizedSignal()
+	_, ok = e.NormalizedSignal(0)
 	c.Check(ok, Equals, false)
 	e.PoolVolumeTor = math.NewUint(1_000)
-	signal, ok := e.NormalizedSignal()
-	c.Check(ok, Equals, true)
+	signal, ok := e.NormalizedSignal(0)
+	c.Check(ok, Equals, true, Commentf("nil own volume reads as zero"))
 	c.Check(signal.Equal(math.NewUint(5_000_000_000)), Equals, true, Commentf("5/1000 scaled by 1e12"))
+
+	// The thorname's own volume is excluded: 5 / (1000 - 750).
+	e.OwnPoolVolumeTor = math.NewUint(750)
+	signal, ok = e.NormalizedSignal(1000)
+	c.Check(ok, Equals, true)
+	c.Check(signal.Equal(math.NewUint(20_000_000_000)), Equals, true)
+
+	// Other flow is 25% of the pool: below a 30% minimum, at a 25% minimum.
+	_, ok = e.NormalizedSignal(3000)
+	c.Check(ok, Equals, false, Commentf("too little outside flow to normalize against"))
+	_, ok = e.NormalizedSignal(2500)
+	c.Check(ok, Equals, true, Commentf("exactly at the minimum counts"))
+
+	e.OwnPoolVolumeTor = math.NewUint(1_000)
+	_, ok = e.NormalizedSignal(0)
+	c.Check(ok, Equals, false, Commentf("the thorname is the whole pool"))
+}
+
+func (s *DynamicFeeTypesSuite) TestProbeAddAndPairs(c *C) {
+	p := DynamicFeeProbe{Bps: 4}
+	p.Add(math.NewUint(3))
+	p.Add(math.NewUint(5))
+	c.Check(p.Epochs, Equals, uint64(2))
+	c.Check(p.SignalSum.Equal(math.NewUint(8)), Equals, true)
+	c.Check(p.SignalSqSum.Equal(math.NewUint(34)), Equals, true)
+	c.Check(p.Mean().Equal(math.NewUint(4)), Equals, true)
+
+	acc := NewDynamicFeeAccumulator("t", "*", "*")
+	c.Check(acc.OwnPoolVolumeTor.IsZero(), Equals, true)
+	acc.AddPair("ETH.ETH", "THOR.RUNE")
+	acc.AddPair("BTC.BTC", "THOR.RUNE")
+	acc.AddPair("ETH.ETH", "THOR.RUNE")
+	c.Check(acc.Pairs, DeepEquals, []string{"BTC.BTC|THOR.RUNE", "ETH.ETH|THOR.RUNE"}, Commentf("sorted, unique"))
 }
 
 func (s *DynamicFeeTypesSuite) TestProbeMean(c *C) {

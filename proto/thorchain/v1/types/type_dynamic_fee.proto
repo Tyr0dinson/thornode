@@ -21,6 +21,13 @@ message DynamicFeeEpochRecord {
     (gogoproto.customtype) = "cosmossdk.io/math.Uint",
     (gogoproto.nullable) = false
   ];
+  // own_pool_volume_tor is this thorname's own share of pool_volume_tor (its
+  // swaps' volume, per leg). The signal divides by the rest of the pool's
+  // volume, pool_volume_tor - own_pool_volume_tor.
+  string own_pool_volume_tor = 7 [
+    (gogoproto.customtype) = "cosmossdk.io/math.Uint",
+    (gogoproto.nullable) = false
+  ];
 }
 
 message DynamicFeeRecord {
@@ -48,6 +55,11 @@ message DynamicFeeProbe {
     (gogoproto.nullable) = false
   ];
   uint64 epochs = 3;
+  // Sum of the squared per-epoch signals, for the epoch-to-epoch spread.
+  string signal_sq_sum = 4 [
+    (gogoproto.customtype) = "cosmossdk.io/math.Uint",
+    (gogoproto.nullable) = false
+  ];
 }
 
 message DynamicFeeAccumulator {
@@ -67,6 +79,13 @@ message DynamicFeeAccumulator {
     (gogoproto.customtype) = "cosmossdk.io/math.Uint",
     (gogoproto.nullable) = false
   ];
+  string own_pool_volume_tor = 8 [
+    (gogoproto.customtype) = "cosmossdk.io/math.Uint",
+    (gogoproto.nullable) = false
+  ];
+  // pairs lists the L1 pairs ("ASSETA|ASSETB") a global-mode accumulator has
+  // been credited on. Its pool volume is summed over these pairs only.
+  repeated string pairs = 9;
 }
 
 // DynamicFeePoolAccumulator tracks total swap volume across a pair (pool) for

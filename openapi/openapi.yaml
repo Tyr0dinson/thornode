@@ -5715,8 +5715,9 @@ components:
             DYNAMICFEE-WHITELIST-{thorname} Mimir value. `0`/absent = not
             enrolled, `1` = per-pair (applied at swap time), `2` = global (one
             floor across all of the thorname's L1 pairs, applied at swap time),
-            `3` = per-pair monitor and `4` = global monitor (computed but not
-            applied).
+            `3` = per-pair monitor and `4` = global monitor (history collected,
+            no floor computed or applied). In a memo with several affiliates,
+            only the one with the largest affiliate bps is charged or credited.
           example: 1
         last_active_epoch:
           type: integer
@@ -5731,11 +5732,12 @@ components:
           example: "12345678"
         phase:
           type: string
-          enum: ["search", "track"]
+          enum: ["search", "track", "monitor"]
           description: |
             `search` while the bracket search is still testing bps values,
             `track` once it has converged and the +/-step controller follows
-            drift from the best value found
+            drift from the best value found, `monitor` for a thorname in a
+            monitor whitelist state (history is collected, no fee decisions)
           example: "search"
 
     DynamicL1FeesResponse:
@@ -5790,9 +5792,18 @@ components:
           type: string
           description: |
             TOR-denominated (1e8-precision USD value) total volume through the
-            pair over the same span, regardless of affiliate. It is the
-            denominator that normalizes fees_tor against market-wide activity
+            pair (for a global "*|*" record, through the pairs the thorname
+            traded) over the same span, regardless of affiliate
           example: "900000000000"
+        own_pool_volume_tor:
+          type: string
+          description: |
+            the thorname's own share of pool_volume_tor, counting every swap
+            leg. The signal is fees_tor / (pool_volume_tor -
+            own_pool_volume_tor): fee revenue against other swappers' volume.
+            An epoch whose other flow is under L1DynamicFeeMinOtherFlowBPS of
+            the pool is recorded but not used as a measurement
+          example: "300000000000"
 
     DynamicL1FeePairDetail:
       type: object
@@ -5819,11 +5830,12 @@ components:
             $ref: "#/components/schemas/DynamicL1FeeHistoryEntry"
         phase:
           type: string
-          enum: ["search", "track"]
+          enum: ["search", "track", "monitor"]
           description: |
             `search` while the bracket search is still testing bps values,
             `track` once it has converged and the +/-step controller follows
-            drift from the best value found
+            drift from the best value found, `monitor` for a thorname in a
+            monitor whitelist state (history is collected, no fee decisions)
           example: "search"
         probes:
           type: array
@@ -5922,9 +5934,16 @@ components:
         pool_volume_tor:
           type: string
           description: |
-            running TOR-denominated total volume through the pair, including the
-            pair's in-progress slice that is only folded in at the seal
+            running TOR-denominated total volume through the pair (for a global
+            "*|*" accumulator, through the pairs the thorname traded),
+            including the in-progress slice that is only folded in at the seal
           example: "900000000000"
+        own_pool_volume_tor:
+          type: string
+          description: |
+            the thorname's own share of pool_volume_tor so far, counting every
+            swap leg
+          example: "300000000000"
 
     DynamicL1FeesCurrentResponse:
       type: object
