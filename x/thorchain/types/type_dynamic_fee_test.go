@@ -86,3 +86,36 @@ func (s *DynamicFeeTypesSuite) TestNormalizePairAssetsEqual(c *C) {
 	c.Check(a, Equals, "BTC.BTC")
 	c.Check(b, Equals, "BTC.BTC")
 }
+
+func (s *DynamicFeeTypesSuite) TestDynamicFeeStates(c *C) {
+	for state, want := range map[int64][2]bool{
+		-1: {false, false}, 0: {false, false},
+		DynamicFeeStatePerPair:        {true, false},
+		DynamicFeeStateGlobal:         {true, true},
+		DynamicFeeStatePerPairMonitor: {true, false},
+		DynamicFeeStateGlobalMonitor:  {true, true},
+		5:                             {false, false},
+	} {
+		c.Check(IsValidDynamicFeeState(state), Equals, want[0], Commentf("state %d", state))
+		c.Check(IsGlobalDynamicFeeState(state), Equals, want[1], Commentf("state %d", state))
+	}
+}
+
+func (s *DynamicFeeTypesSuite) TestNormalizedSignal(c *C) {
+	e := DynamicFeeEpochRecord{FeesTor: math.NewUint(5)}
+	_, ok := e.NormalizedSignal()
+	c.Check(ok, Equals, false, Commentf("nil pool volume: entry predates pool tracking"))
+	e.PoolVolumeTor = math.ZeroUint()
+	_, ok = e.NormalizedSignal()
+	c.Check(ok, Equals, false)
+	e.PoolVolumeTor = math.NewUint(1_000)
+	signal, ok := e.NormalizedSignal()
+	c.Check(ok, Equals, true)
+	c.Check(signal.Equal(math.NewUint(5_000_000_000)), Equals, true, Commentf("5/1000 scaled by 1e12"))
+}
+
+func (s *DynamicFeeTypesSuite) TestProbeMean(c *C) {
+	c.Check((&DynamicFeeProbe{Bps: 3}).Mean().IsZero(), Equals, true, Commentf("no epochs, nil sum"))
+	c.Check((&DynamicFeeProbe{SignalSum: math.NewUint(9)}).Mean().IsZero(), Equals, true, Commentf("no epochs"))
+	c.Check((&DynamicFeeProbe{SignalSum: math.NewUint(9), Epochs: 2}).Mean().Equal(math.NewUint(4)), Equals, true)
+}

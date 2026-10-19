@@ -241,3 +241,11 @@ func (s *KeeperDynamicFeeSuite) TestDynamicFeePoolAccumulator(c *C) {
 	c.Assert(err, IsNil)
 	c.Check(got.VolumeTor.IsZero(), Equals, true)
 }
+
+func (s *KeeperDynamicFeeSuite) TestGetDynamicFeePoolAccumulatorCorrupt(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	acc := NewDynamicFeePoolAccumulator("BTC.BTC", "THOR.RUNE")
+	k.kvStore(ctx).Set(k.GetKey(prefixDynamicFeePoolAcc, acc.Key()), []byte{0xff, 0xff})
+	_, err := k.GetDynamicFeePoolAccumulator(ctx, "BTC.BTC", "THOR.RUNE")
+	c.Check(err, NotNil)
+}
