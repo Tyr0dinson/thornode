@@ -29,6 +29,10 @@ var Upgrades = []upgrades.Upgrade{
 	//
 	// Example pattern: https://gitlab.com/thorchain/thornode/-/merge_requests/3837
 
+	// 3.21.1 is a non-consensus Bifrost-only patch; carry the current consensus
+	// version (3.21.0) so RegisterUpgradeHandlers does not auto-register
+	// NewUpgrade(app.Version()=3.21.1) and cause a consensus failure on node update.
+	standard.NewUpgrade("3.21.0"),
 }
 
 // RegisterUpgradeHandlers registers the chain upgrade handlers
