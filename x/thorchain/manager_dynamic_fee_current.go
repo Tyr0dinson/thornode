@@ -682,15 +682,27 @@ func nextSearchBps(probes []types.DynamicFeeProbe, floorBps, ceilingBps uint64, 
 	}
 	best = inRange[bestIdx].Bps
 
+	// Nearest tested values strictly below and above best. Scanning by value
+	// rather than taking the adjacent indices keeps the gap arithmetic from
+	// underflowing should two probes ever share a bps.
+	var lo, hi uint64
+	hasLo, hasHi := false, false
+	for _, pr := range inRange {
+		if pr.Bps < best {
+			lo, hasLo = pr.Bps, true
+		}
+		if pr.Bps > best && !hasHi {
+			hi, hasHi = pr.Bps, true
+		}
+	}
+
 	var leftCount, leftNext, rightCount, rightNext uint64
-	if bestIdx > 0 {
-		lo := inRange[bestIdx-1].Bps
+	if hasLo {
 		leftCount, leftNext = best-lo-1, (lo+best)/2
 	} else if best > floorBps {
 		leftCount, leftNext = best-floorBps, floorBps
 	}
-	if bestIdx < len(inRange)-1 {
-		hi := inRange[bestIdx+1].Bps
+	if hasHi {
 		rightCount, rightNext = hi-best-1, (best+hi)/2
 	} else if best < ceilingBps {
 		rightCount, rightNext = ceilingBps-best, ceilingBps
