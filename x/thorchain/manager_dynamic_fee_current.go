@@ -110,15 +110,19 @@ func dynamicFeeRecordPair(state int64, pairA, pairB string) (string, string) {
 // continuations so that SwapCount measures user swaps rather than intervals —
 // otherwise a single 30-interval stream would clear a 30-swap liquidity gate
 // on its own.
-func (m *DynamicFeeMgr) CreditSwap(ctx cosmos.Context, affiliates []string, affiliateBps []cosmos.Uint, sourceAsset, targetAsset common.Asset, volumeTor, feesTor cosmos.Uint, countAsSwap bool) {
+//
+// It reports whether it credited a global-mode record. Every leg of a
+// multi-leg swap lands on that same record, so the caller credits the swap's
+// volume and count on the first such leg only.
+func (m *DynamicFeeMgr) CreditSwap(ctx cosmos.Context, affiliates []string, affiliateBps []cosmos.Uint, sourceAsset, targetAsset common.Asset, volumeTor, feesTor cosmos.Uint, countAsSwap bool) bool {
 	enabled := m.keeper.GetConfigInt64(ctx, constants.L1DynamicFeeEnabled)
 	if enabled != 1 {
-		return
+		return false
 	}
 
 	pairA, pairB, ok := dynamicFeePairKey(sourceAsset, targetAsset)
 	if !ok {
-		return
+		return false
 	}
 
 	// Monitor states (3, 4) accumulate the revenue signal too, without
@@ -127,7 +131,7 @@ func (m *DynamicFeeMgr) CreditSwap(ctx cosmos.Context, affiliates []string, affi
 		types.DynamicFeeStatePerPair, types.DynamicFeeStateGlobal,
 		types.DynamicFeeStatePerPairMonitor, types.DynamicFeeStateGlobalMonitor)
 	if !ok {
-		return
+		return false
 	}
 	pairA, pairB = dynamicFeeRecordPair(state, pairA, pairB)
 
@@ -139,7 +143,7 @@ func (m *DynamicFeeMgr) CreditSwap(ctx cosmos.Context, affiliates []string, affi
 	rec, err := m.keeper.GetDynamicFeeRecord(ctx, aff, pairA, pairB)
 	if err != nil {
 		ctx.Logger().Error("fail to get dynamic fee record", "error", err)
-		return
+		return false
 	}
 	if rec.DynamicBps == 0 && len(rec.History) == 0 {
 		rec.DynamicBps = nonNegUint64(m.keeper.GetConfigInt64(ctx, constants.L1DynamicFeeFloorBPS))
@@ -148,14 +152,14 @@ func (m *DynamicFeeMgr) CreditSwap(ctx cosmos.Context, affiliates []string, affi
 		rec.PairAssetB = pairB
 		if setErr := m.keeper.SetDynamicFeeRecord(ctx, rec); setErr != nil {
 			ctx.Logger().Error("fail to create dynamic fee record", "error", setErr)
-			return
+			return false
 		}
 	}
 
 	affAcc, err := m.keeper.GetDynamicFeeAccumulator(ctx, aff, pairA, pairB)
 	if err != nil {
 		ctx.Logger().Error("fail to get thorname accumulator", "error", err)
-		return
+		return false
 	}
 	affAcc.VolumeTor = affAcc.VolumeTor.Add(volumeTor)
 	affAcc.FeesTor = affAcc.FeesTor.Add(feesTor)
@@ -164,7 +168,9 @@ func (m *DynamicFeeMgr) CreditSwap(ctx cosmos.Context, affiliates []string, affi
 	}
 	if setErr := m.keeper.SetDynamicFeeAccumulator(ctx, affAcc); setErr != nil {
 		ctx.Logger().Error("fail to set thorname accumulator", "error", setErr)
+		return false
 	}
+	return types.IsGlobalDynamicFeeState(state)
 }
 
 // CreditPoolVolume accumulates the pair's total swap volume for the current
@@ -206,6 +212,10 @@ func creditDynamicFeeForLegs(ctx cosmos.Context, mgr Manager, swapEvents []*Even
 		return
 	}
 	one := cosmos.NewUint(common.One)
+	// A global-mode thorname credits every leg to one record. The user swap's
+	// volume and count go in once, on the first leg; later legs add only their
+	// fees, which keeps the fee numerator aligned with the per-leg pool volume.
+	creditedGlobal := false
 	for _, evt := range swapEvents {
 		if evt == nil || len(evt.InTx.Coins) == 0 {
 			continue
@@ -240,8 +250,14 @@ func creditDynamicFeeForLegs(ctx cosmos.Context, mgr Manager, swapEvents []*Even
 		if len(affiliates) == 0 {
 			continue
 		}
-		mgr.DynamicFeeMgr().CreditSwap(ctx, affiliates, affiliateBps,
-			legSource, legTarget, legVolumeTor, legFeesTor, countAsSwap)
+		creditVolumeTor, creditAsSwap := legVolumeTor, countAsSwap
+		if creditedGlobal {
+			creditVolumeTor, creditAsSwap = cosmos.ZeroUint(), false
+		}
+		if mgr.DynamicFeeMgr().CreditSwap(ctx, affiliates, affiliateBps,
+			legSource, legTarget, creditVolumeTor, legFeesTor, creditAsSwap) {
+			creditedGlobal = true
+		}
 	}
 }
 
@@ -538,7 +554,8 @@ func (m *DynamicFeeMgr) sealEpochForRecord(ctx cosmos.Context, acc types.Dynamic
 // averages used in the decision (for event emission).
 //
 // Rule:
-//   - No prior bps change in history → cold_start_probe (move up one step).
+//   - No prior bps change in history → cold_start_probe (move up one step,
+//     or down one step when already at the ceiling).
 //   - Previous direction == +1 and fees went up → continue_up (raise).
 //   - Previous direction == +1 and fees went down → reverse_down (lower).
 //   - Previous direction == -1 and fees went up → continue_down (lower).
@@ -547,7 +564,14 @@ func (m *DynamicFeeMgr) sealEpochForRecord(ctx cosmos.Context, acc types.Dynamic
 func decideNextBps(rec types.DynamicFeeRecord, oldBps, floorBps, ceilingBps, stepBps uint64, windowEpochs int, deadbandBps, tenK cosmos.Uint) (reason string, newBps uint64, feesBefore, feesAfter, deltaPctBps cosmos.Uint) {
 	changeIdx, hasChange := lastBpsChangeBefore(rec.History, len(rec.History)-1)
 	if !hasChange {
-		return "cold_start_probe", clampBps(oldBps+stepBps, floorBps, ceilingBps), cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint()
+		// Probe up. A record already at the ceiling cannot, and a clamped
+		// probe records no bps change, so it would cold-start -- and stay
+		// put -- every epoch from then on, never testing a lower fee. Probe
+		// down instead.
+		if up := clampBps(oldBps+stepBps, floorBps, ceilingBps); up != oldBps {
+			return "cold_start_probe", up, cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint()
+		}
+		return "cold_start_probe", clampBpsDown(oldBps, stepBps, floorBps), cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint()
 	}
 
 	directionUp := rec.History[changeIdx].BpsAtClose > rec.History[changeIdx-1].BpsAtClose

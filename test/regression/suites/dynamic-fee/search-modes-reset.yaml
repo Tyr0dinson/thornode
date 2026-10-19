@@ -246,8 +246,8 @@ asserts:
   - '[.pairs[0].probes[].bps|tonumber] == [1, 8, 4, 6, 7]'
 ---
 ########################################################################################
-# Tracking: the +/-step controller starts with a cold-start probe up, which the
-# ceiling clamps, so the floor holds at 8 and history starts filling again.
+# Tracking: the +/-step controller starts with a cold-start probe. At the
+# ceiling it cannot probe up, so it probes down to 7 rather than sitting at 8.
 ########################################################################################
 type: tx-deposit
 signer: {{ addr_thor_fox }}
@@ -263,7 +263,7 @@ type: check
 endpoint: http://localhost:1317/thorchain/dynamic_l1_fees/dyn
 asserts:
   - .pairs[0].phase == "track"
-  - .pairs[0].dynamic_bps|tonumber == 8
+  - .pairs[0].dynamic_bps|tonumber == 7
   - .pairs[0].history|length == 1
   - .pairs[0].history[0].bps_at_close|tonumber == 8
   # The swap was charged the 8 bps floor: ~8x the 1 bps epoch's 1000018.
@@ -289,7 +289,7 @@ type: check
 endpoint: http://localhost:1317/thorchain/dynamic_l1_fees/dyn
 asserts:
   - .pairs[0].history|length == 1
-  - .pairs[0].dynamic_bps|tonumber == 8
+  - .pairs[0].dynamic_bps|tonumber == 7
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/dynamic_l1_fees_current

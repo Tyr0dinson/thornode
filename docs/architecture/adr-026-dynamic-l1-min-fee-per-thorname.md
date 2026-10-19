@@ -28,6 +28,11 @@
      from scratch. This is also how to unstick a record: vote it to
      `0`, then back.
 
+  The ±step controller's cold-start probe goes down instead of up when
+  the record is already at the ceiling, so a search that converges on
+  the ceiling still has its next move evaluated rather than sitting
+  there until a reset.
+
   Adds `search_done` and `probes` to records, `phase` to both REST
   record endpoints, and `probes` to the per-thorname endpoint. Records
   that exist at the upgrade keep their current `dynamic_bps` and start
@@ -348,7 +353,8 @@ or reverses when fees responded negatively.
   - `pool_volume_tor` is the pool's total volume over the same span,
     regardless of affiliate. It is the controller's denominator.
   - `swap_count` counts user swaps, not sub-swaps: a streaming swap
-    contributes 1. An entry may span several epochs if earlier ones
+    contributes 1, and on a global (`*|*`) record so does a multi-leg
+    swap, whose legs all land on that record. An entry may span several epochs if earlier ones
     rolled, in which case all four quantities are sums over the
     rolled span.
   - `bps_at_close` records what the floor was set to at the end of
@@ -431,8 +437,10 @@ DollarsPerRune / 1e8`). When `DollarsPerRune == 0` (no TOR anchor
      `1`-`4`, add the swap's full `volume_tor` and `fees_tor` to the
      thorname's current-epoch accumulator: `(thorname, pair)` in
      per-pair mode (`1`, `3`), `(thorname, *|*)` in global mode
-     (`2`, `4`). (Multi-affiliate memos credit each eligible listed
-     thorname in full — no proportional split.)
+     (`2`, `4`). In global mode a multi-leg swap credits its volume
+     and swap count once, on its first leg, and every leg's fees.
+     (Multi-affiliate memos credit each eligible listed thorname in
+     full — no proportional split.)
    - Otherwise (raw address, unregistered thorname, or a registered
      thorname with whitelist state `0` / absent), no thorname-level
      credit is recorded.
@@ -528,8 +536,12 @@ changeIdx, hasChange = last index j in history[:-1] where
                        history[j].bps_at_close != history[j-1].bps_at_close
 
 if not hasChange:
-    # Cold start — no prior move to evaluate. Probe upward by one step.
-    return "cold_start_probe", clamp(old_bps + step, floor, ceiling)
+    # Cold start — no prior move to evaluate. Probe upward by one step, or
+    # downward when already at the ceiling: a clamped probe records no
+    # change, so the record would otherwise cold-start in place forever.
+    up = clamp(old_bps + step, floor, ceiling)
+    if up != old_bps: return "cold_start_probe", up
+    return "cold_start_probe", clamp(old_bps - step, floor, ceiling)
 
 dir       = sign(history[changeIdx].bps_at_close - history[changeIdx-1].bps_at_close)
 # The signal is fee revenue as a share of pool volume, not a raw fee level:
