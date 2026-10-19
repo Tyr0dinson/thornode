@@ -69,7 +69,10 @@ func parseSPLTransfer(ins rpc.RPCInstruction) (splTransfer, bool) {
 // state, so every observer derives the same item.
 //
 //   - Sender / To are the OWNERS of the source / destination token accounts, so an
-//     inbound credits the vault wallet and a refund targets the sender's wallet.
+//     inbound credits the vault wallet and a refund targets the sender's wallet. The
+//     sender is the source's pre-transaction owner, neither owner may change within
+//     the transaction, and the destination must be its owner's associated token
+//     account.
 //   - The amount is the instruction amount, and the destination's balance must have
 //     grown by exactly that much. That rejects a self-transfer and anything that
 //     credits less than it debits, so the vault is never credited more than it holds.
@@ -132,13 +135,40 @@ func (s *SOLScanner) splTxInItem(
 		return nil, nil
 	}
 
-	src, ok := rpc.FindTokenBalance(post, t.source)
-	if !ok {
-		// The source may have been closed later in the same transaction.
-		src, ok = rpc.FindTokenBalance(pre, t.source)
-	}
+	// The sender is the source's owner BEFORE the transaction, which is who had to
+	// authorize the transfer. SPL lets a transaction reassign a token account's owner
+	// (SetAuthority AccountOwner), so the post-transaction owner of an account an
+	// outsider controlled can be any address, including a vault: trusting it would
+	// observe a vault outbound the vault never signed. A source with no pre-state
+	// (created in this transaction) or whose owner changed is not observed.
+	src, ok := rpc.FindTokenBalance(pre, t.source)
 	if !ok || src.Mint != dstPost.Mint || src.Owner == "" || dstPost.Owner == "" {
 		logger.Debug().Msg("cannot resolve token transfer source or destination owner")
+		return nil, nil
+	}
+	if srcPost, found := rpc.FindTokenBalance(post, t.source); found && (srcPost.Owner != src.Owner || srcPost.Mint != src.Mint) {
+		logger.Warn().Str("pre_owner", src.Owner).Str("post_owner", srcPost.Owner).
+			Msg("token transfer source owner changed within the transaction")
+		return nil, nil
+	}
+
+	// Only credit the owner's canonical associated token account. Anyone can create a
+	// token account owned by a vault (or hand one to it); Bifrost neither scans nor
+	// spends from those, so crediting the vault would book funds it cannot pay out.
+	dstPre, dstExisted := rpc.FindTokenBalance(pre, t.dest)
+	if dstExisted && dstPre.Owner != dstPost.Owner {
+		logger.Warn().Str("pre_owner", dstPre.Owner).Str("post_owner", dstPost.Owner).
+			Msg("token transfer destination owner changed within the transaction")
+		return nil, nil
+	}
+	dstOwner, err := types.PublicKeyFromStringStrict(dstPost.Owner)
+	if err != nil {
+		return nil, nil
+	}
+	canonical, err := types.FindAssociatedTokenAddress(dstOwner, token.mint)
+	if err != nil || canonical.String() != accountAt(t.dest) {
+		logger.Debug().Str("destination", accountAt(t.dest)).Str("owner", dstPost.Owner).
+			Msg("token transfer destination is not the owner's associated token account")
 		return nil, nil
 	}
 
@@ -148,7 +178,7 @@ func (s *SOLScanner) splTxInItem(
 		return nil, nil
 	}
 	preAmt := big.NewInt(0)
-	if dstPre, found := rpc.FindTokenBalance(pre, t.dest); found {
+	if dstExisted {
 		if preAmt, ok = dstPre.RawAmount(); !ok {
 			return nil, nil
 		}

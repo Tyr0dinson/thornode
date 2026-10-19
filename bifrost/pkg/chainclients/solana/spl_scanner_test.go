@@ -2,8 +2,11 @@ package solana
 
 import (
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"math/big"
+	"os"
+	"path/filepath"
 
 	"github.com/mr-tron/base58"
 	"github.com/rs/zerolog/log"
@@ -198,6 +201,9 @@ func (s *SPLScannerSuite) TestRejectedShapes(c *C) {
 			txn.Meta.PostTokenBalances = txn.Meta.PostTokenBalances[:1]
 		},
 		"source of another mint": func(txn *rpc.TransactionResult) {
+			txn.Meta.PreTokenBalances[0].(map[string]interface{})["mint"] = testUSDTMint
+		},
+		"source mint inconsistent across the transaction": func(txn *rpc.TransactionResult) {
 			txn.Meta.PostTokenBalances[0].(map[string]interface{})["mint"] = testUSDTMint
 		},
 		"two token transfers": func(txn *rpc.TransactionResult) {
@@ -217,6 +223,22 @@ func (s *SPLScannerSuite) TestRejectedShapes(c *C) {
 		},
 		"account index out of range": func(txn *rpc.TransactionResult) {
 			txn.Transaction.Message.Instructions[0].Accounts = []int{1, 3, 42, 0}
+		},
+		// The sender is the source's owner before the transaction: one created (or
+		// funded and reassigned) within it has no pre-state owner to trust.
+		"source has no pre-transaction owner": func(txn *rpc.TransactionResult) {
+			txn.Meta.PreTokenBalances = txn.Meta.PreTokenBalances[1:]
+		},
+		"source owner reassigned in the transaction": func(txn *rpc.TransactionResult) {
+			txn.Meta.PostTokenBalances[0].(map[string]interface{})["owner"] = testVault
+		},
+		"destination owner changed in the transaction": func(txn *rpc.TransactionResult) {
+			txn.Meta.PreTokenBalances[1].(map[string]interface{})["owner"] = testSender
+		},
+		// Only the owner's canonical associated token account is credited: Bifrost
+		// spends from nothing else.
+		"destination is not the owner's associated token account": func(txn *rpc.TransactionResult) {
+			txn.Transaction.Message.AccountKeys[2] = testNewAccount
 		},
 	}
 	for name, mutate := range cases {
@@ -420,4 +442,39 @@ func (s *SPLScannerSuite) TestDecimalConversion(c *C) {
 				Commentf("decimals %d amount %d", decimals, amt))
 		}
 	}
+}
+
+// loadTxFixture reads a finalized getTransaction result recorded from a local
+// solana-test-validator.
+func loadTxFixture(c *C, name string) *rpc.TransactionResult {
+	raw, err := os.ReadFile(filepath.Join("testdata", "spl", name))
+	c.Assert(err, IsNil)
+	var txn rpc.TransactionResult
+	c.Assert(json.Unmarshal(raw, &txn), IsNil)
+	return &txn
+}
+
+// TestRejectsSourceOwnerReassignedInTx replays a transaction recorded on a local
+// validator and signed only by an outside key: it transfers out of its own token
+// account, then SetAuthority(AccountOwner) hands that account to the vault in the
+// same transaction. Post-transaction balances report the vault as the source owner,
+// so trusting them would observe a vault outbound the vault never signed.
+func (s *SPLScannerSuite) TestRejectsSourceOwnerReassignedInTx(c *C) {
+	txn := loadTxFixture(c, "source-owner-reassigned.json")
+	c.Assert(txn.Meta.Err, IsNil) // the runtime accepted it
+	item, err := newSPLTestScanner().txInItem(txn, int64(txn.Slot))
+	c.Assert(err, IsNil)
+	c.Check(item, IsNil)
+}
+
+// TestRejectsNonCanonicalDestination replays a recorded transfer into a token account
+// owned by the vault that is not its associated token account. Bifrost neither scans
+// nor spends from such accounts, so crediting the vault would put funds on its books
+// that it cannot pay out.
+func (s *SPLScannerSuite) TestRejectsNonCanonicalDestination(c *C) {
+	txn := loadTxFixture(c, "noncanonical-vault-account.json")
+	c.Assert(txn.Meta.Err, IsNil)
+	item, err := newSPLTestScanner().txInItem(txn, int64(txn.Slot))
+	c.Assert(err, IsNil)
+	c.Check(item, IsNil)
 }
