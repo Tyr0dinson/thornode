@@ -3,21 +3,27 @@
 #
 #   1. per-pair mode (whitelist 1): the bracket search tests the floor, the
 #      ceiling, then halves towards the best value, converges and hands off to
-#      the +/-step controller;
-#   2. the liquidity gate rolls a thin epoch instead of sealing it;
-#   3. switching to global mode (2) wipes the thorname's state at once, then
-#      keeps one "*|*" record whose floor applies on every L1 pair;
-#   4. global monitor (4) wipes state again, still accrues, but charges nothing;
-#   5. removal (0) wipes everything.
+#      the +/-step controller, which can step down from the ceiling;
+#   2. each tested fee is measured over two epochs (the default minimum), and
+#      the signal divides by other swappers' volume on the pool;
+#   3. the liquidity gate rolls a thin epoch instead of sealing it;
+#   4. only the largest affiliate in a memo counts: listing a larger
+#      non-enrolled affiliate charges and credits nothing;
+#   5. switching to global mode (2) wipes the thorname's state at once, then
+#      keeps one "*|*" record, measured on the pairs it traded, whose floor
+#      applies on every L1 pair;
+#   6. global monitor (4) wipes state again and only collects history;
+#   7. removal (0) wipes everything.
 #
-# The USDC pool is ~5.2M RUNE deep, so a 100 RUNE swap slips ~0.2 bps and the
-# dynamic floor (1-8 bps here) sets its fee. With no other flow on the pair, the
-# normalized signal is then proportional to the floor, so revenue rises with
-# bps and the search must converge on the ceiling: tests 1, 8, 4, 6, 7 -> 8.
+# Every epoch has an affiliate swap (fox, via "dyn") and a plain swap of the
+# same size (cat) on the USDC pool, so other swappers are half the pool's flow.
+# The pool is ~5.2M RUNE deep, so a 100 RUNE swap slips ~0.2 bps and the 1-8 bps
+# dynamic floor sets the affiliate's fee. Swap sizes are fixed, so revenue rises
+# with the fee and the search converges on the ceiling: tests 1, 8, 4, 6, 7 -> 8.
 #
-# Epochs are 5 blocks, and every swap is followed by exactly 5 blocks, so each
-# swap lands in its own epoch and is sealed by exactly one boundary, which never
-# falls on the swap's own block.
+# Epochs are 5 blocks and every swap pair is followed by exactly 5 blocks, so
+# each pair lands in its own epoch and is sealed by exactly one boundary, which
+# never falls on the swaps' own block.
 ########################################################################################
 {{ template "default-state.yaml" }}
 ---
@@ -42,7 +48,8 @@ asserts:
   - .owner == "{{ addr_thor_cat }}"
 ---
 # Each mimir is signed by dog; a block between them keeps their account
-# sequences from colliding.
+# sequences from colliding. L1DynamicFeeProbeEpochs (2), ProbeMaxEpochs (6) and
+# MinOtherFlowBPS (10%) stay at their defaults.
 type: tx-mimir
 key: L1DynamicFeeEnabled
 value: 1
@@ -113,8 +120,7 @@ type: create-blocks
 count: 1
 ---
 ########################################################################################
-# Search epoch 1: the cold record charges the floor (1 bps), then jumps to the
-# ceiling.
+# Search, fee 1 (the floor): two epochs. The cold record charges the floor.
 ########################################################################################
 type: tx-deposit
 signer: {{ addr_thor_fox }}
@@ -122,6 +128,13 @@ coins:
   - amount: "10000000000"
     asset: "rune"
 memo: "=:ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48:{{ addr_eth_fox }}::dyn:10"
+---
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - amount: "10000000000"
+    asset: "rune"
+memo: "=:ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48:{{ addr_eth_fox }}"
 ---
 type: create-blocks
 count: 1
@@ -132,25 +145,50 @@ asserts:
   - .entries|length == 1
   - .entries[0].pair == "ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48|THOR.RUNE"
   - .entries[0].swap_count|tonumber == 1
-  # $100 of affiliate volume at $1/RUNE, charged the 1 bps floor; it is the
-  # only flow on the pair, so pool volume equals it.
   - .entries[0].volume_tor == "10000000000"
-  - .entries[0].fees_tor == "1000018"
-  - .entries[0].pool_volume_tor == "10000000000"
+  # Both swaps' volume is pool volume; the affiliate's half is its own.
+  - .entries[0].pool_volume_tor == "20000000000"
+  - .entries[0].own_pool_volume_tor == "10000000000"
+  - .entries[0].fees_tor|tonumber > 0
 ---
 type: create-blocks
 count: 4
 ---
+# One epoch is below the two-epoch minimum: still measuring the floor.
 type: check
 endpoint: http://localhost:1317/thorchain/dynamic_l1_fees/dyn
 asserts:
   - .pairs|length == 1
   - .pairs[0].phase == "search"
-  - .pairs[0].dynamic_bps|tonumber == 8
-  - .pairs[0].history|length == 1
-  - .pairs[0].history[0].bps_at_close|tonumber == 1
+  - .pairs[0].dynamic_bps|tonumber == 1
   - '[.pairs[0].probes[].bps|tonumber] == [1]'
   - .pairs[0].probes[0].epochs|tonumber == 1
+---
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "10000000000"
+    asset: "rune"
+memo: "=:ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48:{{ addr_eth_fox }}::dyn:10"
+---
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - amount: "10000000000"
+    asset: "rune"
+memo: "=:ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48:{{ addr_eth_fox }}"
+---
+type: create-blocks
+count: 5
+---
+# Two clean epochs settle the floor; on to the ceiling.
+type: check
+endpoint: http://localhost:1317/thorchain/dynamic_l1_fees/dyn
+asserts:
+  - .pairs[0].dynamic_bps|tonumber == 8
+  - .pairs[0].probes[0].epochs|tonumber == 2
+  - .pairs[0].history|length == 2
+  - .pairs[0].history[1].own_pool_volume_tor == "10000000000"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/dynamic_l1_fees
@@ -159,14 +197,9 @@ asserts:
   - .entries[0].phase == "search"
   - .entries[0].whitelist_state|tonumber == 1
 ---
-type: check
-endpoint: http://localhost:1317/thorchain/dynamic_l1_fees_current
-asserts:
-  - .entries|length == 0
----
 ########################################################################################
-# Search epoch 2: measured at the ceiling, which beats the floor, so the search
-# tests the midpoint of (1, 8).
+# Search, fees 8, 4, 6 and 7: two epochs each. 8 beats the floor, then each
+# lower value loses to it, halving the gap below 8.
 ########################################################################################
 type: tx-deposit
 signer: {{ addr_thor_fox }}
@@ -174,6 +207,30 @@ coins:
   - amount: "10000000000"
     asset: "rune"
 memo: "=:ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48:{{ addr_eth_fox }}::dyn:10"
+---
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - amount: "10000000000"
+    asset: "rune"
+memo: "=:ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48:{{ addr_eth_fox }}"
+---
+type: create-blocks
+count: 5
+---
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "10000000000"
+    asset: "rune"
+memo: "=:ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48:{{ addr_eth_fox }}::dyn:10"
+---
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - amount: "10000000000"
+    asset: "rune"
+memo: "=:ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48:{{ addr_eth_fox }}"
 ---
 type: create-blocks
 count: 5
@@ -181,21 +238,40 @@ count: 5
 type: check
 endpoint: http://localhost:1317/thorchain/dynamic_l1_fees/dyn
 asserts:
-  - .pairs[0].phase == "search"
   - .pairs[0].dynamic_bps|tonumber == 4
   - '[.pairs[0].probes[].bps|tonumber] == [1, 8]'
-  # Revenue at 8 bps is the larger share of pool volume.
   - (.pairs[0].probes[1].signal|tonumber) > (.pairs[0].probes[0].signal|tonumber)
 ---
-########################################################################################
-# Search epochs 3-4: 4 and then 6 lose to 8, halving the gap below it.
-########################################################################################
 type: tx-deposit
 signer: {{ addr_thor_fox }}
 coins:
   - amount: "10000000000"
     asset: "rune"
 memo: "=:ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48:{{ addr_eth_fox }}::dyn:10"
+---
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - amount: "10000000000"
+    asset: "rune"
+memo: "=:ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48:{{ addr_eth_fox }}"
+---
+type: create-blocks
+count: 5
+---
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "10000000000"
+    asset: "rune"
+memo: "=:ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48:{{ addr_eth_fox }}::dyn:10"
+---
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - amount: "10000000000"
+    asset: "rune"
+memo: "=:ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48:{{ addr_eth_fox }}"
 ---
 type: create-blocks
 count: 5
@@ -213,6 +289,30 @@ coins:
     asset: "rune"
 memo: "=:ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48:{{ addr_eth_fox }}::dyn:10"
 ---
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - amount: "10000000000"
+    asset: "rune"
+memo: "=:ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48:{{ addr_eth_fox }}"
+---
+type: create-blocks
+count: 5
+---
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "10000000000"
+    asset: "rune"
+memo: "=:ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48:{{ addr_eth_fox }}::dyn:10"
+---
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - amount: "10000000000"
+    asset: "rune"
+memo: "=:ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48:{{ addr_eth_fox }}"
+---
 type: create-blocks
 count: 5
 ---
@@ -222,11 +322,6 @@ asserts:
   - .pairs[0].dynamic_bps|tonumber == 7
   - '[.pairs[0].probes[].bps|tonumber] == [1, 8, 4, 6]'
 ---
-########################################################################################
-# Search epoch 5: 7 is the last untested value beside 8. 8 still wins, so the
-# search converges there: history is cleared for the +/-step controller and the
-# probes stay visible.
-########################################################################################
 type: tx-deposit
 signer: {{ addr_thor_fox }}
 coins:
@@ -234,9 +329,35 @@ coins:
     asset: "rune"
 memo: "=:ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48:{{ addr_eth_fox }}::dyn:10"
 ---
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - amount: "10000000000"
+    asset: "rune"
+memo: "=:ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48:{{ addr_eth_fox }}"
+---
 type: create-blocks
 count: 5
 ---
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "10000000000"
+    asset: "rune"
+memo: "=:ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48:{{ addr_eth_fox }}::dyn:10"
+---
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - amount: "10000000000"
+    asset: "rune"
+memo: "=:ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48:{{ addr_eth_fox }}"
+---
+type: create-blocks
+count: 5
+---
+# 7 is the last untested value beside 8. 8 still wins, so the search converges
+# there: history is cleared for the +/-step controller and the probes stay.
 type: check
 endpoint: http://localhost:1317/thorchain/dynamic_l1_fees/dyn
 asserts:
@@ -244,6 +365,7 @@ asserts:
   - .pairs[0].dynamic_bps|tonumber == 8
   - .pairs[0].history|length == 0
   - '[.pairs[0].probes[].bps|tonumber] == [1, 8, 4, 6, 7]'
+  - '[.pairs[0].probes[].epochs|tonumber] == [2, 2, 2, 2, 2]'
 ---
 ########################################################################################
 # Tracking: the +/-step controller starts with a cold-start probe. At the
@@ -256,6 +378,13 @@ coins:
     asset: "rune"
 memo: "=:ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48:{{ addr_eth_fox }}::dyn:10"
 ---
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - amount: "10000000000"
+    asset: "rune"
+memo: "=:ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48:{{ addr_eth_fox }}"
+---
 type: create-blocks
 count: 5
 ---
@@ -266,14 +395,49 @@ asserts:
   - .pairs[0].dynamic_bps|tonumber == 7
   - .pairs[0].history|length == 1
   - .pairs[0].history[0].bps_at_close|tonumber == 8
-  # The swap was charged the 8 bps floor: ~8x the 1 bps epoch's 1000018.
+  # The swap was charged the 8 bps floor: ~8x the 1 bps epochs.
   - .pairs[0].history[0].fees_tor|tonumber > 7900000
   - .pairs[0].history[0].fees_tor|tonumber < 8100000
-  - .pairs[0].probes|length == 5
 ---
 ########################################################################################
-# Liquidity gate: a $10 swap is below the $50 minimum, so the epoch rolls -- no
-# history entry, and the accumulator carries into the next epoch.
+# Only the largest affiliate counts. Listing cat's plain address at a larger
+# bps than dyn means the swap pays the static minimum and nothing is credited
+# to dyn, even though dyn is enrolled.
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "10000000000"
+    asset: "rune"
+memo: "=:ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48:{{ addr_eth_fox }}::dyn/{{ addr_thor_cat }}:10/20"
+---
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - amount: "10000000000"
+    asset: "rune"
+memo: "=:ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48:{{ addr_eth_fox }}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/dynamic_l1_fees_current
+asserts:
+  - .entries|length == 0
+---
+type: create-blocks
+count: 4
+---
+type: check
+endpoint: http://localhost:1317/thorchain/dynamic_l1_fees/dyn
+asserts:
+  - .pairs[0].history|length == 1
+  - .pairs[0].dynamic_bps|tonumber == 7
+---
+########################################################################################
+# Liquidity gate: a $10 affiliate swap is below the $50 minimum, so the epoch
+# rolls -- no history entry, and the accumulator carries into the next epoch.
 ########################################################################################
 type: tx-deposit
 signer: {{ addr_thor_fox }}
@@ -281,6 +445,13 @@ coins:
   - amount: "1000000000"
     asset: "rune"
 memo: "=:ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48:{{ addr_eth_fox }}::dyn:10"
+---
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - amount: "10000000000"
+    asset: "rune"
+memo: "=:ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48:{{ addr_eth_fox }}"
 ---
 type: create-blocks
 count: 5
@@ -327,20 +498,46 @@ coins:
     asset: "rune"
 memo: "=:ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48:{{ addr_eth_fox }}::dyn:10"
 ---
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - amount: "10000000000"
+    asset: "rune"
+memo: "=:ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48:{{ addr_eth_fox }}"
+---
 type: create-blocks
 count: 1
 ---
-# Global mode accrues into one "*|*" accumulator, normalized against the
-# volume of every L1 pair.
+# Global mode accrues into one "*|*" accumulator, measured on the pairs it
+# traded (USDC so far).
 type: check
 endpoint: http://localhost:1317/thorchain/dynamic_l1_fees_current
 asserts:
   - .entries|length == 1
   - .entries[0].pair == "*|*"
   - .entries[0].swap_count|tonumber == 1
+  - .entries[0].pool_volume_tor == "20000000000"
+  - .entries[0].own_pool_volume_tor == "10000000000"
 ---
 type: create-blocks
 count: 4
+---
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "10000000000"
+    asset: "rune"
+memo: "=:ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48:{{ addr_eth_fox }}::dyn:10"
+---
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - amount: "10000000000"
+    asset: "rune"
+memo: "=:ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48:{{ addr_eth_fox }}"
+---
+type: create-blocks
+count: 5
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/dynamic_l1_fees/dyn
@@ -351,15 +548,26 @@ asserts:
   - .pairs[0].dynamic_bps|tonumber == 8
   - '[.pairs[0].probes[].bps|tonumber] == [1]'
 ---
+########################################################################################
 # The global floor applies on a pair the thorname has never traded: GUSD's own
-# slip for 100 RUNE is ~6.6 bps, so the fee is set by the 8 bps floor, and it
-# accrues into the same "*|*" record.
+# slip for 100 RUNE is ~6.6 bps, so the 8 bps floor sets the fee, and it accrues
+# into the same "*|*" record. That record is measured on the pairs it traded
+# this epoch, GUSD only, where fox is the whole flow: the epoch is recorded but
+# is not a measurement, so the search stays on the ceiling.
+########################################################################################
 type: tx-deposit
 signer: {{ addr_thor_fox }}
 coins:
   - amount: "10000000000"
     asset: "rune"
 memo: "=:ETH.GUSD-0X056FD409E1D7A124BD7017459DFEA2F387B6D5CD:{{ addr_eth_fox }}::dyn:10"
+---
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - amount: "10000000000"
+    asset: "rune"
+memo: "=:ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48:{{ addr_eth_fox }}"
 ---
 type: create-blocks
 count: 1
@@ -371,6 +579,8 @@ asserts:
   - .entries[0].pair == "*|*"
   - .entries[0].fees_tor|tonumber > 7900000
   - .entries[0].fees_tor|tonumber < 8100000
+  - .entries[0].pool_volume_tor == "10000000000"
+  - .entries[0].own_pool_volume_tor == "10000000000"
 ---
 type: create-blocks
 count: 4
@@ -378,11 +588,16 @@ count: 4
 type: check
 endpoint: http://localhost:1317/thorchain/dynamic_l1_fees/dyn
 asserts:
-  - .pairs|length == 1
-  - '[.pairs[0].probes[].bps|tonumber] == [1, 8]'
+  - .pairs[0].history|length == 3
+  - .pairs[0].history[2].pool_volume_tor == .pairs[0].history[2].own_pool_volume_tor
+  - .pairs[0].dynamic_bps|tonumber == 8
+  # No probe for 8 yet: the GUSD epoch had no outside flow to measure against.
+  - '[.pairs[0].probes[].bps|tonumber] == [1]'
+
 ---
 ########################################################################################
-# Global monitor: another reset, accrual continues, but no floor is charged.
+# Global monitor: another reset; the record collects history but never
+# searches or steps, and the swap pays only its own slip.
 ########################################################################################
 type: tx-mimir
 key: DYNAMICFEE-WHITELIST-DYN
@@ -405,11 +620,17 @@ coins:
     asset: "rune"
 memo: "=:ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48:{{ addr_eth_fox }}::dyn:10"
 ---
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - amount: "10000000000"
+    asset: "rune"
+memo: "=:ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48:{{ addr_eth_fox }}"
+---
 type: create-blocks
 count: 1
 ---
-# Monitor still accrues, but the swap paid only its own ~0.2 bps slip: no
-# floor (L1SlipMinBps is 0 on mocknet), well under the 1 bps of epoch 1.
+# ~0.2 bps of slip: no floor (L1SlipMinBps is 0 on mocknet).
 type: check
 endpoint: http://localhost:1317/thorchain/dynamic_l1_fees_current
 asserts:
@@ -420,16 +641,31 @@ asserts:
 type: create-blocks
 count: 4
 ---
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "10000000000"
+    asset: "rune"
+memo: "=:ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48:{{ addr_eth_fox }}::dyn:10"
+---
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - amount: "10000000000"
+    asset: "rune"
+memo: "=:ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48:{{ addr_eth_fox }}"
+---
+type: create-blocks
+count: 5
+---
 type: check
 endpoint: http://localhost:1317/thorchain/dynamic_l1_fees/dyn
 asserts:
   - .pairs|length == 1
-  - .pairs[0].pair == "*|*"
-  - .pairs[0].history|length == 1
-  # The fresh record runs its own search (first test at the floor) even though
-  # swaps are charged the static minimum.
-  - .pairs[0].history[0].bps_at_close|tonumber == 1
-  - .pairs[0].phase == "search"
+  - .pairs[0].phase == "monitor"
+  - .pairs[0].history|length == 2
+  - .pairs[0].dynamic_bps|tonumber == 1
+  - .pairs[0].probes|length == 0
 ---
 ########################################################################################
 # Removal wipes everything at once.
