@@ -1228,7 +1228,10 @@ func TestAskStreamForStateEmptyState(t *testing.T) {
 	assert.Equal(t, 0, len(agReceiver.solvencies), "receiver should have no solvencies after empty-state init")
 }
 
-const stateSyncTestFrameTimeout = time.Second
+// stateSyncTestFrameTimeout replaces the ordinary per-frame read deadline in
+// the deadline tests; their stalls, slow batches and budgets are multiples of
+// it. Local pipes answer in microseconds, so a quarter second is ample.
+const stateSyncTestFrameTimeout = 250 * time.Millisecond
 
 // Successful stream cleanup may log after the handler and its test return.
 type stateSyncLogBuffer struct {

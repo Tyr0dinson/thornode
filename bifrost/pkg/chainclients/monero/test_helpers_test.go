@@ -15,6 +15,7 @@ import (
 
 	"filippo.io/edwards25519"
 	cometed25519 "github.com/cometbft/cometbft/crypto/ed25519"
+	"github.com/syndtr/goleveldb/leveldb/opt"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/monero/sidecar"
 	"gitlab.com/thorchain/thornode/v3/cmd"
@@ -29,7 +30,32 @@ func TestMain(m *testing.M) {
 	cfg.SetBech32PrefixForConsensusNode("tthorc", "tthorcpub")
 	cfg.SetCoinType(cmd.THORChainCoinType)
 	cfg.SetPurpose(cmd.THORChainCoinPurpose)
+	// The stores fsync every write so a crashed node keeps its scan state.
+	// No unit test can observe an OS crash, and fsync made the package's
+	// scan-heavy tests disk-bound (a churn rescan: 14s on disk, 0.7s on
+	// tmpfs), so tests write without it unless they check the syncs
+	// themselves (withProductionFsync). Logic and write order are unchanged.
+	syncScannerWrite, signedTxPayloadWriteOptions, syncInternalInboundReplayWrite = testNoSync, testNoSync, testNoSync
 	os.Exit(m.Run())
+}
+
+var (
+	testNoSync = &opt.WriteOptions{}
+	// the stores' production write options, saved before TestMain replaces them
+	productionScannerWrite, productionSignedTxPayloadWrite, productionInternalInboundWrite = syncScannerWrite,
+		signedTxPayloadWriteOptions, syncInternalInboundReplayWrite
+)
+
+// withProductionFsync restores the stores' production (fsync) write options
+// for a test that counts syncs. Only non-parallel tests may call it: parallel
+// tests run after every sequential one has finished.
+func withProductionFsync(t *testing.T) {
+	t.Helper()
+	syncScannerWrite, signedTxPayloadWriteOptions, syncInternalInboundReplayWrite = productionScannerWrite,
+		productionSignedTxPayloadWrite, productionInternalInboundWrite
+	t.Cleanup(func() {
+		syncScannerWrite, signedTxPayloadWriteOptions, syncInternalInboundReplayWrite = testNoSync, testNoSync, testNoSync
+	})
 }
 
 func testVaultPubKey(t *testing.T, seed string) common.PubKey {
