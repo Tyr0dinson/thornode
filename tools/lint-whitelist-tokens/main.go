@@ -15,11 +15,17 @@ func main() {
 
 	failed := false
 	for chain, chainConfig := range config.GetBifrost().GetChains() {
-		if !chain.IsEVM() {
+		if !chain.IsEVM() && !chain.Equals(common.SOLChain) {
 			continue
 		}
 
 		fmt.Printf("checking %s whitelist tokens...\n", chain)
+
+		// Solana mints are case-sensitive base58 and Bifrost matches them exactly.
+		normalize := strings.ToLower
+		if chain.Equals(common.SOLChain) {
+			normalize = func(s string) string { return s }
+		}
 
 		var tl tokenlist.EVMTokenList
 		switch chain.String() {
@@ -33,6 +39,8 @@ func main() {
 			tl = tokenlist.GetBASETokenList()
 		case common.POLChain.String():
 			tl = tokenlist.GetPOLTokenList()
+		case common.SOLChain.String():
+			tl = tokenlist.GetSOLTokenList()
 		default:
 			fmt.Printf("unsupported chain %s\n", chain)
 			os.Exit(1)
@@ -40,12 +48,12 @@ func main() {
 
 		tokenAddrs := map[string]bool{}
 		for _, token := range tl.Tokens {
-			// NOTE: Token lists are inconsistent on whether the addresses is EIP-55, but all
+			// NOTE: EVM token lists are inconsistent on whether the addresses is EIP-55, but all
 			// internal usage performs EqualFold, so it is safe to compare case-insensitively.
-			tokenAddrs[strings.ToLower(token.Address)] = true
+			tokenAddrs[normalize(token.Address)] = true
 		}
 		for _, token := range chainConfig.BlockScanner.WhitelistTokens {
-			if !tokenAddrs[strings.ToLower(token)] {
+			if !tokenAddrs[normalize(token)] {
 				fmt.Printf("  \033[31m%s not in %s token list\033[0m\n", token, chain)
 				failed = true
 			} else {

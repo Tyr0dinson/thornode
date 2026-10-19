@@ -1,0 +1,185 @@
+package solana
+
+import (
+	"fmt"
+	"math/big"
+	"sync"
+
+	"github.com/rs/zerolog"
+
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/solana/types"
+	"gitlab.com/thorchain/thornode/v3/common"
+	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/common/tokenlist"
+)
+
+// splTokenAccountRentLamports is the rent-exempt minimum of a 165-byte SPL Token
+// account, which the vault pays when an outbound creates the recipient's associated
+// token account. Used only when the RPC cannot be asked; observed gas always comes
+// from the vault's actual lamport change.
+const splTokenAccountRentLamports = uint64(2_039_280)
+
+// splTokenAccountSize is the byte length of a classic SPL Token account.
+const splTokenAccountSize = 165
+
+// maxCachedVaultTokenAccounts bounds the per-address token account memo.
+const maxCachedVaultTokenAccounts = 1024
+
+// splToken is a whitelisted SPL Token (classic program) mint.
+type splToken struct {
+	asset    common.Asset
+	mint     types.PublicKey
+	decimals int
+}
+
+// splRegistry maps the whitelisted SPL mints to their THORChain assets. Mints are
+// case-sensitive base58 while asset symbols are uppercased, so outbounds resolve an
+// asset to its mint through this registry, never by parsing the symbol.
+type splRegistry struct {
+	tokens []splToken // config order, so every iteration is deterministic
+	byMint map[string]splToken
+
+	ataMu sync.Mutex
+	atas  map[string][]vaultTokenAccount // vault address -> its associated token accounts
+}
+
+// vaultTokenAccount is a vault's associated token account for one whitelisted mint.
+type vaultTokenAccount struct {
+	address string
+	token   splToken
+}
+
+// newSPLRegistry builds the registry from the configured whitelist. Each entry must
+// be an exact (case-sensitive) mint from the SOL token list; anything else is
+// skipped with an error log, as the TRON client does, so a config typo cannot stop
+// the SOL client from starting.
+func newSPLRegistry(chain common.Chain, whitelist []string, logger zerolog.Logger) *splRegistry {
+	return newSPLRegistryFromTokens(chain, whitelist, tokenlist.GetSOLTokenList().Tokens, logger)
+}
+
+// newSPLRegistryFromTokens is newSPLRegistry against an explicit token list.
+func newSPLRegistryFromTokens(chain common.Chain, whitelist []string, tokens []tokenlist.ERC20Token, logger zerolog.Logger) *splRegistry {
+	r := &splRegistry{
+		byMint: map[string]splToken{},
+		atas:   map[string][]vaultTokenAccount{},
+	}
+	if len(whitelist) == 0 {
+		return r
+	}
+	listed := map[string]tokenlist.ERC20Token{}
+	for _, t := range tokens {
+		listed[t.Address] = t
+	}
+	assets := map[string]bool{}
+	for _, mintStr := range whitelist {
+		t, ok := listed[mintStr]
+		if !ok {
+			logger.Error().Str("mint", mintStr).Msg("whitelisted SPL mint is not in the SOL token list, skipping")
+			continue
+		}
+		mint, err := types.PublicKeyFromStringStrict(mintStr)
+		if err != nil {
+			logger.Error().Err(err).Str("mint", mintStr).Msg("invalid whitelisted SPL mint, skipping")
+			continue
+		}
+		// THORChain reads 0 decimals as "unset" (cosmos.RoundToDecimal does not round),
+		// so a 0-decimal mint's truncated outbounds would never match the scheduled
+		// amount.
+		if t.Decimals < 1 || t.Decimals > 18 {
+			logger.Error().Str("mint", mintStr).Int("decimals", t.Decimals).Msg("unsupported SPL mint decimals, skipping")
+			continue
+		}
+		asset := t.Asset(chain)
+		if err = asset.Valid(); err != nil {
+			logger.Error().Err(err).Str("mint", mintStr).Msg("invalid SPL token asset, skipping")
+			continue
+		}
+		// Uppercasing could in principle map two mints to one symbol; never let one
+		// asset resolve to two mints.
+		if _, dup := r.byMint[mintStr]; dup || assets[asset.String()] {
+			logger.Error().Str("mint", mintStr).Stringer("asset", asset).Msg("duplicate SPL token, skipping")
+			continue
+		}
+		token := splToken{asset: asset, mint: mint, decimals: t.Decimals}
+		r.tokens = append(r.tokens, token)
+		r.byMint[mintStr] = token
+		assets[asset.String()] = true
+	}
+	return r
+}
+
+// tokenByMint returns the whitelisted token for an exact base58 mint.
+func (r *splRegistry) tokenByMint(mint string) (splToken, bool) {
+	if r == nil {
+		return splToken{}, false
+	}
+	t, ok := r.byMint[mint]
+	return t, ok
+}
+
+// tokenByAsset returns the whitelisted token for a THORChain layer-1 asset.
+func (r *splRegistry) tokenByAsset(asset common.Asset) (splToken, bool) {
+	if r == nil || asset.IsSyntheticAsset() || asset.IsTradeAsset() || asset.IsSecuredAsset() {
+		return splToken{}, false
+	}
+	for _, t := range r.tokens {
+		if asset.Equals(t.asset) {
+			return t, true
+		}
+	}
+	return splToken{}, false
+}
+
+// vaultTokenAccounts returns the vault's associated token account for every
+// whitelisted mint, in whitelist order. Derivations are memoized per vault.
+func (r *splRegistry) vaultTokenAccounts(vaultAddr string) ([]vaultTokenAccount, error) {
+	if r == nil || len(r.tokens) == 0 {
+		return nil, nil
+	}
+	r.ataMu.Lock()
+	defer r.ataMu.Unlock()
+	if cached, ok := r.atas[vaultAddr]; ok {
+		return cached, nil
+	}
+	// Vault sets are small; the cap only bounds GetAccountByAddress callers that pass
+	// arbitrary addresses.
+	if len(r.atas) >= maxCachedVaultTokenAccounts {
+		r.atas = map[string][]vaultTokenAccount{}
+	}
+	vault, err := types.PublicKeyFromStringStrict(vaultAddr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid vault address %s: %w", vaultAddr, err)
+	}
+	out := make([]vaultTokenAccount, 0, len(r.tokens))
+	for _, t := range r.tokens {
+		ata, err := types.FindAssociatedTokenAddress(vault, t.mint)
+		if err != nil {
+			return nil, fmt.Errorf("fail to derive %s token account for %s: %w", t.asset, vaultAddr, err)
+		}
+		out = append(out, vaultTokenAccount{address: ata.String(), token: t})
+	}
+	r.atas[vaultAddr] = out
+	return out, nil
+}
+
+// splToTHORChain converts a base-unit token amount to THORChain's 1e8 units.
+func splToTHORChain(amount *big.Int, decimals int) (cosmos.Uint, error) {
+	v, err := common.ConvertDecimals(amount, decimals, common.THORChainDecimals)
+	if err != nil {
+		return cosmos.ZeroUint(), err
+	}
+	return cosmos.NewUintFromBigInt(v), nil
+}
+
+// splFromTHORChain converts a THORChain 1e8 amount to the mint's base units,
+// truncating precision the mint cannot express.
+func splFromTHORChain(amount cosmos.Uint, decimals int) (uint64, error) {
+	v, err := common.ConvertDecimals(amount.BigInt(), common.THORChainDecimals, decimals)
+	if err != nil {
+		return 0, err
+	}
+	if !v.IsUint64() {
+		return 0, fmt.Errorf("token amount %s overflows u64", v)
+	}
+	return v.Uint64(), nil
+}

@@ -48,6 +48,8 @@ func GetEVMTokenList(chain common.Chain) EVMTokenList {
 		return GetTRONTokenList()
 	case common.POLChain:
 		return GetPOLTokenList()
+	case common.SOLChain:
+		return GetSOLTokenList()
 
 	default:
 		return EVMTokenList{}

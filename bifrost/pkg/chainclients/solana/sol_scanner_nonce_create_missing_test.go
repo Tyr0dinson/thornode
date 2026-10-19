@@ -74,7 +74,7 @@ func scanOnce(scanner *SOLScanner, addr string) (ok, healthy bool, cursor string
 	wg.Add(1)
 	okQ, counts, sigs := make([]bool, 1), make([]int, 1), make([]string, 1)
 	healthy = true
-	scanner.scanVault(addr, 0, "", 0, func() { healthy = false }, counts, okQ, sigs, &wg)
+	scanner.scanVault(addr, 0, "", 0, nil, func() { healthy = false }, counts, okQ, sigs, &wg)
 	wg.Wait()
 	return okQ[0], healthy, sigs[0]
 }

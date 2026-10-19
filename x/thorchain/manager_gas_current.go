@@ -164,6 +164,8 @@ func (gm *GasMgr) GetAssetOutboundFee(ctx cosmos.Context, asset common.Asset, in
 		fee = minAsset
 	}
 
+	fee = fee.Add(gm.solTokenOutboundSurcharge(ctx, asset))
+
 	// If feeAsset = gas asset && inRune = false, we are in the correct units, return
 	if asset.Equals(asset.GetChain().GetGasAsset()) && !inRune {
 		return fee, nil
@@ -191,6 +193,24 @@ func (gm *GasMgr) GetAssetOutboundFee(ctx cosmos.Context, asset common.Asset, in
 	}
 
 	return assetPool.RuneValueInAsset(fee), nil
+}
+
+// solTokenOutboundSurcharge returns the SOL (1e8) added to an SPL token outbound's
+// fee. Bifrost creates the recipient's associated token account when it is missing
+// and the vault pays its rent, which is booked as gas and reimbursed by the Reserve.
+// THORChain cannot know whether the account exists, so every token outbound pays
+// the surcharge: without it the rent exceeds the minimum outbound fee, and since a
+// recipient can close the account and keep the rent, small swaps to fresh wallets
+// would drain the Reserve.
+func (gm *GasMgr) solTokenOutboundSurcharge(ctx cosmos.Context, asset common.Asset) cosmos.Uint {
+	if !asset.GetChain().Equals(common.SOLChain) || asset.Equals(common.SOLAsset) {
+		return cosmos.ZeroUint()
+	}
+	surcharge := gm.keeper.GetConfigInt64(ctx, constants.SOLTokenOutboundSurcharge)
+	if surcharge <= 0 {
+		return cosmos.ZeroUint()
+	}
+	return cosmos.NewUint(uint64(surcharge))
 }
 
 // CalcOutboundFeeMultiplier returns the current outbound fee multiplier based on current and target outbound fee surplus

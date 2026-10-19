@@ -32,6 +32,8 @@ const (
 //   - a vault that cannot pay amount + fee, or would be left below rent-exempt,
 //   - anything the runtime rejects in simulation (against the nonce the tx carries).
 //
+// SPL token outbounds run the token-specific checks in splDurablePreSignReject.
+//
 // Not signing is always safe: nothing exists that could land, and LackSigning
 // re-issues the outbound. The filters only reduce failures — a durable tx never
 // expires, so state can still change before it lands; the break-glass
@@ -41,12 +43,12 @@ func (c *SOLClient) durablePreSignReject(tx stypes.TxOutItem, solTx types.Transa
 	if c.rpcClient == nil || len(tx.Coins) != 1 {
 		return ""
 	}
+	if isSPLOutbound(tx) {
+		return c.splDurablePreSignReject(tx, solTx)
+	}
 	amount := convertToLamports(tx.Coins[0].Amount).Uint64()
 	fee := uint64(baseFeePerSigLamports) * uint64(len(solTx.Signatures))
-	rentExempt, err := c.rpcClient.GetMinimumBalanceForRentExemption(0)
-	if err != nil || rentExempt == 0 {
-		rentExempt = solRentExemptFallbackLamports
-	}
+	rentExempt := c.rentExemptMinimum()
 
 	to, err := c.rpcClient.GetAccountMeta(tx.ToAddress.String())
 	if err != nil {
@@ -62,19 +64,46 @@ func (c *SOLClient) durablePreSignReject(tx stypes.TxOutItem, solTx types.Transa
 
 	vaultAddr, err := tx.VaultPubKeyEddsa.GetAddress(tx.Chain)
 	if err == nil {
-		from, fErr := c.rpcClient.GetAccountMeta(vaultAddr.String())
-		switch {
-		case fErr != nil:
-			c.logger.Warn().Err(fErr).Str("vault", vaultAddr.String()).Msg("pre-sign filter: fail to read vault; not filtering")
-		case from.Lamports < amount+fee:
-			return "durable_filter_vault_balance"
-		default:
-			if post := from.Lamports - amount - fee; post > 0 && post < rentExempt {
-				return "durable_filter_vault_below_rent_exempt"
-			}
+		if reason := c.vaultSpendReject(vaultAddr.String(), amount+fee, rentExempt); reason != "" {
+			return reason
 		}
 	}
 
+	return c.simulateReject(tx, solTx)
+}
+
+// rentExemptMinimum returns the rent-exempt minimum of a 0-data account.
+func (c *SOLClient) rentExemptMinimum() uint64 {
+	rentExempt, err := c.rpcClient.GetMinimumBalanceForRentExemption(0)
+	if err != nil || rentExempt == 0 {
+		return solRentExemptFallbackLamports
+	}
+	return rentExempt
+}
+
+// vaultLamportsReject refuses a durable outbound whose lamport spend the vault
+// cannot cover without dropping below rent-exempt.
+func (c *SOLClient) vaultLamportsReject(vaultAddr string, spend uint64) string {
+	return c.vaultSpendReject(vaultAddr, spend, c.rentExemptMinimum())
+}
+
+func (c *SOLClient) vaultSpendReject(vaultAddr string, spend, rentExempt uint64) string {
+	from, err := c.rpcClient.GetAccountMeta(vaultAddr)
+	switch {
+	case err != nil:
+		c.logger.Warn().Err(err).Str("vault", vaultAddr).Msg("pre-sign filter: fail to read vault; not filtering")
+	case from.Lamports < spend:
+		return "durable_filter_vault_balance"
+	default:
+		if post := from.Lamports - spend; post > 0 && post < rentExempt {
+			return "durable_filter_vault_below_rent_exempt"
+		}
+	}
+	return ""
+}
+
+// simulateReject refuses a durable outbound the runtime rejects in simulation.
+func (c *SOLClient) simulateReject(tx stypes.TxOutItem, solTx types.Transaction) string {
 	raw, err := solTx.Serialize()
 	if err != nil {
 		return ""

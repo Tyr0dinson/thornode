@@ -83,6 +83,10 @@ type SOLClient struct {
 	rpcClient           *rpc.SolRPC
 	m                   *metrics.Metrics
 
+	// spl is the SPL token whitelist, shared with the scanner. Nil (as in clients
+	// built directly by tests) means SOL only.
+	spl *splRegistry
+
 	// keepAliveThorMultiple is the last keep-alive cadence boundary this node acted
 	// on. The trigger + keysign anchor are driven off the shared THORChain block
 	// height (not a per-node wall clock or Solana slot) so every member crosses the
@@ -241,6 +245,7 @@ func NewSOLClient(
 	if err != nil {
 		return c, fmt.Errorf("fail to create solana scanner: %w", err)
 	}
+	c.spl = c.solScanner.spl
 
 	return c, nil
 }
@@ -357,6 +362,12 @@ func (c *SOLClient) GetAccountByAddress(addr string, height *big.Int) (common.Ac
 	coins := common.Coins{
 		common.NewCoin(common.SOLAsset, amount),
 	}
+
+	tokenCoins, err := c.splTokenCoins(addr)
+	if err != nil {
+		return common.Account{}, fmt.Errorf("fail to get token balances: %w", err)
+	}
+	coins = append(coins, tokenCoins...)
 
 	return common.Account{
 		Coins: coins,
@@ -584,11 +595,15 @@ func (c *SOLClient) countAbstain(reason string) {
 	}
 }
 
-// canSendAsset reports whether this client can build an outbound of asset. It sends
-// native SOL only: the builders turn the coin amount into lamports whatever the asset,
-// so any other SOL-chain asset (e.g. an SPL token) would pay that amount in SOL.
+// canSendAsset reports whether this client can build an outbound of asset: native SOL,
+// or a whitelisted SPL token, which the builders send with TransferChecked. Any other
+// SOL-chain asset would be built as a native SOL transfer of the coin amount.
 func (c *SOLClient) canSendAsset(asset common.Asset) bool {
-	return asset.Equals(common.SOLAsset)
+	if asset.Equals(common.SOLAsset) {
+		return true
+	}
+	_, ok := c.spl.tokenByAsset(asset)
+	return ok
 }
 
 // SignTx returns the signed transaction.
@@ -854,7 +869,15 @@ func (c *SOLClient) finishSign(solTx types.Transaction, tx stypes.TxOutItem, mem
 		return checkPointBytes, nil, nil, fmt.Errorf("fail to get vault address: %w", err)
 	}
 
-	gasCoin := tx.Chain.NativeGasToThorCoin(cosmos.NewUint(baseFeePerSigLamports))
+	// An SPL outbound also pays rent when it creates the recipient's token account.
+	// This sizes only the signer's early observation; the scanner books actual spend.
+	gasLamports := uint64(baseFeePerSigLamports)
+	if isSPLOutbound(tx) {
+		if params, pErr := c.splOutboundParams(tx); pErr == nil {
+			gasLamports += c.splRecipientRentLamports(params)
+		}
+	}
+	gasCoin := tx.Chain.NativeGasToThorCoin(cosmos.NewUint(gasLamports))
 	txIn := stypes.NewTxInItem(
 		height,
 		base58.Encode(signedTx.Signatures[0]),
@@ -1337,6 +1360,14 @@ func (c *SOLClient) CreateTx(tx stypes.TxOutItem, memoForParsing, recentBlockhas
 		return solTx, fmt.Errorf("fail to create to public key: %w", err)
 	}
 
+	if isSPLOutbound(tx) {
+		params, err := c.splTransferParams(tx, vaultPubKey, toPubkey)
+		if err != nil {
+			return solTx, err
+		}
+		return types.NewSPLTransferTransaction(params, recentBlockhash), nil
+	}
+
 	solValue := convertToLamports(tx.Coins[0].Amount)
 	if solValue.Int64() == 0 {
 		return solTx, errors.New("sol value is zero")
@@ -1732,6 +1763,23 @@ func (c *SOLClient) CreateTxWithNonce(tx stypes.TxOutItem, memoForParsing, nonce
 	toPubkey, err := types.PublicKeyFromString(tx.ToAddress.String())
 	if err != nil {
 		return solTx, fmt.Errorf("fail to create to public key: %w", err)
+	}
+
+	if isSPLOutbound(tx) {
+		// SPL self-sends never get here: durableDestinationExcluded routes them to the
+		// recent-blockhash path.
+		if toPubkey == vaultPubKey {
+			return solTx, errors.New("durable-nonce self-transfer not supported yet")
+		}
+		params, err := c.splTransferParams(tx, vaultPubKey, toPubkey)
+		if err != nil {
+			return solTx, err
+		}
+		return types.NewNonceSPLTransferTransaction(params, types.NonceParams{
+			Value:     nonceValue,
+			Account:   nonceAccount,
+			Authority: nonceAuthority,
+		}), nil
 	}
 
 	solValue := convertToLamports(tx.Coins[0].Amount)

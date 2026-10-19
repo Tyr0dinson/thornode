@@ -182,6 +182,7 @@ func NewConstantValue() *ConstantVals {
 			MissingObservationMinSamples:        24,                 // minimum decayed voters on a chain before a node's ratio on it counts
 			MissingObservationGuardMaxBlocks:    43200,              // the shared-event guard's grace per chain, in blocks: used up while its voters are skipped, refilled at the same rate while they pass (0 = never expires)
 			LUVIOverhangGuard:                   1,                  // reject liquidity adds (user and POL) into pools whose synth supply is at least twice the asset depth (<= 0 = off)
+			SOLTokenOutboundSurcharge:           204_000,            // SOL (1e8) added to SPL token outbound fees for the recipient token account rent (2,039,280 lamports)
 		},
 		boolValues: map[ConstantName]bool{
 			StrictBondLiquidityRatio: true,

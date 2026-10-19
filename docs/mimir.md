@@ -159,6 +159,7 @@ Operational notes:
 - `TNSFeeOnSale`: fee for TNS sale in basis points
 - `TNSFeePerBlock`: per block cost for TNS, in RUNE
 - `MinimumL1OutboundFeeUSD`: Minimum L1 outbound fee in USD (1e8 notation)
+- `SOLTokenOutboundSurcharge`: SOL (1e8 notation) added to the outbound fee of every Solana SPL token outbound, covering the rent the vault pays to create the recipient's token account. Default 204000 (0.00204 SOL); 0 disables it
 - `TargetOutboundFeeSurplusRune`\*: Target RUNE surplus per asset (withheld - spent) for outbound fee calculations (1e8 notation)
 - `MaxOutboundFeeMultiplierBasisPoints`\*: Maximum outbound fee multiplier in basis points
 - `MinOutboundFeeMultiplierBasisPoints`\*: Minimum outbound fee multiplier in basis points

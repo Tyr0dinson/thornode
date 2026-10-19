@@ -8,7 +8,7 @@ THORChain runs four standalone clients: Solana, XRP, Tron, and Monero.
 
 Folder `solana/`, gas asset SOL. The client runs its own block scanner and shares neither the UTXO nor the EVM model.
 
-SPL token support is not yet live. When it lands it uses the same whitelist approach as EVM chains — see [Token Whitelists](./token-lists.md#token-support-on-solana). Until then, only native SOL is observed.
+The client supports native SOL and whitelisted SPL tokens of the classic SPL Token program. It scans each vault's associated token account for every whitelisted mint alongside the vault itself, and builds token outbounds as `CreateIdempotent` + `TransferChecked`. See [Token Support on Solana](./token-lists.md#token-support-on-solana).
 
 ## XRP
 

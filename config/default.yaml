@@ -573,6 +573,11 @@ bifrost:
         gas_price_resolution: 100 # 100 lamports
         max_gas_limit: 0
         max_contract_tx_logs: 0
+        # SPL Token (classic program) mints, case-sensitive base58. Each must be in the
+        # SOL token list; vaults send and receive them via associated token accounts.
+        whitelist_tokens:
+          - EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v # USDC
+          - Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB # USDT
       mempool_tx_id_cache_size: 0
       scanner_leveldb: *default-leveldb
       solvency_blocks: 500

@@ -120,6 +120,65 @@ func (GasManagerTestSuite) TestProcessGasReserveExactMatch(c *C) {
 	c.Check(finalPool.BalanceAsset.String(), Equals, "0")
 }
 
+func (GasManagerTestSuite) TestGetAssetOutboundFeeSOLTokenSurcharge(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	k := mgr.Keeper()
+	gasMgr := newGasMgr(constants.GetConstantValues(GetCurrentVersion()), k)
+	gasMgr.BeginBlock()
+	setOutboundFeeMultiplierMimirs(ctx, k)
+
+	usdc, err := common.NewAsset("SOL.USDC-EPJFWDD5AUFQSSQEM2QN1XZYBAPC8G4WEGGKZWYTDT1V")
+	c.Assert(err, IsNil)
+	c.Assert(k.SaveNetworkFee(ctx, common.SOLChain, NewNetworkFee(common.SOLChain, 1, 10_000)), IsNil)
+	// 1:1 pools, so a SOL-denominated fee converts to the same USDC amount.
+	for _, asset := range []common.Asset{common.SOLAsset, usdc} {
+		c.Assert(k.SetPool(ctx, Pool{
+			BalanceRune:  cosmos.NewUint(100 * common.One),
+			BalanceAsset: cosmos.NewUint(100 * common.One),
+			Asset:        asset,
+			Decimals:     6,
+			Status:       PoolAvailable,
+		}), IsNil)
+	}
+
+	solFee, err := gasMgr.GetAssetOutboundFee(ctx, common.SOLAsset, false)
+	c.Assert(err, IsNil)
+	c.Assert(solFee.IsZero(), Equals, false)
+
+	// A token outbound pays the SOL fee plus the default token account rent surcharge.
+	usdcFee, err := gasMgr.GetAssetOutboundFee(ctx, usdc, false)
+	c.Assert(err, IsNil)
+	defaultSurcharge := constants.GetConstantValues(GetCurrentVersion()).GetInt64Value(constants.SOLTokenOutboundSurcharge)
+	c.Assert(defaultSurcharge, Equals, int64(204_000))
+	c.Check(usdcFee.String(), Equals, solFee.AddUint64(uint64(defaultSurcharge)).String())
+
+	// The same surcharge in RUNE.
+	usdcFeeRune, err := gasMgr.GetAssetOutboundFee(ctx, usdc, true)
+	c.Assert(err, IsNil)
+	c.Check(usdcFeeRune.String(), Equals, solFee.AddUint64(uint64(defaultSurcharge)).String())
+
+	// SOL itself never pays it, and neither do trade or synth forms of the token.
+	solFeeAgain, err := gasMgr.GetAssetOutboundFee(ctx, common.SOLAsset, false)
+	c.Assert(err, IsNil)
+	c.Check(solFeeAgain.String(), Equals, solFee.String())
+	tradeUSDC := usdc.GetTradeAsset()
+	tradeFee, err := gasMgr.GetAssetOutboundFee(ctx, tradeUSDC, false)
+	c.Assert(err, IsNil)
+	c.Check(tradeFee.IsZero(), Equals, true)
+
+	// Governance can tune it.
+	k.SetMimir(ctx, constants.SOLTokenOutboundSurcharge.String(), 300_000)
+	usdcFee, err = gasMgr.GetAssetOutboundFee(ctx, usdc, false)
+	c.Assert(err, IsNil)
+	c.Check(usdcFee.String(), Equals, solFee.AddUint64(300_000).String())
+
+	// Or switch it off.
+	k.SetMimir(ctx, constants.SOLTokenOutboundSurcharge.String(), 0)
+	usdcFee, err = gasMgr.GetAssetOutboundFee(ctx, usdc, false)
+	c.Assert(err, IsNil)
+	c.Check(usdcFee.String(), Equals, solFee.String())
+}
+
 func (GasManagerTestSuite) TestGetAssetOutboundFee(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	k := mgr.Keeper()

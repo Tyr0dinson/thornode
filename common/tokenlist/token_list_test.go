@@ -61,6 +61,22 @@ func (s *TokenListSuite) TestGetEVMTokenListPOL(c *C) {
 	c.Check(list.Name, Not(Equals), "")
 }
 
+func (s *TokenListSuite) TestGetEVMTokenListSOL(c *C) {
+	list := GetEVMTokenList(common.SOLChain)
+	c.Check(list.Name, Not(Equals), "")
+	c.Assert(len(list.Tokens) > 0, Equals, true)
+	for _, token := range list.Tokens {
+		// Solana mints are case-sensitive base58, never hex.
+		c.Check(token.Address, Not(Matches), "0x.*")
+		// Bifrost refuses 0-decimal mints (THORChain reads 0 as "unset").
+		c.Check(token.Decimals >= 1 && token.Decimals <= 18, Equals, true)
+	}
+
+	usdc := ERC20Token{Address: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", Symbol: "USDC", Decimals: 6}
+	asset := usdc.Asset(common.SOLChain)
+	c.Check(asset.String(), Equals, "SOL.USDC-EPJFWDD5AUFQSSQEM2QN1XZYBAPC8G4WEGGKZWYTDT1V")
+}
+
 func (s *TokenListSuite) TestGetEVMTokenListDefault(c *C) {
 	list := GetEVMTokenList(common.BTCChain)
 	c.Check(list.Name, Equals, "")
