@@ -329,3 +329,153 @@ func TestVaultMemoConcurrent(t *testing.T) {
 	}
 	wg.Wait()
 }
+
+// testPool is a pool with every field set.
+func testPool(i int) Pool {
+	p := NewPool()
+	p.Asset = []common.Asset{common.BTCAsset, common.ETHAsset, common.DOGEAsset}[i%3]
+	p.BalanceRune = cosmos.NewUint(uint64(1_000_000_000 + i))
+	p.BalanceAsset = cosmos.NewUint(uint64(2_000_000 + i))
+	p.LPUnits = cosmos.NewUint(uint64(3_000_000_000 + i))
+	p.SynthUnits = cosmos.NewUint(uint64(4_000 + i))
+	p.PendingInboundRune = cosmos.NewUint(uint64(5 + i))
+	p.PendingInboundAsset = cosmos.NewUint(uint64(6 + i))
+	p.Status = types.PoolStatus_Available
+	p.StatusSince = int64(70 + i)
+	p.Decimals = 8
+	return p
+}
+
+func poolTestBlobs(c *C, k KVStore) [][]byte {
+	var blobs [][]byte
+	for i := 0; i < 3; i++ {
+		p := testPool(i)
+		bz, err := k.cdc.Marshal(&p)
+		c.Assert(err, IsNil)
+		blobs = append(blobs, bz)
+	}
+	base := blobs[1]
+	blobs = append(blobs,
+		pbField(nil, 3, "BTC.BTC"),                          // asset only: absent Uints
+		pbField(append([]byte{}, base...), 1, ""),           // empty Uint
+		pbField(append([]byte{}, base...), 99, "unknown"),   // unknown field
+		pbField(append([]byte{}, base...), 2, "-1"),         // rejected Uint
+		pbField(append([]byte{}, base...), 4, "x"),          // rejected Uint
+		append(append([]byte{}, base...), 0x1a, 0x05, 0x0a), // truncated
+		[]byte{0xff},
+	)
+	return blobs
+}
+
+func (s *DecodeMemoSuite) TestPoolRefFields(c *C) {
+	// a new reference field must be added to clonePool and to
+	// TestPoolMutationIsolation
+	c.Check(refPaths(reflect.TypeOf(Pool{}), ""), DeepEquals, []string{
+		".BalanceAsset.i", ".BalanceRune.i", ".LPUnits.i", ".PendingInboundAsset.i",
+		".PendingInboundRune.i", ".SynthUnits.i",
+	})
+}
+
+func (s *DecodeMemoSuite) TestPoolMatchesCodec(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	store := k.kvStore(ctx)
+	for i, bz := range poolTestBlobs(c, k) {
+		var want Pool
+		wantErr := k.cdc.Unmarshal(bz, &want)
+		key := []byte(fmt.Sprintf("memo-test/pool/%d", i))
+		for pass := 0; pass < 2; pass++ { // miss, then hit
+			got := Pool{Decimals: -1}
+			ok := k.memoDecodePool(key, bz, &got)
+			c.Assert(ok, Equals, wantErr == nil, Commentf("blob %d pass %d", i, pass))
+			if ok {
+				c.Assert(got, DeepEquals, want, Commentf("blob %d pass %d", i, pass))
+			} else {
+				c.Assert(got, DeepEquals, Pool{Decimals: -1})
+			}
+		}
+
+		// through GetPool: same pool and error, same gas on miss and hit
+		asset := common.Asset{Chain: "MEMO", Symbol: common.Symbol(fmt.Sprintf("P%d", i)), Ticker: "P"}
+		store.Set(k.GetKey(prefixPool, asset.String()), bz)
+		var gas []uint64
+		for pass := 0; pass < 2; pass++ {
+			gctx := ctx.WithGasMeter(storetypes.NewInfiniteGasMeter())
+			got, err := k.GetPool(gctx, asset)
+			gas = append(gas, gctx.GasMeter().GasConsumed())
+			c.Assert(err == nil, Equals, wantErr == nil, Commentf("blob %d pass %d", i, pass))
+			if err != nil {
+				c.Check(strings.HasSuffix(err.Error(), ": "+wantErr.Error()), Equals, true, Commentf("blob %d pass %d: %s", i, pass, err))
+			} else {
+				c.Assert(got, DeepEquals, want, Commentf("blob %d pass %d", i, pass))
+			}
+		}
+		c.Check(gas[1], Equals, gas[0], Commentf("blob %d", i))
+		store.Delete(k.GetKey(prefixPool, asset.String()))
+	}
+}
+
+func (s *DecodeMemoSuite) TestGetPoolsMatchCodec(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	var want Pools
+	for i := 0; i < 3; i++ {
+		p := testPool(i)
+		c.Assert(k.SetPool(ctx, p), IsNil)
+	}
+	iter := k.GetPoolIterator(ctx)
+	for ; iter.Valid(); iter.Next() {
+		var p Pool
+		c.Assert(k.cdc.Unmarshal(iter.Value(), &p), IsNil)
+		want = append(want, p)
+	}
+	c.Assert(iter.Close(), IsNil)
+	c.Assert(want, HasLen, 3)
+	var gas []uint64
+	for pass := 0; pass < 2; pass++ {
+		gctx := ctx.WithGasMeter(storetypes.NewInfiniteGasMeter())
+		got, err := k.GetPools(gctx)
+		c.Assert(err, IsNil)
+		c.Assert(got, DeepEquals, want)
+		gas = append(gas, gctx.GasMeter().GasConsumed())
+	}
+	c.Check(gas[1], Equals, gas[0])
+
+	// a write through the keeper is seen by the next read
+	p := want[0]
+	p.BalanceRune = cosmos.NewUint(42)
+	c.Assert(k.SetPool(ctx, p), IsNil)
+	got, err := k.GetPools(ctx)
+	c.Assert(err, IsNil)
+	c.Assert(got[0].BalanceRune.Uint64(), Equals, uint64(42))
+	one, err := k.GetPool(ctx, p.Asset)
+	c.Assert(err, IsNil)
+	c.Assert(one.BalanceRune.Uint64(), Equals, uint64(42))
+}
+
+func (s *DecodeMemoSuite) TestPoolMutationIsolation(c *C) {
+	_, k := setupKeeperForTest(c)
+	bz := poolTestBlobs(c, k)[0]
+	var want Pool
+	c.Assert(k.cdc.Unmarshal(bz, &want), IsNil)
+	key := []byte("memo-test/pool/mutation")
+
+	var first Pool
+	c.Assert(k.memoDecodePool(key, bz, &first), Equals, true)
+	for pass := 0; pass < 2; pass++ {
+		var got Pool
+		c.Assert(k.memoDecodePool(key, bz, &got), Equals, true)
+		c.Assert(got, DeepEquals, want)
+		for _, u := range []cosmos.Uint{
+			got.BalanceRune, got.BalanceAsset, got.LPUnits,
+			got.SynthUnits, got.PendingInboundRune, got.PendingInboundAsset,
+		} {
+			u.BigIntMut().SetInt64(5)
+		}
+		got.Asset = common.DOGEAsset
+		got.Status = types.PoolStatus_Staged
+	}
+	first.BalanceRune.BigIntMut().SetInt64(1)
+
+	var got Pool
+	c.Assert(k.memoDecodePool(key, bz, &got), Equals, true)
+	c.Assert(got, DeepEquals, want)
+}

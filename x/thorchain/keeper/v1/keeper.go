@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	storetypes "cosmossdk.io/store/types"
 	upgradekeeper "cosmossdk.io/x/upgrade/keeper"
@@ -184,23 +185,41 @@ func (k *KVStore) SetVersion(ver semver.Version) {
 func (k KVStore) GetKey(prefix types.DbPrefix, key string, other ...string) []byte {
 	// prefix + "/" + upper(key) + upper(other...), built in one buffer: this runs
 	// for every keeper read and write
-	upper := strings.ToUpper(key)
-	size := len(prefix) + 1 + len(upper)
+	size := len(prefix) + 1 + len(key)
 	for _, item := range other {
 		size += len(item)
 	}
 	newKey := make([]byte, 0, size)
 	newKey = append(newKey, prefix...)
 	newKey = append(newKey, '/')
-	newKey = append(newKey, upper...)
+	newKey = appendUpper(newKey, key)
 
 	// TODO: should this handle the slashes automatically?
 	// ref: x/thorchain/keeper/v1/keeper_last_height.go#GetLastObserveHeight
 	for _, item := range other {
-		newKey = append(newKey, strings.ToUpper(item)...)
+		newKey = appendUpper(newKey, item)
 	}
 
 	return newKey
+}
+
+// appendUpper appends strings.ToUpper(s) to dst. An ASCII s, as store keys
+// are, is upper-cased byte by byte straight into dst instead of through an
+// intermediate string; anything else goes through strings.ToUpper.
+func appendUpper(dst []byte, s string) []byte {
+	for i := 0; i < len(s); i++ {
+		if s[i] >= utf8.RuneSelf {
+			return append(dst, strings.ToUpper(s)...)
+		}
+	}
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if 'a' <= c && c <= 'z' {
+			c -= 'a' - 'A'
+		}
+		dst = append(dst, c)
+	}
+	return dst
 }
 
 // getIterator - get an iterator for given prefix

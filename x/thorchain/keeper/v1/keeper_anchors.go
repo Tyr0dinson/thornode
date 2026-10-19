@@ -1,7 +1,6 @@
 package keeperv1
 
 import (
-	"fmt"
 	"strings"
 
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -12,7 +11,7 @@ import (
 // TorAnchorMimirKey is the mimir key whose positive value marks the pool of
 // asset as a TOR anchor.
 func TorAnchorMimirKey(asset common.Asset) string {
-	return strings.ReplaceAll(fmt.Sprintf("TorAnchor-%s", asset.String()), ".", "-")
+	return "TorAnchor-" + strings.ReplaceAll(asset.String(), ".", "-")
 }
 
 func (k KVStore) GetAnchors(ctx cosmos.Context, asset common.Asset) []common.Asset {

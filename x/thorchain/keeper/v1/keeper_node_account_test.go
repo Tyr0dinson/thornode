@@ -606,6 +606,26 @@ func (s *KeeperNodeAccountSuite) TestActiveValidatorsCacheDisabledByWrite(c *C) 
 	c.Check(nodes, HasLen, 1)
 }
 
+func (s *KeeperNodeAccountSuite) TestCountActiveValidators(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	for _, status := range []NodeStatus{NodeStandby, NodeActive, NodeActive, types.NodeStatus_Ready, NodeActive} {
+		c.Assert(k.SetNodeAccount(ctx, GetRandomValidatorNode(status)), IsNil)
+	}
+	vault := GetRandomValidatorNode(NodeActive)
+	vault.Type = NodeTypeVault
+	c.Assert(k.SetNodeAccount(ctx, vault), IsNil)
+
+	listCtx := ctx.WithGasMeter(storetypes.NewInfiniteGasMeter())
+	all, err := k.ListActiveValidators(listCtx)
+	c.Assert(err, IsNil)
+	c.Assert(all, HasLen, 3)
+	countCtx := ctx.WithGasMeter(storetypes.NewInfiniteGasMeter())
+	n, err := k.CountActiveValidators(countCtx)
+	c.Assert(err, IsNil)
+	c.Assert(n, Equals, 3)
+	c.Check(countCtx.GasMeter().GasConsumed(), Equals, listCtx.GasMeter().GasConsumed())
+}
+
 func (s *KeeperNodeAccountSuite) TestListActiveValidatorsUpTo(c *C) {
 	ctx, k := setupKeeperForTest(c)
 	for _, status := range []NodeStatus{NodeStandby, NodeActive, NodeActive, types.NodeStatus_Ready, NodeActive, NodeActive} {
@@ -681,6 +701,16 @@ func (s *KeeperNodeAccountSuite) TestListValidatorsByStatusMatchesOracle(c *C) {
 						got[0].SignerMembership[0] = "changed"
 						got[0].Bond.BigIntMut().SetInt64(1)
 					}
+				}
+				if limit < 0 { // the count reads the store as the listing does
+					cntCtx := ctx.WithGasMeter(storetypes.NewInfiniteGasMeter())
+					n, cntErr := k.countValidatorsByStatus(cntCtx, status)
+					comment := Commentf("%s count status=%s", step, status)
+					c.Assert(cntErr == nil, Equals, wantErr == nil, comment)
+					if wantErr == nil {
+						c.Assert(n, Equals, len(want), comment)
+					}
+					c.Assert(cntCtx.GasMeter().GasConsumed(), Equals, wantCtx.GasMeter().GasConsumed(), comment)
 				}
 			}
 		}

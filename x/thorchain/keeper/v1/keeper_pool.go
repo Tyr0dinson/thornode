@@ -43,9 +43,13 @@ func (k KVStore) GetPools(ctx cosmos.Context) (Pools, error) {
 	defer iterator.Close()
 	for ; iterator.Valid(); iterator.Next() {
 		var pool Pool
-		err := k.Cdc().Unmarshal(iterator.Value(), &pool)
-		if err != nil {
-			return nil, dbError(ctx, "Unmarsahl: pool", err)
+		// Full scans (GetAnchors per stable-swap check, EndBlock managers) see
+		// mostly unchanged pools, so their decodes are memoized. Point reads in
+		// getPool often follow a SetPool of the same pool and would only miss.
+		if !k.memoDecodePool(iterator.Key(), iterator.Value(), &pool) {
+			if err := k.Cdc().Unmarshal(iterator.Value(), &pool); err != nil {
+				return nil, dbError(ctx, "Unmarsahl: pool", err)
+			}
 		}
 		pools = append(pools, pool)
 	}

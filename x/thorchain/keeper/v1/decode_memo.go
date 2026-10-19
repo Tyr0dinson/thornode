@@ -149,3 +149,31 @@ func cloneCoins(cs common.Coins) common.Coins {
 func (k KVStore) memoDecodeVault(key, bz []byte, v *Vault) bool {
 	return vaultDecodeMemo.get(k, key, bz, v)
 }
+
+// poolMemoMaxEntries bounds the pool memo. Mainnet has ~50 pools; an entry
+// holds a pool's ~200 stored bytes and its decoding, well under 1 KiB.
+const poolMemoMaxEntries = 1024
+
+// poolDecodeMemo memoizes pool decodes by store key for GetPools. Decoding a
+// pool parses six decimal Uints, and EndBlock and every deposit scan all pools
+// (GetAnchors, volume, liquidity checks) while few of them change.
+var poolDecodeMemo = newDecodeMemo(poolMemoMaxEntries,
+	func(k KVStore, bz []byte, p *Pool) error { return k.cdc.Unmarshal(bz, p) },
+	clonePool)
+
+// clonePool returns a copy of p sharing no big.Int with it. Its Asset holds
+// only strings and every other field is a value.
+func clonePool(p Pool) Pool {
+	p.BalanceRune = cloneUint(p.BalanceRune)
+	p.BalanceAsset = cloneUint(p.BalanceAsset)
+	p.LPUnits = cloneUint(p.LPUnits)
+	p.SynthUnits = cloneUint(p.SynthUnits)
+	p.PendingInboundRune = cloneUint(p.PendingInboundRune)
+	p.PendingInboundAsset = cloneUint(p.PendingInboundAsset)
+	return p
+}
+
+// memoDecodePool is poolDecodeMemo.get.
+func (k KVStore) memoDecodePool(key, bz []byte, p *Pool) bool {
+	return poolDecodeMemo.get(k, key, bz, p)
+}

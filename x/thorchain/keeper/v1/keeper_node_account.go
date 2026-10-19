@@ -123,6 +123,40 @@ func (k KVStore) listValidatorsByStatus(ctx cosmos.Context, status NodeStatus, l
 	return nodeAccounts, nil
 }
 
+// CountActiveValidators is len(ListActiveValidators(ctx)) without copying the
+// node accounts out: served from the same cache when one is set, else from
+// the same iteration as the listing, so store access and gas are identical.
+func (k KVStore) CountActiveValidators(ctx cosmos.Context) (int, error) {
+	if nodeAccounts, ok := keeper.ActiveValidatorsCacheFromContext(ctx).Get(); ok {
+		return len(nodeAccounts), nil
+	}
+	return k.countValidatorsByStatus(ctx, NodeActive)
+}
+
+// countValidatorsByStatus counts what listValidatorsByStatus(ctx, status, -1)
+// would list, reading the store in the same calls and order: matching records
+// are counted on their memoized decoding instead of being cloned.
+func (k KVStore) countValidatorsByStatus(ctx cosmos.Context, status NodeStatus) (int, error) {
+	count := 0
+	naIterator := k.GetNodeAccountIterator(ctx)
+	defer naIterator.Close()
+	for ; naIterator.Valid(); naIterator.Next() {
+		na := nodeAccountDecodeMemo.shared(k, naIterator.Key(), naIterator.Value())
+		if na == nil {
+			// as the listing: any record that does not decode fails it
+			var decoded NodeAccount
+			if err := k.unmarshalNodeAccount(naIterator.Value(), &decoded); err != nil {
+				return count, dbError(ctx, "Unmarshal: node account", err)
+			}
+			na = &decoded
+		}
+		if na.Type == NodeTypeValidator && na.Status == status {
+			count++
+		}
+	}
+	return count, nil
+}
+
 const nodeAccountSignerMembershipField protowire.Number = 9
 
 // unmarshalNodeAccount is k.cdc.Unmarshal(bz, na) with signer_membership
