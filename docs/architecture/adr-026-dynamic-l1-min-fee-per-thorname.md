@@ -13,14 +13,19 @@
      90%-share integrator whose revenue peaks at 7 bps settled near 15.
      An epoch whose other flow is under `L1DynamicFeeMinOtherFlowBPS`
      (default 10%) of the pool is recorded but is not a measurement.
-  2. **Noise-aware measurement.** Probes also keep a sum of squares.
-     Each tested fee is measured for at least `L1DynamicFeeProbeEpochs`
-     (default now 2) and up to `L1DynamicFeeProbeMaxEpochs` (default 6)
-     epochs, stopping once its gap to the best value is beyond two
-     standard errors. A higher fee only wins when it is significantly
-     better, and the ±step controller holds unless its before/after
-     windows differ significantly. The deadband is the fallback when a
-     side has fewer than two usable epochs.
+  2. **A time cap on measurement spans.** A span below the liquidity
+     gate (`L1DynamicFeeMinSwaps` swaps _and_ `L1DynamicFeeMinVolumeUSD`
+     of affiliate volume, the latter now defaulting to $100,000) rolls
+     into the next epoch, but only until it has run
+     `L1DynamicFeeMaxEpochBlocks` (default 100,800 blocks, about 7
+     days). The next epoch boundary then seals it with what it has. A
+     span with no swaps at all is sealed empty, which reads as zero
+     revenue. Either way, a fee so high that it cannot attract the
+     gate's volume is measured and moved off rather than held there.
+     Spans therefore vary in length; they stay comparable because the
+     signal divides fees by other swappers' volume over the same span
+     (a revenue rate per block would let market-wide swings back in).
+     Each entry records its length in `blocks`.
   3. **Global mode is measured on the pairs it trades.** A global
      accumulator records the pairs it was credited on, and its pool
      volume sums only those pairs, so volume on unrelated pairs no
@@ -36,8 +41,9 @@
      never stands in for it.
 
   Adds `own_pool_volume_tor` to epoch records, accumulators and both
-  query endpoints, `pairs` to accumulators, and `signal_sq_sum` to
-  probes.
+  query endpoints, `blocks` to epoch records and history entries,
+  `span_start_height` and `pairs` to records, `pairs` to accumulators,
+  and `span_blocks` to the in-progress query.
 
 - 2026-10-19: **Bracket search, global mode, reset on change.** Three
   changes:
@@ -269,7 +275,7 @@ or reverses when fees responded negatively.
   accumulated per `(thorname, pair)` per epoch, divided by other
   swappers' volume on the same pools over the same span
   (`pool_volume_tor − own_pool_volume_tor`), and compared across fee
-  levels with a two-standard-error test. RUNE-denominated values are
+  levels. The ratio does not depend on how long a span ran. RUNE-denominated values are
   converted at the swap-completion hook via `DollarsPerRune`. Skipped
   entirely when `DollarsPerRune == 0` (no TOR anchors).
 - **Epoch:** block-count based, default ~14,400 blocks (≈24h at 6s blocks).
@@ -376,16 +382,23 @@ or reverses when fees responded negatively.
   value means "searching", so records that predate the search start
   one from their current `dynamic_bps`.
 - `probes: []Probe` — one entry per bps value the search has tested:
-  `bps`, `signal_sum` (sum of the per-epoch normalized signal),
-  `signal_sq_sum` (sum of their squares) and `epochs` (sealed epochs
-  measured). The probe's mean is `signal_sum / epochs`; with two or more
-  epochs the sums also give the epoch-to-epoch spread.
+  `bps`, `signal_sum` (sum of the per-epoch normalized signal) and
+  `epochs` (sealed epochs measured). The probe's mean is
+  `signal_sum / epochs`.
+- `span_start_height: int64` — the block at which the current
+  measurement span began (the record's creation or its last seal).
+  Once the span reaches `L1DynamicFeeMaxEpochBlocks` the next epoch
+  boundary seals it, gate or not.
+- `pairs: []string` — for a global record, the pairs it traded as of
+  its last seal, so a span with no swaps can still be measured
+  against those pools.
 - `last_active_epoch: uint64` — most recent epoch in which the
   thorname had any in-scope activity on this pair. Used for the
   30-epoch prune rule.
 - `history: []EpochRecord` (up to 30 entries, one per epoch):
   - `epoch`, `volume_tor`, `fees_tor`, `bps_at_close`, `swap_count`,
-    `pool_volume_tor`, `own_pool_volume_tor`.
+    `pool_volume_tor`, `own_pool_volume_tor`, `blocks` (the span's
+    length).
   - `volume_tor` is kept for observability and event emission; it
     is not read by the controller. It _is_ read by the liquidity
     gate before the entry is written.
@@ -410,8 +423,9 @@ or reverses when fees responded negatively.
   epoch, and for a global (`*|*`) accumulator the list of `pairs` it was
   credited on. Sealed and
   cleared at each epoch boundary — unless the liquidity gate rejects
-  the epoch, in which case the accumulator survives and keeps
-  accumulating into the next one.
+  the epoch and the span is under `L1DynamicFeeMaxEpochBlocks`, in
+  which case the accumulator survives and keeps accumulating into the
+  next one.
 - Per `pair`: running `volume_tor` covering _every_ swap through the
   pair, affiliate or not. This is the normalization denominator. It is
   folded into each thorname accumulator's `pool_volume_tor` at the
@@ -426,21 +440,21 @@ denominator is meant to measure market activity.
 
 ### Mimir keys (all operational)
 
-| Key                               | Default | Meaning                                                                                                                                           |
-| --------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `L1DynamicFeeEnabled`             | 0       | Master on/off. 0 disables the entire mechanism.                                                                                                   |
-| `L1DynamicFeeEpochBlocks`         | 14400   | Epoch length in blocks (~24h at 6s).                                                                                                              |
-| `DYNAMICFEE-WHITELIST-{thorname}` | absent  | Per-thorname enrollment and mode: `1` = per-pair, `2` = global, `3`/`4` = per-pair/global monitor (collect only), other = not enrolled.           |
-| `L1DynamicFeeFloorBPS`            | 1       | Lower bound of dynamic bps.                                                                                                                       |
-| `L1DynamicFeeCeilingBPS`          | 20      | Upper bound of dynamic bps.                                                                                                                       |
-| `L1DynamicFeeStepBPS`             | 1       | Magnitude of movement per epoch.                                                                                                                  |
-| `L1DynamicFeeDeadbandBPS`         | 1000    | Fallback hurdle (in bps: 1000 = 10%) when a comparison has fewer than two usable epochs on a side; otherwise a two-standard-error test applies.   |
-| `L1DynamicFeeWindowEpochs`        | 3       | Epochs averaged on each side of the last bps change when measuring the gradient. Clamped into `[1, 30]` at read time.                             |
-| `L1DynamicFeeMinSwaps`            | 30      | Swaps an epoch must hold before it may seal a decision. Below this the accumulator rolls into the next epoch. `0` disables this half of the gate. |
-| `L1DynamicFeeMinVolumeUSD`        | 50000   | Whole USD of affiliate volume an epoch must hold before it may seal. Converted to TOR internally. `0` disables this half of the gate.             |
-| `L1DynamicFeeProbeEpochs`         | 2       | Minimum sealed epochs the bracket search measures at each tested bps. Two or more lets it estimate noise. Values below 1 read as 1.               |
-| `L1DynamicFeeProbeMaxEpochs`      | 6       | Most sealed epochs measured at one tested bps while its gap to the best value is within two standard errors. Raised to `ProbeEpochs` if lower.    |
-| `L1DynamicFeeMinOtherFlowBPS`     | 1000    | Share of a pair's volume (bps of 10,000) that must come from other swappers for an epoch to count as a measurement.                               |
+| Key                               | Default | Meaning                                                                                                                                                               |
+| --------------------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `L1DynamicFeeEnabled`             | 0       | Master on/off. 0 disables the entire mechanism.                                                                                                                       |
+| `L1DynamicFeeEpochBlocks`         | 14400   | Epoch length in blocks (~24h at 6s).                                                                                                                                  |
+| `DYNAMICFEE-WHITELIST-{thorname}` | absent  | Per-thorname enrollment and mode: `1` = per-pair, `2` = global, `3`/`4` = per-pair/global monitor (collect only), other = not enrolled.                               |
+| `L1DynamicFeeFloorBPS`            | 1       | Lower bound of dynamic bps.                                                                                                                                           |
+| `L1DynamicFeeCeilingBPS`          | 20      | Upper bound of dynamic bps.                                                                                                                                           |
+| `L1DynamicFeeStepBPS`             | 1       | Magnitude of movement per epoch.                                                                                                                                      |
+| `L1DynamicFeeDeadbandBPS`         | 1000    | Percentage change in the windowed signal below which the controller holds, and the margin a higher fee must win by in the search (in bps: 1000 = 10%).                |
+| `L1DynamicFeeWindowEpochs`        | 3       | Epochs averaged on each side of the last bps change when measuring the gradient. Clamped into `[1, 30]` at read time.                                                 |
+| `L1DynamicFeeMinSwaps`            | 30      | Swaps an epoch must hold before it may seal a decision. Below this the accumulator rolls into the next epoch. `0` disables this half of the gate.                     |
+| `L1DynamicFeeMinVolumeUSD`        | 100000  | Whole USD of affiliate volume an epoch must hold before it may seal. Converted to TOR internally. `0` disables this half of the gate.                                 |
+| `L1DynamicFeeProbeEpochs`         | 1       | Sealed epochs the bracket search measures at each tested bps before choosing the next one. Values below 1 read as 1.                                                  |
+| `L1DynamicFeeMinOtherFlowBPS`     | 1000    | Share of a pair's volume (bps of 10,000) that must come from other swappers for an epoch to count as a measurement.                                                   |
+| `L1DynamicFeeMaxEpochBlocks`      | 100800  | Longest a span may roll below the liquidity gate (~7 days). The next epoch boundary after it seals the span regardless; with no swaps, as zero revenue. `0` disables. |
 
 The whitelist key's `{thorname}` suffix is the registered thorname
 name, normalized per thornode's existing Mimir-key conventions
@@ -539,18 +553,27 @@ At block heights where `block_height % L1DynamicFeeEpochBlocks == 0`:
    delete all dynamic-fee state for that thorname. (A change of value
    already did this in the Mimir handler; this is the backstop.)
 
-2. **Seal accumulators.** Iterate all `(thorname, pair)` accumulators
-   from this epoch. For each:
+2. **Seal or roll each record's span.** Iterate all enrolled records
+   (not accumulators, so a record that drew no swaps is still visited).
+   For each, with its accumulator (empty if none):
+
+   - With no swaps in the span: do nothing, unless the span has reached
+     `L1DynamicFeeMaxEpochBlocks` and the record is not in a monitor
+     state, in which case seal it empty (zero revenue) below. An empty
+     seal does not update `last_active_epoch`, so an idle record still
+     ages towards pruning.
 
    - Fold the pair's pool accumulator into
      `accumulator.pool_volume_tor` — for a global (`*|*`) accumulator,
      the sum of the pool accumulators of the pairs it was credited on.
    - **Liquidity gate.** If `accumulator.swap_count < MinSwaps` or
-     `accumulator.volume_tor < MinVolumeUSD * 1e8`, the epoch is too
-     thin to carry signal: set `record.last_active_epoch =
-current_epoch` (so a permanently-gated record is not pruned out from
-     under its own accumulator), leave `dynamic_bps` alone, keep the
-     accumulator, and move on. No history entry, no event.
+     `accumulator.volume_tor < MinVolumeUSD * 1e8`, the span is too
+     thin to carry signal. Unless it has run `MaxEpochBlocks` (counted
+     from `record.span_start_height`), roll it: set
+     `record.last_active_epoch = current_epoch` (so a gated record is
+     not pruned out from under its own accumulator), leave
+     `dynamic_bps` alone, keep the accumulator, and move on. No history
+     entry, no event. A span at the cap is sealed anyway.
    - Drop any history entry with `pool_volume_tor == 0` — pre-upgrade
      data in incompatible units. Safe to run on every seal because the
      pool credit precedes the affiliate credit for the same swap leg,
@@ -608,10 +631,7 @@ if feesBefore == 0:
 
 deltaPctBps = abs(feesAfter - feesBefore) * 10000 / feesBefore  # via GetSafeShare
 
-if len(before) >= 2 and len(after) >= 2:
-    # Significance: (after - before)^2 > 4 (Var(mean after) + Var(mean before))
-    if not significant(after, before): return "hold", old_bps
-elif deltaPctBps < deadband:
+if deltaPctBps < deadband:
     return "hold", old_bps
 
 feesIncreased = feesAfter > feesBefore
@@ -625,18 +645,13 @@ if dir == -1 and not feesIncreased: return "reverse_up",   clamp(old_bps + step,
 
 ```text
 signal = signal(newest history entry)       # hold if it cannot be normalized
-probes[old_bps].add(signal)                  # sum, sum of squares, epochs += 1
+probes[old_bps].signal_sum += signal; probes[old_bps].epochs += 1
 if probes[old_bps].epochs < ProbeEpochs:
     return "search_measure", old_bps
-if probes[old_bps].epochs < ProbeMaxEpochs and
-   not significant(probes[old_bps], best of the other probes):
-    return "search_measure", old_bps         # still inside the noise
 
 P    = completed probes with floor <= bps <= ceiling, sorted by bps
-best = P[0]; for p in P[1:]:                 # a higher bps must be clearly better:
-    if p.epochs >= 2 and best.epochs >= 2:   #   beyond two standard errors,
-        if mean(p) > mean(best) and significant(p, best): best = p
-    elif mean(p) > mean(best) * (1 + deadband): best = p   # or the deadband
+best = P[0]; for p in P[1:]:                # a higher bps must win by more
+    if mean(p) > mean(best) * (1 + deadband): best = p   # than the deadband
 
 left  = untested ints between best and the nearest tested bps below it,
         or [floor, best) if none is below (test the floor itself first)
@@ -653,12 +668,12 @@ return "search_probe", next
 
 Assuming revenue is unimodal in bps, the optimum lies between the best
 value's nearest tested neighbours, so only those two gaps are searched
-and each test roughly halves one. A higher fee is only adopted when it
-is clearly better; on a near-tie the lower fee stands. Each test is
-measured until its result is outside the noise or the epoch cap is
-reached, but a losing side is still discarded for good, which is why
-the gradient rule takes over after convergence — and why a governance
-reset (vote `0`, then back) exists for a search that settled badly. If the floor or ceiling moves
+and each test roughly halves one. The deadband preference means a
+higher fee is only adopted when it is clearly better; on a near-tie the
+lower fee stands. Every test is a single (gated) reading and a losing
+side is discarded for good, which is why the gradient rule takes over
+after convergence — and why a governance reset (vote `0`, then back)
+exists for a search that settled badly. If the floor or ceiling moves
 mid-search, probes outside the new range are ignored.
 
 Worked example on `[1, 20]` with revenue `b * (30 - b)` (peak at 15):
@@ -669,9 +684,9 @@ is several epochs behind the current epoch: `feesBefore` draws up to 3
 epochs ending just before the change, `feesAfter` draws up to 3 of the
 most recent epochs starting at the change (including the one just
 appended). If the record has fewer than K epochs on one side, the
-window shortens rather than dropping the comparison. With two or more
-usable epochs on each side the decision uses their spread (two
-standard errors); with fewer, the deadband.
+window shortens rather than dropping the comparison — the controller
+works with as little as one sample on each side, and noise is
+controlled by the deadband.
 
 <a id="disabled-state"></a>
 
@@ -735,7 +750,7 @@ the first entry, it is the whole comparison baseline when the first
 real gradient is evaluated, costing one spurious step. Store migration
 `Migrate21to22` (consensus version 22) deletes every in-flight thorname
 accumulator at the upgrade height, so the first sealed epoch measures
-fees and pool volume over the same span. Records are left alone.
+fees and pool volume over the same span. Records keep their state.
 
 The bracket search needs no store migration either. `search_done`
 unmarshals as `false` on records that predate it, so each existing
@@ -743,9 +758,11 @@ record starts a search from its current `dynamic_bps` (testing it
 first, then the larger untested side) rather than dropping back to the
 floor. Whitelist value `2` changes meaning from monitor to global; no
 mainnet thorname held `2` at the upgrade, so no record changes mode.
-`own_pool_volume_tor`, `pairs` and `signal_sq_sum` read as zero or
-empty on rows written before them; in-flight accumulators are cleared
-at the upgrade anyway.
+`own_pool_volume_tor`, `blocks` and `pairs` read as zero or empty on
+rows written before them; in-flight accumulators are cleared at the
+upgrade anyway. `Migrate20to21` also sets every record's
+`span_start_height` to the upgrade height, so the time cap counts from
+the upgrade rather than sealing every record at the first boundary.
 
 ### REST endpoints
 
@@ -829,11 +846,10 @@ is used anywhere in the algorithm.
   participate at all without being explicitly added via Mimir,
   (b) **monitor mode** (`3` / `4`) which lets operators observe a
   thorname's attribution and volume before promoting it, (c) the
-  search's preference for the lower fee unless a higher one is
-  significantly better, and the slow ±1 bps step after it, (d) the
-  two-standard-error test (with the percentage deadband as fallback),
-  and (e) the configurable window averaging
-  (`L1DynamicFeeWindowEpochs`) which smooths single-epoch spikes.
+  search's preference for the lower fee, and the slow ±1 bps step
+  after it, (d) the percentage deadband, and (e) the configurable
+  window averaging (`L1DynamicFeeWindowEpochs`) which smooths
+  single-epoch spikes.
 - **Self-referential signal.** Dividing by other swappers' volume
   means an affiliate cannot raise its signal by trading more against
   itself; an epoch where it is nearly the whole pool is not used.
@@ -842,8 +858,7 @@ is used anywhere in the algorithm.
 - **Master switch** (`L1DynamicFeeEnabled = 0`) is an immediate,
   total kill. See [Disabled state](#disabled-state).
 - **Determinism:** all arithmetic uses integer math on TOR-denominated
-  values and bps, and the significance test uses exact rationals
-  (`big.Rat`). No floating point.
+  values and bps. No floating point.
 
 ### Testing
 
@@ -870,12 +885,13 @@ is used anywhere in the algorithm.
   fallback to a smaller one.
 - Unit tests on measurement: the signal excludes the thorname's own
   volume and holds under `L1DynamicFeeMinOtherFlowBPS`; a 90%-share
-  integrator converges near its revenue peak; probes stop at the
-  minimum on clean data and extend to the cap on noisy data; a noisy
-  higher fee does not displace a lower one; the ±step controller moves
-  on a significant change under the deadband and holds on a large
-  noisy one; monitor records collect history only; a global record is
-  measured on the pairs it traded.
+  integrator converges near its revenue peak; monitor records collect
+  history only; a global record is measured on the pairs it traded.
+- Unit tests on the time cap: a span below the gate rolls and is
+  sealed once it reaches `L1DynamicFeeMaxEpochBlocks`; a span with no
+  swaps is sealed empty, reads as zero revenue, moves the search on and
+  does not count as activity; monitor records are never sealed empty;
+  a record without a span start begins one.
 - Unit tests on the search: the next-value rule over every gap shape,
   the deadband's lower-fee preference, a full run converging on a
   unimodal curve, `L1DynamicFeeProbeEpochs`, and a pre-existing
