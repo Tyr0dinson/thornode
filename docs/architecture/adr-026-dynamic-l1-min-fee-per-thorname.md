@@ -25,7 +25,12 @@
      Spans therefore vary in length; they stay comparable because the
      signal divides fees by other swappers' volume over the same span
      (a revenue rate per block would let market-wide swings back in).
-     Each entry records its length in `blocks`.
+     Each entry records its length in `blocks`. A span sealed by the cap
+     below the gate is marked `capped`: too thin to justify a higher fee,
+     it may only lower it. In the search a capped probe never displaces a
+     lower-fee best (it still counts as tested); in the ±step controller
+     a raise on a capped reading becomes `capped_hold` and a cold start
+     probes down.
   3. **Global mode is measured on the pairs it trades.** A global
      accumulator records the pairs it was credited on, and its pool
      volume sums only those pairs, so volume on unrelated pairs no
@@ -635,6 +640,8 @@ if deltaPctBps < deadband:
     return "hold", old_bps
 
 feesIncreased = feesAfter > feesBefore
+# (Then, if the newest entry is capped and the result would raise the fee:
+#  a cold start probes down instead, anything else is "capped_hold".)
 if dir == +1 and feesIncreased:  return "continue_up",   clamp(old_bps + step, floor, ceiling)
 if dir == +1 and not feesIncreased: return "reverse_down", clamp(old_bps - step, floor, ceiling)
 if dir == -1 and feesIncreased:  return "continue_down", clamp(old_bps - step, floor, ceiling)
@@ -651,7 +658,8 @@ if probes[old_bps].epochs < ProbeEpochs:
 
 P    = completed probes with floor <= bps <= ceiling, sorted by bps
 best = P[0]; for p in P[1:]:                # a higher bps must win by more
-    if mean(p) > mean(best) * (1 + deadband): best = p   # than the deadband
+    if p.capped: continue                    # than the deadband, and a capped
+    if mean(p) > mean(best) * (1 + deadband): best = p   # probe never wins
 
 left  = untested ints between best and the nearest tested bps below it,
         or [floor, best) if none is below (test the floor itself first)
@@ -722,7 +730,7 @@ change at an epoch boundary:
   "delta_pct_bps": "2500",
   "reason":        "cold_start_probe" | "continue_up" | "continue_down" |
                    "reverse_up" | "reverse_down" | "search_probe" |
-                   "search_converged"
+                   "search_converged" | "capped_hold"
 }
 ```
 
@@ -891,7 +899,9 @@ is used anywhere in the algorithm.
   sealed once it reaches `L1DynamicFeeMaxEpochBlocks`; a span with no
   swaps is sealed empty, reads as zero revenue, moves the search on and
   does not count as activity; monitor records are never sealed empty;
-  a record without a span start begins one.
+  a record without a span start begins one; a capped reading never
+  displaces a lower-fee best in the search, and in the ±step controller
+  turns a raise into `capped_hold` and a cold start into a step down.
 - Unit tests on the search: the next-value rule over every gap shape,
   the deadband's lower-fee preference, a full run converging on a
   unimodal curve, `L1DynamicFeeProbeEpochs`, and a pre-existing
