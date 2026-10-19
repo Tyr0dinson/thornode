@@ -87,7 +87,7 @@ When a swap generates less slip than the applicable minimum, the liquidity fee i
 
 For L1 pairs carrying an enrolled THORName affiliate, the minimum is set per THORName — either per trading pair or, in global mode, once across all of its L1 pairs — rather than by the network-wide `L1SlipMinBps`, and is tuned to the fee revenue that affiliate generates.
 
-At the end of each epoch (~24h) the network totals the fee income that THORName produced, expressed as a share of the pool's total volume over the same period (all L1 pools in global mode). A new THORName first searches the allowed range in large jumps — the lowest floor, then the highest, then the midpoint, then halving towards whichever did best — so each test changes the price enough to show up in the income. Once the search settles, the floor moves one basis point at a time: income share up after a change, it continues in the same direction; down, it reverses. The floor settles higher where THORChain is the only venue and lower where it competes.
+At the end of each epoch (~24h) the network totals the fee income that THORName produced and divides it by the volume other swappers put through the same pools over the same period (in global mode, the pools that THORName traded). Leaving out the THORName's own volume means a fee that drives its own users away shows up as lost income rather than looking like a higher rate. An epoch where other swappers are under 10% of a pool's volume is not used. A new THORName first searches the allowed range in large jumps — the lowest floor, then the highest, then the midpoint, then halving towards whichever did best — so each test changes the price enough to show up in the income. Each test runs for at least two epochs, and longer (up to six) while the result is still within the epoch-to-epoch noise; a higher fee only wins when it is clearly better. Once the search settles, the floor moves one basis point at a time: income share up after a change, it continues in the same direction; down, it reverses. The floor settles higher where THORChain is the only venue and lower where it competes.
 
 An epoch only decides anything if it is large enough to carry signal — at least `L1DynamicFeeMinSwaps` swaps and `L1DynamicFeeMinVolumeUSD` of volume. Thinner epochs roll into the next one and the floor does not move, so a small integration simply never steps. See [ADR 026](../architecture/adr-026-dynamic-l1-min-fee-per-thorname.md) for the rule, bounds and events.
 
@@ -95,18 +95,18 @@ This only affects the liquidity fee charged to the swapper. The affiliate's own 
 
 Enrollment is per-THORName, set by node operators via the operational mimir `DYNAMICFEE-WHITELIST-<thorname>`:
 
-| Value        | State        | Effect                                                                            |
-| ------------ | ------------ | --------------------------------------------------------------------------------- |
-| `1`          | Per-pair     | A floor per trading pair is applied to the THORName's swaps.                      |
-| `2`          | Global       | One floor, tuned across all the THORName's L1 pairs, is applied to every L1 pair. |
-| `3` / `4`    | Monitor      | As `1` / `2`, but the floor is **not** applied — swaps use `L1SlipMinBps`.        |
-| `0` / absent | Not enrolled | Swaps use `L1SlipMinBps`.                                                         |
+| Value        | State        | Effect                                                                                       |
+| ------------ | ------------ | -------------------------------------------------------------------------------------------- |
+| `1`          | Per-pair     | A floor per trading pair is applied to the THORName's swaps.                                 |
+| `2`          | Global       | One floor, tuned across all the THORName's L1 pairs, is applied to every L1 pair.            |
+| `3` / `4`    | Monitor      | Volume and fees are recorded as in `1` / `2`, but no floor is set: swaps use `L1SlipMinBps`. |
+| `0` / absent | Not enrolled | Swaps use `L1SlipMinBps`.                                                                    |
 
 Changing the value restarts that THORName's floor from scratch, including the search. To restart a THORName without changing its mode, set it to `0` and back.
 
 THORNames containing `_` or `+` cannot currently be enrolled via `DYNAMICFEE-WHITELIST-<thorname>` because of mimir key charset restrictions. ([REVSHARE](../affiliate-guide/affiliate-fee-guide.md#revenue-share-revshare) solved the same issue with an explicit alias; dynamic fee does not.)
 
-A new record starts at 1 bps and ratchets up, so enrollment begins below `L1SlipMinBps`; the ceiling is not capped at `L1SlipMinBps`, so a THORName whose fees fall can rise above it until the next epoch moves it back down. When a memo lists several affiliates, the protocol first filters to Active enrolled THORNames that carry a non-zero affiliate fee, then selects the largest affiliate basis-point split among those remaining — that entry's floor applies. Raw addresses, expired THORNames, Monitor-mode, unenrolled, and zero-bps entries are skipped; if none remain eligible the swap uses `L1SlipMinBps`. See the [THORName guide](../affiliate-guide/thorname-guide.md) for validity and expiry rules.
+A new record starts at 1 bps, so enrollment begins below `L1SlipMinBps`; the ceiling is not capped at `L1SlipMinBps`, so a THORName can be charged above it while the search tests higher fees. When a memo lists several affiliates, only the one with the largest affiliate basis-point split counts (the first listed wins a tie). If it is an enrolled THORName in state `1` or `2`, its floor applies and the swap is credited to it; if it is in a monitor state, the swap is credited to it but uses `L1SlipMinBps`; if it is a raw address, an expired or unenrolled THORName, the swap uses `L1SlipMinBps` and nothing is credited. A smaller affiliate in the memo never stands in for it. See the [THORName guide](../affiliate-guide/thorname-guide.md) for validity and expiry rules.
 
 Current state is exposed by [`/thorchain/dynamic_l1_fees`](https://gateway.liquify.com/chain/thorchain_api/thorchain/dynamic_l1_fees), `/{thorname}` and `/dynamic_l1_fees_current`.
 Example output:

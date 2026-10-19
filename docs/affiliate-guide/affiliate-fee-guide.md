@@ -95,4 +95,4 @@ See [ADR 027](../architecture/adr-027-affiliate-revshare.md) for the full ration
 
 ## Dynamic L1 Minimum Fee
 
-Enrolling your THORName lets your users pay a **lower minimum swap fee** on L1 pairs. This is the protocol swap fee, whitelisted per THORName by node operators — it does not change your affiliate fee or payouts. See [Dynamic L1 Minimum Fee](../concepts/fees.md#dynamic-l1-minimum-fee) for how the floor works, enrollment and current values.
+Enrolling your THORName lets your users pay a **lower minimum swap fee** on L1 pairs. This is the protocol swap fee, whitelisted per THORName by node operators — it does not change your affiliate fee or payouts. See [Dynamic L1 Minimum Fee](../concepts/fees.md#dynamic-l1-minimum-fee) for how the floor works, enrollment and current values. If a memo lists more than one affiliate, only the one with the largest affiliate basis points counts: list your enrolled THORName with the largest split, or the swap pays the standard minimum.
