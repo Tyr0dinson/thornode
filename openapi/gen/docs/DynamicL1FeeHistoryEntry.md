@@ -11,6 +11,7 @@ Name | Type | Description | Notes
 **SwapCount** | **int32** | user swaps counted in this epoch; a streaming swap counts once, not once per sub-swap. Epochs below L1DynamicFeeMinSwaps swaps or L1DynamicFeeMinVolumeUSD of volume do not seal and roll into the next one, so this may span several epochs  | 
 **PoolVolumeTor** | **string** | TOR-denominated (1e8-precision USD value) total volume through the pair (for a global \&quot;*|*\&quot; record, through the pairs the thorname traded) over the same span, regardless of affiliate  | 
 **OwnPoolVolumeTor** | Pointer to **string** | the thorname&#39;s own share of pool_volume_tor, counting every swap leg. The signal is fees_tor / (pool_volume_tor - own_pool_volume_tor): fee revenue against other swappers&#39; volume. An epoch whose other flow is under L1DynamicFeeMinOtherFlowBPS of the pool is recorded but not used as a measurement  | [optional] 
+**Blocks** | Pointer to **int64** | length of the span this entry covers, in blocks. A span below the liquidity gate rolls into the next epoch, up to L1DynamicFeeMaxEpochBlocks, after which it is sealed regardless  | [optional] 
 
 ## Methods
 
@@ -175,6 +176,31 @@ SetOwnPoolVolumeTor sets OwnPoolVolumeTor field to given value.
 `func (o *DynamicL1FeeHistoryEntry) HasOwnPoolVolumeTor() bool`
 
 HasOwnPoolVolumeTor returns a boolean if a field has been set.
+
+### GetBlocks
+
+`func (o *DynamicL1FeeHistoryEntry) GetBlocks() int64`
+
+GetBlocks returns the Blocks field if non-nil, zero value otherwise.
+
+### GetBlocksOk
+
+`func (o *DynamicL1FeeHistoryEntry) GetBlocksOk() (*int64, bool)`
+
+GetBlocksOk returns a tuple with the Blocks field if it's non-nil, zero value otherwise
+and a boolean to check if the value has been set.
+
+### SetBlocks
+
+`func (o *DynamicL1FeeHistoryEntry) SetBlocks(v int64)`
+
+SetBlocks sets Blocks field to given value.
+
+### HasBlocks
+
+`func (o *DynamicL1FeeHistoryEntry) HasBlocks() bool`
+
+HasBlocks returns a boolean if a field has been set.
 
 
 [[Back to Model list]](../README.md#documentation-for-models) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to README]](../README.md)

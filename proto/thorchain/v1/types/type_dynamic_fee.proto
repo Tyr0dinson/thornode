@@ -28,6 +28,10 @@ message DynamicFeeEpochRecord {
     (gogoproto.customtype) = "cosmossdk.io/math.Uint",
     (gogoproto.nullable) = false
   ];
+  // blocks is the length of the span this entry covers. Spans vary: an epoch
+  // below the liquidity gate rolls into the next, up to
+  // L1DynamicFeeMaxEpochBlocks.
+  int64 blocks = 8;
 }
 
 message DynamicFeeRecord {
@@ -44,6 +48,13 @@ message DynamicFeeRecord {
   bool search_done = 7;
   // probes holds one entry per bps value tested by the current search.
   repeated DynamicFeeProbe probes = 8 [ (gogoproto.nullable) = false ];
+  // span_start_height is the block at which the record's current measurement
+  // span began (its creation or its last seal). Once the span reaches
+  // L1DynamicFeeMaxEpochBlocks the next epoch boundary seals it, gate or not.
+  int64 span_start_height = 9;
+  // pairs is the global record's traded pairs as of its last seal, so a span
+  // with no swaps at all can still be measured against those pools.
+  repeated string pairs = 10;
 }
 
 // DynamicFeeProbe is the measured fee signal at one tested bps value.
@@ -55,11 +66,6 @@ message DynamicFeeProbe {
     (gogoproto.nullable) = false
   ];
   uint64 epochs = 3;
-  // Sum of the squared per-epoch signals, for the epoch-to-epoch spread.
-  string signal_sq_sum = 4 [
-    (gogoproto.customtype) = "cosmossdk.io/math.Uint",
-    (gogoproto.nullable) = false
-  ];
 }
 
 message DynamicFeeAccumulator {

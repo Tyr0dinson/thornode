@@ -136,7 +136,6 @@ func (s *DynamicFeeTypesSuite) TestProbeAddAndPairs(c *C) {
 	p.Add(math.NewUint(5))
 	c.Check(p.Epochs, Equals, uint64(2))
 	c.Check(p.SignalSum.Equal(math.NewUint(8)), Equals, true)
-	c.Check(p.SignalSqSum.Equal(math.NewUint(34)), Equals, true)
 	c.Check(p.Mean().Equal(math.NewUint(4)), Equals, true)
 
 	acc := NewDynamicFeeAccumulator("t", "*", "*")

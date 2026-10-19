@@ -12,6 +12,7 @@ Name | Type | Description | Notes
 **SwapCount** | **int32** | running count of user swaps for this accumulator, summed across any epochs it has rolled over. The epoch seals only if swap_count &gt;&#x3D; L1DynamicFeeMinSwaps and volume_tor &gt;&#x3D; L1DynamicFeeMinVolumeUSD * 1e8; if either falls short, the accumulator rolls into the next epoch  | 
 **PoolVolumeTor** | **string** | running TOR-denominated total volume through the pair (for a global \&quot;*|*\&quot; accumulator, through the pairs the thorname traded), including the in-progress slice that is only folded in at the seal  | 
 **OwnPoolVolumeTor** | Pointer to **string** | the thorname&#39;s own share of pool_volume_tor so far, counting every swap leg  | [optional] 
+**SpanBlocks** | Pointer to **int64** | blocks since this measurement span began. Once it reaches L1DynamicFeeMaxEpochBlocks the next epoch boundary seals the span, even below the liquidity gate  | [optional] 
 
 ## Methods
 
@@ -196,6 +197,31 @@ SetOwnPoolVolumeTor sets OwnPoolVolumeTor field to given value.
 `func (o *DynamicL1FeeCurrentEntry) HasOwnPoolVolumeTor() bool`
 
 HasOwnPoolVolumeTor returns a boolean if a field has been set.
+
+### GetSpanBlocks
+
+`func (o *DynamicL1FeeCurrentEntry) GetSpanBlocks() int64`
+
+GetSpanBlocks returns the SpanBlocks field if non-nil, zero value otherwise.
+
+### GetSpanBlocksOk
+
+`func (o *DynamicL1FeeCurrentEntry) GetSpanBlocksOk() (*int64, bool)`
+
+GetSpanBlocksOk returns a tuple with the SpanBlocks field if it's non-nil, zero value otherwise
+and a boolean to check if the value has been set.
+
+### SetSpanBlocks
+
+`func (o *DynamicL1FeeCurrentEntry) SetSpanBlocks(v int64)`
+
+SetSpanBlocks sets SpanBlocks field to given value.
+
+### HasSpanBlocks
+
+`func (o *DynamicL1FeeCurrentEntry) HasSpanBlocks() bool`
+
+HasSpanBlocks returns a boolean if a field has been set.
 
 
 [[Back to Model list]](../README.md#documentation-for-models) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to README]](../README.md)

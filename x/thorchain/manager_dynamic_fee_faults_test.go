@@ -2,7 +2,6 @@ package thorchain
 
 import (
 	"errors"
-	"math/big"
 
 	"github.com/cosmos/cosmos-sdk/codec"
 	"github.com/cosmos/gogoproto/proto"
@@ -29,9 +28,13 @@ type faultyDynFeeKeeper struct {
 	// nilOwnVolume returns accumulators as written before own pool volume
 	// existed (a nil Uint).
 	nilOwnVolume bool
+	failGetAcc   bool
 }
 
 func (k *faultyDynFeeKeeper) GetDynamicFeeAccumulator(ctx cosmos.Context, thorname, a, b string) (types.DynamicFeeAccumulator, error) {
+	if k.failGetAcc {
+		return types.DynamicFeeAccumulator{}, errInjected
+	}
 	acc, err := k.Keeper.GetDynamicFeeAccumulator(ctx, thorname, a, b)
 	if k.nilOwnVolume {
 		acc.OwnPoolVolumeTor = cosmos.Uint{}
@@ -172,7 +175,7 @@ func (s *DynamicFeeMgrSuite) TestEndBlockSurvivesStoreFaults(c *C) {
 		fault    func(*faultyDynFeeKeeper)
 		keepsAcc bool
 	}{
-		{name: "record read fails", fault: func(f *faultyDynFeeKeeper) { f.failGetRecord = true }, keepsAcc: true},
+		{name: "accumulator read fails", fault: func(f *faultyDynFeeKeeper) { f.failGetAcc = true }, keepsAcc: true},
 		{name: "record write fails on seal", fault: func(f *faultyDynFeeKeeper) { f.failSetRecord = true }, keepsAcc: true},
 		{name: "record write fails on roll", gate: true, fault: func(f *faultyDynFeeKeeper) { f.failSetRecord = true }, keepsAcc: true},
 		{name: "accumulator write fails on roll", gate: true, fault: func(f *faultyDynFeeKeeper) { f.failSetAcc = true }, keepsAcc: true},
@@ -311,7 +314,7 @@ func (s *DynamicFeeMgrSuite) TestMimirResetFaultIsLogged(c *C) {
 	c.Check(val, Equals, types.DynamicFeeStateGlobal)
 }
 
-func (s *DynamicFeeMgrSuite) TestMigrate20to21Faults(c *C) {
+func (s *DynamicFeeMgrSuite) TestMigrate21to22Faults(c *C) {
 	c.Check(AppModule{}.ConsensusVersion(), Equals, uint64(21))
 
 	for _, tc := range []struct {
@@ -322,14 +325,19 @@ func (s *DynamicFeeMgrSuite) TestMigrate20to21Faults(c *C) {
 			f.cdc = faultyCodec{BinaryCodec: k.Cdc(), fail: isThornameAcc}
 		}},
 		{name: "accumulator delete fails", fault: func(f *faultyDynFeeKeeper, _ keeper.Keeper) { f.failDeleteAcc = true }},
+		{name: "record unreadable", fault: func(f *faultyDynFeeKeeper, k keeper.Keeper) {
+			f.cdc = faultyCodec{BinaryCodec: k.Cdc(), fail: func(m proto.Message) bool { _, ok := m.(*types.DynamicFeeRecord); return ok }}
+		}},
+		{name: "record write fails", fault: func(f *faultyDynFeeKeeper, _ keeper.Keeper) { f.failSetRecord = true }},
 	} {
 		ctx, mgr := setupManagerForTest(c)
 		k := mgr.Keeper()
 		c.Assert(k.SetDynamicFeeAccumulator(ctx, types.NewDynamicFeeAccumulator("tn", "BTC.BTC", "THOR.RUNE")), IsNil)
+		c.Assert(k.SetDynamicFeeRecord(ctx, types.DynamicFeeRecord{Thorname: "tn", PairAssetA: "BTC.BTC", PairAssetB: "THOR.RUNE", DynamicBps: 3}), IsNil)
 		fk := &faultyDynFeeKeeper{Keeper: k}
 		tc.fault(fk, k)
 		mgr.K = fk
-		c.Check(NewMigrator(mgr).Migrate20to21(ctx), NotNil, Commentf(tc.name))
+		c.Check(NewMigrator(mgr).Migrate21to22(ctx), NotNil, Commentf(tc.name))
 	}
 }
 
@@ -420,14 +428,58 @@ func (s *DynamicFeeMgrSuite) TestPairsPoolVolumeSkipsBadPairs(c *C) {
 	c.Check(dynamicFeePairsPoolVolume(ctx, &faultyDynFeeKeeper{Keeper: k, failGetPool: true}, []string{pair}).IsZero(), Equals, true)
 }
 
-// TestProbeStatsEdges: probes with missing sums (old rows) read as zero, and
-// sums that are inconsistent (a sum of squares too small for the sum) give a
-// zero spread instead of a negative one.
-func (s *DynamicFeeMgrSuite) TestProbeStatsEdges(c *C) {
-	st := newProbeStats(types.DynamicFeeProbe{Epochs: 2})
-	c.Check(st.mean.Sign(), Equals, 0)
-	c.Check(st.varOfMean.Sign(), Equals, 0)
-	st = newProbeStats(types.DynamicFeeProbe{SignalSum: cosmos.NewUint(10), SignalSqSum: cosmos.ZeroUint(), Epochs: 2})
-	c.Check(st.mean.Cmp(big.NewRat(5, 1)), Equals, 0)
-	c.Check(st.varOfMean.Sign(), Equals, 0)
+// TestEndEpochSkipsAndOldRows: a record whose thorname is no longer enrolled
+// (its whitelist key deleted outright) is left for pruning, and an
+// accumulator written before own pool volume existed seals normally.
+func (s *DynamicFeeMgrSuite) TestEndEpochSkipsAndOldRows(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	k := mgr.Keeper()
+	setDynamicFeeTestMimirs(ctx, k)
+	registerThorname(ctx, k, "gone", 0)
+	registerThorname(ctx, k, "tn", types.DynamicFeeStatePerPair)
+	pairA, pairB, _ := dynamicFeePairKey(common.BTCAsset, common.RuneAsset())
+	acc := types.NewDynamicFeeAccumulator("gone", pairA, pairB)
+	acc.SwapCount, acc.VolumeTor = 1, cosmos.NewUint(1_000)
+	c.Assert(k.SetDynamicFeeAccumulator(ctx, acc), IsNil)
+	c.Assert(k.SetDynamicFeeRecord(ctx, types.DynamicFeeRecord{Thorname: "gone", PairAssetA: pairA, PairAssetB: pairB, DynamicBps: 4, SpanStartHeight: 1}), IsNil)
+
+	dfm := newDynamicFeeMgr(k)
+	dfm.CreditPoolVolume(ctx, common.BTCAsset, common.RuneAsset(), cosmos.NewUint(10_000))
+	creditOneSwap(ctx, dfm, "tn", cosmos.NewUint(1_000), cosmos.NewUint(10))
+	ctx = ctx.WithBlockHeight(20)
+	c.Assert(newDynamicFeeMgr(&faultyDynFeeKeeper{Keeper: k, nilOwnVolume: true}).EndBlock(ctx), IsNil)
+
+	gone, err := k.GetDynamicFeeRecord(ctx, "gone", pairA, pairB)
+	c.Assert(err, IsNil)
+	c.Check(gone.History, HasLen, 0, Commentf("not enrolled: not sealed"))
+	rec, err := k.GetDynamicFeeRecord(ctx, "tn", pairA, pairB)
+	c.Assert(err, IsNil)
+	c.Check(rec.History, HasLen, 1, Commentf("a nil own volume reads as zero and still seals"))
+}
+
+// TestGlobalEmptySpanUsesLastPairs: a global record that drew no swaps is
+// sealed empty at the cap against the pools it traded as of its last seal.
+func (s *DynamicFeeMgrSuite) TestGlobalEmptySpanUsesLastPairs(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	k := mgr.Keeper()
+	setDynamicFeeTestMimirs(ctx, k)
+	k.SetMimir(ctx, "L1DynamicFeeMaxEpochBlocks", 10)
+	dfm := newDynamicFeeMgr(k)
+	registerThorname(ctx, k, "glob", types.DynamicFeeStateGlobal)
+	g := types.DynamicFeeGlobalPair
+	btcA, btcB, _ := dynamicFeePairKey(common.BTCAsset, common.RuneAsset())
+	c.Assert(k.SetDynamicFeeRecord(ctx, types.DynamicFeeRecord{
+		Thorname: "glob", PairAssetA: g, PairAssetB: g, DynamicBps: 9, SpanStartHeight: 10,
+		Pairs: []string{btcA + "|" + btcB},
+	}), IsNil)
+	dfm.CreditPoolVolume(ctx, common.BTCAsset, common.RuneAsset(), cosmos.NewUint(4_000))
+	dfm.CreditPoolVolume(ctx, common.ETHAsset, common.RuneAsset(), cosmos.NewUint(9_000))
+	ctx = ctx.WithBlockHeight(20)
+	c.Assert(dfm.EndBlock(ctx), IsNil)
+
+	rec, err := k.GetDynamicFeeRecord(ctx, "glob", g, g)
+	c.Assert(err, IsNil)
+	c.Assert(rec.History, HasLen, 1)
+	c.Check(rec.History[0].PoolVolumeTor.Equal(cosmos.NewUint(4_000)), Equals, true, Commentf("BTC only: the pair it traded"))
+	c.Check(rec.History[0].FeesTor.IsZero(), Equals, true)
 }

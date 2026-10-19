@@ -154,11 +154,7 @@ func (m *DynamicFeeProbe) Add(signal math.Uint) {
 	if m.SignalSum.IsNil() {
 		m.SignalSum = math.ZeroUint()
 	}
-	if m.SignalSqSum.IsNil() {
-		m.SignalSqSum = math.ZeroUint()
-	}
 	m.SignalSum = m.SignalSum.Add(signal)
-	m.SignalSqSum = m.SignalSqSum.Add(signal.Mul(signal))
 	m.Epochs++
 }
 

@@ -848,8 +848,9 @@ func (s *MigrationCommonSuite) TestMigrate19to20MergesZECTexClout(c *C) {
 
 // TestMigrate21to22ClearsDynamicFeeAccumulators pins the ADR-026 upgrade step:
 // in-flight accumulators are dropped so no sealed entry mixes a full epoch of
-// fees with a partial epoch of pool volume. Records survive untouched — they
-// keep their bps, and the seal drops their pre-upgrade history on its own.
+// fees with a partial epoch of pool volume. Records keep their bps (the seal
+// drops their pre-upgrade history on its own) and start their measurement span
+// at the upgrade height.
 func (s *MigrationCommonSuite) TestMigrate21to22ClearsDynamicFeeAccumulators(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	k := mgr.Keeper()
@@ -888,6 +889,7 @@ func (s *MigrationCommonSuite) TestMigrate21to22ClearsDynamicFeeAccumulators(c *
 		rec, err := k.GetDynamicFeeRecord(ctx, p.thorname, p.a, p.b)
 		c.Assert(err, IsNil)
 		c.Check(rec.DynamicBps, Equals, uint64(8), Commentf("records keep their current floor"))
+		c.Check(rec.SpanStartHeight, Equals, ctx.BlockHeight(), Commentf("the measurement span starts at the upgrade"))
 		c.Check(rec.LastActiveEpoch, Equals, uint64(41))
 		c.Check(len(rec.History), Equals, 1, Commentf("history is dropped at the seal, not here"))
 	}

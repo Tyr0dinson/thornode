@@ -29,6 +29,8 @@ type DynamicL1FeeHistoryEntry struct {
 	PoolVolumeTor string `json:"pool_volume_tor"`
 	// the thorname's own share of pool_volume_tor, counting every swap leg. The signal is fees_tor / (pool_volume_tor - own_pool_volume_tor): fee revenue against other swappers' volume. An epoch whose other flow is under L1DynamicFeeMinOtherFlowBPS of the pool is recorded but not used as a measurement 
 	OwnPoolVolumeTor *string `json:"own_pool_volume_tor,omitempty"`
+	// length of the span this entry covers, in blocks. A span below the liquidity gate rolls into the next epoch, up to L1DynamicFeeMaxEpochBlocks, after which it is sealed regardless 
+	Blocks *int64 `json:"blocks,omitempty"`
 }
 
 // NewDynamicL1FeeHistoryEntry instantiates a new DynamicL1FeeHistoryEntry object
@@ -230,6 +232,38 @@ func (o *DynamicL1FeeHistoryEntry) SetOwnPoolVolumeTor(v string) {
 	o.OwnPoolVolumeTor = &v
 }
 
+// GetBlocks returns the Blocks field value if set, zero value otherwise.
+func (o *DynamicL1FeeHistoryEntry) GetBlocks() int64 {
+	if o == nil || o.Blocks == nil {
+		var ret int64
+		return ret
+	}
+	return *o.Blocks
+}
+
+// GetBlocksOk returns a tuple with the Blocks field value if set, nil otherwise
+// and a boolean to check if the value has been set.
+func (o *DynamicL1FeeHistoryEntry) GetBlocksOk() (*int64, bool) {
+	if o == nil || o.Blocks == nil {
+		return nil, false
+	}
+	return o.Blocks, true
+}
+
+// HasBlocks returns a boolean if a field has been set.
+func (o *DynamicL1FeeHistoryEntry) HasBlocks() bool {
+	if o != nil && o.Blocks != nil {
+		return true
+	}
+
+	return false
+}
+
+// SetBlocks gets a reference to the given int64 and assigns it to the Blocks field.
+func (o *DynamicL1FeeHistoryEntry) SetBlocks(v int64) {
+	o.Blocks = &v
+}
+
 func (o DynamicL1FeeHistoryEntry) MarshalJSON_deprecated() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if true {
@@ -252,6 +286,9 @@ func (o DynamicL1FeeHistoryEntry) MarshalJSON_deprecated() ([]byte, error) {
 	}
 	if o.OwnPoolVolumeTor != nil {
 		toSerialize["own_pool_volume_tor"] = o.OwnPoolVolumeTor
+	}
+	if o.Blocks != nil {
+		toSerialize["blocks"] = o.Blocks
 	}
 	return json.Marshal(toSerialize)
 }

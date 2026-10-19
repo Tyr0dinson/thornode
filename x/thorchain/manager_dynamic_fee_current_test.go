@@ -32,10 +32,6 @@ func setDynamicFeeTestMimirs(ctx cosmos.Context, k keeper.Keeper) {
 	// Liquidity gate off by default; the gate tests set it explicitly.
 	k.SetMimir(ctx, "L1DynamicFeeMinSwaps", 0)
 	k.SetMimir(ctx, "L1DynamicFeeMinVolumeUSD", 0)
-	// One epoch per tested bps, as the search tests were written against;
-	// the noise-aware measurement tests set these explicitly.
-	k.SetMimir(ctx, "L1DynamicFeeProbeEpochs", 1)
-	k.SetMimir(ctx, "L1DynamicFeeProbeMaxEpochs", 1)
 }
 
 // endBlockT seals an epoch in tests. It first gives every live accumulator's pair
@@ -606,14 +602,16 @@ func (s *DynamicFeeMgrSuite) TestEndBlockZeroVolumeAccumulator(c *C) {
 	}
 	c.Assert(k.SetDynamicFeeRecord(ctx, pre), IsNil)
 
-	// Write an accumulator directly with zero volume/fees (no CreditSwap this
-	// epoch) to simulate a partial/leftover state the sealer must tolerate.
+	// Write an accumulator directly with zero volume/fees but one counted
+	// swap, so the sealer must seal an all-zero entry. (With no swap at all
+	// it would be treated as no accumulator.)
 	c.Assert(k.SetDynamicFeeAccumulator(ctx, types.DynamicFeeAccumulator{
 		Thorname:   "mytn",
 		PairAssetA: pairA,
 		PairAssetB: pairB,
 		VolumeTor:  cosmos.ZeroUint(),
 		FeesTor:    cosmos.ZeroUint(),
+		SwapCount:  1,
 	}), IsNil)
 
 	ctx = ctx.WithBlockHeight(110)

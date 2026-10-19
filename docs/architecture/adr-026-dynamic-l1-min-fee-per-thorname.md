@@ -102,7 +102,7 @@
   endpoints. History written before this change carries raw fee levels
   in incompatible units and is dropped at the first post-upgrade seal;
   affected records keep their current `dynamic_bps` and re-enter
-  cold start. Store migration `Migrate20to21` clears the in-flight
+  cold start. Store migration `Migrate21to22` clears the in-flight
   accumulators so no sealed entry mixes a full epoch of fees with a
   partial epoch of pool volume (see "Migration" below).
 
@@ -733,7 +733,7 @@ carries a full epoch of fees but pool volume only from post-upgrade
 blocks, so its sealed entry would hold an inflated signal — and being
 the first entry, it is the whole comparison baseline when the first
 real gradient is evaluated, costing one spurious step. Store migration
-`Migrate20to21` (consensus version 21) deletes every in-flight thorname
+`Migrate21to22` (consensus version 22) deletes every in-flight thorname
 accumulator at the upgrade height, so the first sealed epoch measures
 fees and pool volume over the same span. Records are left alone.
 

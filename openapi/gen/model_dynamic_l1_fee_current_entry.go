@@ -31,6 +31,8 @@ type DynamicL1FeeCurrentEntry struct {
 	PoolVolumeTor string `json:"pool_volume_tor"`
 	// the thorname's own share of pool_volume_tor so far, counting every swap leg 
 	OwnPoolVolumeTor *string `json:"own_pool_volume_tor,omitempty"`
+	// blocks since this measurement span began. Once it reaches L1DynamicFeeMaxEpochBlocks the next epoch boundary seals the span, even below the liquidity gate 
+	SpanBlocks *int64 `json:"span_blocks,omitempty"`
 }
 
 // NewDynamicL1FeeCurrentEntry instantiates a new DynamicL1FeeCurrentEntry object
@@ -257,6 +259,38 @@ func (o *DynamicL1FeeCurrentEntry) SetOwnPoolVolumeTor(v string) {
 	o.OwnPoolVolumeTor = &v
 }
 
+// GetSpanBlocks returns the SpanBlocks field value if set, zero value otherwise.
+func (o *DynamicL1FeeCurrentEntry) GetSpanBlocks() int64 {
+	if o == nil || o.SpanBlocks == nil {
+		var ret int64
+		return ret
+	}
+	return *o.SpanBlocks
+}
+
+// GetSpanBlocksOk returns a tuple with the SpanBlocks field value if set, nil otherwise
+// and a boolean to check if the value has been set.
+func (o *DynamicL1FeeCurrentEntry) GetSpanBlocksOk() (*int64, bool) {
+	if o == nil || o.SpanBlocks == nil {
+		return nil, false
+	}
+	return o.SpanBlocks, true
+}
+
+// HasSpanBlocks returns a boolean if a field has been set.
+func (o *DynamicL1FeeCurrentEntry) HasSpanBlocks() bool {
+	if o != nil && o.SpanBlocks != nil {
+		return true
+	}
+
+	return false
+}
+
+// SetSpanBlocks gets a reference to the given int64 and assigns it to the SpanBlocks field.
+func (o *DynamicL1FeeCurrentEntry) SetSpanBlocks(v int64) {
+	o.SpanBlocks = &v
+}
+
 func (o DynamicL1FeeCurrentEntry) MarshalJSON_deprecated() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if true {
@@ -282,6 +316,9 @@ func (o DynamicL1FeeCurrentEntry) MarshalJSON_deprecated() ([]byte, error) {
 	}
 	if o.OwnPoolVolumeTor != nil {
 		toSerialize["own_pool_volume_tor"] = o.OwnPoolVolumeTor
+	}
+	if o.SpanBlocks != nil {
+		toSerialize["span_blocks"] = o.SpanBlocks
 	}
 	return json.Marshal(toSerialize)
 }

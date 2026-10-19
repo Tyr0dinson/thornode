@@ -175,10 +175,10 @@ func NewConstantValue() *ConstantVals {
 			L1DynamicFeeDeadbandBPS:             1000,               // % change in the normalized fee signal (in bps, 10000 = 100%) below which the dynamic L1 fee controller holds
 			L1DynamicFeeWindowEpochs:            3,                  // epochs averaged on each side of the last bps change when measuring the fee-signal gradient (clamped into [1, MaxDynamicFeeHistory])
 			L1DynamicFeeMinSwaps:                30,                 // swaps a dynamic fee epoch must contain before it may seal a decision; below this it rolls into the next epoch (0 disables)
-			L1DynamicFeeMinVolumeUSD:            50_000,             // whole USD of affiliate volume a dynamic fee epoch must contain before it may seal a decision (0 disables)
-			L1DynamicFeeProbeEpochs:             2,                  // minimum sealed epochs the bracket search measures at each tested bps; 2 or more lets it estimate the epoch-to-epoch spread (values below 1 read as 1)
-			L1DynamicFeeProbeMaxEpochs:          6,                  // most sealed epochs measured at one tested bps while its gap to the best value is within two standard errors (raised to L1DynamicFeeProbeEpochs if lower)
+			L1DynamicFeeMinVolumeUSD:            100_000,            // whole USD of affiliate volume a dynamic fee epoch must contain before it may seal a decision (0 disables)
+			L1DynamicFeeProbeEpochs:             1,                  // sealed epochs the bracket search measures at each tested bps before choosing the next one (values below 1 read as 1)
 			L1DynamicFeeMinOtherFlowBPS:         1000,               // share of a pair's volume (bps of 10000) that must come from other swappers for an epoch to count as a measurement; below this the signal has no outside reference
+			L1DynamicFeeMaxEpochBlocks:          100_800,            // longest a dynamic fee measurement span may roll below the liquidity gate (~7 days at 6s blocks); the next epoch boundary after it seals the span regardless, so a fee too high to attract swaps still gets measured
 			VaultDeficitGasHaltMaxGasMultiplier: 30,                 // multiple of current max gas at which gas-related vault deficits halt signing and trading
 			MaxAbsentKeygenReporters:            1,                  // number of keygen members allowed to skip MsgTssPool reporting before a successful keygen finalizes (mainnet default)
 			BondYieldEnabled:                    0,                  // enable/disable automatic bond-yield payouts

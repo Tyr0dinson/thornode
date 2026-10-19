@@ -100,6 +100,7 @@ func (qs queryServer) queryDynamicL1FeesByThorname(ctx cosmos.Context, req *type
 				SwapCount:        h.SwapCount,
 				PoolVolumeTor:    uintOrZero(h.PoolVolumeTor).String(),
 				OwnPoolVolumeTor: uintOrZero(h.OwnPoolVolumeTor).String(),
+				Blocks:           h.Blocks,
 			})
 		}
 		resp.Pairs = append(resp.Pairs, detail)
@@ -137,6 +138,12 @@ func (qs queryServer) queryDynamicL1FeesCurrent(ctx cosmos.Context, req *types.Q
 		} else if poolAcc, err := qs.mgr.Keeper().GetDynamicFeePoolAccumulator(ctx, acc.PairAssetA, acc.PairAssetB); err == nil {
 			poolVolumeTor = poolVolumeTor.Add(poolAcc.VolumeTor)
 		}
+		// How long this span has run: the cap seals it at
+		// L1DynamicFeeMaxEpochBlocks even below the liquidity gate.
+		var spanBlocks int64
+		if rec, err := qs.mgr.Keeper().GetDynamicFeeRecord(ctx, acc.Thorname, acc.PairAssetA, acc.PairAssetB); err == nil && rec.SpanStartHeight > 0 {
+			spanBlocks = ctx.BlockHeight() - rec.SpanStartHeight
+		}
 		resp.Entries = append(resp.Entries, types.DynamicL1FeeCurrentEntry{
 			Thorname:         acc.Thorname,
 			Pair:             fmt.Sprintf("%s|%s", acc.PairAssetA, acc.PairAssetB),
@@ -146,6 +153,7 @@ func (qs queryServer) queryDynamicL1FeesCurrent(ctx cosmos.Context, req *types.Q
 			SwapCount:        acc.SwapCount,
 			PoolVolumeTor:    poolVolumeTor.String(),
 			OwnPoolVolumeTor: uintOrZero(acc.OwnPoolVolumeTor).String(),
+			SpanBlocks:       spanBlocks,
 		})
 	}
 

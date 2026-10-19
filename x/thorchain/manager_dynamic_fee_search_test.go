@@ -413,96 +413,6 @@ func (s *DynamicFeeMgrSuite) TestSearchFindsPeakForDominantAffiliate(c *C) {
 	c.Fatal("search did not converge")
 }
 
-func (s *DynamicFeeMgrSuite) TestSignificance(c *C) {
-	u := func(xs ...uint64) []cosmos.Uint {
-		out := make([]cosmos.Uint, len(xs))
-		for i, x := range xs {
-			out[i] = cosmos.NewUint(x)
-		}
-		return out
-	}
-	// No spread: any gap is real.
-	c.Check(significantlyDifferent(newSignalStats(u(101, 101)), newSignalStats(u(100, 100))), Equals, true)
-	c.Check(significantlyDifferent(newSignalStats(u(100, 100)), newSignalStats(u(100, 100))), Equals, false)
-	// Means 115 vs 100 with a spread of +/-60: inside the noise.
-	c.Check(significantlyDifferent(newSignalStats(u(55, 175)), newSignalStats(u(40, 160))), Equals, false)
-	// Same means with a spread of +/-2: clearly different.
-	c.Check(significantlyDifferent(newSignalStats(u(113, 117)), newSignalStats(u(98, 102))), Equals, true)
-
-	// Probe stats match the same values passed directly.
-	p := types.DynamicFeeProbe{}
-	for _, x := range u(113, 117) {
-		p.Add(x)
-	}
-	c.Check(newProbeStats(p).mean.Cmp(newSignalStats(u(113, 117)).mean), Equals, 0)
-	c.Check(newProbeStats(p).varOfMean.Cmp(newSignalStats(u(113, 117)).varOfMean), Equals, 0)
-}
-
-// TestSearchMeasuresLongerWhenNoisy pins the noise-aware measurement: a
-// tested fee keeps being measured, up to L1DynamicFeeProbeMaxEpochs, while
-// its gap to the best is inside the epoch-to-epoch spread, and a noisy higher
-// fee does not displace a lower one.
-func (s *DynamicFeeMgrSuite) TestSearchMeasuresLongerWhenNoisy(c *C) {
-	p := dynamicFeeParams{
-		floorBps: 1, ceilingBps: 20, deadbandBps: cosmos.ZeroUint(), tenK: cosmos.NewUint(10_000),
-		probeEpochs: 2, probeMaxEpochs: 4, minOtherBps: 1000,
-	}
-	entry := func(fees uint64) types.DynamicFeeEpochRecord {
-		return types.DynamicFeeEpochRecord{FeesTor: cosmos.NewUint(fees), PoolVolumeTor: types.SignalScale, OwnPoolVolumeTor: cosmos.ZeroUint()}
-	}
-	run := func(floorReads, ceilingReads []uint64) (reasons []string, rec types.DynamicFeeRecord) {
-		rec = types.DynamicFeeRecord{DynamicBps: 1}
-		for _, reads := range [][]uint64{floorReads, ceilingReads} {
-			for _, f := range reads {
-				rec.History = append(rec.History, entry(f))
-				var reason string
-				reason, rec.DynamicBps, _, _ = searchStep(&rec, rec.DynamicBps, p)
-				reasons = append(reasons, reason)
-			}
-		}
-		return reasons, rec
-	}
-
-	// Clean readings: two epochs at each fee are enough.
-	reasons, rec := run([]uint64{100, 100}, []uint64{150, 150})
-	c.Check(reasons, DeepEquals, []string{"search_measure", "search_probe", "search_measure", "search_probe"})
-	c.Check(rec.DynamicBps, Equals, uint64(10), Commentf("20 beat 1, so test the midpoint"))
-
-	// Noisy readings: the ceiling's higher mean is inside the noise, so it is
-	// measured to the cap and then loses to the lower fee.
-	reasons, rec = run([]uint64{60, 140}, []uint64{40, 260, 90, 210})
-	c.Check(reasons, DeepEquals, []string{"search_measure", "search_probe", "search_measure", "search_measure", "search_measure", "search_probe"})
-	c.Check(rec.Probes[1].Epochs, Equals, uint64(4))
-	c.Check(rec.DynamicBps, Equals, uint64(10), Commentf("1 stays best; the gap (1, 20) is next"))
-	best, _, _ := nextSearchBps(rec.Probes, 1, 20, cosmos.ZeroUint(), cosmos.NewUint(10_000))
-	c.Check(best, Equals, uint64(1), Commentf("a noisy higher fee does not displace a lower one"))
-}
-
-// TestTrackerUsesSignificance: with two or more epochs on each side of the
-// last change, the +/-step controller moves on a significant change even
-// below the deadband, and holds on a large but noisy one.
-func (s *DynamicFeeMgrSuite) TestTrackerUsesSignificance(c *C) {
-	tenK, deadband := cosmos.NewUint(10_000), cosmos.NewUint(1000) // 10%
-	hist := func(bps []uint64, fees []uint64) types.DynamicFeeRecord {
-		rec := types.DynamicFeeRecord{SearchDone: true}
-		for i := range bps {
-			rec.History = append(rec.History, types.DynamicFeeEpochRecord{BpsAtClose: bps[i], FeesTor: cosmos.NewUint(fees[i]), PoolVolumeTor: types.SignalScale})
-		}
-		return rec
-	}
-	// Up from 5 to 6; revenue 1000,1000 -> 1030,1030: a 3% rise, below the
-	// deadband, but with no spread it is real.
-	reason, bps, _, _, _ := decideNextBps(hist([]uint64{5, 5, 6, 6, 6}, []uint64{1000, 1000, 1030, 1030, 1030}), 6, 1, 20, 1, 3, deadband, tenK, 0)
-	c.Check(reason, Equals, "continue_up")
-	c.Check(bps, Equals, uint64(7))
-
-	// Up from 5 to 6; means 1000 -> 1500, a 50% rise, but the readings swing
-	// by +/-60%: hold.
-	reason, bps, _, _, _ = decideNextBps(hist([]uint64{5, 5, 6, 6, 6}, []uint64{400, 1600, 600, 2400, 1500}), 6, 1, 20, 1, 3, deadband, tenK, 0)
-	c.Check(reason, Equals, "hold")
-	c.Check(bps, Equals, uint64(6))
-}
-
 // TestMonitorRecordsHistoryOnly: a monitor thorname's swaps pay the static
 // minimum, so its record collects history but never searches or steps.
 func (s *DynamicFeeMgrSuite) TestMonitorRecordsHistoryOnly(c *C) {
@@ -533,4 +443,134 @@ func (s *DynamicFeeMgrSuite) TestMonitorRecordsHistoryOnly(c *C) {
 	all, err := qs.queryDynamicL1Fees(ctx, &types.QueryDynamicL1FeesRequest{})
 	c.Assert(err, IsNil)
 	c.Check(all.Entries[0].Phase, Equals, "monitor")
+}
+
+// TestSpanCapSealsBelowGate: a span that never clears the liquidity gate
+// rolls until it has run L1DynamicFeeMaxEpochBlocks, then the next boundary
+// seals it with what it has, so a fee too high to draw the gate's volume
+// still gets measured.
+func (s *DynamicFeeMgrSuite) TestSpanCapSealsBelowGate(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	k := mgr.Keeper()
+	setDynamicFeeTestMimirs(ctx, k)
+	k.SetMimir(ctx, "L1DynamicFeeMinSwaps", 5)
+	k.SetMimir(ctx, "L1DynamicFeeMaxEpochBlocks", 30)
+	dfm := newDynamicFeeMgr(k)
+	registerThorname(ctx, k, "tn", types.DynamicFeeStatePerPair)
+	pairA, pairB, _ := dynamicFeePairKey(common.BTCAsset, common.RuneAsset())
+
+	ctx = ctx.WithBlockHeight(10)
+	dfm.CreditPoolVolume(ctx, common.BTCAsset, common.RuneAsset(), cosmos.NewUint(10_000))
+	creditOneSwap(ctx, dfm, "tn", cosmos.NewUint(1_000), cosmos.NewUint(10))
+	for _, h := range []int64{20, 30} {
+		ctx = ctx.WithBlockHeight(h)
+		c.Assert(dfm.EndBlock(ctx), IsNil)
+		rec, err := k.GetDynamicFeeRecord(ctx, "tn", pairA, pairB)
+		c.Assert(err, IsNil)
+		c.Check(rec.History, HasLen, 0, Commentf("height %d: below the gate and under the cap, it rolls", h))
+	}
+
+	ctx = ctx.WithBlockHeight(40)
+	c.Assert(dfm.EndBlock(ctx), IsNil)
+	rec, err := k.GetDynamicFeeRecord(ctx, "tn", pairA, pairB)
+	c.Assert(err, IsNil)
+	c.Assert(rec.History, HasLen, 1, Commentf("30 blocks reached: sealed below the gate"))
+	c.Check(rec.History[0].Blocks, Equals, int64(30))
+	c.Check(rec.History[0].SwapCount, Equals, uint64(1))
+	c.Check(rec.SpanStartHeight, Equals, int64(40), Commentf("the next span starts at the seal"))
+	c.Check(rec.Probes, HasLen, 1)
+	acc, err := k.GetDynamicFeeAccumulator(ctx, "tn", pairA, pairB)
+	c.Assert(err, IsNil)
+	c.Check(acc.SwapCount, Equals, uint64(0), Commentf("the sealed accumulator is consumed"))
+
+	var capped bool
+	for _, evt := range ctx.EventManager().Events() {
+		for _, attr := range evt.Attributes {
+			if evt.Type == types.DynamicL1FeeUpdateEventType && attr.Key == "capped" && attr.Value == "true" {
+				capped = true
+			}
+		}
+	}
+	c.Check(capped, Equals, true)
+
+	qs := queryServer{mgr: mgr}
+	byName, err := qs.queryDynamicL1FeesByThorname(ctx, &types.QueryDynamicL1FeesByThornameRequest{Thorname: "tn"})
+	c.Assert(err, IsNil)
+	c.Check(byName.Pairs[0].History[0].Blocks, Equals, int64(30))
+
+	creditOneSwap(ctx, dfm, "tn", cosmos.NewUint(1_000), cosmos.NewUint(10))
+	ctx = ctx.WithBlockHeight(47)
+	current, err := qs.queryDynamicL1FeesCurrent(ctx, &types.QueryDynamicL1FeesCurrentRequest{})
+	c.Assert(err, IsNil)
+	c.Assert(current.Entries, HasLen, 1)
+	c.Check(current.Entries[0].SpanBlocks, Equals, int64(7))
+}
+
+// TestSpanCapSealsEmptySpan: a fee so high that nobody swaps still gets
+// measured. Once the span reaches the cap with no swaps at all, it is sealed
+// empty, which reads as zero revenue and moves the search on. The empty seal
+// is not activity, so an idle record still ages towards pruning. Monitor
+// records are never sealed empty.
+func (s *DynamicFeeMgrSuite) TestSpanCapSealsEmptySpan(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	k := mgr.Keeper()
+	setDynamicFeeTestMimirs(ctx, k)
+	k.SetMimir(ctx, "L1DynamicFeeCeilingBPS", 20)
+	k.SetMimir(ctx, "L1DynamicFeeMaxEpochBlocks", 20)
+	dfm := newDynamicFeeMgr(k)
+	registerThorname(ctx, k, "tn", types.DynamicFeeStatePerPair)
+	registerThorname(ctx, k, "mon", types.DynamicFeeStatePerPairMonitor)
+	pairA, pairB, _ := dynamicFeePairKey(common.BTCAsset, common.RuneAsset())
+	for _, tn := range []string{"tn", "mon"} {
+		c.Assert(k.SetDynamicFeeRecord(ctx, types.DynamicFeeRecord{
+			Thorname: tn, PairAssetA: pairA, PairAssetB: pairB,
+			DynamicBps: 20, LastActiveEpoch: 1, SpanStartHeight: 10,
+			Probes: []types.DynamicFeeProbe{{Bps: 1, SignalSum: cosmos.NewUint(500), Epochs: 1}},
+		}), IsNil)
+	}
+
+	// Other swappers keep trading; "tn" draws no swaps at 20 bps.
+	for _, h := range []int64{20, 30} {
+		dfm.CreditPoolVolume(ctx, common.BTCAsset, common.RuneAsset(), cosmos.NewUint(10_000))
+		ctx = ctx.WithBlockHeight(h)
+		c.Assert(dfm.EndBlock(ctx), IsNil)
+	}
+
+	rec, err := k.GetDynamicFeeRecord(ctx, "tn", pairA, pairB)
+	c.Assert(err, IsNil)
+	c.Assert(rec.History, HasLen, 1, Commentf("sealed empty at the cap"))
+	c.Check(rec.History[0].FeesTor.IsZero(), Equals, true)
+	c.Check(rec.History[0].Blocks, Equals, int64(20))
+	c.Assert(rec.Probes, HasLen, 2)
+	c.Check(rec.Probes[1].Bps, Equals, uint64(20))
+	c.Check(rec.Probes[1].Mean().IsZero(), Equals, true, Commentf("zero revenue at 20 bps"))
+	c.Check(rec.DynamicBps, Equals, uint64(10), Commentf("1 beat 20, so the search tests the midpoint"))
+	c.Check(rec.LastActiveEpoch, Equals, uint64(1), Commentf("an empty seal is not activity"))
+
+	mon, err := k.GetDynamicFeeRecord(ctx, "mon", pairA, pairB)
+	c.Assert(err, IsNil)
+	c.Check(mon.History, HasLen, 0, Commentf("monitor records are never sealed empty"))
+}
+
+// TestSpanStartsForRecordsWithoutOne: a record from before span tracking (no
+// start height) starts its span at the first boundary instead of being sealed
+// by the cap on the spot.
+func (s *DynamicFeeMgrSuite) TestSpanStartsForRecordsWithoutOne(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	k := mgr.Keeper()
+	setDynamicFeeTestMimirs(ctx, k)
+	k.SetMimir(ctx, "L1DynamicFeeMaxEpochBlocks", 20)
+	dfm := newDynamicFeeMgr(k)
+	registerThorname(ctx, k, "tn", types.DynamicFeeStatePerPair)
+	pairA, pairB, _ := dynamicFeePairKey(common.BTCAsset, common.RuneAsset())
+	c.Assert(k.SetDynamicFeeRecord(ctx, types.DynamicFeeRecord{Thorname: "tn", PairAssetA: pairA, PairAssetB: pairB, DynamicBps: 9}), IsNil)
+
+	dfm.CreditPoolVolume(ctx, common.BTCAsset, common.RuneAsset(), cosmos.NewUint(10_000))
+	ctx = ctx.WithBlockHeight(100)
+	c.Assert(dfm.EndBlock(ctx), IsNil)
+	rec, err := k.GetDynamicFeeRecord(ctx, "tn", pairA, pairB)
+	c.Assert(err, IsNil)
+	c.Check(rec.SpanStartHeight, Equals, int64(100))
+	c.Check(rec.History, HasLen, 0)
+	c.Check(rec.DynamicBps, Equals, uint64(9))
 }

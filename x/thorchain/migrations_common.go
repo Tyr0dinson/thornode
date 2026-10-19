@@ -532,8 +532,8 @@ func (m Migrator) Migrate20to21(ctx cosmos.Context) error {
 // the controller one spurious step. Dropping the partial epoch is cheaper than
 // reading it wrong.
 //
-// Records themselves are left alone: they keep their current dynamic_bps, and
-// the seal drops their pre-upgrade history on its own.
+// Records keep their current dynamic_bps (the seal drops their pre-upgrade
+// history on its own); their measurement span starts at the upgrade height.
 func (m Migrator) Migrate21to22(ctx cosmos.Context) error {
 	if err := m.mgr.LoadManagerIfNecessary(ctx); err != nil {
 		return err
@@ -563,6 +563,27 @@ func (m Migrator) Migrate21to22(ctx cosmos.Context) error {
 
 	// ponytail: pool accumulators cannot exist yet — the prefix ships with
 	// this upgrade — so there is nothing to clear on that side.
+
+	// Start every record's measurement span at the upgrade height, so the
+	// L1DynamicFeeMaxEpochBlocks cap counts from here rather than sealing
+	// every record at the first epoch boundary.
+	var recs []types.DynamicFeeRecord
+	recIter := k.GetDynamicFeeRecordIterator(ctx)
+	for ; recIter.Valid(); recIter.Next() {
+		var rec types.DynamicFeeRecord
+		if err := k.Cdc().Unmarshal(recIter.Value(), &rec); err != nil {
+			recIter.Close()
+			return fmt.Errorf("read dynamic fee record: %w", err)
+		}
+		recs = append(recs, rec)
+	}
+	recIter.Close()
+	for _, rec := range recs {
+		rec.SpanStartHeight = ctx.BlockHeight()
+		if err := k.SetDynamicFeeRecord(ctx, rec); err != nil {
+			return err
+		}
+	}
 
 	ctx.Logger().Info("ADR-026: cleared in-flight dynamic fee accumulators", "count", len(keys))
 	return nil

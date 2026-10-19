@@ -5804,6 +5804,14 @@ components:
             An epoch whose other flow is under L1DynamicFeeMinOtherFlowBPS of
             the pool is recorded but not used as a measurement
           example: "300000000000"
+        blocks:
+          type: integer
+          format: int64
+          description: |
+            length of the span this entry covers, in blocks. A span below the
+            liquidity gate rolls into the next epoch, up to
+            L1DynamicFeeMaxEpochBlocks, after which it is sealed regardless
+          example: 14400
 
     DynamicL1FeePairDetail:
       type: object
@@ -5944,6 +5952,14 @@ components:
             the thorname's own share of pool_volume_tor so far, counting every
             swap leg
           example: "300000000000"
+        span_blocks:
+          type: integer
+          format: int64
+          description: |
+            blocks since this measurement span began. Once it reaches
+            L1DynamicFeeMaxEpochBlocks the next epoch boundary seals the span,
+            even below the liquidity gate
+          example: 28800
 
     DynamicL1FeesCurrentResponse:
       type: object

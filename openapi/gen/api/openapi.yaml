@@ -8886,6 +8886,7 @@ components:
     DynamicL1FeeHistoryEntry:
       example:
         pool_volume_tor: "900000000000"
+        blocks: 14400
         volume_tor: "10000000000"
         epoch: 41
         fees_tor: "12345678"
@@ -8934,6 +8935,13 @@ components:
             \ used as a measurement\n"
           example: "300000000000"
           type: string
+        blocks:
+          description: "length of the span this entry covers, in blocks. A span below\
+            \ the\nliquidity gate rolls into the next epoch, up to\nL1DynamicFeeMaxEpochBlocks,\
+            \ after which it is sealed regardless\n"
+          example: 14400
+          format: int64
+          type: integer
       required:
       - bps_at_close
       - epoch
@@ -8955,6 +8963,7 @@ components:
           epochs: 1
         history:
         - pool_volume_tor: "900000000000"
+          blocks: 14400
           volume_tor: "10000000000"
           epoch: 41
           fees_tor: "12345678"
@@ -8962,6 +8971,7 @@ components:
           own_pool_volume_tor: "300000000000"
           bps_at_close: 12
         - pool_volume_tor: "900000000000"
+          blocks: 14400
           volume_tor: "10000000000"
           epoch: 41
           fees_tor: "12345678"
@@ -9050,6 +9060,7 @@ components:
             epochs: 1
           history:
           - pool_volume_tor: "900000000000"
+            blocks: 14400
             volume_tor: "10000000000"
             epoch: 41
             fees_tor: "12345678"
@@ -9057,6 +9068,7 @@ components:
             own_pool_volume_tor: "300000000000"
             bps_at_close: 12
           - pool_volume_tor: "900000000000"
+            blocks: 14400
             volume_tor: "10000000000"
             epoch: 41
             fees_tor: "12345678"
@@ -9076,6 +9088,7 @@ components:
             epochs: 1
           history:
           - pool_volume_tor: "900000000000"
+            blocks: 14400
             volume_tor: "10000000000"
             epoch: 41
             fees_tor: "12345678"
@@ -9083,6 +9096,7 @@ components:
             own_pool_volume_tor: "300000000000"
             bps_at_close: 12
           - pool_volume_tor: "900000000000"
+            blocks: 14400
             volume_tor: "10000000000"
             epoch: 41
             fees_tor: "12345678"
@@ -9113,6 +9127,7 @@ components:
       example:
         thorname: alice
         pool_volume_tor: "900000000000"
+        span_blocks: 28800
         volume_tor: "10000000000"
         epoch: 42
         fees_tor: "12345678"
@@ -9161,6 +9176,13 @@ components:
             \ every\nswap leg\n"
           example: "300000000000"
           type: string
+        span_blocks:
+          description: "blocks since this measurement span began. Once it reaches\n\
+            L1DynamicFeeMaxEpochBlocks the next epoch boundary seals the span,\neven\
+            \ below the liquidity gate\n"
+          example: 28800
+          format: int64
+          type: integer
       required:
       - epoch
       - fees_tor
@@ -9175,6 +9197,7 @@ components:
         entries:
         - thorname: alice
           pool_volume_tor: "900000000000"
+          span_blocks: 28800
           volume_tor: "10000000000"
           epoch: 42
           fees_tor: "12345678"
@@ -9183,6 +9206,7 @@ components:
           own_pool_volume_tor: "300000000000"
         - thorname: alice
           pool_volume_tor: "900000000000"
+          span_blocks: 28800
           volume_tor: "10000000000"
           epoch: 42
           fees_tor: "12345678"
