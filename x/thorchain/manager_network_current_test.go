@@ -2011,6 +2011,122 @@ func (s *NetworkManagerTestSuite) TestWithdrawLPsRetainsPendingClaim(c *C) {
 	c.Assert(pool.PendingInboundRune.IsZero(), Equals, true, Commentf("pool pending inbound rune should be settled, got %s", pool.PendingInboundRune))
 }
 
+func (s *NetworkManagerTestSuite) TestRagnarokDoesNotPayPoisonedPOLReservePendingAsset(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	ctx = ctx.WithBlockHeight(100000)
+	na := GetRandomValidatorNode(NodeActive)
+	c.Assert(k.SetNodeAccount(ctx, na), IsNil)
+
+	pendingAsset := cosmos.NewUint(common.One)
+	pool := NewPool()
+	pool.Asset = common.BTCAsset
+	pool.BalanceRune = cosmos.NewUint(1000 * common.One)
+	pool.BalanceAsset = cosmos.NewUint(10 * common.One)
+	pool.LPUnits = cosmos.NewUint(1600)
+	pool.PendingInboundAsset = pendingAsset
+	pool.Status = PoolStaged
+	c.Assert(k.SetPool(ctx, pool), IsNil)
+
+	polAddress, err := k.GetModuleAddress(POLReserveName)
+	c.Assert(err, IsNil)
+	attackerAddress := GetRandomBTCAddress()
+	k.SetLiquidityProvider(ctx, LiquidityProvider{
+		Asset:             common.BTCAsset,
+		RuneAddress:       polAddress,
+		AssetAddress:      attackerAddress,
+		LastAddHeight:     5,
+		Units:             cosmos.ZeroUint(),
+		PendingRune:       cosmos.ZeroUint(),
+		PendingAsset:      pendingAsset,
+		RuneDepositValue:  cosmos.ZeroUint(),
+		AssetDepositValue: cosmos.ZeroUint(),
+	})
+
+	mgr := NewDummyMgrWithKeeper(k)
+	networkMgr := newNetworkMgr(k, mgr.TxOutStore(), mgr.EventMgr())
+	c.Assert(networkMgr.withdrawLPs(ctx, pool, na, mgr), Equals, true)
+
+	items, err := mgr.TxOutStore().GetOutboundItems(ctx)
+	c.Assert(err, IsNil)
+	for _, item := range items {
+		c.Check(item.ToAddress.Equals(attackerAddress), Equals, false,
+			Commentf("Ragnarok must not refund a poisoned protocol-owned asset claim"))
+	}
+	got, err := k.GetLiquidityProvider(ctx, common.BTCAsset, polAddress)
+	c.Assert(err, IsNil)
+	c.Check(got.PendingAsset.IsZero(), Equals, true)
+	gotPool, err := k.GetPool(ctx, common.BTCAsset)
+	c.Assert(err, IsNil)
+	c.Check(gotPool.PendingInboundAsset.IsZero(), Equals, true)
+	c.Check(gotPool.BalanceAsset.Equal(pool.BalanceAsset.Add(pendingAsset)), Equals, true,
+		Commentf("poisoned pending asset should be accounted as a pool donation"))
+}
+
+func (s *NetworkManagerTestSuite) TestRagnarokDrainsPoisonedPOLReserveUnitsRuneOnly(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	ctx = ctx.WithBlockHeight(100000)
+	k := mgr.Keeper()
+	na := GetRandomValidatorNode(NodeActive)
+	c.Assert(k.SetNodeAccount(ctx, na), IsNil)
+
+	pool := NewPool()
+	pool.Asset = common.BTCAsset
+	pool.BalanceRune = cosmos.NewUint(1000 * common.One)
+	pool.BalanceAsset = cosmos.NewUint(10 * common.One)
+	pool.LPUnits = cosmos.NewUint(3200)
+	pool.Status = PoolStaged
+	c.Assert(k.SetPool(ctx, pool), IsNil)
+
+	// Native Ragnarok payouts need an active vault for txout routing, even
+	// though this payout ultimately moves module-to-module on THORChain.
+	vault := GetRandomVault()
+	vault.StatusSince = ctx.BlockHeight() - 10
+	c.Assert(k.SetVault(ctx, vault), IsNil)
+
+	polAddress, err := k.GetModuleAddress(POLReserveName)
+	c.Assert(err, IsNil)
+	attackerAddress := GetRandomBTCAddress()
+	lpUnits := cosmos.NewUint(1600)
+	k.SetLiquidityProvider(ctx, LiquidityProvider{
+		Asset:             common.BTCAsset,
+		RuneAddress:       polAddress,
+		AssetAddress:      attackerAddress,
+		LastAddHeight:     5,
+		Units:             lpUnits,
+		PendingRune:       cosmos.ZeroUint(),
+		PendingAsset:      cosmos.ZeroUint(),
+		RuneDepositValue:  cosmos.ZeroUint(),
+		AssetDepositValue: cosmos.ZeroUint(),
+	})
+
+	k.SetMimir(ctx, "PauseAsymWithdrawal-BTC", 1)
+	k.SetMimir(ctx, "RAGNAROK-BTC-BTC", 1)
+	networkMgr := newNetworkMgr(k, mgr.TxOutStore(), mgr.EventMgr())
+	polBefore := k.GetRuneBalanceOfModule(ctx, POLReserveName)
+	c.Assert(networkMgr.withdrawLPs(ctx, pool, na, mgr), Equals, true,
+		Commentf("Ragnarok should finish processing the poisoned LP"))
+
+	polAfter := k.GetRuneBalanceOfModule(ctx, POLReserveName)
+	c.Check(polAfter.GT(polBefore), Equals, true,
+		Commentf("RUNE should return to pol_reserve: before %s after %s", polBefore, polAfter))
+	items, err := mgr.TxOutStore().GetOutboundItems(ctx)
+	c.Assert(err, IsNil)
+	for _, item := range items {
+		c.Check(item.ToAddress.Equals(attackerAddress), Equals, false,
+			Commentf("Ragnarok must not pay an asset leg to the attached address"))
+		c.Check(item.Coin.Asset.Equals(common.BTCAsset), Equals, false,
+			Commentf("Ragnarok must not schedule an asset outbound for the poisoned LP"))
+	}
+	gotLP, err := k.GetLiquidityProvider(ctx, common.BTCAsset, polAddress)
+	c.Assert(err, IsNil)
+	c.Check(gotLP.Units.IsZero(), Equals, true,
+		Commentf("processed protocol LP units should be cleared"))
+	gotPool, err := k.GetPool(ctx, common.BTCAsset)
+	c.Assert(err, IsNil)
+	c.Check(gotPool.LPUnits.LT(pool.LPUnits), Equals, true,
+		Commentf("pool LP units should decrease during the exit"))
+}
+
 // TestWithdrawSaversRetainsOnTransientError verifies that a ragnarok saver
 // withdrawal which fails for a transient reason (here BurnSynths disabling
 // saver withdrawals outside of ragnarok) does NOT delete the saver's claim.
@@ -5222,6 +5338,39 @@ func (s *NetworkManagerTestSuite) TestPOLReserveCycleZeroBalance(c *C) {
 	c.Assert(err, IsNil)
 }
 
+func (s *NetworkManagerTestSuite) TestPOLReserveCycleSkipsContaminatedPosition(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	networkMgr := newNetworkMgr(mgr.Keeper(), mgr.TxOutStore(), mgr.EventMgr())
+
+	polReserveSetPool(c, ctx, mgr, common.BTCAsset, 1000, 10)
+	polAddress, err := mgr.Keeper().GetModuleAddress(POLReserveName)
+	c.Assert(err, IsNil)
+	pendingAsset := cosmos.NewUint(common.One)
+	mgr.Keeper().SetLiquidityProvider(ctx, LiquidityProvider{
+		Asset:             common.BTCAsset,
+		RuneAddress:       polAddress,
+		AssetAddress:      GetRandomBTCAddress(),
+		LastAddHeight:     ctx.BlockHeight(),
+		Units:             cosmos.ZeroUint(),
+		PendingRune:       cosmos.ZeroUint(),
+		PendingAsset:      pendingAsset,
+		RuneDepositValue:  cosmos.ZeroUint(),
+		AssetDepositValue: cosmos.ZeroUint(),
+	})
+
+	FundModule(c, ctx, mgr.Keeper(), POLReserveName, 50*common.One)
+	mgr.Keeper().SetMimir(ctx, constants.POLReserveMaxDeployment.String(), 100*common.One)
+	mgr.Keeper().SetPOLReserveTarget(ctx, common.BTCAsset)
+
+	before := mgr.Keeper().GetRuneBalanceOfModule(ctx, POLReserveName)
+	c.Assert(networkMgr.POLReserveCycle(ctx, mgr), IsNil)
+	after := mgr.Keeper().GetRuneBalanceOfModule(ctx, POLReserveName)
+	c.Check(after.Equal(before), Equals, true, Commentf("contaminated position must not receive protocol RUNE"))
+	got, err := mgr.Keeper().GetLiquidityProvider(ctx, common.BTCAsset, polAddress)
+	c.Assert(err, IsNil)
+	c.Check(got.PendingAsset.Equal(pendingAsset), Equals, true)
+}
+
 func (s *NetworkManagerTestSuite) TestPOLReserveCycleBestPool(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	networkMgr := newNetworkMgr(mgr.Keeper(), mgr.TxOutStore(), mgr.EventMgr())
@@ -5796,6 +5945,34 @@ func (s *NetworkManagerTestSuite) TestPOLReserveDrainStartsNextBlockAndWithdraws
 	amount, found := polReserveEventAttr(nextCtx, types.POLReserveDrainEventType, "rune_amount")
 	c.Assert(found, Equals, true)
 	c.Check(amount, Equals, received.String())
+}
+
+func (s *NetworkManagerTestSuite) TestPOLReserveDrainNeverPaysAttachedAssetAddress(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	networkMgr := newNetworkMgr(mgr.Keeper(), mgr.TxOutStore(), mgr.EventMgr())
+	polAddress := polReserveSetupDrainPosition(c, ctx, mgr, networkMgr)
+
+	attackerAddress := GetRandomBTCAddress()
+	lp, err := mgr.Keeper().GetLiquidityProvider(ctx, common.BTCAsset, polAddress)
+	c.Assert(err, IsNil)
+	lp.AssetAddress = attackerAddress
+	mgr.Keeper().SetLiquidityProvider(ctx, lp)
+
+	// This would normally turn a requested RUNE-only withdrawal back into a
+	// symmetric withdrawal. Protocol-owned positions must bypass it.
+	mgr.Keeper().SetMimir(ctx, "PauseAsymWithdrawal-BTC", 1)
+	polReserveStartDrain(ctx, mgr, "BTC-BTC", 10*common.One)
+	c.Assert(networkMgr.POLReserveDrain(ctx, mgr), IsNil)
+	nextCtx := ctx.WithBlockHeight(ctx.BlockHeight() + 1)
+	c.Assert(networkMgr.POLReserveDrain(nextCtx, mgr), IsNil)
+
+	c.Check(mgr.Keeper().GetRuneBalanceOfModule(nextCtx, POLReserveName).IsZero(), Equals, false)
+	items, err := mgr.TxOutStore().GetOutboundItems(nextCtx)
+	c.Assert(err, IsNil)
+	for _, item := range items {
+		c.Check(item.ToAddress.Equals(attackerAddress), Equals, false,
+			Commentf("drain must not pay an asset leg to the attached address"))
+	}
 }
 
 func (s *NetworkManagerTestSuite) TestPOLReserveDrainAccruesBelowOneBasisPoint(c *C) {

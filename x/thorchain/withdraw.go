@@ -31,6 +31,7 @@ func withdraw(ctx cosmos.Context, msg MsgWithdrawLiquidity, mgr Manager) (cosmos
 		ctx.Logger().Error("failed to find liquidity provider", "error", err)
 		return cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), err
 	}
+	protocolOwned := isProtocolOwnedLiquidityAddress(mgr, lp.RuneAddress)
 
 	withdrawToSecuredAsset := !msg.Asset.IsNative() && !lp.AssetAddress.IsEmpty() && lp.AssetAddress.Equals(lp.RuneAddress)
 
@@ -43,12 +44,21 @@ func withdraw(ctx cosmos.Context, msg MsgWithdrawLiquidity, mgr Manager) (cosmos
 			mgr.Keeper().RemoveLiquidityProvider(ctx, lp)
 			pool.PendingInboundRune = common.SafeSub(pool.PendingInboundRune, lp.PendingRune)
 			pool.PendingInboundAsset = common.SafeSub(pool.PendingInboundAsset, lp.PendingAsset)
+			assetAmount := cosmos.RoundToDecimal(lp.PendingAsset, pool.Decimals)
+			if protocolOwned {
+				// No valid protocol-owned position has an asset-side claim. A
+				// legacy poisoned staged add must not create an outbound to the
+				// attached address, so account its inbound asset as a donation to
+				// the pool while returning any pending RUNE to the module.
+				pool.BalanceAsset = pool.BalanceAsset.Add(lp.PendingAsset)
+				assetAmount = cosmos.ZeroUint()
+			}
 			if err = mgr.Keeper().SetPool(ctx, pool); err != nil {
 				ctx.Logger().Error("failed to save pool pending inbound funds", "error", err)
 			}
 			// remove lp
 
-			return lp.PendingRune, cosmos.RoundToDecimal(lp.PendingAsset, pool.Decimals), lp.Units, cosmos.ZeroUint(), nil
+			return lp.PendingRune, assetAmount, lp.Units, cosmos.ZeroUint(), nil
 		}
 		return cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), errNoLiquidityUnitLeft
 	}
@@ -65,6 +75,12 @@ func withdraw(ctx cosmos.Context, msg MsgWithdrawLiquidity, mgr Manager) (cosmos
 
 	pauseAsym, _ := mgr.Keeper().GetMimir(ctx, fmt.Sprintf("PauseAsymWithdrawal-%s", pool.Asset.GetChain()))
 	assetToWithdraw := assetToWithdraw(msg, lp, pauseAsym)
+	if protocolOwned {
+		// Protocol-owned positions are always RUNE-only. In particular, do not
+		// let PauseAsymWithdrawal turn a drain or Ragnarok into a symmetric
+		// withdrawal that pays a legacy attached external address.
+		assetToWithdraw = common.RuneAsset()
+	}
 
 	if pool.Status == PoolAvailable && lp.RuneDepositValue.IsZero() && lp.AssetDepositValue.IsZero() {
 		lp.RuneDepositValue = lp.RuneDepositValue.Add(common.GetSafeShare(lp.Units, pool.GetPoolUnits(), pool.BalanceRune))

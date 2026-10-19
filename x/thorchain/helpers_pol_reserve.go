@@ -18,11 +18,28 @@ var (
 	drainPOLPoolMimirPrefix        = strings.ToUpper(strings.TrimSuffix(constants.MimirTemplateDrainPOLPool, "%s"))
 )
 
+// isProtocolOwnedLiquidityAddress reports whether address is one of the module
+// accounts allowed to own protocol liquidity. These positions must remain
+// RUNE-address-only: attaching an external address would let that address claim
+// the asset leg of a later protocol withdrawal.
+func isProtocolOwnedLiquidityAddress(mgr Manager, address common.Address) bool {
+	if address.IsEmpty() {
+		return false
+	}
+	for _, module := range []string{ReserveName, POLReserveName} {
+		moduleAddress := common.Address(mgr.Keeper().GetModuleAccAddress(module).String())
+		if address.Equals(moduleAddress) {
+			return true
+		}
+	}
+	return false
+}
+
 // polReserveDeployable reports whether the POL Reserve may deposit into pool.
 // The global trading halt is left to the callers that deposit.
 func polReserveDeployable(ctx cosmos.Context, mgr Manager, pool Pool) bool {
 	k := mgr.Keeper()
-	return pool.Asset.IsExternalL1Asset() &&
+	deployable := pool.Asset.IsExternalL1Asset() &&
 		pool.Status == PoolAvailable &&
 		!pool.BalanceRune.IsZero() &&
 		!k.IsChainTradingHalted(ctx, pool.Asset.GetChain()) &&
@@ -30,6 +47,27 @@ func polReserveDeployable(ctx cosmos.Context, mgr Manager, pool Pool) bool {
 		!k.IsLPPaused(ctx, pool.Asset.GetChain()) &&
 		!k.IsPoolDepositPaused(ctx, pool.Asset) &&
 		k.IsPOLReserveEligiblePool(ctx, pool.Asset)
+	if !deployable {
+		return false
+	}
+
+	// A legacy staged add may already have attached an attacker-controlled asset
+	// address to the pol_reserve key. Never complete or add to that position.
+	polAddress, err := k.GetModuleAddress(POLReserveName)
+	if err != nil {
+		ctx.Logger().Error("fail to get pol_reserve address", "error", err)
+		return false
+	}
+	lp, err := k.GetLiquidityProvider(ctx, pool.Asset, polAddress)
+	if err != nil {
+		ctx.Logger().Error("fail to get pol_reserve liquidity provider", "pool", pool.Asset, "error", err)
+		return false
+	}
+	if !lp.AssetAddress.IsEmpty() || !lp.PendingAsset.IsZero() {
+		ctx.Logger().Error("refusing POL Reserve deployment into position with an asset-side claim", "pool", pool.Asset)
+		return false
+	}
+	return true
 }
 
 // polReserveDrainable reports whether the POL Reserve position lp may be

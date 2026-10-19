@@ -51,6 +51,14 @@ func (m *MockAddLiquidityKeeper) GetModuleAddress(mod string) (common.Address, e
 	return m.polAddress, nil
 }
 
+func (m *MockAddLiquidityKeeper) GetModuleAccAddress(mod string) cosmos.AccAddress {
+	address, err := m.polAddress.AccAddress()
+	if err != nil {
+		return nil
+	}
+	return address
+}
+
 func (m *MockAddLiquidityKeeper) GetPOL(_ cosmos.Context) (ProtocolOwnedLiquidity, error) {
 	return m.pol, nil
 }
@@ -1495,4 +1503,194 @@ func (s *HandlerAddLiquiditySuite) TestAddLiquidityPOL(c *C) {
 	pol, err := mgr.Keeper().GetPOL(ctx)
 	c.Assert(err, IsNil)
 	c.Check(pol.RuneDeposited.Uint64(), Equals, uint64(10000000000))
+}
+
+func (s *HandlerAddLiquiditySuite) TestAddLiquidityRejectsPOLReserveAssetAddress(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	nodeAccount := GetRandomValidatorNode(NodeActive)
+	c.Assert(mgr.K.SetNodeAccount(ctx, nodeAccount), IsNil)
+
+	pool := NewPool()
+	pool.Asset = common.ETHAsset
+	pool.Status = PoolAvailable
+	pool.BalanceRune = cosmos.NewUint(100 * common.One)
+	pool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	c.Assert(mgr.K.SetPool(ctx, pool), IsNil)
+
+	attackerAddress := GetRandomETHAddress()
+	for _, module := range []string{ReserveName, POLReserveName} {
+		moduleAddress, err := mgr.Keeper().GetModuleAddress(module)
+		c.Assert(err, IsNil)
+		tx := GetRandomTx()
+		tx.FromAddress = attackerAddress
+		tx.Coins = common.Coins{common.NewCoin(common.ETHAsset, cosmos.NewUint(common.One))}
+		msg := NewMsgAddLiquidity(
+			tx,
+			common.ETHAsset,
+			cosmos.ZeroUint(),
+			cosmos.NewUint(common.One),
+			moduleAddress,
+			attackerAddress,
+			common.NoAddress,
+			cosmos.ZeroUint(),
+			nodeAccount.NodeAddress,
+		)
+
+		err = NewAddLiquidityHandler(mgr).validate(ctx, *msg)
+		c.Assert(err, NotNil, Commentf("external asset address must not be paired with %s", module))
+	}
+}
+
+func (s *HandlerAddLiquiditySuite) TestAddLiquidityRunRejectsPOLReserveAssetAddressAtomically(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	nodeAccount := GetRandomValidatorNode(NodeActive)
+	c.Assert(mgr.K.SetNodeAccount(ctx, nodeAccount), IsNil)
+
+	pool := NewPool()
+	pool.Asset = common.ETHAsset
+	pool.Status = PoolAvailable
+	pool.BalanceRune = cosmos.NewUint(100 * common.One)
+	pool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	pool.LPUnits = cosmos.NewUint(100 * common.One)
+	c.Assert(mgr.K.SetPool(ctx, pool), IsNil)
+
+	polReserveAddress, err := mgr.Keeper().GetModuleAddress(POLReserveName)
+	c.Assert(err, IsNil)
+	attackerAddress := GetRandomETHAddress()
+	tx := GetRandomTx()
+	tx.FromAddress = attackerAddress
+	tx.Coins = common.Coins{common.NewCoin(common.ETHAsset, cosmos.NewUint(common.One))}
+	msg := NewMsgAddLiquidity(
+		tx,
+		common.ETHAsset,
+		cosmos.ZeroUint(),
+		cosmos.NewUint(common.One),
+		polReserveAddress,
+		attackerAddress,
+		common.NoAddress,
+		cosmos.ZeroUint(),
+		nodeAccount.NodeAddress,
+	)
+
+	_, err = NewAddLiquidityHandler(mgr).Run(ctx, msg)
+	c.Assert(err, ErrorMatches, ".*protocol-owned liquidity cannot have an asset address.*")
+
+	gotPool, err := mgr.Keeper().GetPool(ctx, common.ETHAsset)
+	c.Assert(err, IsNil)
+	c.Check(gotPool.BalanceRune.Equal(pool.BalanceRune), Equals, true)
+	c.Check(gotPool.BalanceAsset.Equal(pool.BalanceAsset), Equals, true)
+	c.Check(gotPool.PendingInboundRune.IsZero(), Equals, true)
+	c.Check(gotPool.PendingInboundAsset.IsZero(), Equals, true)
+	gotLP, err := mgr.Keeper().GetLiquidityProvider(ctx, common.ETHAsset, polReserveAddress)
+	c.Assert(err, IsNil)
+	c.Check(gotLP.Units.IsZero(), Equals, true)
+	c.Check(gotLP.PendingRune.IsZero(), Equals, true)
+	c.Check(gotLP.PendingAsset.IsZero(), Equals, true)
+	c.Check(gotLP.AssetAddress.IsEmpty(), Equals, true)
+}
+
+func (s *HandlerAddLiquiditySuite) TestAddLiquidityRejectsContaminatedPOLReservePosition(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	nodeAccount := GetRandomValidatorNode(NodeActive)
+	c.Assert(mgr.K.SetNodeAccount(ctx, nodeAccount), IsNil)
+
+	pendingAsset := cosmos.NewUint(common.One)
+	pool := NewPool()
+	pool.Asset = common.ETHAsset
+	pool.Status = PoolAvailable
+	pool.BalanceRune = cosmos.NewUint(100 * common.One)
+	pool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	pool.LPUnits = cosmos.NewUint(100 * common.One)
+	pool.PendingInboundAsset = pendingAsset
+	c.Assert(mgr.K.SetPool(ctx, pool), IsNil)
+
+	polReserveAddress, err := mgr.Keeper().GetModuleAddress(POLReserveName)
+	c.Assert(err, IsNil)
+	attackerAddress := GetRandomETHAddress()
+	mgr.Keeper().SetLiquidityProvider(ctx, LiquidityProvider{
+		Asset:             common.ETHAsset,
+		RuneAddress:       polReserveAddress,
+		AssetAddress:      attackerAddress,
+		LastAddHeight:     ctx.BlockHeight(),
+		Units:             cosmos.ZeroUint(),
+		PendingRune:       cosmos.ZeroUint(),
+		PendingAsset:      pendingAsset,
+		RuneDepositValue:  cosmos.ZeroUint(),
+		AssetDepositValue: cosmos.ZeroUint(),
+	})
+
+	asgardAddress, err := mgr.Keeper().GetModuleAddress(AsgardName)
+	c.Assert(err, IsNil)
+	runeAmount := cosmos.NewUint(10 * common.One)
+	tx := common.NewTx(
+		common.BlankTxID,
+		polReserveAddress,
+		asgardAddress,
+		common.NewCoins(common.NewCoin(common.RuneAsset(), runeAmount)),
+		nil,
+		"THOR-POL-RESERVE-ADD",
+	)
+	msg := NewMsgAddLiquidity(
+		tx,
+		common.ETHAsset,
+		runeAmount,
+		cosmos.ZeroUint(),
+		polReserveAddress,
+		common.NoAddress,
+		common.NoAddress,
+		cosmos.ZeroUint(),
+		nodeAccount.NodeAddress,
+	)
+
+	_, err = NewAddLiquidityHandler(mgr).Run(ctx, msg)
+	c.Assert(err, NotNil, Commentf("protocol deposit must not complete a contaminated staged position"))
+
+	gotPool, err := mgr.Keeper().GetPool(ctx, common.ETHAsset)
+	c.Assert(err, IsNil)
+	c.Check(gotPool.BalanceRune.Equal(pool.BalanceRune), Equals, true)
+	c.Check(gotPool.PendingInboundAsset.Equal(pendingAsset), Equals, true)
+	gotLP, err := mgr.Keeper().GetLiquidityProvider(ctx, common.ETHAsset, polReserveAddress)
+	c.Assert(err, IsNil)
+	c.Check(gotLP.AssetAddress.Equals(attackerAddress), Equals, true)
+	c.Check(gotLP.PendingAsset.Equal(pendingAsset), Equals, true)
+}
+
+func (s *HandlerAddLiquiditySuite) TestAddLiquidityRejectsPOLReserveAssetAmountWithoutAddress(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	pool := NewPool()
+	pool.Asset = common.XMRAsset
+	pool.Status = PoolAvailable
+	pool.BalanceRune = cosmos.NewUint(100 * common.One)
+	pool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	pool.LPUnits = cosmos.NewUint(100 * common.One)
+	c.Assert(mgr.K.SetPool(ctx, pool), IsNil)
+
+	polReserveAddress, err := mgr.Keeper().GetModuleAddress(POLReserveName)
+	c.Assert(err, IsNil)
+	err = NewAddLiquidityHandler(mgr).addLiquidity(
+		ctx,
+		common.XMRAsset,
+		cosmos.ZeroUint(),
+		cosmos.NewUint(common.One),
+		polReserveAddress,
+		common.NoAddress,
+		GetRandomTxHash(),
+		false,
+		mgr.GetConstants(),
+	)
+	c.Assert(err, ErrorMatches, ".*protocol-owned liquidity cannot have an asset-side claim.*",
+		Commentf("an asset amount with a normalized empty sender must not attach to pol_reserve"))
+
+	gotPool, err := mgr.Keeper().GetPool(ctx, common.XMRAsset)
+	c.Assert(err, IsNil)
+	c.Check(gotPool.BalanceRune.Equal(pool.BalanceRune), Equals, true)
+	c.Check(gotPool.BalanceAsset.Equal(pool.BalanceAsset), Equals, true)
+	c.Check(gotPool.PendingInboundRune.IsZero(), Equals, true)
+	c.Check(gotPool.PendingInboundAsset.IsZero(), Equals, true)
+	gotLP, err := mgr.Keeper().GetLiquidityProvider(ctx, common.XMRAsset, polReserveAddress)
+	c.Assert(err, IsNil)
+	c.Check(gotLP.Units.IsZero(), Equals, true)
+	c.Check(gotLP.PendingRune.IsZero(), Equals, true)
+	c.Check(gotLP.PendingAsset.IsZero(), Equals, true)
+	c.Check(gotLP.AssetAddress.IsEmpty(), Equals, true)
 }

@@ -159,12 +159,8 @@ func (h AddLiquidityHandler) validate(ctx cosmos.Context, msg MsgAddLiquidity) e
 			return errAddLiquidityMismatchAddr
 		}
 
-		polAddress, err := h.mgr.Keeper().GetModuleAddress(ReserveName)
-		if err != nil {
-			return err
-		}
-		if msg.RuneAddress.Equals(polAddress) {
-			return fmt.Errorf("pol lp cannot have asset address")
+		if isProtocolOwnedLiquidityAddress(h.mgr, msg.RuneAddress) {
+			return fmt.Errorf("protocol-owned liquidity cannot have an asset address")
 		}
 	}
 
@@ -680,6 +676,13 @@ func (h AddLiquidityHandler) addLiquidity(ctx cosmos.Context,
 	su, err := h.mgr.Keeper().GetLiquidityProvider(ctx, asset, fetchAddr)
 	if err != nil {
 		return ErrInternal(err, "fail to get liquidity provider")
+	}
+	protocolOwned := isProtocolOwnedLiquidityAddress(h.mgr, effectiveRuneAddr)
+	storedProtocolOwned := isProtocolOwnedLiquidityAddress(h.mgr, su.RuneAddress)
+	if (protocolOwned || storedProtocolOwned) &&
+		(!effectiveAssetAddr.IsEmpty() || !addAssetAmount.IsZero() ||
+			!su.AssetAddress.IsEmpty() || !su.PendingAsset.IsZero()) {
+		return fmt.Errorf("protocol-owned liquidity cannot have an asset-side claim")
 	}
 	if asset.GetLayer1Asset().GetChain().RequiresExplicitRefundAddress() &&
 		!effectiveRuneAddr.IsEmpty() &&
