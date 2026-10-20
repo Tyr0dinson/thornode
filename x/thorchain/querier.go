@@ -1910,6 +1910,7 @@ func (qs queryServer) queryPool(ctx cosmos.Context, req *types.QueryPoolRequest)
 	p.SynthMintPaused = (synthMintPausedErr != nil)
 	p.SynthSupplyRemaining = synthSupplyRemaining.String()
 	p.DerivedDepthBps = dbps.String()
+	setPoolLuviFields(&p, pool, synthSupply)
 
 	polReserveDeposit, err := qs.mgr.Keeper().GetPOLReserveDeposit(ctx, pool.Asset)
 	if err == nil {
@@ -1927,6 +1928,20 @@ func (qs queryServer) queryPool(ctx cosmos.Context, req *types.QueryPoolRequest)
 	}
 
 	return &p, nil
+}
+
+// setPoolLuviFields fills the stateless LUVI fields of a pool response: the
+// classic index as the chain values a pool unit, the LP equity net of the
+// synth liability, and the synth overhang indicators. See types/type_luvi.go.
+func setPoolLuviFields(p *types.QueryPoolResponse, pool Pool, synthSupply cosmos.Uint) {
+	st := types.NewLuviState(pool, synthSupply)
+	p.Luvi = st.ChainLuvi().String()
+	p.LpEquity = st.LPEquity().String()
+	p.LpEquityPerUnit = st.LPEquityPerUnit().String()
+	p.SynthPerPoolDepthBps = st.SynthPerPoolDepthBps().String()
+	// an empty pool (no asset depth, no synths) is not in overhang, but a
+	// depleted one (no asset depth, synths outstanding) is
+	p.SynthOverhang = !st.SynthSupply.IsZero() && st.IsOverhang()
 }
 
 func (qs queryServer) queryPools(ctx cosmos.Context, _ *types.QueryPoolsRequest) (*types.QueryPoolsResponse, error) {
@@ -2043,6 +2058,7 @@ func (qs queryServer) queryPools(ctx cosmos.Context, _ *types.QueryPoolsRequest)
 		p.SynthMintPaused = (synthMintPausedErr != nil)
 		p.SynthSupplyRemaining = synthSupplyRemaining.String()
 		p.DerivedDepthBps = dbps.String()
+		setPoolLuviFields(&p, pool, synthSupply)
 
 		polReserveDeposit, polErr := qs.mgr.Keeper().GetPOLReserveDeposit(ctx, pool.Asset)
 		if polErr == nil {

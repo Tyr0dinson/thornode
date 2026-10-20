@@ -51,6 +51,8 @@ chain: "BTC"
 ---
 type: create-blocks
 count: 1
+# the errata takes back a swap inbound that was already paid out
+luvi_drop: [BTC.BTC]
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/tx/{{ observe_txid 1 }}

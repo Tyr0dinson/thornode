@@ -524,6 +524,11 @@ var (
 	fd_QueryPoolResponse_volume_asset                    protoreflect.FieldDescriptor
 	fd_QueryPoolResponse_pol_reserve_rune_deposited      protoreflect.FieldDescriptor
 	fd_QueryPoolResponse_rolling_pool_liquidity_fee_rune protoreflect.FieldDescriptor
+	fd_QueryPoolResponse_luvi                            protoreflect.FieldDescriptor
+	fd_QueryPoolResponse_lp_equity                       protoreflect.FieldDescriptor
+	fd_QueryPoolResponse_lp_equity_per_unit              protoreflect.FieldDescriptor
+	fd_QueryPoolResponse_synth_per_pool_depth_bps        protoreflect.FieldDescriptor
+	fd_QueryPoolResponse_synth_overhang                  protoreflect.FieldDescriptor
 )
 
 func init() {
@@ -554,6 +559,11 @@ func init() {
 	fd_QueryPoolResponse_volume_asset = md_QueryPoolResponse.Fields().ByName("volume_asset")
 	fd_QueryPoolResponse_pol_reserve_rune_deposited = md_QueryPoolResponse.Fields().ByName("pol_reserve_rune_deposited")
 	fd_QueryPoolResponse_rolling_pool_liquidity_fee_rune = md_QueryPoolResponse.Fields().ByName("rolling_pool_liquidity_fee_rune")
+	fd_QueryPoolResponse_luvi = md_QueryPoolResponse.Fields().ByName("luvi")
+	fd_QueryPoolResponse_lp_equity = md_QueryPoolResponse.Fields().ByName("lp_equity")
+	fd_QueryPoolResponse_lp_equity_per_unit = md_QueryPoolResponse.Fields().ByName("lp_equity_per_unit")
+	fd_QueryPoolResponse_synth_per_pool_depth_bps = md_QueryPoolResponse.Fields().ByName("synth_per_pool_depth_bps")
+	fd_QueryPoolResponse_synth_overhang = md_QueryPoolResponse.Fields().ByName("synth_overhang")
 }
 
 var _ protoreflect.Message = (*fastReflection_QueryPoolResponse)(nil)
@@ -771,6 +781,36 @@ func (x *fastReflection_QueryPoolResponse) Range(f func(protoreflect.FieldDescri
 			return
 		}
 	}
+	if x.Luvi != "" {
+		value := protoreflect.ValueOfString(x.Luvi)
+		if !f(fd_QueryPoolResponse_luvi, value) {
+			return
+		}
+	}
+	if x.LpEquity != "" {
+		value := protoreflect.ValueOfString(x.LpEquity)
+		if !f(fd_QueryPoolResponse_lp_equity, value) {
+			return
+		}
+	}
+	if x.LpEquityPerUnit != "" {
+		value := protoreflect.ValueOfString(x.LpEquityPerUnit)
+		if !f(fd_QueryPoolResponse_lp_equity_per_unit, value) {
+			return
+		}
+	}
+	if x.SynthPerPoolDepthBps != "" {
+		value := protoreflect.ValueOfString(x.SynthPerPoolDepthBps)
+		if !f(fd_QueryPoolResponse_synth_per_pool_depth_bps, value) {
+			return
+		}
+	}
+	if x.SynthOverhang != false {
+		value := protoreflect.ValueOfBool(x.SynthOverhang)
+		if !f(fd_QueryPoolResponse_synth_overhang, value) {
+			return
+		}
+	}
 }
 
 // Has reports whether a field is populated.
@@ -836,6 +876,16 @@ func (x *fastReflection_QueryPoolResponse) Has(fd protoreflect.FieldDescriptor) 
 		return x.PolReserveRuneDeposited != ""
 	case "types.QueryPoolResponse.rolling_pool_liquidity_fee_rune":
 		return x.RollingPoolLiquidityFeeRune != ""
+	case "types.QueryPoolResponse.luvi":
+		return x.Luvi != ""
+	case "types.QueryPoolResponse.lp_equity":
+		return x.LpEquity != ""
+	case "types.QueryPoolResponse.lp_equity_per_unit":
+		return x.LpEquityPerUnit != ""
+	case "types.QueryPoolResponse.synth_per_pool_depth_bps":
+		return x.SynthPerPoolDepthBps != ""
+	case "types.QueryPoolResponse.synth_overhang":
+		return x.SynthOverhang != false
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.QueryPoolResponse"))
@@ -902,6 +952,16 @@ func (x *fastReflection_QueryPoolResponse) Clear(fd protoreflect.FieldDescriptor
 		x.PolReserveRuneDeposited = ""
 	case "types.QueryPoolResponse.rolling_pool_liquidity_fee_rune":
 		x.RollingPoolLiquidityFeeRune = ""
+	case "types.QueryPoolResponse.luvi":
+		x.Luvi = ""
+	case "types.QueryPoolResponse.lp_equity":
+		x.LpEquity = ""
+	case "types.QueryPoolResponse.lp_equity_per_unit":
+		x.LpEquityPerUnit = ""
+	case "types.QueryPoolResponse.synth_per_pool_depth_bps":
+		x.SynthPerPoolDepthBps = ""
+	case "types.QueryPoolResponse.synth_overhang":
+		x.SynthOverhang = false
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.QueryPoolResponse"))
@@ -993,6 +1053,21 @@ func (x *fastReflection_QueryPoolResponse) Get(descriptor protoreflect.FieldDesc
 	case "types.QueryPoolResponse.rolling_pool_liquidity_fee_rune":
 		value := x.RollingPoolLiquidityFeeRune
 		return protoreflect.ValueOfString(value)
+	case "types.QueryPoolResponse.luvi":
+		value := x.Luvi
+		return protoreflect.ValueOfString(value)
+	case "types.QueryPoolResponse.lp_equity":
+		value := x.LpEquity
+		return protoreflect.ValueOfString(value)
+	case "types.QueryPoolResponse.lp_equity_per_unit":
+		value := x.LpEquityPerUnit
+		return protoreflect.ValueOfString(value)
+	case "types.QueryPoolResponse.synth_per_pool_depth_bps":
+		value := x.SynthPerPoolDepthBps
+		return protoreflect.ValueOfString(value)
+	case "types.QueryPoolResponse.synth_overhang":
+		value := x.SynthOverhang
+		return protoreflect.ValueOfBool(value)
 	default:
 		if descriptor.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.QueryPoolResponse"))
@@ -1063,6 +1138,16 @@ func (x *fastReflection_QueryPoolResponse) Set(fd protoreflect.FieldDescriptor, 
 		x.PolReserveRuneDeposited = value.Interface().(string)
 	case "types.QueryPoolResponse.rolling_pool_liquidity_fee_rune":
 		x.RollingPoolLiquidityFeeRune = value.Interface().(string)
+	case "types.QueryPoolResponse.luvi":
+		x.Luvi = value.Interface().(string)
+	case "types.QueryPoolResponse.lp_equity":
+		x.LpEquity = value.Interface().(string)
+	case "types.QueryPoolResponse.lp_equity_per_unit":
+		x.LpEquityPerUnit = value.Interface().(string)
+	case "types.QueryPoolResponse.synth_per_pool_depth_bps":
+		x.SynthPerPoolDepthBps = value.Interface().(string)
+	case "types.QueryPoolResponse.synth_overhang":
+		x.SynthOverhang = value.Bool()
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.QueryPoolResponse"))
@@ -1133,6 +1218,16 @@ func (x *fastReflection_QueryPoolResponse) Mutable(fd protoreflect.FieldDescript
 		panic(fmt.Errorf("field pol_reserve_rune_deposited of message types.QueryPoolResponse is not mutable"))
 	case "types.QueryPoolResponse.rolling_pool_liquidity_fee_rune":
 		panic(fmt.Errorf("field rolling_pool_liquidity_fee_rune of message types.QueryPoolResponse is not mutable"))
+	case "types.QueryPoolResponse.luvi":
+		panic(fmt.Errorf("field luvi of message types.QueryPoolResponse is not mutable"))
+	case "types.QueryPoolResponse.lp_equity":
+		panic(fmt.Errorf("field lp_equity of message types.QueryPoolResponse is not mutable"))
+	case "types.QueryPoolResponse.lp_equity_per_unit":
+		panic(fmt.Errorf("field lp_equity_per_unit of message types.QueryPoolResponse is not mutable"))
+	case "types.QueryPoolResponse.synth_per_pool_depth_bps":
+		panic(fmt.Errorf("field synth_per_pool_depth_bps of message types.QueryPoolResponse is not mutable"))
+	case "types.QueryPoolResponse.synth_overhang":
+		panic(fmt.Errorf("field synth_overhang of message types.QueryPoolResponse is not mutable"))
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.QueryPoolResponse"))
@@ -1196,6 +1291,16 @@ func (x *fastReflection_QueryPoolResponse) NewField(fd protoreflect.FieldDescrip
 		return protoreflect.ValueOfString("")
 	case "types.QueryPoolResponse.rolling_pool_liquidity_fee_rune":
 		return protoreflect.ValueOfString("")
+	case "types.QueryPoolResponse.luvi":
+		return protoreflect.ValueOfString("")
+	case "types.QueryPoolResponse.lp_equity":
+		return protoreflect.ValueOfString("")
+	case "types.QueryPoolResponse.lp_equity_per_unit":
+		return protoreflect.ValueOfString("")
+	case "types.QueryPoolResponse.synth_per_pool_depth_bps":
+		return protoreflect.ValueOfString("")
+	case "types.QueryPoolResponse.synth_overhang":
+		return protoreflect.ValueOfBool(false)
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.QueryPoolResponse"))
@@ -1362,6 +1467,25 @@ func (x *fastReflection_QueryPoolResponse) ProtoMethods() *protoiface.Methods {
 		if l > 0 {
 			n += 2 + l + runtime.Sov(uint64(l))
 		}
+		l = len(x.Luvi)
+		if l > 0 {
+			n += 2 + l + runtime.Sov(uint64(l))
+		}
+		l = len(x.LpEquity)
+		if l > 0 {
+			n += 2 + l + runtime.Sov(uint64(l))
+		}
+		l = len(x.LpEquityPerUnit)
+		if l > 0 {
+			n += 2 + l + runtime.Sov(uint64(l))
+		}
+		l = len(x.SynthPerPoolDepthBps)
+		if l > 0 {
+			n += 2 + l + runtime.Sov(uint64(l))
+		}
+		if x.SynthOverhang {
+			n += 3
+		}
 		if x.unknownFields != nil {
 			n += len(x.unknownFields)
 		}
@@ -1390,6 +1514,54 @@ func (x *fastReflection_QueryPoolResponse) ProtoMethods() *protoiface.Methods {
 		if x.unknownFields != nil {
 			i -= len(x.unknownFields)
 			copy(dAtA[i:], x.unknownFields)
+		}
+		if x.SynthOverhang {
+			i--
+			if x.SynthOverhang {
+				dAtA[i] = 1
+			} else {
+				dAtA[i] = 0
+			}
+			i--
+			dAtA[i] = 0x2
+			i--
+			dAtA[i] = 0x88
+		}
+		if len(x.SynthPerPoolDepthBps) > 0 {
+			i -= len(x.SynthPerPoolDepthBps)
+			copy(dAtA[i:], x.SynthPerPoolDepthBps)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.SynthPerPoolDepthBps)))
+			i--
+			dAtA[i] = 0x2
+			i--
+			dAtA[i] = 0x82
+		}
+		if len(x.LpEquityPerUnit) > 0 {
+			i -= len(x.LpEquityPerUnit)
+			copy(dAtA[i:], x.LpEquityPerUnit)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.LpEquityPerUnit)))
+			i--
+			dAtA[i] = 0x1
+			i--
+			dAtA[i] = 0xfa
+		}
+		if len(x.LpEquity) > 0 {
+			i -= len(x.LpEquity)
+			copy(dAtA[i:], x.LpEquity)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.LpEquity)))
+			i--
+			dAtA[i] = 0x1
+			i--
+			dAtA[i] = 0xf2
+		}
+		if len(x.Luvi) > 0 {
+			i -= len(x.Luvi)
+			copy(dAtA[i:], x.Luvi)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.Luvi)))
+			i--
+			dAtA[i] = 0x1
+			i--
+			dAtA[i] = 0xea
 		}
 		if len(x.RollingPoolLiquidityFeeRune) > 0 {
 			i -= len(x.RollingPoolLiquidityFeeRune)
@@ -2402,6 +2574,154 @@ func (x *fastReflection_QueryPoolResponse) ProtoMethods() *protoiface.Methods {
 				}
 				x.RollingPoolLiquidityFeeRune = string(dAtA[iNdEx:postIndex])
 				iNdEx = postIndex
+			case 29:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field Luvi", wireType)
+				}
+				var stringLen uint64
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					stringLen |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				intStringLen := int(stringLen)
+				if intStringLen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + intStringLen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.Luvi = string(dAtA[iNdEx:postIndex])
+				iNdEx = postIndex
+			case 30:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field LpEquity", wireType)
+				}
+				var stringLen uint64
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					stringLen |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				intStringLen := int(stringLen)
+				if intStringLen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + intStringLen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.LpEquity = string(dAtA[iNdEx:postIndex])
+				iNdEx = postIndex
+			case 31:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field LpEquityPerUnit", wireType)
+				}
+				var stringLen uint64
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					stringLen |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				intStringLen := int(stringLen)
+				if intStringLen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + intStringLen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.LpEquityPerUnit = string(dAtA[iNdEx:postIndex])
+				iNdEx = postIndex
+			case 32:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field SynthPerPoolDepthBps", wireType)
+				}
+				var stringLen uint64
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					stringLen |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				intStringLen := int(stringLen)
+				if intStringLen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + intStringLen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.SynthPerPoolDepthBps = string(dAtA[iNdEx:postIndex])
+				iNdEx = postIndex
+			case 33:
+				if wireType != 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field SynthOverhang", wireType)
+				}
+				var v int
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					v |= int(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				x.SynthOverhang = bool(v != 0)
 			default:
 				iNdEx = preIndex
 				skippy, err := runtime.Skip(dAtA[iNdEx:])
@@ -3456,6 +3776,20 @@ type QueryPoolResponse struct {
 	// rolling liquidity fees accumulated (in RUNE) since the last pool cycle
 	// reset; used as the numerator of the POL Reserve deployment score
 	RollingPoolLiquidityFeeRune string `protobuf:"bytes,28,opt,name=rolling_pool_liquidity_fee_rune,json=rollingPoolLiquidityFeeRune,proto3" json:"rolling_pool_liquidity_fee_rune,omitempty"`
+	// Liquidity Unit Value Index as the chain values a pool unit:
+	// sqrt(balance_asset * balance_rune) / pool_units (synth-unit clamp included)
+	Luvi string `protobuf:"bytes,29,opt,name=luvi,proto3" json:"luvi,omitempty"`
+	// LP equity net of the synth liability, in sqrt(asset * rune) units:
+	// sqrt(balance_asset * balance_rune) * (2 * balance_asset - synth_supply) /
+	// (2 * balance_asset); zero or negative when synth_overhang is true
+	LpEquity string `protobuf:"bytes,30,opt,name=lp_equity,json=lpEquity,proto3" json:"lp_equity,omitempty"`
+	// lp_equity / LP_units; equals luvi (up to rounding) unless synth_overhang
+	LpEquityPerUnit string `protobuf:"bytes,31,opt,name=lp_equity_per_unit,json=lpEquityPerUnit,proto3" json:"lp_equity_per_unit,omitempty"`
+	// synth supply relative to twice the asset depth, in basis points
+	SynthPerPoolDepthBps string `protobuf:"bytes,32,opt,name=synth_per_pool_depth_bps,json=synthPerPoolDepthBps,proto3" json:"synth_per_pool_depth_bps,omitempty"`
+	// whether synth supply is at or above twice the asset depth; synth units are
+	// clamped and LP units can redeem almost nothing while this is true
+	SynthOverhang bool `protobuf:"varint,33,opt,name=synth_overhang,json=synthOverhang,proto3" json:"synth_overhang,omitempty"`
 }
 
 func (x *QueryPoolResponse) Reset() {
@@ -3653,6 +3987,41 @@ func (x *QueryPoolResponse) GetRollingPoolLiquidityFeeRune() string {
 	return ""
 }
 
+func (x *QueryPoolResponse) GetLuvi() string {
+	if x != nil {
+		return x.Luvi
+	}
+	return ""
+}
+
+func (x *QueryPoolResponse) GetLpEquity() string {
+	if x != nil {
+		return x.LpEquity
+	}
+	return ""
+}
+
+func (x *QueryPoolResponse) GetLpEquityPerUnit() string {
+	if x != nil {
+		return x.LpEquityPerUnit
+	}
+	return ""
+}
+
+func (x *QueryPoolResponse) GetSynthPerPoolDepthBps() string {
+	if x != nil {
+		return x.SynthPerPoolDepthBps
+	}
+	return ""
+}
+
+func (x *QueryPoolResponse) GetSynthOverhang() bool {
+	if x != nil {
+		return x.SynthOverhang
+	}
+	return false
+}
+
 type QueryPoolsRequest struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
@@ -3733,7 +4102,7 @@ var file_types_query_pool_proto_rawDesc = []byte{
 	0x6f, 0x6c, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x12, 0x14, 0x0a, 0x05, 0x61, 0x73, 0x73,
 	0x65, 0x74, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x05, 0x61, 0x73, 0x73, 0x65, 0x74, 0x12,
 	0x16, 0x0a, 0x06, 0x68, 0x65, 0x69, 0x67, 0x68, 0x74, 0x18, 0x02, 0x20, 0x01, 0x28, 0x09, 0x52,
-	0x06, 0x68, 0x65, 0x69, 0x67, 0x68, 0x74, 0x22, 0xdb, 0x0b, 0x0a, 0x11, 0x51, 0x75, 0x65, 0x72,
+	0x06, 0x68, 0x65, 0x69, 0x67, 0x68, 0x74, 0x22, 0xfb, 0x0d, 0x0a, 0x11, 0x51, 0x75, 0x65, 0x72,
 	0x79, 0x50, 0x6f, 0x6f, 0x6c, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x12, 0x1f, 0x0a,
 	0x05, 0x61, 0x73, 0x73, 0x65, 0x74, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x42, 0x09, 0xea, 0xde,
 	0x1f, 0x05, 0x61, 0x73, 0x73, 0x65, 0x74, 0x52, 0x05, 0x61, 0x73, 0x73, 0x65, 0x74, 0x12, 0x1d,
@@ -3827,7 +4196,25 @@ var file_types_query_pool_proto_rawDesc = []byte{
 	0x5f, 0x70, 0x6f, 0x6f, 0x6c, 0x5f, 0x6c, 0x69, 0x71, 0x75, 0x69, 0x64, 0x69, 0x74, 0x79, 0x5f,
 	0x66, 0x65, 0x65, 0x5f, 0x72, 0x75, 0x6e, 0x65, 0x52, 0x1b, 0x72, 0x6f, 0x6c, 0x6c, 0x69, 0x6e,
 	0x67, 0x50, 0x6f, 0x6f, 0x6c, 0x4c, 0x69, 0x71, 0x75, 0x69, 0x64, 0x69, 0x74, 0x79, 0x46, 0x65,
-	0x65, 0x52, 0x75, 0x6e, 0x65, 0x22, 0x2b, 0x0a, 0x11, 0x51, 0x75, 0x65, 0x72, 0x79, 0x50, 0x6f,
+	0x65, 0x52, 0x75, 0x6e, 0x65, 0x12, 0x1c, 0x0a, 0x04, 0x6c, 0x75, 0x76, 0x69, 0x18, 0x1d, 0x20,
+	0x01, 0x28, 0x09, 0x42, 0x08, 0xea, 0xde, 0x1f, 0x04, 0x6c, 0x75, 0x76, 0x69, 0x52, 0x04, 0x6c,
+	0x75, 0x76, 0x69, 0x12, 0x2a, 0x0a, 0x09, 0x6c, 0x70, 0x5f, 0x65, 0x71, 0x75, 0x69, 0x74, 0x79,
+	0x18, 0x1e, 0x20, 0x01, 0x28, 0x09, 0x42, 0x0d, 0xea, 0xde, 0x1f, 0x09, 0x6c, 0x70, 0x5f, 0x65,
+	0x71, 0x75, 0x69, 0x74, 0x79, 0x52, 0x08, 0x6c, 0x70, 0x45, 0x71, 0x75, 0x69, 0x74, 0x79, 0x12,
+	0x43, 0x0a, 0x12, 0x6c, 0x70, 0x5f, 0x65, 0x71, 0x75, 0x69, 0x74, 0x79, 0x5f, 0x70, 0x65, 0x72,
+	0x5f, 0x75, 0x6e, 0x69, 0x74, 0x18, 0x1f, 0x20, 0x01, 0x28, 0x09, 0x42, 0x16, 0xea, 0xde, 0x1f,
+	0x12, 0x6c, 0x70, 0x5f, 0x65, 0x71, 0x75, 0x69, 0x74, 0x79, 0x5f, 0x70, 0x65, 0x72, 0x5f, 0x75,
+	0x6e, 0x69, 0x74, 0x52, 0x0f, 0x6c, 0x70, 0x45, 0x71, 0x75, 0x69, 0x74, 0x79, 0x50, 0x65, 0x72,
+	0x55, 0x6e, 0x69, 0x74, 0x12, 0x54, 0x0a, 0x18, 0x73, 0x79, 0x6e, 0x74, 0x68, 0x5f, 0x70, 0x65,
+	0x72, 0x5f, 0x70, 0x6f, 0x6f, 0x6c, 0x5f, 0x64, 0x65, 0x70, 0x74, 0x68, 0x5f, 0x62, 0x70, 0x73,
+	0x18, 0x20, 0x20, 0x01, 0x28, 0x09, 0x42, 0x1c, 0xea, 0xde, 0x1f, 0x18, 0x73, 0x79, 0x6e, 0x74,
+	0x68, 0x5f, 0x70, 0x65, 0x72, 0x5f, 0x70, 0x6f, 0x6f, 0x6c, 0x5f, 0x64, 0x65, 0x70, 0x74, 0x68,
+	0x5f, 0x62, 0x70, 0x73, 0x52, 0x14, 0x73, 0x79, 0x6e, 0x74, 0x68, 0x50, 0x65, 0x72, 0x50, 0x6f,
+	0x6f, 0x6c, 0x44, 0x65, 0x70, 0x74, 0x68, 0x42, 0x70, 0x73, 0x12, 0x39, 0x0a, 0x0e, 0x73, 0x79,
+	0x6e, 0x74, 0x68, 0x5f, 0x6f, 0x76, 0x65, 0x72, 0x68, 0x61, 0x6e, 0x67, 0x18, 0x21, 0x20, 0x01,
+	0x28, 0x08, 0x42, 0x12, 0xea, 0xde, 0x1f, 0x0e, 0x73, 0x79, 0x6e, 0x74, 0x68, 0x5f, 0x6f, 0x76,
+	0x65, 0x72, 0x68, 0x61, 0x6e, 0x67, 0x52, 0x0d, 0x73, 0x79, 0x6e, 0x74, 0x68, 0x4f, 0x76, 0x65,
+	0x72, 0x68, 0x61, 0x6e, 0x67, 0x22, 0x2b, 0x0a, 0x11, 0x51, 0x75, 0x65, 0x72, 0x79, 0x50, 0x6f,
 	0x6f, 0x6c, 0x73, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x12, 0x16, 0x0a, 0x06, 0x68, 0x65,
 	0x69, 0x67, 0x68, 0x74, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x06, 0x68, 0x65, 0x69, 0x67,
 	0x68, 0x74, 0x22, 0x44, 0x0a, 0x12, 0x51, 0x75, 0x65, 0x72, 0x79, 0x50, 0x6f, 0x6f, 0x6c, 0x73,

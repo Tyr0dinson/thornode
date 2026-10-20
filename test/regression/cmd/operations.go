@@ -31,6 +31,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/constants"
 	openapi "gitlab.com/thorchain/thornode/v3/openapi/gen"
+	"gitlab.com/thorchain/thornode/v3/test/luvicheck"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/ebifrost"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 	"google.golang.org/grpc"
@@ -535,9 +536,10 @@ func (op *OpCheck) Execute(out io.Writer, path string, line, routine int, _ *os.
 
 type OpCreateBlocks struct {
 	OpBase         `yaml:",inline"`
-	Count          int  `json:"count"`
-	SkipInvariants bool `json:"skip_invariants"`
-	Exit           *int `json:"exit"`
+	Count          int      `json:"count"`
+	SkipInvariants bool     `json:"skip_invariants"`
+	Exit           *int     `json:"exit"`
+	LuviDrop       []string `json:"luvi_drop"`
 }
 
 func (op *OpCreateBlocks) Execute(out io.Writer, path string, _, routine int, p *os.Process, logs chan string) error {
@@ -549,6 +551,16 @@ func (op *OpCreateBlocks) Execute(out io.Writer, path string, _, routine int, p 
 	// the loop below trims path in place for blockPath; record block times
 	// under the untrimmed suite path on every iteration
 	suite := path
+
+	// record the state the blocks start from, so the first block is checked
+	// too; before the first block the state is not queryable, and that block
+	// becomes the baseline instead
+	var luviViolations []luvicheck.Violation
+	if op.Exit == nil {
+		if v, err := observeLuvi(routine, 0, &openapi.BlockResponse{}); err == nil {
+			luviViolations = append(luviViolations, v...)
+		}
+	}
 
 	for i := 0; i < op.Count; i++ {
 		// http request to localhost to unblock block creation
@@ -681,12 +693,23 @@ func (op *OpCreateBlocks) Execute(out io.Writer, path string, _, routine int, p 
 		// close the file and response
 		_ = f.Close()
 		_ = res.Body.Close()
+
+		v, err := observeLuvi(routine, int64(height), blockResponse)
+		if err != nil {
+			localLog.Err(err).Msg("failed to observe luvi")
+			return err
+		}
+		luviViolations = append(luviViolations, v...)
 	}
 
 	// if exit code is set, this was unexpected
 	if op.Exit != nil {
 		localLog.Error().Int("expect", *op.Exit).Msg("expected exit code")
 		return errors.New("expected exit code")
+	}
+
+	if err := checkLuvi(luviViolations, op.LuviDrop); err != nil {
+		return err
 	}
 
 	if op.SkipInvariants {

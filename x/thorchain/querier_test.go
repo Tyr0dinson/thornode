@@ -2554,3 +2554,74 @@ func (s *QuerierSuite) TestQueryTCYProtocolOwned(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(result.Amount, Equals, "0")
 }
+
+func (s *QuerierSuite) TestQueryPoolLuviFields(c *C) {
+	type want struct {
+		luvi, equity, perUnit, bps string
+		overhang                   bool
+	}
+	// A = 1e12, R = 4e12 -> sqrt(A*R) = 2e12 exactly; L = 1e12
+	cases := []struct {
+		name  string
+		asset uint64
+		synth uint64
+		want  want
+	}{
+		{"no synths", 1_000_000_000_000, 0, want{"2.000000000000000000", "2000000000000.000000000000000000", "2.000000000000000000", "0", false}},
+		// S = A/2: Q = 2e12*(2e12-5e11)/2e12 = 1.5e12; SU = floor(1e12*5e11/1.5e12)
+		{"synths", 1_000_000_000_000, 500_000_000_000, want{"1.500000000000375000", "1500000000000.000000000000000000", "1.500000000000000000", "2500", false}},
+		// S = 2A exactly: equity 0, synth units clamped
+		{"boundary", 1_000_000_000_000, 2_000_000_000_000, want{"0.000000000000999999", "0.000000000000000000", "0.000000000000000000", "10000", true}},
+		// S = 3A: equity negative, all LP units redeem ~1/(1+S) of the pool
+		{"overhang", 1_000_000_000_000, 3_000_000_000_000, want{"0.000000000000666666", "-1000000000000.000000000000000000", "-1.000000000000000000", "15000", true}},
+		// asset depth exhausted (e.g. by a slash) with synths outstanding: in overhang
+		{"depleted", 0, 1_000_000_000, want{"0.000000000000000000", "0.000000000000000000", "0.000000000000000000", "0", true}},
+		// no asset depth and no synths: empty, not in overhang
+		{"empty", 0, 0, want{"0.000000000000000000", "0.000000000000000000", "0.000000000000000000", "0", false}},
+	}
+	for _, tc := range cases {
+		ctx, mgr := setupManagerForTest(c)
+		txConfig, err := params.TxConfig(s.mgr.cdc, nil)
+		c.Assert(err, IsNil)
+		queryServer := NewQueryServerImpl(mgr, txConfig, s.kb)
+		asgard := NewVault(ctx.BlockHeight(), ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.ETHChain}.Strings(), []ChainContract{})
+		c.Assert(mgr.Keeper().SetVault(ctx, asgard), IsNil)
+
+		pool := NewPool()
+		pool.Asset = common.ETHAsset
+		pool.BalanceAsset = cosmos.NewUint(tc.asset)
+		pool.BalanceRune = cosmos.NewUint(4_000_000_000_000)
+		pool.LPUnits = cosmos.NewUint(1_000_000_000_000)
+		pool.Status = PoolAvailable
+		c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+		if tc.synth > 0 {
+			coin := common.NewCoin(common.ETHAsset.GetSyntheticAsset(), cosmos.NewUint(tc.synth))
+			c.Assert(mgr.Keeper().MintToModule(ctx, ModuleName, coin), IsNil)
+		}
+
+		one, err := queryServer.Pool(ctx, &types.QueryPoolRequest{Asset: "ETH.ETH"})
+		c.Assert(err, IsNil)
+		all, err := queryServer.Pools(ctx, &types.QueryPoolsRequest{})
+		c.Assert(err, IsNil)
+		c.Assert(all.Pools, HasLen, 1)
+
+		for _, p := range []*types.QueryPoolResponse{one, all.Pools[0]} {
+			cm := Commentf("%s: %+v", tc.name, p)
+			c.Check(p.Luvi, Equals, tc.want.luvi, cm)
+			c.Check(p.LpEquity, Equals, tc.want.equity, cm)
+			c.Check(p.LpEquityPerUnit, Equals, tc.want.perUnit, cm)
+			c.Check(p.SynthPerPoolDepthBps, Equals, tc.want.bps, cm)
+			c.Check(p.SynthOverhang, Equals, tc.want.overhang, cm)
+		}
+
+		// the fields are always present in the JSON, including a false overhang
+		raw, err := one.MarshalJSONPB(nil)
+		c.Assert(err, IsNil)
+		var m map[string]any
+		c.Assert(json.Unmarshal(raw, &m), IsNil)
+		for _, k := range []string{"luvi", "lp_equity", "lp_equity_per_unit", "synth_per_pool_depth_bps", "synth_overhang"} {
+			_, ok := m[k]
+			c.Check(ok, Equals, true, Commentf("%s: missing %s in %s", tc.name, k, raw))
+		}
+	}
+}

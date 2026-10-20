@@ -115,6 +115,7 @@ func run(out io.Writer, path string, routine int, doneWithRetries func(path stri
 	nativeTxIDsMu.Lock()
 	nativeTxIDs[routine] = []string{}
 	nativeTxIDsMu.Unlock()
+	resetLuviMonitor(routine)
 	tmpls := template.Must(templates.Clone())
 
 	// ensure no naming collisions

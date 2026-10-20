@@ -347,7 +347,7 @@ func main() {
 	// alone can be skipped entirely by a short simulation.
 	invariants := watchers.NewInvariants()
 	if err := runWithInvariantChecks(cfg, invariants, func() {
-		for _, w := range []*Watcher{invariants, watchers.NewSolvencyHalt(), watchers.NewSecurityEvents()} {
+		for _, w := range []*Watcher{invariants, watchers.NewSolvencyHalt(), watchers.NewSecurityEvents(), watchers.NewLuvi()} {
 			log.Info().Str("watcher", w.Name).Msg("starting watcher")
 			go func(w *Watcher) {
 				if err := w.Execute(cfg, log.Output(os.Stderr)); err != nil {
