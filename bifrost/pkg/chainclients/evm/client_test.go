@@ -74,7 +74,7 @@ func GetMetricForTest(c *C) *metrics.Metrics {
 			ListenPort:   9000,
 			ReadTimeout:  time.Second,
 			WriteTimeout: time.Second,
-			Chains:       common.Chains{common.AVAXChain},
+			Chains:       common.Chains{common.AVAXChain, common.BSCChain, common.BASEChain, common.POLChain},
 		})
 		c.Assert(m, NotNil)
 		c.Assert(err, IsNil)
