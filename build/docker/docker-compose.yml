@@ -161,8 +161,9 @@ services:
       EVM_ALLOWANCE_CHECK_BSC: 1
       EVM_ALLOWANCE_CHECK_ETH: 1
       EVM_ALLOWANCE_CHECK_POL: 1
-      # SOLTokens: every mocknet signer runs SPL-aware bifrost. Production sets this
-      # mimir only after the fleet upgrade (constants.MimirKeySOLTokens).
+      # SOLTokens: every mocknet signer runs SPL-aware bifrost, so SPL is active from
+      # slot 1. Production sets this mimir to a recent slot only after the fleet
+      # upgrade (constants.MimirKeySOLTokens).
       SOL_TOKENS: 1
     ports:
       - 26657:26657

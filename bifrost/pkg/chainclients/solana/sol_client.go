@@ -83,8 +83,8 @@ type SOLClient struct {
 	rpcClient           *rpc.SolRPC
 	m                   *metrics.Metrics
 
-	// spl is the SPL token whitelist, shared with the scanner. Nil (as in clients
-	// built directly by tests) means SOL only.
+	// spl is the SPL token whitelist and its activation, shared with the scanner. Nil
+	// (as in clients built directly by tests) means SOL only.
 	spl *splRegistry
 
 	// keepAliveThorMultiple is the last keep-alive cadence boundary this node acted
@@ -363,8 +363,8 @@ func (c *SOLClient) GetAccountByAddress(addr string, height *big.Int) (common.Ac
 		common.NewCoin(common.SOLAsset, amount),
 	}
 
-	// Token balances only once SPL is enabled: until then THORChain holds none.
-	if c.solScanner != nil && c.solScanner.splEnabled.Load() {
+	// Token balances only once SPL is active: until then THORChain holds none.
+	if c.spl.active() {
 		tokenCoins, err := c.splTokenCoins(addr)
 		if err != nil {
 			return common.Account{}, fmt.Errorf("fail to get token balances: %w", err)
@@ -676,9 +676,11 @@ func (c *SOLClient) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *
 
 	// An SPL self-send can never be observed (errSPLSelfSend). Drop it rather than
 	// retain it: a retained item would hold the vault's signing slot every pass.
-	if isSPLSelfSend(tx) {
-		return c.dropForReschedule(tx, "spl_self_send_dropped", c.logger.Warn(),
-			"SPL outbound to its own vault would be an unobservable no-op, dropping for reschedule")
+	if isSPLOutbound(tx) {
+		if _, err := c.splOutboundParams(tx); errors.Is(err, errSPLSelfSend) {
+			return c.dropForReschedule(tx, "spl_self_send_dropped", c.logger.Warn(),
+				"SPL outbound to its own vault would be an unobservable no-op, dropping for reschedule")
+		}
 	}
 
 	// GetMemo returns OriginalMemo for memoless outbounds

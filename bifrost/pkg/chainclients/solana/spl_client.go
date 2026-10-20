@@ -23,17 +23,6 @@ func isSPLOutbound(tx stypes.TxOutItem) bool {
 // it, burning a fee on every attempt.
 var errSPLSelfSend = errors.New("SPL self-send cannot be observed")
 
-// isSPLSelfSend reports whether tx is an SPL outbound to its own vault's address.
-// Base58 is case-sensitive, so the addresses must match exactly (Address.Equals
-// ignores case).
-func isSPLSelfSend(tx stypes.TxOutItem) bool {
-	if !isSPLOutbound(tx) {
-		return false
-	}
-	vaultAddr, err := tx.VaultPubKeyEddsa.GetAddress(common.SOLChain)
-	return err == nil && tx.ToAddress.String() == vaultAddr.String()
-}
-
 // splTransferParams resolves an SPL outbound: the whitelisted mint, the amount in
 // the mint's base units, and the vault's and recipient's associated token accounts.
 // Everything is derived from the outbound and the whitelist alone, so every keysign

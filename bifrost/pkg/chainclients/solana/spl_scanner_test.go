@@ -46,8 +46,8 @@ func testSPLRegistry(whitelist ...string) *splRegistry {
 
 var _ = Suite(&SPLScannerSuite{})
 
-// newSPLTestScanner is a scanner with USDC and USDT whitelisted and SPL enabled (as
-// by the SOLTokens mimir).
+// newSPLTestScanner is a scanner with USDC and USDT whitelisted and SPL active from
+// slot 1 (as by the SOLTokens mimir).
 func newSPLTestScanner() *SOLScanner {
 	logger := log.Logger.With().Str("module", "test").Logger()
 	s := &SOLScanner{
@@ -55,7 +55,7 @@ func newSPLTestScanner() *SOLScanner {
 		logger: logger,
 		spl:    testSPLRegistry(testUSDCMint, testUSDTMint),
 	}
-	s.splEnabled.Store(true)
+	s.spl.activeFrom.Store(1)
 	return s
 }
 
@@ -144,6 +144,20 @@ func (s *SPLScannerSuite) TestInboundTransferChecked(c *C) {
 	c.Assert(item.Gas, HasLen, 1)
 	c.Check(item.Gas[0].Asset, Equals, common.SOLAsset)
 	c.Check(item.Gas[0].Amount.String(), Equals, convertLamportsToTHORChain(5000).String())
+}
+
+// TestInboundBeforeActivationNotObserved: a token transfer is observed only from the
+// SPL activation slot on, whichever address's scan returned it. A vault wallet's scan
+// can return an old deposit that also lists the wallet (for example one that created
+// the vault's token account) when a node rescans the wallet's history.
+func (s *SPLScannerSuite) TestInboundBeforeActivationNotObserved(c *C) {
+	scanner := newSPLTestScanner()
+	scanner.spl.activeFrom.Store(2000)
+	c.Check(scanner.getTxInItem(splInbound(c, 12_345_678), 1999), IsNil)
+	c.Check(scanner.getTxInItem(splInbound(c, 12_345_678), 2000), NotNil)
+
+	scanner.spl.activeFrom.Store(0) // SPL off
+	c.Check(scanner.getTxInItem(splInbound(c, 12_345_678), 2000), IsNil)
 }
 
 func (s *SPLScannerSuite) TestInboundPlainTransfer(c *C) {

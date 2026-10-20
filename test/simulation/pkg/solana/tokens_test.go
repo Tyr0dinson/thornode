@@ -107,8 +107,8 @@ func TestMocknetSPLAccountLayout(t *testing.T) {
 
 // TestMocknetSPLConfigInSync checks every place the mocknet mint must appear: the
 // mocknet SOL token list Bifrost embeds, the Bifrost whitelist in docker-compose,
-// and the validator entrypoint's --account flags; and that mocknet enables the
-// SOLTokens mimir.
+// and the validator entrypoint's --account flags; and that mocknet activates SPL
+// from slot 1 through the SOLTokens mimir.
 func TestMocknetSPLConfigInSync(t *testing.T) {
 	mint := MocknetTKNMint().String()
 	masterATA, err := stypes.FindAssociatedTokenAddress(stypes.MustPublicKeyFromString(MocknetMasterAddress), MocknetTKNMint())

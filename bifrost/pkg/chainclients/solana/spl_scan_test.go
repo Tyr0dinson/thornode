@@ -103,9 +103,8 @@ func drainTxIns(ch chan stypes.TxIn) []stypes.TxIn {
 }
 
 // TestScanTokenAccounts drives scan() over a vault and its USDC token account:
-//   - a token account seen for the first time, of a vault this node already scanned
-//     (the SPL upgrade), is registered at the current slot, and its pre-existing
-//     history is skipped (but the cursor moves past it);
+//   - the token account's history before the SPL activation slot is skipped (but the
+//     cursor moves past it);
 //   - a new transfer that lists both the vault and its token account is observed
 //     once, though both addresses return it.
 func (s *BlockScannerTestSuite) TestScanTokenAccounts(c *C) {
@@ -125,26 +124,22 @@ func (s *BlockScannerTestSuite) TestScanTokenAccounts(c *C) {
 		getTxHit: map[string]int{},
 	}
 	m.set(1000, map[string][]rpc.SignaturesForAddressResult{
-		tokenAccount: {{Signature: oldSig, Slot: 900}}, // predates tracking
+		tokenAccount: {{Signature: oldSig, Slot: 900}}, // predates activation
 	})
 	server := m.server(c)
 	defer server.Close()
 
-	scanner, storage, txIns := s.newTokenScanTestScanner(c, server, vault)
-	// This node scanned the vault before it tracked the vault's token accounts.
-	c.Assert(storage.SetScanStatus(vaultAddr.String(), "", 800), IsNil)
+	scanner, storage, txIns := s.newTokenScanTestScanner(c, server, vault, 950)
 
-	// Pass 1: the token account is registered at slot 1000; the slot-900 deposit is
-	// not observed, and the cursor moves to it.
+	// Pass 1: the slot-900 deposit is not observed, and the cursor moves to it.
 	scanner.scan()
 	c.Check(drainTxIns(txIns), HasLen, 0)
 	c.Check(m.getTxHit[oldSig], Equals, 0)
 	c.Check(scanner.IsHealthy(), Equals, true)
 	time.Sleep(50 * time.Millisecond) // scan status writes are async
-	sig, slot, err := storage.GetScanStatus(tokenAccount)
+	sig, _, err := storage.GetScanStatus(tokenAccount)
 	c.Assert(err, IsNil)
 	c.Check(sig, Equals, oldSig)
-	c.Check(slot, Equals, uint64(1000))
 
 	// Pass 2: a deposit that lists both the vault and its token account (it created
 	// the token account) comes back from both queries but is observed once.
@@ -169,80 +164,14 @@ func (s *BlockScannerTestSuite) TestScanTokenAccounts(c *C) {
 	}
 }
 
-// TestScanTokenAccountFloorHoldsUntilFirstSignature: a token account registered at a
-// floor (its vault was already scanned) with no signatures keeps its registration
-// slot as its floor while the scan advances, so a transfer that lands later is
-// observed even if an RPC indexes it late.
-func (s *BlockScannerTestSuite) TestScanTokenAccountFloorHoldsUntilFirstSignature(c *C) {
-	vault := types2.GetRandomEd25519PubKey()
-	vaultAddr, err := vault.GetAddress(common.SOLChain)
-	c.Assert(err, IsNil)
-	tokenAccount := ata(c, vaultAddr.String(), testUSDCMint)
-
-	const sig1 = "FirstDeposit11111111111111111111111111111111111111111111111111111111"
-	tx := splInboundTo(c, vaultAddr.String(), 5_000_000)
-	tx.Transaction.Signatures = []string{sig1}
-	m := &splScanRPC{txs: map[string]*rpc.TransactionResult{sig1: tx}, getTxHit: map[string]int{}}
-	m.set(1000, nil)
-	server := m.server(c)
-	defer server.Close()
-
-	scanner, storage, txIns := s.newTokenScanTestScanner(c, server, vault)
-	// This node scanned the vault before it tracked the vault's token accounts.
-	c.Assert(storage.SetScanStatus(vaultAddr.String(), "", 800), IsNil)
-
-	scanner.scan() // registers at 1000
-	m.set(3000, nil)
-	scanner.scan() // nothing yet; floor stays at 1000
-	time.Sleep(50 * time.Millisecond)
-	sig, slot, err := storage.GetScanStatus(tokenAccount)
-	c.Assert(err, IsNil)
-	c.Check(sig, Equals, "")
-	c.Check(slot, Equals, uint64(1000))
-
-	// A transfer at slot 2000 (below the latest scan slot, above the floor) shows up
-	// only now, as from a lagging RPC: it is still observed.
-	m.set(4000, map[string][]rpc.SignaturesForAddressResult{tokenAccount: {{Signature: sig1, Slot: 2000}}})
-	scanner.scan()
-	got := drainTxIns(txIns)
-	c.Assert(got, HasLen, 1)
-	c.Check(got[0].TxArray[0].Tx, Equals, sig1)
-}
-
-// newTokenScanTestScanner builds a scanner over one vault with USDC whitelisted and
-// SPL enabled, served by m, and returns it with its storage and observation queue.
-func (s *BlockScannerTestSuite) newTokenScanTestScanner(c *C, server *httptest.Server, vault common.PubKey) (*SOLScanner, *blockscanner.BlockScannerStorageSolana, chan stypes.TxIn) {
-	storage, err := blockscanner.NewBlockScannerStorageSolana("", config.LevelDBOptions{})
-	c.Assert(err, IsNil)
-	scm, err := signercache.NewSignerCacheManager(storage.GetInternalDb())
-	c.Assert(err, IsNil)
-	cfg := getConfigForTest("http://" + server.Listener.Addr().String())
-	cfg.StartBlockHeight = 0
-	cfg.WhitelistTokens = []string{testUSDCMint}
-	cfg.Solana.ScanInterval = time.Millisecond
-	cfg.Solana.FeeUpdateInterval = 1_000_000_000
-	rpcClient := rpc.NewSolRPC("http://"+server.Listener.Addr().String(), cfg.HTTPRequestTimeout)
-	scanner, err := NewSOLScanner(make(chan struct{}), cfg, storage, s.bridge, s.m, rpcClient,
-		singleVaultPubKeys{vault: vault}, func(int64) error { return nil }, scm)
-	c.Assert(err, IsNil)
-	scanner.spl = testSPLRegistry(testUSDCMint) // independent of the build's token list
-	txIns := make(chan stypes.TxIn, 10)
-	scanner.globalTxsQueue = txIns
-	scanner.lastMimirCheck = time.Now() // skip the halt mimir reads
-	scanner.splEnabled.Store(true)      // as by the SOLTokens mimir
-	return scanner, storage, txIns
-}
-
-// TestScanTokenAccountOfNewVaultObservesEarlierDeposits: the first-tracking floor
-// is only for token accounts of vaults this node already scanned before it tracked
-// their token accounts (the SPL upgrade). A vault this node has never scanned is
-// new to it: nodes that are not members learn of a churned-in vault only once it
-// is active and published in inbound_addresses, and a node that was offline over a
-// churn learns of it later still. A deposit to such a vault's existing token
-// account made before this node's first scan lists only the token account, so
-// flooring it at the current slot would drop it on exactly those nodes and the
-// deposit could never reach consensus.
-func (s *BlockScannerTestSuite) TestScanTokenAccountOfNewVaultObservesEarlierDeposits(c *C) {
+// TestScanTokenAccountObservesDepositsBeforeFirstScan: the floor is the activation
+// slot, not when this node first scans the token account. Nodes that are not members
+// learn of a churned-in vault only once it is active and published in
+// inbound_addresses, and a node that was offline over a churn learns of it later
+// still. A deposit to such a vault's token account made before this node's first
+// scan lists only the token account, so it must still be observed, or it could never
+// reach consensus.
+func (s *BlockScannerTestSuite) TestScanTokenAccountObservesDepositsBeforeFirstScan(c *C) {
 	vault := types2.GetRandomEd25519PubKey()
 	vaultAddr, err := vault.GetAddress(common.SOLChain)
 	c.Assert(err, IsNil)
@@ -260,7 +189,9 @@ func (s *BlockScannerTestSuite) TestScanTokenAccountOfNewVaultObservesEarlierDep
 	server := m.server(c)
 	defer server.Close()
 
-	scanner, storage, txIns := s.newTokenScanTestScanner(c, server, vault)
+	scanner, storage, txIns := s.newTokenScanTestScanner(c, server, vault, 800)
+	// This node scanned the vault before; it makes no difference to its token account.
+	c.Assert(storage.SetScanStatus(vaultAddr.String(), "", 850), IsNil)
 	scanner.scan()
 	got := drainTxIns(txIns)
 	c.Assert(got, HasLen, 1)
@@ -274,10 +205,10 @@ func (s *BlockScannerTestSuite) TestScanTokenAccountOfNewVaultObservesEarlierDep
 	c.Check(sig, Equals, earlySig)
 }
 
-// TestScanTokenAccountOfNewVaultStaysUnfloored: a new vault's token account with no
-// signatures yet keeps no floor on later passes, once the vault itself is known, so
-// a deposit an RPC indexes late is still observed.
-func (s *BlockScannerTestSuite) TestScanTokenAccountOfNewVaultStaysUnfloored(c *C) {
+// TestScanTokenAccountObservesLateIndexedDeposits: a token account with no
+// signatures yet keeps the activation slot as its floor as the scan advances, across
+// a restart, so a deposit an RPC indexes late is still observed.
+func (s *BlockScannerTestSuite) TestScanTokenAccountObservesLateIndexedDeposits(c *C) {
 	vault := types2.GetRandomEd25519PubKey()
 	vaultAddr, err := vault.GetAddress(common.SOLChain)
 	c.Assert(err, IsNil)
@@ -291,25 +222,46 @@ func (s *BlockScannerTestSuite) TestScanTokenAccountOfNewVaultStaysUnfloored(c *
 	server := m.server(c)
 	defer server.Close()
 
-	scanner, storage, txIns := s.newTokenScanTestScanner(c, server, vault)
+	scanner, _, txIns := s.newTokenScanTestScanner(c, server, vault, 1000)
+	scanner.scan()
+	m.set(3000, nil)
 	scanner.scan()
 	c.Check(drainTxIns(txIns), HasLen, 0)
-	// Registered without a floor, synchronously, so a restart cannot re-register it
-	// at a later slot once the vault's own scan status is persisted.
-	sig, slot, err := storage.GetScanStatus(tokenAccount)
-	c.Assert(err, IsNil)
-	c.Check(sig, Equals, "")
-	c.Check(slot, Equals, uint64(0))
 
-	// The scanner restarts (in-memory state lost); the deposit at slot 900 is indexed
-	// only now.
-	time.Sleep(50 * time.Millisecond)
+	// The scanner restarts (in-memory state lost); the deposit at slot 2000 (below the
+	// latest scan slot, above the activation slot) is indexed only now.
+	time.Sleep(50 * time.Millisecond) // scan status writes are async
 	scanner.vaultScanStatuses = map[string]vaultScanStatus{}
-	m.set(2000, map[string][]rpc.SignaturesForAddressResult{tokenAccount: {{Signature: lateSig, Slot: 900}}})
+	m.set(4000, map[string][]rpc.SignaturesForAddressResult{tokenAccount: {{Signature: lateSig, Slot: 2000}}})
 	scanner.scan()
 	got := drainTxIns(txIns)
 	c.Assert(got, HasLen, 1)
 	c.Check(got[0].TxArray[0].Tx, Equals, lateSig)
+}
+
+// newTokenScanTestScanner builds a scanner over one vault with USDC whitelisted and
+// SPL active from activationSlot (as by the SOLTokens mimir), served by m, and
+// returns it with its storage and observation queue.
+func (s *BlockScannerTestSuite) newTokenScanTestScanner(c *C, server *httptest.Server, vault common.PubKey, activationSlot uint64) (*SOLScanner, *blockscanner.BlockScannerStorageSolana, chan stypes.TxIn) {
+	storage, err := blockscanner.NewBlockScannerStorageSolana("", config.LevelDBOptions{})
+	c.Assert(err, IsNil)
+	scm, err := signercache.NewSignerCacheManager(storage.GetInternalDb())
+	c.Assert(err, IsNil)
+	cfg := getConfigForTest("http://" + server.Listener.Addr().String())
+	cfg.StartBlockHeight = 0
+	cfg.WhitelistTokens = []string{testUSDCMint}
+	cfg.Solana.ScanInterval = time.Millisecond
+	cfg.Solana.FeeUpdateInterval = 1_000_000_000
+	rpcClient := rpc.NewSolRPC("http://"+server.Listener.Addr().String(), cfg.HTTPRequestTimeout)
+	scanner, err := NewSOLScanner(make(chan struct{}), cfg, storage, s.bridge, s.m, rpcClient,
+		singleVaultPubKeys{vault: vault}, func(int64) error { return nil }, scm)
+	c.Assert(err, IsNil)
+	scanner.spl = testSPLRegistry(testUSDCMint) // independent of the build's token list
+	scanner.spl.activeFrom.Store(activationSlot)
+	txIns := make(chan stypes.TxIn, 10)
+	scanner.globalTxsQueue = txIns
+	scanner.lastMimirCheck = time.Now() // skip the mimir reads
+	return scanner, storage, txIns
 }
 
 // mimirBridge serves THORChain mimirs (unset reads 0) and a block height; scan()'s
@@ -338,9 +290,8 @@ func (b *mimirBridge) set(key string, v int64) {
 // scanner neither scans vault token accounts nor reports token transfers. A thornode
 // without SPL support has no such mimir, so a Bifrost upgraded early never feeds it
 // SPL deposits it would credit (and later pay out through signers that cannot sign
-// SPL). Once the mimir is set, scanning starts at that point: the vault was already
-// scanned, so its token account is floored there and earlier deposits are never
-// replayed.
+// SPL). Once the mimir is set, its value is the activation slot: deposits before it
+// are never observed, on every node alike.
 func (s *BlockScannerTestSuite) TestScanSPLGatedBySOLTokensMimir(c *C) {
 	vault := types2.GetRandomEd25519PubKey()
 	vaultAddr, err := vault.GetAddress(common.SOLChain)
@@ -360,7 +311,7 @@ func (s *BlockScannerTestSuite) TestScanSPLGatedBySOLTokensMimir(c *C) {
 	server := m.server(c)
 	defer server.Close()
 
-	scanner, storage, txIns := s.newTokenScanTestScanner(c, server, vault)
+	scanner, storage, txIns := s.newTokenScanTestScanner(c, server, vault, 0)
 	bridge := &mimirBridge{values: map[string]int64{}}
 	scanner.bridge = bridge
 	scanner.lastMimirCheck = time.Time{} // read the mimirs this pass
@@ -371,16 +322,15 @@ func (s *BlockScannerTestSuite) TestScanSPLGatedBySOLTokensMimir(c *C) {
 	_, _, err = storage.GetScanStatus(tokenAccount)
 	c.Check(err, NotNil) // never tracked
 
-	bridge.set("SOLTokens", 1)
+	bridge.set("SOLTokens", 2000)
 	scanner.lastMimirCheck = time.Time{}
-	m.set(2000, map[string][]rpc.SignaturesForAddressResult{
+	m.set(2200, map[string][]rpc.SignaturesForAddressResult{
 		tokenAccount: {{Signature: depositSig, Slot: 1500}},
 	})
 	scanner.scan()
-	c.Check(drainTxIns(txIns), HasLen, 0) // made before SPL was enabled
-	_, slot, err := storage.GetScanStatus(tokenAccount)
-	c.Assert(err, IsNil)
-	c.Check(slot, Equals, uint64(2000))
+	c.Check(scanner.spl.activationSlot(), Equals, uint64(2000))
+	c.Check(drainTxIns(txIns), HasLen, 0) // before the activation slot
+	c.Check(m.getTxHit[depositSig], Equals, 0)
 
 	m.set(3000, map[string][]rpc.SignaturesForAddressResult{
 		tokenAccount: {{Signature: laterSig, Slot: 2500}, {Signature: depositSig, Slot: 1500}},

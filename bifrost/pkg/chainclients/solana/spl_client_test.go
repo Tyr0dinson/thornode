@@ -210,10 +210,9 @@ func (s *SolTestSuite) TestSPLGetAccountByAddress(c *C) {
 	defer srv.Close()
 
 	cl := &SOLClient{
-		logger:     log.Logger,
-		rpcClient:  newSolRPCForServer(srv),
-		spl:        testSPLRegistry(testUSDCMint, testUSDTMint),
-		solScanner: &SOLScanner{},
+		logger:    log.Logger,
+		rpcClient: newSolRPCForServer(srv),
+		spl:       testSPLRegistry(testUSDCMint, testUSDTMint),
 	}
 
 	// Until the SOLTokens mimir enables SPL, only SOL is reported and no token account
@@ -225,7 +224,7 @@ func (s *SolTestSuite) TestSPLGetAccountByAddress(c *C) {
 	c.Check(acct.Coins[0].Asset.Equals(common.SOLAsset), Equals, true)
 	failATA = false
 
-	cl.solScanner.splEnabled.Store(true)
+	cl.spl.activeFrom.Store(1)
 	acct, err = cl.GetAccountByAddress(vaultAddr.String(), nil)
 	c.Assert(err, IsNil)
 	c.Assert(acct.Coins, HasLen, 3)

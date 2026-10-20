@@ -3,7 +3,7 @@ package solana
 import (
 	"fmt"
 	"math/big"
-	"sync"
+	"sync/atomic"
 
 	"github.com/rs/zerolog"
 
@@ -22,9 +22,6 @@ const splTokenAccountRentLamports = uint64(2_039_280)
 // splTokenAccountSize is the byte length of a classic SPL Token account.
 const splTokenAccountSize = 165
 
-// maxCachedVaultTokenAccounts bounds the per-address token account memo.
-const maxCachedVaultTokenAccounts = 1024
-
 // splToken is a whitelisted SPL Token (classic program) mint.
 type splToken struct {
 	asset    common.Asset
@@ -32,15 +29,17 @@ type splToken struct {
 	decimals int
 }
 
-// splRegistry maps the whitelisted SPL mints to their THORChain assets. Mints are
-// case-sensitive base58 while asset symbols are uppercased, so outbounds resolve an
-// asset to its mint through this registry, never by parsing the symbol.
+// splRegistry maps the whitelisted SPL mints to their THORChain assets and holds
+// THORChain's activation of them. Mints are case-sensitive base58 while asset symbols
+// are uppercased, so outbounds resolve an asset to its mint through this registry,
+// never by parsing the symbol. The client and scanner share one registry.
 type splRegistry struct {
 	tokens []splToken // config order, so every iteration is deterministic
 	byMint map[string]splToken
 
-	ataMu sync.Mutex
-	atas  map[string][]vaultTokenAccount // vault address -> its associated token accounts
+	// activeFrom mirrors THORChain's SOLTokens mimir (constants.MimirKeySOLTokens): the
+	// Solana slot from which SPL tokens are active, or 0 while they are off.
+	activeFrom atomic.Uint64
 }
 
 // vaultTokenAccount is a vault's associated token account for one whitelisted mint.
@@ -59,10 +58,7 @@ func newSPLRegistry(chain common.Chain, whitelist []string, logger zerolog.Logge
 
 // newSPLRegistryFromTokens is newSPLRegistry against an explicit token list.
 func newSPLRegistryFromTokens(chain common.Chain, whitelist []string, tokens []tokenlist.ERC20Token, logger zerolog.Logger) *splRegistry {
-	r := &splRegistry{
-		byMint: map[string]splToken{},
-		atas:   map[string][]vaultTokenAccount{},
-	}
+	r := &splRegistry{byMint: map[string]splToken{}}
 	if len(whitelist) == 0 {
 		return r
 	}
@@ -130,21 +126,33 @@ func (r *splRegistry) tokenByAsset(asset common.Asset) (splToken, bool) {
 	return splToken{}, false
 }
 
+// activationSlot returns the Solana slot from which SPL tokens are active: vault
+// token accounts are scanned, token balances reported and token transfers at or
+// after it observed. 0 means SPL is off.
+func (r *splRegistry) activationSlot() uint64 {
+	if r == nil || len(r.tokens) == 0 {
+		return 0
+	}
+	return r.activeFrom.Load()
+}
+
+// active reports whether SPL tokens are active.
+func (r *splRegistry) active() bool {
+	return r.activationSlot() > 0
+}
+
+// activeAt reports whether a token transfer at slot is observed: SPL is active and
+// the slot is not before the activation slot.
+func (r *splRegistry) activeAt(slot int64) bool {
+	from := r.activationSlot()
+	return from > 0 && slot >= 0 && uint64(slot) >= from
+}
+
 // vaultTokenAccounts returns the vault's associated token account for every
-// whitelisted mint, in whitelist order. Derivations are memoized per vault.
+// whitelisted mint, in whitelist order.
 func (r *splRegistry) vaultTokenAccounts(vaultAddr string) ([]vaultTokenAccount, error) {
 	if r == nil || len(r.tokens) == 0 {
 		return nil, nil
-	}
-	r.ataMu.Lock()
-	defer r.ataMu.Unlock()
-	if cached, ok := r.atas[vaultAddr]; ok {
-		return cached, nil
-	}
-	// Vault sets are small; the cap only bounds GetAccountByAddress callers that pass
-	// arbitrary addresses.
-	if len(r.atas) >= maxCachedVaultTokenAccounts {
-		r.atas = map[string][]vaultTokenAccount{}
 	}
 	vault, err := types.PublicKeyFromStringStrict(vaultAddr)
 	if err != nil {
@@ -158,7 +166,6 @@ func (r *splRegistry) vaultTokenAccounts(vaultAddr string) ([]vaultTokenAccount,
 		}
 		out = append(out, vaultTokenAccount{address: ata.String(), token: t})
 	}
-	r.atas[vaultAddr] = out
 	return out, nil
 }
 

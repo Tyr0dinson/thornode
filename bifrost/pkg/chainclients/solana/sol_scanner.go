@@ -57,13 +57,11 @@ type SOLScanner struct {
 	solvencyReporter   shtypes.SolvencyReporter
 	signerCacheManager *signercache.CacheManager
 
-	// spl is the SPL token whitelist. Each vault's associated token account for a
-	// whitelisted mint is scanned alongside the vault itself: a plain token transfer
-	// to the vault references only that token account, never the vault wallet.
+	// spl is the SPL token whitelist and its activation. Once active, each vault's
+	// associated token account for a whitelisted mint is scanned alongside the vault
+	// itself: a plain token transfer to the vault references only that token account,
+	// never the vault wallet.
 	spl *splRegistry
-	// splEnabled mirrors THORChain's SOLTokens mimir (constants.MimirKeySOLTokens):
-	// token accounts are scanned and token transfers reported only while it is set.
-	splEnabled atomic.Bool
 
 	globalNetworkFeeQueue chan common.NetworkFee
 	globalTxsQueue        chan stypes.TxIn
@@ -219,25 +217,25 @@ func (s *SOLScanner) scan() {
 		return
 	}
 
-	// vaultAddrs are the addresses scanned this pass: each vault wallet followed by its
-	// associated token account for every whitelisted SPL mint (isTokenAccount marks
-	// those, and walletOf gives each one's vault wallet index). Each address keeps its
-	// own signature cursor.
+	// vaultAddrs are the addresses scanned this pass, each with its own signature
+	// cursor: every vault wallet and, while SPL is active, its associated token account
+	// for each whitelisted mint. minSlots[i] is the lowest slot observed for
+	// vaultAddrs[i]: 0 for a wallet, the SPL activation slot for a token account.
+	// Anyone can create and fund a vault's token account long before activation, and
+	// THORChain agrees on that slot, so every node skips the same history.
 	var vaultAddrs []string
-	var isTokenAccount []bool
-	var walletOf []int
+	var minSlots []uint64
+	splSlot := s.spl.activationSlot()
 	for _, vault := range s.pubKeyMgr.GetAlgoPubKeys(common.SigningAlgoEd25519, s.cfg.Solana.ScanInactiveVaults) {
 		vaultAddrSol, err := vault.GetAddress(common.SOLChain)
 		if err != nil {
 			s.logger.Error().Err(err).Msg("failed to get vault address")
 			continue
 		}
-		wallet := len(vaultAddrs)
 		vaultAddrs = append(vaultAddrs, vaultAddrSol.String())
-		isTokenAccount = append(isTokenAccount, false)
-		walletOf = append(walletOf, wallet)
+		minSlots = append(minSlots, 0)
 
-		if !s.splEnabled.Load() {
+		if splSlot == 0 {
 			continue
 		}
 		tokenAccounts, err := s.spl.vaultTokenAccounts(vaultAddrSol.String())
@@ -247,8 +245,7 @@ func (s *SOLScanner) scan() {
 		}
 		for _, ta := range tokenAccounts {
 			vaultAddrs = append(vaultAddrs, ta.address)
-			isTokenAccount = append(isTokenAccount, true)
-			walletOf = append(walletOf, wallet)
+			minSlots = append(minSlots, splSlot)
 		}
 	}
 
@@ -312,19 +309,12 @@ func (s *SOLScanner) scan() {
 	successfulQueries := make([]bool, len(vaultAddrs))
 	countTxs := make([]int, len(vaultAddrs))
 	vaultLastSigs := make([]string, len(vaultAddrs))
-	vaultLastSlots := make([]uint64, len(vaultAddrs))
-	// statusRead and tracked record, per address, whether its scan status could be read
-	// this pass and whether this node already had one; a token account's first-tracking
-	// floor depends on whether its vault wallet was already tracked.
-	statusRead := make([]bool, len(vaultAddrs))
-	tracked := make([]bool, len(vaultAddrs))
 	for i, vaultAddr := range vaultAddrs {
 		var lastSig string
 		var vaultLastSlot uint64
 		if vss, ok := s.vaultScanStatuses[vaultAddr]; ok {
 			lastSig = vss.lastSig
 			vaultLastSlot = vss.lastSlot
-			statusRead[i], tracked[i] = true, true
 		} else {
 			lastSig, vaultLastSlot, err = s.db.GetScanStatus(vaultAddr)
 			// if err is ErrNotFound, then we set to "" and 0.
@@ -334,58 +324,18 @@ func (s *SOLScanner) scan() {
 				wg.Done()
 				continue
 			}
-			statusRead[i], tracked[i] = true, err == nil
-			if errors.Is(err, leveldb.ErrNotFound) && isTokenAccount[i] {
-				wallet := walletOf[i]
-				if !statusRead[wallet] {
-					// Whether the vault is new to this node is unknown this pass.
-					wg.Done()
-					continue
-				}
-				// First time this node tracks this token account. If it already tracked
-				// the vault (the SPL upgrade), register the token account at the current
-				// slot so only transfers after it are observed: the account can predate
-				// SPL support (anyone can create and fund it), and replaying that history
-				// would observe stale deposits that other nodes, with different RPC
-				// retention, cannot agree on.
-				//
-				// A vault new to this node gets no floor, like the vault wallet itself.
-				// A non-member node learns of a churned-in vault only once it is active
-				// and published for deposits, and a node offline over a churn learns of
-				// it later still, so its token account can already hold deposits that
-				// list only that account. Flooring them would drop them on those nodes,
-				// possibly enough that they never reach consensus. Its whole history
-				// postdates the vault, so there is nothing stale to skip.
-				if tracked[wallet] {
-					vaultLastSlot = currentSlot
-				}
-				if err = s.db.SetScanStatus(vaultAddr, "", vaultLastSlot); err != nil {
-					s.logger.Error().Err(err).Str("token_account", vaultAddr).Msg("failed to register token account scan status")
-					setUnhealthy()
-					wg.Done()
-					continue
-				}
-			}
 			s.vaultScanStatuses[vaultAddr] = vaultScanStatus{
 				lastSig:  lastSig,
 				lastSlot: vaultLastSlot,
 			}
 		}
 		vaultLastSigs[i] = lastSig
-		vaultLastSlots[i] = vaultLastSlot
 
 		var minContextSlot uint64
 		var queryLastSig string
-		// minSlot, when non-zero, is the lowest slot a cursor-less token account scan
-		// observes. Signatures below it predate tracking and are skipped, though the
-		// cursor still moves past them.
-		var minSlot uint64
 		if _, ok := s.initialHeight[vaultAddr]; ok || s.cfg.StartBlockHeight == 0 {
 			minContextSlot = vaultLastSlot
 			queryLastSig = lastSig
-			if isTokenAccount[i] && lastSig == "" {
-				minSlot = vaultLastSlot + 1
-			}
 		} else {
 			minContextSlot = uint64(s.cfg.StartBlockHeight)
 			s.logger.Info().
@@ -396,10 +346,6 @@ func (s *SOLScanner) scan() {
 			// NOTE: this can observe txs that we already observed in the past,
 			// because minContextSlot does not set a minimum bound for the query,
 			// it only ensures that minContextSlot is in the history on the rpc node.
-			// Token accounts do bound it, at StartBlockHeight.
-			if isTokenAccount[i] {
-				minSlot = uint64(s.cfg.StartBlockHeight)
-			}
 		}
 
 		// FloorBlockHeight: never query a vault below the configured floor. If the
@@ -413,12 +359,9 @@ func (s *SOLScanner) scan() {
 				Msg("advancing vault scanner to configured floor block height")
 			minContextSlot = uint64(s.cfg.FloorBlockHeight)
 			queryLastSig = ""
-			if isTokenAccount[i] && minContextSlot > minSlot {
-				minSlot = minContextSlot
-			}
 		}
 
-		go s.scanVault(vaultAddr, i, queryLastSig, minContextSlot, minSlot, &seenSigs, setUnhealthy, countTxs, successfulQueries, newLastSigs, &wg)
+		go s.scanVault(vaultAddr, i, queryLastSig, minContextSlot, minSlots[i], &seenSigs, setUnhealthy, countTxs, successfulQueries, newLastSigs, &wg)
 	}
 	wg.Wait()
 
@@ -452,21 +395,14 @@ func (s *SOLScanner) scan() {
 				s.initialHeight[vaultAddr] = struct{}{}
 			}
 
-			// A token account without a cursor keeps its registration slot, which
-			// is its observation floor, until its first signature sets a cursor.
-			lastScanSlot := currentSlot
-			if isTokenAccount[i] && lastSig == "" {
-				lastScanSlot = vaultLastSlots[i]
-			}
-
 			s.vaultScanStatuses[vaultAddr] = vaultScanStatus{
 				lastSig:  lastSig,
-				lastSlot: lastScanSlot,
+				lastSlot: currentSlot,
 			}
 
 			// update the db in a goroutine, we don't need to block here
 			go func() {
-				if scanStatusErr := s.db.SetScanStatus(vaultAddr, lastSig, lastScanSlot); scanStatusErr != nil {
+				if scanStatusErr := s.db.SetScanStatus(vaultAddr, lastSig, currentSlot); scanStatusErr != nil {
 					s.logger.Error().Err(scanStatusErr).Str("vault", vaultAddr).Msg("failed to set vault scan status")
 				}
 			}()
@@ -522,7 +458,7 @@ func (s *SOLScanner) scan() {
 // If queryLastSig is empty, it will query all transactions for the vault address that exist on the node.
 // minContextSlot is the minimum slot to query for transactions. It does not set a bound on the query,
 // but does ensure that history exists on the RPC node until at least this slot.
-// minSlot, when non-zero, skips signatures below it (a cursor-less token account's observation floor);
+// minSlot, when non-zero, skips signatures below it (a token account's SPL activation slot);
 // skipped signatures still advance the cursor. seen dedupes signatures across the pass's addresses.
 func (s *SOLScanner) scanVault(
 	vaultAddr string,
@@ -743,21 +679,26 @@ func (s *SOLScanner) IsHealthy() bool {
 	return s.healthy.Load()
 }
 
-// refreshSPLGate reads THORChain's SOLTokens mimir. A thornode without SPL support
-// has no such mimir and reads as off. A failed read keeps the last value: briefly
-// missing token accounts is recoverable (their cursors resume), but a flapping gate
-// is not worth the noise.
+// refreshSPLGate reads THORChain's SOLTokens mimir, the Solana slot from which SPL
+// tokens are active (constants.MimirKeySOLTokens). A thornode without SPL support has
+// no such mimir and reads as off. A failed read keeps the last value: briefly missing
+// token accounts is recoverable (their cursors resume), but a flapping gate is not
+// worth the noise.
 func (s *SOLScanner) refreshSPLGate() {
 	if s.spl == nil || len(s.spl.tokens) == 0 || s.bridge == nil {
 		return
 	}
-	enabled, err := s.bridge.GetMimir(constants.MimirKeySOLTokens)
+	value, err := s.bridge.GetMimir(constants.MimirKeySOLTokens)
 	if err != nil {
-		s.logger.Error().Err(err).Msgf("fail to get mimir %s; keeping SPL scanning %t", constants.MimirKeySOLTokens, s.splEnabled.Load())
+		s.logger.Error().Err(err).Msgf("fail to get mimir %s; keeping SPL activation slot %d", constants.MimirKeySOLTokens, s.spl.activationSlot())
 		return
 	}
-	if s.splEnabled.Swap(enabled > 0) != (enabled > 0) {
-		s.logger.Info().Bool("enabled", enabled > 0).Msg("SPL token scanning toggled by the SOLTokens mimir")
+	slot := uint64(0)
+	if value > 0 {
+		slot = uint64(value)
+	}
+	if prev := s.spl.activeFrom.Swap(slot); prev != slot {
+		s.logger.Info().Uint64("activation_slot", slot).Uint64("previous", prev).Msg("SPL token activation set by the SOLTokens mimir")
 	}
 }
 
@@ -948,7 +889,8 @@ func (s *SOLScanner) txInItem(txn *rpc.TransactionResult, blockHeight int64) (*s
 	var amountMoved uint64
 	// tokenTransfers are the top-level SPL Token transfers. They are observed only
 	// when the transaction has no SystemProgram transfer, so a transaction that moves
-	// SOL is observed exactly as it was before SPL support.
+	// SOL is observed exactly as it was before SPL support, and only from the SPL
+	// activation slot on, whichever address's scan returned the transaction.
 	var tokenTransfers []splTransfer
 	fee := txn.Meta.Fee
 
@@ -1049,7 +991,7 @@ func (s *SOLScanner) txInItem(txn *rpc.TransactionResult, blockHeight int64) (*s
 		}
 	}
 
-	if transferCount == 0 && len(tokenTransfers) > 0 && s.splEnabled.Load() {
+	if transferCount == 0 && len(tokenTransfers) > 0 && s.spl.activeAt(blockHeight) {
 		return s.splTxInItem(txn, blockHeight, memo, tokenTransfers, accounts, advancedNonceAcct)
 	}
 
