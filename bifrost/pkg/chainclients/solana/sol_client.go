@@ -671,6 +671,13 @@ func (c *SOLClient) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *
 		return nil, nil, nil, nil
 	}
 
+	// An SPL self-send can never be observed (errSPLSelfSend). Drop it rather than
+	// retain it: a retained item would hold the vault's signing slot every pass.
+	if isSPLSelfSend(tx) {
+		return c.dropForReschedule(tx, "spl_self_send_dropped", c.logger.Warn(),
+			"SPL outbound to its own vault would be an unobservable no-op, dropping for reschedule")
+	}
+
 	// GetMemo returns OriginalMemo for memoless outbounds
 	// For truly memoless transactions (no Memo or OriginalMemo), default to TxOutbound
 	memoForParsing := tx.GetMemo()
@@ -1766,11 +1773,7 @@ func (c *SOLClient) CreateTxWithNonce(tx stypes.TxOutItem, memoForParsing, nonce
 	}
 
 	if isSPLOutbound(tx) {
-		// SPL self-sends never get here: durableDestinationExcluded routes them to the
-		// recent-blockhash path.
-		if toPubkey == vaultPubKey {
-			return solTx, errors.New("durable-nonce self-transfer not supported yet")
-		}
+		// splTransferParams refuses SPL self-sends (errSPLSelfSend).
 		params, err := c.splTransferParams(tx, vaultPubKey, toPubkey)
 		if err != nil {
 			return solTx, err

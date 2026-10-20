@@ -16,11 +16,32 @@ func isSPLOutbound(tx stypes.TxOutItem) bool {
 	return len(tx.Coins) == 1 && !tx.Coins[0].Asset.Equals(common.SOLAsset)
 }
 
+// errSPLSelfSend refuses an SPL outbound from a vault to its own address. It would
+// transfer from the vault's token account to the same account, which the Token
+// program accepts as a no-op: the transaction lands and pays the fee, but no balance
+// changes, so it can never be observed as the outbound and THORChain would re-issue
+// it, burning a fee on every attempt.
+var errSPLSelfSend = errors.New("SPL self-send cannot be observed")
+
+// isSPLSelfSend reports whether tx is an SPL outbound to its own vault's address.
+// Base58 is case-sensitive, so the addresses must match exactly (Address.Equals
+// ignores case).
+func isSPLSelfSend(tx stypes.TxOutItem) bool {
+	if !isSPLOutbound(tx) {
+		return false
+	}
+	vaultAddr, err := tx.VaultPubKeyEddsa.GetAddress(common.SOLChain)
+	return err == nil && tx.ToAddress.String() == vaultAddr.String()
+}
+
 // splTransferParams resolves an SPL outbound: the whitelisted mint, the amount in
 // the mint's base units, and the vault's and recipient's associated token accounts.
 // Everything is derived from the outbound and the whitelist alone, so every keysign
 // party builds identical bytes without reading chain state.
 func (c *SOLClient) splTransferParams(tx stypes.TxOutItem, vault, recipient types.PublicKey) (types.SPLTransferParams, error) {
+	if recipient == vault {
+		return types.SPLTransferParams{}, errSPLSelfSend
+	}
 	coin := tx.Coins[0]
 	token, ok := c.spl.tokenByAsset(coin.Asset)
 	if !ok {

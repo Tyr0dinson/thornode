@@ -143,24 +143,6 @@ func (s *SolTestSuite) TestSPLCreateTxErrors(c *C) {
 	c.Check(err, ErrorMatches, ".*unsupported outbound asset.*")
 }
 
-func (s *SolTestSuite) TestSPLCreateTxSelfSend(c *C) {
-	// A self-send lists every account once.
-	cl := splTestClient()
-	vault := types2.GetRandomEd25519PubKey()
-	vaultAddr, err := vault.GetAddress(common.SOLChain)
-	c.Assert(err, IsNil)
-	tx := splTestTxOut(c, vault, 100_000_000)
-	tx.ToAddress = vaultAddr
-	solTx, err := cl.CreateTx(tx, tx.Memo, mockBlockhashForSlot(950))
-	c.Assert(err, IsNil)
-	seen := map[types.PublicKey]bool{}
-	for _, k := range solTx.Message.Accounts {
-		c.Check(seen[k], Equals, false)
-		seen[k] = true
-	}
-	c.Check(cl.durableDestinationExcluded(tx), Equals, true)
-}
-
 func (s *SolTestSuite) TestSPLCreateTxWithNonce(c *C) {
 	cl := splTestClient()
 	f := newDurableFixture(c)
@@ -435,4 +417,76 @@ func (s *SolTestSuite) TestParseTokenBalancesTolerant(c *C) {
 	c.Check(amt.String(), Equals, "5")
 	_, ok = rpc.FindTokenBalance(balances, 2)
 	c.Check(ok, Equals, false)
+}
+
+// TestSPLSelfSendNeverSigned: an SPL outbound from a vault to its own address would
+// TransferChecked from its token account to the same account. The Token program
+// accepts that as a no-op, so the transaction lands, pays the fee and moves nothing,
+// and the observer (which requires the destination balance to grow by the amount)
+// can never report it: THORChain would see no outbound and re-issue it, burning a fee
+// each time. Such an outbound is never built or signed.
+func (s *SolTestSuite) TestSPLSelfSendNeverSigned(c *C) {
+	vault := types2.GetRandomEd25519PubKey()
+	vaultAddr, err := vault.GetAddress(common.SOLChain)
+	c.Assert(err, IsNil)
+	vaultATA := ata(c, vaultAddr.String(), testUSDCMint)
+
+	// What the landed self-send looks like: one token account as source and
+	// destination, its balance unchanged. It is not observable.
+	landed := &rpc.TransactionResult{
+		Slot: 100,
+		Meta: rpc.RPCMeta{
+			Fee:               5000,
+			PreBalances:       []uint64{1_000_000_000, 2_039_280, 1, 1, 1},
+			PostBalances:      []uint64{1_000_000_000 - 5000, 2_039_280, 1, 1, 1},
+			PreTokenBalances:  []interface{}{tokenBalance(1, testUSDCMint, vaultAddr.String(), "100000000", 6)},
+			PostTokenBalances: []interface{}{tokenBalance(1, testUSDCMint, vaultAddr.String(), "100000000", 6)},
+		},
+		Transaction: rpc.RPCTxnData{
+			Signatures: []string{testTxSig},
+			Message: rpc.RPCMessage{
+				AccountKeys: []string{vaultAddr.String(), vaultATA, testUSDCMint, testTokenProgram, testMemoProgram},
+				Instructions: []rpc.RPCInstruction{
+					{ProgramIdIndex: 4, Accounts: []int{0}, Data: makeMemoData("OUT:4D91ADAFA69765E7805B5FF2F3A0BA1DBE69E37A1CFCD20C48B99C528AA3EE87")},
+					{ProgramIdIndex: 3, Accounts: []int{1, 2, 1, 0}, Data: makeTransferCheckedData(1_000_000, 6)},
+				},
+			},
+		},
+	}
+	c.Check(newSPLTestScanner().getTxInItem(landed, 100), IsNil)
+
+	tx := splTestTxOut(c, vault, 100_000_000)
+	tx.ToAddress = vaultAddr
+
+	// CreateTx refuses to build it.
+	_, err = splTestClient().CreateTx(tx, tx.Memo, mockBlockhashForSlot(950))
+	c.Check(err, ErrorMatches, ".*self-send.*")
+
+	// SignTx drops it for reschedule without signing or retaining it.
+	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		body, _ := io.ReadAll(req.Body)
+		var r struct {
+			Method string          `json:"method"`
+			Params json.RawMessage `json:"params"`
+		}
+		_ = json.Unmarshal(body, &r)
+		if res, ok := consensusBlockhashRPCResponse(r.Method, r.Params); ok {
+			_, _ = fmt.Fprintf(rw, `{"jsonrpc":"2.0","id":1,"result":%s}`, res)
+			return
+		}
+		_, _ = rw.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":null}`))
+	}))
+	defer server.Close()
+	e, pub, pubkeyMgr := s.newSPLSignerTestClient(c, server)
+	defer func() { c.Assert(pubkeyMgr.Stop(), IsNil) }()
+	e.spl = testSPLRegistry(testUSDCMint)
+	pubAddr, err := pub.GetAddress(common.SOLChain)
+	c.Assert(err, IsNil)
+	selfOut := splTestTxOut(c, pub, 100_000_000)
+	selfOut.ToAddress = pubAddr
+	raw, checkpoint, obs, err := e.SignTx(selfOut, 1)
+	c.Check(err, IsNil)
+	c.Check(raw, IsNil)
+	c.Check(checkpoint, IsNil)
+	c.Check(obs, IsNil)
 }
