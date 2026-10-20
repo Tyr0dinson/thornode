@@ -120,3 +120,10 @@ func (m Migrator) Migrate17to18(_ sdk.Context) error {
 func (m Migrator) migrate19to20Mainnet(_ sdk.Context) error {
 	return nil
 }
+
+// migrate20to21Mainnet (on mainnet) writes down the phantom GAIA.ATOM on vault
+// ...jy4h and replenishes the GAIA.ATOM pool with Reserve RUNE. No-op off
+// mainnet: the write-down is mainnet state.
+func (m Migrator) migrate20to21Mainnet(_ sdk.Context) error {
+	return nil
+}

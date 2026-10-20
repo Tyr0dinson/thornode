@@ -511,3 +511,13 @@ func (m Migrator) Migrate19to20(ctx cosmos.Context) error {
 	}
 	return nil
 }
+
+// Migrate20to21 writes down the GAIA.ATOM that vault ...jy4h was credited for
+// five inbounds it never received on the Cosmos Hub, and replenishes the
+// GAIA.ATOM pool with Reserve RUNE. Mainnet only; the step soft-skips on drift.
+func (m Migrator) Migrate20to21(ctx cosmos.Context) error {
+	if err := m.mgr.LoadManagerIfNecessary(ctx); err != nil {
+		return err
+	}
+	return m.migrate20to21Mainnet(ctx)
+}

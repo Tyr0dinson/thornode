@@ -147,7 +147,7 @@ func (AppModule) IsAppModule() {}
 func (AppModule) IsOnePerModuleType() {}
 
 func (AppModule) ConsensusVersion() uint64 {
-	return 20
+	return 21
 }
 
 func (am AppModule) RegisterInvariants(_ sdk.InvariantRegistry) {}
@@ -177,6 +177,9 @@ func (am AppModule) RegisterServices(cfg module.Configurator) {
 	}
 	if err := cfg.RegisterMigration(types.ModuleName, 19, m.Migrate19to20); err != nil {
 		panic(fmt.Sprintf("failed to migrate x/thorchain from version 19 to 20: %v", err))
+	}
+	if err := cfg.RegisterMigration(types.ModuleName, 20, m.Migrate20to21); err != nil {
+		panic(fmt.Sprintf("failed to migrate x/thorchain from version 20 to 21: %v", err))
 	}
 }
 
