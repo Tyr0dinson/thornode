@@ -433,10 +433,10 @@ or reverses when fees responded negatively.
   next one.
 - Per `pair`: running `volume_tor` covering _every_ swap through the
   pair, affiliate or not. This is the normalization denominator. It is
-  folded into each thorname accumulator's `pool_volume_tor` at the
-  epoch boundary and then cleared unconditionally, so a rolled
-  accumulator carries a pool volume spanning exactly the same epochs
-  as its fees.
+  folded into each enrolled record's accumulator `pool_volume_tor` at
+  every epoch boundary, swaps or not, and then cleared unconditionally,
+  so an accumulator carries a pool volume spanning exactly the epochs of
+  its span.
 
 Note: protocol-internal swaps that call `swap()` directly (POL,
 affiliate-fee conversion) bypass the swap-completion hook and so are
@@ -562,15 +562,22 @@ At block heights where `block_height % L1DynamicFeeEpochBlocks == 0`:
    (not accumulators, so a record that drew no swaps is still visited).
    For each, with its accumulator (empty if none):
 
-   - With no swaps in the span: do nothing, unless the span has reached
-     `L1DynamicFeeMaxEpochBlocks` and the record is not in a monitor
-     state, in which case seal it empty (zero revenue) below. An empty
-     seal does not update `last_active_epoch`, so an idle record still
-     ages towards pruning.
-
    - Fold the pair's pool accumulator into
      `accumulator.pool_volume_tor` — for a global (`*|*`) accumulator,
-     the sum of the pool accumulators of the pairs it was credited on.
+     the sum of the pool accumulators of the pairs it was credited on
+     (or, before its first swap in the span, the pairs from its last
+     seal). This runs every epoch, swaps or not, so the span's pool
+     volume covers every epoch its `blocks` counts, including idle ones
+     before the thorname's first swap. Dropping those would shrink the
+     denominator exactly when a high fee delays flow, and read as a
+     higher signal.
+   - With no swaps in the span: keep the accumulator (pool volume only;
+     nothing to store if that is zero too) and move on, unless the span
+     has reached `L1DynamicFeeMaxEpochBlocks` and the record is not in a
+     monitor state, in which case seal it empty (zero revenue) below. An
+     idle epoch or an empty seal does not update `last_active_epoch`, so
+     an idle record still ages towards pruning, and pruning a record
+     deletes its accumulator too.
    - **Liquidity gate.** If `accumulator.swap_count < MinSwaps` or
      `accumulator.volume_tor < MinVolumeUSD * 1e8`, the span is too
      thin to carry signal. Unless it has run `MaxEpochBlocks` (counted
