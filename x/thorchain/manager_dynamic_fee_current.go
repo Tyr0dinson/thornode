@@ -410,6 +410,10 @@ func (m *DynamicFeeMgr) EndBlock(ctx cosmos.Context) error {
 		if err := m.keeper.DeleteDynamicFeeRecord(ctx, rec.Thorname, rec.PairAssetA, rec.PairAssetB); err != nil {
 			ctx.Logger().Error("fail to prune dynamic fee record", "error", err)
 		}
+		// An idle record may still hold a volume-only accumulator.
+		if err := m.keeper.DeleteDynamicFeeAccumulator(ctx, rec.Thorname, rec.PairAssetA, rec.PairAssetB); err != nil {
+			ctx.Logger().Error("fail to prune dynamic fee accumulator", "error", err)
+		}
 	}
 
 	return nil
@@ -471,13 +475,12 @@ func (m *DynamicFeeMgr) endEpochForRecord(ctx cosmos.Context, rec types.DynamicF
 	}
 	spanBlocks := ctx.BlockHeight() - rec.SpanStartHeight
 	capped := p.maxSpan > 0 && spanBlocks >= p.maxSpan
-	if !hasSwaps && (!capped || monitor) {
-		return nil
-	}
 
-	// Fold this epoch's pool volume into the accumulator before deciding. A
-	// rolled accumulator then carries a pool volume spanning exactly the same
-	// epochs as its fees.
+	// Fold this epoch's pool volume into the accumulator before deciding,
+	// swaps or not. The accumulator then carries a pool volume spanning
+	// exactly the epochs counted in the span's Blocks, including idle ones
+	// before the thorname's first swap; dropping those would shrink the
+	// denominator and read a fee that delays flow as a higher signal.
 	if rec.PairAssetA == types.DynamicFeeGlobalPair {
 		// A global accumulator is measured against the pairs its thorname
 		// traded, not every L1 pair: volume on pairs it never touches would
@@ -497,6 +500,14 @@ func (m *DynamicFeeMgr) endEpochForRecord(ctx cosmos.Context, rec types.DynamicF
 		}
 	}
 
+	if !hasSwaps && (!capped || monitor) {
+		// Idle so far: carry the other swappers' volume into the next epoch.
+		if acc.PoolVolumeTor.IsZero() {
+			return nil
+		}
+		return m.keeper.SetDynamicFeeAccumulator(ctx, acc)
+	}
+
 	thin := acc.SwapCount < p.minSwaps || acc.VolumeTor.LT(p.minVolumeTor)
 	if thin {
 		if !capped {
@@ -514,10 +525,7 @@ func (m *DynamicFeeMgr) endEpochForRecord(ctx cosmos.Context, rec types.DynamicF
 	if err := m.sealEpochForRecord(ctx, rec, acc, currentEpoch, spanBlocks, thin, hasSwaps, monitor, p); err != nil {
 		return err
 	}
-	if hasSwaps {
-		return m.keeper.DeleteDynamicFeeAccumulator(ctx, rec.Thorname, rec.PairAssetA, rec.PairAssetB)
-	}
-	return nil
+	return m.keeper.DeleteDynamicFeeAccumulator(ctx, rec.Thorname, rec.PairAssetA, rec.PairAssetB)
 }
 
 // sealEpochForRecord appends the span's entry, decides the next dynamic_bps

@@ -548,6 +548,8 @@ func (s *DynamicFeeMgrSuite) TestSpanCapSealsEmptySpan(c *C) {
 	c.Check(rec.Probes[1].Mean().IsZero(), Equals, true, Commentf("zero revenue at 20 bps"))
 	c.Check(rec.DynamicBps, Equals, uint64(10), Commentf("1 beat 20, so the search tests the midpoint"))
 	c.Check(rec.LastActiveEpoch, Equals, uint64(1), Commentf("an empty seal is not activity"))
+	c.Check(rec.History[0].PoolVolumeTor.Equal(cosmos.NewUint(20_000)), Equals, true,
+		Commentf("both idle epochs' other flow is in the denominator, got %s", rec.History[0].PoolVolumeTor))
 
 	mon, err := k.GetDynamicFeeRecord(ctx, "mon", pairA, pairB)
 	c.Assert(err, IsNil)
@@ -575,6 +577,88 @@ func (s *DynamicFeeMgrSuite) TestSpanStartsForRecordsWithoutOne(c *C) {
 	c.Check(rec.SpanStartHeight, Equals, int64(100))
 	c.Check(rec.History, HasLen, 0)
 	c.Check(rec.DynamicBps, Equals, uint64(9))
+}
+
+// TestIdleEpochsFoldIntoSpanDenominator: a span's pool volume covers every
+// epoch its Blocks counts, including idle ones before the thorname's first
+// swap. Otherwise a fee that delays flow would shrink the denominator and read
+// as a higher signal. Idle epochs leave a volume-only accumulator that is not
+// activity; pruning an idle record also drops it.
+func (s *DynamicFeeMgrSuite) TestIdleEpochsFoldIntoSpanDenominator(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	k := mgr.Keeper()
+	setDynamicFeeTestMimirs(ctx, k)
+	dfm := newDynamicFeeMgr(k)
+	registerThorname(ctx, k, "tn", types.DynamicFeeStatePerPair)
+	registerThorname(ctx, k, "mon", types.DynamicFeeStatePerPairMonitor)
+	registerThorname(ctx, k, "glob", types.DynamicFeeStateGlobal)
+	pairA, pairB, _ := dynamicFeePairKey(common.BTCAsset, common.RuneAsset())
+	g := types.DynamicFeeGlobalPair
+	own := cosmos.NewUint(1_000_000)
+	fees := cosmos.NewUint(10_000)
+	other := cosmos.NewUint(4_000_000)
+
+	// Epoch ending at 20: every thorname swaps and seals.
+	for _, tn := range []string{"tn", "mon", "glob"} {
+		creditOneSwap(ctx, dfm, tn, own, fees)
+	}
+	dfm.CreditPoolVolume(ctx, common.BTCAsset, common.RuneAsset(), own.MulUint64(3).Add(other))
+	ctx = ctx.WithBlockHeight(20)
+	c.Assert(dfm.EndBlock(ctx), IsNil)
+
+	// Epoch ending at 30: only other swappers trade the pair.
+	dfm.CreditPoolVolume(ctx, common.BTCAsset, common.RuneAsset(), other)
+	ctx = ctx.WithBlockHeight(30)
+	c.Assert(dfm.EndBlock(ctx), IsNil)
+	for _, key := range [][3]string{{"tn", pairA, pairB}, {"mon", pairA, pairB}, {"glob", g, g}} {
+		acc, err := k.GetDynamicFeeAccumulator(ctx, key[0], key[1], key[2])
+		c.Assert(err, IsNil)
+		c.Check(acc.PoolVolumeTor.Equal(other), Equals, true, Commentf("%s carries the idle epoch's other flow", key[0]))
+		c.Check(acc.SwapCount, Equals, uint64(0))
+		rec, err := k.GetDynamicFeeRecord(ctx, key[0], key[1], key[2])
+		c.Assert(err, IsNil)
+		c.Check(rec.History, HasLen, 1, Commentf("%s: an idle epoch does not seal", key[0]))
+		c.Check(rec.LastActiveEpoch, Equals, uint64(2), Commentf("%s: an idle epoch is not activity", key[0]))
+	}
+
+	// Epoch ending at 40: the thornames swap again and seal a 20-block span.
+	for _, tn := range []string{"tn", "mon", "glob"} {
+		creditOneSwap(ctx, dfm, tn, own, fees)
+	}
+	dfm.CreditPoolVolume(ctx, common.BTCAsset, common.RuneAsset(), own.MulUint64(3).Add(other))
+	ctx = ctx.WithBlockHeight(40)
+	c.Assert(dfm.EndBlock(ctx), IsNil)
+	want := own.MulUint64(3).Add(other).Add(other)
+	for _, key := range [][3]string{{"tn", pairA, pairB}, {"mon", pairA, pairB}, {"glob", g, g}} {
+		rec, err := k.GetDynamicFeeRecord(ctx, key[0], key[1], key[2])
+		c.Assert(err, IsNil)
+		c.Assert(rec.History, HasLen, 2, Commentf("%s", key[0]))
+		h := rec.History[1]
+		c.Check(h.Blocks, Equals, int64(20), Commentf("%s", key[0]))
+		c.Check(h.PoolVolumeTor.Equal(want), Equals, true,
+			Commentf("%s: span covers 2 epochs, pool volume %s, want %s", key[0], h.PoolVolumeTor, want))
+		acc, err := k.GetDynamicFeeAccumulator(ctx, key[0], key[1], key[2])
+		c.Assert(err, IsNil)
+		c.Check(acc.PoolVolumeTor.IsZero(), Equals, true, Commentf("%s: the seal consumes the accumulator", key[0]))
+	}
+
+	// An idle epoch with no other flow either stores nothing.
+	ctx = ctx.WithBlockHeight(50)
+	c.Assert(dfm.EndBlock(ctx), IsNil)
+	iter := k.GetDynamicFeeAccumulatorIterator(ctx)
+	c.Check(iter.Valid(), Equals, false)
+	iter.Close()
+
+	// Pruning an idle record drops its volume-only accumulator too.
+	dfm.CreditPoolVolume(ctx, common.BTCAsset, common.RuneAsset(), other)
+	ctx = ctx.WithBlockHeight(10 * int64(types.MaxDynamicFeeHistory+4))
+	c.Assert(dfm.EndBlock(ctx), IsNil)
+	iter = k.GetDynamicFeeRecordIterator(ctx)
+	c.Check(iter.Valid(), Equals, false, Commentf("idle past the history window: pruned"))
+	iter.Close()
+	iter = k.GetDynamicFeeAccumulatorIterator(ctx)
+	c.Check(iter.Valid(), Equals, false, Commentf("no accumulator outlives its record"))
+	iter.Close()
 }
 
 // TestCappedReadingsOnlyLower pins that a span sealed by the time cap below the
