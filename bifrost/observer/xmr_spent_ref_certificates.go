@@ -543,7 +543,13 @@ func (s *AttestationGossip) shouldApplyHistoricalXMRSpentRefsFromAttestations(
 func (s *AttestationGossip) historicalXMRSpentRefCertificateSnapshot(
 	payloadHash [sha256.Size]byte,
 ) (common.ObservedTx, []*common.Attestation, bool, bool) {
-	s.mu.Lock()
+	return s.historicalXMRSpentRefCertificateSnapshotWithContext(context.Background(), payloadHash)
+}
+
+func (s *AttestationGossip) historicalXMRSpentRefCertificateSnapshotWithContext(ctx context.Context, payloadHash [sha256.Size]byte) (common.ObservedTx, []*common.Attestation, bool, bool) {
+	if lockAttestationContext(ctx, &s.mu) != nil {
+		return common.ObservedTx{}, nil, false, false
+	}
 	defer s.mu.Unlock()
 	bucket := s.historicalXMRSpentRefCertificates[payloadHash]
 	if bucket == nil {
@@ -566,11 +572,6 @@ func (s *AttestationGossip) historicalXMRSpentRefCertificateApplied(obsTx common
 	}
 	_, _, applied, ok := s.historicalXMRSpentRefCertificateSnapshot(sha256.Sum256(payload))
 	return ok && applied
-}
-
-func (s *AttestationGossip) historicalXMRSpentRefAttestations(payloadHash [sha256.Size]byte) []*common.Attestation {
-	_, attestations, _, _ := s.historicalXMRSpentRefCertificateSnapshot(payloadHash)
-	return attestations
 }
 
 // visitObservedXMRPayloadStates visits every live observation bucket that can
@@ -901,8 +902,7 @@ func (s *AttestationGossip) reconcilePendingObservedXMRSpentRefs(ctx context.Con
 		state.mu.Lock()
 		if state.Item != nil && state.Item.ObservedTx != nil && !state.spentRefsApplied && !key.Inbound &&
 			state.Item.ObservedTx.Tx.Chain.Equals(common.XMRChain) && len(state.Item.ObservedTx.SpentOutputRefs) > 0 {
-			entry := s.authorizedXMRSpentRefs[xmrSpentRefsConflictKeyFor(*state.Item.ObservedTx)]
-			blocked := entry != nil && entry.state != xmrSpentRefsImportFailed
+			blocked := s.hasPendingOrConfirmedXMRSpentRefsWithContext(ctx, *state.Item.ObservedTx)
 			dueNow := state.spentRefsNextRetryAt.IsZero() || !now.Before(state.spentRefsNextRetryAt)
 			if !blocked && dueNow && state.AttestationCount() > 0 {
 				dueAt := state.spentRefsNextRetryAt
@@ -957,11 +957,9 @@ func (s *AttestationGossip) reconcilePendingObservedXMRSpentRefs(ctx context.Con
 	}
 }
 
-func (s *AttestationGossip) mergeHistoricalXMRCertificateAttestations(
-	payloadHash [sha256.Size]byte,
-	attestations []*common.Attestation,
-) []*common.Attestation {
-	return append(attestations, s.historicalXMRSpentRefAttestations(payloadHash)...)
+func (s *AttestationGossip) mergeHistoricalXMRCertificateAttestationsWithContext(ctx context.Context, payloadHash [sha256.Size]byte, attestations []*common.Attestation) []*common.Attestation {
+	_, historical, _, _ := s.historicalXMRSpentRefCertificateSnapshotWithContext(ctx, payloadHash)
+	return append(attestations, historical...)
 }
 
 // retryPendingXMRCertificates runs independently of scanner progress. A full

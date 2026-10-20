@@ -548,9 +548,9 @@ func TestSingleVaultMemberCannotScheduleSpentRefVariantFlood(t *testing.T) {
 	}
 
 	assertNoSpentRefImportDuring(t, applied, 100*time.Millisecond)
-	ag.mu.Lock()
+	ag.authorizedXMRSpentRefsMu.Lock()
 	require.Empty(t, ag.authorizedXMRSpentRefs)
-	ag.mu.Unlock()
+	ag.authorizedXMRSpentRefsMu.Unlock()
 	require.Empty(t, ag.applySpentRefsSem)
 }
 
@@ -909,8 +909,8 @@ func observerTestSpentRefsApplied(t *testing.T, ag *AttestationGossip, obsTx com
 // observerTestConflictState exposes only the import state for conflict-map
 // assertions; the tests should not depend on timestamps or map entry internals.
 func observerTestConflictState(ag *AttestationGossip, obsTx common.ObservedTx) (xmrSpentRefsImportState, bool) {
-	ag.mu.Lock()
-	defer ag.mu.Unlock()
+	ag.authorizedXMRSpentRefsMu.Lock()
+	defer ag.authorizedXMRSpentRefsMu.Unlock()
 	entry, ok := ag.authorizedXMRSpentRefs[xmrSpentRefsConflictKeyFor(obsTx)]
 	if !ok {
 		return 0, false
@@ -1014,6 +1014,12 @@ func TestAuthorizedXMRSpentRefsLifecycle(t *testing.T) {
 	ag.resolveAuthorizedXMRSpentRefs(key, identityA, false)
 	require.True(t, ag.rememberAuthorizedXMRSpentRefs(differing))
 
+	// Cancellation cleanup for the old identity must leave the replacement pending.
+	ag.releaseAuthorizedXMRSpentRefs(key, identityA)
+	replacementState, exists := observerTestConflictState(ag, differing)
+	require.True(t, exists)
+	require.Equal(t, xmrSpentRefsImportPending, replacementState)
+
 	// A late outcome for the replaced identity must not clobber the new entry.
 	ag.resolveAuthorizedXMRSpentRefs(key, identityA, true)
 	require.False(t, ag.rememberAuthorizedXMRSpentRefs(obsTx))
@@ -1047,15 +1053,15 @@ func TestPruneAuthorizedXMRSpentRefsExpiresOldEntries(t *testing.T) {
 		ttl = 2 * defaultNonQuorumTimeout
 	}
 
-	ag.mu.Lock()
-	ag.pruneAuthorizedXMRSpentRefsLocked(time.Now().Add(ttl / 2))
+	ag.pruneAuthorizedXMRSpentRefs(time.Now().Add(ttl / 2))
+	ag.authorizedXMRSpentRefsMu.Lock()
 	surviving := len(ag.authorizedXMRSpentRefs)
-	ag.mu.Unlock()
+	ag.authorizedXMRSpentRefsMu.Unlock()
 	assert.Equal(t, 1, surviving, "entry within TTL must survive pruning")
 
-	ag.mu.Lock()
-	ag.pruneAuthorizedXMRSpentRefsLocked(time.Now().Add(ttl + time.Minute))
+	ag.pruneAuthorizedXMRSpentRefs(time.Now().Add(ttl + time.Minute))
+	ag.authorizedXMRSpentRefsMu.Lock()
 	remaining := len(ag.authorizedXMRSpentRefs)
-	ag.mu.Unlock()
+	ag.authorizedXMRSpentRefsMu.Unlock()
 	assert.Equal(t, 0, remaining, "entry past TTL must be pruned")
 }

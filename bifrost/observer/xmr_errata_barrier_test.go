@@ -78,9 +78,9 @@ func TestCleanupRejectsLocalPeerAndRestartState(t *testing.T) {
 	// even though no volatile cleanup history survived process restart.
 	restarted, _, _, _, _, _ := setupTestGossip(t)
 	restarted.SetObserverStorage(o.storage)
-	restarted.processAttestationStateBatch(zerolog.Nop(), common.QuorumState{
+	require.NoError(t, restarted.processAttestationStateBatch(zerolog.Nop(), common.QuorumState{
 		QuoTxs: []*common.QuorumTx{{ObsTx: old, Inbound: true, Attestations: []*common.Attestation{msg.Attestation}}},
-	})
+	}))
 	require.Empty(t, restarted.observedTxs)
 
 	remine := errataTestObservation("orphan", common.XMRChain, 250)

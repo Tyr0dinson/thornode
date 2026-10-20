@@ -307,18 +307,22 @@ func GetXMRSpentOutputRefs(vaultPubKey string) (XMRSpentOutputRefs, error) {
 }
 
 type ObservedTxSpentRefs struct {
-	ObservedTx struct {
+	ConsensusHeight int64 `json:"consensus_height"`
+	Reverted        bool  `json:"reverted"`
+	ObservedTx      struct {
 		Tx              openapi.Tx         `json:"tx"`
 		ObservedPubKey  string             `json:"observed_pub_key"`
 		SpentOutputRefs []common.OutputRef `json:"spent_output_refs"`
 		Status          string             `json:"status"`
-	} `json:"observed_tx"`
+	} `json:"tx"`
 }
 
 func GetTxSpentRefs(txid string) (ObservedTxSpentRefs, error) {
-	// The consensus observation is returned by /tx/{id}; /tx/details/{id}
-	// returns the voter with a different JSON envelope.
-	url := fmt.Sprintf("%s/thorchain/tx/%s", thornodeURL, txid)
+	// Read the stored outbound voter and its consensus/reversion metadata.
+	// /tx/{id} can select an individual observation, and even the stored Tx's
+	// status can return to incomplete when final votes replace it. Explicitly
+	// select the outbound voter so inbound metadata cannot supply this evidence.
+	url := fmt.Sprintf("%s/thorchain/tx/details/%s?outbound=true", thornodeURL, txid)
 	var result ObservedTxSpentRefs
 	err := Get(url, &result)
 	return result, err

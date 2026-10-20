@@ -205,7 +205,11 @@ type AttestationGossip struct {
 	// a set whose import failed terminally may be replaced by a differing
 	// certified set, and entries expire so a failed certificate cannot pin a
 	// txid for the life of the process.
-	authorizedXMRSpentRefs map[xmrSpentRefsConflictKey]*xmrSpentRefsConflictEntry
+	// This mutex protects only reservation bookkeeping. Never hold it while
+	// acquiring another lock, logging or making RPCs: cancellation cleanup must
+	// not wait for the global observer mutex or external work.
+	authorizedXMRSpentRefsMu sync.Mutex
+	authorizedXMRSpentRefs   map[xmrSpentRefsConflictKey]*xmrSpentRefsConflictEntry
 	// historicalXMRSpentRefCertificates is deliberately separate from
 	// observedTxs. Retiring-vault members that have churned out may contribute a
 	// source-vault certificate share, but that share must never count toward the
@@ -263,8 +267,10 @@ type AttestationGossip struct {
 	startupStatePending time.Time
 	startupStateStopped bool
 
-	stateInitPeers map[peer.ID]bool // peers that we have asked for their attestation state
-	stateInitMu    sync.Mutex
+	stateInitPeers   map[peer.ID]bool // peers that we have asked for their attestation state
+	stateInitContext context.Context
+	stateInitWorkers *sync.WaitGroup
+	stateInitMu      sync.Mutex
 }
 
 // NewAttestationGossip create a new instance of AttestationGossip
@@ -888,7 +894,7 @@ func (s *AttestationGossip) Start(ctx context.Context) {
 			s.priceFeeds = make(map[string]*AttestationState[*common.PriceFeed])
 
 			// Prune XMR spent-ref conflict memory
-			s.pruneAuthorizedXMRSpentRefsLocked(now)
+			s.pruneAuthorizedXMRSpentRefs(now)
 			s.pruneHistoricalXMRSpentRefCertificatesLocked(now)
 
 			s.mu.Unlock()

@@ -18,11 +18,23 @@ func (s *AttestationGossip) handleObservedTxAttestation(ctx context.Context, tx 
 	s.handleObservedTxAttestationInternal(ctx, tx, false)
 }
 
+func (s *AttestationGossip) handleObservedTxAttestationFromStateSync(ctx context.Context, tx common.AttestTx) {
+	s.handleObservedTxAttestationWithStateSyncCancellation(ctx, tx, false, true)
+}
+
 func (s *AttestationGossip) handleObservedTxAttestationInternal(ctx context.Context, tx common.AttestTx, queue bool) {
+	s.handleObservedTxAttestationWithStateSyncCancellation(ctx, tx, queue, false)
+}
+
+func (s *AttestationGossip) handleObservedTxAttestationWithStateSyncCancellation(ctx context.Context, tx common.AttestTx, queue, stateSync bool) {
 	obsTx := tx.ObsTx
+	// Keep transfer-scoped recovery separate from the shorter delivery budget.
+	stateSyncCtx := attestationLockContext(ctx, stateSync)
 	barrierHeld := obsTx.Tx.Chain.Equals(common.XMRChain)
 	if barrierHeld {
-		s.xmrErrataBarrier.RLock()
+		if err := readLockAttestationContext(stateSyncCtx, &s.xmrErrataBarrier); err != nil {
+			return
+		}
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, xmrAttestationTimeout(s.config.PeerTimeout))
 		defer cancel()
@@ -35,7 +47,9 @@ func (s *AttestationGossip) handleObservedTxAttestationInternal(ctx context.Cont
 
 	k := observedTxKey(obsTx, tx.Inbound, tx.AllowFutureObservation)
 
-	s.mu.Lock()
+	if lockAttestationContext(stateSyncCtx, &s.mu) != nil {
+		return
+	}
 	if ctx.Err() != nil {
 		s.mu.Unlock()
 		return
@@ -55,7 +69,10 @@ func (s *AttestationGossip) handleObservedTxAttestationInternal(ctx context.Cont
 
 	// note, purposefully locking the single state mutex prior to releasing the global mutex to avoid race in between.
 	// This order must be maintained everywhere to avoid deadlock.
-	state.mu.Lock()
+	if lockAttestationContext(stateSyncCtx, &state.mu) != nil {
+		s.mu.Unlock()
+		return
+	}
 	s.mu.Unlock()
 
 	// Add the attestation
@@ -135,8 +152,8 @@ func (s *AttestationGossip) handleObservedTxAttestationInternal(ctx context.Cont
 	// Spent-reference authorization/import uses separate recovery checks and
 	// must not extend this observation delivery critical section.
 	if maybeApplySpentRefsPayloadBound {
-		maybeApplySpentRefsAttestations = s.mergeHistoricalXMRCertificateAttestations(
-			maybeApplySpentRefsPayloadHash,
+		maybeApplySpentRefsAttestations = s.mergeHistoricalXMRCertificateAttestationsWithContext(
+			stateSyncCtx, maybeApplySpentRefsPayloadHash,
 			maybeApplySpentRefsAttestations,
 		)
 	}
@@ -144,19 +161,36 @@ func (s *AttestationGossip) handleObservedTxAttestationInternal(ctx context.Cont
 	var applySpentRefs *spentOutputRefsImport
 	var onApplySpentRefsOutcome func(applied bool)
 	if maybeApplySpentRefs != nil && maybeApplySpentRefsPayloadBound && s.observerApplySpentOutputRefs != nil {
-		wireMemo, authorized := s.shouldApplyXMRSpentRefsFromAttestations(*maybeApplySpentRefs, maybeApplySpentRefsAttestations)
+		var wireMemo string
+		var authorized bool
+		if stateSync {
+			wireMemo, authorized = s.shouldApplyXMRSpentRefsWithContext(stateSyncCtx, *maybeApplySpentRefs, maybeApplySpentRefsAttestations)
+		} else {
+			wireMemo, authorized = s.shouldApplyXMRSpentRefsFromAttestations(*maybeApplySpentRefs, maybeApplySpentRefsAttestations)
+		}
 		if !authorized {
 			return
 		}
-		s.mu.Lock()
-		liveState, ok := s.observedTxs[k]
 		conflictKey := xmrSpentRefsConflictKeyFor(*maybeApplySpentRefs)
 		identity := xmrSpentRefsIdentity(maybeApplySpentRefs.SpentOutputRefs)
+		launched := false
+		defer func() {
+			if !launched {
+				s.releaseAuthorizedXMRSpentRefs(conflictKey, identity)
+			}
+		}()
+		if lockAttestationContext(stateSyncCtx, &s.mu) != nil {
+			return
+		}
+		liveState, ok := s.observedTxs[k]
 		if ok {
 			// Re-acquire locks in the normal global-then-state order. The
 			// authorization path above can block on thornode, so the originally
 			// captured state may have been pruned and returned to the pool.
-			liveState.mu.Lock()
+			if lockAttestationContext(stateSyncCtx, &liveState.mu) != nil {
+				s.mu.Unlock()
+				return
+			}
 		}
 		s.mu.Unlock()
 
@@ -191,13 +225,13 @@ func (s *AttestationGossip) handleObservedTxAttestationInternal(ctx context.Cont
 			// Authorization reserves the exact conflict identity. If the captured
 			// state was pruned/replaced before admission completed, release that
 			// reservation so a later exact certificate can retry.
-			s.resolveAuthorizedXMRSpentRefs(conflictKey, identity, false)
+			return
 		}
-	}
-
-	// Apply XMR spent output refs after all authorization and state bookkeeping.
-	// This seeds the sidecar only; it does not add a local attestation.
-	if applySpentRefs != nil && s.observerApplySpentOutputRefs != nil {
+		if stateSyncCtx.Err() != nil {
+			return
+		}
+		// The existing async importer owns retries and the outcome after launch.
+		launched = true
 		s.applySpentRefsAsync(*applySpentRefs, onApplySpentRefsOutcome)
 	}
 }
@@ -320,10 +354,17 @@ func (s *AttestationGossip) sendObservedTxAttestationsToThornode(
 
 // handleNetworkFeeAttestation processes attestations for network fees
 func (s *AttestationGossip) handleNetworkFeeAttestation(ctx context.Context, anf common.AttestNetworkFee) {
+	s.handleNetworkFeeAttestationWithStateSyncCancellation(ctx, anf, false)
+}
+
+func (s *AttestationGossip) handleNetworkFeeAttestationWithStateSyncCancellation(ctx context.Context, anf common.AttestNetworkFee, stateSync bool) {
+	lockCtx := attestationLockContext(ctx, stateSync)
 	// Use the network fee as the map key
 	k := *anf.NetworkFee
 
-	s.mu.Lock()
+	if lockAttestationContext(lockCtx, &s.mu) != nil {
+		return
+	}
 	state, ok := s.networkFees[k]
 	if !ok {
 		// Create a new attestation state
@@ -333,7 +374,10 @@ func (s *AttestationGossip) handleNetworkFeeAttestation(ctx context.Context, anf
 
 	// note, purposefully locking the single state mutex prior to releasing the global mutex to avoid race in between.
 	// This order must be maintained everywhere to avoid deadlock.
-	state.mu.Lock()
+	if lockAttestationContext(lockCtx, &state.mu) != nil {
+		s.mu.Unlock()
+		return
+	}
 	s.mu.Unlock()
 
 	defer state.mu.Unlock()
@@ -385,6 +429,11 @@ func (s *AttestationGossip) sendNetworkFeeAttestationsToThornode(ctx context.Con
 
 // handleSolvencyAttestation processes attestations for solvency proofs
 func (s *AttestationGossip) handleSolvencyAttestation(ctx context.Context, ats common.AttestSolvency) {
+	s.handleSolvencyAttestationWithStateSyncCancellation(ctx, ats, false)
+}
+
+func (s *AttestationGossip) handleSolvencyAttestationWithStateSyncCancellation(ctx context.Context, ats common.AttestSolvency, stateSync bool) {
+	lockCtx := attestationLockContext(ctx, stateSync)
 	// Calculate the hash for the solvency to use as key
 	k, err := ats.Solvency.Hash()
 	if err != nil {
@@ -392,7 +441,9 @@ func (s *AttestationGossip) handleSolvencyAttestation(ctx context.Context, ats c
 		return
 	}
 
-	s.mu.Lock()
+	if lockAttestationContext(lockCtx, &s.mu) != nil {
+		return
+	}
 	state, ok := s.solvencies[k]
 	if !ok {
 		// Create a new attestation state
@@ -402,7 +453,10 @@ func (s *AttestationGossip) handleSolvencyAttestation(ctx context.Context, ats c
 
 	// note, purposefully locking the single state mutex prior to releasing the global mutex to avoid race in between.
 	// This order must be maintained everywhere to avoid deadlock.
-	state.mu.Lock()
+	if lockAttestationContext(lockCtx, &state.mu) != nil {
+		s.mu.Unlock()
+		return
+	}
 	s.mu.Unlock()
 
 	defer state.mu.Unlock()
@@ -454,25 +508,28 @@ func (s *AttestationGossip) sendSolvencyAttestationsToThornode(ctx context.Conte
 
 // handleErrataAttestation processes attestations for errata transactions
 func (s *AttestationGossip) handleErrataAttestation(ctx context.Context, aet common.AttestErrataTx) {
-	s.handleErrataAttestationWithRetry(ctx, aet, false)
+	s.handleErrataAttestationWithRetry(ctx, aet, false, false)
 }
 
 // handlePendingErrataAttestation is the local durable-outbox path. It alone
 // may make an identical, previously sent errata vote sendable again; peer
 // duplicates and every other attestation type retain their existing behavior.
 func (s *AttestationGossip) handlePendingErrataAttestation(ctx context.Context, aet common.AttestErrataTx) {
-	s.handleErrataAttestationWithRetry(ctx, aet, true)
+	s.handleErrataAttestationWithRetry(ctx, aet, true, false)
 }
 
 func (s *AttestationGossip) handleErrataAttestationWithRetry(
 	ctx context.Context,
 	aet common.AttestErrataTx,
-	retryPending bool,
+	retryPending, stateSync bool,
 ) {
+	lockCtx := attestationLockContext(ctx, stateSync)
 	// Use the errata tx as the map key
 	k := *aet.ErrataTx
 
-	s.mu.Lock()
+	if lockAttestationContext(lockCtx, &s.mu) != nil {
+		return
+	}
 	state, ok := s.errataTxs[k]
 	if !ok {
 		// Create a new attestation state
@@ -482,7 +539,10 @@ func (s *AttestationGossip) handleErrataAttestationWithRetry(
 
 	// note, purposefully locking the single state mutex prior to releasing the global mutex to avoid race in between.
 	// This order must be maintained everywhere to avoid deadlock.
-	state.mu.Lock()
+	if lockAttestationContext(lockCtx, &state.mu) != nil {
+		s.mu.Unlock()
+		return
+	}
 	s.mu.Unlock()
 
 	defer state.mu.Unlock()
@@ -562,6 +622,11 @@ func (s *AttestationGossip) sendErrataAttestationsToThornode(ctx context.Context
 
 // handlePriceFeedAttestation processes attestations for price feeds
 func (s *AttestationGossip) handlePriceFeedAttestation(ctx context.Context, apf common.AttestPriceFeed) {
+	s.handlePriceFeedAttestationWithSendContext(ctx, ctx, apf, false)
+}
+
+func (s *AttestationGossip) handlePriceFeedAttestationWithSendContext(ctx, sendCtx context.Context, apf common.AttestPriceFeed, stateSync bool) {
+	lockCtx := attestationLockContext(ctx, stateSync)
 	// Use the pubkey as key
 	k := hex.EncodeToString(apf.Attestation.PubKey)
 
@@ -582,7 +647,9 @@ func (s *AttestationGossip) handlePriceFeedAttestation(ctx context.Context, apf 
 
 	// We don't collect multiple attestations for price feeds, rather want
 	// to store the most recent price we received for every node
-	s.mu.Lock()
+	if lockAttestationContext(lockCtx, &s.mu) != nil {
+		return
+	}
 	defer s.mu.Unlock()
 
 	state, ok := s.priceFeeds[k]
@@ -602,12 +669,12 @@ func (s *AttestationGossip) handlePriceFeedAttestation(ctx context.Context, apf 
 
 		s.priceFeedsDelay.Start()
 		go func() {
+			defer s.priceFeedsDelay.Done()
 			select {
-			case <-ctx.Done():
+			case <-sendCtx.Done():
 				return
 			case <-time.After(priceFeedsUpdateDelay):
-				s.sendPriceFeedAttestationsToThornode(ctx)
-				s.priceFeedsDelay.Done()
+				s.sendPriceFeedAttestationsToThornode(sendCtx)
 			}
 		}()
 	}

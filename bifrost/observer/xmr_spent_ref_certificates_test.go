@@ -1013,12 +1013,12 @@ func TestObservedXMRSpentRefsReconcileCapsPostFilterWork(t *testing.T) {
 	for i, importState := range []xmrSpentRefsImportState{xmrSpentRefsImportPending, xmrSpentRefsImportConfirmed} {
 		obsTx := makeObservation(fmt.Sprintf("blocked-%d", i))
 		addPendingObservedXMRSpentRefsTestState(ag, obsTx, signer, now.Add(-3*time.Hour+time.Duration(i)*time.Second))
-		ag.mu.Lock()
+		ag.authorizedXMRSpentRefsMu.Lock()
 		ag.authorizedXMRSpentRefs[xmrSpentRefsConflictKeyFor(obsTx)] = &xmrSpentRefsConflictEntry{
 			identity: xmrSpentRefsIdentity(obsTx.SpentOutputRefs),
 			state:    importState,
 		}
-		ag.mu.Unlock()
+		ag.authorizedXMRSpentRefsMu.Unlock()
 	}
 
 	notDue := makeObservation("not-due")

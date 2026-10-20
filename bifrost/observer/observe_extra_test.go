@@ -2492,7 +2492,7 @@ func (s *ObserveExtraSuite) TestProcessAttestationStateBatch(c *C) {
 		},
 	}
 
-	ag.processAttestationStateBatch(log.Logger, batch)
+	c.Assert(ag.processAttestationStateBatch(log.Logger, batch), IsNil)
 
 	// Give goroutine a moment to process
 	time.Sleep(50 * time.Millisecond)
@@ -2830,6 +2830,8 @@ func (s *ObserveExtraSuite) TestHandleStreamAttestationStateBatchBeginNoInit(c *
 func (s *ObserveExtraSuite) TestHandleStreamAttestationStateBatchBeginUnauthorized(c *C) {
 	ag, _ := newTestAttestationGossip(c, []peer.ID{"self"})
 	ag.stateInitMu.Lock()
+	ag.stateInitContext = context.Background()
+	ag.stateInitWorkers = new(sync.WaitGroup)
 	ag.stateInitPeers = map[peer.ID]bool{"authorized_peer": true}
 	ag.stateInitMu.Unlock()
 
@@ -2848,6 +2850,8 @@ func (s *ObserveExtraSuite) TestHandleStreamAttestationStateBatchBeginUnauthoriz
 func (s *ObserveExtraSuite) TestHandleStreamAttestationStateBatchBeginAuthorized(c *C) {
 	ag, _ := newTestAttestationGossip(c, []peer.ID{"self"})
 	ag.stateInitMu.Lock()
+	ag.stateInitContext = context.Background()
+	ag.stateInitWorkers = new(sync.WaitGroup)
 	ag.stateInitPeers = map[peer.ID]bool{"peer1": true}
 	ag.stateInitMu.Unlock()
 
@@ -3436,7 +3440,7 @@ func (s *ObserveExtraSuite) TestGetOracleMimirsInterval(c *C) {
 func (s *ObserveExtraSuite) TestProcessAttestationStateBatchEmpty(c *C) {
 	ag, _ := newTestAttestationGossip(c, []peer.ID{"self"})
 	// Empty batch should not panic
-	ag.processAttestationStateBatch(log.Logger, common.QuorumState{})
+	c.Assert(ag.processAttestationStateBatch(log.Logger, common.QuorumState{}), IsNil)
 }
 
 // ---------------------------------------------------------------------------

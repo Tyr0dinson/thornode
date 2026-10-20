@@ -312,7 +312,7 @@ func (s *AttestationGossip) handleStreamAttestationState(stream network.Stream) 
 	case data[0] == prefixBatchBegin[0]:
 
 		s.stateInitMu.Lock()
-		if s.stateInitPeers == nil {
+		if s.stateInitPeers == nil || s.stateInitContext == nil {
 			// we are not asking for attestation state
 			s.stateInitMu.Unlock()
 			s.logger.Warn().Msg("skipping attestation state stream, not asking for it")
@@ -323,6 +323,10 @@ func (s *AttestationGossip) handleStreamAttestationState(stream network.Stream) 
 			return
 		}
 		_, ok := s.stateInitPeers[remotePeer]
+		ctx, workers := s.stateInitContext, s.stateInitWorkers
+		if ok {
+			workers.Add(1)
+		}
 		s.stateInitMu.Unlock()
 		if !ok {
 			// unauthorized peer
@@ -334,9 +338,12 @@ func (s *AttestationGossip) handleStreamAttestationState(stream network.Stream) 
 			return
 		}
 
+		// Registration and closing admission share stateInitMu, so the group
+		// can cancel and join these imports without racing WaitGroup.Add.
+		defer workers.Done()
 		// Batched state transmission
 		logger.Debug().Msg("handling batched attestation state")
-		err := s.receiveBatchedAttestationState(stream, data[1:])
+		err := s.receiveBatchedAttestationStateWithContext(ctx, stream, data[1:])
 		if err != nil {
 			logger.Error().Err(err).Msg("failed to receive batched attestation state")
 		}

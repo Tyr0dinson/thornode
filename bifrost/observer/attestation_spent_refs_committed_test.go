@@ -281,11 +281,15 @@ func TestQuorumTxCommittedBookkeepingUsesConsensusImport(t *testing.T) {
 	assert.False(t, eventState.spentRefsApplied, "event-supplied metadata must not be latched")
 	eventState.mu.Unlock()
 
-	ag.mu.Lock()
+	var identity string
+	ag.authorizedXMRSpentRefsMu.Lock()
 	entry := ag.authorizedXMRSpentRefs[xmrSpentRefsConflictKeyFor(consensusTx)]
-	ag.mu.Unlock()
+	if entry != nil {
+		identity = entry.identity
+	}
+	ag.authorizedXMRSpentRefsMu.Unlock()
 	require.NotNil(t, entry)
-	assert.Equal(t, xmrSpentRefsIdentity(consensusTx.SpentOutputRefs), entry.identity)
+	assert.Equal(t, xmrSpentRefsIdentity(consensusTx.SpentOutputRefs), identity)
 }
 
 func TestQuorumTxCommittedWithoutConsensusDoesNotLatchSpentRefs(t *testing.T) {
@@ -321,8 +325,8 @@ func TestQuorumTxCommittedWithoutConsensusDoesNotLatchSpentRefs(t *testing.T) {
 	state.mu.Lock()
 	assert.False(t, state.spentRefsApplied)
 	state.mu.Unlock()
-	ag.mu.Lock()
+	ag.authorizedXMRSpentRefsMu.Lock()
 	_, remembered := ag.authorizedXMRSpentRefs[xmrSpentRefsConflictKeyFor(tx)]
-	ag.mu.Unlock()
+	ag.authorizedXMRSpentRefsMu.Unlock()
 	assert.False(t, remembered)
 }

@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -24,8 +26,11 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
 	"gitlab.com/thorchain/thornode/v3/bifrost/p2p"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pubkeymanager"
+	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/config"
+	thortypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
 // TestSendAttestationStateEmpty tests sending an empty attestation state
@@ -1408,7 +1413,7 @@ func stateSyncReceiveInline(t *testing.T, receiver *AttestationGossip, client *s
 		if int(i)+1 == slowBatch {
 			time.Sleep(2 * stateSyncTestFrameTimeout)
 		}
-		receiver.processAttestationStateBatch(zerolog.Nop(), batch)
+		require.NoError(t, receiver.processAttestationStateBatch(zerolog.Nop(), batch))
 	}
 	require.Equal(t, prefixBatchEnd, read(prefixBatchEnd))
 	write([]byte(p2p.StreamMsgDone))
@@ -1578,14 +1583,14 @@ func TestStateSyncSenderBudgetIncludesSnapshotConstruction(t *testing.T) {
 		waitStateSyncDeadlineHandler(t, done)
 	})
 	require.NoError(t, p2p.WriteStreamWithBuffer(prefixSendState, client))
-	require.Eventually(t, func() bool { return server.resets.Load() > 0 }, 3*time.Second, time.Millisecond,
+	require.Eventually(t, func() bool { return server.resets.Load()+server.closes.Load() > 0 }, 3*time.Second, time.Millisecond,
 		"budget must expire even while snapshot construction waits on its lock")
-	require.Equal(t, 1, stateSyncExportCount(sender), "reset cannot release a still-running owner")
-	// Reset cannot interrupt the lock; releasing it must let the handler exit.
-	sender.mu.Unlock()
-	locked = false
+	// S15 makes the snapshot lock wait cancellable. The owner must exit and
+	// release its slot while the mutex is still held by this test.
 	waitStateSyncDeadlineHandler(t, done)
 	require.Zero(t, stateSyncExportCount(sender))
+	sender.mu.Unlock()
+	locked = false
 }
 
 func TestStateSyncSenderDeadlineCancellationAndFallback(t *testing.T) {
@@ -1597,7 +1602,8 @@ func TestStateSyncSenderDeadlineCancellationAndFallback(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			before := time.Now()
-			deadline, stop := sender.stateExchangeDeadline(ctx, server)
+			exchange, stop := sender.stateExchangeDeadline(ctx, server)
+			deadline, _ := exchange.Deadline()
 			defer stop()
 			want := timeout
 			if want <= 0 {
@@ -2119,4 +2125,146 @@ func TestStartupStateSyncPeerSelectionFiltersSelfInactiveAndDuplicates(t *testin
 	h.peers = []peer.ID{"self", "inactive", "a", "a", "b"}
 	g.activeVals["self"] = true
 	require.ElementsMatch(t, []peer.ID{"a", "b"}, g.attestationStatePeers())
+}
+
+// Exercise the actual startup group and Observer.Stop, including the production
+// bridge's HTTP cancellation and its wait behind a legacy cached request.
+func TestStartupStateSyncObserverStopCancelsVaultLookup(t *testing.T) {
+	for _, phase := range []string{"request", "cache wait", "inbound request"} {
+		t.Run(phase, func(t *testing.T) {
+			g, h, _, _, legacy, _ := setupTestGossip(t)
+			g.config.AskPeers = 1
+			g.config.StateSyncTimeout = time.Hour // Only shutdown should end this import.
+			g.activeVals = map[peer.ID]bool{h.peers[1]: true}
+			tx, _ := observerTestXMRPlan(t)
+			batch := signedCancellationBatch(t, tx, secp256k1.GenPrivKey())
+			data, err := batch.Marshal()
+			require.NoError(t, err)
+			stream := newStateBoundsStream(h.peers[1], append([]byte{prefixBatchBegin[0]}, stateBoundsCount(1)...), stateBoundsHeader(0, uint32(len(data))), append([]byte{prefixBatchData[0]}, data...), prefixBatchEnd)
+			dialStarted := make(chan struct{})
+			h.streamFunc = func(ctx context.Context, _ peer.ID, _ ...protocol.ID) (network.Stream, error) {
+				if phase == "inbound request" {
+					close(dialStarted)
+					<-ctx.Done()
+					return nil, ctx.Err()
+				}
+				return stream, nil
+			}
+
+			requestStarted, requestExited := make(chan struct{}), make(chan struct{})
+			release := make(chan struct{})
+			var releaseOnce sync.Once
+			unblock := func() { releaseOnce.Do(func() { close(release) }) }
+			var requests atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if requests.Add(1) == 1 {
+					close(requestStarted)
+					defer close(requestExited)
+				}
+				select {
+				case <-r.Context().Done():
+				case <-release:
+					_, _ = w.Write([]byte("{}"))
+				}
+			}))
+			t.Cleanup(server.Close)
+			t.Cleanup(unblock)
+			bridge, err := thorclient.NewThorchainBridge(config.BifrostClientConfiguration{ChainID: "thorchain", ChainHost: server.URL}, getSharedTestMetrics(), nil)
+			require.NoError(t, err)
+			queries, ok := bridge.(thorclient.ContextQueryBridge)
+			require.True(t, ok)
+			lookupStarted, lookupExited := make(chan struct{}), make(chan struct{})
+			lookupCancelled, releaseLookup := make(chan struct{}), make(chan struct{})
+			var releaseLookupOnce sync.Once
+			finishLookup := func() { releaseLookupOnce.Do(func() { close(releaseLookup) }) }
+			t.Cleanup(finishLookup)
+			g.bridge = &cancellationQueryBridge{MockThorchainBridge: legacy, vault: func(ctx context.Context, key string) (thortypes.Vault, error) {
+				close(lookupStarted)
+				defer close(lookupExited)
+				vault, queryErr := queries.GetVaultWithContext(ctx, key)
+				if phase == "inbound request" {
+					close(lookupCancelled)
+					<-releaseLookup
+				}
+				return vault, queryErr
+			}}
+			// If state processing regresses to the legacy API, it must hit the same
+			// stalled request rather than silently failing before the tested decision.
+			legacy.getVaultFunc = func(key string) (thortypes.Vault, error) {
+				close(lookupStarted)
+				defer close(lookupExited)
+				return bridge.GetVault(key)
+			}
+			if phase == "cache wait" {
+				legacyDone := make(chan struct{})
+				go func() { _, _ = bridge.GetVault(tx.ObservedPubKey.String()); close(legacyDone) }()
+				t.Cleanup(func() { unblock(); waitStateBounds(t, legacyDone) })
+				waitStateBounds(t, requestStarted)
+			}
+			pkm, err := pubkeymanager.NewPubKeyManager(nil, nil)
+			require.NoError(t, err)
+			o, err := NewObserver(pkm, nil, legacy, getSharedTestMetrics(), t.TempDir(), metrics.NewTssKeysignMetricMgr(), g, "")
+			require.NoError(t, err)
+			var imports atomic.Int32
+			g.SetObserverApplySpentOutputRefs(func(spentOutputRefsImport, func(bool)) { imports.Add(1) })
+			stopped := make(chan struct{})
+			var stopOnce sync.Once
+			var stopErr error
+			stop := func() { stopOnce.Do(func() { go func() { stopErr = o.Stop(); close(stopped) }() }) }
+			t.Cleanup(func() { unblock(); finishLookup(); stop(); waitStateBounds(t, stopped) })
+			g.tickAttestationStateSync(context.Background(), true, true, time.Now())
+			group := g.startupState.group
+			require.NotNil(t, group)
+			var inboundDone chan struct{}
+			if phase == "inbound request" {
+				waitStateBounds(t, dialStarted)
+				inboundDone = make(chan struct{})
+				go func() { g.handleStreamAttestationState(stream); close(inboundDone) }()
+				t.Cleanup(func() { unblock(); finishLookup(); stop(); waitStateBounds(t, inboundDone) })
+			}
+			waitStateBounds(t, lookupStarted)
+			waitStateBounds(t, requestStarted)
+			stop()
+			if inboundDone != nil {
+				waitStateBounds(t, lookupCancelled)
+				select {
+				case <-stopped:
+					t.Fatal("observer stopped before joining its inbound import")
+				case <-time.After(50 * time.Millisecond):
+				}
+				_, err = o.storage.db.Has([]byte("open-until-inbound-join"), nil)
+				require.NoError(t, err)
+				finishLookup()
+			}
+			select {
+			case <-stopped:
+				require.NoError(t, stopErr)
+			case <-time.After(3 * time.Second):
+				t.Fatal("Observer.Stop did not cancel and join the stalled vault lookup")
+			}
+			waitStateBounds(t, lookupExited)
+			waitStateBounds(t, group.done)
+			if inboundDone != nil {
+				waitStateBounds(t, inboundDone)
+			}
+			require.True(t, g.startupState.finished)
+			require.True(t, g.startupStateStopped)
+			require.Zero(t, group.result.completed)
+			require.Positive(t, stream.resets.Load())
+			require.Zero(t, imports.Load(), "cancelled authorization must not launch an import")
+			require.Zero(t, cancellationTestReservationCount(g))
+			_, err = o.storage.db.Has([]byte("closed-after-join"), nil)
+			require.Error(t, err)
+			if phase != "cache wait" {
+				waitStateBounds(t, requestExited)
+			} else {
+				select {
+				case <-requestExited:
+					t.Fatal("cancelling the cache waiter interrupted the unrelated legacy request")
+				default:
+				}
+			}
+			require.EqualValues(t, 1, requests.Load(), "cache wait cancellation must not launch a second request")
+		})
+	}
 }
