@@ -538,11 +538,11 @@ func (s *LuviInvariantSuite) TestBlockLevelObservationWithLPFlowNeedsPerBlockRea
 // errata (reorged inbounds), through the real errata handler
 // ----------------------------------------------------------------------------
 
-// errata records tx as a finalised observed inbound and has the only active
-// validator attest an errata for it.
+// errata records tx as a finalised observed inbound whose vault was credited
+// and has the only active validator attest an errata for it.
 func (e *luviEnv) errata(tx common.Tx) {
 	obs := common.ObservedTx{Tx: tx}
-	e.mgr.Keeper().SetObservedTxInVoter(e.ctx, ObservedTxVoter{TxID: tx.ID, Tx: obs, Txs: ObservedTxs{obs}, Height: 1})
+	e.mgr.Keeper().SetObservedTxInVoter(e.ctx, ObservedTxVoter{TxID: tx.ID, Tx: obs, Txs: ObservedTxs{obs}, Height: 1, UpdatedVault: true})
 	nas, err := e.mgr.Keeper().ListActiveValidators(e.ctx)
 	e.c.Assert(err, IsNil)
 	e.c.Assert(nas, HasLen, 1)
