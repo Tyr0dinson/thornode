@@ -364,11 +364,11 @@ func ethThorWithdrawUnits(ctx cosmos.Context, pool common.Asset) string {
 		}
 		var p, u string
 		for _, a := range e.Attributes {
-			switch string(a.Key) {
+			switch a.Key {
 			case "pool":
-				p = string(a.Value)
+				p = a.Value
 			case "liquidity_provider_units":
-				u = string(a.Value)
+				u = a.Value
 			}
 		}
 		if p == pool.String() && u != "" {
@@ -492,7 +492,7 @@ func slashSetup(c *C, asgardFund, reserveFund, vaultBTC uint64) (cosmos.Context,
 // in the pool, the freed RUNE moved Asgard->Reserve, and the 218 refunds paid —
 // gated by the same unaccounted-BTC solvency check as the other credits.
 func (s *EthThorRestoreSuite) TestSlashRefundHappyPath(c *C) {
-	total := uint64(mainnetSlashRefunds19to20Total)
+	total := mainnetSlashRefunds19to20Total
 	ctx, mgr := slashSetup(c, slashAsgardToReserve, total, slashPoolBTC+slashBTCCredit) // free BTC == the credit
 	k := mgr.Keeper()
 
@@ -526,7 +526,7 @@ func (s *EthThorRestoreSuite) TestSlashRefundHappyPath(c *C) {
 // credited/debited, so the whole step's cache is discarded — pool, module
 // balances and recipients all untouched.
 func (s *EthThorRestoreSuite) TestSlashRefundRollsBackOnFailedMove(c *C) {
-	total := uint64(mainnetSlashRefunds19to20Total)
+	total := mainnetSlashRefunds19to20Total
 	// Asgard one short of the move amount → SendFromModuleToModule fails post-mutation.
 	ctx, mgr := slashSetup(c, slashAsgardToReserve-1, total, slashPoolBTC+slashBTCCredit)
 	k := mgr.Keeper()
@@ -554,7 +554,7 @@ func (s *EthThorRestoreSuite) TestSlashRefundRollsBackOnFailedMove(c *C) {
 // vaults do not hold the reversed BTC free, the step aborts rather than claim BTC
 // the vaults don't have while the Reserve still pays out.
 func (s *EthThorRestoreSuite) TestSlashRefundRefusesUnaccountedBTC(c *C) {
-	total := uint64(mainnetSlashRefunds19to20Total)
+	total := mainnetSlashRefunds19to20Total
 	ctx, mgr := slashSetup(c, slashAsgardToReserve, total, slashPoolBTC) // vault holds only the pool's BTC → zero free
 	c.Assert(applySlashRefund19to20(ctx, mgr), ErrorMatches, ".*unaccounted BTC.*")
 }
@@ -902,7 +902,7 @@ func (s *EthThorRestoreSuite) TestCapLateLPsAsymmetricEntrantsRounding(c *C) {
 		}
 		k.SetLiquidityProvider(ctx, lp)
 		pinned[addr.String()] = ethThorLatePin{floorUnits: 0} // brand-new: value-cap path
-		byAddr[addr.String()] = want{e.units, e.cv}
+		byAddr[addr.String()] = want(e)
 	}
 
 	pre, err := k.GetPool(ctx, asset)
@@ -1040,8 +1040,8 @@ func (s *EthThorRestoreSuite) TestZecSlashRefundHappyPath(c *C) {
 	c.Check(k.GetRuneBalanceOfModule(ctx, ReserveName).Equal(expReserve), Equals, true)
 	// every affected bond provider received exactly its share as liquid RUNE.
 	for _, r := range zecSlashBondRefunds19to20 {
-		to, err := cosmos.AccAddressFromBech32(r.address)
-		c.Assert(err, IsNil)
+		to, addrErr := cosmos.AccAddressFromBech32(r.address)
+		c.Assert(addrErr, IsNil)
 		c.Check(k.GetBalance(ctx, to).AmountOf(common.RuneNative.Native()).String(), Equals, cosmos.NewUint(r.amount).String(), Commentf("bp %s", r.address))
 	}
 	// parked outbound cancelled.
@@ -1270,8 +1270,8 @@ func (s *EthThorRestoreSuite) TestZecSlashRefundCancelSurvivesRefundSkip(c *C) {
 	c.Check(k.GetRuneBalanceOfModule(ctx, AsgardName).Equal(asgard0), Equals, true)
 	c.Check(k.GetRuneBalanceOfModule(ctx, ReserveName).Equal(reserve0), Equals, true)
 	for _, r := range zecSlashBondRefunds19to20 {
-		to, err := cosmos.AccAddressFromBech32(r.address)
-		c.Assert(err, IsNil)
+		to, addrErr := cosmos.AccAddressFromBech32(r.address)
+		c.Assert(addrErr, IsNil)
 		c.Check(k.GetBalance(ctx, to).AmountOf(common.RuneNative.Native()).IsZero(), Equals, true)
 	}
 	// but the cancel committed regardless: outbound can never re-sign.

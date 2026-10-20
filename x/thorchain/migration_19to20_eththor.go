@@ -146,8 +146,8 @@ func applyEthThorRestore19to20(ctx cosmos.Context, mgr *Mgrs) error {
 		Coins:       common.NewCoins(common.NewCoin(common.RuneAsset(), cosmos.ZeroUint())),
 		Chain:       common.THORChain,
 	}, cosmos.ZeroUint(), cosmos.ZeroUint())
-	if err := mgr.EventMgr().EmitEvent(ctx, withdrawEvt); err != nil {
-		return fmt.Errorf("emit secured-ops withdraw event: %w", err)
+	if emitErr := mgr.EventMgr().EmitEvent(ctx, withdrawEvt); emitErr != nil {
+		return fmt.Errorf("emit secured-ops withdraw event: %w", emitErr)
 	}
 	k.RemoveLiquidityProvider(ctx, lp)
 
@@ -211,13 +211,13 @@ func applyEthThorRestore19to20(ctx cosmos.Context, mgr *Mgrs) error {
 		return fmt.Errorf("reserve %s below ETH.THOR restore need %s", bal, need)
 	}
 	pairCoin := common.NewCoin(common.RuneAsset(), runeToAdd)
-	if err := k.SendFromModuleToModule(ctx, ReserveName, AsgardName, common.NewCoins(pairCoin)); err != nil {
-		return fmt.Errorf("reserve->asgard pairing RUNE: %w", err)
+	if sendErr := k.SendFromModuleToModule(ctx, ReserveName, AsgardName, common.NewCoins(pairCoin)); sendErr != nil {
+		return fmt.Errorf("reserve->asgard pairing RUNE: %w", sendErr)
 	}
 	pool.BalanceAsset = pool.BalanceAsset.Add(surplus)
 	pool.BalanceRune = pool.BalanceRune.Add(runeToAdd)
-	if err := k.SetPool(ctx, pool); err != nil {
-		return fmt.Errorf("set ETH.THOR pool: %w", err)
+	if poolErr := k.SetPool(ctx, pool); poolErr != nil {
+		return fmt.Errorf("set ETH.THOR pool: %w", poolErr)
 	}
 	// Emit the depth change so Midgard (event-sourced) tracks the credited surplus
 	// + paired RUNE, matching the slash step's event. A skipped step's cache is
@@ -233,8 +233,8 @@ func applyEthThorRestore19to20(ctx cosmos.Context, mgr *Mgrs) error {
 	// topped up keeps its snapshot units. The restore hard-aborts only on real
 	// inconsistency (impossible cap math / drifted pin).
 	if capPostDrainAdds {
-		if err := capLateLPs19to20(ctx, mgr, asset, ethThorPinnedLateLP, preAsset, preRune, preUnits); err != nil {
-			return fmt.Errorf("cap late LPs: %w", err)
+		if capErr := capLateLPs19to20(ctx, mgr, asset, ethThorPinnedLateLP, preAsset, preRune, preUnits); capErr != nil {
+			return fmt.Errorf("cap late LPs: %w", capErr)
 		}
 	}
 

@@ -187,9 +187,9 @@ func (m Migrator) Migrate6to7(ctx sdk.Context) error {
 	}
 
 	// handle manual outbounds
-	outbounds, err := mainnetManualOutbounds6to7(ctx, m.mgr)
-	if err != nil {
-		ctx.Logger().Error("failed to create manual outbounds for migration", "error", err)
+	outbounds, migrationErr := mainnetManualOutbounds6to7(ctx, m.mgr)
+	if migrationErr != nil {
+		ctx.Logger().Error("failed to create manual outbounds for migration", "error", migrationErr)
 	}
 	for _, out := range outbounds {
 		// schedule outbound for 30 minutes after upgrade height
@@ -203,14 +203,14 @@ func (m Migrator) Migrate6to7(ctx sdk.Context) error {
 	}
 
 	// handle manual observations of dropped inbounds
-	inbounds, err := mainnetManualInbounds6to7()
-	if err != nil {
-		ctx.Logger().Error("failed to create manual inbounds for migration", "error", err)
+	inbounds, migrationErr := mainnetManualInbounds6to7()
+	if migrationErr != nil {
+		ctx.Logger().Error("failed to create manual inbounds for migration", "error", migrationErr)
 	}
 	for _, in := range inbounds {
-		err = makeFakeTxInObservation(ctx, m.mgr, ObservedTxs{in})
-		if err != nil {
-			ctx.Logger().Error("failed to create fake inbound observation", "error", err, "inbound", in)
+		migrationErr = makeFakeTxInObservation(ctx, m.mgr, ObservedTxs{in})
+		if migrationErr != nil {
+			ctx.Logger().Error("failed to create fake inbound observation", "error", migrationErr, "inbound", in)
 		} else {
 			ctx.Logger().Info("successfully created fake inbound observation", "inbound", in)
 		}
@@ -335,9 +335,9 @@ func (m Migrator) Migrate11to12(ctx sdk.Context) error {
 	}
 
 	// avax.usdc asset
-	avaxUSDC, err := common.NewAsset("AVAX.USDC-0XB97EF9EF8734C71904D8002F8B6BC66DD9C48A6E")
-	if err != nil {
-		return fmt.Errorf("failed to parse AVAX.USDC asset: %w", err)
+	avaxUSDC, migrationErr := common.NewAsset("AVAX.USDC-0XB97EF9EF8734C71904D8002F8B6BC66DD9C48A6E")
+	if migrationErr != nil {
+		return fmt.Errorf("failed to parse AVAX.USDC asset: %w", migrationErr)
 	}
 
 	// records to be removed
@@ -360,17 +360,17 @@ func (m Migrator) Migrate11to12(ctx sdk.Context) error {
 	}
 
 	// get the pool
-	pool, err := m.mgr.Keeper().GetPool(ctx, avaxUSDC)
-	if err != nil {
-		return fmt.Errorf("failed to get AVAX.USDC pool: %w", err)
+	pool, migrationErr := m.mgr.Keeper().GetPool(ctx, avaxUSDC)
+	if migrationErr != nil {
+		return fmt.Errorf("failed to get AVAX.USDC pool: %w", migrationErr)
 	}
 
 	for _, lp := range removeLPs {
 		// fetch the record
-		lp, err = m.mgr.Keeper().GetLiquidityProvider(ctx, avaxUSDC, lp.GetAddress())
-		if err != nil {
+		lp, migrationErr = m.mgr.Keeper().GetLiquidityProvider(ctx, avaxUSDC, lp.GetAddress())
+		if migrationErr != nil {
 			ctx.Logger().Error("failed to get liquidity provider ",
-				"error", err,
+				"error", migrationErr,
 				"rune_address", lp.RuneAddress,
 				"asset_address", lp.AssetAddress)
 			continue
@@ -429,17 +429,17 @@ func (m Migrator) Migrate11to12(ctx sdk.Context) error {
 
 	// refund 43F310A416A4ED8CF8B645B1EBBB5E25FB89F9777A4350F7023DEB62B90EA3AD
 	refundRune := common.NewCoin(common.RuneNative, cosmos.NewUint(40000000000))
-	userAddr, err := common.NewAddress("thor1dvvr4kdeurs8fdwgrql6je7l2v9ma73dp50n7m")
-	if err != nil {
-		return err
+	userAddr, migrationErr := common.NewAddress("thor1dvvr4kdeurs8fdwgrql6je7l2v9ma73dp50n7m")
+	if migrationErr != nil {
+		return migrationErr
 	}
-	userAccAddr, err := userAddr.AccAddress()
-	if err != nil {
-		return err
+	userAccAddr, migrationErr := userAddr.AccAddress()
+	if migrationErr != nil {
+		return migrationErr
 	}
-	err = m.mgr.Keeper().SendFromModuleToAccount(ctx, ReserveName, userAccAddr, common.NewCoins(refundRune))
-	if err != nil {
-		return err
+	migrationErr = m.mgr.Keeper().SendFromModuleToAccount(ctx, ReserveName, userAccAddr, common.NewCoins(refundRune))
+	if migrationErr != nil {
+		return migrationErr
 	}
 
 	return nil
@@ -762,9 +762,9 @@ func (m Migrator) Migrate15to16(ctx sdk.Context) error {
 	}
 
 	// ── Step 0: zero vault 2v28 keeper record ───────────────────────────────
-	vault, err := m.mgr.Keeper().GetVault(ctx, vault2v28PubKey)
-	if err != nil {
-		return fmt.Errorf("conciliation: vault 2v28: fail to get vault 2v28: %w", err)
+	vault, migrationErr := m.mgr.Keeper().GetVault(ctx, vault2v28PubKey)
+	if migrationErr != nil {
+		return fmt.Errorf("conciliation: vault 2v28: fail to get vault 2v28: %w", migrationErr)
 	}
 	originalCoins := vault.Coins
 	vault.Coins = common.Coins{}
@@ -776,33 +776,33 @@ func (m Migrator) Migrate15to16(ctx sdk.Context) error {
 		"cleared_coins", originalCoins.String())
 
 	// ── Build per-pool haircut table (assets requiring NewAsset parsing) ─────
-	ethUSDT, err := common.NewAsset(adr028AssetETHUSDT)
-	if err != nil {
-		return fmt.Errorf("adr028: failed to parse ETH.USDT: %w", err)
+	ethUSDT, migrationErr := common.NewAsset(adr028AssetETHUSDT)
+	if migrationErr != nil {
+		return fmt.Errorf("adr028: failed to parse ETH.USDT: %w", migrationErr)
 	}
-	avaxUSDC, err := common.NewAsset(adr028AssetAVAXUSDC)
-	if err != nil {
-		return fmt.Errorf("adr028: failed to parse AVAX.USDC: %w", err)
+	avaxUSDC, migrationErr := common.NewAsset(adr028AssetAVAXUSDC)
+	if migrationErr != nil {
+		return fmt.Errorf("adr028: failed to parse AVAX.USDC: %w", migrationErr)
 	}
-	baseUSDC, err := common.NewAsset(adr028AssetBASEUSDC)
-	if err != nil {
-		return fmt.Errorf("adr028: failed to parse BASE.USDC: %w", err)
+	baseUSDC, migrationErr := common.NewAsset(adr028AssetBASEUSDC)
+	if migrationErr != nil {
+		return fmt.Errorf("adr028: failed to parse BASE.USDC: %w", migrationErr)
 	}
-	bscBUSD, err := common.NewAsset(adr028AssetBSCBUSD)
-	if err != nil {
-		return fmt.Errorf("adr028: failed to parse BSC.BUSD: %w", err)
+	bscBUSD, migrationErr := common.NewAsset(adr028AssetBSCBUSD)
+	if migrationErr != nil {
+		return fmt.Errorf("adr028: failed to parse BSC.BUSD: %w", migrationErr)
 	}
-	bscETH, err := common.NewAsset(adr028AssetBSCETH)
-	if err != nil {
-		return fmt.Errorf("adr028: failed to parse BSC.ETH: %w", err)
+	bscETH, migrationErr := common.NewAsset(adr028AssetBSCETH)
+	if migrationErr != nil {
+		return fmt.Errorf("adr028: failed to parse BSC.ETH: %w", migrationErr)
 	}
-	bscBTCB, err := common.NewAsset(adr028AssetBSCBTCB)
-	if err != nil {
-		return fmt.Errorf("adr028: failed to parse BSC.BTCB: %w", err)
+	bscBTCB, migrationErr := common.NewAsset(adr028AssetBSCBTCB)
+	if migrationErr != nil {
+		return fmt.Errorf("adr028: failed to parse BSC.BTCB: %w", migrationErr)
 	}
-	ethUSDC, err := common.NewAsset(adr028AssetETHUSDC)
-	if err != nil {
-		return fmt.Errorf("adr028: failed to parse ETH.USDC: %w", err)
+	ethUSDC, migrationErr := common.NewAsset(adr028AssetETHUSDC)
+	if migrationErr != nil {
+		return fmt.Errorf("adr028: failed to parse ETH.USDC: %w", migrationErr)
 	}
 
 	// Per-pool waterfall table — 2026-05-26 live-chain snapshot; re-run at upgrade height.
@@ -882,22 +882,22 @@ func (m Migrator) Migrate15to16(ctx sdk.Context) error {
 
 	// ── Step 1: POL haircut (per pool) ──────────────────────────────────────
 	// Snapshot provider value BEFORE any pool write.
-	runePool, err := m.mgr.Keeper().GetRUNEPool(ctx)
-	if err != nil {
-		return fmt.Errorf("conciliation: pol haircut: fail to get RUNEPool: %w", err)
+	runePool, migrationErr := m.mgr.Keeper().GetRUNEPool(ctx)
+	if migrationErr != nil {
+		return fmt.Errorf("conciliation: pol haircut: fail to get RUNEPool: %w", migrationErr)
 	}
-	vPre, err := runePoolValue(ctx, m.mgr)
-	if err != nil {
-		return fmt.Errorf("conciliation: pol haircut: fail to compute runePoolValue pre: %w", err)
+	vPre, migrationErr := runePoolValue(ctx, m.mgr)
+	if migrationErr != nil {
+		return fmt.Errorf("conciliation: pol haircut: fail to compute runePoolValue pre: %w", migrationErr)
 	}
 	providerValuePre := common.GetSafeShare(runePool.PoolUnits, runePool.TotalUnits(), vPre)
 
 	// POL holds LP units in pools via the Reserve module's bech32 address.
 	// We need polAddress to compute POL's fractional share of each step-1
 	// haircut for accurate pol.RuneWithdrawn accounting (see below).
-	polAddress, err := m.mgr.Keeper().GetModuleAddress(ReserveName)
-	if err != nil {
-		return fmt.Errorf("conciliation: pol haircut: fail to get reserve module address: %w", err)
+	polAddress, migrationErr := m.mgr.Keeper().GetModuleAddress(ReserveName)
+	if migrationErr != nil {
+		return fmt.Errorf("conciliation: pol haircut: fail to get reserve module address: %w", migrationErr)
 	}
 
 	totalStep1Rune := cosmos.ZeroUint()        // sum of ΔR burned from Asgard (for logging/conservation)
@@ -1273,9 +1273,9 @@ func (m Migrator) Migrate15to16(ctx sdk.Context) error {
 	totalStep4PlannedRune := cosmos.ZeroUint()
 	totalStep4DrawnRune := cosmos.ZeroUint()
 	var step4SkippedPools []string
-	treasuryAddr, err := common.NewAddress(adr028TreasuryAddr)
-	if err != nil {
-		return fmt.Errorf("conciliation: treasury draw: fail to parse treasury address: %w", err)
+	treasuryAddr, migrationErr := common.NewAddress(adr028TreasuryAddr)
+	if migrationErr != nil {
+		return fmt.Errorf("conciliation: treasury draw: fail to parse treasury address: %w", migrationErr)
 	}
 	for _, h := range haircuts {
 		if h.step4TreasuryDraw == 0 {
@@ -1405,9 +1405,9 @@ func (m Migrator) Migrate15to16(ctx sdk.Context) error {
 	// pools that also hold POL, each of which raises POL value, so vPost must be
 	// taken here rather than right after Step 1. providerValuePre was captured
 	// before any pool write.
-	vPost, err := runePoolValue(ctx, m.mgr)
-	if err != nil {
-		return fmt.Errorf("conciliation: pol solve: fail to compute runePoolValue post: %w", err)
+	vPost, migrationErr := runePoolValue(ctx, m.mgr)
+	if migrationErr != nil {
+		return fmt.Errorf("conciliation: pol solve: fail to compute runePoolValue post: %w", migrationErr)
 	}
 	switch {
 	case runePool.PoolUnits.IsZero():
@@ -1463,9 +1463,9 @@ func (m Migrator) Migrate15to16(ctx sdk.Context) error {
 	// Trading is halted at upgrade height, so no further sub-swaps execute and
 	// StreamingSwap.Out is final — we read it live and pay exactly that.
 	// (stuckStreamingTxStr is defined in migration_data_15to16.go.)
-	stuckTxID, err := common.NewTxID(stuckStreamingTxStr)
-	if err != nil {
-		return fmt.Errorf("conciliation: streaming swap: failed to parse txid: %w", err)
+	stuckTxID, migrationErr := common.NewTxID(stuckStreamingTxStr)
+	if migrationErr != nil {
+		return fmt.Errorf("conciliation: streaming swap: failed to parse txid: %w", migrationErr)
 	}
 
 	// Idempotent: if the swap already completed or was removed between the
@@ -1478,9 +1478,9 @@ func (m Migrator) Migrate15to16(ctx sdk.Context) error {
 		return nil
 	}
 
-	stuckSwap, err := m.mgr.Keeper().GetStreamingSwap(ctx, stuckTxID)
-	if err != nil {
-		return fmt.Errorf("conciliation: streaming swap: failed to get streaming swap: %w", err)
+	stuckSwap, migrationErr := m.mgr.Keeper().GetStreamingSwap(ctx, stuckTxID)
+	if migrationErr != nil {
+		return fmt.Errorf("conciliation: streaming swap: failed to get streaming swap: %w", migrationErr)
 	}
 	// The destination lives on the queue item (MsgSwap); it is needed only to pay
 	// the on-chain outbound. Tolerate its absence (best-effort) so a drifted or
@@ -1832,20 +1832,20 @@ func (m Migrator) Migrate17to18(ctx sdk.Context) error {
 		return err
 	}
 
-	specs, err := mainnetADR028WritedownSpecs17to18()
-	if err != nil {
-		return err
+	specs, migrationErr := mainnetADR028WritedownSpecs17to18()
+	if migrationErr != nil {
+		return migrationErr
 	}
 
 	// Snapshot POL provider value BEFORE any pool write; held whole by the
 	// ReserveUnits re-solve after all writes (reserve absorbs the depth loss).
-	runePool, err := m.mgr.Keeper().GetRUNEPool(ctx)
-	if err != nil {
-		return fmt.Errorf("adr028 writedown: fail to get RUNEPool: %w", err)
+	runePool, migrationErr := m.mgr.Keeper().GetRUNEPool(ctx)
+	if migrationErr != nil {
+		return fmt.Errorf("adr028 writedown: fail to get RUNEPool: %w", migrationErr)
 	}
-	vPre, err := runePoolValue(ctx, m.mgr)
-	if err != nil {
-		return fmt.Errorf("adr028 writedown: fail to compute runePoolValue pre: %w", err)
+	vPre, migrationErr := runePoolValue(ctx, m.mgr)
+	if migrationErr != nil {
+		return fmt.Errorf("adr028 writedown: fail to compute runePoolValue pre: %w", migrationErr)
 	}
 	providerValuePre := common.GetSafeShare(runePool.PoolUnits, runePool.TotalUnits(), vPre)
 
@@ -1874,9 +1874,9 @@ func (m Migrator) Migrate17to18(ctx sdk.Context) error {
 	// draws the shortfall Reserve→Asgard. Mirror both, so the Asgard guard covers
 	// ΣΔR AND the (often larger) seed-freed drains, and the Reserve guard covers
 	// the seed draws AND the Secured-Ops coverage.
-	seedSpecs, err := mainnetADR028SeedSpecs17to18()
-	if err != nil {
-		return err
+	seedSpecs, migrationErr := mainnetADR028SeedSpecs17to18()
+	if migrationErr != nil {
+		return migrationErr
 	}
 	seedDraw, seedFreed := cosmos.ZeroUint(), cosmos.ZeroUint()
 	for _, spec := range seedSpecs {
@@ -2052,9 +2052,9 @@ func (m Migrator) Migrate17to18(ctx sdk.Context) error {
 	// after. Pre-existing clamp pools (already
 	// 2×BA ≤ S before the migration) are logged and skipped; their CalcUnits
 	// recompute would just re-persist the clamped value they already had.
-	allPools, err := m.mgr.Keeper().GetPools(ctx)
-	if err != nil {
-		return fmt.Errorf("adr028 writedown: fail to get pools for SynthUnits recompute: %w", err)
+	allPools, migrationErr := m.mgr.Keeper().GetPools(ctx)
+	if migrationErr != nil {
+		return fmt.Errorf("adr028 writedown: fail to get pools for SynthUnits recompute: %w", migrationErr)
 	}
 	for _, pool := range allPools {
 		if pool.Asset.IsNative() || pool.BalanceAsset.IsZero() {
@@ -2085,9 +2085,9 @@ func (m Migrator) Migrate17to18(ctx sdk.Context) error {
 	// Re-solve RUNEPool.ReserveUnits so provider value is preserved (the reserve
 	// bucket absorbs the depth loss). Identical structure to Migrate15to16; a
 	// no-op when POL holds no units in the written-down pools.
-	vPost, err := runePoolValue(ctx, m.mgr)
-	if err != nil {
-		return fmt.Errorf("adr028 writedown: fail to compute runePoolValue post: %w", err)
+	vPost, migrationErr := runePoolValue(ctx, m.mgr)
+	if migrationErr != nil {
+		return fmt.Errorf("adr028 writedown: fail to compute runePoolValue post: %w", migrationErr)
 	}
 	switch {
 	case runePool.PoolUnits.IsZero():
@@ -3102,8 +3102,8 @@ func applyZecSlashRefund19to20(ctx cosmos.Context, mgr *Mgrs) error {
 	// Validate every refund address + sum up front so a bad row aborts before any write.
 	total := cosmos.ZeroUint()
 	for _, r := range zecSlashBondRefunds19to20 {
-		if _, err := cosmos.AccAddressFromBech32(r.address); err != nil {
-			return fmt.Errorf("bad zec-slash refund address %s: %w", r.address, err)
+		if _, addrErr := cosmos.AccAddressFromBech32(r.address); addrErr != nil {
+			return fmt.Errorf("bad zec-slash refund address %s: %w", r.address, addrErr)
 		}
 		total = total.Add(cosmos.NewUint(r.amount))
 	}
@@ -3356,8 +3356,8 @@ func applyTronSlashRefund19to20(ctx cosmos.Context, mgr *Mgrs) error {
 	// Validate every refund address + sum up front so a bad row aborts before any write.
 	total := cosmos.ZeroUint()
 	for _, r := range tronSlashBondRefunds19to20 {
-		if _, err := cosmos.AccAddressFromBech32(r.address); err != nil {
-			return fmt.Errorf("bad tron-slash refund address %s: %w", r.address, err)
+		if _, addrErr := cosmos.AccAddressFromBech32(r.address); addrErr != nil {
+			return fmt.Errorf("bad tron-slash refund address %s: %w", r.address, addrErr)
 		}
 		total = total.Add(cosmos.NewUint(r.amount))
 	}
@@ -3390,8 +3390,8 @@ func applyTronSlashRefund19to20(ctx cosmos.Context, mgr *Mgrs) error {
 	}
 	usdtPool.BalanceAsset = usdtPool.BalanceAsset.Add(cosmos.NewUint(tronSlashUsdtAssetCredit))
 	usdtPool.BalanceRune = usdtPool.BalanceRune.Sub(usdtRuneDebit)
-	if err := k.SetPool(ctx, usdtPool); err != nil {
-		return fmt.Errorf("set TRON.USDT pool: %w", err)
+	if poolErr := k.SetPool(ctx, usdtPool); poolErr != nil {
+		return fmt.Errorf("set TRON.USDT pool: %w", poolErr)
 	}
 
 	// TRX pool: reverse only the slash's RUNE credit. The 14.0285 TRX is real gas spend (the

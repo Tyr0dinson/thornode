@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Run golangci-lint over the whole module in one process, at the version trunk
+# Run golangci-lint over the whole module for each build, at the version trunk
 # pins in .trunk/trunk.yaml. trunk runs it once per package directory with
 # --concurrency 1, so each directory type-checks its dependencies again: a
 # full (--all) trunk check took 23 min at p50 in CI on 2026-10-02..07, against
@@ -20,6 +20,10 @@ fi
 # XDG_CACHE_HOME (/trunk-cache in CI), which concurrent jobs share safely.
 CGO_ENABLED=1 go run "github.com/golangci/golangci-lint/cmd/golangci-lint@v${VERSION}" run \
   --config .trunk/configs/.golangci.yaml --timeout 20m --exclude gofmt ./...
+
+# Keep the default build coverage and also analyze mainnet-only source and tests.
+CGO_ENABLED=1 go run "github.com/golangci/golangci-lint/cmd/golangci-lint@v${VERSION}" run \
+  --config .trunk/configs/.golangci.yaml --timeout 20m --exclude gofmt --build-tags mainnet ./...
 
 # test/simulation is its own module, so ./... above stops at its go.mod. trunk
 # ran golangci-lint from that directory, where it found no config file and used
