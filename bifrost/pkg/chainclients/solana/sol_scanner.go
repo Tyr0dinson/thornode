@@ -485,15 +485,14 @@ func (s *SOLScanner) scanVault(
 					return fmt.Errorf("failed to get transaction %s: %w", sig.Signature, err)
 				}
 
-				if tx.Meta.Err != nil {
-					s.logger.Debug().Msgf("transaction %s failed: %s", sig.Signature, tx.Meta.Err)
-					return nil
-				}
-
 				txIn, err := s.getTxIn(sig.Slot, []*rpc.TransactionResult{tx})
 				if err != nil {
 					// Leave the cursor where it is: the scan fails and this tx is re-read.
 					return fmt.Errorf("failed to observe transaction %s: %w", sig.Signature, err)
+				}
+				if tx.Meta.Err != nil && len(txIn.TxArray) == 0 {
+					s.logger.Debug().Msgf("transaction %s failed: %s", sig.Signature, tx.Meta.Err)
+					return nil
 				}
 				s.globalTxsQueue <- txIn
 				return nil
@@ -709,7 +708,13 @@ func (s *SOLScanner) getTxIn(slot uint64, transactions []*rpc.TransactionResult)
 			continue
 		}
 
-		txItem, err := s.txInItem(txn, int64(slot))
+		// A failed transaction moved nothing; only a vault's failed durable tx, which
+		// still consumed its nonce, is observed.
+		observe := s.txInItem
+		if txn.Meta.Err != nil {
+			observe = s.failedDurableTxInItem
+		}
+		txItem, err := observe(txn, int64(slot))
 		if err != nil {
 			return stypes.TxIn{}, err
 		}
@@ -1058,6 +1063,101 @@ func (s *SOLScanner) nonceCreateTxInItem(txn *rpc.TransactionResult, blockHeight
 		Sender:      funder,
 		To:          created,
 		Coins:       []common.Coin{rentCoin},
+		Gas:         common.Gas{gasCoin},
+		SolNonce:    nonce,
+	}, nil
+}
+
+// failedDurableTxInItem observes a vault's durable-nonce transaction that landed but
+// FAILED. Solana still charges its fee and advances its nonce, so left unobserved
+// THORChain's committed nonce goes stale and every durable outbound of the vault is
+// wedged until re-attestation (sol_nonce_reattest.go), about an hour. A durable tx
+// never expires, so state the pre-sign checks saw can change before it lands, and
+// some of that state (such as the recipient's accounts) is not the vault's to control.
+//
+// It is reported in THORChain's nonce-maintenance shape (isSolNonceCreateTx): from the
+// vault to its own nonce account, no memo, one SOL coin, with the post-tx nonce
+// attested. THORChain commits the nonce on a supermajority of identical attestations,
+// books coin plus gas as vault gas, and re-issues the outbounds signed with the
+// consumed nonce, the failed one included. The fee is split as one unit of coin (an
+// observation needs a non-zero coin) and the rest as gas, so the total booked is
+// exactly the fee.
+//
+// The read is deterministic across observers for the same reason as for a successful
+// durable tx (observedSolNonce): nothing else can advance the nonce until THORChain
+// commits this value. It is observed only when the fee payer is a vault, instruction
+// 0 is AdvanceNonceAccount on the vault's own nonce account with the vault as
+// authority, and the post-tx nonce differs from the value the tx carried: re-issuing
+// copies signed with a nonce that was not consumed could pay twice. (Bifrost puts
+// AdvanceNonceAccount first only on durable txs, whose carried value is the nonce
+// they consume.)
+func (s *SOLScanner) failedDurableTxInItem(txn *rpc.TransactionResult, blockHeight int64) (*stypes.TxInItem, error) {
+	instructions := txn.Transaction.GetInstructions()
+	accounts := txn.Transaction.ResolvedAccounts(txn.Meta.LoadedAddresses)
+	accountByIndex := func(i int) string {
+		if i < 0 || i >= len(accounts) {
+			return ""
+		}
+		return accounts[i]
+	}
+	if len(txn.Transaction.Signatures) == 0 || len(instructions) == 0 || len(accounts) == 0 {
+		return nil, nil
+	}
+	advance := instructions[0]
+	if !types.SystemProgramID.EqualsString(accountByIndex(advance.ProgramIdIndex)) || len(advance.Accounts) < 3 {
+		return nil, nil
+	}
+	data, err := base58.Decode(advance.Data)
+	if err != nil || len(data) < 4 || binary.LittleEndian.Uint32(data[:4]) != solSysAdvanceNonce {
+		return nil, nil
+	}
+	// accounts: [nonce account, RecentBlockhashes sysvar, authority]; the fee payer
+	// (account 0) signed, so it is the authority that advanced the nonce.
+	vault := accounts[0]
+	nonceAcct := accountByIndex(advance.Accounts[0])
+	if accountByIndex(advance.Accounts[2]) != vault || s.pubKeyMgr == nil {
+		return nil, nil
+	}
+	if isVault, _ := s.pubKeyMgr.IsValidPoolAddress(vault, common.SOLChain); !isVault {
+		return nil, nil
+	}
+	baked := txn.Transaction.Message.RecentBlockhash
+	if baked == "" {
+		return nil, nil
+	}
+
+	txID := txn.Transaction.Signatures[0]
+	nonce, err := s.readSolNonce(nonceAcct, vault, blockHeight)
+	if errors.Is(err, rpc.ErrNonceAccountNotProvisioned) {
+		// Closed since (retirement): nothing durable can wedge on it any more.
+		return nil, nil
+	}
+	if err != nil {
+		// A transient read failure must not drop the observation, or the vault stays
+		// wedged: fail the scan so the tx is re-read.
+		return nil, fmt.Errorf("fail to read durable nonce %s after failed tx %s: %w", nonceAcct, txID, err)
+	}
+	if nonce == nil || nonce.Nonce == baked {
+		return nil, nil
+	}
+	fee := convertLamportsToTHORChain(txn.Meta.Fee)
+	if fee.LT(sdk.NewUint(2)) {
+		return nil, nil
+	}
+	s.logger.Warn().Str("txID", txID).Str("vault", vault).Str("nonce", nonce.Nonce).
+		Interface("err", txn.Meta.Err).Msg("vault durable tx failed on-chain; observing its fee and nonce advance")
+
+	coin := common.NewCoin(common.SOLAsset, sdk.OneUint())
+	gasCoin := common.NewCoin(common.SOLAsset, fee.Sub(sdk.OneUint()))
+	coin.Decimals = 9
+	gasCoin.Decimals = 9
+	return &stypes.TxInItem{
+		BlockHeight: blockHeight,
+		Tx:          txID,
+		Memo:        "",
+		Sender:      vault,
+		To:          nonceAcct,
+		Coins:       []common.Coin{coin},
 		Gas:         common.Gas{gasCoin},
 		SolNonce:    nonce,
 	}, nil

@@ -19,7 +19,8 @@ const solNonceReattestMinAgeBlocks = int64(600)
 // SolNonceAttestHandler processes MsgSolNonceAttest: validators re-attest a Solana
 // vault's durable-nonce account after its on-chain nonce moved past the committed
 // value without a committed observation (every tx that advanced it FAILED on-chain,
-// so none was observed and the vault's durable outbounds are wedged).
+// and Bifrost's report of the failure never committed, so the vault's durable
+// outbounds are wedged). It is the fallback for that report.
 type SolNonceAttestHandler struct {
 	mgr Manager
 }

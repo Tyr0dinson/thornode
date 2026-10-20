@@ -329,3 +329,88 @@ func (s *SolNonceCreateSuite) TestLatePathDoesNotBookBeforeQuorumProcessed(c *C)
 	c.Assert(handleObservedTxOutQuorum(ctx, mgr, f.nas[0].NodeAddress, f.nas, noop, tx, voter, nil, true), IsNil)
 	c.Assert(balance(), Equals, start-solNonceRent-solNonceFee) // booked exactly once
 }
+
+// A vault's durable outbound that landed but FAILED (state changed between its pre-sign
+// checks and landing) still paid its fee and advanced the vault's nonce. Bifrost observes it in the nonce-creation
+// shape: to the vault's nonce account, no memo, one unit of SOL as the coin and the
+// rest of the fee as gas, with the post-tx nonce attested. On quorum THORChain books
+// exactly the fee, commits the advanced nonce, slashes nobody, and re-issues the failed
+// outbound at once instead of leaving the vault wedged until re-attestation.
+func (s *SolNonceCreateSuite) TestFailedDurableTxBooksFeeAndReissues(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	ctx = ctx.WithBlockHeight(1000)
+	f := newSolNonceFixture(c, ctx, mgr)
+	f.fundAndBond(c, ctx, mgr)
+	start := uint64(10 * common.One)
+	mgr.Keeper().SetSolVaultNonce(ctx, SolVaultNonce{
+		VaultPubKey: f.vault.PubKey, NonceAccount: f.nonceAcct, Nonce: solNonceValue(c), Slot: 500,
+		UpdatedHeight: 900, SetByTx: GetRandomTxHash(),
+	})
+
+	// The outbound whose durable copy failed, still pending, linked (by the signers'
+	// instant observation) to the failed tx.
+	recipient, err := GetRandomEd25519PubKey().GetAddress(common.SOLChain)
+	c.Assert(err, IsNil)
+	const issuedAt = int64(950)
+	failedTxID := GetRandomTxHash()
+	pending := TxOutItem{
+		Chain: common.SOLChain, ToAddress: recipient, VaultPubKey: f.vault.PubKey, VaultPubKeyEddsa: f.vault.PubKeyEddsa,
+		Coin:   common.NewCoin(common.SOLAsset, cosmos.NewUint(250_000_000)),
+		MaxGas: common.Gas{common.NewCoin(common.SOLAsset, cosmos.NewUint(solNonceFee))},
+		InHash: GetRandomTxHash(), Memo: "OUT:" + GetRandomTxHash().String(),
+	}
+	block := NewTxOut(issuedAt)
+	block.TxArray = []TxOutItem{pending}
+	c.Assert(mgr.Keeper().SetTxOut(ctx, block), IsNil)
+	mgr.Keeper().SetObservedLink(ctx, pending.InHash, failedTxID)
+
+	newNonce := solNonceValue(c)
+	tx := f.obs(failedTxID, &common.SolNonceUpdate{NonceAccount: f.nonceAcct, Nonce: newNonce, Slot: 1000}, true, f.nas[0], f.nas[1], f.nas[2])
+	tx.Tx.ToAddress = common.Address(f.nonceAcct)
+	tx.Tx.Memo = ""
+	tx.Tx.Coins = common.NewCoins(common.NewCoin(common.SOLAsset, cosmos.OneUint()))
+	tx.Tx.Gas = common.Gas{common.NewCoin(common.SOLAsset, cosmos.NewUint(solNonceFee-1))}
+	c.Assert(isSolNonceCreateTx(tx), Equals, true)
+	voter := NewObservedTxVoter(tx.Tx.ID, []common.ObservedTx{tx})
+	voter.Tx = tx
+	voter.FinalisedHeight = ctx.BlockHeight()
+	mgr.Keeper().SetObservedTxOutVoter(ctx, voter)
+	handler := func(cosmos.Context, cosmos.Msg) (*cosmos.Result, error) {
+		c.Fatal("a failed durable tx must not reach the outbound handler")
+		return nil, nil
+	}
+	c.Assert(handleObservedTxOutQuorum(ctx, mgr, f.nas[0].NodeAddress, f.nas, handler, tx, voter, nil, true), IsNil)
+
+	// Exactly the fee comes off the vault.
+	vault, err := mgr.Keeper().GetVault(ctx, f.vault.PubKey)
+	c.Assert(err, IsNil)
+	c.Assert(vault.Coins.GetCoin(common.SOLAsset).Amount.Uint64(), Equals, start-solNonceFee)
+
+	// The advanced nonce is committed, set by the failed tx.
+	n, found, err := mgr.Keeper().GetSolVaultNonce(ctx, f.vault.PubKey)
+	c.Assert(err, IsNil)
+	c.Assert(found, Equals, true)
+	c.Assert(n.Nonce, Equals, newNonce)
+	c.Assert(n.SetByTx.Equals(failedTxID), Equals, true)
+
+	// The failed outbound is re-issued at the current height; its old entry is marked
+	// sent so it is not signed again.
+	re, err := mgr.Keeper().GetTxOut(ctx, ctx.BlockHeight())
+	c.Assert(err, IsNil)
+	c.Assert(re.TxArray, HasLen, 1)
+	c.Assert(re.TxArray[0].InHash.Equals(pending.InHash), Equals, true)
+	c.Assert(re.TxArray[0].Coin.Equals(pending.Coin), Equals, true)
+	old, err := mgr.Keeper().GetTxOut(ctx, issuedAt)
+	c.Assert(err, IsNil)
+	c.Assert(old.TxArray[0].OutHash.Equals(common.BlankTxID), Equals, true)
+
+	// Nobody is slashed.
+	for _, na := range f.nas {
+		pts, err := mgr.Keeper().GetNodeAccountSlashPoints(ctx, na.NodeAddress)
+		c.Assert(err, IsNil)
+		c.Assert(pts, Equals, int64(0))
+		after, err := mgr.Keeper().GetNodeAccount(ctx, na.NodeAddress)
+		c.Assert(err, IsNil)
+		c.Assert(after.Bond.Equal(na.Bond), Equals, true)
+	}
+}

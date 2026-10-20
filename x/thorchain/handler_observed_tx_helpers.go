@@ -1071,7 +1071,8 @@ func handleObservedTxOutQuorum(
 	// account (plus the fee) is booked as vault gas, so the vault's recorded balance
 	// keeps matching its main account (migrations never overshoot, solvency needs no
 	// adjustment). It is an operational spend: no outbound to match, no slash. Checked
-	// before the memo-based branches below, which would treat it as unmatched.
+	// before the memo-based branches below, which would treat it as unmatched. Bifrost
+	// reports a vault's failed durable tx (fee spent, nonce advanced) in this shape too.
 	if isSolNonceCreateTx(tx) {
 		if solNonceCommittedBy(ctx, mgr, tx) {
 			bookSolNonceCreateAsGas(ctx, mgr, tx)
@@ -1081,8 +1082,9 @@ func handleObservedTxOutQuorum(
 		// supermajority does (one vote omitting or changing the nonce is enough). If
 		// any final consensus vote attests this as the vault's nonce-account creation,
 		// defer rather than slash it as an unmatched outflow: the late vote that
-		// commits the nonce books it (above). Only a real creation carries a SolNonce
-		// for this shape; bifrost never sends a durable payment to the nonce address.
+		// commits the nonce books it (above). Only a real creation or a failed durable tx
+		// carries a SolNonce for this shape; bifrost never sends a durable payment to the
+		// nonce address.
 		//
 		// Residual: a single byzantine vote can attach a SolNonce to a genuine memoless
 		// transfer of this shape and so defer it instead of slashing it. Every such

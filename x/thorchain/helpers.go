@@ -2361,6 +2361,11 @@ const solNonceCreateMaxRent = 1_000_000
 // vote (whichever completed quorum) must not decide the branch. The shape alone can
 // also match a scheduled memoless payment to that address, so the caller also
 // requires agreed creation evidence (solNonceCommittedBy).
+//
+// Bifrost reports a vault's durable tx that landed but FAILED in the same shape (one
+// unit of SOL as the coin, the rest of the fee as gas, the nonce it advanced to
+// attested): it needs the same handling, booking the spend as gas and committing the
+// nonce, which re-issues the outbounds signed with the consumed value.
 func isSolNonceCreateTx(tx ObservedTx) bool {
 	if !tx.Tx.Chain.Equals(common.SOLChain) || strings.TrimSpace(tx.Tx.Memo) != "" {
 		return false
