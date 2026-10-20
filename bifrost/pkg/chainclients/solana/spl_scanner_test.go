@@ -46,13 +46,17 @@ func testSPLRegistry(whitelist ...string) *splRegistry {
 
 var _ = Suite(&SPLScannerSuite{})
 
+// newSPLTestScanner is a scanner with USDC and USDT whitelisted and SPL enabled (as
+// by the SOLTokens mimir).
 func newSPLTestScanner() *SOLScanner {
 	logger := log.Logger.With().Str("module", "test").Logger()
-	return &SOLScanner{
+	s := &SOLScanner{
 		cfg:    config.BifrostBlockScannerConfiguration{ChainID: common.SOLChain},
 		logger: logger,
 		spl:    testSPLRegistry(testUSDCMint, testUSDTMint),
 	}
+	s.splEnabled.Store(true)
+	return s
 }
 
 func makeTransferCheckedData(amount uint64, decimals uint8) string {

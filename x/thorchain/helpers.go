@@ -2350,6 +2350,44 @@ func activeSolVaultNonce(ctx cosmos.Context, k keeper.Keeper, vaultPubKey common
 	return record, true, nil
 }
 
+// solTokenInboundGated reports whether an observed inbound carries a Solana SPL token
+// while the SOLTokens mimir is not enabled, from a sender that is not one of the Asgard
+// vaults. Such a deposit must not enter: a bifrost that predates SPL support signs any
+// SOL-chain outbound, refunds included, as a native SOL transfer of the coin amount
+// (see constants.MimirKeySOLTokens). Transfers between vaults (migrations) only move
+// tokens that entered while it was on, so they are never gated; an SPL sender is the
+// source token account's owner, who must sign, so a vault sender cannot be forged.
+func solTokenInboundGated(ctx cosmos.Context, k keeper.Keeper, tx common.ObservedTx) bool {
+	if !tx.Tx.Chain.Equals(common.SOLChain) {
+		return false
+	}
+	token := false
+	for _, coin := range tx.Tx.Coins {
+		if !coin.Asset.Equals(common.SOLAsset) {
+			token = true
+			break
+		}
+	}
+	if !token {
+		return false
+	}
+	if enabled, err := k.GetMimir(ctx, constants.MimirKeySOLTokens); err == nil && enabled > 0 {
+		return false
+	}
+	vaults, err := k.GetAsgardVaults(ctx)
+	if err != nil {
+		ctx.Logger().Error("fail to get asgard vaults for the SPL token gate", "error", err)
+		return true
+	}
+	for i := range vaults {
+		// Base58 is case-sensitive, so match exactly (Address.Equals ignores case).
+		if addr, aErr := vaults[i].GetAddress(common.SOLChain); aErr == nil && addr.String() == tx.Tx.FromAddress.String() {
+			return false
+		}
+	}
+	return true
+}
+
 // solNonceCreateMaxRent caps the rent (1e8 units) booked as gas for a durable-nonce
 // account creation: 0.01 SOL, ~7x the current rent-exempt minimum.
 const solNonceCreateMaxRent = 1_000_000

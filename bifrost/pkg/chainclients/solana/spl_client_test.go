@@ -210,11 +210,23 @@ func (s *SolTestSuite) TestSPLGetAccountByAddress(c *C) {
 	defer srv.Close()
 
 	cl := &SOLClient{
-		logger:    log.Logger,
-		rpcClient: newSolRPCForServer(srv),
-		spl:       testSPLRegistry(testUSDCMint, testUSDTMint),
+		logger:     log.Logger,
+		rpcClient:  newSolRPCForServer(srv),
+		spl:        testSPLRegistry(testUSDCMint, testUSDTMint),
+		solScanner: &SOLScanner{},
 	}
+
+	// Until the SOLTokens mimir enables SPL, only SOL is reported and no token account
+	// is read (failATA would fail any read).
+	failATA = true
 	acct, err := cl.GetAccountByAddress(vaultAddr.String(), nil)
+	c.Assert(err, IsNil)
+	c.Assert(acct.Coins, HasLen, 1)
+	c.Check(acct.Coins[0].Asset.Equals(common.SOLAsset), Equals, true)
+	failATA = false
+
+	cl.solScanner.splEnabled.Store(true)
+	acct, err = cl.GetAccountByAddress(vaultAddr.String(), nil)
 	c.Assert(err, IsNil)
 	c.Assert(acct.Coins, HasLen, 3)
 	c.Check(acct.Coins.GetCoin(common.SOLAsset).Amount.String(), Equals, "500000000")

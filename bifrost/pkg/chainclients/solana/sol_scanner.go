@@ -61,6 +61,9 @@ type SOLScanner struct {
 	// whitelisted mint is scanned alongside the vault itself: a plain token transfer
 	// to the vault references only that token account, never the vault wallet.
 	spl *splRegistry
+	// splEnabled mirrors THORChain's SOLTokens mimir (constants.MimirKeySOLTokens):
+	// token accounts are scanned and token transfers reported only while it is set.
+	splEnabled atomic.Bool
 
 	globalNetworkFeeQueue chan common.NetworkFee
 	globalTxsQueue        chan stypes.TxIn
@@ -206,6 +209,7 @@ func (s *SOLScanner) Start() {
 func (s *SOLScanner) scan() {
 	if time.Since(s.lastMimirCheck) >= constants.ThorchainBlockTime {
 		s.isChainPaused = blockscanner.IsChainPaused(s.cfg, s.logger, s.bridge)
+		s.refreshSPLGate()
 		s.lastMimirCheck = time.Now()
 	}
 
@@ -233,6 +237,9 @@ func (s *SOLScanner) scan() {
 		isTokenAccount = append(isTokenAccount, false)
 		walletOf = append(walletOf, wallet)
 
+		if !s.splEnabled.Load() {
+			continue
+		}
 		tokenAccounts, err := s.spl.vaultTokenAccounts(vaultAddrSol.String())
 		if err != nil {
 			s.logger.Error().Err(err).Str("vault", vaultAddrSol.String()).Msg("failed to derive vault token accounts")
@@ -736,6 +743,24 @@ func (s *SOLScanner) IsHealthy() bool {
 	return s.healthy.Load()
 }
 
+// refreshSPLGate reads THORChain's SOLTokens mimir. A thornode without SPL support
+// has no such mimir and reads as off. A failed read keeps the last value: briefly
+// missing token accounts is recoverable (their cursors resume), but a flapping gate
+// is not worth the noise.
+func (s *SOLScanner) refreshSPLGate() {
+	if s.spl == nil || len(s.spl.tokens) == 0 || s.bridge == nil {
+		return
+	}
+	enabled, err := s.bridge.GetMimir(constants.MimirKeySOLTokens)
+	if err != nil {
+		s.logger.Error().Err(err).Msgf("fail to get mimir %s; keeping SPL scanning %t", constants.MimirKeySOLTokens, s.splEnabled.Load())
+		return
+	}
+	if s.splEnabled.Swap(enabled > 0) != (enabled > 0) {
+		s.logger.Info().Bool("enabled", enabled > 0).Msg("SPL token scanning toggled by the SOLTokens mimir")
+	}
+}
+
 // GetNetworkFee returns current chain network fee according to Bifrost.
 func (s *SOLScanner) GetNetworkFee() (transactionSize, transactionFeeRate uint64) {
 	return 1, s.lastFeeRate.Load()
@@ -1024,7 +1049,7 @@ func (s *SOLScanner) txInItem(txn *rpc.TransactionResult, blockHeight int64) (*s
 		}
 	}
 
-	if transferCount == 0 && len(tokenTransfers) > 0 {
+	if transferCount == 0 && len(tokenTransfers) > 0 && s.splEnabled.Load() {
 		return s.splTxInItem(txn, blockHeight, memo, tokenTransfers, accounts, advancedNonceAcct)
 	}
 

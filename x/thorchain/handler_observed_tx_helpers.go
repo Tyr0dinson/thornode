@@ -339,6 +339,22 @@ func handleObservedTxInQuorum(
 		return nil
 	}
 
+	// SPL token deposits are no-ops until SOLTokens is enabled (see
+	// solTokenInboundGated), recorded and closed out like a compromised vault's.
+	if solTokenInboundGated(ctx, k, tx) {
+		if err = k.SetLastChainHeight(ctx, tx.Tx.Chain, tx.BlockHeight); err != nil {
+			ctx.Logger().Error("fail to set last chain height", "error", err)
+		}
+		mgr.ObMgr().AppendObserver(tx.Tx.Chain, voter.Tx.GetSigners())
+		if hasFinalised {
+			telemetry.IncrCounterWithLabels([]string{"thornode", "inbound", "sol_token_gated"}, 1, nil)
+			voter.SetDone()
+			ctx.Logger().Info("observed SPL token deposit no-oped: SOLTokens not enabled", "tx", tx.Tx.ID.String(), "coins", tx.Tx.Coins.String())
+		}
+		k.SetObservedTxInVoter(ctx, voter)
+		return nil
+	}
+
 	// add memo for memoless transactions (after consensus is reached)
 	if len(tx.Tx.Coins) > 0 {
 		// Use the asset from the first coin for reference memo lookup

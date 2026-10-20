@@ -363,11 +363,14 @@ func (c *SOLClient) GetAccountByAddress(addr string, height *big.Int) (common.Ac
 		common.NewCoin(common.SOLAsset, amount),
 	}
 
-	tokenCoins, err := c.splTokenCoins(addr)
-	if err != nil {
-		return common.Account{}, fmt.Errorf("fail to get token balances: %w", err)
+	// Token balances only once SPL is enabled: until then THORChain holds none.
+	if c.solScanner != nil && c.solScanner.splEnabled.Load() {
+		tokenCoins, err := c.splTokenCoins(addr)
+		if err != nil {
+			return common.Account{}, fmt.Errorf("fail to get token balances: %w", err)
+		}
+		coins = append(coins, tokenCoins...)
 	}
-	coins = append(coins, tokenCoins...)
 
 	return common.Account{
 		Coins: coins,

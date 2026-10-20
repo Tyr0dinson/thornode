@@ -15,6 +15,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/signercache"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/solana/rpc"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pubkeymanager"
+	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/config"
@@ -208,8 +209,8 @@ func (s *BlockScannerTestSuite) TestScanTokenAccountFloorHoldsUntilFirstSignatur
 	c.Check(got[0].TxArray[0].Tx, Equals, sig1)
 }
 
-// newTokenScanTestScanner builds a scanner over one vault with USDC whitelisted,
-// served by m, and returns it with its storage and observation queue.
+// newTokenScanTestScanner builds a scanner over one vault with USDC whitelisted and
+// SPL enabled, served by m, and returns it with its storage and observation queue.
 func (s *BlockScannerTestSuite) newTokenScanTestScanner(c *C, server *httptest.Server, vault common.PubKey) (*SOLScanner, *blockscanner.BlockScannerStorageSolana, chan stypes.TxIn) {
 	storage, err := blockscanner.NewBlockScannerStorageSolana("", config.LevelDBOptions{})
 	c.Assert(err, IsNil)
@@ -228,6 +229,7 @@ func (s *BlockScannerTestSuite) newTokenScanTestScanner(c *C, server *httptest.S
 	txIns := make(chan stypes.TxIn, 10)
 	scanner.globalTxsQueue = txIns
 	scanner.lastMimirCheck = time.Now() // skip the halt mimir reads
+	scanner.splEnabled.Store(true)      // as by the SOLTokens mimir
 	return scanner, storage, txIns
 }
 
@@ -308,4 +310,84 @@ func (s *BlockScannerTestSuite) TestScanTokenAccountOfNewVaultStaysUnfloored(c *
 	got := drainTxIns(txIns)
 	c.Assert(got, HasLen, 1)
 	c.Check(got[0].TxArray[0].Tx, Equals, lateSig)
+}
+
+// mimirBridge serves THORChain mimirs (unset reads 0) and a block height; scan()'s
+// pause and SPL gate checks use nothing else.
+type mimirBridge struct {
+	thorclient.ThorchainBridge
+	mu     sync.Mutex
+	values map[string]int64
+}
+
+func (b *mimirBridge) GetBlockHeight() (int64, error) { return 100, nil }
+
+func (b *mimirBridge) GetMimir(key string) (int64, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.values[key], nil
+}
+
+func (b *mimirBridge) set(key string, v int64) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.values[key] = v
+}
+
+// TestScanSPLGatedBySOLTokensMimir: until THORChain's SOLTokens mimir is set, the
+// scanner neither scans vault token accounts nor reports token transfers. A thornode
+// without SPL support has no such mimir, so a Bifrost upgraded early never feeds it
+// SPL deposits it would credit (and later pay out through signers that cannot sign
+// SPL). Once the mimir is set, scanning starts at that point: the vault was already
+// scanned, so its token account is floored there and earlier deposits are never
+// replayed.
+func (s *BlockScannerTestSuite) TestScanSPLGatedBySOLTokensMimir(c *C) {
+	vault := types2.GetRandomEd25519PubKey()
+	vaultAddr, err := vault.GetAddress(common.SOLChain)
+	c.Assert(err, IsNil)
+	tokenAccount := ata(c, vaultAddr.String(), testUSDCMint)
+
+	const depositSig = "GatedDeposit11111111111111111111111111111111111111111111111111111111"
+	const laterSig = "EnabledDeposit111111111111111111111111111111111111111111111111111111"
+	deposit := splInboundTo(c, vaultAddr.String(), 6_000_000)
+	deposit.Transaction.Signatures = []string{depositSig}
+	later := splInboundTo(c, vaultAddr.String(), 7_000_000)
+	later.Transaction.Signatures = []string{laterSig}
+	m := &splScanRPC{txs: map[string]*rpc.TransactionResult{depositSig: deposit, laterSig: later}, getTxHit: map[string]int{}}
+	m.set(1000, map[string][]rpc.SignaturesForAddressResult{
+		tokenAccount: {{Signature: depositSig, Slot: 1500}},
+	})
+	server := m.server(c)
+	defer server.Close()
+
+	scanner, storage, txIns := s.newTokenScanTestScanner(c, server, vault)
+	bridge := &mimirBridge{values: map[string]int64{}}
+	scanner.bridge = bridge
+	scanner.lastMimirCheck = time.Time{} // read the mimirs this pass
+
+	scanner.scan()
+	c.Check(drainTxIns(txIns), HasLen, 0)
+	c.Check(m.getTxHit[depositSig], Equals, 0)
+	_, _, err = storage.GetScanStatus(tokenAccount)
+	c.Check(err, NotNil) // never tracked
+
+	bridge.set("SOLTokens", 1)
+	scanner.lastMimirCheck = time.Time{}
+	m.set(2000, map[string][]rpc.SignaturesForAddressResult{
+		tokenAccount: {{Signature: depositSig, Slot: 1500}},
+	})
+	scanner.scan()
+	c.Check(drainTxIns(txIns), HasLen, 0) // made before SPL was enabled
+	_, slot, err := storage.GetScanStatus(tokenAccount)
+	c.Assert(err, IsNil)
+	c.Check(slot, Equals, uint64(2000))
+
+	m.set(3000, map[string][]rpc.SignaturesForAddressResult{
+		tokenAccount: {{Signature: laterSig, Slot: 2500}, {Signature: depositSig, Slot: 1500}},
+	})
+	scanner.scan()
+	got := drainTxIns(txIns)
+	c.Assert(got, HasLen, 1)
+	c.Check(got[0].TxArray[0].Tx, Equals, laterSig)
+	c.Check(m.getTxHit[depositSig], Equals, 0)
 }

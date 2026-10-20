@@ -34,6 +34,17 @@ const (
 	// MimirTemplateSOLNonceClear.
 	MimirKeySOLDurableNonce = "SOLDurableNonce"
 
+	// MimirKeySOLTokens enables Solana SPL tokens. Unset/<=0: THORChain no-ops any
+	// observed SPL token deposit from outside its vaults (no credit, swap or refund),
+	// and bifrost neither scans vault token accounts nor reports token transfers. Set
+	// it only once every node that can sign for a vault (active, and churned-out
+	// members of retiring vaults) runs SPL-aware bifrost: an older bifrost signs any
+	// SOL-chain outbound as a native SOL transfer of the coin amount, so an SPL
+	// outbound would pay SOL instead of the token. Keeping SPL value out keeps SPL
+	// outbounds from ever being scheduled. Turning it back off stops new deposits
+	// only; transfers between vaults (migrations) are still credited.
+	MimirKeySOLTokens = "SOLTokens"
+
 	// MimirKeySOLAnchorMarginSeconds tunes how far (seconds) bifrost steps back from
 	// the THORChain keysign block time to pick the SOL consensus blockhash anchor.
 	// Read by bifrost only, at the keysign height. Unset/<=0 = 15s; positive values
