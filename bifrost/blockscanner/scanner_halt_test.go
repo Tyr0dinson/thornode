@@ -275,7 +275,7 @@ func newActivationTestScanner(t *testing.T, cfg config.BifrostBlockScannerConfig
 	}
 	scanner.logger = zerolog.Nop()
 	queue := make(chan types.TxIn, 4)
-	scanner.Start(queue, make(chan common.NetworkFee, 4))
+	scanner.Start(queue, make(chan common.NetworkFee, 4), nil)
 	return scanner, fetcher, storage, queue
 }
 

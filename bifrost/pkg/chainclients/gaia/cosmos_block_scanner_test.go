@@ -333,7 +333,7 @@ func (s *BlockScannerTestSuite) TestProcessTxsMsgSendWithIBCMessage(c *C) {
 	c.Assert(err, IsNil)
 
 	// use the production codec so the test covers its interface registrations
-	blockScanner, err := NewCosmosBlockScanner("http://localhost:26657", cfg, storage, s.bridge, s.m, nil, nil)
+	blockScanner, err := NewCosmosBlockScanner("http://localhost:26657", cfg, storage, s.bridge, s.m, nil)
 	c.Assert(err, IsNil)
 	blockScanner.rpc = &mockTendermintRPC{}
 
