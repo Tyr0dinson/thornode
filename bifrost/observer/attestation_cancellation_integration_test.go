@@ -234,7 +234,7 @@ func TestStateCancellationAsyncReceiverACKsWhileProcessing(t *testing.T) {
 			server, client := stateSyncDeadlinePair(t)
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
-			done := make(chan bool, 1)
+			done := make(chan attestationStateTransferResult, 1)
 			returned := make(chan struct{})
 			go func() { defer close(returned); done <- receiver.askStreamForStateWithContext(ctx, client) }()
 			t.Cleanup(func() { cancel(); unblock(); _ = server.transport.Close(); waitStateBounds(t, returned) })
@@ -289,7 +289,8 @@ func TestStateCancellationAsyncReceiverACKsWhileProcessing(t *testing.T) {
 			}
 			select {
 			case success := <-done:
-				require.Equal(t, finish == "success", success)
+				require.Equal(t, finish == "success", success.completed)
+				require.Equal(t, 2, success.items)
 			case <-time.After(2 * time.Second):
 				t.Fatal("async receive did not cancel and join workers")
 			}

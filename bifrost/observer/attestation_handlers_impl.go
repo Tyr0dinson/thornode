@@ -1,15 +1,25 @@
 package observer
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"math"
 	"time"
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/constants"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
+
+// Handlers report evidence retention separately from its later delivery.
+// A zero outcome is a definitive rejection; err means admission was unable
+// to finish. Successful retention, including a duplicate, sets accepted.
+type attestationImportOutcome struct {
+	accepted bool
+	err      error
+}
 
 const priceFeedsUpdateDelay = time.Millisecond * 100
 
@@ -18,22 +28,22 @@ func (s *AttestationGossip) handleObservedTxAttestation(ctx context.Context, tx 
 	s.handleObservedTxAttestationInternal(ctx, tx, false)
 }
 
-func (s *AttestationGossip) handleObservedTxAttestationFromStateSync(ctx context.Context, tx common.AttestTx) {
-	s.handleObservedTxAttestationWithStateSyncCancellation(ctx, tx, false, true)
+func (s *AttestationGossip) handleObservedTxAttestationFromStateSync(ctx context.Context, tx common.AttestTx) attestationImportOutcome {
+	return s.handleObservedTxAttestationWithStateSyncCancellation(ctx, tx, false, true)
 }
 
 func (s *AttestationGossip) handleObservedTxAttestationInternal(ctx context.Context, tx common.AttestTx, queue bool) {
 	s.handleObservedTxAttestationWithStateSyncCancellation(ctx, tx, queue, false)
 }
 
-func (s *AttestationGossip) handleObservedTxAttestationWithStateSyncCancellation(ctx context.Context, tx common.AttestTx, queue, stateSync bool) {
+func (s *AttestationGossip) handleObservedTxAttestationWithStateSyncCancellation(ctx context.Context, tx common.AttestTx, queue, stateSync bool) (result attestationImportOutcome) {
 	obsTx := tx.ObsTx
 	// Keep transfer-scoped recovery separate from the shorter delivery budget.
 	stateSyncCtx := attestationLockContext(ctx, stateSync)
 	barrierHeld := obsTx.Tx.Chain.Equals(common.XMRChain)
 	if barrierHeld {
 		if err := readLockAttestationContext(stateSyncCtx, &s.xmrErrataBarrier); err != nil {
-			return
+			return attestationImportOutcome{err: err}
 		}
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, xmrAttestationTimeout(s.config.PeerTimeout))
@@ -47,16 +57,19 @@ func (s *AttestationGossip) handleObservedTxAttestationWithStateSyncCancellation
 
 	k := observedTxKey(obsTx, tx.Inbound, tx.AllowFutureObservation)
 
-	if lockAttestationContext(stateSyncCtx, &s.mu) != nil {
-		return
+	if err := lockAttestationContext(stateSyncCtx, &s.mu); err != nil {
+		return attestationImportOutcome{err: err}
 	}
-	if ctx.Err() != nil {
+	if err := ctx.Err(); err != nil {
 		s.mu.Unlock()
-		return
+		return attestationImportOutcome{err: err}
 	}
-	if barrierHeld && !s.admitXMRObservationLocked(obsTx) {
-		s.mu.Unlock()
-		return
+	if barrierHeld {
+		admitted, err := s.admitXMRObservationLocked(obsTx)
+		if err != nil || !admitted {
+			s.mu.Unlock()
+			return attestationImportOutcome{err: err}
+		}
 	}
 	state, ok := s.observedTxs[k]
 	if !ok {
@@ -69,11 +82,19 @@ func (s *AttestationGossip) handleObservedTxAttestationWithStateSyncCancellation
 
 	// note, purposefully locking the single state mutex prior to releasing the global mutex to avoid race in between.
 	// This order must be maintained everywhere to avoid deadlock.
-	if lockAttestationContext(stateSyncCtx, &state.mu) != nil {
+	if err := lockAttestationContext(stateSyncCtx, &state.mu); err != nil {
 		s.mu.Unlock()
-		return
+		return attestationImportOutcome{err: err}
 	}
 	s.mu.Unlock()
+
+	// Bucket identity omits signed fields. An import must match the retained
+	// payload before a valid stored signature can count as a duplicate.
+	if stateSync && ok && !sameAttestationPayload(state.Item, &attestableObservedTx{ObservedTx: &obsTx, inbound: tx.Inbound}) {
+		state.mu.Unlock()
+		s.logger.Debug().Msg("reject state-sync observation with conflicting signed payload")
+		return
+	}
 
 	// Add the attestation
 	if err := state.AddAttestation(tx.Attestation); err != nil {
@@ -88,6 +109,7 @@ func (s *AttestationGossip) handleObservedTxAttestationWithStateSyncCancellation
 		}
 		return
 	}
+	result.accepted = true
 	// This is the payload every attestation in state was verified against. The
 	// incoming envelope can share txKey with a payload that differs in signed
 	// fields omitted from that index, so never pair state signatures with obsTx
@@ -234,6 +256,7 @@ func (s *AttestationGossip) handleObservedTxAttestationWithStateSyncCancellation
 		launched = true
 		s.applySpentRefsAsync(*applySpentRefs, onApplySpentRefsOutcome)
 	}
+	return
 }
 
 // Local delivery must not depend on merging into a bucket whose key omits
@@ -286,13 +309,13 @@ func (s *AttestationGossip) markXMRSpentRefsApplied(k txKey, expectedPayloadHash
 
 // admitXMRObservationLocked is shared by local, peer, and state-transfer
 // admission and export filtering. The caller holds mu to read observerStorage.
-func (s *AttestationGossip) admitXMRObservationLocked(tx common.ObservedTx) bool {
+func (s *AttestationGossip) admitXMRObservationLocked(tx common.ObservedTx) (bool, error) {
 	admitted, err := s.observerStorage.admitXMRObservation(tx)
 	if err != nil {
 		s.logger.Error().Err(err).Msg("reject xmr observation: errata storage read failed")
-		return false
+		return false, err
 	}
-	return admitted
+	return admitted, nil
 }
 
 // Cap XMR admission, quorum submission and live batch context budgets.
@@ -357,13 +380,26 @@ func (s *AttestationGossip) handleNetworkFeeAttestation(ctx context.Context, anf
 	s.handleNetworkFeeAttestationWithStateSyncCancellation(ctx, anf, false)
 }
 
-func (s *AttestationGossip) handleNetworkFeeAttestationWithStateSyncCancellation(ctx context.Context, anf common.AttestNetworkFee, stateSync bool) {
+func (s *AttestationGossip) handleNetworkFeeAttestationWithStateSyncCancellation(ctx context.Context, anf common.AttestNetworkFee, stateSync bool) (result attestationImportOutcome) {
 	lockCtx := attestationLockContext(ctx, stateSync)
+	// State-sync completion counts only admissible evidence. Keep these checks
+	// local to import admission; the later S14 change also guards live gossip.
+	if stateSync {
+		if anf.NetworkFee == nil {
+			return
+		}
+		if err := anf.NetworkFee.Valid(); err != nil {
+			return
+		}
+		if anf.NetworkFee.TransactionRate > uint64(math.MaxInt64) || anf.NetworkFee.TransactionSize > uint64(math.MaxInt64) {
+			return
+		}
+	}
 	// Use the network fee as the map key
 	k := *anf.NetworkFee
 
-	if lockAttestationContext(lockCtx, &s.mu) != nil {
-		return
+	if err := lockAttestationContext(lockCtx, &s.mu); err != nil {
+		return attestationImportOutcome{err: err}
 	}
 	state, ok := s.networkFees[k]
 	if !ok {
@@ -374,9 +410,9 @@ func (s *AttestationGossip) handleNetworkFeeAttestationWithStateSyncCancellation
 
 	// note, purposefully locking the single state mutex prior to releasing the global mutex to avoid race in between.
 	// This order must be maintained everywhere to avoid deadlock.
-	if lockAttestationContext(lockCtx, &state.mu) != nil {
+	if err := lockAttestationContext(lockCtx, &state.mu); err != nil {
 		s.mu.Unlock()
-		return
+		return attestationImportOutcome{err: err}
 	}
 	s.mu.Unlock()
 
@@ -387,6 +423,7 @@ func (s *AttestationGossip) handleNetworkFeeAttestationWithStateSyncCancellation
 		s.logger.Error().Err(err).Msg("fail to add attestation")
 		return
 	}
+	result.accepted = true
 
 	// Get the active validator count
 	activeValCount := s.activeValidatorCount()
@@ -400,6 +437,7 @@ func (s *AttestationGossip) handleNetworkFeeAttestationWithStateSyncCancellation
 		s.logger.Debug().Msgf("network fee attestation received - %s, height: %d, quorum: %d/%d",
 			k.Chain, k.Height, state.AttestationCount(), activeValCount)
 	}
+	return
 }
 
 // sendNetworkFeeAttestationsToThornode sends network fee attestations to thornode via gRPC
@@ -432,7 +470,7 @@ func (s *AttestationGossip) handleSolvencyAttestation(ctx context.Context, ats c
 	s.handleSolvencyAttestationWithStateSyncCancellation(ctx, ats, false)
 }
 
-func (s *AttestationGossip) handleSolvencyAttestationWithStateSyncCancellation(ctx context.Context, ats common.AttestSolvency, stateSync bool) {
+func (s *AttestationGossip) handleSolvencyAttestationWithStateSyncCancellation(ctx context.Context, ats common.AttestSolvency, stateSync bool) (result attestationImportOutcome) {
 	lockCtx := attestationLockContext(ctx, stateSync)
 	// Calculate the hash for the solvency to use as key
 	k, err := ats.Solvency.Hash()
@@ -441,8 +479,8 @@ func (s *AttestationGossip) handleSolvencyAttestationWithStateSyncCancellation(c
 		return
 	}
 
-	if lockAttestationContext(lockCtx, &s.mu) != nil {
-		return
+	if err := lockAttestationContext(lockCtx, &s.mu); err != nil {
+		return attestationImportOutcome{err: err}
 	}
 	state, ok := s.solvencies[k]
 	if !ok {
@@ -453,19 +491,26 @@ func (s *AttestationGossip) handleSolvencyAttestationWithStateSyncCancellation(c
 
 	// note, purposefully locking the single state mutex prior to releasing the global mutex to avoid race in between.
 	// This order must be maintained everywhere to avoid deadlock.
-	if lockAttestationContext(lockCtx, &state.mu) != nil {
+	if err := lockAttestationContext(lockCtx, &state.mu); err != nil {
 		s.mu.Unlock()
-		return
+		return attestationImportOutcome{err: err}
 	}
 	s.mu.Unlock()
 
 	defer state.mu.Unlock()
+
+	// Solvency's bucket hash excludes its signed Id field.
+	if stateSync && ok && !sameAttestationPayload(state.Item, ats.Solvency) {
+		s.logger.Debug().Msg("reject state-sync solvency with conflicting signed payload")
+		return
+	}
 
 	// Add the attestation
 	if err := state.AddAttestation(ats.Attestation); err != nil {
 		s.logger.Error().Err(err).Msg("fail to add attestation")
 		return
 	}
+	result.accepted = true
 
 	// Get the active validator count
 	activeValCount := s.activeValidatorCount()
@@ -479,6 +524,7 @@ func (s *AttestationGossip) handleSolvencyAttestationWithStateSyncCancellation(c
 		s.logger.Debug().Msgf("solvency attestation received - %s, height: %d, quorum: %d/%d",
 			ats.Solvency.Chain, ats.Solvency.Height, state.AttestationCount(), activeValCount)
 	}
+	return
 }
 
 // sendSolvencyAttestationsToThornode sends solvency attestations to thornode via gRPC
@@ -522,13 +568,13 @@ func (s *AttestationGossip) handleErrataAttestationWithRetry(
 	ctx context.Context,
 	aet common.AttestErrataTx,
 	retryPending, stateSync bool,
-) {
+) (result attestationImportOutcome) {
 	lockCtx := attestationLockContext(ctx, stateSync)
 	// Use the errata tx as the map key
 	k := *aet.ErrataTx
 
-	if lockAttestationContext(lockCtx, &s.mu) != nil {
-		return
+	if err := lockAttestationContext(lockCtx, &s.mu); err != nil {
+		return attestationImportOutcome{err: err}
 	}
 	state, ok := s.errataTxs[k]
 	if !ok {
@@ -539,9 +585,9 @@ func (s *AttestationGossip) handleErrataAttestationWithRetry(
 
 	// note, purposefully locking the single state mutex prior to releasing the global mutex to avoid race in between.
 	// This order must be maintained everywhere to avoid deadlock.
-	if lockAttestationContext(lockCtx, &state.mu) != nil {
+	if err := lockAttestationContext(lockCtx, &state.mu); err != nil {
 		s.mu.Unlock()
-		return
+		return attestationImportOutcome{err: err}
 	}
 	s.mu.Unlock()
 
@@ -552,6 +598,7 @@ func (s *AttestationGossip) handleErrataAttestationWithRetry(
 		s.logger.Error().Err(err).Msg("fail to add attestation")
 		return
 	}
+	result.accepted = true
 	if retryPending && rearmPendingErrataAttestations(state, s.config.MinTimeBetweenAttestations) {
 		s.logger.Debug().
 			Str("chain", k.Chain.String()).
@@ -571,6 +618,7 @@ func (s *AttestationGossip) handleErrataAttestationWithRetry(
 		s.logger.Debug().Msgf("errata attestation received - %s, id: %s, quorum: %d/%d",
 			k.Chain, k.Id, state.AttestationCount(), activeValCount)
 	}
+	return
 }
 
 // rearmPendingErrataAttestations runs with state.mu held. A successful gRPC
@@ -625,8 +673,15 @@ func (s *AttestationGossip) handlePriceFeedAttestation(ctx context.Context, apf 
 	s.handlePriceFeedAttestationWithSendContext(ctx, ctx, apf, false)
 }
 
-func (s *AttestationGossip) handlePriceFeedAttestationWithSendContext(ctx, sendCtx context.Context, apf common.AttestPriceFeed, stateSync bool) {
+func (s *AttestationGossip) handlePriceFeedAttestationWithSendContext(ctx, sendCtx context.Context, apf common.AttestPriceFeed, stateSync bool) (result attestationImportOutcome) {
 	lockCtx := attestationLockContext(ctx, stateSync)
+	if apf.PriceFeed == nil || apf.Attestation == nil {
+		return
+	}
+	if err := apf.PriceFeed.Valid(); err != nil {
+		s.logger.Debug().Err(err).Msg("reject invalid price feed")
+		return
+	}
 	// Use the pubkey as key
 	k := hex.EncodeToString(apf.Attestation.PubKey)
 
@@ -647,12 +702,16 @@ func (s *AttestationGossip) handlePriceFeedAttestationWithSendContext(ctx, sendC
 
 	// We don't collect multiple attestations for price feeds, rather want
 	// to store the most recent price we received for every node
-	if lockAttestationContext(lockCtx, &s.mu) != nil {
-		return
+	if err := lockAttestationContext(lockCtx, &s.mu); err != nil {
+		return attestationImportOutcome{err: err}
 	}
 	defer s.mu.Unlock()
 
 	state, ok := s.priceFeeds[k]
+	// A verified duplicate already retained by this node is still evidence.
+	if ok && len(state.attestations) > 0 {
+		result.accepted = bytes.Equal(state.attestations[0].attestation.Signature, att.Signature)
+	}
 	if !ok || state.Item.Time < apf.PriceFeed.Time {
 		// Set new attestation state
 		state = s.priceFeedsPool.NewAttestationState(apf.PriceFeed)
@@ -660,6 +719,7 @@ func (s *AttestationGossip) handlePriceFeedAttestationWithSendContext(ctx, sendC
 			{attestation: apf.Attestation, sent: false},
 		}
 		s.priceFeeds[k] = state
+		result.accepted = true
 
 		// we received an updated price feed, start delay to maybe collect
 		// more updated values before sending them to thornode
@@ -678,6 +738,7 @@ func (s *AttestationGossip) handlePriceFeedAttestationWithSendContext(ctx, sendC
 			}
 		}()
 	}
+	return
 }
 
 // sendPriceFeedAttestationsToThornode sends price feed attestations

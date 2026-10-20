@@ -36,6 +36,7 @@
 - [Bifrost](bifrost/how-bifrost-works.md)
 
   - [Vault Behaviors](bifrost/vault-behaviors.md)
+  - [Startup State Recovery](bifrost/state-sync-recovery.md)
   - [Oracles](bifrost/oracle.md)
   - [TSS](bifrost/tss.md)
 

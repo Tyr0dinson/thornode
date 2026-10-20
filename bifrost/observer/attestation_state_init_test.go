@@ -1656,7 +1656,7 @@ func TestStateSyncExportAdmission(t *testing.T) {
 	require.Equal(t, 1, stateSyncExportCount(sender))
 	receiver := stateSyncDeadlineFixture(t, 0)
 	_, b, doneB := startStateSyncExport(t, sender, "b")
-	require.True(t, receiver.askStreamForState(b))
+	require.True(t, receiver.askStreamForState(b).completed)
 	waitStateSyncDeadlineHandler(t, doneB)
 	require.Len(t, receiver.networkFees, 2)
 	require.Equal(t, 1, stateSyncExportCount(sender))
@@ -1709,7 +1709,7 @@ func TestStateSyncExportReleaseOnEveryExit(t *testing.T) {
 			_, client, done := startStateSyncExport(t, sender, "peer")
 			if phase == "success" || phase == "empty" {
 				receiver := stateSyncDeadlineFixture(t, 0)
-				require.True(t, receiver.askStreamForState(client))
+				require.True(t, receiver.askStreamForState(client).completed)
 			} else {
 				stall := phase
 				if phase == "bad ack" || phase == "reset" {
@@ -1730,7 +1730,7 @@ func TestStateSyncExportReleaseOnEveryExit(t *testing.T) {
 			sender.config.StateSyncTimeout = 15 * time.Second
 			_, retry, retryDone := startStateSyncExport(t, sender, "peer")
 			receiver := stateSyncDeadlineFixture(t, 0)
-			require.True(t, receiver.askStreamForState(retry))
+			require.True(t, receiver.askStreamForState(retry).completed)
 			waitStateSyncDeadlineHandler(t, retryDone)
 			require.Zero(t, stateSyncExportCount(sender))
 		})
@@ -1792,30 +1792,6 @@ func (s *startupRetryStream) Reset() error {
 func (s *startupRetryStream) Close() error {
 	s.stopOnce.Do(func() { close(s.stopped) })
 	return nil
-}
-
-func startupRetryGossip(t *testing.T, ids ...peer.ID) (*AttestationGossip, *MockHost) {
-	t.Helper()
-	g := stateSyncDeadlineFixture(t, 0)
-	h := NewMockHost(append([]peer.ID{"self"}, ids...))
-	g.host = h
-	g.activeVals = map[peer.ID]bool{"padding1": true, "padding2": true, "padding3": true}
-	for _, id := range ids {
-		g.activeVals[id] = true
-	}
-	g.config.AskPeers = len(ids)
-	h.streamFunc = func(_ context.Context, id peer.ID, _ ...protocol.ID) (network.Stream, error) {
-		return newStartupRetryStream(id, true), nil
-	}
-	t.Cleanup(g.stopStartupStateSync)
-	return g, h
-}
-
-func settleStartupRetry(t *testing.T, g *AttestationGossip, now time.Time) {
-	t.Helper()
-	require.NotNil(t, g.startupState.group)
-	waitStateSyncDeadlineHandler(t, g.startupState.group.done)
-	g.tickAttestationStateSync(context.Background(), true, false, now)
 }
 
 func TestStartupStateSyncBusyThenRecovers(t *testing.T) {
@@ -1886,7 +1862,7 @@ func TestStartupStateSyncBusyThenRecovers(t *testing.T) {
 	}
 	for _, g := range requesters {
 		require.True(t, g.startupState.finished)
-		require.Equal(t, 1, g.startupState.result.completed)
+		require.Equal(t, 1, g.startupState.result.nonEmpty)
 		require.LessOrEqual(t, g.startupState.requests, 5)
 		require.Len(t, g.networkFees, 2)
 		for _, state := range g.networkFees {
@@ -1896,7 +1872,7 @@ func TestStartupStateSyncBusyThenRecovers(t *testing.T) {
 	require.Zero(t, stateSyncExportCount(sender))
 }
 
-func TestStartupStateSyncWholeGroupAndEmptySuccess(t *testing.T) {
+func TestStartupStateSyncWholeGroupAndEmptyRetry(t *testing.T) {
 	g, h := startupRetryGossip(t, "empty", "failed", "slow")
 	gate := make(chan struct{})
 	defer close(gate)
@@ -1923,13 +1899,11 @@ func TestStartupStateSyncWholeGroupAndEmptySuccess(t *testing.T) {
 	require.Equal(t, 3, g.startupState.requests)
 	require.False(t, g.startupState.finished)
 	require.Zero(t, slow.resets.Load(), "a completed peer must not cancel another import")
-	// Reset ends the still-running peer; the valid empty response remains success.
+	// Reset ends the still-running peer; an empty response does not stop collection.
 	require.NoError(t, slow.Reset())
 	settleStartupRetry(t, g, now.Add(time.Minute))
-	require.True(t, g.startupState.finished)
-	require.Equal(t, attestationStateGroupResult{completed: 1, failed: 2}, g.startupState.result)
-	g.tickAttestationStateSync(context.Background(), true, false, now.Add(time.Hour))
-	require.Equal(t, 3, g.startupState.requests)
+	require.False(t, g.startupState.finished)
+	require.Equal(t, attestationStateGroupResult{empty: 1, failed: 2}, g.startupState.result)
 }
 
 func TestStartupStateSyncFreshPeersAndRequestBudget(t *testing.T) {
@@ -2056,7 +2030,8 @@ func TestStartupStateSyncReactivationJoinsPriorGroup(t *testing.T) {
 	require.NotSame(t, old, g.startupState)
 	require.Equal(t, activated.Add(startupStateSyncWindow), g.startupState.deadline)
 	settleStartupRetry(t, g, activated.Add(time.Minute))
-	require.True(t, g.startupState.finished)
+	require.False(t, g.startupState.finished)
+	require.Equal(t, 1, g.startupState.result.empty)
 	require.EqualValues(t, 2, calls.Load())
 }
 
@@ -2077,54 +2052,6 @@ func TestStartupStateSyncNoPeersAndJitter(t *testing.T) {
 			require.LessOrEqual(t, delay, time.Minute)
 		}
 	}
-}
-
-func TestStartupStateSyncObserverStopJoinsBeforeStorageClose(t *testing.T) {
-	g, h := startupRetryGossip(t, "peer")
-	pkm, err := pubkeymanager.NewPubKeyManager(nil, nil)
-	require.NoError(t, err)
-	o, err := NewObserver(pkm, nil, &MockThorchainBridge{}, getSharedTestMetrics(), t.TempDir(), metrics.NewTssKeysignMetricMgr(), g, "")
-	require.NoError(t, err)
-	release := make(chan struct{})
-	var once sync.Once
-	unblock := func() { once.Do(func() { close(release) }) }
-	defer unblock()
-	stream := newStartupRetryStream("peer", false)
-	stream.block, stream.join = true, release
-	h.streamFunc = func(context.Context, peer.ID, ...protocol.ID) (network.Stream, error) { return stream, nil }
-	g.tickAttestationStateSync(context.Background(), true, true, time.Now())
-	group := g.startupState.group
-	waitStateSyncDeadlineHandler(t, stream.started)
-	stopped := make(chan error, 1)
-	go func() { stopped <- o.Stop() }()
-	waitStateSyncDeadlineHandler(t, stream.stopped)
-	select {
-	case stopErr := <-stopped:
-		t.Fatalf("observer stopped before joining its import: %v", stopErr)
-	default:
-	}
-	_, err = o.storage.db.Has([]byte("still-open"), nil)
-	require.NoError(t, err, "storage must remain usable until the owned import returns")
-	unblock()
-	select {
-	case stopErr := <-stopped:
-		require.NoError(t, stopErr)
-	case <-time.After(time.Second):
-		t.Fatal("observer failed to join the cancelled import")
-	}
-	waitStateSyncDeadlineHandler(t, group.done)
-	require.ErrorIs(t, g.startupState.ctx.Err(), context.Canceled)
-	require.True(t, g.startupState.finished)
-	require.True(t, g.startupStateStopped)
-	_, err = o.storage.db.Has([]byte("now-closed"), nil)
-	require.Error(t, err)
-}
-
-func TestStartupStateSyncPeerSelectionFiltersSelfInactiveAndDuplicates(t *testing.T) {
-	g, h := startupRetryGossip(t, "a", "b")
-	h.peers = []peer.ID{"self", "inactive", "a", "a", "b"}
-	g.activeVals["self"] = true
-	require.ElementsMatch(t, []peer.ID{"a", "b"}, g.attestationStatePeers())
 }
 
 // Exercise the actual startup group and Observer.Stop, including the production
@@ -2249,7 +2176,7 @@ func TestStartupStateSyncObserverStopCancelsVaultLookup(t *testing.T) {
 			}
 			require.True(t, g.startupState.finished)
 			require.True(t, g.startupStateStopped)
-			require.Zero(t, group.result.completed)
+			require.Zero(t, group.result.nonEmpty)
 			require.Positive(t, stream.resets.Load())
 			require.Zero(t, imports.Load(), "cancelled authorization must not launch an import")
 			require.Zero(t, cancellationTestReservationCount(g))

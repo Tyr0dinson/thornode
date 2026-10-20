@@ -292,7 +292,7 @@ func TestStateCancellationStopsVaultQueryAndStream(t *testing.T) {
 	stream := newStateBoundsStream(host.peers[1], append([]byte{prefixBatchBegin[0]}, stateBoundsCount(1)...), stateBoundsHeader(0, uint32(len(data))), append([]byte{prefixBatchData[0]}, data...), prefixBatchEnd)
 	host.streamFunc = func(context.Context, peer.ID, ...protocol.ID) (network.Stream, error) { return stream, nil }
 	done := make(chan struct{})
-	go func() { s.askForAttestationState(context.Background()); close(done) }()
+	go func() { s.askForAttestationState(context.Background(), host.peers[1]); close(done) }()
 	waitStateBounds(t, started)
 	waitStateBounds(t, done)
 	waitStateBounds(t, exited)
@@ -635,7 +635,7 @@ func TestStateCancellationVersionedPriceFeedRoundTrip(t *testing.T) {
 	server, client := stateSyncDeadlinePair(t)
 	done := make(chan struct{})
 	go func() { sender.handleStreamAttestationState(server); close(done) }()
-	require.True(t, receiver.askStreamForState(client))
+	require.True(t, receiver.askStreamForState(client).completed)
 	waitStateBounds(t, done)
 	require.Zero(t, server.resets.Load(), "the exporter must complete its handshake")
 	require.Zero(t, client.resets.Load(), "the requester must complete its handshake")
@@ -662,4 +662,22 @@ func stateSyncTrustAttestors(t *testing.T, s *AttestationGossip, atts []*common.
 		require.NoError(t, err)
 		s.activeVals[id] = true
 	}
+}
+
+func stateBoundsPipe(t *testing.T, first, second peer.ID) (*stateBoundsPipeStream, *stateBoundsPipeStream) {
+	t.Helper()
+	a, b := net.Pipe()
+	require.NoError(t, a.SetDeadline(time.Now().Add(5*time.Second)))
+	require.NoError(t, b.SetDeadline(time.Now().Add(5*time.Second)))
+	t.Cleanup(func() { _ = a.Close(); _ = b.Close() })
+	return &stateBoundsPipeStream{MockStream: MockStream{peer: first}, pipe: a}, &stateBoundsPipeStream{MockStream: MockStream{peer: second}, pipe: b}
+}
+
+func stateSyncImportStream(t *testing.T, remote peer.ID, payloads ...[]byte) *stateBoundsStream {
+	t.Helper()
+	frames := [][]byte{append([]byte{prefixBatchBegin[0]}, stateBoundsCount(uint32(len(payloads)))...)}
+	for i, data := range payloads {
+		frames = append(frames, stateBoundsHeader(uint32(i), uint32(len(data))), append([]byte{prefixBatchData[0]}, data...))
+	}
+	return newStateBoundsStream(remote, append(frames, prefixBatchEnd)...)
 }

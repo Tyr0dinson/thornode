@@ -1128,9 +1128,9 @@ func (s *ObserveExtraSuite) TestAttestationStateAddAttestation(c *C) {
 	c.Assert(state.AttestationCount(), Equals, 1)
 	c.Assert(state.UnsentCount(), Equals, 1)
 
-	// Duplicate signature - should be ignored
+	// The same signer and signature is an idempotent replay.
 	err = state.AddAttestation(&common.Attestation{
-		PubKey:    []byte("pk2"),
+		PubKey:    []byte("pk1"),
 		Signature: []byte("sig1"),
 	})
 	c.Assert(err, IsNil)
@@ -2012,8 +2012,9 @@ func (s *ObserveExtraSuite) TestAttestPriceFeed(c *C) {
 	ag, _ := newTestAttestationGossip(c, []peer.ID{"self", "peer1"})
 
 	pf := common.PriceFeed{
-		Time:  time.Now().Unix(),
-		Rates: []*common.OraclePrice{{Amount: 100, Decimals: 8}},
+		Time:    time.Now().Unix(),
+		Rates:   []*common.OraclePrice{{Amount: 100, Decimals: 8}},
+		Version: make([]byte, 8),
 	}
 
 	err := ag.AttestPriceFeed(context.Background(), pf)
@@ -2166,8 +2167,9 @@ func (s *ObserveExtraSuite) TestHandlePriceFeedAttestation(c *C) {
 
 	// Generate a valid signature for the price feed
 	pf := &common.PriceFeed{
-		Time:  time.Now().Unix(),
-		Rates: []*common.OraclePrice{{Amount: 100, Decimals: 8}},
+		Time:    time.Now().Unix(),
+		Rates:   []*common.OraclePrice{{Amount: 100, Decimals: 8}},
+		Version: make([]byte, 8),
 	}
 	signBz, err := pf.GetSignablePayload()
 	c.Assert(err, IsNil)
@@ -2474,7 +2476,7 @@ func (s *ObserveExtraSuite) TestProcessAttestationStateBatch(c *C) {
 		},
 		QuoNetworkFees: []*common.QuorumNetworkFee{
 			{
-				NetworkFee:   &common.NetworkFee{Chain: common.ETHChain, Height: 50},
+				NetworkFee:   &common.NetworkFee{Chain: common.ETHChain, Height: 50, TransactionSize: 100, TransactionRate: 2},
 				Attestations: []*common.Attestation{{PubKey: []byte("pk2"), Signature: []byte("sig2")}},
 			},
 		},
@@ -2719,23 +2721,23 @@ func (s *ObserveExtraSuite) TestSendErrataAttestationsGrpcError(c *C) {
 }
 
 // ---------------------------------------------------------------------------
-// askForAttestationState - no peers
+// attestationStatePeers - no eligible peers
 // ---------------------------------------------------------------------------
 
-func (s *ObserveExtraSuite) TestAskForAttestationStateNoPeers(c *C) {
+func (s *ObserveExtraSuite) TestAttestationStatePeersNoPeers(c *C) {
 	ag, _ := newTestAttestationGossip(c, []peer.ID{"self"})
 	ag.host = NewMockHost([]peer.ID{}) // no peers at all
-	ag.askForAttestationState(context.Background())
+	c.Assert(ag.attestationStatePeers(), HasLen, 0)
 }
 
-func (s *ObserveExtraSuite) TestAskForAttestationStateNoActiveValPeers(c *C) {
+func (s *ObserveExtraSuite) TestAttestationStatePeersNoActiveValPeers(c *C) {
 	ag, _ := newTestAttestationGossip(c, []peer.ID{"self", "peer1", "peer2"})
 	// Only self is active, so peers without me that are active = 0
 	ag.avMu.Lock()
 	ag.activeVals = map[peer.ID]bool{"self": true}
 	ag.avMu.Unlock()
 
-	ag.askForAttestationState(context.Background())
+	c.Assert(ag.attestationStatePeers(), HasLen, 0)
 }
 
 // ---------------------------------------------------------------------------
