@@ -60,10 +60,14 @@ variables:
   # tss-lib-private is a private GitLab subgroup repo; skip proxy.golang.org / sumdb
   # and resolve directly so the per-job git auth below takes effect.
   GOPRIVATE: gitlab.com/thorchain/tss/tss-lib-private.git
-  # Alpine's go package defaults GOTOOLCHAIN=local; override so jobs that bootstrap
-  # Go via `apk add go` download the toolchain pinned in go.mod (toolchain go1.26.9).
+  # Download the toolchain pinned in go.mod (toolchain go1.26.9) when an image
+  # ships an older Go (the CI tools image's Go is a floor, not a pin).
   GOTOOLCHAIN: auto
   SAST_EXCLUDED_ANALYZERS: eslint,bandit,semgrep
+  # Published by build-ci-tools-image; see ci/Dockerfile.ci-tools before bumping.
+  # Pinned to the digest that job printed ("Pin jobs to: ..."): any Developer's
+  # CI_JOB_TOKEN can push to this registry, so the tag alone is not trusted.
+  CI_TOOLS_IMAGE: $CI_REGISTRY_IMAGE/ci/tools:2@sha256:29b5fe763a4b6fd27e5f7a19c8744e1f9dc39870dcb6ac571661d44cbb5d0e7c
   # Let the runner retry the stages it owns. A failed source fetch ("fetch-pack:
   # unexpected disconnect", "GitLab is currently unable to handle this request
   # due to load") is reported as script_failure, so `retry:` cannot catch it.
@@ -78,8 +82,10 @@ variables:
   GIT_DEPTH: "20"
   SAST_EXCLUDED_PATHS: spec, test, tests, tmp, .cache
 
+# The dind jobs run in the prebuilt tools image (ci/Dockerfile.ci-tools)
+# instead of installing packages with `apk add` on every job.
 .use_dind: &use_dind
-  image: docker:28.5.2
+  image: $CI_TOOLS_IMAGE
   services:
     - docker:28.5.2-dind
 
@@ -404,7 +410,6 @@ generate:
   <<: *use_dind
   before_script:
     - !reference [.wait-for-dind, before_script]
-    - apk -U add bash curl findutils git go jq make protoc sed wget python3
     - !reference [.go-private-auth, before_script]
     - !reference [.dind-registries, before_script]
     - !reference [.proto-builder-image, before_script]
@@ -515,11 +520,7 @@ test-mocknet-scripts:
     - *rules
   stage: test
   needs: []
-  image: alpine:3.21
-  variables:
-    PKGS: bash python3 jq make git
-  before_script:
-    - !reference [.pkg-install, before_script]
+  image: $CI_TOOLS_IMAGE
   script:
     - python3 -m unittest discover -s build/scripts/tests -v
     - python3 -m unittest discover -s scripts/tests -p 'test_quality_*_test.py' -v
@@ -603,7 +604,6 @@ proto-check-formatting:
   <<: *use_dind
   before_script:
     - !reference [.wait-for-dind, before_script]
-    - apk -U add findutils make
     - !reference [.proto-builder-image, before_script]
   script:
     - make proto-format-check
@@ -617,7 +617,6 @@ proto-lint:
   <<: *use_dind
   before_script:
     - !reference [.wait-for-dind, before_script]
-    - apk -U add make
     - !reference [.proto-builder-image, before_script]
     - !reference [.buf-egress, before_script]
   script:
@@ -644,7 +643,6 @@ proto-check-breaking:
   <<: *use_dind
   before_script:
     - !reference [.wait-for-dind, before_script]
-    - apk -U add git make
     - !reference [.proto-builder-image, before_script]
     - !reference [.buf-egress, before_script]
   script:
@@ -668,7 +666,6 @@ build-thornode:
     GO_PRIVATE_AUTH_REQUIRED: "1"
   before_script:
     - !reference [.wait-for-dind, before_script]
-    - apk -U add make git jq curl protoc
     - !reference [.go-private-auth, before_script]
     - !reference [.dind-registries, before_script]
     - make docker-gitlab-login
@@ -812,6 +809,8 @@ build-ci-tools-image:
   stage: build
   needs: []
   <<: *use_dind
+  # the plain docker image, so a broken or missing tools image can be rebuilt
+  image: docker:28.5.2
   before_script:
     - !reference [.wait-for-dind, before_script]
     - !reference [.dind-registries, before_script]
@@ -837,7 +836,6 @@ build-thorscan:
   before_script:
     - !reference [.wait-for-dind, before_script]
   script:
-    - apk -U add make
     - make thorscan-build
     - make thorscan-gitlab-push
 
@@ -849,7 +847,6 @@ build-events:
     GO_PRIVATE_AUTH_REQUIRED: "1"
   before_script:
     - !reference [.wait-for-dind, before_script]
-    - apk -U add git make
     - !reference [.go-private-auth, before_script]
   script:
     - make events-build
