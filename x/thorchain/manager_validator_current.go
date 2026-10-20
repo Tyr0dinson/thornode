@@ -218,13 +218,22 @@ func (vm *ValidatorMgr) hasPendingKeygen(ctx cosmos.Context, keygenType thortype
 	}
 	readyVaults := append(append(Vaults(nil), activeVaults...), initVaults...)
 
+	// Scanning newest first, a resolved keygen of this type supersedes every
+	// older one. An older keygen's vault may have retired since, so membership
+	// can no longer resolve it, yet no result for it can matter any more.
+	// Keygens in the same block (split Asgard groups) are each still checked.
 	for height := ctx.BlockHeight(); height >= startHeight; height-- {
 		keygenBlock, err := vm.k.GetKeygenBlock(ctx, height)
 		if err != nil {
 			return false, fmt.Errorf("fail to get keygen block: %w", err)
 		}
+		superseded := false
 		for _, keygen := range keygenBlock.Keygens {
 			if keygen.Type != keygenType {
+				continue
+			}
+			if keygenResolvedByVaults(keygen, readyVaults) {
+				superseded = true
 				continue
 			}
 			// keygenResultValidityBlocks returns a window that ends one block before
@@ -236,9 +245,10 @@ func (vm *ValidatorMgr) hasPendingKeygen(ctx cosmos.Context, keygenType thortype
 			if ctx.BlockHeight()-height > keygenResultValidityBlocksForBlock(ctx, vm.k, keygen.Type, keygenBlock) {
 				continue
 			}
-			if !keygenResolvedByVaults(keygen, readyVaults) {
-				return true, nil
-			}
+			return true, nil
+		}
+		if superseded {
+			return false, nil
 		}
 	}
 	return false, nil

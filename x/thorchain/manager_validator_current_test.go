@@ -1292,6 +1292,51 @@ func (vts *ValidatorMgrTestSuite) TestHasPendingStandaloneAsgardExpiresAtRetryBo
 	c.Assert(pending, Equals, false)
 }
 
+// A keygen whose vault has since retired must not stay "pending" once a newer
+// keygen of the same type produced the active vault. Seen in test-simulation: the
+// genesis XMR keygen (block 65, one member) was still inside the XMR window at the
+// block-428 churn, its vault had retired after the block-362 churn, so the churn
+// skipped its XMR keygen and the leaving node stayed Active as an XMR member until
+// the next retry tick.
+func (vts *ValidatorMgrTestSuite) TestHasPendingKeygenIgnoresSupersededKeygen(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	k.SetMimir(ctx, constants.ChurnRetryInterval.String(), 365)
+	mgr := NewDummyMgrWithKeeper(k)
+	validatorMgr := newValidatorMgr(k, mgr.NetworkMgr(), mgr.TxOutStore(), mgr.EventMgr())
+
+	genesisMembers := common.PubKeys{GetRandomPubKey()}
+	churnMembers := common.PubKeys{genesisMembers[0], GetRandomPubKey(), GetRandomPubKey(), GetRandomPubKey()}
+
+	setXMRKeygen := func(height int64, members common.PubKeys) {
+		keygen, err := NewKeygen(height, members.Strings(), XMRMonovaultKeygen)
+		c.Assert(err, IsNil)
+		keygenBlock := NewKeygenBlock(height)
+		keygenBlock.Keygens = []Keygen{keygen}
+		k.SetKeygenBlock(ctx, keygenBlock)
+	}
+	setXMRVault := func(height int64, status VaultStatus, members common.PubKeys) {
+		vault := NewVault(height, status, AsgardVault, GetRandomPubKey(), common.Chains{common.XMRChain}.Strings(), nil)
+		vault.Membership = members.Strings()
+		c.Assert(k.SetVault(ctx, vault), IsNil)
+	}
+
+	// genesis XMR keygen, superseded by the churn keygen whose vault is active
+	setXMRKeygen(65, genesisMembers)
+	setXMRVault(67, RetiringVault, genesisMembers)
+	setXMRKeygen(362, churnMembers)
+	setXMRVault(366, ActiveVault, churnMembers)
+
+	pending, err := validatorMgr.hasPendingKeygen(ctx.WithBlockHeight(428), XMRMonovaultKeygen)
+	c.Assert(err, IsNil)
+	c.Assert(pending, Equals, false)
+
+	// a newer keygen without a vault yet is still pending
+	setXMRKeygen(420, common.PubKeys{GetRandomPubKey(), GetRandomPubKey(), GetRandomPubKey()})
+	pending, err = validatorMgr.hasPendingKeygen(ctx.WithBlockHeight(428), XMRMonovaultKeygen)
+	c.Assert(err, IsNil)
+	c.Assert(pending, Equals, true)
+}
+
 // Rounded node shares must conserve the funded reward, independently of Bond Yield.
 // The live five-validator replacement allocated 342 + 4*1141 from only 4905.
 func (vts *ValidatorMgrTestSuite) TestBondRewardCapsRoundedNodeShares(c *C) {
