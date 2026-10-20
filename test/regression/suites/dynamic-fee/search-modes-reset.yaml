@@ -405,6 +405,9 @@ asserts:
   - .pairs[0].history[1].blocks|tonumber == 15
   - .pairs[0].history[1].swap_count|tonumber == 1
   - .pairs[0].history[1].volume_tor == "1000000000"
+  # The pool volume covers the whole span, including the largest-affiliate
+  # epoch before dyn's first swap in it: 20e9 + 11e9.
+  - .pairs[0].history[1].pool_volume_tor == "31000000000"
   - .pairs[0].history[1].capped == true
   # A capped span is too thin to justify a higher fee: the controller's
   # cold-start probe goes down instead of back up.
