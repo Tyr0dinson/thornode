@@ -934,7 +934,18 @@ test-simulation:
         echo "test-simulation passed; skipping failure diagnostics"
         exit 0
       fi
-    - make test-simulation-events || true
+    # The events dump reads the chain from docker-thornode-1. When the job failed
+    # before the cluster started (image pull, build, startup), thorscan only adds
+    # "failed to get current height" and the job reads as a thornode outage. Print
+    # the container state instead, which shows a real crash (exit code, OOM).
+    - |
+      running=$(docker inspect -f '{{.State.Running}}' docker-thornode-1 2>/dev/null || true)
+      if [ "$running" = "true" ]; then
+        make test-simulation-events || true
+      else
+        state=$(docker inspect -f 'status={{.State.Status}} exit_code={{.State.ExitCode}} oom_killed={{.State.OOMKilled}}' docker-thornode-1 2>/dev/null) || state="never created"
+        echo "skipping the events dump: docker-thornode-1 is not running ($state); see the script output above for the failure"
+      fi
     - mkdir -p logs/xmr-debug
     - docker ps -a >./logs/ps.log 2>&1
     - |
