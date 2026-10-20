@@ -2439,3 +2439,97 @@ func (vts *ValidatorMgrTestSuite) TestChurnInnerChainSetStallSmallSet(c *C) {
 		}
 	}
 }
+
+// seedObservationTallies gives each node quota[i] misses out of 30 voters on ETH.
+func seedObservationTallies(ctx cosmos.Context, mgr *Mgrs, nas NodeAccounts, quota []int) {
+	for v := 0; v < 30; v++ {
+		var missed []cosmos.AccAddress
+		for i, na := range nas {
+			if quota[i] > v {
+				missed = append(missed, na.NodeAddress)
+			}
+		}
+		mgr.Keeper().AddObservationTally(ctx, common.ETHChain, observationTallyUnit, missed, nil)
+	}
+}
+
+func (vts *ValidatorMgrTestSuite) TestMarkMissingObservationActors(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	ctx = ctx.WithBlockHeight(1000)
+	networkMgr := newValidatorMgr(mgr.Keeper(), mgr.NetworkMgr(), mgr.TxOutStore(), mgr.EventMgr())
+
+	nas := make(NodeAccounts, 6)
+	for i := range nas {
+		nas[i] = GetRandomValidatorNode(NodeActive)
+	}
+	nas[5].LeaveScore = 100 // already marked for churn-out
+	for _, na := range nas {
+		c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
+	}
+	// 100%, 80%, 60% and 40% missed; nas[4] misses everything but churned in for
+	// the last 10 voters only, below MissingObservationMinSamples; nas[5] misses
+	// everything but is already marked
+	quota := []int{30, 24, 18, 12, 30, 30}
+	for v := 0; v < 30; v++ {
+		if v == 20 {
+			c.Assert(mgr.Keeper().ResetObservationTally(ctx, nas[4].NodeAddress), IsNil)
+		}
+		var missed []cosmos.AccAddress
+		for i, na := range nas {
+			if quota[i] > v {
+				missed = append(missed, na.NodeAddress)
+			}
+		}
+		mgr.Keeper().AddObservationTally(ctx, common.ETHChain, observationTallyUnit, missed, nil)
+	}
+	leaveScores := func() []uint64 {
+		out := make([]uint64, len(nas))
+		for i, na := range nas {
+			after, err := mgr.Keeper().GetNodeAccount(ctx, na.NodeAddress)
+			c.Assert(err, IsNil)
+			out[i] = after.LeaveScore
+		}
+		return out
+	}
+
+	// off by default
+	c.Assert(networkMgr.markMissingObservationActors(ctx), IsNil)
+	c.Check(leaveScores(), DeepEquals, []uint64{0, 0, 0, 0, 0, 100})
+
+	// capped at 2: the two worst above 50% are marked, the already-marked node is
+	// neither re-marked nor counted against the cap
+	mgr.Keeper().SetMimir(ctx, constants.MaxMissingObservationChurnOut.String(), 2)
+	c.Assert(networkMgr.markMissingObservationActors(ctx), IsNil)
+	scores := leaveScores()
+	c.Check(scores[0] > 0, Equals, true, Commentf("100%% missed should be marked"))
+	c.Check(scores[1] > 0, Equals, true, Commentf("80%% missed should be marked"))
+	c.Check(scores[2], Equals, uint64(0), Commentf("60%% missed is capped out"))
+	c.Check(scores[3], Equals, uint64(0), Commentf("40%% missed is under the threshold"))
+	c.Check(scores[4], Equals, uint64(0), Commentf("too few samples since churn-in"))
+	c.Check(scores[5], Equals, uint64(100))
+}
+
+func (vts *ValidatorMgrTestSuite) TestMarkMissingObservationActors_TieBreaksByAddress(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	ctx = ctx.WithBlockHeight(1000)
+	networkMgr := newValidatorMgr(mgr.Keeper(), mgr.NetworkMgr(), mgr.TxOutStore(), mgr.EventMgr())
+	mgr.Keeper().SetMimir(ctx, constants.MaxMissingObservationChurnOut.String(), 1)
+
+	nas := NodeAccounts{GetRandomValidatorNode(NodeActive), GetRandomValidatorNode(NodeActive)}
+	for _, na := range nas {
+		c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
+	}
+	seedObservationTallies(ctx, mgr, nas, []int{30, 30})
+
+	c.Assert(networkMgr.markMissingObservationActors(ctx), IsNil)
+	low, high := nas[0], nas[1]
+	if high.NodeAddress.String() < low.NodeAddress.String() {
+		low, high = high, low
+	}
+	lowAfter, err := mgr.Keeper().GetNodeAccount(ctx, low.NodeAddress)
+	c.Assert(err, IsNil)
+	highAfter, err := mgr.Keeper().GetNodeAccount(ctx, high.NodeAddress)
+	c.Assert(err, IsNil)
+	c.Check(lowAfter.LeaveScore > 0, Equals, true)
+	c.Check(highAfter.LeaveScore, Equals, uint64(0))
+}

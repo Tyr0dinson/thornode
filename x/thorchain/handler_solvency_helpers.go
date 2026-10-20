@@ -88,6 +88,7 @@ func processSolvencyAttestation(
 	nonSigners := getNonSigners(active, signers)
 	slasher.DecSlashPoints(slashCtx, observeSlashPoints, signers...)
 	slasher.IncSlashPoints(slashCtx, lackOfObservationPenalty, nonSigners...)
+	queueObservationTally(ctx, k, observationTallyKindSolvency, voter.Chain, voter.Id.String())
 
 	// Do checks for whether to act on this consensus or not.
 	const StopSolvencyCheckKey = `StopSolvencyCheck`

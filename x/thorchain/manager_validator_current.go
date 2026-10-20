@@ -321,6 +321,11 @@ func (vm *ValidatorMgr) churnInner(ctx cosmos.Context) error {
 		return err
 	}
 
+	// mark someone(s) for missing observations on a chain
+	if err = vm.markMissingObservationActors(ctx); err != nil {
+		return err
+	}
+
 	next, ok, err := vm.nextVaultNodeAccounts(ctx, int(desiredValidatorSet))
 	if err != nil {
 		return err
@@ -589,6 +594,10 @@ func (vm *ValidatorMgr) EndBlock(ctx cosmos.Context, mgr Manager) []abci.Validat
 		na.MissingBlocks = 0 // zero missing blocks that weren't signed (if any)
 
 		vm.k.ResetNodeAccountSlashPoints(ctx, na.NodeAddress)
+		// restart the observation tally, as MissingBlocks restarts above
+		if err = vm.k.ResetObservationTally(ctx, na.NodeAddress); err != nil {
+			ctx.Logger().Error("fail to reset observation tally", "node address", na.NodeAddress, "error", err)
+		}
 		if err = vm.k.SetNodeAccount(ctx, na); err != nil {
 			ctx.Logger().Error("fail to save node account", "error", err)
 		}
@@ -632,6 +641,7 @@ func (vm *ValidatorMgr) EndBlock(ctx cosmos.Context, mgr Manager) []abci.Validat
 			},
 		)
 		nodeRemove.UpdateStatus(status, height)
+		vm.k.ClearObservationTally(ctx, nodeRemove.NodeAddress)
 		if err = vm.k.SetNodeAccount(ctx, nodeRemove); err != nil {
 			ctx.Logger().Error("fail to save node account", "error", err)
 		}
@@ -1592,6 +1602,75 @@ func (vm *ValidatorMgr) markMissingActors(ctx cosmos.Context) error {
 	return nil
 }
 
+// Iterate over active node accounts, finding those that miss most of the voters on
+// a chain, worst first
+func (vm *ValidatorMgr) markMissingObservationActors(ctx cosmos.Context) error {
+	maxChurnOut := vm.k.GetConfigInt64(ctx, constants.MaxMissingObservationChurnOut)
+	if maxChurnOut <= 0 {
+		return nil // skip this mark
+	}
+	thresholdBps := vm.k.GetConfigInt64(ctx, constants.MissingObservationChurnOutBps)
+	minSamples := vm.k.GetConfigInt64(ctx, constants.MissingObservationMinSamples) * observationTallyUnit
+
+	nas, err := vm.k.ListActiveValidators(ctx)
+	if err != nil {
+		return err
+	}
+
+	type candidate struct {
+		na       NodeAccount
+		chain    common.Chain
+		ratioBps int64
+	}
+	var candidates []candidate
+	for _, na := range nas {
+		// Only mark an actor not already marked for churn-out.
+		if na.LeaveScore > 0 {
+			continue
+		}
+		tallies, err := vm.k.GetObservationTallies(ctx, na.NodeAddress)
+		if err != nil {
+			// An unreadable tally is not evidence against the node, and must not
+			// fail the churn.
+			ctx.Logger().Error("fail to get observation tallies", "node address", na.NodeAddress, "error", err)
+			continue
+		}
+		worst := candidate{na: na, ratioBps: -1}
+		for _, t := range tallies {
+			if !observationTallyFailing(t.Missed, t.Total, thresholdBps, minSamples) {
+				continue
+			}
+			ratioBps := min(t.Missed, t.Total) * 10_000 / t.Total
+			if ratioBps > worst.ratioBps {
+				worst.chain, worst.ratioBps = t.Chain, ratioBps
+			}
+		}
+		if worst.ratioBps >= 0 {
+			candidates = append(candidates, worst)
+		}
+	}
+
+	// worst ratio first; the address breaks ties so every node marks the same nodes
+	sort.SliceStable(candidates, func(i, j int) bool {
+		if candidates[i].ratioBps != candidates[j].ratioBps {
+			return candidates[i].ratioBps > candidates[j].ratioBps
+		}
+		return candidates[i].na.NodeAddress.String() < candidates[j].na.NodeAddress.String()
+	})
+
+	for i, c := range candidates {
+		if int64(i) >= maxChurnOut {
+			break
+		}
+		ctx.Logger().Info("node missing observations", "node address", c.na.NodeAddress, "chain", c.chain, "missed bps", c.ratioBps)
+		if err := vm.markActor(ctx, c.na, "for missing observations"); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 // Iterate over active node accounts, finding the one that has been active longest
 func (vm *ValidatorMgr) findOldActor(ctx cosmos.Context) (NodeAccount, error) {
 	na := NodeAccount{}
@@ -1641,8 +1720,8 @@ func (vm *ValidatorMgr) findLowBondActor(ctx cosmos.Context) (NodeAccount, error
 func (vm *ValidatorMgr) markActor(ctx cosmos.Context, na NodeAccount, reason string) error {
 	if !na.IsEmpty() && na.LeaveScore == 0 {
 		ctx.Logger().Info("marked Validator to be churned out", "node address", na.NodeAddress, "reason", reason)
-		// reason is always one of six compile-time string literals at the six
-		// markActor call sites in this file, so label cardinality is fixed at 6.
+		// reason is always one of seven compile-time string literals at the seven
+		// markActor call sites in this file, so label cardinality is fixed at 7.
 		telemetry.IncrCounterWithLabels(
 			[]string{"thornode", "churn", "node_marked"},
 			float32(1),

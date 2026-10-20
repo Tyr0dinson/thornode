@@ -328,6 +328,17 @@ func (am AppModule) EndBlock(goCtx context.Context) ([]abci.ValidatorUpdate, err
 	telemetry.ModuleMeasureSince("network", start, "thornode", "block", "endblock")
 
 	start = telemetry.Now()
+	if err := processObservationTallies(ctx, am.mgr); err != nil {
+		ctx.Logger().Error("fail to process observation tallies", "error", err)
+		telemetry.IncrCounterWithLabels(
+			[]string{"thornode", "endblock", "manager_error"},
+			float32(1),
+			[]metrics.Label{telemetry.NewLabel("manager", "observation_tally")},
+		)
+	}
+	telemetry.ModuleMeasureSince("observation_tally", start, "thornode", "block", "endblock")
+
+	start = telemetry.Now()
 	validators := am.mgr.ValidatorMgr().EndBlock(ctx, am.mgr)
 	telemetry.ModuleMeasureSince("validator", start, "thornode", "block", "endblock")
 

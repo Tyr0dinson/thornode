@@ -2,6 +2,7 @@ package thorchain
 
 import (
 	"context"
+	"strconv"
 
 	"github.com/cosmos/cosmos-sdk/telemetry"
 	"github.com/hashicorp/go-metrics"
@@ -72,6 +73,8 @@ func processNetworkFeeAttestation(
 	nonSigners := getNonSigners(active, signers)
 	mgr.Slasher().DecSlashPoints(slashCtx, observeSlashPoints, signers...)
 	mgr.Slasher().IncSlashPoints(slashCtx, lackOfObservationPenalty, nonSigners...)
+	queueObservationTally(ctx, mgr.Keeper(), observationTallyKindNetworkFee, voter.Chain,
+		strconv.FormatInt(voter.ReportBlockHeight, 10), strconv.FormatInt(voter.FeeRate, 10), strconv.FormatInt(voter.TransactionSize, 10))
 
 	ctx.Logger().Info("update network fee", "chain", nf.Chain.String(), "transaction-size", nf.TransactionSize, "fee-rate", nf.TransactionRate)
 	if err := mgr.Keeper().SaveNetworkFee(ctx, nf.Chain, NetworkFee{

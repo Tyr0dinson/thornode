@@ -838,6 +838,47 @@ func (k KVStoreDummy) GetLastObserveHeight(ctx cosmos.Context, address cosmos.Ac
 	return nil, kaboom
 }
 
+func (k KVStoreDummy) QueueObservationTally(_ cosmos.Context, _ kvTypes.ObservationTallyEntry) {}
+
+func (k KVStoreDummy) PopObservationTallies(_ cosmos.Context, _ int64) ([]kvTypes.ObservationTallyEntry, error) {
+	return nil, kaboom
+}
+
+func (k KVStoreDummy) AddObservationTally(_ cosmos.Context, _ common.Chain, _ int64, _, _ []cosmos.AccAddress) {
+}
+
+func (k KVStoreDummy) GetObservationTally(_ cosmos.Context, _ cosmos.AccAddress, _ common.Chain) (int64, int64, error) {
+	return 0, 0, kaboom
+}
+
+func (k KVStoreDummy) GetObservationTallies(_ cosmos.Context, _ cosmos.AccAddress) ([]kvTypes.ObservationTally, error) {
+	return nil, kaboom
+}
+
+func (k KVStoreDummy) ResetObservationTally(_ cosmos.Context, _ cosmos.AccAddress) error {
+	return kaboom
+}
+
+func (k KVStoreDummy) ClearObservationTally(_ cosmos.Context, _ cosmos.AccAddress) {}
+
+func (k KVStoreDummy) HalveObservationTallies(_ cosmos.Context) error { return kaboom }
+
+func (k KVStoreDummy) GetObservationGuardSince(_ cosmos.Context, _ common.Chain) (int64, error) {
+	return 0, kaboom
+}
+
+func (k KVStoreDummy) SetObservationGuardSince(_ cosmos.Context, _ common.Chain, _ int64) {}
+
+func (k KVStoreDummy) GetObservationGuardChains(_ cosmos.Context) (common.Chains, error) {
+	return nil, kaboom
+}
+
+func (k KVStoreDummy) GetObservationGuardFullAt(_ cosmos.Context, _ common.Chain) (int64, error) {
+	return 0, kaboom
+}
+
+func (k KVStoreDummy) SetObservationGuardFullAt(_ cosmos.Context, _ common.Chain, _ int64) {}
+
 func (k KVStoreDummy) SetTssKeygenMetric(_ cosmos.Context, metric *TssKeygenMetric) {
 }
 

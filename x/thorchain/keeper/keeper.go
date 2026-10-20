@@ -103,6 +103,7 @@ type Keeper interface {
 	KeeperXMRSpentOutputRefs
 	KeeperSolVaultNonce
 	KeeperDynamicFee
+	KeeperObservationTally
 }
 
 type KeeperConfig interface {
@@ -131,6 +132,22 @@ type KeeperLastHeight interface {
 	SetLastObserveHeight(ctx cosmos.Context, chain common.Chain, address cosmos.AccAddress, height int64) error
 	ForceSetLastObserveHeight(ctx cosmos.Context, chain common.Chain, address cosmos.AccAddress, height int64)
 	GetLastObserveHeight(ctx cosmos.Context, address cosmos.AccAddress) ([]kvTypes.ChainHeight, error)
+}
+
+type KeeperObservationTally interface {
+	QueueObservationTally(ctx cosmos.Context, entry kvTypes.ObservationTallyEntry)
+	PopObservationTallies(ctx cosmos.Context, height int64) ([]kvTypes.ObservationTallyEntry, error)
+	AddObservationTally(ctx cosmos.Context, chain common.Chain, units int64, missed, unscored []cosmos.AccAddress)
+	GetObservationTally(ctx cosmos.Context, addr cosmos.AccAddress, chain common.Chain) (int64, int64, error)
+	GetObservationTallies(ctx cosmos.Context, addr cosmos.AccAddress) ([]kvTypes.ObservationTally, error)
+	ResetObservationTally(ctx cosmos.Context, addr cosmos.AccAddress) error
+	ClearObservationTally(ctx cosmos.Context, addr cosmos.AccAddress)
+	HalveObservationTallies(ctx cosmos.Context) error
+	GetObservationGuardSince(ctx cosmos.Context, chain common.Chain) (int64, error)
+	SetObservationGuardSince(ctx cosmos.Context, chain common.Chain, height int64)
+	GetObservationGuardChains(ctx cosmos.Context) (common.Chains, error)
+	GetObservationGuardFullAt(ctx cosmos.Context, chain common.Chain) (int64, error)
+	SetObservationGuardFullAt(ctx cosmos.Context, chain common.Chain, height int64)
 }
 
 type KeeperSwapperClout interface {

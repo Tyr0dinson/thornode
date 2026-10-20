@@ -209,6 +209,12 @@ Operational notes:
 - `BadValidatorRedline`\*: Redline multiplier to find a multitude of bad actors
 - `LowBondValidatorRate`: Rate to mark a validator to be rotated out for low bond
 - `MaxNodeToChurnOutForLowVersion`\*: Maximum number of validators to churn out for low version each churn
+- `MaxMissingObservationChurnOut`\*: Maximum number of validators to churn out each churn for missing most of the observations on a chain; `0` (the default) turns the mark off, while the tallies are still kept
+- `MissingObservationChurnOutBps`\*: A validator is marked when, on any chain, the share of voters it failed to sign within `ObservationDelayFlexibility` is above this, in basis points
+- `MissingObservationGuardBps`\*: A voter is not counted against anyone when more than this share of the validators missed it (a shared outage), in basis points, not counting validators already failing its chain that missed it; `10000` turns the guard off
+- `MissingObservationGuardMaxBlocks`\*: The guard's grace on each chain, in blocks (default one churn interval). Skipping the chain's voters uses it up, time in which they pass the guard refills it at the same rate, and once it is used up the voters count again, so a group failing above the guard share is not immune for good; `0` keeps the guard open indefinitely
+- `MissingObservationHalfLife`\*: Number of blocks between halvings of the missed-observation tallies, which restart at churn-in
+- `MissingObservationMinSamples`\*: Minimum number of voters on a chain, after decay, before a validator's missed share on it counts
 - `MigrationVaultSecurityBps`: Vault bond must be greater than bps of funds value in rune to receive migrations
 
 ## Economics

@@ -115,6 +115,7 @@ func processTxInAttestation(
 			// Persist the credited signer set, including legacy XMR observers,
 			// so later observations cannot collect the same consensus credit again.
 			voter.RecordObserveSigners(signers)
+			queueObservationTally(ctx, k, observationTallyKindTxIn, tx.Tx.Chain, tx.Tx.ID.String())
 		} else if ctx.BlockHeight() <= (voter.FinalisedHeight+observeFlex) &&
 			voter.Tx.IsFinal() == tx.IsFinal() &&
 			voter.Tx.EqualsInboundObservationCredit(tx) &&
@@ -770,6 +771,7 @@ func processTxOutAttestation(
 			// not refund the same node a second time when its own gas-used
 			// observation arrives after consensus has already formed.
 			voter.RecordObserveSigners(signers)
+			queueObservationTally(ctx, k, observationTallyKindTxOut, tx.Tx.Chain, tx.Tx.ID.String())
 		} else if ctx.BlockHeight() <= (voter.FinalisedHeight+observeFlex) &&
 			voter.Tx.IsFinal() == tx.IsFinal() &&
 			voter.Tx.EqualsOutboundObservationCredit(tx) &&
