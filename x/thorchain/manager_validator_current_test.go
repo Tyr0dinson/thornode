@@ -1460,13 +1460,13 @@ func (vts *ValidatorMgrTestSuite) TestHasPendingKeygenIgnoresSupersededKeygen(c 
 	setXMRKeygen(362, churnMembers)
 	setXMRVault(366, ActiveVault, churnMembers)
 
-	pending, err := validatorMgr.hasPendingKeygen(ctx.WithBlockHeight(428), XMRMonovaultKeygen)
+	pending, err := hasPendingKeygen(ctx.WithBlockHeight(428), validatorMgr.k, XMRMonovaultKeygen)
 	c.Assert(err, IsNil)
 	c.Assert(pending, Equals, false)
 
 	// a newer keygen without a vault yet is still pending
 	setXMRKeygen(420, common.PubKeys{GetRandomPubKey(), GetRandomPubKey(), GetRandomPubKey()})
-	pending, err = validatorMgr.hasPendingKeygen(ctx.WithBlockHeight(428), XMRMonovaultKeygen)
+	pending, err = hasPendingKeygen(ctx.WithBlockHeight(428), validatorMgr.k, XMRMonovaultKeygen)
 	c.Assert(err, IsNil)
 	c.Assert(pending, Equals, true)
 }
