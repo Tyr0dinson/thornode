@@ -217,17 +217,21 @@ func (s *SOLScanner) scan() {
 
 	// vaultAddrs are the addresses scanned this pass: each vault wallet followed by its
 	// associated token account for every whitelisted SPL mint (isTokenAccount marks
-	// those). Each address keeps its own signature cursor.
+	// those, and walletOf gives each one's vault wallet index). Each address keeps its
+	// own signature cursor.
 	var vaultAddrs []string
 	var isTokenAccount []bool
+	var walletOf []int
 	for _, vault := range s.pubKeyMgr.GetAlgoPubKeys(common.SigningAlgoEd25519, s.cfg.Solana.ScanInactiveVaults) {
 		vaultAddrSol, err := vault.GetAddress(common.SOLChain)
 		if err != nil {
 			s.logger.Error().Err(err).Msg("failed to get vault address")
 			continue
 		}
+		wallet := len(vaultAddrs)
 		vaultAddrs = append(vaultAddrs, vaultAddrSol.String())
 		isTokenAccount = append(isTokenAccount, false)
+		walletOf = append(walletOf, wallet)
 
 		tokenAccounts, err := s.spl.vaultTokenAccounts(vaultAddrSol.String())
 		if err != nil {
@@ -237,6 +241,7 @@ func (s *SOLScanner) scan() {
 		for _, ta := range tokenAccounts {
 			vaultAddrs = append(vaultAddrs, ta.address)
 			isTokenAccount = append(isTokenAccount, true)
+			walletOf = append(walletOf, wallet)
 		}
 	}
 
@@ -301,12 +306,18 @@ func (s *SOLScanner) scan() {
 	countTxs := make([]int, len(vaultAddrs))
 	vaultLastSigs := make([]string, len(vaultAddrs))
 	vaultLastSlots := make([]uint64, len(vaultAddrs))
+	// statusRead and tracked record, per address, whether its scan status could be read
+	// this pass and whether this node already had one; a token account's first-tracking
+	// floor depends on whether its vault wallet was already tracked.
+	statusRead := make([]bool, len(vaultAddrs))
+	tracked := make([]bool, len(vaultAddrs))
 	for i, vaultAddr := range vaultAddrs {
 		var lastSig string
 		var vaultLastSlot uint64
 		if vss, ok := s.vaultScanStatuses[vaultAddr]; ok {
 			lastSig = vss.lastSig
 			vaultLastSlot = vss.lastSlot
+			statusRead[i], tracked[i] = true, true
 		} else {
 			lastSig, vaultLastSlot, err = s.db.GetScanStatus(vaultAddr)
 			// if err is ErrNotFound, then we set to "" and 0.
@@ -316,15 +327,32 @@ func (s *SOLScanner) scan() {
 				wg.Done()
 				continue
 			}
+			statusRead[i], tracked[i] = true, err == nil
 			if errors.Is(err, leveldb.ErrNotFound) && isTokenAccount[i] {
-				// First time this node tracks this token account: register it at the
-				// current slot so only transfers after it are observed. A vault's token
-				// account can predate SPL support (anyone can create and fund it), and
-				// replaying that history would observe stale deposits that other nodes,
-				// with different RPC retention, cannot agree on. A new vault's token
-				// account does not exist yet when it is first tracked, so nothing is lost.
-				vaultLastSlot = currentSlot
-				if err = s.db.SetScanStatus(vaultAddr, "", currentSlot); err != nil {
+				wallet := walletOf[i]
+				if !statusRead[wallet] {
+					// Whether the vault is new to this node is unknown this pass.
+					wg.Done()
+					continue
+				}
+				// First time this node tracks this token account. If it already tracked
+				// the vault (the SPL upgrade), register the token account at the current
+				// slot so only transfers after it are observed: the account can predate
+				// SPL support (anyone can create and fund it), and replaying that history
+				// would observe stale deposits that other nodes, with different RPC
+				// retention, cannot agree on.
+				//
+				// A vault new to this node gets no floor, like the vault wallet itself.
+				// A non-member node learns of a churned-in vault only once it is active
+				// and published for deposits, and a node offline over a churn learns of
+				// it later still, so its token account can already hold deposits that
+				// list only that account. Flooring them would drop them on those nodes,
+				// possibly enough that they never reach consensus. Its whole history
+				// postdates the vault, so there is nothing stale to skip.
+				if tracked[wallet] {
+					vaultLastSlot = currentSlot
+				}
+				if err = s.db.SetScanStatus(vaultAddr, "", vaultLastSlot); err != nil {
 					s.logger.Error().Err(err).Str("token_account", vaultAddr).Msg("failed to register token account scan status")
 					setUnhealthy()
 					wg.Done()
