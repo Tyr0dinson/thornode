@@ -174,7 +174,13 @@ const (
 	ChainLiquidityRunePerValidator
 	POLReserveSystemIncomeBps
 	POLReserveMaxDeployment
+	StableReserveEnabled
+	StableReserveDepegToleranceBps
+	StableReservePOLShareBps
+	StableReserveWithdrawalRequestMax
+	StableReserveOraclePricing
 	WasmArbContract
+	MaxAbsentKeygenReporters
 
 	// These are the implicitly-0 Constants undisplayed in the API endpoint (no explicit value set).
 	ArtificialRagnarokBlockHeight
@@ -191,6 +197,7 @@ const (
 	MemolessTxnRefCount
 	MemolessTxnCost
 	MemolessTxnMaxUse
+	MemolessTxnCostSlopeBPS
 	StrictBondLiquidityRatio
 	SwapOutDexAggregationDisabled
 	P2PGateDisabled
@@ -201,6 +208,16 @@ const (
 	L1DynamicFeeStepBPS
 	L1DynamicFeeDeadbandBPS
 	L1DynamicFeeWindowEpochs
+	VaultDeficitGasHaltMaxGasMultiplier
+
+	BondYieldEnabled
+
+	MaxMissingObservationChurnOut
+	MissingObservationChurnOutBps
+	MissingObservationGuardBps
+	MissingObservationHalfLife
+	MissingObservationMinSamples
+	MissingObservationGuardMaxBlocks
 )
 
 // ConstantValues define methods used to get constant values

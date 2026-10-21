@@ -1,6 +1,8 @@
 package thorchain
 
 import (
+	"fmt"
+
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/constants"
@@ -17,6 +19,9 @@ func (HandlerTradeAccountDeposit) TestTradeAccountDeposit(c *C) {
 	asset := common.BTCAsset
 	addr := GetRandomBech32Addr()
 	dummyTx := common.Tx{ID: "test"}
+
+	mgr.Keeper().SetMimir(ctx, constants.TradeAccountsEnabled.String(), 1)
+	mgr.Keeper().SetMimir(ctx, constants.TradeAccountsDepositEnabled.String(), 1)
 
 	msg := NewMsgTradeAccountDeposit(asset, cosmos.NewUint(350), addr, addr, dummyTx)
 
@@ -121,6 +126,23 @@ func (HandlerTradeAccountDeposit) TestTradeAccountDepositChainLiquidityCap(c *C)
 	msg = NewMsgTradeAccountDeposit(asset, cosmos.NewUint(50000000), addr, addr, dummyTx)
 	_, err = h.Run(ctx, msg)
 	c.Assert(err, IsNil, Commentf("should allow trade deposit within chain liquidity cap"))
+}
+
+func (HandlerTradeAccountDeposit) TestTradeAccountDepositHaltDeposit(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	h := NewTradeAccountDepositHandler(mgr)
+	asset := common.BTCAsset
+	addr := GetRandomBech32Addr()
+	dummyTx := common.Tx{ID: "test"}
+
+	mgr.Keeper().SetMimir(ctx, constants.TradeAccountsEnabled.String(), 1)
+	mgr.Keeper().SetMimir(ctx, constants.TradeAccountsDepositEnabled.String(), 1)
+	mgr.Keeper().SetMimir(ctx, fmt.Sprintf(constants.MimirTemplateTradeAssetHaltDeposit, asset.Chain), 1)
+
+	msg := NewMsgTradeAccountDeposit(asset, cosmos.NewUint(350), addr, addr, dummyTx)
+	_, err := h.Run(ctx, msg)
+	c.Assert(err, NotNil)
+	c.Check(err.Error(), Matches, ".*trade asset deposits are disabled.*")
 }
 
 func (HandlerTradeAccountDeposit) TestTradeAccountDepositValidateBasicFails(c *C) {

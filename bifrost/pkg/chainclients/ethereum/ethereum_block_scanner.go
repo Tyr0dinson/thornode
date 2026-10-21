@@ -55,14 +55,19 @@ const (
 
 // ETHScanner is a scanner that understand how to interact with ETH chain ,and scan block , parse smart contract etc
 type ETHScanner struct {
-	cfg                   config.BifrostBlockScannerConfiguration
-	logger                zerolog.Logger
-	db                    blockscanner.ScannerStorage
-	m                     *metrics.Metrics
-	errCounter            *prometheus.CounterVec
-	gasPriceChanged       bool
-	gasPrice              *big.Int
-	lastReportedGasPrice  uint64
+	cfg             config.BifrostBlockScannerConfiguration
+	logger          zerolog.Logger
+	db              blockscanner.ScannerStorage
+	m               *metrics.Metrics
+	errCounter      *prometheus.CounterVec
+	gasPriceChanged bool
+	// Guards gasCache while FetchTxs prefetch goroutines append samples and refresh the atomic gasPrice snapshot.
+	gasCacheMu sync.Mutex
+	// Atomic gasPrice snapshot read by signer/unstuck/network-fee goroutines.
+	gasPrice stdatomic.Pointer[big.Int]
+	// Serializes FetchTxs/prefetch network-fee compare and lastReportedGasPrice update.
+	networkFeeMu          sync.Mutex
+	lastReportedGasPrice  stdatomic.Uint64
 	client                *ethclient.Client
 	blockMetaAccessor     evm.BlockMetaAccessor
 	globalErrataQueue     chan<- stypes.ErrataBlock
@@ -120,28 +125,28 @@ func NewETHScanner(cfg config.BifrostBlockScannerConfiguration,
 		return nil, fmt.Errorf("fail to create contract abi: %w", err)
 	}
 
-	return &ETHScanner{
-		cfg:                  cfg,
-		logger:               log.Logger.With().Str("module", "block_scanner").Str("chain", common.ETHChain.String()).Logger(),
-		errCounter:           m.GetCounterVec(metrics.BlockScanError(common.ETHChain)),
-		client:               client,
-		db:                   storage,
-		m:                    m,
-		gasPrice:             big.NewInt(initialGasPrice),
-		lastReportedGasPrice: 0,
-		gasPriceChanged:      false,
-		blockMetaAccessor:    blockMetaAccessor,
-		tokens:               tokens,
-		bridge:               bridge,
-		vaultABI:             vaultABI,
-		erc20ABI:             erc20ABI,
-		eipSigner:            etypes.NewPragueSigner(chainID),
-		pubkeyMgr:            pubkeyMgr,
-		gasCache:             make([]*big.Int, 0),
-		solvencyReporter:     solvencyReporter,
-		whitelistTokens:      tokenlist.GetETHTokenList().Tokens,
-		signerCacheManager:   signerCacheManager,
-	}, nil
+	scanner := &ETHScanner{
+		cfg:                cfg,
+		logger:             log.Logger.With().Str("module", "block_scanner").Str("chain", common.ETHChain.String()).Logger(),
+		errCounter:         m.GetCounterVec(metrics.BlockScanError(common.ETHChain)),
+		client:             client,
+		db:                 storage,
+		m:                  m,
+		gasPriceChanged:    false,
+		blockMetaAccessor:  blockMetaAccessor,
+		tokens:             tokens,
+		bridge:             bridge,
+		vaultABI:           vaultABI,
+		erc20ABI:           erc20ABI,
+		eipSigner:          etypes.NewPragueSigner(chainID),
+		pubkeyMgr:          pubkeyMgr,
+		gasCache:           make([]*big.Int, 0),
+		solvencyReporter:   solvencyReporter,
+		whitelistTokens:    tokenlist.GetETHTokenList().Tokens,
+		signerCacheManager: signerCacheManager,
+	}
+	scanner.gasPrice.Store(big.NewInt(initialGasPrice))
+	return scanner, nil
 }
 
 // GetGasPrice returns current gas price
@@ -149,7 +154,12 @@ func (e *ETHScanner) GetGasPrice() *big.Int {
 	if e.cfg.FixedGasRate > 0 {
 		return big.NewInt(e.cfg.FixedGasRate)
 	}
-	return e.gasPrice
+	// Return a copy because callers mutate gas prices while this atomic snapshot is shared.
+	gasPrice := e.gasPrice.Load()
+	if gasPrice == nil {
+		return big.NewInt(0)
+	}
+	return new(big.Int).Set(gasPrice)
 }
 
 func (e *ETHScanner) getContext() (context.Context, context.CancelFunc) {
@@ -169,7 +179,7 @@ func (e *ETHScanner) GetHeight() (int64, error) {
 
 // GetNetworkFee returns current chain network fee according to Bifrost.
 func (e *ETHScanner) GetNetworkFee() (transactionSize, transactionFeeRate uint64) {
-	return e.cfg.MaxGasLimit, e.lastReportedGasPrice
+	return e.cfg.MaxGasLimit, e.lastReportedGasPrice.Load()
 }
 
 // FetchMemPool get tx from mempool
@@ -193,6 +203,7 @@ func (e *ETHScanner) FetchTxs(height, chainHeight int64) (stypes.TxIn, error) {
 		e.logger.Error().Err(err).Int64("height", height).Msg("fail to search tx in block")
 		return stypes.TxIn{}, fmt.Errorf("fail to process block: %d, err:%w", height, err)
 	}
+
 	// blockMeta need to be saved , even there is no transactions found on this block at the time of scan
 	// because at the time of scan , so the block hash will be stored, and it can be used to detect re-org
 	blockMeta := types.NewBlockMeta(block.Header(), txIn)
@@ -210,7 +221,7 @@ func (e *ETHScanner) FetchTxs(height, chainHeight int64) (stypes.TxIn, error) {
 		}()
 	}
 
-	// skip reporting network fee and solvency if block more than flexibility blocks from tip
+	// skip reporting network fee if block more than flexibility blocks from tip
 	if chainHeight-height > e.cfg.ObservationFlexibilityBlocks {
 		return txIn, nil
 	}
@@ -223,23 +234,37 @@ func (e *ETHScanner) FetchTxs(height, chainHeight int64) (stypes.TxIn, error) {
 		gasRate = 1
 	}
 
-	// post to thorchain if there is a fee and it has changed
-	if gasPrice.Cmp(big.NewInt(0)) != 0 && gasRate != e.lastReportedGasPrice {
-		e.globalNetworkFeeQueue <- common.NetworkFee{
+	// FetchTxs can run in prefetch goroutines. Serialize fee comparison and lastReportedGasPrice.
+	networkFee, postNetworkFee := func() (common.NetworkFee, bool) {
+		e.networkFeeMu.Lock()
+		defer e.networkFeeMu.Unlock()
+
+		// post to thorchain if there is a fee and it has changed
+		if gasPrice.Sign() == 0 || gasRate == e.lastReportedGasPrice.Load() {
+			return common.NetworkFee{}, false
+		}
+		e.lastReportedGasPrice.Store(gasRate)
+
+		return common.NetworkFee{
 			Chain:           common.ETHChain,
 			Height:          height,
 			TransactionSize: e.cfg.MaxGasLimit,
 			TransactionRate: gasRate,
-		}
-		e.lastReportedGasPrice = gasRate
+		}, true
+	}()
+	if postNetworkFee {
+		e.globalNetworkFeeQueue <- networkFee
 	}
 
-	if e.solvencyReporter != nil {
-		if err = e.solvencyReporter(height); err != nil {
-			e.logger.Err(err).Msg("fail to report Solvency info to THORNode")
-		}
-	}
 	return txIn, nil
+}
+
+// ReportSolvency runs after the shared scanner has recomputed health.
+func (e *ETHScanner) ReportSolvency(height, chainHeight int64) error {
+	if chainHeight-height > e.cfg.ObservationFlexibilityBlocks || e.solvencyReporter == nil {
+		return nil
+	}
+	return e.solvencyReporter(height)
 }
 
 func (e *ETHScanner) getCurrentBlockHeight() int64 {
@@ -277,9 +302,14 @@ func (e *ETHScanner) updateGasPrice(baseFee *big.Int, priorityFees []*big.Int) {
 	// round the price up to nearest configured resolution, converting gas rate units to wei
 	_, gasRateUnitsPerOne := e.cfg.ChainID.GetGasUnits()
 	resolution := cosmos.NewUint(uint64(e.cfg.GasPriceResolution)).MulUint64(common.WeiPerOne).Quo(gasRateUnitsPerOne).BigInt()
-	gasPriceWei.Add(gasPriceWei, new(big.Int).Sub(resolution, big.NewInt(1)))
+	gasPriceWei.Add(gasPriceWei, resolution)
+	gasPriceWei.Sub(gasPriceWei, big.NewInt(1))
 	gasPriceWei = gasPriceWei.Div(gasPriceWei, resolution)
 	gasPriceWei = gasPriceWei.Mul(gasPriceWei, resolution)
+
+	// FetchTxs can run in prefetch goroutines, so serialize gasCache updates before publishing gasPrice.
+	e.gasCacheMu.Lock()
+	defer e.gasCacheMu.Unlock()
 
 	// add to the cache
 	e.gasCache = append(e.gasCache, gasPriceWei)
@@ -287,10 +317,10 @@ func (e *ETHScanner) updateGasPrice(baseFee *big.Int, priorityFees []*big.Int) {
 		e.gasCache = e.gasCache[(len(e.gasCache) - e.cfg.GasCacheBlocks):]
 	}
 
-	e.updateGasPriceFromCache()
+	e.updateGasPriceFromCacheLocked()
 }
 
-func (e *ETHScanner) updateGasPriceFromCache() {
+func (e *ETHScanner) updateGasPriceFromCacheLocked() {
 	// skip update unless cache is full
 	if len(e.gasCache) < e.cfg.GasCacheBlocks {
 		return
@@ -314,10 +344,11 @@ func (e *ETHScanner) updateGasPriceFromCache() {
 	std.Sqrt(std)
 
 	// mean + 3x standard deviation over cache blocks
-	e.gasPrice = mean.Add(mean, std.Mul(std, big.NewInt(3)))
+	gasPrice := mean.Add(mean, std.Mul(std, big.NewInt(3)))
+	e.gasPrice.Store(gasPrice)
 
 	// record metrics
-	gasPriceFloat, _ := new(big.Float).SetInt64(e.gasPrice.Int64()).Float64()
+	gasPriceFloat, _ := new(big.Float).SetInt(gasPrice).Float64()
 	e.m.GetGauge(metrics.GasPrice(common.ETHChain)).Set(gasPriceFloat)
 	e.m.GetCounter(metrics.GasPriceChange(common.ETHChain)).Inc()
 }
@@ -752,8 +783,30 @@ func (e *ETHScanner) getTokenMeta(token string) (types.TokenMeta, error) {
 	return tokenMeta, nil
 }
 
-// convertAmount will convert the amount to 1e8 , the decimals used by THORChain
-func (e *ETHScanner) convertAmount(token string, amt *big.Int) cosmos.Uint {
+func (e *ETHScanner) isRelevantERC20Token(addr *ecommon.Address) bool {
+	if addr == nil {
+		return false
+	}
+	return evm.IsRelevantToken(addr.String(), e.whitelistTokens, e.tokens, e.logger)
+}
+
+func (e *ETHScanner) directERC20InboundEnabled() bool {
+	enabled, err := e.bridge.GetMimirWithRef(
+		constants.MimirTemplateEVMDirectERC20Inbound,
+		e.cfg.ChainID.String(),
+	)
+	if err != nil {
+		e.logger.Err(err).
+			Str("mimir_template", constants.MimirTemplateEVMDirectERC20Inbound).
+			Str("chain", e.cfg.ChainID.String()).
+			Msg("fail to get direct ERC20 inbound mimir")
+		return false
+	}
+	return enabled > 0
+}
+
+// ConvertAmount will convert the amount to 1e8, the decimals used by THORChain.
+func (e *ETHScanner) ConvertAmount(token string, amt *big.Int) cosmos.Uint {
 	if IsETH(token) {
 		return cosmos.NewUintFromBigInt(amt).QuoUint64(common.One * 100)
 	}
@@ -773,8 +826,9 @@ func (e *ETHScanner) convertAmount(token string, amt *big.Int) cosmos.Uint {
 	return cosmos.NewUintFromBigInt(amt).QuoUint64(common.One * 100)
 }
 
-// return value 0 means use the default value which is common.THORChainDecimals, use 1e8 as precision
-func (e *ETHScanner) getTokenDecimalsForTHORChain(token string) int64 {
+// GetTokenDecimalsForTHORChain returns the coin decimal override for THORChain.
+// A return value of 0 means use common.THORChainDecimals, 1e8 precision.
+func (e *ETHScanner) GetTokenDecimalsForTHORChain(token string) int64 {
 	if IsETH(token) {
 		return 0
 	}
@@ -792,7 +846,8 @@ func (e *ETHScanner) getTokenDecimalsForTHORChain(token string) int64 {
 	return int64(tokenMeta.Decimal)
 }
 
-func (e *ETHScanner) getAssetFromTokenAddress(token string) (common.Asset, error) {
+// GetAssetFromTokenAddress resolves an ETH chain asset from an ERC20 token address.
+func (e *ETHScanner) GetAssetFromTokenAddress(token string) (common.Asset, error) {
 	if IsETH(token) {
 		return common.ETHAsset, nil
 	}
@@ -804,6 +859,23 @@ func (e *ETHScanner) getAssetFromTokenAddress(token string) (common.Asset, error
 		return common.EmptyAsset, fmt.Errorf("token metadata is empty")
 	}
 	return common.NewAsset(fmt.Sprintf("ETH.%s-%s", tokenMeta.Symbol, strings.ToUpper(tokenMeta.Address)))
+}
+
+// getTxInFromDirectERC20Transfer observes direct ERC20 token transfers sent to
+// active vault addresses. These txs bypass the router, so they are emitted as
+// memo-less inbounds and left to THORNode's normal memoless/refund handling.
+func (e *ETHScanner) getTxInFromDirectERC20Transfer(tx *etypes.Transaction, receipt *etypes.Receipt, sender *ecommon.Address) (*stypes.TxInItem, error) {
+	return evm.GetTxInFromDirectERC20Transfer(tx, receipt, evm.DirectERC20TransferTxInOptions{
+		Chain:                 common.ETHChain,
+		Signer:                e.eipSigner,
+		Sender:                sender,
+		MaxContractTxLogs:     int64(e.cfg.MaxContractTxLogs),
+		PoolAddressProvider:   e.pubkeyMgr,
+		TokenResolver:         e,
+		Logger:                e.logger,
+		SenderErrorMessage:    "fail to get sender",
+		ParseLogsErrorMessage: "fail to parse direct ERC20 transfer logs",
+	})
 }
 
 // getTxInFromSmartContract returns txInItem
@@ -823,9 +895,9 @@ func (e *ETHScanner) getTxInFromSmartContract(tx *etypes.Transaction, receipt *e
 		return nil, nil
 	}
 	p := evm.NewSmartContractLogParser(e.isToValidContractAddress,
-		e.getAssetFromTokenAddress,
-		e.getTokenDecimalsForTHORChain,
-		e.convertAmount,
+		e.GetAssetFromTokenAddress,
+		e.GetTokenDecimalsForTHORChain,
+		e.ConvertAmount,
 		e.vaultABI,
 		common.ETHAsset,
 		maxLogs)
@@ -902,7 +974,7 @@ func (e *ETHScanner) getTxInFromTransaction(tx *etypes.Transaction, receipt *ety
 			txInItem.Memo = string(memo)
 		}
 	}
-	ethValue := e.convertAmount(ethToken, tx.Value())
+	ethValue := e.ConvertAmount(ethToken, tx.Value())
 	txInItem.Coins = append(txInItem.Coins, common.NewCoin(asset, ethValue))
 	txGasPrice := receipt.EffectiveGasPrice
 
@@ -993,6 +1065,26 @@ func (e *ETHScanner) fromTxToTxIn(tx *etypes.Transaction) (*stypes.TxInItem, err
 		case isFromVault:
 			// Tx from a vault (outbound, approval, cancel, etc.)
 			return e.getTxInFromTransaction(tx, receipt)
+		case evm.HasERC20TransferSelector(tx):
+			// Reject unknown tokens before the cached Mimir gate.
+			if !e.isRelevantERC20Token(destination) {
+				return nil, nil
+			}
+			// Confirm this is a successful top-level ERC20 transfer from tx.To().
+			if !evm.IsERC20Transfer(tx, receipt) {
+				return nil, nil
+			}
+			// Keep direct inbounds behind the per-chain operator flag.
+			if !e.directERC20InboundEnabled() {
+				return nil, nil
+			}
+			if senderErr != nil {
+				// Match the whitelist-enabled path: ignore txs whose sender we
+				// cannot determine rather than surfacing scanner noise.
+				return nil, nil
+			}
+			// Reuse the sender recovered above to avoid a second ecrecover.
+			return e.getTxInFromDirectERC20Transfer(tx, receipt, &sender)
 		case evm.IsSmartContractCall(tx, receipt):
 			// Tx to a different contract, attempt to parse with max allowable logs
 			return e.getTxInFromSmartContract(tx, receipt, int64(e.cfg.MaxContractTxLogs))
@@ -1015,7 +1107,22 @@ func (e *ETHScanner) fromTxToTxIn(tx *etypes.Transaction) (*stypes.TxInItem, err
 		if isFromVault || isToVault {
 			return e.getTxInFromTransaction(tx, receipt)
 		}
-		// ignore tx not involving any vault
+		if evm.HasERC20TransferSelector(tx) {
+			// Reject unknown tokens before the cached Mimir gate.
+			if !e.isRelevantERC20Token(tx.To()) {
+				return nil, nil
+			}
+			// Confirm this is a successful top-level ERC20 transfer from tx.To().
+			if !evm.IsERC20Transfer(tx, receipt) {
+				return nil, nil
+			}
+			// Keep direct inbounds behind the per-chain operator flag.
+			if !e.directERC20InboundEnabled() {
+				return nil, nil
+			}
+			// Reuse the sender recovered above to avoid a second ecrecover.
+			return e.getTxInFromDirectERC20Transfer(tx, receipt, &sender)
+		}
 		return nil, nil
 	}
 }

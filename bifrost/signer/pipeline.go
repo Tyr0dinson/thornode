@@ -2,7 +2,8 @@ package signer
 
 import (
 	"fmt"
-	"time"
+	"sort"
+	"sync"
 
 	"github.com/rs/zerolog/log"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
@@ -56,6 +57,10 @@ type pipelineSigner interface {
 type pipeline struct {
 	// concurrency is the number of concurrent signing routines to allow.
 	concurrency int64
+
+	// wg tracks in-flight signing routines so Wait establishes a happens-before
+	// with their writes; polling len(chan) on the semaphores did not.
+	wg sync.WaitGroup
 
 	// vaultStatusConcurrency maps vault status to a semaphore for concurrent signings.
 	vaultStatusConcurrency map[types.VaultStatus]semaphore
@@ -137,6 +142,14 @@ func (p *pipeline) SpawnSignings(s pipelineSigner, bridge thorclient.ThorchainBr
 		}
 	}
 
+	// sort deterministically so all nodes attempt the same outbound first
+	sort.Slice(itemsToSign, func(i, j int) bool {
+		if itemsToSign[i].Height != itemsToSign[j].Height {
+			return itemsToSign[i].Height < itemsToSign[j].Height
+		}
+		return itemsToSign[i].Index < itemsToSign[j].Index
+	})
+
 	// get the available capacities for each vault status
 	availableCapacities := make(map[types.VaultStatus]int)
 	for status, semaphore := range p.vaultStatusConcurrency {
@@ -205,36 +218,27 @@ func (p *pipeline) SpawnSignings(s pipelineSigner, bridge thorclient.ThorchainBr
 			log.Warn().Interface("item", sanitized).Msg("found retry item")
 		}
 
-		// spawn signing routine
-		go func(item TxOutStoreItem, vaultStatus types.VaultStatus) {
+		// Pass the lock into the signing routine so releasing it does not read the
+		// map while this loop creates locks for other vault/chain combinations.
+		p.wg.Add(1)
+		go func(item TxOutStoreItem, vaultStatus types.VaultStatus, lock chan struct{}) {
+			defer p.wg.Done()
+
 			// release the vault status semaphore and vault/chain lock when complete
 			defer func() {
-				vc2 := vaultChain{item.TxOutItem.VaultPubKey, item.TxOutItem.Chain}
-				<-p.vaultChainLock[vc2]
+				<-lock
 				p.vaultStatusConcurrency[vaultStatus].release(1)
 			}()
 
 			// process the transaction
 			s.processTransaction(item)
-		}(item, vault.Status)
+		}(item, vault.Status, p.vaultChainLock[vc])
 	}
 }
 
 // Wait will block until all pipeline signing routines have completed.
 func (p *pipeline) Wait() {
 	log.Info().Msg("waiting for signer pipeline routines to complete")
-	for {
-		running := false
-		for _, semaphore := range p.vaultStatusConcurrency {
-			if len(semaphore) > 0 {
-				running = true
-				break
-			}
-		}
-		if !running {
-			log.Info().Msg("signer pipeline routines complete")
-			return
-		}
-		time.Sleep(time.Second)
-	}
+	p.wg.Wait()
+	log.Info().Msg("signer pipeline routines complete")
 }

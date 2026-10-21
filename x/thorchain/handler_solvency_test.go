@@ -338,3 +338,82 @@ func (s *HandlerSolvencyTestSuite) TestChainAwareConsensus(c *C) {
 	lackOfObservationPenalty := mgr.GetConstants().GetInt64Value(constants.LackOfObservationPenalty)
 	c.Assert(pts2, Equals, lackOfObservationPenalty, Commentf("chain participant non-signer should be penalized"))
 }
+
+func (s *HandlerSolvencyTestSuite) TestInsolvencyCheckSkipsUnpriceableGapCoveredByPendingRagnarok(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	ctx = ctx.WithBlockHeight(200)
+
+	pool := NewPool()
+	pool.Asset = common.BCHAsset
+	pool.Status = PoolSuspended
+	pool.BalanceAsset = cosmos.NewUint(333000)
+	pool.BalanceRune = cosmos.ZeroUint()
+	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+	mgr.Keeper().SetMimir(ctx, "RAGNAROK-"+common.BCHAsset.MimirString(), 1)
+
+	vault := NewVault(1024, ActiveVault, AsgardVault, GetRandomPubKey(), []string{common.BCHChain.String()}, nil)
+	vault.AddFunds(common.NewCoins(common.NewCoin(common.BCHAsset, cosmos.NewUint(100*common.One))))
+
+	txOut := NewTxOut(ctx.BlockHeight() - 1)
+	txOut.TxArray = []TxOutItem{
+		{
+			Chain:       common.BCHChain,
+			VaultPubKey: vault.PubKey,
+			Coin:        common.NewCoin(common.BCHAsset, cosmos.NewUint(150*common.One)),
+			Memo:        NewRagnarokMemo(1).String(),
+		},
+	}
+	c.Assert(mgr.Keeper().SetTxOut(ctx, txOut), IsNil)
+
+	c.Assert(insolvencyCheck(ctx, mgr, vault, common.NewCoins(), common.BCHChain), Equals, false)
+}
+
+func (s *HandlerSolvencyTestSuite) TestInsolvencyCheckSkipsMissingPoolGapCoveredByPendingRagnarok(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	ctx = ctx.WithBlockHeight(200)
+	mgr.Keeper().SetMimir(ctx, "RAGNAROK-"+common.BCHAsset.MimirString(), 1)
+
+	vault := NewVault(1024, ActiveVault, AsgardVault, GetRandomPubKey(), []string{common.BCHChain.String()}, nil)
+	vault.AddFunds(common.NewCoins(common.NewCoin(common.BCHAsset, cosmos.NewUint(100*common.One))))
+
+	txOut := NewTxOut(ctx.BlockHeight() - 1)
+	txOut.TxArray = []TxOutItem{
+		{
+			Chain:       common.BCHChain,
+			VaultPubKey: vault.PubKey,
+			Coin:        common.NewCoin(common.BCHAsset, cosmos.NewUint(150*common.One)),
+			Memo:        NewRagnarokMemo(1).String(),
+		},
+	}
+	c.Assert(mgr.Keeper().SetTxOut(ctx, txOut), IsNil)
+
+	c.Assert(insolvencyCheck(ctx, mgr, vault, common.NewCoins(), common.BCHChain), Equals, false)
+}
+
+func (s *HandlerSolvencyTestSuite) TestInsolvencyCheckFlagsUnpriceableGapWithoutRagnarokCoverage(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	ctx = ctx.WithBlockHeight(200)
+
+	pool := NewPool()
+	pool.Asset = common.BCHAsset
+	pool.Status = PoolSuspended
+	pool.BalanceAsset = cosmos.NewUint(333000)
+	pool.BalanceRune = cosmos.ZeroUint()
+	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+
+	vault := NewVault(1024, ActiveVault, AsgardVault, GetRandomPubKey(), []string{common.BCHChain.String()}, nil)
+	vault.AddFunds(common.NewCoins(common.NewCoin(common.BCHAsset, cosmos.NewUint(100*common.One))))
+
+	txOut := NewTxOut(ctx.BlockHeight() - 1)
+	txOut.TxArray = []TxOutItem{
+		{
+			Chain:       common.BCHChain,
+			VaultPubKey: vault.PubKey,
+			Coin:        common.NewCoin(common.BCHAsset, cosmos.NewUint(150*common.One)),
+			Memo:        NewRagnarokMemo(1).String(),
+		},
+	}
+	c.Assert(mgr.Keeper().SetTxOut(ctx, txOut), IsNil)
+
+	c.Assert(insolvencyCheck(ctx, mgr, vault, common.NewCoins(), common.BCHChain), Equals, true)
+}

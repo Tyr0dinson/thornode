@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"sync"
 
 	"github.com/cosmos/cosmos-sdk/client"
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -13,34 +14,40 @@ import (
 )
 
 type queryServer struct {
-	mgr      *Mgrs
-	kbs      cosmos.KeybaseStore
-	regInit  bool
+	mgr *Mgrs
+	kbs cosmos.KeybaseStore
+	// pointer so value-receiver query helpers share the same Once
+	initOnce *sync.Once
 	txConfig client.TxConfig
 }
 
 var _ types.QueryServer = &queryServer{}
 
 func NewQueryServerImpl(mgr *Mgrs, txConfig client.TxConfig, kbs cosmos.KeybaseStore) types.QueryServer {
-	return &queryServer{mgr: mgr, txConfig: txConfig, kbs: kbs}
+	return &queryServer{mgr: mgr, txConfig: txConfig, kbs: kbs, initOnce: &sync.Once{}}
 }
 
 func (s *queryServer) unwrapSdkContext(c context.Context) sdk.Context {
 	ctx := sdk.UnwrapSDKContext(c)
 	ctx = ctx.WithLogger(ctx.Logger().With("height", ctx.BlockHeight()))
-	if s.regInit {
-		return ctx
+	// queries can be served concurrently off the direct gRPC path; initOnce is
+	// nil when tests construct queryServer literals directly
+	if s.initOnce != nil {
+		s.initOnce.Do(func() {
+			initManager(ctx, s.mgr) // NOOP except regtest
+		})
 	}
-	initManager(ctx, s.mgr) // NOOP except regtest
-	s.regInit = true
 	return ctx
 }
 
 func checkHeightParam(height string) error {
 	if len(height) > 0 {
-		_, err := strconv.ParseInt(height, 10, 64)
+		parsed, err := strconv.ParseInt(height, 10, 64)
 		if err != nil {
 			return fmt.Errorf("invalid height param, %w", err)
+		}
+		if parsed < 0 {
+			return fmt.Errorf("invalid height param, must not be negative")
 		}
 	}
 	return nil
@@ -156,6 +163,22 @@ func (s *queryServer) SecuredAssets(c context.Context, req *types.QuerySecuredAs
 	}
 	ctx := s.unwrapSdkContext(c)
 	return s.querySecuredAssets(ctx, req)
+}
+
+func (s *queryServer) StableReserve(c context.Context, req *types.QueryStableReserveRequest) (*types.QueryStableReserveResponse, error) {
+	if err := checkHeightParam(req.Height); err != nil {
+		return nil, err
+	}
+	ctx := s.unwrapSdkContext(c)
+	return s.queryStableReserve(ctx, req)
+}
+
+func (s *queryServer) StableReserveContributor(c context.Context, req *types.QueryStableReserveContributorRequest) (*types.QueryStableReserveContributorResponse, error) {
+	if err := checkHeightParam(req.Height); err != nil {
+		return nil, err
+	}
+	ctx := s.unwrapSdkContext(c)
+	return s.queryStableReserveContributor(ctx, req)
 }
 
 func (s *queryServer) Node(c context.Context, req *types.QueryNodeRequest) (*types.QueryNodeResponse, error) {
@@ -395,6 +418,14 @@ func (s *queryServer) SwapQueue(c context.Context, req *types.QuerySwapQueueRequ
 	return s.querySwapQueue(ctx, req)
 }
 
+func (s *queryServer) SwapQueuePaginated(c context.Context, req *types.QuerySwapQueuePaginatedRequest) (*types.QuerySwapQueuePaginatedResponse, error) {
+	if err := checkHeightParam(req.Height); err != nil {
+		return nil, err
+	}
+	ctx := s.unwrapSdkContext(c)
+	return s.querySwapQueuePaginated(ctx, req)
+}
+
 func (s *queryServer) SwapDetails(c context.Context, req *types.QuerySwapDetailsRequest) (*types.QuerySwapDetailsResponse, error) {
 	if err := checkHeightParam(req.Height); err != nil {
 		return nil, err
@@ -441,6 +472,32 @@ func (s *queryServer) Vault(c context.Context, req *types.QueryVaultRequest) (*t
 	}
 	ctx := s.unwrapSdkContext(c)
 	return s.queryVault(ctx, req)
+}
+
+// KeysignParty returns the signer eligibility policy for a vault at the
+// requested THORChain signing height.
+func (s *queryServer) KeysignParty(c context.Context, req *types.QueryKeysignPartyRequest) (*types.QueryKeysignPartyResponse, error) {
+	if err := checkHeightParam(req.SigningHeight); err != nil {
+		return nil, err
+	}
+	ctx := s.unwrapSdkContext(c)
+	return s.queryKeysignParty(ctx, req)
+}
+
+func (s *queryServer) XMRSpentOutputRefs(c context.Context, req *types.QueryXMRSpentOutputRefsRequest) (*types.QueryXMRSpentOutputRefsResponse, error) {
+	if err := checkHeightParam(req.Height); err != nil {
+		return nil, err
+	}
+	ctx := s.unwrapSdkContext(c)
+	return s.queryXMRSpentOutputRefs(ctx, req)
+}
+
+func (s *queryServer) SolVaultNonce(c context.Context, req *types.QuerySolVaultNonceRequest) (*types.QuerySolVaultNonceResponse, error) {
+	if err := checkHeightParam(req.Height); err != nil {
+		return nil, err
+	}
+	ctx := s.unwrapSdkContext(c)
+	return s.querySolVaultNonce(ctx, req)
 }
 
 func (s *queryServer) AsgardVaults(c context.Context, req *types.QueryAsgardVaultsRequest) (*types.QueryAsgardVaultsResponse, error) {
@@ -663,6 +720,14 @@ func (s *queryServer) TCYClaimers(c context.Context, req *types.QueryTCYClaimers
 	}
 	ctx := s.unwrapSdkContext(c)
 	return s.queryTCYClaimers(ctx, req)
+}
+
+func (s *queryServer) TCYProtocolOwned(c context.Context, req *types.QueryTCYProtocolOwnedRequest) (*types.QueryTCYProtocolOwnedResponse, error) {
+	if err := checkHeightParam(req.Height); err != nil {
+		return nil, err
+	}
+	ctx := s.unwrapSdkContext(c)
+	return s.queryTCYProtocolOwned(ctx, req)
 }
 
 func (s *queryServer) OraclePrices(c context.Context, req *types.QueryOraclePricesRequest) (*types.QueryOraclePricesResponse, error) {

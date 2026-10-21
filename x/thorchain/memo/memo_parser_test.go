@@ -28,10 +28,11 @@ func (s *MemoParserSuite) TestTxTypeIsInbound(c *C) {
 	inboundTypes := []TxType{
 		TxAdd, TxWithdraw, TxSwap, TxLimitSwap, TxModifyLimitSwap,
 		TxDonate, TxBond, TxUnbond, TxRebond, TxLeave, TxMaint,
-		TxReserve, TxNoOp, TxTHORName, TxExec, TxSwitch,
+		TxReserve, TxNoOp, TxTHORName, TxSwitch,
 		TxTradeAccountDeposit, TxTradeAccountWithdrawal,
 		TxRunePoolDeposit, TxRunePoolWithdraw,
 		TxSecuredAssetDeposit, TxSecuredAssetWithdraw,
+		TxStableReserveDeposit, TxStableReserveWithdraw,
 		TxReferenceWriteMemo, TxReferenceReadMemo,
 		TxTCYClaim, TxTCYStake, TxTCYUnstake, TxOperatorRotate,
 	}
@@ -72,7 +73,7 @@ func (s *MemoParserSuite) TestTxTypeIsInternal(c *C) {
 
 func (s *MemoParserSuite) TestTxTypeHasOutbound(c *C) {
 	// Types without outbound
-	noOutbound := []TxType{TxAdd, TxBond, TxTradeAccountDeposit, TxSecuredAssetDeposit, TxRunePoolDeposit, TxDonate, TxReserve, TxMigrate, TxMaint, TxRagnarok}
+	noOutbound := []TxType{TxAdd, TxBond, TxTradeAccountDeposit, TxSecuredAssetDeposit, TxStableReserveDeposit, TxRunePoolDeposit, TxDonate, TxReserve, TxMigrate, TxMaint, TxBondYield, TxRagnarok}
 	for _, tt := range noOutbound {
 		c.Check(tt.HasOutbound(), Equals, false, Commentf("%s should not have outbound", tt.String()))
 	}
@@ -132,13 +133,12 @@ func (s *MemoParserSuite) TestStringToTxType(c *C) {
 		"secure-":   TxSecuredAssetWithdraw,
 		"pool+":     TxRunePoolDeposit,
 		"pool-":     TxRunePoolWithdraw,
-		"x":         TxExec, "exec": TxExec,
-		"switch":   TxSwitch,
-		"tcy":      TxTCYClaim,
-		"tcy+":     TxTCYStake,
-		"tcy-":     TxTCYUnstake,
-		"maint":    TxMaint,
-		"operator": TxOperatorRotate,
+		"switch":    TxSwitch,
+		"tcy":       TxTCYClaim,
+		"tcy+":      TxTCYStake,
+		"tcy-":      TxTCYUnstake,
+		"maint":     TxMaint,
+		"operator":  TxOperatorRotate,
 	}
 	for s, expected := range tests {
 		result, err := StringToTxType(s)
@@ -321,24 +321,6 @@ func (s *MemoParserSuite) TestParserGetTxID(c *C) {
 	c.Check(len(p.errs), Equals, 0)
 }
 
-func (s *MemoParserSuite) TestParserGetBase64Bytes(c *C) {
-	p := parser{parts: []string{"SGVsbG8=", "not_base64!!!"}, errs: make([]error, 0)}
-
-	result := p.getBase64Bytes(0, false, nil)
-	c.Check(string(result), Equals, "Hello")
-
-	p.errs = make([]error, 0)
-	result = p.getBase64Bytes(1, true, []byte("default"))
-	c.Check(string(result), Equals, "default")
-	c.Check(len(p.errs), Equals, 1)
-
-	// Out of bounds: get(5) returns "", base64.DecodeString("") returns empty []byte
-	p.errs = make([]error, 0)
-	result = p.getBase64Bytes(5, false, []byte("def"))
-	c.Check(len(result), Equals, 0) // empty base64 decodes to empty bytes
-	c.Check(len(p.errs), Equals, 0)
-}
-
 func (s *MemoParserSuite) TestParserGetAccAddress(c *C) {
 	types.SetupConfigForTest()
 	addr := types.GetRandomBech32Addr()
@@ -485,6 +467,33 @@ func (s *MemoParserSuite) TestParseTradeTarget(c *C) {
 
 	_, err = parseTradeTarget("notanumber")
 	c.Assert(err, NotNil)
+
+	// boundary: 1e77 is the largest power of ten that still fits in a 256-bit Uint
+	result, err = parseTradeTarget("1e77")
+	c.Assert(err, IsNil)
+	c.Check(result.IsZero(), Equals, false)
+
+	// magnitude guard: values beyond 2^256-1 must error rather than allocate the
+	// full integer. 1e80 is just over the boundary; 1e300000000 is the DoS payload
+	// that would otherwise materialize a ~118MB big.Int before being rejected.
+	_, err = parseTradeTarget("1e80")
+	c.Assert(err, NotNil)
+
+	_, err = parseTradeTarget("1e300000000")
+	c.Assert(err, NotNil)
+
+	// overflow guard: an exponent past int32 parses to +Inf without error, and
+	// big.Float.Int leaves the destination at zero for Inf. That must be an
+	// error, not a silent zero limit (zero means "no price protection").
+	_, err = parseTradeTarget("1e700000000")
+	c.Assert(err, NotNil)
+
+	// sign guard: NewUintFromBigInt panics on negatives; reject them as an error.
+	_, err = parseTradeTarget("-1")
+	c.Assert(err, NotNil)
+
+	_, err = parseTradeTarget("-1e80")
+	c.Assert(err, NotNil)
 }
 
 // ============================================================
@@ -629,6 +638,16 @@ func (s *MemoParserSuite) TestParseMemoWithoutKeeper(c *C) {
 	c.Assert(err, IsNil)
 	c.Check(memo.IsType(TxSecuredAssetWithdraw), Equals, true)
 
+	// Stable reserve deposit
+	memo, err = ParseMemo(v, "stable+")
+	c.Assert(err, IsNil)
+	c.Check(memo.IsType(TxStableReserveDeposit), Equals, true)
+
+	// Stable reserve withdraw
+	memo, err = ParseMemo(v, "stable-:12345678")
+	c.Assert(err, IsNil)
+	c.Check(memo.IsType(TxStableReserveWithdraw), Equals, true)
+
 	// Trade deposit
 	memo, err = ParseMemo(v, fmt.Sprintf("trade+:%s", addr))
 	c.Assert(err, IsNil)
@@ -644,11 +663,6 @@ func (s *MemoParserSuite) TestParseMemoWithoutKeeper(c *C) {
 	memo, err = ParseMemo(v, fmt.Sprintf("switch:%s", addr))
 	c.Assert(err, IsNil)
 	c.Check(memo.IsType(TxSwitch), Equals, true)
-
-	// Exec
-	memo, err = ParseMemo(v, "x:"+addr.String()+":AA==")
-	c.Assert(err, IsNil)
-	c.Check(memo.IsType(TxExec), Equals, true)
 
 	// TCY claim
 	memo, err = ParseMemo(v, fmt.Sprintf("tcy:%s", thorAddr))
@@ -912,15 +926,6 @@ func (s *MemoParserSuite) TestManageTHORNameMemoGetters(c *C) {
 	c.Check(m.GetBlockExpire(), Equals, int64(100))
 }
 
-func (s *MemoParserSuite) TestExecMemoGetters(c *C) {
-	types.SetupConfigForTest()
-	addr := types.GetRandomBech32Addr()
-	msg := []byte("hello")
-	m := NewExecMemo(addr, msg)
-	c.Check(m.GetAccAddress().String(), Equals, addr.String())
-	c.Check(m.String(), Matches, "x:.*:aGVsbG8=")
-}
-
 func (s *MemoParserSuite) TestSwitchMemoGetter(c *C) {
 	types.SetupConfigForTest()
 	addr := types.GetRandomBech32Addr()
@@ -952,6 +957,16 @@ func (s *MemoParserSuite) TestSecuredAssetMemoGetters(c *C) {
 	thorAddr := types.GetRandomTHORAddress()
 	wd := NewSecuredAssetWithdrawMemo(thorAddr)
 	c.Check(wd.GetAddress(), Equals, thorAddr)
+}
+
+func (s *MemoParserSuite) TestStableReserveMemoGetters(c *C) {
+	dep := NewStableReserveDepositMemo()
+	c.Check(dep.IsType(TxStableReserveDeposit), Equals, true)
+
+	amount := cosmos.NewUint(12345678)
+	wd := NewStableReserveWithdrawMemo(amount)
+	c.Check(wd.IsType(TxStableReserveWithdraw), Equals, true)
+	c.Check(wd.GetAmount().Equal(amount), Equals, true)
 }
 
 func (s *MemoParserSuite) TestRunePoolDepositMemoString(c *C) {
@@ -1098,4 +1113,44 @@ func (s *MemoParserSuite) TestParserGetTHORNameWithoutKeeper(c *C) {
 	p := parser{parts: []string{"thorname"}, errs: make([]error, 0), keeper: nil}
 	tn := p.getTHORName(0, false, types.NewTHORName("", 0, nil), -1)
 	c.Check(tn.Name, Equals, "")
+}
+
+func (s *MemoParserSuite) TestParseAddLiquidityMemoWithExplicitAssetAddress(c *C) {
+	types.SetupConfigForTest()
+	v := semver.MustParse("1.0.0")
+
+	thorAddr := types.GetRandomTHORAddress()
+	xmrAddr := "45v8VYPut8S9wY9fTvn1gKiGN5AMMzsCK9kLNcEpEESygy4vU3Jf3uE4Zyqv2bDLwTToH8ArrsZ3W28kmKUKJkjY8fN9anA"
+
+	// pair address plus explicit asset-chain address (memoless XMR adds)
+	memo, err := ParseMemo(v, "+:XMR.XMR:"+thorAddr.String()+"/"+xmrAddr)
+	c.Assert(err, IsNil)
+	c.Check(memo.IsType(TxAdd), Equals, true)
+	addMemo, ok := memo.(AddLiquidityMemo)
+	c.Assert(ok, Equals, true)
+	c.Check(addMemo.GetDestination().String(), Equals, thorAddr.String())
+	c.Check(addMemo.GetAssetAddress().String(), Equals, xmrAddr)
+	c.Check(addMemo.GetRefundAddress().String(), Equals, xmrAddr)
+
+	// String() round-trips the composite address field
+	reparsed, err := ParseMemo(v, addMemo.String())
+	c.Assert(err, IsNil)
+	reparsedAdd, ok := reparsed.(AddLiquidityMemo)
+	c.Assert(ok, Equals, true)
+	c.Check(reparsedAdd.GetDestination().String(), Equals, thorAddr.String())
+	c.Check(reparsedAdd.GetRefundAddress().String(), Equals, xmrAddr)
+
+	// plain pair address still parses with no refund address
+	memo, err = ParseMemo(v, "+:XMR.XMR:"+thorAddr.String())
+	c.Assert(err, IsNil)
+	addMemo, ok = memo.(AddLiquidityMemo)
+	c.Assert(ok, Equals, true)
+	c.Check(addMemo.GetRefundAddress().IsEmpty(), Equals, true)
+
+	// Other L1 adds retain the existing single-address grammar so an explicitly
+	// supplied asset address is never parsed and then silently ignored.
+	ethAddr := types.GetRandomETHAddress()
+	ethPairAddr := types.GetRandomTHORAddress()
+	_, err = ParseMemo(v, "+:ETH.ETH:"+ethPairAddr.String()+"/"+ethAddr.String())
+	c.Assert(err, NotNil)
 }

@@ -7,13 +7,13 @@ import (
 	"sync"
 	"time"
 
-	bcrypto "github.com/binance-chain/tss-lib/crypto"
-	bkg "github.com/binance-chain/tss-lib/ecdsa/keygen"
-	"github.com/binance-chain/tss-lib/tss"
-	btss "github.com/binance-chain/tss-lib/tss"
 	tcrypto "github.com/cometbft/cometbft/crypto"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
+	bcrypto "gitlab.com/thorchain/tss/tss-lib-private.git/v3/crypto"
+	bkg "gitlab.com/thorchain/tss/tss-lib-private.git/v3/ecdsa/keygen"
+	"gitlab.com/thorchain/tss/tss-lib-private.git/v3/tss"
+	btss "gitlab.com/thorchain/tss/tss-lib-private.git/v3/tss"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/p2p"
 	"gitlab.com/thorchain/thornode/v3/bifrost/p2p/conversion"
@@ -88,9 +88,24 @@ func (tKeyGen *TssKeyGen) GenerateNewKey(keygenReq keygen.Request) (*bcrypto.ECP
 	keyGenPartyMap := new(sync.Map)
 	ctx := btss.NewPeerContext(partiesID)
 	params := btss.NewParameters(tss.S256(), ctx, localPartyID, len(partiesID), threshold)
+	// Bind the SSID to this ceremony so proofs cannot be replayed across
+	// sessions; the nonce must be byte-identical on every participant, so it
+	// is version-gated to activate on the whole network at once.
+	if common.SessionNonceEnabled(keygenReq.Version) {
+		params.SetSessionNonce(common.KeygenSessionNonce(keygenReq.Keys, keygenReq.BlockHeight, string(keygenReq.Algo)))
+	}
+	// Abort if either Paillier-Blum (Π-mod) modulus proofs or Π-fac
+	// (factor-existence) proofs have been disabled — a keyshare produced
+	// without them is unsafe to use.
+	if params.NoProofMod() {
+		return nil, errors.New("keygen aborted: Paillier-Blum (ModProof) verification is disabled for N/NTilde")
+	}
+	if params.NoProofFac() {
+		return nil, errors.New("keygen aborted: Π-fac (factor-existence) proof verification is disabled")
+	}
 	bufferSize := len(partiesID) * 10 // buffer size for outCh and endCh
 	outCh := make(chan btss.Message, bufferSize)
-	endCh := make(chan bkg.LocalPartySaveData, bufferSize)
+	endCh := make(chan *bkg.LocalPartySaveData, bufferSize)
 	errChan := make(chan struct{})
 	if tKeyGen.preParams == nil {
 		tKeyGen.logger.Error().Err(err).Msg("error, empty pre-parameters")
@@ -149,7 +164,7 @@ func (tKeyGen *TssKeyGen) GenerateNewKey(keygenReq keygen.Request) (*bcrypto.ECP
 
 func (tKeyGen *TssKeyGen) processKeyGen(errChan chan struct{},
 	outCh <-chan btss.Message,
-	endCh <-chan bkg.LocalPartySaveData,
+	endCh <-chan *bkg.LocalPartySaveData,
 	keyGenLocalStateItem storage.KeygenLocalState,
 ) (*bcrypto.ECPoint, error) {
 	defer tKeyGen.logger.Debug().Msg("finished keygen process")
@@ -169,7 +184,7 @@ func (tKeyGen *TssKeyGen) processKeyGen(errChan chan struct{},
 			// we bail out after KeyGenTimeoutSeconds
 			tKeyGen.logger.Error().Msgf("fail to generate message with %s", tssConf.KeyGenTimeout.String())
 			lastMsg := blameMgr.GetLastMsg()
-			failReason := blameMgr.GetBlame().FailReason
+			failReason := blameMgr.GetBlame().GetFailReason()
 			if failReason == "" {
 				failReason = blame.TssTimeout
 			}
@@ -198,14 +213,14 @@ func (tKeyGen *TssKeyGen) processKeyGen(errChan chan struct{},
 			blameMgr.GetBlame().AddBlameNodes(blameNodesBroadcast...)
 
 			// if we cannot find the blame node, we check whether everyone send me the share
-			if len(blameMgr.GetBlame().BlameNodes) == 0 {
+			if blameMgr.GetBlame().BlameNodesCount() == 0 {
 				blameNodesMisingShare, isUnicast, err := blameMgr.TssMissingShareBlame(messages.TSSKEYGENROUNDS, messages.ECDSAKEYGEN)
 				if err != nil {
 					tKeyGen.logger.Error().Err(err).Msg("fail to get the node of missing share ")
 				}
 				if len(blameNodesMisingShare) > 0 && len(blameNodesMisingShare) <= threshold {
 					blameMgr.GetBlame().AddBlameNodes(blameNodesMisingShare...)
-					blameMgr.GetBlame().IsUnicast = isUnicast
+					blameMgr.GetBlame().SetIsUnicast(isUnicast)
 				}
 			}
 			return nil, blame.ErrTssTimeOut

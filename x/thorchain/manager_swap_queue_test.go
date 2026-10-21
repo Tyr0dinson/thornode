@@ -1,6 +1,8 @@
 package thorchain
 
 import (
+	"strings"
+
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -22,6 +24,40 @@ func (s *ManagerSwapQueueSuite) TestGenTradePair(c *C) {
 
 	c.Assert(pair.source.Equals(source), Equals, true)
 	c.Assert(pair.target.Equals(target), Equals, true)
+}
+
+func (s *ManagerSwapQueueSuite) TestSwapItemsSortEqualFeeTieBreakers(c *C) {
+	txA := common.TxID("AA00000000000000000000000000000000000000000000000000000000000000")
+	txB := common.TxID("BB00000000000000000000000000000000000000000000000000000000000000")
+	txC := common.TxID("CC00000000000000000000000000000000000000000000000000000000000000")
+	fee := cosmos.NewUint(100)
+
+	items := swapItems{
+		{index: 2, msg: MsgSwap{Tx: common.Tx{ID: txB}}, fee: fee},
+		{index: 3, msg: MsgSwap{Tx: common.Tx{ID: txA}}, fee: fee},
+		{index: 1, msg: MsgSwap{Tx: common.Tx{ID: txA}}, fee: fee},
+		{index: 0, msg: MsgSwap{Tx: common.Tx{ID: txC}}, fee: fee},
+		{index: 0, msg: MsgSwap{Tx: common.Tx{ID: txA}}, fee: fee},
+	}
+
+	sorted := items.Sort()
+
+	expected := []struct {
+		txID  common.TxID
+		index int
+	}{
+		{txID: txA, index: 0},
+		{txID: txA, index: 1},
+		{txID: txA, index: 3},
+		{txID: txB, index: 2},
+		{txID: txC, index: 0},
+	}
+	c.Assert(sorted, HasLen, len(expected))
+	for i, exp := range expected {
+		c.Check(sorted[i].msg.Tx.ID.Equals(exp.txID), Equals, true, Commentf("index %d", i))
+		c.Check(sorted[i].index, Equals, exp.index, Commentf("index %d", i))
+	}
+	c.Check(items[0].msg.Tx.ID.Equals(txB), Equals, true, Commentf("Sort should return a copy"))
 }
 
 // TestTradePairString tests the String method of tradePair
@@ -321,11 +357,76 @@ func (s *ManagerSwapQueueSuite) TestSwapItemGetHash(c *C) {
 		msg:   *msg,
 		index: 0,
 		fee:   cosmos.ZeroUint(),
-		slip:  cosmos.ZeroUint(),
 	}
 
 	// Test GetHash returns the transaction ID
 	actualHash := item.GetHash()
 	c.Assert(actualHash.Equals(expectedHash), Equals, true)
 	c.Assert(actualHash.String(), Equals, expectedHash.String())
+}
+
+// findMatchingTradesRef is the pre-optimization implementation. It is kept as
+// a behavior oracle because the todo slice order affects limit-swap discovery.
+func (p tradePairs) findMatchingTradesRef(trade tradePair, pairs tradePairs) tradePairs {
+	var comp func(pair tradePair) bool
+	switch {
+	case trade.source.IsRune():
+		comp = func(pair tradePair) bool { return pair.source.Equals(trade.target) }
+	case trade.target.IsRune():
+		comp = func(pair tradePair) bool { return pair.target.Equals(trade.source) }
+	default:
+		comp = func(pair tradePair) bool {
+			return pair.source.Equals(trade.target) || pair.target.Equals(trade.source)
+		}
+	}
+	for _, pair := range pairs {
+		if comp(pair) {
+			p = p.Append(pair)
+		}
+	}
+	return p
+}
+
+func (s *ManagerSwapQueueSuite) TestFindMatchingTradesMatchesReference(c *C) {
+	assets := benchAssets(8)
+	pairs := benchPairs(assets)
+	index := newTradePairIndex(pairs)
+	todo := make(tradePairs, 0)
+	seen := make(tradePairSet)
+	indexed := make(tradePairs, 0)
+	indexedSeen := make(tradePairSet)
+	ref := make(tradePairs, 0)
+
+	for i := 0; i < 40; i++ {
+		source := assets[i%len(assets)]
+		target := assets[(i*3+1)%len(assets)]
+		if source.Equals(target) {
+			target = assets[(i*3+2)%len(assets)]
+		}
+		trade := genTradePair(source, target)
+		todo = todo.findMatchingTrades(trade, pairs, seen)
+		indexed = indexed.findMatchingTradesIndexed(trade, index, indexedSeen)
+		ref = ref.findMatchingTradesRef(trade, pairs)
+
+		c.Assert(todo, DeepEquals, ref, Commentf("swap %d", i))
+		c.Assert(indexed, DeepEquals, ref, Commentf("indexed swap %d", i))
+		c.Assert(len(seen), Equals, len(todo), Commentf("swap %d: seen out of sync", i))
+		c.Assert(len(indexedSeen), Equals, len(indexed), Commentf("indexed swap %d: seen out of sync", i))
+	}
+
+	c.Assert(len(todo) < 40*len(pairs), Equals, true)
+	c.Assert(len(todo) > 0, Equals, true)
+
+	// Exact-key lookup intentionally falls back to Asset.Equals for any
+	// non-canonical historical value.
+	lowerETH := common.ETHAsset
+	lowerETH.Chain = common.Chain(strings.ToLower(lowerETH.Chain.String()))
+	lowerETH.Symbol = common.Symbol(strings.ToLower(lowerETH.Symbol.String()))
+	lowerETH.Ticker = common.Ticker(strings.ToLower(lowerETH.Ticker.String()))
+	trade := genTradePair(common.RuneAsset(), lowerETH)
+	indexed = nil
+	ref = nil
+	indexed = indexed.findMatchingTradesIndexed(trade, index, make(tradePairSet))
+	ref = ref.findMatchingTradesRef(trade, pairs)
+	c.Assert(indexed, DeepEquals, ref)
 }

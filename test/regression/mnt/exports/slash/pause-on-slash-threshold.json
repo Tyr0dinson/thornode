@@ -65,6 +65,17 @@
           "permissions": []
         },
         {
+          "@type": "/cosmos.auth.v1beta1.ModuleAccount",
+          "base_account": {
+            "account_number": "9",
+            "address": "tthor102ae04vpk6v2tvjgzdsc2s7ncnptj6pwz0pg2k",
+            "pub_key": null,
+            "sequence": "0"
+          },
+          "name": "stable_reserve",
+          "permissions": []
+        },
+        {
           "@type": "/cosmos.auth.v1beta1.BaseAccount",
           "account_number": "8",
           "address": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
@@ -112,9 +123,6 @@
         "tx_size_cost_per_byte": "10"
       }
     },
-    "authz": {
-      "authorization": []
-    },
     "bank": {
       "balances": [
         {
@@ -139,7 +147,7 @@
           "address": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
           "coins": [
             {
-              "amount": "35009864422044",
+              "amount": "35009831567905",
               "denom": "rune"
             }
           ]
@@ -166,7 +174,7 @@
           "address": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
           "coins": [
             {
-              "amount": "4970822062215",
+              "amount": "4970854916354",
               "denom": "rune"
             }
           ]
@@ -295,13 +303,7 @@
       "network": {
         "LPIncomeSplit": "8925",
         "NodeIncomeSplit": "1075",
-        "bond_reward_rune": "455123",
-        "chain_income": [
-          {
-            "amount": "226300631",
-            "chain": "ETH"
-          }
-        ],
+        "bond_reward_rune": "226755753",
         "total_bond_units": "4"
       },
       "network_fees": [
@@ -326,7 +328,7 @@
       "node_accounts": [
         {
           "active_block_height": "1",
-          "bond": "4970595306461",
+          "bond": "4970628160601",
           "bond_address": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
           "ip_address": "1.1.1.1",
           "node_address": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
@@ -411,7 +413,6 @@
           "asset": "ETH.USDX-0X9999999999999999999999999999999999999999"
         }
       ],
-      "pol_reserve_deposits": [],
       "pools": [
         {
           "LP_units": "100000000000",
@@ -479,6 +480,7 @@
       },
       "rune_providers": [],
       "secured_assets": [],
+      "sol_vault_nonces": [],
       "streaming_swaps": [],
       "swap_queue_items": [],
       "swapper_clout": [

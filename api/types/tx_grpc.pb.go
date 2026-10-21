@@ -20,47 +20,44 @@ import (
 const _ = grpc.SupportPackageIsVersion7
 
 const (
-	Msg_AddNodeChainSupport_FullMethodName    = "/types.Msg/AddNodeChainSupport"
-	Msg_RemoveNodeChainSupport_FullMethodName = "/types.Msg/RemoveNodeChainSupport"
-	Msg_Ban_FullMethodName                    = "/types.Msg/Ban"
-	Msg_Deposit_FullMethodName                = "/types.Msg/Deposit"
-	Msg_ErrataTx_FullMethodName               = "/types.Msg/ErrataTx"
-	Msg_ErrataTxQuorum_FullMethodName         = "/types.Msg/ErrataTxQuorum"
-	Msg_Mimir_FullMethodName                  = "/types.Msg/Mimir"
-	Msg_NetworkFee_FullMethodName             = "/types.Msg/NetworkFee"
-	Msg_NetworkFeeQuorum_FullMethodName       = "/types.Msg/NetworkFeeQuorum"
-	Msg_NodePauseChain_FullMethodName         = "/types.Msg/NodePauseChain"
-	Msg_ObservedTxIn_FullMethodName           = "/types.Msg/ObservedTxIn"
-	Msg_ObservedTxOut_FullMethodName          = "/types.Msg/ObservedTxOut"
-	Msg_ObservedTxQuorum_FullMethodName       = "/types.Msg/ObservedTxQuorum"
-	Msg_ThorSend_FullMethodName               = "/types.Msg/ThorSend"
-	Msg_SetIPAddress_FullMethodName           = "/types.Msg/SetIPAddress"
-	Msg_SetNodeKeys_FullMethodName            = "/types.Msg/SetNodeKeys"
-	Msg_Solvency_FullMethodName               = "/types.Msg/Solvency"
-	Msg_SolvencyQuorum_FullMethodName         = "/types.Msg/SolvencyQuorum"
-	Msg_TssKeysignFail_FullMethodName         = "/types.Msg/TssKeysignFail"
-	Msg_TssPool_FullMethodName                = "/types.Msg/TssPool"
-	Msg_SetVersion_FullMethodName             = "/types.Msg/SetVersion"
-	Msg_ProposeUpgrade_FullMethodName         = "/types.Msg/ProposeUpgrade"
-	Msg_ApproveUpgrade_FullMethodName         = "/types.Msg/ApproveUpgrade"
-	Msg_RejectUpgrade_FullMethodName          = "/types.Msg/RejectUpgrade"
-	Msg_PriceFeedQuorumBatch_FullMethodName   = "/types.Msg/PriceFeedQuorumBatch"
-	Msg_StoreCode_FullMethodName              = "/types.Msg/StoreCode"
-	Msg_InstantiateContract_FullMethodName    = "/types.Msg/InstantiateContract"
-	Msg_InstantiateContract2_FullMethodName   = "/types.Msg/InstantiateContract2"
-	Msg_ExecuteContract_FullMethodName        = "/types.Msg/ExecuteContract"
-	Msg_MigrateContract_FullMethodName        = "/types.Msg/MigrateContract"
-	Msg_SudoContract_FullMethodName           = "/types.Msg/SudoContract"
-	Msg_UpdateAdmin_FullMethodName            = "/types.Msg/UpdateAdmin"
-	Msg_ClearAdmin_FullMethodName             = "/types.Msg/ClearAdmin"
+	Msg_Ban_FullMethodName                  = "/types.Msg/Ban"
+	Msg_Deposit_FullMethodName              = "/types.Msg/Deposit"
+	Msg_ErrataTx_FullMethodName             = "/types.Msg/ErrataTx"
+	Msg_ErrataTxQuorum_FullMethodName       = "/types.Msg/ErrataTxQuorum"
+	Msg_Mimir_FullMethodName                = "/types.Msg/Mimir"
+	Msg_NetworkFee_FullMethodName           = "/types.Msg/NetworkFee"
+	Msg_NetworkFeeQuorum_FullMethodName     = "/types.Msg/NetworkFeeQuorum"
+	Msg_NodePauseChain_FullMethodName       = "/types.Msg/NodePauseChain"
+	Msg_ObservedTxIn_FullMethodName         = "/types.Msg/ObservedTxIn"
+	Msg_ObservedTxOut_FullMethodName        = "/types.Msg/ObservedTxOut"
+	Msg_ObservedTxQuorum_FullMethodName     = "/types.Msg/ObservedTxQuorum"
+	Msg_ThorSend_FullMethodName             = "/types.Msg/ThorSend"
+	Msg_SetIPAddress_FullMethodName         = "/types.Msg/SetIPAddress"
+	Msg_SetNodeKeys_FullMethodName          = "/types.Msg/SetNodeKeys"
+	Msg_Solvency_FullMethodName             = "/types.Msg/Solvency"
+	Msg_SolvencyQuorum_FullMethodName       = "/types.Msg/SolvencyQuorum"
+	Msg_SolNonceAttest_FullMethodName       = "/types.Msg/SolNonceAttest"
+	Msg_TssKeysignFail_FullMethodName       = "/types.Msg/TssKeysignFail"
+	Msg_TssPool_FullMethodName              = "/types.Msg/TssPool"
+	Msg_SetVersion_FullMethodName           = "/types.Msg/SetVersion"
+	Msg_ProposeUpgrade_FullMethodName       = "/types.Msg/ProposeUpgrade"
+	Msg_ApproveUpgrade_FullMethodName       = "/types.Msg/ApproveUpgrade"
+	Msg_RejectUpgrade_FullMethodName        = "/types.Msg/RejectUpgrade"
+	Msg_PriceFeedQuorumBatch_FullMethodName = "/types.Msg/PriceFeedQuorumBatch"
+	Msg_StoreCode_FullMethodName            = "/types.Msg/StoreCode"
+	Msg_InstantiateContract_FullMethodName  = "/types.Msg/InstantiateContract"
+	Msg_InstantiateContract2_FullMethodName = "/types.Msg/InstantiateContract2"
+	Msg_ExecuteContract_FullMethodName      = "/types.Msg/ExecuteContract"
+	Msg_MigrateContract_FullMethodName      = "/types.Msg/MigrateContract"
+	Msg_SudoContract_FullMethodName         = "/types.Msg/SudoContract"
+	Msg_UpdateAdmin_FullMethodName          = "/types.Msg/UpdateAdmin"
+	Msg_ClearAdmin_FullMethodName           = "/types.Msg/ClearAdmin"
 )
 
 // MsgClient is the client API for Msg service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type MsgClient interface {
-	AddNodeChainSupport(ctx context.Context, in *MsgAddNodeChainSupport, opts ...grpc.CallOption) (*MsgEmpty, error)
-	RemoveNodeChainSupport(ctx context.Context, in *MsgRemoveNodeChainSupport, opts ...grpc.CallOption) (*MsgEmpty, error)
 	Ban(ctx context.Context, in *MsgBan, opts ...grpc.CallOption) (*MsgEmpty, error)
 	Deposit(ctx context.Context, in *MsgDeposit, opts ...grpc.CallOption) (*MsgEmpty, error)
 	ErrataTx(ctx context.Context, in *MsgErrataTx, opts ...grpc.CallOption) (*MsgEmpty, error)
@@ -77,6 +74,7 @@ type MsgClient interface {
 	SetNodeKeys(ctx context.Context, in *MsgSetNodeKeys, opts ...grpc.CallOption) (*MsgEmpty, error)
 	Solvency(ctx context.Context, in *MsgSolvency, opts ...grpc.CallOption) (*MsgEmpty, error)
 	SolvencyQuorum(ctx context.Context, in *MsgSolvencyQuorum, opts ...grpc.CallOption) (*MsgEmpty, error)
+	SolNonceAttest(ctx context.Context, in *MsgSolNonceAttest, opts ...grpc.CallOption) (*MsgEmpty, error)
 	TssKeysignFail(ctx context.Context, in *MsgTssKeysignFail, opts ...grpc.CallOption) (*MsgEmpty, error)
 	TssPool(ctx context.Context, in *MsgTssPool, opts ...grpc.CallOption) (*MsgEmpty, error)
 	SetVersion(ctx context.Context, in *MsgSetVersion, opts ...grpc.CallOption) (*MsgEmpty, error)
@@ -103,24 +101,6 @@ type msgClient struct {
 
 func NewMsgClient(cc grpc.ClientConnInterface) MsgClient {
 	return &msgClient{cc}
-}
-
-func (c *msgClient) AddNodeChainSupport(ctx context.Context, in *MsgAddNodeChainSupport, opts ...grpc.CallOption) (*MsgEmpty, error) {
-	out := new(MsgEmpty)
-	err := c.cc.Invoke(ctx, Msg_AddNodeChainSupport_FullMethodName, in, out, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *msgClient) RemoveNodeChainSupport(ctx context.Context, in *MsgRemoveNodeChainSupport, opts ...grpc.CallOption) (*MsgEmpty, error) {
-	out := new(MsgEmpty)
-	err := c.cc.Invoke(ctx, Msg_RemoveNodeChainSupport_FullMethodName, in, out, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
 }
 
 func (c *msgClient) Ban(ctx context.Context, in *MsgBan, opts ...grpc.CallOption) (*MsgEmpty, error) {
@@ -267,6 +247,15 @@ func (c *msgClient) SolvencyQuorum(ctx context.Context, in *MsgSolvencyQuorum, o
 	return out, nil
 }
 
+func (c *msgClient) SolNonceAttest(ctx context.Context, in *MsgSolNonceAttest, opts ...grpc.CallOption) (*MsgEmpty, error) {
+	out := new(MsgEmpty)
+	err := c.cc.Invoke(ctx, Msg_SolNonceAttest_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *msgClient) TssKeysignFail(ctx context.Context, in *MsgTssKeysignFail, opts ...grpc.CallOption) (*MsgEmpty, error) {
 	out := new(MsgEmpty)
 	err := c.cc.Invoke(ctx, Msg_TssKeysignFail_FullMethodName, in, out, opts...)
@@ -406,8 +395,6 @@ func (c *msgClient) ClearAdmin(ctx context.Context, in *types.MsgClearAdmin, opt
 // All implementations must embed UnimplementedMsgServer
 // for forward compatibility
 type MsgServer interface {
-	AddNodeChainSupport(context.Context, *MsgAddNodeChainSupport) (*MsgEmpty, error)
-	RemoveNodeChainSupport(context.Context, *MsgRemoveNodeChainSupport) (*MsgEmpty, error)
 	Ban(context.Context, *MsgBan) (*MsgEmpty, error)
 	Deposit(context.Context, *MsgDeposit) (*MsgEmpty, error)
 	ErrataTx(context.Context, *MsgErrataTx) (*MsgEmpty, error)
@@ -424,6 +411,7 @@ type MsgServer interface {
 	SetNodeKeys(context.Context, *MsgSetNodeKeys) (*MsgEmpty, error)
 	Solvency(context.Context, *MsgSolvency) (*MsgEmpty, error)
 	SolvencyQuorum(context.Context, *MsgSolvencyQuorum) (*MsgEmpty, error)
+	SolNonceAttest(context.Context, *MsgSolNonceAttest) (*MsgEmpty, error)
 	TssKeysignFail(context.Context, *MsgTssKeysignFail) (*MsgEmpty, error)
 	TssPool(context.Context, *MsgTssPool) (*MsgEmpty, error)
 	SetVersion(context.Context, *MsgSetVersion) (*MsgEmpty, error)
@@ -449,12 +437,6 @@ type MsgServer interface {
 type UnimplementedMsgServer struct {
 }
 
-func (UnimplementedMsgServer) AddNodeChainSupport(context.Context, *MsgAddNodeChainSupport) (*MsgEmpty, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method AddNodeChainSupport not implemented")
-}
-func (UnimplementedMsgServer) RemoveNodeChainSupport(context.Context, *MsgRemoveNodeChainSupport) (*MsgEmpty, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method RemoveNodeChainSupport not implemented")
-}
 func (UnimplementedMsgServer) Ban(context.Context, *MsgBan) (*MsgEmpty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Ban not implemented")
 }
@@ -502,6 +484,9 @@ func (UnimplementedMsgServer) Solvency(context.Context, *MsgSolvency) (*MsgEmpty
 }
 func (UnimplementedMsgServer) SolvencyQuorum(context.Context, *MsgSolvencyQuorum) (*MsgEmpty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SolvencyQuorum not implemented")
+}
+func (UnimplementedMsgServer) SolNonceAttest(context.Context, *MsgSolNonceAttest) (*MsgEmpty, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SolNonceAttest not implemented")
 }
 func (UnimplementedMsgServer) TssKeysignFail(context.Context, *MsgTssKeysignFail) (*MsgEmpty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method TssKeysignFail not implemented")
@@ -559,42 +544,6 @@ type UnsafeMsgServer interface {
 
 func RegisterMsgServer(s grpc.ServiceRegistrar, srv MsgServer) {
 	s.RegisterService(&Msg_ServiceDesc, srv)
-}
-
-func _Msg_AddNodeChainSupport_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(MsgAddNodeChainSupport)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(MsgServer).AddNodeChainSupport(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: Msg_AddNodeChainSupport_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(MsgServer).AddNodeChainSupport(ctx, req.(*MsgAddNodeChainSupport))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _Msg_RemoveNodeChainSupport_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(MsgRemoveNodeChainSupport)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(MsgServer).RemoveNodeChainSupport(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: Msg_RemoveNodeChainSupport_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(MsgServer).RemoveNodeChainSupport(ctx, req.(*MsgRemoveNodeChainSupport))
-	}
-	return interceptor(ctx, in, info, handler)
 }
 
 func _Msg_Ban_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -885,6 +834,24 @@ func _Msg_SolvencyQuorum_Handler(srv interface{}, ctx context.Context, dec func(
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Msg_SolNonceAttest_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MsgSolNonceAttest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MsgServer).SolNonceAttest(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Msg_SolNonceAttest_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MsgServer).SolNonceAttest(ctx, req.(*MsgSolNonceAttest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _Msg_TssKeysignFail_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(MsgTssKeysignFail)
 	if err := dec(in); err != nil {
@@ -1163,14 +1130,6 @@ var Msg_ServiceDesc = grpc.ServiceDesc{
 	HandlerType: (*MsgServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
-			MethodName: "AddNodeChainSupport",
-			Handler:    _Msg_AddNodeChainSupport_Handler,
-		},
-		{
-			MethodName: "RemoveNodeChainSupport",
-			Handler:    _Msg_RemoveNodeChainSupport_Handler,
-		},
-		{
 			MethodName: "Ban",
 			Handler:    _Msg_Ban_Handler,
 		},
@@ -1233,6 +1192,10 @@ var Msg_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SolvencyQuorum",
 			Handler:    _Msg_SolvencyQuorum_Handler,
+		},
+		{
+			MethodName: "SolNonceAttest",
+			Handler:    _Msg_SolNonceAttest_Handler,
 		},
 		{
 			MethodName: "TssKeysignFail",

@@ -65,28 +65,46 @@ func (h SolvencyQuorumHandler) handle(ctx cosmos.Context, msg types.MsgSolvencyQ
 	if err != nil {
 		return &cosmos.Result{}, fmt.Errorf("fail to get solvency voter, err: %w", err)
 	}
-	if voter.Empty() {
-		voter = NewSolvencyVoter(s.Id, s.Chain, s.PubKey, s.Coins, s.Height)
-	}
-
-	defer func() {
-		k.SetSolvencyVoter(ctx, voter)
-	}()
-
 	signBz, err := s.GetSignablePayload()
 	if err != nil {
+		// Retrying cannot repair this payload. Acknowledge it so ebifrost can
+		// discard the batch, without writing a voter or consuming any quota.
 		ctx.Logger().Error("fail to marshal solvency sign payload", "error", err)
 		return &cosmos.Result{}, nil
 	}
 
+	// Verify before admitting a new voter. The injected transaction's signer
+	// is a relayer, not the validator whose allowance should be charged.
 	attestations := deduplicateAttestations(msg.QuoSolvency.Attestations, len(active))
+	sigs := preverifyAttestations(active, attestationChecks(attestations, signBz))
+	verified := make([]cosmos.AccAddress, 0, len(attestations))
 	for _, att := range attestations {
-		accAddr, err := verifyQuorumAttestation(active, signBz, att)
-		if err != nil {
-			ctx.Logger().Error("fail to verify quorum solvency attestation", "error", err)
+		accAddr, verifyErr := verifyQuorumAttestation(active, signBz, att, sigs)
+		if verifyErr != nil {
+			ctx.Logger().Error("fail to verify quorum solvency attestation", "error", verifyErr)
 			continue
 		}
+		verified = append(verified, accAddr)
+	}
+	if len(verified) == 0 {
+		// Acknowledge unusable attestations so ebifrost can remove them from
+		// its queue, including signatures from validators that have churned out.
+		// Do not create or update a voter or consume any quota.
+		return &cosmos.Result{}, nil
+	}
 
+	var quota *solvencyVoterQuota
+	if voter.Empty() {
+		quota, err = checkSolvencyVoterQuota(ctx, k, s.Chain, verified)
+		if err != nil {
+			// Failure preserves queued attestations for retry; reporting success
+			// here would make the ebifrost post-handler mark them confirmed.
+			return nil, err
+		}
+		voter = NewSolvencyVoter(s.Id, s.Chain, s.PubKey, s.Coins, s.Height)
+	}
+
+	for _, accAddr := range verified {
 		if err := processSolvencyAttestation(ctx, h.mgr, &voter, accAddr, active, s, false); err != nil {
 			// Propagate the error to prevent persisting a voter in inconsistent state.
 			// This matches the non-quorum handler (handler_solvency.go) and network fee
@@ -95,5 +113,7 @@ func (h SolvencyQuorumHandler) handle(ctx cosmos.Context, msg types.MsgSolvencyQ
 		}
 	}
 
+	k.SetSolvencyVoter(ctx, voter)
+	quota.commit(ctx, k)
 	return &cosmos.Result{}, nil
 }

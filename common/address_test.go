@@ -2,6 +2,7 @@ package common
 
 import (
 	"fmt"
+	"strings"
 
 	. "gopkg.in/check.v1"
 )
@@ -9,6 +10,72 @@ import (
 type AddressSuite struct{}
 
 var _ = Suite(&AddressSuite{})
+
+func (s *AddressSuite) TestCanonicalPreservesOtherAddresses(c *C) {
+	for _, addr := range []Address{
+		NoAddress, NoopAddress,
+		"t1h3iyd8qGvtJZ3V5CYryi5158h9RMkRhMU",
+		"tmEp4k7dSU8eGj32uJPi2wBSGuiNaVFBLN7",
+		"t3cNKv7UpFVqcmRJrvFCMiuzGj9ywpKtDP5",
+		"t2BeXPVjcVq4XDf7dgW4w3mK6ZjoePxy7Gb",
+		"1MirQ9bwyQcGVJPwKUgapu5ouK2E2Ey4gX",
+		"0x90f2b1ae50e6018230e90a33f98c7844a0ab635a",
+		"thor1kljxxccrheghavaw97u78le6yy3sdj7h696nl4",
+	} {
+		c.Check(addr.Canonical(), Equals, addr, Commentf("address: %s", addr))
+	}
+}
+
+func (s *AddressSuite) TestCanonicalPreservesSOLAddressStartingWithTex(c *C) {
+	addr, err := NewAddress("tex" + strings.Repeat("1", 40))
+	c.Assert(err, IsNil)
+	c.Assert(addr.IsChain(SOLChain), Equals, true)
+	c.Assert(addr.IsChain(ZECChain), Equals, false)
+	c.Check(addr.Canonical(), Equals, addr)
+}
+
+func (s *AddressSuite) TestIsCurrentNetwork(c *C) {
+	for _, tc := range []struct {
+		addr  Address
+		chain Chain
+		want  bool
+	}{
+		{"0x90f2b1ae50e6018230e90a33f98c7844a0ab635a", ETHChain, true},
+		{"0x90f2b1ae50e6018230e90a33f98c7844a0ab635a", AVAXChain, true},
+		{"1MirQ9bwyQcGVJPwKUgapu5ouK2E2Ey4gX", BTCChain, CurrentChainNetwork != MockNet},
+		{"mrX9vMRYLfVy1BnZbc5gZjuyaqH3ZW2ZHz", BTCChain, CurrentChainNetwork != MainNet},
+	} {
+		c.Check(tc.addr.IsCurrentNetwork(tc.chain), Equals, tc.want,
+			Commentf("address: %s, chain: %s, network: %s", tc.addr, tc.chain, CurrentChainNetwork))
+	}
+}
+
+// TestAddressEqualsXMRIsCaseSensitive documents that case is part of Monero
+// base58 address identity.
+func (s *AddressSuite) TestAddressEqualsXMRIsCaseSensitive(c *C) {
+	original := Address("4abcDEF")
+	caseVariant := Address("4Abcdef")
+
+	c.Check(AddressEquals(XMRChain, original, original), Equals, true)
+	c.Check(AddressEquals(XMRChain, original, caseVariant), Equals, false)
+	c.Check(AddressEquals(XMRChain, original, Address(" "+original.String())), Equals, false)
+}
+
+// TestAddressEqualsNonXMRPreservesLegacyBehavior protects the case-insensitive
+// fallback used before the chain-aware helper was introduced.
+func (s *AddressSuite) TestAddressEqualsNonXMRPreservesLegacyBehavior(c *C) {
+	c.Check(AddressEquals(BTCChain, Address("legacyAddress"), Address("LEGACYaddress")), Equals, true)
+}
+
+// TestEquivalentAddressesDefersToAddressEquals documents that off the Zcash
+// path the equivalence is exactly AddressEquals - notably the case-sensitive
+// Monero comparison.
+func (s *AddressSuite) TestEquivalentAddressesDefersToAddressEquals(c *C) {
+	c.Check(EquivalentAddresses(XMRChain, Address("4abcDEF"), Address("4abcDEF")), Equals, true)
+	c.Check(EquivalentAddresses(XMRChain, Address("4abcDEF"), Address("4Abcdef")), Equals, false)
+	c.Check(EquivalentAddresses(BTCChain, Address("legacyAddress"), Address("LEGACYaddress")), Equals, true)
+	c.Check(EquivalentAddresses(BTCChain, Address("legacyAddress"), Address("other")), Equals, false)
+}
 
 func (s *AddressSuite) TestAddress(c *C) {
 	c.Assert(AllChains, HasLen, 19)

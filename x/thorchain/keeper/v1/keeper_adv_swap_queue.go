@@ -6,7 +6,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/cosmos/cosmos-sdk/runtime"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/constants"
@@ -52,6 +51,22 @@ func (k KVStore) SetAdvSwapQueueItem(ctx cosmos.Context, msg MsgSwap) error {
 	return nil
 }
 
+// SetAdvSwapQueueItemState updates an existing queue item's mutable state
+// without re-reading and scanning its queue index. Use only when fields that
+// determine the index key are unchanged; mocknet builds (including unit tests)
+// panic if the item is not indexed under its current key.
+func (k KVStore) SetAdvSwapQueueItemState(ctx cosmos.Context, msg MsgSwap) error {
+	if msg.Tx.Coins == nil || len(msg.Tx.Coins) != 1 {
+		return fmt.Errorf("want exactly 1 coin, got %d", len(msg.Tx.Coins))
+	}
+	if msg.Tx.ID.IsEmpty() {
+		return fmt.Errorf("invalid tx hash")
+	}
+	k.assertAdvSwapQueueIndexUnchanged(ctx, msg)
+	k.setMsgSwap(ctx, k.GetKey(prefixAdvSwapQueueItem, formatSwapQueueItemKey(msg.Tx.ID, int(msg.Index))), msg)
+	return nil
+}
+
 // GetAdvSwapQueueItemIterator iterate adv swap queue items
 func (k KVStore) GetAdvSwapQueueItemIterator(ctx cosmos.Context) cosmos.Iterator {
 	return k.getIterator(ctx, prefixAdvSwapQueueItem)
@@ -86,6 +101,15 @@ func (k KVStore) RemoveAdvSwapQueueItem(ctx cosmos.Context, txID common.TxID, in
 	return err
 }
 
+// RemoveAdvSwapQueueItemMsg removes an item and its index entry using the
+// caller's current message, avoiding a store read whose only purpose is to
+// reconstruct the index key.
+func (k KVStore) RemoveAdvSwapQueueItemMsg(ctx cosmos.Context, msg MsgSwap) error {
+	err := k.RemoveAdvSwapQueueIndex(ctx, msg)
+	k.del(ctx, k.GetKey(prefixAdvSwapQueueItem, formatSwapQueueItemKey(msg.Tx.ID, int(msg.Index))))
+	return err
+}
+
 ///----------------------------------------------------------------------///
 
 ///-------------------------- Adv Swap Queue Index --------------------------///
@@ -113,7 +137,7 @@ func (k KVStore) SetAdvSwapQueueIndex(ctx cosmos.Context, msg MsgSwap) error {
 
 // GetAdvSwapQueueIterator iterate adv swap queue items
 func (k KVStore) GetAdvSwapQueueIndexIterator(ctx cosmos.Context, swapType types.SwapType, source, target common.Asset) cosmos.Iterator {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	switch swapType {
 	case types.SwapType_limit:
 		// Normalize to layer1 assets for consistent key format
@@ -127,6 +151,13 @@ func (k KVStore) GetAdvSwapQueueIndexIterator(ctx cosmos.Context, swapType types
 	default:
 		return nil
 	}
+}
+
+// GetAdvSwapQueueLimitIndexIterator iterates populated limit-index buckets.
+// Callers can use it to identify active pairs without probing every possible
+// directional pool pair.
+func (k KVStore) GetAdvSwapQueueLimitIndexIterator(ctx cosmos.Context) cosmos.Iterator {
+	return k.getIterator(ctx, prefixAdvSwapQueueLimitIndex)
 }
 
 // GetAdvSwapQueueIndex - read the given adv swap queue index information from key values tore
@@ -204,6 +235,51 @@ func (k KVStore) RemoveAdvSwapQueueIndex(ctx cosmos.Context, msg MsgSwap) error 
 
 	found := false
 	idStr := formatSwapQueueItemKey(msg.Tx.ID, int(msg.Index))
+	for i, rec := range record {
+		if strings.EqualFold(rec, idStr) {
+			record = removeString(record, i)
+			found = true
+			break
+		}
+	}
+
+	if len(record) == 0 {
+		k.del(ctx, key)
+		return nil
+	}
+	if found {
+		k.setStrings(ctx, key, record)
+	}
+	return nil
+}
+
+// RemoveMarketAdvSwapQueueIndexEntry removes a single market index entry by
+// TxID and Index. Used to clean up orphaned index entries when the
+// corresponding swap queue item is missing — without it, every block would
+// keep retrying the failed lookup, allowing the market index list to grow
+// unbounded.
+func (k KVStore) RemoveMarketAdvSwapQueueIndexEntry(ctx cosmos.Context, txID common.TxID, index int) error {
+	key := k.GetKey(prefixAdvSwapQueueMarketIndex, "")
+	return k.removeAdvSwapQueueIndexEntry(ctx, key, txID, index)
+}
+
+// RemoveLimitAdvSwapQueueIndexEntry removes a single limit index entry from
+// the bucket at the given key by TxID and Index. Used to clean up orphaned
+// limit index entries discovered during iteration — without it, every block
+// would keep probing the missing item from a price-favorable bucket.
+func (k KVStore) RemoveLimitAdvSwapQueueIndexEntry(ctx cosmos.Context, key []byte, txID common.TxID, index int) error {
+	return k.removeAdvSwapQueueIndexEntry(ctx, key, txID, index)
+}
+
+func (k KVStore) removeAdvSwapQueueIndexEntry(ctx cosmos.Context, key []byte, txID common.TxID, index int) error {
+	record := make([]string, 0)
+	_, err := k.getStrings(ctx, key, &record)
+	if err != nil {
+		return err
+	}
+
+	found := false
+	idStr := formatSwapQueueItemKey(txID, index)
 	for i, rec := range record {
 		if strings.EqualFold(rec, idStr) {
 			record = removeString(record, i)

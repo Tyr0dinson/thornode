@@ -58,8 +58,7 @@ func (s *ProviderTestSuite) TestKucoinProvider(c *C) {
 
 	// test connection url override
 
-	/* trunk-ignore(golangci-lint/gosec) */
-	token := "2neAiuYvAU61ZDXANAGAsiL4-iAExhsBXZxftpOeh_55i3Ysy2q2LEsEWU64mdzUOPusi34M_wGoSf7iNyEWJ6azopV1Fkhyh-QgaRrYOuDQZPYx4Ys3Z9iYB9J6i9GjsxUuhPw3Blq6rhZlGykT3Vp1phUafnulOOpts-MEmEFfDgE176QQ8boW21GeTS36JBvJHl5Vs9Y=.IxqhqVbk_kPXPr_RNv7Nhg=="
+	token := "2neAiuYvAU61ZDXANAGAsiL4-iAExhsBXZxftpOeh_55i3Ysy2q2LEsEWU64mdzUOPusi34M_wGoSf7iNyEWJ6azopV1Fkhyh-QgaRrYOuDQZPYx4Ys3Z9iYB9J6i9GjsxUuhPw3Blq6rhZlGykT3Vp1phUafnulOOpts-MEmEFfDgE176QQ8boW21GeTS36JBvJHl5Vs9Y=.IxqhqVbk_kPXPr_RNv7Nhg==" //nolint:gosec
 	err = provider.PrepareConnection()
 	c.Assert(err, IsNil)
 	c.Assert(strings.Contains(provider.wsEndpoint, "?token="+token), Equals, true)
@@ -68,7 +67,7 @@ func (s *ProviderTestSuite) TestKucoinProvider(c *C) {
 
 	provider.Start()
 
-	time.Sleep(time.Millisecond * 100)
+	time.Sleep(500 * time.Millisecond)
 
 	tickers, err = provider.GetTickers()
 	c.Assert(err, IsNil)

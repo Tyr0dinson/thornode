@@ -27,7 +27,8 @@ import (
 func run(out io.Writer, path string, routine int, doneWithRetries func(path string) bool, abort <-chan struct{}) (failExportInvariants bool, err error) {
 	localLog := consoleLogger(out)
 
-	home := "/" + strconv.Itoa(routine)
+	home := regtestHome(routine)
+	mntDir := regtestMntDir()
 	localLog.Info().Str("path", path).Msgf("Loading regression test")
 
 	// clear data directory
@@ -50,11 +51,16 @@ func run(out io.Writer, path string, routine int, doneWithRetries func(path stri
 		fmt.Sprintf("THOR_TENDERMINT_CONSENSUS_TIMEOUT_COMMIT=%s", time.Second*getTimeFactor()),
 		// all ports will be offset by the routine number
 		fmt.Sprintf("THOR_COSMOS_API_ADDRESS=tcp://0.0.0.0:%d", 1317+routine),
-		fmt.Sprintf("THOR_COSMOS_EBIFROST_ADDRESS=127.0.0.1:%d", 50051+routine),
+		fmt.Sprintf("THOR_COSMOS_EBIFROST_ADDRESS=127.0.0.1:%d", regtestEbifrostPort(routine)),
 		fmt.Sprintf("THOR_TENDERMINT_RPC_LISTEN_ADDRESS=tcp://0.0.0.0:%d", 26657+routine),
 		fmt.Sprintf("THOR_TENDERMINT_P2P_LISTEN_ADDRESS=tcp://0.0.0.0:%d", 27000+routine),
-		"CREATE_BLOCK_PORT=" + strconv.Itoa(8080+routine),
-		"GOCOVERDIR=/mnt/coverage",
+		"CREATE_BLOCK_PORT=" + strconv.Itoa(regtestCreateBlockPort(routine)),
+		"GOCOVERDIR=" + filepath.Join(mntDir, "coverage"),
+	}
+
+	// opt-in CPU profile of the node under test (see scripts/perf)
+	if dir := os.Getenv("REGTEST_CPUPROFILE_DIR"); dir != "" {
+		env = append(env, "THORNODE_CPUPROFILE="+filepath.Join(dir, fmt.Sprintf("routine-%d", routine)))
 	}
 
 	// if DEBUG is set also output thornode debug logs
@@ -109,6 +115,7 @@ func run(out io.Writer, path string, routine int, doneWithRetries func(path stri
 	nativeTxIDsMu.Lock()
 	nativeTxIDs[routine] = []string{}
 	nativeTxIDsMu.Unlock()
+	resetLuviMonitor(routine)
 	tmpls := template.Must(templates.Clone())
 
 	// ensure no naming collisions
@@ -128,7 +135,7 @@ func run(out io.Writer, path string, routine int, doneWithRetries func(path stri
 	localLog.Info().Str("path", path).Int("blocks", blockCount(ops)).Msgf("Running regression test")
 
 	// clear block directory
-	blocksPath := filepath.Join("/mnt/blocks", strings.TrimPrefix(path, "suites/"))
+	blocksPath := filepath.Join(mntDir, "blocks", strings.TrimPrefix(path, "suites/"))
 	blocksPath = strings.TrimSuffix(blocksPath, ".yaml")
 	_ = os.RemoveAll(blocksPath)
 
@@ -189,9 +196,7 @@ func run(out io.Writer, path string, routine int, doneWithRetries func(path stri
 	// overwrite private validator key
 	localLog.Debug().Msg("Overwriting private validator key")
 	keyPath := filepath.Join(home, ".thornode/config/priv_validator_key.json")
-	cmd = exec.Command("cp", "/mnt/priv_validator_key.json", keyPath)
-	err = cmd.Run()
-	if err != nil {
+	if err = copyFile(filepath.Join(mntDir, "priv_validator_key.json"), keyPath); err != nil {
 		log.Fatal().Err(err).Msg("failed to overwrite private validator key")
 	}
 
@@ -201,8 +206,19 @@ func run(out io.Writer, path string, routine int, doneWithRetries func(path stri
 		logLevel = debugVar
 	}
 
+	regtestBinDir := os.Getenv("REGTEST_BIN_DIR")
+	if regtestBinDir == "" {
+		regtestBinDir = "/regtest"
+	}
+	regtestBinDir = filepath.Clean(regtestBinDir)
+	if !filepath.IsAbs(regtestBinDir) {
+		log.Fatal().Str("path", regtestBinDir).Msg("REGTEST_BIN_DIR must be absolute")
+	}
+	coverThornodePath := filepath.Join(regtestBinDir, "cover-thornode")
+
 	// setup process io
-	thornode := exec.Command("/regtest/cover-thornode", "--log_level", logLevel, "start")
+	// #nosec G204 G702 -- REGTEST_BIN_DIR is provided by the regression test harness.
+	thornode := exec.Command(coverThornodePath, "--log_level", logLevel, "start")
 	thornode.Env = env
 
 	stderr, err := thornode.StderrPipe()
@@ -236,7 +252,7 @@ func run(out io.Writer, path string, routine int, doneWithRetries func(path stri
 		}
 		time.Sleep(100 * time.Millisecond)
 		var conn net.Conn
-		conn, err = net.Dial("tcp", fmt.Sprintf("localhost:%d", 8080+routine))
+		conn, err = net.Dial("tcp", fmt.Sprintf("localhost:%d", regtestCreateBlockPort(routine)))
 		if err == nil {
 			conn.Close()
 			break
@@ -265,12 +281,15 @@ func run(out io.Writer, path string, routine int, doneWithRetries func(path stri
 				if ops[j].OpType() != "check" {
 					break
 				}
+				checkOp, ok := ops[j].(*OpCheck)
+				if !ok {
+					continue
+				}
 				wg.Add(1)
-				go func(j int) {
+				go func(checkOp *OpCheck) {
 					defer wg.Done()
-					// trunk-ignore(golangci-lint/forcetypeassert)
-					ops[j].(*OpCheck).prefetch(routine)
-				}(j)
+					checkOp.prefetch(routine)
+				}(checkOp)
 			}
 			wg.Wait()
 		}
@@ -366,4 +385,23 @@ func run(out io.Writer, path string, routine int, doneWithRetries func(path stri
 	}
 
 	return failExportInvariants, returnErr
+}
+
+func copyFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+
+	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+	if err != nil {
+		return err
+	}
+
+	if _, err = io.Copy(out, in); err != nil {
+		_ = out.Close()
+		return err
+	}
+	return out.Close()
 }

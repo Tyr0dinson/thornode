@@ -25,8 +25,10 @@ type TxOutItem struct {
 	AggregatorTargetAsset string         `json:"aggregator_target_asset,omitempty"`
 	AggregatorTargetLimit *cosmos.Uint   `json:"aggregator_target_limit,omitempty"`
 	Checkpoint            []byte         `json:"-"`
+	SigningID             string         `json:"-"`
 	Height                int64          `json:"height"`
 	VaultPubKeyEddsa      common.PubKey  `json:"vault_pub_key_eddsa,omitempty"`
+	VaultPubKeyFrost      common.PubKey  `json:"vault_pub_key_frost,omitempty"`
 }
 
 // Hash return a sha256 hash that can uniquely represent the TxOutItem
@@ -42,6 +44,16 @@ func (tx TxOutItem) GetMemo() string {
 		return tx.OriginalMemo
 	}
 	return tx.Memo
+}
+
+// XMRWireMemo retains the semantic memo on Monero even when THORChain plans
+// a memoless outbound. Scanners need it to distinguish change from deposits.
+// Keep the planned memo unchanged for signing identities and failure reports.
+func XMRWireMemo(planned, original string) string {
+	if planned == "" {
+		return original
+	}
+	return planned
 }
 
 // CacheHash return a hash that doesn't include VaultPubKey , thus this one can be used as cache key for txOutItem across different vaults
@@ -102,6 +114,9 @@ func (tx TxOutItem) Equals(tx2 TxOutItem) bool {
 	if !tx.VaultPubKeyEddsa.Equals(tx2.VaultPubKeyEddsa) {
 		return false
 	}
+	if !tx.VaultPubKeyFrost.Equals(tx2.VaultPubKeyFrost) {
+		return false
+	}
 	return true
 }
 
@@ -125,6 +140,7 @@ type TxArrayItem struct {
 	AggregatorTargetLimit *cosmos.Uint   `json:"aggregator_target_limit,omitempty"`
 	CloutSpent            string         `json:"clout_spent,omitempty"`
 	VaultPubKeyEddsa      common.PubKey  `json:"vault_pub_key_eddsa,omitempty"`
+	VaultPubKeyFrost      common.PubKey  `json:"vault_pub_key_frost,omitempty"`
 }
 
 // TxOutItem convert the information to TxOutItem
@@ -145,6 +161,7 @@ func (tx TxArrayItem) TxOutItem(height int64) TxOutItem {
 		AggregatorTargetLimit: tx.AggregatorTargetLimit,
 		Height:                height,
 		VaultPubKeyEddsa:      tx.VaultPubKeyEddsa,
+		VaultPubKeyFrost:      tx.VaultPubKeyFrost,
 	}
 }
 

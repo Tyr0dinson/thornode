@@ -71,13 +71,14 @@ func (h SolvencyHandler) handle(ctx cosmos.Context, msg MsgSolvency) (*cosmos.Re
 	if err != nil {
 		return &cosmos.Result{}, fmt.Errorf("fail to get solvency voter, err: %w", err)
 	}
+	var quota *solvencyVoterQuota
 	if voter.Empty() {
+		quota, err = checkSolvencyVoterQuota(ctx, k, msg.Chain, []cosmos.AccAddress{msg.Signer})
+		if err != nil {
+			return nil, err
+		}
 		voter = NewSolvencyVoter(msg.Id, msg.Chain, msg.PubKey, msg.Coins, msg.Height)
 	}
-
-	defer func() {
-		k.SetSolvencyVoter(ctx, voter)
-	}()
 
 	s := &common.Solvency{
 		Id:     msg.Id,
@@ -92,6 +93,8 @@ func (h SolvencyHandler) handle(ctx cosmos.Context, msg MsgSolvency) (*cosmos.Re
 		return nil, err
 	}
 
+	k.SetSolvencyVoter(ctx, voter)
+	quota.commit(ctx, k)
 	return &cosmos.Result{}, nil
 }
 

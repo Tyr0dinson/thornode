@@ -89,6 +89,16 @@ func (pm *PoolMgr) cyclePools(ctx cosmos.Context, maxAvailablePools, minRunePool
 		case PoolStaged:
 			ctx.Logger().Info("Pool demoted to staged status", "pool", pool.Asset)
 		}
+		// a demotion instantly blocks swaps and single-sided adds on this pool;
+		// setPool is only ever called on a genuine transition
+		telemetry.IncrCounterWithLabels(
+			[]string{"thornode", "pool", "status_change"},
+			float32(1),
+			[]metrics.Label{
+				telemetry.NewLabel("pool", pool.Asset.String()),
+				telemetry.NewLabel("status", pool.Status.String()),
+			},
+		)
 		pool.StatusSince = ctx.BlockHeight()
 		return mgr.Keeper().SetPool(ctx, pool)
 	}
@@ -220,8 +230,21 @@ func (pm *PoolMgr) cyclePools(ctx cosmos.Context, maxAvailablePools, minRunePool
 
 				if err := pm.burnStagedPool(ctx, pool, mgr, queuedSwapLiabilityAssets); err != nil {
 					ctx.Logger().Error("fail to burn staged pool, skipping pool burn", "from pool", pool.Asset, "err", err)
+					// a burn that keeps failing leaves the pool wedged half-dead
+					telemetry.IncrCounterWithLabels(
+						[]string{"thornode", "pool", "burn_failed"},
+						float32(1),
+						[]metrics.Label{telemetry.NewLabel("pool", pool.Asset.String())},
+					)
 					continue
 				}
+				// removes every LP position, the pool itself, and zeroes the asset
+				// in every vault - the most destructive routine in the pool manager
+				telemetry.IncrCounterWithLabels(
+					[]string{"thornode", "pool", "burned"},
+					float32(1),
+					[]metrics.Label{telemetry.NewLabel("pool", pool.Asset.String())},
+				)
 				synthPoolsToRemove = append(synthPoolsToRemove, pool.Asset.GetSyntheticAsset())
 			} else if validPool(pool) && onDeck.BalanceRune.LT(pool.BalanceRune) {
 				onDeck = pool
@@ -572,11 +595,6 @@ func (pm *PoolMgr) removeLiquidityProviders(ctx cosmos.Context, asset common.Ass
 }
 
 func (pm *PoolMgr) cleanupPendingLiquidity(ctx cosmos.Context, mgr Manager) {
-	if atTVLCap(ctx, nil, mgr) {
-		ctx.Logger().Info("cleaning pending liquidity skipped due to TVL cap")
-		return
-	}
-
 	pendingLiquidityAgeLimit := mgr.Keeper().GetConfigInt64(ctx, constants.PendingLiquidityAgeLimit)
 	if pendingLiquidityAgeLimit <= 0 {
 		return
@@ -623,10 +641,24 @@ func (pm *PoolMgr) cleanupPendingLiquidity(ctx cosmos.Context, mgr Manager) {
 		separator = 1
 	}
 	cleanupTarget := ctx.BlockHeight() % pendingLiquidityAgeLimit
+	var due Pools
 	for i, pool := range pools {
-		if cleanupTarget != (separator*int64(i))%pendingLiquidityAgeLimit {
-			continue
+		if cleanupTarget == (separator*int64(i))%pendingLiquidityAgeLimit {
+			due = append(due, pool)
 		}
+	}
+	if len(due) == 0 {
+		return
+	}
+
+	// The TVL cap check reads every asgard vault, a pool per vault coin and
+	// every active validator. Most blocks clean no pool, so it runs only once
+	// one is due, still before anything is committed.
+	if atTVLCap(ctx, nil, mgr) {
+		ctx.Logger().Info("cleaning pending liquidity skipped due to TVL cap")
+		return
+	}
+	for _, pool := range due {
 		if err := pm.commitPendingLiquidity(ctx, pool, mgr); err != nil {
 			ctx.Logger().Error("fail to clean pending liquidity", "pool", pool.Asset, "error", err)
 		}
@@ -756,8 +788,15 @@ func (pm *PoolMgr) checkSaversUtilization(ctx cosmos.Context, mgr Manager) error
 	)
 	ctx.Logger().Info("closing saver LP position", "tx_id", tx.ID, "pool", synthPool.Asset, "units", latestLp.Units, "asset_address", latestLp.AssetAddress)
 	_, err = handler(ctx, withdrawMsg)
+	ejectLabels := []metrics.Label{telemetry.NewLabel("pool", synthPool.Asset.String())}
 	if err != nil {
 		ctx.Logger().Error("fail to eject saver position", "asset", synthPool.Asset, "address", latestLp.AssetAddress, "error", err)
+		// the network decided it must eject but could not: the cap stays breached
+		telemetry.IncrCounterWithLabels([]string{"thornode", "saver", "eject_failed"}, float32(1), ejectLabels)
+	} else {
+		// involuntary position closure
+		telemetry.IncrCounterWithLabels([]string{"thornode", "saver", "ejected"}, float32(1), ejectLabels)
+		telemetry.IncrCounterWithLabels([]string{"thornode", "saver", "ejected_units"}, telem(latestLp.Units), ejectLabels)
 	}
 
 	return nil
@@ -770,6 +809,9 @@ func (pm *PoolMgr) commitPendingLiquidity(ctx cosmos.Context, pool Pool, mgr Man
 	var count int
 	cleanedRune := cosmos.ZeroUint()
 	cleanedAsset := cosmos.ZeroUint()
+	var failCount int
+	failedRune := cosmos.ZeroUint()
+	failedAsset := cosmos.ZeroUint()
 
 	// no need to commit pending liquidity when there is none, quick exit
 	if pool.PendingInboundRune.IsZero() && pool.PendingInboundAsset.IsZero() {
@@ -837,6 +879,9 @@ func (pm *PoolMgr) commitPendingLiquidity(ctx cosmos.Context, pool Pool, mgr Man
 			ctx.Logger().Error("failed to commit pending liquidity", "asset", lp.Asset, "thor address", lp.RuneAddress, "asset address", lp.AssetAddress, "pending rune", lp.PendingRune, "pending asset", lp.PendingAsset, "error", err)
 			// since we failed to clear pending liquidity, lets add it to the
 			// running total for the pool
+			failCount += 1
+			failedRune = failedRune.Add(lp.PendingRune)
+			failedAsset = failedAsset.Add(lp.PendingAsset)
 			continue
 		}
 
@@ -860,6 +905,23 @@ func (pm *PoolMgr) commitPendingLiquidity(ctx cosmos.Context, pool Pool, mgr Man
 	telemetry.IncrCounterWithLabels(
 		[]string{"thornode", "pool", "pending", "clear", "asset"},
 		telem(cleanedAsset),
+		[]metrics.Label{telemetry.NewLabel("pool", pool.Asset.String())},
+	)
+	// the counters above record successes only, so an all-failing pool is
+	// otherwise indistinguishable from a pool with nothing pending
+	telemetry.IncrCounterWithLabels(
+		[]string{"thornode", "pool", "pending", "clear", "failed"},
+		float32(failCount),
+		[]metrics.Label{telemetry.NewLabel("pool", pool.Asset.String())},
+	)
+	telemetry.IncrCounterWithLabels(
+		[]string{"thornode", "pool", "pending", "clear", "failed_rune"},
+		telem(failedRune),
+		[]metrics.Label{telemetry.NewLabel("pool", pool.Asset.String())},
+	)
+	telemetry.IncrCounterWithLabels(
+		[]string{"thornode", "pool", "pending", "clear", "failed_asset"},
+		telem(failedAsset),
 		[]metrics.Label{telemetry.NewLabel("pool", pool.Asset.String())},
 	)
 

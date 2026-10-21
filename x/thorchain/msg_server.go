@@ -112,6 +112,11 @@ func (ms msgServer) Solvency(goCtx context.Context, msg *types.MsgSolvency) (*ty
 	return externalHandler(goCtx, handler, msg)
 }
 
+func (ms msgServer) SolNonceAttest(goCtx context.Context, msg *types.MsgSolNonceAttest) (*types.MsgEmpty, error) {
+	handler := NewSolNonceAttestHandler(ms.mgr)
+	return externalHandler(goCtx, handler, msg)
+}
+
 func (ms msgServer) SolvencyQuorum(goCtx context.Context, msg *types.MsgSolvencyQuorum) (*types.MsgEmpty, error) {
 	handler := NewSolvencyQuorumHandler(ms.mgr)
 	return externalHandler(goCtx, handler, msg)
@@ -149,7 +154,8 @@ func (ms msgServer) RejectUpgrade(goCtx context.Context, msg *types.MsgRejectUpg
 
 func externalHandler(goCtx context.Context, handler MsgHandler, msg sdk.Msg) (_ *types.MsgEmpty, err error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
-	ctx = ctx.WithLogger(ctx.Logger().With("height", ctx.BlockHeight()))
+	// block log capture is already on the logger (ante handler); tag the module
+	ctx = ctx.WithLogger(ctx.Logger().With("module", "x/"+ModuleName, "height", ctx.BlockHeight()))
 
 	defer func() {
 		if r := recover(); r != nil {

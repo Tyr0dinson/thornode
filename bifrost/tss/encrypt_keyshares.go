@@ -35,6 +35,12 @@ const (
 	SaltChaCha = 3
 )
 
+// ageWorkFactor is the scrypt work factor EncryptKeyshares and
+// EncryptRawKeyshares use: AgeWorkFactor, except in this package's tests,
+// which lower it because every encryption also decrypts to verify the
+// round trip.
+var ageWorkFactor = AgeWorkFactor
+
 // EncryptKeyshares encrypts the keyshares at the provided path using the passphrase.
 func EncryptKeyshares(path, passphrase string) ([]byte, error) {
 	// verify the passphrase is provided and a mnemonic
@@ -58,20 +64,28 @@ func EncryptKeyshares(path, passphrase string) ([]byte, error) {
 	}
 
 	// open keyshares
-	f, err := os.Open(path)
+	fileData, err := os.ReadFile(path)
 	if err != nil {
 		log.Error().Str("path", path).Msg("failed to open file")
 		return nil, fmt.Errorf("failed keyshare encrypt - cannot open key file: %w", err)
 	}
-	defer f.Close()
 
-	// tee reader for verification
+	// decrypt at-rest encrypted files before JSON parsing
+	rawData := fileData
+	if storage.IsEncryptedAtRest(fileData) {
+		atRestKey := storage.DeriveAtRestKey(passphrase)
+		rawData, err = storage.DecryptAtRest(atRestKey, fileData)
+		if err != nil {
+			return nil, fmt.Errorf("failed keyshare encrypt - cannot decrypt at-rest keyshares: %w", err)
+		}
+	}
+
 	var teeRaw bytes.Buffer
-	tr := io.TeeReader(f, &teeRaw)
+	teeRaw.Write(rawData)
 
 	// read keyshares
 	var ks storage.KeygenLocalState
-	err = json.NewDecoder(tr).Decode(&ks)
+	err = json.Unmarshal(rawData, &ks)
 	if err != nil {
 		return nil, fmt.Errorf("failed keyshare encrypt - cannot decode keyshares: %w", err)
 	}
@@ -82,7 +96,7 @@ func EncryptKeyshares(path, passphrase string) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed keyshare encrypt - cannot create recipient: %w", err)
 	}
-	recipient.SetWorkFactor(AgeWorkFactor)
+	recipient.SetWorkFactor(ageWorkFactor)
 
 	// encrypt keyshares with age
 	encryptedBytes := new(bytes.Buffer)
@@ -179,8 +193,91 @@ func EncryptKeyshares(path, passphrase string) ([]byte, error) {
 	return tripleEncrypted, nil
 }
 
-// EncryptKeyshares decrypts the provided encrypted keyshares using the passphrase.
+// EncryptRawKeyshares encrypts raw key bytes using the same triple-encryption
+// scheme as EncryptKeyshares but without JSON parsing. Used for FROST keyshares
+// that are opaque binary blobs from the sidecar.
+func EncryptRawKeyshares(raw []byte, passphrase string) ([]byte, error) {
+	if passphrase == "" {
+		return nil, errors.New("failed keyshare encrypt: signer seed phrase is not set")
+	}
+	if len(raw) == 0 {
+		return nil, errors.New("failed keyshare encrypt: raw bytes are empty")
+	}
+
+	agePassphrase := hex.EncodeToString(saltAndHash(passphrase, SaltAge))
+	recipient, err := age.NewScryptRecipient(agePassphrase)
+	if err != nil {
+		return nil, fmt.Errorf("failed keyshare encrypt - cannot create recipient: %w", err)
+	}
+	recipient.SetWorkFactor(ageWorkFactor)
+
+	encryptedBytes := new(bytes.Buffer)
+	enc, err := age.Encrypt(encryptedBytes, recipient)
+	if err != nil {
+		return nil, fmt.Errorf("failed keyshare encrypt - cannot create encrypt writer: %w", err)
+	}
+	cmpEnc := lzma.NewWriterLevel(enc, lzma.BestCompression)
+	n, err := cmpEnc.Write(raw)
+	if err != nil {
+		return nil, fmt.Errorf("failed keyshare encrypt - cannot compress raw bytes: %w", err)
+	}
+	if n != len(raw) {
+		return nil, fmt.Errorf("failed keyshare encrypt - failed to write all bytes")
+	}
+	err = cmpEnc.Close()
+	if err != nil {
+		return nil, fmt.Errorf("failed keyshare encrypt - failed to close compression: %w", err)
+	}
+	err = enc.Close()
+	if err != nil {
+		return nil, fmt.Errorf("failed keyshare encrypt - failed to close encrypt writer: %w", err)
+	}
+
+	doubleEncrypted, err := encryptAES(saltAndHash(passphrase, SaltAES), encryptedBytes.Bytes())
+	if err != nil {
+		return nil, fmt.Errorf("failed keyshare encrypt - cannot aes encrypt: %w", err)
+	}
+	chaCha, err := chacha20poly1305.NewX(saltAndHash(passphrase, SaltChaCha))
+	if err != nil {
+		return nil, fmt.Errorf("failed keyshare encrypt - cannot create chacha: %w", err)
+	}
+	tripleEncrypted, err := encryptAEAD(chaCha, doubleEncrypted)
+	if err != nil {
+		return nil, fmt.Errorf("failed keyshare encrypt - cannot chacha encrypt: %w", err)
+	}
+
+	// round-trip verification: decrypt and compare to ensure recoverability
+	decrypted, err := DecryptRawKeyshares(tripleEncrypted, passphrase)
+	if err != nil {
+		return nil, fmt.Errorf("failed keyshare encrypt - round-trip verify failed: %w", err)
+	}
+	if !bytes.Equal(raw, decrypted) {
+		return nil, errors.New("failed keyshare encrypt - round-trip mismatch")
+	}
+
+	return tripleEncrypted, nil
+}
+
+// DecryptRawKeyshares decrypts raw keyshare bytes encrypted with EncryptRawKeyshares.
+func DecryptRawKeyshares(encrypted []byte, passphrase string) ([]byte, error) {
+	compressed, err := DecryptKeyshares(encrypted, passphrase)
+	if err != nil {
+		return nil, err
+	}
+	cmpDec := lzma.NewReader(bytes.NewReader(compressed))
+	raw, readErr := io.ReadAll(cmpDec)
+	if readErr != nil {
+		return nil, fmt.Errorf("failed to decompress raw keyshares: %w", readErr)
+	}
+	return raw, nil
+}
+
+// DecryptKeyshares decrypts the provided encrypted keyshares using the passphrase.
 func DecryptKeyshares(encrypted []byte, passphrase string) ([]byte, error) {
+	if passphrase == "" {
+		return nil, errors.New("failed keyshare decrypt: passphrase is empty")
+	}
+
 	// decrypt third pass (twofish)
 	chaCha, err := chacha20poly1305.NewX(saltAndHash(passphrase, SaltChaCha))
 	if err != nil {
@@ -284,8 +381,12 @@ func encryptAEAD(aead cipher.AEAD, data []byte) ([]byte, error) {
 
 // decryptAEAD decrypts the provided data using the nonce from the prefix.
 func decryptAEAD(aead cipher.AEAD, data []byte) ([]byte, error) {
-	// extract the nonce
 	nonceSize := aead.NonceSize()
+	if len(data) < nonceSize+aead.Overhead() {
+		return nil, errors.New("ciphertext too short")
+	}
+
+	// extract the nonce
 	nonce, ciphertext := data[:nonceSize], data[nonceSize:]
 
 	// decrypt the data

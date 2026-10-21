@@ -3,8 +3,10 @@ package utxo
 import (
 	"bytes"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -13,7 +15,7 @@ import (
 	"github.com/hashicorp/go-multierror"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
-	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/zecutil"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/zcash"
 
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/btcjson"
@@ -46,6 +48,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/constants"
 
 	. "gitlab.com/thorchain/thornode/v3/test/simulation/pkg/types"
 )
@@ -67,11 +70,21 @@ type Client struct {
 	address common.Address
 
 	// chain specific
-	mtx        sync.Mutex
-	spentUtxos map[string]bool
+	mtx               sync.Mutex
+	spentUtxos        map[string]bool
+	pendingSpentUtxos map[string][]string
 }
 
 var _ LiteChainClient = &Client{}
+
+const utxoStartupRPCTimeout = 5 * time.Second
+
+var (
+	utxoBroadcastAttempts   = 3
+	utxoBroadcastRetryDelay = 2 * time.Second
+)
+
+var utxoStartupImportLocks sync.Map
 
 func NewConstructor(host string) LiteChainClientConstructor {
 	return func(chain common.Chain, keys *thorclient.Keys) (LiteChainClient, error) {
@@ -82,7 +95,7 @@ func NewConstructor(host string) LiteChainClientConstructor {
 func NewClient(chain common.Chain, host string, keys *thorclient.Keys) (LiteChainClient, error) {
 	// create rpc client
 	retries := 5
-	rpc, err := rpc.NewClient(host, "thorchain", "password", retries, time.Second, chain, zerolog.Nop())
+	rpc, err := rpc.NewClient(host, "thorchain", "password", retries, utxoStartupRPCTimeout, chain, zerolog.Nop())
 	if err != nil {
 		return nil, fmt.Errorf("fail to create rpc client: %w", err)
 	}
@@ -110,11 +123,21 @@ func NewClient(chain common.Chain, host string, keys *thorclient.Keys) (LiteChai
 
 	// import address to wallet, rescan if master account
 	if !chain.Equals(common.ZECChain) {
-		if keys.GetSignerInfo().Name == "master" {
-			err = rpc.ImportAddressRescan(address.String())
-		} else {
-			err = rpc.ImportAddress(address.String())
+		importLock := getUTXOStartupImportLock(chain)
+		importLock.Lock()
+		imported, importedErr := rpc.IsAddressImported(address.String())
+		if importedErr != nil {
+			importLock.Unlock()
+			return nil, fmt.Errorf("fail to query address info(%s): %w", address, importedErr)
 		}
+		if !imported {
+			if keys.GetSignerInfo().Name == "master" {
+				err = rpc.ImportAddressRescan(address.String())
+			} else {
+				err = rpc.ImportAddress(address.String())
+			}
+		}
+		importLock.Unlock()
 
 		if err != nil {
 			return nil, fmt.Errorf("fail to import address(%s): %w", address, err)
@@ -122,15 +145,26 @@ func NewClient(chain common.Chain, host string, keys *thorclient.Keys) (LiteChai
 	}
 
 	return &Client{
-		chain:      chain,
-		rpc:        rpc,
-		keys:       keys,
-		privKey:    privKey,
-		pubKey:     pubkey,
-		address:    address,
-		spentUtxos: make(map[string]bool),
-		mtx:        sync.Mutex{},
+		chain:             chain,
+		rpc:               rpc,
+		keys:              keys,
+		privKey:           privKey,
+		pubKey:            pubkey,
+		address:           address,
+		spentUtxos:        make(map[string]bool),
+		pendingSpentUtxos: make(map[string][]string),
+		mtx:               sync.Mutex{},
 	}, nil
+}
+
+func getUTXOStartupImportLock(chain common.Chain) *sync.Mutex {
+	if lock, ok := utxoStartupImportLocks.Load(chain); ok {
+		return lock.(*sync.Mutex)
+	}
+
+	lock := &sync.Mutex{}
+	actual, _ := utxoStartupImportLocks.LoadOrStore(chain, lock)
+	return actual.(*sync.Mutex)
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////
@@ -229,19 +263,39 @@ func (c *Client) SignTx(tx SimTx) ([]byte, error) {
 
 	// only used for zcash
 	var height int64
-	var zecTx *zecutil.MsgTx
+	var zecTx *zcash.Tx
+	var zecHashes *zcash.SigHashes
 	if c.chain.Equals(common.ZECChain) {
 		height, err = c.rpc.GetBlockCount()
 		if err != nil {
 			return nil, fmt.Errorf("fail to get block count: %w", err)
 		}
 
-		redeemTx.Version = 4
-		// set arbitrary high number for expiry height
-		// to use correct branch id for signing
-		zecTx = &zecutil.MsgTx{
-			MsgTx:        redeemTx,
-			ExpiryHeight: uint32(height + 20),
+		var consensus zcash.ConsensusState
+		if err := c.rpc.Call(&consensus, "getblockchaininfo"); err != nil {
+			return nil, err
+		}
+		if height < 0 || height >= 5e8 {
+			return nil, fmt.Errorf("invalid ZEC height")
+		}
+		branch, expiry, err := consensus.PaymentState(uint32(height), 20)
+		if err != nil {
+			return nil, err
+		}
+		redeemTx.Version = 6
+		zecTx = &zcash.Tx{MsgTx: redeemTx, ExpiryHeight: expiry, ConsensusBranchID: branch}
+		inputs := make([]*btcwire.TxOut, len(redeemTx.TxIn))
+		for i, input := range redeemTx.TxIn {
+			key := fmt.Sprintf("%s-%d", input.PreviousOutPoint.Hash, input.PreviousOutPoint.Index)
+			amount, exists := amounts[key]
+			if !exists || amount <= 0 {
+				return nil, fmt.Errorf("invalid ZEC input amount: %s", key)
+			}
+			inputs[i] = btcwire.NewTxOut(amount, sourceScript)
+		}
+		zecHashes, err = zcash.NewSigHashes(zecTx, inputs)
+		if err != nil {
+			return nil, err
 		}
 	}
 
@@ -265,7 +319,7 @@ func (c *Client) SignTx(tx SimTx) ([]byte, error) {
 			case common.BTCChain:
 				err = c.signUTXOBTC(stx.(*btcwire.MsgTx), amount, sourceScript, i)
 			case common.ZECChain:
-				err = c.signUTXOZEC(zecTx, amount, sourceScript, i)
+				err = c.signUTXOZEC(zecTx, zecHashes, i)
 			default:
 				log.Fatal().Msg("unsupported chain")
 			}
@@ -302,7 +356,7 @@ func (c *Client) SignTx(tx SimTx) ([]byte, error) {
 	var signedTx bytes.Buffer
 	switch c.chain {
 	case common.ZECChain:
-		err = zecTx.ZecEncode(&signedTx, 0, wire.BaseEncoding)
+		err = zecTx.Serialize(&signedTx)
 	default:
 		err = redeemTx.Serialize(&signedTx)
 	}
@@ -311,6 +365,7 @@ func (c *Client) SignTx(tx SimTx) ([]byte, error) {
 		return nil, fmt.Errorf("fail to serialize tx to bytes: %w", err)
 	}
 
+	c.rememberPendingSpentUtxos(signedTx.Bytes(), amounts)
 	return signedTx.Bytes(), nil
 }
 
@@ -321,9 +376,35 @@ func (c *Client) SignTx(tx SimTx) ([]byte, error) {
 func (c *Client) BroadcastTx(payload []byte) (string, error) {
 	if c.chain.Equals(common.ZECChain) {
 		var hash string
-		args := []any{hex.EncodeToString(payload)}
-		err := c.rpc.Call(&hash, "sendrawtransaction", args...)
-		return hash, err
+		payloadHex := hex.EncodeToString(payload)
+		tx, err := zcash.ParseTx(payload)
+		if err != nil {
+			return "", err
+		}
+		id, err := tx.ID()
+		if err != nil {
+			return "", err
+		}
+		txid := id.String()
+		args := []any{payloadHex}
+		err = c.rpc.Call(&hash, "sendrawtransaction", args...)
+		if err == nil && !strings.EqualFold(hash, txid) {
+			err = fmt.Errorf("unexpected ZEC broadcast txid: got %q, expected %s", hash, txid)
+		}
+		if err != nil {
+			// Zebra may requeue verification after cancelling the RPC. Check
+			// the original payload in the mempool/chain before retrying it.
+			if accepted, _ := c.payloadAccepted(txid, payloadHex); accepted {
+				c.finalizePendingSpentUtxos(payloadHex)
+				return txid, nil
+			}
+			// Keep these inputs reserved on an ambiguous result, including
+			// exhausted retries. They become spent only after acceptance; a
+			// failed simulation must not reuse possibly consumed inputs.
+			return "", err
+		}
+		c.finalizePendingSpentUtxos(payloadHex)
+		return hash, nil
 	}
 
 	redeemTx := btcwire.NewMsgTx(btcwire.TxVersion)
@@ -340,8 +421,55 @@ func (c *Client) BroadcastTx(payload []byte) (string, error) {
 		maxFee = 10_000_000
 	}
 
-	// broadcast tx
-	return c.rpc.SendRawTransaction(redeemTx, maxFee)
+	// Rebroadcasting identical bytes is idempotent, so transport failures reuse
+	// this payload. Signing again after a timed-out broadcast that the node
+	// accepted anyway spends other inputs and sends a duplicate inbound.
+	txid := redeemTx.TxHash().String()
+	payloadHex := hex.EncodeToString(payload)
+	var err error
+	for attempt := 1; attempt <= utxoBroadcastAttempts; attempt++ {
+		var hash string
+		hash, err = c.rpc.SendRawTransaction(redeemTx, maxFee)
+		if err == nil {
+			return hash, nil
+		}
+		accepted, absent := c.payloadAccepted(txid, payloadHex)
+		if accepted {
+			return txid, nil
+		}
+
+		// the node answered: an earlier attempt was mined, or the payload was
+		// rejected. Rejection is final only when the node also denies holding
+		// the txid, since an earlier attempt or a transport retry inside
+		// rpc.Call may have been accepted without an answer. Otherwise resend.
+		var rpcErr *btcjson.RPCError
+		if errors.As(err, &rpcErr) {
+			if rpcErr.Code == btcjson.ErrRPCTxAlreadyInChain {
+				return txid, nil
+			}
+			if absent {
+				return "", fmt.Errorf("fail to broadcast %s tx %s: %w", c.chain, txid, err)
+			}
+		}
+		if attempt < utxoBroadcastAttempts {
+			time.Sleep(utxoBroadcastRetryDelay)
+		}
+	}
+	return txid, fmt.Errorf("%w: %s tx %s not found after %d broadcast attempts: %w",
+		ErrSimTxUncertain, c.chain, txid, utxoBroadcastAttempts, err)
+}
+
+// payloadAccepted reports whether the node already holds the exact payload in
+// its mempool or chain, and whether the node answered that it has no such txid.
+// absent also rules out mined transactions only with -txindex, which the
+// mocknet DOGE and LTC daemons enable.
+func (c *Client) payloadAccepted(txid, payloadHex string) (accepted, absent bool) {
+	raw, err := c.rpc.GetRawTransaction(txid)
+	if err == nil {
+		return strings.EqualFold(raw, payloadHex), false
+	}
+	var rpcErr *btcjson.RPCError
+	return false, errors.As(err, &rpcErr) && rpcErr.Code == btcjson.ErrRPCNoTxInfo
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////
@@ -380,12 +508,11 @@ func (c *Client) getSourceScript(tx SimTx) ([]byte, error) {
 		return btctxscript.PayToAddrScript(addr)
 	case common.ZECChain:
 		params := c.getChainCfgZEC()
-		var addr btcutil.Address
-		addr, err := zecutil.DecodeAddress(c.address.String(), params.Name)
+		addr, err := zcash.DecodeAddress(c.address.String(), params.Name)
 		if err != nil {
 			return nil, fmt.Errorf("fail to decode source address(%s): %w", c.address, err)
 		}
-		return zecutil.PayToAddrScript(addr)
+		return addr.Script()
 	default:
 		log.Fatal().Msg("unsupported chain")
 		return nil, nil
@@ -421,12 +548,10 @@ func (c *Client) getUtxoToSpend(total float64) ([]btcjson.ListUnspentResult, err
 		if c.chain.Equals(common.ZECChain) {
 			key := fmt.Sprintf("%s-%d", item.TxID, item.Vout)
 
-			_, found := c.spentUtxos[key]
-			if found {
+			if c.spentUtxos[key] || c.pendingSpentUtxoLocked(key) {
 				continue
 			}
 
-			c.spentUtxos[key] = true
 		}
 
 		result = append(result, item)
@@ -466,7 +591,139 @@ func (c *Client) getPaymentAmount(tx SimTx) float64 {
 	amtToPay1e8 := tx.Coin.Amount.Uint64()
 	amtToPay := btcutil.Amount(int64(amtToPay1e8)).ToBTC()
 	amtToPay += c.getGasSats()
+	if memoScripts, err := c.getMemoScripts(tx.Memo); err == nil && len(memoScripts) > 1 {
+		p2wpkhOutputsCost := int64(len(memoScripts)-1) * c.chain.P2WPKHOutputValue()
+		amtToPay += btcutil.Amount(p2wpkhOutputsCost).ToBTC()
+	}
 	return amtToPay
+}
+
+func (c *Client) getMemoScripts(memo string) ([][]byte, error) {
+	switch c.chain {
+	case common.DOGEChain:
+		return memoToScripts(memo, dogetxscript.MaxDataCarrierSize, dogetxscript.NullDataScript, dogetxscript.PayToWitnessScript)
+	case common.BCHChain:
+		return memoToScripts(memo, bchtxscript.MaxDataCarrierSize, bchtxscript.NullDataScript, bchtxscript.PayToWitnessScript)
+	case common.LTCChain:
+		return memoToScripts(memo, ltctxscript.MaxDataCarrierSize, ltctxscript.NullDataScript, ltctxscript.PayToWitnessScript)
+	case common.BTCChain:
+		return memoToScripts(memo, btctxscript.MaxDataCarrierSize, btctxscript.NullDataScript, btctxscript.PayToWitnessScript)
+	case common.ZECChain:
+		return memoToScripts(memo, btctxscript.MaxDataCarrierSize, btctxscript.NullDataScript, zcash.PayToPubKeyHashScript)
+	default:
+		log.Fatal().Msg("unsupported chain")
+		return nil, nil
+	}
+}
+
+func memoToScripts(memo string, maxDataCarrierSize int, nullDataScript, payToContinuationScript func([]byte) ([]byte, error)) ([][]byte, error) {
+	if len(memo) == 0 {
+		return nil, nil
+	}
+
+	if len(memo) > constants.MaxMemoSize {
+		return nil, fmt.Errorf("memo size %d exceeds maximum size of %d bytes", len(memo), constants.MaxMemoSize)
+	}
+
+	data := []byte(memo)
+	remainingDataSize := len(data)
+	if remainingDataSize > maxDataCarrierSize {
+		remainingDataSize -= (maxDataCarrierSize - 1)
+	} else {
+		remainingDataSize = 0
+	}
+
+	numScripts := 1 + (remainingDataSize+19)/20
+	scripts := make([][]byte, 0, numScripts)
+
+	firstChunkSize := len(data)
+	continuation := false
+	if firstChunkSize > maxDataCarrierSize {
+		firstChunkSize = maxDataCarrierSize - 1
+		continuation = true
+	}
+
+	firstChunk := make([]byte, 0, maxDataCarrierSize)
+	firstChunk = append(firstChunk, data[:firstChunkSize]...)
+	if continuation {
+		firstChunk = append(firstChunk, '^')
+	}
+
+	script, err := nullDataScript(firstChunk)
+	if err != nil {
+		return nil, fmt.Errorf("fail to create OP_RETURN script: %w", err)
+	}
+	scripts = append(scripts, script)
+
+	if continuation {
+		remainingData := data[firstChunkSize:]
+		for i := 0; len(remainingData) > 0; i++ {
+			chunkSize := len(remainingData)
+			if chunkSize > 20 {
+				chunkSize = 20
+			}
+
+			hash := make([]byte, 20)
+			copy(hash, remainingData[:chunkSize])
+
+			continuationScript, err := payToContinuationScript(hash)
+			if err != nil {
+				return nil, fmt.Errorf("fail to create memo continuation script at index %d: %w", i, err)
+			}
+			scripts = append(scripts, continuationScript)
+			remainingData = remainingData[chunkSize:]
+		}
+	}
+
+	return scripts, nil
+}
+
+func (c *Client) rememberPendingSpentUtxos(payload []byte, amounts map[string]int64) {
+	if !c.chain.Equals(common.ZECChain) || len(amounts) == 0 {
+		return
+	}
+
+	keys := make([]string, 0, len(amounts))
+	for key := range amounts {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
+	c.mtx.Lock()
+	defer c.mtx.Unlock()
+	if c.pendingSpentUtxos == nil {
+		c.pendingSpentUtxos = make(map[string][]string)
+	}
+	c.pendingSpentUtxos[hex.EncodeToString(payload)] = keys
+}
+
+func (c *Client) finalizePendingSpentUtxos(payloadHex string) {
+	if !c.chain.Equals(common.ZECChain) {
+		return
+	}
+
+	c.mtx.Lock()
+	defer c.mtx.Unlock()
+	keys := c.pendingSpentUtxos[payloadHex]
+	delete(c.pendingSpentUtxos, payloadHex)
+
+	for _, key := range keys {
+		if c.spentUtxos == nil {
+			c.spentUtxos = make(map[string]bool)
+		}
+		c.spentUtxos[key] = true
+	}
+}
+
+func (c *Client) pendingSpentUtxoLocked(key string) bool {
+	for _, keys := range c.pendingSpentUtxos {
+		for _, pendingKey := range keys {
+			if pendingKey == key {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (c *Client) buildTx(tx SimTx, sourceScript []byte) (
@@ -541,12 +798,12 @@ func (c *Client) buildTx(tx SimTx, sourceScript []byte) (
 			return nil, nil, fmt.Errorf("fail to get pay to address script: %w", err)
 		}
 	case common.ZECChain:
-		var outputAddr btcutil.Address
-		outputAddr, err = zecutil.DecodeAddress(tx.ToAddress.String(), c.getChainCfgZEC().Name)
+		var outputAddr *zcash.Address
+		outputAddr, err = zcash.DecodeAddress(tx.ToAddress.String(), c.getChainCfgZEC().Name)
 		if err != nil {
 			return nil, nil, fmt.Errorf("fail to decode next address: %w", err)
 		}
-		buf, err = zecutil.PayToAddrScript(outputAddr)
+		buf, err = outputAddr.Script()
 		if err != nil {
 			return nil, nil, fmt.Errorf("fail to get pay to address script: %w", err)
 		}
@@ -558,31 +815,31 @@ func (c *Client) buildTx(tx SimTx, sourceScript []byte) (
 	redeemTxOut := wire.NewTxOut(int64(tx.Coin.Amount.Uint64()), buf)
 	redeemTx.AddTxOut(redeemTxOut)
 
+	memoScripts, err := c.getMemoScripts(tx.Memo)
+	if err != nil {
+		return nil, nil, fmt.Errorf("fail to generate memo scripts: %w", err)
+	}
+
+	p2wpkhOutputsCost := int64(0)
+	if len(memoScripts) > 1 {
+		p2wpkhOutputsCost = int64(len(memoScripts)-1) * c.chain.P2WPKHOutputValue()
+	}
+
 	// add output to pay the balance back ourselves
-	balance := totalAmt - redeemTxOut.Value - int64(c.getGasSats()*common.One)
+	balance := totalAmt - redeemTxOut.Value - int64(c.getGasSats()*common.One) - p2wpkhOutputsCost
+	if balance < 0 {
+		return nil, nil, fmt.Errorf("not enough balance to pay customer: %d", balance)
+	}
 	if balance > 0 {
 		redeemTx.AddTxOut(wire.NewTxOut(balance, sourceScript))
 	}
 
-	// memo
-	var nullDataScript []byte
-	switch c.chain {
-	case common.DOGEChain:
-		nullDataScript, err = dogetxscript.NullDataScript([]byte(tx.Memo))
-	case common.BCHChain:
-		nullDataScript, err = bchtxscript.NullDataScript([]byte(tx.Memo))
-	case common.LTCChain:
-		nullDataScript, err = ltctxscript.NullDataScript([]byte(tx.Memo))
-	case common.BTCChain, common.ZECChain:
-		nullDataScript, err = btctxscript.NullDataScript([]byte(tx.Memo))
-	default:
-		log.Fatal().Msg("unsupported chain")
+	if len(memoScripts) > 0 {
+		redeemTx.AddTxOut(wire.NewTxOut(0, memoScripts[0]))
+		for _, script := range memoScripts[1:] {
+			redeemTx.AddTxOut(wire.NewTxOut(c.chain.P2WPKHOutputValue(), script))
+		}
 	}
-	if err != nil {
-		return nil, nil, fmt.Errorf("fail to generate null data script: %w", err)
-	}
-
-	redeemTx.AddTxOut(wire.NewTxOut(0, nullDataScript))
 
 	return redeemTx, individualAmounts, nil
 }
@@ -637,12 +894,7 @@ func (c *Client) getChainCfgDOGE() *dogechaincfg.Params {
 }
 
 func (c *Client) getChainCfgZEC() *btcchaincfg.Params {
-	switch common.CurrentChainNetwork {
-	case common.MockNet:
-		return &btcchaincfg.Params{Name: "testnet3"}
-	default:
-		return &btcchaincfg.Params{Name: "mainnet"}
-	}
+	return &btcchaincfg.Params{Name: common.ZECNetworkName()}
 }
 
 // ------------------------------ signing ------------------------------
@@ -735,15 +987,10 @@ func (c *Client) signUTXOBTC(redeemTx *btcwire.MsgTx, amount int64, sourceScript
 	return nil
 }
 
-func (c *Client) signUTXOZEC(zecTx *zecutil.MsgTx, amount int64, sourceScript []byte, idx int) (err error) {
+func (c *Client) signUTXOZEC(zecTx *zcash.Tx, hashes *zcash.SigHashes, idx int) (err error) {
 	signable := btctxscript.NewPrivateKeySignable(c.privKey)
 
-	var cache *zecutil.TxSigHashes
-	if cache, err = zecutil.NewTxSigHashes(zecTx); err != nil {
-		return err
-	}
-
-	blakeHash, err := zecutil.Blake2bSignatureHash(sourceScript, cache, txscript.SigHashAll, zecTx, idx, amount)
+	blakeHash, err := hashes.SignatureHash(idx)
 	if err != nil {
 		return err
 	}

@@ -3,10 +3,26 @@ package pubkeymanager
 import (
 	"errors"
 
+	"github.com/btcsuite/btcutil/bech32"
+	"gitlab.com/thorchain/thornode/v3/cmd"
 	"gitlab.com/thorchain/thornode/v3/common"
 )
 
-var MockPubkey = "tthorpub1addwnpepqt8tnluxnk3y5quyq952klgqnlmz2vmaynm40fp592s0um7ucvjh5lc2l2z"
+var MockPubkey = normalizeMockPubKey("tthorpub1addwnpepqt8tnluxnk3y5quyq952klgqnlmz2vmaynm40fp592s0um7ucvjh5lc2l2z")
+
+func normalizeMockPubKey(pubKey string) string {
+	hrp, data, err := bech32.DecodeNoLimit(pubKey)
+	if err != nil || hrp == cmd.Bech32PrefixAccPub {
+		return pubKey
+	}
+
+	normalized, err := bech32.Encode(cmd.Bech32PrefixAccPub, data)
+	if err != nil {
+		return pubKey
+	}
+
+	return normalized
+}
 
 type MockPoolAddressValidator struct{}
 
@@ -35,9 +51,14 @@ func (mpa *MockPoolAddressValidator) AddPubKey(pk common.PubKey, _ bool, _ commo
 func (mpa *MockPoolAddressValidator) AddNodePubKey(pk common.PubKey, _ common.SigningAlgo)     {}
 func (mpa *MockPoolAddressValidator) RemovePubKey(pk common.PubKey)                            {}
 func (mpa *MockPoolAddressValidator) Start() error                                             { return errors.New("kaboom") }
-func (mpa *MockPoolAddressValidator) Stop() error                                              { return errors.New("kaboom") }
+
+func (mpa *MockPoolAddressValidator) Stop() error { return errors.New("kaboom") }
 
 func (mpa *MockPoolAddressValidator) IsValidPoolAddress(addr string, chain common.Chain) (bool, common.ChainPoolInfo) {
+	return false, common.EmptyChainPoolInfo
+}
+
+func (mpa *MockPoolAddressValidator) IsActivePoolAddress(addr string, chain common.Chain) (bool, common.ChainPoolInfo) {
 	return false, common.EmptyChainPoolInfo
 }
 

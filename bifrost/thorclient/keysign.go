@@ -1,6 +1,7 @@
 package thorclient
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -20,8 +21,30 @@ type QueryKeysign struct {
 
 // GetKeysign retrieves txout from this block height from thorchain
 func (b *thorchainBridge) GetKeysign(blockHeight int64, pk string) (types.TxOut, error) {
-	path := fmt.Sprintf("%s/%d/%s", KeysignEndpoint, blockHeight, pk)
-	body, status, err := b.getWithPath(path)
+	return b.getKeysign(blockHeight, pk, b.getWithPath)
+}
+
+// GetKeysignWithContext retrieves a txout without allowing the request or its
+// retries to outlive ctx.
+func (b *thorchainBridge) GetKeysignWithContext(ctx context.Context, blockHeight int64, pk string) (types.TxOut, error) {
+	return b.getKeysign(blockHeight, pk, func(path string) ([]byte, int, error) {
+		return b.getWithPathWithContext(ctx, path)
+	})
+}
+
+func (b *thorchainBridge) getKeysign(
+	blockHeight int64,
+	pk string,
+	get func(string) ([]byte, int, error),
+) (types.TxOut, error) {
+	path := fmt.Sprintf("%s/%d", KeysignEndpoint, blockHeight)
+	if pk != "" {
+		// Keep the pubkey-specific endpoint for the normal signing path. XMR
+		// peer spent-ref validation passes an empty pk so newly churned-in
+		// validators can load the full public txout by height.
+		path = fmt.Sprintf("%s/%s", path, pk)
+	}
+	body, status, err := get(path)
 	if err != nil {
 		if status == http.StatusNotFound {
 			return types.TxOut{}, btypes.ErrUnavailableBlock

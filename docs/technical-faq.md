@@ -2,7 +2,7 @@
 
 ## Differentiating Features and Protocol Customizations
 
-THORChain is built on the [Cosmos SDK](https://docs.thorchain.org/technology/cosmos-sdk), with several alterations and customizations tailored to its use case.
+THORChain is built on the [Cosmos SDK](https://docs.thorchain.org/technical-documentation/technology/cosmos-sdk), with several alterations and customizations tailored to its use case.
 
 - **Custom Handlers:**
 
@@ -128,7 +128,7 @@ RUNE tokens can be transferred via:
 ### Full Node and Smart Contracts
 
 - **Local Mode**: Available through [mocknet](../README.md#start-standalone-full-stack) environment.
-- **Smart Contracts**: No current smart contracts; CosmWasm integration planned but not necessary for RUNE transfers.
+- **Smart Contracts**: CosmWasm (App Layer) is live; deployment is permissioned. Not required for RUNE transfers. See [ADR-020](./architecture/adr-020-app-layer.md).
 
 ## Staking
 
@@ -162,15 +162,17 @@ Yes, they are held in the network’s bond module. Bonders giving up custody of 
 
 **Are staking rewards claimed on-chain, automatically or in response to a claim transaction, or must the validator send rewards back manually?**
 
-Rewards are accrued to a bond provider’s amount, which is a separate ledger. They must be withdrawn by an explicit UNBOND transaction and can only be withdrawn when a validator is churned out. Otherwise, they continue to accrue in the absence of explicit UNBOND transactions.
+By default, rewards are accrued to a bond provider’s amount, which is a separate ledger. They must be withdrawn by an explicit UNBOND transaction and can only be withdrawn when a validator is churned out. Otherwise, they continue to accrue in the absence of explicit UNBOND transactions.
+
+The exception is Bond Yield (see [ADR 029](./architecture/adr-029-bond-yield-payouts.md)), which must first be enabled by the `BondYieldEnabled` [network variable](./mimir.md#node-management). A bond provider can send a [`BONDYIELD`](./concepts/memos.md#bond-yield) memo to configure a basis-point share of their _future_ reward allocations to be paid out automatically at each reward distribution, with the remainder rebonded as usual. This requires no claim transaction and no churn out, but it does not touch existing bond or rewards already accrued — those still require an UNBOND after the validator churns out. Setting the share back to `0` restores the default full-rebond behavior.
 
 **Are staking rewards automatically redelegated as they accumulate or must they be claimed and redelegated with a transaction?**
 
-Yes, see above.
+Yes, they are redelegated automatically, with no transaction required — except for the portion a bond provider has configured for automatic payout via Bond Yield, see above.
 
 **How much staking rewards are distributed as a percentage of total issuance?**
 
-It depends on the [Incentive Pendulum](https://docs.thorchain.org/how-it-works/incentive-pendulum). When network security is optimal (2 RUNE for every 1 RUNE of non-RUNE pooled assets, e.g., $50m RUNE bonded and $25m L1 pooled), the network security is considered optimal, and block rewards are split 33%/67% in favor of liquidity providers. When network security approaches 1:1 (danger of becoming underbonded), block rewards shift 100% to node operators to incentivize more bonded RUNE.
+It depends on the [Incentive Pendulum](./concepts/incentive-pendulum.md). When network security is optimal (2 RUNE for every 1 RUNE of non-RUNE pooled assets, e.g., $50m RUNE bonded and $25m L1 pooled), the network security is considered optimal, and block rewards are split 33%/67% in favor of liquidity providers. When network security approaches 1:1 (danger of becoming underbonded), block rewards shift 100% to node operators to incentivize more bonded RUNE.
 
 ## Governance
 

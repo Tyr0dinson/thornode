@@ -245,6 +245,27 @@ func (MsgSwapSuite) TestSwapState_IsDone(c *C) {
 	}
 	c.Assert(limitSwapAlmost.IsDone(), Equals, false)
 
+	// Rounded account withdrawals may leave input after all planned successes.
+	// Failed attempts must not cause early settlement.
+	roundedLimitSwap := &MsgSwap{
+		SwapType: SwapType_limit,
+		State: &SwapState{
+			Quantity:    2,
+			Count:       2,
+			FailedSwaps: []uint64{0},
+			Deposit:     cosmos.NewUint(10),
+			In:          cosmos.NewUint(3),
+		},
+	}
+	c.Assert(roundedLimitSwap.IsDone(), Equals, false)
+	roundedLimitSwap.State.Count = 3
+	roundedLimitSwap.State.In = cosmos.NewUint(6)
+	c.Assert(roundedLimitSwap.IsDone(), Equals, true)
+
+	// Orders already over the successful-swap allowance also need settlement.
+	roundedLimitSwap.State.Count = 4
+	c.Assert(roundedLimitSwap.IsDone(), Equals, true)
+
 	// Test unknown swap type (should default to false)
 	unknownSwap := &MsgSwap{
 		SwapType: SwapType(99),

@@ -35,10 +35,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
-var (
-	keyThornodeBench     = storetypes.NewKVStoreKey(StoreKey)
-	serviceThornodeBench = runtime.NewKVStoreService(keyThornodeBench)
-)
+var keyThornodeBench = storetypes.NewKVStoreKey(StoreKey)
 
 // fundModuleBench funds a module for benchmarking (no check.C dependency)
 func fundModuleBench(b testing.TB, ctx cosmos.Context, k keeper.Keeper, name string, amt uint64) {
@@ -55,7 +52,15 @@ func fundModuleBench(b testing.TB, ctx cosmos.Context, k keeper.Keeper, name str
 
 // setupBenchmarkManager creates a test context and manager for benchmarking
 // This is a standalone version of setupManagerForTest that works with testing.B
-func setupBenchmarkManager(b *testing.B) (cosmos.Context, *Mgrs) {
+func setupBenchmarkManager(b testing.TB) (cosmos.Context, *Mgrs) {
+	b.Helper()
+	return setupBenchmarkManagerWith(b, true)
+}
+
+// setupBenchmarkManagerWith is setupBenchmarkManager; bootstrapValidator=false
+// leaves out its random active validator, for fixtures that seed their own
+// validator set (a validator outside it would be churned out in EndBlock).
+func setupBenchmarkManagerWith(b testing.TB, bootstrapValidator bool) (cosmos.Context, *Mgrs) {
 	b.Helper()
 
 	// Ensure we're using mocknet and have proper version set
@@ -70,10 +75,13 @@ func setupBenchmarkManager(b *testing.B) (cosmos.Context, *Mgrs) {
 
 	db := dbm.NewMemDB()
 	ms := store.NewCommitMultiStore(db, sdklog.NewNopLogger(), storemetrics.NewNoOpMetrics())
-	ms.MountStoreWithDB(keyAcc, cosmos.StoreTypeIAVL, db)
-	ms.MountStoreWithDB(keyThornodeBench, cosmos.StoreTypeIAVL, db)
-	ms.MountStoreWithDB(keyBank, cosmos.StoreTypeIAVL, db)
-	ms.MountStoreWithDB(keyWasm, cosmos.StoreTypeIAVL, db)
+	// nil db: rootmulti prefixes its own db per store. Handing every store the
+	// same raw memdb makes their IAVL versions collide, so Commit() panics and
+	// the fixture can never be measured on a committed tree.
+	ms.MountStoreWithDB(keyAcc, cosmos.StoreTypeIAVL, nil)
+	ms.MountStoreWithDB(keyThornodeBench, cosmos.StoreTypeIAVL, nil)
+	ms.MountStoreWithDB(keyBank, cosmos.StoreTypeIAVL, nil)
+	ms.MountStoreWithDB(keyWasm, cosmos.StoreTypeIAVL, nil)
 
 	err := ms.LoadLatestVersion()
 	if err != nil {
@@ -104,6 +112,8 @@ func setupBenchmarkManager(b *testing.B) (cosmos.Context, *Mgrs) {
 			types.RUNEPoolName:           {},
 			types.TCYStakeName:           {},
 			types.TCYClaimingName:        {},
+			types.POLReserveName:         {},
+			types.StableReserveName:      {},
 		},
 		authcodec.NewBech32Codec(sdk.GetConfig().GetBech32AccountAddrPrefix()),
 		sdk.GetConfig().GetBech32AccountAddrPrefix(),
@@ -153,12 +163,14 @@ func setupBenchmarkManager(b *testing.B) (cosmos.Context, *Mgrs) {
 		authtypes.NewModuleAddress(ModuleName).String(),
 	)
 
-	k := kv1.NewKeeper(encodingConfig.Codec, serviceThornodeBench, bk, ak, uk)
+	k := kv1.NewKeeper(encodingConfig.Codec, keyThornodeBench, bk, ak, uk)
 
 	// Set up a validator node account (required for swap simulations)
-	err = k.SetNodeAccount(ctx, GetRandomValidatorNode(NodeActive))
-	if err != nil {
-		b.Fatal(err)
+	if bootstrapValidator {
+		err = k.SetNodeAccount(ctx, GetRandomValidatorNode(NodeActive))
+		if err != nil {
+			b.Fatal(err)
+		}
 	}
 
 	fundModuleBench(b, ctx, k, ModuleName, 10_000*common.One)
@@ -183,7 +195,7 @@ func setupBenchmarkManager(b *testing.B) (cosmos.Context, *Mgrs) {
 		b.Fatal(err)
 	}
 
-	mgr := NewManagers(k, encodingConfig.Codec, serviceThornodeBench, bk, ak, uk, wk)
+	mgr := NewManagers(k, encodingConfig.Codec, keyThornodeBench, bk, ak, uk, wk)
 
 	err = mgr.LoadManagerIfNecessary(ctx)
 	if err != nil {

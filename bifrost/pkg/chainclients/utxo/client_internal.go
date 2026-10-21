@@ -215,6 +215,15 @@ func (c *Client) canDeleteBlock(blockMeta *utxo.BlockMeta) bool {
 }
 
 func (c *Client) updateNetworkInfo() {
+	if c.cfg.ChainID == common.BTCChain {
+		// Preserve BTC's historical total fee floor for signing and fee reports.
+		// The daemon's relayfee is a rate in BTC/kvB, not a total fee, and varies
+		// with version/configuration. Using it here splits signers into different
+		// TSS sessions. Keep this absolute floor independent of local RPC policy.
+		c.minRelayFeeSats.Store(1_000)
+		return
+	}
+
 	networkInfo, err := c.rpc.GetNetworkInfo()
 	if err != nil {
 		c.log.Err(err).Msg("fail to get network info")
@@ -368,11 +377,18 @@ func (c *Client) sendNetworkFeeFromBlock(blockResult *btcjson.GetBlockVerboseTxR
 	c.networkFeeLock.Lock()
 	defer c.networkFeeLock.Unlock()
 
+	// ZEC fees are static, but its agreed chain height must stay fresh for
+	// deterministic transaction expiry. Report every quarter of the expiry
+	// window even when fees are unchanged, using the scanned block height so
+	// validators report the same heights regardless of local timing.
+	// See ZecTxExpiry for the cadence, scanner-lag and quorum-latency budget.
+	zecHeightReport := c.GetChain() == common.ZECChain && height%zecHeightReportInterval == 0
+
 	// skip fee if less than 1 resolution away from the last
 	lastFeeRate := c.lastFeeRate.Load()
 	feeDelta := new(big.Int).Sub(big.NewInt(int64(feeRateSats)), big.NewInt(int64(lastFeeRate)))
 	feeDelta.Abs(feeDelta)
-	if lastFeeRate != 0 && feeDelta.Cmp(big.NewInt(c.cfg.BlockScanner.GasPriceResolution)) != 1 {
+	if !zecHeightReport && lastFeeRate != 0 && feeDelta.Cmp(big.NewInt(c.cfg.BlockScanner.GasPriceResolution)) != 1 {
 		return nil
 	}
 
@@ -874,6 +890,12 @@ func (c *Client) getMemo(tx *btcjson.TxRawResult) (string, error) {
 		switch strings.ToLower(vOut.ScriptPubKey.Type) {
 		case "witness_v0_keyhash", "pubkeyhash", "nulldata":
 			// do nothing
+		case "nonstandard":
+			// zcashd reports the synthetic segwit-style memo continuation outputs as
+			// nonstandard, even though the script still disassembles to `0 <20-byte-data>`.
+			if !c.cfg.ChainID.Equals(common.ZECChain) {
+				continue
+			}
 		default:
 			continue
 		}

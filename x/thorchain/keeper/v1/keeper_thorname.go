@@ -2,13 +2,13 @@ package keeperv1
 
 import (
 	"fmt"
+	"strings"
 
-	"github.com/cosmos/cosmos-sdk/runtime"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 )
 
 func (k KVStore) setTHORName(ctx cosmos.Context, key []byte, record THORName) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	buf := k.cdc.MustMarshal(&record)
 	if buf == nil {
 		store.Delete(key)
@@ -18,7 +18,7 @@ func (k KVStore) setTHORName(ctx cosmos.Context, key []byte, record THORName) {
 }
 
 func (k KVStore) getTHORName(ctx cosmos.Context, key []byte, record *THORName) (bool, error) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	if !store.Has(key) {
 		return false, nil
 	}
@@ -68,6 +68,14 @@ func (k KVStore) GetTHORName(ctx cosmos.Context, name string) (THORName, error) 
 	return record, err
 }
 
+// GetTHORNameRecord includes the previous owner after expiry. A missing record
+// returns only the requested THORName.
+func (k KVStore) GetTHORNameRecord(ctx cosmos.Context, name string) (THORName, error) {
+	record := THORName{Name: name}
+	_, err := k.getTHORName(ctx, k.GetKey(prefixTHORName, record.Key()), &record)
+	return record, err
+}
+
 // DeleteTHORName remove the given THORName from data store
 func (k KVStore) DeleteTHORName(ctx cosmos.Context, name string) error {
 	n := THORName{Name: name}
@@ -78,7 +86,7 @@ func (k KVStore) DeleteTHORName(ctx cosmos.Context, name string) error {
 // AffiliateFeeCollector
 
 func (k KVStore) setAffiliateCollector(ctx cosmos.Context, key []byte, record AffiliateFeeCollector) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	buf := k.cdc.MustMarshal(&record)
 	if buf == nil {
 		store.Delete(key)
@@ -88,7 +96,7 @@ func (k KVStore) setAffiliateCollector(ctx cosmos.Context, key []byte, record Af
 }
 
 func (k KVStore) getAffilateCollector(ctx cosmos.Context, key []byte, record *AffiliateFeeCollector) (bool, error) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	if !store.Has(key) {
 		return false, nil
 	}
@@ -101,16 +109,27 @@ func (k KVStore) getAffilateCollector(ctx cosmos.Context, key []byte, record *Af
 	return true, nil
 }
 
-func (k KVStore) SetAffiliateCollector(ctx cosmos.Context, collector AffiliateFeeCollector) {
-	k.setAffiliateCollector(ctx, k.GetKey(prefixAffiliateCollector, collector.OwnerAddress.String()), collector)
+func (k KVStore) SetAffiliateCollector(ctx cosmos.Context, collector AffiliateFeeCollector) error {
+	if collector.Name == "" {
+		return fmt.Errorf("affiliate collector THORName cannot be empty")
+	}
+	collector.Name = strings.ToLower(collector.Name)
+	k.setAffiliateCollector(ctx, k.GetKey(prefixAffiliateCollector, collector.Name), collector)
+	return nil
 }
 
-func (k KVStore) GetAffiliateCollector(ctx cosmos.Context, acc cosmos.AccAddress) (AffiliateFeeCollector, error) {
+func (k KVStore) GetAffiliateCollector(ctx cosmos.Context, name string) (AffiliateFeeCollector, error) {
 	record := AffiliateFeeCollector{
-		OwnerAddress: acc,
-		RuneAmount:   cosmos.ZeroUint(),
+		Name:       strings.ToLower(name),
+		RuneAmount: cosmos.ZeroUint(),
 	}
-	_, err := k.getAffilateCollector(ctx, k.GetKey(prefixAffiliateCollector, record.OwnerAddress.String()), &record)
+	if name == "" {
+		return record, fmt.Errorf("affiliate collector THORName cannot be empty")
+	}
+	_, err := k.getAffilateCollector(ctx, k.GetKey(prefixAffiliateCollector, record.Name), &record)
+	if err == nil && record.Name == "" {
+		return record, fmt.Errorf("affiliate collector THORName cannot be empty")
+	}
 	return record, err
 }
 

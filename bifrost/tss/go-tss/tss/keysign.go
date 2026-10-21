@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	tsslibcommon "github.com/binance-chain/tss-lib/common"
+	tsslibcommon "gitlab.com/thorchain/tss/tss-lib-private.git/v3/common"
 
 	"github.com/libp2p/go-libp2p-core/peer"
 	"gitlab.com/thorchain/thornode/v3/bifrost/p2p"
@@ -50,6 +50,7 @@ func (t *TssServer) generateSignature(
 	keysignInstance keysign.TssKeySign,
 	sigChan chan string,
 ) (keysign.Response, error) {
+	ourPeerString := t.p2pCommunication.GetHost().ID().String()
 	allPeersID, err := conversion.GetPeerIDsFromPubKeys(allParticipants)
 	if err != nil {
 		t.logger.Error().Msg("invalid block height or public key")
@@ -59,40 +60,8 @@ func (t *TssServer) generateSignature(
 		}, nil
 	}
 
-	oldJoinParty, err := conversion.VersionLTCheck(req.Version, messages.NEWJOINPARTYVERSION)
-	if err != nil {
-		return keysign.Response{
-			Status: common.Fail,
-			Blame:  blame.NewBlame(blame.InternalError, []blame.Node{}),
-		}, errors.New("fail to parse the version")
-	}
-
-	ourPeerString := t.p2pCommunication.GetHost().ID().String()
-
-	// we use the old join party
-	if oldJoinParty {
-		allParticipants = req.SignerPubKeys
-		myPk, err := conversion.GetPubKeyFromPeerID(ourPeerString)
-		if err != nil {
-			t.logger.Info().Msgf("fail to convert the p2p id(%s) to pubkey, turn to wait for signature", ourPeerString)
-			return keysign.Response{}, p2p.ErrNotActiveSigner
-		}
-		isSignMember := false
-		for _, el := range allParticipants {
-			if myPk == el {
-				isSignMember = true
-				break
-			}
-		}
-		if !isSignMember {
-			t.logger.Info().Msgf("we(%s) are not the active signer", ourPeerString)
-			return keysign.Response{}, p2p.ErrNotActiveSigner
-		}
-
-	}
-
 	joinPartyStartTime := time.Now()
-	onlinePeers, leader, errJoinParty := t.joinParty(msgID, req.Version, req.BlockHeight, allParticipants, threshold, sigChan)
+	onlinePeers, leader, errJoinParty := t.joinKeySignParty(msgID, req.Version, req.BlockHeight, allParticipants, threshold, sigChan)
 	joinPartyTime := time.Since(joinPartyStartTime)
 	if errJoinParty != nil {
 		// we received the signature from waiting for signature
@@ -111,7 +80,7 @@ func (t *TssServer) generateSignature(
 				}, nil
 			}
 
-			blameNodes, err := blameMgr.NodeSyncBlame(req.SignerPubKeys, onlinePeers)
+			blameNodes, err := blameMgr.NodeSyncBlame(allParticipants, onlinePeers)
 			if err != nil {
 				t.logger.Err(err).Msg("fail to get peers to blame")
 			}
@@ -121,6 +90,20 @@ func (t *TssServer) generateSignature(
 			return keysign.Response{
 				Status: common.Fail,
 				Blame:  blameNodes,
+			}, nil
+		}
+
+		// Leader-rotation builds (version-gated) already tried every deterministic coordinator
+		// without forming a party and rotated the leader between attempts. A join timeout is
+		// not signed evidence against any node, and the leader is no longer fixed, so blaming
+		// it would serially jail an innocent node. Emit NO blame — mirrors frostJoinPartyBlame.
+		// The error stays a join-party failure, so the UTXO rebuild-retry path is preserved.
+		if rotationOn, verErr := keysignLeaderRotationEnabled(req.Version); verErr == nil && rotationOn {
+			t.broadcastKeysignFailure(msgID, allPeersID)
+			t.logger.Error().Err(errJoinParty).Msgf("messagesID(%s) fail to form keysign party (leader rotated, no blame) online:%v", msgID, onlinePeers)
+			return keysign.Response{
+				Status: common.Fail,
+				Blame:  blame.NewBlame(blame.TssSyncFail, nil),
 			}, nil
 		}
 
@@ -169,14 +152,14 @@ func (t *TssServer) generateSignature(
 			Blame:  blame.Blame{},
 		}, nil
 	}
-	signatureData, err := keysignInstance.SignMessage(msgsToSign, localStateItem, signers)
+	signatureData, err := keysignInstance.SignMessage(msgsToSign, localStateItem, signers, req.Version)
 	// the statistic of keygen only care about Tss it self, even if the following http response aborts,
 	// it still counted as a successful keygen as the Tss model runs successfully.
 	if err != nil {
 		t.logger.Error().Err(err).Msg("err in keysign")
 		sigChan <- "signature generated"
 		t.broadcastKeysignFailure(msgID, allPeersID)
-		blameNodes := *blameMgr.GetBlame()
+		blameNodes := blameMgr.GetBlame().Snapshot()
 		return keysign.Response{
 			Status: common.Fail,
 			Blame:  blameNodes,
@@ -201,11 +184,35 @@ func (t *TssServer) updateKeySignResult(result keysign.Response, timeSpent time.
 }
 
 func (t *TssServer) KeySign(req keysign.Request) (keysign.Response, error) {
+	emptyResp := keysign.Response{}
+	localStateItem, err := t.stateManager.GetLocalState(req.PoolPubKey)
+	if err != nil {
+		return emptyResp, fmt.Errorf("fail to get local keygen state: %w", err)
+	}
+
+	threshold, err := conversion.GetThreshold(len(localStateItem.ParticipantKeys))
+	if err != nil {
+		t.logger.Error().Err(err).Msg("fail to get the threshold")
+		return emptyResp, errors.New("fail to get threshold")
+	}
+	keysignParticipants, err := keysignParticipantsFromRequest(req.SignerPubKeys, localStateItem.ParticipantKeys)
+	if err != nil {
+		return emptyResp, err
+	}
+	if len(keysignParticipants) <= threshold {
+		t.logger.Error().Msgf("not enough signers, threshold=%d and signers=%d", threshold, len(keysignParticipants))
+		return emptyResp, errors.New("not enough signers")
+	}
+	if !keysignParticipantSet(keysignParticipants)[strings.TrimSpace(localStateItem.LocalPartyKey)] {
+		t.logger.Info().Msgf("we(%s) are not the active signer", localStateItem.LocalPartyKey)
+		return emptyResp, nil
+	}
+	req.SignerPubKeys = keysignParticipants
+
 	t.logger.Info().Str("pool pub key", req.PoolPubKey).
 		Str("signer pub keys", strings.Join(req.SignerPubKeys, ",")).
 		Str("msg", strings.Join(req.Messages, ",")).
 		Msg("received keysign request")
-	emptyResp := keysign.Response{}
 	msgID, err := t.requestToMsgId(req)
 	if err != nil {
 		return emptyResp, err
@@ -263,11 +270,6 @@ func (t *TssServer) KeySign(req keysign.Request) (keysign.Response, error) {
 		t.partyCoordinator.ReleaseStream(msgID)
 	}()
 
-	localStateItem, err := t.stateManager.GetLocalState(req.PoolPubKey)
-	if err != nil {
-		return emptyResp, fmt.Errorf("fail to get local keygen state: %w", err)
-	}
-
 	var msgsToSign [][]byte
 	for _, val := range req.Messages {
 		msgToSign, err := base64.StdEncoding.DecodeString(val)
@@ -301,16 +303,6 @@ func (t *TssServer) KeySign(req keysign.Request) (keysign.Response, error) {
 		return emptyResp, errors.New("empty signer pub keys")
 	}
 
-	threshold, err := conversion.GetThreshold(len(localStateItem.ParticipantKeys))
-	if err != nil {
-		t.logger.Error().Err(err).Msg("fail to get the threshold")
-		return emptyResp, errors.New("fail to get threshold")
-	}
-	if len(req.SignerPubKeys) <= threshold && oldJoinParty {
-		t.logger.Error().Msgf("not enough signers, threshold=%d and signers=%d", threshold, len(req.SignerPubKeys))
-		return emptyResp, errors.New("not enough signers")
-	}
-
 	blameMgr := keysignInstance.GetTssCommonStruct().GetBlameMgr()
 
 	var receivedSig, generatedSig keysign.Response
@@ -342,7 +334,7 @@ func (t *TssServer) KeySign(req keysign.Request) (keysign.Response, error) {
 	// we generate the signature ourselves
 	go func() {
 		defer wg.Done()
-		generatedSig, errGen = t.generateSignature(msgID, msgsToSign, req, threshold, localStateItem.ParticipantKeys, localStateItem, blameMgr, keysignInstance, sigChan)
+		generatedSig, errGen = t.generateSignature(msgID, msgsToSign, req, threshold, keysignParticipants, localStateItem, blameMgr, keysignInstance, sigChan)
 	}()
 	wg.Wait()
 	close(sigChan)
@@ -366,6 +358,53 @@ func (t *TssServer) broadcastKeysignFailure(messageID string, peers []peer.ID) {
 	if err := t.signatureNotifier.BroadcastFailed(messageID, peers); err != nil {
 		t.logger.Err(err).Msg("fail to broadcast keysign failure")
 	}
+}
+
+// keysignParticipantsFromRequest treats SignerPubKeys as the authoritative
+// thornode-selected party. Empty SignerPubKeys is kept as a compatibility path
+// for keygen self-check signing, where thornode has no vault policy yet.
+func keysignParticipantsFromRequest(policySigners, localMembers []string) ([]string, error) {
+	if len(localMembers) == 0 {
+		return nil, fmt.Errorf("local signer membership is empty")
+	}
+	local := keysignParticipantSet(localMembers)
+	if len(policySigners) == 0 {
+		return append([]string(nil), localMembers...), nil
+	}
+
+	seen := make(map[string]bool, len(policySigners))
+	participants := make([]string, 0, len(policySigners))
+	for _, signer := range policySigners {
+		normalized := strings.TrimSpace(signer)
+		if normalized == "" {
+			continue
+		}
+		if seen[normalized] {
+			continue
+		}
+		if !local[normalized] {
+			return nil, fmt.Errorf("keysign policy signer %s is not in local keygen state", signer)
+		}
+		seen[normalized] = true
+		participants = append(participants, signer)
+	}
+	if len(participants) == 0 {
+		return nil, fmt.Errorf("empty keysign signer policy")
+	}
+	return participants, nil
+}
+
+// keysignParticipantSet normalizes signer strings into a lookup table used by
+// the active-signer filter and local-state membership checks.
+func keysignParticipantSet(values []string) map[string]bool {
+	set := make(map[string]bool, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			set[value] = true
+		}
+	}
+	return set
 }
 
 func (t *TssServer) batchSignatures(algo tcommon.SigningAlgo, sigs []*tsslibcommon.SignatureData, msgsToSign [][]byte) keysign.Response {
@@ -392,10 +431,8 @@ func (t *TssServer) batchSignatures(algo tcommon.SigningAlgo, sigs []*tsslibcomm
 	var signatures []keysign.Signature
 	// Pair signatures with messages using the M field (message hash)
 	for _, sig := range sigs {
-		sigg := sig.GetSignature()
-
 		// Find the original message that matches this signature's hash
-		sigHashInt := new(big.Int).SetBytes(sigg.M)
+		sigHashInt := new(big.Int).SetBytes(sig.M)
 		sigHashKey := sigHashInt.String()
 		originalMsg, found := msgMap[sigHashKey]
 		if !found {
@@ -412,13 +449,13 @@ func (t *TssServer) batchSignatures(algo tcommon.SigningAlgo, sigs []*tsslibcomm
 		switch algo {
 		case tcommon.SigningAlgoSecp256k1:
 			msg := base64.StdEncoding.EncodeToString(originalMsg)
-			r := base64.StdEncoding.EncodeToString(sigg.R)
-			s := base64.StdEncoding.EncodeToString(sigg.S)
-			recovery := base64.StdEncoding.EncodeToString(sigg.GetSignatureRecovery())
+			r := base64.StdEncoding.EncodeToString(sig.R)
+			s := base64.StdEncoding.EncodeToString(sig.S)
+			recovery := base64.StdEncoding.EncodeToString(sig.SignatureRecovery)
 			signature = keysign.NewSignature(msg, r, s, recovery)
 		case tcommon.SigningAlgoEd25519:
 			msg := base64.StdEncoding.EncodeToString(originalMsg)
-			s := base64.StdEncoding.EncodeToString(sigg.Signature)
+			s := base64.StdEncoding.EncodeToString(sig.Signature)
 			signature = keysign.NewSignature(msg, "", s, "")
 		}
 		signatures = append(signatures, signature)

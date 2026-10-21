@@ -32,10 +32,11 @@ import (
 // Config
 // -------------------------------------------------------------------------------------
 
-const (
-	MaxRetries   = 3
-	RetryBackoff = time.Second * 5
-)
+const MaxRetries = 3
+
+// RetryBackoff is the wait between seed/genesis fetch attempts. A variable so
+// tests of the failure paths need not sleep for real.
+var RetryBackoff = time.Second * 5
 
 var (
 	//go:embed default.yaml
@@ -189,6 +190,107 @@ func Init() {
 		"BCH_START_BLOCK_HEIGHT",
 	))
 	assert(viper.BindEnv(
+		"bifrost.chains.XMR.rpc_host",
+		"XMR_HOST",
+	))
+	assert(viper.BindEnv(
+		"bifrost.chains.XMR.chain_host",
+		"XMR_WALLET_HOST",
+	))
+	assert(viper.BindEnv(
+		"bifrost.chains.XMR.username",
+		"XMR_USER",
+	))
+	assert(viper.BindEnv(
+		"bifrost.chains.XMR.password",
+		"XMR_PASSWORD",
+	))
+	assert(viper.BindEnv(
+		"bifrost.chains.XMR.block_scanner.start_block_height",
+		"XMR_START_BLOCK_HEIGHT",
+	))
+	assert(viper.BindEnv(
+		"bifrost.chains.XMR.signer_backend",
+		"XMR_SIGNER_BACKEND",
+	))
+	assert(viper.BindEnv(
+		"bifrost.chains.XMR.signer_endpoint",
+		"XMR_SIGNER_ENDPOINT",
+	))
+	assert(viper.BindEnv(
+		"bifrost.chains.XMR.signer_authorization_bearer",
+		"XMR_FROST_AUTH_BEARER",
+		"BIFROST_CHAINS_XMR_SIGNER_AUTHORIZATION_BEARER",
+	))
+	assert(viper.BindEnv(
+		"bifrost.chains.XMR.signer_username",
+		"XMR_FROST_AUTH_USERNAME",
+		"BIFROST_CHAINS_XMR_SIGNER_USERNAME",
+	))
+	assert(viper.BindEnv(
+		"bifrost.chains.XMR.signer_password",
+		"XMR_FROST_AUTH_PASSWORD",
+		"BIFROST_CHAINS_XMR_SIGNER_PASSWORD",
+	))
+	assert(viper.BindEnv(
+		"bifrost.chains.XMR.signer_expected_network",
+		"XMR_FROST_CHAIN_NETWORK",
+		"BIFROST_CHAINS_XMR_SIGNER_EXPECTED_NETWORK",
+	))
+	assert(viper.BindEnv(
+		"bifrost.chains.XMR.signer_expected_commit",
+		"XMR_FROST_EXPECTED_COMMIT",
+		"BIFROST_CHAINS_XMR_SIGNER_EXPECTED_COMMIT",
+	))
+	assert(viper.BindEnv(
+		"bifrost.chains.XMR.signer_allow_insecure_http",
+		"BIFROST_CHAINS_XMR_SIGNER_ALLOW_INSECURE_HTTP",
+	))
+	assert(viper.BindEnv(
+		"bifrost.chains.XMR.xmr_consolidation_enabled",
+		"XMR_CONSOLIDATION_ENABLED",
+	))
+	assert(viper.BindEnv(
+		"bifrost.chains.XMR.xmr_consolidation_check_interval_blocks",
+		"XMR_CONSOLIDATION_CHECK_INTERVAL_BLOCKS",
+	))
+	assert(viper.BindEnv(
+		"bifrost.chains.XMR.xmr_consolidation_cooldown_blocks",
+		"XMR_CONSOLIDATION_COOLDOWN_BLOCKS",
+	))
+	assert(viper.BindEnv(
+		"bifrost.chains.XMR.xmr_consolidation_min_unlocked_outputs",
+		"XMR_CONSOLIDATION_MIN_UNLOCKED_OUTPUTS",
+	))
+	assert(viper.BindEnv(
+		"bifrost.chains.XMR.xmr_consolidation_target_outputs",
+		"XMR_CONSOLIDATION_TARGET_OUTPUTS",
+	))
+	assert(viper.BindEnv(
+		"bifrost.chains.XMR.xmr_consolidation_min_unlocked_atomic",
+		"XMR_CONSOLIDATION_MIN_UNLOCKED_ATOMIC",
+	))
+	assert(viper.BindEnv(
+		"bifrost.chains.XMR.xmr_consolidation_reserve_bps",
+		"XMR_CONSOLIDATION_RESERVE_BPS",
+	))
+	assert(viper.BindEnv(
+		"bifrost.chains.XMR.xmr_consolidation_churn_lookahead_blocks",
+		"XMR_CONSOLIDATION_CHURN_LOOKAHEAD_BLOCKS",
+	))
+	assert(viper.BindEnv(
+		"bifrost.chains.XMR.xmr_consolidation_max_retries",
+		"XMR_CONSOLIDATION_MAX_RETRIES",
+	))
+	assert(viper.BindEnv(
+		"bifrost.chains.XMR.xmr_consolidation_max_inputs",
+		"XMR_CONSOLIDATION_MAX_INPUTS",
+	))
+	assert(viper.BindEnv(
+		"bifrost.chains.XMR.xmr_consolidation_max_lock_bps",
+		"XMR_CONSOLIDATION_MAX_LOCK_BPS",
+	))
+	assert(viper.BindEnv(
 		"bifrost.chains.GAIA.cosmos_grpc_host",
 		"GAIA_GRPC_HOST",
 	))
@@ -208,6 +310,7 @@ func Init() {
 	assert(viper.BindEnv("bifrost.chains.DOGE.disabled", "DOGE_DISABLED"))
 	assert(viper.BindEnv("bifrost.chains.LTC.disabled", "LTC_DISABLED"))
 	assert(viper.BindEnv("bifrost.chains.AVAX.disabled", "AVAX_DISABLED"))
+	assert(viper.BindEnv("bifrost.chains.XMR.disabled", "XMR_DISABLED"))
 	assert(viper.BindEnv("bifrost.chains.AVAX.block_scanner.gas_cache_size", "AVAX_GAS_CACHE_SIZE"))
 	assert(viper.BindEnv("thor.cosmos.halt_height", "HARDFORK_BLOCK_HEIGHT"))
 
@@ -309,26 +412,36 @@ func InitThornode(ctx context.Context) {
 	tendermintPath := filepath.Join(home, "config", "config.toml")
 	cosmosPath := filepath.Join(home, "config", "app.toml")
 
-	// template tendermint config into place
+	// template config files into place
 	t := template.Must(template.ParseFS(templates, "*.tmpl"))
-	tendermintFile, err := os.OpenFile(tendermintPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
-	if err != nil {
-		log.Fatal().Err(err).Msg("failed to open config.toml")
-	}
-	err = t.ExecuteTemplate(tendermintFile, "config.toml.tmpl", config.Thornode.Tendermint)
-	if err != nil {
-		log.Fatal().Err(err).Msg("failed to render config.toml")
+
+	// renderConfigFile templates tmpl into path, truncating any existing file.
+	// When preserve is set and the target already exists, the existing file is
+	// left untouched so operators can manage it themselves across restarts
+	// (render-config runs on every boot from Docker). Each file has its own
+	// toggle: THORNODE_PRESERVE_CONFIG_TOML and THORNODE_PRESERVE_APP_TOML.
+	// NOTE: preserving config.toml opts out of the dynamic seed and external
+	// address injection above, so the operator becomes responsible for
+	// maintaining seeds/persistent_peers/external_address.
+	renderConfigFile := func(path, tmpl string, data any, preserve bool) {
+		if preserve {
+			if _, statErr := os.Stat(path); statErr == nil {
+				log.Info().Str("path", path).Msg("preserve env var set and file exists, skipping render")
+				return
+			}
+		}
+		f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
+		if err != nil {
+			log.Fatal().Err(err).Msgf("failed to open %s", filepath.Base(path))
+		}
+		defer f.Close()
+		if err = t.ExecuteTemplate(f, tmpl, data); err != nil {
+			log.Fatal().Err(err).Msgf("failed to render %s", filepath.Base(path))
+		}
 	}
 
-	// template cosmos config into place
-	cosmosFile, err := os.OpenFile(cosmosPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
-	if err != nil {
-		log.Fatal().Err(err).Msg("failed to open app.toml")
-	}
-	err = t.ExecuteTemplate(cosmosFile, "app.toml.tmpl", config.Thornode.Cosmos)
-	if err != nil {
-		log.Fatal().Err(err).Msg("failed to render app.toml")
-	}
+	renderConfigFile(tendermintPath, "config.toml.tmpl", config.Thornode.Tendermint, envToBool("THORNODE_PRESERVE_CONFIG_TOML"))
+	renderConfigFile(cosmosPath, "app.toml.tmpl", config.Thornode.Cosmos, envToBool("THORNODE_PRESERVE_APP_TOML"))
 
 	// fetch genesis
 	if len(seedAddrs) > 0 {
@@ -336,6 +449,20 @@ func InitThornode(ctx context.Context) {
 	} else {
 		log.Warn().Msg("no seeds, skipping genesis fetch")
 	}
+}
+
+func envToBool(name string) bool {
+	v := os.Getenv(name)
+	if v == "" {
+		// env doesn't exist return false
+		return false
+	}
+	b, err := strconv.ParseBool(v)
+	if err != nil {
+		log.Warn().Str("env", name).Str("value", v).Msg("invalid boolean, ignoring (treating as false)")
+		return false
+	}
+	return b
 }
 
 // -------------------------------------------------------------------------------------
@@ -384,6 +511,16 @@ type Thornode struct {
 			// MaxPageSize is the maximum page size for paginated endpoints.
 			MaxPageSize uint64 `mapstructure:"max_page_size"`
 		} `mapstructure:"pagination"`
+
+		// Logs configures the /thorchain/logs endpoint.
+		Logs struct {
+			// RetainBlocks is how many blocks of thorchain module logs to keep on disk
+			// under <home>/data/thorchain_logs. Zero (default) disables capture and the
+			// endpoint. Capture is synchronous on the block-execution goroutine and
+			// records every level regardless of --log_level, so this is not free on a
+			// validator; the endpoint is also unauthenticated. See default.yaml.
+			RetainBlocks int64 `mapstructure:"retain_blocks"`
+		} `mapstructure:"logs"`
 	} `mapstructure:"api"`
 
 	// Telemetry contains THORnode-specific telemetry configuration.
@@ -439,6 +576,7 @@ type Thornode struct {
 			EnabledUnsafeCORS bool   `mapstructure:"enabled_unsafe_cors"`
 			EnabledSwagger    bool   `mapstructure:"enabled_swagger"`
 			Address           string `mapstructure:"address"`
+			QueryViaGRPC      bool   `mapstructure:"query_via_grpc"`
 		} `mapstructure:"api"`
 
 		GRPC struct {
@@ -532,6 +670,7 @@ type Bifrost struct {
 		BASE  BifrostChainConfiguration `mapstructure:"base"`
 		TRON  BifrostChainConfiguration `mapstructure:"tron"`
 		XRP   BifrostChainConfiguration `mapstructure:"xrp"`
+		XMR   BifrostChainConfiguration `mapstructure:"xmr"`
 		SOL   BifrostChainConfiguration `mapstructure:"sol"`
 		POL   BifrostChainConfiguration `mapstructure:"pol"`
 		ZEC   BifrostChainConfiguration `mapstructure:"zec"`
@@ -579,6 +718,7 @@ func (b Bifrost) GetChains() map[common.Chain]BifrostChainConfiguration {
 		common.BASEChain:  b.Chains.BASE,
 		common.TRONChain:  b.Chains.TRON,
 		common.XRPChain:   b.Chains.XRP,
+		common.XMRChain:   b.Chains.XMR,
 		common.SOLChain:   b.Chains.SOL,
 		common.POLChain:   b.Chains.POL,
 		common.ZECChain:   b.Chains.ZEC,
@@ -659,8 +799,9 @@ type BifrostSignerConfiguration struct {
 
 	// RescheduleBufferBlocks is the number of blocks before reschedule we will stop
 	// attempting to sign and broadcast (for outbounds not in round 7 retry).
-	RescheduleBufferBlocks int64          `mapstructure:"reschedule_buffer_blocks"`
-	LevelDB                LevelDBOptions `mapstructure:"leveldb"`
+	RescheduleBufferBlocks int64 `mapstructure:"reschedule_buffer_blocks"`
+
+	LevelDB LevelDBOptions `mapstructure:"leveldb"`
 
 	// AutoObserve will automatically submit the observation for outbound transactions once
 	// they are signed - regardless of broadcast success.
@@ -668,10 +809,11 @@ type BifrostSignerConfiguration struct {
 
 	// -------------------- tss timeouts --------------------
 
-	KeygenTimeout   time.Duration `mapstructure:"keygen_timeout"`
-	KeysignTimeout  time.Duration `mapstructure:"keysign_timeout"`
-	PartyTimeout    time.Duration `mapstructure:"party_timeout"`
-	PreParamTimeout time.Duration `mapstructure:"pre_param_timeout"`
+	KeygenTimeout      time.Duration `mapstructure:"keygen_timeout"`
+	FrostKeygenTimeout time.Duration `mapstructure:"frost_keygen_timeout"`
+	KeysignTimeout     time.Duration `mapstructure:"keysign_timeout"`
+	PartyTimeout       time.Duration `mapstructure:"party_timeout"`
+	PreParamTimeout    time.Duration `mapstructure:"pre_param_timeout"`
 }
 
 type BifrostAttestationGossipConfig struct {
@@ -705,6 +847,12 @@ type BifrostAttestationGossipConfig struct {
 	// how long to wait when sending a single attestation to a peer before giving up.
 	PeerTimeout time.Duration `mapstructure:"peer_timeout"`
 
+	// Absolute budget per attestation-state exchange, including requester
+	// dialing or sender snapshot construction. Later header ACKs and the
+	// final ACK use the remaining budget; ordinary frame deadlines still apply.
+	// Expiry resets the stream but does not cancel lock waits or processing.
+	StateSyncTimeout time.Duration `mapstructure:"state_sync_timeout"`
+
 	// maximum concurrent sends to a single peer
 	PeerConcurrentSends int `mapstructure:"peer_concurrent_sends"`
 
@@ -713,11 +861,17 @@ type BifrostAttestationGossipConfig struct {
 }
 
 type BifrostChainConfiguration struct {
-	ChainID             common.Chain                     `mapstructure:"chain_id"`
-	ChainHost           string                           `mapstructure:"chain_host"`
-	ChainNetwork        string                           `mapstructure:"chain_network"`
-	UserName            string                           `mapstructure:"username"`
-	Password            string                           `mapstructure:"password"`
+	ChainID      common.Chain `mapstructure:"chain_id"`
+	ChainHost    string       `mapstructure:"chain_host"`
+	ChainNetwork string       `mapstructure:"chain_network"`
+	UserName     string       `mapstructure:"username"`
+	Password     string       `mapstructure:"password"`
+	// WalletUserName configures dedicated basic-auth credentials for wallet RPC.
+	// When unset, wallet RPC falls back to username/password.
+	WalletUserName string `mapstructure:"wallet_username"`
+	// WalletPassword configures dedicated basic-auth credentials for wallet RPC.
+	// When unset, wallet RPC falls back to username/password.
+	WalletPassword      string                           `mapstructure:"wallet_password"`
 	RPCHost             string                           `mapstructure:"rpc_host"`
 	APIHost             string                           `mapstructure:"api_host"`
 	CosmosGRPCHost      string                           `mapstructure:"cosmos_grpc_host"`
@@ -743,6 +897,13 @@ type BifrostChainConfiguration struct {
 	// observed inbound transaction is considered valid.
 	MinConfirmations uint64 `mapstructure:"min_confirmations"`
 
+	// SignerCacheExpiry is the duration after broadcast during which the signer
+	// cache entry is respected unconditionally. After expiry, the cache can be
+	// bypassed if the operational mimir SkipSignerCache<Chain> is set and the
+	// broadcast tx is not found on chain. Chains that embed a recent block hash
+	// (e.g. Solana) use their own shorter expiry. Default: 72h (3 days).
+	SignerCacheExpiry time.Duration `mapstructure:"signer_cache_expiry"`
+
 	// MaxRPCRetries is the maximum number of retries for RPC requests.
 	MaxRPCRetries int `mapstructure:"max_rpc_retries"`
 
@@ -753,6 +914,58 @@ type BifrostChainConfiguration struct {
 	// AuthorizationBearer can be set to configure the RPC client with an API token that
 	// will be provided to the backend in an Authorization header.
 	AuthorizationBearer string `mapstructure:"authorization_bearer"`
+	// WalletAuthorizationBearer configures a dedicated bearer token for wallet RPC.
+	// When unset, wallet RPC falls back to authorization_bearer.
+	WalletAuthorizationBearer string `mapstructure:"wallet_authorization_bearer"`
+
+	// SignerBackend selects the transaction signing implementation for the chain.
+	// The XMR chain uses a single TSS signing path with backend value "tss".
+	SignerBackend string `mapstructure:"signer_backend"`
+
+	// SignerEndpoint configures an optional endpoint for remote signer backends.
+	// The XMR TSS signer uses this endpoint when configured.
+	SignerEndpoint string `mapstructure:"signer_endpoint"`
+	// SignerAuthorizationBearer is exclusively used for the signer sidecar. It
+	// must never be copied to a chain daemon or wallet endpoint.
+	SignerAuthorizationBearer string `mapstructure:"signer_authorization_bearer"`
+	// SignerUserName and SignerPassword are the sidecar-only Basic credentials.
+	// They are mutually exclusive with SignerAuthorizationBearer.
+	SignerUserName string `mapstructure:"signer_username"`
+	SignerPassword string `mapstructure:"signer_password"`
+	// SignerExpectedNetwork binds the local sidecar to the intended deployment
+	// network (mocknet, chainnet, stagenet, or mainnet).
+	SignerExpectedNetwork string `mapstructure:"signer_expected_network"`
+	// SignerExpectedCommit is optional release metadata for comparing the
+	// sidecar's reported source revision. Deployment tooling must enforce the
+	// immutable image digest; this self-report is not a runtime trust root.
+	SignerExpectedCommit string `mapstructure:"signer_expected_commit"`
+	// SignerAllowInsecureHTTP is a development-only escape hatch for isolated
+	// mocknet/chainnet compose networks. Production deployments should use TLS
+	// or loopback and leave it false.
+	SignerAllowInsecureHTTP bool `mapstructure:"signer_allow_insecure_http"`
+
+	// XMRConsolidationEnabled toggles periodic Monero output consolidation.
+	XMRConsolidationEnabled bool `mapstructure:"xmr_consolidation_enabled"`
+	// XMRConsolidationCheckIntervalBlocks controls the periodic consolidation check cadence.
+	XMRConsolidationCheckIntervalBlocks int64 `mapstructure:"xmr_consolidation_check_interval_blocks"`
+	// XMRConsolidationCooldownBlocks is the minimum delay between consolidation attempts per vault.
+	XMRConsolidationCooldownBlocks int64 `mapstructure:"xmr_consolidation_cooldown_blocks"`
+	// XMRConsolidationMinUnlockedOutputs is the minimum unlocked output count before consolidation is considered.
+	XMRConsolidationMinUnlockedOutputs int64 `mapstructure:"xmr_consolidation_min_unlocked_outputs"`
+	// XMRConsolidationTargetOutputs is the desired unlocked output count after consolidation.
+	XMRConsolidationTargetOutputs int64 `mapstructure:"xmr_consolidation_target_outputs"`
+	// XMRConsolidationMinUnlockedAtomic is the minimum unlocked atomic balance required before consolidation.
+	XMRConsolidationMinUnlockedAtomic uint64 `mapstructure:"xmr_consolidation_min_unlocked_atomic"`
+	// XMRConsolidationReserveBps is the piconero reserve (in basis points) retained to absorb fee variance.
+	XMRConsolidationReserveBps int64 `mapstructure:"xmr_consolidation_reserve_bps"`
+	// XMRConsolidationChurnLookaheadBlocks controls how early to consolidate before churn windows.
+	XMRConsolidationChurnLookaheadBlocks int64 `mapstructure:"xmr_consolidation_churn_lookahead_blocks"`
+	// XMRConsolidationMaxRetries controls reserve backoff attempts when signing fails for insufficient funds.
+	XMRConsolidationMaxRetries int64 `mapstructure:"xmr_consolidation_max_retries"`
+	// XMRConsolidationMaxInputs caps inputs for consolidation signing requests.
+	XMRConsolidationMaxInputs int64 `mapstructure:"xmr_consolidation_max_inputs"`
+	// XMRConsolidationMaxLockBps caps nominal consolidation lock exposure per attempt.
+	XMRConsolidationMaxLockBps int64 `mapstructure:"xmr_consolidation_max_lock_bps"`
 
 	// EVM contains EVM chain specific configuration.
 	EVM struct {
@@ -872,7 +1085,17 @@ func (b *BifrostChainConfiguration) Validate() {
 }
 
 type BifrostBlockScannerConfiguration struct {
-	StartBlockHeight           int64         `mapstructure:"start_block_height"`
+	StartBlockHeight int64 `mapstructure:"start_block_height"`
+	// FloorBlockHeight is a forward-only floor for the bifrost block scanner start
+	// position (0 = disabled). The effective start is max(FloorBlockHeight, persisted
+	// scan pos), so the scanner never starts below the configured height nor below
+	// where it has already scanned; with the rollback clamp it also never rolls back
+	// below FloorBlockHeight on a reorg. Intended to durably SKIP a known-bad block
+	// range across restarts; for catch-up use MaxResumeBlockLag. On Solana it is
+	// best-effort (minContextSlot is an RPC-readiness hint, not a hard lower bound).
+	// MUST be set uniformly across the validator set: uncoordinated skipping can drop
+	// a real inbound below observation supermajority.
+	FloorBlockHeight           int64         `mapstructure:"floor_block_height"`
 	BlockScanProcessors        int           `mapstructure:"block_scan_processors"`
 	HTTPRequestTimeout         time.Duration `mapstructure:"http_request_timeout"`
 	HTTPRequestReadTimeout     time.Duration `mapstructure:"http_request_read_timeout"`

@@ -97,7 +97,7 @@ func NewChain(chainID string) (Chain, error) {
 
 // Equals compare two chain to see whether they represent the same chain
 func (c Chain) Equals(c2 Chain) bool {
-	return strings.EqualFold(c.String(), c2.String())
+	return equalFoldUpper(string(c), string(c2))
 }
 
 func (c Chain) OneOf(chains ...Chain) bool {
@@ -116,6 +116,26 @@ func (c Chain) IsTHORChain() bool {
 
 func (c Chain) IsBSCChain() bool {
 	return c.Equals(BSCChain)
+}
+
+// SupportsSolvencyObservationSlashing reports whether ordinary solvency
+// observation slash accounting is safe for the chain. TRON account and TRC-20
+// balance reads cannot be pinned to the report height, so honest payloads can
+// fragment (#3098).
+func (c Chain) SupportsSolvencyObservationSlashing() bool {
+	return !c.Equals(TRONChain)
+}
+
+// SolvencyVoterQuota returns the THORChain block window and maximum new voters
+// per validator. Zero values mean no quota. TRON uses this bound because ordinary
+// solvency observation slashing is disabled, with headroom for reporting bursts
+// across active and retiring vaults. This limits creation rate, not lifetime
+// storage or bytes.
+func (c Chain) SolvencyVoterQuota() (windowBlocks int64, limit uint64) {
+	if c.Equals(TRONChain) {
+		return 10, 32
+	}
+	return 0, 0
 }
 
 // GetEVMChains returns all "EVM" chains connected to THORChain
@@ -298,7 +318,9 @@ func (c Chain) ThorchainToNativeGas(thorchain cosmos.Uint) cosmos.Uint {
 	return thorchain.Mul(gasRateUnitsPerOne).QuoUint64(One)
 }
 
-// NativeGasToThorCoin converts native gas units to Coin with THORChain units (1e8).
+// NativeGasToThorCoin converts native gas units to Coin with THORChain units
+// (1e8). The coin Decimals field records the chain gas-asset precision
+// metadata; it does not describe the precision of the Amount field.
 func (c Chain) NativeGasToThorCoin(native cosmos.Uint) Coin {
 	coin := NewCoin(c.GetGasAsset(), c.NativeGasToThorchain(native))
 	coin.Decimals = c.GetGasAssetDecimal()
@@ -326,8 +348,7 @@ func (c Chain) NativeGasToThorCoinCeil(native cosmos.Uint) Coin {
 	return coin
 }
 
-// GetGasAssetDecimal returns the precision THORNode uses when storing gas-asset amounts.
-// External chains are normalized to 1e8 unless they use fewer decimals natively.
+// GetGasAssetDecimal returns the external precision of the chain gas asset.
 func (c Chain) GetGasAssetDecimal() int64 {
 	switch c {
 	case GAIAChain, NOBLEChain, TRONChain, ADAChain:
@@ -338,9 +359,31 @@ func (c Chain) GetGasAssetDecimal() int64 {
 		return 9
 	case DOTChain:
 		return 10
+	case XMRChain:
+		return 12
 	default:
 		return cosmos.DefaultCoinDecimals
 	}
+}
+
+// RequiresTerminalErrataOutcome reports whether delivery alone is insufficient
+// to retire errata retries, including transactions with no known observation.
+func (c Chain) RequiresTerminalErrataOutcome() bool {
+	return c.Equals(XMRChain)
+}
+
+// UsesHeightScopedErrata reports whether local orphan-location barriers need
+// explicit mined-height observation identity. It does not change the chain's
+// consensus errata voter or permanent TxID reversal policy.
+func (c Chain) UsesHeightScopedErrata() bool {
+	return c.Equals(XMRChain)
+}
+
+// RequiresExplicitRefundAddress reports whether an inbound observation may be
+// unable to provide a usable sender address. Higher layers use this capability
+// to require an explicit asset-chain address before funds arrive.
+func (c Chain) RequiresExplicitRefundAddress() bool {
+	return c.Equals(XMRChain)
 }
 
 // IsValidAddress make sure the address is correct for the chain
@@ -602,7 +645,7 @@ func (c Chain) ApproximateBlockMilliseconds() int64 {
 	case NOBLEChain:
 		return 1_500
 	case SOLChain:
-		return 400
+		return 300 // ~265-300ms measured since SIMD-0525 (was 400)
 	case TAOChain:
 		return 12_000
 	case DOTChain:

@@ -1,7 +1,6 @@
 package thorchain
 
 import (
-	"encoding/base64"
 	"fmt"
 	"strconv"
 	"strings"
@@ -85,6 +84,8 @@ func (p *parser) parse() (mem Memo, err error) {
 		return p.ParseRefundMemo()
 	case TxBond:
 		return p.ParseBondMemo()
+	case TxBondYield:
+		return p.ParseBondYieldMemo()
 	case TxUnbond:
 		return p.ParseUnbondMemo()
 	case TxRebond:
@@ -113,8 +114,10 @@ func (p *parser) parse() (mem Memo, err error) {
 		return p.ParseSecuredAssetDeposit()
 	case TxSecuredAssetWithdraw:
 		return p.ParseSecuredAssetWithdraw()
-	case TxExec:
-		return p.ParseExecMemo()
+	case TxStableReserveDeposit:
+		return p.ParseStableReserveDeposit()
+	case TxStableReserveWithdraw:
+		return p.ParseStableReserveWithdraw()
 	case TxSwitch:
 		return p.ParseSwitch()
 	case TxTCYClaim:
@@ -567,16 +570,4 @@ func (p *parser) getTHORName(idx int, required bool, def types.THORName, subInde
 		return tn
 	}
 	return def
-}
-
-func (p *parser) getBase64Bytes(idx int, required bool, def []byte) []byte {
-	p.incRequired(required)
-	value, err := base64.StdEncoding.DecodeString(p.get(idx))
-	if err != nil {
-		if required || p.get(idx) != "" {
-			p.addErr(fmt.Errorf("cannot parse '%s' as a base64 string: %w", p.get(idx), err))
-		}
-		return def
-	}
-	return value
 }

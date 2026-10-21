@@ -12,7 +12,7 @@
             "@type": "/cosmos.crypto.secp256k1.PubKey",
             "key": "AmF4AUTWZEUSBtgqiR5n2Lgic/Yrr1mWupMo5TAubNRO"
           },
-          "sequence": "2"
+          "sequence": "5"
         },
         {
           "@type": "/cosmos.auth.v1beta1.ModuleAccount",
@@ -65,6 +65,17 @@
           "permissions": []
         },
         {
+          "@type": "/cosmos.auth.v1beta1.ModuleAccount",
+          "base_account": {
+            "account_number": "9",
+            "address": "tthor102ae04vpk6v2tvjgzdsc2s7ncnptj6pwz0pg2k",
+            "pub_key": null,
+            "sequence": "0"
+          },
+          "name": "stable_reserve",
+          "permissions": []
+        },
+        {
           "@type": "/cosmos.auth.v1beta1.BaseAccount",
           "account_number": "8",
           "address": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
@@ -109,9 +120,6 @@
         "tx_size_cost_per_byte": "10"
       }
     },
-    "authz": {
-      "authorization": []
-    },
     "bank": {
       "balances": [
         {
@@ -127,7 +135,7 @@
           "address": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
           "coins": [
             {
-              "amount": "100003262938",
+              "amount": "100006525873",
               "denom": "rune"
             }
           ]
@@ -136,7 +144,7 @@
           "address": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
           "coins": [
             {
-              "amount": "34999996670471",
+              "amount": "34999997340942",
               "denom": "rune"
             }
           ]
@@ -163,7 +171,7 @@
           "address": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
           "coins": [
             {
-              "amount": "5000000066591",
+              "amount": "4999996133185",
               "denom": "rune"
             }
           ]
@@ -212,7 +220,7 @@
       "last_chain_heights": [
         {
           "chain": "BTC",
-          "height": "2"
+          "height": "3"
         }
       ],
       "liquidity_providers": [
@@ -228,13 +236,16 @@
           "units": "100000000000"
         }
       ],
-      "mimirs": [],
+      "mimirs": [
+        {
+          "key": "ALLOWNOVAULT-BTC"
+        }
+      ],
       "network": {
         "LPIncomeSplit": "9800",
         "NodeIncomeSplit": "200",
-        "bond_reward_rune": "66591",
-        "chain_income": null,
-        "total_bond_units": "3"
+        "bond_reward_rune": "133185",
+        "total_bond_units": "6"
       },
       "network_fees": [
         {
@@ -243,11 +254,16 @@
           "transaction_size": "1000"
         }
       ],
-      "nodeMimirs": [],
+      "nodeMimirs": [
+        {
+          "key": "ALLOWNOVAULT-BTC",
+          "signer": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m"
+        }
+      ],
       "node_accounts": [
         {
           "active_block_height": "1",
-          "bond": "5000000000000",
+          "bond": "4999996000000",
           "bond_address": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
           "ip_address": "1.1.1.1",
           "node_address": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
@@ -263,13 +279,12 @@
       "observed_tx_out_voters": null,
       "outbound_fee_spent_rune": [],
       "outbound_fee_withheld_rune": [],
-      "pol_reserve_deposits": [],
       "pools": [
         {
           "LP_units": "100000000000",
           "asset": "BTC.BTC",
           "balance_asset": "100000000",
-          "balance_rune": "100003262938",
+          "balance_rune": "100006525873",
           "decimals": "8",
           "pending_inbound_asset": "0",
           "pending_inbound_rune": "0",
@@ -287,6 +302,7 @@
       },
       "rune_providers": [],
       "secured_assets": [],
+      "sol_vault_nonces": [],
       "streaming_swaps": [],
       "swap_queue_items": [],
       "swapper_clout": [],
@@ -310,12 +326,12 @@
           ],
           "coins": [
             {
-              "amount": "103000000",
+              "amount": "110000000",
               "asset": "BTC.BTC",
               "decimals": "8"
             }
           ],
-          "inbound_tx_count": "3",
+          "inbound_tx_count": "4",
           "membership": [
             "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4"
           ],
@@ -374,5 +390,5 @@
       }
     }
   },
-  "initial_height": 4
+  "initial_height": 7
 }

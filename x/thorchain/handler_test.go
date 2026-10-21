@@ -85,10 +85,7 @@ func FundAccount(c *C, ctx cosmos.Context, k keeper.Keeper, addr cosmos.AccAddre
 	c.Assert(err, IsNil)
 }
 
-var (
-	keyThorchain     = storetypes.NewKVStoreKey(StoreKey)
-	serviceThorchain = runtime.NewKVStoreService(keyThorchain)
-)
+var keyThorchain = storetypes.NewKVStoreKey(StoreKey)
 
 func setupManagerForTest(c *C) (cosmos.Context, *Mgrs) {
 	SetupConfigForTest()
@@ -131,6 +128,7 @@ func setupManagerForTest(c *C) (cosmos.Context, *Mgrs) {
 			types.TCYStakeName:           {},
 			types.TCYClaimingName:        {},
 			types.POLReserveName:         {},
+			types.StableReserveName:      {},
 		},
 		authcodec.NewBech32Codec(sdk.GetConfig().GetBech32AccountAddrPrefix()),
 		sdk.GetConfig().GetBech32AccountAddrPrefix(),
@@ -172,7 +170,7 @@ func setupManagerForTest(c *C) (cosmos.Context, *Mgrs) {
 		nil,
 		authtypes.NewModuleAddress(ModuleName).String(),
 	)
-	k := kv1.NewKeeper(encodingConfig.Codec, serviceThorchain, bk, ak, uk)
+	k := kv1.NewKeeper(encodingConfig.Codec, keyThorchain, bk, ak, uk)
 	FundModule(c, ctx, k, ModuleName, 10_000*common.One)
 	FundModule(c, ctx, k, AsgardName, 100_000_000*common.One)
 	FundModule(c, ctx, k, ReserveName, 100_000_000*common.One)
@@ -195,7 +193,7 @@ func setupManagerForTest(c *C) (cosmos.Context, *Mgrs) {
 	}), IsNil)
 
 	os.Setenv("NET", "mocknet")
-	mgr := NewManagers(k, encodingConfig.Codec, serviceThorchain, bk, ak, uk, wk)
+	mgr := NewManagers(k, encodingConfig.Codec, keyThorchain, bk, ak, uk, wk)
 	constants.SWVersion = GetCurrentVersion()
 
 	_, hasVerStored := k.GetVersionWithCtx(ctx)
@@ -253,6 +251,7 @@ func setupKeeperForTest(c *C) (cosmos.Context, keeper.Keeper) {
 			types.TCYStakeName:           {},
 			types.TCYClaimingName:        {},
 			types.POLReserveName:         {},
+			types.StableReserveName:      {},
 		},
 		authcodec.NewBech32Codec(sdk.GetConfig().GetBech32AccountAddrPrefix()),
 		sdk.GetConfig().GetBech32AccountAddrPrefix(),
@@ -282,7 +281,7 @@ func setupKeeperForTest(c *C) (cosmos.Context, keeper.Keeper) {
 		nil,
 		authtypes.NewModuleAddress(ModuleName).String(),
 	)
-	k := kv1.NewKVStore(encodingConfig.Codec, serviceThorchain, bk, ak, uk, GetCurrentVersion())
+	k := kv1.NewKVStore(encodingConfig.Codec, keyThorchain, bk, ak, uk, GetCurrentVersion())
 	FundModule(c, ctx, k, ModuleName, 1000000*common.One)
 	FundModule(c, ctx, k, AsgardName, common.One)
 	FundModule(c, ctx, k, ReserveName, 10000*common.One)
@@ -419,7 +418,15 @@ func (HandlerSuite) TestRefund(c *C) {
 	c.Assert(w.keeper.SetPool(w.ctx, pool), IsNil)
 
 	vault := GetRandomVault()
+	vault.Coins = common.Coins{
+		common.NewCoin(common.DOGEAsset, cosmos.NewUint(100*common.One)),
+	}
 	c.Assert(w.keeper.SetVault(w.ctx, vault), IsNil)
+	c.Assert(w.keeper.SaveNetworkFee(w.ctx, common.DOGEChain, NetworkFee{
+		Chain:              common.DOGEChain,
+		TransactionSize:    1,
+		TransactionFeeRate: 10000,
+	}), IsNil)
 
 	txin := NewObservedTx(
 		common.Tx{
@@ -439,8 +446,20 @@ func (HandlerSuite) TestRefund(c *C) {
 		vault.PubKey, 1024,
 	)
 	txOutStore := w.mgr.TxOutStore()
+	getRefundItems := func() ([]TxOutItem, error) {
+		for height := w.ctx.BlockHeight(); height <= w.ctx.BlockHeight()+10; height++ {
+			items, err := txOutStore.GetOutboundItems(w.ctx.WithBlockHeight(height))
+			if err != nil {
+				return nil, err
+			}
+			if len(items) > 0 {
+				return items, nil
+			}
+		}
+		return nil, nil
+	}
 	c.Assert(refundTx(w.ctx, txin, w.mgr, 0, "refund", ""), IsNil)
-	items, err := txOutStore.GetOutboundItems(w.ctx)
+	items, err := getRefundItems()
 	c.Assert(err, IsNil)
 	c.Assert(items, HasLen, 1)
 
@@ -452,7 +471,7 @@ func (HandlerSuite) TestRefund(c *C) {
 	}
 
 	c.Assert(refundTx(w.ctx, txin, w.mgr, 0, "refund", ""), IsNil)
-	items, err = txOutStore.GetOutboundItems(w.ctx)
+	items, err = getRefundItems()
 	c.Assert(err, IsNil)
 	c.Assert(items, HasLen, 1)
 
@@ -463,7 +482,7 @@ func (HandlerSuite) TestRefund(c *C) {
 
 	// doing it a second time should keep it at zero
 	c.Assert(refundTx(w.ctx, txin, w.mgr, 0, "refund", ""), IsNil)
-	items, err = txOutStore.GetOutboundItems(w.ctx)
+	items, err = getRefundItems()
 	c.Assert(err, IsNil)
 	c.Assert(items, HasLen, 1)
 	pool, err = w.keeper.GetPool(w.ctx, lokiAsset)
@@ -666,6 +685,35 @@ func (HandlerSuite) TestGetMsgLiquidityFromMemo(c *C) {
 	c.Assert(msgAddLiquidity, NotNil)
 	c.Assert(msgAddLiquidity.RuneAddress, Equals, runeAddr)
 	c.Assert(msgAddLiquidity.AssetAddress, Equals, txin.Tx.FromAddress)
+
+	// Monero asset-side observations do not know the sender, so the
+	// constructed liquidity message should leave AssetAddress empty and rely on
+	// the RUNE-side memo address for staged LP reconciliation.
+	xmrAddr, err := GetRandomEd25519PubKey().GetAddress(common.XMRChain)
+	c.Assert(err, IsNil)
+	xmrUnknown, err := common.NewAddress(common.XMRUnknownSenderAddress(GetRandomTxHash().String(), xmrAddr.String()))
+	c.Assert(err, IsNil)
+	xmrMemo, err := ParseMemo(GetCurrentVersion(), fmt.Sprintf("add:XMR.XMR:%s", GetRandomRUNEAddress()))
+	c.Assert(err, IsNil)
+	xmrTxIn := common.NewObservedTx(
+		common.Tx{
+			ID:          GetRandomTxHash(),
+			Chain:       common.XMRChain,
+			Coins:       common.Coins{common.NewCoin(common.XMRAsset, cosmos.NewUint(100*common.One))},
+			Memo:        xmrMemo.String(),
+			FromAddress: xmrUnknown,
+			ToAddress:   xmrAddr,
+			Gas:         common.Gas{common.NewCoin(common.XMRAsset, cosmos.NewUint(1))},
+		},
+		1024,
+		common.EmptyPubKey, 1024,
+	)
+	xmrMsg, err := getMsgAddLiquidityFromMemo(w.ctx, xmrMemo.(AddLiquidityMemo), xmrTxIn, GetRandomBech32Addr())
+	c.Assert(err, IsNil)
+	c.Assert(xmrMsg, NotNil)
+	xmrAddLiquidity, ok := xmrMsg.(*MsgAddLiquidity)
+	c.Assert(ok, Equals, true)
+	c.Assert(xmrAddLiquidity.AssetAddress, Equals, common.NoAddress)
 }
 
 func (HandlerSuite) TestMsgLeaveFromMemo(c *C) {
@@ -831,4 +879,57 @@ func (s *HandlerSuite) TestExternalAssetMatch(c *C) {
 	c.Check(externalAssetMatch(common.ETHChain, "3"), Equals, "3")
 	c.Check(externalAssetMatch(common.ETHChain, ""), Equals, "")
 	c.Check(externalAssetMatch(common.BTCChain, "foo"), Equals, "foo")
+}
+
+func (HandlerSuite) TestGetMsgAddLiquidityFromMemoXMRAssetAddress(c *C) {
+	w := getHandlerTestWrapper(c, 1, true, false)
+
+	thorAddr := GetRandomTHORAddress()
+	xmrAddr, err := GetRandomEd25519PubKey().GetAddress(common.XMRChain)
+	c.Assert(err, IsNil)
+	unknownSender, err := common.NewAddress(common.XMRUnknownSenderAddress(GetRandomTxHash().String(), xmrAddr.String()))
+	c.Assert(err, IsNil)
+
+	m, err := ParseMemo(GetCurrentVersion(), fmt.Sprintf("+:XMR.XMR:%s/%s", thorAddr, xmrAddr))
+	c.Assert(err, IsNil)
+	lpMemo, ok := m.(AddLiquidityMemo)
+	c.Assert(ok, Equals, true)
+
+	txin := common.NewObservedTx(
+		common.Tx{
+			ID:    GetRandomTxHash(),
+			Chain: common.XMRChain,
+			Coins: common.Coins{
+				common.NewCoin(common.XMRAsset, cosmos.NewUint(100*common.One)),
+			},
+			Memo:        lpMemo.String(),
+			FromAddress: unknownSender,
+			ToAddress:   GetRandomTHORAddress(),
+			Gas: common.Gas{
+				common.NewCoin(common.XMRAsset, cosmos.NewUint(10000)),
+			},
+		},
+		1024,
+		common.EmptyPubKey, 1024,
+	)
+
+	// memo-registered asset address becomes the LP asset address in place of
+	// the unrecoverable XMR sender
+	msg, err := getMsgAddLiquidityFromMemo(w.ctx, lpMemo, txin, GetRandomBech32Addr())
+	c.Assert(err, IsNil)
+	addMsg, ok := msg.(*MsgAddLiquidity)
+	c.Assert(ok, Equals, true)
+	c.Check(addMsg.AssetAddress.String(), Equals, xmrAddr.String())
+	c.Check(addMsg.RuneAddress.String(), Equals, thorAddr.String())
+
+	// without a memo asset address the unknown marker still resolves to absent
+	m, err = ParseMemo(GetCurrentVersion(), fmt.Sprintf("+:XMR.XMR:%s", thorAddr))
+	c.Assert(err, IsNil)
+	lpMemo, ok = m.(AddLiquidityMemo)
+	c.Assert(ok, Equals, true)
+	msg, err = getMsgAddLiquidityFromMemo(w.ctx, lpMemo, txin, GetRandomBech32Addr())
+	c.Assert(err, IsNil)
+	addMsg, ok = msg.(*MsgAddLiquidity)
+	c.Assert(ok, Equals, true)
+	c.Check(addMsg.AssetAddress.IsEmpty(), Equals, true)
 }

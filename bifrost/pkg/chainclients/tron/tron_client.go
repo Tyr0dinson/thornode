@@ -2,10 +2,12 @@ package tron
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"math/big"
 	"strings"
 	"sync"
@@ -48,7 +50,123 @@ const (
 
 	ConfirmationBlocks int64 = 1
 	FinalityBlocks     int64 = 19
+
+	tronSignCheckpointVersion = 1
+	maxTronCheckpointSize     = 256 * 1024
 )
+
+// tronSignCheckpoint pins the exact unsigned transaction after all
+// deterministic TRON fields have been applied. A terminal TSS failure may
+// expose a usable signature to another participant, so retries must never
+// reconstruct or mutate the transaction being signed.
+type tronSignCheckpoint struct {
+	Version     int             `json:"version"`
+	TxOutDigest string          `json:"tx_out_digest"`
+	UnsignedTx  api.Transaction `json:"unsigned_tx"`
+	Checksum    string          `json:"checksum"`
+}
+
+func tronJSONDigest(value any) (string, error) {
+	b, err := json.Marshal(value)
+	if err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256(b)
+	return hex.EncodeToString(sum[:]), nil
+}
+
+func validateUnsignedTronTransaction(tx api.Transaction) error {
+	if len(tx.Signature) != 0 || tx.Err != "" || len(tx.Ret) != 0 {
+		return fmt.Errorf("TRON checkpoint transaction is not unsigned")
+	}
+	if strings.TrimSpace(tx.TxId) == "" || strings.TrimSpace(tx.RawDataHex) == "" {
+		return fmt.Errorf("TRON checkpoint transaction is incomplete")
+	}
+	rawData, err := hex.DecodeString(tx.RawDataHex)
+	if err != nil {
+		return fmt.Errorf("fail to decode TRON checkpoint raw_data_hex: %w", err)
+	}
+	wantTxID := sha256.Sum256(rawData)
+	if !strings.EqualFold(tx.TxId, hex.EncodeToString(wantTxID[:])) {
+		return fmt.Errorf("TRON checkpoint txid does not match raw_data_hex")
+	}
+
+	// Rehash only a copy. Equality proves the structured deterministic fields
+	// used by Rehash still describe the exact persisted signing preimage.
+	validated := tx
+	if err := validated.Rehash(); err != nil {
+		return fmt.Errorf("fail to validate TRON checkpoint transaction: %w", err)
+	}
+	if !strings.EqualFold(validated.TxId, tx.TxId) ||
+		!strings.EqualFold(validated.RawDataHex, tx.RawDataHex) {
+		return fmt.Errorf("TRON checkpoint transaction fields do not match raw_data_hex")
+	}
+	return nil
+}
+
+func encodeTronSignCheckpoint(tx api.Transaction, txOutItem types.TxOutItem) ([]byte, error) {
+	if err := validateUnsignedTronTransaction(tx); err != nil {
+		return nil, err
+	}
+	txOutDigest, err := tronJSONDigest(txOutItem)
+	if err != nil {
+		return nil, fmt.Errorf("fail to bind TRON checkpoint to txout: %w", err)
+	}
+	checksum, err := tronJSONDigest(tx)
+	if err != nil {
+		return nil, fmt.Errorf("fail to checksum TRON checkpoint transaction: %w", err)
+	}
+	checkpoint := tronSignCheckpoint{
+		Version:     tronSignCheckpointVersion,
+		TxOutDigest: txOutDigest,
+		UnsignedTx:  tx,
+		Checksum:    checksum,
+	}
+	b, err := json.Marshal(checkpoint)
+	if err != nil {
+		return nil, fmt.Errorf("fail to encode TRON sign checkpoint: %w", err)
+	}
+	if len(b) > maxTronCheckpointSize {
+		return nil, fmt.Errorf("TRON sign checkpoint exceeds %d bytes", maxTronCheckpointSize)
+	}
+	return b, nil
+}
+
+func decodeTronSignCheckpoint(b []byte, txOutItem types.TxOutItem) (api.Transaction, error) {
+	if len(b) == 0 || len(b) > maxTronCheckpointSize {
+		return api.Transaction{}, fmt.Errorf("invalid TRON sign checkpoint size: %d", len(b))
+	}
+	decoder := json.NewDecoder(bytes.NewReader(b))
+	decoder.DisallowUnknownFields()
+	var checkpoint tronSignCheckpoint
+	if err := decoder.Decode(&checkpoint); err != nil {
+		return api.Transaction{}, fmt.Errorf("fail to decode TRON sign checkpoint: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		return api.Transaction{}, fmt.Errorf("TRON sign checkpoint contains trailing data")
+	}
+	if checkpoint.Version != tronSignCheckpointVersion {
+		return api.Transaction{}, fmt.Errorf("unsupported TRON sign checkpoint version: %d", checkpoint.Version)
+	}
+	txOutDigest, err := tronJSONDigest(txOutItem)
+	if err != nil {
+		return api.Transaction{}, fmt.Errorf("fail to validate TRON checkpoint txout: %w", err)
+	}
+	if checkpoint.TxOutDigest != txOutDigest {
+		return api.Transaction{}, fmt.Errorf("TRON sign checkpoint does not match txout")
+	}
+	if validateErr := validateUnsignedTronTransaction(checkpoint.UnsignedTx); validateErr != nil {
+		return api.Transaction{}, validateErr
+	}
+	checksum, err := tronJSONDigest(checkpoint.UnsignedTx)
+	if err != nil {
+		return api.Transaction{}, fmt.Errorf("fail to validate TRON checkpoint checksum: %w", err)
+	}
+	if checkpoint.Checksum != checksum {
+		return api.Transaction{}, fmt.Errorf("TRON sign checkpoint checksum mismatch")
+	}
+	return checkpoint.UnsignedTx, nil
+}
 
 //go:embed abi/trc20.json
 var trc20ContractABI []byte
@@ -70,8 +188,10 @@ type TronClient struct {
 	whitelist           map[string]tokenlist.ERC20Token
 	bridge              thorclient.ThorchainBridge
 	globalSolvencyQueue chan types.Solvency
-	wg                  *sync.WaitGroup
-	stopchan            chan struct{}
+	// Serializes ReportSolvency when ordered scan callbacks and SolvencyCheckRunner can both enter.
+	solvencyLock sync.Mutex
+	wg           *sync.WaitGroup
+	stopchan     chan struct{}
 }
 
 // NewTronClient creates a new instance of a Tron chain client
@@ -353,25 +473,54 @@ func (c *TronClient) SetShouldObserveCallback(cb func() bool) {
 	c.blockScanner.SetShouldObserveCallback(cb)
 }
 
+// getSignerCacheExpiry returns the configured signer-cache expiry (config signer_cache_expiry).
+func (c *TronClient) getSignerCacheExpiry() time.Duration {
+	return c.config.SignerCacheExpiry
+}
+
 // SignTx returns the signed transaction.
 func (c *TronClient) SignTx(
 	txOutItem types.TxOutItem,
-	_ int64,
+	thorchainHeight int64,
 ) ([]byte, []byte, *types.TxInItem, error) {
-	if c.signerCacheManager.HasSigned(txOutItem.CacheHash()) {
-		c.logger.Info().
+	// Signer-cache check, standardized across chains: respect the cache while fresh;
+	// after the expiry window, only bypass when the operational SkipSignerCache<Chain>
+	// mimir is set AND the recorded broadcast is verified absent on chain.
+	mimirKey := fmt.Sprintf(constants.MimirTemplateSkipSignerCache, c.config.ChainID)
+	gateFn := func() bool {
+		skipCache, err := c.bridge.GetMimir(mimirKey)
+		return err == nil && skipCache > 0
+	}
+	// gettransactionbyid reports presence regardless of confirmation, so the
+	// verification path can positively decide whether the recorded broadcast is on
+	// chain before clearing the cache: a populated TxId means present (respect the
+	// cache), an empty result with no error means absent (safe to clear and
+	// re-sign). Transport errors stay ambiguous (fail-closed, cache respected).
+	verifyFn := func(sig string) signercache.LookupResult {
+		tx, txErr := c.api.GetTransaction(sig)
+		switch {
+		case txErr == nil && tx.TxId != "":
+			return signercache.LookupFound
+		case txErr == nil, isTronNotFoundErr(txErr):
+			return signercache.LookupNotFound
+		default:
+			return signercache.LookupAmbiguous
+		}
+	}
+	check := c.signerCacheManager.SignTxCacheCheck(txOutItem.CacheHash(), gateFn, verifyFn)
+	if check.Phase != signercache.PhaseNoEntry {
+		ev := c.logger.Info()
+		if check.Noteworthy() {
+			ev = c.logger.Warn()
+		}
+		ev.Stringer("phase", check.Phase).
+			Str("sig", check.Sig).
 			Interface("tx", txOutItem).
-			Msg("transaction already signed, ignoring...")
+			Msg(check.Phase.String())
+	}
+	if check.SkipSign {
 		return nil, nil, nil, nil
 	}
-
-	if len(c.tronScanner.refBlocks) == 0 {
-		err := fmt.Errorf("no ref blocks found")
-		c.logger.Err(err).Msg("")
-		return nil, nil, nil, err
-	}
-
-	// TODO: Discuss checkpoint
 
 	if len(txOutItem.Coins) != 1 {
 		err := fmt.Errorf("multiple or no coins found")
@@ -388,8 +537,25 @@ func (c *TronClient) SignTx(
 
 	var err error
 	var tronTx api.Transaction
+	memo := txOutItem.GetMemo()
 
 	fromAddress := c.GetAddress(txOutItem.VaultPubKey)
+	if len(txOutItem.Checkpoint) != 0 {
+		tronTx, err = decodeTronSignCheckpoint(txOutItem.Checkpoint, txOutItem)
+		if err != nil {
+			c.logger.Err(err).Msg("failed to restore unsigned TRON transaction")
+			return nil, nil, nil, err
+		}
+		c.logger.Info().Str("txid", tronTx.TxId).Msg("using checkpointed unsigned TRON transaction")
+		return c.signTronTransaction(txOutItem, thorchainHeight, tronTx, txOutItem.Checkpoint, c.sign)
+	}
+
+	refBlocks := c.tronScanner.refBlockSnapshot()
+	if len(refBlocks) == 0 {
+		err = fmt.Errorf("no ref blocks found")
+		c.logger.Err(err).Msg("")
+		return nil, nil, nil, err
+	}
 
 	if coin.Asset == common.TRXAsset {
 		// do trx transfer
@@ -397,7 +563,7 @@ func (c *TronClient) SignTx(
 			fromAddress,
 			txOutItem.ToAddress.String(),
 			coin.Amount.Quo(math.NewUint(100)).Uint64(), // 1e8 -> 1e6
-			txOutItem.Memo,
+			memo,
 		)
 		if err != nil {
 			c.logger.Err(err).Msg("failed to create tx")
@@ -431,12 +597,13 @@ func (c *TronClient) SignTx(
 			return nil, nil, nil, err
 		}
 
+		nativeFeeLimit := c.config.ChainID.ThorchainToNativeGas(txOutItem.MaxGas[0].Amount)
 		tronTx, err = c.createTrc20Transaction(
 			fromAddress,
 			txOutItem.ToAddress.String(),
 			contract,
 			*amount,
-			*txOutItem.MaxGas[0].Amount.BigInt(), // 1e8 -> 1e6
+			*nativeFeeLimit.BigInt(),
 		)
 		if err != nil {
 			c.logger.Err(err).Msg("failed to create trc20 tx")
@@ -464,16 +631,16 @@ func (c *TronClient) SignTx(
 
 	// Find the reference block closest to (but before) the THORChain timestamp
 	// This ensures the ref block is deterministic while still being valid for TRON
-	index := len(c.tronScanner.refBlocks) - 1
+	index := len(refBlocks) - 1
 	for i := index; i >= 0; i-- {
-		refBlock := c.tronScanner.refBlocks[i]
+		refBlock := refBlocks[i]
 		if refBlock.Timestamp <= refTimestampMs {
 			index = i
 			break
 		}
 	}
 
-	refBlock := c.tronScanner.refBlocks[index]
+	refBlock := refBlocks[index]
 
 	refBlockHash := refBlock.Id[16:32]
 	refBlockBytes := fmt.Sprintf("%016x", refBlock.Height)[12:16]
@@ -482,7 +649,7 @@ func (c *TronClient) SignTx(
 	tronTx.RawData.RefBlockHash = refBlockHash
 	tronTx.RawData.Timestamp = timestamp
 	tronTx.RawData.Expiration = timestamp + TimestampValidity.Milliseconds()
-	tronTx.RawData.Data = hex.EncodeToString([]byte(txOutItem.Memo))
+	tronTx.RawData.Data = hex.EncodeToString([]byte(memo))
 
 	err = tronTx.Rehash()
 	if err != nil {
@@ -490,44 +657,55 @@ func (c *TronClient) SignTx(
 		return nil, nil, nil, err
 	}
 
-	// ---------------------------------------------------------------------------
+	checkpoint, err := encodeTronSignCheckpoint(tronTx, txOutItem)
+	if err != nil {
+		c.logger.Err(err).Msg("failed to checkpoint unsigned TRON transaction")
+		return nil, nil, nil, err
+	}
+	return c.signTronTransaction(txOutItem, thorchainHeight, tronTx, checkpoint, c.sign)
+}
 
+func (c *TronClient) signTronTransaction(
+	txOutItem types.TxOutItem,
+	thorchainHeight int64,
+	tronTx api.Transaction,
+	checkpoint []byte,
+	sign func([]byte, types.TxOutItem, int64) ([]byte, error),
+) ([]byte, []byte, *types.TxInItem, error) {
 	hash, err := hex.DecodeString(tronTx.TxId)
 	if err != nil {
 		c.logger.Err(err).Msg("failed to decode tx hash")
-		return nil, nil, nil, err
+		return nil, checkpoint, nil, err
 	}
 
-	signature, err := c.sign(hash, txOutItem)
+	signature, err := sign(hash, txOutItem, thorchainHeight)
 	if err != nil {
+		if errors.Is(err, tss.ErrNotSelectedForKeysign) {
+			return nil, nil, nil, nil
+		}
 		c.logger.Err(err).Msg("failed to sign tx")
-		return nil, nil, nil, err
+		return nil, checkpoint, nil, err
 	}
 
 	tronTx.Signature = append(tronTx.Signature, hex.EncodeToString(signature))
-
 	txBytes, err := json.Marshal(tronTx)
 	if err != nil {
 		c.logger.Err(err).Msg("failed to marshal tx")
-		return nil, nil, nil, err
+		return nil, checkpoint, nil, err
 	}
 
 	currentHeight, err := c.tronScanner.GetHeight()
 	if err != nil {
 		c.logger.Err(err).Msg("failed to get latest block")
-		return nil, nil, nil, err
+		return nil, checkpoint, nil, err
 	}
 
-	gasCoin := common.NewCoin(
-		common.TRXAsset,
-		cosmos.NewUint(uint64(txOutItem.GasRate)),
-	)
-
+	gasCoin := c.config.ChainID.NativeGasToThorCoin(cosmos.NewUint(uint64(txOutItem.GasRate)))
 	txIn := types.NewTxInItem(
 		currentHeight,
 		tronTx.TxId,
-		txOutItem.Memo,
-		fromAddress,
+		txOutItem.GetMemo(),
+		c.GetAddress(txOutItem.VaultPubKey),
 		txOutItem.ToAddress.String(),
 		txOutItem.Coins,
 		[]common.Coin{gasCoin},
@@ -569,10 +747,12 @@ func (c *TronClient) BroadcastTx(
 		return "", err
 	}
 
-	err = c.signerCacheManager.SetSigned(
+	expiry := time.Now().Add(c.getSignerCacheExpiry()).UnixMilli()
+	err = c.signerCacheManager.SetSignedWithExpiry(
 		txOutItem.CacheHash(),
 		txOutItem.CacheVault(c.GetChain()),
 		response.TxId,
+		expiry,
 	)
 	if err != nil {
 		c.logger.Err(err).
@@ -583,17 +763,31 @@ func (c *TronClient) BroadcastTx(
 	return response.TxId, nil
 }
 
+func isTronNotFoundErr(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "response status: 404")
+}
+
+// GetGasEstimateForSolvency returns the current gas fee estimate used by solvency checks.
+func (c *TronClient) GetGasEstimateForSolvency() cosmos.Uint {
+	fee := math.NewUint(c.tronScanner.currentFee.Load())
+	return c.config.ChainID.NativeGasToThorchain(fee)
+}
+
 func (c *TronClient) ShouldReportSolvency(height int64) bool {
 	return height%10 == 0
 }
 
 func (c *TronClient) ReportSolvency(height int64) error {
+	// The ordered scan loop and SolvencyCheckRunner can both call this.
+	c.solvencyLock.Lock()
+	defer c.solvencyLock.Unlock()
+
 	if !c.ShouldReportSolvency(height) {
 		return nil
 	}
 
 	// when block scanner is not healthy, only report from auto-unhalt SolvencyCheckRunner
-	// (FetchTxs passes PreviousHeight + 1 from scanBlocks, while SolvencyCheckRunner passes chainHeight)
+	// TRON passes chainHeight from both callers; at the tip this is PreviousHeight + 1.
 	if !c.IsBlockScannerHealthy() && height == c.blockScanner.PreviousHeight()+1 {
 		return nil
 	}
@@ -604,7 +798,7 @@ func (c *TronClient) ReportSolvency(height int64) error {
 		return err
 	}
 
-	fee := math.NewUint(c.tronScanner.currentFee)
+	currentGasFee := c.GetGasEstimateForSolvency()
 
 	// report insolvent asgard vaults,
 	// or else all if the chain is halted and all are solvent
@@ -637,7 +831,6 @@ func (c *TronClient) ReportSolvency(height int64) error {
 		}
 		processedVaults++
 
-		currentGasFee := c.config.ChainID.NativeGasToThorchain(fee)
 		if runners.IsVaultSolvent(c.config.ChainID, acc, chainVaults[i], currentGasFee) {
 			solventMsgs = append(solventMsgs, msg)
 			continue
@@ -681,6 +874,7 @@ func (c *TronClient) ReportSolvency(height int64) error {
 func (c *TronClient) sign(
 	data []byte,
 	txOutItem types.TxOutItem,
+	thorchainHeight int64,
 ) ([]byte, error) {
 	var err error
 	var signature, recovery []byte
@@ -694,9 +888,12 @@ func (c *TronClient) sign(
 			return nil, err
 		}
 	} else {
-		signature, recovery, err = c.tssKeyManager.RemoteSign(data, common.SigningAlgoSecp256k1, pubkey.String())
+		signature, recovery, err = c.tssKeyManager.RemoteSign(data, common.SigningAlgoSecp256k1, pubkey.String(), thorchainHeight)
 		if err == nil && signature != nil {
 			return append(signature, recovery...), nil
+		}
+		if err == nil && signature == nil {
+			return nil, tss.ErrNotSelectedForKeysign
 		}
 
 		var keysignError tss.KeysignError
@@ -711,7 +908,7 @@ func (c *TronClient) sign(
 			txId, errPostKeysignFail := c.bridge.PostKeysignFailure(
 				keysignError.Blame,
 				txOutItem.Height,
-				txOutItem.Memo,
+				txOutItem.GetMemo(),
 				txOutItem.Coins,
 				txOutItem.VaultPubKey,
 			)

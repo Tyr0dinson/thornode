@@ -5,10 +5,10 @@ import (
 )
 
 // NewTssKeysignFailVoter create a new instance of TssKeysignFailVoter
-func NewTssKeysignFailVoter(id string, height int64) TssKeysignFailVoter {
+func NewTssKeysignFailVoter(id string) TssKeysignFailVoter {
 	return TssKeysignFailVoter{
-		ID:     id,
-		Height: height,
+		ID:    id,
+		State: TssKeysignFailVoterState_PendingVoter,
 	}
 }
 
@@ -60,11 +60,6 @@ func (m *TssKeysignFailVoter) MemberSignerCount(nas NodeAccounts) int {
 // HasConsensus determine if this tss pool has enough signers
 func (m *TssKeysignFailVoter) HasConsensus(nas NodeAccounts) bool {
 	return HasSimpleMajority(m.MemberSignerCount(nas), len(nas))
-}
-
-// Empty to check whether this Voter is empty or not
-func (m *TssKeysignFailVoter) Empty() bool {
-	return len(m.ID) == 0 || m.Height == 0
 }
 
 // String implement fmt.Stringer , return's the ID

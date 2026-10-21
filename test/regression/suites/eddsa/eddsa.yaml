@@ -33,7 +33,7 @@ asserts:
   - .[0].coin.asset == "SOL.SOL"
   - .[0].coin.amount == "997497"
   - .[0].max_gas[0].asset == "SOL.SOL"
-  - .[0].max_gas[0].amount == "500"
+  - .[0].max_gas[0].amount == "500" # 5000 lamports = 0.0000005 SOL = 500 in THORChain 1e8 accounting units
   - .[0].max_gas[0].decimals == 9
 ---
 ########################################################################################

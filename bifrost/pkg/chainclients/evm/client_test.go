@@ -74,7 +74,7 @@ func GetMetricForTest(c *C) *metrics.Metrics {
 			ListenPort:   9000,
 			ReadTimeout:  time.Second,
 			WriteTimeout: time.Second,
-			Chains:       common.Chains{common.AVAXChain},
+			Chains:       common.Chains{common.AVAXChain, common.BSCChain, common.BASEChain, common.POLChain},
 		})
 		c.Assert(m, NotNil)
 		c.Assert(err, IsNil)
@@ -86,7 +86,7 @@ func (s *EVMSuite) SetUpTest(c *C) {
 	s.mimirOverrides = nil
 	s.m = GetMetricForTest(c)
 	c.Assert(s.m, NotNil)
-	types2.SetupConfigForTest()
+	setupMocknetThorConfig()
 	c.Assert(os.Setenv("NET", "mocknet"), IsNil)
 
 	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
@@ -284,6 +284,14 @@ func (s *EVMSuite) SetUpTest(c *C) {
 }
 
 func (s *EVMSuite) TearDownTest(c *C) {
+	// Close the server SetUpTest started. Its handler closes over s.thorKeys, so
+	// leaving it serving lets the next SetUpTest race the handler goroutine when
+	// it reassigns that field. Close waits for outstanding requests to finish.
+	if s.server != nil {
+		s.server.Close()
+		s.server = nil
+	}
+
 	c.Assert(os.Unsetenv("NET"), IsNil)
 
 	if err := os.RemoveAll(s.thordir); err != nil {
@@ -304,6 +312,25 @@ func (s *EVMSuite) TestSolvencyRunnerBackoff(c *C) {
 	// so this consistently exercises the fallback path.
 	client.cfg.ChainID = common.ETHChain
 	c.Assert(client.solvencyRunnerBackoff(), Equals, constants.ThorchainBlockTime)
+}
+
+// TestGetGasEstimateForSolvency verifies the generic EVM solvency buffer formula:
+// 3 * MaxGasLimit * lastReportedGasPrice, converted from the chain gas-rate unit
+// (BASE uses mwei here) into THORChain 1e8 units.
+func (s *EVMSuite) TestGetGasEstimateForSolvency(c *C) {
+	client := &EVMClient{
+		cfg: config.BifrostChainConfiguration{
+			ChainID: common.BASEChain,
+			BlockScanner: config.BifrostBlockScannerConfiguration{
+				MaxGasLimit: 200_000,
+			},
+		},
+		evmScanner: &EVMScanner{},
+	}
+	client.evmScanner.lastReportedGasPrice.Store(500_000)
+
+	got := client.GetGasEstimateForSolvency()
+	c.Assert(got.Equal(cosmos.NewUint(30_000_000)), Equals, true)
 }
 
 func (s *EVMSuite) TestNewClient(c *C) {
@@ -330,6 +357,12 @@ func (s *EVMSuite) TestNewClient(c *C) {
 	e, err = NewEVMClient(nil, config.BifrostChainConfiguration{}, nil, s.bridge, s.m, pubkeyMgr, poolMgr)
 	c.Assert(e, IsNil)
 	c.Assert(err, NotNil)
+
+	divergent := config.BifrostChainConfiguration{ChainID: common.AVAXChain}
+	divergent.EVM.AggregatorMaxGasMultiplier = constants.EVMAggregatorMaxGasMultiplier + 1
+	e, err = NewEVMClient(s.thorKeys, divergent, nil, s.bridge, s.m, pubkeyMgr, poolMgr)
+	c.Assert(e, IsNil)
+	c.Assert(err, ErrorMatches, ".*diverges from Thornode protocol value.*")
 }
 
 func (s *EVMSuite) TestConvertSigningAmount(c *C) {
@@ -341,7 +374,7 @@ func (s *EVMSuite) TestConvertSigningAmount(c *C) {
 		BlockScanner: config.BifrostBlockScannerConfiguration{
 			ChainID:            common.AVAXChain,
 			StartBlockHeight:   1, // avoids querying thorchain for block height
-			HTTPRequestTimeout: time.Second,
+			HTTPRequestTimeout: 10 * time.Second,
 		},
 	}, nil, s.bridge, s.m, pubkeyMgr, poolMgr)
 	c.Assert(err, IsNil)
@@ -364,7 +397,7 @@ func (s *EVMSuite) TestGetTokenAddressFromAsset(c *C) {
 		BlockScanner: config.BifrostBlockScannerConfiguration{
 			ChainID:            common.AVAXChain,
 			StartBlockHeight:   1, // avoids querying thorchain for block height
-			HTTPRequestTimeout: time.Second,
+			HTTPRequestTimeout: 10 * time.Second,
 		},
 	}, nil, s.bridge, s.m, pubkeyMgr, poolMgr)
 	c.Assert(err, IsNil)
@@ -390,7 +423,7 @@ func (s *EVMSuite) TestClient(c *C) {
 		BlockScanner: config.BifrostBlockScannerConfiguration{
 			ChainID:            common.AVAXChain,
 			StartBlockHeight:   1, // avoids querying thorchain for block height
-			HTTPRequestTimeout: time.Second,
+			HTTPRequestTimeout: 10 * time.Second,
 		},
 	}, nil, s.bridge, s.m, pubkeyMgr, poolMgr)
 	c.Assert(err2, IsNil)
@@ -481,7 +514,7 @@ func (s *EVMSuite) TestL1FeeDeduction(c *C) {
 		BlockScanner: config.BifrostBlockScannerConfiguration{
 			ChainID:            common.AVAXChain,
 			StartBlockHeight:   1, // avoids querying thorchain for block height
-			HTTPRequestTimeout: time.Second,
+			HTTPRequestTimeout: 10 * time.Second,
 			MaxGasLimit:        80000,
 		},
 	}
@@ -545,7 +578,7 @@ func (s *EVMSuite) TestGetAccount(c *C) {
 		BlockScanner: config.BifrostBlockScannerConfiguration{
 			ChainID:            common.AVAXChain,
 			StartBlockHeight:   1, // avoids querying thorchain for block height
-			HTTPRequestTimeout: time.Second,
+			HTTPRequestTimeout: 10 * time.Second,
 		},
 	}, nil, s.bridge, s.m, pubkeyMgr, poolMgr)
 	c.Assert(err, IsNil)
@@ -560,6 +593,56 @@ func (s *EVMSuite) TestGetAccount(c *C) {
 	c.Assert(b, NotNil)
 }
 
+func (s *EVMSuite) TestGetVaultBalancesUsesVaultCoins(c *C) {
+	pubkeyMgr, err := pubkeymanager.NewPubKeyManager(s.bridge, s.m)
+	c.Assert(err, IsNil)
+	poolMgr := thorclient.NewPoolMgr(s.bridge)
+	e, err := NewEVMClient(s.thorKeys, config.BifrostChainConfiguration{
+		ChainID: common.AVAXChain,
+		RPCHost: "http://" + s.server.Listener.Addr().String(),
+		BlockScanner: config.BifrostBlockScannerConfiguration{
+			ChainID:            common.AVAXChain,
+			StartBlockHeight:   1,
+			HTTPRequestTimeout: 10 * time.Second,
+		},
+	}, nil, s.bridge, s.m, pubkeyMgr, poolMgr)
+	c.Assert(err, IsNil)
+	c.Assert(e, NotNil)
+
+	// Node-local token metadata must not affect the solvency coin set.
+	c.Assert(e.evmScanner.tokenManager.SaveTokenMeta("RAZE", "0x5EAA69B29F99C84FE5DE8200340B4E9B4AB38EAC", 18), IsNil)
+	c.Assert(e.evmScanner.tokenManager.SaveTokenMeta("FLIP", "0x826180541412D574CF1336D22C0C0A287822678A", 18), IsNil)
+
+	tkn, err := common.NewAsset("AVAX.TKN-0X333C3310824B7C685133F2BEDB2CA4B8B4DF633D")
+	c.Assert(err, IsNil)
+	usdc, err := common.NewAsset("AVAX.USDC-0XB97EF9EF8734C71904D8002F8B6BC66DD9C48A6E")
+	c.Assert(err, IsNil)
+	vault := types2.Vault{
+		Coins: common.NewCoins(
+			common.NewCoin(usdc, cosmos.NewUint(1)),
+			common.NewCoin(common.ETHAsset, cosmos.NewUint(1)),
+			common.NewCoin(common.AVAXAsset, cosmos.NewUint(1)),
+			common.NewCoin(tkn, cosmos.NewUint(1)),
+			common.NewCoin(usdc, cosmos.NewUint(2)),
+		),
+	}
+
+	coins, err := e.GetVaultBalances(
+		"0x9f4aab49a9cd8fc54dcb3701846f608a6f2c44da",
+		nil,
+		"0x17aB05351fC94a1a67Bf3f56DdbB941aE6c63E25",
+		vault,
+	)
+	c.Assert(err, IsNil)
+	c.Assert(coins, HasLen, 3)
+	c.Assert(coins[0].Asset.Equals(common.AVAXAsset), Equals, true)
+	c.Assert(coins[0].Amount.Uint64(), Equals, uint64(10*common.One))
+	c.Assert(coins[1].Asset.Equals(tkn), Equals, true)
+	c.Assert(coins[1].Amount.IsZero(), Equals, true)
+	c.Assert(coins[2].Asset.Equals(usdc), Equals, true)
+	c.Assert(coins[2].Amount.IsZero(), Equals, true)
+}
+
 func (s *EVMSuite) TestSignEVMTx(c *C) {
 	pubkeyMgr, err := pubkeymanager.NewPubKeyManager(s.bridge, s.m)
 	c.Assert(err, IsNil)
@@ -570,7 +653,7 @@ func (s *EVMSuite) TestSignEVMTx(c *C) {
 		BlockScanner: config.BifrostBlockScannerConfiguration{
 			ChainID:            common.AVAXChain,
 			StartBlockHeight:   1, // avoids querying thorchain for block height
-			HTTPRequestTimeout: time.Second,
+			HTTPRequestTimeout: 10 * time.Second,
 			MaxGasLimit:        80000,
 		},
 	}
@@ -582,8 +665,7 @@ func (s *EVMSuite) TestSignEVMTx(c *C) {
 	e.signingReady.Store(true) // Mark ready for tests that don't call Start()
 	c.Assert(pubkeyMgr.Start(), IsNil)
 	defer func() { c.Assert(pubkeyMgr.Stop(), IsNil) }()
-	pubkeys := pubkeyMgr.GetPubKeys()
-	addr, err := pubkeys[len(pubkeys)-4].GetAddress(common.AVAXChain)
+	addr, err := e.localPubKey.GetAddress(common.AVAXChain)
 	c.Assert(err, IsNil)
 
 	// Not AVAX chain
@@ -787,7 +869,7 @@ func (s *EVMSuite) TestSignTxChecksMemLiability(c *C) {
 		BlockScanner: config.BifrostBlockScannerConfiguration{
 			ChainID:            common.AVAXChain,
 			StartBlockHeight:   1, // avoids querying thorchain for block height
-			HTTPRequestTimeout: time.Second,
+			HTTPRequestTimeout: 10 * time.Second,
 			MaxGasLimit:        80000,
 		},
 	}
@@ -858,7 +940,7 @@ func (s *EVMSuite) TestCheckAndApproveAllowance(c *C) {
 		BlockScanner: config.BifrostBlockScannerConfiguration{
 			ChainID:            common.AVAXChain,
 			StartBlockHeight:   1, // avoids querying thorchain for block height
-			HTTPRequestTimeout: time.Second,
+			HTTPRequestTimeout: 10 * time.Second,
 			MaxGasLimit:        80000,
 		},
 	}
@@ -943,7 +1025,7 @@ func (s *EVMSuite) TestSignTxWithAllowanceFlow(c *C) {
 		BlockScanner: config.BifrostBlockScannerConfiguration{
 			ChainID:            common.AVAXChain,
 			StartBlockHeight:   1, // avoids querying thorchain for block height
-			HTTPRequestTimeout: time.Second,
+			HTTPRequestTimeout: 10 * time.Second,
 			MaxGasLimit:        80000,
 		},
 	}
@@ -1063,7 +1145,7 @@ func (s *EVMSuite) TestAllowanceCheckWithDecimalConversions(c *C) {
 		BlockScanner: config.BifrostBlockScannerConfiguration{
 			ChainID:            common.AVAXChain,
 			StartBlockHeight:   1,
-			HTTPRequestTimeout: time.Second,
+			HTTPRequestTimeout: 10 * time.Second,
 			MaxGasLimit:        80000,
 		},
 	}
@@ -1200,7 +1282,7 @@ func (s *EVMSuite) TestApprovalTransactionBroadcastFlow(c *C) {
 		BlockScanner: config.BifrostBlockScannerConfiguration{
 			ChainID:            common.AVAXChain,
 			StartBlockHeight:   1,
-			HTTPRequestTimeout: time.Second,
+			HTTPRequestTimeout: 10 * time.Second,
 			MaxGasLimit:        80000,
 		},
 	}

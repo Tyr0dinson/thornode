@@ -6,8 +6,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/binance-chain/tss-lib/common"
-	tsslibcommon "github.com/binance-chain/tss-lib/common"
 	"github.com/golang/protobuf/proto"
 	"github.com/libp2p/go-libp2p-core/host"
 	"github.com/libp2p/go-libp2p-core/network"
@@ -15,6 +13,8 @@ import (
 	"github.com/libp2p/go-libp2p-core/protocol"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
+	"gitlab.com/thorchain/tss/tss-lib-private.git/v3/common"
+	tsslibcommon "gitlab.com/thorchain/tss/tss-lib-private.git/v3/common"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/p2p"
 	"gitlab.com/thorchain/thornode/v3/bifrost/p2p/messages"
@@ -75,6 +75,7 @@ func (s *SignatureNotifier) Stop() {
 func (s *SignatureNotifier) cleanupStaleNotifiers() {
 	doCleanup := func() {
 		s.notifierLock.Lock()
+		var expired []string
 		for messageID, notifier := range s.notifiers {
 			notifier.mu.Lock()
 			lastUpdated := notifier.lastUpdated
@@ -82,9 +83,21 @@ func (s *SignatureNotifier) cleanupStaleNotifiers() {
 			notifier.mu.Unlock()
 			if time.Since(lastUpdated) > ttl {
 				delete(s.notifiers, messageID)
+				expired = append(expired, messageID)
 			}
 		}
 		s.notifierLock.Unlock()
+		// Streams parked under a msgID (handleStream/sendOneMsgToPeer) are
+		// otherwise only swept by ReleaseStream at local keysign completion.
+		// For notifications about keysigns this node never ran — the same
+		// broadcasts that create the notifiers cleaned up here — nothing else
+		// releases them and they leak. Sweep them with their expired
+		// notifier: parked streams are read+acked and never reused, so a
+		// late reset is safe. (Failed-status notifications create no
+		// notifier; their streams still leak — negligible volume.)
+		for _, messageID := range expired {
+			s.streamMgr.ReleaseStream(messageID)
+		}
 	}
 	ticker := time.NewTicker(time.Second * 15)
 	defer ticker.Stop()
@@ -180,13 +193,21 @@ func (s *SignatureNotifier) sendOneMsgToPeer(m *signatureItem) error {
 	if err != nil {
 		return fmt.Errorf("fail to write message to stream:%w", err)
 	}
-	// we wait for 1 second to allow the receive notify us
-	if err := stream.SetReadDeadline(time.Now().Add(time.Second * 1)); nil != err {
+	// Wait for the receiver ack without assuming the underlying stream supports deadlines.
+	ackResult := make(chan error, 1)
+	go func() {
+		ret := make([]byte, 8)
+		_, readErr := stream.Read(ret)
+		ackResult <- readErr
+	}()
+
+	select {
+	case err := <-ackResult:
 		return err
+	case <-time.After(time.Second):
+		_ = stream.Reset()
+		return fmt.Errorf("timeout waiting for signature ack")
 	}
-	ret := make([]byte, 8)
-	_, err = stream.Read(ret)
-	return err
 }
 
 // BroadcastSignature sending the keysign signature to all other peers

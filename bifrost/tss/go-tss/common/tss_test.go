@@ -12,12 +12,12 @@ import (
 	"testing"
 	"time"
 
-	btsskeygen "github.com/binance-chain/tss-lib/ecdsa/keygen"
-	btss "github.com/binance-chain/tss-lib/tss"
 	tcrypto "github.com/cometbft/cometbft/crypto"
 	"github.com/cometbft/cometbft/crypto/secp256k1"
 	coskey "github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
 	sdk "github.com/cosmos/cosmos-sdk/types/bech32/legacybech32"
+	btsskeygen "gitlab.com/thorchain/tss/tss-lib-private.git/v3/ecdsa/keygen"
+	btss "gitlab.com/thorchain/tss/tss-lib-private.git/v3/tss"
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/p2p"
@@ -102,6 +102,7 @@ func (t *TssTestSuite) TestContains(c *C) {
 
 func (t *TssTestSuite) TestTssProcessOutCh(c *C) {
 	conf := TssConfig{}
+	outbound := make(chan *messages.BroadcastMsgChan, 1)
 	localTestPubKeys := make([]string, len(testPubKeys))
 	copy(localTestPubKeys, testPubKeys[:])
 	partiesID, localPartyID, err := conversion.GetParties(localTestPubKeys, testPubKeys[0])
@@ -119,9 +120,40 @@ func (t *TssTestSuite) TestTssProcessOutCh(c *C) {
 	}
 	msg := btss.NewMessageWrapper(messageRouting, testContent)
 	tssMsg := btss.NewMessage(messageRouting, testContent, msg)
-	tssCommonStruct := NewTssCommon("", nil, conf, "test", t.privKey, 1)
+	tssCommonStruct := NewTssCommon("", outbound, conf, "test", t.privKey, 1)
 	err = tssCommonStruct.ProcessOutCh(tssMsg, messages.TSSKeyGenMsg)
 	c.Assert(err, IsNil)
+
+	emitted := <-outbound
+	var wireMsg messages.WireMessage
+	err = json.Unmarshal(emitted.WrappedMessage.Payload, &wireMsg)
+	c.Assert(err, IsNil)
+	c.Assert(wireMsg.RoundInfo, Equals, tssMsg.Type())
+}
+
+func (t *TssTestSuite) TestRoundInfoAccessors(c *C) {
+	tssCommonStruct := NewTssCommon("", nil, TssConfig{}, "test", t.privKey, 1)
+	c.Assert(tssCommonStruct.GetRoundInfo(), Equals, "")
+
+	const iterations = 1000
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < iterations; i++ {
+			tssCommonStruct.SetRoundInfo(fmt.Sprintf("round-%d", i))
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		for i := 0; i < iterations; i++ {
+			_ = tssCommonStruct.GetRoundInfo()
+		}
+	}()
+	wg.Wait()
+
+	tssCommonStruct.SetRoundInfo("final-round")
+	c.Assert(tssCommonStruct.GetRoundInfo(), Equals, "final-round")
 }
 
 func fabricateTssMsg(c *C, privKey tcrypto.PrivKey, partyID *btss.PartyID, roundInfo, msg, msgID string, msgType messages.THORChainTSSMessageType) (*messages.WrappedMessage, []byte) {
@@ -202,7 +234,7 @@ func setupProcessVerMsgEnv(c *C, privKey tcrypto.PrivKey, keyPool []string, part
 	ctx := btss.NewPeerContext(partiesID)
 	params := btss.NewParameters(btss.S256(), ctx, localPartyID, len(partiesID), 2)
 	outCh := make(chan btss.Message, len(partiesID))
-	endCh := make(chan btsskeygen.LocalPartySaveData, len(partiesID))
+	endCh := make(chan *btsskeygen.LocalPartySaveData, len(partiesID))
 	keyGenParty := btsskeygen.NewLocalParty(params, outCh, endCh)
 	partyMap := new(sync.Map)
 	partyMap.Store("tester", keyGenParty)
@@ -243,7 +275,7 @@ func (t *TssTestSuite) testDropMsgOwner(c *C, privKey tcrypto.PrivKey, tssCommon
 	c.Assert(err, Equals, blame.ErrHashCheck)
 	// since we re-use the tsscommon, so we may have more than one signature
 	var blameSig [][]byte
-	blameNodes := tssCommonStruct.blameMgr.GetBlame().BlameNodes
+	blameNodes := tssCommonStruct.blameMgr.GetBlame().Snapshot().BlameNodes
 	for _, el := range blameNodes {
 		blameSig = append(blameSig, el.BlameSignature)
 	}
@@ -460,7 +492,7 @@ func (t *TssTestSuite) TestProcessInvalidMsgBlame(c *C) {
 
 	fakeErr := btss.NewError(errors.New("test error"), "test task", 1, nil, culprits...)
 	tssCommonStruct.processInvalidMsgBlame(wiredMsg.RoundInfo, blame.RoundInfo{RoundMsg: roundInfo}, fakeErr)
-	blameResult := tssCommonStruct.GetBlameMgr().GetBlame()
+	blameResult := tssCommonStruct.GetBlameMgr().GetBlame().Snapshot()
 	c.Assert(blameResult.BlameNodes, HasLen, 3)
 
 	routingInfo := btss.MessageRouting{
@@ -479,4 +511,96 @@ func (t *TssTestSuite) TestProcessInvalidMsgBlame(c *C) {
 	}
 	// for the last one, since we do not store the msg before hand, it should return no record of this party
 	c.Assert(blameResult.BlameNodes[2].BlameData, HasLen, 0)
+}
+
+// panicUpdateParty is a btss.Party whose UpdateFromBytes panics, standing in
+// for the peer-triggered panic sources inside tss-lib message processing.
+type panicUpdateParty struct {
+	*btss.BaseParty
+	id    *btss.PartyID
+	calls int
+}
+
+func (p *panicUpdateParty) Start() *btss.Error { return nil }
+func (p *panicUpdateParty) UpdateFromBytes(_ []byte, _ *btss.PartyID, _ bool) (bool, *btss.Error) {
+	p.calls++
+	panic("boom: simulated tss-lib panic")
+}
+func (p *panicUpdateParty) Update(_ btss.ParsedMessage) (bool, *btss.Error)       { return true, nil }
+func (p *panicUpdateParty) StoreMessage(_ btss.ParsedMessage) (bool, *btss.Error) { return true, nil }
+func (p *panicUpdateParty) FirstRound() btss.Round                                { return nil }
+func (p *panicUpdateParty) PartyID() *btss.PartyID                                { return p.id }
+
+// TestDoTssJobRecoversPanicAndBlamesSender pins the recover-and-attribute
+// behavior of doTssJob: a panic inside party.UpdateFromBytes must not kill
+// the goroutine, and the cryptographically-verified sender must be recorded
+// both in t.culprits and in a TssBrokenMsg blame with a named node.
+func (t *TssTestSuite) TestDoTssJobRecoversPanicAndBlamesSender(c *C) {
+	tssCommonStruct, _, partiesID := setupProcessVerMsgEnv(c, t.privKey, testBlamePubKeys, 4)
+	sender := findSender(partiesID)
+	c.Assert(sender, NotNil)
+
+	// Valid wire bytes so GetMsgRound succeeds and control reaches
+	// UpdateFromBytes, where the mock panics.
+	routing := btss.MessageRouting{
+		From:        sender,
+		IsBroadcast: true,
+	}
+	content := &btsskeygen.KGRound1Message{Commitment: []byte("TEST")}
+	wrapper := btss.NewMessageWrapper(routing, content)
+	wireBytes, _, err := btss.NewMessage(routing, content, wrapper).WireBytes()
+	c.Assert(err, IsNil)
+
+	// A second share for the same party (msgIdentifier) after the panic: it
+	// must be dropped without touching the party, whose mutex the panic left
+	// held inside tss-lib.
+	first := &panicUpdateParty{BaseParty: &btss.BaseParty{}, id: sender}
+	second := &panicUpdateParty{BaseParty: &btss.BaseParty{}, id: sender}
+
+	jobChan := make(chan *tssJob, 2)
+	jobChan <- newJob(first, wireBytes, "test-identifier", sender, true)
+	jobChan <- newJob(second, wireBytes, "test-identifier", sender, true)
+	close(jobChan)
+
+	wg := &sync.WaitGroup{}
+	wg.Add(1)
+	// runs inline: if the recover is missing, the panic fails the test here
+	tssCommonStruct.doTssJob(jobChan, wg)
+	wg.Wait()
+
+	c.Assert(first.calls, Equals, 1)
+	c.Assert(second.calls, Equals, 0) // dropped by the poison check
+
+	tssCommonStruct.culpritsLock.RLock()
+	c.Assert(tssCommonStruct.culprits, HasLen, 1)
+	c.Assert(tssCommonStruct.culprits[0].Id, Equals, sender.Id)
+	tssCommonStruct.culpritsLock.RUnlock()
+
+	blameResult := tssCommonStruct.GetBlameMgr().GetBlame()
+	c.Assert(blameResult.FailReason, Equals, blame.TssBrokenMsg)
+	c.Assert(blameResult.BlameNodes, HasLen, 1)
+	c.Assert(blameResult.BlameNodes[0].BlameData, DeepEquals, wireBytes)
+}
+
+// TestProcessInvalidMsgBlameEmptyCulprits pins the behavior that tss-lib v3
+// errors arriving with no culprits (e.g. round-9/10 finalize aborts where the
+// fork's identifiable-abort attribution was dropped) do not panic and produce
+// a Blame with an empty BlameNodes list and TssBrokenMsg as the reason. The
+// caller (timeout/missing-share path) is responsible for any further
+// attribution.
+func (t *TssTestSuite) TestProcessInvalidMsgBlameEmptyCulprits(c *C) {
+	tssCommonStruct, _, partiesID := setupProcessVerMsgEnv(c, t.privKey, testBlamePubKeys, 4)
+	sender := findSender(partiesID)
+	roundInfo := "round emptyCulprits"
+
+	// no culprits — simulates v3's finalize-stage abort
+	fakeErr := btss.NewError(errors.New("signature verification failed"), "ecdsa-signing", 10, sender)
+	c.Assert(fakeErr.Culprits(), HasLen, 0)
+
+	err := tssCommonStruct.processInvalidMsgBlame(roundInfo, blame.RoundInfo{RoundMsg: roundInfo}, fakeErr)
+	c.Assert(err, NotNil) // original cause is preserved as wrapped error
+
+	blameResult := tssCommonStruct.GetBlameMgr().GetBlame().Snapshot()
+	c.Assert(blameResult.BlameNodes, HasLen, 0)
+	c.Assert(blameResult.FailReason, Equals, blame.TssBrokenMsg)
 }

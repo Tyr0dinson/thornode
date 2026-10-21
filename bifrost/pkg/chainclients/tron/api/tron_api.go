@@ -85,14 +85,43 @@ func (api *TronApi) GetTransactionInfo(
 		return TransactionInfo{}, err
 	}
 
-	var info TransactionInfo
-
-	err = json.Unmarshal(data, &info)
-	if err != nil {
+	// Java-TRON can report an application error with HTTP 200. Do not turn
+	// that failed lookup into an empty receipt that could hide a scanned transfer.
+	var response *struct {
+		TransactionInfo
+		Error json.RawMessage `json:"Error"`
+	}
+	if err = json.Unmarshal(data, &response); err != nil {
 		return TransactionInfo{}, fmt.Errorf("failed to unmarshal response: %w", err)
 	}
+	if response == nil {
+		return TransactionInfo{}, fmt.Errorf("empty transaction info response")
+	}
+	if len(response.Error) != 0 {
+		return TransactionInfo{}, fmt.Errorf("transaction info lookup failed: %s", response.Error)
+	}
 
-	return info, nil
+	return response.TransactionInfo, nil
+}
+
+func (api *TronApi) GetTransaction(
+	hash string,
+) (Transaction, error) {
+	params := map[string]any{
+		"value": hash,
+	}
+
+	data, err := api.post("gettransactionbyid", params)
+	if err != nil {
+		return Transaction{}, err
+	}
+
+	var tx Transaction
+	if err = json.Unmarshal(data, &tx); err != nil {
+		return Transaction{}, fmt.Errorf("failed to unmarshal response: %w", err)
+	}
+
+	return tx, nil
 }
 
 func (api *TronApi) GetBalance(
@@ -149,6 +178,9 @@ func (api *TronApi) CreateTransaction(
 	err = json.Unmarshal(data, &tx)
 	if err != nil {
 		return tx, fmt.Errorf("failed to unmarshal response: %w", err)
+	}
+	if tx.Err != "" {
+		return tx, fmt.Errorf("create transaction failed: %s", tx.Err)
 	}
 
 	return tx, nil

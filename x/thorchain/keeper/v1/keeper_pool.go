@@ -4,13 +4,12 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/cosmos/cosmos-sdk/runtime"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 )
 
 func (k KVStore) setPool(ctx cosmos.Context, key []byte, record Pool) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	buf := k.cdc.MustMarshal(&record)
 	if buf == nil {
 		store.Delete(key)
@@ -20,7 +19,7 @@ func (k KVStore) setPool(ctx cosmos.Context, key []byte, record Pool) {
 }
 
 func (k KVStore) getPool(ctx cosmos.Context, key []byte, record *Pool) (bool, error) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	if !store.Has(key) {
 		return false, nil
 	}
@@ -44,9 +43,13 @@ func (k KVStore) GetPools(ctx cosmos.Context) (Pools, error) {
 	defer iterator.Close()
 	for ; iterator.Valid(); iterator.Next() {
 		var pool Pool
-		err := k.Cdc().Unmarshal(iterator.Value(), &pool)
-		if err != nil {
-			return nil, dbError(ctx, "Unmarsahl: pool", err)
+		// Full scans (GetAnchors per stable-swap check, EndBlock managers) see
+		// mostly unchanged pools, so their decodes are memoized. Point reads in
+		// getPool often follow a SetPool of the same pool and would only miss.
+		if !k.memoDecodePool(iterator.Key(), iterator.Value(), &pool) {
+			if err := k.Cdc().Unmarshal(iterator.Value(), &pool); err != nil {
+				return nil, dbError(ctx, "Unmarsahl: pool", err)
+			}
 		}
 		pools = append(pools, pool)
 	}

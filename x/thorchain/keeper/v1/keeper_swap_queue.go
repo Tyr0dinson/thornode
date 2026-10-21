@@ -4,13 +4,12 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/cosmos/cosmos-sdk/runtime"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 )
 
 func (k KVStore) setMsgSwap(ctx cosmos.Context, key []byte, record MsgSwap) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	buf := k.cdc.MustMarshal(&record)
 	if buf == nil {
 		store.Delete(key)
@@ -20,7 +19,7 @@ func (k KVStore) setMsgSwap(ctx cosmos.Context, key []byte, record MsgSwap) {
 }
 
 func (k KVStore) getMsgSwap(ctx cosmos.Context, key []byte, record *MsgSwap) (bool, error) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	if !store.Has(key) {
 		return false, nil
 	}
@@ -34,7 +33,8 @@ func (k KVStore) getMsgSwap(ctx cosmos.Context, key []byte, record *MsgSwap) (bo
 
 // SetSwapQueueItem - writes a swap item to the kv store
 func (k KVStore) SetSwapQueueItem(ctx cosmos.Context, msg MsgSwap, i int) error {
-	k.setMsgSwap(ctx, k.GetKey(prefixSwapQueueItem, formatSwapQueueItemKey(msg.Tx.ID, i)), msg)
+	key := k.GetKey(prefixSwapQueueItem, formatSwapQueueItemKey(msg.Tx.ID, i))
+	k.setMsgSwap(ctx, key, msg)
 	return nil
 }
 

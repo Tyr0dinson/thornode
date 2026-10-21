@@ -43,29 +43,128 @@ import (
 func TestPackage(t *testing.T) { TestingT(t) }
 
 type ObserverSuite struct {
-	metrics  *metrics.Metrics
-	thorKeys *thorclient.Keys
-	bridge   thorclient.ThorchainBridge
-	client   *evm.EVMClient
+	metrics    *metrics.Metrics
+	thorKeys   *thorclient.Keys
+	bridge     thorclient.ThorchainBridge
+	client     *evm.EVMClient
+	rpcServer  *httptest.Server
+	thorServer *httptest.Server
 }
 
 var _ = Suite(&ObserverSuite{})
 
+type blockingConfirmationChainClient struct {
+	chainclients.ChainClient
+	started chan struct{}
+	release chan struct{}
+	once    sync.Once
+}
+
+func (c *blockingConfirmationChainClient) ConfirmationCountReady(types.TxIn) bool {
+	c.once.Do(func() { close(c.started) })
+	<-c.release
+	return false
+}
+
+func (c *blockingConfirmationChainClient) GetConfirmationCount(types.TxIn) int64 {
+	return 0
+}
+
 ////////////////////////////////////////////////////////////////////////////////////////
 // Mock
 ////////////////////////////////////////////////////////////////////////////////////////
+
+// TestProcessTxInsDoesNotBlockSharedQueueOnInactiveXMR verifies slow historical
+// certificate work runs in the bounded worker pool rather than on the global
+// transaction queue consumer shared by every chain. Empty XMR batches must be
+// discarded before worker admission so they cannot block behind that work.
+func TestProcessTxInsDoesNotBlockSharedQueueOnInactiveXMR(t *testing.T) {
+	started := make(chan struct{})
+	release := make(chan struct{})
+	stop := make(chan struct{})
+	var releaseOnce, stopOnce sync.Once
+	releaseWork := func() { releaseOnce.Do(func() { close(release) }) }
+	stopProcess := func() { stopOnce.Do(func() { close(stop) }) }
+	defer releaseWork()
+	defer stopProcess()
+
+	chainClient := &blockingConfirmationChainClient{started: started, release: release}
+	o := &Observer{
+		logger:          zerolog.Nop(),
+		chains:          map[common.Chain]chainclients.ChainClient{common.XMRChain: chainClient},
+		stopChan:        stop,
+		globalTxsQueue:  make(chan types.TxIn),
+		observerWorkers: 1,
+		lastNodeStatus:  types2.NodeStatus_Standby,
+	}
+	done := make(chan struct{})
+	go func() {
+		o.processTxIns()
+		close(done)
+	}()
+
+	vaultPubKey := randomXMRObservedPubKey(t)
+	vaultAddress, err := vaultPubKey.GetAddress(common.XMRChain)
+	if err != nil {
+		t.Fatal(err)
+	}
+	o.globalTxsQueue <- types.TxIn{
+		Chain:    common.XMRChain,
+		Filtered: true,
+		TxArray: []*types.TxInItem{{
+			BlockHeight:         1,
+			Sender:              vaultAddress.String(),
+			ObservedVaultPubKey: vaultPubKey,
+			SpentOutputRefs:     []*common.OutputRef{{}},
+		}},
+	}
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("inactive XMR worker did not start")
+	}
+
+	emptyAccepted := make(chan struct{})
+	go func() {
+		o.globalTxsQueue <- types.TxIn{Chain: common.XMRChain}
+		close(emptyAccepted)
+	}()
+	select {
+	case <-emptyAccepted:
+	case <-time.After(time.Second):
+		t.Fatal("empty inactive XMR batch was not consumed")
+	}
+
+	otherAccepted := make(chan struct{})
+	go func() {
+		o.globalTxsQueue <- types.TxIn{Chain: common.BTCChain}
+		close(otherAccepted)
+	}()
+	select {
+	case <-otherAccepted:
+	case <-time.After(time.Second):
+		t.Fatal("inactive XMR processing blocked the shared transaction queue")
+	}
+
+	releaseWork()
+	stopProcess()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("transaction processor did not stop")
+	}
+}
 
 func (s *ObserverSuite) ResetMockClient(c *C) {
 	pubkeyMgr, err := pubkeymanager.NewPubKeyManager(s.bridge, s.metrics)
 	c.Assert(err, IsNil)
 	poolMgr := thorclient.NewPoolMgr(s.bridge)
 
-	mockEvmRPC := httptest.NewServer(
+	s.rpcServer = httptest.NewServer(
 		http.HandlerFunc(
 			func(rw http.ResponseWriter, req *http.Request) {
-				var body []byte
-				body, err = io.ReadAll(req.Body)
-				c.Assert(err, IsNil)
+				body, readErr := io.ReadAll(req.Body)
+				c.Assert(readErr, IsNil)
 				type RPCRequest struct {
 					JSONRPC string          `json:"jsonrpc"`
 					ID      interface{}     `json:"id"`
@@ -73,27 +172,27 @@ func (s *ObserverSuite) ResetMockClient(c *C) {
 					Params  json.RawMessage `json:"params"`
 				}
 				var rpcRequest RPCRequest
-				err = json.Unmarshal(body, &rpcRequest)
-				c.Assert(err, IsNil)
+				c.Assert(json.Unmarshal(body, &rpcRequest), IsNil)
 				if rpcRequest.Method == "eth_chainId" {
-					_, err = rw.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":"0xf"}`))
-					c.Assert(err, IsNil)
+					_, writeErr := rw.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":"0xf"}`))
+					c.Assert(writeErr, IsNil)
 				}
 				if rpcRequest.Method == "eth_blockNumber" {
-					_, err = rw.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":"0x7"}`))
-					c.Assert(err, IsNil)
+					_, writeErr := rw.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":"0x7"}`))
+					c.Assert(writeErr, IsNil)
 				}
-			}))
-
-	httpRequestTimeout, _ := time.ParseDuration("5s")
+			},
+		),
+	)
 
 	s.client, err = evm.NewEVMClient(
 		s.thorKeys,
 		config.BifrostChainConfiguration{
-			RPCHost:        mockEvmRPC.URL,
+			RPCHost:        s.rpcServer.URL,
 			SolvencyBlocks: 10,
 			BlockScanner: config.BifrostBlockScannerConfiguration{
-				HTTPRequestTimeout:  httpRequestTimeout,
+				// These tests exercise observer behavior, not RPC latency.
+				HTTPRequestTimeout:  30 * time.Second,
 				BlockScanProcessors: 1,
 				ChainID:             common.AVAXChain,
 				MaxHTTPRequestRetry: 10,
@@ -117,9 +216,9 @@ func (s *ObserverSuite) ResetMockClient(c *C) {
 ////////////////////////////////////////////////////////////////////////////////////////
 
 func (s *ObserverSuite) SetUpSuite(c *C) {
-	types2.SetupConfigForTest()
+	setupMocknetThorConfig()
 
-	server := httptest.NewServer(
+	s.thorServer = httptest.NewServer(
 		http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 			switch {
 			case strings.HasPrefix(req.RequestURI, thorclient.MimirEndpoint):
@@ -162,7 +261,8 @@ func (s *ObserverSuite) SetUpSuite(c *C) {
 			default:
 				c.Errorf("invalid server query: %s", req.RequestURI)
 			}
-		}))
+		}),
+	)
 
 	s.metrics = getSharedTestMetrics()
 	c.Assert(s.metrics, NotNil)
@@ -170,8 +270,8 @@ func (s *ObserverSuite) SetUpSuite(c *C) {
 	var err error
 	cfg := config.BifrostClientConfiguration{
 		ChainID:      "thorchain",
-		ChainHost:    server.Listener.Addr().String(),
-		ChainRPC:     server.Listener.Addr().String(),
+		ChainHost:    s.thorServer.Listener.Addr().String(),
+		ChainRPC:     s.thorServer.Listener.Addr().String(),
 		SignerName:   "bob",
 		SignerPasswd: "password",
 	}
@@ -196,6 +296,17 @@ func (s *ObserverSuite) SetUpSuite(c *C) {
 	c.Assert(err, IsNil)
 
 	s.ResetMockClient(c)
+}
+
+func (s *ObserverSuite) TearDownSuite(_ *C) {
+	if s.rpcServer != nil {
+		s.rpcServer.Close()
+		s.rpcServer = nil
+	}
+	if s.thorServer != nil {
+		s.thorServer.Close()
+		s.thorServer = nil
+	}
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////
@@ -237,6 +348,9 @@ func (s *ObserverSuite) TestProcess(c *C) {
 	)
 	c.Assert(obs, NotNil)
 	c.Assert(err, IsNil)
+	c.Assert(cap(obs.globalNetworkFeeQueue), Equals, networkFeeQueueCapacity)
+	c.Assert(ag.observerHandleObservedTxCommitted, NotNil)
+	c.Assert(ag.observerHandleErrataTxCommitted, NotNil)
 	ag.SetObserverHandleObservedTxCommitted(obs)
 	err = obs.Start(context.Background())
 	c.Assert(err, IsNil)
@@ -429,7 +543,7 @@ func (s *ObserverSuite) TestObserverDeckStorage(c *C) {
 				},
 			},
 		}
-		observer.processObservedTx(*txInMempool)
+		c.Assert(observer.processObservedTx(*txInMempool), IsNil)
 
 		// Verify transaction is in both memory and storage
 		key := TxInKey(txInMempool)
@@ -473,7 +587,7 @@ func (s *ObserverSuite) TestObserverDeckStorage(c *C) {
 				},
 			},
 		}
-		observer.processObservedTx(*txInBlock)
+		c.Assert(observer.processObservedTx(*txInBlock), IsNil)
 
 		// Should still be in both memory and storage
 		assertTxExists(observer, key, txID.String())
@@ -552,7 +666,7 @@ func (s *ObserverSuite) TestObserverDeckStorage(c *C) {
 				},
 			},
 		}
-		observer.processObservedTx(*txInBlock)
+		c.Assert(observer.processObservedTx(*txInBlock), IsNil)
 
 		// Verify transaction is in both memory and storage
 		key := TxInKey(txInBlock)
@@ -631,7 +745,7 @@ func (s *ObserverSuite) TestObserverDeckStorage(c *C) {
 				},
 			},
 		}
-		observer.processObservedTx(*txFinal)
+		c.Assert(observer.processObservedTx(*txFinal), IsNil)
 
 		// Verify transaction is in both memory and storage
 		key := TxInKey(txFinal)

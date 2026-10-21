@@ -9,6 +9,9 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common"
 )
 
+// polConfirmations is the POL inbound confirmation count.
+const polConfirmations = 15
+
 // GetHeight returns the current block height.
 func (e *EVMScanner) GetHeight() (int64, error) {
 	var (

@@ -7,7 +7,7 @@ THORChain is a decentralised cross-chain liquidity protocol that allows users to
 THORChain works by observing transactions to its vaults across all the chains it supports. When the majority of nodes observe funds flowing into the system, they agree on the user's intent (usually expressed through a [memo](concepts/memos.md) within a transaction) and take the appropriate action.
 
 ```admonish info
-For more information see [Understanding THORChain](https://docs.thorchain.org/learn/understanding-thorchain) [Technology](https://docs.thorchain.org/how-it-works/technology) or [Concepts](./concepts/feature-guide.md).
+For more information see [Understanding THORChain](https://docs.thorchain.org/technical-documentation/understanding-thorchain) [Technology](https://docs.thorchain.org/technical-documentation/technology) or [Concepts](./concepts/feature-guide.md).
 ```
 
 For wallets/interfaces to interact with THORChain, they need to:
@@ -15,6 +15,11 @@ For wallets/interfaces to interact with THORChain, they need to:
 1. Connect to THORChain to obtain information from one or more endpoints.
 2. Construct transactions with the correct memos.
 3. Send the transactions to THORChain Inbound Vaults.
+
+```admonish tip
+**Try it now** — interactive API docs:
+[THORNode](https://gateway.liquify.com/chain/thorchain_api/thorchain/doc) (swaps, quotes, vaults) and [Midgard](https://gateway.liquify.com/chain/thorchain_midgard/v2/doc) (analytics, history). See [Connecting to THORChain](concepts/connecting-to-thorchain.md) for the full list.
+```
 
 See this [THORChain Development Guide](https://youtu.be/Qowrasst2UQ) video for more information or check out the [Front-end](./#front-end-development-guides) guides below for fast and simple implementation.
 
@@ -54,7 +59,7 @@ THORChain has several APIs with Swagger documentation.
 
 - Midgard - [https://gateway.liquify.com/chain/thorchain_midgard/v2/doc](https://gateway.liquify.com/chain/thorchain_midgard/v2/doc)
 - THORNode - [https://gateway.liquify.com/chain/thorchain_api/thorchain/doc](https://gateway.liquify.com/chain/thorchain_api/thorchain/doc)
-- Cosmos RPC - [https://docs.cosmos.network/v0.50/learn/advanced/grpc_rest](https://docs.cosmos.network/v0.50/learn/advanced/grpc_rest)
+- Cosmos RPC - [https://docs.cosmos.network/sdk/v0.53/learn/advanced/grpc_rest](https://docs.cosmos.network/sdk/v0.53/learn/advanced/grpc_rest)
 - CometBFT RPC - [https://docs.cometbft.com/v0.38/rpc/](https://docs.cometbft.com/v0.38/rpc/)
 
 See [Connecting to THORChain](concepts/connecting-to-thorchain.md "mention") for a full list of public endpoints and more information.

@@ -1,8 +1,6 @@
 package keeper
 
 import (
-	"fmt"
-
 	storetypes "cosmossdk.io/core/store"
 	"cosmossdk.io/log"
 
@@ -19,8 +17,9 @@ type (
 		cdc          codec.Codec
 		storeService storetypes.KVStoreService
 
-		accountKeeper types.AccountKeeper
-		bankKeeper    types.BankKeeper
+		accountKeeper  types.AccountKeeper
+		bankKeeper     types.BankKeeper
+		contractKeeper types.ContractKeeper
 
 		authority string
 	}
@@ -32,14 +31,16 @@ func NewKeeper(
 	storeService storetypes.KVStoreService,
 	accountKeeper types.AccountKeeper,
 	bankKeeper types.BankKeeper,
+	contractKeeper types.ContractKeeper,
 	authority string,
 ) Keeper {
 	return Keeper{
 		cdc:          cdc,
 		storeService: storeService,
 
-		accountKeeper: accountKeeper,
-		bankKeeper:    bankKeeper,
+		accountKeeper:  accountKeeper,
+		bankKeeper:     bankKeeper,
+		contractKeeper: contractKeeper,
 
 		authority: authority,
 	}
@@ -47,7 +48,7 @@ func NewKeeper(
 
 // Logger returns a logger for the x/denom module
 func (k Keeper) Logger(ctx sdk.Context) log.Logger {
-	return ctx.Logger().With("module", fmt.Sprintf("x/%s", types.ModuleName))
+	return ctx.Logger().With("module", "x/"+types.ModuleName)
 }
 
 // CreateModuleAccount creates a module account with minting and burning capabilities

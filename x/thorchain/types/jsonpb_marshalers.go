@@ -42,6 +42,7 @@ var (
 	_ jsonpb.JSONPBMarshaler = &QueryObservedTxVoter{}
 	_ jsonpb.JSONPBMarshaler = &QueryOutboundFeesResponse{}
 	_ jsonpb.JSONPBMarshaler = &QueryOutboundResponse{}
+	_ jsonpb.JSONPBMarshaler = &QuerySolVaultNonceResponse{}
 	_ jsonpb.JSONPBMarshaler = &QueryPoolResponse{}
 	_ jsonpb.JSONPBMarshaler = &QueryPoolSlipsResponse{}
 	_ jsonpb.JSONPBMarshaler = &QueryPoolsResponse{}
@@ -56,6 +57,7 @@ var (
 	_ jsonpb.JSONPBMarshaler = &QueryStreamingSwapsResponse{}
 	_ jsonpb.JSONPBMarshaler = &SwapperClout{}
 	_ jsonpb.JSONPBMarshaler = &QuerySwapQueueResponse{}
+	_ jsonpb.JSONPBMarshaler = &QuerySwapQueuePaginatedResponse{}
 	_ jsonpb.JSONPBMarshaler = &QuerySwapDetailsResponse{}
 	_ jsonpb.JSONPBMarshaler = &QueryThornameResponse{}
 	_ jsonpb.JSONPBMarshaler = &QueryTradeAccountsResponse{}
@@ -90,6 +92,12 @@ func jsonify(r any) ([]byte, error) {
 		return nil, fmt.Errorf("fail to marshal response to json: %w", err)
 	}
 	return res, nil
+}
+
+// QuerySolVaultNonceResponse renders with plain encoding/json (int64 as numbers,
+// the json tags as field names), which is the shape bifrost decodes.
+func (m *QuerySolVaultNonceResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, error) {
+	return jsonify(m)
 }
 
 func (m *QueryAsgardVaultsResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, error) {
@@ -144,6 +152,9 @@ func (m *QueryDerivedPoolsResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, 
 }
 
 func (m *QueryInboundAddressesResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, error) {
+	if m.InboundAddresses == nil {
+		return []byte("[]"), nil
+	}
 	return jsonify(m.InboundAddresses)
 }
 
@@ -335,9 +346,9 @@ func (m *SwapperClout) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, error) {
 }
 
 // Use openapi type since its swaptype is a string (i.e. "market", "limit") and not the int representation ("0", "1")
-func (m *QuerySwapQueueResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, error) {
-	result := make([]openapi.MsgSwap, 0)
-	for _, msg := range m.SwapQueue {
+func openAPISwapQueue(swaps []*MsgSwap) []openapi.MsgSwap {
+	result := make([]openapi.MsgSwap, 0, len(swaps))
+	for _, msg := range swaps {
 		// Only display the SwapType if it is "limit", not if "market".
 		var swapType *string
 		if msg.SwapType != SwapType_market {
@@ -362,7 +373,41 @@ func (m *QuerySwapQueueResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, err
 			StreamInterval:          wrapInt64(int64(msg.StreamInterval)),
 		})
 	}
-	return jsonify(result)
+	return result
+}
+
+func (m *QuerySwapQueueResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, error) {
+	return jsonify(openAPISwapQueue(m.SwapQueue))
+}
+
+func (m *QuerySwapQueuePaginatedResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, error) {
+	type paginationMeta struct {
+		Offset  uint64 `json:"offset"`
+		Limit   uint64 `json:"limit"`
+		Total   uint64 `json:"total"`
+		HasNext bool   `json:"has_next"`
+		HasPrev bool   `json:"has_prev"`
+	}
+	type swapQueueResponse struct {
+		SwapQueue  []openapi.MsgSwap `json:"swap_queue"`
+		Pagination *paginationMeta   `json:"pagination"`
+	}
+
+	var pagination *paginationMeta
+	if m.Pagination != nil {
+		pagination = &paginationMeta{
+			Offset:  m.Pagination.Offset,
+			Limit:   m.Pagination.Limit,
+			Total:   m.Pagination.Total,
+			HasNext: m.Pagination.HasNext,
+			HasPrev: m.Pagination.HasPrev,
+		}
+	}
+
+	return jsonify(swapQueueResponse{
+		SwapQueue:  openAPISwapQueue(m.SwapQueue),
+		Pagination: pagination,
+	})
 }
 
 // QuerySwapDetailsResponse

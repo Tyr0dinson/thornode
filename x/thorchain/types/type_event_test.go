@@ -234,6 +234,15 @@ func (EventSuite) TestEventBond(c *C) {
 	c.Check(rewardChainAttr, Equals, common.BTCChain.String())
 }
 
+func (EventSuite) TestEventBondYield(c *C) {
+	e := NewEventBondYield(GetRandomBech32Addr(), GetRandomBech32Addr(), cosmos.NewUint(100), cosmos.NewUint(25), cosmos.NewUint(75), 2500, "yieldname")
+	c.Check(e.Type(), Equals, "bond_yield")
+	events, err := e.Events()
+	c.Check(err, IsNil)
+	c.Assert(events, HasLen, 1)
+	c.Check(events[0].Attributes, HasLen, 7)
+}
+
 func (EventSuite) TestEventReBond(c *C) {
 	tx := GetRandomTx()
 	amount := cosmos.NewUint(68468161)
@@ -435,6 +444,27 @@ func (EventSuite) TestEventLimitSwapCloseEventType(c *C) {
 	c.Check(err, IsNil)
 	c.Assert(len(events), Equals, 1)
 	c.Check(events[0].Type, Equals, LimitSwapCloseEventType)
+}
+
+func (EventSuite) TestNewEventRevShareBpsClamp(c *C) {
+	owner := GetRandomBech32Addr()
+	accrued := cosmos.NewUint(100)
+	payout := cosmos.NewUint(10)
+
+	// GetMimirWithRef returns -1 for unset; the constructor must clamp to 0
+	// so indexers never see a negative bps attribute.
+	e := NewEventRevShare("FOO", owner, accrued, -1, payout)
+	c.Check(e.Bps, Equals, int64(0))
+
+	// Any other negative value also clamps.
+	e = NewEventRevShare("FOO", owner, accrued, -42, payout)
+	c.Check(e.Bps, Equals, int64(0))
+
+	// Non-negative values pass through unchanged.
+	e = NewEventRevShare("FOO", owner, accrued, 0, payout)
+	c.Check(e.Bps, Equals, int64(0))
+	e = NewEventRevShare("FOO", owner, accrued, 250, payout)
+	c.Check(e.Bps, Equals, int64(250))
 }
 
 func (EventSuite) TestEventChainSupportAdded(c *C) {

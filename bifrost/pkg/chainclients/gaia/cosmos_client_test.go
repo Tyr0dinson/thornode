@@ -1,6 +1,9 @@
 package gaia
 
 import (
+	"context"
+	"errors"
+	"fmt"
 	"math/big"
 	"net/http"
 	"net/http/httptest"
@@ -12,15 +15,23 @@ import (
 	"time"
 
 	sdkmath "cosmossdk.io/math"
+	cmtcoretypes "github.com/cometbft/cometbft/rpc/core/types"
+	cmttypes "github.com/cometbft/cometbft/types"
 	"github.com/cosmos/cosmos-sdk/codec"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
 	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 	"github.com/cosmos/cosmos-sdk/crypto/hd"
 	cKeys "github.com/cosmos/cosmos-sdk/crypto/keyring"
 	"github.com/cosmos/cosmos-sdk/types"
+	errortypes "github.com/cosmos/cosmos-sdk/types/errors"
+	txtypes "github.com/cosmos/cosmos-sdk/types/tx"
 	signingtypes "github.com/cosmos/cosmos-sdk/types/tx/signing"
 	"github.com/cosmos/cosmos-sdk/x/auth/tx"
 	btypes "github.com/cosmos/cosmos-sdk/x/bank/types"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/signercache"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
@@ -33,6 +44,163 @@ import (
 )
 
 func TestPackage(t *testing.T) { TestingT(t) }
+
+// fakeCometRPC is an injectable cometMempoolClient for verifyFn mempool tests.
+type fakeCometRPC struct {
+	res *cmtcoretypes.ResultUnconfirmedTxs
+	err error
+}
+
+func (f fakeCometRPC) UnconfirmedTxs(context.Context, *int) (*cmtcoretypes.ResultUnconfirmedTxs, error) {
+	return f.res, f.err
+}
+
+// TestGaiaMempoolLookup covers the CometBFT mempool fallback used by the signer-
+// cache verifyFn once GetTx reports the tx as not committed: present → respect
+// cache, definitively absent → clear + re-sign, and any uncertainty (RPC error,
+// nil client, or a mempool larger than we could fetch) → fail-closed.
+func TestGaiaMempoolLookup(t *testing.T) {
+	pending := cmttypes.Tx([]byte("pending-broadcast-bytes"))
+	sig := fmt.Sprintf("%X", pending.Hash())
+	ctx := context.Background()
+
+	cases := []struct {
+		name string
+		rpc  cometMempoolClient
+		want signercache.LookupResult
+	}{
+		{"nil client", nil, signercache.LookupAmbiguous},
+		{"rpc error", fakeCometRPC{err: errors.New("boom")}, signercache.LookupAmbiguous},
+		{"present in mempool", fakeCometRPC{res: &cmtcoretypes.ResultUnconfirmedTxs{Txs: []cmttypes.Tx{pending}, Total: 1}}, signercache.LookupFound},
+		{"absent, full mempool scanned", fakeCometRPC{res: &cmtcoretypes.ResultUnconfirmedTxs{Txs: []cmttypes.Tx{}, Total: 0}}, signercache.LookupNotFound},
+		{"mempool larger than fetched", fakeCometRPC{res: &cmtcoretypes.ResultUnconfirmedTxs{Txs: []cmttypes.Tx{[]byte("other")}, Total: 99}}, signercache.LookupAmbiguous},
+	}
+	for _, tc := range cases {
+		cc := CosmosClient{cometRPC: tc.rpc}
+		if got := cc.mempoolLookup(ctx, sig); got != tc.want {
+			t.Fatalf("%s: got %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}
+
+// TestGaiaVerifyBroadcast covers the signer-cache verifyFn routing: a committed tx
+// (GetTx ok) is present; a not-committed tx falls back to the mempool; any other
+// gRPC error is ambiguous (fail-closed).
+func TestGaiaVerifyBroadcast(t *testing.T) {
+	pending := cmttypes.Tx([]byte("pending-broadcast-bytes"))
+	sig := fmt.Sprintf("%X", pending.Hash())
+	notCommitted := status.Error(codes.NotFound, "tx not found")
+	inMempool := fakeCometRPC{res: &cmtcoretypes.ResultUnconfirmedTxs{Txs: []cmttypes.Tx{pending}, Total: 1}}
+	emptyMempool := fakeCometRPC{res: &cmtcoretypes.ResultUnconfirmedTxs{Txs: []cmttypes.Tx{}, Total: 0}}
+
+	cases := []struct {
+		name     string
+		getTxErr error
+		rpc      cometMempoolClient
+		want     signercache.LookupResult
+	}{
+		{"committed", nil, emptyMempool, signercache.LookupFound},
+		{"not committed, in mempool", notCommitted, inMempool, signercache.LookupFound},
+		{"not committed, absent", notCommitted, emptyMempool, signercache.LookupNotFound},
+		{"grpc error", errors.New("boom"), emptyMempool, signercache.LookupAmbiguous},
+	}
+	for _, tc := range cases {
+		cc := CosmosClient{txClient: mockTxServiceClient{getTxErr: tc.getTxErr}, cometRPC: tc.rpc}
+		if got := cc.verifyBroadcast(sig); got != tc.want {
+			t.Fatalf("%s: got %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}
+
+type mockTxServiceClient struct {
+	resp     *txtypes.BroadcastTxResponse
+	err      error
+	getTxErr error
+}
+
+func (m mockTxServiceClient) Simulate(context.Context, *txtypes.SimulateRequest, ...grpc.CallOption) (*txtypes.SimulateResponse, error) {
+	return nil, nil
+}
+
+func (m mockTxServiceClient) GetTx(context.Context, *txtypes.GetTxRequest, ...grpc.CallOption) (*txtypes.GetTxResponse, error) {
+	return nil, m.getTxErr
+}
+
+func (m mockTxServiceClient) BroadcastTx(context.Context, *txtypes.BroadcastTxRequest, ...grpc.CallOption) (*txtypes.BroadcastTxResponse, error) {
+	return m.resp, m.err
+}
+
+func (m mockTxServiceClient) GetTxsEvent(context.Context, *txtypes.GetTxsEventRequest, ...grpc.CallOption) (*txtypes.GetTxsEventResponse, error) {
+	return nil, nil
+}
+
+func (m mockTxServiceClient) GetBlockWithTxs(context.Context, *txtypes.GetBlockWithTxsRequest, ...grpc.CallOption) (*txtypes.GetBlockWithTxsResponse, error) {
+	return nil, nil
+}
+
+func (m mockTxServiceClient) TxDecode(context.Context, *txtypes.TxDecodeRequest, ...grpc.CallOption) (*txtypes.TxDecodeResponse, error) {
+	return nil, nil
+}
+
+func (m mockTxServiceClient) TxEncode(context.Context, *txtypes.TxEncodeRequest, ...grpc.CallOption) (*txtypes.TxEncodeResponse, error) {
+	return nil, nil
+}
+
+func (m mockTxServiceClient) TxEncodeAmino(context.Context, *txtypes.TxEncodeAminoRequest, ...grpc.CallOption) (*txtypes.TxEncodeAminoResponse, error) {
+	return nil, nil
+}
+
+func (m mockTxServiceClient) TxDecodeAmino(context.Context, *txtypes.TxDecodeAminoRequest, ...grpc.CallOption) (*txtypes.TxDecodeAminoResponse, error) {
+	return nil, nil
+}
+
+func TestBroadcastTxAllowsWrongSequence(t *testing.T) {
+	t.Parallel()
+
+	client := CosmosClient{
+		txClient: mockTxServiceClient{
+			resp: &txtypes.BroadcastTxResponse{
+				TxResponse: &types.TxResponse{
+					Code:   errortypes.ErrWrongSequence.ABCICode(),
+					TxHash: "WRONGSEQ",
+				},
+			},
+		},
+		accts: NewCosmosMetaDataStore(),
+	}
+
+	txid, err := client.BroadcastTx(stypes.TxOutItem{}, []byte("signed"))
+	if err != nil {
+		t.Fatalf("expected wrong-sequence broadcast to be tolerated, got %v", err)
+	}
+	if txid != "WRONGSEQ" {
+		t.Fatalf("expected returned txid to be preserved, got %q", txid)
+	}
+}
+
+func TestBroadcastTxAllowsTxInMempoolCache(t *testing.T) {
+	t.Parallel()
+
+	client := CosmosClient{
+		txClient: mockTxServiceClient{
+			resp: &txtypes.BroadcastTxResponse{
+				TxResponse: &types.TxResponse{
+					Code:   errortypes.ErrTxInMempoolCache.ABCICode(),
+					TxHash: "INMEMPOOL",
+				},
+			},
+		},
+		accts: NewCosmosMetaDataStore(),
+	}
+
+	txid, err := client.BroadcastTx(stypes.TxOutItem{}, []byte("signed"))
+	if err != nil {
+		t.Fatalf("expected mempool-cache broadcast to be tolerated, got %v", err)
+	}
+	if txid != "INMEMPOOL" {
+		t.Fatalf("expected returned txid to be preserved, got %q", txid)
+	}
+}
 
 type CosmosTestSuite struct {
 	thordir  string
@@ -96,6 +264,26 @@ func (s *CosmosTestSuite) TearDownSuite(c *C) {
 	if err := os.RemoveAll(s.thordir); err != nil {
 		c.Error(err)
 	}
+}
+
+func testCosmosScannerWithLastFee(scanner *CosmosBlockScanner, fee sdkmath.Uint) *CosmosBlockScanner {
+	scanner.setLastFee(fee)
+	return scanner
+}
+
+// TestGetGasEstimateForSolvency verifies the observed Cosmos fee is converted
+// from native gas units into THORChain 1e8 units without extra multipliers.
+func (s *CosmosTestSuite) TestGetGasEstimateForSolvency(c *C) {
+	client := &CosmosClient{
+		cfg: config.BifrostChainConfiguration{
+			ChainID: common.GAIAChain,
+		},
+		cosmosScanner: &CosmosBlockScanner{},
+	}
+	client.cosmosScanner.setLastFee(sdkmath.NewUint(25_000))
+
+	got := client.GetGasEstimateForSolvency()
+	c.Assert(got.Equal(cosmos.NewUint(2_500_000)), Equals, true)
 }
 
 func (s *CosmosTestSuite) TestGetAddress(c *C) {
@@ -291,6 +479,7 @@ func (s *CosmosTestSuite) TestSign(c *C) {
 		vaultPubKey,
 		uint64(meta.AccountNumber),
 		uint64(meta.SeqNumber),
+		0,
 	)
 	c.Assert(err, IsNil)
 }

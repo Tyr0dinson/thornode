@@ -27,6 +27,7 @@ api_savers.go
 api_secured_asset.go
 api_secured_assets.go
 api_smart_contracts.go
+api_stable_reserve.go
 api_streaming_swap.go
 api_supply.go
 api_swap.go
@@ -94,6 +95,7 @@ docs/KeygenMetric.md
 docs/KeygenResponse.md
 docs/KeysignInfo.md
 docs/KeysignMetrics.md
+docs/KeysignPartyResponse.md
 docs/KeysignResponse.md
 docs/LastBlock.md
 docs/LimitOrderApi.md
@@ -104,6 +106,7 @@ docs/LiquidityProvider.md
 docs/LiquidityProviderSummary.md
 docs/LiquidityProvidersApi.md
 docs/LockedSupply.md
+docs/LogEntry.md
 docs/MetricsResponse.md
 docs/MimirApi.md
 docs/MimirNodesResponse.md
@@ -127,6 +130,7 @@ docs/OraclePricesResponse.md
 docs/OutboundDelayStage.md
 docs/OutboundFee.md
 docs/OutboundSignedStage.md
+docs/OutputRef.md
 docs/POL.md
 docs/PaginationMeta.md
 docs/Ping.md
@@ -157,6 +161,11 @@ docs/SecuredAssetApi.md
 docs/SecuredAssetResponse.md
 docs/SecuredAssetsApi.md
 docs/SmartContractsApi.md
+docs/StableReserveApi.md
+docs/StableReserveContributorResponse.md
+docs/StableReserveInventory.md
+docs/StableReserveResponse.md
+docs/StableReserveStreamingSwap.md
 docs/StreamingStatus.md
 docs/StreamingSwap.md
 docs/StreamingSwapApi.md
@@ -165,12 +174,14 @@ docs/SupplyResponse.md
 docs/SwapApi.md
 docs/SwapDetailsResponse.md
 docs/SwapFinalisedStage.md
+docs/SwapQueuePaginatedResponse.md
 docs/SwapState.md
 docs/SwapStatus.md
 docs/SwapperCloutResponse.md
 docs/TCYClaimer.md
 docs/TCYClaimerSummary.md
 docs/TCYClaimersApi.md
+docs/TCYProtocolOwnedResponse.md
 docs/TCYStaker.md
 docs/TCYStakerSummary.md
 docs/TCYStakersApi.md
@@ -252,6 +263,7 @@ model_keygen_metric.go
 model_keygen_response.go
 model_keysign_info.go
 model_keysign_metrics.go
+model_keysign_party_response.go
 model_keysign_response.go
 model_last_block.go
 model_limit_swap_with_details.go
@@ -260,6 +272,7 @@ model_limit_swaps_summary_response.go
 model_liquidity_provider.go
 model_liquidity_provider_summary.go
 model_locked_supply.go
+model_log_entry.go
 model_metrics_response.go
 model_mimir_nodes_response.go
 model_mimir_vote.go
@@ -279,6 +292,7 @@ model_oracle_prices_response.go
 model_outbound_delay_stage.go
 model_outbound_fee.go
 model_outbound_signed_stage.go
+model_output_ref.go
 model_pagination_meta.go
 model_ping.go
 model_planned_out_tx.go
@@ -299,16 +313,22 @@ model_rune_pool_response_reserve.go
 model_rune_provider.go
 model_saver.go
 model_secured_asset_response.go
+model_stable_reserve_contributor_response.go
+model_stable_reserve_inventory.go
+model_stable_reserve_response.go
+model_stable_reserve_streaming_swap.go
 model_streaming_status.go
 model_streaming_swap.go
 model_supply_response.go
 model_swap_details_response.go
 model_swap_finalised_stage.go
+model_swap_queue_paginated_response.go
 model_swap_state.go
 model_swap_status.go
 model_swapper_clout_response.go
 model_tcy_claimer.go
 model_tcy_claimer_summary.go
+model_tcy_protocol_owned_response.go
 model_tcy_staker.go
 model_tcy_staker_summary.go
 model_thorname.go

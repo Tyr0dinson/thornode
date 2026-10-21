@@ -23,6 +23,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
 	"gitlab.com/thorchain/thornode/v3/bifrost/observer"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/monero"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pubkeymanager"
 	"gitlab.com/thorchain/thornode/v3/bifrost/signer"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
@@ -97,10 +98,22 @@ func main() {
 		log.Fatal().Err(err).Msg("fail to start pubkey manager")
 	}
 
-	// automatically attempt to recover TSS keyshares if they are missing
-	if err = btss.RecoverKeyShares(cfg, thorchainBridge); err != nil {
-		log.Error().Err(err).Msg("fail to recover key shares")
+	// Legacy shares back the process-wide TSS stack and remain a startup
+	// prerequisite. XMR FROST shares are isolated by exact-vault readiness, so a
+	// missing historical XMR vault is retried without disabling healthy chains.
+	// A definitively-unrecoverable signing-vault share does not block startup:
+	// bifrost starts degraded (that vault's keysigns fail, everything else —
+	// observations included — keeps working) while recovery retries in the
+	// background.
+	startBifrost, degraded := recoverLegacyKeysharesBeforeStartup(cfg, thorchainBridge)
+	if !startBifrost {
+		return
 	}
+	recoveryCtx, cancelRecovery := context.WithCancel(context.Background())
+	if degraded {
+		go superviseLegacyKeyshareRecovery(recoveryCtx, cfg, thorchainBridge)
+	}
+	go superviseFrostKeyshareRecovery(recoveryCtx, cfg, thorchainBridge)
 
 	// setup TSS signing
 	priKey, err := k.GetPrivateKey()
@@ -126,6 +139,12 @@ func main() {
 			Stringer("keygenJail", jailTimeKeygen).
 			Msg("keygen timeout must be shorter than jail time")
 	}
+	// FrostKeygenTimeout is intentionally NOT bound by jailTimeKeygen.
+	// FROST DKG is a 3-round p2p protocol whose round-2 message exchange
+	// can legitimately exceed the aggressive jail times used in test
+	// environments. The 60s
+	// floor inside NewFrostKeygenCoordinator + per-environment overrides
+	// in docker-compose are the relevant safety nets here.
 	if cfg.Signer.KeysignTimeout >= jailTimeKeysign {
 		log.Fatal().
 			Stringer("keysignTimeout", cfg.Signer.KeysignTimeout).
@@ -150,11 +169,12 @@ func main() {
 		tmPrivateKey,
 		tmPrivateKeyEddsa,
 		common.TssConfig{
-			EnableMonitor:   true,
-			KeyGenTimeout:   cfg.Signer.KeygenTimeout,
-			KeySignTimeout:  cfg.Signer.KeysignTimeout,
-			PartyTimeout:    cfg.Signer.PartyTimeout,
-			PreParamTimeout: cfg.Signer.PreParamTimeout,
+			EnableMonitor:      true,
+			KeyGenTimeout:      cfg.Signer.KeygenTimeout,
+			FrostKeygenTimeout: cfg.Signer.FrostKeygenTimeout,
+			KeySignTimeout:     cfg.Signer.KeysignTimeout,
+			PartyTimeout:       cfg.Signer.PartyTimeout,
+			PreParamTimeout:    cfg.Signer.PreParamTimeout,
 		},
 		nil,
 	)
@@ -205,14 +225,18 @@ func main() {
 	if err != nil {
 		log.Fatal().Err(err).Msg("fail to create observer")
 	}
+	// Register committed-event callbacks before Start launches the gossip event
+	// client. NewObserver also does this defensively for non-main call sites.
+	ag.SetObserverHandleObservedTxCommitted(obs)
+	ag.SetObserverHandleErrataTxCommitted(obs)
+	if xmrClient, ok := chains[tcommon.XMRChain].(*monero.Client); ok {
+		ag.SetObserverApplySpentOutputRefs(xmrClient.ApplySpentOutputRefsWithOutcome)
+		ag.SetObserverApplyCommittedSpentRefs(xmrClient.ApplyCommittedSpentOutputRefs)
+	}
 	if err = obs.Start(ctx); err != nil {
 		log.Fatal().Err(err).Msg("fail to start observer")
 	}
 	healthServer.SetChainInfoProvider(obs)
-
-	// enable observer to react to notifications from thornode
-	// that come through the grpc connection within AttestationGossip.
-	ag.SetObserverHandleObservedTxCommitted(obs)
 
 	// start signer
 	sign, err := signer.NewSigner(cfg, thorchainBridge, k, pubkeyMgr, tssIns, chains, m, tssKeysignMetricMgr, obs)
@@ -231,7 +255,7 @@ func main() {
 	case <-restart:
 	}
 	log.Info().Msg("stop signal received")
-
+	cancelRecovery()
 	// stop observer
 	if err = obs.Stop(); err != nil {
 		log.Fatal().Err(err).Msg("fail to stop observer")
@@ -244,6 +268,130 @@ func main() {
 	tssIns.Stop()
 	if err = healthServer.Stop(); err != nil {
 		log.Fatal().Err(err).Msg("fail to stop health server")
+	}
+}
+
+// recoverLegacyKeysharesBeforeStartup returns (start, degraded). start is false
+// only when a shutdown signal interrupts the retry loop. degraded is true when
+// startup should proceed WITHOUT complete keyshares: recovery failed with an
+// error foreground retries can never fix (source blocks pruned below the node's
+// floor, or a TssPool message found with an empty backup) — blocking here would
+// take down observations for every chain, which is strictly worse than degraded
+// signing, so the caller must hand recovery to superviseLegacyKeyshareRecovery.
+// Transient errors (RPC flake, message not yet found) keep the foreground retry
+// loop, which usually resolves within a few blocks.
+func recoverLegacyKeysharesBeforeStartup(cfg config.Bifrost, bridge thorclient.ThorchainBridge) (start, degraded bool) {
+	ctx, stopSignals := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stopSignals()
+
+	for attempt := 1; ; attempt++ {
+		err := btss.RecoverLegacyKeyShares(cfg, bridge)
+		if err == nil {
+			return true, false
+		}
+		if btss.IsUnrecoverableKeyshareError(err) {
+			// The joined error may also carry transient failures for other vaults;
+			// the background supervisor re-runs the full recovery, so those are
+			// retried there too.
+			log.Error().Err(err).Msg("legacy keyshares for a signing vault are unrecoverable by retrying; starting bifrost DEGRADED and retrying recovery in the background")
+			return true, true
+		}
+		log.Error().Err(err).Int("attempt", attempt).Msg("legacy keyshare recovery incomplete; retrying before TSS startup")
+		timer := time.NewTimer(constants.ThorchainBlockTime)
+		select {
+		case <-timer.C:
+		case <-ctx.Done():
+			if !timer.Stop() {
+				select {
+				case <-timer.C:
+				default:
+				}
+			}
+			return false, false
+		}
+	}
+}
+
+const (
+	// legacyRecoveryRetryInitial/Max bound the background recovery backoff. The
+	// doubling cap keeps the worst case (a found-but-empty backup, where each
+	// re-attempt rescans blocks for the TssPool message) to ~48 scans/day while
+	// still noticing an operator fix — restored localstate short-circuits before
+	// any scan — within a minute at first.
+	legacyRecoveryRetryInitial = time.Minute
+	legacyRecoveryRetryMax     = 30 * time.Minute
+)
+
+// superviseLegacyKeyshareRecovery re-attempts legacy keyshare recovery in the
+// background after bifrost started degraded. The moment an attempt succeeds —
+// the operator restores localstate-<pubkey>.json from a backup, points the
+// THORNode RPC at an archive node with deeper history, or block backfill passes
+// the prune floor — the shares land on disk and the very next keysign picks them
+// up, because go-tss reads keyshares from disk per keysign; no restart needed.
+// Until then it screams on every cycle so the degraded state cannot be missed.
+func superviseLegacyKeyshareRecovery(ctx context.Context, cfg config.Bifrost, bridge thorclient.ThorchainBridge) {
+	recovered := retryRecoveryUntilDone(ctx, legacyRecoveryRetryInitial, legacyRecoveryRetryMax,
+		func() error { return btss.RecoverLegacyKeyShares(cfg, bridge) },
+		func(err error, attempt int, next time.Duration) {
+			log.Error().Err(err).Int("attempt", attempt).Dur("next_retry_in", next).Msg(
+				"BIFROST RUNNING DEGRADED: keyshares for a signing vault are missing, its keysigns fail — restore localstate-<pubkey>.json from backup or point THORNode RPC at an archive node; recovery keeps retrying in the background")
+		})
+	if recovered {
+		log.Info().Msg("legacy keyshare recovery completed in the background; this node signs for the recovered vault from the next keysign")
+	}
+}
+
+// retryRecoveryUntilDone runs attempt on a doubling backoff capped at maxDelay,
+// waiting BEFORE each attempt (the caller just failed one). onFailure observes
+// every failed attempt along with the delay chosen for the next. It returns true
+// once attempt succeeds, or false when ctx ends first.
+func retryRecoveryUntilDone(ctx context.Context, initial, maxDelay time.Duration, attempt func() error, onFailure func(err error, attempt int, next time.Duration)) bool {
+	delay := initial
+	for n := 1; ; n++ {
+		timer := time.NewTimer(delay)
+		select {
+		case <-timer.C:
+		case <-ctx.Done():
+			if !timer.Stop() {
+				select {
+				case <-timer.C:
+				default:
+				}
+			}
+			return false
+		}
+		err := attempt()
+		if err == nil {
+			return true
+		}
+		delay *= 2
+		if delay > maxDelay {
+			delay = maxDelay
+		}
+		onFailure(err, n, delay)
+	}
+}
+
+func superviseFrostKeyshareRecovery(ctx context.Context, cfg config.Bifrost, bridge thorclient.ThorchainBridge) {
+	for attempt := 1; ; attempt++ {
+		if err := btss.RecoverFrostKeyShares(cfg, bridge); err == nil {
+			return
+		} else {
+			log.Error().Err(err).Int("attempt", attempt).Msg("XMR FROST keyshare recovery incomplete; healthy vaults remain available while retrying")
+		}
+
+		timer := time.NewTimer(constants.ThorchainBlockTime)
+		select {
+		case <-timer.C:
+		case <-ctx.Done():
+			if !timer.Stop() {
+				select {
+				case <-timer.C:
+				default:
+				}
+			}
+			return
+		}
 	}
 }
 

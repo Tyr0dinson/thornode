@@ -19,6 +19,7 @@ import (
 	"google.golang.org/grpc"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
+	tctypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/ebifrost"
 	stypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
@@ -224,10 +225,99 @@ func (m *MockGRPCClient) SendQuorumPriceFeedBatch(ctx context.Context, batch *co
 
 type MockThorchainBridge struct {
 	thorclient.ThorchainBridge
+	getKeysignPartyFunc         func(common.PubKey, int64) (common.PubKeys, error)
+	getKeysignPolicyFunc        func(common.PubKey, int64) (thorclient.KeysignPolicy, error)
+	getVaultFunc                func(string) (stypes.Vault, error)
+	getKeysignFunc              func(int64, string) (tctypes.TxOut, error)
+	getBlockHeightFunc          func() (int64, error)
+	getBlockHeightFreshFunc     func() (int64, error)
+	getObservedTxVoterFunc      func(string) (*stypes.QueryObservedTxVoter, error)
+	getObservedTxVoterFreshFunc func(string) (*stypes.QueryObservedTxVoter, bool, error)
 }
 
 func (m *MockThorchainBridge) GetMimir(key string) (int64, error) {
 	return 0, nil
+}
+
+// GetBlockHeight returns a stable height for observer tests that need a
+// ThorchainBridge implementation but do not care about chain progress.
+func (m *MockThorchainBridge) GetBlockHeight() (int64, error) {
+	if m.getBlockHeightFunc != nil {
+		return m.getBlockHeightFunc()
+	}
+	return 100, nil
+}
+
+func (m *MockThorchainBridge) GetBlockHeightUncached() (int64, error) {
+	if m.getBlockHeightFreshFunc != nil {
+		return m.getBlockHeightFreshFunc()
+	}
+	return m.GetBlockHeight()
+}
+
+// GetKeysignParty lets observer tests inject the legacy signer-only response.
+func (m *MockThorchainBridge) GetKeysignParty(pubKey common.PubKey, blockHeight int64) (common.PubKeys, error) {
+	if m.getKeysignPartyFunc != nil {
+		return m.getKeysignPartyFunc(pubKey, blockHeight)
+	}
+	return nil, nil
+}
+
+// GetKeysignPolicy lets observer tests inject a full policy while preserving a
+// compatibility fallback to the legacy signer-only hook.
+func (m *MockThorchainBridge) GetKeysignPolicy(pubKey common.PubKey, blockHeight int64) (thorclient.KeysignPolicy, error) {
+	if m.getKeysignPolicyFunc != nil {
+		return m.getKeysignPolicyFunc(pubKey, blockHeight)
+	}
+	// Older observer tests only set getKeysignPartyFunc; synthesize the minimal
+	// policy so those tests do not need to know about the new endpoint shape.
+	signers, err := m.GetKeysignParty(pubKey, blockHeight)
+	if err != nil {
+		return thorclient.KeysignPolicy{}, err
+	}
+	return thorclient.KeysignPolicy{PubKey: pubKey, Signers: signers, ActiveSignerCount: len(signers)}, nil
+}
+
+// GetVault allows tests to opt into vault lookups without making every mock
+// bridge setup construct a real thorchain bridge.
+func (m *MockThorchainBridge) GetVault(pubkey string) (stypes.Vault, error) {
+	if m.getVaultFunc != nil {
+		return m.getVaultFunc(pubkey)
+	}
+	return stypes.Vault{}, nil
+}
+
+func (m *MockThorchainBridge) GetKeysign(blockHeight int64, pk string) (tctypes.TxOut, error) {
+	if m.getKeysignFunc != nil {
+		return m.getKeysignFunc(blockHeight, pk)
+	}
+	return tctypes.TxOut{}, nil
+}
+
+func (m *MockThorchainBridge) GetObservedTxVoter(txID string) (*stypes.QueryObservedTxVoter, error) {
+	if m.getObservedTxVoterFunc != nil {
+		return m.getObservedTxVoterFunc(txID)
+	}
+	return nil, nil
+}
+
+func (m *MockThorchainBridge) GetObservedTxOutVoter(txID string) (*stypes.QueryObservedTxVoter, error) {
+	return m.GetObservedTxVoter(txID)
+}
+
+func (m *MockThorchainBridge) GetObservedTxOutVoterUncached(ctx context.Context, txID string) (*stypes.QueryObservedTxVoter, bool, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, false, err
+	}
+	return m.GetObservedTxVoterUncached(txID)
+}
+
+func (m *MockThorchainBridge) GetObservedTxVoterUncached(txID string) (*stypes.QueryObservedTxVoter, bool, error) {
+	if m.getObservedTxVoterFreshFunc != nil {
+		return m.getObservedTxVoterFreshFunc(txID)
+	}
+	voter, err := m.GetObservedTxVoter(txID)
+	return voter, voter != nil, err
 }
 
 type MockStream struct {
@@ -253,8 +343,10 @@ func (m *MockStream) Read(p []byte) (n int, err error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	// Perform the read
-	for range 5 {
+	// Perform the read. A bytes.Buffer returns EOF whenever it is momentarily
+	// empty, so poll for up to 5s: a loaded CI runner can starve the peer
+	// goroutine past a few hundred ms and turn "not written yet" into a fake EOF.
+	for range 50 {
 		n, err = m.reader.Read(p)
 		if err == nil {
 			break
@@ -328,9 +420,16 @@ func NewMockEventClient() *MockEventClient {
 // MockThorchainBridge2 implements a broader set of ThorchainBridge methods for observer tests
 type MockThorchainBridge2 struct {
 	thorclient.ThorchainBridge
-	nodeStatus   stypes.NodeStatus
-	activeNodes  common.PubKeys
-	getMimirFunc func(key string) (int64, error)
+	nodeStatus                  stypes.NodeStatus
+	activeNodes                 common.PubKeys
+	getMimirFunc                func(key string) (int64, error)
+	getKeysignPartyFunc         func(common.PubKey, int64) (common.PubKeys, error)
+	getKeysignPolicyFunc        func(common.PubKey, int64) (thorclient.KeysignPolicy, error)
+	getVaultFunc                func(string) (stypes.Vault, error)
+	getKeysignFunc              func(int64, string) (tctypes.TxOut, error)
+	getBlockHeightFreshFunc     func() (int64, error)
+	getObservedTxVoterFunc      func(string) (*stypes.QueryObservedTxVoter, error)
+	getObservedTxVoterFreshFunc func(string) (*stypes.QueryObservedTxVoter, bool, error)
 }
 
 func (m *MockThorchainBridge2) FetchNodeStatus() (stypes.NodeStatus, error) {
@@ -346,6 +445,83 @@ func (m *MockThorchainBridge2) GetMimir(key string) (int64, error) {
 		return m.getMimirFunc(key)
 	}
 	return 0, nil
+}
+
+// GetBlockHeight returns a stable height for broader observer bridge tests.
+func (m *MockThorchainBridge2) GetBlockHeight() (int64, error) {
+	return 100, nil
+}
+
+func (m *MockThorchainBridge2) GetBlockHeightUncached() (int64, error) {
+	if m.getBlockHeightFreshFunc != nil {
+		return m.getBlockHeightFreshFunc()
+	}
+	return m.GetBlockHeight()
+}
+
+// GetKeysignParty lets tests inject the legacy signer-only bridge response.
+func (m *MockThorchainBridge2) GetKeysignParty(pubKey common.PubKey, blockHeight int64) (common.PubKeys, error) {
+	if m.getKeysignPartyFunc != nil {
+		return m.getKeysignPartyFunc(pubKey, blockHeight)
+	}
+	return nil, nil
+}
+
+// GetKeysignPolicy lets tests inject a full policy while keeping the legacy
+// signer-only hook as a compatibility fallback.
+func (m *MockThorchainBridge2) GetKeysignPolicy(pubKey common.PubKey, blockHeight int64) (thorclient.KeysignPolicy, error) {
+	if m.getKeysignPolicyFunc != nil {
+		return m.getKeysignPolicyFunc(pubKey, blockHeight)
+	}
+	// This mirrors MockThorchainBridge so tests can migrate hook-by-hook instead
+	// of updating every call site at once.
+	signers, err := m.GetKeysignParty(pubKey, blockHeight)
+	if err != nil {
+		return thorclient.KeysignPolicy{}, err
+	}
+	return thorclient.KeysignPolicy{PubKey: pubKey, Signers: signers, ActiveSignerCount: len(signers)}, nil
+}
+
+// GetVault allows bridge2 tests to inject vault data only when the path under
+// test needs it.
+func (m *MockThorchainBridge2) GetVault(pubkey string) (stypes.Vault, error) {
+	if m.getVaultFunc != nil {
+		return m.getVaultFunc(pubkey)
+	}
+	return stypes.Vault{}, nil
+}
+
+func (m *MockThorchainBridge2) GetKeysign(blockHeight int64, pk string) (tctypes.TxOut, error) {
+	if m.getKeysignFunc != nil {
+		return m.getKeysignFunc(blockHeight, pk)
+	}
+	return tctypes.TxOut{}, nil
+}
+
+func (m *MockThorchainBridge2) GetObservedTxVoter(txID string) (*stypes.QueryObservedTxVoter, error) {
+	if m.getObservedTxVoterFunc != nil {
+		return m.getObservedTxVoterFunc(txID)
+	}
+	return nil, nil
+}
+
+func (m *MockThorchainBridge2) GetObservedTxOutVoter(txID string) (*stypes.QueryObservedTxVoter, error) {
+	return m.GetObservedTxVoter(txID)
+}
+
+func (m *MockThorchainBridge2) GetObservedTxOutVoterUncached(ctx context.Context, txID string) (*stypes.QueryObservedTxVoter, bool, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, false, err
+	}
+	return m.GetObservedTxVoterUncached(txID)
+}
+
+func (m *MockThorchainBridge2) GetObservedTxVoterUncached(txID string) (*stypes.QueryObservedTxVoter, bool, error) {
+	if m.getObservedTxVoterFreshFunc != nil {
+		return m.getObservedTxVoterFreshFunc(txID)
+	}
+	voter, err := m.GetObservedTxVoter(txID)
+	return voter, voter != nil, err
 }
 
 // Define a custom pipe that implements the stream interface

@@ -28,6 +28,7 @@ func RegisterLegacyAminoCodec(cdc *codec.LegacyAmino) {
 	cdc.RegisterConcrete(&MsgObservedTxOut{}, ModuleName+"/ObservedTxOut", nil)
 	cdc.RegisterConcrete(&MsgDonate{}, ModuleName+"/MsgDonate", nil)
 	cdc.RegisterConcrete(&MsgBond{}, ModuleName+"/MsgBond", nil)
+	cdc.RegisterConcrete(&MsgBondYield{}, ModuleName+"/MsgBondYield", nil)
 	cdc.RegisterConcrete(&MsgUnBond{}, ModuleName+"/MsgUnBond", nil)
 	cdc.RegisterConcrete(&MsgLeave{}, ModuleName+"/MsgLeave", nil)
 	cdc.RegisterConcrete(&MsgNoOp{}, ModuleName+"/MsgNoOp", nil)
@@ -55,6 +56,7 @@ func RegisterLegacyAminoCodec(cdc *codec.LegacyAmino) {
 	cdc.RegisterConcrete(&MsgNodePauseChain{}, ModuleName+"/MsgNodePauseChain", nil)
 	cdc.RegisterConcrete(&MsgSolvency{}, ModuleName+"/MsgSolvency", nil)
 	cdc.RegisterConcrete(&MsgSolvencyQuorum{}, ModuleName+"/MsgSolvencyQuorum", nil)
+	cdc.RegisterConcrete(&MsgSolNonceAttest{}, ModuleName+"/MsgSolNonceAttest", nil)
 	cdc.RegisterConcrete(&MsgManageTHORName{}, ModuleName+"/MsgManageTHORName", nil)
 	cdc.RegisterConcrete(&MsgReferenceMemo{}, "thorchain/MsgReferenceMemo", nil)
 	cdc.RegisterConcrete(&MsgTradeAccountDeposit{}, ModuleName+"/MsgTradeAccountDeposit", nil)
@@ -84,6 +86,7 @@ func RegisterInterfaces(registry cdctypes.InterfaceRegistry) {
 		&MsgObservedTxQuorum{},
 		&MsgDonate{},
 		&MsgBond{},
+		&MsgBondYield{},
 		&MsgUnBond{},
 		&MsgLeave{},
 		&MsgNoOp{},
@@ -111,6 +114,7 @@ func RegisterInterfaces(registry cdctypes.InterfaceRegistry) {
 		&MsgSolvency{},
 		&MsgReferenceMemo{},
 		&MsgSolvencyQuorum{},
+		&MsgSolNonceAttest{},
 		&MsgTradeAccountDeposit{},
 		&MsgTradeAccountWithdrawal{},
 		&MsgModifyLimitSwap{},
@@ -145,6 +149,7 @@ func DefineCustomGetSigners(signingOptions *signing.Options) {
 	signingOptions.DefineCustomGetSigners(protoreflect.FullName("types.MsgSetNodeKeys"), MsgSetNodeKeysCustomGetSigners)
 	signingOptions.DefineCustomGetSigners(protoreflect.FullName("types.MsgSolvency"), MsgSolvencyCustomGetSigners)
 	signingOptions.DefineCustomGetSigners(protoreflect.FullName("types.MsgSolvencyQuorum"), MsgSolvencyQuorumCustomGetSigners)
+	signingOptions.DefineCustomGetSigners(protoreflect.FullName("types.MsgSolNonceAttest"), MsgSolNonceAttestCustomGetSigners)
 	signingOptions.DefineCustomGetSigners(protoreflect.FullName("types.MsgTssKeysignFail"), MsgTssKeysignFailCustomGetSigners)
 	signingOptions.DefineCustomGetSigners(protoreflect.FullName("types.MsgTssPool"), MsgTssPoolCustomGetSigners)
 	signingOptions.DefineCustomGetSigners(protoreflect.FullName("types.MsgSetVersion"), MsgSetVersionCustomGetSigners)

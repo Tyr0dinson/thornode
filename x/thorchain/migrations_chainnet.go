@@ -81,3 +81,41 @@ func (m Migrator) Migrate13to14(ctx sdk.Context) error {
 	// ADR-023: Burn ~87% of Reserve and reduce MaxRuneSupply to 360M.
 	return m.BurnReserveAndReduceMaxSupply(ctx)
 }
+
+// Migrate14to15 migrates from version 14 to 15.
+// No-op on chainnet — the DOGE slash recovery only applies to mainnet state.
+func (m Migrator) Migrate14to15(_ sdk.Context) error {
+	return nil
+}
+
+// Migrate15to16 migrates from version 15 to 16.
+// No-op on chainnet — the ADR-028 exploit conciliation only applies to mainnet state.
+func (m Migrator) Migrate15to16(_ sdk.Context) error {
+	return nil
+}
+
+// Migrate16to17 migrates from version 16 to 17.
+// No-op on chainnet - the dangling settlement requeue only applies to mainnet state.
+func (m Migrator) Migrate16to17(_ sdk.Context) error {
+	return nil
+}
+
+func (m Migrator) Migrate17to18(_ sdk.Context) error {
+	return nil
+}
+
+// Migrate19to20 (on mainnet) reverses the rzxslmgc bond slash + refunds bond
+// providers, donates the Secured-Ops LP positions + repays NDT, restores ETH.THOR
+// depth, retires the low-synth-% pools' residual synths, and refunds the
+// erroneous h28181638 ZEC slash. No-op off mainnet:
+// the spec is mainnet state.
+func (m Migrator) migrate19to20Mainnet(_ sdk.Context) error {
+	return nil
+}
+
+// migrate20to21Mainnet (on mainnet) writes down the phantom GAIA.ATOM on vault
+// ...jy4h and replenishes the GAIA.ATOM pool with Reserve RUNE. No-op off
+// mainnet: the write-down is mainnet state.
+func (m Migrator) migrate20to21Mainnet(_ sdk.Context) error {
+	return nil
+}

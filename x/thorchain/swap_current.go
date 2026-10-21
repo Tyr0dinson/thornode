@@ -3,6 +3,7 @@ package thorchain
 import (
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/cosmos/cosmos-sdk/telemetry"
 	"github.com/hashicorp/go-metrics"
@@ -53,32 +54,39 @@ func (s *SwapperImpl) Swap(ctx cosmos.Context,
 	swp StreamingSwap,
 	synthVirtualDepthMult int64, mgr Manager,
 	affiliates []string, affiliateBps []cosmos.Uint,
-) (cosmos.Uint, []*EventSwap, error) {
+) (cosmos.Uint, cosmos.Uint, []*EventSwap, error) {
 	var swapEvents []*EventSwap
 
 	if err := s.validateMessage(tx, target, destination); err != nil {
-		return cosmos.ZeroUint(), swapEvents, err
+		return cosmos.ZeroUint(), cosmos.ZeroUint(), swapEvents, err
 	}
 	source := tx.Coins[0].Asset
+	effectiveInput := tx.Coins[0].Amount
 
 	if source.IsSyntheticAsset() {
 		burnHeight := mgr.Keeper().GetConfigInt64(ctx, constants.BurnSynths)
-		if burnHeight > 0 && ctx.BlockHeight() > burnHeight {
-			return cosmos.ZeroUint(), swapEvents, fmt.Errorf("burning synthetics has been disabled")
+		// The BurnSynths mimir disables synth-source swaps, but it must NOT block
+		// the synth->L1 swap that pays out a saver whose pool is being ragnaroked.
+		// WithdrawLiquidityHandler.validate relaxes the matching gate for ragnarok
+		// and queues this swap; without the same exception here the queued saver
+		// payout would be rejected, deleting the saver claim with no outbound.
+		if burnHeight > 0 && ctx.BlockHeight() > burnHeight &&
+			!mgr.Keeper().IsRagnarok(ctx, []common.Asset{source.GetLayer1Asset()}) {
+			return cosmos.ZeroUint(), effectiveInput, swapEvents, fmt.Errorf("burning synthetics has been disabled")
 		}
 	}
 	if target.IsSyntheticAsset() {
 		mintHeight := mgr.Keeper().GetConfigInt64(ctx, constants.MintSynths)
 		if mintHeight > 0 && ctx.BlockHeight() > mintHeight {
-			return cosmos.ZeroUint(), swapEvents, fmt.Errorf("minting synthetics has been disabled")
+			return cosmos.ZeroUint(), effectiveInput, swapEvents, fmt.Errorf("minting synthetics has been disabled")
 		}
 	}
 
 	if !destination.IsNoop() && !destination.IsChain(target.GetChain()) {
-		return cosmos.ZeroUint(), swapEvents, fmt.Errorf("destination address is not a valid %s address", target.GetChain())
+		return cosmos.ZeroUint(), effectiveInput, swapEvents, fmt.Errorf("destination address is not a valid %s address", target.GetChain())
 	}
 	if source.Equals(target) {
-		return cosmos.ZeroUint(), swapEvents, fmt.Errorf("cannot swap from %s --> %s, assets match", source, target)
+		return cosmos.ZeroUint(), effectiveInput, swapEvents, fmt.Errorf("cannot swap from %s --> %s, assets match", source, target)
 	}
 
 	isDoubleSwap := !source.IsRune() && !target.IsRune()
@@ -88,17 +96,20 @@ func (s *SwapperImpl) Swap(ctx cosmos.Context,
 		var swapEvt *EventSwap
 		var amt cosmos.Uint
 		// Here we use a swapTarget of 0 because the target is for the next swap asset in a double swap
-		amt, swapEvt, swapErr = s.swapOne(ctx, mgr, tx, common.RuneAsset(), destination, cosmos.ZeroUint(), synthVirtualDepthMult, stableSwap, affiliates, affiliateBps)
+		amt, effectiveInput, swapEvt, swapErr = s.swapOne(ctx, mgr, tx, common.RuneAsset(), destination, cosmos.ZeroUint(), synthVirtualDepthMult, stableSwap, affiliates, affiliateBps)
 		if swapErr != nil {
-			return cosmos.ZeroUint(), swapEvents, swapErr
+			return cosmos.ZeroUint(), effectiveInput, swapEvents, swapErr
 		}
 		tx.Coins = common.Coins{common.NewCoin(common.RuneAsset(), amt)}
 		tx.Gas = nil
 		swapEvents = append(swapEvents, swapEvt)
 	}
-	assetAmount, swapEvt, swapErr := s.swapOne(ctx, mgr, tx, target, destination, swapTarget, synthVirtualDepthMult, stableSwap, affiliates, affiliateBps)
+	assetAmount, swapInput, swapEvt, swapErr := s.swapOne(ctx, mgr, tx, target, destination, swapTarget, synthVirtualDepthMult, stableSwap, affiliates, affiliateBps)
 	if swapErr != nil {
-		return cosmos.ZeroUint(), swapEvents, swapErr
+		return cosmos.ZeroUint(), effectiveInput, swapEvents, swapErr
+	}
+	if !isDoubleSwap {
+		effectiveInput = swapInput
 	}
 	swapEvents = append(swapEvents, swapEvt)
 	if !swapTarget.IsZero() {
@@ -119,12 +130,12 @@ func (s *SwapperImpl) Swap(ctx cosmos.Context,
 			// **NOTE** this error string is utilized by the adv swap queue manager to
 			// catch the error. DO NOT change this error string without updating
 			// the adv swap queue manager as well
-			return cosmos.ZeroUint(), swapEvents, fmt.Errorf("emit asset %s less than price limit %s", checkAmount, swapTarget)
+			return cosmos.ZeroUint(), effectiveInput, swapEvents, fmt.Errorf("emit asset %s less than price limit %s", checkAmount, swapTarget)
 		}
 	}
 	// emit asset is zero
 	if assetAmount.IsZero() {
-		return cosmos.ZeroUint(), swapEvents, errors.New("zero emit asset")
+		return cosmos.ZeroUint(), effectiveInput, swapEvents, errors.New("zero emit asset")
 	}
 
 	// Thanks to CacheContext, the swap event can be emitted before handling outbounds,
@@ -195,22 +206,27 @@ func (s *SwapperImpl) Swap(ctx cosmos.Context,
 		isSimMode := isSimulationMode(ctx)
 		streamingSwap := swp.Valid() == nil
 
-		if streamingSwap || (advSwapQueueEnabled && !isSimMode) {
+		// Defer collector conversions and preferred-asset payouts to settlement,
+		// which handles module transfers and collector accounting together.
+		collectorAddress := common.Address(keeper.GetModuleAccAddress(AffiliateCollectorName).String())
+		collectorOutput := (target.IsRune() && destination.Equals(collectorAddress)) ||
+			(tx.FromAddress.Equals(collectorAddress) && strings.HasPrefix(tx.Memo, PreferredAssetSwapMemoPrefix+"-"))
+		if collectorOutput || streamingSwap || (advSwapQueueEnabled && !isSimMode) {
 			// Skip - outbound will be created by swap queue manager or settleSwap
 		} else {
 			// Create outbound for regular swaps when advanced queue is disabled
 			// OR when in simulation mode (to generate fee events for quotes)
 			ok, err := mgr.TxOutStore().TryAddTxOutItem(ctx, mgr, toi, swapTarget)
 			if err != nil {
-				return assetAmount, swapEvents, ErrInternal(err, "fail to add outbound tx")
+				return assetAmount, effectiveInput, swapEvents, ErrInternal(err, "fail to add outbound tx")
 			}
 			if !ok {
-				return assetAmount, swapEvents, errFailAddOutboundTx
+				return assetAmount, effectiveInput, swapEvents, errFailAddOutboundTx
 			}
 		}
 	}
 
-	return assetAmount, swapEvents, nil
+	return assetAmount, effectiveInput, swapEvents, nil
 }
 
 func (s *SwapperImpl) swapOne(ctx cosmos.Context,
@@ -221,12 +237,13 @@ func (s *SwapperImpl) swapOne(ctx cosmos.Context,
 	synthVirtualDepthMult int64,
 	stableOverride bool,
 	affiliates []string, affiliateBps []cosmos.Uint,
-) (amt cosmos.Uint, evt *EventSwap, swapErr error) {
+) (amt cosmos.Uint, input cosmos.Uint, evt *EventSwap, swapErr error) {
 	tradeAccountsEnabled := mgr.Keeper().GetConfigInt64(ctx, constants.TradeAccountsEnabled)
 	tradeAccountsDepositEnabled := mgr.Keeper().GetConfigInt64(ctx, constants.TradeAccountsDepositEnabled)
 
 	source := tx.Coins[0].Asset
 	amount := tx.Coins[0].Amount
+	input = amount
 
 	ctx.Logger().Info("swapping", "from", tx.FromAddress, "coins", tx.Coins[0], "target", target, "to", destination)
 
@@ -241,32 +258,34 @@ func (s *SwapperImpl) swapOne(ctx cosmos.Context,
 
 	if source.IsTradeAsset() {
 		if tradeAccountsEnabled <= 0 {
-			return cosmos.ZeroUint(), evt, fmt.Errorf("trade accounts are disabled")
+			return cosmos.ZeroUint(), input, evt, fmt.Errorf("trade accounts are disabled")
 		}
 		fromAcc, err := cosmos.AccAddressFromBech32(tx.FromAddress.String())
 		if err != nil {
-			return cosmos.ZeroUint(), evt, ErrInternal(err, "fail to parse from address")
+			return cosmos.ZeroUint(), input, evt, ErrInternal(err, "fail to parse from address")
 		}
 		amount, err = mgr.TradeAccountManager().Withdrawal(ctx, source, amount, fromAcc, common.NoAddress, tx.ID)
 		if err != nil {
-			return cosmos.ZeroUint(), evt, ErrInternal(err, "fail to withdraw from trade")
+			return cosmos.ZeroUint(), input, evt, ErrInternal(err, "fail to withdraw from trade")
 		}
+		input = amount
 	}
 
 	if source.IsSecuredAsset() {
 		fromAcc, err := cosmos.AccAddressFromBech32(tx.FromAddress.String())
 		if err != nil {
-			return cosmos.ZeroUint(), evt, ErrInternal(err, "fail to parse from address")
+			return cosmos.ZeroUint(), input, evt, ErrInternal(err, "fail to parse from address")
 		}
 		withdrawAmount, err := mgr.SecuredAssetManager().Withdraw(ctx, source, amount, fromAcc, common.NoAddress, tx.ID)
 		if err != nil {
-			return cosmos.ZeroUint(), evt, ErrInternal(err, "fail to withdraw from secured asset")
+			return cosmos.ZeroUint(), input, evt, ErrInternal(err, "fail to withdraw from secured asset")
 		}
 		amount = withdrawAmount.Amount
+		input = amount
 	}
 
 	if target.IsTradeAsset() && tradeAccountsDepositEnabled <= 0 {
-		return cosmos.ZeroUint(), evt, fmt.Errorf("trade accounts deposits are disabled")
+		return cosmos.ZeroUint(), input, evt, fmt.Errorf("trade accounts deposits are disabled")
 	}
 
 	swapEvt := NewEventSwap(
@@ -294,17 +313,17 @@ func (s *SwapperImpl) swapOne(ctx cosmos.Context,
 	keeper := mgr.Keeper()
 	if !keeper.PoolExist(ctx, poolAsset) {
 		err := fmt.Errorf("pool %s doesn't exist", poolAsset)
-		return cosmos.ZeroUint(), evt, err
+		return cosmos.ZeroUint(), input, evt, err
 	}
 
 	pool, err := keeper.GetPool(ctx, poolAsset)
 	if err != nil {
-		return cosmos.ZeroUint(), evt, ErrInternal(err, fmt.Sprintf("fail to get pool(%s)", poolAsset))
+		return cosmos.ZeroUint(), input, evt, ErrInternal(err, fmt.Sprintf("fail to get pool(%s)", poolAsset))
 	}
 	// sanity check: ensure we're never swapping with the vault
 	// (technically is actually the yield bearing synth vault)
 	if pool.Asset.IsSyntheticAsset() {
-		return cosmos.ZeroUint(), evt, ErrInternal(err, fmt.Sprintf("dev error: swapping with a vault(%s) is not allowed", pool.Asset))
+		return cosmos.ZeroUint(), input, evt, ErrInternal(err, fmt.Sprintf("dev error: swapping with a vault(%s) is not allowed", pool.Asset))
 	}
 	synthSupply := keeper.GetTotalSupply(ctx, pool.Asset.GetSyntheticAsset())
 	pool.CalcUnits(synthSupply)
@@ -312,7 +331,7 @@ func (s *SwapperImpl) swapOne(ctx cosmos.Context,
 	// pool must be available unless source is synthetic
 	// synths may be redeemed regardless of pool status
 	if !source.IsSyntheticAsset() && !pool.IsAvailable() {
-		return cosmos.ZeroUint(), evt, fmt.Errorf("pool(%s) is not available", pool.Asset)
+		return cosmos.ZeroUint(), input, evt, fmt.Errorf("pool(%s) is not available", pool.Asset)
 	}
 
 	// Get our X, x, Y values
@@ -334,10 +353,10 @@ func (s *SwapperImpl) swapOne(ctx cosmos.Context,
 
 	// check our X,x,Y values are valid
 	if x.IsZero() {
-		return cosmos.ZeroUint(), evt, errSwapFailInvalidAmount
+		return cosmos.ZeroUint(), input, evt, errSwapFailInvalidAmount
 	}
 	if X.IsZero() || Y.IsZero() {
-		return cosmos.ZeroUint(), evt, errSwapFailInvalidBalance
+		return cosmos.ZeroUint(), input, evt, errSwapFailInvalidBalance
 	}
 
 	swapSlipBps := s.CalcSwapSlip(X, x)
@@ -357,17 +376,19 @@ func (s *SwapperImpl) swapOne(ctx cosmos.Context,
 
 	// do THORNode have enough balance to swap?
 	if emitAssets.GTE(Y) {
-		return cosmos.ZeroUint(), evt, errSwapFailNotEnoughBalance
+		return cosmos.ZeroUint(), input, evt, errSwapFailNotEnoughBalance
 	}
 
-	ctx.Logger().Info("pre swap", "pool", pool.Asset, "rune", pool.BalanceRune, "asset", pool.BalanceAsset, "lp units", pool.LPUnits, "synth units", pool.SynthUnits)
+	// Log the effective input amount after Trade/Secured withdrawals, which may
+	// differ from the original transaction coin amount.
+	ctx.Logger().Info("pre swap", "pool", pool.Asset, "rune", pool.BalanceRune, "asset", pool.BalanceAsset, "lp units", pool.LPUnits, "synth units", pool.SynthUnits, "amount", amount)
 
 	// Burning of input synth or derived pool input (Asset or RUNE).
 	if source.IsSyntheticAsset() || pool.Asset.IsDerivedAsset() {
 		burnCoin := tx.Coins[0]
 		if err := mgr.Keeper().SendFromModuleToModule(ctx, AsgardName, ModuleName, common.NewCoins(burnCoin)); err != nil {
 			ctx.Logger().Error("fail to move coins during swap", "error", err)
-			return cosmos.ZeroUint(), evt, err
+			return cosmos.ZeroUint(), input, evt, err
 		} else if err := mgr.Keeper().BurnFromModule(ctx, ModuleName, burnCoin); err != nil {
 			ctx.Logger().Error("fail to burn coins during swap", "error", err)
 		} else {
@@ -385,7 +406,7 @@ func (s *SwapperImpl) swapOne(ctx cosmos.Context,
 		mintCoin := common.NewCoin(target, emitAssets)
 		if err := mgr.Keeper().MintToModule(ctx, ModuleName, mintCoin); err != nil {
 			ctx.Logger().Error("fail to mint coins during swap", "error", err)
-			return cosmos.ZeroUint(), evt, err
+			return cosmos.ZeroUint(), input, evt, err
 		} else {
 			mintEvt := NewEventMintBurn(MintSupplyType, mintCoin.Asset.Native(), mintCoin.Amount, "swap")
 			if err := mgr.EventMgr().EmitEvent(ctx, mintEvt); err != nil {
@@ -394,7 +415,7 @@ func (s *SwapperImpl) swapOne(ctx cosmos.Context,
 
 			if err := mgr.Keeper().SendFromModuleToModule(ctx, ModuleName, AsgardName, common.NewCoins(mintCoin)); err != nil {
 				ctx.Logger().Error("fail to move coins during swap", "error", err)
-				return cosmos.ZeroUint(), evt, err
+				return cosmos.ZeroUint(), input, evt, err
 			}
 		}
 	}
@@ -444,20 +465,52 @@ func (s *SwapperImpl) swapOne(ctx cosmos.Context,
 
 			if err := mgr.Keeper().SendFromModuleToModule(ctx, AsgardName, targetModule, common.NewCoins(liqFeeCoin)); err != nil {
 				ctx.Logger().Error("fail to move liquidity fee RUNE during swap", "module", targetModule, "error", err)
-				return cosmos.ZeroUint(), evt, err
+				return cosmos.ZeroUint(), input, evt, err
 			}
 
 			// Only add to liquidity fees if not TCY
 			if !pool.Asset.IsTCY() {
 				if err := keeper.AddToLiquidityFees(ctx, pool.Asset, swapEvt.LiquidityFeeInRune); err != nil {
-					return cosmos.ZeroUint(), evt, fmt.Errorf("fail to add to liquidity fees: %w", err)
+					return cosmos.ZeroUint(), input, evt, fmt.Errorf("fail to add to liquidity fees: %w", err)
+				}
+				// Skip REVSHARE attribution for protocol-internal affiliate-fee
+				// conversion swaps. affiliateSwapToRune schedules these to
+				// convert a user-side affiliate cut into RUNE, routing to one
+				// of two destinations:
+				//   - the AffiliateCollector module address (preferred-asset case), or
+				//   - the resolved thorname's THORChain alias, or owner if no
+				//     alias is set (non-PA case).
+				// Their fees come from a fee-bearing user-issued swap and
+				// should not double-credit the affiliate. The non-PA case is
+				// further gated by `target == RUNE` so a user-issued swap to
+				// RUNE with affiliate=X and destination=X.alias|X.owner (a rare
+				// and effectively self-payment scenario) is the only false-
+				// negative; normal user-to-RUNE swaps stay attributable.
+				if attributeThorname, ok := resolveFirstAffiliateTHORName(ctx, keeper, tx.Memo); ok {
+					skip := false
+					if affColAddr, err := keeper.GetModuleAddress(AffiliateCollectorName); err == nil && destination.Equals(affColAddr) {
+						skip = true
+					}
+					if !skip && target.Equals(common.RuneAsset()) {
+						if tn, tnErr := keeper.GetTHORName(ctx, attributeThorname); tnErr == nil && !tn.Owner.Empty() {
+							if destination.String() == tn.Owner.String() || destination.Equals(tn.GetAlias(common.THORChain)) {
+								skip = true
+							}
+						}
+					}
+					if !skip {
+						if err := keeper.AddAffiliateLiquidityFee(ctx, attributeThorname, swapEvt.LiquidityFeeInRune); err != nil {
+							ctx.Logger().Error("fail to attribute affiliate liquidity fee", "thorname", attributeThorname, "error", err)
+							// non-fatal — attribution failure must not fail the swap
+						}
+					}
 				}
 			}
 		}
 
 		// use calculated floor
 		if err := keeper.AddToSwapSlip(ctx, pool.Asset, cosmos.NewInt(int64(swapEvt.PoolSlip.Uint64()))); err != nil {
-			return cosmos.ZeroUint(), evt, fmt.Errorf("fail to add to swap slip: %w", err)
+			return cosmos.ZeroUint(), input, evt, fmt.Errorf("fail to add to swap slip: %w", err)
 		}
 	}
 
@@ -465,20 +518,20 @@ func (s *SwapperImpl) swapOne(ctx cosmos.Context,
 
 	// Even for a Derived Asset pool, set the pool so the txout manager's GetFee for toi.Coin.Asset uses updated balances.
 	if err := keeper.SetPool(ctx, pool); err != nil {
-		return cosmos.ZeroUint(), evt, fmt.Errorf("fail to set pool")
+		return cosmos.ZeroUint(), input, evt, fmt.Errorf("fail to set pool")
 	}
 
 	// if target is trade account, check whether swaps to trade assets are enabled
 	if target.IsTradeAsset() {
 		if tradeAccountsEnabled <= 0 {
-			return cosmos.ZeroUint(), evt, fmt.Errorf("trade accounts are disabled")
+			return cosmos.ZeroUint(), input, evt, fmt.Errorf("trade accounts are disabled")
 		}
 	}
 
 	// if target is secured asset, check whether swaps to secured assets are enabled
 	if target.IsSecuredAsset() {
 		if err := mgr.SecuredAssetManager().CheckHalt(ctx); err != nil {
-			return cosmos.ZeroUint(), evt, err
+			return cosmos.ZeroUint(), input, evt, err
 		}
 	}
 
@@ -505,7 +558,7 @@ func (s *SwapperImpl) swapOne(ctx cosmos.Context,
 		}
 	}
 
-	return emitAssets, swapEvt, nil
+	return emitAssets, input, swapEvt, nil
 }
 
 // calculate the number of assets sent to the address (includes liquidity fee)
@@ -588,4 +641,37 @@ func (s *SwapperImpl) GetSwapCalc(X, x, Y, slipBps, minSlipBps cosmos.Uint) (emi
 		slip = slipBps
 	}
 	return
+}
+
+// resolveFirstAffiliateTHORName parses memo as a SwapMemo and returns the
+// first affiliate name if it resolves to an existing, non-expired THORName.
+// Returns ("", false) when the memo isn't a swap memo, has no affiliates,
+// or the first affiliate is a raw address or an expired/missing thorname.
+// Used by the swap fee-recording path to attribute liquidity fees to the
+// first memo affiliate for the affiliate revenue share accumulator.
+//
+// The name is upper-cased so in-memory comparisons and log lines line up
+// with the canonical form used by the rev-share accumulator and
+// `REVSHARE-%s` mimir keys (both go through `KVStore.GetKey`, which
+// upper-cases). THORName lookups are case-insensitive (lower-cased
+// base64), so owner resolution is unaffected.
+func resolveFirstAffiliateTHORName(ctx cosmos.Context, k keeper.Keeper, memoStr string) (string, bool) {
+	parsed, err := ParseMemoWithTHORNames(ctx, k, memoStr)
+	if err != nil {
+		return "", false
+	}
+	sm, ok := parsed.(SwapMemo)
+	if !ok {
+		return "", false
+	}
+	affiliates := sm.GetAffiliates()
+	if len(affiliates) == 0 {
+		return "", false
+	}
+	first := affiliates[0]
+	if !k.THORNameExists(ctx, first) {
+		return "", false
+	}
+	// THORNameExists checks active-at-this-height; that's sufficient.
+	return strings.ToUpper(first), true
 }

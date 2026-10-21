@@ -4,8 +4,8 @@ import (
 	"errors"
 	"time"
 
-	"github.com/binance-chain/tss-lib/crypto"
 	"github.com/cosmos/cosmos-sdk/types"
+	"gitlab.com/thorchain/tss/tss-lib-private.git/v3/crypto"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/p2p/conversion"
 	"gitlab.com/thorchain/thornode/v3/bifrost/p2p/messages"
@@ -39,7 +39,8 @@ func (t *TssServer) Keygen(req keygen.Request) (keygen.Response, error) {
 			msgID,
 			t.stateManager,
 			t.privateKey,
-			t.p2pCommunication)
+			t.p2pCommunication,
+		)
 	case tcommon.SigningAlgoEd25519:
 		keygenInstance = eddsa.NewTssKeyGen(
 			t.p2pCommunication.GetLocalPeerID(),
@@ -50,7 +51,8 @@ func (t *TssServer) Keygen(req keygen.Request) (keygen.Response, error) {
 			msgID,
 			t.stateManager,
 			t.privateKey,
-			t.p2pCommunication)
+			t.p2pCommunication,
+		)
 	default:
 		return keygen.Response{}, errors.New("invalid keygen algo")
 	}
@@ -146,7 +148,7 @@ func (t *TssServer) Keygen(req keygen.Request) (keygen.Response, error) {
 	keygenTime := time.Since(beforeKeygen)
 	if err != nil {
 		t.tssMetrics.UpdateKeyGen(keygenTime, false)
-		blameNodes := *blameMgr.GetBlame()
+		blameNodes := blameMgr.GetBlame().Snapshot()
 		t.logger.Error().Err(err).Msgf("failed to generate key, blaming: %+v", blameNodes.BlameNodes)
 		return keygen.NewResponse(req.Algo, "", "", common.Fail, blameNodes), err
 	} else {
@@ -168,7 +170,7 @@ func (t *TssServer) Keygen(req keygen.Request) (keygen.Response, error) {
 		status = common.Fail
 	}
 
-	blameNodes := *blameMgr.GetBlame()
+	blameNodes := blameMgr.GetBlame().Snapshot()
 	t.logger.Trace().Msgf("returning from keygen with status=%d, blaming=%+v", status, blameNodes.BlameNodes)
 	return keygen.NewResponse(
 		req.Algo,
@@ -200,7 +202,8 @@ func (t *TssServer) KeygenAllAlgo(req keygen.Request) ([]keygen.Response, error)
 		msgID+string(tcommon.SigningAlgoSecp256k1),
 		t.stateManager,
 		t.privateKey,
-		t.p2pCommunication)
+		t.p2pCommunication,
+	)
 
 	eddsaKeygenInstance := eddsa.NewTssKeyGen(
 		t.p2pCommunication.GetLocalPeerID(),
@@ -211,7 +214,8 @@ func (t *TssServer) KeygenAllAlgo(req keygen.Request) ([]keygen.Response, error)
 		msgID+string(tcommon.SigningAlgoEd25519),
 		t.stateManager,
 		t.privateKey,
-		t.p2pCommunication)
+		t.p2pCommunication,
+	)
 	_ = eddsaKeygenInstance
 	_ = ecdsaKeygenInstance
 	keygenInstances := make(map[tcommon.SigningAlgo]keygen.TssKeyGen)
@@ -343,13 +347,13 @@ func (t *TssServer) KeygenAllAlgo(req keygen.Request) ([]keygen.Response, error)
 			t.tssMetrics.UpdateKeyGen(keygenTime, false)
 			t.logger.Error().Err(keygenErr).Msg("err in keygen")
 			blameMgr := instance.GetTssCommonStruct().GetBlameMgr()
-			blameNode = *blameMgr.GetBlame()
+			blameNode = blameMgr.GetBlame().Snapshot()
 			break
 		} else {
 			t.tssMetrics.UpdateKeyGen(keygenTime, true)
 		}
 
-		blameNodes := *blameMgr.GetBlame()
+		blameNodes := blameMgr.GetBlame().Snapshot()
 		var newPubKey string
 		var addr types.AccAddress
 		switch algo {
@@ -376,10 +380,17 @@ func (t *TssServer) KeygenAllAlgo(req keygen.Request) ([]keygen.Response, error)
 	}
 
 	if keygenErr != nil || status != common.Success {
+		// Surface the underlying cause on Blame.FailReason so upstream
+		// callers can distinguish a config-rejected abort (e.g. the Π-mod /
+		// Π-fac guard in keygen/ecdsa/tss_keygen.go) from a generic "PubKey
+		// not generated" failure.
+		if blameNode.FailReason == "" && keygenErr != nil {
+			blameNode.FailReason = keygenErr.Error()
+		}
 		return []keygen.Response{{
 			Status: common.Fail,
 			Blame:  blameNode,
-		}}, nil
+		}}, keygenErr
 	}
 
 	return responseKeys, nil

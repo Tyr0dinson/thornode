@@ -15,6 +15,7 @@ const (
 	TCYClaimingName        = types.TCYClaimingName
 	TCYStakeName           = types.TCYStakeName
 	POLReserveName         = types.POLReserveName
+	StableReserveName      = types.StableReserveName
 	BondName               = types.BondName
 	LendingName            = types.LendingName
 	StoreKey               = types.StoreKey
@@ -41,9 +42,10 @@ const (
 	BurnSupplyType = types.MintBurnSupplyType_burn
 
 	// Bond type
-	AsgardKeygen = types.KeygenType_AsgardKeygen
-	BondCost     = types.BondType_bond_cost
-	BondReturned = types.BondType_bond_returned
+	AsgardKeygen       = types.KeygenType_AsgardKeygen
+	XMRMonovaultKeygen = types.KeygenType_XMRMonovaultKeygen
+	BondCost           = types.BondType_bond_cost
+	BondReturned       = types.BondType_bond_returned
 )
 
 var (
@@ -143,6 +145,8 @@ type (
 	THORNameAlias            = types.THORNameAlias
 	AffiliateFeeCollector    = types.AffiliateFeeCollector
 	SolvencyVoter            = types.SolvencyVoter
+	SolVaultNonce            = types.SolVaultNonce
+	SolNonceAttestVoter      = types.SolNonceAttestVoter
 	MinJoinLast              = types.MinJoinLast
 	NodeMimir                = types.NodeMimir
 	NodeMimirs               = types.NodeMimirs

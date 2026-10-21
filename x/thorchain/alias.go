@@ -21,6 +21,7 @@ const (
 	TCYClaimingName        = types.TCYClaimingName
 	TCYStakeName           = types.TCYStakeName
 	POLReserveName         = types.POLReserveName
+	StableReserveName      = types.StableReserveName
 	RouterKey              = types.RouterKey
 	StoreKey               = types.StoreKey
 	DefaultCodespace       = types.DefaultCodespace
@@ -55,11 +56,12 @@ const (
 	NodeTypeVault     = types.NodeType_TypeVault
 
 	// Bond type
-	BondPaid     = types.BondType_bond_paid
-	BondReturned = types.BondType_bond_returned
-	BondCost     = types.BondType_bond_cost
-	BondReward   = types.BondType_bond_reward
-	AsgardKeygen = types.KeygenType_AsgardKeygen
+	BondPaid           = types.BondType_bond_paid
+	BondReturned       = types.BondType_bond_returned
+	BondCost           = types.BondType_bond_cost
+	BondReward         = types.BondType_bond_reward
+	AsgardKeygen       = types.KeygenType_AsgardKeygen
+	XMRMonovaultKeygen = types.KeygenType_XMRMonovaultKeygen
 
 	// Bond type
 	AddPendingLiquidity      = types.PendingLiquidityType_add
@@ -84,6 +86,7 @@ const (
 	TxModifyLimitSwap   = mem.TxModifyLimitSwap
 	TxAdd               = mem.TxAdd
 	TxBond              = mem.TxBond
+	TxBondYield         = mem.TxBondYield
 	TxMigrate           = mem.TxMigrate
 	TxRagnarok          = mem.TxRagnarok
 	TxReserve           = mem.TxReserve
@@ -126,6 +129,7 @@ var (
 	NewMsgDeposit                  = types.NewMsgDeposit
 	NewMsgTssPool                  = types.NewMsgTssPool
 	NewMsgTssPoolV2                = types.NewMsgTssPoolV2
+	NewMsgTssPoolV3                = types.NewMsgTssPoolV3
 	NewMsgTssKeysignFail           = types.NewMsgTssKeysignFail
 	NewMsgObservedTxIn             = types.NewMsgObservedTxIn
 	NewMsgObservedTxOut            = types.NewMsgObservedTxOut
@@ -146,11 +150,13 @@ var (
 	NewMsgPriceFeedQuorumBatch     = types.NewMsgPriceFeedQuorumBatch
 	NewTxOut                       = types.NewTxOut
 	NewEventRewards                = types.NewEventRewards
+	NewEventRevShare               = types.NewEventRevShare
 	NewEventPOLReserveDeploy       = types.NewEventPOLReserveDeploy
 	NewEventPool                   = types.NewEventPool
 	NewEventDonate                 = types.NewEventDonate
 	NewEventSwap                   = types.NewEventSwap
 	NewEventAffiliateFee           = types.NewEventAffiliateFee
+	NewEventBondYield              = types.NewEventBondYield
 	NewEventStreamingSwap          = types.NewEventStreamingSwap
 	NewEventLimitSwap              = types.NewEventLimitSwap
 	NewEventModifyLimitSwap        = types.NewEventModifyLimitSwap
@@ -209,6 +215,7 @@ var (
 	NewReserveContributor          = types.NewReserveContributor
 	NewMsgReserveContributor       = types.NewMsgReserveContributor
 	NewMsgBond                     = types.NewMsgBond
+	NewMsgBondYield                = types.NewMsgBondYield
 	NewMsgUnBond                   = types.NewMsgUnBond
 	NewMsgReBond                   = types.NewMsgReBond
 	NewMsgErrataTx                 = types.NewMsgErrataTx
@@ -220,7 +227,6 @@ var (
 	NewMsgRejectUpgrade            = types.NewMsgRejectUpgrade
 	NewMsgSetIPAddress             = types.NewMsgSetIPAddress
 	NewMsgNetworkFee               = types.NewMsgNetworkFee
-	NewMsgWasmExec                 = types.NewMsgWasmExec
 	NewNetworkFee                  = types.NewNetworkFee
 	NewTHORName                    = types.NewTHORName
 	NewReferenceMemo               = types.NewReferenceMemo
@@ -245,6 +251,7 @@ var (
 	GetRandomBech32Addr            = types.GetRandomBech32Addr
 	GetRandomBech32ConsensusPubKey = types.GetRandomBech32ConsensusPubKey
 	GetRandomPubKey                = types.GetRandomPubKey
+	GetRandomEd25519PubKey         = types.GetRandomEd25519PubKey
 	GetRandomPubKeySet             = types.GetRandomPubKeySet
 	GetCurrentVersion              = types.GetCurrentVersion
 	SetupConfigForTest             = types.SetupConfigForTest
@@ -254,20 +261,24 @@ var (
 	DefaultGenesis                 = types.DefaultGenesis
 	NewSolvencyVoter               = types.NewSolvencyVoter
 	NewMsgSolvency                 = types.NewMsgSolvency
+	NewMsgSolNonceAttest           = types.NewMsgSolNonceAttest
 	NewSwapperClout                = types.NewSwapperClout
 	NewMsgTCYClaim                 = types.NewMsgTCYClaim
 	NewMsgTCYStake                 = types.NewMsgTCYStake
 	NewMsgTCYUnstake               = types.NewMsgTCYUnstake
 
 	// Memo
-	ParseMemo              = mem.ParseMemo
-	ParseMemoWithTHORNames = mem.ParseMemoWithTHORNames
-	FetchAddress           = mem.FetchAddress
-	NewRefundMemo          = mem.NewRefundMemo
-	NewOutboundMemo        = mem.NewOutboundMemo
-	NewRagnarokMemo        = mem.NewRagnarokMemo
-	NewMigrateMemo         = mem.NewMigrateMemo
-	NewReferenceReadMemo   = mem.NewReferenceReadMemo
+	ParseMemo                    = mem.ParseMemo
+	ParseMemoWithTHORNames       = mem.ParseMemoWithTHORNames
+	ParseMemoWithTHORNamesCached = mem.ParseMemoWithTHORNamesCached
+	WithMemoCache                = mem.WithMemoCache
+	StringToTxType               = mem.StringToTxType
+	FetchAddress                 = mem.FetchAddress
+	NewRefundMemo                = mem.NewRefundMemo
+	NewOutboundMemo              = mem.NewOutboundMemo
+	NewRagnarokMemo              = mem.NewRagnarokMemo
+	NewMigrateMemo               = mem.NewMigrateMemo
+	NewReferenceReadMemo         = mem.NewReferenceReadMemo
 
 	FetchDexAggregator         = aggregators.FetchDexAggregator
 	FetchDexAggregatorGasLimit = aggregators.FetchDexAggregatorGasLimit
@@ -278,6 +289,7 @@ type (
 	MsgSend                   = types.MsgSend
 	MsgDeposit                = types.MsgDeposit
 	MsgBond                   = types.MsgBond
+	MsgBondYield              = types.MsgBondYield
 	MsgUnBond                 = types.MsgUnBond
 	MsgReBond                 = types.MsgReBond
 	MsgNoOp                   = types.MsgNoOp
@@ -318,9 +330,9 @@ type (
 	MsgManageTHORName         = types.MsgManageTHORName
 	MsgReferenceMemo          = types.MsgReferenceMemo
 	MsgSolvency               = types.MsgSolvency
+	MsgSolNonceAttest         = types.MsgSolNonceAttest
 	MsgRunePoolDeposit        = types.MsgRunePoolDeposit
 	MsgRunePoolWithdraw       = types.MsgRunePoolWithdraw
-	MsgWasmExec               = types.MsgWasmExec
 	MsgSwitch                 = types.MsgSwitch
 	MsgTCYClaim               = types.MsgTCYClaim
 	MsgTCYStake               = types.MsgTCYStake
@@ -338,6 +350,8 @@ type (
 	ObservedTxs              = common.ObservedTxs
 	ObservedTx               = common.ObservedTx
 	ObservedTxVoter          = types.ObservedTxVoter
+	SolVaultNonce            = types.SolVaultNonce
+	SolNonceAttestVoter      = types.SolNonceAttestVoter
 	ObservedTxVoters         = types.ObservedTxVoters
 	BanVoter                 = types.BanVoter
 	ErrataTxVoter            = types.ErrataTxVoter
@@ -349,6 +363,7 @@ type (
 	KeygenBlock              = types.KeygenBlock
 	EventSwap                = types.EventSwap
 	EventAffiliateFee        = types.EventAffiliateFee
+	EventBondYield           = types.EventBondYield
 	EventAddLiquidity        = types.EventAddLiquidity
 	EventWithdraw            = types.EventWithdraw
 	EventDonate              = types.EventDonate
@@ -416,6 +431,7 @@ type (
 	MigrateMemo                = mem.MigrateMemo
 	RagnarokMemo               = mem.RagnarokMemo
 	BondMemo                   = mem.BondMemo
+	BondYieldMemo              = mem.BondYieldMemo
 	UnbondMemo                 = mem.UnbondMemo
 	RebondMemo                 = mem.RebondMemo
 	OutboundMemo               = mem.OutboundMemo
@@ -431,9 +447,10 @@ type (
 	TradeAccountWithdrawalMemo = mem.TradeAccountWithdrawalMemo
 	SecuredAssetDepositMemo    = mem.SecuredAssetDepositMemo
 	SecuredAssetWithdrawMemo   = mem.SecuredAssetWithdrawMemo
+	StableReserveDepositMemo   = mem.StableReserveDepositMemo
+	StableReserveWithdrawMemo  = mem.StableReserveWithdrawMemo
 	RunePoolDepositMemo        = mem.RunePoolDepositMemo
 	RunePoolWithdrawMemo       = mem.RunePoolWithdrawMemo
-	ExecMemo                   = mem.ExecMemo
 	SwitchMemo                 = mem.SwitchMemo
 	TCYClaimMemo               = mem.TCYClaimMemo
 	TCYStakeMemo               = mem.TCYStakeMemo

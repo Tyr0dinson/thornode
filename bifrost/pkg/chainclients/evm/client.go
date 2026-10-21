@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"math/big"
 	"net/http"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -41,6 +42,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/constants"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/aggregators"
 	mem "gitlab.com/thorchain/thornode/v3/x/thorchain/memo"
+	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
 ////////////////////////////////////////////////////////////////////////////////////////
@@ -49,23 +51,25 @@ import (
 
 // EVMClient is a generic client for interacting with EVM chains.
 type EVMClient struct {
-	logger                  zerolog.Logger
-	cfg                     config.BifrostChainConfiguration
-	localPubKey             common.PubKey
-	kw                      *evm.KeySignWrapper
-	ethClient               *ethclient.Client
-	evmScanner              *EVMScanner
-	bridge                  thorclient.ThorchainBridge
-	blockScanner            *blockscanner.BlockScanner
-	vaultABI                *abi.ABI
-	pubkeyMgr               pubkeymanager.PubKeyValidator
-	poolMgr                 thorclient.PoolManager
-	tssKeySigner            *tss.KeySign
-	wg                      *sync.WaitGroup
-	stopchan                chan struct{}
-	globalSolvencyQueue     chan stypes.Solvency
-	signerCacheManager      *signercache.CacheManager
-	lastSolvencyCheckHeight int64
+	logger              zerolog.Logger
+	cfg                 config.BifrostChainConfiguration
+	localPubKey         common.PubKey
+	kw                  *evm.KeySignWrapper
+	ethClient           *ethclient.Client
+	evmScanner          *EVMScanner
+	bridge              thorclient.ThorchainBridge
+	blockScanner        *blockscanner.BlockScanner
+	vaultABI            *abi.ABI
+	pubkeyMgr           pubkeymanager.PubKeyValidator
+	poolMgr             thorclient.PoolManager
+	tssKeySigner        *tss.KeySign
+	wg                  *sync.WaitGroup
+	stopchan            chan struct{}
+	globalSolvencyQueue chan stypes.Solvency
+	signerCacheManager  *signercache.CacheManager
+	// Serializes ReportSolvency when FetchTxs prefetch callbacks and SolvencyCheckRunner can both enter.
+	solvencyLock            sync.Mutex
+	lastSolvencyCheckHeight atomic.Int64
 
 	// pendingLiabilities tracks signed but unconfirmed transaction amounts (value + maxGas)
 	// keyed by vault address -> nonce -> amount in Wei.
@@ -75,6 +79,11 @@ type EVMClient struct {
 	// signingReady is set to true once pending liabilities have been reconstructed.
 	// SignTx will reject requests until this is true to prevent overspending.
 	signingReady atomic.Bool
+}
+
+// getSignerCacheExpiry returns the configured signer-cache expiry (config signer_cache_expiry).
+func (c *EVMClient) getSignerCacheExpiry() time.Duration {
+	return c.cfg.SignerCacheExpiry
 }
 
 // NewEVMClient creates a new EVMClient.
@@ -99,6 +108,9 @@ func NewEVMClient(
 	}
 	if poolMgr == nil {
 		return nil, errors.New("pool manager is nil")
+	}
+	if err := evm.NormalizeGasMultipliers(&cfg); err != nil {
+		return nil, fmt.Errorf("invalid %s gas multiplier configuration: %w", cfg.ChainID, err)
 	}
 
 	// create keys
@@ -589,6 +601,23 @@ func (c *EVMClient) GetAccount(pk common.PubKey, height *big.Int) (common.Accoun
 	return account, nil
 }
 
+// GetVaultAccount gets account balances for exactly the assets tracked by the
+// THORChain vault. Zero balances are intentionally retained for solvency.
+func (c *EVMClient) GetVaultAccount(vault types.Vault, height *big.Int) (common.Account, error) {
+	addr := c.GetAddress(vault.PubKey)
+	nonce, err := c.evmScanner.GetNonce(addr)
+	if err != nil {
+		return common.Account{}, err
+	}
+	contractAddr := c.getSmartContractAddr(vault.PubKey)
+	coins, err := c.GetVaultBalances(addr, height, contractAddr.String(), vault)
+	if err != nil {
+		return common.Account{}, err
+	}
+	account := common.NewAccount(int64(nonce), 0, coins, false)
+	return account, nil
+}
+
 // GetAccountByAddress returns the account for the given address.
 func (c *EVMClient) GetAccountByAddress(address string, height *big.Int) (common.Account, error) {
 	nonce, err := c.evmScanner.GetNonce(address)
@@ -671,6 +700,42 @@ func (c *EVMClient) GetBalances(addr string, height *big.Int, contractAddr strin
 	}
 
 	return coins.Distinct(), nil
+}
+
+// GetVaultBalances gets balances for the chain assets tracked by the given
+// THORChain vault. This is used for solvency reports so every node signs the
+// same asset set instead of relying on node-local token metadata discovery.
+func (c *EVMClient) GetVaultBalances(addr string, height *big.Int, contractAddr string, vault types.Vault) (common.Coins, error) {
+	assets := make([]common.Asset, 0, len(vault.Coins))
+	seen := make(map[string]struct{}, len(vault.Coins))
+	for _, coin := range vault.Coins {
+		if !coin.Asset.Chain.Equals(c.cfg.ChainID) {
+			continue
+		}
+		key := coin.Asset.String()
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		assets = append(assets, coin.Asset)
+	}
+	sort.Slice(assets, func(i, j int) bool {
+		return assets[i].String() < assets[j].String()
+	})
+
+	coins := make(common.Coins, 0, len(assets))
+	for _, asset := range assets {
+		tokenAddr := c.getTokenAddressFromAsset(asset)
+		balance, err := c.GetBalance(addr, tokenAddr, height, contractAddr)
+		if err != nil {
+			c.logger.Err(err).Str("token", tokenAddr).Msg("fail to get balance for token")
+			continue
+		}
+		bal := c.evmScanner.tokenManager.ConvertAmount(tokenAddr, balance)
+		coins = append(coins, common.NewCoin(asset, bal))
+	}
+
+	return coins, nil
 }
 
 // --------------------------------- gas ---------------------------------
@@ -800,7 +865,7 @@ func (c *EVMClient) buildOutboundTx(txOutItem stypes.TxOutItem, memo mem.Memo, n
 	toiGasRateWei := cosmos.NewUint(uint64(txOutItem.GasRate)).MulUint64(common.WeiPerOne).Quo(gasRateUnitsPerOne).BigInt()
 
 	gasRate := c.GetGasPrice()
-	if c.cfg.BlockScanner.FixedGasRate > 0 || gasRate.Cmp(big.NewInt(0)) == 0 {
+	if c.cfg.BlockScanner.FixedGasRate > 0 || gasRate.Sign() == 0 {
 		// if chain gas is zero we are still filling our gas price buffer, use outbound rate
 		c.logger.Info().
 			Stringer("toiGasRateWei", toiGasRateWei).
@@ -928,6 +993,28 @@ func (c *EVMClient) buildOutboundTx(txOutItem stypes.TxOutItem, memo mem.Memo, n
 
 // --------------------------------- sign ---------------------------------
 
+// verifyBroadcast is the signer-cache verifyFn: it reports whether the recorded
+// broadcast sig is on chain. It uses TransactionByHash instead of TransactionReceipt
+// because receipts only exist for MINED txs, so a pending mempool tx would surface
+// as ethereum.NotFound and be misclassified as absent. TransactionByHash returns
+// (tx, pending, err) and only returns NotFound for genuinely absent txs. A
+// non-NotFound RPC error is ambiguous (fail-closed). Same approach as unstuckTx.
+func (c *EVMClient) verifyBroadcast(sig string) signercache.LookupResult {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	onchainTx, _, lookupErr := c.ethClient.TransactionByHash(ctx, ecommon.HexToHash(sig))
+	switch {
+	case lookupErr != nil && !errors.Is(lookupErr, ethereum.NotFound):
+		return signercache.LookupAmbiguous
+	case lookupErr == nil && onchainTx != nil:
+		// Mined or pending — both mean the recorded broadcast is alive, so
+		// re-signing risks double-spend at a different pending nonce.
+		return signercache.LookupFound
+	default:
+		return signercache.LookupNotFound
+	}
+}
+
 // SignTx returns the signed transaction.
 func (c *EVMClient) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *stypes.TxInItem, error) {
 	// Wait for liability reconstruction to complete before signing
@@ -939,8 +1026,23 @@ func (c *EVMClient) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *
 		return nil, nil, nil, fmt.Errorf("chain %s is not support by evm chain client", tx.Chain)
 	}
 
-	if c.signerCacheManager.HasSigned(tx.CacheHash()) {
-		c.logger.Info().Interface("tx", tx).Msg("transaction signed before, ignore")
+	mimirKey := fmt.Sprintf(constants.MimirTemplateSkipSignerCache, c.cfg.ChainID)
+	gateFn := func() bool {
+		skipCache, err := c.bridge.GetMimir(mimirKey)
+		return err == nil && skipCache > 0
+	}
+	check := c.signerCacheManager.SignTxCacheCheck(tx.CacheHash(), gateFn, c.verifyBroadcast)
+	if check.Phase != signercache.PhaseNoEntry {
+		ev := c.logger.Info()
+		if check.Noteworthy() {
+			ev = c.logger.Warn()
+		}
+		ev.Stringer("phase", check.Phase).
+			Str("sig", check.Sig).
+			Interface("tx", tx).
+			Msg(check.Phase.String())
+	}
+	if check.SkipSign {
 		return nil, nil, nil, nil
 	}
 
@@ -1028,6 +1130,9 @@ func (c *EVMClient) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *
 		var approvalRawTx []byte
 		approvalRawTx, err = c.sign(approvalTx, tx.VaultPubKey, height, tx)
 		if err != nil {
+			if errors.Is(err, tss.ErrNotSelectedForKeysign) {
+				return nil, nil, nil, nil
+			}
 			c.logger.Err(err).Msg("fail to sign approval transaction")
 			return nil, nonceBytes, nil, fmt.Errorf("fail to sign approval transaction: %w", err)
 		}
@@ -1112,6 +1217,9 @@ func (c *EVMClient) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *
 	// Sign main transaction
 	rawTx, err = c.sign(outboundTx, tx.VaultPubKey, height, tx)
 	if err != nil || len(rawTx) == 0 {
+		if errors.Is(err, tss.ErrNotSelectedForKeysign) {
+			return nil, nil, nil, nil
+		}
 		return nil, nonceBytes, nil, fmt.Errorf("fail to sign message: %w", err)
 	}
 
@@ -1275,7 +1383,7 @@ func (c *EVMClient) checkAndApproveAllowance(tx stypes.TxOutItem, nonce uint64) 
 	toiGasRateWei := cosmos.NewUint(uint64(tx.GasRate)).MulUint64(common.WeiPerOne).Quo(gasRateUnitsPerOne).BigInt()
 
 	gasPrice := c.GetGasPrice()
-	if c.cfg.BlockScanner.FixedGasRate > 0 || gasPrice.Cmp(big.NewInt(0)) == 0 {
+	if c.cfg.BlockScanner.FixedGasRate > 0 || gasPrice.Sign() == 0 {
 		gasPrice = toiGasRateWei
 	} else {
 		// Apply same gas price logic as main transaction
@@ -1284,7 +1392,7 @@ func (c *EVMClient) checkAndApproveAllowance(tx stypes.TxOutItem, nonce uint64) 
 		lowerBound.Div(lowerBound, big.NewInt(3))
 
 		gasPrice.Div(gasPrice, big.NewInt(common.One*100))
-		if gasPrice.Cmp(big.NewInt(0)) == 0 {
+		if gasPrice.Sign() == 0 {
 			gasPrice = big.NewInt(1)
 		}
 		gasPrice.Mul(gasPrice, big.NewInt(common.One*100))
@@ -1324,9 +1432,12 @@ func (c *EVMClient) checkAndApproveAllowance(tx stypes.TxOutItem, nonce uint64) 
 
 // sign is design to sign a given message with keysign party and keysign wrapper
 func (c *EVMClient) sign(tx *etypes.Transaction, poolPubKey common.PubKey, height int64, txOutItem stypes.TxOutItem) ([]byte, error) {
-	rawBytes, err := c.kw.Sign(tx, poolPubKey)
+	rawBytes, err := c.kw.Sign(tx, poolPubKey, height)
 	if err == nil && rawBytes != nil {
 		return rawBytes, nil
+	}
+	if errors.Is(err, tss.ErrNotSelectedForKeysign) {
+		return nil, tss.ErrNotSelectedForKeysign
 	}
 	var keysignError tss.KeysignError
 	if errors.As(err, &keysignError) {
@@ -1367,7 +1478,8 @@ func (c *EVMClient) BroadcastTx(txOutItem stypes.TxOutItem, hexTx []byte) (strin
 	c.logger.Info().Str("memo", txOutItem.Memo).Str("txid", txID).Msg("broadcast tx")
 
 	// update the signer cache
-	if err := c.signerCacheManager.SetSigned(txOutItem.CacheHash(), txOutItem.CacheVault(c.GetChain()), txID); err != nil {
+	expiry := time.Now().Add(c.getSignerCacheExpiry()).UnixMilli()
+	if err := c.signerCacheManager.SetSignedWithExpiry(txOutItem.CacheHash(), txOutItem.CacheVault(c.GetChain()), txID, expiry); err != nil {
 		c.logger.Err(err).Interface("txOutItem", txOutItem).Msg("fail to mark tx out item as signed")
 	}
 
@@ -1414,7 +1526,7 @@ func (c *EVMClient) GetConfirmationCount(txIn stypes.TxIn) int64 {
 	case common.BSCChain:
 		return 3 // round up from 2.5 blocks required for finality
 	case common.POLChain:
-		return 15
+		return polConfirmations
 	default:
 		c.logger.Fatal().Msgf("unsupported chain: %s", c.cfg.ChainID)
 		return 0
@@ -1445,8 +1557,18 @@ func (c *EVMClient) ConfirmationCountReady(txIn stypes.TxIn) bool {
 
 // --------------------------------- solvency ---------------------------------
 
+// GetGasEstimateForSolvency returns the current gas fee estimate used by solvency checks.
+func (c *EVMClient) GetGasEstimateForSolvency() cosmos.Uint {
+	_, gasRateUnitsPerOne := c.cfg.ChainID.GetGasUnits()
+	return cosmos.NewUint(c.cfg.BlockScanner.MaxGasLimit).MulUint64(3).MulUint64(c.evmScanner.lastReportedGasPrice.Load()).MulUint64(common.One).Quo(gasRateUnitsPerOne)
+}
+
 // ReportSolvency reports solvency once per configured solvency blocks.
 func (c *EVMClient) ReportSolvency(height int64) error {
+	// FetchTxs may call this from prefetch goroutines; SolvencyCheckRunner also calls it while halted.
+	c.solvencyLock.Lock()
+	defer c.solvencyLock.Unlock()
+
 	if !c.ShouldReportSolvency(height) {
 		return nil
 	}
@@ -1464,8 +1586,7 @@ func (c *EVMClient) ReportSolvency(height int64) error {
 	}
 
 	// 3x MaxGas breathing room, from gas rate units gas price to THORChain (1e8) format
-	_, gasRateUnitsPerOne := c.cfg.ChainID.GetGasUnits()
-	currentGasFee := cosmos.NewUint(c.cfg.BlockScanner.MaxGasLimit).MulUint64(3).MulUint64(c.evmScanner.lastReportedGasPrice).MulUint64(common.One).Quo(gasRateUnitsPerOne)
+	currentGasFee := c.GetGasEstimateForSolvency()
 
 	// report insolvent asgard vaults,
 	// or else all if the chain is halted and all are solvent
@@ -1481,7 +1602,7 @@ func (c *EVMClient) ReportSolvency(height int64) error {
 	processedVaults := 0
 	for i := range chainVaults {
 		var acct common.Account
-		acct, err = c.GetAccount(chainVaults[i].PubKey, new(big.Int).SetInt64(height))
+		acct, err = c.GetVaultAccount(chainVaults[i], new(big.Int).SetInt64(height))
 		if err != nil {
 			c.logger.Err(err).Msg("fail to get account balance")
 			continue
@@ -1529,7 +1650,7 @@ func (c *EVMClient) ReportSolvency(height int64) error {
 			c.logger.Info().Msg("fail to send solvency info to thorchain, timeout")
 		}
 	}
-	c.lastSolvencyCheckHeight = height
+	c.lastSolvencyCheckHeight.Store(height)
 	return nil
 }
 

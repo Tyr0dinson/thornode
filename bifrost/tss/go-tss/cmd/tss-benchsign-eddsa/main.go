@@ -1,24 +1,26 @@
 package main
 
 import (
+	crand "crypto/rand"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"io/ioutil"
+	"math/big"
 	"os"
 	"runtime"
 	"sync/atomic"
 	"time"
 
-	"github.com/binance-chain/tss-lib/common"
-	"github.com/binance-chain/tss-lib/eddsa/keygen"
-	"github.com/binance-chain/tss-lib/eddsa/signing"
-	"github.com/binance-chain/tss-lib/test"
-	"github.com/binance-chain/tss-lib/tss"
 	"github.com/decred/dcrd/dcrec/edwards/v2"
 	"github.com/ipfs/go-log"
 	"github.com/olekukonko/tablewriter"
 	"github.com/pkg/errors"
+	"gitlab.com/thorchain/tss/tss-lib-private.git/v3/common"
+	"gitlab.com/thorchain/tss/tss-lib-private.git/v3/eddsa/keygen"
+	"gitlab.com/thorchain/tss/tss-lib-private.git/v3/eddsa/signing"
+	"gitlab.com/thorchain/tss/tss-lib-private.git/v3/test"
+	"gitlab.com/thorchain/tss/tss-lib-private.git/v3/tss"
 	"golang.org/x/text/language"
 	"golang.org/x/text/message"
 )
@@ -117,19 +119,21 @@ func runSign(dir string, t int) {
 		panic(fmt.Errorf("wanted %d keys but got %d keys and %d signPIDs", q, len(keys), len(signPIDs)))
 	}
 
-	msg := common.GetRandomPrimeInt(256)
+	msg := common.GetRandomPrimeInt(crand.Reader, 256)
 	p2pCtx := tss.NewPeerContext(signPIDs)
 	parties := make([]*signing.LocalParty, 0, len(signPIDs))
 
 	errCh := make(chan *tss.Error, len(signPIDs))
 	outCh := make(chan tss.Message, len(signPIDs))
-	endCh := make(chan common.SignatureData, len(signPIDs))
+	endCh := make(chan *common.SignatureData, len(signPIDs))
 
 	updater := test.SharedPartyUpdater
 
 	// init the parties
 	for i := 0; i < len(signPIDs); i++ {
 		params := tss.NewParameters(tss.Edwards(), p2pCtx, signPIDs[i], len(signPIDs), t)
+		// fixed nonce: all bench parties run in-process in one session
+		params.SetSessionNonce(big.NewInt(1))
 		P := signing.NewLocalParty(msg, params, keys[i], outCh, endCh).(*signing.LocalParty)
 		parties = append(parties, P)
 		go func(P *signing.LocalParty) {
@@ -167,8 +171,8 @@ outer:
 			atomic.AddInt32(&ended, 1)
 			if atomic.LoadInt32(&ended) == int32(len(signPIDs)) {
 				// BEGIN EDDSA verify
-				bPk := keys[0].EDDSAPub.ToEDDSAPubKey()
-				newSig, err := edwards.ParseSignature(data.Signature.GetSignature())
+				bPk := edwards.NewPublicKey(keys[0].EDDSAPub.X(), keys[0].EDDSAPub.Y())
+				newSig, err := edwards.ParseSignature(data.Signature)
 				if err != nil {
 					panic(err)
 				}

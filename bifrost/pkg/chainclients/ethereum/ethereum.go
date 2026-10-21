@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -43,7 +44,12 @@ import (
 	"gitlab.com/thorchain/thornode/v3/constants"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/aggregators"
 	mem "gitlab.com/thorchain/thornode/v3/x/thorchain/memo"
+	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
+
+// waitForApprovalMined is how SignTx waits for a token approval to be mined;
+// tests against a mock RPC replace it to skip the real multi-block wait.
+var waitForApprovalMined = time.Sleep
 
 const (
 	ethBlockRewardAndFee = 3 * 1e18
@@ -51,25 +57,27 @@ const (
 
 // Client is a structure to sign and broadcast tx to Ethereum chain used by signer mostly
 type Client struct {
-	logger                  zerolog.Logger
-	cfg                     config.BifrostChainConfiguration
-	localPubKey             common.PubKey
-	client                  *ethclient.Client
-	chainID                 *big.Int
-	kw                      *evm.KeySignWrapper
-	ethScanner              *ETHScanner
-	bridge                  thorclient.ThorchainBridge
-	blockScanner            *blockscanner.BlockScanner
-	vaultABI                *abi.ABI
-	pubkeyMgr               pubkeymanager.PubKeyValidator
-	poolMgr                 thorclient.PoolManager
-	asgardCache             atomic.Pointer[utxo.AsgardCache]
-	tssKeySigner            *tss.KeySign
-	wg                      *sync.WaitGroup
-	stopchan                chan struct{}
-	globalSolvencyQueue     chan stypes.Solvency
-	signerCacheManager      *signercache.CacheManager
-	lastSolvencyCheckHeight int64
+	logger              zerolog.Logger
+	cfg                 config.BifrostChainConfiguration
+	localPubKey         common.PubKey
+	client              *ethclient.Client
+	chainID             *big.Int
+	kw                  *evm.KeySignWrapper
+	ethScanner          *ETHScanner
+	bridge              thorclient.ThorchainBridge
+	blockScanner        *blockscanner.BlockScanner
+	vaultABI            *abi.ABI
+	pubkeyMgr           pubkeymanager.PubKeyValidator
+	poolMgr             thorclient.PoolManager
+	asgardCache         atomic.Pointer[utxo.AsgardCache]
+	tssKeySigner        *tss.KeySign
+	wg                  *sync.WaitGroup
+	stopchan            chan struct{}
+	globalSolvencyQueue chan stypes.Solvency
+	signerCacheManager  *signercache.CacheManager
+	// Serializes ReportSolvency when ordered scan callbacks and SolvencyCheckRunner can both enter.
+	solvencyLock            sync.Mutex
+	lastSolvencyCheckHeight atomic.Int64
 
 	// pendingLiabilities tracks signed but unconfirmed transaction amounts (value + maxGas)
 	// keyed by vault address -> nonce -> amount in Wei.
@@ -92,6 +100,9 @@ func NewClient(thorKeys *thorclient.Keys,
 ) (*Client, error) {
 	if thorKeys == nil {
 		return nil, fmt.Errorf("fail to create ETH client,thor keys is empty")
+	}
+	if err := evm.NormalizeGasMultipliers(&cfg); err != nil {
+		return nil, fmt.Errorf("invalid ETH gas multiplier configuration: %w", err)
 	}
 	tssKm, err := tss.NewKeySign(server, bridge)
 	if err != nil {
@@ -595,6 +606,32 @@ func (c *Client) convertThorchainAmountToWei(amt *big.Int) *big.Int {
 	return big.NewInt(0).Mul(amt, big.NewInt(common.One*100))
 }
 
+// getSignerCacheExpiry returns the configured signer-cache expiry (config signer_cache_expiry).
+func (c *Client) getSignerCacheExpiry() time.Duration {
+	return c.cfg.SignerCacheExpiry
+}
+
+// verifyBroadcast is the signer-cache verifyFn: it reports whether the recorded
+// broadcast sig is on chain. It uses TransactionByHash (not TransactionReceipt),
+// which returns (tx, pending, err) and only NotFound for genuinely absent txs, so
+// a pending mempool tx is not misclassified as absent. A non-NotFound RPC error is
+// ambiguous (fail-closed). Same approach as unstuckTx.
+func (c *Client) verifyBroadcast(sig string) signercache.LookupResult {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	onchainTx, _, lookupErr := c.client.TransactionByHash(ctx, ecommon.HexToHash(sig))
+	switch {
+	case lookupErr != nil && !errors.Is(lookupErr, ethereum.NotFound):
+		return signercache.LookupAmbiguous
+	case lookupErr == nil && onchainTx != nil:
+		// Mined or pending — both mean the recorded broadcast is alive, so
+		// re-signing risks double-spend at a different pending nonce.
+		return signercache.LookupFound
+	default:
+		return signercache.LookupNotFound
+	}
+}
+
 // SignTx sign the the given TxArrayItem
 func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *stypes.TxInItem, error) {
 	// Wait for liability reconstruction to complete before signing
@@ -606,8 +643,23 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 		return nil, nil, nil, fmt.Errorf("chain %s is not support by ETH chain client", tx.Chain)
 	}
 
-	if c.signerCacheManager.HasSigned(tx.CacheHash()) {
-		c.logger.Info().Msgf("transaction(%+v), signed before , ignore", tx)
+	mimirKey := fmt.Sprintf(constants.MimirTemplateSkipSignerCache, c.cfg.ChainID)
+	gateFn := func() bool {
+		skipCache, err := c.bridge.GetMimir(mimirKey)
+		return err == nil && skipCache > 0
+	}
+	check := c.signerCacheManager.SignTxCacheCheck(tx.CacheHash(), gateFn, c.verifyBroadcast)
+	if check.Phase != signercache.PhaseNoEntry {
+		ev := c.logger.Info()
+		if check.Noteworthy() {
+			ev = c.logger.Warn()
+		}
+		ev.Stringer("phase", check.Phase).
+			Str("sig", check.Sig).
+			Interface("tx", tx).
+			Msg(check.Phase.String())
+	}
+	if check.SkipSign {
 		return nil, nil, nil, nil
 	}
 
@@ -771,6 +823,9 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 		var approvalRawTx []byte
 		approvalRawTx, err = c.sign(approvalTx, tx.VaultPubKey, height, tx)
 		if err != nil {
+			if errors.Is(err, tss.ErrNotSelectedForKeysign) {
+				return nil, nil, nil, nil
+			}
 			c.logger.Err(err).Msg("fail to sign approval transaction")
 			return nil, nonceBytes, nil, fmt.Errorf("fail to sign approval transaction: %w", err)
 		}
@@ -814,7 +869,7 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 		// If the approval is still not mined in time, the outbound will be rescheduled.
 		wait := time.Duration(c.cfg.ChainID.ApproximateBlockMilliseconds()*3) * time.Millisecond
 		c.logger.Info().Dur("wait", wait).Msg("waiting for approval transaction to be mined")
-		time.Sleep(wait)
+		waitForApprovalMined(wait)
 	}
 
 	// Convert TxOutItem gas rate units to Wei.
@@ -822,7 +877,7 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 	toiGasRateWei := cosmos.NewUint(uint64(tx.GasRate)).MulUint64(common.WeiPerOne).Quo(gasRateUnitsPerOne).BigInt()
 
 	gasRate := c.GetGasPrice()
-	if c.cfg.BlockScanner.FixedGasRate > 0 || gasRate.Cmp(big.NewInt(0)) == 0 {
+	if c.cfg.BlockScanner.FixedGasRate > 0 || gasRate.Sign() == 0 {
 		// if chain gas is zero we are still filling our gas price buffer, use outbound rate
 		gasRate = toiGasRateWei
 	} else {
@@ -836,7 +891,7 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 
 		// round current rate to avoid consensus trouble, same rounding implied in outbound
 		gasRate.Div(gasRate, big.NewInt(common.One*100))
-		if gasRate.Cmp(big.NewInt(0)) == 0 { // floor at 1 like in network fee reporting
+		if gasRate.Sign() == 0 { // floor at 1 like in network fee reporting
 			gasRate = big.NewInt(1)
 		}
 		gasRate.Mul(gasRate, big.NewInt(common.One*100))
@@ -1017,6 +1072,9 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 	// Sign main transaction
 	rawTx, err = c.sign(createdTx, tx.VaultPubKey, height, tx)
 	if err != nil || len(rawTx) == 0 {
+		if errors.Is(err, tss.ErrNotSelectedForKeysign) {
+			return nil, nil, nil, nil
+		}
 		return nil, nonceBytes, nil, fmt.Errorf("fail to sign message: %w", err)
 	}
 
@@ -1063,9 +1121,12 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 
 // sign is design to sign a given message with keysign party and keysign wrapper
 func (c *Client) sign(tx *etypes.Transaction, poolPubKey common.PubKey, height int64, txOutItem stypes.TxOutItem) ([]byte, error) {
-	rawBytes, err := c.kw.Sign(tx, poolPubKey)
+	rawBytes, err := c.kw.Sign(tx, poolPubKey, height)
 	if err == nil && rawBytes != nil {
 		return rawBytes, nil
+	}
+	if errors.Is(err, tss.ErrNotSelectedForKeysign) {
+		return nil, tss.ErrNotSelectedForKeysign
 	}
 	var keysignError tss.KeysignError
 	if errors.As(err, &keysignError) {
@@ -1145,11 +1206,47 @@ func (c *Client) GetBalances(addr string, height *big.Int, contractAddr string) 
 				return nil, err
 			}
 		}
-		bal := c.ethScanner.convertAmount(token.Address, balance)
+		bal := c.ethScanner.ConvertAmount(token.Address, balance)
 		coins = append(coins, common.NewCoin(asset, bal))
 	}
 
 	return coins.Distinct(), nil
+}
+
+// GetVaultBalances gets balances for the chain assets tracked by the given
+// THORChain vault. This is used for solvency reports so every node signs the
+// same asset set instead of relying on node-local token metadata discovery.
+func (c *Client) GetVaultBalances(addr string, height *big.Int, contractAddr string, vault types.Vault) (common.Coins, error) {
+	assets := make([]common.Asset, 0, len(vault.Coins))
+	seen := make(map[string]struct{}, len(vault.Coins))
+	for _, coin := range vault.Coins {
+		if !coin.Asset.Chain.Equals(c.cfg.ChainID) {
+			continue
+		}
+		key := coin.Asset.String()
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		assets = append(assets, coin.Asset)
+	}
+	sort.Slice(assets, func(i, j int) bool {
+		return assets[i].String() < assets[j].String()
+	})
+
+	coins := make(common.Coins, 0, len(assets))
+	for _, asset := range assets {
+		tokenAddr := getTokenAddressFromAsset(asset)
+		balance, err := c.GetBalance(addr, tokenAddr, height, contractAddr)
+		if err != nil {
+			c.logger.Err(err).Msgf("fail to get balance for token:%s", tokenAddr)
+			continue
+		}
+		bal := c.ethScanner.ConvertAmount(tokenAddr, balance)
+		coins = append(coins, common.NewCoin(asset, bal))
+	}
+
+	return coins, nil
 }
 
 // GetAccount gets account by address in eth client
@@ -1161,6 +1258,23 @@ func (c *Client) GetAccount(pk common.PubKey, height *big.Int) (common.Account, 
 	}
 	contractAddr := c.getSmartContractAddr(pk)
 	coins, err := c.GetBalances(addr, height, contractAddr.String())
+	if err != nil {
+		return common.Account{}, err
+	}
+	account := common.NewAccount(int64(nonce), 0, coins, false)
+	return account, nil
+}
+
+// GetVaultAccount gets account balances for exactly the assets tracked by the
+// THORChain vault. Zero balances are intentionally retained for solvency.
+func (c *Client) GetVaultAccount(vault types.Vault, height *big.Int) (common.Account, error) {
+	addr := c.GetAddress(vault.PubKey)
+	nonce, err := c.GetNonce(addr)
+	if err != nil {
+		return common.Account{}, err
+	}
+	contractAddr := c.getSmartContractAddr(vault.PubKey)
+	coins, err := c.GetVaultBalances(addr, height, contractAddr.String(), vault)
 	if err != nil {
 		return common.Account{}, err
 	}
@@ -1197,7 +1311,8 @@ func (c *Client) BroadcastTx(txOutItem stypes.TxOutItem, hexTx []byte) (string, 
 	txID := tx.Hash().String()
 	c.logger.Info().Msgf("broadcast tx with memo: %s to ETH chain , hash: %s", txOutItem.Memo, txID)
 
-	if err := c.signerCacheManager.SetSigned(txOutItem.CacheHash(), txOutItem.CacheVault(c.GetChain()), txID); err != nil {
+	expiry := time.Now().Add(c.getSignerCacheExpiry()).UnixMilli()
+	if err := c.signerCacheManager.SetSignedWithExpiry(txOutItem.CacheHash(), txOutItem.CacheVault(c.GetChain()), txID, expiry); err != nil {
 		c.logger.Err(err).Msgf("fail to mark tx out item (%+v) as signed", txOutItem)
 	}
 
@@ -1354,13 +1469,23 @@ func (c *Client) OnObservedTxIn(txIn stypes.TxInItem, blockHeight int64) {
 	}
 }
 
+// GetGasEstimateForSolvency returns the current gas fee estimate used by solvency checks.
+func (c *Client) GetGasEstimateForSolvency() cosmos.Uint {
+	_, gasRateUnitsPerOne := c.cfg.ChainID.GetGasUnits()
+	return cosmos.NewUint(c.cfg.BlockScanner.MaxGasLimit).MulUint64(3).MulUint64(c.ethScanner.lastReportedGasPrice.Load()).MulUint64(common.One).Quo(gasRateUnitsPerOne)
+}
+
 func (c *Client) ReportSolvency(ethBlockHeight int64) error {
+	// The ordered scan loop and SolvencyCheckRunner can both call this.
+	c.solvencyLock.Lock()
+	defer c.solvencyLock.Unlock()
+
 	if !c.ShouldReportSolvency(ethBlockHeight) {
 		return nil
 	}
 
 	// when block scanner is not healthy, only report from auto-unhalt SolvencyCheckRunner
-	// (FetchTxs passes currentBlockHeight, while SolvencyCheckRunner passes chainHeight)
+	// (the scan hook passes the scanned height, while SolvencyCheckRunner passes chainHeight)
 	if !c.IsBlockScannerHealthy() && ethBlockHeight == c.ethScanner.getCurrentBlockHeight() {
 		return nil
 	}
@@ -1372,8 +1497,7 @@ func (c *Client) ReportSolvency(ethBlockHeight int64) error {
 	}
 
 	// 3x MaxGas breathing room, from gas rate units gas price to THORChain (1e8) format
-	_, gasRateUnitsPerOne := c.cfg.ChainID.GetGasUnits()
-	currentGasFee := cosmos.NewUint(c.cfg.BlockScanner.MaxGasLimit).MulUint64(3).MulUint64(c.ethScanner.lastReportedGasPrice).MulUint64(common.One).Quo(gasRateUnitsPerOne)
+	currentGasFee := c.GetGasEstimateForSolvency()
 
 	// report insolvent asgard vaults,
 	// or else all if the chain is halted and all are solvent
@@ -1389,7 +1513,7 @@ func (c *Client) ReportSolvency(ethBlockHeight int64) error {
 	processedVaults := 0
 	for i := range chainVaults {
 		var acct common.Account
-		acct, err = c.GetAccount(chainVaults[i].PubKey, new(big.Int).SetInt64(ethBlockHeight))
+		acct, err = c.GetVaultAccount(chainVaults[i], new(big.Int).SetInt64(ethBlockHeight))
 		if err != nil {
 			c.logger.Err(err).Msgf("fail to get account balance")
 			continue
@@ -1437,7 +1561,7 @@ func (c *Client) ReportSolvency(ethBlockHeight int64) error {
 			c.logger.Info().Msgf("fail to send solvency info to THORChain, timeout")
 		}
 	}
-	c.lastSolvencyCheckHeight = ethBlockHeight
+	c.lastSolvencyCheckHeight.Store(ethBlockHeight)
 	return nil
 }
 
@@ -1568,7 +1692,7 @@ func (c *Client) checkAndApproveAllowance(tx stypes.TxOutItem, nonce uint64) (*e
 	toiGasRateWei := cosmos.NewUint(uint64(tx.GasRate)).MulUint64(common.WeiPerOne).Quo(gasRateUnitsPerOne).BigInt()
 
 	gasPrice := c.GetGasPrice()
-	if c.cfg.BlockScanner.FixedGasRate > 0 || gasPrice.Cmp(big.NewInt(0)) == 0 {
+	if c.cfg.BlockScanner.FixedGasRate > 0 || gasPrice.Sign() == 0 {
 		gasPrice = toiGasRateWei
 	} else {
 		// Apply same gas price logic as main transaction
@@ -1577,7 +1701,7 @@ func (c *Client) checkAndApproveAllowance(tx stypes.TxOutItem, nonce uint64) (*e
 		lowerBound.Div(lowerBound, big.NewInt(3))
 
 		gasPrice.Div(gasPrice, big.NewInt(common.One*100))
-		if gasPrice.Cmp(big.NewInt(0)) == 0 {
+		if gasPrice.Sign() == 0 {
 			gasPrice = big.NewInt(1)
 		}
 		gasPrice.Mul(gasPrice, big.NewInt(common.One*100))

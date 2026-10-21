@@ -7,7 +7,6 @@ import (
 	"strings"
 	"sync"
 
-	bkeygen "github.com/binance-chain/tss-lib/ecdsa/keygen"
 	tcrypto "github.com/cometbft/cometbft/crypto"
 	coskey "github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
 	sdk "github.com/cosmos/cosmos-sdk/types/bech32/legacybech32"
@@ -15,6 +14,7 @@ import (
 	"github.com/multiformats/go-multiaddr"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
+	bkeygen "gitlab.com/thorchain/tss/tss-lib-private.git/v3/ecdsa/keygen"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/p2p"
 	"gitlab.com/thorchain/thornode/v3/bifrost/p2p/conversion"
@@ -151,7 +151,7 @@ func (t *TssServer) requestToMsgId(request interface{}) (string, error) {
 	case keysign.Request:
 		sort.Strings(value.Messages)
 		dat = []byte(strings.Join(value.Messages, ","))
-		keys = value.SignerPubKeys
+		dat = append(dat, []byte(strings.TrimSpace(value.PoolPubKey))...)
 		algo = string(value.Algo)
 	default:
 		t.logger.Error().Msg("unknown request type")
@@ -226,4 +226,14 @@ func (t *TssServer) GetKnownPeers() []PeerInfo {
 		infos = append(infos, pi)
 	}
 	return infos
+}
+
+func (t *TssServer) persistPeerAddressBook() {
+	if t == nil || t.stateManager == nil || t.p2pCommunication == nil {
+		return
+	}
+	addresses := t.p2pCommunication.ExportPeerAddress()
+	if err := t.stateManager.SaveAddressBook(addresses); err != nil {
+		t.logger.Error().Err(err).Msg("fail to save the peer addresses")
+	}
 }

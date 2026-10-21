@@ -73,13 +73,13 @@ asserts:
   - .txs[0].result.events[5].type == "schedule_add"
   - .txs[0].result.events[5].sender == "tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f"
   - .txs[0].result.events[5].after == "1"
-  - .txs[0].result.events[5].height == "7"
+  - .txs[0].result.events[5].height == "6"
   - .txs[0].result.events[5].msg == "{\"do\":\"something\"}"
 ---
 type: create-blocks
 count: 1
 ---
-# Check nothing happened
+# The scheduled invalid message fails without committing execution events.
 type: check
 endpoint: http://localhost:1317/thorchain/block
 asserts:
@@ -88,16 +88,7 @@ asserts:
 type: create-blocks
 count: 1
 ---
-# Next block, contract execution should fail due to msg variant mismatch
-type: check
-endpoint: http://localhost:1317/thorchain/block
-asserts:
-  - .end_block_events[0].type == "schedule_execute_error"
-  - .end_block_events[0].error | contains("execute wasm contract failed")
-  - .end_block_events[0].sender == "tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f"
-  - .end_block_events[0].msg == "{\"do\":\"something\"}"
----
-# Test recursive scheduling. This is a recursively called msg that calls itslf after a gap of 1 block, emitting anothoer Schedule msg for the same again
+# Test recursive scheduling: execute in the next block and schedule another message one block later.
 # In practice, a contract will construct this message itself and emit it each time it wants to be re-called
 type: tx-execute-contract
 contract: "tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f"
@@ -121,15 +112,7 @@ asserts:
   - .txs[0].result.events[5].type == "schedule_add"
   - .txs[0].result.events[5].sender == "tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f"
   - .txs[0].result.events[5].after == "1"
-  - .txs[0].result.events[5].height == "10"
----
-type: create-blocks
-count: 1
----
-# Check nothing happened
-type: check
-endpoint: http://localhost:1317/thorchain/block
-asserts:
+  - .txs[0].result.events[5].height == "9"
   - .end_block_events | length == 0
 ---
 type: create-blocks
@@ -138,9 +121,12 @@ count: 1
 type: check
 endpoint: http://localhost:1317/thorchain/block
 asserts:
-  - .end_block_events[0].type == "execute"
-  - .end_block_events[0]._contract_address == "tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f"
-  - .end_block_events[1].type == "schedule_add"
-  - .end_block_events[1].msg == "{\"do\":\"something\"}"
-  - .end_block_events[1].after == "1"
-  - .end_block_events[1].height == "12"
+  - .end_block_events[0].type == "schedule_start"
+  - .end_block_events[0].sender == "tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f"
+  - .end_block_events[1].type == "execute"
+  - .end_block_events[1]._contract_address == "tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f"
+  - .end_block_events[2].type == "schedule_add"
+  - .end_block_events[2].msg == "{\"do\":\"something\"}"
+  - .end_block_events[2].after == "1"
+  - .end_block_events[2].height == "10"
+  - .end_block_events[3].type == "schedule_end"

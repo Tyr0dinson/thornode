@@ -15,6 +15,7 @@ import (
 	"github.com/libp2p/go-libp2p-core/protocol"
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/p2p"
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -39,6 +40,21 @@ func TestAttestationBatcher(t *testing.T) {
 		assert.Equal(t, maxBatchSize, batcher.maxBatchSize)
 		assert.Equal(t, peerTimeout, batcher.peerTimeout)
 		assert.Equal(t, concurrentSends, batcher.peerMgr.limit)
+	})
+
+	t.Run("clamps mimir-driven batch size", func(t *testing.T) {
+		host := NewMockHost([]peer.ID{})
+		batcher := NewAttestationBatcher(host, logger, nil, time.Second, 100, time.Second, 1)
+
+		batcher.updateMaxBatchSize(maxAllowedBatchSize * 10)
+		assert.Equal(t, maxAllowedBatchSize, batcher.getMaxBatchSize())
+
+		batcher.updateMaxBatchSize(500)
+		assert.Equal(t, int64(500), batcher.getMaxBatchSize())
+
+		// invalid values are ignored
+		batcher.updateMaxBatchSize(0)
+		assert.Equal(t, int64(500), batcher.getMaxBatchSize())
 	})
 
 	t.Run("batches and broadcasts attestations", func(t *testing.T) {
@@ -249,24 +265,13 @@ func TestAttestationBatcher(t *testing.T) {
 	})
 
 	t.Run("handles batch clearing properly", func(t *testing.T) {
-		// Create mock host
-		mockHost := NewBatcherMockHost([]peer.ID{"peer1"})
+		// This test covers queue clearing; ticker and peer delivery are tested
+		// above. Avoid background work and wall-clock scheduling assumptions.
+		mockHost := NewBatcherMockHost(nil)
 
 		// Create batcher
 		batcher := NewAttestationBatcher(mockHost, logger, nil, 100*time.Millisecond, 10, 1*time.Second, 4)
-
-		// Set active validator getter
-		batcher.setActiveValGetter(func() map[peer.ID]bool {
-			return map[peer.ID]bool{
-				"peer1": true,
-			}
-		})
-
-		// Start the batcher
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
-
-		go batcher.Start(ctx)
+		batcher.setActiveValGetter(func() map[peer.ID]bool { return map[peer.ID]bool{} })
 
 		// Add a mix of attestation types
 		for i := 0; i < 3; i++ {
@@ -295,17 +300,11 @@ func TestAttestationBatcher(t *testing.T) {
 			})
 		}
 
-		// Wait for batch to be processed
-		time.Sleep(200 * time.Millisecond)
-
-		// Check if batches are cleared
-		batcher.mu.Lock()
-		txBatchLen := len(batcher.observedTxBatch)
-		nfBatchLen := len(batcher.networkFeeBatch)
-		batcher.mu.Unlock()
-
-		assert.Equal(t, 0, txBatchLen, "Observed tx batch should be cleared after sending")
-		assert.Equal(t, 0, nfBatchLen, "Network fee batch should be cleared after sending")
+		assert.Len(t, batcher.observedTxBatch, 3)
+		assert.Len(t, batcher.networkFeeBatch, 3)
+		batcher.sendBatches(context.Background(), false)
+		assert.Empty(t, batcher.observedTxBatch, "Observed tx batch should be cleared after sending")
+		assert.Empty(t, batcher.networkFeeBatch, "Network fee batch should be cleared after sending")
 
 		// Check batch clears metric
 		// batchClears := m.GetCounter(metrics.BatchClears)
@@ -318,6 +317,9 @@ type BatcherMockHost struct {
 	*MockHost
 	mu             sync.Mutex
 	createdStreams []*mockStreamInfo
+	// noAck models a peer that accepts the stream but never reads/replies: the
+	// stream opens, but no "done" acknowledgment is ever written back.
+	noAck bool
 }
 
 type mockStreamInfo struct {
@@ -350,17 +352,20 @@ func (h *BatcherMockHost) NewStream(ctx context.Context, p peer.ID, pids ...prot
 		mu:     new(sync.Mutex),
 	}
 
-	// Set up a goroutine to automatically respond with "done"
-	go func() {
-		time.Sleep(50 * time.Millisecond)
-		// Write "done" using proper protocol format
-		lengthBytes := make([]byte, p2p.LengthHeader)
-		binary.LittleEndian.PutUint32(lengthBytes, 4) // "done" is 4 bytes
-		stream.mu.Lock()
-		defer stream.mu.Unlock()
-		serverToClient.Write(lengthBytes)
-		serverToClient.WriteString("done")
-	}()
+	// Set up a goroutine to automatically respond with "done", unless this host
+	// models an unresponsive peer that never acknowledges.
+	if !h.noAck {
+		go func() {
+			time.Sleep(50 * time.Millisecond)
+			// Write "done" using proper protocol format
+			lengthBytes := make([]byte, p2p.LengthHeader)
+			binary.LittleEndian.PutUint32(lengthBytes, 4) // "done" is 4 bytes
+			stream.mu.Lock()
+			defer stream.mu.Unlock()
+			serverToClient.Write(lengthBytes)
+			serverToClient.WriteString("done")
+		}()
+	}
 
 	var pid protocol.ID
 	if len(pids) > 0 {
@@ -384,4 +389,47 @@ func (h *BatcherMockHost) clearStreams() {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.createdStreams = make([]*mockStreamInfo, 0)
+}
+
+// TestBroadcastToUnresponsivePeerTripsBreaker reproduces a peer that accepts the
+// stream but never reads/ACKs. Each send must free its token within the short
+// ACK timeout (not the full peer timeout); after the threshold the breaker opens
+// and further sends are skipped without even opening a stream.
+func TestBroadcastToUnresponsivePeerTripsBreaker(t *testing.T) {
+	logger := zerolog.Nop()
+	peerID := peer.ID("unresponsive-peer")
+	// peers[0] is the mock host's own ID; target a non-self peer.
+	mockHost := NewBatcherMockHost([]peer.ID{peer.ID("self"), peerID})
+	mockHost.noAck = true // accepts the stream, never acknowledges
+
+	// Generous peer timeout (5s) but a short dedicated ACK timeout (200ms): this
+	// isolates the ACK-timeout behaviour from the peer timeout. Pre-change code
+	// (ACK read bound only by peerTimeout) would hold the token ~5s per send and
+	// fail the per-send assertion below.
+	batcher := NewAttestationBatcher(mockHost, logger, nil, time.Hour, 10, 5*time.Second, 4)
+	batcher.ackTimeout = 200 * time.Millisecond
+
+	payload := []byte("batch")
+
+	// Each failed send must return within ~the ACK timeout (not the 5s peer
+	// timeout): a non-ACKing peer must free its send token fast.
+	for i := 0; i < peerBreakerThreshold; i++ {
+		start := time.Now()
+		batcher.broadcastToPeer(context.Background(), peerID, payload)
+		require.Less(t, time.Since(start), 1*time.Second,
+			"send to a non-ACKing peer must free the token via the short ACK timeout, not ride the 5s peer timeout")
+	}
+
+	mockHost.mu.Lock()
+	streamsAfterThreshold := len(mockHost.createdStreams)
+	mockHost.mu.Unlock()
+	require.Equal(t, peerBreakerThreshold, streamsAfterThreshold, "each pre-breaker send opens one stream")
+	require.True(t, batcher.peerMgr.shouldSkipPeer(peerID), "breaker should be open after the threshold")
+
+	// A further send while the breaker is open must be skipped: no new stream.
+	batcher.broadcastToPeer(context.Background(), peerID, payload)
+	mockHost.mu.Lock()
+	streamsAfterSkip := len(mockHost.createdStreams)
+	mockHost.mu.Unlock()
+	assert.Equal(t, streamsAfterThreshold, streamsAfterSkip, "open breaker must skip the send (no new stream)")
 }

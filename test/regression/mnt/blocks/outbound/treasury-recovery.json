@@ -706,6 +706,7 @@
         "mode": "EndBlock",
         "pool": "BTC.BTC",
         "pool_slip": "476",
+        "stable_reserve": "false",
         "streaming_swap_count": "1",
         "streaming_swap_quantity": "1",
         "swap_slip": "476",
@@ -725,6 +726,7 @@
         "mode": "EndBlock",
         "pool": "ETH.ETH",
         "pool_slip": "434",
+        "stable_reserve": "false",
         "streaming_swap_count": "1",
         "streaming_swap_quantity": "1",
         "swap_slip": "434",
@@ -911,6 +913,7 @@
                     "observed_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
                     "out_hashes": [],
                     "signers": [],
+                    "sol_nonce": null,
                     "status": "incomplete",
                     "tx": {
                       "chain": "BTC",
@@ -932,7 +935,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000001",
                       "memo": "=:ETH.ETH:0xe3c64974c78f5693bd2bc68b3221d58df5c6e877",
                       "to_address": "bcrt1qzf3gsk7edzwl9syyefvfhle37cjtql35tlzesk"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }
@@ -1825,13 +1829,14 @@
         "coin": "40861780 ETH.ETH",
         "emit_asset": "4094118219 THOR.RUNE",
         "from": "0xd58610f89265a2fb637ac40edf59141ff873b266",
-        "id": "643F660A31524E66324F2E1E8BCD497963BB718E1DA64631910A2A9ECAE4C114",
+        "id": "8260AB4D9C26D64D3D6CF6C13CC82379BA0F55B8961EF17C4A056515A01D36A4",
         "liquidity_fee": "174420072",
         "liquidity_fee_in_rune": "174420072",
         "memo": "=:BTC.BTC:bcrt1q3wrmhnh2qe98rjse30pl7u6jxszjjwl44ls6uw",
         "mode": "EndBlock",
         "pool": "ETH.ETH",
         "pool_slip": "409",
+        "stable_reserve": "false",
         "streaming_swap_count": "1",
         "streaming_swap_quantity": "1",
         "swap_slip": "409",
@@ -1844,13 +1849,14 @@
         "coin": "4094118219 THOR.RUNE",
         "emit_asset": "4140461 BTC.BTC",
         "from": "0xd58610f89265a2fb637ac40edf59141ff873b266",
-        "id": "643F660A31524E66324F2E1E8BCD497963BB718E1DA64631910A2A9ECAE4C114",
+        "id": "8260AB4D9C26D64D3D6CF6C13CC82379BA0F55B8961EF17C4A056515A01D36A4",
         "liquidity_fee": "177575",
         "liquidity_fee_in_rune": "175278313",
         "memo": "=:BTC.BTC:bcrt1q3wrmhnh2qe98rjse30pl7u6jxszjjwl44ls6uw",
         "mode": "EndBlock",
         "pool": "BTC.BTC",
         "pool_slip": "411",
+        "stable_reserve": "false",
         "streaming_swap_count": "1",
         "streaming_swap_quantity": "1",
         "swap_slip": "411",
@@ -1862,7 +1868,7 @@
         "coins": "7000 BTC.BTC",
         "mode": "EndBlock",
         "pool_deduct": "6896821",
-        "tx_id": "643F660A31524E66324F2E1E8BCD497963BB718E1DA64631910A2A9ECAE4C114",
+        "tx_id": "8260AB4D9C26D64D3D6CF6C13CC82379BA0F55B8961EF17C4A056515A01D36A4",
         "type": "fee"
       },
       {
@@ -1895,7 +1901,7 @@
         "coin_asset": "BTC.BTC",
         "coin_decimals": "0",
         "gas_rate": "10",
-        "in_hash": "643F660A31524E66324F2E1E8BCD497963BB718E1DA64631910A2A9ECAE4C114",
+        "in_hash": "8260AB4D9C26D64D3D6CF6C13CC82379BA0F55B8961EF17C4A056515A01D36A4",
         "max_gas_amount_0": "10000",
         "max_gas_asset_0": "BTC.BTC",
         "max_gas_decimals_0": "8",
@@ -2221,6 +2227,7 @@
                     "observed_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
                     "out_hashes": [],
                     "signers": [],
+                    "sol_nonce": null,
                     "status": "incomplete",
                     "tx": {
                       "chain": "BTC",
@@ -2242,7 +2249,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000002",
                       "memo": "=:INVALID.ASSET:bcrt1q3wrmhnh2qe98rjse30pl7u6jxszjjwl44ls6uw",
                       "to_address": "bcrt1qzf3gsk7edzwl9syyefvfhle37cjtql35tlzesk"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }
@@ -2446,7 +2454,7 @@
         "coin_asset": "BTC.BTC",
         "coin_decimals": "0",
         "gas_rate": "10",
-        "in_hash": "643F660A31524E66324F2E1E8BCD497963BB718E1DA64631910A2A9ECAE4C114",
+        "in_hash": "8260AB4D9C26D64D3D6CF6C13CC82379BA0F55B8961EF17C4A056515A01D36A4",
         "max_gas_amount_0": "10000",
         "max_gas_asset_0": "BTC.BTC",
         "max_gas_decimals_0": "8",
@@ -2848,7 +2856,7 @@
       {
         "coin": "4133461 BTC.BTC",
         "destination": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
-        "in_tx_id": "643F660A31524E66324F2E1E8BCD497963BB718E1DA64631910A2A9ECAE4C114",
+        "in_tx_id": "8260AB4D9C26D64D3D6CF6C13CC82379BA0F55B8961EF17C4A056515A01D36A4",
         "memo": "=:RUNE:tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
         "mode": "EndBlock",
         "recovery_type": "treasury",
@@ -3006,13 +3014,14 @@
         "coin": "4133461 BTC.BTC",
         "emit_asset": "3763946236 THOR.RUNE",
         "from": "bcrt1qzf3gsk7edzwl9syyefvfhle37cjtql35tlzesk",
-        "id": "CAA72C44175BF9D119EC8BC63EEE7912157EB48D6436F5360EBF81EA3F7052B5",
+        "id": "5BADE440FB3247470288B7E6670F001C26DEB53EA4785EB24035D7822064F593",
         "liquidity_fee": "154233955",
         "liquidity_fee_in_rune": "154233955",
         "memo": "=:RUNE:tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
         "mode": "EndBlock",
         "pool": "BTC.BTC",
         "pool_slip": "394",
+        "stable_reserve": "false",
         "streaming_swap_count": "1",
         "streaming_swap_quantity": "1",
         "swap_slip": "394",
@@ -3049,8 +3058,8 @@
         "coin": "3763946236 THOR.RUNE",
         "from": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "id": "0000000000000000000000000000000000000000000000000000000000000000",
-        "in_tx_id": "CAA72C44175BF9D119EC8BC63EEE7912157EB48D6436F5360EBF81EA3F7052B5",
-        "memo": "OUT:CAA72C44175BF9D119EC8BC63EEE7912157EB48D6436F5360EBF81EA3F7052B5",
+        "in_tx_id": "5BADE440FB3247470288B7E6670F001C26DEB53EA4785EB24035D7822064F593",
+        "memo": "OUT:5BADE440FB3247470288B7E6670F001C26DEB53EA4785EB24035D7822064F593",
         "mode": "EndBlock",
         "to": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
         "type": "outbound"
@@ -3191,13 +3200,14 @@
         "coin": "2993000 BTC.BTC",
         "emit_asset": "2580492761 THOR.RUNE",
         "from": "bcrt1qzf3gsk7edzwl9syyefvfhle37cjtql35tlzesk",
-        "id": "DFFE16CD516B9D0760EE5B000F360280DD0398B8CE29670A95B777A70A729AB4",
+        "id": "828A1BCA5987C2FBEF4273D4BCE8502CDA49A7BC660F24DE4F874602C75765A2",
         "liquidity_fee": "73551428",
         "liquidity_fee_in_rune": "73551428",
         "memo": "=:RUNE:tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
         "mode": "EndBlock",
         "pool": "BTC.BTC",
         "pool_slip": "277",
+        "stable_reserve": "false",
         "streaming_swap_count": "1",
         "streaming_swap_quantity": "1",
         "swap_slip": "277",
@@ -3234,8 +3244,8 @@
         "coin": "2580492761 THOR.RUNE",
         "from": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "id": "0000000000000000000000000000000000000000000000000000000000000000",
-        "in_tx_id": "DFFE16CD516B9D0760EE5B000F360280DD0398B8CE29670A95B777A70A729AB4",
-        "memo": "OUT:DFFE16CD516B9D0760EE5B000F360280DD0398B8CE29670A95B777A70A729AB4",
+        "in_tx_id": "828A1BCA5987C2FBEF4273D4BCE8502CDA49A7BC660F24DE4F874602C75765A2",
+        "memo": "OUT:828A1BCA5987C2FBEF4273D4BCE8502CDA49A7BC660F24DE4F874602C75765A2",
         "mode": "EndBlock",
         "to": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
         "type": "outbound"

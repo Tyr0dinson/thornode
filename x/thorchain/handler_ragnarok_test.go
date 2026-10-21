@@ -177,6 +177,64 @@ func (HandlerRagnarokSuite) TestRagnarokHappyPath(c *C) {
 	c.Assert(result, IsNil)
 }
 
+func (HandlerRagnarokSuite) TestRagnarokHappyPathXMR(c *C) {
+	ctx, k := setupKeeperForTest(c)
+
+	retireVault := GetRandomVault()
+	retireVault.PubKeyFrost = GetRandomEd25519PubKey()
+	retireVault.Chains = common.Chains{common.XMRChain}.Strings()
+	retireVault.AddFunds(common.Coins{
+		common.NewCoin(common.XMRAsset, cosmos.NewUint(2*common.One)),
+	})
+
+	newVault := GetRandomVault()
+	newVault.PubKeyFrost = GetRandomEd25519PubKey()
+	newVault.Chains = common.Chains{common.XMRChain}.Strings()
+
+	txout := NewTxOut(1)
+	newVaultAddr, err := newVault.PubKeyFrost.GetAddress(common.XMRChain)
+	c.Assert(err, IsNil)
+	txout.TxArray = append(txout.TxArray, TxOutItem{
+		Chain:            common.XMRChain,
+		InHash:           common.BlankTxID,
+		ToAddress:        newVaultAddr,
+		VaultPubKey:      retireVault.PubKey,
+		VaultPubKeyFrost: retireVault.PubKeyFrost,
+		Coin:             common.NewCoin(common.XMRAsset, cosmos.NewUint(1024)),
+		Memo:             NewRagnarokMemo(1).String(),
+	})
+
+	keeper := &TestRagnarokKeeperHappyPath{
+		Keeper:            k,
+		activeNodeAccount: GetRandomValidatorNode(NodeActive),
+		newVault:          newVault,
+		retireVault:       retireVault,
+		txout:             txout,
+	}
+
+	fromAddr, err := keeper.retireVault.PubKeyFrost.GetAddress(common.XMRChain)
+	c.Assert(err, IsNil)
+	handler := NewRagnarokHandler(NewDummyMgrWithKeeper(keeper))
+	tx := NewObservedTx(common.Tx{
+		ID:    GetRandomTxHash(),
+		Chain: common.XMRChain,
+		Coins: common.Coins{
+			common.NewCoin(common.XMRAsset, cosmos.NewUint(1024)),
+		},
+		Memo:        NewRagnarokMemo(1).String(),
+		FromAddress: fromAddr,
+		ToAddress:   newVaultAddr,
+		Gas: common.Gas{
+			common.NewCoin(common.XMRAsset, cosmos.NewUint(10)),
+		},
+	}, 1, retireVault.PubKeyFrost, 1)
+
+	msgRagnarok := NewMsgRagnarok(tx, 1, keeper.activeNodeAccount.NodeAddress)
+	_, err = handler.handle(ctx, *msgRagnarok)
+	c.Assert(err, IsNil)
+	c.Assert(keeper.txout.TxArray[0].OutHash.Equals(tx.Tx.ID), Equals, true)
+}
+
 func (HandlerRagnarokSuite) TestSlash(c *C) {
 	ctx, k := setupKeeperForTest(c)
 	retireVault := GetRandomVault()
@@ -231,4 +289,97 @@ func (HandlerRagnarokSuite) TestSlash(c *C) {
 	_, err = handler.handle(ctx, *msgRagnarok)
 	c.Assert(err, IsNil)
 	c.Assert(keeper.activeNodeAccount.Bond, DeepEquals, cosmos.NewUint(9999983464))
+}
+
+func (HandlerRagnarokSuite) TestRagnarokZecTexDestination(c *C) {
+	p2pkhAddress, err := GetRandomPubKey().GetAddress(common.ZECChain)
+	c.Assert(err, IsNil)
+	texAddress, err := p2pkhAddress.ToTexAddress()
+	c.Assert(err, IsNil)
+	c.Assert(p2pkhAddress.Equals(texAddress), Equals, false)
+
+	// setup schedules a ragnarok outbound to texAddress and observes it as paid
+	// to observedTo, returning everything the assertions below read.
+	setup := func(observedTo common.Address) (cosmos.Context, *TestRagnarokKeeperHappyPath, RagnarokHandler, MsgRagnarok) {
+		ctx, k := setupKeeperForTest(c)
+
+		na := GetRandomValidatorNode(NodeActive)
+		na.Bond = cosmos.NewUint(100 * common.One)
+
+		retireVault := GetRandomVault()
+		retireVault.Chains = common.Chains{common.ZECChain}.Strings()
+		retireVault.Membership = []string{na.PubKeySet.Secp256k1.String()}
+		retireVault.AddFunds(common.Coins{
+			common.NewCoin(common.ZECAsset, cosmos.NewUint(2*common.One)),
+		})
+
+		pool := NewPool()
+		pool.Asset = common.ZECAsset
+		pool.BalanceAsset = cosmos.NewUint(100 * common.One)
+		pool.BalanceRune = cosmos.NewUint(100 * common.One)
+
+		coin := common.NewCoin(common.ZECAsset, cosmos.NewUint(1024))
+		txout := NewTxOut(1)
+		txout.TxArray = append(txout.TxArray, TxOutItem{
+			Chain:       common.ZECChain,
+			InHash:      common.BlankTxID,
+			ToAddress:   texAddress,
+			VaultPubKey: retireVault.PubKey,
+			Coin:        coin,
+			MaxGas:      common.Gas{common.NewCoin(common.ZECAsset, cosmos.NewUint(10000))},
+			Memo:        NewRagnarokMemo(1).String(),
+		})
+
+		keeper := &TestRagnarokKeeperHappyPath{
+			Keeper:            k,
+			activeNodeAccount: na,
+			newVault:          GetRandomVault(),
+			retireVault:       retireVault,
+			txout:             txout,
+			pool:              pool,
+		}
+		keeper.SetRagnarokPending(ctx, 2)
+
+		mgr := NewDummyMgrWithKeeper(keeper)
+		mgr.slasher = newSlasher(keeper, NewDummyEventMgr())
+
+		fromAddress, fromErr := retireVault.PubKey.GetAddress(common.ZECChain)
+		c.Assert(fromErr, IsNil)
+		tx := NewObservedTx(common.Tx{
+			ID:          GetRandomTxHash(),
+			Chain:       common.ZECChain,
+			Coins:       common.Coins{coin},
+			Memo:        NewRagnarokMemo(1).String(),
+			FromAddress: fromAddress,
+			ToAddress:   observedTo,
+			Gas:         common.Gas{common.NewCoin(common.ZECAsset, cosmos.NewUint(10000))},
+		}, 1, retireVault.PubKey, 1)
+
+		return ctx, keeper, NewRagnarokHandler(mgr), *NewMsgRagnarok(tx, 1, na.NodeAddress)
+	}
+
+	// The scheduled tex destination, observed in its P2PKH form.
+	ctx, keeper, handler, msg := setup(p2pkhAddress)
+	_, err = handler.handle(ctx, msg)
+	c.Assert(err, IsNil)
+	c.Check(keeper.txout.TxArray[0].OutHash.Equals(msg.Tx.Tx.ID), Equals, true,
+		Commentf("tex outbound observed as P2PKH should be marked complete"))
+	pending, err := keeper.GetRagnarokPending(ctx)
+	c.Assert(err, IsNil)
+	c.Check(pending, Equals, int64(1), Commentf("pending ragnarok count should be decremented"))
+	c.Check(keeper.activeNodeAccount.Bond.String(), Equals, cosmos.NewUint(100*common.One).String(),
+		Commentf("vault must not be slashed for an outbound the network ordered"))
+
+	// An unrelated destination must still fail to match.
+	strangerAddress, err := GetRandomPubKey().GetAddress(common.ZECChain)
+	c.Assert(err, IsNil)
+	ctx, keeper, handler, msg = setup(strangerAddress)
+	_, err = handler.handle(ctx, msg)
+	c.Assert(err, IsNil)
+	c.Check(keeper.txout.TxArray[0].OutHash.IsEmpty(), Equals, true)
+	pending, err = keeper.GetRagnarokPending(ctx)
+	c.Assert(err, IsNil)
+	c.Check(pending, Equals, int64(2))
+	c.Check(keeper.activeNodeAccount.Bond.LT(cosmos.NewUint(100*common.One)), Equals, true,
+		Commentf("an unmatched ragnarok outbound should still slash"))
 }

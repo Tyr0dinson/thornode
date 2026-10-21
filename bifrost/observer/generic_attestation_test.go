@@ -24,18 +24,34 @@ func TestNewAttestationState(t *testing.T) {
 	}
 
 	// Create a new attestation state
-	state := AttestationState[*common.ObservedTx]{
-		Item:                     obsTx,
+	state := AttestationState[*attestableObservedTx]{
+		Item:                     &attestableObservedTx{ObservedTx: obsTx},
 		firstAttestationObserved: time.Now(),
 	}
 
 	// Check initial state
-	assert.Equal(t, obsTx, state.Item)
+	assert.Equal(t, obsTx, state.Item.ObservedTx)
 	assert.NotZero(t, state.firstAttestationObserved)
 	assert.Empty(t, state.attestations)
 	assert.True(t, state.initialAttestationsSent.IsZero())
 	assert.True(t, state.quorumAttestationsSent.IsZero())
 	assert.True(t, state.lastAttestationsSent.IsZero())
+}
+
+// TestAttestationStatePoolResetsSpentRefsRetryState verifies pooled observation
+// state cannot carry an XMR retry schedule into an unrelated transaction.
+func TestAttestationStatePoolResetsSpentRefsRetryState(t *testing.T) {
+	pool := NewAttestationStatePool[*attestableObservedTx]()
+	first := pool.NewAttestationState(&attestableObservedTx{ObservedTx: &common.ObservedTx{}})
+	first.spentRefsApplied = true
+	first.spentRefsNextRetryAt = time.Now().Add(time.Hour)
+	first.spentRefsRetryDelay = time.Minute
+	pool.PutAttestationState(first)
+
+	second := pool.NewAttestationState(&attestableObservedTx{ObservedTx: &common.ObservedTx{}})
+	assert.False(t, second.spentRefsApplied)
+	assert.True(t, second.spentRefsNextRetryAt.IsZero())
+	assert.Zero(t, second.spentRefsRetryDelay)
 }
 
 // TestAddAttestation tests adding attestations to the state
@@ -51,8 +67,8 @@ func TestAddAttestation(t *testing.T) {
 	}
 
 	// Create a new attestation state
-	state := AttestationState[*common.ObservedTx]{
-		Item:                     obsTx,
+	state := AttestationState[*attestableObservedTx]{
+		Item:                     &attestableObservedTx{ObservedTx: obsTx},
 		firstAttestationObserved: time.Now(),
 	}
 
@@ -116,8 +132,8 @@ func TestUnsentAttestations(t *testing.T) {
 	}
 
 	// Create a new attestation state
-	state := AttestationState[*common.ObservedTx]{
-		Item:                     obsTx,
+	state := AttestationState[*attestableObservedTx]{
+		Item:                     &attestableObservedTx{ObservedTx: obsTx},
 		firstAttestationObserved: time.Now(),
 	}
 
@@ -174,8 +190,8 @@ func TestAttestationsCopy(t *testing.T) {
 	}
 
 	// Create a new attestation state
-	state := AttestationState[*common.ObservedTx]{
-		Item:                     obsTx,
+	state := AttestationState[*attestableObservedTx]{
+		Item:                     &attestableObservedTx{ObservedTx: obsTx},
 		firstAttestationObserved: time.Now(),
 	}
 
@@ -272,8 +288,8 @@ func TestUnsentCount(t *testing.T) {
 			}
 
 			// Create a new attestation state
-			state := AttestationState[*common.ObservedTx]{
-				Item:                     obsTx,
+			state := AttestationState[*attestableObservedTx]{
+				Item:                     &attestableObservedTx{ObservedTx: obsTx},
 				firstAttestationObserved: time.Now(),
 			}
 			state.attestations = tt.attestations
@@ -299,8 +315,8 @@ func TestAttestationCount(t *testing.T) {
 	}
 
 	// Create a new attestation state
-	state := AttestationState[*common.ObservedTx]{
-		Item:                     obsTx,
+	state := AttestationState[*attestableObservedTx]{
+		Item:                     &attestableObservedTx{ObservedTx: obsTx},
 		firstAttestationObserved: time.Now(),
 	}
 
@@ -399,8 +415,8 @@ func TestShouldSendLate(t *testing.T) {
 			}
 
 			// Create a new attestation state
-			state := AttestationState[*common.ObservedTx]{
-				Item:                     obsTx,
+			state := AttestationState[*attestableObservedTx]{
+				Item:                     &attestableObservedTx{ObservedTx: obsTx},
 				firstAttestationObserved: time.Now(),
 			}
 			state.attestations = tt.attestations
@@ -467,8 +483,8 @@ func TestExpiredAfterQuorum(t *testing.T) {
 			}
 
 			// Create a new attestation state
-			state := AttestationState[*common.ObservedTx]{
-				Item:                     obsTx,
+			state := AttestationState[*attestableObservedTx]{
+				Item:                     &attestableObservedTx{ObservedTx: obsTx},
 				firstAttestationObserved: time.Now(),
 			}
 			state.quorumAttestationsSent = tt.quorumAttsSent
@@ -496,8 +512,8 @@ func TestMarkAttestationsSent(t *testing.T) {
 	}
 
 	// Create a new attestation state
-	state := AttestationState[*common.ObservedTx]{
-		Item:                     obsTx,
+	state := AttestationState[*attestableObservedTx]{
+		Item:                     &attestableObservedTx{ObservedTx: obsTx},
 		firstAttestationObserved: time.Now(),
 	}
 
@@ -617,8 +633,8 @@ func TestFullWorkflow(t *testing.T) {
 	}
 
 	// Create a new attestation state
-	state := AttestationState[*common.ObservedTx]{
-		Item:                     obsTx,
+	state := AttestationState[*attestableObservedTx]{
+		Item:                     &attestableObservedTx{ObservedTx: obsTx},
 		firstAttestationObserved: time.Now(),
 	}
 

@@ -422,6 +422,35 @@ func (s *BackfillSuite) TestBroadcastTxDupTransaction(c *C) {
 	s.client.api = savedApi
 }
 
+// TestBroadcastTxRecordsExpiringEntry is a regression guard: BroadcastTx must
+// record an EXPIRING cache entry (SetSignedWithExpiry), not a legacy never-
+// expiring SetSigned entry — otherwise TRON's whole expiry/mimir/verify path is
+// unreachable in production (HasSignedWithExpiry always reports expired=false).
+func (s *BackfillSuite) TestBroadcastTxRecordsExpiringEntry(c *C) {
+	saved := s.client.config.SignerCacheExpiry
+	s.client.config.SignerCacheExpiry = time.Nanosecond // expire (almost) immediately
+	defer func() { s.client.config.SignerCacheExpiry = saved }()
+
+	txOutItem := types.TxOutItem{
+		Chain:       common.TRONChain,
+		ToAddress:   "TU6nEM4GTca2L5AuDTnY1qp1rkQ2t8NxvM",
+		VaultPubKey: s.client.localKeyManager.Pubkey(),
+		Coins:       common.Coins{{Asset: common.TRXAsset, Amount: cosmos.NewUint(100)}},
+		GasRate:     1,
+	}
+	txBytes, _ := json.Marshal(api.Transaction{TxId: "expiring-entry"})
+
+	_, err := s.client.BroadcastTx(txOutItem, txBytes)
+	c.Assert(err, IsNil)
+
+	time.Sleep(2 * time.Millisecond)
+	signed, expired := s.client.signerCacheManager.HasSignedWithExpiry(txOutItem.CacheHash())
+	c.Assert(signed, Equals, true)
+	// A legacy SetSigned entry would report expired=false forever; that this
+	// entry has already lapsed proves BroadcastTx wrote an expiring one.
+	c.Assert(expired, Equals, true)
+}
+
 func (s *BackfillSuite) TestBroadcastTxFailedBroadcast(c *C) {
 	// Create a mock server that returns a failure
 	failServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -505,16 +534,21 @@ func (s *BackfillSuite) TestReportSolvencyAllSolventIgnoresUnrelatedVaults(c *C)
 	storage, err := blockscanner.NewBlockScannerStorage(filepath.Join(s.tmpdir, "tron-solvency"), config.LevelDBOptions{})
 	c.Assert(err, IsNil)
 
-	client := *s.client
-	clientConfig := client.config
+	clientConfig := s.client.config
 	clientConfig.BlockScanner.ChainID = common.TRONChain
 	clientConfig.BlockScanner.StartBlockHeight = 100
 
+	client := &TronClient{
+		logger:      s.client.logger,
+		config:      clientConfig,
+		chainId:     s.client.chainId,
+		tronScanner: s.client.tronScanner,
+		bridge:      bridge,
+		api:         api.NewTronApi(accountSrv.URL, time.Second),
+	}
+
 	client.blockScanner, err = blockscanner.NewBlockScanner(clientConfig.BlockScanner, storage, GetMetricForTest(c), bridge, s.scanner)
 	c.Assert(err, IsNil)
-	client.config = clientConfig
-	client.bridge = bridge
-	client.api = api.NewTronApi(accountSrv.URL, time.Second)
 	client.whitelist = nil
 	client.globalSolvencyQueue = make(chan types.Solvency, 10)
 
@@ -671,7 +705,7 @@ func (s *ScannerBackfillSuite) TestFetchMemPool(c *C) {
 // ---- GetNetworkFee ----
 
 func (s *ScannerBackfillSuite) TestGetNetworkFee(c *C) {
-	s.scanner.currentFee = 12345
+	s.scanner.currentFee.Store(12345)
 	size, rate := s.scanner.GetNetworkFee()
 	c.Assert(size, Equals, uint64(1))
 	c.Assert(rate, Equals, uint64(12345))
@@ -801,6 +835,12 @@ func (s *ScannerBackfillSuite) TestProcessTxsUnknownContractType(c *C) {
 }
 
 func (s *ScannerBackfillSuite) TestProcessTxsTransferContract(c *C) {
+	vaultAddress, err := api.ConvertAddress("41b8c702bc7c186ad437b798dae8c61727d3c69a85")
+	c.Assert(err, IsNil)
+	previous := s.scanner.pubkeyMgr
+	s.scanner.pubkeyMgr = receiptRetryVaultValidator{address: vaultAddress}
+	defer func() { s.scanner.pubkeyMgr = previous }()
+
 	memoHex := hex.EncodeToString([]byte("ADD:TRON.TRX"))
 	block := api.Block{
 		Header: struct {
@@ -812,7 +852,7 @@ func (s *ScannerBackfillSuite) TestProcessTxsTransferContract(c *C) {
 			RawData: struct {
 				Number    int64 `json:"number"`
 				Timestamp int64 `json:"timestamp"`
-			}{Number: 100, Timestamp: 1000},
+			}{Number: 69351239, Timestamp: 1000},
 		},
 		Transactions: []api.Transaction{{
 			TxId: "e1cd4454d71d8973e89155bc2c2a91aa56fd470c8ce64547ce8c69c789c21f0c",
@@ -1015,7 +1055,8 @@ func (s *ScannerBackfillSuite) TestGetTxInFromFailedTransactionNotVault(c *C) {
 		},
 	}
 
-	result := s.scanner.getTxInFromFailedTransaction(tx, 100)
+	result, err := s.scanner.getTxInFromFailedTransaction(tx, 100)
+	c.Assert(err, IsNil)
 	// MockPoolAddressValidator returns false for unknown addresses
 	c.Assert(result, IsNil)
 }
@@ -1044,7 +1085,8 @@ func (s *ScannerBackfillSuite) TestGetTxInFromFailedTransactionBadOwner(c *C) {
 		},
 	}
 
-	result := s.scanner.getTxInFromFailedTransaction(tx, 100)
+	result, err := s.scanner.getTxInFromFailedTransaction(tx, 100)
+	c.Assert(err, IsNil)
 	c.Assert(result, IsNil)
 }
 
@@ -1071,7 +1113,8 @@ func (s *ScannerBackfillSuite) TestGetTxInFromFailedTransactionUnknownType(c *C)
 		},
 	}
 
-	result := s.scanner.getTxInFromFailedTransaction(tx, 100)
+	result, err := s.scanner.getTxInFromFailedTransaction(tx, 100)
+	c.Assert(err, IsNil)
 	// The sender address conversion will succeed but the mock validator returns false
 	c.Assert(result, IsNil)
 }
@@ -1110,24 +1153,24 @@ func (s *ScannerBackfillSuite) TestDecodeTRC20InputBadMethodId(c *C) {
 
 func (s *ScannerBackfillSuite) TestUpdateFeesNotInterval(c *C) {
 	// height not divisible by updateGasInterval should be skipped
-	s.scanner.currentFee = 0
+	s.scanner.currentFee.Store(0)
 	s.scanner.updateFees(1) // not divisible by 30
-	c.Assert(s.scanner.currentFee, Equals, uint64(0))
+	c.Assert(s.scanner.currentFee.Load(), Equals, uint64(0))
 }
 
 func (s *ScannerBackfillSuite) TestUpdateFeesAtInterval(c *C) {
 	// Set up the network fee queue
 	feeChan := make(chan common.NetworkFee, 1)
 	s.scanner.globalNetworkFeeQueue = feeChan
-	s.scanner.currentFee = 0
+	s.scanner.currentFee.Store(0)
 
 	s.scanner.updateFees(updateGasInterval) // height = 30
 
 	// Should have updated currentFee and sent to the queue
-	if s.scanner.currentFee > 0 {
+	if currentFee := s.scanner.currentFee.Load(); currentFee > 0 {
 		select {
 		case fee := <-feeChan:
-			c.Assert(fee.TransactionRate, Equals, s.scanner.currentFee)
+			c.Assert(fee.TransactionRate, Equals, currentFee)
 		default:
 			c.Log("No fee sent to queue - fee might have been zero or same as before")
 		}
@@ -1140,9 +1183,9 @@ func (s *ScannerBackfillSuite) TestUpdateFeesSameFee(c *C) {
 	s.scanner.globalNetworkFeeQueue = feeChan
 
 	// First call to set the fee
-	s.scanner.currentFee = 0
+	s.scanner.currentFee.Store(0)
 	s.scanner.updateFees(updateGasInterval)
-	firstFee := s.scanner.currentFee
+	firstFee := s.scanner.currentFee.Load()
 
 	// Drain the channel
 	select {
@@ -1153,7 +1196,7 @@ func (s *ScannerBackfillSuite) TestUpdateFeesSameFee(c *C) {
 	// Second call with same parameters should skip sending
 	s.scanner.updateFees(updateGasInterval * 2)
 
-	if s.scanner.currentFee == firstFee && firstFee > 0 {
+	if s.scanner.currentFee.Load() == firstFee && firstFee > 0 {
 		// Fee did not change, no message should have been sent
 		select {
 		case <-feeChan:
@@ -1201,6 +1244,12 @@ func (s *ScannerBackfillSuite) TestFetchTxsFarBehindTip(c *C) {
 // ---- ProcessTxs with TRC20 whitelisted transfer ----
 
 func (s *ScannerBackfillSuite) TestProcessTxsTriggerSmartContractWhitelisted(c *C) {
+	vaultAddress, err := api.ConvertAddress("41b8c702bc7c186ad437b798dae8c61727d3c69a85")
+	c.Assert(err, IsNil)
+	previous := s.scanner.pubkeyMgr
+	s.scanner.pubkeyMgr = receiptRetryVaultValidator{address: vaultAddress}
+	defer func() { s.scanner.pubkeyMgr = previous }()
+
 	// Build transfer data using ABI encoding
 	tABI, err := abi.JSON(bytes.NewReader(trc20ContractABI))
 	c.Assert(err, IsNil)
@@ -1238,11 +1287,11 @@ func (s *ScannerBackfillSuite) TestProcessTxsTriggerSmartContractWhitelisted(c *
 			RawData: struct {
 				Number    int64 `json:"number"`
 				Timestamp int64 `json:"timestamp"`
-			}{Number: 100, Timestamp: 1000},
+			}{Number: 72822854, Timestamp: 1000},
 		},
 		Transactions: []api.Transaction{{
 			// Use a txId that's in the mock server for GetTransactionInfo
-			TxId: "ec7c95841e6e7f77a7e63cd6c97eb4be54e48f04b3a2bb4993b5b84e82f35ec7",
+			TxId: "ec7c95841b6a3fc4ce0adfaa3fd77dd74dbe004895ad0fd02bf63eb3ca5865d5",
 			RawData: api.RawData{
 				Data: memoHex,
 				Contract: []api.Contract{
@@ -1391,26 +1440,38 @@ func (s *ScannerBackfillSuite) TestRefBlockMaxTrimming(c *C) {
 
 	// Fill up to max
 	for i := 0; i < refBlocksMax; i++ {
-		s.scanner.refBlocks = append(s.scanner.refBlocks, RefBlock{
+		s.scanner.addRefBlock(RefBlock{
 			Timestamp: int64(i * 1000),
 			Height:    int64(i * 100),
 			Id:        fmt.Sprintf("block%d%s", i, "0000000000000000abcdef1234567890abcdef1234567890abcdef1234567890"),
 		})
 	}
 
-	c.Assert(len(s.scanner.refBlocks), Equals, refBlocksMax)
+	refBlocks := s.scanner.refBlockSnapshot()
+	c.Assert(len(refBlocks), Equals, refBlocksMax)
 
-	// Simulate adding one more (which FetchTxs does)
-	if len(s.scanner.refBlocks) >= refBlocksMax {
-		s.scanner.refBlocks = s.scanner.refBlocks[len(s.scanner.refBlocks)-(refBlocksMax-1):]
-	}
-	s.scanner.refBlocks = append(s.scanner.refBlocks, RefBlock{
+	s.scanner.addRefBlock(RefBlock{
 		Timestamp: 99999,
 		Height:    99999,
 		Id:        "new_block_id_000000000000000000000000000000000000000000000000000",
 	})
 
-	c.Assert(len(s.scanner.refBlocks), Equals, refBlocksMax)
+	refBlocks = s.scanner.refBlockSnapshot()
+	c.Assert(len(refBlocks), Equals, refBlocksMax)
+	c.Assert(refBlocks[0].Height, Equals, int64(100))
+	c.Assert(refBlocks[len(refBlocks)-1].Height, Equals, int64(99999))
+
+	// A late, older prefetch result must not displace newer retained ref blocks.
+	s.scanner.addRefBlock(RefBlock{
+		Timestamp: 500,
+		Height:    50,
+		Id:        "old_block_id_000000000000000000000000000000000000000000000000000",
+	})
+
+	refBlocks = s.scanner.refBlockSnapshot()
+	c.Assert(len(refBlocks), Equals, refBlocksMax)
+	c.Assert(refBlocks[0].Height, Equals, int64(100))
+	c.Assert(refBlocks[len(refBlocks)-1].Height, Equals, int64(99999))
 }
 
 // ---- Constants ----
@@ -1568,15 +1629,15 @@ func (s *ScannerBackfillSuite) TestUpdateFeesNoWhitelist(c *C) {
 	// Save and clear whitelist
 	savedWhitelist := s.scanner.whitelist
 	s.scanner.whitelist = map[string]tokenlist.ERC20Token{}
-	s.scanner.currentFee = 0
+	s.scanner.currentFee.Store(0)
 
 	s.scanner.updateFees(updateGasInterval)
 
 	// Should compute bandwidth-only fee (no energy) and send to queue
-	if s.scanner.currentFee > 0 {
+	if currentFee := s.scanner.currentFee.Load(); currentFee > 0 {
 		select {
 		case fee := <-feeChan:
-			c.Assert(fee.TransactionRate, Equals, s.scanner.currentFee)
+			c.Assert(fee.TransactionRate, Equals, currentFee)
 		default:
 		}
 	}
@@ -1639,6 +1700,9 @@ func (s *BackfillSuite) TestSignTxTRC20ValidToken(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(signed, NotNil)
 	c.Assert(txIn, NotNil)
+	c.Assert(txIn.Gas, HasLen, 1)
+	c.Assert(txIn.Gas[0].Amount.Uint64(), Equals, uint64(100))
+	c.Assert(txIn.Gas[0].Decimals, Equals, int64(6))
 
 	// Verify the transaction has the right structure
 	var tx api.Transaction
@@ -1661,7 +1725,7 @@ func (s *ScannerBackfillSuite) TestProcessTxsBadDestAddress(c *C) {
 			RawData: struct {
 				Number    int64 `json:"number"`
 				Timestamp int64 `json:"timestamp"`
-			}{Number: 100, Timestamp: 1000},
+			}{Number: 69351239, Timestamp: 1000},
 		},
 		Transactions: []api.Transaction{{
 			TxId: "e1cd4454d71d8973e89155bc2c2a91aa56fd470c8ce64547ce8c69c789c21f0c",
@@ -1712,7 +1776,7 @@ func (s *ScannerBackfillSuite) TestProcessTxsBadSenderAddress(c *C) {
 			RawData: struct {
 				Number    int64 `json:"number"`
 				Timestamp int64 `json:"timestamp"`
-			}{Number: 100, Timestamp: 1000},
+			}{Number: 69351239, Timestamp: 1000},
 		},
 		Transactions: []api.Transaction{{
 			TxId: "e1cd4454d71d8973e89155bc2c2a91aa56fd470c8ce64547ce8c69c789c21f0c",
@@ -1870,12 +1934,12 @@ func (s *ScannerBackfillSuite) TestUpdateFeesWithEnergyError(c *C) {
 	// Clear refAddress so getMaxEnergy fails
 	savedRefAddr := s.scanner.refAddress
 	s.scanner.refAddress = ""
-	s.scanner.currentFee = 0
+	s.scanner.currentFee.Store(0)
 
 	s.scanner.updateFees(updateGasInterval)
 
 	// Should have failed to get max energy and returned early
-	c.Assert(s.scanner.currentFee, Equals, uint64(0))
+	c.Assert(s.scanner.currentFee.Load(), Equals, uint64(0))
 
 	s.scanner.refAddress = savedRefAddr
 }

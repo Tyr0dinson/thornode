@@ -51,7 +51,7 @@ func (h RagnarokHandler) slash(ctx cosmos.Context, tx ObservedTx) error {
 
 	ctx = ctx.WithContext(context.WithValue(ctx.Context(), constants.CtxMetricLabels, []metrics.Label{
 		telemetry.NewLabel("reason", "failed_ragnarok"),
-		telemetry.NewLabel("chain", string(tx.Tx.Chain)),
+		telemetry.NewLabel("chain", telemChain(tx.Tx.Chain)),
 	}))
 
 	return h.mgr.Slasher().SlashVault(ctx, tx.ObservedPubKey, toSlash, h.mgr)
@@ -80,15 +80,27 @@ func (h RagnarokHandler) handle(ctx cosmos.Context, msg MsgRagnarok) (*cosmos.Re
 			// this type of tx out is special, because it doesn't have relevant tx
 			// in to trigger it, it is trigger by thorchain itself.
 
-			fromAddress, err := tx.VaultPubKey.GetAddress(tx.Chain)
+			var fromAddress common.Address
+			sourcePubKey, sourceErr := txOutSourcePubKey(tx)
+			if sourceErr != nil {
+				err = sourceErr
+			} else {
+				fromAddress, err = sourcePubKey.GetAddress(tx.Chain)
+			}
 			if err != nil {
-				ctx.Logger().Error("fail to get from address from vault pubkey", "error", err, "vault_pubkey", tx.VaultPubKey, "chain", tx.Chain)
+				ctx.Logger().Error(
+					"fail to get from address from vault pubkey",
+					"error", err,
+					"vault_pubkey", tx.VaultPubKey,
+					"vault_pubkey_eddsa", tx.VaultPubKeyEddsa,
+					"chain", tx.Chain,
+				)
 				continue
 			}
 
 			if tx.InHash.Equals(common.BlankTxID) &&
 				tx.OutHash.IsEmpty() &&
-				tx.ToAddress.Equals(msg.Tx.Tx.ToAddress) &&
+				common.EquivalentAddresses(tx.Chain, tx.ToAddress, msg.Tx.Tx.ToAddress) &&
 				fromAddress.Equals(msg.Tx.Tx.FromAddress) {
 
 				matchCoin := msg.Tx.Tx.Coins.EqualsEx(common.Coins{tx.Coin})

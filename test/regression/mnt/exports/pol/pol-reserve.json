@@ -42,7 +42,7 @@
         {
           "@type": "/cosmos.auth.v1beta1.ModuleAccount",
           "base_account": {
-            "account_number": "9",
+            "account_number": "10",
             "address": "tthor1fns25sytpf2gsdlg76g45620u5axm4mk8nss6j",
             "pub_key": null,
             "sequence": "0"
@@ -73,6 +73,17 @@
             "sequence": "0"
           },
           "name": "reserve",
+          "permissions": []
+        },
+        {
+          "@type": "/cosmos.auth.v1beta1.ModuleAccount",
+          "base_account": {
+            "account_number": "9",
+            "address": "tthor102ae04vpk6v2tvjgzdsc2s7ncnptj6pwz0pg2k",
+            "pub_key": null,
+            "sequence": "0"
+          },
+          "name": "stable_reserve",
           "permissions": []
         },
         {
@@ -119,9 +130,6 @@
         "tx_sig_limit": "7",
         "tx_size_cost_per_byte": "10"
       }
-    },
-    "authz": {
-      "authorization": []
     },
     "bank": {
       "balances": [
@@ -401,6 +409,7 @@
       },
       "rune_providers": [],
       "secured_assets": [],
+      "sol_vault_nonces": [],
       "streaming_swaps": [],
       "swap_queue_items": [],
       "swapper_clout": [

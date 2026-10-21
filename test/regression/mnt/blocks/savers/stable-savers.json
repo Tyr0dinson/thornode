@@ -607,6 +607,7 @@
                     "observed_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
                     "out_hashes": [],
                     "signers": [],
+                    "sol_nonce": null,
                     "status": "incomplete",
                     "tx": {
                       "chain": "ETH",
@@ -628,7 +629,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000001",
                       "memo": "+:ETH/USDC-0X9999999999999999999999999999999999999999",
                       "to_address": "0xd58610f89265a2fb637ac40edf59141ff873b266"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }
@@ -951,6 +953,7 @@
                     "observed_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
                     "out_hashes": [],
                     "signers": [],
+                    "sol_nonce": null,
                     "status": "incomplete",
                     "tx": {
                       "chain": "ETH",
@@ -972,7 +975,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000002",
                       "memo": "REFUND:0000000000000000000000000000000000000000000000000000000000000001",
                       "to_address": "0xdd99304abf262d653e2eb6722d874c2b86efdcea"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }
@@ -1431,6 +1435,7 @@
         "mode": "EndBlock",
         "pool": "ETH.USDC-0X9999999999999999999999999999999999999999",
         "pool_slip": "99",
+        "stable_reserve": "false",
         "streaming_swap_count": "1",
         "streaming_swap_quantity": "1",
         "swap_slip": "99",
@@ -1450,6 +1455,7 @@
         "mode": "EndBlock",
         "pool": "ETH.USDC-0X9999999999999999999999999999999999999999",
         "pool_slip": "49",
+        "stable_reserve": "false",
         "streaming_swap_count": "1",
         "streaming_swap_quantity": "1",
         "swap_slip": "49",
@@ -1626,6 +1632,7 @@
                     "observed_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
                     "out_hashes": [],
                     "signers": [],
+                    "sol_nonce": null,
                     "status": "incomplete",
                     "tx": {
                       "chain": "ETH",
@@ -1647,7 +1654,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000003",
                       "memo": "+:ETH/USDC-0X9999999999999999999999999999999999999999",
                       "to_address": "0xd58610f89265a2fb637ac40edf59141ff873b266"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }
@@ -1826,6 +1834,7 @@
         "mode": "EndBlock",
         "pool": "ETH.USDC-0X9999999999999999999999999999999999999999",
         "pool_slip": "49",
+        "stable_reserve": "false",
         "streaming_swap_count": "1",
         "streaming_swap_quantity": "1",
         "swap_slip": "49",
@@ -1845,6 +1854,7 @@
         "mode": "EndBlock",
         "pool": "ETH.USDC-0X9999999999999999999999999999999999999999",
         "pool_slip": "97",
+        "stable_reserve": "false",
         "streaming_swap_count": "1",
         "streaming_swap_quantity": "1",
         "swap_slip": "97",
@@ -2006,6 +2016,7 @@
                     "observed_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
                     "out_hashes": [],
                     "signers": [],
+                    "sol_nonce": null,
                     "status": "incomplete",
                     "tx": {
                       "chain": "ETH",
@@ -2027,7 +2038,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000004",
                       "memo": "-:ETH/USDC-0X9999999999999999999999999999999999999999:10000",
                       "to_address": "0xd58610f89265a2fb637ac40edf59141ff873b266"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }
@@ -2305,6 +2317,7 @@
                     "observed_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
                     "out_hashes": [],
                     "signers": [],
+                    "sol_nonce": null,
                     "status": "incomplete",
                     "tx": {
                       "chain": "ETH",
@@ -2326,7 +2339,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000005",
                       "memo": "OUT:0000000000000000000000000000000000000000000000000000000000000004",
                       "to_address": "0xdd99304abf262d653e2eb6722d874c2b86efdcea"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }

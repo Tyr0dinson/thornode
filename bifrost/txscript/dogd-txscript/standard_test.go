@@ -345,7 +345,8 @@ func TestExtractPkScriptAddrs(t *testing.T) {
 	t.Logf("Running %d tests.", len(tests))
 	for i, test := range tests {
 		class, addrs, reqSigs, err := ExtractPkScriptAddrs(
-			test.script, &chaincfg.MainNetParams)
+			test.script, &chaincfg.MainNetParams,
+		)
 		if err != nil {
 		}
 
@@ -557,7 +558,7 @@ func TestCalcScriptInfo(t *testing.T) {
 
 		if *si != test.scriptInfo {
 			t.Errorf("%s: scriptinfo doesn't match expected. "+
-				"got: %q expected %q", test.name, *si,
+				"got: %v expected %v", test.name, *si,
 				test.scriptInfo)
 			continue
 		}

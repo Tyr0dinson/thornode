@@ -4,12 +4,14 @@ import (
 	"bufio"
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/libp2p/go-libp2p-core/helpers"
 	"github.com/libp2p/go-libp2p-core/network"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
@@ -17,10 +19,19 @@ import (
 
 const (
 	LengthHeader        = 4 // LengthHeader represent how many bytes we used as header
-	TimeoutReadPayload  = time.Second * 20
-	TimeoutWritePayload = time.Second * 20
+	TimeoutReadPayload  = time.Second * 40
+	TimeoutWritePayload = time.Second * 40
 	MaxPayload          = 20000000 // 20M
+	// TSSFramePreflightBytes bounds how much of a framed TSS message is read
+	// before its type, session subscription, and authenticated peer are
+	// authorized. WrappedMessage places message_type/message_id before payload.
+	TSSFramePreflightBytes = 4096
 )
+
+// ErrTSSFramePreflightRejected distinguishes an authorization/size rejection
+// from a transport read failure so callers can reset the hostile stream
+// immediately instead of retaining it for normal session cleanup.
+var ErrTSSFramePreflightRejected = errors.New("TSS frame preflight rejected")
 
 // applyDeadline will be true , and only disable it when we are doing test
 // the reason being the p2p network , mocknet, mock stream doesn't support SetReadDeadline ,SetWriteDeadline feature
@@ -80,6 +91,28 @@ func (sm *StreamMgr) AddStream(msgID string, stream network.Stream) {
 	}
 }
 
+// closeStreamAndDrain closes the local write side before returning, then
+// observes the peer EOF in the background. AwaitEOF resets the stream on
+// timeout or protocol error, so callers do not need to retain another owner.
+func closeStreamAndDrain(stream network.Stream) error {
+	if stream == nil {
+		return nil
+	}
+	if err := stream.Close(); err != nil {
+		_ = stream.Reset()
+		return err
+	}
+	// The drain can outlive its caller. Own the logger value so a later
+	// reconfiguration of the package-global logger cannot race with it.
+	drainLogger := log.Logger
+	go func(logger zerolog.Logger) {
+		if err := helpers.AwaitEOF(stream); err != nil {
+			logger.Debug().Err(err).Msg("fail to drain peer EOF after stream close")
+		}
+	}(drainLogger)
+	return nil
+}
+
 // ReadStreamWithBuffer read data from the given stream
 func ReadStreamWithBuffer(stream network.Stream) ([]byte, error) {
 	if ApplyDeadline.Load() {
@@ -108,15 +141,95 @@ func ReadStreamWithBuffer(stream network.Stream) ([]byte, error) {
 	return dataBuf, nil
 }
 
+// readStreamWithBufferPreflight reads only a bounded prefix before invoking
+// preflight. The full frame allocation occurs only after preflight authorizes
+// the declared length and parsed session header.
+func readStreamWithBufferPreflight(
+	stream network.Stream,
+	prefixLimit int,
+	preflight func(length uint32, prefix []byte) error,
+) ([]byte, error) {
+	if stream == nil {
+		return nil, fmt.Errorf("stream is nil")
+	}
+	if prefixLimit <= 0 {
+		return nil, fmt.Errorf("invalid TSS frame preflight prefix limit")
+	}
+	if preflight == nil {
+		return nil, fmt.Errorf("TSS frame preflight callback is nil")
+	}
+	if ApplyDeadline.Load() {
+		if err := stream.SetReadDeadline(time.Now().Add(TimeoutReadPayload)); err != nil {
+			if errReset := stream.Reset(); errReset != nil {
+				return nil, errReset
+			}
+			return nil, err
+		}
+	}
+
+	lengthBytes := make([]byte, LengthHeader)
+	n, err := io.ReadFull(stream, lengthBytes)
+	if n != LengthHeader || err != nil {
+		return nil, fmt.Errorf("error in read the message head: %w", err)
+	}
+	length := binary.LittleEndian.Uint32(lengthBytes)
+	if length > MaxPayload {
+		// the global size gate runs before preflight(), so it must carry the same
+		// sentinel: otherwise handleStreamTss parks the stream in StreamUnknown
+		// instead of resetting it, and an oversized header from any gater-passing
+		// peer leaks a stream with no ceremony to release it.
+		return nil, fmt.Errorf("%w: payload length:%d exceed max payload length:%d", ErrTSSFramePreflightRejected, length, MaxPayload)
+	}
+
+	prefixBytes := int(length)
+	if prefixBytes > prefixLimit {
+		prefixBytes = prefixLimit
+	}
+	prefix := make([]byte, prefixBytes)
+	n, err = io.ReadFull(stream, prefix)
+	if n != prefixBytes || err != nil {
+		return nil, fmt.Errorf("short TSS preflight read err(%w), wanted:%d read:%d", err, prefixBytes, n)
+	}
+	if preflightErr := preflight(length, prefix); preflightErr != nil {
+		return nil, fmt.Errorf("%w: %v", ErrTSSFramePreflightRejected, preflightErr)
+	}
+
+	dataBuf := make([]byte, int(length))
+	copy(dataBuf, prefix)
+	remaining := int(length) - prefixBytes
+	if remaining == 0 {
+		return dataBuf, nil
+	}
+	n, err = io.ReadFull(stream, dataBuf[prefixBytes:])
+	if n != remaining || err != nil {
+		return nil, fmt.Errorf("short read err(%w), we would like to read: %d, however we only read: %d", err, remaining, n)
+	}
+	return dataBuf, nil
+}
+
 // WriteStreamWithBuffer write the message to stream
 func WriteStreamWithBuffer(msg []byte, stream network.Stream) error {
+	return writeStreamWithBuffer(msg, stream, true)
+}
+
+// writeStreamWithBuffer lets a caller that owns terminal cleanup suppress the
+// legacy deadline-error reset. All exported callers retain the old behavior.
+func writeStreamWithBuffer(msg []byte, stream network.Stream, resetDeadlineError bool) error {
 	length := uint32(len(msg))
+	// Fail fast on the sender: receivers enforce the same bound and reject
+	// the frame after the bandwidth is already spent, attributing the error
+	// to the wrong side.
+	if length > MaxPayload {
+		return fmt.Errorf("payload length:%d exceed max payload length:%d", length, MaxPayload)
+	}
 	lengthBytes := make([]byte, LengthHeader)
 	binary.LittleEndian.PutUint32(lengthBytes, length)
 	if ApplyDeadline.Load() {
 		if err := stream.SetWriteDeadline(time.Now().Add(TimeoutWritePayload)); err != nil {
-			if errReset := stream.Reset(); errReset != nil {
-				return errReset
+			if resetDeadlineError {
+				if errReset := stream.Reset(); errReset != nil {
+					return errReset
+				}
 			}
 			return err
 		}
@@ -204,6 +317,9 @@ func ReadStreamWithBufferWithContext(ctx context.Context, stream network.Stream)
 
 // WriteStreamWithBufferWithContext writes the message to stream with context awareness
 func WriteStreamWithBufferWithContext(ctx context.Context, msg []byte, stream network.Stream) error {
+	if len(msg) > MaxPayload {
+		return fmt.Errorf("payload length:%d exceed max payload length:%d", len(msg), MaxPayload)
+	}
 	// Determine deadline from context or use default
 	deadline := time.Now().Add(TimeoutWritePayload)
 	if dl, ok := ctx.Deadline(); ok {

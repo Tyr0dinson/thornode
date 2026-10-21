@@ -22,6 +22,41 @@ if [ -z "$SIGNER_PASSWD" ]; then
   exit 1
 fi
 
+# Resolve the signer seed phrase for roles that need one (validator, genesis,
+# bifrost). Prefer the file mount (SIGNER_SEED_PHRASE_FILE) so the secret stays
+# in tmpfs and is never persisted to the worker node's disk via the container
+# env. The SIGNER_SEED_PHRASE env var is only honored on mocknet for local
+# development. This is a function rather than top-level code so non-signing roles
+# (e.g. fullnode.sh) that source core.sh are not forced to supply a seed phrase.
+resolve_signer_seed_phrase() {
+  if [ -n "$SIGNER_SEED_PHRASE_FILE" ] && [ -r "$SIGNER_SEED_PHRASE_FILE" ]; then
+    SIGNER_SEED_PHRASE="$(cat "$SIGNER_SEED_PHRASE_FILE")"
+    # Trim leading/trailing whitespace for parity with the Go reader (strings.TrimSpace).
+    SIGNER_SEED_PHRASE="${SIGNER_SEED_PHRASE#"${SIGNER_SEED_PHRASE%%[![:space:]]*}"}"
+    SIGNER_SEED_PHRASE="${SIGNER_SEED_PHRASE%"${SIGNER_SEED_PHRASE##*[![:space:]]}"}"
+  elif [ "$NET" != "mocknet" ] || [ -z "$SIGNER_SEED_PHRASE" ]; then
+    echo "SIGNER_SEED_PHRASE_FILE must point to a readable seed phrase file (SIGNER_SEED_PHRASE env var is only honored on mocknet)"
+    exit 1
+  fi
+  # Fail loudly on a missing, empty, or corrupt phrase rather than letting
+  # create_thor_user silently fall through to generating a brand-new key. This
+  # uses the same validation as the Go reader (common.IsValidMnemonic).
+  if ! validate_err=$(printf '%s' "$SIGNER_SEED_PHRASE" | thornode validate-seed-phrase 2>&1); then
+    echo "SIGNER_SEED_PHRASE is not a valid BIP39 mnemonic (refusing to start): $validate_err"
+    exit 1
+  fi
+  # A valid but shorter-than-24-word seed passes validation but cannot produce a
+  # keyshare DR backup; validate-seed-phrase emits a warning on stderr in that case.
+  # Surface it at provisioning so the operator sees it before bonding, not only at
+  # the first keygen.
+  if [ -n "$validate_err" ]; then
+    echo "$validate_err"
+  fi
+  # Intentionally NOT exported: every consumer takes the phrase as a positional
+  # arg or via a stdin pipe, so it must never enter the daemon's environment on
+  # real networks -- that env exposure is exactly what the file mount removes.
+}
+
 # adds an account node into the genesis file
 add_node_account() {
   NODE_ADDRESS=$1
@@ -55,6 +90,20 @@ add_account() {
         "coins": [ { "denom": $ASSET, "amount": $AMOUNT } ],
     }]' <~/.thornode/config/genesis.json >/tmp/genesis.json
   mv /tmp/genesis.json ~/.thornode/config/genesis.json
+}
+
+account_exists() {
+  jq -e --arg ADDRESS "$1" '.app_state.bank.balances[]? | select(.address == $ADDRESS)' \
+    ~/.thornode/config/genesis.json >/dev/null
+}
+
+add_account_if_missing() {
+  if account_exists "$1"; then
+    echo "Skipping duplicate genesis account for $1"
+    return
+  fi
+
+  add_account "$@"
 }
 
 reserve() {

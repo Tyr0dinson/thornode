@@ -6,7 +6,7 @@
 
 # THORChain
 
-THORChain is a decentralised liquidity network built with [CosmosSDK](https://cosmos.network) and [TSS-lib](https://github.com/bnb-chain/tss-lib)
+THORChain is a decentralised liquidity network built with [CosmosSDK](https://cosmos.network) and [tss-lib-private](https://gitlab.com/thorchain/tss/tss-lib-private)
 
 ## THORNodes
 
@@ -60,7 +60,14 @@ ln -sf $(which gawk) /usr/local/bin/awk
 
 Install [Docker and Docker Compose V2](https://docs.docker.com/engine/install/).
 
-Ensure you have a recent version of go ([scripts/check-env.sh](https://gitlab.com/thorchain/thornode/-/blob/develop/scripts/check-env.sh#L46-48)) and enabled go modules.<br/>
+This project must be built with **Go `1.26.10`** (see `go.mod` and `.go-version`).<br/>
+If your workspace has multiple Go versions, set:
+
+```bash
+go env -w GOTOOLCHAIN=go1.26.10
+```
+
+Ensure go modules are enabled.<br/>
 Add `GOBIN` to your `PATH`.
 
 ```bash
@@ -202,7 +209,7 @@ go build -tags cgo,ledger
 - If you have completed this step (or have the required permissions to use the shared runners) make sure the pipeline completes and all is green
 - Once the PR gets all required approvals by other contributors, it can be merged
 
-Current active branch is `develop`, so when you open PR, make sure your target branch is `develop`
+Current active branch is `develop`, so when you open a PR, make sure your target branch is `develop`
 
 ## ADRs
 

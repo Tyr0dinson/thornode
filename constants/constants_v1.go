@@ -119,6 +119,7 @@ func NewConstantValue() *ConstantVals {
 			MemolessTxnRefCount:                 99_999,             // max number of reference ids per chain
 			MemolessTxnCost:                     0,                  // additional cost in RUNE to register a memoless txn (operational mimir)
 			MemolessTxnMaxUse:                   1,                  // maximum times a reference id can be utilized before refunding (operational mimir)
+			MemolessTxnCostSlopeBPS:             0,                  // steepness of the memoless cost curve as reference slots fill, 0 = flat MemolessTxnCost (operational mimir)
 			L1SlipMinBps:                        0,                  // Minimum L1 asset swap fee in basis points
 			TradeAccountsSlipMinBps:             0,                  // Minimum trade asset swap fee in basis points
 			SecuredAssetSlipMinBps:              5,                  // Minimum secured asset swap fee in basis points
@@ -161,6 +162,11 @@ func NewConstantValue() *ConstantVals {
 			ChainLiquidityRunePerValidator:      100_000_00000000,   // per-validator liquidity cap when chain support < 2/3 (100k RUNE)
 			POLReserveSystemIncomeBps:           0,                  // basis points of system income routed to POL reserve, 0 = disabled
 			POLReserveMaxDeployment:             10_000_000_000,     // maximum RUNE deployed per pool per block (100 RUNE in 1e8 units)
+			StableReserveEnabled:                0,                  // enable/disable Stable Reserve
+			StableReserveDepegToleranceBps:      100,                // maximum stable oracle deviation from $1 in basis points
+			StableReservePOLShareBps:            0,                  // share of POLReserveSystemIncomeBps routed to Stable Reserve
+			StableReserveWithdrawalRequestMax:   10_000,             // maximum request coin amount accepted for Stable Reserve withdrawals
+			StableReserveOraclePricing:          0,                  // 0 = fill stable reserve swaps 1:1, 1 = scale the fill by the oracle price ratio
 			L1DynamicFeeEnabled:                 0,                  // enable/disable dynamic L1 min fee
 			L1DynamicFeeEpochBlocks:             14400,              // number of blocks per dynamic fee epoch
 			L1DynamicFeeFloorBPS:                1,                  // floor basis points for dynamic L1 min fee
@@ -168,6 +174,15 @@ func NewConstantValue() *ConstantVals {
 			L1DynamicFeeStepBPS:                 1,                  // step basis points for dynamic L1 min fee adjustment
 			L1DynamicFeeDeadbandBPS:             1000,               // % change in fees_rune (in bps, 10000 = 100%) below which the dynamic L1 fee controller holds
 			L1DynamicFeeWindowEpochs:            3,                  // epochs averaged on each side of the last bps change when measuring the fees_rune gradient (clamped into [1, MaxDynamicFeeHistory])
+			VaultDeficitGasHaltMaxGasMultiplier: 30,                 // multiple of current max gas at which gas-related vault deficits halt signing and trading
+			MaxAbsentKeygenReporters:            1,                  // number of keygen members allowed to skip MsgTssPool reporting before a successful keygen finalizes (mainnet default)
+			BondYieldEnabled:                    0,                  // enable/disable automatic bond-yield payouts
+			MaxMissingObservationChurnOut:       0,                  // max number of nodes to be churned out per churn for missing observations on a chain (0 = off)
+			MissingObservationChurnOutBps:       5000,               // a node is marked when its decayed missed/total observation ratio on any chain is above this (basis points)
+			MissingObservationGuardBps:          1000,               // skip a voter as a shared event when more than this share of the nodes missed it, not counting nodes already failing its chain that missed it (basis points)
+			MissingObservationHalfLife:          43200,              // blocks between halvings of the missed-observation tallies
+			MissingObservationMinSamples:        24,                 // minimum decayed voters on a chain before a node's ratio on it counts
+			MissingObservationGuardMaxBlocks:    43200,              // the shared-event guard's grace per chain, in blocks: used up while its voters are skipped, refilled at the same rate while they pass (0 = never expires)
 		},
 		boolValues: map[ConstantName]bool{
 			StrictBondLiquidityRatio: true,

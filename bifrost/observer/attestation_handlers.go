@@ -15,11 +15,21 @@ import (
 
 // AttestObservedTx creates and broadcasts an attestation for an observed transaction
 func (s *AttestationGossip) AttestObservedTx(ctx context.Context, obsTx *common.ObservedTx, inbound, allowFutureObservation bool) error {
-	if !s.isActiveValidator(s.host.ID()) {
-		return fmt.Errorf("skipping attest observed tx: not active")
+	return s.attestObservedTx(ctx, obsTx, inbound, allowFutureObservation, false)
+}
+
+func (s *AttestationGossip) attestObservedTx(ctx context.Context, obsTx *common.ObservedTx, inbound, allowFutureObservation, historicalOnly bool) error {
+	if obsTx == nil {
+		return fmt.Errorf("observed tx is nil")
+	}
+	isActive := s.isActiveValidator(s.host.ID())
+	if historicalOnly && isActive {
+		// The node-status poll and the gossip active-set refresh are independent.
+		// Never acknowledge a historical handoff via non-durable ordinary gossip.
+		return fmt.Errorf("historical XMR handoff is waiting for node status to agree with gossip membership")
 	}
 
-	signBz, err := obsTx.GetSignablePayload()
+	signBz, err := obsTx.GetSignablePayloadWithInbound(inbound)
 	if err != nil {
 		return fmt.Errorf("fail to marshal tx sign payload: %w", err)
 	}
@@ -38,12 +48,31 @@ func (s *AttestationGossip) AttestObservedTx(ctx context.Context, obsTx *common.
 			Signature: signature,
 		},
 	}
+	if !isActive {
+		if !obsTx.Tx.Chain.Equals(common.XMRChain) || inbound || len(obsTx.SpentOutputRefs) == 0 {
+			return fmt.Errorf("skipping attest observed tx: not active")
+		}
+		// A churned-out member may still certify a spend by a source vault it
+		// historically controlled. Keep this out of observedTxs and the ordinary
+		// batch protocol: it is a source-vault certificate share, never an active
+		// validator observation vote.
+		if s.certificateObserver == nil || s.certificateObserver.storage == nil {
+			return fmt.Errorf("historical XMR certificate durable storage is unavailable")
+		}
+		_, canonical, err := s.validateHistoricalXMRSpentRefCertificate(msg, "")
+		if err != nil {
+			return err
+		}
+		// Transfer ownership before Observer acknowledges the scanner. Only the
+		// durable producer worker transmits this payload.
+		return s.certificateObserver.storage.savePendingXMRCertificate(canonical)
+	}
 
 	// Handle the attestation locally first
 	s.logger.Debug().Msg("handling attestation locally")
-	s.handleObservedTxAttestation(ctx, msg)
-
-	s.batcher.AddObservedTx(msg)
+	// Keep local delivery independent of bucket compatibility. Enqueue validates
+	// the outgoing payload and rechecks durable XMR admission after local handling.
+	s.handleObservedTxAttestationInternal(ctx, msg, true)
 
 	return nil
 }
@@ -132,15 +161,17 @@ func (s *AttestationGossip) AttestSolvency(ctx context.Context, solvency common.
 
 // AttestErrata creates and broadcasts an attestation for an errata transaction
 func (s *AttestationGossip) AttestErrata(ctx context.Context, errata common.ErrataTx) error {
-	// First remove any observed transactions for this chain/tx ID
-	s.mu.Lock()
-	for k := range s.observedTxs {
-		if k.Chain.Equals(errata.Chain) && k.ID.Equals(errata.Id) {
-			// Remove this tx from the list as we've observed an error
-			delete(s.observedTxs, k)
+	// XMR durable retries only retransmit evidence: initial cleanup belongs
+	// to Observer. Preserve the legacy one-shot TxID cleanup for other chains.
+	if !errata.Chain.Equals(common.XMRChain) {
+		s.mu.Lock()
+		for k := range s.observedTxs {
+			if k.Chain.Equals(errata.Chain) && k.ID.Equals(errata.Id) {
+				delete(s.observedTxs, k)
+			}
 		}
+		s.mu.Unlock()
 	}
-	s.mu.Unlock()
 
 	if !s.isActiveValidator(s.host.ID()) {
 		return fmt.Errorf("skipping attest errata tx: not active")
@@ -166,11 +197,47 @@ func (s *AttestationGossip) AttestErrata(ctx context.Context, errata common.Erra
 
 	// Handle the attestation locally first
 	s.logger.Debug().Msg("handling attestation locally")
-	s.handleErrataAttestation(ctx, msg)
+	// AttestErrata is invoked by the Observer's durable pending-tombstone
+	// outbox. Unlike peer gossip, that retry source may re-arm an identical
+	// uncommitted vote after the configured throttle interval.
+	s.handlePendingErrataAttestation(ctx, msg)
 
 	s.batcher.AddErrataTx(msg)
 
 	return nil
+}
+
+// removeObservedTxsForErrata is the volatile half of initial cleanup. XMR
+// callers hold the writer barrier; orphanHeight zero purges a permanent TxID.
+//
+// Finalization rewrites BlockHeight, so this height-scoped cleanup must ship
+// with canonical mined-height checks in cleanup, batch purging and admission:
+// https://gitlab.com/thorchain/thornode/-/merge_requests/5065.
+// Economic XMR activity may predate that change. Deployment must also handle
+// existing observations and voters without mined-height metadata.
+func (s *AttestationGossip) removeObservedTxsForErrata(errata common.ErrataTx, orphanHeight int64) {
+	s.mu.Lock()
+	for k, state := range s.observedTxs {
+		if !k.Chain.Equals(errata.Chain) || !k.ID.Equals(errata.Id) {
+			continue
+		}
+		if errata.Chain.Equals(common.XMRChain) && orphanHeight > 0 &&
+			state != nil && state.Item != nil && state.Item.ObservedTx != nil {
+			// Retain only a proven different location; unavailable metadata
+			// cannot establish that this queued observation survived the reorg.
+			minedHeight, err := state.Item.ObservedTx.CanonicalMinedHeight()
+			if err == nil && minedHeight != orphanHeight {
+				continue
+			}
+		}
+		// Do not pool detached state: an unrelated-chain handler may still
+		// own it. XMR readers are excluded by the cleanup writer.
+		delete(s.observedTxs, k)
+	}
+	s.mu.Unlock()
+	if s.batcher != nil {
+		s.batcher.removeObservedTxsForErrata(errata, orphanHeight)
+	}
 }
 
 // AttestPriceFeed creates and broadcasts an attestation for a price feed
@@ -245,7 +312,7 @@ func (s *AttestationGossip) handleStreamAttestationState(stream network.Stream) 
 	case data[0] == prefixBatchBegin[0]:
 
 		s.stateInitMu.Lock()
-		if s.stateInitPeers == nil {
+		if s.stateInitPeers == nil || s.stateInitContext == nil {
 			// we are not asking for attestation state
 			s.stateInitMu.Unlock()
 			s.logger.Warn().Msg("skipping attestation state stream, not asking for it")
@@ -256,6 +323,10 @@ func (s *AttestationGossip) handleStreamAttestationState(stream network.Stream) 
 			return
 		}
 		_, ok := s.stateInitPeers[remotePeer]
+		ctx, workers := s.stateInitContext, s.stateInitWorkers
+		if ok {
+			workers.Add(1)
+		}
 		s.stateInitMu.Unlock()
 		if !ok {
 			// unauthorized peer
@@ -267,9 +338,12 @@ func (s *AttestationGossip) handleStreamAttestationState(stream network.Stream) 
 			return
 		}
 
+		// Registration and closing admission share stateInitMu, so the group
+		// can cancel and join these imports without racing WaitGroup.Add.
+		defer workers.Done()
 		// Batched state transmission
 		logger.Debug().Msg("handling batched attestation state")
-		err := s.receiveBatchedAttestationState(stream, data[1:])
+		err := s.receiveBatchedAttestationStateWithContext(ctx, stream, data[1:])
 		if err != nil {
 			logger.Error().Err(err).Msg("failed to receive batched attestation state")
 		}

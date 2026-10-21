@@ -48,7 +48,6 @@ func NewMockServer() *httptest.Server {
 
 			switch height {
 			case 55088560, 69351239:
-				w.WriteHeader(http.StatusOK)
 				filename := fmt.Sprintf("test-tron/getblockbynum_%d.json", height)
 				data, _ := responses.ReadFile(filename)
 				_, _ = w.Write(data)
@@ -67,7 +66,7 @@ func NewMockServer() *httptest.Server {
 			}
 
 			switch short {
-			case "ec7c9584", "e1cd4454":
+			case "77ddfa70", "ec7c9584", "e1cd4454":
 				filename := fmt.Sprintf("test-tron/gettransactioninfobyid_%s.json", short)
 				data, _ := responses.ReadFile(filename)
 				w.WriteHeader(http.StatusOK)
@@ -77,6 +76,26 @@ func NewMockServer() *httptest.Server {
 
 			w.WriteHeader(http.StatusNotFound)
 			_, _ = w.Write(nil)
+
+		case "gettransactionbyid":
+			value, found := params["value"]
+
+			var short string
+			if found {
+				short = fmt.Sprintf("%s", value)[:8]
+			}
+
+			switch short {
+			case "77ddfa70", "deadbeef":
+				data, _ := responses.ReadFile(fmt.Sprintf("test-tron/gettransactionbyid_%s.json", short))
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write(data)
+				return
+			}
+
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("{}"))
+			return
 
 		case "getaccount":
 			address, found := params["address"]

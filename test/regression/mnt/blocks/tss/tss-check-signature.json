@@ -232,7 +232,7 @@
         }
       },
       "last_commit_hash": "",
-      "data_hash": "625B8BC143CAC3F12A7D5E1CCB4110ACBFB5165C853F20E4C272495468DC64B8",
+      "data_hash": "1B9726179DBB04B64FD8CEB273A17A159F712067BBE57A53F122DE5A0BA3E5AA",
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
@@ -246,7 +246,7 @@
     "end_block_events": [],
     "txs": [
       {
-        "hash": "D2A96DE4E3EBA81C4E7CF307FF73F666F1661619F3A0347AD290CB6DF2BF1B98",
+        "hash": "6DBCB38FC028354AF1F2E40E167C480703FFB76CDB8D2F0987A1C52F571EE5F6",
         "tx": {
           "auth_info": {
             "fee": {
@@ -282,14 +282,17 @@
                   "THOR",
                   "BTC"
                 ],
-                "height": "4",
-                "id": "6a46ee9987ccc77c62cddbe8a71c1f80c97e604c7c73d5f6c0ec606615805bf5",
+                "height": "2",
+                "id": "1db90155c84a74be76b6ec7b10a4ca8b98ce3337bbf3cbd47945acdbc6f0691f",
                 "keygen_time": "0",
                 "keygen_type": "AsgardKeygen",
                 "keyshares_backup": null,
                 "keyshares_backup_eddsa": null,
-                "pool_pub_key": "tthorpub1addwnpepqw7qvv8309c06z96nwcfhrp5efm2wa2h7nratlgvwpgwksm8d5zwugq792v",
+                "keyshares_backup_frost": null,
+                "observed_monero_height": "0",
+                "pool_pub_key": "tthorpub1addwnpepqtunpzspjfvvxyzfx38ct7ya2g5m2vwggkpklxdsscqlzyauuqm0j005zl9",
                 "pool_pub_key_eddsa": "",
+                "pool_pub_key_frost": "",
                 "pub_keys": [
                   "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
                   "tthorpub1addwnpepqv8lvvqmczr893yf7zyf7xtffccf032aprl8z09y3e3nfruedew85n306k5",
@@ -305,7 +308,7 @@
             "unordered": false
           },
           "signatures": [
-            "JRaWmbaE22uCLPC5lCSlWw+bbsHtv+2vj0+bz4cyTQJ7ykZS0DWrJWFr/ryEYfx/o3FR7Cuu32DTrUVr22LWpQ=="
+            "BZCLTRRFpVJjOtbb5KK1Mryrc7jffXISaUiYQEC1gJkZ0oHq3YXqHvGglHdTpZg7NzNJSMqxK8K2qpzfTiPlrQ=="
           ]
         },
         "result": {
@@ -318,7 +321,7 @@
               "type": "tx"
             },
             {
-              "signature": "JRaWmbaE22uCLPC5lCSlWw+bbsHtv+2vj0+bz4cyTQJ7ykZS0DWrJWFr/ryEYfx/o3FR7Cuu32DTrUVr22LWpQ==",
+              "signature": "BZCLTRRFpVJjOtbb5KK1Mryrc7jffXISaUiYQEC1gJkZ0oHq3YXqHvGglHdTpZg7NzNJSMqxK8K2qpzfTiPlrQ==",
               "type": "tx"
             },
             {
@@ -332,7 +335,7 @@
         }
       },
       {
-        "hash": "5813BF44D255924438534F92B609F7C59FCAFEC94284DC015BD10DEF6F4A69CB",
+        "hash": "EF170EE2AC1228D546974CC79E9372056A2EC4F7D5C36922A6D3C418C08E51D8",
         "tx": {
           "auth_info": {
             "fee": {
@@ -368,14 +371,17 @@
                   "THOR",
                   "BTC"
                 ],
-                "height": "4",
-                "id": "6a46ee9987ccc77c62cddbe8a71c1f80c97e604c7c73d5f6c0ec606615805bf5",
+                "height": "2",
+                "id": "1db90155c84a74be76b6ec7b10a4ca8b98ce3337bbf3cbd47945acdbc6f0691f",
                 "keygen_time": "0",
                 "keygen_type": "AsgardKeygen",
                 "keyshares_backup": null,
                 "keyshares_backup_eddsa": null,
-                "pool_pub_key": "tthorpub1addwnpepqw7qvv8309c06z96nwcfhrp5efm2wa2h7nratlgvwpgwksm8d5zwugq792v",
+                "keyshares_backup_frost": null,
+                "observed_monero_height": "0",
+                "pool_pub_key": "tthorpub1addwnpepqtunpzspjfvvxyzfx38ct7ya2g5m2vwggkpklxdsscqlzyauuqm0j005zl9",
                 "pool_pub_key_eddsa": "",
+                "pool_pub_key_frost": "",
                 "pub_keys": [
                   "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
                   "tthorpub1addwnpepqv8lvvqmczr893yf7zyf7xtffccf032aprl8z09y3e3nfruedew85n306k5",
@@ -391,7 +397,7 @@
             "unordered": false
           },
           "signatures": [
-            "WfKcPQs+ef2H1+TnYGkDCcQOBaTVlDJQJcDsNfqqzCwRXGYoOftlHc59qMJVQtXmH1N7svoGCEGH9h9A+PJrlw=="
+            "KAut9ip4rUewW7YTJoNESJikYWGPkIAeDWpoGF2z8p52EN2Y2j6nFI0t/TYRFTZ/F50J/zGhUZeZUmq1wdrzCw=="
           ]
         },
         "result": {
@@ -404,7 +410,7 @@
               "type": "tx"
             },
             {
-              "signature": "WfKcPQs+ef2H1+TnYGkDCcQOBaTVlDJQJcDsNfqqzCwRXGYoOftlHc59qMJVQtXmH1N7svoGCEGH9h9A+PJrlw==",
+              "signature": "KAut9ip4rUewW7YTJoNESJikYWGPkIAeDWpoGF2z8p52EN2Y2j6nFI0t/TYRFTZ/F50J/zGhUZeZUmq1wdrzCw==",
               "type": "tx"
             },
             {
@@ -418,7 +424,7 @@
         }
       },
       {
-        "hash": "742CC3816BBCA89891ACD23504B174ACC607D11ABE3545E9DA4C2CFB23BD70F0",
+        "hash": "B5A669859203A09588428615FEEBDB0CCA33113B2C59BBD5BBF91F913E19C193",
         "tx": {
           "auth_info": {
             "fee": {
@@ -454,14 +460,17 @@
                   "THOR",
                   "BTC"
                 ],
-                "height": "4",
-                "id": "6a46ee9987ccc77c62cddbe8a71c1f80c97e604c7c73d5f6c0ec606615805bf5",
+                "height": "2",
+                "id": "1db90155c84a74be76b6ec7b10a4ca8b98ce3337bbf3cbd47945acdbc6f0691f",
                 "keygen_time": "0",
                 "keygen_type": "AsgardKeygen",
                 "keyshares_backup": null,
                 "keyshares_backup_eddsa": null,
-                "pool_pub_key": "tthorpub1addwnpepqw7qvv8309c06z96nwcfhrp5efm2wa2h7nratlgvwpgwksm8d5zwugq792v",
+                "keyshares_backup_frost": null,
+                "observed_monero_height": "0",
+                "pool_pub_key": "tthorpub1addwnpepqtunpzspjfvvxyzfx38ct7ya2g5m2vwggkpklxdsscqlzyauuqm0j005zl9",
                 "pool_pub_key_eddsa": "",
+                "pool_pub_key_frost": "",
                 "pub_keys": [
                   "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
                   "tthorpub1addwnpepqv8lvvqmczr893yf7zyf7xtffccf032aprl8z09y3e3nfruedew85n306k5",
@@ -477,7 +486,7 @@
             "unordered": false
           },
           "signatures": [
-            "qBUXMYK6B/JJKGW45UmrVrLEnSajiorfBedItWmsullVyH3UIrTLJUswFTduYxvVdzb7YmBFg9hsYTEDgRBRXw=="
+            "99NwpfVeEYGVWPr6GnEdPiDdV5prDceA+rythHRIvtoAfVQSSmn6HnFYulEybYPp1xIWvxRBqDNdagn2pEUzIg=="
           ]
         },
         "result": {
@@ -490,7 +499,7 @@
               "type": "tx"
             },
             {
-              "signature": "qBUXMYK6B/JJKGW45UmrVrLEnSajiorfBedItWmsullVyH3UIrTLJUswFTduYxvVdzb7YmBFg9hsYTEDgRBRXw==",
+              "signature": "99NwpfVeEYGVWPr6GnEdPiDdV5prDceA+rythHRIvtoAfVQSSmn6HnFYulEybYPp1xIWvxRBqDNdagn2pEUzIg==",
               "type": "tx"
             },
             {
@@ -567,7 +576,7 @@
         }
       },
       "last_commit_hash": "",
-      "data_hash": "9A612EBBC005586F49D598CFDF6372F01ABE1208B9C308F49C07248EDFD6793F",
+      "data_hash": "130EB5759F7D0D1C869C39715DDFF6BD8C6B849E494AAB3D1722E9A357C903F2",
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
@@ -581,7 +590,7 @@
     "end_block_events": [],
     "txs": [
       {
-        "hash": "DD39D9EDECA64F3270B776CE6C30FCE2CE6847D6B6A4D138680897D355C5F543",
+        "hash": "D17CBCCBEA944E2F33572A49E14DB02A60954431394B9285FB6A7D3A3C35BC66",
         "tx": {
           "auth_info": {
             "fee": {
@@ -617,14 +626,17 @@
                   "THOR",
                   "BTC"
                 ],
-                "height": "6",
-                "id": "04f926ad07e5d86acf1f873be94ce51be0c20e0b6fac3ad904ad2ebbd861ee21",
+                "height": "2",
+                "id": "78fe3167d8425807edb8cea3481f45b7e0d5bc2a778935d2bd0630f886af5589",
                 "keygen_time": "0",
                 "keygen_type": "AsgardKeygen",
                 "keyshares_backup": null,
                 "keyshares_backup_eddsa": null,
+                "keyshares_backup_frost": null,
+                "observed_monero_height": "0",
                 "pool_pub_key": "tthorpub1addwnpepqw7qvv8309c06z96nwcfhrp5efm2wa2h7nratlgvwpgwksm8d5zwugq792v",
                 "pool_pub_key_eddsa": "",
+                "pool_pub_key_frost": "",
                 "pub_keys": [
                   "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
                   "tthorpub1addwnpepqv8lvvqmczr893yf7zyf7xtffccf032aprl8z09y3e3nfruedew85n306k5",
@@ -640,7 +652,7 @@
             "unordered": false
           },
           "signatures": [
-            "t+NGMOZTrUfnqQMgJ6CkE/zVrt5KjhGzSr1qRnmO/d8E096tD45HvVA07bzsgLcqDkwaFE2FetvyvJ1cky93gQ=="
+            "TL9GHR627Jw4MlTbLbzOFtpDqUrWNF6frIrFd57IuRh4faeIKf6Y28jkV6dQMuKI4QAQxd4hVmqshZdpJzU02Q=="
           ]
         },
         "result": {
@@ -653,7 +665,7 @@
               "type": "tx"
             },
             {
-              "signature": "t+NGMOZTrUfnqQMgJ6CkE/zVrt5KjhGzSr1qRnmO/d8E096tD45HvVA07bzsgLcqDkwaFE2FetvyvJ1cky93gQ==",
+              "signature": "TL9GHR627Jw4MlTbLbzOFtpDqUrWNF6frIrFd57IuRh4faeIKf6Y28jkV6dQMuKI4QAQxd4hVmqshZdpJzU02Q==",
               "type": "tx"
             },
             {
@@ -667,7 +679,7 @@
         }
       },
       {
-        "hash": "19B6BFF1D900D1B463AC2FF8E5EC8C96A63F713F67DC8E4DF0BD1D52686C7304",
+        "hash": "808AB2861246BCB63A9D67ACA14EA5C55A63103E688540032D421E4852DA7386",
         "tx": {
           "auth_info": {
             "fee": {
@@ -703,14 +715,17 @@
                   "THOR",
                   "BTC"
                 ],
-                "height": "6",
-                "id": "04f926ad07e5d86acf1f873be94ce51be0c20e0b6fac3ad904ad2ebbd861ee21",
+                "height": "2",
+                "id": "78fe3167d8425807edb8cea3481f45b7e0d5bc2a778935d2bd0630f886af5589",
                 "keygen_time": "0",
                 "keygen_type": "AsgardKeygen",
                 "keyshares_backup": null,
                 "keyshares_backup_eddsa": null,
+                "keyshares_backup_frost": null,
+                "observed_monero_height": "0",
                 "pool_pub_key": "tthorpub1addwnpepqw7qvv8309c06z96nwcfhrp5efm2wa2h7nratlgvwpgwksm8d5zwugq792v",
                 "pool_pub_key_eddsa": "",
+                "pool_pub_key_frost": "",
                 "pub_keys": [
                   "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
                   "tthorpub1addwnpepqv8lvvqmczr893yf7zyf7xtffccf032aprl8z09y3e3nfruedew85n306k5",
@@ -726,7 +741,7 @@
             "unordered": false
           },
           "signatures": [
-            "+/L0K5iEOe0AJK18Wfi6o/eHgVrIUpP9vRZfSCQh6cc+m041888GBMX4cwefd/hAyPY/TQdyTTPa3Br8dA0fZw=="
+            "1vySWSbr9p5YK8KCRHJY4AnsF4hw6qoohz12Ps3vK+0d74RVQSdLlZ8rT5FwAE6L5m1bHmVLH0anDOyGlUR+sQ=="
           ]
         },
         "result": {
@@ -739,7 +754,7 @@
               "type": "tx"
             },
             {
-              "signature": "+/L0K5iEOe0AJK18Wfi6o/eHgVrIUpP9vRZfSCQh6cc+m041888GBMX4cwefd/hAyPY/TQdyTTPa3Br8dA0fZw==",
+              "signature": "1vySWSbr9p5YK8KCRHJY4AnsF4hw6qoohz12Ps3vK+0d74RVQSdLlZ8rT5FwAE6L5m1bHmVLH0anDOyGlUR+sQ==",
               "type": "tx"
             },
             {
@@ -753,7 +768,7 @@
         }
       },
       {
-        "hash": "961C229409C89618BAD46C5980B7C6EB051608DD790F197DA9D45B6AF8190185",
+        "hash": "F24E70AAC267F6DFB83C69D023D4DD30F4C8BC34328E1F845CF55D61EA8734E3",
         "tx": {
           "auth_info": {
             "fee": {
@@ -789,14 +804,17 @@
                   "THOR",
                   "BTC"
                 ],
-                "height": "6",
-                "id": "04f926ad07e5d86acf1f873be94ce51be0c20e0b6fac3ad904ad2ebbd861ee21",
+                "height": "2",
+                "id": "78fe3167d8425807edb8cea3481f45b7e0d5bc2a778935d2bd0630f886af5589",
                 "keygen_time": "0",
                 "keygen_type": "AsgardKeygen",
                 "keyshares_backup": null,
                 "keyshares_backup_eddsa": null,
+                "keyshares_backup_frost": null,
+                "observed_monero_height": "0",
                 "pool_pub_key": "tthorpub1addwnpepqw7qvv8309c06z96nwcfhrp5efm2wa2h7nratlgvwpgwksm8d5zwugq792v",
                 "pool_pub_key_eddsa": "",
+                "pool_pub_key_frost": "",
                 "pub_keys": [
                   "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
                   "tthorpub1addwnpepqv8lvvqmczr893yf7zyf7xtffccf032aprl8z09y3e3nfruedew85n306k5",
@@ -812,7 +830,7 @@
             "unordered": false
           },
           "signatures": [
-            "LVWPXjV68+fTSu2BjMatogOklqJmS2eAQyrYZ2n0/qYA/ZMFIyQpbhrR+tlS6+hPxz4EDd4oBFMsw3gL1YG79A=="
+            "5B5/+bl1Bz71WQv3Y38cgwI0edpz63ogCuqqvTtWahsHywoiNKpU5E81tghqx8/W25cn98fykt1jVxImLp0AlA=="
           ]
         },
         "result": {
@@ -825,7 +843,7 @@
               "type": "tx"
             },
             {
-              "signature": "LVWPXjV68+fTSu2BjMatogOklqJmS2eAQyrYZ2n0/qYA/ZMFIyQpbhrR+tlS6+hPxz4EDd4oBFMsw3gL1YG79A==",
+              "signature": "5B5/+bl1Bz71WQv3Y38cgwI0edpz63ogCuqqvTtWahsHywoiNKpU5E81tghqx8/W25cn98fykt1jVxImLp0AlA==",
               "type": "tx"
             },
             {
@@ -902,7 +920,7 @@
         }
       },
       "last_commit_hash": "",
-      "data_hash": "3AD28D78AA1647F4B6DDD0CF43B1E853E68A6A45DF529C8DB5D9B1F858647E71",
+      "data_hash": "93F8A0BCD1E21F87246BC0291BF467260F691C450C089BC4CB8EB77114813650",
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
@@ -916,7 +934,7 @@
     "end_block_events": [],
     "txs": [
       {
-        "hash": "46C10F73C504A4186F56079470B2A3AFD720F76E091DB562C61A2F9DE6F6FB92",
+        "hash": "56001CF35D488AABF0C54AF6CF2300CE8EBAE91A445C79B154BB69D341F81997",
         "tx": {
           "auth_info": {
             "fee": {
@@ -952,14 +970,17 @@
                   "THOR",
                   "BTC"
                 ],
-                "height": "8",
-                "id": "7dd42428d0ccacb755dc6ebaff8a5125718b362976500796d1af5c21dc85c44c",
+                "height": "2",
+                "id": "78fe3167d8425807edb8cea3481f45b7e0d5bc2a778935d2bd0630f886af5589",
                 "keygen_time": "0",
                 "keygen_type": "AsgardKeygen",
                 "keyshares_backup": null,
                 "keyshares_backup_eddsa": null,
+                "keyshares_backup_frost": null,
+                "observed_monero_height": "0",
                 "pool_pub_key": "tthorpub1addwnpepqw7qvv8309c06z96nwcfhrp5efm2wa2h7nratlgvwpgwksm8d5zwugq792v",
                 "pool_pub_key_eddsa": "",
+                "pool_pub_key_frost": "",
                 "pub_keys": [
                   "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
                   "tthorpub1addwnpepqv8lvvqmczr893yf7zyf7xtffccf032aprl8z09y3e3nfruedew85n306k5",
@@ -975,7 +996,7 @@
             "unordered": false
           },
           "signatures": [
-            "owUEDEgZqNIvYhB2NUB1xdAf5nKKkxbsGL6vT1WmnSIiJekcnaYmx61+OGsmgUU2KGZPmfkhhaIOROsKf4duNw=="
+            "TgR8L74UXzOltftupuA2nne/wiLxGOnK9Ry0HnyPCE4V9h/U+/PUdwq6Aq0/q9y25Nzth2w8H9GgC78E8Xuchw=="
           ]
         },
         "result": {
@@ -989,7 +1010,7 @@
               "type": "tx"
             },
             {
-              "signature": "owUEDEgZqNIvYhB2NUB1xdAf5nKKkxbsGL6vT1WmnSIiJekcnaYmx61+OGsmgUU2KGZPmfkhhaIOROsKf4duNw==",
+              "signature": "TgR8L74UXzOltftupuA2nne/wiLxGOnK9Ry0HnyPCE4V9h/U+/PUdwq6Aq0/q9y25Nzth2w8H9GgC78E8Xuchw==",
               "type": "tx"
             }
           ]
@@ -1059,7 +1080,7 @@
         }
       },
       "last_commit_hash": "",
-      "data_hash": "719E085D28C901502DF2CB5B4C636A55FF6F0E5541B25F1E0603CDA56C0C18DB",
+      "data_hash": "29B96CCEEC3CD6CCFAE42BC20F3A2B7A26EEBB450E7A83FF7DCB23045B67642D",
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
@@ -1102,7 +1123,7 @@
     ],
     "txs": [
       {
-        "hash": "84FC4BE9BD49EB01D857B65A12A1278CA438B3474F1A90B02C588044551B9DEF",
+        "hash": "10FDB1518D9073A4C52587DF408640064F683419C44A8097DE32ADEC4E5AEE3F",
         "tx": {
           "auth_info": {
             "fee": {
@@ -1138,20 +1159,23 @@
                   "THOR",
                   "BTC"
                 ],
-                "height": "10",
-                "id": "cf5850c559ca9a315f24b0ce22c336b80a74aefadf87ac8b79051a95e21ba20d",
+                "height": "2",
+                "id": "66ff4f8da02d98b1b9b3f81881433de02a7d484d1e87d7dd0f0f291c579ac853",
                 "keygen_time": "0",
                 "keygen_type": "AsgardKeygen",
                 "keyshares_backup": null,
                 "keyshares_backup_eddsa": null,
-                "pool_pub_key": "tthorpub1addwnpepqw7qvv8309c06z96nwcfhrp5efm2wa2h7nratlgvwpgwksm8d5zwugq792v",
+                "keyshares_backup_frost": null,
+                "observed_monero_height": "0",
+                "pool_pub_key": "tthorpub1addwnpepqtrqglu5g8kh6mfsg4qxa9wq0nv9cauwfwxw70984wkqnw2uwz0w2vxmngk",
                 "pool_pub_key_eddsa": "",
+                "pool_pub_key_frost": "",
                 "pub_keys": [
                   "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
                   "tthorpub1addwnpepqv8lvvqmczr893yf7zyf7xtffccf032aprl8z09y3e3nfruedew85n306k5",
                   "tthorpub1addwnpepqwlkdxcyz8fnxk3xp0eqt89g6cxau2c4zp89yr2x2dy56s2zgu2jx3pmacu"
                 ],
-                "secp256k1_signature": "TAmrPfb9LqTkvdCld4iUqVi/YB7BLRDCpuH7bJV0ByJiv5aJOw/0XkxabmVmF55FItcygEMoiNv5dTZV0U0BKQ==",
+                "secp256k1_signature": "t+9a8BHVrBy/FwPaH2Sk3Lq0hmcJLHWhrNNjEKinnpArmo3rAs7+2b2EC4LoDnLG0ktwZp3/j67aEQAOPCtmSQ==",
                 "signer": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m"
               }
             ],
@@ -1161,7 +1185,7 @@
             "unordered": false
           },
           "signatures": [
-            "C4pYYK5WB09/8kj3lpeirdT1K608tHEgAwQRcrx4WIZAMF/TAjsrcalZeEEcJbiAnTz6o2XKzGo95Mha0kCqnQ=="
+            "59gUdND8aVsb3CSqriVi+gszPcJRhVDp0lR3hu+wVA0j01lJw52YZMHkavyt0qyksDum0ySeobYrSGB/6aop/w=="
           ]
         },
         "result": {
@@ -1174,7 +1198,7 @@
               "type": "tx"
             },
             {
-              "signature": "C4pYYK5WB09/8kj3lpeirdT1K608tHEgAwQRcrx4WIZAMF/TAjsrcalZeEEcJbiAnTz6o2XKzGo95Mha0kCqnQ==",
+              "signature": "59gUdND8aVsb3CSqriVi+gszPcJRhVDp0lR3hu+wVA0j01lJw52YZMHkavyt0qyksDum0ySeobYrSGB/6aop/w==",
               "type": "tx"
             },
             {
@@ -1188,7 +1212,7 @@
         }
       },
       {
-        "hash": "2D10223804EB4B7E35C1F4F00FBB9D49E9C27B137F00F7F0831C26AE4D15511B",
+        "hash": "226C8697179BC75B7D4FA1383B98EE9B9D29933370D9F82A07E9B0FA9CA2B687",
         "tx": {
           "auth_info": {
             "fee": {
@@ -1224,20 +1248,23 @@
                   "THOR",
                   "BTC"
                 ],
-                "height": "10",
-                "id": "cf5850c559ca9a315f24b0ce22c336b80a74aefadf87ac8b79051a95e21ba20d",
+                "height": "2",
+                "id": "66ff4f8da02d98b1b9b3f81881433de02a7d484d1e87d7dd0f0f291c579ac853",
                 "keygen_time": "0",
                 "keygen_type": "AsgardKeygen",
                 "keyshares_backup": null,
                 "keyshares_backup_eddsa": null,
-                "pool_pub_key": "tthorpub1addwnpepqw7qvv8309c06z96nwcfhrp5efm2wa2h7nratlgvwpgwksm8d5zwugq792v",
+                "keyshares_backup_frost": null,
+                "observed_monero_height": "0",
+                "pool_pub_key": "tthorpub1addwnpepqtrqglu5g8kh6mfsg4qxa9wq0nv9cauwfwxw70984wkqnw2uwz0w2vxmngk",
                 "pool_pub_key_eddsa": "",
+                "pool_pub_key_frost": "",
                 "pub_keys": [
                   "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
                   "tthorpub1addwnpepqv8lvvqmczr893yf7zyf7xtffccf032aprl8z09y3e3nfruedew85n306k5",
                   "tthorpub1addwnpepqwlkdxcyz8fnxk3xp0eqt89g6cxau2c4zp89yr2x2dy56s2zgu2jx3pmacu"
                 ],
-                "secp256k1_signature": "TAmrPfb9LqTkvdCld4iUqVi/YB7BLRDCpuH7bJV0ByJiv5aJOw/0XkxabmVmF55FItcygEMoiNv5dTZV0U0BKQ==",
+                "secp256k1_signature": "t+9a8BHVrBy/FwPaH2Sk3Lq0hmcJLHWhrNNjEKinnpArmo3rAs7+2b2EC4LoDnLG0ktwZp3/j67aEQAOPCtmSQ==",
                 "signer": "tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej"
               }
             ],
@@ -1247,7 +1274,7 @@
             "unordered": false
           },
           "signatures": [
-            "6Lvh1j6WP7GHi4Aej05shiLP+HXna8D3svh9V8TEH9RCd5zuhjOf8tep+fRvUpx8mfXedZxgwrVYF7sAi9uJXA=="
+            "/I74BbBo2ZKIdsyFLVI/F3MqeAqwjZK+q2zcFqlR3bNxZ42Pc6d6vaAQnHB5h7ngqA2j5QsjxIjdkmFH7Epc9g=="
           ]
         },
         "result": {
@@ -1260,7 +1287,7 @@
               "type": "tx"
             },
             {
-              "signature": "6Lvh1j6WP7GHi4Aej05shiLP+HXna8D3svh9V8TEH9RCd5zuhjOf8tep+fRvUpx8mfXedZxgwrVYF7sAi9uJXA==",
+              "signature": "/I74BbBo2ZKIdsyFLVI/F3MqeAqwjZK+q2zcFqlR3bNxZ42Pc6d6vaAQnHB5h7ngqA2j5QsjxIjdkmFH7Epc9g==",
               "type": "tx"
             },
             {
@@ -1269,12 +1296,35 @@
               "msg_index": "0",
               "sender": "tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej",
               "type": "message"
+            },
+            {
+              "median_duration_ms": "0",
+              "msg_index": "0",
+              "pubkey": "tthorpub1addwnpepqtrqglu5g8kh6mfsg4qxa9wq0nv9cauwfwxw70984wkqnw2uwz0w2vxmngk",
+              "type": "tss_keygen"
+            },
+            {
+              "msg_index": "0",
+              "set asgard vault to inactive": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
+              "type": "InactiveVault"
+            },
+            {
+              "add new asgard vault": "tthorpub1addwnpepqtrqglu5g8kh6mfsg4qxa9wq0nv9cauwfwxw70984wkqnw2uwz0w2vxmngk",
+              "msg_index": "0",
+              "type": "ActiveVault"
+            },
+            {
+              "height": "2",
+              "members": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m, tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr, tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej",
+              "msg_index": "0",
+              "pubkey": "tthorpub1addwnpepqtrqglu5g8kh6mfsg4qxa9wq0nv9cauwfwxw70984wkqnw2uwz0w2vxmngk",
+              "type": "tss_keygen_success"
             }
           ]
         }
       },
       {
-        "hash": "8A07B241B5953F608D51F355DF6D2283B8241F5852AC37B4CA813D24AD3A8281",
+        "hash": "A2C0929624B5A2780663A6C4BA6377E12BD161A68BB6C663E2BC30BF5226BA62",
         "tx": {
           "auth_info": {
             "fee": {
@@ -1310,14 +1360,17 @@
                   "THOR",
                   "BTC"
                 ],
-                "height": "10",
-                "id": "cf5850c559ca9a315f24b0ce22c336b80a74aefadf87ac8b79051a95e21ba20d",
+                "height": "2",
+                "id": "66ff4f8da02d98b1b9b3f81881433de02a7d484d1e87d7dd0f0f291c579ac853",
                 "keygen_time": "0",
                 "keygen_type": "AsgardKeygen",
                 "keyshares_backup": null,
                 "keyshares_backup_eddsa": null,
-                "pool_pub_key": "tthorpub1addwnpepqw7qvv8309c06z96nwcfhrp5efm2wa2h7nratlgvwpgwksm8d5zwugq792v",
+                "keyshares_backup_frost": null,
+                "observed_monero_height": "0",
+                "pool_pub_key": "tthorpub1addwnpepqtrqglu5g8kh6mfsg4qxa9wq0nv9cauwfwxw70984wkqnw2uwz0w2vxmngk",
                 "pool_pub_key_eddsa": "",
+                "pool_pub_key_frost": "",
                 "pub_keys": [
                   "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
                   "tthorpub1addwnpepqv8lvvqmczr893yf7zyf7xtffccf032aprl8z09y3e3nfruedew85n306k5",
@@ -1333,7 +1386,7 @@
             "unordered": false
           },
           "signatures": [
-            "dX1lJK0k7ReoYM+Ujam3gDQsQtNqR+WU5fwsPeQXnhgWxff8QFF4YOyzY9ZZJmzsvOj3EH1B0q37EM1xb3aLjw=="
+            "szCFNsXkwY82vIpdHA94RSj44UJVtL+QSrqb7ceUZrMtlxXbqYf9EhBC06Mk0CN8Ki9oM8TN7ujNcsjYS+XFyw=="
           ]
         },
         "result": {
@@ -1346,7 +1399,7 @@
               "type": "tx"
             },
             {
-              "signature": "dX1lJK0k7ReoYM+Ujam3gDQsQtNqR+WU5fwsPeQXnhgWxff8QFF4YOyzY9ZZJmzsvOj3EH1B0q37EM1xb3aLjw==",
+              "signature": "szCFNsXkwY82vIpdHA94RSj44UJVtL+QSrqb7ceUZrMtlxXbqYf9EhBC06Mk0CN8Ki9oM8TN7ujNcsjYS+XFyw==",
               "type": "tx"
             },
             {
@@ -1355,29 +1408,6 @@
               "msg_index": "0",
               "sender": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
               "type": "message"
-            },
-            {
-              "median_duration_ms": "0",
-              "msg_index": "0",
-              "pubkey": "tthorpub1addwnpepqw7qvv8309c06z96nwcfhrp5efm2wa2h7nratlgvwpgwksm8d5zwugq792v",
-              "type": "tss_keygen"
-            },
-            {
-              "msg_index": "0",
-              "set asgard vault to inactive": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
-              "type": "InactiveVault"
-            },
-            {
-              "add new asgard vault": "tthorpub1addwnpepqw7qvv8309c06z96nwcfhrp5efm2wa2h7nratlgvwpgwksm8d5zwugq792v",
-              "msg_index": "0",
-              "type": "ActiveVault"
-            },
-            {
-              "height": "10",
-              "members": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m, tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr, tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej",
-              "msg_index": "0",
-              "pubkey": "tthorpub1addwnpepqw7qvv8309c06z96nwcfhrp5efm2wa2h7nratlgvwpgwksm8d5zwugq792v",
-              "type": "tss_keygen_success"
             }
           ]
         }

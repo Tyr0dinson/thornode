@@ -1,6 +1,8 @@
 package thorchain
 
 import (
+	"strings"
+
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -167,6 +169,133 @@ func (s *HandlerObservedTxHelpersSuite) TestGenerateReferenceMemoIDDecimalPrecis
 	}
 }
 
+// TestExtractReferenceFromAmountERC20 exercises ExtractReferenceFromAmount directly
+// (rather than through the generateReferenceMemoID wrapper) for ETH ERC20 assets at
+// both the 6-decimal boundary (USDC, USDT — the "divide to native" branch) and
+// 18 decimals (WETH — the "no division" branch). Direct coverage matters because
+// ExtractReferenceFromAmount is also called by queryReferenceMemoPreflight, and the
+// decimal-aware normalization is the pivotal piece of Path A memoless for ERC20s.
+func (s *HandlerObservedTxHelpersSuite) TestExtractReferenceFromAmountERC20(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	// --- ETH.USDC at 6 decimals (real mainnet contract) ---
+	usdcAsset := common.Asset{
+		Chain:  common.ETHChain,
+		Symbol: "USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48",
+		Ticker: "USDC",
+		Synth:  false,
+	}
+	usdcPool := NewPool()
+	usdcPool.Asset = usdcAsset
+	usdcPool.Decimals = 6
+	usdcPool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	usdcPool.BalanceRune = cosmos.NewUint(100 * common.One)
+	c.Assert(mgr.Keeper().SetPool(ctx, usdcPool), IsNil)
+
+	// User sends 1.000042 USDC. Native 6-dec = 1_000_042; bifrost normalizes to 1e8
+	// precision = 100_004_200. ExtractReferenceFromAmount divides by 100 (= 10^(8-6))
+	// to recover the native value, then takes amount % 100_000 = 42 → "00042".
+	refID, err := ExtractReferenceFromAmount(ctx, mgr, usdcAsset, 100_004_200)
+	c.Assert(err, IsNil)
+	c.Assert(refID, Equals, "00042", Commentf("USDC 1.000042 → ref 00042"))
+
+	// 50.012345 USDC: native 50_012_345, 1e8 = 5_001_234_500, /100 = 50_012_345,
+	// % 100_000 = 12345 → "12345".
+	refID, err = ExtractReferenceFromAmount(ctx, mgr, usdcAsset, 5_001_234_500)
+	c.Assert(err, IsNil)
+	c.Assert(refID, Equals, "12345", Commentf("USDC 50.012345 → ref 12345"))
+
+	// --- ETH.USDT at 6 decimals (different pool, same decimal branch) ---
+	usdtAsset := common.Asset{
+		Chain:  common.ETHChain,
+		Symbol: "USDT-0XDAC17F958D2EE523A2206206994597C13D831EC7",
+		Ticker: "USDT",
+		Synth:  false,
+	}
+	usdtPool := NewPool()
+	usdtPool.Asset = usdtAsset
+	usdtPool.Decimals = 6
+	usdtPool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	usdtPool.BalanceRune = cosmos.NewUint(100 * common.One)
+	c.Assert(mgr.Keeper().SetPool(ctx, usdtPool), IsNil)
+
+	// 10.099999 USDT: native 10_099_999, 1e8 = 1_009_999_900, /100 = 10_099_999,
+	// % 100_000 = 99999 (max ref) → "99999".
+	refID, err = ExtractReferenceFromAmount(ctx, mgr, usdtAsset, 1_009_999_900)
+	c.Assert(err, IsNil)
+	c.Assert(refID, Equals, "99999", Commentf("USDT 10.099999 → ref 99999 (max)"))
+
+	// --- ETH.WETH at 18 decimals (no division branch) ---
+	wethAsset := common.Asset{
+		Chain:  common.ETHChain,
+		Symbol: "WETH-0XC02AAA39B223FE8D0A0E5C4F27EAD9083C756CC2",
+		Ticker: "WETH",
+		Synth:  false,
+	}
+	wethPool := NewPool()
+	wethPool.Asset = wethAsset
+	wethPool.Decimals = 18
+	wethPool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	wethPool.BalanceRune = cosmos.NewUint(100 * common.One)
+	c.Assert(mgr.Keeper().SetPool(ctx, wethPool), IsNil)
+
+	// For decimals >= 8 the normalization branch is skipped. Bifrost has already
+	// scaled 18-dec raw values down to 1e8 precision. The last 5 digits of the
+	// 1e8 amount ARE the ref directly.
+	//
+	// 1.00000000000042 WETH: native 1_000_000_000_000_420_000, 1e8 = 100_000_042,
+	// % 100_000 = 42 → "00042".
+	refID, err = ExtractReferenceFromAmount(ctx, mgr, wethAsset, 100_000_042)
+	c.Assert(err, IsNil)
+	c.Assert(refID, Equals, "00042", Commentf("WETH 1.00000000000042 → ref 00042"))
+
+	// 2.00012345 WETH: 1e8 = 200_012_345, % 100_000 = 12345 → "12345".
+	refID, err = ExtractReferenceFromAmount(ctx, mgr, wethAsset, 200_012_345)
+	c.Assert(err, IsNil)
+	c.Assert(refID, Equals, "12345", Commentf("WETH 2.00012345 → ref 12345"))
+
+	// --- zero-ref rejection on both decimal branches ---
+
+	// WETH 1.00000000 → 1e8 = 100_000_000 → 100_000_000 % 100_000 = 0 → error.
+	_, err = ExtractReferenceFromAmount(ctx, mgr, wethAsset, 100_000_000)
+	c.Assert(err, NotNil)
+	c.Assert(err.Error(), Matches, ".*zero reference.*")
+
+	// USDC 1.000000 → 1e8 = 100_000_000 → /100 = 1_000_000 → % 100_000 = 0 → error.
+	_, err = ExtractReferenceFromAmount(ctx, mgr, usdcAsset, 100_000_000)
+	c.Assert(err, NotNil)
+	c.Assert(err.Error(), Matches, ".*zero reference.*")
+
+	// --- sentinel: pool.Decimals=0 for a non-gas asset is treated as 8 ---
+	fakeAsset := common.Asset{
+		Chain:  common.ETHChain,
+		Symbol: "FAKE-0X0000000000000000000000000000000000000000",
+		Ticker: "FAKE",
+		Synth:  false,
+	}
+	fakePool := NewPool()
+	fakePool.Asset = fakeAsset
+	fakePool.Decimals = 0 // sentinel → ExtractReferenceFromAmount substitutes 8
+	fakePool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	fakePool.BalanceRune = cosmos.NewUint(100 * common.One)
+	c.Assert(mgr.Keeper().SetPool(ctx, fakePool), IsNil)
+
+	// decimals=8 → no division → 42_004_242 % 100_000 = 4242 → "04242".
+	refID, err = ExtractReferenceFromAmount(ctx, mgr, fakeAsset, 42_004_242)
+	c.Assert(err, IsNil)
+	c.Assert(refID, Equals, "04242", Commentf("Decimals=0 sentinel treated as 8"))
+
+	// --- error cases ---
+
+	_, err = ExtractReferenceFromAmount(ctx, mgr, common.EmptyAsset, 100_004_242)
+	c.Assert(err, NotNil)
+	c.Assert(err.Error(), Matches, ".*asset is empty.*")
+
+	_, err = ExtractReferenceFromAmount(ctx, mgr, usdcAsset, 0)
+	c.Assert(err, NotNil)
+	c.Assert(err.Error(), Matches, ".*zero amount.*")
+}
+
 func (s *HandlerObservedTxHelpersSuite) TestGenerateReferenceMemoIDModulus(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 
@@ -231,8 +360,13 @@ func (s *HandlerObservedTxHelpersSuite) TestReferenceMemoIntegration(c *C) {
 	resolvedMemo := fetchMemoFromReference(ctx, mgr, common.BTCAsset, tx.Tx, 1) // tx observed at height 1, memo created at height 0
 	c.Assert(resolvedMemo, Equals, "SWAP:ETH.ETH:0x1234567890123456789012345678901234567890")
 
-	// Verify usage was tracked
+	// Resolution is read-only until the transaction is accepted.
 	updatedRefMemo, err := mgr.Keeper().GetReferenceMemo(ctx, common.BTCAsset, refID)
+	c.Assert(err, IsNil)
+	c.Assert(updatedRefMemo.GetUsageCount(), Equals, int64(0))
+
+	trackReferenceMemoUsage(ctx, mgr, common.BTCAsset, tx.Tx.Memo, tx.Tx.ID)
+	updatedRefMemo, err = mgr.Keeper().GetReferenceMemo(ctx, common.BTCAsset, refID)
 	c.Assert(err, IsNil)
 	c.Assert(updatedRefMemo.GetUsageCount(), Equals, int64(1))
 	c.Assert(updatedRefMemo.HasBeenUsedBy(tx.Tx.ID), Equals, true)
@@ -313,12 +447,14 @@ func (s *HandlerObservedTxHelpersSuite) TestReferenceMemoIntegrationWithUsageLim
 	testTx := common.NewTx(txID1, common.NoAddress, common.NoAddress, common.Coins{}, common.Gas{}, memoStr)
 	resolvedMemo := fetchMemoFromReference(ctx, mgr, common.BTCAsset, testTx, 1) // tx observed at height 1, memo created at height 0
 	c.Assert(resolvedMemo, Equals, "SWAP:ETH.ETH:0x1234567890123456789012345678901234567890")
+	trackReferenceMemoUsage(ctx, mgr, common.BTCAsset, testTx.Memo, testTx.ID)
 
 	// Second usage should succeed
 	txID2, _ := common.NewTxID("2222222222222222222222222222222222222222222222222222222222222222")
 	testTx2 := common.NewTx(txID2, common.NoAddress, common.NoAddress, common.Coins{}, common.Gas{}, memoStr)
 	resolvedMemo = fetchMemoFromReference(ctx, mgr, common.BTCAsset, testTx2, 2) // tx observed at height 2, memo created at height 0
 	c.Assert(resolvedMemo, Equals, "SWAP:ETH.ETH:0x1234567890123456789012345678901234567890")
+	trackReferenceMemoUsage(ctx, mgr, common.BTCAsset, testTx2.Memo, testTx2.ID)
 
 	// Third usage should fail (exceed limit)
 	txID3, _ := common.NewTxID("3333333333333333333333333333333333333333333333333333333333333333")
@@ -326,10 +462,10 @@ func (s *HandlerObservedTxHelpersSuite) TestReferenceMemoIntegrationWithUsageLim
 	resolvedMemo = fetchMemoFromReference(ctx, mgr, common.BTCAsset, testTx3, 3) // tx observed at height 3, memo created at height 0
 	c.Assert(resolvedMemo, Equals, "")
 
-	// Verify usage count is 3 (all attempts are tracked for audit purposes, including failures)
+	// Only the two accepted transactions consume the reference.
 	updatedRefMemo, err := mgr.Keeper().GetReferenceMemo(ctx, common.BTCAsset, refID)
 	c.Assert(err, IsNil)
-	c.Assert(updatedRefMemo.GetUsageCount(), Equals, int64(3))
+	c.Assert(updatedRefMemo.GetUsageCount(), Equals, int64(2))
 }
 
 func (s *HandlerObservedTxHelpersSuite) TestReferenceMemoIntegrationNonExistentReference(c *C) {
@@ -399,7 +535,8 @@ func (s *HandlerObservedTxHelpersSuite) TestReferenceMemoIntegrationFullWorkflow
 	resolvedMemo := fetchMemoFromReference(ctx, mgr, common.BTCAsset, testTx, 1) // tx observed at height 1, memo created at height 0
 	c.Assert(resolvedMemo, Equals, actualMemo)
 
-	// Step 5: Usage is automatically tracked by fetchMemoFromReference
+	// Step 5: Track usage after the resolved transaction is accepted
+	trackReferenceMemoUsage(ctx, mgr, common.BTCAsset, generatedMemo, tx.Tx.ID)
 
 	// Verify the full workflow worked
 	updatedRefMemo, err := mgr.Keeper().GetReferenceMemo(ctx, common.BTCAsset, refID)
@@ -485,10 +622,9 @@ func (s *HandlerObservedTxHelpersSuite) TestUnfinalizedHeightUsedInFetchMemoFrom
 	resolvedMemo := fetchMemoFromReference(ctx, mgr, common.BTCAsset, voter.Tx.Tx, voter.UnfinalizedHeight)
 	c.Assert(resolvedMemo, Equals, "SWAP:ETH.ETH:0x1234567890123456789012345678901234567890")
 
-	// If we had used Height (120) instead, let's verify it would fail the height check
-	// (transaction observed after memo creation: 120 > 50, but this should be caught by height validation)
+	// A later finalized height still represents an observation after memo creation, so it should succeed.
 	resolvedMemoWithHeight := fetchMemoFromReference(ctx, mgr, common.BTCAsset, voter.Tx.Tx, voter.Height)
-	c.Assert(resolvedMemoWithHeight, Equals, "SWAP:ETH.ETH:0x1234567890123456789012345678901234567890") // This will still work since 120 > 50
+	c.Assert(resolvedMemoWithHeight, Equals, "SWAP:ETH.ETH:0x1234567890123456789012345678901234567890")
 
 	// Test edge case where using Height would fail but UnfinalizedHeight succeeds
 	// Create reference memo at height 70
@@ -628,6 +764,211 @@ func (s *HandlerObservedTxHelpersSuite) TestFindOriginalMemoForOutboundSingleMat
 	}
 
 	// Should return OriginalMemo when set
+	result := findOriginalMemoForOutbound(ctx, mgr, observedTx)
+	c.Assert(result, Equals, item.OriginalMemo)
+}
+
+func (s *HandlerObservedTxHelpersSuite) TestFindOriginalMemoForOutboundMatchesCurrentOutHash(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	mgr.Keeper().SetMimir(ctx, constants.SigningTransactionPeriod.String(), 300)
+
+	vaultPubKey := GetRandomPubKey()
+	observedTxID := GetRandomTxHash()
+	inHash := GetRandomTxHash()
+
+	item := TxOutItem{
+		Chain:        common.ETHChain,
+		ToAddress:    GetRandomETHAddress(),
+		VaultPubKey:  vaultPubKey,
+		Coin:         common.NewCoin(common.ETHAsset, cosmos.NewUint(1000000)),
+		Memo:         "",
+		OriginalMemo: "OUT:" + inHash.String(),
+		InHash:       inHash,
+		GasRate:      100,
+		MaxGas:       common.Gas{common.NewCoin(common.ETHAsset, cosmos.NewUint(10000))},
+		OutHash:      observedTxID,
+	}
+
+	ctx = ctx.WithBlockHeight(100)
+	txOut := NewTxOut(100)
+	txOut.TxArray = append(txOut.TxArray, item)
+	c.Assert(mgr.Keeper().SetTxOut(ctx, txOut), IsNil)
+
+	observedTx := common.ObservedTx{
+		Tx: common.Tx{
+			ID:        observedTxID,
+			Chain:     common.ETHChain,
+			ToAddress: item.ToAddress,
+			Coins:     common.Coins{item.Coin},
+			Memo:      "",
+		},
+		ObservedPubKey: vaultPubKey,
+	}
+
+	result := findOriginalMemoForOutbound(ctx, mgr, observedTx)
+	c.Assert(result, Equals, item.OriginalMemo)
+}
+
+func (s *HandlerObservedTxHelpersSuite) TestDuplicateCompletedOutboundDoesNotReenterHandler(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	mgr := NewDummyMgrWithKeeper(k)
+	na := GetRandomValidatorNode(NodeActive)
+	c.Assert(k.SetNodeAccount(ctx, na), IsNil)
+
+	observed := GetRandomObservedTx()
+	stored := observed
+	stored.Signers = []string{na.NodeAddress.String()}
+	voter := NewObservedTxVoter(observed.Tx.ID, ObservedTxs{stored})
+	voter.Tx = stored
+	voter.Height = ctx.BlockHeight()
+	voter.FinalisedHeight = ctx.BlockHeight()
+
+	voter, isQuorum := processTxOutAttestation(
+		ctx,
+		mgr,
+		voter,
+		NodeAccounts{na},
+		observed,
+		na.NodeAddress,
+		true,
+	)
+	c.Assert(isQuorum, Equals, false)
+
+	called := false
+	handler := func(cosmos.Context, cosmos.Msg) (*cosmos.Result, error) {
+		called = true
+		return &cosmos.Result{}, nil
+	}
+	c.Assert(handleObservedTxOutQuorum(
+		ctx,
+		mgr,
+		na.NodeAddress,
+		NodeAccounts{na},
+		handler,
+		observed,
+		voter,
+		[]cosmos.AccAddress{na.NodeAddress},
+		isQuorum,
+	), IsNil)
+	c.Assert(called, Equals, false)
+}
+
+func (s *HandlerObservedTxHelpersSuite) TestXMRMigrateMatchUsesCaseSensitiveAddresses(c *C) {
+	sourcePubKey := GetRandomEd25519PubKey()
+	sourceAddress, err := sourcePubKey.GetAddress(common.XMRChain)
+	c.Assert(err, IsNil)
+	targetPubKey := GetRandomEd25519PubKey()
+	targetAddress, err := targetPubKey.GetAddress(common.XMRChain)
+	c.Assert(err, IsNil)
+
+	item := TxOutItem{
+		Chain:            common.XMRChain,
+		InHash:           common.BlankTxID,
+		ToAddress:        targetAddress,
+		VaultPubKeyFrost: sourcePubKey,
+		Coin:             common.NewCoin(common.XMRAsset, cosmos.NewUint(1_000_000)),
+		MaxGas:           common.Gas{common.NewCoin(common.XMRAsset, cosmos.NewUint(10_000))},
+	}
+	tx := common.Tx{
+		Chain:       common.XMRChain,
+		FromAddress: sourceAddress,
+		ToAddress:   targetAddress,
+		Coins:       common.NewCoins(item.Coin),
+	}
+	c.Assert(xmrMigrateInboundMatchesTxOut(tx, item), Equals, true)
+
+	wrongSourceCase := tx
+	wrongSourceCase.FromAddress = common.Address(strings.ToUpper(sourceAddress.String()))
+	c.Assert(sourceAddress.Equals(wrongSourceCase.FromAddress), Equals, true)
+	c.Assert(xmrMigrateInboundMatchesTxOut(wrongSourceCase, item), Equals, false)
+
+	wrongTargetCase := tx
+	wrongTargetCase.ToAddress = common.Address(strings.ToUpper(targetAddress.String()))
+	c.Assert(targetAddress.Equals(wrongTargetCase.ToAddress), Equals, true)
+	c.Assert(xmrMigrateInboundMatchesTxOut(wrongTargetCase, item), Equals, false)
+}
+
+func (s *HandlerObservedTxHelpersSuite) TestFindOriginalMemoForOutboundUsesExtendedXMRWindow(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	mgr.Keeper().SetMimir(ctx, constants.SigningTransactionPeriod.String(), 10)
+
+	vaultPubKey := GetRandomPubKey()
+	vaultPubKeyFrost := getRandomXMRFrostPubKey(c)
+	toAddress, err := vaultPubKeyFrost.GetAddress(common.XMRChain)
+	c.Assert(err, IsNil)
+	inHash, _ := common.NewTxID("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")
+
+	item := TxOutItem{
+		Chain:            common.XMRChain,
+		ToAddress:        toAddress,
+		VaultPubKey:      vaultPubKey,
+		VaultPubKeyFrost: vaultPubKeyFrost,
+		Coin:             common.NewCoin(common.XMRAsset, cosmos.NewUint(1000000)),
+		Memo:             "OUT:" + inHash.String(),
+		OriginalMemo:     "SWAP:XMR.XMR:" + toAddress.String(),
+		InHash:           inHash,
+		GasRate:          100,
+		MaxGas:           common.Gas{common.NewCoin(common.XMRAsset, cosmos.NewUint(10000))},
+	}
+
+	ctx = ctx.WithBlockHeight(100)
+	txOut := NewTxOut(75)
+	txOut.TxArray = append(txOut.TxArray, item)
+	c.Assert(mgr.Keeper().SetTxOut(ctx, txOut), IsNil)
+
+	observedTx := common.ObservedTx{
+		Tx: common.Tx{
+			Chain:     common.XMRChain,
+			ToAddress: toAddress,
+			Coins:     common.Coins{item.Coin},
+			Memo:      "",
+		},
+		ObservedPubKey: vaultPubKeyFrost,
+	}
+
+	result := findOriginalMemoForOutbound(ctx, mgr, observedTx)
+	c.Assert(result, Equals, item.OriginalMemo)
+}
+
+func (s *HandlerObservedTxHelpersSuite) TestFindOriginalMemoForOutboundUsesExtendedEVMTokenWindow(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	mgr.Keeper().SetMimir(ctx, constants.SigningTransactionPeriod.String(), 10)
+
+	vaultPubKey := GetRandomPubKey()
+	inHash, _ := common.NewTxID("BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB")
+	tokenAsset, err := common.NewAsset("ETH.USDT-0XA3910454BF2CB59B8B3A401589A3BACC5CA42306")
+	c.Assert(err, IsNil)
+
+	item := TxOutItem{
+		Chain:        common.ETHChain,
+		ToAddress:    GetRandomETHAddress(),
+		VaultPubKey:  vaultPubKey,
+		Coin:         common.NewCoin(tokenAsset, cosmos.NewUint(1000000)),
+		Memo:         "OUT:" + inHash.String(),
+		OriginalMemo: "SWAP:" + tokenAsset.String() + ":0x1234567890123456789012345678901234567890",
+		InHash:       inHash,
+		GasRate:      100,
+		MaxGas:       common.Gas{common.NewCoin(common.ETHAsset, cosmos.NewUint(10000))},
+	}
+
+	ctx = ctx.WithBlockHeight(100)
+	txOut := NewTxOut(75)
+	txOut.TxArray = append(txOut.TxArray, item)
+	c.Assert(mgr.Keeper().SetTxOut(ctx, txOut), IsNil)
+
+	observedTx := common.ObservedTx{
+		Tx: common.Tx{
+			Chain:     common.ETHChain,
+			ToAddress: item.ToAddress,
+			Coins:     common.Coins{item.Coin},
+			Memo:      "",
+		},
+		ObservedPubKey: vaultPubKey,
+	}
+
 	result := findOriginalMemoForOutbound(ctx, mgr, observedTx)
 	c.Assert(result, Equals, item.OriginalMemo)
 }
@@ -868,6 +1209,369 @@ func (s *HandlerObservedTxHelpersSuite) TestGasCorrectionOnReorg(c *C) {
 	c.Assert(err, IsNil)
 	// Balance should remain the same (no double correction)
 	c.Assert(vault.GetCoin(common.ETHAsset).Amount.Equal(vaultBalanceAfter), Equals, true)
+}
+
+// The following three tests drive real manager/keeper slash accounting through
+// processTxOutAttestation and assert the PERSISTED slash points (not just the
+// GetObserveSigners return set), covering the facets fixed in #3081/#3104. Each
+// starts from a nonzero pre-existing slash balance so any over-refund of
+// unrelated points is observable.
+
+// observeSlashOutboundTx builds an ETH outbound observed tx for these tests.
+func observeSlashOutboundTx(txID common.TxID, vaultPubKey common.PubKey, gas, blockHeight int64) common.ObservedTx {
+	baseTx := common.Tx{
+		ID:          txID,
+		Chain:       common.ETHChain,
+		FromAddress: GetRandomETHAddress(),
+		ToAddress:   GetRandomETHAddress(),
+		Coins:       common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(305570))),
+		Gas:         common.Gas{common.NewCoin(common.ETHAsset, cosmos.NewUint(uint64(gas)))},
+		Memo:        "OUT:" + txID.String(),
+	}
+	return common.NewObservedTx(baseTx, blockHeight, vaultPubKey, blockHeight)
+}
+
+func observeSlashSetup(c *C, ctx cosmos.Context, mgr *Mgrs) (NodeAccounts, common.PubKey) {
+	nas := NodeAccounts{
+		GetRandomValidatorNode(NodeActive),
+		GetRandomValidatorNode(NodeActive),
+		GetRandomValidatorNode(NodeActive),
+		GetRandomValidatorNode(NodeActive),
+	}
+	vaultPubKey := GetRandomPubKey()
+	vault := GetRandomVault()
+	vault.PubKey = vaultPubKey
+	vault.AddFunds(common.Coins{common.NewCoin(common.ETHAsset, cosmos.NewUint(100*common.One))})
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+	return nas, vaultPubKey
+}
+
+// TestObserveSlashExcessRefundGasSplit (#3081-B + #3104): a member's pre-broadcast
+// gas-limit observation is credited gas-agnostically at consensus; its later
+// gas-used scanner observation must net zero (redundant observe refunded at
+// submission) and must NOT re-fire the flex branch to remove unrelated points.
+func (s *HandlerObservedTxHelpersSuite) TestObserveSlashExcessRefundGasSplit(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	ctx = ctx.WithBlockHeight(100)
+	nas, vaultPubKey := observeSlashSetup(c, ctx, mgr)
+
+	member := nas[3].NodeAddress
+	const pre = int64(50)
+	mgr.Keeper().SetNodeAccountSlashPoints(ctx, member, pre)
+
+	txID := GetRandomTxHash()
+	gasUsed := observeSlashOutboundTx(txID, vaultPubKey, 21000, 100)
+	gasLimit := observeSlashOutboundTx(txID, vaultPubKey, 50000, 100)
+	// Keep the non-gas tx identity identical across the two variants.
+	gasLimit.Tx.FromAddress = gasUsed.Tx.FromAddress
+	gasLimit.Tx.ToAddress = gasUsed.Tx.ToAddress
+
+	voter := NewObservedTxVoter(txID, []common.ObservedTx{})
+	voter, _ = processTxOutAttestation(ctx, mgr, voter, nas, gasLimit, member, false)
+	voter, _ = processTxOutAttestation(ctx, mgr, voter, nas, gasUsed, nas[0].NodeAddress, false)
+	voter, _ = processTxOutAttestation(ctx, mgr, voter, nas, gasUsed, nas[1].NodeAddress, false)
+	voter, _ = processTxOutAttestation(ctx, mgr, voter, nas, gasUsed, nas[2].NodeAddress, false)
+	c.Assert(voter.FinalisedHeight, Equals, int64(100))
+
+	pts, _ := mgr.Keeper().GetNodeAccountSlashPoints(ctx, member)
+	c.Assert(pts, Equals, pre, Commentf("member should be back to pre-existing after gas-agnostic credit, got %d", pts))
+
+	// Same member's later gas-used scanner observation within the flex window.
+	ctx = ctx.WithBlockHeight(101)
+	voter, _ = processTxOutAttestation(ctx, mgr, voter, nas, gasUsed, member, false)
+
+	pts, _ = mgr.Keeper().GetNodeAccountSlashPoints(ctx, member)
+	c.Assert(pts, Equals, pre, Commentf("redundant scanner observation must net zero without double-refund; got %d want %d", pts, pre))
+}
+
+// TestObserveSlashLateGasLimitObserverRefunded (#3081-A): a node that missed
+// consensus (took the lack penalty) then submits a late gas-limit observation
+// within the flex window must be fully refunded via the gas-agnostic flex branch.
+func (s *HandlerObservedTxHelpersSuite) TestObserveSlashLateGasLimitObserverRefunded(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	ctx = ctx.WithBlockHeight(100)
+	nas, vaultPubKey := observeSlashSetup(c, ctx, mgr)
+
+	late := nas[3].NodeAddress
+	const pre = int64(50)
+	mgr.Keeper().SetNodeAccountSlashPoints(ctx, late, pre)
+
+	txID := GetRandomTxHash()
+	gasUsed := observeSlashOutboundTx(txID, vaultPubKey, 21000, 100)
+	gasLimit := observeSlashOutboundTx(txID, vaultPubKey, 50000, 100)
+	gasLimit.Tx.FromAddress = gasUsed.Tx.FromAddress
+	gasLimit.Tx.ToAddress = gasUsed.Tx.ToAddress
+
+	voter := NewObservedTxVoter(txID, []common.ObservedTx{})
+	voter, _ = processTxOutAttestation(ctx, mgr, voter, nas, gasUsed, nas[0].NodeAddress, false)
+	voter, _ = processTxOutAttestation(ctx, mgr, voter, nas, gasUsed, nas[1].NodeAddress, false)
+	voter, _ = processTxOutAttestation(ctx, mgr, voter, nas, gasUsed, nas[2].NodeAddress, false)
+	c.Assert(voter.FinalisedHeight, Equals, int64(100))
+
+	lackPts := mgr.GetConstants().GetInt64Value(constants.LackOfObservationPenalty)
+	pts, _ := mgr.Keeper().GetNodeAccountSlashPoints(ctx, late)
+	c.Assert(pts, Equals, pre+lackPts, Commentf("non-observer should carry the lack penalty, got %d want %d", pts, pre+lackPts))
+
+	ctx = ctx.WithBlockHeight(101)
+	voter, _ = processTxOutAttestation(ctx, mgr, voter, nas, gasLimit, late, false)
+
+	pts, _ = mgr.Keeper().GetNodeAccountSlashPoints(ctx, late)
+	c.Assert(pts, Equals, pre, Commentf("honest late gas-limit observer must be fully refunded; got %d want %d", pts, pre))
+}
+
+// TestObserveSlashBlockHeightSplitRefunded (#3104): even when gas matches exactly
+// (gas-deterministic chains), a member's pre-broadcast observation and its scanner
+// observation split on block height into separate voter entries; the member must
+// not keep an unrefundable observe point.
+func (s *HandlerObservedTxHelpersSuite) TestObserveSlashBlockHeightSplitRefunded(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	ctx = ctx.WithBlockHeight(100)
+	nas, vaultPubKey := observeSlashSetup(c, ctx, mgr)
+
+	member := nas[3].NodeAddress
+	const pre = int64(50)
+	mgr.Keeper().SetNodeAccountSlashPoints(ctx, member, pre)
+
+	txID := GetRandomTxHash()
+	// Identical gas; the only difference is the observation block height
+	// (signing tip vs inclusion), which splits them into separate voter entries.
+	preBroadcast := observeSlashOutboundTx(txID, vaultPubKey, 21000, 99)
+	scanner := observeSlashOutboundTx(txID, vaultPubKey, 21000, 100)
+	scanner.Tx.FromAddress = preBroadcast.Tx.FromAddress
+	scanner.Tx.ToAddress = preBroadcast.Tx.ToAddress
+
+	voter := NewObservedTxVoter(txID, []common.ObservedTx{})
+	voter, _ = processTxOutAttestation(ctx, mgr, voter, nas, preBroadcast, member, false)
+	voter, _ = processTxOutAttestation(ctx, mgr, voter, nas, scanner, nas[0].NodeAddress, false)
+	voter, _ = processTxOutAttestation(ctx, mgr, voter, nas, scanner, nas[1].NodeAddress, false)
+	voter, _ = processTxOutAttestation(ctx, mgr, voter, nas, scanner, nas[2].NodeAddress, false)
+	voter, _ = processTxOutAttestation(ctx, mgr, voter, nas, scanner, member, false)
+
+	c.Assert(voter.FinalisedHeight > 0, Equals, true)
+	pts, _ := mgr.Keeper().GetNodeAccountSlashPoints(ctx, member)
+	c.Assert(pts, Equals, pre, Commentf("block-height split must net zero for the committee member; got %d want %d", pts, pre))
+}
+
+// TestObserveSlashConfCountingNoErasure guards the finality-tier boundary: on a
+// confirmation-counting chain an honest node observes the same tx twice — once
+// non-final (pre-confirmations) and once final — reaching consensus in each tier.
+// The redundant-observation refund must NOT treat the final observation as a
+// redundant variant of the non-final one (they are credited in separate tiers),
+// otherwise the node loses a legitimately-accrued slash point on every such tx.
+func (s *HandlerObservedTxHelpersSuite) TestObserveSlashConfCountingNoErasure(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	ctx = ctx.WithBlockHeight(100)
+	nas, vaultPubKey := observeSlashSetup(c, ctx, mgr)
+
+	honest := nas[0].NodeAddress
+	const pre = int64(50)
+	mgr.Keeper().SetNodeAccountSlashPoints(ctx, honest, pre)
+
+	txID := GetRandomTxHash()
+	inTx := common.Tx{
+		ID:          txID,
+		Chain:       common.BTCChain,
+		FromAddress: GetRandomBTCAddress(),
+		ToAddress:   GetRandomBTCAddress(),
+		Coins:       common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(1*common.One))),
+		Gas:         common.Gas{common.NewCoin(common.BTCAsset, cosmos.NewUint(1000))},
+		Memo:        "SWAP:BTC.BTC",
+	}
+	// Same tx observed non-final (FinaliseHeight > BlockHeight) then final.
+	nonFinal := common.NewObservedTx(inTx, 100, vaultPubKey, 110)
+	final := common.NewObservedTx(inTx, 100, vaultPubKey, 100)
+	c.Assert(nonFinal.IsFinal(), Equals, false)
+	c.Assert(final.IsFinal(), Equals, true)
+
+	voter := NewObservedTxVoter(txID, []common.ObservedTx{})
+	// Non-final consensus tier.
+	voter, _ = processTxInAttestation(ctx, mgr, voter, nas, nonFinal, nas[0].NodeAddress, false)
+	voter, _ = processTxInAttestation(ctx, mgr, voter, nas, nonFinal, nas[1].NodeAddress, false)
+	voter, _ = processTxInAttestation(ctx, mgr, voter, nas, nonFinal, nas[2].NodeAddress, false)
+	// Final consensus tier (same nodes re-observe after confirmations).
+	voter, _ = processTxInAttestation(ctx, mgr, voter, nas, final, nas[0].NodeAddress, false)
+	voter, _ = processTxInAttestation(ctx, mgr, voter, nas, final, nas[1].NodeAddress, false)
+	voter, _ = processTxInAttestation(ctx, mgr, voter, nas, final, nas[2].NodeAddress, false)
+	c.Assert(voter.FinalisedHeight > 0, Equals, true)
+
+	pts, _ := mgr.Keeper().GetNodeAccountSlashPoints(ctx, honest)
+	c.Assert(pts, Equals, pre, Commentf("conf-counting double-observer must net zero; a cross-finality false match erases a slash point (got %d want %d)", pts, pre))
+}
+
+// TestObserveSlashRedundantVariantSpamCapped (#3081, huginn follow-up): the
+// redundant re-observation refund is capped at the signer's FIRST prior matching
+// variant. A member's honest re-observation (its 2nd variant) is refunded, but any
+// further self-inflicted variant (3rd+) keeps its observe slash point, so a node
+// cannot file unlimited gas/height variants at zero cost to defeat the
+// per-observation charge.
+func (s *HandlerObservedTxHelpersSuite) TestObserveSlashRedundantVariantSpamCapped(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	ctx = ctx.WithBlockHeight(100)
+	nas, vaultPubKey := observeSlashSetup(c, ctx, mgr)
+
+	member := nas[3].NodeAddress
+	const pre = int64(50)
+	mgr.Keeper().SetNodeAccountSlashPoints(ctx, member, pre)
+	observeSlashPoints := mgr.GetConstants().GetInt64Value(constants.ObserveSlashPoints)
+
+	txID := GetRandomTxHash()
+	// Three variants of the same outbound differing ONLY by gas.
+	variantA := observeSlashOutboundTx(txID, vaultPubKey, 50000, 100)
+	variantB := observeSlashOutboundTx(txID, vaultPubKey, 21000, 100)
+	variantC := observeSlashOutboundTx(txID, vaultPubKey, 30000, 100)
+	variantB.Tx.FromAddress = variantA.Tx.FromAddress
+	variantB.Tx.ToAddress = variantA.Tx.ToAddress
+	variantC.Tx.FromAddress = variantA.Tx.FromAddress
+	variantC.Tx.ToAddress = variantA.Tx.ToAddress
+
+	// member's original observation, then consensus forms on variantB.
+	voter := NewObservedTxVoter(txID, []common.ObservedTx{})
+	voter, _ = processTxOutAttestation(ctx, mgr, voter, nas, variantA, member, false)
+	voter, _ = processTxOutAttestation(ctx, mgr, voter, nas, variantB, nas[0].NodeAddress, false)
+	voter, _ = processTxOutAttestation(ctx, mgr, voter, nas, variantB, nas[1].NodeAddress, false)
+	voter, _ = processTxOutAttestation(ctx, mgr, voter, nas, variantB, nas[2].NodeAddress, false)
+	c.Assert(voter.FinalisedHeight, Equals, int64(100))
+
+	pts, _ := mgr.Keeper().GetNodeAccountSlashPoints(ctx, member)
+	c.Assert(pts, Equals, pre, Commentf("original observer credited gas-agnostic at consensus; got %d want %d", pts, pre))
+
+	// 2nd variant (1st redundant): honest re-observation, refunded → net zero.
+	ctx = ctx.WithBlockHeight(101)
+	voter, _ = processTxOutAttestation(ctx, mgr, voter, nas, variantB, member, false)
+	pts, _ = mgr.Keeper().GetNodeAccountSlashPoints(ctx, member)
+	c.Assert(pts, Equals, pre, Commentf("first redundant re-observation must be refunded; got %d want %d", pts, pre))
+
+	// 3rd variant (2nd redundant): self-inflicted spam, NOT refunded → keeps its
+	// observe point. Without the cap this would net zero (spam free); with it the
+	// node pays the per-observation charge for the extra variant.
+	voter, _ = processTxOutAttestation(ctx, mgr, voter, nas, variantC, member, false)
+	pts, _ = mgr.Keeper().GetNodeAccountSlashPoints(ctx, member)
+	c.Assert(pts, Equals, pre+observeSlashPoints, Commentf("second redundant variant must NOT be refunded (spam cap); got %d want %d", pts, pre+observeSlashPoints))
+}
+
+// TestObserveSlashRedundantVariantSpamCappedTxIn (#3081, huginn follow-up): the
+// same redundant-variant refund cap on the INBOUND path (processTxInAttestation).
+// The gate is byte-identical to the outbound site; this guards the txin
+// integration so the two paths can't silently diverge.
+func (s *HandlerObservedTxHelpersSuite) TestObserveSlashRedundantVariantSpamCappedTxIn(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	ctx = ctx.WithBlockHeight(100)
+	nas, vaultPubKey := observeSlashSetup(c, ctx, mgr)
+
+	member := nas[3].NodeAddress
+	const pre = int64(50)
+	mgr.Keeper().SetNodeAccountSlashPoints(ctx, member, pre)
+	observeSlashPoints := mgr.GetConstants().GetInt64Value(constants.ObserveSlashPoints)
+
+	txID := GetRandomTxHash()
+	base := common.Tx{
+		ID:          txID,
+		Chain:       common.BTCChain,
+		FromAddress: GetRandomBTCAddress(),
+		ToAddress:   GetRandomBTCAddress(),
+		Coins:       common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(1*common.One))),
+		Memo:        "SWAP:BTC.BTC",
+	}
+	// Three variants of the same inbound differing ONLY by gas, all final.
+	mkVariant := func(gas uint64) common.ObservedTx {
+		tx := base
+		tx.Gas = common.Gas{common.NewCoin(common.BTCAsset, cosmos.NewUint(gas))}
+		return common.NewObservedTx(tx, 100, vaultPubKey, 100)
+	}
+	variantA := mkVariant(1000)
+	variantB := mkVariant(2000)
+	variantC := mkVariant(3000)
+
+	// member's original observation, then consensus forms on variantB.
+	voter := NewObservedTxVoter(txID, []common.ObservedTx{})
+	voter, _ = processTxInAttestation(ctx, mgr, voter, nas, variantA, member, false)
+	voter, _ = processTxInAttestation(ctx, mgr, voter, nas, variantB, nas[0].NodeAddress, false)
+	voter, _ = processTxInAttestation(ctx, mgr, voter, nas, variantB, nas[1].NodeAddress, false)
+	voter, _ = processTxInAttestation(ctx, mgr, voter, nas, variantB, nas[2].NodeAddress, false)
+	c.Assert(voter.FinalisedHeight > 0, Equals, true)
+
+	pts, _ := mgr.Keeper().GetNodeAccountSlashPoints(ctx, member)
+	c.Assert(pts, Equals, pre, Commentf("original observer credited gas-agnostic at consensus; got %d want %d", pts, pre))
+
+	// 2nd variant (1st redundant): honest re-observation, refunded → net zero.
+	ctx = ctx.WithBlockHeight(101)
+	voter, _ = processTxInAttestation(ctx, mgr, voter, nas, variantB, member, false)
+	pts, _ = mgr.Keeper().GetNodeAccountSlashPoints(ctx, member)
+	c.Assert(pts, Equals, pre, Commentf("first redundant re-observation must be refunded; got %d want %d", pts, pre))
+
+	// 3rd variant (2nd redundant): self-inflicted spam, NOT refunded → keeps its point.
+	voter, _ = processTxInAttestation(ctx, mgr, voter, nas, variantC, member, false)
+	pts, _ = mgr.Keeper().GetNodeAccountSlashPoints(ctx, member)
+	c.Assert(pts, Equals, pre+observeSlashPoints, Commentf("second redundant variant must NOT be refunded (spam cap); got %d want %d", pts, pre+observeSlashPoints))
+}
+
+// TestObserveSlashXMRConflictingRefLateMatchKeepsOriginalPoint guards the
+// interaction between the transitive XMR refund class and the flex-window
+// refund. A prior observation with conflicting non-empty refs must remain
+// charged when a later consensus-compatible observation receives its own
+// observe-point and lack-of-observation refunds.
+func (s *HandlerObservedTxHelpersSuite) TestObserveSlashXMRConflictingRefLateMatchKeepsOriginalPoint(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	ctx = ctx.WithBlockHeight(100)
+	nas, _ := observeSlashSetup(c, ctx, mgr)
+
+	member := nas[3].NodeAddress
+	const pre = int64(50)
+	mgr.Keeper().SetNodeAccountSlashPoints(ctx, member, pre)
+	observePoints := mgr.GetConstants().GetInt64Value(constants.ObserveSlashPoints)
+	lackPoints := mgr.GetConstants().GetInt64Value(constants.LackOfObservationPenalty)
+
+	fromPubKey := GetRandomEd25519PubKey()
+	fromAddress, err := fromPubKey.GetAddress(common.XMRChain)
+	c.Assert(err, IsNil)
+	toPubKey := GetRandomEd25519PubKey()
+	toAddress, err := toPubKey.GetAddress(common.XMRChain)
+	c.Assert(err, IsNil)
+
+	txID := GetRandomTxHash()
+	baseTx := common.Tx{
+		ID:          txID,
+		Chain:       common.XMRChain,
+		FromAddress: fromAddress,
+		ToAddress:   toAddress,
+		Coins:       common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(1_000_000))),
+		Gas:         common.Gas{common.NewCoin(common.XMRAsset, cosmos.NewUint(10_000))},
+		Memo:        "OUT:" + txID.String(),
+	}
+	refA := common.NewObservedTx(baseTx, 100, fromPubKey, 100)
+	refA.XmrTxKey = strings.Repeat("a", 64)
+	refA.SpentOutputRefs = []common.OutputRef{
+		{TxHash: "aaaa", OutputIndex: 0, KeyImage: "ki_aaaa", SpendTxHash: txID.String()},
+	}
+	refB := common.NewObservedTx(baseTx, 100, fromPubKey, 100)
+	refB.XmrTxKey = strings.Repeat("a", 64)
+	refB.SpentOutputRefs = []common.OutputRef{
+		{TxHash: "bbbb", OutputIndex: 1, KeyImage: "ki_bbbb", SpendTxHash: txID.String()},
+	}
+	c.Assert(NewMsgObservedTxOut(common.ObservedTxs{refA}, member).ValidateBasic(), IsNil)
+	c.Assert(NewMsgObservedTxOut(common.ObservedTxs{refB}, member).ValidateBasic(), IsNil)
+
+	// The member's refA observation conflicts with the refB observation that
+	// reaches consensus, so its original observe point remains and it receives
+	// the lack-of-observation penalty.
+	voter := NewObservedTxVoter(txID, nil)
+	voter, _ = processTxOutAttestation(ctx, mgr, voter, nas, refA, member, false)
+	voter, _ = processTxOutAttestation(ctx, mgr, voter, nas, refB, nas[0].NodeAddress, false)
+	voter, _ = processTxOutAttestation(ctx, mgr, voter, nas, refB, nas[1].NodeAddress, false)
+	voter, _ = processTxOutAttestation(ctx, mgr, voter, nas, refB, nas[2].NodeAddress, false)
+
+	pts, _ := mgr.Keeper().GetNodeAccountSlashPoints(ctx, member)
+	c.Assert(pts, Equals, pre+observePoints+lackPoints)
+
+	// The late refB observation is consensus-compatible, so the flex branch
+	// refunds that submission and the lack penalty. The conflicting refA point
+	// must not also be erased by the immediate redundant-observation refund.
+	ctx = ctx.WithBlockHeight(101)
+	updatedVoter, reachedConsensus := processTxOutAttestation(ctx, mgr, voter, nas, refB, member, false)
+	c.Assert(reachedConsensus, Equals, false)
+	c.Assert(updatedVoter.Tx.HasSigned(member), Equals, true)
+	pts, _ = mgr.Keeper().GetNodeAccountSlashPoints(ctx, member)
+	c.Assert(pts, Equals, pre+observePoints)
 }
 
 func (s *HandlerObservedTxHelpersSuite) TestGasCorrectionFinalizedIgnoresNonFinalObservations(c *C) {
@@ -1205,6 +1909,84 @@ func (s *HandlerObservedTxHelpersSuite) TestCountMatchingSigners(c *C) {
 	c.Assert(count, Equals, 2)
 }
 
+func (s *HandlerObservedTxHelpersSuite) TestCountMatchingSignersScopesByObservedVault(c *C) {
+	nas := NodeAccounts{
+		GetRandomValidatorNode(NodeActive),
+		GetRandomValidatorNode(NodeActive),
+		GetRandomValidatorNode(NodeActive),
+		GetRandomValidatorNode(NodeActive),
+	}
+
+	txID := GetRandomTxHash()
+	gas := common.Gas{common.NewCoin(common.ETHAsset, cosmos.NewUint(23061))}
+	baseTx := common.Tx{
+		ID:          txID,
+		Chain:       common.ETHChain,
+		FromAddress: GetRandomETHAddress(),
+		ToAddress:   GetRandomETHAddress(),
+		Coins:       common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(305570))),
+		Gas:         gas,
+		Memo:        "OUT:xyz",
+	}
+
+	vaultPubKeyA := GetRandomPubKey()
+	vaultPubKeyB := GetRandomPubKey()
+
+	obsTxA := common.NewObservedTx(baseTx, 100, vaultPubKeyA, 100)
+	obsTxA.Signers = []string{nas[0].NodeAddress.String(), nas[1].NodeAddress.String()}
+
+	obsTxB := common.NewObservedTx(baseTx, 100, vaultPubKeyB, 100)
+	obsTxB.Signers = []string{nas[2].NodeAddress.String(), nas[3].NodeAddress.String()}
+
+	voter := NewObservedTxVoter(txID, []common.ObservedTx{obsTxA, obsTxB})
+
+	countA := countMatchingSigners(voter, obsTxA, nas)
+	c.Assert(countA, Equals, 2)
+
+	countB := countMatchingSigners(voter, obsTxB, nas)
+	c.Assert(countB, Equals, 2)
+}
+
+func (s *HandlerObservedTxHelpersSuite) TestCountMatchingSignersDoesNotMixXMRSpentRefs(c *C) {
+	nas := NodeAccounts{
+		GetRandomValidatorNode(NodeActive),
+		GetRandomValidatorNode(NodeActive),
+		GetRandomValidatorNode(NodeActive),
+		GetRandomValidatorNode(NodeActive),
+	}
+
+	txID := GetRandomTxHash()
+	baseTx := GetRandomTx()
+	baseTx.ID = txID
+	baseTx.Chain = common.XMRChain
+	baseTx.Coins = common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(500000000)))
+	baseTx.Gas = common.Gas{common.NewCoin(common.XMRAsset, cosmos.NewUint(1000))}
+	baseTx.Memo = "OUT:xmr-spent-refs"
+
+	vaultPubKey := GetRandomPubKey()
+	obsTxA := common.NewObservedTx(baseTx, 100, vaultPubKey, 100)
+	obsTxA.SpentOutputRefs = []common.OutputRef{
+		{TxHash: "aaaa", OutputIndex: 0, KeyImage: "ki_aaaa", SpendTxHash: txID.String()},
+		{TxHash: "bbbb", OutputIndex: 1, KeyImage: "ki_bbbb", SpendTxHash: txID.String()},
+	}
+	obsTxA.Signers = []string{nas[0].NodeAddress.String(), nas[1].NodeAddress.String()}
+
+	obsTxB := common.NewObservedTx(baseTx, 100, vaultPubKey, 100)
+	obsTxB.SpentOutputRefs = []common.OutputRef{
+		{TxHash: "cccc", OutputIndex: 0, KeyImage: "ki_cccc", SpendTxHash: txID.String()},
+		{TxHash: "dddd", OutputIndex: 1, KeyImage: "ki_dddd", SpendTxHash: txID.String()},
+	}
+	obsTxB.Signers = []string{nas[2].NodeAddress.String(), nas[3].NodeAddress.String()}
+
+	voter := NewObservedTxVoter(txID, []common.ObservedTx{obsTxA, obsTxB})
+
+	countA := countMatchingSigners(voter, obsTxA, nas)
+	c.Assert(countA, Equals, 2)
+
+	countB := countMatchingSigners(voter, obsTxB, nas)
+	c.Assert(countB, Equals, 2)
+}
+
 func (s *HandlerObservedTxHelpersSuite) TestGasCorrectionRequiresFinalityParity(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	ctx = ctx.WithBlockHeight(100)
@@ -1278,4 +2060,343 @@ func (s *HandlerObservedTxHelpersSuite) TestGasCorrectionRequiresFinalityParity(
 	c.Assert(err, IsNil)
 	c.Assert(vault.GetCoin(common.ETHAsset).Amount.Equal(vaultBalanceBefore), Equals, true,
 		Commentf("vault balance should be unchanged when non-final re-observations are rejected"))
+}
+
+// TestDebitVaultHalts asserts that an outbound observation whose
+// coin amount exceeds the vault's tracked balance halts signing + trading on
+// the affected chain. The excess debit is recorded as deficit and surfaced.
+func (s *HandlerObservedTxHelpersSuite) TestDebitVaultHalts(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	ctx = ctx.WithBlockHeight(1234)
+	k := mgr.Keeper()
+
+	vault := GetRandomVault()
+	vault.AddFunds(common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(10*common.One))))
+	c.Assert(k.SetVault(ctx, vault), IsNil)
+
+	// Observed outbound debits 100 ETH but the vault only tracks 10 ETH.
+	tx := common.NewObservedTx(common.Tx{
+		ID:          GetRandomTxHash(),
+		Chain:       common.ETHChain,
+		FromAddress: GetRandomETHAddress(),
+		ToAddress:   GetRandomETHAddress(),
+		Coins:       common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(100*common.One))),
+		Gas:         common.Gas{common.NewCoin(common.ETHAsset, cosmos.NewUint(1))},
+		Memo:        "OUT:abc",
+	}, ctx.BlockHeight(), vault.PubKey, ctx.BlockHeight())
+
+	// Sanity: chain should not be halted before the call.
+	haltSigning, err := k.GetMimir(ctx, "HaltSigningETH")
+	c.Assert(err, IsNil)
+	c.Assert(haltSigning <= 0, Equals, true)
+	haltTrading, err := k.GetMimir(ctx, "HaltETHTrading")
+	c.Assert(err, IsNil)
+	c.Assert(haltTrading <= 0, Equals, true)
+
+	debitVault(ctx, mgr, &vault, tx, tx.Tx.Coins, vaultDeficitReasonOutbound)
+
+	haltSigning, err = k.GetMimir(ctx, "HaltSigningETH")
+	c.Assert(err, IsNil)
+	c.Assert(haltSigning, Equals, ctx.BlockHeight(),
+		Commentf("HaltSigningETH should be set to current block height when a deficit is created"))
+	haltTrading, err = k.GetMimir(ctx, "HaltETHTrading")
+	c.Assert(err, IsNil)
+	c.Assert(haltTrading, Equals, ctx.BlockHeight(),
+		Commentf("HaltETHTrading should be set to current block height when a deficit is created"))
+}
+
+// TestDebitVaultNoOpWhenSolvent ensures the helper is a no-op
+// when the vault has sufficient balance to cover the observed outbound — the
+// normal happy path that should NOT halt the chain.
+func (s *HandlerObservedTxHelpersSuite) TestDebitVaultNoOpWhenSolvent(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	ctx = ctx.WithBlockHeight(1234)
+	k := mgr.Keeper()
+
+	vault := GetRandomVault()
+	vault.AddFunds(common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(100*common.One))))
+	c.Assert(k.SetVault(ctx, vault), IsNil)
+
+	tx := common.NewObservedTx(common.Tx{
+		ID:          GetRandomTxHash(),
+		Chain:       common.ETHChain,
+		FromAddress: GetRandomETHAddress(),
+		ToAddress:   GetRandomETHAddress(),
+		Coins:       common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(50*common.One))),
+		Gas:         common.Gas{common.NewCoin(common.ETHAsset, cosmos.NewUint(1))},
+		Memo:        "OUT:abc",
+	}, ctx.BlockHeight(), vault.PubKey, ctx.BlockHeight())
+
+	debitVault(ctx, mgr, &vault, tx, tx.Tx.Coins, vaultDeficitReasonOutbound)
+
+	haltSigning, err := k.GetMimir(ctx, "HaltSigningETH")
+	c.Assert(err, IsNil)
+	c.Assert(haltSigning <= 0, Equals, true,
+		Commentf("HaltSigningETH should remain unset when vault has sufficient balance"))
+	haltTrading, err := k.GetMimir(ctx, "HaltETHTrading")
+	c.Assert(err, IsNil)
+	c.Assert(haltTrading <= 0, Equals, true,
+		Commentf("HaltETHTrading should remain unset when vault has sufficient balance"))
+}
+
+// TestDebitVaultHaltsOnGasDebit asserts the helper also catches the same
+// deficit pattern when the slashed-vault gas debit underflows the vault's gas
+// reserve.
+func (s *HandlerObservedTxHelpersSuite) TestDebitVaultHaltsOnGasDebit(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	ctx = ctx.WithBlockHeight(2222)
+	k := mgr.Keeper()
+
+	vault := GetRandomVault()
+	// Vault has only 100 wei of ETH for gas — far less than the observed gas spend.
+	vault.AddFunds(common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(100))))
+	c.Assert(k.SetVault(ctx, vault), IsNil)
+
+	gas := common.Gas{common.NewCoin(common.ETHAsset, cosmos.NewUint(common.One))} // 1e8 wei
+	tx := common.NewObservedTx(common.Tx{
+		ID:          GetRandomTxHash(),
+		Chain:       common.ETHChain,
+		FromAddress: GetRandomETHAddress(),
+		ToAddress:   GetRandomETHAddress(),
+		Coins:       common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(1))),
+		Gas:         gas,
+		Memo:        "OUT:abc",
+	}, ctx.BlockHeight(), vault.PubKey, ctx.BlockHeight())
+
+	// Pass the gas coins explicitly — this is the call shape used by the
+	// vault-slash branch of handleObservedTxOutQuorum.
+	gasCoins := tx.Tx.Gas.ToCoins()
+	debitVault(ctx, mgr, &vault, tx, gasCoins, vaultDeficitReasonVaultSlashGas)
+
+	haltSigning, err := k.GetMimir(ctx, "HaltSigningETH")
+	c.Assert(err, IsNil)
+	c.Assert(haltSigning, Equals, ctx.BlockHeight(),
+		Commentf("HaltSigningETH should be set when gas debit creates deficit"))
+	haltTrading, err := k.GetMimir(ctx, "HaltETHTrading")
+	c.Assert(err, IsNil)
+	c.Assert(haltTrading, Equals, ctx.BlockHeight(),
+		Commentf("HaltETHTrading should be set when gas debit creates deficit"))
+}
+
+// TestGasDeficitHaltUsesCumulativeTotal verifies repeated below-threshold
+// gas-related deficits halt once the stored same-asset deficit total crosses
+// the max-gas-based threshold.
+func (s *HandlerObservedTxHelpersSuite) TestGasDeficitHaltUsesCumulativeTotal(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	ctx = ctx.WithBlockHeight(3333)
+	k := mgr.Keeper()
+
+	k.SetMimir(ctx, constants.VaultDeficitGasHaltMaxGasMultiplier.String(), 2)
+	c.Assert(k.SaveNetworkFee(ctx, common.ETHChain, NewNetworkFee(common.ETHChain, 1000, 10_000)), IsNil)
+
+	maxGasCoin, err := mgr.GasMgr().GetMaxGas(ctx, common.ETHChain)
+	c.Assert(err, IsNil)
+	threshold := maxGasCoin.Amount.MulUint64(2)
+	c.Assert(threshold.GT(cosmos.NewUint(1)), Equals, true)
+
+	vault := NewVault(ctx.BlockHeight(), ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.ETHChain}.Strings(), []ChainContract{})
+	tx := common.NewObservedTx(common.Tx{
+		ID:          GetRandomTxHash(),
+		Chain:       common.ETHChain,
+		FromAddress: GetRandomETHAddress(),
+		ToAddress:   GetRandomETHAddress(),
+		Coins:       common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(1))),
+		Gas:         common.Gas{common.NewCoin(common.ETHAsset, threshold.Sub(cosmos.NewUint(1)))},
+		Memo:        "OUT:abc",
+	}, ctx.BlockHeight(), vault.PubKey, ctx.BlockHeight())
+
+	debitVault(ctx, mgr, &vault, tx, tx.Tx.Gas.ToCoins(), vaultDeficitReasonOutboundGas)
+	c.Assert(vault.GetDeficit(common.ETHAsset).Amount.Equal(threshold.Sub(cosmos.NewUint(1))), Equals, true)
+
+	haltSigning, err := k.GetMimir(ctx, "HaltSigningETH")
+	c.Assert(err, IsNil)
+	c.Assert(haltSigning <= 0, Equals, true)
+	haltTrading, err := k.GetMimir(ctx, "HaltETHTrading")
+	c.Assert(err, IsNil)
+	c.Assert(haltTrading <= 0, Equals, true)
+
+	ctx = ctx.WithBlockHeight(ctx.BlockHeight() + 1)
+	tx.Tx.ID = GetRandomTxHash()
+	tx.Tx.Gas = common.Gas{common.NewCoin(common.ETHAsset, cosmos.NewUint(1))}
+
+	debitVault(ctx, mgr, &vault, tx, tx.Tx.Gas.ToCoins(), vaultDeficitReasonOutboundGas)
+	c.Assert(vault.GetDeficit(common.ETHAsset).Amount.Equal(threshold), Equals, true)
+
+	haltSigning, err = k.GetMimir(ctx, "HaltSigningETH")
+	c.Assert(err, IsNil)
+	c.Assert(haltSigning, Equals, ctx.BlockHeight())
+	haltTrading, err = k.GetMimir(ctx, "HaltETHTrading")
+	c.Assert(err, IsNil)
+	c.Assert(haltTrading, Equals, ctx.BlockHeight())
+}
+
+type zeroMaxGasManager struct {
+	*DummyGasManager
+}
+
+func (zeroMaxGasManager) GetMaxGas(_ cosmos.Context, chain common.Chain) (common.Coin, error) {
+	return common.NewCoin(chain.GetGasAsset(), cosmos.ZeroUint()), nil
+}
+
+func (s *HandlerObservedTxHelpersSuite) TestGasDeficitHaltSkipsZeroMaxGas(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	k := mgr.Keeper()
+	k.SetMimir(ctx, constants.VaultDeficitGasHaltMaxGasMultiplier.String(), 2)
+	mgr.gasMgr = zeroMaxGasManager{DummyGasManager: NewDummyGasManager()}
+
+	crosses := gasDeficitCrossesHaltThreshold(ctx, mgr, k, common.NewCoin(common.ETHAsset, cosmos.OneUint()))
+	c.Assert(crosses, Equals, false)
+}
+
+// TestDebitVaultPreservesManualHalt asserts that existing
+// manual indefinite halts (mimir == 1) on either HaltSigning<Chain> or
+// Halt<Chain>Trading are NOT downgraded to the current block height. Without
+// this guard, a regular halt-height write would later be auto-unhalted, which
+// is exactly what the manual-halt sentinel is meant to prevent.
+func (s *HandlerObservedTxHelpersSuite) TestDebitVaultPreservesManualHalt(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	ctx = ctx.WithBlockHeight(1234)
+	k := mgr.Keeper()
+
+	vault := GetRandomVault()
+	vault.AddFunds(common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(10*common.One))))
+	c.Assert(k.SetVault(ctx, vault), IsNil)
+
+	// Operator has set the manual indefinite-halt sentinels.
+	k.SetMimir(ctx, "HaltSigningETH", 1)
+	k.SetMimir(ctx, "HaltETHTrading", 1)
+
+	tx := common.NewObservedTx(common.Tx{
+		ID:          GetRandomTxHash(),
+		Chain:       common.ETHChain,
+		FromAddress: GetRandomETHAddress(),
+		ToAddress:   GetRandomETHAddress(),
+		Coins:       common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(100*common.One))),
+		Gas:         common.Gas{common.NewCoin(common.ETHAsset, cosmos.NewUint(1))},
+		Memo:        "OUT:abc",
+	}, ctx.BlockHeight(), vault.PubKey, ctx.BlockHeight())
+
+	debitVault(ctx, mgr, &vault, tx, tx.Tx.Coins, vaultDeficitReasonOutbound)
+
+	haltSigning, err := k.GetMimir(ctx, "HaltSigningETH")
+	c.Assert(err, IsNil)
+	c.Assert(haltSigning, Equals, int64(1),
+		Commentf("HaltSigningETH manual indefinite halt must be preserved across deficit handling"))
+	haltTrading, err := k.GetMimir(ctx, "HaltETHTrading")
+	c.Assert(err, IsNil)
+	c.Assert(haltTrading, Equals, int64(1),
+		Commentf("HaltETHTrading manual indefinite halt must be preserved across deficit handling"))
+}
+
+// TestDebitVaultOverridesFutureHalt asserts that a future-scheduled halt is
+// overwritten with ctx.BlockHeight() when a deficit is detected. Per Ursa's MR
+// feedback: a vault debit deficit is a present-time divergence, so triggering
+// the halt now is the right call. Differs from processSolvencyAttestation,
+// which preserves future halts because it can also unhalt.
+func (s *HandlerObservedTxHelpersSuite) TestDebitVaultOverridesFutureHalt(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	ctx = ctx.WithBlockHeight(1234)
+	k := mgr.Keeper()
+
+	vault := GetRandomVault()
+	vault.AddFunds(common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(10*common.One))))
+	c.Assert(k.SetVault(ctx, vault), IsNil)
+
+	// Halts scheduled 1000 blocks in the future.
+	futureHalt := ctx.BlockHeight() + 1000
+	k.SetMimir(ctx, "HaltSigningETH", futureHalt)
+	k.SetMimir(ctx, "HaltETHTrading", futureHalt)
+
+	tx := common.NewObservedTx(common.Tx{
+		ID:          GetRandomTxHash(),
+		Chain:       common.ETHChain,
+		FromAddress: GetRandomETHAddress(),
+		ToAddress:   GetRandomETHAddress(),
+		Coins:       common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(100*common.One))),
+		Gas:         common.Gas{common.NewCoin(common.ETHAsset, cosmos.NewUint(1))},
+		Memo:        "OUT:abc",
+	}, ctx.BlockHeight(), vault.PubKey, ctx.BlockHeight())
+
+	debitVault(ctx, mgr, &vault, tx, tx.Tx.Coins, vaultDeficitReasonOutbound)
+
+	haltSigning, err := k.GetMimir(ctx, "HaltSigningETH")
+	c.Assert(err, IsNil)
+	c.Assert(haltSigning, Equals, ctx.BlockHeight(),
+		Commentf("HaltSigningETH future halt must be overwritten with current block height"))
+	haltTrading, err := k.GetMimir(ctx, "HaltETHTrading")
+	c.Assert(err, IsNil)
+	c.Assert(haltTrading, Equals, ctx.BlockHeight(),
+		Commentf("HaltETHTrading future halt must be overwritten with current block height"))
+}
+
+// TestDebitVaultSumsDuplicateCoins asserts that multiple coin
+// entries for the same asset are summed before comparing against the vault
+// balance. Per Ursa's MR feedback: tx.Tx.Coins should normally have one entry
+// per asset, but if duplicates ever appear the SUM of amounts must be the
+// thing compared, not each entry independently.
+func (s *HandlerObservedTxHelpersSuite) TestDebitVaultSumsDuplicateCoins(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	ctx = ctx.WithBlockHeight(3333)
+	k := mgr.Keeper()
+
+	vault := GetRandomVault()
+	// Vault holds 50 ETH.
+	vault.AddFunds(common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(50*common.One))))
+	c.Assert(k.SetVault(ctx, vault), IsNil)
+
+	// Two coin entries of 30 ETH each — neither alone exceeds 50, but the
+	// sum (60) does. A naive per-entry comparison would miss this deficit.
+	coins := common.Coins{
+		common.NewCoin(common.ETHAsset, cosmos.NewUint(30*common.One)),
+		common.NewCoin(common.ETHAsset, cosmos.NewUint(30*common.One)),
+	}
+	tx := common.NewObservedTx(common.Tx{
+		ID:          GetRandomTxHash(),
+		Chain:       common.ETHChain,
+		FromAddress: GetRandomETHAddress(),
+		ToAddress:   GetRandomETHAddress(),
+		Coins:       coins,
+		Gas:         common.Gas{common.NewCoin(common.ETHAsset, cosmos.NewUint(1))},
+		Memo:        "OUT:abc",
+	}, ctx.BlockHeight(), vault.PubKey, ctx.BlockHeight())
+
+	debitVault(ctx, mgr, &vault, tx, coins, vaultDeficitReasonOutbound)
+
+	haltSigning, err := k.GetMimir(ctx, "HaltSigningETH")
+	c.Assert(err, IsNil)
+	c.Assert(haltSigning, Equals, ctx.BlockHeight(),
+		Commentf("deficit handling must fire when summed-by-asset amount exceeds vault balance"))
+	haltTrading, err := k.GetMimir(ctx, "HaltETHTrading")
+	c.Assert(err, IsNil)
+	c.Assert(haltTrading, Equals, ctx.BlockHeight(),
+		Commentf("deficit handling must fire when summed-by-asset amount exceeds vault balance"))
+}
+
+func (s *HandlerObservedTxHelpersSuite) TestXMRSpentOutputRefsStoreAccumulation(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	vaultPubKey := GetRandomPubKey()
+	vault := NewVaultV2(1, ActiveVault, AsgardVault, vaultPubKey, []string{common.XMRChain.String()}, nil, vaultPubKey)
+	vault.PubKeyFrost = vaultPubKey
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+
+	ref1 := common.OutputRef{TxHash: "aaa", OutputIndex: 0, KeyImage: "ki_aaa", SpendTxHash: "spend_tx"}
+	ref2 := common.OutputRef{TxHash: "bbb", OutputIndex: 1, KeyImage: "ki_bbb", SpendTxHash: "spend_tx"}
+
+	applySpentRefs := func(refs []common.OutputRef) {
+		c.Assert(mgr.Keeper().SetXMRSpentOutputRefs(ctx, vaultPubKey, common.TxID("spend_tx"), refs, ctx.BlockHeight(), ctx.BlockHeight()), IsNil)
+	}
+
+	applySpentRefs([]common.OutputRef{ref1, ref2})
+	refs, err := mgr.Keeper().GetXMRSpentOutputRefs(ctx, vaultPubKey)
+	c.Assert(err, IsNil)
+	c.Assert(len(refs), Equals, 2)
+
+	applySpentRefs([]common.OutputRef{
+		{TxHash: "aaa", OutputIndex: 0, KeyImage: "ki_aaa", SpendTxHash: "spend_tx"},
+		{TxHash: "ccc", OutputIndex: 2, KeyImage: "ki_ccc", SpendTxHash: "spend_tx"},
+	})
+	refs, err = mgr.Keeper().GetXMRSpentOutputRefs(ctx, vaultPubKey)
+	c.Assert(err, IsNil)
+	c.Assert(len(refs), Equals, 3, Commentf("duplicate ref should be deduped"))
 }

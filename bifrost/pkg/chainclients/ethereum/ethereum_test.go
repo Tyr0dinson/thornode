@@ -82,7 +82,7 @@ func (s *EthereumSuite) SetUpTest(c *C) {
 	s.mimirOverrides = nil
 	s.m = GetMetricForTest(c)
 	c.Assert(s.m, NotNil)
-	types2.SetupConfigForTest()
+	setupMocknetThorConfig()
 	c.Assert(os.Setenv("NET", "mocknet"), IsNil)
 
 	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
@@ -294,11 +294,33 @@ func (s *EthereumSuite) SetUpTest(c *C) {
 }
 
 func (s *EthereumSuite) TearDownTest(c *C) {
+	if s.server != nil {
+		s.server.Close()
+		s.server = nil
+	}
 	c.Assert(os.Unsetenv("NET"), IsNil)
 
 	if err := os.RemoveAll(s.thordir); err != nil {
 		c.Error(err)
 	}
+}
+
+// TestGetGasEstimateForSolvency verifies the ETH solvency buffer formula:
+// 3 * MaxGasLimit * lastReportedGasPrice, converted from gwei to THORChain 1e8 units.
+func (s *EthereumSuite) TestGetGasEstimateForSolvency(c *C) {
+	client := &Client{
+		cfg: config.BifrostChainConfiguration{
+			ChainID: common.ETHChain,
+			BlockScanner: config.BifrostBlockScannerConfiguration{
+				MaxGasLimit: 21_000,
+			},
+		},
+		ethScanner: &ETHScanner{},
+	}
+	client.ethScanner.lastReportedGasPrice.Store(40)
+
+	got := client.GetGasEstimateForSolvency()
+	c.Assert(got.Equal(cosmos.NewUint(252_000)), Equals, true)
 }
 
 func (s *EthereumSuite) TestNewClient(c *C) {
@@ -324,6 +346,12 @@ func (s *EthereumSuite) TestNewClient(c *C) {
 	e, err = NewClient(nil, config.BifrostChainConfiguration{}, nil, s.bridge, s.m, pubkeyMgr, poolMgr)
 	c.Assert(e, IsNil)
 	c.Assert(err, NotNil)
+
+	divergent := config.BifrostChainConfiguration{}
+	divergent.EVM.TokenMaxGasMultiplier = constants.EVMTokenMaxGasMultiplier + 1
+	e, err = NewClient(s.thorKeys, divergent, nil, s.bridge, s.m, pubkeyMgr, poolMgr)
+	c.Assert(e, IsNil)
+	c.Assert(err, ErrorMatches, ".*diverges from Thornode protocol value.*")
 }
 
 func (s *EthereumSuite) TestConvertSigningAmount(c *C) {
@@ -502,6 +530,56 @@ func (s *EthereumSuite) TestGetAccount(c *C) {
 	b, err := e.GetBalance("0x9f4aab49a9cd8fc54dcb3701846f608a6f2c44da", "0x3b7FA4dd21c6f9BA3ca375217EAD7CAb9D6bF483", nil, "0xE65e9d372F8cAcc7b6dfcd4af6507851Ed31bb44")
 	c.Assert(err, IsNil)
 	c.Assert(b, NotNil)
+}
+
+func (s *EthereumSuite) TestGetVaultBalancesUsesVaultCoins(c *C) {
+	pubkeyMgr, err := pubkeymanager.NewPubKeyManager(s.bridge, s.m)
+	c.Assert(err, IsNil)
+	poolMgr := thorclient.NewPoolMgr(s.bridge)
+	e, err := NewClient(s.thorKeys, config.BifrostChainConfiguration{
+		RPCHost: "http://" + s.server.Listener.Addr().String(),
+		BlockScanner: config.BifrostBlockScannerConfiguration{
+			StartBlockHeight:   1,
+			HTTPRequestTimeout: time.Second,
+		},
+		ChainID: common.ETHChain,
+	}, nil, s.bridge, s.m, pubkeyMgr, poolMgr)
+	c.Assert(err, IsNil)
+	c.Assert(e, NotNil)
+	e.ethScanner.globalNetworkFeeQueue = make(chan common.NetworkFee, 1)
+
+	// Node-local token metadata must not affect the solvency coin set.
+	c.Assert(e.ethScanner.tokens.SaveTokenMeta("RAZE", "0x5EAA69B29F99C84FE5DE8200340B4E9B4AB38EAC", 18), IsNil)
+	c.Assert(e.ethScanner.tokens.SaveTokenMeta("FLIP", "0x826180541412D574CF1336D22C0C0A287822678A", 18), IsNil)
+
+	tkn, err := common.NewAsset("ETH.TKN-0X3B7FA4DD21C6F9BA3CA375217EAD7CAB9D6BF483")
+	c.Assert(err, IsNil)
+	usdc, err := common.NewAsset("ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48")
+	c.Assert(err, IsNil)
+	vault := types2.Vault{
+		Coins: common.NewCoins(
+			common.NewCoin(usdc, cosmos.NewUint(1)),
+			common.NewCoin(common.BTCAsset, cosmos.NewUint(1)),
+			common.NewCoin(common.ETHAsset, cosmos.NewUint(1)),
+			common.NewCoin(tkn, cosmos.NewUint(1)),
+			common.NewCoin(usdc, cosmos.NewUint(2)),
+		),
+	}
+
+	coins, err := e.GetVaultBalances(
+		"0x9f4aab49a9cd8fc54dcb3701846f608a6f2c44da",
+		nil,
+		"0xE65e9d372F8cAcc7b6dfcd4af6507851Ed31bb44",
+		vault,
+	)
+	c.Assert(err, IsNil)
+	c.Assert(coins, HasLen, 3)
+	c.Assert(coins[0].Asset.Equals(common.ETHAsset), Equals, true)
+	c.Assert(coins[0].Amount.Uint64(), Equals, uint64(10*common.One))
+	c.Assert(coins[1].Asset.Equals(tkn), Equals, true)
+	c.Assert(coins[1].Amount.IsZero(), Equals, true)
+	c.Assert(coins[2].Asset.Equals(usdc), Equals, true)
+	c.Assert(coins[2].Amount.IsZero(), Equals, true)
 }
 
 func (s *EthereumSuite) TestSignETHTx(c *C) {

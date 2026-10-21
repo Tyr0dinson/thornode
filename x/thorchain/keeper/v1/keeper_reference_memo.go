@@ -3,14 +3,13 @@ package keeperv1
 import (
 	"fmt"
 
-	"github.com/cosmos/cosmos-sdk/runtime"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/constants"
 )
 
 func (k KVStore) setReferenceMemo(ctx cosmos.Context, key string, record ReferenceMemo) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	buf := k.cdc.MustMarshal(&record)
 	if buf == nil {
 		store.Delete([]byte(key))
@@ -20,7 +19,7 @@ func (k KVStore) setReferenceMemo(ctx cosmos.Context, key string, record Referen
 }
 
 func (k KVStore) getReferenceMemo(ctx cosmos.Context, key string, record *ReferenceMemo) (bool, error) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	if !store.Has([]byte(key)) {
 		return false, nil
 	}
@@ -166,7 +165,7 @@ func (k KVStore) getHashAlias(ctx cosmos.Context, hash common.TxID) string {
 
 func (k KVStore) setHashAlias(ctx cosmos.Context, hash common.TxID, key string) {
 	hashKey := string(k.GetKey(prefixReferenceMemoHash, hash.String()))
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	if store.Has([]byte(hashKey)) {
 		// this hash already exist, never override it as it would allow an
 		// attacker to overwrite the memo
@@ -176,4 +175,25 @@ func (k KVStore) setHashAlias(ctx cosmos.Context, hash common.TxID, key string) 
 		return
 	}
 	k.setString(ctx, hashKey, key)
+}
+
+// GetReferenceMemoWindow returns the two-bucket sliding window of reference
+// registrations for an asset: the height the current bucket started, the count
+// in the current bucket, the count in the previous one and the MemolessTxnTTL
+// the current bucket was opened under. See memolessLiveRefs for how these are
+// turned into an occupancy estimate.
+func (k KVStore) GetReferenceMemoWindow(ctx cosmos.Context, asset common.Asset) (start, cur, prev, width int64) {
+	_, _ = k.getInt64(ctx, k.GetKey(prefixReferenceMemoWindow, asset.String()+"/start"), &start)
+	_, _ = k.getInt64(ctx, k.GetKey(prefixReferenceMemoWindow, asset.String()+"/cur"), &cur)
+	_, _ = k.getInt64(ctx, k.GetKey(prefixReferenceMemoWindow, asset.String()+"/prev"), &prev)
+	_, _ = k.getInt64(ctx, k.GetKey(prefixReferenceMemoWindow, asset.String()+"/width"), &width)
+	return start, cur, prev, width
+}
+
+// SetReferenceMemoWindow saves the sliding window counters for an asset.
+func (k KVStore) SetReferenceMemoWindow(ctx cosmos.Context, asset common.Asset, start, cur, prev, width int64) {
+	k.setInt64(ctx, k.GetKey(prefixReferenceMemoWindow, asset.String()+"/start"), start)
+	k.setInt64(ctx, k.GetKey(prefixReferenceMemoWindow, asset.String()+"/cur"), cur)
+	k.setInt64(ctx, k.GetKey(prefixReferenceMemoWindow, asset.String()+"/prev"), prev)
+	k.setInt64(ctx, k.GetKey(prefixReferenceMemoWindow, asset.String()+"/width"), width)
 }

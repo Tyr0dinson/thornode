@@ -532,6 +532,7 @@
                     "observed_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
                     "out_hashes": [],
                     "signers": [],
+                    "sol_nonce": null,
                     "status": "incomplete",
                     "tx": {
                       "chain": "BTC",
@@ -553,7 +554,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000001",
                       "memo": "trade+:tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
                       "to_address": "bcrt1qzf3gsk7edzwl9syyefvfhle37cjtql35tlzesk"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }
@@ -706,6 +708,7 @@
         "mode": "EndBlock",
         "pool": "BTC.BTC",
         "pool_slip": "476",
+        "stable_reserve": "false",
         "streaming_swap_count": "1",
         "streaming_swap_quantity": "1",
         "swap_slip": "476",
@@ -725,6 +728,7 @@
         "mode": "EndBlock",
         "pool": "ETH.ETH",
         "pool_slip": "434",
+        "stable_reserve": "false",
         "streaming_swap_count": "1",
         "streaming_swap_quantity": "1",
         "swap_slip": "434",
@@ -1255,6 +1259,7 @@
         "mode": "EndBlock",
         "pool": "ETH.ETH",
         "pool_slip": "48",
+        "stable_reserve": "false",
         "streaming_swap_count": "1",
         "streaming_swap_quantity": "9",
         "swap_slip": "50",
@@ -1274,6 +1279,7 @@
         "mode": "EndBlock",
         "pool": "BTC.BTC",
         "pool_slip": "52",
+        "stable_reserve": "false",
         "streaming_swap_count": "1",
         "streaming_swap_quantity": "9",
         "swap_slip": "52",
@@ -1570,6 +1576,7 @@
         "mode": "EndBlock",
         "pool": "ETH.ETH",
         "pool_slip": "48",
+        "stable_reserve": "false",
         "streaming_swap_count": "2",
         "streaming_swap_quantity": "9",
         "swap_slip": "50",
@@ -1589,6 +1596,7 @@
         "mode": "EndBlock",
         "pool": "BTC.BTC",
         "pool_slip": "51",
+        "stable_reserve": "false",
         "streaming_swap_count": "2",
         "streaming_swap_quantity": "9",
         "swap_slip": "51",
@@ -1788,6 +1796,7 @@
         "mode": "EndBlock",
         "pool": "ETH.ETH",
         "pool_slip": "47",
+        "stable_reserve": "false",
         "streaming_swap_count": "3",
         "streaming_swap_quantity": "9",
         "swap_slip": "50",
@@ -1807,6 +1816,7 @@
         "mode": "EndBlock",
         "pool": "BTC.BTC",
         "pool_slip": "50",
+        "stable_reserve": "false",
         "streaming_swap_count": "3",
         "streaming_swap_quantity": "9",
         "swap_slip": "50",
@@ -2006,6 +2016,7 @@
         "mode": "EndBlock",
         "pool": "ETH.ETH",
         "pool_slip": "47",
+        "stable_reserve": "false",
         "streaming_swap_count": "4",
         "streaming_swap_quantity": "9",
         "swap_slip": "50",
@@ -2025,6 +2036,7 @@
         "mode": "EndBlock",
         "pool": "BTC.BTC",
         "pool_slip": "50",
+        "stable_reserve": "false",
         "streaming_swap_count": "4",
         "streaming_swap_quantity": "9",
         "swap_slip": "50",
@@ -2224,6 +2236,7 @@
         "mode": "EndBlock",
         "pool": "ETH.ETH",
         "pool_slip": "47",
+        "stable_reserve": "false",
         "streaming_swap_count": "5",
         "streaming_swap_quantity": "9",
         "swap_slip": "50",
@@ -2243,6 +2256,7 @@
         "mode": "EndBlock",
         "pool": "BTC.BTC",
         "pool_slip": "49",
+        "stable_reserve": "false",
         "streaming_swap_count": "5",
         "streaming_swap_quantity": "9",
         "swap_slip": "50",
@@ -2442,6 +2456,7 @@
         "mode": "EndBlock",
         "pool": "ETH.ETH",
         "pool_slip": "47",
+        "stable_reserve": "false",
         "streaming_swap_count": "6",
         "streaming_swap_quantity": "9",
         "swap_slip": "50",
@@ -2461,6 +2476,7 @@
         "mode": "EndBlock",
         "pool": "BTC.BTC",
         "pool_slip": "48",
+        "stable_reserve": "false",
         "streaming_swap_count": "6",
         "streaming_swap_quantity": "9",
         "swap_slip": "50",
@@ -2660,6 +2676,7 @@
         "mode": "EndBlock",
         "pool": "ETH.ETH",
         "pool_slip": "47",
+        "stable_reserve": "false",
         "streaming_swap_count": "7",
         "streaming_swap_quantity": "9",
         "swap_slip": "50",
@@ -2679,6 +2696,7 @@
         "mode": "EndBlock",
         "pool": "BTC.BTC",
         "pool_slip": "48",
+        "stable_reserve": "false",
         "streaming_swap_count": "7",
         "streaming_swap_quantity": "9",
         "swap_slip": "50",
@@ -2878,6 +2896,7 @@
         "mode": "EndBlock",
         "pool": "ETH.ETH",
         "pool_slip": "46",
+        "stable_reserve": "false",
         "streaming_swap_count": "8",
         "streaming_swap_quantity": "9",
         "swap_slip": "50",
@@ -2897,6 +2916,7 @@
         "mode": "EndBlock",
         "pool": "BTC.BTC",
         "pool_slip": "47",
+        "stable_reserve": "false",
         "streaming_swap_count": "8",
         "streaming_swap_quantity": "9",
         "swap_slip": "50",
@@ -3096,6 +3116,7 @@
         "mode": "EndBlock",
         "pool": "ETH.ETH",
         "pool_slip": "46",
+        "stable_reserve": "false",
         "streaming_swap_count": "9",
         "streaming_swap_quantity": "9",
         "swap_slip": "50",
@@ -3115,6 +3136,7 @@
         "mode": "EndBlock",
         "pool": "BTC.BTC",
         "pool_slip": "46",
+        "stable_reserve": "false",
         "streaming_swap_count": "9",
         "streaming_swap_quantity": "9",
         "swap_slip": "50",
@@ -3719,6 +3741,7 @@
                     "observed_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
                     "out_hashes": [],
                     "signers": [],
+                    "sol_nonce": null,
                     "status": "incomplete",
                     "tx": {
                       "chain": "BTC",
@@ -3740,7 +3763,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000002",
                       "memo": "OUT:AA170169016E043D63E912771E808F0A448EB877FC9699F7DAACE38775872764",
                       "to_address": "bcrt1q3wrmhnh2qe98rjse30pl7u6jxszjjwl44ls6uw"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }
@@ -4266,6 +4290,7 @@
                     "observed_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
                     "out_hashes": [],
                     "signers": [],
+                    "sol_nonce": null,
                     "status": "incomplete",
                     "tx": {
                       "chain": "BTC",
@@ -4287,7 +4312,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000003",
                       "memo": "OUT:9A7EC1FA3967D0383CDD0EDFA4EBBE21129A0100E2C9CB564FF0089A1476A268",
                       "to_address": "bcrt1q3wrmhnh2qe98rjse30pl7u6jxszjjwl44ls6uw"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }

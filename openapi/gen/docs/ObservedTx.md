@@ -15,6 +15,9 @@ Name | Type | Description | Notes
 **Signers** | Pointer to **[]string** |  | [optional] 
 **KeysignMs** | Pointer to **int64** |  | [optional] 
 **OutHashes** | Pointer to **[]string** |  | [optional] 
+**SpentOutputRefs** | Pointer to [**[]OutputRef**](OutputRef.md) | XMR outbound spent outputs and key images committed by observers. | [optional] 
+**XmrTxKey** | Pointer to **string** | XMR outbound tx private key used by third parties to verify recipient outputs. | [optional] 
+**XmrMinedHeight** | Pointer to **int64** | Original XMR mined height, retained when observation height changes at finalization. Zero means unavailable or pre-mining. | [optional] 
 **Status** | Pointer to **string** |  | [optional] 
 
 ## Methods
@@ -305,6 +308,81 @@ SetOutHashes sets OutHashes field to given value.
 `func (o *ObservedTx) HasOutHashes() bool`
 
 HasOutHashes returns a boolean if a field has been set.
+
+### GetSpentOutputRefs
+
+`func (o *ObservedTx) GetSpentOutputRefs() []OutputRef`
+
+GetSpentOutputRefs returns the SpentOutputRefs field if non-nil, zero value otherwise.
+
+### GetSpentOutputRefsOk
+
+`func (o *ObservedTx) GetSpentOutputRefsOk() (*[]OutputRef, bool)`
+
+GetSpentOutputRefsOk returns a tuple with the SpentOutputRefs field if it's non-nil, zero value otherwise
+and a boolean to check if the value has been set.
+
+### SetSpentOutputRefs
+
+`func (o *ObservedTx) SetSpentOutputRefs(v []OutputRef)`
+
+SetSpentOutputRefs sets SpentOutputRefs field to given value.
+
+### HasSpentOutputRefs
+
+`func (o *ObservedTx) HasSpentOutputRefs() bool`
+
+HasSpentOutputRefs returns a boolean if a field has been set.
+
+### GetXmrTxKey
+
+`func (o *ObservedTx) GetXmrTxKey() string`
+
+GetXmrTxKey returns the XmrTxKey field if non-nil, zero value otherwise.
+
+### GetXmrTxKeyOk
+
+`func (o *ObservedTx) GetXmrTxKeyOk() (*string, bool)`
+
+GetXmrTxKeyOk returns a tuple with the XmrTxKey field if it's non-nil, zero value otherwise
+and a boolean to check if the value has been set.
+
+### SetXmrTxKey
+
+`func (o *ObservedTx) SetXmrTxKey(v string)`
+
+SetXmrTxKey sets XmrTxKey field to given value.
+
+### HasXmrTxKey
+
+`func (o *ObservedTx) HasXmrTxKey() bool`
+
+HasXmrTxKey returns a boolean if a field has been set.
+
+### GetXmrMinedHeight
+
+`func (o *ObservedTx) GetXmrMinedHeight() int64`
+
+GetXmrMinedHeight returns the XmrMinedHeight field if non-nil, zero value otherwise.
+
+### GetXmrMinedHeightOk
+
+`func (o *ObservedTx) GetXmrMinedHeightOk() (*int64, bool)`
+
+GetXmrMinedHeightOk returns a tuple with the XmrMinedHeight field if it's non-nil, zero value otherwise
+and a boolean to check if the value has been set.
+
+### SetXmrMinedHeight
+
+`func (o *ObservedTx) SetXmrMinedHeight(v int64)`
+
+SetXmrMinedHeight sets XmrMinedHeight field to given value.
+
+### HasXmrMinedHeight
+
+`func (o *ObservedTx) HasXmrMinedHeight() bool`
+
+HasXmrMinedHeight returns a boolean if a field has been set.
 
 ### GetStatus
 

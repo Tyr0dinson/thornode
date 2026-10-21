@@ -27,6 +27,7 @@ import (
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/constants"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
 	kv1 "gitlab.com/thorchain/thornode/v3/x/thorchain/keeper/v1"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
@@ -99,7 +100,7 @@ func (s *MemoSuite) SetUpSuite(c *C) {
 		nil,
 		authtypes.NewModuleAddress(types.ModuleName).String(),
 	)
-	s.k = kv1.NewKVStore(encodingConfig.Codec, runtime.NewKVStoreService(keyThorchain), bk, ak, uk, types.GetCurrentVersion())
+	s.k = kv1.NewKVStore(encodingConfig.Codec, keyThorchain, bk, ak, uk, types.GetCurrentVersion())
 }
 
 func (s *MemoSuite) TestTxType(c *C) {
@@ -284,6 +285,15 @@ func (s *MemoSuite) TestParseWithAbbreviated(c *C) {
 	_, err = ParseMemoWithTHORNames(ctx, k, fmt.Sprintf("=:%s:0x90f2b1ae50e6018230e90a33f98c7844a0ab635a:1200/102103980982304982058230492830429384080/20", common.RuneAsset()))
 	c.Assert(err, NotNil)
 
+	// a price limit that overflows big.Float to +Inf must be rejected (refund),
+	// not silently parsed as a zero limit that disables price protection
+	_, err = ParseMemoWithTHORNames(ctx, k, fmt.Sprintf("=:%s:0x90f2b1ae50e6018230e90a33f98c7844a0ab635a:1e700000000/10/20", common.RuneAsset()))
+	c.Assert(err, NotNil)
+	// a negative price limit is rejected as a parse error, not via panic recovery
+	_, err = ParseMemoWithTHORNames(ctx, k, fmt.Sprintf("=:%s:0x90f2b1ae50e6018230e90a33f98c7844a0ab635a:-1/10/20", common.RuneAsset()))
+	c.Assert(err, NotNil)
+	c.Check(strings.Contains(err.Error(), "panicked"), Equals, false, Commentf("%s", err))
+
 	memo, err = ParseMemoWithTHORNames(ctx, k, "=:"+common.RuneAsset().String()+":0x90f2b1ae50e6018230e90a33f98c7844a0ab635a")
 	c.Assert(err, IsNil)
 	c.Check(memo.GetAsset().String(), Equals, common.RuneAsset().String())
@@ -407,6 +417,50 @@ func (s *MemoSuite) TestParseWithAbbreviated(c *C) {
 	c.Assert(err, NotNil)
 }
 
+// TestAddLiquidityMemoCompositeAddressParsing keeps keeper-backed and keeperless
+// parsing aligned while treating an invalid optional asset address as absent.
+func (s *MemoSuite) TestAddLiquidityMemoCompositeAddressParsing(c *C) {
+	pairAddr := types.GetRandomTHORAddress()
+	assetAddr := "45v8VYPut8S9wY9fTvn1gKiGN5AMMzsCK9kLNcEpEESygy4vU3Jf3uE4Zyqv2bDLwTToH8ArrsZ3W28kmKUKJkjY8fN9anA"
+	validMemo := fmt.Sprintf("+:XMR.XMR:%s/%s", pairAddr, assetAddr)
+	invalidMemo := fmt.Sprintf("+:XMR.XMR:%s/not-an-address", pairAddr)
+	missingPairMemo := fmt.Sprintf("+:XMR.XMR:/%s", assetAddr)
+	nonExplicitChainMemo := fmt.Sprintf("+:BTC.BTC:%s/%s", pairAddr, types.GetRandomBTCAddress())
+
+	parsers := []func(string) (Memo, error){
+		func(memo string) (Memo, error) {
+			return ParseMemo(types.GetCurrentVersion(), memo)
+		},
+		func(memo string) (Memo, error) {
+			return ParseMemoWithTHORNames(s.ctx, s.k, memo)
+		},
+	}
+
+	for _, parse := range parsers {
+		parsed, err := parse(validMemo)
+		c.Assert(err, IsNil)
+		addMemo, ok := parsed.(AddLiquidityMemo)
+		c.Assert(ok, Equals, true)
+		c.Check(addMemo.GetDestination(), Equals, pairAddr)
+		c.Check(addMemo.GetAssetAddress().String(), Equals, assetAddr)
+
+		parsed, err = parse(invalidMemo)
+		c.Assert(err, IsNil)
+		addMemo, ok = parsed.(AddLiquidityMemo)
+		c.Assert(ok, Equals, true)
+		c.Check(addMemo.GetDestination(), Equals, pairAddr)
+		c.Check(addMemo.GetAssetAddress().IsEmpty(), Equals, true)
+
+		_, err = parse(missingPairMemo)
+		c.Assert(err, NotNil)
+
+		// ADD composite addresses are XMR-scoped. On chains with an observable
+		// sender, accepting this field would silently discard the asset address.
+		_, err = parse(nonExplicitChainMemo)
+		c.Assert(err, NotNil)
+	}
+}
+
 func (s *MemoSuite) TestParse(c *C) {
 	ctx := s.ctx
 	k := s.k
@@ -437,7 +491,7 @@ func (s *MemoSuite) TestParse(c *C) {
 	c.Check(memo.GetDestination().String(), Equals, "bc1qwqdg6squsna38e46795at95yu9atm8azzmyvckulcc7kytlcckxswvvzej")
 	c.Check(memo.IsType(TxAdd), Equals, true, Commentf("MEMO: %+v", memo))
 
-	_, err = ParseMemoWithTHORNames(ctx, k, "ADD:ETH.ETH:0x90f2b1ae50e6018230e90a33f98c7844a0ab635a:tthor176xrckly4p7efq7fshhcuc2kax3dyxu9hguzl7:1000")
+	_, err = ParseMemoWithTHORNames(ctx, k, "ADD:ETH.ETH:0x90f2b1ae50e6018230e90a33f98c7844a0ab635a:"+thorAddr.String()+":1000")
 	c.Assert(err, IsNil)
 
 	memo, err = ParseMemoWithTHORNames(ctx, k, "TCY:"+thorAddr.String())
@@ -506,22 +560,37 @@ func (s *MemoSuite) TestParse(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(memo.IsType(TxBond), Equals, true)
 	c.Assert(memo.GetAccAddress().String(), Equals, whiteListAddr.String())
-	// trunk-ignore(golangci-lint/govet): shadow false positive
-	parser, _ := newParser(ctx, k, k.GetVersion(), fmt.Sprintf("BOND:%s:%s", whiteListAddr.String(), bondProvider.String()))
-	mem, err := parser.ParseBondMemo()
+	bondParser, _ := newParser(ctx, k, k.GetVersion(), fmt.Sprintf("BOND:%s:%s", whiteListAddr.String(), bondProvider.String()))
+	mem, err := bondParser.ParseBondMemo()
 	c.Assert(err, IsNil)
 	c.Assert(mem.BondProviderAddress.String(), Equals, bondProvider.String())
 	c.Assert(mem.NodeOperatorFee, Equals, int64(-1))
-	parser, _ = newParser(ctx, k, k.GetVersion(), fmt.Sprintf("BOND:%s:%s:0", whiteListAddr.String(), bondProvider.String()))
-	mem, err = parser.ParseBondMemo()
+	bondParser, _ = newParser(ctx, k, k.GetVersion(), fmt.Sprintf("BOND:%s:%s:0", whiteListAddr.String(), bondProvider.String()))
+	mem, err = bondParser.ParseBondMemo()
 	c.Assert(err, IsNil)
 	c.Assert(mem.BondProviderAddress.String(), Equals, bondProvider.String())
 	c.Assert(mem.NodeOperatorFee, Equals, int64(0))
-	parser, _ = newParser(ctx, k, k.GetVersion(), fmt.Sprintf("BOND:%s:%s:1000", whiteListAddr.String(), bondProvider.String()))
-	mem, err = parser.ParseBondMemo()
+	bondParser, _ = newParser(ctx, k, k.GetVersion(), fmt.Sprintf("BOND:%s:%s:1000", whiteListAddr.String(), bondProvider.String()))
+	mem, err = bondParser.ParseBondMemo()
 	c.Assert(err, IsNil)
 	c.Assert(mem.BondProviderAddress.String(), Equals, bondProvider.String())
 	c.Assert(mem.NodeOperatorFee, Equals, int64(1000))
+
+	memo, err = ParseMemoWithTHORNames(ctx, k, fmt.Sprintf("BONDYIELD:%s:%d", whiteListAddr, constants.MaxBasisPts))
+	c.Assert(err, IsNil)
+	c.Assert(memo.IsType(TxBondYield), Equals, true)
+	c.Assert(memo.GetAccAddress().String(), Equals, whiteListAddr.String())
+	bondYieldMemo, ok := memo.(BondYieldMemo)
+	c.Assert(ok, Equals, true)
+	c.Assert(bondYieldMemo.GetBps(), Equals, constants.MaxBasisPts)
+	memoParser, _ := newParser(ctx, k, k.GetVersion(), fmt.Sprintf("BONDYIELD:%s:2500:yieldname", whiteListAddr.String()))
+	bondYieldMemo, err = memoParser.ParseBondYieldMemo()
+	c.Assert(err, IsNil)
+	c.Assert(bondYieldMemo.GetBps(), Equals, uint64(2500))
+	c.Assert(bondYieldMemo.PayoutTarget, Equals, "yieldname")
+	memoParser, _ = newParser(ctx, k, k.GetVersion(), fmt.Sprintf("BONDYIELD:%s:AUTO:2500:yieldname", whiteListAddr.String()))
+	_, err = memoParser.ParseBondYieldMemo()
+	c.Assert(err, NotNil)
 
 	memo, err = ParseMemoWithTHORNames(ctx, k, "leave:"+types.GetRandomBech32Addr().String())
 	c.Assert(err, IsNil)
@@ -532,8 +601,8 @@ func (s *MemoSuite) TestParse(c *C) {
 	c.Assert(memo.IsType(TxUnbond), Equals, true)
 	c.Assert(memo.GetAccAddress().String(), Equals, whiteListAddr.String())
 	c.Assert(memo.GetAmount().Equal(cosmos.NewUint(300)), Equals, true)
-	parser, _ = newParser(ctx, k, k.GetVersion(), fmt.Sprintf("UNBOND:%s:400:%s", whiteListAddr.String(), bondProvider.String()))
-	unbondMemo, err := parser.ParseUnbondMemo()
+	bondParser, _ = newParser(ctx, k, k.GetVersion(), fmt.Sprintf("UNBOND:%s:400:%s", whiteListAddr.String(), bondProvider.String()))
+	unbondMemo, err := bondParser.ParseUnbondMemo()
 	c.Assert(err, IsNil)
 	c.Assert(unbondMemo.BondProviderAddress.String(), Equals, bondProvider.String())
 
@@ -668,10 +737,6 @@ func (s *MemoSuite) TestParse(c *C) {
 	_, err = ParseMemoWithTHORNames(ctx, k, "whatever") // not support
 	c.Assert(err, NotNil)
 
-	memo, err = ParseMemoWithTHORNames(ctx, k, "x:tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f:AA==")
-	c.Assert(err, IsNil)
-	c.Check(memo.IsType(TxExec), Equals, true)
-	c.Check(memo.String(), Equals, "x:tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f:AA==")
 	_, err = ParseMemoWithTHORNames(ctx, k, "tcy:0x90f2b1ae50e6018230e90a33f98c7844a0ab635a") // invalid thor address
 	c.Assert(err, NotNil)
 	_, err = ParseMemoWithTHORNames(ctx, k, "tcy-") // emptu bps
@@ -1125,4 +1190,80 @@ func (s *MemoSuite) TestReferenceWriteMemoValidation(c *C) {
 	_, err = ParseMemoWithTHORNames(ctx, k, invalidMemo3)
 	c.Assert(err, Not(IsNil))
 	c.Assert(strings.Contains(err.Error(), "embedded memo is invalid"), Equals, true)
+}
+
+func (s *MemoSuite) TestParseMemoWithTHORNamesCached(c *C) {
+	// CacheContext discards THORName writes so they do not leak into other tests.
+	baseCtx, _ := s.ctx.CacheContext()
+	k := s.k
+
+	thorAddr := types.GetRandomTHORAddress()
+	resolveMemo := "=:THOR.RUNE:cachetest"
+	otherMemo := "=:THOR.RUNE:" + thorAddr.String()
+
+	// no cache on the context: falls through to an uncached parse
+	_, err := ParseMemoWithTHORNamesCached(baseCtx, k, resolveMemo)
+	c.Assert(err, NotNil)
+	c.Check(baseCtx.Value(memoCacheKey{}), IsNil)
+
+	ctx := WithMemoCache(baseCtx)
+
+	// miss: the unregistered THORName fails to parse and the error is cached
+	_, err = ParseMemoWithTHORNamesCached(ctx, k, resolveMemo)
+	c.Assert(err, NotNil)
+	cachedErr := err
+
+	name := types.NewTHORName("cachetest", 50, []types.THORNameAlias{{Chain: common.THORChain, Address: thorAddr}})
+	k.SetTHORName(ctx, name)
+
+	// hit: the cached error is reused even though the THORName now resolves
+	_, err = ParseMemoWithTHORNamesCached(ctx, k, resolveMemo)
+	c.Check(err, Equals, cachedErr)
+	_, err = ParseMemoWithTHORNames(ctx, k, resolveMemo)
+	c.Assert(err, IsNil)
+
+	// a distinct memo string is a separate entry
+	mem, err := ParseMemoWithTHORNamesCached(ctx, k, otherMemo)
+	c.Assert(err, IsNil)
+	c.Check(mem.GetDestination(), Equals, thorAddr)
+
+	// a fresh cache does not share entries with the previous one
+	freshCtx := WithMemoCache(baseCtx)
+	mem, err = ParseMemoWithTHORNamesCached(freshCtx, k, resolveMemo)
+	c.Assert(err, IsNil)
+	c.Check(mem.GetDestination(), Equals, thorAddr)
+
+	// hit: the cached success survives the THORName changing underneath it
+	newAddr := types.GetRandomTHORAddress()
+	name.Aliases = []types.THORNameAlias{{Chain: common.THORChain, Address: newAddr}}
+	k.SetTHORName(freshCtx, name)
+	mem, err = ParseMemoWithTHORNamesCached(freshCtx, k, resolveMemo)
+	c.Assert(err, IsNil)
+	c.Check(mem.GetDestination(), Equals, thorAddr)
+	mem, err = ParseMemoWithTHORNames(freshCtx, k, resolveMemo)
+	c.Assert(err, IsNil)
+	c.Check(mem.GetDestination(), Equals, newAddr)
+
+	// contexts derived from a cached context share its cache
+	childCtx, _ := freshCtx.CacheContext()
+	mem, err = ParseMemoWithTHORNamesCached(childCtx, k, resolveMemo)
+	c.Assert(err, IsNil)
+	c.Check(mem.GetDestination(), Equals, thorAddr)
+}
+
+func (s *MemoSuite) TestParseMemoWithTHORNamesCachedSharesSlices(c *C) {
+	ctx := WithMemoCache(s.ctx)
+	aff1 := types.GetRandomTHORAddress()
+	aff2 := types.GetRandomTHORAddress()
+	ms := fmt.Sprintf("=:e:0x90f2b1ae50e6018230e90a33f98c7844a0ab635a::%s/%s:10/20", aff1, aff2)
+
+	first, err := ParseMemoWithTHORNamesCached(ctx, s.k, ms)
+	c.Assert(err, IsNil)
+	second, err := ParseMemoWithTHORNamesCached(ctx, s.k, ms)
+	c.Assert(err, IsNil)
+
+	// cached Memo values alias the same backing arrays, so callers must not mutate them
+	c.Assert(len(first.GetAffiliates()), Equals, 2)
+	c.Check(&first.GetAffiliates()[0] == &second.GetAffiliates()[0], Equals, true)
+	c.Check(&first.GetAffiliatesBasisPoints()[0] == &second.GetAffiliatesBasisPoints()[0], Equals, true)
 }

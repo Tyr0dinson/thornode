@@ -21,7 +21,9 @@ const (
 	// MinKeysharesBackupEntropy was selected based on a few spot checks of the entropy in
 	// encrypted keyshares for mocknet, which were always greater than 7, this is just a
 	// sanity check and is safe to set lower.
-	MinKeysharesBackupEntropy float64 = 7
+	MinKeysharesBackupEntropy   float64 = 7
+	MinKeysharesBackupSize      int     = 1024
+	MinFrostKeysharesBackupSize int     = 256
 )
 
 // MatchMnemonic will match substrings that look like a 12+ word mnemonic.
@@ -35,7 +37,7 @@ var (
 
 // NewMsgTssPool is a constructor function for MsgTssPool
 func NewMsgTssPool(pks []string, poolpk common.PubKey, secp256k1Signature, keysharesBackup []byte, keygenType KeygenType, height int64, bl []Blame, chains []string, signer cosmos.AccAddress, keygenTime int64) (*MsgTssPool, error) {
-	id, err := getTssID(pks, poolpk, height, bl)
+	id, err := getTssID(pks, poolpk, common.EmptyPubKey, height, bl)
 	if err != nil {
 		return nil, fmt.Errorf("fail to get tss id: %w", err)
 	}
@@ -54,8 +56,33 @@ func NewMsgTssPool(pks []string, poolpk common.PubKey, secp256k1Signature, keysh
 	}, nil
 }
 
-// getTssID
-func getTssID(members []string, poolPk common.PubKey, height int64, bl []Blame) (string, error) {
+// getTssID computes the identity of a keygen result, which is also the identity
+// of the TssVoter that tallies it.
+//
+// Every field the handler requires all reporters of an ID to agree on must
+// either be bound into this identity or be pinned to a fixed value by
+// TssHandler.validate. An unbound field is set in the voter by whichever
+// message is processed first, and every later message that disagrees is
+// rejected before it is counted - so a single keygen member could otherwise
+// pin a bogus value and stall consensus for that keygen (issue #2953).
+func getTssID(members []string, poolPk, poolPubKeyEddsa common.PubKey, height int64, bl []Blame) (string, error) {
+	return getTssIDWithXMRFields(members, poolPk, poolPubKeyEddsa, height, bl, common.EmptyPubKey, 0, false)
+}
+
+func getXMRTssID(members []string, poolPk, poolPubKeyEddsa common.PubKey, height int64, bl []Blame, poolPubKeyFrost common.PubKey, observedMoneroHeight int64) (string, error) {
+	return getTssIDWithXMRFields(members, poolPk, poolPubKeyEddsa, height, bl, poolPubKeyFrost, observedMoneroHeight, true)
+}
+
+func getTssIDWithXMRFields(
+	members []string,
+	poolPk common.PubKey,
+	poolPubKeyEddsa common.PubKey,
+	height int64,
+	bl []Blame,
+	poolPubKeyFrost common.PubKey,
+	observedMoneroHeight int64,
+	includeXMRFields bool,
+) (string, error) {
 	// ensure input pubkeys list is deterministically sorted
 	sort.SliceStable(members, func(i, j int) bool {
 		return members[i] < members[j]
@@ -75,11 +102,25 @@ func getTssID(members []string, poolPk common.PubKey, height int64, bl []Blame) 
 	for _, item := range members {
 		sb.WriteString("m:" + item)
 	}
+	// IsSuccess is determined by whether the Blame slice itself is empty, not
+	// by whether any blamed pubkeys are present. Bind that distinction
+	// explicitly so a legitimate failure with zero BlameNodes cannot share a
+	// voter with successful reports.
+	if len(bl) == 0 {
+		sb.WriteString("r:success")
+	} else {
+		sb.WriteString("r:failure")
+	}
 	for _, item := range pubkeys {
 		sb.WriteString("p:" + item)
 	}
 	sb.WriteString(poolPk.String())
 	sb.WriteString(fmt.Sprintf("%d", height))
+	sb.WriteString("e:" + poolPubKeyEddsa.String())
+	if includeXMRFields {
+		sb.WriteString("f:" + poolPubKeyFrost.String())
+		sb.WriteString(fmt.Sprintf("x:%d", observedMoneroHeight))
+	}
 	hash := sha256.New()
 	_, err := hash.Write([]byte(sb.String()))
 	if err != nil {
@@ -99,8 +140,12 @@ func (m *MsgTssPool) ValidateBasic() error {
 	if len(m.ID) == 0 {
 		return cosmos.ErrUnknownRequest("ID cannot be blank")
 	}
-	if len(m.PubKeys) < 2 {
-		return cosmos.ErrUnknownRequest("Must have at least 2 pub keys")
+	minPubKeys := 2
+	if m.KeygenType == KeygenType_XMRMonovaultKeygen {
+		minPubKeys = 1
+	}
+	if len(m.PubKeys) < minPubKeys {
+		return cosmos.ErrUnknownRequest(fmt.Sprintf("Must have at least %d pub keys", minPubKeys))
 	}
 	if len(m.PubKeys) > 100 {
 		return cosmos.ErrUnknownRequest("Must have no more then 100 pub keys")
@@ -153,6 +198,17 @@ func (m *MsgTssPool) ValidateBasic() error {
 	if _, err := common.NewPubKey(m.PoolPubKey.String()); err != nil {
 		return cosmos.ErrUnknownRequest(err.Error())
 	}
+	if m.KeygenType == KeygenType_XMRMonovaultKeygen && m.IsSuccess() {
+		if m.PoolPubKeyFrost.IsEmpty() {
+			return cosmos.ErrUnknownRequest("xmr frost pool pubkey cannot be empty")
+		}
+		if _, err := m.PoolPubKeyFrost.GetAddress(common.XMRChain); err != nil {
+			return cosmos.ErrUnknownRequest("invalid xmr frost pool pubkey")
+		}
+		if m.ObservedMoneroHeight <= 0 {
+			return cosmos.ErrUnknownRequest("xmr observed monero height must be greater than zero")
+		}
+	}
 	chains := m.GetChains()
 	if len(chains) != len(m.Chains) {
 		return cosmos.ErrUnknownRequest("One or more chains were not valid")
@@ -164,39 +220,36 @@ func (m *MsgTssPool) ValidateBasic() error {
 		return cosmos.ErrUnknownRequest("cannot have duplicate chains")
 	}
 
-	if len(m.KeysharesBackup) != 0 {
-		// sanity check encrypted keyshares do not a mnemonic
-		if MatchMnemonic.Match(m.KeysharesBackup) {
-			return cosmos.ErrUnknownRequest("invalid keyshares backup")
-		}
-
-		// sanity check encrypted keyshares are over 1Kb
-		if len(m.KeysharesBackup) < 1024 {
-			return cosmos.ErrUnknownRequest("invalid keyshares backup")
-		}
-
-		// sanity check probability distribution of keyshares backup bytes
-		entropy := common.Entropy(m.KeysharesBackup)
-		// analyze-ignore(float-comparison)
-		if entropy < MinKeysharesBackupEntropy {
-			return cosmos.ErrUnknownRequest("invalid keyshares backup")
-		}
+	if err := validateKeysharesBackup(m.KeysharesBackup, "keyshares backup", MinKeysharesBackupSize); err != nil {
+		return err
+	}
+	if err := validateKeysharesBackup(m.KeysharesBackupEddsa, "eddsa keyshares backup", MinKeysharesBackupSize); err != nil {
+		return err
+	}
+	if err := validateKeysharesBackup(m.KeysharesBackupFrost, "frost keyshares backup", MinFrostKeysharesBackupSize); err != nil {
+		return err
 	}
 
-	if len(m.KeysharesBackupEddsa) != 0 {
-		if MatchMnemonic.Match(m.KeysharesBackupEddsa) {
-			return cosmos.ErrUnknownRequest("invalid eddsa keyshares backup")
-		}
+	return nil
+}
 
-		if len(m.KeysharesBackupEddsa) < 1024 {
-			return cosmos.ErrUnknownRequest("invalid eddsa keyshares backup")
-		}
+func validateKeysharesBackup(backup []byte, label string, minSize int) error {
+	if len(backup) == 0 {
+		return nil
+	}
 
-		entropy := common.Entropy(m.KeysharesBackupEddsa)
-		// analyze-ignore(float-comparison)
-		if entropy < MinKeysharesBackupEntropy {
-			return cosmos.ErrUnknownRequest("invalid eddsa keyshares backup")
-		}
+	if MatchMnemonic.Match(backup) {
+		return cosmos.ErrUnknownRequest(fmt.Sprintf("invalid %s", label))
+	}
+
+	if len(backup) < minSize {
+		return cosmos.ErrUnknownRequest(fmt.Sprintf("invalid %s", label))
+	}
+
+	entropy := common.Entropy(backup)
+	// analyze-ignore(float-comparison)
+	if entropy < MinKeysharesBackupEntropy {
+		return cosmos.ErrUnknownRequest(fmt.Sprintf("invalid %s", label))
 	}
 
 	return nil

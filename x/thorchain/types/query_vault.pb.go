@@ -86,15 +86,18 @@ type QueryVaultResponse struct {
 	Status      string                                        `protobuf:"bytes,5,opt,name=status,proto3" json:"status"`
 	StatusSince int64                                         `protobuf:"varint,6,opt,name=status_since,json=statusSince,proto3" json:"status_since,omitempty"`
 	// the list of node public keys which are members of the vault
-	Membership            []string        `protobuf:"bytes,7,rep,name=membership,proto3" json:"membership,omitempty"`
-	Chains                []string        `protobuf:"bytes,8,rep,name=chains,proto3" json:"chains,omitempty"`
-	InboundTxCount        int64           `protobuf:"varint,9,opt,name=inbound_tx_count,json=inboundTxCount,proto3" json:"inbound_tx_count,omitempty"`
-	OutboundTxCount       int64           `protobuf:"varint,10,opt,name=outbound_tx_count,json=outboundTxCount,proto3" json:"outbound_tx_count,omitempty"`
-	PendingTxBlockHeights []int64         `protobuf:"varint,11,rep,packed,name=pending_tx_block_heights,json=pendingTxBlockHeights,proto3" json:"pending_tx_block_heights,omitempty"`
-	Routers               []*VaultRouter  `protobuf:"bytes,12,rep,name=routers,proto3" json:"routers"`
-	Addresses             []*VaultAddress `protobuf:"bytes,13,rep,name=addresses,proto3" json:"addresses"`
-	Frozen                []string        `protobuf:"bytes,14,rep,name=frozen,proto3" json:"frozen,omitempty"`
-	PubKeyEddsa           string          `protobuf:"bytes,15,opt,name=pub_key_eddsa,json=pubKeyEddsa,proto3" json:"pub_key_eddsa,omitempty"`
+	Membership             []string                                      `protobuf:"bytes,7,rep,name=membership,proto3" json:"membership,omitempty"`
+	Chains                 []string                                      `protobuf:"bytes,8,rep,name=chains,proto3" json:"chains,omitempty"`
+	InboundTxCount         int64                                         `protobuf:"varint,9,opt,name=inbound_tx_count,json=inboundTxCount,proto3" json:"inbound_tx_count,omitempty"`
+	OutboundTxCount        int64                                         `protobuf:"varint,10,opt,name=outbound_tx_count,json=outboundTxCount,proto3" json:"outbound_tx_count,omitempty"`
+	PendingTxBlockHeights  []int64                                       `protobuf:"varint,11,rep,packed,name=pending_tx_block_heights,json=pendingTxBlockHeights,proto3" json:"pending_tx_block_heights,omitempty"`
+	Routers                []*VaultRouter                                `protobuf:"bytes,12,rep,name=routers,proto3" json:"routers"`
+	Addresses              []*VaultAddress                               `protobuf:"bytes,13,rep,name=addresses,proto3" json:"addresses"`
+	Frozen                 []string                                      `protobuf:"bytes,14,rep,name=frozen,proto3" json:"frozen,omitempty"`
+	PubKeyEddsa            string                                        `protobuf:"bytes,15,opt,name=pub_key_eddsa,json=pubKeyEddsa,proto3" json:"pub_key_eddsa,omitempty"`
+	VaultCreationHeightXmr int64                                         `protobuf:"varint,16,opt,name=vault_creation_height_xmr,json=vaultCreationHeightXmr,proto3" json:"vault_creation_height_xmr,omitempty"`
+	PubKeyFrost            string                                        `protobuf:"bytes,18,opt,name=pub_key_frost,json=pubKeyFrost,proto3" json:"pub_key_frost,omitempty"`
+	Deficit                gitlab_com_thorchain_thornode_v3_common.Coins `protobuf:"bytes,19,rep,name=deficit,proto3,castrepeated=gitlab.com/thorchain/thornode/v3/common.Coins" json:"deficit"`
 }
 
 func (m *QueryVaultResponse) Reset()         { *m = QueryVaultResponse{} }
@@ -235,6 +238,179 @@ func (m *QueryVaultResponse) GetPubKeyEddsa() string {
 	return ""
 }
 
+func (m *QueryVaultResponse) GetVaultCreationHeightXmr() int64 {
+	if m != nil {
+		return m.VaultCreationHeightXmr
+	}
+	return 0
+}
+
+func (m *QueryVaultResponse) GetPubKeyFrost() string {
+	if m != nil {
+		return m.PubKeyFrost
+	}
+	return ""
+}
+
+func (m *QueryVaultResponse) GetDeficit() gitlab_com_thorchain_thornode_v3_common.Coins {
+	if m != nil {
+		return m.Deficit
+	}
+	return nil
+}
+
+type QueryKeysignPartyRequest struct {
+	PubKey        string `protobuf:"bytes,1,opt,name=pub_key,json=pubKey,proto3" json:"pub_key,omitempty"`
+	SigningHeight string `protobuf:"bytes,2,opt,name=signing_height,json=signingHeight,proto3" json:"signing_height,omitempty"`
+}
+
+func (m *QueryKeysignPartyRequest) Reset()         { *m = QueryKeysignPartyRequest{} }
+func (m *QueryKeysignPartyRequest) String() string { return proto.CompactTextString(m) }
+func (*QueryKeysignPartyRequest) ProtoMessage()    {}
+func (*QueryKeysignPartyRequest) Descriptor() ([]byte, []int) {
+	return fileDescriptor_941f4868303210e7, []int{2}
+}
+func (m *QueryKeysignPartyRequest) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *QueryKeysignPartyRequest) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_QueryKeysignPartyRequest.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *QueryKeysignPartyRequest) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_QueryKeysignPartyRequest.Merge(m, src)
+}
+func (m *QueryKeysignPartyRequest) XXX_Size() int {
+	return m.Size()
+}
+func (m *QueryKeysignPartyRequest) XXX_DiscardUnknown() {
+	xxx_messageInfo_QueryKeysignPartyRequest.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_QueryKeysignPartyRequest proto.InternalMessageInfo
+
+func (m *QueryKeysignPartyRequest) GetPubKey() string {
+	if m != nil {
+		return m.PubKey
+	}
+	return ""
+}
+
+func (m *QueryKeysignPartyRequest) GetSigningHeight() string {
+	if m != nil {
+		return m.SigningHeight
+	}
+	return ""
+}
+
+type QueryKeysignPartyResponse struct {
+	PubKey                string   `protobuf:"bytes,1,opt,name=pub_key,json=pubKey,proto3" json:"pub_key,omitempty"`
+	Signers               []string `protobuf:"bytes,2,rep,name=signers,proto3" json:"signers,omitempty"`
+	Height                int64    `protobuf:"varint,3,opt,name=height,proto3" json:"height,omitempty"`
+	Threshold             int64    `protobuf:"varint,4,opt,name=threshold,proto3" json:"threshold,omitempty"`
+	RequiredSigners       int64    `protobuf:"varint,5,opt,name=required_signers,json=requiredSigners,proto3" json:"required_signers,omitempty"`
+	NeverSigners          []string `protobuf:"bytes,6,rep,name=never_signers,json=neverSigners,proto3" json:"never_signers,omitempty"`
+	JailedFallbackSigners []string `protobuf:"bytes,7,rep,name=jailed_fallback_signers,json=jailedFallbackSigners,proto3" json:"jailed_fallback_signers,omitempty"`
+	ActiveSignerCount     int64    `protobuf:"varint,8,opt,name=active_signer_count,json=activeSignerCount,proto3" json:"active_signer_count,omitempty"`
+}
+
+func (m *QueryKeysignPartyResponse) Reset()         { *m = QueryKeysignPartyResponse{} }
+func (m *QueryKeysignPartyResponse) String() string { return proto.CompactTextString(m) }
+func (*QueryKeysignPartyResponse) ProtoMessage()    {}
+func (*QueryKeysignPartyResponse) Descriptor() ([]byte, []int) {
+	return fileDescriptor_941f4868303210e7, []int{3}
+}
+func (m *QueryKeysignPartyResponse) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *QueryKeysignPartyResponse) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_QueryKeysignPartyResponse.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *QueryKeysignPartyResponse) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_QueryKeysignPartyResponse.Merge(m, src)
+}
+func (m *QueryKeysignPartyResponse) XXX_Size() int {
+	return m.Size()
+}
+func (m *QueryKeysignPartyResponse) XXX_DiscardUnknown() {
+	xxx_messageInfo_QueryKeysignPartyResponse.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_QueryKeysignPartyResponse proto.InternalMessageInfo
+
+func (m *QueryKeysignPartyResponse) GetPubKey() string {
+	if m != nil {
+		return m.PubKey
+	}
+	return ""
+}
+
+func (m *QueryKeysignPartyResponse) GetSigners() []string {
+	if m != nil {
+		return m.Signers
+	}
+	return nil
+}
+
+func (m *QueryKeysignPartyResponse) GetHeight() int64 {
+	if m != nil {
+		return m.Height
+	}
+	return 0
+}
+
+func (m *QueryKeysignPartyResponse) GetThreshold() int64 {
+	if m != nil {
+		return m.Threshold
+	}
+	return 0
+}
+
+func (m *QueryKeysignPartyResponse) GetRequiredSigners() int64 {
+	if m != nil {
+		return m.RequiredSigners
+	}
+	return 0
+}
+
+func (m *QueryKeysignPartyResponse) GetNeverSigners() []string {
+	if m != nil {
+		return m.NeverSigners
+	}
+	return nil
+}
+
+func (m *QueryKeysignPartyResponse) GetJailedFallbackSigners() []string {
+	if m != nil {
+		return m.JailedFallbackSigners
+	}
+	return nil
+}
+
+func (m *QueryKeysignPartyResponse) GetActiveSignerCount() int64 {
+	if m != nil {
+		return m.ActiveSignerCount
+	}
+	return 0
+}
+
 type QueryAsgardVaultsRequest struct {
 	Height string `protobuf:"bytes,1,opt,name=height,proto3" json:"height,omitempty"`
 }
@@ -243,7 +419,7 @@ func (m *QueryAsgardVaultsRequest) Reset()         { *m = QueryAsgardVaultsReque
 func (m *QueryAsgardVaultsRequest) String() string { return proto.CompactTextString(m) }
 func (*QueryAsgardVaultsRequest) ProtoMessage()    {}
 func (*QueryAsgardVaultsRequest) Descriptor() ([]byte, []int) {
-	return fileDescriptor_941f4868303210e7, []int{2}
+	return fileDescriptor_941f4868303210e7, []int{4}
 }
 func (m *QueryAsgardVaultsRequest) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -287,7 +463,7 @@ func (m *QueryAsgardVaultsResponse) Reset()         { *m = QueryAsgardVaultsResp
 func (m *QueryAsgardVaultsResponse) String() string { return proto.CompactTextString(m) }
 func (*QueryAsgardVaultsResponse) ProtoMessage()    {}
 func (*QueryAsgardVaultsResponse) Descriptor() ([]byte, []int) {
-	return fileDescriptor_941f4868303210e7, []int{3}
+	return fileDescriptor_941f4868303210e7, []int{5}
 }
 func (m *QueryAsgardVaultsResponse) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -331,7 +507,7 @@ func (m *QueryVaultsPubkeysRequest) Reset()         { *m = QueryVaultsPubkeysReq
 func (m *QueryVaultsPubkeysRequest) String() string { return proto.CompactTextString(m) }
 func (*QueryVaultsPubkeysRequest) ProtoMessage()    {}
 func (*QueryVaultsPubkeysRequest) Descriptor() ([]byte, []int) {
-	return fileDescriptor_941f4868303210e7, []int{4}
+	return fileDescriptor_941f4868303210e7, []int{6}
 }
 func (m *QueryVaultsPubkeysRequest) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -376,7 +552,7 @@ func (m *QueryVaultsPubkeysResponse) Reset()         { *m = QueryVaultsPubkeysRe
 func (m *QueryVaultsPubkeysResponse) String() string { return proto.CompactTextString(m) }
 func (*QueryVaultsPubkeysResponse) ProtoMessage()    {}
 func (*QueryVaultsPubkeysResponse) Descriptor() ([]byte, []int) {
-	return fileDescriptor_941f4868303210e7, []int{5}
+	return fileDescriptor_941f4868303210e7, []int{7}
 }
 func (m *QueryVaultsPubkeysResponse) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -424,13 +600,14 @@ type VaultInfo struct {
 	Routers     []*VaultRouter `protobuf:"bytes,2,rep,name=routers,proto3" json:"routers"`
 	PubKeyEddsa string         `protobuf:"bytes,3,opt,name=pub_key_eddsa,json=pubKeyEddsa,proto3" json:"pub_key_eddsa"`
 	Membership  []string       `protobuf:"bytes,4,rep,name=membership,proto3" json:"membership,omitempty"`
+	PubKeyFrost string         `protobuf:"bytes,5,opt,name=pub_key_frost,json=pubKeyFrost,proto3" json:"pub_key_frost"`
 }
 
 func (m *VaultInfo) Reset()         { *m = VaultInfo{} }
 func (m *VaultInfo) String() string { return proto.CompactTextString(m) }
 func (*VaultInfo) ProtoMessage()    {}
 func (*VaultInfo) Descriptor() ([]byte, []int) {
-	return fileDescriptor_941f4868303210e7, []int{6}
+	return fileDescriptor_941f4868303210e7, []int{8}
 }
 func (m *VaultInfo) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -487,6 +664,239 @@ func (m *VaultInfo) GetMembership() []string {
 	return nil
 }
 
+func (m *VaultInfo) GetPubKeyFrost() string {
+	if m != nil {
+		return m.PubKeyFrost
+	}
+	return ""
+}
+
+type QueryXMRSpentOutputRefsRequest struct {
+	VaultPubKey string `protobuf:"bytes,1,opt,name=vault_pub_key,json=vaultPubKey,proto3" json:"vault_pub_key,omitempty"`
+	Height      string `protobuf:"bytes,2,opt,name=height,proto3" json:"height,omitempty"`
+}
+
+func (m *QueryXMRSpentOutputRefsRequest) Reset()         { *m = QueryXMRSpentOutputRefsRequest{} }
+func (m *QueryXMRSpentOutputRefsRequest) String() string { return proto.CompactTextString(m) }
+func (*QueryXMRSpentOutputRefsRequest) ProtoMessage()    {}
+func (*QueryXMRSpentOutputRefsRequest) Descriptor() ([]byte, []int) {
+	return fileDescriptor_941f4868303210e7, []int{9}
+}
+func (m *QueryXMRSpentOutputRefsRequest) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *QueryXMRSpentOutputRefsRequest) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_QueryXMRSpentOutputRefsRequest.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *QueryXMRSpentOutputRefsRequest) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_QueryXMRSpentOutputRefsRequest.Merge(m, src)
+}
+func (m *QueryXMRSpentOutputRefsRequest) XXX_Size() int {
+	return m.Size()
+}
+func (m *QueryXMRSpentOutputRefsRequest) XXX_DiscardUnknown() {
+	xxx_messageInfo_QueryXMRSpentOutputRefsRequest.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_QueryXMRSpentOutputRefsRequest proto.InternalMessageInfo
+
+func (m *QueryXMRSpentOutputRefsRequest) GetVaultPubKey() string {
+	if m != nil {
+		return m.VaultPubKey
+	}
+	return ""
+}
+
+func (m *QueryXMRSpentOutputRefsRequest) GetHeight() string {
+	if m != nil {
+		return m.Height
+	}
+	return ""
+}
+
+type QueryXMRSpentOutputRefsResponse struct {
+	SpentOutputRefs []*common.OutputRef `protobuf:"bytes,1,rep,name=spent_output_refs,json=spentOutputRefs,proto3" json:"spent_output_refs,omitempty"`
+}
+
+func (m *QueryXMRSpentOutputRefsResponse) Reset()         { *m = QueryXMRSpentOutputRefsResponse{} }
+func (m *QueryXMRSpentOutputRefsResponse) String() string { return proto.CompactTextString(m) }
+func (*QueryXMRSpentOutputRefsResponse) ProtoMessage()    {}
+func (*QueryXMRSpentOutputRefsResponse) Descriptor() ([]byte, []int) {
+	return fileDescriptor_941f4868303210e7, []int{10}
+}
+func (m *QueryXMRSpentOutputRefsResponse) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *QueryXMRSpentOutputRefsResponse) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_QueryXMRSpentOutputRefsResponse.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *QueryXMRSpentOutputRefsResponse) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_QueryXMRSpentOutputRefsResponse.Merge(m, src)
+}
+func (m *QueryXMRSpentOutputRefsResponse) XXX_Size() int {
+	return m.Size()
+}
+func (m *QueryXMRSpentOutputRefsResponse) XXX_DiscardUnknown() {
+	xxx_messageInfo_QueryXMRSpentOutputRefsResponse.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_QueryXMRSpentOutputRefsResponse proto.InternalMessageInfo
+
+func (m *QueryXMRSpentOutputRefsResponse) GetSpentOutputRefs() []*common.OutputRef {
+	if m != nil {
+		return m.SpentOutputRefs
+	}
+	return nil
+}
+
+type QuerySolVaultNonceRequest struct {
+	VaultPubKey string `protobuf:"bytes,1,opt,name=vault_pub_key,json=vaultPubKey,proto3" json:"vault_pub_key,omitempty"`
+	Height      string `protobuf:"bytes,2,opt,name=height,proto3" json:"height,omitempty"`
+}
+
+func (m *QuerySolVaultNonceRequest) Reset()         { *m = QuerySolVaultNonceRequest{} }
+func (m *QuerySolVaultNonceRequest) String() string { return proto.CompactTextString(m) }
+func (*QuerySolVaultNonceRequest) ProtoMessage()    {}
+func (*QuerySolVaultNonceRequest) Descriptor() ([]byte, []int) {
+	return fileDescriptor_941f4868303210e7, []int{11}
+}
+func (m *QuerySolVaultNonceRequest) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *QuerySolVaultNonceRequest) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_QuerySolVaultNonceRequest.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *QuerySolVaultNonceRequest) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_QuerySolVaultNonceRequest.Merge(m, src)
+}
+func (m *QuerySolVaultNonceRequest) XXX_Size() int {
+	return m.Size()
+}
+func (m *QuerySolVaultNonceRequest) XXX_DiscardUnknown() {
+	xxx_messageInfo_QuerySolVaultNonceRequest.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_QuerySolVaultNonceRequest proto.InternalMessageInfo
+
+func (m *QuerySolVaultNonceRequest) GetVaultPubKey() string {
+	if m != nil {
+		return m.VaultPubKey
+	}
+	return ""
+}
+
+func (m *QuerySolVaultNonceRequest) GetHeight() string {
+	if m != nil {
+		return m.Height
+	}
+	return ""
+}
+
+// QuerySolVaultNonceResponse is empty (all fields zero) when the vault has no
+// committed durable nonce.
+type QuerySolVaultNonceResponse struct {
+	NonceAccount  string `protobuf:"bytes,1,opt,name=nonce_account,json=nonceAccount,proto3" json:"nonce_account"`
+	Nonce         string `protobuf:"bytes,2,opt,name=nonce,proto3" json:"nonce"`
+	Slot          int64  `protobuf:"varint,3,opt,name=slot,proto3" json:"slot"`
+	UpdatedHeight int64  `protobuf:"varint,4,opt,name=updated_height,json=updatedHeight,proto3" json:"updated_height"`
+	SetByTx       string `protobuf:"bytes,5,opt,name=set_by_tx,json=setByTx,proto3" json:"set_by_tx"`
+}
+
+func (m *QuerySolVaultNonceResponse) Reset()         { *m = QuerySolVaultNonceResponse{} }
+func (m *QuerySolVaultNonceResponse) String() string { return proto.CompactTextString(m) }
+func (*QuerySolVaultNonceResponse) ProtoMessage()    {}
+func (*QuerySolVaultNonceResponse) Descriptor() ([]byte, []int) {
+	return fileDescriptor_941f4868303210e7, []int{12}
+}
+func (m *QuerySolVaultNonceResponse) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *QuerySolVaultNonceResponse) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_QuerySolVaultNonceResponse.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *QuerySolVaultNonceResponse) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_QuerySolVaultNonceResponse.Merge(m, src)
+}
+func (m *QuerySolVaultNonceResponse) XXX_Size() int {
+	return m.Size()
+}
+func (m *QuerySolVaultNonceResponse) XXX_DiscardUnknown() {
+	xxx_messageInfo_QuerySolVaultNonceResponse.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_QuerySolVaultNonceResponse proto.InternalMessageInfo
+
+func (m *QuerySolVaultNonceResponse) GetNonceAccount() string {
+	if m != nil {
+		return m.NonceAccount
+	}
+	return ""
+}
+
+func (m *QuerySolVaultNonceResponse) GetNonce() string {
+	if m != nil {
+		return m.Nonce
+	}
+	return ""
+}
+
+func (m *QuerySolVaultNonceResponse) GetSlot() int64 {
+	if m != nil {
+		return m.Slot
+	}
+	return 0
+}
+
+func (m *QuerySolVaultNonceResponse) GetUpdatedHeight() int64 {
+	if m != nil {
+		return m.UpdatedHeight
+	}
+	return 0
+}
+
+func (m *QuerySolVaultNonceResponse) GetSetByTx() string {
+	if m != nil {
+		return m.SetByTx
+	}
+	return ""
+}
+
 type VaultRouter struct {
 	Chain  string `protobuf:"bytes,1,opt,name=chain,proto3" json:"chain,omitempty"`
 	Router string `protobuf:"bytes,2,opt,name=router,proto3" json:"router,omitempty"`
@@ -496,7 +906,7 @@ func (m *VaultRouter) Reset()         { *m = VaultRouter{} }
 func (m *VaultRouter) String() string { return proto.CompactTextString(m) }
 func (*VaultRouter) ProtoMessage()    {}
 func (*VaultRouter) Descriptor() ([]byte, []int) {
-	return fileDescriptor_941f4868303210e7, []int{7}
+	return fileDescriptor_941f4868303210e7, []int{13}
 }
 func (m *VaultRouter) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -548,7 +958,7 @@ func (m *VaultAddress) Reset()         { *m = VaultAddress{} }
 func (m *VaultAddress) String() string { return proto.CompactTextString(m) }
 func (*VaultAddress) ProtoMessage()    {}
 func (*VaultAddress) Descriptor() ([]byte, []int) {
-	return fileDescriptor_941f4868303210e7, []int{8}
+	return fileDescriptor_941f4868303210e7, []int{14}
 }
 func (m *VaultAddress) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -599,7 +1009,7 @@ func (m *QueryVaultSolvencyRequest) Reset()         { *m = QueryVaultSolvencyReq
 func (m *QueryVaultSolvencyRequest) String() string { return proto.CompactTextString(m) }
 func (*QueryVaultSolvencyRequest) ProtoMessage()    {}
 func (*QueryVaultSolvencyRequest) Descriptor() ([]byte, []int) {
-	return fileDescriptor_941f4868303210e7, []int{9}
+	return fileDescriptor_941f4868303210e7, []int{15}
 }
 func (m *QueryVaultSolvencyRequest) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -644,7 +1054,7 @@ func (m *VaultSolvencyAsset) Reset()         { *m = VaultSolvencyAsset{} }
 func (m *VaultSolvencyAsset) String() string { return proto.CompactTextString(m) }
 func (*VaultSolvencyAsset) ProtoMessage()    {}
 func (*VaultSolvencyAsset) Descriptor() ([]byte, []int) {
-	return fileDescriptor_941f4868303210e7, []int{10}
+	return fileDescriptor_941f4868303210e7, []int{16}
 }
 func (m *VaultSolvencyAsset) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -681,7 +1091,7 @@ func (m *QueryVaultSolvencyResponse) Reset()         { *m = QueryVaultSolvencyRe
 func (m *QueryVaultSolvencyResponse) String() string { return proto.CompactTextString(m) }
 func (*QueryVaultSolvencyResponse) ProtoMessage()    {}
 func (*QueryVaultSolvencyResponse) Descriptor() ([]byte, []int) {
-	return fileDescriptor_941f4868303210e7, []int{11}
+	return fileDescriptor_941f4868303210e7, []int{17}
 }
 func (m *QueryVaultSolvencyResponse) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -720,11 +1130,17 @@ func (m *QueryVaultSolvencyResponse) GetAssets() []*VaultSolvencyAsset {
 func init() {
 	proto.RegisterType((*QueryVaultRequest)(nil), "types.QueryVaultRequest")
 	proto.RegisterType((*QueryVaultResponse)(nil), "types.QueryVaultResponse")
+	proto.RegisterType((*QueryKeysignPartyRequest)(nil), "types.QueryKeysignPartyRequest")
+	proto.RegisterType((*QueryKeysignPartyResponse)(nil), "types.QueryKeysignPartyResponse")
 	proto.RegisterType((*QueryAsgardVaultsRequest)(nil), "types.QueryAsgardVaultsRequest")
 	proto.RegisterType((*QueryAsgardVaultsResponse)(nil), "types.QueryAsgardVaultsResponse")
 	proto.RegisterType((*QueryVaultsPubkeysRequest)(nil), "types.QueryVaultsPubkeysRequest")
 	proto.RegisterType((*QueryVaultsPubkeysResponse)(nil), "types.QueryVaultsPubkeysResponse")
 	proto.RegisterType((*VaultInfo)(nil), "types.VaultInfo")
+	proto.RegisterType((*QueryXMRSpentOutputRefsRequest)(nil), "types.QueryXMRSpentOutputRefsRequest")
+	proto.RegisterType((*QueryXMRSpentOutputRefsResponse)(nil), "types.QueryXMRSpentOutputRefsResponse")
+	proto.RegisterType((*QuerySolVaultNonceRequest)(nil), "types.QuerySolVaultNonceRequest")
+	proto.RegisterType((*QuerySolVaultNonceResponse)(nil), "types.QuerySolVaultNonceResponse")
 	proto.RegisterType((*VaultRouter)(nil), "types.VaultRouter")
 	proto.RegisterType((*VaultAddress)(nil), "types.VaultAddress")
 	proto.RegisterType((*QueryVaultSolvencyRequest)(nil), "types.QueryVaultSolvencyRequest")
@@ -735,61 +1151,89 @@ func init() {
 func init() { proto.RegisterFile("types/query_vault.proto", fileDescriptor_941f4868303210e7) }
 
 var fileDescriptor_941f4868303210e7 = []byte{
-	// 861 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x94, 0x55, 0xcd, 0x8e, 0x1b, 0x45,
-	0x10, 0xde, 0x59, 0xaf, 0xed, 0xb8, 0x6c, 0x27, 0xd9, 0x4e, 0x42, 0x3a, 0x7b, 0xf0, 0x98, 0x11,
-	0x08, 0x0b, 0x09, 0x5b, 0xf2, 0x82, 0x10, 0x20, 0x02, 0xeb, 0x80, 0x44, 0x04, 0x07, 0xe8, 0x44,
-	0x39, 0x90, 0x83, 0x35, 0x3f, 0x1d, 0x7b, 0x64, 0xbb, 0xdb, 0x99, 0xee, 0xb1, 0x6c, 0x1e, 0x02,
-	0x71, 0xe1, 0x25, 0x78, 0x04, 0xae, 0x5c, 0xf6, 0x98, 0x23, 0xe2, 0x30, 0xa0, 0xdd, 0x9b, 0x9f,
-	0x02, 0xf5, 0xcf, 0xd8, 0x63, 0x6f, 0xd0, 0x92, 0xd3, 0x54, 0x7f, 0xf5, 0x55, 0x55, 0x57, 0xd7,
-	0xd7, 0x3d, 0x70, 0x5f, 0xae, 0xe6, 0x54, 0xf4, 0x5e, 0xa6, 0x34, 0x59, 0x0d, 0x17, 0x7e, 0x3a,
-	0x95, 0xdd, 0x79, 0xc2, 0x25, 0x47, 0x65, 0xed, 0x38, 0xb9, 0x3b, 0xe2, 0x23, 0xae, 0x91, 0x9e,
-	0xb2, 0x8c, 0xf3, 0xe4, 0x4e, 0xc8, 0x67, 0x33, 0xce, 0x7a, 0xe6, 0x63, 0x40, 0xef, 0x2b, 0x38,
-	0xfe, 0x41, 0xa5, 0x79, 0xa6, 0xb2, 0x10, 0xfa, 0x32, 0xa5, 0x42, 0xa2, 0xfb, 0x50, 0x9d, 0xa7,
-	0xc1, 0x70, 0x42, 0x57, 0xd8, 0x69, 0x3b, 0x9d, 0x1a, 0xa9, 0xcc, 0xd3, 0xe0, 0x5b, 0xba, 0x42,
-	0x6f, 0x41, 0x65, 0x4c, 0xe3, 0xd1, 0x58, 0xe2, 0x43, 0x83, 0x9b, 0x95, 0xf7, 0x6b, 0x19, 0x50,
-	0x31, 0x8d, 0x98, 0x73, 0x26, 0x28, 0x7a, 0x1b, 0x1a, 0xc1, 0x94, 0x87, 0x93, 0xa1, 0x0d, 0x52,
-	0xc9, 0x4a, 0xa4, 0xae, 0xb1, 0x6f, 0x34, 0x54, 0x2c, 0x75, 0xb8, 0x53, 0x2a, 0x80, 0x72, 0xc8,
-	0x63, 0x26, 0x70, 0xa9, 0x5d, 0xea, 0xd4, 0xfb, 0x8d, 0xae, 0xdd, 0xf6, 0x23, 0x1e, 0xb3, 0xc1,
-	0xc3, 0xf3, 0xcc, 0x3d, 0x58, 0x67, 0xae, 0xa1, 0xfc, 0xf6, 0xb7, 0xfb, 0xc1, 0x28, 0x96, 0x53,
-	0x3f, 0x50, 0xa4, 0x9e, 0x1c, 0xf3, 0x24, 0x1c, 0xfb, 0x31, 0xd3, 0x16, 0xe3, 0x11, 0xed, 0x2d,
-	0x4e, 0x7b, 0x85, 0x70, 0x41, 0x4c, 0x1c, 0x42, 0x70, 0xa4, 0x0e, 0x0c, 0x1f, 0xe9, 0xca, 0xda,
-	0x46, 0x1e, 0x54, 0x84, 0xf4, 0x65, 0x2a, 0x70, 0x59, 0xa1, 0x03, 0x58, 0x67, 0xae, 0x45, 0x88,
-	0xfd, 0xaa, 0xbe, 0x8c, 0x35, 0x14, 0x31, 0x0b, 0x29, 0xae, 0x98, 0xbe, 0x0c, 0xf6, 0x44, 0x41,
-	0xa8, 0x05, 0x30, 0xa3, 0xb3, 0x80, 0x26, 0x62, 0x1c, 0xcf, 0x71, 0xb5, 0x5d, 0xea, 0xd4, 0x48,
-	0x01, 0x51, 0x27, 0xa9, 0xf7, 0x28, 0xf0, 0x0d, 0xed, 0xb3, 0x2b, 0xd4, 0x81, 0xdb, 0x31, 0x0b,
-	0x78, 0xca, 0xa2, 0xa1, 0x5c, 0x0e, 0x43, 0x9e, 0x32, 0x89, 0x6b, 0x3a, 0xfd, 0x4d, 0x8b, 0x3f,
-	0x5d, 0x3e, 0x52, 0x28, 0x7a, 0x1f, 0x8e, 0x79, 0x2a, 0xf7, 0xa8, 0xa0, 0xa9, 0xb7, 0x72, 0x47,
-	0xce, 0xfd, 0x18, 0xf0, 0x9c, 0xb2, 0x28, 0x66, 0x23, 0x45, 0x2d, 0xce, 0x44, 0xe0, 0x7a, 0xbb,
-	0xd4, 0x29, 0x91, 0x7b, 0xd6, 0xff, 0x74, 0x39, 0xd8, 0x4e, 0x47, 0xa0, 0x4f, 0xa0, 0x9a, 0xf0,
-	0x54, 0xd2, 0x44, 0xe0, 0x86, 0x9e, 0x03, 0xea, 0x6a, 0x89, 0x75, 0xcd, 0xa0, 0xb5, 0x6b, 0x50,
-	0x5f, 0x67, 0x6e, 0x4e, 0x23, 0xb9, 0x81, 0xbe, 0x84, 0x9a, 0x1f, 0x45, 0x09, 0x15, 0x82, 0x0a,
-	0xdc, 0xd4, 0xc1, 0x77, 0x8a, 0xc1, 0x67, 0xc6, 0x39, 0x68, 0xae, 0x33, 0x77, 0xcb, 0x24, 0x5b,
-	0x53, 0x9d, 0xd1, 0x8b, 0x84, 0xff, 0x44, 0x19, 0xbe, 0x69, 0xce, 0xc8, 0xac, 0x50, 0x07, 0x9a,
-	0x56, 0x33, 0x43, 0x1a, 0x45, 0xc2, 0xc7, 0xb7, 0xf4, 0xa4, 0x8e, 0xce, 0x33, 0xd7, 0x21, 0x75,
-	0xa3, 0x9f, 0xaf, 0x95, 0xc3, 0xeb, 0x03, 0xd6, 0xb2, 0x3c, 0x13, 0x23, 0x3f, 0x89, 0x74, 0x59,
-	0x91, 0x8b, 0x7c, 0xab, 0x65, 0x67, 0x47, 0xcb, 0xcf, 0xe1, 0xc1, 0x6b, 0x62, 0xac, 0xa2, 0x1f,
-	0x42, 0xd3, 0xd7, 0xb8, 0xb9, 0x76, 0x02, 0x3b, 0xba, 0xb1, 0x07, 0xb6, 0xb1, 0xab, 0x77, 0x80,
-	0x34, 0xfc, 0x42, 0x1e, 0xef, 0xd4, 0x26, 0x37, 0xcb, 0xef, 0xd3, 0x60, 0x42, 0x57, 0xd7, 0xee,
-	0xe8, 0x67, 0x07, 0x4e, 0x5e, 0x17, 0x65, 0xf7, 0xf4, 0x21, 0x54, 0x4c, 0x0d, 0xbb, 0x99, 0xdb,
-	0xc5, 0x53, 0x7e, 0xcc, 0x5e, 0x70, 0xa3, 0x61, 0xc3, 0x21, 0xf6, 0x8b, 0x3e, 0x85, 0x1b, 0x31,
-	0xf3, 0x43, 0x19, 0x2f, 0x28, 0x3e, 0xfc, 0x8f, 0xb8, 0xc6, 0x3a, 0x73, 0x37, 0x2c, 0xb2, 0xb1,
-	0xbc, 0x3f, 0x1c, 0xa8, 0x6d, 0x58, 0xe8, 0x9d, 0xbd, 0xd7, 0xc2, 0xe8, 0xc1, 0x42, 0x9b, 0xfb,
-	0x5c, 0x50, 0xd2, 0xe1, 0x1b, 0x2a, 0xe9, 0xa3, 0xfd, 0x79, 0x97, 0x74, 0x99, 0xe3, 0x75, 0xe6,
-	0xee, 0x3a, 0x76, 0x86, 0xbf, 0x77, 0x05, 0x8f, 0xf6, 0xaf, 0xa0, 0xf7, 0x19, 0xd4, 0x0b, 0xb5,
-	0xd1, 0x5d, 0x28, 0xeb, 0x3b, 0x68, 0x0f, 0xdf, 0x2c, 0xd4, 0x4c, 0xcc, 0x36, 0xf2, 0xe7, 0xc9,
-	0xac, 0xbc, 0x67, 0xd0, 0x28, 0xaa, 0x18, 0xb9, 0x3b, 0xd1, 0x83, 0x9a, 0x7e, 0x9c, 0x14, 0x90,
-	0x27, 0x7a, 0x17, 0xaa, 0x56, 0xd9, 0x26, 0x93, 0xe9, 0xd5, 0x42, 0x24, 0x37, 0x76, 0x05, 0xf2,
-	0x84, 0x4f, 0x17, 0x94, 0x85, 0xab, 0xeb, 0x04, 0xf2, 0xbb, 0x03, 0x68, 0x27, 0xe0, 0x4c, 0x08,
-	0x2a, 0x51, 0x08, 0x65, 0x5f, 0x19, 0x9a, 0x5d, 0xef, 0x37, 0xf3, 0x27, 0x54, 0x7b, 0xcd, 0x1b,
-	0xfa, 0x57, 0xf6, 0xff, 0x9f, 0x4e, 0x1d, 0xa6, 0xfa, 0xd2, 0x49, 0x89, 0xf9, 0xa0, 0x2f, 0xa0,
-	0xe2, 0xcf, 0xf4, 0xdb, 0x63, 0xda, 0x7a, 0xcf, 0xa6, 0xbd, 0x17, 0x72, 0x31, 0xe3, 0x42, 0x44,
-	0x93, 0x6e, 0xcc, 0x7b, 0x33, 0x5f, 0x8e, 0xbb, 0x8f, 0x99, 0xd4, 0x42, 0xd4, 0x74, 0x62, 0xbf,
-	0xde, 0xf3, 0xa2, 0xb8, 0xb7, 0x1d, 0x5b, 0x71, 0x7f, 0xae, 0xc4, 0x2d, 0xe8, 0x95, 0x9b, 0x76,
-	0xb5, 0xdd, 0x5c, 0xe5, 0x8a, 0x4c, 0xec, 0x77, 0xf0, 0xdd, 0xf9, 0x45, 0xcb, 0x79, 0x75, 0xd1,
-	0x72, 0xfe, 0xb9, 0x68, 0x39, 0xbf, 0x5c, 0xb6, 0x0e, 0x5e, 0x5d, 0xb6, 0x0e, 0xfe, 0xbc, 0x6c,
-	0x1d, 0xfc, 0xd8, 0xbf, 0xb6, 0xed, 0x65, 0x11, 0x57, 0x45, 0x83, 0x8a, 0xfe, 0x67, 0x9e, 0xfe,
-	0x1b, 0x00, 0x00, 0xff, 0xff, 0x02, 0x17, 0xde, 0xee, 0x80, 0x07, 0x00, 0x00,
+	// 1300 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xac, 0x57, 0xdf, 0x6e, 0x1b, 0x45,
+	0x17, 0x8f, 0xe3, 0xd8, 0x8e, 0x8f, 0xed, 0x34, 0x9e, 0x34, 0xed, 0xb6, 0xaa, 0xec, 0x7c, 0xfb,
+	0x7d, 0xd5, 0x97, 0x22, 0x61, 0x4b, 0x29, 0x2d, 0x2a, 0x88, 0xd2, 0xb8, 0x50, 0x51, 0xca, 0x9f,
+	0x32, 0xa9, 0x4a, 0xd5, 0x22, 0x2d, 0xeb, 0xdd, 0xb1, 0xbd, 0xc4, 0xde, 0x71, 0x77, 0x66, 0x23,
+	0x9b, 0x3b, 0x5e, 0x00, 0xf1, 0x1c, 0x3c, 0x02, 0xe2, 0x01, 0x7a, 0xd9, 0x4b, 0xc4, 0x85, 0x41,
+	0xed, 0x9d, 0xdf, 0x00, 0xae, 0xd0, 0x9c, 0x99, 0xb5, 0xd7, 0x4e, 0x4a, 0xa8, 0xc4, 0x4d, 0x76,
+	0xce, 0xef, 0xfc, 0x99, 0x99, 0xf3, 0xe7, 0x37, 0x0e, 0x9c, 0x97, 0xe3, 0x21, 0x13, 0xcd, 0xa7,
+	0x31, 0x8b, 0xc6, 0xce, 0x91, 0x1b, 0xf7, 0x65, 0x63, 0x18, 0x71, 0xc9, 0x49, 0x0e, 0x15, 0x17,
+	0xcf, 0x76, 0x79, 0x97, 0x23, 0xd2, 0x54, 0x2b, 0xad, 0xbc, 0xb8, 0xe5, 0xf1, 0xc1, 0x80, 0x87,
+	0x4d, 0xfd, 0xd1, 0xa0, 0xfd, 0x01, 0x54, 0xbf, 0x50, 0x61, 0x1e, 0xaa, 0x28, 0x94, 0x3d, 0x8d,
+	0x99, 0x90, 0xe4, 0x3c, 0x14, 0x86, 0x71, 0xdb, 0x39, 0x64, 0x63, 0x2b, 0xb3, 0x93, 0xd9, 0x2d,
+	0xd2, 0xfc, 0x30, 0x6e, 0xdf, 0x63, 0x63, 0x72, 0x0e, 0xf2, 0x3d, 0x16, 0x74, 0x7b, 0xd2, 0x5a,
+	0xd5, 0xb8, 0x96, 0xec, 0xef, 0x0a, 0x40, 0xd2, 0x61, 0xc4, 0x90, 0x87, 0x82, 0x91, 0xff, 0x40,
+	0xb9, 0xdd, 0xe7, 0xde, 0xa1, 0x63, 0x9c, 0x54, 0xb0, 0x2c, 0x2d, 0x21, 0xf6, 0x11, 0x42, 0xe9,
+	0xad, 0x56, 0x17, 0xb6, 0x6a, 0x43, 0xce, 0xe3, 0x41, 0x28, 0xac, 0xec, 0x4e, 0x76, 0xb7, 0xb4,
+	0x57, 0x6e, 0x98, 0x63, 0xdf, 0xe6, 0x41, 0xd8, 0xba, 0xf9, 0x6c, 0x52, 0x5f, 0x99, 0x4e, 0xea,
+	0xda, 0xe4, 0xc7, 0xdf, 0xea, 0x6f, 0x76, 0x03, 0xd9, 0x77, 0xdb, 0xca, 0xa8, 0x29, 0x7b, 0x3c,
+	0xf2, 0x7a, 0x6e, 0x10, 0xe2, 0x2a, 0xe4, 0x3e, 0x6b, 0x1e, 0x5d, 0x6d, 0xa6, 0xdc, 0x05, 0xd5,
+	0x7e, 0x84, 0xc0, 0x9a, 0x4a, 0x98, 0xb5, 0x86, 0x3b, 0xe3, 0x9a, 0xd8, 0x90, 0x17, 0xd2, 0x95,
+	0xb1, 0xb0, 0x72, 0x0a, 0x6d, 0xc1, 0x74, 0x52, 0x37, 0x08, 0x35, 0x5f, 0x75, 0x2f, 0xbd, 0x72,
+	0x44, 0x10, 0x7a, 0xcc, 0xca, 0xeb, 0x7b, 0x69, 0xec, 0x40, 0x41, 0xa4, 0x06, 0x30, 0x60, 0x83,
+	0x36, 0x8b, 0x44, 0x2f, 0x18, 0x5a, 0x85, 0x9d, 0xec, 0x6e, 0x91, 0xa6, 0x10, 0x95, 0x49, 0x3c,
+	0xa3, 0xb0, 0xd6, 0x51, 0x67, 0x24, 0xb2, 0x0b, 0x9b, 0x41, 0xd8, 0xe6, 0x71, 0xe8, 0x3b, 0x72,
+	0xe4, 0x78, 0x3c, 0x0e, 0xa5, 0x55, 0xc4, 0xf0, 0x1b, 0x06, 0x7f, 0x30, 0xba, 0xad, 0x50, 0xf2,
+	0x06, 0x54, 0x79, 0x2c, 0x97, 0x4c, 0x01, 0x4d, 0xcf, 0x24, 0x8a, 0xc4, 0xf6, 0x6d, 0xb0, 0x86,
+	0x2c, 0xf4, 0x83, 0xb0, 0xab, 0x4c, 0xd3, 0x35, 0x11, 0x56, 0x69, 0x27, 0xbb, 0x9b, 0xa5, 0xdb,
+	0x46, 0xff, 0x60, 0xd4, 0x9a, 0x57, 0x47, 0x90, 0x1b, 0x50, 0x88, 0x78, 0x2c, 0x59, 0x24, 0xac,
+	0x32, 0xd6, 0x81, 0x34, 0xb0, 0xc5, 0x1a, 0xba, 0xd0, 0xa8, 0x6a, 0x95, 0xa6, 0x93, 0x7a, 0x62,
+	0x46, 0x93, 0x05, 0xb9, 0x05, 0x45, 0xd7, 0xf7, 0x23, 0x26, 0x04, 0x13, 0x56, 0x05, 0x9d, 0xb7,
+	0xd2, 0xce, 0xfb, 0x5a, 0xd9, 0xaa, 0x4c, 0x27, 0xf5, 0xb9, 0x25, 0x9d, 0x2f, 0x55, 0x8e, 0x3a,
+	0x11, 0xff, 0x96, 0x85, 0xd6, 0x86, 0xce, 0x91, 0x96, 0xc8, 0x2e, 0x54, 0x4c, 0xcf, 0x38, 0xcc,
+	0xf7, 0x85, 0x6b, 0x9d, 0xc1, 0x4a, 0xad, 0x3d, 0x9b, 0xd4, 0x33, 0xb4, 0xa4, 0xfb, 0xe7, 0x43,
+	0xa5, 0x20, 0x37, 0xe0, 0x02, 0x8e, 0x87, 0xe3, 0x45, 0xcc, 0x95, 0x01, 0x0f, 0xcd, 0xad, 0x9d,
+	0xd1, 0x20, 0xb2, 0x36, 0x31, 0x57, 0xe7, 0xd0, 0xe0, 0xb6, 0xd1, 0xeb, 0x7b, 0x3f, 0x1a, 0x44,
+	0xe9, 0x4d, 0x3a, 0x11, 0x17, 0xd2, 0x22, 0xc7, 0x37, 0xb9, 0xa3, 0x14, 0xa4, 0x07, 0x05, 0x9f,
+	0x75, 0x02, 0x2f, 0x90, 0xd6, 0xd6, 0x09, 0xbd, 0x7a, 0xcb, 0xf4, 0x6a, 0x62, 0xf4, 0xfa, 0xdd,
+	0x9a, 0x78, 0x7e, 0xbc, 0xb6, 0x5e, 0xdd, 0x24, 0x74, 0x5b, 0x0c, 0x59, 0x28, 0x1d, 0x1e, 0xcb,
+	0x61, 0x2c, 0x9d, 0x88, 0x75, 0x84, 0xba, 0x8e, 0xfd, 0x18, 0x2c, 0x1c, 0xc1, 0x7b, 0x6c, 0x2c,
+	0x82, 0x6e, 0x78, 0xdf, 0x8d, 0xe4, 0xf8, 0xd4, 0x81, 0xbe, 0x0c, 0x1b, 0xca, 0x58, 0x35, 0xc6,
+	0xc2, 0x60, 0x57, 0x0c, 0xaa, 0xf3, 0x61, 0xff, 0xbc, 0x0a, 0x17, 0x4e, 0x08, 0x6e, 0xc6, 0xfc,
+	0x95, 0xd1, 0x2d, 0x28, 0x28, 0x6b, 0xd5, 0x3d, 0xab, 0x58, 0xc1, 0x44, 0x4c, 0x11, 0x49, 0x16,
+	0xab, 0x60, 0x24, 0x72, 0x09, 0x8a, 0xb2, 0x17, 0x31, 0xd1, 0xe3, 0x7d, 0x1f, 0xc7, 0x32, 0x4b,
+	0xe7, 0x00, 0xb9, 0x02, 0x9b, 0x11, 0x7b, 0x1a, 0x07, 0x11, 0xf3, 0x9d, 0x24, 0x70, 0x4e, 0x77,
+	0x7c, 0x82, 0x1f, 0x98, 0x0d, 0xfe, 0x0b, 0x95, 0x90, 0x1d, 0xb1, 0x68, 0x66, 0x97, 0xc7, 0x03,
+	0x94, 0x11, 0x4c, 0x8c, 0xae, 0xc3, 0xf9, 0x6f, 0xdc, 0xa0, 0xcf, 0x7c, 0xa7, 0xe3, 0xf6, 0xfb,
+	0x6d, 0xd7, 0x3b, 0x9c, 0x99, 0xeb, 0x89, 0xdd, 0xd6, 0xea, 0x3b, 0x46, 0x9b, 0xf8, 0x35, 0x60,
+	0xcb, 0xf5, 0x64, 0x70, 0xc4, 0x8c, 0xb9, 0x19, 0xbe, 0x75, 0x3c, 0x4a, 0x55, 0xab, 0xb4, 0x2d,
+	0x8e, 0x9f, 0xbd, 0x67, 0x4a, 0xb3, 0x2f, 0xba, 0x6e, 0xe4, 0x63, 0xf7, 0x8b, 0xa4, 0x34, 0xf3,
+	0x4c, 0x64, 0x16, 0x28, 0xf5, 0x89, 0xc9, 0xf8, 0xa2, 0x8f, 0xc9, 0xf8, 0x4d, 0xa8, 0xb8, 0x88,
+	0x6b, 0xf6, 0x17, 0x56, 0x06, 0x1b, 0xef, 0x82, 0x99, 0xaf, 0xe3, 0x54, 0x4c, 0xcb, 0x6e, 0x2a,
+	0x8e, 0x7d, 0xd5, 0x04, 0xd7, 0xe2, 0xfd, 0xb8, 0x7d, 0xc8, 0xc6, 0xa7, 0x9e, 0xe8, 0xfb, 0x0c,
+	0x5c, 0x3c, 0xc9, 0xcb, 0x9c, 0xe9, 0x2d, 0xc8, 0xeb, 0x3d, 0xcc, 0x61, 0x36, 0xd3, 0xc3, 0x7e,
+	0x37, 0xec, 0x70, 0x4d, 0xa5, 0xda, 0x86, 0x9a, 0x2f, 0x79, 0x07, 0xd6, 0x83, 0x50, 0x67, 0x0c,
+	0x7b, 0xe4, 0x24, 0xbf, 0xf2, 0x74, 0x52, 0x9f, 0x59, 0xd1, 0xd9, 0xca, 0xfe, 0x33, 0x03, 0xc5,
+	0x99, 0x15, 0xf9, 0xdf, 0x52, 0x17, 0x6a, 0x5a, 0x32, 0xd0, 0xac, 0x25, 0x53, 0x84, 0xb6, 0xfa,
+	0x9a, 0x84, 0x76, 0x6d, 0x99, 0x76, 0xb2, 0xb8, 0x4d, 0x75, 0x3a, 0xa9, 0x2f, 0x2a, 0x16, 0x39,
+	0x68, 0xf1, 0x25, 0x58, 0x3b, 0xf6, 0x12, 0x5c, 0x5b, 0x26, 0x9a, 0xdc, 0xf1, 0xb0, 0xa8, 0x58,
+	0x60, 0x1d, 0xfb, 0x2b, 0xa8, 0x61, 0x31, 0x1e, 0x7d, 0x4a, 0x0f, 0x14, 0x1f, 0x7c, 0x8e, 0x74,
+	0x40, 0x59, 0x67, 0x56, 0x47, 0x1b, 0x2a, 0x9a, 0xfc, 0x16, 0x87, 0xb3, 0x84, 0xe0, 0xfd, 0xbf,
+	0x7f, 0xd0, 0xbf, 0x86, 0xfa, 0x2b, 0xa3, 0x9b, 0x7a, 0xbf, 0x07, 0xd5, 0x63, 0x44, 0x64, 0x4a,
+	0x5f, 0x4d, 0x08, 0x70, 0xe6, 0x46, 0xcf, 0x88, 0xc5, 0x30, 0xf6, 0x97, 0xa6, 0x05, 0x0f, 0x78,
+	0x1f, 0x53, 0xff, 0x19, 0x0f, 0x3d, 0xf6, 0x6f, 0x1c, 0xfd, 0x8f, 0xa4, 0x4d, 0x97, 0x22, 0x9b,
+	0x63, 0x5f, 0x87, 0x4a, 0xa8, 0x00, 0xc7, 0xf5, 0xf4, 0xd4, 0x66, 0xe6, 0xe9, 0x5e, 0x50, 0xd0,
+	0x32, 0x8a, 0xfb, 0x5a, 0x22, 0x75, 0xc8, 0xa1, 0xac, 0x77, 0x6b, 0x15, 0xd5, 0xaf, 0x0f, 0x04,
+	0xa8, 0xfe, 0x90, 0x4b, 0xb0, 0x26, 0xfa, 0xdc, 0x10, 0x5a, 0x6b, 0x7d, 0x3a, 0xa9, 0xa3, 0x4c,
+	0xf1, 0x2f, 0xb9, 0x01, 0x1b, 0xf1, 0xd0, 0x77, 0x25, 0xf3, 0x13, 0xa2, 0x45, 0x76, 0x6b, 0x91,
+	0xe9, 0xa4, 0xbe, 0xa4, 0xa1, 0x15, 0x23, 0x9b, 0x9f, 0x48, 0x57, 0xa0, 0x28, 0x98, 0x74, 0xda,
+	0x63, 0x47, 0x8e, 0x4c, 0x73, 0xe0, 0x9b, 0x39, 0x03, 0x69, 0x41, 0x30, 0xd9, 0x1a, 0x3f, 0x18,
+	0xd9, 0xef, 0x42, 0x29, 0xd5, 0xc7, 0xe4, 0x2c, 0xe4, 0xf0, 0x69, 0x31, 0xe9, 0xd3, 0x82, 0x4a,
+	0x9c, 0x6e, 0xe9, 0x24, 0x71, 0x5a, 0xb2, 0x1f, 0x42, 0x39, 0xfd, 0x30, 0xab, 0x1b, 0xa7, 0xbc,
+	0xf5, 0x8d, 0x11, 0x48, 0x02, 0x5d, 0x86, 0x82, 0x79, 0xac, 0x4d, 0x52, 0x70, 0x6e, 0x0c, 0x44,
+	0x93, 0xc5, 0x22, 0xd9, 0x1c, 0xf0, 0xfe, 0x11, 0x0b, 0xbd, 0xf1, 0x69, 0x64, 0xf3, 0x53, 0x06,
+	0xc8, 0x82, 0xc3, 0xbe, 0x10, 0x4c, 0x12, 0x0f, 0x72, 0xae, 0x5a, 0xa0, 0x75, 0x69, 0xaf, 0x92,
+	0x34, 0x1a, 0x6a, 0xf5, 0xcf, 0xc2, 0x5f, 0x27, 0xff, 0xfc, 0x7d, 0x45, 0x37, 0x75, 0x2f, 0x0c,
+	0x4a, 0xf5, 0x87, 0xbc, 0x0f, 0x79, 0x77, 0x80, 0xbd, 0xa1, 0xaf, 0xf5, 0x7f, 0x13, 0x76, 0xdb,
+	0xe3, 0x62, 0xc0, 0x85, 0xf0, 0x0f, 0x1b, 0x01, 0x6f, 0x0e, 0x5c, 0xd9, 0x6b, 0xdc, 0x0d, 0x25,
+	0x92, 0x1a, 0x9a, 0x53, 0xf3, 0xb5, 0x9f, 0xa4, 0x89, 0x72, 0x7e, 0xe3, 0xd9, 0xe0, 0xe4, 0x71,
+	0x9f, 0x65, 0xd6, 0x3e, 0x7e, 0xdd, 0x84, 0x31, 0x95, 0x31, 0x35, 0xdf, 0xd6, 0x27, 0xcf, 0x5e,
+	0xd4, 0x32, 0xcf, 0x5f, 0xd4, 0x32, 0xbf, 0xbf, 0xa8, 0x65, 0x7e, 0x78, 0x59, 0x5b, 0x79, 0xfe,
+	0xb2, 0xb6, 0xf2, 0xcb, 0xcb, 0xda, 0xca, 0xe3, 0xbd, 0x53, 0xaf, 0x3d, 0x4a, 0xe3, 0x6a, 0xd3,
+	0x76, 0x1e, 0xff, 0x0d, 0xb8, 0xfa, 0x57, 0x00, 0x00, 0x00, 0xff, 0xff, 0x93, 0x9f, 0xe6, 0xe9,
+	0x53, 0x0c, 0x00, 0x00,
 }
 
 func (m *QueryVaultRequest) Marshal() (dAtA []byte, err error) {
@@ -849,6 +1293,38 @@ func (m *QueryVaultResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	_ = i
 	var l int
 	_ = l
+	if len(m.Deficit) > 0 {
+		for iNdEx := len(m.Deficit) - 1; iNdEx >= 0; iNdEx-- {
+			{
+				size, err := m.Deficit[iNdEx].MarshalToSizedBuffer(dAtA[:i])
+				if err != nil {
+					return 0, err
+				}
+				i -= size
+				i = encodeVarintQueryVault(dAtA, i, uint64(size))
+			}
+			i--
+			dAtA[i] = 0x1
+			i--
+			dAtA[i] = 0x9a
+		}
+	}
+	if len(m.PubKeyFrost) > 0 {
+		i -= len(m.PubKeyFrost)
+		copy(dAtA[i:], m.PubKeyFrost)
+		i = encodeVarintQueryVault(dAtA, i, uint64(len(m.PubKeyFrost)))
+		i--
+		dAtA[i] = 0x1
+		i--
+		dAtA[i] = 0x92
+	}
+	if m.VaultCreationHeightXmr != 0 {
+		i = encodeVarintQueryVault(dAtA, i, uint64(m.VaultCreationHeightXmr))
+		i--
+		dAtA[i] = 0x1
+		i--
+		dAtA[i] = 0x80
+	}
 	if len(m.PubKeyEddsa) > 0 {
 		i -= len(m.PubKeyEddsa)
 		copy(dAtA[i:], m.PubKeyEddsa)
@@ -984,6 +1460,120 @@ func (m *QueryVaultResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 		i = encodeVarintQueryVault(dAtA, i, uint64(m.BlockHeight))
 		i--
 		dAtA[i] = 0x8
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *QueryKeysignPartyRequest) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *QueryKeysignPartyRequest) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *QueryKeysignPartyRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if len(m.SigningHeight) > 0 {
+		i -= len(m.SigningHeight)
+		copy(dAtA[i:], m.SigningHeight)
+		i = encodeVarintQueryVault(dAtA, i, uint64(len(m.SigningHeight)))
+		i--
+		dAtA[i] = 0x12
+	}
+	if len(m.PubKey) > 0 {
+		i -= len(m.PubKey)
+		copy(dAtA[i:], m.PubKey)
+		i = encodeVarintQueryVault(dAtA, i, uint64(len(m.PubKey)))
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *QueryKeysignPartyResponse) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *QueryKeysignPartyResponse) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *QueryKeysignPartyResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.ActiveSignerCount != 0 {
+		i = encodeVarintQueryVault(dAtA, i, uint64(m.ActiveSignerCount))
+		i--
+		dAtA[i] = 0x40
+	}
+	if len(m.JailedFallbackSigners) > 0 {
+		for iNdEx := len(m.JailedFallbackSigners) - 1; iNdEx >= 0; iNdEx-- {
+			i -= len(m.JailedFallbackSigners[iNdEx])
+			copy(dAtA[i:], m.JailedFallbackSigners[iNdEx])
+			i = encodeVarintQueryVault(dAtA, i, uint64(len(m.JailedFallbackSigners[iNdEx])))
+			i--
+			dAtA[i] = 0x3a
+		}
+	}
+	if len(m.NeverSigners) > 0 {
+		for iNdEx := len(m.NeverSigners) - 1; iNdEx >= 0; iNdEx-- {
+			i -= len(m.NeverSigners[iNdEx])
+			copy(dAtA[i:], m.NeverSigners[iNdEx])
+			i = encodeVarintQueryVault(dAtA, i, uint64(len(m.NeverSigners[iNdEx])))
+			i--
+			dAtA[i] = 0x32
+		}
+	}
+	if m.RequiredSigners != 0 {
+		i = encodeVarintQueryVault(dAtA, i, uint64(m.RequiredSigners))
+		i--
+		dAtA[i] = 0x28
+	}
+	if m.Threshold != 0 {
+		i = encodeVarintQueryVault(dAtA, i, uint64(m.Threshold))
+		i--
+		dAtA[i] = 0x20
+	}
+	if m.Height != 0 {
+		i = encodeVarintQueryVault(dAtA, i, uint64(m.Height))
+		i--
+		dAtA[i] = 0x18
+	}
+	if len(m.Signers) > 0 {
+		for iNdEx := len(m.Signers) - 1; iNdEx >= 0; iNdEx-- {
+			i -= len(m.Signers[iNdEx])
+			copy(dAtA[i:], m.Signers[iNdEx])
+			i = encodeVarintQueryVault(dAtA, i, uint64(len(m.Signers[iNdEx])))
+			i--
+			dAtA[i] = 0x12
+		}
+	}
+	if len(m.PubKey) > 0 {
+		i -= len(m.PubKey)
+		copy(dAtA[i:], m.PubKey)
+		i = encodeVarintQueryVault(dAtA, i, uint64(len(m.PubKey)))
+		i--
+		dAtA[i] = 0xa
 	}
 	return len(dAtA) - i, nil
 }
@@ -1156,6 +1746,13 @@ func (m *VaultInfo) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	_ = i
 	var l int
 	_ = l
+	if len(m.PubKeyFrost) > 0 {
+		i -= len(m.PubKeyFrost)
+		copy(dAtA[i:], m.PubKeyFrost)
+		i = encodeVarintQueryVault(dAtA, i, uint64(len(m.PubKeyFrost)))
+		i--
+		dAtA[i] = 0x2a
+	}
 	if len(m.Membership) > 0 {
 		for iNdEx := len(m.Membership) - 1; iNdEx >= 0; iNdEx-- {
 			i -= len(m.Membership[iNdEx])
@@ -1190,6 +1787,171 @@ func (m *VaultInfo) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 		i -= len(m.PubKey)
 		copy(dAtA[i:], m.PubKey)
 		i = encodeVarintQueryVault(dAtA, i, uint64(len(m.PubKey)))
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *QueryXMRSpentOutputRefsRequest) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *QueryXMRSpentOutputRefsRequest) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *QueryXMRSpentOutputRefsRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if len(m.Height) > 0 {
+		i -= len(m.Height)
+		copy(dAtA[i:], m.Height)
+		i = encodeVarintQueryVault(dAtA, i, uint64(len(m.Height)))
+		i--
+		dAtA[i] = 0x12
+	}
+	if len(m.VaultPubKey) > 0 {
+		i -= len(m.VaultPubKey)
+		copy(dAtA[i:], m.VaultPubKey)
+		i = encodeVarintQueryVault(dAtA, i, uint64(len(m.VaultPubKey)))
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *QueryXMRSpentOutputRefsResponse) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *QueryXMRSpentOutputRefsResponse) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *QueryXMRSpentOutputRefsResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if len(m.SpentOutputRefs) > 0 {
+		for iNdEx := len(m.SpentOutputRefs) - 1; iNdEx >= 0; iNdEx-- {
+			{
+				size, err := m.SpentOutputRefs[iNdEx].MarshalToSizedBuffer(dAtA[:i])
+				if err != nil {
+					return 0, err
+				}
+				i -= size
+				i = encodeVarintQueryVault(dAtA, i, uint64(size))
+			}
+			i--
+			dAtA[i] = 0xa
+		}
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *QuerySolVaultNonceRequest) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *QuerySolVaultNonceRequest) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *QuerySolVaultNonceRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if len(m.Height) > 0 {
+		i -= len(m.Height)
+		copy(dAtA[i:], m.Height)
+		i = encodeVarintQueryVault(dAtA, i, uint64(len(m.Height)))
+		i--
+		dAtA[i] = 0x12
+	}
+	if len(m.VaultPubKey) > 0 {
+		i -= len(m.VaultPubKey)
+		copy(dAtA[i:], m.VaultPubKey)
+		i = encodeVarintQueryVault(dAtA, i, uint64(len(m.VaultPubKey)))
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *QuerySolVaultNonceResponse) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *QuerySolVaultNonceResponse) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *QuerySolVaultNonceResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if len(m.SetByTx) > 0 {
+		i -= len(m.SetByTx)
+		copy(dAtA[i:], m.SetByTx)
+		i = encodeVarintQueryVault(dAtA, i, uint64(len(m.SetByTx)))
+		i--
+		dAtA[i] = 0x2a
+	}
+	if m.UpdatedHeight != 0 {
+		i = encodeVarintQueryVault(dAtA, i, uint64(m.UpdatedHeight))
+		i--
+		dAtA[i] = 0x20
+	}
+	if m.Slot != 0 {
+		i = encodeVarintQueryVault(dAtA, i, uint64(m.Slot))
+		i--
+		dAtA[i] = 0x18
+	}
+	if len(m.Nonce) > 0 {
+		i -= len(m.Nonce)
+		copy(dAtA[i:], m.Nonce)
+		i = encodeVarintQueryVault(dAtA, i, uint64(len(m.Nonce)))
+		i--
+		dAtA[i] = 0x12
+	}
+	if len(m.NonceAccount) > 0 {
+		i -= len(m.NonceAccount)
+		copy(dAtA[i:], m.NonceAccount)
+		i = encodeVarintQueryVault(dAtA, i, uint64(len(m.NonceAccount)))
 		i--
 		dAtA[i] = 0xa
 	}
@@ -1485,6 +2247,79 @@ func (m *QueryVaultResponse) Size() (n int) {
 	if l > 0 {
 		n += 1 + l + sovQueryVault(uint64(l))
 	}
+	if m.VaultCreationHeightXmr != 0 {
+		n += 2 + sovQueryVault(uint64(m.VaultCreationHeightXmr))
+	}
+	l = len(m.PubKeyFrost)
+	if l > 0 {
+		n += 2 + l + sovQueryVault(uint64(l))
+	}
+	if len(m.Deficit) > 0 {
+		for _, e := range m.Deficit {
+			l = e.Size()
+			n += 2 + l + sovQueryVault(uint64(l))
+		}
+	}
+	return n
+}
+
+func (m *QueryKeysignPartyRequest) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	l = len(m.PubKey)
+	if l > 0 {
+		n += 1 + l + sovQueryVault(uint64(l))
+	}
+	l = len(m.SigningHeight)
+	if l > 0 {
+		n += 1 + l + sovQueryVault(uint64(l))
+	}
+	return n
+}
+
+func (m *QueryKeysignPartyResponse) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	l = len(m.PubKey)
+	if l > 0 {
+		n += 1 + l + sovQueryVault(uint64(l))
+	}
+	if len(m.Signers) > 0 {
+		for _, s := range m.Signers {
+			l = len(s)
+			n += 1 + l + sovQueryVault(uint64(l))
+		}
+	}
+	if m.Height != 0 {
+		n += 1 + sovQueryVault(uint64(m.Height))
+	}
+	if m.Threshold != 0 {
+		n += 1 + sovQueryVault(uint64(m.Threshold))
+	}
+	if m.RequiredSigners != 0 {
+		n += 1 + sovQueryVault(uint64(m.RequiredSigners))
+	}
+	if len(m.NeverSigners) > 0 {
+		for _, s := range m.NeverSigners {
+			l = len(s)
+			n += 1 + l + sovQueryVault(uint64(l))
+		}
+	}
+	if len(m.JailedFallbackSigners) > 0 {
+		for _, s := range m.JailedFallbackSigners {
+			l = len(s)
+			n += 1 + l + sovQueryVault(uint64(l))
+		}
+	}
+	if m.ActiveSignerCount != 0 {
+		n += 1 + sovQueryVault(uint64(m.ActiveSignerCount))
+	}
 	return n
 }
 
@@ -1575,6 +2410,86 @@ func (m *VaultInfo) Size() (n int) {
 			l = len(s)
 			n += 1 + l + sovQueryVault(uint64(l))
 		}
+	}
+	l = len(m.PubKeyFrost)
+	if l > 0 {
+		n += 1 + l + sovQueryVault(uint64(l))
+	}
+	return n
+}
+
+func (m *QueryXMRSpentOutputRefsRequest) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	l = len(m.VaultPubKey)
+	if l > 0 {
+		n += 1 + l + sovQueryVault(uint64(l))
+	}
+	l = len(m.Height)
+	if l > 0 {
+		n += 1 + l + sovQueryVault(uint64(l))
+	}
+	return n
+}
+
+func (m *QueryXMRSpentOutputRefsResponse) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if len(m.SpentOutputRefs) > 0 {
+		for _, e := range m.SpentOutputRefs {
+			l = e.Size()
+			n += 1 + l + sovQueryVault(uint64(l))
+		}
+	}
+	return n
+}
+
+func (m *QuerySolVaultNonceRequest) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	l = len(m.VaultPubKey)
+	if l > 0 {
+		n += 1 + l + sovQueryVault(uint64(l))
+	}
+	l = len(m.Height)
+	if l > 0 {
+		n += 1 + l + sovQueryVault(uint64(l))
+	}
+	return n
+}
+
+func (m *QuerySolVaultNonceResponse) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	l = len(m.NonceAccount)
+	if l > 0 {
+		n += 1 + l + sovQueryVault(uint64(l))
+	}
+	l = len(m.Nonce)
+	if l > 0 {
+		n += 1 + l + sovQueryVault(uint64(l))
+	}
+	if m.Slot != 0 {
+		n += 1 + sovQueryVault(uint64(m.Slot))
+	}
+	if m.UpdatedHeight != 0 {
+		n += 1 + sovQueryVault(uint64(m.UpdatedHeight))
+	}
+	l = len(m.SetByTx)
+	if l > 0 {
+		n += 1 + l + sovQueryVault(uint64(l))
 	}
 	return n
 }
@@ -2281,6 +3196,459 @@ func (m *QueryVaultResponse) Unmarshal(dAtA []byte) error {
 			}
 			m.PubKeyEddsa = string(dAtA[iNdEx:postIndex])
 			iNdEx = postIndex
+		case 16:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field VaultCreationHeightXmr", wireType)
+			}
+			m.VaultCreationHeightXmr = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowQueryVault
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.VaultCreationHeightXmr |= int64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 18:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field PubKeyFrost", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowQueryVault
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthQueryVault
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthQueryVault
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.PubKeyFrost = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 19:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Deficit", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowQueryVault
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthQueryVault
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthQueryVault
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Deficit = append(m.Deficit, common.Coin{})
+			if err := m.Deficit[len(m.Deficit)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipQueryVault(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthQueryVault
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *QueryKeysignPartyRequest) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowQueryVault
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: QueryKeysignPartyRequest: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: QueryKeysignPartyRequest: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field PubKey", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowQueryVault
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthQueryVault
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthQueryVault
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.PubKey = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field SigningHeight", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowQueryVault
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthQueryVault
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthQueryVault
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.SigningHeight = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipQueryVault(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthQueryVault
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *QueryKeysignPartyResponse) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowQueryVault
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: QueryKeysignPartyResponse: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: QueryKeysignPartyResponse: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field PubKey", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowQueryVault
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthQueryVault
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthQueryVault
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.PubKey = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Signers", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowQueryVault
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthQueryVault
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthQueryVault
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Signers = append(m.Signers, string(dAtA[iNdEx:postIndex]))
+			iNdEx = postIndex
+		case 3:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Height", wireType)
+			}
+			m.Height = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowQueryVault
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.Height |= int64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 4:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Threshold", wireType)
+			}
+			m.Threshold = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowQueryVault
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.Threshold |= int64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 5:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field RequiredSigners", wireType)
+			}
+			m.RequiredSigners = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowQueryVault
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.RequiredSigners |= int64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 6:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field NeverSigners", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowQueryVault
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthQueryVault
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthQueryVault
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.NeverSigners = append(m.NeverSigners, string(dAtA[iNdEx:postIndex]))
+			iNdEx = postIndex
+		case 7:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field JailedFallbackSigners", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowQueryVault
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthQueryVault
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthQueryVault
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.JailedFallbackSigners = append(m.JailedFallbackSigners, string(dAtA[iNdEx:postIndex]))
+			iNdEx = postIndex
+		case 8:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field ActiveSignerCount", wireType)
+			}
+			m.ActiveSignerCount = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowQueryVault
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.ActiveSignerCount |= int64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
 		default:
 			iNdEx = preIndex
 			skippy, err := skipQueryVault(dAtA[iNdEx:])
@@ -2826,6 +4194,534 @@ func (m *VaultInfo) Unmarshal(dAtA []byte) error {
 				return io.ErrUnexpectedEOF
 			}
 			m.Membership = append(m.Membership, string(dAtA[iNdEx:postIndex]))
+			iNdEx = postIndex
+		case 5:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field PubKeyFrost", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowQueryVault
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthQueryVault
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthQueryVault
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.PubKeyFrost = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipQueryVault(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthQueryVault
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *QueryXMRSpentOutputRefsRequest) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowQueryVault
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: QueryXMRSpentOutputRefsRequest: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: QueryXMRSpentOutputRefsRequest: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field VaultPubKey", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowQueryVault
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthQueryVault
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthQueryVault
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.VaultPubKey = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Height", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowQueryVault
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthQueryVault
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthQueryVault
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Height = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipQueryVault(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthQueryVault
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *QueryXMRSpentOutputRefsResponse) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowQueryVault
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: QueryXMRSpentOutputRefsResponse: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: QueryXMRSpentOutputRefsResponse: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field SpentOutputRefs", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowQueryVault
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthQueryVault
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthQueryVault
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.SpentOutputRefs = append(m.SpentOutputRefs, &common.OutputRef{})
+			if err := m.SpentOutputRefs[len(m.SpentOutputRefs)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipQueryVault(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthQueryVault
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *QuerySolVaultNonceRequest) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowQueryVault
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: QuerySolVaultNonceRequest: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: QuerySolVaultNonceRequest: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field VaultPubKey", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowQueryVault
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthQueryVault
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthQueryVault
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.VaultPubKey = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Height", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowQueryVault
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthQueryVault
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthQueryVault
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Height = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipQueryVault(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthQueryVault
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *QuerySolVaultNonceResponse) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowQueryVault
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: QuerySolVaultNonceResponse: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: QuerySolVaultNonceResponse: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field NonceAccount", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowQueryVault
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthQueryVault
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthQueryVault
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.NonceAccount = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Nonce", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowQueryVault
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthQueryVault
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthQueryVault
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Nonce = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 3:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Slot", wireType)
+			}
+			m.Slot = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowQueryVault
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.Slot |= int64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 4:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field UpdatedHeight", wireType)
+			}
+			m.UpdatedHeight = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowQueryVault
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.UpdatedHeight |= int64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 5:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field SetByTx", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowQueryVault
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthQueryVault
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthQueryVault
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.SetByTx = string(dAtA[iNdEx:postIndex])
 			iNdEx = postIndex
 		default:
 			iNdEx = preIndex

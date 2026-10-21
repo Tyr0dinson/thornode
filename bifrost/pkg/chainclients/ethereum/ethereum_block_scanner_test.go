@@ -19,11 +19,13 @@ import (
 	cKeys "github.com/cosmos/cosmos-sdk/crypto/keyring"
 	"github.com/ethereum/go-ethereum/common"
 	etypes "github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/blockscanner"
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
+	sharedevm "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/evm"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/evm/types"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pubkeymanager"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
@@ -33,11 +35,14 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	tokenlist "gitlab.com/thorchain/thornode/v3/common/tokenlist"
 	"gitlab.com/thorchain/thornode/v3/config"
-	"gitlab.com/thorchain/thornode/v3/x/thorchain"
+	"gitlab.com/thorchain/thornode/v3/constants"
 	types2 "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
-const Mainnet = 1
+const (
+	Mainnet                = 1
+	testERC20TransferEvent = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
+)
 
 type BlockScannerTestSuite struct {
 	m      *metrics.Metrics
@@ -47,8 +52,64 @@ type BlockScannerTestSuite struct {
 
 var _ = Suite(&BlockScannerTestSuite{})
 
+type directTransferPubKeyValidator struct {
+	*pubkeymanager.MockPoolAddressValidator
+	pubkey thorcommon.PubKey
+}
+
+type testMimirBridge struct {
+	thorclient.ThorchainBridge
+	getMimir func(string) (int64, error)
+}
+
+func (b testMimirBridge) GetMimir(key string) (int64, error) {
+	return b.getMimir(key)
+}
+
+func (b testMimirBridge) GetMimirWithRef(template, ref string) (int64, error) {
+	return b.GetMimir(fmt.Sprintf(template, ref))
+}
+
+func (v directTransferPubKeyValidator) GetAlgoPubKeys(algo thorcommon.SigningAlgo, includeInactive bool) thorcommon.PubKeys {
+	if v.pubkey.IsEmpty() {
+		return nil
+	}
+	return thorcommon.PubKeys{v.pubkey}
+}
+
+func (v directTransferPubKeyValidator) IsValidPoolAddress(addr string, chain thorcommon.Chain) (bool, thorcommon.ChainPoolInfo) {
+	return v.matchPoolAddress(addr, chain)
+}
+
+func (v directTransferPubKeyValidator) IsActivePoolAddress(addr string, chain thorcommon.Chain) (bool, thorcommon.ChainPoolInfo) {
+	return v.matchPoolAddress(addr, chain)
+}
+
+func (v directTransferPubKeyValidator) matchPoolAddress(addr string, chain thorcommon.Chain) (bool, thorcommon.ChainPoolInfo) {
+	cpi, err := thorcommon.NewChainPoolInfo(chain, v.pubkey)
+	if err != nil {
+		return false, thorcommon.EmptyChainPoolInfo
+	}
+	if strings.EqualFold(cpi.PoolAddress.String(), addr) {
+		return true, cpi
+	}
+	return false, thorcommon.EmptyChainPoolInfo
+}
+
+func erc20TransferCallData(to common.Address, amount *big.Int) []byte {
+	selector := crypto.Keccak256([]byte("transfer(address,uint256)"))[:4]
+	data := append([]byte{}, selector...)
+	data = append(data, common.LeftPadBytes(to.Bytes(), common.HashLength)...)
+	data = append(data, common.LeftPadBytes(amount.Bytes(), common.HashLength)...)
+	return data
+}
+
+func paddedAddressHash(addr common.Address) common.Hash {
+	return common.BytesToHash(common.LeftPadBytes(addr.Bytes(), common.HashLength))
+}
+
 func (s *BlockScannerTestSuite) SetUpSuite(c *C) {
-	thorchain.SetupConfigForTest()
+	setupMocknetThorConfig()
 	s.m = GetMetricForTest(c)
 	c.Assert(s.m, NotNil)
 	cfg := config.BifrostClientConfiguration{
@@ -76,11 +137,12 @@ func (s *BlockScannerTestSuite) SetUpSuite(c *C) {
 	c.Assert(err, IsNil)
 }
 
+// Functional scanner tests must allow for scheduling delays during CI coverage.
 func getConfigForTest() config.BifrostBlockScannerConfiguration {
 	return config.BifrostBlockScannerConfiguration{
 		StartBlockHeight:           1, // avoids querying thorchain for block height
 		BlockScanProcessors:        1,
-		HTTPRequestTimeout:         time.Second,
+		HTTPRequestTimeout:         30 * time.Second,
 		HTTPRequestReadTimeout:     time.Second * 30,
 		HTTPRequestWriteTimeout:    time.Second * 30,
 		MaxHTTPRequestRetry:        3,
@@ -143,10 +205,13 @@ func (s *BlockScannerTestSuite) TestNewBlockScanner(c *C) {
 			c.Assert(err, IsNil)
 		}
 	}))
+	defer server.Close()
 	storage, err := blockscanner.NewBlockScannerStorage("", config.LevelDBOptions{})
 	c.Assert(err, IsNil)
+	defer func() { c.Check(storage.Close(), IsNil) }()
 	ethClient, err := ethclient.Dial(server.URL)
 	c.Assert(err, IsNil)
+	defer ethClient.Close()
 	pubKeyManager, err := pubkeymanager.NewPubKeyManager(s.bridge, s.m)
 	c.Assert(err, IsNil)
 	solvencyReporter := func(height int64) error {
@@ -230,11 +295,14 @@ func (s *BlockScannerTestSuite) TestProcessBlock(c *C) {
 			}
 		}
 	}))
+	defer server.Close()
 	ethClient, err := ethclient.Dial(server.URL)
 	c.Assert(err, IsNil)
+	defer ethClient.Close()
 	c.Assert(ethClient, NotNil)
 	storage, err := blockscanner.NewBlockScannerStorage("", config.LevelDBOptions{})
 	c.Assert(err, IsNil)
+	defer func() { c.Check(storage.Close(), IsNil) }()
 	u, err := url.Parse(server.URL)
 	c.Assert(err, IsNil)
 	bridge, err := thorclient.NewThorchainBridge(config.BifrostClientConfiguration{
@@ -389,11 +457,14 @@ func (s *BlockScannerTestSuite) TestFromTxToTxIn(c *C) {
 			}
 		}
 	}))
+	defer server.Close()
 	ethClient, err := ethclient.Dial(server.URL)
 	c.Assert(err, IsNil)
+	defer ethClient.Close()
 	c.Assert(ethClient, NotNil)
 	storage, err := blockscanner.NewBlockScannerStorage("", config.LevelDBOptions{})
 	c.Assert(err, IsNil)
+	defer func() { c.Check(storage.Close(), IsNil) }()
 	c.Assert(storage, NotNil)
 	u, err := url.Parse(server.URL)
 	c.Assert(err, IsNil)
@@ -568,7 +639,8 @@ func (s *BlockScannerTestSuite) TestFromTxToTxIn(c *C) {
 
 	// add thorchain router
 	useWhitelistSmartContract = true
-	whitelistSmartContractAddress = append(whitelistSmartContractAddress,
+	whitelistSmartContractAddress = append(
+		whitelistSmartContractAddress,
 		"0xd37bbe5744d730a1d98d8dc97c42f0ca46ad7146",
 	)
 
@@ -583,6 +655,214 @@ func (s *BlockScannerTestSuite) TestFromTxToTxIn(c *C) {
 	c.Assert(txInItem.Coins[0].Amount.Equal(cosmos.NewUint(1043565)), Equals, true)
 	c.Assert(txInItem.Gas[0].Asset.String(), Equals, "ETH.ETH")
 	c.Assert(txInItem.Gas[0].Amount.Equal(cosmos.NewUint(38440)), Equals, true)
+}
+
+func (s *BlockScannerTestSuite) TestGetTxInFromDirectERC20Transfer(c *C) {
+	storage, err := blockscanner.NewBlockScannerStorage("", config.LevelDBOptions{})
+	c.Assert(err, IsNil)
+	defer func() { c.Assert(storage.Close(), IsNil) }()
+
+	tokens, err := sharedevm.NewLevelDBTokenMeta(storage.GetInternalDb(), "direct-eth-tokenmeta-")
+	c.Assert(err, IsNil)
+	tokenAddr := common.HexToAddress("0xdAC17F958D2ee523a2206206994597C13D831ec7")
+	c.Assert(tokens.SaveTokenMeta("USDT", tokenAddr.String(), 6), IsNil)
+
+	vaultABI, erc20ABI, err := sharedevm.GetContractABI(routerContractABI, erc20ContractABI)
+	c.Assert(err, IsNil)
+	priKey, err := s.keys.GetPrivateKey()
+	c.Assert(err, IsNil)
+	tm, err := cryptocodec.ToCmtPubKeyInterface(priKey.PubKey())
+	c.Assert(err, IsNil)
+	pubkey, err := thorcommon.NewPubKeyFromCrypto(tm)
+	c.Assert(err, IsNil)
+	cpi, err := thorcommon.NewChainPoolInfo(thorcommon.ETHChain, pubkey)
+	c.Assert(err, IsNil)
+	vaultAddr := common.HexToAddress(cpi.PoolAddress.String())
+
+	scanner := &ETHScanner{
+		cfg:       getConfigForTest(),
+		vaultABI:  vaultABI,
+		erc20ABI:  erc20ABI,
+		tokens:    tokens,
+		pubkeyMgr: directTransferPubKeyValidator{MockPoolAddressValidator: pubkeymanager.NewMockPoolAddressValidator(), pubkey: pubkey},
+		eipSigner: etypes.NewEIP155Signer(big.NewInt(int64(Mainnet))),
+	}
+
+	privateKey, err := crypto.HexToECDSA(strings.Repeat("1", 64))
+	c.Assert(err, IsNil)
+	senderAddr := crypto.PubkeyToAddress(privateKey.PublicKey)
+	tokenAmount := big.NewInt(1_000_000)
+	unsignedTx := etypes.NewTransaction(7, tokenAddr, big.NewInt(0), 100000, big.NewInt(1), erc20TransferCallData(vaultAddr, tokenAmount))
+	tx, err := etypes.SignTx(unsignedTx, etypes.NewEIP155Signer(big.NewInt(int64(Mainnet))), privateKey)
+	c.Assert(err, IsNil)
+
+	receipt := &etypes.Receipt{
+		Status:            1,
+		GasUsed:           21000,
+		EffectiveGasPrice: big.NewInt(1),
+		Logs: []*etypes.Log{
+			{
+				Address: tokenAddr,
+				Topics: []common.Hash{
+					common.HexToHash(testERC20TransferEvent),
+					paddedAddressHash(senderAddr),
+					paddedAddressHash(vaultAddr),
+				},
+				Data: common.LeftPadBytes(tokenAmount.Bytes(), common.HashLength),
+			},
+		},
+	}
+
+	txInItem, err := scanner.getTxInFromDirectERC20Transfer(tx, receipt, nil)
+	c.Assert(err, IsNil)
+	c.Assert(txInItem, NotNil)
+	c.Assert(txInItem.Sender, Equals, strings.ToLower(senderAddr.String()))
+	c.Assert(txInItem.To, Equals, vaultAddr.String())
+	c.Assert(txInItem.Memo, Equals, "")
+	c.Assert(txInItem.Tx, Equals, tx.Hash().Hex()[2:])
+	c.Assert(txInItem.Coins[0].Asset.String(), Equals, "ETH.USDT-0XDAC17F958D2EE523A2206206994597C13D831EC7")
+	c.Assert(txInItem.Coins[0].Amount.Equal(cosmos.NewUint(100000000)), Equals, true)
+}
+
+func (s *BlockScannerTestSuite) TestDirectERC20TransferFeatureFlag(c *C) {
+	storage, err := blockscanner.NewBlockScannerStorage("", config.LevelDBOptions{})
+	c.Assert(err, IsNil)
+	defer func() { c.Assert(storage.Close(), IsNil) }()
+
+	tokens, err := sharedevm.NewLevelDBTokenMeta(storage.GetInternalDb(), "direct-eth-feature-tokenmeta-")
+	c.Assert(err, IsNil)
+	tokenAddr := common.HexToAddress("0xdAC17F958D2ee523a2206206994597C13D831ec7")
+	c.Assert(tokens.SaveTokenMeta("USDT", tokenAddr.String(), 6), IsNil)
+
+	vaultABI, erc20ABI, err := sharedevm.GetContractABI(routerContractABI, erc20ContractABI)
+	c.Assert(err, IsNil)
+	priKey, err := s.keys.GetPrivateKey()
+	c.Assert(err, IsNil)
+	tm, err := cryptocodec.ToCmtPubKeyInterface(priKey.PubKey())
+	c.Assert(err, IsNil)
+	pubkey, err := thorcommon.NewPubKeyFromCrypto(tm)
+	c.Assert(err, IsNil)
+	cpi, err := thorcommon.NewChainPoolInfo(thorcommon.ETHChain, pubkey)
+	c.Assert(err, IsNil)
+	vaultAddr := common.HexToAddress(cpi.PoolAddress.String())
+
+	privateKey, err := crypto.HexToECDSA(strings.Repeat("1", 64))
+	c.Assert(err, IsNil)
+	senderAddr := crypto.PubkeyToAddress(privateKey.PublicKey)
+	tokenAmount := big.NewInt(1_000_000)
+	unsignedTx := etypes.NewTransaction(7, tokenAddr, big.NewInt(0), 100000, big.NewInt(1), erc20TransferCallData(vaultAddr, tokenAmount))
+	tx, err := etypes.SignTx(unsignedTx, etypes.NewEIP155Signer(big.NewInt(int64(Mainnet))), privateKey)
+	c.Assert(err, IsNil)
+
+	receipt := &etypes.Receipt{
+		Status:            1,
+		GasUsed:           21000,
+		EffectiveGasPrice: big.NewInt(1),
+		TxHash:            tx.Hash(),
+		BlockHash:         common.HexToHash("0x1"),
+		BlockNumber:       big.NewInt(1),
+		Logs: []*etypes.Log{
+			{
+				Address: tokenAddr,
+				Topics: []common.Hash{
+					common.HexToHash(testERC20TransferEvent),
+					paddedAddressHash(senderAddr),
+					paddedAddressHash(vaultAddr),
+				},
+				Data: common.LeftPadBytes(tokenAmount.Bytes(), common.HashLength),
+			},
+		},
+	}
+	receiptJSON, err := receipt.MarshalJSON()
+	c.Assert(err, IsNil)
+
+	disableWhitelist := int64(0)
+	directInbound := int64(-1)
+	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		body, err2 := io.ReadAll(req.Body)
+		c.Assert(err2, IsNil)
+		type RPCRequest struct {
+			JSONRPC string          `json:"jsonrpc"`
+			ID      interface{}     `json:"id"`
+			Method  string          `json:"method"`
+			Params  json.RawMessage `json:"params"`
+		}
+		var rpcRequest RPCRequest
+		if err2 = json.Unmarshal(body, &rpcRequest); err2 != nil {
+			return
+		}
+		if rpcRequest.Method == "eth_getTransactionReceipt" {
+			_, err2 = fmt.Fprintf(rw, `{"jsonrpc":"2.0","id":1,"result":%s}`, receiptJSON)
+			c.Assert(err2, IsNil)
+		}
+	}))
+	defer server.Close()
+
+	ethClient, err := ethclient.Dial(server.URL)
+	c.Assert(err, IsNil)
+	defer ethClient.Close()
+	bridge := testMimirBridge{
+		getMimir: func(key string) (int64, error) {
+			switch key {
+			case constants.EVMDisableContractWhitelist.String():
+				return disableWhitelist, nil
+			case fmt.Sprintf(constants.MimirTemplateEVMDirectERC20Inbound, thorcommon.ETHChain):
+				return directInbound, nil
+			default:
+				return -1, nil
+			}
+		},
+	}
+
+	scanner := &ETHScanner{
+		cfg:       getConfigForTest(),
+		client:    ethClient,
+		bridge:    bridge,
+		vaultABI:  vaultABI,
+		erc20ABI:  erc20ABI,
+		tokens:    tokens,
+		pubkeyMgr: directTransferPubKeyValidator{MockPoolAddressValidator: pubkeymanager.NewMockPoolAddressValidator(), pubkey: pubkey},
+		eipSigner: etypes.NewEIP155Signer(big.NewInt(int64(Mainnet))),
+	}
+
+	testCases := []struct {
+		name             string
+		disableWhitelist int64
+		directInbound    int64
+		expectObserved   bool
+	}{
+		{"whitelist enabled and direct inbound unset", 0, -1, false},
+		{"whitelist enabled and direct inbound enabled", 0, 1, true},
+		{"whitelist disabled and direct inbound zero", 1, 0, false},
+		{"whitelist disabled and direct inbound enabled", 1, 1, true},
+	}
+
+	for _, tc := range testCases {
+		disableWhitelist = tc.disableWhitelist
+		directInbound = tc.directInbound
+
+		txInItem, txErr := scanner.fromTxToTxIn(tx)
+		c.Assert(txErr, IsNil, Commentf(tc.name))
+		if !tc.expectObserved {
+			c.Assert(txInItem, IsNil, Commentf(tc.name))
+			continue
+		}
+		c.Assert(txInItem, NotNil, Commentf(tc.name))
+		c.Assert(txInItem.Sender, Equals, strings.ToLower(senderAddr.String()), Commentf(tc.name))
+		c.Assert(txInItem.To, Equals, vaultAddr.String(), Commentf(tc.name))
+		c.Assert(txInItem.Coins[0].Asset.String(), Equals, "ETH.USDT-0XDAC17F958D2EE523A2206206994597C13D831EC7", Commentf(tc.name))
+		c.Assert(txInItem.Coins[0].Amount.Equal(cosmos.NewUint(100000000)), Equals, true, Commentf(tc.name))
+	}
+
+	disableWhitelist = 1
+	directInbound = 1
+
+	// Unsigned transfer(...) txs fail sender recovery. The scanner should
+	// quietly ignore them rather than re-running sender recovery and returning
+	// an error from the direct-ERC20 helper.
+	txInItem, err := scanner.fromTxToTxIn(unsignedTx)
+	c.Assert(err, IsNil)
+	c.Assert(txInItem, IsNil)
 }
 
 func (s *BlockScannerTestSuite) TestRouterValidation(c *C) {
@@ -682,8 +962,10 @@ func (s *BlockScannerTestSuite) TestRouterValidation(c *C) {
 
 	ethClient, err := ethclient.Dial(server.URL)
 	c.Assert(err, IsNil)
+	defer ethClient.Close()
 	storage, err := blockscanner.NewBlockScannerStorage("", config.LevelDBOptions{})
 	c.Assert(err, IsNil)
+	defer func() { c.Check(storage.Close(), IsNil) }()
 	u, err := url.Parse(server.URL)
 	c.Assert(err, IsNil)
 	cfg := config.BifrostClientConfiguration{
@@ -707,7 +989,8 @@ func (s *BlockScannerTestSuite) TestRouterValidation(c *C) {
 
 	// Ensure both router addresses pass the log parser's address validator.
 	useWhitelistSmartContract = true
-	whitelistSmartContractAddress = append(whitelistSmartContractAddress,
+	whitelistSmartContractAddress = append(
+		whitelistSmartContractAddress,
 		thorcommon.Address(correctRouter),
 		thorcommon.Address(wrongRouter),
 	)
@@ -815,11 +1098,14 @@ func (s *BlockScannerTestSuite) TestProcessReOrg(c *C) {
 			}
 		}
 	}))
+	defer server.Close()
 	ethClient, err := ethclient.Dial(server.URL)
 	c.Assert(err, IsNil)
+	defer ethClient.Close()
 	c.Assert(ethClient, NotNil)
 	storage, err := blockscanner.NewBlockScannerStorage("", config.LevelDBOptions{})
 	c.Assert(err, IsNil)
+	defer func() { c.Check(storage.Close(), IsNil) }()
 	bridge, err := thorclient.NewThorchainBridge(config.BifrostClientConfiguration{
 		ChainID:         "thorchain",
 		ChainHost:       server.Listener.Addr().String(),
@@ -887,10 +1173,13 @@ func (s *BlockScannerTestSuite) TestGasPrice(c *C) {
 			c.Assert(err, IsNil)
 		}
 	}))
+	defer server.Close()
 	storage, err := blockscanner.NewBlockScannerStorage("", config.LevelDBOptions{})
 	c.Assert(err, IsNil)
+	defer func() { c.Check(storage.Close(), IsNil) }()
 	ethClient, err := ethclient.Dial(server.URL)
 	c.Assert(err, IsNil)
+	defer ethClient.Close()
 	pubKeyManager, err := pubkeymanager.NewPubKeyManager(s.bridge, s.m)
 	c.Assert(err, IsNil)
 	solvencyReporter := func(height int64) error {
@@ -914,31 +1203,31 @@ func (s *BlockScannerTestSuite) TestGasPrice(c *C) {
 	// empty blocks should not count
 	bs.updateGasPrice(baseFee, []*big.Int{})
 	c.Assert(len(bs.gasCache), Equals, 39)
-	c.Assert(bs.gasPrice.Cmp(big.NewInt(initialGasPrice)), Equals, 0)
+	c.Assert(bs.GetGasPrice().Cmp(big.NewInt(initialGasPrice)), Equals, 0)
 
 	// now we should get the average of the 25th percentile gas (2)
 	bs.updateGasPrice(baseFee, []*big.Int{big.NewInt(1 * resolution), big.NewInt(2 * resolution), big.NewInt(3 * resolution), big.NewInt(4 * resolution)})
 	c.Assert(len(bs.gasCache), Equals, 40)
-	c.Assert(bs.gasPrice.Uint64(), Equals, big.NewInt(2*resolution).Uint64())
+	c.Assert(bs.GetGasPrice().Uint64(), Equals, big.NewInt(2*resolution).Uint64())
 
 	// add 20 more blocks with 2x the 25th percentile and we should get 6 (3 + 3x stddev)
 	for i := 0; i < 20; i++ {
 		bs.updateGasPrice(baseFee, []*big.Int{big.NewInt(2 * resolution), big.NewInt(4 * resolution), big.NewInt(6 * resolution), big.NewInt(8 * resolution)})
 	}
 	c.Assert(len(bs.gasCache), Equals, 40)
-	c.Assert(bs.gasPrice.Uint64(), Equals, big.NewInt(6*resolution).Uint64())
+	c.Assert(bs.GetGasPrice().Uint64(), Equals, big.NewInt(6*resolution).Uint64())
 
 	// add 20 more blocks with 2x the 25th percentile and we should get 4
 	for i := 0; i < 20; i++ {
 		bs.updateGasPrice(baseFee, []*big.Int{big.NewInt(2 * resolution), big.NewInt(4 * resolution), big.NewInt(6 * resolution), big.NewInt(8 * resolution)})
 	}
 	c.Assert(len(bs.gasCache), Equals, 40)
-	c.Assert(bs.gasPrice.Uint64(), Equals, big.NewInt(4*resolution).Uint64())
+	c.Assert(bs.GetGasPrice().Uint64(), Equals, big.NewInt(4*resolution).Uint64())
 
 	// add 20 more blocks with 2x the 25th percentile and we should get 12 (6 + 3x stddev)
 	for i := 0; i < 20; i++ {
 		bs.updateGasPrice(baseFee, []*big.Int{big.NewInt(4 * resolution), big.NewInt(8 * resolution), big.NewInt(12 * resolution), big.NewInt(16 * resolution)})
 	}
 	c.Assert(len(bs.gasCache), Equals, 40)
-	c.Assert(bs.gasPrice.Uint64(), Equals, big.NewInt(12*resolution).Uint64())
+	c.Assert(bs.GetGasPrice().Uint64(), Equals, big.NewInt(12*resolution).Uint64())
 }

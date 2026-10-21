@@ -1,7 +1,7 @@
 openapi: 3.0.0
 info:
   title: Thornode API
-  version: 3.17.0
+  version: 3.20.0
   contact:
     email: devs@thorchain.org
   description: Thornode REST API.
@@ -330,6 +330,22 @@ paths:
               schema:
                 $ref: "#/components/schemas/TCYClaimersResponse"
 
+  /thorchain/tcy_protocol_owned:
+    parameters:
+      - $ref: "#/components/parameters/queryHeight"
+    get:
+      description: Returns the amount of TCY held by the claim module in excess of the outstanding tcy_claimer entitlements (protocol-owned TCY accumulated by the claim-module rune→TCY swap cycle).
+      operationId: tcyProtocolOwned
+      tags:
+        - TCY Claimers
+      responses:
+        200:
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TCYProtocolOwnedResponse"
+
   # ------------------------------ rune pool ------------------------------
 
   /thorchain/runepool:
@@ -443,6 +459,7 @@ paths:
     parameters:
       - $ref: "#/components/parameters/queryHeight"
       - $ref: "#/components/parameters/hash"
+      - $ref: "#/components/parameters/queryOutboundVoter"
     get:
       description: Deprecated - migrate to /thorchain/tx/details.
       operationId: txSignersOld
@@ -460,6 +477,7 @@ paths:
     parameters:
       - $ref: "#/components/parameters/queryHeight"
       - $ref: "#/components/parameters/hash"
+      - $ref: "#/components/parameters/queryOutboundVoter"
     get:
       description: Returns the signers for a provided inbound or outbound hash.
       operationId: txSigners
@@ -592,6 +610,23 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/VaultResponse"
+
+  /thorchain/vault/{pubkey}/keysign_party:
+    parameters:
+      - $ref: "#/components/parameters/querySigningHeight"
+      - $ref: "#/components/parameters/pubkey"
+    get:
+      description: Returns the keysign-eligible signer set for the provided vault pubkey. The optional signing_height is the signing height used for jail-release evaluation against current vault and node-account state; it is not a historical state query.
+      operationId: vaultKeysignParty
+      tags:
+        - Vaults
+      responses:
+        200:
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KeysignPartyResponse"
 
   /thorchain/vaults/pubkeys:
     parameters:
@@ -824,6 +859,65 @@ paths:
                 type: boolean
                 example: false
 
+  /thorchain/logs:
+    parameters:
+      - name: start
+        in: query
+        description: first block height to include, defaults to the last block capture closed
+        required: false
+        schema:
+          type: integer
+          format: int64
+          minimum: 1
+      - name: end
+        in: query
+        description: last block height to include, defaults to the last block capture closed
+        required: false
+        schema:
+          type: integer
+          format: int64
+          minimum: 1
+      - name: level
+        in: query
+        description: lowest log level to include, along with every more severe level, defaults to info
+        required: false
+        schema:
+          type: string
+          enum: [debug, info, warn, error]
+      - name: modules
+        in: query
+        description: modules to include, repeat the parameter for more than one (x/thorchain, x/bank, x/wasm, x/upgrade, ...), defaults to x/thorchain, pass * for every module
+        required: false
+        schema:
+          type: array
+          items:
+            type: string
+    get:
+      description: |
+        Returns the module log lines this node captured while executing the
+        requested blocks. Node-local, never consensus data, and only available when
+        the operator has set thor.api.logs.retain_blocks above zero. start and end
+        default to the last block capture closed, which this route reads from the
+        capture store rather than from consensus, so it can briefly trail the last
+        committed height; both are clamped to the blocks still on disk, so a range outside that window returns an empty array rather than an
+        error. A block can be absent for three reasons: it fell out of
+        retain_blocks, it was dropped oldest-first to keep the log directory under
+        its 1 GiB ceiling, or writing it failed and the rest of that block was
+        skipped. An empty result therefore does not mean the node logged nothing at
+        that level. Unauthenticated like every other endpoint here.
+      operationId: logs
+      tags:
+        - Network
+      responses:
+        200:
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/LogEntry"
+
   /thorchain/ban/{address}:
     parameters:
       - $ref: "#/components/parameters/queryHeight"
@@ -1001,6 +1095,42 @@ paths:
               schema:
                 $ref: "#/components/schemas/SecuredAssetsResponse"
 
+  # ------------------------------ stable reserve ------------------------------
+
+  /thorchain/stable_reserve:
+    parameters:
+      - $ref: "#/components/parameters/queryHeight"
+    get:
+      description: Returns Stable Reserve module status, inventory health, deployment stream settings, and active internal swaps
+      operationId: stable_reserve
+      tags:
+        - StableReserve
+      responses:
+        200:
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StableReserveResponse"
+
+  /thorchain/stable_reserve/contributor/{asset}/{address}:
+    parameters:
+      - $ref: "#/components/parameters/queryHeight"
+      - $ref: "#/components/parameters/asset"
+      - $ref: "#/components/parameters/address"
+    get:
+      description: Returns a contributor's Stable Reserve credit for the given asset
+      operationId: stable_reserve_contributor
+      tags:
+        - StableReserve
+      responses:
+        200:
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StableReserveContributorResponse"
+
   # ------------------------------ swap ------------------------------
 
   /thorchain/queue/swap/details/{tx_id}:
@@ -1060,6 +1190,39 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/SwapQueueResponse"
+
+  /thorchain/queue/swap/paginated:
+    parameters:
+      - $ref: "#/components/parameters/queryHeight"
+      - name: offset
+        in: query
+        schema:
+          type: integer
+          format: int64
+          minimum: 0
+          default: 0
+        description: Number of items to skip
+      - name: limit
+        in: query
+        schema:
+          type: integer
+          format: int64
+          minimum: 0
+          default: 100
+          maximum: 1000
+        description: Number of items to return
+    get:
+      description: Returns the swap queue with pagination.
+      operationId: queueSwapPaginated
+      tags:
+        - Queue
+      responses:
+        200:
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SwapQueuePaginatedResponse"
 
   /thorchain/queue/limit_swaps:
     parameters:
@@ -1471,7 +1634,7 @@ paths:
           example: "0x1c7b17362c84287bd1184447e6dfeaf920c31bbe"
       - name: refund_address
         in: query
-        description: the refund address, refunds will be sent here if the swap fails
+        description: the source-chain refund address; required when the source chain cannot observe senders (currently XMR), and otherwise optional; when provided, it must be valid for the configured network
         schema:
           type: string
           example: "0x1c7b17362c84287bd1184447e6dfeaf920c31bbe"
@@ -1559,7 +1722,7 @@ paths:
           example: "0x1c7b17362c84287bd1184447e6dfeaf920c31bbe"
       - name: refund_address
         in: query
-        description: the refund address, refunds will be sent here if the swap fails
+        description: the source-chain refund address; required when the source chain cannot observe senders (currently XMR), and otherwise optional; when provided, it must be valid for the configured network
         schema:
           type: string
           example: "0x1c7b17362c84287bd1184447e6dfeaf920c31bbe"
@@ -1835,10 +1998,29 @@ components:
   # ------------------------------ parameters ------------------------------
 
   parameters:
+    queryOutboundVoter:
+      name: outbound
+      in: query
+      description: Select only the outbound voter. By default, prefer the inbound voter and fall back to the outbound voter when no inbound observations exist.
+      required: false
+      schema:
+        type: boolean
+        default: false
+
     queryHeight:
       name: height
       in: query
       description: optional block height, defaults to current tip
+      required: false
+      schema:
+        type: integer
+        format: int64
+        minimum: 0
+
+    querySigningHeight:
+      name: signing_height
+      in: query
+      description: optional signing height, defaults to current tip
       required: false
       schema:
         type: integer
@@ -1939,6 +2121,35 @@ components:
   # ------------------------------ schemas ------------------------------
 
   schemas:
+    LogEntry:
+      type: object
+      required:
+        - height
+        - time
+        - level
+        - module
+        - msg
+        - fields
+      properties:
+        height:
+          type: integer
+          format: int64
+          description: block height the line was emitted during
+        time:
+          type: string
+          description: RFC3339 wall-clock time on this node
+        level:
+          type: string
+          enum: [debug, info, warn, error]
+        module:
+          type: string
+          description: module that emitted the line (x/thorchain, x/bank, x/wasm, ...)
+        msg:
+          type: string
+        fields:
+          type: object
+          additionalProperties: true
+          description: structured key/value context attached to the line
     Pool:
       type: object
       required:
@@ -1960,6 +2171,11 @@ components:
         - synth_mint_paused
         - synth_supply_remaining
         - derived_depth_bps
+        - luvi
+        - lp_equity
+        - lp_equity_per_unit
+        - synth_per_pool_depth_bps
+        - synth_overhang
       properties:
         asset:
           type: string
@@ -2054,6 +2270,26 @@ components:
           type: string
           example: "12345678"
           description: rolling liquidity fees accumulated (in RUNE) since the last pool cycle reset; used as the numerator of the POL Reserve deployment score
+        luvi:
+          type: string
+          example: "1.500000000000375000"
+          description: Liquidity Unit Value Index as the chain values a pool unit, sqrt(balance_asset * balance_rune) / pool_units (synth-unit clamp included)
+        lp_equity:
+          type: string
+          example: "1500000000000.000000000000000000"
+          description: LP equity net of the synth liability in sqrt(asset * rune) units, sqrt(balance_asset * balance_rune) * (2 * balance_asset - synth_supply) / (2 * balance_asset); zero or negative when synth_overhang is true
+        lp_equity_per_unit:
+          type: string
+          example: "1.500000000000000000"
+          description: lp_equity / LP_units; equals luvi (up to rounding) unless synth_overhang is true
+        synth_per_pool_depth_bps:
+          type: string
+          example: "2500"
+          description: synth supply relative to twice the asset depth, in basis points
+        synth_overhang:
+          type: boolean
+          example: false
+          description: whether synth supply is at or above twice the asset depth; synth units are clamped and LP units can redeem almost nothing while this is true
     DerivedPool:
       type: object
       required:
@@ -2428,7 +2664,13 @@ components:
           type: string
         pub_key_eddsa:
           type: string
+        pub_key_frost:
+          type: string
         coins:
+          type: array
+          items:
+            $ref: "#/components/schemas/Coin"
+        deficit:
           type: array
           items:
             $ref: "#/components/schemas/Coin"
@@ -2576,6 +2818,9 @@ components:
         pub_key_eddsa:
           type: string
           example: "thorpub1addwnpepq068dr0x7ue973drmq4eqmzhcq3650n7nx5fhgn9gl207luxp6vaklu52tc"
+        pub_key_frost:
+          type: string
+          example: "thorpub1zcjduepq068dr0x7ue973drmq4eqmzhcq3650n7nx5fhgn9gl207luxp6vaklu52tc"
         routers:
           type: array
           items:
@@ -2835,10 +3080,45 @@ components:
           items:
             type: string
             example: "E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B"
+        spent_output_refs:
+          type: array
+          description: XMR outbound spent outputs and key images committed by observers.
+          items:
+            $ref: "#/components/schemas/OutputRef"
+        xmr_tx_key:
+          type: string
+          description: XMR outbound tx private key used by third parties to verify recipient outputs.
+          example: "1111111111111111111111111111111111111111111111111111111111111111"
+        xmr_mined_height:
+          type: integer
+          format: int64
+          description: Original XMR mined height, retained when observation height changes at finalization. Zero means unavailable or pre-mining.
+          example: 7581328
         status:
           type: string
           enum: ["done", "incomplete"]
           example: "done"
+
+    OutputRef:
+      type: object
+      properties:
+        tx_hash:
+          type: string
+          description: Source transaction hash for the spent XMR output.
+          example: "E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B"
+        output_index:
+          type: integer
+          format: int64
+          description: Output index in the source transaction.
+          example: 0
+        key_image:
+          type: string
+          description: XMR key image proving the referenced output was spent.
+          example: "2222222222222222222222222222222222222222222222222222222222222222"
+        spend_tx_hash:
+          type: string
+          description: XMR outbound transaction hash that spends this output.
+          example: "3333333333333333333333333333333333333333333333333333333333333333"
 
     OutboundFee:
       type: object
@@ -3014,6 +3294,9 @@ components:
         vault_pub_key_eddsa:
           type: string
           example: "thorpub1addwnpepqt45wmsxj29xpgdrdsvg2h3dx68qeapgykw3hlyj6vuds2r0pnkwx5gt9m4"
+        vault_pub_key_frost:
+          type: string
+          example: "thorpub1zcjduepq27ck6u44zl8qqdnmzjjc8rg72amrxrsp42p9vd7kt6marhy6ww76z8shwe"
         coin:
           $ref: "#/components/schemas/Coin"
         max_gas:
@@ -3159,6 +3442,15 @@ components:
                     type: string
                   bond:
                     type: string
+                  bps:
+                    format: int64
+                    type: integer
+                    example: 5000
+                    description: the share of provider rewards to pay out automatically - `0` means no reward split
+                  payout_target:
+                    type: string
+                    example: "alice"
+                    description: either empty, a THORChain address, or a THORName
         signer_membership:
           type: array
           description: the set of vault public keys of which the node is a member
@@ -3688,6 +3980,16 @@ components:
     TCYClaimerResponse:
       $ref: "#/components/schemas/TCYClaimer"
 
+    TCYProtocolOwnedResponse:
+      type: object
+      properties:
+        amount:
+          type: string
+          example: "3096016855586000"
+          description: protocol-owned TCY in 1e8 base units (claim module tcy balance minus the sum of outstanding tcy_claimer entitlements)
+      required:
+        - amount
+
     SaverResponse:
       $ref: "#/components/schemas/Saver"
 
@@ -3989,6 +4291,49 @@ components:
     VaultResponse:
       $ref: "#/components/schemas/Vault"
 
+    KeysignPartyResponse:
+      type: object
+      required:
+        - pub_key
+        - signers
+        - height
+        - threshold
+        - required_signers
+        - never_signers
+        - jailed_fallback_signers
+        - active_signer_count
+      properties:
+        pub_key:
+          type: string
+          example: thorpub1addwnpep...
+        signers:
+          type: array
+          items:
+            type: string
+            example: thorpub1addwnpep...
+        height:
+          type: integer
+          format: int64
+        threshold:
+          type: integer
+          format: int64
+        required_signers:
+          type: integer
+          format: int64
+        never_signers:
+          type: array
+          items:
+            type: string
+            example: thorpub1addwnpep...
+        jailed_fallback_signers:
+          type: array
+          items:
+            type: string
+            example: thorpub1addwnpep...
+        active_signer_count:
+          type: integer
+          format: int64
+
     VaultPubkeysResponse:
       type: object
       required:
@@ -4046,6 +4391,7 @@ components:
         - effective_security_bond
         - total_reserve
         - vaults_migrating
+        - xmr_active_vault_ready
         - gas_spent_rune
         - gas_withheld_rune
         - native_outbound_fee_rune
@@ -4084,6 +4430,10 @@ components:
           type: boolean
           example: false
           description: Returns true if there exist RetiringVaults which have not finished migrating funds to new ActiveVaults
+        xmr_active_vault_ready:
+          type: boolean
+          example: false
+          description: Indicates whether an active Asgard vault currently has spendable XMR funds
         gas_spent_rune:
           type: string
           example: "1000000000"
@@ -4247,6 +4597,17 @@ components:
       type: array
       items:
         $ref: "#/components/schemas/MsgSwap"
+
+    SwapQueuePaginatedResponse:
+      type: object
+      properties:
+        swap_queue:
+          type: array
+          items:
+            $ref: "#/components/schemas/MsgSwap"
+          description: Array of queued swaps
+        pagination:
+          $ref: "#/components/schemas/PaginationMeta"
 
     SwapDetailsResponse:
       type: object
@@ -4573,6 +4934,104 @@ components:
       type: array
       items:
         $ref: "#/components/schemas/SecuredAssetResponse"
+
+    StableReserveInventory:
+      type: object
+      required:
+        - asset
+        - amount
+        - healthy
+        - reason
+        - oracle_price
+      properties:
+        asset:
+          type: string
+        amount:
+          type: string
+        healthy:
+          type: boolean
+        reason:
+          type: string
+        oracle_price:
+          type: string
+
+    StableReserveStreamingSwap:
+      type: object
+      required:
+        - tx_id
+        - memo
+        - purpose
+        - source_asset
+        - target_asset
+        - amount
+        - stream_quantity
+        - stream_interval
+      properties:
+        tx_id:
+          type: string
+        memo:
+          type: string
+        purpose:
+          type: string
+        source_asset:
+          type: string
+        target_asset:
+          type: string
+        amount:
+          type: string
+        stream_quantity:
+          type: integer
+          format: int64
+        stream_interval:
+          type: integer
+          format: int64
+
+    StableReserveResponse:
+      type: object
+      required:
+        - enabled
+        - rune_balance
+        - depeg_tolerance_bps
+        - pol_share_bps
+        - inventory
+        - deployment_stream_quantity
+        - deployment_stream_interval
+        - active_swaps
+      properties:
+        enabled:
+          type: boolean
+        rune_balance:
+          type: string
+        depeg_tolerance_bps:
+          type: string
+        pol_share_bps:
+          type: string
+        inventory:
+          type: array
+          items:
+            $ref: "#/components/schemas/StableReserveInventory"
+        deployment_stream_quantity:
+          type: string
+        deployment_stream_interval:
+          type: string
+        active_swaps:
+          type: array
+          items:
+            $ref: "#/components/schemas/StableReserveStreamingSwap"
+
+    StableReserveContributorResponse:
+      type: object
+      required:
+        - asset
+        - address
+        - credit
+      properties:
+        asset:
+          type: string
+        address:
+          type: string
+        credit:
+          type: string
 
     MimirResponse:
       type: object

@@ -2,31 +2,26 @@ package blockscanner
 
 import (
 	"encoding/binary"
-	"encoding/json"
-	"fmt"
 
 	"github.com/syndtr/goleveldb/leveldb"
-	"github.com/syndtr/goleveldb/leveldb/util"
+	"github.com/syndtr/goleveldb/leveldb/opt"
 )
 
 // LevelDBScannerStorage is a scanner storage backed by level db
 type LevelDBScannerStorage struct {
-	db *leveldb.DB
+	db          *leveldb.DB
+	syncScanPos bool
 }
 
-const (
-	ScanPosKey = "blockscanpos"
-)
-
-// BlockStatusItem indicate the status of a block
-type BlockStatusItem struct {
-	Block  Block           `json:"block"`
-	Status BlockScanStatus `json:"status"`
-}
+const ScanPosKey = "blockscanpos"
 
 // NewLevelDBScannerStorage create a new instance of LevelDBScannerStorage
 func NewLevelDBScannerStorage(db *leveldb.DB) (*LevelDBScannerStorage, error) {
-	return &LevelDBScannerStorage{db: db}, nil
+	return newLevelDBScannerStorage(db, false)
+}
+
+func newLevelDBScannerStorage(db *leveldb.DB, syncScanPos bool) (*LevelDBScannerStorage, error) {
+	return &LevelDBScannerStorage{db: db, syncScanPos: syncScanPos}, nil
 }
 
 // GetScanPos get current Scan Pos
@@ -43,55 +38,11 @@ func (ldbss *LevelDBScannerStorage) GetScanPos() (int64, error) {
 func (ldbss *LevelDBScannerStorage) SetScanPos(block int64) error {
 	buf := make([]byte, 8)
 	n := binary.PutVarint(buf, block)
-	return ldbss.db.Put([]byte(ScanPosKey), buf[:n], nil)
-}
-
-func (ldbss *LevelDBScannerStorage) SetBlockScanStatus(block Block, status BlockScanStatus) error {
-	blockStatusItem := BlockStatusItem{
-		Block:  block,
-		Status: status,
+	var writeOptions *opt.WriteOptions
+	if ldbss.syncScanPos {
+		writeOptions = &opt.WriteOptions{Sync: true}
 	}
-	buf, err := json.Marshal(blockStatusItem)
-	if err != nil {
-		return fmt.Errorf("fail to marshal BlockStatusItem to json: %w", err)
-	}
-	if err = ldbss.db.Put([]byte(getBlockStatusKey(block.Height)), buf, nil); err != nil {
-		return fmt.Errorf("fail to set block scan status: %w", err)
-	}
-	return nil
-}
-
-// GetFailedBlocksForRetry
-func (ldbss *LevelDBScannerStorage) GetBlocksForRetry(failedOnly bool) ([]Block, error) {
-	iterator := ldbss.db.NewIterator(util.BytesPrefix([]byte("block-process-status-")), nil)
-	defer iterator.Release()
-	var results []Block
-	for iterator.Next() {
-		buf := iterator.Value()
-		if len(buf) == 0 {
-			continue
-		}
-		var blockStatusItem BlockStatusItem
-		if err := json.Unmarshal(buf, &blockStatusItem); err != nil {
-			return nil, fmt.Errorf("fail to unmarshal to block status item: %w", err)
-		}
-		if !failedOnly {
-			results = append(results, blockStatusItem.Block)
-			continue
-		}
-		if blockStatusItem.Status == Failed {
-			results = append(results, blockStatusItem.Block)
-		}
-	}
-	return results, nil
-}
-
-func getBlockStatusKey(block int64) string {
-	return fmt.Sprintf("block-process-status-%d", block)
-}
-
-func (ldbss *LevelDBScannerStorage) RemoveBlockStatus(block int64) error {
-	return ldbss.db.Delete([]byte(getBlockStatusKey(block)), nil)
+	return ldbss.db.Put([]byte(ScanPosKey), buf[:n], writeOptions)
 }
 
 func (ldbss *LevelDBScannerStorage) Close() error {

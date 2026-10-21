@@ -1,11 +1,18 @@
 package keeperv1
 
 import (
+	"bytes"
+	"fmt"
+
+	storetypes "cosmossdk.io/store/types"
 	"github.com/blang/semver"
+	"google.golang.org/protobuf/encoding/protowire"
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	keeperpkg "gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
+	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
 type KeeperNodeAccountSuite struct{}
@@ -440,4 +447,308 @@ func (s *KeeperNodeAccountSuite) TestRemoveLowBondValidatorAccounts_NoBondProvid
 		Commentf("node account should be preserved when send fails with no bond providers"))
 	c.Check(naStore.Bond.Equal(na.Bond), Equals, true,
 		Commentf("bond should remain unchanged, got %s", naStore.Bond))
+}
+
+func (s *KeeperNodeAccountSuite) TestListValidatorsByStatusFilters(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	// ListValidatorsByStatus still returns exactly the matching validators
+	for _, status := range []NodeStatus{NodeActive, NodeStandby, types.NodeStatus_Disabled} {
+		for i := 0; i < 3; i++ {
+			c.Assert(k.SetNodeAccount(ctx, GetRandomValidatorNode(status)), IsNil)
+		}
+	}
+	vault := GetRandomValidatorNode(NodeActive)
+	vault.Type = NodeTypeVault
+	c.Assert(k.SetNodeAccount(ctx, vault), IsNil)
+	active, err := k.ListValidatorsByStatus(ctx, NodeActive)
+	c.Assert(err, IsNil)
+	c.Check(active, HasLen, 3)
+	for _, na := range active {
+		c.Check(na.Status, Equals, NodeActive)
+		c.Check(na.Type, Equals, NodeTypeValidator)
+	}
+}
+
+// nodeAccountTestBlobs returns well-formed node account encodings plus
+// unusual and malformed ones, for decoders that must match k.cdc.Unmarshal.
+func nodeAccountTestBlobs(c *C, k KVStore) [][]byte {
+	vaults := make([]string, 8)
+	for i := range vaults {
+		vaults[i] = GetRandomPubKey().String()
+	}
+	var blobs [][]byte
+	for i := 0; i < 50; i++ {
+		na := GetRandomValidatorNode(NodeActive)
+		na.Version = "3.20.0"
+		for j := 0; j < i%10; j++ {
+			na.SignerMembership = append(na.SignerMembership, vaults[(i+j)%len(vaults)])
+		}
+		bz, err := k.cdc.Marshal(&na)
+		c.Assert(err, IsNil)
+		blobs = append(blobs, bz)
+	}
+	// field 9 split around other fields, repeated scalar fields (last wins),
+	// an empty member, and malformed tails
+	extra := protowire.AppendTag(nil, nodeAccountSignerMembershipField, protowire.BytesType)
+	extra = protowire.AppendString(extra, vaults[0])
+	status := protowire.AppendTag(nil, nodeAccountStatusField, protowire.VarintType)
+	status = protowire.AppendVarint(status, uint64(NodeStandby))
+	empty := protowire.AppendTag(nil, nodeAccountSignerMembershipField, protowire.BytesType)
+	empty = protowire.AppendString(empty, "")
+	wrongType := protowire.AppendTag(nil, nodeAccountSignerMembershipField, protowire.VarintType)
+	wrongType = protowire.AppendVarint(wrongType, 1)
+	base := blobs[5]
+	blobs = append(blobs,
+		append(append(append(append([]byte{}, extra...), base...), status...), extra...),
+		append(append([]byte{}, base...), empty...),
+		append(append([]byte{}, base...), wrongType...),
+		append(append([]byte{}, base...), 0x4a, 0x05, 'a'),
+		[]byte{0xff},
+		nil,
+	)
+	return blobs
+}
+
+func (s *KeeperNodeAccountSuite) TestUnmarshalNodeAccountMatchesCodec(c *C) {
+	_, k := setupKeeperForTest(c)
+	for i, bz := range nodeAccountTestBlobs(c, k) {
+		var want, got, gotShared NodeAccount
+		wantErr := k.cdc.Unmarshal(bz, &want)
+		gotErr := k.unmarshalNodeAccount(bz, &got)
+		c.Assert(gotErr == nil, Equals, wantErr == nil, Commentf("blob %d", i))
+		sharedErr := k.decodeNodeAccount(bytes.Clone(bz), &gotShared, true)
+		c.Assert(sharedErr == nil, Equals, wantErr == nil, Commentf("blob %d", i))
+		if wantErr == nil {
+			c.Assert(got, DeepEquals, want, Commentf("blob %d", i))
+			c.Assert(gotShared, DeepEquals, want, Commentf("blob %d", i))
+		}
+	}
+}
+
+func (s *KeeperNodeAccountSuite) TestActiveValidatorsCache(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	na1 := GetRandomValidatorNode(NodeActive)
+	na1.SignerMembership = []string{"a", "b"}
+	c.Assert(k.SetNodeAccount(ctx, na1), IsNil)
+	cachedCtx := keeperpkg.WithActiveValidatorsCache(ctx)
+
+	nodes, err := k.ListActiveValidators(cachedCtx)
+	c.Assert(err, IsNil)
+	c.Assert(nodes, HasLen, 1)
+
+	// Callers own what they get back: mutating it does not reach the cache.
+	nodes[0].SignerMembership[0] = "mutated"
+	nodes[0].NodeAddress[0] ^= 0xff
+	nodes[0].Bond.BigIntMut().SetInt64(1)
+	nodes[0].Version = "9.9.9"
+	nodes, err = k.ListActiveValidators(cachedCtx)
+	c.Assert(err, IsNil)
+	c.Assert(nodes, HasLen, 1)
+	c.Check(nodes[0].Equals(na1), Equals, true)
+	c.Check(nodes[0].SignerMembership, DeepEquals, []string{"a", "b"})
+	c.Check(nodes[0].Bond.Equal(na1.Bond), Equals, true)
+	c.Check(nodes[0].Version, Equals, na1.Version)
+
+	// A write through a context without the cache is not seen through it.
+	na2 := GetRandomValidatorNode(NodeActive)
+	c.Assert(k.SetNodeAccount(ctx, na2), IsNil)
+	nodes, err = k.ListActiveValidators(cachedCtx)
+	c.Assert(err, IsNil)
+	c.Check(nodes, HasLen, 1)
+	nodes, err = k.ListActiveValidators(ctx)
+	c.Assert(err, IsNil)
+	c.Check(nodes, HasLen, 2)
+
+	// Other statuses are not cached.
+	c.Assert(k.SetNodeAccount(ctx, GetRandomValidatorNode(NodeStandby)), IsNil)
+	nodes, err = k.ListValidatorsByStatus(cachedCtx, NodeStandby)
+	c.Assert(err, IsNil)
+	c.Check(nodes, HasLen, 1)
+}
+
+func (s *KeeperNodeAccountSuite) TestActiveValidatorsCacheDisabledByWrite(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	na1 := GetRandomValidatorNode(NodeActive)
+	c.Assert(k.SetNodeAccount(ctx, na1), IsNil)
+	cachedCtx := keeperpkg.WithActiveValidatorsCache(ctx)
+	nodes, err := k.ListActiveValidators(cachedCtx)
+	c.Assert(err, IsNil)
+	c.Assert(nodes, HasLen, 1)
+
+	// A write in a discarded cache context still disables the shared cache,
+	// and the parent then reads its own (unchanged) store.
+	branch, _ := cachedCtx.CacheContext()
+	na2 := GetRandomValidatorNode(NodeActive)
+	c.Assert(k.SetNodeAccount(branch, na2), IsNil)
+	nodes, err = k.ListActiveValidators(branch)
+	c.Assert(err, IsNil)
+	c.Check(nodes, HasLen, 2)
+	_, ok := keeperpkg.ActiveValidatorsCacheFromContext(cachedCtx).Get()
+	c.Check(ok, Equals, false)
+	nodes, err = k.ListActiveValidators(cachedCtx)
+	c.Assert(err, IsNil)
+	c.Check(nodes, HasLen, 1)
+
+	// Writes made later through the parent are now visible.
+	c.Assert(k.SetNodeAccount(ctx, na2), IsNil)
+	nodes, err = k.ListActiveValidators(cachedCtx)
+	c.Assert(err, IsNil)
+	c.Check(nodes, HasLen, 2)
+
+	// Deleting a node account key disables a fresh cache too.
+	cachedCtx = keeperpkg.WithActiveValidatorsCache(ctx)
+	nodes, err = k.ListActiveValidators(cachedCtx)
+	c.Assert(err, IsNil)
+	c.Assert(nodes, HasLen, 2)
+	k.DeleteKey(cachedCtx, k.GetKey(prefixNodeAccount, na2.NodeAddress.String()))
+	nodes, err = k.ListActiveValidators(cachedCtx)
+	c.Assert(err, IsNil)
+	c.Check(nodes, HasLen, 1)
+}
+
+func (s *KeeperNodeAccountSuite) TestCountActiveValidators(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	for _, status := range []NodeStatus{NodeStandby, NodeActive, NodeActive, types.NodeStatus_Ready, NodeActive} {
+		c.Assert(k.SetNodeAccount(ctx, GetRandomValidatorNode(status)), IsNil)
+	}
+	vault := GetRandomValidatorNode(NodeActive)
+	vault.Type = NodeTypeVault
+	c.Assert(k.SetNodeAccount(ctx, vault), IsNil)
+
+	listCtx := ctx.WithGasMeter(storetypes.NewInfiniteGasMeter())
+	all, err := k.ListActiveValidators(listCtx)
+	c.Assert(err, IsNil)
+	c.Assert(all, HasLen, 3)
+	countCtx := ctx.WithGasMeter(storetypes.NewInfiniteGasMeter())
+	n, err := k.CountActiveValidators(countCtx)
+	c.Assert(err, IsNil)
+	c.Assert(n, Equals, 3)
+	c.Check(countCtx.GasMeter().GasConsumed(), Equals, listCtx.GasMeter().GasConsumed())
+}
+
+func (s *KeeperNodeAccountSuite) TestListActiveValidatorsUpTo(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	for _, status := range []NodeStatus{NodeStandby, NodeActive, NodeActive, types.NodeStatus_Ready, NodeActive, NodeActive} {
+		c.Assert(k.SetNodeAccount(ctx, GetRandomValidatorNode(status)), IsNil)
+	}
+	vault := GetRandomValidatorNode(NodeActive)
+	vault.Type = NodeTypeVault
+	c.Assert(k.SetNodeAccount(ctx, vault), IsNil)
+
+	gasCtx := func() cosmos.Context { return ctx.WithGasMeter(storetypes.NewInfiniteGasMeter()) }
+	allCtx := gasCtx()
+	all, err := k.ListActiveValidators(allCtx)
+	c.Assert(err, IsNil)
+	c.Assert(all, HasLen, 4)
+	for _, n := range []int{0, 1, 3, 4, 10} {
+		upToCtx := gasCtx()
+		got, err := k.ListActiveValidatorsUpTo(upToCtx, n)
+		c.Assert(err, IsNil)
+		c.Assert(got, DeepEquals, all[:min(n, len(all))], Commentf("n=%d", n))
+		// same store access, so the same gas
+		c.Check(upToCtx.GasMeter().GasConsumed(), Equals, allCtx.GasMeter().GasConsumed(), Commentf("n=%d", n))
+	}
+}
+
+// listValidatorsByStatusOracle is ListValidatorsByStatus as on develop
+// (unmarshal every record, fail on any that does not decode), keeping at most
+// limit matches (limit < 0: all).
+func listValidatorsByStatusOracle(ctx cosmos.Context, k KVStore, status NodeStatus, limit int) (NodeAccounts, error) {
+	nodeAccounts := make(NodeAccounts, 0)
+	naIterator := k.GetNodeAccountIterator(ctx)
+	defer naIterator.Close()
+	for ; naIterator.Valid(); naIterator.Next() {
+		var na NodeAccount
+		if err := k.cdc.Unmarshal(naIterator.Value(), &na); err != nil {
+			return nodeAccounts, dbError(ctx, "Unmarshal: node account", err)
+		}
+		full := limit >= 0 && len(nodeAccounts) >= limit
+		if !full && na.Type == NodeTypeValidator && na.Status == status {
+			nodeAccounts = append(nodeAccounts, na)
+		}
+	}
+	return nodeAccounts, nil
+}
+
+func (s *KeeperNodeAccountSuite) TestListValidatorsByStatusMatchesOracle(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	statuses := []NodeStatus{types.NodeStatus_Unknown, types.NodeStatus_Whitelisted, NodeStandby, types.NodeStatus_Ready, NodeActive, types.NodeStatus_Disabled}
+	var nodes NodeAccounts
+	for i := 0; i < 40; i++ {
+		na := GetRandomValidatorNode(statuses[i%len(statuses)])
+		if i%7 == 0 {
+			na.Type = NodeTypeVault
+		}
+		na.SignerMembership = []string{GetRandomPubKey().String(), GetRandomPubKey().String()}
+		c.Assert(k.SetNodeAccount(ctx, na), IsNil)
+		nodes = append(nodes, na)
+	}
+
+	check := func(step string) {
+		for _, status := range statuses {
+			for _, limit := range []int{-1, 0, 1, 3, 100} {
+				wantCtx := ctx.WithGasMeter(storetypes.NewInfiniteGasMeter())
+				want, wantErr := listValidatorsByStatusOracle(wantCtx, k, status, limit)
+				for pass := 0; pass < 2; pass++ { // memo miss, then hit
+					gotCtx := ctx.WithGasMeter(storetypes.NewInfiniteGasMeter())
+					got, gotErr := k.listValidatorsByStatus(gotCtx, status, limit)
+					comment := Commentf("%s status=%s limit=%d pass=%d", step, status, limit, pass)
+					c.Assert(gotErr == nil, Equals, wantErr == nil, comment)
+					c.Assert(got, DeepEquals, want, comment)
+					c.Assert(gotCtx.GasMeter().GasConsumed(), Equals, wantCtx.GasMeter().GasConsumed(), comment)
+					if len(got) > 0 { // results are copies, not the memoized values
+						got[0].NodeAddress[0] ^= 0xff
+						got[0].SignerMembership[0] = "changed"
+						got[0].Bond.BigIntMut().SetInt64(1)
+					}
+				}
+				if limit < 0 { // the count reads the store as the listing does
+					cntCtx := ctx.WithGasMeter(storetypes.NewInfiniteGasMeter())
+					n, cntErr := k.countValidatorsByStatus(cntCtx, status)
+					comment := Commentf("%s count status=%s", step, status)
+					c.Assert(cntErr == nil, Equals, wantErr == nil, comment)
+					if wantErr == nil {
+						c.Assert(n, Equals, len(want), comment)
+					}
+					c.Assert(cntCtx.GasMeter().GasConsumed(), Equals, wantCtx.GasMeter().GasConsumed(), comment)
+				}
+			}
+		}
+	}
+	check("initial")
+
+	// changed records are seen
+	for i := 0; i < len(nodes); i += 3 {
+		nodes[i].Status = statuses[(i+1)%len(statuses)]
+		nodes[i].Bond = nodes[i].Bond.AddUint64(1)
+		c.Assert(k.SetNodeAccount(ctx, nodes[i]), IsNil)
+	}
+	check("changed")
+
+	// a standby record whose wire framing is fine but whose custom bond does
+	// not decode fails every listing, not just the standby one
+	store := k.kvStore(ctx)
+	standby := protowire.AppendTag(nil, nodeAccountStatusField, protowire.VarintType)
+	standby = protowire.AppendVarint(standby, uint64(NodeStandby))
+	badBond := protowire.AppendTag(append([]byte(nil), standby...), nodeAccountBondField, protowire.BytesType)
+	badBond = protowire.AppendString(badBond, "x")
+	badBondKey := k.GetKey(prefixNodeAccount, "zz-standby-bad-bond")
+	store.Set(badBondKey, badBond)
+	check("bad bond")
+	for _, status := range statuses {
+		_, err := k.ListValidatorsByStatus(ctx, status)
+		c.Check(err, NotNil, Commentf("status=%s", status))
+	}
+	store.Delete(badBondKey)
+
+	// records whose bytes are unusual or do not decode; any that does not
+	// decode is an error, whatever its status
+	for i, bz := range nodeAccountTestBlobs(c, k) {
+		if len(bz) == 0 {
+			continue // an empty value cannot be stored
+		}
+		store.Set(k.GetKey(prefixNodeAccount, fmt.Sprintf("zz-blob-%02d", i)), bz)
+	}
+	store.Set(k.GetKey(prefixNodeAccount, "zz-a-undecodable-standby"), append(standby, 0x4a, 0x05, 'a'))
+	check("blobs")
 }

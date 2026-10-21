@@ -1,6 +1,7 @@
 package p2p
 
 import (
+	"context"
 	"fmt"
 	"sync"
 	"time"
@@ -97,9 +98,22 @@ func (m *MockThorchainBridge) EnsureNodeWhitelistedWithTimeout() error { return 
 func (m *MockThorchainBridge) FetchNodeStatus() (types.NodeStatus, error) {
 	return types.NodeStatus_Unknown, nil
 }
-func (m *MockThorchainBridge) FetchActiveNodes() ([]common.PubKey, error)  { return nil, nil }
+func (m *MockThorchainBridge) FetchActiveNodes() ([]common.PubKey, error) { return nil, nil }
+
+// GetKeysignPolicy satisfies the expanded bridge interface for node-gater
+// tests; peer gating does not inspect keysign signer filtering.
+func (m *MockThorchainBridge) GetKeysignPolicy(common.PubKey, int64) (thorclient.KeysignPolicy, error) {
+	return thorclient.KeysignPolicy{}, nil
+}
+
+// GetKeysignParty satisfies legacy callers on the mock bridge without making
+// node-gater tests set up vault signer state.
+func (m *MockThorchainBridge) GetKeysignParty(common.PubKey, int64) (common.PubKeys, error) {
+	return nil, nil
+}
 func (m *MockThorchainBridge) GetAsgards() (types.Vaults, error)           { return nil, nil }
 func (m *MockThorchainBridge) GetVault(pubkey string) (types.Vault, error) { return types.Vault{}, nil }
+
 func (m *MockThorchainBridge) GetConfig() config.BifrostClientConfiguration {
 	return config.BifrostClientConfiguration{}
 }
@@ -122,8 +136,10 @@ func (m *MockThorchainBridge) GetContext() client.Context { return client.Contex
 func (m *MockThorchainBridge) GetContractAddress() ([]thorclient.PubKeyContractAddressPair, error) {
 	return nil, nil
 }
+
 func (m *MockThorchainBridge) GetErrataMsg(txID common.TxID, chain common.Chain) sdk.Msg { return nil }
-func (m *MockThorchainBridge) GetKeygenStdTx(poolPubKey common.PubKey, secp256k1Signature, keysharesBackup []byte, blame []types.Blame, inputPks common.PubKeys, keygenType types.KeygenType, chains common.Chains, height, keygenTime int64, poolPubKeyEddsa common.PubKey, keysharesBackupEddsa []byte) (sdk.Msg, error) {
+
+func (m *MockThorchainBridge) GetKeygenStdTx(poolPubKey common.PubKey, secp256k1Signature, keysharesBackup []byte, blame []types.Blame, inputPks common.PubKeys, keygenType types.KeygenType, chains common.Chains, height, keygenTime int64, poolPubKeyEddsa common.PubKey, keysharesBackupEddsa []byte, frostExtras ...any) (sdk.Msg, error) {
 	return nil, nil
 }
 
@@ -171,6 +187,10 @@ func (m *MockThorchainBridge) GetLastObservedInHeight(chain common.Chain) (int64
 	return 0, nil
 }
 
+func (m *MockThorchainBridge) GetLastObservedInHeightAtHeight(common.Chain, int64) (int64, error) {
+	return 0, nil
+}
+
 func (m *MockThorchainBridge) GetLastSignedOutHeight(chain common.Chain) (int64, error) {
 	return 0, nil
 }
@@ -190,7 +210,36 @@ func (m *MockThorchainBridge) GetKeygenBlock(int64, string) (types.KeygenBlock, 
 func (m *MockThorchainBridge) GetReferenceMemo(chain common.Chain, ref string) (string, error) {
 	return "", nil
 }
+
 func (m *MockThorchainBridge) GetReferenceMemoByTxHash(hash string) (string, error) { return "", nil }
+
+func (m *MockThorchainBridge) GetObservedTxVoter(txID string) (*types.QueryObservedTxVoter, error) {
+	return nil, nil
+}
+
+func (m *MockThorchainBridge) GetObservedTxOutVoter(txID string) (*types.QueryObservedTxVoter, error) {
+	return m.GetObservedTxVoter(txID)
+}
+
+func (m *MockThorchainBridge) GetObservedTxOutVoterUncached(ctx context.Context, txID string) (*types.QueryObservedTxVoter, bool, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, false, err
+	}
+	voter, err := m.GetObservedTxVoter(txID)
+	return voter, voter != nil, err
+}
+
+func (m *MockThorchainBridge) GetXMRSpentOutputRefs(vaultPubKey common.PubKey) ([]*common.OutputRef, error) {
+	return nil, nil
+}
+
+func (m *MockThorchainBridge) GetXMRSpentOutputRefsUncached(ctx context.Context, vaultPubKey common.PubKey) ([]*common.OutputRef, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return m.GetXMRSpentOutputRefs(vaultPubKey)
+}
+
 func (m *MockThorchainBridge) GetBlockTimestamp(height int64) (time.Time, error) {
 	return time.Time{}, nil
 }
@@ -732,10 +781,9 @@ func (s *NodeGaterTestSuite) TestPeriodicRefresh(c *C) {
 	})
 
 	gater.Start()
-	time.Sleep(time.Millisecond * 50)
 
 	// Verify initial allowlist
-	c.Assert(len(gater.allowedPeers), Equals, 1)
+	c.Assert(waitForAllowlistLen(gater, 1), Equals, 1)
 
 	// Update the node list
 	s.mockBridge.SetNodeAccounts([]*types.QueryNodeResponse{
@@ -757,13 +805,28 @@ func (s *NodeGaterTestSuite) TestPeriodicRefresh(c *C) {
 		},
 	})
 
-	// Wait for a refresh cycle
-	time.Sleep(time.Millisecond * 150)
-
-	// Verify allowlist was updated
-	c.Assert(len(gater.allowedPeers), Equals, 2)
+	// Verify allowlist was updated on the next refresh cycle
+	c.Assert(waitForAllowlistLen(gater, 2), Equals, 2)
 
 	gater.Stop()
+}
+
+// waitForAllowlistLen polls the allowlist under the gater's own lock until it
+// reaches want, or 5s elapses, and returns the length it settled on. The
+// refresh goroutine is live during TestPeriodicRefresh, so reading
+// gater.allowedPeers directly is a data race, and a fixed sleep is a flake on a
+// loaded runner.
+func waitForAllowlistLen(g *NodeGater, want int) int {
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		g.mu.RLock()
+		got := len(g.allowedPeers)
+		g.mu.RUnlock()
+		if got == want || time.Now().After(deadline) {
+			return got
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
 }
 
 func (s *NodeGaterTestSuite) TestConcurrentAccess(c *C) {

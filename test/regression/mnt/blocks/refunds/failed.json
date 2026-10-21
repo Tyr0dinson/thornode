@@ -238,6 +238,7 @@
         "mode": "EndBlock",
         "pool": "BTC.BTC",
         "pool_slip": "50",
+        "stable_reserve": "false",
         "streaming_swap_count": "1",
         "streaming_swap_quantity": "1",
         "swap_slip": "50",
@@ -511,12 +512,24 @@
         "mode": "EndBlock",
         "pool": "BTC.BTC",
         "pool_slip": "0",
+        "stable_reserve": "false",
         "streaming_swap_count": "1",
         "streaming_swap_quantity": "1",
         "swap_slip": "0",
         "swap_target": "0",
         "to": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "swap"
+      },
+      {
+        "chain": "THOR",
+        "coin": "9 BTC.BTC",
+        "from": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
+        "id": "251B8BFF7DA1A9063CA3DA1D8858EA33572376AE9124E401E65F8DF30C002554",
+        "memo": "=:BTC.BTC:bcrt1q3wrmhnh2qe98rjse30pl7u6jxszjjwl44ls6uw",
+        "mode": "EndBlock",
+        "pool": "BTC.BTC",
+        "to": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
+        "type": "donate"
       },
       {
         "chain": "BTC",
@@ -830,6 +843,7 @@
         "mode": "EndBlock",
         "pool": "BTC.BTC",
         "pool_slip": "0",
+        "stable_reserve": "false",
         "streaming_swap_count": "1",
         "streaming_swap_quantity": "1",
         "swap_slip": "0",
@@ -1152,6 +1166,7 @@
         "mode": "EndBlock",
         "pool": "BTC.BTC",
         "pool_slip": "0",
+        "stable_reserve": "false",
         "streaming_swap_count": "1",
         "streaming_swap_quantity": "1",
         "swap_slip": "0",
@@ -1299,6 +1314,7 @@
                     "observed_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
                     "out_hashes": [],
                     "signers": [],
+                    "sol_nonce": null,
                     "status": "incomplete",
                     "tx": {
                       "chain": "BTC",
@@ -1320,7 +1336,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000001",
                       "memo": "=:THOR.RUNE:tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
                       "to_address": "bcrt1qzf3gsk7edzwl9syyefvfhle37cjtql35tlzesk"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }

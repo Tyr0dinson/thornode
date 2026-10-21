@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/cosmos/cosmos-sdk/telemetry"
@@ -15,6 +16,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/constants"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
+	mem "gitlab.com/thorchain/thornode/v3/x/thorchain/memo"
 )
 
 // processTxInAttestation processes a single attestation for an observed tx.
@@ -37,7 +39,7 @@ func processTxInAttestation(
 
 	slashCtx := ctx.WithContext(context.WithValue(ctx.Context(), constants.CtxMetricLabels, []metrics.Label{
 		telemetry.NewLabel("reason", "failed_observe_txin"),
-		telemetry.NewLabel("chain", string(tx.Tx.Chain)),
+		telemetry.NewLabel("chain", telemChain(tx.Tx.Chain)),
 	}))
 	slashCtx = ctx.WithContext(context.WithValue(slashCtx.Context(), constants.CtxObservedTx, tx.Tx.ID.String()))
 
@@ -51,15 +53,51 @@ func processTxInAttestation(
 	// to be decremented only if contributing to or within ObservationDelayFlexibility of consensus.
 	slasher.IncSlashPoints(slashCtx, observeSlashPoints, signer)
 
+	// A committee member's pre-broadcast "instant" observation and its later
+	// scanner observation of the same tx differ only in gas (EVM) or block height
+	// (all chains, from signing-tip vs inclusion) and split into separate voter
+	// entries. Detect that the signer already recorded a matching variant BEFORE
+	// Add records this one, so the redundant observe point can be refunded exactly
+	// once below without depending on the post-consensus flex branch.
+	// Refund a redundant re-observation only for the signer's FIRST prior variant
+	// (exactly one earlier matching observation) — the honest "observed it, lost the
+	// gas/height race, re-observed once" case. Further variants (count >= 2) are
+	// self-inflicted spam and keep their observe slash point, so a node cannot file
+	// unlimited gas/height variants at zero cost to erase the per-observation charge.
+	redundantReObservation := voter.ShouldRefundRedundantInboundObservation(tx, signer)
+
+	obsChain := telemetry.NewLabel("chain", telemChain(tx.Tx.Chain))
+	obsDir := telemetry.NewLabel("direction", "in")
+
 	if !voter.Add(tx, signer) {
 		if !shouldSlashForDuplicate {
 			slasher.DecSlashPoints(slashCtx, observeSlashPoints, signer)
 		}
+		telemetry.IncrCounterWithLabels(
+			[]string{"thornode", "observe", "attestation"}, 1,
+			[]metrics.Label{obsChain, obsDir, telemetry.NewLabel("result", "duplicate")},
+		)
 		// A duplicate message, so do nothing further.
 		return voter, ok
 	}
+
+	// Single mutually-exclusive attestation result per call; late wins over redundant.
+	attResult := "new"
+
+	// The signer already observed this tx via a different gas/height variant, so
+	// this observation is redundant honest work rather than a missed observation:
+	// refund its observe point. The observation stays recorded above so it still
+	// counts toward consensus and gas correction.
+	if redundantReObservation {
+		attResult = "redundant"
+		slasher.DecSlashPoints(slashCtx, observeSlashPoints, signer)
+	}
 	if voter.HasFinalised(nas) {
 		if voter.FinalisedHeight == 0 {
+			telemetry.IncrCounterWithLabels(
+				[]string{"thornode", "observe", "consensus"}, 1,
+				[]metrics.Label{obsChain, obsDir, telemetry.NewLabel("finalised", "true")},
+			)
 			ok = true
 			voter.Height = ctx.BlockHeight() // Always record the consensus height of the finalised Tx
 			if voter.UnfinalizedHeight == 0 {
@@ -70,26 +108,35 @@ func processTxInAttestation(
 
 			// This signer brings the voter to consensus;
 			// decrement all the signers' slash points and increment the non-signers' slash points.
-			signers := voter.GetConsensusSigners()
+			signers := voter.GetInboundObserveSigners()
 			nonSigners, totalParticipants := getChainAwareNonSigners(ctx, mgr, signers, tx.Tx.Chain)
 			slasher.DecSlashPoints(slashCtx, observeSlashPoints, signers...)
 			slasher.IncSlashPoints(slashCtx, lackOfObservationPenalty, nonSigners...)
 			if err := slasher.ForfeitChainIncomeForNonSigners(ctx, tx.Tx.Chain, nonSigners, totalParticipants); err != nil {
 				ctx.Logger().Error("fail to forfeit chain income for non-signers", "chain", tx.Tx.Chain, "error", err)
 			}
+			// Persist the credited signer set, including legacy XMR observers,
+			// so later observations cannot collect the same consensus credit again.
+			voter.RecordObserveSigners(signers)
+			queueObservationTally(ctx, k, observationTallyKindTxIn, tx.Tx.Chain, tx.Tx.ID.String())
 		} else if ctx.BlockHeight() <= (voter.FinalisedHeight+observeFlex) &&
 			voter.Tx.IsFinal() == tx.IsFinal() &&
-			voter.Tx.Tx.EqualsEx(tx.Tx) &&
+			voter.Tx.EqualsInboundObservationCredit(tx) &&
 			!voter.Tx.HasSigned(signer) {
 			// Track already-decremented slash points with the consensus Tx's Signers list.
 			voter.Tx.Signers = append(voter.Tx.Signers, signer.String())
 			// event the tx had been processed , given the signer just a bit late , so still take away their slash points
 			// but only when the tx signer are voting is the tx that already reached consensus
 			slasher.DecSlashPoints(slashCtx, observeSlashPoints+lackOfObservationPenalty, signer)
+			attResult = "late"
 		}
 	}
 	if !ok && voter.HasConsensus(nas) && !tx.IsFinal() && voter.FinalisedHeight == 0 {
 		if voter.Height == 0 {
+			telemetry.IncrCounterWithLabels(
+				[]string{"thornode", "observe", "consensus"}, 1,
+				[]metrics.Label{obsChain, obsDir, telemetry.NewLabel("finalised", "false")},
+			)
 			ok = true
 			voter.Height = ctx.BlockHeight()
 			if voter.UnfinalizedHeight == 0 {
@@ -100,24 +147,33 @@ func processTxInAttestation(
 
 			// This signer brings the voter to consensus;
 			// decrement all the signers' slash points and increment the non-signers' slash points.
-			signers := voter.GetConsensusSigners()
+			signers := voter.GetInboundObserveSigners()
 			nonSigners, _ := getChainAwareNonSigners(ctx, mgr, signers, tx.Tx.Chain)
 			slasher.DecSlashPoints(slashCtx, observeSlashPoints, signers...)
 			slasher.IncSlashPoints(slashCtx, lackOfObservationPenalty, nonSigners...)
 			// ChainIncome forfeiture is deferred to final consensus to avoid
 			// draining the chain-income bucket twice per observation lifecycle
 			// (once at non-final, once at final consensus).
+			// Persist the credited signer set, including legacy XMR observers,
+			// so later observations cannot collect the same consensus credit again.
+			voter.RecordObserveSigners(signers)
 		} else if ctx.BlockHeight() <= (voter.Height+observeFlex) &&
 			voter.Tx.IsFinal() == tx.IsFinal() &&
-			voter.Tx.Tx.EqualsEx(tx.Tx) &&
+			voter.Tx.EqualsInboundObservationCredit(tx) &&
 			!voter.Tx.HasSigned(signer) {
 			// Track already-decremented slash points with the consensus Tx's Signers list.
 			voter.Tx.Signers = append(voter.Tx.Signers, signer.String())
 			// event the tx had been processed , given the signer just a bit late , so still take away their slash points
 			// but only when the tx signer are voting is the tx that already reached consensus
 			slasher.DecSlashPoints(slashCtx, observeSlashPoints+lackOfObservationPenalty, signer)
+			attResult = "late"
 		}
 	}
+
+	telemetry.IncrCounterWithLabels(
+		[]string{"thornode", "observe", "attestation"}, 1,
+		[]metrics.Label{obsChain, obsDir, telemetry.NewLabel("result", attResult)},
+	)
 
 	k.SetObservedTxInVoter(ctx, voter)
 
@@ -131,15 +187,63 @@ func ensureVaultAndGetTxInVoter(ctx cosmos.Context, vaultPubKey common.PubKey, t
 	// check we are sending to a valid vault
 	if !k.VaultExists(ctx, vaultPubKey) {
 		ctx.Logger().Info("Not valid Observed Pubkey", "observed pub key", vaultPubKey)
+		telemetry.IncrCounterWithLabels(
+			[]string{"thornode", "observation", "dropped"},
+			1,
+			[]metrics.Label{telemetry.NewLabel("reason", "txin_vault_not_found")},
+		)
 		return ObservedTxVoter{}, fmt.Errorf("vault not found for observed tx in pubkey: %s", vaultPubKey)
 	}
 
 	voter, err := k.GetObservedTxInVoter(ctx, txID)
 	if err != nil {
+		telemetry.IncrCounterWithLabels(
+			[]string{"thornode", "observation", "dropped"},
+			1,
+			[]metrics.Label{telemetry.NewLabel("reason", "txin_voter_read_fail")},
+		)
 		return ObservedTxVoter{}, fmt.Errorf("fail to get tx in voter: %w", err)
 	}
 
 	return voter, nil
+}
+
+const (
+	compromisedVaultMimirKeyPrefix  = "CompromisedVault-"
+	compromisedVaultNoOpSecurityMsg = "inbound to compromised vault no-oped"
+)
+
+// isVaultCompromised reports whether CompromisedVault-<pubkey> is set.
+// The compromised-vault Mimir is keyed by vault pubkey rather than chain or
+// address so it covers every inbound address exposed by the same vault.
+// On KV read failure it returns true so callers can fail closed.
+func isVaultCompromised(ctx cosmos.Context, k keeper.Keeper, vaultPubKey common.PubKey) (bool, error) {
+	flagged, err := k.GetMimir(ctx, compromisedVaultMimirKeyPrefix+vaultPubKey.String())
+	if err != nil {
+		return true, err
+	}
+	return flagged > 0, nil
+}
+
+// emitCompromisedVaultNoOpSecurityEvent emits the operator-facing alert for an
+// inbound that reached quorum but was intentionally skipped because its vault is
+// flagged by CompromisedVault-<pubkey>.
+func emitCompromisedVaultNoOpSecurityEvent(ctx cosmos.Context, mgr Manager, tx common.ObservedTx, vaultPubKey common.PubKey) {
+	telemetry.IncrCounterWithLabels(
+		[]string{"thornode", "inbound", "compromised_vault_noop"},
+		1,
+		[]metrics.Label{
+			telemetry.NewLabel("chain", telemChain(tx.Tx.Chain)),
+			telemetry.NewLabel("pubkey", vaultPubKey.String()),
+		},
+	)
+
+	// EventSecurity includes the external tx attributes, but not the observed
+	// vault pubkey, so keep the vault key in the message for incident review.
+	msg := fmt.Sprintf("%s: vault=%s", compromisedVaultNoOpSecurityMsg, vaultPubKey.String())
+	if err := mgr.EventMgr().EmitEvent(ctx, NewEventSecurity(tx.Tx, msg)); err != nil {
+		ctx.Logger().Error("fail to emit compromised vault no-op security event", "pub_key", vaultPubKey.String(), "tx", tx.Tx.ID.String(), "error", err)
+	}
 }
 
 // handleObservedTxInQuorum - will process the observed tx in quorum.
@@ -166,13 +270,22 @@ func handleObservedTxInQuorum(
 	}
 
 	// all logic after this is upon consensus
+	k := mgr.Keeper()
+
+	// An XMR errata can reach consensus while the original inbound has only
+	// partial observations. In that ordering the errata voter is committed,
+	// but the empty inbound voter cannot yet be marked Reverted and later
+	// errata votes short-circuit on BlockHeight. Re-apply that monotonic outcome
+	// at the inbound's first quorum, before any vault, pool, memo, or swap side
+	// effect can run.
+	if err := applyCommittedXMRErrataToInboundConsensus(ctx, k, &voter); err != nil {
+		return err
+	}
 
 	if voter.Reverted {
 		ctx.Logger().Info("tx had been reverted", "Tx", tx.String())
 		return nil
 	}
-
-	k := mgr.Keeper()
 
 	vault, err := k.GetVault(ctx, tx.ObservedPubKey)
 	if err != nil {
@@ -181,6 +294,37 @@ func handleObservedTxInQuorum(
 	}
 
 	voter.Tx.Tx.Memo = tx.Tx.Memo
+
+	hasFinalised := voter.HasFinalised(activeNodeAccounts)
+
+	compromised, compromisedErr := isVaultCompromised(ctx, k, vault.PubKey)
+	if compromisedErr != nil {
+		ctx.Logger().Error("failed to read CompromisedVault mimir, treating inbound as no-op", "pub_key", vault.PubKey.String(), "error", compromisedErr)
+	}
+	if compromised {
+		// The tx has already reached observation quorum. Record observation
+		// metadata, but deliberately skip every value-changing action below:
+		// vault accounting, memo resolution, refunds, swap queueing, and
+		// internal handler dispatch. Funds sent to a compromised vault should
+		// not affect THORChain state.
+		if err = k.SetLastChainHeight(ctx, tx.Tx.Chain, tx.BlockHeight); err != nil {
+			ctx.Logger().Error("fail to set last chain height", "error", err)
+		}
+
+		mgr.ObMgr().AppendObserver(tx.Tx.Chain, voter.Tx.GetSigners())
+		if hasFinalised {
+			// Mark finalised no-op observations done so they do not remain as
+			// pending inbound work waiting for an outbound that will never be
+			// scheduled.
+			emitCompromisedVaultNoOpSecurityEvent(ctx, mgr, tx, vault.PubKey)
+			voter.SetDone()
+			ctx.Logger().Info("observed tx in to compromised vault no-oped", "pub_key", vault.PubKey.String(), "tx", tx.Tx.ID.String())
+		} else {
+			ctx.Logger().Info("observed tx in to compromised vault pending confirmation counting", "pub_key", vault.PubKey.String(), "tx", tx.Tx.ID.String())
+		}
+		k.SetObservedTxInVoter(ctx, voter)
+		return nil
+	}
 
 	// add memo for memoless transactions (after consensus is reached)
 	if len(tx.Tx.Coins) > 0 {
@@ -208,21 +352,21 @@ func handleObservedTxInQuorum(
 	// after vault update, voter setup, etc and the coin will be refunded
 	memo, _ := ParseMemoWithTHORNames(ctx, k, tx.Tx.Memo)
 
-	hasFinalised := voter.HasFinalised(activeNodeAccounts)
-
 	// Update vault balances from inbounds with Migrate memos immediately,
 	// to minimise any gap between outbound and inbound observations.
 	// TODO: In future somehow update both balances in a single action,
 	// so the ActiveVault balance increase is guaranteed to never be early nor late?
 	if hasFinalised || memo.IsType(TxMigrate) {
 		if vault.IsAsgard() && !voter.UpdatedVault {
-			if !tx.Tx.FromAddress.Equals(tx.Tx.ToAddress) {
+			if tx.Tx.FromAddress.Equals(tx.Tx.ToAddress) {
 				// Don't add to or subtract from vault balances when the sender and recipient are the same
 				// (particularly avoid Consolidate SafeSub zeroing of vault balances).
+				voter.UpdatedVault = true
+			} else if shouldCreditObservedInboundVault(ctx, mgr, tx, memo.IsType(TxMigrate), memo.GetBlockHeight()) {
 				vault.AddFunds(tx.Tx.Coins)
 				vault.InboundTxCount++
+				voter.UpdatedVault = true
 			}
-			voter.UpdatedVault = true
 		}
 	}
 	if err = k.SetLastChainHeight(ctx, tx.Tx.Chain, tx.BlockHeight); err != nil {
@@ -256,7 +400,27 @@ func handleObservedTxInQuorum(
 		return nil
 	}
 
-	ctx.Logger().Debug("tx in finalized and has consensus",
+	// Resolve reference memo before any finalized refund path. In particular,
+	// an inactive-vault XMR refund needs the registered ADD asset address rather
+	// than the unavailable observed sender encoded by the raw r:<ref> memo.
+	// Keep the parsed memo aligned as well so post-handler completion logic uses
+	// the actual transaction type rather than TxReferenceReadMemo.
+	// Amount-encoded memoless inbounds have their synthesized r:<ref> memo on
+	// the voter, while the observed transaction memo remains empty. Preserve
+	// that synthesized memo so successful processing consumes the reference.
+	referenceMemo := voter.Tx.Tx.Memo
+	referenceAsset := common.EmptyAsset
+	if len(tx.Tx.Coins) > 0 {
+		referenceAsset = tx.Tx.Coins[0].Asset
+	}
+	referenceResolved := false
+	if resolvedMemo, ok := resolveReferenceMemo(ctx, mgr, k, &tx, &voter); ok {
+		memo = resolvedMemo
+		referenceResolved = true
+	}
+
+	ctx.Logger().Debug(
+		"tx in finalized and has consensus",
 		"id", tx.Tx.ID.String(),
 		"chain", tx.Tx.Chain.String(),
 		"height", tx.BlockHeight,
@@ -270,26 +434,30 @@ func handleObservedTxInQuorum(
 
 	if vault.Status == InactiveVault {
 		ctx.Logger().Error("observed tx on inactive vault", "tx", tx.String())
+		telemetry.IncrCounterWithLabels(
+			[]string{"thornode", "inbound", "refund"}, 1,
+			[]metrics.Label{
+				telemetry.NewLabel("chain", telemChain(tx.Tx.Chain)),
+				telemetry.NewLabel("reason", "inactive_vault"),
+			},
+		)
 		if newErr := refundTx(ctx, tx, mgr, CodeInvalidVault, "observed inbound tx to an inactive vault", ""); newErr != nil {
 			ctx.Logger().Error("fail to refund", "error", newErr)
 		}
 		return nil
 	}
 
-	// Resolve reference memo if needed before processing
-	if len(tx.Tx.Coins) > 0 {
-		asset := tx.Tx.Coins[0].Asset
-		resolvedMemo := fetchMemoFromReference(ctx, mgr, asset, voter.Tx.Tx, voter.UnfinalizedHeight)
-		preMemo := voter.Tx.Tx.Memo
-		voter.Tx.Tx.Memo = resolvedMemo
-		ctx.Logger().Info("reference memo conversion", "pre", preMemo, "post", voter.Tx.Tx.Memo, "asset", asset)
-		k.SetObservedTxInVoter(ctx, voter)
-	}
-
 	// construct msg from memo
 	m, txErr := processOneTxIn(ctx, k, voter.Tx, signer)
 	if txErr != nil {
-		ctx.Logger().Error("fail to process inbound tx", "error", txErr.Error(), "tx hash", tx.Tx.ID.String())
+		ctx.Logger().Error("fail to process inbound tx", "error", txErr, "tx hash", tx.Tx.ID.String())
+		telemetry.IncrCounterWithLabels(
+			[]string{"thornode", "inbound", "refund"}, 1,
+			[]metrics.Label{
+				telemetry.NewLabel("chain", telemChain(tx.Tx.Chain)),
+				telemetry.NewLabel("reason", "invalid_memo"),
+			},
+		)
 		if newErr := refundTx(ctx, tx, mgr, CodeInvalidMemo, txErr.Error(), ""); nil != newErr {
 			ctx.Logger().Error("fail to refund", "error", newErr)
 		}
@@ -302,6 +470,13 @@ func handleObservedTxInQuorum(
 
 	if isSwap || isAddLiquidity {
 		if k.IsTradingHalt(ctx, m) || k.RagnarokInProgress(ctx) {
+			telemetry.IncrCounterWithLabels(
+				[]string{"thornode", "inbound", "refund"}, 1,
+				[]metrics.Label{
+					telemetry.NewLabel("chain", telemChain(tx.Tx.Chain)),
+					telemetry.NewLabel("reason", "trading_halted"),
+				},
+			)
 			if newErr := refundTx(ctx, tx, mgr, se.ErrUnauthorized.ABCICode(), "trading halted", ""); nil != newErr {
 				ctx.Logger().Error("fail to refund for halted trading", "error", newErr)
 			}
@@ -312,10 +487,21 @@ func handleObservedTxInQuorum(
 	// if its a swap, send it to our queue for processing later
 	if isSwap {
 		if err = addSwap(ctx, mgr, *swapMsg); err != nil {
+			telemetry.IncrCounterWithLabels(
+				[]string{"thornode", "inbound", "refund"}, 1,
+				[]metrics.Label{
+					telemetry.NewLabel("chain", telemChain(tx.Tx.Chain)),
+					telemetry.NewLabel("reason", "swap_queue_failed"),
+				},
+			)
 			if refundErr := refundTx(ctx, tx, mgr, CodeSwapFail, err.Error(), ""); refundErr != nil {
 				ctx.Logger().Error("fail to refund swap", "error", refundErr)
 				return fmt.Errorf("swap failed and refund also failed: %w, refund error: %v", err, refundErr)
 			}
+			return nil
+		}
+		if referenceResolved {
+			trackReferenceMemoUsage(ctx, mgr, referenceAsset, referenceMemo, tx.Tx.ID)
 		}
 		return nil
 	}
@@ -327,6 +513,13 @@ func handleObservedTxInQuorum(
 	// bifrost & switch whitelisting prior to switching commencing
 	_, isSwitch := m.(*MsgSwitch)
 	if !isSwitch && len(tx.Tx.Coins) > 0 && mgr.SwitchManager().IsSwitch(ctx, tx.Tx.Coins[0].Asset) {
+		telemetry.IncrCounterWithLabels(
+			[]string{"thornode", "inbound", "refund"}, 1,
+			[]metrics.Label{
+				telemetry.NewLabel("chain", telemChain(tx.Tx.Chain)),
+				telemetry.NewLabel("reason", "switch_asset"),
+			},
+		)
 		if err = refundTx(ctx, tx, mgr, CodeTxFail, "asset is a switch asset", ""); err != nil {
 			ctx.Logger().Error("fail to refund", "error", err)
 		}
@@ -336,6 +529,13 @@ func handleObservedTxInQuorum(
 
 	_, err = handler(mCtx, m)
 	if err != nil {
+		telemetry.IncrCounterWithLabels(
+			[]string{"thornode", "inbound", "refund"}, 1,
+			[]metrics.Label{
+				telemetry.NewLabel("chain", telemChain(tx.Tx.Chain)),
+				telemetry.NewLabel("reason", "handler_failed"),
+			},
+		)
 		if err = refundTx(ctx, tx, mgr, CodeTxFail, err.Error(), ""); err != nil {
 			return fmt.Errorf("fail to refund: %w", err)
 		}
@@ -352,10 +552,105 @@ func handleObservedTxInQuorum(
 		voter.SetDone()
 		k.SetObservedTxInVoter(ctx, voter)
 	}
+	if referenceResolved {
+		trackReferenceMemoUsage(ctx, mgr, referenceAsset, referenceMemo, tx.Tx.ID)
+	}
 
 	ctx.Logger().Info("tx in processed", "chain", tx.Tx.Chain, "id", tx.Tx.ID, "finalized", tx.IsFinal())
 
 	return nil
+}
+
+// applyCommittedXMRErrataToInboundConsensus closes the ordering gap between a
+// committed errata voter and the original XMR inbound reaching quorum. It must
+// not run the normal errata accounting reversal: at this point the inbound has
+// not executed any value-changing path, so marking it Reverted is sufficient
+// and avoids subtracting state which was never credited.
+func applyCommittedXMRErrataToInboundConsensus(ctx cosmos.Context, k keeper.Keeper, voter *ObservedTxVoter) error {
+	if voter == nil || voter.Reverted || voter.Tx.IsEmpty() || !voter.Tx.Tx.Chain.Equals(common.XMRChain) {
+		return nil
+	}
+	errataVoter, err := k.GetErrataTxVoter(ctx, voter.TxID, voter.Tx.Tx.Chain)
+	if err != nil {
+		return fmt.Errorf("fail to get errata voter for inbound %s: %w", voter.TxID, err)
+	}
+	if errataVoter.BlockHeight <= 0 {
+		return nil
+	}
+	voter.SetReverted()
+	k.SetObservedTxInVoter(ctx, *voter)
+	return nil
+}
+
+func shouldCreditObservedInboundVault(ctx cosmos.Context, mgr Manager, tx common.ObservedTx, isMigrate bool, migrateHeight int64) bool {
+	if !tx.Tx.Chain.Equals(common.XMRChain) || !isMigrate {
+		return true
+	}
+	if common.IsXMRUnknownSenderAddress(tx.Tx.FromAddress) {
+		ctx.Logger().Info("skip xmr migrate inbound vault credit: source vault is unknown", "tx", tx.Tx.ID.String(), "to", tx.Tx.ToAddress.String())
+		return false
+	}
+
+	txOut, err := mgr.Keeper().GetTxOut(ctx, migrateHeight)
+	if err != nil {
+		ctx.Logger().Error("skip xmr migrate inbound vault credit: fail to get txout", "height", migrateHeight, "tx", tx.Tx.ID.String(), "error", err)
+		return false
+	}
+	for _, item := range txOut.TxArray {
+		if !xmrMigrateInboundMatchesTxOut(tx.Tx, item) {
+			continue
+		}
+		return true
+	}
+
+	ctx.Logger().Info(
+		"skip xmr migrate inbound vault credit: no matching scheduled txout",
+		"tx", tx.Tx.ID.String(),
+		"height", migrateHeight,
+		"from", tx.Tx.FromAddress.String(),
+		"to", tx.Tx.ToAddress.String(),
+		"coins", tx.Tx.Coins.String(),
+	)
+	return false
+}
+
+func xmrMigrateInboundMatchesTxOut(tx common.Tx, item TxOutItem) bool {
+	if !item.Chain.Equals(common.XMRChain) {
+		return false
+	}
+	if !item.InHash.Equals(common.BlankTxID) {
+		return false
+	}
+	if !common.AddressEquals(item.Chain, item.ToAddress, tx.ToAddress) {
+		return false
+	}
+
+	sourcePubKey, err := txOutSourcePubKey(item)
+	if err != nil {
+		return false
+	}
+	fromAddress, err := sourcePubKey.GetAddress(item.Chain)
+	if err != nil {
+		return false
+	}
+	if !common.AddressEquals(item.Chain, fromAddress, tx.FromAddress) {
+		return false
+	}
+
+	matchCoin := tx.Coins.Contains(item.Coin)
+	if matchCoin {
+		return true
+	}
+
+	asset := item.Chain.GetGasAsset()
+	if !item.Coin.Asset.Equals(asset) {
+		return false
+	}
+	// Inbound XMR gas is observer-reported and may not equal the actual signer fee.
+	received := tx.Coins.GetCoin(asset).Amount
+	minReceived := item.Coin.Amount
+	maxReceived := item.Coin.Amount.Add(item.MaxGas.ToCoins().GetCoin(asset).Amount)
+	return !received.LT(minReceived) && !received.GT(maxReceived)
 }
 
 // processTxOutAttestation processes a single attestation for an observed tx.
@@ -379,7 +674,7 @@ func processTxOutAttestation(
 
 	slashCtx := ctx.WithContext(context.WithValue(ctx.Context(), constants.CtxMetricLabels, []metrics.Label{
 		telemetry.NewLabel("reason", "failed_observe_txout"),
-		telemetry.NewLabel("chain", string(tx.Tx.Chain)),
+		telemetry.NewLabel("chain", telemChain(tx.Tx.Chain)),
 	}))
 	slashCtx = ctx.WithContext(context.WithValue(slashCtx.Context(), constants.CtxObservedTx, tx.Tx.ID.String()))
 
@@ -392,12 +687,44 @@ func processTxOutAttestation(
 	// to be decremented only if contributing to or within ObservationDelayFlexibility of consensus.
 	slasher.IncSlashPoints(slashCtx, observeSlashPoints, signer)
 
+	// A committee member's pre-broadcast "instant" observation and its later
+	// scanner observation of the same tx differ only in gas (EVM) or block height
+	// (all chains, from signing-tip vs inclusion) and split into separate voter
+	// entries. Detect that the signer already recorded a matching variant BEFORE
+	// Add records this one, so the redundant observe point can be refunded exactly
+	// once below without depending on the post-consensus flex branch.
+	// Refund a redundant re-observation only for the signer's FIRST prior variant
+	// (exactly one earlier matching observation) — the honest "observed it, lost the
+	// gas/height race, re-observed once" case. Further variants (count >= 2) are
+	// self-inflicted spam and keep their observe slash point, so a node cannot file
+	// unlimited gas/height variants at zero cost to erase the per-observation charge.
+	redundantReObservation := voter.ShouldRefundRedundantOutboundObservation(tx, signer)
+
+	obsChain := telemetry.NewLabel("chain", telemChain(tx.Tx.Chain))
+	obsDir := telemetry.NewLabel("direction", "out")
+
 	if !voter.Add(tx, signer) {
 		if !shouldSlashForDuplicate {
 			slasher.DecSlashPoints(slashCtx, observeSlashPoints, signer)
 		}
+		telemetry.IncrCounterWithLabels(
+			[]string{"thornode", "observe", "attestation"}, 1,
+			[]metrics.Label{obsChain, obsDir, telemetry.NewLabel("result", "duplicate")},
+		)
 		// A duplicate message, so do nothing further.
 		return voter, ok
+	}
+
+	// Single mutually-exclusive attestation result per call; late wins over redundant.
+	attResult := "new"
+
+	// The signer already observed this tx via a different gas/height variant, so
+	// this observation is redundant honest work rather than a missed observation:
+	// refund its observe point. The observation stays recorded above so it still
+	// counts toward consensus and gas correction.
+	if redundantReObservation {
+		attResult = "redundant"
+		slasher.DecSlashPoints(slashCtx, observeSlashPoints, signer)
 	}
 
 	// Outbound memos can have | data passthrough,
@@ -411,6 +738,10 @@ func processTxOutAttestation(
 
 	if voter.HasFinalised(nas) {
 		if voter.FinalisedHeight == 0 {
+			telemetry.IncrCounterWithLabels(
+				[]string{"thornode", "observe", "consensus"}, 1,
+				[]metrics.Label{obsChain, obsDir, telemetry.NewLabel("finalised", "true")},
+			)
 			if voter.Height == 0 {
 				ok = true
 				// Record the consensus height at which outbound consensus actions are taken.
@@ -422,7 +753,8 @@ func processTxOutAttestation(
 			voter.FinalisedHeight = ctx.BlockHeight()
 			voter.Tx = *voter.GetTx(nas)
 
-			ctx.Logger().Debug("tx out finalized and has consensus",
+			ctx.Logger().Debug(
+				"tx out finalized and has consensus",
 				"id", tx.Tx.ID.String(),
 				"chain", tx.Tx.Chain.String(),
 				"height", tx.BlockHeight,
@@ -436,21 +768,28 @@ func processTxOutAttestation(
 
 			// This signer brings the voter to consensus;
 			// decrement all the signers' slash points and increment the non-signers' slash points.
-			signers := voter.GetConsensusSigners()
+			signers := voter.GetOutboundObserveSigners()
 			nonSigners, totalParticipants := getChainAwareNonSigners(ctx, mgr, signers, tx.Tx.Chain)
 			slasher.DecSlashPoints(slashCtx, observeSlashPoints, signers...)
 			slasher.IncSlashPoints(slashCtx, lackOfObservationPenalty, nonSigners...)
 			if err := slasher.ForfeitChainIncomeForNonSigners(ctx, tx.Tx.Chain, nonSigners, totalParticipants); err != nil {
 				ctx.Logger().Error("fail to forfeit chain income for non-signers", "chain", tx.Tx.Chain, "error", err)
 			}
+			// Record the credited gas-agnostic observers on the consensus Tx so the
+			// ObservationDelayFlexibility branch below (keyed off Tx.HasSigned) does
+			// not refund the same node a second time when its own gas-used
+			// observation arrives after consensus has already formed.
+			voter.RecordObserveSigners(signers)
+			queueObservationTally(ctx, k, observationTallyKindTxOut, tx.Tx.Chain, tx.Tx.ID.String())
 		} else if ctx.BlockHeight() <= (voter.FinalisedHeight+observeFlex) &&
 			voter.Tx.IsFinal() == tx.IsFinal() &&
-			voter.Tx.Tx.EqualsEx(tx.Tx) &&
+			voter.Tx.EqualsOutboundObservationCredit(tx) &&
 			!voter.Tx.HasSigned(signer) {
 			// Track already-decremented slash points with the consensus Tx's Signers list.
 			voter.Tx.Signers = append(voter.Tx.Signers, signer.String())
 			// event the tx had been processed , given the signer just a bit late , so we still take away their slash points
 			slasher.DecSlashPoints(slashCtx, observeSlashPoints+lackOfObservationPenalty, signer)
+			attResult = "late"
 		}
 
 		// Gas correction for re-org re-observations.
@@ -460,7 +799,7 @@ func processTxOutAttestation(
 		if voter.FinalisedHeight > 0 &&
 			voter.Tx.IsFinal() == tx.IsFinal() &&
 			!voter.Tx.Tx.Gas.Equals(tx.Tx.Gas) &&
-			voter.Tx.Tx.EqualsExIgnoreGas(tx.Tx) {
+			voter.Tx.EqualsConsensusIgnoreGas(tx) {
 			gasCorrectionSigners := countMatchingSigners(voter, tx, nas)
 			if HasSuperMajority(gasCorrectionSigners, len(nas)) {
 				correctOutboundGas(ctx, mgr, voter.Tx, tx)
@@ -470,6 +809,10 @@ func processTxOutAttestation(
 	}
 	if !ok && voter.HasConsensus(nas) && !tx.IsFinal() && voter.FinalisedHeight == 0 {
 		if voter.Height == 0 {
+			telemetry.IncrCounterWithLabels(
+				[]string{"thornode", "observe", "consensus"}, 1,
+				[]metrics.Label{obsChain, obsDir, telemetry.NewLabel("finalised", "false")},
+			)
 			ok = true
 			// Record the consensus height at which outbound consensus actions are taken,
 			// even if not yet Finalised.
@@ -482,28 +825,34 @@ func processTxOutAttestation(
 
 			// This signer brings the voter to consensus;
 			// decrement all the signers' slash points and increment the non-signers' slash points.
-			signers := voter.GetConsensusSigners()
+			signers := voter.GetOutboundObserveSigners()
 			nonSigners, _ := getChainAwareNonSigners(ctx, mgr, signers, tx.Tx.Chain)
 			slasher.DecSlashPoints(slashCtx, observeSlashPoints, signers...)
 			slasher.IncSlashPoints(slashCtx, lackOfObservationPenalty, nonSigners...)
 			// ChainIncome forfeiture is deferred to final consensus to avoid
 			// draining the chain-income bucket twice per observation lifecycle
 			// (once at non-final, once at final consensus).
+			// Record the credited gas-agnostic observers on the consensus Tx so the
+			// ObservationDelayFlexibility branch below (keyed off Tx.HasSigned) does
+			// not refund the same node a second time when its own gas-used
+			// observation arrives after consensus has already formed.
+			voter.RecordObserveSigners(signers)
 		} else if ctx.BlockHeight() <= (voter.Height+observeFlex) &&
 			voter.Tx.IsFinal() == tx.IsFinal() &&
-			voter.Tx.Tx.EqualsEx(tx.Tx) &&
+			voter.Tx.EqualsOutboundObservationCredit(tx) &&
 			!voter.Tx.HasSigned(signer) {
 			// Track already-decremented slash points with the consensus Tx's Signers list.
 			voter.Tx.Signers = append(voter.Tx.Signers, signer.String())
 			// event the tx had been processed , given the signer just a bit late , so still take away their slash points
 			// but only when the tx signer are voting is the tx that already reached consensus
 			slasher.DecSlashPoints(slashCtx, observeSlashPoints+lackOfObservationPenalty, signer)
+			attResult = "late"
 		}
 
 		// Gas correction for re-org re-observations (non-finalized consensus path).
 		if voter.Height > 0 &&
 			!voter.Tx.Tx.Gas.Equals(tx.Tx.Gas) &&
-			voter.Tx.Tx.EqualsExIgnoreGas(tx.Tx) {
+			voter.Tx.EqualsConsensusIgnoreGas(tx) {
 			gasCorrectionSigners := countMatchingSigners(voter, tx, nas)
 			if HasSuperMajority(gasCorrectionSigners, len(nas)) {
 				correctOutboundGas(ctx, mgr, voter.Tx, tx)
@@ -511,6 +860,11 @@ func processTxOutAttestation(
 			}
 		}
 	}
+
+	telemetry.IncrCounterWithLabels(
+		[]string{"thornode", "observe", "attestation"}, 1,
+		[]metrics.Label{obsChain, obsDir, telemetry.NewLabel("result", attResult)},
+	)
 
 	k.SetObservedTxOutVoter(ctx, voter)
 
@@ -526,7 +880,10 @@ func countMatchingSigners(voter ObservedTxVoter, tx ObservedTx, nas NodeAccounts
 		if otherTx.IsFinal() != tx.IsFinal() {
 			continue
 		}
-		if !otherTx.Tx.EqualsEx(tx.Tx) {
+		if !otherTx.ObservedPubKey.Equals(tx.ObservedPubKey) {
+			continue
+		}
+		if !otherTx.EqualsConsensus(tx) {
 			continue
 		}
 		for _, s := range otherTx.GetSigners() {
@@ -560,7 +917,7 @@ func correctOutboundGas(ctx cosmos.Context, mgr Manager, consensusTx common.Obse
 		if newGasCoin.Amount.GT(oldAmount) {
 			// More gas was actually spent - deduct additional from vault.
 			delta := common.NewCoin(newGasCoin.Asset, newGasCoin.Amount.Sub(oldAmount))
-			vault.SubFunds(common.NewCoins(delta))
+			debitVault(ctx, mgr, &vault, consensusTx, common.NewCoins(delta), vaultDeficitReasonOutboundGasCorrection)
 			additionalGas = additionalGas.Add(delta)
 		} else if oldAmount.GT(newGasCoin.Amount) {
 			// Less gas was actually spent - credit back to vault.
@@ -593,7 +950,8 @@ func correctOutboundGas(ctx cosmos.Context, mgr Manager, consensusTx common.Obse
 		mgr.GasMgr().AddGasAsset(outAsset, additionalGas, false)
 	}
 
-	ctx.Logger().Info("corrected outbound gas after reorg",
+	ctx.Logger().Info(
+		"corrected outbound gas after reorg",
 		"txid", correctedTx.Tx.ID,
 		"old_gas", common.Coins(oldGas).String(),
 		"new_gas", common.Coins(newGas).String(),
@@ -606,6 +964,11 @@ func ensureVaultAndGetTxOutVoter(ctx cosmos.Context, k keeper.Keeper, vaultPubKe
 	// check we are sending from a valid vault
 	if !k.VaultExists(ctx, vaultPubKey) {
 		ctx.Logger().Info("Not valid Observed Pubkey", "observed pub key", vaultPubKey)
+		telemetry.IncrCounterWithLabels(
+			[]string{"thornode", "observation", "dropped"},
+			1,
+			[]metrics.Label{telemetry.NewLabel("reason", "txout_vault_not_found")},
+		)
 		return ObservedTxVoter{}, fmt.Errorf("vault not found for observed tx out pubkey: %s", vaultPubKey)
 	}
 
@@ -623,6 +986,11 @@ func ensureVaultAndGetTxOutVoter(ctx cosmos.Context, k keeper.Keeper, vaultPubKe
 
 	voter, err := k.GetObservedTxOutVoter(ctx, txID)
 	if err != nil {
+		telemetry.IncrCounterWithLabels(
+			[]string{"thornode", "observation", "dropped"},
+			1,
+			[]metrics.Label{telemetry.NewLabel("reason", "txout_voter_read_fail")},
+		)
 		return ObservedTxVoter{}, fmt.Errorf("fail to get tx out voter: %w", err)
 	}
 
@@ -650,10 +1018,59 @@ func handleObservedTxOutQuorum(
 			// update the observing addresses
 			mgr.ObMgr().AppendObserver(tx.Tx.Chain, observers)
 		}
+		if len(tx.SpentOutputRefs) > 0 && (voter.Height > 0 || voter.FinalisedHeight > 0) {
+			saveXMRSpentOutputRefsWithQuorum(ctx, mgr, voter, tx, activeNodeAccounts)
+		}
+		// A late final vote can complete the durable-nonce supermajority after the
+		// outbound itself reached consensus. If that commit is a nonce-account creation
+		// whose processing was deferred at quorum (below), book it now, exactly once:
+		// the commit fires once per value.
+		// Gated on the chain, not on this vote: the tally reads every recorded vote,
+		// so a vote that omits SolNonce can still be the one that completes it.
+		if tx.Tx.Chain.Equals(common.SOLChain) && saveSolVaultNonceWithQuorum(ctx, mgr, voter, activeNodeAccounts) &&
+			voter.Height > 0 && isSolNonceCreateTx(voter.Tx) && solNonceCommittedBy(ctx, mgr, voter.Tx) {
+			bookSolNonceCreateAsGas(ctx, mgr, voter.Tx)
+		}
 		return nil
 	}
 
 	k := mgr.Keeper()
+
+	// Commit the vault's durable nonce BEFORE any early return below: every branch
+	// (cancel/approval, inbound-memo slash, normal outbound) is a vault spend that
+	// can advance the nonce. Gated on the chain, not on this vote (see above).
+	if tx.Tx.Chain.Equals(common.SOLChain) {
+		saveSolVaultNonceWithQuorum(ctx, mgr, voter, activeNodeAccounts)
+	}
+
+	// A Solana vault's durable-nonce account creation: the rent it moved into the nonce
+	// account (plus the fee) is booked as vault gas, so the vault's recorded balance
+	// keeps matching its main account (migrations never overshoot, solvency needs no
+	// adjustment). It is an operational spend: no outbound to match, no slash. Checked
+	// before the memo-based branches below, which would treat it as unmatched.
+	if isSolNonceCreateTx(tx) {
+		if solNonceCommittedBy(ctx, mgr, tx) {
+			bookSolNonceCreateAsGas(ctx, mgr, tx)
+			return nil
+		}
+		// Outbound consensus ignores SolNonce, so it can form before the nonce
+		// supermajority does (one vote omitting or changing the nonce is enough). If
+		// any final consensus vote attests this as the vault's nonce-account creation,
+		// defer rather than slash it as an unmatched outflow: the late vote that
+		// commits the nonce books it (above). Only a real creation carries a SolNonce
+		// for this shape; bifrost never sends a durable payment to the nonce address.
+		//
+		// Residual: a single byzantine vote can attach a SolNonce to a genuine memoless
+		// transfer of this shape and so defer it instead of slashing it. Every such
+		// transfer pays the vault's OWN seed-derived nonce account, so the funds stay
+		// under vault control and the attacker gains nothing; if no nonce ever commits,
+		// the rent + fee (<= solNonceCreateMaxRent) stays unbooked, a bounded
+		// accounting drift, not a loss.
+		if voterAttestsSolNonceCreate(voter, tx) {
+			ctx.Logger().Info("deferring durable-nonce account creation until its nonce commits", "txid", tx.Tx.ID)
+			return nil
+		}
+	}
 
 	if isCancelOrApprovalTx(tx) {
 		ctx.Logger().Info("skipping slash for cancel tx with empty memo", "txid", tx.Tx.ID)
@@ -679,15 +1096,24 @@ func handleObservedTxOutQuorum(
 
 		slashCtx := ctx.WithContext(context.WithValue(ctx.Context(), constants.CtxMetricLabels, []metrics.Label{
 			telemetry.NewLabel("reason", "sent_extra_funds"),
-			telemetry.NewLabel("chain", string(tx.Tx.Chain)),
+			telemetry.NewLabel("chain", telemChain(tx.Tx.Chain)),
 		}))
 
 		if err := mgr.Slasher().SlashVault(slashCtx, tx.ObservedPubKey, toSlash, mgr); err != nil {
 			ctx.Logger().Error("fail to slash account for sending extra fund", "error", err)
 		}
-		vault.SubFunds(toSlash)
+		// The inbound-memo slash debit has the same silent-drop risk as a normal
+		// outbound debit: bifrost reports the vault sent toSlash, but THORChain's
+		// tracked balance may be below that. Record any underflow as deficit and
+		// surface it instead of losing the accounting gap.
+		debitVault(ctx, mgr, &vault, tx, toSlash, vaultDeficitReasonVaultSlash)
 		if err := k.SetVault(ctx, vault); err != nil {
 			ctx.Logger().Error("fail to save vault", "error", err)
+		} else if tx.Tx.Chain.RequiresTerminalErrataOutcome() {
+			// Record the principal debit only once it is stored, so errata
+			// restores exactly what this observation removed from the vault.
+			voter.UpdatedVault = true
+			k.SetObservedTxOutVoter(ctx, voter)
 		}
 
 		return nil
@@ -697,10 +1123,27 @@ func handleObservedTxOutQuorum(
 	// Even if the handler fails, vault accounting must still happen because
 	// the outbound transaction is irrevocable (funds already left the vault).
 	vaultSlash := false
+	slashObservedOutbound := func(reason string, err error) {
+		ctx.Logger().Error("slash observed outbound", "reason", reason, "error", err, "tx", tx.Tx.String())
+		toSlash := make(common.Coins, len(tx.Tx.Coins))
+		copy(toSlash, tx.Tx.Coins)
+		toSlash = toSlash.Add(tx.Tx.Gas.ToCoins()...)
+
+		slashCtx := ctx.WithContext(context.WithValue(ctx.Context(), constants.CtxMetricLabels, []metrics.Label{
+			telemetry.NewLabel("reason", reason),
+			telemetry.NewLabel("chain", telemChain(tx.Tx.Chain)),
+		}))
+
+		if slashErr := mgr.Slasher().SlashVault(slashCtx, tx.ObservedPubKey, toSlash, mgr); slashErr != nil {
+			ctx.Logger().Error("fail to slash account for observed outbound", "error", slashErr)
+		} else {
+			vaultSlash = true
+		}
+	}
 	txOut := voter.GetTx(activeNodeAccounts) // get consensus tx, in case our for loop is incorrect
 	if txOut == nil || txOut.IsEmpty() {
 		ctx.Logger().Error("fail to get consensus tx from voter", "txid", tx.Tx.ID)
-		// Continue with vault accounting below - outbound is irrevocable
+		slashObservedOutbound("missing_consensus_tx", nil)
 	} else {
 		txOut.Tx.Memo = tx.Tx.Memo
 
@@ -709,15 +1152,27 @@ func handleObservedTxOutQuorum(
 			if originalMemo := findOriginalMemoForOutbound(ctx, mgr, tx); originalMemo != "" {
 				txOut.Tx.Memo = originalMemo
 				ctx.Logger().Info("resolved memoless outbound", "original_memo", originalMemo, "txid", tx.Tx.ID)
+				// The per-vote link above parsed the empty raw memo, so a memoless
+				// outbound has no observed link. The SOL durable-nonce landed-copy hold
+				// finds copies only through that link: record it from the recovered memo.
+				if tx.Tx.Chain.Equals(common.SOLChain) {
+					if recovered, mErr := ParseMemoWithTHORNames(ctx, k, originalMemo); mErr == nil {
+						if inhash := recovered.GetTxID(); !inhash.IsEmpty() {
+							k.SetObservedLink(ctx, inhash, tx.Tx.ID)
+						}
+					}
+				}
 			}
 		}
 
 		if tx.Tx.Chain.IsEmpty() {
 			ctx.Logger().Error("fail to process txOut: chain is empty", "tx", tx.Tx.String())
+			slashObservedOutbound("empty_chain", nil)
 		} else if m, mErr := processOneTxIn(ctx, k, *txOut, signer); mErr != nil {
 			ctx.Logger().Error("fail to process txOut",
 				"error", mErr,
 				"tx", tx.Tx.String())
+			slashObservedOutbound("invalid_outbound", mErr)
 		} else {
 			// add addresses to observing addresses. This is used to detect
 			// active/inactive observing node accounts
@@ -729,17 +1184,25 @@ func handleObservedTxOutQuorum(
 				if kmErr != nil {
 					ctx.Logger().Error("fail to get tss keysign metric", "error", kmErr, "hash", tx.Tx.ID)
 				} else {
-					evt := NewEventTssKeysignMetric(keysignMetric.TxID, keysignMetric.GetMedianTime())
+					medianKeysignMs := keysignMetric.GetMedianTime()
+					evt := NewEventTssKeysignMetric(keysignMetric.TxID, medianKeysignMs)
 					if emitErr := mgr.EventMgr().EmitEvent(ctx, evt); emitErr != nil {
 						ctx.Logger().Error("fail to emit tss metric event", "error", emitErr)
 					}
+					// median keysign time climbs well before a degrading signing
+					// party starts producing outright MsgTssKeysignFail
+					telemetry.SetGaugeWithLabels(
+						[]string{"thornode", "tss", "keysign", "time_ms"},
+						float32(medianKeysignMs),
+						[]metrics.Label{telemetry.NewLabel("chain", telemChain(tx.Tx.Chain))},
+					)
 				}
 			}
 
 			res, hErr := handler(ctx, m)
 			if hErr != nil {
 				ctx.Logger().Error("handler failed:", "error", hErr)
-				// Continue with vault accounting - outbound is irrevocable
+				slashObservedOutbound("failed_outbound", hErr)
 			} else if res != nil && res.Events != nil {
 				for _, ev := range res.Events {
 					if ev.Type == "vault-slash" {
@@ -762,13 +1225,16 @@ func handleObservedTxOutQuorum(
 	}
 
 	// If sending from one of our vaults, decrement coins
+	principalDebited := false
 	vault, err := k.GetVault(ctx, tx.ObservedPubKey)
 	if err != nil {
 		ctx.Logger().Error("fail to get vault", "error", err)
 	} else {
 		// if the vault was slashed we skipped the gas manager above and deduct gas directly
 		if vaultSlash {
-			vault.SubFunds(tx.Tx.Gas.ToCoins())
+			// The slashed-vault gas debit can underflow the same way as the main
+			// coin debit when the vault has insufficient gas reserve.
+			debitVault(ctx, mgr, &vault, tx, tx.Tx.Gas.ToCoins(), vaultDeficitReasonVaultSlashGas)
 		}
 
 		// Don't add to or subtract from vault balances when the sender and recipient are the same
@@ -776,7 +1242,12 @@ func handleObservedTxOutQuorum(
 		if !tx.Tx.FromAddress.Equals(tx.Tx.ToAddress) {
 			// skip deducting funds for outbound fake gas
 			if !isOutboundFakeGasTx(tx) {
-				vault.SubFunds(tx.Tx.Coins)
+				// An outbound observation should normally be covered by the vault's
+				// tracked balance. If it is not, the L1 already sent the funds, so
+				// THORChain must record the deficit and halt/signal rather than keep
+				// phantom credit on the vault.
+				debitVault(ctx, mgr, &vault, tx, tx.Tx.Coins, vaultDeficitReasonOutbound)
+				principalDebited = true
 			}
 			vault.OutboundTxCount++
 		}
@@ -786,9 +1257,18 @@ func handleObservedTxOutQuorum(
 			vault.RemovePendingTxBlockHeights(memo.GetBlockHeight())
 		}
 
+		// RetiringVault status should clear once all real coins are drained,
+		// even if deficit accounting still remains on the vault.
 		if !vault.HasFunds() && vault.Status == RetiringVault {
-			// we have successfully removed all funds from a retiring vault,
-			// mark it as inactive
+			// We have successfully removed all funds from a retiring vault;
+			// mark it inactive so it no longer blocks churn or unbonding.
+			if vault.HasDeficit() {
+				ctx.Logger().Info(
+					"Retiring vault has no funds but still has deficit; marking inactive",
+					"vault_pubkey", vault.PubKey,
+					"deficit", vault.Deficit.String(),
+				)
+			}
 			vault.UpdateStatus(InactiveVault, ctx.BlockHeight())
 		}
 		// if the vault is frozen, then unfreeze it. Since we saw that a
@@ -803,8 +1283,13 @@ func handleObservedTxOutQuorum(
 		}
 		if err := k.SetVault(ctx, vault); err != nil {
 			ctx.Logger().Error("fail to save vault", "error", err)
+		} else if principalDebited && tx.Tx.Chain.RequiresTerminalErrataOutcome() {
+			// Record the principal debit only once it is stored, so errata
+			// restores exactly what this observation removed from the vault.
+			voter.UpdatedVault = true
 		}
 	}
+	saveXMRSpentOutputRefsWithQuorum(ctx, mgr, voter, tx, activeNodeAccounts)
 
 	// Mark voter as done AFTER all vault operations to prevent
 	// inconsistency if vault ops fail.
@@ -814,6 +1299,441 @@ func handleObservedTxOutQuorum(
 	ctx.Logger().Info("tx out processed", "chain", tx.Tx.Chain, "id", tx.Tx.ID, "finalized", tx.IsFinal())
 
 	return nil
+}
+
+// saveSolVaultNonceWithQuorum commits a Solana vault's durable nonce from the
+// observations of the vault transaction that set it: the nonce account's creation,
+// or a durable outbound that advanced it. It writes only when
+//   - the transaction itself reached FINAL consensus (voter.Tx), so a nonce advance
+//     never outruns the consensus record LackSigning uses to detect a landed copy,
+//   - a supermajority of active validators attested the IDENTICAL SolNonce on FINAL
+//     observations of that consensus tx (no "absent matches anything" rule),
+//   - the nonce account is the vault's own seed-derived account, and
+//   - the attested slot is newer than the stored one (idempotent and monotonic).
+//
+// Signers build every durable outbound from this committed value, so the value a
+// vault's durable txs use changes only here, when the tx that consumed the previous
+// value is committed. It is called on every observation of the transaction, so a
+// late final vote that completes the supermajority still commits. It never affects
+// outbound processing: SolNonce is deliberately not part of EqualsConsensus.
+// It reports whether this call committed a new value.
+func saveSolVaultNonceWithQuorum(ctx cosmos.Context, mgr Manager, voter ObservedTxVoter, nas NodeAccounts) bool {
+	consensus := voter.Tx
+	if voter.FinalisedHeight <= 0 || consensus.IsEmpty() || !consensus.IsFinal() {
+		return false
+	}
+	hasCandidate := false
+	for _, v := range voter.Txs {
+		if v.SolNonce != nil {
+			hasCandidate = true
+			break
+		}
+	}
+	if !hasCandidate {
+		return false
+	}
+	// Late votes after the value is committed skip the tally (commit is idempotent).
+	var committedSlot int64
+	if vault, err := mgr.Keeper().GetVault(ctx, consensus.ObservedPubKey); err == nil {
+		if existing, found, err := mgr.Keeper().GetSolVaultNonce(ctx, vault.PubKey); err == nil && found {
+			committedSlot = existing.Slot
+		}
+	}
+	for _, candidate := range voter.Txs {
+		if candidate.SolNonce == nil || !candidate.Tx.Chain.Equals(common.SOLChain) || !candidate.IsFinal() ||
+			candidate.SolNonce.Slot <= committedSlot {
+			continue
+		}
+		// Outbound processing rewrites a memoless outbound's consensus memo to the
+		// recovered one (voter.Tx aliases the stored consensus), so raw votes would no
+		// longer match it and a late vote could never complete the tally. Compare on
+		// the candidate's raw memo instead: counted votes still agree with each other
+		// on the memo and with the consensus on every other field.
+		ref := consensus
+		ref.Tx.Memo = candidate.Tx.Memo
+		voters := make(map[string]struct{})
+		for _, tx := range voter.Txs {
+			if tx.SolNonce == nil || !tx.IsFinal() || !tx.EqualsConsensus(ref) {
+				continue
+			}
+			if !tx.Tx.ID.Equals(candidate.Tx.ID) ||
+				!tx.Tx.FromAddress.Equals(candidate.Tx.FromAddress) ||
+				!tx.ObservedPubKey.Equals(candidate.ObservedPubKey) {
+				continue
+			}
+			if !common.SolNonceUpdatesEqual(tx.SolNonce, candidate.SolNonce) {
+				continue
+			}
+			for _, signer := range tx.GetSigners() {
+				if !nas.IsNodeKeys(signer) {
+					continue
+				}
+				voters[signer.String()] = struct{}{}
+			}
+		}
+		if !HasSuperMajority(len(voters), len(nas)) {
+			continue
+		}
+		return commitSolVaultNonce(ctx, mgr, candidate)
+	}
+	return false
+}
+
+// commitSolVaultNonce writes an agreed durable-nonce update for the observing vault,
+// after checking it names the vault's own seed-derived nonce account and is newer
+// than what is stored.
+func commitSolVaultNonce(ctx cosmos.Context, mgr Manager, obs common.ObservedTx) bool {
+	k := mgr.Keeper()
+	vault, err := k.GetVault(ctx, obs.ObservedPubKey)
+	if err != nil {
+		ctx.Logger().Error("fail to get vault for sol durable nonce", "pubkey", obs.ObservedPubKey, "error", err)
+		return false
+	}
+	vaultAddr, err := vault.PubKeyEddsa.GetAddress(common.SOLChain)
+	if err != nil || !vaultAddr.Equals(obs.Tx.FromAddress) {
+		ctx.Logger().Error("sol durable nonce observation is not from the vault's SOL address",
+			"vault", vault.PubKey, "from", obs.Tx.FromAddress, "error", err)
+		return false
+	}
+	expected, err := common.SolNonceAccountAddress(obs.Tx.FromAddress.String())
+	if err != nil || expected != obs.SolNonce.NonceAccount {
+		ctx.Logger().Error("sol durable nonce account is not the vault's seed-derived account",
+			"vault", vault.PubKey, "from", obs.Tx.FromAddress, "attested", obs.SolNonce.NonceAccount, "expected", expected, "error", err)
+		return false
+	}
+	existing, found, err := k.GetSolVaultNonce(ctx, vault.PubKey)
+	if err != nil {
+		ctx.Logger().Error("fail to get sol vault nonce", "vault", vault.PubKey, "error", err)
+		return false
+	}
+	if found && existing.Slot >= obs.SolNonce.Slot {
+		return false // already committed (idempotent), or an older update
+	}
+	// The previous ACTIVE commit (none on a first commit or after a break-glass
+	// clear) bounds which pending outbounds were signed durably with a now-consumed
+	// nonce and can be re-issued straight away (reissueSupersededSolDurable).
+	prev, prevActive, err := activeSolVaultNonce(ctx, k, vault.PubKey)
+	if err != nil {
+		ctx.Logger().Error("fail to get active sol vault nonce", "vault", vault.PubKey, "error", err)
+		prevActive = false
+	}
+	k.SetSolVaultNonce(ctx, SolVaultNonce{
+		VaultPubKey:   vault.PubKey,
+		NonceAccount:  obs.SolNonce.NonceAccount,
+		Nonce:         obs.SolNonce.Nonce,
+		Slot:          obs.SolNonce.Slot,
+		UpdatedHeight: ctx.BlockHeight(),
+		SetByTx:       obs.Tx.ID,
+	})
+	ctx.Logger().Info("committed sol durable nonce", "vault", vault.PubKey, "nonce", obs.SolNonce.Nonce,
+		"slot", obs.SolNonce.Slot, "set_by_tx", obs.Tx.ID)
+	if prevActive {
+		reissueSupersededSolDurable(ctx, mgr, vault, prev.UpdatedHeight, &obs)
+	}
+	return true
+}
+
+// bookSolNonceCreateAsGas books a nonce-account creation's rent plus fee as vault gas.
+func bookSolNonceCreateAsGas(ctx cosmos.Context, mgr Manager, tx common.ObservedTx) {
+	gasTx := tx
+	gasTx.Tx.Gas = common.Gas(tx.Tx.Gas.ToCoins().Add(tx.Tx.Coins...)) // Add returns a new slice
+	if err := addGasFees(ctx, mgr, gasTx); err != nil {
+		ctx.Logger().Error("fail to book durable-nonce account rent as gas", "error", err)
+	}
+}
+
+// voterAttestsSolNonceCreate reports whether any final vote matching tx's consensus
+// fields attests a durable nonce for tx's destination (the vault's nonce account).
+func voterAttestsSolNonceCreate(voter ObservedTxVoter, tx common.ObservedTx) bool {
+	for _, v := range voter.Txs {
+		if v.SolNonce != nil && v.IsFinal() && v.EqualsConsensus(tx) && v.SolNonce.NonceAccount == tx.Tx.ToAddress.String() {
+			return true
+		}
+	}
+	return false
+}
+
+// solNonceCommittedBy reports whether tx is the transaction that set the observing
+// vault's committed durable nonce, i.e. a supermajority attested the nonce it
+// created (saveSolVaultNonceWithQuorum runs just before this check). This is the
+// agreed evidence that a memoless transfer to the nonce account is the account's
+// creation and not a scheduled (memoless) payment to that address.
+func solNonceCommittedBy(ctx cosmos.Context, mgr Manager, tx common.ObservedTx) bool {
+	vault, err := mgr.Keeper().GetVault(ctx, tx.ObservedPubKey)
+	if err != nil {
+		return false
+	}
+	record, found, err := mgr.Keeper().GetSolVaultNonce(ctx, vault.PubKey)
+	return err == nil && found && record.SetByTx.Equals(tx.Tx.ID)
+}
+
+// saveXMRSpentOutputRefsWithQuorum persists XMR spent-output refs for the
+// voter's consensus outbound once a supermajority of active nodes has
+// reported matching refs. Safe to call repeatedly: it skips the write when
+// the refs are already stored.
+func saveXMRSpentOutputRefsWithQuorum(ctx cosmos.Context, mgr Manager, voter ObservedTxVoter, tx common.ObservedTx, activeNodeAccounts NodeAccounts) {
+	if !tx.Tx.Chain.Equals(common.XMRChain) {
+		return
+	}
+	if len(tx.SpentOutputRefs) == 0 {
+		return
+	}
+	if voter.Height <= 0 && voter.FinalisedHeight <= 0 {
+		return
+	}
+
+	// Spent refs are side metadata for the outbound that already reached
+	// consensus. Do not let a separate ref-bearing observation select its own
+	// outbound; it must attach to the voter's consensus tx.
+	consensusTx := voter.GetTx(activeNodeAccounts)
+	if consensusTx == nil || consensusTx.IsEmpty() {
+		return
+	}
+
+	refTx := findSpentOutputRefs(*consensusTx, voter, activeNodeAccounts)
+	if len(refTx.SpentOutputRefs) == 0 {
+		return
+	}
+
+	existing, err := mgr.Keeper().GetXMRSpentOutputRefs(ctx, refTx.ObservedPubKey)
+	existingSet := make(map[string]struct{}, len(existing))
+	if err != nil {
+		ctx.Logger().Error("fail to get xmr spent output refs", "error", err)
+	} else {
+		for _, ref := range existing {
+			existingSet[common.SpentOutputRefIdentity(ref)] = struct{}{}
+		}
+	}
+
+	allExisting := len(existingSet) > 0
+	for _, ref := range refTx.SpentOutputRefs {
+		if _, ok := existingSet[common.SpentOutputRefIdentity(ref)]; !ok {
+			allExisting = false
+			break
+		}
+	}
+	if allExisting {
+		return
+	}
+
+	if err := mgr.Keeper().SetXMRSpentOutputRefs(ctx, refTx.ObservedPubKey, refTx.Tx.ID, refTx.SpentOutputRefs, refTx.BlockHeight, ctx.BlockHeight()); err != nil {
+		ctx.Logger().Error("fail to save xmr spent output refs", "error", err)
+	}
+}
+
+// findSpentOutputRefs returns the observed tx whose spent-output refs reached
+// supermajority for this outbound voter's consensus tx.
+func findSpentOutputRefs(consensusTx common.ObservedTx, voter ObservedTxVoter, nas NodeAccounts) common.ObservedTx {
+	for _, candidate := range voter.Txs {
+		// Candidate ref sets are only eligible when their outbound payload is the
+		// same payload that already reached consensus.
+		if !matchesConsensusOutboundIgnoringSpentRefs(candidate, consensusTx) || len(candidate.SpentOutputRefs) == 0 {
+			continue
+		}
+
+		voters := make(map[string]struct{})
+		for _, tx := range voter.Txs {
+			if tx.IsFinal() != candidate.IsFinal() {
+				continue
+			}
+			if !tx.ObservedPubKey.Equals(candidate.ObservedPubKey) {
+				continue
+			}
+			if !tx.Tx.EqualsEx(candidate.Tx) {
+				continue
+			}
+			if !tx.HasEquivalentXMRTxKey(candidate) {
+				continue
+			}
+			// Count only observations that both agree with the candidate ref set
+			// and still bind back to the consensus outbound.
+			if !matchesConsensusOutboundIgnoringSpentRefs(tx, consensusTx) {
+				continue
+			}
+			if !common.SpentOutputRefsEqual(tx.SpentOutputRefs, candidate.SpentOutputRefs) {
+				continue
+			}
+			for _, signer := range tx.GetSigners() {
+				if !nas.IsNodeKeys(signer) {
+					continue
+				}
+				voters[signer.String()] = struct{}{}
+			}
+		}
+
+		if HasSuperMajority(len(voters), len(nas)) {
+			return candidate
+		}
+	}
+
+	return common.ObservedTx{}
+}
+
+// matchesConsensusOutboundIgnoringSpentRefs binds spent-ref metadata to the
+// already-consensed outbound payload. XMR observers can report the same
+// outbound at different external heights, so height fields are not part of
+// this metadata identity check.
+func matchesConsensusOutboundIgnoringSpentRefs(tx, consensusTx common.ObservedTx) bool {
+	if !tx.Tx.Chain.Equals(common.XMRChain) || !consensusTx.Tx.Chain.Equals(common.XMRChain) {
+		return false
+	}
+	if tx.IsFinal() != consensusTx.IsFinal() {
+		return false
+	}
+	if !tx.Tx.EqualsEx(consensusTx.Tx) {
+		return false
+	}
+	if !tx.ObservedPubKey.Equals(consensusTx.ObservedPubKey) {
+		return false
+	}
+	if !strings.EqualFold(tx.Aggregator, consensusTx.Aggregator) {
+		return false
+	}
+	if !strings.EqualFold(tx.AggregatorTarget, consensusTx.AggregatorTarget) {
+		return false
+	}
+
+	emptyAmt := cosmos.ZeroUint()
+	if tx.AggregatorTargetLimit == nil {
+		tx.AggregatorTargetLimit = &emptyAmt
+	}
+	if consensusTx.AggregatorTargetLimit == nil {
+		consensusTx.AggregatorTargetLimit = &emptyAmt
+	}
+	if !tx.AggregatorTargetLimit.Equal(*consensusTx.AggregatorTargetLimit) {
+		return false
+	}
+
+	return tx.HasEquivalentXMRTxKey(consensusTx)
+}
+
+type vaultDeficitReason string
+
+const (
+	vaultDeficitReasonOutbound              vaultDeficitReason = "outbound"
+	vaultDeficitReasonOutboundGas           vaultDeficitReason = "outbound_gas"
+	vaultDeficitReasonOutboundGasCorrection vaultDeficitReason = "outbound_gas_correction"
+	vaultDeficitReasonVaultSlash            vaultDeficitReason = "vault_slash"
+	vaultDeficitReasonVaultSlashGas         vaultDeficitReason = "vault_slash_gas"
+	vaultDeficitReasonInboundErrataReversal vaultDeficitReason = "inbound_errata_reversal"
+	vaultDeficitReasonNoVault               vaultDeficitReason = "novault"
+)
+
+// debitVault subtracts funds and handles any newly-created deficit.
+// It mutates the vault in memory; callers are still responsible for SetVault.
+// The requested coins are explicit so gas and main coin debits share the same path.
+func debitVault(ctx cosmos.Context, mgr Manager, vault *Vault, tx common.ObservedTx, requested common.Coins, reason vaultDeficitReason) {
+	if missed := vault.SubFundsWithDeficit(requested); !missed.IsEmpty() {
+		handleVaultDeficitCreated(ctx, mgr, mgr.Keeper(), *vault, tx, requested, missed, reason)
+	}
+}
+
+// handleVaultDeficitCreated emits security signals for newly-created vault deficit.
+func handleVaultDeficitCreated(ctx cosmos.Context, mgr Manager, k keeper.Keeper, vault Vault, tx common.ObservedTx, requested common.Coins, missed common.Coins, reason vaultDeficitReason) {
+	requestedByAsset := common.Coins{}.Add(requested...).NoneEmpty()
+	missedByAsset := common.Coins{}.Add(missed...).NoneEmpty()
+	for _, coin := range missedByAsset {
+		requestedAmount := requestedByAsset.GetCoin(coin.Asset).Amount
+		accountedFromCoins := common.SafeSub(requestedAmount, coin.Amount)
+		deficitTotal := vault.GetDeficit(coin.Asset).Amount
+		msg := fmt.Sprintf(
+			"vault deficit created: vault=%s tx=%s reason=%s asset=%s requested=%s accounted_from_coins=%s deficit_delta=%s deficit_total=%s",
+			vault.PubKey, tx.Tx.ID, reason, coin.Asset, requestedAmount, accountedFromCoins, coin.Amount, deficitTotal,
+		)
+		ctx.Logger().Error(msg)
+
+		// The ledger just discovered missing funds. Today this produces a log line
+		// and an on-chain security event and nothing scrapeable; the reason label
+		// discriminates benign gas rounding from funds-missing.
+		deficitLabels := []metrics.Label{
+			telemetry.NewLabel("reason", string(reason)),
+			telemetry.NewLabel("asset", coin.Asset.String()),
+		}
+		telemetry.IncrCounterWithLabels([]string{"thornode", "vault", "deficit_created"}, 1, deficitLabels)
+		telemetry.IncrCounterWithLabels([]string{"thornode", "vault", "deficit_created_amount"}, telem(coin.Amount), deficitLabels)
+
+		if err := mgr.EventMgr().EmitEvent(ctx, NewEventSecurity(tx.Tx, msg)); err != nil {
+			ctx.Logger().Error("fail to emit vault deficit security event", "error", err)
+		}
+
+		if shouldHaltForVaultDeficit(ctx, mgr, k, reason, common.NewCoin(coin.Asset, deficitTotal)) {
+			// Halt signing and trading, not the chain-scanner solvency halt. Bifrost
+			// should keep observing while THORChain stops new outbounds and trades
+			// against the affected chain until operators investigate and unhalt.
+			chain := coin.Asset.GetChain()
+			telemetry.IncrCounterWithLabels(
+				[]string{"thornode", "vault", "deficit_halt"},
+				1,
+				[]metrics.Label{
+					telemetry.NewLabel("chain", chain.String()),
+					telemetry.NewLabel("reason", string(reason)),
+				},
+			)
+			setHaltMimirIfNotPreserved(ctx, k, mgr, fmt.Sprintf(constants.MimirTemplateHaltSigning, chain))
+			setHaltMimirIfNotPreserved(ctx, k, mgr, fmt.Sprintf(constants.MimirTemplateHaltTrading, chain))
+		}
+	}
+}
+
+// shouldHaltForVaultDeficit applies reason-specific halt policy for new deficits.
+func shouldHaltForVaultDeficit(ctx cosmos.Context, mgr Manager, k keeper.Keeper, reason vaultDeficitReason, deficit common.Coin) bool {
+	switch reason {
+	case vaultDeficitReasonOutbound, vaultDeficitReasonVaultSlash, vaultDeficitReasonVaultSlashGas, vaultDeficitReasonNoVault:
+		return true
+	case vaultDeficitReasonOutboundGas, vaultDeficitReasonOutboundGasCorrection:
+		return gasDeficitCrossesHaltThreshold(ctx, mgr, k, deficit)
+	case vaultDeficitReasonInboundErrataReversal:
+		return false
+	default:
+		return true
+	}
+}
+
+// gasDeficitCrossesHaltThreshold checks the total per-asset deficit against current max gas.
+// It is only called for gas-related deficit reasons.
+func gasDeficitCrossesHaltThreshold(ctx cosmos.Context, mgr Manager, k keeper.Keeper, deficit common.Coin) bool {
+	multiplier := k.GetConfigInt64(ctx, constants.VaultDeficitGasHaltMaxGasMultiplier)
+	if multiplier <= 0 {
+		return false
+	}
+	chain := deficit.Asset.GetChain()
+	maxGasCoin, err := mgr.GasMgr().GetMaxGas(ctx, chain)
+	if err != nil {
+		ctx.Logger().Error("fail to get max gas for vault deficit halt threshold", "chain", chain, "error", err)
+		return true
+	}
+	if maxGasCoin.Amount.IsZero() {
+		ctx.Logger().Error("max gas is zero for vault deficit halt threshold", "chain", chain)
+		return false
+	}
+	threshold := maxGasCoin.Amount.MulUint64(uint64(multiplier))
+	return deficit.Amount.GTE(threshold)
+}
+
+// setHaltMimirIfNotPreserved writes ctx.BlockHeight() to a halt mimir unless
+// the operator has set the indefinite-manual sentinel (1), in which case the
+// halt is preserved. A halt scheduled for a future block is overwritten:
+// the vault deficit signals a present-time divergence that warrants halting
+// now rather than waiting for the scheduled height.
+//
+// Differs from processSolvencyAttestation's guard, which preserves future
+// halts because it can also unhalt — overwriting there would let a future
+// halt be unhalted by an earlier solvent attestation. This function only
+// sets, never unhalts, so future halts are safe to overwrite.
+func setHaltMimirIfNotPreserved(ctx cosmos.Context, k keeper.Keeper, mgr Manager, key string) {
+	haltVal, err := k.GetMimir(ctx, key)
+	if err != nil {
+		ctx.Logger().Error("fail to get mimir", "key", key, "error", err)
+	}
+	// Preserve manual indefinite halt; same-block dedupe avoids duplicate events.
+	if haltVal == 1 || haltVal == ctx.BlockHeight() {
+		return
+	}
+	k.SetMimir(ctx, key, ctx.BlockHeight())
+	ev := NewEventSetMimir(strings.ToUpper(key), strconv.FormatInt(ctx.BlockHeight(), 10))
+	if err := mgr.EventMgr().EmitEvent(ctx, ev); err != nil {
+		ctx.Logger().Error("fail to emit set_mimir event for vault deficit", "key", key, "error", err)
+	}
 }
 
 // matchedOutbound holds a matching TxOutItem with its height and hash for sorting
@@ -838,10 +1758,19 @@ func findOriginalMemoForOutbound(ctx cosmos.Context, mgr Manager, tx common.Obse
 
 	k := mgr.Keeper()
 	signingTransPeriod := k.GetConfigInt64(ctx, constants.SigningTransactionPeriod)
+	searchPeriod := signingTransPeriod
+	switch {
+	case tx.Tx.Chain.Equals(common.XMRChain):
+		searchPeriod = signingTransPeriod * xmrSigningPeriodMultiplier
+	case isObservedEVMAggregatorOutbound(tx):
+		searchPeriod = signingTransPeriod * evmAggregatorSigningPeriodMultiplier
+	case isObservedEVMTokenOutbound(tx):
+		searchPeriod = signingTransPeriod * evmTokenSigningPeriodMultiplier
+	}
 
 	// Search recent TxOut blocks for matching TxOutItem
 	// Use the same range logic as handler_common_outbound.go
-	earliestHeight := ctx.BlockHeight() - signingTransPeriod
+	earliestHeight := ctx.BlockHeight() - searchPeriod
 	if earliestHeight < 1 {
 		earliestHeight = 1
 	}
@@ -866,18 +1795,20 @@ func findOriginalMemoForOutbound(ctx cosmos.Context, mgr Manager, tx common.Obse
 			continue
 		}
 		for _, item := range txOut.TxArray {
-			// Skip if already has an OutHash (already processed)
-			if !item.OutHash.IsEmpty() {
+			// CommonOutboundTxHandler records the current observation's OutHash
+			// before memo recovery runs, so that exact item remains eligible here.
+			// Exclude every other completed item; duplicate delivery of the current
+			// transaction is stopped earlier by the ObservedTxVoter done guard.
+			if !item.OutHash.IsEmpty() && !item.OutHash.Equals(tx.Tx.ID) {
 				continue
 			}
 			if !item.Chain.Equals(tx.Tx.Chain) {
 				continue
 			}
-			if !item.ToAddress.Equals(tx.Tx.ToAddress) {
+			if !common.EquivalentAddresses(item.Chain, item.ToAddress, tx.Tx.ToAddress) {
 				continue
 			}
-			// Check both regular and EdDSA vault pubkeys (same as handler_common_outbound.go)
-			if !item.VaultPubKey.Equals(tx.ObservedPubKey) && !item.VaultPubKeyEddsa.Equals(tx.ObservedPubKey) {
+			if !txOutPubKeyMatchesObserved(tx.Tx.Chain, tx.ObservedPubKey, item) {
 				continue
 			}
 			if !item.Coin.Asset.Equals(tx.Tx.Coins[0].Asset) {
@@ -926,8 +1857,95 @@ func findOriginalMemoForOutbound(ctx cosmos.Context, mgr Manager, tx common.Obse
 	return matches[0].item.Memo
 }
 
-// fetchMemoFromReference fetches memo from reference if it's a memoless transaction
+// resolveReferenceMemo resolves and parses a memoless reference memo before
+// processing. A successful resolution updates both the stored voter and the
+// in-flight observed tx so processing, refund, and completion paths share the
+// same memo. A failed resolution empties only the voter memo to prevent
+// execution; the in-flight copy keeps the raw r:<ref> for refund events. When
+// memoless transactions are halted, an otherwise-valid reference is resolved
+// only into the in-flight copy so it can provide a safe refund address without
+// becoming executable.
+func resolveReferenceMemo(ctx cosmos.Context, mgr Manager, k keeper.Keeper, tx *common.ObservedTx, voter *ObservedTxVoter) (mem.Memo, bool) {
+	if len(tx.Tx.Coins) == 0 {
+		return mem.EmptyMemo, false
+	}
+
+	preMemo := voter.Tx.Tx.Memo
+	referenceMemo, err := ParseMemoWithTHORNames(ctx, k, preMemo)
+	if err != nil || !referenceMemo.IsType(TxReferenceReadMemo) {
+		return mem.EmptyMemo, false
+	}
+
+	asset := tx.Tx.Coins[0].Asset
+	lookup := lookupMemoFromReference(ctx, mgr, asset, voter.Tx.Tx, voter.UnfinalizedHeight)
+	resolvedMemo := lookup.memo
+	// The voter memo is the source used by processOneTxIn. Store the lookup
+	// result even when it is empty so a missing, expired, or exhausted
+	// reference cannot execute using the raw r:<ref> memo.
+	voter.Tx.Tx.Memo = resolvedMemo
+	ctx.Logger().Info("reference memo conversion", "pre", preMemo, "post", resolvedMemo, "asset", asset)
+
+	if resolvedMemo == "" {
+		// Do not also blank tx.Tx.Memo. This in-flight copy is used by refund
+		// events, where preserving the observed r:<ref> is more informative than
+		// replacing it with an empty memo and does not make the reference executable.
+		k.SetObservedTxInVoter(ctx, *voter)
+		return mem.EmptyMemo, false
+	}
+
+	parsedMemo, err := ParseMemoWithTHORNames(ctx, k, resolvedMemo)
+	if err != nil {
+		voter.Tx.Tx.Memo = ""
+		k.SetObservedTxInVoter(ctx, *voter)
+		return mem.EmptyMemo, false
+	}
+	if parsedMemo.IsOutbound() || parsedMemo.IsInternal() {
+		ctx.Logger().Error("resolved reference memo expands to a forbidden type; blanking",
+			"type", parsedMemo.GetType().String(), "tx", tx.Tx.ID.String())
+		voter.Tx.Tx.Memo = ""
+		k.SetObservedTxInVoter(ctx, *voter)
+		return mem.EmptyMemo, false
+	}
+
+	tx.Tx.Memo = resolvedMemo
+	if lookup.halted {
+		// HaltMemoless must stop execution, but sender-opaque chains still need
+		// the validated registered memo on the in-flight copy so refundTx can
+		// recover its explicit refund address. Keep the stored voter empty and
+		// do not report a successful resolution, which also prevents usage from
+		// being tracked by the caller.
+		voter.Tx.Tx.Memo = ""
+		k.SetObservedTxInVoter(ctx, *voter)
+		return mem.EmptyMemo, false
+	}
+
+	k.SetObservedTxInVoter(ctx, *voter)
+	// The caller parsed its local memo before reference resolution. Return the
+	// resolved parsed value so post-handler HasOutbound/SetDone decisions use
+	// the registered transaction type rather than TxReferenceReadMemo.
+	return parsedMemo, true
+}
+
+type referenceMemoLookupResult struct {
+	memo   string
+	halted bool
+}
+
+// fetchMemoFromReference fetches a memo without consuming the reference. Usage
+// is recorded only after the resolved transaction has been accepted for execution.
 func fetchMemoFromReference(ctx cosmos.Context, mgr Manager, asset common.Asset, tx common.Tx, txObservationHeight int64) string {
+	lookup := lookupMemoFromReference(ctx, mgr, asset, tx, txObservationHeight)
+	if lookup.halted {
+		return ""
+	}
+	return lookup.memo
+}
+
+// lookupMemoFromReference validates a reference independently from the
+// operational halt. Callers that process transactions must still reject a
+// halted lookup, while refund handling can use an otherwise-valid memo solely
+// to recover its explicit refund address.
+func lookupMemoFromReference(ctx cosmos.Context, mgr Manager, asset common.Asset, tx common.Tx, txObservationHeight int64) referenceMemoLookupResult {
 	mem, err := ParseMemoWithTHORNames(ctx, mgr.Keeper(), tx.Memo)
 	if err != nil {
 		ctx.Logger().Debug("failed to parse memo in fetchMemoFromReference", "error", err, "memo", tx.Memo, "txid", tx.ID)
@@ -935,33 +1953,34 @@ func fetchMemoFromReference(ctx cosmos.Context, mgr Manager, asset common.Asset,
 	if mem.GetType() == TxReferenceReadMemo {
 		m, ok := mem.(ReferenceReadMemo)
 		if !ok {
-			return tx.Memo
+			return referenceMemoLookupResult{memo: tx.Memo}
 		}
-		// Check if memoless transactions are halted
+
+		result := referenceMemoLookupResult{}
 		haltMemoless, err := mgr.Keeper().GetMimir(ctx, constants.HaltMemoless.String())
 		if err == nil && haltMemoless > 0 {
-			return ""
+			result.halted = true
 		}
 
 		// Check if the reference memo exists before proceeding
 		if !mgr.Keeper().ReferenceMemoExists(ctx, asset, m.Reference) {
 			ctx.Logger().Debug("reference memo not found", "reference", m.Reference, "asset", asset)
-			return ""
+			return result
 		}
 
 		refMemo, err := mgr.Keeper().GetReferenceMemo(ctx, asset, m.Reference)
 		if err != nil {
 			ctx.Logger().Error("unable to fetch pool for ref memo lookup", "error", err, "asset", asset)
-			return ""
+			return result
 		}
 
 		// Ensure transaction was observed after the reference memo was created
 		if txObservationHeight <= refMemo.Height {
 			ctx.Logger().Info("transaction observed before reference memo creation", "tx_height", txObservationHeight, "memo_height", refMemo.Height, "reference", m.Reference)
-			// Track usage for audit purposes - we intentionally track all usage attempts (including failures)
-			// to maintain a record of who tried to use the reference memo, even if the attempt was invalid.
-			trackReferenceMemoUsage(ctx, mgr, asset, tx.Memo, tx.ID)
-			return ""
+			// Do not track this attempt against the current record. Reference numbers
+			// are recycled, so the record may belong to a later registrant whose
+			// usage allowance must not be consumed by an older observation.
+			return result
 		}
 
 		ttl := mgr.Keeper().GetConfigInt64(ctx, constants.MemolessTxnTTL)
@@ -970,23 +1989,16 @@ func fetchMemoFromReference(ctx cosmos.Context, mgr Manager, asset common.Asset,
 			maxUse := mgr.Keeper().GetConfigInt64(ctx, constants.MemolessTxnMaxUse)
 			if maxUse > 0 && refMemo.GetUsageCount() >= maxUse {
 				ctx.Logger().Info("reference memo usage limit exceeded in fetchMemoFromReference", "reference", m.Reference, "usage_count", refMemo.GetUsageCount(), "max_use", maxUse)
-				// Track usage for audit purposes - we intentionally track all usage attempts (including failures)
-				// to maintain a record of who tried to use the reference memo, even if the attempt was invalid.
-				trackReferenceMemoUsage(ctx, mgr, asset, tx.Memo, tx.ID)
-				return ""
+				return result
 			}
 
-			// Track successful usage
-			trackReferenceMemoUsage(ctx, mgr, asset, tx.Memo, tx.ID)
-			return refMemo.Memo
+			result.memo = refMemo.Memo
+			return result
 		}
 
-		// Track usage for audit purposes - we intentionally track all usage attempts (including failures)
-		// to maintain a record of who tried to use the reference memo, even if the attempt was invalid (expired).
-		trackReferenceMemoUsage(ctx, mgr, asset, tx.Memo, tx.ID)
-		return ""
+		return result
 	}
-	return tx.Memo
+	return referenceMemoLookupResult{memo: tx.Memo}
 }
 
 // trackReferenceMemoUsage tracks that a transaction has used a reference memo

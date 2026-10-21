@@ -96,6 +96,11 @@ func LargeUnconfirmedInbounds(block *thorscan.BlockResponse) {
 			// since this is checked often, only update cached price every 10 blocks
 			priceHeight := block.Header.Height / 10 * 10
 
+			// skip simulation test inbounds (mocknet only)
+			if isTestMemo(tx.Tx.Memo) {
+				continue
+			}
+
 			// skip if below usd threshold
 			usdValue := util.USDValue(priceHeight, tx.Tx.Coins[0])
 			if uint64(usdValue) < config.Get().Thresholds.USDValue {
@@ -195,14 +200,16 @@ func LargeUnconfirmedInbounds(block *thorscan.BlockResponse) {
 			fields.Set("Hash", tx.Tx.ID.String())
 			fields.Set("Memo", formattedMemo)
 			fields.Set("Confirmation Time", util.FormatDuration(confirmDuration))
-			fields.Set("Amount", fmt.Sprintf(
-				"%f %s (%s)",
-				float64(tx.Tx.Coins[0].Amount.Uint64())/common.One,
-				tx.Tx.Coins[0].Asset,
-				util.USDValueString(priceHeight, tx.Tx.Coins[0]),
-			),
+			fields.Set(
+				"Amount", fmt.Sprintf(
+					"%f %s (%s)",
+					float64(tx.Tx.Coins[0].Amount.Uint64())/common.One,
+					tx.Tx.Coins[0].Asset,
+					util.USDValueString(priceHeight, tx.Tx.Coins[0]),
+				),
 			)
-			fields.Set(fmt.Sprintf("Clout (%s)", tx.Tx.FromAddress),
+			fields.Set(
+				fmt.Sprintf("Clout (%s)", tx.Tx.FromAddress),
 				fmt.Sprintf(
 					"%f RUNE (%s)",
 					float64(fromClout.Amount.Uint64())/common.One,
@@ -601,6 +608,10 @@ func scheduledOutbound(height int64, events []map[string]string) {
 	}
 	memoType := memo.TxUnknown
 	if status.Tx != nil && status.Tx.Memo != nil {
+		// skip simulation test outbounds (mocknet only)
+		if isTestMemo(*status.Tx.Memo) {
+			return
+		}
 		memoParts := strings.Split(*status.Tx.Memo, ":")
 		memoType, err = memo.StringToTxType(memoParts[0])
 		if err != nil {

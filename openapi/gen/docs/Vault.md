@@ -7,7 +7,9 @@ Name | Type | Description | Notes
 **BlockHeight** | Pointer to **int64** |  | [optional] 
 **PubKey** | Pointer to **string** |  | [optional] 
 **PubKeyEddsa** | Pointer to **string** |  | [optional] 
+**PubKeyFrost** | Pointer to **string** |  | [optional] 
 **Coins** | [**[]Coin**](Coin.md) |  | 
+**Deficit** | Pointer to [**[]Coin**](Coin.md) |  | [optional] 
 **Type** | Pointer to **string** |  | [optional] 
 **Status** | **string** |  | 
 **StatusSince** | Pointer to **int64** |  | [optional] 
@@ -114,6 +116,31 @@ SetPubKeyEddsa sets PubKeyEddsa field to given value.
 
 HasPubKeyEddsa returns a boolean if a field has been set.
 
+### GetPubKeyFrost
+
+`func (o *Vault) GetPubKeyFrost() string`
+
+GetPubKeyFrost returns the PubKeyFrost field if non-nil, zero value otherwise.
+
+### GetPubKeyFrostOk
+
+`func (o *Vault) GetPubKeyFrostOk() (*string, bool)`
+
+GetPubKeyFrostOk returns a tuple with the PubKeyFrost field if it's non-nil, zero value otherwise
+and a boolean to check if the value has been set.
+
+### SetPubKeyFrost
+
+`func (o *Vault) SetPubKeyFrost(v string)`
+
+SetPubKeyFrost sets PubKeyFrost field to given value.
+
+### HasPubKeyFrost
+
+`func (o *Vault) HasPubKeyFrost() bool`
+
+HasPubKeyFrost returns a boolean if a field has been set.
+
 ### GetCoins
 
 `func (o *Vault) GetCoins() []Coin`
@@ -133,6 +160,31 @@ and a boolean to check if the value has been set.
 
 SetCoins sets Coins field to given value.
 
+
+### GetDeficit
+
+`func (o *Vault) GetDeficit() []Coin`
+
+GetDeficit returns the Deficit field if non-nil, zero value otherwise.
+
+### GetDeficitOk
+
+`func (o *Vault) GetDeficitOk() (*[]Coin, bool)`
+
+GetDeficitOk returns a tuple with the Deficit field if it's non-nil, zero value otherwise
+and a boolean to check if the value has been set.
+
+### SetDeficit
+
+`func (o *Vault) SetDeficit(v []Coin)`
+
+SetDeficit sets Deficit field to given value.
+
+### HasDeficit
+
+`func (o *Vault) HasDeficit() bool`
+
+HasDeficit returns a boolean if a field has been set.
 
 ### GetType
 

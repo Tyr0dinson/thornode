@@ -2,10 +2,13 @@ package main
 
 import (
 	"bytes"
+	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"math/big"
 	"net/http"
 	"os"
 	"os/exec"
@@ -26,8 +29,13 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"gitlab.com/thorchain/thornode/v3/common"
+	"gitlab.com/thorchain/thornode/v3/constants"
 	openapi "gitlab.com/thorchain/thornode/v3/openapi/gen"
+	"gitlab.com/thorchain/thornode/v3/test/luvicheck"
+	"gitlab.com/thorchain/thornode/v3/x/thorchain/ebifrost"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 	"gopkg.in/yaml.v3"
 )
 
@@ -99,6 +107,8 @@ func NewOperation(opMap map[string]any) (Operation, error) {
 		op = &OpTxObservedOut{}
 	case "tx-network-fee":
 		op = &OpTxNetworkFee{}
+	case "tx-price-feed":
+		op = &OpTxPriceFeed{}
 	case "tx-node-pause-chain":
 		op = &OpTxNodePauseChain{}
 	case "tx-send":
@@ -246,7 +256,7 @@ type OpState struct {
 
 func (op *OpState) Execute(_ io.Writer, _ string, _, routine int, _ *os.Process, _ chan string) error {
 	// extract HOME from command environment
-	home := fmt.Sprintf("/%d", routine)
+	home := regtestHome(routine)
 
 	// load genesis file
 	f, err := os.OpenFile(filepath.Join(home, ".thornode/config/genesis.json"), os.O_RDWR, 0o644)
@@ -338,8 +348,15 @@ func (op *OpCheck) prefetch(routine int) {
 	}
 	req.URL.RawQuery = q.Encode()
 
-	// send request
-	op.prefetchResp, op.prefetchErr = httpClient.Do(req)
+	// Transaction indexing can briefly lag block creation on loaded CI runners.
+	for i := 0; i < 10; i++ {
+		op.prefetchResp, op.prefetchErr = httpClient.Do(req)
+		if op.prefetchErr != nil || op.prefetchResp.StatusCode != http.StatusNotFound || op.Status == http.StatusNotFound || i == 9 {
+			return
+		}
+		op.prefetchResp.Body.Close()
+		time.Sleep(100 * time.Millisecond * getTimeFactor())
+	}
 }
 
 func (op *OpCheck) Execute(out io.Writer, path string, line, routine int, _ *os.Process, logs chan string) error {
@@ -525,9 +542,10 @@ func (op *OpCheck) Execute(out io.Writer, path string, line, routine int, _ *os.
 
 type OpCreateBlocks struct {
 	OpBase         `yaml:",inline"`
-	Count          int  `json:"count"`
-	SkipInvariants bool `json:"skip_invariants"`
-	Exit           *int `json:"exit"`
+	Count          int      `json:"count"`
+	SkipInvariants bool     `json:"skip_invariants"`
+	Exit           *int     `json:"exit"`
+	LuviDrop       []string `json:"luvi_drop"`
 }
 
 func (op *OpCreateBlocks) Execute(out io.Writer, path string, _, routine int, p *os.Process, logs chan string) error {
@@ -536,9 +554,25 @@ func (op *OpCreateBlocks) Execute(out io.Writer, path string, _, routine int, p 
 	// clear existing log output
 	drainLogs(logs)
 
+	// the loop below trims path in place for blockPath; record block times
+	// under the untrimmed suite path on every iteration
+	suite := path
+
+	// record the state the blocks start from, so the first block is checked
+	// too; before the first block the state is not queryable, and that block
+	// becomes the baseline instead
+	var luviViolations []luvicheck.Violation
+	if op.Exit == nil {
+		if v, err := observeLuvi(routine, 0, &openapi.BlockResponse{}); err == nil {
+			luviViolations = append(luviViolations, v...)
+		}
+	}
+
 	for i := 0; i < op.Count; i++ {
 		// http request to localhost to unblock block creation
-		newBlockRes, err := httpClient.Get(fmt.Sprintf("http://localhost:%d/newBlock", 8080+routine))
+		blockStart := time.Now()
+		newBlockRes, err := httpClient.Get(fmt.Sprintf("http://localhost:%d/newBlock", regtestCreateBlockPort(routine)))
+		blockElapsed := time.Since(blockStart)
 		if err != nil {
 			// if exit code is not set this was unexpected
 			if op.Exit == nil {
@@ -580,11 +614,12 @@ func (op *OpCreateBlocks) Execute(out io.Writer, path string, _, routine int, p 
 			localLog.Err(err).Msg("failed to parse new block response")
 			return err
 		}
+		recordBlockTime(suite, height, blockElapsed)
 
 		// determine path for block output
 		path = strings.TrimPrefix(path, "suites/")
 		path = strings.TrimSuffix(path, filepath.Ext(path))
-		blockPath := fmt.Sprintf("/mnt/blocks/%s/%03d.json", path, height)
+		blockPath := filepath.Join(regtestMntDir(), "blocks", path, fmt.Sprintf("%03d.json", height))
 
 		// make block directory
 		err = os.MkdirAll(filepath.Dir(blockPath), 0o755)
@@ -608,8 +643,11 @@ func (op *OpCreateBlocks) Execute(out io.Writer, path string, _, routine int, p 
 		var res *http.Response
 		for j := 0; j < 5; j++ {
 			res, err = httpClient.Get(url)
-			if res.StatusCode == http.StatusOK {
-				break
+			if err == nil {
+				if res.StatusCode == http.StatusOK {
+					break
+				}
+				_ = res.Body.Close()
 			}
 			time.Sleep(100 * time.Millisecond * getTimeFactor())
 		}
@@ -661,12 +699,23 @@ func (op *OpCreateBlocks) Execute(out io.Writer, path string, _, routine int, p 
 		// close the file and response
 		_ = f.Close()
 		_ = res.Body.Close()
+
+		v, err := observeLuvi(routine, int64(height), blockResponse)
+		if err != nil {
+			localLog.Err(err).Msg("failed to observe luvi")
+			return err
+		}
+		luviViolations = append(luviViolations, v...)
 	}
 
 	// if exit code is set, this was unexpected
 	if op.Exit != nil {
 		localLog.Error().Int("expect", *op.Exit).Msg("expected exit code")
 		return errors.New("expected exit code")
+	}
+
+	if err := checkLuvi(luviViolations, op.LuviDrop); err != nil {
+		return err
 	}
 
 	if op.SkipInvariants {
@@ -829,6 +878,111 @@ func (op *OpTxNetworkFee) Execute(out io.Writer, _ string, _, routine int, _ *os
 	return sendMsg(out, routine, msg, op.Signer, "", op.Sequence, op.Gas, op, "", logs)
 }
 
+// ------------------------------ OpTxPriceFeed ------------------------------
+
+// priceFeedTime is a fixed, far-future timestamp (2100-01-01 UTC, milliseconds)
+// used for every price-feed attestation. The handler rejects feeds whose time is
+// before the block header time, so this must stay ahead of any regression block
+// time; a fixed value also keeps the signed payload deterministic across runs.
+const priceFeedTime int64 = 4102444800000
+
+// OpTxPriceFeed seeds oracle prices by sending a signed QuorumPriceFeedBatch to
+// the node's Enshrined Bifrost (ebifrost) over its localhost gRPC interface, the
+// same path bifrost uses in production. MsgPriceFeedQuorumBatch cannot be
+// broadcast as a normal tx (the InjectedTxDecorator ante rejects it) - it is only
+// admitted when the proposer injects it during PrepareProposal. ebifrost caches
+// the batch (30m TTL) and re-injects it every block, so a suite sends this once
+// and oracle prices stay live for the remainder of the run (they are otherwise
+// wiped every BeginBlock by OracleMgr). The injected tx is processed before
+// mempool txs in the block. Only symbols in the RequiredPriceFeeds constant can
+// be priced (e.g. USDC, USDT); unlisted symbols default to a zero rate, which the
+// handler discards.
+type OpTxPriceFeed struct {
+	OpBase `yaml:",inline"`
+	Prices map[string]string `json:"prices"` // symbol -> decimal price, e.g. {"USDC": "1.00"}
+	Node   string            `json:"node"`   // attesting active-node name, default "dog"
+}
+
+func (op *OpTxPriceFeed) Execute(out io.Writer, _ string, _, routine int, _ *os.Process, logs chan string) error {
+	node := op.Node
+	if node == "" {
+		node = "dog"
+	}
+
+	privKey, err := nodeSecpPrivKey(node)
+	if err != nil {
+		return err
+	}
+
+	// The handler derives the required symbols and the feed version from the
+	// RequiredPriceFeeds constant; mirror it exactly so attestations validate.
+	// (A suite that overrides RequiredPriceFeeds via mimir would change the
+	// version hash and is therefore unsupported.)
+	feedConfig := constants.NewConstantValue().GetStringValue(constants.RequiredPriceFeeds)
+	symbols := strings.Split(feedConfig, ",")
+	version := sha256.Sum256([]byte(feedConfig))
+
+	rates := make([]*common.OraclePrice, len(symbols))
+	for i, symbol := range symbols {
+		value := big.NewFloat(0)
+		if priceStr, ok := op.Prices[symbol]; ok {
+			parsed, _, parseErr := big.ParseFloat(priceStr, 10, 0, big.ToNearestEven)
+			if parseErr != nil {
+				return fmt.Errorf("failed to parse price for %s: %w", symbol, parseErr)
+			}
+			value = parsed
+		}
+		rate, rateErr := common.NewOraclePrice(value)
+		if rateErr != nil {
+			return fmt.Errorf("failed to build oracle price for %s: %w", symbol, rateErr)
+		}
+		rates[i] = rate
+	}
+
+	priceFeed := &common.PriceFeed{
+		Version: version[:8],
+		Time:    priceFeedTime,
+		Rates:   rates,
+	}
+
+	signBz, err := priceFeed.GetSignablePayload()
+	if err != nil {
+		return err
+	}
+	signature, err := privKey.Sign(signBz)
+	if err != nil {
+		return err
+	}
+
+	batch := &common.QuorumPriceFeedBatch{
+		QuorumPriceFeeds: []*common.QuorumPriceFeed{{
+			PriceFeed: priceFeed,
+			Attestations: []*common.Attestation{{
+				PubKey:    privKey.PubKey().Bytes(),
+				Signature: signature,
+			}},
+		}},
+	}
+
+	// Deliver to the node's ebifrost gRPC (same container, port offset by routine).
+	addr := fmt.Sprintf("127.0.0.1:%d", regtestEbifrostPort(routine))
+	conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		return fmt.Errorf("failed to dial ebifrost at %s: %w", addr, err)
+	}
+	defer conn.Close()
+
+	grpcCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if _, err = ebifrost.NewLocalhostBifrostClient(conn).SendQuorumPriceFeedBatch(grpcCtx, batch); err != nil {
+		return fmt.Errorf("failed to send price feed to ebifrost: %w", err)
+	}
+
+	localLog := log.Output(zerolog.ConsoleWriter{Out: out})
+	localLog.Debug().Str("node", node).Msg("price feed sent to ebifrost")
+	return nil
+}
+
 // ------------------------------ OpTxNodePauseChain ------------------------------
 
 type OpTxNodePauseChain struct {
@@ -970,10 +1124,13 @@ type OpTxTssPool struct {
 	Gas                  *int64           `json:"gas"`
 	PoolPubKeyEddsa      common.PubKey    `json:"pool_pub_key_eddsa"`
 	KeysharesBackupEddsa []byte           `json:"keyshares_backup_eddsa"`
+	KeysharesBackupFrost []byte           `json:"keyshares_backup_frost"`
+	PoolPubKeyFrost      common.PubKey    `json:"pool_pub_key_frost"`
+	ObservedMoneroHeight int64            `json:"observed_monero_height"`
 }
 
 func (op *OpTxTssPool) Execute(out io.Writer, _ string, _, routine int, _ *os.Process, logs chan string) error {
-	msg, err := types.NewMsgTssPoolV2(op.PubKeys, op.PoolPubKey, op.Secp256K1Signature, op.KeysharesBackup, op.KeygenType, op.Height, op.Blame, op.Chains, op.Signer, op.KeygenTime, op.PoolPubKeyEddsa, op.KeysharesBackupEddsa)
+	msg, err := types.NewMsgTssPoolV3(op.PubKeys, op.PoolPubKey, op.Secp256K1Signature, op.KeysharesBackup, op.KeygenType, op.Height, op.Blame, op.Chains, op.Signer, op.KeygenTime, op.PoolPubKeyEddsa, op.KeysharesBackupEddsa, op.KeysharesBackupFrost, op.PoolPubKeyFrost, op.ObservedMoneroHeight)
 	if err != nil {
 		return err
 	}
@@ -1305,4 +1462,19 @@ func sendMsg(out io.Writer, routine int, msg sdk.Msg, signer sdk.AccAddress, txM
 	}
 
 	return nil
+}
+
+// recordBlockTime appends "suite,height,microseconds" to REGTEST_BLOCK_TIMES when
+// set, for perf analysis of per-block processing time (see scripts/perf).
+func recordBlockTime(suite string, height int, elapsed time.Duration) {
+	path := os.Getenv("REGTEST_BLOCK_TIMES")
+	if path == "" {
+		return
+	}
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	_, _ = fmt.Fprintf(f, "%s,%d,%d\n", suite, height, elapsed.Microseconds())
 }

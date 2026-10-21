@@ -3,12 +3,13 @@ package thorchain
 import (
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
-	"gitlab.com/thorchain/thornode/v3/constants"
 )
 
 type NetworkMgrDummy struct {
 	nas          NodeAccounts
+	xmrNas       NodeAccounts
 	vault        Vault
+	rotated      Vaults
 	keygens      []NodeAccounts
 	keygenChains [][]common.Chain
 }
@@ -38,12 +39,18 @@ func (vm *NetworkMgrDummy) TriggerKeygen(_ cosmos.Context, nas NodeAccounts, tar
 	return nil
 }
 
-func (vm *NetworkMgrDummy) RotateVault(ctx cosmos.Context, vault Vault) error {
-	vm.vault = vault
+func (vm *NetworkMgrDummy) TriggerXMRKeygen(_ cosmos.Context, nas NodeAccounts) error {
+	vm.xmrNas = nas
 	return nil
 }
 
-func (vm *NetworkMgrDummy) UpdateNetwork(ctx cosmos.Context, constAccessor constants.ConstantValues, gasManager GasManager, eventMgr EventManager) error {
+func (vm *NetworkMgrDummy) RotateVault(ctx cosmos.Context, vault Vault) error {
+	vm.vault = vault
+	vm.rotated = append(vm.rotated, vault)
+	return nil
+}
+
+func (vm *NetworkMgrDummy) UpdateNetwork(ctx cosmos.Context, mgr Manager) error {
 	return nil
 }
 

@@ -107,8 +107,26 @@ func (h PriceFeedQuorumBatchHandler) handle(ctx cosmos.Context, msg types.MsgPri
 
 	trackPricePerNode := config.GetThornode().Telemetry.PricePerNode
 
+	// each feed carries one attestation over its own payload; verify them
+	// all concurrently up front, skipping feeds handleQuorumPriceFeed rejects
+	// before it reaches signature verification
+	checks := make([]attestationCheck, 0, len(msg.QuoPriceFeeds))
 	for _, qpf := range msg.QuoPriceFeeds {
-		pf, err := h.handleQuorumPriceFeed(ctx, qpf, activeNodes)
+		if qpf == nil || qpf.PriceFeed == nil || len(qpf.Attestations) != 1 ||
+			!bytes.Equal(qpf.PriceFeed.Version, h.requiredVersion) ||
+			len(qpf.PriceFeed.Rates) != len(h.requiredSymbols) {
+			continue
+		}
+		signBz, err := qpf.PriceFeed.GetSignablePayload()
+		if err != nil {
+			continue
+		}
+		checks = append(checks, attestationCheck{att: qpf.Attestations[0], signBz: signBz})
+	}
+	sigs := preverifyAttestations(activeNodes, checks)
+
+	for _, qpf := range msg.QuoPriceFeeds {
+		pf, err := h.handleQuorumPriceFeed(ctx, qpf, activeNodes, sigs)
 		if err != nil {
 			ctx.Logger().Error("fail to handle QuorumPriceFeed", "error", err)
 			continue
@@ -127,9 +145,11 @@ func (h PriceFeedQuorumBatchHandler) handle(ctx cosmos.Context, msg types.MsgPri
 			if rate.Decimals > 18 {
 				continue
 			}
-			pricesByAsset[symbol][nodeAddress] = rate.BigFloat()
+			price := rate.BigFloat()
+			pricesByAsset[symbol][nodeAddress] = price
 			if found {
-				pricesByBondAddress[bondAddress][symbol] = rate.BigFloat()
+				// Copy keeps the value, precision, mode and accuracy
+				pricesByBondAddress[bondAddress][symbol] = new(big.Float).Copy(price)
 			}
 		}
 	}
@@ -161,16 +181,43 @@ func (h PriceFeedQuorumBatchHandler) handle(ctx cosmos.Context, msg types.MsgPri
 			}
 		}
 
+		// Emitted before the supermajority guard so a symbol that is about to fail
+		// still reports its count. priceByNode was already topped up by the
+		// bond-address fallback above, so this is the number HasSuperMajority sees.
+		// The denominator is the existing thornode_node_count{status="Active"}.
+		telemetry.SetGaugeWithLabels(
+			[]string{"thornode", "price_feed", "nodes_reporting"},
+			float32(len(priceByNode)),
+			[]metrics.Label{telemetry.NewLabel("symbol", symbol)},
+		)
+
 		if !HasSuperMajority(len(priceByNode), len(activeNodes)) {
 			ctx.Logger().Error(
 				"not enough prices for asset", "asset", symbol,
-				"num_prices", len(priceByNode), "num_nodes", len(activeNodes))
+				"num_prices", len(priceByNode), "num_nodes", len(activeNodes),
+			)
+			telemetry.IncrCounterWithLabels(
+				[]string{"thornode", "oracle", "price_skipped"},
+				1,
+				[]metrics.Label{
+					telemetry.NewLabel("symbol", symbol),
+					telemetry.NewLabel("reason", "no_supermajority"),
+				},
+			)
 			continue
 		}
 
 		deviation, median, err := common.MedianAbsoluteDeviation(allPricesForSymbol)
 		if err != nil {
 			ctx.Logger().Error("fail to compute deviation", "err", err)
+			telemetry.IncrCounterWithLabels(
+				[]string{"thornode", "oracle", "price_skipped"},
+				1,
+				[]metrics.Label{
+					telemetry.NewLabel("symbol", symbol),
+					telemetry.NewLabel("reason", "deviation_error"),
+				},
+			)
 			continue
 		}
 
@@ -211,39 +258,75 @@ func (h PriceFeedQuorumBatchHandler) handleQuorumPriceFeed(
 	ctx cosmos.Context,
 	qpf *common.QuorumPriceFeed,
 	active NodeAccounts,
+	sigs attestationSigs,
 ) (*PriceFeed, error) {
 	if qpf.PriceFeed == nil {
+		telemetry.IncrCounterWithLabels(
+			[]string{"thornode", "price_feed", "rejected"},
+			1,
+			[]metrics.Label{telemetry.NewLabel("reason", "nil_price_feed")},
+		)
 		return nil, fmt.Errorf("PriceFeed cannot be nil")
 	}
 	pf := qpf.PriceFeed
 
 	if !bytes.Equal(pf.Version, h.requiredVersion) {
+		telemetry.IncrCounterWithLabels(
+			[]string{"thornode", "price_feed", "rejected"},
+			1,
+			[]metrics.Label{telemetry.NewLabel("reason", "version_mismatch")},
+		)
 		return nil, fmt.Errorf("version does not match required version")
 	}
 
 	if len(pf.Rates) != len(h.requiredSymbols) {
+		telemetry.IncrCounterWithLabels(
+			[]string{"thornode", "price_feed", "rejected"},
+			1,
+			[]metrics.Label{telemetry.NewLabel("reason", "rate_count_mismatch")},
+		)
 		return nil, fmt.Errorf("amount of rates does not match required symbols")
 	}
 
 	signBz, err := pf.GetSignablePayload()
 	if err != nil {
+		telemetry.IncrCounterWithLabels(
+			[]string{"thornode", "price_feed", "rejected"},
+			1,
+			[]metrics.Label{telemetry.NewLabel("reason", "payload_marshal")},
+		)
 		return nil, fmt.Errorf("fail to get signable price feed payload: %v", err)
 	}
 
 	atts := qpf.Attestations
 
 	if len(atts) == 0 {
+		telemetry.IncrCounterWithLabels(
+			[]string{"thornode", "price_feed", "rejected"},
+			1,
+			[]metrics.Label{telemetry.NewLabel("reason", "no_attestation")},
+		)
 		return nil, fmt.Errorf("no attestation found")
 	}
 
 	if len(atts) > 1 {
+		telemetry.IncrCounterWithLabels(
+			[]string{"thornode", "price_feed", "rejected"},
+			1,
+			[]metrics.Label{telemetry.NewLabel("reason", "multiple_attestations")},
+		)
 		return nil, fmt.Errorf("found more than one attestation")
 	}
 
 	att := atts[0]
 
-	_, err = verifyQuorumAttestation(active, signBz, att)
+	_, err = verifyQuorumAttestation(active, signBz, att, sigs)
 	if err != nil {
+		telemetry.IncrCounterWithLabels(
+			[]string{"thornode", "price_feed", "rejected"},
+			1,
+			[]metrics.Label{telemetry.NewLabel("reason", "invalid_attestation")},
+		)
 		return nil, fmt.Errorf("fail to verify quorum price feed attestation: %v", err)
 	}
 
@@ -253,6 +336,11 @@ func (h PriceFeedQuorumBatchHandler) handleQuorumPriceFeed(
 	timestamp := time.UnixMilli(pf.Time)
 
 	if timestamp.Before(ctx.HeaderInfo().Time) {
+		telemetry.IncrCounterWithLabels(
+			[]string{"thornode", "price_feed", "rejected"},
+			1,
+			[]metrics.Label{telemetry.NewLabel("reason", "stale")},
+		)
 		return nil, fmt.Errorf("price feed too old: %s", timestamp)
 	}
 

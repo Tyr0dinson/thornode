@@ -102,6 +102,7 @@ Class | Method | HTTP request | Description
 *NetworkApi* | [**InboundAddresses**](docs/NetworkApi.md#inboundaddresses) | **Get** /thorchain/inbound_addresses | 
 *NetworkApi* | [**Lastblock**](docs/NetworkApi.md#lastblock) | **Get** /thorchain/lastblock | 
 *NetworkApi* | [**LastblockChain**](docs/NetworkApi.md#lastblockchain) | **Get** /thorchain/lastblock/{chain} | 
+*NetworkApi* | [**Logs**](docs/NetworkApi.md#logs) | **Get** /thorchain/logs | 
 *NetworkApi* | [**Network**](docs/NetworkApi.md#network) | **Get** /thorchain/network | 
 *NetworkApi* | [**OutboundFeeAsset**](docs/NetworkApi.md#outboundfeeasset) | **Get** /thorchain/outbound_fee/{asset} | 
 *NetworkApi* | [**OutboundFees**](docs/NetworkApi.md#outboundfees) | **Get** /thorchain/outbound_fees | 
@@ -126,6 +127,7 @@ Class | Method | HTTP request | Description
 *QueueApi* | [**QueueOutbound**](docs/QueueApi.md#queueoutbound) | **Get** /thorchain/queue/outbound | 
 *QueueApi* | [**QueueScheduled**](docs/QueueApi.md#queuescheduled) | **Get** /thorchain/queue/scheduled | 
 *QueueApi* | [**QueueSwap**](docs/QueueApi.md#queueswap) | **Get** /thorchain/queue/swap | 
+*QueueApi* | [**QueueSwapPaginated**](docs/QueueApi.md#queueswappaginated) | **Get** /thorchain/queue/swap/paginated | 
 *QuoteApi* | [**Quoteswap**](docs/QuoteApi.md#quoteswap) | **Get** /thorchain/quote/swap | 
 *RUNEPoolApi* | [**RunePool**](docs/RUNEPoolApi.md#runepool) | **Get** /thorchain/runepool | 
 *RUNEPoolApi* | [**RuneProvider**](docs/RUNEPoolApi.md#runeprovider) | **Get** /thorchain/rune_provider/{address} | 
@@ -139,6 +141,8 @@ Class | Method | HTTP request | Description
 *SecuredAssetsApi* | [**SecuredAssets**](docs/SecuredAssetsApi.md#securedassets) | **Get** /thorchain/securedassets | 
 *SmartContractsApi* | [**ContractInfo**](docs/SmartContractsApi.md#contractinfo) | **Get** /thorchain/contract/{address} | 
 *SmartContractsApi* | [**ContractInfos**](docs/SmartContractsApi.md#contractinfos) | **Get** /thorchain/contracts | 
+*StableReserveApi* | [**StableReserve**](docs/StableReserveApi.md#stablereserve) | **Get** /thorchain/stable_reserve | 
+*StableReserveApi* | [**StableReserveContributor**](docs/StableReserveApi.md#stablereservecontributor) | **Get** /thorchain/stable_reserve/contributor/{asset}/{address} | 
 *StreamingSwapApi* | [**StreamSwap**](docs/StreamingSwapApi.md#streamswap) | **Get** /thorchain/swap/streaming/{hash} | 
 *StreamingSwapApi* | [**StreamSwaps**](docs/StreamingSwapApi.md#streamswaps) | **Get** /thorchain/swaps/streaming | 
 *SupplyApi* | [**Supply**](docs/SupplyApi.md#supply) | **Get** /thorchain/supply | 
@@ -146,6 +150,7 @@ Class | Method | HTTP request | Description
 *SwapApi* | [**SwapDetails**](docs/SwapApi.md#swapdetails) | **Get** /thorchain/queue/swap/details/{tx_id} | 
 *TCYClaimersApi* | [**TcyClaimer**](docs/TCYClaimersApi.md#tcyclaimer) | **Get** /thorchain/tcy_claimer/{address} | 
 *TCYClaimersApi* | [**TcyClaimers**](docs/TCYClaimersApi.md#tcyclaimers) | **Get** /thorchain/tcy_claimers | 
+*TCYClaimersApi* | [**TcyProtocolOwned**](docs/TCYClaimersApi.md#tcyprotocolowned) | **Get** /thorchain/tcy_protocol_owned | 
 *TCYStakersApi* | [**TcyStaker**](docs/TCYStakersApi.md#tcystaker) | **Get** /thorchain/tcy_staker/{address} | 
 *TCYStakersApi* | [**TcyStakers**](docs/TCYStakersApi.md#tcystakers) | **Get** /thorchain/tcy_stakers | 
 *TSSApi* | [**KeygenPubkey**](docs/TSSApi.md#keygenpubkey) | **Get** /thorchain/keygen/{height}/{pubkey} | 
@@ -165,6 +170,7 @@ Class | Method | HTTP request | Description
 *TransactionsApi* | [**TxStatus**](docs/TransactionsApi.md#txstatus) | **Get** /thorchain/tx/status/{hash} | 
 *VaultsApi* | [**Asgard**](docs/VaultsApi.md#asgard) | **Get** /thorchain/vaults/asgard | 
 *VaultsApi* | [**Vault**](docs/VaultsApi.md#vault) | **Get** /thorchain/vault/{pubkey} | 
+*VaultsApi* | [**VaultKeysignParty**](docs/VaultsApi.md#vaultkeysignparty) | **Get** /thorchain/vault/{pubkey}/keysign_party | 
 *VaultsApi* | [**VaultPubkeys**](docs/VaultsApi.md#vaultpubkeys) | **Get** /thorchain/vaults/pubkeys | 
 *VaultsApi* | [**VaultSolvency**](docs/VaultsApi.md#vaultsolvency) | **Get** /thorchain/vaults/solvency | 
 *VaultsApi* | [**Yggdrasil**](docs/VaultsApi.md#yggdrasil) | **Get** /thorchain/vaults/yggdrasil | 
@@ -215,6 +221,7 @@ Class | Method | HTTP request | Description
  - [KeygenResponse](docs/KeygenResponse.md)
  - [KeysignInfo](docs/KeysignInfo.md)
  - [KeysignMetrics](docs/KeysignMetrics.md)
+ - [KeysignPartyResponse](docs/KeysignPartyResponse.md)
  - [KeysignResponse](docs/KeysignResponse.md)
  - [LastBlock](docs/LastBlock.md)
  - [LimitSwapWithDetails](docs/LimitSwapWithDetails.md)
@@ -223,6 +230,7 @@ Class | Method | HTTP request | Description
  - [LiquidityProvider](docs/LiquidityProvider.md)
  - [LiquidityProviderSummary](docs/LiquidityProviderSummary.md)
  - [LockedSupply](docs/LockedSupply.md)
+ - [LogEntry](docs/LogEntry.md)
  - [MetricsResponse](docs/MetricsResponse.md)
  - [MimirNodesResponse](docs/MimirNodesResponse.md)
  - [MimirVote](docs/MimirVote.md)
@@ -242,6 +250,7 @@ Class | Method | HTTP request | Description
  - [OutboundDelayStage](docs/OutboundDelayStage.md)
  - [OutboundFee](docs/OutboundFee.md)
  - [OutboundSignedStage](docs/OutboundSignedStage.md)
+ - [OutputRef](docs/OutputRef.md)
  - [POL](docs/POL.md)
  - [PaginationMeta](docs/PaginationMeta.md)
  - [Ping](docs/Ping.md)
@@ -262,16 +271,22 @@ Class | Method | HTTP request | Description
  - [ReferenceMemoResponse](docs/ReferenceMemoResponse.md)
  - [Saver](docs/Saver.md)
  - [SecuredAssetResponse](docs/SecuredAssetResponse.md)
+ - [StableReserveContributorResponse](docs/StableReserveContributorResponse.md)
+ - [StableReserveInventory](docs/StableReserveInventory.md)
+ - [StableReserveResponse](docs/StableReserveResponse.md)
+ - [StableReserveStreamingSwap](docs/StableReserveStreamingSwap.md)
  - [StreamingStatus](docs/StreamingStatus.md)
  - [StreamingSwap](docs/StreamingSwap.md)
  - [SupplyResponse](docs/SupplyResponse.md)
  - [SwapDetailsResponse](docs/SwapDetailsResponse.md)
  - [SwapFinalisedStage](docs/SwapFinalisedStage.md)
+ - [SwapQueuePaginatedResponse](docs/SwapQueuePaginatedResponse.md)
  - [SwapState](docs/SwapState.md)
  - [SwapStatus](docs/SwapStatus.md)
  - [SwapperCloutResponse](docs/SwapperCloutResponse.md)
  - [TCYClaimer](docs/TCYClaimer.md)
  - [TCYClaimerSummary](docs/TCYClaimerSummary.md)
+ - [TCYProtocolOwnedResponse](docs/TCYProtocolOwnedResponse.md)
  - [TCYStaker](docs/TCYStaker.md)
  - [TCYStakerSummary](docs/TCYStakerSummary.md)
  - [Thorname](docs/Thorname.md)

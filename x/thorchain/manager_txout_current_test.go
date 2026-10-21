@@ -7,11 +7,37 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/constants"
+	ttypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
 type TxOutStoreSuite struct{}
 
 var _ = Suite(&TxOutStoreSuite{})
+
+type recordingEventMgr struct {
+	*DummyEventMgr
+	events []EmitEventItem
+}
+
+func newRecordingEventMgr() *recordingEventMgr {
+	return &recordingEventMgr{DummyEventMgr: NewDummyEventMgr()}
+}
+
+func (m *recordingEventMgr) EmitEvent(ctx cosmos.Context, evt EmitEventItem) error {
+	m.events = append(m.events, evt)
+	return nil
+}
+
+func (m *recordingEventMgr) securityEvents() []*ttypes.EventSecurity {
+	events := make([]*ttypes.EventSecurity, 0)
+	for _, evt := range m.events {
+		securityEvent, ok := evt.(*ttypes.EventSecurity)
+		if ok {
+			events = append(events, securityEvent)
+		}
+	}
+	return events
+}
 
 func (s TxOutStoreSuite) TestTakeAffiliateFee(c *C) {
 	w := getHandlerTestWrapper(c, 1, true, true)
@@ -201,6 +227,27 @@ func (s TxOutStoreSuite) TestEndBlock(c *C) {
 	c.Check(items[0].MaxGas[0].Amount.Uint64(), Equals, uint64(56250), Commentf("%d", items[0].MaxGas[0].Amount.Uint64()))
 }
 
+func (s TxOutStoreSuite) TestNativeTxOutWithoutActiveVaults(c *C) {
+	w := getHandlerTestWrapper(c, 1, true, false)
+	txOutStore := newTxOutStorage(w.keeper, w.mgr.GetConstants(), w.mgr.EventMgr(), w.mgr.GasMgr())
+
+	active, err := w.keeper.GetAsgardVaultsByStatus(w.ctx, ActiveVault)
+	c.Assert(err, IsNil)
+	c.Assert(active, HasLen, 0)
+
+	toi := TxOutItem{
+		Chain:     common.THORChain,
+		ToAddress: GetRandomRUNEAddress(),
+		InHash:    GetRandomTxHash(),
+		Coin:      common.NewCoin(common.RuneAsset(), cosmos.NewUint(common.One)),
+		Memo:      "RESERVE",
+	}
+
+	err = txOutStore.nativeTxOut(w.ctx, w.mgr, toi)
+	c.Assert(err, NotNil)
+	c.Check(err.Error(), Equals, "dev error: no pubkey for native txn")
+}
+
 func (s TxOutStoreSuite) TestAddOutTxItem(c *C) {
 	w := getHandlerTestWrapper(c, 1, true, true)
 	vault := GetRandomVault()
@@ -216,7 +263,7 @@ func (s TxOutStoreSuite) TestAddOutTxItem(c *C) {
 	c.Assert(err, IsNil)
 	outboundFeeSpentRune, err := w.keeper.GetOutboundFeeSpentRune(w.ctx, common.ETHAsset)
 	c.Assert(err, IsNil)
-	c.Check(initialOutboundFeeWithheldRune.String(), Equals, "689655172414")
+	c.Check(initialOutboundFeeWithheldRune.String(), Equals, w.keeper.GetSurplusForTargetMultiplier(w.ctx, cosmos.NewUint(10_000)).String())
 	c.Check(outboundFeeSpentRune.String(), Equals, "0")
 
 	acc1 := GetRandomValidatorNode(NodeActive)
@@ -248,6 +295,8 @@ func (s TxOutStoreSuite) TestAddOutTxItem(c *C) {
 		Coin:      common.NewCoin(common.DOGEAsset, cosmos.NewUint(20*common.One)),
 	}
 	txOutStore := newTxOutStorage(w.keeper, w.mgr.GetConstants(), w.mgr.EventMgr(), w.mgr.GasMgr())
+	expectedOutboundFee, err := txOutStore.gasManager.GetAssetOutboundFee(w.ctx, item.Coin.Asset, false)
+	c.Assert(err, IsNil)
 	ok, err := txOutStore.TryAddTxOutItem(w.ctx, w.mgr, item, cosmos.ZeroUint())
 	c.Assert(err, IsNil)
 	c.Assert(ok, Equals, true)
@@ -255,7 +304,7 @@ func (s TxOutStoreSuite) TestAddOutTxItem(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(msgs, HasLen, 1)
 	c.Assert(msgs[0].VaultPubKey.String(), Equals, vault.PubKey.String())
-	c.Assert(msgs[0].Coin.Amount.Equal(cosmos.NewUint(1999962500)), Equals, true, Commentf("%d", msgs[0].Coin.Amount.Uint64()))
+	c.Assert(msgs[0].Coin.Amount.Equal(item.Coin.Amount.Sub(expectedOutboundFee)), Equals, true, Commentf("%d", msgs[0].Coin.Amount.Uint64()))
 
 	// Gas withheld should be updated
 	outboundFeeWithheldRune, err := w.keeper.GetOutboundFeeWithheldRune(w.ctx, common.DOGEAsset)
@@ -263,8 +312,7 @@ func (s TxOutStoreSuite) TestAddOutTxItem(c *C) {
 	outboundFeeSpentRune, err = w.keeper.GetOutboundFeeSpentRune(w.ctx, common.DOGEAsset)
 	c.Assert(err, IsNil)
 
-	// After slippage the 75000 fee is 74999 in RUNE.
-	c.Check(outboundFeeWithheldRune.Sub(initialOutboundFeeWithheldRune).String(), Equals, "37500")
+	c.Check(outboundFeeWithheldRune.Sub(initialOutboundFeeWithheldRune).String(), Equals, expectedOutboundFee.String())
 	c.Check(outboundFeeSpentRune.String(), Equals, "0")
 
 	// Should get acc1. Acc3 hasn't signed and acc1 now has the highest amount
@@ -287,7 +335,8 @@ func (s TxOutStoreSuite) TestAddOutTxItem(c *C) {
 	// Outbound fee withheld RUNE should be updated
 	outboundFeeWithheldRune, err = w.keeper.GetOutboundFeeWithheldRune(w.ctx, common.DOGEAsset)
 	c.Assert(err, IsNil)
-	c.Assert(outboundFeeWithheldRune.Sub(initialOutboundFeeWithheldRune).String(), Equals, "75000")
+	c.Assert(outboundFeeWithheldRune.Sub(initialOutboundFeeWithheldRune).String(), Equals, expectedOutboundFee.MulUint64(2).String())
+	beforeLargeOutboundFeeWithheldRune := outboundFeeWithheldRune
 
 	item = TxOutItem{
 		Chain:     common.DOGEChain,
@@ -296,18 +345,25 @@ func (s TxOutStoreSuite) TestAddOutTxItem(c *C) {
 		Coin:      common.NewCoin(common.DOGEAsset, cosmos.NewUint(1000*common.One)),
 	}
 	txOutStore.ClearOutboundItems(w.ctx)
+	expectedLargeOutboundRuneFee, err := txOutStore.gasManager.GetAssetOutboundFee(w.ctx, item.Coin.Asset, true)
+	c.Assert(err, IsNil)
 	success, err = txOutStore.TryAddTxOutItem(w.ctx, w.mgr, item, cosmos.ZeroUint())
 	c.Assert(err, IsNil)
 	c.Assert(success, Equals, true)
-	msgs, err = txOutStore.GetOutboundItems(w.ctx)
-	c.Assert(err, IsNil)
+	for height := w.ctx.BlockHeight(); height <= w.ctx.BlockHeight()+100; height++ {
+		msgs, err = txOutStore.GetOutboundItems(w.ctx.WithBlockHeight(height))
+		c.Assert(err, IsNil)
+		if len(msgs) > 0 {
+			break
+		}
+	}
 	c.Assert(msgs, HasLen, 1)
 	c.Check(msgs[0].VaultPubKey.String(), Equals, vault.PubKey.String())
 
 	// Outbound fee withheld RUNE should be updated
 	outboundFeeWithheldRune, err = w.keeper.GetOutboundFeeWithheldRune(w.ctx, common.DOGEAsset)
 	c.Assert(err, IsNil)
-	c.Assert(outboundFeeWithheldRune.Sub(initialOutboundFeeWithheldRune).String(), Equals, "112499")
+	c.Assert(outboundFeeWithheldRune.Sub(beforeLargeOutboundFeeWithheldRune).String(), Equals, expectedLargeOutboundRuneFee.String())
 
 	networkFee := NewNetworkFee(common.BCHChain, 1, 10)
 	c.Assert(w.keeper.SaveNetworkFee(w.ctx, common.BCHChain, networkFee), IsNil)
@@ -325,14 +381,21 @@ func (s TxOutStoreSuite) TestAddOutTxItem(c *C) {
 	result, err := txOutStore.TryAddTxOutItem(w.ctx, w.mgr, item, cosmos.ZeroUint())
 	c.Assert(err, IsNil)
 	c.Assert(result, Equals, true)
-	msgs, err = txOutStore.GetOutboundItems(w.ctx)
-	c.Assert(err, IsNil)
+	for height := w.ctx.BlockHeight(); height <= w.ctx.BlockHeight()+100; height++ {
+		msgs, err = txOutStore.GetOutboundItems(w.ctx.WithBlockHeight(height))
+		c.Assert(err, IsNil)
+		if len(msgs) > 0 {
+			break
+		}
+	}
+	c.Assert(msgs, HasLen, 1)
 	// this should be a mocknet address
 	c.Assert(msgs[0].ToAddress.String(), Equals, "qzg5mkh7rkw3y8kw47l3rrnvhmenvctmd5yg6hxe64")
 
 	// outbound originating from a pool should pay fee from asgard to reserve
 	FundModule(c, w.ctx, w.keeper, AsgardName, 1000*common.One)
-	testAndCheckModuleBalances(c, w.ctx, w.keeper,
+	testAndCheckModuleBalances(
+		c, w.ctx, w.keeper,
 		func() {
 			item = TxOutItem{
 				Chain:     common.THORChain,
@@ -356,7 +419,8 @@ func (s TxOutStoreSuite) TestAddOutTxItem(c *C) {
 
 	// outbound originating from bond should pay fee from bond to reserve
 	FundModule(c, w.ctx, w.keeper, BondName, 1000*common.One)
-	testAndCheckModuleBalances(c, w.ctx, w.keeper,
+	testAndCheckModuleBalances(
+		c, w.ctx, w.keeper,
 		func() {
 			item = TxOutItem{
 				ModuleName: BondName,
@@ -427,6 +491,8 @@ func (s TxOutStoreSuite) TestAddOutTxItem_OutboundHeightDoesNotGetOverride(c *C)
 		Coin:      common.NewCoin(common.DOGEAsset, cosmos.NewUint(80*common.One)),
 	}
 	txOutStore := newTxOutStorage(w.keeper, w.mgr.GetConstants(), w.mgr.EventMgr(), w.mgr.GasMgr())
+	expectedOutboundFee, err := txOutStore.gasManager.GetAssetOutboundFee(w.ctx, item.Coin.Asset, false)
+	c.Assert(err, IsNil)
 	ok, err := txOutStore.TryAddTxOutItem(w.ctx, w.mgr, item, cosmos.ZeroUint())
 	c.Assert(err, IsNil)
 	c.Assert(ok, Equals, true)
@@ -440,7 +506,7 @@ func (s TxOutStoreSuite) TestAddOutTxItem_OutboundHeightDoesNotGetOverride(c *C)
 	c.Assert(err, IsNil)
 	c.Assert(msgs, HasLen, 1)
 	c.Assert(msgs[0].VaultPubKey.String(), Equals, vault.PubKey.String())
-	c.Assert(msgs[0].Coin.Amount.Equal(cosmos.NewUint(7999962500)), Equals, true, Commentf("%d", msgs[0].Coin.Amount.Uint64()))
+	c.Assert(msgs[0].Coin.Amount.Equal(item.Coin.Amount.Sub(expectedOutboundFee)), Equals, true, Commentf("%d", msgs[0].Coin.Amount.Uint64()))
 
 	// make sure outbound_height has been set correctly
 	afterVoter, err := w.keeper.GetObservedTxInVoter(w.ctx, inTxID)
@@ -677,6 +743,8 @@ func (s TxOutStoreSuite) TestAddOutTxItem_MultipleOutboundWillNotBeScheduledAtTh
 		Coin:      common.NewCoin(common.DOGEAsset, cosmos.NewUint(10*common.One)),
 	}
 
+	expectedImmediateFee, err := txOutStore.gasManager.GetAssetOutboundFee(w.ctx, item1.Coin.Asset, false)
+	c.Assert(err, IsNil)
 	ok, err = txOutStore.TryAddTxOutItem(w.ctx, w.mgr, item1, cosmos.ZeroUint())
 	c.Assert(err, IsNil)
 	c.Assert(ok, Equals, true)
@@ -686,14 +754,14 @@ func (s TxOutStoreSuite) TestAddOutTxItem_MultipleOutboundWillNotBeScheduledAtTh
 	c.Assert(msgs, HasLen, 1)
 	//  the smaller outbound hasn't been delayed
 	c.Assert(msgs[0].VaultPubKey.String(), Equals, vault.PubKey.String())
-	c.Assert(msgs[0].Coin.Amount.Equal(cosmos.NewUint(999962500)), Equals, true, Commentf("%d", msgs[0].Coin.Amount.Uint64()))
+	c.Assert(msgs[0].Coin.Amount.Equal(item1.Coin.Amount.Sub(expectedImmediateFee)), Equals, true, Commentf("%d", msgs[0].Coin.Amount.Uint64()))
 
 	newCtx := w.ctx.WithBlockHeight(4)
 	msgs, err = txOutStore.GetOutboundItems(newCtx)
 	c.Assert(err, IsNil)
 	c.Assert(msgs, HasLen, 1) // the delayed outbound's height has been reached
 	c.Assert(msgs[0].VaultPubKey.String(), Equals, vault.PubKey.String())
-	c.Assert(msgs[0].Coin.Amount.Equal(cosmos.NewUint(7999962500)), Equals, true, Commentf("%d", msgs[0].Coin.Amount.Uint64()))
+	c.Assert(msgs[0].Coin.Amount.Equal(item.Coin.Amount.Sub(expectedImmediateFee)), Equals, true, Commentf("%d", msgs[0].Coin.Amount.Uint64()))
 
 	// make sure outbound_height has been set correctly (to the furthest-future outbound height)
 	afterVoter, err := w.keeper.GetObservedTxInVoter(w.ctx, inTxID)
@@ -738,25 +806,30 @@ func (s TxOutStoreSuite) TestAddOutTxItemInteractionWithPool(c *C) {
 		Coin:      common.NewCoin(common.DOGEAsset, cosmos.NewUint(20*common.One)),
 	}
 	txOutStore := newTxOutStorage(w.keeper, w.mgr.GetConstants(), w.mgr.EventMgr(), w.mgr.GasMgr())
+	expectedOutboundFee, err := txOutStore.gasManager.GetAssetOutboundFee(w.ctx, item.Coin.Asset, false)
+	c.Assert(err, IsNil)
 	success, err := txOutStore.TryAddTxOutItem(w.ctx, w.mgr, item, cosmos.ZeroUint())
 	c.Assert(err, IsNil)
 	c.Assert(success, Equals, true)
-	msgs, err := txOutStore.GetOutboundItems(w.ctx)
-	c.Assert(err, IsNil)
+	var msgs []TxOutItem
+	for height := w.ctx.BlockHeight(); height <= w.ctx.BlockHeight()+5; height++ {
+		msgs, err = txOutStore.GetOutboundItems(w.ctx.WithBlockHeight(height))
+		c.Assert(err, IsNil)
+		if len(msgs) > 0 {
+			break
+		}
+	}
 	c.Assert(msgs, HasLen, 1)
-	c.Assert(msgs[0].Coin.Amount.Equal(cosmos.NewUint(1999962500)), Equals, true, Commentf("%d", msgs[0].Coin.Amount.Uint64()))
+	c.Assert(msgs[0].Coin.Amount.Equal(item.Coin.Amount.Sub(expectedOutboundFee)), Equals, true, Commentf("%d", msgs[0].Coin.Amount.Uint64()))
 	pool, err = w.keeper.GetPool(w.ctx, common.DOGEAsset)
 	c.Assert(err, IsNil)
-	// Let:
-	//   R_0 := the initial pool Rune balance
-	//   A_0 := the initial pool Asset balance
-	//   a   := the gas amount in Asset
-	// Then the expected pool balances are:
-	//   A_1 = A_0 + a = 50e8 + (20e8 - 1999925000) = 5000075000
-	//   R_1 = R_0 - R_0 * a / (A_0 + a)  // slip formula
-	//       = 100e8 - 100e8 * (20e8 - 1999925000) / (50e8 + (20e8 - 1999925000)) = 9999850002
-	c.Assert(pool.BalanceAsset.Equal(cosmos.NewUint(5000037500)), Equals, true, Commentf("%d", pool.BalanceAsset.Uint64()))
-	c.Assert(pool.BalanceRune.Equal(cosmos.NewUint(9999925001)), Equals, true, Commentf("%d", pool.BalanceRune.Uint64()))
+	expectedPoolAsset := cosmos.NewUint(50 * common.One).Add(expectedOutboundFee)
+	expectedPoolRune := common.SafeSub(
+		cosmos.NewUint(100*common.One),
+		common.GetSafeShare(expectedOutboundFee, expectedPoolAsset, cosmos.NewUint(100*common.One)),
+	)
+	c.Assert(pool.BalanceAsset.Equal(expectedPoolAsset), Equals, true, Commentf("%d", pool.BalanceAsset.Uint64()))
+	c.Assert(pool.BalanceRune.Equal(expectedPoolRune), Equals, true, Commentf("%d", pool.BalanceRune.Uint64()))
 }
 
 func (s TxOutStoreSuite) TestAddOutTxItemSendingFromRetiredVault(c *C) {
@@ -1005,6 +1078,82 @@ func (s TxOutStoreSuite) TestAddOutTxItem_SecurityVersusOutboundNumber(c *C) {
 	}
 	// There are no scheduled outbounds.
 	c.Assert(scheduledOutbounds, HasLen, 0)
+}
+
+// TestPrepareTxOutItemExcludesCompromisedVaults verifies initial outbound
+// scheduling filters flagged vaults before both Active and Retiring candidates
+// are considered. The compromised vaults are funded enough to be selected if the
+// filter is accidentally removed.
+func (s TxOutStoreSuite) TestPrepareTxOutItemExcludesCompromisedVaults(c *C) {
+	w := getHandlerTestWrapper(c, 1, true, true)
+
+	activeCompromisedPubKey := GetRandomPubKey()
+	retiringCompromisedPubKey := GetRandomPubKey()
+	retiringSafePubKey := GetRandomPubKey()
+
+	activeCompromisedVault := GetRandomVault()
+	activeCompromisedVault.PubKey = activeCompromisedPubKey
+	activeCompromisedVault.Type = AsgardVault
+	activeCompromisedVault.Status = ActiveVault
+	activeCompromisedVault.Coins = common.Coins{
+		common.NewCoin(common.ETHAsset, cosmos.NewUint(10000*common.One)),
+	}
+	c.Assert(w.keeper.SetVault(w.ctx, activeCompromisedVault), IsNil)
+
+	retiringCompromisedVault := GetRandomVault()
+	retiringCompromisedVault.PubKey = retiringCompromisedPubKey
+	retiringCompromisedVault.Type = AsgardVault
+	retiringCompromisedVault.Status = RetiringVault
+	retiringCompromisedVault.Coins = common.Coins{
+		common.NewCoin(common.ETHAsset, cosmos.NewUint(10000*common.One)),
+	}
+	c.Assert(w.keeper.SetVault(w.ctx, retiringCompromisedVault), IsNil)
+
+	retiringSafeVault := GetRandomVault()
+	retiringSafeVault.PubKey = retiringSafePubKey
+	retiringSafeVault.Type = AsgardVault
+	retiringSafeVault.Status = RetiringVault
+	retiringSafeVault.Coins = common.Coins{
+		common.NewCoin(common.ETHAsset, cosmos.NewUint(5000*common.One)),
+	}
+	c.Assert(w.keeper.SetVault(w.ctx, retiringSafeVault), IsNil)
+
+	pool, err := w.keeper.GetPool(w.ctx, common.ETHAsset)
+	c.Assert(err, IsNil)
+	pool.Asset = common.ETHAsset
+	pool.BalanceAsset = cosmos.NewUint(50000 * common.One)
+	pool.BalanceRune = cosmos.NewUint(50000 * common.One)
+	pool.LPUnits = cosmos.NewUint(50000 * common.One)
+	c.Assert(w.keeper.SetPool(w.ctx, pool), IsNil)
+
+	w.keeper.SetMimir(w.ctx, compromisedVaultMimirKeyPrefix+activeCompromisedVault.PubKey.String(), 1)
+	w.keeper.SetMimir(w.ctx, compromisedVaultMimirKeyPrefix+retiringCompromisedVault.PubKey.String(), 1)
+
+	inTxID := GetRandomTxHash()
+	voter := NewObservedTxVoter(inTxID, common.ObservedTxs{
+		common.ObservedTx{
+			Tx:             GetRandomTx(),
+			Status:         common.Status_incomplete,
+			BlockHeight:    1,
+			Signers:        []string{w.activeNodeAccount.NodeAddress.String()},
+			KeysignMs:      0,
+			FinaliseHeight: 1,
+		},
+	})
+	w.keeper.SetObservedTxInVoter(w.ctx, voter)
+
+	txOutStore := newTxOutStorage(w.keeper, w.mgr.GetConstants(), w.mgr.EventMgr(), w.mgr.GasMgr())
+	outputs, _, err := txOutStore.prepareTxOutItem(w.ctx, TxOutItem{
+		Chain:     common.ETHChain,
+		ToAddress: GetRandomETHAddress(),
+		InHash:    inTxID,
+		Coin:      common.NewCoin(common.ETHAsset, cosmos.NewUint(100*common.One)),
+	})
+	c.Assert(err, IsNil)
+	c.Assert(outputs, HasLen, 1)
+	c.Assert(outputs[0].VaultPubKey.Equals(activeCompromisedPubKey), Equals, false)
+	c.Assert(outputs[0].VaultPubKey.Equals(retiringCompromisedPubKey), Equals, false)
+	c.Assert(outputs[0].VaultPubKey.Equals(retiringSafePubKey), Equals, true)
 }
 
 func (s TxOutStoreSuite) TestAddOutTxItem_VaultStatusVersusOutboundNumber(c *C) {
@@ -1472,7 +1621,8 @@ func (s TxOutStoreSuite) TestDiscoverOutboundsFallbackVault(c *C) {
 	// The unit tests above verify selectFallbackVault works correctly,
 	// and this test verifies that DiscoverOutbounds calls it when no outputs are created.
 
-	txOutStore := newTxOutStorage(w.keeper, w.mgr.GetConstants(), w.mgr.EventMgr(), w.mgr.GasMgr())
+	eventMgr := newRecordingEventMgr()
+	txOutStore := newTxOutStorage(w.keeper, w.mgr.GetConstants(), eventMgr, w.mgr.GasMgr())
 
 	// Create a TxOutItem for testing
 	toi := TxOutItem{
@@ -1499,6 +1649,9 @@ func (s TxOutStoreSuite) TestDiscoverOutboundsFallbackVault(c *C) {
 	c.Assert(outputs[0].VaultPubKey.Equals(vault.PubKey), Equals, true, Commentf("Expected output to use original vault"))
 	// The remaining should be zero because the entire amount was assigned to the fallback vault
 	c.Assert(remaining.IsZero(), Equals, true, Commentf("Expected zero remaining, got %s", remaining.String()))
+	securityEvents := eventMgr.securityEvents()
+	c.Assert(securityEvents, HasLen, 1)
+	c.Assert(securityEvents[0].Msg, Equals, "outbound scheduled with insufficient available vault balance")
 }
 
 func (s TxOutStoreSuite) TestDiscoverOutboundsRemainderAddedToSmallestOutput(c *C) {
@@ -1523,7 +1676,8 @@ func (s TxOutStoreSuite) TestDiscoverOutboundsRemainderAddedToSmallestOutput(c *
 	}
 	c.Assert(mgr.Keeper().SetVault(ctx, vault2), IsNil)
 
-	txOutStore := newTxOutStorage(mgr.Keeper(), mgr.GetConstants(), mgr.EventMgr(), mgr.GasMgr())
+	eventMgr := newRecordingEventMgr()
+	txOutStore := newTxOutStorage(mgr.Keeper(), mgr.GetConstants(), eventMgr, mgr.GasMgr())
 
 	// Request more ETH than both vaults combined have
 	// Total available: 30 + 50 = 80 ETH, requesting 100 ETH
@@ -1576,4 +1730,167 @@ func (s TxOutStoreSuite) TestDiscoverOutboundsRemainderAddedToSmallestOutput(c *
 
 	// Remaining should be zero since we added the remainder to the smallest output
 	c.Assert(remaining.IsZero(), Equals, true, Commentf("Expected zero remaining, got %s", remaining.String()))
+	securityEvents := eventMgr.securityEvents()
+	c.Assert(securityEvents, HasLen, 1)
+	c.Assert(securityEvents[0].Msg, Equals, "outbound scheduled with insufficient available vault balance")
+}
+
+func (s TxOutStoreSuite) TestDiscoverOutboundsRagnarokGasAssetDoesNotReserveGasTwice(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	vault := GetRandomVault()
+	vault.Type = AsgardVault
+	vault.Status = ActiveVault
+	vault.Coins = common.Coins{
+		common.NewCoin(common.ETHAsset, cosmos.NewUint(100*common.One)),
+	}
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+
+	eventMgr := newRecordingEventMgr()
+	txOutStore := newTxOutStorage(mgr.Keeper(), mgr.GetConstants(), eventMgr, mgr.GasMgr())
+	toi := TxOutItem{
+		Chain:     common.ETHChain,
+		ToAddress: GetRandomETHAddress(),
+		InHash:    common.BlankTxID,
+		Coin:      common.NewCoin(common.ETHAsset, cosmos.NewUint(100*common.One)),
+		Memo:      NewRagnarokMemo(ctx.BlockHeight()).String(),
+	}
+
+	outputs, remaining := txOutStore.DiscoverOutbounds(
+		ctx,
+		cosmos.NewUint(1000),
+		common.NewCoin(common.ETHAsset, cosmos.NewUint(common.One)),
+		toi,
+		Vaults{vault},
+	)
+
+	c.Assert(outputs, HasLen, 1)
+	c.Assert(outputs[0].Coin.Amount.Equal(cosmos.NewUint(100*common.One)), Equals, true)
+	c.Assert(remaining.IsZero(), Equals, true)
+	c.Assert(eventMgr.securityEvents(), HasLen, 0)
+}
+
+func (s TxOutStoreSuite) TestDiscoverOutboundsRagnarokFallbackDoesNotEmitSecurity(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	vault := GetRandomVault()
+	vault.Type = AsgardVault
+	vault.Status = RetiringVault
+	vault.Coins = common.Coins{
+		common.NewCoin(common.TRXAsset, cosmos.NewUint(224139306140)),
+	}
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+
+	pendingDeductedVault := vault
+	pendingDeductedVault.Coins = common.Coins{
+		common.NewCoin(common.TRXAsset, cosmos.ZeroUint()),
+	}
+
+	eventMgr := newRecordingEventMgr()
+	txOutStore := newTxOutStorage(mgr.Keeper(), mgr.GetConstants(), eventMgr, mgr.GasMgr())
+	toi := TxOutItem{
+		Chain:     common.TRONChain,
+		ToAddress: common.Address("TJSU21dCbB6uJXSANMydvRvDzr3kuuuKxS"),
+		InHash:    common.BlankTxID,
+		Coin:      common.NewCoin(common.TRXAsset, cosmos.NewUint(224139306140)),
+		Memo:      NewRagnarokMemo(ctx.BlockHeight()).String(),
+	}
+
+	outputs, remaining := txOutStore.DiscoverOutbounds(
+		ctx,
+		cosmos.NewUint(1000),
+		common.NewCoin(common.TRXAsset, cosmos.NewUint(2800000)),
+		toi,
+		Vaults{pendingDeductedVault},
+	)
+
+	c.Assert(outputs, HasLen, 1)
+	c.Assert(outputs[0].VaultPubKey.Equals(vault.PubKey), Equals, true)
+	c.Assert(outputs[0].Coin.Amount.Equal(toi.Coin.Amount), Equals, true)
+	c.Assert(remaining.IsZero(), Equals, true)
+	c.Assert(eventMgr.securityEvents(), HasLen, 0)
+}
+
+func (s TxOutStoreSuite) TestDiscoverOutboundsRagnarokXRPLeavesReserve(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	vault := GetRandomVault()
+	vault.Type = AsgardVault
+	vault.Status = RetiringVault
+	vault.Coins = common.Coins{
+		common.NewCoin(common.XRPAsset, cosmos.NewUint(250660398000)),
+	}
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+
+	eventMgr := newRecordingEventMgr()
+	txOutStore := newTxOutStorage(mgr.Keeper(), mgr.GetConstants(), eventMgr, mgr.GasMgr())
+	toi := TxOutItem{
+		Chain:     common.XRPChain,
+		ToAddress: common.Address("rpfiEuZjKgjqchVeq5qBEUH9zWeo2xoN9p"),
+		InHash:    common.BlankTxID,
+		Coin:      common.NewCoin(common.XRPAsset, cosmos.NewUint(250660397985)),
+		Memo:      NewRagnarokMemo(ctx.BlockHeight()).String(),
+	}
+
+	outputs, remaining := txOutStore.DiscoverOutbounds(
+		ctx,
+		cosmos.NewUint(1000),
+		common.NewCoin(common.XRPAsset, cosmos.NewUint(15)),
+		toi,
+		Vaults{vault},
+	)
+
+	c.Assert(outputs, HasLen, 1)
+	c.Assert(outputs[0].Coin.Amount.Equal(cosmos.NewUint(250560398000)), Equals, true)
+	c.Assert(remaining.IsZero(), Equals, true)
+	c.Assert(eventMgr.securityEvents(), HasLen, 0)
+}
+
+// TestDiscoverOutboundsRagnarokSOLLeavesRentReserve covers the SOL Ragnarok
+// failure seen in simulation: txout discovery scheduled a near-full SOL sweep,
+// the transaction signed, and Solana rejected every broadcast because the
+// source account would fall below rent-exempt balance. The fix must cap only the
+// sweep amount and then treat the left-behind rent reserve as an intentional
+// Ragnarok residual rather than a security/recovery deficit.
+func (s TxOutStoreSuite) TestDiscoverOutboundsRagnarokSOLLeavesRentReserve(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	vault := GetRandomVault()
+	vault.Type = AsgardVault
+	vault.Status = RetiringVault
+	vault.Coins = common.Coins{
+		common.NewCoin(common.SOLAsset, cosmos.NewUint(2524534019)),
+	}
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+
+	eventMgr := newRecordingEventMgr()
+	txOutStore := newTxOutStorage(mgr.Keeper(), mgr.GetConstants(), eventMgr, mgr.GasMgr())
+
+	// This request mirrors the stuck RAGNAROK:2520 item from the default
+	// simulation run: it leaves only gas-sized dust unless txout discovery first
+	// subtracts the same SOL account reserve used by migration.
+	toi := TxOutItem{
+		Chain:     common.SOLChain,
+		ToAddress: common.Address("AfzXzUhKw57x9Pub9Dj4CxYovYCktSrXY7mcr1XEcftY"),
+		InHash:    common.BlankTxID,
+		Coin:      common.NewCoin(common.SOLAsset, cosmos.NewUint(2524532519)),
+		Memo:      NewRagnarokMemo(ctx.BlockHeight()).String(),
+	}
+
+	outputs, remaining := txOutStore.DiscoverOutbounds(
+		ctx,
+		cosmos.NewUint(1000),
+		common.NewCoin(common.SOLAsset, cosmos.NewUint(750)),
+		toi,
+		Vaults{vault},
+	)
+
+	// The scheduled outbound is capped to the vault balance minus the chain dust
+	// threshold, matching migration's SOL account-reserve convention. The
+	// leftover Ragnarok residual is intentionally zeroed instead of being routed
+	// into fallback/security handling.
+	c.Assert(outputs, HasLen, 1)
+	c.Assert(outputs[0].Coin.Amount.Equal(cosmos.NewUint(2524434019)), Equals, true)
+	c.Assert(remaining.IsZero(), Equals, true)
+	c.Assert(eventMgr.securityEvents(), HasLen, 0)
 }

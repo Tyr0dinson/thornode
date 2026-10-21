@@ -45,6 +45,9 @@ func (p *AttestationStatePool[T]) NewAttestationState(initialItem T) *Attestatio
 	state.quorumAttestationsSent = time.Time{}
 	state.lastAttestationsSent = time.Time{}
 	state.lastCommittedAttestation = time.Time{}
+	state.spentRefsApplied = false
+	state.spentRefsNextRetryAt = time.Time{}
+	state.spentRefsRetryDelay = 0
 
 	return state
 }
@@ -57,6 +60,9 @@ func (p *AttestationStatePool[T]) PutAttestationState(state *AttestationState[T]
 	state.quorumAttestationsSent = time.Time{}
 	state.lastAttestationsSent = time.Time{}
 	state.lastCommittedAttestation = time.Time{}
+	state.spentRefsApplied = false
+	state.spentRefsNextRetryAt = time.Time{}
+	state.spentRefsRetryDelay = 0
 	// Return to pool
 	p.Put(state)
 }
@@ -81,7 +87,7 @@ type AttestMessage interface {
 
 // Ensure all required types implement AttestableItem
 var (
-	_ AttestableItem = &common.ObservedTx{}
+	_ AttestableItem = &attestableObservedTx{}
 	_ AttestableItem = &common.NetworkFee{}
 	_ AttestableItem = &common.Solvency{}
 	_ AttestableItem = &common.ErrataTx{}
@@ -143,6 +149,15 @@ type AttestationState[T AttestableItem] struct {
 	lastAttestationsSent     time.Time
 	lastCommittedAttestation time.Time
 
+	// spentRefsApplied tracks whether XMR spent output refs have been
+	// successfully applied to the sidecar for this tx. Failed imports are left
+	// retryable so later peer attestations can recover transient sidecar races.
+	spentRefsApplied bool
+	// Ordinary XMR observation reconciliation uses a per-state schedule so a
+	// failed or sub-quorum item cannot repeat Thornode RPCs on every tick.
+	spentRefsNextRetryAt time.Time
+	spentRefsRetryDelay  time.Duration
+
 	mu sync.Mutex
 }
 
@@ -153,11 +168,11 @@ func (s *AttestationState[T]) AddAttestation(attestation *common.Attestation) er
 	}
 
 	for _, item := range s.attestations {
-		if bytes.Equal(item.attestation.Signature, attestation.Signature) {
-			// already have the signature, ignore
-			return nil
-		}
 		if bytes.Equal(item.attestation.PubKey, attestation.PubKey) {
+			if bytes.Equal(item.attestation.Signature, attestation.Signature) {
+				// The same signer and signature already verified this item's payload.
+				return nil
+			}
 			// Unexpected: we should never have a different signature from the same pubkey for the same item
 			return fmt.Errorf("signature already present for %s", attestation.PubKey)
 		}
@@ -190,7 +205,7 @@ func (s *AttestationState[T]) UnsentAttestations() []*common.Attestation {
 	return unsent
 }
 
-// AttestationsCopy returns a deep copy of all attestations
+// AttestationsCopy returns deep copies of uncommitted attestations only.
 func (s *AttestationState[T]) AttestationsCopy() []*common.Attestation {
 	atts := make([]*common.Attestation, 0, len(s.attestations))
 	for _, item := range s.attestations {
@@ -198,6 +213,20 @@ func (s *AttestationState[T]) AttestationsCopy() []*common.Attestation {
 			// skip committed attestations
 			continue
 		}
+		atts = append(atts, &common.Attestation{
+			PubKey:    append([]byte(nil), item.attestation.PubKey...),
+			Signature: append([]byte(nil), item.attestation.Signature...),
+		})
+	}
+	return atts
+}
+
+// VerifiedAttestationsCopy returns deep copies of every verified attestation,
+// including committed shares. Use it for proof and authority checks, not
+// delivery bookkeeping. The caller must hold the state lock.
+func (s *AttestationState[T]) VerifiedAttestationsCopy() []*common.Attestation {
+	atts := make([]*common.Attestation, 0, len(s.attestations))
+	for _, item := range s.attestations {
 		atts = append(atts, &common.Attestation{
 			PubKey:    append([]byte(nil), item.attestation.PubKey...),
 			Signature: append([]byte(nil), item.attestation.Signature...),
@@ -244,6 +273,15 @@ func (s *AttestationState[T]) ShouldSendLate(minTimeBetweenAttestations time.Dur
 
 // ExpiredAfterQuorum determines if the attestation state can be pruned
 func (s *AttestationState[T]) ExpiredAfterQuorum(lateObserveTimeout, nonQuorumTimeout time.Duration) bool {
+	if observed, ok := any(s.Item).(*attestableObservedTx); ok && observed != nil && observed.ObservedTx != nil &&
+		!observed.inbound && observed.Tx.Chain.Equals(common.XMRChain) && len(observed.SpentOutputRefs) > 0 && !s.spentRefsApplied {
+		// Delivery or commitment does not complete source-vault authorization.
+		// Ordinary shares are not archived in the historical certificate store,
+		// so retain pending proof through retries, with an absolute lifetime that
+		// later sends and commits cannot extend.
+		return time.Since(s.firstAttestationObserved) > nonQuorumTimeout
+	}
+
 	if !s.lastAttestationsSent.IsZero() && time.Since(s.lastAttestationsSent) > nonQuorumTimeout {
 		// we haven't received a new attestation in a long time, stop tracking this item
 		return true

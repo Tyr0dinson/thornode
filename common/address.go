@@ -20,7 +20,7 @@ import (
 	ltcchaincfg "github.com/ltcsuite/ltcd/chaincfg"
 	"github.com/ltcsuite/ltcutil"
 	"github.com/mr-tron/base58"
-	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/zecutil"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/zcash"
 	"gitlab.com/thorchain/thornode/v3/common/crypto/ss58"
 
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
@@ -172,7 +172,7 @@ func IsValidZECAddress(address string) bool {
 				network = "testnet3"
 			}
 
-			_, err := zecutil.DecodeAddress(address, network)
+			_, err := zcash.DecodeAddress(address, network)
 			return err == nil
 		}
 	}
@@ -381,6 +381,16 @@ func (addr Address) GetChain() Chain {
 	return EmptyChain
 }
 
+// IsCurrentNetwork checks network compatibility for an already validated address.
+// ZEC requires an exact network match; other chains use SoftEquals.
+func (addr Address) IsCurrentNetwork(chain Chain) bool {
+	if chain.Equals(ZECChain) {
+		_, err := zcash.DecodeAddress(addr.String(), ZECNetworkName())
+		return err == nil
+	}
+	return CurrentChainNetwork.SoftEquals(addr.GetNetwork(chain))
+}
+
 func (addr Address) GetNetwork(chain Chain) ChainNetwork {
 	currentNetwork := CurrentChainNetwork
 	mainNetPredicate := func() ChainNetwork {
@@ -542,6 +552,40 @@ func (addr Address) Equals(addr2 Address) bool {
 	return strings.EqualFold(addr.String(), addr2.String())
 }
 
+// AddressEquals compares addresses using the identity rules of their chain.
+// Monero base58 is case-sensitive; legacy chains retain Address.Equals.
+func AddressEquals(chain Chain, addr, addr2 Address) bool {
+	if chain.Equals(XMRChain) {
+		return addr.String() == addr2.String()
+	}
+	return addr.Equals(addr2)
+}
+
+// EquivalentAddresses reports whether two addresses name the same destination
+// on the given chain, allowing for chain specific alternative encodings of the
+// same address.
+//
+// Zcash TEX and P2PKH encodings identify the same destination.
+func EquivalentAddresses(chain Chain, addr, addr2 Address) bool {
+	if AddressEquals(chain, addr, addr2) {
+		return true
+	}
+	if !chain.Equals(ZECChain) {
+		return false
+	}
+	return texAddressOrSelf(addr).Equals(texAddressOrSelf(addr2))
+}
+
+// texAddressOrSelf returns the tex encoding of a Zcash P2PKH address, or the
+// address unchanged when it has no tex form (it may already be one).
+func texAddressOrSelf(addr Address) Address {
+	tex, err := addr.ToTexAddress()
+	if err != nil {
+		return addr
+	}
+	return tex
+}
+
 func (addr Address) IsEmpty() bool {
 	return strings.TrimSpace(addr.String()) == ""
 }
@@ -581,6 +625,46 @@ func (addr Address) MappedAccAddress() (cosmos.AccAddress, error) {
 	return cosmos.AccAddressFromBech32(encoded)
 }
 
+// Canonical normalizes supported alternative address encodings to the form used
+// internally for storage and matching. Chain-specific conversions belong here
+// so callers do not need to handle each encoding themselves.
+//
+// It currently converts Zcash TEX addresses to transparent addresses on the
+// current network. If no conversion applies or conversion fails, it returns the
+// original address. It does not validate addresses.
+func (addr Address) Canonical() Address {
+	if strings.HasPrefix(addr.String(), "tex") {
+		if converted, err := ConvertToZECTransparentAddress(addr); err == nil {
+			return converted
+		}
+	}
+	return addr
+}
+
+// ConvertToZECTransparentAddress converts a Zcash TEX address to its Base58Check
+// P2PKH encoding on the current network: t1 on mainnet, or tm on mocknet.
+func ConvertToZECTransparentAddress(addr Address) (Address, error) {
+	addrStr := addr.String()
+	if !strings.HasPrefix(addrStr, "tex") {
+		return NoAddress, fmt.Errorf("address(%s) is not a TEX address", addr)
+	}
+
+	zecAddr, err := zcash.DecodeAddress(addrStr, ZECNetworkName())
+	if err != nil {
+		return NoAddress, fmt.Errorf("fail to decode ZEC address(%s): %w", addr, err)
+	}
+	return Address(zecAddr.String()), nil
+}
+
+// ZECNetworkName returns the Zcash address network for the current build:
+// testnet3 on mocknet, mainnet otherwise.
+func ZECNetworkName() string {
+	if CurrentChainNetwork == MockNet {
+		return "testnet3"
+	}
+	return "mainnet"
+}
+
 // ToTexAddress returns the tex address for a Zcash P2PKH address
 func (addr Address) ToTexAddress() (Address, error) {
 	addrStr := addr.String()
@@ -593,17 +677,13 @@ func (addr Address) ToTexAddress() (Address, error) {
 		return NoAddress, fmt.Errorf("%s is no P2PKH address", addrStr)
 	}
 
-	var network, prefix string
-	switch CurrentChainNetwork {
-	case MockNet:
-		network = "testnet3"
+	network := ZECNetworkName()
+	prefix := "tex"
+	if network == "testnet3" {
 		prefix = "textest"
-	case MainNet, StageNet, ChainNet:
-		network = "mainnet"
-		prefix = "tex"
 	}
 
-	zecAddr, err := zecutil.DecodeAddress(addrStr, network)
+	zecAddr, err := zcash.DecodeAddress(addrStr, network)
 	if err != nil {
 		return NoAddress, err
 	}

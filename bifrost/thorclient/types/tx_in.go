@@ -2,12 +2,30 @@ package types
 
 import (
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"strings"
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	mem "gitlab.com/thorchain/thornode/v3/x/thorchain/memo"
+)
+
+var (
+	// ErrObservedTxOrphaned identifies the exact observation location removed by
+	// an errata handoff. Durable scanners may acknowledge that location, but must
+	// allow the same transaction ID to be observed at a new canonical location.
+	ErrObservedTxOrphaned = errors.New("observed transaction location is orphaned")
+
+	// ErrObservedTxPermanentlyReverted distinguishes THORChain's permanent
+	// TxID-level Reverted barrier from transient Observer rejection. Durable chain
+	// scanners must quarantine the exact TxID before acknowledging this rejection.
+	ErrObservedTxPermanentlyReverted = errors.New("observed transaction is permanently reverted")
+
+	// ErrObservedTxNotApplicable identifies a durable observation which is valid
+	// but this node is not authorized to attest. Scanners may acknowledge it
+	// without quarantining the transaction or retaining it for futile replay.
+	ErrObservedTxNotApplicable = errors.New("observed transaction is not applicable to this node")
 )
 
 type TxIn struct {
@@ -20,21 +38,50 @@ type TxIn struct {
 	// whether this originated from a "instant observation" - e.g. by a member of the signing party
 	// immediately after signing, and also has incorrect gas, requiring a re-observation to correct.
 	AllowFutureObservation bool `json:"allow_future_observation"`
+
+	// Persisted is an optional local durability acknowledgement. Chain scanners
+	// with a restart journal use it to retain replay data until BlockScanner has
+	// queued the observations and durably advanced its scan position.
+	// Producers must provide a buffered channel with room for one result.
+	// Observer does not block if the acknowledgement receiver is unavailable.
+	Persisted chan error `json:"-"`
+	// FinalizePersistence atomically publishes any chain-scanner replay metadata
+	// after Observer persistence succeeds but before BlockScanner advances its
+	// scan position. A crash in between only causes a safe duplicate rescan.
+	FinalizePersistence func() error `json:"-"`
+	// AbortPersistence releases an in-process replay delivery reservation after
+	// Observer persistence fails; the synced replay journal remains for retry.
+	AbortPersistence func() `json:"-"`
 }
 
 type TxInItem struct {
-	BlockHeight           int64         `json:"block_height"`
-	Tx                    string        `json:"tx"`
-	Memo                  string        `json:"memo"`
-	Sender                string        `json:"sender"`
-	To                    string        `json:"to"` // to address
-	Coins                 common.Coins  `json:"coins"`
-	Gas                   common.Gas    `json:"gas"`
-	ObservedVaultPubKey   common.PubKey `json:"observed_vault_pub_key"`
-	Aggregator            string        `json:"aggregator"`
-	AggregatorTarget      string        `json:"aggregator_target"`
-	AggregatorTargetLimit *cosmos.Uint  `json:"aggregator_target_limit"`
-	CommittedUnFinalised  bool          `json:"committed_pre_final"`
+	BlockHeight           int64               `json:"block_height"`
+	Tx                    string              `json:"tx"`
+	Memo                  string              `json:"memo"`
+	Sender                string              `json:"sender"`
+	To                    string              `json:"to"` // to address
+	Coins                 common.Coins        `json:"coins"`
+	Gas                   common.Gas          `json:"gas"`
+	ObservedVaultPubKey   common.PubKey       `json:"observed_vault_pub_key"`
+	Aggregator            string              `json:"aggregator"`
+	AggregatorTarget      string              `json:"aggregator_target"`
+	AggregatorTargetLimit *cosmos.Uint        `json:"aggregator_target_limit"`
+	SpentOutputRefs       []*common.OutputRef `json:"spent_output_refs,omitempty"`
+	TxKey                 string              `json:"tx_key,omitempty"`
+	// SolNonce is the post-tx state of the sending vault's durable-nonce account,
+	// attached by the SOL scanner to observations of vault txs that created or
+	// advanced it. Deliberately NOT part of Equals/EqualsObservedTx: dedup and the
+	// commit-event match must not depend on it (a committed consensus tx can carry a
+	// different observer's value, and the deck item must still clear).
+	SolNonce             *common.SolNonceUpdate `json:"sol_nonce,omitempty"`
+	CommittedUnFinalised bool                   `json:"committed_pre_final"`
+
+	// OnObservedTxStored and OnObservedTxRejected are local-only handoff
+	// callbacks used by scanners which retain a durable replay record until the
+	// observer has durably accepted (or explicitly rejected) the observation.
+	// They must never be serialized into observer storage or sent over the wire.
+	OnObservedTxStored   func()      `json:"-"`
+	OnObservedTxRejected func(error) `json:"-"`
 }
 type TxInStatus byte
 
@@ -97,6 +144,9 @@ func (t *TxInItem) Equals(other *TxInItem) bool {
 	if !t.ObservedVaultPubKey.Equals(other.ObservedVaultPubKey) {
 		return false
 	}
+	if normalizeString(t.TxKey) != normalizeString(other.TxKey) {
+		return false
+	}
 	return true
 }
 
@@ -129,10 +179,21 @@ func (t *TxInItem) EqualsObservedTx(other common.ObservedTx) bool {
 	if !t.ObservedVaultPubKey.Equals(other.ObservedPubKey) {
 		return false
 	}
+	if normalizeString(t.TxKey) != normalizeString(other.XmrTxKey) {
+		return false
+	}
 	return true
 }
 
 func (t *TxInItem) Copy() *TxInItem {
+	var refs []*common.OutputRef
+	if len(t.SpentOutputRefs) > 0 {
+		refs = make([]*common.OutputRef, len(t.SpentOutputRefs))
+		for i, r := range t.SpentOutputRefs {
+			cp := *r
+			refs[i] = &cp
+		}
+	}
 	return &TxInItem{
 		BlockHeight:           t.BlockHeight,
 		Tx:                    t.Tx,
@@ -145,7 +206,12 @@ func (t *TxInItem) Copy() *TxInItem {
 		Aggregator:            t.Aggregator,
 		AggregatorTarget:      t.AggregatorTarget,
 		AggregatorTargetLimit: t.AggregatorTargetLimit,
+		SpentOutputRefs:       refs,
+		TxKey:                 t.TxKey,
+		SolNonce:              copySolNonce(t.SolNonce),
 		CommittedUnFinalised:  t.CommittedUnFinalised,
+		OnObservedTxStored:    t.OnObservedTxStored,
+		OnObservedTxRejected:  t.OnObservedTxRejected,
 	}
 }
 
@@ -158,7 +224,12 @@ func (t *TxInItem) IsEmpty() bool {
 		t.To == "" &&
 		t.Coins.IsEmpty() &&
 		t.Gas.IsEmpty() &&
-		t.ObservedVaultPubKey.IsEmpty()
+		t.ObservedVaultPubKey.IsEmpty() &&
+		t.TxKey == ""
+}
+
+func normalizeString(value string) string {
+	return strings.ToLower(strings.TrimSpace(value))
 }
 
 // CacheHash calculate the has used for signer cache
@@ -215,4 +286,12 @@ func (t TxIn) GetTotalGas() cosmos.Uint {
 
 func InboundCacheKey(vault, chain string) string {
 	return fmt.Sprintf("inbound-%s-%s", vault, chain)
+}
+
+func copySolNonce(u *common.SolNonceUpdate) *common.SolNonceUpdate {
+	if u == nil {
+		return nil
+	}
+	cp := *u
+	return &cp
 }

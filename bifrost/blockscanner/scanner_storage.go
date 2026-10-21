@@ -14,9 +14,6 @@ import (
 type ScannerStorage interface {
 	GetScanPos() (int64, error)
 	SetScanPos(block int64) error
-	SetBlockScanStatus(block Block, status BlockScanStatus) error
-	RemoveBlockStatus(block int64) error
-	GetBlocksForRetry(failedOnly bool) ([]Block, error)
 	GetInternalDb() *leveldb.DB
 	io.Closer
 }
@@ -28,12 +25,23 @@ type BlockScannerStorage struct {
 }
 
 func NewBlockScannerStorage(levelDbFolder string, opts config.LevelDBOptions) (*BlockScannerStorage, error) {
+	return newBlockScannerStorage(levelDbFolder, opts, false)
+}
+
+// NewBlockScannerStorageWithScanPosSync creates scanner storage whose cursor
+// updates are fsynced. XMR uses this together with its durable reorg journal;
+// other chains retain the historical buffered LevelDB behavior.
+func NewBlockScannerStorageWithScanPosSync(levelDbFolder string, opts config.LevelDBOptions) (*BlockScannerStorage, error) {
+	return newBlockScannerStorage(levelDbFolder, opts, true)
+}
+
+func newBlockScannerStorage(levelDbFolder string, opts config.LevelDBOptions, syncScanPos bool) (*BlockScannerStorage, error) {
 	ldb, err := db.NewLevelDB(levelDbFolder, opts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create level db: %w", err)
 	}
 
-	levelDbStorage, err := NewLevelDBScannerStorage(ldb)
+	levelDbStorage, err := newLevelDBScannerStorage(ldb, syncScanPos)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create storage: %w", err)
 	}

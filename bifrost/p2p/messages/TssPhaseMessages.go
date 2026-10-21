@@ -29,8 +29,19 @@ const (
 	KEYSIGN5         = "SignRound5Message"
 	KEYSIGN6         = "SignRound6Message"
 	KEYSIGN7         = "SignRound7Message"
-	TSSKEYGENROUNDS  = 4
-	TSSKEYSIGNROUNDS = 7
+	KEYSIGN8         = "SignRound8Message"
+	KEYSIGN9         = "SignRound9Message"
+	// FROST keysign failures use these ordinary ceremony rounds. They remain
+	// distinct from the FROSTV2 equivocation-evidence identifiers, which are
+	// not accepted on-chain until their evidence is validated by consensus.
+	FROSTKEYSIGNPREPROCESS = "frost_preprocess"
+	FROSTKEYSIGNSHARE      = "frost_share"
+	FROSTKEYSIGNRESULT     = "frost_result"
+	TSSKEYGENROUNDS        = 4
+	// TSSKEYSIGNROUNDS is sized to fit every ECDSA keysign message index
+	// (round 1 splits into Message1/Message2, then rounds 2..9 add one each),
+	// i.e. max blame.RoundInfo.Index + 1 = 10. tss-lib v3 added rounds 8 and 9.
+	TSSKEYSIGNROUNDS = 10
 
 	ECDSAKEYGEN Algo = iota
 	ECDSAKEYSIGN
@@ -42,15 +53,20 @@ const (
 // alias normalization. Defined here alongside the constants so additions to
 // the round constants are reflected in the validity set.
 var ValidTssKeysignRounds = map[string]bool{
-	KEYSIGN1aUnicast: true,
-	KEYSIGN1b:        true,
-	KEYSIGN2Unicast:  true,
-	KEYSIGN3:         true,
-	KEYSIGN4:         true,
-	KEYSIGN5:         true,
-	KEYSIGN6:         true,
-	KEYSIGN7:         true,
-	EDDSAKEYSIGN1:    true,
-	EDDSAKEYSIGN2:    true,
-	EDDSAKEYSIGN3:    true,
+	KEYSIGN1aUnicast:       true,
+	KEYSIGN1b:              true,
+	KEYSIGN2Unicast:        true,
+	KEYSIGN3:               true,
+	KEYSIGN4:               true,
+	KEYSIGN5:               true,
+	KEYSIGN6:               true,
+	KEYSIGN7:               true,
+	KEYSIGN8:               true,
+	KEYSIGN9:               true,
+	EDDSAKEYSIGN1:          true,
+	EDDSAKEYSIGN2:          true,
+	EDDSAKEYSIGN3:          true,
+	FROSTKEYSIGNPREPROCESS: true,
+	FROSTKEYSIGNSHARE:      true,
+	FROSTKEYSIGNRESULT:     true,
 }

@@ -50,9 +50,19 @@ func getKeygenTypeFromString(t string) KeygenType {
 	switch {
 	case strings.EqualFold(t, "asgardKeygen"):
 		return KeygenType_AsgardKeygen
+	case strings.EqualFold(t, "xmrMonovaultKeygen"):
+		return KeygenType_XMRMonovaultKeygen
 	default:
 		return KeygenType_UnknownKeygen
 	}
+}
+
+// JailsLateSigners reports whether a successful keygen consensus should jail
+// members that have not yet submitted the consensus result. XMR monovault DKG
+// is intentionally slash-only because its large participant set makes brief
+// reporting skew common enough that jailing can remove an honest quorum.
+func (x KeygenType) JailsLateSigners() bool {
+	return x != KeygenType_XMRMonovaultKeygen
 }
 
 // MarshalJSON marshal keygen type to JSON in string form

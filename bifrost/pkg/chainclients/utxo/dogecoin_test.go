@@ -55,7 +55,7 @@ func (s *DogecoinSuite) SetUpSuite(c *C) {
 
 var chainRPCs = map[string]map[string]interface{}{}
 
-func init() {
+func loadDOGEFixtures() {
 	// map the method and params to the loaded fixture
 	loadFixture := func(path string) map[string]interface{} {
 		f, err := os.Open(path)

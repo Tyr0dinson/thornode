@@ -3,6 +3,9 @@ package thorchain
 import (
 	"fmt"
 
+	"github.com/cosmos/cosmos-sdk/telemetry"
+	"github.com/hashicorp/go-metrics"
+
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/constants"
@@ -146,8 +149,8 @@ func (gm *GasMgr) GetAssetOutboundFee(ctx cosmos.Context, asset common.Asset, in
 	minMultiplierBasisPoints := gm.keeper.GetConfigInt64(ctx, constants.MinOutboundFeeMultiplierBasisPoints)
 
 	// Calculate outbound fee based on current fee multiplier
-	_, gasRateUnitsPerOne := asset.GetChain().GetGasUnits()
-	chainBaseFee := cosmos.NewUint(chainOutboundFee.TransactionSize).MulUint64(chainOutboundFee.TransactionFeeRate).MulUint64(common.One).Quo(gasRateUnitsPerOne)
+	nativeChainBaseFee := cosmos.NewUint(chainOutboundFee.TransactionSize).MulUint64(chainOutboundFee.TransactionFeeRate)
+	chainBaseFee := asset.GetChain().NativeGasToThorchain(nativeChainBaseFee)
 	feeMultiplierBps := gm.CalcOutboundFeeMultiplier(ctx, cosmos.NewUint(uint64(targetOutboundFeeSurplus)), outboundFeeSpentRune, outboundFeeWithheldRune, cosmos.NewUint(uint64(maxMultiplierBasisPoints)), cosmos.NewUint(uint64(minMultiplierBasisPoints)))
 	finalFee := common.GetUncappedShare(feeMultiplierBps, cosmos.NewUint(constants.MaxBasisPts), chainBaseFee)
 
@@ -231,19 +234,9 @@ func (gm *GasMgr) GetGasDetails(ctx cosmos.Context, chain common.Chain) (common.
 		// to increase the likelihood of transaction acceptance.
 		gasRate = gasRate.MulUint64(3).QuoUint64(2)
 	}
-	chainGasAssetPrecision := chain.GetGasAssetDecimal()
 
-	// convert to 1e8 decimals for the max gas coin
-	_, gasRateUnitsPerOne := chain.GetGasUnits()
 	maxGasAmount := gasRate.MulUint64(networkFee.TransactionSize)
-	maxGasAmount1e8 := maxGasAmount.MulUint64(common.One).Quo(gasRateUnitsPerOne)
-	maxGasAmount1e8 = cosmos.RoundToDecimal(
-		maxGasAmount1e8,
-		chainGasAssetPrecision,
-	)
-
-	maxGasCoin := common.NewCoin(chain.GetGasAsset(), maxGasAmount1e8)
-	maxGasCoin.Decimals = chainGasAssetPrecision
+	maxGasCoin := chain.NativeGasToThorCoinCeil(maxGasAmount)
 
 	return maxGasCoin, int64(gasRate.Uint64()), nil
 }
@@ -277,6 +270,16 @@ func (gm *GasMgr) GetMaxGas(ctx cosmos.Context, chain common.Chain) (common.Coin
 // EndBlock emit the events
 func (gm *GasMgr) EndBlock(ctx cosmos.Context, keeper keeper.Keeper, eventManager EventManager) {
 	gm.ProcessGas(ctx, keeper)
+
+	// Per-block native gas burn and outbound count, per gas asset. Emitted before
+	// the empty-pools early return below so the loop is always reached.
+	for _, p := range gm.gasEvent.Pools {
+		assetLabels := []metrics.Label{telemetry.NewLabel("asset", p.Asset.String())}
+		telemetry.IncrCounterWithLabels([]string{"thornode", "gas", "spent_asset"}, telem(p.AssetAmt), assetLabels)
+		// GasPool.Count is set once from the already-final gm.gasCount; UpsertGasPool
+		// merges never touch it, so this is the block's outbound tx count per gas asset.
+		telemetry.IncrCounterWithLabels([]string{"thornode", "gas", "outbound_count"}, float32(p.Count), assetLabels)
+	}
 
 	if len(gm.gasEvent.Pools) == 0 {
 		return
@@ -330,11 +333,24 @@ func (gm *GasMgr) ProcessGas(ctx cosmos.Context, keeper keeper.Keeper) {
 				continue
 			}
 			// Keep track of whether the Reserve RUNE will be enough for all reimbursements.
-			reserveRune = common.SafeSub(reserveRune, runeGas)
-			if reserveRune.IsZero() {
+			// Only skip the reimbursement when the reserve has strictly less than runeGas;
+			// an exact match (runeGas == reserveRune) still has enough to cover this gas, so
+			// it should be reimbursed and leave the reserve at zero for subsequent coins.
+			if runeGas.GT(reserveRune) {
 				// since we don't have enough in the reserve to cover the gas used,
 				// no further rune is added to gas pools, sorry LPs!
+				// This is the only observable signal of Reserve exhaustion: the skip
+				// emits no event and no log. Note every later coin in this block also
+				// lands here once reserveRune is zeroed.
+				telemetry.IncrCounterWithLabels(
+					[]string{"thornode", "gas", "reserve_shortfall"},
+					1,
+					[]metrics.Label{telemetry.NewLabel("asset", coin.Asset.String())},
+				)
 				runeGas = cosmos.ZeroUint()
+				reserveRune = cosmos.ZeroUint()
+			} else {
+				reserveRune = reserveRune.Sub(runeGas)
 			}
 
 			gasPool := GasPool{

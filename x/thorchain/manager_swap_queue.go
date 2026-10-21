@@ -13,8 +13,9 @@ const PreferredAssetSwapMemoPrefix = "THOR-PREFERRED-ASSET"
 type swapItem struct {
 	index int
 	msg   MsgSwap
-	fee   cosmos.Uint
-	slip  cosmos.Uint
+	// fee is the liquidity fee in RUNE, computed by scoreMsgs.
+	// Sort() orders items on this field alone.
+	fee cosmos.Uint
 }
 type swapItems []swapItem
 
@@ -31,84 +32,25 @@ func (items swapItems) HasItem(hash common.TxID) bool {
 	return false
 }
 
+// Sort returns a copy of items ordered by liquidity fee (descending), with
+// ties broken by TxID (ascending) and then sub-swap index (ascending). The
+// explicit tiebreakers matter: arbitrage bots routinely submit swaps that
+// land in the same pool on the same block with identical fees, and sub-swaps
+// of a single streaming swap share a TxID but differ by index. Relying on
+// input order alone would let the keeper's iteration order decide priority.
 func (items swapItems) Sort() swapItems {
-	// Create independent copies so each sort operates on its own slice.
-	byFee := make(swapItems, len(items))
-	copy(byFee, items)
-
-	bySlip := make(swapItems, len(items))
-	copy(bySlip, items)
-
-	// sort by liquidity fee, descending
-	sort.SliceStable(byFee, func(i, j int) bool {
-		return byFee[i].fee.GT(byFee[j].fee)
-	})
-
-	// sort by slip fee, descending
-	sort.SliceStable(bySlip, func(i, j int) bool {
-		return bySlip[i].slip.GT(bySlip[j].slip)
-	})
-
-	type score struct {
-		msg   MsgSwap
-		score int
-		index int
-	}
-
-	// Build a map from (TxID, index) -> scores index for O(1) lookups.
-	type itemKey struct {
-		txID  common.TxID
-		index int
-	}
-	scoreIdx := make(map[itemKey]int, len(items))
-
-	// add liquidity fee score
-	scores := make([]score, len(byFee))
-	for i, item := range byFee {
-		key := itemKey{txID: item.msg.Tx.ID, index: item.index}
-		scores[i] = score{
-			msg:   item.msg,
-			score: i,
-			index: item.index,
-		}
-		scoreIdx[key] = i
-	}
-
-	// add slip score
-	for i, item := range bySlip {
-		key := itemKey{txID: item.msg.Tx.ID, index: item.index}
-		if j, ok := scoreIdx[key]; ok {
-			scores[j].score += i
-		}
-	}
-
-	// This sorted appears to sort twice, but actually the first sort informs
-	// the second. If we have multiple swaps with the same score, it will use
-	// the ID sort to deterministically sort within the same score
-
-	// sort by ID, first
-	sort.SliceStable(scores, func(i, j int) bool {
-		return scores[i].msg.Tx.ID.String() < scores[j].msg.Tx.ID.String()
-	})
-
-	// sort by score, second
-	sort.SliceStable(scores, func(i, j int) bool {
-		return scores[i].score < scores[j].score
-	})
-
-	// Build a map from (TxID, index) -> item for O(1) lookups.
-	itemMap := make(map[itemKey]swapItem, len(items))
-	for _, item := range items {
-		key := itemKey{txID: item.msg.Tx.ID, index: item.index}
-		itemMap[key] = item
-	}
-
-	// sort our items by score
 	sorted := make(swapItems, len(items))
-	for i, score := range scores {
-		key := itemKey{txID: score.msg.Tx.ID, index: score.index}
-		sorted[i] = itemMap[key]
-	}
+	copy(sorted, items)
+
+	sort.SliceStable(sorted, func(i, j int) bool {
+		if !sorted[i].fee.Equal(sorted[j].fee) {
+			return sorted[i].fee.GT(sorted[j].fee)
+		}
+		if sorted[i].msg.Tx.ID != sorted[j].msg.Tx.ID {
+			return sorted[i].msg.Tx.ID < sorted[j].msg.Tx.ID
+		}
+		return sorted[i].index < sorted[j].index
+	})
 
 	return sorted
 }
@@ -151,10 +93,38 @@ func (p tradePairs) Append(pair tradePair) tradePairs {
 	return append(p, pair)
 }
 
+// tradePairSet mirrors the membership of a tradePairs slice, so dedupe on
+// append is a map lookup instead of a linear Equals scan. The slice remains
+// the source of truth because FetchQueue iterates it in order.
+type tradePairSet map[tradePair]struct{}
+
+// tradePairIndex stores pair positions by source and target asset. Position
+// slices inherit the deterministic order of getAssetPairs, allowing matching
+// lists to be selected in O(P) instead of scanning all O(P^2) pairs for every
+// successful swap.
+type tradePairIndex struct {
+	pairs    tradePairs
+	bySource map[common.Asset][]int
+	byTarget map[common.Asset][]int
+}
+
+func newTradePairIndex(pairs tradePairs) tradePairIndex {
+	index := tradePairIndex{
+		pairs:    pairs,
+		bySource: make(map[common.Asset][]int),
+		byTarget: make(map[common.Asset][]int),
+	}
+	for position, pair := range pairs {
+		index.bySource[pair.source] = append(index.bySource[pair.source], position)
+		index.byTarget[pair.target] = append(index.byTarget[pair.target], position)
+	}
+	return index
+}
+
 // given a trade pair, find the trading pairs that are the reverse of this
 // trade pair. This helps us build a list of trading pairs adv swap queue to check
 // for limit swaps later
-func (p tradePairs) findMatchingTrades(trade tradePair, pairs tradePairs) tradePairs {
+func (p tradePairs) findMatchingTrades(trade tradePair, pairs tradePairs, seen tradePairSet) tradePairs {
 	var comp func(pair tradePair) bool
 	switch {
 	case trade.source.IsRune():
@@ -165,8 +135,71 @@ func (p tradePairs) findMatchingTrades(trade tradePair, pairs tradePairs) tradeP
 		comp = func(pair tradePair) bool { return pair.source.Equals(trade.target) || pair.target.Equals(trade.source) }
 	}
 	for _, pair := range pairs {
-		if comp(pair) {
-			p = p.Append(pair)
+		if !comp(pair) {
+			continue
+		}
+		if _, ok := seen[pair]; ok {
+			continue
+		}
+		seen[pair] = struct{}{}
+		p = append(p, pair)
+	}
+	return p
+}
+
+// findMatchingTradesIndexed is behavior-identical to findMatchingTrades but
+// uses the block-scoped position index. If a trade asset is not in canonical
+// form, exact map lookup can miss even though Asset.Equals would match; fall
+// back to the reference scan in that case.
+func (p tradePairs) findMatchingTradesIndexed(trade tradePair, index tradePairIndex, seen tradePairSet) tradePairs {
+	appendPosition := func(position int) {
+		pair := index.pairs[position]
+		if _, ok := seen[pair]; ok {
+			return
+		}
+		seen[pair] = struct{}{}
+		p = append(p, pair)
+	}
+
+	switch {
+	case trade.source.IsRune():
+		positions, ok := index.bySource[trade.target]
+		if !ok {
+			return p.findMatchingTrades(trade, index.pairs, seen)
+		}
+		for _, position := range positions {
+			appendPosition(position)
+		}
+	case trade.target.IsRune():
+		positions, ok := index.byTarget[trade.source]
+		if !ok {
+			return p.findMatchingTrades(trade, index.pairs, seen)
+		}
+		for _, position := range positions {
+			appendPosition(position)
+		}
+	default:
+		bySource, sourceOK := index.bySource[trade.target]
+		byTarget, targetOK := index.byTarget[trade.source]
+		if !sourceOK || !targetOK {
+			return p.findMatchingTrades(trade, index.pairs, seen)
+		}
+
+		// Merge the two ordered position lists and suppress their one possible
+		// overlap, preserving the exact global pair order of the scan.
+		for sourcePos, targetPos := 0, 0; sourcePos < len(bySource) || targetPos < len(byTarget); {
+			switch {
+			case targetPos >= len(byTarget) || (sourcePos < len(bySource) && bySource[sourcePos] < byTarget[targetPos]):
+				appendPosition(bySource[sourcePos])
+				sourcePos++
+			case sourcePos >= len(bySource) || byTarget[targetPos] < bySource[sourcePos]:
+				appendPosition(byTarget[targetPos])
+				targetPos++
+			default:
+				appendPosition(bySource[sourcePos])
+				sourcePos++
+				targetPos++
+			}
 		}
 	}
 	return p

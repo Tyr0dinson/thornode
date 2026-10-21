@@ -12,6 +12,71 @@ type KeeperAdvSwapQueueTTLSuite struct{}
 
 var _ = Suite(&KeeperAdvSwapQueueTTLSuite{})
 
+func (s *KeeperAdvSwapQueueTTLSuite) TestSetAdvSwapQueueItemStatePreservesIndex(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	tx := GetRandomTx()
+	tx.Coins = common.NewCoins(common.NewCoin(common.RuneAsset(), cosmos.NewUint(common.One)))
+	msg := NewMsgSwap(
+		tx, common.BTCAsset, GetRandomBTCAddress(), cosmos.ZeroUint(),
+		common.NoAddress, cosmos.ZeroUint(), "", "", nil,
+		types.SwapType_market, 0, 0, types.SwapVersion_v1, GetRandomBech32Addr(),
+	)
+	msg.State = &types.SwapState{Quantity: 2, Deposit: cosmos.NewUint(common.One)}
+	c.Assert(k.SetAdvSwapQueueItem(ctx, *msg), IsNil)
+
+	before, err := k.GetAdvSwapQueueIndex(ctx, *msg)
+	c.Assert(err, IsNil)
+	c.Assert(before, HasLen, 1)
+
+	msg.State.Count = 1
+	msg.State.In = cosmos.NewUint(common.One / 2)
+	c.Assert(k.SetAdvSwapQueueItemState(ctx, *msg), IsNil)
+
+	after, err := k.GetAdvSwapQueueIndex(ctx, *msg)
+	c.Assert(err, IsNil)
+	c.Assert(after, DeepEquals, before)
+	stored, err := k.GetAdvSwapQueueItem(ctx, msg.Tx.ID, int(msg.Index))
+	c.Assert(err, IsNil)
+	c.Assert(stored.State.Count, Equals, uint64(1))
+	c.Assert(stored.State.In.Equal(msg.State.In), Equals, true)
+}
+
+func (s *KeeperAdvSwapQueueTTLSuite) TestSetAdvSwapQueueItemStatePanicsOnIndexKeyChange(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	tx := GetRandomTx()
+	tx.Coins = common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(common.One)))
+	msg := NewMsgSwap(
+		tx, common.BTCAsset, GetRandomBTCAddress(), cosmos.NewUint(5000000),
+		common.NoAddress, cosmos.ZeroUint(), "", "", nil,
+		types.SwapType_limit, 0, 0, types.SwapVersion_v2, GetRandomBech32Addr(),
+	)
+	c.Assert(k.SetAdvSwapQueueItem(ctx, *msg), IsNil)
+	c.Assert(k.SetAdvSwapQueueItemState(ctx, *msg), IsNil)
+
+	// TradeTarget feeds the limit index ratio, so changing it breaks the
+	// contract and must trip the mocknet assertion.
+	msg.TradeTarget = cosmos.NewUint(6000000)
+	c.Assert(func() { _ = k.SetAdvSwapQueueItemState(ctx, *msg) }, PanicMatches, ".*index-key fields changed.*")
+}
+
+func (s *KeeperAdvSwapQueueTTLSuite) TestRemoveAdvSwapQueueItemMsgRemovesItemAndIndex(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	tx := GetRandomTx()
+	tx.Coins = common.NewCoins(common.NewCoin(common.RuneAsset(), cosmos.NewUint(common.One)))
+	msg := NewMsgSwap(
+		tx, common.BTCAsset, GetRandomBTCAddress(), cosmos.ZeroUint(),
+		common.NoAddress, cosmos.ZeroUint(), "", "", nil,
+		types.SwapType_market, 0, 0, types.SwapVersion_v1, GetRandomBech32Addr(),
+	)
+	c.Assert(k.SetAdvSwapQueueItem(ctx, *msg), IsNil)
+
+	c.Assert(k.RemoveAdvSwapQueueItemMsg(ctx, *msg), IsNil)
+	c.Assert(k.HasAdvSwapQueueItem(ctx, msg.Tx.ID, int(msg.Index)), Equals, false)
+	index, err := k.GetAdvSwapQueueIndex(ctx, *msg)
+	c.Assert(err, IsNil)
+	c.Assert(index, HasLen, 0)
+}
+
 func (s *KeeperAdvSwapQueueTTLSuite) TestSetLimitSwapTTL(c *C) {
 	ctx, k := setupKeeperForTest(c)
 

@@ -85,8 +85,31 @@ func withdraw(ctx cosmos.Context, msg MsgWithdrawLiquidity, mgr Manager) (cosmos
 	}
 	if !pool.Asset.IsSyntheticAsset() {
 		if (withdrawRune.Equal(poolRune) && !withDrawAsset.Equal(poolAsset)) || (!withdrawRune.Equal(poolRune) && withDrawAsset.Equal(poolAsset)) {
-			ctx.Logger().Error("fail to withdraw: cannot withdraw 100% of only one side of the pool")
-			return cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), errWithdrawFail
+			// A one-sided (asymmetric) last liquidity provider necessarily drains
+			// 100% of a single side, which would leave a live pool with a zeroed
+			// depth - hence this guard. A pool in ragnarok is being wound down and
+			// removed entirely, so there the guard would instead reject the withdraw
+			// on every interval forever: the provider is never paid and the pool
+			// never finalizes. Pay out everything the provider has an address for
+			// instead; withdrawLiquidity sweeps any remaining RUNE to the Reserve on
+			// finalization, and an L1 remainder the provider has no address for is
+			// left orphaned in the vault for the nodes to dispose of.
+			// Restricted to the protocol's own ragnarok withdraw (a blank tx ID) so
+			// that a user-submitted asymmetric withdraw is still rejected rather
+			// than silently forfeiting the opposite side of the pool.
+			// Both flavours of ragnarok count: a per-asset RAGNAROK-* mimir
+			// (IsRagnarok) and a network-wide ragnarok (RagnarokInProgress), which
+			// winds every pool down through ragnarokPools without setting any of
+			// those mimirs.
+			ragnarokWithdraw := msg.Tx.ID.Equals(common.BlankTxID) &&
+				(mgr.Keeper().IsRagnarok(ctx, []common.Asset{pool.Asset}) ||
+					mgr.Keeper().RagnarokInProgress(ctx))
+			if !ragnarokWithdraw {
+				ctx.Logger().Error("fail to withdraw: cannot withdraw 100% of only one side of the pool")
+				return cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), errWithdrawFail
+			}
+			ctx.Logger().Info("ragnarok: withdrawing 100% of one side of the pool",
+				"pool", pool.Asset, "rune", withdrawRune, "asset", withDrawAsset)
 		}
 	}
 	withDrawAsset = cosmos.RoundToDecimal(withDrawAsset, pool.Decimals)

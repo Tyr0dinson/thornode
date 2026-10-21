@@ -1,6 +1,7 @@
 package xrp
 
 import (
+	"context"
 	"crypto/sha512"
 	"encoding/asn1"
 	"encoding/hex"
@@ -59,10 +60,12 @@ type Client struct {
 	signerCacheManager  *signercache.CacheManager
 	xrpScanner          *XrpBlockScanner
 	globalSolvencyQueue chan stypes.Solvency
-	wg                  *sync.WaitGroup
-	stopchan            chan struct{}
-	rpcClient           *rpc.Client
-	networkID           uint32
+	// Serializes ReportSolvency when ordered scan callbacks and SolvencyCheckRunner can both enter.
+	solvencyLock sync.Mutex
+	wg           *sync.WaitGroup
+	stopchan     chan struct{}
+	rpcClient    *rpc.Client
+	networkID    uint32
 }
 
 // NewClient creates a new instance of an XRP-based chain client
@@ -102,7 +105,11 @@ func NewClient(
 		}
 	}
 
-	rpcConfig, err := rpc.NewClientConfig(cfg.RPCHost)
+	// Override the library's default HTTP client (a hard 1s timeout, no
+	// transport retries) with the chain's configured block-scanner timeout and
+	// transient-error retry policy — see retryHTTPClient.
+	rpcConfig, err := rpc.NewClientConfig(cfg.RPCHost,
+		rpc.WithHTTPClient(newRetryHTTPClient(cfg.BlockScanner.HTTPRequestTimeout, cfg.BlockScanner.MaxHTTPRequestRetry, logger)))
 	if err != nil {
 		return nil, fmt.Errorf("unable to create rpc config for client, %w", err)
 	}
@@ -233,7 +240,7 @@ func (c *Client) GetAccountByAddress(address string, height *big.Int) (common.Ac
 		Account:     txtypes.Address(address),
 		LedgerIndex: qcommon.Current, // Query current/non-closed/non-validated ledger
 	}
-	if height != nil && height.Cmp(big.NewInt(0)) > 0 {
+	if height != nil && height.Sign() > 0 {
 		aiReq.LedgerIndex = qcommon.LedgerIndex(height.Int64())
 	}
 	aiResp, err := c.rpcClient.GetAccountInfo(&aiReq)
@@ -291,6 +298,58 @@ func (c *Client) processOutboundTx(tx stypes.TxOutItem) (*transactions.Payment, 
 	return &payment, nil
 }
 
+// verifyBroadcast is the signer-cache verifyFn: it reports whether the recorded
+// broadcast sig is on chain, via the rippled `tx` query (bounded by a timeout).
+// A validated tx is present; txnNotFound with searched_all is definitively absent
+// (txnNotFound without searched_all — a pruned online_delete node — is ambiguous);
+// any RPC/parse error or in-flight response is ambiguous (fail-closed).
+func (c *Client) verifyBroadcast(sig string) signercache.LookupResult {
+	// Wrap the lookup in an explicit timeout to bound the signer goroutine.
+	type lookupRes struct {
+		res rpc.XRPLResponse
+		err error
+	}
+	resultCh := make(chan lookupRes, 1)
+	go func() {
+		res, rpcErr := c.rpcClient.Request(&requests.TxRequest{Transaction: sig})
+		resultCh <- lookupRes{res: res, err: rpcErr}
+	}()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	var res rpc.XRPLResponse
+	var rpcErr error
+	select {
+	case r := <-resultCh:
+		res, rpcErr = r.res, r.err
+	case <-ctx.Done():
+		rpcErr = ctx.Err()
+	}
+	// The xrpl-go client surfaces a rippled result-level error (e.g. txnNotFound for
+	// a missing tx) as a non-nil rpcErr with a NIL response — so we cannot recover
+	// searched_all to distinguish a genuinely-absent tx from a pruned (online_delete)
+	// node. Treating txnNotFound as definitive absence would risk clearing the cache
+	// and re-signing a tx that a pruned node simply couldn't find (double-spend), so
+	// any error is fail-closed ambiguous. XRP recovers a dropped broadcast via a
+	// manual/operator cache clear rather than this verify path.
+	if rpcErr != nil || res == nil {
+		return signercache.LookupAmbiguous
+	}
+	var parsed struct {
+		Validated bool `json:"validated"`
+	}
+	if parseErr := res.GetResult(&parsed); parseErr != nil {
+		return signercache.LookupAmbiguous
+	}
+	if parsed.Validated {
+		// rippled reports the tx in a validated (closed) ledger — the recorded
+		// broadcast is definitively on chain, so respect the cache and record it as
+		// present (PhaseVerifiedFound) rather than merely ambiguous.
+		return signercache.LookupFound
+	}
+	// Non-validated (in flight) or unrecognized response — respect cache.
+	return signercache.LookupAmbiguous
+}
+
 // SignTx sign the the given TxArrayItem
 func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) (signedTx, checkpoint []byte, _ *stypes.TxInItem, err error) {
 	defer func() {
@@ -316,8 +375,23 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) (signedTx, c
 		}
 	}()
 
-	if c.signerCacheManager.HasSigned(tx.CacheHash()) {
-		c.logger.Info().Interface("tx", tx).Msg("transaction already signed, ignoring...")
+	mimirKey := fmt.Sprintf(constants.MimirTemplateSkipSignerCache, c.cfg.ChainID)
+	gateFn := func() bool {
+		skipCache, mimirErr := c.thorchainBridge.GetMimir(mimirKey)
+		return mimirErr == nil && skipCache > 0
+	}
+	check := c.signerCacheManager.SignTxCacheCheck(tx.CacheHash(), gateFn, c.verifyBroadcast)
+	if check.Phase != signercache.PhaseNoEntry {
+		ev := c.logger.Info()
+		if check.Noteworthy() {
+			ev = c.logger.Warn()
+		}
+		ev.Stringer("phase", check.Phase).
+			Str("sig", check.Sig).
+			Interface("tx", tx).
+			Msg(check.Phase.String())
+	}
+	if check.SkipSign {
 		return nil, nil, nil, nil
 	}
 
@@ -369,18 +443,17 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) (signedTx, c
 	}
 
 	// gas rate from gas rate units to THORChain decimals
-	gasRate := c.cfg.ChainID.NativeGasToThorchain(cosmos.NewUint(uint64(tx.GasRate)))
-	if gasRate.IsZero() {
-		gasRate = cosmos.OneUint()
+	gasCoin := c.cfg.ChainID.NativeGasToThorCoin(cosmos.NewUint(uint64(tx.GasRate)))
+	if gasCoin.Amount.IsZero() {
+		gasCoin.Amount = cosmos.OneUint()
 	}
-	gasCoin := common.NewCoin(common.XRPAsset, cosmos.NewUint(uint64(tx.GasRate)))
 
 	// TODO: Optionally
 	// (to avoid overpaying for already-queued TxOutItems when changing units),
 	// rather than assuming Transaction Size 1 here,
 	// use the tx.MaxGas instead like GAIA?
 
-	feeCurrency, err := fromThorchainToXrp(common.NewCoin(common.XRPAsset, gasRate))
+	feeCurrency, err := fromThorchainToXrp(gasCoin)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("fail to get fee: %w", err)
 	}
@@ -403,8 +476,11 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) (signedTx, c
 		}
 	}
 
-	txBytes, err := c.signMsg(msg, tx.VaultPubKey)
+	txBytes, err := c.signMsg(msg, tx.VaultPubKey, thorchainHeight)
 	if err != nil {
+		if errors.Is(err, tss.ErrNotSelectedForKeysign) {
+			return nil, nil, nil, nil
+		}
 		return nil, checkpointBytes, nil, fmt.Errorf("failed to sign message: %w", err)
 	}
 
@@ -441,6 +517,7 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) (signedTx, c
 func (c *Client) signMsg(
 	payment *transactions.Payment,
 	pubkey common.PubKey,
+	thorchainHeight int64,
 ) ([]byte, error) {
 	xrpPubKey, err := pubkey.Secp256K1()
 	if err != nil {
@@ -467,14 +544,13 @@ func (c *Client) signMsg(
 	} else {
 		hashedMsg := sha512.Sum512(signBytes)
 		var signature []byte
-		signature, _, err = c.tssKeyManager.RemoteSign(hashedMsg[:32], common.SigningAlgoSecp256k1, pubkey.String())
+		signature, _, err = c.tssKeyManager.RemoteSign(hashedMsg[:32], common.SigningAlgoSecp256k1, pubkey.String(), thorchainHeight)
 		if err != nil {
 			c.logger.Err(err).Msg("xrp remote sign")
 			return nil, fmt.Errorf("error, xrp remote sign: %w", err)
 		}
 		if signature == nil {
-			c.logger.Error().Msg("xrp remote sign, signature is nil")
-			return nil, fmt.Errorf("error, xrp remote sign, signature is nil")
+			return nil, tss.ErrNotSelectedForKeysign
 		}
 		if len(signature) < 64 {
 			c.logger.Error().Msg("xrp remote sign, signature is <64 bytes")
@@ -572,7 +648,9 @@ func (c *Client) broadcastTx(txBlob string) error {
 	// Only add the transaction to signer cache when it is sure the transaction has been broadcast successfully.
 	// So for other scenario , like transaction already in mempool , invalid account sequence # , the transaction can be rescheduled , and retried
 	// If we get tefPAST_SEQ, tx is already in current ledger, most likely by another validator.
-	if response.EngineResult != "tesSUCCESS" && response.EngineResult != "tefPAST_SEQ" {
+	// tefALREADY means this exact tx was already applied, e.g. a retried submit.
+	if response.EngineResult != "tesSUCCESS" && response.EngineResult != "tefPAST_SEQ" &&
+		response.EngineResult != "tefALREADY" {
 		c.logger.Info().Interface("broadcastRes", response).Msg("XRP BroadcastTx failed")
 		return fmt.Errorf("transaction failed to submit with engine result: %s", response.EngineResult)
 	}
@@ -597,7 +675,8 @@ func (c *Client) BroadcastTx(tx stypes.TxOutItem, txBytes []byte) (string, error
 	}
 
 	c.accts.SeqInc(tx.VaultPubKey)
-	if err = c.signerCacheManager.SetSigned(tx.CacheHash(), tx.CacheVault(c.GetChain()), txHash); err != nil {
+	expiry := time.Now().Add(c.getSignerCacheExpiry()).UnixMilli()
+	if err = c.signerCacheManager.SetSignedWithExpiry(tx.CacheHash(), tx.CacheVault(c.GetChain()), txHash, expiry); err != nil {
 		c.logger.Err(err).Msg("fail to set signer cache")
 	}
 
@@ -616,13 +695,27 @@ func (c *Client) GetConfirmationCount(txIn stypes.TxIn) int64 {
 	return 0
 }
 
+// getSignerCacheExpiry returns the configured signer-cache expiry (config signer_cache_expiry).
+func (c *Client) getSignerCacheExpiry() time.Duration {
+	return c.cfg.SignerCacheExpiry
+}
+
+// GetGasEstimateForSolvency returns the current gas fee estimate used by solvency checks.
+func (c *Client) GetGasEstimateForSolvency() cosmos.Uint {
+	return c.cfg.ChainID.NativeGasToThorchain(c.xrpScanner.getLastFee())
+}
+
 func (c *Client) ReportSolvency(blockHeight int64) error {
+	// The ordered scan loop and SolvencyCheckRunner can both call this.
+	c.solvencyLock.Lock()
+	defer c.solvencyLock.Unlock()
+
 	if !c.ShouldReportSolvency(blockHeight) {
 		return nil
 	}
 
 	// when block scanner is not healthy, only report from auto-unhalt SolvencyCheckRunner
-	// (FetchTxs passes PreviousHeight + 1 from scanBlocks, while SolvencyCheckRunner passes chainHeight)
+	// (the scan hook passes PreviousHeight + 1, while SolvencyCheckRunner passes chainHeight)
 	if !c.IsBlockScannerHealthy() && blockHeight == c.blockScanner.PreviousHeight()+1 {
 		return nil
 	}
@@ -634,7 +727,7 @@ func (c *Client) ReportSolvency(blockHeight int64) error {
 	}
 
 	// 1x estimated gas cost breathing room (transaction size 1), from gas rate units gas price to THORChain (1e8) format
-	currentGasFee := c.cfg.ChainID.NativeGasToThorchain(c.xrpScanner.lastFee)
+	currentGasFee := c.GetGasEstimateForSolvency()
 
 	// report insolvent asgard vaults,
 	// or else all if the chain is halted and all are solvent
@@ -706,7 +799,7 @@ func (c *Client) ShouldReportSolvency(height int64) bool {
 	// blocks/min). Since the last fee is used as a buffer we also want to ensure that is
 	// non-zero (enough blocks have been seen) before checking insolvency to avoid false
 	// positives.
-	return height%c.cfg.SolvencyBlocks == 0 && !c.xrpScanner.lastFee.IsZero()
+	return height%c.cfg.SolvencyBlocks == 0 && !c.xrpScanner.getLastFee().IsZero()
 }
 
 func (c *Client) SetShouldObserveCallback(cb func() bool) {

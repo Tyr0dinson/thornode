@@ -2,39 +2,67 @@ package utxo
 
 import (
 	"bytes"
-	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	bchwire "github.com/gcash/bchd/wire"
 	"github.com/gcash/bchutil"
 	"github.com/hashicorp/go-multierror"
 	ltcwire "github.com/ltcsuite/ltcd/wire"
 	"github.com/ltcsuite/ltcutil"
-	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/zecutil"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/zcash"
 
 	ltctxscript "gitlab.com/thorchain/thornode/v3/bifrost/txscript/ltcd-txscript"
 
+	"github.com/btcsuite/btcd/btcjson"
 	btcwire "github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
 	dogewire "github.com/eager7/dogd/wire"
 	"github.com/eager7/dogutil"
 
+	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/signercache"
+	chainclienttypes "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/types"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/utxo"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/rpc/zec"
 	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
+	"gitlab.com/thorchain/thornode/v3/bifrost/tss"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/constants"
 
 	"github.com/btcsuite/btcd/mempool"
 )
 
-// ZecTxExpiry (in blocks) is used to calculate the tx expiry height
+// ZecTxExpiry is the window, in ZEC blocks, after the agreed LastObservedIn
+// at the outbound's fixed THORChain signing height. Its budget must cover report
+// staleness plus outbound scheduling, TSS, broadcast and inclusion delays.
+// With every scheduled report reaching quorum, a conservative staleness budget
+// is zecHeightReportInterval + ObservationFlexibilityBlocks + quorum latency:
+// the defaults give 10 + 3 + Q = 13 + Q blocks, leaving 27 - Q for the outbound.
+// Q and all other delays here are measured in ZEC blocks, not THORChain blocks.
+// The scanner's near-tip gate in FetchTxs can skip scheduled reports; each
+// missed interval spends another 10 blocks. Scanner/quorum stalls have no finite
+// worst-case bound. Revisit this budget when changing any of these settings.
+// checkZecExpiry rejects exhausted windows without changing the shared digest;
+// THORChain must reschedule expired outbounds with a new signing height.
 const ZecTxExpiry = uint32(40)
+
+const zecHeightReportInterval = int64(ZecTxExpiry) / 4
+
+// broadcastMaxFeeRate is the "maxfeerate" passed to sendrawtransaction for BTC and
+// LTC. It is denominated in BTC/kvB, not sats - Core multiplies by 1e8 itself and
+// rejects anything >= 1 BTC/kvB. 0.1 is Core's own default (10,000 sat/vB); the fee
+// cap in buildTx must keep the signed transaction within it (see maxFeeSats).
+const broadcastMaxFeeRate = 0.1
+
+// broadcastMaxSatsPerVByte is broadcastMaxFeeRate in sats per vbyte (1e8 / 1000).
+const broadcastMaxSatsPerVByte = int64(broadcastMaxFeeRate * 1e5)
 
 // ZecExtraFee (in Zats) is added to the calculated gas costs
 const ZecExtraFee = int(0)
@@ -63,8 +91,27 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []b
 	}
 
 	// skip outbounds that have been signed
-	if c.signerCacheManager.HasSigned(tx.CacheHash()) {
-		c.log.Info().Msgf("ignoring already signed transaction: (%+v)", tx)
+	mimirKey := fmt.Sprintf(constants.MimirTemplateSkipSignerCache, c.cfg.ChainID)
+	gateFn := func() bool {
+		skipCache, err := c.bridge.GetMimir(mimirKey)
+		return err == nil && skipCache > 0
+	}
+	verifyFn := func(sig string) signercache.LookupResult {
+		verbose, txLookupErr := c.rpc.GetRawTransactionVerbose(sig)
+		return utxoVerifyPresence(verbose, txLookupErr)
+	}
+	check := c.signerCacheManager.SignTxCacheCheck(tx.CacheHash(), gateFn, verifyFn)
+	if check.Phase != signercache.PhaseNoEntry {
+		ev := c.log.Info()
+		if check.Noteworthy() {
+			ev = c.log.Warn()
+		}
+		ev.Stringer("phase", check.Phase).
+			Str("sig", check.Sig).
+			Interface("tx", tx).
+			Msg(check.Phase.String())
+	}
+	if check.SkipSign {
 		return nil, nil, nil, nil
 	}
 
@@ -82,27 +129,43 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []b
 		if err != nil {
 			return nil, nil, nil, fmt.Errorf("fail to decode next address: %w", err)
 		}
-		outputAddrStr = outputAddr.(dogutil.Address).String() // trunk-ignore(golangci-lint/forcetypeassert)
+		dogeAddr, ok := outputAddr.(dogutil.Address)
+		if !ok {
+			return nil, nil, nil, fmt.Errorf("decoded doge address has unexpected type %T", outputAddr)
+		}
+		outputAddrStr = dogeAddr.String()
 	case common.BCHChain:
 		outputAddr, err = bchutil.DecodeAddress(tx.ToAddress.String(), c.getChainCfgBCH())
 		if err != nil {
 			return nil, nil, nil, fmt.Errorf("fail to decode next address: %w", err)
 		}
-		outputAddrStr = outputAddr.(bchutil.Address).String() // trunk-ignore(golangci-lint/forcetypeassert)
+		bchAddr, ok := outputAddr.(bchutil.Address)
+		if !ok {
+			return nil, nil, nil, fmt.Errorf("decoded bch address has unexpected type %T", outputAddr)
+		}
+		outputAddrStr = bchAddr.String()
 	case common.LTCChain:
 		outputAddr, err = ltctxscript.DecodeAddress(tx.ToAddress.String(), c.getChainCfgLTC())
 		if err != nil {
 			return nil, nil, nil, fmt.Errorf("fail to decode next address: %w", err)
 		}
-		outputAddrStr = outputAddr.(ltcutil.Address).String() // trunk-ignore(golangci-lint/forcetypeassert)
+		ltcAddr, ok := outputAddr.(ltcutil.Address)
+		if !ok {
+			return nil, nil, nil, fmt.Errorf("decoded ltc address has unexpected type %T", outputAddr)
+		}
+		outputAddrStr = ltcAddr.String()
 	case common.BTCChain:
 		outputAddr, err = btcutil.DecodeAddress(tx.ToAddress.String(), c.getChainCfgBTC())
 		if err != nil {
 			return nil, nil, nil, fmt.Errorf("fail to decode next address: %w", err)
 		}
-		outputAddrStr = outputAddr.(btcutil.Address).String()
+		btcAddr, ok := outputAddr.(btcutil.Address)
+		if !ok {
+			return nil, nil, nil, fmt.Errorf("decoded btc address has unexpected type %T", outputAddr)
+		}
+		outputAddrStr = btcAddr.String()
 	case common.ZECChain:
-		outputAddr, err = zecutil.DecodeAddress(tx.ToAddress.String(), c.getChainCfgZEC().Name)
+		outputAddr, err = zcash.DecodeAddress(tx.ToAddress.String(), c.getChainCfgZEC().Name)
 		if err != nil {
 			return nil, nil, nil, fmt.Errorf("fail to decode next address: %w", err)
 		}
@@ -131,6 +194,15 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []b
 		if err = json.Unmarshal(tx.Checkpoint, &checkpoint); err != nil {
 			return nil, nil, nil, fmt.Errorf("fail to unmarshal checkpoint: %w", err)
 		}
+		if c.cfg.ChainID == common.ZECChain && checkpoint.ZecExpiryHeight == 0 {
+			// This version must be deployed before first ZEC mainnet activation,
+			// so there are no live mainnet signatures from the old schema to
+			// migrate. Test networks must drain old signings or reset the network
+			// before upgrading. Skip without rebuilding a digest; the nil result
+			// retires even Round7Retry for normal rescheduling.
+			c.log.Warn().Msg("discarding pre-activation ZEC checkpoint without expiry; awaiting THORChain rescheduling")
+			return nil, nil, nil, nil
+		}
 		if err = redeemTx.Deserialize(bytes.NewReader(checkpoint.UnsignedTx)); err != nil {
 			return nil, nil, nil, fmt.Errorf("fail to deserialize tx: %w", err)
 		}
@@ -147,9 +219,60 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []b
 		}
 
 	} else {
-		redeemTx, checkpoint.IndividualAmounts, err = c.buildTx(tx, sourceScript)
+		var zecReference int64
+		var zecVersion int32
+		if c.cfg.ChainID == common.ZECChain {
+			checkpoint.ZecExpiryHeight, err = c.getZecExpiryHeight(thorchainHeight)
+			if err != nil {
+				return nil, nil, nil, err
+			}
+			// Keep the agreed reference even when an upgrade shortens expiry.
+			agreedHeight := checkpoint.ZecExpiryHeight - ZecTxExpiry
+			zecReference = int64(agreedHeight)
+			var consensus zcash.ConsensusState
+			if err = c.rpc.Call(&consensus, "getblockchaininfo"); err != nil {
+				return nil, nil, nil, fmt.Errorf("get ZEC upgrades: %w", err)
+			}
+			branch, expiry, stateErr := consensus.PaymentState(agreedHeight, ZecTxExpiry)
+			if stateErr != nil {
+				return nil, nil, nil, stateErr
+			}
+			checkpoint.ZecConsensusBranchID = branch
+			checkpoint.ZecExpiryHeight = expiry
+			// Choose the transaction version from the daemon's upgrade schedule: v6
+			// (ZIP-229) once the agreed height is at or past NU6.3, else v5. Fixed by the
+			// consensus-agreed height + branch schedule, so every signer picks the same
+			// version, and it is committed in the checkpoint's UnsignedTx for retries.
+			if consensus.V6Active(agreedHeight) {
+				zecVersion = 6
+			} else {
+				zecVersion = 5
+			}
+			tip, tipErr := c.rpc.GetBlockCount()
+			if tipErr != nil {
+				return nil, nil, nil, fmt.Errorf("get ZEC tip before input selection: %w", tipErr)
+			}
+			if err = checkZecExpiry(checkpoint.ZecExpiryHeight, tip); err != nil {
+				return nil, nil, nil, err
+			}
+		}
+		redeemTx, checkpoint.IndividualAmounts, err = c.buildTx(tx, sourceScript, zecReference)
 		if err != nil {
 			return nil, nil, nil, err
+		}
+		if c.cfg.ChainID == common.ZECChain {
+			// Sign transparent payments as v6 (ZIP-229) once NU6.3 is active at the agreed
+			// height, else v5 (the daemon rejects a v6 tx under a pre-NU6.3 branch). v6 is the
+			// standard transparent format on mainnet since NU6.3 (block 3,428,143) and stays
+			// valid under NU7; v5 is valid on every branch since NU5. zecVersion was fixed above
+			// from the consensus-agreed height + daemon schedule, so every signer picks the same
+			// version. The transparent code path (input selection, serialization, the transparent
+			// sub-digest) is identical for v5 and v6; the full ZIP-244 SIGHASH differs, because
+			// the header digest commits the version/version-group id and the empty-shielded digest
+			// uses v6 personalizations. A mixed-version signer set therefore cannot form a keysign
+			// party, so a version switch is gated operationally by HALTSIGNINGZEC (held until every
+			// bifrost runs the new build, then unhalted).
+			redeemTx.Version = zecVersion
 		}
 		buf := bytes.NewBuffer([]byte{})
 		err = redeemTx.Serialize(buf)
@@ -196,6 +319,9 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []b
 
 	chainHeight, err := c.rpc.GetBlockCount()
 	if err != nil {
+		if c.cfg.ChainID == common.ZECChain {
+			return nil, checkpointBytes, nil, fmt.Errorf("get ZEC tip for expiry check: %w", err)
+		}
 		// fall back to the scanner height, thornode voter does not use height
 		chainHeight = c.getCurrentBlockHeight()
 		c.log.Warn().Err(err).
@@ -204,16 +330,41 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []b
 	}
 
 	// only used for zcash
-	var zecTx *zecutil.MsgTx
+	var zecTx *zcash.Tx
+	var zecHashes *zcash.SigHashes
 	if c.cfg.ChainID == common.ZECChain {
-		// WARNING: v4 (Sapling) is assumed by both BroadcastTx (double-SHA256 txid)
-		// and zecutil signing (Blake2b sighash). Upgrading to v5 requires updating
-		// txid calculation per ZIP-244 and the signing algorithm.
-		redeemTx.Version = 4
-
-		zecTx = &zecutil.MsgTx{
-			MsgTx:        redeemTx,
-			ExpiryHeight: uint32(chainHeight) + ZecTxExpiry,
+		// Retire expired attempts even if their format cannot be signed.
+		if err = checkZecExpiry(checkpoint.ZecExpiryHeight, chainHeight); err != nil {
+			return nil, checkpointBytes, nil, err
+		}
+		// Accept v5 and v6: both are chain-valid under the current branch and the version
+		// is pinned in the checkpoint bytes (not re-chosen here), so a signer that holds a
+		// v5 checkpoint resumes it as v5 instead of burning its expiry window on
+		// "unsupported Zcash checkpoint". Checkpoints are per-signer local storage, not
+		// shared: a member without the checkpoint rebuilds via the else-branch as v6, so a
+		// fleet with in-flight v5 signings at the flip still cannot form a party until those
+		// retire — stagenet must drain or halt ZEC signing before the switch. Moot on
+		// mainnet, which is HALTSIGNINGZEC-halted and has never signed a ZEC outbound.
+		if (redeemTx.Version != 5 && redeemTx.Version != 6) || checkpoint.ZecConsensusBranchID == 0 {
+			return nil, checkpointBytes, nil, errors.New("unsupported Zcash checkpoint")
+		}
+		zecTx = &zcash.Tx{
+			MsgTx:             redeemTx,
+			ExpiryHeight:      checkpoint.ZecExpiryHeight,
+			ConsensusBranchID: checkpoint.ZecConsensusBranchID,
+		}
+		inputs := make([]*btcwire.TxOut, len(redeemTx.TxIn))
+		for i, input := range redeemTx.TxIn {
+			key := formatUtxoKey(input.PreviousOutPoint.Hash.String(), input.PreviousOutPoint.Index)
+			amount, exists := checkpoint.IndividualAmounts[key]
+			if !exists || amount <= 0 {
+				return nil, checkpointBytes, nil, fmt.Errorf("invalid ZEC input amount: %s", key)
+			}
+			inputs[i] = btcwire.NewTxOut(amount, sourceScript)
+		}
+		zecHashes, err = zcash.NewSigHashes(zecTx, inputs)
+		if err != nil {
+			return nil, checkpointBytes, nil, err
 		}
 	}
 
@@ -226,48 +377,122 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []b
 		go func(i int, amount int64) {
 			defer wg.Done()
 
-			// trunk-ignore(golangci-lint/govet): shadow
-			var err error
+			var signErr error
 
 			// chain specific signing
 			switch c.cfg.ChainID {
 			case common.DOGEChain:
-				err = c.signUTXODOGE(stx.(*dogewire.MsgTx), tx, amount, sourceScript, i)
+				msgTx, ok := stx.(*dogewire.MsgTx)
+				if !ok {
+					signErr = fmt.Errorf("unexpected doge signing tx type %T", stx)
+					break
+				}
+				signErr = c.signUTXODOGE(msgTx, tx, amount, sourceScript, i, thorchainHeight)
 			case common.BCHChain:
-				err = c.signUTXOBCH(stx.(*bchwire.MsgTx), tx, amount, sourceScript, i)
+				msgTx, ok := stx.(*bchwire.MsgTx)
+				if !ok {
+					signErr = fmt.Errorf("unexpected bch signing tx type %T", stx)
+					break
+				}
+				signErr = c.signUTXOBCH(msgTx, tx, amount, sourceScript, i, thorchainHeight)
 			case common.LTCChain:
-				err = c.signUTXOLTC(stx.(*ltcwire.MsgTx), tx, amount, sourceScript, i)
+				msgTx, ok := stx.(*ltcwire.MsgTx)
+				if !ok {
+					signErr = fmt.Errorf("unexpected ltc signing tx type %T", stx)
+					break
+				}
+				signErr = c.signUTXOLTC(msgTx, tx, amount, sourceScript, i, thorchainHeight)
 			case common.BTCChain:
-				err = c.signUTXOBTC(stx.(*btcwire.MsgTx), tx, amount, sourceScript, i)
+				msgTx, ok := stx.(*btcwire.MsgTx)
+				if !ok {
+					signErr = fmt.Errorf("unexpected btc signing tx type %T", stx)
+					break
+				}
+				signErr = c.signUTXOBTC(msgTx, tx, amount, sourceScript, i, thorchainHeight)
 			case common.ZECChain:
-				err = c.signUTXOZEC(zecTx, tx, amount, sourceScript, i)
+				signErr = c.signUTXOZEC(zecTx, zecHashes, tx, i, thorchainHeight)
 			default:
 				c.log.Fatal().Msg("unsupported chain")
 			}
 
-			if err != nil {
+			if signErr != nil {
 				mu.Lock()
-				utxoErr = multierror.Append(utxoErr, err)
+				utxoErr = multierror.Append(utxoErr, signErr)
 				mu.Unlock()
 			}
 		}(int(signing.idx), signing.amount)
 	}
 	wg.Wait()
 	if utxoErr != nil {
+		if allNotSelectedForKeysign(utxoErr) {
+			return nil, nil, nil, nil
+		}
+		// Classify before posting: PostKeysignFailure appends to utxoErr in place.
+		partyNeverFormed := allJoinPartyFailures(utxoErr, len(signings))
 		err = utxo.PostKeysignFailure(c.bridge, tx, c.log, thorchainHeight, utxoErr)
+
+		// The checkpoint pins this outbound to one tx, so a vault never signs
+		// two different txs for it. That only matters once signing may have
+		// produced a signature. If the party never formed for any input, no
+		// signing round ran, so keep no checkpoint and rebuild next attempt.
+		// Members that built different txs (their bitcoind views of the vault
+		// UTXOs differ) otherwise keep retrying their own tx and never form a
+		// party until THORChain reschedules the outbound.
+		if tx.Checkpoint == nil && partyNeverFormed {
+			c.log.Warn().
+				Stringer("in_hash", tx.InHash).
+				Msg("keysign party did not form, discarding unsigned tx so the next attempt rebuilds it")
+			c.countPartyNotFormed()
+			return nil, nil, nil, fmt.Errorf("fail to sign the message: %w", err)
+		}
 		return nil, checkpointBytes, nil, fmt.Errorf("fail to sign the message: %w", err)
+	}
+
+	if c.cfg.ChainID == common.ZECChain {
+		// TSS may span the expiry boundary. Check again before creating an
+		// observation or reserving inputs for a transaction that cannot be mined.
+		latestHeight, heightErr := c.rpc.GetBlockCount()
+		if heightErr == nil {
+			heightErr = checkZecExpiry(checkpoint.ZecExpiryHeight, latestHeight)
+		}
+		if errors.Is(heightErr, chainclienttypes.ErrTxExpired) {
+			return nil, checkpointBytes, nil, heightErr
+		}
+		if heightErr != nil {
+			// Signatures have already been exposed. Preserve the payload and its
+			// input reservations; broadcast requires a live tip before submission.
+			c.log.Warn().Err(heightErr).Msg("cannot refresh ZEC tip after signing; retaining signed payload for broadcast expiry check")
+		} else {
+			chainHeight = latestHeight
+		}
 	}
 
 	// convert back to wire tx
 	switch c.cfg.ChainID {
 	case common.DOGEChain:
-		redeemTx = dogeToWire(stx.(*dogewire.MsgTx))
+		msgTx, ok := stx.(*dogewire.MsgTx)
+		if !ok {
+			return nil, checkpointBytes, nil, fmt.Errorf("unexpected doge signed tx type %T", stx)
+		}
+		redeemTx = dogeToWire(msgTx)
 	case common.BCHChain:
-		redeemTx = bchToWire(stx.(*bchwire.MsgTx))
+		msgTx, ok := stx.(*bchwire.MsgTx)
+		if !ok {
+			return nil, checkpointBytes, nil, fmt.Errorf("unexpected bch signed tx type %T", stx)
+		}
+		redeemTx = bchToWire(msgTx)
 	case common.LTCChain:
-		redeemTx = ltcToWire(stx.(*ltcwire.MsgTx))
+		msgTx, ok := stx.(*ltcwire.MsgTx)
+		if !ok {
+			return nil, checkpointBytes, nil, fmt.Errorf("unexpected ltc signed tx type %T", stx)
+		}
+		redeemTx = ltcToWire(msgTx)
 	case common.BTCChain:
-		redeemTx = btcToWire(stx.(*btcwire.MsgTx))
+		msgTx, ok := stx.(*btcwire.MsgTx)
+		if !ok {
+			return nil, checkpointBytes, nil, fmt.Errorf("unexpected btc signed tx type %T", stx)
+		}
+		redeemTx = btcToWire(msgTx)
 	case common.ZECChain:
 		// using zecTx directly, no need to convert back
 	default:
@@ -278,7 +503,7 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []b
 
 	switch c.cfg.ChainID {
 	case common.ZECChain:
-		err = zecTx.ZecEncode(&signedTx, 0, btcwire.BaseEncoding)
+		err = zecTx.Serialize(&signedTx)
 	default:
 		// calculate the final transaction size
 		finalSize := redeemTx.SerializeSize()
@@ -302,7 +527,11 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []b
 	// ZEC hash is computed from zecTx instead of redeemTx
 	txHash := redeemTx.TxHash().String()
 	if c.cfg.ChainID == common.ZECChain {
-		txHash = zecTx.TxHash().String()
+		hash, hashErr := zecTx.ID()
+		if hashErr != nil {
+			return nil, checkpointBytes, nil, hashErr
+		}
+		txHash = hash.String()
 	}
 
 	var txIn *stypes.TxInItem
@@ -334,13 +563,121 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []b
 			id := formatUtxoKey(vin.PreviousOutPoint.Hash.String(), vin.PreviousOutPoint.Index)
 			ids = append(ids, id)
 		}
-		err = c.temporalStorage.SetSpentUtxos(ids, chainHeight)
+		// PruneSpentUtxos removes reservations after ZecTxExpiry blocks. Anchor
+		// them to the fixed expiry instead of extending them on a delayed retry.
+		reservationHeight := int64(checkpoint.ZecExpiryHeight) - int64(ZecTxExpiry)
+		err = c.temporalStorage.SetSpentUtxos(ids, reservationHeight)
 		if err != nil {
 			return nil, nil, nil, fmt.Errorf("fail to set utxos: %w", err)
 		}
 	}
 
 	return signedTx.Bytes(), nil, txIn, nil
+}
+
+// allNotSelectedForKeysign only stands down when every parallel signing error
+// says this node was not selected. Mixed errors still need normal failure
+// handling and blame reporting.
+func allNotSelectedForKeysign(err error) bool {
+	if err == nil {
+		return false
+	}
+	var merr *multierror.Error
+	if !errors.As(err, &merr) {
+		return errors.Is(err, tss.ErrNotSelectedForKeysign)
+	}
+	if len(merr.Errors) == 0 {
+		return false
+	}
+	for _, item := range merr.Errors {
+		if !errors.Is(item, tss.ErrNotSelectedForKeysign) {
+			return false
+		}
+	}
+	return true
+}
+
+// countPartyNotFormed increments the party-not-formed metric for this chain.
+// Nil-safe: directly-constructed test clients omit m.
+func (c *Client) countPartyNotFormed() {
+	if c.m == nil {
+		return
+	}
+	if cv := c.m.GetCounterVec(metrics.UTXOKeysignPartyNotFormed); cv != nil {
+		cv.WithLabelValues(c.cfg.ChainID.String()).Inc()
+	}
+}
+
+// allJoinPartyFailures reports whether every one of the inputs failed to form
+// a keysign party. An input that signed, or that failed after the party
+// formed, may have exposed a signature, so any such input returns false.
+func allJoinPartyFailures(err error, inputs int) bool {
+	var merr *multierror.Error
+	if !errors.As(err, &merr) || inputs == 0 || len(merr.Errors) != inputs {
+		return false
+	}
+	for _, item := range merr.Errors {
+		ksErr := tss.KeysignError{}
+		if !errors.As(item, &ksErr) || !ksErr.IsJoinPartyFailure() {
+			return false
+		}
+	}
+	return true
+}
+
+// getSignerCacheExpiry returns the configured signer-cache expiry (config signer_cache_expiry).
+func (c *Client) getSignerCacheExpiry() time.Duration {
+	return c.cfg.SignerCacheExpiry
+}
+
+// isUTXOTxNotFoundErr returns true when the error from GetRawTransactionVerbose
+// indicates the transaction is definitively not found (RPC error code -5).
+//
+// Backends:
+//   - bitcoind (BTC): returns *btcjson.RPCError code -5 ("Invalid or non-wallet
+//     transaction id"); litecoind (LTC), dogecoind (DOGE), bcashnode (BCH) are
+//     bitcoind-derived and behave the same.
+//   - zebrad (ZEC): surfaces JSON-RPC errors as *zec.Error (not *btcjson.RPCError);
+//     getrawtransaction on a missing tx returns code -5, bitcoind-compatible.
+//
+// Any other error shape returns false, so the caller respects the cache
+// (fail-closed and safe) rather than clearing it and re-signing on ambiguity.
+func isUTXOTxNotFoundErr(err error) bool {
+	var rpcErr *btcjson.RPCError
+	if errors.As(err, &rpcErr) {
+		return rpcErr.Code == btcjson.ErrRPCInvalidAddressOrKey
+	}
+	var zecErr *zec.Error
+	if errors.As(err, &zecErr) {
+		return zecErr.Code == int(btcjson.ErrRPCInvalidAddressOrKey)
+	}
+	return false
+}
+
+// utxoVerifyPresence maps a GetRawTransactionVerbose outcome to a signer-cache
+// LookupResult for the SignTx verify path.
+//
+// A node with txindex retains a transaction even after its block is orphaned by a
+// reorg, so a bare "no error" is not proof the tx is canonical. Only treat it as
+// present (LookupFound) when it is in the canonical chain (>0 confirmations) or
+// still pending in the mempool (no block hash yet). A tx whose containing block
+// was orphaned reports confirmations <= 0 with a block hash set — surface it as
+// absent (LookupNotFound) so that, under the SkipSignerCache mimir gate, an
+// operator can let an expired outbound re-sign after its inputs were re-spent by
+// another transaction. A not-found error is absence; any other error is ambiguous
+// (fail closed — the cache is respected).
+func utxoVerifyPresence(verbose *btcjson.TxRawResult, lookupErr error) signercache.LookupResult {
+	switch {
+	case lookupErr == nil:
+		if verbose == nil || verbose.Confirmations > 0 || verbose.BlockHash == "" {
+			return signercache.LookupFound
+		}
+		return signercache.LookupNotFound
+	case isUTXOTxNotFoundErr(lookupErr):
+		return signercache.LookupNotFound
+	default:
+		return signercache.LookupAmbiguous
+	}
 }
 
 // GetVaultLock returns a mutex for the given vault pubkey. This is primarily used to
@@ -375,9 +712,8 @@ func (c *Client) BroadcastTx(txOut stypes.TxOutItem, payload []byte) (string, er
 		bm = utxo.NewBlockMeta("", height, "")
 	}
 	defer func() {
-		// trunk-ignore(golangci-lint/govet): shadow
-		if err := c.temporalStorage.SaveBlockMeta(height, bm); err != nil {
-			c.log.Err(err).Msg("fail to save block metadata")
+		if saveErr := c.temporalStorage.SaveBlockMeta(height, bm); saveErr != nil {
+			c.log.Err(saveErr).Msg("fail to save block metadata")
 		}
 	}()
 
@@ -385,10 +721,28 @@ func (c *Client) BroadcastTx(txOut stypes.TxOutItem, payload []byte) (string, er
 
 	// broadcast tx
 	var txid string
+	var zecTxID string
 	switch c.cfg.ChainID {
 	case common.ZECChain:
 		if len(payload) == 0 {
 			return "", fmt.Errorf("payload is empty")
+		}
+		zecTx, decodeErr := zcash.ParseTx(payload)
+		if decodeErr != nil {
+			return "", fmt.Errorf("invalid ZEC payload: %w", decodeErr)
+		}
+		hash, hashErr := zecTx.ID()
+		if hashErr != nil {
+			return "", hashErr
+		}
+		zecTxID = hash.String()
+		txid, err = c.checkZecBroadcastExpiry(zecTx.ExpiryHeight, zecTxID, height)
+		if err != nil {
+			return "", err
+		}
+		if txid != "" {
+			// Already mined by another signer; retain the normal success/cache path.
+			break
 		}
 
 		args := []any{hex.EncodeToString(payload)}
@@ -408,7 +762,7 @@ func (c *Client) BroadcastTx(txOut stypes.TxOutItem, payload []byte) (string, er
 		case common.DOGEChain, common.BCHChain:
 			maxFee = true // "allowHighFees"
 		case common.LTCChain, common.BTCChain:
-			maxFee = 10_000_000
+			maxFee = broadcastMaxFeeRate
 		}
 
 		txid, err = c.rpc.SendRawTransaction(redeemTx, maxFee)
@@ -423,13 +777,7 @@ func (c *Client) BroadcastTx(txOut stypes.TxOutItem, payload []byte) (string, er
 	if err != nil {
 		switch c.cfg.ChainID {
 		case common.ZECChain:
-			hash1 := sha256.Sum256(payload)
-			hash2 := sha256.Sum256(hash1[:])
-			final := hash2[:]
-
-			slices.Reverse(final)
-
-			txid = hex.EncodeToString(final)
+			txid = zecTxID
 
 			// zebrad specific messages
 			msgs = append(msgs, []string{
@@ -443,9 +791,10 @@ func (c *Client) BroadcastTx(txOut stypes.TxOutItem, payload []byte) (string, er
 		for _, msg := range msgs {
 			if strings.Contains(err.Error(), msg) {
 				c.log.Info().Str("hash", txid).Msg("broadcasted by another node")
-				err = c.signerCacheManager.SetSigned(txOut.CacheHash(), txOut.CacheVault(c.GetChain()), txid)
-				if err != nil {
-					c.log.Err(err).Msgf("fail to mark tx out item (%+v) as signed", txOut)
+				expiry := time.Now().Add(c.getSignerCacheExpiry()).UnixMilli()
+				cacheErr := c.signerCacheManager.SetSignedWithExpiry(txOut.CacheHash(), txOut.CacheVault(c.GetChain()), txid, expiry)
+				if cacheErr != nil {
+					c.log.Err(cacheErr).Msgf("fail to mark tx out item (%+v) as signed", txOut)
 				}
 				return txid, nil
 			}
@@ -455,7 +804,8 @@ func (c *Client) BroadcastTx(txOut stypes.TxOutItem, payload []byte) (string, er
 	}
 
 	// save tx id to block meta in case we need to errata later
-	if err = c.signerCacheManager.SetSigned(txOut.CacheHash(), txOut.CacheVault(c.GetChain()), txid); err != nil {
+	expiry := time.Now().Add(c.getSignerCacheExpiry()).UnixMilli()
+	if err = c.signerCacheManager.SetSignedWithExpiry(txOut.CacheHash(), txOut.CacheVault(c.GetChain()), txid, expiry); err != nil {
 		c.log.Err(err).Msgf("fail to mark tx out item (%+v) as signed", txOut)
 	}
 

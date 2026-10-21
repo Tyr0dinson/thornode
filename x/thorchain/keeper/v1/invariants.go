@@ -17,6 +17,26 @@ func (k KVStore) InvariantRoutes() []common.InvariantRoute {
 		common.NewInvariantRoute("pools", PoolsInvariant(k)),
 		common.NewInvariantRoute("streaming_swaps", StreamingSwapsInvariant(k)),
 		common.NewInvariantRoute("runepool", RUNEPoolInvariant(k)),
+		common.NewInvariantRoute("tcy_claim", TCYClaimInvariant(k)),
+		common.NewInvariantRoute("tcy_stake", TCYStakeInvariant(k)),
+		common.NewInvariantRoute("vault_deficit", VaultDeficitInvariant(k)),
+	}
+}
+
+// VaultDeficitInvariant reports vaults with positive coins and deficit for the same asset.
+func VaultDeficitInvariant(k KVStore) common.Invariant {
+	return func(ctx cosmos.Context) (msg []string, broken bool) {
+		iterator := k.GetVaultIterator(ctx)
+		defer iterator.Close()
+		for ; iterator.Valid(); iterator.Next() {
+			var vault Vault
+			k.Cdc().MustUnmarshal(iterator.Value(), &vault)
+			if err := vault.ValidateDeficitInvariant(); err != nil {
+				broken = true
+				msg = append(msg, fmt.Sprintf("vault_deficit: %s", err))
+			}
+		}
+		return msg, broken
 	}
 }
 
@@ -238,6 +258,9 @@ func AffilliateCollectorInvariant(k KVStore) common.Invariant {
 
 		totalAffRune := cosmos.ZeroUint()
 		for _, ac := range affCols {
+			if ac.Name == "" {
+				return []string{"affiliate collector THORName cannot be empty"}, true
+			}
 			totalAffRune = totalAffRune.Add(ac.RuneAmount)
 		}
 
@@ -341,7 +364,8 @@ func StreamingSwapsInvariant(k KVStore) common.Invariant {
 					"%s: swap.coin %s != state.deposit %s",
 					swap.Tx.ID.String(),
 					swap.Tx.Coins[0].Amount,
-					swap.State.Deposit.String()))
+					swap.State.Deposit.String(),
+				))
 			}
 
 			// Check count doesn't exceed quantity
@@ -363,7 +387,8 @@ func StreamingSwapsInvariant(k KVStore) common.Invariant {
 					swap.Tx.ID.String(),
 					countLabel,
 					countToCheck,
-					swap.State.Quantity))
+					swap.State.Quantity,
+				))
 			}
 
 			// Check In doesn't exceed Deposit
@@ -373,7 +398,8 @@ func StreamingSwapsInvariant(k KVStore) common.Invariant {
 					"%s: state.in %s > state.deposit %s",
 					swap.Tx.ID.String(),
 					swap.State.In.String(),
-					swap.State.Deposit.String()))
+					swap.State.Deposit.String(),
+				))
 			}
 		}
 
@@ -427,7 +453,8 @@ func StreamingSwapsInvariant(k KVStore) common.Invariant {
 					"%s: swap.coin %s != stream.deposit %s",
 					stream.TxID.String(),
 					swap.Tx.Coins[0].Amount,
-					stream.Deposit.String()))
+					stream.Deposit.String(),
+				))
 			}
 			if stream.Count > stream.Quantity {
 				broken = true
@@ -435,7 +462,8 @@ func StreamingSwapsInvariant(k KVStore) common.Invariant {
 					"%s: stream.count %d > stream.quantity %d",
 					stream.TxID.String(),
 					stream.Count,
-					stream.Quantity))
+					stream.Quantity,
+				))
 			}
 			if stream.In.GT(stream.Deposit) {
 				broken = true
@@ -443,8 +471,75 @@ func StreamingSwapsInvariant(k KVStore) common.Invariant {
 					"%s: stream.in %s > stream.deposit %s",
 					stream.TxID.String(),
 					stream.In.String(),
-					stream.Deposit.String()))
+					stream.Deposit.String(),
+				))
 			}
+		}
+
+		return msg, broken
+	}
+}
+
+// TCYClaimInvariant the tcy_claim module must hold at least enough TCY to back
+// every outstanding TCYClaimer entitlement. Any surplus is protocol-owned TCY
+// accumulated by claimingSwapRuneToTCY and is not flagged.
+func TCYClaimInvariant(k KVStore) common.Invariant {
+	return func(ctx cosmos.Context) (msg []string, broken bool) {
+		moduleTCY := k.GetBalanceOfModule(ctx, TCYClaimingName, common.TCY.Native())
+
+		claimerSum := cosmos.ZeroUint()
+		iter := k.GetTCYClaimerIterator(ctx)
+		defer iter.Close()
+		for ; iter.Valid(); iter.Next() {
+			var claimer TCYClaimer
+			k.Cdc().MustUnmarshal(iter.Value(), &claimer)
+			claimerSum = claimerSum.Add(claimer.Amount)
+		}
+
+		if claimerSum.GT(moduleTCY) {
+			diff := claimerSum.Sub(moduleTCY)
+			coin, _ := common.NewCoin(common.TCY, diff).Native()
+			msg = append(msg, fmt.Sprintf("insolvent: %s", coin))
+			broken = true
+		}
+
+		return msg, broken
+	}
+}
+
+// TCYStakeInvariant the tcy_stake module's TCY must exactly back the recorded
+// stakers. TCY only enters the module against a TCYStaker record (a claim or a
+// stake deposit) and only leaves it against one (an unstake), so any difference
+// is either stake the module cannot pay out or TCY stranded with no record to
+// redeem it - the fingerprint of a credit that was dropped after the funds moved.
+//
+// Only the stored records are summed: TCY smart contract addresses are surfaced by
+// ListTCYStakers as synthetic stakers whose amount is the contract's own balance,
+// which the module never held.
+func TCYStakeInvariant(k KVStore) common.Invariant {
+	return func(ctx cosmos.Context) (msg []string, broken bool) {
+		moduleTCY := k.GetBalanceOfModule(ctx, TCYStakeName, common.TCY.Native())
+
+		stakerSum := cosmos.ZeroUint()
+		iter := k.getTCYStakerIterator(ctx)
+		defer iter.Close()
+		for ; iter.Valid(); iter.Next() {
+			var staker TCYStaker
+			k.Cdc().MustUnmarshal(iter.Value(), &staker)
+			stakerSum = stakerSum.Add(staker.Amount)
+		}
+
+		switch {
+		case stakerSum.GT(moduleTCY):
+			diff := stakerSum.Sub(moduleTCY)
+			coin, _ := common.NewCoin(common.TCY, diff).Native()
+			msg = append(msg, fmt.Sprintf("insolvent: %s", coin))
+			broken = true
+		case stakerSum.LT(moduleTCY):
+			diff := moduleTCY.Sub(stakerSum)
+			coin, _ := common.NewCoin(common.TCY, diff).Native()
+			msg = append(msg, fmt.Sprintf("oversolvent: %s", coin))
+			broken = true
 		}
 
 		return msg, broken

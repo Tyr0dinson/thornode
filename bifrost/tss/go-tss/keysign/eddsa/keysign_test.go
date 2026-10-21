@@ -13,13 +13,13 @@ import (
 	"testing"
 	"time"
 
-	tsslibcommon "github.com/binance-chain/tss-lib/common"
-	btss "github.com/binance-chain/tss-lib/tss"
 	tcrypto "github.com/cometbft/cometbft/crypto"
 	"github.com/cometbft/cometbft/crypto/secp256k1"
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/libp2p/go-libp2p-peerstore/addr"
 	maddr "github.com/multiformats/go-multiaddr"
+	tsslibcommon "gitlab.com/thorchain/tss/tss-lib-private.git/v3/common"
+	btss "gitlab.com/thorchain/tss/tss-lib-private.git/v3/tss"
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/p2p"
@@ -171,7 +171,7 @@ func (s *EddsaKeysignTestSuite) TestSignMessage(c *C) {
 		return
 	}
 	sort.Strings(testPubKeys)
-	req := keysign.NewRequest("thorpub1zcjduepq665vjeq34n7ccpvdl8t6akgls3c6u2uq242vpag2d9knstxymxfqq2ufwe", tcommon.SigningAlgoEd25519, []string{"helloworld-test111", "test2"}, 10, testPubKeys, "0.16.0")
+	req := keysign.NewRequest("thorpub1zcjduepq665vjeq34n7ccpvdl8t6akgls3c6u2uq242vpag2d9knstxymxfqq2ufwe", tcommon.SigningAlgoEd25519, []string{"helloworld-test111", "test2"}, 10, testPubKeys, common.SessionNonceActivationVersion)
 	sort.Strings(req.Messages)
 	dat := []byte(strings.Join(req.Messages, ","))
 	messageID, err := common.MsgToHashString(dat)
@@ -213,7 +213,7 @@ func (s *EddsaKeysignTestSuite) TestSignMessage(c *C) {
 
 			localState, err := s.stateMgrs[idx].GetLocalState(req.PoolPubKey)
 			c.Assert(err, IsNil)
-			sig, err := keysignIns.SignMessage(msgForSign, localState, req.SignerPubKeys)
+			sig, err := keysignIns.SignMessage(msgForSign, localState, req.SignerPubKeys, req.Version)
 			c.Assert(err, IsNil)
 			lock.Lock()
 			defer lock.Unlock()
@@ -226,13 +226,13 @@ func (s *EddsaKeysignTestSuite) TestSignMessage(c *C) {
 	for _, item := range keysignResult {
 		if len(signatures) == 0 {
 			for _, each := range item {
-				signatures = append(signatures, string(each.GetSignature().Signature))
+				signatures = append(signatures, string(each.GetSignature()))
 			}
 			continue
 		}
 		var targetSignatures []string
 		for _, each := range item {
-			targetSignatures = append(targetSignatures, string(each.GetSignature().Signature))
+			targetSignatures = append(targetSignatures, string(each.GetSignature()))
 		}
 		c.Assert(signatures, DeepEquals, targetSignatures)
 	}
@@ -272,7 +272,7 @@ func (s *EddsaKeysignTestSuite) TestSignMessageNotInParty(c *C) {
 	}
 	parties := []string{"thorpub1addwnpepq2ryyje5zr09lq7gqptjwnxqsy2vcdngvwd6z7yt5yjcnyj8c8cn559xe69"}
 
-	sig, err := ks.SignMessage([][]byte{[]byte("msg")}, localState, parties)
+	sig, err := ks.SignMessage([][]byte{[]byte("msg")}, localState, parties, "")
 	c.Assert(err, NotNil)
 	c.Assert(err, ErrorMatches, "fail to form key sign party:.*")
 	c.Assert(sig, IsNil)
@@ -288,7 +288,7 @@ func (s *EddsaKeysignTestSuite) TestSignMessageInvalidParties(c *C) {
 	}
 
 	// Empty parties should cause GetParties to fail
-	sig, err := ks.SignMessage([][]byte{[]byte("msg")}, localState, []string{})
+	sig, err := ks.SignMessage([][]byte{[]byte("msg")}, localState, []string{}, "")
 	c.Assert(err, NotNil)
 	c.Assert(sig, IsNil)
 }
@@ -305,7 +305,7 @@ func (s *EddsaKeysignTestSuite) TestSignMessageInvalidLocalData(c *C) {
 		LocalData:       []byte("not-valid-json"),
 	}
 
-	sig, err := ks.SignMessage([][]byte{[]byte("msg")}, localState, testPubKeys)
+	sig, err := ks.SignMessage([][]byte{[]byte("msg")}, localState, testPubKeys, "")
 	c.Assert(err, NotNil)
 	c.Assert(sig, IsNil)
 }
@@ -319,7 +319,7 @@ func (s *EddsaKeysignTestSuite) TestProcessKeySignErrChan(c *C) {
 
 	errCh := make(chan struct{})
 	outCh := make(chan btss.Message, 10)
-	endCh := make(chan tsslibcommon.SignatureData, 10)
+	endCh := make(chan *tsslibcommon.SignatureData, 10)
 
 	// Close errCh to simulate error during party start
 	close(errCh)
@@ -339,7 +339,7 @@ func (s *EddsaKeysignTestSuite) TestProcessKeySignStopChan(c *C) {
 
 	errCh := make(chan struct{})
 	outCh := make(chan btss.Message, 10)
-	endCh := make(chan tsslibcommon.SignatureData, 10)
+	endCh := make(chan *tsslibcommon.SignatureData, 10)
 
 	// Close stopChan to simulate exit signal
 	close(stopChan)
@@ -359,7 +359,7 @@ func (s *EddsaKeysignTestSuite) TestProcessKeySignTimeout(c *C) {
 
 	errCh := make(chan struct{})
 	outCh := make(chan btss.Message, 10)
-	endCh := make(chan tsslibcommon.SignatureData, 10)
+	endCh := make(chan *tsslibcommon.SignatureData, 10)
 
 	// With no lastMsg, should return ErrTssTimeOut directly
 	result, err := ks.processKeySign(1, errCh, outCh, endCh)
@@ -377,12 +377,12 @@ func (s *EddsaKeysignTestSuite) TestProcessKeySignEndCh(c *C) {
 
 	errCh := make(chan struct{})
 	outCh := make(chan btss.Message, 10)
-	endCh := make(chan tsslibcommon.SignatureData, 10)
+	endCh := make(chan *tsslibcommon.SignatureData, 10)
 
 	// Send a SignatureData to endCh before calling processKeySign
 	sigData := tsslibcommon.SignatureData{}
 	go func() {
-		endCh <- sigData
+		endCh <- &sigData
 	}()
 
 	// reqNum=1, so receiving 1 signature should complete

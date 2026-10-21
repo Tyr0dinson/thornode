@@ -3,14 +3,13 @@ package keeperv1
 import (
 	"fmt"
 
-	"github.com/cosmos/cosmos-sdk/runtime"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper/types"
 )
 
 func (k KVStore) setRagnarokWithdrawPosition(ctx cosmos.Context, key []byte, record RagnarokWithdrawPosition) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	buf := k.cdc.MustMarshal(&record)
 	if buf == nil {
 		store.Delete(key)
@@ -20,7 +19,7 @@ func (k KVStore) setRagnarokWithdrawPosition(ctx cosmos.Context, key []byte, rec
 }
 
 func (k KVStore) getRagnarokWithdrawPosition(ctx cosmos.Context, key []byte, record *RagnarokWithdrawPosition) (bool, error) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	if !store.Has(key) {
 		return false, nil
 	}

@@ -412,6 +412,41 @@ func (HandlerWithdrawSuite) TestAsymmetricWithdraw(c *C) {
 	c.Assert(err, NotNil)
 }
 
+// TestWithdrawSynthRagnarokBypassesBurnSynths verifies that the BurnSynths
+// mimir blocks user-facing saver withdrawals, but does NOT block the internal
+// ragnarok saver withdrawals (which must be able to pay savers out even while
+// synth burning is disabled). Regression for issue #3006.
+func (HandlerWithdrawSuite) TestWithdrawSynthRagnarokBypassesBurnSynths(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	h := NewWithdrawLiquidityHandler(NewDummyMgrWithKeeper(k))
+
+	synthAsset := common.BTCAsset.GetSyntheticAsset()
+	msg := NewMsgWithdrawLiquidity(
+		GetRandomTx(),
+		GetRandomBTCAddress(),
+		cosmos.NewUint(uint64(MaxWithdrawBasisPoints)),
+		synthAsset,
+		common.EmptyAsset,
+		GetRandomValidatorNode(NodeActive).NodeAddress,
+	)
+
+	// Burning synths disabled and the pool NOT in ragnarok: the saver withdraw
+	// must be rejected with the burn-synths error.
+	k.SetMimir(ctx, constants.BurnSynths.String(), 1)
+	err := h.validate(ctx, *msg)
+	c.Assert(err, NotNil)
+	c.Assert(err, ErrorMatches, ".*burning synths is disabled.*")
+
+	// While the pool is in ragnarok, the internal ragnarok saver withdrawal must
+	// be allowed to proceed past the burn-synths gate. Any remaining error must
+	// NOT be the burn-synths rejection.
+	k.SetMimir(ctx, "RAGNAROK-BTC-BTC", 1)
+	err = h.validate(ctx, *msg)
+	if err != nil {
+		c.Assert(err, Not(ErrorMatches), ".*burning synths is disabled.*")
+	}
+}
+
 func (HandlerWithdrawSuite) TestWithdrawHandler_Validation(c *C) {
 	ctx, k := setupKeeperForTest(c)
 	testCases := []struct {
@@ -587,7 +622,8 @@ func (HandlerWithdrawSuite) TestWithdrawHandler_outboundFailures(c *C) {
 		cosmos.NewUint(1000),
 		asset,
 		common.RuneAsset(),
-		na.NodeAddress)
+		na.NodeAddress,
+	)
 
 	c.Assert(msg.ValidateBasic(), IsNil)
 
@@ -641,6 +677,8 @@ func (s *HandlerWithdrawSuite) TestFairMergeAddAndWithdrawLiquidityHandlerSavers
 	ctx, mgr := setupManagerForTest(c)
 	mgr.txOutStore = NewTxStoreDummy()
 	activeNodeAccount := GetRandomValidatorNode(NodeActive)
+	activeNodeAccount.Bond = cosmos.NewUint(10_000_000 * common.One)
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, activeNodeAccount), IsNil)
 	runeAddr := GetRandomRUNEAddress()
 	avaxAddr, err := common.NewAddress("0x29d33FCD30240d55b9280362599d5066c1a2cf10")
 	c.Assert(err, IsNil)
@@ -672,7 +710,8 @@ func (s *HandlerWithdrawSuite) TestFairMergeAddAndWithdrawLiquidityHandlerSavers
 		common.NoAddress,
 		avaxAddr,
 		common.NoAddress, cosmos.ZeroUint(),
-		activeNodeAccount.NodeAddress)
+		activeNodeAccount.NodeAddress,
+	)
 	err = addHandler.handle(ctx, *msg)
 	c.Assert(err, IsNil)
 
@@ -683,13 +722,13 @@ func (s *HandlerWithdrawSuite) TestFairMergeAddAndWithdrawLiquidityHandlerSavers
 
 	pool, err = mgr.Keeper().GetPool(ctx, common.AVAXAsset)
 	c.Assert(err, IsNil)
-	c.Check(pool.BalanceRune.Uint64(), Equals, uint64(2_199_049_46419930), Commentf("%d", pool.BalanceRune.Uint64()))
+	c.Check(pool.BalanceRune.Uint64(), Equals, uint64(219_904_946_419_930), Commentf("%d", pool.BalanceRune.Uint64()))
 	c.Check(pool.BalanceAsset.Uint64(), Equals, uint64(2199430478930), Commentf("%d", pool.BalanceAsset.Uint64()))
 
 	lp, err := mgr.Keeper().GetLiquidityProvider(ctx, common.AVAXAsset.GetSyntheticAsset(), avaxAddr)
 	c.Assert(err, IsNil)
 	c.Check(lp.Units.IsZero(), Equals, false)
-	c.Check(lp.Units.Uint64(), Equals, uint64(99_54688254), Commentf("%d", lp.Units.Uint64()))
+	c.Check(lp.Units.Uint64(), Equals, uint64(9_954_688_254), Commentf("%d", lp.Units.Uint64()))
 
 	// nothing in the outbound queue
 	outbound, err := mgr.txOutStore.GetOutboundItems(ctx)
@@ -713,6 +752,154 @@ func (s *HandlerWithdrawSuite) TestFairMergeAddAndWithdrawLiquidityHandlerSavers
 	c.Assert(err, IsNil)
 	c.Assert(outbound, HasLen, 1)
 
-	expected := common.NewCoin(common.AVAXAsset, cosmos.NewUint(98_65235979))
+	expected := common.NewCoin(common.AVAXAsset, cosmos.NewUint(9_865_235_979))
 	c.Check(outbound[0].Coin.Equals(expected), Equals, true, Commentf("%s", outbound[0].Coin))
+}
+
+// TestSaversWithdrawSchedulesOutboundWithAdvSwapQueue verifies that the savers
+// synth->L1 redemption swap actually results in a scheduled outbound when the
+// advanced swap queue is enabled. The redemption is queued by the withdraw
+// handler; if it is written to the legacy queue while the advanced queue is
+// enabled, SwapperImpl.Swap skips outbound creation (deferring to the queue
+// manager) and the legacy queue then drops the item - burning the synth and
+// removing the saver record with no payout. Regression for issue #3006.
+func (s *HandlerWithdrawSuite) TestSaversWithdrawSchedulesOutboundWithAdvSwapQueue(c *C) {
+	for _, ragnarok := range []bool{false, true} {
+		ctx, mgr := setupManagerForTest(c)
+		mgr.txOutStore = NewTxStoreDummy()
+
+		activeNodeAccount := GetRandomValidatorNode(NodeActive)
+		activeNodeAccount.Bond = cosmos.NewUint(10_000_000 * common.One)
+		c.Assert(mgr.Keeper().SetNodeAccount(ctx, activeNodeAccount), IsNil)
+
+		avaxAddr, err := common.NewAddress("0x29d33FCD30240d55b9280362599d5066c1a2cf10")
+		c.Assert(err, IsNil)
+
+		pool := NewPool()
+		pool.Asset = common.AVAXAsset
+		pool.BalanceRune = cosmos.NewUint(219911755050746)
+		pool.BalanceAsset = cosmos.NewUint(2189430478930)
+		pool.LPUnits = cosmos.NewUint(104756821848147)
+		pool.Status = PoolAvailable
+		c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+
+		c.Assert(mgr.Keeper().SaveNetworkFee(ctx, common.AVAXChain, NewNetworkFee(common.AVAXChain, 1, 10)), IsNil)
+
+		// the advanced swap queue is enabled for this test (mocknet default)
+		c.Assert(mgr.Keeper().AdvSwapQueueEnabled(ctx), Equals, true)
+
+		// deposit to savers
+		tx := common.NewTx(
+			GetRandomTxHash(),
+			avaxAddr,
+			GetRandomRUNEAddress(),
+			common.Coins{common.NewCoin(common.AVAXAsset, cosmos.NewUint(common.One*100))},
+			common.Gas{common.NewCoin(common.AVAXAsset, cosmos.NewUint(10000))},
+			"add:AVAX/AVAX",
+		)
+		msgAdd := NewMsgAddLiquidity(
+			tx,
+			common.AVAXAsset.GetSyntheticAsset(),
+			cosmos.NewUint(100*common.One),
+			cosmos.ZeroUint(),
+			common.NoAddress,
+			avaxAddr,
+			common.NoAddress, cosmos.ZeroUint(),
+			activeNodeAccount.NodeAddress,
+		)
+		c.Assert(NewAddLiquidityHandler(mgr).handle(ctx, *msgAdd), IsNil)
+		c.Assert(processSwapQueues(ctx, mgr), IsNil)
+
+		lp, err := mgr.Keeper().GetLiquidityProvider(ctx, common.AVAXAsset.GetSyntheticAsset(), avaxAddr)
+		c.Assert(err, IsNil)
+		c.Assert(lp.Units.IsZero(), Equals, false)
+
+		outbound, err := mgr.txOutStore.GetOutboundItems(ctx)
+		c.Assert(err, IsNil)
+		c.Assert(outbound, HasLen, 0)
+
+		if ragnarok {
+			// the pool is being ragnaroked and synth burning is disabled, the
+			// exact state in which savers must still be paid out. The pool is
+			// still Available here: withdrawLiquidity only flips it to Staged
+			// once every saver has been withdrawn.
+			mgr.Keeper().SetMimir(ctx, "RAGNAROK-"+common.AVAXAsset.MimirString(), 1)
+			mgr.Keeper().SetMimir(ctx, constants.BurnSynths.String(), 1)
+		}
+
+		msgWithdraw := NewMsgWithdrawLiquidity(GetRandomTx(), avaxAddr, cosmos.NewUint(uint64(MaxWithdrawBasisPoints)), common.AVAXAsset.GetSyntheticAsset(), common.EmptyAsset, activeNodeAccount.NodeAddress)
+		_, err = NewWithdrawLiquidityHandler(mgr).Run(ctx, msgWithdraw)
+		c.Assert(err, IsNil, Commentf("ragnarok: %v", ragnarok))
+
+		// run the queues until the redemption settles
+		for i := 0; i < 20; i++ {
+			ctx = ctx.WithBlockHeight(ctx.BlockHeight() + 1)
+			c.Assert(processSwapQueues(ctx, mgr), IsNil)
+			outbound, err = mgr.txOutStore.GetOutboundItems(ctx)
+			c.Assert(err, IsNil)
+			if len(outbound) > 0 {
+				break
+			}
+		}
+
+		c.Assert(outbound, HasLen, 1, Commentf("saver redemption outbound must be scheduled (ragnarok: %v)", ragnarok))
+		c.Check(outbound[0].Coin.Asset.Equals(common.AVAXAsset), Equals, true, Commentf("%s", outbound[0].Coin))
+		c.Check(outbound[0].Coin.Amount.IsZero(), Equals, false, Commentf("%s", outbound[0].Coin))
+		c.Check(outbound[0].ToAddress.Equals(avaxAddr), Equals, true, Commentf("%s", outbound[0].ToAddress))
+	}
+}
+
+// TestSaversWithdrawTokenPoolRagnarokIsNotStreaming verifies that a token pool
+// on a chain whose gas asset is in ragnarok is recognised as being in ragnarok
+// by the withdraw handler. IsRagnarok deliberately treats a gas asset ragnarok
+// as covering every token on that chain - which is exactly how checkPoolRagnarok
+// picks the pools to ragnarok - so a direct RAGNAROK-ETH-USDC lookup would miss
+// it and leave the redemption streaming.
+func (s *HandlerWithdrawSuite) TestSaversWithdrawTokenPoolRagnarokIsNotStreaming(c *C) {
+	usdc, err := common.NewAsset("ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48")
+	c.Assert(err, IsNil)
+
+	for _, ragnarok := range []bool{false, true} {
+		ctx, mgr := setupManagerForTest(c)
+		mgr.txOutStore = NewTxStoreDummy()
+
+		activeNodeAccount := GetRandomValidatorNode(NodeActive)
+		c.Assert(mgr.Keeper().SetNodeAccount(ctx, activeNodeAccount), IsNil)
+
+		pool := NewPool()
+		pool.Asset = usdc
+		pool.BalanceRune = cosmos.NewUint(100_000 * common.One)
+		pool.BalanceAsset = cosmos.NewUint(100_000 * common.One)
+		pool.LPUnits = cosmos.NewUint(100_000 * common.One)
+		pool.Status = PoolAvailable
+		c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+		c.Assert(mgr.Keeper().SaveNetworkFee(ctx, common.ETHChain, NewNetworkFee(common.ETHChain, 80000, 30)), IsNil)
+
+		// savers redemptions stream by default only when this is configured
+		mgr.Keeper().SetMimir(ctx, constants.SaversStreamingSwapsInterval.String(), 1)
+
+		if ragnarok {
+			// only the chain gas asset is flagged, never the token itself
+			mgr.Keeper().SetMimir(ctx, "RAGNAROK-"+common.ETHAsset.MimirString(), 1)
+		}
+
+		ethAddr := GetRandomETHAddress()
+		tx := GetRandomTx()
+		msg := NewMsgWithdrawLiquidity(tx, ethAddr, cosmos.NewUint(uint64(MaxWithdrawBasisPoints)), usdc.GetSyntheticAsset(), common.EmptyAsset, activeNodeAccount.NodeAddress)
+
+		h := NewWithdrawLiquidityHandler(mgr)
+		coin := common.NewCoin(usdc.GetSyntheticAsset(), cosmos.NewUint(100*common.One))
+		c.Assert(h.swap(ctx, *msg, coin, ethAddr), IsNil, Commentf("ragnarok: %v", ragnarok))
+
+		item, err := mgr.Keeper().GetAdvSwapQueueItem(ctx, tx.ID, 0)
+		c.Assert(err, IsNil, Commentf("ragnarok: %v", ragnarok))
+
+		if ragnarok {
+			c.Check(item.State.Interval, Equals, uint64(0), Commentf("token pool ragnarok redemption must not stream"))
+			c.Check(item.State.Quantity, Equals, uint64(1), Commentf("token pool ragnarok redemption must be a single swap"))
+			c.Check(item.IsStreaming(), Equals, false)
+		} else {
+			c.Check(item.State.Interval, Equals, uint64(1), Commentf("without ragnarok the configured savers streaming interval must be kept"))
+		}
+	}
 }

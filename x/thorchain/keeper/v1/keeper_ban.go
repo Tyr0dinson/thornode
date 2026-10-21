@@ -3,12 +3,11 @@ package keeperv1
 import (
 	"fmt"
 
-	"github.com/cosmos/cosmos-sdk/runtime"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 )
 
 func (k KVStore) setBanVoter(ctx cosmos.Context, key []byte, record BanVoter) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	buf := k.cdc.MustMarshal(&record)
 	if buf == nil {
 		store.Delete(key)
@@ -18,7 +17,7 @@ func (k KVStore) setBanVoter(ctx cosmos.Context, key []byte, record BanVoter) {
 }
 
 func (k KVStore) getBanVoter(ctx cosmos.Context, key []byte, record *BanVoter) (bool, error) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	if !store.Has(key) {
 		return false, nil
 	}

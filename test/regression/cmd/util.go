@@ -18,7 +18,38 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// trunk-ignore-all(golangci-lint/forcetypeassert)
+func regtestMntDir() string {
+	if dir := os.Getenv("REGTEST_MNT_DIR"); dir != "" {
+		return dir
+	}
+	return "/mnt"
+}
+
+func regtestCreateBlockPort(routine int) int {
+	base := 8080
+	if val := os.Getenv("REGTEST_CREATE_BLOCK_PORT_BASE"); val != "" {
+		if parsed, err := strconv.Atoi(val); err == nil {
+			base = parsed
+		}
+	}
+	return base + routine
+}
+
+// regtestEbifrostPort keeps the per-routine ebifrost listener below Linux's
+// default ephemeral range (32768-60999). Inside it, an outbound localhost
+// connection from a parallel routine can already own the port as its source
+// port, and thornode then panics with "bind: address already in use".
+func regtestEbifrostPort(routine int) int {
+	return 30000 + routine
+}
+
+func regtestHome(routine int) string {
+	base := os.Getenv("REGTEST_HOME_BASE")
+	if base == "" {
+		base = "/"
+	}
+	return filepath.Join(base, strconv.Itoa(routine))
+}
 
 // deepMerge merges two maps recursively - if there is an array in the map it will deep
 // merge elements that match on keys in overrideKeys.
@@ -38,16 +69,24 @@ func deepMerge(a, b map[string]any, overrideKeys ...string) map[string]any {
 					// deep merge if key in overrideKeys matches in the source and destination
 					for _, ov := range overrideKeys {
 						for i := range av {
+							avEntry, ok := av[i].(map[string]any)
+							if !ok {
+								continue
+							}
 							for j := range v {
-								if _, ok = av[i].(map[string]any)[ov]; !ok {
+								vEntry, ok := v[j].(map[string]any)
+								if !ok {
 									continue
 								}
-								if _, ok = v[j].(map[string]any)[ov]; !ok {
+								if _, ok = avEntry[ov]; !ok {
+									continue
+								}
+								if _, ok = vEntry[ov]; !ok {
 									continue
 								}
 
-								if av[i].(map[string]any)[ov] == v[j].(map[string]any)[ov] {
-									av[i] = deepMerge(av[i].(map[string]any), v[j].(map[string]any), overrideKeys...)
+								if avEntry[ov] == vEntry[ov] {
+									av[i] = deepMerge(avEntry, vEntry, overrideKeys...)
 
 									// remove value from v
 									v = append(v[:j], v[j+1:]...)
@@ -214,7 +253,11 @@ func parseOps(localLog zerolog.Logger, path string, tmpls *template.Template, en
 			if err != nil {
 				log.Fatal().Str("path", path).Err(err).Msg("failed to create operation")
 			}
-			env = append(env, fmt.Sprintf("%s=%s", o.(*OpEnv).Key, o.(*OpEnv).Value))
+			envOp, ok := o.(*OpEnv)
+			if !ok {
+				log.Fatal().Str("path", path).Msg("env operation has unexpected type")
+			}
+			env = append(env, fmt.Sprintf("%s=%s", envOp.Key, envOp.Value))
 			envAdded++
 			continue
 		}
@@ -250,8 +293,8 @@ func parseOps(localLog zerolog.Logger, path string, tmpls *template.Template, en
 func blockCount(ops []Operation) int {
 	blocks := 0
 	for _, op := range ops {
-		if _, ok := op.(*OpCreateBlocks); ok {
-			blocks += op.(*OpCreateBlocks).Count
+		if createBlocks, ok := op.(*OpCreateBlocks); ok {
+			blocks += createBlocks.Count
 		}
 	}
 	return blocks
@@ -268,11 +311,11 @@ func pathExists(path string) bool {
 	return false
 }
 
-var reBlockExport = regexp.MustCompile(`^/mnt/blocks/.*/[0-9]+\.json$`)
-
 // cleanExports will remove all block and export files without a corresponding test.
 func cleanExports() {
-	for _, dir := range []string{"/mnt/exports", "/mnt/blocks"} {
+	mntDir := regtestMntDir()
+	reBlockExport := regexp.MustCompile(fmt.Sprintf(`^%s/blocks/.*/[0-9]+\.json$`, regexp.QuoteMeta(mntDir)))
+	for _, dir := range []string{filepath.Join(mntDir, "exports"), filepath.Join(mntDir, "blocks")} {
 		_ = filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
 			if err != nil {
 				return err

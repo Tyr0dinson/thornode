@@ -43,7 +43,7 @@ var _ = Suite(&UnstuckTestSuite{})
 func (s *UnstuckTestSuite) SetUpTest(c *C) {
 	s.m = GetMetricForTest(c)
 	c.Assert(s.m, NotNil)
-	types2.SetupConfigForTest()
+	setupMocknetThorConfig()
 	c.Assert(os.Setenv("NET", "mocknet"), IsNil)
 
 	cfg := config.BifrostClientConfiguration{
@@ -88,6 +88,10 @@ func (s *UnstuckTestSuite) SetUpTest(c *C) {
 			httpTestHandler(c, rw, "../../../../test/fixtures/endpoints/constants/constants.json")
 		case "/thorchain/mimir/key/EVMDisableContractWhitelist":
 			_, err = rw.Write([]byte(`1`))
+			c.Assert(err, IsNil)
+		case "/thorchain/mimir/key/HALTSIGNING",
+			"/thorchain/mimir/key/HaltSigningETH":
+			_, err = rw.Write([]byte(`0`))
 			c.Assert(err, IsNil)
 		case thorclient.PubKeysEndpoint:
 			var content []byte
@@ -275,6 +279,10 @@ func (s *UnstuckTestSuite) SetUpTest(c *C) {
 }
 
 func (s *UnstuckTestSuite) TearDownTest(c *C) {
+	if s.server != nil {
+		s.server.Close()
+		s.server = nil
+	}
 	c.Assert(os.Unsetenv("NET"), IsNil)
 }
 

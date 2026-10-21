@@ -16,14 +16,14 @@ import (
 
 	"github.com/ipfs/go-log"
 
-	"github.com/binance-chain/tss-lib/crypto"
 	tcrypto "github.com/cometbft/cometbft/crypto"
 	"github.com/cometbft/cometbft/crypto/secp256k1"
 	"github.com/libp2p/go-libp2p-core/peer"
+	"gitlab.com/thorchain/tss/tss-lib-private.git/v3/crypto"
 
-	btsskeygen "github.com/binance-chain/tss-lib/ecdsa/keygen"
-	btss "github.com/binance-chain/tss-lib/tss"
 	maddr "github.com/multiformats/go-multiaddr"
+	btsskeygen "gitlab.com/thorchain/tss/tss-lib-private.git/v3/ecdsa/keygen"
+	btss "gitlab.com/thorchain/tss/tss-lib-private.git/v3/tss"
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/p2p"
@@ -168,7 +168,7 @@ func getPreparams(c *C) []*btsskeygen.LocalPreParams {
 func (s *TssECDSAKeygenTestSuite) TestGenerateNewKey(c *C) {
 	log.SetLogLevel("tss-lib", "info")
 	sort.Strings(testPubKeys)
-	req := keygen.NewRequest(testPubKeys, 10, "", tcommon.SigningAlgoSecp256k1)
+	req := keygen.NewRequest(testPubKeys, 10, common.SessionNonceActivationVersion, tcommon.SigningAlgoSecp256k1)
 	messageID, err := common.MsgToHashString([]byte(strings.Join(req.Keys, "")))
 	c.Assert(err, IsNil)
 	conf := common.TssConfig{
@@ -194,7 +194,8 @@ func (s *TssECDSAKeygenTestSuite) TestGenerateNewKey(c *C) {
 				stopChan,
 				s.preParams[idx],
 				messageID,
-				s.stateMgrs[idx], s.nodePrivKeys[idx], s.comms[idx])
+				s.stateMgrs[idx], s.nodePrivKeys[idx], s.comms[idx],
+			)
 			c.Assert(keygenInstance, NotNil)
 			keygenMsgChannel := keygenInstance.GetTssKeyGenChannels()
 			comm.SetSubscribe(messages.TSSKeyGenMsg, messageID, keygenMsgChannel)
@@ -234,7 +235,7 @@ func (s *TssECDSAKeygenTestSuite) TestGenerateNewKeyWithStop(c *C) {
 			var localpubKey []string
 			localpubKey = append(localpubKey, testPubKeys...)
 			sort.Strings(testPubKeys)
-			req := keygen.NewRequest(localpubKey, 10, "", tcommon.SigningAlgoSecp256k1)
+			req := keygen.NewRequest(localpubKey, 10, common.SessionNonceActivationVersion, tcommon.SigningAlgoSecp256k1)
 			messageID, err := common.MsgToHashString([]byte(strings.Join(req.Keys, "")))
 			c.Assert(err, IsNil)
 			comm := s.comms[idx]
@@ -249,7 +250,8 @@ func (s *TssECDSAKeygenTestSuite) TestGenerateNewKeyWithStop(c *C) {
 				s.preParams[idx],
 				messageID,
 				s.stateMgrs[idx],
-				s.nodePrivKeys[idx], s.comms[idx])
+				s.nodePrivKeys[idx], s.comms[idx],
+			)
 			c.Assert(keygenInstance, NotNil)
 			keygenMsgChannel := keygenInstance.GetTssKeyGenChannels()
 			comm.SetSubscribe(messages.TSSKeyGenMsg, messageID, keygenMsgChannel)
@@ -270,7 +272,8 @@ func (s *TssECDSAKeygenTestSuite) TestGenerateNewKeyWithStop(c *C) {
 			c.Assert(err, NotNil)
 			// we skip the node 1 as we force it to stop
 			if idx != 0 {
-				blames := keygenInstance.GetTssCommonStruct().GetBlameMgr().GetBlame().BlameNodes
+				blameSnapshot := keygenInstance.GetTssCommonStruct().GetBlameMgr().GetBlame().Snapshot()
+				blames := blameSnapshot.BlameNodes
 				c.Assert(blames, HasLen, 1)
 				c.Assert(blames[0].Pubkey, Equals, testPubKeys[0])
 			}

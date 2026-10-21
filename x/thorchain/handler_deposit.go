@@ -94,9 +94,10 @@ func (h DepositHandler) handle(ctx cosmos.Context, msg MsgDeposit, idx uint16) (
 		txIDSource = append(txIDSource, height...)
 	}
 	hash := tmtypes.Tx(txIDSource).Hash()
-	txID, err := common.NewTxID(fmt.Sprintf("%X", hash))
+	hashHex := fmt.Sprintf("%X", hash)
+	txID, err := common.NewTxID(hashHex)
 	if idx > 0 {
-		ctx.Logger().Info("auto-increment txid", "idx", idx, "hash", fmt.Sprintf("%X", hash))
+		ctx.Logger().Info("auto-increment txid", "idx", idx, "hash", hashHex)
 		txID, err = common.NewTxID(fmt.Sprintf("%X-%d", hash, idx))
 		if err != nil {
 			return nil, fmt.Errorf("fail to get tx hash: %w", err)
@@ -147,22 +148,34 @@ func (h DepositHandler) handle(ctx cosmos.Context, msg MsgDeposit, idx uint16) (
 		return nil, fmt.Errorf("cannot send inbound an outbound or internal transaction")
 	}
 
+	var referenceAsset common.Asset
+	var referenceMemo string
+	referenceResolved := false
+
 	// Resolve reference memo before determining target module to ensure funds go to the correct module
 	if len(msg.Coins) > 0 && memo.GetType() == TxReferenceReadMemo {
-		asset := msg.Coins[0].Asset
+		referenceAsset = msg.Coins[0].Asset
+		referenceMemo = msg.Memo
 		// Create a temporary tx for resolution context
 		tempTx := common.NewTx(txID, from, common.NoAddress, msg.Coins, common.Gas{}, msg.Memo)
 		// Use current block height as observation height for native deposits (instant finality)
-		resolvedMemo := fetchMemoFromReference(ctx, h.mgr, asset, tempTx, ctx.BlockHeight())
+		resolvedMemo := fetchMemoFromReference(ctx, h.mgr, referenceAsset, tempTx, ctx.BlockHeight())
 		preMemo := msg.Memo
 		msg.Memo = resolvedMemo
-		ctx.Logger().Info("reference memo conversion for native deposit", "pre", preMemo, "post", msg.Memo, "asset", asset)
+		ctx.Logger().Info("reference memo conversion for native deposit", "pre", preMemo, "post", msg.Memo, "asset", referenceAsset)
 
 		// Re-parse the resolved memo
 		memo, err = ParseMemoWithTHORNames(ctx, h.mgr.Keeper(), msg.Memo)
 		if err != nil {
 			return nil, ErrInternal(err, "invalid resolved memo")
 		}
+		referenceResolved = resolvedMemo != ""
+	}
+
+	// Defense-in-depth: a reference memo can resolve to a reserved
+	// validator-internal type; re-apply the inbound guard to the resolved memo.
+	if memo.IsOutbound() || memo.IsInternal() {
+		return nil, fmt.Errorf("resolved reference memo expands to a forbidden type: %s", memo.GetType().String())
 	}
 
 	var targetModule string
@@ -213,7 +226,7 @@ func (h DepositHandler) handle(ctx cosmos.Context, msg MsgDeposit, idx uint16) (
 
 	m, txErr := processOneTxIn(ctx, h.mgr.Keeper(), txIn, msg.Signer)
 	if txErr != nil {
-		ctx.Logger().Error("fail to process native inbound tx", "error", txErr.Error(), "tx hash", tx.ID.String())
+		ctx.Logger().Error("fail to process native inbound tx", "error", txErr, "tx hash", tx.ID.String())
 		return nil, txErr
 	}
 
@@ -235,6 +248,10 @@ func (h DepositHandler) handle(ctx cosmos.Context, msg MsgDeposit, idx uint16) (
 					ctx.Logger().Error("fail to refund swap", "error", refundErr)
 					return nil, fmt.Errorf("swap failed and refund also failed: %w, refund error: %v", err, refundErr)
 				}
+				return &cosmos.Result{}, nil
+			}
+			if referenceResolved {
+				trackReferenceMemoUsage(ctx, h.mgr, referenceAsset, referenceMemo, txID)
 			}
 		}
 		return &cosmos.Result{}, nil
@@ -255,6 +272,9 @@ func (h DepositHandler) handle(ctx cosmos.Context, msg MsgDeposit, idx uint16) (
 		}
 		voter.SetDone()
 		h.mgr.Keeper().SetObservedTxInVoter(ctx, voter)
+	}
+	if referenceResolved {
+		trackReferenceMemoUsage(ctx, h.mgr, referenceAsset, referenceMemo, txID)
 	}
 	return result, nil
 }

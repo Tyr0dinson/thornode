@@ -3,8 +3,8 @@ package messages
 import (
 	"fmt"
 
-	btss "github.com/binance-chain/tss-lib/tss"
 	"github.com/libp2p/go-libp2p-core/peer"
+	btss "gitlab.com/thorchain/tss/tss-lib-private.git/v3/tss"
 )
 
 // THORChainTSSMessageType  represent the message type used in THORChain TSS
@@ -23,6 +23,22 @@ const (
 	TSSControlMsg
 	// TSSTaskDone is the message of Tss process notification
 	TSSTaskDone
+	// TSSFrostPreprocessMsg is round-1 preprocess exchange for FROST signing
+	TSSFrostPreprocessMsg
+	// TSSFrostShareMsg is round-2 signature share exchange for FROST signing
+	TSSFrostShareMsg
+	// TSSFrostVerifyMsg is per-round transcript hash verification for FROST messages
+	TSSFrostVerifyMsg
+	// TSSFrostResultMsg is final result propagation for non-active signers
+	TSSFrostResultMsg
+	// TSSFrostDKGRound1Msg is round-1 commitment exchange for FROST DKG
+	TSSFrostDKGRound1Msg
+	// TSSFrostDKGRound2Msg is round-2 encrypted share exchange for FROST DKG
+	TSSFrostDKGRound2Msg
+	// TSSFrostDKGRound3Msg is round-3 result exchange for FROST DKG
+	TSSFrostDKGRound3Msg
+	// TSSFrostDKGResultMsg is final DKG result propagation for non-active signers
+	TSSFrostDKGResultMsg
 	// Unknown is the message indicates the undefined message type
 	Unknown
 )
@@ -38,6 +54,22 @@ func (msgType THORChainTSSMessageType) String() string {
 		return "TSSKeyGenVerMsg"
 	case TSSKeySignVerMsg:
 		return "TSSKeySignVerMsg"
+	case TSSFrostPreprocessMsg:
+		return "TSSFrostPreprocessMsg"
+	case TSSFrostShareMsg:
+		return "TSSFrostShareMsg"
+	case TSSFrostVerifyMsg:
+		return "TSSFrostVerifyMsg"
+	case TSSFrostResultMsg:
+		return "TSSFrostResultMsg"
+	case TSSFrostDKGRound1Msg:
+		return "TSSFrostDKGRound1Msg"
+	case TSSFrostDKGRound2Msg:
+		return "TSSFrostDKGRound2Msg"
+	case TSSFrostDKGRound3Msg:
+		return "TSSFrostDKGRound3Msg"
+	case TSSFrostDKGResultMsg:
+		return "TSSFrostDKGResultMsg"
 	default:
 		return "Unknown"
 	}

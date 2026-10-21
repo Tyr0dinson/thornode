@@ -4,14 +4,13 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/cosmos/cosmos-sdk/runtime"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 )
 
 // --- DynamicFeeRecord ---
 
 func (k KVStore) setDynamicFeeRecord(ctx cosmos.Context, key []byte, record DynamicFeeRecord) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	buf := k.cdc.MustMarshal(&record)
 	if buf == nil {
 		store.Delete(key)
@@ -21,7 +20,7 @@ func (k KVStore) setDynamicFeeRecord(ctx cosmos.Context, key []byte, record Dyna
 }
 
 func (k KVStore) getDynamicFeeRecord(ctx cosmos.Context, key []byte, record *DynamicFeeRecord) (bool, error) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	if !store.Has(key) {
 		return false, nil
 	}
@@ -43,7 +42,7 @@ func (k KVStore) GetDynamicFeeRecordIterator(ctx cosmos.Context) cosmos.Iterator
 // <prefixDynamicFee>/<THORNAME_UPPER>|<PAIRA>|<PAIRB> established by
 // KVStore.GetKey and DynamicFeeRecord.Key.
 func (k KVStore) GetDynamicFeeRecordIteratorForThorname(ctx cosmos.Context, thorname string) cosmos.Iterator {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	prefix := fmt.Sprintf("%s/%s|", prefixDynamicFee, strings.ToUpper(thorname))
 	return cosmos.KVStorePrefixIterator(store, []byte(prefix))
 }
@@ -76,7 +75,7 @@ func (k KVStore) DeleteDynamicFeeRecord(ctx cosmos.Context, thorname, pairAssetA
 // --- DynamicFeeAccumulator ---
 
 func (k KVStore) setDynamicFeeAccumulator(ctx cosmos.Context, key []byte, acc DynamicFeeAccumulator) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	buf := k.cdc.MustMarshal(&acc)
 	if buf == nil {
 		store.Delete(key)
@@ -86,7 +85,7 @@ func (k KVStore) setDynamicFeeAccumulator(ctx cosmos.Context, key []byte, acc Dy
 }
 
 func (k KVStore) getDynamicFeeAccumulator(ctx cosmos.Context, key []byte, acc *DynamicFeeAccumulator) (bool, error) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	if !store.Has(key) {
 		return false, nil
 	}
@@ -192,7 +191,7 @@ func (k KVStore) SetLastObservedDynamicFeeEpochBlocks(ctx cosmos.Context, value 
 // under prefixMimir); DeleteAllDynamicFeeStateForThorname uppercases
 // internally, so the casing is transparent to callers.
 func (k KVStore) GetRemovedDynamicFeeWhitelistThornames(ctx cosmos.Context) []string {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	prefix := fmt.Sprintf("%s/DYNAMICFEE-WHITELIST-", prefixMimir)
 	iter := cosmos.KVStorePrefixIterator(store, []byte(prefix))
 	defer iter.Close()

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
+	dto "github.com/prometheus/client_model/go"
 	"github.com/rs/zerolog/log"
 
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -203,6 +204,11 @@ func TestNewMetrics(t *testing.T) {
 	if cv := m.GetCounterVec(BlockScanError(common.ETHChain)); cv == nil {
 		t.Error("expected chain counter vec BlockScanError(ETH) to be registered")
 	}
+	for _, name := range []MetricName{SolvencyPayloads, SolvencyRoundsStarted, SolvencyRounds, SolvencyRoundAttestations} {
+		if cv := m.GetCounterVec(name); cv == nil {
+			t.Errorf("expected counter vec %s to be registered", name)
+		}
+	}
 }
 
 func TestNewMetrics_PprofEnabled(t *testing.T) {
@@ -396,5 +402,22 @@ func TestTssKeysignMetricMgr_MultipleKeys(t *testing.T) {
 	// All consumed
 	if v := mgr.GetTssKeysignMetric("a"); v != 0 {
 		t.Fatalf("expected 0, got %d", v)
+	}
+}
+
+func TestXMRCertificateOutboxGaugesHaveNoLabels(t *testing.T) {
+	m := &Metrics{}
+	for _, name := range []MetricName{XMRPendingCertificates, XMROldestPendingCertificateAge} {
+		gauge := m.GetGauge(name)
+		if gauge == nil {
+			t.Fatalf("missing gauge %s", name)
+		}
+		var metric dto.Metric
+		if err := gauge.Write(&metric); err != nil {
+			t.Fatal(err)
+		}
+		if len(metric.GetLabel()) != 0 {
+			t.Fatalf("outbox gauge %s must not have labels", name)
+		}
 	}
 }

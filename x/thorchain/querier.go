@@ -7,7 +7,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"math/big"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -28,6 +30,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/config"
 	"gitlab.com/thorchain/thornode/v3/constants"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
+	kvTypes "gitlab.com/thorchain/thornode/v3/x/thorchain/keeper/types"
 	keeperv1 "gitlab.com/thorchain/thornode/v3/x/thorchain/keeper/v1"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
@@ -43,13 +46,20 @@ const (
 	QueueTypeAdvanced = "advanced"
 )
 
+const (
+	jailReasonFailedToVoteKeygen     = "failed to vote keygen in time"
+	jailReasonFailedToPerformKeygen  = "failed to perform keygen"
+	jailReasonFailedToPerformKeysign = "failed to perform keysign"
+)
+
 var (
 	initManager = func(_ cosmos.Context, _ *Mgrs) {}
 	queryExport = func(_ sdk.Context, _ *Mgrs) ([]byte, error) {
 		return nil, fmt.Errorf("export query not supported")
 	}
-	tendermintClient   *tmhttp.HTTP
-	initTendermintOnce = sync.Once{}
+	tendermintClient    *tmhttp.HTTP // fallback when no in-process client is set
+	tendermintClientErr error
+	initTendermintOnce  = sync.Once{}
 )
 
 func initTendermint() {
@@ -61,7 +71,10 @@ func initTendermint() {
 	var err error
 	tendermintClient, err = tmhttp.New(fmt.Sprintf("tcp://localhost:%s", port), "/websocket")
 	if err != nil {
-		log.Fatal().Err(err).Msg("fail to create tendermint client")
+		// reachable from a query - return the error to the caller rather than
+		// taking the process down
+		tendermintClientErr = fmt.Errorf("fail to create tendermint client: %w", err)
+		log.Error().Err(err).Msg("fail to create tendermint client")
 	}
 }
 
@@ -103,7 +116,7 @@ func (qs queryServer) queryTHORName(ctx cosmos.Context, req *types.QueryThorname
 	}
 
 	affRune := cosmos.ZeroUint()
-	affCol, err := qs.mgr.Keeper().GetAffiliateCollector(ctx, name.Owner)
+	affCol, err := qs.mgr.Keeper().GetAffiliateCollector(ctx, name.Name)
 	if err == nil {
 		affRune = affCol.RuneAmount
 	}
@@ -119,7 +132,7 @@ func (qs queryServer) queryTHORName(ctx cosmos.Context, req *types.QueryThorname
 
 	threshold := cosmos.ZeroUint()
 	if !name.PreferredAsset.IsEmpty() {
-		paOf, err := qs.mgr.gasMgr.GetAssetOutboundFee(ctx, name.PreferredAsset, true)
+		paOf, err := qs.mgr.GasMgr().GetAssetOutboundFee(ctx, name.PreferredAsset, true)
 		if err == nil {
 			multiplier := getEffectiveMultiplier(ctx, qs.mgr, name)
 			threshold = paOf.MulUint64(uint64(multiplier))
@@ -157,23 +170,249 @@ func (qs queryServer) queryVault(ctx cosmos.Context, req *types.QueryVaultReques
 	}
 
 	resp := types.QueryVaultResponse{
-		BlockHeight:           v.BlockHeight,
-		PubKey:                v.PubKey.String(),
-		PubKeyEddsa:           v.PubKeyEddsa.String(),
-		Coins:                 v.Coins,
-		Type:                  v.Type.String(),
-		Status:                v.Status.String(),
-		StatusSince:           v.StatusSince,
-		Membership:            v.Membership,
-		Chains:                v.Chains,
-		InboundTxCount:        v.InboundTxCount,
-		OutboundTxCount:       v.OutboundTxCount,
-		PendingTxBlockHeights: v.PendingTxBlockHeights,
-		Routers:               castVaultRouters(v.Routers),
-		Addresses:             getVaultChainAddresses(ctx, v),
-		Frozen:                v.Frozen,
+		BlockHeight:            v.BlockHeight,
+		PubKey:                 v.PubKey.String(),
+		PubKeyEddsa:            v.PubKeyEddsa.String(),
+		PubKeyFrost:            v.PubKeyFrost.String(),
+		Coins:                  v.Coins,
+		Deficit:                v.Deficit,
+		Type:                   v.Type.String(),
+		Status:                 v.Status.String(),
+		StatusSince:            v.StatusSince,
+		Membership:             v.Membership,
+		Chains:                 v.Chains,
+		InboundTxCount:         v.InboundTxCount,
+		OutboundTxCount:        v.OutboundTxCount,
+		PendingTxBlockHeights:  v.PendingTxBlockHeights,
+		Routers:                castVaultRouters(v.Routers),
+		Addresses:              getVaultChainAddresses(ctx, v),
+		Frozen:                 v.Frozen,
+		VaultCreationHeightXmr: v.VaultCreationHeightXmr,
 	}
 	return &resp, nil
+}
+
+// queryKeysignParty classifies vault members into active, never-sign, and
+// jailed-fallback signers at a specific THORChain height.
+func (qs queryServer) queryKeysignParty(ctx cosmos.Context, req *types.QueryKeysignPartyRequest) (*types.QueryKeysignPartyResponse, error) {
+	if len(req.PubKey) < 1 {
+		return nil, errors.New("missing vault pub_key parameter")
+	}
+	height, err := optionalQueryHeight(ctx, req.SigningHeight)
+	if err != nil {
+		return nil, err
+	}
+	// Evaluate jail release state at the requested signing height. The query
+	// still reads the current store, so callers use rounded heights and avoid
+	// binding the returned party into keysign message IDs.
+	ctx = ctx.WithBlockHeight(height)
+
+	pubkey, err := common.NewPubKey(req.PubKey)
+	if err != nil {
+		return nil, fmt.Errorf("%s is invalid pubkey", req.PubKey)
+	}
+	vault, err := qs.mgr.Keeper().GetVault(ctx, pubkey)
+	if err != nil {
+		return nil, fmt.Errorf("fail to get vault with pubkey(%s),err:%w", pubkey, err)
+	}
+	if vault.IsEmpty() {
+		return nil, errors.New("vault not found")
+	}
+	compromised, err := isVaultCompromised(ctx, qs.mgr.Keeper(), vault.PubKey)
+	if err != nil {
+		return nil, fmt.Errorf("fail to get compromised vault mimir: %w", err)
+	}
+	// A compromised vault is a vault-level hard stop; no member fallback should
+	// form a signing party for it.
+	if compromised {
+		return nil, fmt.Errorf("vault %s is %w", vault.PubKey.String(), common.ErrCompromisedVault)
+	}
+	members := vault.GetMembership()
+	if len(members) == 0 {
+		return nil, fmt.Errorf("vault %s has empty signer membership", pubkey.String())
+	}
+
+	threshold, err := conversion.GetThreshold(len(members))
+	if err != nil {
+		return nil, fmt.Errorf("fail to calculate key sign threshold: %w", err)
+	}
+	requiredSigners := threshold + 1
+	policy := keysignPartyPolicy{signers: members}
+	filteringDisabled, err := tssSignerFilteringDisabled(ctx, qs.mgr.Keeper())
+	if err != nil {
+		return nil, fmt.Errorf("fail to get TSS signer filtering mimir: %w", err)
+	}
+	if !filteringDisabled {
+		policy, err = keysignPolicyForVaultMembers(ctx, qs.mgr.Keeper(), members, requiredSigners)
+		if err != nil {
+			return nil, fmt.Errorf("fail to classify key sign party for vault %s: %w", pubkey.String(), err)
+		}
+	}
+
+	return &types.QueryKeysignPartyResponse{
+		PubKey:                vault.PubKey.String(),
+		Signers:               policy.signers.Strings(),
+		Height:                height,
+		Threshold:             int64(threshold),
+		RequiredSigners:       int64(requiredSigners),
+		NeverSigners:          policy.neverSigners.Strings(),
+		JailedFallbackSigners: policy.jailedFallbackSigners.Strings(),
+		ActiveSignerCount:     int64(len(policy.signers)),
+	}, nil
+}
+
+// optionalQueryHeight returns the request height when supplied, otherwise the
+// current context height. Future heights are rejected because jail release
+// checks would otherwise be evaluated against unavailable state.
+func optionalQueryHeight(ctx cosmos.Context, heightStr string) (int64, error) {
+	return parseQueryHeight(ctx, heightStr, true)
+}
+
+// keysignJailedCandidate carries a deterministic fallback ordering for jailed
+// vault members that may be needed to satisfy threshold.
+type keysignJailedCandidate struct {
+	pubkey            common.PubKey
+	priority          int
+	slashPoints       int64
+	jailReleaseHeight int64
+}
+
+// keysignPartyMemberState is the local classification input for one vault
+// member.
+type keysignPartyMemberState struct {
+	pubkey            common.PubKey
+	never             bool
+	jailed            bool
+	jailReason        string
+	jailReleaseHeight int64
+	slashPoints       int64
+}
+
+// keysignPartyPolicy is the final signer policy returned to bifrost callers.
+type keysignPartyPolicy struct {
+	signers               common.PubKeys
+	neverSigners          common.PubKeys
+	jailedFallbackSigners common.PubKeys
+}
+
+// keysignPolicyForVaultMembers loads node and jail state for each vault member
+// before applying the keysign participant policy.
+func keysignPolicyForVaultMembers(ctx cosmos.Context, k keeper.Keeper, members common.PubKeys, requiredSigners int) (keysignPartyPolicy, error) {
+	states := make([]keysignPartyMemberState, 0, len(members))
+	for _, member := range members {
+		nodeAccount, err := k.GetNodeAccountByPubKey(ctx, member)
+		if err != nil {
+			return keysignPartyPolicy{}, fmt.Errorf("vault member %s is missing node account state: %w", member.String(), err)
+		}
+		jail, err := k.GetNodeAccountJail(ctx, nodeAccount.NodeAddress)
+		if err != nil {
+			return keysignPartyPolicy{}, fmt.Errorf("fail to get node account jail for vault member %s: %w", member.String(), err)
+		}
+		slashPoints, err := k.GetNodeAccountSlashPoints(ctx, nodeAccount.NodeAddress)
+		if err != nil {
+			return keysignPartyPolicy{}, fmt.Errorf("fail to get slash points for vault member %s: %w", member.String(), err)
+		}
+		states = append(states, keysignPartyMemberState{
+			pubkey:            member,
+			never:             nodeAccountForcedOrFlagged(nodeAccount),
+			jailed:            jail.IsJailed(ctx),
+			jailReason:        jail.Reason,
+			jailReleaseHeight: jail.ReleaseHeight,
+			slashPoints:       slashPoints,
+		})
+	}
+	return classifyKeysignParty(states, requiredSigners)
+}
+
+// classifyKeysignParty prefers non-jailed vault members, then records jailed
+// members as deterministic fallback candidates that are used only when required.
+func classifyKeysignParty(members []keysignPartyMemberState, requiredSigners int) (keysignPartyPolicy, error) {
+	preferred := make(common.PubKeys, 0, len(members))
+	fallbackJailed := make([]keysignJailedCandidate, 0)
+	neverSigners := make(common.PubKeys, 0)
+	for _, member := range members {
+		// Forced-to-leave members are always excluded. Jailed members remain
+		// deterministic fallback candidates so a vault can still sign at
+		// threshold when clean members alone are insufficient.
+		if member.never {
+			neverSigners = append(neverSigners, member.pubkey)
+			continue
+		}
+		if member.jailed {
+			fallbackJailed = append(fallbackJailed, keysignJailedCandidate{
+				pubkey:            member.pubkey,
+				priority:          keysignJailFallbackPriority(member.jailReason),
+				slashPoints:       member.slashPoints,
+				jailReleaseHeight: member.jailReleaseHeight,
+			})
+			continue
+		}
+		preferred = append(preferred, member.pubkey)
+	}
+
+	sort.SliceStable(fallbackJailed, func(i, j int) bool {
+		// Use deterministic reliability signals before pubkey so every node
+		// derives the same fallback set while preferring less risky signers.
+		if fallbackJailed[i].priority != fallbackJailed[j].priority {
+			return fallbackJailed[i].priority < fallbackJailed[j].priority
+		}
+		if fallbackJailed[i].slashPoints != fallbackJailed[j].slashPoints {
+			return fallbackJailed[i].slashPoints < fallbackJailed[j].slashPoints
+		}
+		if fallbackJailed[i].jailReleaseHeight != fallbackJailed[j].jailReleaseHeight {
+			return fallbackJailed[i].jailReleaseHeight < fallbackJailed[j].jailReleaseHeight
+		}
+		return fallbackJailed[i].pubkey.String() < fallbackJailed[j].pubkey.String()
+	})
+	jailedFallbackSigners := make(common.PubKeys, 0, len(fallbackJailed))
+	for _, candidate := range fallbackJailed {
+		jailedFallbackSigners = append(jailedFallbackSigners, candidate.pubkey)
+	}
+
+	if len(preferred) >= requiredSigners {
+		return keysignPartyPolicy{
+			signers:               preferred,
+			neverSigners:          neverSigners,
+			jailedFallbackSigners: jailedFallbackSigners,
+		}, nil
+	}
+
+	needed := requiredSigners - len(preferred)
+	if len(fallbackJailed) < needed {
+		return keysignPartyPolicy{}, fmt.Errorf(
+			"not enough eligible signers: need %d of %d, got %d preferred and %d jailed fallback after excluding %d never-eligible members",
+			requiredSigners,
+			len(members),
+			len(preferred),
+			len(fallbackJailed),
+			len(neverSigners),
+		)
+	}
+	eligible := append(common.PubKeys{}, preferred...)
+	for _, candidate := range fallbackJailed[:needed] {
+		eligible = append(eligible, candidate.pubkey)
+	}
+	return keysignPartyPolicy{
+		signers:               eligible,
+		neverSigners:          neverSigners,
+		jailedFallbackSigners: jailedFallbackSigners,
+	}, nil
+}
+
+// keysignJailFallbackPriority orders jailed fallback candidates from least to
+// most directly relevant to keysign failure. Unknown reasons are still usable,
+// but only after known keygen/keysign reasons.
+func keysignJailFallbackPriority(reason string) int {
+	switch strings.ToLower(strings.TrimSpace(reason)) {
+	case jailReasonFailedToVoteKeygen:
+		return 10
+	case jailReasonFailedToPerformKeygen:
+		return 20
+	case jailReasonFailedToPerformKeysign:
+		return 30
+	default:
+		return 40
+	}
 }
 
 func (qs queryServer) queryAsgardVaults(ctx cosmos.Context, _ *types.QueryAsgardVaultsRequest) (*types.QueryAsgardVaultsResponse, error) {
@@ -182,32 +421,60 @@ func (qs queryServer) queryAsgardVaults(ctx cosmos.Context, _ *types.QueryAsgard
 		return nil, fmt.Errorf("fail to get asgard vaults: %w", err)
 	}
 
+	// Inactive Asgard vaults are removed from the Asgard index, but every vault
+	// carrying an unsettled deficit must remain observable until the deficit is
+	// resolved. Preserve the existing indexed order and append only missing
+	// deficit-bearing Asgard vaults from the canonical vault store.
+	indexed := make(map[string]struct{}, len(vaults))
+	for _, vault := range vaults {
+		indexed[vault.PubKey.String()] = struct{}{}
+	}
+	iter := qs.mgr.Keeper().GetVaultIterator(ctx)
+	defer iter.Close()
+	for ; iter.Valid(); iter.Next() {
+		var vault Vault
+		if err := qs.mgr.Keeper().Cdc().Unmarshal(iter.Value(), &vault); err != nil {
+			return nil, fmt.Errorf("fail to unmarshal vault: %w", err)
+		}
+		if !vault.IsAsgard() || !vault.HasDeficit() {
+			continue
+		}
+		if _, ok := indexed[vault.PubKey.String()]; ok {
+			continue
+		}
+		vaults = append(vaults, vault)
+		indexed[vault.PubKey.String()] = struct{}{}
+	}
+
 	var vaultsWithFunds []*types.QueryVaultResponse
 	for _, vault := range vaults {
-		if vault.Status == InactiveVault {
+		if vault.Status == InactiveVault && !vault.HasDeficit() {
 			continue
 		}
 		if !vault.IsAsgard() {
 			continue
 		}
 		// Being in a RetiringVault blocks a node from unbonding, so display them even if having no funds.
-		if vault.HasFunds() || vault.Status == ActiveVault || vault.Status == RetiringVault {
+		if vault.HasFunds() || vault.HasDeficit() || vault.Status == ActiveVault || vault.Status == RetiringVault {
 			vaultsWithFunds = append(vaultsWithFunds, &types.QueryVaultResponse{
-				BlockHeight:           vault.BlockHeight,
-				PubKey:                vault.PubKey.String(),
-				PubKeyEddsa:           vault.PubKeyEddsa.String(),
-				Coins:                 vault.Coins,
-				Type:                  vault.Type.String(),
-				Status:                vault.Status.String(),
-				StatusSince:           vault.StatusSince,
-				Membership:            vault.Membership,
-				Chains:                vault.Chains,
-				InboundTxCount:        vault.InboundTxCount,
-				OutboundTxCount:       vault.OutboundTxCount,
-				PendingTxBlockHeights: vault.PendingTxBlockHeights,
-				Routers:               castVaultRouters(vault.Routers),
-				Frozen:                vault.Frozen,
-				Addresses:             getVaultChainAddresses(ctx, vault),
+				BlockHeight:            vault.BlockHeight,
+				PubKey:                 vault.PubKey.String(),
+				PubKeyEddsa:            vault.PubKeyEddsa.String(),
+				PubKeyFrost:            vault.PubKeyFrost.String(),
+				Coins:                  vault.Coins,
+				Deficit:                vault.Deficit,
+				Type:                   vault.Type.String(),
+				Status:                 vault.Status.String(),
+				StatusSince:            vault.StatusSince,
+				Membership:             vault.Membership,
+				Chains:                 vault.Chains,
+				InboundTxCount:         vault.InboundTxCount,
+				OutboundTxCount:        vault.OutboundTxCount,
+				PendingTxBlockHeights:  vault.PendingTxBlockHeights,
+				Routers:                castVaultRouters(vault.Routers),
+				Frozen:                 vault.Frozen,
+				Addresses:              getVaultChainAddresses(ctx, vault),
+				VaultCreationHeightXmr: vault.VaultCreationHeightXmr,
 			})
 		}
 	}
@@ -215,13 +482,65 @@ func (qs queryServer) queryAsgardVaults(ctx cosmos.Context, _ *types.QueryAsgard
 	return &types.QueryAsgardVaultsResponse{AsgardVaults: vaultsWithFunds}, nil
 }
 
+func (qs queryServer) queryXMRSpentOutputRefs(ctx cosmos.Context, req *types.QueryXMRSpentOutputRefsRequest) (*types.QueryXMRSpentOutputRefsResponse, error) {
+	if len(req.VaultPubKey) < 1 {
+		return nil, errors.New("missing vault_pub_key parameter")
+	}
+	pubkey, err := common.NewPubKey(req.VaultPubKey)
+	if err != nil {
+		return nil, fmt.Errorf("%s is invalid pubkey", req.VaultPubKey)
+	}
+	refs, err := qs.mgr.Keeper().GetXMRSpentOutputRefs(ctx, pubkey)
+	if err != nil {
+		return nil, fmt.Errorf("fail to get xmr spent refs for vault(%s),err:%w", pubkey, err)
+	}
+	return &types.QueryXMRSpentOutputRefsResponse{SpentOutputRefs: castOutputRefs(refs)}, nil
+}
+
+// querySolVaultNonce returns a Solana vault's committed durable nonce, or an empty
+// response when it has none. Bifrost reads it at the keysign height (?height=) so
+// every keysign party builds from the same value.
+func (qs queryServer) querySolVaultNonce(ctx cosmos.Context, req *types.QuerySolVaultNonceRequest) (*types.QuerySolVaultNonceResponse, error) {
+	if len(req.VaultPubKey) < 1 {
+		return nil, errors.New("missing vault_pub_key parameter")
+	}
+	pubkey, err := common.NewPubKey(req.VaultPubKey)
+	if err != nil {
+		return nil, fmt.Errorf("%s is invalid pubkey", req.VaultPubKey)
+	}
+	// Records are keyed by the vault's canonical pubkey; accept its EdDSA key too.
+	if vault, vErr := qs.mgr.Keeper().GetVault(ctx, pubkey); vErr == nil && !vault.PubKey.IsEmpty() {
+		pubkey = vault.PubKey
+	}
+	record, found, err := activeSolVaultNonce(ctx, qs.mgr.Keeper(), pubkey)
+	if err != nil {
+		return nil, fmt.Errorf("fail to get sol vault nonce for vault(%s),err:%w", pubkey, err)
+	}
+	if !found {
+		return &types.QuerySolVaultNonceResponse{}, nil
+	}
+	return &types.QuerySolVaultNonceResponse{
+		NonceAccount:  record.NonceAccount,
+		Nonce:         record.Nonce,
+		Slot:          record.Slot,
+		UpdatedHeight: record.UpdatedHeight,
+		SetByTx:       record.SetByTx.String(),
+	}, nil
+}
+
 func getVaultChainAddresses(ctx cosmos.Context, vault Vault) []*types.VaultAddress {
 	var result []*types.VaultAddress
 	allChains := append(vault.GetChains(), common.THORChain)
 	for _, c := range allChains.Distinct() {
-		if vault.PubKeyEddsa.IsEmpty() && c.GetSigningAlgo() != common.SigningAlgoEd25519 {
-			// this is an eddsa chain, but the vault doesn't have an eddsa pubkey, skip.
-			continue
+		if c.GetSigningAlgo() == common.SigningAlgoEd25519 {
+			if c == common.XMRChain {
+				if vault.PubKeyFrost.IsEmpty() {
+					continue
+				}
+			} else if vault.PubKeyEddsa.IsEmpty() {
+				// this is an eddsa chain, but the vault doesn't have an eddsa pubkey, skip.
+				continue
+			}
 		}
 		addr, err := vault.GetAddress(c)
 		if err != nil {
@@ -279,6 +598,7 @@ func (qs queryServer) queryVaultsPubkeys(ctx cosmos.Context, _ *types.QueryVault
 				resp.Asgard = append(resp.Asgard, &types.VaultInfo{
 					PubKey:      vault.PubKey.String(),
 					PubKeyEddsa: vault.PubKeyEddsa.String(),
+					PubKeyFrost: vault.PubKeyFrost.String(),
 					Routers:     castVaultRouters(vault.Routers),
 					Membership:  vault.Membership,
 				})
@@ -303,6 +623,7 @@ func (qs queryServer) queryVaultsPubkeys(ctx cosmos.Context, _ *types.QueryVault
 					resp.Inactive = append(resp.Inactive, &types.VaultInfo{
 						PubKey:      vault.PubKey.String(),
 						PubKeyEddsa: vault.PubKeyEddsa.String(),
+						PubKeyFrost: vault.PubKeyFrost.String(),
 						Routers:     castVaultRouters(vault.Routers),
 						Membership:  vault.Membership,
 					})
@@ -497,6 +818,10 @@ func (qs queryServer) queryNetwork(ctx cosmos.Context, _ *types.QueryNetworkRequ
 		return nil, fmt.Errorf("fail to get retiring vaults: %w", err)
 	}
 	vaultsMigrating := (len(vaults) != 0)
+	xmrActiveVaultReady, err := getXMRActiveVaultReady(ctx, qs.mgr.Keeper())
+	if err != nil {
+		return nil, fmt.Errorf("fail to get xmr active vault readiness: %w", err)
+	}
 
 	nodeAccounts, err := qs.mgr.Keeper().ListActiveValidators(ctx)
 	if err != nil {
@@ -516,7 +841,7 @@ func (qs queryServer) queryNetwork(ctx cosmos.Context, _ *types.QueryNetworkRequ
 	targetOutboundFeeSurplus := qs.mgr.Keeper().GetConfigInt64(ctx, constants.TargetOutboundFeeSurplusRune)
 	maxMultiplierBasisPoints := qs.mgr.Keeper().GetConfigInt64(ctx, constants.MaxOutboundFeeMultiplierBasisPoints)
 	minMultiplierBasisPoints := qs.mgr.Keeper().GetConfigInt64(ctx, constants.MinOutboundFeeMultiplierBasisPoints)
-	outboundFeeMultiplier := qs.mgr.gasMgr.CalcOutboundFeeMultiplier(ctx, cosmos.NewUint(uint64(targetOutboundFeeSurplus)), cosmos.NewUint(data.OutboundGasSpentRune), cosmos.NewUint(data.OutboundGasWithheldRune), cosmos.NewUint(uint64(maxMultiplierBasisPoints)), cosmos.NewUint(uint64(minMultiplierBasisPoints)))
+	outboundFeeMultiplier := qs.mgr.GasMgr().CalcOutboundFeeMultiplier(ctx, cosmos.NewUint(uint64(targetOutboundFeeSurplus)), cosmos.NewUint(data.OutboundGasSpentRune), cosmos.NewUint(data.OutboundGasWithheldRune), cosmos.NewUint(uint64(maxMultiplierBasisPoints)), cosmos.NewUint(uint64(minMultiplierBasisPoints)))
 
 	assets := qs.mgr.Keeper().GetAnchors(ctx, common.TOR)
 	median := qs.mgr.Keeper().AnchorMedian(ctx, assets).QuoUint64(constants.DollarMulti)
@@ -541,9 +866,76 @@ func (qs queryServer) queryNetwork(ctx cosmos.Context, _ *types.QueryNetworkRequ
 		RunePriceInTor:        dollarsPerRuneIgnoreHalt(ctx, qs.mgr.Keeper()).String(),
 		TorPriceInRune:        runePerDollarIgnoreHalt(ctx, qs.mgr.Keeper()).String(),
 		TorPriceHalted:        median.IsZero(),
+		XmrActiveVaultReady:   xmrActiveVaultReady,
 	}
 
 	return &result, nil
+}
+
+func getXMRActiveVaultReady(ctx cosmos.Context, k keeper.Keeper) (bool, error) {
+	activeVaults, err := k.GetAsgardVaultsByStatus(ctx, ActiveVault)
+	if err != nil {
+		return false, err
+	}
+	for _, vault := range activeVaults {
+		// "ready" should mean THORChain has observed an active XMR vault with a
+		// usable inbound address and actual XMR funds on the vault, not just that
+		// an active vault record exists for the chain.
+		if vault.GetCoin(common.XMRAsset).Amount.IsZero() {
+			continue
+		}
+		if _, addrErr := vault.GetAddress(common.XMRChain); addrErr != nil {
+			continue
+		}
+		return true, nil
+	}
+	return false, nil
+}
+
+// filterCompromisedVaults removes any vault whose CompromisedVault-<pubkey>
+// mimir is set to a positive value. On KV error the vault is excluded
+// (fail-closed): we can't confirm safety, so we treat it as compromised.
+// Only called for non-WASM paths; WASM contracts must see a deterministic,
+// unfiltered response to avoid consensus divergence mid-upgrade.
+func filterCompromisedVaults(ctx cosmos.Context, k keeper.Keeper, active Vaults) Vaults {
+	safe := make(Vaults, 0, len(active))
+	for _, v := range active {
+		compromised, err := isVaultCompromised(ctx, k, v.PubKey)
+		if err != nil {
+			ctx.Logger().Error("failed to read CompromisedVault mimir, excluding vault", "pub_key", v.PubKey.String(), "error", err)
+			continue
+		}
+		if compromised {
+			ctx.Logger().Info("excluding compromised vault", "pub_key", v.PubKey.String())
+			continue
+		}
+		safe = append(safe, v)
+	}
+	return safe
+}
+
+// filterInsolventVaults removes any vault flagged insolvent by the solvency
+// checker (SolvencyHaltVault-<pubkey>-<chain>). Insolvency on one chain is
+// usually the symptom of a compromised key, so the whole vault is dropped from
+// inbound-address election - including its still-solvent, unhalted chains -
+// rather than only the halted chain. On KV error the vault is excluded
+// (fail-closed). Like filterCompromisedVaults, only used for non-WASM paths so
+// WASM contracts keep seeing a deterministic, unfiltered response.
+func filterInsolventVaults(ctx cosmos.Context, k keeper.Keeper, active Vaults) Vaults {
+	safe := make(Vaults, 0, len(active))
+	for _, v := range active {
+		insolvent, err := isVaultInsolvent(ctx, k, v)
+		if err != nil {
+			ctx.Logger().Error("failed to read solvency-halt vault mimir, excluding vault", "pub_key", v.PubKey.String(), "error", err)
+			continue
+		}
+		if insolvent {
+			ctx.Logger().Info("excluding insolvent vault from inbound election", "pub_key", v.PubKey.String())
+			continue
+		}
+		safe = append(safe, v)
+	}
+	return safe
 }
 
 func (qs queryServer) queryInboundAddresses(ctx cosmos.Context, _ *types.QueryInboundAddressesRequest) (*types.QueryInboundAddressesResponse, error) {
@@ -553,7 +945,13 @@ func (qs queryServer) queryInboundAddresses(ctx cosmos.Context, _ *types.QueryIn
 		return nil, fmt.Errorf("fail to get active vaults: %w", err)
 	}
 
-	var resp []*types.QueryInboundAddressResponse
+	isWasm, _ := ctx.Value(constants.CtxWASMQuery).(bool)
+	if !isWasm {
+		active = filterCompromisedVaults(ctx, qs.mgr.Keeper(), active)
+		active = filterInsolventVaults(ctx, qs.mgr.Keeper(), active)
+	}
+
+	resp := make([]*types.QueryInboundAddressResponse, 0)
 	constAccessor := qs.mgr.GetConstants()
 	signingTransactionPeriod := constAccessor.GetInt64Value(constants.SigningTransactionPeriod)
 
@@ -562,11 +960,11 @@ func (qs queryServer) queryInboundAddresses(ctx cosmos.Context, _ *types.QueryIn
 		ctx.Logger().Error("keeper is nil, can't fulfill query")
 		return nil, errors.New("keeper is nil, can't fulfill query")
 	}
-	// select vault that is most secure
-	vault := k.GetMostSecure(ctx, active, signingTransactionPeriod)
-
-	chains := vault.GetChains()
-
+	chains := make(common.Chains, 0)
+	for _, vault := range active {
+		chains = append(chains, vault.GetChains()...)
+	}
+	chains = chains.Distinct()
 	if len(chains) == 0 {
 		chains = common.Chains{common.RuneAsset().Chain}
 	}
@@ -591,6 +989,15 @@ func (qs queryServer) queryInboundAddresses(ctx cosmos.Context, _ *types.QueryIn
 		isChainTradingPaused := k.IsChainTradingHalted(ctx, chain)
 		isChainLpPaused := k.IsLPPaused(ctx, chain)
 
+		vault, err := selectActiveVaultForChain(ctx, k, active, chain, signingTransactionPeriod)
+		if err != nil {
+			if chain == common.XMRChain {
+				ctx.Logger().Info("skipping XMR inbound address until an active XMR-capable vault exists", "error", err)
+				continue
+			}
+			ctx.Logger().Error("fail to select active vault for chain", "chain", chain.String(), "error", err)
+			return nil, fmt.Errorf("fail to select active vault for chain %s: %w", chain, err)
+		}
 		vaultAddress, err := vault.GetAddress(chain)
 		if err != nil {
 			ctx.Logger().Error("fail to get address for chain", "error", err)
@@ -648,6 +1055,11 @@ func (qs queryServer) queryInboundAddresses(ctx cosmos.Context, _ *types.QueryIn
 			capRune = liquidityRunePerValidator.MulUint64(uint64(supportingValidators)).String()
 		}
 
+		var viewKey string
+		if chain == common.XMRChain {
+			viewKey, _ = common.XMRViewKeyHex()
+		}
+
 		addr := types.QueryInboundAddressResponse{
 			Chain:                   chain.String(),
 			PubKey:                  pubKey.String(),
@@ -667,6 +1079,7 @@ func (qs queryServer) queryInboundAddresses(ctx cosmos.Context, _ *types.QueryIn
 			ActiveValidatorFraction: fraction,
 			LiquidityCapApplied:     capApplied,
 			LiquidityCapRune:        capRune,
+			ViewKey:                 viewKey,
 		}
 
 		resp = append(resp, &addr)
@@ -675,6 +1088,20 @@ func (qs queryServer) queryInboundAddresses(ctx cosmos.Context, _ *types.QueryIn
 	return &types.QueryInboundAddressesResponse{
 		InboundAddresses: resp,
 	}, nil
+}
+
+// observeChainsFromHeights converts keeper observe heights into the query
+// response type. No sorting is needed or performed here: the keeper returns the
+// heights in ascending chain order, and this only maps them one-for-one.
+func observeChainsFromHeights(chainHeights []kvTypes.ChainHeight) []*types.ChainHeight {
+	observeChains := make([]*types.ChainHeight, 0, len(chainHeights))
+	for _, chainHeight := range chainHeights {
+		observeChains = append(observeChains, &types.ChainHeight{
+			Chain:  chainHeight.Chain.String(),
+			Height: chainHeight.Height,
+		})
+	}
+	return observeChains
 }
 
 // queryNode return the Node information related to the request node address
@@ -760,8 +1187,10 @@ func (qs queryServer) queryNode(ctx cosmos.Context, req *types.QueryNodeRequest)
 		providers = make([]*types.NodeBondProvider, len(bp.Providers))
 		for i, p := range bp.Providers {
 			providers[i] = &types.NodeBondProvider{
-				BondAddress: p.BondAddress.String(),
-				Bond:        p.Bond.String(),
+				BondAddress:  p.BondAddress.String(),
+				Bond:         p.Bond.String(),
+				Bps:          p.Bps,
+				PayoutTarget: p.PayoutTarget,
 			}
 		}
 	}
@@ -802,19 +1231,11 @@ func (qs queryServer) queryNode(ctx cosmos.Context, req *types.QueryNodeRequest)
 		result.CurrentAward = reward.String()
 	}
 
-	// TODO: Represent this map as the field directly, instead of making an array?
-	// It would then always be represented in alphabetical order.
 	chainHeights, err := qs.mgr.Keeper().GetLastObserveHeight(ctx, addr)
 	if err != nil {
 		return nil, fmt.Errorf("fail to get last observe chain height: %w", err)
 	}
-	// analyze-ignore(map-iteration)
-	for c, h := range chainHeights {
-		result.ObserveChains = append(result.ObserveChains, &types.ChainHeight{
-			Chain:  c.String(),
-			Height: h,
-		})
-	}
+	result.ObserveChains = observeChainsFromHeights(chainHeights)
 
 	preflightCheckResult, err := getNodePreflightResult(ctx, qs.mgr, nodeAcc)
 	if err != nil {
@@ -972,19 +1393,11 @@ func (qs queryServer) queryNodes(ctx cosmos.Context, _ *types.QueryNodesRequest)
 			Reason:        jail.Reason,
 		}
 
-		// TODO: Represent this map as the field directly, instead of making an array?
-		// It would then always be represented in alphabetical order.
 		chainHeights, err := qs.mgr.Keeper().GetLastObserveHeight(ctx, na.NodeAddress)
 		if err != nil {
 			return nil, fmt.Errorf("fail to get last observe chain height: %w", err)
 		}
-		// analyze-ignore(map-iteration)
-		for c, h := range chainHeights {
-			result[i].ObserveChains = append(result[i].ObserveChains, &types.ChainHeight{
-				Chain:  c.String(),
-				Height: h,
-			})
-		}
+		result[i].ObserveChains = observeChainsFromHeights(chainHeights)
 
 		preflightCheckResult, err := getNodePreflightResult(ctx, qs.mgr, na)
 		if err != nil {
@@ -1005,8 +1418,10 @@ func (qs queryServer) queryNodes(ctx cosmos.Context, _ *types.QueryNodesRequest)
 			providers = make([]*types.NodeBondProvider, len(bp.Providers))
 			for i := range bp.Providers {
 				providers[i] = &types.NodeBondProvider{
-					BondAddress: bp.Providers[i].BondAddress.String(),
-					Bond:        bp.Providers[i].Bond.String(),
+					BondAddress:  bp.Providers[i].BondAddress.String(),
+					Bond:         bp.Providers[i].Bond.String(),
+					Bps:          bp.Providers[i].Bps,
+					PayoutTarget: bp.Providers[i].PayoutTarget,
 				}
 			}
 		}
@@ -1553,6 +1968,7 @@ func (qs queryServer) queryPool(ctx cosmos.Context, req *types.QueryPoolRequest)
 	p.SynthMintPaused = (synthMintPausedErr != nil)
 	p.SynthSupplyRemaining = synthSupplyRemaining.String()
 	p.DerivedDepthBps = dbps.String()
+	setPoolLuviFields(&p, pool, synthSupply)
 
 	polReserveDeposit, err := qs.mgr.Keeper().GetPOLReserveDeposit(ctx, pool.Asset)
 	if err == nil {
@@ -1570,6 +1986,20 @@ func (qs queryServer) queryPool(ctx cosmos.Context, req *types.QueryPoolRequest)
 	}
 
 	return &p, nil
+}
+
+// setPoolLuviFields fills the stateless LUVI fields of a pool response: the
+// classic index as the chain values a pool unit, the LP equity net of the
+// synth liability, and the synth overhang indicators. See types/type_luvi.go.
+func setPoolLuviFields(p *types.QueryPoolResponse, pool Pool, synthSupply cosmos.Uint) {
+	st := types.NewLuviState(pool, synthSupply)
+	p.Luvi = st.ChainLuvi().String()
+	p.LpEquity = st.LPEquity().String()
+	p.LpEquityPerUnit = st.LPEquityPerUnit().String()
+	p.SynthPerPoolDepthBps = st.SynthPerPoolDepthBps().String()
+	// an empty pool (no asset depth, no synths) is not in overhang, but a
+	// depleted one (no asset depth, synths outstanding) is
+	p.SynthOverhang = !st.SynthSupply.IsZero() && st.IsOverhang()
 }
 
 func (qs queryServer) queryPools(ctx cosmos.Context, _ *types.QueryPoolsRequest) (*types.QueryPoolsResponse, error) {
@@ -1686,6 +2116,7 @@ func (qs queryServer) queryPools(ctx cosmos.Context, _ *types.QueryPoolsRequest)
 		p.SynthMintPaused = (synthMintPausedErr != nil)
 		p.SynthSupplyRemaining = synthSupplyRemaining.String()
 		p.DerivedDepthBps = dbps.String()
+		setPoolLuviFields(&p, pool, synthSupply)
 
 		polReserveDeposit, polErr := qs.mgr.Keeper().GetPOLReserveDeposit(ctx, pool.Asset)
 		if polErr == nil {
@@ -2039,7 +2470,167 @@ func (qs queryServer) querySecuredAsset(ctx cosmos.Context, req *types.QuerySecu
 	}, nil
 }
 
-func extractVoter(ctx cosmos.Context, tx_id string, mgr *Mgrs) (common.TxID, ObservedTxVoter, error) {
+func (qs queryServer) queryStableReserve(ctx cosmos.Context, _ *types.QueryStableReserveRequest) (*types.QueryStableReserveResponse, error) {
+	moduleAddr := qs.mgr.Keeper().GetModuleAccAddress(StableReserveName)
+	securedMgr := qs.mgr.SecuredAssetManager()
+	assets := make(map[string]common.Asset)
+
+	for _, anchor := range qs.mgr.Keeper().GetAnchors(ctx, common.TOR) {
+		asset := anchor.GetLayer1Asset()
+		assets[asset.String()] = asset
+	}
+
+	iter := qs.mgr.Keeper().GetSecuredAssetIterator(ctx)
+	defer iter.Close()
+	for ; iter.Valid(); iter.Next() {
+		var secured keeper.SecuredAsset
+		if err := qs.mgr.Keeper().Cdc().Unmarshal(iter.Value(), &secured); err != nil {
+			continue
+		}
+
+		asset := secured.Asset.GetLayer1Asset()
+		if securedMgr.BalanceOf(ctx, asset, moduleAddr).IsZero() {
+			continue
+		}
+		assets[asset.String()] = asset
+	}
+
+	keys := slices.Sorted(maps.Keys(assets))
+
+	inventory := make([]*types.QueryStableReserveInventory, 0, len(keys))
+	for _, key := range keys {
+		asset := assets[key]
+		healthy, reason := qs.mgr.StableReserveManager().IsEligibleStable(ctx, asset)
+		oraclePrice := ""
+		if price, err := qs.mgr.Keeper().GetPrice(ctx, asset.Ticker.String()); err == nil {
+			oraclePrice = price.Price
+		}
+
+		inventory = append(inventory, &types.QueryStableReserveInventory{
+			Asset:       asset.String(),
+			Amount:      securedMgr.BalanceOf(ctx, asset, moduleAddr).String(),
+			Healthy:     healthy,
+			Reason:      reason,
+			OraclePrice: oraclePrice,
+		})
+	}
+
+	return &types.QueryStableReserveResponse{
+		Enabled:           qs.mgr.StableReserveManager().IsEnabled(ctx),
+		RuneBalance:       qs.mgr.Keeper().GetRuneBalanceOfModule(ctx, StableReserveName).String(),
+		DepegToleranceBps: strconv.FormatInt(qs.mgr.Keeper().GetConfigInt64(ctx, constants.StableReserveDepegToleranceBps), 10),
+		PolShareBps:       strconv.FormatInt(qs.mgr.Keeper().GetConfigInt64(ctx, constants.StableReservePOLShareBps), 10),
+		Inventory:         inventory,
+		// Deployment swaps always use quantity 0 / interval 0 (see
+		// scheduleDeploymentSwap); these are no longer configurable.
+		DeploymentStreamQuantity: "0",
+		DeploymentStreamInterval: "0",
+		ActiveSwaps:              qs.queryStableReserveActiveSwaps(ctx),
+	}, nil
+}
+
+func (qs queryServer) queryStableReserveActiveSwaps(ctx cosmos.Context) []*types.QueryStableReserveStreamingSwap {
+	stableReserveAddress, err := qs.mgr.Keeper().GetModuleAddress(StableReserveName)
+	if err != nil {
+		return nil
+	}
+
+	active := make([]*types.QueryStableReserveStreamingSwap, 0)
+	appendActive := func(iter cosmos.Iterator) {
+		defer iter.Close()
+		for ; iter.Valid(); iter.Next() {
+			var msg MsgSwap
+			if err := qs.mgr.Keeper().Cdc().Unmarshal(iter.Value(), &msg); err != nil {
+				continue
+			}
+			purpose, ok := stableReserveSwapPurpose(msg.Tx.Memo)
+			if !ok {
+				continue
+			}
+			if !msg.Tx.FromAddress.Equals(stableReserveAddress) {
+				continue
+			}
+
+			sourceAsset := ""
+			amount := "0"
+			if len(msg.Tx.Coins) > 0 {
+				sourceAsset = msg.Tx.Coins[0].Asset.String()
+				amount = msg.Tx.Coins[0].Amount.String()
+			}
+			active = append(active, &types.QueryStableReserveStreamingSwap{
+				TxId:           msg.Tx.ID.String(),
+				Memo:           msg.Tx.Memo,
+				Purpose:        purpose,
+				SourceAsset:    sourceAsset,
+				TargetAsset:    msg.TargetAsset.String(),
+				Amount:         amount,
+				StreamQuantity: msg.StreamQuantity,
+				StreamInterval: msg.StreamInterval,
+			})
+		}
+	}
+	appendActive(qs.mgr.Keeper().GetSwapQueueIterator(ctx))
+	appendActive(qs.mgr.Keeper().GetAdvSwapQueueItemIterator(ctx))
+
+	sort.SliceStable(active, func(i, j int) bool {
+		if active[i].Purpose != active[j].Purpose {
+			return active[i].Purpose < active[j].Purpose
+		}
+		return active[i].Memo < active[j].Memo
+	})
+	return active
+}
+
+func stableReserveSwapPurpose(memo string) (string, bool) {
+	key, ok := types.StableReservePendingSwapKeyFromMemo(memo)
+	if !ok {
+		return "", false
+	}
+	switch {
+	case key == types.StableReservePendingDeploySwapKey:
+		return "deployment", true
+	case strings.HasPrefix(key, types.StableReservePendingRescueSwapPrefix):
+		return "rescue", true
+	default:
+		return "", false
+	}
+}
+
+func (qs queryServer) queryStableReserveContributor(ctx cosmos.Context, req *types.QueryStableReserveContributorRequest) (*types.QueryStableReserveContributorResponse, error) {
+	if len(req.Asset) == 0 {
+		return nil, errors.New("asset not provided")
+	}
+	asset, err := common.NewAsset(req.Asset)
+	if err != nil {
+		ctx.Logger().Error("fail to parse asset", "error", err)
+		return nil, fmt.Errorf("could not parse asset: %w", err)
+	}
+	asset = asset.GetLayer1Asset()
+	if !asset.IsExternalL1Asset() {
+		return nil, fmt.Errorf("invalid stable reserve asset: %s", req.Asset)
+	}
+	if len(req.Address) == 0 {
+		return nil, errors.New("address not provided")
+	}
+	addr, err := common.NewAddress(req.Address)
+	if err != nil {
+		ctx.Logger().Error("fail to parse address", "error", err)
+		return nil, fmt.Errorf("could not parse address: %w", err)
+	}
+
+	credit, err := qs.mgr.Keeper().GetStableReserveCredit(ctx, asset, addr)
+	if err != nil {
+		return nil, fmt.Errorf("could not get stable reserve contributor credit: %w", err)
+	}
+
+	return &types.QueryStableReserveContributorResponse{
+		Asset:   asset.String(),
+		Address: addr.String(),
+		Credit:  credit.String(),
+	}, nil
+}
+
+func extractVoter(ctx cosmos.Context, tx_id string, mgr *Mgrs, outbound bool) (common.TxID, ObservedTxVoter, error) {
 	if len(tx_id) == 0 {
 		return "", ObservedTxVoter{}, errors.New("tx id not provided")
 	}
@@ -2048,7 +2639,12 @@ func extractVoter(ctx cosmos.Context, tx_id string, mgr *Mgrs) (common.TxID, Obs
 		ctx.Logger().Error("fail to parse tx id", "error", err)
 		return "", ObservedTxVoter{}, fmt.Errorf("fail to parse tx id: %w", err)
 	}
-	voter, err := mgr.Keeper().GetObservedTxInVoter(ctx, hash)
+	var voter ObservedTxVoter
+	if outbound {
+		voter, err = mgr.Keeper().GetObservedTxOutVoter(ctx, hash)
+	} else {
+		voter, err = mgr.Keeper().GetObservedTxInVoter(ctx, hash)
+	}
 	if err != nil {
 		ctx.Logger().Error("fail to get observed tx voter", "error", err)
 		return "", ObservedTxVoter{}, fmt.Errorf("fail to get observed tx voter: %w", err)
@@ -2057,19 +2653,20 @@ func extractVoter(ctx cosmos.Context, tx_id string, mgr *Mgrs) (common.TxID, Obs
 }
 
 func (qs queryServer) queryTxVoters(ctx cosmos.Context, req *types.QueryTxVotersRequest) (*types.QueryObservedTxVoter, error) {
-	hash, voter, err := extractVoter(ctx, req.TxId, qs.mgr)
+	hash, voter, err := extractVoter(ctx, req.TxId, qs.mgr, req.Outbound)
 	if err != nil {
 		return nil, err
 	}
-	// when tx in voter doesn't exist , double check tx out voter
-	if len(voter.Txs) == 0 {
+	// Migrations can have both voters under one tx ID. Explicit outbound
+	// queries must never fall back to destination-side observation metadata.
+	if !req.Outbound && len(voter.Txs) == 0 {
 		voter, err = qs.mgr.Keeper().GetObservedTxOutVoter(ctx, hash)
 		if err != nil {
 			return nil, fmt.Errorf("fail to get observed tx out voter: %w", err)
 		}
-		if len(voter.Txs) == 0 {
-			return nil, fmt.Errorf("tx: %s doesn't exist", hash)
-		}
+	}
+	if len(voter.Txs) == 0 {
+		return nil, fmt.Errorf("tx: %s doesn't exist", hash)
 	}
 
 	var txs []types.QueryObservedTx
@@ -2298,7 +2895,7 @@ func newTxStagesResponse(ctx cosmos.Context, voter ObservedTxVoter, isSwap, isPe
 
 func (qs queryServer) queryTxStages(ctx cosmos.Context, req *types.QueryTxStagesRequest) (*types.QueryTxStagesResponse, error) {
 	// First, get the ObservedTxVoter of interest.
-	_, voter, err := extractVoter(ctx, req.TxId, qs.mgr)
+	_, voter, err := extractVoter(ctx, req.TxId, qs.mgr, false)
 	if err != nil {
 		return nil, err
 	}
@@ -2314,7 +2911,7 @@ func (qs queryServer) queryTxStages(ctx cosmos.Context, req *types.QueryTxStages
 
 func (qs queryServer) queryTxStatus(ctx cosmos.Context, req *types.QueryTxStatusRequest) (*types.QueryTxStatusResponse, error) {
 	// First, get the ObservedTxVoter of interest.
-	_, voter, err := extractVoter(ctx, req.TxId, qs.mgr)
+	_, voter, err := extractVoter(ctx, req.TxId, qs.mgr, false)
 	if err != nil {
 		return nil, err
 	}
@@ -2359,7 +2956,7 @@ func (qs queryServer) queryTxStatus(ctx cosmos.Context, req *types.QueryTxStatus
 }
 
 func (qs queryServer) queryTx(ctx cosmos.Context, req *types.QueryTxRequest) (*types.QueryTxResponse, error) {
-	hash, voter, err := extractVoter(ctx, req.TxId, qs.mgr)
+	hash, voter, err := extractVoter(ctx, req.TxId, qs.mgr, false)
 	if err != nil {
 		return nil, err
 	}
@@ -2394,13 +2991,25 @@ func (qs queryServer) queryTx(ctx cosmos.Context, req *types.QueryTxRequest) (*t
 }
 
 func extractBlockHeight(ctx cosmos.Context, heightStr string) (int64, error) {
+	return parseQueryHeight(ctx, heightStr, false)
+}
+
+// parseQueryHeight parses historical query heights for endpoint handlers and
+// rejects future heights so callers cannot evaluate unavailable state.
+func parseQueryHeight(ctx cosmos.Context, heightStr string, allowEmpty bool) (int64, error) {
 	if len(heightStr) == 0 {
+		if allowEmpty {
+			return ctx.BlockHeight(), nil
+		}
 		return -1, errors.New("block height not provided")
 	}
-	height, err := strconv.ParseInt(heightStr, 0, 64)
+	height, err := strconv.ParseInt(heightStr, 10, 64)
 	if err != nil {
 		ctx.Logger().Error("fail to parse block height", "error", err)
 		return -1, fmt.Errorf("fail to parse block height: %w", err)
+	}
+	if height < 0 {
+		return -1, fmt.Errorf("block height must not be negative")
 	}
 	if height > ctx.BlockHeight() {
 		return -1, fmt.Errorf("block height not available yet")
@@ -2519,8 +3128,10 @@ func (qs queryServer) queryKeysign(ctx cosmos.Context, heightStr, pubKey string)
 // queryOutQueue - iterates over txout, counting how many transactions are waiting to be sent
 func (qs queryServer) queryQueue(ctx cosmos.Context, _ *types.QueryQueueRequest) (*types.QueryQueueResponse, error) {
 	constAccessor := qs.mgr.GetConstants()
-	signingTransactionPeriod := constAccessor.GetInt64Value(constants.SigningTransactionPeriod)
-	startHeight := ctx.BlockHeight() - signingTransactionPeriod
+	signingTransactionPeriod := qs.mgr.Keeper().GetConfigInt64(ctx, constants.SigningTransactionPeriod)
+	// XMR and EVM token/aggregator outbounds stay live for an extended signing
+	// period; scan that window and apply each item's own period below.
+	startHeight := ctx.BlockHeight() - types.MaxTxOutSigningTransactionPeriod(signingTransactionPeriod)
 	var query types.QueryQueueResponse
 	scheduledOutboundValue := cosmos.ZeroUint()
 	scheduledOutboundClout := cosmos.ZeroUint()
@@ -2553,8 +3164,8 @@ func (qs queryServer) queryQueue(ctx cosmos.Context, _ *types.QueryQueueRequest)
 			return nil, fmt.Errorf("fail to get tx out array from key value store: %w", err)
 		}
 		for _, tx := range txs.TxArray {
-			if tx.OutHash.IsEmpty() {
-				memo, _ := ParseMemoWithTHORNames(ctx, qs.mgr.Keeper(), tx.Memo)
+			if tx.OutHash.IsEmpty() && height >= ctx.BlockHeight()-tx.SigningTransactionPeriod(signingTransactionPeriod) {
+				memo, _ := ParseMemoWithTHORNames(ctx, qs.mgr.Keeper(), tx.GetMemo())
 				if memo.IsInternal() {
 					query.Internal++
 				} else if memo.IsOutbound() {
@@ -2645,25 +3256,22 @@ func (qs queryServer) queryConstantValues(_ cosmos.Context, _ *types.QueryConsta
 	cv := constAccessor.GetConstantValsByKeyname()
 
 	proto := types.QueryConstantValuesResponse{}
-	// analyze-ignore(map-iteration)
-	for k, v := range cv.Int64Values {
+	for _, k := range slices.Sorted(maps.Keys(cv.Int64Values)) {
 		proto.Int_64Values = append(proto.Int_64Values, &types.Int64Constants{
 			Name:  k,
-			Value: v,
+			Value: cv.Int64Values[k],
 		})
 	}
-	// analyze-ignore(map-iteration)
-	for k, v := range cv.BoolValues {
+	for _, k := range slices.Sorted(maps.Keys(cv.BoolValues)) {
 		proto.BoolValues = append(proto.BoolValues, &types.BoolConstants{
 			Name:  k,
-			Value: v,
+			Value: cv.BoolValues[k],
 		})
 	}
-	// analyze-ignore(map-iteration)
-	for k, v := range cv.StringValues {
+	for _, k := range slices.Sorted(maps.Keys(cv.StringValues)) {
 		proto.StringValues = append(proto.StringValues, &types.StringConstants{
 			Name:  k,
-			Value: v,
+			Value: cv.StringValues[k],
 		})
 	}
 
@@ -3133,10 +3741,12 @@ func (qs queryServer) queryScheduledOutbound(ctx cosmos.Context, _ *types.QueryS
 }
 
 func (qs queryServer) queryPendingOutbound(ctx cosmos.Context, _ *types.QueryPendingOutboundRequest) (*types.QueryOutboundResponse, error) {
-	constAccessor := qs.mgr.GetConstants()
-	signingTransactionPeriod := constAccessor.GetInt64Value(constants.SigningTransactionPeriod)
+	signingTransactionPeriod := qs.mgr.Keeper().GetConfigInt64(ctx, constants.SigningTransactionPeriod)
 	rescheduleCoalesceBlocks := qs.mgr.Keeper().GetConfigInt64(ctx, constants.RescheduleCoalesceBlocks)
-	startHeight := ctx.BlockHeight() - signingTransactionPeriod
+	// XMR and EVM token/aggregator outbounds stay live for an extended signing
+	// period (see LackSigning); scan that window and apply each item's own period
+	// below so they remain visible until they are actually rescheduled.
+	startHeight := ctx.BlockHeight() - types.MaxTxOutSigningTransactionPeriod(signingTransactionPeriod)
 	if startHeight < 1 {
 		startHeight = 1
 	}
@@ -3158,7 +3768,7 @@ func (qs queryServer) queryPendingOutbound(ctx cosmos.Context, _ *types.QueryPen
 			return nil, fmt.Errorf("fail to get tx out array from key value store: %w", err)
 		}
 		for _, tx := range txs.TxArray {
-			if tx.OutHash.IsEmpty() {
+			if tx.OutHash.IsEmpty() && height >= ctx.BlockHeight()-tx.SigningTransactionPeriod(signingTransactionPeriod) {
 				result = append(result, castTxOutItem(tx, height))
 			}
 		}
@@ -3169,16 +3779,54 @@ func (qs queryServer) queryPendingOutbound(ctx cosmos.Context, _ *types.QueryPen
 
 func (qs queryServer) querySwapQueue(ctx cosmos.Context, _ *types.QuerySwapQueueRequest) (*types.QuerySwapQueueResponse, error) {
 	result := make([]*MsgSwap, 0)
+	qs.iterSwapQueue(ctx, func(msg *MsgSwap) { result = append(result, msg) })
 
+	return &types.QuerySwapQueueResponse{SwapQueue: result}, nil
+}
+
+func (qs queryServer) querySwapQueuePaginated(ctx cosmos.Context, req *types.QuerySwapQueuePaginatedRequest) (*types.QuerySwapQueuePaginatedResponse, error) {
+	offset := req.Offset
+	limit := req.Limit
+	if limit == 0 {
+		limit = config.GetThornode().API.Pagination.DefaultPageSize
+	}
+	if limit > config.GetThornode().API.Pagination.MaxPageSize {
+		limit = config.GetThornode().API.Pagination.MaxPageSize
+	}
+
+	result := make([]*MsgSwap, 0)
+	var total uint64
+	// TODO: If swap queue pagination starts showing performance issues, avoid
+	// unmarshalling entries outside the requested page window.
+	qs.iterSwapQueue(ctx, func(msg *MsgSwap) {
+		if total >= offset && uint64(len(result)) < limit {
+			result = append(result, msg)
+		}
+		total++
+	})
+
+	return &types.QuerySwapQueuePaginatedResponse{
+		SwapQueue: result,
+		Pagination: &types.PaginationMeta{
+			Offset:  offset,
+			Limit:   limit,
+			Total:   total,
+			HasNext: total > offset && total-offset > limit,
+			HasPrev: offset > 0,
+		},
+	}, nil
+}
+
+func (qs queryServer) iterSwapQueue(ctx cosmos.Context, handle func(*MsgSwap)) {
 	// Add items from regular swap queue
 	iterator := qs.mgr.Keeper().GetSwapQueueIterator(ctx)
 	defer iterator.Close()
 	for ; iterator.Valid(); iterator.Next() {
-		var msg MsgSwap
-		if err := qs.mgr.Keeper().Cdc().Unmarshal(iterator.Value(), &msg); err != nil {
+		msg := &MsgSwap{}
+		if err := qs.mgr.Keeper().Cdc().Unmarshal(iterator.Value(), msg); err != nil {
 			continue
 		}
-		result = append(result, &msg)
+		handle(msg)
 	}
 
 	// Add items from advanced swap queue if enabled
@@ -3186,15 +3834,13 @@ func (qs queryServer) querySwapQueue(ctx cosmos.Context, _ *types.QuerySwapQueue
 		advIterator := qs.mgr.Keeper().GetAdvSwapQueueItemIterator(ctx)
 		defer advIterator.Close()
 		for ; advIterator.Valid(); advIterator.Next() {
-			var msg MsgSwap
-			if err := qs.mgr.Keeper().Cdc().Unmarshal(advIterator.Value(), &msg); err != nil {
+			msg := &MsgSwap{}
+			if err := qs.mgr.Keeper().Cdc().Unmarshal(advIterator.Value(), msg); err != nil {
 				continue
 			}
-			result = append(result, &msg)
+			handle(msg)
 		}
 	}
-
-	return &types.QuerySwapQueueResponse{SwapQueue: result}, nil
 }
 
 func (qs queryServer) querySwapDetails(ctx cosmos.Context, req *types.QuerySwapDetailsRequest) (*types.QuerySwapDetailsResponse, error) {
@@ -3321,18 +3967,21 @@ func (qs queryServer) queryInvariant(ctx cosmos.Context, req *types.QueryInvaria
 }
 
 func (qs queryServer) queryBlock(ctx cosmos.Context, req *types.QueryBlockRequest) (*types.QueryBlockResponse, error) {
-	initTendermintOnce.Do(initTendermint)
+	tmClient, err := getTendermintClient()
+	if err != nil {
+		return nil, err
+	}
 	height := ctx.BlockHeight()
-	if parsed, err := strconv.ParseInt(req.Height, 10, 64); err == nil {
+	if parsed, parseErr := strconv.ParseInt(req.Height, 10, 64); parseErr == nil {
 		height = parsed
 	}
 
 	// get the block and results from tendermint rpc
-	block, err := tendermintClient.Block(ctx.Context(), &height)
+	block, err := tmClient.Block(ctx.Context(), &height)
 	if err != nil {
 		return nil, fmt.Errorf("fail to get block from tendermint rpc: %w", err)
 	}
-	results, err := tendermintClient.BlockResults(ctx.Context(), &height)
+	results, err := tmClient.BlockResults(ctx.Context(), &height)
 	if err != nil {
 		return nil, fmt.Errorf("fail to get block results from tendermint rpc: %w", err)
 	}
@@ -3447,6 +4096,7 @@ func castTxOutItem(toi TxOutItem, height int64) *types.QueryTxOutItem {
 		Height:                height, // Omitted if 0, for use in openapi.TxDetailsResponse
 		VaultPubKey:           toi.VaultPubKey.String(),
 		VaultPubKeyEddsa:      toi.VaultPubKeyEddsa.String(),
+		VaultPubKeyFrost:      toi.VaultPubKeyFrost.String(),
 		InHash:                toi.InHash.String(),
 		OutHash:               toi.OutHash.String(),
 		Chain:                 toi.Chain.String(),
@@ -3481,7 +4131,21 @@ func castObservedTx(observedTx ObservedTx) types.QueryObservedTx {
 		Aggregator:            observedTx.Aggregator,
 		AggregatorTarget:      observedTx.AggregatorTarget,
 		AggregatorTargetLimit: observedTx.AggregatorTargetLimit,
+		SpentOutputRefs:       castOutputRefs(observedTx.SpentOutputRefs),
+		XmrTxKey:              observedTx.XmrTxKey,
+		XmrMinedHeight:        observedTx.XmrMinedHeight,
 	}
+}
+
+func castOutputRefs(refs []common.OutputRef) []*common.OutputRef {
+	if len(refs) == 0 {
+		return nil
+	}
+	out := make([]*common.OutputRef, 0, len(refs))
+	for i := range refs {
+		out = append(out, &refs[i])
+	}
+	return out
 }
 
 func castVaultRouters(chainContracts []ChainContract) []*types.VaultRouter {
@@ -3526,8 +4190,9 @@ func eventMap(e sdk.Event) map[string]string {
 }
 
 func simulate(ctx cosmos.Context, mgr Manager, msg sdk.Msg) (sdk.Events, error) {
-	// use the first active node account as the signer
-	nodeAccounts, err := mgr.Keeper().ListActiveValidators(ctx)
+	// use the first active node account as the signer (same store access as
+	// ListActiveValidators, without unmarshalling the other active nodes)
+	nodeAccounts, err := mgr.Keeper().ListActiveValidatorsUpTo(ctx, 1)
 	if err != nil {
 		return nil, fmt.Errorf("no active node accounts: %w", err)
 	}
@@ -3556,6 +4221,9 @@ func simulate(ctx cosmos.Context, mgr Manager, msg sdk.Msg) (sdk.Events, error) 
 	cms := ctx.MultiStore().CacheMultiStore() // never call cms.Write()
 	em := cosmos.NewEventManager()
 	ctx = ctx.WithMultiStore(cms).WithEventManager(em)
+	// cms is discarded, so its txout writes need not disable the caller's
+	// txout cache (if any) for the caller's later simulations
+	ctx = keeper.ForkTxOutCache(ctx)
 
 	// disable logging
 	ctx = ctx.WithLogger(nullLogger)
@@ -3567,8 +4235,12 @@ func simulate(ctx cosmos.Context, mgr Manager, msg sdk.Msg) (sdk.Events, error) 
 	}
 	iter.Close()
 
+	// AdvSwapQueueEnabled reads a config/mimir value that does not change during
+	// simulation, so resolve it once instead of on every end-block iteration.
+	advSwapQueueEnabled := mgr.Keeper().AdvSwapQueueEnabled(ctx)
+
 	// reset the advanced swap queue if enabled
-	if mgr.Keeper().AdvSwapQueueEnabled(ctx) {
+	if advSwapQueueEnabled {
 		advIter := mgr.Keeper().GetAdvSwapQueueItemIterator(ctx)
 		for ; advIter.Valid(); advIter.Next() {
 			mgr.Keeper().DeleteKey(ctx, advIter.Key())
@@ -3576,17 +4248,28 @@ func simulate(ctx cosmos.Context, mgr Manager, msg sdk.Msg) (sdk.Events, error) 
 		advIter.Close()
 	}
 
-	// save pool state
+	// save pool state - the end-block loop restores these between iterations so
+	// each simulated sub-swap of a streaming swap sees the original pool depth
 	pools, err := mgr.Keeper().GetPools(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get pools: %w", err)
 	}
+	cdc := mgr.Keeper().Cdc()
 
 	// simulate the handler
 	_, err = NewInternalHandler(mgr)(ctx, msg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to simulate handler: %w", err)
 	}
+
+	// touchedPools is the set of pools mutated while processing this swap. It is
+	// detected on the first end-block iteration by diffing against the snapshot
+	// and reused thereafter: simulate() only ever processes a single MsgSwap, so
+	// every streaming sub-swap follows the same route and touches the same pools.
+	// Restoring only these (rather than every pool, every iteration) keeps the
+	// per-iteration restore O(route) instead of O(all pools).
+	var touchedPools []Pool
+	touchedDetected := false
 
 	// simulate end block, loop it until the swap queue is empty
 	queueEmpty := false
@@ -3600,14 +4283,30 @@ func simulate(ctx cosmos.Context, mgr Manager, msg sdk.Msg) (sdk.Events, error) 
 		}
 
 		// process advanced swap queue if enabled
-		if mgr.Keeper().AdvSwapQueueEnabled(ctx) {
+		if advSwapQueueEnabled {
 			err = mgr.AdvSwapQueueMgr().EndBlock(blockCtx, mgr, false)
 			if err != nil {
 				return nil, fmt.Errorf("failed to simulate end block for advanced queue: %w", err)
 			}
 		}
 
-		for _, pool := range pools {
+		// restore pool depths to the pre-swap snapshot. On the first iteration
+		// the touched set is unknown, so diff every pool against the snapshot;
+		// thereafter only the pools the swap actually moved need restoring.
+		if !touchedDetected {
+			for i := range pools {
+				var current Pool
+				current, err = mgr.Keeper().GetPool(ctx, pools[i].Asset)
+				if err != nil {
+					return nil, fmt.Errorf("failed to get pool: %w", err)
+				}
+				if !bytes.Equal(cdc.MustMarshal(&current), cdc.MustMarshal(&pools[i])) {
+					touchedPools = append(touchedPools, pools[i])
+				}
+			}
+			touchedDetected = true
+		}
+		for _, pool := range touchedPools {
 			_ = mgr.Keeper().SetPool(ctx, pool)
 		}
 
@@ -3617,7 +4316,7 @@ func simulate(ctx cosmos.Context, mgr Manager, msg sdk.Msg) (sdk.Events, error) 
 		iter.Close()
 
 		advQueueEmpty := true
-		if mgr.Keeper().AdvSwapQueueEnabled(ctx) {
+		if advSwapQueueEnabled {
 			advIter := mgr.Keeper().GetAdvSwapQueueItemIterator(ctx)
 			advQueueEmpty = !advIter.Valid()
 			advIter.Close()
@@ -3761,6 +4460,29 @@ func (qs queryServer) queryTCYClaimer(ctx cosmos.Context, req *types.QueryTCYCla
 	}
 
 	return &types.QueryTCYClaimerResponse{TcyClaimer: claimsRes}, nil
+}
+
+// queryTCYProtocolOwned returns the amount of TCY held by the claim module
+// in excess of the outstanding TCYClaimer entitlements. This surplus is
+// accumulated by claimingSwapRuneToTCY each distribution cycle: RUNE rewards
+// earmarked for the claim module's own TCY balance (plus the pool's TCY
+// depth and unaccounted supply) are swapped back into TCY against the pool,
+// and the resulting TCY accumulates in the claim module on top of the
+// unclaimed-entitlement backing.
+func (qs queryServer) queryTCYProtocolOwned(ctx cosmos.Context, _ *types.QueryTCYProtocolOwnedRequest) (*types.QueryTCYProtocolOwnedResponse, error) {
+	claimBalance := qs.mgr.Keeper().GetBalanceOfModule(ctx, TCYClaimingName, common.TCY.Native())
+
+	unclaimed := cosmos.ZeroUint()
+	iterator := qs.mgr.Keeper().GetTCYClaimerIterator(ctx)
+	defer iterator.Close()
+	for ; iterator.Valid(); iterator.Next() {
+		var claimer TCYClaimer
+		qs.mgr.Keeper().Cdc().MustUnmarshal(iterator.Value(), &claimer)
+		unclaimed = unclaimed.Add(claimer.Amount)
+	}
+
+	protocolOwned := common.SafeSub(claimBalance, unclaimed)
+	return &types.QueryTCYProtocolOwnedResponse{Amount: protocolOwned.String()}, nil
 }
 
 // queryOraclePrices

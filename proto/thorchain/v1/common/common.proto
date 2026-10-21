@@ -91,6 +91,19 @@ message OutputRef {
   string spend_tx_hash = 4;
 }
 
+// SolNonceUpdate is the post-transaction state of a Solana vault's
+// durable-nonce account, attested with the observation of the vault transaction
+// that created or advanced it. THORChain commits it as the vault's current
+// durable nonce once a supermajority of final observations of that transaction
+// agree on it exactly.
+message SolNonceUpdate {
+  option (gogoproto.stringer) = true;
+
+  string nonce_account = 1;
+  string nonce = 2;
+  int64 slot = 3;
+}
+
 message ObservedTx {
   Tx tx = 1 [ (gogoproto.nullable) = false ];
   Status status = 2;
@@ -107,6 +120,10 @@ message ObservedTx {
     (gogoproto.nullable) = true
   ];
   repeated OutputRef spent_output_refs = 12 [ (gogoproto.nullable) = false ];
+  string xmr_tx_key = 13;
+  SolNonceUpdate sol_nonce = 14;
+  // Original XMR mining location, independent of the finalization height.
+  int64 xmr_mined_height = 15;
 }
 
 message Attestation {
@@ -203,6 +220,19 @@ message ErrataTx {
   string chain = 2 [ (gogoproto.casttype) = "Chain" ];
 }
 
+// ErrataTxOutcome records processing-time applicability after errata quorum.
+// It does not change the signed ErrataTx payload or its TxID-based identity.
+enum ErrataTxOutcome {
+  // No terminal result yet, including records written before this field.
+  ERRATA_TX_OUTCOME_UNSPECIFIED = 0;
+  // An applicable observation was reverted, or was already reverted.
+  ERRATA_TX_OUTCOME_REVERTED = 1;
+  // No applicable observation existed when processing completed. A later
+  // inbound quorum still applies the committed TxID-wide errata before
+  // accounting.
+  ERRATA_TX_OUTCOME_NO_APPLICABLE_OBSERVATION = 2;
+}
+
 message AttestErrataTx {
   option (gogoproto.stringer) = true;
 
@@ -215,6 +245,8 @@ message QuorumErrataTx {
 
   ErrataTx errata_tx = 1;
   repeated Attestation attestations = 2;
+  // THORNode's result, never an attested or submitter-authoritative field.
+  ErrataTxOutcome outcome = 3;
 }
 
 message PriceFeed {

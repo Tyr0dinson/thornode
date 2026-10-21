@@ -45,7 +45,7 @@ Note the context/background should be written in the present tense.
 - [012 - Scale Lending](./adr-012-scale-lending.md)
 - [013 - Synth Backstop](./adr-013-synth-backstop.md)
 - [014 - Reduce Saver Yield Synth Target to Match POL Target](./adr-014-reduce-saver-yield-target.md)
-- [015 - Refund Synth Positions After Ragnarok](architecture/adr-015-refund-synth-positions-after-ragnarok.md)
+- [015 - Refund Synth Positions After Ragnarok](./adr-015-refund-synth-positions-after-ragnarok.md)
 
 ### Accepted
 
@@ -78,6 +78,8 @@ None
 - [009 - Reserve Income and Fee Overhaul](./adr-009-reserve-income-fee-overhaul.md)
 - [019 - AutoBond](./adr-019-auto-bond.md)
 - [025 - Migrate Dev Fund Address](./adr-025-migrate-dev-fund-address.md)
+- [027 - Affiliate Revenue Share (REVSHARE)](./adr-027-affiliate-revshare.md)
+- [029 - Bond Yield Reward-Time Payouts](./adr-029-bond-yield-payouts.md)
 
 ### On Pause
 

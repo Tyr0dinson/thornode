@@ -229,3 +229,39 @@ type: check
 endpoint: http://localhost:1317/auth/accounts/{{ addr_thor_wolf }}
 asserts:
   - .result.value.sequence == "3"
+---
+########################################################################################
+# a send denominated in an aliasing denom must not debit a different one
+########################################################################################
+type: tx-mimir
+key: BankSendEnabled
+value: 1
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_wolf }}
+asserts:
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == 2499990000000
+---
+# "x/rune" parses to THOR.RUNE, whose denom is "rune", so converting this send to
+# the module address into a deposit would debit native RUNE the sender never
+# denominated it in. The send is rejected instead.
+type: tx-bank-send
+from_address: {{ addr_thor_wolf }}
+to_address: {{ addr_module_thorchain }}
+amount:
+  - denom: x/rune
+    amount: "100000000"
+memo: "noop"
+---
+type: create-blocks
+count: 1
+---
+# only the native tx fee, which the ante handler deducts either way, was taken
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_wolf }}
+asserts:
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == 2499988000000
