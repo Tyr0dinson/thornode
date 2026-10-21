@@ -1,10 +1,9 @@
 package keeperv1
 
 import (
-	"cosmossdk.io/log"
-	"cosmossdk.io/store"
-	storemetrics "cosmossdk.io/store/metrics"
+	"cosmossdk.io/log/v2"
 	dbm "github.com/cosmos/cosmos-db"
+	"github.com/cosmos/cosmos-sdk/store/v2"
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -21,7 +20,7 @@ func (s *SolvencyQuotaKeeperSuite) TestPersistsAndOverwritesOneRecord(c *C) {
 	// and is only used without commits. Use a dedicated store for restart QA.
 	db := dbm.NewMemDB()
 	key := cosmos.NewKVStoreKey(StoreKey)
-	ms := store.NewCommitMultiStore(db, log.NewNopLogger(), storemetrics.NewNoOpMetrics())
+	ms := store.NewCommitMultiStore(db, log.NewNopLogger())
 	ms.MountStoreWithDB(key, cosmos.StoreTypeIAVL, nil)
 	c.Assert(ms.LoadLatestVersion(), IsNil)
 	ctx = ctx.WithMultiStore(ms)
@@ -45,7 +44,7 @@ func (s *SolvencyQuotaKeeperSuite) TestPersistsAndOverwritesOneRecord(c *C) {
 
 	// Commit/reload the store and instantiate a fresh keeper, as on restart.
 	ms.Commit()
-	reloaded := store.NewCommitMultiStore(db, log.NewNopLogger(), storemetrics.NewNoOpMetrics())
+	reloaded := store.NewCommitMultiStore(db, log.NewNopLogger())
 	reloaded.MountStoreWithDB(key, cosmos.StoreTypeIAVL, nil)
 	c.Assert(reloaded.LoadLatestVersion(), IsNil)
 	ctx = ctx.WithMultiStore(reloaded)
