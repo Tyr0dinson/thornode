@@ -1,6 +1,7 @@
 package gaia
 
 import (
+	"bytes"
 	"encoding/hex"
 	"fmt"
 
@@ -13,10 +14,16 @@ import (
 	"github.com/cosmos/cosmos-sdk/crypto/hd"
 	cKeys "github.com/cosmos/cosmos-sdk/crypto/keyring"
 	ctypes "github.com/cosmos/cosmos-sdk/types"
+	signingtypes "github.com/cosmos/cosmos-sdk/types/tx/signing"
+	"github.com/cosmos/cosmos-sdk/x/auth/tx"
 	btypes "github.com/cosmos/cosmos-sdk/x/bank/types"
+	ibctransfertypes "github.com/cosmos/ibc-go/v8/modules/apps/transfer/types"
 	ibccoretypes "github.com/cosmos/ibc-go/v8/modules/core/02-client/types"
 	ibcchanneltypes "github.com/cosmos/ibc-go/v8/modules/core/04-channel/types"
 	ibclightclient "github.com/cosmos/ibc-go/v8/modules/light-clients/07-tendermint"
+
+	wasmtypes "github.com/CosmWasm/wasmd/x/wasm/types"
+	tmtypes "github.com/cometbft/cometbft/types"
 
 	protov2 "google.golang.org/protobuf/proto"
 
@@ -333,4 +340,96 @@ func (s *BlockScannerTestSuite) TestProcessTxsMsgSendWithIBCMessage(c *C) {
 	assertTxInItem(c, txInItems[0],
 		hex.EncodeToString(tmhash.Sum(rawTx)), sender, vault, "test", 100000000,
 	)
+}
+
+// -------------------------------------------------------------------------------------
+// Wasm-bearing transactions
+// -------------------------------------------------------------------------------------
+
+// A transaction bundling MsgExecuteContract with a MsgSend deposit must still have
+// the MsgSend observed. Tx decoding is all-or-nothing, so before the codec
+// registered the CosmWasm types the WHOLE transaction failed decode ("unable to
+// resolve type URL /cosmwasm.wasm.v1.MsgExecuteContract") and the bundled deposit
+// was silently dropped by every node on the network. This test builds its scanner
+// with newGaiaCodec — the exact production registry — because registering types
+// inside the test (as other tests here do) would have hidden the bug.
+func (s *BlockScannerTestSuite) TestProcessTxsObservesMsgSendBundledWithWasm(c *C) {
+	cfg := config.BifrostBlockScannerConfiguration{
+		ChainID: common.GAIAChain,
+		WhitelistCosmosAssets: []config.WhitelistCosmosAsset{
+			{Denom: "uatom", Decimals: 6, THORChainSymbol: "ATOM"},
+		},
+	}
+
+	cdc := newGaiaCodec()
+	txConfig := tx.NewTxConfig(cdc, []signingtypes.SignMode{signingtypes.SignMode_SIGN_MODE_DIRECT})
+
+	blockScanner := CosmosBlockScanner{
+		cfg:    cfg,
+		rpc:    &mockTendermintRPC{},
+		cdc:    cdc,
+		logger: log.Logger.With().Str("module", "blockscanner").Str("chain", common.GAIAChain.String()).Logger(),
+	}
+
+	from := ctypes.AccAddress(make([]byte, 20))
+	to := ctypes.AccAddress(bytes.Repeat([]byte{0x1}, 20))
+
+	builder := txConfig.NewTxBuilder()
+	err := builder.SetMsgs(
+		&wasmtypes.MsgExecuteContract{
+			Sender:   from.String(),
+			Contract: to.String(),
+			Msg:      wasmtypes.RawContractMessage(`{"swap":{}}`),
+		},
+		&btypes.MsgSend{
+			FromAddress: from.String(),
+			ToAddress:   to.String(),
+			Amount:      ctypes.NewCoins(ctypes.NewCoin("uatom", sdkmath.NewInt(5_000_000))),
+		},
+	)
+	c.Assert(err, IsNil)
+	builder.SetMemo("ADD:GAIA.ATOM")
+
+	rawTx, err := txConfig.TxEncoder()(builder.GetTx())
+	c.Assert(err, IsNil)
+
+	txInItems, err := blockScanner.processTxs(1, []tmtypes.Tx{rawTx})
+	c.Assert(err, IsNil)
+
+	// The wasm message itself is not a deposit vector; the bundled MsgSend is.
+	c.Assert(len(txInItems), Equals, 1)
+	c.Assert(txInItems[0].Memo, Equals, "ADD:GAIA.ATOM")
+	c.Assert(len(txInItems[0].Coins), Equals, 1)
+	c.Assert(txInItems[0].Coins[0].Asset.String(), Equals, "GAIA.ATOM")
+	c.Assert(txInItems[0].Coins[0].Amount.String(), Equals, "500000000") // 5 ATOM in 1e8
+
+	// Same shape with an IBC MsgTransfer sibling — MsgTransfer was never
+	// registered in the decode codec, so this bundle was dropped whole just like
+	// the wasm one.
+	builder = txConfig.NewTxBuilder()
+	err = builder.SetMsgs(
+		&ibctransfertypes.MsgTransfer{
+			SourcePort:    "transfer",
+			SourceChannel: "channel-0",
+			Token:         ctypes.NewCoin("uatom", sdkmath.NewInt(1_000_000)),
+			Sender:        from.String(),
+			Receiver:      to.String(),
+			TimeoutHeight: ibccoretypes.Height{RevisionNumber: 1, RevisionHeight: 1},
+		},
+		&btypes.MsgSend{
+			FromAddress: from.String(),
+			ToAddress:   to.String(),
+			Amount:      ctypes.NewCoins(ctypes.NewCoin("uatom", sdkmath.NewInt(5_000_000))),
+		},
+	)
+	c.Assert(err, IsNil)
+	builder.SetMemo("ADD:GAIA.ATOM")
+
+	rawTx, err = txConfig.TxEncoder()(builder.GetTx())
+	c.Assert(err, IsNil)
+
+	txInItems, err = blockScanner.processTxs(1, []tmtypes.Tx{rawTx})
+	c.Assert(err, IsNil)
+	c.Assert(len(txInItems), Equals, 1)
+	c.Assert(txInItems[0].Coins[0].Asset.String(), Equals, "GAIA.ATOM")
 }

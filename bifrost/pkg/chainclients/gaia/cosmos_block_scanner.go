@@ -5,10 +5,15 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
 
+	feegranttypes "cosmossdk.io/x/feegrant"
+	wasmtypes "github.com/CosmWasm/wasmd/x/wasm/types"
+	icacontrollertypes "github.com/cosmos/ibc-go/v8/modules/apps/27-interchain-accounts/controller/types"
+	ibctransfertypes "github.com/cosmos/ibc-go/v8/modules/apps/transfer/types"
 	ibccoretypes "github.com/cosmos/ibc-go/v8/modules/core/02-client/types"
 	ibcchanneltypes "github.com/cosmos/ibc-go/v8/modules/core/04-channel/types"
 	ibclightclient "github.com/cosmos/ibc-go/v8/modules/light-clients/07-tendermint"
@@ -25,11 +30,14 @@ import (
 	upgradetypes "cosmossdk.io/x/upgrade/types"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	authvesting "github.com/cosmos/cosmos-sdk/x/auth/vesting/types"
+	authztypes "github.com/cosmos/cosmos-sdk/x/authz"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 	distribtypes "github.com/cosmos/cosmos-sdk/x/distribution/types"
 	govv1types "github.com/cosmos/cosmos-sdk/x/gov/types/v1"
 	govv1beta1types "github.com/cosmos/cosmos-sdk/x/gov/types/v1beta1"
+	grouptypes "github.com/cosmos/cosmos-sdk/x/group"
 	paramsproptypes "github.com/cosmos/cosmos-sdk/x/params/types/proposal"
+	slashingtypes "github.com/cosmos/cosmos-sdk/x/slashing/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 
 	"github.com/rs/zerolog"
@@ -124,26 +132,7 @@ func NewCosmosBlockScanner(
 	// Bifrost only supports an "RPCHost" in its configuration.
 	// We also need to access GRPC for Cosmos chains
 
-	// Registry for decoding gaia txs
-	// Note: we register gaia's cosmos sdk types
-	// don't use thorchain's codec as it is a smaller subset of codecs
-	registry := codectypes.NewInterfaceRegistry()
-	authtypes.RegisterInterfaces(registry)
-	banktypes.RegisterInterfaces(registry)
-	authvesting.RegisterInterfaces(registry)
-	stakingtypes.RegisterInterfaces(registry)
-	cryptocodec.RegisterInterfaces(registry)
-	govv1types.RegisterInterfaces(registry)
-	govv1beta1types.RegisterInterfaces(registry)
-	paramsproptypes.RegisterInterfaces(registry)
-	upgradetypes.RegisterInterfaces(registry)
-	distribtypes.RegisterInterfaces(registry)
-	// IBC messages are not observed, but must still decode so a MsgSend batched
-	// with them (e.g. MsgUpdateClient, MsgAcknowledgement) is not dropped.
-	ibcchanneltypes.RegisterInterfaces(registry)
-	ibccoretypes.RegisterInterfaces(registry)
-	ibclightclient.RegisterInterfaces(registry)
-	cdc := codec.NewProtoCodec(registry)
+	cdc := newGaiaCodec()
 
 	// Registry for encoding txs
 	txConfig := tx.NewTxConfig(cdc, []signingtypes.SignMode{signingtypes.SignMode_SIGN_MODE_DIRECT})
@@ -377,7 +366,60 @@ func (c *CosmosBlockScanner) updateGasFees(height int64) error {
 	return nil
 }
 
+// newGaiaCodec builds the codec used to DECODE Cosmos Hub transactions. It is a
+// named function (not constructor inline) so tests exercise the exact registry
+// production uses — a test that registers its own types would have hidden the
+// missing-registration bug this codec once had.
+//
+// Note: we register gaia's cosmos sdk types; don't use thorchain's codec as it
+// is a smaller subset of codecs.
+func newGaiaCodec() *codec.ProtoCodec {
+	registry := codectypes.NewInterfaceRegistry()
+	authtypes.RegisterInterfaces(registry)
+	banktypes.RegisterInterfaces(registry)
+	authvesting.RegisterInterfaces(registry)
+	stakingtypes.RegisterInterfaces(registry)
+	cryptocodec.RegisterInterfaces(registry)
+	govv1types.RegisterInterfaces(registry)
+	govv1beta1types.RegisterInterfaces(registry)
+	paramsproptypes.RegisterInterfaces(registry)
+	upgradetypes.RegisterInterfaces(registry)
+	distribtypes.RegisterInterfaces(registry)
+	// IBC messages are not observed, but must still decode so a MsgSend batched
+	// with them (e.g. MsgUpdateClient, MsgAcknowledgement) is not dropped.
+	ibcchanneltypes.RegisterInterfaces(registry)
+	ibccoretypes.RegisterInterfaces(registry)
+	ibclightclient.RegisterInterfaces(registry)
+	// Tx decoding is all-or-nothing: a single message type missing from this
+	// registry fails decode of the WHOLE transaction ("unable to resolve type
+	// URL ...") and every message in it is dropped — including a valid MsgSend
+	// deposit to an Asgard vault bundled in the same transaction, which is then
+	// unobserved by the entire network (the funds arrive; no node credits them).
+	// The registrations below are the message types Cosmos Hub transactions
+	// routinely carry that were missing here; registering them lets such
+	// transactions decode, while processTxs still observes only MsgSend and
+	// ignores the messages themselves — this widens decoding, not the deposit
+	// surface.
+	// (Residual gap: a nested Any of a type absent from ALL deps — e.g. an
+	// 08-wasm light-client update — still fails whole-tx; processTxs logs every
+	// unresolved type URL, so the next gap surfaces in logs instead of silence.)
+	wasmtypes.RegisterInterfaces(registry)        // CosmWasm is live on the Hub (MsgExecuteContract)
+	ibctransfertypes.RegisterInterfaces(registry) // MsgTransfer — outgoing IBC transfers
+	authztypes.RegisterInterfaces(registry)       // MsgGrant/MsgExec/MsgRevoke — constant restake-bot traffic
+	feegranttypes.RegisterInterfaces(registry)    // MsgGrantAllowance + its allowance Anys
+	slashingtypes.RegisterInterfaces(registry)    // MsgUnjail — routine validator traffic
+	grouptypes.RegisterInterfaces(registry)       // x/group user transactions
+	icacontrollertypes.RegisterInterfaces(registry)
+	return codec.NewProtoCodec(registry)
+}
+
+// typeURLPattern extracts the offending type URL from the SDK's
+// "unable to resolve type URL <url>" decode error.
+var typeURLPattern = regexp.MustCompile(`unable to resolve type URL ([^\s:]+)`)
+
 func (c *CosmosBlockScanner) processTxs(height int64, rawTxs []tmtypes.Tx) ([]*types.TxInItem, error) {
+	// One log per unresolved type URL per scan pass (see the decode-failure branch).
+	unresolvedTypeURLs := map[string]struct{}{}
 	// Proto types for Cosmos chains that we are transacting with may not be included in this repo.
 	// Therefore, it is necessary to include them in the "proto" directory and register them in
 	// the cdc (codec) that is passed below. Registry occurs in the NewCosmosBlockScanner function.
@@ -420,21 +462,26 @@ func (c *CosmosBlockScanner) processTxs(height int64, rawTxs []tmtypes.Tx) ([]*t
 		tx, err = decoder(rawTx)
 		if err != nil {
 			if strings.Contains(err.Error(), "unable to resolve type URL") {
-				// One of the transaction message contains an unknown type. Although the
-				// transaction may contain a valid MsgSend, we support transactions containing
-				// only MsgSend and MsgExecuteContract. If the transaction contains MsgSend or
-				// MsgExecuteContract log the error for debugging.
-				supportedMessages := []string{
-					"MsgSend",
-					"MsgExecuteContract",
+				// One of the transaction's messages has a type absent from the interface
+				// registry (newGaiaCodec), and tx decoding is all-or-nothing: the WHOLE
+				// transaction is dropped here, including any valid MsgSend deposit bundled
+				// in it. That is exactly how wasm- and IBC-transfer-bearing deposits went
+				// unobserved. This log line is the tripwire that catches the next missing
+				// registration — it deliberately fires for EVERY unresolved type URL: the
+				// previous version logged only errors naming an allowlist of message
+				// types, which silently discarded precisely the unknown unknowns this
+				// tripwire exists to catch. Deduped per type URL per scan pass so a busy
+				// block cannot spam the log.
+				typeURL := "unknown"
+				if m := typeURLPattern.FindStringSubmatch(err.Error()); len(m) == 2 {
+					typeURL = m[1]
 				}
-				for _, msg := range supportedMessages {
-					if strings.Contains(err.Error(), msg) {
-						c.logger.Err(err).
-							Str("tx", string(rawTx)).
-							Msg("unable to decode msg")
-						break
-					}
+				if _, seen := unresolvedTypeURLs[typeURL]; !seen {
+					unresolvedTypeURLs[typeURL] = struct{}{}
+					c.logger.Err(err).
+						Str("type_url", typeURL).
+						Str("tx_hash", hash).
+						Msg("dropping whole tx: message type missing from decode registry")
 				}
 			}
 			continue
