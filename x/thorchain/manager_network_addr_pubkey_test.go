@@ -45,8 +45,8 @@ func (s *NetworkMgrAddrPubKeySuite) TestRotateVaultCreatesAddressMappings(c *C) 
 	}
 
 	// Rotate the vault (this should create address mappings)
-	err := vm.RotateVault(ctx, vault)
-	c.Assert(err, IsNil)
+	rotateErr := vm.RotateVault(ctx, vault)
+	c.Assert(rotateErr, IsNil)
 
 	// Verify address mappings were created after rotation
 	for _, chainStr := range chains {
