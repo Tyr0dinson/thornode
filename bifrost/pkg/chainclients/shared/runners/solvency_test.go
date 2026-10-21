@@ -632,3 +632,72 @@ func (s *SolvencyTestSuite) TestIsVaultSolventMissingZeroAmountAssetDoesNotLogIn
 	c.Assert(IsVaultSolvent(common.ETHChain, acct, vault, cosmos.ZeroUint()), Equals, true)
 	c.Assert(strings.Contains(buf.String(), "insolvent"), Equals, false)
 }
+
+// IsHaltedOnChain is the gate that decides whether a chain client may send a solvency
+// "all clear". It must be true only for the network's own halt state, never for
+// anything local to a node, and it must fail closed on a bridge error.
+func (s *SolvencyTestSuite) TestIsHaltedOnChain(c *C) {
+	type testCase struct {
+		name               string
+		haltHeight         int
+		solvencyHaltHeight int
+		thorHeight         int
+		mimirFails         bool
+		expectHalted       bool
+		expectErr          bool
+	}
+	testCases := []testCase{
+		{name: "nothing set", thorHeight: 100},
+		{name: "admin halt value 1 is not a height-based halt", haltHeight: 1, thorHeight: 100},
+		{name: "height-based chain halt not yet reached", haltHeight: 200, thorHeight: 100},
+		{name: "height-based chain halt reached", haltHeight: 50, thorHeight: 100, expectHalted: true},
+		{name: "solvency halt reached", solvencyHaltHeight: 100, thorHeight: 100, expectHalted: true},
+		{name: "solvency halt not yet reached", solvencyHaltHeight: 150, thorHeight: 100},
+		{name: "bridge error fails closed", haltHeight: 50, thorHeight: 100, mimirFails: true, expectErr: true},
+	}
+	for _, tc := range testCases {
+		c.Log(tc.name)
+		mimirMap := map[string]int{
+			"HaltETHChain":         tc.haltHeight,
+			"SolvencyHaltETHChain": tc.solvencyHaltHeight,
+		}
+		h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if strings.HasPrefix(r.RequestURI, thorclient.MimirEndpoint) {
+				if tc.mimirFails {
+					w.WriteHeader(http.StatusInternalServerError)
+					return
+				}
+				parts := strings.Split(r.RequestURI, "/key/")
+				if _, err := w.Write([]byte(strconv.Itoa(mimirMap[parts[1]]))); err != nil {
+					c.Error(err)
+				}
+				return
+			}
+			if strings.HasPrefix(r.RequestURI, thorclient.LastBlockEndpoint) {
+				if _, err := fmt.Fprintf(w, `[{"thorchain": %d}]`, tc.thorHeight); err != nil {
+					c.Error(err)
+				}
+			}
+		})
+		server := httptest.NewServer(h)
+		bridge, err := thorclient.NewThorchainBridge(config.BifrostClientConfiguration{
+			ChainID:         "thorchain",
+			ChainHost:       server.Listener.Addr().String(),
+			ChainRPC:        server.Listener.Addr().String(),
+			SignerName:      "bob",
+			SignerPasswd:    "password",
+			ChainHomeFolder: ".",
+		}, s.m, s.keys)
+		c.Assert(err, IsNil)
+
+		halted, err := IsHaltedOnChain(bridge, common.ETHChain)
+		if tc.expectErr {
+			c.Check(err, NotNil)
+			c.Check(halted, Equals, false)
+		} else {
+			c.Check(err, IsNil)
+			c.Check(halted, Equals, tc.expectHalted)
+		}
+		server.Close()
+	}
+}
