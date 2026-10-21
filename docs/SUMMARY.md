@@ -37,6 +37,7 @@
 
   - [Vault Behaviors](bifrost/vault-behaviors.md)
   - [Startup State Recovery](bifrost/state-sync-recovery.md)
+  - [TRON Solvency Admission](bifrost/tron-solvency-admission.md)
   - [Oracles](bifrost/oracle.md)
   - [TSS](bifrost/tss.md)
 

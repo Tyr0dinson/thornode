@@ -118,6 +118,26 @@ func (c Chain) IsBSCChain() bool {
 	return c.Equals(BSCChain)
 }
 
+// SupportsSolvencyObservationSlashing reports whether ordinary solvency
+// observation slash accounting is safe for the chain. TRON account and TRC-20
+// balance reads cannot be pinned to the report height, so honest payloads can
+// fragment (#3098).
+func (c Chain) SupportsSolvencyObservationSlashing() bool {
+	return !c.Equals(TRONChain)
+}
+
+// SolvencyVoterQuota returns the THORChain block window and maximum new voters
+// per validator. Zero values mean no quota. TRON uses this bound because ordinary
+// solvency observation slashing is disabled, with headroom for reporting bursts
+// across active and retiring vaults. This limits creation rate, not lifetime
+// storage or bytes.
+func (c Chain) SolvencyVoterQuota() (windowBlocks int64, limit uint64) {
+	if c.Equals(TRONChain) {
+		return 10, 32
+	}
+	return 0, 0
+}
+
 // GetEVMChains returns all "EVM" chains connected to THORChain
 // "EVM" is defined, in thornode's context, as a chain that:
 // - uses 0x as an address prefix

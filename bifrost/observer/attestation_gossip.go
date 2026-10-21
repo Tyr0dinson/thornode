@@ -199,6 +199,8 @@ type AttestationGossip struct {
 	solvencies  map[common.TxID]*AttestationState[*common.Solvency]
 	errataTxs   map[common.ErrataTx]*AttestationState[*common.ErrataTx]
 	priceFeeds  map[string]*AttestationState[*common.PriceFeed]
+
+	solvencyMetrics *solvencyAttestationMetrics
 	// authorizedXMRSpentRefs remembers the source-vault-certified, pre-chain
 	// ref set admitted for an XMR outbound so later certified disagreements do
 	// not race a conflicting sidecar import. Entries track the import outcome:
@@ -325,6 +327,7 @@ func NewAttestationGossip(
 		solvencies:                        make(map[common.TxID]*AttestationState[*common.Solvency]),
 		errataTxs:                         make(map[common.ErrataTx]*AttestationState[*common.ErrataTx]),
 		priceFeeds:                        make(map[string]*AttestationState[*common.PriceFeed]),
+		solvencyMetrics:                   newSolvencyAttestationMetrics(m),
 		authorizedXMRSpentRefs:            make(map[xmrSpentRefsConflictKey]*xmrSpentRefsConflictEntry),
 		historicalXMRSpentRefCertificates: make(map[[32]byte]*historicalXMRSpentRefCertificateBucket),
 		historicalXMRCertificateSignerUse: make(map[string]int),
@@ -868,6 +871,9 @@ func (s *AttestationGossip) Start(ctx context.Context) {
 			for k, state := range s.solvencies {
 				state.mu.Lock()
 				if state.ExpiredAfterQuorum(s.config.LateObserveTimeout, s.config.NonQuorumTimeout) {
+					if state.AttestationCount() > 0 && shouldTrackSolvencyMetrics(state.Item) {
+						s.solvencyMetrics.prunePayload(state.Item, requiredSolvencyAttestations(s.activeValidatorCount()))
+					}
 					delete(s.solvencies, k)
 					s.solvenciesPool.PutAttestationState(state)
 				} else if state.ShouldSendLate(s.config.MinTimeBetweenAttestations) {

@@ -513,6 +513,8 @@ type KeeperChainContract interface {
 type KeeperSolvencyVoter interface {
 	SetSolvencyVoter(_ cosmos.Context, _ SolvencyVoter)
 	GetSolvencyVoter(_ cosmos.Context, _ common.TxID, _ common.Chain) (SolvencyVoter, error)
+	GetSolvencyVoterQuota(ctx cosmos.Context, chain common.Chain, signer cosmos.AccAddress) (window, used uint64, err error)
+	SetSolvencyVoterQuota(ctx cosmos.Context, chain common.Chain, signer cosmos.AccAddress, window, used uint64)
 }
 
 type KeeperOracle interface {

@@ -1,7 +1,7 @@
 # Consensus determinism replay
 
 Run `scripts/test-consensus-determinism.sh` from any directory. The runner uses the
-Go 1.26.9 version pinned by `go.mod`, the caller's `GOCACHE` (CI's shared
+Go 1.26.10 version pinned by `go.mod`, the caller's `GOCACHE` (CI's shared
 `/go-build-cache`; a dedicated `/tmp` cache when unset), a 15 minute limit on both
 the `go test` process and the test binary (`-timeout 15m`), limited build
 parallelism, and the shared build lock. It selects only

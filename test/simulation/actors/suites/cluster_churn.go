@@ -20,15 +20,30 @@ func ClusterChurn(rng *rand.Rand) *Actor {
 // ClusterChurnWithXMRPostChurn checks the same vault replacement requested by the
 // Bond Yield scenario instead of waiting for a later independent rotation.
 func ClusterChurnWithXMRPostChurn(rng *rand.Rand) *Actor {
-	return clusterChurn(rng, XMRPostChurnEnabled())
+	return ClusterChurnWithXMRPostChurnActors(rng)
 }
 
-func clusterChurn(rng *rand.Rand, verifyXMR bool) *Actor {
+// ClusterChurnWithPostChurnActors runs checks with the full active validator set
+// before Bond Yield selects a target and requests its leave.
+func ClusterChurnWithPostChurnActors(rng *rand.Rand, actors ...*Actor) *Actor {
+	return clusterChurn(rng, false, actors...)
+}
+
+// ClusterChurnWithXMRPostChurnActors also checks the same vault replacement
+// requested by Bond Yield after the additional activation checks.
+func ClusterChurnWithXMRPostChurnActors(rng *rand.Rand, actors ...*Actor) *Actor {
+	return clusterChurn(rng, XMRPostChurnEnabled(), actors...)
+}
+
+func clusterChurn(rng *rand.Rand, verifyXMR bool, actors ...*Actor) *Actor {
 	state := features.NewBondYieldState()
 	a := NewActor("ClusterChurn", rng)
 
 	a.Append(features.NewBondYieldSetupActor(state, rng))
 	a.Append(core.NewChurnActorWithSkip(rng, state.SkipReason))
+	for _, actor := range actors {
+		a.Append(actor)
+	}
 	a.Append(features.NewBondYieldSelectTargetActor(state, rng))
 	a.Append(features.NewBondYieldTargetAutoClaimActor(state, rng))
 	var verify *Actor

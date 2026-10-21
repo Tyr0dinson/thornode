@@ -205,7 +205,16 @@ func GetNetwork() (openapi.NetworkResponse, error) {
 }
 
 func GetNodes() ([]openapi.Node, error) {
+	return GetNodesAtHeight(0)
+}
+
+// GetNodesAtHeight returns node accounts as committed at height, or at the
+// latest height when height is not positive.
+func GetNodesAtHeight(height int64) ([]openapi.Node, error) {
 	url := fmt.Sprintf("%s/thorchain/nodes", thornodeURL)
+	if height > 0 {
+		url = fmt.Sprintf("%s?height=%d", url, height)
+	}
 	var nodes []openapi.Node
 	err := Get(url, &nodes)
 	return nodes, err

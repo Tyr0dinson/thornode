@@ -47,6 +47,20 @@ const (
 	BatchSize       MetricName = `batch_size`
 	BatchSendTime   MetricName = `batch_send_time`
 
+	// SolvencyPayloads counts the distinct exact-balance payloads observed for
+	// TRON solvency rounds. Together with SolvencyRoundsStarted it exposes the
+	// balance-fragmentation rate described in #3098.
+	SolvencyPayloads MetricName = `solvency_payloads`
+	// SolvencyRoundsStarted counts logical TRON rounds keyed internally by
+	// chain, vault, and canonical report height.
+	SolvencyRoundsStarted MetricName = `solvency_rounds_started`
+	// SolvencyRounds counts TRON rounds that reached exact-payload quorum or
+	// expired without quorum.
+	SolvencyRounds MetricName = `solvency_rounds`
+	// SolvencyRoundAttestations records the cumulative largest exact-payload
+	// group and required quorum size for completed TRON rounds.
+	SolvencyRoundAttestations MetricName = `solvency_round_attestations`
+
 	// SolKeysignAbstain counts SOL keysign abstentions by reason. A fleet-wide spike
 	// (every node failing IsBlockhashValid, or finalization lag exceeding the margin)
 	// is otherwise invisible — the signer logs an abstain like routine non-selection.
@@ -189,6 +203,38 @@ var (
 			Help:      "number of messages batched",
 		}, []string{
 			"message_type",
+		}),
+		SolvencyPayloads: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Namespace: "observer",
+			Subsystem: "attestation_gossip",
+			Name:      "solvency_payloads_total",
+			Help:      "number of distinct exact TRON solvency payload variants observed",
+		}, []string{
+			"chain",
+		}),
+		SolvencyRoundsStarted: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Namespace: "observer",
+			Subsystem: "attestation_gossip",
+			Name:      "solvency_rounds_started_total",
+			Help:      "number of logical TRON solvency rounds observed, grouped by chain, vault, and report height internally",
+		}, []string{
+			"chain",
+		}),
+		SolvencyRounds: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Namespace: "observer",
+			Subsystem: "attestation_gossip",
+			Name:      "solvency_rounds_total",
+			Help:      "number of TRON solvency rounds that reached exact-payload quorum or expired without it",
+		}, []string{
+			"chain", "outcome",
+		}),
+		SolvencyRoundAttestations: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Namespace: "observer",
+			Subsystem: "attestation_gossip",
+			Name:      "solvency_round_attestations_total",
+			Help:      "sum of largest exact-payload attestation groups and required quorum sizes when TRON solvency rounds reach quorum or expire",
+		}, []string{
+			"chain", "outcome", "measure",
 		}),
 	}
 

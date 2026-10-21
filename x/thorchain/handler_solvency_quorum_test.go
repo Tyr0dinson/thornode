@@ -236,9 +236,12 @@ func (s *HandlerSolvencyQuorumSuite) TestHandleInvalidAttestations(c *C) {
 	c.Assert(err, IsNil)
 
 	result, err := handler.handle(ctx, *msg)
-	// Invalid attestations are logged but handler still returns success
+	// No verified signer means no voter can be admitted or persisted.
 	c.Assert(result, NotNil)
 	c.Assert(err, IsNil)
+	voter, err := mgr.Keeper().GetSolvencyVoter(ctx, sol.Id, sol.Chain)
+	c.Assert(err, IsNil)
+	c.Assert(voter.Id.IsEmpty(), Equals, true)
 }
 
 func (s *HandlerSolvencyQuorumSuite) TestHandleValidAttestations(c *C) {
@@ -532,6 +535,13 @@ func (s *HandlerSolvencyQuorumSuite) TestHandleNoAttestations(c *C) {
 	result, err := handler.handle(ctx, *msg)
 	c.Assert(result, NotNil)
 	c.Assert(err, IsNil)
+	voter, err := mgr.Keeper().GetSolvencyVoter(ctx, sol.Id, sol.Chain)
+	c.Assert(err, IsNil)
+	c.Assert(voter.Id.IsEmpty(), Equals, true)
+	// The public entry point still rejects structurally empty batches.
+	result, err = handler.Run(ctx, msg)
+	c.Assert(result, IsNil)
+	c.Assert(err, NotNil)
 }
 
 // --- Test keeper for failure injection ---

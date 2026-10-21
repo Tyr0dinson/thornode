@@ -100,6 +100,7 @@ func simulationStages() []simulationStage {
 		{name: "memoless-refunds", defaultOn: false, constructor: features.MemolessRefunds},
 		{name: "cluster-churn", defaultOn: false, constructor: suites.ClusterChurn},
 		{name: "churn", defaultOn: false, constructor: suites.Churn},
+		{name: "tron-solvency-fragmentation", defaultOn: false, constructor: core.NewTRONSolvencyFragmentationActor},
 		{name: "xmr-keygen-jail", defaultOn: false, constructor: suites.XMRKeygenJail},
 		{name: "xmr-spent-refs", defaultOn: false, constructor: suites.XMRSpentRefTracking},
 		{name: "forced-to-leave-keygen", defaultOn: false, constructor: core.NewForcedToLeaveKeygenActor},
@@ -148,14 +149,25 @@ func selectedSimulationStages(enabledStages map[string]bool) []simulationStage {
 			if !enabledStages[stage.name] {
 				continue
 			}
-		case "churn":
-			// ClusterChurn already activates the cluster and requests a leave.
+		case "churn", "tron-solvency-fragmentation":
+			// ClusterChurn already activates the cluster and runs selected TRON
+			// assertions before requesting a validator leave.
 			if enabled("cluster-churn") {
 				continue
 			}
 		case "cluster-churn":
 			if enabled("xmr-post-churn") {
 				stage.constructor = suites.ClusterChurnWithXMRPostChurn
+			}
+			if enabled("tron-solvency-fragmentation") {
+				verifyXMR := enabled("xmr-post-churn")
+				stage.constructor = func(rng *rand.Rand) *Actor {
+					tron := core.NewTRONSolvencyFragmentationActor(rng)
+					if verifyXMR {
+						return suites.ClusterChurnWithXMRPostChurnActors(rng, tron)
+					}
+					return suites.ClusterChurnWithPostChurnActors(rng, tron)
+				}
 			}
 		case "xmr-post-churn":
 			if enabled("cluster-churn") {

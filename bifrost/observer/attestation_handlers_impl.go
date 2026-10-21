@@ -506,15 +506,29 @@ func (s *AttestationGossip) handleSolvencyAttestationWithStateSyncCancellation(c
 	}
 
 	// Add the attestation
+	wasEmpty := state.AttestationCount() == 0
 	if err := state.AddAttestation(ats.Attestation); err != nil {
 		s.logger.Error().Err(err).Msg("fail to add attestation")
 		return
 	}
 	result.accepted = true
+	// Register only the first accepted attestation, including when an earlier
+	// rejected signature left an empty state. Duplicates do not add a payload.
+	if wasEmpty && shouldTrackSolvencyMetrics(state.Item) {
+		s.solvencyMetrics.observePayload(state.Item)
+	}
 
 	// Get the active validator count
 	activeValCount := s.activeValidatorCount()
 	hasSuperMajority := types.HasSuperMajority(state.AttestationCount(), activeValCount)
+	if shouldTrackSolvencyMetrics(state.Item) {
+		s.solvencyMetrics.observeAttestations(
+			state.Item,
+			state.AttestationCount(),
+			requiredSolvencyAttestations(activeValCount),
+			hasSuperMajority,
+		)
+	}
 
 	// If we have a supermajority, send to thornode
 	if hasSuperMajority {

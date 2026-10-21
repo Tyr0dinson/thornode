@@ -829,7 +829,7 @@ func TestSimulationTargetsUseExplicitStageDefaults(t *testing.T) {
 		t.Fatalf("missing expected single-node simulation stages: %s", wantSingle)
 	}
 
-	wantCluster := "TEST_SIMULATION_CLUSTER_STAGES ?= seed,bootstrap,xmr-coverage,xmr-spent-refs,swaps,memoless-swaps,inactive-vault-refunds,memoless-refunds,cluster-churn,solvency,xmr-post-churn,ragnarok"
+	wantCluster := "TEST_SIMULATION_CLUSTER_STAGES ?= seed,bootstrap,xmr-coverage,xmr-spent-refs,swaps,memoless-swaps,inactive-vault-refunds,memoless-refunds,cluster-churn,tron-solvency-fragmentation,solvency,xmr-post-churn,ragnarok"
 	if !strings.Contains(makefile, wantCluster) {
 		t.Fatalf("missing expected cluster simulation stages: %s", wantCluster)
 	}
@@ -875,6 +875,10 @@ func TestSimulationStageRegistryOrder(t *testing.T) {
 	assertStageOrder(t, stageNames, "xmr-coverage", "arb")
 	assertStageOrder(t, stageNames, "memoless-refunds", "cluster-churn")
 	assertStageOrder(t, stageNames, "xmr-spent-refs", "jailed-keysign-fallback")
+	assertStageOrder(t, stageNames, "churn", "tron-solvency-fragmentation")
+	assertStageOrder(t, stageNames, "tron-solvency-fragmentation", "xmr-post-churn")
+	assertStageOrder(t, stageNames, "tron-solvency-fragmentation", "ragnarok")
+	assertStageOrder(t, stageNames, "xmr-post-churn", "ragnarok")
 }
 
 func TestSimulationStageNamesUnique(t *testing.T) {

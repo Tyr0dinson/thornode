@@ -913,6 +913,13 @@ func (k KVStoreDummy) GetSolvencyVoter(_ cosmos.Context, _ common.TxID, _ common
 	return SolvencyVoter{}, kaboom
 }
 
+func (k KVStoreDummy) GetSolvencyVoterQuota(_ cosmos.Context, _ common.Chain, _ cosmos.AccAddress) (uint64, uint64, error) {
+	return 0, 0, kaboom
+}
+
+func (k KVStoreDummy) SetSolvencyVoterQuota(_ cosmos.Context, _ common.Chain, _ cosmos.AccAddress, _, _ uint64) {
+}
+
 func (k KVStoreDummy) THORNameExists(ctx cosmos.Context, _ string) bool { return false }
 func (k KVStoreDummy) GetTHORName(ctx cosmos.Context, _ string) (THORName, error) {
 	return THORName{}, kaboom

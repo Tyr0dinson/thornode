@@ -18,7 +18,7 @@ scripts/test-simulation-unit.sh /tmp/simulation-unit.jsonl
 ```
 
 The script runs every package in `test/simulation` with the `mocknet` build tag,
-Go 1.26.9, limited build parallelism, and the shared test-quality build lock.
+Go 1.26.10, limited build parallelism, and the shared test-quality build lock.
 The JSON Lines report contains per-test results for CI or local inspection. It
 rejects unexpected skips and clears integration RPC settings, so it never
 connects to a live chain. `TestDogeStalledBroadcastIsNotDuplicated` and
@@ -27,8 +27,8 @@ are the only expected skips. To check test order isolation, run from
 `test/simulation` with the same build lock:
 
 ```bash
-flock -w 1200 /tmp/thornode-test-quality-build.lock env GOMAXPROCS=4 GOTOOLCHAIN=go1.26.9 go test -p 2 -tags mocknet -count=5 -shuffle=on ./pkg/types ./pkg/dag ./pkg/solana
-flock -w 1200 /tmp/thornode-test-quality-build.lock env GOMAXPROCS=4 GOTOOLCHAIN=go1.26.9 go test -p 2 -tags mocknet -count=5 -run '^Test$' -v ./pkg/types -check.f NewUser
+flock -w 1200 /tmp/thornode-test-quality-build.lock env GOMAXPROCS=4 GOTOOLCHAIN=go1.26.10 go test -p 2 -tags mocknet -count=5 -shuffle=on ./pkg/types ./pkg/dag ./pkg/solana
+flock -w 1200 /tmp/thornode-test-quality-build.lock env GOMAXPROCS=4 GOTOOLCHAIN=go1.26.10 go test -p 2 -tags mocknet -count=5 -run '^Test$' -v ./pkg/types -check.f NewUser
 ```
 
 These commands use only local fixtures. The second command exercises the
@@ -96,6 +96,45 @@ separately. S29's focused tests force this ordering, disable the filter as a
 negative control, cover Active/Retiring/Inactive source vaults, restart before
 certificate delivery, high-value batches, pruned journals, and queue saturation.
 The cluster supplements those tests; it does not replace their crash injection.
+
+### TRON solvency slashing (#3098)
+
+The default `make test-simulation-cluster` stages include
+`tron-solvency-fragmentation`. To run just its setup and validator test, use:
+
+```bash
+make test-simulation-cluster \
+  TEST_SIMULATION_CLUSTER_STAGES=seed,bootstrap,churn,tron-solvency-fragmentation
+```
+
+This rebuilds and **resets the local mocknet cluster**. Keep `churn` in this
+focused stage selection so the validators are activated before the test.
+Bootstrap creates pools but leaves the other validators on standby with churning
+halted. The existing churn stage activates the cluster before the TRON actor
+selects the active simulation clients. At least four validators must be active,
+and each active validator must have exactly one matching client. Extra standby
+clients are excluded from client locks and slash-point snapshots. Missing activation is a
+setup error, not a five-minute wait or a successful slashing test. On an already
+activated cluster the TRON stage can run alone; do not churn it again just to
+satisfy a stage-name requirement.
+
+The actor injects differing TRX/USDT solvency payloads at the same stale height,
+checks that ordinary observations leave slash points unchanged, and verifies the
+duplicate-message penalty. Slash points are compared only from the block before
+to the block of each injected transaction. Bifrost observations in those blocks
+can still change them, so a mismatch is measured again with fresh voters, up to
+five attempts. It tests handler accounting, not historical TRON RPC
+balances or Bifrost gossip/quorum dispatch. Other cluster readiness/keygen errors
+can still prevent this test from running.
+
+When both `cluster-churn` (or its `bond-yield` alias) and `tron-solvency-fragmentation` are selected, the TRON
+assertions run inside the Bond Yield sequence, immediately after initial
+activation and before target selection and voluntary leave. Bond Yield then
+verifies the churn-out payout and completed migration, restores its Mimir
+settings, and lets later stages proceed without waiting for the validator to
+churn back in. This avoids an extra restoration churn solely for TRON's
+requirement for at least four matching active validators. Selecting `churn` as well does not add a second
+activation. Stage selection order does not override these dependencies.
 
 ### Faster reruns
 
