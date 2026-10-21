@@ -309,7 +309,25 @@ func (c *XrpBlockScanner) processTxs(height int64, rawTxs []transaction.FlatTran
 		if err != nil {
 			return nil, fmt.Errorf("cannot convert xrp fee to thorchain fee: %w", err)
 		}
-		c.updateFeeCache(fee)
+		// Batch inner transactions (tfInnerBatchTxn) carry no fee of their own — the
+		// outer Batch pays the aggregate fee — so payment.Fee is 0. A zero-amount gas
+		// coin is stripped by the observer's Gas.NoneEmpty() (observe.go), leaving no
+		// gas coin, which fails MsgObservedTxIn ValidateBasic ("must have at least 1
+		// gas coin") every block so the inbound never starts. Floor such an inbound's
+		// gas to the XRP minimum (1 drop) so the observation validates and the deposit
+		// is processed. Fee==0 uniquely identifies these — a normal XRP Payment must
+		// pay a non-zero fee. Keeping the zero-fee case out of updateFeeCache is
+		// belt-and-suspenders: updateFeeCache already discards a zero fee via
+		// fee.Valid(), and we only reach it on the non-zero branch — this just makes
+		// explicit that the synthetic 1-drop floor must never seed the fee estimate.
+		if fee.Amount.IsZero() {
+			fee, err = fromXrpToThorchain(txtypes.XRPCurrencyAmount(1))
+			if err != nil {
+				return nil, fmt.Errorf("cannot build xrp minimum gas floor: %w", err)
+			}
+		} else {
+			c.updateFeeCache(fee)
+		}
 
 		hash, ok := rawTx["hash"].(string)
 		if !ok {
