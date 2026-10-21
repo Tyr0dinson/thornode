@@ -5167,6 +5167,9 @@ components:
           code: 0
           status: Ready
         leave_height: 0
+        supported_chains:
+        - BTC
+        - BTC
         active_block_height: 123456
         pub_key_set:
           ed25519: thorpub1addwnpepq27ck6u44zl8qqdnmzjjc8rg72amrxrsp42p9vd7kt6marhy6ww76z8shwe
@@ -5293,6 +5296,12 @@ components:
           type: integer
         preflight_status:
           $ref: '#/components/schemas/NodePreflightStatus'
+        supported_chains:
+          description: the list of chains this node supports
+          items:
+            example: BTC
+            type: string
+          type: array
       required:
       - active_block_height
       - bond_providers
@@ -5314,6 +5323,7 @@ components:
       - slash_points
       - status
       - status_since
+      - supported_chains
       - total_bond
       - validator_cons_pub_key
       - version

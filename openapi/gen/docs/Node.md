@@ -27,12 +27,13 @@ Name | Type | Description | Notes
 **Maintenance** | **bool** | indicates whether the node is in maintenance mode | 
 **MissingBlocks** | **int64** | the number of recent blocks the node has missed signing | 
 **PreflightStatus** | [**NodePreflightStatus**](NodePreflightStatus.md) |  | 
+**SupportedChains** | **[]string** | the list of chains this node supports | 
 
 ## Methods
 
 ### NewNode
 
-`func NewNode(nodeAddress string, status string, pubKeySet NodePubKeySet, validatorConsPubKey string, peerId string, activeBlockHeight int64, statusSince int64, nodeOperatorAddress string, totalBond string, bondProviders NodeBondProviders, signerMembership []string, requestedToLeave bool, forcedToLeave bool, leaveHeight int64, ipAddress string, version string, slashPoints int64, jail NodeJail, currentAward string, observeChains []ChainHeight, maintenance bool, missingBlocks int64, preflightStatus NodePreflightStatus, ) *Node`
+`func NewNode(nodeAddress string, status string, pubKeySet NodePubKeySet, validatorConsPubKey string, peerId string, activeBlockHeight int64, statusSince int64, nodeOperatorAddress string, totalBond string, bondProviders NodeBondProviders, signerMembership []string, requestedToLeave bool, forcedToLeave bool, leaveHeight int64, ipAddress string, version string, slashPoints int64, jail NodeJail, currentAward string, observeChains []ChainHeight, maintenance bool, missingBlocks int64, preflightStatus NodePreflightStatus, supportedChains []string, ) *Node`
 
 NewNode instantiates a new Node object
 This constructor will assign default values to properties that have it defined,
@@ -505,6 +506,26 @@ and a boolean to check if the value has been set.
 `func (o *Node) SetPreflightStatus(v NodePreflightStatus)`
 
 SetPreflightStatus sets PreflightStatus field to given value.
+
+
+### GetSupportedChains
+
+`func (o *Node) GetSupportedChains() []string`
+
+GetSupportedChains returns the SupportedChains field if non-nil, zero value otherwise.
+
+### GetSupportedChainsOk
+
+`func (o *Node) GetSupportedChainsOk() (*[]string, bool)`
+
+GetSupportedChainsOk returns a tuple with the SupportedChains field if it's non-nil, zero value otherwise
+and a boolean to check if the value has been set.
+
+### SetSupportedChains
+
+`func (o *Node) SetSupportedChains(v []string)`
+
+SetSupportedChains sets SupportedChains field to given value.
 
 
 

@@ -51,13 +51,15 @@ type Node struct {
 	// the number of recent blocks the node has missed signing
 	MissingBlocks int64 `json:"missing_blocks"`
 	PreflightStatus NodePreflightStatus `json:"preflight_status"`
+	// the list of chains this node supports
+	SupportedChains []string `json:"supported_chains"`
 }
 
 // NewNode instantiates a new Node object
 // This constructor will assign default values to properties that have it defined,
 // and makes sure properties required by API are set, but the set of arguments
 // will change when the set of required properties is changed
-func NewNode(nodeAddress string, status string, pubKeySet NodePubKeySet, validatorConsPubKey string, peerId string, activeBlockHeight int64, statusSince int64, nodeOperatorAddress string, totalBond string, bondProviders NodeBondProviders, signerMembership []string, requestedToLeave bool, forcedToLeave bool, leaveHeight int64, ipAddress string, version string, slashPoints int64, jail NodeJail, currentAward string, observeChains []ChainHeight, maintenance bool, missingBlocks int64, preflightStatus NodePreflightStatus) *Node {
+func NewNode(nodeAddress string, status string, pubKeySet NodePubKeySet, validatorConsPubKey string, peerId string, activeBlockHeight int64, statusSince int64, nodeOperatorAddress string, totalBond string, bondProviders NodeBondProviders, signerMembership []string, requestedToLeave bool, forcedToLeave bool, leaveHeight int64, ipAddress string, version string, slashPoints int64, jail NodeJail, currentAward string, observeChains []ChainHeight, maintenance bool, missingBlocks int64, preflightStatus NodePreflightStatus, supportedChains []string) *Node {
 	this := Node{}
 	this.NodeAddress = nodeAddress
 	this.Status = status
@@ -82,6 +84,7 @@ func NewNode(nodeAddress string, status string, pubKeySet NodePubKeySet, validat
 	this.Maintenance = maintenance
 	this.MissingBlocks = missingBlocks
 	this.PreflightStatus = preflightStatus
+	this.SupportedChains = supportedChains
 	return &this
 }
 
@@ -645,6 +648,30 @@ func (o *Node) SetPreflightStatus(v NodePreflightStatus) {
 	o.PreflightStatus = v
 }
 
+// GetSupportedChains returns the SupportedChains field value
+func (o *Node) GetSupportedChains() []string {
+	if o == nil {
+		var ret []string
+		return ret
+	}
+
+	return o.SupportedChains
+}
+
+// GetSupportedChainsOk returns a tuple with the SupportedChains field value
+// and a boolean to check if the value has been set.
+func (o *Node) GetSupportedChainsOk() ([]string, bool) {
+	if o == nil {
+		return nil, false
+	}
+	return o.SupportedChains, true
+}
+
+// SetSupportedChains sets field value
+func (o *Node) SetSupportedChains(v []string) {
+	o.SupportedChains = v
+}
+
 func (o Node) MarshalJSON_deprecated() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if true {
@@ -715,6 +742,9 @@ func (o Node) MarshalJSON_deprecated() ([]byte, error) {
 	}
 	if true {
 		toSerialize["preflight_status"] = o.PreflightStatus
+	}
+	if true {
+		toSerialize["supported_chains"] = o.SupportedChains
 	}
 	return json.Marshal(toSerialize)
 }

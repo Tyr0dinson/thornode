@@ -20,38 +20,40 @@ import (
 const _ = grpc.SupportPackageIsVersion7
 
 const (
-	Msg_Ban_FullMethodName                  = "/types.Msg/Ban"
-	Msg_Deposit_FullMethodName              = "/types.Msg/Deposit"
-	Msg_ErrataTx_FullMethodName             = "/types.Msg/ErrataTx"
-	Msg_ErrataTxQuorum_FullMethodName       = "/types.Msg/ErrataTxQuorum"
-	Msg_Mimir_FullMethodName                = "/types.Msg/Mimir"
-	Msg_NetworkFee_FullMethodName           = "/types.Msg/NetworkFee"
-	Msg_NetworkFeeQuorum_FullMethodName     = "/types.Msg/NetworkFeeQuorum"
-	Msg_NodePauseChain_FullMethodName       = "/types.Msg/NodePauseChain"
-	Msg_ObservedTxIn_FullMethodName         = "/types.Msg/ObservedTxIn"
-	Msg_ObservedTxOut_FullMethodName        = "/types.Msg/ObservedTxOut"
-	Msg_ObservedTxQuorum_FullMethodName     = "/types.Msg/ObservedTxQuorum"
-	Msg_ThorSend_FullMethodName             = "/types.Msg/ThorSend"
-	Msg_SetIPAddress_FullMethodName         = "/types.Msg/SetIPAddress"
-	Msg_SetNodeKeys_FullMethodName          = "/types.Msg/SetNodeKeys"
-	Msg_Solvency_FullMethodName             = "/types.Msg/Solvency"
-	Msg_SolvencyQuorum_FullMethodName       = "/types.Msg/SolvencyQuorum"
-	Msg_SolNonceAttest_FullMethodName       = "/types.Msg/SolNonceAttest"
-	Msg_TssKeysignFail_FullMethodName       = "/types.Msg/TssKeysignFail"
-	Msg_TssPool_FullMethodName              = "/types.Msg/TssPool"
-	Msg_SetVersion_FullMethodName           = "/types.Msg/SetVersion"
-	Msg_ProposeUpgrade_FullMethodName       = "/types.Msg/ProposeUpgrade"
-	Msg_ApproveUpgrade_FullMethodName       = "/types.Msg/ApproveUpgrade"
-	Msg_RejectUpgrade_FullMethodName        = "/types.Msg/RejectUpgrade"
-	Msg_PriceFeedQuorumBatch_FullMethodName = "/types.Msg/PriceFeedQuorumBatch"
-	Msg_StoreCode_FullMethodName            = "/types.Msg/StoreCode"
-	Msg_InstantiateContract_FullMethodName  = "/types.Msg/InstantiateContract"
-	Msg_InstantiateContract2_FullMethodName = "/types.Msg/InstantiateContract2"
-	Msg_ExecuteContract_FullMethodName      = "/types.Msg/ExecuteContract"
-	Msg_MigrateContract_FullMethodName      = "/types.Msg/MigrateContract"
-	Msg_SudoContract_FullMethodName         = "/types.Msg/SudoContract"
-	Msg_UpdateAdmin_FullMethodName          = "/types.Msg/UpdateAdmin"
-	Msg_ClearAdmin_FullMethodName           = "/types.Msg/ClearAdmin"
+	Msg_Ban_FullMethodName                    = "/types.Msg/Ban"
+	Msg_Deposit_FullMethodName                = "/types.Msg/Deposit"
+	Msg_ErrataTx_FullMethodName               = "/types.Msg/ErrataTx"
+	Msg_ErrataTxQuorum_FullMethodName         = "/types.Msg/ErrataTxQuorum"
+	Msg_Mimir_FullMethodName                  = "/types.Msg/Mimir"
+	Msg_NetworkFee_FullMethodName             = "/types.Msg/NetworkFee"
+	Msg_NetworkFeeQuorum_FullMethodName       = "/types.Msg/NetworkFeeQuorum"
+	Msg_NodePauseChain_FullMethodName         = "/types.Msg/NodePauseChain"
+	Msg_ObservedTxIn_FullMethodName           = "/types.Msg/ObservedTxIn"
+	Msg_ObservedTxOut_FullMethodName          = "/types.Msg/ObservedTxOut"
+	Msg_ObservedTxQuorum_FullMethodName       = "/types.Msg/ObservedTxQuorum"
+	Msg_ThorSend_FullMethodName               = "/types.Msg/ThorSend"
+	Msg_SetIPAddress_FullMethodName           = "/types.Msg/SetIPAddress"
+	Msg_SetNodeKeys_FullMethodName            = "/types.Msg/SetNodeKeys"
+	Msg_AddNodeChainSupport_FullMethodName    = "/types.Msg/AddNodeChainSupport"
+	Msg_RemoveNodeChainSupport_FullMethodName = "/types.Msg/RemoveNodeChainSupport"
+	Msg_Solvency_FullMethodName               = "/types.Msg/Solvency"
+	Msg_SolvencyQuorum_FullMethodName         = "/types.Msg/SolvencyQuorum"
+	Msg_SolNonceAttest_FullMethodName         = "/types.Msg/SolNonceAttest"
+	Msg_TssKeysignFail_FullMethodName         = "/types.Msg/TssKeysignFail"
+	Msg_TssPool_FullMethodName                = "/types.Msg/TssPool"
+	Msg_SetVersion_FullMethodName             = "/types.Msg/SetVersion"
+	Msg_ProposeUpgrade_FullMethodName         = "/types.Msg/ProposeUpgrade"
+	Msg_ApproveUpgrade_FullMethodName         = "/types.Msg/ApproveUpgrade"
+	Msg_RejectUpgrade_FullMethodName          = "/types.Msg/RejectUpgrade"
+	Msg_PriceFeedQuorumBatch_FullMethodName   = "/types.Msg/PriceFeedQuorumBatch"
+	Msg_StoreCode_FullMethodName              = "/types.Msg/StoreCode"
+	Msg_InstantiateContract_FullMethodName    = "/types.Msg/InstantiateContract"
+	Msg_InstantiateContract2_FullMethodName   = "/types.Msg/InstantiateContract2"
+	Msg_ExecuteContract_FullMethodName        = "/types.Msg/ExecuteContract"
+	Msg_MigrateContract_FullMethodName        = "/types.Msg/MigrateContract"
+	Msg_SudoContract_FullMethodName           = "/types.Msg/SudoContract"
+	Msg_UpdateAdmin_FullMethodName            = "/types.Msg/UpdateAdmin"
+	Msg_ClearAdmin_FullMethodName             = "/types.Msg/ClearAdmin"
 )
 
 // MsgClient is the client API for Msg service.
@@ -72,6 +74,8 @@ type MsgClient interface {
 	ThorSend(ctx context.Context, in *MsgSend, opts ...grpc.CallOption) (*MsgEmpty, error)
 	SetIPAddress(ctx context.Context, in *MsgSetIPAddress, opts ...grpc.CallOption) (*MsgEmpty, error)
 	SetNodeKeys(ctx context.Context, in *MsgSetNodeKeys, opts ...grpc.CallOption) (*MsgEmpty, error)
+	AddNodeChainSupport(ctx context.Context, in *MsgAddNodeChainSupport, opts ...grpc.CallOption) (*MsgEmpty, error)
+	RemoveNodeChainSupport(ctx context.Context, in *MsgRemoveNodeChainSupport, opts ...grpc.CallOption) (*MsgEmpty, error)
 	Solvency(ctx context.Context, in *MsgSolvency, opts ...grpc.CallOption) (*MsgEmpty, error)
 	SolvencyQuorum(ctx context.Context, in *MsgSolvencyQuorum, opts ...grpc.CallOption) (*MsgEmpty, error)
 	SolNonceAttest(ctx context.Context, in *MsgSolNonceAttest, opts ...grpc.CallOption) (*MsgEmpty, error)
@@ -223,6 +227,24 @@ func (c *msgClient) SetIPAddress(ctx context.Context, in *MsgSetIPAddress, opts 
 func (c *msgClient) SetNodeKeys(ctx context.Context, in *MsgSetNodeKeys, opts ...grpc.CallOption) (*MsgEmpty, error) {
 	out := new(MsgEmpty)
 	err := c.cc.Invoke(ctx, Msg_SetNodeKeys_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *msgClient) AddNodeChainSupport(ctx context.Context, in *MsgAddNodeChainSupport, opts ...grpc.CallOption) (*MsgEmpty, error) {
+	out := new(MsgEmpty)
+	err := c.cc.Invoke(ctx, Msg_AddNodeChainSupport_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *msgClient) RemoveNodeChainSupport(ctx context.Context, in *MsgRemoveNodeChainSupport, opts ...grpc.CallOption) (*MsgEmpty, error) {
+	out := new(MsgEmpty)
+	err := c.cc.Invoke(ctx, Msg_RemoveNodeChainSupport_FullMethodName, in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -409,6 +431,8 @@ type MsgServer interface {
 	ThorSend(context.Context, *MsgSend) (*MsgEmpty, error)
 	SetIPAddress(context.Context, *MsgSetIPAddress) (*MsgEmpty, error)
 	SetNodeKeys(context.Context, *MsgSetNodeKeys) (*MsgEmpty, error)
+	AddNodeChainSupport(context.Context, *MsgAddNodeChainSupport) (*MsgEmpty, error)
+	RemoveNodeChainSupport(context.Context, *MsgRemoveNodeChainSupport) (*MsgEmpty, error)
 	Solvency(context.Context, *MsgSolvency) (*MsgEmpty, error)
 	SolvencyQuorum(context.Context, *MsgSolvencyQuorum) (*MsgEmpty, error)
 	SolNonceAttest(context.Context, *MsgSolNonceAttest) (*MsgEmpty, error)
@@ -478,6 +502,12 @@ func (UnimplementedMsgServer) SetIPAddress(context.Context, *MsgSetIPAddress) (*
 }
 func (UnimplementedMsgServer) SetNodeKeys(context.Context, *MsgSetNodeKeys) (*MsgEmpty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SetNodeKeys not implemented")
+}
+func (UnimplementedMsgServer) AddNodeChainSupport(context.Context, *MsgAddNodeChainSupport) (*MsgEmpty, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method AddNodeChainSupport not implemented")
+}
+func (UnimplementedMsgServer) RemoveNodeChainSupport(context.Context, *MsgRemoveNodeChainSupport) (*MsgEmpty, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RemoveNodeChainSupport not implemented")
 }
 func (UnimplementedMsgServer) Solvency(context.Context, *MsgSolvency) (*MsgEmpty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Solvency not implemented")
@@ -794,6 +824,42 @@ func _Msg_SetNodeKeys_Handler(srv interface{}, ctx context.Context, dec func(int
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(MsgServer).SetNodeKeys(ctx, req.(*MsgSetNodeKeys))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Msg_AddNodeChainSupport_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MsgAddNodeChainSupport)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MsgServer).AddNodeChainSupport(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Msg_AddNodeChainSupport_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MsgServer).AddNodeChainSupport(ctx, req.(*MsgAddNodeChainSupport))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Msg_RemoveNodeChainSupport_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MsgRemoveNodeChainSupport)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MsgServer).RemoveNodeChainSupport(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Msg_RemoveNodeChainSupport_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MsgServer).RemoveNodeChainSupport(ctx, req.(*MsgRemoveNodeChainSupport))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -1184,6 +1250,14 @@ var Msg_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SetNodeKeys",
 			Handler:    _Msg_SetNodeKeys_Handler,
+		},
+		{
+			MethodName: "AddNodeChainSupport",
+			Handler:    _Msg_AddNodeChainSupport_Handler,
+		},
+		{
+			MethodName: "RemoveNodeChainSupport",
+			Handler:    _Msg_RemoveNodeChainSupport_Handler,
 		},
 		{
 			MethodName: "Solvency",
