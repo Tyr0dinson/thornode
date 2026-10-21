@@ -210,6 +210,7 @@
       "dynamic_fee_records": [],
       "last_chain_heights": [],
       "liquidity_providers": null,
+      "mempool_swaps": [],
       "mimirs": [],
       "network": {
         "bond_reward_rune": "0",
@@ -253,6 +254,7 @@
       "rune_providers": [],
       "secured_assets": [],
       "sol_vault_nonces": [],
+      "staged_outbounds": [],
       "streaming_swaps": [],
       "swap_queue_items": [],
       "swapper_clout": [],

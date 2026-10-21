@@ -184,6 +184,8 @@ asserts:
 # signing-period boundary. Recovery must still atomically unwind the swap there.
 type: create-blocks
 count: 1
+# Recovery unwinds the mempool swap, giving back the swap fee it earned the pool.
+luvi_drop: [BTC.BTC]
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/lastblock

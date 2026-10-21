@@ -144,6 +144,8 @@ chain: BTC
 ---
 type: create-blocks
 count: 1
+# the errata unwinds the mempool swap, giving back the swap fee it earned the pool
+luvi_drop: [BTC.BTC]
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/tx/details/{{ observe_txid 1 }}
@@ -410,6 +412,8 @@ chain: BTC
 ---
 type: create-blocks
 count: 1
+# the errata unwinds the mempool swap, giving back the swap fee it earned the pool
+luvi_drop: [BTC.BTC]
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/tx/details/{{ observe_txid 2 }}

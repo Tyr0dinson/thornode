@@ -248,6 +248,7 @@
           "units": "100000000000"
         }
       ],
+      "mempool_swaps": [],
       "mimirs": [
         {
           "key": "ENABLEADVSWAPQUEUE"
@@ -344,6 +345,7 @@
       "rune_providers": [],
       "secured_assets": [],
       "sol_vault_nonces": [],
+      "staged_outbounds": [],
       "streaming_swaps": [],
       "swap_queue_items": [],
       "swapper_clout": [
