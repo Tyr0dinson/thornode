@@ -136,7 +136,7 @@ func (s *NetworkManagerTestSuite) TestTriggerKeygenIgnoresXMRMonovaultMembership
 	activeXMR.PubKeyFrost = GetRandomEd25519PubKey()
 	c.Assert(mgr.Keeper().SetVault(ctx, activeXMR), IsNil)
 
-	c.Assert(networkMgr.TriggerKeygen(ctx, nas), IsNil)
+	c.Assert(networkMgr.TriggerKeygen(ctx, nas, nil), IsNil)
 
 	keygenBlock, err := mgr.Keeper().GetKeygenBlock(ctx, ctx.BlockHeight())
 	c.Assert(err, IsNil)
@@ -6654,8 +6654,6 @@ func (s *NetworkManagerTestSuite) TestAddChainIncomeToNetwork(c *C) {
 
 func (s *NetworkManagerTestSuite) TestPerChainIncomeBucketing(c *C) {
 	ctx, mgr := setupManagerForTest(c)
-	ver := GetCurrentVersion()
-	constAccessor := constants.GetConstantValues(ver)
 	helper := NewVaultGenesisSetupTestHelper(mgr.Keeper())
 	mgr.K = helper
 	networkMgr := newNetworkMgr(helper, mgr.TxOutStore(), mgr.EventMgr())
@@ -6696,7 +6694,7 @@ func (s *NetworkManagerTestSuite) TestPerChainIncomeBucketing(c *C) {
 	//
 	// Case 1: No liquidity fees — all bonder split goes to global BondRewardRune.
 	//
-	c.Assert(networkMgr.UpdateNetwork(ctx, constAccessor, mgr.GasMgr(), mgr.EventMgr()), IsNil)
+	c.Assert(networkMgr.UpdateNetwork(ctx, mgr), IsNil)
 	network, err := helper.GetNetwork(ctx)
 	c.Assert(err, IsNil)
 	c.Assert(network.BondRewardRune.GT(cosmos.ZeroUint()), Equals, true,
@@ -6709,7 +6707,7 @@ func (s *NetworkManagerTestSuite) TestPerChainIncomeBucketing(c *C) {
 	//
 	prevBondRewardRune := network.BondRewardRune
 	c.Assert(helper.Keeper.AddToLiquidityFees(ctx, common.BTCAsset, cosmos.NewUint(1000*common.One)), IsNil)
-	c.Assert(networkMgr.UpdateNetwork(ctx, constAccessor, mgr.GasMgr(), mgr.EventMgr()), IsNil)
+	c.Assert(networkMgr.UpdateNetwork(ctx, mgr), IsNil)
 	network, err = helper.GetNetwork(ctx)
 	c.Assert(err, IsNil)
 	// Global BondRewardRune should have increased (emission portion), but less than if no per-chain bucketing.
@@ -6735,7 +6733,7 @@ func (s *NetworkManagerTestSuite) TestPerChainIncomeBucketing(c *C) {
 
 	c.Assert(helper.Keeper.AddToLiquidityFees(ctx, common.BTCAsset, cosmos.NewUint(300*common.One)), IsNil)
 	c.Assert(helper.Keeper.AddToLiquidityFees(ctx, common.ETHAsset, cosmos.NewUint(100*common.One)), IsNil)
-	c.Assert(networkMgr.UpdateNetwork(ctx, constAccessor, mgr.GasMgr(), mgr.EventMgr()), IsNil)
+	c.Assert(networkMgr.UpdateNetwork(ctx, mgr), IsNil)
 	network, err = helper.GetNetwork(ctx)
 	c.Assert(err, IsNil)
 
@@ -6787,7 +6785,7 @@ func (s *NetworkManagerTestSuite) TestSkimsDrawFromGlobalSystemIncome(c *C) {
 	// Baseline: no skims.
 	bondNoSkim, poolNoSkim, _, devNoSkim, burnNoSkim, tcyNoSkim, mktNoSkim, _ := networkMgr.calcBlockRewards(
 		ctx, availablePoolsRune, vaultsLiquidityRune, effectiveSecurityBond,
-		totalEffectiveBond, totalReserve, totalLiquidityFees, emissionCurve, blocksPerYear,
+		totalEffectiveBond, totalReserve, totalLiquidityFees, cosmos.ZeroUint(), emissionCurve, blocksPerYear,
 		0, 0, 0, 0, 0)
 	c.Assert(devNoSkim.IsZero(), Equals, true)
 	c.Assert(burnNoSkim.IsZero(), Equals, true)
@@ -6811,7 +6809,7 @@ func (s *NetworkManagerTestSuite) TestSkimsDrawFromGlobalSystemIncome(c *C) {
 
 	bondSkim, poolSkim, _, devDeduct, burnDeduct, tcyDeduct, mktDeduct, _ := networkMgr.calcBlockRewards(
 		ctx, availablePoolsRune, vaultsLiquidityRune, effectiveSecurityBond,
-		totalEffectiveBond, totalReserve, totalLiquidityFees, emissionCurve, blocksPerYear,
+		totalEffectiveBond, totalReserve, totalLiquidityFees, cosmos.ZeroUint(), emissionCurve, blocksPerYear,
 		devBps, burnBps, tcyBps, mktBps, 0)
 
 	// Skims should be calculated on the FULL system income (emission + all fees).
@@ -6841,8 +6839,6 @@ func (s *NetworkManagerTestSuite) TestSkimsDrawFromGlobalSystemIncome(c *C) {
 
 func (s *NetworkManagerTestSuite) TestSkimsApplyBeforePerChainBucketing(c *C) {
 	ctx, mgr := setupManagerForTest(c)
-	ver := GetCurrentVersion()
-	constAccessor := constants.GetConstantValues(ver)
 	helper := NewVaultGenesisSetupTestHelper(mgr.Keeper())
 	mgr.K = helper
 	networkMgr := newNetworkMgr(helper, mgr.TxOutStore(), mgr.EventMgr())
@@ -6879,7 +6875,7 @@ func (s *NetworkManagerTestSuite) TestSkimsApplyBeforePerChainBucketing(c *C) {
 	// Run once with no skims to get baseline per-chain income.
 	c.Assert(helper.Keeper.AddToLiquidityFees(ctx, common.BTCAsset, cosmos.NewUint(300*common.One)), IsNil)
 	c.Assert(helper.Keeper.AddToLiquidityFees(ctx, common.ETHAsset, cosmos.NewUint(100*common.One)), IsNil)
-	c.Assert(networkMgr.UpdateNetwork(ctx, constAccessor, mgr.GasMgr(), mgr.EventMgr()), IsNil)
+	c.Assert(networkMgr.UpdateNetwork(ctx, mgr), IsNil)
 	networkNoSkim, err := helper.GetNetwork(ctx)
 	c.Assert(err, IsNil)
 
@@ -6916,7 +6912,7 @@ func (s *NetworkManagerTestSuite) TestSkimsApplyBeforePerChainBucketing(c *C) {
 	ctx = ctx.WithBlockHeight(ctx.BlockHeight() + 1)
 	c.Assert(helper.Keeper.AddToLiquidityFees(ctx, common.BTCAsset, cosmos.NewUint(300*common.One)), IsNil)
 	c.Assert(helper.Keeper.AddToLiquidityFees(ctx, common.ETHAsset, cosmos.NewUint(100*common.One)), IsNil)
-	c.Assert(networkMgr.UpdateNetwork(ctx, constAccessor, mgr.GasMgr(), mgr.EventMgr()), IsNil)
+	c.Assert(networkMgr.UpdateNetwork(ctx, mgr), IsNil)
 	networkWithSkim, err := helper.GetNetwork(ctx)
 	c.Assert(err, IsNil)
 
@@ -6945,8 +6941,6 @@ func (s *NetworkManagerTestSuite) TestSkimsApplyBeforePerChainBucketing(c *C) {
 
 func (s *NetworkManagerTestSuite) TestBondInvariantMultiBlock(c *C) {
 	ctx, mgr := setupManagerForTest(c)
-	ver := GetCurrentVersion()
-	constAccessor := constants.GetConstantValues(ver)
 	k := mgr.Keeper()
 	networkMgr := newNetworkMgr(k, mgr.TxOutStore(), mgr.EventMgr())
 
@@ -7020,7 +7014,7 @@ func (s *NetworkManagerTestSuite) TestBondInvariantMultiBlock(c *C) {
 		c.Assert(k.AddToLiquidityFees(ctx, common.ETHAsset, ethFee), IsNil)
 		c.Assert(k.AddToLiquidityFees(ctx, common.BTCAsset, btcFee), IsNil)
 
-		c.Assert(networkMgr.UpdateNetwork(ctx, constAccessor, mgr.GasMgr(), mgr.EventMgr()), IsNil)
+		c.Assert(networkMgr.UpdateNetwork(ctx, mgr), IsNil)
 
 		// Check invariant every 10 blocks
 		if i%10 == 0 {
@@ -7039,8 +7033,6 @@ func (s *NetworkManagerTestSuite) TestBondInvariantMultiBlock(c *C) {
 
 func (s *NetworkManagerTestSuite) TestBondInvariantWithNativePoolFees(c *C) {
 	ctx, mgr := setupManagerForTest(c)
-	ver := GetCurrentVersion()
-	constAccessor := constants.GetConstantValues(ver)
 	k := mgr.Keeper()
 	networkMgr := newNetworkMgr(k, mgr.TxOutStore(), mgr.EventMgr())
 
@@ -7102,7 +7094,7 @@ func (s *NetworkManagerTestSuite) TestBondInvariantWithNativePoolFees(c *C) {
 		ctx = ctx.WithBlockHeight(i)
 		c.Assert(k.AddToLiquidityFees(ctx, common.ETHAsset, cosmos.NewUint(500)), IsNil)
 		c.Assert(k.AddToLiquidityFees(ctx, common.RuneAsset(), cosmos.NewUint(300)), IsNil)
-		c.Assert(networkMgr.UpdateNetwork(ctx, constAccessor, mgr.GasMgr(), mgr.EventMgr()), IsNil)
+		c.Assert(networkMgr.UpdateNetwork(ctx, mgr), IsNil)
 		if i%10 == 0 {
 			checkBondInvariant(i)
 		}
@@ -7121,8 +7113,6 @@ func (s *NetworkManagerTestSuite) TestBondInvariantWithNativePoolFees(c *C) {
 // alphabetically-last layer-1 chain via the remainder-to-last pattern.
 func (s *NetworkManagerTestSuite) TestNativePoolFeesNotAbsorbedByLastChain(c *C) {
 	ctx, mgr := setupManagerForTest(c)
-	ver := GetCurrentVersion()
-	constAccessor := constants.GetConstantValues(ver)
 	k := mgr.Keeper()
 	networkMgr := newNetworkMgr(k, mgr.TxOutStore(), mgr.EventMgr())
 
@@ -7171,7 +7161,7 @@ func (s *NetworkManagerTestSuite) TestNativePoolFeesNotAbsorbedByLastChain(c *C)
 		bondRewardBefore = net.BondRewardRune
 	}
 
-	c.Assert(networkMgr.UpdateNetwork(ctx, constAccessor, mgr.GasMgr(), mgr.EventMgr()), IsNil)
+	c.Assert(networkMgr.UpdateNetwork(ctx, mgr), IsNil)
 
 	network, err := k.GetNetwork(ctx)
 	c.Assert(err, IsNil)
@@ -7205,8 +7195,6 @@ func (s *NetworkManagerTestSuite) TestNativePoolFeesNotAbsorbedByLastChain(c *C)
 
 func (s *NetworkManagerTestSuite) TestBondInvariantFullChurnCycle(c *C) {
 	ctx, mgr := setupManagerForTest(c)
-	ver := GetCurrentVersion()
-	constAccessor := constants.GetConstantValues(ver)
 	k := mgr.Keeper()
 	networkMgr := newNetworkMgr(k, mgr.TxOutStore(), mgr.EventMgr())
 
@@ -7279,7 +7267,7 @@ func (s *NetworkManagerTestSuite) TestBondInvariantFullChurnCycle(c *C) {
 		ctx = ctx.WithBlockHeight(i)
 		c.Assert(k.AddToLiquidityFees(ctx, common.ETHAsset, cosmos.NewUint(uint64(300+i%100))), IsNil)
 		c.Assert(k.AddToLiquidityFees(ctx, common.BTCAsset, cosmos.NewUint(uint64(200+i%70))), IsNil)
-		c.Assert(networkMgr.UpdateNetwork(ctx, constAccessor, mgr.GasMgr(), mgr.EventMgr()), IsNil)
+		c.Assert(networkMgr.UpdateNetwork(ctx, mgr), IsNil)
 	}
 	checkBondInvariant(500)
 

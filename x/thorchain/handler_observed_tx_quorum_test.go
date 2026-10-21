@@ -756,8 +756,8 @@ func (s *HandlerObservedTxQuorumSuite) TestHandleChainMembership(c *C) {
 	)
 
 	// Attestations from privKey2 and privKey3 (NOT in vault membership)
-	att2 := attestObservedTx(c, privKey2, obsTx)
-	att3 := attestObservedTx(c, privKey3, obsTx)
+	att2 := attestObservedTx(c, privKey2, obsTx, true)
+	att3 := attestObservedTx(c, privKey3, obsTx, true)
 
 	quoTx := &common.QuorumTx{
 		ObsTx:        obsTx,
@@ -776,7 +776,7 @@ func (s *HandlerObservedTxQuorumSuite) TestHandleChainMembership(c *C) {
 	c.Assert(voter.Txs, HasLen, 0, Commentf("non-member attestations should be skipped"))
 
 	// Now include an attestation from privKey4 (IS a vault member)
-	att4 := attestObservedTx(c, privKey4, obsTx)
+	att4 := attestObservedTx(c, privKey4, obsTx, true)
 	quoTx2 := &common.QuorumTx{
 		ObsTx:        obsTx,
 		Inbound:      true,

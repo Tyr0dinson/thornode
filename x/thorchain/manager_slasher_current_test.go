@@ -1472,6 +1472,8 @@ func (s *SlashingSuite) TestQueueRecoverySwapUsesFrostVaultAddressForXMR(c *C) {
 	vault.Status = types2.VaultStatus_ActiveVault
 	vault.PubKey = GetRandomPubKey()
 	vault.PubKeyFrost = GetRandomEd25519PubKey()
+	// The swap handler requires an active Asgard serving the source chain.
+	vault.Chains = append(vault.Chains, common.XMRChain.String())
 	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
 
 	xmrAddr, err := vault.PubKeyFrost.GetAddress(common.XMRChain)

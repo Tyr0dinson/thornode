@@ -402,6 +402,11 @@ func NewClient(
 	return c, nil
 }
 
+// SetShouldObserveCallback gates block scanning on the node's supported chains.
+func (c *Client) SetShouldObserveCallback(cb func() bool) {
+	c.blockScanner.SetShouldObserveCallback(cb)
+}
+
 func (c *Client) Start(
 	globalTxsQueue chan stypes.TxIn,
 	globalErrataQueue chan stypes.ErrataBlock,

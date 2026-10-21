@@ -893,7 +893,7 @@ func (s *HandlerTssSuite) TestKeygenSuccessWithTargetChains(c *C) {
 	for _, item := range helper.members {
 		thorAddr, err := item.GetThorAddress()
 		c.Assert(err, IsNil)
-		tssMsg, err := NewMsgTssPoolV2(helper.members.Strings(), poolPubKey, fakeSig, nil, AsgardKeygen, helper.ctx.BlockHeight(), nil, common.Chains{common.RuneAsset().Chain}.Strings(), thorAddr, keygenTime, poolEddsaPubKey, nil)
+		tssMsg, err := NewMsgTssPoolV2(helper.members.Strings(), poolPubKey, fakeSig, nil, AsgardKeygen, helper.ctx.BlockHeight(), nil, common.Chains{common.RuneAsset().Chain}.Strings(), thorAddr, keygenTime, poolEddsaPubKey, nil, nil, common.EmptyPubKey)
 		c.Assert(err, IsNil)
 		err = handler.handle(helper.ctx, tssMsg)
 		c.Assert(err, IsNil)
@@ -944,7 +944,7 @@ func (s *HandlerTssSuite) TestKeygenSuccessWithoutTargetChainsFallback(c *C) {
 	for _, item := range helper.members {
 		thorAddr, err := item.GetThorAddress()
 		c.Assert(err, IsNil)
-		tssMsg, err := NewMsgTssPoolV2(helper.members.Strings(), poolPubKey, fakeSig, nil, AsgardKeygen, helper.ctx.BlockHeight(), nil, common.Chains{common.RuneAsset().Chain}.Strings(), thorAddr, keygenTime, poolEddsaPubKey, nil)
+		tssMsg, err := NewMsgTssPoolV2(helper.members.Strings(), poolPubKey, fakeSig, nil, AsgardKeygen, helper.ctx.BlockHeight(), nil, common.Chains{common.RuneAsset().Chain}.Strings(), thorAddr, keygenTime, poolEddsaPubKey, nil, nil, common.EmptyPubKey)
 		c.Assert(err, IsNil)
 		err = handler.handle(helper.ctx, tssMsg)
 		c.Assert(err, IsNil)
@@ -2560,4 +2560,42 @@ func securityEventMsg(ctx cosmos.Context) string {
 		}
 	}
 	return ""
+}
+
+// TestRotateInitVaultPartitions checks that the init-vault chain-set guard is
+// applied per opt-in chain partition: vaults from keygens with different
+// TargetChains may differ, but vaults of one partition must still agree.
+func (s *HandlerTssSuite) TestRotateInitVaultPartitions(c *C) {
+	helper := newTssHandlerTestHelper(c)
+	mgr := NewDummyMgrWithKeeper(helper.keeper)
+	handler := NewTssHandler(mgr)
+	netMgr, ok := mgr.NetworkMgr().(*NetworkMgrDummy)
+	c.Assert(ok, Equals, true)
+
+	btcSet := common.Chains{common.BTCChain, common.THORChain}.Strings()
+	ethSet := common.Chains{common.ETHChain, common.THORChain}.Strings()
+	members := func() common.PubKeys {
+		return common.PubKeys{GetRandomPubKey(), GetRandomPubKey()}
+	}
+	btcA, btcB, eth := makeInitVaultAt(1, members(), btcSet), makeInitVaultAt(1, members(), btcSet), makeInitVaultAt(1, members(), ethSet)
+	keygenBlock := KeygenBlock{Keygens: []Keygen{
+		{Type: AsgardKeygen, Members: btcA.Membership, TargetChains: btcSet},
+		{Type: AsgardKeygen, Members: btcB.Membership, TargetChains: btcSet},
+		{Type: AsgardKeygen, Members: eth.Membership, TargetChains: ethSet},
+	}}
+
+	partitions := initVaultPartitions(Vaults{btcA, eth, btcB}, keygenBlock)
+	c.Assert(partitions, HasLen, 2)
+	c.Assert(partitions[0], HasLen, 2)
+	c.Assert(partitions[1], HasLen, 1)
+
+	// different partitions with different chain sets rotate together
+	c.Assert(handler.tryRotateInitVaultPartitions(helper.ctx, Vaults{btcA, eth, btcB}, keygenBlock), IsNil)
+	c.Assert(netMgr.rotated, HasLen, 3)
+
+	// a mismatch inside one partition blocks the whole rotation
+	netMgr.rotated = nil
+	btcB.Chains = ethSet
+	c.Assert(handler.tryRotateInitVaultPartitions(helper.ctx, Vaults{btcA, eth, btcB}, keygenBlock), IsNil)
+	c.Assert(netMgr.rotated, HasLen, 0)
 }

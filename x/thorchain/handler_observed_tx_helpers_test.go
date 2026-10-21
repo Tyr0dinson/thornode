@@ -1238,9 +1238,15 @@ func observeSlashSetup(c *C, ctx cosmos.Context, mgr *Mgrs) (NodeAccounts, commo
 		GetRandomValidatorNode(NodeActive),
 		GetRandomValidatorNode(NodeActive),
 	}
+	// Non-signers are chain-aware: they are read from the chain's vault
+	// membership, falling back to the stored active validators.
 	vaultPubKey := GetRandomPubKey()
 	vault := GetRandomVault()
 	vault.PubKey = vaultPubKey
+	for _, na := range nas {
+		c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
+		vault.Membership = append(vault.Membership, na.PubKeySet.Secp256k1.String())
+	}
 	vault.AddFunds(common.Coins{common.NewCoin(common.ETHAsset, cosmos.NewUint(100*common.One))})
 	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
 	return nas, vaultPubKey

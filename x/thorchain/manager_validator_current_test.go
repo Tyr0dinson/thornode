@@ -1076,6 +1076,8 @@ func (vts *ValidatorMgrTestSuite) TestChurnInnerSchedulesReplacementXMRKeygen(c 
 	ready := GetRandomValidatorNode(NodeReady)
 	ready.Bond = cosmos.NewUint(uint64(minBond))
 	ready.Version = constants.SWVersion.String()
+	// match the incumbents' chain support so all four land in one keygen partition
+	ready.SupportedChains = common.Chains{common.THORChain, common.BTCChain, common.XMRChain}.Strings()
 	c.Assert(k.SetNodeAccount(ctx, ready), IsNil)
 
 	regular := NewVault(1, ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.THORChain, common.BTCChain}.Strings(), nil)
@@ -1087,7 +1089,7 @@ func (vts *ValidatorMgrTestSuite) TestChurnInnerSchedulesReplacementXMRKeygen(c 
 	xmr.PubKeyFrost = GetRandomEd25519PubKey()
 	c.Assert(k.SetVault(ctx, xmr), IsNil)
 
-	c.Assert(validatorMgr.churnInner(ctx), IsNil)
+	c.Assert(validatorMgr.churnInner(ctx, mgr), IsNil)
 	c.Assert(networkDummy.nas, HasLen, 4)
 	c.Assert(networkDummy.xmrNas, HasLen, 4)
 	c.Assert(networkDummy.xmrNas.Contains(ready), Equals, true)
@@ -1124,7 +1126,7 @@ func (vts *ValidatorMgrTestSuite) TestChurnInnerRecoversMissingXMRAtBFTFloor(c *
 	regular.Membership = append(regular.Membership, membership...)
 	c.Assert(k.SetVault(ctx, regular), IsNil)
 
-	c.Assert(validatorMgr.churnInner(ctx), IsNil)
+	c.Assert(validatorMgr.churnInner(ctx, mgr), IsNil)
 	c.Assert(networkDummy.nas, HasLen, 0, Commentf("must not schedule an unnecessary regular keygen"))
 	c.Assert(networkDummy.xmrNas, HasLen, 4)
 	for _, member := range active {
@@ -2460,7 +2462,7 @@ func (vts *ValidatorMgrTestSuite) TestChurnInnerChainSetStallSmallSet(c *C) {
 		pending.Membership = membership
 		c.Assert(k.SetVault(ctx, pending), IsNil)
 
-		c.Assert(vm.churnInner(ctx), IsNil)
+		c.Assert(vm.churnInner(ctx, mgr), IsNil)
 		c.Assert(len(networkDummy.nas) > 0, Equals, true, Commentf("%d faulty: the keygen must still fire", nFaulty))
 		inKeygen := func(na NodeAccount) bool { return networkDummy.nas.Contains(na) }
 		excluded := 0

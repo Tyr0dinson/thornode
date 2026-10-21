@@ -668,23 +668,8 @@ func (h TssHandler) handle(ctx cosmos.Context, msg *MsgTssPool) error {
 			}
 
 			chains := voter.ConsensusChains()
-			if matchingKeygen := findMatchingKeygen(keygenBlock, voter.PubKeys); matchingKeygen != nil && len(matchingKeygen.TargetChains) > 0 {
-				targetChains := make(common.Chains, 0, len(matchingKeygen.TargetChains))
-				for _, tc := range matchingKeygen.TargetChains {
-					chain, parseErr := common.NewChain(tc)
-					if parseErr != nil {
-						ctx.Logger().Error("fail to parse target chain", "chain", tc, "error", parseErr)
-						continue
-					}
-					// XMR is only ever custodied by the dedicated XMR monovault.
-					if chain.Equals(common.XMRChain) {
-						continue
-					}
-					targetChains = append(targetChains, chain)
-				}
-				if len(targetChains) > 0 {
-					chains = targetChains
-				}
+			if targetChains := keygenTargetChains(ctx, findMatchingKeygenOfType(keygenBlock, voter.PubKeys, msg.KeygenType)); len(targetChains) > 0 {
+				chains = targetChains
 			}
 
 			if msg.KeygenType == XMRMonovaultKeygen {
@@ -804,6 +789,16 @@ func (h TssHandler) refreshInitVaultChains(ctx cosmos.Context, msg *MsgTssPool, 
 		return nil
 	}
 
+	keygenBlock, err := h.mgr.Keeper().GetKeygenBlock(ctx, msg.Height)
+	if err != nil {
+		return fmt.Errorf("fail to get keygen block, err: %w, height: %d", err, msg.Height)
+	}
+	// A keygen scheduled for an opt-in chain partition fixes the vault's chain
+	// set to that partition's TargetChains; late reports must not widen it.
+	if len(keygenTargetChains(ctx, findMatchingKeygenOfType(keygenBlock, voter.PubKeys, msg.KeygenType))) > 0 {
+		return nil
+	}
+
 	// Start from the sorted consensus set and keep whatever the vault already
 	// carries: AddFunds appends a chain when a coin for it is observed, and an
 	// inbound must not be undone by a later keygen report.
@@ -833,10 +828,6 @@ func (h TssHandler) refreshInitVaultChains(ctx cosmos.Context, msg *MsgTssPool, 
 		return fmt.Errorf("fail to save vault: %w", err)
 	}
 
-	keygenBlock, err := h.mgr.Keeper().GetKeygenBlock(ctx, msg.Height)
-	if err != nil {
-		return fmt.Errorf("fail to get keygen block, err: %w, height: %d", err, msg.Height)
-	}
 	// Return rather than log on failure: tryRotateInitVaults returns nil for a
 	// chain set mismatch, so an error here is a keeper failure partway through
 	// the per-vault rotation loop. Reverting the tx is better than leaving the
@@ -867,6 +858,58 @@ func (h TssHandler) tryRotateInitVaults(ctx cosmos.Context, initVaults Vaults) e
 		}
 	}
 	return nil
+}
+
+// tryRotateInitVaultPartitions applies the tryRotateInitVaults chain-set guard
+// within each opt-in chain partition. Each partition is scheduled as its own
+// keygen family with its own TargetChains, so vaults of different partitions
+// intentionally serve different chain sets; only vaults of the same partition
+// must agree. Rotation stays all-or-nothing across partitions.
+func (h TssHandler) tryRotateInitVaultPartitions(ctx cosmos.Context, initVaults Vaults, keygenBlock KeygenBlock) error {
+	partitions := initVaultPartitions(initVaults, keygenBlock)
+	if len(partitions) <= 1 {
+		return h.tryRotateInitVaults(ctx, initVaults)
+	}
+	for _, partition := range partitions {
+		if !initVaultsAgreeOnChains(partition) {
+			// emits the security event and rotates nothing
+			return h.tryRotateInitVaults(ctx, partition)
+		}
+	}
+	for _, v := range initVaults {
+		if err := h.mgr.NetworkMgr().RotateVault(ctx, v); err != nil {
+			return fmt.Errorf("fail to rotate vault: %w", err)
+		}
+	}
+	return nil
+}
+
+// initVaultPartitions groups vaults by the TargetChains of the keygen that
+// produced them, in first-seen order. Vaults from keygens without
+// TargetChains share one group.
+func initVaultPartitions(vaults Vaults, keygenBlock KeygenBlock) []Vaults {
+	var keys []string
+	groups := make(map[string]Vaults)
+	for _, v := range vaults {
+		key := ""
+		for _, kg := range keygenBlock.Keygens {
+			if keygenMatchesVault(kg, v) {
+				targets := append([]string(nil), kg.TargetChains...)
+				sort.Strings(targets)
+				key = strings.Join(targets, ",")
+				break
+			}
+		}
+		if _, ok := groups[key]; !ok {
+			keys = append(keys, key)
+		}
+		groups[key] = append(groups[key], v)
+	}
+	result := make([]Vaults, 0, len(keys))
+	for _, key := range keys {
+		result = append(result, groups[key])
+	}
+	return result
 }
 
 // initVaultsAgreeOnChains returns true if every vault's Chains slice is
@@ -924,7 +967,7 @@ func (h TssHandler) rotateReadyKeygenVaultFamilies(ctx cosmos.Context, keygenBlo
 		if keygenTypeReady(keygenBlock, readyVaults, AsgardKeygen) {
 			if len(regularInitVaults) > 0 {
 				ctx.Logger().Info("tss keygen results churn", "asgards", len(regularInitVaults))
-				if rotateErr := h.tryRotateInitVaults(ctx, regularInitVaults); rotateErr != nil {
+				if rotateErr := h.tryRotateInitVaultPartitions(ctx, regularInitVaults, keygenBlock); rotateErr != nil {
 					return fmt.Errorf("fail to rotate regular vaults: %w", rotateErr)
 				}
 				activeVaults, err = h.mgr.Keeper().GetAsgardVaultsByStatus(ctx, ActiveVault)
@@ -1040,6 +1083,41 @@ func judgeLateSigner(ctx cosmos.Context, mgr Manager, msg *MsgTssPool, voter *Ts
 			}
 		}
 	}
+}
+
+// findMatchingKeygenOfType is findMatchingKeygen restricted to one keygen type,
+// so an XMR monovault keygen with the same members as an Asgard keygen is never
+// taken for it.
+func findMatchingKeygenOfType(keygenBlock KeygenBlock, voterPubKeys []string, keygenType types.KeygenType) *Keygen {
+	filtered := KeygenBlock{Height: keygenBlock.Height}
+	for _, kg := range keygenBlock.Keygens {
+		if kg.Type == keygenType {
+			filtered.Keygens = append(filtered.Keygens, kg)
+		}
+	}
+	return findMatchingKeygen(filtered, voterPubKeys)
+}
+
+// keygenTargetChains parses a keygen's TargetChains. XMR is dropped: it is only
+// ever custodied by the dedicated XMR monovault. A nil keygen or one without
+// TargetChains yields nil.
+func keygenTargetChains(ctx cosmos.Context, kg *Keygen) common.Chains {
+	if kg == nil || len(kg.TargetChains) == 0 {
+		return nil
+	}
+	targetChains := make(common.Chains, 0, len(kg.TargetChains))
+	for _, tc := range kg.TargetChains {
+		chain, err := common.NewChain(tc)
+		if err != nil {
+			ctx.Logger().Error("fail to parse target chain", "chain", tc, "error", err)
+			continue
+		}
+		if chain.Equals(common.XMRChain) {
+			continue
+		}
+		targetChains = append(targetChains, chain)
+	}
+	return targetChains
 }
 
 func findMatchingKeygen(keygenBlock KeygenBlock, voterPubKeys []string) *Keygen {

@@ -87,7 +87,8 @@ func (s *KeeperVaultSecuritySuite) TestPeekNodeAccountStatusBond(c *C) {
 		appendRaw(base, 3, protowire.BytesType, 0x0a, 0x05),                                                     // pub_key_set.secp256k1 truncated
 		appendRaw(base, 3, protowire.BytesType, 0x1a, 0x01, 0x78),                                               // pub_key_set unknown field
 		appendRaw(base, 3, protowire.BytesType),                                                                 // empty pub_key_set
-		appendRaw(base, 18, protowire.VarintType, 7),                                                            // unknown varint field
+		appendRaw(base, 18, protowire.VarintType, 7),                                                            // supported_chains as varint
+		appendRaw(base, 19, protowire.VarintType, 7),                                                            // unknown varint field
 	)
 	fastPath := 0
 	for i, bz := range cases {

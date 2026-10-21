@@ -24,6 +24,11 @@ func setupXMRObservationCredit(c *C, ctx cosmos.Context, mgr *Mgrs, final bool) 
 	to, err := GetRandomEd25519PubKey().GetAddress(common.XMRChain)
 	c.Assert(err, IsNil)
 	vault := NewVault(1, ActiveVault, AsgardVault, pk, []string{common.XMRChain.String()}, nil)
+	// Non-signers are chain-aware: with no vault members for the chain they
+	// fall back to the stored active validators.
+	for _, na := range nas {
+		c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
+	}
 	vault.AddFunds(common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(100*common.One))))
 	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
 	txID := GetRandomTxHash()

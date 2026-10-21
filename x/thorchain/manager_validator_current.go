@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"slices"
 	"sort"
 	"strings"
 
@@ -378,8 +379,8 @@ func (vm *ValidatorMgr) churnInner(ctx cosmos.Context, mgr Manager) error {
 				}
 			}
 
-			if err := vm.autoRagnarokUncoveredChains(ctx, mgr, coveredChains); err != nil {
-				return err
+			if ragErr := vm.autoRagnarokUncoveredChains(ctx, mgr, coveredChains); ragErr != nil {
+				return ragErr
 			}
 		}
 	}
@@ -2414,6 +2415,11 @@ func (vm *ValidatorMgr) missingKeygenChain(ctx cosmos.Context, na NodeAccount, r
 	}
 
 	for _, chain := range required {
+		// A node that explicitly opted out of a chain is never placed in a vault
+		// for it, so leaving it out of a keygen report is expected.
+		if len(na.SupportedChains) > 0 && !slices.Contains(na.SupportedChains, chain.String()) {
+			continue
+		}
 		if !declared.Has(chain) {
 			return chain, reportHeight
 		}

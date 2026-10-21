@@ -126,14 +126,14 @@ const (
 )
 
 // nodeAccountWireTypes are the wire types NodeAccount.Unmarshal requires of
-// its fields (1-17); it rejects any other wire type for them.
+// its fields (1-18); it rejects any other wire type for them.
 var nodeAccountWireTypes = [...]protowire.Type{
 	1: protowire.BytesType, 2: protowire.VarintType, 3: protowire.BytesType,
 	4: protowire.BytesType, 5: protowire.BytesType, 6: protowire.VarintType,
 	7: protowire.BytesType, 8: protowire.VarintType, 9: protowire.BytesType,
 	10: protowire.VarintType, 11: protowire.VarintType, 12: protowire.VarintType,
 	13: protowire.BytesType, 14: protowire.BytesType, 15: protowire.VarintType,
-	16: protowire.VarintType, 17: protowire.VarintType,
+	16: protowire.VarintType, 17: protowire.VarintType, 18: protowire.BytesType,
 }
 
 // nodeAccountPubKeySetField is the PubKeySet message field of a NodeAccount.

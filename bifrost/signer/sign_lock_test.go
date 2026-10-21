@@ -15,8 +15,9 @@ type mockChainNoVaultLock struct{}
 
 func (m *mockChainNoVaultLock) Start(chan thtypes.TxIn, chan thtypes.ErrataBlock, chan thtypes.Solvency, chan common.NetworkFee) {
 }
-func (m *mockChainNoVaultLock) Stop()                       {}
-func (m *mockChainNoVaultLock) IsBlockScannerHealthy() bool { return true }
+func (m *mockChainNoVaultLock) Stop()                                {}
+func (m *mockChainNoVaultLock) SetShouldObserveCallback(func() bool) {}
+func (m *mockChainNoVaultLock) IsBlockScannerHealthy() bool          { return true }
 func (m *mockChainNoVaultLock) SignTx(thtypes.TxOutItem, int64) ([]byte, []byte, *thtypes.TxInItem, error) {
 	return nil, nil, nil, nil
 }
