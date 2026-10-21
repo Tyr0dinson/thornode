@@ -82,6 +82,7 @@ const (
 	Query_SolVaultNonce_FullMethodName            = "/types.Query/SolVaultNonce"
 	Query_AsgardVaults_FullMethodName             = "/types.Query/AsgardVaults"
 	Query_VaultsPubkeys_FullMethodName            = "/types.Query/VaultsPubkeys"
+	Query_AddrPubKey_FullMethodName               = "/types.Query/AddrPubKey"
 	Query_VaultSolvency_FullMethodName            = "/types.Query/VaultSolvency"
 	Query_TxStages_FullMethodName                 = "/types.Query/TxStages"
 	Query_TxStatus_FullMethodName                 = "/types.Query/TxStatus"
@@ -196,6 +197,7 @@ type QueryClient interface {
 	SolVaultNonce(ctx context.Context, in *QuerySolVaultNonceRequest, opts ...grpc.CallOption) (*QuerySolVaultNonceResponse, error)
 	AsgardVaults(ctx context.Context, in *QueryAsgardVaultsRequest, opts ...grpc.CallOption) (*QueryAsgardVaultsResponse, error)
 	VaultsPubkeys(ctx context.Context, in *QueryVaultsPubkeysRequest, opts ...grpc.CallOption) (*QueryVaultsPubkeysResponse, error)
+	AddrPubKey(ctx context.Context, in *QueryAddrPubKeyRequest, opts ...grpc.CallOption) (*QueryAddrPubKeyResponse, error)
 	VaultSolvency(ctx context.Context, in *QueryVaultSolvencyRequest, opts ...grpc.CallOption) (*QueryVaultSolvencyResponse, error)
 	TxStages(ctx context.Context, in *QueryTxStagesRequest, opts ...grpc.CallOption) (*QueryTxStagesResponse, error)
 	TxStatus(ctx context.Context, in *QueryTxStatusRequest, opts ...grpc.CallOption) (*QueryTxStatusResponse, error)
@@ -809,6 +811,15 @@ func (c *queryClient) VaultsPubkeys(ctx context.Context, in *QueryVaultsPubkeysR
 	return out, nil
 }
 
+func (c *queryClient) AddrPubKey(ctx context.Context, in *QueryAddrPubKeyRequest, opts ...grpc.CallOption) (*QueryAddrPubKeyResponse, error) {
+	out := new(QueryAddrPubKeyResponse)
+	err := c.cc.Invoke(ctx, Query_AddrPubKey_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *queryClient) VaultSolvency(ctx context.Context, in *QueryVaultSolvencyRequest, opts ...grpc.CallOption) (*QueryVaultSolvencyResponse, error) {
 	out := new(QueryVaultSolvencyResponse)
 	err := c.cc.Invoke(ctx, Query_VaultSolvency_FullMethodName, in, out, opts...)
@@ -1209,6 +1220,7 @@ type QueryServer interface {
 	SolVaultNonce(context.Context, *QuerySolVaultNonceRequest) (*QuerySolVaultNonceResponse, error)
 	AsgardVaults(context.Context, *QueryAsgardVaultsRequest) (*QueryAsgardVaultsResponse, error)
 	VaultsPubkeys(context.Context, *QueryVaultsPubkeysRequest) (*QueryVaultsPubkeysResponse, error)
+	AddrPubKey(context.Context, *QueryAddrPubKeyRequest) (*QueryAddrPubKeyResponse, error)
 	VaultSolvency(context.Context, *QueryVaultSolvencyRequest) (*QueryVaultSolvencyResponse, error)
 	TxStages(context.Context, *QueryTxStagesRequest) (*QueryTxStagesResponse, error)
 	TxStatus(context.Context, *QueryTxStatusRequest) (*QueryTxStatusResponse, error)
@@ -1440,6 +1452,9 @@ func (UnimplementedQueryServer) AsgardVaults(context.Context, *QueryAsgardVaults
 }
 func (UnimplementedQueryServer) VaultsPubkeys(context.Context, *QueryVaultsPubkeysRequest) (*QueryVaultsPubkeysResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method VaultsPubkeys not implemented")
+}
+func (UnimplementedQueryServer) AddrPubKey(context.Context, *QueryAddrPubKeyRequest) (*QueryAddrPubKeyResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method AddrPubKey not implemented")
 }
 func (UnimplementedQueryServer) VaultSolvency(context.Context, *QueryVaultSolvencyRequest) (*QueryVaultSolvencyResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method VaultSolvency not implemented")
@@ -2696,6 +2711,24 @@ func _Query_VaultsPubkeys_Handler(srv interface{}, ctx context.Context, dec func
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Query_AddrPubKey_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(QueryAddrPubKeyRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(QueryServer).AddrPubKey(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Query_AddrPubKey_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(QueryServer).AddrPubKey(ctx, req.(*QueryAddrPubKeyRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _Query_VaultSolvency_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(QueryVaultSolvencyRequest)
 	if err := dec(in); err != nil {
@@ -3602,6 +3635,10 @@ var Query_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "VaultsPubkeys",
 			Handler:    _Query_VaultsPubkeys_Handler,
+		},
+		{
+			MethodName: "AddrPubKey",
+			Handler:    _Query_AddrPubKey_Handler,
 		},
 		{
 			MethodName: "VaultSolvency",

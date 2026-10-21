@@ -210,6 +210,7 @@ docs/UpgradeProposal.md
 docs/UpgradeVote.md
 docs/Vault.md
 docs/VaultAddress.md
+docs/VaultAddressResponse.md
 docs/VaultInfo.md
 docs/VaultPubkeysResponse.md
 docs/VaultRouter.md
@@ -350,6 +351,7 @@ model_upgrade_proposal.go
 model_upgrade_vote.go
 model_vault.go
 model_vault_address.go
+model_vault_address_response.go
 model_vault_info.go
 model_vault_pubkeys_response.go
 model_vault_router.go

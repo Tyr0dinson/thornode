@@ -172,6 +172,7 @@ Class | Method | HTTP request | Description
 *TransactionsApi* | [**TxStatus**](docs/TransactionsApi.md#txstatus) | **Get** /thorchain/tx/status/{hash} | 
 *VaultsApi* | [**Asgard**](docs/VaultsApi.md#asgard) | **Get** /thorchain/vaults/asgard | 
 *VaultsApi* | [**Vault**](docs/VaultsApi.md#vault) | **Get** /thorchain/vault/{pubkey} | 
+*VaultsApi* | [**VaultAddress**](docs/VaultsApi.md#vaultaddress) | **Get** /thorchain/vaults/address/{address} | 
 *VaultsApi* | [**VaultKeysignParty**](docs/VaultsApi.md#vaultkeysignparty) | **Get** /thorchain/vault/{pubkey}/keysign_party | 
 *VaultsApi* | [**VaultPubkeys**](docs/VaultsApi.md#vaultpubkeys) | **Get** /thorchain/vaults/pubkeys | 
 *VaultsApi* | [**VaultSolvency**](docs/VaultsApi.md#vaultsolvency) | **Get** /thorchain/vaults/solvency | 
@@ -309,6 +310,7 @@ Class | Method | HTTP request | Description
  - [UpgradeVote](docs/UpgradeVote.md)
  - [Vault](docs/Vault.md)
  - [VaultAddress](docs/VaultAddress.md)
+ - [VaultAddressResponse](docs/VaultAddressResponse.md)
  - [VaultInfo](docs/VaultInfo.md)
  - [VaultPubkeysResponse](docs/VaultPubkeysResponse.md)
  - [VaultRouter](docs/VaultRouter.md)

@@ -245,6 +245,119 @@ func (a *VaultsApiService) VaultExecute(r ApiVaultRequest) (*Vault, *http.Respon
 	return localVarReturnValue, localVarHTTPResponse, nil
 }
 
+type ApiVaultAddressRequest struct {
+	ctx context.Context
+	ApiService *VaultsApiService
+	address string
+	height *int64
+}
+
+// optional block height, defaults to current tip
+func (r ApiVaultAddressRequest) Height(height int64) ApiVaultAddressRequest {
+	r.height = &height
+	return r
+}
+
+func (r ApiVaultAddressRequest) Execute() (*VaultAddressResponse, *http.Response, error) {
+	return r.ApiService.VaultAddressExecute(r)
+}
+
+/*
+VaultAddress Method for VaultAddress
+
+Returns the vault pubkey associated with the provided address.
+
+ @param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
+ @param address
+ @return ApiVaultAddressRequest
+*/
+func (a *VaultsApiService) VaultAddress(ctx context.Context, address string) ApiVaultAddressRequest {
+	return ApiVaultAddressRequest{
+		ApiService: a,
+		ctx: ctx,
+		address: address,
+	}
+}
+
+// Execute executes the request
+//  @return VaultAddressResponse
+func (a *VaultsApiService) VaultAddressExecute(r ApiVaultAddressRequest) (*VaultAddressResponse, *http.Response, error) {
+	var (
+		localVarHTTPMethod   = http.MethodGet
+		localVarPostBody     interface{}
+		formFiles            []formFile
+		localVarReturnValue  *VaultAddressResponse
+	)
+
+	localBasePath, err := a.client.cfg.ServerURLWithContext(r.ctx, "VaultsApiService.VaultAddress")
+	if err != nil {
+		return localVarReturnValue, nil, &GenericOpenAPIError{error: err.Error()}
+	}
+
+	localVarPath := localBasePath + "/thorchain/vaults/address/{address}"
+	localVarPath = strings.Replace(localVarPath, "{"+"address"+"}", url.PathEscape(parameterToString(r.address, "")), -1)
+
+	localVarHeaderParams := make(map[string]string)
+	localVarQueryParams := url.Values{}
+	localVarFormParams := url.Values{}
+
+	if r.height != nil {
+		localVarQueryParams.Add("height", parameterToString(*r.height, ""))
+	}
+	// to determine the Content-Type header
+	localVarHTTPContentTypes := []string{}
+
+	// set Content-Type header
+	localVarHTTPContentType := selectHeaderContentType(localVarHTTPContentTypes)
+	if localVarHTTPContentType != "" {
+		localVarHeaderParams["Content-Type"] = localVarHTTPContentType
+	}
+
+	// to determine the Accept header
+	localVarHTTPHeaderAccepts := []string{"application/json"}
+
+	// set Accept header
+	localVarHTTPHeaderAccept := selectHeaderAccept(localVarHTTPHeaderAccepts)
+	if localVarHTTPHeaderAccept != "" {
+		localVarHeaderParams["Accept"] = localVarHTTPHeaderAccept
+	}
+	req, err := a.client.prepareRequest(r.ctx, localVarPath, localVarHTTPMethod, localVarPostBody, localVarHeaderParams, localVarQueryParams, localVarFormParams, formFiles)
+	if err != nil {
+		return localVarReturnValue, nil, err
+	}
+
+	localVarHTTPResponse, err := a.client.callAPI(req)
+	if err != nil || localVarHTTPResponse == nil {
+		return localVarReturnValue, localVarHTTPResponse, err
+	}
+
+	localVarBody, err := ioutil.ReadAll(localVarHTTPResponse.Body)
+	localVarHTTPResponse.Body.Close()
+	localVarHTTPResponse.Body = ioutil.NopCloser(bytes.NewBuffer(localVarBody))
+	if err != nil {
+		return localVarReturnValue, localVarHTTPResponse, err
+	}
+
+	if localVarHTTPResponse.StatusCode >= 300 {
+		newErr := &GenericOpenAPIError{
+			body:  localVarBody,
+			error: localVarHTTPResponse.Status,
+		}
+		return localVarReturnValue, localVarHTTPResponse, newErr
+	}
+
+	err = a.client.decode(&localVarReturnValue, localVarBody, localVarHTTPResponse.Header.Get("Content-Type"))
+	if err != nil {
+		newErr := &GenericOpenAPIError{
+			body:  localVarBody,
+			error: err.Error(),
+		}
+		return localVarReturnValue, localVarHTTPResponse, newErr
+	}
+
+	return localVarReturnValue, localVarHTTPResponse, nil
+}
+
 type ApiVaultKeysignPartyRequest struct {
 	ctx context.Context
 	ApiService *VaultsApiService

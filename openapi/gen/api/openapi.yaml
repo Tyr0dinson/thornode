@@ -1182,6 +1182,40 @@ paths:
           description: OK
       tags:
       - Vaults
+  /thorchain/vaults/address/{address}:
+    get:
+      description: Returns the vault pubkey associated with the provided address.
+      operationId: vaultAddress
+      parameters:
+      - description: "optional block height, defaults to current tip"
+        explode: true
+        in: query
+        name: height
+        required: false
+        schema:
+          format: int64
+          minimum: 0
+          type: integer
+        style: form
+      - explode: false
+        in: path
+        name: address
+        required: true
+        schema:
+          example: thor1zupk5lmc84r2dh738a9g3zscavannjy3nzplwt
+          type: string
+        style: simple
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VaultAddressResponse'
+          description: OK
+        "404":
+          description: Address not found in vault mappings
+      tags:
+      - Vaults
   /thorchain/network:
     get:
       description: Returns network overview statistics.
@@ -6803,6 +6837,24 @@ components:
       required:
       - amount
       - asset
+      type: object
+    VaultAddressResponse:
+      example:
+        found: true
+        pubkey: thorpub1addwnpepq068dr0x7ue973drmq4eqmzhcq3650n7nx5fhgn9gl207luxp6vaklu52tc
+      properties:
+        pubkey:
+          description: The vault pubkey associated with the address (empty if not
+            found)
+          example: thorpub1addwnpepq068dr0x7ue973drmq4eqmzhcq3650n7nx5fhgn9gl207luxp6vaklu52tc
+          type: string
+        found:
+          description: Whether the address was found in the vault mappings
+          example: true
+          type: boolean
+      required:
+      - found
+      - pubkey
       type: object
     NetworkResponse:
       example:
