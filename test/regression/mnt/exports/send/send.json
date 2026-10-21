@@ -226,6 +226,8 @@
       "mimirs": [],
       "network": {
         "bond_reward_rune": "0",
+        "chain_bond_units": null,
+        "chain_rewards": null,
         "total_bond_units": "0"
       },
       "network_fees": [],
@@ -244,6 +246,9 @@
           },
           "requested_to_leave": true,
           "status": "Active",
+          "supported_chains": [
+            "BTC"
+          ],
           "validator_cons_pub_key": "tthorcpub1zcjduepqq75h7uy6qhesh9d3a9tuk0mzrnc46u8rye44ze6peua3zmpfh23q8z37sz"
         }
       ],

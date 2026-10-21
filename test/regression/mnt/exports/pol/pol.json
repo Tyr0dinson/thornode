@@ -267,6 +267,18 @@
         "LPIncomeSplit": "9659",
         "NodeIncomeSplit": "341",
         "bond_reward_rune": "7729397545",
+        "chain_bond_units": [
+          {
+            "chain": "BTC",
+            "units": "9"
+          }
+        ],
+        "chain_rewards": [
+          {
+            "amount": "7729397545",
+            "chain": "BTC"
+          }
+        ],
         "total_bond_units": "9"
       },
       "network_fees": [
@@ -320,6 +332,9 @@
             "secp256k1": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4"
           },
           "status": "Active",
+          "supported_chains": [
+            "BTC"
+          ],
           "validator_cons_pub_key": "tthorcpub1zcjduepqq75h7uy6qhesh9d3a9tuk0mzrnc46u8rye44ze6peua3zmpfh23q8z37sz"
         }
       ],

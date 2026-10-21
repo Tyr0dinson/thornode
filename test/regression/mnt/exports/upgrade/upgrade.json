@@ -327,6 +327,74 @@
         "LPIncomeSplit": "9840",
         "NodeIncomeSplit": "160",
         "bond_reward_rune": "159821",
+        "chain_bond_units": [
+          {
+            "chain": "AVAX",
+            "units": "45"
+          },
+          {
+            "chain": "BCH",
+            "units": "45"
+          },
+          {
+            "chain": "BTC",
+            "units": "45"
+          },
+          {
+            "chain": "DOGE",
+            "units": "45"
+          },
+          {
+            "chain": "ETH",
+            "units": "45"
+          },
+          {
+            "chain": "GAIA",
+            "units": "45"
+          },
+          {
+            "chain": "LTC",
+            "units": "45"
+          },
+          {
+            "chain": "THOR",
+            "units": "45"
+          }
+        ],
+        "chain_rewards": [
+          {
+            "amount": "19980",
+            "chain": "AVAX"
+          },
+          {
+            "amount": "19980",
+            "chain": "BCH"
+          },
+          {
+            "amount": "19980",
+            "chain": "BTC"
+          },
+          {
+            "amount": "19980",
+            "chain": "DOGE"
+          },
+          {
+            "amount": "19980",
+            "chain": "ETH"
+          },
+          {
+            "amount": "19980",
+            "chain": "GAIA"
+          },
+          {
+            "amount": "19980",
+            "chain": "LTC"
+          },
+          {
+            "amount": "19980",
+            "chain": "THOR"
+          }
+        ],
         "total_bond_units": "45"
       },
       "network_fees": [
