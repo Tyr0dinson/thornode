@@ -573,6 +573,13 @@ func (c *SOLClient) countAbstain(reason string) {
 	}
 }
 
+// canSendAsset reports whether this client can build an outbound of asset. It sends
+// native SOL only: the builders turn the coin amount into lamports whatever the asset,
+// so any other SOL-chain asset (e.g. an SPL token) would pay that amount in SOL.
+func (c *SOLClient) canSendAsset(asset common.Asset) bool {
+	return asset.Equals(common.SOLAsset)
+}
+
 // SignTx returns the signed transaction.
 func (c *SOLClient) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *stypes.TxInItem, error) {
 	if tx.Chain != common.SOLChain {
@@ -583,6 +590,16 @@ func (c *SOLClient) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *
 	}
 	if tx.VaultPubKeyEddsa.IsEmpty() {
 		return nil, nil, nil, errors.New("vault public key is empty")
+	}
+	// Never build or sign an asset this client cannot send (canSendAsset). Drop rather
+	// than retain: this node steps aside instead of holding the vault's signing slot
+	// every pass, and a node that can send the asset signs it after reschedule.
+	for _, coin := range tx.Coins {
+		if !c.canSendAsset(coin.Asset) {
+			return c.dropForReschedule(tx, "non_sol_asset_dropped",
+				c.logger.Warn().Str("asset", coin.Asset.String()),
+				"outbound asset is not native SOL, not signing, dropping for reschedule")
+		}
 	}
 
 	// Solana is the canonical reference for the cache-and-verify pattern. Unlike
@@ -1288,6 +1305,9 @@ func (c *SOLClient) CreateTx(tx stypes.TxOutItem, memoForParsing, recentBlockhas
 	if len(tx.Coins) != 1 {
 		return types.Transaction{}, fmt.Errorf("only support one coin per transaction, received: %d", len(tx.Coins))
 	}
+	if !c.canSendAsset(tx.Coins[0].Asset) {
+		return types.Transaction{}, fmt.Errorf("unsupported outbound asset: %s", tx.Coins[0].Asset)
+	}
 
 	solTx := types.Transaction{}
 
@@ -1680,6 +1700,9 @@ func (c *SOLClient) CreateTxWithNonce(tx stypes.TxOutItem, memoForParsing, nonce
 	}
 	if len(tx.Coins) != 1 {
 		return types.Transaction{}, fmt.Errorf("only support one coin per transaction, received: %d", len(tx.Coins))
+	}
+	if !c.canSendAsset(tx.Coins[0].Asset) {
+		return types.Transaction{}, fmt.Errorf("unsupported outbound asset: %s", tx.Coins[0].Asset)
 	}
 
 	solTx := types.Transaction{}
