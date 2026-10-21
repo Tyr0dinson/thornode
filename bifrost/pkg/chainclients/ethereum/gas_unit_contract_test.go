@@ -111,7 +111,7 @@ func (s *EthereumSuite) TestGasUnitContract(c *C) {
 
 		// 3. bifrost client: sign the outbound THORNode scheduled with them
 		inHash := types2.GetRandomTxHash()
-		raw, _, _, err := e.SignTx(stypes.TxOutItem{
+		raw, _, _, err := e.SignTx([]stypes.TxOutItem{{
 			Chain:       common.ETHChain,
 			ToAddress:   types2.GetRandomETHAddress(),
 			VaultPubKey: e.localPubKey,
@@ -120,7 +120,7 @@ func (s *EthereumSuite) TestGasUnitContract(c *C) {
 			GasRate:     gasRate,
 			InHash:      inHash,
 			Memo:        mem.NewOutboundMemo(inHash).String(),
-		}, 1)
+		}}, 1)
 		c.Assert(err, IsNil, comment)
 
 		// 4. the outbound is signed, at about the observed price, within what THORNode reserved

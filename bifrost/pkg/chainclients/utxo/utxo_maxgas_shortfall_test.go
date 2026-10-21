@@ -74,7 +74,7 @@ func (s *BitcoinSignerSuite) btcRefundFromSingleUTXO(c *C, inbound int64, refund
 		InHash:      common.TxID(inHash),
 		Memo:        "REFUND:" + inHash,
 	}
-	redeemTx, _, err := s.client.buildTx(tx, script, 0)
+	redeemTx, _, _, err := s.client.buildTx([]stypes.TxOutItem{tx}, script, 0)
 	return redeemTx, utxo, script, err
 }
 
@@ -118,7 +118,7 @@ func (s *BitcoinSignerSuite) TestBuildTxRefundShortOfMaxGasPaysActualFee(c *C) {
 	// the fee is the estimate at the outbound's gas rate, well within MaxGas
 	memoScripts, err := MemoToScripts("REFUND:"+strings.Repeat("ab", 32), btctxscript.MaxDataCarrierSize, btctxscript.NullDataScript, btctxscript.PayToWitnessScript)
 	c.Assert(err, IsNil)
-	size := s.client.estimateTxSize([]btcjson.ListUnspentResult{utxo}, memoScripts, redeemTx.TxOut[0].PkScript, script)
+	size := s.client.estimateTxSize([]btcjson.ListUnspentResult{utxo}, memoScripts, [][]byte{redeemTx.TxOut[0].PkScript}, script)
 	c.Check(fee, Equals, gasRate*size)
 	c.Check(uint64(fee) < maxGas, Equals, true)
 }
@@ -226,7 +226,7 @@ func (s *ZcashSignerSuite) TestZECRefundShortOfMaxGasPaysActualFee(c *C) {
 	inbound := int64(refund) + fee + 20_000
 	c.Assert(inbound < int64(refund)+maxGas, Equals, true)
 	view.Store([]zecInputSelectionCandidate{makeCandidate(strings.Repeat("aa", 32), reference-10, 0, uint64(inbound))})
-	redeemTx, _, err := s.client.buildTx(tx, script, reference)
+	redeemTx, _, _, err := s.client.buildTx([]stypes.TxOutItem{tx}, script, reference)
 	c.Assert(err, IsNil)
 	c.Assert(redeemTx.TxIn, HasLen, 1)
 	c.Assert(redeemTx.TxOut, HasLen, 3)
@@ -237,11 +237,11 @@ func (s *ZcashSignerSuite) TestZECRefundShortOfMaxGasPaysActualFee(c *C) {
 
 	// one zat short of the actual fee must not sign
 	view.Store([]zecInputSelectionCandidate{makeCandidate(strings.Repeat("aa", 32), reference-10, 0, refund+uint64(fee)-1)})
-	_, _, err = s.client.buildTx(tx, script, reference)
+	_, _, _, err = s.client.buildTx([]stypes.TxOutItem{tx}, script, reference)
 	c.Check(err, ErrorMatches, `not enough balance to pay customer: -1 .*`)
 
 	// short of the refund itself fails selection, reporting the refund
 	view.Store([]zecInputSelectionCandidate{makeCandidate(strings.Repeat("aa", 32), reference-10, 0, refund-1)})
-	_, _, err = s.client.buildTx(tx, script, reference)
+	_, _, _, err = s.client.buildTx([]stypes.TxOutItem{tx}, script, reference)
 	c.Check(err, ErrorMatches, `fail to get confirmed ZEC inputs: insufficient confirmed ZEC inputs at tip \d+: have 999999, need 1000000`)
 }

@@ -49,7 +49,6 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/config"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain"
-	mem "gitlab.com/thorchain/thornode/v3/x/thorchain/memo"
 	types2 "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
@@ -771,7 +770,7 @@ func (s *BitcoinSignerSuite) TestBTCFeeFloorTransactionAndSighash(c *C) {
 			defer closeRPC()
 			s.client.minRelayFeeSats.Store(0)
 			s.client.updateNetworkInfo()
-			redeemTx, _, err := s.client.buildTx(tx, script, 0)
+			redeemTx, _, _, err := s.client.buildTx([]stypes.TxOutItem{tx}, script, 0)
 			c.Assert(err, IsNil, Commentf("%s, relay fee %g", tc.name, relayFee))
 			var serialized bytes.Buffer
 			c.Assert(redeemTx.Serialize(&serialized), IsNil)
@@ -789,7 +788,7 @@ func (s *BitcoinSignerSuite) TestBTCFeeFloorTransactionAndSighash(c *C) {
 			case "above floor":
 				memoScripts, memoErr := MemoToScripts(tx.Memo, txscript.MaxDataCarrierSize, txscript.NullDataScript, txscript.PayToWitnessScript)
 				c.Assert(memoErr, IsNil)
-				size := s.client.estimateTxSize([]btcjson.ListUnspentResult{input}, memoScripts, redeemTx.TxOut[0].PkScript, script)
+				size := s.client.estimateTxSize([]btcjson.ListUnspentResult{input}, memoScripts, [][]byte{redeemTx.TxOut[0].PkScript}, script)
 				c.Check(fee, Equals, tc.gasRate*size)
 				c.Assert(fee > 1_000, Equals, true)
 			case "MaxGas below floor":
@@ -830,13 +829,12 @@ func (s *BitcoinSignerSuite) TestBTCFeeFloorBoundaries(c *C) {
 	s.client.minRelayFeeSats.Store(0)
 	s.client.updateNetworkInfo()
 	tx := stypes.TxOutItem{Chain: common.BTCChain}
-	memo := mem.NewOutboundMemo(common.TxID(strings.Repeat("ab", 32)))
 	for _, tc := range []struct{ fee, want uint64 }{
 		{0, 1_000}, {100, 1_000}, {999, 1_000}, {1_000, 1_000}, {1_001, 1_001},
 	} {
-		fee, customer := s.client.applyFeeLimits(tx, memo, tc.fee, 10_000, 10_000)
+		fee, gap := s.client.applyFeeLimits(tx.MaxGas, tc.fee, 10_000)
 		c.Check(fee, Equals, tc.want)
-		c.Check(customer, Equals, uint64(10_000))
+		c.Check(gap, Equals, uint64(0))
 	}
 }
 
@@ -866,15 +864,16 @@ func (s *BitcoinSignerSuite) TestBTCFeeFloorPreservesCheckpoint(c *C) {
 
 	// Construct a checkpoint at the old, daemon-dependent 100-sat floor.
 	s.client.minRelayFeeSats.Store(100)
-	unsigned, amounts, err := s.client.buildTx(tx, script, 0)
+	unsigned, amounts, batchTxInfos, err := s.client.buildTx([]stypes.TxOutItem{tx}, script, 0)
 	c.Assert(err, IsNil)
 	c.Assert(checkSpendsAmountPlusFee(c, unsigned, 100_000, 10_000, script) < 1_000, Equals, true)
 	var serialized bytes.Buffer
 	c.Assert(unsigned.Serialize(&serialized), IsNil)
-	tx.Checkpoint, err = json.Marshal(utxo.SignCheckpoint{
-		UnsignedTx: serialized.Bytes(), IndividualAmounts: amounts,
+	checkpoint, err := json.Marshal(utxo.SignCheckpoint{
+		UnsignedTx: serialized.Bytes(), IndividualAmounts: amounts, BatchTxInfos: batchTxInfos,
 	})
 	c.Assert(err, IsNil)
+	c.Assert(s.client.signerCacheManager.SetCheckpoint(tx.VaultPubKey, checkpoint), IsNil)
 
 	// Refresh the fixed policy, then retry through SignTx. A possibly signed
 	// checkpoint must keep its original bytes rather than adopt the new floor.
@@ -884,11 +883,11 @@ func (s *BitcoinSignerSuite) TestBTCFeeFloorPreservesCheckpoint(c *C) {
 	s.client.tssKeySigner = &keysignFailKeyManager{
 		blame: types2.Blame{FailReason: blame.TssTimeout, Round: messages.KEYSIGN2Unicast},
 	}
-	signed, retained, _, err := s.client.SignTx(tx, 100)
+	signed, retained, _, err := s.client.SignTx([]stypes.TxOutItem{tx}, 100)
 	c.Assert(err, NotNil)
 	c.Assert(strings.Contains(err.Error(), blame.TssTimeout), Equals, true)
 	c.Assert(signed, IsNil)
-	c.Assert(retained, DeepEquals, tx.Checkpoint)
+	c.Assert(retained, DeepEquals, checkpoint)
 }
 
 // TestBatchTxInfoGasWeightsAreSignerIndependent guards the batch fee split against

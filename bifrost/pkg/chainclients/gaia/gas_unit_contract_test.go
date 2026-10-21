@@ -120,7 +120,7 @@ func (s *ExtraTestSuite) TestGasUnitContract(c *C) {
 			toAddr, err := types2.GetRandomPubKey().GetAddress(tc.chain)
 			c.Assert(err, IsNil)
 			inHash := types2.GetRandomTxHash()
-			txBytes, _, _, err := client.SignTx(stypes.TxOutItem{
+			txBytes, _, _, err := client.SignTx([]stypes.TxOutItem{{
 				Chain:       tc.chain,
 				ToAddress:   toAddr,
 				VaultPubKey: vaultPubKey,
@@ -129,7 +129,7 @@ func (s *ExtraTestSuite) TestGasUnitContract(c *C) {
 				GasRate:     gasRate,
 				InHash:      inHash,
 				Memo:        mem.NewOutboundMemo(inHash).String(),
-			}, int64(i+1))
+			}}, int64(i+1))
 			c.Assert(err, IsNil, comment)
 			c.Assert(storage.Close(), IsNil)
 

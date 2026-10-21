@@ -225,7 +225,7 @@ func (s *RouterSimSuite) TestNativeTransferOut(c *C) {
 
 	// V6 transferOut reverts unless msg.value == amount, so the gas estimate, which
 	// sends a placeholder value, must also encode that placeholder as the amount.
-	raw, _, obs, err := s.client.SignTx(item, 1)
+	raw, _, obs, err := s.client.SignTx([]stypes.TxOutItem{item}, 1)
 	c.Assert(err, IsNil)
 	c.Assert(raw, NotNil, Commentf("SignTx skipped the outbound; the transferOut gas estimate reverted"))
 	c.Assert(obs, NotNil)
@@ -251,7 +251,7 @@ func (s *RouterSimSuite) TestERC20TransferOutApprovesRouterFirst(c *C) {
 	// Retain each returned checkpoint as the signer does between attempts. The
 	// preparation and signed bytes must both be saved before approval submission.
 	checkpointPending := func(height int64) {
-		raw, checkpoint, observation, signErr := s.client.SignTx(item, height)
+		raw, checkpoint, observation, signErr := s.client.SignTx([]stypes.TxOutItem{item}, height)
 		c.Assert(errors.Is(signErr, errApprovalPending), Equals, true)
 		c.Assert(raw, IsNil)
 		c.Assert(observation, IsNil)
@@ -282,7 +282,7 @@ func (s *RouterSimSuite) TestERC20TransferOutApprovesRouterFirst(c *C) {
 	// signature, then execute that transfer at the following nonce.
 	checkpointPending(2)
 	assertUnsignedNonce(c, item.Checkpoint, 1)
-	raw, _, obs, err := s.client.SignTx(item, 2)
+	raw, _, obs, err := s.client.SignTx([]stypes.TxOutItem{item}, 2)
 	c.Assert(err, IsNil)
 	c.Assert(raw, NotNil, Commentf("SignTx skipped the outbound after the approval was mined"))
 	c.Assert(obs, NotNil)

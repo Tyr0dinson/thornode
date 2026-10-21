@@ -97,7 +97,7 @@ func (s *GasUnitContractSuite) TestGasUnitContract(c *C) {
 		to, err := types2.GetRandomPubKey().GetAddress(tc.chain)
 		c.Assert(err, IsNil)
 		inHash := types2.GetRandomTxHash()
-		redeemTx, _, err := client.buildTx(stypes.TxOutItem{
+		redeemTx, _, _, err := client.buildTx([]stypes.TxOutItem{{
 			Chain:       tc.chain,
 			ToAddress:   to,
 			VaultPubKey: client.nodePubKey,
@@ -106,7 +106,7 @@ func (s *GasUnitContractSuite) TestGasUnitContract(c *C) {
 			GasRate:     gasRate,
 			InHash:      inHash,
 			Memo:        mem.NewOutboundMemo(inHash).String(),
-		}, script, 0)
+		}}, script, 0)
 		server.Close()
 		c.Assert(err, IsNil, comment)
 
@@ -120,7 +120,7 @@ func (s *GasUnitContractSuite) TestGasUnitContract(c *C) {
 		fee := int64(inbound) - out
 		// customer, change back to the vault, memo
 		c.Assert(redeemTx.TxOut, HasLen, 3, comment)
-		size := client.estimateTxSize([]btcjson.ListUnspentResult{utxo}, [][]byte{redeemTx.TxOut[2].PkScript}, redeemTx.TxOut[0].PkScript, script)
+		size := client.estimateTxSize([]btcjson.ListUnspentResult{utxo}, [][]byte{redeemTx.TxOut[2].PkScript}, [][]byte{redeemTx.TxOut[0].PkScript}, script)
 		rate := uint64(fee / size)
 		detail := fmt.Sprintf("%s at %d sats/vbyte: posted rate %d (size %d), THORNode GasRate %d MaxGas %s",
 			tc.chain, tc.satsPer, networkFee.TransactionRate, networkFee.TransactionSize, gasRate, maxGas)

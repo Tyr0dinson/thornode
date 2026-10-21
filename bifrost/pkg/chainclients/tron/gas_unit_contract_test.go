@@ -91,7 +91,7 @@ func (s *TronTestSuite) TestGasUnitContract(c *C) {
 	defer recorder.Close()
 	s.client.api = api.NewTronApi(recorder.URL, s.client.config.BlockScanner.HTTPRequestTimeout)
 
-	signed, _, _, err := s.client.SignTx(types.TxOutItem{
+	signed, _, _, err := s.client.SignTx([]types.TxOutItem{{
 		Chain:       common.TRONChain,
 		ToAddress:   "TWfHpcbBVTcQaakccHt3d1d41iNgzaPwow",
 		VaultPubKey: s.client.localKeyManager.Pubkey(),
@@ -104,7 +104,7 @@ func (s *TronTestSuite) TestGasUnitContract(c *C) {
 		MaxGas:  common.Gas{maxGas},
 		GasRate: gasRate,
 		Height:  1,
-	}, 1)
+	}}, 1)
 	c.Assert(err, IsNil)
 	c.Assert(signed, NotNil)
 

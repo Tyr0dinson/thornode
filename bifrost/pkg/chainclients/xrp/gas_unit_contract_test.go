@@ -77,7 +77,7 @@ func (s *XrpTestSuite) TestGasUnitContract(c *C) {
 		toAddr, err := stypes.GetRandomPubKey().GetAddress(common.XRPChain)
 		c.Assert(err, IsNil)
 		inHash := stypes.GetRandomTxHash()
-		signed, _, _, err := client.SignTx(types.TxOutItem{
+		signed, _, _, err := client.SignTx([]types.TxOutItem{{
 			Chain:       common.XRPChain,
 			ToAddress:   toAddr,
 			VaultPubKey: vaultPubKey,
@@ -86,7 +86,7 @@ func (s *XrpTestSuite) TestGasUnitContract(c *C) {
 			GasRate:     gasRate,
 			InHash:      inHash,
 			Memo:        mem.NewOutboundMemo(inHash).String(),
-		}, 100)
+		}}, 100)
 		c.Assert(err, IsNil, comment)
 
 		// 4. the signed fee is the observed fee up to THORNode's 1.5x buffer
