@@ -80,6 +80,23 @@ func (h SwapHandler) validate(ctx cosmos.Context, msg MsgSwap) error {
 	memo, _ := ParseMemoWithTHORNamesCached(ctx, h.mgr.Keeper(), msg.Tx.Memo)
 	mem, isSwapMemo := memo.(SwapMemo)
 	target := msg.TargetAsset
+
+	// Reject a swap whose final destination is the target EVM asset's own token
+	// contract. On EVM chains the output address would be the ERC-20 contract
+	// itself, not a recipient wallet; paying out there burns/locks the funds with
+	// no recovery, so refund at validation instead. Only EVM token assets carry a
+	// "-<contract>" suffix in their symbol (native gas assets and RUNE do not).
+	// Checked outside the isSwapMemo block, on msg.Destination (the address the
+	// outbound actually pays), so it also covers MsgSwaps built from non-swap memos
+	// (e.g. preferred-asset swaps, where Destination is a user-controlled THORName alias).
+	if target.Chain.IsEVM() && !msg.Destination.IsEmpty() {
+		parts := strings.Split(target.Symbol.String(), "-")
+		if len(parts) >= 2 && len(parts[1]) > 0 &&
+			strings.EqualFold(msg.Destination.String(), parts[1]) {
+			return fmt.Errorf("swap destination cannot be the target asset's token contract")
+		}
+	}
+
 	if isSwapMemo {
 		// Prevent swaps to module addresses to protect system invariants,
 		// except for swaps to RUNE destined for the reserve (for over-solvency clearing).
