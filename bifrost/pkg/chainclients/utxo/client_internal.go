@@ -215,6 +215,15 @@ func (c *Client) canDeleteBlock(blockMeta *utxo.BlockMeta) bool {
 }
 
 func (c *Client) updateNetworkInfo() {
+	if c.cfg.ChainID == common.BTCChain {
+		// Preserve BTC's historical total fee floor for signing and fee reports.
+		// The daemon's relayfee is a rate in BTC/kvB, not a total fee, and varies
+		// with version/configuration. Using it here splits signers into different
+		// TSS sessions. Keep this absolute floor independent of local RPC policy.
+		c.minRelayFeeSats.Store(1_000)
+		return
+	}
+
 	networkInfo, err := c.rpc.GetNetworkInfo()
 	if err != nil {
 		c.log.Err(err).Msg("fail to get network info")
