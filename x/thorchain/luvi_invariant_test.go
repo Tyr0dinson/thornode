@@ -253,7 +253,7 @@ func (e *luviEnv) donate(runeAmt, assetAmt uint64) {
 func (e *luviEnv) reimburseGas(amt uint64) {
 	gm := e.mgr.GasMgr()
 	gm.AddGasAsset(e.asset, common.Gas{common.NewCoin(e.asset, cosmos.NewUint(amt))}, true)
-	gm.EndBlock(e.ctx, e.mgr.Keeper(), e.mgr.EventMgr())
+	gm.EndBlock(e.ctx, e.mgr)
 }
 
 // slashVault steals amt of the asset from a vault owned by a node with the
