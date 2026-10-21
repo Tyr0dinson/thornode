@@ -35,7 +35,7 @@ fi
 # shared by every branch, and only the corpus from $corpus_dir may be replayed.
 # The lock lives on that volume, so jobs in other containers sharing it wait
 # instead of swapping the subtree out from under each other.
-gocache=$(GOTOOLCHAIN=go1.26.9 go env GOCACHE)
+gocache=$(GOTOOLCHAIN=go1.26.10 go env GOCACHE)
 mkdir -p "$gocache"
 exec 9>"$gocache/.thornode-security-fuzz.lock"
 flock -w 1200 9 || {
@@ -62,7 +62,7 @@ for spec in "${targets[@]}"; do
     fuzztime="$((BASH_REMATCH[1] + $(find "$cached" -type f | wc -l)))x"
   fi
   printf '\nRunning %s in %s for %s\n' "$name" "$package" "$fuzztime"
-  GOTOOLCHAIN=go1.26.9 GOMAXPROCS=4 go test -p 2 -parallel 4 -run '^$' -fuzz "^${name}$" -fuzztime "$fuzztime" "$package"
+  GOTOOLCHAIN=go1.26.10 GOMAXPROCS=4 go test -p 2 -parallel 4 -run '^$' -fuzz "^${name}$" -fuzztime "$fuzztime" "$package"
 done
 echo 'Completed targets:'
 for spec in "${targets[@]}"; do

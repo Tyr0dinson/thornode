@@ -1,4 +1,4 @@
-image: golang:1.26.9
+image: golang:1.26.10
 
 # Retry jobs that failed for infrastructure reasons, never on script_failure.
 # Server-side execution timeouts are left out: those jobs really ran too long.
@@ -60,7 +60,7 @@ variables:
   # tss-lib-private is a private GitLab subgroup repo; skip proxy.golang.org / sumdb
   # and resolve directly so the per-job git auth below takes effect.
   GOPRIVATE: gitlab.com/thorchain/tss/tss-lib-private.git
-  # Download the toolchain pinned in go.mod (toolchain go1.26.9) when an image
+  # Download the toolchain pinned in go.mod (toolchain go1.26.10) when an image
   # ships an older Go (the CI tools image's Go is a floor, not a pin).
   GOTOOLCHAIN: auto
   SAST_EXCLUDED_ANALYZERS: eslint,bandit,semgrep
@@ -135,8 +135,8 @@ variables:
           unset DOCKER_MIRROR
         # imagetools resolves the manifest in ~1s; `docker manifest inspect`
         # took 16-32s against the dependency proxy in every dind job.
-        elif ! docker buildx imagetools inspect "${DOCKER_MIRROR}golang:1.26.9" >/dev/null 2>&1; then
-          echo "Dependency proxy missing golang:1.26.9; falling back to Docker Hub"
+        elif ! docker buildx imagetools inspect "${DOCKER_MIRROR}golang:1.26.10" >/dev/null 2>&1; then
+          echo "Dependency proxy missing golang:1.26.10; falling back to Docker Hub"
           unset DOCKER_MIRROR
         fi
       fi
@@ -891,9 +891,9 @@ test-simulation:
   # test-simulation-cluster-native in the Makefile), with the runner's warm Go
   # caches. bookworm is the build stage of build/docker/Dockerfile, so the
   # binaries link against the glibc of the bookworm runtime they run on; the
-  # default golang:1.26.9 is trixie. The module cache is warm, so like
+  # default golang:1.26.10 is trixie. The module cache is warm, so like
   # unit-tests this only warns when no credential can read tss-lib-private.
-  image: golang:1.26.9-bookworm
+  image: golang:1.26.10-bookworm
   services:
     - docker:28.5.2-dind
   artifacts:

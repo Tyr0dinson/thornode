@@ -682,7 +682,7 @@ prepare-mocknet-cluster: stop-mocknet-cluster
 # (build/docker/Dockerfile.native). The in-image builds started from an empty
 # dind every run: `go mod download` (the tss-lib-private fetch) plus a cold
 # compile of simtest, thornode and events, 6-8 min before the cluster could
-# start. The job must run on golang:1.26.4-bookworm, the build stage of
+# start. The job must run on golang:1.26.10-bookworm, the build stage of
 # build/docker/Dockerfile, so the binaries link against the same glibc as the
 # bookworm runtime. Local `make test-simulation-cluster` is unchanged.
 NATIVE_SIM_DIR ?= $(CURDIR)/tmp/native-sim
