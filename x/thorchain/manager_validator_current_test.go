@@ -1076,8 +1076,6 @@ func (vts *ValidatorMgrTestSuite) TestChurnInnerSchedulesReplacementXMRKeygen(c 
 	ready := GetRandomValidatorNode(NodeReady)
 	ready.Bond = cosmos.NewUint(uint64(minBond))
 	ready.Version = constants.SWVersion.String()
-	// match the incumbents' chain support so all four land in one keygen partition
-	ready.SupportedChains = common.Chains{common.THORChain, common.BTCChain, common.XMRChain}.Strings()
 	c.Assert(k.SetNodeAccount(ctx, ready), IsNil)
 
 	regular := NewVault(1, ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.THORChain, common.BTCChain}.Strings(), nil)

@@ -418,10 +418,18 @@ func (vm *ValidatorMgr) partitionByChainSupport(ctx cosmos.Context, mgr Manager,
 		nodes  NodeAccounts
 	}
 	partMap := make(map[string]*entry)
+	// A node that never opted in or out (no explicit SupportedChains) supports
+	// every chain, so all such nodes share one partition: the chains the active
+	// Asgards serve. Deriving it per node from its own vault membership would
+	// split brand new nodes (no vault yet) from incumbents and stall rotation.
+	implicitChains := vm.implicitPartitionChains(ctx)
 	for _, na := range nas {
 		// XMR is custodied by the dedicated XMR monovault, which has its own
 		// keygen family; it is never a target chain of a regular Asgard keygen.
-		supported := getNodeSupportedChains(ctx, mgr, na)
+		supported := implicitChains
+		if len(na.SupportedChains) > 0 {
+			supported = getNodeSupportedChains(ctx, mgr, na)
+		}
 		chains := make([]common.Chain, 0, len(supported))
 		for _, c := range supported {
 			if !c.Equals(common.XMRChain) {
@@ -470,6 +478,28 @@ func (vm *ValidatorMgr) partitionByChainSupport(ctx cosmos.Context, mgr Manager,
 		result = append(result, chainPartition{chains: e.chains, nodes: e.nodes})
 	}
 	return result
+}
+
+// implicitPartitionChains returns the chain set used for nodes without explicit
+// SupportedChains: every chain served by an active Asgard vault, or all chains
+// when there is none (genesis).
+func (vm *ValidatorMgr) implicitPartitionChains(ctx cosmos.Context) []common.Chain {
+	activeVaults, err := vm.k.GetAsgardVaultsByStatus(ctx, ActiveVault)
+	if err != nil {
+		ctx.Logger().Error("fail to get active vaults for chain partitions", "error", err)
+	}
+	var chains common.Chains
+	for _, v := range activeVaults {
+		for _, c := range v.GetChains() {
+			if !chains.Has(c) {
+				chains = append(chains, c)
+			}
+		}
+	}
+	if len(chains) == 0 {
+		return append([]common.Chain(nil), common.AllChains[:]...)
+	}
+	return chains
 }
 
 // autoRagnarokUncoveredChains triggers chain-level ragnarok for any currently
