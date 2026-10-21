@@ -1222,6 +1222,13 @@ func (s *ObserverSuite) TestShouldObserveCallbackWiring(c *C) {
 	c.Assert(btcClient.callback(), Equals, true)
 	c.Assert(ethClient.callback(), Equals, true)
 
+	// Member of no vault (standby / new node) → keep observing everything
+	obs.getSupportedChains = func() []common.Chain { return nil }
+	obs.recomputeSupportedChains()
+
+	c.Assert(btcClient.callback(), Equals, true)
+	c.Assert(ethClient.callback(), Equals, true)
+
 	err = obs.Stop()
 	c.Assert(err, IsNil)
 }

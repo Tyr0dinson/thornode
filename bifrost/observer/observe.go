@@ -422,7 +422,11 @@ func (o *Observer) Start(ctx context.Context) error {
 		chain.SetShouldObserveCallback(func() bool {
 			o.supportedChainsMu.RLock()
 			defer o.supportedChainsMu.RUnlock()
-			if o.supportedChains == nil {
+			// Not computed yet, or not a member of any vault (standby / new
+			// node): keep every scanner running so the node is caught up when
+			// it joins a vault. Pausing until then leaves scanners far behind
+			// the vault birthday (XMR's sidecar then rejects the sync).
+			if len(o.supportedChains) == 0 {
 				return true
 			}
 			return o.supportedChains[c]
