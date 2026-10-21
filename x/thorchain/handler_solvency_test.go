@@ -335,3 +335,163 @@ func (s *HandlerSolvencyTestSuite) TestInsolvencyCheckFlagsUnpriceableGapWithout
 
 	c.Assert(insolvencyCheck(ctx, mgr, vault, common.NewCoins(), common.BCHChain), Equals, true)
 }
+
+// TestSolvencyOscillationPrevention tests that when multiple vaults report different
+// solvency states, the chain remains halted and doesn't oscillate between halt/unhalt.
+// This tests the fix for the bug where a solvent vault could unhalt a chain that
+// an insolvent vault had just halted.
+func (s *HandlerSolvencyTestSuite) TestSolvencyOscillationPrevention(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	height := int64(100)
+	ctx = ctx.WithBlockHeight(height)
+
+	// Create two vaults for the same chain
+	vault1 := GetRandomVault()
+	vault1.Chains = []string{common.ETHChain.String()}
+	vault1.AddFunds(common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(1000*common.One))))
+	c.Assert(mgr.Keeper().SetVault(ctx, vault1), IsNil)
+
+	vault2 := GetRandomVault()
+	vault2.Chains = []string{common.ETHChain.String()}
+	vault2.AddFunds(common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(1000*common.One))))
+	c.Assert(mgr.Keeper().SetVault(ctx, vault2), IsNil)
+
+	// Set up ETH pool so gap can be valued in RUNE
+	ethPool := NewPool()
+	ethPool.Asset = common.ETHAsset
+	ethPool.BalanceAsset = cosmos.NewUint(1000 * common.One)
+	ethPool.BalanceRune = cosmos.NewUint(10000 * common.One)
+	ethPool.Status = PoolAvailable
+	c.Assert(mgr.Keeper().SetPool(ctx, ethPool), IsNil)
+
+	// Set RUNE price
+	mgr.Keeper().SetMimir(ctx, "DollarsPerRune", 5_00000000)
+
+	// Create 4 active nodes for consensus (need 2/4 = 50% > 33% threshold)
+	nas := NodeAccounts{
+		GetRandomValidatorNode(NodeActive),
+		GetRandomValidatorNode(NodeActive),
+		GetRandomValidatorNode(NodeActive),
+		GetRandomValidatorNode(NodeActive),
+	}
+	for _, na := range nas {
+		c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
+	}
+
+	handler := NewSolvencyHandler(mgr)
+
+	// Helper to run solvency message to consensus
+	runToConsensus := func(vault Vault, walletBalance cosmos.Uint, chainHeight int64) {
+		msg, err := NewMsgSolvency(common.ETHChain,
+			vault.PubKey,
+			common.NewCoins(common.NewCoin(common.ETHAsset, walletBalance)),
+			chainHeight,
+			nas[0].NodeAddress)
+		c.Assert(err, IsNil)
+
+		// First signer
+		_, err = handler.handle(ctx, *msg)
+		c.Assert(err, IsNil)
+
+		// Second signer reaches consensus
+		msg.Signer = nas[1].NodeAddress
+		_, err = handler.handle(ctx, *msg)
+		c.Assert(err, IsNil)
+	}
+
+	// Step 1: Vault1 reports insolvent (wallet has 100 ETH, vault has 1000 ETH)
+	// This should halt the chain
+	runToConsensus(vault1, cosmos.NewUint(100*common.One), 1000)
+
+	halt, err := mgr.Keeper().GetMimir(ctx, "SolvencyHaltETHChain")
+	c.Assert(err, IsNil)
+	c.Assert(halt, Equals, height, Commentf("Chain should be halted at block %d", height))
+
+	// Step 2: Move to next block
+	height++
+	ctx = ctx.WithBlockHeight(height)
+
+	// Step 3: Vault1 reports insolvent again - this should refresh the halt height
+	runToConsensus(vault1, cosmos.NewUint(100*common.One), 1001)
+
+	halt, err = mgr.Keeper().GetMimir(ctx, "SolvencyHaltETHChain")
+	c.Assert(err, IsNil)
+	c.Assert(halt, Equals, height, Commentf("Halt should be refreshed to block %d", height))
+
+	// Step 4: Vault2 reports solvent in the same block - this should NOT unhalt
+	// because the halt was refreshed to the current block
+	runToConsensus(vault2, cosmos.NewUint(1000*common.One), 1001)
+
+	halt, err = mgr.Keeper().GetMimir(ctx, "SolvencyHaltETHChain")
+	c.Assert(err, IsNil)
+	c.Assert(halt, Equals, height, Commentf("Chain should still be halted - solvent vault should not unhalt when insolvent vault refreshed this block"))
+
+	// Step 5: Move to next block - vault2 reports solvent first (before vault1 can refresh)
+	height++
+	ctx = ctx.WithBlockHeight(height)
+
+	// Vault2 reports solvent - this COULD unhalt since halt is from previous block
+	runToConsensus(vault2, cosmos.NewUint(1000*common.One), 1002)
+
+	halt, err = mgr.Keeper().GetMimir(ctx, "SolvencyHaltETHChain")
+	c.Assert(err, IsNil)
+	// The solvent vault unhalts because halt is from previous block and no insolvent vault has refreshed yet
+	c.Assert(halt, Equals, int64(0), Commentf("Chain should be unhalted when solvent vault reports and halt is from previous block"))
+
+	// Vault1 reports insolvent - this should re-halt
+	runToConsensus(vault1, cosmos.NewUint(100*common.One), 1002)
+
+	halt, err = mgr.Keeper().GetMimir(ctx, "SolvencyHaltETHChain")
+	c.Assert(err, IsNil)
+	c.Assert(halt, Equals, height, Commentf("Chain should be re-halted by insolvent vault"))
+
+	// Step 6: Test that chain remains halted when insolvent vault keeps refreshing
+	for i := 0; i < 3; i++ {
+		height++
+		ctx = ctx.WithBlockHeight(height)
+
+		// Insolvent vault reports first (refreshes halt)
+		runToConsensus(vault1, cosmos.NewUint(100*common.One), 1003+int64(i))
+
+		halt, err = mgr.Keeper().GetMimir(ctx, "SolvencyHaltETHChain")
+		c.Assert(err, IsNil)
+		c.Assert(halt, Equals, height, Commentf("Halt should be refreshed to block %d", height))
+
+		// Solvent vault reports - should NOT unhalt due to refresh
+		runToConsensus(vault2, cosmos.NewUint(1000*common.One), 1003+int64(i))
+
+		halt, err = mgr.Keeper().GetMimir(ctx, "SolvencyHaltETHChain")
+		c.Assert(err, IsNil)
+		c.Assert(halt, Equals, height, Commentf("Chain should remain halted at block %d", height))
+	}
+
+	// Step 7: Test that chain unhalts when insolvent vault becomes solvent
+	height++
+	ctx = ctx.WithBlockHeight(height)
+
+	// Both vaults now report solvent
+	runToConsensus(vault1, cosmos.NewUint(1000*common.One), 1010)
+
+	halt, err = mgr.Keeper().GetMimir(ctx, "SolvencyHaltETHChain")
+	c.Assert(err, IsNil)
+	c.Assert(halt, Equals, int64(0), Commentf("Chain should be unhalted when previously insolvent vault becomes solvent"))
+
+	// Step 8: A manual indefinite halt ('1') is never touched by the solvency checker:
+	// an insolvent vault must not convert it into a refreshable auto-halt height,
+	// and a solvent vault must not lift it.
+	mgr.Keeper().SetMimir(ctx, "SolvencyHaltETHChain", 1)
+	for i := 0; i < 2; i++ {
+		height++
+		ctx = ctx.WithBlockHeight(height)
+
+		runToConsensus(vault1, cosmos.NewUint(100*common.One), 1011+int64(i))
+		halt, err = mgr.Keeper().GetMimir(ctx, "SolvencyHaltETHChain")
+		c.Assert(err, IsNil)
+		c.Assert(halt, Equals, int64(1), Commentf("Insolvent vault must not overwrite a manual halt"))
+
+		runToConsensus(vault2, cosmos.NewUint(1000*common.One), 1011+int64(i))
+		halt, err = mgr.Keeper().GetMimir(ctx, "SolvencyHaltETHChain")
+		c.Assert(err, IsNil)
+		c.Assert(halt, Equals, int64(1), Commentf("Solvent vault must not lift a manual halt"))
+	}
+}
