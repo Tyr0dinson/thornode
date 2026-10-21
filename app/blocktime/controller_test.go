@@ -78,6 +78,18 @@ func TestControllerConstantOverhead(t *testing.T) {
 	}
 }
 
+func TestControllerLowOverheadNoWindup(t *testing.T) {
+	// a single-validator mocknet has ~25ms of overhead, far below the 1.1s
+	// the wait starts from; the startup error must not wind up the integral
+	// and pin the wait at the target
+	for _, target := range []time.Duration{3 * time.Second, 2 * time.Second} {
+		res := simulate(target, 130, 30, func(*rand.Rand) time.Duration { return 25 * time.Millisecond })
+		if d := (res.mean - target).Abs(); d > target/500 {
+			t.Errorf("target %v: mean %v over blocks 30-130", target, res.mean)
+		}
+	}
+}
+
 func TestControllerStepResponse(t *testing.T) {
 	// overhead jumps from 1.0s to 1.5s (e.g. a larger validator set); the
 	// wait must absorb it without overshooting past zero

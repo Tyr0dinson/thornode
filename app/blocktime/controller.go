@@ -37,6 +37,8 @@ type Controller struct {
 	integral time.Duration
 	interval time.Duration
 	prev     time.Time
+	lastErr  time.Duration
+	settled  bool // the error has changed sign since the last Reset
 }
 
 // Next records the header time of the block being committed and returns the
@@ -60,7 +62,19 @@ func (c *Controller) Next(target time.Duration, header time.Time) (wait time.Dur
 	}
 
 	err := interval - target
-	c.integral = clamp(c.integral+err, -integralMax*target, integralMax*target)
+	// Anti-windup: the integral only accumulates once the interval has
+	// reached the target (the error has changed sign). Otherwise the error of
+	// the initial climb (overhead far from initialOverhead, e.g. ~25ms on a
+	// one-node mocknet) holds the wait at the target for hundreds of blocks.
+	// Saturating at zero wait still accumulates: that is the debt from slow
+	// rounds the integral pays back to keep the mean on target.
+	if !c.settled && (err < 0) != (c.lastErr < 0) && c.lastErr != 0 {
+		c.settled = true
+	}
+	c.lastErr = err
+	if c.settled {
+		c.integral = clamp(c.integral+err, -integralMax*target, integralMax*target)
+	}
 	c.wait = clamp(c.wait-err*kNum/gainDen-c.integral*kiNum/gainDen, 0, target)
 	return c.wait, true
 }
