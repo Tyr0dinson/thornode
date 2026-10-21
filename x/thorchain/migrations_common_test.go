@@ -1103,3 +1103,28 @@ func (s *MigrationCommonSuite) TestDrainLegacyPendingStreamKeepsStreaming(c *C) 
 	c.Check(blocks, Equals, want)
 	c.Check(k.HasAdvSwapQueueItem(ctx, oneShotTx.ID, 0), Equals, false)
 }
+
+// A temporary LP pause at settlement must not forfeit the deferred output: the
+// settlement fails, keeps the item and its record, and credits once unpaused.
+func (s *MigrationCommonSuite) TestDrainLegacySaversAddRetriesAfterLPPause(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	k := mgr.Keeper()
+	accumulated := cosmos.NewUint(99 * common.One / 100)
+	tx, synth := seedLegacySaversAdd(c, ctx, mgr, accumulated)
+
+	c.Assert(NewMigrator(mgr).drainLegacySwapQueue(ctx), IsNil)
+	migrated, err := k.GetAdvSwapQueueItem(ctx, tx.ID, 0)
+	c.Assert(err, IsNil)
+
+	k.SetMimir(ctx, "PauseLPBTC", 1)
+	c.Assert(settleSwap(ctx, mgr, migrated, "remaining sub-swaps failed"), NotNil)
+	c.Check(k.HasAdvSwapQueueItem(ctx, tx.ID, 0), Equals, true)
+	c.Check(k.StreamingSwapExists(ctx, tx.ID), Equals, true)
+
+	k.SetMimir(ctx, "PauseLPBTC", 0)
+	c.Assert(settleSwap(ctx, mgr, migrated, "remaining sub-swaps failed"), IsNil)
+	lp, err := k.GetLiquidityProvider(ctx, synth, tx.FromAddress)
+	c.Assert(err, IsNil)
+	c.Check(lp.AssetDepositValue.Equal(accumulated), Equals, true, Commentf("deposit value %s", lp.AssetDepositValue))
+	c.Check(k.StreamingSwapExists(ctx, tx.ID), Equals, false)
+}

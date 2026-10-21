@@ -544,3 +544,41 @@ func (GenesisTestSuite) TestGenesisImportsLegacySaversAddDeferredOutput(c *C) {
 	c.Check(lp.AssetDepositValue.Equal(accumulated), Equals, true, Commentf("deposit value %s", lp.AssetDepositValue))
 	c.Check(k.StreamingSwapExists(ctx, tx.ID), Equals, false)
 }
+
+// A legacy limit swap's TTL entry must use the exported StreamingLimitSwapMaxAge,
+// not the default, so the conversion has to run after the Mimir import.
+func (GenesisTestSuite) TestGenesisLegacyLimitSwapTTLUsesExportedMaxAge(c *C) {
+	SetupConfigForTest()
+	srcCtx, srcMgr := setupManagerForTest(c)
+	exported := ExportGenesis(srcCtx, srcMgr.Keeper())
+
+	const maxAge = int64(100)
+	defaultMaxAge := constants.NewConstantValue().GetInt64Value(constants.StreamingLimitSwapMaxAge)
+	c.Assert(defaultMaxAge, Not(Equals), maxAge)
+	exported.Mimirs = append(exported.Mimirs, Mimir{Key: constants.StreamingLimitSwapMaxAge.String(), Value: maxAge})
+
+	tx := GetRandomTx()
+	tx.Coins = common.NewCoins(common.NewCoin(common.RuneAsset(), cosmos.NewUint(100*common.One)))
+	msg := NewMsgSwap(tx, common.BTCAsset, GetRandomBTCAddress(), cosmos.NewUint(5*common.One), common.NoAddress, cosmos.ZeroUint(), "", "", nil, LimitSwap, 0, 0, types.SwapVersion_v1, GetRandomBech32Addr())
+	exported.SwapQueueItems = append(exported.SwapQueueItems, *msg)
+	c.Assert(ValidateGenesis(exported), IsNil)
+
+	ctx, mgr := setupManagerForTest(c)
+	k := mgr.Keeper()
+	InitGenesis(ctx, k, exported)
+
+	got, err := k.GetAdvSwapQueueItem(ctx, tx.ID, 0)
+	c.Assert(err, IsNil)
+	hasTTL := func(height int64) bool {
+		ids, err := k.GetLimitSwapTTL(ctx, height)
+		c.Assert(err, IsNil)
+		for _, id := range ids {
+			if id.Equals(tx.ID) {
+				return true
+			}
+		}
+		return false
+	}
+	c.Check(hasTTL(got.InitialBlockHeight+maxAge), Equals, true)
+	c.Check(hasTTL(got.InitialBlockHeight+defaultMaxAge), Equals, false)
+}

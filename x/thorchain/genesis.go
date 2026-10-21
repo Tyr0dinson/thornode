@@ -275,22 +275,6 @@ func initGenesis(ctx cosmos.Context, keeper keeper.Keeper, data GenesisState) []
 		keeper.SetStreamingSwap(ctx, item)
 	}
 
-	// Legacy swap queue items from an older genesis export. The legacy queue no
-	// longer exists, so convert them exactly as the Migrate20to21 drain does. This
-	// must follow the streaming swap import: a legacy streaming swap's progress
-	// lives in its StreamingSwap record, which the conversion folds into State
-	// and then removes. The export dropped the sub-swap index (the legacy queue
-	// kept it only in the key), so items sharing a TxID take the next free index
-	// rather than overwriting each other at <txid>-0.
-	for _, item := range data.SwapQueueItems {
-		for keeper.HasAdvSwapQueueItem(ctx, item.Tx.ID, int(item.Index)) {
-			item.Index++
-		}
-		if _, err := queueLegacySwapItem(ctx, keeper, nil, item); err != nil {
-			panic(err)
-		}
-	}
-
 	for _, nf := range data.NetworkFees {
 		if err := keeper.SaveNetworkFee(ctx, nf.Chain, nf); err != nil {
 			panic(err)
@@ -371,6 +355,24 @@ func initGenesis(ctx cosmos.Context, keeper keeper.Keeper, data GenesisState) []
 			continue
 		}
 		if err := keeper.SetNodeMimir(ctx, item.Key, item.Value, item.Signer); err != nil {
+			panic(err)
+		}
+	}
+
+	// Legacy swap queue items from an older genesis export. The legacy queue no
+	// longer exists, so convert them exactly as the Migrate20to21 drain does. This
+	// must follow the streaming swap import: a legacy streaming swap's progress
+	// lives in its StreamingSwap record, which the conversion folds into State
+	// and then removes. It must also follow the Mimir import: the conversion
+	// writes each limit swap's TTL index entry from StreamingLimitSwapMaxAge.
+	// The export dropped the sub-swap index (the legacy queue kept it only in the
+	// key), so items sharing a TxID take the next free index rather than
+	// overwriting each other at <txid>-0.
+	for _, item := range data.SwapQueueItems {
+		for keeper.HasAdvSwapQueueItem(ctx, item.Tx.ID, int(item.Index)) {
+			item.Index++
+		}
+		if _, err := queueLegacySwapItem(ctx, keeper, nil, item); err != nil {
 			panic(err)
 		}
 	}

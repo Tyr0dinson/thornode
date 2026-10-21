@@ -693,6 +693,11 @@ func creditLegacySaversAdd(ctx cosmos.Context, mgr Manager, msg MsgSwap) error {
 	if addErr == nil {
 		return nil
 	}
+	// A halt or pause is temporary: fail settlement so its cache rolls back the
+	// record removal and the queue retries the credit once it lifts.
+	if k.IsChainHalted(ctx, asset.Chain) || k.IsLPPaused(ctx, asset.Chain) || k.IsPoolDepositPaused(ctx, asset) {
+		return fmt.Errorf("defer legacy savers add %s: %w", msg.Tx.ID, addErr)
+	}
 
 	ctx.Logger().Error("fail to credit legacy savers add", "tx", msg.Tx.ID, "error", addErr)
 	toi := TxOutItem{
