@@ -17,8 +17,7 @@ func (HandlerMimirSuite) TestBlockTimeMsValidation(c *C) {
 		return MsgMimir{Key: key, Value: value, Signer: na.NodeAddress}
 	}
 
-	// BLOCKTIMEMS is enabled on mocknet: zero (disengage) and the bounds are
-	// accepted, in any key casing
+	// zero (disengage) and the bounds are accepted, in any key casing
 	for _, v := range []int64{0, constants.BlockTimeMsMin, 3000, constants.BlockTimeMsMax} {
 		c.Assert(h.validate(ctx, mkMsg("BLOCKTIMEMS", v)), IsNil, Commentf("%d", v))
 	}

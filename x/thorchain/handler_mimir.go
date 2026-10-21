@@ -90,9 +90,6 @@ func (h MimirHandler) validate(ctx cosmos.Context, msg MsgMimir) error {
 
 	// BLOCKTIMEMS sets the commit wait; zero disengages it
 	if strings.EqualFold(msg.Key, constants.BlockTimeMs.String()) {
-		if !constants.BlockTimeMimirEnabled && msg.Value != 0 {
-			return cosmos.ErrUnknownRequest("BLOCKTIMEMS is not enabled on this network yet")
-		}
 		if msg.Value > 0 && (msg.Value < constants.BlockTimeMsMin || msg.Value > constants.BlockTimeMsMax) {
 			return cosmos.ErrUnknownRequest(fmt.Sprintf("BLOCKTIMEMS must be 0 or between %d and %d", constants.BlockTimeMsMin, constants.BlockTimeMsMax))
 		}

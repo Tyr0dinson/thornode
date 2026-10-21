@@ -6,7 +6,8 @@ import (
 	. "gopkg.in/check.v1"
 )
 
-func (HandlerMimirSuite) TestBlockTimeMsDisabledOnMainnet(c *C) {
+// the BLOCKTIMEMS hard limits on real networks: 1500ms to 10000ms, 0 = off
+func (HandlerMimirSuite) TestBlockTimeMsBoundsOnMainnet(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	h := NewMimirHandler(mgr)
 	na := GetRandomValidatorNode(NodeActive)
@@ -15,13 +16,15 @@ func (HandlerMimirSuite) TestBlockTimeMsDisabledOnMainnet(c *C) {
 		return MsgMimir{Key: key, Value: value, Signer: na.NodeAddress}
 	}
 
-	// BLOCKTIMEMS is not enabled until block-count settings scale with it:
-	// every nonzero value is rejected, in range or not
-	for _, v := range []int64{1499, 1500, 2000, 10_000, 10_001, -1} {
-		err := h.validate(ctx, mkMsg("BLOCKTIMEMS", v))
-		c.Assert(err, ErrorMatches, ".*BLOCKTIMEMS is not enabled on this network yet.*", Commentf("%d", v))
+	for _, v := range []int64{0, 1500, 2000, 10_000} {
+		c.Assert(h.validate(ctx, mkMsg("BLOCKTIMEMS", v)), IsNil, Commentf("%d", v))
 	}
-	c.Assert(h.validate(ctx, mkMsg("blocktimems", 2000)), NotNil)
-	// zero (off) is still accepted
-	c.Assert(h.validate(ctx, mkMsg("BLOCKTIMEMS", 0)), IsNil)
+	for _, v := range []int64{1, 200, 1499, 10_001} {
+		c.Assert(h.validate(ctx, mkMsg("BLOCKTIMEMS", v)), NotNil, Commentf("%d", v))
+	}
+	c.Assert(h.validate(ctx, mkMsg("blocktimems", 1499)), NotNil)
+	// a negative vote passes validation like any other mimir: it never sets
+	// an effective value (handle ignores negative supermajorities), so it
+	// cannot engage the hook, which also treats <= 0 as off
+	c.Assert(h.validate(ctx, mkMsg("BLOCKTIMEMS", -1)), IsNil)
 }

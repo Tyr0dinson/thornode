@@ -52,10 +52,6 @@ func (h *Hook) OnCommit(logger log.Logger, targetMs int64, header time.Time) {
 	if b == nil {
 		return
 	}
-	if !enabled {
-		// never engaged, so TimeoutCommit is never touched
-		return
-	}
 	if targetMs <= 0 {
 		if h.engaged {
 			h.engaged = false
@@ -95,18 +91,13 @@ func ClampTargetMs(ms int64) int64 {
 	return min(max(ms, constants.BlockTimeMsMin), constants.BlockTimeMsMax)
 }
 
-// enabled is constants.BlockTimeMimirEnabled; tests of the controller on
-// networks where it is off override it.
-var enabled = constants.BlockTimeMimirEnabled
-
 var std Hook
 
 // Attach binds the process-wide hook; see Hook.Attach.
 func Attach(cfg *cmtcfg.ConsensusConfig) { std.Attach(cfg) }
 
-// Active reports whether the process-wide hook is bound and BLOCKTIMEMS is
-// enabled on this network, i.e. whether OnCommit can do anything.
-func Active() bool { return enabled && std.Attached() }
+// Attached reports whether the process-wide hook is bound.
+func Attached() bool { return std.Attached() }
 
 // OnCommit drives the process-wide hook; see Hook.OnCommit.
 func OnCommit(logger log.Logger, targetMs int64, header time.Time) {

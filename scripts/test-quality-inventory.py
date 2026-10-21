@@ -47,7 +47,7 @@ SELECTIONS = (
         "mainnet",
         ("./x/thorchain",),
         "unit-tests test-network-specific",
-        "Migrate|Migration19to20Suite|EthThorRestoreSuite|BlockTimeMsDisabledOnMainnet",
+        "Migrate|Migration19to20Suite|EthThorRestoreSuite|BlockTimeMsBoundsOnMainnet",
     ),
     (
         ".",

@@ -16,11 +16,6 @@ import (
 
 var ThorchainBlockTime = time.Second
 
-// BlockTimeMimirEnabled gates the BLOCKTIMEMS mimir; mocknet enables it for
-// tests.
-// TODO(duration-scaling): enable once block-count settings scale with BLOCKTIMEMS
-const BlockTimeMimirEnabled = true
-
 // BlockTimeMsMin is the smallest BLOCKTIMEMS mimir value accepted. Mocknet
 // allows sub-second targets so tests can exercise the commit-wait controller
 // at mocknet's 1s block time.

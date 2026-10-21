@@ -653,7 +653,7 @@ func NewChainApp(
 	// set here. It only reads state, and only on a node whose consensus
 	// config is attached (cmd/thornode).
 	app.SetPrecommiter(func(ctx sdk.Context) {
-		if !blocktime.Active() {
+		if !blocktime.Attached() {
 			return
 		}
 		targetMs, mimirErr := app.ThorchainKeeper.GetMimir(ctx, constants.BlockTimeMs.String())
