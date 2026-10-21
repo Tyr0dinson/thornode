@@ -180,6 +180,7 @@ func (s *ConstantsTestSuite) TestIsOperationalMimir_CompleteCoverage(c *C) {
 	economicExceptions := []string{
 		"NodePauseChainBlocks",
 		"PauseOnSlashThreshold",
+		BlockTimeMs.String(),
 	}
 
 	for _, mimir := range economicExceptions {

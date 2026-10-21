@@ -87,6 +87,12 @@ func (s *KeeperMimirSuite) TestScopedMimirCacheDisabledByWrite(c *C) {
 	c.Assert(value, Equals, int64(-1))
 }
 
+func (s *KeeperMimirSuite) TestBlockTimeMsIsEconomicMimir(c *C) {
+	for _, key := range []string{"BLOCKTIMEMS", "BlockTimeMs", "blocktimems"} {
+		c.Check(constants.IsOperationalMimir(key), Equals, false, Commentf(key))
+	}
+}
+
 func (s *KeeperMimirSuite) TestIsOperationalMimirPOLReserveBlackList(c *C) {
 	// Per-pool POL reserve blacklist must be operational so operators can
 	// quickly disable a misbehaving pool without full governance consensus.

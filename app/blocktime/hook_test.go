@@ -12,7 +12,16 @@ import (
 	"gitlab.com/thorchain/thornode/v3/constants"
 )
 
+// forceEnabled runs the hook as if BLOCKTIMEMS were enabled on this network,
+// so the controller paths are tested on mainnet tags too.
+func forceEnabled(t *testing.T) {
+	prev := enabled
+	enabled = true
+	t.Cleanup(func() { enabled = prev })
+}
+
 func TestHookUnsetNeverTouchesTimeoutCommit(t *testing.T) {
+	forceEnabled(t)
 	var h Hook
 	cfg := cmtcfg.DefaultConsensusConfig()
 	cfg.TimeoutCommit = 5 * time.Second
@@ -31,6 +40,7 @@ func TestHookUnsetNeverTouchesTimeoutCommit(t *testing.T) {
 }
 
 func TestHookUnattachedIsInert(t *testing.T) {
+	forceEnabled(t)
 	var h Hook
 	h.OnCommit(log.NewNopLogger(), 3000, time.Unix(1_700_000_000, 0))
 	if h.Attached() || h.engaged {
@@ -39,6 +49,7 @@ func TestHookUnattachedIsInert(t *testing.T) {
 }
 
 func TestHookEngageAndRestore(t *testing.T) {
+	forceEnabled(t)
 	var h Hook
 	cfg := cmtcfg.DefaultConsensusConfig()
 	cfg.TimeoutCommit = 5 * time.Second
@@ -73,6 +84,7 @@ func TestHookEngageAndRestore(t *testing.T) {
 }
 
 func TestHookClampsStoredTarget(t *testing.T) {
+	forceEnabled(t)
 	// out-of-range values that bypassed MsgMimir validation run at the bound
 	for _, tc := range []struct{ stored, want int64 }{
 		{1, constants.BlockTimeMsMin},
@@ -121,6 +133,7 @@ func TestControllerWaitWithinTarget(t *testing.T) {
 // while PostSetup attaches the config from another goroutine after consensus
 // has started. Run with -race.
 func TestHookRace(t *testing.T) {
+	forceEnabled(t)
 	var h Hook
 	cfg := cmtcfg.DefaultConsensusConfig()
 	cfg.TimeoutCommit = 5 * time.Second

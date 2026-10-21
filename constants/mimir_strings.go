@@ -170,6 +170,8 @@ func IsOperationalMimir(key string) bool {
 	exactUnmatches := []string{
 		"NodePauseChainBlocks",
 		"PauseOnSlashThreshold",
+		// block time changes emission and every timeout, so it needs the 2/3 supermajority
+		BlockTimeMs.String(),
 	}
 	for i := range exactUnmatches {
 		if strings.EqualFold(key, exactUnmatches[i]) {
