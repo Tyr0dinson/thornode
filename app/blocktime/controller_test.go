@@ -155,8 +155,27 @@ func TestControllerFallback(t *testing.T) {
 		t.Fatal("halt-length interval accepted")
 	}
 	// measurement resumes from the last header
-	if _, ok := c.Next(target, h.Add(target)); !ok {
+	h = h.Add(target)
+	if _, ok := c.Next(target, h); !ok {
 		t.Fatal("did not resume")
+	}
+	// an outlier reopens the settle gate: the intervals after a fallback
+	// height are not integrated until they settle again
+	for i := 0; i < settleBlocks; i++ {
+		h = h.Add(target)
+		c.Next(target, h)
+	}
+	if c.inBand != settleBlocks {
+		t.Fatalf("inBand %d after %d on-target intervals", c.inBand, settleBlocks)
+	}
+	h = h.Add(time.Hour)
+	c.Next(target, h)
+	if c.inBand != 0 || c.integral != 0 {
+		t.Fatalf("after an outlier: inBand %d, integral %v", c.inBand, c.integral)
+	}
+	h = h.Add(target + time.Second)
+	if c.Next(target, h); c.integral != 0 {
+		t.Fatalf("integrated %v right after an outlier", c.integral)
 	}
 	// a new target resets the wait
 	if w, _ := c.Next(6*time.Second, h.Add(2*target)); w != 4900*time.Millisecond {

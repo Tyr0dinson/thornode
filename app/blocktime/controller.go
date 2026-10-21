@@ -60,7 +60,10 @@ func (c *Controller) Next(target time.Duration, header time.Time) (wait time.Dur
 	interval := header.Sub(prev)
 	c.interval = interval
 	if interval <= 0 || interval > fallbackFactor*target {
+		// the caller waits its configured timeout_commit for this height, so
+		// the next intervals must settle again before they are integrated
 		c.integral = 0
+		c.inBand = 0
 		return c.wait, false
 	}
 
