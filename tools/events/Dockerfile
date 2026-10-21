@@ -39,7 +39,7 @@ COPY --from=build /go/bin/events /usr/bin/
 COPY --from=build /go/pkg/mod/github.com/!cosm!wasm/wasmvm/v2@v2.2.9/internal/api/libwasmvm.*.so /usr/lib
 
 RUN apt-get update && \
-  apt-get install -y --no-install-recommends curl=7.88.1-10+deb12u* ca-certificates=20230311+deb12u1 && \
+  apt-get install -y --no-install-recommends curl=7.88.1-10+deb12u* ca-certificates=20250419~deb12u2 && \
   rm -rf /var/lib/apt/lists/*
 
 CMD ["events"]
