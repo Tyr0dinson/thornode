@@ -393,6 +393,8 @@ Using the `ISSUE_VERSION` tag (from step 0c), read relevant handler/manager code
 
 Identify what log messages would be emitted for the described scenario.
 
+Read `references/tx-pipeline.md` when you need the function-level path between stages (observer deck, attestation quorum, `MsgObservedTxQuorum`, swap queue, txout scheduling, signer, reschedule) and the condition that gates each one.
+
 #### 4c. Search logs based on code analysis
 
 Build targeted LogQL queries from the log messages found in code:

@@ -47,6 +47,10 @@ lint:
         - test/regression/suites/**
         - test/regression/templates/**
     - linters:
+        - markdownlint
+      paths:
+        - .claude/skills/**
+    - linters:
         - hadolint
         - terrascan
       paths:

@@ -177,13 +177,13 @@ Add this inside the `for i, pool := range swapPools` loop alongside the existing
 ```bash
 # Reset mocknet and run
 make reset-mocknet
-STAGES=bootstrap,swaps make test-simulation
+TEST_SIMULATION_STAGES=bootstrap,swaps make test-simulation
 
 # Run all stages
-STAGES=all make test-simulation
+TEST_SIMULATION_STAGES=all make test-simulation
 
 # Run with specific parallelism
-PARALLELISM=4 STAGES=bootstrap,swaps make test-simulation
+PARALLELISM=4 TEST_SIMULATION_STAGES=bootstrap,swaps make test-simulation
 ```
 
 ## Transaction Types
