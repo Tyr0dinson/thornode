@@ -288,9 +288,9 @@ func (s *SPLScannerSuite) TestSOLTransferTakesPrecedence(c *C) {
 	c.Check(item.To, Equals, testVault)
 }
 
-// splVaultOutbound is vault's own 25 USDC outbound to testSender, as
-// NewSPLTransferTransaction builds it, creating the recipient's token account.
-func splVaultOutbound(c *C, vault string) *rpc.TransactionResult {
+// splVaultOutbound is vault's own outbound of amount (USDC base units) to testSender,
+// as NewSPLTransferTransaction builds it, creating the recipient's token account.
+func splVaultOutbound(c *C, vault string, amount uint64) *rpc.TransactionResult {
 	vaultATA := ata(c, vault, testUSDCMint)
 	recipientATA := ata(c, testSender, testUSDCMint)
 	return &rpc.TransactionResult{
@@ -303,8 +303,8 @@ func splVaultOutbound(c *C, vault string) *rpc.TransactionResult {
 				tokenBalance(1, testUSDCMint, vault, "90000000", 6),
 			},
 			PostTokenBalances: []interface{}{
-				tokenBalance(1, testUSDCMint, vault, "65000000", 6),
-				tokenBalance(2, testUSDCMint, testSender, "25000000", 6),
+				tokenBalance(1, testUSDCMint, vault, fmt.Sprint(90_000_000-amount), 6),
+				tokenBalance(2, testUSDCMint, testSender, fmt.Sprint(amount), 6),
 			},
 		},
 		Transaction: rpc.RPCTxnData{
@@ -314,7 +314,7 @@ func splVaultOutbound(c *C, vault string) *rpc.TransactionResult {
 				Instructions: []rpc.RPCInstruction{
 					{ProgramIdIndex: 8, Accounts: []int{0}, Data: makeMemoData("OUT:ABCDEF")},
 					{ProgramIdIndex: 7, Accounts: []int{0, 2, 3, 4, 5, 6}, Data: base58.Encode([]byte{1})},
-					{ProgramIdIndex: 6, Accounts: []int{1, 4, 2, 0}, Data: makeTransferCheckedData(25_000_000, 6)},
+					{ProgramIdIndex: 6, Accounts: []int{1, 4, 2, 0}, Data: makeTransferCheckedData(amount, 6)},
 				},
 			},
 		},
@@ -335,7 +335,7 @@ func (s *SPLScannerSuite) TestVaultOutboundBooksRentAsGas(c *C) {
 	// Gas is the vault's whole lamport spend, including the recipient token account's
 	// rent.
 	scanner := newSPLTestScanner()
-	txn := splVaultOutbound(c, testVault)
+	txn := splVaultOutbound(c, testVault, 25_000_000)
 	item := scanner.getTxInItem(txn, 200)
 	c.Assert(item, NotNil)
 	c.Check(item.Sender, Equals, testVault)
@@ -364,19 +364,44 @@ func (s *SPLScannerSuite) TestVaultTokenTransferObservedWhenInactive(c *C) {
 	scanner.pubKeyMgr = splVaultAddrs{addrs: map[string]bool{testVault: true}}
 
 	scanner.spl.activeFrom.Store(0) // turned back off
-	item := scanner.getTxInItem(splVaultOutbound(c, testVault), 200)
+	item := scanner.getTxInItem(splVaultOutbound(c, testVault, 25_000_000), 200)
 	c.Assert(item, NotNil)
 	c.Check(item.Sender, Equals, testVault)
 	c.Check(item.To, Equals, testSender)
 	c.Check(item.Coins[0].Asset.String(), Equals, testUSDCAssetStr)
 
 	scanner.spl.activeFrom.Store(5000) // re-enabled from a later slot
-	c.Check(scanner.getTxInItem(splVaultOutbound(c, testVault), 200), NotNil)
+	c.Check(scanner.getTxInItem(splVaultOutbound(c, testVault, 25_000_000), 200), NotNil)
 
 	// A deposit from outside the vaults stays gated in both cases.
 	c.Check(scanner.getTxInItem(splInbound(c, 1_000_000), 200), IsNil)
 	scanner.spl.activeFrom.Store(0)
 	c.Check(scanner.getTxInItem(splInbound(c, 1_000_000), 200), IsNil)
+}
+
+// TestDepositBelowMinimumNotObserved: a token's min_deposit (base units) floors the
+// deposits Bifrost observes from outside the vaults, as the dust threshold does for
+// SOL. Without it an SPL deposit costs only the ~5,000-lamport fee, the cheapest way
+// to make every node post a THORChain observation. The vaults' own transfers are
+// observed whatever their amount.
+func (s *SPLScannerSuite) TestDepositBelowMinimumNotObserved(c *C) {
+	tokens := []tokenlist.ERC20Token{{Address: testUSDCMint, Symbol: "USDC", Name: "USD Coin", Decimals: 6, MinDeposit: 100_000}}
+	scanner := newSPLTestScanner()
+	scanner.spl = newSPLRegistryFromTokens(common.SOLChain, []string{testUSDCMint}, tokens, log.Logger)
+	scanner.spl.activeFrom.Store(1)
+	scanner.pubKeyMgr = splVaultAddrs{addrs: map[string]bool{testVault: true}}
+
+	c.Check(scanner.getTxInItem(splInbound(c, 99_999), 200), IsNil)
+	item := scanner.getTxInItem(splInbound(c, 100_000), 200)
+	c.Assert(item, NotNil)
+	c.Check(item.Coins[0].Amount.String(), Equals, "10000000") // 0.1 USDC in 1e8
+
+	// A vault's own transfer below the floor (an outbound, refund or migration that
+	// THORChain scheduled) is still observed.
+	out := scanner.getTxInItem(splVaultOutbound(c, testVault, 50_000), 200)
+	c.Assert(out, NotNil)
+	c.Check(out.Sender, Equals, testVault)
+	c.Check(out.Coins[0].Amount.String(), Equals, "5000000")
 }
 
 func (s *SPLScannerSuite) TestDurableOutboundStillObserved(c *C) {

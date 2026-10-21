@@ -249,7 +249,7 @@ func (s *BlockScannerTestSuite) TestScanObservesVaultTokenTransferWhenInactive(c
 	c.Assert(err, IsNil)
 
 	const outSig = "VaultTokenOutbound11111111111111111111111111111111111111111111111111"
-	out := splVaultOutbound(c, vaultAddr.String())
+	out := splVaultOutbound(c, vaultAddr.String(), 25_000_000)
 	out.Transaction.Signatures = []string{outSig}
 	m := &splScanRPC{txs: map[string]*rpc.TransactionResult{outSig: out}, getTxHit: map[string]int{}}
 	m.set(1000, map[string][]rpc.SignaturesForAddressResult{

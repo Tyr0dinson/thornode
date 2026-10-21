@@ -196,6 +196,14 @@ func (s *SOLScanner) splTxInItem(
 			Msg("token destination balance change does not match the transfer amount")
 		return nil, nil
 	}
+	// The token's minimum deposit floors deposits from outside the vaults, as the dust
+	// threshold does for SOL: otherwise a deposit costs only the transaction fee. The
+	// vaults' own transfers are observed whatever their amount.
+	if t.amount < token.minDeposit && !s.isVaultAddress(src.Owner) {
+		logger.Debug().Uint64("amount", t.amount).Uint64("min_deposit", token.minDeposit).
+			Msg("token deposit below the minimum deposit")
+		return nil, nil
+	}
 	coinAmount, err := splToTHORChain(amount, token.decimals)
 	if err != nil || coinAmount.IsZero() {
 		logger.Debug().Stringer("amount", amount).Msg("token transfer amount below THORChain precision")

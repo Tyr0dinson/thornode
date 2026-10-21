@@ -27,6 +27,9 @@ type splToken struct {
 	asset    common.Asset
 	mint     types.PublicKey
 	decimals int
+	// minDeposit is the smallest deposit from outside the vaults that is observed, in
+	// the mint's base units (the token list's min_deposit); 0 means no floor.
+	minDeposit uint64
 }
 
 // splRegistry maps the whitelisted SPL mints to their THORChain assets and holds
@@ -99,7 +102,7 @@ func newSPLRegistryFromTokens(chain common.Chain, whitelist []string, tokens []t
 			logger.Error().Str("mint", mintStr).Stringer("asset", asset).Msg("duplicate SPL token, skipping")
 			continue
 		}
-		token := splToken{asset: asset, mint: mint, decimals: t.Decimals}
+		token := splToken{asset: asset, mint: mint, decimals: t.Decimals, minDeposit: t.MinDeposit}
 		r.tokens = append(r.tokens, token)
 		r.byMint[mintStr] = token
 		assets[asset.String()] = true

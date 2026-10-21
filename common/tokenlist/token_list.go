@@ -13,6 +13,10 @@ type ERC20Token struct {
 	Symbol   string `json:"symbol"`
 	Name     string `json:"name"`
 	Decimals int    `json:"decimals"`
+	// MinDeposit is the smallest deposit, in the token's base units, that Bifrost
+	// observes from outside the vaults. Only the Solana client reads it; 0 means no
+	// floor.
+	MinDeposit uint64 `json:"min_deposit,omitempty"`
 }
 
 // Asset returns the common.Asset representation of the token.
