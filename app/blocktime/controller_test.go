@@ -90,6 +90,29 @@ func TestControllerLowOverheadNoWindup(t *testing.T) {
 	}
 }
 
+func TestControllerTargetChangeNoWindup(t *testing.T) {
+	// live mocknet 3000ms -> 2000ms: the first interval after the change
+	// still carries the old ~3s wait, then the wait climbs from 900ms
+	var c Controller
+	h := time.Unix(1_700_000_000, 0)
+	wait := time.Duration(0)
+	var sum time.Duration
+	for n := 0; n < 330; n++ {
+		target := 3 * time.Second
+		if n >= 100 {
+			target = 2 * time.Second
+		}
+		h = h.Add(wait + 33*time.Millisecond)
+		if n >= 130 {
+			sum += wait + 33*time.Millisecond
+		}
+		wait, _ = c.Next(target, h)
+	}
+	if mean := sum / 200; (mean - 2*time.Second).Abs() > 4*time.Millisecond {
+		t.Fatalf("mean %v over 200 blocks after the change settled", mean)
+	}
+}
+
 func TestControllerStepResponse(t *testing.T) {
 	// overhead jumps from 1.0s to 1.5s (e.g. a larger validator set); the
 	// wait must absorb it without overshooting past zero

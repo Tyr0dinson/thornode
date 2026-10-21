@@ -24,6 +24,10 @@ const (
 	gainDen = 1000
 	kNum    = 100 // proportional on this block's error
 	kiNum   = 2   // on the accumulated error
+	// The integral starts accumulating once settleBlocks consecutive
+	// intervals come within target/settleBand (5%) of the target.
+	settleBand   = 20
+	settleBlocks = 3
 	// integralMax bounds the accumulated error (anti-windup) to this many
 	// targets.
 	integralMax = 3
@@ -37,8 +41,7 @@ type Controller struct {
 	integral time.Duration
 	interval time.Duration
 	prev     time.Time
-	lastErr  time.Duration
-	settled  bool // the error has changed sign since the last Reset
+	inBand   int // consecutive intervals within the settle band, up to settleBlocks
 }
 
 // Next records the header time of the block being committed and returns the
@@ -62,17 +65,21 @@ func (c *Controller) Next(target time.Duration, header time.Time) (wait time.Dur
 	}
 
 	err := interval - target
-	// Anti-windup: the integral only accumulates once the interval has
-	// reached the target (the error has changed sign). Otherwise the error of
-	// the initial climb (overhead far from initialOverhead, e.g. ~25ms on a
-	// one-node mocknet) holds the wait at the target for hundreds of blocks.
-	// Saturating at zero wait still accumulates: that is the debt from slow
-	// rounds the integral pays back to keep the mean on target.
-	if !c.settled && (err < 0) != (c.lastErr < 0) && c.lastErr != 0 {
-		c.settled = true
+	// Anti-windup: the integral only accumulates once the intervals have
+	// settled near the target (several in a row, so one stale interval after
+	// a target change that happens to land on it does not count). Otherwise the error of the initial climb (overhead
+	// far from initialOverhead, e.g. ~25ms on a one-node mocknet, or the old
+	// wait after a target change) holds the wait at the target for hundreds
+	// of blocks. Saturating at zero wait still accumulates: that is the debt
+	// from slow rounds the integral pays back to keep the mean on target.
+	if c.inBand < settleBlocks {
+		if err.Abs() <= target/settleBand {
+			c.inBand++
+		} else {
+			c.inBand = 0
+		}
 	}
-	c.lastErr = err
-	if c.settled {
+	if c.inBand >= settleBlocks {
 		c.integral = clamp(c.integral+err, -integralMax*target, integralMax*target)
 	}
 	c.wait = clamp(c.wait-err*kNum/gainDen-c.integral*kiNum/gainDen, 0, target)
