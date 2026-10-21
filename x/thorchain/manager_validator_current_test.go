@@ -2761,7 +2761,7 @@ func (vts *ValidatorMgrTestSuite) TestAutoRagnarokChainLostToOptOuts(c *C) {
 	c.Assert(err, IsNil)
 
 	// Verify halt mimir was set for DOGE.
-	haltVal, err := k.GetMimir(ctx, "HaltDOGEChain")
+	haltVal, err := k.GetMimir(ctx, "HaltDOGETrading")
 	c.Assert(err, IsNil)
 	c.Assert(haltVal, Equals, int64(100))
 
@@ -2793,10 +2793,10 @@ func (vts *ValidatorMgrTestSuite) TestAutoRagnarokChainLostToOptOuts(c *C) {
 	c.Assert(found, Equals, true)
 
 	// Verify BTC/ETH halt mimirs were NOT set.
-	btcHalt, err := k.GetMimir(ctx, "HaltBTCChain")
+	btcHalt, err := k.GetMimir(ctx, "HaltBTCTrading")
 	c.Assert(err, IsNil)
 	c.Assert(btcHalt, Equals, int64(-1))
-	ethHalt, err := k.GetMimir(ctx, "HaltETHChain")
+	ethHalt, err := k.GetMimir(ctx, "HaltETHTrading")
 	c.Assert(err, IsNil)
 	c.Assert(ethHalt, Equals, int64(-1))
 }
@@ -2834,7 +2834,7 @@ func (vts *ValidatorMgrTestSuite) TestAutoRagnarokChainLostToNodeRemovals(c *C) 
 	c.Assert(err, IsNil)
 
 	// Verify DOGE halt.
-	haltVal, err := k.GetMimir(ctx, "HaltDOGEChain")
+	haltVal, err := k.GetMimir(ctx, "HaltDOGETrading")
 	c.Assert(err, IsNil)
 	c.Assert(haltVal, Equals, int64(200))
 

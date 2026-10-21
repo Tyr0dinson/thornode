@@ -505,8 +505,10 @@ func (vm *ValidatorMgr) autoRagnarokUncoveredChains(ctx cosmos.Context, mgr Mana
 		}
 		ctx.Logger().Warn("auto-ragnarok triggered for chain with no viable partition", "chain", chain)
 
-		// Halt the chain to block new inflows.
-		vm.k.SetMimir(ctx, fmt.Sprintf("Halt%sChain", chain), ctx.BlockHeight())
+		// Halt trading on the chain to block new inflows. The chain itself must
+		// stay live: ragnarok withdrawals are rejected while the chain is halted
+		// (and retried rather than dropped), and its outbounds must still sign.
+		vm.k.SetMimir(ctx, fmt.Sprintf(constants.MimirTemplateHaltTrading, chain), ctx.BlockHeight())
 
 		// Mark pools on this chain for ragnarok.
 		pools, err := vm.k.GetPools(ctx)

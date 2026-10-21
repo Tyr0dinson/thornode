@@ -413,7 +413,7 @@ count: 8
 skip_invariants: true
 ---
 ########################################################################################
-# Verify BTC auto-ragnarok: pool staged, chain halted.
+# Verify BTC auto-ragnarok: pool staged, trading halted (chain stays live for ragnarok outbounds).
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/pool/BTC.BTC
@@ -423,8 +423,8 @@ asserts:
 type: check
 endpoint: http://localhost:1317/thorchain/mimir
 asserts:
-  - .HALTBTCCHAIN != null
-  - .HALTBTCCHAIN > 0
+  - .HALTBTCTRADING != null
+  - .HALTBTCTRADING > 0
 ---
 ########################################################################################
 # Verify ETH pool unaffected.
