@@ -680,10 +680,12 @@ func (s *SOLScanner) IsHealthy() bool {
 }
 
 // refreshSPLGate reads THORChain's SOLTokens mimir, the Solana slot from which SPL
-// tokens are active (constants.MimirKeySOLTokens). A thornode without SPL support has
-// no such mimir and reads as off. A failed read keeps the last value: briefly missing
-// token accounts is recoverable (their cursors resume), but a flapping gate is not
-// worth the noise.
+// tokens are active (constants.MimirKeySOLTokens). It gates only token deposits from
+// outside the vaults: a vault's own token transfers and its token balances of
+// whitelisted mints are observed and reported whatever its value. A thornode without
+// SPL support has no such mimir and reads as off. A failed read keeps the last value:
+// briefly missing token accounts is recoverable (their cursors resume), but a
+// flapping gate is not worth the noise.
 func (s *SOLScanner) refreshSPLGate() {
 	if s.spl == nil || len(s.spl.tokens) == 0 || s.bridge == nil {
 		return
@@ -889,7 +891,8 @@ func (s *SOLScanner) txInItem(txn *rpc.TransactionResult, blockHeight int64) (*s
 	var amountMoved uint64
 	// tokenTransfers are the top-level SPL Token transfers. They are observed only
 	// when the transaction has no SystemProgram transfer, so a transaction that moves
-	// SOL is observed exactly as it was before SPL support, and only from the SPL
+	// SOL is observed exactly as it was before SPL support. A vault's own token
+	// transfer is always observed; one from outside the vaults only from the SPL
 	// activation slot on, whichever address's scan returned the transaction.
 	var tokenTransfers []splTransfer
 	fee := txn.Meta.Fee
@@ -991,7 +994,7 @@ func (s *SOLScanner) txInItem(txn *rpc.TransactionResult, blockHeight int64) (*s
 		}
 	}
 
-	if transferCount == 0 && len(tokenTransfers) > 0 && s.spl.activeAt(blockHeight) {
+	if transferCount == 0 && len(tokenTransfers) > 0 && s.spl != nil && len(s.spl.tokens) > 0 {
 		return s.splTxInItem(txn, blockHeight, memo, tokenTransfers, accounts, advancedNonceAcct)
 	}
 

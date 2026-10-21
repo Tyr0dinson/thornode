@@ -363,14 +363,14 @@ func (c *SOLClient) GetAccountByAddress(addr string, height *big.Int) (common.Ac
 		common.NewCoin(common.SOLAsset, amount),
 	}
 
-	// Token balances only once SPL is active: until then THORChain holds none.
-	if c.spl.active() {
-		tokenCoins, err := c.splTokenCoins(addr)
-		if err != nil {
-			return common.Account{}, fmt.Errorf("fail to get token balances: %w", err)
-		}
-		coins = append(coins, tokenCoins...)
+	// Token balances of the whitelisted mints, whether or not SPL is active: the
+	// vaults keep holding tokens after the SOLTokens mimir is turned back off, and a
+	// token missing here would make them look insolvent in it.
+	tokenCoins, err := c.splTokenCoins(addr)
+	if err != nil {
+		return common.Account{}, fmt.Errorf("fail to get token balances: %w", err)
 	}
+	coins = append(coins, tokenCoins...)
 
 	return common.Account{
 		Coins: coins,

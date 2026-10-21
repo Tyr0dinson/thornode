@@ -14,6 +14,7 @@ import (
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/solana/rpc"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/solana/types"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pubkeymanager"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/common/tokenlist"
@@ -287,30 +288,29 @@ func (s *SPLScannerSuite) TestSOLTransferTakesPrecedence(c *C) {
 	c.Check(item.To, Equals, testVault)
 }
 
-func (s *SPLScannerSuite) TestVaultOutboundBooksRentAsGas(c *C) {
-	// The vault's own outbound, as NewSPLTransferTransaction builds it, creating the
-	// recipient's token account. Gas is the vault's whole lamport spend.
-	scanner := newSPLTestScanner()
-	vaultATA := ata(c, testVault, testUSDCMint)
+// splVaultOutbound is vault's own 25 USDC outbound to testSender, as
+// NewSPLTransferTransaction builds it, creating the recipient's token account.
+func splVaultOutbound(c *C, vault string) *rpc.TransactionResult {
+	vaultATA := ata(c, vault, testUSDCMint)
 	recipientATA := ata(c, testSender, testUSDCMint)
-	txn := &rpc.TransactionResult{
+	return &rpc.TransactionResult{
 		Slot: 200,
 		Meta: rpc.RPCMeta{
 			Fee:          5000,
 			PreBalances:  []uint64{10_000_000_000, 2_039_280, 0, 1, 1, 1, 1, 1, 1},
 			PostBalances: []uint64{10_000_000_000 - 5000 - 2_039_280, 2_039_280, 2_039_280, 1, 1, 1, 1, 1, 1},
 			PreTokenBalances: []interface{}{
-				tokenBalance(1, testUSDCMint, testVault, "90000000", 6),
+				tokenBalance(1, testUSDCMint, vault, "90000000", 6),
 			},
 			PostTokenBalances: []interface{}{
-				tokenBalance(1, testUSDCMint, testVault, "65000000", 6),
+				tokenBalance(1, testUSDCMint, vault, "65000000", 6),
 				tokenBalance(2, testUSDCMint, testSender, "25000000", 6),
 			},
 		},
 		Transaction: rpc.RPCTxnData{
 			Signatures: []string{testTxSig},
 			Message: rpc.RPCMessage{
-				AccountKeys: []string{testVault, vaultATA, recipientATA, testSender, testUSDCMint, testSystemProgram, testTokenProgram, testATAProgram, testMemoProgram},
+				AccountKeys: []string{vault, vaultATA, recipientATA, testSender, testUSDCMint, testSystemProgram, testTokenProgram, testATAProgram, testMemoProgram},
 				Instructions: []rpc.RPCInstruction{
 					{ProgramIdIndex: 8, Accounts: []int{0}, Data: makeMemoData("OUT:ABCDEF")},
 					{ProgramIdIndex: 7, Accounts: []int{0, 2, 3, 4, 5, 6}, Data: base58.Encode([]byte{1})},
@@ -319,6 +319,23 @@ func (s *SPLScannerSuite) TestVaultOutboundBooksRentAsGas(c *C) {
 			},
 		},
 	}
+}
+
+// splVaultAddrs recognises a fixed set of SOL addresses as vaults.
+type splVaultAddrs struct {
+	pubkeymanager.PubKeyValidator
+	addrs map[string]bool
+}
+
+func (p splVaultAddrs) IsValidPoolAddress(addr string, chain common.Chain) (bool, common.ChainPoolInfo) {
+	return chain.Equals(common.SOLChain) && p.addrs[addr], common.ChainPoolInfo{}
+}
+
+func (s *SPLScannerSuite) TestVaultOutboundBooksRentAsGas(c *C) {
+	// Gas is the vault's whole lamport spend, including the recipient token account's
+	// rent.
+	scanner := newSPLTestScanner()
+	txn := splVaultOutbound(c, testVault)
 	item := scanner.getTxInItem(txn, 200)
 	c.Assert(item, NotNil)
 	c.Check(item.Sender, Equals, testVault)
@@ -334,6 +351,32 @@ func (s *SPLScannerSuite) TestVaultOutboundBooksRentAsGas(c *C) {
 	item = scanner.getTxInItem(txn, 200)
 	c.Assert(item, NotNil)
 	c.Check(item.Gas[0].Amount.String(), Equals, convertLamportsToTHORChain(5000).String())
+}
+
+// TestVaultTokenTransferObservedWhenInactive: SOLTokens gates only new SPL value from
+// outside the vaults. THORChain keeps scheduling outbounds, refunds and migrations of
+// the tokens it already holds after the mimir is turned back off (or re-set to a
+// later slot), and Bifrost keeps signing them; a vault transfer that lands but is
+// never observed is re-issued. So a vault's own token transfer is observed whether
+// SPL is active or not, and whatever the activation slot.
+func (s *SPLScannerSuite) TestVaultTokenTransferObservedWhenInactive(c *C) {
+	scanner := newSPLTestScanner()
+	scanner.pubKeyMgr = splVaultAddrs{addrs: map[string]bool{testVault: true}}
+
+	scanner.spl.activeFrom.Store(0) // turned back off
+	item := scanner.getTxInItem(splVaultOutbound(c, testVault), 200)
+	c.Assert(item, NotNil)
+	c.Check(item.Sender, Equals, testVault)
+	c.Check(item.To, Equals, testSender)
+	c.Check(item.Coins[0].Asset.String(), Equals, testUSDCAssetStr)
+
+	scanner.spl.activeFrom.Store(5000) // re-enabled from a later slot
+	c.Check(scanner.getTxInItem(splVaultOutbound(c, testVault), 200), NotNil)
+
+	// A deposit from outside the vaults stays gated in both cases.
+	c.Check(scanner.getTxInItem(splInbound(c, 1_000_000), 200), IsNil)
+	scanner.spl.activeFrom.Store(0)
+	c.Check(scanner.getTxInItem(splInbound(c, 1_000_000), 200), IsNil)
 }
 
 func (s *SPLScannerSuite) TestDurableOutboundStillObserved(c *C) {

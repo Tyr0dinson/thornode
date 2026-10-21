@@ -146,6 +146,14 @@ func (s *SOLScanner) splTxInItem(
 		logger.Debug().Msg("cannot resolve token transfer source or destination owner")
 		return nil, nil
 	}
+	// The SOLTokens mimir gates only deposits from outside the vaults. A vault's own
+	// transfer (an outbound, refund or migration of tokens THORChain already holds) is
+	// observed whether SPL is active or not, and whatever the activation slot:
+	// THORChain keeps scheduling those and re-issues one that is never observed.
+	if !s.spl.activeAt(blockHeight) && !s.isVaultAddress(src.Owner) {
+		logger.Debug().Str("sender", src.Owner).Msg("token transfer from outside the vaults before SPL activation")
+		return nil, nil
+	}
 	if srcPost, found := rpc.FindTokenBalance(post, t.source); found && (srcPost.Owner != src.Owner || srcPost.Mint != src.Mint) {
 		logger.Warn().Str("pre_owner", src.Owner).Str("post_owner", srcPost.Owner).
 			Msg("token transfer source owner changed within the transaction")
@@ -217,4 +225,14 @@ func (s *SOLScanner) splTxInItem(
 		Gas:         common.Gas{gasCoin},
 		SolNonce:    s.observedSolNonce(advancedNonceAcct, src.Owner, blockHeight, txID),
 	}, nil
+}
+
+// isVaultAddress reports whether addr is one of THORChain's SOL vaults. A scanner
+// without a pubkey manager (unit tests) has no vaults.
+func (s *SOLScanner) isVaultAddress(addr string) bool {
+	if s.pubKeyMgr == nil {
+		return false
+	}
+	ok, _ := s.pubKeyMgr.IsValidPoolAddress(addr, common.SOLChain)
+	return ok
 }

@@ -239,6 +239,41 @@ func (s *BlockScannerTestSuite) TestScanTokenAccountObservesLateIndexedDeposits(
 	c.Check(got[0].TxArray[0].Tx, Equals, lateSig)
 }
 
+// TestScanObservesVaultTokenTransferWhenInactive drives scan() with SPL off (the
+// SOLTokens mimir turned back off after activation): the vault's token account is
+// not scanned, but the vault's own token outbound lists the vault wallet, so the
+// wallet's scan returns it, and it is observed.
+func (s *BlockScannerTestSuite) TestScanObservesVaultTokenTransferWhenInactive(c *C) {
+	vault := types2.GetRandomEd25519PubKey()
+	vaultAddr, err := vault.GetAddress(common.SOLChain)
+	c.Assert(err, IsNil)
+
+	const outSig = "VaultTokenOutbound11111111111111111111111111111111111111111111111111"
+	out := splVaultOutbound(c, vaultAddr.String())
+	out.Transaction.Signatures = []string{outSig}
+	m := &splScanRPC{txs: map[string]*rpc.TransactionResult{outSig: out}, getTxHit: map[string]int{}}
+	m.set(1000, map[string][]rpc.SignaturesForAddressResult{
+		vaultAddr.String(): {{Signature: outSig, Slot: 900}},
+	})
+	server := m.server(c)
+	defer server.Close()
+
+	scanner, _, txIns := s.newTokenScanTestScanner(c, server, vault, 0)
+	scanner.pubKeyMgr = singleVaultPubKeys{
+		vault:           vault,
+		PubKeyValidator: splVaultAddrs{addrs: map[string]bool{vaultAddr.String(): true}},
+	}
+	scanner.scan()
+	got := drainTxIns(txIns)
+	c.Assert(got, HasLen, 1)
+	c.Assert(got[0].TxArray, HasLen, 1)
+	item := got[0].TxArray[0]
+	c.Check(item.Tx, Equals, outSig)
+	c.Check(item.Sender, Equals, vaultAddr.String())
+	c.Check(item.To, Equals, testSender)
+	c.Check(scanner.IsHealthy(), Equals, true)
+}
+
 // newTokenScanTestScanner builds a scanner over one vault with USDC whitelisted and
 // SPL active from activationSlot (as by the SOLTokens mimir), served by m, and
 // returns it with its storage and observation queue.
@@ -287,7 +322,9 @@ func (b *mimirBridge) set(key string, v int64) {
 }
 
 // TestScanSPLGatedBySOLTokensMimir: until THORChain's SOLTokens mimir is set, the
-// scanner neither scans vault token accounts nor reports token transfers. A thornode
+// scanner neither scans vault token accounts nor reports token deposits from outside
+// the vaults (TestScanObservesVaultTokenTransferWhenInactive covers the vaults' own
+// transfers, which are observed regardless). A thornode
 // without SPL support has no such mimir, so a Bifrost upgraded early never feeds it
 // SPL deposits it would credit (and later pay out through signers that cannot sign
 // SPL). Once the mimir is set, its value is the activation slot: deposits before it

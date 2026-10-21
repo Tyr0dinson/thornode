@@ -35,21 +35,27 @@ const (
 	MimirKeySOLDurableNonce = "SOLDurableNonce"
 
 	// MimirKeySOLTokens activates Solana SPL tokens; its value is the Solana slot they
-	// are active from. Unset/<=0: THORChain no-ops any observed SPL token deposit from
-	// outside its vaults (no credit, swap or refund), and bifrost neither scans vault
-	// token accounts nor reports token transfers. Positive: bifrost scans vault token
-	// accounts and observes token transfers at or after that slot, never earlier ones.
-	// Anyone can create and fund a vault's token account at any time, so a slot every
-	// node agrees on is what keeps their observations of that history identical. Set
-	// it to a recent finalized slot, at or before the slot the vote lands in: a later
-	// slot leaves deposits made before it unobserved.
+	// are active from. It gates only token deposits from outside the vaults: whatever
+	// its value, bifrost observes the vaults' own token transfers (outbounds, refunds,
+	// migrations) and reports vault token balances of every whitelisted mint.
+	// Unset/<=0: THORChain no-ops any observed SPL token deposit from outside its
+	// vaults (no credit, swap or refund), and bifrost neither scans vault token
+	// accounts nor reports token transfers from outside the vaults. Positive: bifrost
+	// scans vault token accounts and observes token transfers from outside the vaults
+	// at or after that slot, never earlier ones. Anyone can create and fund a vault's
+	// token account at any time, so a slot every node agrees on is what keeps their
+	// observations of that history identical. Set it to a recent finalized slot, at or
+	// before the slot the vote lands in: a later slot leaves deposits made before it
+	// unobserved.
 	//
 	// Set it only once every node that can sign for a vault (active, and churned-out
 	// members of retiring vaults) runs SPL-aware bifrost: an older bifrost signs any
 	// SOL-chain outbound as a native SOL transfer of the coin amount, so an SPL
 	// outbound would pay SOL instead of the token. Keeping SPL value out keeps SPL
-	// outbounds from ever being scheduled. Turning it back off stops new deposits
-	// only; transfers between vaults (migrations) are still credited.
+	// outbounds from ever being scheduled. Turning it back off, or re-setting it to a
+	// later slot, stops new deposits only: transfers between vaults (migrations) are
+	// still credited, and the vaults' outbounds and refunds of tokens THORChain already
+	// holds are still observed.
 	MimirKeySOLTokens = "SOLTokens"
 
 	// MimirKeySOLAnchorMarginSeconds tunes how far (seconds) bifrost steps back from

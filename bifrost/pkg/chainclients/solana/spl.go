@@ -30,15 +30,18 @@ type splToken struct {
 }
 
 // splRegistry maps the whitelisted SPL mints to their THORChain assets and holds
-// THORChain's activation of them. Mints are case-sensitive base58 while asset symbols
-// are uppercased, so outbounds resolve an asset to its mint through this registry,
-// never by parsing the symbol. The client and scanner share one registry.
+// THORChain's activation of them. Activation gates only token deposits from outside
+// the vaults: a vault's own token transfers and its token balances of whitelisted
+// mints are always observed and reported. Mints are case-sensitive base58 while asset
+// symbols are uppercased, so outbounds resolve an asset to its mint through this
+// registry, never by parsing the symbol. The client and scanner share one registry.
 type splRegistry struct {
 	tokens []splToken // config order, so every iteration is deterministic
 	byMint map[string]splToken
 
 	// activeFrom mirrors THORChain's SOLTokens mimir (constants.MimirKeySOLTokens): the
-	// Solana slot from which SPL tokens are active, or 0 while they are off.
+	// Solana slot from which token deposits from outside the vaults are observed, or 0
+	// while they are off.
 	activeFrom atomic.Uint64
 }
 
@@ -127,8 +130,9 @@ func (r *splRegistry) tokenByAsset(asset common.Asset) (splToken, bool) {
 }
 
 // activationSlot returns the Solana slot from which SPL tokens are active: vault
-// token accounts are scanned, token balances reported and token transfers at or
-// after it observed. 0 means SPL is off.
+// token accounts are scanned from it, and token transfers from outside the vaults at
+// or after it are observed. 0 means SPL is off. A vault's own token transfers and its
+// token balances do not depend on it.
 func (r *splRegistry) activationSlot() uint64 {
 	if r == nil || len(r.tokens) == 0 {
 		return 0
@@ -136,13 +140,9 @@ func (r *splRegistry) activationSlot() uint64 {
 	return r.activeFrom.Load()
 }
 
-// active reports whether SPL tokens are active.
-func (r *splRegistry) active() bool {
-	return r.activationSlot() > 0
-}
-
-// activeAt reports whether a token transfer at slot is observed: SPL is active and
-// the slot is not before the activation slot.
+// activeAt reports whether a token transfer from outside the vaults at slot is
+// observed: SPL is active and the slot is not before the activation slot. A vault's
+// own token transfer is observed regardless.
 func (r *splRegistry) activeAt(slot int64) bool {
 	from := r.activationSlot()
 	return from > 0 && slot >= 0 && uint64(slot) >= from
