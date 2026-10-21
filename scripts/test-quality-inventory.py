@@ -33,7 +33,12 @@ SELECTIONS = (
     (
         ".",
         "mainnet",
-        ("./common", "./constants", "./bifrost/pkg/chainclients/utxo/..."),
+        (
+            "./common",
+            "./constants",
+            "./app/blocktime",
+            "./bifrost/pkg/chainclients/utxo/...",
+        ),
         "unit-tests test-network-specific",
         None,
     ),
@@ -42,7 +47,7 @@ SELECTIONS = (
         "mainnet",
         ("./x/thorchain",),
         "unit-tests test-network-specific",
-        "Migrate|Migration19to20Suite|EthThorRestoreSuite",
+        "Migrate|Migration19to20Suite|EthThorRestoreSuite|BlockTimeMsDisabledOnMainnet",
     ),
     (
         ".",
