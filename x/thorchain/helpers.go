@@ -2455,6 +2455,10 @@ func applyMemolessOutboundLogic(version semver.Version, toi *TxOutItem, enableMe
 	case memo.GetType().IsOutboundMemoless():
 		// Outbound memo type supports memoless, clear the memo
 		toi.Memo = ""
+	case enableMemolessOutbound >= 2 && memo.GetType().IsInternal():
+		// Internal transactions (migrate, consolidate) support memoless when
+		// enableMemolessOutbound >= 2
+		toi.Memo = ""
 	default:
 		// For all other memo types, preserve the original memo
 		toi.Memo = toi.OriginalMemo

@@ -64,6 +64,11 @@ func (vm *NetworkMgr) processGenesisSetup(ctx cosmos.Context) error {
 	}
 	if len(vaults) > 0 {
 		ctx.Logger().Info("already have vault, no need to generate at genesis")
+
+		// Store address-to-pubkey mappings for the genesis vaults
+		for i := range vaults {
+			vm.storeVaultAddressMappings(ctx, vaults[i])
+		}
 		return nil
 	}
 	active, err := vm.k.ListActiveValidators(ctx)
@@ -1696,6 +1701,31 @@ func (vm *NetworkMgr) scheduleKeygen(ctx cosmos.Context, nas NodeAccounts, keyge
 	return nil
 }
 
+// storeVaultAddressMappings stores address-to-pubkey mappings for a vault across
+// all of its chains, using the pubkey matching each chain's signing algorithm.
+func (vm *NetworkMgr) storeVaultAddressMappings(ctx cosmos.Context, vault Vault) {
+	for _, chainStr := range vault.Chains {
+		chain, err := common.NewChain(chainStr)
+		if err != nil {
+			ctx.Logger().Error("fail to parse chain", "chain", chainStr, "error", err)
+			continue
+		}
+
+		pubkey, err := vault.AlgoPubKey(chain)
+		if err != nil || pubkey.IsEmpty() {
+			continue
+		}
+
+		addr, err := pubkey.GetAddress(chain)
+		if err != nil {
+			ctx.Logger().Error("fail to get address for chain", "chain", chain, "pubkey", pubkey, "error", err)
+			continue
+		}
+		vm.k.SetAddrPubKey(ctx, addr, pubkey)
+		ctx.Logger().Debug("stored address-pubkey mapping", "chain", chain, "address", addr, "pubkey", pubkey)
+	}
+}
+
 // RotateVault update vault to Retiring and new vault to active
 func (vm *NetworkMgr) RotateVault(ctx cosmos.Context, vault Vault) error {
 	active, err := vm.k.GetAsgardVaultsByStatus(ctx, ActiveVault)
@@ -1728,6 +1758,7 @@ func (vm *NetworkMgr) RotateVault(ctx cosmos.Context, vault Vault) error {
 		if err := vm.k.SetVault(ctx, asgard); err != nil {
 			return err
 		}
+		vm.storeVaultAddressMappings(ctx, asgard)
 
 		ctx.EventManager().EmitEvent(
 			cosmos.NewEvent(EventTypeInactiveVault,
@@ -1754,6 +1785,9 @@ func (vm *NetworkMgr) RotateVault(ctx cosmos.Context, vault Vault) error {
 	if err := vm.k.SetVault(ctx, vault); err != nil {
 		return err
 	}
+
+	// Store address-to-pubkey mappings for the new active vault
+	vm.storeVaultAddressMappings(ctx, vault)
 
 	ctx.EventManager().EmitEvent(
 		cosmos.NewEvent(EventTypeActiveVault,

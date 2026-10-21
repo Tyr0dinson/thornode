@@ -35,6 +35,7 @@ import "types/query_limit_swaps.proto";
 import "types/query_limit_swaps_summary.proto";
 import "types/query_last_block.proto";
 import "types/query_vault.proto";
+import "types/query_addr_pubkey.proto";
 import "types/query_tx.proto";
 import "types/query_swapper_clout.proto";
 import "types/type_clout.proto";
@@ -358,6 +359,10 @@ service Query {
   rpc VaultsPubkeys(QueryVaultsPubkeysRequest)
       returns (QueryVaultsPubkeysResponse) {
     option (google.api.http).get = "/thorchain/vaults/pubkeys";
+  }
+
+  rpc AddrPubKey(QueryAddrPubKeyRequest) returns (QueryAddrPubKeyResponse) {
+    option (google.api.http).get = "/thorchain/vaults/address/{address}";
   }
 
   rpc VaultSolvency(QueryVaultSolvencyRequest)

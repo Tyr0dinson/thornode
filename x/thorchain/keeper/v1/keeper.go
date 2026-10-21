@@ -125,6 +125,7 @@ const (
 	prefixUpgradeVotes              types.DbPrefix = "upgr_votes/"
 	prefixTCYClaimer                types.DbPrefix = "tcy_claimer/"
 	prefixTCYStaker                 types.DbPrefix = "tcy_staker/"
+	prefixAddrPubKey                types.DbPrefix = "addr_pk/"
 	prefixOraclePrice               types.DbPrefix = "oracle_price/"
 	prefixVolumeBucket              types.DbPrefix = "volume_bucket/"
 	prefixVolume                    types.DbPrefix = "volume/"

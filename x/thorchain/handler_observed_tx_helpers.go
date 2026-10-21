@@ -20,6 +20,12 @@ import (
 	mem "gitlab.com/thorchain/thornode/v3/x/thorchain/memo"
 )
 
+// isInternalTransaction checks if both the from and to addresses belong to Asgard vaults
+func isInternalTransaction(ctx cosmos.Context, k keeper.Keeper, tx common.Tx) bool {
+	// Both addresses must map to a vault pubkey for an internal transaction
+	return k.HasAddrPubKey(ctx, tx.FromAddress) && k.HasAddrPubKey(ctx, tx.ToAddress)
+}
+
 // processTxInAttestation applies a single attestation for an observed tx and saves
 // the voter. MsgObservedTxIn (single attester) uses it; MsgObservedTxQuorum applies
 // its attestations with applyTxInAttestation and saves the voter once.
@@ -371,8 +377,13 @@ func handleObservedTxInQuorum(
 		return nil
 	}
 
+	// Blank memo vault-to-vault transfers (memoless migrate/consolidate) are
+	// internal; they must neither be assigned a reference memo nor dispatched
+	// to a handler.
+	blankMemoInternal := strings.TrimSpace(tx.Tx.Memo) == "" && isInternalTransaction(ctx, k, tx.Tx)
+
 	// add memo for memoless transactions (after consensus is reached)
-	if len(tx.Tx.Coins) > 0 {
+	if len(tx.Tx.Coins) > 0 && !blankMemoInternal {
 		// Use the asset from the first coin for reference memo lookup
 		refAsset := tx.Tx.Coins[0].Asset
 
@@ -489,6 +500,16 @@ func handleObservedTxInQuorum(
 		if newErr := refundTx(ctx, tx, mgr, CodeInvalidVault, "observed inbound tx to an inactive vault", ""); newErr != nil {
 			ctx.Logger().Error("fail to refund", "error", newErr)
 		}
+		return nil
+	}
+
+	if blankMemoInternal {
+		// This is a vault-to-vault transaction with blank memo, skip handler processing
+		ctx.Logger().Info("skipping handler processing for blank memo internal transaction",
+			"tx_id", tx.Tx.ID.String(),
+			"from", tx.Tx.FromAddress.String(),
+			"to", tx.Tx.ToAddress.String(),
+			"chain", tx.Tx.Chain.String())
 		return nil
 	}
 

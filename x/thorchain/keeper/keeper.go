@@ -96,6 +96,7 @@ type Keeper interface {
 	KeeperTradeAccount
 	KeeperSecuredAsset
 	KeeperRUNEPool
+	KeeperAddrPubKey
 	KeeperTCYClaimer
 	KeeperTCYStaker
 	KeeperVolume
@@ -624,4 +625,12 @@ type KeeperTCYStaker interface {
 	ListTCYStakers(ctx cosmos.Context) ([]TCYStaker, error)
 	TCYStakerExists(ctx cosmos.Context, address common.Address) bool
 	UpdateTCYStaker(ctx cosmos.Context, address common.Address, amount math.Uint) error
+}
+
+type KeeperAddrPubKey interface {
+	SetAddrPubKey(ctx cosmos.Context, addr common.Address, pubKey common.PubKey)
+	GetAddrPubKey(ctx cosmos.Context, addr common.Address) (common.PubKey, error)
+	HasAddrPubKey(ctx cosmos.Context, addr common.Address) bool
+	DeleteAddrPubKey(ctx cosmos.Context, addr common.Address)
+	GetAddrPubKeyIterator(ctx cosmos.Context) cosmos.Iterator
 }

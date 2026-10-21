@@ -574,6 +574,29 @@ var whitelistPubkeys = map[string]bool{
 	"thorpub1addwnpepqwht8xtersz90wsyu6fgx9tj5s3lx4w6q5adcm3mxzetgaa3rxv9sshhjmu": true,
 }
 
+func (qs queryServer) queryAddrPubKey(ctx cosmos.Context, req *types.QueryAddrPubKeyRequest) (*types.QueryAddrPubKeyResponse, error) {
+	addr, err := common.NewAddress(req.Address)
+	if err != nil {
+		return nil, fmt.Errorf("invalid address: %w", err)
+	}
+
+	pubKey, err := qs.mgr.Keeper().GetAddrPubKey(ctx, addr)
+	if err != nil {
+		return nil, fmt.Errorf("fail to get pubkey for address: %w", err)
+	}
+
+	found := !pubKey.IsEmpty()
+	pubKeyStr := ""
+	if found {
+		pubKeyStr = pubKey.String()
+	}
+
+	return &types.QueryAddrPubKeyResponse{
+		Pubkey: pubKeyStr,
+		Found:  found,
+	}, nil
+}
+
 func (qs queryServer) queryVaultsPubkeys(ctx cosmos.Context, _ *types.QueryVaultsPubkeysRequest) (*types.QueryVaultsPubkeysResponse, error) {
 	var resp types.QueryVaultsPubkeysResponse
 	resp.Asgard = make([]*types.VaultInfo, 0)

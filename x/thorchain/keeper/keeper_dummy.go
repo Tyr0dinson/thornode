@@ -1124,6 +1124,16 @@ func (k KVStoreDummy) GetPriceIterator(_ cosmos.Context) cosmos.Iterator {
 	return nil
 }
 
+// KeeperAddrPubKey interface implementation
+func (k KVStoreDummy) SetAddrPubKey(_ cosmos.Context, _ common.Address, _ common.PubKey) {}
+
+func (k KVStoreDummy) GetAddrPubKey(_ cosmos.Context, _ common.Address) (common.PubKey, error) {
+	return common.EmptyPubKey, kaboom
+}
+func (k KVStoreDummy) HasAddrPubKey(_ cosmos.Context, _ common.Address) bool  { return false }
+func (k KVStoreDummy) DeleteAddrPubKey(_ cosmos.Context, _ common.Address)    {}
+func (k KVStoreDummy) GetAddrPubKeyIterator(_ cosmos.Context) cosmos.Iterator { return nil }
+
 func (k KVStoreDummy) GetVolumeBucket(_ cosmos.Context, _ common.Asset, _ int64) (VolumeBucket, error) {
 	return VolumeBucket{}, nil
 }
