@@ -67,7 +67,7 @@
         {
           "@type": "/cosmos.auth.v1beta1.ModuleAccount",
           "base_account": {
-            "account_number": "12115055028948567804",
+            "account_number": "9678804506309705781",
             "address": "tthor1dl7un46w7l7f3ewrnrm6nq58nerjtp0d82uzjg",
             "pub_key": null,
             "sequence": "0"

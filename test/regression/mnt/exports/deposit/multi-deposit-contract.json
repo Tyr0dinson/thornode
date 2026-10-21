@@ -41,7 +41,7 @@
         },
         {
           "@type": "/cosmos.auth.v1beta1.BaseAccount",
-          "account_number": "18055381193523101450",
+          "account_number": "18252028424423224186",
           "address": "tthor1f6z8lvkkj4u0f4g0cz6akzhydn6d9yv64t7ss7",
           "pub_key": {
             "@type": "/cosmos.crypto.secp256k1.PubKey",
@@ -97,7 +97,7 @@
         },
         {
           "@type": "/cosmos.auth.v1beta1.BaseAccount",
-          "account_number": "17858329531541283844",
+          "account_number": "10802205057004980205",
           "address": "tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f",
           "pub_key": null,
           "sequence": "0"
