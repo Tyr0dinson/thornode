@@ -139,9 +139,6 @@
         "tx_size_cost_per_byte": "10"
       }
     },
-    "authz": {
-      "authorization": []
-    },
     "bank": {
       "balances": [
         {
@@ -859,7 +856,6 @@
           "asset": "BTC.BTC"
         }
       ],
-      "pol_reserve_deposits": [],
       "pools": [
         {
           "LP_units": "90000000000",
@@ -894,6 +890,7 @@
       },
       "rune_providers": [],
       "secured_assets": [],
+      "sol_vault_nonces": [],
       "streaming_swaps": [],
       "swap_queue_items": [],
       "swapper_clout": [],

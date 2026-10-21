@@ -285,7 +285,13 @@
       ],
       "network": {
         "NodeIncomeSplit": "10000",
-        "bond_reward_rune": "9996214220301",
+        "bond_reward_rune": "14744934",
+        "chain_income": [
+          {
+            "amount": "9996199475367",
+            "chain": "BTC"
+          }
+        ],
         "total_bond_units": "13"
       },
       "network_fees": [

@@ -238,7 +238,13 @@
       "mimirs": [],
       "network": {
         "NodeIncomeSplit": "10000",
-        "bond_reward_rune": "21605384",
+        "bond_reward_rune": "0",
+        "chain_income": [
+          {
+            "amount": "21605384",
+            "chain": "ZEC"
+          }
+        ],
         "total_bond_units": "3"
       },
       "network_fees": [

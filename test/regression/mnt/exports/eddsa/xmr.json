@@ -253,7 +253,13 @@
       "network": {
         "LPIncomeSplit": "9600",
         "NodeIncomeSplit": "400",
-        "bond_reward_rune": "137206",
+        "bond_reward_rune": "133204",
+        "chain_income": [
+          {
+            "amount": "4002",
+            "chain": "XMR"
+          }
+        ],
         "total_bond_units": "3"
       },
       "network_fees": [

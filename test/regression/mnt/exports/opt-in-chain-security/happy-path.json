@@ -139,9 +139,6 @@
         "tx_size_cost_per_byte": "10"
       }
     },
-    "authz": {
-      "authorization": []
-    },
     "bank": {
       "balances": [
         {
@@ -434,7 +431,6 @@
       "observed_tx_out_voters": null,
       "outbound_fee_spent_rune": [],
       "outbound_fee_withheld_rune": [],
-      "pol_reserve_deposits": [],
       "pools": [
         {
           "LP_units": "100000000000",
@@ -469,6 +465,7 @@
       },
       "rune_providers": [],
       "secured_assets": [],
+      "sol_vault_nonces": [],
       "streaming_swaps": [],
       "swap_queue_items": [],
       "swapper_clout": [
