@@ -1987,12 +1987,26 @@ func (s *XrpTestSuite) TestSignMsgLocalKeyManager(c *C) {
 
 type mockXrpBridge struct {
 	thorclient.ThorchainBridge
-	asgards   stypes.Vaults
-	asgardErr error
+	// solvencyHalted makes the mock report the chain as solvency-halted on-chain,
+	// the only state in which ReportSolvency sends an all-solvent report.
+	solvencyHalted bool
+	asgards        stypes.Vaults
+	asgardErr      error
 }
 
 func (m *mockXrpBridge) GetAsgards() (stypes.Vaults, error) {
 	return m.asgards, m.asgardErr
+}
+
+func (m *mockXrpBridge) GetMimir(key string) (int64, error) {
+	if m.solvencyHalted && key == "SolvencyHaltXRPChain" {
+		return 1, nil
+	}
+	return 0, nil
+}
+
+func (m *mockXrpBridge) GetBlockHeight() (int64, error) {
+	return 100, nil
 }
 
 // -------------------------------------------------------------------------------------
@@ -2034,7 +2048,8 @@ func (s *XrpTestSuite) TestReportSolvencyFullPath(c *C) {
 	}
 
 	mockBridge := &mockXrpBridge{
-		asgards: stypes.Vaults{vault},
+		solvencyHalted: true, // all-solvent report is only sent while the chain is solvency-halted on-chain
+		asgards:        stypes.Vaults{vault},
 	}
 
 	solvencyQueue := make(chan types.Solvency, 10)

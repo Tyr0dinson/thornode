@@ -409,6 +409,14 @@ func (e *ETHScanner) extractTxs(block *etypes.Block) (stypes.TxIn, error) {
 		MemPool:  false,
 	}
 
+	// Fetch the whole block's receipts with one eth_getBlockReceipts call
+	// where the node supports it; transactions missing from the result (or
+	// all of them, when the call fails) fall back to individual
+	// eth_getTransactionReceipt lookups below.
+	receiptsCtx, receiptsCancel := e.getContext()
+	receipts := fetchBlockReceipts(receiptsCtx, e.client.Client(), e.logger, block)
+	receiptsCancel()
+
 	sem := semaphore.NewWeighted(e.cfg.Concurrency)
 	mu := sync.Mutex{}
 	wg := sync.WaitGroup{}
@@ -432,7 +440,7 @@ func (e *ETHScanner) extractTxs(block *etypes.Block) (stypes.TxIn, error) {
 			e.logger.Err(err).Msgf("fail to remove signed tx item, hash:%s", tx.Hash().String())
 		}
 
-		txInItem, err := e.fromTxToTxIn(tx)
+		txInItem, err := e.fromTxToTxInWithReceipts(tx, receipts)
 		if err != nil {
 			e.logger.Error().Err(err).Str("hash", tx.Hash().Hex()).Msg("fail to get one tx from server")
 			return
@@ -1017,15 +1025,26 @@ func (e *ETHScanner) getTxInFromTransaction(tx *etypes.Transaction, receipt *ety
 }
 
 func (e *ETHScanner) fromTxToTxIn(tx *etypes.Transaction) (*stypes.TxInItem, error) {
+	return e.fromTxToTxInWithReceipts(tx, nil)
+}
+
+// fromTxToTxInWithReceipts converts the transaction to a TxInItem, taking its
+// receipt from the supplied block-receipts map when present and falling back
+// to an individual eth_getTransactionReceipt lookup otherwise.
+func (e *ETHScanner) fromTxToTxInWithReceipts(tx *etypes.Transaction, receipts map[ecommon.Hash]*etypes.Receipt) (*stypes.TxInItem, error) {
 	if tx == nil || tx.To() == nil {
 		return nil, nil
 	}
-	receipt, err := e.getReceipt(tx.Hash().Hex())
-	if err != nil {
-		if errors.Is(err, ethereum.NotFound) {
-			return nil, nil
+	receipt := receipts[tx.Hash()]
+	if receipt == nil {
+		var err error
+		receipt, err = e.getReceipt(tx.Hash().Hex())
+		if err != nil {
+			if errors.Is(err, ethereum.NotFound) {
+				return nil, nil
+			}
+			return nil, fmt.Errorf("fail to get transaction receipt: %w", err)
 		}
-		return nil, fmt.Errorf("fail to get transaction receipt: %w", err)
 	}
 	if receipt.Status != 1 {
 		// a transaction that is failed

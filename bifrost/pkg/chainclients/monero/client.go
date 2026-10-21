@@ -4228,7 +4228,16 @@ func (c *Client) ReportSolvency(height int64) error {
 		return nil
 	}
 
-	if !c.IsBlockScannerHealthy() && !deferredForReconciliation && checkedVaults > 0 && len(solventMsgs) == checkedVaults {
+	// Report all vaults solvent only while THORChain itself has XMR halted or solvency-halted and
+	// this node's scanner is paused for it: the same gate as the other chain clients. A scanner
+	// that is unhealthy for a local reason (daemon or sidecar lag) must stay silent, because an
+	// all-clear only one node sends can never reach consensus and each one costs that node an
+	// unrefunded observation slash point. On a bridge error stay silent; the runner retries.
+	halted, haltErr := runners.IsHaltedOnChain(c.thorchainBridge, c.chain)
+	if haltErr != nil {
+		c.logger.Err(haltErr).Msg("fail to read chain halt state, skipping solvency all-clear")
+	}
+	if halted && !c.IsBlockScannerHealthy() && !deferredForReconciliation && checkedVaults > 0 && len(solventMsgs) == checkedVaults {
 		msgs = solventMsgs
 	}
 

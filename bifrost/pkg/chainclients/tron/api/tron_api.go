@@ -104,6 +104,29 @@ func (api *TronApi) GetTransactionInfo(
 	return response.TransactionInfo, nil
 }
 
+// GetTransactionInfoByBlockNum returns the TransactionInfo of every
+// transaction in the block at the given height with a single call.
+func (api *TronApi) GetTransactionInfoByBlockNum(
+	height int64,
+) ([]TransactionInfo, error) {
+	params := map[string]any{
+		"num": height,
+	}
+
+	data, err := api.post("gettransactioninfobyblocknum", params)
+	if err != nil {
+		return nil, err
+	}
+
+	var infos []TransactionInfo
+
+	if err := json.Unmarshal(data, &infos); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
+	}
+
+	return infos, nil
+}
+
 func (api *TronApi) GetTransaction(
 	hash string,
 ) (Transaction, error) {

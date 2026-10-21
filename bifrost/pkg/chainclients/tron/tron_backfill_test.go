@@ -500,11 +500,25 @@ func (s *BackfillSuite) TestShouldReportSolvencyAdditional(c *C) {
 
 type mockTronSolvencyBridge struct {
 	thorclient.ThorchainBridge
-	asgards stypes.Vaults
+	// solvencyHalted makes the mock report the chain as solvency-halted on-chain,
+	// the only state in which ReportSolvency sends an all-solvent report.
+	solvencyHalted bool
+	asgards        stypes.Vaults
 }
 
 func (m *mockTronSolvencyBridge) GetAsgards() (stypes.Vaults, error) {
 	return m.asgards, nil
+}
+
+func (m *mockTronSolvencyBridge) GetMimir(key string) (int64, error) {
+	if m.solvencyHalted && key == "SolvencyHaltTRONChain" {
+		return 1, nil
+	}
+	return 0, nil
+}
+
+func (m *mockTronSolvencyBridge) GetBlockHeight() (int64, error) {
+	return 100, nil
 }
 
 func (s *BackfillSuite) TestReportSolvencyAllSolventIgnoresUnrelatedVaults(c *C) {
@@ -528,7 +542,8 @@ func (s *BackfillSuite) TestReportSolvencyAllSolventIgnoresUnrelatedVaults(c *C)
 		Coins:  common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(1_000_000))),
 	}
 	bridge := &mockTronSolvencyBridge{
-		asgards: stypes.Vaults{tronVault, unrelatedBTCVault},
+		solvencyHalted: true, // all-solvent report is only sent while the chain is solvency-halted on-chain
+		asgards:        stypes.Vaults{tronVault, unrelatedBTCVault},
 	}
 
 	storage, err := blockscanner.NewBlockScannerStorage(filepath.Join(s.tmpdir, "tron-solvency"), config.LevelDBOptions{})
@@ -1055,8 +1070,7 @@ func (s *ScannerBackfillSuite) TestGetTxInFromFailedTransactionNotVault(c *C) {
 		},
 	}
 
-	result, err := s.scanner.getTxInFromFailedTransaction(tx, 100)
-	c.Assert(err, IsNil)
+	result := s.scanner.getTxInFromFailedTransaction(tx, 100)
 	// MockPoolAddressValidator returns false for unknown addresses
 	c.Assert(result, IsNil)
 }
@@ -1085,8 +1099,7 @@ func (s *ScannerBackfillSuite) TestGetTxInFromFailedTransactionBadOwner(c *C) {
 		},
 	}
 
-	result, err := s.scanner.getTxInFromFailedTransaction(tx, 100)
-	c.Assert(err, IsNil)
+	result := s.scanner.getTxInFromFailedTransaction(tx, 100)
 	c.Assert(result, IsNil)
 }
 
@@ -1113,8 +1126,7 @@ func (s *ScannerBackfillSuite) TestGetTxInFromFailedTransactionUnknownType(c *C)
 		},
 	}
 
-	result, err := s.scanner.getTxInFromFailedTransaction(tx, 100)
-	c.Assert(err, IsNil)
+	result := s.scanner.getTxInFromFailedTransaction(tx, 100)
 	// The sender address conversion will succeed but the mock validator returns false
 	c.Assert(result, IsNil)
 }

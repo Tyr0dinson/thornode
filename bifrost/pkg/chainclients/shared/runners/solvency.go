@@ -48,36 +48,14 @@ func SolvencyCheckRunner(chain common.Chain,
 		case <-stopper:
 			return
 		case <-time.After(backOffDuration):
-			// check whether the chain is halted via mimir or not
-			haltHeight, err := bridge.GetMimir(fmt.Sprintf("Halt%sChain", chain))
+			halted, err := IsHaltedOnChain(bridge, chain)
 			if err != nil {
-				logger.Err(err).Msg("fail to get chain halt height")
+				logger.Err(err).Msg("fail to read chain halt state")
 				continue
 			}
-
-			// check whether the chain is halted via solvency check
-			solvencyHaltHeight, err := bridge.GetMimir(fmt.Sprintf("SolvencyHalt%sChain", chain))
-			if err != nil {
-				logger.Err(err).Msg("fail to get solvency halt height")
-				continue
-			}
-
-			thorHeight, err := bridge.GetBlockHeight()
-			if err != nil {
-				logger.Err(err).Msg("fail to get THORChain block height")
-				continue
-			}
-
-			// Halt<chain>Chain values > 1 are height-based and should not activate until THORChain
-			// reaches that height. A value of 1 is treated as an immediate admin halt and should
-			// not trigger runner-driven solvency checks.
-			chainHalted := haltHeight > 1 && thorHeight >= haltHeight
-			// Solvency halts are also height-based, though in practice they are expected to be set
-			// to the current THORChain height by the solvency handler.
-			solvencyHalted := solvencyHaltHeight > 0 && thorHeight >= solvencyHaltHeight
 			// When the chain is not actively halted, the normal chain client will report solvency
 			// when needed.
-			if !chainHalted && !solvencyHalted {
+			if !halted {
 				continue
 			}
 
@@ -94,6 +72,35 @@ func SolvencyCheckRunner(chain common.Chain,
 			}
 		}
 	}
+}
+
+// IsHaltedOnChain reports whether THORChain itself currently has the chain halted,
+// either administratively (Halt<Chain>Chain) or by the solvency handler
+// (SolvencyHalt<Chain>Chain). This is network state: every node reads the same
+// answer, which is what makes it the right gate for solvency "all clear" reports.
+// A chain client's own block-scanner health is not a substitute - it is local to
+// one node, and an all-clear that only one node sends can never reach consensus.
+func IsHaltedOnChain(bridge thorclient.ThorchainBridge, chain common.Chain) (bool, error) {
+	haltHeight, err := bridge.GetMimir(fmt.Sprintf("Halt%sChain", chain))
+	if err != nil {
+		return false, fmt.Errorf("fail to get chain halt height: %w", err)
+	}
+	solvencyHaltHeight, err := bridge.GetMimir(fmt.Sprintf("SolvencyHalt%sChain", chain))
+	if err != nil {
+		return false, fmt.Errorf("fail to get solvency halt height: %w", err)
+	}
+	thorHeight, err := bridge.GetBlockHeight()
+	if err != nil {
+		return false, fmt.Errorf("fail to get THORChain block height: %w", err)
+	}
+	// Halt<chain>Chain values > 1 are height-based and should not activate until THORChain
+	// reaches that height. A value of 1 is treated as an immediate admin halt and should
+	// not trigger runner-driven solvency checks.
+	chainHalted := haltHeight > 1 && thorHeight >= haltHeight
+	// Solvency halts are also height-based, though in practice they are expected to be set
+	// to the current THORChain height by the solvency handler.
+	solvencyHalted := solvencyHaltHeight > 0 && thorHeight >= solvencyHaltHeight
+	return chainHalted || solvencyHalted, nil
 }
 
 // IsVaultSolvent checks whether the chain-specific portion of the given vault is solvent.
