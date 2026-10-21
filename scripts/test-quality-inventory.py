@@ -33,7 +33,7 @@ SELECTIONS = (
     (
         ".",
         "mainnet",
-        ("./common", "./bifrost/pkg/chainclients/utxo/..."),
+        ("./common", "./constants", "./bifrost/pkg/chainclients/utxo/..."),
         "unit-tests test-network-specific",
         None,
     ),
