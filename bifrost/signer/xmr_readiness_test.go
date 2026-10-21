@@ -185,9 +185,12 @@ func (s *SignCoverageSuite) TestXMRScannerAndSigningHaltPoliciesRemainDistinct(c
 		item := NewTxOutStoreItem(90, types.TxOutItem{Chain: common.XMRChain, VaultPubKey: vaultKey, ToAddress: "destination", Memo: "MIGRATE:90"}, 0)
 		reads := bridge.scannerReads
 		_, _, signErr := signer.signAndBroadcast(item)
-		if paused {
+		switch {
+		case paused:
 			c.Assert(signErr, ErrorMatches, ".*block scanner.*unhealthy.*")
-		} else {
+		case scenario.signingHalt > 0:
+			c.Assert(signErr, Equals, errRetryLater)
+		default:
 			c.Assert(signErr, IsNil)
 		}
 		c.Assert(client.signatures.Load(), Equals, scenario.wantSignings, Commentf("%s", scenario.name))
