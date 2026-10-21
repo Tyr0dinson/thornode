@@ -315,7 +315,7 @@ func (s *DynamicFeeMgrSuite) TestMimirResetFaultIsLogged(c *C) {
 }
 
 func (s *DynamicFeeMgrSuite) TestMigrate21to22Faults(c *C) {
-	c.Check(AppModule{}.ConsensusVersion(), Equals, uint64(21))
+	c.Check(AppModule{}.ConsensusVersion(), Equals, uint64(22))
 
 	for _, tc := range []struct {
 		name  string

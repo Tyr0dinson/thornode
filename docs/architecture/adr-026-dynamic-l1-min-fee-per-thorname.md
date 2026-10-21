@@ -775,7 +775,7 @@ floor. Whitelist value `2` changes meaning from monitor to global; no
 mainnet thorname held `2` at the upgrade, so no record changes mode.
 `own_pool_volume_tor`, `blocks` and `pairs` read as zero or empty on
 rows written before them; in-flight accumulators are cleared at the
-upgrade anyway. `Migrate20to21` also sets every record's
+upgrade anyway. `Migrate21to22` also sets every record's
 `span_start_height` to the upgrade height, so the time cap counts from
 the upgrade rather than sealing every record at the first boundary.
 
