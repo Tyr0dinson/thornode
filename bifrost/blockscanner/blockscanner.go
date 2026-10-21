@@ -69,7 +69,7 @@ type BlockScanner struct {
 	stallHeight int64
 	stallSince  time.Time
 
-	shouldObserve         ShouldObserveCallback
+	shouldObserve ShouldObserveCallback
 }
 
 // NewBlockScanner create a new instance of BlockScanner

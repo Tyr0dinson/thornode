@@ -68,7 +68,6 @@ func init() {
 		JailTimeKeygen:                      30,
 		JailTimeKeygenBase:                  30,
 		JailTimeKeysign:                     10,
-		EnableNodeChainConsensus:            1,
 		AsgardSize:                          6,
 		StreamingSwapMinBPFee:               100, // TODO: remove on hard fork
 		EnableAdvSwapQueue:                  1,

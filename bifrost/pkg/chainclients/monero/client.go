@@ -1123,6 +1123,11 @@ func (c *Client) getSpentOutputCatchupVaultKeys() (common.PubKeys, error) {
 	return vaultKeys, nil
 }
 
+// SetShouldObserveCallback sets the callback to determine if this chain should be observed
+func (c *Client) SetShouldObserveCallback(callback func() bool) {
+	c.blockScanner.SetShouldObserveCallback(callback)
+}
+
 func (c *Client) Stop() {
 	c.blockScanner.Stop()
 	c.lifecycleMu.Lock()

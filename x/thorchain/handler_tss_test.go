@@ -2982,7 +2982,7 @@ func (s *HandlerTssSuite) TestVaultCreationWithTargetChains(c *C) {
 		helper.signer,
 		keygenTime,
 		helper.poolPkEddsa,
-		[]byte("backup"),
+		nil,
 		nil,
 		common.EmptyPubKey,
 	)
@@ -3065,7 +3065,7 @@ func (s *HandlerTssSuite) TestVaultCreationFallbackToConsensusChains(c *C) {
 		helper.signer,
 		keygenTime,
 		helper.poolPkEddsa,
-		[]byte("backup"),
+		nil,
 		nil,
 		common.EmptyPubKey,
 	)

@@ -436,6 +436,9 @@ func (o *Observer) IsChainObserved(chain common.Chain) bool {
 
 // updateObservedChains updates which chains should be observed based on vault membership
 func (o *Observer) updateObservedChains() {
+	if o.pubkeyMgr == nil {
+		return
+	}
 	supportedChains := o.pubkeyMgr.GetSupportedChains()
 
 	o.chainsMutex.Lock()

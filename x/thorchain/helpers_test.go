@@ -2814,7 +2814,7 @@ func (s *HelperSuite) TestChainAwareConsensusWithMimir(c *C) {
 
 	// Test 1: With mimir disabled (default), should use all active validators
 	// Only 1 out of 3 validators signed, so no consensus
-	hasConsensus := hasObservedTxChainConsensus(ctx, mgr.Keeper(), voter, common.BTCChain.String())
+	hasConsensus := hasObservedTxChainConsensus(ctx, mgr.Keeper(), voter, common.BTCChain.String(), nil)
 	c.Assert(hasConsensus, Equals, false, Commentf("Should not have consensus with 1/3 signatures"))
 
 	// Add another signature to reach consensus with all active validators
@@ -2826,7 +2826,7 @@ func (s *HelperSuite) TestChainAwareConsensusWithMimir(c *C) {
 		Signers: []string{na2.NodeAddress.String()},
 	}, na2.NodeAddress)
 
-	hasConsensus = hasObservedTxChainConsensus(ctx, mgr.Keeper(), voter, common.BTCChain.String())
+	hasConsensus = hasObservedTxChainConsensus(ctx, mgr.Keeper(), voter, common.BTCChain.String(), nil)
 	c.Assert(hasConsensus, Equals, true, Commentf("Should have consensus with 2/3 signatures (super majority)"))
 
 	// Add third signature
@@ -2838,7 +2838,7 @@ func (s *HelperSuite) TestChainAwareConsensusWithMimir(c *C) {
 		Signers: []string{na3.NodeAddress.String()},
 	}, na3.NodeAddress)
 
-	hasConsensus = hasObservedTxChainConsensus(ctx, mgr.Keeper(), voter, common.BTCChain.String())
+	hasConsensus = hasObservedTxChainConsensus(ctx, mgr.Keeper(), voter, common.BTCChain.String(), nil)
 	c.Assert(hasConsensus, Equals, true, Commentf("Should have consensus with 3/3 signatures"))
 
 	// Test 2: Enable chain-aware consensus via mimir
@@ -2858,7 +2858,7 @@ func (s *HelperSuite) TestChainAwareConsensusWithMimir(c *C) {
 
 	// With chain-aware consensus enabled, only vault members (na1, na2) matter
 	// 1 out of 2 vault members signed, so no consensus yet
-	hasConsensus = hasObservedTxChainConsensus(ctx, mgr.Keeper(), voter2, common.BTCChain.String())
+	hasConsensus = hasObservedTxChainConsensus(ctx, mgr.Keeper(), voter2, common.BTCChain.String(), nil)
 	c.Assert(hasConsensus, Equals, false, Commentf("Should not have chain-aware consensus with 1/2 vault member signatures"))
 
 	// Add signature from second vault member
@@ -2870,7 +2870,7 @@ func (s *HelperSuite) TestChainAwareConsensusWithMimir(c *C) {
 		Signers: []string{na2.NodeAddress.String()},
 	}, na2.NodeAddress)
 
-	hasConsensus = hasObservedTxChainConsensus(ctx, mgr.Keeper(), voter2, common.BTCChain.String())
+	hasConsensus = hasObservedTxChainConsensus(ctx, mgr.Keeper(), voter2, common.BTCChain.String(), nil)
 	c.Assert(hasConsensus, Equals, true, Commentf("Should have chain-aware consensus with 2/2 vault member signatures"))
 
 	// na3 is not a vault member, so their signature doesn't affect chain-aware consensus
@@ -2884,7 +2884,7 @@ func (s *HelperSuite) TestChainAwareConsensusWithMimir(c *C) {
 		},
 	})
 
-	hasConsensus = hasObservedTxChainConsensus(ctx, mgr.Keeper(), voter3, common.BTCChain.String())
+	hasConsensus = hasObservedTxChainConsensus(ctx, mgr.Keeper(), voter3, common.BTCChain.String(), nil)
 	c.Assert(hasConsensus, Equals, false, Commentf("Non-vault member signature should not create consensus"))
 
 	// Test 3: Disable chain-aware consensus again
@@ -2901,7 +2901,7 @@ func (s *HelperSuite) TestChainAwareConsensusWithMimir(c *C) {
 		},
 	})
 
-	hasConsensus = hasObservedTxChainConsensus(ctx, mgr.Keeper(), voter4, common.BTCChain.String())
+	hasConsensus = hasObservedTxChainConsensus(ctx, mgr.Keeper(), voter4, common.BTCChain.String(), nil)
 	c.Assert(hasConsensus, Equals, true, Commentf("With mimir disabled, should have consensus with 2/3 validators (super majority)"))
 }
 
@@ -2926,12 +2926,12 @@ func (s *HelperSuite) TestNetworkFeeChainConsensusWithMimir(c *C) {
 	voter1 := types.NewObservedNetworkFeeVoter(1000, common.ETHChain)
 	voter1.Sign(na1.NodeAddress)
 
-	hasConsensus := hasNetworkFeeChainConsensus(ctx, mgr.Keeper(), voter1)
+	hasConsensus := hasNetworkFeeChainConsensus(ctx, mgr.Keeper(), voter1, nil)
 	c.Assert(hasConsensus, Equals, false, Commentf("Should not have consensus with 1/3 signatures"))
 
 	// Add second signature
 	voter1.Sign(na2.NodeAddress)
-	hasConsensus = hasNetworkFeeChainConsensus(ctx, mgr.Keeper(), voter1)
+	hasConsensus = hasNetworkFeeChainConsensus(ctx, mgr.Keeper(), voter1, nil)
 	c.Assert(hasConsensus, Equals, true, Commentf("Should have consensus with 2/3 signatures (super majority)"))
 
 	// Test 2: Enable chain-aware consensus via mimir
@@ -2943,18 +2943,18 @@ func (s *HelperSuite) TestNetworkFeeChainConsensusWithMimir(c *C) {
 
 	// With chain-aware consensus, only vault members (na1, na2) matter
 	// 1 out of 2 vault members signed, no consensus yet
-	hasConsensus = hasNetworkFeeChainConsensus(ctx, mgr.Keeper(), voter2)
+	hasConsensus = hasNetworkFeeChainConsensus(ctx, mgr.Keeper(), voter2, nil)
 	c.Assert(hasConsensus, Equals, false, Commentf("Should not have chain-aware consensus with 1/2 vault member signatures"))
 
 	// Add signature from second vault member
 	voter2.Sign(na2.NodeAddress)
-	hasConsensus = hasNetworkFeeChainConsensus(ctx, mgr.Keeper(), voter2)
+	hasConsensus = hasNetworkFeeChainConsensus(ctx, mgr.Keeper(), voter2, nil)
 	c.Assert(hasConsensus, Equals, true, Commentf("Should have chain-aware consensus with 2/2 vault member signatures"))
 
 	// na3 is not a vault member, so their signature alone doesn't create consensus
 	voter3 := types.NewObservedNetworkFeeVoter(1002, common.ETHChain)
 	voter3.Sign(na3.NodeAddress)
-	hasConsensus = hasNetworkFeeChainConsensus(ctx, mgr.Keeper(), voter3)
+	hasConsensus = hasNetworkFeeChainConsensus(ctx, mgr.Keeper(), voter3, nil)
 	c.Assert(hasConsensus, Equals, false, Commentf("Non-vault member signature should not create consensus"))
 
 	// Test 3: Disable chain-aware consensus again
@@ -2964,7 +2964,7 @@ func (s *HelperSuite) TestNetworkFeeChainConsensusWithMimir(c *C) {
 	voter4 := types.NewObservedNetworkFeeVoter(1003, common.ETHChain)
 	voter4.Sign(na1.NodeAddress)
 	voter4.Sign(na2.NodeAddress)
-	hasConsensus = hasNetworkFeeChainConsensus(ctx, mgr.Keeper(), voter4)
+	hasConsensus = hasNetworkFeeChainConsensus(ctx, mgr.Keeper(), voter4, nil)
 	c.Assert(hasConsensus, Equals, true, Commentf("With mimir disabled, should have consensus with 2/3 validators (super majority)"))
 }
 
@@ -2990,7 +2990,7 @@ func (s *HelperSuite) TestSolvencyChainConsensusWithMimir(c *C) {
 	voter1 := types.NewSolvencyVoter(txID1, common.BTCChain, btcVault.PubKey, btcVault.Coins, ctx.BlockHeight())
 	voter1.Sign(na1.NodeAddress)
 
-	hasConsensus := hasSolvencyChainConsensus(ctx, mgr.Keeper(), voter1)
+	hasConsensus := hasSolvencyChainConsensus(ctx, mgr.Keeper(), voter1, nil)
 	c.Assert(hasConsensus, Equals, true, Commentf("Should have minority consensus with 1/3 signatures"))
 
 	// Test 2: Enable chain-aware consensus via mimir
@@ -3003,14 +3003,14 @@ func (s *HelperSuite) TestSolvencyChainConsensusWithMimir(c *C) {
 
 	// With chain-aware consensus, only vault members (na1, na2) matter
 	// 1 out of 2 vault members signed, has minority consensus
-	hasConsensus = hasSolvencyChainConsensus(ctx, mgr.Keeper(), voter2)
+	hasConsensus = hasSolvencyChainConsensus(ctx, mgr.Keeper(), voter2, nil)
 	c.Assert(hasConsensus, Equals, true, Commentf("Should have chain-aware minority consensus with 1/2 vault member signatures"))
 
 	// na3 is not a vault member, their signature alone doesn't create consensus with vault members
 	txID3 := GetRandomTxHash()
 	voter3 := types.NewSolvencyVoter(txID3, common.BTCChain, btcVault.PubKey, btcVault.Coins, ctx.BlockHeight()+2)
 	voter3.Sign(na3.NodeAddress)
-	hasConsensus = hasSolvencyChainConsensus(ctx, mgr.Keeper(), voter3)
+	hasConsensus = hasSolvencyChainConsensus(ctx, mgr.Keeper(), voter3, nil)
 	c.Assert(hasConsensus, Equals, false, Commentf("Non-vault member signature should not create consensus"))
 
 	// Test 3: Disable chain-aware consensus again
@@ -3020,7 +3020,7 @@ func (s *HelperSuite) TestSolvencyChainConsensusWithMimir(c *C) {
 	txID4 := GetRandomTxHash()
 	voter4 := types.NewSolvencyVoter(txID4, common.BTCChain, btcVault.PubKey, btcVault.Coins, ctx.BlockHeight()+3)
 	voter4.Sign(na1.NodeAddress)
-	hasConsensus = hasSolvencyChainConsensus(ctx, mgr.Keeper(), voter4)
+	hasConsensus = hasSolvencyChainConsensus(ctx, mgr.Keeper(), voter4, nil)
 	c.Assert(hasConsensus, Equals, true, Commentf("With mimir disabled, should have minority consensus with 1/3 validators"))
 }
 
@@ -3118,31 +3118,32 @@ func (s *HelperSuite) TestGetChainAwareNonSigners(c *C) {
 	btcVault.Membership = []string{na1.PubKeySet.Secp256k1.String(), na2.PubKeySet.Secp256k1.String()}
 	c.Assert(mgr.Keeper().SetVault(ctx, btcVault), IsNil)
 
-	// Test 1: With chain-aware consensus enabled (default in mocknet), only vault members matter
+	// Test 1: With chain-aware consensus enabled, only vault members matter
+	mgr.Keeper().SetMimir(ctx, constants.EnableNodeChainConsensus.String(), 1)
 	signers := []cosmos.AccAddress{na1.NodeAddress}
-	nonSigners := getChainAwareNonSigners(ctx, mgr.Keeper(), common.BTCChain.String(), signers)
+	nonSigners := getChainAwareNonSigners(ctx, mgr.Keeper(), common.BTCChain.String(), signers, nil)
 	c.Assert(len(nonSigners), Equals, 1, Commentf("Should return 1 non-signer from vault members"))
 	c.Assert(nonSigners[0].Equals(na2.NodeAddress), Equals, true, Commentf("na2 should be the only non-signer"))
 
 	// Test 2: All vault members signed
 	signers = []cosmos.AccAddress{na1.NodeAddress, na2.NodeAddress}
-	nonSigners = getChainAwareNonSigners(ctx, mgr.Keeper(), common.BTCChain.String(), signers)
+	nonSigners = getChainAwareNonSigners(ctx, mgr.Keeper(), common.BTCChain.String(), signers, nil)
 	c.Assert(len(nonSigners), Equals, 0, Commentf("Should return empty when all vault members signed"))
 
 	// Test 3: None of the vault members signed
 	signers = []cosmos.AccAddress{na3.NodeAddress} // na3 is not a vault member
-	nonSigners = getChainAwareNonSigners(ctx, mgr.Keeper(), common.BTCChain.String(), signers)
+	nonSigners = getChainAwareNonSigners(ctx, mgr.Keeper(), common.BTCChain.String(), signers, nil)
 	c.Assert(len(nonSigners), Equals, 2, Commentf("Should return all vault members as non-signers"))
 
 	// Test 4: No vault members for chain (should return empty to avoid slashing)
-	nonSigners = getChainAwareNonSigners(ctx, mgr.Keeper(), common.ETHChain.String(), signers)
+	nonSigners = getChainAwareNonSigners(ctx, mgr.Keeper(), common.ETHChain.String(), signers, nil)
 	c.Assert(len(nonSigners), Equals, 0, Commentf("Should return empty when no vault members for chain"))
 
 	// Test 5: Disable chain-aware consensus to test legacy behavior
 	mgr.Keeper().SetMimir(ctx, constants.EnableNodeChainConsensus.String(), 0)
 
 	signers = []cosmos.AccAddress{na1.NodeAddress}
-	nonSigners = getChainAwareNonSigners(ctx, mgr.Keeper(), common.BTCChain.String(), signers)
+	nonSigners = getChainAwareNonSigners(ctx, mgr.Keeper(), common.BTCChain.String(), signers, nil)
 	c.Assert(len(nonSigners), Equals, 2, Commentf("Should return 2 non-signers from all active validators in legacy mode"))
 
 	// Verify na2 and na3 are non-signers
@@ -3252,12 +3253,12 @@ func (s *HelperSuite) TestHasErrataTxChainConsensus(c *C) {
 	voter1 := types.NewErrataTxVoter(txID1, common.BTCChain)
 	voter1.Sign(na1.NodeAddress)
 
-	hasConsensus := hasErrataTxChainConsensus(ctx, mgr.Keeper(), voter1)
+	hasConsensus := hasErrataTxChainConsensus(ctx, mgr.Keeper(), voter1, nil)
 	c.Assert(hasConsensus, Equals, false, Commentf("Should not have consensus with 1/3 signatures (need super majority)"))
 
 	// Add second signature to reach super majority
 	voter1.Sign(na2.NodeAddress)
-	hasConsensus = hasErrataTxChainConsensus(ctx, mgr.Keeper(), voter1)
+	hasConsensus = hasErrataTxChainConsensus(ctx, mgr.Keeper(), voter1, nil)
 	c.Assert(hasConsensus, Equals, true, Commentf("Should have consensus with 2/3 signatures (super majority)"))
 
 	// Test 2: Enable chain-aware consensus via mimir
@@ -3270,25 +3271,25 @@ func (s *HelperSuite) TestHasErrataTxChainConsensus(c *C) {
 
 	// With chain-aware consensus, only vault members (na1, na2) matter
 	// 1 out of 2 vault members signed, no super majority yet
-	hasConsensus = hasErrataTxChainConsensus(ctx, mgr.Keeper(), voter2)
+	hasConsensus = hasErrataTxChainConsensus(ctx, mgr.Keeper(), voter2, nil)
 	c.Assert(hasConsensus, Equals, false, Commentf("Should not have chain-aware consensus with 1/2 vault member signatures"))
 
 	// Add signature from second vault member to reach super majority
 	voter2.Sign(na2.NodeAddress)
-	hasConsensus = hasErrataTxChainConsensus(ctx, mgr.Keeper(), voter2)
+	hasConsensus = hasErrataTxChainConsensus(ctx, mgr.Keeper(), voter2, nil)
 	c.Assert(hasConsensus, Equals, true, Commentf("Should have chain-aware consensus with 2/2 vault member signatures (super majority)"))
 
 	// Test 3: Non-vault member signature should not create consensus
 	txID3 := GetRandomTxHash()
 	voter3 := types.NewErrataTxVoter(txID3, common.BTCChain)
 	voter3.Sign(na3.NodeAddress) // na3 is not a vault member
-	hasConsensus = hasErrataTxChainConsensus(ctx, mgr.Keeper(), voter3)
+	hasConsensus = hasErrataTxChainConsensus(ctx, mgr.Keeper(), voter3, nil)
 	c.Assert(hasConsensus, Equals, false, Commentf("Non-vault member signature should not create consensus"))
 
 	// Test 4: No vault members for chain
 	voter4 := types.NewErrataTxVoter(GetRandomTxHash(), common.ETHChain)
 	voter4.Sign(na1.NodeAddress)
-	hasConsensus = hasErrataTxChainConsensus(ctx, mgr.Keeper(), voter4)
+	hasConsensus = hasErrataTxChainConsensus(ctx, mgr.Keeper(), voter4, nil)
 	c.Assert(hasConsensus, Equals, false, Commentf("Should not have consensus when no vault members for chain"))
 
 	// Test 5: Disable chain-aware consensus again
@@ -3299,6 +3300,6 @@ func (s *HelperSuite) TestHasErrataTxChainConsensus(c *C) {
 	voter5 := types.NewErrataTxVoter(txID5, common.BTCChain)
 	voter5.Sign(na1.NodeAddress)
 	voter5.Sign(na2.NodeAddress)
-	hasConsensus = hasErrataTxChainConsensus(ctx, mgr.Keeper(), voter5)
+	hasConsensus = hasErrataTxChainConsensus(ctx, mgr.Keeper(), voter5, nil)
 	c.Assert(hasConsensus, Equals, true, Commentf("With mimir disabled, should have consensus with 2/3 validators (super majority)"))
 }

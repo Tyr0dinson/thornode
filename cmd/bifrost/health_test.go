@@ -194,7 +194,7 @@ func (HealthServerTestSuite) TestClassifyHost(c *C) {
 
 func (HealthServerTestSuite) TestVersionHandler(c *C) {
 	tssServer := &MockTssServer{}
-	s := NewHealthServer("127.0.0.1:8080", tssServer, nil)
+	s := NewHealthServer("127.0.0.1:8080", tssServer, nil, nil)
 	c.Assert(s, NotNil)
 	req := httptest.NewRequest(http.MethodGet, "/version", nil)
 	res := httptest.NewRecorder()
@@ -215,7 +215,7 @@ func (HealthServerTestSuite) TestProviderStatusHandler(c *C) {
 	tssServer := &MockTssServer{}
 
 	// handler returns 500 when payload is nil (marshal failure path)
-	s := NewHealthServer("127.0.0.1:8080", tssServer, nil)
+	s := NewHealthServer("127.0.0.1:8080", tssServer, nil, nil)
 	s.providerPayload = nil
 	req := httptest.NewRequest(http.MethodGet, "/status/provider", nil)
 	res := httptest.NewRecorder()

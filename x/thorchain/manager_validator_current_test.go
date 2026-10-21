@@ -2773,7 +2773,8 @@ func (vts *ValidatorMgrTestSuite) TestMultipleChainRewards(c *C) {
 
 	// Set up network with different rewards for each chain
 	network, _ := networkMgr.k.GetNetwork(ctx)
-	network.BondRewardRune = cosmos.NewUint(2 * common.One) // Total available rewards
+	// Total available rewards: the per-chain buckets are an attribution of it
+	network.BondRewardRune = cosmos.NewUint(200 * common.One)
 
 	// ETH has more rewards
 	network.SetChainRewardAmount(common.ETHChain.String(), cosmos.NewUint(120*common.One)) // 120 RUNE

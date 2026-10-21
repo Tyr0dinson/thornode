@@ -1747,17 +1747,25 @@ func getVaultMembersForChain(ctx cosmos.Context, k keeper.Keeper, chain string) 
 	return members, nil
 }
 
+// legacyActiveValidators returns the active validators used when chain-aware
+// consensus is disabled: the caller's set when provided, else the keeper's.
+func legacyActiveValidators(ctx cosmos.Context, k keeper.Keeper, active NodeAccounts) (NodeAccounts, error) {
+	if active != nil {
+		return active, nil
+	}
+	return k.ListActiveValidators(ctx)
+}
+
 // getChainAwareNonSigners returns nodes who should have observed the transaction but didn't sign
 // Checks the EnableNodeChainConsensus mimir to enable/disable the feature
 // When enabled, only includes nodes that are members of active vaults supporting the specific chain
 // When disabled, falls back to all active validators
-func getChainAwareNonSigners(ctx cosmos.Context, k keeper.Keeper, chain string, signers []cosmos.AccAddress) []cosmos.AccAddress {
+func getChainAwareNonSigners(ctx cosmos.Context, k keeper.Keeper, chain string, signers []cosmos.AccAddress, active NodeAccounts) []cosmos.AccAddress {
 	// Check if chain-aware consensus is enabled via mimir
 	enableChainConsensus := k.GetConfigInt64(ctx, constants.EnableNodeChainConsensus)
 	if enableChainConsensus <= 0 {
-		// If mimir is not set or disabled, fall back to all active validators
-		var activeNodeAccounts NodeAccounts
-		activeNodeAccounts, err := k.ListActiveValidators(ctx)
+		// If mimir is not set or disabled, fall back to the caller's active validators
+		activeNodeAccounts, err := legacyActiveValidators(ctx, k, active)
 		if err != nil {
 			ctx.Logger().Error("failed to get active validators for non-signers", "error", err)
 			return nil
@@ -1842,25 +1850,18 @@ func getNodeSupportedChains(ctx cosmos.Context, k keeper.Keeper, node NodeAccoun
 
 // hasNetworkFeeChainConsensus determines if network fee has enough signers among chain-specific vault members
 // Checks the EnableNodeChainConsensus mimir to enable/disable the feature
-func hasNetworkFeeChainConsensus(ctx cosmos.Context, k keeper.Keeper, voter ObservedNetworkFeeVoter) bool {
+func hasNetworkFeeChainConsensus(ctx cosmos.Context, k keeper.Keeper, voter ObservedNetworkFeeVoter, active NodeAccounts) bool {
 	// Check if chain-aware consensus is enabled via mimir
 	enableChainConsensus := k.GetConfigInt64(ctx, constants.EnableNodeChainConsensus)
 	if enableChainConsensus <= 0 {
-		// If mimir is not set or disabled, fall back to all active validators
-		var activeNodeAccounts NodeAccounts
-		activeNodeAccounts, err := k.ListActiveValidators(ctx)
+		// If mimir is not set or disabled, fall back to the caller's active validators
+		activeNodeAccounts, err := legacyActiveValidators(ctx, k, active)
 		if err != nil {
 			ctx.Logger().Error("failed to get active validators for network fee consensus", "error", err)
 			return false
 		}
 
-		var count int
-		for _, signer := range voter.GetSigners() {
-			if activeNodeAccounts.IsNodeKeys(signer) {
-				count++
-			}
-		}
-		return HasSuperMajority(count, len(activeNodeAccounts))
+		return voter.HasConsensus(activeNodeAccounts)
 	}
 
 	// Get eligible vault members for this chain
@@ -1899,25 +1900,18 @@ func hasNetworkFeeChainConsensus(ctx cosmos.Context, k keeper.Keeper, voter Obse
 
 // hasSolvencyChainConsensus determines if solvency has enough signers among chain-specific vault members
 // Checks the EnableNodeChainConsensus mimir to enable/disable the feature
-func hasSolvencyChainConsensus(ctx cosmos.Context, k keeper.Keeper, voter SolvencyVoter) bool {
+func hasSolvencyChainConsensus(ctx cosmos.Context, k keeper.Keeper, voter SolvencyVoter, active NodeAccounts) bool {
 	// Check if chain-aware consensus is enabled via mimir
 	enableChainConsensus := k.GetConfigInt64(ctx, constants.EnableNodeChainConsensus)
 	if enableChainConsensus <= 0 {
-		// If mimir is not set or disabled, fall back to all active validators
-		var activeNodeAccounts NodeAccounts
-		activeNodeAccounts, err := k.ListActiveValidators(ctx)
+		// If mimir is not set or disabled, fall back to the caller's active validators
+		activeNodeAccounts, err := legacyActiveValidators(ctx, k, active)
 		if err != nil {
 			ctx.Logger().Error("failed to get active validators for solvency consensus", "error", err)
 			return false
 		}
 
-		var count int
-		for _, signer := range voter.GetSigners() {
-			if activeNodeAccounts.IsNodeKeys(signer) {
-				count++
-			}
-		}
-		return HasMinority(count, len(activeNodeAccounts))
+		return voter.HasConsensus(activeNodeAccounts)
 	}
 
 	// Get eligible vault members for this chain
@@ -1956,25 +1950,18 @@ func hasSolvencyChainConsensus(ctx cosmos.Context, k keeper.Keeper, voter Solven
 
 // hasErrataTxChainConsensus determines if errata tx has enough signers among chain-specific vault members
 // Checks the EnableNodeChainConsensus mimir to enable/disable the feature
-func hasErrataTxChainConsensus(ctx cosmos.Context, k keeper.Keeper, voter ErrataTxVoter) bool {
+func hasErrataTxChainConsensus(ctx cosmos.Context, k keeper.Keeper, voter ErrataTxVoter, active NodeAccounts) bool {
 	// Check if chain-aware consensus is enabled via mimir
 	enableChainConsensus := k.GetConfigInt64(ctx, constants.EnableNodeChainConsensus)
 	if enableChainConsensus <= 0 {
-		// If mimir is not set or disabled, fall back to all active validators
-		var activeNodeAccounts NodeAccounts
-		activeNodeAccounts, err := k.ListActiveValidators(ctx)
+		// If mimir is not set or disabled, fall back to the caller's active validators
+		activeNodeAccounts, err := legacyActiveValidators(ctx, k, active)
 		if err != nil {
 			ctx.Logger().Error("failed to get active validators for errata tx consensus", "error", err)
 			return false
 		}
 
-		var count int
-		for _, signer := range voter.GetSigners() {
-			if activeNodeAccounts.IsNodeKeys(signer) {
-				count++
-			}
-		}
-		return HasSuperMajority(count, len(activeNodeAccounts))
+		return voter.HasConsensus(activeNodeAccounts)
 	}
 
 	// Get eligible vault members for this chain
@@ -2013,13 +2000,12 @@ func hasErrataTxChainConsensus(ctx cosmos.Context, k keeper.Keeper, voter Errata
 
 // hasObservedTxChainConsensus determines if an observed tx voter has chain-aware consensus
 // Checks the EnableNodeChainConsensus mimir to enable/disable the feature
-func hasObservedTxChainConsensus(ctx cosmos.Context, k keeper.Keeper, voter ObservedTxVoter, chain string) bool {
+func hasObservedTxChainConsensus(ctx cosmos.Context, k keeper.Keeper, voter ObservedTxVoter, chain string, active NodeAccounts) bool {
 	// Check if chain-aware consensus is enabled via mimir
 	enableChainConsensus := k.GetConfigInt64(ctx, constants.EnableNodeChainConsensus)
 	if enableChainConsensus <= 0 {
-		// If mimir is not set or disabled, fall back to all active validators
-		var activeNodeAccounts NodeAccounts
-		activeNodeAccounts, err := k.ListActiveValidators(ctx)
+		// If mimir is not set or disabled, fall back to the caller's active validators
+		activeNodeAccounts, err := legacyActiveValidators(ctx, k, active)
 		if err != nil {
 			ctx.Logger().Error("failed to get active validators for consensus", "error", err)
 			return false
@@ -2055,13 +2041,12 @@ func hasObservedTxChainConsensus(ctx cosmos.Context, k keeper.Keeper, voter Obse
 
 // hasObservedTxChainFinalised determines if an observed tx voter has chain-aware finalization
 // Checks the EnableNodeChainConsensus mimir to enable/disable the feature
-func hasObservedTxChainFinalised(ctx cosmos.Context, k keeper.Keeper, voter ObservedTxVoter, chain string) bool {
+func hasObservedTxChainFinalised(ctx cosmos.Context, k keeper.Keeper, voter ObservedTxVoter, chain string, active NodeAccounts) bool {
 	// Check if chain-aware consensus is enabled via mimir
 	enableChainConsensus := k.GetConfigInt64(ctx, constants.EnableNodeChainConsensus)
 	if enableChainConsensus <= 0 {
-		// If mimir is not set or disabled, fall back to all active validators
-		var activeNodeAccounts NodeAccounts
-		activeNodeAccounts, err := k.ListActiveValidators(ctx)
+		// If mimir is not set or disabled, fall back to the caller's active validators
+		activeNodeAccounts, err := legacyActiveValidators(ctx, k, active)
 		if err != nil {
 			ctx.Logger().Error("failed to get active validators for finalization", "error", err)
 			return false
@@ -2959,6 +2944,11 @@ func countActiveValidatorsForChain(ctx cosmos.Context, mgr Manager, chain common
 func validateChainLiquidityCap(ctx cosmos.Context, mgr Manager, chain common.Chain, additionalRune, assetAmount cosmos.Uint, pool Pool) error {
 	// Skip for empty chains or THORChain
 	if chain.IsEmpty() || chain.IsTHORChain() {
+		return nil
+	}
+	// Without chain-aware consensus every validator serves every chain, so
+	// there is no partially supported chain to cap.
+	if mgr.Keeper().GetConfigInt64(ctx, constants.EnableNodeChainConsensus) <= 0 {
 		return nil
 	}
 

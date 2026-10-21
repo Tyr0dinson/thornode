@@ -43,7 +43,8 @@ func (m *mockChainNoVaultLock) GetBlockScannerHeight() (int64, error)    { retur
 func (m *mockChainNoVaultLock) GetLatestTxForVault(string) (string, string, error) {
 	return "", "", nil
 }
-func (m *mockChainNoVaultLock) RollbackBlockScanner() error { return nil }
+func (m *mockChainNoVaultLock) RollbackBlockScanner() error          { return nil }
+func (m *mockChainNoVaultLock) SetShouldObserveCallback(func() bool) {}
 
 type mockChainWithVaultLock struct {
 	mockChainNoVaultLock

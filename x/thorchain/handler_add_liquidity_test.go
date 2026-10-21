@@ -1526,6 +1526,7 @@ func (s *HandlerAddLiquiditySuite) TestChainLiquidityRunePerValidatorLimit(c *C)
 	ctx, mgr := setupManagerForTest(c)
 
 	// Set ChainLiquidityRunePerValidator to 100k RUNE
+	mgr.Keeper().SetMimir(ctx, constants.EnableNodeChainConsensus.String(), 1)
 	mgr.Keeper().SetMimir(ctx, constants.ChainLiquidityRunePerValidator.String(), 100_000_00000000)
 
 	// Create a test chain (BTC) that will NOT have super majority support
@@ -1691,6 +1692,7 @@ func (s *HandlerAddLiquiditySuite) TestChainLiquidityRunePerValidatorVaultBased(
 	ctx, mgr := setupManagerForTest(c)
 
 	// Set ChainLiquidityRunePerValidator to 100k RUNE
+	mgr.Keeper().SetMimir(ctx, constants.EnableNodeChainConsensus.String(), 1)
 	mgr.Keeper().SetMimir(ctx, constants.ChainLiquidityRunePerValidator.String(), 100_000_00000000)
 
 	// Create 4 validators
@@ -1973,6 +1975,7 @@ func (s *HandlerAddLiquiditySuite) TestChainLiquidityValidationEdgeCases(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 
 	// Set ChainLiquidityRunePerValidator to 100k RUNE
+	mgr.Keeper().SetMimir(ctx, constants.EnableNodeChainConsensus.String(), 1)
 	mgr.Keeper().SetMimir(ctx, constants.ChainLiquidityRunePerValidator.String(), 100_000_00000000)
 
 	// Create 4 validators, only 2 support BTC (no super majority)
@@ -2077,6 +2080,7 @@ func (s *HandlerAddLiquiditySuite) TestChainLiquidityWithNoValidators(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 
 	// Set ChainLiquidityRunePerValidator to 100k RUNE
+	mgr.Keeper().SetMimir(ctx, constants.EnableNodeChainConsensus.String(), 1)
 	mgr.Keeper().SetMimir(ctx, constants.ChainLiquidityRunePerValidator.String(), 100_000_00000000)
 
 	// Create 4 validators, NONE support BTC
