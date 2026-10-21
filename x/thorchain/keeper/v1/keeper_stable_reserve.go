@@ -71,7 +71,7 @@ func (k KVStore) GetStableReserveCreditIterator(ctx cosmos.Context) cosmos.Itera
 // correct basis for credits written before basis tracking existed: those
 // deposits never contributed to the aggregate either.
 func (k KVStore) GetStableReserveCreditBasis(ctx cosmos.Context, asset common.Asset, addr common.Address) (cosmos.Uint, error) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	key := k.GetKey(prefixStableReserveBasis, stableReserveCreditKey(asset, addr))
 	if !store.Has(key) {
 		return cosmos.ZeroUint(), nil
@@ -82,7 +82,7 @@ func (k KVStore) GetStableReserveCreditBasis(ctx cosmos.Context, asset common.As
 // SetStableReserveCreditBasis stores a contributor's credit basis. A zero value
 // deletes the key so Get round-trips back to zero.
 func (k KVStore) SetStableReserveCreditBasis(ctx cosmos.Context, asset common.Asset, addr common.Address, basis cosmos.Uint) error {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	key := k.GetKey(prefixStableReserveBasis, stableReserveCreditKey(asset, addr))
 	if basis.IsZero() {
 		store.Delete(key)
@@ -100,7 +100,7 @@ const stableReserveDepositValueKey = "total"
 // GetStableReserveDepositValue returns the aggregate USD value of all stable
 // reserve deposits, in 1e8 fixed-point (1e8 = $1). Returns zero when unset.
 func (k KVStore) GetStableReserveDepositValue(ctx cosmos.Context) (cosmos.Uint, error) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	key := k.GetKey(prefixStableReserveDeposit, stableReserveDepositValueKey)
 	if !store.Has(key) {
 		return cosmos.ZeroUint(), nil
@@ -111,7 +111,7 @@ func (k KVStore) GetStableReserveDepositValue(ctx cosmos.Context) (cosmos.Uint, 
 // SetStableReserveDepositValue stores the aggregate USD deposit value. A zero
 // value deletes the key so Get round-trips back to zero.
 func (k KVStore) SetStableReserveDepositValue(ctx cosmos.Context, value cosmos.Uint) error {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	key := k.GetKey(prefixStableReserveDeposit, stableReserveDepositValueKey)
 	if value.IsZero() {
 		store.Delete(key)
