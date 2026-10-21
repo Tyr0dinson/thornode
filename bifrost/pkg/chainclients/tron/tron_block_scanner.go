@@ -29,6 +29,17 @@ import (
 
 var updateGasInterval int64 = 30
 
+// batchReceiptMinTxs is the number of vault-involved transactions in a block
+// from which their fees are resolved with one gettransactioninfobyblocknum
+// call instead of one gettransactioninfobyid call each. The batch response
+// carries the info of every transaction in the block (~100-400 KB on mainnet,
+// ~0.25s on TronGrid vs ~0.12s for a ~200 B single lookup), so below this it
+// costs more than the individual calls it replaces. Mainnet sample over 24h:
+// ~7% of blocks carry a vault transaction and none carry more than two, so the
+// batch only engages for unusual bursts (e.g. many transfers sent to a vault
+// in one block).
+const batchReceiptMinTxs = 3
+
 type ReportSolvency func(int64) error
 
 type RefBlock struct {
@@ -228,6 +239,9 @@ func (s *TronBlockScanner) processTxs(
 
 	contracts := map[string]struct{}{}
 
+	// Every item collected below needs its fee from the transaction info.
+	// Filtering only reads the block payload, so collect the items first and
+	// resolve the fees afterwards, once their number is known.
 	for _, rawTx := range block.Transactions {
 		logger := s.logger.With().Str("hash", rawTx.TxId).Logger()
 
@@ -248,10 +262,7 @@ func (s *TronBlockScanner) processTxs(
 		// check for failed outbound transactions from vaults
 		if rawTx.Ret[0].ContractRet != "SUCCESS" {
 			// process failed transactions that originated from a vault
-			txInItem, err := s.getTxInFromFailedTransaction(&rawTx, height)
-			if err != nil {
-				return nil, err
-			}
+			txInItem := s.getTxInFromFailedTransaction(&rawTx, height)
 			if txInItem != nil {
 				txInItems = append(txInItems, txInItem)
 			}
@@ -379,22 +390,6 @@ func (s *TronBlockScanner) processTxs(
 			continue
 		}
 
-		// get fee
-		info, err := s.getBlockReceipt(rawTx.TxId, height)
-		if err != nil {
-			return nil, err
-		}
-
-		gasAmount := math.NewUint(info.Fee).Mul(math.NewUint(100))
-		if gasAmount.IsZero() {
-			gasAmount = math.NewUint(1)
-		}
-		gas := common.Gas{{
-			Amount:   gasAmount,
-			Asset:    common.TRXAsset,
-			Decimals: 6,
-		}}
-
 		txInItems = append(txInItems, &types.TxInItem{
 			Tx:          rawTx.TxId,
 			BlockHeight: height,
@@ -402,17 +397,49 @@ func (s *TronBlockScanner) processTxs(
 			Sender:      sender,
 			To:          dest,
 			Coins:       coins,
-			Gas:         gas,
 		})
+	}
+
+	if err := s.setReceiptGas(txInItems, height); err != nil {
+		return nil, err
 	}
 
 	return txInItems, nil
 }
 
+// setReceiptGas sets the gas of every item from its transaction info, batching
+// the lookups into one call when the block has at least batchReceiptMinTxs
+// items. Any unavailable or mismatched receipt fails the whole block.
+func (s *TronBlockScanner) setReceiptGas(txInItems []*types.TxInItem, height int64) error {
+	if len(txInItems) == 0 {
+		return nil
+	}
+
+	txInfos := s.api.NewTxInfoResolver(height, len(txInItems) >= batchReceiptMinTxs)
+	for _, item := range txInItems {
+		info, err := s.getBlockReceipt(txInfos, item.Tx, height)
+		if err != nil {
+			return err
+		}
+
+		gasAmount := math.NewUint(info.Fee).Mul(math.NewUint(100))
+		if gasAmount.IsZero() {
+			gasAmount = math.NewUint(1)
+		}
+		item.Gas = common.Gas{{
+			Amount:   gasAmount,
+			Asset:    common.TRXAsset,
+			Decimals: 6,
+		}}
+	}
+
+	return nil
+}
+
 // getBlockReceipt requires inclusion in the block being scanned. The shared API
 // still permits empty lookups for transactions not yet included in a block.
-func (s *TronBlockScanner) getBlockReceipt(txID string, height int64) (api.TransactionInfo, error) {
-	info, err := s.api.GetTransactionInfo(txID)
+func (s *TronBlockScanner) getBlockReceipt(txInfos *api.TxInfoResolver, txID string, height int64) (api.TransactionInfo, error) {
+	info, err := txInfos.Get(txID)
 	if err != nil {
 		return api.TransactionInfo{}, fmt.Errorf("%w: transaction %s receipt: %w", btypes.ErrUnavailableBlock, txID, err)
 	}
@@ -424,24 +451,24 @@ func (s *TronBlockScanner) getBlockReceipt(txID string, height int64) (api.Trans
 
 // getTxInFromFailedTransaction processes a failed transaction and returns a TxInItem if it
 // originated from a vault. This allows the vault accounting to be updated for gas spent on
-// failed outbound transactions.
+// failed outbound transactions. The caller sets the item's gas from its receipt.
 func (s *TronBlockScanner) getTxInFromFailedTransaction(
 	rawTx *api.Transaction,
 	height int64,
-) (*types.TxInItem, error) {
+) *types.TxInItem {
 	raw := rawTx.RawData.Contract[0]
 
 	// get sender address
 	sender, err := api.ConvertAddress(raw.Parameter.Value.OwnerAddress)
 	if err != nil {
 		s.logger.Err(err).Msg("failed to convert sender address")
-		return nil, nil
+		return nil
 	}
 
 	// check if the sender is a vault address
 	ok, cif := s.pubkeyMgr.IsValidPoolAddress(sender, s.config.ChainID)
 	if !ok || cif.IsEmpty() {
-		return nil, nil
+		return nil
 	}
 
 	// get destination address
@@ -451,33 +478,17 @@ func (s *TronBlockScanner) getTxInFromFailedTransaction(
 		dest, err = api.ConvertAddress(raw.Parameter.Value.ToAddress)
 		if err != nil {
 			s.logger.Err(err).Msg("failed to convert destination address")
-			return nil, nil
+			return nil
 		}
 	case "TriggerSmartContract":
 		dest, err = api.ConvertAddress(raw.Parameter.Value.ContractAddress)
 		if err != nil {
 			s.logger.Err(err).Msg("failed to convert contract address")
-			return nil, nil
+			return nil
 		}
 	default:
-		return nil, nil
+		return nil
 	}
-
-	// get fee
-	info, err := s.getBlockReceipt(rawTx.TxId, height)
-	if err != nil {
-		return nil, err
-	}
-
-	gasAmount := math.NewUint(info.Fee).Mul(math.NewUint(100))
-	if gasAmount.IsZero() {
-		gasAmount = math.NewUint(1)
-	}
-	gas := common.Gas{{
-		Amount:   gasAmount,
-		Asset:    common.TRXAsset,
-		Decimals: 6,
-	}}
 
 	return &types.TxInItem{
 		Tx:          rawTx.TxId,
@@ -487,8 +498,7 @@ func (s *TronBlockScanner) getTxInFromFailedTransaction(
 		Sender: sender,
 		To:     dest,
 		Coins:  common.NewCoins(common.NewCoin(common.TRXAsset, math.NewUint(1))),
-		Gas:    gas,
-	}, nil
+	}
 }
 
 func (s *TronBlockScanner) decodeTRC20Input(
