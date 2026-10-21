@@ -74,7 +74,7 @@ Always add unit tests alongside each file (`_test.go` siblings). Do **not** crea
 
 Read `references/interface.md` for the full interface definitions. You must implement:
 
-1. **`ChainClient`** (17 methods) — defined in `bifrost/pkg/chainclients/shared/types/types.go`
+1. **`ChainClient`** (18 methods) — defined in `bifrost/pkg/chainclients/shared/types/types.go`
 2. **`BlockScannerFetcher`** (4 methods) — defined in `bifrost/blockscanner/blockscanner.go`
 3. **`SolvencyCheckProvider`** (3 methods) — defined in `bifrost/pkg/chainclients/shared/runners/solvency.go`
 

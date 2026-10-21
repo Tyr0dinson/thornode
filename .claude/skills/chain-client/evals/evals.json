@@ -18,7 +18,7 @@
     {
       "id": 2,
       "prompt": "Review the XRP chain client for correctness and test coverage. Tell me if there are any gaps or issues.",
-      "expected_output": "A thorough verification covering: interface compliance check (all 17 ChainClient methods), BlockScannerFetcher compliance, solvency provider check, instant observation support in SignTx, confirmation count strategy, signer cache usage, concurrency safety, test coverage analysis with specific gaps identified.",
+      "expected_output": "A thorough verification covering: interface compliance check (all 18 ChainClient methods), BlockScannerFetcher compliance, solvency provider check, instant observation support in SignTx, confirmation count strategy, signer cache usage, concurrency safety, test coverage analysis with specific gaps identified.",
       "files": [],
       "assertions": [
         "Reads the actual xrp client source rather than describing it from memory",
