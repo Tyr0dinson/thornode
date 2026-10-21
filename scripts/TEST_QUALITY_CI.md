@@ -2,21 +2,21 @@
 
 The root Go module and `test/simulation` are independent modules. Run the fast
 checks with the Go version specified by their `go.mod` files. The root module
-currently pins Go 1.26.9; the nested module requires 1.26.9. Limit concurrent
+currently pins Go 1.26.10; the nested module requires 1.26.10. Limit concurrent
 builds on a shared host with `flock /tmp/thornode-test-quality-build.lock` and
 `GOMAXPROCS=4 GOFLAGS=-p=2`. Use a writable `GOCACHE` if the shared cache is
-read only. Put the Go 1.26.9 toolchain's `bin` directory first on `PATH` and
-set `GOTOOLCHAIN=local`; verify `go version` reports `go1.26.9` before testing.
+read only. Put the Go 1.26.10 toolchain's `bin` directory first on `PATH` and
+set `GOTOOLCHAIN=local`; verify `go version` reports `go1.26.10` before testing.
 
 Fast MR commands, in dependency order (run each `make` command under the shared
 lock on a shared host):
 
 ```sh
 python3 -m unittest discover -s scripts/tests -p 'test_quality_*_test.py' -v
-GOTOOLCHAIN=go1.26.9 GOMAXPROCS=4 GOFLAGS=-p=2 flock -w 600 /tmp/thornode-test-quality-build.lock make test-quality-mainnet
-GOTOOLCHAIN=go1.26.9 GOMAXPROCS=4 GOFLAGS=-p=2 flock -w 600 /tmp/thornode-test-quality-build.lock make test-quality-simulation
-GOTOOLCHAIN=go1.26.9 GOMAXPROCS=4 GOFLAGS=-p=2 flock -w 600 /tmp/thornode-test-quality-build.lock make test-coverage-sum
-GOTOOLCHAIN=go1.26.9 GOMAXPROCS=4 GOFLAGS=-p=2 flock -w 600 /tmp/thornode-test-quality-build.lock make test-race-bifrost
+GOTOOLCHAIN=go1.26.10 GOMAXPROCS=4 GOFLAGS=-p=2 flock -w 600 /tmp/thornode-test-quality-build.lock make test-quality-mainnet
+GOTOOLCHAIN=go1.26.10 GOMAXPROCS=4 GOFLAGS=-p=2 flock -w 600 /tmp/thornode-test-quality-build.lock make test-quality-simulation
+GOTOOLCHAIN=go1.26.10 GOMAXPROCS=4 GOFLAGS=-p=2 flock -w 600 /tmp/thornode-test-quality-build.lock make test-coverage-sum
+GOTOOLCHAIN=go1.26.10 GOMAXPROCS=4 GOFLAGS=-p=2 flock -w 600 /tmp/thornode-test-quality-build.lock make test-race-bifrost
 ```
 
 `test-quality-mainnet` requires the Monero fail-closed test to pass. The runner
@@ -52,8 +52,8 @@ diagnostic; it has no arbitrary coverage threshold.
 Deeper runs on isolated infrastructure:
 
 ```sh
-GOTOOLCHAIN=go1.26.9 GOMAXPROCS=4 GOFLAGS=-p=2 make test-regression
-GOTOOLCHAIN=go1.26.9 GOMAXPROCS=4 GOFLAGS=-p=2 make test-simulation-cluster-native TEST_SIMULATION_REQUIRE_XMR=1
+GOTOOLCHAIN=go1.26.10 GOMAXPROCS=4 GOFLAGS=-p=2 make test-regression
+GOTOOLCHAIN=go1.26.10 GOMAXPROCS=4 GOFLAGS=-p=2 make test-simulation-cluster-native TEST_SIMULATION_REQUIRE_XMR=1
 ```
 
 Simulation records `RANDOM_SEED_HEX` as an artifact before

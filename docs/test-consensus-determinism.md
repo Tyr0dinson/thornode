@@ -1,7 +1,7 @@
 # Consensus determinism replay
 
 Run `scripts/test-consensus-determinism.sh` from any directory. The runner uses the
-Go 1.26.9 version pinned by `go.mod`, the caller's `GOCACHE` (CI's shared
+Go 1.26.10 version pinned by `go.mod`, the caller's `GOCACHE` (CI's shared
 `/go-build-cache`; a dedicated `/tmp` cache when unset), a 15 minute limit on both
 the `go test` process and the test binary (`-timeout 15m`), limited build
 parallelism, and the shared build lock. It selects only
@@ -63,5 +63,5 @@ so it does not prove swap execution or outbound signing. Those paths need a
 separate transaction-level replay with validator and vault fixtures.
 
 Validated on this workspace with `scripts/test-consensus-determinism.sh`:
-five tests passed, no skips (Go 1.26.9, `go test -p 2 -timeout 15m ./app -run
+five tests passed, no skips (Go 1.26.10, `go test -p 2 -timeout 15m ./app -run
 '^TestConsensusDeterminism' -count=1 -v`).

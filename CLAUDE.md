@@ -32,7 +32,7 @@ Layout:
 | Simulation tests | `make test-simulation` (Docker mocknet; `TEST_SIMULATION_STAGES=...` to subset)             |
 | Mocknet          | `make run-mocknet`, `make logs-mocknet`, `make reset-mocknet`, `make cli-mocknet`           |
 
-The Go toolchain is pinned in `go.mod` and `.go-version` (go1.26.9); if the system Go differs, `go env -w GOTOOLCHAIN=go1.26.9`.
+The Go toolchain is pinned in `go.mod` and `.go-version` (go1.26.10); if the system Go differs, `go env -w GOTOOLCHAIN=go1.26.10`.
 Go 1.27 corrupts local regression exports (a sonic warning lands in the JSON), so stay on 1.26.x.
 GNU coreutils are required (`scripts/check-env.sh` runs on every `make`).
 
