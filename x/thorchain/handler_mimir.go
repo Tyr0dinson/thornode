@@ -88,6 +88,14 @@ func (h MimirHandler) validate(ctx cosmos.Context, msg MsgMimir) error {
 		return nil
 	}
 
+	// BLOCKTIMEMS sets the commit wait; zero disengages it
+	if strings.EqualFold(msg.Key, constants.BlockTimeMs.String()) {
+		if msg.Value > 0 && (msg.Value < constants.BlockTimeMsMin || msg.Value > constants.BlockTimeMsMax) {
+			return cosmos.ErrUnknownRequest(fmt.Sprintf("BLOCKTIMEMS must be 0 or between %d and %d", constants.BlockTimeMsMin, constants.BlockTimeMsMax))
+		}
+		return nil
+	}
+
 	// nothing else to verify if this is not a min slip mimir
 	if !strings.HasSuffix(strings.ToUpper(msg.Key), "SLIPMINBPS") {
 		return nil

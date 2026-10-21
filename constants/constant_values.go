@@ -221,6 +221,7 @@ const (
 
 	LUVIOverhangGuard
 	LUVIGuard
+	BlockTimeMs
 )
 
 // ConstantValues define methods used to get constant values

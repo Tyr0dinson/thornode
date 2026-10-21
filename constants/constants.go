@@ -31,6 +31,10 @@ const MaxBasisPts = uint64(10_000)
 // operational mimir may be set to (50% of any attributed liquidity fee).
 const RevShareMaxBps = 5000
 
+// BlockTimeMsMax is the largest BLOCKTIMEMS mimir value accepted; the
+// smallest is BlockTimeMsMin (lower on mocknet).
+const BlockTimeMsMax = 10_000
+
 // MaxMemoSize Maximum Memo Size
 const MaxMemoSize = 250
 

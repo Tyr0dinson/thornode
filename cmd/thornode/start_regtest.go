@@ -49,6 +49,9 @@ func startCmdOptions(addStartFlags servertypes.ModuleInitFlags) server.StartCmdO
 //     infinite, so a proposal parked for the harness cannot time out into a new
 //     round.
 //
+// PostSetup is not run here, so the BLOCKTIMEMS commit-wait hook
+// (app/blocktime) never attaches and timeout_commit stays as set above.
+//
 // gRPC-only and stand-alone modes are not supported here; regtest never uses them.
 func regtestStart(svrCtx *server.Context, clientCtx client.Context, appCreator servertypes.AppCreator, withCmt bool, opts server.StartCmdOptions) error {
 	if !withCmt {

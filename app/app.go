@@ -79,6 +79,7 @@ import (
 	"github.com/CosmWasm/wasmd/x/wasm"
 	wasmkeeper "github.com/CosmWasm/wasmd/x/wasm/keeper"
 	wasmtypes "github.com/CosmWasm/wasmd/x/wasm/types"
+	"gitlab.com/thorchain/thornode/v3/app/blocktime"
 	"gitlab.com/thorchain/thornode/v3/app/divergence"
 	appparams "gitlab.com/thorchain/thornode/v3/app/params"
 	thornodeconfig "gitlab.com/thorchain/thornode/v3/config"
@@ -646,6 +647,20 @@ func NewChainApp(
 	app.SetEndBlocker(func(ctx sdk.Context) (sdk.EndBlock, error) {
 		defer thorlog.EndBlock(ctx.BlockHeight())
 		return app.EndBlocker(thorlog.CaptureContext(ctx))
+	})
+	// Commit runs on CometBFT's consensus goroutine just before it reads
+	// timeout_commit for the next height, so the BLOCKTIMEMS commit wait is
+	// set here. It only reads state, and only on a node whose consensus
+	// config is attached (cmd/thornode).
+	app.SetPrecommiter(func(ctx sdk.Context) {
+		if !blocktime.Attached() {
+			return
+		}
+		targetMs, mimirErr := app.ThorchainKeeper.GetMimir(ctx, constants.BlockTimeMs.String())
+		if mimirErr != nil {
+			targetMs = -1
+		}
+		blocktime.OnCommit(ctx.Logger(), targetMs, ctx.BlockHeader().Time)
 	})
 
 	anteHandler, err := NewAnteHandler(

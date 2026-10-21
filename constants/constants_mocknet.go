@@ -16,6 +16,11 @@ import (
 
 var ThorchainBlockTime = time.Second
 
+// BlockTimeMsMin is the smallest BLOCKTIMEMS mimir value accepted. Mocknet
+// allows sub-second targets so tests can exercise the commit-wait controller
+// at mocknet's 1s block time.
+const BlockTimeMsMin = 200
+
 // CamelToSnakeUpper converts a camelCase string to SNAKE_CASE.
 // Examples: "PoolCycle" -> "POOL_CYCLE", "L1SlipMinBps" -> "L1_SLIP_MIN_BPS"
 func CamelToSnakeUpper(s string) string {

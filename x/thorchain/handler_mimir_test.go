@@ -181,6 +181,26 @@ func (s *HandlerMimirSuite) TestDisableTSSSignerFilteringOperationalVoting(c *C)
 	c.Assert(votes.Mimirs, HasLen, 1)
 }
 
+func (HandlerMimirSuite) TestBlockTimeMsValidation(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	h := NewMimirHandler(mgr)
+	na := GetRandomValidatorNode(NodeActive)
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
+	mkMsg := func(key string, value int64) MsgMimir {
+		return MsgMimir{Key: key, Value: value, Signer: na.NodeAddress}
+	}
+
+	// zero (disengage) and the bounds are accepted, in any key casing
+	for _, v := range []int64{0, constants.BlockTimeMsMin, 3000, constants.BlockTimeMsMax} {
+		c.Assert(h.validate(ctx, mkMsg("BLOCKTIMEMS", v)), IsNil, Commentf("%d", v))
+	}
+	c.Assert(h.validate(ctx, mkMsg("BlockTimeMs", 2000)), IsNil)
+	// values outside the range are rejected
+	c.Assert(h.validate(ctx, mkMsg("BLOCKTIMEMS", constants.BlockTimeMsMin-1)), NotNil)
+	c.Assert(h.validate(ctx, mkMsg("BLOCKTIMEMS", constants.BlockTimeMsMax+1)), NotNil)
+	c.Assert(h.validate(ctx, mkMsg("blocktimems", 1)), NotNil)
+}
+
 func (HandlerMimirSuite) TestRevShareValidation(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	k := mgr.Keeper()
