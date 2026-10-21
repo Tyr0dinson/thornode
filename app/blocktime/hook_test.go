@@ -1,12 +1,15 @@
 package blocktime
 
 import (
+	"math/rand"
 	"sync"
 	"testing"
 	"time"
 
 	"cosmossdk.io/log"
 	cmtcfg "github.com/cometbft/cometbft/config"
+
+	"gitlab.com/thorchain/thornode/v3/constants"
 )
 
 func TestHookUnsetNeverTouchesTimeoutCommit(t *testing.T) {
@@ -66,6 +69,50 @@ func TestHookEngageAndRestore(t *testing.T) {
 	h.OnCommit(log.NewNopLogger(), 2000, hdr.Add(6*time.Second))
 	if cfg.TimeoutCommit != 900*time.Millisecond {
 		t.Fatalf("re-engaged wait %v", cfg.TimeoutCommit)
+	}
+}
+
+func TestHookClampsStoredTarget(t *testing.T) {
+	// out-of-range values that bypassed MsgMimir validation run at the bound
+	for _, tc := range []struct{ stored, want int64 }{
+		{1, constants.BlockTimeMsMin},
+		{500, max(500, constants.BlockTimeMsMin)}, // 1500 on mainnet tags, 500 on mocknet
+		{constants.BlockTimeMsMin, constants.BlockTimeMsMin},
+		{3000, 3000},
+		{constants.BlockTimeMsMax, constants.BlockTimeMsMax},
+		{60_000, constants.BlockTimeMsMax},
+	} {
+		var h Hook
+		cfg := cmtcfg.DefaultConsensusConfig()
+		h.Attach(cfg)
+		hdr := time.Unix(1_700_000_000, 0)
+		for i := 0; i < 200; i++ {
+			hdr = hdr.Add(time.Duration(tc.want)*time.Millisecond + 50*time.Millisecond)
+			h.OnCommit(log.NewNopLogger(), tc.stored, hdr)
+			if cfg.TimeoutCommit < 0 || cfg.TimeoutCommit > time.Duration(tc.want)*time.Millisecond {
+				t.Fatalf("stored %d: wait %v outside [0, %dms]", tc.stored, cfg.TimeoutCommit, tc.want)
+			}
+		}
+		if h.ctrl.target != time.Duration(tc.want)*time.Millisecond {
+			t.Errorf("stored %d: target %v, want %dms", tc.stored, h.ctrl.target, tc.want)
+		}
+	}
+}
+
+func TestControllerWaitWithinTarget(t *testing.T) {
+	// whatever intervals it sees, the wait stays in [0, target], so with no
+	// overhead the interval cannot exceed BlockTimeMsMax
+	r := rand.New(rand.NewSource(2)) //nolint:gosec // deterministic test RNG
+	for _, ms := range []int64{constants.BlockTimeMsMin, 1500, 6000, constants.BlockTimeMsMax} {
+		target := time.Duration(ms) * time.Millisecond
+		var c Controller
+		h := time.Unix(1_700_000_000, 0)
+		for i := 0; i < 5000; i++ {
+			h = h.Add(time.Duration(r.Int63n(int64(3 * target))))
+			if w, _ := c.Next(target, h); w < 0 || w > target || w > constants.BlockTimeMsMax*time.Millisecond {
+				t.Fatalf("target %v: wait %v", target, w)
+			}
+		}
 	}
 }
 
