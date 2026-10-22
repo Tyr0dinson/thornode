@@ -38,7 +38,7 @@ Consensus changes on develop ship **ungated**. Validators propose and approve an
 
 Runs once inside the x/upgrade handler at the upgrade height. Steps (detail and footguns in `references/migrations.md`):
 
-1. Bump `func (AppModule) ConsensusVersion()` in `x/thorchain/module.go` (currently `20`).
+1. Bump `func (AppModule) ConsensusVersion()` in `x/thorchain/module.go` (read the current value; do not trust a copied number).
 2. `cfg.RegisterMigration(types.ModuleName, <N>, m.Migrate<N>to<N+1>)` in `AppModule.RegisterServices` (same file).
 3. Implement `Migrate<N>to<N+1>` for **every** build tag: either once in untagged `migrations_common.go`, or in each of `migrations.go` (mocknet / default), `migrations_mainnet.go`, `migrations_stagenet.go`, `migrations_chainnet.go`. A missing tag fails only that network's build.
 4. Start with `m.mgr.LoadManagerIfNecessary(ctx)` - migrations run before `BeginBlock`.

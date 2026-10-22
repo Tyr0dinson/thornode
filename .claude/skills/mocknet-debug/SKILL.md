@@ -80,7 +80,7 @@ Useful first queries: `/thorchain/lastblock` (per-chain observed heights), `/tho
 TX_FLAGS='--node http://thornode:26657 --keyring-backend file --keyring-dir /cli/keys --chain-id thorchain'
 ```
 
-- Chain ID is `thorchain` (compose `CHAIN_ID`), keyring passphrase is `password`, keys are `cat dog fox pig`. `dog` is the validator and admin mimir key.
+- Chain ID is `thorchain` (compose `CHAIN_ID`), keyring passphrase is `password`, keys are `cat dog fox pig`. `dog` is the only validator, so its node-mimir vote alone takes effect (mocknet `OperationalVotesMin` 1; one node is a supermajority). There is no admin mimir.
 - Addresses use the `tthor` prefix. Mnemonics are in `build/docker/README.md`.
 - Tx commands live in `x/thorchain/client/cli/tx.go`: `deposit`, `send`, `mimir`, `pause-chain`, `resume-chain`, `ban`, `set-ip-address`, `set-version`, `set-node-keys`, `propose-upgrade`, `approve-upgrade`, `reject-upgrade`, `observe-tx-ins`, `observe-tx-outs`. Example: `thornode tx thorchain mimir HaltChurning 0 --from dog $TX_FLAGS`.
 

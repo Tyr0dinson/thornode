@@ -13,15 +13,17 @@ case "$f" in
   if has goimports; then out=$(goimports -w "$f" 2>&1); fi
   ;;
 *.proto)
-  out=$(make proto-format generate 2>&1) || out="make proto-format generate failed:"$'\n'"$(tail -20 <<<"$out")"
-  [[ $out == *failed* ]] || out=""
+  if has docker; then
+    out=$(make proto-format proto-gen 2>&1) && out="" || out="make proto-format proto-gen failed:"$'\n'"$(tail -20 <<<"$out")"
+  fi
   ;;
 */openapi/*.yaml | */openapi/*.yml)
-  out=$(make generate 2>&1) || out="make generate failed:"$'\n'"$(tail -20 <<<"$out")"
-  [[ $out == *failed* ]] || out=""
+  if has docker; then
+    out=$(make openapi 2>&1) && out="" || out="make openapi failed:"$'\n'"$(tail -20 <<<"$out")"
+  fi
   ;;
 */go.mod)
-  out=$( (cd "$(dirname "$f")" && go mod tidy) 2>&1)
+  out=$( (cd "$(dirname "$f")" && go mod tidy) 2>&1) && out=""
   ;;
 *.gitlab-ci.yml)
   if has glab; then out=$(glab ci lint "$f" 2>&1) && out=""; fi

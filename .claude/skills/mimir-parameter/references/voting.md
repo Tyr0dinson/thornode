@@ -79,8 +79,8 @@ operational automatically. Name new economic keys carefully.
 | `k.GetConfigInt64(ctx, constants.X)`       | the mimir value if >= 0, else the constant default (keeper_config.go:14) |
 
 - Mainnet, stagenet and chainnet builds use keeper_mimir_mainnet.go.
-- The mocknet build (keeper*mimir_mocknet.go) falls back to the env var
-  `CamelToSnakeUpper(key)` with `-` replaced by `*` when the store has no value.
+- The mocknet build (`keeper_mimir_mocknet.go`) falls back to the env var
+  `CamelToSnakeUpper(key)` with `-` replaced by `_` when the store has no value.
 - `MimirCache` (x/thorchain/keeper/mimir_cache.go) is disabled for the rest of the
   context on any `SetMimir`/`DeleteMimir`.
 
