@@ -246,8 +246,12 @@ lint:
 	@./scripts/lint.sh
 	@./scripts/trunk check --no-fix --show-existing --upstream origin/develop
 
+.PHONY: test-lint-tokens
+test-lint-tokens:
+	@./scripts/tests/test-lint-tokens.bash
+
 # The three checks are independent; run them at once, each one's output kept together.
-lint-ci:
+lint-ci: test-lint-tokens
 	@$(MAKE) --no-print-directory -j3 --output-sync=target lint-ci-scripts lint-ci-golangci lint-ci-trunk
 
 lint-ci-scripts:
