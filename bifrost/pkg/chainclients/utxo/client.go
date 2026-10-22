@@ -165,6 +165,13 @@ func NewClient(
 		regexpRemoveTrailingZeros: regexp.MustCompile(`(?:00)+$`),
 	}
 
+	// Seed the BTC min-relay-fee floor to its fixed, daemon-independent value so it is
+	// never 0 before the first updateNetworkInfo tick (the floor is signing-consensus-
+	// relevant — see updateNetworkInfo). updateNetworkInfo re-pins it on every tick.
+	if c.cfg.ChainID.Equals(common.BTCChain) {
+		c.minRelayFeeSats.Store(btcFixedMinRelayFeeSats)
+	}
+
 	// import the node local address in the daemon wallet
 	if !c.cfg.ChainID.Equals(common.ZECChain) {
 		err = c.RegisterPublicKey(c.nodePubKey)

@@ -214,16 +214,30 @@ func (c *Client) canDeleteBlock(blockMeta *utxo.BlockMeta) bool {
 	return true
 }
 
+// btcFixedMinRelayFeeSats is the daemon-independent BTC min-relay-fee floor (sats).
+// It MUST be identical on every node: it is signing-consensus-relevant (see
+// updateNetworkInfo). 1000 sat == Bitcoin Core's historical 0.00001 BTC/kvB default
+// (<=29.0), which the network majority runs; pinning here keeps all nodes aligned
+// regardless of Core version. Do not make this per-node configurable.
+const btcFixedMinRelayFeeSats uint64 = 1000
+
 func (c *Client) updateNetworkInfo() {
-	if c.cfg.ChainID == common.BTCChain {
-		// Preserve BTC's historical total fee floor for signing and fee reports.
-		// The daemon's relayfee is a rate in BTC/kvB, not a total fee, and varies
-		// with version/configuration. Using it here splits signers into different
-		// TSS sessions. Keep this absolute floor independent of local RPC policy.
-		c.minRelayFeeSats.Store(1_000)
+	// For BTC the min-relay-fee floor is signing-consensus-relevant: minRelayFeeSats
+	// feeds both the reported network fee (sendNetworkFee) and the outbound fee floor
+	// (applyFeeLimits), which shape the change output, its sighash and the TSS message
+	// id. Bitcoin Core <=29.0 reports relayfee 0.00001 BTC/kvB (1000 sat) while 29.1+
+	// and 30.x default to 0.000001 (100 sat), so a daemon-derived floor makes nodes on
+	// different Core lines build different change outputs for the same outbound — the
+	// minority then signs a different message, is absent from the majority's party, and
+	// is blamed/jailed with no error in its own log. Pin BTC to a fixed floor
+	// independent of the daemon — and independent of whether the GetNetworkInfo RPC
+	// succeeds, so an RPC failure can never leave the BTC floor at 0 — so every node
+	// computes the same fee regardless of Core version. Other UTXO chains keep their
+	// daemon-derived relay fee.
+	if c.cfg.ChainID.Equals(common.BTCChain) {
+		c.minRelayFeeSats.Store(btcFixedMinRelayFeeSats)
 		return
 	}
-
 	networkInfo, err := c.rpc.GetNetworkInfo()
 	if err != nil {
 		c.log.Err(err).Msg("fail to get network info")
