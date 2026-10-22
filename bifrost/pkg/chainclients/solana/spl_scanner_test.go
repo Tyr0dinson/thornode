@@ -25,11 +25,11 @@ const (
 	testUSDCMint       = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
 	testUSDTMint       = "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB"
 	testUnlistedMint   = "So11111111111111111111111111111111111111112"
-	testTokenProgram   = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
-	testToken2022      = "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"
+	testTokenProgram   = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA" //nolint:gosec // G101: a public Solana address, not a credential
+	testToken2022      = "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb" //nolint:gosec // G101: a public Solana address, not a credential
 	testATAProgram     = "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
 	testUSDCAssetStr   = "SOL.USDC-EPJFWDD5AUFQSSQEM2QN1XZYBAPC8G4WEGGKZWYTDT1V"
-	testSenderTokenAcc = "2Y7HATmn9aJBcxCskE5V2U2epmjvkZmB51zTJBbhj4cU"
+	testSenderTokenAcc = "2Y7HATmn9aJBcxCskE5V2U2epmjvkZmB51zTJBbhj4cU" //nolint:gosec // G101: a public Solana address, not a credential
 )
 
 type SPLScannerSuite struct{}
@@ -83,6 +83,16 @@ func tokenBalance(accountIndex int, mint, owner, amount string, decimals int) ma
 		"programId":     testTokenProgram,
 		"uiTokenAmount": map[string]interface{}{"amount": amount, "decimals": decimals},
 	}
+}
+
+// tokenBalanceEntry returns a raw meta token balance entry (as tokenBalance builds
+// it) for a test to edit.
+func tokenBalanceEntry(b interface{}) map[string]interface{} {
+	m, ok := b.(map[string]interface{})
+	if !ok {
+		panic(fmt.Sprintf("token balance entry is %T, not a JSON object", b))
+	}
+	return m
 }
 
 func ata(c *C, owner, mint string) string {
@@ -201,11 +211,11 @@ func (s *SPLScannerSuite) TestRejectedShapes(c *C) {
 		"non-whitelisted mint": func(txn *rpc.TransactionResult) {
 			txn.Transaction.Message.AccountKeys[3] = testUnlistedMint
 			for _, b := range append(txn.Meta.PreTokenBalances, txn.Meta.PostTokenBalances...) {
-				b.(map[string]interface{})["mint"] = testUnlistedMint
+				tokenBalanceEntry(b)["mint"] = testUnlistedMint
 			}
 		},
 		"token-2022 account": func(txn *rpc.TransactionResult) {
-			txn.Meta.PostTokenBalances[1].(map[string]interface{})["programId"] = testToken2022
+			tokenBalanceEntry(txn.Meta.PostTokenBalances[1])["programId"] = testToken2022
 		},
 		"decimals mismatch": func(txn *rpc.TransactionResult) {
 			txn.Transaction.Message.Instructions[0].Data = makeTransferCheckedData(12_345_678, 9)
@@ -214,16 +224,16 @@ func (s *SPLScannerSuite) TestRejectedShapes(c *C) {
 			txn.Transaction.Message.AccountKeys[3] = testUSDTMint
 		},
 		"destination credited less than the amount": func(txn *rpc.TransactionResult) {
-			txn.Meta.PostTokenBalances[1].(map[string]interface{})["uiTokenAmount"] = map[string]interface{}{"amount": "7000001", "decimals": 6}
+			tokenBalanceEntry(txn.Meta.PostTokenBalances[1])["uiTokenAmount"] = map[string]interface{}{"amount": "7000001", "decimals": 6}
 		},
 		"no destination token balance": func(txn *rpc.TransactionResult) {
 			txn.Meta.PostTokenBalances = txn.Meta.PostTokenBalances[:1]
 		},
 		"source of another mint": func(txn *rpc.TransactionResult) {
-			txn.Meta.PreTokenBalances[0].(map[string]interface{})["mint"] = testUSDTMint
+			tokenBalanceEntry(txn.Meta.PreTokenBalances[0])["mint"] = testUSDTMint
 		},
 		"source mint inconsistent across the transaction": func(txn *rpc.TransactionResult) {
-			txn.Meta.PostTokenBalances[0].(map[string]interface{})["mint"] = testUSDTMint
+			tokenBalanceEntry(txn.Meta.PostTokenBalances[0])["mint"] = testUSDTMint
 		},
 		"two token transfers": func(txn *rpc.TransactionResult) {
 			ins := txn.Transaction.Message.Instructions
@@ -249,10 +259,10 @@ func (s *SPLScannerSuite) TestRejectedShapes(c *C) {
 			txn.Meta.PreTokenBalances = txn.Meta.PreTokenBalances[1:]
 		},
 		"source owner reassigned in the transaction": func(txn *rpc.TransactionResult) {
-			txn.Meta.PostTokenBalances[0].(map[string]interface{})["owner"] = testVault
+			tokenBalanceEntry(txn.Meta.PostTokenBalances[0])["owner"] = testVault
 		},
 		"destination owner changed in the transaction": func(txn *rpc.TransactionResult) {
-			txn.Meta.PreTokenBalances[1].(map[string]interface{})["owner"] = testSender
+			tokenBalanceEntry(txn.Meta.PreTokenBalances[1])["owner"] = testSender
 		},
 		// Only the owner's canonical associated token account is credited: Bifrost
 		// spends from nothing else.
@@ -411,8 +421,7 @@ func (s *SPLScannerSuite) TestDurableOutboundStillObserved(c *C) {
 	txn := splInbound(c, 3_000_000)
 	nonceAcct, err := common.SolNonceAccountAddress(testSender)
 	c.Assert(err, IsNil)
-	keys := txn.Transaction.Message.AccountKeys
-	txn.Transaction.Message.AccountKeys = append(keys, nonceAcct, "SysvarRecentB1ockHashes11111111111111111111", testSystemProgram)
+	txn.Transaction.Message.AccountKeys = append(txn.Transaction.Message.AccountKeys, nonceAcct, "SysvarRecentB1ockHashes11111111111111111111", testSystemProgram)
 	advance := make([]byte, 4)
 	binary.LittleEndian.PutUint32(advance, 4)
 	txn.Transaction.Message.Instructions = append([]rpc.RPCInstruction{

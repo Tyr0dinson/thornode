@@ -220,8 +220,8 @@ func (s *SolTestSuite) TestSPLGetAccountByAddress(c *C) {
 	// insolvent in them.
 	for _, activeFrom := range []uint64{0, 1} {
 		cl.spl.activeFrom.Store(activeFrom)
-		acct, err := cl.GetAccountByAddress(vaultAddr.String(), nil)
-		c.Assert(err, IsNil)
+		acct, readErr := cl.GetAccountByAddress(vaultAddr.String(), nil)
+		c.Assert(readErr, IsNil)
 		c.Assert(acct.Coins, HasLen, 3, Commentf("active from %d", activeFrom))
 		c.Check(acct.Coins.GetCoin(usdcAsset(c)).Amount.String(), Equals, "1234567800")
 	}

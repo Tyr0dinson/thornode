@@ -12,7 +12,7 @@ type SOLTokenGateSuite struct{}
 
 var _ = Suite(&SOLTokenGateSuite{})
 
-const solTokenGateUSDC = "SOL.USDC-EPJFWDD5AUFQSSQEM2QN1XZYBAPC8G4WEGGKZWYTDT1V"
+const solTokenGateUSDC = "SOL.USDC-EPJFWDD5AUFQSSQEM2QN1XZYBAPC8G4WEGGKZWYTDT1V" //nolint:gosec // G101: a THORChain asset name, not a credential
 
 type solTokenGateFixture struct {
 	ctx   cosmos.Context

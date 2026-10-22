@@ -15,7 +15,7 @@ import (
 
 // testToken2022Program is the Token-2022 program, which also owns token accounts and
 // mints.
-const testToken2022Program = "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"
+const testToken2022Program = "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb" //nolint:gosec // G101: a public Solana address, not a credential
 
 // TestSPLOutboundToTokenAccountNeverSigned: an SPL outbound pays the recipient's
 // associated token account, derived from the recipient address as a wallet. If that
