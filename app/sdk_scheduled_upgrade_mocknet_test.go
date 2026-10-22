@@ -3,7 +3,8 @@
 package app
 
 import (
-	"archive/zip"
+	"bytes"
+	"encoding/hex"
 	"math/rand"
 	"os"
 	"path/filepath"
@@ -26,15 +27,46 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// restoreSDKUpgradeFixture rebuilds the previous application's home: every
+// key/value pair of its GoLevelDB application database (one hex "key=value"
+// line each), and the stored code of
+// its one contract (counter.wasm, whose checksum the database records).
+func restoreSDKUpgradeFixture(t *testing.T) string {
+	t.Helper()
+	home := t.TempDir()
+	dump, err := os.ReadFile("testdata/sdk-v053/application.db.hex")
+	require.NoError(t, err)
+	db, err := dbm.NewGoLevelDB("application", filepath.Join(home, "data"), nil)
+	require.NoError(t, err)
+	batch := db.NewBatch()
+	for _, line := range bytes.Split(bytes.TrimSpace(dump), []byte("\n")) {
+		hexKey, hexValue, ok := bytes.Cut(line, []byte("="))
+		require.True(t, ok, "malformed fixture line %q", line)
+		key, err := hex.DecodeString(string(hexKey))
+		require.NoError(t, err)
+		value, err := hex.DecodeString(string(hexValue))
+		require.NoError(t, err)
+		require.NoError(t, batch.Set(key, value))
+	}
+	require.NoError(t, batch.WriteSync())
+	require.NoError(t, batch.Close())
+	require.NoError(t, db.Close())
+	code, err := os.ReadFile("../test/fixtures/wasm/counter.wasm")
+	require.NoError(t, err)
+	codeDir := filepath.Join(home, "data", "wasm", "state", "wasm")
+	require.NoError(t, os.MkdirAll(codeDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(codeDir, sdkUpgradeFixtureCodeHash+".wasm"), code, 0o644))
+	return home
+}
+
+// sdkUpgradeFixtureCodeHash is the sha256 of test/fixtures/wasm/counter.wasm.
+const sdkUpgradeFixtureCodeHash = "016414b67c4a8b0cd030d8221e19df549e95688002ed18894466008e32c9db3a"
+
 // Open a Store v1 database committed by the previous application; never call
 // InitChain or RunMigrations here, or replace its version map or upgrade plan.
 func TestSDKScheduledUpgradeFromOldDatabase(t *testing.T) {
 	setupSDKReplay(t)
-	home := t.TempDir()
-	fixture, err := zip.OpenReader("testdata/sdk-v053/home.zip")
-	require.NoError(t, err)
-	require.NoError(t, os.CopyFS(home, fixture))
-	require.NoError(t, fixture.Close())
+	home := restoreSDKUpgradeFixture(t)
 	var engine *wasmvm.VM
 	newApp := func() *THORChainApp {
 		db, err := dbm.NewGoLevelDB("application", filepath.Join(home, "data"), nil)

@@ -5,6 +5,7 @@
 package app
 
 import (
+	"encoding/hex"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -49,7 +50,6 @@ func TestGenerateSDKUpgradeFixture(t *testing.T) {
 	db, err := dbm.NewGoLevelDB("application", filepath.Join(home, "data"), nil)
 	require.NoError(t, err)
 	app := NewChainApp(log.NewNopLogger(), db, nil, true, &appOptionsWrapper{homeDir: home}, nil, baseapp.SetChainID(genesis.ChainID))
-	defer app.Close()
 	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	_, err = app.InitChain(&abci.RequestInitChain{ChainId: genesis.ChainID, InitialHeight: genesis.InitialHeight, Time: start, ConsensusParams: &params, AppStateBytes: genesis.AppState})
 	require.NoError(t, err)
@@ -71,4 +71,19 @@ func TestGenerateSDKUpgradeFixture(t *testing.T) {
 	_, err = app.Commit()
 	require.NoError(t, err)
 	require.Equal(t, int64(7), app.LastBlockHeight())
+	require.NoError(t, app.Close())
+
+	// Dump every key/value pair as one hex "key=value" line, in key order.
+	db, err = dbm.NewGoLevelDB("application", filepath.Join(home, "data"), nil)
+	require.NoError(t, err)
+	defer db.Close()
+	it, err := db.Iterator(nil, nil)
+	require.NoError(t, err)
+	defer it.Close()
+	var dump []byte
+	for ; it.Valid(); it.Next() {
+		dump = append(dump, hex.EncodeToString(it.Key())+"="+hex.EncodeToString(it.Value())+"\n"...)
+	}
+	require.NoError(t, it.Error())
+	require.NoError(t, os.WriteFile(filepath.Join(home, "application.db.hex"), dump, 0o644))
 }
