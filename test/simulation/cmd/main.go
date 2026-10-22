@@ -101,7 +101,7 @@ func simulationStages() []simulationStage {
 		{name: "cluster-churn", defaultOn: false, constructor: suites.ClusterChurn},
 		{name: "churn", defaultOn: false, constructor: suites.Churn},
 		{name: "tron-solvency-fragmentation", defaultOn: false, constructor: core.NewTRONSolvencyFragmentationActor},
-		{name: "xmr-keygen-jail", defaultOn: false, constructor: suites.XMRKeygenJail},
+		{name: "xmr-keygen-recovery", defaultOn: false, constructor: suites.XMRKeygenRecovery},
 		{name: "xmr-spent-refs", defaultOn: false, constructor: suites.XMRSpentRefTracking},
 		{name: "forced-to-leave-keygen", defaultOn: false, constructor: core.NewForcedToLeaveKeygenActor},
 		{name: "forced-to-leave-keysign", defaultOn: false, constructor: core.NewForcedToLeaveKeysignActor},
@@ -143,9 +143,9 @@ func selectedSimulationStages(enabledStages map[string]bool) []simulationStage {
 			continue
 		}
 		switch stage.name {
-		case "xmr-historical-refund":
-			// Requires the dedicated long-jail mocknet setup; keep generic "all"
-			// runs unchanged unless this scenario is explicitly requested as well.
+		case "xmr-historical-refund", "xmr-keygen-recovery":
+			// These need dedicated fault-injection environments; generic "all"
+			// runs must explicitly request the scenario as well.
 			if !enabledStages[stage.name] {
 				continue
 			}

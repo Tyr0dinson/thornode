@@ -43,9 +43,9 @@ func XMRPostChurnEnabled() bool {
 	return acommon.XMRChainEnabled() || os.Getenv("XMR_POST_CHURN_REQUIRED") == "1"
 }
 
-func XMRKeygenJail(rng *rand.Rand) *Actor {
-	a := NewActor("XMRKeygenJail", rng)
-	a.Append(core.NewXMRKeygenJailActor(rng))
+func XMRKeygenRecovery(rng *rand.Rand) *Actor {
+	a := NewActor("XMRKeygenRecovery", rng)
+	a.Append(core.NewXMRKeygenRecoveryActor(rng))
 	return a
 }
 

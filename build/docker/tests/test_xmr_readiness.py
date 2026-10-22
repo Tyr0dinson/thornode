@@ -272,6 +272,24 @@ class XMRReadinessConfigTest(unittest.TestCase):
             self.assertEqual(json.loads(result.stdout), self.models["mocknet"])
             self.assertEqual(os.environ, caller_env)
 
+    def test_keygen_recovery_override_only_reaches_pig(self):
+        setting = "XMR_KEYGEN_RECOVERY_ROUND3_TIMEOUT_MS"
+        for value in ("", "100"):
+            with self.subTest(timeout=value), patch.dict(os.environ, {setting: value}):
+                result = render("mocknet")
+                self.assertEqual(result.returncode, 0, result.stderr)
+                services = json.loads(result.stdout)["services"]
+                for name, service in services.items():
+                    if not name.startswith("bifrost"):
+                        continue
+                    actual = service.get("environment", {}).get(
+                        "XMR_FROST_KEYGEN_TEST_ROUND3_TIMEOUT_MS"
+                    )
+                    if name == "bifrost-pig" and value:
+                        self.assertEqual(str(actual), value)
+                    else:
+                        self.assertTrue(actual in (None, ""))
+
     def test_mocknet_still_honors_explicit_xmr_disable(self):
         result = render("mocknet", xmr_disabled="true")
         self.assertEqual(result.returncode, 0, result.stderr)
