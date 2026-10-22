@@ -263,6 +263,32 @@ lint-ci-golangci:
 lint-ci-trunk:
 	@./scripts/trunk-ci.sh
 
+# Install a pre-push hook that runs CI's lint (and, opt-in, generate) checks;
+# see scripts/git-hooks/pre-push. It goes in the clone's shared hooks directory,
+# so every worktree gets it, and it runs the checked-out copy of the script, so
+# it follows the branch. Refuses to replace a different pre-push hook.
+define PRE_PUSH_HOOK
+#!/bin/sh
+# Installed by `make install-git-hooks`.
+hook="$$(git rev-parse --show-toplevel)/scripts/git-hooks/pre-push"
+if [ -x "$$hook" ]; then exec "$$hook" "$$@"; fi
+endef
+
+install-git-hooks: export PRE_PUSH_HOOK := $(PRE_PUSH_HOOK)
+install-git-hooks:
+	@dest="$$(git rev-parse --path-format=absolute --git-common-dir)/hooks/pre-push"; \
+	if [ -e "$$dest" ] && [ "$$(cat "$$dest")" != "$$PRE_PUSH_HOOK" ]; then \
+		echo "$$dest is a different hook; not replacing it. Remove it or call scripts/git-hooks/pre-push from it."; \
+		exit 1; \
+	fi; \
+	mkdir -p "$$(dirname "$$dest")"; \
+	printf '%s\n' "$$PRE_PUSH_HOOK" >"$$dest"; \
+	chmod +x "$$dest"; \
+	echo "Installed $$dest"; \
+	if hooks_path=$$(git config core.hooksPath); then \
+		echo "Warning: core.hooksPath is $$hooks_path, so git does not run hooks from $$(dirname "$$dest")."; \
+	fi
+
 # ------------------------------ Unit Tests ------------------------------
 
 test-coverage: test-network-specific

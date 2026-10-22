@@ -1705,10 +1705,12 @@ func TestStateSyncExportReleaseOnEveryExit(t *testing.T) {
 				count = 0
 			}
 			sender := stateSyncDeadlineFixture(t, count)
-			sender.config.StateSyncTimeout = 300 * time.Millisecond
+			sender.config.StateSyncTimeout = time.Second
+			// Build receivers before the handler starts: the sender's first
+			// read is scaled to one second, and fixture setup can exceed it.
+			receiver := stateSyncDeadlineFixture(t, 0)
 			_, client, done := startStateSyncExport(t, sender, "peer")
 			if phase == "success" || phase == "empty" {
-				receiver := stateSyncDeadlineFixture(t, 0)
 				require.True(t, receiver.askStreamForState(client).completed)
 			} else {
 				stall := phase
@@ -1728,9 +1730,9 @@ func TestStateSyncExportReleaseOnEveryExit(t *testing.T) {
 			require.Zero(t, stateSyncExportCount(sender))
 			// The same identity can obtain a new copy after any exit.
 			sender.config.StateSyncTimeout = 15 * time.Second
+			retryReceiver := stateSyncDeadlineFixture(t, 0)
 			_, retry, retryDone := startStateSyncExport(t, sender, "peer")
-			receiver := stateSyncDeadlineFixture(t, 0)
-			require.True(t, receiver.askStreamForState(retry).completed)
+			require.True(t, retryReceiver.askStreamForState(retry).completed)
 			waitStateSyncDeadlineHandler(t, retryDone)
 			require.Zero(t, stateSyncExportCount(sender))
 		})
