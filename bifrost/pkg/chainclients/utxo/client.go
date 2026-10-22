@@ -53,6 +53,9 @@ type Client struct {
 	m   *metrics.Metrics
 	rpc *rpc.Client
 
+	// coinbases remembers the coinbase value of recently fetched blocks
+	coinbases coinbaseCache
+
 	// ---------- signing ----------
 	nodePubKey         common.PubKey
 	nodePrivKey        *btcec.PrivateKey

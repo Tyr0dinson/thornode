@@ -429,7 +429,14 @@ func (c *Client) getBlock(height int64) (*btcjson.GetBlockVerboseTxResult, error
 	if err != nil {
 		return &btcjson.GetBlockVerboseTxResult{}, err
 	}
-	return c.rpc.GetBlockVerboseTxs(hash)
+	block, err := c.rpc.GetBlockVerboseTxs(hash)
+	if err == nil && block.Hash == hash {
+		// remember the coinbase value for the confirmation count of this block
+		if value, cbErr := coinbaseValue(block); cbErr == nil {
+			c.coinbases.put(height, hash, value)
+		}
+	}
+	return block, err
 }
 
 func (c *Client) isValidUTXO(hexPubKey string) bool {
@@ -1107,19 +1114,31 @@ func (c *Client) getGas(tx *btcjson.TxRawResult, isInbound bool) (common.Gas, er
 }
 
 func (c *Client) getCoinbaseValue(blockHeight int64) (int64, error) {
-	// TODO: this is inefficient, in particular for dogecoin, investigate coinbase cache
-	result, err := c.getBlock(blockHeight)
+	hash, err := c.rpc.GetBlockHash(blockHeight)
 	if err != nil {
 		return 0, fmt.Errorf("fail to get block verbose tx: %w", err)
 	}
+	// A block's content is fixed by its hash, so reuse the value computed when
+	// this block was scanned instead of fetching the whole block again.
+	if value, ok := c.coinbases.get(blockHeight, hash); ok {
+		return value, nil
+	}
+	result, err := c.rpc.GetBlockVerboseTxs(hash)
+	if err != nil {
+		return 0, fmt.Errorf("fail to get block verbose tx: %w", err)
+	}
+	return coinbaseValue(result)
+}
+
+// coinbaseValue returns the total output value of the block's coinbase tx.
+func coinbaseValue(result *btcjson.GetBlockVerboseTxResult) (int64, error) {
 	for _, tx := range result.Tx {
 		if len(tx.Vin) == 1 && tx.Vin[0].IsCoinBase() {
 			total := float64(0)
 			for _, opt := range tx.Vout {
 				total += opt.Value
 			}
-			var amt btcutil.Amount
-			amt, err = btcutil.NewAmount(total)
+			amt, err := btcutil.NewAmount(total)
 			if err != nil {
 				return 0, fmt.Errorf("fail to parse amount: %w", err)
 			}
