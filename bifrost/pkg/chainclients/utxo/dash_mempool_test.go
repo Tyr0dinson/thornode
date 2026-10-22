@@ -10,6 +10,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
+	ttypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 	. "gopkg.in/check.v1"
 )
 
@@ -187,7 +188,14 @@ func (b *dashMempoolPolicyBridge) GetMimir(key string) (int64, error) {
 	if key == DashInstantSendEnabledMimirKey {
 		return b.enabled, nil
 	}
+	if key == DashInstantSendMaxAmountMimirKey {
+		return 100_000 * common.One, nil
+	}
 	return -1, nil
+}
+
+func (b *dashMempoolPolicyBridge) FetchNodeStatus() (ttypes.NodeStatus, error) {
+	return ttypes.NodeStatus_Active, nil
 }
 
 func (s *DashSuite) TestDashFetchMemPoolWithInstantSendDisabled(c *C) {
@@ -196,7 +204,7 @@ func (s *DashSuite) TestDashFetchMemPoolWithInstantSendDisabled(c *C) {
 	bridge := &dashMempoolPolicyBridge{enabled: 0}
 	client.bridge = bridge
 	// A disabled policy must discard any previously prepared final batches.
-	client.instantSendQueuedBatches = instantSendObservationGroups(common.DASHChain,
+	client.instantSendTxQueue = instantSendObservationGroups(common.DASHChain,
 		map[int64][]*types.TxInItem{100: {{Tx: "stale-policy-batch"}}})
 	for i := 0; i < 2; i++ {
 		batch, err := client.FetchMemPool(123)
@@ -208,7 +216,7 @@ func (s *DashSuite) TestDashFetchMemPoolWithInstantSendDisabled(c *C) {
 			c.Assert(batch.TxArray, HasLen, 0)
 		}
 	}
-	c.Assert(client.instantSendQueuedBatches, HasLen, 0)
+	c.Assert(client.instantSendTxQueue, HasLen, 0)
 	c.Assert(f.ordinaryCalls, Equals, 2)
 	c.Assert(f.instantSendCalls, Equals, 0)
 	bridge.enabled = 1

@@ -782,6 +782,8 @@ func waitForMasterAccount(chain common.Chain, client LiteChainClient) (*common.A
 	)
 }
 
+// waitForMasterAccountWithMinAmountAndSleep polls for account readiness, retrying
+// temporary startup errors and insufficient balances. Tests can supply their own sleep function.
 func waitForMasterAccountWithMinAmountAndSleep(
 	chain common.Chain,
 	client LiteChainClient,
@@ -839,6 +841,8 @@ func isRetryableZeroBalanceStartupState(chain common.Chain, account *common.Acco
 	return isRetryableMasterAccountBalanceState(chain, account, sdkmath.ZeroUint())
 }
 
+// isRetryableMasterAccountBalanceState reports whether an existing account needs
+// more funds before simulation setup can continue.
 func isRetryableMasterAccountBalanceState(chain common.Chain, account *common.Account, minAmount sdkmath.Uint) bool {
 	if account == nil {
 		return false
@@ -852,6 +856,7 @@ func isRetryableMasterAccountBalanceState(chain common.Chain, account *common.Ac
 	return requiresFundedMasterAccount(chain) && amount.IsZero()
 }
 
+// masterAccountBalanceNotReadyError describes the balance that prevents account readiness.
 func masterAccountBalanceNotReadyError(chain common.Chain, account *common.Account, minAmount sdkmath.Uint) error {
 	amount := sdkmath.ZeroUint()
 	if account != nil {

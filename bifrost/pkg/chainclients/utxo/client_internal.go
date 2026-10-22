@@ -689,6 +689,15 @@ func (c *Client) extractTxs(block *btcjson.GetBlockVerboseTxResult) (types.TxIn,
 		Chain:   c.GetChain(),
 		MemPool: false,
 	}
+	// FetchTxs only passes verified ChainLocked Dash blocks. Settle raw txids
+	// before parsing or observed-marker filtering can discard an already seen tx.
+	if c.cfg.ChainID.Equals(common.DASHChain) {
+		if err := c.reconcileInstantSendBlock(block); err != nil {
+			// Keep ChainLock observations available. Failed settlement retains the
+			// reservation and pauses customer admission until it can be retried.
+			c.log.Err(err).Msg("fail to settle InstantSend allowance")
+		}
+	}
 
 	var vinZeroTxs map[string]*btcjson.TxRawResult
 	var err error
@@ -858,6 +867,8 @@ func (c *Client) isFromAsgard(txID string) bool {
 	return c.isAsgardAddress(sender)
 }
 
+var errInvalidSenderUTXO = errors.New("sender utxo must be single-sig")
+
 // getSender returns sender address for a btc tx, using vin:0
 func (c *Client) getSender(tx *btcjson.TxRawResult, vinZeroTxs map[string]*btcjson.TxRawResult) (string, error) {
 	if len(tx.Vin) == 0 {
@@ -890,7 +901,7 @@ func (c *Client) getSender(tx *btcjson.TxRawResult, vinZeroTxs map[string]*btcjs
 	// (since ExtractPkScriptAddrs returns addresses[0] for bare multisig).
 	// P2SH/P2WSH-wrapped multisig is unaffected (returns single 3xxx/bc1q address).
 	if !c.isValidUTXO(vout.ScriptPubKey.Hex) {
-		return "", fmt.Errorf("sender utxo must be single-sig")
+		return "", errInvalidSenderUTXO
 	}
 
 	addresses := c.getAddressesFromScriptPubKey(vout.ScriptPubKey)

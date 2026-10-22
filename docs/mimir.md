@@ -150,6 +150,11 @@ Operational notes:
 - `MaxConfirmations-<Chain>`# : The maximum number of confirmations for a chain
 - `ConfMultiplierBasisPoints-<Chain>`#: Increases or decrease the inbound confirmation count block requirement for a chain
 
+### Dash InstantSend
+
+- `DashInstantSendMaxAmount`: Per-node customer InstantSend allowance in duffs (`100000000000` means 1,000 DASH); unset or zero stops new customer InstantSend observations. See [Dash InstantSend allowance](chain-clients/utxo.md#dash-instantsend-allowance).
+- `DashInstantSendMinAmount`: Minimum customer InstantSend deposit in duffs; defaults to `1000000` (0.01 DASH). Zero removes this extra minimum while keeping the chain dust check.
+
 ### Fee Management
 
 - `NativeTransactionFee`: RUNE fee on all on chain txs
@@ -191,6 +196,7 @@ Operational notes:
 - `FailKeysignSlashPoints`: Slash for 2 blocks
 - `ObserveSlashPoints`: The number of slashpoints for making an observation (redeems later if observation reaches consensus)
 - `ObservationDelayFlexibility`: Number of blocks of flexibility for a validator to get their slash points taken off for making an observation
+- `ObservationDelayFlexibility<CHAIN>`: Optional per-chain transaction observation window, in THORChain blocks (for example `ObservationDelayFlexibilityDASH`). A nonnegative value overrides the global window; unset values use the global setting.
 - `JailTimeKeygen`: Blocks a node account is jailed for failing to keygen. DO NOT drop below TSS timeout
 - `JailTimeKeysign`: Blocks a node account is jailed for failing to keysign. DO NOT drop below TSS timeout
 - `BondSlashBan`: RUNE amount to slash bond of banned node

@@ -84,13 +84,21 @@ type Client struct {
 	bridge      thorclient.ThorchainBridge
 	asgardCache stdatomic.Pointer[utxo.AsgardCache]
 
-	// Effective InstantSend settings, including Mimir overrides.
-	instantSendSettings config.InstantSendConfiguration
 	// Owned by the single mempool scanner; queued batches are rebuilt after restart.
 	instantSendMempoolCursor string
-	instantSendQueuedBatches []types.TxIn
-	// True selects InstantSend on the next call; false selects ordinary outbounds.
-	instantSendScanNext bool
+	// Transaction batches awaiting final checks and delivery.
+	instantSendTxQueue []types.TxIn
+	// Selects the next mempool scan; starts with scanOutbounds.
+	nextMempoolScan mempoolScanType
+	// Amount settings are owned by the mempool scanner.
+	// Both amounts and their Mimir values use duffs (common.One per DASH).
+	instantSendMinAmount uint64
+	instantSendMaxAmount uint64
+	// Serializes finality checks and allowance writes with ChainLock settlement.
+	// Also protects recovery progress, which settlement failures can reset.
+	// Guards Mimir updates to cfg.InstantSend against GetConfig copies.
+	instantSendAllowanceMu sync.Mutex
+	instantSendRecovery    instantSendRecovery
 
 	// ---------- fees / solvency ----------
 	minRelayFeeSats         stdatomic.Uint64
@@ -173,7 +181,6 @@ func NewClient(
 		vaultLocks:                make(map[string]*sync.Mutex),
 		stopchan:                  make(chan struct{}),
 		bridge:                    bridge,
-		instantSendSettings:       cfg.InstantSend,
 		regexpRemoveTrailingZeros: regexp.MustCompile(`(?:00)+$`),
 	}
 
@@ -214,8 +221,10 @@ func NewClient(
 	return c, nil
 }
 
-// GetConfig returns the chain configuration.
+// GetConfig returns the chain configuration, including InstantSend Mimir overrides.
 func (c *Client) GetConfig() config.BifrostChainConfiguration {
+	c.instantSendAllowanceMu.Lock()
+	defer c.instantSendAllowanceMu.Unlock()
 	return c.cfg
 }
 
@@ -606,33 +615,57 @@ func (c *Client) FetchTxs(height, chainHeight int64) (types.TxIn, error) {
 // Client - Fetch Mempool
 ////////////////////////////////////////////////////////////////////////////////////////
 
+type mempoolScanType uint8
+
+const (
+	scanOutbounds   mempoolScanType = iota // Non-final observations of vault-sent transactions.
+	scanInstantSend                        // Final observations of InstantSend transactions received by vaults.
+)
+
 // FetchMemPool retrieves txs from mempool
 func (c *Client) FetchMemPool(height int64) (types.TxIn, error) {
 	if !c.cfg.ChainID.Equals(common.DASHChain) {
 		return c.fetchMemPoolTransactions(height, false)
 	}
 
-	previousSettings := c.instantSendSettings
-	c.refreshInstantSendSettings()
-	if !c.instantSendSettings.Enabled {
-		c.instantSendQueuedBatches = nil
-		c.instantSendScanNext = false
+	previousConfig := c.cfg.InstantSend
+	err := c.refreshInstantSendSettings()
+	if err != nil {
+		c.log.Err(err).Msg("customer InstantSend observations paused")
+		c.publishInstantSendAllowance(instantSendAdmission{reason: "settings"})
+	}
+	if !c.cfg.InstantSend.Enabled {
+		c.instantSendTxQueue = nil
+		c.nextMempoolScan = scanOutbounds
+		admission, err := c.prepareInstantSendAllowance(err)
+		if err != nil {
+			c.log.Err(err).Msg("fail to maintain InstantSend allowance while disabled")
+		}
+		c.publishInstantSendAllowance(admission)
 		return c.fetchMemPoolTransactions(height, true)
 	}
-	if c.instantSendSettings != previousSettings {
+	if c.cfg.InstantSend != previousConfig {
 		// Rebuild queued batches using the new observation settings.
-		c.instantSendQueuedBatches = nil
+		c.instantSendTxQueue = nil
 	}
 
 	// Each batch has one finality flag, so alternate ordinary vault outbounds
 	// and finalized InstantSend observations, starting with outbounds.
 	// Select the next scan before fetching so errors cannot stall either path.
-	if c.instantSendScanNext {
-		c.instantSendScanNext = false
-		return c.fetchInstantSendBatch(height)
+	switch c.nextMempoolScan {
+	case scanInstantSend:
+		c.nextMempoolScan = scanOutbounds
+		admission, err := c.prepareInstantSendAllowance(err)
+		if err != nil {
+			c.log.Err(err).Msg("customer InstantSend observations paused")
+		}
+		// Publish after this scan's preparation and claims, using its own decision.
+		defer c.publishInstantSendAllowance(admission)
+		return c.fetchInstantSendBatch(height, admission)
+	default: // scanOutbounds is the initial scan and the fallback.
+		c.nextMempoolScan = scanInstantSend
+		return c.fetchMemPoolTransactions(height, true)
 	}
-	c.instantSendScanNext = true
-	return c.fetchMemPoolTransactions(height, true)
 }
 
 // fetchMemPoolTransactions returns non-final observations. Dash restricts this

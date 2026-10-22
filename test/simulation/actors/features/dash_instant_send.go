@@ -43,6 +43,7 @@ func DashInstantSend(rng *rand.Rand) *Actor {
 	return &a.Actor
 }
 
+// acquireUser reserves an available account with a Dash client for these scenarios.
 func (a *DashInstantSendActor) acquireUser(config *OpConfig) OpResult {
 	for _, user := range config.Users {
 		client, ok := user.ChainClients[common.DASHChain].(*utxo.Client)
@@ -81,6 +82,7 @@ func (a *DashInstantSendActor) initContext(_ *OpConfig) OpResult {
 	return OpResult{Continue: true}
 }
 
+// happyPathInstantSend checks that a standard deposit is observed before mining.
 func (a *DashInstantSendActor) happyPathInstantSend(_ *OpConfig) OpResult {
 	return a.observeInstantSend("happy-path", 18*common.One/10, 0)
 }
@@ -246,16 +248,18 @@ func (a *DashInstantSendActor) observeInstantSend(name string, amount, feeSats u
 	}
 }
 
-// This payment exceeded the former $100 simulation limit at the fixed $50 DASH price.
+// largerPaymentInstantSend checks a payment above the former $100 simulation limit
+// at the fixed $50 DASH price.
 func (a *DashInstantSendActor) largerPaymentInstantSend(_ *OpConfig) OpResult {
 	return a.observeInstantSend("larger-payment", 22*common.One/10, 0)
 }
 
-// Use a fee below the former InstantSend floor while still paying for relay.
+// lowFeeInstantSend checks a fee below the former InstantSend floor while still paying for relay.
 func (a *DashInstantSendActor) lowFeeInstantSend(_ *OpConfig) OpResult {
 	return a.observeInstantSend("low-fee", 18*common.One/10, 600)
 }
 
+// releaseAccount makes the account available to other actors and finishes this actor.
 func (a *DashInstantSendActor) releaseAccount(_ *OpConfig) OpResult {
 	if a.account != nil {
 		a.account.Release()
@@ -265,6 +269,7 @@ func (a *DashInstantSendActor) releaseAccount(_ *OpConfig) OpResult {
 	return OpResult{Finish: true}
 }
 
+// broadcastTx signs and broadcasts a NOOP deposit with the scenario's amount and fee override.
 func (a *DashInstantSendActor) broadcastTx(scenario string, amount uint64, feeSats uint64) (string, error) {
 	// Build memo and tx with a fixed fee override tuned for the scenario.
 	// Use NOOP to avoid pool-availability issues.

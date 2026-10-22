@@ -923,6 +923,7 @@ func (c *Client) getChainCfgZEC() *btcchaincfg.Params {
 	}
 }
 
+// getChainCfgDASH selects Dash parameters for the configured simulation network.
 func (c *Client) getChainCfgDASH() *dashchaincfg.Params {
 	switch common.CurrentChainNetwork {
 	case common.MockNet:
@@ -1025,6 +1026,7 @@ func (c *Client) signUTXOBTC(redeemTx *btcwire.MsgTx, amount int64, sourceScript
 	return nil
 }
 
+// signUTXODASH signs one legacy Dash input and verifies its signature script locally.
 func (c *Client) signUTXODASH(redeemTx *btcwire.MsgTx, amount int64, sourceScript []byte, idx int) error {
 	// Dash uses Bitcoin-compatible legacy ECDSA signing (no SegWit).
 	signable := btctxscript.NewPrivateKeySignable(c.privKey)

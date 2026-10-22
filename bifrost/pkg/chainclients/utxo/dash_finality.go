@@ -21,6 +21,8 @@ type chainLockHeightHealth struct {
 	checkedAt       time.Time
 }
 
+// isHealthy reports whether height data is fresh and both ChainLock and scanner
+// lag are within the Dash signing limit.
 func (h *chainLockHeightHealth) isHealthy(now time.Time, scannedHeight int64) bool {
 	maxAge := time.Duration(dashMaxHealthyBlockLag*common.DASHChain.ApproximateBlockMilliseconds()) * time.Millisecond
 	if h == nil || h.checkedAt.IsZero() || now.Sub(h.checkedAt) >= maxAge {

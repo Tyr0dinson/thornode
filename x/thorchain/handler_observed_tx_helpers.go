@@ -19,6 +19,16 @@ import (
 	mem "gitlab.com/thorchain/thornode/v3/x/thorchain/memo"
 )
 
+// observationDelayFlexibility lets a slow chain allow later observations without
+// changing other chains. The value is measured in THORChain blocks.
+func observationDelayFlexibility(ctx cosmos.Context, k keeper.Keeper, chain common.Chain) int64 {
+	value, err := k.GetMimir(ctx, constants.ObservationDelayFlexibility.String()+chain.String())
+	if err == nil && value >= 0 {
+		return value
+	}
+	return k.GetConfigInt64(ctx, constants.ObservationDelayFlexibility)
+}
+
 // processTxInAttestation processes a single attestation for an observed tx.
 // This is used by both MsgObservedTxIn (single attester) and MsgObservedTxInQuorum (multiple attesters).
 func processTxInAttestation(
@@ -35,7 +45,7 @@ func processTxInAttestation(
 
 	observeSlashPoints := mgr.GetConstants().GetInt64Value(constants.ObserveSlashPoints)
 	lackOfObservationPenalty := mgr.GetConstants().GetInt64Value(constants.LackOfObservationPenalty)
-	observeFlex := k.GetConfigInt64(ctx, constants.ObservationDelayFlexibility)
+	observeFlex := observationDelayFlexibility(ctx, k, tx.Tx.Chain)
 
 	slashCtx := ctx.WithContext(context.WithValue(ctx.Context(), constants.CtxMetricLabels, []metrics.Label{
 		telemetry.NewLabel("reason", "failed_observe_txin"),
@@ -666,7 +676,7 @@ func processTxOutAttestation(
 
 	observeSlashPoints := mgr.GetConstants().GetInt64Value(constants.ObserveSlashPoints)
 	lackOfObservationPenalty := mgr.GetConstants().GetInt64Value(constants.LackOfObservationPenalty)
-	observeFlex := k.GetConfigInt64(ctx, constants.ObservationDelayFlexibility)
+	observeFlex := observationDelayFlexibility(ctx, k, tx.Tx.Chain)
 	ok := false
 
 	slashCtx := ctx.WithContext(context.WithValue(ctx.Context(), constants.CtxMetricLabels, []metrics.Label{

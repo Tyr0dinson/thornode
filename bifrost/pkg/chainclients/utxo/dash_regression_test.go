@@ -26,6 +26,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/bifrost/tss"
 	"gitlab.com/thorchain/thornode/v3/common"
+	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/constants"
 	. "gopkg.in/check.v1"
 )
@@ -105,7 +106,7 @@ func (s *DashSuite) TestDashLockedBalanceAndInputSelection(c *C) {
 	client, cleanup := newDashClientForRPCServer(c, server.URL)
 	defer cleanup()
 	client.bridge = &dashSelectionBridge{}
-	client.instantSendSettings.Enabled = false
+	client.cfg.InstantSend.Enabled = false
 	account, err := client.GetAccount(pubKey, nil)
 	c.Assert(err, IsNil)
 	c.Assert(account.Coins.GetCoin(common.DASHAsset).Amount.Uint64(), Equals, uint64(20000000))
@@ -153,15 +154,19 @@ func (s *DashSuite) TestDashMemoRoundTrip(c *C) {
 }
 
 func (s *DashSuite) TestDashObservationGroupsClaimOnlyDeliveredTransactions(c *C) {
-	client, cleanup := newDashClientForRPCServer(c, "http://localhost:1")
+	client, fixture, cleanup := newDashMempoolFixture(c)
 	defer cleanup()
-	first, second := strings.Repeat("a", 64), strings.Repeat("b", 64)
+	first, second := fixture.inbound, fixture.lowFeeInbound
+	item := func(id string, height int64) *types.TxInItem {
+		return &types.TxInItem{Tx: id, BlockHeight: height, Sender: fixture.user, To: fixture.asgard,
+			Coins: common.NewCoins(common.NewCoin(common.DASHAsset, cosmos.NewUint(common.One/10)))}
+	}
 	groups := instantSendObservationGroups(client.GetChain(), map[int64][]*types.TxInItem{
-		200: {{Tx: second, BlockHeight: 200}},
-		100: {{Tx: strings.ToUpper(first), BlockHeight: 100}},
+		200: {item(second, 200)},
+		100: {item(strings.ToUpper(first), 100)},
 	})
-	client.instantSendQueuedBatches = groups
-	batch, err := client.fetchInstantSendBatch(300)
+	client.instantSendTxQueue = groups
+	batch, err := client.fetchInstantSendBatch(300, instantSendAdmission{allowed: true})
 	c.Assert(err, IsNil)
 	c.Assert(batch.TxArray, HasLen, 1)
 	c.Assert(batch.TxArray[0].BlockHeight, Equals, int64(100))
@@ -176,7 +181,7 @@ func (s *DashSuite) TestDashObservationGroupsClaimOnlyDeliveredTransactions(c *C
 	accepted, err := client.trackObservedTxs([]*types.TxInItem{{Tx: second}})
 	c.Assert(err, IsNil)
 	c.Assert(accepted, HasLen, 1)
-	batch, err = client.fetchInstantSendBatch(300)
+	batch, err = client.fetchInstantSendBatch(300, instantSendAdmission{allowed: true})
 	c.Assert(err, IsNil)
 	c.Assert(batch.TxArray, HasLen, 0)
 	// Changing case cannot bypass the persistent marker.
@@ -201,24 +206,27 @@ func (s *DashSuite) TestDashObservationBatchPreservesOrderAndFirstItem(c *C) {
 }
 
 func (s *DashSuite) TestDashObservationStorageFailureRetainsPendingGroup(c *C) {
-	client, closeStorage := newDashClientForRPCServer(c, "http://localhost:1")
-	item := &types.TxInItem{Tx: strings.Repeat("a", 64), BlockHeight: 100}
-	client.instantSendQueuedBatches = instantSendObservationGroups(client.GetChain(), map[int64][]*types.TxInItem{100: {item}})
+	client, fixture, cleanup := newDashMempoolFixture(c)
+	defer cleanup()
+	item := &types.TxInItem{Tx: fixture.inbound, BlockHeight: 100, Sender: fixture.user, To: fixture.asgard,
+		Coins: common.NewCoins(common.NewCoin(common.DASHAsset, cosmos.NewUint(common.One/10)))}
+	client.instantSendTxQueue = instantSendObservationGroups(client.GetChain(), map[int64][]*types.TxInItem{100: {item}})
+	closed, closeStorage := newDashClientForRPCServer(c, "http://localhost:1")
+	healthyStorage := client.temporalStorage
+	client.temporalStorage = closed.temporalStorage
 	closeStorage()
-	batch, err := client.fetchInstantSendBatch(200)
+	batch, err := client.fetchInstantSendBatch(200, instantSendAdmission{allowed: true})
 	c.Assert(err, NotNil)
 	c.Assert(batch.TxArray, HasLen, 0)
-	c.Assert(client.instantSendQueuedBatches, HasLen, 1)
-	c.Assert(client.instantSendQueuedBatches[0].TxArray, DeepEquals, []*types.TxInItem{item})
+	c.Assert(client.instantSendTxQueue, HasLen, 1)
+	c.Assert(client.instantSendTxQueue[0].TxArray, DeepEquals, []*types.TxInItem{item})
 
 	// Once storage is available, retry the queued group without another RPC scan.
-	healthy, cleanup := newDashClientForRPCServer(c, "http://localhost:1")
-	defer cleanup()
-	client.temporalStorage = healthy.temporalStorage
-	batch, err = client.fetchInstantSendBatch(200)
+	client.temporalStorage = healthyStorage
+	batch, err = client.fetchInstantSendBatch(200, instantSendAdmission{allowed: true})
 	c.Assert(err, IsNil)
 	c.Assert(batch.TxArray, DeepEquals, []*types.TxInItem{item})
-	c.Assert(client.instantSendQueuedBatches, HasLen, 0)
+	c.Assert(client.instantSendTxQueue, HasLen, 0)
 }
 
 func (s *DashSuite) TestDashDifferentCyclesDeliveredSeparately(c *C) {
@@ -284,7 +292,7 @@ func (s *DashSuite) TestDashDifferentCyclesDeliveredSeparately(c *C) {
 	client.cfg.ParallelMempoolScan = 2
 	client.asgardCache.Store(&sharedutxo.AsgardCache{Addresses: []common.Address{common.Address(vault)}, FetchedAt: time.Now()})
 	for i, height := range []int64{100, 200} {
-		batch, err := client.fetchInstantSendBatch(201)
+		batch, err := client.fetchInstantSendBatch(201, instantSendAdmission{allowed: true})
 		c.Assert(err, IsNil)
 		c.Assert(batch.TxArray, HasLen, 1)
 		c.Assert(batch.TxArray[0].Tx, Equals, ids[i])

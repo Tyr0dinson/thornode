@@ -77,6 +77,7 @@ type TemporalStorage struct {
 	db               *leveldb.DB
 	mempoolTxIDCache *lru.Cache
 	observedTxMu     sync.Mutex
+	instantSendState *InstantSendState // protected by observedTxMu; published only after a successful write
 }
 
 func NewTemporalStorage(db *leveldb.DB, txidCacheSize int) (*TemporalStorage, error) {

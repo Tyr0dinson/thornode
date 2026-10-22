@@ -15,12 +15,18 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common"
 )
 
-const DashInstantSendEnabledMimirKey = "DashInstantSendEnabled"
+const (
+	DashInstantSendEnabledMimirKey   = "DashInstantSendEnabled"
+	DashInstantSendMinAmountMimirKey = "DashInstantSendMinAmount"
+	DashInstantSendMaxAmountMimirKey = "DashInstantSendMaxAmount"
+)
 
-// refreshInstantSendSettings applies the Dash InstantSend enable/disable Mimir override.
-func (c *Client) refreshInstantSendSettings() {
+const defaultInstantSendMinAmount uint64 = common.One / 100 // 0.01 DASH, in duffs
+
+// refreshInstantSendSettings reads the InstantSend switch and amount policy.
+func (c *Client) refreshInstantSendSettings() error {
 	if c.bridge == nil {
-		return
+		return errors.New("InstantSend settings bridge unavailable")
 	}
 
 	// Load InstantSend Enabled mimir override.
@@ -28,8 +34,27 @@ func (c *Client) refreshInstantSendSettings() {
 	if err != nil {
 		c.log.Err(err).Msg("fail to get DashInstantSendEnabled mimir")
 	} else if enabled >= 0 {
-		c.instantSendSettings.Enabled = enabled > 0
+		c.instantSendAllowanceMu.Lock()
+		c.cfg.InstantSend.Enabled = enabled > 0
+		c.instantSendAllowanceMu.Unlock()
 	}
+	minAmount, err := c.bridge.GetMimir(DashInstantSendMinAmountMimirKey)
+	if err != nil {
+		return fmt.Errorf("fail to read InstantSend minimum amount: %w", err)
+	}
+	maxAmount, err := c.bridge.GetMimir(DashInstantSendMaxAmountMimirKey)
+	if err != nil {
+		return fmt.Errorf("fail to read InstantSend maximum amount: %w", err)
+	}
+	c.instantSendMinAmount = defaultInstantSendMinAmount
+	if minAmount >= 0 {
+		c.instantSendMinAmount = uint64(minAmount)
+	}
+	c.instantSendMaxAmount = 0
+	if maxAmount > 0 {
+		c.instantSendMaxAmount = uint64(maxAmount)
+	}
+	return nil
 }
 
 // allowInstantSend applies our InstantSend policy for mempool observations.
@@ -38,8 +63,8 @@ func (c *Client) refreshInstantSendSettings() {
 // InstantSend mempool path and instead wait for the normal block-based flow
 // (which checks the fetched block's ChainLock).
 func (c *Client) allowInstantSend(age time.Duration) (bool, string) {
-	if c.instantSendSettings.MaxMempoolAge > 0 && age > c.instantSendSettings.MaxMempoolAge {
-		return false, fmt.Sprintf("mempool age too high: %v > %v", age, c.instantSendSettings.MaxMempoolAge)
+	if c.cfg.InstantSend.MaxMempoolAge > 0 && age > c.cfg.InstantSend.MaxMempoolAge {
+		return false, fmt.Sprintf("mempool age too high: %v > %v", age, c.cfg.InstantSend.MaxMempoolAge)
 	}
 	return true, ""
 }
@@ -93,25 +118,33 @@ func (c *Client) instantSendCandidates(mempool map[string]rpc.GetRawMempoolVerbo
 // fetchInstantSendBatch returns one queued observation batch, scanning for more
 // when the queue is empty. Only the returned batch is marked as observed; the
 // remaining batches can still be retried or discarded after a settings change.
-func (c *Client) fetchInstantSendBatch(height int64) (types.TxIn, error) {
-	if len(c.instantSendQueuedBatches) == 0 {
+func (c *Client) fetchInstantSendBatch(height int64, admission instantSendAdmission) (types.TxIn, error) {
+	if len(c.instantSendTxQueue) == 0 {
 		groups, err := c.scanInstantSend(height)
 		if err != nil {
 			return types.TxIn{}, err
 		}
-		c.instantSendQueuedBatches = groups
+		c.instantSendTxQueue = groups
 	}
-	if len(c.instantSendQueuedBatches) == 0 {
+	if len(c.instantSendTxQueue) == 0 {
 		return types.TxIn{Chain: c.GetChain()}, nil
 	}
-	batch := c.instantSendQueuedBatches[0]
+	batch := c.instantSendTxQueue[0]
+	// A cycle group can span several mempool batches. Bound the fresh finality
+	// check performed while holding the allowance lock, keeping its remainder queued.
+	count := min(len(batch.TxArray), c.instantSendWorkLimit())
+	batch.TxArray = batch.TxArray[:count]
 	var err error
-	batch.TxArray, err = c.trackObservedTxs(batch.TxArray)
+	batch.TxArray, err = c.claimInstantSendBatch(batch.TxArray, admission)
 	if err != nil {
 		return types.TxIn{}, err
 	}
-	c.instantSendQueuedBatches[0] = types.TxIn{}
-	c.instantSendQueuedBatches = c.instantSendQueuedBatches[1:]
+	if count == len(c.instantSendTxQueue[0].TxArray) {
+		c.instantSendTxQueue[0] = types.TxIn{}
+		c.instantSendTxQueue = c.instantSendTxQueue[1:]
+	} else {
+		c.instantSendTxQueue[0].TxArray = c.instantSendTxQueue[0].TxArray[count:]
+	}
 	if c.m != nil {
 		if counter := c.m.GetCounter(metrics.DashInstantSendObserved); counter != nil {
 			counter.Add(float64(len(batch.TxArray)))
@@ -120,6 +153,8 @@ func (c *Client) fetchInstantSendBatch(height int64) (types.TxIn, error) {
 	return batch, nil
 }
 
+// scanInstantSend collects a bounded set of locked mempool candidates, grouped by
+// lock cycle height. Allowance checks and observation claims happen before delivery.
 func (c *Client) scanInstantSend(height int64) ([]types.TxIn, error) {
 	// Only Dash currently supports the lock RPCs used by this scan.
 	if !c.GetChain().Equals(common.DASHChain) {
@@ -146,9 +181,9 @@ func (c *Client) scanInstantSend(height int64) ([]types.TxIn, error) {
 	group.SetLimit(workers)
 	for i, id := range ids {
 		group.Go(func() error {
-			tx, fetchErr := c.rpc.GetRawTransactionVerbose(id)
-			if fetchErr != nil {
-				c.log.Debug().Err(fetchErr).Str("txid", id).Msg("retry InstantSend mempool transaction later")
+			tx, err := c.rpc.GetRawTransactionVerbose(id)
+			if err != nil {
+				c.log.Debug().Err(err).Str("txid", id).Msg("retry InstantSend mempool transaction later")
 			} else if strings.EqualFold(tx.Txid, id) && tx.InstantSendLocked() {
 				raw[i] = tx
 			}
@@ -205,6 +240,8 @@ func (c *Client) scanInstantSend(height int64) ([]types.TxIn, error) {
 	return instantSendObservationGroups(c.GetChain(), byHeight), nil
 }
 
+// buildInstantSendTxInItem extracts a vault inbound at the lock cycle height.
+// It returns nil if extraction fails or the recipient, dust, or age checks reject it.
 func (c *Client) buildInstantSendTxInItem(tx *rpc.TxResult, anchor int64, entry rpc.GetRawMempoolVerboseResult) *types.TxInItem {
 	item, err := c.getTxIn(&tx.TxRawResult, anchor, true, nil)
 	if err != nil {
@@ -232,6 +269,7 @@ func (c *Client) buildInstantSendTxInItem(tx *rpc.TxResult, anchor int64, entry 
 	return &item
 }
 
+// instantSendObservationGroups builds final batches ordered by lock cycle height.
 // Observer uses a single finalization height for each batch. Mixing cycle heights
 // would make the signed observation depend on which worker happened to finish first.
 func instantSendObservationGroups(chain common.Chain, byHeight map[int64][]*types.TxInItem) []types.TxIn {

@@ -42,6 +42,82 @@ The observer parses these and pushes a `TxIn` to THORChain once confirmed.
 See [Inbound Transactions](../bifrost/how-bifrost-works.md#observing-inbound-transactions).
 For wallet developers, see [Sending UTXO Transactions](../concepts/sending-transactions.md#utxo-chains) for required transaction structure, dust thresholds, OP_RETURN handling, and examples of short and long memos.
 
+### Dash InstantSend allowance
+
+Dash normally observes deposits from ChainLocked blocks. When InstantSend is enabled,
+each Bifrost can report eligible deposits sooner, subject to a persistent allowance
+shared across all of its vaults. This limits the amount that node reports before
+ChainLock settlement. It is a local soft limit, not a network-wide cap or a guarantee
+against an InstantSend failure.
+
+| Mimir | Units | Default / unset | Effect |
+| --- | --- | --- | --- |
+| `DashInstantSendMaxAmount` | duffs | `0` | Maximum outstanding customer InstantSend amount per node. Set `100000000000` for 1,000 DASH. Zero or a deleted value stops new customer InstantSend observations. |
+| `DashInstantSendMinAmount` | duffs | `1000000` (0.01 DASH) | Minimum customer deposit for InstantSend. Zero removes this extra minimum; the existing chain dust threshold still applies. |
+| `ObservationDelayFlexibilityDASH` | THORChain blocks | Global `ObservationDelayFlexibility` | Allows later matching transaction observations to recover slash points. Zero is a valid override. |
+
+Both amount Mimirs use duffs, matching internal accounting: `100000000` duffs is
+1 DASH (`common.One` in Go). This also supports amounts such as 0.01 DASH.
+
+`DashInstantSendEnabled` and the existing maximum mempool age policy still apply.
+A failed read of either amount Mimir pauses customer admission until both reads
+succeed. Lowering the limit below current usage leaves zero available; raising it
+exposes the difference. Deleting either amount Mimir restores the default above.
+Vault senders bypass the new allowance and minimum, including vault migrations,
+consolidation and outbounds. They neither consume nor refill customer allowance.
+The allowance does not change signing or input selection.
+
+For example, setting `DashInstantSendMaxAmount=1000000000` gives a 10 DASH allowance.
+An early 7 DASH observation leaves 3 DASH.
+A 4 DASH deposit waits for a ChainLock; a later 2 DASH deposit can still be reported
+early. A new ChainLock restores the 7 DASH only if its block actually contains that
+transaction. Merely advancing the height, losing the transaction from the mempool,
+or reaching THORChain consensus does not restore capacity.
+
+Reservations and final observation markers are written together in one synchronous
+database batch before delivery. A deferred deposit gets no final marker, so the
+ordinary ChainLock scanner can observe it later. Reservations survive restarts and
+settings changes. Block scans settle raw transaction IDs before parsing and duplicate
+filtering, including while InstantSend is disabled. On restart, pending reservations
+are also checked for inclusion in canonical ChainLocked blocks, covering blocks
+the scanner may have passed while the node was offline.
+
+Customer InstantSend requires a persistent block-scanner database. With no journal
+(including an upgrade from the earlier client), the node starts with no available
+allowance. Once active and caught up, it saves a finite snapshot of potential
+InstantSend transactions in its local mempool and classifies it in bounded batches.
+It counts relevant customer deposits regardless of old observation markers or the
+new age/minimum policy. RPC errors leave work pending for retry. Completion requires
+both full classification and the completed scanner height passing the initial
+ChainLock height. Snapshot deposits remain ChainLock-only and stay reserved until
+included in a ChainLocked block, even if their total exceeds the configured limit.
+Only the remaining allowance admits new deposits. An intact journal resumes instead
+of taking a fresh snapshot; invalid journal data does not silently reset usage.
+
+This startup approach has an accepted gap: a previously credited transaction that
+is absent from the local snapshot cannot be reconstructed from it. A new or recovered
+node may therefore make fresh allowance available while that older exposure remains.
+Persisting the database avoids losing known reservations, but a local snapshot is
+not a complete network exposure history. A crash between persisting a final marker
+and handing the batch to Observer can still miss that node's observation; this
+retains the existing preference for avoiding duplicate delivery.
+
+For rollout, keep `DashInstantSendEnabled=0` while upgrading nodes. Configure a
+positive pending-amount limit, the desired minimum and a DASH observation window,
+then enable InstantSend after the upgrade. Allow time for startup warm-up. The
+observation window is in **THORChain blocks**, not Dash blocks, and does not postpone
+the initial missing-observation penalty or guarantee that every delayed observation
+will arrive in time. Other chains keep the global window unless their own
+`ObservationDelayFlexibility<CHAIN>` override is configured. The override applies
+to transaction observations, not network-fee, solvency or TSS votes.
+
+Monitor `dash_instantsend_reserved_duffs`, `dash_instantsend_available_duffs`,
+`dash_instantsend_pending_transactions`, `dash_instantsend_warming_up`, and
+`dash_instantsend_deferred_total{reason=...}`. Amounts/counts are refreshed on mempool
+scans; the deferral counter counts attempts, so repeated retries can count the same
+deposit more than once. Investigate persistent warm-up or storage errors before
+reenabling customer observations; do not delete the journal to clear reservations.
+
 ## Confirmation Counting
 
 THORChain dynamically delays finality based on transaction value and miner incentives.
