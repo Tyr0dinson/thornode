@@ -11,7 +11,7 @@ endif
 # Config
 ########################################################################################
 
-.PHONY: build test test-xmr-frost-e2e tools export healthcheck run-mocknet build-mocknet stop-mocknet halt-mocknet ps-mocknet reset-mocknet logs-mocknet openapi test-performance test-performance-quick test-performance-all test-performance-analyze test-performance-profile-cpu test-performance-profile-mem test-performance-trace test-performance-clean test-xmr-e2e perf-mix perf-bench perf-ab perf-profile perf-guard perf-times
+.PHONY: build test test-xmr-frost-e2e tools export healthcheck run-mocknet build-mocknet stop-mocknet halt-mocknet ps-mocknet reset-mocknet logs-mocknet openapi test-performance test-performance-quick test-performance-all test-performance-analyze test-performance-profile-cpu test-performance-profile-mem test-performance-trace test-performance-clean test-xmr-e2e perf-mix perf-bench perf-ab perf-profile perf-guard perf-times ci-health test-ci-health
 
 # mocknet docker compose files and overrides for macOS
 DOCKER_COMPOSE_FILES ?= -f build/docker/docker-compose.yml
@@ -425,6 +425,16 @@ perf-guard:
 
 perf-times:
 	@./scripts/perf/test-times.sh $(LABEL)
+
+# ------------------------------ CI Health ------------------------------
+# Why MR pipeline jobs fail; see tools/ci-health/README.md.
+# Pass options with CI_HEALTH_ARGS, e.g. CI_HEALTH_ARGS="--since 2026-01-01".
+
+ci-health:
+	@python3 tools/ci-health/run.py all $(CI_HEALTH_ARGS)
+
+test-ci-health:
+	@python3 -m unittest discover -s tools/ci-health -v
 
 # ------------------------------ Regression Tests ------------------------------
 
