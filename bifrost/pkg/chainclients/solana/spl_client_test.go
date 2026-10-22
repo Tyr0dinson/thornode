@@ -355,6 +355,7 @@ func (s *SolTestSuite) newSPLSignerTestClient(c *C, server *httptest.Server) (*S
 
 func (s *SolTestSuite) TestSPLSignTxObservation(c *C) {
 	recipientMissing := true
+	recipientATA := ata(c, testRecipient, testUSDCMint)
 	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 		body, _ := io.ReadAll(req.Body)
 		var r struct {
@@ -368,8 +369,16 @@ func (s *SolTestSuite) TestSPLSignTxObservation(c *C) {
 		}
 		switch r.Method {
 		case "getAccountInfo":
+			// Only the recipient's token account is a token account; the recipient wallet
+			// itself has no account.
+			var params []json.RawMessage
+			_ = json.Unmarshal(r.Params, &params)
+			var addr string
+			if len(params) > 0 {
+				_ = json.Unmarshal(params[0], &addr)
+			}
 			value := "null"
-			if !recipientMissing {
+			if !recipientMissing && addr == recipientATA {
 				value = tokenAcct(testUSDCMint, testRecipient, "0", "initialized")
 			}
 			_, _ = fmt.Fprintf(rw, `{"jsonrpc":"2.0","id":1,"result":{"context":{"slot":1},"value":%s}}`, value)

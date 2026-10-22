@@ -15,6 +15,9 @@ var (
 	// mints THORChain supports. Token-2022 mints are excluded because their extensions
 	// (transfer fees, transfer hooks, permanent delegates) break 1:1 vault accounting.
 	TokenProgramID = MustPublicKeyFromString("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA")
+	// Token2022ProgramID is the Token-2022 program. Its mints are not supported, but its
+	// accounts are token accounts all the same, never wallets.
+	Token2022ProgramID = MustPublicKeyFromString("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb")
 	// AssociatedTokenProgramID derives and creates the canonical token account a wallet
 	// holds for a mint. Vaults receive and send SPL tokens only through these accounts.
 	AssociatedTokenProgramID = MustPublicKeyFromString("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL")

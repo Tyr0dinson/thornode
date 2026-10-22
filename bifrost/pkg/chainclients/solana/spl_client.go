@@ -23,6 +23,24 @@ func isSPLOutbound(tx stypes.TxOutItem) bool {
 // it, burning a fee on every attempt.
 var errSPLSelfSend = errors.New("SPL self-send cannot be observed")
 
+// splRecipientIsTokenAccount reports whether an SPL outbound's recipient address is
+// itself a token account or a mint, that is, an account owned by a token program. The
+// outbound pays the recipient's associated token account, derived from the address as
+// a wallet; for such an address that account belongs to an address nobody can sign
+// for, so the tokens could never be moved again. An account that does not exist yet,
+// or one owned by any other program, is a wallet. A failed read is an error, so the
+// outbound is retried rather than signed through.
+func (c *SOLClient) splRecipientIsTokenAccount(tx stypes.TxOutItem) (bool, error) {
+	if c.rpcClient == nil {
+		return false, nil
+	}
+	meta, err := c.rpcClient.GetAccountMeta(tx.ToAddress.String())
+	if err != nil {
+		return false, fmt.Errorf("fail to read recipient account %s: %w", tx.ToAddress, err)
+	}
+	return meta.Owner == types.TokenProgramID.String() || meta.Owner == types.Token2022ProgramID.String(), nil
+}
+
 // splTransferParams resolves an SPL outbound: the whitelisted mint, the amount in
 // the mint's base units, and the vault's and recipient's associated token accounts.
 // Everything is derived from the outbound and the whitelist alone, so every keysign

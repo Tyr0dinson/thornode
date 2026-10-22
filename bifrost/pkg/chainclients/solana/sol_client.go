@@ -681,6 +681,18 @@ func (c *SOLClient) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *
 			return c.dropForReschedule(tx, "spl_self_send_dropped", c.logger.Warn(),
 				"SPL outbound to its own vault would be an unobservable no-op, dropping for reschedule")
 		}
+		// Nor is one paid to a recipient address that is itself a token account or a
+		// mint (splRecipientIsTokenAccount): the tokens would be unrecoverable. Dropped,
+		// they stay in the vault. A failed read is retained and retried.
+		isTokenAccount, err := c.splRecipientIsTokenAccount(tx)
+		if err != nil {
+			c.countAbstain("spl_recipient_read_error")
+			return nil, nil, nil, fmt.Errorf("fail to check SPL recipient; retaining outbound: %w", err)
+		}
+		if isTokenAccount {
+			return c.dropForReschedule(tx, "spl_recipient_token_account_dropped", c.logger.Warn(),
+				"SPL outbound recipient is a token account, not a wallet, so the tokens would be unrecoverable; dropping for reschedule")
+		}
 	}
 
 	// GetMemo returns OriginalMemo for memoless outbounds
