@@ -85,8 +85,12 @@ type HTTPRouterConfig struct {
 	MaxBodyBytes int64
 	// DialTimeout bounds TCP connect and TLS handshake per attempt (default 5s).
 	DialTimeout time.Duration
-	// AttemptTimeout bounds the wait for response headers per attempt (default 10s),
-	// so one black-holed endpoint cannot consume the caller's whole request budget.
+	// AttemptTimeout bounds a read attempt, from the request to the classification
+	// of the response (default 10s), so one black-holed endpoint cannot consume the
+	// caller's whole request budget. Writes are not bounded by it: their only
+	// fallback is a provable dial error, so cutting a broadcast short would only
+	// turn a likely accepted write into an ambiguous one. A write keeps the
+	// caller's whole deadline.
 	AttemptTimeout time.Duration
 	// Transport performs the actual requests. Default: a clone of
 	// http.DefaultTransport with the timeouts above.
@@ -150,12 +154,15 @@ func NewHTTPRouter(mgr *Manager, cfg HTTPRouterConfig, log zerolog.Logger) (*HTT
 		r.cfg.AttemptTimeout = defaultAttemptTimeout
 	}
 	if r.cfg.Transport == nil {
-		r.cfg.Transport = newTransport(r.cfg.DialTimeout, r.cfg.AttemptTimeout)
+		r.cfg.Transport = newTransport(r.cfg.DialTimeout)
 	}
 	return r, nil
 }
 
-func newTransport(dial, header time.Duration) http.RoundTripper {
+// newTransport bounds connecting and the TLS handshake. Response headers are not
+// bounded here: the router's per-attempt timer does that for reads, and writes
+// keep the caller's whole deadline.
+func newTransport(dial time.Duration) http.RoundTripper {
 	base, ok := http.DefaultTransport.(*http.Transport)
 	if !ok {
 		return http.DefaultTransport
@@ -163,7 +170,6 @@ func newTransport(dial, header time.Duration) http.RoundTripper {
 	t := base.Clone()
 	t.DialContext = (&net.Dialer{Timeout: dial, KeepAlive: 30 * time.Second}).DialContext
 	t.TLSHandshakeTimeout = dial
-	t.ResponseHeaderTimeout = header
 	return t
 }
 
@@ -226,34 +232,41 @@ func (r *HTTPRouter) RoundTrip(req *http.Request) (*http.Response, error) {
 		if isWrite && i > 0 && !isDialError(lastErr) {
 			break // may have been sent; never duplicate a write
 		}
-		// Per-attempt budget: a stalled endpoint must leave time for the next one.
-		// The budget only bounds the wait for response headers; once they arrive the
+		// Per-attempt budget for reads: a stalled endpoint must leave time for the
+		// next one. The budget covers the wait for the response headers and the
+		// classification sniff of the body (a 200 whose body then stalls is just as
+		// much a dead endpoint as one that never answers); once classified, the
 		// timer is disarmed and the body read keeps the caller's own deadline. A
-		// write keeps the whole budget: its only fallback is a provable dial error,
-		// which fails fast anyway.
-		remaining := len(candidates) - i - 1
-		if isWrite {
-			remaining = 0
-		}
+		// write keeps the caller's whole deadline: its only fallback is a provable
+		// dial error, which fails fast anyway, and cutting a broadcast short would
+		// only make an accepted write look ambiguous.
 		actx, acancel := context.WithCancel(req.Context())
 		var (
-			headerMu sync.Mutex
-			gotHead  bool
+			headerMu   sync.Mutex
+			classified bool
+			timer      *time.Timer
 		)
-		timer := time.AfterFunc(attemptBudget(req.Context(), r.cfg.AttemptTimeout, remaining), func() {
+		if budget, ok := r.attemptBudgetFor(req.Context(), isWrite, len(candidates)-i-1); ok {
+			timer = time.AfterFunc(budget, func() {
+				headerMu.Lock()
+				defer headerMu.Unlock()
+				if !classified {
+					acancel()
+				}
+			})
+		}
+		stopTimer := func() {
 			headerMu.Lock()
-			defer headerMu.Unlock()
-			if !gotHead {
-				acancel()
+			classified = true
+			headerMu.Unlock()
+			if timer != nil {
+				timer.Stop()
 			}
-		})
+		}
 		out := r.rewrite(req.WithContext(actx), t, body)
 		resp, err := r.cfg.Transport.RoundTrip(out)
-		headerMu.Lock()
-		gotHead = err == nil
-		headerMu.Unlock()
-		timer.Stop()
 		if err != nil {
+			stopTimer()
 			acancel()
 			if req.Context().Err() != nil {
 				return nil, err // caller cancelled; not the endpoint's fault
@@ -273,6 +286,7 @@ func (r *HTTPRouter) RoundTrip(req *http.Request) (*http.Response, error) {
 		ab := &attemptBody{ReadCloser: resp.Body, cancel: acancel}
 		resp.Body = ab
 		verdict, kind, fromBody := r.classify(resp, isWrite)
+		stopTimer()
 		switch verdict {
 		case verdictOK, verdictAppError:
 			// the endpoint answered; the caller's own error handling applies to appError
@@ -365,6 +379,25 @@ func (b *attemptBody) Close() error {
 	err := b.ReadCloser.Close()
 	b.cancel()
 	return err
+}
+
+// attemptBudgetFor returns the timer budget for one attempt, or ok=false when no
+// router timer applies. Reads get attemptBudget. A write gets the caller's whole
+// remaining deadline when there is one, and no router timer otherwise (the caller's
+// http.Client timeout still applies).
+func (r *HTTPRouter) attemptBudgetFor(ctx context.Context, isWrite bool, remainingCandidates int) (time.Duration, bool) {
+	if !isWrite {
+		return attemptBudget(ctx, r.cfg.AttemptTimeout, remainingCandidates), true
+	}
+	deadline, ok := ctx.Deadline()
+	if !ok {
+		return 0, false
+	}
+	budget := time.Until(deadline)
+	if budget <= 0 {
+		budget = time.Millisecond
+	}
+	return budget, true
 }
 
 // attemptBudget bounds one attempt so that, when more candidates remain, at least
@@ -490,9 +523,13 @@ func classifyJSONRPC(trimmed []byte) (verdict, ErrorKind) {
 			if worst < verdictRateLimited {
 				worst, worstKind = verdictRateLimited, ErrorKindRateLimit
 			}
-		case e.Code == -32601 || e.Code == -32603: // method not found / internal error: the endpoint cannot serve bifrost
+		case e.Code == -32603: // internal error: the endpoint could not serve the request
 			worst, worstKind = verdictEndpointError, ErrorKindHTTP
 		default:
+			// application errors, including -32601 method not found: bifrost calls
+			// optional methods (eth_getBlockReceipts) and falls back itself when a
+			// node lacks them, so a missing method must not charge the endpoint;
+			// the health probes already catch nodes that cannot serve core methods
 			if worst < verdictAppError {
 				worst = verdictAppError
 			}

@@ -203,8 +203,8 @@ func (s *RouterSuite) TestRateLimitPutsEndpointInCooldown(c *C) {
 func (s *RouterSuite) TestJSONRPCErrorsAndRedirectsAreClassified(c *C) {
 	var stErr, stOK, stRedirect int32 = http.StatusOK, http.StatusOK, http.StatusFound
 	var h1, h2, h3 []hit
-	notFound := rpcServer(&stErr, &h1, `{"jsonrpc":"2.0","id":1,"error":{"code":-32601,"message":"method not found"}}`)
-	defer notFound.Close()
+	internal := rpcServer(&stErr, &h1, `{"jsonrpc":"2.0","id":1,"error":{"code":-32603,"message":"internal error"}}`)
+	defer internal.Close()
 	limited := rpcServer(&stErr, &h3, `{"jsonrpc":"2.0","id":1,"error":{"code":-32005,"message":"limit"}}`)
 	defer limited.Close()
 	redirect := rpcServer(&stRedirect, nil, "")
@@ -212,7 +212,7 @@ func (s *RouterSuite) TestJSONRPCErrorsAndRedirectsAreClassified(c *C) {
 	good := rpcServer(&stOK, &h2, `{"jsonrpc":"2.0","id":1,"error":{"code":3,"message":"execution reverted"}}`)
 	defer good.Close()
 	m, err := endpoints.NewManager(common.ETHChain, []config.ChainEndpointConfig{
-		{Name: "nf", RPCHost: notFound.URL, Priority: 1},
+		{Name: "internal", RPCHost: internal.URL, Priority: 1},
 		{Name: "lim", RPCHost: limited.URL, Priority: 2},
 		{Name: "redir", RPCHost: redirect.URL, Priority: 3},
 		{Name: "good", RPCHost: good.URL, Priority: 4},
@@ -222,7 +222,7 @@ func (s *RouterSuite) TestJSONRPCErrorsAndRedirectsAreClassified(c *C) {
 		e.SetIdentity("g")
 	}
 	targets, err := endpoints.TargetsFrom([]config.ChainEndpointConfig{
-		{Name: "nf", RPCHost: notFound.URL}, {Name: "lim", RPCHost: limited.URL}, {Name: "redir", RPCHost: redirect.URL}, {Name: "good", RPCHost: good.URL},
+		{Name: "internal", RPCHost: internal.URL}, {Name: "lim", RPCHost: limited.URL}, {Name: "redir", RPCHost: redirect.URL}, {Name: "good", RPCHost: good.URL},
 	}, endpoints.RPCHost)
 	c.Assert(err, IsNil)
 	hc := routerFor(c, m, targets, nil)
@@ -231,11 +231,106 @@ func (s *RouterSuite) TestJSONRPCErrorsAndRedirectsAreClassified(c *C) {
 	body, _ := io.ReadAll(resp.Body)
 	_ = resp.Body.Close()
 	c.Assert(string(body), Matches, ".*execution reverted.*") // application error passed through intact
-	c.Assert(m.Entry("nf").State(), Equals, endpoints.StateUnhealthy)
+	c.Assert(m.Entry("internal").State(), Equals, endpoints.StateUnhealthy)
 	c.Assert(m.Entry("lim").InCooldown(), Equals, true)
 	c.Assert(m.Entry("redir").State(), Equals, endpoints.StateUnhealthy)
 	c.Assert(m.Entry("good").State(), Equals, endpoints.StateHealthy)
 	c.Assert(m.Active().Name, Equals, "good")
+}
+
+// A node that lacks an optional method answers -32601. Bifrost falls back itself
+// (eth_getBlockReceipts to per-transaction receipts), so the answer is the caller's
+// business: it is returned as-is and never charged, however often it happens.
+func (s *RouterSuite) TestMethodNotFoundIsNotChargedToTheEndpoint(c *C) {
+	var st int32 = http.StatusOK
+	var h1, h2 []hit
+	old := rpcServer(&st, &h1, `{"jsonrpc":"2.0","id":1,"error":{"code":-32601,"message":"the method eth_getBlockReceipts does not exist/is not available"}}`)
+	defer old.Close()
+	good := rpcServer(&st, &h2, "")
+	defer good.Close()
+	m, targets := twoEndpointMgr(c, common.ETHChain, []config.ChainEndpointConfig{{Name: "old", RPCHost: old.URL, Priority: 1}, {Name: "good", RPCHost: good.URL, Priority: 2}}, 1)
+	hc := routerFor(c, m, targets, nil)
+	for i := 0; i < 6; i++ {
+		resp, err := post(c, hc, base(m), "eth_getBlockReceipts")
+		c.Assert(err, IsNil)
+		body, _ := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		c.Assert(string(body), Matches, ".*does not exist.*")
+	}
+	c.Assert(h1, HasLen, 6)
+	c.Assert(h2, HasLen, 0)
+	c.Assert(m.Entry("old").State(), Equals, endpoints.StateHealthy)
+	c.Assert(m.Active().Name, Equals, "old")
+}
+
+// A write is never cut short by the per-attempt timer: a broadcast that the node
+// takes longer than attempt_timeout to answer still completes within the caller's
+// deadline, instead of becoming an ambiguous error.
+func (s *RouterSuite) TestWriteKeepsTheCallerWholeBudget(c *C) {
+	slow := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(700 * time.Millisecond)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":"0xtxhash"}`))
+	}))
+	defer slow.Close()
+	m, targets := twoEndpointMgr(c, common.ETHChain, []config.ChainEndpointConfig{{Name: "slow", RPCHost: slow.URL, Priority: 1}}, 1)
+	r, err := endpoints.NewHTTPRouter(m, endpoints.HTTPRouterConfig{
+		Base: endpoints.SyntheticBase(m.Chain()), Targets: targets, WriteMethods: []string{"eth_sendRawTransaction"}, AttemptTimeout: 200 * time.Millisecond,
+	}, zerolog.Nop())
+	c.Assert(err, IsNil)
+	hc := &http.Client{Transport: r, Timeout: 5 * time.Second}
+
+	// the write waits for the node
+	resp, err := post(c, hc, base(m), "eth_sendRawTransaction")
+	c.Assert(err, IsNil)
+	body, _ := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	c.Assert(string(body), Matches, `.*0xtxhash.*`)
+	c.Assert(m.Entry("slow").State(), Equals, endpoints.StateHealthy)
+
+	// a read on the same endpoint is still bounded by the attempt timer
+	_, err = post(c, hc, base(m), "eth_blockNumber")
+	c.Assert(err, NotNil)
+}
+
+// A 200 whose body then stalls is a dead endpoint too: the classification sniff is
+// inside the per-attempt budget, so the read moves to the backup instead of
+// consuming the caller's whole deadline.
+func (s *RouterSuite) TestStalledSuccessBodyIsBoundedByTheAttemptBudget(c *C) {
+	release := make(chan struct{})
+	defer close(release)
+	stalled := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+		select {
+		case <-release:
+		case <-r.Context().Done():
+		}
+	}))
+	defer stalled.Close()
+	var st int32 = http.StatusOK
+	var h2 []hit
+	good := rpcServer(&st, &h2, "")
+	defer good.Close()
+	m, targets := twoEndpointMgr(c, common.ETHChain, []config.ChainEndpointConfig{{Name: "stalled", RPCHost: stalled.URL, Priority: 1}, {Name: "good", RPCHost: good.URL, Priority: 2}}, 1)
+	r, err := endpoints.NewHTTPRouter(m, endpoints.HTTPRouterConfig{
+		Base: endpoints.SyntheticBase(m.Chain()), Targets: targets, AttemptTimeout: 300 * time.Millisecond,
+	}, zerolog.Nop())
+	c.Assert(err, IsNil)
+	hc := &http.Client{Transport: r, Timeout: 5 * time.Second}
+
+	start := time.Now()
+	resp, err := post(c, hc, base(m), "eth_blockNumber")
+	c.Assert(err, IsNil)
+	body, _ := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	c.Assert(string(body), Matches, `.*"ok".*`)
+	c.Assert(h2, HasLen, 1)
+	c.Assert(time.Since(start) < 2*time.Second, Equals, true, Commentf("took %s", time.Since(start)))
+	c.Assert(m.Entry("stalled").State(), Equals, endpoints.StateUnhealthy)
 }
 
 func (s *RouterSuite) TestApplicationHTTPErrorsAreNotFailover(c *C) {
