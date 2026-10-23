@@ -1302,6 +1302,11 @@ func (s *PoolMgrSuite) TestPoolCycleFailureRollsBackAndRetries(c *C) {
 	c.Assert(err, IsNil)
 	c.Check(previousFee, Equals, uint64(17))
 	c.Check(getPoolCycleRetryHeight(retryCtx, mgr), Equals, int64(0))
+	// A completed cycle removes the retry marker rather than leaving a
+	// zero-valued key in the mimir store.
+	retryMarker, err := baseKeeper.GetMimir(retryCtx, poolCycleRetryMimir)
+	c.Assert(err, IsNil)
+	c.Check(retryMarker, Equals, int64(-1))
 
 	poolEvents := 0
 	poolBalanceEvents := 0

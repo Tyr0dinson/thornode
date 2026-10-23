@@ -79,8 +79,13 @@ func (pm *PoolMgr) EndBlock(ctx cosmos.Context, mgr Manager) error {
 			if err = pm.cyclePoolsAfterPreflight(cycleCtx, maxAvailablePools, minRunePoolDepth, stagedPoolCost, mgr); err != nil {
 				ctx.Logger().Error("Unable to enable a pool", "error", err)
 			} else {
-				mgr.Keeper().SetMimir(cycleCtx, poolCycleRetryMimir, 0)
-				commitCycle()
+				// Remove the marker so a completed cycle leaves no residue in
+				// the mimir store.
+				if err = mgr.Keeper().DeleteMimir(cycleCtx, poolCycleRetryMimir); err != nil {
+					ctx.Logger().Error("fail to clear pool cycle retry marker", "error", err)
+				} else {
+					commitCycle()
+				}
 			}
 		}
 	}

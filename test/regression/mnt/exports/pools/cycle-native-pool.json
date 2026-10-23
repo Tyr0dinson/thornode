@@ -289,9 +289,6 @@
       "mempool_swaps": [],
       "mimirs": [
         {
-          "key": "MEMPOOLSWAPPOOLCYCLERETRYHEIGHT"
-        },
-        {
           "key": "POOLCYCLE",
           "value": "3"
         },
