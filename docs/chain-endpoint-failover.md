@@ -12,16 +12,28 @@ Every chain keeps one **active** endpoint (the highest-priority healthy one at s
 All requests go to the active endpoint. Reads that fail with a transport error, an HTTP
 3xx / 5xx, a 401 / 403, a JSON-RPC "internal error", a body that is not valid JSON, or a
 rate limit are retried on the next healthy endpoint immediately and charged to the
-endpoint that failed. A JSON-RPC "method not found" is the caller's business and is never
+endpoint that failed. On the HTTP-routed chains (EVM, SOL, XRP, TRON, and the Cosmos
+CometBFT RPC) a JSON-RPC "method not found" is the caller's business and is never
 charged: bifrost calls optional methods (`eth_getBlockReceipts`) and falls back itself
 when a node lacks them. On XRP, a provider answering `lgrNotFound` is asked last: the
 other endpoints are tried first and nothing is charged. Writes (broadcasts) are sent
 once, to the active endpoint, with the caller's whole timeout, and never duplicated
 elsewhere; the XRP transport retry wrapper never replays `submit` either.
 
-UTXO chains are the exception to "immediately": the primary daemon is retried with the
-client's own backoff (`max_rpc_retries`, up to about a minute with the default 9) before
-a fallback is tried, as it was before failover existed.
+UTXO chains differ in two ways. The primary daemon is retried with the client's own
+backoff (`max_rpc_retries`, up to about a minute with the default 9) before a fallback
+is tried, as it was before failover existed. And "method not found" (-32601) and
+"internal error" (-32603) both count as endpoint errors there: a UTXO fallback must serve
+every RPC bifrost calls (`txindex=1` included). An endpoint that answered a read with an
+application error ("no such transaction") is authoritative over one that failed.
+
+Several UTXO decisions ask only the primary daemon and fail closed when it cannot
+answer: reorg re-confirmation (no errata without the primary's positive "not found";
+the height stays pending and is re-checked on the next block), block-meta pruning (kept
+while our own broadcast may still be in the primary's mempool, listed via `getrawmempool`
+on daemons without `getmempoolentry`, such as Zebra), and the mempool-ancestor check
+before spending an unconfirmed UTXO (the UTXO is skipped that round). A long primary
+outage therefore delays errata, retains block meta and spends only confirmed UTXOs.
 
 A background health check runs every `health_check_interval` against every endpoint:
 
@@ -42,7 +54,10 @@ A background health check runs every `health_check_interval` against every endpo
   is set: an endpoint that reports no identity is then never used, even when every other
   endpoint is down, because observing an unknown network is worse than observing
   nothing. XRP servers report `network_id` only when configured with one, so make sure
-  yours does before pinning XRP or adding a second XRP endpoint. BTC and BCH share the
+  yours does before pinning XRP or adding a second XRP endpoint. TRON requires identity
+  even for a single legacy endpoint: its `api_host` and `rpc_host` must be proven to be
+  one network (same block id 20 blocks below the API tip) before the endpoint serves;
+  until then the chain stays dark rather than observe an unknown network. BTC and BCH share the
   same genesis block hash, so identity cannot tell them apart; only the integrity check
   (with enough endpoints) protects against mixing them. An endpoint with two hosts
   (Cosmos `rpc_host` + `cosmos_grpc_host`, TRON `rpc_host` + `api_host`) must have both
@@ -51,8 +66,9 @@ A background health check runs every `health_check_interval` against every endpo
 - **Integrity.** When `integrity_check_depth` is greater than 0 **and at least two
   endpoints agree on a tip**, the block hash at `tip - depth` is compared across the
   healthy endpoints that answered. When one hash holds a strict majority of them, every
-  other hash is a strike; an endpoint evicted for one is quarantined (shown as
-  `integrity_evicted` in `/status/provider`) and must serve the majority hash again
+  other hash is a strike; an endpoint whose eviction run contained such a strike (even
+  when a lag or probe strike completed the eviction) is quarantined, shown as
+  `integrity_evicted` in `/status/provider`, and must serve the majority hash again
   before it may serve traffic, even as an all-down fallback. Without a strict majority
   (a tie, or a plurality such as H, H, X, Y) nothing is evicted or cleared and the
   disagreement is logged. With fewer than two agreeing endpoints there is no tip and the
@@ -139,9 +155,11 @@ verifying whether a broadcast is still alive. That window counts any time spent 
 the healthy state, lag included, not only unreachability. The risk is deliberate and
 worth stating plainly: if the endpoint that took a broadcast is the one that has been
 down that long, the others can all answer "not found" and the outbound is signed again.
-On the EVM chains the re-sign reuses the nonce, so at most one of the two can mine; on
-Cosmos the account sequence bounds it the same way; on Solana and TRON the original has
-expired long before. Remove dead endpoints from the list rather than relying on this.
+This is not made safe by the skip itself. On the EVM chains and Cosmos the re-sign takes
+its nonce or sequence from a node that never saw the original, which is the same value
+the original used, so at most one of the two can mine; a re-sign with a checkpoint reuses
+them outright. On Solana and TRON the original has expired long before. Remove dead
+endpoints from the list rather than relying on this.
 
 An endpoint's identity is verified once, when it is first reached. A provider URL
 repointed at another network after bifrost started is not re-verified; the only
