@@ -1217,9 +1217,6 @@ func (fc ChainFailoverConfig) Validate() error {
 // goroutine per health cycle and a metric label set.
 const MaxChainEndpoints = 16
 
-// ValidateEndpoints checks the explicit endpoints list. Legacy single-host configs
-// (no endpoints list) are always valid here; host presence for them is checked at
-// startup in cmd/bifrost.
 // SupportsEndpoints reports whether the chain's bifrost client runs an endpoint
 // manager, so an `endpoints` list (or BIFROST_CHAINS_<CHAIN>_ENDPOINTS_* variables)
 // is honored. XMR talks to its signer sidecar only, and SUI and ADA have no client
@@ -1396,11 +1393,14 @@ func applyEndpointEnvOverridesTo(chains map[string]*BifrostChainConfiguration, e
 			case "COSMOS_GRPC_TLS":
 				b, err := strconv.ParseBool(strings.TrimSpace(o.value))
 				if err != nil {
-					// a typo must not silently downgrade a gRPC connection to plaintext
-					log.Warn().Str("chain", chain).Int("endpoint", o.idx).Str("value", o.value).
-						Msg("unparsable COSMOS_GRPC_TLS for chain endpoint, treating as false")
+					// a typo must not silently downgrade a gRPC connection to plaintext: an
+					// unparsable value keeps TLS on, and a plaintext server then fails the
+					// dial loudly instead of a bearer token leaving in the clear
+					log.Error().Str("chain", chain).Int("endpoint", o.idx).Str("value", o.value).
+						Msg("unparsable COSMOS_GRPC_TLS for chain endpoint, keeping TLS on; use true or false")
+					b = true
 				}
-				ep.CosmosGRPCTLS = err == nil && b
+				ep.CosmosGRPCTLS = b
 			case "NAME":
 				ep.Name = o.value
 			case "PRIORITY":

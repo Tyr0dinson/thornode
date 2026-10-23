@@ -20,6 +20,9 @@ func TestApplyEndpointEnvOverridesTo(t *testing.T) {
 		"BIFROST_CHAINS_BTC_ENDPOINTS_2_PRIORITY=5",
 		"BIFROST_CHAINS_GAIA_ENDPOINTS_1_COSMOS_GRPC_HOST=new:9090",
 		"BIFROST_CHAINS_GAIA_ENDPOINTS_1_COSMOS_GRPC_TLS=true",
+		// a typo in a TLS flag must fail safe (TLS stays on), never downgrade to plaintext
+		"BIFROST_CHAINS_GAIA_ENDPOINTS_2_COSMOS_GRPC_HOST=typo:9090",
+		"BIFROST_CHAINS_GAIA_ENDPOINTS_2_COSMOS_GRPC_TLS=yes",
 		// unrelated and malformed keys that must be ignored
 		"BIFROST_CHAINS_BTC_RPC_HOST=should-be-ignored",
 		"BIFROST_CHAINS_ZZZ_ENDPOINTS_1_URL=unknown-chain",
@@ -52,8 +55,11 @@ func TestApplyEndpointEnvOverridesTo(t *testing.T) {
 		t.Errorf("BTC endpoint 2 priority = %d, want 5", got)
 	}
 
-	if len(gaia.Endpoints) != 1 {
-		t.Fatalf("expected 1 GAIA endpoint, got %d", len(gaia.Endpoints))
+	if len(gaia.Endpoints) != 2 {
+		t.Fatalf("expected 2 GAIA endpoints, got %d", len(gaia.Endpoints))
+	}
+	if !gaia.Endpoints[1].CosmosGRPCTLS {
+		t.Errorf("GAIA endpoint 2 cosmos_grpc_tls = false after an unparsable value, want TLS kept on")
 	}
 	if got := gaia.Endpoints[0].CosmosGRPCHost; got != "new:9090" {
 		t.Errorf("GAIA endpoint 1 cosmos_grpc_host = %q, want override", got)
