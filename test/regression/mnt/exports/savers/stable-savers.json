@@ -389,6 +389,7 @@
       },
       "rune_providers": [],
       "secured_assets": [],
+      "sol_vault_nonces": [],
       "streaming_swaps": [],
       "swap_queue_items": [],
       "swapper_clout": [
@@ -396,6 +397,12 @@
           "address": "0xdd99304abf262d653e2eb6722d874c2b86efdcea",
           "reclaimed": "0",
           "score": "21565332",
+          "spent": "0"
+        },
+        {
+          "address": "noop",
+          "reclaimed": "0",
+          "score": "7314080",
           "spent": "0"
         }
       ],

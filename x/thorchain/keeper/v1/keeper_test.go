@@ -5,7 +5,6 @@ import (
 
 	. "gopkg.in/check.v1"
 
-	cstore "cosmossdk.io/core/store"
 	"cosmossdk.io/log"
 	"cosmossdk.io/store"
 	storemetrics "cosmossdk.io/store/metrics"
@@ -42,15 +41,11 @@ func FundModule(c *C, ctx cosmos.Context, k KVStore, name string, amt uint64) {
 	c.Assert(err, IsNil)
 }
 
-var serviceThorchain cstore.KVStoreService
-
 func setupKeeperForTest(c *C) (cosmos.Context, KVStore) {
 	SetupConfigForTest()
 	keys := cosmos.NewKVStoreKeys(
 		authtypes.StoreKey, banktypes.StoreKey, stakingtypes.StoreKey, upgradetypes.StoreKey, StoreKey,
 	)
-
-	serviceThorchain = runtime.NewKVStoreService(keys[StoreKey])
 
 	db := dbm.NewMemDB()
 	ms := store.NewCommitMultiStore(db, log.NewNopLogger(), storemetrics.NewNoOpMetrics())
@@ -114,7 +109,7 @@ func setupKeeperForTest(c *C) (cosmos.Context, KVStore) {
 		authtypes.NewModuleAddress(ModuleName).String(),
 	)
 
-	k := NewKVStore(encodingConfig.Codec, serviceThorchain, bk, ak, uk, GetCurrentVersion())
+	k := NewKVStore(encodingConfig.Codec, keys[StoreKey], bk, ak, uk, GetCurrentVersion())
 
 	FundModule(c, ctx, k, AsgardName, 100_000_000*common.One)
 

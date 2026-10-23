@@ -296,6 +296,51 @@ func (s *HandlerSwapSuite) TestValidationWithStreamingSwap(c *C) {
 	c.Assert(handler.validate(ctx, *msg), IsNil)
 }
 
+func (s *HandlerSwapSuite) TestValidateRejectsDestinationEqualsTargetContract(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	na := GetRandomValidatorNode(NodeActive)
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
+
+	usdc, err := common.NewAsset("ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48")
+	c.Assert(err, IsNil)
+	// the target asset's own token contract, as a destination address.
+	contractAddr := common.Address("0xA0b86991c6218b36c1D19D4a2e9Eb0cE3606eB48")
+
+	// Available ETH.USDC pool so a valid wallet-dest swap passes validation cleanly.
+	pool := NewPool()
+	pool.Asset = usdc
+	pool.Status = PoolAvailable
+	pool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	pool.BalanceRune = cosmos.NewUint(100 * common.One)
+	pool.LPUnits = cosmos.NewUint(100 * common.One)
+	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+
+	handler := NewSwapHandler(mgr)
+	signerAddr := GetRandomTHORAddress()
+	observerAddr := na.NodeAddress
+
+	buildMsg := func(dest common.Address) *MsgSwap {
+		memoStr := "=:" + usdc.String() + ":" + dest.String()
+		tx := common.NewTx(
+			GetRandomTxHash(), signerAddr, signerAddr,
+			common.Coins{common.NewCoin(common.RuneAsset(), cosmos.NewUint(common.One*100))},
+			common.Gas{common.NewCoin(common.RuneAsset(), cosmos.NewUint(10000))},
+			memoStr,
+		)
+		return NewMsgSwap(tx, usdc, dest, cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(), "", "", nil, types.SwapType_market, 0, 0, types.SwapVersion_v1, observerAddr)
+	}
+
+	// destination == target asset's token contract -> refunded at validation.
+	err = handler.validate(ctx, *buildMsg(contractAddr))
+	c.Assert(err, NotNil)
+	c.Assert(strings.Contains(err.Error(), "token contract"), Equals, true, Commentf("got: %v", err))
+
+	// a normal recipient wallet passes validation outright — proves the guard
+	// does not over-match ordinary addresses.
+	walletAddr := common.Address("0x90f2b1ae50e6018230e90a33f98c7844a0ab635a")
+	c.Assert(handler.validate(ctx, *buildMsg(walletAddr)), IsNil)
+}
+
 func (s *HandlerSwapSuite) TestHandle(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	keeper := &TestSwapHandleKeeper{
@@ -409,6 +454,34 @@ func (s *HandlerSwapSuite) TestHandle(c *C) {
 	c.Assert(err, NotNil)
 	c.Assert(result, IsNil)
 	keeper.haltChain = 0
+}
+
+func (s *HandlerSwapSuite) TestHandleRejectsWrongNetworkZECDestination(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	handler := NewSwapHandler(mgr)
+	observerAddr := GetRandomValidatorNode(NodeActive).NodeAddress
+	_, tex, _, wrongNetworkTex := zecTxOutAddresses()
+	wrongNetworkP2PKH := common.Address("tmEp4k7dSU8eGj32uJPi2wBSGuiNaVFBLN7")
+	if common.CurrentChainNetwork == common.MockNet {
+		wrongNetworkP2PKH = "t1h3iyd8qGvtJZ3V5CYryi5158h9RMkRhMU"
+	}
+	for _, dest := range []common.Address{wrongNetworkTex, wrongNetworkP2PKH} {
+		tx := common.NewTx(GetRandomTxHash(), GetRandomRUNEAddress(), GetRandomRUNEAddress(),
+			common.Coins{common.NewCoin(common.RuneAsset(), cosmos.NewUint(common.One))}, common.Gas{}, "")
+		msg := NewMsgSwap(tx, common.ZECAsset, dest, cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(), "", "", nil, types.SwapType_market, 0, 0, types.SwapVersion_v1, observerAddr)
+		_, _, err := handler.handleWithEmit(ctx, *msg)
+		c.Assert(err, NotNil, Commentf("destination: %s", dest))
+		c.Check(err.Error(), Equals, fmt.Sprintf("address(%s) is not same network", dest))
+	}
+
+	// A current-network destination passes the check and fails later on the
+	// missing pool instead.
+	tx := common.NewTx(GetRandomTxHash(), GetRandomRUNEAddress(), GetRandomRUNEAddress(),
+		common.Coins{common.NewCoin(common.RuneAsset(), cosmos.NewUint(common.One))}, common.Gas{}, "")
+	msg := NewMsgSwap(tx, common.ZECAsset, tex, cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(), "", "", nil, types.SwapType_market, 0, 0, types.SwapVersion_v1, observerAddr)
+	_, _, err := handler.handleWithEmit(ctx, *msg)
+	c.Assert(err, NotNil)
+	c.Check(err.Error(), Not(Matches), ".*is not same network.*")
 }
 
 func (s *HandlerSwapSuite) TestHandleStreamingSwap(c *C) {

@@ -677,6 +677,74 @@ func (s *RPCSuite) TestCreateWalletOtherError(c *C) {
 }
 
 // ---------------------------------------------------------------------------
+// GetZecAddressUTXOs tests
+// ---------------------------------------------------------------------------
+
+func (s *RPCSuite) TestGetZecAddressUTXOsPreservesRawHeightAndIntegerValue(c *C) {
+	// The RPC adapter preserves even an out-of-supply value exactly; monetary
+	// validation belongs to the selector. This odd value detects float64 loss.
+	const exactValue = uint64(9007199254740993)
+	expected := []ZecAddressUTXO{
+		{Txid: strings.Repeat("AB", 32), Address: "t1vault", Index: 3, Script: "76A914ABC88AC", Satoshis: exactValue, Height: 3500001},
+		{Txid: strings.Repeat("cd", 32), Address: "t1vault", Index: 0, Script: "76a914abc88ac", Satoshis: 1, Height: -1},
+		{Txid: strings.Repeat("ef", 32), Address: "t1vault", Index: 2, Script: "76a914abc88ac", Satoshis: 123456789, Height: 0},
+	}
+	var methods []string
+	server := newMockRPCServer(func(method string, params []interface{}) (interface{}, *btcjson.RPCError) {
+		methods = append(methods, method)
+		c.Assert(method, Equals, "getaddressutxos")
+		c.Assert(params, DeepEquals, []interface{}{"t1vault"})
+		return expected, nil
+	})
+	defer server.Close()
+	client, err := NewClient(server.URL, "user", "pass", 0, time.Second, common.ZECChain, zerolog.Nop())
+	c.Assert(err, IsNil)
+	result, err := client.GetZecAddressUTXOs("t1vault")
+	c.Assert(err, IsNil)
+	c.Assert(result, DeepEquals, expected)
+	// No tip query or derived confirmation count may rewrite creation heights.
+	c.Assert(methods, DeepEquals, []string{"getaddressutxos"})
+}
+
+func (s *RPCSuite) TestGetZecAddressUTXOsPropagatesRPCAndDecodeErrors(c *C) {
+	for _, response := range []struct {
+		name   string
+		result interface{}
+		rpcErr *btcjson.RPCError
+		match  string
+	}{
+		{"RPC failure", nil, btcjson.NewRPCError(btcjson.ErrRPCInternal.Code, "utxo index unavailable"), ".*utxo index unavailable.*"},
+		{"negative value", json.RawMessage(`[{"txid":"bad","satoshis":-1,"height":3500000}]`), nil, ".*cannot unmarshal.*"},
+		{"fractional value", json.RawMessage(`[{"txid":"bad","satoshis":1.5,"height":3500000}]`), nil, ".*cannot unmarshal.*"},
+	} {
+		server := newMockRPCServer(func(method string, params []interface{}) (interface{}, *btcjson.RPCError) {
+			c.Assert(method, Equals, "getaddressutxos")
+			return response.result, response.rpcErr
+		})
+		client, err := NewClient(server.URL, "user", "pass", 0, time.Second, common.ZECChain, zerolog.Nop())
+		c.Assert(err, IsNil)
+		_, err = client.GetZecAddressUTXOs("t1vault")
+		c.Assert(err, ErrorMatches, response.match, Commentf("%s", response.name))
+		server.Close()
+	}
+}
+
+func (s *RPCSuite) TestGetZecAddressUTXOsRejectsOtherChainsWithoutRPC(c *C) {
+	calls := 0
+	server := newMockRPCServer(func(method string, params []interface{}) (interface{}, *btcjson.RPCError) {
+		calls++
+		return nil, nil
+	})
+	defer server.Close()
+	client, err := NewClient(server.URL, "user", "pass", 0, time.Second, common.BTCChain, zerolog.Nop())
+	c.Assert(err, IsNil)
+	result, err := client.GetZecAddressUTXOs("bc1vault")
+	c.Assert(err, ErrorMatches, "ZEC address UTXOs requested for BTC")
+	c.Assert(result, IsNil)
+	c.Assert(calls, Equals, 0)
+}
+
+// ---------------------------------------------------------------------------
 // ListUnspent tests
 // ---------------------------------------------------------------------------
 

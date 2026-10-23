@@ -2,15 +2,18 @@ package monero
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"reflect"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/rs/zerolog/log"
+	"github.com/stretchr/testify/require"
 	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/syndtr/goleveldb/leveldb/storage"
 
@@ -20,7 +23,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/config"
 )
 
-func TestScannerFetchTxsDetectsReorgAndEmitsErrata(t *testing.T) {
+func TestScannerFetchTxsDetectsReorgAfterEmptyCatchupAndRestart(t *testing.T) {
 	t.Parallel()
 	sourceVault := testVaultPubKey(t, "scanner-reorg-source")
 	sourceAddress, err := sourceVault.GetAddress(common.XMRChain)
@@ -104,7 +107,8 @@ func TestScannerFetchTxsDetectsReorgAndEmitsErrata(t *testing.T) {
 				http.Error(w, decodeErr.Error(), http.StatusBadRequest)
 				return
 			}
-			if rewindReq.ExpectedResetEpoch != resetEpoch ||
+			if rewindReq.Network != "mocknet" ||
+				rewindReq.ExpectedResetEpoch != resetEpoch ||
 				rewindReq.ExpectedNextHeight != nextHeight ||
 				rewindReq.TargetNextHeight != 99 ||
 				rewindReq.AnchorHeight != 98 ||
@@ -165,7 +169,7 @@ func TestScannerFetchTxsDetectsReorgAndEmitsErrata(t *testing.T) {
 	defer frostServer.Close()
 
 	frostSigner, err := sidecar.NewClientWithEndpoint(
-		config.BifrostChainConfiguration{},
+		config.BifrostChainConfiguration{SignerExpectedNetwork: "mocknet"},
 		frostServer.URL,
 	)
 	if err != nil {
@@ -177,7 +181,7 @@ func TestScannerFetchTxsDetectsReorgAndEmitsErrata(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open in-memory leveldb: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	reorgStore := NewReorgStore(db)
 	for _, meta := range []*reorgBlockMeta{
@@ -208,6 +212,33 @@ func TestScannerFetchTxsDetectsReorgAndEmitsErrata(t *testing.T) {
 		}
 	}
 
+	// A newly enrolled vault contributes no observations at the older vault's
+	// already-scanned heights. Repeated catch-up must retain both the deposit
+	// needing errata and the transaction needing a relocation watch.
+	for attempt := 0; attempt < 2; attempt++ {
+		for _, delta := range []*reorgBlockMeta{
+			{Height: 99, BlockHash: old99, PreviousHash: h98, ProvenanceComplete: true},
+			{Height: 100, BlockHash: old100, PreviousHash: old99, ProvenanceComplete: true},
+		} {
+			next := scannerCatchupMarker{StartHeight: delta.Height + 1, TargetHeight: 100, AnchorHeight: delta.Height, AnchorHash: delta.BlockHash}
+			if err = reorgStore.CheckpointCatchup(next, delta, nil); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	completed := scannerCatchupMarker{StartHeight: 101, TargetHeight: 100, AnchorHeight: 100, AnchorHash: old100}
+	if err = reorgStore.ClearCompletedCatchupMarker(completed); err != nil {
+		t.Fatal(err)
+	}
+	if err = db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	db, err = leveldb.Open(memStorage, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reorgStore = NewReorgStore(db)
+
 	scanner := NewScanner(
 		log.Logger,
 		frostSigner,
@@ -221,6 +252,7 @@ func TestScannerFetchTxsDetectsReorgAndEmitsErrata(t *testing.T) {
 	scanner.SetClaimQuarantineHandler(func(string) error { return nil })
 	errataQueue := make(chan stypes.ErrataBlock, 2)
 	scanner.SetErrataQueue(errataQueue)
+	defer close(errataQueue)
 	storedErrata := make(chan stypes.ErrataBlock, 2)
 	go func() {
 		for errata := range errataQueue {
@@ -268,6 +300,12 @@ func TestScannerFetchTxsDetectsReorgAndEmitsErrata(t *testing.T) {
 	case extra := <-storedErrata:
 		t.Fatalf("did not expect second errata block: %#v", extra)
 	default:
+	}
+
+	watches, err := reorgStore.ListRelocationWatches(0)
+	if err != nil || len(watches) != 1 || watches[0].TxID != canonicalRelocatedTxID ||
+		watches[0].OriginalHeight != 99 || watches[0].LocationHeight != 97 {
+		t.Fatalf("retained transaction did not reach relocation handling: %#v err=%v", watches, err)
 	}
 
 	meta100, err := reorgStore.Get(100)
@@ -460,5 +498,186 @@ func TestScannerReorgFailsClosedOnMetadataHoleWithOutstandingWork(t *testing.T) 
 	meta100, metaErr := store.Get(100)
 	if metaErr != nil || meta100 == nil || meta100.BlockHash != old100 {
 		t.Fatalf("aborted replay must not publish canonical metadata: meta=%#v err=%v", meta100, metaErr)
+	}
+}
+
+func TestSameHeightReorgObservationAmount(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		outputs      int
+		noReorg      bool
+		restart      bool
+		freshExtra   bool
+		receiptExtra bool
+		feeChange    bool
+	}{
+		{name: "replacement payment", outputs: 1},
+		{name: "identical outputs still aggregate", outputs: 2},
+		{name: "restart after journal commit", outputs: 2, restart: true},
+		{name: "new observation on rescan", outputs: 2, freshExtra: true},
+		{name: "saved observation absent from rescan", outputs: 2, receiptExtra: true},
+		{name: "ordinary exact replay control", outputs: 2, noReorg: true},
+		{name: "fee estimate changes after rejected handoff", outputs: 1, feeChange: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			vault, address := testVaultPubKeyAndAddress(t)
+			signer := &churnSigner{next: 1004, vault: vault, address: address}
+			txID := testXMRHash("same-height-replacement")
+			extraID := testXMRHash("same-height-extra")
+			oldHash := testXMRHash("same-height-old-block")
+			var scans atomic.Int64
+			var feeRate atomic.Uint64
+			feeRate.Store(1000)
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if tc.feeChange && r.URL.Path == "/v1/monero/fee-rate" {
+					_ = json.NewEncoder(w).Encode(sidecar.FeeRate{FeeRatePerWeight: feeRate.Load()})
+					return
+				}
+				if r.URL.Path == "/v1/monero/scanner/state" {
+					signer.mu.Lock()
+					defer signer.mu.Unlock()
+					last := signer.next - 1
+					hash := testBlockHash(int64(last))
+					if !tc.noReorg && signer.epoch == 0 {
+						hash = oldHash
+					}
+					_ = json.NewEncoder(w).Encode(sidecar.ScannerState{
+						NextHeight: &signer.next, ResetEpoch: signer.epoch, LastHeight: &last,
+						LastBlockHash: hash, LastParentHash: testBlockHash(int64(last) - 1),
+						StrictAfterReset: signer.epoch > 0,
+					})
+					return
+				}
+				if r.URL.Path != "/v1/monero/scanner/sync" {
+					signer.serveHTTP(w, r)
+					return
+				}
+				// Keep the authenticated cursor/epoch checks and exact-last-block
+				// replay behavior of the signer fixture, replacing only its results.
+				recorder := httptest.NewRecorder()
+				signer.serveHTTP(recorder, r)
+				if recorder.Code != http.StatusOK {
+					http.Error(w, recorder.Body.String(), recorder.Code)
+					return
+				}
+				scan := scans.Add(1)
+				if tc.restart && scan == 2 {
+					// Reorg replay and replacement journal are durable, but Fetch
+					// fails before any observation can reach Observer.
+					http.Error(w, "exact replay response unavailable", http.StatusServiceUnavailable)
+					return
+				}
+				transfers := sidecar.Transfers{}
+				for range tc.outputs {
+					transfers.Incoming = append(transfers.Incoming, sidecar.Transfer{
+						TxID: txID, Height: 1003, Address: address.String(), VaultPubKey: vault.String(),
+						Amount: 3 * moneroAtomicToThorchain, Note: "ADD:XMR.XMR",
+					})
+				}
+				if (tc.freshExtra && scan > 1) || (tc.receiptExtra && scan == 1) {
+					transfers.Incoming = append(transfers.Incoming, sidecar.Transfer{
+						TxID: extraID, Height: 1003, Address: address.String(), VaultPubKey: vault.String(),
+						Amount: 4 * moneroAtomicToThorchain, Note: "ADD:XMR.XMR",
+					})
+				}
+				_ = json.NewEncoder(w).Encode(transfers)
+			}))
+			defer server.Close()
+
+			dir := t.TempDir()
+			db, err := leveldb.OpenFile(dir, nil)
+			require.NoError(t, err)
+			defer func() { require.NoError(t, db.Close()) }()
+			store := NewReorgStore(db)
+			require.NoError(t, store.Set(&reorgBlockMeta{
+				Height: 1002, BlockHash: testBlockHash(1002), PreviousHash: testBlockHash(1001),
+				ProvenanceComplete: true,
+			}))
+			journalHash := oldHash
+			if tc.noReorg {
+				journalHash = testBlockHash(1003)
+			}
+			require.NoError(t, store.Set(&reorgBlockMeta{
+				Height: 1003, BlockHash: journalHash, PreviousHash: testBlockHash(1002),
+				ProvenanceComplete: true,
+			}))
+			scanner, _ := newChurnScanner(t, server.URL, store, vault)
+			txIn, err := scanner.FetchTxs(1003, 1003)
+			if tc.restart {
+				require.ErrorContains(t, err, "status 503")
+				meta, metaErr := store.Get(1003)
+				require.NoError(t, metaErr)
+				require.Equal(t, testBlockHash(1003), meta.BlockHash)
+				claims, receiptErr := store.ListObservationReceipts()
+				require.NoError(t, receiptErr)
+				require.Len(t, claims, 1)
+				require.NoError(t, db.Close())
+				db, err = leveldb.OpenFile(dir, nil)
+				require.NoError(t, err)
+				store = NewReorgStore(db)
+				scanner, _ = newChurnScanner(t, server.URL, store, vault)
+				txIn, err = scanner.FetchTxs(1003, 1003)
+			}
+			require.NoError(t, err)
+			assertAmounts := func(got stypes.TxIn) {
+				t.Helper()
+				expected := map[string]uint64{txID: uint64(3 * tc.outputs)}
+				if tc.freshExtra || tc.receiptExtra {
+					expected[extraID] = 4
+				}
+				require.Len(t, got.TxArray, len(expected))
+				for _, item := range got.TxArray {
+					amount, ok := expected[item.Tx]
+					require.True(t, ok, "unexpected transaction %s", item.Tx)
+					require.Equal(t, amount, item.Coins.GetCoin(common.XMRAsset).Amount.Uint64(),
+						"a complete observation must not be added to its own durable receipt")
+				}
+			}
+			assertAmounts(txIn)
+			if tc.feeChange {
+				require.Len(t, txIn.TxArray[0].Gas, 1)
+				require.Equal(t, uint64(1000), txIn.TxArray[0].Gas[0].Amount.Uint64())
+			}
+			marker, err := store.GetCatchupMarker()
+			require.NoError(t, err)
+			require.Nil(t, marker, "this path must be covered without a catch-up marker")
+			if !tc.noReorg {
+				for _, item := range txIn.TxArray {
+					require.NotNil(t, item.OnObservedTxRejected)
+					item.OnObservedTxRejected(errors.New("observer storage unavailable"))
+				}
+				claims, receiptErr := store.ListObservationReceipts()
+				require.NoError(t, receiptErr)
+				require.Len(t, claims, 1, "rejected handoff must retain the receipt")
+				if tc.feeChange {
+					feeRate.Store(5000)
+				}
+				txIn, err = scanner.FetchTxs(1003, 1003)
+				require.NoError(t, err)
+				assertAmounts(txIn)
+				if tc.feeChange {
+					require.Len(t, txIn.TxArray[0].Gas, 1)
+					require.Equal(t, uint64(5000), txIn.TxArray[0].Gas[0].Amount.Uint64(),
+						"the fresh scan's fee estimate takes precedence over the receipt")
+				}
+				for _, item := range txIn.TxArray {
+					require.NotNil(t, item.OnObservedTxStored)
+					item.OnObservedTxStored()
+					if tc.feeChange {
+						item.OnObservedTxStored()
+					}
+				}
+				claims, receiptErr = store.ListObservationReceipts()
+				require.NoError(t, receiptErr)
+				require.Empty(t, claims, "stored handoff must acknowledge the receipt")
+			}
+			signer.mu.Lock()
+			defer signer.mu.Unlock()
+			if tc.noReorg {
+				require.Empty(t, signer.rewinds)
+			} else {
+				require.Equal(t, []uint64{1003}, signer.rewinds, "retry must use the committed journal")
+			}
+		})
 	}
 }

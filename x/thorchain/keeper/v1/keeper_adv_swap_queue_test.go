@@ -300,3 +300,41 @@ func (s *KeeperAdvSwapQueueSuite) TestLimitSwapTTLRemoval(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(len(emptyHashes), Equals, 0)
 }
+
+// TestSetAdvSwapQueueItemStateSkipsIndex verifies enqueue (SetAdvSwapQueueItem)
+// creates the market index while the EndBlock re-write path
+// (SetAdvSwapQueueItemState) persists the item blob WITHOUT touching the index.
+func (s *KeeperAdvSwapQueueSuite) TestSetAdvSwapQueueItemStateSkipsIndex(c *C) {
+	ctx, k := setupKeeperForTest(c)
+
+	// enqueue indexes the item
+	enq := MsgSwap{
+		Tx:          GetRandomTx(),
+		TradeTarget: cosmos.NewUint(10 * common.One),
+		SwapType:    types.SwapType_limit,
+	}
+	c.Assert(k.SetAdvSwapQueueItem(ctx, enq), IsNil)
+	ok, err := k.HasAdvSwapQueueIndex(ctx, enq)
+	c.Assert(err, IsNil)
+	c.Check(ok, Equals, true)
+
+	// re-writing the same item's state leaves the index in place
+	c.Assert(k.SetAdvSwapQueueItemState(ctx, enq), IsNil)
+	ok, err = k.HasAdvSwapQueueIndex(ctx, enq)
+	c.Assert(err, IsNil)
+	c.Check(ok, Equals, true)
+
+	// a state write on an item that was never enqueued has no index entry under
+	// its current key. The re-write path is for mutable-state updates only, so
+	// mocknet builds (all unit tests) deliberately panic on it rather than
+	// silently persist a de-indexed blob; assert the guard fires.
+	rw := MsgSwap{
+		Tx:          GetRandomTx(),
+		TradeTarget: cosmos.NewUint(10 * common.One),
+		SwapType:    types.SwapType_limit,
+	}
+	c.Assert(func() { _ = k.SetAdvSwapQueueItemState(ctx, rw) }, PanicMatches,
+		`SetAdvSwapQueueItemState: .* not indexed under its current key.*`)
+	// the guard fires before the write, so no blob is persisted
+	c.Check(k.HasAdvSwapQueueItem(ctx, rw.Tx.ID, int(rw.Index)), Equals, false)
+}

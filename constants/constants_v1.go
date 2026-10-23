@@ -175,6 +175,12 @@ func NewConstantValue() *ConstantVals {
 			VaultDeficitGasHaltMaxGasMultiplier: 30,                 // multiple of current max gas at which gas-related vault deficits halt signing and trading
 			MaxAbsentKeygenReporters:            1,                  // number of keygen members allowed to skip MsgTssPool reporting before a successful keygen finalizes (mainnet default)
 			BondYieldEnabled:                    0,                  // enable/disable automatic bond-yield payouts
+			MaxMissingObservationChurnOut:       0,                  // max number of nodes to be churned out per churn for missing observations on a chain (0 = off)
+			MissingObservationChurnOutBps:       5000,               // a node is marked when its decayed missed/total observation ratio on any chain is above this (basis points)
+			MissingObservationGuardBps:          1000,               // skip a voter as a shared event when more than this share of the nodes missed it, not counting nodes already failing its chain that missed it (basis points)
+			MissingObservationHalfLife:          43200,              // blocks between halvings of the missed-observation tallies
+			MissingObservationMinSamples:        24,                 // minimum decayed voters on a chain before a node's ratio on it counts
+			MissingObservationGuardMaxBlocks:    43200,              // the shared-event guard's grace per chain, in blocks: used up while its voters are skipped, refilled at the same rate while they pass (0 = never expires)
 		},
 		boolValues: map[ConstantName]bool{
 			StrictBondLiquidityRatio: true,

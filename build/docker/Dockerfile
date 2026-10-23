@@ -3,7 +3,7 @@
 ########################################################################################
 
 ARG DOCKER_MIRROR=
-FROM ${DOCKER_MIRROR}golang:1.26.4-bookworm AS build
+FROM ${DOCKER_MIRROR}golang:1.26.10-bookworm AS build
 
 ENV GOBIN=/go/bin
 ENV GOPATH=/go
@@ -14,12 +14,13 @@ ENV GOPRIVATE=gitlab.com/thorchain/tss/tss-lib-private.git
 
 WORKDIR /app
 COPY go.mod go.sum ./
-# Mount CI_JOB_TOKEN as a BuildKit secret to authenticate the private fetch.
-# required=false keeps local `make` builds working when CI_JOB_TOKEN is unset.
+# Authenticate the private fetch with the go_private_auth BuildKit secret
+# ("user:token", chosen by scripts/ci-go-private-auth.sh in CI).
+# required=false keeps local `make` builds working without it.
 # File-based mount instead of env= so hadolint 2.12.1-beta can parse the RUN.
-RUN --mount=type=secret,id=ci_job_token,required=false \
-    if [ -s /run/secrets/ci_job_token ]; then \
-      git config --global url."https://gitlab-ci-token:$(cat /run/secrets/ci_job_token)@gitlab.com/".insteadOf "https://gitlab.com/"; \
+RUN --mount=type=secret,id=go_private_auth,required=false \
+    if [ -s /run/secrets/go_private_auth ]; then \
+      git config --global url."https://$(cat /run/secrets/go_private_auth)@gitlab.com/thorchain/tss/".insteadOf "https://gitlab.com/thorchain/tss/"; \
     fi && \
     go mod download && \
     rm -f /root/.gitconfig
@@ -46,14 +47,16 @@ ARG COMMIT=unknown
 RUN make install
 
 ########################################################################################
-# Deploy
+# Runtime
 ########################################################################################
 
-FROM debian:bookworm-20260610-slim@sha256:96e378d7e6531ac9a15ad505478fcc2e69f371b10f5cdf87857c4b8188404716
+# Separate stage so CI's test-simulation can build it alone (--target runtime) and
+# COPY natively built binaries onto it (build/docker/Dockerfile.native).
+FROM ${DOCKER_MIRROR}debian:bookworm-20260610-slim@sha256:96e378d7e6531ac9a15ad505478fcc2e69f371b10f5cdf87857c4b8188404716 AS runtime
 
 RUN apt-get update && \
   apt-get install -y --no-install-recommends \
-  ca-certificates=20230311+deb12u1 \
+  ca-certificates=20250419~deb12u2 \
   curl=7.88.1-10+deb12u* \
   jq=1.6-2.1+deb12u* \
   libffi-dev=3.4.4-1 \
@@ -65,9 +68,15 @@ RUN apt-get update && \
   rm -rf /var/lib/apt/lists/* && \
   pip3 install --no-cache-dir --break-system-packages requests==2.32.3 web3==7.5.0 retry==0.9.2
 
+########################################################################################
+# Deploy
+########################################################################################
+
+FROM runtime
+
 # Copy the compiled binaries over.
 COPY --from=build /go/bin/thornode /go/bin/bifrost /go/bin/recover-keyshare-backup /usr/bin/
-COPY --from=build /go/pkg/mod/github.com/!cosm!wasm/wasmvm/v2@v2.2.1/internal/api/libwasmvm.*.so /usr/lib
+COPY --from=build /go/pkg/mod/github.com/!cosm!wasm/wasmvm/v2@v2.2.9/internal/api/libwasmvm.*.so /usr/lib
 
 COPY build/scripts /scripts
 

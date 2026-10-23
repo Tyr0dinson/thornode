@@ -36,7 +36,7 @@ func (k Keeper) AddMsg(ctx sdk.Context, msg types.MsgScheduleExecuteContract) er
 	if msg.After > types.MaxAfter {
 		return types.ErrAfterTooLarge
 	}
-	height := uint64(ctx.BlockHeight()) + msg.After + 1
+	height := uint64(ctx.BlockHeight()) + msg.After
 
 	existing, err := k.GetSchedule(ctx, height)
 	if err != nil {

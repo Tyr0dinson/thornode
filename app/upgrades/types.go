@@ -15,9 +15,8 @@ import (
 )
 
 type AppKeepers struct {
-	AccountKeeper *authkeeper.AccountKeeper
-	// trunk-ignore(golangci-lint/staticcheck): deprecated TODO: SDK 0.53 cleanup
-	ParamsKeeper          *paramskeeper.Keeper
+	AccountKeeper         *authkeeper.AccountKeeper
+	ParamsKeeper          *paramskeeper.Keeper //nolint:staticcheck // deprecated TODO: SDK 0.53 cleanup
 	ConsensusParamsKeeper *consensusparamkeeper.Keeper
 	ThorchainKeeper       thorchainKeeper.Keeper
 	Codec                 codec.Codec

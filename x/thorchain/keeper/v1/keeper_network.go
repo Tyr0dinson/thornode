@@ -3,12 +3,11 @@ package keeperv1
 import (
 	"fmt"
 
-	"github.com/cosmos/cosmos-sdk/runtime"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 )
 
 func (k KVStore) setNetwork(ctx cosmos.Context, key []byte, record Network) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	buf := k.cdc.MustMarshal(&record)
 	if buf == nil {
 		store.Delete(key)
@@ -18,7 +17,7 @@ func (k KVStore) setNetwork(ctx cosmos.Context, key []byte, record Network) {
 }
 
 func (k KVStore) getNetwork(ctx cosmos.Context, key []byte, record *Network) (bool, error) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	if !store.Has(key) {
 		return false, nil
 	}
@@ -44,7 +43,7 @@ func (k KVStore) SetNetwork(ctx cosmos.Context, data Network) error {
 }
 
 func (k KVStore) setPOL(ctx cosmos.Context, key []byte, record ProtocolOwnedLiquidity) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	buf := k.cdc.MustMarshal(&record)
 	if buf == nil {
 		store.Delete(key)
@@ -54,7 +53,7 @@ func (k KVStore) setPOL(ctx cosmos.Context, key []byte, record ProtocolOwnedLiqu
 }
 
 func (k KVStore) getPOL(ctx cosmos.Context, key []byte, record *ProtocolOwnedLiquidity) (bool, error) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	if !store.Has(key) {
 		return false, nil
 	}

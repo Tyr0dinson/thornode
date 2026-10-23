@@ -57,7 +57,7 @@ var (
 	queryExport = func(_ sdk.Context, _ *Mgrs) ([]byte, error) {
 		return nil, fmt.Errorf("export query not supported")
 	}
-	tendermintClient    *tmhttp.HTTP
+	tendermintClient    *tmhttp.HTTP // fallback when no in-process client is set
 	tendermintClientErr error
 	initTendermintOnce  = sync.Once{}
 )
@@ -495,6 +495,37 @@ func (qs queryServer) queryXMRSpentOutputRefs(ctx cosmos.Context, req *types.Que
 		return nil, fmt.Errorf("fail to get xmr spent refs for vault(%s),err:%w", pubkey, err)
 	}
 	return &types.QueryXMRSpentOutputRefsResponse{SpentOutputRefs: castOutputRefs(refs)}, nil
+}
+
+// querySolVaultNonce returns a Solana vault's committed durable nonce, or an empty
+// response when it has none. Bifrost reads it at the keysign height (?height=) so
+// every keysign party builds from the same value.
+func (qs queryServer) querySolVaultNonce(ctx cosmos.Context, req *types.QuerySolVaultNonceRequest) (*types.QuerySolVaultNonceResponse, error) {
+	if len(req.VaultPubKey) < 1 {
+		return nil, errors.New("missing vault_pub_key parameter")
+	}
+	pubkey, err := common.NewPubKey(req.VaultPubKey)
+	if err != nil {
+		return nil, fmt.Errorf("%s is invalid pubkey", req.VaultPubKey)
+	}
+	// Records are keyed by the vault's canonical pubkey; accept its EdDSA key too.
+	if vault, vErr := qs.mgr.Keeper().GetVault(ctx, pubkey); vErr == nil && !vault.PubKey.IsEmpty() {
+		pubkey = vault.PubKey
+	}
+	record, found, err := activeSolVaultNonce(ctx, qs.mgr.Keeper(), pubkey)
+	if err != nil {
+		return nil, fmt.Errorf("fail to get sol vault nonce for vault(%s),err:%w", pubkey, err)
+	}
+	if !found {
+		return &types.QuerySolVaultNonceResponse{}, nil
+	}
+	return &types.QuerySolVaultNonceResponse{
+		NonceAccount:  record.NonceAccount,
+		Nonce:         record.Nonce,
+		Slot:          record.Slot,
+		UpdatedHeight: record.UpdatedHeight,
+		SetByTx:       record.SetByTx.String(),
+	}, nil
 }
 
 func getVaultChainAddresses(ctx cosmos.Context, vault Vault) []*types.VaultAddress {
@@ -1879,6 +1910,7 @@ func (qs queryServer) queryPool(ctx cosmos.Context, req *types.QueryPoolRequest)
 	p.SynthMintPaused = (synthMintPausedErr != nil)
 	p.SynthSupplyRemaining = synthSupplyRemaining.String()
 	p.DerivedDepthBps = dbps.String()
+	setPoolLuviFields(&p, pool, synthSupply)
 
 	polReserveDeposit, err := qs.mgr.Keeper().GetPOLReserveDeposit(ctx, pool.Asset)
 	if err == nil {
@@ -1896,6 +1928,20 @@ func (qs queryServer) queryPool(ctx cosmos.Context, req *types.QueryPoolRequest)
 	}
 
 	return &p, nil
+}
+
+// setPoolLuviFields fills the stateless LUVI fields of a pool response: the
+// classic index as the chain values a pool unit, the LP equity net of the
+// synth liability, and the synth overhang indicators. See types/type_luvi.go.
+func setPoolLuviFields(p *types.QueryPoolResponse, pool Pool, synthSupply cosmos.Uint) {
+	st := types.NewLuviState(pool, synthSupply)
+	p.Luvi = st.ChainLuvi().String()
+	p.LpEquity = st.LPEquity().String()
+	p.LpEquityPerUnit = st.LPEquityPerUnit().String()
+	p.SynthPerPoolDepthBps = st.SynthPerPoolDepthBps().String()
+	// an empty pool (no asset depth, no synths) is not in overhang, but a
+	// depleted one (no asset depth, synths outstanding) is
+	p.SynthOverhang = !st.SynthSupply.IsZero() && st.IsOverhang()
 }
 
 func (qs queryServer) queryPools(ctx cosmos.Context, _ *types.QueryPoolsRequest) (*types.QueryPoolsResponse, error) {
@@ -2012,6 +2058,7 @@ func (qs queryServer) queryPools(ctx cosmos.Context, _ *types.QueryPoolsRequest)
 		p.SynthMintPaused = (synthMintPausedErr != nil)
 		p.SynthSupplyRemaining = synthSupplyRemaining.String()
 		p.DerivedDepthBps = dbps.String()
+		setPoolLuviFields(&p, pool, synthSupply)
 
 		polReserveDeposit, polErr := qs.mgr.Keeper().GetPOLReserveDeposit(ctx, pool.Asset)
 		if polErr == nil {
@@ -2525,7 +2572,7 @@ func (qs queryServer) queryStableReserveContributor(ctx cosmos.Context, req *typ
 	}, nil
 }
 
-func extractVoter(ctx cosmos.Context, tx_id string, mgr *Mgrs) (common.TxID, ObservedTxVoter, error) {
+func extractVoter(ctx cosmos.Context, tx_id string, mgr *Mgrs, outbound bool) (common.TxID, ObservedTxVoter, error) {
 	if len(tx_id) == 0 {
 		return "", ObservedTxVoter{}, errors.New("tx id not provided")
 	}
@@ -2534,7 +2581,12 @@ func extractVoter(ctx cosmos.Context, tx_id string, mgr *Mgrs) (common.TxID, Obs
 		ctx.Logger().Error("fail to parse tx id", "error", err)
 		return "", ObservedTxVoter{}, fmt.Errorf("fail to parse tx id: %w", err)
 	}
-	voter, err := mgr.Keeper().GetObservedTxInVoter(ctx, hash)
+	var voter ObservedTxVoter
+	if outbound {
+		voter, err = mgr.Keeper().GetObservedTxOutVoter(ctx, hash)
+	} else {
+		voter, err = mgr.Keeper().GetObservedTxInVoter(ctx, hash)
+	}
 	if err != nil {
 		ctx.Logger().Error("fail to get observed tx voter", "error", err)
 		return "", ObservedTxVoter{}, fmt.Errorf("fail to get observed tx voter: %w", err)
@@ -2543,19 +2595,20 @@ func extractVoter(ctx cosmos.Context, tx_id string, mgr *Mgrs) (common.TxID, Obs
 }
 
 func (qs queryServer) queryTxVoters(ctx cosmos.Context, req *types.QueryTxVotersRequest) (*types.QueryObservedTxVoter, error) {
-	hash, voter, err := extractVoter(ctx, req.TxId, qs.mgr)
+	hash, voter, err := extractVoter(ctx, req.TxId, qs.mgr, req.Outbound)
 	if err != nil {
 		return nil, err
 	}
-	// when tx in voter doesn't exist , double check tx out voter
-	if len(voter.Txs) == 0 {
+	// Migrations can have both voters under one tx ID. Explicit outbound
+	// queries must never fall back to destination-side observation metadata.
+	if !req.Outbound && len(voter.Txs) == 0 {
 		voter, err = qs.mgr.Keeper().GetObservedTxOutVoter(ctx, hash)
 		if err != nil {
 			return nil, fmt.Errorf("fail to get observed tx out voter: %w", err)
 		}
-		if len(voter.Txs) == 0 {
-			return nil, fmt.Errorf("tx: %s doesn't exist", hash)
-		}
+	}
+	if len(voter.Txs) == 0 {
+		return nil, fmt.Errorf("tx: %s doesn't exist", hash)
 	}
 
 	var txs []types.QueryObservedTx
@@ -2784,7 +2837,7 @@ func newTxStagesResponse(ctx cosmos.Context, voter ObservedTxVoter, isSwap, isPe
 
 func (qs queryServer) queryTxStages(ctx cosmos.Context, req *types.QueryTxStagesRequest) (*types.QueryTxStagesResponse, error) {
 	// First, get the ObservedTxVoter of interest.
-	_, voter, err := extractVoter(ctx, req.TxId, qs.mgr)
+	_, voter, err := extractVoter(ctx, req.TxId, qs.mgr, false)
 	if err != nil {
 		return nil, err
 	}
@@ -2800,7 +2853,7 @@ func (qs queryServer) queryTxStages(ctx cosmos.Context, req *types.QueryTxStages
 
 func (qs queryServer) queryTxStatus(ctx cosmos.Context, req *types.QueryTxStatusRequest) (*types.QueryTxStatusResponse, error) {
 	// First, get the ObservedTxVoter of interest.
-	_, voter, err := extractVoter(ctx, req.TxId, qs.mgr)
+	_, voter, err := extractVoter(ctx, req.TxId, qs.mgr, false)
 	if err != nil {
 		return nil, err
 	}
@@ -2845,7 +2898,7 @@ func (qs queryServer) queryTxStatus(ctx cosmos.Context, req *types.QueryTxStatus
 }
 
 func (qs queryServer) queryTx(ctx cosmos.Context, req *types.QueryTxRequest) (*types.QueryTxResponse, error) {
-	hash, voter, err := extractVoter(ctx, req.TxId, qs.mgr)
+	hash, voter, err := extractVoter(ctx, req.TxId, qs.mgr, false)
 	if err != nil {
 		return nil, err
 	}
@@ -3017,8 +3070,10 @@ func (qs queryServer) queryKeysign(ctx cosmos.Context, heightStr, pubKey string)
 // queryOutQueue - iterates over txout, counting how many transactions are waiting to be sent
 func (qs queryServer) queryQueue(ctx cosmos.Context, _ *types.QueryQueueRequest) (*types.QueryQueueResponse, error) {
 	constAccessor := qs.mgr.GetConstants()
-	signingTransactionPeriod := constAccessor.GetInt64Value(constants.SigningTransactionPeriod)
-	startHeight := ctx.BlockHeight() - signingTransactionPeriod
+	signingTransactionPeriod := qs.mgr.Keeper().GetConfigInt64(ctx, constants.SigningTransactionPeriod)
+	// XMR and EVM token/aggregator outbounds stay live for an extended signing
+	// period; scan that window and apply each item's own period below.
+	startHeight := ctx.BlockHeight() - types.MaxTxOutSigningTransactionPeriod(signingTransactionPeriod)
 	var query types.QueryQueueResponse
 	scheduledOutboundValue := cosmos.ZeroUint()
 	scheduledOutboundClout := cosmos.ZeroUint()
@@ -3051,8 +3106,8 @@ func (qs queryServer) queryQueue(ctx cosmos.Context, _ *types.QueryQueueRequest)
 			return nil, fmt.Errorf("fail to get tx out array from key value store: %w", err)
 		}
 		for _, tx := range txs.TxArray {
-			if tx.OutHash.IsEmpty() {
-				memo, _ := ParseMemoWithTHORNames(ctx, qs.mgr.Keeper(), tx.Memo)
+			if tx.OutHash.IsEmpty() && height >= ctx.BlockHeight()-tx.SigningTransactionPeriod(signingTransactionPeriod) {
+				memo, _ := ParseMemoWithTHORNames(ctx, qs.mgr.Keeper(), tx.GetMemo())
 				if memo.IsInternal() {
 					query.Internal++
 				} else if memo.IsOutbound() {
@@ -3628,10 +3683,12 @@ func (qs queryServer) queryScheduledOutbound(ctx cosmos.Context, _ *types.QueryS
 }
 
 func (qs queryServer) queryPendingOutbound(ctx cosmos.Context, _ *types.QueryPendingOutboundRequest) (*types.QueryOutboundResponse, error) {
-	constAccessor := qs.mgr.GetConstants()
-	signingTransactionPeriod := constAccessor.GetInt64Value(constants.SigningTransactionPeriod)
+	signingTransactionPeriod := qs.mgr.Keeper().GetConfigInt64(ctx, constants.SigningTransactionPeriod)
 	rescheduleCoalesceBlocks := qs.mgr.Keeper().GetConfigInt64(ctx, constants.RescheduleCoalesceBlocks)
-	startHeight := ctx.BlockHeight() - signingTransactionPeriod
+	// XMR and EVM token/aggregator outbounds stay live for an extended signing
+	// period (see LackSigning); scan that window and apply each item's own period
+	// below so they remain visible until they are actually rescheduled.
+	startHeight := ctx.BlockHeight() - types.MaxTxOutSigningTransactionPeriod(signingTransactionPeriod)
 	if startHeight < 1 {
 		startHeight = 1
 	}
@@ -3653,7 +3710,7 @@ func (qs queryServer) queryPendingOutbound(ctx cosmos.Context, _ *types.QueryPen
 			return nil, fmt.Errorf("fail to get tx out array from key value store: %w", err)
 		}
 		for _, tx := range txs.TxArray {
-			if tx.OutHash.IsEmpty() {
+			if tx.OutHash.IsEmpty() && height >= ctx.BlockHeight()-tx.SigningTransactionPeriod(signingTransactionPeriod) {
 				result = append(result, castTxOutItem(tx, height))
 			}
 		}
@@ -3852,21 +3909,21 @@ func (qs queryServer) queryInvariant(ctx cosmos.Context, req *types.QueryInvaria
 }
 
 func (qs queryServer) queryBlock(ctx cosmos.Context, req *types.QueryBlockRequest) (*types.QueryBlockResponse, error) {
-	initTendermintOnce.Do(initTendermint)
-	if tendermintClientErr != nil {
-		return nil, tendermintClientErr
+	tmClient, err := getTendermintClient()
+	if err != nil {
+		return nil, err
 	}
 	height := ctx.BlockHeight()
-	if parsed, err := strconv.ParseInt(req.Height, 10, 64); err == nil {
+	if parsed, parseErr := strconv.ParseInt(req.Height, 10, 64); parseErr == nil {
 		height = parsed
 	}
 
 	// get the block and results from tendermint rpc
-	block, err := tendermintClient.Block(ctx.Context(), &height)
+	block, err := tmClient.Block(ctx.Context(), &height)
 	if err != nil {
 		return nil, fmt.Errorf("fail to get block from tendermint rpc: %w", err)
 	}
-	results, err := tendermintClient.BlockResults(ctx.Context(), &height)
+	results, err := tmClient.BlockResults(ctx.Context(), &height)
 	if err != nil {
 		return nil, fmt.Errorf("fail to get block results from tendermint rpc: %w", err)
 	}
@@ -4018,6 +4075,7 @@ func castObservedTx(observedTx ObservedTx) types.QueryObservedTx {
 		AggregatorTargetLimit: observedTx.AggregatorTargetLimit,
 		SpentOutputRefs:       castOutputRefs(observedTx.SpentOutputRefs),
 		XmrTxKey:              observedTx.XmrTxKey,
+		XmrMinedHeight:        observedTx.XmrMinedHeight,
 	}
 }
 
@@ -4074,8 +4132,9 @@ func eventMap(e sdk.Event) map[string]string {
 }
 
 func simulate(ctx cosmos.Context, mgr Manager, msg sdk.Msg) (sdk.Events, error) {
-	// use the first active node account as the signer
-	nodeAccounts, err := mgr.Keeper().ListActiveValidators(ctx)
+	// use the first active node account as the signer (same store access as
+	// ListActiveValidators, without unmarshalling the other active nodes)
+	nodeAccounts, err := mgr.Keeper().ListActiveValidatorsUpTo(ctx, 1)
 	if err != nil {
 		return nil, fmt.Errorf("no active node accounts: %w", err)
 	}
@@ -4104,6 +4163,9 @@ func simulate(ctx cosmos.Context, mgr Manager, msg sdk.Msg) (sdk.Events, error) 
 	cms := ctx.MultiStore().CacheMultiStore() // never call cms.Write()
 	em := cosmos.NewEventManager()
 	ctx = ctx.WithMultiStore(cms).WithEventManager(em)
+	// cms is discarded, so its txout writes need not disable the caller's
+	// txout cache (if any) for the caller's later simulations
+	ctx = keeper.ForkTxOutCache(ctx)
 
 	// disable logging
 	ctx = ctx.WithLogger(nullLogger)

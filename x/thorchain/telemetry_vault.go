@@ -156,8 +156,9 @@ func emitVaultDetailTelemetry(ctx cosmos.Context, mgr Manager) {
 		}
 
 		// Migrate outbounds scheduled off this vault and not yet observed back.
-		// migrateFunds refuses to schedule any further migration while this is
-		// non-zero, so a count that never returns to zero is a wedged churn.
+		// migrateFunds pauses their chains while other chains can continue. Use
+		// the oldest pending age below to distinguish progress from a stuck migrate
+		// that can still prevent this vault from retiring and churn from completing.
 		telemetry.SetGaugeWithLabels(
 			[]string{"thornode", "vault", "pending_migrate_txs"},
 			float32(len(vault.PendingTxBlockHeights)),

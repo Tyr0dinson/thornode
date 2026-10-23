@@ -4,32 +4,20 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/cosmos/cosmos-sdk/runtime"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
 )
 
 func (k KVStore) setTxOut(ctx cosmos.Context, key []byte, record TxOut) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	keeper.TxOutCacheFromContext(ctx).Disable()
+	store := k.kvStore(ctx)
 	buf := k.cdc.MustMarshal(&record)
 	if buf == nil {
 		store.Delete(key)
 	} else {
 		store.Set(key, buf)
 	}
-}
-
-func (k KVStore) getTxOut(ctx cosmos.Context, key []byte, record *TxOut) (bool, error) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
-	if !store.Has(key) {
-		return false, nil
-	}
-
-	bz := store.Get(key)
-	if err := k.cdc.Unmarshal(bz, record); err != nil {
-		return true, dbError(ctx, fmt.Sprintf("Unmarshal kvstore: (%T) %s", record, key), err)
-	}
-	return true, nil
 }
 
 // AppendTxOut - append the given item to txOut
@@ -65,8 +53,38 @@ func (k KVStore) GetTxOutIterator(ctx cosmos.Context) cosmos.Iterator {
 // GetTxOut - write the given txout information to key value store
 func (k KVStore) GetTxOut(ctx cosmos.Context, height int64) (*TxOut, error) {
 	record := NewTxOut(height)
-	_, err := k.getTxOut(ctx, k.GetKey(prefixTxOut, strconv.FormatInt(height, 10)), record)
-	return record, err
+	key, bz, present := k.getTxOutBytes(ctx, height)
+	if !present {
+		return record, nil
+	}
+	if err := k.cdc.Unmarshal(bz, record); err != nil {
+		return record, dbError(ctx, fmt.Sprintf("Unmarshal kvstore: (%T) %s", record, key), err)
+	}
+	return record, nil
+}
+
+// getTxOutBytes makes GetTxOut's store reads (those of getTxOut: Has, then Get
+// if present) and returns the stored bytes undecoded. With a TxOutCache on ctx
+// the stored bytes (or their absence) of each height are shared between the
+// reads of one query instead.
+func (k KVStore) getTxOutBytes(ctx cosmos.Context, height int64) (key, bz []byte, present bool) {
+	key = k.GetKey(prefixTxOut, strconv.FormatInt(height, 10))
+	cache := keeper.TxOutCacheFromContext(ctx)
+	if cache != nil {
+		var ok bool
+		if bz, present, ok = cache.Get(height); ok {
+			return key, bz, present
+		}
+	}
+	store := k.kvStore(ctx)
+	present = store.Has(key)
+	if present {
+		bz = store.Get(key)
+	}
+	if cache != nil {
+		cache.Set(height, bz, present)
+	}
+	return key, bz, present
 }
 
 func (k KVStore) GetTxOutValue(ctx cosmos.Context, height int64) (cosmos.Uint, cosmos.Uint, error) {

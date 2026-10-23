@@ -86,7 +86,7 @@ No authorization required
 
 ## TxSigners
 
-> TxDetailsResponse TxSigners(ctx, hash).Height(height).Execute()
+> TxDetailsResponse TxSigners(ctx, hash).Height(height).Outbound(outbound).Execute()
 
 
 
@@ -107,10 +107,11 @@ import (
 func main() {
     hash := "CF524818D42B63D25BBA0CCC4909F127CAA645C0F9CD07324F2824CC151A64C7" // string | 
     height := int64(789) // int64 | optional block height, defaults to current tip (optional)
+    outbound := true // bool | Select only the outbound voter. By default, prefer the inbound voter and fall back to the outbound voter when no inbound observations exist. (optional) (default to false)
 
     configuration := openapiclient.NewConfiguration()
     apiClient := openapiclient.NewAPIClient(configuration)
-    resp, r, err := apiClient.TransactionsApi.TxSigners(context.Background(), hash).Height(height).Execute()
+    resp, r, err := apiClient.TransactionsApi.TxSigners(context.Background(), hash).Height(height).Outbound(outbound).Execute()
     if err != nil {
         fmt.Fprintf(os.Stderr, "Error when calling `TransactionsApi.TxSigners``: %v\n", err)
         fmt.Fprintf(os.Stderr, "Full HTTP response: %v\n", r)
@@ -137,6 +138,7 @@ Name | Type | Description  | Notes
 ------------- | ------------- | ------------- | -------------
 
  **height** | **int64** | optional block height, defaults to current tip | 
+ **outbound** | **bool** | Select only the outbound voter. By default, prefer the inbound voter and fall back to the outbound voter when no inbound observations exist. | [default to false]
 
 ### Return type
 
@@ -158,7 +160,7 @@ No authorization required
 
 ## TxSignersOld
 
-> TxSignersResponse TxSignersOld(ctx, hash).Height(height).Execute()
+> TxSignersResponse TxSignersOld(ctx, hash).Height(height).Outbound(outbound).Execute()
 
 
 
@@ -179,10 +181,11 @@ import (
 func main() {
     hash := "CF524818D42B63D25BBA0CCC4909F127CAA645C0F9CD07324F2824CC151A64C7" // string | 
     height := int64(789) // int64 | optional block height, defaults to current tip (optional)
+    outbound := true // bool | Select only the outbound voter. By default, prefer the inbound voter and fall back to the outbound voter when no inbound observations exist. (optional) (default to false)
 
     configuration := openapiclient.NewConfiguration()
     apiClient := openapiclient.NewAPIClient(configuration)
-    resp, r, err := apiClient.TransactionsApi.TxSignersOld(context.Background(), hash).Height(height).Execute()
+    resp, r, err := apiClient.TransactionsApi.TxSignersOld(context.Background(), hash).Height(height).Outbound(outbound).Execute()
     if err != nil {
         fmt.Fprintf(os.Stderr, "Error when calling `TransactionsApi.TxSignersOld``: %v\n", err)
         fmt.Fprintf(os.Stderr, "Full HTTP response: %v\n", r)
@@ -209,6 +212,7 @@ Name | Type | Description  | Notes
 ------------- | ------------- | ------------- | -------------
 
  **height** | **int64** | optional block height, defaults to current tip | 
+ **outbound** | **bool** | Select only the outbound voter. By default, prefer the inbound voter and fall back to the outbound voter when no inbound observations exist. | [default to false]
 
 ### Return type
 

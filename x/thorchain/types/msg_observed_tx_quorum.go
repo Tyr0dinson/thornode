@@ -48,6 +48,13 @@ func (m *MsgObservedTxQuorum) ValidateBasic() error {
 		return cosmos.ErrUnknownRequest(err.Error())
 	}
 	if m.QuoTx.Inbound {
+		// Match legacy inbound admission. Zero remains available to outbound
+		// pre-mining observations, but cannot establish an inbound quorum.
+		if tx.Tx.Chain.UsesHeightScopedErrata() {
+			if _, err := tx.CanonicalMinedHeight(); err != nil {
+				return cosmos.ErrUnknownRequest(err.Error())
+			}
+		}
 		if len(tx.SpentOutputRefs) > 0 {
 			return cosmos.ErrUnknownRequest("spent output refs are only valid for outbound observed transactions")
 		}

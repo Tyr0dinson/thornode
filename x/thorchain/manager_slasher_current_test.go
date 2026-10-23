@@ -2126,7 +2126,7 @@ func (s *SlashingSuite) TestNeedsNewVaultMatchesDestination(c *C) {
 	c.Check(slasherNeedsNewVault(c, mgr, ctx, vaultOf(pk1, pk2, pk3), matchedToi), Equals, false)
 
 	// A Zcash tex destination and its P2PKH form are one address.
-	p2pkhAddress, err := common.NewAddress("tmEp4k7dSU8eGj32uJPi2wBSGuiNaVFBLN7")
+	p2pkhAddress, err := GetRandomPubKey().GetAddress(common.ZECChain)
 	c.Assert(err, IsNil)
 	texAddress, err := p2pkhAddress.ToTexAddress()
 	c.Assert(err, IsNil)
@@ -2476,4 +2476,417 @@ func (s *SlashingSuite) TestLackSigningSurvivesOversizedObservation(c *C) {
 	c.Assert(after.TxArray, HasLen, 1)
 	// The replaced batch item proves LackSigning reached and rescheduled it.
 	c.Check(after.TxArray[0].OutHash.Equals(common.BlankTxID), Equals, true)
+}
+
+func (s *SlashingSuite) TestRecoverySwapsForSiblingOutboundsDoNotCollide(c *C) {
+	for _, advQueue := range []int64{0, 1} {
+		c.Logf("EnableAdvSwapQueue=%d", advQueue)
+		ctx, mgr := setupManagerForTest(c)
+		mgr.Keeper().SetMimir(ctx, constants.EnableAdvSwapQueue.String(), advQueue)
+		slasher := newSlasher(mgr.Keeper(), mgr.EventMgr())
+
+		pool := NewPool()
+		pool.Asset = common.BTCAsset
+		pool.BalanceRune = cosmos.NewUint(1000 * common.One)
+		pool.BalanceAsset = cosmos.NewUint(1000 * common.One)
+		pool.Status = PoolAvailable
+		c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+
+		vault1 := GetRandomVault()
+		vault2 := GetRandomVault()
+
+		// A split outbound: one inbound, same memo and destination, two vaults.
+		inHash := GetRandomTxHash()
+		dest := GetRandomBTCAddress()
+		split := []TxOutItem{
+			{
+				Chain:       common.BTCChain,
+				InHash:      inHash,
+				VaultPubKey: vault1.PubKey,
+				ToAddress:   dest,
+				Coin:        common.NewCoin(common.BTCAsset, cosmos.NewUint(2*common.One)),
+				Memo:        fmt.Sprintf("OUT:%s", inHash),
+			},
+			{
+				Chain:       common.BTCChain,
+				InHash:      inHash,
+				VaultPubKey: vault2.PubKey,
+				ToAddress:   dest,
+				Coin:        common.NewCoin(common.BTCAsset, cosmos.NewUint(3*common.One)),
+				Memo:        fmt.Sprintf("OUT:%s", inHash),
+			},
+		}
+		// Ragnarok payouts from one iteration share the blank InHash and memo.
+		ragnarok := []TxOutItem{
+			{
+				Chain:       common.BTCChain,
+				InHash:      common.BlankTxID,
+				VaultPubKey: vault1.PubKey,
+				ToAddress:   GetRandomBTCAddress(),
+				Coin:        common.NewCoin(common.BTCAsset, cosmos.NewUint(5*common.One)),
+				Memo:        NewRagnarokMemo(100).String(),
+			},
+			{
+				Chain:       common.BTCChain,
+				InHash:      common.BlankTxID,
+				VaultPubKey: vault1.PubKey,
+				ToAddress:   GetRandomBTCAddress(),
+				Coin:        common.NewCoin(common.BTCAsset, cosmos.NewUint(7*common.One)),
+				Memo:        NewRagnarokMemo(100).String(),
+			},
+		}
+		// Byte-identical siblings hash to the same TxOutItem hash; the queue
+		// key check must still keep both recoveries.
+		items := append(append([]TxOutItem{}, split...), ragnarok...)
+		items = append(items, ragnarok[1])
+
+		vaults := []Vault{vault1, vault2, vault1, vault1, vault1}
+		expected := cosmos.ZeroUint()
+		for i, toi := range items {
+			memo, err := ParseMemoWithTHORNames(ctx, mgr.Keeper(), toi.Memo)
+			c.Assert(err, IsNil)
+			c.Assert(memo.IsOutbound(), Equals, true)
+			c.Assert(slasher.sendFailedOutboundToTreasury(ctx, mgr, toi, vaults[i], memo), IsNil)
+			expected = expected.Add(toi.Coin.Amount)
+		}
+
+		swaps := affiliateIntegrationQueuedSwaps(c, ctx, mgr.Keeper())
+		c.Assert(swaps, HasLen, len(items))
+		total := cosmos.ZeroUint()
+		for _, swap := range swaps {
+			total = total.Add(swap.Tx.Coins[0].Amount)
+		}
+		c.Check(total.String(), Equals, expected.String())
+	}
+}
+
+// TestLackSigningRecoversEverySplitOutbound drives recovery through LackSigning:
+// the legs of one split outbound exhaust MaxOutboundAttempts in the same block,
+// and every leg marked handled must leave its own recovery swap behind.
+func (s *SlashingSuite) TestLackSigningRecoversEverySplitOutbound(c *C) {
+	for _, advQueue := range []int64{0, 1} {
+		c.Logf("EnableAdvSwapQueue=%d", advQueue)
+		ctx, mgr := setupManagerForTest(c)
+		ctx = ctx.WithBlockHeight(500)
+		mgr.Keeper().SetMimir(ctx, constants.MaxOutboundAttempts.String(), 1)
+		mgr.Keeper().SetMimir(ctx, constants.EnableAdvSwapQueue.String(), advQueue)
+
+		pool := NewPool()
+		pool.Asset = common.BTCAsset
+		pool.Decimals = 8
+		pool.BalanceRune = cosmos.NewUint(1000 * common.One)
+		pool.BalanceAsset = cosmos.NewUint(1000 * common.One)
+		pool.Status = PoolAvailable
+		c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+
+		signingTransPeriod := mgr.Keeper().GetConfigInt64(ctx, constants.SigningTransactionPeriod)
+		c.Assert(signingTransPeriod > 0, Equals, true)
+		scheduledHeight := ctx.BlockHeight() - signingTransPeriod
+
+		inHash := GetRandomTxHash()
+		dest := GetRandomBTCAddress()
+		txOut := NewTxOut(scheduledHeight)
+		expected := cosmos.ZeroUint()
+		for _, amt := range []uint64{2, 3} {
+			vault := GetRandomVault()
+			vault.Coins = common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(100*common.One))}
+			c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+			toi := TxOutItem{
+				Chain:       common.BTCChain,
+				InHash:      inHash,
+				VaultPubKey: vault.PubKey,
+				ToAddress:   dest,
+				Coin:        common.NewCoin(common.BTCAsset, cosmos.NewUint(amt*common.One)),
+				MaxGas:      common.Gas{common.NewCoin(common.BTCAsset, cosmos.NewUint(1000))},
+				Memo:        "OUT:" + inHash.String(),
+			}
+			txOut.TxArray = append(txOut.TxArray, toi)
+			expected = expected.Add(toi.Coin.Amount)
+		}
+		c.Assert(mgr.Keeper().SetTxOut(ctx, txOut), IsNil)
+		voter := NewObservedTxVoter(inHash, nil)
+		voter.FinalisedHeight = 1
+		voter.Actions = txOut.TxArray
+		mgr.Keeper().SetObservedTxInVoter(ctx, voter)
+
+		slasher := newSlasher(mgr.Keeper(), mgr.EventMgr())
+		c.Assert(slasher.LackSigning(ctx, mgr), IsNil)
+
+		after, err := mgr.Keeper().GetTxOut(ctx, scheduledHeight)
+		c.Assert(err, IsNil)
+		c.Assert(after.TxArray, HasLen, 2)
+		for _, toi := range after.TxArray {
+			c.Check(toi.OutHash.Equals(common.BlankTxID), Equals, true)
+		}
+
+		swaps := affiliateIntegrationQueuedSwaps(c, ctx, mgr.Keeper())
+		c.Assert(swaps, HasLen, 2)
+		total := cosmos.ZeroUint()
+		for _, swap := range swaps {
+			total = total.Add(swap.Tx.Coins[0].Amount)
+		}
+		c.Check(total.String(), Equals, expected.String())
+	}
+}
+
+// TestReverseSwapRecoveriesForSiblingsDoNotCollide covers the reverse_swap
+// recovery type: the split legs of a failed swap outbound each queue their own
+// reverse swap, and a failed refund of that swap, which would reverse-swap
+// into its own asset, falls back to treasury recovery.
+func (s *SlashingSuite) TestReverseSwapRecoveriesForSiblingsDoNotCollide(c *C) {
+	for _, advQueue := range []int64{0, 1} {
+		c.Logf("EnableAdvSwapQueue=%d", advQueue)
+		ctx, mgr := setupManagerForTest(c)
+		mgr.Keeper().SetMimir(ctx, constants.EnableAdvSwapQueue.String(), advQueue)
+		slasher := newSlasher(mgr.Keeper(), mgr.EventMgr())
+
+		for _, asset := range []common.Asset{common.BTCAsset, common.ETHAsset} {
+			pool := NewPool()
+			pool.Asset = asset
+			pool.BalanceRune = cosmos.NewUint(1000 * common.One)
+			pool.BalanceAsset = cosmos.NewUint(1000 * common.One)
+			pool.Status = PoolAvailable
+			c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+		}
+
+		// Original swap: ETH -> BTC.
+		inHash := GetRandomTxHash()
+		sender := GetRandomETHAddress()
+		dest := GetRandomBTCAddress()
+		observed := ObservedTx{
+			Tx: common.Tx{
+				ID:          inHash,
+				Chain:       common.ETHChain,
+				FromAddress: sender,
+				ToAddress:   GetRandomETHAddress(),
+				Coins:       common.Coins{common.NewCoin(common.ETHAsset, cosmos.NewUint(10*common.One))},
+				Memo:        fmt.Sprintf("=:BTC.BTC:%s", dest),
+				Gas:         common.Gas{common.NewCoin(common.ETHAsset, cosmos.NewUint(1000000))},
+			},
+			Status:         common.Status_done,
+			BlockHeight:    ctx.BlockHeight(),
+			FinaliseHeight: ctx.BlockHeight(),
+		}
+		voter := NewObservedTxVoter(inHash, []ObservedTx{observed})
+		voter.FinalisedHeight = ctx.BlockHeight()
+		voter.Tx = observed
+		mgr.Keeper().SetObservedTxInVoter(ctx, voter)
+
+		vault1 := GetRandomVault()
+		vault2 := GetRandomVault()
+		items := []TxOutItem{
+			{
+				Chain:       common.BTCChain,
+				InHash:      inHash,
+				VaultPubKey: vault1.PubKey,
+				ToAddress:   dest,
+				Coin:        common.NewCoin(common.BTCAsset, cosmos.NewUint(2*common.One)),
+				Memo:        fmt.Sprintf("OUT:%s", inHash),
+			},
+			{
+				Chain:       common.BTCChain,
+				InHash:      inHash,
+				VaultPubKey: vault2.PubKey,
+				ToAddress:   dest,
+				Coin:        common.NewCoin(common.BTCAsset, cosmos.NewUint(3*common.One)),
+				Memo:        fmt.Sprintf("OUT:%s", inHash),
+			},
+			{
+				Chain:       common.ETHChain,
+				InHash:      inHash,
+				VaultPubKey: vault1.PubKey,
+				ToAddress:   sender,
+				Coin:        common.NewCoin(common.ETHAsset, cosmos.NewUint(4*common.One)),
+				Memo:        fmt.Sprintf("REFUND:%s", inHash),
+			},
+		}
+		vaults := []Vault{vault1, vault2, vault1}
+		for i, toi := range items {
+			memo, err := ParseMemoWithTHORNames(ctx, mgr.Keeper(), toi.Memo)
+			c.Assert(err, IsNil)
+			c.Assert(slasher.sendFailedOutboundToTreasury(ctx, mgr, toi, vaults[i], memo), IsNil)
+		}
+
+		swaps := affiliateIntegrationQueuedSwaps(c, ctx, mgr.Keeper())
+		c.Assert(swaps, HasLen, len(items))
+		reversed := cosmos.ZeroUint()
+		for _, swap := range swaps {
+			c.Check(swap.Tx.Coins[0].Asset.Equals(swap.TargetAsset), Equals, false)
+			switch {
+			case swap.TargetAsset.Equals(common.ETHAsset):
+				c.Check(swap.Destination.Equals(sender), Equals, true)
+				reversed = reversed.Add(swap.Tx.Coins[0].Amount)
+			case swap.Tx.Coins[0].Asset.Equals(common.ETHAsset):
+				c.Check(swap.TargetAsset.IsRune(), Equals, true)
+				c.Check(swap.Destination.Equals(common.TreasuryAddress), Equals, true)
+			default:
+				c.Errorf("unexpected recovery swap %s -> %s", swap.Tx.Coins[0].Asset, swap.TargetAsset)
+			}
+		}
+		c.Check(reversed.String(), Equals, cosmos.NewUint(5*common.One).String())
+	}
+}
+
+// TestRecoverySwapIDExhaustionDoesNotOverwrite fills every nonce slot for one
+// byte-identical TxOutItem: the next recovery must fail rather than overwrite a
+// queued swap, leaving LackSigning to reschedule the item for a later retry.
+func (s *SlashingSuite) TestRecoverySwapIDExhaustionDoesNotOverwrite(c *C) {
+	for _, advQueue := range []int64{0, 1} {
+		c.Logf("EnableAdvSwapQueue=%d", advQueue)
+		ctx, mgr := setupManagerForTest(c)
+		mgr.Keeper().SetMimir(ctx, constants.EnableAdvSwapQueue.String(), advQueue)
+		slasher := newSlasher(mgr.Keeper(), mgr.EventMgr())
+
+		pool := NewPool()
+		pool.Asset = common.BTCAsset
+		pool.BalanceRune = cosmos.NewUint(1000 * common.One)
+		pool.BalanceAsset = cosmos.NewUint(1000 * common.One)
+		pool.Status = PoolAvailable
+		c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+
+		vault := GetRandomVault()
+		toi := TxOutItem{
+			Chain:       common.BTCChain,
+			InHash:      common.BlankTxID,
+			VaultPubKey: vault.PubKey,
+			ToAddress:   GetRandomBTCAddress(),
+			Coin:        common.NewCoin(common.BTCAsset, cosmos.NewUint(common.One)),
+			Memo:        NewRagnarokMemo(100).String(),
+		}
+		memo, err := ParseMemoWithTHORNames(ctx, mgr.Keeper(), toi.Memo)
+		c.Assert(err, IsNil)
+
+		for i := 0; i < maxRecoveryTxIDNonce; i++ {
+			c.Assert(slasher.sendFailedOutboundToTreasury(ctx, mgr, toi, vault, memo), IsNil)
+		}
+		err = slasher.sendFailedOutboundToTreasury(ctx, mgr, toi, vault, memo)
+		c.Assert(err, NotNil)
+		c.Check(err, ErrorMatches, "no free treasury recovery swap id.*")
+
+		swaps := affiliateIntegrationQueuedSwaps(c, ctx, mgr.Keeper())
+		c.Check(swaps, HasLen, maxRecoveryTxIDNonce)
+	}
+}
+
+// TestLackSigningRetriesRecoveryAfterIDExhaustion queues more byte-identical
+// items than there are recovery IDs per height: the overflow item must be
+// rescheduled rather than stranded, and recovered at the next signing period.
+// For a failed swap outbound the overflow must still refund the original
+// sender, not fall back to the treasury while reverse_swap IDs are exhausted.
+func (s *SlashingSuite) TestLackSigningRetriesRecoveryAfterIDExhaustion(c *C) {
+	for _, reverseSwap := range []bool{false, true} {
+		for _, advQueue := range []int64{0, 1} {
+			c.Logf("reverseSwap=%t EnableAdvSwapQueue=%d", reverseSwap, advQueue)
+			ctx, mgr := setupManagerForTest(c)
+			ctx = ctx.WithBlockHeight(500)
+			mgr.Keeper().SetMimir(ctx, constants.MaxOutboundAttempts.String(), 1)
+			mgr.Keeper().SetMimir(ctx, constants.EnableAdvSwapQueue.String(), advQueue)
+
+			for _, asset := range []common.Asset{common.BTCAsset, common.ETHAsset} {
+				pool := NewPool()
+				pool.Asset = asset
+				pool.Decimals = 8
+				pool.BalanceRune = cosmos.NewUint(1000 * common.One)
+				pool.BalanceAsset = cosmos.NewUint(1000 * common.One)
+				pool.Status = PoolAvailable
+				c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+			}
+
+			signingTransPeriod := mgr.Keeper().GetConfigInt64(ctx, constants.SigningTransactionPeriod)
+			c.Assert(signingTransPeriod > 0, Equals, true)
+			scheduledHeight := ctx.BlockHeight() - signingTransPeriod
+
+			vault := GetRandomVault()
+			vault.Coins = common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(1000*common.One))}
+			c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+
+			inHash := GetRandomTxHash()
+			sender := GetRandomETHAddress()
+			dest := GetRandomBTCAddress()
+			toi := TxOutItem{
+				Chain:       common.BTCChain,
+				InHash:      inHash,
+				VaultPubKey: vault.PubKey,
+				ToAddress:   dest,
+				Coin:        common.NewCoin(common.BTCAsset, cosmos.NewUint(common.One)),
+				MaxGas:      common.Gas{common.NewCoin(common.BTCAsset, cosmos.NewUint(1000))},
+				Memo:        "OUT:" + inHash.String(),
+			}
+			txOut := NewTxOut(scheduledHeight)
+			for i := 0; i <= maxRecoveryTxIDNonce; i++ {
+				txOut.TxArray = append(txOut.TxArray, toi)
+			}
+			c.Assert(mgr.Keeper().SetTxOut(ctx, txOut), IsNil)
+			voter := NewObservedTxVoter(inHash, nil)
+			if reverseSwap {
+				// Original swap: ETH -> BTC.
+				observed := ObservedTx{
+					Tx: common.Tx{
+						ID:          inHash,
+						Chain:       common.ETHChain,
+						FromAddress: sender,
+						ToAddress:   GetRandomETHAddress(),
+						Coins:       common.Coins{common.NewCoin(common.ETHAsset, cosmos.NewUint(200*common.One))},
+						Memo:        fmt.Sprintf("=:BTC.BTC:%s", dest),
+						Gas:         common.Gas{common.NewCoin(common.ETHAsset, cosmos.NewUint(1000000))},
+					},
+					Status:         common.Status_done,
+					BlockHeight:    1,
+					FinaliseHeight: 1,
+				}
+				voter = NewObservedTxVoter(inHash, []ObservedTx{observed})
+				voter.Tx = observed
+			}
+			voter.FinalisedHeight = 1
+			voter.Actions = txOut.TxArray
+			mgr.Keeper().SetObservedTxInVoter(ctx, voter)
+
+			slasher := newSlasher(mgr.Keeper(), mgr.EventMgr())
+			c.Assert(slasher.LackSigning(ctx, mgr), IsNil)
+
+			// Every item is handled: maxRecoveryTxIDNonce recovered, one rescheduled.
+			after, err := mgr.Keeper().GetTxOut(ctx, scheduledHeight)
+			c.Assert(err, IsNil)
+			c.Assert(after.TxArray, HasLen, maxRecoveryTxIDNonce+1)
+			for _, item := range after.TxArray {
+				c.Check(item.OutHash.Equals(common.BlankTxID), Equals, true)
+			}
+			c.Check(affiliateIntegrationQueuedSwaps(c, ctx, mgr.Keeper()), HasLen, maxRecoveryTxIDNonce)
+
+			retryHeight := ctx.BlockHeight()
+			retry, err := mgr.Keeper().GetTxOut(ctx, retryHeight)
+			c.Assert(err, IsNil)
+			c.Assert(retry.TxArray, HasLen, 1)
+			c.Check(retry.TxArray[0].OutHash.IsEmpty(), Equals, true)
+			c.Check(retry.TxArray[0].Coin.Equals(toi.Coin), Equals, true)
+
+			// Next signing period: the retry recovers with fresh, height-scoped IDs.
+			ctx = ctx.WithBlockHeight(retryHeight + signingTransPeriod)
+			c.Assert(slasher.LackSigning(ctx, mgr), IsNil)
+
+			retry, err = mgr.Keeper().GetTxOut(ctx, retryHeight)
+			c.Assert(err, IsNil)
+			c.Assert(retry.TxArray, HasLen, 1)
+			c.Check(retry.TxArray[0].OutHash.Equals(common.BlankTxID), Equals, true)
+			swaps := affiliateIntegrationQueuedSwaps(c, ctx, mgr.Keeper())
+			c.Assert(swaps, HasLen, maxRecoveryTxIDNonce+1)
+			total := cosmos.ZeroUint()
+			for _, swap := range swaps {
+				total = total.Add(swap.Tx.Coins[0].Amount)
+				if reverseSwap {
+					c.Check(swap.TargetAsset.Equals(common.ETHAsset), Equals, true)
+					c.Check(swap.Destination.Equals(sender), Equals, true)
+				} else {
+					c.Check(swap.TargetAsset.IsRune(), Equals, true)
+					c.Check(swap.Destination.Equals(common.TreasuryAddress), Equals, true)
+				}
+			}
+			c.Check(total.String(), Equals, cosmos.NewUint(uint64(maxRecoveryTxIDNonce+1)*common.One).String())
+
+			// Nothing is left to retry at the next height.
+			next, err := mgr.Keeper().GetTxOut(ctx, ctx.BlockHeight())
+			c.Assert(err, IsNil)
+			c.Check(next.TxArray, HasLen, 0)
+		}
+	}
 }

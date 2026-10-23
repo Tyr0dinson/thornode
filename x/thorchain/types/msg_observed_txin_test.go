@@ -34,6 +34,39 @@ func (s *MsgObservedTxInSuite) TestRejectsXMRVaultAddressCaseVariant(c *C) {
 	c.Assert(msg.ValidateBasic(), NotNil)
 }
 
+func (s *MsgObservedTxInSuite) TestRejectsInboundXMROutboundMetadata(c *C) {
+	pk := getRandomXMRPubKeyForMsgTest(c)
+	toAddress, err := pk.GetAddress(common.XMRChain)
+	c.Assert(err, IsNil)
+	fromAddress, err := common.NewAddress(common.XMRUnknownSenderAddress(GetRandomTxHash().String(), toAddress.String()))
+	c.Assert(err, IsNil)
+	tx := common.NewObservedTx(common.Tx{
+		ID:          GetRandomTxHash(),
+		Chain:       common.XMRChain,
+		FromAddress: fromAddress,
+		ToAddress:   toAddress,
+		Coins:       common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(100))),
+		Gas:         common.Gas{common.NewCoin(common.XMRAsset, cosmos.OneUint())},
+		Memo:        "=:THOR.RUNE:" + GetRandomTHORAddress().String(),
+	}, 55, pk, 55)
+	tx.XmrMinedHeight = 55
+
+	msg := NewMsgObservedTxIn(common.ObservedTxs{tx}, GetRandomBech32Addr())
+	c.Assert(msg.ValidateBasic(), IsNil)
+
+	withKey := tx
+	withKey.XmrTxKey = strings.Repeat("a", 64)
+	msg = NewMsgObservedTxIn(common.ObservedTxs{withKey}, GetRandomBech32Addr())
+	err = msg.ValidateBasic()
+	c.Assert(err, ErrorMatches, ".*xmr tx key is only valid for outbound observed transactions.*")
+	c.Check(errors.Is(err, se.ErrUnknownRequest), Equals, true)
+
+	withRefs := tx
+	withRefs.SpentOutputRefs = []common.OutputRef{validXMRSpentRefForMsgTest(tx)}
+	msg = NewMsgObservedTxIn(common.ObservedTxs{withRefs}, GetRandomBech32Addr())
+	c.Assert(msg.ValidateBasic(), ErrorMatches, ".*spent output refs are only valid for outbound observed transactions.*")
+}
+
 func (s *MsgObservedTxInSuite) TestMsgObservedTxIn(c *C) {
 	var err error
 	pk := GetRandomPubKey()

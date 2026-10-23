@@ -64,7 +64,7 @@ type Client struct {
 	signerCacheManager  *signercache.CacheManager
 	xrpScanner          *XrpBlockScanner
 	globalSolvencyQueue chan stypes.Solvency
-	// Serializes ReportSolvency when FetchTxs prefetch callbacks and SolvencyCheckRunner can both enter.
+	// Serializes ReportSolvency when ordered scan callbacks and SolvencyCheckRunner can both enter.
 	solvencyLock sync.Mutex
 	wg           *sync.WaitGroup
 	stopchan     chan struct{}
@@ -149,7 +149,10 @@ func NewClient(
 	}
 	xrpHTTP := &http.Client{Transport: router, Timeout: cfg.BlockScanner.HTTPRequestTimeout}
 	rpcBase := endpoints.SyntheticBase(cfg.ChainID).String()
-	rpcConfig, err := rpc.NewClientConfig(rpcBase, rpc.WithHTTPClient(xrpHTTP))
+	// develop's transient-error retry policy (see retryHTTPClient) wraps the
+	// router-backed client; the router itself handles endpoint failover
+	rpcConfig, err := rpc.NewClientConfig(rpcBase,
+		rpc.WithHTTPClient(newRetryHTTPClientFrom(xrpHTTP, cfg.BlockScanner.MaxHTTPRequestRetry, logger)))
 	if err != nil {
 		return nil, fmt.Errorf("unable to create rpc config for client, %w", err)
 	}
@@ -698,7 +701,9 @@ func (c *Client) broadcastTx(txBlob string) error {
 	// Only add the transaction to signer cache when it is sure the transaction has been broadcast successfully.
 	// So for other scenario , like transaction already in mempool , invalid account sequence # , the transaction can be rescheduled , and retried
 	// If we get tefPAST_SEQ, tx is already in current ledger, most likely by another validator.
-	if response.EngineResult != "tesSUCCESS" && response.EngineResult != "tefPAST_SEQ" {
+	// tefALREADY means this exact tx was already applied, e.g. a retried submit.
+	if response.EngineResult != "tesSUCCESS" && response.EngineResult != "tefPAST_SEQ" &&
+		response.EngineResult != "tefALREADY" {
 		c.logger.Info().Interface("broadcastRes", response).Msg("XRP BroadcastTx failed")
 		return fmt.Errorf("transaction failed to submit with engine result: %s", response.EngineResult)
 	}
@@ -754,7 +759,7 @@ func (c *Client) GetGasEstimateForSolvency() cosmos.Uint {
 }
 
 func (c *Client) ReportSolvency(blockHeight int64) error {
-	// FetchTxs may call this from prefetch goroutines; SolvencyCheckRunner also calls it while halted.
+	// The ordered scan loop and SolvencyCheckRunner can both call this.
 	c.solvencyLock.Lock()
 	defer c.solvencyLock.Unlock()
 
@@ -763,7 +768,7 @@ func (c *Client) ReportSolvency(blockHeight int64) error {
 	}
 
 	// when block scanner is not healthy, only report from auto-unhalt SolvencyCheckRunner
-	// (FetchTxs passes PreviousHeight + 1 from scanBlocks, while SolvencyCheckRunner passes chainHeight)
+	// (the scan hook passes PreviousHeight + 1, while SolvencyCheckRunner passes chainHeight)
 	if !c.IsBlockScannerHealthy() && blockHeight == c.blockScanner.PreviousHeight()+1 {
 		return nil
 	}
@@ -812,15 +817,29 @@ func (c *Client) ReportSolvency(blockHeight int64) error {
 		msgs = append(msgs, msg) // Insolvent-vault message
 	}
 
-	// Only if the block scanner is unhealthy (e.g. solvency-halted) and all chain-specific vaults are solvent,
-	// report that all the chain-specific vaults are solvent.
+	// Only if THORChain itself has this chain halted or solvency-halted, this node's block scanner
+	// is paused for it (unhealthy), and all chain-specific vaults are solvent, report that all the
+	// chain-specific vaults are solvent. That "all clear" exists to lift a network SolvencyHalt
+	// (see SolvencyCheckRunner), so the network's halt state is the gate, not this node's own
+	// block-scanner health: a scanner that is unhealthy for a local reason (RPC trouble, a stalled
+	// fetch) must stay silent here, because an all-clear only one node sends can never reach
+	// consensus and each one costs that node an unrefunded observation slash point. The paused
+	// scanner is still required alongside the halt: the scanner re-reads the pause mimirs only once
+	// per THORChain block, and reads a mimir error as not paused, so just after a halt takes effect
+	// a healthy scanner can still reach here from the scan path. Its all-clear would carry the
+	// scanned height rather than the runner's, a different voter, and so would be a lone vote too.
+	// On a bridge error stay silent; the runner retries.
 	// If there are any insolvent vaults, report only them.
 	// Not reporting both solvent and insolvent vaults is to avoid noise (spam):
 	// Reporting both could halt-and-unhalt SolvencyHalt in the same THOR block
 	// (resetting its height), plus making it harder to know at a glance from solvency reports which vaults were insolvent.
 	solvent := false
 	allVaultsProcessed := len(chainVaults) > 0 && processedVaults == len(chainVaults)
-	if !c.IsBlockScannerHealthy() && allVaultsProcessed && len(solventMsgs) == processedVaults {
+	halted, haltErr := runners.IsHaltedOnChain(c.thorchainBridge, c.cfg.ChainID)
+	if haltErr != nil {
+		c.logger.Err(haltErr).Msg("fail to read chain halt state, skipping solvency all-clear")
+	}
+	if halted && !c.IsBlockScannerHealthy() && allVaultsProcessed && len(solventMsgs) == processedVaults {
 		msgs = solventMsgs
 		solvent = true
 	}

@@ -55,7 +55,7 @@ func (s *LitecoinSuite) SetUpSuite(c *C) {
 
 var ltcChainRPCs = map[string]map[string]interface{}{}
 
-func init() {
+func loadLTCFixtures() {
 	// map the method and params to the loaded fixture
 	loadFixture := func(path string) map[string]interface{} {
 		f, err := os.Open(path)

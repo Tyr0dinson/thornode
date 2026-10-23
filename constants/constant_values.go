@@ -209,6 +209,13 @@ const (
 	VaultDeficitGasHaltMaxGasMultiplier
 
 	BondYieldEnabled
+
+	MaxMissingObservationChurnOut
+	MissingObservationChurnOutBps
+	MissingObservationGuardBps
+	MissingObservationHalfLife
+	MissingObservationMinSamples
+	MissingObservationGuardMaxBlocks
 )
 
 // ConstantValues define methods used to get constant values

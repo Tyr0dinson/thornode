@@ -58,13 +58,23 @@ type Pool struct {
 	PolReserveRuneDeposited *string `json:"pol_reserve_rune_deposited,omitempty"`
 	// rolling liquidity fees accumulated (in RUNE) since the last pool cycle reset; used as the numerator of the POL Reserve deployment score
 	RollingPoolLiquidityFeeRune *string `json:"rolling_pool_liquidity_fee_rune,omitempty"`
+	// Liquidity Unit Value Index as the chain values a pool unit, sqrt(balance_asset * balance_rune) / pool_units (synth-unit clamp included)
+	Luvi string `json:"luvi"`
+	// LP equity net of the synth liability in sqrt(asset * rune) units, sqrt(balance_asset * balance_rune) * (2 * balance_asset - synth_supply) / (2 * balance_asset); zero or negative when synth_overhang is true
+	LpEquity string `json:"lp_equity"`
+	// lp_equity / LP_units; equals luvi (up to rounding) unless synth_overhang is true
+	LpEquityPerUnit string `json:"lp_equity_per_unit"`
+	// synth supply relative to twice the asset depth, in basis points
+	SynthPerPoolDepthBps string `json:"synth_per_pool_depth_bps"`
+	// whether synth supply is at or above twice the asset depth; synth units are clamped and LP units can redeem almost nothing while this is true
+	SynthOverhang bool `json:"synth_overhang"`
 }
 
 // NewPool instantiates a new Pool object
 // This constructor will assign default values to properties that have it defined,
 // and makes sure properties required by API are set, but the set of arguments
 // will change when the set of required properties is changed
-func NewPool(asset string, status string, pendingInboundAsset string, pendingInboundRune string, balanceAsset string, balanceRune string, assetTorPrice string, poolUnits string, lPUnits string, synthUnits string, synthSupply string, saversDepth string, saversUnits string, saversFillBps string, saversCapacityRemaining string, synthMintPaused bool, synthSupplyRemaining string, derivedDepthBps string) *Pool {
+func NewPool(asset string, status string, pendingInboundAsset string, pendingInboundRune string, balanceAsset string, balanceRune string, assetTorPrice string, poolUnits string, lPUnits string, synthUnits string, synthSupply string, saversDepth string, saversUnits string, saversFillBps string, saversCapacityRemaining string, synthMintPaused bool, synthSupplyRemaining string, derivedDepthBps string, luvi string, lpEquity string, lpEquityPerUnit string, synthPerPoolDepthBps string, synthOverhang bool) *Pool {
 	this := Pool{}
 	this.Asset = asset
 	this.Status = status
@@ -84,6 +94,11 @@ func NewPool(asset string, status string, pendingInboundAsset string, pendingInb
 	this.SynthMintPaused = synthMintPaused
 	this.SynthSupplyRemaining = synthSupplyRemaining
 	this.DerivedDepthBps = derivedDepthBps
+	this.Luvi = luvi
+	this.LpEquity = lpEquity
+	this.LpEquityPerUnit = lpEquityPerUnit
+	this.SynthPerPoolDepthBps = synthPerPoolDepthBps
+	this.SynthOverhang = synthOverhang
 	return &this
 }
 
@@ -751,6 +766,126 @@ func (o *Pool) SetRollingPoolLiquidityFeeRune(v string) {
 	o.RollingPoolLiquidityFeeRune = &v
 }
 
+// GetLuvi returns the Luvi field value
+func (o *Pool) GetLuvi() string {
+	if o == nil {
+		var ret string
+		return ret
+	}
+
+	return o.Luvi
+}
+
+// GetLuviOk returns a tuple with the Luvi field value
+// and a boolean to check if the value has been set.
+func (o *Pool) GetLuviOk() (*string, bool) {
+	if o == nil {
+		return nil, false
+	}
+	return &o.Luvi, true
+}
+
+// SetLuvi sets field value
+func (o *Pool) SetLuvi(v string) {
+	o.Luvi = v
+}
+
+// GetLpEquity returns the LpEquity field value
+func (o *Pool) GetLpEquity() string {
+	if o == nil {
+		var ret string
+		return ret
+	}
+
+	return o.LpEquity
+}
+
+// GetLpEquityOk returns a tuple with the LpEquity field value
+// and a boolean to check if the value has been set.
+func (o *Pool) GetLpEquityOk() (*string, bool) {
+	if o == nil {
+		return nil, false
+	}
+	return &o.LpEquity, true
+}
+
+// SetLpEquity sets field value
+func (o *Pool) SetLpEquity(v string) {
+	o.LpEquity = v
+}
+
+// GetLpEquityPerUnit returns the LpEquityPerUnit field value
+func (o *Pool) GetLpEquityPerUnit() string {
+	if o == nil {
+		var ret string
+		return ret
+	}
+
+	return o.LpEquityPerUnit
+}
+
+// GetLpEquityPerUnitOk returns a tuple with the LpEquityPerUnit field value
+// and a boolean to check if the value has been set.
+func (o *Pool) GetLpEquityPerUnitOk() (*string, bool) {
+	if o == nil {
+		return nil, false
+	}
+	return &o.LpEquityPerUnit, true
+}
+
+// SetLpEquityPerUnit sets field value
+func (o *Pool) SetLpEquityPerUnit(v string) {
+	o.LpEquityPerUnit = v
+}
+
+// GetSynthPerPoolDepthBps returns the SynthPerPoolDepthBps field value
+func (o *Pool) GetSynthPerPoolDepthBps() string {
+	if o == nil {
+		var ret string
+		return ret
+	}
+
+	return o.SynthPerPoolDepthBps
+}
+
+// GetSynthPerPoolDepthBpsOk returns a tuple with the SynthPerPoolDepthBps field value
+// and a boolean to check if the value has been set.
+func (o *Pool) GetSynthPerPoolDepthBpsOk() (*string, bool) {
+	if o == nil {
+		return nil, false
+	}
+	return &o.SynthPerPoolDepthBps, true
+}
+
+// SetSynthPerPoolDepthBps sets field value
+func (o *Pool) SetSynthPerPoolDepthBps(v string) {
+	o.SynthPerPoolDepthBps = v
+}
+
+// GetSynthOverhang returns the SynthOverhang field value
+func (o *Pool) GetSynthOverhang() bool {
+	if o == nil {
+		var ret bool
+		return ret
+	}
+
+	return o.SynthOverhang
+}
+
+// GetSynthOverhangOk returns a tuple with the SynthOverhang field value
+// and a boolean to check if the value has been set.
+func (o *Pool) GetSynthOverhangOk() (*bool, bool) {
+	if o == nil {
+		return nil, false
+	}
+	return &o.SynthOverhang, true
+}
+
+// SetSynthOverhang sets field value
+func (o *Pool) SetSynthOverhang(v bool) {
+	o.SynthOverhang = v
+}
+
 func (o Pool) MarshalJSON_deprecated() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if true {
@@ -827,6 +962,21 @@ func (o Pool) MarshalJSON_deprecated() ([]byte, error) {
 	}
 	if o.RollingPoolLiquidityFeeRune != nil {
 		toSerialize["rolling_pool_liquidity_fee_rune"] = o.RollingPoolLiquidityFeeRune
+	}
+	if true {
+		toSerialize["luvi"] = o.Luvi
+	}
+	if true {
+		toSerialize["lp_equity"] = o.LpEquity
+	}
+	if true {
+		toSerialize["lp_equity_per_unit"] = o.LpEquityPerUnit
+	}
+	if true {
+		toSerialize["synth_per_pool_depth_bps"] = o.SynthPerPoolDepthBps
+	}
+	if true {
+		toSerialize["synth_overhang"] = o.SynthOverhang
 	}
 	return json.Marshal(toSerialize)
 }

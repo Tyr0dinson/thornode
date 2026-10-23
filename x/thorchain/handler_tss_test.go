@@ -672,7 +672,11 @@ func (s *HandlerTssSuite) TestTssHandler(c *C) {
 	}
 }
 
-func (s *HandlerTssSuite) TestTssHandlerAcceptsKeygenAtRetryBoundary(c *C) {
+// A keygen result expires exactly at the retry boundary (age == ChurnRetryInterval),
+// the same block the churn retry schedules a replacement keygen. Accepting it there
+// would let a stale result finalize a vault the retry is replacing; it must be
+// accepted only up to the block before the boundary.
+func (s *HandlerTssSuite) TestTssHandlerRejectsKeygenAtRetryBoundary(c *C) {
 	helper := newTssHandlerTestHelper(c)
 	handler := NewTssHandler(NewDummyMgrWithKeeper(helper.keeper))
 
@@ -697,8 +701,13 @@ func (s *HandlerTssSuite) TestTssHandlerAcceptsKeygenAtRetryBoundary(c *C) {
 	)
 	c.Assert(err, IsNil)
 
+	// One block before the boundary: still accepted.
+	lastValidCtx := helper.ctx.WithBlockHeight(helper.ctx.BlockHeight() + retryBlocks - 1)
+	c.Assert(handler.validate(lastValidCtx, msg), IsNil)
+
+	// At the retry boundary: rejected (was accepted before the off-by-one fix).
 	boundaryCtx := helper.ctx.WithBlockHeight(helper.ctx.BlockHeight() + retryBlocks)
-	c.Assert(handler.validate(boundaryCtx, msg), IsNil)
+	c.Assert(handler.validate(boundaryCtx, msg), ErrorMatches, "invalid keygen block: unknown request")
 
 	expiredCtx := helper.ctx.WithBlockHeight(helper.ctx.BlockHeight() + retryBlocks + 1)
 	c.Assert(handler.validate(expiredCtx, msg), ErrorMatches, "invalid keygen block: unknown request")

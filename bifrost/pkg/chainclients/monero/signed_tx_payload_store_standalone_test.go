@@ -86,6 +86,61 @@ func TestStandaloneReleaseReservedNeverUnlocksSignedClaim(t *testing.T) {
 	}
 }
 
+func TestStandaloneVisibilityImportPreservesExactClaimAndRejectsConflicts(t *testing.T) {
+	for _, exactAlias := range []bool{false, true} {
+		name := "logical"
+		if exactAlias {
+			name = "exact-alias"
+		}
+		t.Run(name, func(t *testing.T) {
+			store, plan := standaloneSignedClaim(t, "visibility-only-outbound", "signed-tx")
+			importVerified := func(txHash string) error {
+				if exactAlias {
+					_, _, err := store.ImportVerifiedExact(plan.ObserveKeys[0], plan.OwnerVault, txHash)
+					return err
+				}
+				_, _, err := store.ImportVerifiedLogical(plan.LogicalHash, plan.ObserveKeys, txHash)
+				return err
+			}
+			if err := importVerified("signed-tx"); err != nil {
+				t.Fatal(err)
+			}
+			if _, found, err := store.GetOwned(plan.CacheVault, plan.CacheHash, plan.LogicalHash); err != nil || !found {
+				t.Fatalf("exact imported claim is not recoverable: found=%t err=%v", found, err)
+			}
+			if err := store.ReleaseReserved(plan); !errors.Is(err, errXMRSigningClaimConflict) {
+				t.Fatalf("visibility import released signature-exposed ownership: %v", err)
+			}
+			// A competing verified result must retain the conservative guard.
+			// Reimport of the old hash cannot silently erase that conflict.
+			if err := importVerified("competing-tx"); err != nil {
+				t.Fatal(err)
+			}
+			if err := importVerified("signed-tx"); err == nil {
+				t.Fatal("exact reimport erased a competing verified fulfillment")
+			}
+			called := false
+			_, err := store.WithBroadcastAuthorization(plan.CacheVault, plan.CacheHash, plan.LogicalHash,
+				plan.OwnerVault, "signed-tx", plan.MsgID, plan.PlanHash,
+				func() (string, error) { called = true; return "signed-tx", nil })
+			if err == nil || called {
+				t.Fatalf("competing import failed to block dispatch: called=%t err=%v", called, err)
+			}
+		})
+	}
+}
+
+func TestStandaloneVisibilityImportBeforeSigningKeepsOwnershipClosed(t *testing.T) {
+	store := newStandaloneSignedStore(t)
+	plan := standaloneClaimPlan("visibility-before-signing")
+	if _, _, err := store.ImportVerifiedLogical(plan.LogicalHash, plan.ObserveKeys, "peer-tx"); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Reserve(plan); err == nil {
+		t.Fatal("verified peer fulfillment allowed a new independently signed payment")
+	}
+}
+
 func TestStandaloneReleaseReservedHonorsObservationBarrier(t *testing.T) {
 	store := newStandaloneSignedStore(t)
 	plan := standaloneClaimPlan("logical-observed-release")

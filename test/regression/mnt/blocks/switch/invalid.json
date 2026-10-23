@@ -277,6 +277,7 @@
                     "observed_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
                     "out_hashes": [],
                     "signers": [],
+                    "sol_nonce": null,
                     "status": "incomplete",
                     "tx": {
                       "chain": "GAIA",
@@ -298,7 +299,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000001",
                       "memo": "+:GAIA.KUJI:tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
                       "to_address": "cosmos1zf3gsk7edzwl9syyefvfhle37cjtql35427vcp"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }
@@ -430,6 +432,7 @@
                     "observed_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
                     "out_hashes": [],
                     "signers": [],
+                    "sol_nonce": null,
                     "status": "incomplete",
                     "tx": {
                       "chain": "GAIA",
@@ -451,7 +454,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000002",
                       "memo": "switch:tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
                       "to_address": "cosmos1zf3gsk7edzwl9syyefvfhle37cjtql35427vcp"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }

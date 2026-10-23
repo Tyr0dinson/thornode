@@ -218,21 +218,21 @@ func (p *pipeline) SpawnSignings(s pipelineSigner, bridge thorclient.ThorchainBr
 			log.Warn().Interface("item", sanitized).Msg("found retry item")
 		}
 
-		// spawn signing routine
+		// Pass the lock into the signing routine so releasing it does not read the
+		// map while this loop creates locks for other vault/chain combinations.
 		p.wg.Add(1)
-		go func(item TxOutStoreItem, vaultStatus types.VaultStatus) {
+		go func(item TxOutStoreItem, vaultStatus types.VaultStatus, lock chan struct{}) {
 			defer p.wg.Done()
 
 			// release the vault status semaphore and vault/chain lock when complete
 			defer func() {
-				vc2 := vaultChain{item.TxOutItem.VaultPubKey, item.TxOutItem.Chain}
-				<-p.vaultChainLock[vc2]
+				<-lock
 				p.vaultStatusConcurrency[vaultStatus].release(1)
 			}()
 
 			// process the transaction
 			s.processTransaction(item)
-		}(item, vault.Status)
+		}(item, vault.Status, p.vaultChainLock[vc])
 	}
 }
 

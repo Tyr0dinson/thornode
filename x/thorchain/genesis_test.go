@@ -377,3 +377,59 @@ func (GenesisTestSuite) TestGenesisExportSkipsTCYSmartContractStakers(c *C) {
 	}
 	c.Assert(foundStaker, Equals, true)
 }
+
+// TestGenesisSolVaultNonceRoundTrip: a vault's committed durable nonce survives
+// export/import (case-sensitive base58 values intact), so the vault is not treated as
+// legacy afterwards; invalid records fail genesis validation.
+func (GenesisTestSuite) TestGenesisSolVaultNonceRoundTrip(c *C) {
+	SetupConfigForTest()
+
+	srcCtx, srcMgr := setupManagerForTest(c)
+	vaultPK := GetRandomPubKey()
+	record := SolVaultNonce{
+		VaultPubKey:   vaultPK,
+		NonceAccount:  "9rAtxuhtKn8qagc3UtZFyhLrw5zkh6etv43TibaXuSKo",
+		Nonce:         "C8976AEb5Q4QFVZQQZ7rNY3u2j4n83PPHNagHeJLeCkH",
+		Slot:          1000,
+		UpdatedHeight: 42,
+		SetByTx:       GetRandomTxHash(),
+	}
+	srcMgr.Keeper().SetSolVaultNonce(srcCtx, record)
+
+	exported := ExportGenesis(srcCtx, srcMgr.Keeper())
+	c.Assert(exported.SolVaultNonces, HasLen, 1)
+	c.Assert(ValidateGenesis(exported), IsNil)
+	bz, err := exported.Marshal()
+	c.Assert(err, IsNil)
+	var decoded GenesisState
+	c.Assert(decoded.Unmarshal(bz), IsNil)
+
+	dstCtx, dstMgr := setupManagerForTest(c)
+	InitGenesis(dstCtx, dstMgr.Keeper(), decoded)
+	got, found, err := dstMgr.Keeper().GetSolVaultNonce(dstCtx, vaultPK)
+	c.Assert(err, IsNil)
+	c.Assert(found, Equals, true)
+	c.Check(got.NonceAccount, Equals, record.NonceAccount)
+	c.Check(got.Nonce, Equals, record.Nonce)
+	c.Check(got.Slot, Equals, record.Slot)
+	c.Check(got.UpdatedHeight, Equals, record.UpdatedHeight)
+	c.Check(got.SetByTx.Equals(record.SetByTx), Equals, true)
+
+	bad := decoded
+	bad.SolVaultNonces = []SolVaultNonce{{VaultPubKey: vaultPK, NonceAccount: record.NonceAccount, Slot: 1}}
+	c.Assert(ValidateGenesis(bad), NotNil)
+}
+
+func (GenesisTestSuite) TestExportSwapperCloutBase58(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	transparent, _, _, _ := zecTxOutAddresses()
+	clout := NewSwapperClout(transparent)
+	clout.Score = cosmos.NewUint(1000)
+	c.Assert(mgr.Keeper().SetSwapperClout(ctx, clout), IsNil)
+
+	// Store keys are uppercased, so the export must not rebuild base58 addresses from them.
+	gs := ExportGenesis(ctx, mgr.Keeper())
+	c.Assert(gs.SwapperClout, HasLen, 1)
+	c.Check(gs.SwapperClout[0].Address, Equals, transparent)
+	c.Check(gs.SwapperClout[0].Score.String(), Equals, "1000")
+}

@@ -94,14 +94,46 @@ func (api *TronApi) GetTransactionInfo(
 		return TransactionInfo{}, err
 	}
 
-	var info TransactionInfo
-
-	err = json.Unmarshal(data, &info)
-	if err != nil {
+	// Java-TRON can report an application error with HTTP 200. Do not turn
+	// that failed lookup into an empty receipt that could hide a scanned transfer.
+	var response *struct {
+		TransactionInfo
+		Error json.RawMessage `json:"Error"`
+	}
+	if err = json.Unmarshal(data, &response); err != nil {
 		return TransactionInfo{}, fmt.Errorf("failed to unmarshal response: %w", err)
 	}
+	if response == nil {
+		return TransactionInfo{}, fmt.Errorf("empty transaction info response")
+	}
+	if len(response.Error) != 0 {
+		return TransactionInfo{}, fmt.Errorf("transaction info lookup failed: %s", response.Error)
+	}
 
-	return info, nil
+	return response.TransactionInfo, nil
+}
+
+// GetTransactionInfoByBlockNum returns the TransactionInfo of every
+// transaction in the block at the given height with a single call.
+func (api *TronApi) GetTransactionInfoByBlockNum(
+	height int64,
+) ([]TransactionInfo, error) {
+	params := map[string]any{
+		"num": height,
+	}
+
+	data, err := api.post("gettransactioninfobyblocknum", params)
+	if err != nil {
+		return nil, err
+	}
+
+	var infos []TransactionInfo
+
+	if err := json.Unmarshal(data, &infos); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
+	}
+
+	return infos, nil
 }
 
 func (api *TronApi) GetTransaction(

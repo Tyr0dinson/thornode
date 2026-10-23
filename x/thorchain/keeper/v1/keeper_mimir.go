@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/cosmos/cosmos-sdk/runtime"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/constants"
+	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
 )
 
 // GetMimirWithRef is a helper function to more readably insert references (such as Asset MimirString or Chain) into Mimir key templates.
@@ -19,6 +19,7 @@ func (k KVStore) GetMimirWithRef(ctx cosmos.Context, template string, ref ...any
 
 // SetMimir save a mimir value to key value store
 func (k KVStore) SetMimir(ctx cosmos.Context, key string, value int64) {
+	keeper.MimirCacheFromContext(ctx).Disable()
 	k.setInt64(ctx, k.GetKey(prefixMimir, key), value)
 }
 
@@ -26,7 +27,7 @@ func (k KVStore) SetMimir(ctx cosmos.Context, key string, value int64) {
 func (k KVStore) GetNodeMimirs(ctx cosmos.Context, key string) (NodeMimirs, error) {
 	key = strings.ToUpper(key)
 	record := NodeMimirs{}
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	if !store.Has(k.GetKey(prefixNodeMimir, key)) {
 		return record, nil
 	}
@@ -52,7 +53,7 @@ func (k KVStore) SetNodeMimir(ctx cosmos.Context, key string, value int64, acc c
 		record.Delete(key, acc)
 	}
 
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	buf := k.cdc.MustMarshal(&record)
 	if buf == nil || len(record.Mimirs) == 0 {
 		store.Delete(kvkey)
@@ -89,6 +90,7 @@ func (k KVStore) GetNodeMimirIterator(ctx cosmos.Context) cosmos.Iterator {
 }
 
 func (k KVStore) DeleteMimir(ctx cosmos.Context, key string) error {
+	keeper.MimirCacheFromContext(ctx).Disable()
 	k.del(ctx, k.GetKey(prefixMimir, key))
 	return nil
 }
@@ -122,6 +124,7 @@ func (k KVStore) IsOperationalMimir(key string) bool {
 		constants.EnableMemolessOutbound.String(),
 		constants.POLReserveSystemIncomeBps.String(),
 		constants.StableReserveOraclePricing.String(),
+		constants.MimirKeyPreflightChainSetDisabled,
 	}
 	for i := range exactMatches {
 		if strings.EqualFold(key, exactMatches[i]) {
@@ -142,6 +145,19 @@ func (k KVStore) IsOperationalMimir(key string) bool {
 	// Past this point, compare only upper-case strings due to case sensitivity.
 	key = strings.ToUpper(key)
 	if strings.HasPrefix(key, "COMPROMISEDVAULT-") {
+		return true
+	}
+	// AllowNoVault-<CHAIN> opens the noop:novault debit for a brief, coordinated
+	// insolvency-correction window. That is a time-critical operator action (a
+	// gas top-up to a retiring vault must not be credited before the next
+	// migration round), so it is operational rather than economic.
+	if strings.HasPrefix(key, "ALLOWNOVAULT-") {
+		return true
+	}
+	// XMRConsolidation* tunes bifrost's Monero output consolidation. Each run
+	// locks vault liquidity for Monero's 10-block spend lock, so operators must
+	// be able to tune or disable it quickly rather than wait for a supermajority.
+	if strings.HasPrefix(key, "XMRCONSOLIDATION") {
 		return true
 	}
 	partialMatches := []string{

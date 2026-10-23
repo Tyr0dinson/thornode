@@ -10,6 +10,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/constants"
+	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
 )
 
 type ValidatorMgrTestSuite struct{}
@@ -1131,6 +1132,80 @@ func (vts *ValidatorMgrTestSuite) TestChurnInnerRecoversMissingXMRAtBFTFloor(c *
 	}
 }
 
+// TestBannedActiveNodeCannotEnterNextXMRKeygen follows the production block
+// lifecycle rather than constructing an impossible churn input. A ban reaches
+// consensus during transaction delivery, ValidatorMgr.EndBlock removes the
+// forced node from the active set and disables it, and only the following
+// BeginBlock derives the membership for replacement keygens.
+func (vts *ValidatorMgrTestSuite) TestBannedActiveNodeCannotEnterNextXMRKeygen(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	ctx = ctx.WithBlockHeight(60)
+	k := mgr.Keeper()
+
+	k.SetMimir(ctx, constants.BondSlashBan.String(), 0)
+	k.SetMimir(ctx, constants.ChurnInterval.String(), 60)
+	k.SetMimir(ctx, constants.DesiredValidatorSet.String(), 4)
+	k.SetMimir(ctx, constants.AsgardSize.String(), 10)
+
+	active := make(NodeAccounts, 0, 5)
+	membership := make(common.PubKeys, 0, 5)
+	for i := 0; i < 5; i++ {
+		na := GetRandomValidatorNode(NodeActive)
+		c.Assert(k.SetNodeAccount(ctx, na), IsNil)
+		active = append(active, na)
+		membership = append(membership, na.PubKeySet.Secp256k1)
+	}
+
+	regular := NewVault(1, ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.THORChain, common.BTCChain}.Strings(), nil)
+	regular.Membership = membership.Strings()
+	c.Assert(k.SetVault(ctx, regular), IsNil)
+
+	xmr := NewVaultV2(1, ActiveVault, AsgardVault, GetRandomPubKey(), xmrMonovaultChains().Strings(), nil, common.EmptyPubKey)
+	xmr.Membership = membership.Strings()
+	xmr.PubKeyFrost = GetRandomEd25519PubKey()
+	c.Assert(k.SetVault(ctx, xmr), IsNil)
+
+	banned := active[0]
+	banHandler := NewBanHandler(mgr)
+	for _, banner := range active[1:] {
+		_, err := banHandler.Run(ctx, NewMsgBan(banned.NodeAddress, banner.NodeAddress))
+		c.Assert(err, IsNil)
+	}
+
+	bannedAfterVote, err := k.GetNodeAccount(ctx, banned.NodeAddress)
+	c.Assert(err, IsNil)
+	c.Assert(bannedAfterVote.Status, Equals, NodeActive)
+	c.Assert(bannedAfterVote.ForcedToLeave, Equals, true)
+
+	mgr.ValidatorMgr().EndBlock(ctx, mgr)
+	bannedAfterEndBlock, err := k.GetNodeAccount(ctx, banned.NodeAddress)
+	c.Assert(err, IsNil)
+	c.Assert(bannedAfterEndBlock.Status, Equals, NodeDisabled)
+
+	remaining, err := k.ListActiveValidators(ctx)
+	c.Assert(err, IsNil)
+	c.Assert(remaining, HasLen, 4)
+	c.Assert(remaining.Contains(banned), Equals, false)
+
+	nextCtx := ctx.WithBlockHeight(61)
+	c.Assert(mgr.ValidatorMgr().BeginBlock(nextCtx, mgr, nil), IsNil)
+
+	keygenBlock, err := k.GetKeygenBlock(nextCtx, nextCtx.BlockHeight())
+	c.Assert(err, IsNil)
+	var xmrKeygens []Keygen
+	for _, keygen := range keygenBlock.Keygens {
+		if keygen.Type == XMRMonovaultKeygen {
+			xmrKeygens = append(xmrKeygens, keygen)
+		}
+	}
+	c.Assert(xmrKeygens, HasLen, 1)
+	c.Assert(xmrKeygens[0].GetMembers(), HasLen, 4)
+	c.Assert(xmrKeygens[0].GetMembers().Contains(banned.PubKeySet.Secp256k1), Equals, false)
+	for _, na := range remaining {
+		c.Assert(xmrKeygens[0].GetMembers().Contains(na.PubKeySet.Secp256k1), Equals, true)
+	}
+}
+
 func (vts *ValidatorMgrTestSuite) TestHasPendingCoScheduledKeygenUsesExtendedValidity(c *C) {
 	ctx, k := setupKeeperForTest(c)
 	const retryBlocks int64 = 2
@@ -1181,7 +1256,10 @@ func (vts *ValidatorMgrTestSuite) TestHasPendingCoScheduledKeygenUsesExtendedVal
 	c.Assert(pending, Equals, false)
 }
 
-func (vts *ValidatorMgrTestSuite) TestHasPendingStandaloneAsgardExpiresAfterRetryBoundary(c *C) {
+// A failed keygen must stop being pending exactly at its first retry tick
+// (age == ChurnRetryInterval), so the retry that fires on that block is not
+// suppressed as "pending" and the effective retry interval is one tick, not two.
+func (vts *ValidatorMgrTestSuite) TestHasPendingStandaloneAsgardExpiresAtRetryBoundary(c *C) {
 	ctx, k := setupKeeperForTest(c)
 	const retryBlocks int64 = 2
 	k.SetMimir(ctx, constants.ChurnRetryInterval.String(), retryBlocks)
@@ -1196,17 +1274,134 @@ func (vts *ValidatorMgrTestSuite) TestHasPendingStandaloneAsgardExpiresAfterRetr
 	keygenBlock.Keygens = []Keygen{keygen}
 	k.SetKeygenBlock(ctx, keygenBlock)
 
+	// One block before the retry tick: still pending.
 	pending, err := validatorMgr.hasPendingKeygen(ctx.WithBlockHeight(keygenHeight+retryBlocks-1), AsgardKeygen)
 	c.Assert(err, IsNil)
 	c.Assert(pending, Equals, true)
 
+	// Exactly at the retry tick: expired, so the retry is NOT skipped. Before the
+	// off-by-one fix this returned true and the first retry silently no-opped,
+	// doubling the effective retry interval.
 	pending, err = validatorMgr.hasPendingKeygen(ctx.WithBlockHeight(keygenHeight+retryBlocks), AsgardKeygen)
 	c.Assert(err, IsNil)
-	c.Assert(pending, Equals, true)
+	c.Assert(pending, Equals, false)
 
+	// And after the tick.
 	pending, err = validatorMgr.hasPendingKeygen(ctx.WithBlockHeight(keygenHeight+retryBlocks+1), AsgardKeygen)
 	c.Assert(err, IsNil)
 	c.Assert(pending, Equals, false)
+}
+
+// A keygen whose vault has since retired must not stay "pending" once a newer
+// keygen of the same type produced the active vault. Seen in test-simulation: the
+// genesis XMR keygen (block 65, one member) was still inside the XMR window at the
+// block-428 churn, its vault had retired after the block-362 churn, so the churn
+// skipped its XMR keygen and the leaving node stayed Active as an XMR member until
+// the next retry tick.
+func (vts *ValidatorMgrTestSuite) TestHasPendingKeygenIgnoresSupersededKeygen(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	k.SetMimir(ctx, constants.ChurnRetryInterval.String(), 365)
+	mgr := NewDummyMgrWithKeeper(k)
+	validatorMgr := newValidatorMgr(k, mgr.NetworkMgr(), mgr.TxOutStore(), mgr.EventMgr())
+
+	genesisMembers := common.PubKeys{GetRandomPubKey()}
+	churnMembers := common.PubKeys{genesisMembers[0], GetRandomPubKey(), GetRandomPubKey(), GetRandomPubKey()}
+
+	setXMRKeygen := func(height int64, members common.PubKeys) {
+		keygen, err := NewKeygen(height, members.Strings(), XMRMonovaultKeygen)
+		c.Assert(err, IsNil)
+		keygenBlock := NewKeygenBlock(height)
+		keygenBlock.Keygens = []Keygen{keygen}
+		k.SetKeygenBlock(ctx, keygenBlock)
+	}
+	setXMRVault := func(height int64, status VaultStatus, members common.PubKeys) {
+		vault := NewVault(height, status, AsgardVault, GetRandomPubKey(), common.Chains{common.XMRChain}.Strings(), nil)
+		vault.Membership = members.Strings()
+		c.Assert(k.SetVault(ctx, vault), IsNil)
+	}
+
+	// genesis XMR keygen, superseded by the churn keygen whose vault is active
+	setXMRKeygen(65, genesisMembers)
+	setXMRVault(67, RetiringVault, genesisMembers)
+	setXMRKeygen(362, churnMembers)
+	setXMRVault(366, ActiveVault, churnMembers)
+
+	pending, err := validatorMgr.hasPendingKeygen(ctx.WithBlockHeight(428), XMRMonovaultKeygen)
+	c.Assert(err, IsNil)
+	c.Assert(pending, Equals, false)
+
+	// a newer keygen without a vault yet is still pending
+	setXMRKeygen(420, common.PubKeys{GetRandomPubKey(), GetRandomPubKey(), GetRandomPubKey()})
+	pending, err = validatorMgr.hasPendingKeygen(ctx.WithBlockHeight(428), XMRMonovaultKeygen)
+	c.Assert(err, IsNil)
+	c.Assert(pending, Equals, true)
+}
+
+// Rounded node shares must conserve the funded reward, independently of Bond Yield.
+// The live five-validator replacement allocated 342 + 4*1141 from only 4905.
+func (vts *ValidatorMgrTestSuite) TestBondRewardCapsRoundedNodeShares(c *C) {
+	for _, rewardUnits := range []uint64{0, 3, 4905} {
+		for _, enabled := range []int64{0, 1} {
+			ctx, k := setupKeeperForTest(c)
+			ctx = ctx.WithBlockHeight(20)
+			mgr := NewDummyMgrWithKeeper(k)
+			eventMgr, err := GetEventManager(GetCurrentVersion())
+			c.Assert(err, IsNil)
+			mgr.eventMgr = eventMgr
+			validatorMgr := newValidatorMgr(k, mgr.NetworkMgr(), mgr.TxOutStore(), eventMgr)
+			k.SetMimir(ctx, constants.BondYieldEnabled.String(), enabled)
+
+			initialBonds := cosmos.ZeroUint()
+			for _, weight := range []uint64{3, 10, 10, 10, 10} {
+				na := GetRandomValidatorNode(NodeActive)
+				na.ActiveBlockHeight = 1
+				na.Bond = cosmos.NewUint(weight * common.One)
+				c.Assert(k.SetNodeAccount(ctx, na), IsNil)
+				operator, addressErr := na.BondAddress.AccAddress()
+				c.Assert(addressErr, IsNil)
+				bp := NewBondProviders(na.NodeAddress)
+				bp.NodeOperatorFee = cosmos.NewUint(500)
+				bp.Providers = []BondProvider{NewBondProvider(operator)}
+				bp.Bond(na.Bond, operator)
+				c.Assert(bp.SetAutoClaim(operator, 4000, ""), Equals, true)
+				c.Assert(k.SetBondProviders(ctx, bp), IsNil)
+				initialBonds = initialBonds.Add(na.Bond)
+			}
+			reward := cosmos.NewUint(rewardUnits)
+			network, err := k.GetNetwork(ctx)
+			c.Assert(err, IsNil)
+			network.BondRewardRune = reward
+			c.Assert(k.SetNetwork(ctx, network), IsNil)
+			FundModule(c, ctx, k, BondName, initialBonds.Add(reward).Uint64())
+			assertBondInvariantHolds(c, ctx, k.InvariantRoutes())
+
+			c.Assert(validatorMgr.distributeBondReward(ctx, mgr), IsNil)
+			assertBondInvariantHolds(c, ctx, k.InvariantRoutes())
+			network, err = k.GetNetwork(ctx)
+			c.Assert(err, IsNil)
+			c.Check(network.BondRewardRune.IsZero(), Equals, true)
+
+			paid := cosmos.ZeroUint()
+			rewardEvents := 0
+			for _, event := range ctx.EventManager().Events() {
+				if event.Type != "bond" {
+					continue
+				}
+				attrs := make(map[string]string)
+				for _, attr := range event.Attributes {
+					attrs[attr.Key] = attr.Value
+				}
+				if attrs["bond_type"] == "bond_reward" {
+					amount, err := cosmos.ParseUint(attrs["amount"])
+					c.Assert(err, IsNil)
+					paid = paid.Add(amount)
+					rewardEvents++
+				}
+			}
+			c.Check(rewardEvents, Equals, 5)
+			c.Check(paid.Equal(reward), Equals, true, Commentf("BondYieldEnabled=%d paid=%s", enabled, paid))
+		}
+	}
 }
 
 func (vts *ValidatorMgrTestSuite) TestWeightedBondReward(c *C) {
@@ -1825,4 +2020,561 @@ func (vts *ValidatorMgrTestSuite) TestMarkMissingActors_MimirDisabled(c *C) {
 	nodeAfter, err := mgr.Keeper().GetNodeAccount(ctx, activeNode.NodeAddress)
 	c.Assert(err, IsNil)
 	c.Assert(nodeAfter.LeaveScore, Equals, uint64(0), Commentf("Node should not be marked when MissingBlockChurnOut is disabled"))
+}
+
+// TestNodeAccountPreflightCheckKeygenChainSet covers the four outcomes of the keygen
+// chain set check: a node with no report is unaffected, a complete report passes, a
+// report that omits a chain the active vaults serve is held in Standby, and a report
+// older than the active vaults is not judged at all.
+func (vts *ValidatorMgrTestSuite) TestNodeAccountPreflightCheckKeygenChainSet(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	ctx = ctx.WithBlockHeight(1000)
+	mgr := NewDummyMgrWithKeeper(k)
+
+	validatorMgr := newValidatorMgr(k, mgr.NetworkMgr(), mgr.TxOutStore(), mgr.EventMgr())
+	c.Assert(validatorMgr, NotNil)
+
+	// The active vaults serve BTC and ETH, and were created at height 500.
+	vault := NewVault(500, ActiveVault, AsgardVault, GetRandomPubKey(),
+		common.Chains{common.BTCChain, common.ETHChain}.Strings(), []ChainContract{})
+	c.Assert(k.SetVault(ctx, vault), IsNil)
+	k.SetMimir(ctx, constants.MinimumBondInRune.String(), 1000000)
+
+	readyNode := func() NodeAccount {
+		na := GetRandomValidatorNode(NodeStandby)
+		na.Bond = cosmos.NewUint(10 * common.One)
+		na.PubKeySet = GetRandomPubKeySet()
+		na.Version = constants.SWVersion.String()
+		na.IPAddress = "192.168.0.1"
+		c.Assert(k.SetNodeAccount(ctx, na), IsNil)
+		return na
+	}
+
+	// No keygen report at all: nothing to judge, so a node that has never been
+	// selected is unaffected.
+	never := readyNode()
+	status, err := validatorMgr.NodeAccountPreflightCheck(ctx, never, k.GetConstants())
+	c.Assert(err, IsNil)
+	c.Assert(status, Equals, NodeReady)
+
+	// A report covering every chain the active vaults serve.
+	complete := readyNode()
+	k.SetLastKeygenChains(ctx, complete.NodeAddress, common.Chains{common.BTCChain, common.ETHChain}, 600)
+	status, err = validatorMgr.NodeAccountPreflightCheck(ctx, complete, k.GetConstants())
+	c.Assert(err, IsNil)
+	c.Assert(status, Equals, NodeReady)
+
+	// A report that omits ETH: this is the node that would drop ETH from the next
+	// vault and stall the rotation, so it is held back.
+	incomplete := readyNode()
+	k.SetLastKeygenChains(ctx, incomplete.NodeAddress, common.Chains{common.BTCChain}, 600)
+	status, err = validatorMgr.NodeAccountPreflightCheck(ctx, incomplete, k.GetConstants())
+	c.Assert(err, NotNil)
+	c.Assert(status, Equals, NodeStandby)
+	c.Assert(err.Error(), Equals, "node account keygen report at height 600 omitted chain ETH served by the active vaults")
+
+	// The mimir kill switch restores the old behaviour.
+	k.SetMimir(ctx, constants.MimirKeyPreflightChainSetDisabled, 1)
+	status, err = validatorMgr.NodeAccountPreflightCheck(ctx, incomplete, k.GetConstants())
+	c.Assert(err, IsNil)
+	c.Assert(status, Equals, NodeReady)
+	k.SetMimir(ctx, constants.MimirKeyPreflightChainSetDisabled, 0)
+
+	// A report older than the active vaults may predate a chain being added to them,
+	// so it is not evidence of a missing chain. This is also what expires a recorded
+	// report at the next completed churn, so no node can be locked out.
+	stale := readyNode()
+	k.SetLastKeygenChains(ctx, stale.NodeAddress, common.Chains{common.BTCChain}, 400)
+	status, err = validatorMgr.NodeAccountPreflightCheck(ctx, stale, k.GetConstants())
+	c.Assert(err, IsNil)
+	c.Assert(status, Equals, NodeReady)
+
+	// XMR is served by a monovault keygen with its own fixed chain set, so an asgard
+	// report never carries it and its absence is not held against the reporter. The
+	// monovault rotates on its own schedule: one created after the asgard keygen must
+	// not move the report-age bound past the asgard reports, or every incomplete
+	// report would be treated as stale and the check would never fire.
+	xmrVault := NewVault(900, ActiveVault, AsgardVault, GetRandomPubKey(),
+		common.Chains{common.THORChain, common.XMRChain}.Strings(), []ChainContract{})
+	c.Assert(k.SetVault(ctx, xmrVault), IsNil)
+	status, err = validatorMgr.NodeAccountPreflightCheck(ctx, complete, k.GetConstants())
+	c.Assert(err, IsNil)
+	c.Assert(status, Equals, NodeReady)
+	status, err = validatorMgr.NodeAccountPreflightCheck(ctx, incomplete, k.GetConstants())
+	c.Assert(err, NotNil)
+	c.Assert(status, Equals, NodeStandby)
+	c.Assert(err.Error(), Equals, "node account keygen report at height 600 omitted chain ETH served by the active vaults")
+
+	// A chain being retired (RAGNAROK-<gas asset>) is dropped from the reports of the
+	// operators who set OptToRetire first, so it is not required.
+	k.SetMimir(ctx, "RAGNAROK-ETH-ETH", 1)
+	status, err = validatorMgr.NodeAccountPreflightCheck(ctx, incomplete, k.GetConstants())
+	c.Assert(err, IsNil)
+	c.Assert(status, Equals, NodeReady)
+	k.SetMimir(ctx, "RAGNAROK-ETH-ETH", 0)
+}
+
+// chainSetTest holds the fixture shared by the chain-set churn-out tests: active asgard
+// vaults created at height 500 serving the given chains, and the mark armed with a limit
+// of 10 unless a test changes it.
+type chainSetTest struct {
+	ctx cosmos.Context
+	k   keeper.Keeper
+	vm  *ValidatorMgr
+}
+
+func newChainSetTest(c *C, chains common.Chains) chainSetTest {
+	ctx, k := setupKeeperForTest(c)
+	ctx = ctx.WithBlockHeight(1000)
+	mgr := NewDummyMgrWithKeeper(k)
+	vm := newValidatorMgr(k, mgr.NetworkMgr(), mgr.TxOutStore(), mgr.EventMgr())
+	c.Assert(vm, NotNil)
+	vault := NewVault(500, ActiveVault, AsgardVault, GetRandomPubKey(), chains.Strings(), []ChainContract{})
+	c.Assert(k.SetVault(ctx, vault), IsNil)
+	k.SetMimir(ctx, constants.MimirKeyChainSetChurnOutMax, 10)
+	return chainSetTest{ctx: ctx, k: k, vm: vm}
+}
+
+// node adds an Active node whose last asgard keygen report, at height 600, declared the
+// given chains; nil means it has never reported.
+func (t chainSetTest) node(c *C, declared common.Chains) NodeAccount {
+	na := GetRandomValidatorNode(NodeActive)
+	na.Bond = cosmos.NewUint(10 * common.One)
+	c.Assert(t.k.SetNodeAccount(t.ctx, na), IsNil)
+	if declared != nil {
+		t.k.SetLastKeygenChains(t.ctx, na.NodeAddress, declared, 600)
+	}
+	return na
+}
+
+// pendingVault adds an asgard InitVault, as a keygen round leaves it, with the given chains.
+func (t chainSetTest) pendingVault(c *C, chains common.Chains) Vault {
+	vault := NewVault(700, InitVault, AsgardVault, GetRandomPubKey(), chains.Strings(), []ChainContract{})
+	c.Assert(t.k.SetVault(t.ctx, vault), IsNil)
+	return vault
+}
+
+func (t chainSetTest) leaveScore(c *C, na NodeAccount) uint64 {
+	after, err := t.k.GetNodeAccount(t.ctx, na.NodeAddress)
+	c.Assert(err, IsNil)
+	return after.LeaveScore
+}
+
+var (
+	btcEth  = common.Chains{common.BTCChain, common.ETHChain}
+	btcOnly = common.Chains{common.BTCChain}
+)
+
+// TestMarkChainSetActors covers the Active-side half: it is off unless the mimir is set,
+// it marks nothing until a pending vault is actually created without a chain, and then
+// it marks only the nodes whose latest report omitted that chain.
+func (vts *ValidatorMgrTestSuite) TestMarkChainSetActors(c *C) {
+	t := newChainSetTest(c, btcEth)
+	complete := t.node(c, btcEth)
+	incomplete := t.node(c, btcOnly)
+	noReport := t.node(c, nil)
+
+	t.k.SetMimir(t.ctx, constants.MimirKeyChainSetChurnOutMax, 0)
+	t.pendingVault(c, btcOnly)
+	c.Assert(t.vm.markChainSetActors(t.ctx), IsNil)
+	c.Check(t.leaveScore(c, incomplete), Equals, uint64(0), Commentf("must not mark while ChainSetChurnOutMax is 0"))
+
+	t.k.SetMimir(t.ctx, constants.MimirKeyChainSetChurnOutMax, 10)
+	c.Assert(t.vm.markChainSetActors(t.ctx), IsNil)
+	c.Check(t.leaveScore(c, incomplete) > 0, Equals, true, Commentf("the omitted chain stalled a pending vault"))
+	c.Check(t.leaveScore(c, complete), Equals, uint64(0))
+	c.Check(t.leaveScore(c, noReport), Equals, uint64(0))
+}
+
+// TestMarkChainSetActors_NoStallNoMark: an omission that stalled nothing (the chain still
+// reached its supermajority, so no pending vault lacks it) is not marked, even when the
+// churn is being retried for some other reason.
+func (vts *ValidatorMgrTestSuite) TestMarkChainSetActors_NoStallNoMark(c *C) {
+	t := newChainSetTest(c, btcEth)
+	incomplete := t.node(c, btcOnly)
+
+	c.Assert(t.vm.markChainSetActors(t.ctx), IsNil)
+	c.Check(t.leaveScore(c, incomplete), Equals, uint64(0), Commentf("no pending vault: nothing stalled"))
+
+	t.pendingVault(c, btcEth)
+	c.Assert(t.vm.markChainSetActors(t.ctx), IsNil)
+	c.Check(t.leaveScore(c, incomplete), Equals, uint64(0), Commentf("the pending vault kept ETH"))
+}
+
+// TestMarkChainSetActors_IgnoresChainThatDidNotStall: only an omission of a chain that
+// actually stalled counts. A node lagging on a different chain is left alone.
+func (vts *ValidatorMgrTestSuite) TestMarkChainSetActors_IgnoresChainThatDidNotStall(c *C) {
+	t := newChainSetTest(c, common.Chains{common.BTCChain, common.ETHChain, common.LTCChain})
+	missingETH := t.node(c, common.Chains{common.BTCChain, common.LTCChain})
+	missingLTC := t.node(c, common.Chains{common.BTCChain, common.ETHChain})
+
+	t.pendingVault(c, common.Chains{common.BTCChain, common.LTCChain}) // ETH stalled, LTC did not
+	c.Assert(t.vm.markChainSetActors(t.ctx), IsNil)
+	c.Check(t.leaveScore(c, missingETH) > 0, Equals, true)
+	c.Check(t.leaveScore(c, missingLTC), Equals, uint64(0), Commentf("LTC kept its supermajority"))
+}
+
+// TestMarkChainSetActors_LimitIsAllOrNothing: every faulty node is marked, up to the
+// limit; past it, none are, rather than a subset that would be picked again every retry.
+func (vts *ValidatorMgrTestSuite) TestMarkChainSetActors_LimitIsAllOrNothing(c *C) {
+	t := newChainSetTest(c, btcEth)
+	a := t.node(c, btcOnly)
+	b := t.node(c, btcOnly)
+	t.pendingVault(c, btcOnly)
+
+	t.k.SetMimir(t.ctx, constants.MimirKeyChainSetChurnOutMax, 1)
+	c.Assert(t.vm.markChainSetActors(t.ctx), IsNil)
+	c.Check(t.leaveScore(c, a), Equals, uint64(0), Commentf("two faulty nodes over a limit of 1: none marked"))
+	c.Check(t.leaveScore(c, b), Equals, uint64(0))
+
+	t.k.SetMimir(t.ctx, constants.MimirKeyChainSetChurnOutMax, 2)
+	c.Assert(t.vm.markChainSetActors(t.ctx), IsNil)
+	c.Check(t.leaveScore(c, a) > 0, Equals, true)
+	c.Check(t.leaveScore(c, b) > 0, Equals, true)
+}
+
+// TestMarkChainSetActors_MarksPersistAcrossRetries is the review's multi-retry case: the
+// first round's pending vault is retired when the retry's keygen is scheduled, and the
+// excluded nodes cannot file a newer report, yet both offenders are marked on every
+// attempt, not only the one first in address order.
+func (vts *ValidatorMgrTestSuite) TestMarkChainSetActors_MarksPersistAcrossRetries(c *C) {
+	t := newChainSetTest(c, btcEth)
+	a := t.node(c, btcOnly)
+	b := t.node(c, btcOnly)
+	pending := t.pendingVault(c, btcOnly)
+
+	for attempt := 1; attempt <= 3; attempt++ {
+		c.Assert(t.vm.clearLeaveScores(t.ctx), IsNil)
+		c.Assert(t.vm.markChainSetActors(t.ctx), IsNil)
+		c.Check(t.leaveScore(c, a) > 0, Equals, true, Commentf("attempt %d", attempt))
+		c.Check(t.leaveScore(c, b) > 0, Equals, true, Commentf("attempt %d", attempt))
+		// TriggerKeygen retires the round's pending vault; the next round fails for
+		// another reason and leaves none.
+		pending.UpdateStatus(InactiveVault, t.ctx.BlockHeight())
+		c.Assert(t.k.SetVault(t.ctx, pending), IsNil)
+	}
+}
+
+// TestMarkChainSetActors_StaleReportUntilCycleCompletes documents the trade-off: a node
+// left out cannot re-report, so it stays marked for the rest of the cycle even if its
+// operator fixed the config, and is judged afresh once the churn completes.
+func (vts *ValidatorMgrTestSuite) TestMarkChainSetActors_StaleReportUntilCycleCompletes(c *C) {
+	t := newChainSetTest(c, btcEth)
+	fixedLater := t.node(c, btcOnly)
+	t.pendingVault(c, btcOnly)
+
+	c.Assert(t.vm.markChainSetActors(t.ctx), IsNil)
+	c.Check(t.leaveScore(c, fixedLater) > 0, Equals, true)
+	c.Assert(t.vm.clearLeaveScores(t.ctx), IsNil)
+	c.Assert(t.vm.markChainSetActors(t.ctx), IsNil)
+	c.Check(t.leaveScore(c, fixedLater) > 0, Equals, true, Commentf("still the latest report it could file"))
+
+	// The churn completes: the new active vaults are newer than the report and the stall.
+	vaults, err := t.k.GetAsgardVaultsByStatus(t.ctx, ActiveVault)
+	c.Assert(err, IsNil)
+	for _, v := range vaults {
+		v.UpdateStatus(RetiringVault, t.ctx.BlockHeight())
+		c.Assert(t.k.SetVault(t.ctx, v), IsNil)
+	}
+	newVault := NewVault(900, ActiveVault, AsgardVault, GetRandomPubKey(), btcEth.Strings(), []ChainContract{})
+	c.Assert(t.k.SetVault(t.ctx, newVault), IsNil)
+	c.Assert(t.vm.clearLeaveScores(t.ctx), IsNil)
+	c.Assert(t.vm.markChainSetActors(t.ctx), IsNil)
+	c.Check(t.leaveScore(c, fixedLater), Equals, uint64(0), Commentf("a new cycle judges the next report"))
+}
+
+// TestMarkChainSetActors_XMRAndRetiring asserts the mark uses the same required set and
+// report-age bound as the preflight half: an XMR monovault newer than the asgard keygen
+// does not expire the asgard reports, and a chain under RAGNAROK is not required.
+func (vts *ValidatorMgrTestSuite) TestMarkChainSetActors_XMRAndRetiring(c *C) {
+	t := newChainSetTest(c, btcEth)
+	xmrVault := NewVault(900, ActiveVault, AsgardVault, GetRandomPubKey(),
+		common.Chains{common.THORChain, common.XMRChain}.Strings(), []ChainContract{})
+	c.Assert(t.k.SetVault(t.ctx, xmrVault), IsNil)
+	early := t.node(c, btcOnly)
+	t.pendingVault(c, btcOnly)
+
+	// ETH is being retired: the node that already dropped it is not marked.
+	t.k.SetMimir(t.ctx, "RAGNAROK-ETH-ETH", 1)
+	c.Assert(t.vm.markChainSetActors(t.ctx), IsNil)
+	c.Check(t.leaveScore(c, early), Equals, uint64(0), Commentf("a chain under RAGNAROK must not be required"))
+
+	// Without the retirement the same report is marked, despite the newer monovault.
+	t.k.SetMimir(t.ctx, "RAGNAROK-ETH-ETH", 0)
+	c.Assert(t.vm.markChainSetActors(t.ctx), IsNil)
+	c.Check(t.leaveScore(c, early) > 0, Equals, true, Commentf("a newer XMR monovault must not expire the asgard report"))
+}
+
+// removedBy runs nextVaultNodeAccounts and reports which of the given nodes it left out.
+func (t chainSetTest) removedBy(c *C, size int, nodes ...NodeAccount) []bool {
+	next, _, err := t.vm.nextVaultNodeAccounts(t.ctx, size)
+	c.Assert(err, IsNil)
+	out := make([]bool, len(nodes))
+	for i, na := range nodes {
+		out[i] = true
+		for _, n := range next {
+			if n.NodeAddress.Equals(na.NodeAddress) {
+				out[i] = false
+			}
+		}
+	}
+	return out
+}
+
+// TestNextVaultNodeAccounts_ChainSetMarkLeavesFirst asserts a node marked for its chain
+// set is the one removed when only one node may leave, even though it has no slash
+// points and so the highest recomputed LeaveScore of the marked nodes.
+func (vts *ValidatorMgrTestSuite) TestNextVaultNodeAccounts_ChainSetMarkLeavesFirst(c *C) {
+	t := newChainSetTest(c, btcEth)
+	nodes := NodeAccounts{t.node(c, btcOnly)}
+	for i := 0; i < 4; i++ {
+		nodes = append(nodes, t.node(c, btcEth))
+	}
+	c.Assert(findMaxAbleToLeave(len(nodes)), Equals, 1)
+	t.pendingVault(c, btcOnly)
+	misconfigured, slashed := nodes[0], nodes[1]
+	c.Assert(t.k.IncNodeAccountSlashPoints(t.ctx, slashed.NodeAddress, 100), IsNil)
+	c.Assert(t.vm.markActor(t.ctx, slashed, "for age"), IsNil)
+	c.Assert(t.vm.markChainSetActors(t.ctx), IsNil)
+
+	removed := t.removedBy(c, len(nodes), misconfigured, slashed)
+	c.Check(removed[0], Equals, true, Commentf("the chain-set node must be the one to leave"))
+	c.Check(removed[1], Equals, false)
+}
+
+// TestNextVaultNodeAccounts_ChainSetAheadOfRequested: with one free slot, a faulty node
+// leaves before a voluntary leaver, who could not leave anyway while the keygen stalls.
+// A ForcedToLeave node still goes first.
+func (vts *ValidatorMgrTestSuite) TestNextVaultNodeAccounts_ChainSetAheadOfRequested(c *C) {
+	t := newChainSetTest(c, btcEth)
+	nodes := NodeAccounts{t.node(c, btcOnly), t.node(c, btcEth)}
+	for i := 0; i < 4; i++ {
+		nodes = append(nodes, t.node(c, btcEth))
+	}
+	c.Assert(findMaxAbleToLeave(len(nodes)), Equals, 1)
+	t.pendingVault(c, btcOnly)
+	faulty, requester := nodes[0], nodes[1]
+	requester.RequestedToLeave = true
+	c.Assert(t.k.SetNodeAccount(t.ctx, requester), IsNil)
+	c.Assert(t.vm.markChainSetActors(t.ctx), IsNil)
+
+	removed := t.removedBy(c, len(nodes), faulty, requester)
+	c.Check(removed[0], Equals, true, Commentf("the faulty node takes the only slot"))
+	c.Check(removed[1], Equals, false)
+
+	forced := nodes[2]
+	forced.ForcedToLeave = true
+	c.Assert(t.k.SetNodeAccount(t.ctx, forced), IsNil)
+	removed = t.removedBy(c, len(nodes), faulty, forced)
+	c.Check(removed[0], Equals, false)
+	c.Check(removed[1], Equals, true, Commentf("ForcedToLeave still goes first"))
+}
+
+// TestNextVaultNodeAccounts_ChainSetLeavesSlotForOthers: when faulty nodes would take
+// every slot while an offline or bad-actor node also waits to leave, the last slot goes
+// to the ordinary order, so that node can leave too.
+func (vts *ValidatorMgrTestSuite) TestNextVaultNodeAccounts_ChainSetLeavesSlotForOthers(c *C) {
+	t := newChainSetTest(c, btcEth)
+	var faulty, others NodeAccounts
+	for i := 0; i < 3; i++ {
+		faulty = append(faulty, t.node(c, btcOnly))
+	}
+	for i := 0; i < 9; i++ {
+		others = append(others, t.node(c, btcEth))
+	}
+	c.Assert(findMaxAbleToLeave(len(faulty)+len(others)), Equals, 3)
+	t.pendingVault(c, btcOnly)
+	c.Assert(t.vm.markChainSetActors(t.ctx), IsNil)
+
+	// No one else waiting: all three faulty nodes leave.
+	removed := t.removedBy(c, 12, faulty...)
+	c.Check(removed, DeepEquals, []bool{true, true, true})
+
+	offline := others[0]
+	c.Assert(t.k.IncNodeAccountSlashPoints(t.ctx, offline.NodeAddress, 100), IsNil)
+	c.Assert(t.vm.markActor(t.ctx, offline, "for not signing blocks"), IsNil)
+	removed = t.removedBy(c, 12, append(NodeAccounts{offline}, faulty...)...)
+	c.Check(removed[0], Equals, true, Commentf("the offline node keeps a slot"))
+	leaving := 0
+	for _, r := range removed[1:] {
+		if r {
+			leaving++
+		}
+	}
+	c.Check(leaving, Equals, 2, Commentf("two faulty nodes take the other slots"))
+}
+
+// TestNextVaultNodeAccounts_ChainSetTinySetKeepsRequestedLeaver: with four nodes no slot
+// is free, so findCountToRemove only lets a forced or requested leaver go; a faulty node
+// must not be sorted ahead of the voluntary leaver there.
+func (vts *ValidatorMgrTestSuite) TestNextVaultNodeAccounts_ChainSetTinySetKeepsRequestedLeaver(c *C) {
+	t := newChainSetTest(c, btcEth)
+	nodes := NodeAccounts{t.node(c, btcOnly), t.node(c, btcEth), t.node(c, btcEth), t.node(c, btcEth)}
+	c.Assert(findMaxAbleToLeave(len(nodes)), Equals, 0)
+	t.pendingVault(c, btcOnly)
+	requester := nodes[1]
+	requester.RequestedToLeave = true
+	c.Assert(t.k.SetNodeAccount(t.ctx, requester), IsNil)
+	c.Assert(t.vm.markChainSetActors(t.ctx), IsNil)
+
+	removed := t.removedBy(c, len(nodes), nodes[0], requester)
+	c.Check(removed[0], Equals, false)
+	c.Check(removed[1], Equals, true, Commentf("the requested leaver still goes"))
+}
+
+// TestChurnInnerChainSetStallSmallSet runs a stalled retry end to end through churnInner
+// on a nine-node set (stagenet sizing): the faulty node is left out of the keygen that is
+// triggered, and with more faulty nodes than free slots the keygen still fires with the
+// remainder, who are marked again on the next attempt.
+func (vts *ValidatorMgrTestSuite) TestChurnInnerChainSetStallSmallSet(c *C) {
+	for _, nFaulty := range []int{1, 3} {
+		ctx, k := setupKeeperForTest(c)
+		ctx = ctx.WithBlockHeight(1000)
+		mgr := NewDummyMgrWithKeeper(k)
+		networkDummy, ok := mgr.NetworkMgr().(*NetworkMgrDummy)
+		c.Assert(ok, Equals, true)
+		vm := newValidatorMgr(k, mgr.NetworkMgr(), mgr.TxOutStore(), mgr.EventMgr())
+		k.SetMimir(ctx, constants.DesiredValidatorSet.String(), 9)
+		k.SetMimir(ctx, constants.AsgardSize.String(), 20)
+		k.SetMimir(ctx, constants.MimirKeyChainSetChurnOutMax, 5)
+
+		var nodes NodeAccounts
+		membership := make([]string, 0, 9)
+		for i := 0; i < 9; i++ {
+			na := GetRandomValidatorNode(NodeActive)
+			na.Bond = cosmos.NewUint(10 * common.One)
+			na.StatusSince = 100
+			c.Assert(k.SetNodeAccount(ctx, na), IsNil)
+			declared := btcEth
+			if i < nFaulty {
+				declared = btcOnly
+			}
+			k.SetLastKeygenChains(ctx, na.NodeAddress, declared, 600)
+			nodes = append(nodes, na)
+			membership = append(membership, na.PubKeySet.Secp256k1.String())
+		}
+		active := NewVault(500, ActiveVault, AsgardVault, GetRandomPubKey(), btcEth.Strings(), nil)
+		active.Membership = membership
+		c.Assert(k.SetVault(ctx, active), IsNil)
+		pending := NewVault(700, InitVault, AsgardVault, GetRandomPubKey(), btcOnly.Strings(), nil)
+		pending.Membership = membership
+		c.Assert(k.SetVault(ctx, pending), IsNil)
+
+		c.Assert(vm.churnInner(ctx), IsNil)
+		c.Assert(len(networkDummy.nas) > 0, Equals, true, Commentf("%d faulty: the keygen must still fire", nFaulty))
+		inKeygen := func(na NodeAccount) bool { return networkDummy.nas.Contains(na) }
+		excluded := 0
+		for _, na := range nodes[:nFaulty] {
+			if !inKeygen(na) {
+				excluded++
+			}
+		}
+		if nFaulty == 1 {
+			c.Check(excluded, Equals, 1, Commentf("the faulty node must be left out of the keygen"))
+			continue
+		}
+		// Nine nodes free two slots. The age mark is also waiting, so one slot goes to
+		// the ordinary order and at least one faulty node stays in for this attempt.
+		c.Check(excluded >= 1, Equals, true)
+		c.Check(excluded < nFaulty, Equals, true, Commentf("more faulty nodes than slots"))
+		for _, na := range nodes[:nFaulty] {
+			after, err := k.GetNodeAccount(ctx, na.NodeAddress)
+			c.Assert(err, IsNil)
+			c.Check(after.LeaveScore > 0, Equals, true, Commentf("every faulty node is marked"))
+		}
+	}
+}
+
+// seedObservationTallies gives each node quota[i] misses out of 30 voters on ETH.
+func seedObservationTallies(ctx cosmos.Context, mgr *Mgrs, nas NodeAccounts, quota []int) {
+	for v := 0; v < 30; v++ {
+		var missed []cosmos.AccAddress
+		for i, na := range nas {
+			if quota[i] > v {
+				missed = append(missed, na.NodeAddress)
+			}
+		}
+		mgr.Keeper().AddObservationTally(ctx, common.ETHChain, observationTallyUnit, missed, nil)
+	}
+}
+
+func (vts *ValidatorMgrTestSuite) TestMarkMissingObservationActors(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	ctx = ctx.WithBlockHeight(1000)
+	networkMgr := newValidatorMgr(mgr.Keeper(), mgr.NetworkMgr(), mgr.TxOutStore(), mgr.EventMgr())
+
+	nas := make(NodeAccounts, 6)
+	for i := range nas {
+		nas[i] = GetRandomValidatorNode(NodeActive)
+	}
+	nas[5].LeaveScore = 100 // already marked for churn-out
+	for _, na := range nas {
+		c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
+	}
+	// 100%, 80%, 60% and 40% missed; nas[4] misses everything but churned in for
+	// the last 10 voters only, below MissingObservationMinSamples; nas[5] misses
+	// everything but is already marked
+	quota := []int{30, 24, 18, 12, 30, 30}
+	for v := 0; v < 30; v++ {
+		if v == 20 {
+			c.Assert(mgr.Keeper().ResetObservationTally(ctx, nas[4].NodeAddress), IsNil)
+		}
+		var missed []cosmos.AccAddress
+		for i, na := range nas {
+			if quota[i] > v {
+				missed = append(missed, na.NodeAddress)
+			}
+		}
+		mgr.Keeper().AddObservationTally(ctx, common.ETHChain, observationTallyUnit, missed, nil)
+	}
+	leaveScores := func() []uint64 {
+		out := make([]uint64, len(nas))
+		for i, na := range nas {
+			after, err := mgr.Keeper().GetNodeAccount(ctx, na.NodeAddress)
+			c.Assert(err, IsNil)
+			out[i] = after.LeaveScore
+		}
+		return out
+	}
+
+	// off by default
+	c.Assert(networkMgr.markMissingObservationActors(ctx), IsNil)
+	c.Check(leaveScores(), DeepEquals, []uint64{0, 0, 0, 0, 0, 100})
+
+	// capped at 2: the two worst above 50% are marked, the already-marked node is
+	// neither re-marked nor counted against the cap
+	mgr.Keeper().SetMimir(ctx, constants.MaxMissingObservationChurnOut.String(), 2)
+	c.Assert(networkMgr.markMissingObservationActors(ctx), IsNil)
+	scores := leaveScores()
+	c.Check(scores[0] > 0, Equals, true, Commentf("100%% missed should be marked"))
+	c.Check(scores[1] > 0, Equals, true, Commentf("80%% missed should be marked"))
+	c.Check(scores[2], Equals, uint64(0), Commentf("60%% missed is capped out"))
+	c.Check(scores[3], Equals, uint64(0), Commentf("40%% missed is under the threshold"))
+	c.Check(scores[4], Equals, uint64(0), Commentf("too few samples since churn-in"))
+	c.Check(scores[5], Equals, uint64(100))
+}
+
+func (vts *ValidatorMgrTestSuite) TestMarkMissingObservationActors_TieBreaksByAddress(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	ctx = ctx.WithBlockHeight(1000)
+	networkMgr := newValidatorMgr(mgr.Keeper(), mgr.NetworkMgr(), mgr.TxOutStore(), mgr.EventMgr())
+	mgr.Keeper().SetMimir(ctx, constants.MaxMissingObservationChurnOut.String(), 1)
+
+	nas := NodeAccounts{GetRandomValidatorNode(NodeActive), GetRandomValidatorNode(NodeActive)}
+	for _, na := range nas {
+		c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
+	}
+	seedObservationTallies(ctx, mgr, nas, []int{30, 30})
+
+	c.Assert(networkMgr.markMissingObservationActors(ctx), IsNil)
+	low, high := nas[0], nas[1]
+	if high.NodeAddress.String() < low.NodeAddress.String() {
+		low, high = high, low
+	}
+	lowAfter, err := mgr.Keeper().GetNodeAccount(ctx, low.NodeAddress)
+	c.Assert(err, IsNil)
+	highAfter, err := mgr.Keeper().GetNodeAccount(ctx, high.NodeAddress)
+	c.Assert(err, IsNil)
+	c.Check(lowAfter.LeaveScore > 0, Equals, true)
+	c.Check(highAfter.LeaveScore, Equals, uint64(0))
 }

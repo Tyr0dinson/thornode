@@ -646,6 +646,26 @@ func (c *Client) CreateWallet(name string) error {
 	return err
 }
 
+// ZecAddressUTXO preserves the block height and integer value returned by Zebra.
+// Signing must not recover this height from confirmations at a moving RPC tip.
+type ZecAddressUTXO struct {
+	Txid     string `json:"txid"`
+	Address  string `json:"address"`
+	Index    uint32 `json:"outputIndex"`
+	Script   string `json:"script"`
+	Satoshis uint64 `json:"satoshis"`
+	Height   int64  `json:"height"`
+}
+
+func (c *Client) GetZecAddressUTXOs(address string) ([]ZecAddressUTXO, error) {
+	if c.chain != common.ZECChain {
+		return nil, fmt.Errorf("ZEC address UTXOs requested for %s", c.chain)
+	}
+	var utxos []ZecAddressUTXO
+	err := c.Call(&utxos, "getaddressutxos", []any{address}...)
+	return utxos, extractBTCError(err)
+}
+
 // ListUnspent returns all unspent outputs with between min and max confirmations.
 func (c *Client) ListUnspent(address string) ([]btcjson.ListUnspentResult, error) {
 	var unspent []btcjson.ListUnspentResult
@@ -659,16 +679,8 @@ func (c *Client) ListUnspent(address string) ([]btcjson.ListUnspentResult, error
 			return nil, err
 		}
 
-		var utxos []struct {
-			Txid     string `json:"txid"`
-			Address  string `json:"address"`
-			Index    uint32 `json:"outputIndex"`
-			Script   string `json:"script"`
-			Satoshis uint64 `json:"satoshis"`
-			Height   int64  `json:"height"`
-		}
-
-		err = c.Call(&utxos, "getaddressutxos", []any{address}...)
+		var utxos []ZecAddressUTXO
+		utxos, err = c.GetZecAddressUTXOs(address)
 
 		for _, utxo := range utxos {
 			unspent = append(unspent, btcjson.ListUnspentResult{

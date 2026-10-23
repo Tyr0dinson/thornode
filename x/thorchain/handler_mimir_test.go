@@ -1,6 +1,8 @@
 package thorchain
 
 import (
+	"fmt"
+
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -247,4 +249,124 @@ func (HandlerMimirSuite) TestRevShareIsOperational(c *C) {
 	_ = ctx
 	c.Assert(mgr.Keeper().IsOperationalMimir("REVSHARE-foobar"), Equals, true)
 	c.Assert(mgr.Keeper().IsOperationalMimir("revshare-foobar"), Equals, true) // case-insensitive
+}
+
+func (s *HandlerMimirSuite) TestAllowNoVaultOperationalVoting(c *C) {
+	ctx, keeper := setupKeeperForTest(c)
+	handler := NewMimirHandler(NewDummyMgrWithKeeper(keeper))
+	FundModule(c, ctx, keeper, BondName, 100*common.One)
+
+	// Three operational votes must suffice even though eight active nodes
+	// would require six votes for an economic Mimir.
+	nodes := make(NodeAccounts, 8)
+	for i := range nodes {
+		nodes[i] = GetRandomValidatorNode(NodeActive)
+		c.Assert(keeper.SetNodeAccount(ctx, nodes[i]), IsNil)
+	}
+	key := fmt.Sprintf(constants.MimirTemplateAllowNoVault, common.TRONChain.String())
+	keeper.SetMimir(ctx, constants.OperationalVotesMin.String(), 3)
+	keeper.SetMimir(ctx, key, 0)
+
+	// Both opening and shutting the novault gate require only the operational minimum.
+	for _, value := range []int64{1, 0} {
+		for i, node := range nodes[:3] {
+			result, err := handler.Run(ctx, NewMsgMimir(key, value, node.NodeAddress))
+			c.Assert(err, IsNil)
+			c.Assert(result, NotNil)
+			actual, err := keeper.GetMimir(ctx, key)
+			c.Assert(err, IsNil)
+			// The first two votes are below OperationalVotesMin, so the previous
+			// value (1-value) still stands; the third vote reaches it and flips.
+			expected := 1 - value
+			if i == 2 {
+				expected = value
+			}
+			c.Assert(actual, Equals, expected, Commentf("value=%d votes=%d", value, i+1))
+		}
+	}
+
+	// Churn clears operational votes, but preserves the effective Mimir value
+	// and unrelated economic votes.
+	c.Assert(keeper.SetNodeMimir(ctx, "EconomicMimir", 1, nodes[0].NodeAddress), IsNil)
+	keeper.PurgeOperationalNodeMimirs(ctx)
+	votes, err := keeper.GetNodeMimirs(ctx, key)
+	c.Assert(err, IsNil)
+	c.Assert(votes.Mimirs, HasLen, 0)
+	actual, err := keeper.GetMimir(ctx, key)
+	c.Assert(err, IsNil)
+	c.Assert(actual, Equals, int64(0))
+	votes, err = keeper.GetNodeMimirs(ctx, "EconomicMimir")
+	c.Assert(err, IsNil)
+	c.Assert(votes.Mimirs, HasLen, 1)
+}
+
+func (s *HandlerMimirSuite) TestXMRConsolidationOperationalVoting(c *C) {
+	ctx, keeper := setupKeeperForTest(c)
+	handler := NewMimirHandler(NewDummyMgrWithKeeper(keeper))
+	FundModule(c, ctx, keeper, BondName, 100*common.One)
+
+	// Three operational votes must suffice even though eight active nodes
+	// would require six votes for an economic Mimir.
+	nodes := make(NodeAccounts, 8)
+	for i := range nodes {
+		nodes[i] = GetRandomValidatorNode(NodeActive)
+		c.Assert(keeper.SetNodeAccount(ctx, nodes[i]), IsNil)
+	}
+	keeper.SetMimir(ctx, constants.OperationalVotesMin.String(), 3)
+	enabledKey := "XMRConsolidationEnabled"
+	lockKey := "XMRConsolidationMaxLockBps"
+	keeper.SetMimir(ctx, enabledKey, 1)
+	keeper.SetMimir(ctx, lockKey, 1000)
+
+	vote := func(key string, value int64) {
+		for i, node := range nodes[:3] {
+			before, err := keeper.GetMimir(ctx, key)
+			c.Assert(err, IsNil)
+			result, err := handler.Run(ctx, NewMsgMimir(key, value, node.NodeAddress))
+			c.Assert(err, IsNil)
+			c.Assert(result, NotNil)
+			actual, err := keeper.GetMimir(ctx, key)
+			c.Assert(err, IsNil)
+			// Below OperationalVotesMin the previous value stands; the third vote flips it.
+			expected := before
+			if i == 2 {
+				expected = value
+			}
+			c.Assert(actual, Equals, expected, Commentf("key=%s value=%d votes=%d", key, value, i+1))
+		}
+	}
+	// Disabling, re-enabling and retuning all take only the operational minimum.
+	vote(enabledKey, 0)
+	vote(enabledKey, 1)
+	vote(lockKey, 500)
+
+	// MaxUTXOsToSpend is shared with the other UTXO chains and stays economic:
+	// the same three votes change nothing.
+	keeper.SetMimir(ctx, "MaxUTXOsToSpend", 15)
+	for _, node := range nodes[:3] {
+		_, err := handler.Run(ctx, NewMsgMimir("MaxUTXOsToSpend", 5, node.NodeAddress))
+		c.Assert(err, IsNil)
+	}
+	actual, err := keeper.GetMimir(ctx, "MaxUTXOsToSpend")
+	c.Assert(err, IsNil)
+	c.Assert(actual, Equals, int64(15))
+
+	// Churn clears the operational votes but keeps the effective values and the
+	// economic MaxUTXOsToSpend votes.
+	keeper.PurgeOperationalNodeMimirs(ctx)
+	votes, err := keeper.GetNodeMimirs(ctx, "MaxUTXOsToSpend")
+	c.Assert(err, IsNil)
+	c.Assert(votes.Mimirs, HasLen, 3)
+	for _, kv := range []struct {
+		key   string
+		value int64
+	}{{enabledKey, 1}, {lockKey, 500}} {
+		key, value := kv.key, kv.value
+		votes, err = keeper.GetNodeMimirs(ctx, key)
+		c.Assert(err, IsNil)
+		c.Assert(votes.Mimirs, HasLen, 0, Commentf("key=%s", key))
+		actual, err = keeper.GetMimir(ctx, key)
+		c.Assert(err, IsNil)
+		c.Assert(actual, Equals, value, Commentf("key=%s", key))
+	}
 }

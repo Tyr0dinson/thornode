@@ -107,8 +107,26 @@ func (h PriceFeedQuorumBatchHandler) handle(ctx cosmos.Context, msg types.MsgPri
 
 	trackPricePerNode := config.GetThornode().Telemetry.PricePerNode
 
+	// each feed carries one attestation over its own payload; verify them
+	// all concurrently up front, skipping feeds handleQuorumPriceFeed rejects
+	// before it reaches signature verification
+	checks := make([]attestationCheck, 0, len(msg.QuoPriceFeeds))
 	for _, qpf := range msg.QuoPriceFeeds {
-		pf, err := h.handleQuorumPriceFeed(ctx, qpf, activeNodes)
+		if qpf == nil || qpf.PriceFeed == nil || len(qpf.Attestations) != 1 ||
+			!bytes.Equal(qpf.PriceFeed.Version, h.requiredVersion) ||
+			len(qpf.PriceFeed.Rates) != len(h.requiredSymbols) {
+			continue
+		}
+		signBz, err := qpf.PriceFeed.GetSignablePayload()
+		if err != nil {
+			continue
+		}
+		checks = append(checks, attestationCheck{att: qpf.Attestations[0], signBz: signBz})
+	}
+	sigs := preverifyAttestations(activeNodes, checks)
+
+	for _, qpf := range msg.QuoPriceFeeds {
+		pf, err := h.handleQuorumPriceFeed(ctx, qpf, activeNodes, sigs)
 		if err != nil {
 			ctx.Logger().Error("fail to handle QuorumPriceFeed", "error", err)
 			continue
@@ -127,9 +145,11 @@ func (h PriceFeedQuorumBatchHandler) handle(ctx cosmos.Context, msg types.MsgPri
 			if rate.Decimals > 18 {
 				continue
 			}
-			pricesByAsset[symbol][nodeAddress] = rate.BigFloat()
+			price := rate.BigFloat()
+			pricesByAsset[symbol][nodeAddress] = price
 			if found {
-				pricesByBondAddress[bondAddress][symbol] = rate.BigFloat()
+				// Copy keeps the value, precision, mode and accuracy
+				pricesByBondAddress[bondAddress][symbol] = new(big.Float).Copy(price)
 			}
 		}
 	}
@@ -238,6 +258,7 @@ func (h PriceFeedQuorumBatchHandler) handleQuorumPriceFeed(
 	ctx cosmos.Context,
 	qpf *common.QuorumPriceFeed,
 	active NodeAccounts,
+	sigs attestationSigs,
 ) (*PriceFeed, error) {
 	if qpf.PriceFeed == nil {
 		telemetry.IncrCounterWithLabels(
@@ -299,7 +320,7 @@ func (h PriceFeedQuorumBatchHandler) handleQuorumPriceFeed(
 
 	att := atts[0]
 
-	_, err = verifyQuorumAttestation(active, signBz, att)
+	_, err = verifyQuorumAttestation(active, signBz, att, sigs)
 	if err != nil {
 		telemetry.IncrCounterWithLabels(
 			[]string{"thornode", "price_feed", "rejected"},

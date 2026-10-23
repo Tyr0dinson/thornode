@@ -126,8 +126,16 @@ func (t *LevelDBBlockMetaAccessor) AddSignedTxItem(item evmtypes.SignedTxItem) e
 
 // RemoveSignedTxItem remove a signed item from key value store
 func (t *LevelDBBlockMetaAccessor) RemoveSignedTxItem(hash string) error {
-	key := t.getSignedTxItemKey(hash)
-	return t.db.Delete([]byte(key), nil)
+	key := []byte(t.getSignedTxItemKey(hash))
+	// Scanners call this for every tx in every block, and almost none were
+	// signed by this node. Deleting a missing key still writes a tombstone
+	// (journal + memtable) that GetSignedTxItems then iterates past until
+	// compaction drops it, so skip keys that are not there. If Has fails, the
+	// Delete below reports the error as before.
+	if has, err := t.db.Has(key, nil); err == nil && !has {
+		return nil
+	}
+	return t.db.Delete(key, nil)
 }
 
 // GetSignedTxItems get all the signed tx items that in the key value store

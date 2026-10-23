@@ -595,10 +595,11 @@ asserts:
   ##
   - .|[..|select(.type? == "streaming_swap")] | length == 1
   - ..|select(.type? == "streaming_swap").deposit == "${TOTAL_INPUT} BTC-BTC"
-  - ..|select(.type? == "streaming_swap").in == "${TOTAL_INPUT} BTC-BTC"
-  # The streaming swap reflects the initial attempted amount, rather than the post-withdraw input sum;
-  # this is perhaps consistent with that any non-Deposit In is treated as to be refunded from failed sub-swaps.
-  # TODO:  Perhaps revisit this in future.
+  - ${INPUT_1} + ${INPUT_3} == ${TOTAL_STREAMING_INPUT=7019961}
+  - ..|select(.type? == "streaming_swap").in == "${TOTAL_STREAMING_INPUT} BTC-BTC"
+  # The streaming swap records the secured asset actually consumed by the stream.
+  # INPUT_2 was spent by the double-spend attempt; the stream remainder is reported
+  # as a refund event with no payout.
   - ${OUTPUT_1} + ${OUTPUT_3} == ${TOTAL_STREAMING_OUTPUT=6188925618}
   - ..|select(.type? == "streaming_swap").out == "${TOTAL_STREAMING_OUTPUT} THOR.RUNE" # As it should be.
   ##

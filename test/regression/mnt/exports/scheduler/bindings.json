@@ -197,7 +197,7 @@
     "scheduler": {
       "schedules": [
         {
-          "height": "12",
+          "height": "10",
           "msgs": [
             {
               "after": "1",
@@ -276,6 +276,7 @@
       },
       "rune_providers": [],
       "secured_assets": [],
+      "sol_vault_nonces": [],
       "streaming_swaps": [],
       "swap_queue_items": [],
       "swapper_clout": [],
@@ -412,5 +413,5 @@
       }
     }
   },
-  "initial_height": 11
+  "initial_height": 10
 }

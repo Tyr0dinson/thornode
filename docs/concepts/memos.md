@@ -42,7 +42,6 @@ The following functions can be put into a memo:
 1. [**WITHDRAW Trade Account**](memos.md#withdraw-trade-account)
 1. [**ADD Secured Asset**](memos.md#add-secured-asset)
 1. [**WITHDRAW Secured Asset**](memos.md#withdraw-secured-asset)
-1. [**EXECUTE Smart Contract**](memos.md#execute-smart-contract)
 1. [**SWITCH Asset**](memos.md#switch-asset)
 1. [**DEPOSIT** **Savers**](memos.md#deposit-savers)
 1. [**WITHDRAW Savers**](memos.md#withdraw-savers)
@@ -152,7 +151,7 @@ Add liquidity to a pool.
 
 **`ADD:POOL:PAIREDADDR:AFFILIATE:FEE`**
 
-There are rules for adding liquidity, see [the rules here](https://docs.thorchain.org/learn/getting-started#entering-and-leaving-a-pool).
+There are rules for adding liquidity, see [the rules here](https://docs.thorchain.org/thornodes/frequently-asked-questions/liquidity-providers#entering-and-leaving-a-pool).
 
 | Parameter     | Notes                                                                                                                                                                                                                                  | Conditions                                                                  |
 | ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
@@ -300,29 +299,6 @@ Converts a Secured Asset to a L1 Asset.
 Note: Secured Assets and amount are determined by the `coins` within the `MsgDeposit`. Transaction fee in `RUNE` does apply.
 
 **Example:** `SECURE-:bc1qp8278yutn09r2wu3jrc8xg2a7hgdgwv2gvsdyw` - Convert 0.1 BTC from a Secured Asset to a L1 and send to `bc1qp8278yutn09r2wu3jrc8xg2a7hgdgwv2gvsdyw`
-
-### Execute Smart Contract
-
-Execute a Smart Contract from a base layer transaction.
-
-**`X:ADDR:MSG`**
-
-| Parameter | Notes                                                                                                                          | Conditions                                       |
-| --------- | ------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------ |
-| Payload   | The asset to sent to the smart contract. L1 asset will be converted into a [Secured Asset](./asset-notation.md#secured-assets) | [Dust thresholds](#dust-thresholds) must be met. |
-| `x`       | The Wasm Execute handler. Also `exec`.                                                                                         | Must be a THORChain address                      |
-| `ADDR`    | The THORChain Wasm smart contract address                                                                                      | Must be a thor address                           |
-| `MSG`     | Payload send as `msg` to the Smart Contract, encoded as a base64 byte string.                                                  |                                                  |
-
-Example: `x:tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f:AA==`
-
-The above example creates a `MsgWasmExec` object for a smart contract execution and calls the contract with the following parameters:
-
-1. Contract Address: The address specified in the ADDR field `tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f`.
-2. Sender Address: Derived from the Layer 1 transaction's sender (e.g., the Bitcoin address).
-3. Msg Payload: The arguments provided in the MSG field (AA== in the example, decoded into the expected input for the smart contract).
-4. Funds: The Layer 1 asset (e.g., BTC amount sent in) is converted into a Secured Asset and included in the smart contract call.
-5. The smart contract will be executed via the following Cosmos SDK function: `ExecuteContract(ctx, contractAddr, senderAddr, msg.Msg, msg.Funds)`
 
 ### Switch Asset
 
@@ -725,6 +701,8 @@ May cause loss of funds if not performed correctly and at the right time.
 | Payload    | The asset to credit to a vault. | Must be ASSET or RUNE.                                   |
 | `NOOP`     | The no-op handler.              | Adds to the vault balance, but does not add to the pool. |
 | `:NOVAULT` | Do not credit the vault.        | Optional. Just fix the insolvency issue.                 |
+
+The `:NOVAULT` debit only applies while the operational mimir `AllowNoVault-<CHAIN>` is `1` (or a block height greater than or equal to the current height). Prefer the block-height form: it is the only variant that closes itself. When the gate is closed the vault is credited as with a plain `NOOP`.
 
 ## Refunds
 

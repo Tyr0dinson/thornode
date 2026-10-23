@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/cosmos/cosmos-sdk/runtime"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 )
@@ -39,7 +38,7 @@ func parseStableReserveCreditValue(value string) (common.Address, cosmos.Uint) {
 }
 
 func (k KVStore) GetStableReserveCredit(ctx cosmos.Context, asset common.Asset, addr common.Address) (cosmos.Uint, error) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	key := k.GetKey(prefixStableReserveCredit, stableReserveCreditKey(asset, addr))
 	if !store.Has(key) {
 		return cosmos.ZeroUint(), nil
@@ -49,7 +48,7 @@ func (k KVStore) GetStableReserveCredit(ctx cosmos.Context, asset common.Asset, 
 }
 
 func (k KVStore) SetStableReserveCredit(ctx cosmos.Context, asset common.Asset, addr common.Address, amount cosmos.Uint) error {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	key := k.GetKey(prefixStableReserveCredit, stableReserveCreditKey(asset, addr))
 	if amount.IsZero() {
 		store.Delete(key)

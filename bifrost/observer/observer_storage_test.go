@@ -3,11 +3,14 @@ package observer
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
 
 	"github.com/rs/zerolog/log"
 	"github.com/stretchr/testify/assert"
@@ -494,4 +497,80 @@ func TestClose(t *testing.T) {
 		err = storage.AddOrUpdateTx(tx)
 		assert.Error(t, err)
 	})
+}
+
+func TestPendingXMRCertificateDurableHandoffRestartAndFairness(t *testing.T) {
+	store, path := setupTestDB(t)
+	obs, _ := observerTestXMRPlan(t)
+	key := secp256k1.GenPrivKey()
+	signed := observerTestSignedHistoricalXMRCertificate(t, obs, key)
+	store.beforeCertificateWrite = func() error { return errors.New("injected pre-fsync crash") }
+	require.Error(t, store.savePendingXMRCertificate(signed))
+	records, _, err := store.pendingXMRCertificates(time.Now().Add(time.Hour), maxPendingXMRCertificates)
+	require.NoError(t, err)
+	require.Empty(t, records)
+	store.beforeCertificateWrite = nil
+	require.NoError(t, store.savePendingXMRCertificate(signed))
+	want, err := signed.Marshal()
+	require.NoError(t, err)
+	require.NoError(t, store.Close())
+	store, err = NewObserverStorage(path, config.LevelDBOptions{})
+	require.NoError(t, err)
+	defer cleanupTestDB(t, store, path)
+	records, _, err = store.pendingXMRCertificates(time.Now().Add(time.Second), maxPendingXMRCertificates)
+	require.NoError(t, err)
+	require.Len(t, records, 1)
+	require.Equal(t, want, records[0].Payload, "restart must retain the exact signed bytes before delivery")
+	require.NoError(t, store.savePendingXMRCertificate(signed))
+	for i := 1; i < maxPendingXMRCertificates; i++ {
+		next := obs
+		next.Tx.ID = common.TxID(observerTestHash(fmt.Sprintf("pending-%d", i)))
+		require.NoError(t, store.savePendingXMRCertificate(observerTestSignedHistoricalXMRCertificate(t, next, key)))
+	}
+	require.NoError(t, store.savePendingXMRCertificate(signed), "duplicate at capacity must succeed")
+	overflow := obs
+	overflow.Tx.ID = common.TxID(observerTestHash("overflow"))
+	require.ErrorContains(t, store.savePendingXMRCertificate(observerTestSignedHistoricalXMRCertificate(t, overflow, key)), "queue is full")
+	first, stats, err := store.pendingXMRCertificates(time.Now(), 16)
+	require.NoError(t, err)
+	require.Len(t, first, 16)
+	require.Equal(t, maxPendingXMRCertificates, stats.count, "occupancy includes every queued record, not only selected retries")
+	for _, record := range first {
+		require.NoError(t, store.finishPendingXMRCertificate(record, false, time.Now()))
+	}
+	second, _, err := store.pendingXMRCertificates(time.Now(), 16)
+	require.NoError(t, err)
+	require.Len(t, second, 16)
+	for _, a := range first {
+		for _, b := range second {
+			require.NotEqual(t, a.key, b.key, "retry backoff must allow later records to progress")
+		}
+	}
+	// A terminal frees capacity; a transient failure did not.
+	require.NoError(t, store.finishPendingXMRCertificate(second[0], true, time.Now()))
+	require.NoError(t, store.savePendingXMRCertificate(observerTestSignedHistoricalXMRCertificate(t, overflow, key)))
+}
+
+func TestPendingXMRCertificateFinalPromotionAndCompletionCAS(t *testing.T) {
+	store, path := setupTestDB(t)
+	defer cleanupTestDB(t, store, path)
+	obs, _ := observerTestXMRPlan(t)
+	obs.BlockHeight, obs.FinaliseHeight = 100, 137
+	key := secp256k1.GenPrivKey()
+	nonfinal := observerTestSignedHistoricalXMRCertificate(t, obs, key)
+	require.NoError(t, store.savePendingXMRCertificate(nonfinal))
+	records, _, err := store.pendingXMRCertificates(time.Now().Add(time.Second), 16)
+	require.NoError(t, err)
+	require.Len(t, records, 1)
+	obs.BlockHeight = obs.FinaliseHeight
+	final := observerTestSignedHistoricalXMRCertificate(t, obs, key)
+	require.NoError(t, store.savePendingXMRCertificate(final))
+	require.NoError(t, store.finishPendingXMRCertificate(records[0], true, time.Now()))
+	require.NoError(t, store.savePendingXMRCertificate(nonfinal))
+	records, _, err = store.pendingXMRCertificates(time.Now().Add(time.Second), 16)
+	require.NoError(t, err)
+	require.Len(t, records, 1)
+	want, err := final.Marshal()
+	require.NoError(t, err)
+	require.Equal(t, want, records[0].Payload, "stale completion or replay must not erase/downgrade the final phase")
 }

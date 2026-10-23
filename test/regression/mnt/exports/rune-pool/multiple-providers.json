@@ -422,6 +422,7 @@
         }
       ],
       "secured_assets": [],
+      "sol_vault_nonces": [],
       "streaming_swaps": [],
       "swap_queue_items": [],
       "swapper_clout": [

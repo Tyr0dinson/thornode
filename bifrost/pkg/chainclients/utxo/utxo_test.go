@@ -2,6 +2,7 @@ package utxo
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"testing"
@@ -10,11 +11,14 @@ import (
 	"github.com/btcsuite/btcd/btcjson"
 	"github.com/hashicorp/go-multierror"
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
+	tssMessages "gitlab.com/thorchain/thornode/v3/bifrost/p2p/messages"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/signercache"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/rpc/zec"
 	"gitlab.com/thorchain/thornode/v3/bifrost/tss"
+	"gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/blame"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/config"
+	ttypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 	. "gopkg.in/check.v1"
 )
 
@@ -25,7 +29,17 @@ const (
 
 var m *metrics.Metrics
 
-func TestPackage(t *testing.T) { TestingT(t) }
+func TestPackage(t *testing.T) {
+	// Load the RPC fixtures here, not in init(): go test records the files a
+	// test opens only once tests start running, and CI reuses cached results
+	// when no recorded input changed (scripts/ci-stable-mtimes.sh). A fixture
+	// read in init() would not invalidate the cached result when it changed.
+	loadBTCFixtures()
+	loadBCHFixtures()
+	loadDOGEFixtures()
+	loadLTCFixtures()
+	TestingT(t)
+}
 
 func TestIsUTXOTxNotFoundErr(t *testing.T) {
 	// bitcoind/litecoind/dogecoind return RPC error -5 (ErrRPCInvalidAddressOrKey)
@@ -107,6 +121,28 @@ func (s *HelpersSuite) TestAllNotSelectedForKeysign(c *C) {
 
 	mixed := multierror.Append(nil, tss.ErrNotSelectedForKeysign, errors.New("signature failed"))
 	c.Assert(allNotSelectedForKeysign(mixed), Equals, false)
+}
+
+// TestAllJoinPartyFailures covers the helper that decides whether a failed
+// UTXO keysign exposed no signature and may be rebuilt on the next attempt.
+func (s *HelpersSuite) TestAllJoinPartyFailures(c *C) {
+	syncFail := tss.NewKeysignError(ttypes.Blame{FailReason: blame.TssSyncFail})
+	roundFail := tss.NewKeysignError(ttypes.Blame{FailReason: blame.TssTimeout, Round: tssMessages.KEYSIGN2Unicast})
+	wrapped := fmt.Errorf("fail to get witness: %w", fmt.Errorf("cannot sign tx input: %w", syncFail))
+
+	c.Assert(allJoinPartyFailures(nil, 1), Equals, false)
+	c.Assert(allJoinPartyFailures(syncFail, 1), Equals, false)
+	c.Assert(allJoinPartyFailures(multierror.Append(nil, wrapped), 0), Equals, false)
+
+	c.Assert(allJoinPartyFailures(multierror.Append(nil, wrapped), 1), Equals, true)
+	c.Assert(allJoinPartyFailures(multierror.Append(nil, wrapped, syncFail), 2), Equals, true)
+
+	// one input signed or was never attempted
+	c.Assert(allJoinPartyFailures(multierror.Append(nil, wrapped), 2), Equals, false)
+	// the party formed for one input
+	c.Assert(allJoinPartyFailures(multierror.Append(nil, wrapped, roundFail), 2), Equals, false)
+	c.Assert(allJoinPartyFailures(multierror.Append(nil, wrapped, tss.ErrNotSelectedForKeysign), 2), Equals, false)
+	c.Assert(allJoinPartyFailures(multierror.Append(nil, wrapped, errors.New("rpc failed")), 2), Equals, false)
 }
 
 func GetMetricForTest(c *C, chain common.Chain) *metrics.Metrics {

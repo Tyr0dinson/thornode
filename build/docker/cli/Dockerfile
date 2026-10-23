@@ -4,7 +4,7 @@ FROM registry.gitlab.com/thorchain/devops/node-launcher:dogecoin-daemon-1.14.9 a
 FROM registry.gitlab.com/thorchain/devops/node-launcher:litecoin-daemon-0.21.4 as litecoin
 
 ARG DOCKER_MIRROR=
-FROM ${DOCKER_MIRROR}golang:1.26.4 AS build
+FROM ${DOCKER_MIRROR}golang:1.26.10 AS build
 
 # build geth since the image is alpine based
 RUN go install github.com/ethereum/go-ethereum/cmd/geth@v1.16.3
@@ -21,12 +21,13 @@ ENV GOPRIVATE=gitlab.com/thorchain/tss/tss-lib-private.git
 
 WORKDIR /app
 COPY go.mod go.sum ./
-# Mount CI_JOB_TOKEN as a BuildKit secret to authenticate the private fetch.
-# required=false keeps local `make` / `docker compose` builds working when unset.
+# Authenticate the private fetch with the go_private_auth BuildKit secret
+# ("user:token", chosen by scripts/ci-go-private-auth.sh in CI).
+# required=false keeps local `make` / `docker compose` builds working without it.
 # File-based mount instead of env= so hadolint 2.12.1-beta can parse the RUN.
-RUN --mount=type=secret,id=ci_job_token,required=false \
-    if [ -s /run/secrets/ci_job_token ]; then \
-      git config --global url."https://gitlab-ci-token:$(cat /run/secrets/ci_job_token)@gitlab.com/".insteadOf "https://gitlab.com/"; \
+RUN --mount=type=secret,id=go_private_auth,required=false \
+    if [ -s /run/secrets/go_private_auth ]; then \
+      git config --global url."https://$(cat /run/secrets/go_private_auth)@gitlab.com/thorchain/tss/".insteadOf "https://gitlab.com/thorchain/tss/"; \
     fi && \
     go mod download && \
     rm -f /root/.gitconfig

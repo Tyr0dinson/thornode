@@ -17,6 +17,12 @@ import (
 
 // ValidateGenesis validate genesis is valid or not
 func ValidateGenesis(data GenesisState) error {
+	for i := range data.SolVaultNonces {
+		if err := data.SolVaultNonces[i].Valid(); err != nil {
+			return err
+		}
+	}
+
 	for _, record := range data.Pools {
 		if err := record.Valid(); err != nil {
 			return err
@@ -159,6 +165,7 @@ func DefaultGenesisState() GenesisState {
 		DynamicFeeRecords:       make([]types.DynamicFeeRecord, 0),
 		DynamicFeeAccumulators:  make([]types.DynamicFeeAccumulator, 0),
 		StableReserveCredits:    make([]StableReserveCredit, 0),
+		SolVaultNonces:          make([]types.SolVaultNonce, 0),
 	}
 }
 
@@ -415,6 +422,14 @@ func initGenesis(ctx cosmos.Context, keeper keeper.Keeper, data GenesisState) []
 		if err := keeper.SetStableReserveCredit(ctx, asset, addr, cosmos.NewUintFromString(credit.Amount)); err != nil {
 			panic(err)
 		}
+	}
+
+	// Restore committed SOL durable nonces. Without them a vault that signs durable
+	// outbounds would look legacy after import: signers could fall back to recent
+	// blockhashes and LackSigning could reassign an outbound whose durable copy can
+	// still land (double pay).
+	for _, record := range data.SolVaultNonces {
+		keeper.SetSolVaultNonce(ctx, record)
 	}
 
 	reserveAddr, _ := keeper.GetModuleAddress(ReserveName)
@@ -756,15 +771,9 @@ func ExportGenesis(ctx cosmos.Context, k keeper.Keeper) GenesisState {
 	iterClouts := k.GetSwapperCloutIterator(ctx)
 	defer iterClouts.Close()
 	for ; iterClouts.Valid(); iterClouts.Next() {
-		var addr common.Address
-		parts := strings.Split(string(iterClouts.Key()), "/")
-		addr, err = common.NewAddress(parts[len(parts)-1])
-		if err != nil {
-			continue
-		}
-		var clout SwapperClout
-		clout, err = k.GetSwapperClout(ctx, addr)
-		if err != nil {
+		// Read the stored record: keys are uppercased, which breaks base58 addresses.
+		clout := NewSwapperClout(common.NoAddress)
+		if err = k.Cdc().Unmarshal(iterClouts.Value(), &clout); err != nil {
 			continue
 		}
 		clouts = append(clouts, clout)
@@ -915,6 +924,15 @@ func ExportGenesis(ctx cosmos.Context, k keeper.Keeper) GenesisState {
 		})
 	}
 
+	solVaultNonces := make([]types.SolVaultNonce, 0)
+	iterSolVaultNonce := k.GetSolVaultNonceIterator(ctx)
+	defer iterSolVaultNonce.Close()
+	for ; iterSolVaultNonce.Valid(); iterSolVaultNonce.Next() {
+		var record types.SolVaultNonce
+		k.Cdc().MustUnmarshal(iterSolVaultNonce.Value(), &record)
+		solVaultNonces = append(solVaultNonces, record)
+	}
+
 	return GenesisState{
 		Pools:                             pools,
 		LiquidityProviders:                liquidityProviders,
@@ -952,5 +970,6 @@ func ExportGenesis(ctx cosmos.Context, k keeper.Keeper) GenesisState {
 		DynamicFeeAccumulators:            dynamicFeeAccumulators,
 		LastObservedDynamicFeeEpochBlocks: lastObservedDynamicFeeEpochBlocks,
 		StableReserveCredits:              stableReserveCredits,
+		SolVaultNonces:                    solVaultNonces,
 	}
 }

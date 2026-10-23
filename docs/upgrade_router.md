@@ -8,7 +8,7 @@ Router contract hold all ERC20 assets, but not the native asset (e.g. `ETH` or `
 
 # Where is Router code?
 
-EVM router code lives in this repository, under the [chain/](../chain/) directory. Open a PR against this repository for any changes to the routers.
+EVM router code lives in this repository, under the [`chain/evm/`](https://gitlab.com/thorchain/thornode/-/blob/develop/chain/evm/README.md) directory. Open a PR against this repository for any changes to the routers.
 
 # How to upgrade Router?
 

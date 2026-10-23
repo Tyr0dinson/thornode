@@ -459,6 +459,7 @@ paths:
     parameters:
       - $ref: "#/components/parameters/queryHeight"
       - $ref: "#/components/parameters/hash"
+      - $ref: "#/components/parameters/queryOutboundVoter"
     get:
       description: Deprecated - migrate to /thorchain/tx/details.
       operationId: txSignersOld
@@ -476,6 +477,7 @@ paths:
     parameters:
       - $ref: "#/components/parameters/queryHeight"
       - $ref: "#/components/parameters/hash"
+      - $ref: "#/components/parameters/queryOutboundVoter"
     get:
       description: Returns the signers for a provided inbound or outbound hash.
       operationId: txSigners
@@ -1996,6 +1998,15 @@ components:
   # ------------------------------ parameters ------------------------------
 
   parameters:
+    queryOutboundVoter:
+      name: outbound
+      in: query
+      description: Select only the outbound voter. By default, prefer the inbound voter and fall back to the outbound voter when no inbound observations exist.
+      required: false
+      schema:
+        type: boolean
+        default: false
+
     queryHeight:
       name: height
       in: query
@@ -2160,6 +2171,11 @@ components:
         - synth_mint_paused
         - synth_supply_remaining
         - derived_depth_bps
+        - luvi
+        - lp_equity
+        - lp_equity_per_unit
+        - synth_per_pool_depth_bps
+        - synth_overhang
       properties:
         asset:
           type: string
@@ -2254,6 +2270,26 @@ components:
           type: string
           example: "12345678"
           description: rolling liquidity fees accumulated (in RUNE) since the last pool cycle reset; used as the numerator of the POL Reserve deployment score
+        luvi:
+          type: string
+          example: "1.500000000000375000"
+          description: Liquidity Unit Value Index as the chain values a pool unit, sqrt(balance_asset * balance_rune) / pool_units (synth-unit clamp included)
+        lp_equity:
+          type: string
+          example: "1500000000000.000000000000000000"
+          description: LP equity net of the synth liability in sqrt(asset * rune) units, sqrt(balance_asset * balance_rune) * (2 * balance_asset - synth_supply) / (2 * balance_asset); zero or negative when synth_overhang is true
+        lp_equity_per_unit:
+          type: string
+          example: "1.500000000000000000"
+          description: lp_equity / LP_units; equals luvi (up to rounding) unless synth_overhang is true
+        synth_per_pool_depth_bps:
+          type: string
+          example: "2500"
+          description: synth supply relative to twice the asset depth, in basis points
+        synth_overhang:
+          type: boolean
+          example: false
+          description: whether synth supply is at or above twice the asset depth; synth units are clamped and LP units can redeem almost nothing while this is true
     DerivedPool:
       type: object
       required:
@@ -3036,6 +3072,11 @@ components:
           type: string
           description: XMR outbound tx private key used by third parties to verify recipient outputs.
           example: "1111111111111111111111111111111111111111111111111111111111111111"
+        xmr_mined_height:
+          type: integer
+          format: int64
+          description: Original XMR mined height, retained when observation height changes at finalization. Zero means unavailable or pre-mining.
+          example: 7581328
         status:
           type: string
           enum: ["done", "incomplete"]

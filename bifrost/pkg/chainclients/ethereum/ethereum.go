@@ -48,6 +48,10 @@ import (
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
+// waitForApprovalMined is how SignTx waits for a token approval to be mined;
+// tests against a mock RPC replace it to skip the real multi-block wait.
+var waitForApprovalMined = time.Sleep
+
 const (
 	ethBlockRewardAndFee = 3 * 1e18
 )
@@ -73,7 +77,7 @@ type Client struct {
 	stopchan            chan struct{}
 	globalSolvencyQueue chan stypes.Solvency
 	signerCacheManager  *signercache.CacheManager
-	// Serializes ReportSolvency when FetchTxs prefetch callbacks and SolvencyCheckRunner can both enter.
+	// Serializes ReportSolvency when ordered scan callbacks and SolvencyCheckRunner can both enter.
 	solvencyLock            sync.Mutex
 	lastSolvencyCheckHeight atomic.Int64
 
@@ -881,7 +885,7 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 		// If the approval is still not mined in time, the outbound will be rescheduled.
 		wait := time.Duration(c.cfg.ChainID.ApproximateBlockMilliseconds()*3) * time.Millisecond
 		c.logger.Info().Dur("wait", wait).Msg("waiting for approval transaction to be mined")
-		time.Sleep(wait)
+		waitForApprovalMined(wait)
 	}
 
 	// Convert TxOutItem gas rate units to Wei.
@@ -1488,7 +1492,7 @@ func (c *Client) GetGasEstimateForSolvency() cosmos.Uint {
 }
 
 func (c *Client) ReportSolvency(ethBlockHeight int64) error {
-	// FetchTxs may call this from prefetch goroutines; SolvencyCheckRunner also calls it while halted.
+	// The ordered scan loop and SolvencyCheckRunner can both call this.
 	c.solvencyLock.Lock()
 	defer c.solvencyLock.Unlock()
 
@@ -1497,7 +1501,7 @@ func (c *Client) ReportSolvency(ethBlockHeight int64) error {
 	}
 
 	// when block scanner is not healthy, only report from auto-unhalt SolvencyCheckRunner
-	// (FetchTxs passes currentBlockHeight, while SolvencyCheckRunner passes chainHeight)
+	// (the scan hook passes the scanned height, while SolvencyCheckRunner passes chainHeight)
 	if !c.IsBlockScannerHealthy() && ethBlockHeight == c.ethScanner.getCurrentBlockHeight() {
 		return nil
 	}
@@ -1546,15 +1550,29 @@ func (c *Client) ReportSolvency(ethBlockHeight int64) error {
 		msgs = append(msgs, msg) // Insolvent-vault message
 	}
 
-	// Only if the block scanner is unhealthy (e.g. solvency-halted) and all chain-specific vaults are solvent,
-	// report that all the chain-specific vaults are solvent.
+	// Only if THORChain itself has this chain halted or solvency-halted, this node's block scanner
+	// is paused for it (unhealthy), and all chain-specific vaults are solvent, report that all the
+	// chain-specific vaults are solvent. That "all clear" exists to lift a network SolvencyHalt
+	// (see SolvencyCheckRunner), so the network's halt state is the gate, not this node's own
+	// block-scanner health: a scanner that is unhealthy for a local reason (RPC trouble, a stalled
+	// fetch) must stay silent here, because an all-clear only one node sends can never reach
+	// consensus and each one costs that node an unrefunded observation slash point. The paused
+	// scanner is still required alongside the halt: the scanner re-reads the pause mimirs only once
+	// per THORChain block, and reads a mimir error as not paused, so just after a halt takes effect
+	// a healthy scanner can still reach here from the scan path. Its all-clear would carry the
+	// scanned height rather than the runner's, a different voter, and so would be a lone vote too.
+	// On a bridge error stay silent; the runner retries.
 	// If there are any insolvent vaults, report only them.
 	// Not reporting both solvent and insolvent vaults is to avoid noise (spam):
 	// Reporting both could halt-and-unhalt SolvencyHalt in the same THOR block
 	// (resetting its height), plus making it harder to know at a glance from solvency reports which vaults were insolvent.
 	solvent := false
 	allVaultsProcessed := len(chainVaults) > 0 && processedVaults == len(chainVaults)
-	if !c.IsBlockScannerHealthy() && allVaultsProcessed && len(solventMsgs) == processedVaults {
+	halted, haltErr := runners.IsHaltedOnChain(c.bridge, c.cfg.ChainID)
+	if haltErr != nil {
+		c.logger.Err(haltErr).Msg("fail to read chain halt state, skipping solvency all-clear")
+	}
+	if halted && !c.IsBlockScannerHealthy() && allVaultsProcessed && len(solventMsgs) == processedVaults {
 		msgs = solventMsgs
 		solvent = true
 	}

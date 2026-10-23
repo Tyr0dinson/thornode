@@ -3,13 +3,12 @@ package keeperv1
 import (
 	"fmt"
 
-	"github.com/cosmos/cosmos-sdk/runtime"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 )
 
 func (k KVStore) setErrataTxVoter(ctx cosmos.Context, key []byte, record ErrataTxVoter) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	buf := k.cdc.MustMarshal(&record)
 	if buf == nil {
 		store.Delete(key)
@@ -19,7 +18,7 @@ func (k KVStore) setErrataTxVoter(ctx cosmos.Context, key []byte, record ErrataT
 }
 
 func (k KVStore) getErrataTxVoter(ctx cosmos.Context, key []byte, record *ErrataTxVoter) (bool, error) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	if !store.Has(key) {
 		return false, nil
 	}

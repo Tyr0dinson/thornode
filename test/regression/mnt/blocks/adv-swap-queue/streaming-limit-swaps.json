@@ -620,6 +620,7 @@
                     "observed_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
                     "out_hashes": [],
                     "signers": [],
+                    "sol_nonce": null,
                     "status": "incomplete",
                     "tx": {
                       "chain": "BTC",
@@ -641,7 +642,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000001",
                       "memo": "=\u003c:ETH.ETH:0xe3c64974c78f5693bd2bc68b3221d58df5c6e877:4000000",
                       "to_address": "bcrt1qzf3gsk7edzwl9syyefvfhle37cjtql35tlzesk"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }
@@ -4084,6 +4086,7 @@
                     "observed_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
                     "out_hashes": [],
                     "signers": [],
+                    "sol_nonce": null,
                     "status": "incomplete",
                     "tx": {
                       "chain": "ETH",
@@ -4105,7 +4108,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000065",
                       "memo": "OUT:0000000000000000000000000000000000000000000000000000000000000001",
                       "to_address": "0xe3c64974c78f5693bd2bc68b3221d58df5c6e877"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }
@@ -4565,6 +4569,7 @@
                     "observed_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
                     "out_hashes": [],
                     "signers": [],
+                    "sol_nonce": null,
                     "status": "incomplete",
                     "tx": {
                       "chain": "BTC",
@@ -4586,7 +4591,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000003",
                       "memo": "=\u003c:THOR.RUNE:tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr:999999999999",
                       "to_address": "bcrt1qzf3gsk7edzwl9syyefvfhle37cjtql35tlzesk"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }
@@ -6142,6 +6148,7 @@
                     "observed_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
                     "out_hashes": [],
                     "signers": [],
+                    "sol_nonce": null,
                     "status": "incomplete",
                     "tx": {
                       "chain": "BTC",
@@ -6163,7 +6170,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000067",
                       "memo": "REFUND:0000000000000000000000000000000000000000000000000000000000000003",
                       "to_address": "bcrt1q3wrmhnh2qe98rjse30pl7u6jxszjjwl44ls6uw"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }
@@ -6379,6 +6387,7 @@
                     "observed_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
                     "out_hashes": [],
                     "signers": [],
+                    "sol_nonce": null,
                     "status": "incomplete",
                     "tx": {
                       "chain": "BTC",
@@ -6400,7 +6409,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000005",
                       "memo": "=\u003c:ETH.ETH:0xe3c64974c78f5693bd2bc68b3221d58df5c6e877/bcrt1quuds8pd92qnnq0udw0rpg0szpgcslc9pm6tzal:888888888",
                       "to_address": "bcrt1qzf3gsk7edzwl9syyefvfhle37cjtql35tlzesk"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }
@@ -7956,6 +7966,7 @@
                     "observed_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
                     "out_hashes": [],
                     "signers": [],
+                    "sol_nonce": null,
                     "status": "incomplete",
                     "tx": {
                       "chain": "BTC",
@@ -7977,7 +7988,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000069",
                       "memo": "REFUND:0000000000000000000000000000000000000000000000000000000000000005",
                       "to_address": "bcrt1quuds8pd92qnnq0udw0rpg0szpgcslc9pm6tzal"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }
@@ -8437,6 +8449,7 @@
                     "observed_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
                     "out_hashes": [],
                     "signers": [],
+                    "sol_nonce": null,
                     "status": "incomplete",
                     "tx": {
                       "chain": "BTC",
@@ -8458,7 +8471,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000009",
                       "memo": "=\u003c:ETH.ETH:0xe3c64974c78f5693bd2bc68b3221d58df5c6e877:999999999",
                       "to_address": "bcrt1qzf3gsk7edzwl9syyefvfhle37cjtql35tlzesk"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }
@@ -8756,6 +8770,7 @@
                     "observed_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
                     "out_hashes": [],
                     "signers": [],
+                    "sol_nonce": null,
                     "status": "incomplete",
                     "tx": {
                       "chain": "BTC",
@@ -8777,7 +8792,8 @@
                       "id": "000000000000000000000000000000000000000000000000000000000000006d",
                       "memo": "REFUND:0000000000000000000000000000000000000000000000000000000000000009",
                       "to_address": "bcrt1q3wrmhnh2qe98rjse30pl7u6jxszjjwl44ls6uw"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }
@@ -9237,6 +9253,7 @@
                     "observed_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
                     "out_hashes": [],
                     "signers": [],
+                    "sol_nonce": null,
                     "status": "incomplete",
                     "tx": {
                       "chain": "BTC",
@@ -9258,7 +9275,8 @@
                       "id": "000000000000000000000000000000000000000000000000000000000000000a",
                       "memo": "=\u003c:ETH.ETH:0xe3c64974c78f5693bd2bc68b3221d58df5c6e877:888888888",
                       "to_address": "bcrt1qzf3gsk7edzwl9syyefvfhle37cjtql35tlzesk"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }
@@ -9558,6 +9576,7 @@
                     "observed_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
                     "out_hashes": [],
                     "signers": [],
+                    "sol_nonce": null,
                     "status": "incomplete",
                     "tx": {
                       "chain": "BTC",
@@ -9579,7 +9598,8 @@
                       "id": "00000000000000000000000000000000000000000000000000000000000003f2",
                       "memo": "m=\u003c:3500000BTC.BTC:888888888ETH.ETH:20000000",
                       "to_address": "bcrt1qzf3gsk7edzwl9syyefvfhle37cjtql35tlzesk"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }
@@ -10225,6 +10245,7 @@
                     "observed_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
                     "out_hashes": [],
                     "signers": [],
+                    "sol_nonce": null,
                     "status": "incomplete",
                     "tx": {
                       "chain": "BTC",
@@ -10246,7 +10267,8 @@
                       "id": "00000000000000000000000000000000000000000000000000000000000003f3",
                       "memo": "m=\u003c:3500000BTC.BTC:20000000ETH.ETH:0",
                       "to_address": "bcrt1qzf3gsk7edzwl9syyefvfhle37cjtql35tlzesk"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }
@@ -10665,6 +10687,7 @@
                     "observed_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
                     "out_hashes": [],
                     "signers": [],
+                    "sol_nonce": null,
                     "status": "incomplete",
                     "tx": {
                       "chain": "ETH",
@@ -10686,7 +10709,8 @@
                       "id": "000000000000000000000000000000000000000000000000000000000000006e",
                       "memo": "OUT:000000000000000000000000000000000000000000000000000000000000000a",
                       "to_address": "0xe3c64974c78f5693bd2bc68b3221d58df5c6e877"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   },
                   {
                     "aggregator": "",
@@ -10698,6 +10722,7 @@
                     "observed_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
                     "out_hashes": [],
                     "signers": [],
+                    "sol_nonce": null,
                     "status": "incomplete",
                     "tx": {
                       "chain": "BTC",
@@ -10719,7 +10744,8 @@
                       "id": "000000000000000000000000000000000000000000000000000000000000006f",
                       "memo": "REFUND:000000000000000000000000000000000000000000000000000000000000000a",
                       "to_address": "bcrt1q3wrmhnh2qe98rjse30pl7u6jxszjjwl44ls6uw"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }

@@ -178,7 +178,7 @@ func (a *AggregatorSwapActor) sendAggregatorSwap(config *OpConfig) OpResult {
 	txid, err := SignAndBroadcastTx(client, tx)
 	if err != nil {
 		a.Log().Error().Err(err).Msg("failed to broadcast tx")
-		return OpResult{Continue: false}
+		return SimTxErrorResult(err)
 	}
 	a.swapTxID = txid
 

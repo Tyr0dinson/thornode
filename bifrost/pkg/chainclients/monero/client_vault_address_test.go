@@ -1,6 +1,7 @@
 package monero
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"testing"
@@ -24,9 +25,13 @@ type mockMoneroBridge struct {
 	thorclient.ThorchainBridge
 	vaultByPubKey       map[string]ttypes.Vault
 	observedByTx        map[string]*ttypes.QueryObservedTxVoter
+	observedFreshFunc   func(context.Context, string) (*ttypes.QueryObservedTxVoter, bool, error)
 	spentRefsByVaultKey map[string][]*common.OutputRef
+	spentRefsFunc       func(common.PubKey) ([]*common.OutputRef, error)
+	spentRefsFreshFunc  func(context.Context, common.PubKey) ([]*common.OutputRef, error)
 	pubKeys             []thorclient.PubKeyContractAddressPair
 	pubKeysErr          error
+	mimirValues         map[string]int64
 	keysignPolicy       thorclient.KeysignPolicy
 	keysignPolicyErr    error
 }
@@ -75,11 +80,43 @@ func (m *mockMoneroBridge) GetObservedTxVoter(txID string) (*ttypes.QueryObserve
 	return nil, errors.New("observed tx voter not found")
 }
 
+func (m *mockMoneroBridge) GetObservedTxOutVoter(txID string) (*ttypes.QueryObservedTxVoter, error) {
+	return m.GetObservedTxVoter(txID)
+}
+
+func (m *mockMoneroBridge) GetObservedTxOutVoterUncached(ctx context.Context, txID string) (*ttypes.QueryObservedTxVoter, bool, error) {
+	if m.observedFreshFunc != nil {
+		return m.observedFreshFunc(ctx, txID)
+	}
+	voter, err := m.GetObservedTxVoter(txID)
+	return voter, voter != nil, err
+}
+
 func (m *mockMoneroBridge) GetXMRSpentOutputRefs(vaultPubKey common.PubKey) ([]*common.OutputRef, error) {
+	if m.spentRefsFunc != nil {
+		return m.spentRefsFunc(vaultPubKey)
+	}
 	if m.spentRefsByVaultKey != nil {
 		return m.spentRefsByVaultKey[vaultPubKey.String()], nil
 	}
 	return nil, nil
+}
+
+func (m *mockMoneroBridge) GetXMRSpentOutputRefsUncached(ctx context.Context, vaultPubKey common.PubKey) ([]*common.OutputRef, error) {
+	if m.spentRefsFreshFunc != nil {
+		return m.spentRefsFreshFunc(ctx, vaultPubKey)
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return m.GetXMRSpentOutputRefs(vaultPubKey)
+}
+
+func (m *mockMoneroBridge) GetMimir(key string) (int64, error) {
+	if value, ok := m.mimirValues[key]; ok {
+		return value, nil
+	}
+	return -1, nil
 }
 
 // GetKeysignPolicy returns the injected policy so vault membership tests can

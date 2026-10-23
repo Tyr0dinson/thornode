@@ -24,8 +24,7 @@ func main() {
 
 	node, err := parser.ParseFile(fset, filename, file, parser.ParseComments)
 	if err != nil {
-		// trunk-ignore(golangci-lint/gocritic)
-		log.Fatal(err)
+		log.Fatal(err) //nolint:gocritic
 	}
 
 	ast.Inspect(node, func(n ast.Node) bool {

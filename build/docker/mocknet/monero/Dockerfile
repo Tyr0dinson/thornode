@@ -1,4 +1,5 @@
-FROM ubuntu:24.04
+ARG DOCKER_MIRROR=
+FROM ${DOCKER_MIRROR}ubuntu:24.04
 
 # hadolint ignore=DL3008
 RUN apt-get update \

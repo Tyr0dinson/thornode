@@ -437,17 +437,12 @@ func (s *HandlerCommonOutboundSuite) TestOutboundSearchUsesMimirSigningPeriod(c 
 	c.Check(stored.TxArray[0].OutHash.Equals(outHash), check.Equals, true)
 }
 
-// A Zcash outbound scheduled to a tex destination is broadcast to the P2PKH
-// form of the same address and observed as such. The two spellings must be
-// recognised as one destination, otherwise the payment lands but OutHash is
-// never written: the item looks unfulfilled forever and the vault is slashed
-// for "extra funds" over a transaction the network itself ordered.
 func (s *HandlerCommonOutboundSuite) TestZecTexOutboundCompletesAction(c *check.C) {
 	ctx, k := setupKeeperForTest(c)
 	mgr := NewDummyMgrWithKeeper(k)
 	scheduledHeight := ctx.BlockHeight()
 
-	p2pkhAddress, err := common.NewAddress("tmEp4k7dSU8eGj32uJPi2wBSGuiNaVFBLN7")
+	p2pkhAddress, err := GetRandomPubKey().GetAddress(common.ZECChain)
 	c.Assert(err, check.IsNil)
 	texAddress, err := p2pkhAddress.ToTexAddress()
 	c.Assert(err, check.IsNil)
@@ -478,6 +473,7 @@ func (s *HandlerCommonOutboundSuite) TestZecTexOutboundCompletesAction(c *check.
 	voter := NewObservedTxVoter(inHash, nil)
 	voter.Height = scheduledHeight
 	voter.FinalisedHeight = scheduledHeight
+	voter.Actions = []TxOutItem{item}
 	k.SetObservedTxInVoter(ctx, voter)
 
 	// The daemon reports the decoded P2PKH form of the tex destination.
@@ -489,11 +485,79 @@ func (s *HandlerCommonOutboundSuite) TestZecTexOutboundCompletesAction(c *check.
 		common.Gas{common.NewCoin(common.ZECAsset, cosmos.NewUint(1_000))},
 		item.Memo,
 	), ctx.BlockHeight(), vaultPubKey, ctx.BlockHeight())
-	_, err = NewCommonOutboundTxHandler(mgr).handle(ctx, observed, inHash)
+	result, err := NewCommonOutboundTxHandler(mgr).handle(ctx, observed, inHash)
 	c.Assert(err, check.IsNil)
+	c.Check(result.Events, check.HasLen, 0)
+	c.Check(hasMissingTxOutSecurityEvent(ctx), check.Equals, false)
 
 	stored, err := k.GetTxOut(ctx, scheduledHeight)
 	c.Assert(err, check.IsNil)
 	c.Assert(stored.TxArray, check.HasLen, 1)
 	c.Check(stored.TxArray[0].OutHash.Equals(outHash), check.Equals, true)
+	voter, err = k.GetObservedTxInVoter(ctx, inHash)
+	c.Assert(err, check.IsNil)
+	c.Assert(voter.OutTxs, check.HasLen, 1)
+	c.Check(voter.OutTxs[0].ID, check.Equals, outHash)
+	c.Check(voter.IsDone(), check.Equals, true)
+}
+
+func (s *HandlerCommonOutboundSuite) TestXMRMemolessPlanAcceptsSemanticRefund(c *check.C) {
+	for _, wrongHash := range []bool{false, true} {
+		ctx, k := setupKeeperForTest(c)
+		mgr := NewDummyMgrWithKeeper(k)
+		slasher := &xmrMemoCompatibilitySlasher{DummySlasher: NewDummySlasher()}
+		mgr.slasher = slasher
+		inHash, outHash := GetRandomTxHash(), GetRandomTxHash()
+		vaultKey := GetRandomEd25519PubKey()
+		from, err := vaultKey.GetAddress(common.XMRChain)
+		c.Assert(err, check.IsNil)
+		to := common.Address(common.XMRSeededDummyAddress('8', []byte("memo-compatibility")))
+		coin := common.NewCoin(common.XMRAsset, cosmos.NewUint(common.One))
+		gas := common.Gas{common.NewCoin(common.XMRAsset, cosmos.NewUint(1000))}
+		semanticMemo := NewRefundMemo(inHash).String()
+		item := TxOutItem{Chain: common.XMRChain, InHash: inHash, ToAddress: to, VaultPubKey: vaultKey, VaultPubKeyFrost: vaultKey, Coin: coin, MaxGas: gas, Memo: "", OriginalMemo: semanticMemo}
+		scheduled := NewTxOut(ctx.BlockHeight())
+		scheduled.TxArray = []TxOutItem{item}
+		c.Assert(k.SetTxOut(ctx, scheduled), check.IsNil)
+		vault := NewVault(1, ActiveVault, AsgardVault, vaultKey, common.Chains{common.XMRChain}.Strings(), nil)
+		vault.PubKeyFrost = vaultKey
+		c.Assert(k.SetVault(ctx, vault), check.IsNil)
+		voter := NewObservedTxVoter(inHash, nil)
+		voter.Height, voter.FinalisedHeight = ctx.BlockHeight(), ctx.BlockHeight()
+		k.SetObservedTxInVoter(ctx, voter)
+		memoHash := inHash
+		if wrongHash {
+			memoHash = GetRandomTxHash()
+		}
+		observed := NewObservedTx(common.NewTx(outHash, from, to, common.NewCoins(coin), gas, NewRefundMemo(memoHash).String()), ctx.BlockHeight(), vaultKey, ctx.BlockHeight())
+		parsed, err := ParseMemo(common.LatestVersion, observed.Tx.Memo)
+		c.Assert(err, check.IsNil)
+		result, err := NewCommonOutboundTxHandler(mgr).handle(ctx, observed, parsed.GetTxID())
+		c.Assert(err, check.IsNil)
+		stored, err := k.GetTxOut(ctx, ctx.BlockHeight())
+		c.Assert(err, check.IsNil)
+		c.Check(stored.TxArray[0].OutHash.Equals(outHash), check.Equals, !wrongHash)
+		slashed := false
+		for _, event := range result.Events {
+			if event.Type == "vault-slash" {
+				slashed = true
+			}
+		}
+		c.Check(slashed, check.Equals, wrongHash)
+		if wrongHash {
+			c.Check(slasher.calls, check.Equals, 1)
+		} else {
+			c.Check(slasher.calls, check.Equals, 0)
+		}
+	}
+}
+
+type xmrMemoCompatibilitySlasher struct {
+	*DummySlasher
+	calls int
+}
+
+func (s *xmrMemoCompatibilitySlasher) SlashVault(cosmos.Context, common.PubKey, common.Coins, Manager) error {
+	s.calls++
+	return nil
 }

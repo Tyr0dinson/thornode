@@ -268,7 +268,7 @@ func (s *SwapSuite) TestSwap(c *C) {
 		mgr.K = poolStorage
 		mgr.txOutStore = NewTxStoreDummy()
 
-		amount, evts, err := newSwapper().Swap(ctx, poolStorage, tx, item.target, item.destination, item.tradeTarget, "", "", nil, StreamingSwap{}, 20_000, mgr, nil, nil)
+		amount, _, evts, err := newSwapper().Swap(ctx, poolStorage, tx, item.target, item.destination, item.tradeTarget, "", "", nil, StreamingSwap{}, 20_000, mgr, nil, nil)
 		if item.expectedErr == nil && item.expectedErrRe == "" {
 			c.Assert(err, IsNil)
 			c.Assert(evts, HasLen, item.events)
@@ -363,7 +363,7 @@ func (s *SwapSuite) TestSynthSwap_RuneSynthRune(c *C) {
 		_ = expectedRuneBalance
 		_ = expectedSynthSupply
 
-		amount, _, err := newSwapper().Swap(ctx, mgr.Keeper(), tx, common.ETHAsset.GetSyntheticAsset(), addr, cosmos.ZeroUint(), "", "", nil, StreamingSwap{}, 20_000, mgr, nil, nil)
+		amount, _, _, err := newSwapper().Swap(ctx, mgr.Keeper(), tx, common.ETHAsset.GetSyntheticAsset(), addr, cosmos.ZeroUint(), "", "", nil, StreamingSwap{}, 20_000, mgr, nil, nil)
 		c.Assert(err, IsNil)
 		c.Check(amount.Uint64(), Equals, swapResult.Uint64(),
 			Commentf("Actual: %d Exp: %d", amount.Uint64(), swapResult.Uint64()))
@@ -440,7 +440,7 @@ func (s *SwapSuite) TestSynthSwap_RuneSynthRune(c *C) {
 		poolUnitsBefore2 := pool.GetPoolUnits().Mul(pool.GetPoolUnits())
 		luviBefore2 := pool.BalanceRune.Mul(pool.BalanceAsset).Quo(poolUnitsBefore2)
 
-		amount, _, err := newSwapper().Swap(ctx, mgr.Keeper(), tx, common.RuneAsset(), addr, cosmos.ZeroUint(), "", "", nil, StreamingSwap{}, 20_000, mgr, nil, nil)
+		amount, _, _, err := newSwapper().Swap(ctx, mgr.Keeper(), tx, common.RuneAsset(), addr, cosmos.ZeroUint(), "", "", nil, StreamingSwap{}, 20_000, mgr, nil, nil)
 		c.Assert(err, IsNil)
 		c.Check(amount.Uint64(), Equals, swapResult.Uint64(),
 			Commentf("Actual: %d Exp: %d", amount.Uint64(), swapResult.Uint64()))
@@ -554,7 +554,7 @@ func (s *SwapSuite) TestSynthSwap_AssetSynth(c *C) {
 	poolUnitsBefore2 := pool.GetPoolUnits().Mul(pool.GetPoolUnits())
 	luviBefore2 := pool.BalanceRune.Mul(pool.BalanceAsset).Quo(poolUnitsBefore2)
 
-	amount, _, err := newSwapper().Swap(ctx, mgr.Keeper(), tx, common.ETHAsset.GetSyntheticAsset(), addr, cosmos.ZeroUint(), "", "", nil, StreamingSwap{}, 20_000, mgr, nil, nil)
+	amount, _, _, err := newSwapper().Swap(ctx, mgr.Keeper(), tx, common.ETHAsset.GetSyntheticAsset(), addr, cosmos.ZeroUint(), "", "", nil, StreamingSwap{}, 20_000, mgr, nil, nil)
 	c.Assert(err, IsNil)
 	c.Check(amount.Uint64(), Equals, swapResult2.Uint64(),
 		Commentf("Actual: %d Exp: %d", amount.Uint64(), swapResult2.Uint64()))
@@ -603,7 +603,7 @@ func (s *SwapSuite) TestSynthSwap_AssetSynth(c *C) {
 	btcPool.SynthUnits = cosmos.ZeroUint()
 	c.Assert(mgr.Keeper().SetPool(ctx, btcPool), IsNil)
 
-	amount, _, err = newSwapper().Swap(ctx, mgr.Keeper(), tx1, common.BTCAsset, addr, cosmos.ZeroUint(), "", "", nil, StreamingSwap{}, 20_000, mgr, nil, nil)
+	amount, _, _, err = newSwapper().Swap(ctx, mgr.Keeper(), tx1, common.BTCAsset, addr, cosmos.ZeroUint(), "", "", nil, StreamingSwap{}, 20_000, mgr, nil, nil)
 	c.Assert(err, NotNil)
 	c.Check(amount.IsZero(), Equals, true)
 	pool, err = mgr.Keeper().GetPool(ctx, common.BTCAsset)
@@ -656,7 +656,7 @@ func (s *SwapSuite) TestSynthSwapBurnSynthsRagnarok(c *C) {
 	// withdraw) is rejected by the BurnSynths gate.
 	tx := mintSynthToAsgard()
 	addr := tx.FromAddress
-	_, _, err := newSwapper().Swap(ctx, mgr.Keeper(), tx, common.RuneAsset(), addr, cosmos.ZeroUint(), "", "", nil, StreamingSwap{}, 20_000, mgr, nil, nil)
+	_, _, _, err := newSwapper().Swap(ctx, mgr.Keeper(), tx, common.RuneAsset(), addr, cosmos.ZeroUint(), "", "", nil, StreamingSwap{}, 20_000, mgr, nil, nil)
 	c.Assert(err, NotNil)
 	c.Assert(strings.Contains(err.Error(), "burning synthetics has been disabled"), Equals, true,
 		Commentf("expected burn-disabled rejection, got: %v", err))
@@ -665,7 +665,7 @@ func (s *SwapSuite) TestSynthSwapBurnSynthsRagnarok(c *C) {
 	// the saver can be paid out; the BurnSynths gate no longer blocks it.
 	mgr.Keeper().SetMimir(ctx, "RAGNAROK-"+common.ETHAsset.MimirString(), 1)
 	tx = mintSynthToAsgard()
-	_, _, err = newSwapper().Swap(ctx, mgr.Keeper(), tx, common.RuneAsset(), tx.FromAddress, cosmos.ZeroUint(), "", "", nil, StreamingSwap{}, 20_000, mgr, nil, nil)
+	_, _, _, err = newSwapper().Swap(ctx, mgr.Keeper(), tx, common.RuneAsset(), tx.FromAddress, cosmos.ZeroUint(), "", "", nil, StreamingSwap{}, 20_000, mgr, nil, nil)
 	c.Assert(err, IsNil, Commentf("ragnarok saver redemption swap must not be blocked by BurnSynths: %v", err))
 }
 
@@ -841,7 +841,7 @@ func (s *SwapSuite) TestSwapSurvivesAffiliateAttributionFailure(c *C) {
 	// so the wrapper must be installed on the manager.
 	mgr.K = wrapped
 
-	_, _, err := newSwapper().Swap(ctx, wrapped, tx, common.RuneAsset(), destination, cosmos.ZeroUint(), "", "", nil, StreamingSwap{}, 20_000, mgr, nil, nil)
+	_, _, _, err := newSwapper().Swap(ctx, wrapped, tx, common.RuneAsset(), destination, cosmos.ZeroUint(), "", "", nil, StreamingSwap{}, 20_000, mgr, nil, nil)
 	c.Assert(err, IsNil, Commentf("swap must succeed even when affiliate attribution fails"))
 	c.Assert(called, Equals, true, Commentf("AddAffiliateLiquidityFee must have been invoked; otherwise the test does not exercise the failure path"))
 
@@ -880,7 +880,7 @@ func (s *SwapSuite) TestAffiliateAttribution(c *C) {
 	)
 	tx.Chain = common.BTCChain
 
-	_, _, err := newSwapper().Swap(ctx, mgr.Keeper(), tx, common.RuneAsset(), destination, cosmos.ZeroUint(), "", "", nil, StreamingSwap{}, 20_000, mgr, nil, nil)
+	_, _, _, err := newSwapper().Swap(ctx, mgr.Keeper(), tx, common.RuneAsset(), destination, cosmos.ZeroUint(), "", "", nil, StreamingSwap{}, 20_000, mgr, nil, nil)
 	c.Assert(err, IsNil)
 
 	got := mgr.Keeper().GetAffiliateLiquidityFees(ctx)
@@ -928,7 +928,7 @@ func (s *SwapSuite) TestAffiliateAttributionSkippedForAffiliateCollectorDestinat
 	)
 	tx.Chain = common.BTCChain
 
-	_, _, err = newSwapper().Swap(ctx, mgr.Keeper(), tx, common.RuneAsset(), destination, cosmos.ZeroUint(), "", "", nil, StreamingSwap{}, 20_000, mgr, nil, nil)
+	_, _, _, err = newSwapper().Swap(ctx, mgr.Keeper(), tx, common.RuneAsset(), destination, cosmos.ZeroUint(), "", "", nil, StreamingSwap{}, 20_000, mgr, nil, nil)
 	c.Assert(err, IsNil)
 
 	got := mgr.Keeper().GetAffiliateLiquidityFees(ctx)
@@ -971,7 +971,7 @@ func (s *SwapSuite) TestAffiliateAttributionSkippedForThornameAliasDestination(c
 	)
 	tx.Chain = common.BTCChain
 
-	_, _, err = newSwapper().Swap(ctx, mgr.Keeper(), tx, common.RuneAsset(), destination, cosmos.ZeroUint(), "", "", nil, StreamingSwap{}, 20_000, mgr, nil, nil)
+	_, _, _, err = newSwapper().Swap(ctx, mgr.Keeper(), tx, common.RuneAsset(), destination, cosmos.ZeroUint(), "", "", nil, StreamingSwap{}, 20_000, mgr, nil, nil)
 	c.Assert(err, IsNil)
 
 	got := mgr.Keeper().GetAffiliateLiquidityFees(ctx)

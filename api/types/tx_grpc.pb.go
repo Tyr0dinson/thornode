@@ -36,6 +36,7 @@ const (
 	Msg_SetNodeKeys_FullMethodName          = "/types.Msg/SetNodeKeys"
 	Msg_Solvency_FullMethodName             = "/types.Msg/Solvency"
 	Msg_SolvencyQuorum_FullMethodName       = "/types.Msg/SolvencyQuorum"
+	Msg_SolNonceAttest_FullMethodName       = "/types.Msg/SolNonceAttest"
 	Msg_TssKeysignFail_FullMethodName       = "/types.Msg/TssKeysignFail"
 	Msg_TssPool_FullMethodName              = "/types.Msg/TssPool"
 	Msg_SetVersion_FullMethodName           = "/types.Msg/SetVersion"
@@ -73,6 +74,7 @@ type MsgClient interface {
 	SetNodeKeys(ctx context.Context, in *MsgSetNodeKeys, opts ...grpc.CallOption) (*MsgEmpty, error)
 	Solvency(ctx context.Context, in *MsgSolvency, opts ...grpc.CallOption) (*MsgEmpty, error)
 	SolvencyQuorum(ctx context.Context, in *MsgSolvencyQuorum, opts ...grpc.CallOption) (*MsgEmpty, error)
+	SolNonceAttest(ctx context.Context, in *MsgSolNonceAttest, opts ...grpc.CallOption) (*MsgEmpty, error)
 	TssKeysignFail(ctx context.Context, in *MsgTssKeysignFail, opts ...grpc.CallOption) (*MsgEmpty, error)
 	TssPool(ctx context.Context, in *MsgTssPool, opts ...grpc.CallOption) (*MsgEmpty, error)
 	SetVersion(ctx context.Context, in *MsgSetVersion, opts ...grpc.CallOption) (*MsgEmpty, error)
@@ -245,6 +247,15 @@ func (c *msgClient) SolvencyQuorum(ctx context.Context, in *MsgSolvencyQuorum, o
 	return out, nil
 }
 
+func (c *msgClient) SolNonceAttest(ctx context.Context, in *MsgSolNonceAttest, opts ...grpc.CallOption) (*MsgEmpty, error) {
+	out := new(MsgEmpty)
+	err := c.cc.Invoke(ctx, Msg_SolNonceAttest_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *msgClient) TssKeysignFail(ctx context.Context, in *MsgTssKeysignFail, opts ...grpc.CallOption) (*MsgEmpty, error) {
 	out := new(MsgEmpty)
 	err := c.cc.Invoke(ctx, Msg_TssKeysignFail_FullMethodName, in, out, opts...)
@@ -400,6 +411,7 @@ type MsgServer interface {
 	SetNodeKeys(context.Context, *MsgSetNodeKeys) (*MsgEmpty, error)
 	Solvency(context.Context, *MsgSolvency) (*MsgEmpty, error)
 	SolvencyQuorum(context.Context, *MsgSolvencyQuorum) (*MsgEmpty, error)
+	SolNonceAttest(context.Context, *MsgSolNonceAttest) (*MsgEmpty, error)
 	TssKeysignFail(context.Context, *MsgTssKeysignFail) (*MsgEmpty, error)
 	TssPool(context.Context, *MsgTssPool) (*MsgEmpty, error)
 	SetVersion(context.Context, *MsgSetVersion) (*MsgEmpty, error)
@@ -472,6 +484,9 @@ func (UnimplementedMsgServer) Solvency(context.Context, *MsgSolvency) (*MsgEmpty
 }
 func (UnimplementedMsgServer) SolvencyQuorum(context.Context, *MsgSolvencyQuorum) (*MsgEmpty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SolvencyQuorum not implemented")
+}
+func (UnimplementedMsgServer) SolNonceAttest(context.Context, *MsgSolNonceAttest) (*MsgEmpty, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SolNonceAttest not implemented")
 }
 func (UnimplementedMsgServer) TssKeysignFail(context.Context, *MsgTssKeysignFail) (*MsgEmpty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method TssKeysignFail not implemented")
@@ -819,6 +834,24 @@ func _Msg_SolvencyQuorum_Handler(srv interface{}, ctx context.Context, dec func(
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Msg_SolNonceAttest_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MsgSolNonceAttest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MsgServer).SolNonceAttest(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Msg_SolNonceAttest_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MsgServer).SolNonceAttest(ctx, req.(*MsgSolNonceAttest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _Msg_TssKeysignFail_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(MsgTssKeysignFail)
 	if err := dec(in); err != nil {
@@ -1159,6 +1192,10 @@ var Msg_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SolvencyQuorum",
 			Handler:    _Msg_SolvencyQuorum_Handler,
+		},
+		{
+			MethodName: "SolNonceAttest",
+			Handler:    _Msg_SolNonceAttest_Handler,
 		},
 		{
 			MethodName: "TssKeysignFail",

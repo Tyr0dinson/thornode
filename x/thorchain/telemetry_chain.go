@@ -171,7 +171,7 @@ func emitChainDetailTelemetry(ctx cosmos.Context, mgr Manager) {
 		telemetry.SetGauge(boolTelem(v > 0 && height > v), "thornode", "wasm", "halted")
 	}
 
-	// Secured assets back the WasmExec path and the stable reserve, so the global halt
+	// Secured assets back the stable reserve, so the global halt
 	// disables far more than its name suggests. Predicate per SecuredAssetMgr.CheckHalt.
 	if v, err := k.GetMimir(ctx, constants.MimirKeySecuredAssetHaltGlobal); err == nil {
 		telemetry.SetGauge(boolTelem(v > 0 && v <= height), "thornode", "secured_asset", "halted")

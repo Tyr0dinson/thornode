@@ -1,6 +1,7 @@
 package p2p
 
 import (
+	"context"
 	"sync"
 
 	"github.com/libp2p/go-libp2p-core/peer"
@@ -20,10 +21,15 @@ type MessageSubscription struct {
 	maxMessagesPerPeer uint32
 	maxBytesPerPeer    uint64
 	maxSessionBytes    uint64
-	done               chan struct{}
-	doneOnce           sync.Once
+	ctx                context.Context
+	cancel             context.CancelFunc
+	done               <-chan struct{}
 
-	lock         sync.Mutex
+	lock    sync.Mutex
+	stopped bool
+	// narrowed is closed and replaced on every narrowing so deliveries
+	// blocked on a full queue recheck whether their peer is still allowed.
+	narrowed     chan struct{}
 	peerCounts   map[peer.ID]uint32
 	peerBytes    map[peer.ID]uint64
 	sessionBytes uint64
@@ -44,6 +50,7 @@ func newMessageSubscription(
 			allowed[id] = struct{}{}
 		}
 	}
+	ctx, cancel := context.WithCancel(context.Background())
 	return &MessageSubscription{
 		channel:            channel,
 		allowedPeers:       allowed,
@@ -51,7 +58,10 @@ func newMessageSubscription(
 		maxMessagesPerPeer: maxMessagesPerPeer,
 		maxBytesPerPeer:    maxBytesPerPeer,
 		maxSessionBytes:    maxSessionBytes,
-		done:               make(chan struct{}),
+		ctx:                ctx,
+		cancel:             cancel,
+		done:               ctx.Done(),
+		narrowed:           make(chan struct{}),
 		peerCounts:         make(map[peer.ID]uint32, len(allowed)),
 		peerBytes:          make(map[peer.ID]uint64, len(allowed)),
 	}
@@ -66,7 +76,7 @@ func (s *MessageSubscription) accepts(id peer.ID, payloadBytes int) bool {
 	}
 	s.lock.Lock()
 	defer s.lock.Unlock()
-	if !s.authorizedLocked(id, payloadBytes) {
+	if s.stopped || !s.authorizedLocked(id, payloadBytes) {
 		return false
 	}
 	if s.maxMessagesPerPeer == 0 {
@@ -112,7 +122,7 @@ func (s *MessageSubscription) authorized(id peer.ID, payloadBytes int) bool {
 	}
 	s.lock.Lock()
 	defer s.lock.Unlock()
-	return s.authorizedLocked(id, payloadBytes)
+	return !s.stopped && s.authorizedLocked(id, payloadBytes)
 }
 
 func (s *MessageSubscription) authorizedLocked(id peer.ID, payloadBytes int) bool {
@@ -127,20 +137,49 @@ func (s *MessageSubscription) authorizedLocked(id peer.ID, payloadBytes int) boo
 	return true
 }
 
-func (s *MessageSubscription) setAllowedPeers(allowedPeers []peer.ID) {
+// narrowAllowedPeers restricts the allow-list after party formation. It never
+// re-authorizes a peer that is not already allowed, so a ceremony can only
+// shrink its party. Removed peers can never send to this session again, so
+// their share of the shared session budget is released: peers that refused
+// to join cannot starve the retained party. It performs no transport I/O.
+func (s *MessageSubscription) narrowAllowedPeers(allowedPeers []peer.ID) bool {
 	if s == nil {
-		return
+		return false
 	}
 	allowed := make(map[peer.ID]struct{}, len(allowedPeers))
 	for _, id := range allowedPeers {
 		allowed[id] = struct{}{}
 	}
 	s.lock.Lock()
+	defer s.lock.Unlock()
+	if s.stopped {
+		return false
+	}
+	// A nil current set is the unrestricted wildcard and may be narrowed once
+	// to any explicit set.
+	if s.allowedPeers != nil {
+		for id := range allowed {
+			if _, ok := s.allowedPeers[id]; !ok {
+				return false
+			}
+		}
+	}
 	s.allowedPeers = allowed
-	// Preserve counters and byte reservations for removed peers. Party
-	// narrowing must not let a peer regain its allowance if it is later added
-	// again to the same session.
-	s.lock.Unlock()
+	// Deleting the entries keeps a repeated narrowing from refunding twice.
+	for id, spent := range s.peerBytes {
+		if _, retained := allowed[id]; retained {
+			continue
+		}
+		if spent > s.sessionBytes {
+			spent = s.sessionBytes
+		}
+		s.sessionBytes -= spent
+		delete(s.peerBytes, id)
+		delete(s.peerCounts, id)
+	}
+	close(s.narrowed)
+	s.narrowed = make(chan struct{})
+	return true
 }
 
 func (s *MessageSubscription) Channel() chan *Message {
@@ -153,27 +192,61 @@ func (s *MessageSubscription) Channel() chan *Message {
 // deliver applies backpressure when a bounded protocol queue is full. Dropping
 // an authenticated FROST frame here can make an otherwise healthy ceremony
 // fail merely because a valid burst exceeded the local buffer. Session byte
-// and message budgets bound the number of blocked handlers, and stop unblocks
-// them during shutdown.
+// and message budgets bound the number of blocked handlers.
+//
+// Narrowing wakes handlers whose peer was removed, and they give up their
+// place. That bounds stale traffic but does not eliminate it. Go's select has
+// no priority between the send and the narrowing signal: a waiting handler
+// whose send a receive completes before the close reaches it still delivers,
+// and so can a handler caught between releasing s.lock and entering select if
+// the queue has room at that instant. Frames already queued stay queued.
+// Consumers must therefore drop frames from removed peers with a sender check
+// before parsing, as the keysign rounds and result waiter do.
+//
+// Cancellation is not strict against a send in progress either: a frame that
+// races it can still enter its own ceremony's queue, where the coordinator's
+// msgID and sender checks apply. Queues are per ceremony, so it never reaches
+// another ceremony. Cancellation guarantees that no new frame is charged and
+// that no delivery keeps waiting.
 func (s *MessageSubscription) deliver(message *Message, stop <-chan struct{}) bool {
 	if s == nil || s.channel == nil || message == nil {
 		return false
 	}
-	select {
-	case s.channel <- message:
-		return true
-	case <-s.done:
-		return false
-	case <-stop:
-		return false
+	for {
+		s.lock.Lock()
+		allowed := !s.stopped && s.authorizedLocked(message.PeerID, len(message.Payload))
+		narrowed := s.narrowed
+		s.lock.Unlock()
+		if !allowed {
+			return false
+		}
+		select {
+		case s.channel <- message:
+			return true
+		case <-narrowed:
+		case <-s.done:
+			return false
+		case <-stop:
+			return false
+		}
 	}
 }
 
+// stop invalidates the subscription. Setting stopped and cancelling its
+// context under s.lock makes every later charge or narrowing observe the stop.
+// Cancelling the context triggers the resets that handlers registered for
+// FROST frames still being read; stop does not wait for them.
 func (s *MessageSubscription) stop() {
 	if s == nil {
 		return
 	}
-	s.doneOnce.Do(func() { close(s.done) })
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	if s.stopped {
+		return
+	}
+	s.stopped = true
+	s.cancel()
 }
 
 // MessageIDSubscriber
@@ -260,15 +333,16 @@ func (ms *MessageIDSubscriber) UnSubscribe(msgID string) {
 	delete(ms.subscribers, msgID)
 }
 
-func (ms *MessageIDSubscriber) UpdateAllowedPeers(msgID string, allowedPeers []peer.ID) bool {
+// NarrowAllowedPeers restricts an existing session allow-list after party
+// formation. It never creates a subscription and rejects re-expansion.
+func (ms *MessageIDSubscriber) NarrowAllowedPeers(msgID string, allowedPeers []peer.ID) bool {
 	ms.lock.Lock()
 	subscription, ok := ms.subscribers[msgID]
 	ms.lock.Unlock()
 	if !ok || subscription == nil {
 		return false
 	}
-	subscription.setAllowedPeers(allowedPeers)
-	return true
+	return subscription.narrowAllowedPeers(allowedPeers)
 }
 
 // GetSubscribers return a subscriber of given message id

@@ -101,7 +101,9 @@ type Keeper interface {
 	KeeperPOLReserve
 	KeeperStableReserve
 	KeeperXMRSpentOutputRefs
+	KeeperSolVaultNonce
 	KeeperDynamicFee
+	KeeperObservationTally
 }
 
 type KeeperConfig interface {
@@ -132,6 +134,22 @@ type KeeperLastHeight interface {
 	GetLastObserveHeight(ctx cosmos.Context, address cosmos.AccAddress) ([]kvTypes.ChainHeight, error)
 }
 
+type KeeperObservationTally interface {
+	QueueObservationTally(ctx cosmos.Context, entry kvTypes.ObservationTallyEntry)
+	PopObservationTallies(ctx cosmos.Context, height int64) ([]kvTypes.ObservationTallyEntry, error)
+	AddObservationTally(ctx cosmos.Context, chain common.Chain, units int64, missed, unscored []cosmos.AccAddress)
+	GetObservationTally(ctx cosmos.Context, addr cosmos.AccAddress, chain common.Chain) (int64, int64, error)
+	GetObservationTallies(ctx cosmos.Context, addr cosmos.AccAddress) ([]kvTypes.ObservationTally, error)
+	ResetObservationTally(ctx cosmos.Context, addr cosmos.AccAddress) error
+	ClearObservationTally(ctx cosmos.Context, addr cosmos.AccAddress)
+	HalveObservationTallies(ctx cosmos.Context) error
+	GetObservationGuardSince(ctx cosmos.Context, chain common.Chain) (int64, error)
+	SetObservationGuardSince(ctx cosmos.Context, chain common.Chain, height int64)
+	GetObservationGuardChains(ctx cosmos.Context) (common.Chains, error)
+	GetObservationGuardFullAt(ctx cosmos.Context, chain common.Chain) (int64, error)
+	SetObservationGuardFullAt(ctx cosmos.Context, chain common.Chain, height int64)
+}
+
 type KeeperSwapperClout interface {
 	GetSwapperClout(ctx cosmos.Context, addr common.Address) (SwapperClout, error)
 	SetSwapperClout(ctx cosmos.Context, record SwapperClout) error
@@ -159,6 +177,8 @@ type KeeperNodeAccount interface {
 	ListValidatorsWithBond(ctx cosmos.Context) (NodeAccounts, error)
 	ListValidatorsByStatus(ctx cosmos.Context, status NodeStatus) (NodeAccounts, error)
 	ListActiveValidators(ctx cosmos.Context) (NodeAccounts, error)
+	CountActiveValidators(ctx cosmos.Context) (int, error)
+	ListActiveValidatorsUpTo(ctx cosmos.Context, n int) (NodeAccounts, error)
 	GetLowestActiveVersion(ctx cosmos.Context) semver.Version
 	GetMinJoinVersion(ctx cosmos.Context) semver.Version
 	GetNodeAccount(ctx cosmos.Context, addr cosmos.AccAddress) (NodeAccount, error)
@@ -335,6 +355,14 @@ type KeeperXMRSpentOutputRefs interface {
 	GetXMRSpentOutputRefs(ctx cosmos.Context, vaultPubKey common.PubKey) ([]common.OutputRef, error)
 }
 
+type KeeperSolVaultNonce interface {
+	SetSolVaultNonce(ctx cosmos.Context, record SolVaultNonce)
+	GetSolVaultNonce(ctx cosmos.Context, vaultPubKey common.PubKey) (SolVaultNonce, bool, error)
+	GetSolVaultNonceIterator(ctx cosmos.Context) cosmos.Iterator
+	SetSolNonceAttestVoter(ctx cosmos.Context, voter SolNonceAttestVoter)
+	GetSolNonceAttestVoter(ctx cosmos.Context, vaultPubKey common.PubKey, nonceAccount, nonce string, lastTx common.TxID, slot int64) (SolNonceAttestVoter, error)
+}
+
 type KeeperReserveContributors interface {
 	AddPoolFeeToReserve(ctx cosmos.Context, fee cosmos.Uint) error
 	AddBondFeeToReserve(ctx cosmos.Context, fee cosmos.Uint) error
@@ -371,6 +399,10 @@ type KeeperTss interface {
 	SetTssKeysignMetric(_ cosmos.Context, metric *TssKeysignMetric)
 	GetTssKeysignMetric(_ cosmos.Context, txID common.TxID) (*TssKeysignMetric, error)
 	GetLatestTssKeysignMetric(_ cosmos.Context) (*TssKeysignMetric, error)
+	SetLastKeygenChains(_ cosmos.Context, _ cosmos.AccAddress, _ common.Chains, _ int64)
+	GetLastKeygenChains(_ cosmos.Context, _ cosmos.AccAddress) (int64, common.Chains, error)
+	SetChainSetStall(_ cosmos.Context, _ common.Chain, _ int64)
+	GetChainSetStalls(_ cosmos.Context, _ int64) (common.Chains, error)
 }
 
 type KeeperTssKeysignFail interface {
@@ -423,11 +455,14 @@ type KeeperSwapQueue interface {
 type KeeperAdvSwapQueues interface {
 	AdvSwapQueueEnabled(ctx cosmos.Context) bool
 	SetAdvSwapQueueItem(ctx cosmos.Context, msg MsgSwap) error
+	SetAdvSwapQueueItemState(ctx cosmos.Context, msg MsgSwap) error
 	GetAdvSwapQueueItemIterator(ctx cosmos.Context) cosmos.Iterator
 	GetAdvSwapQueueItem(ctx cosmos.Context, txID common.TxID, index int) (MsgSwap, error)
 	HasAdvSwapQueueItem(ctx cosmos.Context, txID common.TxID, index int) bool
 	RemoveAdvSwapQueueItem(ctx cosmos.Context, txID common.TxID, index int) error
+	RemoveAdvSwapQueueItemMsg(ctx cosmos.Context, msg MsgSwap) error
 	GetAdvSwapQueueIndexIterator(_ cosmos.Context, _ types.SwapType, _, _ common.Asset) cosmos.Iterator
+	GetAdvSwapQueueLimitIndexIterator(ctx cosmos.Context) cosmos.Iterator
 	SetAdvSwapQueueIndex(_ cosmos.Context, _ MsgSwap) error
 	GetAdvSwapQueueIndex(_ cosmos.Context, _ MsgSwap) ([]types.AdvSwapQueueIndexItem, error)
 	HasAdvSwapQueueIndex(_ cosmos.Context, _ MsgSwap) (bool, error)
@@ -478,6 +513,8 @@ type KeeperChainContract interface {
 type KeeperSolvencyVoter interface {
 	SetSolvencyVoter(_ cosmos.Context, _ SolvencyVoter)
 	GetSolvencyVoter(_ cosmos.Context, _ common.TxID, _ common.Chain) (SolvencyVoter, error)
+	GetSolvencyVoterQuota(ctx cosmos.Context, chain common.Chain, signer cosmos.AccAddress) (window, used uint64, err error)
+	SetSolvencyVoterQuota(ctx cosmos.Context, chain common.Chain, signer cosmos.AccAddress, window, used uint64)
 }
 
 type KeeperOracle interface {

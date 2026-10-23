@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -185,42 +186,36 @@ func (c *Client) BroadcastTx(signed []byte) (string, error) {
 		return "", fmt.Errorf("failed to decode signed tx: %w", err)
 	}
 
+	if signedTx.TxId == "" {
+		return "", fmt.Errorf("signed TRON transaction has no txID")
+	}
 	response, err := c.api.BroadcastTransaction(signed)
-	if err != nil {
-		return "", err
+	// Only a known rejection of this first submission can release its identity.
+	// All other replies (including connectivity failures after pool insertion)
+	// leave the original payload potentially executable.
+	if err == nil && !response.Result && isDefiniteBroadcastRejection(response.Code) &&
+		(response.TxId == "" || strings.EqualFold(response.TxId, signedTx.TxId)) {
+		return "", fmt.Errorf("failed to broadcast tx: %s - %s", response.Code, response.Message)
 	}
-
-	txID := response.TxId
-	if txID == "" {
-		txID = signedTx.TxId
+	if err := c.waitForConfirmedBroadcast(signedTx.TxId, signed, signedTx.RawData.Expiration); err != nil {
+		return signedTx.TxId, err
 	}
+	return signedTx.TxId, nil
+}
 
-	if !response.Result {
-		if response.Code == "DUP_TRANSACTION_ERROR" && txID != "" {
-			if err := c.waitForConfirmedBroadcast(txID, signed, signedTx.RawData.Expiration); err != nil {
-				return txID, err
-			}
-			return txID, nil
-		}
-
-		if response.Message != "" {
-			return "", fmt.Errorf("failed to broadcast tx: %s - %s", response.Code, response.Message)
-		}
-		if response.Code != "" {
-			return "", fmt.Errorf("failed to broadcast tx: %s", response.Code)
-		}
-		return "", fmt.Errorf("failed to broadcast tx")
+// These java-tron 4.8.1 codes are returned before pending-pool insertion.
+// NOT_ENOUGH_EFFECTIVE_CONNECTION also occurs after insertion, so is excluded.
+// This classification applies only before any earlier ambiguous submission.
+func isDefiniteBroadcastRejection(code string) bool {
+	switch code {
+	case "BLOCK_UNSOLIDIFIED", "NO_CONNECTION", "SERVER_BUSY",
+		"SIGERROR", "CONTRACT_VALIDATE_ERROR", "CONTRACT_EXE_ERROR",
+		"BANDWITH_ERROR", "TAPOS_ERROR", "TOO_BIG_TRANSACTION_ERROR",
+		"TRANSACTION_EXPIRATION_ERROR":
+		return true
+	default:
+		return false
 	}
-
-	if txID == "" {
-		return "", fmt.Errorf("broadcast transaction returned empty txID")
-	}
-
-	if err := c.waitForConfirmedBroadcast(txID, signed, signedTx.RawData.Expiration); err != nil {
-		return txID, err
-	}
-
-	return txID, nil
 }
 
 func (c *Client) waitForConfirmedBroadcast(txID string, signed []byte, expirationMs int64) error {
@@ -238,7 +233,7 @@ func (c *Client) waitForConfirmedBroadcast(txID string, signed []byte, expiratio
 
 	for {
 		info, err := c.api.GetTransactionInfo(txID)
-		if err == nil && info.ID != "" && info.BlockNumber > 0 {
+		if err == nil && strings.EqualFold(info.ID, txID) && info.BlockNumber > 0 {
 			return nil
 		}
 		if err != nil {
@@ -246,23 +241,24 @@ func (c *Client) waitForConfirmedBroadcast(txID string, signed []byte, expiratio
 		}
 
 		tx, err := c.api.GetTransaction(txID)
-		if err == nil && tx.TxId != "" {
+		if err == nil && strings.EqualFold(tx.TxId, txID) {
 			observed = true
 		} else if err != nil {
 			lastErr = err
 		}
 
+		// A local deadline or expiry cannot prove the original was never mined.
 		if time.Now().After(deadline) {
 			if lastErr != nil {
 				if observed {
-					return fmt.Errorf("broadcasted tx %s not confirmed on tron node: %w", txID, lastErr)
+					return fmt.Errorf("%w: broadcasted tx %s not confirmed on tron node: %w", ErrSimTxUncertain, txID, lastErr)
 				}
-				return fmt.Errorf("broadcasted tx %s not observed on tron node: %w", txID, lastErr)
+				return fmt.Errorf("%w: broadcasted tx %s not observed on tron node: %w", ErrSimTxUncertain, txID, lastErr)
 			}
 			if observed {
-				return fmt.Errorf("broadcasted tx %s not confirmed on tron node", txID)
+				return fmt.Errorf("%w: broadcasted tx %s not confirmed on tron node", ErrSimTxUncertain, txID)
 			}
-			return fmt.Errorf("broadcasted tx %s not observed on tron node", txID)
+			return fmt.Errorf("%w: broadcasted tx %s not observed on tron node", ErrSimTxUncertain, txID)
 		}
 
 		if time.Since(lastBroadcast) >= tronBroadcastRebroadcastInterval &&

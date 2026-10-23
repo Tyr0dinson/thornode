@@ -388,10 +388,10 @@ func (s *KeeperTestSuite) TestGetSchedulesBySender(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(res.Pagination, NotNil)
 	c.Assert(res.Schedules, HasLen, 2)
-	c.Assert(res.Schedules[0].Height, Equals, uint64(101))
+	c.Assert(res.Schedules[0].Height, Equals, uint64(100))
 	c.Assert(res.Schedules[0].Msgs[0].Msg, DeepEquals, []byte(`{"a":"1"}`))
 	c.Assert(res.Schedules[0].Msgs[0].Sender, Equals, accAddrs[0].String())
-	c.Assert(res.Schedules[1].Height, Equals, uint64(201))
+	c.Assert(res.Schedules[1].Height, Equals, uint64(200))
 	c.Assert(res.Schedules[1].Msgs[0].Msg, DeepEquals, []byte(`{"a":"2"}`))
 	c.Assert(res.Schedules[1].Msgs[0].Sender, Equals, accAddrs[0].String())
 
@@ -400,7 +400,7 @@ func (s *KeeperTestSuite) TestGetSchedulesBySender(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(res.Pagination, NotNil)
 	c.Assert(res.Schedules, HasLen, 1)
-	c.Assert(res.Schedules[0].Height, Equals, uint64(101))
+	c.Assert(res.Schedules[0].Height, Equals, uint64(100))
 	c.Assert(res.Schedules[0].Msgs[0].Msg, DeepEquals, []byte(`{"a":"1"}`))
 	c.Assert(res.Schedules[0].Msgs[0].Sender, Equals, accAddrs[0].String())
 	c.Assert(res.Schedules[0].Msgs[1].Msg, DeepEquals, []byte(`{"b":"1"}`))
@@ -437,13 +437,13 @@ func (s *KeeperTestSuite) TestRemoveScheduleCleansIndex(c *C) {
 	c.Assert(res.Schedules, HasLen, 2)
 
 	// Remove only the first schedule
-	c.Assert(s.keeper.RemoveSchedule(sdkCtx, 101), IsNil)
+	c.Assert(s.keeper.RemoveSchedule(sdkCtx, 100), IsNil)
 
 	// Only the second schedule should remain
 	res, err = s.keeper.Schedules(s.ctx, &types.QuerySchedulesRequest{Sender: accAddrs[0].String()})
 	c.Assert(err, IsNil)
 	c.Assert(res.Schedules, HasLen, 1)
-	c.Assert(res.Schedules[0].Height, Equals, uint64(201))
+	c.Assert(res.Schedules[0].Height, Equals, uint64(200))
 	c.Assert(res.Schedules[0].Msgs[0].Msg, DeepEquals, []byte(`{"a":"2"}`))
 }
 
@@ -464,7 +464,7 @@ func (s *KeeperTestSuite) TestSetScheduleUpdatesIndex(c *C) {
 
 	// Overwrite the schedule via SetSchedule, replacing sender 0 with sender 1
 	c.Assert(s.keeper.SetSchedule(sdkCtx, types.Schedule{
-		Height: 101,
+		Height: 100,
 		Msgs: []types.MsgScheduleExecuteContract{
 			{Sender: accAddrs[1].String(), Msg: []byte(`{"b":"1"}`)},
 		},
@@ -479,7 +479,7 @@ func (s *KeeperTestSuite) TestSetScheduleUpdatesIndex(c *C) {
 	res, err = s.keeper.Schedules(s.ctx, &types.QuerySchedulesRequest{Sender: accAddrs[1].String()})
 	c.Assert(err, IsNil)
 	c.Assert(res.Schedules, HasLen, 1)
-	c.Assert(res.Schedules[0].Height, Equals, uint64(101))
+	c.Assert(res.Schedules[0].Height, Equals, uint64(100))
 	c.Assert(res.Schedules[0].Msgs[0].Msg, DeepEquals, []byte(`{"b":"1"}`))
 	c.Assert(res.Schedules[0].Msgs[0].Sender, Equals, accAddrs[1].String())
 }
@@ -495,8 +495,8 @@ func (s *KeeperTestSuite) TestMsgServerScheduleExecuteContract(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(resp, NotNil)
 
-	// Verify the schedule was stored at block height + after + 1
-	expectedHeight := uint64(sdkCtx.BlockHeight()) + 5 + 1
+	// Verify the schedule was stored at block height + after
+	expectedHeight := uint64(sdkCtx.BlockHeight()) + 5
 	schedule, err := s.keeper.GetSchedule(sdkCtx, expectedHeight)
 	c.Assert(err, IsNil)
 	c.Assert(schedule.Msgs, HasLen, 1)

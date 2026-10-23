@@ -136,7 +136,19 @@ func (s *MsgObservedTxOutSuite) TestMsgObservedTxOutRequiresXMRTxKey(c *C) {
 	}, 55, pk, 55)
 
 	msg := NewMsgObservedTxOut(common.ObservedTxs{tx}, GetRandomBech32Addr())
-	c.Assert(msg.ValidateBasic(), NotNil)
+	c.Assert(msg.ValidateBasic(), ErrorMatches, ".*xmr outbound observations must include xmr tx key.*")
+
+	tx.XmrTxKey = "   "
+	msg = NewMsgObservedTxOut(common.ObservedTxs{tx}, GetRandomBech32Addr())
+	c.Assert(msg.ValidateBasic(), ErrorMatches, ".*xmr outbound observations must include xmr tx key.*")
+
+	tx.XmrTxKey = strings.Repeat("a", 63)
+	msg = NewMsgObservedTxOut(common.ObservedTxs{tx}, GetRandomBech32Addr())
+	c.Assert(msg.ValidateBasic(), ErrorMatches, ".*xmr tx key must be 64 hex characters.*")
+
+	tx.XmrTxKey = strings.Repeat("z", 64)
+	msg = NewMsgObservedTxOut(common.ObservedTxs{tx}, GetRandomBech32Addr())
+	c.Assert(msg.ValidateBasic(), ErrorMatches, ".*xmr tx key must be hex.*")
 
 	tx.XmrTxKey = strings.Repeat("a", 64)
 	msg = NewMsgObservedTxOut(common.ObservedTxs{tx}, GetRandomBech32Addr())

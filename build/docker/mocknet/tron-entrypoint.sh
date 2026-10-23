@@ -27,10 +27,32 @@ mocknet-fullnode)
     ' "$HOME/${config}" >"$HOME/${config}.tmp"
     mv "$HOME/${config}.tmp" "$HOME/${config}"
   fi
-  # Single-witness mocknet can receive a just-produced block before the
-  # fullnode wall clock reaches the block timestamp. Keep Bifrost on the
-  # fullnode while avoiding a BAD_BLOCK peer ban in local simulation.
-  sed -i 's/needSyncCheck = true/needSyncCheck = false/' "$HOME/${config}"
+  # Require the producer connection before accepting a broadcast. Otherwise
+  # a transient peer disconnect can return success after sending to zero peers,
+  # leaving both simulation deposits and vault migrations unconfirmed.
+  # Validate the fixture assignment before replacing the config: a silent no-op
+  # would leave broadcasts unguarded if the image changes its config format.
+  if ! awk '
+    {
+      setting = $0
+      sub(/(#|\/\/).*$/, "", setting)
+      if (index(setting, "minEffectiveConnection")) {
+        count++
+        if (setting !~ /^[[:space:]]*minEffectiveConnection[[:space:]]*=[[:space:]]*[01][[:space:]]*$/) {
+          invalid = 1
+        } else if (setting ~ /=[[:space:]]*0[[:space:]]*$/) {
+          sub(/=[[:space:]]*0/, "= 1")
+        }
+      }
+      print
+    }
+    END { exit(count != 1 || invalid) }
+  ' "$HOME/${config}" >"$HOME/${config}.tmp"; then
+    rm -f "$HOME/${config}.tmp"
+    echo "Invalid TRON mocknet config: expected exactly one minEffectiveConnection assignment set to 0 or 1 in $HOME/${config}" >&2
+    exit 1
+  fi
+  mv "$HOME/${config}.tmp" "$HOME/${config}"
   ;;
 mocknet-supernode)
   heap_size="${TRON_HEAP_SIZE:-1024m}"

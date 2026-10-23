@@ -122,10 +122,8 @@ func (m *ObservedTxVoter) Add(observedTx common.ObservedTx, signer cosmos.AccAdd
 		}
 		votedIdx = idx
 		// check whether the signer is already in the list
-		for _, siggy := range transaction.GetSigners() {
-			if siggy.Equals(signer) {
-				return false
-			}
+		if transaction.HasSigned(signer) {
+			return false
 		}
 	}
 	if votedIdx != -1 {
@@ -157,11 +155,13 @@ func (m *ObservedTxVoter) GetTx(nodeAccounts NodeAccounts) *common.ObservedTx {
 	if !m.Tx.IsEmpty() && m.Tx.IsFinal() {
 		return &m.Tx
 	}
-	finalTx := m.getConsensusTx(nodeAccounts, true)
+	// both passes share one index of the active node addresses
+	var idx activeNodeIndex
+	finalTx := m.getConsensusTx(nodeAccounts, true, &idx)
 	if !finalTx.IsEmpty() {
 		return &finalTx
 	}
-	discoverTx := m.getConsensusTx(nodeAccounts, false)
+	discoverTx := m.getConsensusTx(nodeAccounts, false, &idx)
 	if !discoverTx.IsEmpty() {
 		return &discoverTx
 	}
@@ -172,27 +172,94 @@ func sameConsensusObservation(lhs, rhs common.ObservedTx) bool {
 	return lhs.EqualsConsensus(rhs)
 }
 
-func (m *ObservedTxVoter) getConsensusTx(accounts NodeAccounts, final bool) common.ObservedTx {
+// activeNodeIndex gives each distinct active node address a slot in [0, n),
+// so getConsensusTx can count distinct active signers with a []bool instead
+// of a map of strings. It is built on first use and lives only for one GetTx.
+type activeNodeIndex struct {
+	built bool
+	slots map[string]int
+	n     int
+	voted []bool // scratch, one flag per slot
+}
+
+// signerSlot is the slot of the address signer decodes to, exactly as
+// GetSigners decodes it, or -1 if GetSigners skips signer or the address is
+// not active. Unlike GetSigners, it allocates nothing for a memoized signer.
+func (idx *activeNodeIndex) signerSlot(signer string) int {
+	if addr, ok := common.SignerAddressString(signer); ok {
+		if slot, active := idx.slots[addr]; active {
+			return slot
+		}
+	}
+	return -1
+}
+
+func (idx *activeNodeIndex) build(accounts NodeAccounts) {
+	idx.built = true
+	size, count := 0, 0
+	for i := range accounts {
+		if accounts[i].Status == NodeStatus_Active {
+			size += len(accounts[i].NodeAddress)
+			count++
+		}
+	}
+	// one copy of all active addresses backs every key, instead of one string
+	// allocation per address
+	var all strings.Builder
+	all.Grow(size)
+	for i := range accounts {
+		if accounts[i].Status == NodeStatus_Active {
+			all.Write(accounts[i].NodeAddress)
+		}
+	}
+	keys := all.String()
+	idx.slots = make(map[string]int, count)
+	off := 0
+	for i := range accounts {
+		if accounts[i].Status != NodeStatus_Active {
+			continue
+		}
+		key := keys[off : off+len(accounts[i].NodeAddress)]
+		off += len(accounts[i].NodeAddress)
+		// a repeated address keeps its first slot, so it counts once
+		if _, exist := idx.slots[key]; !exist {
+			idx.slots[key] = idx.n
+			idx.n++
+		}
+	}
+	idx.voted = make([]bool, idx.n)
+}
+
+func (m *ObservedTxVoter) getConsensusTx(accounts NodeAccounts, final bool, idx *activeNodeIndex) common.ObservedTx {
+	// accounts.IsNodeKeys(signer) for every signer is a linear scan; index the
+	// active node addresses once. Signers decode to non-empty addresses, for
+	// which AccAddress.Equals is byte equality.
 	for _, txFinal := range m.Txs {
-		voters := make(map[string]bool)
 		if txFinal.IsFinal() != final {
 			continue
 		}
-		for _, txIn := range m.Txs {
+		if !idx.built {
+			idx.build(accounts)
+		}
+		clear(idx.voted)
+		voters := 0
+		for i := range m.Txs {
+			txIn := &m.Txs[i]
 			if txIn.IsFinal() != final {
 				continue
 			}
-			if !sameConsensusObservation(txFinal, txIn) {
+			if !sameConsensusObservation(txFinal, *txIn) {
 				continue
 			}
-			for _, signer := range txIn.GetSigners() {
-				_, exist := voters[signer.String()]
-				if !exist && accounts.IsNodeKeys(signer) {
-					voters[signer.String()] = true
+			for _, signer := range txIn.Signers {
+				slot := idx.signerSlot(signer)
+				if slot >= 0 && !idx.voted[slot] {
+					idx.voted[slot] = true
+					voters++
 				}
 			}
 		}
-		if HasSuperMajority(len(voters), len(accounts)) {
+		if HasSuperMajority(voters, len(accounts)) {
 			return txFinal
 		}
 	}
@@ -262,8 +329,26 @@ func (m *ObservedTxVoter) GetConsensusSigners() []cosmos.AccAddress {
 // scanner's later gas-used observation and would otherwise never be refunded
 // its observe slash point. The authoritative consensus tx/gas selection
 // (GetTx/getConsensusTx) stays gas-sensitive, so recorded gas and vault
-// accounting are unaffected.
+// accounting are unaffected. For pre-mining XMR outbounds, use
+// GetOutboundObserveSigners to also allow the unknown mined-height sentinel.
 func (m *ObservedTxVoter) GetObserveSigners() []cosmos.AccAddress {
+	return m.getObserveSigners(m.Tx.EqualsConsensusIgnoreGas)
+}
+
+// GetInboundObserveSigners also credits legacy XMR observations that lack the
+// mined-height field. Only slash accounting uses this compatibility matching.
+func (m *ObservedTxVoter) GetInboundObserveSigners() []cosmos.AccAddress {
+	return m.getObserveSigners(m.Tx.EqualsInboundObservationCredit)
+}
+
+// GetOutboundObserveSigners also credits legacy non-final and final pre-mining
+// XMR observations of the same outbound. Only slash accounting uses this
+// compatibility matching.
+func (m *ObservedTxVoter) GetOutboundObserveSigners() []cosmos.AccAddress {
+	return m.getObserveSigners(m.Tx.EqualsOutboundObservationCredit)
+}
+
+func (m *ObservedTxVoter) getObserveSigners(matches func(common.ObservedTx) bool) []cosmos.AccAddress {
 	if m.Tx.IsEmpty() {
 		return nil
 	}
@@ -276,7 +361,7 @@ func (m *ObservedTxVoter) GetObserveSigners() []cosmos.AccAddress {
 		if tx.IsFinal() != final {
 			continue
 		}
-		if !m.Tx.EqualsConsensusIgnoreGas(tx) {
+		if !matches(tx) {
 			continue
 		}
 
@@ -346,7 +431,21 @@ func equalsRefundableObservation(a, b common.ObservedTx) bool {
 		common.SpentOutputRefsEqual(a.SpentOutputRefs, b.SpentOutputRefs)
 }
 
-// ShouldRefundRedundantObservation reports whether this is the signer's first
+// ShouldRefundRedundantInboundObservation preserves the one-variant allowance
+// for legacy XMR observations, but never refunds a conflicting concrete height.
+func (m *ObservedTxVoter) ShouldRefundRedundantInboundObservation(tx common.ObservedTx, signer cosmos.AccAddress) bool {
+	return m.shouldRefundRedundantObservation(tx, signer, common.ObservedTx.EqualsInboundObservationCredit)
+}
+
+// ShouldRefundRedundantOutboundObservation uses the same transitive allowance
+// and exact-ref check, but also requires matching outbound credit identity. A
+// conflicting concrete mining location must keep its original observe point
+// when a later matching observation receives the late-signer refund.
+func (m *ObservedTxVoter) ShouldRefundRedundantOutboundObservation(tx common.ObservedTx, signer cosmos.AccAddress) bool {
+	return m.shouldRefundRedundantObservation(tx, signer, common.ObservedTx.EqualsOutboundObservationCredit)
+}
+
+// shouldRefundRedundantObservation reports whether this is the signer's first
 // redundant observation in the refund class and a prior observation has the
 // same canonical XMR spent refs. A committee member's pre-broadcast "instant"
 // observation and its later scanner observation can differ only in gas or block
@@ -376,7 +475,14 @@ func equalsRefundableObservation(a, b common.ObservedTx) bool {
 //     instant/scanner pair is indistinguishable from an honest one. So spam of N
 //     distinct bogus classes costs N-1 points, not N — inherent to the base
 //     feature and bounded at one free variant per class.
-func (m *ObservedTxVoter) ShouldRefundRedundantObservation(tx common.ObservedTx, signer cosmos.AccAddress) bool {
+func (m *ObservedTxVoter) shouldRefundRedundantObservation(tx common.ObservedTx, signer cosmos.AccAddress, matches func(common.ObservedTx, common.ObservedTx) bool) bool {
+	// A legacy zero-height variant must not bridge two conflicting locations
+	// once the consensus transaction has a concrete mined height.
+	if m.Tx.Tx.Chain.Equals(common.XMRChain) && tx.Tx.Chain.Equals(common.XMRChain) &&
+		m.Tx.IsFinal() == tx.IsFinal() && m.Tx.XmrMinedHeight > 0 && tx.XmrMinedHeight > 0 &&
+		!m.Tx.HasEquivalentCanonicalMinedHeight(tx) {
+		return false
+	}
 	count := 0
 	hasRefundableMatch := false
 	for _, existing := range m.Txs {
@@ -389,7 +495,8 @@ func (m *ObservedTxVoter) ShouldRefundRedundantObservation(tx common.ObservedTx,
 			continue
 		}
 		count++
-		if equalsRefundableObservation(existing, tx) {
+		if equalsRefundableObservation(existing, tx) &&
+			matches(existing, tx) {
 			hasRefundableMatch = true
 		}
 	}

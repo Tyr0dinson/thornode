@@ -6,11 +6,13 @@ import (
 	"sync"
 
 	"cosmossdk.io/core/store"
+	storetypes "cosmossdk.io/store/types"
 	upgradekeeper "cosmossdk.io/x/upgrade/keeper"
 	wasmkeeper "github.com/CosmWasm/wasmd/x/wasm/keeper"
 	"github.com/blang/semver"
 	abci "github.com/cometbft/cometbft/abci/types"
 	"github.com/cosmos/cosmos-sdk/codec"
+	"github.com/cosmos/cosmos-sdk/runtime"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	authkeeper "github.com/cosmos/cosmos-sdk/x/auth/keeper"
 	bankkeeper "github.com/cosmos/cosmos-sdk/x/bank/keeper"
@@ -244,7 +246,7 @@ type Swapper interface {
 		synthVirtualDepthMult int64,
 		mgr Manager,
 		affiliates []string, affiliateBps []cosmos.Uint,
-	) (cosmos.Uint, []*EventSwap, error)
+	) (cosmos.Uint, cosmos.Uint, []*EventSwap, error)
 	CalcAssetEmission(X, x, Y cosmos.Uint) cosmos.Uint
 	CalcLiquidityFee(X, x, Y cosmos.Uint) cosmos.Uint
 	CalcSwapSlip(Xi, xi cosmos.Uint) cosmos.Uint
@@ -312,6 +314,7 @@ type Mgrs struct {
 	accountKeeper authkeeper.AccountKeeper
 	upgradeKeeper *upgradekeeper.Keeper
 	wasmKeeper    wasmkeeper.Keeper
+	storeKey      *storetypes.KVStoreKey
 	storeService  store.KVStoreService
 }
 
@@ -319,7 +322,7 @@ type Mgrs struct {
 func NewManagers(
 	keeper keeper.Keeper,
 	cdc codec.Codec,
-	storeService store.KVStoreService,
+	storeKey *storetypes.KVStoreKey,
 	coinKeeper bankkeeper.Keeper,
 	accountKeeper authkeeper.AccountKeeper,
 	upgradeKeeper *upgradekeeper.Keeper,
@@ -332,7 +335,8 @@ func NewManagers(
 		accountKeeper: accountKeeper,
 		upgradeKeeper: upgradeKeeper,
 		wasmKeeper:    wasmKeeper,
-		storeService:  storeService,
+		storeKey:      storeKey,
+		storeService:  runtime.NewKVStoreService(storeKey),
 	}
 }
 
@@ -386,7 +390,7 @@ func (mgr *Mgrs) recreateManagers(ctx cosmos.Context, v semver.Version) error {
 	// construction error leaves the previous set intact.
 	constAccessor := constants.GetConstantValues(v)
 
-	k, err := GetKeeper(v, mgr.cdc, mgr.storeService, mgr.coinKeeper, mgr.accountKeeper, mgr.upgradeKeeper)
+	k, err := GetKeeper(v, mgr.cdc, mgr.storeKey, mgr.coinKeeper, mgr.accountKeeper, mgr.upgradeKeeper)
 	if err != nil {
 		return fmt.Errorf("fail to create keeper: %w", err)
 	}
@@ -649,12 +653,12 @@ func (mgr *Mgrs) DynamicFeeMgr() DynamicFeeManager {
 func GetKeeper(
 	version semver.Version,
 	cdc codec.BinaryCodec,
-	storeService store.KVStoreService,
+	storeKey *storetypes.KVStoreKey,
 	coinKeeper bankkeeper.Keeper,
 	accountKeeper authkeeper.AccountKeeper,
 	upgradeKeeper *upgradekeeper.Keeper,
 ) (keeper.Keeper, error) {
-	kvs := kv1.NewKVStore(cdc, storeService, coinKeeper, accountKeeper, upgradeKeeper, version)
+	kvs := kv1.NewKVStore(cdc, storeKey, coinKeeper, accountKeeper, upgradeKeeper, version)
 	return &kvs, nil
 }
 

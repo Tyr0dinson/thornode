@@ -102,6 +102,11 @@ func (ms msgServer) Solvency(goCtx context.Context, msg *types.MsgSolvency) (*ty
 	return externalHandler(goCtx, handler, msg)
 }
 
+func (ms msgServer) SolNonceAttest(goCtx context.Context, msg *types.MsgSolNonceAttest) (*types.MsgEmpty, error) {
+	handler := NewSolNonceAttestHandler(ms.mgr)
+	return externalHandler(goCtx, handler, msg)
+}
+
 func (ms msgServer) SolvencyQuorum(goCtx context.Context, msg *types.MsgSolvencyQuorum) (*types.MsgEmpty, error) {
 	handler := NewSolvencyQuorumHandler(ms.mgr)
 	return externalHandler(goCtx, handler, msg)

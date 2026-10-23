@@ -31,7 +31,7 @@ func (s *MsgObservedTxQuorumSuite) TestMsgObservedTxQuorumRequiresXMROutboundTxK
 	}, 55, pk, 55)
 
 	msg := NewMsgObservedTxQuorum(&common.QuorumTx{ObsTx: tx}, GetRandomBech32Addr())
-	c.Assert(msg.ValidateBasic(), NotNil)
+	c.Assert(msg.ValidateBasic(), ErrorMatches, ".*xmr outbound observations must include xmr tx key.*")
 
 	tx.XmrTxKey = strings.Repeat("a", 64)
 	msg = NewMsgObservedTxQuorum(&common.QuorumTx{ObsTx: tx}, GetRandomBech32Addr())
@@ -83,13 +83,14 @@ func (s *MsgObservedTxQuorumSuite) TestMsgObservedTxQuorumRejectsInboundXMRMetad
 		Gas:         common.Gas{common.NewCoin(common.XMRAsset, cosmos.NewUint(1))},
 		Memo:        "=:THOR.RUNE:" + GetRandomTHORAddress().String(),
 	}, 55, pk, 55)
+	tx.XmrMinedHeight = 55
 	tx.XmrTxKey = strings.Repeat("a", 64)
 
 	msg := NewMsgObservedTxQuorum(&common.QuorumTx{ObsTx: tx, Inbound: true}, GetRandomBech32Addr())
-	c.Assert(msg.ValidateBasic(), NotNil)
+	c.Assert(msg.ValidateBasic(), ErrorMatches, ".*xmr tx key is only valid for outbound observed transactions.*")
 
 	tx.XmrTxKey = ""
 	tx.SpentOutputRefs = []common.OutputRef{validXMRSpentRefForMsgTest(tx)}
 	msg = NewMsgObservedTxQuorum(&common.QuorumTx{ObsTx: tx, Inbound: true}, GetRandomBech32Addr())
-	c.Assert(msg.ValidateBasic(), NotNil)
+	c.Assert(msg.ValidateBasic(), ErrorMatches, ".*spent output refs are only valid for outbound observed transactions.*")
 }

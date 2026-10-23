@@ -32,6 +32,13 @@ type BlockScannerFetcher interface {
 	GetNetworkFee() (transactionSize, transactionFeeRate uint64)
 }
 
+// BlockScannerSolvencyReporter is an optional post-fetch hook. The ordered scan
+// loop calls it only after a successful fetch has restored scanner health, never
+// from prefetch workers. Reporting failures do not discard the fetched block.
+type BlockScannerSolvencyReporter interface {
+	ReportSolvency(fetchHeight, chainHeight int64) error
+}
+
 type Block struct {
 	Height int64
 	Txs    []string
@@ -143,8 +150,12 @@ func (b *BlockScanner) RollbackToLastObserved() error {
 		rollbackHeight = 0
 	}
 
-	b.rollbackChan <- rollbackHeight
-	return nil
+	select {
+	case b.rollbackChan <- rollbackHeight:
+		return nil
+	case <-b.stopChan:
+		return errors.New("block scanner stopped before rollback could be queued")
+	}
 }
 
 func (b *BlockScanner) rollback(height int64) error {
@@ -157,6 +168,14 @@ func (b *BlockScanner) rollback(height int64) error {
 	if b.PreviousHeight() <= height {
 		// height is already below rollback amount, proceed as normal
 		return nil
+	}
+	// Stateful chain clients may be unable to replay an arbitrarily old block.
+	// Validate on the scan loop before persisting a cursor they cannot follow.
+	// Rejection leaves the existing cursor and pending recovery state intact.
+	if validator, ok := b.chainScanner.(interface{ ValidateScannerRollback(int64) error }); ok {
+		if err := validator.ValidateScannerRollback(height + 1); err != nil {
+			return fmt.Errorf("rollback validation failed; scan position retained and requested history not replayed: %w", err)
+		}
 	}
 	if err := b.scannerStorage.SetScanPos(height); err != nil {
 		return fmt.Errorf("fail to set scan pos: %w", err)
@@ -394,9 +413,32 @@ func (b *BlockScanner) scanMempool() {
 	}
 }
 
+const mimirHaltScannerXMR = "HaltScannerXMR"
+
+// IsXMRScannerPaused checks the Bifrost-only XMR scanner switch. A missing or
+// unreadable setting fails closed so deploying the monovault cannot implicitly
+// enable economic activity. Zero explicitly enables scanning; any positive
+// value pauses it.
+func IsXMRScannerPaused(logger zerolog.Logger, bridge thorclient.ThorchainBridge) bool {
+	halted, err := bridge.GetMimir(mimirHaltScannerXMR)
+	if err != nil {
+		logger.Error().Err(err).Str("mimir", mimirHaltScannerXMR).Msg("fail to get XMR scanner halt")
+		return true
+	}
+	if halted < 0 {
+		logger.Debug().Str("mimir", mimirHaltScannerXMR).Msg("XMR scanner halt is unset; keeping scanner paused")
+		return true
+	}
+	return halted > 0
+}
+
 // Checks current mimir settings to determine if the current chain is paused
 // either globally or specifically
 func IsChainPaused(cfg config.BifrostBlockScannerConfiguration, logger zerolog.Logger, bridge thorclient.ThorchainBridge) bool {
+	if cfg.ChainID.Equals(common.XMRChain) && IsXMRScannerPaused(logger, bridge) {
+		return true
+	}
+
 	thorHeight, err := bridge.GetBlockHeight()
 	if err != nil {
 		logger.Error().Err(err).Msg("fail to get THORChain block height")
@@ -473,15 +515,54 @@ func (b *BlockScanner) scanBlocks() {
 		case <-b.stopChan:
 			return
 		case amount := <-b.rollbackChan:
-			if err := b.rollback(amount); err != nil {
-				b.logger.Error().Err(err).Msg("fail to rollback block scanner")
+			// Retain the earliest requested height through temporary validation failures.
+			// Forward scans and skip-ahead must wait so they cannot age the replay
+			// beyond the supported window. Until rollback saves the cursor this
+			// request exists only in memory and is lost on process restart.
+			for {
+				err := b.rollback(amount)
+				if err == nil {
+					// Prefetched results belong to the abandoned cursor lineage.
+					clearPrefetch()
+					break
+				}
+				retry := errors.Is(err, btypes.ErrRollbackValidationUnavailable)
+				if retry {
+					b.healthy.Store(false)
+					b.logger.Warn().Err(err).Int64("rollback_height", amount).
+						Msg("rollback validation unavailable; retaining request for retry")
+				} else {
+					b.logger.Error().Err(err).Msg("fail to rollback block scanner")
+				}
 				b.recordError("rollback_failed")
-				time.Sleep(b.cfg.BlockHeightDiscoverBackoff)
-				continue
+				stopped := func() bool {
+					timer := time.NewTimer(b.cfg.BlockHeightDiscoverBackoff)
+					defer timer.Stop()
+					var queued <-chan int64
+					if retry {
+						// Observer sends rollbacks from the loop that submits every
+						// chain's observations. Accept later requests while waiting,
+						// keeping the lower target that covers both.
+						queued = b.rollbackChan
+					}
+					for {
+						select {
+						case <-b.stopChan:
+							return true
+						case next := <-queued:
+							amount = min(amount, next)
+						case <-timer.C:
+							return false
+						}
+					}
+				}()
+				if stopped {
+					return
+				}
+				if !retry {
+					break
+				}
 			}
-			// Results fetched before a rollback belong to the abandoned cursor
-			// lineage and must never be replayed after the cursor moves.
-			clearPrefetch()
 		default:
 			preBlockHeight := atomic.LoadInt64(&b.previousBlock)
 			currentBlock := preBlockHeight + 1
@@ -565,10 +646,12 @@ func (b *BlockScanner) scanBlocks() {
 					continue
 				}
 
-				// don't log an error if its because the block doesn't exist yet
+				// This height is at or below the reported tip, but has not been fully
+				// scanned. Retrying it must not preserve stale signing health.
+				b.healthy.Store(false)
+				// Expected availability retries remain quiet and never skip a height.
 				if !errors.Is(err, btypes.ErrUnavailableBlock) {
 					b.logger.Error().Err(err).Int64("block height", currentBlock).Msg("fail to get RPCBlock")
-					b.healthy.Store(false)
 
 					// An error that never clears would otherwise retry this same height
 					// forever, so give the cursor the same catch-up bound the scanner
@@ -619,6 +702,22 @@ func (b *BlockScanner) scanBlocks() {
 
 			ms := b.cfg.ChainID.ApproximateBlockMilliseconds()
 
+			// consider 3 blocks or the configured lag time behind tip as healthy
+			lagDuration := time.Duration((chainHeight-currentBlock)*ms) * time.Millisecond
+			if chainHeight-currentBlock <= 3 || lagDuration < b.cfg.MaxHealthyLag {
+				b.healthy.Store(true)
+			} else {
+				b.healthy.Store(false)
+			}
+
+			if b.healthy.Load() {
+				if reporter, ok := b.chainScanner.(BlockScannerSolvencyReporter); ok {
+					if solvencyErr := reporter.ReportSolvency(currentBlock, chainHeight); solvencyErr != nil {
+						b.logger.Error().Err(solvencyErr).Int64("height", currentBlock).Msg("fail to report solvency after scan")
+					}
+				}
+			}
+
 			// determine how often we compare THORNode network fee to Bifrost network fee.
 			// General goal is about once per hour, but report immediately if
 			// THORChain has no fee for this chain yet (rate=0).
@@ -641,13 +740,7 @@ func (b *BlockScanner) scanBlocks() {
 					Bool("healthy", b.healthy.Load()).
 					Msg("scan block")
 			}
-			// consider 3 blocks or the configured lag time behind tip as healthy
-			lagDuration := time.Duration((chainHeight-currentBlock)*ms) * time.Millisecond
-			if chainHeight-currentBlock <= 3 || lagDuration < b.cfg.MaxHealthyLag {
-				b.healthy.Store(true)
-			} else {
-				b.healthy.Store(false)
-			}
+
 			b.logger.Debug().Msgf("the gap is %d , healthy: %+v", chainHeight-currentBlock, b.healthy.Load())
 
 			b.metrics.GetCounter(metrics.TotalBlockScanned).Inc()

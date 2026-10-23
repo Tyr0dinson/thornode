@@ -35,8 +35,8 @@ func (m *EventMgr) EmitEvent(ctx cosmos.Context, evt EmitEventItem) error {
 		// bounded. Two limits are deliberate, and this counts emissions rather
 		// than commits - do not read it as a census of on-chain events:
 		//   - Not commit-aware. It fires when the event enters ctx, which may be a
-		//     CacheContext that is later discarded (handler_wasm_exec.go and
-		//     handler_switch.go both emit before a fallible step and skip commit()
+		//     CacheContext that is later discarded (handler_switch.go emits
+		//     before a fallible step and skips commit()
 		//     on failure). A process-local counter cannot roll back with the store.
 		//   - Not complete. The sites that call ctx.EventManager().EmitEvent
 		//     directly bypass EventMgr entirely and are invisible here: new_node

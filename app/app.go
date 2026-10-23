@@ -25,6 +25,7 @@ import (
 	wasmvmtypes "github.com/CosmWasm/wasmvm/v2/types"
 	abci "github.com/cometbft/cometbft/abci/types"
 	tmproto "github.com/cometbft/cometbft/proto/tendermint/types"
+	cmtlocal "github.com/cometbft/cometbft/rpc/client/local"
 	dbm "github.com/cosmos/cosmos-db"
 	"github.com/cosmos/cosmos-sdk/baseapp"
 	"github.com/cosmos/cosmos-sdk/client"
@@ -152,13 +153,12 @@ type THORChainApp struct {
 	tkeys map[string]*storetypes.TransientStoreKey
 
 	// keepers
-	AccountKeeper authkeeper.AccountKeeper
-	BankKeeper    bankkeeper.BaseKeeper
-	StakingKeeper *stakingkeeper.Keeper
-	MintKeeper    mintkeeper.Keeper
-	UpgradeKeeper *upgradekeeper.Keeper
-	// trunk-ignore(golangci-lint/staticcheck): deprecated TODO: SDK 0.53 cleanup
-	ParamsKeeper          paramskeeper.Keeper
+	AccountKeeper         authkeeper.AccountKeeper
+	BankKeeper            bankkeeper.BaseKeeper
+	StakingKeeper         *stakingkeeper.Keeper
+	MintKeeper            mintkeeper.Keeper
+	UpgradeKeeper         *upgradekeeper.Keeper
+	ParamsKeeper          paramskeeper.Keeper //nolint:staticcheck // deprecated TODO: SDK 0.53 cleanup
 	ConsensusParamsKeeper consensusparamkeeper.Keeper
 
 	ThorchainKeeper  thorchainkeeper.Keeper
@@ -366,7 +366,7 @@ func NewChainApp(
 	)
 
 	app.ThorchainKeeper = thorchainkeeperv1.NewKeeper(
-		app.appCodec, runtime.NewKVStoreService(keys[thorchaintypes.StoreKey]), app.BankKeeper, app.AccountKeeper, app.UpgradeKeeper,
+		app.appCodec, keys[thorchaintypes.StoreKey], app.BankKeeper, app.AccountKeeper, app.UpgradeKeeper,
 	)
 
 	wasmDir := filepath.Join(homePath, "data") // "wasm" subdirectory created here
@@ -443,7 +443,7 @@ func NewChainApp(
 		app.restQueryViaGRPC = cast.ToBool(v)
 	}
 
-	mgrs := thorchain.NewManagers(app.ThorchainKeeper, app.appCodec, runtime.NewKVStoreService(keys[thorchaintypes.StoreKey]), app.BankKeeper, app.AccountKeeper, app.UpgradeKeeper, app.WasmKeeper)
+	mgrs := thorchain.NewManagers(app.ThorchainKeeper, app.appCodec, keys[thorchaintypes.StoreKey], app.BankKeeper, app.AccountKeeper, app.UpgradeKeeper, app.WasmKeeper)
 	app.msgServiceRouter.AddCustomRoute("cosmos.bank.v1beta1.Msg", thorchain.NewBankSendHandler(thorchain.NewSendHandler(mgrs)))
 
 	thorchainModule := thorchain.NewAppModule(mgrs, telemetryEnabled, testApp)
@@ -459,8 +459,9 @@ func NewChainApp(
 		defaultProposalHandler.ProcessProposalHandler(),
 	)
 
-	bApp.SetPrepareProposal(eBifrostProposalHandler.PrepareProposal)
+	bApp.SetPrepareProposal(wrapPrepareProposal(eBifrostProposalHandler.PrepareProposal))
 	bApp.SetProcessProposal(eBifrostProposalHandler.ProcessProposal)
+	setPrepareCheckStater(bApp)
 
 	// NOTE: Any module instantiated in the module manager that is later modified
 	// must be passed by reference here.
@@ -468,8 +469,7 @@ func NewChainApp(
 	bankModule := bank.NewAppModule(app.appCodec, app.BankKeeper, app.AccountKeeper, app.GetSubspace(banktypes.ModuleName))
 	consensusModule := consensus.NewAppModule(app.appCodec, app.ConsensusParamsKeeper)
 	genutilModule := genutil.NewAppModule(app.AccountKeeper, app.StakingKeeper, app, txConfig)
-	// trunk-ignore(golangci-lint/staticcheck): deprecated TODO: SDK 0.53 cleanup
-	paramsModule := params.NewAppModule(app.ParamsKeeper)
+	paramsModule := params.NewAppModule(app.ParamsKeeper) //nolint:staticcheck // deprecated TODO: SDK 0.53 cleanup
 	upgradeModule := upgrade.NewAppModule(app.UpgradeKeeper, app.AccountKeeper.AddressCodec())
 	wasmModule := wasm.NewAppModule(
 		app.appCodec,
@@ -917,6 +917,13 @@ func (app *THORChainApp) RegisterTxService(clientCtx client.Context) {
 
 // RegisterTendermintService implements the Application.RegisterTendermintService method.
 func (app *THORChainApp) RegisterTendermintService(clientCtx client.Context) {
+	// With CometBFT in-process the SDK hands us a client that calls the node
+	// directly; serve /thorchain/block through it instead of a JSON-RPC round
+	// trip to the node's own RPC server.
+	if lc, ok := clientCtx.Client.(*cmtlocal.Local); ok {
+		thorchain.SetLocalTendermintClient(lc)
+	}
+
 	cmtApp := server.NewCometABCIWrapper(app)
 	cmtservice.RegisterTendermintService(
 		clientCtx,
@@ -982,10 +989,8 @@ func (app *THORChainApp) SetInterfaceRegistry(registry types.InterfaceRegistry) 
 	app.BaseApp.SetInterfaceRegistry(registry)
 }
 
-// trunk-ignore(golangci-lint/staticcheck): deprecated TODO: SDK 0.53 cleanup
-func initParamsKeeper(appCodec codec.BinaryCodec, legacyAmino *codec.LegacyAmino, key, tkey storetypes.StoreKey) paramskeeper.Keeper {
-	// trunk-ignore(golangci-lint/staticcheck): deprecated TODO: SDK 0.53 cleanup
-	paramsKeeper := paramskeeper.NewKeeper(appCodec, legacyAmino, key, tkey)
+func initParamsKeeper(appCodec codec.BinaryCodec, legacyAmino *codec.LegacyAmino, key, tkey storetypes.StoreKey) paramskeeper.Keeper { //nolint:staticcheck // deprecated TODO: SDK 0.53 cleanup
+	paramsKeeper := paramskeeper.NewKeeper(appCodec, legacyAmino, key, tkey) //nolint:staticcheck // deprecated TODO: SDK 0.53 cleanup
 
 	// required for testing finalized block migration
 	paramsKeeper.Subspace(baseapp.Paramspace)

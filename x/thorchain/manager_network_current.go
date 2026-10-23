@@ -38,8 +38,6 @@ type overSolvencyEventGroup struct {
 	assets []types.AssetOverSolvency
 }
 
-const xmrMonovaultGenesisBootstrapDelayBlocks int64 = 128
-
 func xmrMonovaultGenesisKeygenHeight(currentHeight int64) int64 {
 	if currentHeight < 1 {
 		currentHeight = 1
@@ -570,7 +568,10 @@ func (vm *NetworkMgr) migrateFunds(ctx cosmos.Context, mgr Manager) error {
 	}
 
 	vaultsAvailableCoins := map[common.PubKey]common.Coins{}
-	vaultsWithPendingMigrate := map[common.PubKey]bool{}
+	// Chains with a migrate still pending from each RetiringVault. Only those
+	// chains wait for the pending migrate; the vault's other chains keep
+	// migrating on schedule.
+	vaultsPendingMigrateChains := map[common.PubKey]common.Chains{}
 	for _, vault := range retiring {
 		// Copy the RetiringVault Coins for deduction.
 		vaultsAvailableCoins[vault.PubKey] = common.NewCoins(vault.Coins...)
@@ -608,7 +609,10 @@ func (vm *NetworkMgr) migrateFunds(ctx cosmos.Context, mgr Manager) error {
 				continue
 			}
 			if memo, memoErr := ParseMemo(mgr.GetVersion(), toi.Memo); memoErr == nil && memo.IsType(TxMigrate) {
-				vaultsWithPendingMigrate[toi.VaultPubKey] = true
+				chain := toi.Coin.Asset.GetChain()
+				if pendingChains := vaultsPendingMigrateChains[toi.VaultPubKey]; !pendingChains.Has(chain) {
+					vaultsPendingMigrateChains[toi.VaultPubKey] = append(pendingChains, chain)
+				}
 			}
 			// Deduct from the available Coins all pending outbounds and their MaxGas.
 			for _, coin := range append(common.Coins{toi.Coin}, toi.MaxGas...) {
@@ -640,7 +644,9 @@ func (vm *NetworkMgr) migrateFunds(ctx cosmos.Context, mgr Manager) error {
 	stalePendingHeights := make([]int64, 0)
 	for vaultIdx := range retiring {
 		vault := retiring[vaultIdx]
-		for _, height := range vault.PendingTxBlockHeights {
+		// Expiry removes entries in place. Iterate a snapshot so those removals
+		// cannot shift a still-unprocessed height past the range cursor.
+		for _, height := range append([]int64(nil), vault.PendingTxBlockHeights...) {
 			if height < 1 || height >= startHeight {
 				continue
 			}
@@ -752,10 +758,7 @@ func (vm *NetworkMgr) migrateFunds(ctx cosmos.Context, mgr Manager) error {
 			ctx.Logger().Error("RetiringVault Coins not found in map", "vault_pubkey", vault.PubKey)
 			continue
 		}
-		if vaultsWithPendingMigrate[vault.PubKey] {
-			ctx.Logger().Info("Skipping migration scheduling while migrate transactions are still pending", "vault_pubkey", vault.PubKey)
-			continue
-		}
+		pendingMigrateChains := vaultsPendingMigrateChains[vault.PubKey]
 
 		// move partial funds every 30 minutes
 		if (ctx.BlockHeight()-vault.StatusSince)%migrateInterval == 0 {
@@ -775,6 +778,13 @@ func (vm *NetworkMgr) migrateFunds(ctx cosmos.Context, mgr Manager) error {
 				}
 
 				chain := coin.Asset.GetChain()
+				// Pause this chain until its previously scheduled migrates are observed
+				// or expired. This preserves its gas and scheduling behavior while
+				// allowing other chains to progress using their unreserved balances.
+				if pendingMigrateChains.Has(chain) {
+					ctx.Logger().Info("Skipping migration scheduling while a migrate transaction is still pending on this chain", "vault_pubkey", vault.PubKey, "chain", chain)
+					continue
+				}
 				targetVaults := filterVaultsByChain(active, chain)
 				if len(targetVaults) == 0 && !chain.Equals(common.XMRChain) {
 					// Some churn/bootstrap paths still materialize regular Asgards without a
@@ -982,8 +992,8 @@ func (vm *NetworkMgr) migrateFunds(ctx cosmos.Context, mgr Manager) error {
 					// Migration scheduling having been successful, add a zero Amount of this Asset to the target ActiveVault
 					// (which will not be set)
 					// to prioritise target vaults without it for this block's migrations from other RetiringVaults.
-					// There is no need to initially add outbound queue migration Assets,
-					// since new migrations are skipped when there is a pending outbound (including migrations) from any RetiringVault.
+					// These markers cover only migrations scheduled in this call; earlier queued
+					// migrations from other RetiringVaults are not represented here.
 					active[targetVaultIndex].AddFunds(common.NewCoins(common.NewCoin(coin.Asset, cosmos.ZeroUint())))
 
 					vault.AppendPendingTxBlockHeights(ctx.BlockHeight(), mgr.GetConstants())
@@ -1138,6 +1148,9 @@ func (vm *NetworkMgr) POLCycle(ctx cosmos.Context, mgr Manager) error {
 		return fmt.Errorf("no POL pools")
 	}
 
+	// polPoolValue only changes when a POL add commits or POL is removed;
+	// most adds fail validation (e.g. paused deposits) and leave it as is
+	polValue := &polValueMemo{}
 	for idx, pool := range pools {
 		val := mimirVals[idx]
 
@@ -1153,6 +1166,7 @@ func (vm *NetworkMgr) POLCycle(ctx cosmos.Context, mgr Manager) error {
 			if err := vm.removePOLLiquidity(ctx, pool, polAddress, asgardAddress, signer, maxMovement, synthPerPoolDepth, cosmos.NewUint(10_000), mgr); err != nil {
 				ctx.Logger().Error("fail to manage POL in pool", "pool", pool.Asset.String(), "error", err)
 			}
+			polValue.reset()
 			continue
 		}
 
@@ -1162,7 +1176,7 @@ func (vm *NetworkMgr) POLCycle(ctx cosmos.Context, mgr Manager) error {
 				ctx.Logger().Info("maximum rune deployed from POL")
 				continue
 			}
-			if err := vm.addPOLLiquidity(ctx, pool, polAddress, asgardAddress, signer, maxMovement, synthPerPoolDepth, loopTarget, mgr); err != nil {
+			if err := vm.addPOLLiquidity(ctx, pool, polAddress, asgardAddress, signer, maxMovement, synthPerPoolDepth, loopTarget, mgr, polValue); err != nil {
 				ctx.Logger().Error("fail to manage POL in pool", "pool", pool.Asset.String(), "error", err)
 			}
 			continue
@@ -1173,6 +1187,7 @@ func (vm *NetworkMgr) POLCycle(ctx cosmos.Context, mgr Manager) error {
 			if err := vm.removePOLLiquidity(ctx, pool, polAddress, asgardAddress, signer, maxMovement, synthPerPoolDepth, loopTarget, mgr); err != nil {
 				ctx.Logger().Error("fail to manage POL in pool", "pool", pool.Asset.String(), "error", err)
 			}
+			polValue.reset()
 		}
 	}
 
@@ -1384,6 +1399,7 @@ func (vm *NetworkMgr) addPOLLiquidity(
 	signer cosmos.AccAddress,
 	maxMovement, synthPerPoolDepth, targetSynthPerPoolDepth cosmos.Uint,
 	mgr Manager,
+	polValue *polValueMemo,
 ) error {
 	handler := NewInternalHandler(mgr)
 
@@ -1411,7 +1427,7 @@ func (vm *NetworkMgr) addPOLLiquidity(
 	// compute the new provider units
 	if !runePool.TotalUnits().IsZero() {
 		var rpValue cosmos.Uint
-		rpValue, err = runePoolValue(ctx, mgr)
+		rpValue, err = polValue.runePoolValue(ctx, mgr)
 		if err != nil {
 			return fmt.Errorf("fail to get rune pool value: %s", err)
 		}
@@ -1438,6 +1454,7 @@ func (vm *NetworkMgr) addPOLLiquidity(
 		}
 		return handlerErr
 	}
+	polValue.reset()
 
 	// deposit was successful, update the rune pool units accordingly
 	runePool.ReserveUnits = runePool.ReserveUnits.Add(depositUnits)

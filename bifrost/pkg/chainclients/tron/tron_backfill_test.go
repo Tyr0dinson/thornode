@@ -500,11 +500,25 @@ func (s *BackfillSuite) TestShouldReportSolvencyAdditional(c *C) {
 
 type mockTronSolvencyBridge struct {
 	thorclient.ThorchainBridge
-	asgards stypes.Vaults
+	// solvencyHalted makes the mock report the chain as solvency-halted on-chain,
+	// the only state in which ReportSolvency sends an all-solvent report.
+	solvencyHalted bool
+	asgards        stypes.Vaults
 }
 
 func (m *mockTronSolvencyBridge) GetAsgards() (stypes.Vaults, error) {
 	return m.asgards, nil
+}
+
+func (m *mockTronSolvencyBridge) GetMimir(key string) (int64, error) {
+	if m.solvencyHalted && key == "SolvencyHaltTRONChain" {
+		return 1, nil
+	}
+	return 0, nil
+}
+
+func (m *mockTronSolvencyBridge) GetBlockHeight() (int64, error) {
+	return 100, nil
 }
 
 func (s *BackfillSuite) TestReportSolvencyAllSolventIgnoresUnrelatedVaults(c *C) {
@@ -528,7 +542,8 @@ func (s *BackfillSuite) TestReportSolvencyAllSolventIgnoresUnrelatedVaults(c *C)
 		Coins:  common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(1_000_000))),
 	}
 	bridge := &mockTronSolvencyBridge{
-		asgards: stypes.Vaults{tronVault, unrelatedBTCVault},
+		solvencyHalted: true, // all-solvent report is only sent while the chain is solvency-halted on-chain
+		asgards:        stypes.Vaults{tronVault, unrelatedBTCVault},
 	}
 
 	storage, err := blockscanner.NewBlockScannerStorage(filepath.Join(s.tmpdir, "tron-solvency"), config.LevelDBOptions{})
@@ -835,6 +850,12 @@ func (s *ScannerBackfillSuite) TestProcessTxsUnknownContractType(c *C) {
 }
 
 func (s *ScannerBackfillSuite) TestProcessTxsTransferContract(c *C) {
+	vaultAddress, err := api.ConvertAddress("41b8c702bc7c186ad437b798dae8c61727d3c69a85")
+	c.Assert(err, IsNil)
+	previous := s.scanner.pubkeyMgr
+	s.scanner.pubkeyMgr = receiptRetryVaultValidator{address: vaultAddress}
+	defer func() { s.scanner.pubkeyMgr = previous }()
+
 	memoHex := hex.EncodeToString([]byte("ADD:TRON.TRX"))
 	block := api.Block{
 		Header: struct {
@@ -846,7 +867,7 @@ func (s *ScannerBackfillSuite) TestProcessTxsTransferContract(c *C) {
 			RawData: struct {
 				Number    int64 `json:"number"`
 				Timestamp int64 `json:"timestamp"`
-			}{Number: 100, Timestamp: 1000},
+			}{Number: 69351239, Timestamp: 1000},
 		},
 		Transactions: []api.Transaction{{
 			TxId: "e1cd4454d71d8973e89155bc2c2a91aa56fd470c8ce64547ce8c69c789c21f0c",
@@ -1235,6 +1256,12 @@ func (s *ScannerBackfillSuite) TestFetchTxsFarBehindTip(c *C) {
 // ---- ProcessTxs with TRC20 whitelisted transfer ----
 
 func (s *ScannerBackfillSuite) TestProcessTxsTriggerSmartContractWhitelisted(c *C) {
+	vaultAddress, err := api.ConvertAddress("41b8c702bc7c186ad437b798dae8c61727d3c69a85")
+	c.Assert(err, IsNil)
+	previous := s.scanner.pubkeyMgr
+	s.scanner.pubkeyMgr = receiptRetryVaultValidator{address: vaultAddress}
+	defer func() { s.scanner.pubkeyMgr = previous }()
+
 	// Build transfer data using ABI encoding
 	tABI, err := abi.JSON(bytes.NewReader(trc20ContractABI))
 	c.Assert(err, IsNil)
@@ -1272,11 +1299,11 @@ func (s *ScannerBackfillSuite) TestProcessTxsTriggerSmartContractWhitelisted(c *
 			RawData: struct {
 				Number    int64 `json:"number"`
 				Timestamp int64 `json:"timestamp"`
-			}{Number: 100, Timestamp: 1000},
+			}{Number: 72822854, Timestamp: 1000},
 		},
 		Transactions: []api.Transaction{{
 			// Use a txId that's in the mock server for GetTransactionInfo
-			TxId: "ec7c95841e6e7f77a7e63cd6c97eb4be54e48f04b3a2bb4993b5b84e82f35ec7",
+			TxId: "ec7c95841b6a3fc4ce0adfaa3fd77dd74dbe004895ad0fd02bf63eb3ca5865d5",
 			RawData: api.RawData{
 				Data: memoHex,
 				Contract: []api.Contract{
@@ -1710,7 +1737,7 @@ func (s *ScannerBackfillSuite) TestProcessTxsBadDestAddress(c *C) {
 			RawData: struct {
 				Number    int64 `json:"number"`
 				Timestamp int64 `json:"timestamp"`
-			}{Number: 100, Timestamp: 1000},
+			}{Number: 69351239, Timestamp: 1000},
 		},
 		Transactions: []api.Transaction{{
 			TxId: "e1cd4454d71d8973e89155bc2c2a91aa56fd470c8ce64547ce8c69c789c21f0c",
@@ -1761,7 +1788,7 @@ func (s *ScannerBackfillSuite) TestProcessTxsBadSenderAddress(c *C) {
 			RawData: struct {
 				Number    int64 `json:"number"`
 				Timestamp int64 `json:"timestamp"`
-			}{Number: 100, Timestamp: 1000},
+			}{Number: 69351239, Timestamp: 1000},
 		},
 		Transactions: []api.Transaction{{
 			TxId: "e1cd4454d71d8973e89155bc2c2a91aa56fd470c8ce64547ce8c69c789c21f0c",

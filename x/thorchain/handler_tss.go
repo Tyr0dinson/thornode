@@ -161,6 +161,10 @@ func (h TssHandler) validate(ctx cosmos.Context, msg *MsgTssPool) error {
 		return fmt.Errorf("fail to get keygen block from data store: %w", err)
 	}
 	keygenValidityBlocks := keygenResultValidityBlocksForBlock(ctx, h.mgr.Keeper(), msg.KeygenType, keygenBlock)
+	// The window ends one block before the retry tick, so a result is rejected
+	// exactly at the block the churn retry schedules a replacement keygen. Matches
+	// ValidatorMgr.hasPendingKeygen; accepting a stale result there would let it
+	// finalize a vault the retry is replacing (a double-trigger).
 	if msg.Height < ctx.BlockHeight()-keygenValidityBlocks {
 		return cosmos.ErrUnknownRequest("invalid keygen block")
 	}
@@ -215,7 +219,14 @@ func keygenResultValidityBlocks(ctx cosmos.Context, k keeper.Keeper, keygenType 
 	if keygenType == XMRMonovaultKeygen {
 		blocks = max(blocks, durationToBlocks(6*time.Minute))
 	}
-	return blocks
+	// The window ends one block before the retry tick. A keygen scheduled at H is
+	// valid for ages 0..blocks-1 and expires at age `blocks`, the same age the
+	// churn retry fires (ticks run every ChurnRetryInterval). Returning the full
+	// interval instead kept the keygen valid AT the first tick, so hasPendingKeygen
+	// suppressed that retry and the effective interval doubled (the off-by-one).
+	// Subtracting one lets the first retry fire on schedule while a stale result is
+	// already rejected on that block, so the retry cannot double-trigger a live keygen.
+	return blocks - 1
 }
 
 func keygenResultValidityBlocksForBlock(ctx cosmos.Context, k keeper.Keeper, keygenType types.KeygenType, keygenBlock KeygenBlock) int64 {
@@ -377,6 +388,20 @@ func (h TssHandler) handle(ctx cosmos.Context, msg *MsgTssPool) error {
 
 	}
 	h.mgr.Keeper().SetTssVoter(ctx, voter)
+
+	// Record this reporter's declared chain set. voter.Sign concatenates every
+	// member's chains, so per-member attribution only exists here, in the message.
+	// NodeAccountPreflightCheck reads it to keep a node that reported without a chain
+	// the active vaults serve out of the next Ready set, instead of the churn retrying
+	// the same ceremony with the same member every ChurnRetryInterval. XMR monovault
+	// reports carry a fixed chain set of their own and say nothing about the node's
+	// asgard chain config, so they are not recorded.
+	// An empty chain set is never what bifrost reports (keygenChainsForType always
+	// carries at least THORChain), so treat it as a malformed report and keep the
+	// node's previous record rather than recording a set that omits everything.
+	if declaredChains := msg.GetChains(); msg.KeygenType == AsgardKeygen && len(declaredChains) > 0 {
+		h.mgr.Keeper().SetLastKeygenChains(ctx, msg.Signer, declaredChains, msg.Height)
+	}
 
 	if !voter.HasConsensus() {
 		// Slash until 2/3rds consensus.

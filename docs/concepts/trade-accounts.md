@@ -2,7 +2,7 @@
 
 More capital-efficient trading and arbitration than Synthetics.
 
-Trade Accounts provide professional traders (mostly arbitrage bots) a method to execute instant trades on THORChain without involving Layer1 transactions on external blockchains. Trade Accounts create a new type of asset, backed by the network security rather than the liquidity in a pool ([Synthetics](https://docs.thorchain.org/thorchain-finance/synthetic-asset-model)), or by the RUNE asset (Derived Assets).
+Trade Accounts provide professional traders (mostly arbitrage bots) a method to execute instant trades on THORChain without involving Layer1 transactions on external blockchains. Trade Accounts create a new type of asset, backed by the network security rather than the liquidity in a pool ([Synthetics](https://docs.thorchain.org/technical-documentation/thorchain-finance/synthetic-asset-model)), or by the RUNE asset (Derived Assets).
 
 Arbitrage bots can arbitrage the pools faster and with more capital efficiency than Synthetics can. This is because Synthetics adds or removes from one side of the pool depth but not the other, causing the pool to move only half the distance in terms of price. For example, a $100 RUNE --> BTC swap requires $200 of Synthetic BTC to be burned to correct the price. Trade Accounts have twice the efficiency, so a $100 RUNE --> BTC swap would require $100 from Trade Accounts to correct the price. This allows arbitrageurs to quickly restore big deviations using less capital.
 
@@ -19,7 +19,7 @@ RUNE and Synthetics cannot be added to the Trade Account.
 
 As assets within the Trade Account are not held in the pools, the combined pool and trade account value (combined Layer1 asset value) could exceed the total bonded. To ensure this does not occur:
 
-1. The calculation of the [Incentive Pendulum](https://docs.thorchain.org/how-it-works/incentive-pendulum) now operates based on Layer1 assets versus bonds, rather than solely on pool depths versus bonds. This ensures there is always "space" for arbitrageurs to exist in the network and be able to arbitrage pools effectively (versus synths hitting caps).
+1. The calculation of the [Incentive Pendulum](./incentive-pendulum.md) now operates based on Layer1 assets versus bonds, rather than solely on pool depths versus bonds. This ensures there is always "space" for arbitrageurs to exist in the network and be able to arbitrage pools effectively (versus synths hitting caps).
 
 ## Using Trade Accounts
 

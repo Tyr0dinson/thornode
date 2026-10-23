@@ -795,6 +795,131 @@ func (s *QuerierSuite) TestQueryQueue(c *C) {
 	c.Assert(q.ScheduledOutboundValue, Equals, queryQueueResp.ScheduledOutboundValue)
 }
 
+func (s *QuerierSuite) TestQueryPendingOutboundKeepsExtendedSigningPeriodItems(c *C) {
+	period := s.mgr.GetConstants().GetInt64Value(constants.SigningTransactionPeriod)
+	s.checkQueryOutboundSigningPeriods(c, period)
+}
+
+func (s *QuerierSuite) TestQueryQueueCountsMemolessOutbounds(c *C) {
+	ctx := s.ctx.WithBlockHeight(1500)
+	qs := queryServer{mgr: s.mgr}
+	zero := cosmos.ZeroUint()
+	inHash := GetRandomTxHash()
+	for _, memos := range []struct {
+		memo         string
+		originalMemo string
+	}{
+		{"", NewOutboundMemo(inHash).String()},
+		{"", NewRefundMemo(inHash).String()},
+		{NewOutboundMemo(inHash).String(), ""},
+		{NewMigrateMemo(ctx.BlockHeight()).String(), ""},
+	} {
+		c.Assert(s.k.AppendTxOut(ctx, ctx.BlockHeight(), TxOutItem{
+			Chain:                 common.BTCChain,
+			ToAddress:             GetRandomBTCAddress(),
+			VaultPubKey:           GetRandomPubKey(),
+			Coin:                  common.NewCoin(common.BTCAsset, cosmos.NewUint(100)),
+			Memo:                  memos.memo,
+			OriginalMemo:          memos.originalMemo,
+			InHash:                inHash,
+			CloutSpent:            &zero,
+			AggregatorTargetLimit: &zero,
+		}), IsNil)
+	}
+
+	pending, err := qs.queryPendingOutbound(ctx, &types.QueryPendingOutboundRequest{})
+	c.Assert(err, IsNil)
+	c.Assert(pending.TxOutItems, HasLen, 4)
+
+	queue, err := qs.queryQueue(ctx, &types.QueryQueueRequest{})
+	c.Assert(err, IsNil)
+	c.Assert(queue.Outbound, Equals, int64(3))
+	c.Assert(queue.Internal, Equals, int64(1))
+}
+
+func (s *QuerierSuite) TestQueryOutboundHonorsLongerMimirSigningPeriod(c *C) {
+	period := 2 * s.mgr.GetConstants().GetInt64Value(constants.SigningTransactionPeriod)
+	s.k.SetMimir(s.ctx, constants.SigningTransactionPeriod.String(), period)
+	s.checkQueryOutboundSigningPeriods(c, period)
+}
+
+func (s *QuerierSuite) TestQueryOutboundHonorsShorterMimirSigningPeriod(c *C) {
+	period := s.mgr.GetConstants().GetInt64Value(constants.SigningTransactionPeriod) / 2
+	s.k.SetMimir(s.ctx, constants.SigningTransactionPeriod.String(), period)
+	s.checkQueryOutboundSigningPeriods(c, period)
+}
+
+func (s *QuerierSuite) TestQueryOutboundFallsBackAfterSigningPeriodMimirRemoved(c *C) {
+	period := s.mgr.GetConstants().GetInt64Value(constants.SigningTransactionPeriod)
+	s.k.SetMimir(s.ctx, constants.SigningTransactionPeriod.String(), 2*period)
+	s.k.SetMimir(s.ctx, constants.SigningTransactionPeriod.String(), -1)
+	s.checkQueryOutboundSigningPeriods(c, period)
+}
+
+func (s *QuerierSuite) checkQueryOutboundSigningPeriods(c *C, period int64) {
+	ctx := s.ctx.WithBlockHeight(5 * period)
+	qs := queryServer{mgr: s.mgr}
+	zero := cosmos.ZeroUint()
+	usdc, err := common.NewAsset("ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48")
+	c.Assert(err, IsNil)
+
+	classes := []struct {
+		name       string
+		chain      common.Chain
+		asset      common.Asset
+		aggregator string
+		window     int64
+	}{
+		{name: "BTC", chain: common.BTCChain, asset: common.BTCAsset, window: period},
+		{name: "EVM gas asset", chain: common.ETHChain, asset: common.ETHAsset, window: period},
+		{name: "XMR", chain: common.XMRChain, asset: common.XMRAsset, window: 3 * period},
+		{name: "EVM token", chain: common.ETHChain, asset: usdc, window: 3 * period},
+		{name: "EVM aggregator", chain: common.ETHChain, asset: common.ETHAsset, aggregator: "0xaggregator", window: 3 * period},
+	}
+
+	expected := make(map[string]bool)
+	for _, class := range classes {
+		appendItem := func(height int64) common.TxID {
+			inHash := GetRandomTxHash()
+			c.Assert(s.k.AppendTxOut(ctx, height, TxOutItem{
+				Chain:                 class.chain,
+				ToAddress:             GetRandomBTCAddress(),
+				VaultPubKey:           GetRandomPubKey(),
+				Coin:                  common.NewCoin(class.asset, cosmos.NewUint(100)),
+				Memo:                  NewOutboundMemo(inHash).String(),
+				InHash:                inHash,
+				Aggregator:            class.aggregator,
+				CloutSpent:            &zero,
+				AggregatorTargetLimit: &zero,
+			}), IsNil, Commentf("class %s", class.name))
+			return inHash
+		}
+
+		// Each class stays visible at its expiry boundary and disappears one block later.
+		edge := appendItem(ctx.BlockHeight() - class.window)
+		expected[edge.String()] = true
+		appendItem(ctx.BlockHeight() - class.window - 1)
+		if class.window > period {
+			// Extended outbounds must also remain visible after the standard window.
+			live := appendItem(ctx.BlockHeight() - 2*period)
+			expected[live.String()] = true
+		}
+	}
+
+	resp, err := qs.queryPendingOutbound(ctx, &types.QueryPendingOutboundRequest{})
+	c.Assert(err, IsNil)
+	got := make(map[string]bool)
+	for _, item := range resp.TxOutItems {
+		got[item.InHash] = true
+	}
+	c.Check(got, DeepEquals, expected)
+	c.Check(resp.TxOutItems, HasLen, len(expected))
+
+	queue, err := qs.queryQueue(ctx, &types.QueryQueueRequest{})
+	c.Assert(err, IsNil)
+	c.Check(queue.Outbound, Equals, int64(len(expected)))
+}
+
 func (s *QuerierSuite) TestQueryHeights(c *C) {
 	queryChainsLastBlockResp, err := s.queryServer.ChainsLastBlock(s.ctx, &types.QueryChainsLastBlockRequest{
 		Chain: strconv.FormatInt(s.ctx.BlockHeight(), 10),
@@ -2428,4 +2553,75 @@ func (s *QuerierSuite) TestQueryTCYProtocolOwned(c *C) {
 	result, err = s.queryServer.TCYProtocolOwned(s.ctx, &types.QueryTCYProtocolOwnedRequest{})
 	c.Assert(err, IsNil)
 	c.Assert(result.Amount, Equals, "0")
+}
+
+func (s *QuerierSuite) TestQueryPoolLuviFields(c *C) {
+	type want struct {
+		luvi, equity, perUnit, bps string
+		overhang                   bool
+	}
+	// A = 1e12, R = 4e12 -> sqrt(A*R) = 2e12 exactly; L = 1e12
+	cases := []struct {
+		name  string
+		asset uint64
+		synth uint64
+		want  want
+	}{
+		{"no synths", 1_000_000_000_000, 0, want{"2.000000000000000000", "2000000000000.000000000000000000", "2.000000000000000000", "0", false}},
+		// S = A/2: Q = 2e12*(2e12-5e11)/2e12 = 1.5e12; SU = floor(1e12*5e11/1.5e12)
+		{"synths", 1_000_000_000_000, 500_000_000_000, want{"1.500000000000375000", "1500000000000.000000000000000000", "1.500000000000000000", "2500", false}},
+		// S = 2A exactly: equity 0, synth units clamped
+		{"boundary", 1_000_000_000_000, 2_000_000_000_000, want{"0.000000000000999999", "0.000000000000000000", "0.000000000000000000", "10000", true}},
+		// S = 3A: equity negative, all LP units redeem ~1/(1+S) of the pool
+		{"overhang", 1_000_000_000_000, 3_000_000_000_000, want{"0.000000000000666666", "-1000000000000.000000000000000000", "-1.000000000000000000", "15000", true}},
+		// asset depth exhausted (e.g. by a slash) with synths outstanding: in overhang
+		{"depleted", 0, 1_000_000_000, want{"0.000000000000000000", "0.000000000000000000", "0.000000000000000000", "0", true}},
+		// no asset depth and no synths: empty, not in overhang
+		{"empty", 0, 0, want{"0.000000000000000000", "0.000000000000000000", "0.000000000000000000", "0", false}},
+	}
+	for _, tc := range cases {
+		ctx, mgr := setupManagerForTest(c)
+		txConfig, err := params.TxConfig(s.mgr.cdc, nil)
+		c.Assert(err, IsNil)
+		queryServer := NewQueryServerImpl(mgr, txConfig, s.kb)
+		asgard := NewVault(ctx.BlockHeight(), ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.ETHChain}.Strings(), []ChainContract{})
+		c.Assert(mgr.Keeper().SetVault(ctx, asgard), IsNil)
+
+		pool := NewPool()
+		pool.Asset = common.ETHAsset
+		pool.BalanceAsset = cosmos.NewUint(tc.asset)
+		pool.BalanceRune = cosmos.NewUint(4_000_000_000_000)
+		pool.LPUnits = cosmos.NewUint(1_000_000_000_000)
+		pool.Status = PoolAvailable
+		c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+		if tc.synth > 0 {
+			coin := common.NewCoin(common.ETHAsset.GetSyntheticAsset(), cosmos.NewUint(tc.synth))
+			c.Assert(mgr.Keeper().MintToModule(ctx, ModuleName, coin), IsNil)
+		}
+
+		one, err := queryServer.Pool(ctx, &types.QueryPoolRequest{Asset: "ETH.ETH"})
+		c.Assert(err, IsNil)
+		all, err := queryServer.Pools(ctx, &types.QueryPoolsRequest{})
+		c.Assert(err, IsNil)
+		c.Assert(all.Pools, HasLen, 1)
+
+		for _, p := range []*types.QueryPoolResponse{one, all.Pools[0]} {
+			cm := Commentf("%s: %+v", tc.name, p)
+			c.Check(p.Luvi, Equals, tc.want.luvi, cm)
+			c.Check(p.LpEquity, Equals, tc.want.equity, cm)
+			c.Check(p.LpEquityPerUnit, Equals, tc.want.perUnit, cm)
+			c.Check(p.SynthPerPoolDepthBps, Equals, tc.want.bps, cm)
+			c.Check(p.SynthOverhang, Equals, tc.want.overhang, cm)
+		}
+
+		// the fields are always present in the JSON, including a false overhang
+		raw, err := one.MarshalJSONPB(nil)
+		c.Assert(err, IsNil)
+		var m map[string]any
+		c.Assert(json.Unmarshal(raw, &m), IsNil)
+		for _, k := range []string{"luvi", "lp_equity", "lp_equity_per_unit", "synth_per_pool_depth_bps", "synth_overhang"} {
+			_, ok := m[k]
+			c.Check(ok, Equals, true, Commentf("%s: missing %s in %s", tc.name, k, raw))
+		}
+	}
 }

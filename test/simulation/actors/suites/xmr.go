@@ -2,6 +2,7 @@ package suites
 
 import (
 	rand "math/rand/v2"
+	"os"
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	acommon "gitlab.com/thorchain/thornode/v3/test/simulation/actors/common"
@@ -26,16 +27,25 @@ func XMRCoverage(rng *rand.Rand) *Actor {
 
 func XMRPostChurn(rng *rand.Rand) *Actor {
 	a := NewActor("XMRPostChurn", rng)
-	if !acommon.XMRChainEnabled() {
+	// The shared develop baseline still skips XMR keygen. Required runs (S00
+	// and the dedicated readiness target) must create the first usable vault
+	// even when it is absent from the pre-churn inbound list.
+	if !XMRPostChurnEnabled() {
 		return a
 	}
 	a.Append(core.NewXMRPostChurnActor(rng))
 	return a
 }
 
-func XMRKeygenJail(rng *rand.Rand) *Actor {
-	a := NewActor("XMRKeygenJail", rng)
-	a.Append(core.NewXMRKeygenJailActor(rng))
+// XMRPostChurnEnabled preserves optional develop coverage while allowing an
+// explicitly required run to wait for its first XMR vault.
+func XMRPostChurnEnabled() bool {
+	return acommon.XMRChainEnabled() || os.Getenv("XMR_POST_CHURN_REQUIRED") == "1"
+}
+
+func XMRKeygenRecovery(rng *rand.Rand) *Actor {
+	a := NewActor("XMRKeygenRecovery", rng)
+	a.Append(core.NewXMRKeygenRecoveryActor(rng))
 	return a
 }
 

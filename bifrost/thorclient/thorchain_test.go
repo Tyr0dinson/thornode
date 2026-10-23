@@ -87,6 +87,18 @@ func (s *ThorchainSuite) SetUpTest(c *C) {
 			httpTestHandler(c, rw, "../../test/fixtures/endpoints/inbound_addresses/inbound_addresses.json")
 		case strings.HasPrefix(req.RequestURI, "/thorchain/thorname/"):
 			httpTestHandler(c, rw, "../../test/fixtures/endpoints/thorname/thorname.json")
+		case strings.HasPrefix(req.RequestURI, PendingOutboundEndpoint):
+			// /thorchain/queue/outbound serialises as a BARE JSON array. If a height
+			// query was intended (the URI mentions "height", raw or %3F-escaped) but did
+			// not parse into a real query param, the '?' was escaped into the path — the
+			// exact #3 regression — so 400 to make the test fail.
+			if strings.Contains(req.RequestURI, "height") && req.URL.Query().Get("height") == "" {
+				rw.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			_, err := rw.Write([]byte(`[{"height":100,"vault_pub_key":"vaultA","in_hash":"HASH1","chain":"SOL"},` +
+				`{"height":101,"vault_pub_key":"vaultB","in_hash":"HASH2","chain":"ETH"}]`))
+			c.Assert(err, IsNil)
 		}
 	}))
 	s.cfg.ChainHost = s.server.Listener.Addr().String()
@@ -849,4 +861,25 @@ func (s *ThorchainSuite) TestTHORName(c *C) {
 	c.Assert(result.Aliases, HasLen, 1)
 	c.Assert(result.Aliases[0].Chain, Equals, common.THORChain)
 	c.Assert(result.Aliases[0].Address, Equals, common.Address("tthor1tdfqy34uptx207scymqsy4k5uzfmry5sf7z3dw"))
+}
+
+// TestGetPendingOutbounds guards the /thorchain/queue/outbound decode + the
+// height-query URL: the endpoint returns a BARE JSON array (not {tx_out_items}),
+// and height>0 must send ?height= as a real query param (not a '?' escaped into
+// the path, which a scheme-less ChainHost would do if built by hand).
+func (s *ThorchainSuite) TestGetPendingOutbounds(c *C) {
+	// live (height 0)
+	live, err := s.bridge.GetPendingOutbounds(0)
+	c.Assert(err, IsNil)
+	c.Assert(live, HasLen, 2)
+	c.Assert(live[0].Chain, Equals, "SOL")
+	c.Assert(live[0].VaultPubKey, Equals, "vaultA")
+	c.Assert(live[0].Height, Equals, int64(100))
+	c.Assert(live[0].InHash, Equals, "HASH1")
+
+	// as-of a consensus height — the server 400s if the height query did not arrive
+	atHeight, err := s.bridge.GetPendingOutbounds(2_500_000)
+	c.Assert(err, IsNil)
+	c.Assert(atHeight, HasLen, 2)
+	c.Assert(atHeight[1].Chain, Equals, "ETH")
 }

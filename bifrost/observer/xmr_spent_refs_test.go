@@ -83,6 +83,7 @@ func observerTestXMRPlan(t *testing.T) (common.ObservedTx, plannedXMROutbound) {
 		8,
 	)
 	obsTx.SpentOutputRefs = []common.OutputRef{observerTestOutputRef("xmr-peer-spent-ref", txID.String())}
+	obsTx.XmrMinedHeight = obsTx.BlockHeight
 
 	planned := plannedXMROutbound{
 		chain:            common.XMRChain,
@@ -265,8 +266,10 @@ func TestPeerXMRSpentRefsRequirePlannedOutboundAndSourceVaultQuorum(t *testing.T
 		bridge.getKeysignFunc = observerTestKeysignFunc(planned)
 
 		applied := make(chan common.ObservedTx, 1)
-		ag.SetObserverApplySpentOutputRefs(func(tx common.ObservedTx, onOutcome func(applied bool)) {
-			applied <- tx
+		wireMemos := make(chan string, 1)
+		ag.SetObserverApplySpentOutputRefs(func(request spentOutputRefsImport, onOutcome func(applied bool)) {
+			applied <- request.Tx
+			wireMemos <- request.WireMemo
 			if onOutcome != nil {
 				onOutcome(true)
 			}
@@ -278,6 +281,8 @@ func TestPeerXMRSpentRefsRequirePlannedOutboundAndSourceVaultQuorum(t *testing.T
 		select {
 		case got := <-applied:
 			assert.Equal(t, obsTx.Tx.ID, got.Tx.ID)
+			assert.Equal(t, obsTx.Tx.Memo, got.Tx.Memo)
+			assert.Equal(t, obsTx.Tx.Memo, <-wireMemos)
 		case <-time.After(time.Second):
 			t.Fatal("timed out waiting for historical source-vault quorum import")
 		}
@@ -301,7 +306,8 @@ func TestPeerXMRSpentRefsRequirePlannedOutboundAndSourceVaultQuorum(t *testing.T
 		bridge.getKeysignFunc = observerTestKeysignFunc(planned)
 
 		applied := make(chan common.ObservedTx, 1)
-		ag.SetObserverApplySpentOutputRefs(func(tx common.ObservedTx, onOutcome func(applied bool)) {
+		ag.SetObserverApplySpentOutputRefs(func(request spentOutputRefsImport, onOutcome func(applied bool)) {
+			tx := request.Tx
 			applied <- tx
 			if onOutcome != nil {
 				onOutcome(true)
@@ -350,7 +356,8 @@ func TestPeerXMRSpentRefsUnauthorizedFirstDoesNotBlockAuthorizedImport(t *testin
 	bridge.getKeysignFunc = observerTestKeysignFunc(planned)
 
 	applied := make(chan common.ObservedTx, 1)
-	ag.SetObserverApplySpentOutputRefs(func(tx common.ObservedTx, onOutcome func(applied bool)) {
+	ag.SetObserverApplySpentOutputRefs(func(request spentOutputRefsImport, onOutcome func(applied bool)) {
+		tx := request.Tx
 		applied <- tx
 		if onOutcome != nil {
 			onOutcome(true)
@@ -397,7 +404,8 @@ func TestPeerXMRSpentRefsFailedImportDoesNotBlockAuthorizedRetry(t *testing.T) {
 
 	applied := make(chan common.ObservedTx, 2)
 	results := make(chan bool, 2)
-	ag.SetObserverApplySpentOutputRefs(func(tx common.ObservedTx, onOutcome func(applied bool)) {
+	ag.SetObserverApplySpentOutputRefs(func(request spentOutputRefsImport, onOutcome func(applied bool)) {
+		tx := request.Tx
 		applied <- tx
 		if onOutcome != nil {
 			onOutcome(<-results)
@@ -464,7 +472,8 @@ func TestPeerXMRSpentRefsAuthorizedConflictBlocksSecondImport(t *testing.T) {
 	bridge.getKeysignFunc = observerTestKeysignFunc(planned)
 
 	applied := make(chan common.ObservedTx, 2)
-	ag.SetObserverApplySpentOutputRefs(func(tx common.ObservedTx, onOutcome func(applied bool)) {
+	ag.SetObserverApplySpentOutputRefs(func(request spentOutputRefsImport, onOutcome func(applied bool)) {
+		tx := request.Tx
 		applied <- tx
 		if onOutcome != nil {
 			onOutcome(true)
@@ -493,7 +502,8 @@ func TestXMRSpentRefGateFailsClosedForNilAttestation(t *testing.T) {
 	ag, _, _, _, _, _ := setupTestGossip(t)
 	obsTx, _ := observerTestXMRPlan(t)
 
-	assert.False(t, ag.shouldApplyXMRSpentRefsFromAttestations(obsTx, nil))
+	_, ok := ag.shouldApplyXMRSpentRefsFromAttestations(obsTx, nil)
+	assert.False(t, ok)
 }
 
 // TestSingleVaultMemberCannotScheduleSpentRefVariantFlood is the direct
@@ -520,7 +530,8 @@ func TestSingleVaultMemberCannotScheduleSpentRefVariantFlood(t *testing.T) {
 	bridge.getKeysignFunc = observerTestKeysignFunc(planned)
 
 	applied := make(chan common.ObservedTx, 1)
-	ag.SetObserverApplySpentOutputRefs(func(tx common.ObservedTx, onOutcome func(applied bool)) {
+	ag.SetObserverApplySpentOutputRefs(func(request spentOutputRefsImport, onOutcome func(applied bool)) {
+		tx := request.Tx
 		applied <- tx
 		if onOutcome != nil {
 			onOutcome(true)
@@ -537,9 +548,9 @@ func TestSingleVaultMemberCannotScheduleSpentRefVariantFlood(t *testing.T) {
 	}
 
 	assertNoSpentRefImportDuring(t, applied, 100*time.Millisecond)
-	ag.mu.Lock()
+	ag.authorizedXMRSpentRefsMu.Lock()
 	require.Empty(t, ag.authorizedXMRSpentRefs)
-	ag.mu.Unlock()
+	ag.authorizedXMRSpentRefsMu.Unlock()
 	require.Empty(t, ag.applySpentRefsSem)
 }
 
@@ -579,7 +590,8 @@ func TestSpentRefCertificateUsesTheExactlySignedStatePayload(t *testing.T) {
 	require.NoError(t, err)
 
 	applied := make(chan common.ObservedTx, 1)
-	ag.SetObserverApplySpentOutputRefs(func(tx common.ObservedTx, onOutcome func(applied bool)) {
+	ag.SetObserverApplySpentOutputRefs(func(request spentOutputRefsImport, onOutcome func(applied bool)) {
+		tx := request.Tx
 		applied <- tx
 		if onOutcome != nil {
 			onOutcome(true)
@@ -634,15 +646,21 @@ func TestXMRSpentRefImportCapacityIsAcquiredBeforeSpawn(t *testing.T) {
 
 	started := make(chan common.TxID, 2)
 	release := make(chan struct{})
-	ag.SetObserverApplySpentOutputRefs(func(tx common.ObservedTx, onOutcome func(applied bool)) {
+	ag.SetObserverApplySpentOutputRefs(func(request spentOutputRefsImport, onOutcome func(applied bool)) {
+		tx := request.Tx
 		started <- tx.Tx.ID
 		<-release
 		if onOutcome != nil {
 			onOutcome(true)
 		}
 	})
+	ag.SetObserverApplyCommittedSpentRefs(func(_ context.Context, _ common.PubKey, txID common.TxID) (common.ObservedTx, bool) {
+		started <- txID
+		<-release
+		return committed, true
+	})
 
-	ag.applySpentRefsAsync(first, nil)
+	ag.applySpentRefsAsync(spentOutputRefsImport{Tx: first}, nil)
 	select {
 	case got := <-started:
 		require.Equal(t, first.Tx.ID, got)
@@ -651,7 +669,7 @@ func TestXMRSpentRefImportCapacityIsAcquiredBeforeSpawn(t *testing.T) {
 	}
 
 	rejected := make(chan bool, 1)
-	ag.applySpentRefsAsync(second, func(applied bool) { rejected <- applied })
+	ag.applySpentRefsAsync(spentOutputRefsImport{Tx: second}, func(applied bool) { rejected <- applied })
 	select {
 	case applied := <-rejected:
 		require.False(t, applied)
@@ -660,7 +678,7 @@ func TestXMRSpentRefImportCapacityIsAcquiredBeforeSpawn(t *testing.T) {
 	}
 	require.Len(t, ag.applySpentRefsSem, 1)
 
-	ag.applyCommittedSpentRefsAsync(committed, nil)
+	ag.applyCommittedSpentRefsAsync(committed.ObservedPubKey, committed.Tx.ID, nil)
 	select {
 	case got := <-started:
 		require.Equal(t, committed.Tx.ID, got)
@@ -685,13 +703,22 @@ func TestXMRPlannedOutboundMatcherUsesInboundVoterActions(t *testing.T) {
 	planned.memo = obsTx.Tx.Memo
 	bridge.getObservedTxVoterFunc = observerTestObservedTxVoterFunc(inboundID, planned)
 
-	assert.True(t, ag.observedXMRMatchesPlannedOutbound(obsTx))
+	wireMemo, ok := ag.plannedXMRWireMemo(obsTx)
+	assert.True(t, ok)
+	assert.Equal(t, obsTx.Tx.Memo, wireMemo)
+
+	planned.wireMemo = planned.memo
+	bridge.getObservedTxVoterFunc = observerTestObservedTxVoterFunc(inboundID, planned)
+	wireMemo, ok = ag.plannedXMRWireMemo(obsTx)
+	assert.True(t, ok)
+	assert.Equal(t, obsTx.Tx.Memo, wireMemo)
 
 	// Mutating the observed tx after the voter action is fixed should break the
 	// match, proving this path compares the full planned outbound rather than
 	// accepting the memo/inbound ID alone.
 	obsTx.Tx.ToAddress = common.Address(common.XMRSeededDummyAddress('8', []byte("wrong-voter-action-dest")))
-	assert.False(t, ag.observedXMRMatchesPlannedOutbound(obsTx))
+	_, ok = ag.plannedXMRWireMemo(obsTx)
+	assert.False(t, ok)
 }
 
 // TestXMRPlannedOutboundMatcherUsesKeysignHeightForRagnarok verifies the
@@ -706,12 +733,14 @@ func TestXMRPlannedOutboundMatcherUsesKeysignHeightForRagnarok(t *testing.T) {
 	planned.memo = ragnarokMemo
 	bridge.getKeysignFunc = observerTestKeysignFunc(planned)
 
-	assert.True(t, ag.observedXMRMatchesPlannedOutbound(obsTx))
+	_, ok := ag.plannedXMRWireMemo(obsTx)
+	assert.True(t, ok)
 
 	// The same RAGNAROK memo must still fail closed when the planned txout no
 	// longer matches the observed outbound.
 	obsTx.Tx.ToAddress = common.Address(common.XMRSeededDummyAddress('8', []byte("wrong-ragnarok-dest")))
-	assert.False(t, ag.observedXMRMatchesPlannedOutbound(obsTx))
+	_, ok = ag.plannedXMRWireMemo(obsTx)
+	assert.False(t, ok)
 }
 
 // TestXMRPlannedOutboundMatcherAcceptsLegacyVaultPubKey keeps the matcher
@@ -770,7 +799,8 @@ func observerTestKeysignFunc(planned plannedXMROutbound) func(int64, string) (tc
 					VaultPubKey:      planned.vaultPubKey,
 					VaultPubKeyFrost: planned.vaultPubKeyFrost,
 					Coin:             planned.coins.GetCoin(common.XMRAsset),
-					Memo:             planned.memo,
+					Memo:             planned.wireMemo,
+					OriginalMemo:     planned.memo,
 					MaxGas:           planned.maxGas,
 				},
 			},
@@ -795,7 +825,8 @@ func observerTestObservedTxVoterFunc(inboundID common.TxID, planned plannedXMROu
 					VaultPubKey:      planned.vaultPubKey,
 					VaultPubKeyFrost: planned.vaultPubKeyFrost,
 					Coin:             planned.coins.GetCoin(common.XMRAsset),
-					Memo:             planned.memo,
+					Memo:             planned.wireMemo,
+					OriginalMemo:     planned.memo,
 					MaxGas:           planned.maxGas,
 				},
 			},
@@ -810,7 +841,8 @@ func assertNoSpentRefCallback(t *testing.T, ag *AttestationGossip) func() {
 	t.Helper()
 
 	applied := make(chan common.ObservedTx, 1)
-	ag.SetObserverApplySpentOutputRefs(func(tx common.ObservedTx, onOutcome func(applied bool)) {
+	ag.SetObserverApplySpentOutputRefs(func(request spentOutputRefsImport, onOutcome func(applied bool)) {
+		tx := request.Tx
 		applied <- tx
 		if onOutcome != nil {
 			onOutcome(true)
@@ -877,8 +909,8 @@ func observerTestSpentRefsApplied(t *testing.T, ag *AttestationGossip, obsTx com
 // observerTestConflictState exposes only the import state for conflict-map
 // assertions; the tests should not depend on timestamps or map entry internals.
 func observerTestConflictState(ag *AttestationGossip, obsTx common.ObservedTx) (xmrSpentRefsImportState, bool) {
-	ag.mu.Lock()
-	defer ag.mu.Unlock()
+	ag.authorizedXMRSpentRefsMu.Lock()
+	defer ag.authorizedXMRSpentRefsMu.Unlock()
 	entry, ok := ag.authorizedXMRSpentRefs[xmrSpentRefsConflictKeyFor(obsTx)]
 	if !ok {
 		return 0, false
@@ -912,7 +944,8 @@ func TestPeerXMRSpentRefsTerminalFailureAllowsDifferingAuthorizedSet(t *testing.
 
 	applied := make(chan common.ObservedTx, 2)
 	results := make(chan bool, 2)
-	ag.SetObserverApplySpentOutputRefs(func(tx common.ObservedTx, onOutcome func(applied bool)) {
+	ag.SetObserverApplySpentOutputRefs(func(request spentOutputRefsImport, onOutcome func(applied bool)) {
+		tx := request.Tx
 		applied <- tx
 		if onOutcome != nil {
 			onOutcome(<-results)
@@ -981,6 +1014,12 @@ func TestAuthorizedXMRSpentRefsLifecycle(t *testing.T) {
 	ag.resolveAuthorizedXMRSpentRefs(key, identityA, false)
 	require.True(t, ag.rememberAuthorizedXMRSpentRefs(differing))
 
+	// Cancellation cleanup for the old identity must leave the replacement pending.
+	ag.releaseAuthorizedXMRSpentRefs(key, identityA)
+	replacementState, exists := observerTestConflictState(ag, differing)
+	require.True(t, exists)
+	require.Equal(t, xmrSpentRefsImportPending, replacementState)
+
 	// A late outcome for the replaced identity must not clobber the new entry.
 	ag.resolveAuthorizedXMRSpentRefs(key, identityA, true)
 	require.False(t, ag.rememberAuthorizedXMRSpentRefs(obsTx))
@@ -1014,15 +1053,15 @@ func TestPruneAuthorizedXMRSpentRefsExpiresOldEntries(t *testing.T) {
 		ttl = 2 * defaultNonQuorumTimeout
 	}
 
-	ag.mu.Lock()
-	ag.pruneAuthorizedXMRSpentRefsLocked(time.Now().Add(ttl / 2))
+	ag.pruneAuthorizedXMRSpentRefs(time.Now().Add(ttl / 2))
+	ag.authorizedXMRSpentRefsMu.Lock()
 	surviving := len(ag.authorizedXMRSpentRefs)
-	ag.mu.Unlock()
+	ag.authorizedXMRSpentRefsMu.Unlock()
 	assert.Equal(t, 1, surviving, "entry within TTL must survive pruning")
 
-	ag.mu.Lock()
-	ag.pruneAuthorizedXMRSpentRefsLocked(time.Now().Add(ttl + time.Minute))
+	ag.pruneAuthorizedXMRSpentRefs(time.Now().Add(ttl + time.Minute))
+	ag.authorizedXMRSpentRefsMu.Lock()
 	remaining := len(ag.authorizedXMRSpentRefs)
-	ag.mu.Unlock()
+	ag.authorizedXMRSpentRefsMu.Unlock()
 	assert.Equal(t, 0, remaining, "entry past TTL must be pruned")
 }

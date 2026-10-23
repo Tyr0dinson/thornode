@@ -492,6 +492,14 @@ func (s *queryServer) XMRSpentOutputRefs(c context.Context, req *types.QueryXMRS
 	return s.queryXMRSpentOutputRefs(ctx, req)
 }
 
+func (s *queryServer) SolVaultNonce(c context.Context, req *types.QuerySolVaultNonceRequest) (*types.QuerySolVaultNonceResponse, error) {
+	if err := checkHeightParam(req.Height); err != nil {
+		return nil, err
+	}
+	ctx := s.unwrapSdkContext(c)
+	return s.querySolVaultNonce(ctx, req)
+}
+
 func (s *queryServer) AsgardVaults(c context.Context, req *types.QueryAsgardVaultsRequest) (*types.QueryAsgardVaultsResponse, error) {
 	if err := checkHeightParam(req.Height); err != nil {
 		return nil, err

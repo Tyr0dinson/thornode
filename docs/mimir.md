@@ -82,7 +82,7 @@ Mimirs have a maximum length of 128 bytes (see MaxMimirLength in THORNode code).
 ## TCY Management
 
 - `MinRuneForTCYStakeDistribution`: Minimum RUNE required in the TCY fund to be eligible for distribution (default: 2,100 RUNE (210000000000 in 1e8 notation))
-- `MinTCYForTCYStakeDistribution`: Minimum TCY required in the TCY fund to be eligible for distribution (default: 100,000 TCY)
+- `MinTCYForTCYStakeDistribution`: Minimum TCY a staker must have staked to be included in a RUNE distribution (default: 0.001 TCY (100000 in 1e8 notation))
 - `TCYStakeSystemIncomeBps`: Percentage (in basis points) of system income allocated to the TCY fund (default: 1000 bps = 10%)
 - `TCYClaimingSwapHalt`: Enables/disables RUNE-to-TCY swaps in the claiming module (default: 1, halted)
 - `TCYStakeDistributionHalt`: Enables/disables distribution of RUNE revenue to TCY stakers (default: 1, halted)
@@ -141,10 +141,12 @@ Operational notes:
 - `HaltTrading`: Stops swaps and additions, if done, will result in refunds. Observations still occur.
 - `Halt<chain>Chain`#: Pause a specific blockchain
 - `SolvencyHalt<Chain>`# Halts a chain if the solvency checker for that chain fails.
+- `HaltScannerXMR`#: Bifrost-only XMR scanner activation switch. `0` explicitly enables block scanning and spent-reference catch-up, positive values pause them. Missing or negative values and lookup errors fail closed. This does not set THORNode's XMR chain-halt state or directly pause churn. A paused scanner also blocks normal XMR signing through the scanner-health check, so funded vault migrations can still stall and subsequently block churn. See [XMR Scanner Activation](./concepts/network-halts.md#xmr-scanner-activation) for rollout and voting requirements.
 - `NodePauseChainGlobal`#: Individual node controlled means to pause all chains
 - `NodePauseChainBlocks`: Number of block a node operator can pause/resume the chains for
 - `BlocksPerYear`: Blocks in a year
 - `MaxUTXOsToSpend`#: Max UTXOs to be spent in one block
+- `XMRConsolidation<Setting>`#: Tunes Bifrost's Monero output consolidation (operational Mimir, as each run locks vault liquidity for Monero's 10-block spend lock): `XMRConsolidationEnabled` (`0` disables), `XMRConsolidationCheckIntervalBlocks`, `XMRConsolidationCooldownBlocks`, `XMRConsolidationMinUnlockedOutputs`, `XMRConsolidationTargetOutputs`, `XMRConsolidationMinUnlockedAtomic`, `XMRConsolidationReserveBps`, `XMRConsolidationChurnLookaheadBlocks`, `XMRConsolidationMaxRetries`, `XMRConsolidationMaxInputs` and `XMRConsolidationMaxLockBps`. Unset or non-positive values fall back to Bifrost defaults.
 - `MinimumNodesForBFT`: Minimum node count to keep the network running. Below this, Ragnarök is performed
 - `MaxConfirmations-<Chain>`# : The maximum number of confirmations for a chain
 - `ConfMultiplierBasisPoints-<Chain>`#: Increases or decrease the inbound confirmation count block requirement for a chain
@@ -167,6 +169,7 @@ Operational notes:
 
 - `StopSolvencyCheck`#: Enable/Disable Solvency Checker
 - `StopSolvencyCheck<chain>`#: Enable/Disable Solvency Checker, per chain
+- `AllowNoVault-<Chain>`#: Authorizes `NOOP:NOVAULT` vault debits on the chain, used for a brief, coordinated insolvency correction (operational Mimir). Prefer setting it to a future block height so the window closes itself (agree the exact height off-chain first: operational votes only count when the values match, and a tie sets nothing); `1` holds it open until it is reset to `0`, and because churn purges operational node votes while keeping the effective value, a `1` gate outlives churn still listed in `/thorchain/mimir` but with no vote trail left in `/thorchain/mimir/nodes_all`.
 - `OverSolvencyToTreasuryBps-<asset>`#: Per-asset basis points (0-10000) of over-solvent liquidity to swap to RUNE and transfer to the over-solvency sweep destination address, for example `OverSolvencyToTreasuryBps-BTC-BTC`. Falls back to `OverSolvencyToTreasuryBps` when unset.
 - `PermittedSolvencyGap`: (deprecated) The amount of funds permitted to be "insolvent" as a percentage (basis points). Replaced by `PermittedSolvencyGapUSD`.
 - `PermittedSolvencyGapUSD`: The permitted solvency gap in USD (1e8 notation). Vault insolvency below this USD value will not trigger a chain halt. Default is $500 (500_00000000).
@@ -206,6 +209,12 @@ Operational notes:
 - `BadValidatorRedline`\*: Redline multiplier to find a multitude of bad actors
 - `LowBondValidatorRate`: Rate to mark a validator to be rotated out for low bond
 - `MaxNodeToChurnOutForLowVersion`\*: Maximum number of validators to churn out for low version each churn
+- `MaxMissingObservationChurnOut`\*: Maximum number of validators to churn out each churn for missing most of the observations on a chain; `0` (the default) turns the mark off, while the tallies are still kept
+- `MissingObservationChurnOutBps`\*: A validator is marked when, on any chain, the share of voters it failed to sign within `ObservationDelayFlexibility` is above this, in basis points
+- `MissingObservationGuardBps`\*: A voter is not counted against anyone when more than this share of the validators missed it (a shared outage), in basis points, not counting validators already failing its chain that missed it; `10000` turns the guard off
+- `MissingObservationGuardMaxBlocks`\*: The guard's grace on each chain, in blocks (default one churn interval). Skipping the chain's voters uses it up, time in which they pass the guard refills it at the same rate, and once it is used up the voters count again, so a group failing above the guard share is not immune for good; `0` keeps the guard open indefinitely
+- `MissingObservationHalfLife`\*: Number of blocks between halvings of the missed-observation tallies, which restart at churn-in
+- `MissingObservationMinSamples`\*: Minimum number of voters on a chain, after decay, before a validator's missed share on it counts
 - `MigrationVaultSecurityBps`: Vault bond must be greater than bps of funds value in rune to receive migrations
 
 ## Economics

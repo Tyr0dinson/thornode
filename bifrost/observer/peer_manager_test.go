@@ -334,3 +334,103 @@ func TestPeerManagerUpdateLimit(t *testing.T) {
 		assert.Greater(t, int(successCount), 0, "Some operations should have succeeded")
 	})
 }
+
+func TestPeerSendCircuitBreaker(t *testing.T) {
+	logger := zerolog.Nop()
+	peerID, err := peer.Decode("QmYyQSo1c1Ym7orWxLYvCrM2EmxFTANf8wXmmE7DWjhx5N")
+	require.NoError(t, err)
+
+	t.Run("opens after threshold consecutive failures and skips during cooldown", func(t *testing.T) {
+		pm := newPeerManager(logger, 4)
+		now := time.Unix(0, 0)
+		pm.nowFn = func() time.Time { return now }
+
+		// Below threshold: not skipped.
+		for i := 0; i < peerBreakerThreshold-1; i++ {
+			pm.recordSendResult(peerID, false)
+			assert.False(t, pm.shouldSkipPeer(peerID), "should not skip before threshold")
+		}
+		// Threshold'th failure opens the breaker.
+		pm.recordSendResult(peerID, false)
+		assert.True(t, pm.shouldSkipPeer(peerID), "should skip once breaker opens")
+
+		// Still skipped partway through the cooldown.
+		now = now.Add(peerBreakerCooldown / 2)
+		assert.True(t, pm.shouldSkipPeer(peerID), "should stay skipped during cooldown")
+	})
+
+	t.Run("half-opens after cooldown and a success closes it", func(t *testing.T) {
+		pm := newPeerManager(logger, 4)
+		now := time.Unix(0, 0)
+		pm.nowFn = func() time.Time { return now }
+
+		for i := 0; i < peerBreakerThreshold; i++ {
+			pm.recordSendResult(peerID, false)
+		}
+		require.True(t, pm.shouldSkipPeer(peerID))
+
+		// After the cooldown a single trial send is allowed through (half-open).
+		now = now.Add(peerBreakerCooldown + time.Second)
+		assert.False(t, pm.shouldSkipPeer(peerID), "should allow a trial send after cooldown")
+
+		// A success fully closes the breaker.
+		pm.recordSendResult(peerID, true)
+		assert.False(t, pm.shouldSkipPeer(peerID))
+
+		// A later single failure must not immediately re-open (count was reset).
+		pm.recordSendResult(peerID, false)
+		assert.False(t, pm.shouldSkipPeer(peerID), "one failure after reset should not open")
+	})
+
+	t.Run("success resets the consecutive-failure count", func(t *testing.T) {
+		pm := newPeerManager(logger, 4)
+		now := time.Unix(0, 0)
+		pm.nowFn = func() time.Time { return now }
+
+		pm.recordSendResult(peerID, false)
+		pm.recordSendResult(peerID, false)
+		pm.recordSendResult(peerID, true) // reset
+		pm.recordSendResult(peerID, false)
+		pm.recordSendResult(peerID, false)
+		assert.False(t, pm.shouldSkipPeer(peerID), "two failures after a reset must not open")
+	})
+}
+
+// TestPeerBreakerTrialDoesNotStick guards the half-open trial against the
+// permanent-blacklist bug: if a trial send exits on a path that never calls
+// recordSendResult (parent-context expiry, acquire timeout), finishTrial must
+// still clear the flag so the peer gets another trial instead of being skipped
+// forever.
+func TestPeerBreakerTrialDoesNotStick(t *testing.T) {
+	logger := zerolog.Nop()
+	peerID := peer.ID("flappy-peer")
+	pm := newPeerManager(logger, 4)
+	now := time.Unix(0, 0)
+	pm.nowFn = func() time.Time { return now }
+
+	// Open the breaker.
+	for i := 0; i < peerBreakerThreshold; i++ {
+		pm.recordSendResult(peerID, false)
+	}
+	require.True(t, pm.shouldSkipPeer(peerID))
+
+	// Cooldown elapses → one trial admitted (sets trialInFlight); further callers skip.
+	now = now.Add(peerBreakerCooldown + time.Second)
+	require.False(t, pm.shouldSkipPeer(peerID), "first call admits the trial")
+	require.True(t, pm.shouldSkipPeer(peerID), "second call skips while the trial is in flight")
+
+	// Trial exits WITHOUT recording (ctx expired / acquire timeout): finishTrial clears it.
+	pm.finishTrial(peerID)
+
+	// The peer must not be permanently skipped: a later call admits a fresh trial.
+	require.False(t, pm.shouldSkipPeer(peerID), "after finishTrial the peer is not blacklisted")
+
+	// And prune must not keep a stuck entry alive forever once it is idle + cleared.
+	pm.finishTrial(peerID)
+	now = now.Add(semaphorePruneInterval + time.Second)
+	pm.prune()
+	pm.bmu.Lock()
+	_, stillThere := pm.breakers[peerID]
+	pm.bmu.Unlock()
+	assert.False(t, stillThere, "idle, non-cooling, no-trial entry should be pruned")
+}

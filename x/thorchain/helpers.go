@@ -18,6 +18,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/constants"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
+	keeperv1 "gitlab.com/thorchain/thornode/v3/x/thorchain/keeper/v1"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
@@ -153,6 +154,9 @@ func refundTx(ctx cosmos.Context, tx ObservedTx, mgr Manager, refundCode uint32,
 				validRefundAddress := refundAddress.IsChain(coin.Asset.GetChain())
 				if coin.Asset.GetChain().RequiresExplicitRefundAddress() {
 					validRefundAddress = validRefundAddress && coin.Asset.GetChain().IsValidAddress(refundAddress)
+				}
+				if coin.Asset.GetChain().Equals(common.ZECChain) {
+					validRefundAddress = validRefundAddress && refundAddress.IsCurrentNetwork(coin.Asset.GetChain())
 				}
 				if validRefundAddress {
 					toAddr = refundAddress
@@ -499,6 +503,10 @@ func getMaxSwapQuantity(ctx cosmos.Context, mgr Manager, sourceAsset, targetAsse
 }
 
 // isStableToStable returns true if both source and target L1 assets are TOR anchors (stablecoins).
+//
+// It runs inside txs (e.g. a deposit's swap queue entry), where store reads are
+// gas and gas_used is consensus-visible, so it keeps the GetAnchors scan: point
+// lookups of the two candidates give the same answer with different gas.
 func isStableToStable(ctx cosmos.Context, k keeper.Keeper, source, target common.Asset) bool {
 	anchors := k.GetAnchors(ctx, common.TOR)
 	if len(anchors) == 0 {
@@ -516,6 +524,15 @@ func isStableToStable(ctx cosmos.Context, k keeper.Keeper, source, target common
 		}
 	}
 	return sourceIsAnchor && targetIsAnchor
+}
+
+// isTORAnchorAsset reports whether GetAnchors(TOR) would include the layer-1 asset.
+func isTORAnchorAsset(ctx cosmos.Context, k keeper.Keeper, l1 common.Asset) bool {
+	if !k.PoolExist(ctx, l1) {
+		return false
+	}
+	val, err := k.GetMimir(ctx, keeperv1.TorAnchorMimirKey(l1))
+	return err == nil && val > 0
 }
 
 // getMinSlipBps returns artificial slip floor, expressed in basis points (10000).
@@ -1941,7 +1958,7 @@ func settleSwapCached(ctx cosmos.Context, mgr Manager, msg MsgSwap, settleReason
 	// completed swap outbound, even after multiple sub-swaps have already run.
 	if !msg.State.Out.IsZero() && !stableReserveInternal && !collectorConversion && !collectorPayout {
 		// Parse memo to check if this is a savers add
-		memo, err := ParseMemoWithTHORNames(ctx, mgr.Keeper(), msg.Tx.Memo)
+		memo, err := ParseMemoWithTHORNamesCached(ctx, mgr.Keeper(), msg.Tx.Memo)
 		if err != nil {
 			ctx.Logger().Error("fail to parse memo", "error", err)
 			// Continue with outbound even if memo parsing fails
@@ -2042,14 +2059,9 @@ func settleSwapCached(ctx cosmos.Context, mgr Manager, msg MsgSwap, settleReason
 		}
 	}
 
-	// Remove from advanced swap queue index
-	if err := mgr.Keeper().RemoveAdvSwapQueueIndex(ctx, msg); err != nil {
-		// Log but don't fail - it might not exist in index
-		ctx.Logger().Debug("fail to remove swap from adv queue index", "error", err)
-	}
-
-	// Remove from advanced swap queue
-	if err := mgr.Keeper().RemoveAdvSwapQueueItem(ctx, msg.Tx.ID, int(msg.Index)); err != nil {
+	// Remove the item and its index entry together, reusing the message already
+	// loaded by EndBlock instead of fetching and decoding it again.
+	if err := mgr.Keeper().RemoveAdvSwapQueueItemMsg(ctx, msg); err != nil {
 		// Log but don't fail
 		ctx.Logger().Debug("fail to remove swap from adv queue", "error", err)
 	}
@@ -2183,6 +2195,36 @@ func runePoolValue(ctx cosmos.Context, mgr Manager) (cosmos.Uint, error) {
 	return polValue.Add(pending), nil
 }
 
+// polValueMemo caches polPoolValue across a run of POL operations. Callers
+// reset it after anything that can change pools, synth supply or the POL
+// liquidity provider. A nil memo computes every time.
+type polValueMemo struct {
+	value cosmos.Uint
+	ok    bool
+}
+
+func (m *polValueMemo) reset() {
+	if m != nil {
+		m.ok = false
+	}
+}
+
+// runePoolValue is runePoolValue with the POL part taken from the memo.
+func (m *polValueMemo) runePoolValue(ctx cosmos.Context, mgr Manager) (cosmos.Uint, error) {
+	if m == nil {
+		return runePoolValue(ctx, mgr)
+	}
+	if !m.ok {
+		value, err := polPoolValue(ctx, mgr)
+		if err != nil {
+			return cosmos.ZeroUint(), err
+		}
+		m.value, m.ok = value, true
+	}
+	pending := mgr.Keeper().GetRuneBalanceOfModule(ctx, RUNEPoolName)
+	return m.value.Add(pending), nil
+}
+
 // polPoolValue - calculates how much the POL is worth in rune
 func polPoolValue(ctx cosmos.Context, mgr Manager) (cosmos.Uint, error) {
 	total := cosmos.ZeroUint()
@@ -2287,6 +2329,52 @@ func isOutboundFakeGasTx(tx ObservedTx) bool {
 
 	// fake gas txs have a self-referential out memo
 	return tx.Tx.Memo == "OUT:"+tx.Tx.ID.String()
+}
+
+// activeSolVaultNonce returns a vault's committed durable nonce unless the
+// break-glass mimir SOLNonceClear-<vault pubkey> voids it (a record committed at or
+// before the mimir's height is ignored; a later commit re-anchors the vault). All
+// consensus readers of the committed nonce go through this.
+func activeSolVaultNonce(ctx cosmos.Context, k keeper.Keeper, vaultPubKey common.PubKey) (SolVaultNonce, bool, error) {
+	record, found, err := k.GetSolVaultNonce(ctx, vaultPubKey)
+	if err != nil || !found {
+		return record, found, err
+	}
+	clearHeight, err := k.GetMimir(ctx, fmt.Sprintf(constants.MimirTemplateSOLNonceClear, vaultPubKey.String()))
+	if err != nil {
+		return SolVaultNonce{}, false, err
+	}
+	if clearHeight > 0 && record.UpdatedHeight <= clearHeight {
+		return SolVaultNonce{}, false, nil
+	}
+	return record, true, nil
+}
+
+// solNonceCreateMaxRent caps the rent (1e8 units) booked as gas for a durable-nonce
+// account creation: 0.01 SOL, ~7x the current rent-exempt minimum.
+const solNonceCreateMaxRent = 1_000_000
+
+// isSolNonceCreateTx reports whether an observed vault outflow is a Solana vault's
+// durable-nonce account CREATION: no memo and a single SOL coin (the rent, capped)
+// sent to the sender's own seed-derived nonce account. Classified on these consensus
+// fields alone — not on the attested SolNonce, which EqualsConsensus ignores, so one
+// vote (whichever completed quorum) must not decide the branch. The shape alone can
+// also match a scheduled memoless payment to that address, so the caller also
+// requires agreed creation evidence (solNonceCommittedBy).
+func isSolNonceCreateTx(tx ObservedTx) bool {
+	if !tx.Tx.Chain.Equals(common.SOLChain) || strings.TrimSpace(tx.Tx.Memo) != "" {
+		return false
+	}
+	if len(tx.Tx.Coins) != 1 || !tx.Tx.Coins[0].Asset.Equals(common.SOLAsset) {
+		return false
+	}
+	// Rent for an 80-byte nonce account is ~0.0015 SOL; anything far above it is not a
+	// nonce creation and must not be written off as gas.
+	if tx.Tx.Coins[0].Amount.GT(cosmos.NewUint(solNonceCreateMaxRent)) {
+		return false
+	}
+	expected, err := common.SolNonceAccountAddress(tx.Tx.FromAddress.String())
+	return err == nil && tx.Tx.ToAddress.String() == expected
 }
 
 // isCancelOrApprovalTx returns true if the observed outbound is a cancel transaction

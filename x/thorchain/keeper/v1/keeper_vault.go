@@ -1,13 +1,15 @@
 package keeperv1
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"sort"
 	"strconv"
 	"strings"
 
-	"github.com/cosmos/cosmos-sdk/runtime"
+	"google.golang.org/protobuf/encoding/protowire"
+
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/constants"
@@ -23,7 +25,7 @@ type VaultSecurity struct {
 }
 
 func (k KVStore) setVault(ctx cosmos.Context, key []byte, record Vault) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	buf := k.cdc.MustMarshal(&record)
 	if buf == nil {
 		store.Delete(key)
@@ -33,12 +35,15 @@ func (k KVStore) setVault(ctx cosmos.Context, key []byte, record Vault) {
 }
 
 func (k KVStore) getVault(ctx cosmos.Context, key []byte, record *Vault) (bool, error) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	if !store.Has(key) {
 		return false, nil
 	}
 
 	bz := store.Get(key)
+	if k.memoDecodeVault(key, bz, record) {
+		return true, nil
+	}
 	if err := k.cdc.Unmarshal(bz, record); err != nil {
 		return true, dbError(ctx, fmt.Sprintf("Unmarshal kvstore: (%T) %s", record, key), err)
 	}
@@ -113,20 +118,202 @@ func (k KVStore) SortBySecurity(ctx cosmos.Context, vaults Vaults, signingTransP
 	return final
 }
 
+// NodeAccount protobuf field numbers of the status and bond, read by
+// peekNodeAccountStatusBond.
+const (
+	nodeAccountStatusField protowire.Number = 2
+	nodeAccountBondField   protowire.Number = 5
+)
+
+// nodeAccountWireTypes are the wire types NodeAccount.Unmarshal requires of
+// its fields (1-17); it rejects any other wire type for them.
+var nodeAccountWireTypes = [...]protowire.Type{
+	1: protowire.BytesType, 2: protowire.VarintType, 3: protowire.BytesType,
+	4: protowire.BytesType, 5: protowire.BytesType, 6: protowire.VarintType,
+	7: protowire.BytesType, 8: protowire.VarintType, 9: protowire.BytesType,
+	10: protowire.VarintType, 11: protowire.VarintType, 12: protowire.VarintType,
+	13: protowire.BytesType, 14: protowire.BytesType, 15: protowire.VarintType,
+	16: protowire.VarintType, 17: protowire.VarintType,
+}
+
+// nodeAccountPubKeySetField is the PubKeySet message field of a NodeAccount.
+const nodeAccountPubKeySetField protowire.Number = 3
+
+// peekNodeAccountStatusBond returns the status and bond that the codec's
+// Unmarshal decodes from a NodeAccount's protobuf bytes, without decoding the
+// other fields. Unmarshal resets the record first, so an absent status is
+// Unknown and an absent bond is the zero Uint value (nil, not ZeroUint); the
+// last occurrence of a field wins and the bond goes through the same
+// Uint.Unmarshal. The other fields are only checked for what Unmarshal
+// rejects: their framing, wire type, and the framing and wire types of the
+// PubKeySet. ok is false if any of that fails or the status or bond do not
+// decode, in which case the caller must fully unmarshal to get the error.
+func peekNodeAccountStatusBond(bz []byte) (status NodeStatus, bond cosmos.Uint, ok bool) {
+	for len(bz) > 0 {
+		num, wtype, n := protowire.ConsumeTag(bz)
+		if n < 0 {
+			return 0, bond, false
+		}
+		bz = bz[n:]
+		if int(num) < len(nodeAccountWireTypes) && wtype != nodeAccountWireTypes[num] {
+			return 0, bond, false
+		}
+		switch num {
+		case nodeAccountStatusField:
+			v, m := protowire.ConsumeVarint(bz)
+			if m < 0 {
+				return 0, bond, false
+			}
+			bz = bz[m:]
+			status = NodeStatus(int32(v))
+		case nodeAccountBondField:
+			v, m := protowire.ConsumeBytes(bz)
+			if m < 0 {
+				return 0, bond, false
+			}
+			bz = bz[m:]
+			if err := bond.Unmarshal(v); err != nil {
+				return 0, bond, false
+			}
+		case nodeAccountPubKeySetField:
+			v, m := protowire.ConsumeBytes(bz)
+			if m < 0 || !wellFormedPubKeySet(v) {
+				return 0, bond, false
+			}
+			bz = bz[m:]
+		default:
+			m := protowire.ConsumeFieldValue(num, wtype, bz)
+			if m < 0 {
+				return 0, bond, false
+			}
+			bz = bz[m:]
+		}
+	}
+	return status, bond, true
+}
+
+// wellFormedPubKeySet reports whether PubKeySet.Unmarshal accepts bz: its two
+// fields are strings and it does not validate their contents.
+func wellFormedPubKeySet(bz []byte) bool {
+	for len(bz) > 0 {
+		num, wtype, n := protowire.ConsumeTag(bz)
+		if n < 0 {
+			return false
+		}
+		bz = bz[n:]
+		if (num == 1 || num == 2) && wtype != protowire.BytesType {
+			return false
+		}
+		m := protowire.ConsumeFieldValue(num, wtype, bz)
+		if m < 0 {
+			return false
+		}
+		bz = bz[m:]
+	}
+	return true
+}
+
+// getNodeStatusBondByPubKey returns the Status and Bond of
+// GetNodeAccountByPubKey(ctx, pk), with the same store access (Has, then Get
+// of the node account key), without decoding the rest of the node account.
+func (k KVStore) getNodeStatusBondByPubKey(ctx cosmos.Context, pk common.PubKey) (NodeStatus, cosmos.Uint, error) {
+	addr, err := pk.GetThorAddress()
+	if err != nil {
+		return NodeUnknown, cosmos.ZeroUint(), err
+	}
+	key := k.GetKey(prefixNodeAccount, addr.String())
+	store := k.kvStore(ctx)
+	if !store.Has(key) {
+		return NodeUnknown, cosmos.ZeroUint(), nil
+	}
+	bz := store.Get(key)
+	if status, bond, ok := peekNodeAccountStatusBond(bz); ok {
+		return status, bond, nil
+	}
+	emptyPubKeySet := common.PubKeySet{
+		Secp256k1: common.EmptyPubKey,
+		Ed25519:   common.EmptyPubKey,
+	}
+	record := NewNodeAccount(addr, NodeUnknown, emptyPubKeySet, "", cosmos.ZeroUint(), "", ctx.BlockHeight())
+	if err := k.cdc.Unmarshal(bz, &record); err != nil {
+		return record.Status, record.Bond, dbError(ctx, fmt.Sprintf("Unmarshal kvstore: (%T) %s", &record, key), err)
+	}
+	return record.Status, record.Bond, nil
+}
+
+// txOutMemo is a TxOut decoded by getSortedVaultSecurity, with the bytes it
+// was decoded from; it is only read.
+type txOutMemo struct {
+	bz    []byte
+	txOut *TxOut
+}
+
+// poolMemo is a pool decoded by getPoolMemo, with the bytes it was decoded from.
+type poolMemo struct {
+	bz   []byte
+	pool Pool
+}
+
+// getPoolMemo is GetPool with the same store access (Has, then Get of the
+// pool key), returning the pool decoded earlier from memo when the stored
+// bytes are the same rather than unmarshalling them again. Callers share the
+// returned pool's Uints, so they must not modify them.
+func (k KVStore) getPoolMemo(ctx cosmos.Context, asset common.Asset, memo map[string]poolMemo) (Pool, error) {
+	key := k.GetKey(prefixPool, asset.String())
+	store := k.kvStore(ctx)
+	if !store.Has(key) {
+		return NewPool(), nil
+	}
+	bz := store.Get(key)
+	if m, ok := memo[string(key)]; ok && bytes.Equal(m.bz, bz) {
+		return m.pool, nil
+	}
+	record := NewPool()
+	if err := k.cdc.Unmarshal(bz, &record); err != nil {
+		return record, dbError(ctx, fmt.Sprintf("Unmarshal kvstore: (%T) %s", &record, key), err)
+	}
+	memo[string(key)] = poolMemo{bz: bz, pool: record}
+	return record, nil
+}
+
 func (k KVStore) getSortedVaultSecurity(ctx cosmos.Context, vaults Vaults, signingTransPeriod int64) []VaultSecurity {
 	vaultSecurity := make([]VaultSecurity, len(vaults))
+
+	// Every vault re-reads the pending txout window, as it always has: inside a
+	// tx those store reads are gas, and gas_used is consensus-visible. Only the
+	// decoding is shared, keyed by the exact bytes read.
+	txOuts := make(map[int64]txOutMemo)
+	getTxOut := func(height int64) (*TxOut, error) {
+		key, bz, present := k.getTxOutBytes(ctx, height)
+		if !present {
+			return NewTxOut(height), nil
+		}
+		if m, ok := txOuts[height]; ok && bytes.Equal(m.bz, bz) {
+			return m.txOut, nil
+		}
+		record := NewTxOut(height)
+		if err := k.cdc.Unmarshal(bz, record); err != nil {
+			return record, dbError(ctx, fmt.Sprintf("Unmarshal kvstore: (%T) %s", record, key), err)
+		}
+		txOuts[height] = txOutMemo{bz: bz, txOut: record}
+		return record, nil
+	}
+
+	// the vaults hold, and the pending window pays out, the same few dozen
+	// pools many times over: decode each stored pool once
+	pools := make(map[string]poolMemo)
 
 	for i, vault := range vaults {
 		// get total bond
 		totalBond := cosmos.ZeroUint()
 		for _, pk := range vault.GetMembership() {
-			na, err := k.GetNodeAccountByPubKey(ctx, pk)
+			status, bond, err := k.getNodeStatusBondByPubKey(ctx, pk)
 			if err != nil {
 				ctx.Logger().Error("failed to get node account by pubkey", "error", err)
 				continue
 			}
-			if na.Status == NodeActive {
-				totalBond = totalBond.Add(na.Bond)
+			if status == NodeActive {
+				totalBond = totalBond.Add(bond)
 			}
 		}
 
@@ -136,7 +323,7 @@ func (k KVStore) getSortedVaultSecurity(ctx cosmos.Context, vaults Vaults, signi
 			if coin.IsRune() {
 				continue
 			} else {
-				pool, err := k.GetPool(ctx, coin.Asset)
+				pool, err := k.getPoolMemo(ctx, coin.Asset, pools)
 				if err != nil {
 					ctx.Logger().Error("failed to get pool", "error", err)
 					continue
@@ -151,7 +338,7 @@ func (k KVStore) getSortedVaultSecurity(ctx cosmos.Context, vaults Vaults, signi
 			h = 1
 		}
 		for height := h; height <= ctx.BlockHeight(); height += 1 {
-			txOut, err := k.GetTxOut(ctx, height)
+			txOut, err := getTxOut(height)
 			if err != nil {
 				ctx.Logger().Error("unable to get txout", "error", err)
 				continue
@@ -169,7 +356,7 @@ func (k KVStore) getSortedVaultSecurity(ctx cosmos.Context, vaults Vaults, signi
 							totalValue = common.SafeSub(totalValue, item.Coin.Amount)
 						} else {
 							var pool Pool
-							pool, err = k.GetPool(ctx, item.Coin.Asset)
+							pool, err = k.getPoolMemo(ctx, item.Coin.Asset, pools)
 							if err != nil {
 								ctx.Logger().Error("failed to get pool", "error", err)
 								continue
@@ -181,7 +368,7 @@ func (k KVStore) getSortedVaultSecurity(ctx cosmos.Context, vaults Vaults, signi
 							totalValue = totalValue.Add(item.Coin.Amount)
 						} else {
 							var pool Pool
-							pool, err = k.GetPool(ctx, item.Coin.Asset)
+							pool, err = k.getPoolMemo(ctx, item.Coin.Asset, pools)
 							if err != nil {
 								ctx.Logger().Error("failed to get pool", "error", err)
 								continue
@@ -436,8 +623,10 @@ func (k KVStore) HasValidVaultPools(ctx cosmos.Context) (bool, error) {
 	defer iterator.Close()
 	for ; iterator.Valid(); iterator.Next() {
 		var vault Vault
-		if err := k.cdc.Unmarshal(iterator.Value(), &vault); err != nil {
-			return false, dbError(ctx, "fail to unmarshal vault", err)
+		if !k.memoDecodeVault(iterator.Key(), iterator.Value(), &vault) {
+			if err := k.cdc.Unmarshal(iterator.Value(), &vault); err != nil {
+				return false, dbError(ctx, "fail to unmarshal vault", err)
+			}
 		}
 		if vault.HasFundsOrDeficit() {
 			return true, nil
