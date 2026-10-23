@@ -43,6 +43,16 @@ func printVersion() {
 	fmt.Printf("%s v%s, rev %s\n", serverIdentity, constants.Version, constants.GitCommit)
 }
 
+// requireLegacyRPCHost keeps develop's startup check for chains whose client takes
+// only rpc_host (no endpoints list, so ValidateEndpoints has nothing to check): an
+// enabled one without it is refused.
+func requireLegacyRPCHost(chainCfg config.BifrostChainConfiguration) error {
+	if !chainCfg.SupportsEndpoints() && len(chainCfg.RPCHost) == 0 {
+		return fmt.Errorf("chain %s: missing chain RPC host", chainCfg.ChainID)
+	}
+	return nil
+}
+
 // withScheme prefixes a bare host with http://. A host that names a scheme keeps it,
 // except tcp://, which becomes http:// (CometBFT's own client treats them the same,
 // and the endpoint router speaks http(s) only); other schemes are rejected by
@@ -214,6 +224,9 @@ func main() {
 		}
 		if err = chainCfg.ValidateEndpoints(); err != nil {
 			log.Fatal().Err(err).Msg("invalid chain endpoints configuration")
+		}
+		if err = requireLegacyRPCHost(chainCfg); err != nil {
+			log.Fatal().Err(err).Stringer("chain", chainCfg.ChainID).Msg("missing chain RPC host")
 		}
 		if err = chainCfg.GetFailoverConfig().Validate(); err != nil {
 			log.Fatal().Err(err).Stringer("chain", chainCfg.ChainID).Msg("invalid chain failover configuration")
