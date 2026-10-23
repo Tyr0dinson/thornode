@@ -241,6 +241,12 @@ func (am AppModule) EndBlock(goCtx context.Context) ([]abci.ValidatorUpdate, err
 	// EndBlock lists the active validators many times (per POL pool, per
 	// outbound, per manager); share one decode until a node account is written.
 	ctx = keeper.WithActiveValidatorsCache(ctx)
+	// Vault security sorts, pending outbound checks and fund migration walk the
+	// txout window of the past signing periods (the extended one for XMR and EVM
+	// outbounds) for every outbound; load it once. Not the current height, which
+	// EndBlock's outbounds keep appending to.
+	signingTransPeriod := am.mgr.Keeper().GetConfigInt64(ctx, constants.SigningTransactionPeriod)
+	ctx = keeper.WithTxOutWindow(ctx, ctx.BlockHeight()-types.MaxTxOutSigningTransactionPeriod(signingTransPeriod), ctx.BlockHeight()-1)
 
 	ctx.Logger().Debug("End Block")
 

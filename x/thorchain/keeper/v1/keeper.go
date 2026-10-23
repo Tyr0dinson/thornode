@@ -258,6 +258,7 @@ func (k KVStore) del(ctx cosmos.Context, key []byte) {
 	}
 	if bytes.HasPrefix(key, []byte(prefixTxOut)) {
 		keeper.TxOutCacheFromContext(ctx).Disable()
+		noteTxOutWindowWrite(ctx, key)
 	}
 	store := k.kvStore(ctx)
 	if store.Has(key) {
