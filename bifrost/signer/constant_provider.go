@@ -62,19 +62,21 @@ func (cp *ConstantsProvider) EnsureConstants(thorchainBlockHeight int64) error {
 	requestHeight := cp.requestHeight
 	churnInterval := cp.constants[constants.ChurnInterval.String()]
 	blockTimeMs := cp.blockTimeMs
+	history := cp.history
 	cp.constantsLock.Unlock()
 	if requestHeight == 0 {
 		return cp.getConstantsFromThorchain(thorchainBlockHeight)
 	}
 	// THORChain scales block-denominated constants to its block time, so
-	// refresh as soon as the block time changes. Fail closed when the block
-	// time can't be read: the cached history could miss a change, and the
-	// signer measures outbound age over it.
-	ms, _, err := cp.bridge.GetBlockTime()
+	// refresh as soon as the block time or its history changes: a change and
+	// its revert between two lookups leave ms as cached but add two segments,
+	// and the signer measures outbound age over the history. Fail closed when
+	// the block time can't be read, for the same reason.
+	ms, latest, err := cp.bridge.GetBlockTime()
 	if err != nil {
 		return fmt.Errorf("fail to get block time: %w", err)
 	}
-	if ms != blockTimeMs {
+	if ms != blockTimeMs || !sameRevision(latest, history) {
 		return cp.getConstantsFromThorchain(thorchainBlockHeight)
 	}
 	// Thorchain will have new version and constants only when new node get rotated in , and the new version get consensus
@@ -89,7 +91,7 @@ func (cp *ConstantsProvider) getConstantsFromThorchain(height int64) error {
 	// in between: constants scaled to one block time must not be paired with
 	// another.
 	for range 3 {
-		before, _, err := cp.bridge.GetBlockTime()
+		before, beforeHistory, err := cp.bridge.GetBlockTime()
 		if err != nil {
 			return fmt.Errorf("fail to get block time: %w", err)
 		}
@@ -101,7 +103,7 @@ func (cp *ConstantsProvider) getConstantsFromThorchain(height int64) error {
 		if err != nil {
 			return fmt.Errorf("fail to get block time: %w", err)
 		}
-		if blockTimeMs != before {
+		if blockTimeMs != before || !sameRevision(history, beforeHistory) {
 			continue
 		}
 		cp.constantsLock.Lock()
@@ -113,4 +115,11 @@ func (cp *ConstantsProvider) getConstantsFromThorchain(height int64) error {
 		return nil
 	}
 	return fmt.Errorf("block time kept changing while reading constants")
+}
+
+// sameRevision reports whether two reads of the block time history are the
+// same revision. THORChain only ever appends to it, so the length and the last
+// segment identify one.
+func sameRevision(a, b constants.BlockTimeHistory) bool {
+	return len(a) == len(b) && (len(a) == 0 || a[len(a)-1] == b[len(b)-1])
 }

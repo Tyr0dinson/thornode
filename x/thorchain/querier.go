@@ -3281,7 +3281,7 @@ func (qs queryServer) queryQueue(ctx cosmos.Context, _ *types.QueryQueueRequest)
 	// sum outbound value, including outbounds an earlier, faster block time
 	// scheduled further ahead
 	offsetEnd := qs.mgr.Keeper().RefWindowEnd(ctx, qs.mgr.Keeper().GetConfigInt64Ref(ctx, constants.MaxTxOutOffset))
-	scanEnd := qs.mgr.Keeper().RefWindowEnd(ctx, qs.mgr.Keeper().GetConfigInt64Ref(ctx, constants.TxOutDelayMax))
+	scanEnd := txOutScanEnd(ctx, qs.mgr.Keeper())
 
 	for height := ctx.BlockHeight() + 1; height <= scanEnd; height++ {
 		value, clout, err := qs.mgr.Keeper().GetTxOutValue(ctx, height)
@@ -3823,9 +3823,8 @@ func (qs queryServer) queryScheduledOutbound(ctx cosmos.Context, _ *types.QueryS
 	result := make([]*types.QueryTxOutItem, 0)
 	// including outbounds an earlier, faster block time scheduled further ahead
 	maxTxOutOffset := qs.mgr.Keeper().RefWindowEnd(ctx, qs.mgr.Keeper().GetConfigInt64Ref(ctx, constants.MaxTxOutOffset)) - ctx.BlockHeight()
-	// outbounds are scheduled at most TxOutDelayMax + MaxTxOutOffset ahead
-	scanBlocks := maxTxOutWindow(ctx, qs.mgr.Keeper())
-	for height := ctx.BlockHeight() + 1; height <= ctx.BlockHeight()+scanBlocks; height++ {
+	scanEnd := txOutScanEnd(ctx, qs.mgr.Keeper())
+	for height := ctx.BlockHeight() + 1; height <= scanEnd; height++ {
 		txOut, err := qs.mgr.Keeper().GetTxOut(ctx, height)
 		if err != nil {
 			ctx.Logger().Error("fail to get tx out array from key value store", "error", err)

@@ -294,3 +294,30 @@ func (s *ConstantsProviderSuite) TestEnsureConstantsFailsClosedOnBlockTimeError(
 	bridge.blockErr = nil
 	c.Assert(cp.EnsureConstants(102), IsNil)
 }
+
+// A block time change and its revert between two lookups leave the block time
+// as cached but grow the history; the cached constants must refresh, or the
+// signer measures outbound age over a history that misses both changes.
+func (s *ConstantsProviderSuite) TestRefreshOnHistoryChangeWithSameBlockTime(c *C) {
+	refMs := constants.ThorchainBlockTime.Milliseconds()
+	bridge := &mockBridgeConstants{
+		constants:   map[string]int64{constants.ChurnInterval.String(): 43200},
+		blockTimeMs: refMs,
+	}
+	cp := NewConstantsProvider(bridge)
+	_, _, history, err := cp.GetInt64ValueWithBlockTime(100, constants.SigningTransactionPeriod)
+	c.Assert(err, IsNil)
+	c.Check(history, HasLen, 0)
+
+	bridge.history = constants.BlockTimeHistory{{Height: 101, Ms: refMs / 2}, {Height: 301, Ms: refMs}}
+	_, ms, history, err := cp.GetInt64ValueWithBlockTime(301, constants.SigningTransactionPeriod)
+	c.Assert(err, IsNil)
+	c.Check(ms, Equals, refMs)
+	c.Check(history, DeepEquals, bridge.history)
+	c.Check(cp.requestHeight, Equals, int64(301))
+
+	// an outbound from height 100 is 101 reference blocks old at 301, not 201:
+	// still inside a 300-block period with a 150-block buffer
+	c.Check(signingWindowExpired(100, 301, 300, 150, refMs, history), Equals, false)
+	c.Check(signingWindowExpired(100, 301, 300, 150, refMs, nil), Equals, true)
+}

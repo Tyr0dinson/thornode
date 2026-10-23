@@ -72,6 +72,14 @@ func (h RagnarokHandler) handle(ctx cosmos.Context, msg MsgRagnarok) (*cosmos.Re
 	// analyze-ignore(unscaled-config): a wall-clock period, in reference blocks
 	periodMs := h.mgr.GetConstants().GetInt64Value(constants.SigningTransactionPeriod) * refMs
 	history := h.mgr.Keeper().GetBlockTimeHistory(ctx)
+	if len(history) > 0 {
+		// LackSigning reschedules XMR, EVM aggregator and EVM token outbounds
+		// one extended period later, rounded up to a whole block once. Stepping
+		// by the standard period rounds each step, which can overshoot that
+		// height. Without a block time change the extended period is a whole
+		// number of standard steps, so they already land on it.
+		periodMs *= observedSigningPeriodMultiplier(msg.Tx)
+	}
 	decrementedPendingRagnarok := false
 	for height := msg.BlockHeight; height <= ctx.BlockHeight(); height = history.HeightAfter(height, periodMs, refMs) {
 		// update txOut record with our TxID that sent funds out of the pool

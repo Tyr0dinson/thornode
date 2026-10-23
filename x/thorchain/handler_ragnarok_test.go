@@ -7,6 +7,7 @@ import (
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/constants"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
 )
 
@@ -382,4 +383,93 @@ func (HandlerRagnarokSuite) TestRagnarokZecTexDestination(c *C) {
 	c.Check(pending, Equals, int64(2))
 	c.Check(keeper.activeNodeAccount.Bond.LT(cosmos.NewUint(100*common.One)), Equals, true,
 		Commentf("an unmatched ragnarok outbound should still slash"))
+}
+
+// ragnarokRetryKeeper stores TxOuts in the real keeper, so the handler can walk
+// several heights.
+type ragnarokRetryKeeper struct {
+	*TestRagnarokKeeperHappyPath
+}
+
+func (k ragnarokRetryKeeper) GetTxOut(ctx cosmos.Context, height int64) (*TxOut, error) {
+	return k.Keeper.GetTxOut(ctx, height)
+}
+
+func (k ragnarokRetryKeeper) SetTxOut(ctx cosmos.Context, txOut *TxOut) error {
+	return k.Keeper.SetTxOut(ctx, txOut)
+}
+
+// After a block time change, LackSigning reschedules an XMR ragnarok outbound
+// one extended (3x) signing period later in wall-clock time. At a block time
+// that does not divide the period, three rounded standard steps overshoot that
+// height, so the handler must step by the extended period to find the retry.
+func (HandlerRagnarokSuite) TestRagnarokFindsExtendedRetryAfterBlockTimeChange(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	refMs := constants.ThorchainBlockTime.Milliseconds()
+	history := constants.BlockTimeHistory{{Height: 1, Ms: refMs * 7 / 10}}
+	k.SetBlockTimeHistory(ctx, history[0].Ms, history)
+
+	periodMs := constants.NewConstantValue().GetInt64Value(constants.SigningTransactionPeriod) * refMs
+	retryHeight := history.HeightAfter(1, periodMs*xmrSigningPeriodMultiplier, refMs)
+	standard := int64(1)
+	for range xmrSigningPeriodMultiplier {
+		standard = history.HeightAfter(standard, periodMs, refMs)
+	}
+	c.Assert(standard, Not(Equals), retryHeight, Commentf("the block time must not divide the period"))
+	ctx = ctx.WithBlockHeight(retryHeight + 10)
+
+	retireVault := GetRandomVault()
+	retireVault.PubKeyFrost = GetRandomEd25519PubKey()
+	retireVault.Chains = common.Chains{common.XMRChain}.Strings()
+	newVault := GetRandomVault()
+	newVault.PubKeyFrost = GetRandomEd25519PubKey()
+	newVaultAddr, err := newVault.PubKeyFrost.GetAddress(common.XMRChain)
+	c.Assert(err, IsNil)
+	fromAddr, err := retireVault.PubKeyFrost.GetAddress(common.XMRChain)
+	c.Assert(err, IsNil)
+
+	item := TxOutItem{
+		Chain:            common.XMRChain,
+		InHash:           common.BlankTxID,
+		ToAddress:        newVaultAddr,
+		VaultPubKey:      retireVault.PubKey,
+		VaultPubKeyFrost: retireVault.PubKeyFrost,
+		Coin:             common.NewCoin(common.XMRAsset, cosmos.NewUint(1024)),
+		Memo:             NewRagnarokMemo(1).String(),
+	}
+	original := NewTxOut(1)
+	rescheduled := item
+	rescheduled.OutHash = common.BlankTxID // marked by LackSigning when it rescheduled the item
+	original.TxArray = append(original.TxArray, rescheduled)
+	c.Assert(k.SetTxOut(ctx, original), IsNil)
+	retry := NewTxOut(retryHeight)
+	retry.TxArray = append(retry.TxArray, item)
+	c.Assert(k.SetTxOut(ctx, retry), IsNil)
+	k.SetRagnarokPending(ctx, 1)
+
+	keeper := ragnarokRetryKeeper{&TestRagnarokKeeperHappyPath{
+		Keeper:            k,
+		activeNodeAccount: GetRandomValidatorNode(NodeActive),
+		newVault:          newVault,
+		retireVault:       retireVault,
+	}}
+	handler := NewRagnarokHandler(NewDummyMgrWithKeeper(keeper))
+	tx := NewObservedTx(common.Tx{
+		ID:          GetRandomTxHash(),
+		Chain:       common.XMRChain,
+		Coins:       common.Coins{common.NewCoin(common.XMRAsset, cosmos.NewUint(1024))},
+		Memo:        NewRagnarokMemo(1).String(),
+		FromAddress: fromAddr,
+		ToAddress:   newVaultAddr,
+		Gas:         common.Gas{common.NewCoin(common.XMRAsset, cosmos.NewUint(10))},
+	}, ctx.BlockHeight(), retireVault.PubKeyFrost, ctx.BlockHeight())
+
+	_, err = handler.handle(ctx, *NewMsgRagnarok(tx, 1, keeper.activeNodeAccount.NodeAddress))
+	c.Assert(err, IsNil)
+	got, err := k.GetTxOut(ctx, retryHeight)
+	c.Assert(err, IsNil)
+	c.Check(got.TxArray[0].OutHash.Equals(tx.Tx.ID), Equals, true)
+	pending, err := k.GetRagnarokPending(ctx)
+	c.Assert(err, IsNil)
+	c.Check(pending, Equals, int64(0))
 }

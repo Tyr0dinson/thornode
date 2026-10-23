@@ -2627,3 +2627,34 @@ func (s *QuerierSuite) TestQueryPoolLuviFields(c *C) {
 		}
 	}
 }
+
+// Lowering TxOutDelayMax and MaxTxOutOffset leaves already queued outbounds
+// where they are: the scheduled outbound and queue queries must still report
+// every one of them, as the fixed span they scanned before did.
+func (s *QuerierSuite) TestQueryScheduledOutboundAfterDelayLowered(c *C) {
+	ctx := s.ctx.WithBlockHeight(1500)
+	qs := queryServer{mgr: s.mgr}
+	zero := cosmos.ZeroUint()
+	for height := ctx.BlockHeight() + 20; height <= ctx.BlockHeight()+40; height++ {
+		c.Assert(s.k.AppendTxOut(ctx, height, TxOutItem{
+			Chain:                 common.THORChain,
+			ToAddress:             GetRandomTHORAddress(),
+			VaultPubKey:           GetRandomPubKey(),
+			Coin:                  common.NewCoin(common.RuneAsset(), cosmos.NewUint(100)),
+			Memo:                  NewOutboundMemo(GetRandomTxHash()).String(),
+			InHash:                GetRandomTxHash(),
+			CloutSpent:            &zero,
+			AggregatorTargetLimit: &zero,
+		}), IsNil)
+	}
+	s.k.SetMimir(ctx, constants.TxOutDelayMax.String(), 0)
+	s.k.SetMimir(ctx, constants.MaxTxOutOffset.String(), 20)
+
+	scheduled, err := qs.queryScheduledOutbound(ctx, &types.QueryScheduledOutboundRequest{})
+	c.Assert(err, IsNil)
+	c.Check(scheduled.TxOutItems, HasLen, 21)
+
+	queue, err := qs.queryQueue(ctx, &types.QueryQueueRequest{})
+	c.Assert(err, IsNil)
+	c.Check(queue.ScheduledOutboundValue, Equals, "2100")
+}

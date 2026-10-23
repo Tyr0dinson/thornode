@@ -1216,7 +1216,7 @@ func emitEndBlockTelemetry(ctx cosmos.Context, mgr Manager) error {
 	// outbounds scheduled before a block time change
 	// analyze-ignore(unscaled-config): RefWindowStart takes reference blocks
 	startHeight := mgr.Keeper().RefWindowStart(ctx, mgr.GetConstants().GetInt64Value(constants.SigningTransactionPeriod))
-	scanEnd := mgr.Keeper().RefWindowEnd(ctx, mgr.Keeper().GetConfigInt64Ref(ctx, constants.TxOutDelayMax))
+	scanEnd := txOutScanEnd(ctx, mgr.Keeper())
 	offsetEnd := mgr.Keeper().RefWindowEnd(ctx, mgr.Keeper().GetConfigInt64Ref(ctx, constants.MaxTxOutOffset))
 	var queueSwap, queueInternal, queueOutbound int64
 	queueScheduledOutboundValue := cosmos.ZeroUint()
@@ -2476,6 +2476,20 @@ func signingWindowStarts(ctx cosmos.Context, k keeper.Keeper) func(refPeriod int
 func maxTxOutWindow(ctx cosmos.Context, k keeper.Keeper) int64 {
 	refWindow := max(k.GetConfigInt64Ref(ctx, constants.TxOutDelayMax), 0) + max(k.GetConfigInt64Ref(ctx, constants.MaxTxOutOffset), 0)
 	return k.RefWindowEnd(ctx, refWindow) - ctx.BlockHeight()
+}
+
+// txOutQueueScanBlocks is the least span, in reference blocks, that a scan of
+// the scheduled outbound queue covers: the fixed span it covered before the
+// span followed the delay settings.
+const txOutQueueScanBlocks = 17280
+
+// txOutScanEnd returns the last height a scan of the scheduled outbound queue
+// must reach. Outbounds are scheduled at most maxTxOutWindow ahead, but
+// lowering TxOutDelayMax or MaxTxOutOffset leaves already queued outbounds
+// where they are, so it never ends before txOutQueueScanBlocks of wall-clock
+// time ahead. Scans still stop at the first empty height past MaxTxOutOffset.
+func txOutScanEnd(ctx cosmos.Context, k keeper.Keeper) int64 {
+	return max(ctx.BlockHeight()+maxTxOutWindow(ctx, k), k.RefWindowEnd(ctx, txOutQueueScanBlocks))
 }
 
 // thorchainBlockMs returns the approximate THORChain block interval in

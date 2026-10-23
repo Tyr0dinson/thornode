@@ -284,6 +284,21 @@ func isObservedEVMTokenOutbound(tx common.ObservedTx) bool {
 	return !tx.Tx.Coins[0].Asset.Equals(tx.Tx.Chain.GetGasAsset())
 }
 
+// observedSigningPeriodMultiplier returns the multiple of
+// SigningTransactionPeriod LackSigning waits before rescheduling the outbound
+// that tx observes.
+func observedSigningPeriodMultiplier(tx common.ObservedTx) int64 {
+	switch {
+	case tx.Tx.Chain.Equals(common.XMRChain):
+		return xmrSigningPeriodMultiplier
+	case isObservedEVMAggregatorOutbound(tx):
+		return evmAggregatorSigningPeriodMultiplier
+	case isObservedEVMTokenOutbound(tx):
+		return evmTokenSigningPeriodMultiplier
+	}
+	return 1
+}
+
 func txOutSigningPeriod(toi TxOutItem, signingTransPeriod int64) int64 {
 	return toi.SigningTransactionPeriod(signingTransPeriod)
 }
