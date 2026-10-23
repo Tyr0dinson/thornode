@@ -522,3 +522,41 @@ func (s *RouterSuite) TestSuccessIsRecordedWhenTheBodyCompletes(c *C) {
 func hcFor(c *C, m *endpoints.Manager, targets []endpoints.Target) *http.Client {
 	return routerFor(c, m, targets, nil)
 }
+
+// An endpoint that flushes an error status and then stalls the body must not consume
+// the caller's remaining deadline: the read moves on to the healthy backup well
+// inside the caller's budget instead of draining the stalled body.
+func (s *RouterSuite) TestStalledErrorBodyDoesNotStarveTheNextCandidate(c *C) {
+	release := make(chan struct{})
+	defer close(release)
+	stalled := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte(`{"error":"busy`))
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+		select { // body never completes until the test ends
+		case <-release:
+		case <-r.Context().Done():
+		}
+	}))
+	defer stalled.Close()
+	var st int32 = http.StatusOK
+	var h2 []hit
+	good := rpcServer(&st, &h2, "")
+	defer good.Close()
+	m, targets := twoEndpointMgr(c, common.ETHChain, []config.ChainEndpointConfig{{Name: "stalled", RPCHost: stalled.URL, Priority: 1}, {Name: "good", RPCHost: good.URL, Priority: 2}}, 1)
+	hc := routerFor(c, m, targets, nil)
+	hc.Timeout = 5 * time.Second
+
+	start := time.Now()
+	resp, err := post(c, hc, base(m), "eth_blockNumber")
+	c.Assert(err, IsNil)
+	body, _ := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	c.Assert(string(body), Matches, `.*"ok".*`)
+	c.Assert(h2, HasLen, 1)
+	c.Assert(time.Since(start) < 2*time.Second, Equals, true, Commentf("took %s", time.Since(start)))
+	c.Assert(m.Entry("stalled").State(), Equals, endpoints.StateUnhealthy)
+}

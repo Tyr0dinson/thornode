@@ -108,6 +108,9 @@ const (
 	defaultDialTimeout    = 5 * time.Second
 	defaultAttemptTimeout = 10 * time.Second
 	sniffLimit            = 64 << 10
+	// drainTimeout bounds how long a rejected response body is read before the
+	// connection is simply dropped, so a stalled error body cannot eat the retry budget.
+	drainTimeout = 500 * time.Millisecond
 )
 
 // NewHTTPRouter validates the config against the manager and returns the router.
@@ -289,7 +292,7 @@ func (r *HTTPRouter) RoundTrip(req *http.Request) (*http.Response, error) {
 			if isWrite && fromBody {
 				return resp, nil // the write may have been accepted; hand the answer back, never retry
 			}
-			drain(resp)
+			drain(resp, acancel)
 			lastErr = fmt.Errorf("endpoint %s: rate limited", e.Name)
 			if isWrite {
 				return nil, lastErr
@@ -299,7 +302,7 @@ func (r *HTTPRouter) RoundTrip(req *http.Request) (*http.Response, error) {
 			if isWrite && fromBody {
 				return resp, nil
 			}
-			drain(resp)
+			drain(resp, acancel)
 			lastErr = fmt.Errorf("endpoint %s: http %d", e.Name, resp.StatusCode)
 			if isWrite {
 				return nil, lastErr
@@ -613,7 +616,14 @@ func isDialError(err error) bool {
 	return errors.As(err, &dnsErr)
 }
 
-func drain(resp *http.Response) {
+// drain discards a rejected response so its connection can be reused, but only for
+// drainTimeout: an endpoint that sends an error status and then stalls the body
+// would otherwise hold the whole remaining deadline (the per-attempt timer is
+// disarmed once headers arrive) and starve the next candidate. On timeout, cancel
+// aborts the attempt and the connection is dropped instead.
+func drain(resp *http.Response, cancel context.CancelFunc) {
+	t := time.AfterFunc(drainTimeout, cancel)
 	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
+	t.Stop()
 	_ = resp.Body.Close()
 }
