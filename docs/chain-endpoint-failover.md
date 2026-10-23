@@ -110,9 +110,17 @@ verifying whether a broadcast is still alive. That window counts any time spent 
 the healthy state, lag included, not only unreachability.
 
 An endpoint's identity is verified once, when it is first reached. A provider URL
-repointed at another network after bifrost started is caught by the block-hash
-integrity check rather than by identity verification, so leave `integrity_check_depth`
-enabled on chains that support it.
+repointed at another network after bifrost started is not re-verified; the only
+later defence is the block-hash integrity check, and that check has limits. It needs
+a height quorum (two endpoints within `max_block_lag` of each other), so it never
+runs with a single endpoint. It evicts an endpoint only when a strict majority of the
+healthy endpoints agree on another hash, so with two endpoints a disagreement cannot
+be attributed to either: both stay in service and the tie is logged as a warning. In
+practice that means three or more endpoints are needed before a repointed provider
+is caught automatically; with fewer, watch the `endpoints disagree on the block hash`
+log line and restart bifrost after fixing the configuration (identity is re-verified
+at startup). Leave `integrity_check_depth` enabled on chains that support it either
+way: an evicted endpoint is only let back in after it serves the majority hash again.
 
 ## Configuration
 
