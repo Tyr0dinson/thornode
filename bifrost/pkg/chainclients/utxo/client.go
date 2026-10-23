@@ -526,7 +526,7 @@ func (c *Client) FetchTxs(height, chainHeight int64) (types.TxIn, error) {
 
 	block, err := c.getBlock(height)
 	if err != nil {
-		if rpcErr, ok := err.(*btcjson.RPCError); ok && rpcErr.Code == btcjson.ErrRPCInvalidParameter {
+		if isBlockUnavailable(err) {
 			// this means the tx had been broadcast to chain, it must be another signer finished quicker then us
 			return txIn, btypes.ErrUnavailableBlock
 		}
@@ -955,4 +955,12 @@ func (c *Client) ReportSolvency(height int64) error {
 
 	c.lastSolvencyCheckHeight.Store(height)
 	return nil
+}
+
+// isBlockUnavailable reports a daemon's "block height out of range" (-8): the height
+// is not there yet, so the scanner retries it quietly. The error may arrive wrapped
+// (redacted) when a fallback daemon answered.
+func isBlockUnavailable(err error) bool {
+	var rpcErr *btcjson.RPCError
+	return errors.As(err, &rpcErr) && rpcErr.Code == btcjson.ErrRPCInvalidParameter
 }

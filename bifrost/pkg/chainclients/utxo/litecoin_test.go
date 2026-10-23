@@ -2,7 +2,6 @@ package utxo
 
 import (
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -125,10 +124,7 @@ func (s *LitecoinSuite) SetUpTest(c *C) {
 		c.Assert(err, IsNil)
 
 		rw.Header().Set("Content-Type", "application/json")
-		key := r.Method
-		if r.Method == "getrawtransaction" {
-			key = fmt.Sprintf("%s-%s", r.Method, r.Params[0])
-		}
+		key := rpcFixtureKey(r.Method, r.Params)
 		if ltcChainRPCs[key] == nil {
 			key = r.Method
 		}
@@ -149,10 +145,7 @@ func (s *LitecoinSuite) SetUpTest(c *C) {
 		rw.Header().Set("Content-Type", "application/json")
 		result := make([]map[string]interface{}, len(r))
 		for i, v := range r {
-			key := v.Method
-			if v.Method == "getrawtransaction" {
-				key = fmt.Sprintf("%s-%s", v.Method, v.Params[0])
-			}
+			key := rpcFixtureKey(v.Method, v.Params)
 			if ltcChainRPCs[key] == nil {
 				key = v.Method
 			}
@@ -875,10 +868,9 @@ func (s *LitecoinSuite) TestProcessReOrg(c *C) {
 	reOrgedTxIns, err := s.client.processReorg(&result)
 	c.Assert(err, IsNil)
 	c.Assert(reOrgedTxIns, IsNil)
-	// the primary has reached the reorg tip, so its "not found" is proof
-	savedCount := ltcChainRPCs["getblockcount"]
-	ltcChainRPCs["getblockcount"] = map[string]interface{}{"result": result.Height, "error": nil, "id": 3}
-	defer func() { ltcChainRPCs["getblockcount"] = savedCount }()
+	// the new chain's block at height-1 (also the primary's), so the reorg walk can
+	// fetch it by hash and the primary's "not found" is proof
+	defer reorgParent(ltcChainRPCs, result.Height-1, result.PreviousHash, ttypes.GetRandomTxHash().String())()
 
 	// add one UTXO which will trigger the re-org process next
 	previousHeight := result.Height - 1

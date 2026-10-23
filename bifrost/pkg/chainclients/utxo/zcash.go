@@ -64,7 +64,7 @@ func (c *Client) checkZecBroadcastExpiry(expiry uint32, txid string, chainHeight
 	confirmed, err := c.rpc.GetRawTransactionVerbosePrimary(txid)
 	if err != nil {
 		if isUTXOTxNotFoundErr(err) {
-			return "", expiryErr
+			return "", c.zecExpiredOnPrimary(expiry, txid, expiryErr)
 		}
 		return "", fmt.Errorf("check expired ZEC transaction %s: %w", txid, err)
 	}
@@ -74,7 +74,22 @@ func (c *Client) checkZecBroadcastExpiry(expiry uint32, txid string, chainHeight
 	if confirmed.Confirmations > 0 && confirmed.BlockHash != "" {
 		return txid, nil
 	}
-	return "", expiryErr
+	return "", c.zecExpiredOnPrimary(expiry, txid, expiryErr)
+}
+
+// zecExpiredOnPrimary returns expiryErr only once the primary has itself reached the
+// expiry height: below it, the primary's "not mined" says nothing about the blocks
+// between its tip and the routed height the expiry was judged on, where another
+// signer's copy may have been mined. Until then the payload stays retryable.
+func (c *Client) zecExpiredOnPrimary(expiry uint32, txid string, expiryErr error) error {
+	tip, err := c.rpc.GetBlockCountPrimary()
+	if err != nil {
+		return fmt.Errorf("check expired ZEC transaction %s: primary height: %w", txid, err)
+	}
+	if tip < int64(expiry) {
+		return fmt.Errorf("check expired ZEC transaction %s: the primary is at %d, below the expiry height %d", txid, tip, expiry)
+	}
+	return expiryErr
 }
 
 // getZecUtxoToSpend selects a confirmed input prefix from Zebra's live UTXO set.
@@ -104,7 +119,9 @@ func (c *Client) selectZecUtxos(pubkey common.PubKey, target, floor btcutil.Amou
 	if target < 0 || (!consolidate && target == 0) {
 		return nil, fmt.Errorf("invalid ZEC input target: %d", target)
 	}
-	tip, err := c.rpc.GetBlockCount()
+	// the primary's own tip: the inputs below come from the primary only, so a
+	// fallback that is further ahead must not let a lagging primary pass this check
+	tip, err := c.rpc.GetBlockCountPrimary()
 	if err != nil {
 		return nil, fmt.Errorf("get ZEC tip for input selection: %w", err)
 	}

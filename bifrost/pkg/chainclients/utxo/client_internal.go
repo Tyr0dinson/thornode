@@ -60,6 +60,7 @@ func (c *Client) isAsgardAddress(addressToCheck string) bool {
 type utxoReorgFix struct {
 	meta   *utxo.BlockMeta
 	errata []types.ErrataTx
+	block  *btcjson.GetBlockVerboseTxResult // the new chain's block at meta.Height
 }
 
 // utxoReorgPlan is the work a detected reorg requires. It is computed without side
@@ -112,29 +113,19 @@ func (c *Client) planReorg(block *btcjson.GetBlockVerboseTxResult) (*utxoReorgPl
 		Str("blockMetaHash", prevBlockMeta.BlockHash).
 		Msg("re-org detected")
 
-	fixes, err := c.planReConfirm(block.Height)
+	fixes, err := c.planReConfirm(block)
 	if err != nil {
 		return nil, fmt.Errorf("re-org at height %d cannot be resolved yet: %w", block.Height, err)
 	}
 	plan := &utxoReorgPlan{fixes: fixes}
 	for _, fix := range fixes {
-		height := fix.meta.Height
-		c.log.Info().Int64("height", height).Msg("rescanning block")
-		b, berr := c.getBlock(height)
-		if berr != nil {
+		c.log.Info().Int64("height", fix.meta.Height).Msg("rescanning block")
+		txIn, xerr := c.extractTxs(fix.block)
+		if xerr != nil {
 			// extractTxs already marked the earlier rescans' txs as observed: undo
 			// that, or the retry of this step would skip them as reported before
 			c.untrackObserved(plan.txIns)
-			return nil, fmt.Errorf("rescan block %d: %w", height, berr)
-		}
-		// the repaired meta takes the hashes of the block actually rescanned, so the
-		// stored hash and the observations always describe the same block
-		fix.meta.PreviousHash = b.PreviousHash
-		fix.meta.BlockHash = b.Hash
-		txIn, xerr := c.extractTxs(b)
-		if xerr != nil {
-			c.untrackObserved(plan.txIns)
-			return nil, fmt.Errorf("rescan block %d: %w", height, xerr)
+			return nil, fmt.Errorf("rescan block %d: %w", fix.meta.Height, xerr)
 		}
 		if len(txIn.TxArray) > 0 {
 			plan.txIns = append(plan.txIns, txIn)
@@ -155,54 +146,91 @@ func (c *Client) untrackObserved(txIns []types.TxIn) {
 	}
 }
 
-// planReConfirm walks back from height-1 until a stored block matches the chain,
-// re-confirming every observed customer transaction of the blocks that do not. It
-// reports and persists nothing. A transaction becomes an errata only on the
-// primary's positive "not found"; any lookup that cannot be answered aborts the
-// whole plan.
-func (c *Client) planReConfirm(height int64) ([]utxoReorgFix, error) {
+// planReConfirm walks back from the scanned block's parent until a stored block is
+// on the scanned block's chain, re-confirming every observed customer transaction of
+// the stored blocks that are not. The walk follows hashes, not heights: each block is
+// fetched by the hash its child names, so an endpoint that is behind, still on the
+// old fork, or a load-balanced provider answering from different nodes cannot answer
+// for another chain (one that does not have the block errors, and the next endpoint
+// is asked). A height with no stored block (a gap a skip-ahead left) is walked
+// through by hash while stored blocks remain below it; the walk stops where no
+// stored block is left in the window. A transaction
+// becomes an errata only on the primary's positive "not found", once the primary is
+// proven to be on the scanned block's chain; one that the new chain's blocks hold is
+// still on chain. It reports and persists nothing; any read that cannot be answered
+// aborts the whole plan.
+func (c *Client) planReConfirm(block *btcjson.GetBlockVerboseTxResult) ([]utxoReorgFix, error) {
 	// calculate the earliest look back height
-	earliestHeight := height - c.cfg.BlockScanner.MaxReorgRescanBlocks
+	earliestHeight := block.Height - c.cfg.BlockScanner.MaxReorgRescanBlocks
 	if earliestHeight < 1 {
 		earliestHeight = 1
 	}
 
+	// transactions the new chain holds need no lookup: an inbound reorged out and
+	// mined again in one of these blocks is on chain even if the primary is exactly
+	// at the scanned block's parent and never saw it in its mempool
+	onNewChain := blockTxids(block)
+	primaryProven := false
 	var fixes []utxoReorgFix
-	// the primary's "not found" is proof only once it has reached the reorg tip: a
-	// resyncing or lagging primary answers "not found" for everything above its own
-	primaryHeight := int64(-1)
+	expected := block.PreviousHash
 	// the current block is not yet in block meta, start from previous block
-	for i := height - 1; i >= earliestHeight; i-- {
+	for i := block.Height - 1; i >= earliestHeight; i-- {
 		blockMeta, err := c.temporalStorage.GetBlockMeta(i)
 		if err != nil {
 			return nil, fmt.Errorf("fail to get block meta %d from local storage: %w", i, err)
 		}
 		if blockMeta == nil {
-			continue // nothing stored at this height, nothing to re-confirm
+			below, berr := c.storedMetaBelow(i, earliestHeight)
+			if berr != nil {
+				return nil, berr
+			}
+			if !below {
+				break // nothing stored from here down, nothing to re-confirm
+			}
+			// a gap (a skip-ahead left it): nothing recorded here, but stored blocks
+			// below may be on the old fork, so follow the chain through it by hash
+			b, gerr := c.getBlockByHash(i, expected)
+			if gerr != nil {
+				return nil, fmt.Errorf("fail to get block %s at height %d: %w", expected, i, gerr)
+			}
+			if !strings.EqualFold(b.Hash, expected) || b.Height != i {
+				return nil, fmt.Errorf("asked for block %s at height %d, got block %s at height %d", expected, i, b.Hash, b.Height)
+			}
+			for txid := range blockTxids(b) {
+				onNewChain[txid] = true
+			}
+			expected = b.PreviousHash
+			continue
 		}
-
-		hash, err := c.rpc.GetBlockHash(blockMeta.Height)
-		if err != nil {
-			return nil, fmt.Errorf("fail to get block hash %d: %w", blockMeta.Height, err)
-		}
-		if strings.EqualFold(blockMeta.BlockHash, hash) {
+		if strings.EqualFold(blockMeta.BlockHash, expected) {
 			break // we know about this block, everything prior is okay
 		}
 
-		c.log.Info().Int64("height", blockMeta.Height).Msg("re-confirming transactions")
-		if len(blockMeta.CustomerTransactions) > 0 && primaryHeight < 0 {
-			ph, perr := c.rpc.GetBlockCountPrimary()
-			if perr != nil {
-				return nil, fmt.Errorf("cannot ask the primary its height: %w", perr)
-			}
-			if ph < height-1 {
-				return nil, fmt.Errorf("the primary is at height %d, below the reorg tip %d: its \"not found\" is not proof yet", ph, height-1)
-			}
-			primaryHeight = ph
+		b, err := c.getBlockByHash(i, expected)
+		if err != nil {
+			return nil, fmt.Errorf("fail to get block %s at height %d: %w", expected, i, err)
 		}
-		fix := utxoReorgFix{meta: blockMeta}
+		if !strings.EqualFold(b.Hash, expected) || b.Height != i {
+			return nil, fmt.Errorf("asked for block %s at height %d, got block %s at height %d", expected, i, b.Hash, b.Height)
+		}
+		for txid := range blockTxids(b) {
+			onNewChain[txid] = true
+		}
+
+		c.log.Info().Int64("height", blockMeta.Height).Msg("re-confirming transactions")
+		fix := utxoReorgFix{meta: blockMeta, block: b}
 		var gone []string
 		for _, tx := range blockMeta.CustomerTransactions {
+			if onNewChain[tx] {
+				c.log.Info().Int64("height", blockMeta.Height).Str("txid", tx).Msg("transaction is on the new chain")
+				continue
+			}
+			if !primaryProven {
+				if err = c.requirePrimaryOnChainOf(block); err != nil {
+					return nil, err
+				}
+				primaryProven = true
+			}
 			switch c.confirmTx(tx) {
 			case txStillOnChain:
 				c.log.Info().Int64("height", blockMeta.Height).Str("txid", tx).Msg("transaction still exists")
@@ -221,11 +249,53 @@ func (c *Client) planReConfirm(height int64) ([]utxoReorgFix, error) {
 		for _, tx := range gone {
 			blockMeta.RemoveCustomerTransaction(tx)
 		}
-		// the hashes are repaired from the rescanned block (planReorg)
-		blockMeta.BlockHash = hash
+		// the stored record now describes the new chain's block at this height
+		blockMeta.BlockHash = b.Hash
+		blockMeta.PreviousHash = b.PreviousHash
 		fixes = append(fixes, fix)
+		expected = b.PreviousHash
 	}
 	return fixes, nil
+}
+
+// storedMetaBelow reports whether a block meta is stored at any height below height,
+// down to earliest (local storage only).
+func (c *Client) storedMetaBelow(height, earliest int64) (bool, error) {
+	for j := height - 1; j >= earliest; j-- {
+		meta, err := c.temporalStorage.GetBlockMeta(j)
+		if err != nil {
+			return false, fmt.Errorf("fail to get block meta %d from local storage: %w", j, err)
+		}
+		if meta != nil {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// requirePrimaryOnChainOf checks that the primary daemon (the one confirmTx asks) is
+// on the scanned block's chain: its block at height-1 is the scanned block's parent.
+// A primary that is behind, or still on the old fork, would call a transaction of the
+// new chain absent; the reorg step is then retried.
+func (c *Client) requirePrimaryOnChainOf(block *btcjson.GetBlockVerboseTxResult) error {
+	hash, err := c.rpc.GetBlockHashPrimary(block.Height - 1)
+	if err != nil {
+		return fmt.Errorf("cannot read block %d from the primary: %w", block.Height-1, err)
+	}
+	if !strings.EqualFold(hash, block.PreviousHash) {
+		return fmt.Errorf("the primary has block %d as %s, not the scanned block's parent %s: it is behind or on another fork, so its \"not found\" is no proof yet",
+			block.Height-1, hash, block.PreviousHash)
+	}
+	return nil
+}
+
+// blockTxids lists the txids of a block.
+func blockTxids(block *btcjson.GetBlockVerboseTxResult) map[string]bool {
+	out := make(map[string]bool, len(block.Tx))
+	for _, tx := range block.Tx {
+		out[tx.Txid] = true
+	}
+	return out
 }
 
 // commitReorg reports the errata and persists the repaired block metas of a plan.
@@ -316,6 +386,11 @@ func (c *Client) canDeleteBlock(blockMeta *utxo.BlockMeta) bool {
 	// them would report them absent and let the block meta go too early. Zebra does
 	// not implement getmempoolentry, so a method-not-found answer falls back to the
 	// primary's raw mempool listing.
+	if len(blockMeta.SelfTransactions) > 0 && !c.rpc.PrimaryInRotation() {
+		// the health checks took the primary out: keep the meta for now rather than
+		// run its full retry loop for every pruned block while a fallback serves reads
+		return false
+	}
 	var rawMempool map[string]struct{}
 	for _, tx := range blockMeta.SelfTransactions {
 		result, err := c.rpc.GetMempoolEntryPrimary(tx)
@@ -373,7 +448,10 @@ func (c *Client) updateNetworkInfo() {
 		c.minRelayFeeSats.Store(btcFixedMinRelayFeeSats)
 		return
 	}
-	networkInfo, err := c.rpc.GetNetworkInfo()
+	// the relay fee is read from the primary only: a fallback provider may run another
+	// daemon version with another default, and the fee floor must be this node's own
+	// daemon's (when the primary cannot answer, the last value is kept)
+	networkInfo, err := c.rpc.GetNetworkInfoPrimary()
 	if err != nil {
 		c.log.Err(err).Msg("fail to get network info")
 		return
@@ -564,6 +642,12 @@ func (c *Client) getBlock(height int64) (*btcjson.GetBlockVerboseTxResult, error
 	if err != nil {
 		return &btcjson.GetBlockVerboseTxResult{}, err
 	}
+	return c.getBlockByHash(height, hash)
+}
+
+// getBlockByHash fetches a block by its hash: any endpoint that has the block returns
+// the same one, so the read may be served by any of them.
+func (c *Client) getBlockByHash(height int64, hash string) (*btcjson.GetBlockVerboseTxResult, error) {
 	block, err := c.rpc.GetBlockVerboseTxs(hash)
 	if err == nil && block.Hash == hash {
 		// remember the coinbase value for the confirmation count of this block

@@ -140,9 +140,11 @@ func NewClientWithAuth(host, user, password, bearer string, maxRetries int, time
 }
 
 // NewClientWithFallbacks wraps NewClientWithAuth and attaches read-only fallback providers.
-// Fallbacks are tried in slice order after the primary exhausts its retries.
-// rateLimitBackoff is the sleep duration when the primary returns HTTP 429 (no
-// failover occurs on rate-limit errors).
+// Without an endpoint manager, fallbacks are tried in slice order after the primary
+// exhausts its retries, and a rate-limited primary is waited for (rateLimitBackoff,
+// no failover). With one (WithEndpointManager, as in production), reads follow the
+// manager's candidate order, so a fallback can be asked first, and a rate-limited
+// endpoint is put in cooldown while the next candidate serves the read.
 func NewClientWithFallbacks(
 	host, user, password, bearer string,
 	maxRetries int,
@@ -379,6 +381,27 @@ func (c *Client) GetBlockCountPrimary() (int64, error) {
 	var count int64
 	err := c.callRaw(&count, "getblockcount")
 	return count, extractBTCError(c.redact(0, err))
+}
+
+// PrimaryInRotation reports whether the health checks currently keep the primary
+// daemon in rotation (always true without an endpoint manager). A decision that can
+// wait, such as pruning, skips a primary they have taken out instead of running its
+// full retry loop on every block.
+func (c *Client) PrimaryInRotation() bool {
+	if c.manager == nil || len(c.names) == 0 {
+		return true
+	}
+	e := c.manager.Entry(c.names[0])
+	return e != nil && e.Eligible()
+}
+
+// GetBlockHashPrimary returns the primary daemon's own block hash at a height, so a
+// decision that trusts the primary's "not found" can first check the primary is on
+// the chain in question.
+func (c *Client) GetBlockHashPrimary(height int64) (string, error) {
+	var hash string
+	err := c.callRaw(&hash, "getblockhash", height)
+	return hash, extractBTCError(c.redact(0, err))
 }
 
 // GetRawTransactionPrimary is the primary-only counterpart of GetRawTransaction, for
@@ -717,8 +740,10 @@ func (c *Client) ListUnspent(address string) ([]btcjson.ListUnspentResult, error
 
 	switch c.chain {
 	case common.ZECChain:
+		// the primary's own height: the UTXOs and their heights below come from the
+		// primary only, so confirmations must be counted against the same daemon
 		var height int64
-		height, err = c.GetBlockCount()
+		height, err = c.GetBlockCountPrimary()
 		if err != nil {
 			return nil, err
 		}
@@ -798,13 +823,31 @@ func (c *Client) GetNetworkInfo() (*btcjson.GetNetworkInfoResult, error) {
 	return &result, extractBTCError(err)
 }
 
+// GetNetworkInfoPrimary is GetNetworkInfo asked of the primary daemon only. The relay
+// fee it reports feeds the outbound fee floor, which shapes the signed transaction
+// every signer must build alike: it must be this node's own daemon's policy (the one
+// its broadcasts go to), never a fallback provider's, which may run another version
+// with another default.
+func (c *Client) GetNetworkInfoPrimary() (*btcjson.GetNetworkInfoResult, error) {
+	var info struct {
+		btcjson.GetNetworkInfoResult
+		Warnings flexibleWarnings `json:"warnings"`
+	}
+	if err := c.callRaw(&info, "getnetworkinfo"); err != nil {
+		return nil, extractBTCError(c.redact(0, err))
+	}
+	result := info.GetNetworkInfoResult
+	result.Warnings = strings.Join(info.Warnings, "; ")
+	return &result, nil
+}
+
 func (c *Client) Call(result any, method string, args ...interface{}) error {
 	err := c.callRaw(result, method, args...)
 	return extractBTCError(err)
 }
 
-// CallWithFallback issues a generic JSON-RPC read against the primary and fails over to
-// each read fallback when the primary errors (and the error is not a rate limit). Use it
+// CallWithFallback issues a generic JSON-RPC read through the read candidates (see
+// NewClientWithFallbacks for the order and the rate-limit rule). Use it
 // for reads that have no typed helper, e.g. BCH getblockstats, whose float avgfeerate
 // needs a chain-specific result struct that the typed GetBlockStats cannot represent.
 // Writes must keep using Call, which is primary-only.

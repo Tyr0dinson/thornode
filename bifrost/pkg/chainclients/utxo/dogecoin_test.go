@@ -2,7 +2,6 @@ package utxo
 
 import (
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -124,10 +123,7 @@ func (s *DogecoinSuite) SetUpTest(c *C) {
 		c.Assert(err, IsNil)
 
 		rw.Header().Set("Content-Type", "application/json")
-		key := r.Method
-		if r.Method == "getrawtransaction" {
-			key = fmt.Sprintf("%s-%s", r.Method, r.Params[0])
-		}
+		key := rpcFixtureKey(r.Method, r.Params)
 		if chainRPCs[key] == nil {
 			key = r.Method
 		}
@@ -148,10 +144,7 @@ func (s *DogecoinSuite) SetUpTest(c *C) {
 		rw.Header().Set("Content-Type", "application/json")
 		result := make([]map[string]interface{}, len(r))
 		for i, v := range r {
-			key := v.Method
-			if v.Method == "getrawtransaction" {
-				key = fmt.Sprintf("%s-%s", v.Method, v.Params[0])
-			}
+			key := rpcFixtureKey(v.Method, v.Params)
 			if chainRPCs[key] == nil {
 				key = v.Method
 			}
@@ -911,10 +904,9 @@ func (s *DogecoinSuite) TestProcessReOrg(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(reOrgedTxIns, IsNil)
 
-	// the primary has reached the reorg tip, so its "not found" is proof
-	savedCount := chainRPCs["getblockcount"]
-	chainRPCs["getblockcount"] = map[string]interface{}{"result": result.Height, "error": nil, "id": 3}
-	defer func() { chainRPCs["getblockcount"] = savedCount }()
+	// the new chain's block at height-1 (also the primary's), so the reorg walk can
+	// fetch it by hash and the primary's "not found" is proof
+	defer reorgParent(chainRPCs, result.Height-1, result.PreviousHash, ttypes.GetRandomTxHash().String())()
 
 	// add one UTXO which will trigger the re-org process next
 	previousHeight := result.Height - 1
