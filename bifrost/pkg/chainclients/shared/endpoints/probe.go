@@ -40,7 +40,15 @@ type HashProbe interface {
 // endpoint) to a base probe. Height fails when either part fails.
 type CompoundProbe struct {
 	Probe
+	// Extra is an additional liveness check run after a successful Height.
 	Extra func(ctx context.Context) error
+	// ExtraIdentity, when set, is given the base probe's verified identity and
+	// returns the identity to report for the endpoint. It lets a second host of the
+	// same endpoint (a gRPC server, a REST API) take part in identity verification:
+	// return a different identity for a proven mismatch (the endpoint is then
+	// disabled, or fatal at startup for priority 1 with expected_identity), or an
+	// error to leave the endpoint unverified until the hosts agree.
+	ExtraIdentity func(ctx context.Context, base string) (string, error)
 }
 
 // Height runs the base probe and then the extra check.
@@ -55,6 +63,15 @@ func (p CompoundProbe) Height(ctx context.Context) (int64, error) {
 		}
 	}
 	return h, nil
+}
+
+// Identity runs the base probe's identity check and then ExtraIdentity.
+func (p CompoundProbe) Identity(ctx context.Context) (string, error) {
+	id, err := p.Probe.Identity(ctx)
+	if err != nil || p.ExtraIdentity == nil {
+		return id, err
+	}
+	return p.ExtraIdentity(ctx, id)
 }
 
 // HashAt delegates to the base probe when it supports hashes.

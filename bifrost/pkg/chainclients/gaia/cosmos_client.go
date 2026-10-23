@@ -198,39 +198,59 @@ func NewCosmosClient(
 	grpcConn := endpoints.NewGRPCConn(endpointMgr, grpcConns, []string{"/cosmos.tx.v1beta1.Service/BroadcastTx"}, attempt, logger)
 
 	// compound probes: CometBFT status on rpc_host plus a gRPC call on the endpoint's
-	// own connection, so an endpoint with RPC up and gRPC down is not healthy
+	// own connection, so an endpoint with RPC up and gRPC down is not healthy, and
+	// the gRPC host's network takes part in identity verification: both halves of
+	// one endpoint must be the same network before it may serve anything
 	probes := make([]endpoints.Probe, len(ordered))
 	for i, e := range ordered {
 		base := endpoints.NewCometProbe(e, failoverCfg.HealthCheckTimeout)
 		if conn, ok := grpcConns[e.Name]; ok {
 			svc := cmtservice.NewServiceClient(conn)
-			// only a pinned identity is enforced here; without one, a differing
-			// network is advisory, exactly as on the CometBFT half, so a legacy
-			// config does not become permanently unhealthy
 			wantNetwork, endpointName := expected, e.Name
-			probes[i] = endpoints.CompoundProbe{Probe: base, Extra: func(ctx context.Context) error {
-				// GetNodeInfo is the cheapest call on the service and doubles as the
-				// gRPC host's identity: the gRPC and RPC halves of one endpoint must
-				// be the same network (GetLatestBlock would download a whole block
-				// from every endpoint on every health cycle).
+			// GetNodeInfo is the cheapest call on the service and doubles as the
+			// gRPC host's identity (GetLatestBlock would download a whole block from
+			// every endpoint on every health cycle).
+			nodeNetwork := func(ctx context.Context) (string, error) {
 				info, perr := svc.GetNodeInfo(ctx, &cmtservice.GetNodeInfoRequest{})
 				if status.Code(perr) == codes.ResourceExhausted {
-					return fmt.Errorf("grpc: %w", endpoints.ErrRateLimited)
+					return "", fmt.Errorf("grpc: %w", endpoints.ErrRateLimited)
 				}
 				if perr != nil {
-					return perr
+					return "", perr
 				}
-				got := info.GetDefaultNodeInfo().GetNetwork()
-				switch {
-				case got == "" || got == wantNetwork:
-				case wantNetwork != "":
-					return fmt.Errorf("grpc host is on network %q, expected %q", got, wantNetwork)
-				case cfg.CosmosChainID != "" && got != cfg.CosmosChainID:
-					logger.Error().Str("endpoint", endpointName).Str("network", got).Str("cosmos_chain_id", cfg.CosmosChainID).
-						Msg("gRPC host reports a different network than cosmos_chain_id; set endpoints or expected_identity to make this fatal")
-				}
-				return nil
-			}}
+				return info.GetDefaultNodeInfo().GetNetwork(), nil
+			}
+			probes[i] = endpoints.CompoundProbe{
+				Probe: base,
+				// liveness: the gRPC half must answer, and once the endpoint is
+				// verified it must keep reporting that network (an unreachable gRPC
+				// host at verification time is checked here on every later cycle)
+				Extra: func(ctx context.Context) error {
+					got, perr := nodeNetwork(ctx)
+					if perr != nil {
+						return perr
+					}
+					if id := endpointMgr.Entry(endpointName).Identity(); id != "" && got != "" && got != id {
+						return fmt.Errorf("grpc host is on network %q but the endpoint is verified as %q", got, id)
+					}
+					return nil
+				},
+				// identity: a gRPC host that answers must agree with the RPC host; one
+				// that cannot be reached leaves the RPC identity in force, exactly as
+				// before, with liveness (above) keeping the endpoint out of rotation
+				ExtraIdentity: func(ctx context.Context, rpcNetwork string) (string, error) {
+					got, perr := nodeNetwork(ctx)
+					if perr != nil {
+						return rpcNetwork, nil
+					}
+					id, ierr := grpcIdentity(rpcNetwork, got, wantNetwork)
+					if ierr != nil {
+						logger.Error().Err(ierr).Str("endpoint", endpointName).
+							Msg("endpoint rpc_host and cosmos_grpc_host disagree on the network; the endpoint stays unverified")
+					}
+					return id, ierr
+				},
+			}
 		} else {
 			probes[i] = base
 		}
@@ -325,6 +345,27 @@ func NewCosmosClient(
 
 	grpcOK = true
 	return c, nil
+}
+
+// grpcIdentity combines the networks reported by an endpoint's CometBFT RPC host and
+// its gRPC host into the identity the endpoint manager verifies. The two must agree
+// (a gRPC host that reports no network is trusted to match). With an expected
+// identity, a half on another network is reported as that network, so the endpoint
+// is disabled, or fatal at startup for priority 1. Without one, a disagreement
+// leaves the endpoint unverified (an error) rather than letting either half latch
+// the reference identity.
+func grpcIdentity(rpcNetwork, grpcNetwork, expected string) (string, error) {
+	switch {
+	case grpcNetwork == "" || grpcNetwork == rpcNetwork:
+		return rpcNetwork, nil
+	case expected != "":
+		if rpcNetwork != expected {
+			return rpcNetwork, nil
+		}
+		return grpcNetwork, nil
+	default:
+		return "", fmt.Errorf("rpc_host reports network %q but cosmos_grpc_host reports %q", rpcNetwork, grpcNetwork)
+	}
 }
 
 // Start Cosmos chain client

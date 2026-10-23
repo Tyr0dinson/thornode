@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -19,8 +20,10 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/endpoints"
 
 	sdkmath "cosmossdk.io/math"
+	"github.com/cometbft/cometbft/proto/tendermint/p2p"
 	cmtcoretypes "github.com/cometbft/cometbft/rpc/core/types"
 	cmttypes "github.com/cometbft/cometbft/types"
+	"github.com/cosmos/cosmos-sdk/client/grpc/cmtservice"
 	"github.com/cosmos/cosmos-sdk/codec"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
 	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
@@ -676,4 +679,121 @@ func TestGaiaVerifyBroadcastManaged(t *testing.T) {
 			t.Fatalf("%s: got %v, want %v", tc.name, got, tc.want)
 		}
 	}
+}
+
+// The gRPC half of an endpoint takes part in identity verification: with a pinned
+// identity a mismatching half is reported as its own network (disabled, or fatal for
+// priority 1); without one a disagreement leaves the endpoint unverified.
+func TestGRPCIdentity(t *testing.T) {
+	cases := []struct {
+		rpc, grpc, expected, want string
+		wantErr                   bool
+	}{
+		{"cosmoshub-4", "cosmoshub-4", "", "cosmoshub-4", false},
+		{"cosmoshub-4", "", "", "cosmoshub-4", false},
+		{"cosmoshub-4", "cosmoshub-4", "cosmoshub-4", "cosmoshub-4", false},
+		{"cosmoshub-4", "theta-testnet-001", "cosmoshub-4", "theta-testnet-001", false},
+		{"theta-testnet-001", "cosmoshub-4", "cosmoshub-4", "theta-testnet-001", false},
+		{"cosmoshub-4", "theta-testnet-001", "", "", true},
+	}
+	for _, tc := range cases {
+		got, err := grpcIdentity(tc.rpc, tc.grpc, tc.expected)
+		if (err != nil) != tc.wantErr {
+			t.Fatalf("grpcIdentity(%q,%q,%q): err=%v, wantErr=%v", tc.rpc, tc.grpc, tc.expected, err, tc.wantErr)
+		}
+		if got != tc.want {
+			t.Fatalf("grpcIdentity(%q,%q,%q)=%q, want %q", tc.rpc, tc.grpc, tc.expected, got, tc.want)
+		}
+	}
+}
+
+// nodeInfoServer is a gRPC CometBFT service that only answers GetNodeInfo.
+type nodeInfoServer struct {
+	cmtservice.UnimplementedServiceServer
+	network string
+}
+
+func (n *nodeInfoServer) GetNodeInfo(context.Context, *cmtservice.GetNodeInfoRequest) (*cmtservice.GetNodeInfoResponse, error) {
+	return &cmtservice.GetNodeInfoResponse{DefaultNodeInfo: &p2p.DefaultNodeInfo{Network: n.network}}, nil
+}
+
+// startNodeInfoGRPC serves GetNodeInfo for network on a loopback port and returns the
+// host to configure plus a stop func.
+func startNodeInfoGRPC(c *C, network string) (string, func()) {
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	c.Assert(err, IsNil)
+	srv := grpc.NewServer()
+	cmtservice.RegisterServiceServer(srv, &nodeInfoServer{network: network})
+	go func() { _ = srv.Serve(lis) }()
+	return lis.Addr().String(), srv.Stop
+}
+
+// cometStatusServer answers CometBFT "status" with the given network.
+func cometStatusServer(network string) *httptest.Server {
+	return httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		var body struct {
+			Method string          `json:"method"`
+			ID     json.RawMessage `json:"id"`
+		}
+		_ = json.NewDecoder(req.Body).Decode(&body)
+		id := string(body.ID)
+		if id == "" {
+			id = "1"
+		}
+		rw.Header().Set("Content-Type", "application/json")
+		if body.Method == "status" {
+			_, _ = rw.Write([]byte(`{"jsonrpc":"2.0","id":` + id + `,"result":{"node_info":{"network":"` + network +
+				`"},"sync_info":{"latest_block_height":"10"}}}`))
+			return
+		}
+		_, _ = rw.Write([]byte(`{"jsonrpc":"2.0","id":` + id + `,"error":{"code":-32601,"message":"nope"}}`))
+	}))
+}
+
+// A gRPC host on another network than the RPC host is an identity rejection, not a
+// liveness failure: with the identity pinned by an endpoints list it is fatal for the
+// priority-1 endpoint, and a legacy flat config leaves the endpoint unverified.
+func (s *CosmosTestSuite) TestGRPCHostOnAnotherNetworkIsAnIdentityRejection(c *C) {
+	rpc := cometStatusServer("cosmoshub-4")
+	defer rpc.Close()
+	grpcHost, stop := startNodeInfoGRPC(c, "theta-testnet-001")
+	defer stop()
+
+	cfg := config.BifrostChainConfiguration{
+		ChainID:       common.GAIAChain,
+		CosmosChainID: "cosmoshub-4",
+		Endpoints: []config.ChainEndpointConfig{
+			{Name: "a", RPCHost: rpc.URL, CosmosGRPCHost: grpcHost, Priority: 1},
+		},
+		BlockScanner: config.BifrostBlockScannerConfiguration{CosmosGRPCHost: grpcHost, StartBlockHeight: 1},
+	}
+	cfg.Failover.HealthCheckTimeout = 2 * time.Second
+	_, err := NewCosmosClient(s.thorKeys, cfg, nil, s.bridge, s.m, nil)
+	c.Assert(err, ErrorMatches, `(?s).*priority-1 endpoint a reports identity "theta-testnet-001" but expected_identity is "cosmoshub-4".*`)
+
+	// legacy flat config: not pinned, so the disagreement leaves the endpoint
+	// unverified (and it keeps serving, as a single legacy endpoint always did)
+	legacy := config.BifrostChainConfiguration{
+		ChainID:        common.GAIAChain,
+		CosmosChainID:  "cosmoshub-4",
+		RPCHost:        rpc.URL,
+		CosmosGRPCHost: grpcHost,
+		BlockScanner:   config.BifrostBlockScannerConfiguration{CosmosGRPCHost: grpcHost, StartBlockHeight: 1},
+	}
+	legacy.Failover.HealthCheckTimeout = 2 * time.Second
+	client, err := NewCosmosClient(s.thorKeys, legacy, nil, s.bridge, s.m, nil)
+	c.Assert(err, IsNil)
+	e := client.EndpointManager().Entry("primary")
+	c.Assert(e.IdentityVerified(), Equals, false)
+	c.Assert(e.Usable(), Equals, true)
+
+	// agreeing halves verify normally
+	okHost, stopOK := startNodeInfoGRPC(c, "cosmoshub-4")
+	defer stopOK()
+	cfg.Endpoints[0].CosmosGRPCHost = okHost
+	cfg.BlockScanner.CosmosGRPCHost = okHost
+	client, err = NewCosmosClient(s.thorKeys, cfg, nil, s.bridge, s.m, nil)
+	c.Assert(err, IsNil)
+	c.Assert(client.EndpointManager().Entry("a").IdentityVerified(), Equals, true)
+	c.Assert(client.EndpointManager().Entry("a").State(), Equals, endpoints.StateHealthy)
 }

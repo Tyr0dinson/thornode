@@ -225,3 +225,34 @@ func (s *ProbeSuite) TestProbeReportsRateLimits(c *C) {
 	check := endpoints.HTTPPostCheck(config.ChainEndpointConfig{Name: "a"}, limited.URL, "/wallet/getnowblock", time.Second)
 	c.Assert(errors.Is(check(ctxBg()), endpoints.ErrRateLimited), Equals, true)
 }
+
+// ExtraIdentity lets a second host of the endpoint take part in identity
+// verification: it sees the base identity and decides what to report.
+func (s *ProbeSuite) TestCompoundProbeExtraIdentity(c *C) {
+	srv := jsonrpcServer(c, map[string]string{"eth_blockNumber": `"0x10"`, "eth_chainId": `"0x1"`}, nil)
+	defer srv.Close()
+	base := endpoints.NewEVMProbe(config.ChainEndpointConfig{Name: "a", RPCHost: srv.URL}, time.Second)
+	p := endpoints.CompoundProbe{Probe: base, ExtraIdentity: func(_ context.Context, id string) (string, error) {
+		c.Assert(id, Equals, "0x1")
+		return "other", nil
+	}}
+	id, err := p.Identity(ctxBg())
+	c.Assert(err, IsNil)
+	c.Assert(id, Equals, "other")
+
+	failing := endpoints.CompoundProbe{Probe: base, ExtraIdentity: func(context.Context, string) (string, error) {
+		return "", errors.New("halves disagree")
+	}}
+	_, err = failing.Identity(ctxBg())
+	c.Assert(err, ErrorMatches, "halves disagree")
+
+	// a base identity failure is returned as-is, ExtraIdentity is not consulted
+	dead := endpoints.NewEVMProbe(config.ChainEndpointConfig{Name: "a", RPCHost: "http://127.0.0.1:1"}, time.Second)
+	called := false
+	_, err = endpoints.CompoundProbe{Probe: dead, ExtraIdentity: func(context.Context, string) (string, error) {
+		called = true
+		return "x", nil
+	}}.Identity(ctxBg())
+	c.Assert(err, NotNil)
+	c.Assert(called, Equals, false)
+}
