@@ -1,9 +1,11 @@
 package tron
 
 import (
+	"errors"
 	"net/http/httptest"
 	"time"
 
+	btypes "gitlab.com/thorchain/thornode/v3/bifrost/blockscanner/types"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/tron/api"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -94,4 +96,13 @@ func (s *BlockScannerTestSuite) TestGetMaxEnergy(c *C) {
 	c.Assert(err, IsNil)
 	// mock data returns 900k (2x)
 	c.Assert(maxEnergy, Equals, int64(1800000))
+}
+
+// java-tron answers {} for a block it does not have yet. After a failover the height
+// can come from one endpoint and the block from another that is behind: the scan must
+// be retried (ErrUnavailableBlock), never recorded as an empty block.
+func (s *BlockScannerTestSuite) TestFetchTxsRejectsBlockTheEndpointDoesNotHaveYet(c *C) {
+	_, err := s.scanner.FetchTxs(42, 100)
+	c.Assert(err, NotNil)
+	c.Assert(errors.Is(err, btypes.ErrUnavailableBlock), Equals, true, Commentf("%v", err))
 }

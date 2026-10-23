@@ -153,7 +153,7 @@ func (api *TronApi) GetTransactionWithContext(ctx context.Context, hash string) 
 
 	data, err := api.doWithContext(ctx, "POST", "gettransactionbyid", params)
 	if err != nil {
-		api.logger.Err(err)
+		api.logger.Err(err).Msg("tron api request failed")
 		return Transaction{}, fmt.Errorf("failed to call %s: %w", "gettransactionbyid", err)
 	}
 
@@ -358,7 +358,7 @@ func (api *TronApi) get(
 ) ([]byte, error) {
 	data, err := api.do("GET", method, nil)
 	if err != nil {
-		api.logger.Err(err)
+		api.logger.Err(err).Msg("tron api request failed")
 		return nil, fmt.Errorf("failed to call %s: %w", method, err)
 	}
 
@@ -371,7 +371,7 @@ func (api *TronApi) post(
 ) ([]byte, error) {
 	data, err := api.do("POST", method, params)
 	if err != nil {
-		api.logger.Err(err)
+		api.logger.Err(err).Msg("tron api request failed")
 		return nil, fmt.Errorf("failed to call %s: %w", method, err)
 	}
 

@@ -25,6 +25,25 @@ func NewMockServer() *httptest.Server {
 
 		path := strings.Replace(r.URL.Path, "/wallet/", "", 1)
 		switch path {
+		case "getblock":
+			// header only, like java-tron with detail=false; the latest block when no
+			// id_or_num is given, {} for a block the node does not have
+			file := "test-tron/getblockbynum_55088560.json"
+			if idOrNum, found := params["id_or_num"]; found {
+				switch fmt.Sprintf("%v", idOrNum) {
+				case "55088560", "69351239":
+					file = fmt.Sprintf("test-tron/getblockbynum_%v.json", idOrNum)
+				default:
+					_, _ = w.Write([]byte("{}"))
+					return
+				}
+			}
+			data, _ := responses.ReadFile(file)
+			var full map[string]json.RawMessage
+			_ = json.Unmarshal(data, &full)
+			delete(full, "transactions")
+			header, _ := json.Marshal(full)
+			_, _ = w.Write(header)
 		case "getnowblock":
 			w.WriteHeader(http.StatusOK)
 			data, _ := responses.ReadFile("test-tron/getblockbynum_55088560.json")
@@ -51,6 +70,10 @@ func NewMockServer() *httptest.Server {
 				filename := fmt.Sprintf("test-tron/getblockbynum_%d.json", height)
 				data, _ := responses.ReadFile(filename)
 				_, _ = w.Write(data)
+				return
+			case 42:
+				// java-tron's answer for a block this node does not have (yet)
+				_, _ = w.Write([]byte("{}"))
 				return
 			}
 

@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"net/http/httputil"
 	"net/url"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -131,13 +132,13 @@ func (s *TronTestSuite) TestVerifyBroadcastAsksEveryEndpoint(c *C) {
 func tronHostPair(apiBlockID, rpcHash string) (api, rpc *httptest.Server) {
 	api = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		switch r.URL.Path {
-		case "/wallet/getnowblock":
+		body, _ := io.ReadAll(r.Body)
+		switch {
+		case r.URL.Path == "/wallet/getblock" && !strings.Contains(string(body), "id_or_num"):
 			_, _ = w.Write([]byte(`{"blockID":"tip","block_header":{"raw_data":{"number":1000}}}`))
-		case "/wallet/getblockbynum":
-			body, _ := io.ReadAll(r.Body)
-			if string(body) != `{"num":980}` {
-				w.WriteHeader(http.StatusBadRequest)
+		case r.URL.Path == "/wallet/getblock":
+			if !strings.Contains(string(body), `"id_or_num":"980"`) {
+				_, _ = w.Write([]byte(`{}`)) // java-tron: block not available
 				return
 			}
 			_, _ = w.Write([]byte(`{"blockID":"` + apiBlockID + `","block_header":{"raw_data":{"number":980}}}`))

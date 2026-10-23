@@ -225,16 +225,16 @@ func tronIdentity(chainID, rpcHash, apiBlockID, expected string) (string, error)
 
 // tronAPIIdentity is the CompoundProbe identity hook for one TRON endpoint: given
 // the verified rpc_host chain id it reads the api_host tip, takes the block
-// tronIdentityDepth below it, and compares its id across api_host
-// (/wallet/getblockbynum) and rpc_host (eth_getBlockByNumber). Transport failures
-// leave the endpoint unverified until a later cycle.
+// tronIdentityDepth below it, and compares its id across api_host (/wallet/getblock,
+// header only) and rpc_host (eth_getBlockByNumber). Transport failures leave the
+// endpoint unverified until a later cycle.
 func tronAPIIdentity(name string, apiPost func(ctx context.Context, path, body string) (map[string]json.RawMessage, error), rpcProbe endpoints.Probe, expected string, logger zerolog.Logger) func(ctx context.Context, chainID string) (string, error) {
 	hp, ok := rpcProbe.(endpoints.HashProbe)
 	return func(ctx context.Context, chainID string) (string, error) {
 		if !ok {
 			return "", fmt.Errorf("endpoint %s: rpc probe cannot fetch block hashes", name)
 		}
-		now, err := apiPost(ctx, "/wallet/getnowblock", "{}")
+		now, err := apiPost(ctx, "/wallet/getblock", `{"detail":false}`)
 		if err != nil {
 			return "", fmt.Errorf("api identity: %w", err)
 		}
@@ -246,19 +246,19 @@ func tronAPIIdentity(name string, apiPost func(ctx context.Context, path, body s
 			} `json:"block_header"`
 		}
 		if err = json.Unmarshal(now["block_header"], &hdr.BlockHeader); err != nil || hdr.BlockHeader.RawData.Number <= 0 {
-			return "", fmt.Errorf("api identity: getnowblock has no block number")
+			return "", fmt.Errorf("api identity: getblock has no block number")
 		}
 		h := hdr.BlockHeader.RawData.Number - tronIdentityDepth
 		if h < 1 {
 			h = 1
 		}
-		blk, err := apiPost(ctx, "/wallet/getblockbynum", fmt.Sprintf(`{"num":%d}`, h))
+		blk, err := apiPost(ctx, "/wallet/getblock", fmt.Sprintf(`{"id_or_num":"%d","detail":false}`, h))
 		if err != nil {
 			return "", fmt.Errorf("api identity: %w", err)
 		}
 		var apiID string
 		if err = json.Unmarshal(blk["blockID"], &apiID); err != nil || apiID == "" {
-			return "", fmt.Errorf("api identity: getblockbynum %d has no blockID", h)
+			return "", fmt.Errorf("api identity: getblock %d has no blockID (node behind?)", h)
 		}
 		rpcHash, err := hp.HashAt(ctx, h)
 		if err != nil {
@@ -324,8 +324,10 @@ func NewTronClient(
 		rpcProbe := endpoints.NewEVMProbe(e, failoverCfg.HealthCheckTimeout)
 		apiPost := endpoints.HTTPPostJSON(e, e.APIHost, failoverCfg.HealthCheckTimeout)
 		probes[i] = endpoints.CompoundProbe{
-			Probe:         rpcProbe,
-			Extra:         endpoints.HTTPPostCheck(e, e.APIHost, "/wallet/getnowblock", failoverCfg.HealthCheckTimeout, "blockID"),
+			Probe: rpcProbe,
+			// getblock without detail returns the latest block header only, so a
+			// probe never downloads a full block (up to 2 MB) every cycle
+			Extra:         endpoints.HTTPPostCheck(e, e.APIHost, "/wallet/getblock", failoverCfg.HealthCheckTimeout, "blockID"),
 			ExtraIdentity: tronAPIIdentity(e.Name, apiPost, rpcProbe, expectedIdentity, logger),
 		}
 	}

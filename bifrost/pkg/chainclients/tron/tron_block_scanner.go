@@ -160,6 +160,14 @@ func (s *TronBlockScanner) FetchTxs(
 		s.logger.Err(err).Msg("")
 		return types.TxIn{}, err
 	}
+	// java-tron answers {} (HTTP 200) for a block it does not have yet. With several
+	// endpoints the height can come from one node and the block from another that is
+	// still behind, so an empty or foreign block must be retried, never scanned as a
+	// block without transactions.
+	if block.Header.RawData.Number != fetchHeight {
+		return types.TxIn{}, fmt.Errorf("%w: block %d is not available on this endpoint yet (got id %q, height %d)",
+			btypes.ErrUnavailableBlock, fetchHeight, block.BlockId, block.Header.RawData.Number)
+	}
 
 	txs, err := s.processTxs(block)
 	if err != nil {
