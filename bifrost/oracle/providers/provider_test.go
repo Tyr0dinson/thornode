@@ -98,3 +98,47 @@ func newPair(symbol string) types.CurrencyPair {
 	}
 	return pair
 }
+
+// pollAndWait runs poll and blocks until it has refreshed the given pairs.
+// Coinbase and LBank poll each pair in its own goroutine and return at once,
+// so without this a REST response can land after, and overwrite, a
+// websocket price the test is about to assert.
+func pollAndWait(c *C, p *websocketProvider, poll func(), pairs ...string) {
+	since := time.Now()
+	poll()
+	waitForTickers(c, p, func(tickers map[string]types.Ticker) bool {
+		for _, pair := range pairs {
+			if ticker, ok := tickers[pair]; !ok || ticker.Time.Before(since) {
+				return false
+			}
+		}
+		return true
+	})
+}
+
+// waitForTickerPrices blocks until every pair has the given price.
+func waitForTickerPrices(c *C, p *websocketProvider, prices map[string]string) {
+	waitForTickers(c, p, func(tickers map[string]types.Ticker) bool {
+		for pair, price := range prices {
+			if ticker, ok := tickers[pair]; !ok || ticker.Price.Text('f', 2) != price {
+				return false
+			}
+		}
+		return true
+	})
+}
+
+func waitForTickers(c *C, p *websocketProvider, done func(map[string]types.Ticker) bool) {
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		tickers, err := p.GetTickers()
+		c.Assert(err, IsNil)
+		if done(tickers) {
+			return
+		}
+		if time.Now().After(deadline) {
+			c.Fatalf("tickers not updated: %v", tickers)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
