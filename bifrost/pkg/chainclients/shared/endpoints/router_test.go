@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"sync/atomic"
 	"time"
 
@@ -559,4 +560,50 @@ func (s *RouterSuite) TestStalledErrorBodyDoesNotStarveTheNextCandidate(c *C) {
 	c.Assert(h2, HasLen, 1)
 	c.Assert(time.Since(start) < 2*time.Second, Equals, true, Commentf("took %s", time.Since(start)))
 	c.Assert(m.Entry("stalled").State(), Equals, endpoints.StateUnhealthy)
+}
+
+// A complete 200 body that is not valid JSON is a broken answer: the read is retried
+// on the backup and the endpoint is charged, exactly like a cut connection. Valid JSON
+// of a non-standard shape (TRON's {"Error": "..."}) is still handed to the caller.
+func (s *RouterSuite) TestInvalidJSONBodyIsAnEndpointFailure(c *C) {
+	garbled := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		body := []byte(`{"jsonrpc":"2.0","id":1,"result":`) // complete body, broken JSON
+		w.Header().Set("Content-Length", strconv.Itoa(len(body)))
+		_, _ = w.Write(body)
+	}))
+	defer garbled.Close()
+	var st int32 = http.StatusOK
+	var h2 []hit
+	good := rpcServer(&st, &h2, "")
+	defer good.Close()
+	m, targets := twoEndpointMgr(c, common.ETHChain, []config.ChainEndpointConfig{{Name: "garbled", RPCHost: garbled.URL, Priority: 1}, {Name: "good", RPCHost: good.URL, Priority: 2}}, 1)
+	hc := routerFor(c, m, targets, nil)
+	resp, err := post(c, hc, base(m), "eth_blockNumber")
+	c.Assert(err, IsNil)
+	body, _ := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	c.Assert(string(body), Matches, `.*"ok".*`)
+	c.Assert(h2, HasLen, 1)
+	c.Assert(m.Entry("garbled").State(), Equals, endpoints.StateUnhealthy)
+
+	// a write is never retried: the garbled answer is returned to the caller as-is
+	m2, targets2 := twoEndpointMgr(c, common.ETHChain, []config.ChainEndpointConfig{{Name: "garbled", RPCHost: garbled.URL, Priority: 1}, {Name: "good", RPCHost: good.URL, Priority: 2}}, 1)
+	hc2 := routerFor(c, m2, targets2, []string{"eth_sendRawTransaction"})
+	resp, err = post(c, hc2, base(m2), "eth_sendRawTransaction")
+	c.Assert(err, IsNil)
+	body, _ = io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	c.Assert(string(body), Equals, `{"jsonrpc":"2.0","id":1,"result":`)
+	c.Assert(h2, HasLen, 1)
+
+	// valid but non-standard JSON is the caller's business
+	odd := rpcServer(&st, nil, `{"Error":"class org.tron.core.exception.ContractValidateException : balance is not sufficient"}`)
+	defer odd.Close()
+	m3, targets3 := twoEndpointMgr(c, common.TRONChain, []config.ChainEndpointConfig{{Name: "odd", RPCHost: odd.URL, Priority: 1}}, 1)
+	hc3 := routerFor(c, m3, targets3, nil)
+	resp, err = post(c, hc3, base(m3), "anything")
+	c.Assert(err, IsNil)
+	_ = resp.Body.Close()
+	c.Assert(m3.Entry("odd").State(), Equals, endpoints.StateHealthy)
 }

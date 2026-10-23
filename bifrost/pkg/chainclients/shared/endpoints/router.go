@@ -443,8 +443,15 @@ func (r *HTTPRouter) classify(resp *http.Response, isWrite bool) (verdict, Error
 }
 
 // classifyJSONRPC applies the JSON-RPC error code rules to a single response or a
-// batch; the worst element decides.
+// batch; the worst element decides. trimmed is a complete body (classify only calls
+// this when the whole body fit in the sniff buffer), so a body that is not valid
+// JSON is a broken answer from the endpoint, not a decoding quirk: it is charged as
+// a transport failure so a read moves on to the next candidate. Valid JSON of an
+// unexpected shape (a non-standard error field, a bare value) is left to the caller.
 func classifyJSONRPC(trimmed []byte) (verdict, ErrorKind) {
+	if !json.Valid(trimmed) {
+		return verdictEndpointError, ErrorKindTransport
+	}
 	type rpcErr struct {
 		Code int `json:"code"`
 	}
