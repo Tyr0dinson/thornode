@@ -21,12 +21,13 @@ type txOutWindowKey struct{}
 // disables it for good, so the snapshot always holds the range as it was
 // when the cache was attached: the pointer is shared with cache contexts that
 // may be discarded, and a load in one of them after such a write could
-// snapshot an uncommitted value. Writes to other heights (the current block's
-// and scheduled outbounds) leave it alone.
+// snapshot an uncommitted value. Writes to other heights (e.g. the current
+// block's) leave it alone.
 //
 // Windows attached over each other (past and scheduled heights) stay
 // independent: a read uses the innermost window covering its height, and a
-// write disables only the windows covering it.
+// write disables only the windows covering it, so a delayed outbound disables
+// the scheduled window and leaves the past one.
 //
 // Only attach it outside transactions (EndBlock): skipping store reads inside
 // a tx changes gas_used, which is consensus-visible.
