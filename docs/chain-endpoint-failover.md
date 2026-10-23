@@ -10,9 +10,18 @@ fails back when you ask it to.
 
 Every chain keeps one **active** endpoint (the highest-priority healthy one at startup).
 All requests go to the active endpoint. Reads that fail with a transport error, an HTTP
-3xx / 5xx, a 401 / 403, a JSON-RPC "method not found" or "internal error", or a rate
-limit are retried on the next healthy endpoint immediately. Writes (broadcasts) are sent
-once, to the active endpoint, and never duplicated elsewhere.
+3xx / 5xx, a 401 / 403, a JSON-RPC "internal error", a body that is not valid JSON, or a
+rate limit are retried on the next healthy endpoint immediately and charged to the
+endpoint that failed. A JSON-RPC "method not found" is the caller's business and is never
+charged: bifrost calls optional methods (`eth_getBlockReceipts`) and falls back itself
+when a node lacks them. On XRP, a provider answering `lgrNotFound` is asked last: the
+other endpoints are tried first and nothing is charged. Writes (broadcasts) are sent
+once, to the active endpoint, with the caller's whole timeout, and never duplicated
+elsewhere; the XRP transport retry wrapper never replays `submit` either.
+
+UTXO chains are the exception to "immediately": the primary daemon is retried with the
+client's own backoff (`max_rpc_retries`, up to about a minute with the default 9) before
+a fallback is tried, as it was before failover existed.
 
 A background health check runs every `health_check_interval` against every endpoint:
 
@@ -23,19 +32,31 @@ A background health check runs every `health_check_interval` against every endpo
 - **Identity.** Every endpoint must report the same chain identity (EVM `eth_chainId`,
   UTXO genesis block hash, Cosmos `node_info.network`, Solana genesis hash, XRP
   `network_id`). The reference is `expected_identity` when set, otherwise the priority-1
-  endpoint's, otherwise one that at least two endpoints agree on. A single reachable
-  endpoint never becomes the reference: it would otherwise disable your own node when it
-  came back. Until a reference exists, endpoints serve but none can be disabled for a
-  mismatch. Once one exists, an endpoint on another network is disabled permanently, and
-  the priority-1 endpoint disagreeing with `expected_identity` stops the chain client
-  from starting. With more than one endpoint, an endpoint that reports no identity at
-  all is never used, even when every other endpoint is down: observing an unknown
-  network is worse than observing nothing.
+  endpoint's, otherwise one held by a strict majority (and at least two) of the
+  endpoints that reported an identity. A single reachable endpoint never becomes the
+  reference: it would otherwise disable your own node when it came back. Until a
+  reference exists, endpoints serve but none can be disabled for a mismatch. Once one
+  exists, an endpoint on another network is disabled permanently, and the priority-1
+  endpoint disagreeing with `expected_identity` stops the chain client from starting.
+  Identity is required whenever there is more than one endpoint **or** `expected_identity`
+  is set: an endpoint that reports no identity is then never used, even when every other
+  endpoint is down, because observing an unknown network is worse than observing
+  nothing. XRP servers report `network_id` only when configured with one, so make sure
+  yours does before pinning XRP or adding a second XRP endpoint. BTC and BCH share the
+  same genesis block hash, so identity cannot tell them apart; only the integrity check
+  (with enough endpoints) protects against mixing them. An endpoint with two hosts
+  (Cosmos `rpc_host` + `cosmos_grpc_host`, TRON `rpc_host` + `api_host`) must have both
+  on the same network: a proven disagreement disables the endpoint, even when it is the
+  only one, since bifrost cannot name the network it would be observing.
 - **Integrity.** When `integrity_check_depth` is greater than 0 **and at least two
   endpoints agree on a tip**, the block hash at `tip - depth` is compared across the
-  healthy endpoints; a minority hash is a strike, and an endpoint evicted for one must
-  match the majority again before it may serve. With fewer than two agreeing endpoints
-  there is no tip and the check does not run.
+  healthy endpoints that answered. When one hash holds a strict majority of them, every
+  other hash is a strike; an endpoint evicted for one is quarantined (shown as
+  `integrity_evicted` in `/status/provider`) and must serve the majority hash again
+  before it may serve traffic, even as an all-down fallback. Without a strict majority
+  (a tie, or a plurality such as H, H, X, Y) nothing is evicted or cleared and the
+  disagreement is logged. With fewer than two agreeing endpoints there is no tip and the
+  check does not run.
 
 `error_threshold` consecutive probe strikes, or `error_threshold` consecutive inline
 request errors no more than `error_window` apart, mark an endpoint **unhealthy**. If it
@@ -46,8 +67,14 @@ higher-priority endpoint only when `prefer_higher_priority` is true.
 
 A rate limit (HTTP 429, gRPC `ResourceExhausted`, JSON-RPC -32005 / -32029) never marks
 an endpoint unhealthy and never counts as a strike, including when a health probe is
-rate limited: the endpoint enters a cooldown of `rate_limit_backoff`, is not probed while
-cooling down, and traffic moves to the next eligible endpoint immediately.
+rate limited: the endpoint enters a cooldown of `rate_limit_backoff`, a healthy endpoint
+is not probed while cooling down (recovery probes of an unhealthy one still run), and
+traffic moves to the next eligible endpoint immediately. One exception at startup: an
+endpoint rate limited during bootstrap cannot report its identity, so when identity is
+required it starts unhealthy and unverified until a later probe succeeds.
+
+gRPC `Unimplemented` counts as an endpoint error: a Cosmos node that lacks a module
+bifrost needs cannot serve it, and is evicted like an unreachable one.
 
 `rate_limit_backoff` is also slept, once, on the UTXO chains only, and only when the
 rate-limited endpoint was the primary and no other endpoint served the read. That
@@ -101,31 +128,46 @@ Mocknet and stagenet use different values, so nothing is pinned by default.
 On GAIA and NOBLE, `cosmos_chain_id` is used as the expected identity when an
 `endpoints:` list is configured, and a mismatch then stops the chain client from
 starting. A legacy configuration with only the flat `rpc_host` / `cosmos_grpc_host`
-fields keeps its previous behavior: a mismatch is logged as an error and bifrost
-starts. Set `endpoints:` or `expected_identity` to make it fatal.
+fields keeps its previous behavior when both hosts agree with each other but not with
+`cosmos_chain_id`: the mismatch is logged as an error and bifrost starts. Set `endpoints:`
+or `expected_identity` to make it fatal. The two hosts disagreeing with each other is
+never advisory: that endpoint is disabled.
 
 A dead endpoint left in the list does not block recovery of a stuck outbound: an
 endpoint continuously unhealthy for longer than `signer_cache_expiry` is skipped when
 verifying whether a broadcast is still alive. That window counts any time spent out of
-the healthy state, lag included, not only unreachability.
+the healthy state, lag included, not only unreachability. The risk is deliberate and
+worth stating plainly: if the endpoint that took a broadcast is the one that has been
+down that long, the others can all answer "not found" and the outbound is signed again.
+On the EVM chains the re-sign reuses the nonce, so at most one of the two can mine; on
+Cosmos the account sequence bounds it the same way; on Solana and TRON the original has
+expired long before. Remove dead endpoints from the list rather than relying on this.
 
 An endpoint's identity is verified once, when it is first reached. A provider URL
 repointed at another network after bifrost started is not re-verified; the only
 later defence is the block-hash integrity check, and that check has limits. It needs
 a height quorum (two endpoints within `max_block_lag` of each other), so it never
 runs with a single endpoint. It evicts an endpoint only when a strict majority of the
-healthy endpoints agree on another hash, so with two endpoints a disagreement cannot
-be attributed to either: both stay in service and the tie is logged as a warning. In
-practice that means three or more endpoints are needed before a repointed provider
-is caught automatically; with fewer, watch the `endpoints disagree on the block hash`
-log line and restart bifrost after fixing the configuration (identity is re-verified
-at startup). Leave `integrity_check_depth` enabled on chains that support it either
-way: an evicted endpoint is only let back in after it serves the majority hash again.
+healthy endpoints that answered agree on another hash, so with two endpoints a
+disagreement cannot be attributed to either: both stay in service and the tie is
+logged as a warning. In practice that means three or more endpoints are needed before
+a repointed provider is caught automatically; with fewer, watch the `endpoints disagree
+on the block hash` log line and restart bifrost after fixing the configuration (identity
+is re-verified at startup). Leave `integrity_check_depth` enabled on chains that support
+it either way: an evicted endpoint is only let back in after it serves the majority hash
+again.
 
 ## Configuration
 
-Add an `endpoints` list to any chain in `bifrost.yaml`. If `endpoints` is omitted, bifrost
-falls back to the existing `rpc_host` / `api_host` fields (backward-compatible).
+Bifrost reads its configuration from the embedded defaults plus environment variables;
+it does not load a `bifrost.yaml` file. The YAML below shows the configuration
+structure; in a deployment, set the same values through the indexed environment
+variables described further down. Add an `endpoints` list to any chain whose client
+supports it (UTXO, EVM, GAIA, NOBLE, SOL, XRP, TRON; an `endpoints` list on any other
+chain is rejected at startup). If `endpoints` is omitted, bifrost falls back to the
+existing `rpc_host` / `api_host` fields (backward-compatible), which must still satisfy
+the chain's host rules (GAIA and NOBLE need `cosmos_grpc_host` too, TRON needs `api_host`
+too).
 
 ```yaml
 chains:
@@ -148,7 +190,7 @@ chains:
       recovery_check_interval: 30s
       prefer_higher_priority: false # set true to actively fail back to lower-priority-number endpoints
       rate_limit_backoff: 30s # cooldown after a rate limit (429, -32005): the endpoint is skipped this long and traffic moves on at once. UTXO chains also sleep it once when the primary was rate limited and nothing else served the read
-      health_check_timeout: 5s # a probe slower than this is a strike; must be < health_check_interval
+      health_check_timeout: 5s # a probe slower than this is a strike; clamped to half of health_check_interval when larger
       integrity_check_depth: 20 # compare block hashes at tip - depth across endpoints; 0 disables
     expected_identity: "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f" # optional network pin
   ETH:
