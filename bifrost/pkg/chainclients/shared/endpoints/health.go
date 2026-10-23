@@ -331,12 +331,11 @@ func (m *Manager) Cycle(ctx context.Context) {
 	}
 
 	// 4. integrity: majority hash at tip - depth among healthy hash-capable endpoints;
-	// endpoints evicted for a minority hash are compared to it before they may recover
-	badHash := map[string]bool{}
-	integrityChecked := false
+	// endpoints evicted for a minority hash must positively match it before they may
+	// recover (matchedHash), a check that merely ran or returned nothing is not enough
+	badHash, matchedHash := map[string]bool{}, map[string]bool{}
 	if quorum && m.cfg.IntegrityCheckDepth > 0 && tip-m.cfg.IntegrityCheckDepth > 0 {
-		badHash = m.integrityCheck(ctx, tip-m.cfg.IntegrityCheckDepth, heights)
-		integrityChecked = true
+		badHash, matchedHash = m.integrityCheck(ctx, tip-m.cfg.IntegrityCheckDepth, heights)
 	}
 
 	// 5. apply results per entry
@@ -375,8 +374,10 @@ func (m *Manager) Cycle(ctx context.Context) {
 				}
 			}
 			if ok && e.IntegrityEvicted() && m.cfg.IntegrityCheckDepth > 0 {
-				// evicted for a minority hash: must match the healthy majority first
-				ok = integrityChecked && !badHash[e.Name]
+				// evicted for a minority hash: only a hash that matched the healthy
+				// reference this cycle clears the quarantine; a failed or empty hash
+				// fetch, a missing quorum, or a tie among the healthy endpoints does not
+				ok = matchedHash[e.Name]
 			}
 			from, to := e.RecordHealthCheck(ok, m.cfg)
 			m.logTransition(e, from, to, "health probe")
@@ -411,11 +412,14 @@ func consensusTip(heights map[string]int64, lag int64) (tip int64, quorum bool) 
 
 // integrityCheck fetches the block hash at height from every healthy endpoint that
 // supports it (and from non-healthy endpoints that were evicted for a minority
-// hash, so they can be re-checked) and returns the set of endpoints whose hash
-// differs from the majority of the healthy ones. Ties among healthy endpoints
-// yield nothing; an integrity-evicted endpoint with no healthy majority to compare
-// against is reported as bad, since it cannot be cleared.
-func (m *Manager) integrityCheck(ctx context.Context, height int64, heights map[string]int64) map[string]bool {
+// hash, so they can be re-checked). It returns the set of endpoints whose hash
+// differs from the reference (bad) and the set whose hash positively matched it
+// (matched); an endpoint whose hash could not be fetched is in neither. The
+// reference is the majority hash among healthy endpoints, or the single healthy
+// endpoint's hash. Ties among healthy endpoints yield nothing (logged); an
+// integrity-evicted endpoint with no healthy endpoint to compare against is
+// reported as bad, since it cannot be cleared.
+func (m *Manager) integrityCheck(ctx context.Context, height int64, heights map[string]int64) (bad, matched map[string]bool) {
 	type res struct {
 		name    string
 		hash    string
@@ -463,13 +467,13 @@ func (m *Manager) integrityCheck(ctx context.Context, height int64, heights map[
 			healthyN++
 		}
 	}
+	bad, matched = map[string]bool{}, map[string]bool{}
 	if healthyN == 0 {
 		// nothing to compare against: integrity-evicted endpoints stay evicted
-		bad := map[string]bool{}
 		for _, r := range results {
 			bad[r.name] = true
 		}
-		return bad
+		return bad, matched
 	}
 	if healthyN < 2 {
 		// a single healthy endpoint is the reference for re-checks but cannot be
@@ -478,13 +482,16 @@ func (m *Manager) integrityCheck(ctx context.Context, height int64, heights map[
 		for h := range counts {
 			ref = h
 		}
-		bad := map[string]bool{}
 		for _, r := range results {
-			if !r.healthy && r.hash != ref {
+			switch {
+			case r.healthy:
+			case r.hash == ref:
+				matched[r.name] = true
+			default:
 				bad[r.name] = true
 			}
 		}
-		return bad
+		return bad, matched
 	}
 	best, bestN, tie := "", 0, false
 	for h, n := range counts {
@@ -496,15 +503,20 @@ func (m *Manager) integrityCheck(ctx context.Context, height int64, heights map[
 		}
 	}
 	if tie {
-		return nil
+		// no healthy majority: nothing can be evicted or cleared this cycle; with two
+		// endpoints this is the only outcome of a disagreement, so make it visible
+		m.log.Warn().Int64("height", height).Int("healthy", healthyN).
+			Msg("healthy endpoints disagree on the block hash with no majority; integrity check skipped")
+		return map[string]bool{}, map[string]bool{}
 	}
-	bad := map[string]bool{}
 	for _, r := range results {
 		if r.hash != best {
 			bad[r.name] = true
 			m.log.Error().Str("endpoint", r.name).Int64("height", height).Str("hash", r.hash).Str("majority", best).
 				Msg("endpoint block hash disagrees with majority")
+			continue
 		}
+		matched[r.name] = true
 	}
-	return bad
+	return bad, matched
 }

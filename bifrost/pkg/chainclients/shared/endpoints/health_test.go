@@ -536,3 +536,68 @@ func (s *HealthSuite) TestBootstrapRateLimitedEndpointStaysHealthyInCooldown(c *
 	c.Assert(m.Entry("a").State(), Equals, endpoints.StateHealthy)
 	c.Assert(m.Entry("a").InCooldown(), Equals, true)
 }
+
+// errHashProbe is a fakeProbe whose HashAt fails.
+type errHashProbe struct{ fakeProbe }
+
+func (p *errHashProbe) HashAt(context.Context, int64) (string, error) {
+	return "", errors.New("hash unavailable")
+}
+
+// An evicted endpoint recovers only on a hash that positively matched the healthy
+// reference. A failed hash fetch, an empty hash, or a tie among the healthy endpoints
+// is not a match, however many height probes pass.
+func (s *HealthSuite) TestIntegrityEvictedEndpointNeedsAnExplicitHashMatchToRecover(c *C) {
+	cfg := healthCfg()
+	cfg.IntegrityCheckDepth = 5
+	cfg.ErrorThreshold = 1
+	cfg.MinRecoveryChecks = 1
+
+	// 1. hash fetch fails on the evicted endpoint: stays evicted
+	a := &fakeProbe{name: "a", height: 100, identity: "g", hashes: map[int64]string{95: "H"}}
+	b := &fakeProbe{name: "b", height: 100, identity: "g", hashes: map[int64]string{95: "H"}}
+	d := &errHashProbe{fakeProbe{name: "d", height: 100, identity: "g"}}
+	m, err := endpoints.NewManager(common.BTCChain, eps("a", "b", "d"), cfg, zerolog.Nop())
+	c.Assert(err, IsNil)
+	c.Assert(m.Bootstrap(ctxBg(), []endpoints.Probe{a, b, d}), IsNil)
+	m.Entry("d").MarkUnhealthy(endpoints.ErrorKindIntegrity)
+	for i := 0; i < 3; i++ {
+		m.Cycle(ctxBg())
+	}
+	c.Assert(m.Entry("d").State(), Equals, endpoints.StateUnhealthy)
+	c.Assert(m.Entry("d").IntegrityEvicted(), Equals, true)
+
+	// 2. empty hash (endpoint answers but has no hash): stays evicted
+	d2 := &fakeProbe{name: "d", height: 100, identity: "g", hashes: map[int64]string{}}
+	var ps []endpoints.Probe
+	m, ps = newHealthMgr(c, cfg, nil, a, b, d2)
+	c.Assert(m.Bootstrap(ctxBg(), ps), IsNil)
+	m.Entry("d").MarkUnhealthy(endpoints.ErrorKindIntegrity)
+	for i := 0; i < 3; i++ {
+		m.Cycle(ctxBg())
+	}
+	c.Assert(m.Entry("d").State(), Equals, endpoints.StateUnhealthy)
+	c.Assert(m.Entry("d").IntegrityEvicted(), Equals, true)
+
+	// 3. the healthy endpoints tie: nothing is cleared, even though d agrees with one
+	bx := &fakeProbe{name: "b", height: 100, identity: "g", hashes: map[int64]string{95: "X"}}
+	d3 := &fakeProbe{name: "d", height: 100, identity: "g", hashes: map[int64]string{95: "H"}}
+	m, ps = newHealthMgr(c, cfg, nil, a, bx, d3)
+	c.Assert(m.Bootstrap(ctxBg(), ps), IsNil)
+	m.Entry("d").MarkUnhealthy(endpoints.ErrorKindIntegrity)
+	for i := 0; i < 3; i++ {
+		m.Cycle(ctxBg())
+	}
+	c.Assert(m.Entry("d").State(), Equals, endpoints.StateUnhealthy)
+	c.Assert(m.Entry("a").State(), Equals, endpoints.StateHealthy)
+	c.Assert(m.Entry("b").State(), Equals, endpoints.StateHealthy)
+
+	// 4. a matching hash clears the quarantine in one cycle
+	d4 := &fakeProbe{name: "d", height: 100, identity: "g", hashes: map[int64]string{95: "H"}}
+	m, ps = newHealthMgr(c, cfg, nil, a, b, d4)
+	c.Assert(m.Bootstrap(ctxBg(), ps), IsNil)
+	m.Entry("d").MarkUnhealthy(endpoints.ErrorKindIntegrity)
+	m.Cycle(ctxBg())
+	c.Assert(m.Entry("d").State(), Equals, endpoints.StateHealthy)
+	c.Assert(m.Entry("d").IntegrityEvicted(), Equals, false)
+}
