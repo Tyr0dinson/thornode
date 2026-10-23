@@ -340,7 +340,7 @@ func (api *TronApi) get(
 ) ([]byte, error) {
 	data, err := api.do("GET", method, nil)
 	if err != nil {
-		api.logger.Err(err)
+		api.logger.Err(err).Str("method", method).Msg("failed to call tron api")
 		return nil, fmt.Errorf("failed to call %s: %w", method, err)
 	}
 
@@ -353,7 +353,7 @@ func (api *TronApi) post(
 ) ([]byte, error) {
 	data, err := api.do("POST", method, params)
 	if err != nil {
-		api.logger.Err(err)
+		api.logger.Err(err).Str("method", method).Msg("failed to call tron api")
 		return nil, fmt.Errorf("failed to call %s: %w", method, err)
 	}
 

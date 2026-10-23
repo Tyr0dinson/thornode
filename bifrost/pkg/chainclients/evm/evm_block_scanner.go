@@ -401,7 +401,9 @@ func (e *EVMScanner) getTxInOptimized(method string, block *etypes.Block) (stype
 		return stypes.TxIn{}, nil, err
 	}
 
-	sem := make(chan struct{}, e.cfg.Concurrency)
+	// at least one worker: an unbuffered semaphore would block the first
+	// receipt forever, and a negative capacity panics
+	sem := make(chan struct{}, max(e.cfg.Concurrency, 1))
 	wg := sync.WaitGroup{}
 	mu := sync.Mutex{}
 	var gasPrices []*big.Int
@@ -431,9 +433,9 @@ func (e *EVMScanner) getTxInOptimized(method string, block *etypes.Block) (stype
 				return
 			}
 
-			// extract the txInItem
-			var txInItem *stypes.TxInItem
-			txInItem, err = e.receiptToTxInItem(txForReceipt, receipt)
+			// extract the txInItem; err must be goroutine-local, a shared one
+			// lets this goroutine drop its item on another goroutine's error
+			txInItem, err := e.receiptToTxInItem(txForReceipt, receipt)
 			if err != nil {
 				e.logger.Error().Err(err).Msg("failed to convert receipt to txInItem")
 				return
@@ -531,7 +533,7 @@ func (e *EVMScanner) getTxIn(block *etypes.Block) (stypes.TxIn, []*big.Int, erro
 		// process the batch rpc response
 		for i, elem := range rpcBatch {
 			if elem.Error != nil {
-				if !errors.Is(err, ethereum.NotFound) {
+				if !errors.Is(elem.Error, ethereum.NotFound) {
 					e.logger.Error().Err(elem.Error).Msg("failed to fetch transaction receipt")
 				}
 				continue
