@@ -48,6 +48,8 @@ func TestCatchupSpentOutputRefsSkipsClientCov(t *testing.T) {
 	var mu sync.Mutex
 	queried := map[string]int{}
 	bridge := &mockMoneroBridge{
+		// catch-up is skipped while the XMR scanner is paused (or unset)
+		mimirValues: map[string]int64{"HaltScannerXMR": 0},
 		pubKeys: []thorclient.PubKeyContractAddressPair{
 			{PubKey: vaultA, Algo: common.SigningAlgoEd25519},
 			{PubKey: vaultA, Algo: common.SigningAlgoEd25519},

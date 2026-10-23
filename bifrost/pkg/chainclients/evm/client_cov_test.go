@@ -876,7 +876,9 @@ func TestCovReportSolvency(t *testing.T) {
 	require.ErrorContains(t, c.ReportSolvency(30), "fail to get asgards")
 	env.bridge.asgardsErr = nil
 
-	// solvent vault (balance 1 AVAX >= 0.5 AVAX) while unhealthy -> reported solvent
+	// solvent vault (balance 1 AVAX >= 0.5 AVAX) while unhealthy and
+	// solvency-halted on THORChain -> reported solvent
+	env.bridge.setMimir("SolvencyHaltAVAXChain", 1)
 	solvent := ttypes.Vault{
 		PubKey: c.localPubKey,
 		Coins:  common.NewCoins(common.NewCoin(common.AVAXAsset, cosmos.NewUint(common.One/2))),

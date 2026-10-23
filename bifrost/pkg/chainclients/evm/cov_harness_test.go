@@ -380,6 +380,9 @@ func covThorKeys(t *testing.T) *thorclient.Keys {
 	return thorclient.NewKeysWithKeybase(kb, "bob", "password")
 }
 
+// covMetrics shares the package-level m with GetMetricForTest, whichever runs
+// first, so it registers the same chains: EVMSuite.TestGasUnitContract needs
+// every EVM chain's gas gauges.
 func covMetrics(t *testing.T) *metrics.Metrics {
 	t.Helper()
 	if m != nil {
@@ -391,7 +394,7 @@ func covMetrics(t *testing.T) *metrics.Metrics {
 		ListenPort:   9000,
 		ReadTimeout:  time.Second,
 		WriteTimeout: time.Second,
-		Chains:       common.Chains{common.AVAXChain},
+		Chains:       common.Chains{common.AVAXChain, common.BSCChain, common.BASEChain, common.POLChain},
 	})
 	require.NoError(t, err)
 	return m

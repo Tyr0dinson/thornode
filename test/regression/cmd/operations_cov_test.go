@@ -772,6 +772,9 @@ func (b *blockServerCov) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			Txs: []openapi.BlockTx{{Hash: "TX", Result: openapi.BlockTxResult{GasUsed: &gas}}},
 		}
 		_ = json.NewEncoder(w).Encode(block)
+	case r.URL.Path == "/thorchain/pools":
+		// no pools: the per-block LUVI check has nothing to flag
+		_, _ = w.Write([]byte(`[]`))
 	case strings.HasPrefix(r.URL.Path, "/thorchain/invariant/"):
 		atomic.AddInt32(&b.invariantHit, 1)
 		inv := strings.TrimPrefix(r.URL.Path, "/thorchain/invariant/")
@@ -801,6 +804,7 @@ func TestOpCreateBlocksCov(t *testing.T) {
 
 	b := &blockServerCov{height: "7", blockStatus: http.StatusOK}
 	routine := startBlockServerCov(t, b)
+	resetLuviMonitor(routine) // run() does this before a suite's operations
 
 	logs := make(chan string, 2)
 	logs <- "stale"

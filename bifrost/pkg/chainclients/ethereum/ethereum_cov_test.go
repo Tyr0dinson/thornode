@@ -1101,7 +1101,8 @@ func TestCovReportSolvency(t *testing.T) {
 	insolvent := thortypes.Vault{PubKey: thortypes.GetRandomPubKey(), Coins: common.Coins{ethCoin(10 * common.One)}}
 	btcOnly := thortypes.Vault{PubKey: thortypes.GetRandomPubKey(), Coins: common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(1))}}
 
-	// all solvent while unhealthy -> report solvent vaults
+	// all solvent while unhealthy and solvency-halted on THORChain -> report solvent vaults
+	env.bridge.setMimir("SolvencyHaltETHChain", 1)
 	env.bridge.asgards = thortypes.Vaults{solvent, btcOnly}
 	if err := c.ReportSolvency(20); err != nil {
 		t.Fatal(err)

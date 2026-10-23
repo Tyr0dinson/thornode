@@ -57,6 +57,8 @@ type tronCovBridge struct {
 
 func (b *tronCovBridge) GetMimir(string) (int64, error) { return b.mimir, nil }
 
+func (b *tronCovBridge) GetBlockHeight() (int64, error) { return 100, nil }
+
 func (b *tronCovBridge) GetBlockTimestamp(int64) (time.Time, error) {
 	return time.UnixMilli(1749121581000), b.timestampErr
 }

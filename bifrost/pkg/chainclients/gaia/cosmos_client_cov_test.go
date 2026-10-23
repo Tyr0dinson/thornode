@@ -43,6 +43,8 @@ func (m *mockGaiaBridgeCov) GetMimir(key string) (int64, error) {
 	return m.mimir[key], nil
 }
 
+func (m *mockGaiaBridgeCov) GetBlockHeight() (int64, error) { return 100, nil }
+
 func (m *mockGaiaBridgeCov) GetAsgards() (thortypes.Vaults, error) {
 	m.asgardCalls++
 	return m.asgards, m.asgardErr
@@ -194,8 +196,10 @@ func (s *CosmosTestSuite) TestReportSolvencyCov(c *C) {
 	}
 	c.Check(len(queue), Equals, 0)
 
-	// All vaults solvent while the scanner is unhealthy: solvent vaults are
-	// reported so the chain can auto-unhalt.
+	// All vaults solvent while the scanner is unhealthy and the chain is
+	// solvency-halted on THORChain: solvent vaults are reported so the chain
+	// can auto-unhalt.
+	bridge.mimir = map[string]int64{"SolvencyHaltGAIAChain": 1}
 	solvent := thortypes.Vault{
 		PubKey: covTestVaultPubKey,
 		Coins:  common.Coins{common.NewCoin(atom, cosmos.NewUint(100000000))},
