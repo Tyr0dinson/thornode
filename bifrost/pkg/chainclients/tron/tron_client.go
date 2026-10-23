@@ -224,10 +224,12 @@ func tronIdentity(chainID, rpcHash, apiBlockID, expected string) (string, error)
 }
 
 // tronAPIIdentity is the CompoundProbe identity hook for one TRON endpoint: given
-// the verified rpc_host chain id it reads the api_host tip, takes the block
-// tronIdentityDepth below it, and compares its id across api_host (/wallet/getblock,
-// header only) and rpc_host (eth_getBlockByNumber). Transport failures leave the
-// endpoint unverified until a later cycle.
+// the verified rpc_host chain id it reads both tips, takes the block
+// tronIdentityDepth below the lower one (so both hosts have it, whichever network
+// is ahead), and compares its id across api_host (/wallet/getblock, header only)
+// and rpc_host (eth_getBlockByNumber). Hosts on different networks are therefore
+// proven to differ whenever both answer; transport failures leave the endpoint
+// unverified until a later cycle.
 func tronAPIIdentity(name string, apiPost func(ctx context.Context, path, body string) (map[string]json.RawMessage, error), rpcProbe endpoints.Probe, expected string, logger zerolog.Logger) func(ctx context.Context, chainID string) (string, error) {
 	hp, ok := rpcProbe.(endpoints.HashProbe)
 	return func(ctx context.Context, chainID string) (string, error) {
@@ -248,7 +250,11 @@ func tronAPIIdentity(name string, apiPost func(ctx context.Context, path, body s
 		if err = json.Unmarshal(now["block_header"], &hdr.BlockHeader); err != nil || hdr.BlockHeader.RawData.Number <= 0 {
 			return "", fmt.Errorf("api identity: getblock has no block number")
 		}
-		h := hdr.BlockHeader.RawData.Number - tronIdentityDepth
+		rpcTip, err := rpcProbe.Height(ctx)
+		if err != nil {
+			return "", fmt.Errorf("api identity: rpc tip: %w", err)
+		}
+		h := min(hdr.BlockHeader.RawData.Number, rpcTip) - tronIdentityDepth
 		if h < 1 {
 			h = 1
 		}
@@ -310,9 +316,10 @@ func NewTronClient(
 	failoverCfg := config.GetFailoverConfig()
 	endpointCfgs := config.GetEndpoints()
 	expectedIdentity := strings.ToLower(config.ExpectedIdentity)
-	// identity is required even for a single legacy endpoint: a TRON endpoint is two
-	// hosts, and the pair must be proven to be one network before it serves anything
-	mgrOpts := []endpoints.Option{endpoints.WithMetrics(endpoints.DefaultMetrics()), endpoints.WithIdentityRequired()}
+	// a single legacy endpoint serves while its identity is unproven, as on develop
+	// (where rpc_host only served TRC20 balance reads); a host pair proven to be on
+	// different networks is disabled whatever the endpoint count (tronAPIIdentity)
+	mgrOpts := []endpoints.Option{endpoints.WithMetrics(endpoints.DefaultMetrics())}
 	if expectedIdentity != "" {
 		mgrOpts = append(mgrOpts, endpoints.WithExpectedIdentity(expectedIdentity))
 	}

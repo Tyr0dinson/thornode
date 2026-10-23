@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"net/http/httputil"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -130,12 +131,18 @@ func (s *TronTestSuite) TestVerifyBroadcastAsksEveryEndpoint(c *C) {
 // (eth_blockNumber, eth_chainId, eth_getBlockByNumber) whose block ids agree unless
 // apiBlockID differs from rpcHash.
 func tronHostPair(apiBlockID, rpcHash string) (api, rpc *httptest.Server) {
+	return tronHostPairAt(1000, apiBlockID, rpcHash)
+}
+
+// tronHostPairAt is tronHostPair with the api_host tip at apiTip (the rpc_host tip
+// stays 1000), so the compared block is 20 below the lower of the two.
+func tronHostPairAt(apiTip int, apiBlockID, rpcHash string) (api, rpc *httptest.Server) {
 	api = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		body, _ := io.ReadAll(r.Body)
 		switch {
 		case r.URL.Path == "/wallet/getblock" && !strings.Contains(string(body), "id_or_num"):
-			_, _ = w.Write([]byte(`{"blockID":"tip","block_header":{"raw_data":{"number":1000}}}`))
+			_, _ = w.Write([]byte(`{"blockID":"tip","block_header":{"raw_data":{"number":` + strconv.Itoa(apiTip) + `}}}`))
 		case r.URL.Path == "/wallet/getblock":
 			if !strings.Contains(string(body), `"id_or_num":"980"`) {
 				_, _ = w.Write([]byte(`{}`)) // java-tron: block not available
@@ -196,6 +203,13 @@ func (s *TronTestSuite) TestAPIHostIdentityMustMatchRPCHost(c *C) {
 	_, err = build(badAPI, rpc2, "")(context.Background(), "0x2b6653dc")
 	c.Assert(err, ErrorMatches, ".*disagree on a recent block.*")
 	c.Assert(errors.Is(err, endpoints.ErrIdentityMismatch), Equals, true) // disabled, even as the only endpoint
+	// an api_host on another network whose tip is far ahead of the rpc_host is still
+	// proven different: the compared block is below the lower tip, which both have
+	aheadAPI, rpc3 := tronHostPairAt(5000, other, id)
+	defer aheadAPI.Close()
+	defer rpc3.Close()
+	_, err = build(aheadAPI, rpc3, "")(context.Background(), "0x2b6653dc")
+	c.Assert(errors.Is(err, endpoints.ErrIdentityMismatch), Equals, true, Commentf("%v", err))
 	got, err = build(badAPI, rpc2, "0x2b6653dc")(context.Background(), "0x2b6653dc")
 	c.Assert(err, IsNil)
 	c.Assert(got, Not(Equals), "0x2b6653dc")

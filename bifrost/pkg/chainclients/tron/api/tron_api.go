@@ -153,7 +153,7 @@ func (api *TronApi) GetTransactionWithContext(ctx context.Context, hash string) 
 
 	data, err := api.doWithContext(ctx, "POST", "gettransactionbyid", params)
 	if err != nil {
-		api.logger.Err(err).Msg("tron api request failed")
+		api.logger.Err(err).Str("method", "gettransactionbyid").Msg("failed to call tron api")
 		return Transaction{}, fmt.Errorf("failed to call %s: %w", "gettransactionbyid", err)
 	}
 
