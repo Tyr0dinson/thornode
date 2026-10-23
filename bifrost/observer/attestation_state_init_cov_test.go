@@ -354,6 +354,8 @@ func TestAskPeerForStateStreamErrorCov(t *testing.T) {
 		called = append(called, p)
 		return nil, errors.New("dial failed")
 	}
-	require.False(t, ag.askPeerForState(context.Background(), "remote"))
+	result := ag.askPeerForState(context.Background(), "remote")
+	require.False(t, result.completed)
+	require.EqualError(t, result.err, "dial failed")
 	require.Equal(t, []peer.ID{"remote"}, called)
 }
