@@ -141,6 +141,9 @@ const maxProbeBody = 1 << 20
 // instead of counting a strike.
 var ErrRateLimited = errors.New("rate limited")
 
+// errNotJSONObject is HTTPPostJSON's answer to a 200 whose body is not a JSON object.
+var errNotJSONObject = errors.New("response is not a JSON object")
+
 // isRateLimitCode reports whether a JSON-RPC error code is a provider rate limit.
 func isRateLimitCode(code int) bool { return code == -32005 || code == -32029 }
 
@@ -483,7 +486,7 @@ func HTTPPostJSON(e config.ChainEndpointConfig, base string, timeout time.Durati
 		}
 		var obj map[string]json.RawMessage
 		if err := json.Unmarshal(raw, &obj); err != nil {
-			return nil, fmt.Errorf("%s: response is not a JSON object", path)
+			return nil, fmt.Errorf("%s: %w", path, errNotJSONObject)
 		}
 		return obj, nil
 	}
@@ -499,7 +502,7 @@ func HTTPPostCheck(e config.ChainEndpointConfig, base, path string, timeout time
 	return func(ctx context.Context) error {
 		obj, err := post(ctx, path, "{}")
 		if err != nil {
-			if len(wantFields) == 0 && strings.HasSuffix(err.Error(), "response is not a JSON object") {
+			if len(wantFields) == 0 && errors.Is(err, errNotJSONObject) {
 				return nil // liveness only: any 200 answers
 			}
 			return err

@@ -42,6 +42,18 @@ func SecretsOf(u *url.URL, extra ...string) []string {
 		if u.Path != "" && u.Path != "/" {
 			add(u.Path)
 		}
+		// the URL a request is sent to once userinfo moved to a header, and the path
+		// as an error prints it (escaped), so neither form leaks a key in the path
+		clean := *u
+		clean.User = nil
+		add(clean.String())
+		add(strings.TrimPrefix(clean.String(), clean.Scheme+"://"))
+		if ep := u.EscapedPath(); ep != u.Path {
+			add(u.Host + ep)
+			if ep != "" && ep != "/" {
+				add(ep)
+			}
+		}
 		if u.User != nil {
 			if pw, ok := u.User.Password(); ok {
 				addCredential(pw)

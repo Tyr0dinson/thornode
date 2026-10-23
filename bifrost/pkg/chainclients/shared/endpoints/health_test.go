@@ -217,7 +217,8 @@ func (s *HealthSuite) TestBootstrapRejectsProbeNameMismatch(c *C) {
 	c.Assert(err, ErrorMatches, ".*probe.*other.*does not match.*local.*")
 }
 
-// Mirrors the unrolled table in section 1.3 of the plan.
+// One health cycle per step: a lagging backup without quorum is left alone, the
+// primary fails over on probe strikes, recovers, and is failed back to.
 func (s *HealthSuite) TestHealthLoopUnrolledFailoverAndFailback(c *C) {
 	cfg := healthCfg()
 	cfg.PreferHigherPriority = true
@@ -761,4 +762,45 @@ func (s *HealthSuite) TestIntegrityStrikeEarlierInTheRunStillQuarantines(c *C) {
 	m.Cycle(ctxBg())
 	c.Assert(m.Entry("d").State(), Equals, endpoints.StateUnhealthy)
 	c.Assert(m.Entry("d").IntegrityEvicted(), Equals, false)
+}
+
+type rateLimitedHashProbe struct{ fakeProbe }
+
+func (p *rateLimitedHashProbe) HashAt(context.Context, int64) (string, error) {
+	return "", fmt.Errorf("http 429: %w", endpoints.ErrRateLimited)
+}
+
+// A hash probe that is rate limited puts the endpoint in cooldown, as a rate-limited
+// height probe does: it is not a strike, and the endpoint is left alone until the
+// cooldown ends instead of being asked again every cycle.
+func (s *HealthSuite) TestRateLimitedHashProbeIsACooldown(c *C) {
+	cfg := healthCfg()
+	cfg.IntegrityCheckDepth = 5
+	a := &fakeProbe{name: "a", height: 100, identity: "g", hashes: map[int64]string{95: "H"}}
+	b := &fakeProbe{name: "b", height: 100, identity: "g", hashes: map[int64]string{95: "H"}}
+	d := &rateLimitedHashProbe{fakeProbe{name: "d", height: 100, identity: "g"}}
+	m, err := endpoints.NewManager(common.BTCChain, eps("a", "b", "d"), cfg, zerolog.Nop())
+	c.Assert(err, IsNil)
+	c.Assert(m.Bootstrap(ctxBg(), []endpoints.Probe{a, b, d}), IsNil)
+	m.Cycle(ctxBg())
+	c.Assert(m.Entry("d").InCooldown(), Equals, true)
+	c.Assert(m.Entry("d").State(), Equals, endpoints.StateHealthy)
+}
+
+// Only an endpoint that may serve votes on the consensus tip: two endpoints whose
+// network was never verified, close to each other and far ahead, must not make the
+// verified endpoint look behind and evict it.
+func (s *HealthSuite) TestUnverifiedEndpointsDoNotVoteOnTheTip(c *C) {
+	a := &fakeProbe{name: "a", height: 100, identity: "g"}
+	x := &fakeProbe{name: "x", height: 200}
+	y := &fakeProbe{name: "y", height: 201}
+	m, ps := newHealthMgr(c, healthCfg(), nil, a, x, y)
+	c.Assert(m.Bootstrap(ctxBg(), ps), IsNil)
+	c.Assert(m.Entry("x").Usable(), Equals, false)
+	c.Assert(m.Entry("y").Usable(), Equals, false)
+	for i := 0; i < 3; i++ {
+		m.Cycle(ctxBg())
+	}
+	c.Assert(m.Entry("a").State(), Equals, endpoints.StateHealthy)
+	c.Assert(m.Active().Name, Equals, "a")
 }

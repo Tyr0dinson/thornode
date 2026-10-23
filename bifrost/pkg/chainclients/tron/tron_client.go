@@ -487,7 +487,9 @@ func (c *TronClient) Start(
 
 // Stop Tron chain client
 func (c *TronClient) Stop() {
-	c.endpointMgr.Stop()
+	if c.endpointMgr != nil {
+		c.endpointMgr.Stop()
+	}
 	c.tssKeyManager.Stop()
 	c.blockScanner.Stop()
 	close(c.stopchan)

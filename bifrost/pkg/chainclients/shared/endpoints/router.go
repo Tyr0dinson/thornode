@@ -360,8 +360,15 @@ func (r *HTTPRouter) RoundTrip(req *http.Request) (*http.Response, error) {
 			if isWrite && fromBody {
 				return resp, nil
 			}
-			drain(resp, acancel)
 			lastErr = fmt.Errorf("endpoint %s: http %d", e.Name, resp.StatusCode)
+			if fromBody {
+				// the body was buffered whole by the sniff: keep the node's own code and
+				// message in the error, so it is not reduced to a bare status
+				if text := jsonRPCErrorText(resp.Body); text != "" {
+					lastErr = Redact(fmt.Errorf("endpoint %s: %s", e.Name, text), t.secrets)
+				}
+			}
+			drain(resp, acancel)
 			if isWrite {
 				return nil, lastErr
 			}
@@ -721,6 +728,30 @@ func isDialError(err error) bool {
 // would otherwise hold the whole remaining deadline (the per-attempt timer is
 // disarmed once headers arrive) and starve the next candidate. On timeout, cancel
 // aborts the attempt and the connection is dropped instead.
+// jsonRPCErrorText returns "json-rpc error <code>: <message>" for a JSON-RPC error
+// object read from body (at most sniffLimit bytes), or "" when there is none. The
+// message is cut to 200 bytes.
+func jsonRPCErrorText(body io.Reader) string {
+	raw, err := io.ReadAll(io.LimitReader(body, sniffLimit))
+	if err != nil {
+		return ""
+	}
+	var env struct {
+		Error *struct {
+			Code    int    `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if json.Unmarshal(bytes.TrimSpace(raw), &env) != nil || env.Error == nil {
+		return ""
+	}
+	msg := env.Error.Message
+	if len(msg) > 200 {
+		msg = msg[:200]
+	}
+	return fmt.Sprintf("json-rpc error %d: %s", env.Error.Code, msg)
+}
+
 func drain(resp *http.Response, cancel context.CancelFunc) {
 	t := time.AfterFunc(drainTimeout, cancel)
 	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))

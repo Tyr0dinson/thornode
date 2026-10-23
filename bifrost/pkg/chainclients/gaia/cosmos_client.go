@@ -214,7 +214,7 @@ func NewCosmosClient(
 			// every endpoint on every health cycle).
 			nodeNetwork := func(ctx context.Context) (string, error) {
 				info, perr := svc.GetNodeInfo(ctx, &cmtservice.GetNodeInfoRequest{})
-				if status.Code(perr) == codes.ResourceExhausted {
+				if endpoints.IsGRPCRateLimit(perr) {
 					return "", fmt.Errorf("grpc: %w", endpoints.ErrRateLimited)
 				}
 				if perr != nil {

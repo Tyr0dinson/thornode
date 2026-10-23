@@ -209,7 +209,7 @@ func tronHostPairAt(apiTip int, apiBlockID, rpcHash string) (api, rpc *httptest.
 // The api_host must serve the same network as the rpc_host: identity verification
 // compares a recent block id across the two. Agreement yields the chain id; with a
 // pinned identity a disagreement yields a distinct identity (disabled, fatal for
-// priority 1); unpinned it leaves the endpoint unverified.
+// priority 1); unpinned it is ErrIdentityMismatch, which disables the endpoint.
 func (s *TronTestSuite) TestAPIHostIdentityMustMatchRPCHost(c *C) {
 	const id = "00000000000003d4aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 	const other = "00000000000003d4bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"

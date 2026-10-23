@@ -344,7 +344,12 @@ func (m *Manager) Cycle(ctx context.Context) {
 			continue
 		}
 		e.RecordProbe(r.height, r.latency)
-		heights[e.Name] = r.height
+		// only an endpoint that may serve votes on the tip: one disabled this cycle,
+		// or one whose required network is not verified, must not make the
+		// endpoints that are in use look behind
+		if e.Usable() {
+			heights[e.Name] = r.height
+		}
 		if m.metrics != nil {
 			m.metrics.probeLatency.WithLabelValues(m.chain.String(), e.Name).Set(r.latency.Seconds())
 		}
@@ -467,9 +472,10 @@ func (m *Manager) integrityCheck(ctx context.Context, height int64, heights map[
 		healthy bool
 	}
 	var (
-		wg      sync.WaitGroup
-		mu      sync.Mutex
-		results []res
+		wg          sync.WaitGroup
+		mu          sync.Mutex
+		results     []res
+		rateLimited []string
 	)
 	for i, e := range m.entries {
 		hp, ok := m.probes[i].(HashProbe)
@@ -491,6 +497,12 @@ func (m *Manager) integrityCheck(ctx context.Context, height int64, heights map[
 			pctx, cancel := context.WithTimeout(ctx, m.cfg.HealthCheckTimeout)
 			defer cancel()
 			h, err := hp.HashAt(pctx, height)
+			if errors.Is(err, ErrRateLimited) {
+				mu.Lock()
+				rateLimited = append(rateLimited, e.Name)
+				mu.Unlock()
+				return
+			}
 			if err != nil || h == "" {
 				return // a failed hash fetch is not an integrity signal
 			}
@@ -500,6 +512,12 @@ func (m *Manager) integrityCheck(ctx context.Context, height int64, heights map[
 		}(e, hp, healthy)
 	}
 	wg.Wait()
+	// a rate-limited hash probe is a cooldown, as a rate-limited height probe is
+	// (these probes bypass the routers, which would otherwise record it)
+	sort.Strings(rateLimited)
+	for _, name := range rateLimited {
+		m.RecordRateLimited(name)
+	}
 	counts := map[string]int{}
 	healthyN := 0
 	for _, r := range results {

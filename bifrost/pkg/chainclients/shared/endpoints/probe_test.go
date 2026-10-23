@@ -193,6 +193,17 @@ func (s *ProbeSuite) TestProbeErrorsAreRedacted(c *C) {
 	c.Assert(err.Error(), Not(Matches), "(?s).*SECRET.*")
 }
 
+// With credentials in the URL the request goes to the URL without them (they move to
+// a header), and the error prints its path escaped: neither form may leak a key in
+// the path.
+func (s *ProbeSuite) TestProbeErrorsAreRedactedWithUserinfoAndEscapedPath(c *C) {
+	p := endpoints.NewEVMProbe(config.ChainEndpointConfig{Name: "leaky", RPCHost: "http://user:SECRETPW@127.0.0.1:1/rpc/SECRETKEY%2Fx"}, 200*time.Millisecond)
+	_, err := p.Height(ctxBg())
+	c.Assert(err, NotNil)
+	c.Assert(err.Error(), Matches, "(?s).*leaky.*")
+	c.Assert(err.Error(), Not(Matches), "(?s).*SECRET.*")
+}
+
 func (s *ProbeSuite) TestInvalidProbeURLFailsCleanly(c *C) {
 	p := endpoints.NewEVMProbe(config.ChainEndpointConfig{Name: "bad", RPCHost: "http://[::1"}, time.Second)
 	_, err := p.Height(ctxBg())
@@ -287,4 +298,16 @@ func (s *ProbeSuite) TestSolanaNodeUnhealthyIsAStrikeNotARateLimit(c *C) {
 
 	_, err = endpoints.NewEVMProbe(ep, time.Second).Height(context.Background())
 	c.Assert(errors.Is(err, endpoints.ErrRateLimited), Equals, true)
+}
+
+// Without required fields the check is liveness only: any 200 answers, even one whose
+// body is not JSON. With a required field, such a body fails the check.
+func (s *ProbeSuite) TestHTTPPostCheckLivenessOnlyAcceptsAnyOK(c *C) {
+	plain := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("OK"))
+	}))
+	defer plain.Close()
+	e := config.ChainEndpointConfig{Name: "a"}
+	c.Assert(endpoints.HTTPPostCheck(e, plain.URL, "/health", time.Second)(ctxBg()), IsNil)
+	c.Assert(endpoints.HTTPPostCheck(e, plain.URL, "/health", time.Second, "blockID")(ctxBg()), ErrorMatches, ".*not a JSON object.*")
 }

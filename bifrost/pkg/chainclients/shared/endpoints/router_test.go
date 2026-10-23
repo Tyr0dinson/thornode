@@ -862,3 +862,21 @@ func (s *RouterSuite) TestRetryElsewhereAsksTheNextCandidateWithoutCharging(c *C
 	c.Assert(string(body), Matches, `.*lgrNotFound.*`)
 	c.Assert(m2.Entry("short").State(), Equals, endpoints.StateHealthy)
 }
+
+// When no candidate is left after an endpoint-level JSON-RPC error (here a single
+// endpoint's -32603), the error the caller gets carries the node's code and message,
+// not a bare status; the endpoint is charged for it.
+func (s *RouterSuite) TestEndpointErrorKeepsTheNodesCodeAndMessage(c *C) {
+	var st int32 = http.StatusOK
+	var hits []hit
+	only := rpcServer(&st, &hits, `{"jsonrpc":"2.0","id":1,"error":{"code":-32603,"message":"missing trie node"}}`)
+	defer only.Close()
+	eps := []config.ChainEndpointConfig{{Name: "only", RPCHost: only.URL, Priority: 1}}
+	m, err := endpoints.NewManager(common.ETHChain, eps, fc(1, 1), zerolog.Nop())
+	c.Assert(err, IsNil)
+	targets, err := endpoints.TargetsFrom(eps, endpoints.RPCHost)
+	c.Assert(err, IsNil)
+	_, err = post(c, routerFor(c, m, targets, nil), base(m), "eth_call")
+	c.Assert(err, ErrorMatches, `.*endpoint only: json-rpc error -32603: missing trie node.*`)
+	c.Assert(m.Entry("only").State(), Equals, endpoints.StateUnhealthy)
+}

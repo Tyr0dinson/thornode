@@ -102,7 +102,7 @@ func (g *GRPCConn) Invoke(ctx context.Context, method string, args, reply any, o
 			return err
 		}
 		switch code := status.Code(err); {
-		case code == codes.ResourceExhausted, code == codes.Unavailable && isHTTP429(err):
+		case IsGRPCRateLimit(err):
 			// a rate limit, also when an HTTP proxy answered 429 (grpc-go maps that
 			// to Unavailable): a cooldown, never a strike
 			g.mgr.RecordRateLimited(e.Name)
@@ -135,6 +135,15 @@ func (g *GRPCConn) Invoke(ctx context.Context, method string, args, reply any, o
 // Unknown errors never carry this text, so they stay application answers.
 func isProxyHTTPStatus(err error) bool {
 	return strings.Contains(status.Convert(err).Message(), "unexpected HTTP status code received from server")
+}
+
+// IsGRPCRateLimit reports whether a gRPC error is a provider rate limit:
+// ResourceExhausted, or an HTTP 429 from a proxy, which grpc-go reports as
+// Unavailable. Health probes that call gRPC directly use it too, so a gateway's 429
+// is a cooldown there as well, never a strike.
+func IsGRPCRateLimit(err error) bool {
+	code := status.Code(err)
+	return code == codes.ResourceExhausted || code == codes.Unavailable && isHTTP429(err)
 }
 
 // isHTTP429 reports whether a gRPC error came from an HTTP 429 response, which

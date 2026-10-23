@@ -302,3 +302,14 @@ func (s *GRPCSuite) TestLastCandidateKeepsTheDeadlineAndIsChargedOnExpiry(c *C) 
 	c.Assert(err, NotNil)
 	c.Assert(m.Entry("only").State(), Equals, endpoints.StateUnhealthy)
 }
+
+// Health probes that call gRPC directly classify a rate limit as the router does: a
+// gateway's HTTP 429 (Unavailable with the status in the message) is one, as is
+// ResourceExhausted; any other Unavailable is not.
+func (s *GRPCSuite) TestIsGRPCRateLimit(c *C) {
+	c.Assert(endpoints.IsGRPCRateLimit(status.Error(codes.ResourceExhausted, "quota")), Equals, true)
+	c.Assert(endpoints.IsGRPCRateLimit(status.Error(codes.Unavailable, "unexpected HTTP status code received from server: 429 (Too Many Requests)")), Equals, true)
+	c.Assert(endpoints.IsGRPCRateLimit(status.Error(codes.Unavailable, "connection refused")), Equals, false)
+	c.Assert(endpoints.IsGRPCRateLimit(status.Error(codes.NotFound, "429")), Equals, false)
+	c.Assert(endpoints.IsGRPCRateLimit(nil), Equals, false)
+}
