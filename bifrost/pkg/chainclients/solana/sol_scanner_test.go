@@ -227,3 +227,54 @@ func (s *BlockScannerTestSuite) TestScanVaultOmitsMinContextSlotWithUntilCursor(
 	_, hasUntil := noCursor["until"]
 	c.Assert(hasUntil, Equals, false)
 }
+
+// A null getTransaction for a signature the address scan just listed means the node
+// has not finalized that slot yet (a lagging endpoint after a failover). The vault
+// scan must fail and keep its cursor, never skip the transaction for good.
+func (s *BlockScannerTestSuite) TestScanVaultNullTransactionKeepsCursor(c *C) {
+	const sig = "5QUofaQtNullSig11111111111111111111111111111111111111111111111111111"
+	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		if req.RequestURI == thorclient.PubKeysEndpoint {
+			httpTestHandler(c, rw, "../../../../test/fixtures/endpoints/vaults/pubKeys.json")
+			return
+		}
+		body, _ := io.ReadAll(req.Body)
+		var rpcReq struct {
+			Method string `json:"method"`
+		}
+		_ = json.Unmarshal(body, &rpcReq)
+		rw.Header().Set("Content-Type", "application/json")
+		switch rpcReq.Method {
+		case "getSignaturesForAddress":
+			_, _ = rw.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":[{"signature":"` + sig + `","slot":100,"err":null}]}`))
+		case "getTransaction":
+			_, _ = rw.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":null}`))
+		default:
+			_, _ = rw.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":null}`))
+		}
+	}))
+	defer server.Close()
+
+	storage, err := blockscanner.NewBlockScannerStorageSolana("", config.LevelDBOptions{})
+	c.Assert(err, IsNil)
+	signerCacheManager, err := signercache.NewSignerCacheManager(storage.GetInternalDb())
+	c.Assert(err, IsNil)
+	pubKeyManager, err := pubkeymanager.NewPubKeyManager(s.bridge, s.m)
+	c.Assert(err, IsNil)
+	cfg := getConfigForTest("http://" + server.Listener.Addr().String())
+	rpcClient := rpc.NewSolRPC("http://"+server.Listener.Addr().String(), cfg.HTTPRequestTimeout)
+	scanner, err := NewSOLScanner(make(chan struct{}), cfg, storage, s.bridge, s.m, rpcClient, pubKeyManager, nil, signerCacheManager)
+	c.Assert(err, IsNil)
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	unhealthy := false
+	ok := make([]bool, 1)
+	newLastSigs := make([]string, 1)
+	scanner.scanVault("Vault1111111111111111111111111111111111111", 0, "", 0,
+		func() { unhealthy = true }, make([]int, 1), ok, newLastSigs, &wg)
+	wg.Wait()
+	c.Assert(unhealthy, Equals, true)
+	c.Assert(ok[0], Equals, false)
+	c.Assert(newLastSigs[0], Equals, "") // cursor not advanced past the unseen tx
+}

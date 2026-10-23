@@ -420,11 +420,23 @@ func (e *ETHScanner) extractTxs(block *etypes.Block) (stypes.TxIn, error) {
 	sem := semaphore.NewWeighted(e.cfg.Concurrency)
 	mu := sync.Mutex{}
 	wg := sync.WaitGroup{}
+	// the first failure fails the whole block: a transaction whose receipt could not
+	// be read must not be dropped while the block is marked scanned (it would never
+	// be revisited, since reorg detection only looks at the block hash)
+	var firstErr error
+	fail := func(err error) {
+		mu.Lock()
+		defer mu.Unlock()
+		if firstErr == nil {
+			firstErr = err
+		}
+	}
 
 	processTx := func(tx *etypes.Transaction) {
 		defer wg.Done()
 		if err := sem.Acquire(context.Background(), 1); err != nil {
 			e.logger.Err(err).Msg("fail to acquire semaphore")
+			fail(err)
 			return
 		}
 		defer sem.Release(1)
@@ -443,6 +455,7 @@ func (e *ETHScanner) extractTxs(block *etypes.Block) (stypes.TxIn, error) {
 		txInItem, err := e.fromTxToTxInWithReceipts(tx, receipts)
 		if err != nil {
 			e.logger.Error().Err(err).Str("hash", tx.Hash().Hex()).Msg("fail to get one tx from server")
+			fail(fmt.Errorf("tx %s: %w", tx.Hash().Hex(), err))
 			return
 		}
 		if txInItem == nil {
@@ -473,6 +486,9 @@ func (e *ETHScanner) extractTxs(block *etypes.Block) (stypes.TxIn, error) {
 		go processTx(tx)
 	}
 	wg.Wait()
+	if firstErr != nil {
+		return stypes.TxIn{}, fmt.Errorf("block %d: %w", block.NumberU64(), firstErr)
+	}
 
 	count := len(txInbound.TxArray)
 	if count == 0 {
@@ -1041,7 +1057,12 @@ func (e *ETHScanner) fromTxToTxInWithReceipts(tx *etypes.Transaction, receipts m
 		receipt, err = e.getReceipt(tx.Hash().Hex())
 		if err != nil {
 			if errors.Is(err, ethereum.NotFound) {
-				return nil, nil
+				// the block lists this transaction, so a node that has the block has
+				// its receipt: "not found" means the answering node has not imported
+				// the block yet (a lagging endpoint after a failover) or dropped it
+				// in a reorg. Either way the block must be retried, never scanned
+				// with the transaction silently missing.
+				return nil, fmt.Errorf("receipt for tx %s in block is not available on this node yet: %w", tx.Hash().Hex(), err)
 			}
 			return nil, fmt.Errorf("fail to get transaction receipt: %w", err)
 		}

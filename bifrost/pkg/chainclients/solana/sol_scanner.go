@@ -484,6 +484,14 @@ func (s *SOLScanner) scanVault(
 					setUnhealthy()
 					return fmt.Errorf("failed to get transaction %s: %w", sig.Signature, err)
 				}
+				if tx.Slot == 0 && len(tx.Transaction.Signatures) == 0 {
+					// a null result: the signature list proved the transaction exists,
+					// so the answering node has not finalized that slot yet (a lagging
+					// endpoint after a failover). Fail the scan and keep the cursor,
+					// otherwise the transaction is skipped for good.
+					setUnhealthy()
+					return fmt.Errorf("transaction %s is not available on this node yet", sig.Signature)
+				}
 
 				if tx.Meta.Err != nil {
 					s.logger.Debug().Msgf("transaction %s failed: %s", sig.Signature, tx.Meta.Err)

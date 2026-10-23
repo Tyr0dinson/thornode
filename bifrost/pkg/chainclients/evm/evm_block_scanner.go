@@ -401,12 +401,32 @@ func (e *EVMScanner) getTxInOptimized(method string, block *etypes.Block) (stype
 		return stypes.TxIn{}, nil, err
 	}
 
+	// every transaction the block lists must have a receipt: a null or short answer
+	// means the node has not imported the block yet (a lagging endpoint after a
+	// failover) and the block must be retried, not scanned with transactions missing
+	have := 0
+	for _, receipt := range receipts {
+		if receipt == nil {
+			continue
+		}
+		if _, ok := txByHash[receipt.TxHash.String()]; ok {
+			have++
+		}
+	}
+	if have < len(txByHash) {
+		return stypes.TxIn{}, nil, fmt.Errorf("block %d: %s returned %d receipts for %d transactions; node has not imported the block yet",
+			block.NumberU64(), method, have, len(txByHash))
+	}
+
 	sem := make(chan struct{}, e.cfg.Concurrency)
 	wg := sync.WaitGroup{}
 	mu := sync.Mutex{}
 	var gasPrices []*big.Int
 
 	for _, receipt := range receipts {
+		if receipt == nil {
+			continue
+		}
 		sem <- struct{}{}
 		wg.Add(1)
 		go func(receipt *etypes.Receipt) {
@@ -531,17 +551,18 @@ func (e *EVMScanner) getTxIn(block *etypes.Block) (stypes.TxIn, []*big.Int, erro
 		// process the batch rpc response
 		for i, elem := range rpcBatch {
 			if elem.Error != nil {
-				if !errors.Is(err, ethereum.NotFound) {
-					e.logger.Error().Err(elem.Error).Msg("failed to fetch transaction receipt")
-				}
-				continue
+				// the block lists this transaction, so its receipt exists on any node
+				// that has the block: a missing or unreadable receipt (a null element
+				// from a node that has not imported the block yet) fails the block so
+				// it is retried instead of scanned with the transaction missing
+				return stypes.TxIn{}, nil, fmt.Errorf("block %d: receipt for tx %s unavailable: %w",
+					block.NumberU64(), batch[i].Hash().Hex(), elem.Error)
 			}
 
 			// get the receipt
 			receipt, ok := elem.Result.(*etypes.Receipt)
-			if !ok {
-				e.logger.Error().Msg("failed to cast to transaction receipt")
-				continue
+			if !ok || receipt == nil {
+				return stypes.TxIn{}, nil, fmt.Errorf("block %d: receipt for tx %s is not a receipt", block.NumberU64(), batch[i].Hash().Hex())
 			}
 
 			// collect effective gas price from receipt for gas price tracking
