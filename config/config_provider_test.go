@@ -168,3 +168,46 @@ func (s *ConfigSuite) TestValidateEndpoints(c *C) {
 	}
 	c.Assert(tooMany.ValidateEndpoints(), ErrorMatches, ".*at most 16 endpoints.*")
 }
+
+// A legacy config carries the chain-level username/password into its synthesized
+// endpoint only on chains whose client sent them before endpoint lists existed
+// (UTXO and the EVM client); ETH, GAIA, NOBLE, SOL, XRP and TRON never sent them, so
+// the default thorchain/password pair from the config anchor must not reach them.
+func (s *ConfigSuite) TestLegacyEndpointCarriesBasicAuthOnlyWhereItWasSent(c *C) {
+	legacy := func(chain common.Chain) config.ChainEndpointConfig {
+		return config.BifrostChainConfiguration{ChainID: chain, RPCHost: "http://x", UserName: "thorchain", Password: "password", AuthorizationBearer: "tok"}.GetEndpoints()[0]
+	}
+	// the EVM client sent both
+	for _, chain := range []common.Chain{common.AVAXChain, common.BSCChain, common.BASEChain, common.POLChain} {
+		e := legacy(chain)
+		c.Assert(e.UserName, Equals, "thorchain", Commentf("%s", chain))
+		c.Assert(e.Password, Equals, "password", Commentf("%s", chain))
+		c.Assert(e.AuthorizationBearer, Equals, "tok", Commentf("%s", chain))
+	}
+	// the UTXO daemons sent username/password only
+	for _, chain := range []common.Chain{common.BTCChain, common.LTCChain, common.BCHChain, common.DOGEChain, common.ZECChain} {
+		e := legacy(chain)
+		c.Assert(e.UserName, Equals, "thorchain", Commentf("%s", chain))
+		c.Assert(e.Password, Equals, "password", Commentf("%s", chain))
+		c.Assert(e.AuthorizationBearer, Equals, "", Commentf("%s", chain))
+	}
+	// the EVM client sent username/password only when both were set; otherwise
+	// credentials embedded in rpc_host stayed in effect
+	for _, chain := range []common.Chain{common.AVAXChain, common.BSCChain, common.BASEChain, common.POLChain} {
+		e := config.BifrostChainConfiguration{ChainID: chain, RPCHost: "https://u:k@gw", UserName: "thorchain"}.GetEndpoints()[0]
+		c.Assert(e.UserName, Equals, "", Commentf("%s", chain))
+		c.Assert(e.Password, Equals, "", Commentf("%s", chain))
+	}
+	// every other chain sent neither
+	for _, chain := range []common.Chain{common.ETHChain, common.GAIAChain, common.NOBLEChain, common.SOLChain, common.XRPChain, common.TRONChain} {
+		e := legacy(chain)
+		c.Assert(e.UserName, Equals, "", Commentf("%s", chain))
+		c.Assert(e.Password, Equals, "", Commentf("%s", chain))
+		c.Assert(e.AuthorizationBearer, Equals, "", Commentf("%s", chain))
+	}
+	// an explicit endpoints list sends exactly what it sets
+	eps := config.BifrostChainConfiguration{ChainID: common.GAIAChain, Endpoints: []config.ChainEndpointConfig{
+		{Name: "a", RPCHost: "http://x", CosmosGRPCHost: "h:9090", UserName: "u", Password: "p", Priority: 1},
+	}}.GetEndpoints()
+	c.Assert(eps[0].UserName, Equals, "u")
+}

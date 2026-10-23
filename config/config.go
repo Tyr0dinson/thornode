@@ -868,7 +868,7 @@ type BifrostAttestationGossipConfig struct {
 }
 
 // ChainEndpointConfig describes a single chain data endpoint used for automatic
-// failover. An endpoint is a full node RPC/API — either a self-hosted daemon or an
+// failover. An endpoint is a full node RPC/API: either a self-hosted daemon or an
 // external provider exposing the same interface (e.g. another node hosted by the
 // operator). All endpoints for a chain speak that chain's native protocol, so there is
 // no per-endpoint "type" to configure.
@@ -1132,17 +1132,52 @@ func (c BifrostChainConfiguration) GetEndpoints() []ChainEndpointConfig {
 		})
 		return sorted
 	}
-	return []ChainEndpointConfig{{
-		Name:                "primary",
-		RPCHost:             c.RPCHost,
-		APIHost:             c.APIHost,
-		CosmosGRPCHost:      c.CosmosGRPCHost,
-		CosmosGRPCTLS:       c.CosmosGRPCTLS,
-		Priority:            1,
-		UserName:            c.UserName,
-		Password:            c.Password,
-		AuthorizationBearer: c.AuthorizationBearer,
-	}}
+	legacy := ChainEndpointConfig{
+		Name:           "primary",
+		RPCHost:        c.RPCHost,
+		APIHost:        c.APIHost,
+		CosmosGRPCHost: c.CosmosGRPCHost,
+		CosmosGRPCTLS:  c.CosmosGRPCTLS,
+		Priority:       1,
+	}
+	if c.legacySendsBasicAuth() {
+		legacy.UserName = c.UserName
+		legacy.Password = c.Password
+	}
+	if c.legacySendsBearer() {
+		legacy.AuthorizationBearer = c.AuthorizationBearer
+	}
+	return []ChainEndpointConfig{legacy}
+}
+
+// legacySendsBasicAuth reports whether the chain's client sent the chain-level
+// username/password to its node before endpoint lists existed: the UTXO daemons
+// always did, the EVM client (AVAX, BSC, BASE, POL) only when both were set (with
+// one missing it left credentials embedded in rpc_host in effect, and so does an
+// endpoint without explicit ones). Every chain inherits the default
+// thorchain/password pair from the config anchor, so a legacy config on any other
+// chain must not start sending it (a gateway that checks Authorization would reject
+// every call). An explicit endpoints list sends whatever it sets.
+func (c BifrostChainConfiguration) legacySendsBasicAuth() bool {
+	switch c.ChainID {
+	case common.BTCChain, common.LTCChain, common.BCHChain, common.DOGEChain, common.ZECChain:
+		return true
+	case common.AVAXChain, common.BSCChain, common.BASEChain, common.POLChain:
+		return c.UserName != "" && c.Password != ""
+	}
+	return false
+}
+
+// legacySendsBearer reports whether the chain's client sent the chain-level
+// authorization_bearer before endpoint lists existed: only the EVM client (AVAX, BSC,
+// BASE, POL) did. A legacy config on any other chain must not start sending a token
+// it never sent (one set once on the shared config anchor would reach every chain).
+func (c BifrostChainConfiguration) legacySendsBearer() bool {
+	switch c.ChainID {
+	case common.AVAXChain, common.BSCChain, common.BASEChain, common.POLChain:
+		return true
+	}
+	return false
 }
 
 // GetFailoverConfig returns the failover configuration with defaults applied.
