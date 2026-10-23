@@ -59,7 +59,9 @@ func (c *Client) checkZecBroadcastExpiry(expiry uint32, txid string, chainHeight
 	if !errors.Is(expiryErr, chainclienttypes.ErrTxExpired) {
 		return "", expiryErr
 	}
-	confirmed, err := c.rpc.GetRawTransactionVerbose(txid)
+	// primary only: a fallback that never saw the broadcast would answer "not found"
+	// and retire a payload another signer already mined
+	confirmed, err := c.rpc.GetRawTransactionVerbosePrimary(txid)
 	if err != nil {
 		if isUTXOTxNotFoundErr(err) {
 			return "", expiryErr

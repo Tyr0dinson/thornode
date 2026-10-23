@@ -174,13 +174,24 @@ func (c *Client) reConfirmTx(height int64) ([]int64, error) {
 	return rescanBlockHeights, nil
 }
 
+// confirmTx reports whether an already observed transaction still exists after a
+// reorg. A false answer becomes an errata sent to THORChain, so absence needs
+// positive proof: only the primary daemon is asked (it runs with txindex, and a
+// fallback that never saw the transaction would call it absent), and only its
+// "not found" answer counts. A transport failure, or a disabled primary, is not
+// evidence of anything and keeps the transaction confirmed for now.
 func (c *Client) confirmTx(txid string) bool {
-	// since daemons are run with the tx index enabled, this covers block and mempool
-	_, err := c.rpc.GetRawTransaction(txid)
-	if err != nil {
-		c.log.Err(err).Str("txid", txid).Msg("fail to get tx")
+	_, err := c.rpc.GetRawTransactionPrimary(txid)
+	switch {
+	case err == nil:
+		return true
+	case isUTXOTxNotFoundErr(err):
+		c.log.Warn().Err(err).Str("txid", txid).Msg("transaction no longer on chain after reorg")
+		return false
+	default:
+		c.log.Err(err).Str("txid", txid).Msg("fail to re-confirm tx after reorg; keeping it until the primary can be asked")
+		return true
 	}
-	return err == nil
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////
@@ -206,8 +217,15 @@ func (c *Client) canDeleteBlock(blockMeta *utxo.BlockMeta) bool {
 		return true
 	}
 	for _, tx := range blockMeta.SelfTransactions {
-		if result, err := c.rpc.GetMempoolEntry(tx); err == nil && result != nil {
+		// our own broadcasts live in the primary's mempool; a fallback that never saw
+		// them would report them absent and let the block meta go too early
+		result, err := c.rpc.GetMempoolEntryPrimary(tx)
+		switch {
+		case err == nil && result != nil:
 			c.log.Info().Str("txid", tx).Msg("still in mempool, block cannot be deleted")
+			return false
+		case err != nil && !isUTXOTxNotFoundErr(err):
+			c.log.Warn().Err(err).Str("txid", tx).Msg("cannot check mempool on the primary; keeping block meta for now")
 			return false
 		}
 	}

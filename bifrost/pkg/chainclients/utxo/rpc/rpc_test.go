@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/endpoints"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/rpc/zec"
 	"gitlab.com/thorchain/thornode/v3/config"
 
 	"github.com/btcsuite/btcd/btcjson"
@@ -2016,4 +2017,21 @@ func (s *RPCSuite) TestFallbackClientRedactsWithoutAManager(c *C) {
 	c.Assert(err, NotNil)
 	c.Assert(err.Error(), Not(Matches), "(?s).*SECRET.*")
 	c.Assert(buf.String(), Not(Matches), "(?s).*SECRET.*")
+}
+
+// Zebra answers through the zec client with *zec.Error: its application answers
+// (not found, out of range) count as served, not as endpoint failures.
+func TestClassifyRPCErrorRecognisesZecErrors(t *testing.T) {
+	if got := classifyRPCError(&zec.Error{Code: -5, Message: "No such mempool or blockchain transaction"}); got != verdictApplication {
+		t.Fatalf("zec -5: got verdict %d, want application", got)
+	}
+	if got := classifyRPCError(&zec.Error{Code: -8, Message: "Block height out of range"}); got != verdictApplication {
+		t.Fatalf("zec -8: got verdict %d, want application", got)
+	}
+	if got := classifyRPCError(&zec.Error{Code: -32601, Message: "Method not found"}); got != verdictEndpointError {
+		t.Fatalf("zec -32601: got verdict %d, want endpoint error", got)
+	}
+	if got := classifyRPCError(fmt.Errorf("wrapped: %w", &zec.Error{Code: -5})); got != verdictApplication {
+		t.Fatalf("wrapped zec -5: got verdict %d, want application", got)
+	}
 }

@@ -34,6 +34,7 @@ func newTssSignableBCH(poolPubKey common.PubKey, tssKeyManager tss.ThorchainKeyM
 		thorchainHeight: thorchainHeight,
 	}
 }
+
 func (ts *tssSignableBCH) SignECDSA(payload []byte) (*bchec.Signature, error) {
 	ts.log.Info().Msgf("msg to sign: %s", base64.StdEncoding.EncodeToString(payload))
 	result, _, err := ts.tssKeyManager.RemoteSign(payload, common.SigningAlgoSecp256k1, ts.poolPubKey.String(), ts.thorchainHeight)
@@ -98,6 +99,7 @@ func newTssSignableBTC(poolPubKey common.PubKey, tssKeyManager tss.ThorchainKeyM
 		thorchainHeight: thorchainHeight,
 	}
 }
+
 func (ts *tssSignableBTC) Sign(payload []byte) (*btcec.Signature, error) {
 	ts.log.Info().Msgf("msg to sign: %s", base64.StdEncoding.EncodeToString(payload))
 	result, _, err := ts.tssKeyManager.RemoteSign(payload, common.SigningAlgoSecp256k1, ts.poolPubKey.String(), ts.thorchainHeight)
@@ -157,6 +159,7 @@ func newTssSignableDOGE(poolPubKey common.PubKey, tssKeyManager tss.ThorchainKey
 		thorchainHeight: thorchainHeight,
 	}
 }
+
 func (ts *tssSignableDOGE) Sign(payload []byte) (*dogeec.Signature, error) {
 	ts.log.Info().Msgf("msg to sign: %s", base64.StdEncoding.EncodeToString(payload))
 	result, _, err := ts.tssKeyManager.RemoteSign(payload, common.SigningAlgoSecp256k1, ts.poolPubKey.String(), ts.thorchainHeight)
@@ -216,6 +219,7 @@ func newTssSignableLTC(poolPubKey common.PubKey, tssKeyManager tss.ThorchainKeyM
 		thorchainHeight: thorchainHeight,
 	}
 }
+
 func (ts *tssSignableLTC) Sign(payload []byte) (*ltcec.Signature, error) {
 	ts.log.Info().Msgf("msg to sign: %s", base64.StdEncoding.EncodeToString(payload))
 	result, _, err := ts.tssKeyManager.RemoteSign(payload, common.SigningAlgoSecp256k1, ts.poolPubKey.String(), ts.thorchainHeight)

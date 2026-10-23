@@ -109,9 +109,17 @@ func (c *Client) getUtxoToSpend(pubkey common.PubKey, total, floor btcutil.Amoun
 			if item.Confirmations == 0 && c.cfg.UTXO.MaxMempoolAncestors > 0 {
 				var entry *btcjson.GetMempoolEntryResult
 				entry, err = c.rpc.GetMempoolEntryPrimary(item.TxID) // our own broadcasts live in the primary's mempool
+				if err != nil && !isUTXOTxNotFoundErr(err) {
+					// not an answer: the primary could not be asked (down, disabled, or
+					// a transport failure). Spending the UTXO blind could exceed the
+					// mempool chain limit, so skip it this round.
+					c.log.Warn().Err(err).Str("txid", item.TxID).Msg("cannot check mempool ancestors on the primary; skipping UTXO this round")
+					excluded.mempoolChainLimit++
+					continue
+				}
 				if err != nil {
-					// If we cannot get the mempool entry, the tx is likely confirmed.
-					c.log.Debug().Err(err).Str("txid", item.TxID).Msg("failed to get mempool entry")
+					// not in the mempool: confirmed since ListUnspent answered
+					c.log.Debug().Err(err).Str("txid", item.TxID).Msg("mempool entry not found; treating as confirmed")
 				}
 
 				// Check the combined ancestor and descendant counts to avoid exceeding mempool

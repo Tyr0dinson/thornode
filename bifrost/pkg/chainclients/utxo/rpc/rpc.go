@@ -161,7 +161,6 @@ func NewClientWithFallbacks(
 	return cl, nil
 }
 
-// GetBlockCount returns the number of blocks in the longest block chain.
 // WithEndpointManager attaches the chain's endpoint manager. eps must list the
 // primary first, then one endpoint per fallback in order; the manager is expected
 // to have been built from the same list.
@@ -237,11 +236,18 @@ func classifyRPCError(err error) rpcVerdict {
 	if isRateLimitError(err) {
 		return verdictRateLimit
 	}
+	var code int
 	var rpcErr *btcjson.RPCError
-	if !errors.As(extractBTCError(err), &rpcErr) {
+	var zecErr *zec.Error
+	switch {
+	case errors.As(extractBTCError(err), &rpcErr):
+		code = int(rpcErr.Code)
+	case errors.As(err, &zecErr): // Zebra answers through the zec client with its own error type
+		code = zecErr.Code
+	default:
 		return verdictFailure
 	}
-	switch rpcErr.Code {
+	switch code {
 	case -32005, -32029:
 		return verdictRateLimit
 	case -32601, -32603:
@@ -356,6 +362,16 @@ func (c *Client) GetRawTransactionVerbosePrimary(txid string) (*btcjson.TxRawRes
 	return &tx, extractBTCError(c.redact(0, err))
 }
 
+// GetRawTransactionPrimary is the primary-only counterpart of GetRawTransaction, for
+// the reorg re-confirmation that decides an errata: a fallback without txindex, or
+// one that never saw the transaction, must not be able to call an on-chain inbound
+// absent.
+func (c *Client) GetRawTransactionPrimary(txid string) (string, error) {
+	var tx string
+	err := c.callRaw(&tx, "getrawtransaction", txid, false)
+	return tx, extractBTCError(c.redact(0, err))
+}
+
 // GetMempoolEntryPrimary is the primary-only counterpart of GetMempoolEntry, for
 // signer-side mempool checks that must observe the broadcasting daemon.
 func (c *Client) GetMempoolEntryPrimary(txid string) (*btcjson.GetMempoolEntryResult, error) {
@@ -364,6 +380,7 @@ func (c *Client) GetMempoolEntryPrimary(txid string) (*btcjson.GetMempoolEntryRe
 	return &entry, extractBTCError(c.redact(0, err))
 }
 
+// GetBlockCount returns the number of blocks in the longest block chain.
 func (c *Client) GetBlockCount() (int64, error) {
 	var count int64
 	err := c.readWithFallback(func() error { return c.callPrimary(&count, "getblockcount") }, func(fb UTXOReader) error {

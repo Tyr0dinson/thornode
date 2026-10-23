@@ -467,11 +467,12 @@ func (s *CoverageBackfillSuite) TestCanDeleteBlock(c *C) {
 	bm := sutxo.NewBlockMeta("prev", 100, "hash")
 	c.Assert(s.client.canDeleteBlock(bm), Equals, true)
 
-	// Block meta with self transaction in mempool
+	// Block meta with a self transaction: the mock's getmempoolentry fails with
+	// something other than "not found", so the primary could not answer; the block
+	// meta is kept until it can (a fallback or a failure must never let it go early)
 	bm.AddSelfTransaction("sometxid")
 	result := s.client.canDeleteBlock(bm)
-	// will call GetMempoolEntry which may fail, so should return true (can delete)
-	c.Assert(result, Equals, true)
+	c.Assert(result, Equals, false)
 }
 
 func (s *CoverageBackfillSuite) TestIsRBFEnabled(c *C) {
@@ -690,10 +691,11 @@ func (s *CoverageBackfillSuite) TestSendNetworkFeeFromBlockSmallDelta(c *C) {
 
 func (s *CoverageBackfillSuite) TestConfirmTx(c *C) {
 	// GetRawTransaction calls with verbose=false expecting a hex string result,
-	// but the mock returns a JSON object, so the unmarshal fails and confirmTx returns false.
-	// This exercises the error path in confirmTx.
+	// but the mock returns a JSON object, so the unmarshal fails. That is not a
+	// "not found" answer, so the transaction stays confirmed: an errata needs the
+	// primary's positive "not found", never a lookup failure.
 	result := s.client.confirmTx("sometxid")
-	c.Assert(result, Equals, false)
+	c.Assert(result, Equals, true)
 }
 
 func (s *CoverageBackfillSuite) TestIsSelfTransaction(c *C) {
