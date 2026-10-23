@@ -73,11 +73,11 @@ func (k KVStore) GetTxOut(ctx cosmos.Context, height int64) (*TxOut, error) {
 // each height are shared between the reads of one EndBlock or query instead.
 func (k KVStore) getTxOutBytes(ctx cosmos.Context, height int64) (key, bz []byte, present bool) {
 	key = k.getKeyInt64(prefixTxOut, height)
-	if bz, present, ok := k.getTxOutWindowBytes(ctx, height); ok {
+	var ok bool
+	if bz, present, ok = k.getTxOutWindowBytes(ctx, height); ok {
 		return key, bz, present
 	}
 	cache := keeper.TxOutCacheFromContext(ctx)
-	var ok bool
 	if bz, present, ok = cache.Get(height); ok {
 		return key, bz, present
 	}
