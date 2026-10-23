@@ -103,11 +103,12 @@ func (s *ProbeSuite) TestURLUserinfoBecomesBasicAuth(c *C) {
 }
 
 func (s *ProbeSuite) TestCometProbe(c *C) {
+	var seen []string
 	srv := jsonrpcServer(c, map[string]string{
 		"status": `{"node_info":{"network":"cosmoshub-4"},"sync_info":{"latest_block_height":"22000001"}}`,
 		// commit, not block: the hash without the block's transactions
 		"commit": `{"signed_header":{"commit":{"block_id":{"hash":"DEADBEEF"}}},"canonical":true}`,
-	}, nil)
+	}, &seen)
 	defer srv.Close()
 	p := endpoints.NewCometProbe(config.ChainEndpointConfig{Name: "a", RPCHost: srv.URL}, time.Second)
 	h, err := p.Height(ctxBg())
@@ -119,25 +120,32 @@ func (s *ProbeSuite) TestCometProbe(c *C) {
 	hash, err := hashProbe(c, p).HashAt(ctxBg(), 5)
 	c.Assert(err, IsNil)
 	c.Assert(hash, Equals, "DEADBEEF")
+	c.Assert(seen, DeepEquals, []string{`status [] auth=`, `status [] auth=`, `commit {"height":"5"} auth=`})
 }
 
 func (s *ProbeSuite) TestSolanaProbeHasNoHash(c *C) {
-	srv := jsonrpcServer(c, map[string]string{"getSlot": `123`, "getGenesisHash": `"5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d"`}, nil)
+	var seen []string
+	srv := jsonrpcServer(c, map[string]string{"getSlot": `123`, "getGenesisHash": `"5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d"`}, &seen)
 	defer srv.Close()
 	p := endpoints.NewSolanaProbe(config.ChainEndpointConfig{Name: "a", RPCHost: srv.URL}, time.Second)
 	h, err := p.Height(ctxBg())
 	c.Assert(err, IsNil)
 	c.Assert(h, Equals, int64(123))
+	id, err := p.Identity(ctxBg())
+	c.Assert(err, IsNil)
+	c.Assert(id, Equals, "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d")
 	_, isHash := p.(endpoints.HashProbe)
 	c.Assert(isHash, Equals, false)
+	c.Assert(seen, DeepEquals, []string{`getSlot [{"commitment":"finalized"}] auth=`, `getGenesisHash [] auth=`})
 }
 
 func (s *ProbeSuite) TestXRPProbe(c *C) {
+	var seen []string
 	srv := jsonrpcServer(c, map[string]string{
 		"ledger_current": `{"ledger_current_index":99}`,
 		"server_info":    `{"info":{"network_id":0}}`,
 		"ledger":         `{"ledger":{"ledger_hash":"ABC"}}`,
-	}, nil)
+	}, &seen)
 	defer srv.Close()
 	p := endpoints.NewXRPProbe(config.ChainEndpointConfig{Name: "a", RPCHost: srv.URL}, time.Second)
 	h, err := p.Height(ctxBg())
@@ -149,6 +157,9 @@ func (s *ProbeSuite) TestXRPProbe(c *C) {
 	hash, err := hashProbe(c, p).HashAt(ctxBg(), 98)
 	c.Assert(err, IsNil)
 	c.Assert(hash, Equals, "ABC")
+	// rippled and clio answer HTTP 200 to an empty params array (checked against
+	// public mainnet servers); only a non-empty array that is not one object is refused
+	c.Assert(seen, DeepEquals, []string{`ledger_current [] auth=`, `server_info [] auth=`, `ledger [{"ledger_index":98}] auth=`})
 }
 
 func (s *ProbeSuite) TestCompoundProbeFailsWhenExtraFails(c *C) {
