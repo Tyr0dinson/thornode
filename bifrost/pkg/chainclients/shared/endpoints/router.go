@@ -280,6 +280,9 @@ func (r *HTTPRouter) RoundTrip(req *http.Request) (*http.Response, error) {
 			stopTimer()
 			acancel()
 			if req.Context().Err() != nil {
+				if deferred != nil {
+					return deferred, nil
+				}
 				return nil, err // caller cancelled; not the endpoint's fault
 			}
 			r.mgr.RecordError(e.Name, ErrorKindTransport)
@@ -300,6 +303,9 @@ func (r *HTTPRouter) RoundTrip(req *http.Request) (*http.Response, error) {
 		stopTimer()
 		switch verdict {
 		case verdictOK, verdictAppError:
+			if deferred != nil {
+				drain(deferred, func() {}) // a later candidate did better: release the held answer
+			}
 			// the endpoint answered; the caller's own error handling applies to appError
 			ab.arm(func(rerr error) {
 				if req.Context().Err() != nil {

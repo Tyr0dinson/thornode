@@ -29,6 +29,9 @@ type Entry struct {
 	inlineErrors int
 	lastInlineAt time.Time
 	probeStrikes int
+	// integrityInRun records a minority-hash strike within the current run of probe
+	// strikes, so an eviction completed by a lag or probe strike still quarantines
+	integrityInRun bool
 
 	recoveryChecks int
 	cooldownUntil  time.Time
@@ -128,6 +131,7 @@ func (e *Entry) markUnhealthyLocked() {
 	e.inlineErrors = 0
 	e.lastInlineAt = time.Time{}
 	e.probeStrikes = 0
+	e.integrityInRun = false
 	e.recoveryChecks = 0
 }
 
@@ -198,13 +202,18 @@ func (e *Entry) RecordProbeStrike(cfg config.ChainFailoverConfig, kind ErrorKind
 		return false
 	}
 	e.probeStrikes++
+	if kind == ErrorKindIntegrity {
+		e.integrityInRun = true
+	}
 	if e.probeStrikes >= cfg.ErrorThreshold {
-		if kind == ErrorKindIntegrity {
+		if e.integrityInRun {
 			// sticky: lastErrorKind is overwritten by the next transport error or
 			// rate limit, and recovery must still require a matching hash. Only an
 			// eviction quarantines; a strike that leaves the entry healthy does not,
 			// or a transient disagreement would silently keep a healthy endpoint out
-			// of the all-down fallback.
+			// of the all-down fallback. Any minority-hash strike in the run counts,
+			// not just the one that completes it: a forked node that also lags or
+			// fails a probe is still a forked node.
 			e.integrityEvicted = true
 		}
 		e.markUnhealthyLocked()
@@ -227,6 +236,7 @@ func (e *Entry) RecordProbePass() {
 	defer e.mu.Unlock()
 	if e.state == StateHealthy {
 		e.probeStrikes = 0
+		e.integrityInRun = false
 	}
 }
 

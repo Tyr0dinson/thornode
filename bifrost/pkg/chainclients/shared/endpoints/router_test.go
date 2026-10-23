@@ -729,6 +729,14 @@ func (s *RouterSuite) TestRetryElsewhereAsksTheNextCandidateWithoutCharging(c *C
 	c.Assert(h2, HasLen, 1)
 	c.Assert(m.Entry("short").State(), Equals, endpoints.StateHealthy)
 	c.Assert(m.Active().Name, Equals, "short")
+	// the held-back answer was released: repeating the read many times must not
+	// exhaust anything (each held body is closed and its sniff reader returned)
+	for i := 0; i < 50; i++ {
+		resp, err = post(c, hc, base(m), "ledger")
+		c.Assert(err, IsNil)
+		_, _ = io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+	}
 
 	// when no candidate has it, the deferred answer is returned so the caller sees the
 	// chain's own error, and still nothing is charged

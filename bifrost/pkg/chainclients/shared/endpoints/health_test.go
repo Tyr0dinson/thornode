@@ -675,7 +675,7 @@ func (s *HealthSuite) TestIntegrityPluralityWithoutMajorityIsSkipped(c *C) {
 	// H holds 2 of the 4 healthy answers: a plurality, not a majority, so z is not cleared
 	c.Assert(m.Entry("z").State(), Equals, endpoints.StateUnhealthy)
 	c.Assert(m.Entry("z").IntegrityEvicted(), Equals, true)
-	// once H is a strict majority (3 of 5 healthy answers) z recovers
+	// once H is a strict majority (3 of the 4 healthy answers) z recovers
 	y.mu.Lock()
 	y.hashes[95] = "H"
 	y.mu.Unlock()
@@ -723,4 +723,39 @@ func (s *HealthSuite) TestIdentityMismatchDisablesTheEndpoint(c *C) {
 	c.Assert(m.Bootstrap(ctxBg(), ps), IsNil)
 	c.Assert(m.Entry("a").State(), Equals, endpoints.StateDisabled)
 	c.Assert(m.ReadCandidates(), HasLen, 0)
+}
+
+// A forked node that is evicted by a lag or probe strike after minority-hash strikes
+// is still quarantined: the integrity strike anywhere in the run counts.
+func (s *HealthSuite) TestIntegrityStrikeEarlierInTheRunStillQuarantines(c *C) {
+	cfg := healthCfg()
+	cfg.IntegrityCheckDepth = 5
+	cfg.ErrorThreshold = 2
+	cfg.MaxBlockLag = 3
+	a := &fakeProbe{name: "a", height: 100, identity: "g", hashes: map[int64]string{95: "H"}}
+	b := &fakeProbe{name: "b", height: 100, identity: "g", hashes: map[int64]string{95: "H"}}
+	d := &fakeProbe{name: "d", height: 100, identity: "g", hashes: map[int64]string{95: "X"}}
+	m, ps := newHealthMgr(c, cfg, nil, a, b, d)
+	c.Assert(m.Bootstrap(ctxBg(), ps), IsNil)
+	m.Cycle(ctxBg()) // strike 1: minority hash, still healthy
+	c.Assert(m.Entry("d").State(), Equals, endpoints.StateHealthy)
+	d.set(0, down) // strike 2: probe failure completes the eviction
+	m.Cycle(ctxBg())
+	c.Assert(m.Entry("d").State(), Equals, endpoints.StateUnhealthy)
+	c.Assert(m.Entry("d").IntegrityEvicted(), Equals, true)
+	c.Assert(m.Entry("d").Snapshot().IntegrityEvicted, Equals, true)
+	// a passing probe between the two strikes resets the run: no quarantine
+	d2 := &fakeProbe{name: "d", height: 100, identity: "g", hashes: map[int64]string{95: "X"}}
+	m, ps = newHealthMgr(c, cfg, nil, a, b, d2)
+	c.Assert(m.Bootstrap(ctxBg(), ps), IsNil)
+	m.Cycle(ctxBg())
+	d2.mu.Lock()
+	d2.hashes[95] = "H"
+	d2.mu.Unlock()
+	m.Cycle(ctxBg()) // pass
+	d2.set(0, down)
+	m.Cycle(ctxBg())
+	m.Cycle(ctxBg())
+	c.Assert(m.Entry("d").State(), Equals, endpoints.StateUnhealthy)
+	c.Assert(m.Entry("d").IntegrityEvicted(), Equals, false)
 }

@@ -72,6 +72,7 @@ type ProviderSummary struct {
 	ProbeLatencyMs   int64  `json:"probe_latency_ms,omitempty"`
 	InCooldown       bool   `json:"in_cooldown,omitempty"`
 	IdentityVerified bool   `json:"identity_verified,omitempty"`
+	IntegrityEvicted bool   `json:"integrity_evicted,omitempty"`
 	InlineErrors     int    `json:"inline_errors,omitempty"`
 	ProbeStrikes     int    `json:"probe_strikes,omitempty"`
 	LastErrorKind    string `json:"last_error_kind,omitempty"`
@@ -436,6 +437,7 @@ func (s *HealthServer) providerEntry(client chainclients.ChainClient) ProviderEn
 		entry.Providers[i].ProbeLatencyMs = snap.ProbeLatencyMs
 		entry.Providers[i].InCooldown = snap.InCooldown
 		entry.Providers[i].IdentityVerified = snap.IdentityVerified
+		entry.Providers[i].IntegrityEvicted = snap.IntegrityEvicted
 		entry.Providers[i].InlineErrors = snap.InlineErrors
 		entry.Providers[i].ProbeStrikes = snap.ProbeStrikes
 		entry.Providers[i].LastErrorKind = snap.LastErrorKind
