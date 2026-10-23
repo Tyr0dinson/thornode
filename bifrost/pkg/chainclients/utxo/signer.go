@@ -706,18 +706,10 @@ func (c *Client) BroadcastTx(txOut stypes.TxOutItem, payload []byte) (string, er
 	if err != nil {
 		return "", fmt.Errorf("fail to get block height: %w", err)
 	}
-	bm, err := c.temporalStorage.GetBlockMeta(height)
-	if err != nil {
-		c.log.Err(err).Int64("height", height).Msg("fail to get blockmeta")
-	}
-	if bm == nil {
-		bm = utxo.NewBlockMeta("", height, "")
-	}
-	defer func() {
-		if saveErr := c.temporalStorage.SaveBlockMeta(height, bm); saveErr != nil {
-			c.log.Err(saveErr).Msg("fail to save block metadata")
-		}
-	}()
+	// the txid is recorded when the broadcast is done, into the meta as stored then: a
+	// copy read before the RPCs would overwrite a reorg repair made meanwhile
+	var selfTxid string
+	defer func() { c.recordSelfTx(height, selfTxid) }()
 
 	redeemTx := btcwire.NewMsgTx(btcwire.TxVersion)
 
@@ -771,7 +763,7 @@ func (c *Client) BroadcastTx(txOut stypes.TxOutItem, payload []byte) (string, er
 	}
 
 	if txid != "" {
-		bm.AddSelfTransaction(txid)
+		selfTxid = txid
 	}
 
 	msgs := []string{"already in block chain"}

@@ -683,11 +683,19 @@ func (s *CoverageBackfillSuite) TestSendNetworkFeeFromBlockSmallDelta(c *C) {
 	s.client.cfg.ChainID = oldChain
 }
 
+// primaryCannotAnswer makes the mock primary fail the lookup of txid with an
+// internal error, which is not a "not found" answer. It returns a restore func.
+func primaryCannotAnswer(txid string) func() {
+	key := rpcFixtureKey("getrawtransaction", []interface{}{txid})
+	btcChainRPCs[key] = map[string]interface{}{"result": nil, "id": 1, "error": map[string]interface{}{"code": -32603, "message": "internal error"}}
+	return func() { delete(btcChainRPCs, key) }
+}
+
 func (s *CoverageBackfillSuite) TestConfirmTx(c *C) {
-	// GetRawTransaction calls with verbose=false expecting a hex string result,
-	// but the mock returns a JSON object, so the unmarshal fails. That is not a
-	// "not found" answer, so the transaction stays confirmed: an errata needs the
-	// primary's positive "not found", never a lookup failure.
+	// a lookup that fails is not a "not found" answer, so the transaction is not
+	// called gone: an errata needs the primary's positive "not found", never a
+	// lookup failure
+	defer primaryCannotAnswer("sometxid")()
 	result := s.client.confirmTx("sometxid")
 	c.Assert(result, Equals, txUnknown)
 }
@@ -698,7 +706,8 @@ func (s *CoverageBackfillSuite) TestConfirmTx(c *C) {
 // once the primary answers the reorg is resolved in full.
 func (s *CoverageBackfillSuite) TestReorgIsRetriedWhileThePrimaryCannotAnswer(c *C) {
 	bm := sutxo.NewBlockMeta("prevhash", 1997, "stored_hash_1997")
-	bm.AddCustomerTransaction("sometxid") // the mock's getrawtransaction answer does not decode: unknown
+	bm.AddCustomerTransaction("sometxid")
+	defer primaryCannotAnswer("sometxid")() // unknown
 	c.Assert(s.client.temporalStorage.SaveBlockMeta(1997, bm), IsNil)
 	errataQueue := make(chan stypes.ErrataBlock, 1)
 	s.client.globalErrataQueue = errataQueue
@@ -2125,6 +2134,72 @@ func (s *CoverageBackfillSuite) TestReorgTxInScannedBlockIsNotErrata(c *C) {
 	c.Assert(fixes, HasLen, 1)
 	c.Assert(fixes[0].errata, HasLen, 0)
 	c.Assert(fixes[0].meta.CustomerTransactions, DeepEquals, []string{txid})
+}
+
+// A txindex daemon still returns a transaction of a block a reorg disconnected (it
+// checks its mempool first, so a block hash with zero confirmations means the
+// transaction is in no active block and not in the mempool): that is gone, not on
+// chain. In the mempool (no block hash) it is still treated as on chain.
+func (s *CoverageBackfillSuite) TestReorgTxOnlyInAnOrphanedBlockIsErrata(c *C) {
+	const orphaned = "0d1e0f2a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e"
+	const pending = "1d1e0f2a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e"
+	bm := sutxo.NewBlockMeta("prevhash", 4997, "stored_hash_4997")
+	bm.AddCustomerTransaction(orphaned)
+	bm.AddCustomerTransaction(pending)
+	c.Assert(s.client.temporalStorage.SaveBlockMeta(4997, bm), IsNil)
+	s.client.cfg.BlockScanner.MaxReorgRescanBlocks = 1
+	defer reorgParent(btcChainRPCs, 4997, "new4997", "prevhash")()
+	orphanedKey := rpcFixtureKey("getrawtransaction", []interface{}{orphaned})
+	pendingKey := rpcFixtureKey("getrawtransaction", []interface{}{pending})
+	btcChainRPCs[orphanedKey] = map[string]interface{}{"error": nil, "id": 1, "result": map[string]interface{}{
+		"txid": orphaned, "hex": "00", "blockhash": "stored_hash_4997", "confirmations": 0,
+	}}
+	btcChainRPCs[pendingKey] = map[string]interface{}{"error": nil, "id": 1, "result": map[string]interface{}{
+		"txid": pending, "hex": "00",
+	}}
+	defer delete(btcChainRPCs, orphanedKey)
+	defer delete(btcChainRPCs, pendingKey)
+
+	block := &btcjson.GetBlockVerboseTxResult{Height: 4998, PreviousHash: "new4997"}
+	fixes, err := s.client.planReConfirm(block)
+	c.Assert(err, IsNil)
+	c.Assert(fixes, HasLen, 1)
+	c.Assert(fixes[0].errata, HasLen, 1)
+	c.Assert(fixes[0].errata[0].TxID.String(), Equals, orphaned)
+	c.Assert(fixes[0].meta.CustomerTransactions, DeepEquals, []string{pending})
+}
+
+// A transaction the observer records at a repaired height between the plan and the
+// commit survives the commit, so a later reorg can still re-confirm it; an errata'd
+// one is not brought back.
+func (s *CoverageBackfillSuite) TestCommitReorgKeepsTransactionsObservedMeanwhile(c *C) {
+	const gone = "27de3e1865c098cd4fded71bae1e8236fd27ce5dce6e524a9ac5cd1a17b5c241" // -5 from the primary
+	const later = "2d1e0f2a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e"
+	bm := sutxo.NewBlockMeta("prevhash", 4997, "stored_hash_4997")
+	bm.AddCustomerTransaction(gone)
+	c.Assert(s.client.temporalStorage.SaveBlockMeta(4997, bm), IsNil)
+	errataQueue := make(chan stypes.ErrataBlock, 1)
+	s.client.globalErrataQueue = errataQueue
+	s.client.cfg.BlockScanner.MaxReorgRescanBlocks = 1
+	defer reorgParent(btcChainRPCs, 4997, "new4997", "prevhash")()
+
+	fixes, err := s.client.planReConfirm(&btcjson.GetBlockVerboseTxResult{Height: 4998, PreviousHash: "new4997"})
+	c.Assert(err, IsNil)
+	c.Assert(fixes, HasLen, 1)
+	c.Assert(fixes[0].errata, HasLen, 1)
+
+	// the observer records another transaction at that height meanwhile
+	stored, err := s.client.temporalStorage.GetBlockMeta(4997)
+	c.Assert(err, IsNil)
+	stored.AddCustomerTransaction(later)
+	c.Assert(s.client.temporalStorage.SaveBlockMeta(4997, stored), IsNil)
+
+	s.client.commitReorg(&utxoReorgPlan{fixes: fixes})
+	c.Assert(errataQueue, HasLen, 1)
+	committed, err := s.client.temporalStorage.GetBlockMeta(4997)
+	c.Assert(err, IsNil)
+	c.Assert(committed.BlockHash, Equals, "new4997")
+	c.Assert(committed.CustomerTransactions, DeepEquals, []string{later})
 }
 
 // The "observed" marks extractTxs sets for an abandoned scan step are undone, so the

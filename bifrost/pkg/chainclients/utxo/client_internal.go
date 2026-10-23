@@ -61,6 +61,9 @@ type utxoReorgFix struct {
 	meta   *utxo.BlockMeta
 	errata []types.ErrataTx
 	block  *btcjson.GetBlockVerboseTxResult // the new chain's block at meta.Height
+	// planned holds the transactions the stored meta had when the plan read it, so
+	// the commit can tell them from ones the observer recorded since
+	planned map[string]bool
 }
 
 // utxoReorgPlan is the work a detected reorg requires. It is computed without side
@@ -218,7 +221,13 @@ func (c *Client) planReConfirm(block *btcjson.GetBlockVerboseTxResult) ([]utxoRe
 		}
 
 		c.log.Info().Int64("height", blockMeta.Height).Msg("re-confirming transactions")
-		fix := utxoReorgFix{meta: blockMeta, block: b}
+		fix := utxoReorgFix{meta: blockMeta, block: b, planned: map[string]bool{}}
+		for _, tx := range blockMeta.CustomerTransactions {
+			fix.planned[tx] = true
+		}
+		for _, tx := range blockMeta.SelfTransactions {
+			fix.planned[tx] = true
+		}
 		var gone []string
 		for _, tx := range blockMeta.CustomerTransactions {
 			if onNewChain[tx] {
@@ -311,6 +320,26 @@ func (c *Client) commitReorg(plan *utxoReorgPlan) {
 				Txs:    fix.errata,
 			}
 		}
+	}
+	// errata are queued before the lock is taken: the observer may wait on metaMu,
+	// and must never be needed to drain a blocked errata send
+	c.metaMu.Lock()
+	defer c.metaMu.Unlock()
+	for _, fix := range plan.fixes {
+		// keep a transaction the observer recorded at this height after the plan read
+		// it (an errata'd one was there when the plan read it, so it is not re-added)
+		if current, err := c.temporalStorage.GetBlockMeta(fix.meta.Height); err == nil && current != nil {
+			for _, tx := range current.CustomerTransactions {
+				if !fix.planned[tx] {
+					fix.meta.AddCustomerTransaction(tx)
+				}
+			}
+			for _, tx := range current.SelfTransactions {
+				if !fix.planned[tx] {
+					fix.meta.AddSelfTransaction(tx)
+				}
+			}
+		}
 		if err := c.temporalStorage.SaveBlockMeta(fix.meta.Height, fix.meta); err != nil {
 			c.log.Err(err).Int64("height", fix.meta.Height).Msg("fail to save block meta of height")
 		}
@@ -330,12 +359,18 @@ const (
 // reorg. txGone becomes an errata sent to THORChain, so absence needs positive
 // proof: only the primary daemon is asked (it runs with txindex, and a fallback
 // that never saw the transaction would call it absent), and only its "not found"
-// answer counts. A transport failure, or a disabled primary, is txUnknown: the
-// reorg plan is abandoned with nothing written, so the scan of the block fails and
-// is retried with the mismatch still detected.
+// answer, or a transaction it holds only in a disconnected block, counts. txindex
+// keeps the transactions of disconnected blocks and the daemon looks in its mempool
+// first, so a block hash with no confirmations means the transaction is in no
+// active block and not in the mempool. A transport failure, or a disabled primary,
+// is txUnknown: the reorg plan is abandoned with nothing written, so the scan of the
+// block fails and is retried with the mismatch still detected.
 func (c *Client) confirmTx(txid string) txConfirmation {
-	_, err := c.rpc.GetRawTransactionPrimary(txid)
+	tx, err := c.rpc.GetRawTransactionVerbosePrimary(txid)
 	switch {
+	case err == nil && tx != nil && tx.BlockHash != "" && tx.Confirmations <= 0:
+		c.log.Warn().Str("txid", txid).Str("block", tx.BlockHash).Msg("transaction only in a disconnected block after reorg")
+		return txGone
 	case err == nil:
 		return txStillOnChain
 	case isUTXOTxNotFoundErr(err):

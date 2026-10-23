@@ -404,16 +404,6 @@ func (c *Client) GetBlockHashPrimary(height int64) (string, error) {
 	return hash, extractBTCError(c.redact(0, err))
 }
 
-// GetRawTransactionPrimary is the primary-only counterpart of GetRawTransaction, for
-// the reorg re-confirmation that decides an errata: a fallback without txindex, or
-// one that never saw the transaction, must not be able to call an on-chain inbound
-// absent.
-func (c *Client) GetRawTransactionPrimary(txid string) (string, error) {
-	var tx string
-	err := c.callRaw(&tx, "getrawtransaction", txid, false)
-	return tx, extractBTCError(c.redact(0, err))
-}
-
 // GetRawMempoolPrimary lists the primary daemon's mempool (for daemons such as Zebra
 // that do not implement getmempoolentry).
 func (c *Client) GetRawMempoolPrimary() ([]string, error) {

@@ -62,6 +62,38 @@ func (s *ZcashSignerSuite) TestZECExpiryNeedsThePrimaryAtTheExpiryHeight(c *C) {
 	c.Assert(errors.Is(err, chainclienttypes.ErrTxExpired), Equals, true)
 }
 
+// The primary's height bounds what its "not mined" answer can know only when it is
+// read before that answer: a primary at 39 that says "not found" and then imports
+// block 40 (which may hold the payload) has proven nothing about block 40.
+func (s *ZcashSignerSuite) TestZECExpiryReadsThePrimaryHeightBeforeTheLookup(c *C) {
+	const txid = "500468e8f504eaeee3c53f826dac132dbff2abf824b5361d10d712a199917d65"
+	var tip atomic.Int64
+	tip.Store(39)
+	catchingUp := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var request struct {
+			Method string `json:"method"`
+			ID     int    `json:"id"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&request)
+		switch request.Method {
+		case "getblockcount":
+			_ = json.NewEncoder(w).Encode(map[string]any{"id": request.ID, "result": tip.Load(), "error": nil})
+		case "getrawtransaction":
+			_ = json.NewEncoder(w).Encode(map[string]any{"id": request.ID, "result": nil, "error": map[string]any{"code": -5, "message": "No such mempool or blockchain transaction"}})
+			tip.Store(40) // the primary imports the expiry block right after answering
+		default:
+			http.Error(w, "unexpected RPC: "+request.Method, 400)
+		}
+	}))
+	defer catchingUp.Close()
+	var err error
+	s.client.rpc, err = utxorpcc.NewClient(catchingUp.Listener.Addr().String(), s.cfg.UserName, s.cfg.Password, 0, time.Second, common.ZECChain, s.client.log)
+	c.Assert(err, IsNil)
+	_, err = s.client.checkZecBroadcastExpiry(40, txid, 41)
+	c.Assert(err, NotNil)
+	c.Assert(errors.Is(err, chainclienttypes.ErrTxExpired), Equals, false)
+}
+
 // ZEC inputs come from the primary daemon only, so the "tip has reached the input
 // reference" guard must read the primary's tip: a fallback's height must not let a
 // primary that cannot show it has caught up pass the guard.

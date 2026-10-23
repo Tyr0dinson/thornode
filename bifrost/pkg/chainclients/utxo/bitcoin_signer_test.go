@@ -465,6 +465,48 @@ func (s *BitcoinSignerSuite) TestBroadcastTx(c *C) {
 	c.Assert(err, IsNil)
 }
 
+// A broadcast records its txid in the block meta at the current height without
+// writing back a copy it read before its RPCs: a reorg commit that repaired that meta
+// meanwhile (new hash, transactions) is kept.
+func (s *BitcoinSignerSuite) TestBroadcastKeepsAMetaRepairedMeanwhile(c *C) {
+	const repairedTx = "3d1e0f2a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e"
+	stale := utxo.NewBlockMeta("old_prev", 10, "old_hash")
+	c.Assert(s.client.temporalStorage.SaveBlockMeta(10, stale), IsNil)
+	srv := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		body, err := io.ReadAll(req.Body)
+		c.Check(err, IsNil)
+		var rpcReq struct {
+			Method string `json:"method"`
+		}
+		c.Check(json.Unmarshal(body, &rpcReq), IsNil)
+		switch rpcReq.Method {
+		case "getblockcount":
+			_, _ = rw.Write([]byte(`{"result":10,"error":null,"id":1}`))
+		case "sendrawtransaction":
+			// a reorg commit repairs the meta at this height while the broadcast is in flight
+			repaired := utxo.NewBlockMeta("new_prev", 10, "new_hash")
+			repaired.AddCustomerTransaction(repairedTx)
+			c.Check(s.client.temporalStorage.SaveBlockMeta(10, repaired), IsNil)
+			_, _ = rw.Write([]byte(`{"result":"aa00000000000000000000000000000000000000000000000000000000000000","error":null,"id":1}`))
+		default:
+			http.Error(rw, "unexpected RPC: "+rpcReq.Method, http.StatusBadRequest)
+		}
+	}))
+	defer srv.Close()
+	var err error
+	s.client.rpc, err = rpc.NewClient(srv.Listener.Addr().String(), "user", "pass", 0, time.Second, common.BTCChain, s.client.log)
+	c.Assert(err, IsNil)
+	payload, err := hex.DecodeString("01000000000103c7d45551ff54354be6711396560348ebbf273b989b542be36645568ed1dbecf10000000000ffffffff951ed70edc0bf2a4b3e1cbfe55d191a72850c5595c381309f69fc084c9af0b540100000000ffffffffc5db14c562b96bfd95f97d74a558a3e3b91841a96e1b09546208c9fb67424f420000000000ffffffff02231710000000000016001417acb08a31369e7666d94664d7e64f0e048220900000000000000000176a1574686f72636861696e3a636f6e736f6c6964617465024730440220756d15a363b78b070b583dfc1a6aba0dd605550407d5d3d92f5e785ef7e42aca02200db19dab144033c9c353481be30469da42c0c0a7580a513f49282bea77d7a29301210223da2ff73fa9b2258d335a4e63a4e7ef88211b8e800588280ed8b51e285ec0ff02483045022100a695f0fece36de02212b10bf6aa2f06dc6ef84ba30cae0c78749deddba1574530220315b490111c830c27e6cb810559c2a37cd00b123de82df79e061df26c8deb14301210223da2ff73fa9b2258d335a4e63a4e7ef88211b8e800588280ed8b51e285ec0ff0247304402207e586439b04985a90a53cf9fc511a53d86acece57b3e5571118562449d4f27ac02206d84f0fba1a68cf55efc8a1c2ec768924479b97ceaf2029ed6941176f004bf8101210223da2ff73fa9b2258d335a4e63a4e7ef88211b8e800588280ed8b51e285ec0ff00000000")
+	c.Assert(err, IsNil)
+	txid, err := s.client.BroadcastTx(stypes.TxOutItem{Chain: common.BTCChain, VaultPubKey: types2.GetRandomPubKey()}, payload)
+	c.Assert(err, IsNil)
+	meta, err := s.client.temporalStorage.GetBlockMeta(10)
+	c.Assert(err, IsNil)
+	c.Assert(meta.BlockHash, Equals, "new_hash")
+	c.Assert(meta.CustomerTransactions, DeepEquals, []string{repairedTx})
+	c.Assert(meta.SelfTransactions, DeepEquals, []string{txid})
+}
+
 // TestBuildConsolidateTxOutItemSumsUtxosInSats verifies consolidation sums each UTXO
 // in sats so the resulting amount is not affected by float accumulation drift.
 func (s *BitcoinSignerSuite) TestBuildConsolidateTxOutItemSumsUtxosInSats(c *C) {

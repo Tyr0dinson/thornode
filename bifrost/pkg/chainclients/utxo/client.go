@@ -73,6 +73,10 @@ type Client struct {
 	networkFeeLock        sync.Mutex
 	solvencyLock          sync.Mutex
 	consolidateInProgress stdatomic.Bool
+	// metaMu serialises every read-modify-write of a block meta (observed and
+	// broadcast transactions, the scanned block's hash, a reorg commit), so none
+	// overwrites what another just recorded
+	metaMu sync.Mutex
 
 	// ---------- scanner ----------
 	blockScanner    *blockscanner.BlockScanner
@@ -376,7 +380,9 @@ func (c *Client) Start(
 
 // Stop stops the scanner, signer, and solvency check.
 func (c *Client) Stop() {
-	c.endpointMgr.Stop()
+	if c.endpointMgr != nil {
+		c.endpointMgr.Stop()
+	}
 	c.blockScanner.Stop()
 	c.tssKeySigner.Stop()
 	close(c.stopchan)
@@ -472,26 +478,8 @@ func (c *Client) OnObservedTxIn(txIn types.TxInItem, blockHeight int64) {
 		return
 	}
 
-	blockMeta, err := c.temporalStorage.GetBlockMeta(blockHeight)
-	if err != nil {
-		c.log.Err(err).Int64("height", blockHeight).Msgf("fail to get block meta")
+	if !c.recordObservedTx(txIn, blockHeight) {
 		return
-	}
-	if blockMeta == nil {
-		blockMeta = utxo.NewBlockMeta("", blockHeight, "")
-	}
-	if _, err = c.temporalStorage.TrackObservedTx(txIn.Tx); err != nil {
-		c.log.Err(err).Msgf("fail to add hash (%s) to observed tx cache", txIn.Tx)
-	}
-	if c.isAsgardAddress(txIn.Sender) {
-		c.log.Debug().Int64("height", blockHeight).Msgf("add hash %s as self transaction", txIn.Tx)
-		blockMeta.AddSelfTransaction(txIn.Tx)
-	} else {
-		// add the transaction to block meta
-		blockMeta.AddCustomerTransaction(txIn.Tx)
-	}
-	if err = c.temporalStorage.SaveBlockMeta(blockHeight, blockMeta); err != nil {
-		c.log.Err(err).Int64("height", blockHeight).Msgf("fail to save block meta to storage")
 	}
 	// update the signer cache
 	var m mem.Memo
@@ -510,6 +498,77 @@ func (c *Client) OnObservedTxIn(txIn types.TxInItem, blockHeight int64) {
 	if err = c.signerCacheManager.SetSigned(txIn.CacheHash(c.GetChain(), m.GetTxID().String()), txIn.CacheVault(c.GetChain()), txIn.Tx); err != nil {
 		c.log.Err(err).Msg("fail to update signer cache")
 	}
+}
+
+// saveScannedBlockMeta records the scanned block's hashes in its block meta under
+// metaMu, keeping the transactions already recorded at that height.
+func (c *Client) saveScannedBlockMeta(block *btcjson.GetBlockVerboseTxResult) error {
+	c.metaMu.Lock()
+	defer c.metaMu.Unlock()
+	blockMeta, err := c.temporalStorage.GetBlockMeta(block.Height)
+	if err != nil {
+		return fmt.Errorf("fail to get block meta from storage: %w", err)
+	}
+	if blockMeta == nil {
+		blockMeta = utxo.NewBlockMeta(block.PreviousHash, block.Height, block.Hash)
+	} else {
+		blockMeta.PreviousHash = block.PreviousHash
+		blockMeta.BlockHash = block.Hash
+	}
+	if err = c.temporalStorage.SaveBlockMeta(block.Height, blockMeta); err != nil {
+		return fmt.Errorf("fail to save block meta into storage: %w", err)
+	}
+	return nil
+}
+
+// recordSelfTx adds a broadcast's txid ("" for none) to the block meta at height
+// under metaMu, read when the broadcast is done.
+func (c *Client) recordSelfTx(height int64, txid string) {
+	c.metaMu.Lock()
+	defer c.metaMu.Unlock()
+	bm, err := c.temporalStorage.GetBlockMeta(height)
+	if err != nil {
+		c.log.Err(err).Int64("height", height).Msg("fail to get blockmeta")
+	}
+	if bm == nil {
+		bm = utxo.NewBlockMeta("", height, "")
+	}
+	if txid != "" {
+		bm.AddSelfTransaction(txid)
+	}
+	if err = c.temporalStorage.SaveBlockMeta(height, bm); err != nil {
+		c.log.Err(err).Msg("fail to save block metadata")
+	}
+}
+
+// recordObservedTx adds an observed transaction to its block's meta under metaMu,
+// so a reorg commit cannot overwrite it. It returns false if the meta could not be
+// read.
+func (c *Client) recordObservedTx(txIn types.TxInItem, blockHeight int64) bool {
+	c.metaMu.Lock()
+	defer c.metaMu.Unlock()
+	blockMeta, err := c.temporalStorage.GetBlockMeta(blockHeight)
+	if err != nil {
+		c.log.Err(err).Int64("height", blockHeight).Msgf("fail to get block meta")
+		return false
+	}
+	if blockMeta == nil {
+		blockMeta = utxo.NewBlockMeta("", blockHeight, "")
+	}
+	if _, err = c.temporalStorage.TrackObservedTx(txIn.Tx); err != nil {
+		c.log.Err(err).Msgf("fail to add hash (%s) to observed tx cache", txIn.Tx)
+	}
+	if c.isAsgardAddress(txIn.Sender) {
+		c.log.Debug().Int64("height", blockHeight).Msgf("add hash %s as self transaction", txIn.Tx)
+		blockMeta.AddSelfTransaction(txIn.Tx)
+	} else {
+		// add the transaction to block meta
+		blockMeta.AddCustomerTransaction(txIn.Tx)
+	}
+	if err = c.temporalStorage.SaveBlockMeta(blockHeight, blockMeta); err != nil {
+		c.log.Err(err).Int64("height", blockHeight).Msgf("fail to save block meta to storage")
+	}
+	return true
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////
@@ -554,21 +613,9 @@ func (c *Client) FetchTxs(height, chainHeight int64) (types.TxIn, error) {
 		}
 	}
 
-	blockMeta, err := c.temporalStorage.GetBlockMeta(block.Height)
-	if err != nil {
+	if err = c.saveScannedBlockMeta(block); err != nil {
 		abandon()
-		return txIn, fmt.Errorf("fail to get block meta from storage: %w", err)
-	}
-	if blockMeta == nil {
-		blockMeta = utxo.NewBlockMeta(block.PreviousHash, block.Height, block.Hash)
-	} else {
-		blockMeta.PreviousHash = block.PreviousHash
-		blockMeta.BlockHash = block.Hash
-	}
-
-	if err = c.temporalStorage.SaveBlockMeta(block.Height, blockMeta); err != nil {
-		abandon()
-		return txIn, fmt.Errorf("fail to save block meta into storage: %w", err)
+		return txIn, err
 	}
 
 	// extractTxs marks what it returns as observed and cannot fail after that, so it

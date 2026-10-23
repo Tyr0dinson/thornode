@@ -59,12 +59,24 @@ func (c *Client) checkZecBroadcastExpiry(expiry uint32, txid string, chainHeight
 	if !errors.Is(expiryErr, chainclienttypes.ErrTxExpired) {
 		return "", expiryErr
 	}
+	// The primary's "not mined" retires the payload only once the primary has itself
+	// reached the expiry height, read before the lookup: below it, the blocks between
+	// its tip and the routed height the expiry was judged on may hold another
+	// signer's copy, and a height read after the lookup would not bound what the
+	// lookup saw. Until then the payload stays retryable.
+	tip, err := c.rpc.GetBlockCountPrimary()
+	if err != nil {
+		return "", fmt.Errorf("check expired ZEC transaction %s: primary height: %w", txid, err)
+	}
+	if tip < int64(expiry) {
+		return "", fmt.Errorf("check expired ZEC transaction %s: the primary is at %d, below the expiry height %d", txid, tip, expiry)
+	}
 	// primary only: a fallback that never saw the broadcast would answer "not found"
 	// and retire a payload another signer already mined
 	confirmed, err := c.rpc.GetRawTransactionVerbosePrimary(txid)
 	if err != nil {
 		if isUTXOTxNotFoundErr(err) {
-			return "", c.zecExpiredOnPrimary(expiry, txid, expiryErr)
+			return "", expiryErr
 		}
 		return "", fmt.Errorf("check expired ZEC transaction %s: %w", txid, err)
 	}
@@ -74,22 +86,7 @@ func (c *Client) checkZecBroadcastExpiry(expiry uint32, txid string, chainHeight
 	if confirmed.Confirmations > 0 && confirmed.BlockHash != "" {
 		return txid, nil
 	}
-	return "", c.zecExpiredOnPrimary(expiry, txid, expiryErr)
-}
-
-// zecExpiredOnPrimary returns expiryErr only once the primary has itself reached the
-// expiry height: below it, the primary's "not mined" says nothing about the blocks
-// between its tip and the routed height the expiry was judged on, where another
-// signer's copy may have been mined. Until then the payload stays retryable.
-func (c *Client) zecExpiredOnPrimary(expiry uint32, txid string, expiryErr error) error {
-	tip, err := c.rpc.GetBlockCountPrimary()
-	if err != nil {
-		return fmt.Errorf("check expired ZEC transaction %s: primary height: %w", txid, err)
-	}
-	if tip < int64(expiry) {
-		return fmt.Errorf("check expired ZEC transaction %s: the primary is at %d, below the expiry height %d", txid, tip, expiry)
-	}
-	return expiryErr
+	return "", expiryErr
 }
 
 // getZecUtxoToSpend selects a confirmed input prefix from Zebra's live UTXO set.
