@@ -130,6 +130,12 @@ func (e *Entry) markUnhealthyLocked() {
 	if e.state == StateHealthy {
 		e.nonHealthySince = e.now()
 	}
+	// whatever completes the eviction (probe strike or inline errors), a
+	// minority-hash strike in the current run means the endpoint may be on a fork:
+	// it is quarantined until it serves the majority hash again
+	if e.integrityInRun {
+		e.integrityEvicted = true
+	}
 	e.state = StateUnhealthy
 	e.inlineErrors = 0
 	e.lastInlineAt = time.Time{}

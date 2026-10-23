@@ -247,15 +247,27 @@ func (s *ManagerSuite) TestIntegrityEvictedEndpointIsQuarantinedUntilHashMatches
 	c.Assert(m.ReadCandidates(), HasLen, 0)
 }
 
-// WithIdentityRequired keeps even a lone, unpinned endpoint out of rotation until its
-// identity is verified (TRON: the api_host/rpc_host pair must prove one network).
-func (s *ManagerSuite) TestWithIdentityRequiredGatesASingleEndpoint(c *C) {
-	m, err := endpoints.NewManager(common.TRONChain, eps("a"), fc(1, 1), zerolog.Nop(), endpoints.WithIdentityRequired())
-	c.Assert(err, IsNil)
-	c.Assert(m.Entry("a").Usable(), Equals, false)
-	c.Assert(m.ReadCandidates(), HasLen, 0)
-	c.Assert(m.WriteTarget(), IsNil)
-	m.Entry("a").SetIdentity("0x2b6653dc")
-	c.Assert(m.Entry("a").Usable(), Equals, true)
-	c.Assert(names(m.ReadCandidates()), DeepEquals, []string{"a"})
+// Inline errors that complete an eviction after a minority-hash strike keep the
+// integrity evidence: the endpoint is quarantined, not just unhealthy.
+func (s *ManagerSuite) TestInlineEvictionAfterAnIntegrityStrikeQuarantines(c *C) {
+	m := newMgr(c, fc(2, 1), "a", "b")
+	cfg := m.Config()
+	a := m.Entry("a")
+	c.Assert(a.RecordProbeStrike(cfg, endpoints.ErrorKindIntegrity), Equals, false) // 1 of 2: still healthy
+	c.Assert(a.IntegrityEvicted(), Equals, false)
+	m.RecordError("a", endpoints.ErrorKindTransport)
+	c.Assert(m.RecordError("a", endpoints.ErrorKindTransport), Equals, true)
+	c.Assert(a.State(), Equals, endpoints.StateUnhealthy)
+	c.Assert(a.IntegrityEvicted(), Equals, true)
+	c.Assert(names(m.ReadCandidates()), DeepEquals, []string{"b"})
+
+	// a passing probe between the strike and the eviction clears the evidence
+	m2 := newMgr(c, fc(2, 1), "a", "b")
+	a2 := m2.Entry("a")
+	a2.RecordProbeStrike(m2.Config(), endpoints.ErrorKindIntegrity)
+	a2.RecordProbePass()
+	m2.RecordError("a", endpoints.ErrorKindTransport)
+	m2.RecordError("a", endpoints.ErrorKindTransport)
+	c.Assert(a2.State(), Equals, endpoints.StateUnhealthy)
+	c.Assert(a2.IntegrityEvicted(), Equals, false)
 }

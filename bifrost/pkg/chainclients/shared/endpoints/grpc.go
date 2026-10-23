@@ -3,7 +3,9 @@ package endpoints
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/rs/zerolog"
@@ -80,9 +82,10 @@ func (g *GRPCConn) Invoke(ctx context.Context, method string, args, reply any, o
 			continue
 		}
 		actx, cancel := ctx, func() {}
-		if !pinned && !g.writeMethods[method] {
-			// leave budget for the remaining candidates inside the caller's deadline
-			actx, cancel = context.WithTimeout(ctx, attemptBudget(ctx, g.attemptTimeout, len(candidates)-i-1))
+		if remaining := len(candidates) - i - 1; !pinned && !g.writeMethods[method] && remaining > 0 {
+			// leave budget for the remaining candidates inside the caller's deadline;
+			// the last candidate keeps the caller's whole deadline
+			actx, cancel = context.WithTimeout(ctx, attemptBudget(ctx, g.attemptTimeout, remaining))
 		}
 		err := conn.Invoke(actx, method, args, reply, opts...)
 		cancel()
@@ -90,16 +93,26 @@ func (g *GRPCConn) Invoke(ctx context.Context, method string, args, reply any, o
 			g.mgr.RecordSuccess(e.Name)
 			return nil
 		}
-		if ctx.Err() != nil {
-			return err // caller's deadline or cancellation, not the endpoint's fault
+		if cerr := ctx.Err(); cerr != nil {
+			// the caller's deadline ran out waiting for this endpoint: that is the
+			// endpoint's failure; an explicit cancel is not
+			if errors.Is(cerr, context.DeadlineExceeded) {
+				g.mgr.RecordError(e.Name, ErrorKindHTTP)
+			}
+			return err
 		}
-		switch status.Code(err) {
-		case codes.Unavailable, codes.DeadlineExceeded, codes.Internal, codes.Unauthenticated, codes.Unimplemented:
-			g.mgr.RecordError(e.Name, ErrorKindHTTP)
+		switch code := status.Code(err); {
+		case code == codes.ResourceExhausted, code == codes.Unavailable && isHTTP429(err):
+			// a rate limit, also when an HTTP proxy answered 429 (grpc-go maps that
+			// to Unavailable): a cooldown, never a strike
+			g.mgr.RecordRateLimited(e.Name)
 			lastErr = fmt.Errorf("endpoint %s: %w", e.Name, err)
 			continue
-		case codes.ResourceExhausted:
-			g.mgr.RecordRateLimited(e.Name)
+		case code == codes.Unavailable, code == codes.DeadlineExceeded, code == codes.Internal,
+			code == codes.Unauthenticated, code == codes.PermissionDenied, code == codes.Unimplemented:
+			// PermissionDenied is what grpc-go reports for an HTTP 403 (a revoked or
+			// exhausted API key), so it fails over like a 401
+			g.mgr.RecordError(e.Name, ErrorKindHTTP)
 			lastErr = fmt.Errorf("endpoint %s: %w", e.Name, err)
 			continue
 		default:
@@ -113,6 +126,13 @@ func (g *GRPCConn) Invoke(ctx context.Context, method string, args, reply any, o
 		lastErr = fmt.Errorf("chain %s: no gRPC endpoint available", g.mgr.Chain())
 	}
 	return lastErr
+}
+
+// isHTTP429 reports whether a gRPC error came from an HTTP 429 response, which
+// grpc-go converts to codes.Unavailable with the HTTP status in the message.
+func isHTTP429(err error) bool {
+	msg := status.Convert(err).Message()
+	return strings.Contains(msg, "429") && strings.Contains(strings.ToLower(msg), "http")
 }
 
 // NewStream implements grpc.ClientConnInterface (active endpoint only, no retry).

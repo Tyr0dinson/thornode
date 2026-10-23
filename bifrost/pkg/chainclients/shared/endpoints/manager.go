@@ -33,7 +33,6 @@ type Manager struct {
 	metrics          *Metrics
 	now              func() time.Time
 	expectedIdentity string
-	identityRequired bool
 
 	active atomic.Int32 // index into entries
 	mu     sync.Mutex   // serializes failover / failback decisions
@@ -62,11 +61,6 @@ func WithClock(now func() time.Time) Option { return func(mg *Manager) { mg.now 
 // WithExpectedIdentity pins the identity every endpoint must report.
 func WithExpectedIdentity(id string) Option { return func(mg *Manager) { mg.expectedIdentity = id } }
 
-// WithIdentityRequired makes identity verification a precondition for serving even
-// with a single endpoint and no expected identity. Chains whose endpoints have two
-// hosts (TRON) use it so a host pair is proven to be one network before it serves.
-func WithIdentityRequired() Option { return func(mg *Manager) { mg.identityRequired = true } }
-
 // NewManager builds a manager from the chain's endpoint list (any order) and the
 // failover config with defaults applied. It fails on an empty list or duplicate
 // names; both are also rejected by config validation, this is defense in depth.
@@ -91,7 +85,7 @@ func NewManager(chain common.Chain, eps []config.ChainEndpointConfig, cfg config
 	for _, o := range opts {
 		o(m)
 	}
-	requireIdentity := len(sorted) > 1 || m.expectedIdentity != "" || m.identityRequired
+	requireIdentity := len(sorted) > 1 || m.expectedIdentity != ""
 	for _, e := range sorted {
 		if _, dup := m.byName[e.Name]; dup {
 			cancel()
@@ -405,11 +399,12 @@ func (m *Manager) logTransition(e *Entry, from, to State, why string) {
 }
 
 // VerificationCandidates returns the endpoints worth asking when verifying whether
-// a broadcast is still alive (signer-cache verification): every non-disabled
-// endpoint, minus those that have been continuously non-healthy for longer than
-// maxDown. A long-dead endpoint cannot inform the answer, and treating it as
-// "cannot confirm absence" forever would wedge re-signing of a stuck outbound.
-// maxDown <= 0 keeps every non-disabled endpoint.
+// a broadcast is still alive (signer-cache verification): every usable endpoint,
+// minus those that have been continuously non-healthy for longer than maxDown.
+// maxDown <= 0 keeps every usable endpoint, which is what every chain must pass
+// unless its transactions provably expire within maxDown (TRON embeds a 20 minute
+// expiration): endpoint health says nothing about whether a transaction an endpoint
+// accepted can still settle, so skipping it can authorise a duplicate payment.
 func (m *Manager) VerificationCandidates(maxDown time.Duration) []*Entry {
 	out := make([]*Entry, 0, len(m.entries))
 	for _, e := range m.entries {

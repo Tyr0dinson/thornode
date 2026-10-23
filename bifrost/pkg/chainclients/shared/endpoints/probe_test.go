@@ -29,7 +29,9 @@ func jsonrpcServer(c *C, results map[string]string, seen *[]string) *httptest.Se
 			Method string          `json:"method"`
 			Params json.RawMessage `json:"params"`
 		}
-		c.Assert(json.NewDecoder(r.Body).Decode(&req), IsNil)
+		// Check, not Assert: an Assert failing on the server goroutine would Goexit
+		// that goroutine and hang the test instead of failing it
+		c.Check(json.NewDecoder(r.Body).Decode(&req), IsNil)
 		if seen != nil {
 			*seen = append(*seen, req.Method+" "+string(req.Params)+" auth="+r.Header.Get("Authorization"))
 		}

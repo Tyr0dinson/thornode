@@ -279,11 +279,16 @@ func (r *HTTPRouter) RoundTrip(req *http.Request) (*http.Response, error) {
 		if err != nil {
 			stopTimer()
 			acancel()
-			if req.Context().Err() != nil {
+			if cerr := req.Context().Err(); cerr != nil {
 				if deferred != nil {
 					return deferred, nil
 				}
-				return nil, err // caller cancelled; not the endpoint's fault
+				// the caller's deadline ran out waiting for this endpoint: that is
+				// the endpoint's failure; an explicit cancel is not
+				if errors.Is(cerr, context.DeadlineExceeded) {
+					r.mgr.RecordError(e.Name, ErrorKindTransport)
+				}
+				return nil, err
 			}
 			r.mgr.RecordError(e.Name, ErrorKindTransport)
 			lastErr = Redact(fmt.Errorf("endpoint %s: %w", e.Name, err), t.secrets)
@@ -308,8 +313,14 @@ func (r *HTTPRouter) RoundTrip(req *http.Request) (*http.Response, error) {
 			}
 			// the endpoint answered; the caller's own error handling applies to appError
 			ab.arm(func(rerr error) {
-				if req.Context().Err() != nil {
-					return // caller cancelled; not the endpoint's fault
+				switch cerr := req.Context().Err(); {
+				case errors.Is(cerr, context.Canceled):
+					return // the caller gave up; not the endpoint's fault
+				case errors.Is(cerr, context.DeadlineExceeded):
+					// the body did not complete within the caller's deadline: a
+					// stalled endpoint, charged so it is evicted and the backup used
+					r.mgr.RecordError(name, ErrorKindTransport)
+					return
 				}
 				if rerr != nil {
 					r.mgr.RecordError(name, ErrorKindTransport)
@@ -410,11 +421,13 @@ func (b *attemptBody) Close() error {
 }
 
 // attemptBudgetFor returns the timer budget for one attempt, or ok=false when no
-// router timer applies. Reads get attemptBudget. A write gets the caller's whole
-// remaining deadline when there is one, and no router timer otherwise (the caller's
-// http.Client timeout still applies).
+// router timer applies. A read with candidates left after it gets attemptBudget, so
+// a stalled endpoint leaves time for the next one. A write, and a read on the last
+// (or only) candidate, get the caller's whole remaining deadline when there is one
+// and no router timer otherwise: there is nothing to save time for, and a
+// single-endpoint config keeps the request timeout it had before failover existed.
 func (r *HTTPRouter) attemptBudgetFor(ctx context.Context, isWrite bool, remainingCandidates int) (time.Duration, bool) {
-	if !isWrite {
+	if !isWrite && remainingCandidates > 0 {
 		return attemptBudget(ctx, r.cfg.AttemptTimeout, remainingCandidates), true
 	}
 	deadline, ok := ctx.Deadline()
@@ -678,8 +691,9 @@ func joinPath(base, suffix string) string {
 }
 
 // isDialError reports whether err happened before any bytes were sent (connection
-// refused, DNS failure, TLS handshake), which makes a retry safe even for writes.
-// Timeouts after the request was sent are never dial errors.
+// refused, DNS failure), which makes a retry safe even for writes. A TLS handshake
+// failure is not a *net.OpError with Op "dial", so a write is conservatively not
+// retried after one, and timeouts after the request was sent are never dial errors.
 func isDialError(err error) bool {
 	if err == nil {
 		return false

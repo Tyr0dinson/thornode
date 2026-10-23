@@ -288,9 +288,62 @@ func (s *RouterSuite) TestWriteKeepsTheCallerWholeBudget(c *C) {
 	c.Assert(string(body), Matches, `.*0xtxhash.*`)
 	c.Assert(m.Entry("slow").State(), Equals, endpoints.StateHealthy)
 
-	// a read on the same endpoint is still bounded by the attempt timer
-	_, err = post(c, hc, base(m), "eth_blockNumber")
+	// a read on the only endpoint keeps the caller's budget too: there is no other
+	// candidate to save time for, so a single-endpoint config keeps its request
+	// timeout instead of being cut at attempt_timeout
+	resp, err = post(c, hc, base(m), "eth_blockNumber")
+	c.Assert(err, IsNil)
+	_ = resp.Body.Close()
+	c.Assert(m.Entry("slow").State(), Equals, endpoints.StateHealthy)
+
+	// with a backup behind it, the same slow read is cut at attempt_timeout and the
+	// backup answers
+	var st int32 = http.StatusOK
+	var hb []hit
+	backup := rpcServer(&st, &hb, "")
+	defer backup.Close()
+	m2, targets2 := twoEndpointMgr(c, common.ETHChain, []config.ChainEndpointConfig{{Name: "slow", RPCHost: slow.URL, Priority: 1}, {Name: "backup", RPCHost: backup.URL, Priority: 2}}, 5)
+	r2, err := endpoints.NewHTTPRouter(m2, endpoints.HTTPRouterConfig{
+		Base: endpoints.SyntheticBase(m2.Chain()), Targets: targets2, AttemptTimeout: 200 * time.Millisecond,
+	}, zerolog.Nop())
+	c.Assert(err, IsNil)
+	resp, err = post(c, &http.Client{Transport: r2, Timeout: 5 * time.Second}, base(m2), "eth_blockNumber")
+	c.Assert(err, IsNil)
+	_ = resp.Body.Close()
+	c.Assert(hb, HasLen, 1)
+}
+
+// When the caller's deadline runs out waiting for an endpoint, that endpoint failed
+// and is charged; when the caller cancels, it is not.
+func (s *RouterSuite) TestCallerDeadlineIsChargedButCancelIsNot(c *C) {
+	release := make(chan struct{})
+	hang := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.ReadAll(r.Body) // lets the server notice when the client goes away
+		select {
+		case <-release:
+		case <-r.Context().Done():
+		}
+	}))
+	defer hang.Close()
+	defer close(release) // runs first: frees any handler before Close waits for it
+
+	m, targets := twoEndpointMgr(c, common.ETHChain, []config.ChainEndpointConfig{{Name: "hang", RPCHost: hang.URL, Priority: 1}}, 1)
+	r, err := endpoints.NewHTTPRouter(m, endpoints.HTTPRouterConfig{Base: endpoints.SyntheticBase(m.Chain()), Targets: targets}, zerolog.Nop())
+	c.Assert(err, IsNil)
+	_, err = post(c, &http.Client{Transport: r, Timeout: 300 * time.Millisecond}, base(m), "eth_blockNumber")
 	c.Assert(err, NotNil)
+	c.Assert(m.Entry("hang").State(), Equals, endpoints.StateUnhealthy)
+
+	m2, targets2 := twoEndpointMgr(c, common.ETHChain, []config.ChainEndpointConfig{{Name: "hang", RPCHost: hang.URL, Priority: 1}}, 1)
+	r2, err := endpoints.NewHTTPRouter(m2, endpoints.HTTPRouterConfig{Base: endpoints.SyntheticBase(m2.Chain()), Targets: targets2}, zerolog.Nop())
+	c.Assert(err, IsNil)
+	ctx, cancel := context.WithCancel(context.Background())
+	time.AfterFunc(200*time.Millisecond, cancel)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, base(m2), bytes.NewReader([]byte(`{"jsonrpc":"2.0","id":1,"method":"eth_blockNumber","params":[]}`)))
+	c.Assert(err, IsNil)
+	_, err = (&http.Client{Transport: r2, Timeout: 5 * time.Second}).Do(req)
+	c.Assert(err, NotNil)
+	c.Assert(m2.Entry("hang").State(), Equals, endpoints.StateHealthy)
 }
 
 // A 200 whose body then stalls is a dead endpoint too: the classification sniff is

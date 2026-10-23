@@ -221,3 +221,63 @@ func (s *GRPCSuite) TestWritesRefusedWhenEveryEndpointDisabled(c *C) {
 	c.Assert(err, ErrorMatches, ".*no permitted write endpoint.*")
 	c.Assert(primary.calls.Load(), Equals, int32(0))
 }
+
+// grpc-go reports an HTTP 403 as PermissionDenied (a revoked or exhausted API key):
+// the read fails over like a 401. An HTTP 429 arrives as Unavailable with the status
+// in the message: a cooldown, never a strike.
+func (s *GRPCSuite) TestHTTPStatusesFromProxiesAreClassified(c *C) {
+	denied := &healthServer{err: status.Error(codes.PermissionDenied, "unexpected HTTP status code received from server: 403 (Forbidden)")}
+	backup := &healthServer{}
+	pc, closeP := bufServer(c, denied)
+	defer closeP()
+	bc, closeB := bufServer(c, backup)
+	defer closeB()
+	m := grpcMgr(c, 1)
+	g := endpoints.NewGRPCConn(m, map[string]*grpc.ClientConn{"primary": pc, "backup": bc}, nil, 0, zerolog.Nop())
+	_, err := healthpb.NewHealthClient(g).Check(context.Background(), &healthpb.HealthCheckRequest{})
+	c.Assert(err, IsNil)
+	c.Assert(backup.calls.Load(), Equals, int32(1))
+	c.Assert(m.Entry("primary").State(), Equals, endpoints.StateUnhealthy)
+
+	limited := &healthServer{err: status.Error(codes.Unavailable, "unexpected HTTP status code received from server: 429 (Too Many Requests)")}
+	lc, closeL := bufServer(c, limited)
+	defer closeL()
+	m2 := grpcMgr(c, 1)
+	g2 := endpoints.NewGRPCConn(m2, map[string]*grpc.ClientConn{"primary": lc, "backup": bc}, nil, 0, zerolog.Nop())
+	_, err = healthpb.NewHealthClient(g2).Check(context.Background(), &healthpb.HealthCheckRequest{})
+	c.Assert(err, IsNil)
+	c.Assert(m2.Entry("primary").InCooldown(), Equals, true)
+	c.Assert(m2.Entry("primary").State(), Equals, endpoints.StateHealthy)
+}
+
+// The only endpoint keeps the caller's whole deadline (no attempt cap), and when that
+// deadline runs out waiting for it, the endpoint is charged.
+func (s *GRPCSuite) TestLastCandidateKeepsTheDeadlineAndIsChargedOnExpiry(c *C) {
+	lis := bufconn.Listen(1 << 20)
+	srv := grpc.NewServer()
+	healthpb.RegisterHealthServer(srv, &slowHealthServer{delay: 400 * time.Millisecond})
+	go func() { _ = srv.Serve(lis) }()
+	defer srv.Stop()
+	pc, err := grpc.NewClient("passthrough:///slow",
+		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return lis.Dial() }),
+		grpc.WithTransportCredentials(insecure.NewCredentials()))
+	c.Assert(err, IsNil)
+	defer func() { _ = pc.Close() }()
+	m, err := endpoints.NewManager(common.GAIAChain, []config.ChainEndpointConfig{{Name: "only", CosmosGRPCHost: "o", RPCHost: "http://o", Priority: 1}}, fc(1, 1), zerolog.Nop())
+	c.Assert(err, IsNil)
+	g := endpoints.NewGRPCConn(m, map[string]*grpc.ClientConn{"only": pc}, nil, 100*time.Millisecond, zerolog.Nop())
+
+	// slower than attempt_timeout but within the caller's deadline: served
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	_, err = healthpb.NewHealthClient(g).Check(ctx, &healthpb.HealthCheckRequest{})
+	cancel()
+	c.Assert(err, IsNil)
+	c.Assert(m.Entry("only").State(), Equals, endpoints.StateHealthy)
+
+	// the caller's deadline runs out waiting: charged
+	ctx, cancel = context.WithTimeout(context.Background(), 150*time.Millisecond)
+	_, err = healthpb.NewHealthClient(g).Check(ctx, &healthpb.HealthCheckRequest{})
+	cancel()
+	c.Assert(err, NotNil)
+	c.Assert(m.Entry("only").State(), Equals, endpoints.StateUnhealthy)
+}
