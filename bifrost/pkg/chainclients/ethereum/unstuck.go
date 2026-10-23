@@ -14,6 +14,7 @@ import (
 	"github.com/rs/zerolog"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/evm/types"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/signercache"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/signing"
 	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -127,12 +128,23 @@ func (c *Client) unstuckTx(clog zerolog.Logger, item types.SignedTxItem) error {
 	tx, pending, err := c.client.TransactionByHash(ctx, ecommon.HexToHash(item.Hash))
 	if err != nil {
 		if errors.Is(err, ethereum.NotFound) {
-			clog.Err(err).Msg("transaction not found on chain")
-
-			// dropped from mempool or re-orged, remove from signer cache to resign
-			c.signerCacheManager.RemoveSigned(item.Hash)
-
-			return nil
+			// The active endpoint does not know the transaction. With several endpoints
+			// the broadcast may sit only in the mempool of the endpoint that took it, so
+			// the signer cache is cleared only when every endpoint says the transaction
+			// is absent (verifyBroadcast asks each one, pinned); otherwise the item is
+			// retried later. Clearing the cache on one endpoint's answer would let the
+			// outbound be re-signed at a new nonce while the original is still live.
+			switch c.verifyBroadcast(item.Hash) {
+			case signercache.LookupNotFound:
+				clog.Err(err).Msg("transaction not found on any endpoint")
+				// dropped from mempool or re-orged, remove from signer cache to resign
+				c.signerCacheManager.RemoveSigned(item.Hash)
+				return nil
+			case signercache.LookupFound:
+				return fmt.Errorf("transaction %s is unknown to the active endpoint but alive on another endpoint; retrying later", item.Hash)
+			default:
+				return fmt.Errorf("transaction %s is unknown to the active endpoint and not every endpoint answered; retrying later", item.Hash)
+			}
 		}
 		return fmt.Errorf("fail to get transaction by hash: %s, error: %w", item.Hash, err)
 	}
