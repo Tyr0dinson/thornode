@@ -219,16 +219,22 @@ endpoint: http://localhost:1317/thorchain/network
 asserts:
   - .mempool_swap_usage_tor == "0"
 ---
-# Asset depths return exactly to their pre-swap values after the reverse swap.
+# Rollback reverses the recorded pool deltas, so asset depths return exactly
+# and no RUNE moves from BTC to ETH. Both pools started at 1,000 RUNE and have
+# only gained block rewards since; a reverse swap left BTC near 918 RUNE.
 type: check
 endpoint: http://localhost:1317/thorchain/pool/BTC.BTC
 asserts:
   - .balance_asset == "${BTC_ASSET_DEPTH}"
+  - (.balance_rune|tonumber) >= 100000000000
+  - (.balance_rune|tonumber) < 100100000000
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pool/ETH.ETH
 asserts:
   - .balance_asset == "${ETH_ASSET_DEPTH}"
+  - (.balance_rune|tonumber) >= 100000000000
+  - (.balance_rune|tonumber) < 100100000000
 ---
 # Verify that recovery occurred at the exact indexed due height and used the timeout path.
 type: check

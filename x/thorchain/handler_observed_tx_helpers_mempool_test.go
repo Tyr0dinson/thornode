@@ -1805,8 +1805,9 @@ func (s *HandlerObservedTxHelpersMempoolSuite) checkSameUnderlyingSecuredTargetR
 		Commentf("same-asset rollback should return the escrowed output and deduct only the credited State.In (fullyStaged=%t)", fullyStaged))
 
 	// Indexers rebuild depth from events, so the reported movements must sum
-	// to the actual change: +escrowed output, -credited input, plus any
-	// restored speculative fee on the RUNE side.
+	// to the actual change. An unfinalized rollback reverses the recorded
+	// deltas and reports one net change: the credited input less the escrowed
+	// output, plus the speculative fee on the RUNE side.
 	runeIn, runeOut := cosmos.ZeroUint(), cosmos.ZeroUint()
 	assetIn, assetOut := cosmos.ZeroUint(), cosmos.ZeroUint()
 	for _, item := range recorder.items {
@@ -1827,8 +1828,8 @@ func (s *HandlerObservedTxHelpersMempoolSuite) checkSameUnderlyingSecuredTargetR
 			c.Errorf("same-asset rollback should not donate (fullyStaged=%t)", fullyStaged)
 		}
 	}
-	c.Check(assetIn.String(), Equals, stateOut.String(), Commentf("reported asset returned (fullyStaged=%t)", fullyStaged))
-	c.Check(assetOut.String(), Equals, stateIn.String(), Commentf("reported asset removed (fullyStaged=%t)", fullyStaged))
+	c.Check(assetIn.IsZero(), Equals, true, Commentf("reported asset returned (fullyStaged=%t)", fullyStaged))
+	c.Check(assetOut.String(), Equals, stateIn.Sub(stateOut).String(), Commentf("reported net asset removed (fullyStaged=%t)", fullyStaged))
 	c.Check(poolBeforeRollback.BalanceAsset.Add(assetIn).String(), Equals, sourcePoolAfter.BalanceAsset.Add(assetOut).String(),
 		Commentf("pool events must match the actual pool change (fullyStaged=%t)", fullyStaged))
 	c.Check(poolBeforeRollback.BalanceRune.Add(runeIn).String(), Equals, sourcePoolAfter.BalanceRune.Add(runeOut).String(),
@@ -2057,6 +2058,7 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestEmptyRollbackDeductsMidFlight
 	baseBalance := poolCredited.BalanceAsset
 	poolCredited.BalanceAsset = poolCredited.BalanceAsset.Add(credited)
 	c.Assert(mgr.Keeper().SetPool(ctx, poolCredited), IsNil)
+	journalMempoolSwapPoolCredit(c, ctx, mgr, inTxID, common.BTCAsset, cosmos.ZeroUint(), credited)
 
 	staged, err := mgr.Keeper().GetStagedOutbounds(ctx, inTxID)
 	c.Assert(err, IsNil)
@@ -3765,4 +3767,16 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestFinalizedPendingQueueMempoolS
 	c.Assert(err, IsNil)
 	c.Check(outItems, HasLen, 1,
 		Commentf("post-finality settlement should materialize its outbound normally"))
+}
+
+// journalMempoolSwapPoolCredit records a hand-applied speculative pool
+// mutation on the lifecycle, as swap execution would have.
+func journalMempoolSwapPoolCredit(c *C, ctx cosmos.Context, mgr *Mgrs, txID common.TxID, asset common.Asset, runeDecrease, assetIncrease cosmos.Uint) {
+	record, found, err := mgr.Keeper().GetMempoolSwap(ctx, txID, 0)
+	c.Assert(err, IsNil)
+	c.Assert(found, Equals, true)
+	effect := findOrAppendPoolEffect(&record.PendingEffects, asset)
+	effect.BalanceRuneDecrease = effect.BalanceRuneDecrease.Add(runeDecrease)
+	effect.BalanceAssetIncrease = effect.BalanceAssetIncrease.Add(assetIncrease)
+	c.Assert(mgr.Keeper().SetMempoolSwap(ctx, record), IsNil)
 }

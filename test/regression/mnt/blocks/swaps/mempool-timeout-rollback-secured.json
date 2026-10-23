@@ -4358,7 +4358,7 @@
       {
         "asset": "BTC.BTC",
         "asset_add": "false",
-        "asset_amt": "0",
+        "asset_amt": "194956",
         "mode": "EndBlock",
         "reason": "mempool swap rollback",
         "rune_add": "true",
@@ -4366,28 +4366,8 @@
         "type": "pool_balance_change"
       },
       {
-        "asset": "BTC.BTC",
-        "asset_add": "true",
-        "asset_amt": "9805044",
-        "mode": "EndBlock",
-        "reason": "mempool swap rollback",
-        "rune_add": "false",
-        "rune_amt": "0",
-        "type": "pool_balance_change"
-      },
-      {
-        "asset": "BTC.BTC",
-        "asset_add": "false",
-        "asset_amt": "10000000",
-        "mode": "EndBlock",
-        "reason": "mempool swap rollback",
-        "rune_add": "false",
-        "rune_amt": "0",
-        "type": "pool_balance_change"
-      },
-      {
         "block_height": "26",
-        "donated_amount": "9805044",
+        "donated_amount": "0",
         "mode": "EndBlock",
         "source_amount": "10000000",
         "source_asset": "BTC.BTC",

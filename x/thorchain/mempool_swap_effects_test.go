@@ -417,7 +417,7 @@ func (s *MempoolSwapEffectsSuite) TestSpeculativeSynthSupplyEffectsAreExact(c *C
 	c.Check(finalizedSupply.Equal(supplyBefore), Equals, true)
 	rollbackSupplyTargets, err := getMempoolSwapRollbackSupplyTargets(ctx, mgr.Keeper(), record)
 	c.Assert(err, IsNil)
-	c.Assert(prepareMempoolSwapRollbackEffectsCached(ctx, mgr, record), IsNil)
+	c.Assert(prepareMempoolSwapRollbackEffectsCached(ctx, mgr, record, false), IsNil)
 	cleared, _, err := mgr.Keeper().GetMempoolSwap(ctx, msg.Tx.ID, msg.Index)
 	c.Assert(err, IsNil)
 	c.Check(cleared.PendingEffects.Supplies, HasLen, 0)
@@ -483,7 +483,7 @@ func (s *MempoolSwapEffectsSuite) TestRollbackSupplyReconciliationPreservesInter
 	c.Assert(err, IsNil)
 	targets, err := getMempoolSwapRollbackSupplyTargets(ctx, mgr.Keeper(), record)
 	c.Assert(err, IsNil)
-	c.Assert(prepareMempoolSwapRollbackEffectsCached(ctx, mgr, record), IsNil)
+	c.Assert(prepareMempoolSwapRollbackEffectsCached(ctx, mgr, record, false), IsNil)
 
 	// Model an inverse swap which burns one unit less than the forward mint. The
 	// exact reconciler must remove that rounding residue without consuming the
@@ -562,7 +562,7 @@ func (s *MempoolSwapEffectsSuite) TestSpeculativeDerivedSupplyAndRegenerationAre
 	c.Assert(mgr.Keeper().SetMempoolSwap(ctx, record), IsNil)
 	rollbackSupplyTargets, err := getMempoolSwapRollbackSupplyTargets(ctx, mgr.Keeper(), record)
 	c.Assert(err, IsNil)
-	c.Assert(prepareMempoolSwapRollbackEffectsCached(ctx, mgr, record), IsNil)
+	c.Assert(prepareMempoolSwapRollbackEffectsCached(ctx, mgr, record, false), IsNil)
 	cleared, _, err := mgr.Keeper().GetMempoolSwap(ctx, msg.Tx.ID, msg.Index)
 	c.Assert(err, IsNil)
 	c.Check(cleared.PendingEffects.Supplies, HasLen, 0)
@@ -695,6 +695,9 @@ func (s *MempoolSwapEffectsSuite) TestMarkerlessRollbackReconcilesSupplyWithoutA
 		SupplyIncrease: mintedAmount,
 		SupplyDecrease: cosmos.ZeroUint(),
 	}}
+	poolEffect := newMempoolSwapPoolEffect(common.BTCAsset)
+	poolEffect.BalanceAssetIncrease = inputAmount
+	record.PendingEffects.Pools = []types.MempoolSwapPoolEffect{poolEffect}
 	c.Assert(mgr.Keeper().SetMempoolSwap(ctx, record), IsNil)
 
 	observed := ObservedTx{
@@ -1413,17 +1416,44 @@ func (s *MempoolSwapEffectsSuite) TestRollbackPreparationRestoresFeeDepthExactly
 	asgardBefore := mgr.Keeper().GetBalanceOfModule(ctx, AsgardName, common.RuneNative.Native())
 	reserveBefore := mgr.Keeper().GetBalanceOfModule(ctx, ReserveName, common.RuneNative.Native())
 
-	c.Assert(prepareMempoolSwapRollbackEffectsCached(ctx, mgr, originalRecord), IsNil)
+	c.Assert(prepareMempoolSwapRollbackEffectsCached(ctx, mgr, originalRecord, false), IsNil)
 	poolPrepared, err := mgr.Keeper().GetPool(ctx, common.BTCAsset)
 	c.Assert(err, IsNil)
 	c.Check(poolPrepared.BalanceRune.Equal(common.SafeSub(poolBefore.BalanceRune, emit)), Equals, true)
 	c.Check(mgr.Keeper().GetBalanceOfModule(ctx, AsgardName, common.RuneNative.Native()).Equal(asgardBefore), Equals, true)
 	c.Check(mgr.Keeper().GetBalanceOfModule(ctx, ReserveName, common.RuneNative.Native()).Equal(reserveBefore), Equals, true)
 
-	c.Assert(prepareMempoolSwapRollbackEffectsCached(ctx, mgr, originalRecord), IsNil)
+	c.Assert(prepareMempoolSwapRollbackEffectsCached(ctx, mgr, originalRecord, false), IsNil)
 	poolAfterReplay, err := mgr.Keeper().GetPool(ctx, common.BTCAsset)
 	c.Assert(err, IsNil)
 	c.Check(poolAfterReplay.BalanceRune.Equal(poolPrepared.BalanceRune), Equals, true)
+}
+
+func (s *MempoolSwapEffectsSuite) TestRollbackPreparationReversesBalanceDeltasExactly(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	msg, originalRecord, poolBefore := setupMempoolSwapEffectsSwap(c, ctx, mgr, 0)
+
+	emit, event := executeMempoolSwapEffectsSwap(c, ctx, mgr, msg, mempoolSwapExecutionSpeculative)
+	c.Assert(event.LiquidityFeeInRune.IsZero(), Equals, false)
+	poolAfterSwap, err := mgr.Keeper().GetPool(ctx, common.BTCAsset)
+	c.Assert(err, IsNil)
+	c.Check(poolAfterSwap.BalanceRune.Equal(common.SafeSub(poolBefore.BalanceRune, emit.Add(event.LiquidityFeeInRune))), Equals, true)
+	asgardBefore := mgr.Keeper().GetBalanceOfModule(ctx, AsgardName, common.RuneNative.Native())
+
+	// The recorded RUNE decrease includes the system fee, so reversing the
+	// deltas restores the fee too; a separate fee restore would double it.
+	c.Assert(prepareMempoolSwapRollbackEffectsCached(ctx, mgr, originalRecord, true), IsNil)
+	poolPrepared, err := mgr.Keeper().GetPool(ctx, common.BTCAsset)
+	c.Assert(err, IsNil)
+	c.Check(poolPrepared.BalanceRune.String(), Equals, poolBefore.BalanceRune.String())
+	c.Check(poolPrepared.BalanceAsset.String(), Equals, poolBefore.BalanceAsset.String())
+	c.Check(mgr.Keeper().GetBalanceOfModule(ctx, AsgardName, common.RuneNative.Native()).Equal(asgardBefore), Equals, true)
+
+	// A replay reloads the cleared journal and changes nothing.
+	c.Assert(prepareMempoolSwapRollbackEffectsCached(ctx, mgr, originalRecord, true), IsNil)
+	poolAfterReplay, err := mgr.Keeper().GetPool(ctx, common.BTCAsset)
+	c.Assert(err, IsNil)
+	c.Check(poolAfterReplay, DeepEquals, poolPrepared)
 }
 
 func (s *MempoolSwapEffectsSuite) TestSpeculativeRevShareCannotPayBeforeFinality(c *C) {

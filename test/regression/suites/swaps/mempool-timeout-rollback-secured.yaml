@@ -239,5 +239,5 @@ asserts:
   - .end_block_events[]|select(.type == "mempool_swap_reverted" and .tx_id == "{{ observe_txid 1 }}")|.block_height == "26"
   - .end_block_events[]|select(.type == "mempool_swap_reverted" and .tx_id == "{{ observe_txid 1 }}")|.source_asset == "BTC.BTC"
   - .end_block_events[]|select(.type == "mempool_swap_reverted" and .tx_id == "{{ observe_txid 1 }}")|.source_amount == "10000000"
-  - .end_block_events[]|select(.type == "mempool_swap_reverted" and .tx_id == "{{ observe_txid 1 }}")|.donated_amount|tonumber > 0
+  - .end_block_events[]|select(.type == "mempool_swap_reverted" and .tx_id == "{{ observe_txid 1 }}")|.donated_amount == "0"
   - '[.end_block_events[]|select(.type == "security" and .msg == "mempool swap rolled back")]|length == 1'

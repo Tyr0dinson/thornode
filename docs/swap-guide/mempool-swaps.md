@@ -20,18 +20,20 @@ The aim is to reduce swap execution time while withholding payouts until finalit
 the number of active lifecycle records. Swaps that cannot be admitted wait for
 finality and follow normal processing.
 
-## Accepted rollback behavior
+## Rollback
 
-Cross-asset rollback deliberately executes a reverse AMM swap and donates the
-recovered source asset back to its pool. AMM pricing and rounding mean this does
-not guarantee exact restoration of each pool's pre-swap RUNE balance. RUNE can
-be redistributed between the affected pools.
+While an inbound is unfinalized, its swap owns every pool it touched: other
+swaps and liquidity changes on those pools first roll it back. Each speculative
+leg records the exact balance change it made to each pool, including the system
+fee taken from pool depth. Rollback reverses those recorded changes, so every
+pool returns to its pre-swap balances exactly. No reverse swap runs, no RUNE
+moves between pools, and AMM pricing has no effect on the outcome.
 
-**This price impact and RUNE redistribution are known and accepted consequences
-of the design.** Exact per-pool RUNE restoration is not a requirement. Future
-reviews should not report this documented behavior alone as a defect. Additional
-economic consequences, incorrect supply accounting, duplicate execution, and
-rollback failures remain valid concerns.
+An inbound that already reached finality may have released its pools, so other
+swaps may have changed them since. In the rare cases where such an inbound is
+rolled back (for example, an errata after finality), a cross-asset output is
+unwound with a reverse AMM swap and the recovered source asset is donated back to
+its pool. Price impact applies on this path.
 
 See the [rollback implementation](../../x/thorchain/handler_observed_tx_helpers.go)
 and the [feature merge request](https://gitlab.com/thorchain/thornode/-/merge_requests/4342).

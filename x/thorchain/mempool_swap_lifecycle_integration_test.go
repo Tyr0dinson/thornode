@@ -232,6 +232,58 @@ func (s *MempoolSwapLifecycleIntegrationSuite) TestRagnarokDrainsExecutedCrossAs
 	}
 }
 
+// An unfinalized cross-pool rollback must return both pools to their exact
+// pre-swap balances. A reverse AMM swap would instead reprice the output and
+// leave the target pool with the slip of both legs, paid by the source pool.
+func (s *MempoolSwapLifecycleIntegrationSuite) TestUnfinalizedCrossPoolRollbackRestoresBothPools(c *C) {
+	ctx, mgr, fixture := setupMempoolSwapLifecycleFixture(c)
+	targetPool := fixture.sourcePool
+	targetPool.Asset = common.ETHAsset
+	c.Assert(mgr.Keeper().SetPool(ctx, targetPool), IsNil)
+
+	msg := fixture.msg
+	msg.TargetAsset = common.ETHAsset
+	msg.Destination = GetRandomETHAddress()
+	msg.Tx.Memo = fmt.Sprintf("=:ETH.ETH:%s:0/1/2", msg.Destination)
+	fixture.voter.Tx.Tx = msg.Tx
+	mgr.Keeper().SetObservedTxInVoter(ctx, fixture.voter)
+	record := newMempoolSwapLifecycle(ctx, mgr.Keeper(), fixture.voter, msg, fixture.reservedTOR)
+	c.Assert(mgr.Keeper().SetMempoolSwap(ctx, record), IsNil)
+	c.Assert(mgr.Keeper().SetAdvSwapQueueItem(ctx, msg), IsNil)
+	asgardRuneBefore := mgr.Keeper().GetBalanceOfModule(ctx, AsgardName, common.RuneNative.Native())
+
+	// Execute one real speculative BTC->ETH slice.
+	c.Assert(mgr.AdvSwapQueueMgr().EndBlock(ctx, mgr, false), IsNil)
+	record, found, err := mgr.Keeper().GetMempoolSwap(ctx, msg.Tx.ID, msg.Index)
+	c.Assert(err, IsNil)
+	c.Assert(found, Equals, true)
+	c.Assert(record.PendingEffects.Pools, HasLen, 2)
+	c.Assert(record.LatestSwap.State.Out.IsZero(), Equals, false)
+	btcAfterSwap, err := mgr.Keeper().GetPool(ctx, common.BTCAsset)
+	c.Assert(err, IsNil)
+	c.Assert(btcAfterSwap.BalanceRune.LT(fixture.sourcePool.BalanceRune), Equals, true)
+
+	voter, err := mgr.Keeper().GetObservedTxInVoter(ctx, msg.Tx.ID)
+	c.Assert(err, IsNil)
+	c.Assert(voter.FinalisedHeight, Equals, int64(0))
+	c.Assert(rollbackMempoolSwapCached(ctx, mgr.Keeper(), mgr, voter), IsNil)
+
+	for _, expected := range []Pool{fixture.sourcePool, targetPool} {
+		pool, poolErr := mgr.Keeper().GetPool(ctx, expected.Asset)
+		c.Assert(poolErr, IsNil)
+		c.Check(pool.BalanceRune.String(), Equals, expected.BalanceRune.String(), Commentf("%s rune", expected.Asset))
+		c.Check(pool.BalanceAsset.String(), Equals, expected.BalanceAsset.String(), Commentf("%s asset", expected.Asset))
+		overlay, overlayErr := mgr.Keeper().GetMempoolSwapPoolBalanceOverlay(ctx, expected.Asset)
+		c.Assert(overlayErr, IsNil)
+		c.Check(mempoolSwapPoolBalanceOverlayIsZero(overlay), Equals, true)
+	}
+	// The system fee never left Asgard, and no reverse swap moved RUNE.
+	c.Check(mgr.Keeper().GetBalanceOfModule(ctx, AsgardName, common.RuneNative.Native()).String(), Equals, asgardRuneBefore.String())
+	c.Check(mgr.Keeper().HasMempoolSwap(ctx, msg.Tx.ID, msg.Index), Equals, false)
+	c.Check(mgr.Keeper().HasAdvSwapQueueItem(ctx, msg.Tx.ID, int(msg.Index)), Equals, false)
+	c.Check(mgr.Keeper().GetMempoolSwapUsageTOR(ctx).IsZero(), Equals, true)
+}
+
 // setupMempoolSwapLifecycleFixture creates one admitted, unexecuted BTC->RUNE
 // mempool swap. The queue entry is deliberately present alongside the durable
 // lifecycle record so each test can remove or advance whichever representation
@@ -1154,7 +1206,7 @@ func (s *MempoolSwapLifecycleIntegrationSuite) TestRefundOnlyCloutReclaimFailure
 
 	failKeeper := &failSecondSetSwapperCloutKeeper{Keeper: baseKeeper}
 	err = rollbackMempoolSwapAtomic(ctx, failKeeper, mgr, voter)
-	c.Assert(err, ErrorMatches, "fail to reclaim staged clout on refund-only rollback: fail to save recipient clout: fail second swapper clout write")
+	c.Assert(err, ErrorMatches, "fail to reclaim staged clout on rollback: fail to save recipient clout: fail second swapper clout write")
 	c.Check(failKeeper.setCalls, Equals, 2)
 
 	// Releasing TOR and marking the lifecycle ROLLBACK_PENDING happen before
@@ -1285,6 +1337,11 @@ func (s *MempoolSwapLifecycleIntegrationSuite) TestRefundOnlyStagedRollbackResto
 	record.Status = types.MempoolSwapStatus_SETTLED
 	record.LatestSwap.State.In = executedIn
 	record.LatestSwap.State.Out = runeOutput
+	// Journal the pool mutation applied below, as speculative execution does.
+	poolEffect := newMempoolSwapPoolEffect(common.BTCAsset)
+	poolEffect.BalanceRuneDecrease = runeOutput
+	poolEffect.BalanceAssetIncrease = executedIn
+	record.PendingEffects.Pools = []types.MempoolSwapPoolEffect{poolEffect}
 	c.Assert(k.SetMempoolSwap(ctx, record), IsNil)
 	c.Assert(k.RemoveAdvSwapQueueItem(ctx, fixture.voter.TxID, 0), IsNil)
 

@@ -575,13 +575,25 @@ func applyPendingMempoolSwapEffectsCached(ctx cosmos.Context, mgr Manager, recor
 	return nil
 }
 
-// prepareMempoolSwapRollbackEffectsCached restores system-liquidity-fee RUNE
-// to its pool before the inverse swap executes. Speculative execution deducted
-// this RUNE from pool depth but deliberately left it in Asgard, so no module
-// transfer is needed. Clearing the journal in the same cache prevents a retry
-// in the current transaction from restoring it twice; an outer rollback still
-// discards both changes together if the inverse swap later fails.
-func prepareMempoolSwapRollbackEffectsCached(ctx cosmos.Context, mgr Manager, record types.MempoolSwap) error {
+// prepareMempoolSwapRollbackEffectsCached unwinds the journaled pool effects
+// of a speculative swap before the rest of the rollback runs.
+//
+// With reverseBalances set, every pool is restored by reversing the exact
+// balance deltas the speculative legs recorded (live + decrease - increase).
+// This is only valid while the lifecycle still owns its pools: per-pool
+// serialization guarantees no foreign mutation happened in between, so the
+// result equals finalityPoolView.adjust and no RUNE moves between pools. The
+// recorded RUNE decrease already includes the system fee taken from depth, so
+// no separate fee restore is applied.
+//
+// Without reverseBalances, only system-liquidity-fee RUNE is restored ahead
+// of an inverse swap. Speculative execution deducted this RUNE from pool depth
+// but deliberately left it in Asgard, so no module transfer is needed.
+//
+// Clearing the journal in the same cache prevents a retry in the current
+// transaction from restoring it twice; an outer rollback still discards both
+// changes together if a later rollback step fails.
+func prepareMempoolSwapRollbackEffectsCached(ctx cosmos.Context, mgr Manager, record types.MempoolSwap, reverseBalances bool) error {
 	cacheCtx, commit := ctx.CacheContext()
 	current, found, err := loadCurrentMempoolSwapRecord(cacheCtx, mgr, record)
 	if err != nil {
@@ -592,6 +604,12 @@ func prepareMempoolSwapRollbackEffectsCached(ctx cosmos.Context, mgr Manager, re
 	}
 
 	for _, effect := range current.PendingEffects.Pools {
+		if reverseBalances {
+			if err := reverseMempoolSwapPoolBalanceEffect(cacheCtx, mgr, effect); err != nil {
+				return err
+			}
+			continue
+		}
 		restoreRune := effect.ReserveRune.Add(effect.TcyRune)
 		if restoreRune.IsZero() {
 			continue
@@ -617,4 +635,56 @@ func prepareMempoolSwapRollbackEffectsCached(ctx cosmos.Context, mgr Manager, re
 	}
 	commit()
 	return nil
+}
+
+// reverseMempoolSwapPoolBalanceEffect returns one pool to the balances it had
+// before the speculative legs recorded in effect, and reports the net change.
+func reverseMempoolSwapPoolBalanceEffect(ctx cosmos.Context, mgr Manager, effect types.MempoolSwapPoolEffect) error {
+	if effect.BalanceRuneIncrease.Equal(effect.BalanceRuneDecrease) &&
+		effect.BalanceAssetIncrease.Equal(effect.BalanceAssetDecrease) {
+		return nil
+	}
+	pool, err := mgr.Keeper().GetPool(ctx, effect.Asset)
+	if err != nil {
+		return fmt.Errorf("fail to get pool %s for speculative balance rollback: %w", effect.Asset, err)
+	}
+	pool.BalanceRune, err = removeMempoolSwapPoolBalanceOverlay(
+		pool.BalanceRune,
+		effect.BalanceRuneIncrease,
+		effect.BalanceRuneDecrease,
+		effect.Asset,
+		"rune",
+	)
+	if err != nil {
+		return err
+	}
+	pool.BalanceAsset, err = removeMempoolSwapPoolBalanceOverlay(
+		pool.BalanceAsset,
+		effect.BalanceAssetIncrease,
+		effect.BalanceAssetDecrease,
+		effect.Asset,
+		"asset",
+	)
+	if err != nil {
+		return err
+	}
+	if err = mgr.Keeper().SetPool(ctx, pool); err != nil {
+		return fmt.Errorf("fail to restore speculative balances to pool %s: %w", effect.Asset, err)
+	}
+	runeAmt, runeAdd := netMempoolSwapPoolReversal(effect.BalanceRuneIncrease, effect.BalanceRuneDecrease)
+	assetAmt, assetAdd := netMempoolSwapPoolReversal(effect.BalanceAssetIncrease, effect.BalanceAssetDecrease)
+	emitPoolBalanceChangedEvent(ctx,
+		NewPoolMod(effect.Asset, runeAmt, runeAdd, assetAmt, assetAdd),
+		"mempool swap rollback",
+		mgr)
+	return nil
+}
+
+// netMempoolSwapPoolReversal returns the magnitude and direction of the
+// balance change that undoes a recorded increase/decrease pair.
+func netMempoolSwapPoolReversal(increase, decrease cosmos.Uint) (cosmos.Uint, bool) {
+	if decrease.GT(increase) {
+		return decrease.Sub(increase), true
+	}
+	return increase.Sub(decrease), false
 }

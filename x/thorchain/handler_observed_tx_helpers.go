@@ -3475,10 +3475,12 @@ func rollbackRevertedMempoolVaultCreditCached(
 }
 
 // rollbackMempoolSwapCached performs the inline mempool rollback itself.
-// It gathers the staged or partially-executed outputs that need to be unwound,
-// executes any required reverse swaps inline, then clears staged state and
-// resets the voter only after the whole rollback succeeds in the current cache
-// context.
+// An unfinalized lifecycle owner still holds its pools exclusively, so its
+// recorded pool deltas are reversed exactly and no reverse swap runs. Otherwise
+// it gathers the staged or partially-executed outputs that need to be unwound
+// and executes any required reverse swaps inline. Either way it clears staged
+// state and resets the voter only after the whole rollback succeeds in the
+// current cache context.
 func rollbackMempoolSwapCached(ctx cosmos.Context, keeper keeper.Keeper, mgr Manager, voter ObservedTxVoter) error {
 	ctx.Logger().Info("rolling back mempool swap", "hash", voter.TxID)
 
@@ -3486,6 +3488,14 @@ func rollbackMempoolSwapCached(ctx cosmos.Context, keeper keeper.Keeper, mgr Man
 	if err != nil {
 		return fmt.Errorf("fail to get mempool swap lifecycle for rollback: %w", err)
 	}
+	// While the inbound is unfinalized, the lifecycle has never been FINALIZED
+	// (FinalisedHeight is never reset) and per-pool serialization has kept every
+	// pool it touched free of foreign mutations since the speculative swap. Its
+	// recorded deltas therefore describe exactly what to undo. A finalized
+	// owner may have released its pools, so it keeps the reverse-swap path.
+	reverseDeltas := hasLifecycle &&
+		voter.FinalisedHeight == 0 &&
+		lifecycleRecord.Status != types.MempoolSwapStatus_FINALIZED
 	var rollbackSupplyTargets []mempoolSwapRollbackSupplyTarget
 	if hasLifecycle {
 		rollbackSupplyTargets, err = getMempoolSwapRollbackSupplyTargets(ctx, keeper, lifecycleRecord)
@@ -3498,10 +3508,10 @@ func rollbackMempoolSwapCached(ctx cosmos.Context, keeper keeper.Keeper, mgr Man
 		if err = keeper.SetMempoolSwap(ctx, lifecycleRecord); err != nil {
 			return fmt.Errorf("fail to mark mempool swap rollback pending: %w", err)
 		}
-		// Forward fee RUNE stayed in Asgard but was excluded from pool depth.
-		// Restore that depth before executing the reverse swap. Every other
-		// pending effect is simply discarded on delete.
-		if err = prepareMempoolSwapRollbackEffectsCached(ctx, mgr, lifecycleRecord); err != nil {
+		// Reverse the recorded pool deltas, or, on the reverse-swap path, restore
+		// the forward fee RUNE that stayed in Asgard but was excluded from pool
+		// depth. Every other pending effect is simply discarded on delete.
+		if err = prepareMempoolSwapRollbackEffectsCached(ctx, mgr, lifecycleRecord, reverseDeltas); err != nil {
 			return fmt.Errorf("fail to prepare mempool swap rollback effects: %w", err)
 		}
 		voter, err = releaseMempoolSwapLifecycleCached(ctx, keeper, lifecycleRecord, voter, "released mempool swap lifecycle reservation on rollback")
@@ -3523,6 +3533,10 @@ func rollbackMempoolSwapCached(ctx cosmos.Context, keeper keeper.Keeper, mgr Man
 	stagedItems, err := keeper.GetStagedOutbounds(ctx, voter.TxID)
 	if err != nil {
 		return fmt.Errorf("fail to get staged outbounds: %w", err)
+	}
+
+	if reverseDeltas {
+		return finishMempoolSwapDeltaRollbackCached(ctx, keeper, mgr, voter, lifecycleRecord, stagedItems, rollbackSupplyTargets, sourceAsset)
 	}
 
 	actionsToRollback := make([]mempoolRollbackAction, 0, len(stagedItems))
@@ -3762,10 +3776,10 @@ func rollbackMempoolSwapCached(ctx cosmos.Context, keeper keeper.Keeper, mgr Man
 			}
 		}
 
-		// Cross-asset rollback deliberately uses a reverse AMM swap followed by
-		// a source-pool donation. Price impact and RUNE redistribution are accepted;
-		// exact restoration of each pool's pre-swap RUNE balance is not required.
-		// See [accepted rollback behavior](../../docs/swap-guide/mempool-swaps.md#accepted-rollback-behavior).
+		// A finalized owner's pools may have moved since its speculative swap,
+		// so its recorded deltas no longer describe them. Cross-asset rollback
+		// here uses a reverse AMM swap followed by a source-pool donation, and
+		// price impact applies. See [rollback](../../docs/swap-guide/mempool-swaps.md#rollback).
 		rollbackSwap, buildErr := buildMempoolRollbackSwapMsg(ctx, mgr, voter, sourceAsset, action, rollbackAction.actionIndex, rollbackSwapVault)
 		if buildErr != nil {
 			return buildErr
@@ -3845,6 +3859,49 @@ func rollbackMempoolSwapCached(ctx cosmos.Context, keeper keeper.Keeper, mgr Man
 	}
 	emitMempoolSwapRollbackEvents(ctx, mgr, voter, sourceAsset, sourceAmount, aggregateDonatedAmount)
 
+	return nil
+}
+
+// finishMempoolSwapDeltaRollbackCached completes the rollback of an
+// unfinalized lifecycle whose pool deltas prepareMempoolSwapRollbackEffectsCached
+// has already reversed. The source credit, the swapped output, any native RUNE
+// or same-asset escrow, and the system fee are all inside those deltas, so no
+// reverse swap, source deduction or donation runs here. Staged outputs never
+// left Asgard; supply reconciliation removes any speculative mint or burn.
+func finishMempoolSwapDeltaRollbackCached(
+	ctx cosmos.Context,
+	keeper keeper.Keeper,
+	mgr Manager,
+	voter ObservedTxVoter,
+	lifecycleRecord types.MempoolSwap,
+	stagedItems []keeper.StagedOutbound,
+	rollbackSupplyTargets []mempoolSwapRollbackSupplyTarget,
+	sourceAsset common.Asset,
+) error {
+	if err := reconcileMempoolSwapRollbackSupplies(ctx, mgr, rollbackSupplyTargets); err != nil {
+		return err
+	}
+	if len(stagedItems) > 0 {
+		if err := reclaimStagedClout(ctx, keeper, voter, stagedItems); err != nil {
+			return fmt.Errorf("fail to reclaim staged clout on rollback: %w", err)
+		}
+		if err := keeper.DeleteStagedOutbounds(ctx, voter.TxID); err != nil {
+			return fmt.Errorf("fail to delete staged outbounds on rollback: %w", err)
+		}
+	}
+	if err := clearPendingMempoolSwapQueueItems(ctx, keeper, voter.TxID); err != nil {
+		return err
+	}
+	voter, err := rollbackRevertedMempoolVaultCreditCached(ctx, mgr, voter)
+	if err != nil {
+		return err
+	}
+	voter = clearMempoolRollbackState(voter)
+	keeper.SetObservedTxInVoter(ctx, voter)
+	if err = keeper.DeleteMempoolSwap(ctx, lifecycleRecord.TxId, lifecycleRecord.Index); err != nil {
+		return fmt.Errorf("fail to delete rolled-back mempool swap lifecycle: %w", err)
+	}
+	emitMempoolSwapRollbackEvents(ctx, mgr, voter, sourceAsset, voter.Tx.Tx.Coins[0].Amount, cosmos.ZeroUint())
 	return nil
 }
 
