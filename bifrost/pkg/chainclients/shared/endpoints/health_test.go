@@ -514,7 +514,6 @@ func (s *HealthSuite) TestRateLimitedProbeIsCooldownNotStrike(c *C) {
 	b := &fakeProbe{name: "b", height: 100, identity: "g"}
 	m, ps := newHealthMgr(c, cfg, nil, a, b)
 	c.Assert(m.Bootstrap(ctxBg(), ps), IsNil)
-	a.set(0, errors.New("wrapped: "+endpoints.ErrRateLimited.Error()))
 	a.mu.Lock()
 	a.err = fmt.Errorf("http 429: %w", endpoints.ErrRateLimited)
 	a.mu.Unlock()
@@ -600,4 +599,87 @@ func (s *HealthSuite) TestIntegrityEvictedEndpointNeedsAnExplicitHashMatchToReco
 	m.Cycle(ctxBg())
 	c.Assert(m.Entry("d").State(), Equals, endpoints.StateHealthy)
 	c.Assert(m.Entry("d").IntegrityEvicted(), Equals, false)
+}
+
+// A minority-hash strike that does not evict leaves the endpoint healthy and NOT
+// quarantined: only an eviction for a minority hash sets the quarantine flag.
+func (s *HealthSuite) TestIntegrityStrikeBelowThresholdDoesNotQuarantine(c *C) {
+	cfg := healthCfg()
+	cfg.IntegrityCheckDepth = 5
+	cfg.ErrorThreshold = 3
+	a := &fakeProbe{name: "a", height: 100, identity: "g", hashes: map[int64]string{95: "H"}}
+	b := &fakeProbe{name: "b", height: 100, identity: "g", hashes: map[int64]string{95: "H"}}
+	d := &fakeProbe{name: "d", height: 100, identity: "g", hashes: map[int64]string{95: "X"}}
+	m, ps := newHealthMgr(c, cfg, nil, a, b, d)
+	c.Assert(m.Bootstrap(ctxBg(), ps), IsNil)
+	m.Cycle(ctxBg())
+	c.Assert(m.Entry("d").State(), Equals, endpoints.StateHealthy)
+	c.Assert(m.Entry("d").IntegrityEvicted(), Equals, false)
+	c.Assert(m.Entry("d").Snapshot().IntegrityEvicted, Equals, false)
+	// a transient disagreement that heals never quarantines
+	d.mu.Lock()
+	d.hashes[95] = "H"
+	d.mu.Unlock()
+	m.Cycle(ctxBg())
+	c.Assert(m.Entry("d").State(), Equals, endpoints.StateHealthy)
+	c.Assert(m.Entry("d").IntegrityEvicted(), Equals, false)
+	// three disagreements evict and quarantine, visible in the status snapshot
+	d.mu.Lock()
+	d.hashes[95] = "X"
+	d.mu.Unlock()
+	for i := 0; i < 3; i++ {
+		m.Cycle(ctxBg())
+	}
+	c.Assert(m.Entry("d").State(), Equals, endpoints.StateUnhealthy)
+	c.Assert(m.Entry("d").IntegrityEvicted(), Equals, true)
+	c.Assert(m.Entry("d").Snapshot().IntegrityEvicted, Equals, true)
+}
+
+// An endpoint that is both behind and on another fork is evicted for the fork, not
+// merely for lag, so it stays quarantined until it serves the majority hash.
+func (s *HealthSuite) TestLaggingEndpointWithMinorityHashIsQuarantined(c *C) {
+	cfg := healthCfg()
+	cfg.IntegrityCheckDepth = 5
+	cfg.ErrorThreshold = 1
+	cfg.MaxBlockLag = 3
+	a := &fakeProbe{name: "a", height: 100, identity: "g", hashes: map[int64]string{95: "H"}}
+	b := &fakeProbe{name: "b", height: 100, identity: "g", hashes: map[int64]string{95: "H"}}
+	d := &fakeProbe{name: "d", height: 96, identity: "g", hashes: map[int64]string{95: "X"}} // behind by 4 and on a fork
+	m, ps := newHealthMgr(c, cfg, nil, a, b, d)
+	c.Assert(m.Bootstrap(ctxBg(), ps), IsNil)
+	m.Cycle(ctxBg())
+	c.Assert(m.Entry("d").State(), Equals, endpoints.StateUnhealthy)
+	c.Assert(m.Entry("d").IntegrityEvicted(), Equals, true)
+	c.Assert(m.Entry("d").LastErrorKind(), Equals, endpoints.ErrorKindIntegrity)
+	c.Assert(names(m.ReadCandidates()), DeepEquals, []string{"a", "b"})
+}
+
+// Without a strict majority among the healthy endpoints (H, H, X, Y) nothing is
+// evicted and nothing is cleared: an inconclusive disagreement must not pick a fork.
+func (s *HealthSuite) TestIntegrityPluralityWithoutMajorityIsSkipped(c *C) {
+	cfg := healthCfg()
+	cfg.IntegrityCheckDepth = 5
+	cfg.ErrorThreshold = 1
+	a := &fakeProbe{name: "a", height: 100, identity: "g", hashes: map[int64]string{95: "H"}}
+	b := &fakeProbe{name: "b", height: 100, identity: "g", hashes: map[int64]string{95: "H"}}
+	x := &fakeProbe{name: "x", height: 100, identity: "g", hashes: map[int64]string{95: "X"}}
+	y := &fakeProbe{name: "y", height: 100, identity: "g", hashes: map[int64]string{95: "Y"}}
+	z := &fakeProbe{name: "z", height: 100, identity: "g", hashes: map[int64]string{95: "H"}}
+	m, ps := newHealthMgr(c, cfg, nil, a, b, x, y, z)
+	c.Assert(m.Bootstrap(ctxBg(), ps), IsNil)
+	m.Entry("z").MarkUnhealthy(endpoints.ErrorKindIntegrity) // quarantined earlier, now agrees with the plurality
+	m.Cycle(ctxBg())
+	for _, n := range []string{"a", "b", "x", "y"} {
+		c.Assert(m.Entry(n).State(), Equals, endpoints.StateHealthy, Commentf(n))
+	}
+	// H holds 2 of the 4 healthy answers: a plurality, not a majority, so z is not cleared
+	c.Assert(m.Entry("z").State(), Equals, endpoints.StateUnhealthy)
+	c.Assert(m.Entry("z").IntegrityEvicted(), Equals, true)
+	// once H is a strict majority (3 of 5 healthy answers) z recovers
+	y.mu.Lock()
+	y.hashes[95] = "H"
+	y.mu.Unlock()
+	m.Cycle(ctxBg())
+	c.Assert(m.Entry("z").State(), Not(Equals), endpoints.StateUnhealthy)
+	c.Assert(m.Entry("x").State(), Equals, endpoints.StateUnhealthy)
 }

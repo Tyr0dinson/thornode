@@ -356,13 +356,15 @@ func (m *Manager) Cycle(ctx context.Context) {
 				m.recordProbeStrike(e, ErrorKindProbe, "probe failed")
 				continue
 			}
+			// a hash disagreement outranks lag: an endpoint that is both behind and on
+			// another fork must be quarantined, not merely struck for lag
+			if badHash[e.Name] {
+				m.recordProbeStrike(e, ErrorKindIntegrity, "minority block hash")
+				continue
+			}
 			if lag, why := lagging(r.height); lag {
 				m.log.Warn().Str("endpoint", e.Name).Int64("height", r.height).Msg("endpoint lagging: " + why)
 				m.recordProbeStrike(e, ErrorKindLag, why)
-				continue
-			}
-			if badHash[e.Name] {
-				m.recordProbeStrike(e, ErrorKindIntegrity, "minority block hash")
 				continue
 			}
 			e.RecordProbePass()
@@ -415,10 +417,11 @@ func consensusTip(heights map[string]int64, lag int64) (tip int64, quorum bool) 
 // hash, so they can be re-checked). It returns the set of endpoints whose hash
 // differs from the reference (bad) and the set whose hash positively matched it
 // (matched); an endpoint whose hash could not be fetched is in neither. The
-// reference is the majority hash among healthy endpoints, or the single healthy
-// endpoint's hash. Ties among healthy endpoints yield nothing (logged); an
-// integrity-evicted endpoint with no healthy endpoint to compare against is
-// reported as bad, since it cannot be cleared.
+// reference is the hash held by a strict majority of the healthy endpoints that
+// answered, or the single healthy endpoint's hash. Without a strict majority (a tie,
+// or a plurality such as H, H, X, Y) nothing is evicted or cleared, and the
+// disagreement is logged; an integrity-evicted endpoint with no healthy endpoint to
+// compare against is reported as bad, since it cannot be cleared.
 func (m *Manager) integrityCheck(ctx context.Context, height int64, heights map[string]int64) (bad, matched map[string]bool) {
 	type res struct {
 		name    string
@@ -493,19 +496,18 @@ func (m *Manager) integrityCheck(ctx context.Context, height int64, heights map[
 		}
 		return bad, matched
 	}
-	best, bestN, tie := "", 0, false
+	best, bestN := "", 0
 	for h, n := range counts {
-		switch {
-		case n > bestN:
-			best, bestN, tie = h, n, false
-		case n == bestN:
-			tie = true
+		if n > bestN {
+			best, bestN = h, n
 		}
 	}
-	if tie {
-		// no healthy majority: nothing can be evicted or cleared this cycle; with two
-		// endpoints this is the only outcome of a disagreement, so make it visible
-		m.log.Warn().Int64("height", height).Int("healthy", healthyN).
+	if bestN*2 <= healthyN {
+		// no strict healthy majority (a tie, or a plurality): an inconclusive
+		// disagreement must not pick the fork used for observations, so nothing is
+		// evicted or cleared this cycle. With two endpoints this is the only outcome
+		// of a disagreement, so make it visible.
+		m.log.Warn().Int64("height", height).Int("healthy", healthyN).Int("agreeing", bestN).
 			Msg("healthy endpoints disagree on the block hash with no majority; integrity check skipped")
 		return map[string]bool{}, map[string]bool{}
 	}

@@ -56,6 +56,7 @@ type Snapshot struct {
 	ProbeLatencyMs   int64  `json:"probe_latency_ms,omitempty"`
 	InCooldown       bool   `json:"in_cooldown,omitempty"`
 	IdentityVerified bool   `json:"identity_verified"`
+	IntegrityEvicted bool   `json:"integrity_evicted,omitempty"`
 	InlineErrors     int    `json:"inline_errors,omitempty"`
 	ProbeStrikes     int    `json:"probe_strikes,omitempty"`
 	LastErrorKind    string `json:"last_error_kind,omitempty"`
@@ -196,13 +197,16 @@ func (e *Entry) RecordProbeStrike(cfg config.ChainFailoverConfig, kind ErrorKind
 	case StateUnhealthy, StateDisabled:
 		return false
 	}
-	if kind == ErrorKindIntegrity {
-		// sticky: lastErrorKind is overwritten by the next transport error or rate
-		// limit, and recovery must still require a matching hash
-		e.integrityEvicted = true
-	}
 	e.probeStrikes++
 	if e.probeStrikes >= cfg.ErrorThreshold {
+		if kind == ErrorKindIntegrity {
+			// sticky: lastErrorKind is overwritten by the next transport error or
+			// rate limit, and recovery must still require a matching hash. Only an
+			// eviction quarantines; a strike that leaves the entry healthy does not,
+			// or a transient disagreement would silently keep a healthy endpoint out
+			// of the all-down fallback.
+			e.integrityEvicted = true
+		}
 		e.markUnhealthyLocked()
 		return true
 	}
@@ -371,6 +375,7 @@ func (e *Entry) Snapshot() Snapshot {
 		ProbeLatencyMs:   e.lastProbeLatency.Milliseconds(),
 		InCooldown:       e.inCooldownLocked(),
 		IdentityVerified: e.identityVerified,
+		IntegrityEvicted: e.integrityEvicted,
 		InlineErrors:     e.inlineErrors,
 		ProbeStrikes:     e.probeStrikes,
 		LastErrorKind:    string(e.lastErrorKind),
