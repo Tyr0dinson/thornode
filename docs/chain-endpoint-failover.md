@@ -10,15 +10,23 @@ fails back when you ask it to.
 
 Every chain keeps one **active** endpoint (the highest-priority healthy one at startup).
 All requests go to the active endpoint. Reads that fail with a transport error, an HTTP
-3xx / 5xx, a 401 / 403, a JSON-RPC "internal error", a body that is not valid JSON, or a
-rate limit are retried on the next healthy endpoint immediately and charged to the
-endpoint that failed. On the HTTP-routed chains (EVM, SOL, XRP, TRON, and the Cosmos
-CometBFT RPC) a JSON-RPC "method not found" is the caller's business and is never
-charged: bifrost calls optional methods (`eth_getBlockReceipts`) and falls back itself
-when a node lacks them. On XRP, a provider answering `lgrNotFound` is asked last: the
-other endpoints are tried first and nothing is charged. Writes (broadcasts) are sent
-once, to the active endpoint, with the caller's whole timeout, and never duplicated
-elsewhere; the XRP transport retry wrapper never replays `submit` either.
+3xx / 5xx, a 401 / 403, a JSON-RPC "internal error", or a body that is not valid JSON are
+retried on the next healthy endpoint immediately and charged to the endpoint that
+failed. A rate-limited read is retried on the next endpoint too, but the rate-limited
+endpoint is only put in cooldown (see below), never charged. On the HTTP-routed chains
+(EVM, SOL, XRP, TRON, and the Cosmos CometBFT RPC) a JSON-RPC "method not found" is the
+caller's business and is never charged: bifrost calls optional methods
+(`eth_getBlockReceipts`) and falls back itself when a node lacks them. On XRP, a
+provider answering `lgrNotFound` is asked last: the other endpoints are tried first and
+nothing is charged. Writes (broadcasts) are sent once, to the active endpoint, with the
+caller's whole timeout, and never duplicated elsewhere; the XRP transport retry wrapper
+never replays `submit` either.
+
+A read attempt is cut at the attempt timeout (half of `http_request_timeout`, at most
+10s) only while another candidate is left to try; the last or only candidate keeps the
+caller's whole timeout, so a single-endpoint configuration keeps the request timeout it
+had before failover existed. When the caller's timeout runs out waiting for an endpoint,
+that endpoint is charged; when the caller cancels, it is not.
 
 UTXO chains differ in two ways. The primary daemon is retried with the client's own
 backoff (`max_rpc_retries`, up to about a minute with the default 9) before a fallback
@@ -28,12 +36,39 @@ every RPC bifrost calls (`txindex=1` included). An endpoint that answered a read
 application error ("no such transaction") is authoritative over one that failed.
 
 Several UTXO decisions ask only the primary daemon and fail closed when it cannot
-answer: reorg re-confirmation (no errata without the primary's positive "not found";
-the height stays pending and is re-checked on the next block), block-meta pruning (kept
-while our own broadcast may still be in the primary's mempool, listed via `getrawmempool`
-on daemons without `getmempoolentry`, such as Zebra), and the mempool-ancestor check
-before spending an unconfirmed UTXO (the UTXO is skipped that round). A long primary
-outage therefore delays errata, retains block meta and spends only confirmed UTXOs.
+answer: reorg re-confirmation, block-meta pruning (kept while our own broadcast may still
+be in the primary's mempool, listed via `getrawmempool` on daemons without
+`getmempoolentry`, such as Zebra), and the mempool-ancestor check before spending an
+unconfirmed UTXO (the UTXO is skipped that round). Reorg re-confirmation needs the
+primary's positive "not found" before it reports an errata, and the primary must have
+reached the reorg tip first: a resyncing or lagging primary answers "not found" for
+everything above its own tip. While the primary cannot answer, or is below the reorg
+tip, the scan of the block that revealed the reorg fails and is retried, so that
+chain's scanner waits. A long primary outage therefore delays reorg handling, retains
+block meta and spends only confirmed UTXOs.
+
+On every failover chain with reorg handling (UTXO, ETH, and the EVM chains whose
+`max_reorg_rescan_blocks` is above 0, so not AVAX) a reorg is resolved all or nothing:
+the errata, the repaired block records and the observations of the rescanned blocks are
+reported and written only once the whole scan of the block that revealed the reorg has
+succeeded. A transaction lookup that cannot be answered fails the scan, which is
+retried, so it never turns into an errata (on ETH and the EVM chains a receipt that
+cannot be read keeps the observation, as before). A failed attempt may already have
+removed the signed-transaction and signer-cache entries of outbounds seen in the
+rescanned blocks, which is what the retry does anyway; UTXO undoes the
+observed-transaction marks the failed attempt set. With several endpoints, ETH and the
+EVM chains take a reorg's headers, transaction re-confirmations and rescanned blocks
+from one witness, the active endpoint, and only once its block at the reorg tip
+is the parent of the block being scanned, which proves it is caught up and on the same
+fork; otherwise the scan fails and is retried. No other endpoint is asked, so one still
+on the old fork cannot suppress an errata. A witness whose lookups fail rather than
+answer "not found" (for example a node still building its transaction index) holds the
+scan until it answers. If a scan stays stuck for longer than `max_resume_block_lag`
+while THORChain's last observed height for the chain moves more than that window ahead
+of it, the block scanner's existing skip-ahead moves past the stalled height (never for
+an unavailable-block error), and this node may not report that reorg or observe the
+rescanned blocks (a later reorg re-checks the stored block records still in the
+window); the errata then depends on the other nodes' votes.
 
 A background health check runs every `health_check_interval` against every endpoint:
 
@@ -54,15 +89,16 @@ A background health check runs every `health_check_interval` against every endpo
   is set: an endpoint that reports no identity is then never used, even when every other
   endpoint is down, because observing an unknown network is worse than observing
   nothing. XRP servers report `network_id` only when configured with one, so make sure
-  yours does before pinning XRP or adding a second XRP endpoint. TRON requires identity
-  even for a single legacy endpoint: its `api_host` and `rpc_host` must be proven to be
-  one network (same block id 20 blocks below the API tip) before the endpoint serves;
-  until then the chain stays dark rather than observe an unknown network. BTC and BCH share the
+  yours does before pinning XRP or adding a second XRP endpoint. BTC and BCH share the
   same genesis block hash, so identity cannot tell them apart; only the integrity check
   (with enough endpoints) protects against mixing them. An endpoint with two hosts
   (Cosmos `rpc_host` + `cosmos_grpc_host`, TRON `rpc_host` + `api_host`) must have both
   on the same network: a proven disagreement disables the endpoint, even when it is the
-  only one, since bifrost cannot name the network it would be observing.
+  only one, since bifrost cannot name the network it would be observing. TRON compares
+  the block 20 below the lower of the two hosts' tips, so a pair on different networks
+  is proven different whenever both hosts answer; a single legacy TRON endpoint keeps
+  serving while that check cannot run (a host unreachable), as before endpoint lists
+  existed.
 - **Integrity.** When `integrity_check_depth` is greater than 0 **and at least two
   endpoints agree on a tip**, the block hash at `tip - depth` is compared across the
   healthy endpoints that answered. When one hash holds a strict majority of them, every
@@ -72,7 +108,9 @@ A background health check runs every `health_check_interval` against every endpo
   before it may serve traffic, even as an all-down fallback. Without a strict majority
   (a tie, or a plurality such as H, H, X, Y) nothing is evicted or cleared and the
   disagreement is logged. With fewer than two agreeing endpoints there is no tip and the
-  check does not run.
+  check does not run, which also means a quarantined endpoint cannot be cleared: it
+  needs healthy endpoints at a common height to compare against, so with no second
+  healthy endpoint it stays out until one comes back or bifrost is restarted.
 
 `error_threshold` consecutive probe strikes, or `error_threshold` consecutive inline
 request errors no more than `error_window` apart, mark an endpoint **unhealthy**. If it
@@ -90,7 +128,10 @@ endpoint rate limited during bootstrap cannot report its identity, so when ident
 required it starts unhealthy and unverified until a later probe succeeds.
 
 gRPC `Unimplemented` counts as an endpoint error: a Cosmos node that lacks a module
-bifrost needs cannot serve it, and is evicted like an unreachable one.
+bifrost needs cannot serve it, and is evicted like an unreachable one. So do
+`Unauthenticated` and `PermissionDenied`, which is how grpc-go reports an HTTP 401 / 403
+from a gateway (a revoked or exhausted API key). An HTTP 429 from a gateway arrives as
+`Unavailable` with the status in the message and is treated as a rate limit.
 
 `rate_limit_backoff` is also slept, once, on the UTXO chains only, and only when the
 rate-limited endpoint was the primary and no other endpoint served the read. That
@@ -113,10 +154,17 @@ If every endpoint is unhealthy, bifrost logs an error, sets
 | TRON                            | `api_host` and `rpc_host` routed together; each endpoint needs both; both are probed                            | `/wallet/broadcasttransaction` sent once                                                                                      |
 | XMR                             | not supported; the Monero client talks to its signer sidecar only                                               |                                                                                                                               |
 
-`authorization_bearer` and `username` / `password` are honored on every chain (gRPC sends
-them as `authorization` metadata). Credentials embedded in a URL
-(`https://user:pass@host/`) are moved into the request header. Endpoint URLs and
-credentials never appear in logs, metrics or status output.
+`authorization_bearer` and `username` / `password` set on an `endpoints:` entry are
+honored on every chain (gRPC sends them as `authorization` metadata). A legacy
+configuration without `endpoints:` sends the chain-level credentials only where its
+chain's client sent them before endpoint lists existed, because every chain inherits the
+default `thorchain` / `password` pair from the config template: `username` / `password`
+on the UTXO chains, and on AVAX, BSC, BASE and POL when both are set;
+`authorization_bearer` on AVAX, BSC, BASE and POL only. Credentials embedded in an HTTP
+URL (`https://user:pass@host/`) are sent, as a header, only when the endpoint has no
+`username`, `password` or `authorization_bearer` of its own, and are stripped from the
+URL either way. Endpoint URLs and credentials never appear in logs, metrics or status
+output.
 
 Two URLs from the same provider count as two votes for the lag quorum and the integrity
 majority; prefer endpoints from different operators.
@@ -149,17 +197,17 @@ fields keeps its previous behavior when both hosts agree with each other but not
 or `expected_identity` to make it fatal. The two hosts disagreeing with each other is
 never advisory: that endpoint is disabled.
 
-A dead endpoint left in the list does not block recovery of a stuck outbound: an
-endpoint continuously unhealthy for longer than `signer_cache_expiry` is skipped when
-verifying whether a broadcast is still alive. That window counts any time spent out of
-the healthy state, lag included, not only unreachability. The risk is deliberate and
-worth stating plainly: if the endpoint that took a broadcast is the one that has been
-down that long, the others can all answer "not found" and the outbound is signed again.
-This is not made safe by the skip itself. On the EVM chains and Cosmos the re-sign takes
-its nonce or sequence from a node that never saw the original, which is the same value
-the original used, so at most one of the two can mine; a re-sign with a checkpoint reuses
-them outright. On Solana and TRON the original has expired long before. Remove dead
-endpoints from the list rather than relying on this.
+Broadcast verification (before a stuck outbound may be signed again) asks every usable
+endpoint, however long it has been unhealthy, and an endpoint that does not answer makes
+the result ambiguous, which keeps the outbound from being re-signed. Endpoint health says
+nothing about whether a transaction an endpoint accepted can still settle, and a re-sign
+does not necessarily reuse the original's nonce or sequence: Cosmos signs with its
+locally cached sequence (which the broadcast advanced), and a Solana durable-nonce
+outbound does not expire with its blockhash. A dead endpoint left in an EVM, Cosmos or
+Solana list therefore blocks the automatic re-sign of a stuck outbound until it answers
+again or is removed from the list. TRON is the exception: its transactions expire 20
+minutes after creation, so an endpoint continuously unhealthy for longer than
+`signer_cache_expiry` is skipped there.
 
 An endpoint's identity is verified once, when it is first reached. A provider URL
 repointed at another network after bifrost started is not re-verified; the only
