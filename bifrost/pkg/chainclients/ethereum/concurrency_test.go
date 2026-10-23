@@ -57,7 +57,7 @@ func TestExtractTxsNonPositiveConcurrency(t *testing.T) {
 			client: ethClient,
 		}
 		within(t, 10*time.Second, "extractTxs", func() {
-			txIn, err := e.extractTxs(block)
+			txIn, err := e.extractTxs(block, 0)
 			if err != nil || len(txIn.TxArray) != 0 {
 				t.Errorf("concurrency %d: got %v, %v", concurrency, txIn, err)
 			}

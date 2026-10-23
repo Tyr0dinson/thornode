@@ -164,7 +164,7 @@ func TestGetTxInOptimizedConcurrentReceipts(t *testing.T) {
 		}
 		done := make(chan result, 1)
 		go func() {
-			txIn, gasPrices, err := scanner.getTxInOptimized("eth_getBlockReceipts", block)
+			txIn, gasPrices, err := scanner.getTxInOptimized("eth_getBlockReceipts", block, false)
 			done <- result{txIn, gasPrices, err}
 		}()
 		var res result
