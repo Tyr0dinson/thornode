@@ -1287,7 +1287,54 @@ func (c BifrostChainConfiguration) validateEndpointHosts(e ChainEndpointConfig) 
 			return fmt.Errorf("chain %s: endpoint %q needs rpc_host", c.ChainID, e.Name)
 		}
 	}
+	// the endpoint router speaks http(s) only (tcp:// is read as http://): a ws://, ipc
+	// or other host would start and then fail every request. Only the hosts a chain
+	// reads are checked (api_host only on TRON); the error names the scheme, never
+	// the host, which may carry credentials.
+	if s := hostScheme(e.RPCHost); !routableScheme(s) {
+		return fmt.Errorf("chain %s: endpoint %q rpc_host uses the unsupported %s:// scheme; use http(s)", c.ChainID, e.Name, s)
+	}
+	if c.ChainID.Equals(common.TRONChain) {
+		if s := hostScheme(e.APIHost); !routableScheme(s) {
+			return fmt.Errorf("chain %s: endpoint %q api_host uses the unsupported %s:// scheme; use http(s)", c.ChainID, e.Name, s)
+		}
+	}
 	return nil
+}
+
+// hostScheme returns a host's URL scheme in lower case, or "" for a bare host:port.
+// Only a leading RFC 3986 scheme token counts: a bare host whose path or query holds
+// "://" (or whose userinfo holds credentials) has no scheme, so nothing of the host
+// can ever be reported as one.
+func hostScheme(host string) string {
+	i := strings.Index(host, "://")
+	if i <= 0 || !IsSchemeToken(host[:i]) {
+		return ""
+	}
+	return strings.ToLower(host[:i])
+}
+
+// IsSchemeToken reports whether s is a URL scheme: a letter followed by letters,
+// digits, "+", "-" or ".".
+func IsSchemeToken(s string) bool {
+	for i, r := range s {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z':
+		case i > 0 && (r >= '0' && r <= '9' || r == '+' || r == '-' || r == '.'):
+		default:
+			return false
+		}
+	}
+	return s != ""
+}
+
+// routableScheme reports whether the endpoint router can reach a host of that scheme.
+func routableScheme(scheme string) bool {
+	switch scheme {
+	case "", "http", "https", "tcp":
+		return true
+	}
+	return false
 }
 
 // ValidateEndpoints checks the chain's endpoint configuration: an explicit list
@@ -1400,7 +1447,13 @@ func applyEndpointEnvOverridesTo(chains map[string]*BifrostChainConfiguration, e
 		}
 		idx, err := strconv.Atoi(idxStr)
 		if err != nil || idx < 1 {
+			log.Warn().Str("env", key).Msg("ignoring endpoint override: endpoint numbers start at 1")
 			continue
+		}
+		// an index past the limit is clamped to one past it, so ValidateEndpoints still
+		// fails with its "at most" error instead of this allocating a huge list first
+		if idx > MaxChainEndpoints {
+			idx = MaxChainEndpoints + 1
 		}
 		overrides[chain] = append(overrides[chain], override{idx: idx, field: field, value: value})
 		if idx > maxIdx[chain] {

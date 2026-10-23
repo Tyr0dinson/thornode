@@ -2,6 +2,7 @@ package config_test
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	. "gopkg.in/check.v1"
@@ -210,4 +211,32 @@ func (s *ConfigSuite) TestLegacyEndpointCarriesBasicAuthOnlyWhereItWasSent(c *C)
 		{Name: "a", RPCHost: "http://x", CosmosGRPCHost: "h:9090", UserName: "u", Password: "p", Priority: 1},
 	}}.GetEndpoints()
 	c.Assert(eps[0].UserName, Equals, "u")
+}
+
+// The endpoint router speaks http(s) only: a host with another scheme fails at
+// startup with an error that names the scheme (never the host, which may carry
+// credentials), instead of starting and failing every request. Only the hosts the
+// chain reads are checked.
+func (s *ConfigSuite) TestEndpointHostSchemes(c *C) {
+	ok := []string{"node:8545", "http://node:8545", "HTTPS://node:8545", "tcp://gaia:26657", "TCP://gaia:26657"}
+	for _, host := range ok {
+		c.Assert(config.BifrostChainConfiguration{ChainID: common.ETHChain, RPCHost: host}.ValidateEndpoints(), IsNil, Commentf(host))
+	}
+	for _, host := range []string{"ws://user:secret@node:8546", "WSS://node:8546", "ipc:///geth.ipc", "unix:///gaia.sock"} {
+		err := config.BifrostChainConfiguration{ChainID: common.ETHChain, RPCHost: host}.ValidateEndpoints()
+		c.Assert(err, ErrorMatches, ".*rpc_host uses the unsupported .*:// scheme.*", Commentf(host))
+		c.Assert(strings.Contains(err.Error(), "secret"), Equals, false)
+	}
+	// a bare host whose path or query holds "://" has no scheme, so the host (and its
+	// credentials) is never reported as one
+	c.Assert(config.BifrostChainConfiguration{ChainID: common.ETHChain, RPCHost: "user:secret@node:8545/x?u=http://y"}.ValidateEndpoints(), IsNil)
+	// an explicit endpoints list is checked the same way
+	err := config.BifrostChainConfiguration{ChainID: common.BSCChain, Endpoints: []config.ChainEndpointConfig{
+		{Name: "a", RPCHost: "ws://node:8546", Priority: 1},
+	}}.ValidateEndpoints()
+	c.Assert(err, ErrorMatches, `.*endpoint "a" rpc_host uses the unsupported ws:// scheme.*`)
+	// api_host is read only by TRON, so only TRON checks it
+	c.Assert(config.BifrostChainConfiguration{ChainID: common.ETHChain, RPCHost: "http://node", APIHost: "ws://leftover"}.ValidateEndpoints(), IsNil)
+	err = config.BifrostChainConfiguration{ChainID: common.TRONChain, RPCHost: "http://node", APIHost: "ws://api"}.ValidateEndpoints()
+	c.Assert(err, ErrorMatches, ".*api_host uses the unsupported ws:// scheme.*")
 }

@@ -71,3 +71,26 @@ func TestApplyEndpointEnvOverridesTo(t *testing.T) {
 		t.Errorf("GAIA endpoint 1 name = %q, want preserved yaml value", got)
 	}
 }
+
+// An endpoint number past the limit (a typo such as _99999999_) must not allocate a
+// list that large before validation: the list stops one past the limit, so
+// ValidateEndpoints still refuses it with its clear error. Number 0 is ignored.
+func TestApplyEndpointEnvOverridesBoundsTheIndex(t *testing.T) {
+	btc := &BifrostChainConfiguration{ChainID: "BTC"}
+	applyEndpointEnvOverridesTo(map[string]*BifrostChainConfiguration{"BTC": btc}, []string{
+		"BIFROST_CHAINS_BTC_ENDPOINTS_1_URL=http://localhost:8332",
+		"BIFROST_CHAINS_BTC_ENDPOINTS_99999999_URL=http://typo:8332",
+		"BIFROST_CHAINS_BTC_ENDPOINTS_0_URL=http://zero:8332",
+	})
+	if len(btc.Endpoints) != MaxChainEndpoints+1 {
+		t.Fatalf("expected the list to stop at %d entries, got %d", MaxChainEndpoints+1, len(btc.Endpoints))
+	}
+	for _, e := range btc.Endpoints {
+		if e.RPCHost == "http://zero:8332" {
+			t.Fatal("endpoint number 0 must be ignored")
+		}
+	}
+	if err := btc.ValidateEndpoints(); err == nil {
+		t.Fatal("expected ValidateEndpoints to refuse more endpoints than the limit")
+	}
+}

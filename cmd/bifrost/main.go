@@ -43,14 +43,20 @@ func printVersion() {
 	fmt.Printf("%s v%s, rev %s\n", serverIdentity, constants.Version, constants.GitCommit)
 }
 
-// withScheme prefixes a bare host with http://; an existing http:// or https:// in
-// any letter case is kept as is.
+// withScheme prefixes a bare host with http://. A host that names a scheme keeps it,
+// except tcp://, which becomes http:// (CometBFT's own client treats them the same,
+// and the endpoint router speaks http(s) only); other schemes are rejected by
+// ValidateEndpoints before this runs.
 func withScheme(host string) string {
 	if host == "" {
 		return host
 	}
-	lower := strings.ToLower(host)
-	if strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://") {
+	// only a leading scheme token is a scheme: a bare host whose path or query holds
+	// "://" has none of its own and gets http://
+	if i := strings.Index(host, "://"); i > 0 && config.IsSchemeToken(host[:i]) {
+		if strings.EqualFold(host[:i], "tcp") {
+			return "http://" + host[i+len("://"):]
+		}
 		return host
 	}
 	return "http://" + host
