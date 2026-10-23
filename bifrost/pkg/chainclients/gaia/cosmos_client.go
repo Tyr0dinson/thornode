@@ -564,22 +564,22 @@ func (c *CosmosClient) mempoolLookup(ctx context.Context, sig string) signercach
 		return mempoolLookupOn(ctx, c.cometRPC, sig)
 	}
 	// With several endpoints the broadcast may sit in only one endpoint's mempool:
-	// every non-disabled endpoint is asked with a pinned request through the routed
-	// client (so each endpoint's credentials apply). Found anywhere is Found; not
-	// found everywhere with every endpoint answering a complete page is NotFound;
-	// anything else is Ambiguous (keeps the cache entry).
-	// every usable endpoint is asked, however long it has been down: a broadcast it
-	// accepted can still settle, and a re-sign takes the locally cached sequence
-	// (BroadcastTx increments it), not necessarily the original one
-	candidates := c.endpointMgr.VerificationCandidates(0)
-	return c.mempoolLookupOnCandidates(ctx, sig, candidates, evm.VerificationBudget(ctx, len(candidates)))
+	// every usable endpoint is asked with a pinned request through the routed client
+	// (so each endpoint's credentials apply), however long it has been down: a
+	// broadcast it accepted can still settle, and a re-sign takes the locally cached
+	// sequence (BroadcastTx increments it), not necessarily the original one. Found
+	// anywhere is Found; not found everywhere with every endpoint answering a
+	// complete page, and none left unasked, is NotFound; anything else is Ambiguous
+	// (keeps the cache entry).
+	candidates, unverified := c.endpointMgr.VerificationCandidates(0)
+	return c.mempoolLookupOnCandidates(ctx, sig, candidates, unverified, evm.VerificationBudget(ctx, len(candidates)))
 }
 
 // mempoolLookupOnCandidates asks the given endpoints, each with its own bounded
 // context. Found anywhere is Found; not found on every endpoint, each of which
-// answered a complete page, is NotFound; anything else, including no endpoint at
-// all, is Ambiguous.
-func (c *CosmosClient) mempoolLookupOnCandidates(ctx context.Context, sig string, candidates []*endpoints.Entry, perEndpoint time.Duration) signercache.LookupResult {
+// answered a complete page, with no endpoint left unasked (unverified), is NotFound;
+// anything else, including no endpoint at all, is Ambiguous.
+func (c *CosmosClient) mempoolLookupOnCandidates(ctx context.Context, sig string, candidates []*endpoints.Entry, unverified int, perEndpoint time.Duration) signercache.LookupResult {
 	if len(candidates) == 0 {
 		return signercache.LookupAmbiguous // absence needs at least one witness
 	}
@@ -595,7 +595,7 @@ func (c *CosmosClient) mempoolLookupOnCandidates(ctx context.Context, sig string
 			ambiguous = true
 		}
 	}
-	if ambiguous {
+	if ambiguous || unverified > 0 {
 		return signercache.LookupAmbiguous
 	}
 	return signercache.LookupNotFound
@@ -630,7 +630,7 @@ func mempoolLookupOn(ctx context.Context, client cometMempoolClient, sig string)
 // CometBFT mempool via mempoolLookup. A non-NotFound RPC error is ambiguous.
 //
 // With several endpoints, an endpoint behind in blocks or tx indexing can report a
-// committed tx as absent, so GetTx is asked on every non-disabled endpoint (pinned):
+// committed tx as absent, so GetTx is asked on every usable endpoint (pinned):
 // found anywhere is Found, any non-NotFound error is Ambiguous, and only NotFound
 // everywhere proceeds to the mempool lookup, which is also done on every endpoint.
 func (c *CosmosClient) verifyBroadcast(sig string) signercache.LookupResult {
@@ -650,7 +650,7 @@ func (c *CosmosClient) verifyBroadcast(sig string) signercache.LookupResult {
 	// every usable endpoint is asked, however long it has been down: a broadcast it
 	// accepted can still settle, and a re-sign takes the locally cached sequence
 	// (BroadcastTx increments it), not necessarily the original one
-	candidates := c.endpointMgr.VerificationCandidates(0)
+	candidates, unverified := c.endpointMgr.VerificationCandidates(0)
 	if len(candidates) == 0 {
 		return signercache.LookupAmbiguous // absence needs at least one witness
 	}
@@ -672,7 +672,7 @@ func (c *CosmosClient) verifyBroadcast(sig string) signercache.LookupResult {
 	if ambiguous {
 		return signercache.LookupAmbiguous
 	}
-	return c.mempoolLookupOnCandidates(ctx, sig, candidates, perEndpoint)
+	return c.mempoolLookupOnCandidates(ctx, sig, candidates, unverified, perEndpoint)
 }
 
 // SignTx sign the the given TxArrayItem

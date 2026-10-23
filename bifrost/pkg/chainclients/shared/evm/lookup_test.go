@@ -120,12 +120,16 @@ func (s *LookupSuite) TestLookupTxEverywhere(c *C) {
 	defer fc3.Client.Close()
 	c.Assert(evm.LookupTxEverywhere(context.Background(), fc3.Manager, fc3.Client, ecommonHash(), time.Hour), Equals, signercache.LookupAmbiguous)
 
-	// an endpoint whose chain identity was never verified is never asked, so it
-	// cannot make the answer ambiguous: bifrost never broadcast to it either
+	// an endpoint whose chain identity was never verified in this process (it was
+	// unreachable at startup) is never asked, but it may have taken the broadcast
+	// before a restart: absence is not established, the cache entry is kept
 	fc5 := lookupClient(c, absent, broken)
 	defer fc5.Manager.Stop()
 	defer fc5.Client.Close()
 	c.Assert(fc5.Manager.Entry("b").Usable(), Equals, false)
+	c.Assert(evm.LookupTxEverywhere(context.Background(), fc5.Manager, fc5.Client, ecommonHash(), time.Hour), Equals, signercache.LookupAmbiguous)
+	// once it is proven to be on another network it is disabled and no longer counts
+	fc5.Manager.Disable("b", "identity")
 	c.Assert(evm.LookupTxEverywhere(context.Background(), fc5.Manager, fc5.Client, ecommonHash(), time.Hour), Equals, signercache.LookupNotFound)
 
 	// every endpoint disabled: nothing was queried, so nothing can prove absence

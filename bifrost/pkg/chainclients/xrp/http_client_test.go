@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"syscall"
 	"testing"
@@ -326,3 +327,25 @@ func TestIsLedgerNotFoundBody(t *testing.T) {
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+// A write-protected client fails closed: a body that is not a single JSON-RPC object
+// (a batch array, or anything unreadable) could carry a write, so it is never replayed.
+func TestRetryHTTPClientDoesNotReplayAnUnreadableBody(t *testing.T) {
+	c := &retryHTTPClient{noRetry: map[string]bool{"submit": true}}
+	for _, body := range []string{`[{"method":"submit"}]`, `not json`} {
+		req, err := http.NewRequest(http.MethodPost, "http://xrp.invalid/", strings.NewReader(body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !c.isNoRetry(req) {
+			t.Errorf("body %q: expected no replay", body)
+		}
+	}
+	req, err := http.NewRequest(http.MethodPost, "http://xrp.invalid/", strings.NewReader(`{"method":"ledger"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.isNoRetry(req) {
+		t.Error("a read must stay retryable")
+	}
+}

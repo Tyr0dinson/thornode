@@ -310,7 +310,7 @@ func NewTronClient(
 
 	// endpoint manager (#2828): one router for api_host (/wallet/*) and one for
 	// rpc_host (JSON-RPC), both following the same active endpoint. Probes check
-	// eth_blockNumber / eth_chainId on rpc_host and /wallet/getnowblock on api_host,
+	// eth_blockNumber / eth_chainId on rpc_host and /wallet/getblock on api_host,
 	// and identity verification proves both hosts serve the same network by
 	// comparing a recent block id across them (tronAPIIdentity).
 	failoverCfg := config.GetFailoverConfig()
@@ -633,9 +633,9 @@ func (c *TronClient) ConfirmationCountReady(_ types.TxIn) bool {
 func (c *TronClient) OnObservedTxIn(_ types.TxInItem, _ int64) {}
 
 // tronVerifyBroadcast is the signer-cache verifyFn. With an endpoint manager, every
-// non-disabled endpoint is asked with a pinned request: a tx known to any endpoint
-// is Found, any transport error or no queried endpoint is Ambiguous, and only
-// absence on every endpoint is NotFound. Without a manager it asks the single API.
+// usable endpoint is asked with a pinned request: a tx known to any endpoint is
+// Found, any transport error, no queried endpoint, or an endpoint left unasked
+// (unverified) is Ambiguous, and only absence on every endpoint is NotFound. Without a manager it asks the single API.
 func tronVerifyBroadcast(ctx context.Context, mgr *endpoints.Manager, tronAPI *api.TronApi, sig string, maxDown time.Duration) signercache.LookupResult {
 	lookup := func(ctx context.Context) signercache.LookupResult {
 		tx, txErr := tronAPI.GetTransactionWithContext(ctx, sig)
@@ -651,7 +651,7 @@ func tronVerifyBroadcast(ctx context.Context, mgr *endpoints.Manager, tronAPI *a
 	if mgr == nil {
 		return lookup(ctx)
 	}
-	candidates := mgr.VerificationCandidates(maxDown)
+	candidates, unverified := mgr.VerificationCandidates(maxDown)
 	if len(candidates) == 0 {
 		return signercache.LookupAmbiguous // absence needs at least one witness
 	}
@@ -668,7 +668,7 @@ func tronVerifyBroadcast(ctx context.Context, mgr *endpoints.Manager, tronAPI *a
 			ambiguous = true
 		}
 	}
-	if ambiguous {
+	if ambiguous || unverified > 0 {
 		return signercache.LookupAmbiguous
 	}
 	return signercache.LookupNotFound

@@ -248,6 +248,27 @@ func (s *GRPCSuite) TestHTTPStatusesFromProxiesAreClassified(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(m2.Entry("primary").InCooldown(), Equals, true)
 	c.Assert(m2.Entry("primary").State(), Equals, endpoints.StateHealthy)
+
+	// an HTTP status grpc-go has no code for (a proxy's 502, a gateway's 52x) arrives as
+	// Unknown with the status in the message: the endpoint failed, the backup serves
+	gateway := &healthServer{err: status.Error(codes.Unknown, "unexpected HTTP status code received from server: 502 (Bad Gateway)")}
+	gc, closeG := bufServer(c, gateway)
+	defer closeG()
+	m3 := grpcMgr(c, 1)
+	g3 := endpoints.NewGRPCConn(m3, map[string]*grpc.ClientConn{"primary": gc, "backup": bc}, nil, 0, zerolog.Nop())
+	_, err = healthpb.NewHealthClient(g3).Check(context.Background(), &healthpb.HealthCheckRequest{})
+	c.Assert(err, IsNil)
+	c.Assert(m3.Entry("primary").State(), Equals, endpoints.StateUnhealthy)
+
+	// the Cosmos SDK's own Unknown errors are the application's answer: returned as is
+	sdkErr := &healthServer{err: status.Error(codes.Unknown, "codespace sdk code 5: insufficient funds")}
+	sc, closeS := bufServer(c, sdkErr)
+	defer closeS()
+	m4 := grpcMgr(c, 1)
+	g4 := endpoints.NewGRPCConn(m4, map[string]*grpc.ClientConn{"primary": sc, "backup": bc}, nil, 0, zerolog.Nop())
+	_, err = healthpb.NewHealthClient(g4).Check(context.Background(), &healthpb.HealthCheckRequest{})
+	c.Assert(status.Code(err), Equals, codes.Unknown)
+	c.Assert(m4.Entry("primary").State(), Equals, endpoints.StateHealthy)
 }
 
 // The only endpoint keeps the caller's whole deadline (no attempt cap), and when that

@@ -127,6 +127,34 @@ func (s *TronTestSuite) TestVerifyBroadcastAsksEveryEndpoint(c *C) {
 	c.Assert(tronVerifyBroadcast(context.Background(), mgr, apiClient, known, time.Hour), Equals, signercache.LookupAmbiguous)
 }
 
+// An endpoint whose identity was never verified in this process (unreachable at
+// startup) may hold a broadcast from before a restart: while it cannot be asked,
+// absence elsewhere is not proof. TRON still skips it once it has been down longer
+// than maxDown, as its transactions expire within that.
+func (s *TronTestSuite) TestVerifyBroadcastCountsAnUnverifiedEndpoint(c *C) {
+	const known = "77ddfa70000000000000000000000000000000000000000000000000000000000"
+	absent := emptyTxServer()
+	defer absent.Close()
+	cfgEps := []config.ChainEndpointConfig{
+		{Name: "a", RPCHost: s.rpc.URL, APIHost: absent.URL, Priority: 1},
+		{Name: "b", RPCHost: s.rpc.URL, APIHost: "http://127.0.0.1:1", Priority: 2},
+	}
+	fc := config.BifrostChainConfiguration{ChainID: common.TRONChain}.GetFailoverConfig()
+	mgr, err := endpoints.NewManager(common.TRONChain, cfgEps, fc, zerolog.Nop())
+	c.Assert(err, IsNil)
+	mgr.Entry("a").SetIdentity("0x2b6653dc") // b never verified
+	mgr.Entry("b").MarkUnhealthy(endpoints.ErrorKindTransport)
+	targets, err := endpoints.TargetsFrom(cfgEps, endpoints.APIHost)
+	c.Assert(err, IsNil)
+	router, err := endpoints.NewHTTPRouter(mgr, endpoints.HTTPRouterConfig{Base: endpoints.SyntheticBase(common.TRONChain), Targets: targets}, zerolog.Nop())
+	c.Assert(err, IsNil)
+	apiClient := api.NewTronAPIWithClient(endpoints.SyntheticBase(common.TRONChain).String(), 2*time.Second, &http.Client{Transport: router, Timeout: 2 * time.Second})
+
+	c.Assert(tronVerifyBroadcast(context.Background(), mgr, apiClient, known, time.Hour), Equals, signercache.LookupAmbiguous)
+	mgr.Entry("b").SetClock(func() time.Time { return time.Now().Add(2 * time.Hour) })
+	c.Assert(tronVerifyBroadcast(context.Background(), mgr, apiClient, known, time.Hour), Equals, signercache.LookupNotFound)
+}
+
 // tronHostPair serves a TRON api_host (getnowblock, getblockbynum) and rpc_host
 // (eth_blockNumber, eth_chainId, eth_getBlockByNumber) whose block ids agree unless
 // apiBlockID differs from rpcHash.

@@ -258,3 +258,22 @@ func (s *ProbeSuite) TestCompoundProbeExtraIdentity(c *C) {
 	c.Assert(err, NotNil)
 	c.Assert(called, Equals, false)
 }
+
+// Solana answers -32005 when the node is behind ("node is unhealthy"): its probe takes
+// a strike, as the router charges it, while on other chains the same code is a
+// provider rate limit (a cooldown, never a strike).
+func (s *ProbeSuite) TestSolanaNodeUnhealthyIsAStrikeNotARateLimit(c *C) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"error":{"code":-32005,"message":"Node is unhealthy"}}`))
+	}))
+	defer srv.Close()
+	ep := config.ChainEndpointConfig{Name: "a", RPCHost: srv.URL}
+
+	_, err := endpoints.NewSolanaProbe(ep, time.Second).Height(context.Background())
+	c.Assert(err, NotNil)
+	c.Assert(errors.Is(err, endpoints.ErrRateLimited), Equals, false)
+
+	_, err = endpoints.NewEVMProbe(ep, time.Second).Height(context.Background())
+	c.Assert(errors.Is(err, endpoints.ErrRateLimited), Equals, true)
+}

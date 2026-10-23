@@ -46,12 +46,15 @@ const (
 ////////////////////////////////////////////////////////////////////////////////////////
 
 type SOLScanner struct {
-	cfg                config.BifrostBlockScannerConfiguration
-	logger             zerolog.Logger
-	db                 blockscanner.ScannerStorageSolana
-	m                  *metrics.Metrics
-	errCounter         *prometheus.CounterVec
-	solRpc             *rpc.SolRPC
+	cfg        config.BifrostBlockScannerConfiguration
+	logger     zerolog.Logger
+	db         blockscanner.ScannerStorageSolana
+	m          *metrics.Metrics
+	errCounter *prometheus.CounterVec
+	solRpc     *rpc.SolRPC
+	// pinEndpoint names the endpoint a vault's paged signature listing is pinned to
+	// ("" when there is nothing to pin); set by the client when it has several
+	pinEndpoint        func() string
 	pubKeyMgr          pubkeymanager.PubKeyValidator
 	bridge             thorclient.ThorchainBridge
 	solvencyReporter   shtypes.SolvencyReporter
@@ -438,6 +441,7 @@ func (s *SOLScanner) scanVault(
 	var totalTxs int
 	var newestSig string
 	before := ""
+	listing, pinned := s.solRpc, false
 	for {
 		params := rpc.GetSignaturesForAddressUntilParams{
 			Commitment: "finalized",
@@ -455,11 +459,23 @@ func (s *SOLScanner) scanVault(
 		if queryLastSig == "" {
 			params.MinContextSlot = minContextSlot
 		}
-		res, err := s.solRpc.GetSignaturesForAddressUntil(vaultAddr, params)
+		res, err := listing.GetSignaturesForAddressUntil(vaultAddr, params)
 		if err != nil {
 			s.logger.Error().Err(err).Msgf("failed to get signatures for address %s", vaultAddr)
 			setUnhealthy()
 			return
+		}
+
+		// more than one page of new signatures must be listed by one endpoint:
+		// "before" names a signature of the previous page, and a node that does not
+		// have it answers an empty list, which would end the scan early and skip every
+		// older signature for good. Restart this vault's listing on one endpoint
+		// (nothing of the routed page has been used yet).
+		if !pinned && before == "" && len(res) == transactionQueryLimit && s.pinEndpoint != nil {
+			if pin := s.pinEndpoint(); pin != "" {
+				listing, pinned = s.solRpc.Pinned(pin), true
+				continue
+			}
 		}
 
 		if len(res) == 0 {

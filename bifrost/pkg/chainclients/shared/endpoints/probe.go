@@ -11,6 +11,7 @@ import (
 	"math/big"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -162,6 +163,10 @@ type JSONRPCProbe struct {
 	hashMethod     string
 	hashParams     func(int64) any
 	parseHash      func(json.RawMessage) (string, error)
+	// endpointErrorCodes are JSON-RPC codes that are this chain's "endpoint cannot
+	// serve" answer even though other providers use them for a rate limit (Solana's
+	// -32005 "node is unhealthy"): a strike, not a cooldown, as in the router
+	endpointErrorCodes []int
 }
 
 // jsonRPCHashProbe is the HashProbe view of a JSONRPCProbe; only probes with a
@@ -229,7 +234,7 @@ func (p *JSONRPCProbe) call(ctx context.Context, method string, params any, out 
 		return p.wrap(fmt.Errorf("%s: decode: %w", method, err))
 	}
 	if env.Error != nil {
-		if isRateLimitCode(env.Error.Code) {
+		if isRateLimitCode(env.Error.Code) && !slices.Contains(p.endpointErrorCodes, env.Error.Code) {
 			return p.wrap(fmt.Errorf("%s: rpc error %d: %w", method, env.Error.Code, ErrRateLimited))
 		}
 		return p.wrap(fmt.Errorf("%s: rpc error %d: %s", method, env.Error.Code, env.Error.Message))
@@ -419,6 +424,7 @@ func NewSolanaProbe(e config.ChainEndpointConfig, timeout time.Duration) Probe {
 	p.heightMethod, p.parseHeight = "getSlot", parseNumber
 	p.heightParams = []any{map[string]any{"commitment": "finalized"}}
 	p.identityMethod, p.parseIdentity = "getGenesisHash", parseString
+	p.endpointErrorCodes = []int{-32005} // "node is unhealthy" (behind), not a rate limit
 	return p.asProbe()
 }
 
@@ -487,7 +493,7 @@ func HTTPPostJSON(e config.ChainEndpointConfig, base string, timeout time.Durati
 // empty JSON object to base+path with the endpoint's credentials and requires a 200
 // whose JSON body contains every field in wantFields. The field requirement is what
 // separates a real chain API from a proxy or a captive portal that answers 200 to
-// anything. TRON uses it against api_host/wallet/getnowblock with "blockID".
+// anything. TRON uses it against api_host/wallet/getblock with "blockID".
 func HTTPPostCheck(e config.ChainEndpointConfig, base, path string, timeout time.Duration, wantFields ...string) func(ctx context.Context) error {
 	post := HTTPPostJSON(e, base, timeout)
 	return func(ctx context.Context) error {

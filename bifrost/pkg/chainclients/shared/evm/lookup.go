@@ -28,28 +28,8 @@ import (
 // nothing about whether a transaction an endpoint accepted can still settle, so
 // skipping one could authorise a duplicate payment.
 func LookupTxEverywhere(ctx context.Context, mgr *endpoints.Manager, client *ethclient.Client, hash ecommon.Hash, maxDown time.Duration) signercache.LookupResult {
-	candidates := mgr.VerificationCandidates(maxDown)
-	if len(candidates) == 0 {
-		return signercache.LookupAmbiguous // absence needs at least one witness
-	}
-	perEndpoint := VerificationBudget(ctx, len(candidates))
-	ambiguous := false
-	for _, e := range candidates {
-		ectx, cancel := context.WithTimeout(endpoints.PinContext(ctx, e.Name), perEndpoint)
-		tx, _, err := client.TransactionByHash(ectx, hash)
-		cancel()
-		switch {
-		case err == nil && tx != nil:
-			// Mined or pending on this endpoint: the recorded broadcast is alive.
-			return signercache.LookupFound
-		case err != nil && !errors.Is(err, ethereum.NotFound):
-			ambiguous = true
-		}
-	}
-	if ambiguous {
-		return signercache.LookupAmbiguous
-	}
-	return signercache.LookupNotFound
+	_, _, res := FindTxEverywhere(ctx, mgr, client, hash, maxDown)
+	return res
 }
 
 // VerificationBudget splits the caller's remaining deadline across the queries a
@@ -76,9 +56,11 @@ func VerificationBudget(ctx context.Context, queries int) time.Duration {
 // the cancellation must be built from that endpoint's copy (its nonce and gas
 // price) instead of giving up, or the vault's nonce stays blocked behind the
 // original. The result is LookupFound with a transaction, LookupNotFound when every
-// endpoint answered NotFound, or LookupAmbiguous (nil transaction) otherwise.
+// endpoint answered NotFound (and none could not be asked: see
+// endpoints.Manager.VerificationCandidates), or LookupAmbiguous (nil transaction)
+// otherwise.
 func FindTxEverywhere(ctx context.Context, mgr *endpoints.Manager, client *ethclient.Client, hash ecommon.Hash, maxDown time.Duration) (*etypes.Transaction, bool, signercache.LookupResult) {
-	candidates := mgr.VerificationCandidates(maxDown)
+	candidates, unverified := mgr.VerificationCandidates(maxDown)
 	if len(candidates) == 0 {
 		return nil, false, signercache.LookupAmbiguous
 	}
@@ -95,7 +77,7 @@ func FindTxEverywhere(ctx context.Context, mgr *endpoints.Manager, client *ethcl
 			ambiguous = true
 		}
 	}
-	if ambiguous {
+	if ambiguous || unverified > 0 {
 		return nil, false, signercache.LookupAmbiguous
 	}
 	return nil, false, signercache.LookupNotFound

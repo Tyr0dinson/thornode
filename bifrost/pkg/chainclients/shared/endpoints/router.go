@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -101,6 +102,11 @@ type HTTPRouterConfig struct {
 	// answer is not charged to the endpoint; it is returned only when no other
 	// candidate does better. Writes are never retried.
 	RetryElsewhere func(body []byte) bool
+	// EndpointErrorCodes are JSON-RPC error codes that mean this endpoint cannot
+	// serve the request (charged like -32603, and a read moves on), checked before
+	// the generic rate-limit codes. Solana sets -32005, its "node is unhealthy"
+	// (behind) code, which other providers use for a rate limit.
+	EndpointErrorCodes []int
 }
 
 // HTTPRouter is an http.RoundTripper that sends every request to the manager's
@@ -182,8 +188,9 @@ func newTransport(dial time.Duration) http.RoundTripper {
 type pinKey struct{}
 
 // PinContext makes the routers send the request to the named endpoint only, with
-// no retry and regardless of its health state. It exists for signer-cache
-// verification reads that must observe a specific endpoint.
+// no retry and regardless of its health state ("" leaves the request unpinned). It
+// exists for reads that must observe one specific endpoint: signer-cache
+// verification, the EVM reorg witness, and the Solana catch-up signature listing.
 func PinContext(ctx context.Context, name string) context.Context {
 	return context.WithValue(ctx, pinKey{}, name)
 }
@@ -214,7 +221,7 @@ func (r *HTTPRouter) RoundTrip(req *http.Request) (*http.Response, error) {
 	} else if isWrite {
 		wt := r.mgr.WriteTarget()
 		if wt == nil {
-			return nil, fmt.Errorf("chain %s: no permitted write endpoint (active endpoint disabled)", r.mgr.Chain())
+			return nil, fmt.Errorf("chain %s: no permitted write endpoint (active endpoint disabled or unverified)", r.mgr.Chain())
 		}
 		candidates = []*Entry{wt}
 		for _, e := range r.mgr.ReadCandidates() { // dial-error fallbacks only
@@ -280,13 +287,14 @@ func (r *HTTPRouter) RoundTrip(req *http.Request) (*http.Response, error) {
 			stopTimer()
 			acancel()
 			if cerr := req.Context().Err(); cerr != nil {
-				if deferred != nil {
-					return deferred, nil
-				}
 				// the caller's deadline ran out waiting for this endpoint: that is
-				// the endpoint's failure; an explicit cancel is not
+				// the endpoint's failure (also when an earlier answer is held back);
+				// an explicit cancel is not
 				if errors.Is(cerr, context.DeadlineExceeded) {
 					r.mgr.RecordError(e.Name, ErrorKindTransport)
+				}
+				if deferred != nil {
+					return deferred, nil
 				}
 				return nil, err
 			}
@@ -513,7 +521,7 @@ func (r *HTTPRouter) classify(resp *http.Response, isWrite bool) (verdict, Error
 	if len(trimmed) == 0 {
 		return verdictEndpointError, ErrorKindTransport, false
 	}
-	v, k := classifyJSONRPC(trimmed)
+	v, k := classifyJSONRPC(trimmed, r.cfg.EndpointErrorCodes)
 	if (v == verdictOK || v == verdictAppError) && !isWrite && r.cfg.RetryElsewhere != nil && r.cfg.RetryElsewhere(trimmed) {
 		return verdictRetryElsewhere, "", true
 	}
@@ -526,7 +534,7 @@ func (r *HTTPRouter) classify(resp *http.Response, isWrite bool) (verdict, Error
 // JSON is a broken answer from the endpoint, not a decoding quirk: it is charged as
 // a transport failure so a read moves on to the next candidate. Valid JSON of an
 // unexpected shape (a non-standard error field, a bare value) is left to the caller.
-func classifyJSONRPC(trimmed []byte) (verdict, ErrorKind) {
+func classifyJSONRPC(trimmed []byte, endpointErrorCodes []int) (verdict, ErrorKind) {
 	if !json.Valid(trimmed) {
 		return verdictEndpointError, ErrorKindTransport
 	}
@@ -564,6 +572,8 @@ func classifyJSONRPC(trimmed []byte) (verdict, ErrorKind) {
 			continue
 		}
 		switch {
+		case slices.Contains(endpointErrorCodes, e.Code): // this chain's "endpoint cannot serve" code
+			worst, worstKind = verdictEndpointError, ErrorKindHTTP
 		case isRateLimitCode(e.Code): // provider request limit exceeded (Infura / Ankr style)
 			if worst < verdictRateLimited {
 				worst, worstKind = verdictRateLimited, ErrorKindRateLimit

@@ -198,16 +198,49 @@ func (s *ManagerSuite) TestVerificationCandidatesSkipDisabledAndLongDead(c *C) {
 	for _, e := range m.Entries() {
 		e.SetIdentity("g")
 	}
-	c.Assert(names(m.VerificationCandidates(time.Hour)), DeepEquals, []string{"a", "b", "d"})
+	verified := func(maxDown time.Duration) []string {
+		got, unverified := m.VerificationCandidates(maxDown)
+		c.Assert(unverified, Equals, 0) // every endpoint here has a verified identity
+		return names(got)
+	}
+	c.Assert(verified(time.Hour), DeepEquals, []string{"a", "b", "d"})
 
 	m.Entry("b").MarkUnhealthy(endpoints.ErrorKindTransport)
 	now = now.Add(2 * time.Hour) // b has been down longer than the cache expiry
 	m.Disable("d", "identity")
-	c.Assert(names(m.VerificationCandidates(time.Hour)), DeepEquals, []string{"a"})
+	c.Assert(verified(time.Hour), DeepEquals, []string{"a"})
 	// a briefly-down endpoint still counts, and maxDown <= 0 keeps everything
-	c.Assert(names(m.VerificationCandidates(3*time.Hour)), DeepEquals, []string{"a", "b"})
-	c.Assert(names(m.VerificationCandidates(0)), DeepEquals, []string{"a", "b"})
+	c.Assert(verified(3*time.Hour), DeepEquals, []string{"a", "b"})
+	c.Assert(verified(0), DeepEquals, []string{"a", "b"})
 	c.Assert(m.Entry("a").NonHealthyFor(), Equals, time.Duration(0))
+}
+
+// An endpoint whose identity has not been verified since bifrost started (one that
+// was unreachable at startup) cannot be asked, but may have taken a broadcast before
+// a restart: it is counted, so verification cannot conclude the broadcast is absent.
+// A disabled one (a proven wrong network) is not, and maxDown skips it like any
+// long-dead endpoint.
+func (s *ManagerSuite) TestVerificationCandidatesCountUnverified(c *C) {
+	now := time.Unix(1_700_000_000, 0)
+	m, err := endpoints.NewManager(common.BTCChain, eps("a", "b", "d"), fc(1, 1), zerolog.Nop(),
+		endpoints.WithClock(func() time.Time { return now }))
+	c.Assert(err, IsNil)
+	m.Entry("a").SetIdentity("g") // b and d never reported one
+	m.Entry("b").MarkUnhealthy(endpoints.ErrorKindTransport)
+	m.Entry("d").MarkUnhealthy(endpoints.ErrorKindTransport)
+	got, unverified := m.VerificationCandidates(0)
+	c.Assert(names(got), DeepEquals, []string{"a"})
+	c.Assert(unverified, Equals, 2)
+
+	m.Disable("d", "identity")
+	got, unverified = m.VerificationCandidates(0)
+	c.Assert(names(got), DeepEquals, []string{"a"})
+	c.Assert(unverified, Equals, 1)
+
+	now = now.Add(2 * time.Hour) // b has been down longer than maxDown
+	got, unverified = m.VerificationCandidates(time.Hour)
+	c.Assert(names(got), DeepEquals, []string{"a"})
+	c.Assert(unverified, Equals, 0)
 }
 
 // An endpoint evicted for a minority block hash is quarantined: it is left out of the
@@ -270,4 +303,20 @@ func (s *ManagerSuite) TestInlineEvictionAfterAnIntegrityStrikeQuarantines(c *C)
 	m2.RecordError("a", endpoints.ErrorKindTransport)
 	c.Assert(a2.State(), Equals, endpoints.StateUnhealthy)
 	c.Assert(a2.IntegrityEvicted(), Equals, false)
+}
+
+// With nothing healthy and the active endpoint disabled, the all-down fallback moves
+// to a usable endpoint: one whose identity was never verified would refuse every
+// write, and nothing would ever move the active role off it.
+func (s *ManagerSuite) TestAllDownFallbackSkipsAnUnverifiedEndpoint(c *C) {
+	m, err := endpoints.NewManager(common.BTCChain, eps("a", "b", "c"), fc(1, 1), zerolog.Nop())
+	c.Assert(err, IsNil)
+	m.Entry("a").SetIdentity("g")
+	m.Entry("c").SetIdentity("g") // b never verified
+	m.Entry("b").MarkUnhealthy(endpoints.ErrorKindTransport)
+	m.Entry("c").MarkUnhealthy(endpoints.ErrorKindTransport)
+	m.Disable("a", "identity")
+	c.Assert(m.Active().Name, Equals, "c")
+	c.Assert(m.WriteTarget(), NotNil)
+	c.Assert(m.WriteTarget().Name, Equals, "c")
 }

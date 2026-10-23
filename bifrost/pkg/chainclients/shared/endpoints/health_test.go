@@ -455,13 +455,16 @@ func (s *HealthSuite) TestUnverifiedEndpointIsNotUsedEvenWhenAllDown(c *C) {
 	m.Cycle(ctxBg())
 	c.Assert(m.AllDown(), Equals, true)
 	c.Assert(names(m.ReadCandidates()), DeepEquals, []string{"a"})
-	c.Assert(names(m.VerificationCandidates(0)), DeepEquals, []string{"a"})
+	verify, unverified := m.VerificationCandidates(0)
+	c.Assert(names(verify), DeepEquals, []string{"a"})
+	c.Assert(unverified, Equals, 1) // b cannot be asked, so absence is not established
 	c.Assert(m.WriteTarget().Name, Equals, "a")
 	// and if a is disabled outright, nothing is usable at all
 	m.Disable("a", "identity")
 	c.Assert(m.ReadCandidates(), HasLen, 0)
 	c.Assert(m.WriteTarget(), IsNil)
-	c.Assert(m.VerificationCandidates(0), HasLen, 0)
+	verify, _ = m.VerificationCandidates(0)
+	c.Assert(verify, HasLen, 0)
 }
 
 func (s *HealthSuite) TestIntegrityEvictedEndpointMustMatchMajorityToRecover(c *C) {

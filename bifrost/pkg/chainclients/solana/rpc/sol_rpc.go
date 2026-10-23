@@ -11,6 +11,8 @@ import (
 
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
+
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/endpoints"
 )
 
 // SolRPC is a struct that interacts with the Solana blockchain
@@ -19,6 +21,17 @@ type SolRPC struct {
 	timeout time.Duration
 	logger  zerolog.Logger
 	http    *http.Client
+	pin     string // endpoint every request goes to ("" means routed)
+}
+
+// Pinned returns a copy whose requests all go to the named endpoint of the endpoint
+// router ("" means unpinned): for reads that must come from one node, such as the
+// pages of one signature listing, where a page asked of another node can come back
+// empty instead of failing.
+func (s *SolRPC) Pinned(endpoint string) *SolRPC {
+	cp := *s
+	cp.pin = endpoint
+	return &cp
 }
 
 func NewSolRPC(host string, timeout time.Duration) *SolRPC {
@@ -57,6 +70,9 @@ func (s *SolRPC) post(method string, params, response interface{}) error {
 // postWithContext is post with a caller-supplied context, for example one pinned to
 // a specific endpoint with endpoints.PinContext.
 func (s *SolRPC) postWithContext(ctx context.Context, method string, params, response interface{}) error {
+	if s.pin != "" {
+		ctx = endpoints.PinContext(ctx, s.pin)
+	}
 	payload := map[string]interface{}{
 		"jsonrpc": "2.0",
 		"id":      1,

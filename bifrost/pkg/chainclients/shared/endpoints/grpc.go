@@ -66,7 +66,7 @@ func (g *GRPCConn) Invoke(ctx context.Context, method string, args, reply any, o
 	} else if g.writeMethods[method] {
 		wt := g.mgr.WriteTarget()
 		if wt == nil {
-			return fmt.Errorf("chain %s: no permitted write endpoint (active endpoint disabled)", g.mgr.Chain())
+			return fmt.Errorf("chain %s: no permitted write endpoint (active endpoint disabled or unverified)", g.mgr.Chain())
 		}
 		candidates = []*Entry{wt}
 	} else {
@@ -109,9 +109,11 @@ func (g *GRPCConn) Invoke(ctx context.Context, method string, args, reply any, o
 			lastErr = fmt.Errorf("endpoint %s: %w", e.Name, err)
 			continue
 		case code == codes.Unavailable, code == codes.DeadlineExceeded, code == codes.Internal,
-			code == codes.Unauthenticated, code == codes.PermissionDenied, code == codes.Unimplemented:
+			code == codes.Unauthenticated, code == codes.PermissionDenied, code == codes.Unimplemented,
+			code == codes.Unknown && isProxyHTTPStatus(err):
 			// PermissionDenied is what grpc-go reports for an HTTP 403 (a revoked or
-			// exhausted API key), so it fails over like a 401
+			// exhausted API key), so it fails over like a 401; an HTTP status it has no
+			// gRPC code for (a proxy's 500, a gateway's 52x) arrives as Unknown
 			g.mgr.RecordError(e.Name, ErrorKindHTTP)
 			lastErr = fmt.Errorf("endpoint %s: %w", e.Name, err)
 			continue
@@ -126,6 +128,13 @@ func (g *GRPCConn) Invoke(ctx context.Context, method string, args, reply any, o
 		lastErr = fmt.Errorf("chain %s: no gRPC endpoint available", g.mgr.Chain())
 	}
 	return lastErr
+}
+
+// isProxyHTTPStatus reports whether grpc-go built the error from a plain HTTP response
+// (a proxy or gateway answered instead of the gRPC server). The Cosmos SDK's own
+// Unknown errors never carry this text, so they stay application answers.
+func isProxyHTTPStatus(err error) bool {
+	return strings.Contains(status.Convert(err).Message(), "unexpected HTTP status code received from server")
 }
 
 // isHTTP429 reports whether a gRPC error came from an HTTP 429 response, which
@@ -146,7 +155,7 @@ func (g *GRPCConn) NewStream(ctx context.Context, desc *grpc.StreamDesc, method 
 		e = pe
 	}
 	if e == nil {
-		return nil, fmt.Errorf("chain %s: no permitted endpoint for streams (active endpoint disabled)", g.mgr.Chain())
+		return nil, fmt.Errorf("chain %s: no permitted endpoint for streams (active endpoint disabled or unverified)", g.mgr.Chain())
 	}
 	conn, ok := g.conns[e.Name]
 	if !ok {

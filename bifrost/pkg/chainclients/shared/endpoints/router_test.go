@@ -756,6 +756,65 @@ func (s *RouterSuite) TestInvalidJSONBodyIsAnEndpointFailure(c *C) {
 	c.Assert(m3.Entry("odd").State(), Equals, endpoints.StateHealthy)
 }
 
+// A chain can name JSON-RPC codes that mean the endpoint itself cannot serve. Solana's
+// -32005 is "node unhealthy" (behind): it is charged and the read moves on, while on
+// other chains the same code is a provider rate limit (cooldown, never charged).
+func (s *RouterSuite) TestEndpointErrorCodesOverrideTheRateLimitCode(c *C) {
+	var st int32 = http.StatusOK
+	var h1, h2 []hit
+	behind := rpcServer(&st, &h1, `{"jsonrpc":"2.0","id":1,"error":{"code":-32005,"message":"Node is unhealthy"}}`)
+	defer behind.Close()
+	ok := rpcServer(&st, &h2, `{"jsonrpc":"2.0","id":1,"result":"0x1"}`)
+	defer ok.Close()
+	read := func(codes []int) *endpoints.Manager {
+		m, targets := twoEndpointMgr(c, common.SOLChain, []config.ChainEndpointConfig{{Name: "behind", RPCHost: behind.URL, Priority: 1}, {Name: "ok", RPCHost: ok.URL, Priority: 2}}, 1)
+		r, err := endpoints.NewHTTPRouter(m, endpoints.HTTPRouterConfig{Base: endpoints.SyntheticBase(m.Chain()), Targets: targets, EndpointErrorCodes: codes}, zerolog.Nop())
+		c.Assert(err, IsNil)
+		resp, err := post(c, &http.Client{Transport: r, Timeout: 2 * time.Second}, base(m), "getSlot")
+		c.Assert(err, IsNil)
+		body, _ := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		c.Assert(string(body), Matches, `.*"result":"0x1".*`) // served by the next endpoint
+		return m
+	}
+
+	m := read([]int{-32005})
+	c.Assert(m.Entry("behind").State(), Equals, endpoints.StateUnhealthy)
+	c.Assert(m.Entry("behind").InCooldown(), Equals, false)
+
+	m = read(nil)
+	c.Assert(m.Entry("behind").State(), Equals, endpoints.StateHealthy)
+	c.Assert(m.Entry("behind").InCooldown(), Equals, true)
+}
+
+// When an earlier candidate's "not here" answer is held back and the last candidate
+// then runs out the caller's deadline, the held answer is returned, and the stalled
+// endpoint is still charged: the caller's deadline ran out waiting for it.
+func (s *RouterSuite) TestHeldAnswerDoesNotHideAStalledEndpoint(c *C) {
+	var st int32 = http.StatusOK
+	var h1 []hit
+	short := rpcServer(&st, &h1, `{"result":{"error":"lgrNotFound","error_code":21,"status":"error"}}`)
+	defer short.Close()
+	release := make(chan struct{})
+	stall := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		_, _ = io.ReadAll(req.Body)
+		<-release
+	}))
+	defer stall.Close()
+	defer close(release) // runs first, so the stalled handler returns before Close waits on it
+	m, targets := twoEndpointMgr(c, common.XRPChain, []config.ChainEndpointConfig{{Name: "short", RPCHost: short.URL, Priority: 1}, {Name: "stall", RPCHost: stall.URL, Priority: 2}}, 1)
+	notHere := func(body []byte) bool { return bytes.Contains(body, []byte(`"lgrNotFound"`)) }
+	r, err := endpoints.NewHTTPRouter(m, endpoints.HTTPRouterConfig{Base: endpoints.SyntheticBase(m.Chain()), Targets: targets, RetryElsewhere: notHere}, zerolog.Nop())
+	c.Assert(err, IsNil)
+
+	resp, err := post(c, &http.Client{Transport: r, Timeout: 300 * time.Millisecond}, base(m), "ledger")
+	if err == nil {
+		_ = resp.Body.Close()
+	}
+	c.Assert(m.Entry("short").State(), Equals, endpoints.StateHealthy) // a proper answer is never charged
+	c.Assert(m.Entry("stall").State(), Equals, endpoints.StateUnhealthy)
+}
+
 // A chain-native "I do not have that" answer (XRP lgrNotFound) is a proper answer from
 // a healthy endpoint, so it is never charged, but another endpoint may have the data:
 // the router asks the next candidate and returns the deferred answer only when none

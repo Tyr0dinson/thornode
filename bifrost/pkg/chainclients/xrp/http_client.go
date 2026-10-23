@@ -121,7 +121,7 @@ func (r *retryHTTPClient) isNoRetry(req *http.Request) bool {
 		Method string `json:"method"`
 	}
 	if json.NewDecoder(io.LimitReader(body, 1<<20)).Decode(&call) != nil {
-		return false
+		return true // not a single JSON-RPC call (a batch, or unreadable): do not replay
 	}
 	return r.noRetry[call.Method]
 }

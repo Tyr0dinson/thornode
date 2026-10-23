@@ -153,9 +153,10 @@ func (m *Manager) Entry(name string) *Entry { return m.byName[name] }
 // Active returns the sticky active entry. It never returns nil.
 func (m *Manager) Active() *Entry { return m.entries[m.active.Load()] }
 
-// WriteTarget is the only endpoint writes go to. It is nil when the active entry
-// is Disabled (wrong network) and nothing else could replace it; routers must then
-// refuse the write rather than send it to a rejected endpoint.
+// WriteTarget is the only endpoint writes go to. It is nil when the active entry is
+// not usable (Disabled, a proven wrong network, or its required identity not yet
+// verified) and nothing else could replace it; routers must then refuse the write
+// rather than send it to an endpoint of unknown or wrong network.
 func (m *Manager) WriteTarget() *Entry {
 	e := m.Active()
 	if !e.Usable() {
@@ -336,7 +337,7 @@ func (m *Manager) reselect(reason string) bool {
 		}
 	}
 	for i, e := range m.entries {
-		if e.State() == StateHealthy {
+		if e.State() == StateHealthy && e.Usable() {
 			m.switchActive(cur, e, int32(i), reason, "failover")
 			return true
 		}
@@ -346,8 +347,10 @@ func (m *Manager) reselect(reason string) bool {
 		m.metrics.allDown.WithLabelValues(m.chain.String()).Set(1)
 	}
 	if cur.State() == StateDisabled || cur.IntegrityEvicted() {
+		// only a usable endpoint (identity verified when required): an unverified one
+		// would refuse every write and could never be left while nothing is healthy
 		for i, e := range m.entries {
-			if e.State() != StateDisabled && !e.IntegrityEvicted() {
+			if e.State() != StateDisabled && !e.IntegrityEvicted() && e.Usable() {
 				m.switchActive(cur, e, int32(i), reason+" (active disabled or quarantined)", "failover")
 				return true
 			}
@@ -398,17 +401,20 @@ func (m *Manager) logTransition(e *Entry, from, to State, why string) {
 	}
 }
 
-// VerificationCandidates returns the endpoints worth asking when verifying whether
-// a broadcast is still alive (signer-cache verification): every usable endpoint,
-// minus those that have been continuously non-healthy for longer than maxDown.
-// maxDown <= 0 keeps every usable endpoint, which is what every chain must pass
-// unless its transactions provably expire within maxDown (TRON embeds a 20 minute
-// expiration): endpoint health says nothing about whether a transaction an endpoint
-// accepted can still settle, so skipping it can authorise a duplicate payment.
-func (m *Manager) VerificationCandidates(maxDown time.Duration) []*Entry {
-	out := make([]*Entry, 0, len(m.entries))
+// VerificationCandidates returns the endpoints to ask when verifying whether a
+// broadcast is still alive (signer-cache verification), and how many endpoints could
+// not be asked although they might hold it: not disabled (a proven wrong network
+// never received a broadcast of ours), but with an identity not verified since
+// bifrost started, for example one unreachable at startup that may have taken a
+// broadcast before a restart. Callers treat a non-zero count like an endpoint that
+// did not answer: absence is not established. maxDown skips, in both groups,
+// endpoints continuously non-healthy for longer than that; maxDown <= 0 keeps them
+// all, which is what every chain must pass unless its transactions provably expire
+// within maxDown (TRON embeds a 20 minute expiration): endpoint health says nothing
+// about whether a transaction an endpoint accepted can still settle.
+func (m *Manager) VerificationCandidates(maxDown time.Duration) (candidates []*Entry, unverified int) {
 	for _, e := range m.entries {
-		if !e.Usable() {
+		if e.State() == StateDisabled {
 			continue
 		}
 		if maxDown > 0 && e.NonHealthyFor() > maxDown {
@@ -416,9 +422,13 @@ func (m *Manager) VerificationCandidates(maxDown time.Duration) []*Entry {
 				Msg("skipping long-dead endpoint for broadcast verification")
 			continue
 		}
-		out = append(out, e)
+		if !e.Usable() {
+			unverified++
+			continue
+		}
+		candidates = append(candidates, e)
 	}
-	return out
+	return candidates, unverified
 }
 
 // Status returns a snapshot of every endpoint in priority order.

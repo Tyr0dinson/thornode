@@ -229,6 +229,8 @@ func NewSOLClient(
 		WriteMethods:   []string{"sendTransaction"},
 		DialTimeout:    failoverCfg.HealthCheckTimeout,
 		AttemptTimeout: evm.AttemptTimeout(cfg.BlockScanner.HTTPRequestTimeout),
+		// Solana's -32005 is "node unhealthy" (behind), not a rate limit
+		EndpointErrorCodes: []int{-32005},
 	}, log.Logger)
 	if err != nil {
 		return nil, fmt.Errorf("fail to create endpoint router: %w", err)
@@ -281,6 +283,16 @@ func NewSOLClient(
 	)
 	if err != nil {
 		return c, fmt.Errorf("fail to create solana scanner: %w", err)
+	}
+	c.solScanner.pinEndpoint = func() string {
+		if c.endpointMgr == nil || c.endpointMgr.Len() < 2 {
+			return ""
+		}
+		// the first endpoint a routed read would use; none when nothing is usable
+		if candidates := c.endpointMgr.ReadCandidates(); len(candidates) > 0 {
+			return candidates[0].Name
+		}
+		return ""
 	}
 
 	return c, nil
@@ -1962,30 +1974,33 @@ func (c *SOLClient) ConfirmationCountReady(txIn stypes.TxIn) bool {
 // counts as absent so expiry plus verification re-signs it (#3089). Without that the
 // failed signature keeps verifying as found and wedges the outbound forever.
 func (c *SOLClient) verifyBroadcast(sig string, tx stypes.TxOutItem) signercache.LookupResult {
-	lookup := func(ctx context.Context) signercache.LookupResult {
+	// landedFailed: the signature was processed and failed. A signature lands at most
+	// once, so no other endpoint can make it succeed: that is proof on its own.
+	lookup := func(ctx context.Context) (res signercache.LookupResult, landedFailed bool) {
 		result, lookupErr := c.rpcClient.GetTransactionWithCommitmentContext(ctx, sig, "confirmed")
 		switch {
 		case lookupErr != nil:
-			return signercache.LookupAmbiguous
+			return signercache.LookupAmbiguous, false
 		case result.Slot > 0 && result.Meta.Err == nil:
-			return signercache.LookupFound
+			return signercache.LookupFound, false
 		case result.Slot > 0:
 			c.logger.Warn().Str("sig", sig).Interface("meta_err", result.Meta.Err).Interface("tx", tx).
 				Msg("cached broadcast failed on chain, re-signing")
-			return signercache.LookupNotFound
+			return signercache.LookupNotFound, true
 		default:
-			return signercache.LookupNotFound
+			return signercache.LookupNotFound, false
 		}
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), c.cfg.BlockScanner.HTTPRequestTimeout)
 	defer cancel()
 	if c.endpointMgr == nil {
-		return lookup(ctx)
+		res, _ := lookup(ctx)
+		return res
 	}
 	// every usable endpoint is asked, however long it has been down: a durable-nonce
 	// outbound does not expire with its blockhash, so an endpoint that accepted it may
 	// still let it land
-	candidates := c.endpointMgr.VerificationCandidates(0)
+	candidates, unverified := c.endpointMgr.VerificationCandidates(0)
 	if len(candidates) == 0 {
 		return signercache.LookupAmbiguous // absence needs at least one witness
 	}
@@ -1993,16 +2008,20 @@ func (c *SOLClient) verifyBroadcast(sig string, tx stypes.TxOutItem) signercache
 	ambiguous := false
 	for _, e := range candidates {
 		ectx, ecancel := context.WithTimeout(endpoints.PinContext(ctx, e.Name), perEndpoint)
-		res := lookup(ectx)
+		res, landedFailed := lookup(ectx)
 		ecancel()
-		switch res {
-		case signercache.LookupFound:
+		switch {
+		case res == signercache.LookupFound:
 			return signercache.LookupFound
-		case signercache.LookupAmbiguous:
+		case landedFailed:
+			// the fee is burned and any durable nonce advanced: the original can
+			// never land, whatever the other endpoints say (#3089 re-signs it)
+			return signercache.LookupNotFound
+		case res == signercache.LookupAmbiguous:
 			ambiguous = true
 		}
 	}
-	if ambiguous {
+	if ambiguous || unverified > 0 {
 		return signercache.LookupAmbiguous
 	}
 	return signercache.LookupNotFound

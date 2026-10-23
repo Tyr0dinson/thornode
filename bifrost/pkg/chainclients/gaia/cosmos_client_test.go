@@ -856,3 +856,49 @@ func (s *CosmosTestSuite) TestMempoolLookupStillAsksALongDeadEndpoint(c *C) {
 	txHash := fmt.Sprintf("%X", cmttypes.Tx([]byte{1, 2}).Hash())
 	c.Assert(client.mempoolLookup(context.Background(), txHash), Equals, signercache.LookupFound)
 }
+
+// An endpoint whose identity was never verified in this process (unreachable at
+// startup) cannot be asked, but may hold a broadcast from before a restart: while it
+// is configured, "not in any mempool" is not proof and the cache entry is kept.
+func (s *CosmosTestSuite) TestMempoolLookupCountsAnUnverifiedEndpoint(c *C) {
+	absent := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		var body struct {
+			Method string          `json:"method"`
+			ID     json.RawMessage `json:"id"`
+		}
+		_ = json.NewDecoder(req.Body).Decode(&body)
+		id := string(body.ID)
+		if id == "" {
+			id = "1"
+		}
+		rw.Header().Set("Content-Type", "application/json")
+		switch body.Method {
+		case "status":
+			_, _ = rw.Write([]byte(`{"jsonrpc":"2.0","id":` + id + `,"result":{"node_info":{"network":"cosmoshub-4"},"sync_info":{"latest_block_height":"10"}}}`))
+		case "unconfirmed_txs":
+			_, _ = rw.Write([]byte(`{"jsonrpc":"2.0","id":` + id + `,"result":{"n_txs":"0","total":"0","total_bytes":"0","txs":[]}}`))
+		default:
+			_, _ = rw.Write([]byte(`{"jsonrpc":"2.0","id":` + id + `,"error":{"code":-32601,"message":"nope"}}`))
+		}
+	}))
+	defer absent.Close()
+	cfg := config.BifrostChainConfiguration{
+		ChainID:           common.GAIAChain,
+		CosmosChainID:     "cosmoshub-4",
+		SignerCacheExpiry: time.Hour,
+		Endpoints: []config.ChainEndpointConfig{
+			{Name: "absent", RPCHost: absent.URL, CosmosGRPCHost: "127.0.0.1:1", Priority: 1},
+			{Name: "ghost", RPCHost: "http://127.0.0.1:1", CosmosGRPCHost: "127.0.0.1:2", Priority: 2},
+		},
+		BlockScanner: config.BifrostBlockScannerConfiguration{StartBlockHeight: 1},
+	}
+	cfg.Failover.HealthCheckTimeout = 500 * time.Millisecond
+	client, err := NewCosmosClient(s.thorKeys, cfg, nil, s.bridge, s.m, nil)
+	c.Assert(err, IsNil)
+	c.Assert(client.EndpointManager().Entry("ghost").Usable(), Equals, false)
+	txHash := fmt.Sprintf("%X", cmttypes.Tx([]byte{1, 2}).Hash())
+	c.Assert(client.mempoolLookup(context.Background(), txHash), Equals, signercache.LookupAmbiguous)
+	// once proven to be on another network it no longer counts
+	client.EndpointManager().Disable("ghost", "identity")
+	c.Assert(client.mempoolLookup(context.Background(), txHash), Equals, signercache.LookupNotFound)
+}
