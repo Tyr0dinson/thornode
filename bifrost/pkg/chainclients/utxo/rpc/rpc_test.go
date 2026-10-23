@@ -2035,3 +2035,20 @@ func TestClassifyRPCErrorRecognisesZecErrors(t *testing.T) {
 		t.Fatalf("wrapped zec -5: got verdict %d, want application", got)
 	}
 }
+
+// An HTTP 429 answered with a generic JSON-RPC error body keeps its rate-limit
+// classification through extractBTCError, which the fallback clients return through.
+func TestExtractBTCErrorKeepsRateLimit(t *testing.T) {
+	err := errors.New(`429 Too Many Requests: {"error":{"code":-1,"message":"server error"},"id":1}`)
+	if got := extractBTCError(err); got != err {
+		t.Fatalf("429 was rewritten to %v", got)
+	}
+	if classifyRPCError(extractBTCError(err)) != verdictRateLimit {
+		t.Fatal("429 lost its rate-limit classification")
+	}
+	// ordinary HTTP 500 bodies still decode to the JSON-RPC error
+	var rpcErr *btcjson.RPCError
+	if !errors.As(extractBTCError(errors.New(`500 Internal Server Error: {"error":{"code":-5,"message":"No such mempool transaction"}}`)), &rpcErr) || rpcErr.Code != -5 {
+		t.Fatal("500 body no longer decodes to the JSON-RPC error")
+	}
+}

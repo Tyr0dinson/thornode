@@ -303,6 +303,8 @@ func (c *Client) readWithFallback(primary func() error, fn func(UTXOReader) erro
 	var (
 		firstErr    error
 		firstIdx    int
+		appErr      error // an application answer ("no such transaction") from an endpoint that served the read
+		appIdx      int
 		rateLimited bool
 	)
 	for _, i := range c.candidates() {
@@ -320,6 +322,9 @@ func (c *Client) readWithFallback(primary func() error, fn func(UTXOReader) erro
 		if firstErr == nil {
 			firstErr, firstIdx = err, i
 		}
+		if appErr == nil && classifyRPCError(err) == verdictApplication {
+			appErr, appIdx = err, i
+		}
 		if i == 0 && classifyRPCError(err) == verdictRateLimit {
 			rateLimited = true
 			if c.manager == nil {
@@ -329,6 +334,10 @@ func (c *Client) readWithFallback(primary func() error, fn func(UTXOReader) erro
 	}
 	if rateLimited {
 		c.sleepRateLimit()
+	}
+	if appErr != nil {
+		// an endpoint that served the read is authoritative over one that failed
+		return c.redact(appIdx, appErr)
 	}
 	if firstErr == nil {
 		return fmt.Errorf("no eligible %s endpoint served the read", c.chain)
@@ -370,6 +379,14 @@ func (c *Client) GetRawTransactionPrimary(txid string) (string, error) {
 	var tx string
 	err := c.callRaw(&tx, "getrawtransaction", txid, false)
 	return tx, extractBTCError(c.redact(0, err))
+}
+
+// GetRawMempoolPrimary lists the primary daemon's mempool (for daemons such as Zebra
+// that do not implement getmempoolentry).
+func (c *Client) GetRawMempoolPrimary() ([]string, error) {
+	var txids []string
+	err := c.callRaw(&txids, "getrawmempool")
+	return txids, extractBTCError(c.redact(0, err))
 }
 
 // GetMempoolEntryPrimary is the primary-only counterpart of GetMempoolEntry, for
@@ -825,17 +842,22 @@ func (c *Client) batchCall(batch []rpc.BatchElem) error {
 		return err
 	}
 	// A batch reports per-element failures through BatchElem.Error with a nil
-	// aggregate error, so an endpoint that rate limits or cannot serve the method
-	// would otherwise look like a success. Surface the first such element so the
-	// read is retried on another endpoint and the endpoint is accounted for.
+	// aggregate error, so an endpoint that rate limits, cannot serve the method, or
+	// did not answer an element at all (missing response, null result from a node
+	// that does not have the data yet) would otherwise look like a success. Surface
+	// the first such element so the read is retried on another endpoint and the
+	// endpoint is accounted for. A result that does not decode stays per-element, as
+	// it always did: the caller skips that element, and one transaction that will
+	// never decode cannot abort the whole batch on every round.
 	for _, elem := range batch {
 		if elem.Error == nil {
 			continue
 		}
-		// only an application answer means the endpoint served this element; a rate
-		// limit, an endpoint-level code, or a plain failure such as a missing batch
-		// response all mean it did not
-		if classifyRPCError(elem.Error) != verdictApplication {
+		if errors.Is(elem.Error, rpc.ErrMissingBatchResponse) || errors.Is(elem.Error, rpc.ErrNoResult) {
+			return elem.Error
+		}
+		switch classifyRPCError(elem.Error) {
+		case verdictRateLimit, verdictEndpointError:
 			return elem.Error
 		}
 	}
@@ -865,6 +887,12 @@ func isRateLimitError(err error) bool {
 func extractBTCError(err error) error {
 	if err == nil {
 		return nil
+	}
+	// an HTTP 429 must keep its status: the fallback clients return through this
+	// function, and classifyRPCError needs to see the rate limit, not the generic
+	// JSON-RPC error object some providers put in the body
+	if isRateLimitError(err) {
+		return err
 	}
 
 	// Bitcoin Core >=28 answers JSON-RPC 2.0 requests with HTTP 200 and a

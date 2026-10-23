@@ -695,7 +695,28 @@ func (s *CoverageBackfillSuite) TestConfirmTx(c *C) {
 	// "not found" answer, so the transaction stays confirmed: an errata needs the
 	// primary's positive "not found", never a lookup failure.
 	result := s.client.confirmTx("sometxid")
-	c.Assert(result, Equals, true)
+	c.Assert(result, Equals, txUnknown)
+}
+
+// When the primary cannot answer during reorg re-confirmation, the height is left
+// exactly as stored: no errata, no rescan, and the old block hash kept, so the next
+// block detects the mismatch again and re-runs the check once the primary answers.
+func (s *CoverageBackfillSuite) TestReConfirmTxLeavesHeightPendingWhenPrimaryCannotAnswer(c *C) {
+	bm := sutxo.NewBlockMeta("prevhash", 1998, "stored_hash_1998")
+	bm.AddCustomerTransaction("sometxid") // the mock's getrawtransaction answer does not decode: unknown
+	c.Assert(s.client.temporalStorage.SaveBlockMeta(1998, bm), IsNil)
+	errataQueue := make(chan stypes.ErrataBlock, 1)
+	s.client.globalErrataQueue = errataQueue
+	s.client.cfg.BlockScanner.MaxReorgRescanBlocks = 1
+
+	heights, err := s.client.reConfirmTx(1999)
+	c.Assert(err, IsNil)
+	c.Assert(heights, HasLen, 0)
+	c.Assert(errataQueue, HasLen, 0)
+	stored, err := s.client.temporalStorage.GetBlockMeta(1998)
+	c.Assert(err, IsNil)
+	c.Assert(stored.BlockHash, Equals, "stored_hash_1998") // mismatch kept: re-checked next block
+	c.Assert(stored.CustomerTransactions, DeepEquals, []string{"sometxid"})
 }
 
 func (s *CoverageBackfillSuite) TestIsSelfTransaction(c *C) {

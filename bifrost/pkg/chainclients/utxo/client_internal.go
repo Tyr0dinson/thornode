@@ -19,6 +19,7 @@ import (
 	btypes "gitlab.com/thorchain/thornode/v3/bifrost/blockscanner/types"
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/utxo"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/rpc/zec"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
@@ -133,10 +134,18 @@ func (c *Client) reConfirmTx(height int64) ([]int64, error) {
 		c.log.Info().Int64("height", blockMeta.Height).Msg("re-confirming transactions")
 
 		var errataTxs []types.ErrataTx
+		pending := false
 		for _, tx := range blockMeta.CustomerTransactions {
 			// check if the tx still exists in chain
-			if c.confirmTx(tx) {
+			switch c.confirmTx(tx) {
+			case txStillOnChain:
 				c.log.Info().Int64("height", blockMeta.Height).Str("txid", tx).Msg("transaction still exists")
+				continue
+			case txUnknown:
+				// the primary could not answer: neither errata nor "still exists" can be
+				// decided, so this height is left exactly as stored and re-run on the
+				// next block, when the stored hash still mismatches
+				pending = true
 				continue
 			}
 
@@ -148,6 +157,11 @@ func (c *Client) reConfirmTx(height int64) ([]int64, error) {
 			})
 
 			blockMeta.RemoveCustomerTransaction(tx)
+		}
+		if pending {
+			c.log.Warn().Int64("height", blockMeta.Height).
+				Msg("reorg re-confirmation pending: the primary could not answer; keeping the stored block meta and retrying on the next block")
+			continue
 		}
 
 		if len(errataTxs) > 0 {
@@ -174,24 +188,46 @@ func (c *Client) reConfirmTx(height int64) ([]int64, error) {
 	return rescanBlockHeights, nil
 }
 
+// txConfirmation is the three-valued answer of confirmTx.
+type txConfirmation int
+
+const (
+	txStillOnChain txConfirmation = iota
+	txGone
+	txUnknown
+)
+
 // confirmTx reports whether an already observed transaction still exists after a
-// reorg. A false answer becomes an errata sent to THORChain, so absence needs
-// positive proof: only the primary daemon is asked (it runs with txindex, and a
-// fallback that never saw the transaction would call it absent), and only its
-// "not found" answer counts. A transport failure, or a disabled primary, is not
-// evidence of anything and keeps the transaction confirmed for now.
-func (c *Client) confirmTx(txid string) bool {
+// reorg. txGone becomes an errata sent to THORChain, so absence needs positive
+// proof: only the primary daemon is asked (it runs with txindex, and a fallback
+// that never saw the transaction would call it absent), and only its "not found"
+// answer counts. A transport failure, or a disabled primary, is txUnknown: the
+// caller leaves the height pending and asks again on the next block.
+func (c *Client) confirmTx(txid string) txConfirmation {
 	_, err := c.rpc.GetRawTransactionPrimary(txid)
 	switch {
 	case err == nil:
-		return true
+		return txStillOnChain
 	case isUTXOTxNotFoundErr(err):
 		c.log.Warn().Err(err).Str("txid", txid).Msg("transaction no longer on chain after reorg")
-		return false
+		return txGone
 	default:
-		c.log.Err(err).Str("txid", txid).Msg("fail to re-confirm tx after reorg; keeping it until the primary can be asked")
-		return true
+		c.log.Err(err).Str("txid", txid).Msg("fail to re-confirm tx after reorg; the primary could not answer")
+		return txUnknown
 	}
+}
+
+// isMethodNotFoundErr reports a JSON-RPC -32601 from either client type.
+func isMethodNotFoundErr(err error) bool {
+	var rpcErr *btcjson.RPCError
+	if errors.As(err, &rpcErr) {
+		return rpcErr.Code == btcjson.RPCErrorCode(-32601)
+	}
+	var zecErr *zec.Error
+	if errors.As(err, &zecErr) {
+		return zecErr.Code == -32601
+	}
+	return false
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////
@@ -216,15 +252,36 @@ func (c *Client) canDeleteBlock(blockMeta *utxo.BlockMeta) bool {
 	if blockMeta == nil {
 		return true
 	}
+	// our own broadcasts live in the primary's mempool; a fallback that never saw
+	// them would report them absent and let the block meta go too early. Zebra does
+	// not implement getmempoolentry, so a method-not-found answer falls back to the
+	// primary's raw mempool listing.
+	var rawMempool map[string]struct{}
 	for _, tx := range blockMeta.SelfTransactions {
-		// our own broadcasts live in the primary's mempool; a fallback that never saw
-		// them would report them absent and let the block meta go too early
 		result, err := c.rpc.GetMempoolEntryPrimary(tx)
 		switch {
 		case err == nil && result != nil:
 			c.log.Info().Str("txid", tx).Msg("still in mempool, block cannot be deleted")
 			return false
-		case err != nil && !isUTXOTxNotFoundErr(err):
+		case err == nil, isUTXOTxNotFoundErr(err):
+			continue
+		case isMethodNotFoundErr(err):
+			if rawMempool == nil {
+				hashes, lerr := c.rpc.GetRawMempoolPrimary()
+				if lerr != nil {
+					c.log.Warn().Err(lerr).Str("txid", tx).Msg("cannot list the primary's mempool; keeping block meta for now")
+					return false
+				}
+				rawMempool = make(map[string]struct{}, len(hashes))
+				for _, h := range hashes {
+					rawMempool[strings.ToLower(h)] = struct{}{}
+				}
+			}
+			if _, inMempool := rawMempool[strings.ToLower(tx)]; inMempool {
+				c.log.Info().Str("txid", tx).Msg("still in mempool, block cannot be deleted")
+				return false
+			}
+		default:
 			c.log.Warn().Err(err).Str("txid", tx).Msg("cannot check mempool on the primary; keeping block meta for now")
 			return false
 		}
