@@ -9,7 +9,7 @@ import (
 type txOutWindowKey struct{}
 
 // TxOutWindow is a read-through snapshot of the stored TxOut bytes of a range
-// of past heights, scoped by a cosmos.Context. EndBlock walks the pending txout
+// of heights, scoped by a cosmos.Context. EndBlock walks the pending txout
 // window (the last SigningTransactionPeriod heights) many times: every vault
 // security sort for an outbound, every pending outbound check, fund
 // migration. Most of those heights hold no TxOut, and the first Has of each
@@ -24,6 +24,10 @@ type txOutWindowKey struct{}
 // snapshot an uncommitted value. Writes to other heights (the current block's
 // and scheduled outbounds) leave it alone.
 //
+// Windows attached over each other (past and scheduled heights) stay
+// independent: a read uses the innermost window covering its height, and a
+// write disables only the windows covering it.
+//
 // Only attach it outside transactions (EndBlock): skipping store reads inside
 // a tx changes gas_used, which is consensus-visible.
 type TxOutWindow struct {
@@ -32,6 +36,7 @@ type TxOutWindow struct {
 	entries  map[int64][]byte // present heights only
 	loaded   bool
 	disabled bool
+	outer    *TxOutWindow // the window on ctx when this one was attached
 }
 
 // WithTxOutWindow attaches a fresh window covering heights lo..hi (from height
@@ -45,12 +50,23 @@ func WithTxOutWindow(ctx cosmos.Context, lo, hi int64) cosmos.Context {
 	if hi < lo {
 		return ctx
 	}
-	return ctx.WithValue(txOutWindowKey{}, &TxOutWindow{lo: lo, hi: hi})
+	return ctx.WithValue(txOutWindowKey{}, &TxOutWindow{lo: lo, hi: hi, outer: TxOutWindowFromContext(ctx)})
 }
 
 func TxOutWindowFromContext(ctx cosmos.Context) *TxOutWindow {
 	window, _ := ctx.Value(txOutWindowKey{}).(*TxOutWindow)
 	return window
+}
+
+// Covering returns the innermost enabled window of w and the windows it was
+// attached over that covers height, or nil.
+func (w *TxOutWindow) Covering(height int64) *TxOutWindow {
+	for ; w != nil; w = w.outer {
+		if _, _, ok := w.Range(height); ok {
+			return w
+		}
+	}
+	return nil
 }
 
 // Range returns the covered heights. ok is false if the window does not serve
@@ -99,17 +115,17 @@ func (w *TxOutWindow) Load(entries map[int64][]byte) {
 	w.loaded = true
 }
 
-// NoteWrite disables the window if height is covered. ok=false (a txout key
-// that is not a height) disables it too.
+// NoteWrite disables each of w and the windows it was attached over that
+// covers height. ok=false (a txout key that is not a height) disables them
+// all.
 func (w *TxOutWindow) NoteWrite(height int64, ok bool) {
-	if w == nil {
-		return
+	for ; w != nil; w = w.outer {
+		w.mu.Lock()
+		if !ok || (height >= w.lo && height <= w.hi) {
+			w.disable()
+		}
+		w.mu.Unlock()
 	}
-	w.mu.Lock()
-	if !ok || (height >= w.lo && height <= w.hi) {
-		w.disable()
-	}
-	w.mu.Unlock()
 }
 
 // Disable drops the snapshot and makes every later read go to the store.

@@ -172,3 +172,59 @@ func (s *KeeperTxOutWindowSuite) TestRange(c *C) {
 	_, _, ok = none.Range(5)
 	c.Check(ok, Equals, false)
 }
+
+// EndBlock attaches the past heights and the scheduled heights as two windows
+// over each other: each serves its own range, and a write disables only the
+// window covering it.
+func (s *KeeperTxOutWindowSuite) TestStackedWindows(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	for _, h := range []int64{150, 200, 250} {
+		c.Assert(k.SetTxOut(ctx, windowTxOut(h, "OUT:"+strconv.FormatInt(h, 10))), IsNil)
+	}
+	windowed := keeper.WithTxOutWindow(keeper.WithTxOutWindow(ctx, 100, 199), 201, 300)
+	past := keeper.TxOutWindowFromContext(windowed).Covering(150)
+	future := keeper.TxOutWindowFromContext(windowed).Covering(250)
+	c.Assert(past, NotNil)
+	c.Assert(future, NotNil)
+	c.Assert(past == future, Equals, false)
+	c.Check(keeper.TxOutWindowFromContext(windowed).Covering(200), IsNil)
+
+	for h := int64(90); h <= 310; h++ {
+		want, err := k.GetTxOut(ctx, h)
+		c.Assert(err, IsNil)
+		got, err := k.GetTxOut(windowed, h)
+		c.Assert(err, IsNil)
+		c.Check(got, DeepEquals, want, Commentf("height %d", h))
+	}
+
+	// raw writes the windows cannot see: both serve their snapshots
+	writeRawTxOut(ctx, k, windowTxOut(150, "OUT:changed"))
+	writeRawTxOut(ctx, k, windowTxOut(250, "OUT:changed"))
+	readMemo := func(h int64) string {
+		got, err := k.GetTxOut(windowed, h)
+		c.Assert(err, IsNil)
+		c.Assert(got.TxArray, HasLen, 1)
+		return got.TxArray[0].Memo
+	}
+	c.Check(readMemo(150), Equals, "OUT:150")
+	c.Check(readMemo(250), Equals, "OUT:250")
+
+	// writing the current height keeps both
+	c.Assert(k.AppendTxOut(windowed, 200, types.TxOutItem{Chain: common.BTCChain, Memo: "OUT:new"}), IsNil)
+	c.Check(readMemo(150), Equals, "OUT:150")
+	c.Check(readMemo(250), Equals, "OUT:250")
+
+	// a scheduled outbound, even in a discarded cache context, disables the
+	// scheduled window only
+	cacheCtx, _ := windowed.CacheContext()
+	c.Assert(k.AppendTxOut(cacheCtx, 260, types.TxOutItem{Chain: common.BTCChain, Memo: "OUT:delayed"}), IsNil)
+	c.Check(readMemo(150), Equals, "OUT:150")
+	c.Check(readMemo(250), Equals, "OUT:changed")
+	_, _, ok := future.Get(250)
+	c.Check(ok, Equals, false)
+
+	// and a past write the past one
+	c.Assert(k.SetTxOut(windowed, windowTxOut(120, "OUT:120")), IsNil)
+	c.Check(readMemo(150), Equals, "OUT:changed")
+	c.Check(keeper.TxOutWindowFromContext(windowed).Covering(150), IsNil)
+}

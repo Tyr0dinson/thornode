@@ -242,11 +242,11 @@ func (k KVStore) GetTOIsValue(ctx cosmos.Context, tois ...TxOutItem) (cosmos.Uin
 	return runeValue, cloutValue
 }
 
-// getTxOutWindowBytes serves height from the TxOutWindow on ctx, if it covers
-// it. The first read loads every covered height with one store iteration: the
-// same present keys and values as a Has (and Get) per height.
+// getTxOutWindowBytes serves height from the TxOutWindow on ctx covering it,
+// if any. The first read loads every covered height with one store iteration:
+// the same present keys and values as a Has (and Get) per height.
 func (k KVStore) getTxOutWindowBytes(ctx cosmos.Context, height int64) (bz []byte, present, ok bool) {
-	window := keeper.TxOutWindowFromContext(ctx)
+	window := keeper.TxOutWindowFromContext(ctx).Covering(height)
 	lo, hi, ok := window.Range(height)
 	if !ok {
 		return nil, false, false

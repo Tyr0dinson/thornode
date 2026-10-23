@@ -247,6 +247,11 @@ func (am AppModule) EndBlock(goCtx context.Context) ([]abci.ValidatorUpdate, err
 	// EndBlock's outbounds keep appending to.
 	signingTransPeriod := am.mgr.Keeper().GetConfigInt64(ctx, constants.SigningTransactionPeriod)
 	ctx = keeper.WithTxOutWindow(ctx, ctx.BlockHeight()-types.MaxTxOutSigningTransactionPeriod(signingTransPeriod), ctx.BlockHeight()-1)
+	// Pending outbound checks and fund migration also scan the scheduled
+	// heights up to MaxTxOutOffset ahead and the first one past it, mostly
+	// empty. A delayed outbound written there disables this window only.
+	maxTxOutOffset := am.mgr.Keeper().GetConfigInt64(ctx, constants.MaxTxOutOffset)
+	ctx = keeper.WithTxOutWindow(ctx, ctx.BlockHeight()+1, ctx.BlockHeight()+maxTxOutOffset+1)
 
 	ctx.Logger().Debug("End Block")
 
