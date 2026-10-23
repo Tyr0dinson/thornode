@@ -425,7 +425,8 @@ func (e *ETHScanner) extractTxs(block *etypes.Block) (stypes.TxIn, error) {
 	receipts := fetchBlockReceipts(receiptsCtx, e.client.Client(), e.logger, block)
 	receiptsCancel()
 
-	sem := semaphore.NewWeighted(e.cfg.Concurrency)
+	// at least one worker: a semaphore smaller than one Acquire never grants it
+	sem := semaphore.NewWeighted(max(e.cfg.Concurrency, 1))
 	mu := sync.Mutex{}
 	wg := sync.WaitGroup{}
 	// the first unavailable receipt fails the whole block: a transaction whose receipt

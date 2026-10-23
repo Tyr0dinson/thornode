@@ -418,7 +418,9 @@ func (e *EVMScanner) getTxInOptimized(method string, block *etypes.Block) (stype
 			block.NumberU64(), method, have, len(txByHash))
 	}
 
-	sem := make(chan struct{}, e.cfg.Concurrency)
+	// at least one worker: an unbuffered semaphore would block the first
+	// receipt forever, and a negative capacity panics
+	sem := make(chan struct{}, max(e.cfg.Concurrency, 1))
 	wg := sync.WaitGroup{}
 	mu := sync.Mutex{}
 	var gasPrices []*big.Int
@@ -451,9 +453,9 @@ func (e *EVMScanner) getTxInOptimized(method string, block *etypes.Block) (stype
 				return
 			}
 
-			// extract the txInItem
-			var txInItem *stypes.TxInItem
-			txInItem, err = e.receiptToTxInItem(txForReceipt, receipt)
+			// extract the txInItem; err must be goroutine-local, a shared one
+			// lets this goroutine drop its item on another goroutine's error
+			txInItem, err := e.receiptToTxInItem(txForReceipt, receipt)
 			if err != nil {
 				e.logger.Error().Err(err).Msg("failed to convert receipt to txInItem")
 				return

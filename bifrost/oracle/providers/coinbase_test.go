@@ -2,7 +2,6 @@ package providers
 
 import (
 	"encoding/json"
-	"time"
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	. "gopkg.in/check.v1"
@@ -30,10 +29,8 @@ func (s *ProviderTestSuite) TestCoinbaseProvider(c *C) {
 
 	// test polling
 
-	provider.Poll()
-
 	// does one request per asset, so wait for them to complete
-	time.Sleep(500 * time.Millisecond)
+	pollAndWait(c, provider.websocketProvider, provider.Poll, "BTC/USD", "ETH/USD")
 
 	tickers, err := provider.GetTickers()
 	c.Assert(err, IsNil)
@@ -60,9 +57,17 @@ func (s *ProviderTestSuite) TestCoinbaseProvider(c *C) {
 
 	// test websocket
 
+	// Start polls REST before connecting; finish that poll first so a late
+	// REST response cannot overwrite the websocket prices asserted below.
+	provider.poll = func() {
+		pollAndWait(c, provider.websocketProvider, provider.Poll, "BTC/USD", "ETH/USD")
+	}
 	provider.Start()
 
-	time.Sleep(500 * time.Millisecond)
+	waitForTickerPrices(c, provider.websocketProvider, map[string]string{
+		"BTC/USD": "108741.64",
+		"ETH/USD": "2610.05",
+	})
 
 	tickers, err = provider.GetTickers()
 	c.Assert(err, IsNil)

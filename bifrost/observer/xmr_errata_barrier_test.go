@@ -435,6 +435,10 @@ func TestCancelledFanoutReleasesPeerReservations(t *testing.T) {
 	b.peerMgr.release(held)
 	require.Zero(t, held.refCount)
 
+	// The default 50ms busy timeout can expire before this test observes the
+	// waiter or cancels it on a loaded runner; keep the waiter parked so only
+	// cancellation can end it.
+	b.peerMgr.acquireTimeout = time.Minute
 	held, err = b.peerMgr.acquire("waiting")
 	require.NoError(t, err)
 	waitCtx, cancelWait := context.WithCancel(context.Background())

@@ -307,7 +307,9 @@ func (c *Client) reconstructLiabilities() {
 
 	// WaitGroup for local reconstruction routine
 	var reconWg sync.WaitGroup
-	sem := make(chan struct{}, c.cfg.EVM.ReconstructLiabilitiesConcurrency)
+	// at least one worker: with an unbuffered semaphore the first send blocks
+	// forever and signing never becomes ready
+	sem := make(chan struct{}, max(c.cfg.EVM.ReconstructLiabilitiesConcurrency, 1))
 
 	for _, vaultAddr := range vaultAddresses {
 		reconWg.Add(1)
