@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/cosmos/cosmos-sdk/codec"
@@ -79,7 +80,13 @@ func (s *UnstuckTestSuite) SetUpTest(c *C) {
 	lastBroadcastTx := ""
 	var lastBroadcastTxJSON []byte
 
+	// The handler writes shared state (lastBroadcastTx, err) and the server is
+	// reached concurrently once several endpoints are configured against it
+	// (bootstrap probes every endpoint at once), so requests are serialized.
+	var serverMu sync.Mutex
 	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		serverMu.Lock()
+		defer serverMu.Unlock()
 		switch req.RequestURI {
 		case thorclient.ChainVersionEndpoint:
 			_, err = rw.Write([]byte(`{"current":"` + types2.GetCurrentVersion().String() + `"}`))
