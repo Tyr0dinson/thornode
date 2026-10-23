@@ -12,7 +12,8 @@ Every chain keeps one **active** endpoint (the highest-priority healthy one at s
 All requests go to the active endpoint. Reads that fail with a transport error, an HTTP
 3xx / 5xx, a 401 / 403, a JSON-RPC "internal error", or a body that is not valid JSON are
 retried on the next healthy endpoint immediately and charged to the endpoint that
-failed. A rate-limited read is retried on the next endpoint too, but the rate-limited
+failed. When no endpoint is left to try, the error returned to the caller carries the
+last node's JSON-RPC code and message. A rate-limited read is retried on the next endpoint too, but the rate-limited
 endpoint is only put in cooldown (see below), never charged. On the HTTP-routed chains
 (EVM, SOL, XRP, TRON, and the Cosmos CometBFT RPC) a JSON-RPC "method not found" is the
 caller's business and is never charged: bifrost calls optional methods
@@ -26,7 +27,10 @@ writes never move). The XRP transport retry wrapper never replays `submit` eithe
 A read attempt is cut at the attempt timeout (half of `http_request_timeout`, at most
 10s) only while another candidate is left to try; the last or only candidate keeps the
 caller's whole timeout, so a single-endpoint configuration keeps the request timeout it
-had before failover existed. When the caller's timeout runs out waiting for an endpoint,
+had before failover existed. The attempt timeout covers the wait for the response
+headers and the check of the start of the body; once a response is handed to the
+caller, its body is read within the caller's own deadline, so a slow large response
+uses that deadline and is not moved to another endpoint. When the caller's timeout runs out waiting for an endpoint,
 that endpoint is charged; when the caller cancels, it is not.
 
 UTXO chains differ in two ways. The primary daemon is retried with the client's own
@@ -45,7 +49,8 @@ skipped that round), the relay fee that sets the outbound fee floor on LTC, BCH,
 ZEC (the last value is kept; a fallback provider's is never taken, since every signer
 must compute the same fee), ZEC input selection (checked against the primary's own
 height, as the inputs come from the primary), retiring an expired ZEC payload (only once
-the primary has reached the expiry height), and reorg re-confirmation. A long primary
+the primary has reached the expiry height, read before the transaction is looked up),
+and reorg re-confirmation. A long primary
 outage therefore retains block meta and spends only confirmed UTXOs.
 
 A UTXO reorg is walked back by block hash from the scanned block: each earlier block is
@@ -54,7 +59,11 @@ fork cannot answer for another chain, and a reorg without customer transactions 
 resolved through any endpoint that has the new blocks. The walk stops at the first stored
 block on the new chain, or where no stored block is left in the window; a height with no
 stored block (a gap a skip-ahead left) is walked through by hash. A customer
-transaction becomes an errata only on the primary's positive "not found", and only once
+transaction becomes an errata only on the primary's positive "not found", or when the
+primary holds it only in a block that is no longer on its chain (txindex keeps the
+transactions of disconnected blocks; the daemon looks in its mempool first, so a block
+hash with no confirmations means the transaction is in no active block and not in the
+mempool), and only once
 the primary's block at the scanned block's height minus one is the scanned block's
 parent (the primary is caught up and on the new chain); one contained in the scanned
 block, or in a new-chain block the walk has fetched, counts as on chain without asking.
@@ -75,8 +84,8 @@ instant finality. A failed attempt may already have
 removed the signed-transaction and signer-cache entries of outbounds seen in the
 rescanned blocks, which is what the retry does anyway; UTXO undoes the
 observed-transaction marks the failed attempt set. With several endpoints, ETH and the
-EVM chains take a reorg's headers, transaction re-confirmations and rescanned blocks
-from one witness, the active endpoint, and only once its block at the reorg tip
+EVM chains take a reorg's headers, transaction re-confirmations, rescanned blocks and
+their receipts from one witness, the active endpoint, and only once its block at the reorg tip
 is the parent of the block being scanned, which proves it is caught up and on the same
 fork; otherwise the scan fails and is retried. No other endpoint is asked, so one still
 on the old fork cannot suppress an errata. A witness whose lookups fail rather than
@@ -91,7 +100,8 @@ window); the errata then depends on the other nodes' votes.
 A background health check runs every `health_check_interval` against every endpoint:
 
 - **Liveness.** A probe that errors or exceeds `health_check_timeout` is a strike.
-- **Lag.** When at least two endpoints agree on a tip (within `max_block_lag`), an
+- **Lag.** When at least two usable endpoints (not disabled, and with their network
+  verified when that is required) agree on a tip (within `max_block_lag`), an
   endpoint further behind than `max_block_lag` gets a strike each cycle. With a single
   endpoint, the block scanner's own height is the baseline instead. With exactly two
   endpoints, two heights that agree leave neither behind and two that do not agree form
@@ -149,12 +159,14 @@ are re-probed every `recovery_check_interval` and return to healthy after
 `min_recovery_checks` consecutive passing probes. Traffic moves back to a recovered
 higher-priority endpoint only when `prefer_higher_priority` is true.
 
-A rate limit (HTTP 429, gRPC `ResourceExhausted`, JSON-RPC -32005 / -32029; on Solana
+A rate limit (HTTP 429, gRPC `ResourceExhausted` or a gateway's HTTP 429, JSON-RPC -32005 / -32029; on Solana
 -32005 means the node is behind and is charged as an endpoint error instead) never marks
 an endpoint unhealthy and never counts as a strike, including when a health probe is
 rate limited: the endpoint enters a cooldown of `rate_limit_backoff`, a healthy endpoint
 is not probed while cooling down (recovery probes of an unhealthy one still run), and
-traffic moves to the next eligible endpoint immediately. One exception at startup: an
+traffic moves to the next eligible endpoint immediately. A cooldown is not a minimum
+interval between requests: when every endpoint is cooling down or unhealthy, reads go to
+the usable ones anyway rather than fail. One exception at startup: an
 endpoint rate limited during bootstrap cannot report its identity, so when identity is
 required it starts unhealthy and unverified until a later probe succeeds.
 
@@ -298,7 +310,7 @@ chains:
       min_recovery_checks: 3 # passing checks required to restore an endpoint
       recovery_check_interval: 30s
       prefer_higher_priority: false # set true to actively fail back to lower-priority-number endpoints
-      rate_limit_backoff: 30s # cooldown after a rate limit (429; -32005 except on Solana): the endpoint is skipped this long and traffic moves on at once. UTXO chains also sleep it once when the primary was rate limited and nothing else served the read
+      rate_limit_backoff: 30s # cooldown after a rate limit (429; -32005 except on Solana): the endpoint is skipped this long while another endpoint can serve, and traffic moves on at once. UTXO chains also sleep it once when the primary was rate limited and nothing else served the read
       health_check_timeout: 5s # a probe slower than this is a strike; clamped to half of health_check_interval when larger
       integrity_check_depth: 20 # compare block hashes at tip - depth across endpoints; 0 disables
     expected_identity: "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f" # optional network pin
