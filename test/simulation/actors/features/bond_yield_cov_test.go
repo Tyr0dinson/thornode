@@ -25,6 +25,8 @@ type bondYieldFixtureCov struct {
 	nodeAddr   string
 	ownerAddr  string
 	ethAddr    string
+	// statusSince is the status_since setNode reports for the target node.
+	statusSince int64
 }
 
 func newBondYieldFixtureCov(t *testing.T) *bondYieldFixtureCov {
@@ -60,7 +62,8 @@ func (f *bondYieldFixtureCov) setTHORName(owner, aliasChain, aliasAddr, pref str
 
 func (f *bondYieldFixtureCov) setNode(status, award string, providers string) {
 	f.routes.set("/thorchain/node/"+f.nodeAddr, fmt.Sprintf(
-		`{"status":%q,"current_award":%q,"bond_providers":{"providers":[%s]}}`, status, award, providers))
+		`{"status":%q,"status_since":%d,"current_award":%q,"bond_providers":{"providers":[%s]}}`,
+		status, f.statusSince, award, providers))
 }
 
 func TestBondYieldConstructorsCov(t *testing.T) {
@@ -460,6 +463,11 @@ func TestBondYieldChurnOutFlowCov(t *testing.T) {
 	co := &BondYieldChurnOutActor{Actor: *NewActor("co", rngCov()), state: f.state}
 	f.state.collectorBeforeAutoClaim = cosmos.NewUint(100)
 
+	if res := co.requestTargetLeave(nil); res.Continue || len(f.nodeBridge.msgs) != 0 {
+		t.Fatal("node query error keeps pending without broadcasting")
+	}
+	f.statusSince = 7
+	f.setNode("Active", "", `{"bond_address":"`+f.nodeAddr+`"}`)
 	f.nodeBridge.err = errCov
 	if res := co.requestTargetLeave(nil); res.Continue {
 		t.Fatal("leave error keeps pending")
@@ -468,6 +476,10 @@ func TestBondYieldChurnOutFlowCov(t *testing.T) {
 	if res := co.requestTargetLeave(nil); !res.Continue || lastMemoCov(t, f.nodeBridge) != "leave:"+f.nodeAddr {
 		t.Fatal("leave must be broadcast")
 	}
+	if f.state.leaveStatusSince != 7 {
+		t.Fatalf("leave must record the node's status_since, got %d", f.state.leaveStatusSince)
+	}
+	f.routes.del("/thorchain/node/" + f.nodeAddr)
 
 	// churn scheduling fails fast without nodes
 	if res := co.scheduleTargetChurnOut(&OpConfig{}); res.Continue {

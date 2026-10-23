@@ -254,8 +254,8 @@ func TestXMRSuitesEnabledCov(t *testing.T) {
 	if a := XMRSpentRefTracking(rng); len(a.Children) != 1 {
 		t.Fatalf("expected spent ref verify actor, got %d", len(a.Children))
 	}
-	if a := XMRKeygenJail(rng); len(a.Children) != 1 {
-		t.Fatalf("expected keygen jail actor, got %d", len(a.Children))
+	if a := XMRKeygenRecovery(rng); len(a.Children) != 1 {
+		t.Fatalf("expected keygen recovery actor, got %d", len(a.Children))
 	}
 }
 

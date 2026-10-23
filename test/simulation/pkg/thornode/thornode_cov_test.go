@@ -139,7 +139,7 @@ func TestSimpleGettersCov(t *testing.T) {
 		"/thorchain/tx/stages/abc":                    `{"inbound_observed":{"completed":true}}`,
 		"/thorchain/tx/details/abc":                   `{"tx_id":"abc"}`,
 		"/thorchain/xmr/spent_refs/pk":                `{"spent_output_refs":[]}`,
-		"/thorchain/tx/abc":                           `{"observed_tx":{"observed_pub_key":"opk","status":"done"}}`,
+		"/thorchain/tx/details/abc?outbound=true":     `{"consensus_height":9,"tx":{"observed_pub_key":"opk","status":"done"}}`,
 		"/thorchain/mimir":                            `{"HALTCHAINGLOBAL":1,"CHURNINTERVAL":43200}`,
 		"/thorchain/block":                            `{"id":{"hash":"latest"}}`,
 		"/thorchain/block?height=12":                  `{"id":{"hash":"h12"}}`,
@@ -191,7 +191,7 @@ func TestSimpleGettersCov(t *testing.T) {
 		t.Fatalf("refs %v %v", refs, err)
 	}
 	txRefs, err := GetTxSpentRefs("abc")
-	if err != nil || txRefs.ObservedTx.ObservedPubKey != "opk" || txRefs.ObservedTx.Status != "done" {
+	if err != nil || txRefs.ConsensusHeight != 9 || txRefs.ObservedTx.ObservedPubKey != "opk" || txRefs.ObservedTx.Status != "done" {
 		t.Fatalf("tx refs %v %v", txRefs, err)
 	}
 	mimirs, err := GetMimirs()

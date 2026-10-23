@@ -151,14 +151,14 @@ func TestXMRSpentRefWaitForSpentRefsOnVaultCovB2(t *testing.T) {
 	a := newXMRSpentRefActorCovB2()
 	a.outboundTxID = outbound
 	a.captureSpentRefs("frost-vault", nil)
-	txPath := "/thorchain/tx/" + outbound
+	txPath := "/thorchain/tx/details/" + outbound
 	refsPath := "/thorchain/xmr/spent_refs/frost-vault"
 
 	api.Status(txPath, 404, "missing")
 	if res := a.waitForSpentRefsOnVault(nil); res.Continue || res.Finish {
 		t.Fatalf("missing observation must wait: %+v", res)
 	}
-	observed := map[string]interface{}{"observed_tx": map[string]interface{}{
+	observed := map[string]interface{}{"consensus_height": 9, "tx": map[string]interface{}{
 		"tx":               map[string]interface{}{"id": outbound, "chain": "XMR", "coins": []interface{}{}, "gas": []interface{}{}},
 		"observed_pub_key": "frost-vault",
 		"status":           "done",
