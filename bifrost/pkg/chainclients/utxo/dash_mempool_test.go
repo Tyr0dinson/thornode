@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/btcsuite/btcd/btcjson"
 	sharedutxo "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/utxo"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
@@ -21,6 +22,9 @@ type dashMempoolFixture struct {
 	entries                                                  map[string]map[string]any
 	failOrdinary, failInstantSend, chainLocked               bool
 	ordinaryCalls, instantSendCalls                          int
+	beforeRawTransaction                                     func(string)
+	utxos                                                    []btcjson.ListUnspentResult
+	failMempoolEntry                                         bool
 }
 
 func newDashMempoolFixture(c *C) (*Client, *dashMempoolFixture, func()) {
@@ -62,6 +66,13 @@ func newDashMempoolFixture(c *C) (*Client, *dashMempoolFixture, func()) {
 	cycleHash := strings.Repeat("3", 64)
 	server := newRPCTestServer(c, func(method string, params []json.RawMessage) any {
 		switch method {
+		case "listunspent":
+			return f.utxos
+		case "getmempoolentry":
+			if f.failMempoolEntry {
+				return &btcjson.RPCError{Code: btcjson.ErrRPCInvalidAddressOrKey, Message: "entry unavailable"}
+			}
+			return map[string]any{"ancestorcount": 1, "descendantcount": 1}
 		case "getrawmempool":
 			verbose := false
 			if len(params) > 0 {
@@ -86,6 +97,9 @@ func newDashMempoolFixture(c *C) (*Client, *dashMempoolFixture, func()) {
 		case "getrawtransaction":
 			var id string
 			c.Assert(json.Unmarshal(params[0], &id), IsNil)
+			if f.beforeRawTransaction != nil {
+				f.beforeRawTransaction(id)
+			}
 			c.Assert(f.txs[id], NotNil)
 			return f.txs[id]
 		case "getislocks":
@@ -196,6 +210,14 @@ func (b *dashMempoolPolicyBridge) GetMimir(key string) (int64, error) {
 
 func (b *dashMempoolPolicyBridge) FetchNodeStatus() (ttypes.NodeStatus, error) {
 	return ttypes.NodeStatus_Active, nil
+}
+
+func (b *dashMempoolPolicyBridge) GetBlockHeight() (int64, error) { return 100, nil }
+
+func (b *dashMempoolPolicyBridge) GetAsgardPubKeys() ([]thorclient.PubKeyContractAddressPair, error) {
+	// These fixtures seed vault addresses directly. An empty refresh retains
+	// them when the cache expires, without calling an embedded nil bridge.
+	return nil, nil
 }
 
 func (s *DashSuite) TestDashFetchMemPoolWithInstantSendDisabled(c *C) {

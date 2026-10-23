@@ -11,7 +11,6 @@ import (
 
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/btcjson"
-	"github.com/btcsuite/btcutil"
 	"github.com/cometbft/cometbft/crypto/secp256k1"
 	dashbtcec "github.com/dashpay/dashd-go/btcec/v2"
 	dashecdsa "github.com/dashpay/dashd-go/btcec/v2/ecdsa"
@@ -22,7 +21,6 @@ import (
 	sharedutxo "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/utxo"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/dashutil"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/rpc"
-	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/bifrost/tss"
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -30,10 +28,6 @@ import (
 	"gitlab.com/thorchain/thornode/v3/constants"
 	. "gopkg.in/check.v1"
 )
-
-type dashSelectionBridge struct{ thorclient.ThorchainBridge }
-
-func (*dashSelectionBridge) GetMimir(string) (int64, error) { return 1, nil }
 
 func (s *DashSuite) TestDashBlockRequiresMatchingChainLock(c *C) {
 	hash := strings.Repeat("a", 64)
@@ -77,14 +71,14 @@ func (s *DashSuite) TestDashBlockRequiresMatchingChainLock(c *C) {
 	c.Assert(err, NotNil)
 }
 
-func (s *DashSuite) TestDashLockedBalanceAndInputSelection(c *C) {
+func (s *DashSuite) TestDashLockedBalance(c *C) {
 	pubKey, err := common.NewPubKeyFromCrypto(secp256k1.GenPrivKey().PubKey())
 	c.Assert(err, IsNil)
 	id := strings.Repeat("a", 64)
 	script := newDashP2PKHScriptHex(c, newDashTestAddress(c, 0x11))
 	amount := 0.1
 	txID := id
-	locked := true
+	lockFlag := "instantlock"
 	rawCalls := 0
 	server := newRPCTestServer(c, func(method string, _ []json.RawMessage) any {
 		switch method {
@@ -95,9 +89,7 @@ func (s *DashSuite) TestDashLockedBalanceAndInputSelection(c *C) {
 			}
 		case "getrawtransaction":
 			rawCalls++
-			return map[string]any{"txid": txID, "instantlock": locked, "instantlock_internal": locked}
-		case "getmempoolentry":
-			return map[string]any{"ancestorcount": 1, "descendantcount": 1}
+			return map[string]any{"txid": txID, lockFlag: true}
 		}
 		c.Fatalf("unexpected RPC %s", method)
 		return nil
@@ -105,29 +97,19 @@ func (s *DashSuite) TestDashLockedBalanceAndInputSelection(c *C) {
 	defer server.Close()
 	client, cleanup := newDashClientForRPCServer(c, server.URL)
 	defer cleanup()
-	client.bridge = &dashSelectionBridge{}
 	client.cfg.InstantSend.Enabled = false
+	for _, flag := range []string{"instantlock", "instantlock_internal", "chainlock"} {
+		lockFlag = flag
+		rawCalls = 0
+		account, err := client.GetAccount(pubKey, nil)
+		c.Assert(err, IsNil)
+		c.Assert(account.Coins.GetCoin(common.DASHAsset).Amount.Uint64(), Equals, uint64(common.One/5))
+		c.Assert(rawCalls, Equals, 1) // multiple outputs share the lookup
+	}
+	lockFlag = "unlocked"
 	account, err := client.GetAccount(pubKey, nil)
 	c.Assert(err, IsNil)
-	c.Assert(account.Coins.GetCoin(common.DASHAsset).Amount.Uint64(), Equals, uint64(20000000))
-	c.Assert(rawCalls, Equals, 1)
-	client.cfg.UTXO.MinUTXOConfirmations = 1
-	rawCalls = 0
-	outputs, err := client.getUtxoToSpend(pubKey, btcutil.Amount(20000000))
-	c.Assert(err, IsNil)
-	c.Assert(outputs, HasLen, 2)
-	c.Assert(rawCalls, Equals, 1)
-	client.cfg.UTXO.MaxMempoolAncestors = 2
-	_, err = client.getUtxoToSpend(pubKey, 1)
-	c.Assert(err, NotNil)
-	client.cfg.UTXO.MaxMempoolAncestors = 0
-	amount = 0.00000001
-	_, err = client.getUtxoToSpend(pubKey, 1)
-	c.Assert(err, NotNil) // locks do not bypass dust
-	amount = 0.1
-	locked = false
-	_, err = client.getUtxoToSpend(pubKey, 1)
-	c.Assert(err, NotNil)
+	c.Assert(account.Coins.GetCoin(common.DASHAsset).Amount.IsZero(), Equals, true)
 	txID = "wrong response"
 	_, err = client.GetAccount(pubKey, nil)
 	c.Assert(err, NotNil) // never report an incomplete balance

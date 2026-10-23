@@ -23,6 +23,38 @@ const (
 
 const defaultInstantSendMinAmount uint64 = common.One / 100 // 0.01 DASH, in duffs
 
+var errInstantSendPaused = errors.New("InstantSend observations paused")
+
+// isInstantSendPaused follows blockscanner.IsChainPaused on successful reads.
+// Unlike the shared scanner, it defers final observations if any read fails.
+func (c *Client) isInstantSendPaused() bool {
+	if c.bridge == nil {
+		c.log.Error().Msg("InstantSend halt bridge unavailable")
+		return true
+	}
+	thorHeight, err := c.bridge.GetBlockHeight()
+	if err != nil {
+		c.log.Err(err).Msg("fail to get THORChain height for InstantSend halt check")
+		return true
+	}
+	for _, key := range []string{"HaltDASHChain", "SolvencyHaltDASHChain", "HaltChainGlobal"} {
+		height, err := c.bridge.GetMimir(key)
+		if err != nil {
+			c.log.Err(err).Str("key", key).Msg("fail to read InstantSend halt setting")
+			return true
+		}
+		if height > 0 && thorHeight >= height {
+			return true
+		}
+	}
+	height, err := c.bridge.GetMimir("NodePauseChainGlobal")
+	if err != nil {
+		c.log.Err(err).Msg("fail to read InstantSend node pause setting")
+		return true
+	}
+	return height > 0 && thorHeight <= height
+}
+
 // refreshInstantSendSettings reads the InstantSend switch and amount policy.
 func (c *Client) refreshInstantSendSettings() error {
 	if c.bridge == nil {

@@ -111,7 +111,7 @@ func (t *TemporalStorage) loadInstantSendState() (InstantSendState, error) {
 	if missing {
 		s.Version = 1
 	} else {
-		if err := json.Unmarshal(b, &s); err != nil {
+		if err = json.Unmarshal(b, &s); err != nil {
 			return s, err
 		}
 	}
@@ -119,19 +119,19 @@ func (t *TemporalStorage) loadInstantSendState() (InstantSendState, error) {
 	defer it.Release()
 	for it.Next() {
 		var r InstantSendReservation
-		if err := json.Unmarshal(it.Value(), &r); err != nil {
+		if err = json.Unmarshal(it.Value(), &r); err != nil {
 			return s, err
 		}
 		id := strings.TrimPrefix(string(it.Key()), instantSendReservationPrefix)
 		s.Reservations[id] = r
 	}
-	if err := it.Error(); err != nil {
+	if err = it.Error(); err != nil {
 		return s, err
 	}
 	if missing && len(s.Reservations) != 0 {
 		return s, errors.New("missing InstantSend metadata with existing reservations")
 	}
-	if err := s.validate(); err != nil {
+	if err = s.validate(); err != nil {
 		return s, err
 	}
 	cached := s.clone()
@@ -157,18 +157,19 @@ func (t *TemporalStorage) updateInstantSend(update func(*InstantSendState, *leve
 	}
 	after := before.clone()
 	batch := new(leveldb.Batch)
-	if err := update(&after, batch); err != nil {
+	if err = update(&after, batch); err != nil {
 		return err
 	}
 	after.Count = len(after.Reservations)
-	if err := after.validate(); err != nil {
+	if err = after.validate(); err != nil {
 		return err
 	}
 	for id, r := range after.Reservations {
 		if old, ok := before.Reservations[id]; ok && old == r {
 			continue
 		}
-		b, err := json.Marshal(r)
+		var b []byte
+		b, err = json.Marshal(r)
 		if err != nil {
 			return err
 		}
@@ -193,7 +194,7 @@ func (t *TemporalStorage) updateInstantSend(update func(*InstantSendState, *leve
 	if batch.Len() == 0 {
 		return nil
 	}
-	if err := t.db.Write(batch, &opt.WriteOptions{Sync: true}); err != nil {
+	if err = t.db.Write(batch, &opt.WriteOptions{Sync: true}); err != nil {
 		return err
 	}
 	t.instantSendState = &after

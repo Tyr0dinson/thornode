@@ -121,7 +121,7 @@ func newDashClientForRPCServer(c *C, serverURL string) (*Client, func()) {
 		cfg: config.BifrostChainConfiguration{
 			ChainID:             common.DASHChain,
 			ParallelMempoolScan: 1,
-			BlockScanner:        config.BifrostBlockScannerConfiguration{DBPath: path},
+			BlockScanner:        config.BifrostBlockScannerConfiguration{ChainID: common.DASHChain, DBPath: path},
 			InstantSend: config.InstantSendConfiguration{
 				Enabled:       true,
 				MaxMempoolAge: 2 * time.Minute,
@@ -698,7 +698,7 @@ func (s *DashSuite) TestDashInstantSendAcceptsLargeLowFeePaymentsWithoutPricing(
 		FetchedAt: time.Now(),
 	})
 
-	client.bridge = dashOracleBridge{getPrice: func(string) (cosmos.Uint, error) {
+	client.bridge = dashOracleBridge{ThorchainBridge: client.bridge, getPrice: func(string) (cosmos.Uint, error) {
 		c.Fatal("InstantSend must not request a USD price")
 		return cosmos.ZeroUint(), nil
 	}}

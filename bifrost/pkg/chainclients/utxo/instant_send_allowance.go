@@ -423,6 +423,11 @@ func (c *Client) claimInstantSendBatch(items []*types.TxInItem, admission instan
 		claims = append(claims, sharedutxo.InstantSendClaim{TxID: id, Amount: item.Coins.GetCoin(c.cfg.ChainID.GetGasAsset()).Amount.Uint64(), Exempt: vaultSender})
 	}
 	admission = c.currentInstantSendAdmission(admission)
+	// Check after the finality and sender lookups, immediately before any writes.
+	// Vault senders bypass the amount allowance, but must still respect halts.
+	if c.isInstantSendPaused() {
+		return nil, errInstantSendPaused
+	}
 	accepted, err := c.temporalStorage.ClaimInstantSendTxs(claims, c.instantSendMinAmount, c.instantSendMaxAmount, admission.allowed, time.Now().Unix())
 	if err != nil {
 		c.deferInstantSend("storage")
@@ -432,6 +437,9 @@ func (c *Client) claimInstantSendBatch(items []*types.TxInItem, admission instan
 		}
 		// A damaged allowance journal must not stop vault transactions. They use
 		// the existing observation-marker store without touching the allowance.
+		if c.isInstantSendPaused() {
+			return nil, errInstantSendPaused
+		}
 		return c.trackObservedTxs(exempt)
 	}
 	result := make([]*types.TxInItem, 0, len(accepted))

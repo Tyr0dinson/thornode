@@ -36,7 +36,7 @@ func (h *chainLockHeightHealth) isHealthy(now time.Time, scannedHeight int64) bo
 		h.blockHeight-scannedHeight <= dashMaxHealthyBlockLag
 }
 
-// isTransactionQuorumLocked shares daemon facts between balance and spending policy.
+// isTransactionQuorumLocked checks daemon lock status for balance reporting.
 // The cache belongs to one operation, so a previously unlocked tx is refreshed
 // on the next call and multiple outputs of one tx need only one RPC lookup.
 func (c *Client) isTransactionQuorumLocked(txID string, cache map[string]bool) (bool, error) {

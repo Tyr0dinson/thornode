@@ -50,11 +50,11 @@ shared across all of its vaults. This limits the amount that node reports before
 ChainLock settlement. It is a local soft limit, not a network-wide cap or a guarantee
 against an InstantSend failure.
 
-| Mimir | Units | Default / unset | Effect |
-| --- | --- | --- | --- |
-| `DashInstantSendMaxAmount` | duffs | `0` | Maximum outstanding customer InstantSend amount per node. Set `100000000000` for 1,000 DASH. Zero or a deleted value stops new customer InstantSend observations. |
-| `DashInstantSendMinAmount` | duffs | `1000000` (0.01 DASH) | Minimum customer deposit for InstantSend. Zero removes this extra minimum; the existing chain dust threshold still applies. |
-| `ObservationDelayFlexibilityDASH` | THORChain blocks | Global `ObservationDelayFlexibility` | Allows later matching transaction observations to recover slash points. Zero is a valid override. |
+| Mimir                             | Units            | Default / unset                      | Effect                                                                                                                                                            |
+| --------------------------------- | ---------------- | ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DashInstantSendMaxAmount`        | duffs            | `0`                                  | Maximum outstanding customer InstantSend amount per node. Set `100000000000` for 1,000 DASH. Zero or a deleted value stops new customer InstantSend observations. |
+| `DashInstantSendMinAmount`        | duffs            | `1000000` (0.01 DASH)                | Minimum customer deposit for InstantSend. Zero removes this extra minimum; the existing chain dust threshold still applies.                                       |
+| `ObservationDelayFlexibilityDASH` | THORChain blocks | Global `ObservationDelayFlexibility` | Allows later matching transaction observations to recover slash points. Zero is a valid override.                                                                 |
 
 Both amount Mimirs use duffs, matching internal accounting: `100000000` duffs is
 1 DASH (`common.One` in Go). This also supports amounts such as 0.01 DASH.

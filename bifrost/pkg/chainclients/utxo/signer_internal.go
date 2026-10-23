@@ -76,7 +76,6 @@ func (c *Client) getUtxoToSpend(pubKey common.PubKey, total btcutil.Amount) ([]b
 
 	var result []btcjson.ListUnspentResult
 	var toSpend btcutil.Amount
-	finality := make(map[string]bool)
 	var excluded utxoExclusions
 	minUTXOAmt := btcutil.Amount(c.cfg.ChainID.DustThreshold().Uint64()).ToBTC()
 	utxosToSpend := c.getMaximumUtxosToSpend() // can be set by mimir
@@ -91,17 +90,9 @@ func (c *Client) getUtxoToSpend(pubKey common.PubKey, total btcutil.Amount) ([]b
 		// analyze-ignore(float-comparison)
 		belowMinimum := item.Confirmations < c.cfg.UTXO.MinUTXOConfirmations || item.Amount < minUTXOAmt
 		if belowMinimum {
-			locked := false
-			// Finality replaces confirmations, never the dust requirement.
-			// analyze-ignore(float-comparison)
-			if c.cfg.ChainID == common.DASHChain && item.Amount >= minUTXOAmt {
-				locked, err = c.isTransactionQuorumLocked(item.TxID, finality)
-				if err != nil {
-					return nil, err
-				}
-			}
-			// Preserve the existing confirmation/dust exception for vault change.
-			if !locked && !c.isSelfTransaction(item.TxID) && !c.isFromAsgard(item.TxID) {
+			// Local Dash lock visibility must not change signer inputs. Preserve
+			// the existing confirmation/dust exceptions for vault transactions.
+			if !c.isSelfTransaction(item.TxID) && !c.isFromAsgard(item.TxID) {
 				excluded.unconfirmedOrDust++
 				continue
 			}

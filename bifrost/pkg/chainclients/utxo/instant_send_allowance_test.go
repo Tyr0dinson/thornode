@@ -469,7 +469,7 @@ func (s *DashSuite) TestInstantSendWarmupNeedsActiveNodeAndCompletedScannerHeigh
 	var height atomic.Int64
 	height.Store(100)
 	var snapshots atomic.Int64
-	server := newRPCTestServer(c, func(method string, _ []json.RawMessage) any {
+	server := newRPCTestServer(c, func(method string, params []json.RawMessage) any {
 		switch method {
 		case "getbestchainlock":
 			return map[string]any{"height": height.Load(), "known_block": true, "blockhash": dashCatchUpHash(height.Load())}
@@ -478,6 +478,9 @@ func (s *DashSuite) TestInstantSendWarmupNeedsActiveNodeAndCompletedScannerHeigh
 		case "getblockcount":
 			return height.Load()
 		case "getrawmempool":
+			if len(params) == 0 {
+				return []string{} // ordinary outbound fallback during a halt
+			}
 			snapshots.Add(1)
 			return map[string]any{}
 		default:
@@ -489,7 +492,8 @@ func (s *DashSuite) TestInstantSendWarmupNeedsActiveNodeAndCompletedScannerHeigh
 	client, cleanup := newDashClientForRPCServer(c, server.URL)
 	defer cleanup()
 	defer freshInstantSendJournal(c, client)()
-	bridge := &instantSendPolicyBridge{status: ttypes.NodeStatus_Active}
+	bridge := &instantSendPolicyBridge{status: ttypes.NodeStatus_Active,
+		values: map[string]int64{DashInstantSendEnabledMimirKey: 1, DashInstantSendMaxAmountMimirKey: 100 * common.One}}
 	client.bridge = bridge
 	// An inactive or unhealthy node must not initialize an empty allowance.
 	admission, err := client.prepareInstantSendAllowance(nil)
@@ -512,6 +516,18 @@ func (s *DashSuite) TestInstantSendWarmupNeedsActiveNodeAndCompletedScannerHeigh
 	waitForDashCatchUp(c, func() bool { return scanner.PreviousHeight() == 100 && scanner.IsHealthy() })
 	_, err = client.GetHeight()
 	c.Assert(err, IsNil)
+	// Even a fully caught-up active node must not start a snapshot while the
+	// halt state is unavailable. Keep the amount limit positive to exercise it.
+	bridge.fail = "HaltDASHChain"
+	client.nextMempoolScan = scanInstantSend
+	batch, err := client.FetchMemPool(100)
+	c.Assert(err, IsNil)
+	c.Assert(batch.MemPool, Equals, true)
+	c.Assert(snapshots.Load(), Equals, int64(0))
+	state, err := client.temporalStorage.GetInstantSendState()
+	c.Assert(err, IsNil)
+	c.Assert(state.Started, Equals, false)
+	bridge.fail = ""
 	bridge.status = ttypes.NodeStatus_Standby
 	admission, err = client.prepareInstantSendAllowance(nil)
 	c.Assert(err, IsNil)
@@ -604,6 +620,7 @@ func (s *DashSuite) TestInstantSendRestoredAllowanceRequiresInclusionProof(c *C)
 		{limit: 0},
 		{disabled: true, limit: 100},
 		{limit: 100, settingsErr: errors.New("Mimir unavailable")},
+		{limit: 100, settingsErr: errInstantSendPaused},
 	} {
 		store, closeStore := newDashClientForRPCServer(c, server.URL)
 		_, err := store.temporalStorage.ClaimInstantSendTxs([]sharedutxo.InstantSendClaim{{TxID: mined, Amount: 60}}, 0, 100, true, 1)

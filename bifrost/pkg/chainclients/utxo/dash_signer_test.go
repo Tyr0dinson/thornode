@@ -45,6 +45,7 @@ func (s *DashSuite) TestDashSignTxCheckpointAndBroadcast(c *C) {
 	var utxos []btcjson.ListUnspentResult
 	var broadcastBytes []byte
 	var broadcastMaxFee float64
+	var customerScript string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if strings.HasPrefix(r.URL.Path, thorclient.MimirEndpoint) {
@@ -53,6 +54,10 @@ func (s *DashSuite) TestDashSignTxCheckpointAndBroadcast(c *C) {
 		}
 		if r.URL.Path == thorclient.ChainVersionEndpoint {
 			c.Assert(json.NewEncoder(w).Encode(map[string]string{"current": ttypes.GetCurrentVersion().String()}), IsNil)
+			return
+		}
+		if r.URL.Path == thorclient.PubKeysEndpoint {
+			c.Assert(json.NewEncoder(w).Encode(map[string]any{"asgard": []any{}}), IsNil)
 			return
 		}
 		var req rpcRequest
@@ -68,6 +73,17 @@ func (s *DashSuite) TestDashSignTxCheckpointAndBroadcast(c *C) {
 			result = 123
 		case "listunspent":
 			result = utxos
+		case "getrawtransaction":
+			var id string
+			c.Assert(json.Unmarshal(req.Params[0], &id), IsNil)
+			if id == strings.Repeat("2", 64) {
+				result = map[string]any{"txid": id, "instantlock": true,
+					"vin": []any{map[string]any{"txid": strings.Repeat("3", 64), "vout": 0}}}
+			} else {
+				c.Assert(id, Equals, strings.Repeat("3", 64))
+				result = map[string]any{"txid": id, "vout": []any{map[string]any{
+					"n": 0, "value": 0.6, "scriptPubKey": map[string]any{"hex": customerScript, "type": "pubkeyhash"}}}}
+			}
 		case "sendrawtransaction":
 			c.Assert(req.Params, HasLen, 2)
 			var payload string
@@ -118,9 +134,24 @@ func (s *DashSuite) TestDashSignTxCheckpointAndBroadcast(c *C) {
 		{TxID: strings.Repeat("2", 64), Amount: 0.6, ScriptPubKey: hex.EncodeToString(sourceScript), Confirmations: 9},
 	}
 	previous := []*dashwire.TxOut{dashwire.NewTxOut(70_000_000, sourceScript), dashwire.NewTxOut(60_000_000, sourceScript)}
+	customerAddress, err := dashutil.DecodeAddress(to.String(), client.getChainCfgDASH())
+	c.Assert(err, IsNil)
+	pkScript, err := dashtxscript.PayToAddrScript(customerAddress)
+	c.Assert(err, IsNil)
+	customerScript = hex.EncodeToString(pkScript)
+	// An InstantSend customer input cannot fund a signature until it meets the
+	// confirmation requirement. Failure must happen before creating a checkpoint.
+	utxos[1].Confirmations = 0
+	signed, checkpoint, observation, err := client.SignTx(txOut, 1)
+	c.Assert(err, ErrorMatches, ".*insufficient available UTXOs:.*")
+	c.Assert(signed, IsNil)
+	c.Assert(checkpoint, IsNil)
+	c.Assert(observation, IsNil)
+	c.Assert(broadcastBytes, IsNil)
+	utxos[1].Confirmations = 9
 
 	// Exercise construction, per-input signing, verification and serialization.
-	signed, checkpoint, observation, err := client.SignTx(txOut, 1)
+	signed, checkpoint, observation, err = client.SignTx(txOut, 1)
 	c.Assert(err, IsNil)
 	c.Assert(checkpoint, IsNil)
 	c.Assert(observation, NotNil)

@@ -648,6 +648,16 @@ func (c *Client) FetchMemPool(height int64) (types.TxIn, error) {
 		// Rebuild queued batches using the new observation settings.
 		c.instantSendTxQueue = nil
 	}
+	if c.isInstantSendPaused() {
+		c.instantSendTxQueue = nil
+		c.nextMempoolScan = scanOutbounds
+		// Keep existing recovery moving, without starting a new allowance snapshot.
+		if _, err := c.prepareInstantSendAllowance(errInstantSendPaused); err != nil {
+			c.log.Err(err).Msg("fail to maintain InstantSend allowance while halted")
+		}
+		c.publishInstantSendAllowance(instantSendAdmission{reason: "halt"})
+		return c.fetchMemPoolTransactions(height, true)
+	}
 
 	// Each batch has one finality flag, so alternate ordinary vault outbounds
 	// and finalized InstantSend observations, starting with outbounds.
@@ -660,8 +670,16 @@ func (c *Client) FetchMemPool(height int64) (types.TxIn, error) {
 			c.log.Err(err).Msg("customer InstantSend observations paused")
 		}
 		// Publish after this scan's preparation and claims, using its own decision.
-		defer c.publishInstantSendAllowance(admission)
-		return c.fetchInstantSendBatch(height, admission)
+		defer func() { c.publishInstantSendAllowance(admission) }()
+		batch, err := c.fetchInstantSendBatch(height, admission)
+		if errors.Is(err, errInstantSendPaused) {
+			// The halt became visible during the scan. No claims were written.
+			c.instantSendTxQueue = nil
+			c.nextMempoolScan = scanOutbounds
+			admission = instantSendAdmission{reason: "halt"}
+			return c.fetchMemPoolTransactions(height, true)
+		}
+		return batch, err
 	default: // scanOutbounds is the initial scan and the fallback.
 		c.nextMempoolScan = scanInstantSend
 		return c.fetchMemPoolTransactions(height, true)

@@ -51,7 +51,8 @@ func TestInstantSendAllowanceSelectionAndSettlement(t *testing.T) {
 		t.Fatal(s)
 	}
 	for _, id := range []string{"oversize", "small", "waiting"} {
-		marked, err := store.HasObservedTx(id)
+		var marked bool
+		marked, err = store.HasObservedTx(id)
 		if err != nil || marked {
 			t.Fatalf("deferred %s marked: %v %v", id, marked, err)
 		}
@@ -60,16 +61,16 @@ func TestInstantSendAllowanceSelectionAndSettlement(t *testing.T) {
 	if s.Available(50) != 0 || s.Available(150) != 50 {
 		t.Fatal("incorrect resized allowance")
 	}
-	if err := store.ReleaseInstantSendReservations([]string{"vault", "unrelated"}); err != nil {
+	if err = store.ReleaseInstantSendReservations([]string{"vault", "unrelated"}); err != nil {
 		t.Fatal(err)
 	}
 	if instantSendState(t, store).Reserved != 100 {
 		t.Fatal("unrelated block refilled allowance")
 	}
-	if err := store.ReleaseInstantSendReservations([]string{"FIRST", "first"}); err != nil {
+	if err = store.ReleaseInstantSendReservations([]string{"FIRST", "first"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.ReleaseInstantSendReservations([]string{"first"}); err != nil {
+	if err = store.ReleaseInstantSendReservations([]string{"first"}); err != nil {
 		t.Fatal(err)
 	}
 	s = instantSendState(t, store)
@@ -170,7 +171,7 @@ func TestInstantSendWarmupSurvivesRestartAndKeepsSnapshotChainLockOnly(t *testin
 		t.Fatal("snapshot wrote observed marker", marked, err)
 	}
 	// The ordinary block path can still report a snapshot deposit exactly once.
-	if err := store.ReleaseInstantSendReservations([]string{"pending"}); err != nil {
+	if err = store.ReleaseInstantSendReservations([]string{"pending"}); err != nil {
 		t.Fatal(err)
 	}
 	added, err := store.TrackObservedTx("pending")
@@ -187,7 +188,7 @@ func TestInstantSendAtomicWriteFailureAndRestart(t *testing.T) {
 	if err != nil || len(accepted) != 1 {
 		t.Fatal(accepted, err)
 	}
-	if err := db.Close(); err != nil {
+	if err = db.Close(); err != nil {
 		t.Fatal(err)
 	}
 	store, db = openObservationMarkerStorage(t, path, &opt.Options{ReadOnly: true})
@@ -199,18 +200,19 @@ func TestInstantSendAtomicWriteFailureAndRestart(t *testing.T) {
 		t.Fatal("tentative state leaked")
 	}
 	for _, id := range []string{"new", "vault"} {
-		marked, err := store.HasObservedTx(id)
+		var marked bool
+		marked, err = store.HasObservedTx(id)
 		if err != nil || marked {
 			t.Fatal(id, marked, err)
 		}
 	}
-	if err := store.ReleaseInstantSendReservations([]string{"known"}); err == nil {
+	if err = store.ReleaseInstantSendReservations([]string{"known"}); err == nil {
 		t.Fatal("failed settlement succeeded")
 	}
 	if instantSendState(t, store).Reserved != 20 {
 		t.Fatal("failed settlement released exposure")
 	}
-	if err := db.Close(); err != nil {
+	if err = db.Close(); err != nil {
 		t.Fatal(err)
 	}
 	store, _ = openObservationMarkerStorage(t, path, nil)
