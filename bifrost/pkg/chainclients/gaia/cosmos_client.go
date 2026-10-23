@@ -568,7 +568,10 @@ func (c *CosmosClient) mempoolLookup(ctx context.Context, sig string) signercach
 	// client (so each endpoint's credentials apply). Found anywhere is Found; not
 	// found everywhere with every endpoint answering a complete page is NotFound;
 	// anything else is Ambiguous (keeps the cache entry).
-	candidates := c.endpointMgr.VerificationCandidates(c.cfg.SignerCacheExpiry)
+	// every usable endpoint is asked, however long it has been down: a broadcast it
+	// accepted can still settle, and a re-sign takes the locally cached sequence
+	// (BroadcastTx increments it), not necessarily the original one
+	candidates := c.endpointMgr.VerificationCandidates(0)
 	return c.mempoolLookupOnCandidates(ctx, sig, candidates, evm.VerificationBudget(ctx, len(candidates)))
 }
 
@@ -644,7 +647,10 @@ func (c *CosmosClient) verifyBroadcast(sig string) signercache.LookupResult {
 			return signercache.LookupAmbiguous
 		}
 	}
-	candidates := c.endpointMgr.VerificationCandidates(c.cfg.SignerCacheExpiry)
+	// every usable endpoint is asked, however long it has been down: a broadcast it
+	// accepted can still settle, and a re-sign takes the locally cached sequence
+	// (BroadcastTx increments it), not necessarily the original one
+	candidates := c.endpointMgr.VerificationCandidates(0)
 	if len(candidates) == 0 {
 		return signercache.LookupAmbiguous // absence needs at least one witness
 	}

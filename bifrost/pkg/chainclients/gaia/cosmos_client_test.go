@@ -683,7 +683,7 @@ func TestGaiaVerifyBroadcastManaged(t *testing.T) {
 
 // The gRPC half of an endpoint takes part in identity verification: with a pinned
 // identity a mismatching half is reported as its own network (disabled, or fatal for
-// priority 1); without one a disagreement leaves the endpoint unverified.
+// priority 1); without one a disagreement is an ErrIdentityMismatch, which disables it.
 func TestGRPCIdentity(t *testing.T) {
 	cases := []struct {
 		rpc, grpc, expected, want string
@@ -755,7 +755,7 @@ func cometStatusServer(network string) *httptest.Server {
 
 // A gRPC host on another network than the RPC host is an identity rejection, not a
 // liveness failure: with the identity pinned by an endpoints list it is fatal for the
-// priority-1 endpoint, and a legacy flat config leaves the endpoint unverified.
+// priority-1 endpoint, and a legacy flat config gets the endpoint disabled.
 func (s *CosmosTestSuite) TestGRPCHostOnAnotherNetworkIsAnIdentityRejection(c *C) {
 	rpc := cometStatusServer("cosmoshub-4")
 	defer rpc.Close()
@@ -799,4 +799,60 @@ func (s *CosmosTestSuite) TestGRPCHostOnAnotherNetworkIsAnIdentityRejection(c *C
 	c.Assert(err, IsNil)
 	c.Assert(client.EndpointManager().Entry("a").IdentityVerified(), Equals, true)
 	c.Assert(client.EndpointManager().Entry("a").State(), Equals, endpoints.StateHealthy)
+}
+
+// An endpoint that has been unhealthy for longer than signer_cache_expiry is still
+// asked during broadcast verification: it may hold the original, which can still
+// settle, and a re-sign would use the locally cached (higher) sequence. Only it has
+// the transaction here, so skipping it would answer NotFound and allow a double pay.
+func (s *CosmosTestSuite) TestMempoolLookupStillAsksALongDeadEndpoint(c *C) {
+	mk := func(has bool) *httptest.Server {
+		return httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+			var body struct {
+				Method string          `json:"method"`
+				ID     json.RawMessage `json:"id"`
+			}
+			_ = json.NewDecoder(req.Body).Decode(&body)
+			id := string(body.ID)
+			if id == "" {
+				id = "1"
+			}
+			rw.Header().Set("Content-Type", "application/json")
+			switch body.Method {
+			case "status":
+				_, _ = rw.Write([]byte(`{"jsonrpc":"2.0","id":` + id + `,"result":{"node_info":{"network":"cosmoshub-4"},"sync_info":{"latest_block_height":"10"}}}`))
+			case "unconfirmed_txs":
+				if has {
+					_, _ = rw.Write([]byte(`{"jsonrpc":"2.0","id":` + id + `,"result":{"n_txs":"1","total":"1","total_bytes":"2","txs":["AQI="]}}`))
+				} else {
+					_, _ = rw.Write([]byte(`{"jsonrpc":"2.0","id":` + id + `,"result":{"n_txs":"0","total":"0","total_bytes":"0","txs":[]}}`))
+				}
+			default:
+				_, _ = rw.Write([]byte(`{"jsonrpc":"2.0","id":` + id + `,"error":{"code":-32601,"message":"nope"}}`))
+			}
+		}))
+	}
+	holder := mk(true)
+	defer holder.Close()
+	other := mk(false)
+	defer other.Close()
+	cfg := config.BifrostChainConfiguration{
+		ChainID:           common.GAIAChain,
+		CosmosChainID:     "cosmoshub-4",
+		SignerCacheExpiry: time.Hour,
+		Endpoints: []config.ChainEndpointConfig{
+			{Name: "holder", RPCHost: holder.URL, CosmosGRPCHost: "127.0.0.1:1", Priority: 1},
+			{Name: "other", RPCHost: other.URL, CosmosGRPCHost: "127.0.0.1:2", Priority: 2},
+		},
+		BlockScanner: config.BifrostBlockScannerConfiguration{StartBlockHeight: 1},
+	}
+	cfg.Failover.HealthCheckTimeout = 500 * time.Millisecond
+	client, err := NewCosmosClient(s.thorKeys, cfg, nil, s.bridge, s.m, nil)
+	c.Assert(err, IsNil)
+	// both are unhealthy (no gRPC listens); make the holder look down for 3 hours
+	h := client.EndpointManager().Entry("holder")
+	h.SetClock(func() time.Time { return time.Now().Add(3 * time.Hour) })
+	c.Assert(h.NonHealthyFor() > cfg.SignerCacheExpiry, Equals, true)
+	txHash := fmt.Sprintf("%X", cmttypes.Tx([]byte{1, 2}).Hash())
+	c.Assert(client.mempoolLookup(context.Background(), txHash), Equals, signercache.LookupFound)
 }

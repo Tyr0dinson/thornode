@@ -1982,7 +1982,10 @@ func (c *SOLClient) verifyBroadcast(sig string, tx stypes.TxOutItem) signercache
 	if c.endpointMgr == nil {
 		return lookup(ctx)
 	}
-	candidates := c.endpointMgr.VerificationCandidates(c.cfg.SignerCacheExpiry)
+	// every usable endpoint is asked, however long it has been down: a durable-nonce
+	// outbound does not expire with its blockhash, so an endpoint that accepted it may
+	// still let it land
+	candidates := c.endpointMgr.VerificationCandidates(0)
 	if len(candidates) == 0 {
 		return signercache.LookupAmbiguous // absence needs at least one witness
 	}
