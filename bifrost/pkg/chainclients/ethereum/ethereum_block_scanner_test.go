@@ -1053,6 +1053,11 @@ func (s *BlockScannerTestSuite) TestProcessReOrg(c *C) {
 				_, err = rw.Write([]byte(`{"jsonrpc":"2.0","error":{"code":-32700,"message":"Not found tx"},"id": null}`))
 				c.Assert(err, IsNil)
 			}
+			if rpcRequest.Method == "eth_getTransactionByHash" {
+				// the node positively answers "not found": the reorged-out tx is gone
+				_, err = rw.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":null}`))
+				c.Assert(err, IsNil)
+			}
 			if rpcRequest.Method == "eth_call" {
 				_, err = rw.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":"0x52554e45"}`))
 				c.Assert(err, IsNil)
@@ -1137,14 +1142,37 @@ func (s *BlockScannerTestSuite) TestProcessReOrg(c *C) {
 	// add one UTXO which will trigger the re-org process next
 	c.Assert(bs.blockMetaAccessor.SaveBlockMeta(0, blockMeta), IsNil)
 	bs.globalErrataQueue = make(chan stypes.ErrataBlock, 1)
-	reorgedBlocks, err := bs.processReorg(blockNew)
+	storedHash := blockMeta.BlockHash
+	plan, err := bs.planReorg(blockNew)
 	c.Assert(err, IsNil)
-	c.Assert(reorgedBlocks, IsNil)
-	// make sure there is errata block in the queue
+	c.Assert(plan, NotNil)
+	c.Assert(plan.txIns, IsNil)
+	// planning reports and persists nothing
+	c.Assert(bs.globalErrataQueue, HasLen, 0)
+	blockMeta, err = bs.blockMetaAccessor.GetBlockMeta(0)
+	c.Assert(err, IsNil)
+	c.Assert(blockMeta.BlockHash, Equals, storedHash)
+
+	// a current block that cannot be extracted (its receipt lookup fails) fails the
+	// whole scan step: still no errata and no rewritten meta, so the retry of this
+	// height detects the reorg again
+	to := common.HexToAddress("0xf02c1c8e6114b1dbe8937a39260b5b0a374432bb")
+	tx := etypes.NewTx(&etypes.LegacyTx{Nonce: 1, To: &to, Value: big.NewInt(1), Gas: 21000, GasPrice: big.NewInt(1)})
+	current := etypes.NewBlockWithHeader(blockNew).WithBody(etypes.Body{Transactions: []*etypes.Transaction{tx}})
+	_, err = bs.processBlock(current)
+	c.Assert(err, NotNil)
+	c.Assert(bs.globalErrataQueue, HasLen, 0)
+	blockMeta, err = bs.blockMetaAccessor.GetBlockMeta(0)
+	c.Assert(err, IsNil)
+	c.Assert(blockMeta.BlockHash, Equals, storedHash)
+
+	// once the step succeeds the plan is committed: the errata is reported
+	bs.commitReorg(plan)
 	c.Assert(bs.globalErrataQueue, HasLen, 1)
 	blockMeta, err = bs.blockMetaAccessor.GetBlockMeta(0)
 	c.Assert(err, IsNil)
 	c.Assert(blockMeta, NotNil)
+	c.Assert(blockMeta.Transactions, HasLen, 0)
 }
 
 // -------------------------------------------------------------------------------------

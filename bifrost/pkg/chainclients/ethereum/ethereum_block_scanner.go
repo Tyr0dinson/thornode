@@ -24,6 +24,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/blockscanner"
 	btypes "gitlab.com/thorchain/thornode/v3/bifrost/blockscanner/types"
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/endpoints"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/evm"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/evm/types"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/signercache"
@@ -55,6 +56,10 @@ const (
 
 // ETHScanner is a scanner that understand how to interact with ETH chain ,and scan block , parse smart contract etc
 type ETHScanner struct {
+	// endpointMgr is set by the client; with several endpoints, reorg
+	// re-confirmation is answered by the active endpoint once it has reached the
+	// reorg tip (evm.ReorgWitness)
+	endpointMgr     *endpoints.Manager
 	cfg             config.BifrostBlockScannerConfiguration
 	logger          zerolog.Logger
 	db              blockscanner.ScannerStorage
@@ -355,7 +360,6 @@ func (e *ETHScanner) updateGasPriceFromCacheLocked() {
 
 // processBlock extracts transactions from block
 func (e *ETHScanner) processBlock(block *etypes.Block) (stypes.TxIn, error) {
-	height := int64(block.NumberU64())
 	txIn := stypes.TxIn{
 		Chain:    common.ETHChain,
 		TxArray:  nil,
@@ -363,7 +367,38 @@ func (e *ETHScanner) processBlock(block *etypes.Block) (stypes.TxIn, error) {
 		MemPool:  false,
 	}
 
-	// update gas price
+	// Reorg handling is planned first and committed last: errata, repaired block
+	// metas and the rescanned observations are reported and persisted only once the
+	// current block has been extracted too. If any step fails nothing was written, so
+	// the retry of this height detects the reorg again and redoes all of it.
+	plan, err := e.planReorg(block.Header())
+	if err != nil {
+		e.logger.Error().Err(err).Msgf("fail to process reorg for block %d", block.NumberU64())
+		return txIn, err
+	}
+
+	var txInBlock stypes.TxIn
+	if block.Transactions().Len() > 0 {
+		txInBlock, err = e.extractTxs(block)
+		if err != nil {
+			return txIn, err
+		}
+	}
+
+	e.commitReorg(plan)
+	if plan != nil {
+		for _, item := range plan.txIns {
+			if len(item.TxArray) == 0 {
+				continue
+			}
+			txIn.TxArray = append(txIn.TxArray, item.TxArray...)
+		}
+	}
+	if len(txInBlock.TxArray) > 0 {
+		txIn.TxArray = append(txIn.TxArray, txInBlock.TxArray...)
+	}
+
+	// the gas price is fed once the block is done, so a retried block is not counted twice
 	var priorityFees []*big.Int
 	for _, tx := range block.Transactions() {
 		tipCap := tx.GasTipCap()
@@ -373,32 +408,6 @@ func (e *ETHScanner) processBlock(block *etypes.Block) (stypes.TxIn, error) {
 		priorityFees = append(priorityFees, tipCap)
 	}
 	e.updateGasPrice(block.BaseFee(), priorityFees)
-
-	reorgedTxIns, err := e.processReorg(block.Header())
-	if err != nil {
-		e.logger.Error().Err(err).Msgf("fail to process reorg for block %d", height)
-		return txIn, err
-	}
-	if len(reorgedTxIns) > 0 {
-		for _, item := range reorgedTxIns {
-			if len(item.TxArray) == 0 {
-				continue
-			}
-			txIn.TxArray = append(txIn.TxArray, item.TxArray...)
-		}
-	}
-
-	if block.Transactions().Len() == 0 {
-		return txIn, nil
-	}
-
-	txInBlock, err := e.extractTxs(block)
-	if err != nil {
-		return txIn, err
-	}
-	if len(txInBlock.TxArray) > 0 {
-		txIn.TxArray = append(txIn.TxArray, txInBlock.TxArray...)
-	}
 	return txIn, nil
 }
 
@@ -538,10 +547,23 @@ func (e *ETHScanner) onObservedTxIn(txIn stypes.TxInItem, blockHeight int64) {
 	}
 }
 
-// processReorg will compare block's parent hash and the block hash we have in store
-// when there is a reorg detected , it will return true, other false
-func (e *ETHScanner) processReorg(block *etypes.Header) ([]stypes.TxIn, error) {
-	previousHeight := block.Number.Int64() - 1
+// reorgPlan is the work a detected reorg requires: errata to report, repaired block
+// metas to persist, and the observations of the rescanned blocks. It is computed
+// without side effects and committed only once the whole scan step has succeeded.
+type reorgPlan struct {
+	errata []stypes.ErrataBlock
+	metas  []*types.BlockMeta
+	txIns  []stypes.TxIn
+}
+
+// planReorg compares the block's parent hash with the stored hash of the previous
+// height. On a reorg it re-confirms the transactions of every cached block, works out
+// the repaired metas, and rescans the blocks whose hash changed, reading all of it
+// from one witness endpoint (evm.ReorgWitness). It reports and persists nothing
+// (commitReorg does, once the current block is done too), and any read that cannot
+// be answered aborts it, so the scan step is retried as a whole.
+func (e *ETHScanner) planReorg(header *etypes.Header) (*reorgPlan, error) {
+	previousHeight := header.Number.Int64() - 1
 	prevBlockMeta, err := e.blockMetaAccessor.GetBlockMeta(previousHeight)
 	if err != nil {
 		return nil, fmt.Errorf("fail to get block meta of height(%d) : %w", previousHeight, err)
@@ -551,127 +573,158 @@ func (e *ETHScanner) processReorg(block *etypes.Header) ([]stypes.TxIn, error) {
 	}
 	// the block's previous hash need to be the same as the block hash chain client recorded in block meta
 	// blockMetas[PreviousHeight].BlockHash == Block.PreviousHash
-	if strings.EqualFold(prevBlockMeta.BlockHash, block.ParentHash.Hex()) {
+	if strings.EqualFold(prevBlockMeta.BlockHash, header.ParentHash.Hex()) {
 		return nil, nil
 	}
-	e.logger.Info().Msgf("re-org detected, current block height:%d ,previous block hash is : %s , however block meta at height: %d, block hash is %s", block.Number.Int64(), block.ParentHash.Hex(), prevBlockMeta.Height, prevBlockMeta.BlockHash)
-	heights, err := e.reprocessTxs()
-	if err != nil {
-		e.logger.Err(err).Msg("fail to reprocess all txs")
-	}
-	var txIns []stypes.TxIn
-	for _, item := range heights {
-		e.logger.Info().Msgf("rescan block height: %d", item)
-		var block *etypes.Block
-		block, err = e.getRPCBlock(item)
-		if err != nil {
-			e.logger.Err(err).Msgf("fail to get block from RPC endpoint, height:%d", item)
-			continue
-		}
-		if block.Transactions().Len() == 0 {
-			continue
-		}
-		var txIn stypes.TxIn
-		txIn, err = e.extractTxs(block)
-		if err != nil {
-			e.logger.Err(err).Msgf("fail to extract txs from block (%d)", item)
-			continue
-		}
-		if len(txIn.TxArray) > 0 {
-			txIns = append(txIns, txIn)
-		}
-	}
-	return txIns, nil
-}
+	e.logger.Info().Msgf("re-org detected, current block height:%d ,previous block hash is : %s , however block meta at height: %d, block hash is %s", header.Number.Int64(), header.ParentHash.Hex(), prevBlockMeta.Height, prevBlockMeta.BlockHash)
 
-// reprocessTx will be kicked off only when chain client detected a re-org on ethereum chain
-// it will read through all the block meta data from local storage, and go through all the txs.
-// For each transaction, it will send a RPC request to ethereuem chain, double check whether the TX exist or not
-// if the tx still exist, then it is all good, if a transaction previous we detected, however doesn't exist anymore, that means
-// the transaction had been removed from chain, chain client should report to thorchain
-// []int64 is the block heights that need to be rescanned
-func (e *ETHScanner) reprocessTxs() ([]int64, error) {
 	blockMetas, err := e.blockMetaAccessor.GetBlockMetas()
 	if err != nil {
 		return nil, fmt.Errorf("fail to get block metas from local storage: %w", err)
 	}
-	var rescanBlockHeights []int64
+	wctx, wcancel := e.getContext()
+	witness, err := evm.ReorgWitness(wctx, e.endpointMgr, e.client, previousHeight, header.ParentHash)
+	wcancel()
+	if err != nil {
+		return nil, fmt.Errorf("reorg at height %d: %w", header.Number.Int64(), err)
+	}
+	plan := &reorgPlan{}
+	var rescanHeights []int64
 	for _, blockMeta := range blockMetas {
+		// the witness's header first: it proves the witness has this height before
+		// its "not found" for the block's transactions is believed
+		h, herr := e.headerFrom(witness, blockMeta.Height)
+		if herr != nil {
+			return nil, fmt.Errorf("block %d: fail to get header to check for reorg: %w", blockMeta.Height, herr)
+		}
 		metaTxs := make([]types.TransactionMeta, 0)
 		var errataTxs []stypes.ErrataTx
 		for _, tx := range blockMeta.Transactions {
-			if e.checkTransaction(tx.Hash) {
+			presence, cerr := e.checkTransaction(witness, tx.Hash)
+			if cerr != nil {
+				return nil, fmt.Errorf("block %d: cannot re-confirm tx %s: %w", blockMeta.Height, tx.Hash, cerr)
+			}
+			if presence == evm.TxOnChain {
 				e.logger.Debug().Msgf("block height: %d, tx: %s still exist", blockMeta.Height, tx.Hash)
 				metaTxs = append(metaTxs, tx)
 				continue
 			}
-			// this means the tx doesn't exist in chain ,thus should errata it
+			// the node says the tx is not on chain (any more): errata it
 			errataTxs = append(errataTxs, stypes.ErrataTx{
 				TxID:  common.TxID(tx.Hash),
 				Chain: common.ETHChain,
 			})
 		}
 		if len(errataTxs) > 0 {
-			e.globalErrataQueue <- stypes.ErrataBlock{
-				Height: blockMeta.Height,
-				Txs:    errataTxs,
-			}
+			plan.errata = append(plan.errata, stypes.ErrataBlock{Height: blockMeta.Height, Txs: errataTxs})
 		}
-		// Let's get the block again to fix the block hash
-		var block *etypes.Header
-		block, err = e.getHeader(blockMeta.Height)
-		if err != nil {
-			e.logger.Err(err).Msgf("fail to get block verbose tx result: %d", blockMeta.Height)
-			rescanBlockHeights = append(rescanBlockHeights, blockMeta.Height)
+		if !strings.EqualFold(blockMeta.BlockHash, h.Hash().Hex()) {
+			// if the block hash is different as previously recorded , then the block should be rescanned
+			rescanHeights = append(rescanHeights, blockMeta.Height)
+		}
+		blockMeta.PreviousHash = h.ParentHash.Hex()
+		blockMeta.BlockHash = h.Hash().Hex()
+		blockMeta.Transactions = metaTxs
+		plan.metas = append(plan.metas, blockMeta)
+	}
+
+	for _, height := range rescanHeights {
+		e.logger.Info().Msgf("rescan block height: %d", height)
+		block, berr := e.blockFrom(witness, height)
+		if berr != nil {
+			return nil, fmt.Errorf("rescan block %d: %w", height, berr)
+		}
+		if block.Transactions().Len() == 0 {
 			continue
 		}
-		if !strings.EqualFold(blockMeta.BlockHash, block.Hash().Hex()) {
-			// if the block hash is different as previously recorded , then the block should be rescanned
-			rescanBlockHeights = append(rescanBlockHeights, blockMeta.Height)
+		txIn, xerr := e.extractTxs(block)
+		if xerr != nil {
+			return nil, fmt.Errorf("rescan block %d: %w", height, xerr)
 		}
-		blockMeta.PreviousHash = block.ParentHash.Hex()
-		blockMeta.BlockHash = block.Hash().Hex()
-		blockMeta.Transactions = metaTxs
-		if err = e.blockMetaAccessor.SaveBlockMeta(blockMeta.Height, blockMeta); err != nil {
+		if len(txIn.TxArray) > 0 {
+			plan.txIns = append(plan.txIns, txIn)
+		}
+	}
+	return plan, nil
+}
+
+// commitReorg reports the errata and persists the repaired block metas of a plan.
+// It runs only after every fallible step of the scan step has succeeded.
+func (e *ETHScanner) commitReorg(plan *reorgPlan) {
+	if plan == nil {
+		return
+	}
+	for _, errata := range plan.errata {
+		e.globalErrataQueue <- errata
+	}
+	for _, blockMeta := range plan.metas {
+		if err := e.blockMetaAccessor.SaveBlockMeta(blockMeta.Height, blockMeta); err != nil {
 			e.logger.Err(err).Msgf("fail to save block meta of height: %d ", blockMeta.Height)
 		}
 	}
-	return rescanBlockHeights, nil
 }
 
-func (e *ETHScanner) checkTransaction(hash string) bool {
+// headerFrom reads a header from the endpoint named by pin ("" for unpinned).
+func (e *ETHScanner) headerFrom(pin string, height int64) (*etypes.Header, error) {
 	ctx, cancel := e.getContext()
 	defer cancel()
-	tx, pending, err := e.client.TransactionByHash(ctx, ecommon.HexToHash(hash))
-	if err != nil || tx == nil {
-		return false
+	return e.client.HeaderByNumber(endpoints.PinContext(ctx, pin), big.NewInt(height))
+}
+
+// blockFrom reads a block from the endpoint named by pin ("" for unpinned), with
+// getRPCBlock's error mapping.
+func (e *ETHScanner) blockFrom(pin string, height int64) (*etypes.Block, error) {
+	ctx, cancel := e.getContext()
+	defer cancel()
+	block, err := e.client.BlockByNumber(endpoints.PinContext(ctx, pin), big.NewInt(height))
+	if err == ethereum.NotFound {
+		return nil, btypes.ErrUnavailableBlock
+	}
+	if err != nil {
+		return nil, fmt.Errorf("fail to fetch block: %w", err)
+	}
+	return block, nil
+}
+
+// checkTransaction reports what the endpoint named by pin ("" for unpinned) knows
+// about an observed transaction after a reorg. Only its "not found" answer, or a
+// failed receipt, says it is not on chain; a lookup that fails is returned as an
+// error, never turned into an errata.
+func (e *ETHScanner) checkTransaction(pin, hash string) (evm.TxPresence, error) {
+	ctx, cancel := e.getContext()
+	defer cancel()
+	tx, pending, err := e.client.TransactionByHash(endpoints.PinContext(ctx, pin), ecommon.HexToHash(hash))
+	if errors.Is(err, ethereum.NotFound) || (err == nil && tx == nil) {
+		return evm.TxNotFound, nil
+	}
+	if err != nil {
+		return evm.TxOnChain, err
 	}
 
 	// pending transactions may fail, but we should only errata when there is certainty
 	if pending {
 		e.logger.Warn().Msgf("tx: %s is in pending status", hash)
-		return true // unknown, prefer false positive
+		return evm.TxOnChain, nil // unknown, prefer false positive
 	}
 
 	// ensure the tx was successful
-	receipt, err := e.getReceipt(hash)
+	rctx, rcancel := e.getContext()
+	defer rcancel()
+	receipt, err := e.client.TransactionReceipt(endpoints.PinContext(rctx, pin), ecommon.HexToHash(hash))
 	if err != nil {
 		e.logger.Warn().Err(err).Msgf("fail to get receipt for tx: %s", hash)
-		return true // unknown, prefer false positive
+		return evm.TxOnChain, nil // unknown, prefer false positive
 	}
-	return receipt.Status == etypes.ReceiptStatusSuccessful
+	if receipt.Status != etypes.ReceiptStatusSuccessful {
+		return evm.TxFailed, nil
+	}
+	return evm.TxOnChain, nil
 }
 
 func (e *ETHScanner) getReceipt(hash string) (*etypes.Receipt, error) {
 	ctx, cancel := e.getContext()
 	defer cancel()
 	return e.client.TransactionReceipt(ctx, ecommon.HexToHash(hash))
-}
-
-func (e *ETHScanner) getHeader(height int64) (*etypes.Header, error) {
-	ctx, cancel := e.getContext()
-	defer cancel()
-	return e.client.HeaderByNumber(ctx, big.NewInt(height))
 }
 
 func (e *ETHScanner) getBlock(height int64) (*etypes.Block, error) {

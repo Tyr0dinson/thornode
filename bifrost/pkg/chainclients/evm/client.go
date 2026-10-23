@@ -234,6 +234,7 @@ func NewEVMClient(
 	if err != nil {
 		return c, fmt.Errorf("fail to create evm block scanner: %w", err)
 	}
+	c.evmScanner.endpointMgr = c.endpointMgr
 
 	// initialize block scanner
 	c.blockScanner, err = blockscanner.NewBlockScanner(
@@ -998,7 +999,10 @@ func (c *EVMClient) verifyBroadcast(sig string) signercache.LookupResult {
 			return signercache.LookupNotFound
 		}
 	}
-	return evm.LookupTxEverywhere(ctx, c.endpointMgr, c.ethClient, ecommon.HexToHash(sig), c.getSignerCacheExpiry())
+	// maxDown 0: every usable endpoint is asked however long it has been down;
+	// endpoint health says nothing about whether a transaction it accepted can still
+	// settle, and a re-sign does not necessarily reuse the original nonce
+	return evm.LookupTxEverywhere(ctx, c.endpointMgr, c.ethClient, ecommon.HexToHash(sig), 0)
 }
 
 // SignTx returns the signed transaction.

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	ecommon "github.com/ethereum/go-ethereum/common"
+	etypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/rs/zerolog"
 	. "gopkg.in/check.v1"
 
@@ -24,6 +25,16 @@ type LookupSuite struct{}
 var _ = Suite(&LookupSuite{})
 
 const lookupHash = "0x00000000000000000000000000000000000000000000000000000000000000ab"
+
+// testBlockJSON is an empty block every txServer returns at any height.
+const testBlockJSON = `{"parentHash":"0x0000000000000000000000000000000000000000000000000000000000000000","sha3Uncles":"0x1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347","miner":"0x0000000000000000000000000000000000000000","stateRoot":"0x0000000000000000000000000000000000000000000000000000000000000000","transactionsRoot":"0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421","receiptsRoot":"0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421","logsBloom":"0x00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000","difficulty":"0x1","number":"0x63","gasLimit":"0x1","gasUsed":"0x0","timestamp":"0x1","extraData":"0x","mixHash":"0x0000000000000000000000000000000000000000000000000000000000000000","nonce":"0x0000000000000000","transactions":[],"uncles":[]}`
+
+// testBlockHash is the hash of testBlockJSON's header.
+func testBlockHash(c *C) ecommon.Hash {
+	var h etypes.Header
+	c.Assert(json.Unmarshal([]byte(testBlockJSON), &h), IsNil)
+	return h.Hash()
+}
 
 func ecommonHash() ecommon.Hash { return ecommon.HexToHash(lookupHash) }
 
@@ -49,6 +60,8 @@ func txServer(mode string) *httptest.Server {
 			_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":` + id + `,"result":"0x539"}`))
 		case "eth_blockNumber":
 			_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":` + id + `,"result":"0x10"}`))
+		case "eth_getBlockByNumber":
+			_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":` + id + `,"result":` + testBlockJSON + `}`))
 		case "eth_getTransactionByHash":
 			if mode == "txerror" {
 				w.WriteHeader(http.StatusBadGateway)
@@ -138,4 +151,44 @@ func (s *LookupSuite) TestLookupSkipsLongDeadEndpoints(c *C) {
 	// once it has been down longer than the signer-cache expiry it is skipped, so a
 	// retired provider left in the list does not wedge re-signing forever
 	c.Assert(evm.LookupTxEverywhere(context.Background(), fc.Manager, fc.Client, ecommonHash(), time.Nanosecond), Equals, signercache.LookupNotFound)
+}
+
+// Reorg re-confirmation has one witness: the active endpoint, once its block at the
+// reorg tip is the parent of the block being scanned (same height, same fork). Another
+// endpoint that still has the transaction (it may be on the old fork) cannot veto the
+// errata, and a witness that is behind or on another fork cannot cause one.
+func (s *LookupSuite) TestReorgWitness(c *C) {
+	absent, known := txServer("absent"), txServer("known")
+	defer absent.Close()
+	defer known.Close()
+	ctx := context.Background()
+	parent := testBlockHash(c)
+
+	// no manager: unpinned, the single endpoint answers as before failover existed
+	w, err := evm.ReorgWitness(ctx, nil, nil, 99, parent)
+	c.Assert(err, IsNil)
+	c.Assert(w, Equals, "")
+
+	// a is active and its block 99 is the reorg parent: it is the witness
+	fc := lookupClient(c, absent, known)
+	defer fc.Manager.Stop()
+	defer fc.Client.Close()
+	w, err = evm.ReorgWitness(ctx, fc.Manager, fc.Client, 99, parent)
+	c.Assert(err, IsNil)
+	c.Assert(w, Equals, "a")
+
+	// the witness's "not found" stands although b still has the transaction
+	rpc, err := evm.NewEthRPC(fc.Client, 2*time.Second, "AVAX")
+	c.Assert(err, IsNil)
+	presence, err := rpc.CheckTransaction(w, lookupHash)
+	c.Assert(err, IsNil)
+	c.Assert(presence, Equals, evm.TxNotFound)
+	// the pin is what decides who answers: b says it is still there (pending)
+	presence, err = rpc.CheckTransaction("b", lookupHash)
+	c.Assert(err, IsNil)
+	c.Assert(presence, Equals, evm.TxOnChain)
+
+	// a's block 99 is not the reorg parent: no witness, the step is retried
+	_, err = evm.ReorgWitness(ctx, fc.Manager, fc.Client, 99, ecommon.HexToHash("0x01"))
+	c.Assert(err, ErrorMatches, ".*behind or on another fork.*")
 }

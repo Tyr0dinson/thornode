@@ -1066,6 +1066,12 @@ func (s *BlockScannerTestSuite) TestProcessReOrg(c *C) {
 			var rpcRequest RPCRequest
 			err = json.Unmarshal(body, &rpcRequest)
 			c.Assert(err, IsNil)
+			if rpcRequest.Method == "eth_getTransactionByHash" {
+				// the node positively answers "not found": the reorged-out tx is gone
+				_, err = rw.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":null}`))
+				c.Assert(err, IsNil)
+				return
+			}
 			if rpcRequest.Method == "eth_getBlockByNumber" {
 				_, err = rw.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{
 				"parentHash":"0x8b535592eb3192017a527bbf8e3596da86b3abea51d6257898b2ced9d3a83826",
@@ -1146,14 +1152,22 @@ func (s *BlockScannerTestSuite) TestProcessReOrg(c *C) {
 	// add one UTXO which will trigger the re-org process next
 	c.Assert(bs.blockMetaAccessor.SaveBlockMeta(0, blockMeta), IsNil)
 	bs.globalErrataQueue = make(chan stypes.ErrataBlock, 1)
-	reorgedBlocks, err := bs.processReorg(blockNew)
+	storedHash := blockMeta.BlockHash
+	plan, err := bs.planReorg(blockNew)
 	c.Assert(err, IsNil)
-	c.Assert(reorgedBlocks, IsNil)
-	// make sure there is errata block in the queue
+	c.Assert(plan, NotNil)
+	c.Assert(plan.txIns, IsNil)
+	// planning reports and persists nothing; only the commit does
+	c.Assert(bs.globalErrataQueue, HasLen, 0)
+	blockMeta, err = bs.blockMetaAccessor.GetBlockMeta(0)
+	c.Assert(err, IsNil)
+	c.Assert(blockMeta.BlockHash, Equals, storedHash)
+	bs.commitReorg(plan)
 	c.Assert(bs.globalErrataQueue, HasLen, 1)
 	blockMeta, err = bs.blockMetaAccessor.GetBlockMeta(0)
 	c.Assert(err, IsNil)
 	c.Assert(blockMeta, NotNil)
+	c.Assert(blockMeta.Transactions, HasLen, 0)
 }
 
 // -------------------------------------------------------------------------------------

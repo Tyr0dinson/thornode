@@ -116,3 +116,62 @@ func (s *UnstuckTestSuite) TestUnstuckKeepsCacheWhileAnotherEndpointHoldsTheTx(c
 	c.Assert(items, HasLen, 0) // both processed
 	c.Assert(e.signerCacheManager.HasSigned(toi.CacheHash()), Equals, true)
 }
+
+// Items are ordered by hash, so one vault's items can be interleaved with another's.
+// With A1 deferred (not every endpoint could answer), A2 of the same vault must not be
+// taken in this pass even though B1 of another vault sits between them; B1 is still
+// looked at.
+func (s *UnstuckTestSuite) TestUnstuckSkipsEveryLaterItemOfADeferredVault(c *C) {
+	config.Init()
+	active := nullTxProxy(s.server.URL)
+	defer active.Close()
+	pubkeyMgr, err := pubkeymanager.NewPubKeyManager(s.bridge, s.m)
+	c.Assert(err, IsNil)
+	poolMgr := thorclient.NewPoolMgr(s.bridge)
+	e, err := NewEVMClient(s.thorKeys, config.BifrostChainConfiguration{
+		ChainID:        common.AVAXChain,
+		RPCHost:        active.URL,
+		SolvencyBlocks: 10,
+		Endpoints: []config.ChainEndpointConfig{
+			{Name: "active", RPCHost: active.URL, Priority: 1},
+			{Name: "holder", RPCHost: s.server.URL, Priority: 2},
+		},
+		BlockScanner: config.BifrostBlockScannerConfiguration{
+			ChainID:            common.AVAXChain,
+			StartBlockHeight:   1,
+			HTTPRequestTimeout: time.Second * 10,
+			GasCacheBlocks:     40,
+			Concurrency:        1,
+		},
+	}, nil, s.bridge, s.m, pubkeyMgr, poolMgr)
+	c.Assert(err, IsNil)
+	accessor := e.evmScanner.blockMetaAccessor
+	c.Assert(pubkeyMgr.Start(), IsNil)
+	defer func() { c.Assert(pubkeyMgr.Stop(), IsNil) }()
+
+	vaultA := e.kw.GetPubKey().String()
+	vaultB := types2.GetRandomPubKey().String()
+	// the holder endpoint answers nothing for these two hashes: the lookup is ambiguous
+	a1 := types.SignedTxItem{Hash: "0x1111111111111111111111111111111111111111111111111111111111111111", Height: 800, VaultPubKey: vaultA}
+	b1 := types.SignedTxItem{Hash: "0x2222222222222222222222222222222222222222222222222222222222222222", Height: 800, VaultPubKey: vaultB}
+	// mined on the holder: taken and removed whenever it is looked at
+	a2 := types.SignedTxItem{Hash: "0x96395fbdb39e33293999dc1a0a3b87c8a9e51185e177760d1482c2155bb35b87", Height: 800, VaultPubKey: vaultA}
+	for _, it := range []types.SignedTxItem{a2, b1, a1} {
+		c.Assert(accessor.AddSignedTxItem(it), IsNil)
+	}
+	e.unstuckAction()
+	items, err := accessor.GetSignedTxItems()
+	c.Assert(err, IsNil)
+	c.Assert(items, HasLen, 3) // A1 and B1 deferred, A2 skipped because A1 was
+	for _, it := range items {
+		c.Assert(it.Hash == a1.Hash || it.Hash == b1.Hash || it.Hash == a2.Hash, Equals, true)
+	}
+
+	// control: without A1 in front of it, A2 is taken (and removed as already mined)
+	c.Assert(accessor.RemoveSignedTxItem(a1.Hash), IsNil)
+	e.unstuckAction()
+	items, err = accessor.GetSignedTxItems()
+	c.Assert(err, IsNil)
+	c.Assert(items, HasLen, 1)
+	c.Assert(items[0].Hash, Equals, b1.Hash)
+}

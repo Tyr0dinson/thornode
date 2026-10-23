@@ -2,6 +2,7 @@ package evm
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/big"
 	"time"
@@ -14,6 +15,7 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	btypes "gitlab.com/thorchain/thornode/v3/bifrost/blockscanner/types"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/endpoints"
 )
 
 // EthRPC is a struct that interacts with an ETH RPC compatible blockchain
@@ -123,31 +125,52 @@ func (e *EthRPC) GetNonceFinalized(addr string) (uint64, error) {
 	return nonce, nil
 }
 
-// CheckTransaction returns true if a transaction is found and successful on chain. This
-// is used to determine when a transaction has been dropped from the chain or failed on
-// subsequent execution after reorgs. This can return false positives, but should not
-// return false negatives - as we want to errata an observation only when we are certain
-// it has later been dropped or failed.
-func (e *EthRPC) CheckTransaction(hash string) bool {
+// TxPresence is what reorg re-confirmation learned about an observed transaction.
+type TxPresence int
+
+const (
+	// TxOnChain: mined and successful, pending, or its receipt cannot be read (an
+	// errata needs certainty, so anything short of proof keeps the observation)
+	TxOnChain TxPresence = iota
+	// TxNotFound: the answering node says it does not know the transaction
+	TxNotFound
+	// TxFailed: mined, but the receipt says it failed
+	TxFailed
+)
+
+// CheckTransaction reports what the node knows about a transaction, for reorg
+// re-confirmation. Only the node's "not found" answer, or a failed receipt, says it
+// is not on chain; a lookup that fails is returned as an error, never as absence, so
+// a transient failure can never produce an errata. Both reads go to the endpoint
+// named by pin (see ReorgWitness; "" leaves them unpinned).
+func (e *EthRPC) CheckTransaction(pin, hash string) (TxPresence, error) {
 	ctx, cancel := e.getContext()
 	defer cancel()
-	tx, pending, err := e.client.TransactionByHash(ctx, ecommon.HexToHash(hash))
-	if err != nil || tx == nil {
-		e.logger.Info().Str("txid", hash).Err(err).Msg("tx not found")
-		return false
+	tx, pending, err := e.client.TransactionByHash(endpoints.PinContext(ctx, pin), ecommon.HexToHash(hash))
+	if errors.Is(err, ethereum.NotFound) || (err == nil && tx == nil) {
+		e.logger.Info().Str("txid", hash).Msg("tx not found")
+		return TxNotFound, nil
+	}
+	if err != nil {
+		return TxOnChain, fmt.Errorf("fail to look up tx %s: %w", hash, err)
 	}
 
 	// pending transactions may fail, but we should only errata when there is certainty
 	if pending {
 		e.logger.Warn().Str("txid", hash).Msg("observed transaction is pending")
-		return true // unknown, prefer false positive
+		return TxOnChain, nil // unknown, prefer false positive
 	}
 
 	// ensure the tx was successful
-	receipt, err := e.GetReceipt(hash)
+	rctx, rcancel := e.getContext()
+	defer rcancel()
+	receipt, err := e.client.TransactionReceipt(endpoints.PinContext(rctx, pin), ecommon.HexToHash(hash))
 	if err != nil {
 		e.logger.Warn().Str("txid", hash).Err(err).Msg("tx receipt not found")
-		return true // unknown, prefer false positive
+		return TxOnChain, nil // unknown, prefer false positive
 	}
-	return receipt.Status == etypes.ReceiptStatusSuccessful
+	if receipt.Status != etypes.ReceiptStatusSuccessful {
+		return TxFailed, nil
+	}
+	return TxOnChain, nil
 }

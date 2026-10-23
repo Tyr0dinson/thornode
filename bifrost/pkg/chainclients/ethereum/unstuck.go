@@ -76,7 +76,14 @@ func (c *Client) unstuckAction() {
 		c.logger.Err(err).Msg("fail to get all signed tx items")
 		return
 	}
-	for idx, item := range signedTxItems {
+	// vaults with a deferred item: none of their later items is taken this pass, since
+	// the other members may still be working on the deferred one (items are ordered by
+	// hash, so one vault's items can be interleaved with another's)
+	deferredVaults := map[string]bool{}
+	for _, item := range signedTxItems {
+		if deferredVaults[item.VaultPubKey] {
+			continue
+		}
 		clog := c.logger.With().
 			Str("txid", item.Hash).
 			Str("vault", item.VaultPubKey).
@@ -108,15 +115,12 @@ func (c *Client) unstuckAction() {
 		err = c.unstuckTx(clog, item)
 		if errors.Is(err, errUnstuckRetryLater) {
 			// nothing was keysigned for this item. Whether an item is deferred depends
-			// on this node's own endpoints, so moving on to another item of the same
-			// vault would start a keysign the other members are not in (they are on
-			// this one); only an item of a different vault, whose party cannot
-			// collide, is taken this round.
-			clog.Warn().Err(err).Msg("unstuck deferred")
-			if idx+1 < len(signedTxItems) && signedTxItems[idx+1].VaultPubKey != item.VaultPubKey {
-				continue
-			}
-			break
+			// on this node's own endpoints, so taking a later item of the same vault
+			// would start a keysign the other members are not in (they are on this
+			// one); other vaults' items, whose parties cannot collide, are still taken.
+			clog.Warn().Err(err).Msg("unstuck deferred; skipping this vault's later items this pass")
+			deferredVaults[item.VaultPubKey] = true
+			continue
 		}
 		if err != nil {
 			clog.Err(err).Msg("failed to unstuck tx")
@@ -155,7 +159,8 @@ func (c *Client) unstuckTx(clog zerolog.Logger, item types.SignedTxItem) error {
 		// round, and the signer cache is kept, because clearing it on an incomplete
 		// answer could re-sign the outbound at a new nonce while the original is live.
 		var res signercache.LookupResult
-		tx, pending, res = evm.FindTxEverywhere(ctx, c.endpointMgr, c.client, ecommon.HexToHash(item.Hash), c.getSignerCacheExpiry())
+		// maxDown 0: a long-unhealthy endpoint may still hold the original
+		tx, pending, res = evm.FindTxEverywhere(ctx, c.endpointMgr, c.client, ecommon.HexToHash(item.Hash), 0)
 		switch res {
 		case signercache.LookupFound:
 			err = nil

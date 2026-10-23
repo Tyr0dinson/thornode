@@ -209,6 +209,7 @@ func NewClient(thorKeys *thorclient.Keys,
 	if err != nil {
 		return c, fmt.Errorf("fail to create eth block scanner: %w", err)
 	}
+	c.ethScanner.endpointMgr = c.endpointMgr
 
 	c.blockScanner, err = blockscanner.NewBlockScanner(c.cfg.BlockScanner, storage, m, c.bridge, c.ethScanner)
 	if err != nil {
@@ -643,8 +644,11 @@ func (c *Client) verifyBroadcast(sig string) signercache.LookupResult {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if c.endpointMgr != nil {
-		// every endpoint is asked (pinned); unreachable endpoints make it ambiguous
-		return evm.LookupTxEverywhere(ctx, c.endpointMgr, c.client, ecommon.HexToHash(sig), c.getSignerCacheExpiry())
+		// every usable endpoint is asked (pinned), however long it has been down
+		// (maxDown 0), and an unreachable one makes the answer ambiguous: endpoint
+		// health says nothing about whether a transaction it accepted can still
+		// settle, and a re-sign does not necessarily reuse the original nonce
+		return evm.LookupTxEverywhere(ctx, c.endpointMgr, c.client, ecommon.HexToHash(sig), 0)
 	}
 	onchainTx, _, lookupErr := c.client.TransactionByHash(ctx, ecommon.HexToHash(sig))
 	switch {
