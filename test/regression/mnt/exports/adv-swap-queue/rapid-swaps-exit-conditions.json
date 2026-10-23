@@ -411,9 +411,6 @@
           "value": "1"
         },
         {
-          "key": "MEMPOOLSWAPPOOLCYCLERETRYHEIGHT"
-        },
-        {
           "key": "POOLCYCLE",
           "value": "100"
         }
