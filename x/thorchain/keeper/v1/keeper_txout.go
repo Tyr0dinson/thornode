@@ -266,7 +266,7 @@ func (k KVStore) getTxOutWindowBytes(ctx cosmos.Context, height int64) (bz []byt
 	iter := k.kvStore(ctx).Iterator(start, end)
 	for ; iter.Valid(); iter.Next() {
 		// the range also holds keys of other lengths, e.g. height 2812370
-		// sorts between 28123709 and 28123710
+		// sorts between 28123699 and 28123700
 		h, canonical := txOutKeyHeight(iter.Key())
 		if canonical && h >= lo && h <= hi {
 			entries[h] = bytes.Clone(iter.Value())
