@@ -177,7 +177,10 @@ func (m *Manager) AllDown() bool {
 // ReadCandidates returns endpoints for a read, best first: the active endpoint, then
 // the other healthy ones by priority, all excluding rate-limit cooldown. When that
 // leaves nothing (every endpoint is down or cooling off) it returns every
-// non-disabled endpoint by priority so bifrost keeps trying (#2828 failover logic 5).
+// non-disabled endpoint by priority so bifrost keeps trying (#2828 failover logic 5),
+// except endpoints evicted for a minority block hash: a rejected fork must never
+// become the data source just because everything else is down. Only the health
+// loop's hash check can clear that quarantine.
 func (m *Manager) ReadCandidates() []*Entry {
 	active := m.Active()
 	out := make([]*Entry, 0, len(m.entries))
@@ -193,12 +196,12 @@ func (m *Manager) ReadCandidates() []*Entry {
 		return out
 	}
 	for _, e := range m.entries {
-		if e.Usable() {
+		if e.Usable() && !e.IntegrityEvicted() {
 			out = append(out, e)
 		}
 	}
 	if len(out) == 0 {
-		m.log.Error().Msg("no usable endpoint: every endpoint is disabled or its chain identity is unverified")
+		m.log.Error().Msg("no usable endpoint: every endpoint is disabled, unverified, or quarantined for a minority block hash")
 	}
 	return out
 }
@@ -206,7 +209,10 @@ func (m *Manager) ReadCandidates() []*Entry {
 // RecordSuccess is called by routers after a successful request. While every
 // endpoint is down, an inline success on a non-healthy endpoint counts as one
 // passing recovery check so bifrost can climb out of all-down without waiting for
-// the probe loop (identity verification still gates the promotion).
+// the probe loop (identity verification still gates the promotion). An endpoint
+// evicted for a minority block hash is excluded: answering requests proves nothing
+// about which chain it is on, so only a matching hash in the health loop may
+// recover it (pinned verification reads can still reach it).
 func (m *Manager) RecordSuccess(name string) {
 	e := m.byName[name]
 	if e == nil {
@@ -216,6 +222,9 @@ func (m *Manager) RecordSuccess(name string) {
 	case StateHealthy:
 		e.RecordSuccess()
 	case StateUnhealthy, StateRecovering:
+		if e.IntegrityEvicted() {
+			return
+		}
 		if m.AllDown() {
 			from, to := e.RecordHealthCheck(true, m.cfg)
 			m.logTransition(e, from, to, "inline success while all endpoints down")
@@ -308,9 +317,10 @@ func (m *Manager) handOff(reason string) bool {
 }
 
 // reselect moves active to the highest-priority Healthy endpoint if the current
-// active is not Healthy. With nothing Healthy, a Disabled active is replaced by the
-// best non-Disabled endpoint so writes never target a wrong-network node. Returns
-// true when active changed.
+// active is not Healthy. With nothing Healthy, a Disabled or integrity-evicted
+// active is replaced by the best endpoint that is neither, so writes never target a
+// wrong-network node or a rejected fork while one is still available. Returns true
+// when active changed.
 func (m *Manager) reselect(reason string) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -335,10 +345,10 @@ func (m *Manager) reselect(reason string) bool {
 	if m.metrics != nil {
 		m.metrics.allDown.WithLabelValues(m.chain.String()).Set(1)
 	}
-	if cur.State() == StateDisabled {
+	if cur.State() == StateDisabled || cur.IntegrityEvicted() {
 		for i, e := range m.entries {
-			if e.State() != StateDisabled {
-				m.switchActive(cur, e, int32(i), reason+" (active disabled)", "failover")
+			if e.State() != StateDisabled && !e.IntegrityEvicted() {
+				m.switchActive(cur, e, int32(i), reason+" (active disabled or quarantined)", "failover")
 				return true
 			}
 		}

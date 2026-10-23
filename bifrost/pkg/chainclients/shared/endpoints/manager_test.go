@@ -209,3 +209,40 @@ func (s *ManagerSuite) TestVerificationCandidatesSkipDisabledAndLongDead(c *C) {
 	c.Assert(names(m.VerificationCandidates(0)), DeepEquals, []string{"a", "b"})
 	c.Assert(m.Entry("a").NonHealthyFor(), Equals, time.Duration(0))
 }
+
+// An endpoint evicted for a minority block hash is quarantined: it is left out of the
+// all-down fallback list, inline successes never count as recovery checks for it, and
+// the active role moves off it while a non-quarantined endpoint exists. Only the
+// health loop's hash check (health_test) may clear the quarantine.
+func (s *ManagerSuite) TestIntegrityEvictedEndpointIsQuarantinedUntilHashMatches(c *C) {
+	m := newMgr(c, fc(1, 2), "a", "b", "d")
+	a, b, d := m.Entry("a"), m.Entry("b"), m.Entry("d")
+	// a (active) is evicted and the health loop would have reselected; then b and d
+	// go down one after the other
+	c.Assert(m.RecordError("a", endpoints.ErrorKindTransport), Equals, true)
+	a.MarkUnhealthy(endpoints.ErrorKindIntegrity)
+	c.Assert(a.IntegrityEvicted(), Equals, true)
+	c.Assert(m.Active().Name, Equals, "b")
+	c.Assert(m.RecordError("b", endpoints.ErrorKindTransport), Equals, true)
+	c.Assert(m.RecordError("d", endpoints.ErrorKindTransport), Equals, true)
+	c.Assert(m.AllDown(), Equals, true)
+
+	// fallback traffic goes to the merely-unreachable endpoints, never to the fork
+	c.Assert(names(m.ReadCandidates()), DeepEquals, []string{"b", "d"})
+	c.Assert(m.Active().Name, Not(Equals), "a")
+
+	// inline successes recover b but leave a quarantined
+	for i := 0; i < 3; i++ {
+		m.RecordSuccess("a")
+		m.RecordSuccess("b")
+	}
+	c.Assert(b.State(), Equals, endpoints.StateHealthy)
+	c.Assert(a.State(), Equals, endpoints.StateUnhealthy)
+	c.Assert(a.IntegrityEvicted(), Equals, true)
+	c.Assert(d.State(), Equals, endpoints.StateUnhealthy)
+
+	// with every other endpoint disabled the quarantined one is still not used
+	m.Disable("b", "test")
+	m.Disable("d", "test")
+	c.Assert(m.ReadCandidates(), HasLen, 0)
+}
