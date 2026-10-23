@@ -43,6 +43,8 @@ type utxoCovBridge struct {
 	asgardErr       error
 	lastObservedErr error
 	pubkeys         []thorclient.PubKeyContractAddressPair
+	// solvencyHalted makes every chain read as solvency-halted on THORChain.
+	solvencyHalted bool
 }
 
 func (b *utxoCovBridge) GetAsgards() (ttypes.Vaults, error) {
@@ -59,8 +61,15 @@ func (b *utxoCovBridge) GetLastObservedInHeight(common.Chain) (int64, error) {
 	return 0, b.lastObservedErr
 }
 
-func (b *utxoCovBridge) GetMimir(string) (int64, error)                { return 0, nil }
+func (b *utxoCovBridge) GetMimir(key string) (int64, error) {
+	if b.solvencyHalted && strings.HasPrefix(key, "SolvencyHalt") {
+		return 1, nil
+	}
+	return 0, nil
+}
+
 func (b *utxoCovBridge) GetMimirWithRef(string, string) (int64, error) { return 0, nil }
+func (b *utxoCovBridge) GetBlockHeight() (int64, error)                { return 100, nil }
 
 // utxoRPCCov serves the shared BTC fixtures, with per-method overrides.
 type utxoRPCCov struct {
@@ -505,8 +514,10 @@ func (s *UTXOCovSuite) TestReportSolvencyCov(c *C) {
 	// per-byte rate. Same wallet (1.0 coin), fee 1000, two vaults: one fully
 	// funded, one 0.01 coin short. The allowed gap is 10x3x(txSize)xfee: BTC's
 	// per-byte 1000-byte estimate (3e7) hides the shortfall, ZEC's 1x (3e4)
-	// does not. With the scanner unhealthy, all-solvent vaults are reported as
-	// solvent (2 messages); an insolvent vault is reported alone (1 message).
+	// does not. With the chain solvency-halted on THORChain and the scanner
+	// unhealthy, all-solvent vaults are reported as solvent (2 messages); an
+	// insolvent vault is reported alone (1 message).
+	s.bridge.solvencyHalted = true
 	pk1, pk2 := ttypes.GetRandomPubKey(), ttypes.GetRandomPubKey()
 	addr, script := regtestP2WPKHCov(c, pk1)
 	s.rpc.set("listunspent", rpcResultCov([]map[string]any{
@@ -552,6 +563,9 @@ func (s *UTXOCovSuite) TestCanDeleteBlockAndNetworkInfoCov(c *C) {
 	s.rpc.set("getmempoolentry", rpcErrCov(-5, "Transaction not in mempool"))
 	c.Check(s.client.canDeleteBlock(meta), Equals, true)
 
+	// BTC pins its floor regardless of the daemon, so a failed lookup is only
+	// observable on a chain that keeps the daemon-derived relay fee.
+	s.client.cfg.ChainID = common.LTCChain
 	s.client.minRelayFeeSats.Store(77)
 	s.rpc.set("getnetworkinfo", rpcErrCov(-1, "boom"))
 	s.client.updateNetworkInfo()

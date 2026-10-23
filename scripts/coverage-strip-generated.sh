@@ -19,8 +19,9 @@ trap 'rm -f "$PATTERNS" "$PROFILE.tmp"' EXIT
 
 # Profile lines look like "<module>/<path>.go:<line>.<col>,...", so match on
 # "<module>/<path>.go:" exactly.
-git ls-files '*.go' |
-  xargs grep -lE '^// Code generated .* DO NOT EDIT\.$' |
+# git grep searches every tracked file in one pass; xargs grep would exit 123
+# (fatal under pipefail) whenever one of its batches held no generated file.
+git grep -lE '^// Code generated .* DO NOT EDIT\.$' -- '*.go' |
   sed "s|^|$MODULE/|; s|\$|:|" >"$PATTERNS"
 
 grep -vFf "$PATTERNS" "$PROFILE" >"$PROFILE.tmp"
