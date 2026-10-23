@@ -310,7 +310,9 @@ func NewTronClient(
 	failoverCfg := config.GetFailoverConfig()
 	endpointCfgs := config.GetEndpoints()
 	expectedIdentity := strings.ToLower(config.ExpectedIdentity)
-	mgrOpts := []endpoints.Option{endpoints.WithMetrics(endpoints.DefaultMetrics())}
+	// identity is required even for a single legacy endpoint: a TRON endpoint is two
+	// hosts, and the pair must be proven to be one network before it serves anything
+	mgrOpts := []endpoints.Option{endpoints.WithMetrics(endpoints.DefaultMetrics()), endpoints.WithIdentityRequired()}
 	if expectedIdentity != "" {
 		mgrOpts = append(mgrOpts, endpoints.WithExpectedIdentity(expectedIdentity))
 	}

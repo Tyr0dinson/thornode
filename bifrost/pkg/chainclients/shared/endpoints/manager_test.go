@@ -246,3 +246,16 @@ func (s *ManagerSuite) TestIntegrityEvictedEndpointIsQuarantinedUntilHashMatches
 	m.Disable("d", "test")
 	c.Assert(m.ReadCandidates(), HasLen, 0)
 }
+
+// WithIdentityRequired keeps even a lone, unpinned endpoint out of rotation until its
+// identity is verified (TRON: the api_host/rpc_host pair must prove one network).
+func (s *ManagerSuite) TestWithIdentityRequiredGatesASingleEndpoint(c *C) {
+	m, err := endpoints.NewManager(common.TRONChain, eps("a"), fc(1, 1), zerolog.Nop(), endpoints.WithIdentityRequired())
+	c.Assert(err, IsNil)
+	c.Assert(m.Entry("a").Usable(), Equals, false)
+	c.Assert(m.ReadCandidates(), HasLen, 0)
+	c.Assert(m.WriteTarget(), IsNil)
+	m.Entry("a").SetIdentity("0x2b6653dc")
+	c.Assert(m.Entry("a").Usable(), Equals, true)
+	c.Assert(names(m.ReadCandidates()), DeepEquals, []string{"a"})
+}

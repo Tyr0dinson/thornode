@@ -76,7 +76,7 @@ func (c *Client) unstuckAction() {
 		c.logger.Err(err).Msg("fail to get all signed tx items")
 		return
 	}
-	for _, item := range signedTxItems {
+	for idx, item := range signedTxItems {
 		clog := c.logger.With().
 			Str("txid", item.Hash).
 			Str("vault", item.VaultPubKey).
@@ -107,9 +107,16 @@ func (c *Client) unstuckAction() {
 
 		err = c.unstuckTx(clog, item)
 		if errors.Is(err, errUnstuckRetryLater) {
-			// nothing to keysign yet for this item; the ones behind it are independent
+			// nothing was keysigned for this item. Whether an item is deferred depends
+			// on this node's own endpoints, so moving on to another item of the same
+			// vault would start a keysign the other members are not in (they are on
+			// this one); only an item of a different vault, whose party cannot
+			// collide, is taken this round.
 			clog.Warn().Err(err).Msg("unstuck deferred")
-			continue
+			if idx+1 < len(signedTxItems) && signedTxItems[idx+1].VaultPubKey != item.VaultPubKey {
+				continue
+			}
+			break
 		}
 		if err != nil {
 			clog.Err(err).Msg("failed to unstuck tx")

@@ -92,11 +92,14 @@ func (e *Entry) State() State {
 	return e.state
 }
 
-// Eligible reports whether readers may use this endpoint right now.
+// Eligible reports whether readers may use this endpoint right now: healthy, not
+// cooling down, and of a verified identity when one is required. The identity check
+// is repeated here rather than relied on through Bootstrap's state transitions, so
+// no path into StateHealthy can hand the routers an endpoint of unknown network.
 func (e *Entry) Eligible() bool {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	return e.state == StateHealthy && !e.inCooldownLocked()
+	return e.state == StateHealthy && !e.inCooldownLocked() && (!e.identityRequired || e.identityVerified)
 }
 
 // Usable reports whether the endpoint may be talked to at all: it is not disabled,

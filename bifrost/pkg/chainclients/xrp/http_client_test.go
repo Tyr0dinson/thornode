@@ -295,6 +295,18 @@ func TestRetryHTTPClientNeverReplaysWrites(t *testing.T) {
 	if attempts != 4 {
 		t.Fatalf("ledger was attempted %d times, want 4 (1 + 3 retries)", attempts)
 	}
+
+	// a request whose body cannot be inspected is never replayed while writes are
+	// protected: "sent once" fails closed
+	attempts = 0
+	opaque := mk("ledger")
+	opaque.GetBody = nil
+	if _, err := c.Do(opaque); err == nil {
+		t.Fatal("expected an error")
+	}
+	if attempts != 1 {
+		t.Fatalf("opaque request was attempted %d times, want exactly 1", attempts)
+	}
 }
 
 func TestIsLedgerNotFoundBody(t *testing.T) {

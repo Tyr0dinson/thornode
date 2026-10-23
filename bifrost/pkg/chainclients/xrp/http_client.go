@@ -102,10 +102,15 @@ func newRetryHTTPClientFrom(inner *http.Client, maxRetries int, logger zerolog.L
 	return c
 }
 
-// isNoRetry reports whether req carries a JSON-RPC method that must never be replayed.
+// isNoRetry reports whether req carries a JSON-RPC method that must never be
+// replayed. When methods are protected and the body cannot be inspected, the
+// request is not replayed either: "sent once" must fail closed.
 func (r *retryHTTPClient) isNoRetry(req *http.Request) bool {
-	if len(r.noRetry) == 0 || req.GetBody == nil {
+	if len(r.noRetry) == 0 {
 		return false
+	}
+	if req.GetBody == nil {
+		return true
 	}
 	body, err := req.GetBody()
 	if err != nil {

@@ -164,12 +164,14 @@ func NewCosmosClient(
 	ordered := endpoints.OrderedEndpoints(endpointMgr, endpointCfgs)
 
 	grpcConns := make(map[string]*grpc.ClientConn, len(ordered))
-	// every connection built below must be closed if a later step fails
+	// every connection built below, and the endpoint manager, must be released if a
+	// later step fails
 	grpcOK := false
 	defer func() {
 		if grpcOK {
 			return
 		}
+		endpointMgr.Stop()
 		for _, conn := range grpcConns {
 			_ = conn.Close()
 		}
