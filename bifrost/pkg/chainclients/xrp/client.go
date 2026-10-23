@@ -73,6 +73,10 @@ type Client struct {
 	networkID    uint32
 }
 
+// xrpWriteMethods are never retried on a second endpoint once they may have been
+// sent, and never replayed by the transport retry wrapper.
+var xrpWriteMethods = []string{"submit", "submit_multisigned"}
+
 // NewClient creates a new instance of an XRP-based chain client
 func NewClient(
 	thorKeys *thorclient.Keys,
@@ -137,22 +141,31 @@ func NewClient(
 	if err != nil {
 		return nil, fmt.Errorf("fail to build endpoint targets: %w", err)
 	}
+	requestTimeout := cfg.BlockScanner.HTTPRequestTimeout
+	if requestTimeout <= 0 {
+		requestTimeout = defaultHTTPTimeout
+	}
 	router, err := endpoints.NewHTTPRouter(endpointMgr, endpoints.HTTPRouterConfig{
 		Base:           endpoints.SyntheticBase(cfg.ChainID),
 		Targets:        targets,
-		WriteMethods:   []string{"submit", "submit_multisigned"},
+		WriteMethods:   xrpWriteMethods,
 		DialTimeout:    failoverCfg.HealthCheckTimeout,
-		AttemptTimeout: evm.AttemptTimeout(cfg.BlockScanner.HTTPRequestTimeout),
+		AttemptTimeout: evm.AttemptTimeout(requestTimeout),
+		// a provider with a shorter ledger history answers lgrNotFound inside a 200;
+		// another endpoint may still have the ledger, so it is asked first
+		RetryElsewhere: isLedgerNotFoundBody,
 	}, logger)
 	if err != nil {
 		return nil, fmt.Errorf("fail to create endpoint router: %w", err)
 	}
-	xrpHTTP := &http.Client{Transport: router, Timeout: cfg.BlockScanner.HTTPRequestTimeout}
+	xrpHTTP := &http.Client{Transport: router, Timeout: requestTimeout}
 	rpcBase := endpoints.SyntheticBase(cfg.ChainID).String()
 	// develop's transient-error retry policy (see retryHTTPClient) wraps the
-	// router-backed client; the router itself handles endpoint failover
+	// router-backed client; the router itself handles endpoint failover, and the
+	// wrapper never replays a write (the router's "sent once" guarantee must hold
+	// end to end)
 	rpcConfig, err := rpc.NewClientConfig(rpcBase,
-		rpc.WithHTTPClient(newRetryHTTPClientFrom(xrpHTTP, cfg.BlockScanner.MaxHTTPRequestRetry, logger)))
+		rpc.WithHTTPClient(newRetryHTTPClientFrom(xrpHTTP, cfg.BlockScanner.MaxHTTPRequestRetry, logger, xrpWriteMethods...)))
 	if err != nil {
 		return nil, fmt.Errorf("unable to create rpc config for client, %w", err)
 	}

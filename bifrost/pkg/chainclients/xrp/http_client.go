@@ -1,6 +1,7 @@
 package xrp
 
 import (
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -58,6 +59,9 @@ type retryHTTPClient struct {
 	maxRetries int
 	backoff    time.Duration
 	logger     zerolog.Logger
+	// noRetry lists JSON-RPC methods that are never replayed (writes): a replay after
+	// a connection reset could reach a second endpoint through the router.
+	noRetry map[string]bool
 }
 
 var _ rpc.HTTPClient = (*retryHTTPClient)(nil)
@@ -80,16 +84,52 @@ func newRetryHTTPClient(timeout time.Duration, maxRetries int, logger zerolog.Lo
 // newRetryHTTPClientFrom wraps an existing http.Client (for example one whose
 // transport routes requests to the active endpoint) with the same transient-error
 // retry policy as newRetryHTTPClient. The inner client keeps its own timeout.
-func newRetryHTTPClientFrom(inner *http.Client, maxRetries int, logger zerolog.Logger) *retryHTTPClient {
+// Requests whose JSON-RPC method is in noRetryMethods are sent exactly once.
+func newRetryHTTPClientFrom(inner *http.Client, maxRetries int, logger zerolog.Logger, noRetryMethods ...string) *retryHTTPClient {
 	if maxRetries < 0 {
 		maxRetries = 0
 	}
-	return &retryHTTPClient{
+	c := &retryHTTPClient{
 		inner:      inner,
 		maxRetries: maxRetries,
 		backoff:    defaultRetryBackoff,
 		logger:     logger,
+		noRetry:    make(map[string]bool, len(noRetryMethods)),
 	}
+	for _, m := range noRetryMethods {
+		c.noRetry[m] = true
+	}
+	return c
+}
+
+// isNoRetry reports whether req carries a JSON-RPC method that must never be replayed.
+func (r *retryHTTPClient) isNoRetry(req *http.Request) bool {
+	if len(r.noRetry) == 0 || req.GetBody == nil {
+		return false
+	}
+	body, err := req.GetBody()
+	if err != nil {
+		return true // cannot inspect: do not replay
+	}
+	defer func() { _ = body.Close() }()
+	var call struct {
+		Method string `json:"method"`
+	}
+	if json.NewDecoder(io.LimitReader(body, 1<<20)).Decode(&call) != nil {
+		return false
+	}
+	return r.noRetry[call.Method]
+}
+
+// isLedgerNotFoundBody reports whether a complete XRPL JSON-RPC body carries rippled's
+// lgrNotFound error: the server does not have the requested ledger (yet, or any more).
+func isLedgerNotFoundBody(body []byte) bool {
+	var env struct {
+		Result struct {
+			Error string `json:"error"`
+		} `json:"result"`
+	}
+	return json.Unmarshal(body, &env) == nil && strings.Contains(env.Result.Error, "lgrNotFound")
 }
 
 // isTransientNetError reports whether err is a transport-level failure that is
@@ -151,7 +191,7 @@ func (r *retryHTTPClient) Do(req *http.Request) (*http.Response, error) {
 		if err == nil {
 			return resp, nil
 		}
-		if !isTransientNetError(err) {
+		if !isTransientNetError(err) || r.isNoRetry(req) {
 			return nil, err
 		}
 		lastErr = err

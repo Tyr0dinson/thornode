@@ -95,6 +95,12 @@ type HTTPRouterConfig struct {
 	// Transport performs the actual requests. Default: a clone of
 	// http.DefaultTransport with the timeouts above.
 	Transport http.RoundTripper
+	// RetryElsewhere, when set, inspects a complete, well-formed 200 body that is
+	// not an endpoint error and reports whether another endpoint should be asked
+	// first (a chain-native "I do not have that ledger" answer, for example). Such an
+	// answer is not charged to the endpoint; it is returned only when no other
+	// candidate does better. Writes are never retried.
+	RetryElsewhere func(body []byte) bool
 }
 
 // HTTPRouter is an http.RoundTripper that sends every request to the manager's
@@ -221,8 +227,13 @@ func (r *HTTPRouter) RoundTrip(req *http.Request) (*http.Response, error) {
 	}
 
 	var lastErr error
+	// a chain-native "not here" answer kept in case no other candidate does better
+	var deferred *http.Response
 	for i, e := range candidates {
 		if err := req.Context().Err(); err != nil {
+			if deferred != nil {
+				return deferred, nil
+			}
 			return nil, err
 		}
 		t, ok := r.targets[e.Name]
@@ -301,6 +312,14 @@ func (r *HTTPRouter) RoundTrip(req *http.Request) (*http.Response, error) {
 				r.mgr.RecordSuccess(name)
 			})
 			return resp, nil
+		case verdictRetryElsewhere:
+			// the endpoint answered properly, so nothing is charged; keep the answer
+			// and ask the next candidate
+			if deferred != nil {
+				drain(deferred, func() {})
+			}
+			deferred = resp
+			continue
 		case verdictRateLimited:
 			r.mgr.RecordRateLimited(e.Name)
 			if isWrite && fromBody {
@@ -322,6 +341,9 @@ func (r *HTTPRouter) RoundTrip(req *http.Request) (*http.Response, error) {
 				return nil, lastErr
 			}
 		}
+	}
+	if deferred != nil {
+		return deferred, nil
 	}
 	if lastErr == nil {
 		lastErr = fmt.Errorf("chain %s: no endpoint available", r.mgr.Chain())
@@ -424,6 +446,7 @@ type verdict int
 const (
 	verdictOK verdict = iota
 	verdictAppError
+	verdictRetryElsewhere
 	verdictRateLimited
 	verdictEndpointError
 )
@@ -472,6 +495,9 @@ func (r *HTTPRouter) classify(resp *http.Response, isWrite bool) (verdict, Error
 		return verdictEndpointError, ErrorKindTransport, false
 	}
 	v, k := classifyJSONRPC(trimmed)
+	if (v == verdictOK || v == verdictAppError) && !isWrite && r.cfg.RetryElsewhere != nil && r.cfg.RetryElsewhere(trimmed) {
+		return verdictRetryElsewhere, "", true
+	}
 	return v, k, true
 }
 

@@ -260,3 +260,57 @@ func TestNewRetryHTTPClientDefaults(t *testing.T) {
 		t.Fatalf("backoff must default to %s, got %s", defaultRetryBackoff, c.backoff)
 	}
 }
+
+// A write (submit) is sent exactly once by the retry wrapper even on a transient
+// transport error, so the router's "never duplicated on a second endpoint" guarantee
+// holds end to end; a read with the same error is still retried.
+func TestRetryHTTPClientNeverReplaysWrites(t *testing.T) {
+	attempts := 0
+	inner := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		attempts++
+		return nil, syscall.ECONNRESET
+	})}
+	c := newRetryHTTPClientFrom(inner, 3, zerolog.Nop(), "submit", "submit_multisigned")
+
+	mk := func(method string) *http.Request {
+		body := []byte(`{"method":"` + method + `","params":[{}]}`)
+		req, err := http.NewRequest(http.MethodPost, "http://xrp.endpoints.invalid/", bytes.NewReader(body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.GetBody = func() (io.ReadCloser, error) { return io.NopCloser(bytes.NewReader(body)), nil }
+		return req
+	}
+	if _, err := c.Do(mk("submit")); err == nil {
+		t.Fatal("expected an error")
+	}
+	if attempts != 1 {
+		t.Fatalf("submit was attempted %d times, want exactly 1", attempts)
+	}
+
+	attempts = 0
+	if _, err := c.Do(mk("ledger")); err == nil {
+		t.Fatal("expected an error")
+	}
+	if attempts != 4 {
+		t.Fatalf("ledger was attempted %d times, want 4 (1 + 3 retries)", attempts)
+	}
+}
+
+func TestIsLedgerNotFoundBody(t *testing.T) {
+	cases := map[string]bool{
+		lgrNotFoundResponse:                                   true,
+		`{"result":{"ledger":{},"status":"success"}}`:         false,
+		`{"result":{"error":"actNotFound","status":"error"}}`: false,
+		`not json`: false,
+	}
+	for body, want := range cases {
+		if got := isLedgerNotFoundBody([]byte(body)); got != want {
+			t.Fatalf("isLedgerNotFoundBody(%s) = %v, want %v", body, got, want)
+		}
+	}
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }

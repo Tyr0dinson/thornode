@@ -702,3 +702,43 @@ func (s *RouterSuite) TestInvalidJSONBodyIsAnEndpointFailure(c *C) {
 	_ = resp.Body.Close()
 	c.Assert(m3.Entry("odd").State(), Equals, endpoints.StateHealthy)
 }
+
+// A chain-native "I do not have that" answer (XRP lgrNotFound) is a proper answer from
+// a healthy endpoint, so it is never charged, but another endpoint may have the data:
+// the router asks the next candidate and returns the deferred answer only when none
+// does better.
+func (s *RouterSuite) TestRetryElsewhereAsksTheNextCandidateWithoutCharging(c *C) {
+	var st int32 = http.StatusOK
+	var h1, h2 []hit
+	short := rpcServer(&st, &h1, `{"result":{"error":"lgrNotFound","error_code":21,"status":"error"}}`)
+	defer short.Close()
+	full := rpcServer(&st, &h2, `{"result":{"ledger":{"ledger_index":"100"},"status":"success"}}`)
+	defer full.Close()
+	m, targets := twoEndpointMgr(c, common.XRPChain, []config.ChainEndpointConfig{{Name: "short", RPCHost: short.URL, Priority: 1}, {Name: "full", RPCHost: full.URL, Priority: 2}}, 1)
+	notHere := func(body []byte) bool { return bytes.Contains(body, []byte(`"lgrNotFound"`)) }
+	r, err := endpoints.NewHTTPRouter(m, endpoints.HTTPRouterConfig{Base: endpoints.SyntheticBase(m.Chain()), Targets: targets, RetryElsewhere: notHere}, zerolog.Nop())
+	c.Assert(err, IsNil)
+	hc := &http.Client{Transport: r, Timeout: 2 * time.Second}
+
+	resp, err := post(c, hc, base(m), "ledger")
+	c.Assert(err, IsNil)
+	body, _ := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	c.Assert(string(body), Matches, `.*"ledger_index":"100".*`)
+	c.Assert(h1, HasLen, 1)
+	c.Assert(h2, HasLen, 1)
+	c.Assert(m.Entry("short").State(), Equals, endpoints.StateHealthy)
+	c.Assert(m.Active().Name, Equals, "short")
+
+	// when no candidate has it, the deferred answer is returned so the caller sees the
+	// chain's own error, and still nothing is charged
+	m2, targets2 := twoEndpointMgr(c, common.XRPChain, []config.ChainEndpointConfig{{Name: "short", RPCHost: short.URL, Priority: 1}}, 1)
+	r2, err := endpoints.NewHTTPRouter(m2, endpoints.HTTPRouterConfig{Base: endpoints.SyntheticBase(m2.Chain()), Targets: targets2, RetryElsewhere: notHere}, zerolog.Nop())
+	c.Assert(err, IsNil)
+	resp, err = post(c, &http.Client{Transport: r2, Timeout: 2 * time.Second}, base(m2), "ledger")
+	c.Assert(err, IsNil)
+	body, _ = io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	c.Assert(string(body), Matches, `.*lgrNotFound.*`)
+	c.Assert(m2.Entry("short").State(), Equals, endpoints.StateHealthy)
+}
