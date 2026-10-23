@@ -1220,9 +1220,56 @@ const MaxChainEndpoints = 16
 // ValidateEndpoints checks the explicit endpoints list. Legacy single-host configs
 // (no endpoints list) are always valid here; host presence for them is checked at
 // startup in cmd/bifrost.
+// SupportsEndpoints reports whether the chain's bifrost client runs an endpoint
+// manager, so an `endpoints` list (or BIFROST_CHAINS_<CHAIN>_ENDPOINTS_* variables)
+// is honored. XMR talks to its signer sidecar only, and SUI and ADA have no client
+// wiring for it yet.
+func (c BifrostChainConfiguration) SupportsEndpoints() bool {
+	switch c.ChainID {
+	case common.BTCChain, common.LTCChain, common.BCHChain, common.DOGEChain, common.ZECChain,
+		common.ETHChain, common.AVAXChain, common.BSCChain, common.BASEChain, common.POLChain,
+		common.GAIAChain, common.NOBLEChain, common.SOLChain, common.XRPChain, common.TRONChain:
+		return true
+	}
+	return false
+}
+
+// validateEndpointHosts applies the per-chain host rules to one endpoint, the
+// legacy synthesized one included: GAIA and NOBLE need both hosts, TRON needs both
+// rpc_host and api_host, everything else needs rpc_host.
+func (c BifrostChainConfiguration) validateEndpointHosts(e ChainEndpointConfig) error {
+	if e.RPCHost == "" && e.APIHost == "" && e.CosmosGRPCHost == "" {
+		return fmt.Errorf("chain %s: endpoint %q has no host", c.ChainID, e.Name)
+	}
+	switch c.ChainID {
+	case common.GAIAChain, common.NOBLEChain:
+		if e.CosmosGRPCHost == "" || e.RPCHost == "" {
+			return fmt.Errorf("chain %s: endpoint %q needs both cosmos_grpc_host and rpc_host", c.ChainID, e.Name)
+		}
+	case common.TRONChain:
+		if e.RPCHost == "" || e.APIHost == "" {
+			return fmt.Errorf("chain %s: endpoint %q needs both rpc_host and api_host", c.ChainID, e.Name)
+		}
+	default:
+		if e.RPCHost == "" {
+			return fmt.Errorf("chain %s: endpoint %q needs rpc_host", c.ChainID, e.Name)
+		}
+	}
+	return nil
+}
+
+// ValidateEndpoints checks the chain's endpoint configuration: an explicit list
+// (names, count, per-chain hosts, only on chains whose client supports it), or,
+// without one, the hosts of the synthesized legacy endpoint on chains that do.
 func (c BifrostChainConfiguration) ValidateEndpoints() error {
 	if len(c.Endpoints) == 0 {
-		return nil
+		if !c.SupportsEndpoints() {
+			return nil
+		}
+		return c.validateEndpointHosts(c.GetEndpoints()[0])
+	}
+	if !c.SupportsEndpoints() {
+		return fmt.Errorf("chain %s: the %s client does not support an endpoints list; configure rpc_host", c.ChainID, c.ChainID)
 	}
 	if len(c.Endpoints) > MaxChainEndpoints {
 		return fmt.Errorf("chain %s: at most %d endpoints are supported, got %d", c.ChainID, MaxChainEndpoints, len(c.Endpoints))
@@ -1236,22 +1283,8 @@ func (c BifrostChainConfiguration) ValidateEndpoints() error {
 			return fmt.Errorf("chain %s: duplicate endpoint name %q", c.ChainID, e.Name)
 		}
 		seen[e.Name] = struct{}{}
-		if e.RPCHost == "" && e.APIHost == "" && e.CosmosGRPCHost == "" {
-			return fmt.Errorf("chain %s: endpoint %q has no host", c.ChainID, e.Name)
-		}
-		switch c.ChainID {
-		case common.GAIAChain, common.NOBLEChain:
-			if e.CosmosGRPCHost == "" || e.RPCHost == "" {
-				return fmt.Errorf("chain %s: endpoint %q needs both cosmos_grpc_host and rpc_host", c.ChainID, e.Name)
-			}
-		case common.TRONChain:
-			if e.RPCHost == "" || e.APIHost == "" {
-				return fmt.Errorf("chain %s: endpoint %q needs both rpc_host and api_host", c.ChainID, e.Name)
-			}
-		default:
-			if e.RPCHost == "" {
-				return fmt.Errorf("chain %s: endpoint %q needs rpc_host", c.ChainID, e.Name)
-			}
+		if err := c.validateEndpointHosts(e); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -1361,12 +1394,21 @@ func applyEndpointEnvOverridesTo(chains map[string]*BifrostChainConfiguration, e
 			case "COSMOS_GRPC_HOST":
 				ep.CosmosGRPCHost = o.value
 			case "COSMOS_GRPC_TLS":
-				ep.CosmosGRPCTLS = parseEnvBool(o.value)
+				b, err := strconv.ParseBool(strings.TrimSpace(o.value))
+				if err != nil {
+					// a typo must not silently downgrade a gRPC connection to plaintext
+					log.Warn().Str("chain", chain).Int("endpoint", o.idx).Str("value", o.value).
+						Msg("unparsable COSMOS_GRPC_TLS for chain endpoint, treating as false")
+				}
+				ep.CosmosGRPCTLS = err == nil && b
 			case "NAME":
 				ep.Name = o.value
 			case "PRIORITY":
 				if n, err := strconv.Atoi(strings.TrimSpace(o.value)); err == nil {
 					ep.Priority = n
+				} else {
+					log.Warn().Str("chain", chain).Int("endpoint", o.idx).Str("value", o.value).
+						Msg("unparsable PRIORITY for chain endpoint, using its position")
 				}
 			case "USERNAME":
 				ep.UserName = o.value
@@ -1388,11 +1430,6 @@ func applyEndpointEnvOverridesTo(chains map[string]*BifrostChainConfiguration, e
 			}
 		}
 	}
-}
-
-func parseEnvBool(v string) bool {
-	b, err := strconv.ParseBool(strings.TrimSpace(v))
-	return err == nil && b
 }
 
 func (b *BifrostChainConfiguration) Validate() {

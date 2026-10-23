@@ -43,6 +43,19 @@ func printVersion() {
 	fmt.Printf("%s v%s, rev %s\n", serverIdentity, constants.Version, constants.GitCommit)
 }
 
+// withScheme prefixes a bare host with http://; an existing http:// or https:// in
+// any letter case is kept as is.
+func withScheme(host string) string {
+	if host == "" {
+		return host
+	}
+	lower := strings.ToLower(host)
+	if strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://") {
+		return host
+	}
+	return "http://" + host
+}
+
 func main() {
 	showVersion := flag.Bool("version", false, "Shows version")
 	logLevel := flag.StringP("log-level", "l", "info", "Log Level")
@@ -199,31 +212,17 @@ func main() {
 		if err = chainCfg.GetFailoverConfig().Validate(); err != nil {
 			log.Fatal().Err(err).Stringer("chain", chainCfg.ChainID).Msg("invalid chain failover configuration")
 		}
-		for _, e := range chainCfg.GetEndpoints() {
-			if e.RPCHost == "" && e.APIHost == "" && e.CosmosGRPCHost == "" {
-				log.Fatal().
-					Stringer("chain", chainCfg.ChainID).
-					Str("endpoint", e.Name).
-					Msg("no host configured for chain endpoint")
-			}
-		}
-		// Normalize scheme on all endpoint hosts.
-		// Must copy→mutate→reassign because cfgChains is a map of structs (not pointers).
+		// Normalize scheme on all endpoint hosts (ValidateEndpoints has already
+		// checked that every endpoint, the legacy one included, has the hosts its
+		// chain needs). Must copy→mutate→reassign because cfgChains is a map of
+		// structs (not pointers).
 		for j, e := range chainCfg.Endpoints {
-			if e.RPCHost != "" && !strings.HasPrefix(e.RPCHost, "http") {
-				chainCfg.Endpoints[j].RPCHost = "http://" + e.RPCHost
-			}
-			if e.APIHost != "" && !strings.HasPrefix(e.APIHost, "http") {
-				chainCfg.Endpoints[j].APIHost = "http://" + e.APIHost
-			}
+			chainCfg.Endpoints[j].RPCHost = withScheme(e.RPCHost)
+			chainCfg.Endpoints[j].APIHost = withScheme(e.APIHost)
 		}
 		// Also normalize legacy flat fields for backward compat.
-		if chainCfg.RPCHost != "" && !strings.HasPrefix(chainCfg.RPCHost, "http") {
-			chainCfg.RPCHost = "http://" + chainCfg.RPCHost
-		}
-		if chainCfg.APIHost != "" && !strings.HasPrefix(chainCfg.APIHost, "http") {
-			chainCfg.APIHost = "http://" + chainCfg.APIHost
-		}
+		chainCfg.RPCHost = withScheme(chainCfg.RPCHost)
+		chainCfg.APIHost = withScheme(chainCfg.APIHost)
 		cfgChains[chain] = chainCfg
 	}
 	poolMgr := thorclient.NewPoolMgr(thorchainBridge)

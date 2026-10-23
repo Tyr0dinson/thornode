@@ -119,8 +119,17 @@ func (s *ConfigSuite) TestFailoverConfigValidate(c *C) {
 }
 
 func (s *ConfigSuite) TestValidateEndpoints(c *C) {
-	// legacy single host: always valid
+	// legacy single host: valid when it carries the hosts its chain needs
 	c.Assert(config.BifrostChainConfiguration{ChainID: common.BTCChain, RPCHost: "http://x"}.ValidateEndpoints(), IsNil)
+	c.Assert(config.BifrostChainConfiguration{ChainID: common.BTCChain, APIHost: "http://x"}.ValidateEndpoints(), ErrorMatches, `.*endpoint "primary" needs rpc_host.*`)
+	c.Assert(config.BifrostChainConfiguration{ChainID: common.TRONChain, APIHost: "http://x"}.ValidateEndpoints(), ErrorMatches, `.*endpoint "primary" needs both rpc_host and api_host.*`)
+	c.Assert(config.BifrostChainConfiguration{ChainID: common.GAIAChain, CosmosGRPCHost: "h:9090"}.ValidateEndpoints(), ErrorMatches, `.*endpoint "primary" needs both cosmos_grpc_host and rpc_host.*`)
+	// chains without an endpoint manager: a legacy config is not checked here, and an
+	// endpoints list is rejected instead of being silently ignored
+	c.Assert(config.BifrostChainConfiguration{ChainID: common.XMRChain}.ValidateEndpoints(), IsNil)
+	c.Assert(config.BifrostChainConfiguration{ChainID: common.XMRChain, Endpoints: []config.ChainEndpointConfig{
+		{Name: "a", RPCHost: "http://x", Priority: 1},
+	}}.ValidateEndpoints(), ErrorMatches, ".*XMR client does not support an endpoints list.*")
 
 	dup := config.BifrostChainConfiguration{ChainID: common.BTCChain, Endpoints: []config.ChainEndpointConfig{
 		{Name: "a", RPCHost: "http://x", Priority: 1},
