@@ -22,12 +22,19 @@ finality and follow normal processing.
 
 ## Rollback
 
-While an inbound is unfinalized, its swap owns every pool it touched: other
-swaps and liquidity changes on those pools first roll it back. Each speculative
-leg records the exact balance change it made to each pool, including the system
-fee taken from pool depth. Rollback reverses those recorded changes, so every
-pool returns to its pre-swap balances exactly. No reverse swap runs, no RUNE
-moves between pools, and AMM pricing has no effect on the outcome.
+While an inbound is unfinalized, its swap owns every pool it touched. Other
+unfinalized swaps through those pools wait for it to finalize or roll back. A
+swap whose inbound is already final, or an operation that permanently changes
+the pool (adding or withdrawing liquidity, errata, gas accounting), takes the
+pool back first: it rolls the owner back, or completes it if its inbound has
+since confirmed. While a deferred pool cycle is being retried, even confirmed
+swaps through an owned pool wait.
+
+Each speculative leg records the exact balance change it made to each pool,
+including the system fee taken from pool depth. Rollback subtracts exactly those
+recorded changes. No reverse swap runs, no RUNE moves between pools, and AMM
+pricing has no effect on the outcome. Changes the swap did not make, such as
+block rewards paid to the pool while it was owned, stay in the pool.
 
 An inbound that already reached finality may have released its pools, so other
 swaps may have changed them since. In the rare cases where such an inbound is

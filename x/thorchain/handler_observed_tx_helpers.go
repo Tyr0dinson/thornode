@@ -3490,8 +3490,9 @@ func rollbackMempoolSwapCached(ctx cosmos.Context, keeper keeper.Keeper, mgr Man
 	}
 	// While the inbound is unfinalized, the lifecycle has never been FINALIZED
 	// (FinalisedHeight is never reset) and per-pool serialization has kept every
-	// pool it touched free of foreign mutations since the speculative swap. Its
-	// recorded deltas therefore describe exactly what to undo. A finalized
+	// pool it touched free of other swaps and liquidity changes since the
+	// speculative swap. Its recorded deltas therefore describe exactly what to
+	// undo; block rewards credited meanwhile are left in place. A finalized
 	// owner may have released its pools, so it keeps the reverse-swap path.
 	reverseDeltas := hasLifecycle &&
 		voter.FinalisedHeight == 0 &&
