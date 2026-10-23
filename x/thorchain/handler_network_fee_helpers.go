@@ -24,7 +24,7 @@ func processNetworkFeeAttestation(
 ) error {
 	observeSlashPoints := mgr.GetConstants().GetInt64Value(constants.ObserveSlashPoints)
 	lackOfObservationPenalty := mgr.GetConstants().GetInt64Value(constants.LackOfObservationPenalty)
-	observeFlex := mgr.Keeper().GetConfigInt64(ctx, constants.ObservationDelayFlexibility)
+	observeFlex := mgr.Keeper().GetConfigInt64Ref(ctx, constants.ObservationDelayFlexibility)
 
 	slashCtx := ctx.WithContext(context.WithValue(ctx.Context(), constants.CtxMetricLabels, []metrics.Label{
 		telemetry.NewLabel("reason", "failed_observe_network_fee"),
@@ -49,7 +49,7 @@ func processNetworkFeeAttestation(
 
 	if voter.BlockHeight > 0 {
 		// After consensus, only decrement slash points if within the ObservationDelayFlexibility period.
-		if (voter.BlockHeight + observeFlex) >= ctx.BlockHeight() {
+		if withinObservationFlex(ctx, mgr.Keeper(), voter.BlockHeight, observeFlex) {
 			mgr.Slasher().DecSlashPoints(slashCtx, lackOfObservationPenalty, attester)
 		}
 		// MsgNetworkFeeQuorum tx already processed

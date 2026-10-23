@@ -41,6 +41,10 @@ func (k *durableLackKeeper) GetConfigInt64(ctx cosmos.Context, key constants.Con
 	return k.TestSlashingLackKeeper.GetConfigInt64(ctx, key)
 }
 
+func (k *durableLackKeeper) GetConfigInt64Ref(ctx cosmos.Context, key constants.ConstantName) int64 {
+	return k.GetConfigInt64(ctx, key)
+}
+
 func (k *durableLackKeeper) GetSolVaultNonce(_ cosmos.Context, pk common.PubKey) (SolVaultNonce, bool, error) {
 	if k.nonceErr != nil {
 		return SolVaultNonce{}, false, k.nonceErr

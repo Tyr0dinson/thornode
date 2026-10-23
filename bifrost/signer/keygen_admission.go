@@ -4,8 +4,8 @@ import (
 	"sync"
 	"time"
 
+	"gitlab.com/thorchain/thornode/v3/bifrost/blocktime"
 	"gitlab.com/thorchain/thornode/v3/common"
-	"gitlab.com/thorchain/thornode/v3/constants"
 	ttypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
@@ -92,7 +92,11 @@ func (s *Signer) keygenStillValid(block ttypes.KeygenBlock, retry bool) (bool, e
 	if err != nil {
 		return false, err
 	}
-	return keygenHeightInWindow(height, block.Height, validity), nil
+	history, err := s.keygenBlockTimeHistory()
+	if err != nil {
+		return false, err
+	}
+	return keygenHeightInWindow(height, block.Height, validity, history), nil
 }
 
 // runAdmittedXMRKeygen returns the still-owned request only when policy cannot
@@ -123,19 +127,28 @@ func (s *Signer) runAdmittedXMRKeygen(current *xmrKeygenRequest) *xmrKeygenReque
 	return nil
 }
 
-// xmrKeygenRecheckInterval is how often a retained XMR keygen rechecks its
-// policy. A variable so tests can skip the real waiting.
-var xmrKeygenRecheckInterval = constants.ThorchainBlockTime
+// xmrKeygenRecheckInterval, when positive, replaces the once-per-block recheck
+// of a retained XMR keygen's policy. A variable so tests can skip the real
+// waiting; zero follows the THORChain block time.
+var xmrKeygenRecheckInterval time.Duration
 
 // retainXMRKeygen uses one worker for repeated errors and promoted requests.
 // Initial work does not require retries to be enabled; scheduled retries do.
 func (s *Signer) retainXMRKeygen(current *xmrKeygenRequest) {
-	ticker := time.NewTicker(xmrKeygenRecheckInterval)
-	defer ticker.Stop()
+	var tick <-chan time.Time
+	if xmrKeygenRecheckInterval > 0 {
+		ticker := time.NewTicker(xmrKeygenRecheckInterval)
+		defer ticker.Stop()
+		tick = ticker.C
+	} else {
+		ticker := blocktime.NewTicker()
+		defer ticker.Stop()
+		tick = ticker.C
+	}
 	for current != nil {
 		select {
 		case <-s.stopChan:
-		case <-ticker.C:
+		case <-tick:
 		}
 		current = s.runAdmittedXMRKeygen(current)
 	}

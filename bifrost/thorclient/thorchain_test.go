@@ -829,6 +829,22 @@ func (s *ThorchainSuite) TestGetConstants(c *C) {
 	c.Assert(result, NotNil)
 }
 
+func (s *ThorchainSuite) TestGetBlockTime(c *C) {
+	// a THORNode without the fields reports the default block time
+	ms, history, err := s.bridge.GetBlockTime()
+	c.Assert(err, IsNil)
+	c.Check(ms, Equals, constants.ThorchainBlockTime.Milliseconds())
+	c.Check(history, HasLen, 0)
+
+	ms, history, err = parseBlockTime([]byte(`{"int_64_values":{},"block_time_ms":500,"block_time_history":[{"height":100,"ms":500}]}`))
+	c.Assert(err, IsNil)
+	c.Check(ms, Equals, int64(500))
+	c.Check(history, DeepEquals, constants.BlockTimeHistory{{Height: 100, Ms: 500}})
+
+	_, _, err = parseBlockTime([]byte(`not json`))
+	c.Check(err, NotNil)
+}
+
 func (s *ThorchainSuite) TestGetRagnarok(c *C) {
 	result, err := s.bridge.RagnarokInProgress()
 	c.Assert(err, IsNil)

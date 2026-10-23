@@ -31,6 +31,7 @@ import (
 
 	"gitlab.com/thorchain/thornode/v3/app"
 	"gitlab.com/thorchain/thornode/v3/bifrost/blockscanner"
+	"gitlab.com/thorchain/thornode/v3/bifrost/blocktime"
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
 	tssMessages "gitlab.com/thorchain/thornode/v3/bifrost/p2p/messages"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/monero/sidecar"
@@ -415,7 +416,7 @@ func (c *Client) Start(
 	c.scanner.SetErrataQueue(globalErrataQueue)
 	c.blockScanner.Start(globalTxsQueue, globalNetworkFeeQueue)
 	c.wg.Add(1)
-	go runners.SolvencyCheckRunner(c.GetChain(), c, c.thorchainBridge, c.stopchan, c.wg, constants.ThorchainBlockTime)
+	go runners.SolvencyCheckRunner(c.GetChain(), c, c.thorchainBridge, c.stopchan, c.wg, 0)
 	c.wg.Add(1)
 	go c.consolidationRunner()
 	c.wg.Add(1)
@@ -766,14 +767,12 @@ func (c *Client) spentOutputRefsSyncRunner() {
 
 	c.catchupSpentOutputRefs()
 
-	ticker := time.NewTicker(constants.ThorchainBlockTime * 10)
-	defer ticker.Stop()
-
+	// every 10 THORChain blocks, re-reading the block time each time
 	for {
 		select {
 		case <-c.stopchan:
 			return
-		case <-ticker.C:
+		case <-time.After(blocktime.Get() * 10):
 			c.catchupSpentOutputRefs()
 		}
 	}
@@ -1183,7 +1182,7 @@ func (c *Client) GetVaultLockKey(tx stypes.TxOutItem) string {
 func (c *Client) consolidationRunner() {
 	defer c.wg.Done()
 
-	ticker := time.NewTicker(constants.ThorchainBlockTime)
+	ticker := blocktime.NewTicker()
 	defer ticker.Stop()
 
 	for {
@@ -1648,7 +1647,7 @@ func (c *Client) setConsolidationVaultState(vaultPubKey string, state consolidat
 
 func (c *Client) loadConsolidationSettings() consolidationSettings {
 	c.consolidationSettingsMu.RLock()
-	if c.hasConsolidationConfig && time.Since(c.lastConsolidationConfig) < constants.ThorchainBlockTime {
+	if c.hasConsolidationConfig && time.Since(c.lastConsolidationConfig) < blocktime.Get() {
 		settings := c.consolidationSettings
 		c.consolidationSettingsMu.RUnlock()
 		return settings
@@ -1657,7 +1656,7 @@ func (c *Client) loadConsolidationSettings() consolidationSettings {
 
 	c.consolidationSettingsMu.Lock()
 	defer c.consolidationSettingsMu.Unlock()
-	if c.hasConsolidationConfig && time.Since(c.lastConsolidationConfig) < constants.ThorchainBlockTime {
+	if c.hasConsolidationConfig && time.Since(c.lastConsolidationConfig) < blocktime.Get() {
 		return c.consolidationSettings
 	}
 
@@ -4335,7 +4334,7 @@ func (c *Client) logFailClosedCoordination(path string, err error) {
 
 func (c *Client) getAsgardAddress() ([]common.Address, error) {
 	c.asgardMu.RLock()
-	if time.Since(c.lastAsgard) < constants.ThorchainBlockTime && len(c.asgardAddresses) > 0 {
+	if time.Since(c.lastAsgard) < blocktime.Get() && len(c.asgardAddresses) > 0 {
 		result := append([]common.Address(nil), c.asgardAddresses...)
 		c.asgardMu.RUnlock()
 		return result, nil
@@ -4344,7 +4343,7 @@ func (c *Client) getAsgardAddress() ([]common.Address, error) {
 
 	c.asgardMu.Lock()
 	defer c.asgardMu.Unlock()
-	if time.Since(c.lastAsgard) < constants.ThorchainBlockTime && len(c.asgardAddresses) > 0 {
+	if time.Since(c.lastAsgard) < blocktime.Get() && len(c.asgardAddresses) > 0 {
 		return append([]common.Address(nil), c.asgardAddresses...), nil
 	}
 

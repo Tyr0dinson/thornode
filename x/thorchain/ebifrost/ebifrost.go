@@ -20,6 +20,7 @@ import (
 	"github.com/cosmos/gogoproto/proto"
 	"github.com/hashicorp/go-metrics"
 	common "gitlab.com/thorchain/thornode/v3/common"
+	"gitlab.com/thorchain/thornode/v3/constants"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 	"google.golang.org/grpc"
 )
@@ -28,7 +29,7 @@ const (
 	// This is a dummy address used for injected transactions.
 	// It is not used otherwise, as quorum msg attestations are verified within the handlers.
 	ebifrostSigner                     = "thor1zxhfu0qmmq6gmgq4sgz0xgq69h0nhqx5yrseu5"
-	cachedBlocks                       = 10
+	cachedBlocks                       = 10 // reference blocks of the default block time; see cachedBlockCount
 	EventQuorumTxCommitted             = "quorum_tx_committed"
 	EventQuorumNetworkFeeCommitted     = "quorum_network_fee_committed"
 	EventQuorumSolvencyCommitted       = "quorum_solvency_committed"
@@ -89,6 +90,27 @@ type EnshrinedBifrost struct {
 	mu      sync.Mutex
 
 	stopChan chan struct{}
+
+	// blockTimeMs returns the effective THORChain block time; nil means the
+	// default ThorchainBlockTime
+	blockTimeMs func(sdk.Context) int64
+}
+
+// SetBlockTimeMs sets how the effective block time is read, so the cache window
+// keeps its wall-clock length under BLOCKTIMEMS.
+func (b *EnshrinedBifrost) SetBlockTimeMs(f func(sdk.Context) int64) {
+	if b == nil {
+		return
+	}
+	b.blockTimeMs = f
+}
+
+// cachedBlockCount returns cachedBlocks at the current block time.
+func (b *EnshrinedBifrost) cachedBlockCount(ctx sdk.Context) int64 {
+	if b.blockTimeMs == nil {
+		return cachedBlocks
+	}
+	return constants.ScaleDuration(cachedBlocks, constants.ThorchainBlockTime.Milliseconds(), b.blockTimeMs(ctx))
 }
 
 func NewEnshrinedBifrost(cdc codec.Codec, logger log.Logger, config EBifrostConfig) *EnshrinedBifrost {
@@ -561,7 +583,7 @@ func (b *EnshrinedBifrost) MarkQuorumTxAttestationsConfirmed(ctx context.Context
 	found := b.quorumTxCache.MarkAttestationsConfirmedAndAddToBlock(
 		qtx,
 		height,
-		cachedBlocks,
+		b.cachedBlockCount(sdkCtx),
 		b.logger,
 		(*common.QuorumTx).Equals,
 		(*common.QuorumTx).GetAttestations,
@@ -616,7 +638,7 @@ func (b *EnshrinedBifrost) MarkQuorumNetworkFeeAttestationsConfirmed(ctx context
 	found := b.networkFeeCache.MarkAttestationsConfirmedAndAddToBlock(
 		qnf,
 		height,
-		cachedBlocks,
+		b.cachedBlockCount(sdkCtx),
 		b.logger,
 		(*common.QuorumNetworkFee).Equals,
 		(*common.QuorumNetworkFee).GetAttestations,
@@ -675,7 +697,7 @@ func (b *EnshrinedBifrost) MarkQuorumSolvencyAttestationsConfirmed(ctx context.C
 	found := b.solvencyCache.MarkAttestationsConfirmedAndAddToBlock(
 		qs,
 		height,
-		cachedBlocks,
+		b.cachedBlockCount(sdkCtx),
 		b.logger,
 		(*common.QuorumSolvency).Equals,
 		(*common.QuorumSolvency).GetAttestations,
@@ -755,7 +777,7 @@ func (b *EnshrinedBifrost) MarkQuorumErrataTxAttestationsConfirmed(ctx context.C
 	found := b.errataCache.MarkAttestationsConfirmedAndAddToBlock(
 		qe,
 		height,
-		cachedBlocks,
+		b.cachedBlockCount(sdkCtx),
 		b.logger,
 		(*common.QuorumErrataTx).Equals,
 		(*common.QuorumErrataTx).GetAttestations,
@@ -809,13 +831,13 @@ func (b *EnshrinedBifrost) MarshalTx(msg sdk.Msg) ([]byte, error) {
 // event after the existing cache window. Quiet errata history must age with
 // proposal height, not depend on a different errata being confirmed first.
 // Keep other chains' delivery semantics unchanged.
-func (b *EnshrinedBifrost) expireXMRErrataReceipts(currentHeight int64) {
+func (b *EnshrinedBifrost) expireXMRErrataReceipts(currentHeight, cacheBlocks int64) {
 	b.errataCache.mu.Lock()
 	defer b.errataCache.mu.Unlock()
 	// This is proposer-local retry history, not consensus state.
 	// analyze-ignore(map-iteration)
 	for height, items := range b.errataCache.recentBlockItems {
-		if height >= currentHeight-cachedBlocks {
+		if height >= currentHeight-cacheBlocks {
 			continue
 		}
 		retained := items[:0]
@@ -841,7 +863,7 @@ func (b *EnshrinedBifrost) ProposalInjectTxs(ctx sdk.Context, maxTxBytes int64) 
 		return nil, 0
 	}
 
-	b.expireXMRErrataReceipts(ctx.BlockHeight())
+	b.expireXMRErrataReceipts(ctx.BlockHeight(), b.cachedBlockCount(ctx))
 
 	var injectTxs [][]byte
 	var txBzLen int64

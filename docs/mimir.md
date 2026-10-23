@@ -20,6 +20,21 @@ Mimirs have a maximum length of 128 bytes (see MaxMimirLength in THORNode code).
 - Star (\*) indicates a Mimir override of a Constant.
 - Hash (#) indicates Mimir with no Constant.
 
+### Block Time
+
+Block counts in constants and mimirs are stored in reference blocks of the network's default block time (6s on mainnet, 1s on mocknet) and converted when read, so they keep their wall-clock meaning when `BlockTimeMs` sets a different target. They are converted to the effective block time, which can differ from the `BlockTimeMs` target:
+
+- The effective block time is latched at the start of each block, so a vote in block H takes effect from H+1.
+- It is rate limited. A step back toward the default applies at once, without going past it. Any other step waits until `ChurnInterval` of wall-clock time has passed since the previous change, and goes at most half or double the current block time. On mainnet, a `BlockTimeMs` of `2000` first gives `3000`, and `2000` one `ChurnInterval` later.
+
+Each constant has a unit (`constants/units.go`):
+
+- Duration (e.g. `ChurnInterval`, `JailTimeKeysign`, `BlocksPerYear`): multiplied by default / effective block time, rounded up. `0` and `-1` are unchanged.
+- Per-block rate (e.g. `TxOutDelayRate`, `TNSFeePerBlock`, `POLMaxPoolMovement`): divided by the same ratio, rounded half up.
+- Count, height and wall-clock values are never converted.
+
+Stored mimir values are not rewritten, except `NodePauseChainGlobal`: like the other deadlines the protocol stores as a future height (jail releases, the outbound queue, THORName expiries), it is moved at a change so it keeps the time it had left. Unsetting `BlockTimeMs` returns every scaled constant and mimir to its stored value. Governance heights (`Halt*`, upgrades, `ScheduledMigration`) are absolute and are not moved; re-plan them after a change. `/thorchain/constants` shows constants at the current block time; `/thorchain/mimir` shows the stored values. Block counts in memos and quote parameters are THORChain blocks at the current block time and are not converted.
+
 ## Outbound Transactions
 
 - `OutboundTransactionFee`: Amount of rune to withhold on all outbound transactions (1e8 notation)
@@ -358,7 +373,7 @@ Operational notes:
 - `OracleUpdateInterval`#: Milliseconds between Bifrost oracle price updates
 - `RequiredPriceFeeds`: Price feeds the oracle must report
 - `ObservationDelayFlexibility`\*: Number of blocks of flexibility for a validator to get their slash points taken off for making an observation
-- `BlockTimeMs`\*: Target block interval in milliseconds (`1500`-`10000`). While set above zero, each node steers its CometBFT commit wait (`timeout_commit`) every block so the mean interval between block header times tracks the target. Unset or `0` leaves `timeout_commit` at the node's configured value; setting `0` after a target restores it. The constant (the default block time) is not applied on its own. Economic mimir (2/3 supermajority); block-count durations do not scale with it yet
+- `BlockTimeMs`\*: Target block interval in milliseconds (`1500`-`10000`). While set above zero, each node steers its CometBFT commit wait (`timeout_commit`) every block so the mean interval between block header times tracks the target. Unset or `0` leaves `timeout_commit` at the node's configured value; setting `0` after a target restores it. The constant (the default block time) is not applied on its own. Economic mimir (2/3 supermajority); block-count durations scale with it (see [Block Time](#block-time))
 
 ### Router Upgrading (DO NOT TOUCH!)
 

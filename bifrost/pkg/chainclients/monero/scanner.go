@@ -16,6 +16,7 @@ import (
 	"go.uber.org/atomic"
 
 	btypes "gitlab.com/thorchain/thornode/v3/bifrost/blockscanner/types"
+	"gitlab.com/thorchain/thornode/v3/bifrost/blocktime"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/monero/sidecar"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
@@ -2695,7 +2696,7 @@ func addVaultOriginToMeta(meta *reorgBlockMeta, txID string) bool {
 
 func (s *Scanner) refreshAsgardLookup(nextScanHeight int64) error {
 	s.asgardMu.RLock()
-	if time.Since(s.asgardUpdated) < constants.ThorchainBlockTime && len(s.asgardLookup) > 0 {
+	if time.Since(s.asgardUpdated) < blocktime.Get() && len(s.asgardLookup) > 0 {
 		s.asgardMu.RUnlock()
 		return nil
 	}

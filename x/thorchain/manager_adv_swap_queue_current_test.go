@@ -8555,3 +8555,35 @@ func (s AdvSwapQueueSuite) TestCapFailedSwapReasons(c *C) {
 	capFailedSwapReasons(nil)
 	capFailedSwapReasons(&MsgSwap{})
 }
+
+// A limit swap's TTL is in blocks of the block time it was placed at: across a
+// block time change it expires after the same wall-clock time, at the height
+// its converted TTL index entry fires.
+func (s AdvSwapQueueSuite) TestIsDoneAcrossBlockTimeChange(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	k := mgr.Keeper()
+	vm := newSwapQueueAdv(k)
+	k.SetMimir(ctx, "StreamingLimitSwapMaxAge", 100) // 100 s
+
+	// placed at 50 under 500 ms blocks: 200 blocks to expiry, at 250
+	k.SetMimir(ctx, constants.BlockTimeMs.String(), 500)
+	k.UpdateBlockTime(ctx.WithBlockHeight(10))
+	msg := types.MsgSwap{
+		SwapType:           types.SwapType_limit,
+		InitialBlockHeight: 50,
+		State: &types.SwapState{
+			Deposit: cosmos.NewUint(1000),
+			In:      cosmos.NewUint(500),
+		},
+	}
+	c.Assert(k.AddToLimitSwapTTL(ctx, 250, GetRandomTxHash()), IsNil)
+
+	// back to 1000 ms at 100: 24.5 s have passed, 75.5 s are left
+	k.SetMimir(ctx, constants.BlockTimeMs.String(), 0)
+	k.UpdateBlockTime(ctx.WithBlockHeight(100))
+	c.Check(vm.IsDone(ctx.WithBlockHeight(174), msg), Equals, false)
+	c.Check(vm.IsDone(ctx.WithBlockHeight(175), msg), Equals, true)
+	hashes, err := k.GetLimitSwapTTL(ctx, 175)
+	c.Assert(err, IsNil)
+	c.Check(hashes, HasLen, 1)
+}

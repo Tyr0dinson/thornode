@@ -52,6 +52,7 @@ type Keeper interface {
 	GetNativeTxFee(ctx cosmos.Context) cosmos.Uint
 	GetTHORNameRegisterFee(ctx cosmos.Context) cosmos.Uint
 	GetTHORNamePerBlockFee(ctx cosmos.Context) cosmos.Uint
+	GetTHORNameRefBlockFee(ctx cosmos.Context) cosmos.Uint
 
 	DeductNativeTxFeeFromAccount(ctx cosmos.Context, acctAddr cosmos.AccAddress) error
 
@@ -110,6 +111,18 @@ type Keeper interface {
 type KeeperConfig interface {
 	GetConstants() constants.ConstantValues
 	GetConfigInt64(ctx cosmos.Context, key constants.ConstantName) int64
+	GetConfigInt64Ref(ctx cosmos.Context, key constants.ConstantName) int64
+	GetBlockTimeMs(ctx cosmos.Context) int64
+	GetBlockTimeChange(ctx cosmos.Context) (height, prevMs int64)
+	GetBlockTimeHistory(ctx cosmos.Context) constants.BlockTimeHistory
+	SetBlockTimeHistory(ctx cosmos.Context, ms int64, history constants.BlockTimeHistory)
+	RefWindowStart(ctx cosmos.Context, refBlocks int64) int64
+	RefWindowEnd(ctx cosmos.Context, refBlocks int64) int64
+	RefBlocksSince(ctx cosmos.Context, height int64) int64
+	RefHeightAfter(ctx cosmos.Context, from, refBlocks int64) int64
+	UpdateBlockTime(ctx cosmos.Context)
+	ScaleConfigInt64(ctx cosmos.Context, key constants.ConstantName, v int64) int64
+	RefBlocks(ctx cosmos.Context, refBlocks int64) int64
 }
 
 type KeeperPool interface {

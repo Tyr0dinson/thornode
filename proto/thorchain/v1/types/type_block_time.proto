@@ -1,0 +1,20 @@
+syntax = "proto3";
+package types;
+
+option go_package = "gitlab.com/thorchain/thornode/v3/x/thorchain/types";
+
+import "gogoproto/gogo.proto";
+
+option (gogoproto.marshaler_all) = true;
+
+// BlockTimeSegment says that from height on, blocks are ms apart.
+message BlockTimeSegment {
+  int64 height = 1 [ (gogoproto.jsontag) = "height" ];
+  int64 ms = 2 [ (gogoproto.jsontag) = "ms" ];
+}
+
+// BlockTimeHistory is every change of the effective block time, in ascending
+// height order.
+message BlockTimeHistory {
+  repeated BlockTimeSegment segments = 1 [ (gogoproto.nullable) = false ];
+}

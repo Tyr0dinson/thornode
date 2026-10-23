@@ -836,7 +836,8 @@ func (pm *PoolMgr) commitPendingLiquidity(ctx cosmos.Context, pool Pool, mgr Man
 	signer := nodeAccounts[0].NodeAddress
 
 	handler := newLuviProtocolHandler(mgr)
-	pendingLiquidityAgeLimit := mgr.Keeper().GetConfigInt64(ctx, constants.PendingLiquidityAgeLimit)
+	// in reference blocks: the age is wall-clock time since the last add
+	pendingLiquidityAgeLimit := mgr.Keeper().GetConfigInt64Ref(ctx, constants.PendingLiquidityAgeLimit)
 
 	iterator := mgr.Keeper().GetLiquidityProviderIterator(ctx, pool.Asset)
 	defer iterator.Close()
@@ -857,7 +858,7 @@ func (pm *PoolMgr) commitPendingLiquidity(ctx cosmos.Context, pool Pool, mgr Man
 		}
 
 		// check if last add height is within our pendingLiquidityAgeLimit
-		if ctx.BlockHeight()-lp.LastAddHeight <= pendingLiquidityAgeLimit {
+		if mgr.Keeper().RefBlocksSince(ctx, lp.LastAddHeight) <= pendingLiquidityAgeLimit {
 			continue
 		}
 

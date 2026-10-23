@@ -1,0 +1,155 @@
+{{ template "default-state.yaml" }}
+---
+type: state
+genesis:
+  app_state:
+    thorchain:
+      vaults:
+        - block_height: "0"
+          chains:
+            - THOR
+            - BTC
+          coins:
+            - amount: "100000000"
+              asset: BTC.BTC
+              decimals: "8"
+          membership:
+            - {{ pubkey_dog }}
+          pub_key: {{ pubkey_dog }}
+          status: ActiveVault
+          type: AsgardVault
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# BLOCKTIMEMS unset: block-denominated settings read at their reference values
+# (mocknet's default block time is 1000 ms)
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/constants
+asserts:
+  - .int_64_values.BlockTimeMs == 1000
+  - .int_64_values.JailTimeKeysign == 10
+  - .int_64_values.ChurnInterval == 60
+  - .int_64_values.TxOutDelayRate == 200000000000000
+  - .int_64_values.DesiredValidatorSet == 12
+---
+type: check
+endpoint: http://localhost:1317/thorchain/network
+asserts:
+  - .block_time_ms == "1000"
+---
+########################################################################################
+# half the default block time, effective from the block after the mimir: durations
+# double, per-block rates halve, counts and heights are unchanged; /thorchain/mimir
+# keeps the stored (reference) values
+########################################################################################
+type: tx-mimir
+key: BLOCKTIMEMS
+value: 500
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: tx-mimir
+key: MaxTxOutOffset
+value: 300
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/mimir
+asserts:
+  - .BLOCKTIMEMS == 500
+  - .MAXTXOUTOFFSET == 300
+---
+type: check
+endpoint: http://localhost:1317/thorchain/network
+asserts:
+  - .block_time_ms == "500"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/constants
+asserts:
+  - .int_64_values.BlockTimeMs == 1000
+  - .int_64_values.JailTimeKeysign == 20
+  - .int_64_values.ChurnInterval == 120
+  - .int_64_values.TxOutDelayRate == 100000000000000
+  - .int_64_values.DesiredValidatorSet == 12
+---
+########################################################################################
+# behaviour: a keysign failure jails the blamed node for JailTimeKeysign, which is now
+# 20 blocks (10 reference blocks of 1000 ms at 500 ms per block)
+########################################################################################
+type: tx-tss-keysign
+signer: {{ addr_thor_dog }}
+id: "9c97754842280d53bad5135b7cdcc41a0345ce1c4cacf2a29e77e98e4ff9e3fd"
+pub_key: {{ pubkey_dog }}
+height: 1
+coins:
+  - asset: "BTC.BTC"
+    amount: "1"
+memo: "doesn't matter"
+blame:
+  round: "SignRound1Message1"
+  fail_reason: "fail to keysign"
+  blame_nodes:
+    - pubkey: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - '[.txs[]|.result.events[]|select(.type=="tss_keysign_failure")]|length == 1'
+  - .header.height == 4
+---
+type: check
+endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_dog }}
+asserts:
+  - .jail.release_height == 24
+  - .jail.reason == "failed to perform keysign"
+---
+########################################################################################
+# unsetting BLOCKTIMEMS restores every reference value
+########################################################################################
+type: tx-mimir
+key: BLOCKTIMEMS
+value: 0
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# a change takes effect from the next block: the block that set it still scales
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/constants
+asserts:
+  - .int_64_values.JailTimeKeysign == 20
+---
+type: check
+endpoint: http://localhost:1317/thorchain/network
+asserts:
+  - .block_time_ms == "500"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/constants
+asserts:
+  - .int_64_values.JailTimeKeysign == 10
+  - .int_64_values.ChurnInterval == 60
+  - .int_64_values.TxOutDelayRate == 200000000000000
+---
+type: check
+endpoint: http://localhost:1317/thorchain/network
+asserts:
+  - .block_time_ms == "1000"

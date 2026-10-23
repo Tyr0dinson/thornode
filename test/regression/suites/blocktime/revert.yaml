@@ -1,0 +1,181 @@
+type: env
+key: SIGNING_TRANSACTION_PERIOD
+value: "10"
+---
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# halve the block time (mocknet's default is 1000 ms): the 10-reference-block signing
+# period becomes 20 blocks
+########################################################################################
+type: tx-mimir
+key: BLOCKTIMEMS
+value: 500
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 2
+---
+type: check
+endpoint: http://localhost:1317/thorchain/constants
+asserts:
+  - .block_time_ms == 500
+  - .block_time_history|length == 1
+  - .block_time_history[0].height == 3
+  - .block_time_history[0].ms == 500
+  - .int_64_values.SigningTransactionPeriod == 20
+---
+########################################################################################
+# an in-flight outbound, scheduled at 500 ms
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "10000000000"
+    asset: "rune"
+memo: "=:BTC.BTC:{{ addr_btc_fox }}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 1
+  - .[0].height == 4
+---
+########################################################################################
+# a queued outbound: delay every outbound by the max offset, 20 reference blocks, or
+# 40 blocks at 500 ms (one mimir per block)
+########################################################################################
+type: tx-mimir
+key: MINTXOUTVOLUMETHRESHOLD
+value: 1
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: tx-mimir
+key: TXOUTDELAYRATE
+value: 1
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: tx-mimir
+key: MAXTXOUTOFFSET
+value: 20
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "10000000000"
+    asset: "rune"
+memo: "=:BTC.BTC:{{ addr_btc_fox }}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/scheduled
+asserts:
+  - .|length == 1
+  - .[0].height == 48
+---
+########################################################################################
+# revert to the default block time, effective at 16: the period is 10 blocks again
+########################################################################################
+type: create-blocks
+count: 6
+---
+type: tx-mimir
+key: BLOCKTIMEMS
+value: 0
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 2
+---
+type: check
+endpoint: http://localhost:1317/thorchain/constants
+asserts:
+  - .block_time_ms == 1000
+  - .block_time_history|length == 2
+  - .block_time_history[1].height == 16
+  - .block_time_history[1].ms == 1000
+  - .int_64_values.SigningTransactionPeriod == 10
+---
+########################################################################################
+# The in-flight outbound from 4 is 12 blocks old but only 6.5 s: past the new period in
+# blocks, not in time. It is not rescheduled yet (it could still be in the mempool of
+# its chain), and stays pending.
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 1
+  - .[0].height == 4
+---
+type: create-blocks
+count: 3
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 1
+  - .[0].height == 4
+---
+########################################################################################
+# at 20 it is 11 blocks of 500 ms plus 5 of 1000 ms old: the 10 s period. Rescheduled.
+########################################################################################
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 1
+  - .[0].height == 20
+---
+########################################################################################
+# the queued outbound was moved at the revert to keep its time: 32 blocks out from 15 at
+# 500 ms is 16.5 s, now at 15 + 17 = 32
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/queue/scheduled
+asserts:
+  - .|length == 1
+  - .[0].height == 32
+---
+type: create-blocks
+count: 11
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/scheduled
+asserts:
+  - .|length == 1
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/scheduled
+asserts:
+  - .|length == 0
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 2
+  - '[.[]|select(.height == 32)]|length == 1'

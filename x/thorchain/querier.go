@@ -584,7 +584,9 @@ func (qs queryServer) queryVaultsPubkeys(ctx cosmos.Context, _ *types.QueryVault
 	if err != nil {
 		return nil, err
 	}
-	cutOffAge := ctx.BlockHeight() - config.GetThornode().VaultPubkeysCutoffBlocks
+	// the cutoff is wall-clock time, in reference blocks
+	refMs := constants.ThorchainBlockTime.Milliseconds()
+	cutOffAge := qs.mgr.Keeper().GetBlockTimeHistory(ctx).HeightAgo(ctx.BlockHeight(), config.GetThornode().VaultPubkeysCutoffBlocks*refMs, refMs)
 	defer iter.Close()
 	for ; iter.Valid(); iter.Next() {
 		var vault Vault
@@ -867,6 +869,7 @@ func (qs queryServer) queryNetwork(ctx cosmos.Context, _ *types.QueryNetworkRequ
 		TorPriceInRune:        runePerDollarIgnoreHalt(ctx, qs.mgr.Keeper()).String(),
 		TorPriceHalted:        median.IsZero(),
 		XmrActiveVaultReady:   xmrActiveVaultReady,
+		BlockTimeMs:           strconv.FormatInt(qs.mgr.Keeper().GetBlockTimeMs(ctx), 10),
 	}
 
 	return &result, nil
@@ -953,13 +956,13 @@ func (qs queryServer) queryInboundAddresses(ctx cosmos.Context, _ *types.QueryIn
 
 	resp := make([]*types.QueryInboundAddressResponse, 0)
 	constAccessor := qs.mgr.GetConstants()
-	signingTransactionPeriod := constAccessor.GetInt64Value(constants.SigningTransactionPeriod)
-
 	k := qs.mgr.Keeper()
 	if k == nil {
 		ctx.Logger().Error("keeper is nil, can't fulfill query")
 		return nil, errors.New("keeper is nil, can't fulfill query")
 	}
+	// analyze-ignore(unscaled-config): GetMostSecure takes reference blocks
+	refSigningTransactionPeriod := constAccessor.GetInt64Value(constants.SigningTransactionPeriod)
 	chains := make(common.Chains, 0)
 	for _, vault := range active {
 		chains = append(chains, vault.GetChains()...)
@@ -980,7 +983,7 @@ func (qs queryServer) queryInboundAddresses(ctx cosmos.Context, _ *types.QueryIn
 		isChainTradingPaused := k.IsChainTradingHalted(ctx, chain)
 		isChainLpPaused := k.IsLPPaused(ctx, chain)
 
-		vault, err := selectActiveVaultForChain(ctx, k, active, chain, signingTransactionPeriod)
+		vault, err := selectActiveVaultForChain(ctx, k, active, chain, refSigningTransactionPeriod)
 		if err != nil {
 			if chain == common.XMRChain {
 				ctx.Logger().Info("skipping XMR inbound address until an active XMR-capable vault exists", "error", err)
@@ -2868,7 +2871,7 @@ func countSigners(voter ObservedTxVoter) (int64, int64) {
 // Call newTxStagesResponse from both queryTxStatus (which includes the stages) and queryTxStages.
 // TODO: Remove isSwap and isPending arguments when SwapFinalised deprecated in favour of SwapStatus.
 // TODO: Deprecate InboundObserved.Started field in favour of the observation counting.
-func newTxStagesResponse(ctx cosmos.Context, voter ObservedTxVoter, isSwap, isPending, pending bool, streamingSwap StreamingSwap) (result types.QueryTxStagesResponse) {
+func newTxStagesResponse(ctx cosmos.Context, voter ObservedTxVoter, isSwap, isPending, pending bool, streamingSwap StreamingSwap, thorBlockMs int64) (result types.QueryTxStagesResponse) {
 	result.InboundObserved.PreConfirmationCount, result.InboundObserved.FinalCount = countSigners(voter)
 	result.InboundObserved.Completed = !voter.Tx.IsEmpty()
 
@@ -2901,7 +2904,7 @@ func newTxStagesResponse(ctx cosmos.Context, voter ObservedTxVoter, isSwap, isPe
 
 			estConfMs := voter.Tx.Tx.Chain.ApproximateBlockMilliseconds() * (extConfDelayHeight - extObsHeight)
 			if currentHeight > countStartHeight {
-				estConfMs -= (currentHeight - countStartHeight) * common.THORChain.ApproximateBlockMilliseconds()
+				estConfMs -= (currentHeight - countStartHeight) * thorBlockMs
 			}
 			estConfSec := estConfMs / 1000
 			// Floor at 0.
@@ -2962,7 +2965,7 @@ func newTxStagesResponse(ctx cosmos.Context, voter ObservedTxVoter, isSwap, isPe
 			remainBlocks := voter.OutboundHeight - currentHeight
 			outDelay.RemainingDelayBlocks = remainBlocks
 
-			remainSec := remainBlocks * common.THORChain.ApproximateBlockMilliseconds() / 1000
+			remainSec := remainBlocks * thorBlockMs / 1000
 			outDelay.RemainingDelaySeconds = remainSec
 		}
 
@@ -3002,7 +3005,7 @@ func (qs queryServer) queryTxStages(ctx cosmos.Context, req *types.QueryTxStages
 
 	isSwap, isPending, pending, streamingSwap := checkPending(ctx, qs.mgr.Keeper(), voter)
 
-	result := newTxStagesResponse(ctx, voter, isSwap, isPending, pending, streamingSwap)
+	result := newTxStagesResponse(ctx, voter, isSwap, isPending, pending, streamingSwap, thorchainBlockMs(ctx, qs.mgr.Keeper()))
 
 	return &result, nil
 }
@@ -3048,7 +3051,7 @@ func (qs queryServer) queryTxStatus(ctx cosmos.Context, req *types.QueryTxStatus
 		result.OutTxs = voter.OutTxs
 	}
 
-	result.Stages = newTxStagesResponse(ctx, voter, isSwap, isPending, pending, streamingSwap)
+	result.Stages = newTxStagesResponse(ctx, voter, isSwap, isPending, pending, streamingSwap, thorchainBlockMs(ctx, qs.mgr.Keeper()))
 
 	return &result, nil
 }
@@ -3225,11 +3228,13 @@ func (qs queryServer) queryKeysign(ctx cosmos.Context, heightStr, pubKey string)
 
 // queryOutQueue - iterates over txout, counting how many transactions are waiting to be sent
 func (qs queryServer) queryQueue(ctx cosmos.Context, _ *types.QueryQueueRequest) (*types.QueryQueueResponse, error) {
-	constAccessor := qs.mgr.GetConstants()
-	signingTransactionPeriod := qs.mgr.Keeper().GetConfigInt64(ctx, constants.SigningTransactionPeriod)
+	// in reference blocks: each window is measured in wall-clock time, as
+	// LackSigning does across a block time change
+	signingTransactionPeriod := qs.mgr.Keeper().GetConfigInt64Ref(ctx, constants.SigningTransactionPeriod)
+	windowStart := signingWindowStarts(ctx, qs.mgr.Keeper())
 	// XMR and EVM token/aggregator outbounds stay live for an extended signing
 	// period; scan that window and apply each item's own period below.
-	startHeight := ctx.BlockHeight() - types.MaxTxOutSigningTransactionPeriod(signingTransactionPeriod)
+	startHeight := windowStart(types.MaxTxOutSigningTransactionPeriod(signingTransactionPeriod))
 	var query types.QueryQueueResponse
 	scheduledOutboundValue := cosmos.ZeroUint()
 	scheduledOutboundClout := cosmos.ZeroUint()
@@ -3262,7 +3267,7 @@ func (qs queryServer) queryQueue(ctx cosmos.Context, _ *types.QueryQueueRequest)
 			return nil, fmt.Errorf("fail to get tx out array from key value store: %w", err)
 		}
 		for _, tx := range txs.TxArray {
-			if tx.OutHash.IsEmpty() && height >= ctx.BlockHeight()-tx.SigningTransactionPeriod(signingTransactionPeriod) {
+			if tx.OutHash.IsEmpty() && height >= windowStart(tx.SigningTransactionPeriod(signingTransactionPeriod)) {
 				memo, _ := ParseMemoWithTHORNames(ctx, qs.mgr.Keeper(), tx.GetMemo())
 				if memo.IsInternal() {
 					query.Internal++
@@ -3273,23 +3278,18 @@ func (qs queryServer) queryQueue(ctx cosmos.Context, _ *types.QueryQueueRequest)
 		}
 	}
 
-	// sum outbound value
-	maxTxOutOffset, err := qs.mgr.Keeper().GetMimir(ctx, constants.MaxTxOutOffset.String())
-	if maxTxOutOffset < 0 || err != nil {
-		maxTxOutOffset = constAccessor.GetInt64Value(constants.MaxTxOutOffset)
-	}
-	txOutDelayMax, err := qs.mgr.Keeper().GetMimir(ctx, constants.TxOutDelayMax.String())
-	if txOutDelayMax <= 0 || err != nil {
-		txOutDelayMax = constAccessor.GetInt64Value(constants.TxOutDelayMax)
-	}
+	// sum outbound value, including outbounds an earlier, faster block time
+	// scheduled further ahead
+	offsetEnd := qs.mgr.Keeper().RefWindowEnd(ctx, qs.mgr.Keeper().GetConfigInt64Ref(ctx, constants.MaxTxOutOffset))
+	scanEnd := qs.mgr.Keeper().RefWindowEnd(ctx, qs.mgr.Keeper().GetConfigInt64Ref(ctx, constants.TxOutDelayMax))
 
-	for height := ctx.BlockHeight() + 1; height <= ctx.BlockHeight()+txOutDelayMax; height++ {
+	for height := ctx.BlockHeight() + 1; height <= scanEnd; height++ {
 		value, clout, err := qs.mgr.Keeper().GetTxOutValue(ctx, height)
 		if err != nil {
 			ctx.Logger().Error("fail to get tx out array from key value store", "error", err)
 			continue
 		}
-		if height > ctx.BlockHeight()+maxTxOutOffset && value.IsZero() {
+		if height > offsetEnd && value.IsZero() {
 			// we've hit our max offset, and an empty block, we can assume the
 			// rest will be empty as well
 			break
@@ -3349,15 +3349,22 @@ func (qs queryServer) queryLastBlockHeights(ctx cosmos.Context, chain string) (*
 	return &types.QueryLastBlocksResponse{LastBlocks: result}, nil
 }
 
-func (qs queryServer) queryConstantValues(_ cosmos.Context, _ *types.QueryConstantValuesRequest) (*types.QueryConstantValuesResponse, error) {
+func (qs queryServer) queryConstantValues(ctx cosmos.Context, _ *types.QueryConstantValuesRequest) (*types.QueryConstantValuesResponse, error) {
 	constAccessor := qs.mgr.GetConstants()
 	cv := constAccessor.GetConstantValsByKeyname()
 
-	proto := types.QueryConstantValuesResponse{}
+	// block-denominated defaults are shown at the current block time
+	refMs := constants.ThorchainBlockTime.Milliseconds()
+	blockMs := qs.mgr.Keeper().GetBlockTimeMs(ctx)
+
+	proto := types.QueryConstantValuesResponse{BlockTimeMs: blockMs}
+	for _, seg := range qs.mgr.Keeper().GetBlockTimeHistory(ctx) {
+		proto.BlockTimeHistory = append(proto.BlockTimeHistory, types.BlockTimeSegment{Height: seg.Height, Ms: seg.Ms})
+	}
 	for _, k := range slices.Sorted(maps.Keys(cv.Int64Values)) {
 		proto.Int_64Values = append(proto.Int_64Values, &types.Int64Constants{
 			Name:  k,
-			Value: cv.Int64Values[k],
+			Value: constants.MimirKeyUnit(k).Scale(cv.Int64Values[k], refMs, blockMs),
 		})
 	}
 	for _, k := range slices.Sorted(maps.Keys(cv.BoolValues)) {
@@ -3814,12 +3821,11 @@ func (qs queryServer) queryBan(ctx cosmos.Context, req *types.QueryBanRequest) (
 
 func (qs queryServer) queryScheduledOutbound(ctx cosmos.Context, _ *types.QueryScheduledOutboundRequest) (*types.QueryOutboundResponse, error) {
 	result := make([]*types.QueryTxOutItem, 0)
-	constAccessor := qs.mgr.GetConstants()
-	maxTxOutOffset, err := qs.mgr.Keeper().GetMimir(ctx, constants.MaxTxOutOffset.String())
-	if maxTxOutOffset < 0 || err != nil {
-		maxTxOutOffset = constAccessor.GetInt64Value(constants.MaxTxOutOffset)
-	}
-	for height := ctx.BlockHeight() + 1; height <= ctx.BlockHeight()+17280; height++ {
+	// including outbounds an earlier, faster block time scheduled further ahead
+	maxTxOutOffset := qs.mgr.Keeper().RefWindowEnd(ctx, qs.mgr.Keeper().GetConfigInt64Ref(ctx, constants.MaxTxOutOffset)) - ctx.BlockHeight()
+	// outbounds are scheduled at most TxOutDelayMax + MaxTxOutOffset ahead
+	scanBlocks := maxTxOutWindow(ctx, qs.mgr.Keeper())
+	for height := ctx.BlockHeight() + 1; height <= ctx.BlockHeight()+scanBlocks; height++ {
 		txOut, err := qs.mgr.Keeper().GetTxOut(ctx, height)
 		if err != nil {
 			ctx.Logger().Error("fail to get tx out array from key value store", "error", err)
@@ -3839,12 +3845,15 @@ func (qs queryServer) queryScheduledOutbound(ctx cosmos.Context, _ *types.QueryS
 }
 
 func (qs queryServer) queryPendingOutbound(ctx cosmos.Context, _ *types.QueryPendingOutboundRequest) (*types.QueryOutboundResponse, error) {
-	signingTransactionPeriod := qs.mgr.Keeper().GetConfigInt64(ctx, constants.SigningTransactionPeriod)
+	// in reference blocks: each window is measured in wall-clock time, as
+	// LackSigning does across a block time change
+	signingTransactionPeriod := qs.mgr.Keeper().GetConfigInt64Ref(ctx, constants.SigningTransactionPeriod)
+	windowStart := signingWindowStarts(ctx, qs.mgr.Keeper())
 	rescheduleCoalesceBlocks := qs.mgr.Keeper().GetConfigInt64(ctx, constants.RescheduleCoalesceBlocks)
 	// XMR and EVM token/aggregator outbounds stay live for an extended signing
 	// period (see LackSigning); scan that window and apply each item's own period
 	// below so they remain visible until they are actually rescheduled.
-	startHeight := ctx.BlockHeight() - types.MaxTxOutSigningTransactionPeriod(signingTransactionPeriod)
+	startHeight := windowStart(types.MaxTxOutSigningTransactionPeriod(signingTransactionPeriod))
 	if startHeight < 1 {
 		startHeight = 1
 	}
@@ -3866,7 +3875,7 @@ func (qs queryServer) queryPendingOutbound(ctx cosmos.Context, _ *types.QueryPen
 			return nil, fmt.Errorf("fail to get tx out array from key value store: %w", err)
 		}
 		for _, tx := range txs.TxArray {
-			if tx.OutHash.IsEmpty() && height >= ctx.BlockHeight()-tx.SigningTransactionPeriod(signingTransactionPeriod) {
+			if tx.OutHash.IsEmpty() && height >= windowStart(tx.SigningTransactionPeriod(signingTransactionPeriod)) {
 				result = append(result, castTxOutItem(tx, height))
 			}
 		}

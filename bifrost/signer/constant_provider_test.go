@@ -18,8 +18,21 @@ var _ = Suite(&ConstantsProviderSuite{})
 
 type mockBridgeConstants struct {
 	thorclient.ThorchainBridge
-	constants map[string]int64
-	err       error
+	constants   map[string]int64
+	err         error
+	blockTimeMs int64 // 0 reports the default block time
+	history     constants.BlockTimeHistory
+	blockErr    error
+}
+
+func (b *mockBridgeConstants) GetBlockTime() (int64, constants.BlockTimeHistory, error) {
+	if b.blockErr != nil {
+		return 0, nil, b.blockErr
+	}
+	if b.blockTimeMs == 0 {
+		return constants.ThorchainBlockTime.Milliseconds(), nil, nil
+	}
+	return b.blockTimeMs, b.history, nil
 }
 
 func (b *mockBridgeConstants) GetConstants() (map[string]int64, error) {
@@ -234,4 +247,50 @@ func (s *ConstantsProviderSuite) TestGetInt64Value_ConcurrentRefresh(c *C) {
 		}
 		c.Assert(cp.requestHeight, Equals, int64(200))
 	}
+}
+
+// A block time change refreshes the cached constants at once, rather than at
+// the next churn interval, and the block time is returned with them.
+func (s *ConstantsProviderSuite) TestRefreshOnBlockTimeChange(c *C) {
+	bridge := &mockBridgeConstants{
+		constants: map[string]int64{
+			constants.SigningTransactionPeriod.String(): 300,
+			constants.ChurnInterval.String():            43200,
+		},
+	}
+	cp := NewConstantsProvider(bridge)
+	val, ms, history, err := cp.GetInt64ValueWithBlockTime(100, constants.SigningTransactionPeriod)
+	c.Assert(err, IsNil)
+	c.Check(val, Equals, int64(300))
+	c.Check(ms, Equals, constants.ThorchainBlockTime.Milliseconds())
+	c.Check(history, HasLen, 0)
+
+	// THORChain halves the block time: the period doubles in blocks
+	bridge.constants = map[string]int64{
+		constants.SigningTransactionPeriod.String(): 600,
+		constants.ChurnInterval.String():            86400,
+	}
+	bridge.blockTimeMs = constants.ThorchainBlockTime.Milliseconds() / 2
+	bridge.history = constants.BlockTimeHistory{{Height: 150, Ms: bridge.blockTimeMs}}
+	val, ms, history, err = cp.GetInt64ValueWithBlockTime(151, constants.SigningTransactionPeriod)
+	c.Assert(err, IsNil)
+	c.Check(val, Equals, int64(600))
+	c.Check(ms, Equals, bridge.blockTimeMs)
+	c.Check(history, DeepEquals, bridge.history)
+	c.Check(cp.requestHeight, Equals, int64(151))
+}
+
+// A failed block time lookup fails closed instead of serving the cached
+// constants: their history could miss a block time change, and the signer
+// measures outbound age over it.
+func (s *ConstantsProviderSuite) TestEnsureConstantsFailsClosedOnBlockTimeError(c *C) {
+	bridge := &mockBridgeConstants{constants: map[string]int64{constants.ChurnInterval.String(): 43200}}
+	cp := NewConstantsProvider(bridge)
+	c.Assert(cp.EnsureConstants(100), IsNil)
+	bridge.blockErr = fmt.Errorf("unavailable")
+	c.Assert(cp.EnsureConstants(101), ErrorMatches, ".*fail to get block time.*")
+	_, err := cp.GetInt64Value(101, constants.SigningTransactionPeriod)
+	c.Assert(err, NotNil)
+	bridge.blockErr = nil
+	c.Assert(cp.EnsureConstants(102), IsNil)
 }

@@ -453,6 +453,7 @@ var (
 	fd_QueryNetworkResponse_tor_price_in_rune        protoreflect.FieldDescriptor
 	fd_QueryNetworkResponse_tor_price_halted         protoreflect.FieldDescriptor
 	fd_QueryNetworkResponse_xmr_active_vault_ready   protoreflect.FieldDescriptor
+	fd_QueryNetworkResponse_block_time_ms            protoreflect.FieldDescriptor
 )
 
 func init() {
@@ -476,6 +477,7 @@ func init() {
 	fd_QueryNetworkResponse_tor_price_in_rune = md_QueryNetworkResponse.Fields().ByName("tor_price_in_rune")
 	fd_QueryNetworkResponse_tor_price_halted = md_QueryNetworkResponse.Fields().ByName("tor_price_halted")
 	fd_QueryNetworkResponse_xmr_active_vault_ready = md_QueryNetworkResponse.Fields().ByName("xmr_active_vault_ready")
+	fd_QueryNetworkResponse_block_time_ms = md_QueryNetworkResponse.Fields().ByName("block_time_ms")
 }
 
 var _ protoreflect.Message = (*fastReflection_QueryNetworkResponse)(nil)
@@ -651,6 +653,12 @@ func (x *fastReflection_QueryNetworkResponse) Range(f func(protoreflect.FieldDes
 			return
 		}
 	}
+	if x.BlockTimeMs != "" {
+		value := protoreflect.ValueOfString(x.BlockTimeMs)
+		if !f(fd_QueryNetworkResponse_block_time_ms, value) {
+			return
+		}
+	}
 }
 
 // Has reports whether a field is populated.
@@ -702,6 +710,8 @@ func (x *fastReflection_QueryNetworkResponse) Has(fd protoreflect.FieldDescripto
 		return x.TorPriceHalted != false
 	case "types.QueryNetworkResponse.xmr_active_vault_ready":
 		return x.XmrActiveVaultReady != false
+	case "types.QueryNetworkResponse.block_time_ms":
+		return x.BlockTimeMs != ""
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.QueryNetworkResponse"))
@@ -754,6 +764,8 @@ func (x *fastReflection_QueryNetworkResponse) Clear(fd protoreflect.FieldDescrip
 		x.TorPriceHalted = false
 	case "types.QueryNetworkResponse.xmr_active_vault_ready":
 		x.XmrActiveVaultReady = false
+	case "types.QueryNetworkResponse.block_time_ms":
+		x.BlockTimeMs = ""
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.QueryNetworkResponse"))
@@ -824,6 +836,9 @@ func (x *fastReflection_QueryNetworkResponse) Get(descriptor protoreflect.FieldD
 	case "types.QueryNetworkResponse.xmr_active_vault_ready":
 		value := x.XmrActiveVaultReady
 		return protoreflect.ValueOfBool(value)
+	case "types.QueryNetworkResponse.block_time_ms":
+		value := x.BlockTimeMs
+		return protoreflect.ValueOfString(value)
 	default:
 		if descriptor.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.QueryNetworkResponse"))
@@ -880,6 +895,8 @@ func (x *fastReflection_QueryNetworkResponse) Set(fd protoreflect.FieldDescripto
 		x.TorPriceHalted = value.Bool()
 	case "types.QueryNetworkResponse.xmr_active_vault_ready":
 		x.XmrActiveVaultReady = value.Bool()
+	case "types.QueryNetworkResponse.block_time_ms":
+		x.BlockTimeMs = value.Interface().(string)
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.QueryNetworkResponse"))
@@ -936,6 +953,8 @@ func (x *fastReflection_QueryNetworkResponse) Mutable(fd protoreflect.FieldDescr
 		panic(fmt.Errorf("field tor_price_halted of message types.QueryNetworkResponse is not mutable"))
 	case "types.QueryNetworkResponse.xmr_active_vault_ready":
 		panic(fmt.Errorf("field xmr_active_vault_ready of message types.QueryNetworkResponse is not mutable"))
+	case "types.QueryNetworkResponse.block_time_ms":
+		panic(fmt.Errorf("field block_time_ms of message types.QueryNetworkResponse is not mutable"))
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.QueryNetworkResponse"))
@@ -985,6 +1004,8 @@ func (x *fastReflection_QueryNetworkResponse) NewField(fd protoreflect.FieldDesc
 		return protoreflect.ValueOfBool(false)
 	case "types.QueryNetworkResponse.xmr_active_vault_ready":
 		return protoreflect.ValueOfBool(false)
+	case "types.QueryNetworkResponse.block_time_ms":
+		return protoreflect.ValueOfString("")
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.QueryNetworkResponse"))
@@ -1123,6 +1144,10 @@ func (x *fastReflection_QueryNetworkResponse) ProtoMethods() *protoiface.Methods
 		if x.XmrActiveVaultReady {
 			n += 3
 		}
+		l = len(x.BlockTimeMs)
+		if l > 0 {
+			n += 2 + l + runtime.Sov(uint64(l))
+		}
 		if x.unknownFields != nil {
 			n += len(x.unknownFields)
 		}
@@ -1151,6 +1176,15 @@ func (x *fastReflection_QueryNetworkResponse) ProtoMethods() *protoiface.Methods
 		if x.unknownFields != nil {
 			i -= len(x.unknownFields)
 			copy(dAtA[i:], x.unknownFields)
+		}
+		if len(x.BlockTimeMs) > 0 {
+			i -= len(x.BlockTimeMs)
+			copy(dAtA[i:], x.BlockTimeMs)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.BlockTimeMs)))
+			i--
+			dAtA[i] = 0x1
+			i--
+			dAtA[i] = 0x9a
 		}
 		if x.XmrActiveVaultReady {
 			i--
@@ -1882,6 +1916,38 @@ func (x *fastReflection_QueryNetworkResponse) ProtoMethods() *protoiface.Methods
 					}
 				}
 				x.XmrActiveVaultReady = bool(v != 0)
+			case 19:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field BlockTimeMs", wireType)
+				}
+				var stringLen uint64
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					stringLen |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				intStringLen := int(stringLen)
+				if intStringLen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + intStringLen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.BlockTimeMs = string(dAtA[iNdEx:postIndex])
+				iNdEx = postIndex
 			default:
 				iNdEx = preIndex
 				skippy, err := runtime.Skip(dAtA[iNdEx:])
@@ -2011,6 +2077,10 @@ type QueryNetworkResponse struct {
 	TorPriceHalted bool `protobuf:"varint,17,opt,name=tor_price_halted,json=torPriceHalted,proto3" json:"tor_price_halted,omitempty"`
 	// indicates whether an active Asgard vault currently has spendable XMR funds
 	XmrActiveVaultReady bool `protobuf:"varint,18,opt,name=xmr_active_vault_ready,json=xmrActiveVaultReady,proto3" json:"xmr_active_vault_ready,omitempty"`
+	// the effective block time in milliseconds: the BLOCKTIMEMS target in force
+	// for this block, or the network's default block time while it is unset; a
+	// string, as are the other network fields
+	BlockTimeMs string `protobuf:"bytes,19,opt,name=block_time_ms,json=blockTimeMs,proto3" json:"block_time_ms,omitempty"`
 }
 
 func (x *QueryNetworkResponse) Reset() {
@@ -2159,6 +2229,13 @@ func (x *QueryNetworkResponse) GetXmrActiveVaultReady() bool {
 	return false
 }
 
+func (x *QueryNetworkResponse) GetBlockTimeMs() string {
+	if x != nil {
+		return x.BlockTimeMs
+	}
+	return ""
+}
+
 var File_types_query_network_proto protoreflect.FileDescriptor
 
 var file_types_query_network_proto_rawDesc = []byte{
@@ -2168,7 +2245,7 @@ var file_types_query_network_proto_rawDesc = []byte{
 	0x67, 0x6f, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x22, 0x2d, 0x0a, 0x13, 0x51, 0x75, 0x65, 0x72,
 	0x79, 0x4e, 0x65, 0x74, 0x77, 0x6f, 0x72, 0x6b, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x12,
 	0x16, 0x0a, 0x06, 0x68, 0x65, 0x69, 0x67, 0x68, 0x74, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52,
-	0x06, 0x68, 0x65, 0x69, 0x67, 0x68, 0x74, 0x22, 0x83, 0x0a, 0x0a, 0x14, 0x51, 0x75, 0x65, 0x72,
+	0x06, 0x68, 0x65, 0x69, 0x67, 0x68, 0x74, 0x22, 0xba, 0x0a, 0x0a, 0x14, 0x51, 0x75, 0x65, 0x72,
 	0x79, 0x4e, 0x65, 0x74, 0x77, 0x6f, 0x72, 0x6b, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65,
 	0x12, 0x3e, 0x0a, 0x10, 0x62, 0x6f, 0x6e, 0x64, 0x5f, 0x72, 0x65, 0x77, 0x61, 0x72, 0x64, 0x5f,
 	0x72, 0x75, 0x6e, 0x65, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x42, 0x14, 0xea, 0xde, 0x1f, 0x10,
@@ -2248,16 +2325,20 @@ var file_types_query_network_proto_rawDesc = []byte{
 	0x5f, 0x72, 0x65, 0x61, 0x64, 0x79, 0x18, 0x12, 0x20, 0x01, 0x28, 0x08, 0x42, 0x1a, 0xea, 0xde,
 	0x1f, 0x16, 0x78, 0x6d, 0x72, 0x5f, 0x61, 0x63, 0x74, 0x69, 0x76, 0x65, 0x5f, 0x76, 0x61, 0x75,
 	0x6c, 0x74, 0x5f, 0x72, 0x65, 0x61, 0x64, 0x79, 0x52, 0x13, 0x78, 0x6d, 0x72, 0x41, 0x63, 0x74,
-	0x69, 0x76, 0x65, 0x56, 0x61, 0x75, 0x6c, 0x74, 0x52, 0x65, 0x61, 0x64, 0x79, 0x42, 0x82, 0x01,
-	0x0a, 0x09, 0x63, 0x6f, 0x6d, 0x2e, 0x74, 0x79, 0x70, 0x65, 0x73, 0x42, 0x11, 0x51, 0x75, 0x65,
-	0x72, 0x79, 0x4e, 0x65, 0x74, 0x77, 0x6f, 0x72, 0x6b, 0x50, 0x72, 0x6f, 0x74, 0x6f, 0x50, 0x01,
-	0x5a, 0x2a, 0x67, 0x69, 0x74, 0x6c, 0x61, 0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x74, 0x68, 0x6f,
-	0x72, 0x63, 0x68, 0x61, 0x69, 0x6e, 0x2f, 0x74, 0x68, 0x6f, 0x72, 0x6e, 0x6f, 0x64, 0x65, 0x2f,
-	0x76, 0x33, 0x2f, 0x61, 0x70, 0x69, 0x2f, 0x74, 0x79, 0x70, 0x65, 0x73, 0xa2, 0x02, 0x03, 0x54,
-	0x58, 0x58, 0xaa, 0x02, 0x05, 0x54, 0x79, 0x70, 0x65, 0x73, 0xca, 0x02, 0x05, 0x54, 0x79, 0x70,
-	0x65, 0x73, 0xe2, 0x02, 0x11, 0x54, 0x79, 0x70, 0x65, 0x73, 0x5c, 0x47, 0x50, 0x42, 0x4d, 0x65,
-	0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0xea, 0x02, 0x05, 0x54, 0x79, 0x70, 0x65, 0x73, 0xc8, 0xe2,
-	0x1e, 0x01, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
+	0x69, 0x76, 0x65, 0x56, 0x61, 0x75, 0x6c, 0x74, 0x52, 0x65, 0x61, 0x64, 0x79, 0x12, 0x35, 0x0a,
+	0x0d, 0x62, 0x6c, 0x6f, 0x63, 0x6b, 0x5f, 0x74, 0x69, 0x6d, 0x65, 0x5f, 0x6d, 0x73, 0x18, 0x13,
+	0x20, 0x01, 0x28, 0x09, 0x42, 0x11, 0xea, 0xde, 0x1f, 0x0d, 0x62, 0x6c, 0x6f, 0x63, 0x6b, 0x5f,
+	0x74, 0x69, 0x6d, 0x65, 0x5f, 0x6d, 0x73, 0x52, 0x0b, 0x62, 0x6c, 0x6f, 0x63, 0x6b, 0x54, 0x69,
+	0x6d, 0x65, 0x4d, 0x73, 0x42, 0x82, 0x01, 0x0a, 0x09, 0x63, 0x6f, 0x6d, 0x2e, 0x74, 0x79, 0x70,
+	0x65, 0x73, 0x42, 0x11, 0x51, 0x75, 0x65, 0x72, 0x79, 0x4e, 0x65, 0x74, 0x77, 0x6f, 0x72, 0x6b,
+	0x50, 0x72, 0x6f, 0x74, 0x6f, 0x50, 0x01, 0x5a, 0x2a, 0x67, 0x69, 0x74, 0x6c, 0x61, 0x62, 0x2e,
+	0x63, 0x6f, 0x6d, 0x2f, 0x74, 0x68, 0x6f, 0x72, 0x63, 0x68, 0x61, 0x69, 0x6e, 0x2f, 0x74, 0x68,
+	0x6f, 0x72, 0x6e, 0x6f, 0x64, 0x65, 0x2f, 0x76, 0x33, 0x2f, 0x61, 0x70, 0x69, 0x2f, 0x74, 0x79,
+	0x70, 0x65, 0x73, 0xa2, 0x02, 0x03, 0x54, 0x58, 0x58, 0xaa, 0x02, 0x05, 0x54, 0x79, 0x70, 0x65,
+	0x73, 0xca, 0x02, 0x05, 0x54, 0x79, 0x70, 0x65, 0x73, 0xe2, 0x02, 0x11, 0x54, 0x79, 0x70, 0x65,
+	0x73, 0x5c, 0x47, 0x50, 0x42, 0x4d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0xea, 0x02, 0x05,
+	0x54, 0x79, 0x70, 0x65, 0x73, 0xc8, 0xe2, 0x1e, 0x01, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f,
+	0x33,
 }
 
 var (

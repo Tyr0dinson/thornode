@@ -112,13 +112,11 @@ func (h UnBondHandler) handle(ctx cosmos.Context, msg MsgUnBond) error {
 	}
 
 	if !isZeroBalanceProviderRemoval {
-		var bondLockPeriod int64
-		bondLockPeriod, err = h.mgr.Keeper().GetMimir(ctx, constants.BondLockupPeriod.String())
-		if err != nil || bondLockPeriod < 0 {
-			bondLockPeriod = h.mgr.GetConstants().GetInt64Value(constants.BondLockupPeriod)
-		}
-		if ctx.BlockHeight()-na.StatusSince < bondLockPeriod {
-			return fmt.Errorf("node can not unbond before %d", na.StatusSince+bondLockPeriod)
+		// in reference blocks of wall-clock time since StatusSince, so a block
+		// time change in between neither shortens nor stretches the lockup
+		bondLockPeriod := h.mgr.Keeper().GetConfigInt64Ref(ctx, constants.BondLockupPeriod)
+		if h.mgr.Keeper().RefBlocksSince(ctx, na.StatusSince) < bondLockPeriod {
+			return fmt.Errorf("node can not unbond before %d", h.mgr.Keeper().RefHeightAfter(ctx, na.StatusSince, bondLockPeriod))
 		}
 		var vaults Vaults
 		vaults, err = h.mgr.Keeper().GetAsgardVaultsByStatus(ctx, RetiringVault)

@@ -65,9 +65,15 @@ func (h RagnarokHandler) handle(ctx cosmos.Context, msg MsgRagnarok) (*cosmos.Re
 		return &cosmos.Result{}, nil
 	}
 	shouldSlash := true
-	signingTransPeriod := h.mgr.GetConstants().GetInt64Value(constants.SigningTransactionPeriod)
+	// follow the heights LackSigning reschedules the ragnarok outbound to: one
+	// signing period of wall-clock time apart (signingTransPeriod blocks
+	// without a block time change)
+	refMs := constants.ThorchainBlockTime.Milliseconds()
+	// analyze-ignore(unscaled-config): a wall-clock period, in reference blocks
+	periodMs := h.mgr.GetConstants().GetInt64Value(constants.SigningTransactionPeriod) * refMs
+	history := h.mgr.Keeper().GetBlockTimeHistory(ctx)
 	decrementedPendingRagnarok := false
-	for height := msg.BlockHeight; height <= ctx.BlockHeight(); height += signingTransPeriod {
+	for height := msg.BlockHeight; height <= ctx.BlockHeight(); height = history.HeightAfter(height, periodMs, refMs) {
 		// update txOut record with our TxID that sent funds out of the pool
 		txOut, err := h.mgr.Keeper().GetTxOut(ctx, height)
 		if err != nil {

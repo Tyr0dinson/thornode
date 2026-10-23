@@ -38,11 +38,12 @@ type overSolvencyEventGroup struct {
 	assets []types.AssetOverSolvency
 }
 
-func xmrMonovaultGenesisKeygenHeight(currentHeight int64) int64 {
+func xmrMonovaultGenesisKeygenHeight(ctx cosmos.Context, k keeper.Keeper) int64 {
+	currentHeight := ctx.BlockHeight()
 	if currentHeight < 1 {
 		currentHeight = 1
 	}
-	return currentHeight + xmrMonovaultGenesisBootstrapDelayBlocks
+	return currentHeight + k.RefBlocks(ctx, xmrMonovaultGenesisBootstrapDelayBlocks)
 }
 
 // newNetworkMgr create a new vault manager
@@ -103,7 +104,7 @@ func (vm *NetworkMgr) processGenesisSetup(ctx cosmos.Context) error {
 		if err := vm.k.SetVault(ctx, vault); err != nil {
 			return fmt.Errorf("fail to save vault: %w", err)
 		}
-		if err := vm.scheduleKeygen(ctx, active, XMRMonovaultKeygen, xmrMonovaultGenesisKeygenHeight(ctx.BlockHeight())); err != nil {
+		if err := vm.scheduleKeygen(ctx, active, XMRMonovaultKeygen, xmrMonovaultGenesisKeygenHeight(ctx, vm.k)); err != nil {
 			return fmt.Errorf("fail to trigger xmr monovault keygen: %w", err)
 		}
 	} else {
@@ -115,7 +116,7 @@ func (vm *NetworkMgr) processGenesisSetup(ctx cosmos.Context) error {
 		if err != nil {
 			return fmt.Errorf("fail to trigger a keygen: %w", err)
 		}
-		if err := vm.scheduleKeygen(ctx, active, XMRMonovaultKeygen, xmrMonovaultGenesisKeygenHeight(ctx.BlockHeight())); err != nil {
+		if err := vm.scheduleKeygen(ctx, active, XMRMonovaultKeygen, xmrMonovaultGenesisKeygenHeight(ctx, vm.k)); err != nil {
 			return fmt.Errorf("fail to trigger xmr monovault keygen: %w", err)
 		}
 	}
@@ -433,7 +434,10 @@ func (vm *NetworkMgr) fetchWeightedMeanSlip(ctx cosmos.Context, asset common.Ass
 }
 
 func (vm *NetworkMgr) calculateWeightedMeanSlip(ctx cosmos.Context, asset common.Asset, mgr Manager) int64 {
-	dynamicMaxAnchorSlipBlocks := mgr.Keeper().GetConfigInt64(ctx, constants.DynamicMaxAnchorSlipBlocks)
+	// snapshots older than DynamicMaxAnchorSlipBlocks of wall-clock time are dropped
+	dynamicMaxAnchorSlipBlocks := mgr.Keeper().GetConfigInt64Ref(ctx, constants.DynamicMaxAnchorSlipBlocks)
+	refMs := constants.ThorchainBlockTime.Milliseconds()
+	oldestSnapshot := mgr.Keeper().GetBlockTimeHistory(ctx).HeightAgo(ctx.BlockHeight(), dynamicMaxAnchorSlipBlocks*refMs, refMs)
 	availableAnchors, depths := vm.GetAvailableAnchorsAndDepths(ctx, mgr, asset)
 
 	// track median slips used and their corresponding depths for weighted mean
@@ -441,7 +445,7 @@ func (vm *NetworkMgr) calculateWeightedMeanSlip(ctx cosmos.Context, asset common
 	medianSlipsDepths := make([]cosmos.Uint, 0)
 
 	for i, anchorAsset := range availableAnchors {
-		slips := vm.collectAnchorSlips(ctx, mgr, anchorAsset, dynamicMaxAnchorSlipBlocks)
+		slips := vm.collectAnchorSlips(ctx, mgr, anchorAsset, oldestSnapshot)
 
 		// if there are no slips, skip this anchor
 		if len(slips) == 0 {
@@ -467,7 +471,7 @@ func (vm *NetworkMgr) calculateWeightedMeanSlip(ctx cosmos.Context, asset common
 // returns the slips. The iterator is closed before this function returns so
 // resources are released per-anchor rather than accumulating until the
 // enclosing function returns.
-func (vm *NetworkMgr) collectAnchorSlips(ctx cosmos.Context, mgr Manager, anchorAsset common.Asset, dynamicMaxAnchorSlipBlocks int64) []int64 {
+func (vm *NetworkMgr) collectAnchorSlips(ctx cosmos.Context, mgr Manager, anchorAsset common.Asset, oldestSnapshot int64) []int64 {
 	slips := make([]int64, 0)
 	iter := mgr.Keeper().GetSwapSlipSnapShotIterator(ctx, anchorAsset)
 	defer iter.Close()
@@ -475,7 +479,7 @@ func (vm *NetworkMgr) collectAnchorSlips(ctx cosmos.Context, mgr Manager, anchor
 		key := iter.Key()
 		parts := strings.Split(string(key), "/")
 		i, err := strconv.ParseInt(parts[len(parts)-1], 10, 64)
-		if err != nil || i < ctx.BlockHeight()-dynamicMaxAnchorSlipBlocks {
+		if err != nil || i < oldestSnapshot {
 			mgr.Keeper().DeleteKey(ctx, key)
 			continue
 		}
@@ -533,7 +537,9 @@ func (vm *NetworkMgr) EndBlock(ctx cosmos.Context, mgr Manager) error {
 }
 
 func (vm *NetworkMgr) migrateFunds(ctx cosmos.Context, mgr Manager) error {
-	migrateInterval := vm.k.GetConfigInt64(ctx, constants.FundMigrationInterval)
+	// in reference blocks: migration rounds follow wall-clock time since the
+	// vault started retiring
+	migrateInterval := vm.k.GetConfigInt64Ref(ctx, constants.FundMigrationInterval)
 	if migrateInterval <= 0 {
 		return nil
 	}
@@ -584,17 +590,20 @@ func (vm *NetworkMgr) migrateFunds(ctx cosmos.Context, mgr Manager) error {
 		migrationRounds = 2
 	}
 
-	signingTransactionPeriod := mgr.GetConstants().GetInt64Value(constants.SigningTransactionPeriod)
+	signingTransactionPeriod := mgr.Keeper().ScaleConfigInt64(ctx, constants.SigningTransactionPeriod, mgr.GetConstants().GetInt64Value(constants.SigningTransactionPeriod))
 	if signingTransactionPeriod <= 0 {
 		return fmt.Errorf("invalid signing transaction period: %d", signingTransactionPeriod)
 	}
-	startHeight := ctx.BlockHeight() - signingTransactionPeriod
+	// measured in wall-clock time across a block time change, so outbounds
+	// scheduled under a faster block time stay deducted
+	startHeight := mgr.Keeper().RefWindowStart(ctx, mgr.GetConstants().GetInt64Value(constants.SigningTransactionPeriod))
 	if startHeight < 1 {
 		startHeight = 1
 	}
-	txOutDelayMax := mgr.Keeper().GetConfigInt64(ctx, constants.TxOutDelayMax)
-	maxTxOutOffset := mgr.Keeper().GetConfigInt64(ctx, constants.MaxTxOutOffset)
-	staleMigratePendingBlocks := signingTransactionPeriod * constants.StaleMigratePendingSigningPeriodMultiplier
+	scanEnd := mgr.Keeper().RefWindowEnd(ctx, mgr.Keeper().GetConfigInt64Ref(ctx, constants.TxOutDelayMax))
+	offsetEnd := mgr.Keeper().RefWindowEnd(ctx, mgr.Keeper().GetConfigInt64Ref(ctx, constants.MaxTxOutOffset))
+	// in reference blocks of wall-clock time
+	staleMigratePendingBlocks := mgr.GetConstants().GetInt64Value(constants.SigningTransactionPeriod) * constants.StaleMigratePendingSigningPeriodMultiplier
 	// Keep pending outbound accounting in one place because migrateFunds scans both
 	// the normal signing window and explicit stale migrate heights below.
 	processBlockOut := func(blockOut *TxOut) {
@@ -622,14 +631,14 @@ func (vm *NetworkMgr) migrateFunds(ctx cosmos.Context, mgr Manager) error {
 			vaultsAvailableCoins[toi.VaultPubKey] = availableCoins
 		}
 	}
-	for height := startHeight; height <= ctx.BlockHeight()+txOutDelayMax; height++ {
+	for height := startHeight; height <= scanEnd; height++ {
 		var blockOut *TxOut
 		blockOut, err = mgr.Keeper().GetTxOut(ctx, height)
 		if err != nil {
 			ctx.Logger().Error("fail to get block tx out", "error", err)
 			continue
 		}
-		if height > ctx.BlockHeight()+maxTxOutOffset && len(blockOut.TxArray) == 0 {
+		if height > offsetEnd && len(blockOut.TxArray) == 0 {
 			// we've hit our max offset, and an empty block, we can assume the
 			// rest will be empty as well
 			break
@@ -664,7 +673,7 @@ func (vm *NetworkMgr) migrateFunds(ctx cosmos.Context, mgr Manager) error {
 				stalePendingHeights = append(stalePendingHeights, height)
 			}
 
-			if staleMigratePendingBlocks > 0 && ctx.BlockHeight()-height > staleMigratePendingBlocks {
+			if staleMigratePendingBlocks > 0 && mgr.Keeper().RefBlocksSince(ctx, height) > staleMigratePendingBlocks {
 				prunedMigrateCount := 0
 				// Only expire unobserved migrate requests for this vault and exact
 				// memo height. Unrelated pending txouts at the same height still count.
@@ -760,8 +769,11 @@ func (vm *NetworkMgr) migrateFunds(ctx cosmos.Context, mgr Manager) error {
 		}
 		pendingMigrateChains := vaultsPendingMigrateChains[vault.PubKey]
 
-		// move partial funds every 30 minutes
-		if (ctx.BlockHeight()-vault.StatusSince)%migrateInterval == 0 {
+		// move partial funds every 30 minutes: in the block the vault started
+		// retiring, then each time its age passes another migrateInterval
+		retiringAge := vm.k.RefBlocksSince(ctx, vault.StatusSince)
+		prevRetiringAge := vm.k.RefBlocksSince(ctx.WithBlockHeight(ctx.BlockHeight()-1), vault.StatusSince)
+		if ctx.BlockHeight() == vault.StatusSince || (retiringAge > 0 && retiringAge/migrateInterval > prevRetiringAge/migrateInterval) {
 			for _, coin := range availableCoins {
 				// non-native rune assets are no migrated, therefore they are
 				// burned in each churn
@@ -835,7 +847,7 @@ func (vm *NetworkMgr) migrateFunds(ctx cosmos.Context, mgr Manager) error {
 				}
 
 				// GetMostSecure also takes into account migration outbound items.
-				target := vm.k.GetMostSecure(ctx, targetVaults, signingTransactionPeriod)
+				target := vm.k.GetMostSecure(ctx, targetVaults, mgr.GetConstants().GetInt64Value(constants.SigningTransactionPeriod))
 				// get address of asgard pubkey
 				var addr common.Address
 				addr, err = target.GetAddress(coin.Asset.GetChain())
@@ -857,7 +869,7 @@ func (vm *NetworkMgr) migrateFunds(ctx cosmos.Context, mgr Manager) error {
 				}
 
 				// figure the nth time, we've sent migration txs from this vault
-				nth := (ctx.BlockHeight()-vault.StatusSince)/migrateInterval + 1
+				nth := retiringAge/migrateInterval + 1
 
 				// for the last migration round, only migrate the final amount
 				// of non-gas assets. For the last migration round + 1, then
@@ -2243,7 +2255,7 @@ func (vm *NetworkMgr) UpdateNetwork(ctx cosmos.Context, mgr Manager) error {
 	tcyStakeSystemIncomeBps := vm.k.GetConfigInt64(ctx, constants.TCYStakeSystemIncomeBps)
 	marketingFundSystemIncomeBps := vm.k.GetConfigInt64(ctx, constants.MarketingFundSystemIncomeBps)
 	polReserveSystemIncomeBps := vm.k.GetConfigInt64(ctx, constants.POLReserveSystemIncomeBps)
-	blocksPerYear := constAccessor.GetInt64Value(constants.BlocksPerYear)
+	blocksPerYear := vm.k.ScaleConfigInt64(ctx, constants.BlocksPerYear, constAccessor.GetInt64Value(constants.BlocksPerYear))
 	bondReward, totalPoolRewards, lpShare, devFundDeduct, systemIncomeBurnDeduct, tcyStakeDeduct, marketingFundDeduct, polReserveDeduct := vm.calcBlockRewards(ctx,
 		availablePoolsRune, vaultsLiquidityRune, effectiveSecurityBond,
 		totalEffectiveBond, totalReserve, totalLiquidityFees, totalRevShare, emissionCurve,
@@ -3275,8 +3287,11 @@ func (vm *NetworkMgr) calculateNetworkSolvency(ctx cosmos.Context, mgr Manager) 
 	// signing + confirmation latency), the same window LackSigning and outbound
 	// observation matching use. Items are filtered per-item back to their own
 	// chain-specific window below, so standard-window chains keep the base window.
-	signingPeriod := vm.k.GetConfigInt64(ctx, constants.SigningTransactionPeriod)
-	startHeight := ctx.BlockHeight() - signingPeriod*xmrSigningPeriodMultiplier
+	// Windows are measured in wall-clock time across a block time change, so
+	// outbounds scheduled under a faster block time are still subtracted.
+	refSigningPeriod := vm.k.GetConfigInt64Ref(ctx, constants.SigningTransactionPeriod)
+	windowStart := signingWindowStarts(ctx, vm.k)
+	startHeight := windowStart(refSigningPeriod * xmrSigningPeriodMultiplier)
 	if startHeight < 1 {
 		startHeight = 1
 	}
@@ -3295,7 +3310,7 @@ func (vm *NetworkMgr) calculateNetworkSolvency(ctx cosmos.Context, mgr Manager) 
 			// Items older than their own signing period have already been
 			// rescheduled/handled by the slasher; extended-window chains (XMR/EVM)
 			// keep the longer window.
-			if height < ctx.BlockHeight()-item.SigningTransactionPeriod(signingPeriod) {
+			if height < windowStart(item.SigningTransactionPeriod(refSigningPeriod)) {
 				continue
 			}
 			// Skip outbounds from inactive vaults
@@ -3338,8 +3353,8 @@ func (vm *NetworkMgr) calculateNetworkSolvency(ctx cosmos.Context, mgr Manager) 
 	// GetPendingOutbounds keeper helper: only break once past MaxTxOutOffset and an
 	// empty txout height is observed (scheduled items are contiguous within the
 	// offset but sparse beyond it).
-	maxOffset := vm.k.GetConfigInt64(ctx, constants.MaxTxOutOffset)
-	txOutDelayMax := vm.k.GetConfigInt64(ctx, constants.TxOutDelayMax)
+	maxOffset := vm.k.RefWindowEnd(ctx, vm.k.GetConfigInt64Ref(ctx, constants.MaxTxOutOffset)) - ctx.BlockHeight()
+	txOutDelayMax := vm.k.RefWindowEnd(ctx, vm.k.GetConfigInt64Ref(ctx, constants.TxOutDelayMax)) - ctx.BlockHeight()
 	for i := int64(0); i <= txOutDelayMax; i++ {
 		height := ctx.BlockHeight() + i
 		txOut, err := vm.k.GetTxOut(ctx, height)

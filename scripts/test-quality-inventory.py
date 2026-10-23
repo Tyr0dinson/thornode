@@ -52,6 +52,13 @@ SELECTIONS = (
     (
         ".",
         "mainnet",
+        ("./x/thorchain/keeper/v1",),
+        "unit-tests test-network-specific",
+        "BlockTimeMsMainnetScale",
+    ),
+    (
+        ".",
+        "mainnet",
         ("./bifrost/pkg/chainclients/monero",),
         "test-mainnet-monero",
         None,

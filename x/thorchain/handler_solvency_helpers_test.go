@@ -772,7 +772,7 @@ func (s *HandlerSolvencyHelpersSuite) TestDeductVaultBlockPendingOutbound_NoMatc
 	}
 
 	signingPeriod := mgr.GetConstants().GetInt64Value(constants.SigningTransactionPeriod)
-	result, _ := deductVaultBlockPendingOutbound(ctx, mgr, vault, block, make(map[string]cosmos.Uint), common.ETHChain, signingPeriod)
+	result, _ := deductVaultBlockPendingOutbound(ctx, mgr, vault, block, make(map[string]cosmos.Uint), common.ETHChain, signingPeriod, signingWindowStarts(ctx, mgr.Keeper()))
 	// Balance should be unchanged since VaultPubKey doesn't match
 	ethCoin := result.Coins.GetCoin(common.ETHAsset)
 	c.Assert(ethCoin.Amount.Equal(cosmos.NewUint(1000*common.One)), Equals, true)
@@ -799,7 +799,7 @@ func (s *HandlerSolvencyHelpersSuite) TestDeductVaultBlockPendingOutbound_Alread
 	}
 
 	signingPeriod := mgr.GetConstants().GetInt64Value(constants.SigningTransactionPeriod)
-	result, _ := deductVaultBlockPendingOutbound(ctx, mgr, vault, block, make(map[string]cosmos.Uint), common.ETHChain, signingPeriod)
+	result, _ := deductVaultBlockPendingOutbound(ctx, mgr, vault, block, make(map[string]cosmos.Uint), common.ETHChain, signingPeriod, signingWindowStarts(ctx, mgr.Keeper()))
 	// Balance should be unchanged since tx already has OutHash
 	ethCoin := result.Coins.GetCoin(common.ETHAsset)
 	c.Assert(ethCoin.Amount.Equal(cosmos.NewUint(1000*common.One)), Equals, true)
@@ -828,7 +828,7 @@ func (s *HandlerSolvencyHelpersSuite) TestDeductVaultBlockPendingOutbound_WithGa
 	}
 
 	signingPeriod := mgr.GetConstants().GetInt64Value(constants.SigningTransactionPeriod)
-	result, _ := deductVaultBlockPendingOutbound(ctx, mgr, vault, block, make(map[string]cosmos.Uint), common.ETHChain, signingPeriod)
+	result, _ := deductVaultBlockPendingOutbound(ctx, mgr, vault, block, make(map[string]cosmos.Uint), common.ETHChain, signingPeriod, signingWindowStarts(ctx, mgr.Keeper()))
 	// Should deduct both the coin amount and gas
 	ethCoin := result.Coins.GetCoin(common.ETHAsset)
 	expected := cosmos.NewUint(899 * common.One) // 1000 - 100 - 1
@@ -1008,4 +1008,41 @@ func (s *HandlerSolvencyHelpersSuite) TestProcessSolvencyAttestation_ConsensusAl
 	ctx = ctx.WithBlockHeight(voter.ConsensusBlockHeight + 100)
 	err = processSolvencyAttestation(ctx, mgr, &voter, nas[3].NodeAddress, nas, sol, false)
 	c.Assert(err, IsNil)
+}
+
+// After the block time goes from 1500ms to 6000ms, an outbound scheduled under
+// the faster block time stays deducted until it is a full signing period old in
+// wall-clock time, though more blocks than the new period lie behind it, so a
+// signed-but-unobserved outbound does not read as insolvency.
+func (s *HandlerSolvencyHelpersSuite) TestExcludePendingOutboundAcrossBlockTimeIncrease(c *C) {
+	ctx, mgr, _, vault := setupSolvencyHelpersTest(c)
+	k := mgr.Keeper()
+	c.Assert(constants.ThorchainBlockTime.Milliseconds(), Equals, int64(1000))
+	c.Assert(k.GetConfigInt64Ref(ctx, constants.SigningTransactionPeriod), Equals, int64(300))
+	// a 1500ms to 6000ms change, past the rate limit
+	k.SetBlockTimeHistory(ctx, 6000, constants.BlockTimeHistory{{Height: 100, Ms: 1500}, {Height: 10100, Ms: 6000}})
+	ctx = ctx.WithBlockHeight(10120)
+	// the current period is 50 blocks
+	c.Assert(k.GetConfigInt64(ctx, constants.SigningTransactionPeriod), Equals, int64(50))
+
+	add := func(height int64, amount uint64) {
+		txOut := NewTxOut(height)
+		txOut.TxArray = []TxOutItem{{
+			Chain:       common.ETHChain,
+			VaultPubKey: vault.PubKey,
+			Coin:        common.NewCoin(common.ETHAsset, cosmos.NewUint(amount*common.One)),
+		}}
+		c.Assert(k.SetTxOut(ctx, txOut), IsNil)
+	}
+	// 70 blocks back, but 50 of 1500ms and 20 of 6000ms: 195 reference blocks
+	add(10050, 10)
+	// the window ends at the previous block: 120 of 1500ms and 19 of 6000ms
+	// make 294 reference blocks, and one more fast block crosses 300
+	add(9980, 20)
+	add(9979, 40)
+
+	adjusted, pending, err := excludePendingOutboundFromVault(ctx, mgr, vault, common.ETHChain)
+	c.Assert(err, IsNil)
+	c.Check(pending[common.ETHAsset.String()].String(), Equals, cosmos.NewUint(30*common.One).String())
+	c.Check(adjusted.Coins.GetCoin(common.ETHAsset).Amount.String(), Equals, cosmos.NewUint(970*common.One).String())
 }

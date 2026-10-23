@@ -336,10 +336,19 @@ func (vm *SwapQueueAdv) IsDone(ctx cosmos.Context, msg MsgSwap) bool {
 	}
 
 	if msg.IsLimitSwap() {
-		ttl := vm.getTTL(ctx, msg)
-		if ctx.BlockHeight()-msg.InitialBlockHeight >= ttl {
-			return true
+		history := vm.k.GetBlockTimeHistory(ctx)
+		if len(history) == 0 {
+			ttl := vm.getTTL(ctx, msg)
+			return ctx.BlockHeight()-msg.InitialBlockHeight >= ttl
 		}
+		// The TTL is in blocks of the block time the swap was placed at: it
+		// expires once that much wall-clock time has passed, matching its TTL
+		// index entry, which a block time change converts the same way.
+		refMs := constants.ThorchainBlockTime.Milliseconds()
+		placedMs := history.MsAt(msg.InitialBlockHeight, refMs)
+		maxAge := constants.ScaleDuration(vm.k.GetConfigInt64Ref(ctx, constants.StreamingLimitSwapMaxAge), refMs, placedMs)
+		ttl := getLimitSwapTTL(msg, maxAge)
+		return history.ElapsedMs(msg.InitialBlockHeight, ctx.BlockHeight(), refMs) >= ttl*placedMs
 	}
 
 	return false

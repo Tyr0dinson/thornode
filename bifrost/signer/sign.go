@@ -26,6 +26,7 @@ import (
 
 	"gitlab.com/thorchain/thornode/v3/app"
 	"gitlab.com/thorchain/thornode/v3/bifrost/blockscanner"
+	"gitlab.com/thorchain/thornode/v3/bifrost/blocktime"
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
 	"gitlab.com/thorchain/thornode/v3/bifrost/observer"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients"
@@ -472,7 +473,7 @@ func (s *Signer) scheduleKeygenRetry(keygenBlock ttypes.KeygenBlock, keygenReq t
 	targetRetryHeight := retry.targetHeight
 	if !s.startKeygenWorker(func() {
 		defer s.keygenRetries.CompareAndDelete(id, retry)
-		ticker := time.NewTicker(constants.ThorchainBlockTime)
+		ticker := blocktime.NewTicker()
 		defer ticker.Stop()
 		for {
 			select {
@@ -1198,7 +1199,7 @@ func (s *Signer) signAndBroadcast(item TxOutStoreItem) ([]byte, *types.TxInItem,
 	// the cached height is still a block behind it. THORChain is at least at the
 	// item's height, and a signing halt that activates there must apply.
 	blockHeight = max(blockHeight, height)
-	signingTransactionPeriod, err := s.constantsProvider.GetInt64Value(blockHeight, constants.SigningTransactionPeriod)
+	signingTransactionPeriod, blockTimeMs, blockTimeHistory, err := s.constantsProvider.GetInt64ValueWithBlockTime(blockHeight, constants.SigningTransactionPeriod)
 	s.logger.Debug().Msgf("signing transaction period:%d", signingTransactionPeriod)
 	if err != nil {
 		s.logger.Error().Err(err).Msgf("fail to get constant value for(%s)", constants.SigningTransactionPeriod)
@@ -1215,7 +1216,7 @@ func (s *Signer) signAndBroadcast(item TxOutStoreItem) ([]byte, *types.TxInItem,
 			s.logger.Err(err).Msgf("fail to get %s", mimirKey)
 			return nil, nil, err
 		}
-		attempt := (blockHeight - height) / signingTransactionPeriod
+		attempt := round7Attempts(height, blockHeight, signingTransactionPeriod, blockTimeMs, blockTimeHistory)
 		if attempt > maxOutboundAttemptsMimir {
 			s.logger.Warn().
 				Int64("outbound_height", height).
@@ -1251,7 +1252,7 @@ func (s *Signer) signAndBroadcast(item TxOutStoreItem) ([]byte, *types.TxInItem,
 		signingWindow = ttypes.MaxTxOutSigningTransactionPeriod(signingTransactionPeriod)
 	}
 	if !allowStaleSignedRetry && (!item.Round7Retry || inactiveVaultRound7Retry) {
-		if blockHeight-signingWindow > height-s.cfg.Signer.RescheduleBufferBlocks {
+		if signingWindowExpired(height, blockHeight, signingWindow, s.cfg.Signer.RescheduleBufferBlocks, blockTimeMs, blockTimeHistory) {
 			s.logger.Error().Msgf("tx was created at block height(%d), now it is (%d), it is older than (%d) blocks, skip it", height, blockHeight, signingWindow)
 			return nil, nil, nil
 		}
@@ -1700,4 +1701,34 @@ func (s *Signer) applySpentOutputRefsFromObs(ctx context.Context, tx types.TxOut
 	case <-s.stopChan:
 		return false
 	}
+}
+
+// signingWindowExpired reports whether an outbound scheduled at height is too
+// old to sign at blockHeight: within rescheduleBufferBlocks (reference blocks)
+// of THORChain rescheduling it after signingWindow blocks at blockTimeMs. Ages
+// are measured in wall-clock time over the block time history, as THORChain
+// does, so the two agree across a block time change; without a change this is
+// blockHeight - signingWindow > height - rescheduleBufferBlocks.
+func signingWindowExpired(height, blockHeight, signingWindow, rescheduleBufferBlocks, blockTimeMs int64, history constants.BlockTimeHistory) bool {
+	refMs := constants.ThorchainBlockTime.Milliseconds()
+	// the scaled window times its block time overstates the wall-clock period
+	// by under one block, which the buffer covers
+	maxAgeMs := signingWindow*blockTimeMs - rescheduleBufferBlocks*refMs
+	if maxAgeMs <= 0 {
+		return blockHeight-signingWindow > height-rescheduleBufferBlocks
+	}
+	// expired once strictly older than maxAgeMs, as the block count above
+	return height <= history.HeightAgo(blockHeight, maxAgeMs+1, refMs)
+}
+
+// round7Attempts returns how many signing periods have passed since height in
+// wall-clock time, as THORNode counts outbound attempts across a block time
+// change: (blockHeight - height) / signingWindow without one. signingWindow is
+// the period in blocks at blockTimeMs.
+func round7Attempts(height, blockHeight, signingWindow, blockTimeMs int64, history constants.BlockTimeHistory) int64 {
+	periodMs := signingWindow * blockTimeMs
+	if periodMs <= 0 {
+		return (blockHeight - height) / signingWindow
+	}
+	return history.ElapsedMs(height, blockHeight, constants.ThorchainBlockTime.Milliseconds()) / periodMs
 }

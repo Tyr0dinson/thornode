@@ -26,6 +26,13 @@ type retryTestBridge struct {
 	failures   map[string]error
 	reads      map[string]int
 	broadcasts int
+	history    constants.BlockTimeHistory
+}
+
+func (b *retryTestBridge) GetBlockTime() (int64, constants.BlockTimeHistory, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return constants.ThorchainBlockTime.Milliseconds(), b.history, b.failures["blocktime"]
 }
 
 func (b *retryTestBridge) GetMimir(key string) (int64, error) {
@@ -326,7 +333,72 @@ func TestCommonRetryWindowAndScheduleBoundaries(t *testing.T) {
 			t.Fatalf("height=%d done=%t target=%d err=%v", test.height, done, retry.targetHeight, err)
 		}
 	}
-	if !keygenHeightInWindow(2700, 2700, 0) || keygenHeightInWindow(2701, 2700, 0) {
+	if !keygenHeightInWindow(2700, 2700, 0, nil) || keygenHeightInWindow(2701, 2700, 0, nil) {
 		t.Fatal("zero validity must preserve only the initial block")
+	}
+}
+
+// Across a block time change the acceptance window and the retry grid are
+// wall-clock time since the keygen, as THORNode measures them, so every node
+// picks the same retry height and stops when THORNode does.
+func TestKeygenRetryAcrossBlockTimeChange(t *testing.T) {
+	refMs := constants.ThorchainBlockTime.Milliseconds()
+	// 49 blocks at the default after the keygen at 2700, then half-length blocks
+	history := constants.BlockTimeHistory{{Height: 2750, Ms: refMs / 2}}
+
+	// validity 999 reference blocks: 49 + 1900/2 at 4649, 49 + 1901/2 at 4650
+	if !keygenHeightInWindow(4650, 2700, 999, history) || keygenHeightInWindow(4651, 2700, 999, history) {
+		t.Fatal("window must end once 999 reference blocks have passed")
+	}
+
+	signer, bridge, _, block := newRetryTestSigner(t)
+	bridge.history = history
+	bridge.setHeight(2800)
+	retry := &keygenRetry{block: block, keygen: block.Keygens[0]}
+	// 74.5 reference blocks have passed: the next 100-block grid point is 51
+	// half-length blocks after 2749, where counting blocks would give 2900
+	if done, err := signer.prepareKeygenRetry(retry); err != nil || done || retry.targetHeight != 2851 {
+		t.Fatalf("done=%t target=%d err=%v", done, retry.targetHeight, err)
+	}
+
+	bridge.fail("blocktime", errors.New("unavailable"))
+	retry = &keygenRetry{block: block, keygen: block.Keygens[0]}
+	if done, err := signer.prepareKeygenRetry(retry); err == nil || done || retry.targetHeight != 0 {
+		t.Fatalf("a history lookup failure must leave the retry pollable: done=%t target=%d err=%v", done, retry.targetHeight, err)
+	}
+}
+
+// A retry prepared before a block time change fires when the elapsed time
+// since the keygen reaches its target, as for one prepared after the change,
+// not at the height projected before it: nodes must start the shared keygen
+// attempt together.
+func TestKeygenRetryPreparedBeforeBlockTimeChange(t *testing.T) {
+	refMs := constants.ThorchainBlockTime.Milliseconds()
+	signer, bridge, generator, block := newRetryTestSigner(t)
+	bridge.setHeight(2740)
+	retry := &keygenRetry{block: block, keygen: block.Keygens[0]}
+	if done, err := signer.prepareKeygenRetry(retry); err != nil || done || retry.targetRef != 100 || retry.targetHeight != 2800 {
+		t.Fatalf("done=%t ref=%d target=%d err=%v", done, retry.targetRef, retry.targetHeight, err)
+	}
+	signer.keygenRetries.Store(retryID(block, retry.keygen), retry)
+
+	// the block time halves at 2750: 100 reference blocks after 2700 is 2851
+	bridge.mu.Lock()
+	bridge.history = constants.BlockTimeHistory{{Height: 2750, Ms: refMs / 2}}
+	bridge.mu.Unlock()
+	after := &keygenRetry{block: block, keygen: block.Keygens[0]}
+	bridge.setHeight(2760)
+	if _, err := signer.prepareKeygenRetry(after); err != nil || after.targetHeight != 2851 {
+		t.Fatalf("prepared after the change: target=%d err=%v", after.targetHeight, err)
+	}
+	for _, h := range []int64{2800, 2850} {
+		bridge.setHeight(h)
+		if signer.tryKeygenRetry(retry) || generator.calls() != 0 {
+			t.Fatalf("fired at %d, before 100 reference blocks", h)
+		}
+	}
+	bridge.setHeight(2851)
+	if !signer.tryKeygenRetry(retry) || generator.calls() != 1 {
+		t.Fatalf("did not fire at 2851: calls=%d", generator.calls())
 	}
 }

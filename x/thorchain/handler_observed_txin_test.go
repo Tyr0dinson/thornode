@@ -884,6 +884,10 @@ func (k *TestObservedTxInHandleKeeper) GetMimir(_ cosmos.Context, key string) (i
 	return 0, fmt.Errorf("mimir not found")
 }
 
+func (k *TestObservedTxInHandleKeeper) GetConfigInt64Ref(ctx cosmos.Context, key constants.ConstantName) int64 {
+	return k.GetConfigInt64(ctx, key)
+}
+
 func (k *TestObservedTxInHandleKeeper) GetConfigInt64(_ cosmos.Context, key constants.ConstantName) int64 {
 	// Set reasonable defaults for test
 	switch key {

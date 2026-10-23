@@ -121,12 +121,17 @@ func (m *QueryConstantValuesResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte
 		Int64Values  map[string]int64  `json:"int_64_values"`
 		BoolValues   map[string]bool   `json:"bool_values"`
 		StringValues map[string]string `json:"string_values"`
+		BlockTimeMs  int64             `json:"block_time_ms"`
+		// omitted while the block time never changed
+		BlockTimeHistory []BlockTimeSegment `json:"block_time_history,omitempty"`
 	}
 
 	c := constantVals{
-		Int64Values:  make(map[string]int64),
-		BoolValues:   make(map[string]bool),
-		StringValues: make(map[string]string),
+		Int64Values:      make(map[string]int64),
+		BoolValues:       make(map[string]bool),
+		StringValues:     make(map[string]string),
+		BlockTimeMs:      m.BlockTimeMs,
+		BlockTimeHistory: m.BlockTimeHistory,
 	}
 
 	for _, kv := range m.BoolValues {

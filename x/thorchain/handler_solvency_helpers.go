@@ -46,7 +46,10 @@ func checkSolvencyVoterQuota(ctx cosmos.Context, k keeper.Keeper, chain common.C
 	if height <= 0 {
 		return nil, fmt.Errorf("invalid THORChain height for solvency admission: %d", height)
 	}
-	window := uint64(height / windowBlocks)
+	// windows of wall-clock time since genesis (windowBlocks reference blocks
+	// each), so the index never goes back when the block time goes down;
+	// height / windowBlocks without a block time change
+	window := uint64(k.RefBlocksSince(ctx, 0) / windowBlocks)
 
 	// Never depend on local arrival order or map iteration for consensus state.
 	ordered := append([]cosmos.AccAddress(nil), signers...)
@@ -88,7 +91,7 @@ func processSolvencyAttestation(
 
 	observeSlashPoints := mgr.GetConstants().GetInt64Value(constants.ObserveSlashPoints)
 	lackOfObservationPenalty := mgr.GetConstants().GetInt64Value(constants.LackOfObservationPenalty)
-	observeFlex := k.GetConfigInt64(ctx, constants.ObservationDelayFlexibility)
+	observeFlex := k.GetConfigInt64Ref(ctx, constants.ObservationDelayFlexibility)
 
 	slashCtx := ctx.WithContext(context.WithValue(ctx.Context(), constants.CtxMetricLabels, []metrics.Label{
 		telemetry.NewLabel("reason", "failed_observe_solvency"),
@@ -122,7 +125,7 @@ func processSolvencyAttestation(
 	// from this point , solvency reach consensus
 	if voter.ConsensusBlockHeight > 0 {
 		// After consensus, only decrement slash points if within the ObservationDelayFlexibility period.
-		if slashObservations && (voter.ConsensusBlockHeight+observeFlex) >= ctx.BlockHeight() {
+		if slashObservations && withinObservationFlex(ctx, k, voter.ConsensusBlockHeight, observeFlex) {
 			slasher.DecSlashPoints(slashCtx, lackOfObservationPenalty, attester)
 		}
 		// solvency tx already processed
@@ -540,9 +543,12 @@ func excludePendingOutboundFromVault(ctx cosmos.Context, mgr Manager, vault Vaul
 	// Scan the longest live signing period for the reported chain, then apply the
 	// exact per-item period in deductVaultBlockPendingOutbound. This keeps
 	// solvency accounting aligned with LackSigning without retaining ordinary
-	// outbounds for too long.
-	signingPeriod := mgr.Keeper().GetConfigInt64(ctx, constants.SigningTransactionPeriod)
-	startHeight := ctx.BlockHeight() - thortypes.MaxTxOutSigningTransactionPeriodForChain(chain, signingPeriod)
+	// outbounds for too long. Periods are measured in wall-clock time, so
+	// outbounds scheduled before a block time change stay deducted until
+	// LackSigning reschedules them.
+	refSigningPeriod := mgr.Keeper().GetConfigInt64Ref(ctx, constants.SigningTransactionPeriod)
+	windowStart := signingWindowStarts(ctx, mgr.Keeper())
+	startHeight := windowStart(thortypes.MaxTxOutSigningTransactionPeriodForChain(chain, refSigningPeriod))
 	if startHeight < 1 {
 		startHeight = 1
 	}
@@ -552,17 +558,21 @@ func excludePendingOutboundFromVault(ctx cosmos.Context, mgr Manager, vault Vaul
 			ctx.Logger().Error("fail to get block tx out", "error", err)
 			return vault, pendingOutbounds, fmt.Errorf("fail to get block tx out, err: %w", err)
 		}
-		vault, pendingOutbounds = deductVaultBlockPendingOutbound(ctx, mgr, vault, blockOut, pendingOutbounds, chain, signingPeriod)
+		vault, pendingOutbounds = deductVaultBlockPendingOutbound(ctx, mgr, vault, blockOut, pendingOutbounds, chain, refSigningPeriod, windowStart)
 	}
 	return vault, pendingOutbounds, nil
 }
 
-func deductVaultBlockPendingOutbound(ctx cosmos.Context, mgr Manager, vault Vault, block *TxOut, pendingOutbounds map[string]cosmos.Uint, chain common.Chain, signingPeriod int64) (Vault, map[string]cosmos.Uint) {
+// deductVaultBlockPendingOutbound deducts block's outstanding outbounds for chain
+// from vault while they are inside their signing period: refSigningPeriod is
+// the period in reference blocks, and windowStart (signingWindowStarts) maps a
+// period to the first height still inside it.
+func deductVaultBlockPendingOutbound(ctx cosmos.Context, mgr Manager, vault Vault, block *TxOut, pendingOutbounds map[string]cosmos.Uint, chain common.Chain, refSigningPeriod int64, windowStart func(refPeriod int64) int64) (Vault, map[string]cosmos.Uint) {
 	for _, txOutItem := range block.TxArray {
 		if !txOutItem.Chain.Equals(chain) {
 			continue
 		}
-		if ctx.BlockHeight()-block.Height > txOutItem.SigningTransactionPeriod(signingPeriod) {
+		if block.Height < windowStart(txOutItem.SigningTransactionPeriod(refSigningPeriod)) {
 			continue
 		}
 		if !txOutItem.VaultPubKey.Equals(vault.PubKey) {

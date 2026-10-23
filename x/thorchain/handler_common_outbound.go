@@ -89,7 +89,9 @@ func (h CommonOutboundTxHandler) handle(ctx cosmos.Context, tx ObservedTx, inTxI
 	}
 
 	shouldSlash := true
-	signingTransPeriod := h.mgr.Keeper().GetConfigInt64(ctx, constants.SigningTransactionPeriod)
+	// in reference blocks: the search window is measured in wall-clock time,
+	// matching LackSigning across a block time change
+	signingTransPeriod := h.mgr.Keeper().GetConfigInt64Ref(ctx, constants.SigningTransactionPeriod)
 	// every Signing Transaction Period , THORNode will check whether a
 	// TxOutItem had been sent by signer or not
 	// if a txout item that is older than SigningTransactionPeriod, but has not
@@ -114,7 +116,7 @@ func (h CommonOutboundTxHandler) handle(ctx cosmos.Context, tx ObservedTx, inTxI
 	case isObservedEVMTokenOutbound(tx):
 		searchPeriod = signingTransPeriod * evmTokenSigningPeriodMultiplier
 	}
-	earliestHeight := ctx.BlockHeight() - searchPeriod
+	earliestHeight := h.mgr.Keeper().RefWindowStart(ctx, searchPeriod)
 	if voter.Height > earliestHeight {
 		earliestHeight = voter.Height
 	}

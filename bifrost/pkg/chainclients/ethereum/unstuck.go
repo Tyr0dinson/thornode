@@ -66,8 +66,14 @@ func (c *Client) unstuckAction() {
 		c.logger.Err(err).Int64("signingPeriod", signingPeriod).Msg("invalid signing period")
 		return
 	}
-	rescheduleBufferBlocks := config.GetBifrost().Signer.RescheduleBufferBlocks
-	txWaitBlocks := signingPeriod - rescheduleBufferBlocks
+	// the buffer is configured in reference blocks of wall-clock time, while the
+	// signing period above is in blocks at the current block time
+	blockTimeMs, history, err := c.bridge.GetBlockTime()
+	if err != nil {
+		c.logger.Err(err).Msg("failed to get THORChain block time")
+		return
+	}
+	bufferRefBlocks := config.GetBifrost().Signer.RescheduleBufferBlocks
 
 	signedTxItems, err := c.ethScanner.blockMetaAccessor.GetSignedTxItems()
 	if err != nil {
@@ -87,18 +93,21 @@ func (c *Client) unstuckAction() {
 			continue
 		}
 
-		if (height - item.Height) < txWaitBlocks {
+		// ages are wall-clock time over the block time history
+		txOutHeight := item.Height
+		if item.TxOutItem != nil {
+			txOutHeight = item.TxOutItem.Height
+		}
+		waiting, outsideBuffer := signing.UnstuckWindow(history, item.Height, txOutHeight, height, signingPeriod, blockTimeMs, bufferRefBlocks)
+		if waiting {
 			// not time yet , continue to wait for this tx to commit
 			continue
 		}
 
 		// only attempt unstuck during the reschedule buffer of the signing period
-		if item.TxOutItem != nil {
-			periodBlock := (height - item.TxOutItem.Height) % signingPeriod
-			if signingPeriod-periodBlock > rescheduleBufferBlocks {
-				clog.Warn().Msg("waiting for start of reschedule buffer blocks to unstuck")
-				continue
-			}
+		if item.TxOutItem != nil && outsideBuffer {
+			clog.Warn().Msg("waiting for start of reschedule buffer blocks to unstuck")
+			continue
 		}
 
 		clog.Warn().Msg("attempting unstuck")

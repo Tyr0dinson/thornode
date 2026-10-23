@@ -74,10 +74,31 @@ func (s *Signer) keygenRetrySettings(block ttypes.KeygenBlock) (interval, validi
 	return interval, validity, nil
 }
 
-func keygenHeightInWindow(height, keygenHeight, validity int64) bool {
+// keygenHeightInWindow reports whether a keygen scheduled at keygenHeight is
+// still accepted at height. validity is in reference blocks of wall-clock time,
+// measured over the block time history as THORNode does.
+func keygenHeightInWindow(height, keygenHeight, validity int64, history constants.BlockTimeHistory) bool {
 	// THORNode accepts the boundary inclusively, including the delivery
 	// block when validity is zero. Retry settings separately disable retries.
-	return validity >= 0 && keygenHeight > 0 && height >= keygenHeight && height-keygenHeight <= validity
+	return validity >= 0 && keygenHeight > 0 && height >= keygenHeight && keygenRefElapsed(history, keygenHeight, height) <= validity
+}
+
+// keygenRefElapsed returns the wall-clock time from keygenHeight to height in
+// reference blocks, rounded down: height - keygenHeight without a block time
+// change.
+func keygenRefElapsed(history constants.BlockTimeHistory, keygenHeight, height int64) int64 {
+	refMs := constants.ThorchainBlockTime.Milliseconds()
+	return history.ElapsedMs(keygenHeight, height, refMs) / refMs
+}
+
+// keygenBlockTimeHistory reads THORChain's block time history, which keygen
+// windows and the retry grid are measured over.
+func (s *Signer) keygenBlockTimeHistory() (constants.BlockTimeHistory, error) {
+	_, history, err := s.thorchainBridge.GetBlockTime()
+	if err != nil {
+		s.logger.Error().Err(err).Msg("fail to get block time history")
+	}
+	return history, err
 }
 
 // keygenCurrentHeight requires an endpoint at least as current as the delivered
@@ -116,8 +137,13 @@ type keygenRetryID struct {
 }
 
 type keygenRetry struct {
-	block        ttypes.KeygenBlock
-	keygen       ttypes.Keygen
+	block  ttypes.KeygenBlock
+	keygen ttypes.Keygen
+	// targetRef is when the retry fires: that many reference blocks of
+	// wall-clock time after the keygen. It is checked against fresh history,
+	// so nodes that prepared before and after a block time change still fire
+	// together. targetHeight is its projected height; nonzero once prepared.
+	targetRef    int64
 	targetHeight int64
 }
 
@@ -140,12 +166,23 @@ func (s *Signer) prepareKeygenRetry(retry *keygenRetry) (finished bool, err erro
 	if err != nil {
 		return false, err
 	}
-	elapsed := height - retry.block.Height
+	history, err := s.keygenBlockTimeHistory()
+	if err != nil {
+		return false, err
+	}
+	// the grid is in reference blocks of wall-clock time since the keygen, so
+	// every node picks the same height across a block time change
+	elapsed := keygenRefElapsed(history, retry.block.Height, height)
 	delay := interval - elapsed%interval
 	if elapsed > validity-interval || delay > validity-interval-elapsed || height > math.MaxInt64-delay {
 		return true, nil
 	}
-	retry.targetHeight = height + delay
+	refMs := constants.ThorchainBlockTime.Milliseconds()
+	if elapsed+delay > math.MaxInt64/refMs {
+		return true, nil
+	}
+	retry.targetRef = elapsed + delay
+	retry.targetHeight = history.HeightAfter(retry.block.Height, retry.targetRef*refMs, refMs)
 	return false, nil
 }
 
@@ -164,7 +201,15 @@ func (s *Signer) tryKeygenRetry(retry *keygenRetry) bool {
 		s.logger.Error().Err(err).Msg("fail to get last chain height")
 		return false
 	}
-	if height < retry.targetHeight {
+	history, err := s.keygenBlockTimeHistory()
+	if err != nil {
+		return false
+	}
+	if retry.targetRef > 0 {
+		if keygenRefElapsed(history, block.Height, height) < retry.targetRef {
+			return false
+		}
+	} else if height < retry.targetHeight {
 		return false
 	}
 	interval, validity, err := s.keygenRetrySettings(block)
@@ -173,7 +218,7 @@ func (s *Signer) tryKeygenRetry(retry *keygenRetry) bool {
 		// will re-read policy on its next block tick, without spawning work.
 		return false
 	}
-	if interval <= 0 || !keygenHeightInWindow(height, block.Height, validity) {
+	if interval <= 0 || !keygenHeightInWindow(height, block.Height, validity, history) {
 		s.logger.Warn().Int64("keygen_height", block.Height).Int64("current_height", height).
 			Msg("skipping disabled or expired keygen retry")
 		return true

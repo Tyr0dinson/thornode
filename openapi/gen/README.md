@@ -200,6 +200,7 @@ Class | Method | HTTP request | Description
  - [CodesResponse](docs/CodesResponse.md)
  - [Coin](docs/Coin.md)
  - [ConstantsResponse](docs/ConstantsResponse.md)
+ - [ConstantsResponseBlockTimeHistoryInner](docs/ConstantsResponseBlockTimeHistoryInner.md)
  - [ContractInfo](docs/ContractInfo.md)
  - [ContractInfoResponse](docs/ContractInfoResponse.md)
  - [ContractInfosResponse](docs/ContractInfosResponse.md)

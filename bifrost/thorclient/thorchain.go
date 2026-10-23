@@ -27,6 +27,7 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"gitlab.com/thorchain/thornode/v3/app"
+	"gitlab.com/thorchain/thornode/v3/bifrost/blocktime"
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
 	"gitlab.com/thorchain/thornode/v3/bifrost/p2p/conversion"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
@@ -116,6 +117,7 @@ type ThorchainBridge interface {
 	GetXMRSpentOutputRefsUncached(ctx context.Context, vaultPubKey common.PubKey) ([]*common.OutputRef, error)
 	GetConfig() config.BifrostClientConfiguration
 	GetConstants() (map[string]int64, error)
+	GetBlockTime() (int64, constants.BlockTimeHistory, error)
 	GetContext() client.Context
 	GetContractAddress() ([]PubKeyContractAddressPair, error)
 	GetErrataMsg(txID common.TxID, chain common.Chain) sdk.Msg
@@ -349,7 +351,7 @@ func (b *thorchainBridge) getCached(
 	defer respCachePointer.unlock()
 
 	// When the same endpoint has been checked within the span of a single block, return the cached response.
-	if time.Since(respCachePointer.httpResponseChecked) < constants.ThorchainBlockTime && respCachePointer.httpResponse != nil {
+	if time.Since(respCachePointer.httpResponseChecked) < blocktime.Get() && respCachePointer.httpResponse != nil {
 		return respCachePointer.httpResponse, http.StatusOK, nil
 	}
 
@@ -1335,6 +1337,40 @@ func (b *thorchainBridge) GetConstants() (map[string]int64, error) {
 		return nil, fmt.Errorf("fail to unmarshal to json: %w", err)
 	}
 	return result.Int64Values, nil
+}
+
+// GetBlockTime returns THORChain's effective block time in milliseconds and its
+// history of block time changes, from /thorchain/constants: the same response
+// as GetConstants, so the block time matches the one those constants are
+// scaled to. A THORNode that predates the fields reports the default block time
+// and no history.
+func (b *thorchainBridge) GetBlockTime() (int64, constants.BlockTimeHistory, error) {
+	buf, s, err := b.getWithPath(ThorchainConstants)
+	if err != nil {
+		return 0, nil, fmt.Errorf("fail to get constants: %w", err)
+	}
+	if s != http.StatusOK {
+		return 0, nil, fmt.Errorf("unexpected status code: %d", s)
+	}
+	ms, history, err := parseBlockTime(buf)
+	if err == nil {
+		blocktime.Set(ms)
+	}
+	return ms, history, err
+}
+
+func parseBlockTime(buf []byte) (int64, constants.BlockTimeHistory, error) {
+	var result struct {
+		BlockTimeMs      int64                      `json:"block_time_ms"`
+		BlockTimeHistory constants.BlockTimeHistory `json:"block_time_history"`
+	}
+	if err := json.Unmarshal(buf, &result); err != nil {
+		return 0, nil, fmt.Errorf("fail to unmarshal to json: %w", err)
+	}
+	if result.BlockTimeMs <= 0 {
+		result.BlockTimeMs = constants.ThorchainBlockTime.Milliseconds()
+	}
+	return result.BlockTimeMs, result.BlockTimeHistory, nil
 }
 
 // RagnarokInProgress is to query thorchain to check whether ragnarok had been triggered

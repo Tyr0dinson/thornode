@@ -476,6 +476,7 @@ func NewChainApp(
 	thorchainModule := thorchain.NewAppModule(mgrs, telemetryEnabled, testApp)
 
 	app.EnshrinedBifrost = ebifrost.NewEnshrinedBifrost(app.appCodec, logger, ebifrostConfig)
+	app.EnshrinedBifrost.SetBlockTimeMs(app.ThorchainKeeper.GetBlockTimeMs)
 
 	defaultProposalHandler := baseapp.NewDefaultProposalHandler(bApp.Mempool(), bApp)
 	eBifrostProposalHandler := thorchainkeeperabci.NewProposalHandler(

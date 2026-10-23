@@ -6811,6 +6811,7 @@ components:
         effective_security_bond: "0"
         available_pools_rune: "4785723312627752"
         total_bond_units: "0"
+        block_time_ms: "6000"
         gas_withheld_rune: "1500000000"
         outbound_fee_multiplier: "15000"
         total_reserve: "21999180112172346"
@@ -6905,8 +6906,15 @@ components:
             \ one anchor chain is available (false)"
           example: false
           type: boolean
+        block_time_ms:
+          description: "the effective block time in milliseconds, the BLOCKTIMEMS\
+            \ target in force for this block, or the network's default block time\
+            \ while it is unset"
+          example: "6000"
+          type: string
       required:
       - available_pools_rune
+      - block_time_ms
       - bond_reward_rune
       - effective_security_bond
       - gas_spent_rune
@@ -6981,8 +6989,14 @@ components:
           StrictBondLiquidityRatio: true
         int_64_values:
           AsgardSize: 40
+        block_time_ms: 6000
         string_values:
           DefaultPoolStatus: Staged
+        block_time_history:
+        - ms: 2000
+          height: 1000
+        - ms: 2000
+          height: 1000
       properties:
         int_64_values:
           additionalProperties:
@@ -7002,6 +7016,18 @@ components:
           example:
             DefaultPoolStatus: Staged
           type: object
+        block_time_ms:
+          description: the effective block time in milliseconds that the block-denominated
+            int_64_values are scaled to
+          example: 6000
+          format: int64
+          type: integer
+        block_time_history:
+          description: "every change of the effective block time, oldest first; omitted\
+            \ while it never changed"
+          items:
+            $ref: '#/components/schemas/ConstantsResponse_block_time_history_inner'
+          type: array
       type: object
     BanResponse:
       example:
@@ -9582,6 +9608,25 @@ components:
       - refund
       - to_address
       title: PlannedOutTx
+      type: object
+    ConstantsResponse_block_time_history_inner:
+      example:
+        ms: 2000
+        height: 1000
+      properties:
+        height:
+          description: the height from which blocks are ms apart
+          example: 1000
+          format: int64
+          type: integer
+        ms:
+          description: the block time in milliseconds from height on
+          example: 2000
+          format: int64
+          type: integer
+      required:
+      - height
+      - ms
       type: object
     KeysignInfo:
       example:

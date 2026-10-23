@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"gitlab.com/thorchain/thornode/v3/bifrost/blocktime"
 	"gitlab.com/thorchain/thornode/v3/bifrost/oracle"
 
 	lru "github.com/hashicorp/golang-lru"
@@ -346,7 +347,7 @@ func (o *Observer) stopStartedChainClients() {
 // maintainXMRErrata restores startup quarantine once, then owns ongoing cleanup.
 // Durable unresolved receipts survive missed ticks, failures and restart.
 func (o *Observer) maintainXMRErrata(ctx context.Context, restoreQuarantines bool) {
-	ticker := time.NewTicker(constants.ThorchainBlockTime)
+	ticker := blocktime.NewTicker()
 	defer ticker.Stop()
 	for {
 		select {
@@ -1418,7 +1419,7 @@ func (o *Observer) appendPreAttributedXMRObservation(
 }
 
 func (o *Observer) processErrataTx(ctx context.Context) {
-	retryTicker := time.NewTicker(constants.ThorchainBlockTime)
+	retryTicker := blocktime.NewTicker()
 	pruneTicker := time.NewTicker(committedOnlyErrataPruneInterval)
 	defer retryTicker.Stop()
 	defer pruneTicker.Stop()

@@ -206,8 +206,9 @@ func emitQueueDetailTelemetry(ctx cosmos.Context, mgr Manager) {
 		}
 		poolByAsset := make(map[common.Asset]*Pool, len(pools))
 
-		signingPeriod := k.GetConfigInt64(ctx, constants.SigningTransactionPeriod)
-		dueStartHeight := ctx.BlockHeight() - types.MaxTxOutSigningTransactionPeriod(signingPeriod)
+		// wall-clock, so outbounds scheduled before a block time change stay in view
+		signingPeriod := k.GetConfigInt64Ref(ctx, constants.SigningTransactionPeriod)
+		dueStartHeight := k.RefWindowStart(ctx, types.MaxTxOutSigningTransactionPeriod(signingPeriod))
 		if dueStartHeight < 1 {
 			dueStartHeight = 1
 		}

@@ -355,7 +355,7 @@ coverage-report: test-coverage
 
 # only print the coverage total: the full per-function dump pushed the CI job log
 # past GitLab's 4MB cap, truncating the "total:" line the coverage regex reads
-# test-network-specific runs alongside the main suite: its five sequential
+# test-network-specific runs alongside the main suite: its six sequential
 # `go test` runs took 95-130s in a 6-CPU CI slot, mostly waiting on tests, and
 # no longer hold up the main suite. Its output is printed when both finish, so
 # the main suite's output still streams.
@@ -394,6 +394,7 @@ test-network-specific:
 	@python3 scripts/test-quality-run.py --tags chainnet --run '$(RUN)' --report-dir test-quality-reports/network-chainnet ./common
 	@python3 scripts/test-quality-run.py --tags mainnet --run '$(RUN)' --report-dir test-quality-reports/network-mainnet ./common ./constants ./app/blocktime ./bifrost/pkg/chainclients/utxo/...
 	@python3 scripts/test-quality-run.py --tags mainnet --run TestPackage --test-arg=-check.f --test-arg='Migrate|Migration19to20Suite|EthThorRestoreSuite|BlockTimeMsBoundsOnMainnet' --report-dir test-quality-reports/network-mainnet-migration ./x/thorchain # mainnet store-migration tests run under the gocheck TestPackage entrypoint (CI unit-tests is mocknet-only). The suites Migration19to20Suite/EthThorRestoreSuite lack the substring "Migrate", so -check.f names them explicitly (as it does HandlerMimirSuite.TestBlockTimeMsBoundsOnMainnet, the mainnet BLOCKTIMEMS bounds); this filter must stay in sync with scripts/test-quality-inventory.py SELECTIONS (enforced by test_selection_filters_match_the_makefile).
+	@python3 scripts/test-quality-run.py --tags mainnet --run TestPackage --test-arg=-check.f --test-arg='BlockTimeMsMainnetScale' --report-dir test-quality-reports/network-mainnet-keeper ./x/thorchain/keeper/v1 # the mainnet 6s reference-block scaling of BLOCKTIMEMS; the rest of the package is mocknet-only, so -check.f keeps it to this test (in sync with scripts/test-quality-inventory.py SELECTIONS)
 	@python3 scripts/test-quality-run.py --tags mocknet --run '$(RUN)' --report-dir test-quality-reports/network-mocknet ./common ./bifrost/pkg/chainclients/utxo/...
 
 test-race:

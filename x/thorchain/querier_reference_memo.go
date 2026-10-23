@@ -82,7 +82,7 @@ func (qs queryServer) queryReferenceMemoPreflight(ctx cosmos.Context, req *types
 	}
 
 	// Check if memoless transactions are enabled
-	ttl := qs.mgr.Keeper().GetConfigInt64(ctx, constants.MemolessTxnTTL)
+	ttl := qs.mgr.Keeper().GetConfigInt64Ref(ctx, constants.MemolessTxnTTL)
 	if ttl <= 0 {
 		return nil, fmt.Errorf("memoless transactions are currently disabled")
 	}
@@ -111,17 +111,18 @@ func (qs queryServer) queryReferenceMemoPreflight(ctx cosmos.Context, req *types
 	}
 
 	// Check if the reference is available (not registered or expired)
-	if refMemo.Height == 0 || refMemo.IsExpired(ctx.BlockHeight(), ttl) {
+	if refMemo.Height == 0 || referenceMemoExpired(ctx, qs.mgr.Keeper(), refMemo, ttl) {
 		response.Available = true
 		response.CanRegister = true
 		response.ExpiresAt = 0
 	} else {
 		response.Available = false
 		response.Memo = refMemo.Memo
-		response.ExpiresAt = refMemo.Height + ttl
+		// the last height it is live at
+		response.ExpiresAt = qs.mgr.Keeper().RefHeightAfter(ctx, refMemo.Height, ttl+1) - 1
 
 		// Can register if it's expired
-		response.CanRegister = refMemo.IsExpired(ctx.BlockHeight(), ttl)
+		response.CanRegister = referenceMemoExpired(ctx, qs.mgr.Keeper(), refMemo, ttl)
 	}
 
 	return response, nil

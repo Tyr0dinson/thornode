@@ -112,7 +112,10 @@ func (h ReferenceMemoHandler) validate(ctx cosmos.Context, msg MsgReferenceMemo)
 
 // handle process MsgReferenceMemo
 func (h ReferenceMemoHandler) handle(ctx cosmos.Context, msg MsgReferenceMemo) (*cosmos.Result, error) {
-	ttl := h.mgr.Keeper().GetConfigInt64(ctx, constants.MemolessTxnTTL)
+	// reference memos expire in wall-clock time (refTTL); the occupancy window
+	// counts blocks at the current block time (ttl)
+	refTTL := h.mgr.Keeper().GetConfigInt64Ref(ctx, constants.MemolessTxnTTL)
+	ttl := h.mgr.Keeper().ScaleConfigInt64(ctx, constants.MemolessTxnTTL, refTTL)
 	// Priced before the registration is recorded, so the registrant pays for the
 	// congestion they arrive into, not the congestion they create.
 	cost := memolessCost(ctx, h.mgr.Keeper(), msg.Asset)
@@ -122,7 +125,7 @@ func (h ReferenceMemoHandler) handle(ctx cosmos.Context, msg MsgReferenceMemo) (
 	// starting from the last assigned number, preventing collisions even when
 	// multiple users register concurrently.
 	posStr := h.mgr.Keeper().GetLastReferenceNumber(ctx, msg.Asset)
-	next := h.nextReference(ctx, msg.Asset, posStr, ttl)
+	next := h.nextReference(ctx, msg.Asset, posStr, refTTL)
 	if next == "" {
 		return nil, fmt.Errorf("unable to find an available reference")
 	}
@@ -159,7 +162,7 @@ func (h ReferenceMemoHandler) handle(ctx cosmos.Context, msg MsgReferenceMemo) (
 }
 
 // nextReference finds the next available reference for the asset
-func (h ReferenceMemoHandler) nextReference(ctx cosmos.Context, asset common.Asset, posStr string, ttl int64) string {
+func (h ReferenceMemoHandler) nextReference(ctx cosmos.Context, asset common.Asset, posStr string, refTTL int64) string {
 	end := h.mgr.Keeper().GetConfigInt64(ctx, constants.MemolessTxnRefCount)
 	if end <= 0 {
 		return ""
@@ -202,7 +205,7 @@ func (h ReferenceMemoHandler) nextReference(ctx cosmos.Context, asset common.Ass
 		}
 
 		// see if this memo is available, if its not being used, return it
-		if refMemo.Height == 0 || refMemo.IsExpired(ctx.BlockHeight(), ttl) {
+		if refMemo.Height == 0 || referenceMemoExpired(ctx, h.mgr.Keeper(), refMemo, refTTL) {
 			return ref
 		}
 		pos++

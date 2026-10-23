@@ -19,6 +19,10 @@ type ConstantsResponse struct {
 	Int64Values *map[string]string `json:"int_64_values,omitempty"`
 	BoolValues *map[string]string `json:"bool_values,omitempty"`
 	StringValues *map[string]string `json:"string_values,omitempty"`
+	// the effective block time in milliseconds that the block-denominated int_64_values are scaled to
+	BlockTimeMs *int64 `json:"block_time_ms,omitempty"`
+	// every change of the effective block time, oldest first; omitted while it never changed
+	BlockTimeHistory []ConstantsResponseBlockTimeHistoryInner `json:"block_time_history,omitempty"`
 }
 
 // NewConstantsResponse instantiates a new ConstantsResponse object
@@ -134,6 +138,70 @@ func (o *ConstantsResponse) SetStringValues(v map[string]string) {
 	o.StringValues = &v
 }
 
+// GetBlockTimeMs returns the BlockTimeMs field value if set, zero value otherwise.
+func (o *ConstantsResponse) GetBlockTimeMs() int64 {
+	if o == nil || o.BlockTimeMs == nil {
+		var ret int64
+		return ret
+	}
+	return *o.BlockTimeMs
+}
+
+// GetBlockTimeMsOk returns a tuple with the BlockTimeMs field value if set, nil otherwise
+// and a boolean to check if the value has been set.
+func (o *ConstantsResponse) GetBlockTimeMsOk() (*int64, bool) {
+	if o == nil || o.BlockTimeMs == nil {
+		return nil, false
+	}
+	return o.BlockTimeMs, true
+}
+
+// HasBlockTimeMs returns a boolean if a field has been set.
+func (o *ConstantsResponse) HasBlockTimeMs() bool {
+	if o != nil && o.BlockTimeMs != nil {
+		return true
+	}
+
+	return false
+}
+
+// SetBlockTimeMs gets a reference to the given int64 and assigns it to the BlockTimeMs field.
+func (o *ConstantsResponse) SetBlockTimeMs(v int64) {
+	o.BlockTimeMs = &v
+}
+
+// GetBlockTimeHistory returns the BlockTimeHistory field value if set, zero value otherwise.
+func (o *ConstantsResponse) GetBlockTimeHistory() []ConstantsResponseBlockTimeHistoryInner {
+	if o == nil || o.BlockTimeHistory == nil {
+		var ret []ConstantsResponseBlockTimeHistoryInner
+		return ret
+	}
+	return o.BlockTimeHistory
+}
+
+// GetBlockTimeHistoryOk returns a tuple with the BlockTimeHistory field value if set, nil otherwise
+// and a boolean to check if the value has been set.
+func (o *ConstantsResponse) GetBlockTimeHistoryOk() ([]ConstantsResponseBlockTimeHistoryInner, bool) {
+	if o == nil || o.BlockTimeHistory == nil {
+		return nil, false
+	}
+	return o.BlockTimeHistory, true
+}
+
+// HasBlockTimeHistory returns a boolean if a field has been set.
+func (o *ConstantsResponse) HasBlockTimeHistory() bool {
+	if o != nil && o.BlockTimeHistory != nil {
+		return true
+	}
+
+	return false
+}
+
+// SetBlockTimeHistory gets a reference to the given []ConstantsResponseBlockTimeHistoryInner and assigns it to the BlockTimeHistory field.
+func (o *ConstantsResponse) SetBlockTimeHistory(v []ConstantsResponseBlockTimeHistoryInner) {
+	o.BlockTimeHistory = v
+}
+
 func (o ConstantsResponse) MarshalJSON_deprecated() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if o.Int64Values != nil {
@@ -144,6 +212,12 @@ func (o ConstantsResponse) MarshalJSON_deprecated() ([]byte, error) {
 	}
 	if o.StringValues != nil {
 		toSerialize["string_values"] = o.StringValues
+	}
+	if o.BlockTimeMs != nil {
+		toSerialize["block_time_ms"] = o.BlockTimeMs
+	}
+	if o.BlockTimeHistory != nil {
+		toSerialize["block_time_history"] = o.BlockTimeHistory
 	}
 	return json.Marshal(toSerialize)
 }

@@ -18,6 +18,7 @@ import "types/type_vault.proto";
 import "types/type_sol_vault_nonce.proto";
 import "types/type_tx_out.proto";
 import "types/type_mimir.proto";
+import "types/type_block_time.proto";
 import "types/type_node_account.proto";
 import "types/type_observed_tx.proto";
 import "types/type_liquidity_provider.proto";
@@ -141,4 +142,11 @@ message GenesisState {
       [ (gogoproto.nullable) = false ];
   repeated types.SolVaultNonce sol_vault_nonces = 50
       [ (gogoproto.nullable) = false ];
+  // the latched effective block time and its history, set only once
+  // BLOCKTIMEMS has changed it
+  int64 block_time_ms = 51 [ (gogoproto.jsontag) = "block_time_ms,omitempty" ];
+  repeated types.BlockTimeSegment block_time_history = 52 [
+    (gogoproto.nullable) = false,
+    (gogoproto.jsontag) = "block_time_history,omitempty"
+  ];
 }

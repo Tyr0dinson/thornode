@@ -116,12 +116,10 @@ func (h LeaveHandler) handle(ctx cosmos.Context, msg MsgLeave) error {
 			}
 		}
 	} else {
-		bondLockPeriod, err := h.mgr.Keeper().GetMimir(ctx, constants.BondLockupPeriod.String())
-		if err != nil || bondLockPeriod < 0 {
-			bondLockPeriod = h.mgr.GetConstants().GetInt64Value(constants.BondLockupPeriod)
-		}
-		if ctx.BlockHeight()-nodeAcc.StatusSince < bondLockPeriod {
-			return fmt.Errorf("node can not unbond before %d", nodeAcc.StatusSince+bondLockPeriod)
+		// in reference blocks of wall-clock time since StatusSince, as for unbond
+		bondLockPeriod := h.mgr.Keeper().GetConfigInt64Ref(ctx, constants.BondLockupPeriod)
+		if h.mgr.Keeper().RefBlocksSince(ctx, nodeAcc.StatusSince) < bondLockPeriod {
+			return fmt.Errorf("node can not unbond before %d", h.mgr.Keeper().RefHeightAfter(ctx, nodeAcc.StatusSince, bondLockPeriod))
 		}
 		vaults, err := h.mgr.Keeper().GetAsgardVaultsByStatus(ctx, RetiringVault)
 		if err != nil {

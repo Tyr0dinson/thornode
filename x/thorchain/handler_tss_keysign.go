@@ -312,7 +312,7 @@ func (h TssKeysignHandler) handle(ctx cosmos.Context, msg MsgTssKeysignFail) (*c
 		}
 		// go to jail
 		ctx.Logger().Info("jailing node", "pubkey", na.PubKeySet.Secp256k1)
-		jailTime := h.mgr.GetConstants().GetInt64Value(constants.JailTimeKeysign)
+		jailTime := h.mgr.Keeper().ScaleConfigInt64(ctx, constants.JailTimeKeysign, h.mgr.GetConstants().GetInt64Value(constants.JailTimeKeysign))
 		releaseHeight := ctx.BlockHeight() + jailTime
 		reason := jailReasonFailedToPerformKeysign
 		err = h.mgr.Keeper().SetNodeAccountJail(ctx, na.NodeAddress, releaseHeight, reason)

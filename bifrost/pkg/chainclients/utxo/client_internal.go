@@ -17,6 +17,7 @@ import (
 	btctxscript "gitlab.com/thorchain/thornode/v3/bifrost/txscript/txscript"
 
 	btypes "gitlab.com/thorchain/thornode/v3/bifrost/blockscanner/types"
+	"gitlab.com/thorchain/thornode/v3/bifrost/blocktime"
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/utxo"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
@@ -31,7 +32,7 @@ import (
 ////////////////////////////////////////////////////////////////////////////////////////
 
 func (c *Client) getAsgardAddress() ([]common.Address, error) {
-	return utxo.GetAsgardAddressCached(&c.asgardCache, c.cfg.ChainID, c.bridge, constants.ThorchainBlockTime)
+	return utxo.GetAsgardAddressCached(&c.asgardCache, c.cfg.ChainID, c.bridge, blocktime.Get())
 }
 
 func (c *Client) isAsgardAddress(addressToCheck string) bool {

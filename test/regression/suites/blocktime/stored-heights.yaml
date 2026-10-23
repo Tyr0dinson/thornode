@@ -1,0 +1,140 @@
+type: env
+key: TNS_REGISTER_FEE
+value: 100000000
+---
+{{ template "default-state.yaml" }}
+---
+type: state
+genesis:
+  app_state:
+    thorchain:
+      vaults:
+        - block_height: "0"
+          chains:
+            - THOR
+            - BTC
+          coins:
+            - amount: "100000000"
+              asset: BTC.BTC
+              decimals: "8"
+          membership:
+            - {{ pubkey_dog }}
+          pub_key: {{ pubkey_dog }}
+          status: ActiveVault
+          type: AsgardVault
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# halve the block time (mocknet's default is 1000 ms), effective at 3
+########################################################################################
+type: tx-mimir
+key: BLOCKTIMEMS
+value: 500
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 2
+---
+type: check
+endpoint: http://localhost:1317/thorchain/constants
+asserts:
+  - .block_time_ms == 500
+---
+########################################################################################
+# a THORName expiring at 60, 56 blocks of 500 ms (28 s) after it is registered at 4
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - amount: "200000000"
+    asset: "rune"
+memo: "~:few:THOR:{{ addr_thor_cat }}:{{ addr_thor_cat }}::60"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/thorname/few
+asserts:
+  - .owner == "{{ addr_thor_cat }}"
+  - .expire_block_height == 60
+---
+########################################################################################
+# a node jailed at 5 for JailTimeKeysign: 10 reference blocks, 20 blocks at 500 ms
+########################################################################################
+type: tx-tss-keysign
+signer: {{ addr_thor_dog }}
+id: "9c97754842280d53bad5135b7cdcc41a0345ce1c4cacf2a29e77e98e4ff9e3fd"
+pub_key: {{ pubkey_dog }}
+height: 1
+coins:
+  - asset: "BTC.BTC"
+    amount: "1"
+memo: "doesn't matter"
+blame:
+  round: "SignRound1Message1"
+  fail_reason: "fail to keysign"
+  blame_nodes:
+    - pubkey: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_dog }}
+asserts:
+  - .jail.release_height == 25
+---
+########################################################################################
+# revert to the default block time, effective at 10. Each deadline keeps the time it
+# had left, D -> 9 + ceil((D - 9) / 2): the jail release 25 -> 17, the THORName expiry
+# 60 -> 35
+########################################################################################
+type: create-blocks
+count: 3
+---
+type: tx-mimir
+key: BLOCKTIMEMS
+value: 0
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 2
+---
+type: check
+endpoint: http://localhost:1317/thorchain/constants
+asserts:
+  - .block_time_ms == 1000
+  - .block_time_history[1].height == 10
+---
+type: check
+endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_dog }}
+asserts:
+  - .jail.release_height == 17
+---
+type: check
+endpoint: http://localhost:1317/thorchain/thorname/few
+asserts:
+  - .owner == "{{ addr_thor_cat }}"
+  - .expire_block_height == 35
+---
+########################################################################################
+# the THORName is live through 35 and expired at 36
+########################################################################################
+type: create-blocks
+count: 25
+---
+type: check
+endpoint: http://localhost:1317/thorchain/thorname/few
+asserts:
+  - .owner == "{{ addr_thor_cat }}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/thorname/few
+asserts:
+  - .owner == null

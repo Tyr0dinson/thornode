@@ -10,8 +10,11 @@ import (
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/constants"
 )
 
+// xmrSpentOutputRefRetentionBlocks is how long spent output refs are kept
+// (~30 days, in reference blocks scaled with BLOCKTIMEMS).
 const xmrSpentOutputRefRetentionBlocks int64 = 432000
 
 func xmrSpentOutputRefVaultPrefix(vaultPubKey common.PubKey) []byte {
@@ -106,10 +109,12 @@ func (k KVStore) GetXMRSpentOutputRefs(ctx cosmos.Context, vaultPubKey common.Pu
 }
 
 func (k KVStore) pruneXMRSpentOutputRefs(ctx cosmos.Context, vaultPubKey common.PubKey, finalisedHeight int64) {
-	if finalisedHeight <= xmrSpentOutputRefRetentionBlocks {
+	// the retention is wall-clock time before finalisedHeight
+	refMs := constants.ThorchainBlockTime.Milliseconds()
+	cutoff := k.GetBlockTimeHistory(ctx).HeightAgo(finalisedHeight, xmrSpentOutputRefRetentionBlocks*refMs, refMs)
+	if cutoff <= 0 {
 		return
 	}
-	cutoff := finalisedHeight - xmrSpentOutputRefRetentionBlocks
 	prefix := xmrSpentOutputRefVaultPrefix(vaultPubKey)
 	iterator := k.getIterator(ctx, kvPrefix(prefix))
 	defer iterator.Close()

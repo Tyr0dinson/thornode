@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"time"
 
+	"gitlab.com/thorchain/thornode/v3/constants"
+
 	"github.com/blang/semver"
 	"github.com/cosmos/cosmos-sdk/client"
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -113,7 +115,10 @@ func (m *mockBridgeForKeysign) GetConfig() config.BifrostClientConfiguration {
 	return config.BifrostClientConfiguration{}
 }
 func (m *mockBridgeForKeysign) GetConstants() (map[string]int64, error) { return nil, nil }
-func (m *mockBridgeForKeysign) GetContext() client.Context              { return client.Context{} }
+func (m *mockBridgeForKeysign) GetBlockTime() (int64, constants.BlockTimeHistory, error) {
+	return 0, nil, nil
+}
+func (m *mockBridgeForKeysign) GetContext() client.Context { return client.Context{} }
 func (m *mockBridgeForKeysign) GetContractAddress() ([]thorclient.PubKeyContractAddressPair, error) {
 	return nil, nil
 }

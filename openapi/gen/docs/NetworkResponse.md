@@ -22,12 +22,13 @@ Name | Type | Description | Notes
 **RunePriceInTor** | **string** | the rune price in tor | 
 **TorPriceInRune** | **string** | the tor price in rune | 
 **TorPriceHalted** | **bool** | indicates if all anchor chains are halted (true), or at least one anchor chain is available (false) | 
+**BlockTimeMs** | **string** | the effective block time in milliseconds, the BLOCKTIMEMS target in force for this block, or the network&#39;s default block time while it is unset | 
 
 ## Methods
 
 ### NewNetworkResponse
 
-`func NewNetworkResponse(bondRewardRune string, totalBondUnits string, availablePoolsRune string, vaultsLiquidityRune string, effectiveSecurityBond string, totalReserve string, vaultsMigrating bool, xmrActiveVaultReady bool, gasSpentRune string, gasWithheldRune string, nativeOutboundFeeRune string, nativeTxFeeRune string, tnsRegisterFeeRune string, tnsFeePerBlockRune string, runePriceInTor string, torPriceInRune string, torPriceHalted bool, ) *NetworkResponse`
+`func NewNetworkResponse(bondRewardRune string, totalBondUnits string, availablePoolsRune string, vaultsLiquidityRune string, effectiveSecurityBond string, totalReserve string, vaultsMigrating bool, xmrActiveVaultReady bool, gasSpentRune string, gasWithheldRune string, nativeOutboundFeeRune string, nativeTxFeeRune string, tnsRegisterFeeRune string, tnsFeePerBlockRune string, runePriceInTor string, torPriceInRune string, torPriceHalted bool, blockTimeMs string, ) *NetworkResponse`
 
 NewNetworkResponse instantiates a new NetworkResponse object
 This constructor will assign default values to properties that have it defined,
@@ -405,6 +406,26 @@ and a boolean to check if the value has been set.
 `func (o *NetworkResponse) SetTorPriceHalted(v bool)`
 
 SetTorPriceHalted sets TorPriceHalted field to given value.
+
+
+### GetBlockTimeMs
+
+`func (o *NetworkResponse) GetBlockTimeMs() string`
+
+GetBlockTimeMs returns the BlockTimeMs field if non-nil, zero value otherwise.
+
+### GetBlockTimeMsOk
+
+`func (o *NetworkResponse) GetBlockTimeMsOk() (*string, bool)`
+
+GetBlockTimeMsOk returns a tuple with the BlockTimeMs field if it's non-nil, zero value otherwise
+and a boolean to check if the value has been set.
+
+### SetBlockTimeMs
+
+`func (o *NetworkResponse) SetBlockTimeMs(v string)`
+
+SetBlockTimeMs sets BlockTimeMs field to given value.
 
 
 

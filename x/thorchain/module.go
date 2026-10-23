@@ -217,6 +217,9 @@ func (am AppModule) BeginBlock(goCtx context.Context) error {
 		ctx.Logger().Error("fail to get managers", "error", err)
 	}
 
+	// latch BLOCKTIMEMS before anything converts block counts this block
+	am.mgr.Keeper().UpdateBlockTime(ctx)
+
 	version := am.mgr.GetVersion()
 	localVer := semver.MustParse(constants.SWVersion.String())
 	if version.Major > localVer.Major || version.Minor > localVer.Minor {

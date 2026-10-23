@@ -108,8 +108,11 @@ func (s *SlasherImpl) BeginBlock(ctx cosmos.Context, constAccessor constants.Con
 // https://blog.cosmos.network/consensus-compare-casper-vs-tendermint-6df154ad56ae
 func (s *SlasherImpl) HandleDoubleSign(ctx cosmos.Context, addr crypto.Address, infractionHeight int64, constAccessor constants.ConstantValues, validatorAddresses []nodeAddressValidatorAddressPair) error {
 	// check if we're recent enough to slash for this behavior
+	// in wall-clock time, so an infraction from before a block time change ages
+	// by how long ago it was
+	// analyze-ignore(unscaled-config): compared with RefBlocksSince
 	maxAge := constAccessor.GetInt64Value(constants.DoubleSignMaxAge)
-	if (ctx.BlockHeight() - infractionHeight) > maxAge {
+	if s.keeper.RefBlocksSince(ctx, infractionHeight) > maxAge {
 		ctx.Logger().Info("double sign detected but too old to be slashed", "infraction height", infractionHeight, "address", addr.String())
 		return nil
 	}
@@ -285,11 +288,22 @@ func txOutSigningPeriod(toi TxOutItem, signingTransPeriod int64) int64 {
 	return toi.SigningTransactionPeriod(signingTransPeriod)
 }
 
+// outboundAttempts returns how many signing periods of refSigningTransPeriod
+// reference blocks have passed since finalisedHeight in wall-clock time, so a
+// block time change neither inflates nor shrinks the count.
+func outboundAttempts(ctx cosmos.Context, k keeper.Keeper, finalisedHeight, refSigningTransPeriod int64) int64 {
+	return k.RefBlocksSince(ctx, finalisedHeight) / refSigningTransPeriod
+}
+
 // LackSigning slash account that fail to sign tx
 func (s *SlasherImpl) LackSigning(ctx cosmos.Context, mgr Manager) error {
 	var resultErr error
 	maxOutboundAttempts := mgr.Keeper().GetConfigInt64(ctx, constants.MaxOutboundAttempts)
-	signingTransPeriod := mgr.Keeper().GetConfigInt64(ctx, constants.SigningTransactionPeriod)
+	// the period in reference blocks measures ages in wall-clock time, so they
+	// hold across a block time change; signingTransPeriod is it at the current
+	// block time
+	refSigningTransPeriod := mgr.Keeper().GetConfigInt64Ref(ctx, constants.SigningTransactionPeriod)
+	signingTransPeriod := mgr.Keeper().ScaleConfigInt64(ctx, constants.SigningTransactionPeriod, refSigningTransPeriod)
 	if signingTransPeriod == 0 {
 		return fmt.Errorf("invalid signing transaction period: %d", signingTransPeriod)
 	}
@@ -322,26 +336,47 @@ func (s *SlasherImpl) LackSigning(ctx cosmos.Context, mgr Manager) error {
 		wantEVMAggregator bool
 		wantEVMToken      bool
 	}
-	batches := []rescheduleBatch{
-		{height: ctx.BlockHeight() - signingTransPeriod, wantXMR: false},
-	}
-	if ctx.BlockHeight() >= xmrSigningTransPeriod {
-		batches = append(batches, rescheduleBatch{
-			height:  ctx.BlockHeight() - xmrSigningTransPeriod,
-			wantXMR: true,
-		})
-	}
-	if ctx.BlockHeight() >= evmAggregatorSigningTransPeriod {
-		batches = append(batches, rescheduleBatch{
-			height:            ctx.BlockHeight() - evmAggregatorSigningTransPeriod,
-			wantEVMAggregator: true,
-		})
-	}
-	if ctx.BlockHeight() >= evmTokenSigningTransPeriod {
-		batches = append(batches, rescheduleBatch{
-			height:       ctx.BlockHeight() - evmTokenSigningTransPeriod,
-			wantEVMToken: true,
-		})
+	var batches []rescheduleBatch
+	if history := mgr.Keeper().GetBlockTimeHistory(ctx); len(history) > 0 {
+		// The block time has changed: measure each period in wall-clock time,
+		// so an outbound is checked once it is a full period old whatever the
+		// block time did since it was scheduled. Each block checks the heights
+		// that became that old since the previous block: several per block
+		// after the block time went up, none in some blocks after it went down.
+		refMs := constants.ThorchainBlockTime.Milliseconds()
+		due := func(multiplier int64, want rescheduleBatch) {
+			periodMs := refSigningTransPeriod * multiplier * refMs
+			from := history.HeightAgo(ctx.BlockHeight()-1, periodMs, refMs) + 1
+			to := history.HeightAgo(ctx.BlockHeight(), periodMs, refMs)
+			for h := max(from, 1); h <= to; h++ {
+				want.height = h
+				batches = append(batches, want)
+			}
+		}
+		due(1, rescheduleBatch{})
+		due(xmrSigningPeriodMultiplier, rescheduleBatch{wantXMR: true})
+		due(evmAggregatorSigningPeriodMultiplier, rescheduleBatch{wantEVMAggregator: true})
+		due(evmTokenSigningPeriodMultiplier, rescheduleBatch{wantEVMToken: true})
+	} else {
+		batches = append(batches, rescheduleBatch{height: ctx.BlockHeight() - signingTransPeriod, wantXMR: false})
+		if ctx.BlockHeight() >= xmrSigningTransPeriod {
+			batches = append(batches, rescheduleBatch{
+				height:  ctx.BlockHeight() - xmrSigningTransPeriod,
+				wantXMR: true,
+			})
+		}
+		if ctx.BlockHeight() >= evmAggregatorSigningTransPeriod {
+			batches = append(batches, rescheduleBatch{
+				height:            ctx.BlockHeight() - evmAggregatorSigningTransPeriod,
+				wantEVMAggregator: true,
+			})
+		}
+		if ctx.BlockHeight() >= evmTokenSigningTransPeriod {
+			batches = append(batches, rescheduleBatch{
+				height:       ctx.BlockHeight() - evmTokenSigningTransPeriod,
+				wantEVMToken: true,
+			})
+		}
 	}
 
 	siblingOutHashes := solSiblingCache{}
@@ -372,7 +407,7 @@ func (s *SlasherImpl) LackSigning(ctx cosmos.Context, mgr Manager) error {
 				continue // skip this transaction
 			}
 			if toi.OutHash.IsEmpty() {
-				itemSigningTransPeriod := txOutSigningPeriod(toi, signingTransPeriod)
+				itemRefSigningTransPeriod := txOutSigningPeriod(toi, refSigningTransPeriod)
 
 				// Slash node account for not sending funds
 				vault, err := s.keeper.GetVault(ctx, toi.VaultPubKey)
@@ -489,8 +524,7 @@ func (s *SlasherImpl) LackSigning(ctx cosmos.Context, mgr Manager) error {
 				// fulfilled from a vault that actually holds the funds.
 				if vault.Status == InactiveVault {
 					maxRetiredVaultRecoveryAttempts := mgr.Keeper().GetConfigInt64(ctx, constants.MaxRetiredVaultRecoveryAttempts)
-					age := ctx.BlockHeight() - voter.FinalisedHeight
-					attempts := age / itemSigningTransPeriod
+					attempts := outboundAttempts(ctx, mgr.Keeper(), voter.FinalisedHeight, itemRefSigningTransPeriod)
 					if attempts >= maxRetiredVaultRecoveryAttempts {
 						ctx.Logger().Info("too many attempts for retired vault recovery",
 							"hash", toi.InHash,
@@ -548,7 +582,7 @@ func (s *SlasherImpl) LackSigning(ctx cosmos.Context, mgr Manager) error {
 					// A durable copy may still land, so there is no treasury recovery; surface
 					// an outbound its vault has failed to sign for too long (e.g. the vault
 					// cannot reach its keysign threshold) instead of retrying it silently.
-					if attempts := (ctx.BlockHeight() - voter.FinalisedHeight) / itemSigningTransPeriod; attempts >= maxOutboundAttempts {
+					if attempts := outboundAttempts(ctx, mgr.Keeper(), voter.FinalisedHeight, itemRefSigningTransPeriod); attempts >= maxOutboundAttempts {
 						ctx.Logger().Error("durable nonce outbound past max attempts; kept on its vault",
 							"hash", toi.InHash, "vault", vault.PubKey, "attempts", attempts)
 						telemetry.IncrCounterWithLabels(
@@ -562,13 +596,12 @@ func (s *SlasherImpl) LackSigning(ctx cosmos.Context, mgr Manager) error {
 					}
 				}
 				if maxOutboundAttempts > 0 && !durableKeepVault {
-					age := ctx.BlockHeight() - voter.FinalisedHeight
-					attempts := age / itemSigningTransPeriod
+					attempts := outboundAttempts(ctx, mgr.Keeper(), voter.FinalisedHeight, itemRefSigningTransPeriod)
 					if attempts >= maxOutboundAttempts {
 						// Skip treasury recovery if there's already an outbound associated or
 						// a non-stale observation of the outbound (outbound is in progress).
 						hasOutboundAssociated := len(voter.OutTxs) > 0
-						hasOutboundObservation := s.hasActiveOutboundObservation(ctx, mgr, itemSigningTransPeriod, voter.FinalisedHeight, toi.InHash)
+						hasOutboundObservation := s.hasActiveOutboundObservation(ctx, mgr, itemRefSigningTransPeriod, voter.FinalisedHeight, toi.InHash)
 						if hasOutboundAssociated || hasOutboundObservation {
 							ctx.Logger().Info("skipping treasury recovery, outbound in progress",
 								"hash", toi.InHash,
@@ -625,7 +658,7 @@ func (s *SlasherImpl) LackSigning(ctx cosmos.Context, mgr Manager) error {
 					}
 				}
 
-				if !frozen && !durableKeepVault && s.needsNewVault(ctx, mgr, vault, itemSigningTransPeriod, voter.FinalisedHeight, toi) {
+				if !frozen && !durableKeepVault && s.needsNewVault(ctx, mgr, vault, itemRefSigningTransPeriod, voter.FinalisedHeight, toi) {
 					var active types.Vaults
 					active, err = s.keeper.GetAsgardVaultsByStatus(ctx, ActiveVault)
 					if err != nil {
@@ -1368,6 +1401,7 @@ func (s *SlasherImpl) updatePoolFromSlash(ctx cosmos.Context, pool types.Pool, s
 // hasActiveOutboundObservation reports whether an observed link should still
 // block MaxOutboundAttempts recovery. Fresh or finalised observations remain a
 // double-send guard; only stale non-finalised observations are ignored.
+// staleSigningTransPeriod is in reference blocks.
 func (s *SlasherImpl) hasActiveOutboundObservation(ctx cosmos.Context, mgr Manager, staleSigningTransPeriod, startHeight int64, inHash common.TxID) bool {
 	outhashes := mgr.Keeper().GetObservedLink(ctx, inHash)
 	for _, hash := range outhashes {
@@ -1408,7 +1442,8 @@ type staleOutboundObservationStatus struct {
 
 // staleNonFinalOutboundObservation bounds the "vault says it sent it" heuristic.
 // A non-finalised outbound observation that never reaches finality should not
-// pin reassignment or recovery forever.
+// pin reassignment or recovery forever. signingTransPeriod is in reference
+// blocks: the observation's age is measured in wall-clock time.
 func (s *SlasherImpl) staleNonFinalOutboundObservation(ctx cosmos.Context, voter ObservedTxVoter, signingTransPeriod, startHeight int64) staleOutboundObservationStatus {
 	status := staleOutboundObservationStatus{}
 	if signingTransPeriod <= 0 || voter.FinalisedHeight > 0 {
@@ -1428,17 +1463,19 @@ func (s *SlasherImpl) staleNonFinalOutboundObservation(ctx cosmos.Context, voter
 		return status
 	}
 
-	expiryHeight := observationHeight + (staleOutboundObservationSigningPeriods * signingTransPeriod)
+	staleAfter := staleOutboundObservationSigningPeriods * signingTransPeriod
 	status.observationHeight = observationHeight
-	status.staleSinceHeight = expiryHeight + 1
-	if ctx.BlockHeight() <= expiryHeight {
+	// the first height more than staleAfter old
+	status.staleSinceHeight = s.keeper.RefHeightAfter(ctx, observationHeight, staleAfter+1)
+	age := s.keeper.RefBlocksSince(ctx, observationHeight)
+	if age <= staleAfter {
 		return status
 	}
 
 	status.stale = true
 	// LackSigning re-evaluates rescheduled items on signing-period boundaries,
-	// so an exact expiryHeight+1 check could miss the first actionable check.
-	status.firstStaleWindow = ctx.BlockHeight() <= expiryHeight+signingTransPeriod
+	// so an exact staleSinceHeight check could miss the first actionable check.
+	status.firstStaleWindow = age <= staleAfter+signingTransPeriod
 	return status
 }
 
@@ -1530,6 +1567,7 @@ func outboundObservationAmountMatches(ctx cosmos.Context, mgr Manager, tx common
 // active observer, not just vault members, so an outsider majority attesting
 // that funds left this vault's address is exactly what a reassignment would
 // pay twice. staleNonFinalOutboundObservation caps how long that window runs.
+// signingTransPeriod is in reference blocks, so the window is wall-clock time.
 func (s *SlasherImpl) needsNewVault(ctx cosmos.Context, mgr Manager, vault Vault, signingTransPeriod, startHeight int64, toi TxOutItem) bool {
 	for _, hash := range mgr.Keeper().GetObservedLink(ctx, toi.InHash) {
 		voter, err := mgr.Keeper().GetObservedTxOutVoter(ctx, hash)
@@ -1592,8 +1630,7 @@ func (s *SlasherImpl) needsNewVault(ctx cosmos.Context, mgr Manager, vault Vault
 		// is what a reassignment would double-spend, so they earn the window as
 		// well; staleNonFinalOutboundObservation already bounds it. Keep
 		// scanning: a later link may still hold the majority this one lacks.
-		maxHeight := startHeight + ((int64(len(signers)) + 1) * signingTransPeriod)
-		if maxHeight >= ctx.BlockHeight() {
+		if mgr.Keeper().RefBlocksSince(ctx, startHeight) <= (int64(len(signers))+1)*signingTransPeriod {
 			return false
 		}
 	}
@@ -1682,7 +1719,7 @@ func (s *SlasherImpl) solDurableCopyLanded(ctx cosmos.Context, mgr Manager, toi 
 }
 
 // solSiblingScanMaxBlocks bounds the TxOut blocks scanned for an inbound's matched
-// outbound hashes (~1 day). A sibling matched further back is not found, which only
+// outbound hashes (~1 day, in reference blocks scaled with BLOCKTIMEMS). A sibling matched further back is not found, which only
 // makes the guard hold (never re-issue) on that payment.
 const solSiblingScanMaxBlocks = int64(14400)
 
@@ -1721,7 +1758,8 @@ func (s *SlasherImpl) solMatchedOutHashes(ctx cosmos.Context, mgr Manager, inHas
 		}
 	}
 	start := inboundHeight
-	if floor := ctx.BlockHeight() - solSiblingScanMaxBlocks; start < floor {
+	refMs := constants.ThorchainBlockTime.Milliseconds()
+	if floor := mgr.Keeper().GetBlockTimeHistory(ctx).HeightAgo(ctx.BlockHeight(), solSiblingScanMaxBlocks*refMs, refMs); start < floor {
 		start = floor
 	}
 	if start < 1 {

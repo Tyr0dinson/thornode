@@ -172,6 +172,9 @@ func (h ManageTHORNameHandler) handle(ctx cosmos.Context, msg MsgManageTHORName)
 		if err = h.validateName(msg.Name); err != nil {
 			return nil, err
 		}
+		// expiry is priced in reference blocks (of the default block time) and
+		// converted to blocks at the current block time once, so the fee per unit
+		// of time is exact at any BLOCKTIMEMS
 		var addBlocks int64
 		// registration fee is for THORChain addresses only
 		if !exists {
@@ -179,9 +182,11 @@ func (h ManageTHORNameHandler) handle(ctx cosmos.Context, msg MsgManageTHORName)
 			registrationFee := h.mgr.Keeper().GetTHORNameRegisterFee(ctx)
 			msg.Coin.Amount = common.SafeSub(msg.Coin.Amount, registrationFee)
 			registrationFeePaid = registrationFee
-			addBlocks = h.mgr.GetConstants().GetInt64Value(constants.BlocksPerYear) // registration comes with 1 free year
+			// registration comes with 1 free year, in reference blocks (scaled below)
+			// analyze-ignore(unscaled-config)
+			addBlocks = h.mgr.GetConstants().GetInt64Value(constants.BlocksPerYear)
 		}
-		feePerBlock := h.mgr.Keeper().GetTHORNamePerBlockFee(ctx)
+		feePerBlock := h.mgr.Keeper().GetTHORNameRefBlockFee(ctx)
 		// Validate feePerBlock is not zero to prevent division by zero
 		if feePerBlock.IsZero() {
 			return nil, errors.New("per block fee cannot be zero")
@@ -200,7 +205,7 @@ func (h ManageTHORNameHandler) handle(ctx cosmos.Context, msg MsgManageTHORName)
 		if addBlocks > 0 && blocksFromFund > math.MaxInt64-addBlocks {
 			return nil, errors.New("block calculation overflow: addBlocks")
 		}
-		addBlocks += blocksFromFund
+		addBlocks = h.mgr.Keeper().RefBlocks(ctx, addBlocks+blocksFromFund)
 		// Determine base block height for expiration
 		baseHeight := tn.ExpireBlockHeight
 		if baseHeight < ctx.BlockHeight() {

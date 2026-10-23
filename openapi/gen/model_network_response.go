@@ -52,13 +52,15 @@ type NetworkResponse struct {
 	TorPriceInRune string `json:"tor_price_in_rune"`
 	// indicates if all anchor chains are halted (true), or at least one anchor chain is available (false)
 	TorPriceHalted bool `json:"tor_price_halted"`
+	// the effective block time in milliseconds, the BLOCKTIMEMS target in force for this block, or the network's default block time while it is unset
+	BlockTimeMs string `json:"block_time_ms"`
 }
 
 // NewNetworkResponse instantiates a new NetworkResponse object
 // This constructor will assign default values to properties that have it defined,
 // and makes sure properties required by API are set, but the set of arguments
 // will change when the set of required properties is changed
-func NewNetworkResponse(bondRewardRune string, totalBondUnits string, availablePoolsRune string, vaultsLiquidityRune string, effectiveSecurityBond string, totalReserve string, vaultsMigrating bool, xmrActiveVaultReady bool, gasSpentRune string, gasWithheldRune string, nativeOutboundFeeRune string, nativeTxFeeRune string, tnsRegisterFeeRune string, tnsFeePerBlockRune string, runePriceInTor string, torPriceInRune string, torPriceHalted bool) *NetworkResponse {
+func NewNetworkResponse(bondRewardRune string, totalBondUnits string, availablePoolsRune string, vaultsLiquidityRune string, effectiveSecurityBond string, totalReserve string, vaultsMigrating bool, xmrActiveVaultReady bool, gasSpentRune string, gasWithheldRune string, nativeOutboundFeeRune string, nativeTxFeeRune string, tnsRegisterFeeRune string, tnsFeePerBlockRune string, runePriceInTor string, torPriceInRune string, torPriceHalted bool, blockTimeMs string) *NetworkResponse {
 	this := NetworkResponse{}
 	this.BondRewardRune = bondRewardRune
 	this.TotalBondUnits = totalBondUnits
@@ -77,6 +79,7 @@ func NewNetworkResponse(bondRewardRune string, totalBondUnits string, availableP
 	this.RunePriceInTor = runePriceInTor
 	this.TorPriceInRune = torPriceInRune
 	this.TorPriceHalted = torPriceHalted
+	this.BlockTimeMs = blockTimeMs
 	return &this
 }
 
@@ -528,6 +531,30 @@ func (o *NetworkResponse) SetTorPriceHalted(v bool) {
 	o.TorPriceHalted = v
 }
 
+// GetBlockTimeMs returns the BlockTimeMs field value
+func (o *NetworkResponse) GetBlockTimeMs() string {
+	if o == nil {
+		var ret string
+		return ret
+	}
+
+	return o.BlockTimeMs
+}
+
+// GetBlockTimeMsOk returns a tuple with the BlockTimeMs field value
+// and a boolean to check if the value has been set.
+func (o *NetworkResponse) GetBlockTimeMsOk() (*string, bool) {
+	if o == nil {
+		return nil, false
+	}
+	return &o.BlockTimeMs, true
+}
+
+// SetBlockTimeMs sets field value
+func (o *NetworkResponse) SetBlockTimeMs(v string) {
+	o.BlockTimeMs = v
+}
+
 func (o NetworkResponse) MarshalJSON_deprecated() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if true {
@@ -583,6 +610,9 @@ func (o NetworkResponse) MarshalJSON_deprecated() ([]byte, error) {
 	}
 	if true {
 		toSerialize["tor_price_halted"] = o.TorPriceHalted
+	}
+	if true {
+		toSerialize["block_time_ms"] = o.BlockTimeMs
 	}
 	return json.Marshal(toSerialize)
 }

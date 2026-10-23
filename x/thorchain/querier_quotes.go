@@ -430,9 +430,10 @@ func quoteInboundInfo(ctx cosmos.Context, mgr *Mgrs, amount sdkmath.Uint, chain 
 			active = filterInsolventVaults(ctx, mgr.Keeper(), active)
 		}
 		constAccessor := mgr.GetConstants()
-		signingTransactionPeriod := constAccessor.GetInt64Value(constants.SigningTransactionPeriod)
+		// analyze-ignore(unscaled-config): GetMostSecure takes reference blocks
+		refSigningTransactionPeriod := constAccessor.GetInt64Value(constants.SigningTransactionPeriod)
 		var vault Vault
-		vault, err = selectActiveVaultForChain(ctx, mgr.Keeper(), active, chain, signingTransactionPeriod)
+		vault, err = selectActiveVaultForChain(ctx, mgr.Keeper(), active, chain, refSigningTransactionPeriod)
 		if err != nil {
 			return common.NoAddress, common.NoAddress, 0, err
 		}
@@ -787,7 +788,7 @@ func (qs queryServer) queryQuoteLimit(ctx cosmos.Context, req *types.QueryQuoteL
 	// calculate order expiry
 	currentHeight := ctx.BlockHeight()
 	orderExpiryBlock := currentHeight + customTTL
-	blockTimeMs := common.THORChain.ApproximateBlockMilliseconds()
+	blockTimeMs := thorchainBlockMs(ctx, qs.mgr.Keeper())
 	orderExpiryTimestamp := ctx.BlockTime().Add(time.Duration(customTTL) * time.Duration(blockTimeMs) * time.Millisecond).Unix()
 
 	// create response
@@ -1233,7 +1234,7 @@ func (qs queryServer) queryQuoteSwap(ctx cosmos.Context, req *types.QueryQuoteSw
 		}
 	}
 	res.StreamingSwapBlocks = streamSwapBlocks
-	res.StreamingSwapSeconds = streamSwapBlocks * common.THORChain.ApproximateBlockMilliseconds() / 1000
+	res.StreamingSwapSeconds = streamSwapBlocks * thorchainBlockMs(ctx, qs.mgr.Keeper()) / 1000
 
 	res.InboundAddress = inboundAddress.String()
 	if inboundConfirmations > 0 {
@@ -1250,7 +1251,7 @@ func (qs queryServer) queryQuoteSwap(ctx cosmos.Context, req *types.QueryQuoteSw
 			return nil, err
 		}
 		res.OutboundDelayBlocks = outboundDelay
-		res.OutboundDelaySeconds = outboundDelay * common.THORChain.ApproximateBlockMilliseconds() / 1000
+		res.OutboundDelaySeconds = outboundDelay * thorchainBlockMs(ctx, qs.mgr.Keeper()) / 1000
 	}
 
 	totalSeconds := res.OutboundDelaySeconds

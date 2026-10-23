@@ -14,10 +14,10 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/tendermint/btcd/btcec"
+	"gitlab.com/thorchain/thornode/v3/bifrost/blocktime"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/keysign"
 	"gitlab.com/thorchain/thornode/v3/common"
-	"gitlab.com/thorchain/thornode/v3/constants"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
@@ -287,7 +287,7 @@ func getSignature(r, s string) ([]byte, error) {
 func (s *KeySign) getVersion() semver.Version {
 	requestTime := time.Now()
 	// analyze-ignore(float-comparison)
-	if !s.currentVersion.Equals(semver.Version{}) && requestTime.Sub(s.lastCheck).Seconds() < constants.ThorchainBlockTime.Seconds() {
+	if !s.currentVersion.Equals(semver.Version{}) && requestTime.Sub(s.lastCheck) < blocktime.Get() {
 		return s.currentVersion
 	}
 	version, err := s.bridge.GetThorchainVersion()

@@ -172,6 +172,8 @@ type (
 	DynamicFeeAccumulator    = types.DynamicFeeAccumulator
 
 	ProtoInt64        = types.ProtoInt64
+	BlockTimeHistory  = types.BlockTimeHistory
+	BlockTimeSegment  = types.BlockTimeSegment
 	ProtoUint64       = types.ProtoUint64
 	ProtoAccAddress   = types.ProtoAccAddress
 	ProtoAccAddresses = types.ProtoAccAddresses

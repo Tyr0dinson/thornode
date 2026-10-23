@@ -263,7 +263,7 @@ func (c *SOLClient) Start(
 	c.tssKeyManager.Start()
 	go c.solScanner.Start()
 	c.wg.Add(1)
-	go runners.SolvencyCheckRunner(c.GetChain(), c, c.bridge, c.stopchan, c.wg, constants.ThorchainBlockTime)
+	go runners.SolvencyCheckRunner(c.GetChain(), c, c.bridge, c.stopchan, c.wg, 0)
 	c.wg.Add(1)
 	go c.keepAliveLoop()
 }

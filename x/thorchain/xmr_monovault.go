@@ -132,7 +132,9 @@ func filterVaultsByKeygenType(vaults Vaults, keygenBlock KeygenBlock, keygenType
 	return filtered
 }
 
-func selectActiveVaultForChain(ctx cosmos.Context, k keeper.Keeper, active Vaults, chain common.Chain, signingTransactionPeriod int64) (Vault, error) {
+// selectActiveVaultForChain picks the most secure active vault for chain;
+// refSigningTransactionPeriod is in reference blocks, as GetMostSecure takes it.
+func selectActiveVaultForChain(ctx cosmos.Context, k keeper.Keeper, active Vaults, chain common.Chain, refSigningTransactionPeriod int64) (Vault, error) {
 	filtered := preferredActiveVaultsForChain(active, chain)
 	if chain == common.THORChain {
 		// Keep native THOR routing on ordinary Asgards when they exist. Vaults
@@ -153,5 +155,5 @@ func selectActiveVaultForChain(ctx cosmos.Context, k keeper.Keeper, active Vault
 	if len(filtered) == 0 {
 		return Vault{}, fmt.Errorf("no active vault for chain %s", chain)
 	}
-	return k.GetMostSecure(ctx, filtered, signingTransactionPeriod), nil
+	return k.GetMostSecure(ctx, filtered, refSigningTransactionPeriod), nil
 }

@@ -36,6 +36,10 @@ func (k *TestSlashingLackKeeper) GetConfigInt64(ctx cosmos.Context, key constant
 	return constants.GetConstantValues(GetCurrentVersion()).GetInt64Value(key)
 }
 
+func (k *TestSlashingLackKeeper) GetConfigInt64Ref(ctx cosmos.Context, key constants.ConstantName) int64 {
+	return k.GetConfigInt64(ctx, key)
+}
+
 func (k *TestSlashingLackKeeper) GetObservedTxInVoter(_ cosmos.Context, _ common.TxID) (ObservedTxVoter, error) {
 	if k.failGetObservedTxVoter {
 		return ObservedTxVoter{}, errKaboom

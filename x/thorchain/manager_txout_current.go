@@ -806,7 +806,8 @@ func (tos *TxOutStorage) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem) ([]
 			// to deduct balances of vaults that have outstanding txs assigned
 			pendingOutbounds := tos.keeper.GetPendingOutbounds(ctx, toi.Coin.Asset)
 
-			signingTransactionPeriod := tos.constAccessor.GetInt64Value(constants.SigningTransactionPeriod)
+			// analyze-ignore(unscaled-config): SortBySecurity takes reference blocks
+			refSigningTransactionPeriod := tos.constAccessor.GetInt64Value(constants.SigningTransactionPeriod)
 
 			// ///////////// COLLECT ACTIVE ASGARD VAULTS ///////////////////
 			var activeAsgards Vaults
@@ -819,7 +820,7 @@ func (tos *TxOutStorage) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem) ([]
 			activeAsgards = filterCompromisedVaults(ctx, tos.keeper, activeAsgards)
 
 			// All else being equal, prefer lower-security vaults for outbounds.
-			activeAsgards = tos.keeper.SortBySecurity(ctx, activeAsgards, signingTransactionPeriod)
+			activeAsgards = tos.keeper.SortBySecurity(ctx, activeAsgards, refSigningTransactionPeriod)
 			activeAsgards = filterActiveVaultsForOutboundChain(activeAsgards, toi.Chain)
 
 			for i := range activeAsgards {
@@ -839,7 +840,7 @@ func (tos *TxOutStorage) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem) ([]
 			retiringAsgards = filterCompromisedVaults(ctx, tos.keeper, retiringAsgards)
 
 			// All else being equal, prefer lower-security vaults for outbounds.
-			retiringAsgards = tos.keeper.SortBySecurity(ctx, retiringAsgards, signingTransactionPeriod)
+			retiringAsgards = tos.keeper.SortBySecurity(ctx, retiringAsgards, refSigningTransactionPeriod)
 			retiringAsgards = filterActiveVaultsForOutboundChain(retiringAsgards, toi.Chain)
 
 			for i := range retiringAsgards {
@@ -1209,13 +1210,13 @@ func (tos *TxOutStorage) calcClout(ctx cosmos.Context, runeValue cosmos.Uint, to
 		ctx.Logger().Error("fail to get swapper clout destination address", "error", err)
 	}
 
-	swapperCloutReset := tos.keeper.GetConfigInt64(ctx, constants.CloutReset)
+	swapperCloutReset := tos.keeper.GetConfigInt64Ref(ctx, constants.CloutReset)
 	swapperCloutLimit := tos.keeper.GetConfigInt64(ctx, constants.CloutLimit)
 
-	// if last clout spend was over an hour ago, restore clout available to
-	// 100%
-	cloutOut.Restore(ctx.BlockHeight(), swapperCloutReset)
-	cloutIn.Restore(ctx.BlockHeight(), swapperCloutReset)
+	// if last clout spend was over an hour ago (wall-clock), restore clout
+	// available to 100%
+	restoreClout(ctx, tos.keeper, &cloutOut, swapperCloutReset)
+	restoreClout(ctx, tos.keeper, &cloutIn, swapperCloutReset)
 
 	clout1, clout2, newValue := tos.splitClout(
 		ctx,
@@ -1296,8 +1297,10 @@ func (tos *TxOutStorage) CalcTxOutHeight(ctx cosmos.Context, version semver.Vers
 
 	minTxOutVolumeThreshold := tos.keeper.GetConfigInt64(ctx, constants.MinTxOutVolumeThreshold)
 	txOutDelayRate := tos.keeper.GetConfigInt64(ctx, constants.TxOutDelayRate)
-	txOutDelayMax := tos.keeper.GetConfigInt64(ctx, constants.TxOutDelayMax)
-	maxTxOutOffset := tos.keeper.GetConfigInt64(ctx, constants.MaxTxOutOffset)
+	txOutDelayMaxRef := tos.keeper.GetConfigInt64Ref(ctx, constants.TxOutDelayMax)
+	txOutDelayMax := tos.keeper.ScaleConfigInt64(ctx, constants.TxOutDelayMax, txOutDelayMaxRef)
+	maxTxOutOffsetRef := tos.keeper.GetConfigInt64Ref(ctx, constants.MaxTxOutOffset)
+	maxTxOutOffset := tos.keeper.ScaleConfigInt64(ctx, constants.MaxTxOutOffset, maxTxOutOffsetRef)
 
 	// only delay if volume threshold and delay rate are positive
 	if minTxOutVolumeThreshold <= 0 || txOutDelayRate <= 0 || maxTxOutOffset <= 0 {
@@ -1319,16 +1322,19 @@ func (tos *TxOutStorage) CalcTxOutHeight(ctx cosmos.Context, version semver.Vers
 		return ctx.BlockHeight(), cloutApplied, nil
 	}
 
-	// sum value of scheduled txns (including this one)
+	// sum value of scheduled txns (including this one), including those an
+	// earlier, faster block time scheduled further ahead than the current window
 	sumValue := runeValue
 	cloutValue := cosmos.ZeroUint()
-	for height := ctx.BlockHeight() + 1; height <= ctx.BlockHeight()+txOutDelayMax; height++ {
+	scanEnd := tos.keeper.RefWindowEnd(ctx, txOutDelayMaxRef)
+	offsetEnd := tos.keeper.RefWindowEnd(ctx, maxTxOutOffsetRef)
+	for height := ctx.BlockHeight() + 1; height <= scanEnd; height++ {
 		value, clout, err := tos.keeper.GetTxOutValue(ctx, height)
 		if err != nil {
 			ctx.Logger().Error("fail to get tx out array from key value store", "error", err)
 			continue
 		}
-		if height > ctx.BlockHeight()+maxTxOutOffset && value.IsZero() {
+		if height > offsetEnd && value.IsZero() {
 			// we've hit our max offset, and an empty block, we can assume the
 			// rest will be empty as well
 			break
@@ -1482,8 +1488,9 @@ func (tos *TxOutStorage) nativeTxOut(ctx cosmos.Context, mgr Manager, toi TxOutI
 		)
 		return err
 	}
-	signingTransactionPeriod := mgr.GetConstants().GetInt64Value(constants.SigningTransactionPeriod)
-	activeVault, err := selectActiveVaultForChain(ctx, tos.keeper, active, common.THORChain, signingTransactionPeriod)
+	// analyze-ignore(unscaled-config): SortBySecurity takes reference blocks
+	refSigningTransactionPeriod := mgr.GetConstants().GetInt64Value(constants.SigningTransactionPeriod)
+	activeVault, err := selectActiveVaultForChain(ctx, tos.keeper, active, common.THORChain, refSigningTransactionPeriod)
 	if err != nil {
 		ctx.Logger().Error("fail to select active vault for native txn", "err", err)
 		return err

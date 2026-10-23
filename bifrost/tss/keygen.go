@@ -10,13 +10,13 @@ import (
 	"github.com/blang/semver"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
+	"gitlab.com/thorchain/thornode/v3/bifrost/blocktime"
 	"gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/keygen"
 	"gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/tss"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
-	"gitlab.com/thorchain/thornode/v3/constants"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
@@ -50,7 +50,7 @@ func NewTssKeyGen(keys *thorclient.Keys, server *tss.TssServer, bridge thorclien
 func (kg *KeyGen) getVersion() semver.Version {
 	requestTime := time.Now()
 	// analyze-ignore(float-comparison)
-	if !kg.currentVersion.Equals(semver.Version{}) && requestTime.Sub(kg.lastCheck).Seconds() < constants.ThorchainBlockTime.Seconds() {
+	if !kg.currentVersion.Equals(semver.Version{}) && requestTime.Sub(kg.lastCheck) < blocktime.Get() {
 		return kg.currentVersion
 	}
 	version, err := kg.bridge.GetThorchainVersion()

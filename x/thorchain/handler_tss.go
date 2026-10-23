@@ -165,7 +165,7 @@ func (h TssHandler) validate(ctx cosmos.Context, msg *MsgTssPool) error {
 	// exactly at the block the churn retry schedules a replacement keygen. Matches
 	// ValidatorMgr.hasPendingKeygen; accepting a stale result there would let it
 	// finalize a vault the retry is replacing (a double-trigger).
-	if msg.Height < ctx.BlockHeight()-keygenValidityBlocks {
+	if h.mgr.Keeper().RefBlocksSince(ctx, msg.Height) > keygenValidityBlocks {
 		return cosmos.ErrUnknownRequest("invalid keygen block")
 	}
 
@@ -205,8 +205,11 @@ func (h TssHandler) validate(ctx cosmos.Context, msg *MsgTssPool) error {
 	return cosmos.ErrUnauthorized("not authorized")
 }
 
+// keygenResultValidityBlocks returns how long a keygen result stays valid, in
+// reference blocks of wall-clock time (compare with RefBlocksSince), as the
+// churn retry ticks are.
 func keygenResultValidityBlocks(ctx cosmos.Context, k keeper.Keeper, keygenType types.KeygenType) int64 {
-	blocks := k.GetConfigInt64(ctx, constants.ChurnRetryInterval)
+	blocks := k.GetConfigInt64Ref(ctx, constants.ChurnRetryInterval)
 	// An explicit zero disables churn retries. Preserve that operational
 	// setting for both ordinary and XMR keygens instead of replacing it with
 	// the default or the XMR minimum window.
@@ -214,10 +217,11 @@ func keygenResultValidityBlocks(ctx cosmos.Context, k keeper.Keeper, keygenType 
 		return 0
 	}
 	if blocks < 0 {
+		// analyze-ignore(unscaled-config): a wall-clock window, in reference blocks
 		blocks = constants.NewConstantValue().GetInt64Value(constants.ChurnRetryInterval)
 	}
 	if keygenType == XMRMonovaultKeygen {
-		blocks = max(blocks, durationToBlocks(6*time.Minute))
+		blocks = max(blocks, durationToBlocks(6*time.Minute, constants.ThorchainBlockTime.Milliseconds()))
 	}
 	// The window ends one block before the retry tick. A keygen scheduled at H is
 	// valid for ages 0..blocks-1 and expires at age `blocks`, the same age the
@@ -242,12 +246,15 @@ func keygenResultValidityBlocksForBlock(ctx cosmos.Context, k keeper.Keeper, key
 	return blocks
 }
 
-func durationToBlocks(d time.Duration) int64 {
-	if constants.ThorchainBlockTime <= 0 {
+// durationToBlocks returns the blocks of blockMs that span d, rounded up and
+// at least one.
+func durationToBlocks(d time.Duration, blockMs int64) int64 {
+	blockTime := time.Duration(blockMs) * time.Millisecond
+	if blockTime <= 0 {
 		return int64(d / time.Second)
 	}
-	blocks := d / constants.ThorchainBlockTime
-	if d%constants.ThorchainBlockTime != 0 {
+	blocks := d / blockTime
+	if d%blockTime != 0 {
 		blocks++
 	}
 	if blocks < 1 {
@@ -374,7 +381,7 @@ func (h TssHandler) handle(ctx cosmos.Context, msg *MsgTssPool) error {
 	}
 	observeSlashPoints := h.mgr.GetConstants().GetInt64Value(constants.ObserveSlashPoints)
 	lackOfObservationPenalty := h.mgr.GetConstants().GetInt64Value(constants.LackOfObservationPenalty)
-	observeFlex := h.mgr.Keeper().GetConfigInt64(ctx, constants.ObservationDelayFlexibility)
+	observeFlex := h.mgr.Keeper().GetConfigInt64Ref(ctx, constants.ObservationDelayFlexibility)
 
 	slashCtx := ctx.WithContext(context.WithValue(ctx.Context(), constants.CtxMetricLabels, []metrics.Label{
 		telemetry.NewLabel("reason", "failed_observe_tss_pool"),
@@ -409,7 +416,7 @@ func (h TssHandler) handle(ctx cosmos.Context, msg *MsgTssPool) error {
 		return nil
 	}
 
-	if voter.BlockHeight > 0 && (voter.BlockHeight+observeFlex) >= ctx.BlockHeight() {
+	if voter.BlockHeight > 0 && withinObservationFlex(ctx, h.mgr.Keeper(), voter.BlockHeight, observeFlex) {
 		// After 2/3rds consensus, only decrement slash points if within the ObservationDelayFlexibility period.
 		// (This is expected to only apply for a failed keygen.)
 		h.mgr.Slasher().DecSlashPoints(slashCtx, lackOfObservationPenalty, msg.Signer)
@@ -504,7 +511,7 @@ func (h TssHandler) handle(ctx cosmos.Context, msg *MsgTssPool) error {
 
 			// if a node fail to join the keygen, thus hold off the network
 			// from churning then it will be slashed accordingly
-			slashPoints := h.mgr.GetConstants().GetInt64Value(constants.FailKeygenSlashPoints)
+			slashPoints := h.mgr.Keeper().ScaleConfigInt64(ctx, constants.FailKeygenSlashPoints, h.mgr.GetConstants().GetInt64Value(constants.FailKeygenSlashPoints))
 			for _, b := range msg.Blame {
 				for _, node := range b.BlameNodes {
 					nodePubKey, err := common.NewPubKey(node.Pubkey)
@@ -561,8 +568,8 @@ func (h TssHandler) handle(ctx cosmos.Context, msg *MsgTssPool) error {
 						// blame-since-churn count). It is intentionally distinct from
 						// JailTimeKeygen, which is the flat jail period used by the
 						// active-node and late-signer paths.
-						baseSlashPoints := h.mgr.GetConstants().GetInt64Value(constants.FailKeygenSlashPoints)
-						baseJailTime := h.mgr.GetConstants().GetInt64Value(constants.JailTimeKeygenBase)
+						baseSlashPoints := slashPoints
+						baseJailTime := h.mgr.Keeper().ScaleConfigInt64(ctx, constants.JailTimeKeygenBase, h.mgr.GetConstants().GetInt64Value(constants.JailTimeKeygenBase))
 
 						escalatedSlashPoints := baseSlashPoints * mult
 						escalatedJailTime := baseJailTime * mult
@@ -1026,14 +1033,19 @@ func judgeLateSigner(ctx cosmos.Context, mgr Manager, msg *MsgTssPool, voter *Ts
 	if !voter.HasConsensus() || !msg.IsSuccess() {
 		return
 	}
-	slashPoints := mgr.GetConstants().GetInt64Value(constants.FailKeygenSlashPoints)
+	refSlashPoints := mgr.GetConstants().GetInt64Value(constants.FailKeygenSlashPoints)
+	slashPoints := mgr.Keeper().ScaleConfigInt64(ctx, constants.FailKeygenSlashPoints, refSlashPoints)
 	slashCtx := ctx.WithContext(context.WithValue(ctx.Context(), constants.CtxMetricLabels, []metrics.Label{
 		telemetry.NewLabel("reason", "failed_observe_tss_pool"),
 	}))
 
 	// when voter already has 2/3 majority signers , restore current message signer's slash points
 	if voter.MajorityConsensusBlockHeight > 0 {
-		mgr.Slasher().DecSlashPoints(slashCtx, slashPoints, msg.Signer)
+		// restore what was charged at consensus, scaled to the block time then
+		refMs := constants.ThorchainBlockTime.Milliseconds()
+		chargedMs := mgr.Keeper().GetBlockTimeHistory(ctx).MsAt(voter.MajorityConsensusBlockHeight, refMs)
+		charged := constants.FailKeygenSlashPoints.Unit().Scale(refSlashPoints, refMs, chargedMs)
+		mgr.Slasher().DecSlashPoints(slashCtx, charged, msg.Signer)
 		// XMR monovault keygen is slash-only and never jails, so it must not
 		// release any jail. The jail reason is a generic string not tied to a
 		// keygen ID, so a late XMR report could otherwise clear a "failed to vote
@@ -1083,7 +1095,7 @@ func judgeLateSigner(ctx cosmos.Context, mgr Manager, msg *MsgTssPool, voter *Ts
 				continue
 			}
 			// go to jail
-			jailTime := mgr.GetConstants().GetInt64Value(constants.JailTimeKeygen)
+			jailTime := mgr.Keeper().ScaleConfigInt64(ctx, constants.JailTimeKeygen, mgr.GetConstants().GetInt64Value(constants.JailTimeKeygen))
 			releaseHeight := ctx.BlockHeight() + jailTime
 			reason := jailReasonFailedToVoteKeygen
 			if err := mgr.Keeper().SetNodeAccountJail(ctx, thorAddr, releaseHeight, reason); err != nil {

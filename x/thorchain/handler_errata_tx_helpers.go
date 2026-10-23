@@ -26,7 +26,7 @@ func processErrataTxAttestation(
 
 	observeSlashPoints := mgr.GetConstants().GetInt64Value(constants.ObserveSlashPoints)
 	lackOfObservationPenalty := mgr.GetConstants().GetInt64Value(constants.LackOfObservationPenalty)
-	observeFlex := k.GetConfigInt64(ctx, constants.ObservationDelayFlexibility)
+	observeFlex := k.GetConfigInt64Ref(ctx, constants.ObservationDelayFlexibility)
 
 	slashCtx := ctx.WithContext(context.WithValue(ctx.Context(), constants.CtxMetricLabels, []metrics.Label{ // nolint
 		telemetry.NewLabel("reason", "failed_observe_errata"),
@@ -61,7 +61,7 @@ func processErrataTxAttestation(
 	}
 
 	if voter.BlockHeight > 0 {
-		if newSigner && (voter.BlockHeight+observeFlex) >= ctx.BlockHeight() {
+		if newSigner && withinObservationFlex(ctx, k, voter.BlockHeight, observeFlex) {
 			slasher.DecSlashPoints(slashCtx, lackOfObservationPenalty, attester)
 		}
 		if !terminalOutcome || voter.Outcome != common.ErrataTxOutcome_ERRATA_TX_OUTCOME_UNSPECIFIED {

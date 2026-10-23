@@ -18,6 +18,7 @@ import (
 	"github.com/rs/zerolog/log"
 	"github.com/syndtr/goleveldb/leveldb"
 	"gitlab.com/thorchain/thornode/v3/bifrost/blockscanner"
+	"gitlab.com/thorchain/thornode/v3/bifrost/blocktime"
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/signercache"
 	shtypes "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/types"
@@ -145,7 +146,7 @@ func NewSOLScanner(
 }
 
 func (s *SOLScanner) Start() {
-	s.lastMimirCheck = time.Now().Add(-constants.ThorchainBlockTime)
+	s.lastMimirCheck = time.Now().Add(-blocktime.Get())
 	s.isChainPaused = false
 
 	initialSlot, ok := waitForInitialSlot(s.solRpc, s.stopChan, s.cfg.Solana.ScanInterval, s.logger)
@@ -197,7 +198,7 @@ func (s *SOLScanner) Start() {
 // scan is the main scanning loop for the SOLScanner. It will check if the chain is paused, get the current slot,
 // and then scan for new transactions in the vaults. It will also update the network fee if necessary.min
 func (s *SOLScanner) scan() {
-	if time.Since(s.lastMimirCheck) >= constants.ThorchainBlockTime {
+	if time.Since(s.lastMimirCheck) >= blocktime.Get() {
 		s.isChainPaused = blockscanner.IsChainPaused(s.cfg, s.logger, s.bridge)
 		s.lastMimirCheck = time.Now()
 	}

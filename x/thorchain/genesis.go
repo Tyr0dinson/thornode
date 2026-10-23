@@ -17,6 +17,17 @@ import (
 
 // ValidateGenesis validate genesis is valid or not
 func ValidateGenesis(data GenesisState) error {
+	if (data.BlockTimeMs > 0) != (len(data.BlockTimeHistory) > 0) {
+		return fmt.Errorf("block time ms and history must be set together")
+	}
+	for i, seg := range data.BlockTimeHistory {
+		if seg.Ms <= 0 || seg.Ms > constants.BlockTimeMsMax || (i > 0 && seg.Height <= data.BlockTimeHistory[i-1].Height) {
+			return fmt.Errorf("invalid block time history segment %d: height %d, ms %d", i, seg.Height, seg.Ms)
+		}
+	}
+	if n := len(data.BlockTimeHistory); n > 0 && data.BlockTimeHistory[n-1].Ms != data.BlockTimeMs {
+		return fmt.Errorf("block time ms %d is not the last history segment's %d", data.BlockTimeMs, data.BlockTimeHistory[n-1].Ms)
+	}
 	for i := range data.SolVaultNonces {
 		if err := data.SolVaultNonces[i].Valid(); err != nil {
 			return err
@@ -169,8 +180,24 @@ func DefaultGenesisState() GenesisState {
 	}
 }
 
+// genesisExportQueueBlocks is the least span of the outbound queue, ahead of
+// the export height, that ExportGenesis covers: about a day of reference blocks.
+const genesisExportQueueBlocks = 17200
+
 // initGenesis read the data in GenesisState and apply it to data store
 func initGenesis(ctx cosmos.Context, keeper keeper.Keeper, data GenesisState) []abci.ValidatorUpdate {
+	// Restore the latched block time and its history first, as the ages below
+	// are measured with it. Without them the next BeginBlock would re-latch
+	// BLOCKTIMEMS as a change from the default and convert every stored
+	// deadline as if it had been set at the default.
+	if data.BlockTimeMs > 0 {
+		history := make(constants.BlockTimeHistory, 0, len(data.BlockTimeHistory))
+		for _, seg := range data.BlockTimeHistory {
+			history = append(history, constants.BlockTimeSegment{Height: seg.Height, Ms: seg.Ms})
+		}
+		keeper.SetBlockTimeHistory(ctx, data.BlockTimeMs, history)
+	}
+
 	for _, record := range data.Pools {
 		if err := keeper.SetPool(ctx, record); err != nil {
 			panic(err)
@@ -323,10 +350,11 @@ func initGenesis(ctx cosmos.Context, keeper keeper.Keeper, data GenesisState) []
 	// since every imported memo expires within one TTL of here. Assets are applied
 	// in first-seen order rather than by ranging the tally, to keep it deterministic.
 	ttl := keeper.GetConfigInt64(ctx, constants.MemolessTxnTTL)
+	refTTL := keeper.GetConfigInt64Ref(ctx, constants.MemolessTxnTTL)
 	liveRefs := make(map[common.Asset]int64)
 	refAssets := make([]common.Asset, 0)
 	for _, ref := range data.ReferenceMemos {
-		if !ref.IsExpired(ctx.BlockHeight(), ttl) {
+		if !referenceMemoExpired(ctx, keeper, ref, refTTL) {
 			keeper.SetReferenceMemo(ctx, ref)
 			if _, ok := liveRefs[ref.Asset]; !ok {
 				refAssets = append(refAssets, ref.Asset)
@@ -579,11 +607,16 @@ func ExportGenesis(ctx cosmos.Context, k keeper.Keeper) GenesisState {
 
 	var observedTxInVoters ObservedTxVoters
 	var outs []TxOut
-	startBlockHeight := ctx.BlockHeight() - k.GetConstants().GetInt64Value(constants.SigningTransactionPeriod)
+	// analyze-ignore(unscaled-config): RefWindowStart takes reference blocks
+	startBlockHeight := k.RefWindowStart(ctx, k.GetConstants().GetInt64Value(constants.SigningTransactionPeriod))
 	if startBlockHeight < 1 {
 		startBlockHeight = 1
 	}
-	endBlockHeight := ctx.BlockHeight() + 17200
+	// outbounds are scheduled at most TxOutDelayMax + MaxTxOutOffset ahead, but
+	// lowering those settings leaves already queued outbounds where they are,
+	// so never scan less than the fixed span exported before (in reference
+	// blocks of wall-clock time)
+	endBlockHeight := max(ctx.BlockHeight()+maxTxOutWindow(ctx, k)+1, k.RefWindowEnd(ctx, genesisExportQueueBlocks))
 
 	for height := startBlockHeight; height < endBlockHeight; height++ {
 		var txOut *keeper.TxOut
@@ -679,14 +712,14 @@ func ExportGenesis(ctx cosmos.Context, k keeper.Keeper) GenesisState {
 		vaults = append(vaults, vault)
 	}
 
-	ttl := k.GetConfigInt64(ctx, constants.MemolessTxnTTL)
+	ttl := k.GetConfigInt64Ref(ctx, constants.MemolessTxnTTL)
 	memos := make([]ReferenceMemo, 0)
 	refIter := k.GetReferenceMemoIterator(ctx)
 	defer refIter.Close()
 	for ; refIter.Valid(); refIter.Next() {
 		var mem ReferenceMemo
 		k.Cdc().MustUnmarshal(refIter.Value(), &mem)
-		if mem.IsExpired(ctx.BlockHeight(), ttl) {
+		if referenceMemoExpired(ctx, k, mem, ttl) {
 			continue
 		}
 		memos = append(memos, mem)
@@ -887,6 +920,16 @@ func ExportGenesis(ctx cosmos.Context, k keeper.Keeper) GenesisState {
 		dynamicFeeAccumulators = append(dynamicFeeAccumulators, acc)
 	}
 
+	// set only once BLOCKTIMEMS has changed the block time
+	var blockTimeMs int64
+	var blockTimeHistory []types.BlockTimeSegment
+	if history := k.GetBlockTimeHistory(ctx); len(history) > 0 {
+		blockTimeMs = k.GetBlockTimeMs(ctx)
+		for _, seg := range history {
+			blockTimeHistory = append(blockTimeHistory, types.BlockTimeSegment{Height: seg.Height, Ms: seg.Ms})
+		}
+	}
+
 	lastObservedDynamicFeeEpochBlocks, err := k.GetLastObservedDynamicFeeEpochBlocks(ctx)
 	if err != nil {
 		panic(err)
@@ -971,5 +1014,7 @@ func ExportGenesis(ctx cosmos.Context, k keeper.Keeper) GenesisState {
 		LastObservedDynamicFeeEpochBlocks: lastObservedDynamicFeeEpochBlocks,
 		StableReserveCredits:              stableReserveCredits,
 		SolVaultNonces:                    solVaultNonces,
+		BlockTimeMs:                       blockTimeMs,
+		BlockTimeHistory:                  blockTimeHistory,
 	}
 }

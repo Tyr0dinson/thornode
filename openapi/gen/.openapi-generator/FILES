@@ -68,6 +68,7 @@ docs/CodesApi.md
 docs/CodesResponse.md
 docs/Coin.md
 docs/ConstantsResponse.md
+docs/ConstantsResponseBlockTimeHistoryInner.md
 docs/ContractInfo.md
 docs/ContractInfoResponse.md
 docs/ContractInfosResponse.md
@@ -241,6 +242,7 @@ model_code.go
 model_codes_response.go
 model_coin.go
 model_constants_response.go
+model_constants_response_block_time_history_inner.go
 model_contract_info.go
 model_contract_info_response.go
 model_contract_infos_response.go

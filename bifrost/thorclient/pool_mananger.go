@@ -8,9 +8,9 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 
+	"gitlab.com/thorchain/thornode/v3/bifrost/blocktime"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
-	"gitlab.com/thorchain/thornode/v3/constants"
 	stypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
@@ -50,7 +50,7 @@ func (pm *PoolMgr) updatePool() {
 
 func (pm *PoolMgr) getPool(asset common.Asset) stypes.Pool {
 	duration := time.Since(pm.lastCheck)
-	if duration > constants.ThorchainBlockTime {
+	if duration > blocktime.Get() {
 		pm.updatePool()
 		pm.lastCheck = time.Now()
 	}

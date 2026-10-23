@@ -10,10 +10,10 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 
+	"gitlab.com/thorchain/thornode/v3/bifrost/blocktime"
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/v3/common"
-	"gitlab.com/thorchain/thornode/v3/constants"
 )
 
 // OnNewPubKey is a function that used as a callback , if somehow we need to do additional process when a new pubkey get added
@@ -313,7 +313,7 @@ func (pkm *PubKeyManager) updatePubKeys() {
 		select {
 		case <-pkm.stopChan:
 			return
-		case <-time.After(constants.ThorchainBlockTime):
+		case <-time.After(blocktime.Get()):
 			pkm.fetchPubKeys(i%100 == 0) // only prune every 100 blocks
 		}
 	}

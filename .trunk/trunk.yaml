@@ -33,6 +33,8 @@ lint:
       paths:
         - openapi/gen
         - "**/*gen.go"
+        # analyzer fixtures: GOPATH-style packages that only load under analysistest
+        - tools/analyze/testdata/**
         # TODO: fix all lint errors in imported repos and enable lint for these.
         - bifrost/tss/go-tss
         - bifrost/txscript

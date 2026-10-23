@@ -7,7 +7,8 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 )
 
-// Keep failed refund cleanup markers for roughly 30 days at 6-second blocks.
+// Keep failed refund cleanup markers for roughly 30 days (reference blocks,
+// scaled with BLOCKTIMEMS).
 const refundCleanupRetentionBlocks int64 = 432000
 
 func refundCleanupExpiryPrefix(expiryHeight int64) []byte {
@@ -22,7 +23,7 @@ func refundCleanupExpiryKey(expiryHeight int64, key string) []byte {
 }
 
 func (k KVStore) SetRefundCleanup(ctx cosmos.Context, key string) {
-	expiryHeight := ctx.BlockHeight() + refundCleanupRetentionBlocks
+	expiryHeight := ctx.BlockHeight() + k.RefBlocks(ctx, refundCleanupRetentionBlocks)
 	k.setInt64(ctx, k.GetKey(prefixRefundCleanup, key), expiryHeight)
 	k.setInt64(ctx, refundCleanupExpiryKey(expiryHeight, key), 1)
 }

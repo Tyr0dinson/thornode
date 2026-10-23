@@ -80,6 +80,10 @@ func (k *TestObservedTxOutHandleKeeper) GetConfigInt64(_ cosmos.Context, key con
 	return k.GetConstants().GetInt64Value(key)
 }
 
+func (k *TestObservedTxOutHandleKeeper) GetConfigInt64Ref(_ cosmos.Context, key constants.ConstantName) int64 {
+	return k.GetConstants().GetInt64Value(key)
+}
+
 func (k *TestObservedTxOutHandleKeeper) ListActiveValidators(_ cosmos.Context) (NodeAccounts, error) {
 	return k.nas, nil
 }

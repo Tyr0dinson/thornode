@@ -334,7 +334,7 @@ func (s *EVMSuite) TestSolvencyRunnerBackoff(c *C) {
 	// ETH is above THORChain block time in both mocknet and non-mocknet builds,
 	// so this consistently exercises the fallback path.
 	client.cfg.ChainID = common.ETHChain
-	c.Assert(client.solvencyRunnerBackoff(), Equals, constants.ThorchainBlockTime)
+	c.Assert(client.solvencyRunnerBackoff(), Equals, time.Duration(0)) // one THORChain block
 }
 
 // TestGetGasEstimateForSolvency verifies the generic EVM solvency buffer formula:

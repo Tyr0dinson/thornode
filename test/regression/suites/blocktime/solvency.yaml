@@ -1,0 +1,142 @@
+type: env
+key: SIGNING_TRANSACTION_PERIOD
+value: "10"
+---
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-pool-state.yaml" }}
+---
+# $50 RUNE, so the 0.0826 BTC (82.6 RUNE) gap a dropped outbound would leave is over
+# the $500 solvency tolerance
+type: state
+genesis:
+  app_state:
+    thorchain:
+      mimirs:
+        - key: DollarsPerRune
+          value: "5000000000"
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# halve the block time (mocknet's default is 1000 ms), effective at 3
+########################################################################################
+type: tx-mimir
+key: BLOCKTIMEMS
+value: 500
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 2
+---
+type: check
+endpoint: http://localhost:1317/thorchain/constants
+asserts:
+  - .block_time_ms == 500
+  - .int_64_values.SigningTransactionPeriod == 20
+---
+########################################################################################
+# an in-flight outbound from the dog vault, scheduled at 4 under 500 ms
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "10000000000"
+    asset: "rune"
+memo: "=:BTC.BTC:{{ addr_btc_fox }}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 1
+  - .[0].height == 4
+  - .[0].vault_pub_key == "{{ pubkey_dog }}"
+  - .[0].coin.amount == "8257278"
+  - .[0].max_gas[0].amount == "10000"
+---
+########################################################################################
+# revert to the default block time, effective at 16
+########################################################################################
+type: create-blocks
+count: 10
+---
+type: tx-mimir
+key: BLOCKTIMEMS
+value: 0
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 2
+---
+type: check
+endpoint: http://localhost:1317/thorchain/constants
+asserts:
+  - .block_time_ms == 1000
+  - .block_time_history[1].height == 16
+  - .int_64_values.SigningTransactionPeriod == 10
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# At 18 the outbound from 4 is 14 blocks old, past the 10-block period, but only
+# 11 x 500 ms + 3 x 1000 ms = 8.5 s: still in flight. The vault has signed and sent it,
+# so its wallet holds the vault's 1 BTC less the outbound and its max gas:
+# 100000000 - 8257278 - 10000 = 91732722. The solvency check still deducts the
+# outbound, so the report is solvent and BTC is not halted (counting blocks, the
+# outbound would have dropped out of the 10-block window and the vault would look
+# 0.0826 BTC short).
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 1
+  - .[0].height == 4
+---
+type: tx-solvency
+signer: {{ addr_thor_dog }}
+chain: "BTC"
+pub_key: {{ pubkey_dog }}
+coins:
+  - amount: "91732722"
+    asset: "BTC.BTC"
+    decimals: 8
+Height: 1
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/mimir
+asserts:
+  - .["SOLVENCYHALTBTCCHAIN"] == null
+---
+type: check
+endpoint: http://localhost:1317/thorchain/vault/{{ pubkey_dog }}
+asserts:
+  - .coins[0].amount == "100000000"
+---
+########################################################################################
+# the outbound is still pending at 19, and rescheduled once a full 10 s old, at 20
+########################################################################################
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 1
+  - .[0].height == 4
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 1
+  - .[0].height == 20

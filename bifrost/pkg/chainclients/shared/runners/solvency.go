@@ -7,10 +7,10 @@ import (
 
 	"github.com/rs/zerolog/log"
 
+	"gitlab.com/thorchain/thornode/v3/bifrost/blocktime"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
-	"gitlab.com/thorchain/thornode/v3/constants"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
@@ -40,14 +40,16 @@ func SolvencyCheckRunner(chain common.Chain,
 		logger.Error().Msg("solvency checker provider is nil")
 		return
 	}
-	if backOffDuration == 0 {
-		backOffDuration = constants.ThorchainBlockTime
-	}
 	for {
+		// a zero backOffDuration waits one THORChain block, at its current block time
+		wait := backOffDuration
+		if wait == 0 {
+			wait = blocktime.Get()
+		}
 		select {
 		case <-stopper:
 			return
-		case <-time.After(backOffDuration):
+		case <-time.After(wait):
 			halted, err := IsHaltedOnChain(bridge, chain)
 			if err != nil {
 				logger.Err(err).Msg("fail to read chain halt state")

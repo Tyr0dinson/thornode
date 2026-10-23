@@ -11,7 +11,8 @@ import (
 )
 
 // solNonceReattestMinAgeBlocks is how long a vault's committed durable nonce must
-// stand before a re-attestation may replace it (~1h at 6s blocks). Normal commits
+// stand before a re-attestation may replace it (~1h, in reference blocks scaled
+// with BLOCKTIMEMS). Normal commits
 // come from the observation of the tx that advanced the nonce within about a minute;
 // the delay keeps re-attestation from racing, and pre-empting, that path.
 const solNonceReattestMinAgeBlocks = int64(600)
@@ -120,7 +121,7 @@ func (h SolNonceAttestHandler) handle(ctx cosmos.Context, msg MsgSolNonceAttest)
 			voter.CommittedHeight = ctx.BlockHeight() // already the committed value
 			return &cosmos.Result{}, nil
 		}
-		if ctx.BlockHeight()-existing.UpdatedHeight < solNonceReattestMinAgeBlocks {
+		if h.mgr.Keeper().RefBlocksSince(ctx, existing.UpdatedHeight) < solNonceReattestMinAgeBlocks {
 			return &cosmos.Result{}, nil // too soon: a later vote re-checks
 		}
 		if msg.Slot <= existing.Slot {

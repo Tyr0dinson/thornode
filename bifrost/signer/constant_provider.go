@@ -15,6 +15,10 @@ type ConstantsProvider struct {
 	bridge        thorclient.ThorchainBridge
 	constantsLock *sync.Mutex
 	constants     map[string]int64 // the constant values get from thorchain and cached in memory
+	// the block time the cached constants are scaled to, and its history,
+	// fetched together with them
+	blockTimeMs int64
+	history     constants.BlockTimeHistory
 }
 
 // NewConstantsProvider create a new instance of ConstantsProvider
@@ -37,6 +41,19 @@ func (cp *ConstantsProvider) GetInt64Value(thorchainBlockHeight int64, key const
 	return cp.constants[key.String()], nil
 }
 
+// GetInt64ValueWithBlockTime returns the constant value that matches key
+// together with the block time it is scaled to and the block time history,
+// all from the same refresh, so a duration read from it converts to wall-clock
+// time consistently.
+func (cp *ConstantsProvider) GetInt64ValueWithBlockTime(thorchainBlockHeight int64, key constants.ConstantName) (value, blockTimeMs int64, history constants.BlockTimeHistory, err error) {
+	if err = cp.EnsureConstants(thorchainBlockHeight); err != nil {
+		return 0, 0, nil, fmt.Errorf("fail to get constants from thorchain: %w", err)
+	}
+	cp.constantsLock.Lock()
+	defer cp.constantsLock.Unlock()
+	return cp.constants[key.String()], cp.blockTimeMs, cp.history, nil
+}
+
 func (cp *ConstantsProvider) EnsureConstants(thorchainBlockHeight int64) error {
 	// requestHeight and churnInterval are read together under the lock: they are
 	// written together by getConstantsFromThorchain, and reading either outside
@@ -44,8 +61,20 @@ func (cp *ConstantsProvider) EnsureConstants(thorchainBlockHeight int64) error {
 	cp.constantsLock.Lock()
 	requestHeight := cp.requestHeight
 	churnInterval := cp.constants[constants.ChurnInterval.String()]
+	blockTimeMs := cp.blockTimeMs
 	cp.constantsLock.Unlock()
 	if requestHeight == 0 {
+		return cp.getConstantsFromThorchain(thorchainBlockHeight)
+	}
+	// THORChain scales block-denominated constants to its block time, so
+	// refresh as soon as the block time changes. Fail closed when the block
+	// time can't be read: the cached history could miss a change, and the
+	// signer measures outbound age over it.
+	ms, _, err := cp.bridge.GetBlockTime()
+	if err != nil {
+		return fmt.Errorf("fail to get block time: %w", err)
+	}
+	if ms != blockTimeMs {
 		return cp.getConstantsFromThorchain(thorchainBlockHeight)
 	}
 	// Thorchain will have new version and constants only when new node get rotated in , and the new version get consensus
@@ -56,13 +85,32 @@ func (cp *ConstantsProvider) EnsureConstants(thorchainBlockHeight int64) error {
 }
 
 func (cp *ConstantsProvider) getConstantsFromThorchain(height int64) error {
-	constants, err := cp.bridge.GetConstants()
-	if err != nil {
-		return fmt.Errorf("fail to get constants: %w", err)
+	// Read the block time on both sides of the constants and retry if it moved
+	// in between: constants scaled to one block time must not be paired with
+	// another.
+	for range 3 {
+		before, _, err := cp.bridge.GetBlockTime()
+		if err != nil {
+			return fmt.Errorf("fail to get block time: %w", err)
+		}
+		values, err := cp.bridge.GetConstants()
+		if err != nil {
+			return fmt.Errorf("fail to get constants: %w", err)
+		}
+		blockTimeMs, history, err := cp.bridge.GetBlockTime()
+		if err != nil {
+			return fmt.Errorf("fail to get block time: %w", err)
+		}
+		if blockTimeMs != before {
+			continue
+		}
+		cp.constantsLock.Lock()
+		cp.constants = values
+		cp.blockTimeMs = blockTimeMs
+		cp.history = history
+		cp.requestHeight = height
+		cp.constantsLock.Unlock()
+		return nil
 	}
-	cp.constantsLock.Lock()
-	defer cp.constantsLock.Unlock()
-	cp.constants = constants
-	cp.requestHeight = height
-	return nil
+	return fmt.Errorf("block time kept changing while reading constants")
 }

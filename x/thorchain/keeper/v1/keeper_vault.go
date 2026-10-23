@@ -103,7 +103,9 @@ func (k KVStore) GetLeastSecure(ctx cosmos.Context, vaults Vaults, signingTransP
 
 // SortBySecurity sorts a list of vaults in an order by how close the total
 // value of the vault is to the total bond of the members of that vault. Sorts
-// by least secure to most secure.
+// by least secure to most secure. signingTransPeriod is in reference blocks
+// (the unscaled constant), as for GetMostSecure, GetMostSecureStrict and
+// GetLeastSecure.
 func (k KVStore) SortBySecurity(ctx cosmos.Context, vaults Vaults, signingTransPeriod int64) Vaults {
 	if len(vaults) <= 1 {
 		return vaults
@@ -195,9 +197,12 @@ func (k KVStore) getPoolMemo(ctx cosmos.Context, store storetypes.KVStore, asset
 
 func (k KVStore) getSortedVaultSecurity(ctx cosmos.Context, vaults Vaults, signingTransPeriod int64) []VaultSecurity {
 	vaultSecurity := make([]VaultSecurity, len(vaults))
+	// signingTransPeriod is in reference blocks: the window is wall-clock time,
+	// so it still covers outbounds scheduled before a block time change
+	windowStart := k.RefWindowStart(ctx, signingTransPeriod)
 
 	// recent unsent txout items count towards each vault's value
-	h := ctx.BlockHeight() - signingTransPeriod
+	h := windowStart
 	if h < 1 {
 		h = 1
 	}
@@ -333,21 +338,36 @@ func (k KVStore) getSortedVaultSecurity(ctx cosmos.Context, vaults Vaults, signi
 // GetPendingOutbounds selects txouts in the outbound and scheduled outbound queues (for deduction to leave only 'available' balances),
 // as the amounts of both types of txout items are yet to be deducted from the vault balances.
 func (k KVStore) GetPendingOutbounds(ctx cosmos.Context, asset common.Asset) []TxOutItem {
-	signingPeriod := k.GetConfigInt64(ctx, constants.SigningTransactionPeriod)
-	standardStartHeight := ctx.BlockHeight() - signingPeriod
+	// Windows are measured in wall-clock time via the reference period, so
+	// outbounds scheduled before a block time change stay covered until
+	// LackSigning reschedules them; without a change these are the plain
+	// now - period and now + offset bounds.
+	refSigningPeriod := k.GetConfigInt64Ref(ctx, constants.SigningTransactionPeriod)
+	signingPeriod := k.ScaleConfigInt64(ctx, constants.SigningTransactionPeriod, refSigningPeriod)
+	standardStartHeight := k.RefWindowStart(ctx, refSigningPeriod)
 	if standardStartHeight < 1 {
 		standardStartHeight = 1
 	}
 	// Use the longest period the requested asset's underlying chain can contain.
 	// GetChain reports THOR for synth, trade, and secured assets, so use the L1
 	// chain to retain any EVM/XMR-backed liabilities conservatively.
-	scanPeriod := thortypes.MaxTxOutSigningTransactionPeriodForChain(asset.GetLayer1Asset().Chain, signingPeriod)
-	startHeight := ctx.BlockHeight() - scanPeriod
+	startHeight := k.RefWindowStart(ctx, thortypes.MaxTxOutSigningTransactionPeriodForChain(asset.GetLayer1Asset().Chain, refSigningPeriod))
 	if startHeight < 1 {
 		startHeight = 1
 	}
-	txOutDelayMax := k.GetConfigInt64(ctx, constants.TxOutDelayMax)
-	maxTxOutOffset := k.GetConfigInt64(ctx, constants.MaxTxOutOffset)
+	// the first height still inside each item period, by reference period
+	windowStarts := make(map[int64]int64)
+	itemWindowStart := func(item TxOutItem) int64 {
+		period := item.SigningTransactionPeriod(refSigningPeriod)
+		start, ok := windowStarts[period]
+		if !ok {
+			start = k.RefWindowStart(ctx, period)
+			windowStarts[period] = start
+		}
+		return start
+	}
+	scanEnd := k.RefWindowEnd(ctx, k.GetConfigInt64Ref(ctx, constants.TxOutDelayMax))
+	offsetEnd := k.RefWindowEnd(ctx, k.GetConfigInt64Ref(ctx, constants.MaxTxOutOffset))
 	var outbounds []TxOutItem
 	seen := make(map[string]struct{})
 	// The rolling window spans the longest timing class, while each item retains
@@ -362,7 +382,7 @@ func (k KVStore) GetPendingOutbounds(ctx cosmos.Context, asset common.Asset) []T
 			if !txOutItem.OutHash.IsEmpty() {
 				continue
 			}
-			if ctx.BlockHeight()-blockOut.Height > txOutItem.SigningTransactionPeriod(signingPeriod) {
+			if blockOut.Height < itemWindowStart(txOutItem) {
 				continue
 			}
 			itemKey := strconv.FormatInt(blockOut.Height, 10) + "/" + strconv.Itoa(i)
@@ -371,12 +391,12 @@ func (k KVStore) GetPendingOutbounds(ctx cosmos.Context, asset common.Asset) []T
 		}
 	}
 	walk := k.newTxOutWalk(ctx)
-	for height := startHeight; height <= ctx.BlockHeight()+txOutDelayMax; height++ {
+	for height := startHeight; height <= scanEnd; height++ {
 		blockOut, err := k.getTxOutWalk(ctx, walk, height)
 		if err != nil {
 			ctx.Logger().Error("fail to get block tx out", "error", err)
 		}
-		if height > ctx.BlockHeight()+maxTxOutOffset && (blockOut == nil || len(blockOut.TxArray) == 0) {
+		if height > offsetEnd && (blockOut == nil || len(blockOut.TxArray) == 0) {
 			// we've hit our max offset, and an empty block, we can assume the
 			// rest will be empty as well
 			break
@@ -390,7 +410,8 @@ func (k KVStore) GetPendingOutbounds(ctx cosmos.Context, asset common.Asset) []T
 		return outbounds
 	}
 
-	staleMigratePendingBlocks := signingPeriod * constants.StaleMigratePendingSigningPeriodMultiplier
+	// in reference blocks of wall-clock time, as in migrateFunds
+	staleMigratePendingBlocks := refSigningPeriod * constants.StaleMigratePendingSigningPeriodMultiplier
 	// Build a unique set of old pending migrate heights before loading txouts.
 	// The same height can appear multiple times for multi-asset migration, but
 	// processing a txout block more than once would double-deduct availability.
@@ -409,7 +430,7 @@ func (k KVStore) GetPendingOutbounds(ctx cosmos.Context, asset common.Asset) []T
 			// Pending migrate heights are durable references beyond the rolling
 			// signing window, but expired ones are retry-eligible in migrateFunds
 			// and must not reserve funds forever.
-			if ctx.BlockHeight()-height > staleMigratePendingBlocks {
+			if k.RefBlocksSince(ctx, height) > staleMigratePendingBlocks {
 				continue
 			}
 			eligibleVaults, ok := stalePendingVaultsByHeight[height]

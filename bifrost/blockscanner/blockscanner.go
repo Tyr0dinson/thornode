@@ -12,6 +12,7 @@ import (
 	"github.com/rs/zerolog/log"
 
 	btypes "gitlab.com/thorchain/thornode/v3/bifrost/blockscanner/types"
+	"gitlab.com/thorchain/thornode/v3/bifrost/blocktime"
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
@@ -486,7 +487,7 @@ func (b *BlockScanner) scanBlocks() {
 	defer b.logger.Debug().Msg("stop scan blocks")
 	defer b.wg.Done()
 
-	lastMimirCheck := time.Now().Add(-constants.ThorchainBlockTime)
+	lastMimirCheck := time.Now().Add(-blocktime.Get())
 	isChainPaused := false
 
 	type fetchTxsResult struct {
@@ -567,7 +568,7 @@ func (b *BlockScanner) scanBlocks() {
 			preBlockHeight := atomic.LoadInt64(&b.previousBlock)
 			currentBlock := preBlockHeight + 1
 			// check if mimir has disabled this chain
-			if time.Since(lastMimirCheck) >= constants.ThorchainBlockTime {
+			if time.Since(lastMimirCheck) >= blocktime.Get() {
 				isChainPaused = IsChainPaused(b.cfg, b.logger, b.thorchainBridge)
 				lastMimirCheck = time.Now()
 			}

@@ -1311,6 +1311,8 @@ func (s *QuerierSuite) TestQueryNetwork(c *C) {
 	c.Assert(openapiNetworkResponse.TotalReserve, Equals, queryNetworkResp.TotalReserve)
 	c.Assert(openapiNetworkResponse.VaultsMigrating, Equals, queryNetworkResp.VaultsMigrating)
 	c.Assert(openapiNetworkResponse.XmrActiveVaultReady, Equals, queryNetworkResp.XmrActiveVaultReady)
+	c.Assert(openapiNetworkResponse.BlockTimeMs, Equals, queryNetworkResp.BlockTimeMs)
+	c.Assert(queryNetworkResp.BlockTimeMs, Equals, strconv.FormatInt(constants.ThorchainBlockTime.Milliseconds(), 10))
 }
 
 func (s *QuerierSuite) TestGetXMRActiveVaultReadyRequiresFundsAndAddress(c *C) {

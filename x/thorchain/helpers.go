@@ -1212,17 +1212,12 @@ func emitEndBlockTelemetry(ctx cosmos.Context, mgr Manager) error {
 		}
 	}
 
-	// emit queue metrics
-	signingTransactionPeriod := mgr.GetConstants().GetInt64Value(constants.SigningTransactionPeriod)
-	startHeight := ctx.BlockHeight() - signingTransactionPeriod
-	txOutDelayMax, err := mgr.Keeper().GetMimir(ctx, constants.TxOutDelayMax.String())
-	if txOutDelayMax <= 0 || err != nil {
-		txOutDelayMax = mgr.GetConstants().GetInt64Value(constants.TxOutDelayMax)
-	}
-	maxTxOutOffset, err := mgr.Keeper().GetMimir(ctx, constants.MaxTxOutOffset.String())
-	if maxTxOutOffset <= 0 || err != nil {
-		maxTxOutOffset = mgr.GetConstants().GetInt64Value(constants.MaxTxOutOffset)
-	}
+	// emit queue metrics; the windows are wall-clock time, so they cover
+	// outbounds scheduled before a block time change
+	// analyze-ignore(unscaled-config): RefWindowStart takes reference blocks
+	startHeight := mgr.Keeper().RefWindowStart(ctx, mgr.GetConstants().GetInt64Value(constants.SigningTransactionPeriod))
+	scanEnd := mgr.Keeper().RefWindowEnd(ctx, mgr.Keeper().GetConfigInt64Ref(ctx, constants.TxOutDelayMax))
+	offsetEnd := mgr.Keeper().RefWindowEnd(ctx, mgr.Keeper().GetConfigInt64Ref(ctx, constants.MaxTxOutOffset))
 	var queueSwap, queueInternal, queueOutbound int64
 	queueScheduledOutboundValue := cosmos.ZeroUint()
 	iterator := mgr.Keeper().GetSwapQueueIterator(ctx)
@@ -1251,13 +1246,13 @@ func emitEndBlockTelemetry(ctx cosmos.Context, mgr Manager) error {
 		}
 	}
 	cloutSpent := cosmos.ZeroUint()
-	for height := ctx.BlockHeight() + 1; height <= ctx.BlockHeight()+txOutDelayMax; height++ {
+	for height := ctx.BlockHeight() + 1; height <= scanEnd; height++ {
 		value, clout, err := mgr.Keeper().GetTxOutValue(ctx, height)
 		if err != nil {
 			ctx.Logger().Error("fail to get tx out array from key value store", "error", err)
 			continue
 		}
-		if height > ctx.BlockHeight()+maxTxOutOffset && value.IsZero() {
+		if height > offsetEnd && value.IsZero() {
 			// we've hit our max offset, and an empty block, we can assume the
 			// rest will be empty as well
 			break
@@ -2458,5 +2453,51 @@ func applyMemolessOutboundLogic(version semver.Version, toi *TxOutItem, enableMe
 	default:
 		// For all other memo types, preserve the original memo
 		toi.Memo = toi.OriginalMemo
+	}
+}
+
+// signingWindowStarts returns a memoized k.RefWindowStart: the first height
+// still inside a signing period of the given reference blocks.
+func signingWindowStarts(ctx cosmos.Context, k keeper.Keeper) func(refPeriod int64) int64 {
+	starts := make(map[int64]int64)
+	return func(refPeriod int64) int64 {
+		start, ok := starts[refPeriod]
+		if !ok {
+			start = k.RefWindowStart(ctx, refPeriod)
+			starts[refPeriod] = start
+		}
+		return start
+	}
+}
+
+// maxTxOutWindow returns how far ahead of the current height an outbound can
+// be scheduled: TxOutDelayMax plus MaxTxOutOffset, at the current block time or
+// at an earlier, faster one if outbounds it scheduled reach further.
+func maxTxOutWindow(ctx cosmos.Context, k keeper.Keeper) int64 {
+	refWindow := max(k.GetConfigInt64Ref(ctx, constants.TxOutDelayMax), 0) + max(k.GetConfigInt64Ref(ctx, constants.MaxTxOutOffset), 0)
+	return k.RefWindowEnd(ctx, refWindow) - ctx.BlockHeight()
+}
+
+// thorchainBlockMs returns the approximate THORChain block interval in
+// milliseconds for time estimates: common.THORChain's 6s approximation scaled
+// by BLOCKTIMEMS relative to the default block time, so it is unchanged while
+// the mimir is unset (on every network) and follows the target once it is set.
+func thorchainBlockMs(ctx cosmos.Context, k keeper.Keeper) int64 {
+	return constants.ScalePerBlockRate(common.THORChain.ApproximateBlockMilliseconds(), constants.ThorchainBlockTime.Milliseconds(), k.GetBlockTimeMs(ctx))
+}
+
+// referenceMemoExpired reports whether ref is more than refTTL reference blocks
+// (MemolessTxnTTL) old in wall-clock time: ref.IsExpired(now, ttl) without a
+// block time change.
+func referenceMemoExpired(ctx cosmos.Context, k keeper.Keeper, ref ReferenceMemo, refTTL int64) bool {
+	return k.RefBlocksSince(ctx, ref.Height) > refTTL
+}
+
+// restoreClout restores the clout of c last spent more than refReset reference
+// blocks (CloutReset) ago in wall-clock time: c.Restore(now, reset) without a
+// block time change.
+func restoreClout(ctx cosmos.Context, k keeper.Keeper, c *SwapperClout, refReset int64) {
+	if k.RefBlocksSince(ctx, c.LastSpentHeight) > refReset {
+		c.Reclaimed = c.Spent
 	}
 }

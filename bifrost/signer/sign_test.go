@@ -355,6 +355,10 @@ func (b fakeBridge) GetThorchainVersion() (semver.Version, error) {
 	return semver.MustParse("1.0.0"), nil
 }
 
+func (b fakeBridge) GetBlockTime() (int64, constants.BlockTimeHistory, error) {
+	return constants.ThorchainBlockTime.Milliseconds(), nil, nil
+}
+
 func (b fakeBridge) GetConstants() (map[string]int64, error) {
 	return map[string]int64{
 		constants.SigningTransactionPeriod.String(): 300,

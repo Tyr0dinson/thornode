@@ -94,16 +94,15 @@ func (h RunePoolWithdrawHandler) handle(ctx cosmos.Context, msg MsgRunePoolWithd
 	}
 
 	// ensure the deposit has reached maturity
-	depositMaturity := h.mgr.Keeper().GetConfigInt64(ctx, constants.RUNEPoolDepositMaturityBlocks)
-	currentBlockHeight := ctx.BlockHeight()
-	blocksSinceLastDeposit := currentBlockHeight - runeProvider.LastDepositHeight
-	if blocksSinceLastDeposit < depositMaturity {
+	// in reference blocks of wall-clock time since the last deposit
+	depositMaturity := h.mgr.Keeper().GetConfigInt64Ref(ctx, constants.RUNEPoolDepositMaturityBlocks)
+	if h.mgr.Keeper().RefBlocksSince(ctx, runeProvider.LastDepositHeight) < depositMaturity {
 		telemetry.IncrCounterWithLabels(
 			[]string{"thornode", "rune_pool", "withdraw_rejected"},
 			float32(1),
 			[]metrics.Label{telemetry.NewLabel("reason", "immature")},
 		)
-		return fmt.Errorf("deposit reaches maturity in %d blocks", depositMaturity-blocksSinceLastDeposit)
+		return fmt.Errorf("deposit reaches maturity in %d blocks", h.mgr.Keeper().RefHeightAfter(ctx, runeProvider.LastDepositHeight, depositMaturity)-ctx.BlockHeight())
 	}
 
 	// rune pool tracks the reserve and pooler unit shares of pol

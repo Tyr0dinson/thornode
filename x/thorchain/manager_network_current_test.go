@@ -629,7 +629,7 @@ func (*NetworkManagerTestSuite) TestProcessGenesisSetup(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(keygenBlock.Keygens, HasLen, 0)
 
-	xmrBootstrapHeight := xmrMonovaultGenesisKeygenHeight(ctx.BlockHeight())
+	xmrBootstrapHeight := xmrMonovaultGenesisKeygenHeight(ctx, mgr.Keeper())
 	keygenBlock, err = mgr.Keeper().GetKeygenBlock(ctx, xmrBootstrapHeight)
 	c.Assert(err, IsNil)
 	c.Assert(keygenBlock.Keygens, HasLen, 1)
@@ -664,7 +664,7 @@ func (*NetworkManagerTestSuite) TestProcessGenesisSetup(c *C) {
 	c.Assert(keygenBlock.Keygens, HasLen, 1)
 	c.Assert(keygenBlock.Keygens[0].Type, Equals, AsgardKeygen)
 
-	xmrBootstrapHeight = xmrMonovaultGenesisKeygenHeight(ctx.BlockHeight())
+	xmrBootstrapHeight = xmrMonovaultGenesisKeygenHeight(ctx, mgr.Keeper())
 	keygenBlock, err = mgr.Keeper().GetKeygenBlock(ctx, xmrBootstrapHeight)
 	c.Assert(err, IsNil)
 	c.Assert(keygenBlock.Keygens, HasLen, 1)
@@ -710,7 +710,7 @@ func (*NetworkManagerTestSuite) TestProcessGenesisSetupExistingVaultSkipsDelayed
 
 	c.Assert(networkMgr.processGenesisSetup(ctx), IsNil)
 
-	keygenBlock, err := mgr.Keeper().GetKeygenBlock(ctx, xmrMonovaultGenesisKeygenHeight(ctx.BlockHeight()))
+	keygenBlock, err := mgr.Keeper().GetKeygenBlock(ctx, xmrMonovaultGenesisKeygenHeight(ctx, mgr.Keeper()))
 	c.Assert(err, IsNil)
 	c.Assert(keygenBlock.Keygens, HasLen, 0)
 
@@ -740,7 +740,7 @@ func (*NetworkManagerTestSuite) TestFreshGenesisEarlyXMRKeygensRotateSequentiall
 	}
 
 	c.Assert(networkMgr.processGenesisSetup(ctx), IsNil)
-	delayedHeight := xmrMonovaultGenesisKeygenHeight(ctx.BlockHeight())
+	delayedHeight := xmrMonovaultGenesisKeygenHeight(ctx, mgr.Keeper())
 	delayedBlock, err := mgr.Keeper().GetKeygenBlock(ctx, delayedHeight)
 	c.Assert(err, IsNil)
 	c.Assert(delayedBlock.Keygens, HasLen, 1)

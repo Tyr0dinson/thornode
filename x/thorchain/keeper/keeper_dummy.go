@@ -994,6 +994,49 @@ func (k KVStoreDummy) GetConfigInt64(ctx cosmos.Context, key constants.ConstantN
 	return -1
 }
 
+func (k KVStoreDummy) GetConfigInt64Ref(ctx cosmos.Context, key constants.ConstantName) int64 {
+	return -1
+}
+
+func (k KVStoreDummy) GetBlockTimeMs(ctx cosmos.Context) int64 {
+	return constants.ThorchainBlockTime.Milliseconds()
+}
+
+func (k KVStoreDummy) GetBlockTimeChange(ctx cosmos.Context) (height, prevMs int64) {
+	return 0, 0
+}
+
+func (k KVStoreDummy) GetBlockTimeHistory(ctx cosmos.Context) constants.BlockTimeHistory {
+	return nil
+}
+
+func (k KVStoreDummy) SetBlockTimeHistory(ctx cosmos.Context, ms int64, history constants.BlockTimeHistory) {
+}
+
+func (k KVStoreDummy) RefWindowStart(ctx cosmos.Context, refBlocks int64) int64 {
+	return ctx.BlockHeight() - refBlocks
+}
+
+func (k KVStoreDummy) RefWindowEnd(ctx cosmos.Context, refBlocks int64) int64 {
+	return ctx.BlockHeight() + refBlocks
+}
+
+func (k KVStoreDummy) RefBlocksSince(ctx cosmos.Context, height int64) int64 {
+	return ctx.BlockHeight() - height
+}
+
+func (k KVStoreDummy) RefHeightAfter(ctx cosmos.Context, from, refBlocks int64) int64 {
+	return from + refBlocks
+}
+
+func (k KVStoreDummy) UpdateBlockTime(ctx cosmos.Context) {}
+
+func (k KVStoreDummy) ScaleConfigInt64(ctx cosmos.Context, key constants.ConstantName, v int64) int64 {
+	return v
+}
+
+func (k KVStoreDummy) RefBlocks(ctx cosmos.Context, refBlocks int64) int64 { return refBlocks }
+
 func (k KVStoreDummy) IsRagnarok(ctx cosmos.Context, assets []common.Asset) bool { return false }
 
 func (k KVStoreDummy) IsTradingHalt(ctx cosmos.Context, msg cosmos.Msg) bool { return false }
@@ -1060,6 +1103,10 @@ func (k KVStoreDummy) GetTHORNameRegisterFee(ctx cosmos.Context) cosmos.Uint {
 }
 
 func (k KVStoreDummy) GetTHORNamePerBlockFee(ctx cosmos.Context) cosmos.Uint {
+	return cosmos.ZeroUint()
+}
+
+func (k KVStoreDummy) GetTHORNameRefBlockFee(ctx cosmos.Context) cosmos.Uint {
 	return cosmos.ZeroUint()
 }
 

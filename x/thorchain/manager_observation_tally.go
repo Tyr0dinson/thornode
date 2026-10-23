@@ -67,9 +67,11 @@ const (
 // queueObservationTally schedules a voter that reached consensus in this block to
 // be scored when its ObservationDelayFlexibility window closes.
 func queueObservationTally(ctx cosmos.Context, k keeper.Keeper, kind string, chain common.Chain, ref ...string) {
-	observeFlex := k.GetConfigInt64(ctx, constants.ObservationDelayFlexibility)
+	// due when the window closes in wall-clock time; UpdateBlockTime moves
+	// queued entries across a block time change
+	observeFlex := k.GetConfigInt64Ref(ctx, constants.ObservationDelayFlexibility)
 	k.QueueObservationTally(ctx, kvTypes.ObservationTallyEntry{
-		DueHeight:       ctx.BlockHeight() + max(observeFlex, 0),
+		DueHeight:       k.RefHeightAfter(ctx, ctx.BlockHeight(), max(observeFlex, 0)),
 		ConsensusHeight: ctx.BlockHeight(),
 		Kind:            kind,
 		Chain:           chain,
@@ -176,7 +178,9 @@ func scoreObservationTally(ctx cosmos.Context, k keeper.Keeper, active NodeAccou
 	if err != nil {
 		return err
 	}
-	guardMax := k.GetConfigInt64(ctx, constants.MissingObservationGuardMaxBlocks)
+	// the grace is wall-clock time, in reference blocks
+	guardMax := k.GetConfigInt64Ref(ctx, constants.MissingObservationGuardMaxBlocks)
+	atConsensus := ctx.WithBlockHeight(entry.ConsensusHeight)
 	result := "scored"
 	if population > 0 && fresh*10_000 > guardBps*population {
 		guardedAt[entry.Chain] = entry.ConsensusHeight
@@ -188,13 +192,18 @@ func scoreObservationTally(ctx cosmos.Context, k keeper.Keeper, active NodeAccou
 			if err != nil {
 				return err
 			}
-			guardSince = entry.ConsensusHeight - max(fullAt-entry.ConsensusHeight, 0)
+			var unrefilled int64
+			if fullAt > entry.ConsensusHeight {
+				unrefilled = k.RefBlocksSince(ctx.WithBlockHeight(fullAt), entry.ConsensusHeight)
+			}
+			refMs := constants.ThorchainBlockTime.Milliseconds()
+			guardSince = k.GetBlockTimeHistory(ctx).HeightAgo(entry.ConsensusHeight, unrefilled*refMs, refMs)
 			k.SetObservationGuardSince(ctx, entry.Chain, guardSince)
 			if fullAt > 0 {
 				k.SetObservationGuardFullAt(ctx, entry.Chain, 0)
 			}
 		}
-		if guardMax <= 0 || entry.ConsensusHeight-guardSince < guardMax {
+		if guardMax <= 0 || k.RefBlocksSince(atConsensus, guardSince) < guardMax {
 			result = "guarded"
 		} else {
 			result = "guard_expired"
@@ -239,12 +248,13 @@ func endHaltedObservationGuardRuns(ctx cosmos.Context, k keeper.Keeper) error {
 
 // endObservationGuardRun ends the chain's open run of guarded voters at height. The
 // grace the run used, up to the limit, refills one block per block from there, so it
-// is full again that many blocks on.
+// is full again that many blocks on. Both are wall-clock time, in reference
+// blocks; UpdateBlockTime moves the full-at height across a block time change.
 func endObservationGuardRun(ctx cosmos.Context, k keeper.Keeper, chain common.Chain, guardSince, height int64) {
 	k.SetObservationGuardSince(ctx, chain, 0)
-	if guardMax := k.GetConfigInt64(ctx, constants.MissingObservationGuardMaxBlocks); guardMax > 0 {
-		used := min(height-guardSince, guardMax)
-		k.SetObservationGuardFullAt(ctx, chain, height+used)
+	if guardMax := k.GetConfigInt64Ref(ctx, constants.MissingObservationGuardMaxBlocks); guardMax > 0 {
+		used := min(k.RefBlocksSince(ctx.WithBlockHeight(height), guardSince), guardMax)
+		k.SetObservationGuardFullAt(ctx, chain, k.RefHeightAfter(ctx, height, used))
 	}
 }
 

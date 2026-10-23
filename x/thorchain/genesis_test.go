@@ -433,3 +433,78 @@ func (GenesisTestSuite) TestExportSwapperCloutBase58(c *C) {
 	c.Check(gs.SwapperClout[0].Address, Equals, transparent)
 	c.Check(gs.SwapperClout[0].Score.String(), Equals, "1000")
 }
+
+// The latched block time and its history survive an export/import, so the
+// first BeginBlock after import does not re-latch BLOCKTIMEMS as a new change
+// and convert stored deadlines again.
+func (GenesisTestSuite) TestGenesisBlockTimeRoundTrip(c *C) {
+	srcCtx, srcMgr := setupManagerForTest(c)
+	exported := ExportGenesis(srcCtx, srcMgr.Keeper())
+	c.Check(exported.BlockTimeMs, Equals, int64(0))
+	c.Check(exported.BlockTimeHistory, HasLen, 0)
+
+	srcMgr.Keeper().SetMimir(srcCtx, constants.BlockTimeMs.String(), 500)
+	srcMgr.Keeper().UpdateBlockTime(srcCtx.WithBlockHeight(100))
+	srcCtx = srcCtx.WithBlockHeight(200)
+	exported = ExportGenesis(srcCtx, srcMgr.Keeper())
+	c.Assert(exported.BlockTimeMs, Equals, int64(500))
+	c.Assert(exported.BlockTimeHistory, DeepEquals, []types.BlockTimeSegment{{Height: 100, Ms: 500}})
+	c.Assert(ValidateGenesis(exported), IsNil)
+	bz, err := exported.Marshal()
+	c.Assert(err, IsNil)
+	var decoded GenesisState
+	c.Assert(decoded.Unmarshal(bz), IsNil)
+
+	dstCtx, dstMgr := setupManagerForTest(c)
+	dstCtx = dstCtx.WithBlockHeight(201)
+	InitGenesis(dstCtx, dstMgr.Keeper(), decoded)
+	k := dstMgr.Keeper()
+	c.Check(k.GetBlockTimeMs(dstCtx), Equals, int64(500))
+	c.Check(k.GetBlockTimeHistory(dstCtx), DeepEquals, constants.BlockTimeHistory{{Height: 100, Ms: 500}})
+	// the imported mimir re-latches to the same value: no new change
+	k.SetMimir(dstCtx, constants.BlockTimeMs.String(), 500)
+	k.UpdateBlockTime(dstCtx)
+	c.Check(k.GetBlockTimeHistory(dstCtx), HasLen, 1)
+
+	for _, bad := range []func(*GenesisState){
+		func(g *GenesisState) { g.BlockTimeHistory = nil },
+		func(g *GenesisState) { g.BlockTimeMs = 0 },
+		func(g *GenesisState) { g.BlockTimeMs = 1000 },
+		func(g *GenesisState) {
+			g.BlockTimeHistory = []types.BlockTimeSegment{{Height: 100, Ms: 1000}, {Height: 100, Ms: 500}}
+		},
+		func(g *GenesisState) { g.BlockTimeHistory = []types.BlockTimeSegment{{Height: 100, Ms: 0}} },
+	} {
+		g := decoded
+		bad(&g)
+		c.Check(ValidateGenesis(g), NotNil)
+	}
+}
+
+// Lowering TxOutDelayMax does not move outbounds already queued further
+// ahead, so the export still covers its fixed span of the queue.
+func (GenesisTestSuite) TestGenesisExportKeepsQueueAfterLoweringDelay(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	k := mgr.Keeper()
+	vault := GetRandomVault()
+	vault.Status = ActiveVault
+	c.Assert(k.SetVault(ctx, vault), IsNil)
+	ahead := ctx.BlockHeight() + 800
+	c.Assert(k.AppendTxOut(ctx, ahead, TxOutItem{
+		Chain:       common.BTCChain,
+		ToAddress:   GetRandomBTCAddress(),
+		VaultPubKey: vault.PubKey,
+		InHash:      GetRandomTxHash(),
+		Coin:        common.NewCoin(common.BTCAsset, cosmos.NewUint(common.One)),
+	}), IsNil)
+	k.SetMimir(ctx, constants.TxOutDelayMax.String(), 0)
+	k.SetMimir(ctx, constants.MaxTxOutOffset.String(), 720)
+	c.Assert(maxTxOutWindow(ctx, k) < 800, Equals, true)
+
+	exported := ExportGenesis(ctx, k)
+	found := false
+	for _, txOut := range exported.TxOuts {
+		found = found || txOut.Height == ahead
+	}
+	c.Check(found, Equals, true)
+}

@@ -4508,6 +4508,7 @@ components:
         - rune_price_in_tor
         - tor_price_in_rune
         - tor_price_halted
+        - block_time_ms
       properties:
         bond_reward_rune:
           type: string
@@ -4581,6 +4582,10 @@ components:
           type: boolean
           example: false
           description: indicates if all anchor chains are halted (true), or at least one anchor chain is available (false)
+        block_time_ms:
+          type: string
+          example: "6000"
+          description: the effective block time in milliseconds, the BLOCKTIMEMS target in force for this block, or the network's default block time while it is unset
 
     OutboundFeesResponse:
       type: array
@@ -4655,6 +4660,30 @@ components:
             type: string
           example:
             DefaultPoolStatus: Staged
+        block_time_ms:
+          type: integer
+          format: int64
+          example: 6000
+          description: the effective block time in milliseconds that the block-denominated int_64_values are scaled to
+        block_time_history:
+          type: array
+          description: every change of the effective block time, oldest first; omitted while it never changed
+          items:
+            type: object
+            required:
+              - height
+              - ms
+            properties:
+              height:
+                type: integer
+                format: int64
+                example: 1000
+                description: the height from which blocks are ms apart
+              ms:
+                type: integer
+                format: int64
+                example: 2000
+                description: the block time in milliseconds from height on
 
     BanResponse:
       type: object

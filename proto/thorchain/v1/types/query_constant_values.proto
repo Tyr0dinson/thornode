@@ -4,6 +4,7 @@ package types;
 option go_package = "gitlab.com/thorchain/thornode/v3/x/thorchain/types";
 
 import "gogoproto/gogo.proto";
+import "types/type_block_time.proto";
 
 option (gogoproto.marshaler_all) = true;
 
@@ -13,6 +14,14 @@ message QueryConstantValuesResponse {
   repeated Int64Constants int_64_values = 1;
   repeated BoolConstants bool_values = 2;
   repeated StringConstants string_values = 3;
+  // the effective block time in milliseconds that the block-denominated
+  // int_64_values are scaled to
+  int64 block_time_ms = 4;
+  // every change of the effective block time, oldest first; empty while it
+  // never changed. With it, an outbound's age can be measured in wall-clock
+  // time across changes, as THORNode does to reschedule it.
+  repeated BlockTimeSegment block_time_history = 5
+      [ (gogoproto.nullable) = false ];
 }
 
 message Int64Constants {

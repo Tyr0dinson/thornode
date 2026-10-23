@@ -52,3 +52,14 @@ func (s *AnalyzeSuite) TestFloatComparison(c *C) {
 	testdata := analysistest.TestData()
 	analysistest.Run(testingT, testdata, a, "floatcmp")
 }
+
+func (s *AnalyzeSuite) TestUnscaledConfig(c *C) {
+	a := &analysis.Analyzer{
+		Name:     "unscaled_config",
+		Doc:      "fails on reads of block-denominated settings that bypass BLOCKTIMEMS scaling",
+		Requires: []*analysis.Analyzer{inspect.Analyzer},
+		Run:      UnscaledConfig,
+	}
+	testdata := analysistest.TestData()
+	analysistest.Run(testingT, testdata, a, "unscaled")
+}

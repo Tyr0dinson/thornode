@@ -3,6 +3,7 @@ package keeperv1
 import (
 	"bytes"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -131,6 +132,7 @@ const (
 	prefixDynamicFee                types.DbPrefix = "dynfee/"
 	prefixDynamicFeeAcc             types.DbPrefix = "dynfeeacc/"
 	prefixDynamicFeeEpochBlocks     types.DbPrefix = "dynfeeebo/"
+	prefixBlockTime                 types.DbPrefix = "blocktime/"
 )
 
 func dbError(ctx cosmos.Context, wrapper string, err error) error {
@@ -663,10 +665,24 @@ func (k KVStore) GetTHORNameRegisterFee(ctx cosmos.Context) cosmos.Uint {
 	return cosmos.NewUint(uint64(fee))
 }
 
+// GetTHORNamePerBlockFee returns the THORName fee per block at the current
+// block time. Registrations price expiry from GetTHORNameRefBlockFee instead,
+// so the fee per unit of time does not lose precision to per-block rounding.
 func (k KVStore) GetTHORNamePerBlockFee(ctx cosmos.Context) cosmos.Uint {
-	if k.usdFeesEnabled(ctx) {
-		return k.DollarConfigInRune(ctx, constants.TNSFeePerBlockUSD)
+	fee := k.GetTHORNameRefBlockFee(ctx)
+	if !fee.LTE(cosmos.NewUint(math.MaxInt64)) {
+		return fee
 	}
+	return cosmos.NewUint(uint64(k.ScaleConfigInt64(ctx, constants.TNSFeePerBlock, int64(fee.Uint64()))))
+}
+
+// GetTHORNameRefBlockFee returns the THORName fee per reference block (a block
+// of the default ThorchainBlockTime), unaffected by BLOCKTIMEMS.
+func (k KVStore) GetTHORNameRefBlockFee(ctx cosmos.Context) cosmos.Uint {
+	if k.usdFeesEnabled(ctx) {
+		return k.dollarsInRune(ctx, k.GetConfigInt64Ref(ctx, constants.TNSFeePerBlockUSD))
+	}
+	// analyze-ignore(unscaled-config): a fee per reference block, by definition
 	fee := k.GetConstants().GetInt64Value(constants.TNSFeePerBlock)
 	return cosmos.NewUint(uint64(fee))
 }
@@ -674,7 +690,11 @@ func (k KVStore) GetTHORNamePerBlockFee(ctx cosmos.Context) cosmos.Uint {
 // DollarConfigInRune returns the dollar denominated config value in RUNE. If the RUNE
 // price feed returns zero, the USD value will be returned.
 func (k KVStore) DollarConfigInRune(ctx cosmos.Context, value constants.ConstantName) cosmos.Uint {
-	usd := cosmos.SafeUintFromInt64(k.GetConfigInt64(ctx, value))
+	return k.dollarsInRune(ctx, k.GetConfigInt64(ctx, value))
+}
+
+func (k KVStore) dollarsInRune(ctx cosmos.Context, usdValue int64) cosmos.Uint {
+	usd := cosmos.SafeUintFromInt64(usdValue)
 	runeUSDPrice := k.DollarsPerRune(ctx)
 	if !runeUSDPrice.IsZero() {
 		runeValue := usd.MulUint64(common.One).Quo(runeUSDPrice)

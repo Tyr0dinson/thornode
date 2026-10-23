@@ -54,9 +54,9 @@ func withdraw(ctx cosmos.Context, msg MsgWithdrawLiquidity, mgr Manager) (cosmos
 	}
 
 	// fail if the last add height less than the lockup period in the past
-	height := ctx.BlockHeight()
-	lockupBlocks := mgr.Keeper().GetConfigInt64(ctx, constants.LiquidityLockUpBlocks)
-	if height < (lp.LastAddHeight + lockupBlocks) {
+	// in reference blocks of wall-clock time since the last add
+	lockupBlocks := mgr.Keeper().GetConfigInt64Ref(ctx, constants.LiquidityLockUpBlocks)
+	if mgr.Keeper().RefBlocksSince(ctx, lp.LastAddHeight) < lockupBlocks {
 		return cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), errWithdrawLockup
 	}
 

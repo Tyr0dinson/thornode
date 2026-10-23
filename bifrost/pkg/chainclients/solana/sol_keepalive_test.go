@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 	. "gopkg.in/check.v1"
 
+	"gitlab.com/thorchain/thornode/v3/bifrost/blocktime"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/solana/types"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pubkeymanager"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
@@ -14,6 +15,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/config"
+	"gitlab.com/thorchain/thornode/v3/constants"
 )
 
 func TestKeepAliveDue(t *testing.T) {
@@ -39,6 +41,20 @@ func TestKeepAliveDue(t *testing.T) {
 
 	// current slot behind newest signature (RPC lag): not due
 	require.False(t, keepAliveDue(999_999, 1_000_000, refreshBlocks, slotsPerThorBlock))
+}
+
+// SignatureRefreshBlocks is a mimir in reference blocks (6s each), so the
+// refresh threshold is a fixed span of Solana slots: it does not change when
+// BLOCKTIMEMS changes THORChain's block time.
+func TestKeepAliveDueIgnoresBlockTime(t *testing.T) {
+	refreshBlocks := int64(14400)
+	threshold := uint64(refreshBlocks) * solSlotsPerThorchainBlock()
+	t.Cleanup(func() { blocktime.Set(constants.ThorchainBlockTime.Milliseconds()) })
+	for _, ms := range []int64{constants.ThorchainBlockTime.Milliseconds(), constants.ThorchainBlockTime.Milliseconds() / 2} {
+		blocktime.Set(ms)
+		require.False(t, keepAliveDue(1_000_000+threshold, 1_000_000, refreshBlocks))
+		require.True(t, keepAliveDue(1_000_000+threshold+1, 1_000_000, refreshBlocks))
+	}
 }
 
 // TestKeepAliveThorBoundary covers the convergence mechanism: every member derives

@@ -58,4 +58,8 @@ message QueryNetworkResponse {
   // indicates whether an active Asgard vault currently has spendable XMR funds
   bool xmr_active_vault_ready = 18
       [ (gogoproto.jsontag) = "xmr_active_vault_ready" ];
+  // the effective block time in milliseconds: the BLOCKTIMEMS target in force
+  // for this block, or the network's default block time while it is unset; a
+  // string, as are the other network fields
+  string block_time_ms = 19 [ (gogoproto.jsontag) = "block_time_ms" ];
 }

@@ -57,7 +57,7 @@ func applyTxInAttestation(
 
 	observeSlashPoints := mgr.GetConstants().GetInt64Value(constants.ObserveSlashPoints)
 	lackOfObservationPenalty := mgr.GetConstants().GetInt64Value(constants.LackOfObservationPenalty)
-	observeFlex := k.GetConfigInt64(ctx, constants.ObservationDelayFlexibility)
+	observeFlex := k.GetConfigInt64Ref(ctx, constants.ObservationDelayFlexibility)
 
 	slashCtx := ctx.WithContext(context.WithValue(ctx.Context(), constants.CtxMetricLabels, []metrics.Label{
 		telemetry.NewLabel("reason", "failed_observe_txin"),
@@ -122,7 +122,7 @@ func applyTxInAttestation(
 	// or as the observation that forms it, observed the tx in time: refund the
 	// penalty and excuse it, as if its final observation had come first. Its
 	// observe point is still settled by final consensus.
-	if lateFinalObservationExcused(voter, tx, signer, ctx.BlockHeight(), observeFlex) &&
+	if lateFinalObservationExcused(ctx, k, voter, tx, signer, observeFlex) &&
 		inboundConsensusMatches(&voter, nas, tx) {
 		voter.ExcusedObservers = append(voter.ExcusedObservers, signer.String())
 		slasher.DecSlashPoints(slashCtx, lackOfObservationPenalty, signer)
@@ -159,7 +159,7 @@ func applyTxInAttestation(
 			voter.RecordObserveSigners(signers)
 			voter.ExcusedObservers = nil
 			queueObservationTally(ctx, k, observationTallyKindTxIn, tx.Tx.Chain, tx.Tx.ID.String())
-		case ctx.BlockHeight() <= (voter.FinalisedHeight+observeFlex) &&
+		case withinObservationFlex(ctx, k, voter.FinalisedHeight, observeFlex) &&
 			voter.Tx.IsFinal() == tx.IsFinal() &&
 			inboundConsensusMatches(&voter, nas, tx) &&
 			!voter.Tx.HasSigned(signer):
@@ -169,7 +169,7 @@ func applyTxInAttestation(
 			// but only when the tx signer are voting is the tx that already reached consensus
 			slasher.DecSlashPoints(slashCtx, observeSlashPoints+lackOfObservationPenalty, signer)
 			attResult = "late"
-		case ctx.BlockHeight() <= (voter.FinalisedHeight+observeFlex) &&
+		case withinObservationFlex(ctx, k, voter.FinalisedHeight, observeFlex) &&
 			!tx.IsFinal() && firstInTier &&
 			voter.CreditsAcrossFinality(tx) &&
 			inboundConsensusMatches(&voter, nas, tx):
@@ -205,7 +205,7 @@ func applyTxInAttestation(
 			// Persist the credited signer set, including legacy XMR observers,
 			// so later observations cannot collect the same consensus credit again.
 			voter.RecordObserveSigners(signers)
-		} else if ctx.BlockHeight() <= (voter.Height+observeFlex) &&
+		} else if withinObservationFlex(ctx, k, voter.Height, observeFlex) &&
 			voter.Tx.IsFinal() == tx.IsFinal() &&
 			inboundConsensusMatches(&voter, nas, tx) &&
 			!voter.Tx.HasSigned(signer) {
@@ -735,7 +735,7 @@ func applyTxOutAttestation(
 
 	observeSlashPoints := mgr.GetConstants().GetInt64Value(constants.ObserveSlashPoints)
 	lackOfObservationPenalty := mgr.GetConstants().GetInt64Value(constants.LackOfObservationPenalty)
-	observeFlex := k.GetConfigInt64(ctx, constants.ObservationDelayFlexibility)
+	observeFlex := k.GetConfigInt64Ref(ctx, constants.ObservationDelayFlexibility)
 	ok := false
 
 	slashCtx := ctx.WithContext(context.WithValue(ctx.Context(), constants.CtxMetricLabels, []metrics.Label{
@@ -806,7 +806,7 @@ func applyTxOutAttestation(
 	}
 
 	// A late final observation of non-final consensus, as on the inbound path.
-	if lateFinalObservationExcused(voter, tx, signer, ctx.BlockHeight(), observeFlex) &&
+	if lateFinalObservationExcused(ctx, k, voter, tx, signer, observeFlex) &&
 		outboundConsensusMatches(&voter, nas, tx) {
 		voter.ExcusedObservers = append(voter.ExcusedObservers, signer.String())
 		slasher.DecSlashPoints(slashCtx, lackOfObservationPenalty, signer)
@@ -862,7 +862,7 @@ func applyTxOutAttestation(
 			voter.RecordObserveSigners(signers)
 			voter.ExcusedObservers = nil
 			queueObservationTally(ctx, k, observationTallyKindTxOut, tx.Tx.Chain, tx.Tx.ID.String())
-		case ctx.BlockHeight() <= (voter.FinalisedHeight+observeFlex) &&
+		case withinObservationFlex(ctx, k, voter.FinalisedHeight, observeFlex) &&
 			voter.Tx.IsFinal() == tx.IsFinal() &&
 			outboundConsensusMatches(&voter, nas, tx) &&
 			!voter.Tx.HasSigned(signer):
@@ -871,7 +871,7 @@ func applyTxOutAttestation(
 			// event the tx had been processed , given the signer just a bit late , so we still take away their slash points
 			slasher.DecSlashPoints(slashCtx, observeSlashPoints+lackOfObservationPenalty, signer)
 			attResult = "late"
-		case ctx.BlockHeight() <= (voter.FinalisedHeight+observeFlex) &&
+		case withinObservationFlex(ctx, k, voter.FinalisedHeight, observeFlex) &&
 			!tx.IsFinal() && firstInTier &&
 			voter.CreditsAcrossFinality(tx) &&
 			outboundConsensusMatches(&voter, nas, tx):
@@ -926,7 +926,7 @@ func applyTxOutAttestation(
 			// not refund the same node a second time when its own gas-used
 			// observation arrives after consensus has already formed.
 			voter.RecordObserveSigners(signers)
-		} else if ctx.BlockHeight() <= (voter.Height+observeFlex) &&
+		} else if withinObservationFlex(ctx, k, voter.Height, observeFlex) &&
 			voter.Tx.IsFinal() == tx.IsFinal() &&
 			voter.Tx.EqualsOutboundObservationCredit(tx) &&
 			!voter.Tx.HasSigned(signer) {
@@ -1024,9 +1024,9 @@ func lateObserveRefund(voter ObservedTxVoter, signer cosmos.AccAddress, observeS
 // followed, from a node charged the lack penalty there: one that neither signed
 // the consensus tx nor was already excused. The caller checks that tx matches
 // the consensus tx.
-func lateFinalObservationExcused(voter ObservedTxVoter, tx common.ObservedTx, signer cosmos.AccAddress, height, observeFlex int64) bool {
+func lateFinalObservationExcused(ctx cosmos.Context, k keeper.Keeper, voter ObservedTxVoter, tx common.ObservedTx, signer cosmos.AccAddress, observeFlex int64) bool {
 	return tx.IsFinal() && isNonFinalConsensus(voter.Tx) &&
-		height <= voter.Height+observeFlex &&
+		withinObservationFlex(ctx, k, voter.Height, observeFlex) &&
 		voter.CreditsAcrossFinality(tx) &&
 		!voter.Tx.HasSigned(signer) && !voter.IsExcusedObserver(signer)
 }
@@ -1916,7 +1916,9 @@ func findOriginalMemoForOutbound(ctx cosmos.Context, mgr Manager, tx common.Obse
 	}
 
 	k := mgr.Keeper()
-	signingTransPeriod := k.GetConfigInt64(ctx, constants.SigningTransactionPeriod)
+	// in reference blocks: the search window is measured in wall-clock time,
+	// matching LackSigning across a block time change
+	signingTransPeriod := k.GetConfigInt64Ref(ctx, constants.SigningTransactionPeriod)
 	searchPeriod := signingTransPeriod
 	switch {
 	case tx.Tx.Chain.Equals(common.XMRChain):
@@ -1929,7 +1931,7 @@ func findOriginalMemoForOutbound(ctx cosmos.Context, mgr Manager, tx common.Obse
 
 	// Search recent TxOut blocks for matching TxOutItem
 	// Use the same range logic as handler_common_outbound.go
-	earliestHeight := ctx.BlockHeight() - searchPeriod
+	earliestHeight := k.RefWindowStart(ctx, searchPeriod)
 	if earliestHeight < 1 {
 		earliestHeight = 1
 	}
@@ -2142,8 +2144,8 @@ func lookupMemoFromReference(ctx cosmos.Context, mgr Manager, asset common.Asset
 			return result
 		}
 
-		ttl := mgr.Keeper().GetConfigInt64(ctx, constants.MemolessTxnTTL)
-		if !refMemo.IsExpired(ctx.BlockHeight(), ttl) {
+		ttl := mgr.Keeper().GetConfigInt64Ref(ctx, constants.MemolessTxnTTL)
+		if !referenceMemoExpired(ctx, mgr.Keeper(), refMemo, ttl) {
 			// Check usage limit
 			maxUse := mgr.Keeper().GetConfigInt64(ctx, constants.MemolessTxnMaxUse)
 			if maxUse > 0 && refMemo.GetUsageCount() >= maxUse {
@@ -2280,4 +2282,12 @@ func ExtractReferenceFromAmount(ctx cosmos.Context, mgr Manager, asset common.As
 	}
 
 	return leadingZeros(txnRefLength, fmt.Sprintf("%d", refNum)), nil
+}
+
+// withinObservationFlex reports whether this block is within refFlex reference
+// blocks (ObservationDelayFlexibility) of wall-clock time after height, the
+// window in which a late observation still counts: height + flex >= now without
+// a block time change.
+func withinObservationFlex(ctx cosmos.Context, k keeper.Keeper, height, refFlex int64) bool {
+	return k.RefBlocksSince(ctx, height) <= refFlex
 }

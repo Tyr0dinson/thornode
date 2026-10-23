@@ -28,6 +28,7 @@ import (
 
 	"github.com/ethereum/go-ethereum"
 	"gitlab.com/thorchain/thornode/v3/bifrost/blockscanner"
+	"gitlab.com/thorchain/thornode/v3/bifrost/blocktime"
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/evm"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/runners"
@@ -523,8 +524,8 @@ func (c *EVMClient) solvencyRunnerBackoff() time.Duration {
 	// Use the chain block time for fast chains so the periodic runner does not skip
 	// modulo-based solvency report heights. Fall back to THORChain block time.
 	dur := time.Duration(c.cfg.ApproximateBlockMilliseconds()) * time.Millisecond
-	if dur <= 0 || dur > constants.ThorchainBlockTime {
-		return constants.ThorchainBlockTime
+	if dur <= 0 || dur > blocktime.Get() {
+		return 0 // the runner waits one THORChain block
 	}
 	return dur
 }

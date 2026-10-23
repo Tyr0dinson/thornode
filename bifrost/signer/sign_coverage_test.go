@@ -64,6 +64,10 @@ func (b *mockSignBridge) GetBlockHeight() (int64, error) {
 	return b.blockHeight, b.blockHeightErr
 }
 
+func (b *mockSignBridge) GetBlockTime() (int64, constants.BlockTimeHistory, error) {
+	return constants.ThorchainBlockTime.Milliseconds(), nil, nil
+}
+
 func (b *mockSignBridge) GetConstants() (map[string]int64, error) {
 	if b.constantsErr != nil {
 		return nil, b.constantsErr
@@ -1791,6 +1795,10 @@ type mockSignBridgeWithCallback struct {
 
 func (b *mockSignBridgeWithCallback) GetBlockHeight() (int64, error) {
 	return b.blockHeight, nil
+}
+
+func (b *mockSignBridgeWithCallback) GetBlockTime() (int64, constants.BlockTimeHistory, error) {
+	return constants.ThorchainBlockTime.Milliseconds(), nil, nil
 }
 
 func (b *mockSignBridgeWithCallback) GetConstants() (map[string]int64, error) {

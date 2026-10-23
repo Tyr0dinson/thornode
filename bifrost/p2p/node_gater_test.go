@@ -118,6 +118,10 @@ func (m *MockThorchainBridge) GetConfig() config.BifrostClientConfiguration {
 	return config.BifrostClientConfiguration{}
 }
 
+func (m *MockThorchainBridge) GetBlockTime() (int64, constants.BlockTimeHistory, error) {
+	return constants.ThorchainBlockTime.Milliseconds(), nil, nil
+}
+
 func (m *MockThorchainBridge) GetConstants() (map[string]int64, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()

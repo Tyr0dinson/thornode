@@ -53,15 +53,22 @@ func (vm *ValidatorMgr) BeginBlock(ctx cosmos.Context, mgr Manager, existingVali
 	}
 
 	lastChurnHeight := getLastChurnHeight(ctx, vm.k)
-	churnInterval := vm.k.GetConfigInt64(ctx, constants.ChurnInterval)
-	churnRetryInterval := vm.k.GetConfigInt64(ctx, constants.ChurnRetryInterval)
-	// Only compute retry tick if the interval is valid and past the scheduled churn height
+	// The churn schedule is wall-clock time since the last churn, in reference
+	// blocks: the regular churn fires in the block its age reaches
+	// ChurnInterval, and retries each time it passes another ChurnRetryInterval.
+	// Without a block time change these are lastChurnHeight + ChurnInterval and
+	// every ChurnRetryInterval blocks after it.
+	churnInterval := vm.k.GetConfigInt64Ref(ctx, constants.ChurnInterval)
+	churnRetryInterval := vm.k.GetConfigInt64Ref(ctx, constants.ChurnRetryInterval)
+	age := vm.k.RefBlocksSince(ctx, lastChurnHeight)
+	prevAge := vm.k.RefBlocksSince(ctx.WithBlockHeight(ctx.BlockHeight()-1), lastChurnHeight)
+	// Only compute retry tick if the interval is valid and past the scheduled churn
 	onChurnTick := false
-	if churnRetryInterval > 0 && ctx.BlockHeight() > lastChurnHeight+churnInterval {
-		onChurnTick = (ctx.BlockHeight()-lastChurnHeight-churnInterval)%churnRetryInterval == 0
+	if churnRetryInterval > 0 && age >= churnInterval+churnRetryInterval {
+		onChurnTick = (age-churnInterval)/churnRetryInterval > max(prevAge-churnInterval, 0)/churnRetryInterval
 	}
 	// Allow regular churns to proceed regardless of churnRetryInterval
-	isRegularChurn := lastChurnHeight+churnInterval == ctx.BlockHeight()
+	isRegularChurn := prevAge < churnInterval && age >= churnInterval
 	if !onChurnTick && !isRegularChurn {
 		return nil
 	}
@@ -103,11 +110,11 @@ func (vm *ValidatorMgr) BeginBlock(ctx cosmos.Context, mgr Manager, existingVali
 		expectedActiveVaults++
 	}
 	incompleteChurnCheck := len(vaults) != expectedActiveVaults
-	oldVaultCheck := ctx.BlockHeight()-lastChurnHeight > churnInterval
+	oldVaultCheck := age > churnInterval
 	retryChurn := (oldVaultCheck || incompleteChurnCheck) && onChurnTick
 
 	// skip churn if any active chain is halted
-	shouldChurn := lastChurnHeight+churnInterval == ctx.BlockHeight() || retryChurn
+	shouldChurn := isRegularChurn || retryChurn
 	if !shouldChurn {
 		return nil
 	}
@@ -203,7 +210,11 @@ func (vm *ValidatorMgr) hasPendingKeygen(ctx cosmos.Context, keygenType thortype
 	if keygenType == AsgardKeygen {
 		lookback = max(lookback, keygenResultValidityBlocks(ctx, vm.k, XMRMonovaultKeygen))
 	}
-	startHeight := ctx.BlockHeight() - lookback
+	// the oldest height the validity check below can still accept: younger
+	// than lookback+1 reference blocks (RefBlocksSince rounds down); now -
+	// lookback without a block time change
+	refMs := constants.ThorchainBlockTime.Milliseconds()
+	startHeight := vm.k.GetBlockTimeHistory(ctx).HeightAgo(ctx.BlockHeight(), (lookback+1)*refMs, refMs) + 1
 	if startHeight < genesisBlockHeight {
 		startHeight = genesisBlockHeight
 	}
@@ -242,7 +253,7 @@ func (vm *ValidatorMgr) hasPendingKeygen(ctx cosmos.Context, keygenType thortype
 			// same window, so a result can no longer finalize a vault in the block
 			// the retry is scheduled, which stops the retry double-triggering a live
 			// keygen.
-			if ctx.BlockHeight()-height > keygenResultValidityBlocksForBlock(ctx, vm.k, keygen.Type, keygenBlock) {
+			if vm.k.RefBlocksSince(ctx, height) > keygenResultValidityBlocksForBlock(ctx, vm.k, keygen.Type, keygenBlock) {
 				continue
 			}
 			return true, nil
@@ -1015,8 +1026,10 @@ func (vm *ValidatorMgr) processRagnarok(ctx cosmos.Context, mgr Manager) error {
 }
 
 func (vm *ValidatorMgr) getPendingTxOut(ctx cosmos.Context) (int64, error) {
-	signingTransactionPeriod := vm.k.GetConstants().GetInt64Value(constants.SigningTransactionPeriod)
-	startHeight := ctx.BlockHeight() - signingTransactionPeriod
+	// the period in wall-clock time, so outbounds scheduled before a block
+	// time change still count until LackSigning reschedules them
+	// analyze-ignore(unscaled-config): RefWindowStart takes reference blocks
+	startHeight := vm.k.RefWindowStart(ctx, vm.k.GetConstants().GetInt64Value(constants.SigningTransactionPeriod))
 	count := int64(0)
 	for height := startHeight; height <= ctx.BlockHeight(); height++ {
 		txs, err := vm.k.GetTxOut(ctx, height)
@@ -1801,8 +1814,9 @@ func (vm *ValidatorMgr) markBadActor(ctx cosmos.Context, minSlashPointsForBadVal
 func (vm *ValidatorMgr) markLowVersionValidators(ctx cosmos.Context) error {
 	// Only mark low version validators later than ChurnOutForLowVersionBlocks since the MinJoinVersion last changed.
 	_, minJoinlastHeight := vm.k.GetMinJoinLast(ctx)
-	churnOutForLowVersionBlocks := vm.k.GetConfigInt64(ctx, constants.ChurnOutForLowVersionBlocks)
-	if ctx.BlockHeight() < minJoinlastHeight+churnOutForLowVersionBlocks {
+	// the grace is wall-clock time since MinJoinVersion changed, in reference blocks
+	churnOutForLowVersionBlocks := vm.k.GetConfigInt64Ref(ctx, constants.ChurnOutForLowVersionBlocks)
+	if vm.k.RefBlocksSince(ctx, minJoinlastHeight) < churnOutForLowVersionBlocks {
 		return nil
 	}
 
