@@ -701,6 +701,9 @@ func TestGRPCIdentity(t *testing.T) {
 		if (err != nil) != tc.wantErr {
 			t.Fatalf("grpcIdentity(%q,%q,%q): err=%v, wantErr=%v", tc.rpc, tc.grpc, tc.expected, err, tc.wantErr)
 		}
+		if err != nil && !errors.Is(err, endpoints.ErrIdentityMismatch) {
+			t.Fatalf("grpcIdentity(%q,%q,%q): error must wrap ErrIdentityMismatch, got %v", tc.rpc, tc.grpc, tc.expected, err)
+		}
 		if got != tc.want {
 			t.Fatalf("grpcIdentity(%q,%q,%q)=%q, want %q", tc.rpc, tc.grpc, tc.expected, got, tc.want)
 		}
@@ -771,8 +774,8 @@ func (s *CosmosTestSuite) TestGRPCHostOnAnotherNetworkIsAnIdentityRejection(c *C
 	_, err := NewCosmosClient(s.thorKeys, cfg, nil, s.bridge, s.m, nil)
 	c.Assert(err, ErrorMatches, `(?s).*priority-1 endpoint a reports identity "theta-testnet-001" but expected_identity is "cosmoshub-4".*`)
 
-	// legacy flat config: not pinned, so the disagreement leaves the endpoint
-	// unverified (and it keeps serving, as a single legacy endpoint always did)
+	// legacy flat config: not pinned, so the disagreement cannot name the right
+	// network; the endpoint is disabled rather than serving from an unknown one
 	legacy := config.BifrostChainConfiguration{
 		ChainID:        common.GAIAChain,
 		CosmosChainID:  "cosmoshub-4",
@@ -784,8 +787,8 @@ func (s *CosmosTestSuite) TestGRPCHostOnAnotherNetworkIsAnIdentityRejection(c *C
 	client, err := NewCosmosClient(s.thorKeys, legacy, nil, s.bridge, s.m, nil)
 	c.Assert(err, IsNil)
 	e := client.EndpointManager().Entry("primary")
-	c.Assert(e.IdentityVerified(), Equals, false)
-	c.Assert(e.Usable(), Equals, true)
+	c.Assert(e.State(), Equals, endpoints.StateDisabled)
+	c.Assert(e.Usable(), Equals, false)
 
 	// agreeing halves verify normally
 	okHost, stopOK := startNodeInfoGRPC(c, "cosmoshub-4")

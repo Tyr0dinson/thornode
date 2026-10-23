@@ -231,7 +231,10 @@ func NewCosmosClient(
 						return perr
 					}
 					if id := endpointMgr.Entry(endpointName).Identity(); id != "" && got != "" && got != id {
-						return fmt.Errorf("grpc host is on network %q but the endpoint is verified as %q", got, id)
+						// the gRPC host was unreachable when the endpoint was verified
+						// from its RPC host alone and now proves to be another network:
+						// the manager disables the endpoint on this error
+						return fmt.Errorf("%w: cosmos_grpc_host is on network %q but the endpoint is verified as %q", endpoints.ErrIdentityMismatch, got, id)
 					}
 					return nil
 				},
@@ -246,7 +249,11 @@ func NewCosmosClient(
 					id, ierr := grpcIdentity(rpcNetwork, got, wantNetwork)
 					if ierr != nil {
 						logger.Error().Err(ierr).Str("endpoint", endpointName).
-							Msg("endpoint rpc_host and cosmos_grpc_host disagree on the network; the endpoint stays unverified")
+							Msg("endpoint rpc_host and cosmos_grpc_host disagree on the network; disabling the endpoint")
+					} else if wantNetwork == "" && cfg.CosmosChainID != "" && id != cfg.CosmosChainID {
+						// legacy flat config: the check against cosmos_chain_id is advisory
+						logger.Error().Str("endpoint", endpointName).Str("network", id).Str("cosmos_chain_id", cfg.CosmosChainID).
+							Msg("endpoint reports a different network than cosmos_chain_id; set endpoints or expected_identity to make this fatal")
 					}
 					return id, ierr
 				},
@@ -351,9 +358,9 @@ func NewCosmosClient(
 // its gRPC host into the identity the endpoint manager verifies. The two must agree
 // (a gRPC host that reports no network is trusted to match). With an expected
 // identity, a half on another network is reported as that network, so the endpoint
-// is disabled, or fatal at startup for priority 1. Without one, a disagreement
-// leaves the endpoint unverified (an error) rather than letting either half latch
-// the reference identity.
+// is disabled, or fatal at startup for priority 1. Without one, a disagreement is an
+// ErrIdentityMismatch: the endpoint is disabled rather than letting either half
+// latch the reference identity or serve from a network bifrost cannot name.
 func grpcIdentity(rpcNetwork, grpcNetwork, expected string) (string, error) {
 	switch {
 	case grpcNetwork == "" || grpcNetwork == rpcNetwork:
@@ -364,7 +371,7 @@ func grpcIdentity(rpcNetwork, grpcNetwork, expected string) (string, error) {
 		}
 		return grpcNetwork, nil
 	default:
-		return "", fmt.Errorf("rpc_host reports network %q but cosmos_grpc_host reports %q", rpcNetwork, grpcNetwork)
+		return "", fmt.Errorf("%w: rpc_host reports network %q but cosmos_grpc_host reports %q", endpoints.ErrIdentityMismatch, rpcNetwork, grpcNetwork)
 	}
 }
 

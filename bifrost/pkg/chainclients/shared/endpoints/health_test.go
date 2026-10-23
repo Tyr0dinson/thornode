@@ -683,3 +683,44 @@ func (s *HealthSuite) TestIntegrityPluralityWithoutMajorityIsSkipped(c *C) {
 	c.Assert(m.Entry("z").State(), Not(Equals), endpoints.StateUnhealthy)
 	c.Assert(m.Entry("x").State(), Equals, endpoints.StateUnhealthy)
 }
+
+// A probe that proves the endpoint serves another network (ErrIdentityMismatch) gets
+// the endpoint disabled, at bootstrap or later, instead of a liveness strike; with
+// expected_identity set it is fatal for the priority-1 endpoint.
+func (s *HealthSuite) TestIdentityMismatchDisablesTheEndpoint(c *C) {
+	cfg := healthCfg()
+	mismatch := fmt.Errorf("%w: grpc host is on another network", endpoints.ErrIdentityMismatch)
+
+	// at bootstrap, a backup on another network is disabled
+	a := &fakeProbe{name: "a", height: 100, identity: "g"}
+	b := &fakeProbe{name: "b", height: 100, identity: "g", err: mismatch}
+	m, ps := newHealthMgr(c, cfg, nil, a, b)
+	c.Assert(m.Bootstrap(ctxBg(), ps), IsNil)
+	c.Assert(m.Entry("b").State(), Equals, endpoints.StateDisabled)
+	c.Assert(m.Entry("a").State(), Equals, endpoints.StateHealthy)
+
+	// later: an endpoint verified from one host alone proves the other host wrong
+	a2 := &fakeProbe{name: "a", height: 100, identity: "g"}
+	b2 := &fakeProbe{name: "b", height: 100, identity: "g"}
+	m, ps = newHealthMgr(c, cfg, nil, a2, b2)
+	c.Assert(m.Bootstrap(ctxBg(), ps), IsNil)
+	c.Assert(m.Entry("b").State(), Equals, endpoints.StateHealthy)
+	b2.set(100, mismatch)
+	m.Cycle(ctxBg())
+	c.Assert(m.Entry("b").State(), Equals, endpoints.StateDisabled)
+	c.Assert(m.Entry("b").Usable(), Equals, false)
+	c.Assert(names(m.ReadCandidates()), DeepEquals, []string{"a"})
+
+	// priority 1 with a pinned identity: fatal
+	a3 := &fakeProbe{name: "a", height: 100, identity: "g", err: mismatch}
+	b3 := &fakeProbe{name: "b", height: 100, identity: "g"}
+	m, ps = newHealthMgr(c, cfg, []endpoints.Option{endpoints.WithExpectedIdentity("g")}, a3, b3)
+	c.Assert(m.Bootstrap(ctxBg(), ps), ErrorMatches, ".*priority-1 endpoint a: .*another network.*")
+
+	// a single legacy endpoint is disabled rather than left serving an unknown network
+	a4 := &fakeProbe{name: "a", height: 100, identity: "g", err: mismatch}
+	m, ps = newHealthMgr(c, cfg, nil, a4)
+	c.Assert(m.Bootstrap(ctxBg(), ps), IsNil)
+	c.Assert(m.Entry("a").State(), Equals, endpoints.StateDisabled)
+	c.Assert(m.ReadCandidates(), HasLen, 0)
+}

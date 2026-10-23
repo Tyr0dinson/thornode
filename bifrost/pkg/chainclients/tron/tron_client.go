@@ -210,8 +210,8 @@ const tronIdentityDepth = 20
 // hash of the same block, so the two hosts serve the same network exactly when they
 // agree on it. With an expected identity a disagreement is reported as a distinct
 // identity, so the endpoint is disabled (fatal at startup for priority 1); without
-// one it is an error that leaves the endpoint unverified, never letting either host
-// latch the reference.
+// one it is an endpoints.ErrIdentityMismatch, which disables the endpoint as well,
+// so a misconfigured host pair never serves, even as the only endpoint.
 func tronIdentity(chainID, rpcHash, apiBlockID, expected string) (string, error) {
 	norm := func(h string) string { return strings.ToLower(strings.TrimPrefix(strings.TrimPrefix(h, "0x"), "0X")) }
 	if norm(rpcHash) == norm(apiBlockID) && norm(rpcHash) != "" {
@@ -220,7 +220,7 @@ func tronIdentity(chainID, rpcHash, apiBlockID, expected string) (string, error)
 	if expected != "" {
 		return fmt.Sprintf("%s (api_host block %s != rpc_host %s)", chainID, norm(apiBlockID), norm(rpcHash)), nil
 	}
-	return "", fmt.Errorf("api_host and rpc_host disagree on a recent block (api %q, rpc %q): different networks?", norm(apiBlockID), norm(rpcHash))
+	return "", fmt.Errorf("%w: api_host and rpc_host disagree on a recent block (api %q, rpc %q)", endpoints.ErrIdentityMismatch, norm(apiBlockID), norm(rpcHash))
 }
 
 // tronAPIIdentity is the CompoundProbe identity hook for one TRON endpoint: given
@@ -267,7 +267,7 @@ func tronAPIIdentity(name string, apiPost func(ctx context.Context, path, body s
 		id, ierr := tronIdentity(chainID, rpcHash, apiID, expected)
 		if ierr != nil {
 			logger.Error().Err(ierr).Str("endpoint", name).Int64("height", h).
-				Msg("endpoint api_host and rpc_host disagree on the network; the endpoint stays unverified")
+				Msg("endpoint api_host and rpc_host disagree on the network; disabling the endpoint")
 		}
 		return id, ierr
 	}

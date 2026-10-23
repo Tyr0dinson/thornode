@@ -3,6 +3,7 @@ package tron
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -193,6 +194,7 @@ func (s *TronTestSuite) TestAPIHostIdentityMustMatchRPCHost(c *C) {
 	defer rpc2.Close()
 	_, err = build(badAPI, rpc2, "")(context.Background(), "0x2b6653dc")
 	c.Assert(err, ErrorMatches, ".*disagree on a recent block.*")
+	c.Assert(errors.Is(err, endpoints.ErrIdentityMismatch), Equals, true) // disabled, even as the only endpoint
 	got, err = build(badAPI, rpc2, "0x2b6653dc")(context.Background(), "0x2b6653dc")
 	c.Assert(err, IsNil)
 	c.Assert(got, Not(Equals), "0x2b6653dc")
@@ -214,7 +216,7 @@ func (s *TronTestSuite) TestTronIdentity(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(got, Equals, "0x1")
 	_, err = tronIdentity("0x1", "0xabc", "def", "")
-	c.Assert(err, NotNil)
+	c.Assert(errors.Is(err, endpoints.ErrIdentityMismatch), Equals, true)
 	got, err = tronIdentity("0x1", "0xabc", "def", "0x1")
 	c.Assert(err, IsNil)
 	c.Assert(got, Equals, "0x1 (api_host block def != rpc_host abc)")

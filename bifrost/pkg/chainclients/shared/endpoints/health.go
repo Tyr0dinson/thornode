@@ -20,6 +20,26 @@ type probeResult struct {
 
 var errSkipped = errors.New("skipped")
 
+// ErrIdentityMismatch is returned (wrapped) by a probe when it has positively
+// established that the endpoint, or one of its hosts, serves another network than
+// the one it is verified as or configured for. The manager disables such an
+// endpoint permanently instead of treating the error as a liveness failure; for
+// the priority-1 endpoint with expected_identity set it fails startup.
+var ErrIdentityMismatch = errors.New("endpoint serves another network")
+
+// identityMismatch reports whether a probe result proved a network mismatch.
+func identityMismatch(r probeResult) bool {
+	return errors.Is(r.err, ErrIdentityMismatch) || errors.Is(r.idErr, ErrIdentityMismatch)
+}
+
+// mismatchReason is the one-line reason of a proven network mismatch.
+func mismatchReason(r probeResult) string {
+	if errors.Is(r.err, ErrIdentityMismatch) {
+		return r.err.Error()
+	}
+	return r.idErr.Error()
+}
+
 // Bootstrap probes every endpoint once (height + identity, concurrently, bounded by
 // health_check_timeout), establishes the reference identity, and selects the
 // highest-priority healthy endpoint as active.
@@ -40,6 +60,15 @@ func (m *Manager) Bootstrap(ctx context.Context, probes []Probe) error {
 	verified := make(map[string]string, len(m.entries))
 	for i, e := range m.entries {
 		r := results[i]
+		if identityMismatch(r) {
+			reason := mismatchReason(r)
+			if i == 0 && m.expectedIdentity != "" {
+				return fmt.Errorf("chain %s: priority-1 endpoint %s: %s; check the endpoint is on the right network", m.chain, e.Name, reason)
+			}
+			m.log.Error().Str("endpoint", e.Name).Str("reason", reason).Msg("endpoint proved to serve another network; disabling it permanently")
+			e.Disable(reason)
+			continue
+		}
 		switch {
 		case r.err != nil && errors.Is(r.err, ErrRateLimited):
 			m.log.Warn().Str("endpoint", e.Name).Msg("endpoint rate limited at startup; cooling down")
@@ -273,6 +302,15 @@ func (m *Manager) Cycle(ctx context.Context) {
 	// endpoint that happens to answer.
 	for i, e := range m.entries {
 		r := results[i]
+		if errors.Is(r.err, errSkipped) || e.State() == StateDisabled {
+			continue
+		}
+		if identityMismatch(r) {
+			reason := mismatchReason(r)
+			m.log.Error().Str("endpoint", e.Name).Str("reason", reason).Msg("endpoint proved to serve another network; disabling it permanently")
+			m.Disable(e.Name, reason)
+			continue
+		}
 		if e.IdentityVerified() || r.idErr != nil || r.identity == "" {
 			continue
 		}
@@ -341,7 +379,7 @@ func (m *Manager) Cycle(ctx context.Context) {
 	// 5. apply results per entry
 	for i, e := range m.entries {
 		r := results[i]
-		if errors.Is(r.err, errSkipped) {
+		if errors.Is(r.err, errSkipped) || e.State() == StateDisabled {
 			continue
 		}
 		if r.err != nil && errors.Is(r.err, ErrRateLimited) {
