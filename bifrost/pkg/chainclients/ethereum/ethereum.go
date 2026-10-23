@@ -144,6 +144,14 @@ func NewClient(thorKeys *thorclient.Keys,
 		return nil, fmt.Errorf("fail to dial ETH rpc: %w", err)
 	}
 	ethClient := failover.Client
+	// a later step failing must not leak the manager's context or the routed client
+	ok := false
+	defer func() {
+		if !ok {
+			failover.Manager.Stop()
+			ethClient.Close()
+		}
+	}()
 	chainID := failover.ChainID
 	activeID, err := getChainID(ethClient, cfg.BlockScanner.HTTPRequestTimeout)
 	if err != nil {
@@ -212,6 +220,7 @@ func NewClient(thorKeys *thorclient.Keys,
 	}
 	c.logger.Info().Msgf("local node ETH address %s", localNodeETHAddress)
 
+	ok = true
 	return c, nil
 }
 

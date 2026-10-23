@@ -49,9 +49,10 @@ func nullTxProxy(target string) *httptest.Server {
 
 // A broadcast made through one endpoint can be unknown to the endpoint that is active
 // when unstuck runs. The signer cache must not be cleared on that single "not found":
-// every endpoint is asked, and while one still holds the transaction the item is left
-// for a later round. Clearing it would re-sign the outbound at a new nonce while the
-// original is still live.
+// every endpoint is asked, the cancellation is built from the copy the holding
+// endpoint returns (same nonce, higher gas), and the cache entry survives until the
+// cancel is observed. Clearing the cache would re-sign the outbound at a new nonce
+// while the original is still live; giving up would leave the vault's nonce blocked.
 func (s *UnstuckTestSuite) TestUnstuckKeepsCacheWhileAnotherEndpointHoldsTheTx(c *C) {
 	config.Init()
 	active := nullTxProxy(s.server.URL)
@@ -101,11 +102,17 @@ func (s *UnstuckTestSuite) TestUnstuckKeepsCacheWhileAnotherEndpointHoldsTheTx(c
 	item := types.SignedTxItem{Hash: stuckTxID, Height: 800, VaultPubKey: e.kw.GetPubKey().String(), TxOutItem: &toi}
 	c.Assert(accessor.AddSignedTxItem(item), IsNil)
 
-	err = e.unstuckTx(zerolog.Nop(), item)
-	c.Assert(err, ErrorMatches, ".*alive on another endpoint.*")
+	// a second item queued behind it: already mined, so it is simply removed; it
+	// must not be blocked by the first
+	second := types.SignedTxItem{Hash: "0x96395fbdb39e33293999dc1a0a3b87c8a9e51185e177760d1482c2155bb35b87", Height: 800, VaultPubKey: e.kw.GetPubKey().String()}
+	c.Assert(accessor.AddSignedTxItem(second), IsNil)
+
+	c.Assert(e.unstuckTx(zerolog.Nop(), item), IsNil) // cancelled from the holder's copy
+	c.Assert(e.signerCacheManager.HasSigned(toi.CacheHash()), Equals, true)
+	c.Assert(accessor.AddSignedTxItem(item), IsNil)
 	e.unstuckAction()
 	items, err := accessor.GetSignedTxItems()
 	c.Assert(err, IsNil)
-	c.Assert(items, HasLen, 1) // left for a later round
+	c.Assert(items, HasLen, 0) // both processed
 	c.Assert(e.signerCacheManager.HasSigned(toi.CacheHash()), Equals, true)
 }

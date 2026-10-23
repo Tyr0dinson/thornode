@@ -7,6 +7,7 @@ import (
 
 	"github.com/ethereum/go-ethereum"
 	ecommon "github.com/ethereum/go-ethereum/common"
+	etypes "github.com/ethereum/go-ethereum/core/types"
 	ethclient "github.com/ethereum/go-ethereum/ethclient"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/endpoints"
@@ -64,4 +65,35 @@ func VerificationBudget(ctx context.Context, queries int) time.Duration {
 		per = time.Millisecond
 	}
 	return per
+}
+
+// FindTxEverywhere is LookupTxEverywhere that also hands back the transaction from
+// the first endpoint that knows it, with its pending flag. The unstuck path uses it:
+// when the active endpoint does not know a broadcast another endpoint still holds,
+// the cancellation must be built from that endpoint's copy (its nonce and gas
+// price) instead of giving up, or the vault's nonce stays blocked behind the
+// original. The result is LookupFound with a transaction, LookupNotFound when every
+// endpoint answered NotFound, or LookupAmbiguous (nil transaction) otherwise.
+func FindTxEverywhere(ctx context.Context, mgr *endpoints.Manager, client *ethclient.Client, hash ecommon.Hash, maxDown time.Duration) (*etypes.Transaction, bool, signercache.LookupResult) {
+	candidates := mgr.VerificationCandidates(maxDown)
+	if len(candidates) == 0 {
+		return nil, false, signercache.LookupAmbiguous
+	}
+	perEndpoint := VerificationBudget(ctx, len(candidates))
+	ambiguous := false
+	for _, e := range candidates {
+		ectx, cancel := context.WithTimeout(endpoints.PinContext(ctx, e.Name), perEndpoint)
+		tx, pending, err := client.TransactionByHash(ectx, hash)
+		cancel()
+		switch {
+		case err == nil && tx != nil:
+			return tx, pending, signercache.LookupFound
+		case err != nil && !errors.Is(err, ethereum.NotFound):
+			ambiguous = true
+		}
+	}
+	if ambiguous {
+		return nil, false, signercache.LookupAmbiguous
+	}
+	return nil, false, signercache.LookupNotFound
 }

@@ -142,6 +142,14 @@ func NewEVMClient(
 		return nil, fmt.Errorf("fail to dial EVM rpc: %w", err)
 	}
 	ethClient := failover.Client
+	// a later step failing must not leak the manager's context or the routed client
+	ok := false
+	defer func() {
+		if !ok {
+			failover.Manager.Stop()
+			ethClient.Close()
+		}
+	}()
 
 	rpcClient, err := evm.NewEthRPC(
 		ethClient,
@@ -245,6 +253,7 @@ func NewEVMClient(
 		Stringer("address", localNodeAddress).
 		Msg("local node address")
 
+	ok = true
 	return c, nil
 }
 

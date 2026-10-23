@@ -11,6 +11,7 @@ import (
 	etypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/rs/zerolog"
 
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/evm"
 	evmtypes "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/evm/types"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/signercache"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/signing"
@@ -106,6 +107,11 @@ func (c *EVMClient) unstuckAction() {
 		clog.Warn().Msg("attempting unstuck")
 
 		err = c.unstuckTx(clog, item)
+		if errors.Is(err, errUnstuckRetryLater) {
+			// nothing to keysign yet for this item; the ones behind it are independent
+			clog.Warn().Err(err).Msg("unstuck deferred")
+			continue
+		}
 		if err != nil {
 			clog.Err(err).Msg("failed to unstuck tx")
 			// Break on error so that if a keysign fails from members getting out of sync
@@ -121,30 +127,47 @@ func (c *EVMClient) unstuckAction() {
 	}
 }
 
+// errUnstuckRetryLater marks a stuck item that cannot be acted on this round
+// without risking a duplicate outbound (not every endpoint could say whether the
+// broadcast is still live). unstuckAction moves on to the next item instead of
+// stopping, since nothing was keysigned.
+var errUnstuckRetryLater = errors.New("unstuck deferred")
+
 // unstuckTx will re-broadcast the transaction for the given txid with a higher gas price.
 func (c *EVMClient) unstuckTx(clog zerolog.Logger, item evmtypes.SignedTxItem) error {
 	ctx, cancel := c.getTimeoutContext()
 	defer cancel()
 	tx, pending, err := c.ethClient.TransactionByHash(ctx, ecommon.HexToHash(item.Hash))
+	if err != nil && errors.Is(err, ethereum.NotFound) && c.endpointMgr != nil {
+		// The active endpoint does not know the transaction. With several endpoints
+		// the broadcast may sit only in the mempool of the endpoint that took it, so
+		// every endpoint is asked (pinned). Found elsewhere: the cancellation is built
+		// from that endpoint's copy, so the vault's nonce does not stay blocked behind
+		// the original. Absent everywhere: the signer cache is cleared so the outbound
+		// can be re-signed. Not every endpoint answered: the item is left for a later
+		// round, and the signer cache is kept, because clearing it on an incomplete
+		// answer could re-sign the outbound at a new nonce while the original is live.
+		var res signercache.LookupResult
+		tx, pending, res = evm.FindTxEverywhere(ctx, c.endpointMgr, c.ethClient, ecommon.HexToHash(item.Hash), c.getSignerCacheExpiry())
+		switch res {
+		case signercache.LookupFound:
+			err = nil
+			clog.Warn().Msg("transaction unknown to the active endpoint but alive on another; cancelling from that copy")
+		case signercache.LookupNotFound:
+			clog.Err(err).Msg("transaction not found on any endpoint")
+			// dropped from mempool or re-orged, remove from signer cache to resign
+			c.signerCacheManager.RemoveSigned(item.Hash)
+			return nil
+		default:
+			return fmt.Errorf("%w: transaction %s is unknown to the active endpoint and not every endpoint answered", errUnstuckRetryLater, item.Hash)
+		}
+	}
 	if err != nil {
 		if errors.Is(err, ethereum.NotFound) {
-			// The active endpoint does not know the transaction. With several endpoints
-			// the broadcast may sit only in the mempool of the endpoint that took it, so
-			// the signer cache is cleared only when every endpoint says the transaction
-			// is absent (verifyBroadcast asks each one, pinned); otherwise the item is
-			// retried later. Clearing the cache on one endpoint's answer would let the
-			// outbound be re-signed at a new nonce while the original is still live.
-			switch c.verifyBroadcast(item.Hash) {
-			case signercache.LookupNotFound:
-				clog.Err(err).Msg("transaction not found on any endpoint")
-				// dropped from mempool or re-orged, remove from signer cache to resign
-				c.signerCacheManager.RemoveSigned(item.Hash)
-				return nil
-			case signercache.LookupFound:
-				return fmt.Errorf("transaction %s is unknown to the active endpoint but alive on another endpoint; retrying later", item.Hash)
-			default:
-				return fmt.Errorf("transaction %s is unknown to the active endpoint and not every endpoint answered; retrying later", item.Hash)
-			}
+			clog.Err(err).Msg("transaction not found on chain")
+			// dropped from mempool or re-orged, remove from signer cache to resign
+			c.signerCacheManager.RemoveSigned(item.Hash)
+			return nil
 		}
 		return fmt.Errorf("fail to get transaction by txid: %s, error: %w", item.Hash, err)
 	}
