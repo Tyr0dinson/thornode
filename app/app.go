@@ -652,7 +652,9 @@ func NewChainApp(
 	// Commit runs on CometBFT's consensus goroutine just before it reads
 	// timeout_commit for the next height, so the BLOCKTIMEMS commit wait is
 	// set here. It only reads state, and only on a node whose consensus
-	// config is attached (cmd/thornode).
+	// config is attached (cmd/thornode). While the mimir is set it steers to
+	// the latched block time, which the durations are scaled to, not the raw
+	// mimir, which the latch may still be rate limiting toward.
 	app.SetPrecommiter(func(ctx sdk.Context) {
 		if !blocktime.Attached() {
 			return
@@ -660,6 +662,9 @@ func NewChainApp(
 		targetMs, mimirErr := app.ThorchainKeeper.GetMimir(ctx, constants.BlockTimeMs.String())
 		if mimirErr != nil {
 			targetMs = -1
+		}
+		if targetMs > 0 {
+			targetMs = app.ThorchainKeeper.GetBlockTimeMs(ctx)
 		}
 		blocktime.OnCommit(ctx.Logger(), targetMs, ctx.BlockHeader().Time)
 	})
