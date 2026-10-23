@@ -1143,7 +1143,7 @@ func (s *RPCSuite) TestZecClientTimeout(c *C) {
 }
 
 // ---------------------------------------------------------------------------
-// mockUTXOReader — minimal UTXOReader for fallback tests
+// mockUTXOReader is a minimal UTXOReader for fallback tests
 // ---------------------------------------------------------------------------
 
 type mockUTXOReader struct {

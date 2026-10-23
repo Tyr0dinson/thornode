@@ -55,7 +55,42 @@ func (c *Client) isAsgardAddress(addressToCheck string) bool {
 // Reorg Handling
 ////////////////////////////////////////////////////////////////////////////////////////
 
+// utxoReorgFix is one height's share of a reorg: the errata to report and the
+// repaired block meta to persist.
+type utxoReorgFix struct {
+	meta   *utxo.BlockMeta
+	errata []types.ErrataTx
+}
+
+// utxoReorgPlan is the work a detected reorg requires. It is computed without side
+// effects and committed only once the whole scan step has succeeded.
+type utxoReorgPlan struct {
+	fixes []utxoReorgFix
+	txIns []types.TxIn
+}
+
+// processReorg detects and resolves a reorg at block in one go: plan, rescan, commit.
+// FetchTxs uses the pieces directly so the current block is extracted before the
+// commit.
 func (c *Client) processReorg(block *btcjson.GetBlockVerboseTxResult) ([]types.TxIn, error) {
+	plan, err := c.planReorg(block)
+	if err != nil {
+		return nil, err
+	}
+	c.commitReorg(plan)
+	if plan == nil {
+		return nil, nil
+	}
+	return plan.txIns, nil
+}
+
+// planReorg compares the block's previous hash with the stored hash of the previous
+// height. On a reorg it re-confirms the observed transactions of every stored block
+// back to the common ancestor and rescans those blocks. It reports and persists
+// nothing (commitReorg does), and any lookup that cannot be answered aborts it, so
+// the scan step fails and is retried with the stored metas untouched: the next
+// attempt detects the same reorg and redoes all of it.
+func (c *Client) planReorg(block *btcjson.GetBlockVerboseTxResult) (*utxoReorgPlan, error) {
 	previousHeight := block.Height - 1
 	prevBlockMeta, err := c.temporalStorage.GetBlockMeta(previousHeight)
 	if err != nil {
@@ -77,115 +112,139 @@ func (c *Client) processReorg(block *btcjson.GetBlockVerboseTxResult) ([]types.T
 		Str("blockMetaHash", prevBlockMeta.BlockHash).
 		Msg("re-org detected")
 
-	blockHeights, err := c.reConfirmTx(block.Height)
+	fixes, err := c.planReConfirm(block.Height)
 	if err != nil {
-		c.log.Err(err).Msgf("fail to reprocess all txs")
+		return nil, fmt.Errorf("re-org at height %d cannot be resolved yet: %w", block.Height, err)
 	}
-	var txIns []types.TxIn
-	for _, height := range blockHeights {
+	plan := &utxoReorgPlan{fixes: fixes}
+	for _, fix := range fixes {
+		height := fix.meta.Height
 		c.log.Info().Int64("height", height).Msg("rescanning block")
-		var b *btcjson.GetBlockVerboseTxResult
-		b, err = c.getBlock(height)
-		if err != nil {
-			c.log.Err(err).Int64("height", height).Msg("fail to get block from RPC")
-			continue
+		b, berr := c.getBlock(height)
+		if berr != nil {
+			// extractTxs already marked the earlier rescans' txs as observed: undo
+			// that, or the retry of this step would skip them as reported before
+			c.untrackObserved(plan.txIns)
+			return nil, fmt.Errorf("rescan block %d: %w", height, berr)
 		}
-		var txIn types.TxIn
-		txIn, err = c.extractTxs(b)
-		if err != nil {
-			c.log.Err(err).Msgf("fail to extract txIn from block")
-			continue
+		// the repaired meta takes the hashes of the block actually rescanned, so the
+		// stored hash and the observations always describe the same block
+		fix.meta.PreviousHash = b.PreviousHash
+		fix.meta.BlockHash = b.Hash
+		txIn, xerr := c.extractTxs(b)
+		if xerr != nil {
+			c.untrackObserved(plan.txIns)
+			return nil, fmt.Errorf("rescan block %d: %w", height, xerr)
 		}
-		if len(txIn.TxArray) == 0 {
-			continue
+		if len(txIn.TxArray) > 0 {
+			plan.txIns = append(plan.txIns, txIn)
 		}
-		txIns = append(txIns, txIn)
 	}
-	return txIns, nil
+	return plan, nil
 }
 
-// reConfirmTx is triggered on detection of a re-org. It will walk backwards from the
-// provided height until it finds a block with a matching hash, returning a slice all
-// heights between the re-org height and the height of the common ancestor.
-func (c *Client) reConfirmTx(height int64) ([]int64, error) {
-	var rescanBlockHeights []int64
+// untrackObserved undoes the "observed" marks extractTxs set for txIns, when the scan
+// step that produced them is abandoned: the retry must emit them again.
+func (c *Client) untrackObserved(txIns []types.TxIn) {
+	for _, txIn := range txIns {
+		for _, item := range txIn.TxArray {
+			if err := c.temporalStorage.UntrackObservedTx(item.Tx); err != nil {
+				c.log.Err(err).Str("txid", item.Tx).Msg("fail to untrack observed tx of an abandoned scan step")
+			}
+		}
+	}
+}
 
+// planReConfirm walks back from height-1 until a stored block matches the chain,
+// re-confirming every observed customer transaction of the blocks that do not. It
+// reports and persists nothing. A transaction becomes an errata only on the
+// primary's positive "not found"; any lookup that cannot be answered aborts the
+// whole plan.
+func (c *Client) planReConfirm(height int64) ([]utxoReorgFix, error) {
 	// calculate the earliest look back height
 	earliestHeight := height - c.cfg.BlockScanner.MaxReorgRescanBlocks
 	if earliestHeight < 1 {
 		earliestHeight = 1
 	}
 
+	var fixes []utxoReorgFix
+	// the primary's "not found" is proof only once it has reached the reorg tip: a
+	// resyncing or lagging primary answers "not found" for everything above its own
+	primaryHeight := int64(-1)
 	// the current block is not yet in block meta, start from previous block
 	for i := height - 1; i >= earliestHeight; i-- {
 		blockMeta, err := c.temporalStorage.GetBlockMeta(i)
 		if err != nil {
 			return nil, fmt.Errorf("fail to get block meta %d from local storage: %w", i, err)
 		}
+		if blockMeta == nil {
+			continue // nothing stored at this height, nothing to re-confirm
+		}
 
 		hash, err := c.rpc.GetBlockHash(blockMeta.Height)
 		if err != nil {
-			c.log.Err(err).Msgf("fail to get block verbose tx result: %d", blockMeta.Height)
+			return nil, fmt.Errorf("fail to get block hash %d: %w", blockMeta.Height, err)
 		}
 		if strings.EqualFold(blockMeta.BlockHash, hash) {
 			break // we know about this block, everything prior is okay
 		}
 
 		c.log.Info().Int64("height", blockMeta.Height).Msg("re-confirming transactions")
-
-		var errataTxs []types.ErrataTx
-		pending := false
+		if len(blockMeta.CustomerTransactions) > 0 && primaryHeight < 0 {
+			ph, perr := c.rpc.GetBlockCountPrimary()
+			if perr != nil {
+				return nil, fmt.Errorf("cannot ask the primary its height: %w", perr)
+			}
+			if ph < height-1 {
+				return nil, fmt.Errorf("the primary is at height %d, below the reorg tip %d: its \"not found\" is not proof yet", ph, height-1)
+			}
+			primaryHeight = ph
+		}
+		fix := utxoReorgFix{meta: blockMeta}
+		var gone []string
 		for _, tx := range blockMeta.CustomerTransactions {
-			// check if the tx still exists in chain
 			switch c.confirmTx(tx) {
 			case txStillOnChain:
 				c.log.Info().Int64("height", blockMeta.Height).Str("txid", tx).Msg("transaction still exists")
-				continue
-			case txUnknown:
-				// the primary could not answer: neither errata nor "still exists" can be
-				// decided, so this height is left exactly as stored and re-run on the
-				// next block, when the stored hash still mismatches
-				pending = true
-				continue
+			case txGone:
+				c.log.Info().Int64("height", blockMeta.Height).Str("txid", tx).Msg("errata tx")
+				fix.errata = append(fix.errata, types.ErrataTx{
+					TxID:  common.TxID(tx),
+					Chain: c.cfg.ChainID,
+				})
+				gone = append(gone, tx)
+			default:
+				return nil, fmt.Errorf("height %d: cannot re-confirm tx %s, the primary did not answer", blockMeta.Height, tx)
 			}
+		}
 
-			// otherwise add it to the errata txs
-			c.log.Info().Int64("height", blockMeta.Height).Str("txid", tx).Msg("errata tx")
-			errataTxs = append(errataTxs, types.ErrataTx{
-				TxID:  common.TxID(tx),
-				Chain: c.cfg.ChainID,
-			})
-
+		for _, tx := range gone {
 			blockMeta.RemoveCustomerTransaction(tx)
 		}
-		if pending {
-			c.log.Warn().Int64("height", blockMeta.Height).
-				Msg("reorg re-confirmation pending: the primary could not answer; keeping the stored block meta and retrying on the next block")
-			continue
-		}
+		// the hashes are repaired from the rescanned block (planReorg)
+		blockMeta.BlockHash = hash
+		fixes = append(fixes, fix)
+	}
+	return fixes, nil
+}
 
-		if len(errataTxs) > 0 {
+// commitReorg reports the errata and persists the repaired block metas of a plan.
+// It runs only after every fallible step of the scan step has succeeded.
+func (c *Client) commitReorg(plan *utxoReorgPlan) {
+	if plan == nil {
+		return
+	}
+	for _, fix := range plan.fixes {
+		if len(fix.errata) > 0 {
 			c.globalErrataQueue <- types.ErrataBlock{
-				Height: blockMeta.Height,
-				Txs:    errataTxs,
+				Height: fix.meta.Height,
+				Txs:    fix.errata,
 			}
 		}
-
-		rescanBlockHeights = append(rescanBlockHeights, blockMeta.Height)
-
-		// update the stored block meta with the new block hash
-		var r *btcjson.GetBlockVerboseResult
-		r, err = c.rpc.GetBlockVerbose(hash)
-		if err != nil {
-			c.log.Err(err).Int64("height", blockMeta.Height).Msg("fail to get block verbose result")
-		}
-		blockMeta.PreviousHash = r.PreviousHash
-		blockMeta.BlockHash = r.Hash
-		if err = c.temporalStorage.SaveBlockMeta(blockMeta.Height, blockMeta); err != nil {
-			c.log.Err(err).Int64("height", blockMeta.Height).Msg("fail to save block meta of height")
+		if err := c.temporalStorage.SaveBlockMeta(fix.meta.Height, fix.meta); err != nil {
+			c.log.Err(err).Int64("height", fix.meta.Height).Msg("fail to save block meta of height")
 		}
 	}
-	return rescanBlockHeights, nil
 }
 
 // txConfirmation is the three-valued answer of confirmTx.
@@ -202,7 +261,8 @@ const (
 // proof: only the primary daemon is asked (it runs with txindex, and a fallback
 // that never saw the transaction would call it absent), and only its "not found"
 // answer counts. A transport failure, or a disabled primary, is txUnknown: the
-// caller leaves the height pending and asks again on the next block.
+// reorg plan is abandoned with nothing written, so the scan of the block fails and
+// is retried with the mismatch still detected.
 func (c *Client) confirmTx(txid string) txConfirmation {
 	_, err := c.rpc.GetRawTransactionPrimary(txid)
 	switch {

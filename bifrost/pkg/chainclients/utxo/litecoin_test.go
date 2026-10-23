@@ -875,6 +875,11 @@ func (s *LitecoinSuite) TestProcessReOrg(c *C) {
 	reOrgedTxIns, err := s.client.processReorg(&result)
 	c.Assert(err, IsNil)
 	c.Assert(reOrgedTxIns, IsNil)
+	// the primary has reached the reorg tip, so its "not found" is proof
+	savedCount := ltcChainRPCs["getblockcount"]
+	ltcChainRPCs["getblockcount"] = map[string]interface{}{"result": result.Height, "error": nil, "id": 3}
+	defer func() { ltcChainRPCs["getblockcount"] = savedCount }()
+
 	// add one UTXO which will trigger the re-org process next
 	previousHeight := result.Height - 1
 	blockMeta := utxo.NewBlockMeta(ttypes.GetRandomTxHash().String(), previousHeight, ttypes.GetRandomTxHash().String())

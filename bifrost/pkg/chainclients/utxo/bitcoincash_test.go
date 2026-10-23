@@ -876,6 +876,11 @@ func (s *BitcoinCashSuite) TestProcessReOrg(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(reOrgedTxs, IsNil)
 
+	// the primary has reached the reorg tip, so its "not found" is proof
+	savedCount := bchChainRPCs["getblockcount"]
+	bchChainRPCs["getblockcount"] = map[string]interface{}{"result": result.Height, "error": nil, "id": 3}
+	defer func() { bchChainRPCs["getblockcount"] = savedCount }()
+
 	// add one UTXO which will trigger the re-org process next
 	previousHeight := result.Height - 1
 	blockMeta := utxo.NewBlockMeta(ttypes.GetRandomTxHash().String(), previousHeight, ttypes.GetRandomTxHash().String())

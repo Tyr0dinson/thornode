@@ -257,7 +257,7 @@ func NewClient(
 // and returns them with the endpoint configs actually used (hostless or unparsable
 // endpoints are skipped and logged), so the endpoint manager matches the fallbacks.
 // Each fallback is a full rpc.Client pointing at another node daemon (self-hosted or an
-// external provider exposing the same RPC) — only read methods are routed to it during
+// external provider exposing the same RPC). Only read methods are routed to it during
 // failover, while writes always go to the primary.
 func buildUTXOFallbacks(endpointCfgs []config.ChainEndpointConfig, maxRetries int, timeout time.Duration, chain common.Chain, log zerolog.Logger) ([]rpc.UTXOReader, []config.ChainEndpointConfig) {
 	var (
@@ -538,21 +538,25 @@ func (c *Client) FetchTxs(height, chainHeight int64) (types.TxIn, error) {
 	}
 
 	c.updateCurrentBlockHeight(height)
-	reScannedTxs, err := c.processReorg(block)
+
+	// Reorg handling is planned first and committed last: errata, repaired block
+	// metas and the rescanned observations are reported and persisted only once every
+	// fallible step of this scan step has succeeded. If one fails nothing was
+	// committed and the rescans' observed marks are undone, so the retry of this
+	// height detects the reorg again and redoes all of it.
+	plan, err := c.planReorg(block)
 	if err != nil {
-		c.log.Err(err).Msg("fail to process re-org")
+		return txIn, fmt.Errorf("fail to process re-org: %w", err)
 	}
-	if len(reScannedTxs) > 0 {
-		for _, item := range reScannedTxs {
-			if len(item.TxArray) == 0 {
-				continue
-			}
-			txIn.TxArray = append(txIn.TxArray, item.TxArray...)
+	abandon := func() {
+		if plan != nil {
+			c.untrackObserved(plan.txIns)
 		}
 	}
 
 	blockMeta, err := c.temporalStorage.GetBlockMeta(block.Height)
 	if err != nil {
+		abandon()
 		return txIn, fmt.Errorf("fail to get block meta from storage: %w", err)
 	}
 	if blockMeta == nil {
@@ -563,8 +567,27 @@ func (c *Client) FetchTxs(height, chainHeight int64) (types.TxIn, error) {
 	}
 
 	if err = c.temporalStorage.SaveBlockMeta(block.Height, blockMeta); err != nil {
+		abandon()
 		return txIn, fmt.Errorf("fail to save block meta into storage: %w", err)
 	}
+
+	// extractTxs marks what it returns as observed and cannot fail after that, so it
+	// is the last fallible step before the commit
+	txInBlock, err := c.extractTxs(block)
+	if err != nil {
+		abandon()
+		return types.TxIn{}, fmt.Errorf("fail to extract txIn from block: %w", err)
+	}
+	c.commitReorg(plan)
+	if plan != nil {
+		for _, item := range plan.txIns {
+			if len(item.TxArray) == 0 {
+				continue
+			}
+			txIn.TxArray = append(txIn.TxArray, item.TxArray...)
+		}
+	}
+
 	pruneHeight := height - int64(c.cfg.UTXO.BlockCacheCount)
 	if pruneHeight > 0 {
 		defer func() {
@@ -574,11 +597,6 @@ func (c *Client) FetchTxs(height, chainHeight int64) (types.TxIn, error) {
 		}()
 	}
 
-	var txInBlock types.TxIn
-	txInBlock, err = c.extractTxs(block)
-	if err != nil {
-		return types.TxIn{}, fmt.Errorf("fail to extract txIn from block: %w", err)
-	}
 	if len(txInBlock.TxArray) > 0 {
 		txIn.TxArray = append(txIn.TxArray, txInBlock.TxArray...)
 	}

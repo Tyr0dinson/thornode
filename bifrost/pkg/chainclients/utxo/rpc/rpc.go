@@ -371,6 +371,16 @@ func (c *Client) GetRawTransactionVerbosePrimary(txid string) (*btcjson.TxRawRes
 	return &tx, extractBTCError(c.redact(0, err))
 }
 
+// GetBlockCountPrimary returns the primary daemon's own block count, so a decision
+// that trusts the primary's "not found" can first check the primary has reached the
+// heights in question (a resyncing primary answers "not found" for everything above
+// its tip).
+func (c *Client) GetBlockCountPrimary() (int64, error) {
+	var count int64
+	err := c.callRaw(&count, "getblockcount")
+	return count, extractBTCError(c.redact(0, err))
+}
+
 // GetRawTransactionPrimary is the primary-only counterpart of GetRawTransaction, for
 // the reorg re-confirmation that decides an errata: a fallback without txindex, or
 // one that never saw the transaction, must not be able to call an on-chain inbound
@@ -795,7 +805,7 @@ func (c *Client) Call(result any, method string, args ...interface{}) error {
 
 // CallWithFallback issues a generic JSON-RPC read against the primary and fails over to
 // each read fallback when the primary errors (and the error is not a rate limit). Use it
-// for reads that have no typed helper — e.g. BCH getblockstats, whose float avgfeerate
+// for reads that have no typed helper, e.g. BCH getblockstats, whose float avgfeerate
 // needs a chain-specific result struct that the typed GetBlockStats cannot represent.
 // Writes must keep using Call, which is primary-only.
 func (c *Client) CallWithFallback(result any, method string, args ...interface{}) error {

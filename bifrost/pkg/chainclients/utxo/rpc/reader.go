@@ -7,7 +7,7 @@ import (
 
 // UTXOReader is the read-only subset of *Client that failover endpoints serve. Write
 // operations (SendRawTransaction, wallet imports, CreateWallet, ListUnspent) are
-// deliberately excluded — they are only ever issued against the primary endpoint. A
+// deliberately excluded: they are only ever issued against the primary endpoint. A
 // fallback is itself a full *Client pointing at a secondary node daemon, so it satisfies
 // this interface; only reads are routed to it when the primary is unavailable.
 type UTXOReader interface {

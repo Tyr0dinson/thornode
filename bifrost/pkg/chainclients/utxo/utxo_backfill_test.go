@@ -698,25 +698,49 @@ func (s *CoverageBackfillSuite) TestConfirmTx(c *C) {
 	c.Assert(result, Equals, txUnknown)
 }
 
-// When the primary cannot answer during reorg re-confirmation, the height is left
-// exactly as stored: no errata, no rescan, and the old block hash kept, so the next
-// block detects the mismatch again and re-runs the check once the primary answers.
-func (s *CoverageBackfillSuite) TestReConfirmTxLeavesHeightPendingWhenPrimaryCannotAnswer(c *C) {
-	bm := sutxo.NewBlockMeta("prevhash", 1998, "stored_hash_1998")
+// When the primary cannot answer during reorg re-confirmation, the whole reorg step
+// fails with nothing written: no errata, no rescan, and the stored block meta left as
+// it was. The scan of this height is retried, the mismatch is detected again, and
+// once the primary answers the reorg is resolved in full.
+func (s *CoverageBackfillSuite) TestReorgIsRetriedWhileThePrimaryCannotAnswer(c *C) {
+	bm := sutxo.NewBlockMeta("prevhash", 1997, "stored_hash_1997")
 	bm.AddCustomerTransaction("sometxid") // the mock's getrawtransaction answer does not decode: unknown
-	c.Assert(s.client.temporalStorage.SaveBlockMeta(1998, bm), IsNil)
+	c.Assert(s.client.temporalStorage.SaveBlockMeta(1997, bm), IsNil)
 	errataQueue := make(chan stypes.ErrataBlock, 1)
 	s.client.globalErrataQueue = errataQueue
 	s.client.cfg.BlockScanner.MaxReorgRescanBlocks = 1
+	block := &btcjson.GetBlockVerboseTxResult{Height: 1998, PreviousHash: "actual_hash_not_matching"}
+	savedCount := btcChainRPCs["getblockcount"]
+	btcChainRPCs["getblockcount"] = map[string]interface{}{"result": 1998, "error": nil, "id": 3}
+	defer func() { btcChainRPCs["getblockcount"] = savedCount }()
 
-	heights, err := s.client.reConfirmTx(1999)
+	_, err := s.client.planReConfirm(1998)
+	c.Assert(err, ErrorMatches, ".*cannot re-confirm tx sometxid.*")
+	for attempt := 0; attempt < 2; attempt++ {
+		_, err = s.client.processReorg(block)
+		c.Assert(err, NotNil)
+		c.Assert(errataQueue, HasLen, 0)
+		stored, gerr := s.client.temporalStorage.GetBlockMeta(1997)
+		c.Assert(gerr, IsNil)
+		c.Assert(stored.BlockHash, Equals, "stored_hash_1997") // untouched: detected again next attempt
+		c.Assert(stored.CustomerTransactions, DeepEquals, []string{"sometxid"})
+	}
+
+	// the primary now answers "not found" for the stored inbound (the fixture's -5
+	// transaction): the retried step resolves the reorg, reports the errata and
+	// repairs the meta
+	bm = sutxo.NewBlockMeta("prevhash", 1997, "stored_hash_1997")
+	bm.AddCustomerTransaction("27de3e1865c098cd4fded71bae1e8236fd27ce5dce6e524a9ac5cd1a17b5c241")
+	c.Assert(s.client.temporalStorage.SaveBlockMeta(1997, bm), IsNil)
+	_, err = s.client.processReorg(block)
 	c.Assert(err, IsNil)
-	c.Assert(heights, HasLen, 0)
-	c.Assert(errataQueue, HasLen, 0)
-	stored, err := s.client.temporalStorage.GetBlockMeta(1998)
+	c.Assert(errataQueue, HasLen, 1)
+	errata := <-errataQueue
+	c.Assert(errata.Height, Equals, int64(1997))
+	stored, err := s.client.temporalStorage.GetBlockMeta(1997)
 	c.Assert(err, IsNil)
-	c.Assert(stored.BlockHash, Equals, "stored_hash_1998") // mismatch kept: re-checked next block
-	c.Assert(stored.CustomerTransactions, DeepEquals, []string{"sometxid"})
+	c.Assert(stored.BlockHash, Not(Equals), "stored_hash_1997")
+	c.Assert(stored.CustomerTransactions, HasLen, 0)
 }
 
 func (s *CoverageBackfillSuite) TestIsSelfTransaction(c *C) {
@@ -1942,7 +1966,10 @@ func (s *CoverageBackfillSuite) TestSendNetworkFeeFromBlockDOGE(c *C) {
 func (s *CoverageBackfillSuite) TestReConfirmTxWithBlockMeta(c *C) {
 	// Save a block meta, then try to reconfirm
 	bm := sutxo.NewBlockMeta("prevhash", 998, "blockhash998")
-	bm.AddCustomerTransaction("sometx123")
+	bm.AddCustomerTransaction("27de3e1865c098cd4fded71bae1e8236fd27ce5dce6e524a9ac5cd1a17b5c241") // the primary answers -5
+	savedCount := btcChainRPCs["getblockcount"]
+	btcChainRPCs["getblockcount"] = map[string]interface{}{"result": 1000, "error": nil, "id": 3}
+	defer func() { btcChainRPCs["getblockcount"] = savedCount }()
 	err := s.client.temporalStorage.SaveBlockMeta(998, bm)
 	c.Assert(err, IsNil)
 
@@ -1952,10 +1979,10 @@ func (s *CoverageBackfillSuite) TestReConfirmTxWithBlockMeta(c *C) {
 
 	// reConfirmTx from height 1000 (looks back at 999)
 	s.client.cfg.BlockScanner.MaxReorgRescanBlocks = 2
-	heights, err := s.client.reConfirmTx(1000)
+	fixes, err := s.client.planReConfirm(1000)
 	c.Assert(err, IsNil)
 	// The hash won't match so it should detect reorg and return heights to rescan
-	c.Assert(len(heights) > 0, Equals, true)
+	c.Assert(len(fixes) > 0, Equals, true)
 }
 
 func (s *CoverageBackfillSuite) TestProcessReorgWithBlockMeta(c *C) {
@@ -1972,6 +1999,9 @@ func (s *CoverageBackfillSuite) TestProcessReorgWithBlockMeta(c *C) {
 	}
 	errataQueue := make(chan stypes.ErrataBlock, 1)
 	s.client.globalErrataQueue = errataQueue
+	savedCount := btcChainRPCs["getblockcount"]
+	btcChainRPCs["getblockcount"] = map[string]interface{}{"result": 998, "error": nil, "id": 3}
+	defer func() { btcChainRPCs["getblockcount"] = savedCount }()
 	txIns, err := s.client.processReorg(block)
 	c.Assert(err, IsNil)
 
@@ -1986,4 +2016,42 @@ func (s *CoverageBackfillSuite) TestProcessReorgWithBlockMeta(c *C) {
 	c.Assert(errata.Height, Equals, int64(997))
 	c.Assert(errata.Txs, HasLen, 1)
 	c.Assert(errata.Txs[0].TxID.String(), Equals, "27de3e1865c098cd4fded71bae1e8236fd27ce5dce6e524a9ac5cd1a17b5c241")
+}
+
+// A primary that has not reached the reorg tip (resyncing, or lagging behind the
+// fallback the scanner used) answers "not found" for everything above its own tip.
+// That is not proof: no errata, nothing persisted, and the step is retried.
+func (s *CoverageBackfillSuite) TestReorgWaitsForALaggingPrimary(c *C) {
+	bm := sutxo.NewBlockMeta("prevhash", 2997, "stored_hash_2997")
+	bm.AddCustomerTransaction("27de3e1865c098cd4fded71bae1e8236fd27ce5dce6e524a9ac5cd1a17b5c241") // -5 from the primary
+	c.Assert(s.client.temporalStorage.SaveBlockMeta(2997, bm), IsNil)
+	errataQueue := make(chan stypes.ErrataBlock, 1)
+	s.client.globalErrataQueue = errataQueue
+	s.client.cfg.BlockScanner.MaxReorgRescanBlocks = 1
+	savedCount := btcChainRPCs["getblockcount"]
+	btcChainRPCs["getblockcount"] = map[string]interface{}{"result": 2000, "error": nil, "id": 3} // behind 2997
+	defer func() { btcChainRPCs["getblockcount"] = savedCount }()
+
+	_, err := s.client.processReorg(&btcjson.GetBlockVerboseTxResult{Height: 2998, PreviousHash: "actual_hash_not_matching"})
+	c.Assert(err, ErrorMatches, ".*the primary is at height 2000, below the reorg tip 2997.*")
+	c.Assert(errataQueue, HasLen, 0)
+	stored, err := s.client.temporalStorage.GetBlockMeta(2997)
+	c.Assert(err, IsNil)
+	c.Assert(stored.BlockHash, Equals, "stored_hash_2997")
+	c.Assert(stored.CustomerTransactions, HasLen, 1)
+}
+
+// The "observed" marks extractTxs sets for an abandoned scan step are undone, so the
+// retry emits those transactions again instead of skipping them as reported before.
+func (s *CoverageBackfillSuite) TestAbandonedRescanMarksAreUndone(c *C) {
+	added, err := s.client.temporalStorage.TrackObservedTx("abandoned-tx")
+	c.Assert(err, IsNil)
+	c.Assert(added, Equals, true)
+	added, err = s.client.temporalStorage.TrackObservedTx("abandoned-tx")
+	c.Assert(err, IsNil)
+	c.Assert(added, Equals, false) // a retry would skip it
+	s.client.untrackObserved([]stypes.TxIn{{TxArray: []*stypes.TxInItem{{Tx: "abandoned-tx"}}}})
+	added, err = s.client.temporalStorage.TrackObservedTx("abandoned-tx")
+	c.Assert(err, IsNil)
+	c.Assert(added, Equals, true) // emitted again on retry
 }
