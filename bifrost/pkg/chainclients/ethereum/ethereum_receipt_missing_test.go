@@ -2,6 +2,7 @@ package ethereum
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"math/big"
 	"net/http"
@@ -98,10 +99,14 @@ func (s *BlockScannerTestSuite) TestMissingReceiptFailsTheBlock(c *C) {
 // way on every retry. It must be logged and skipped, never fail the block: failing it
 // would stall ETH scanning on every node at that height.
 func (s *BlockScannerTestSuite) TestContentErrorIsSkippedNotFatal(c *C) {
-	receipt := `{"jsonrpc":"2.0","id":1,"result":{"transactionHash":"0x88df016429689c079f3b2f6ad39fa052532c56795b733da78a91ebe6a713944b",` +
-		`"transactionIndex":"0x0","blockNumber":"0x5","blockHash":"0x78bfef68fccd4507f9f4804ba5c65eb2f928ea45b3383ade88aaa720f1209cba",` +
-		`"cumulativeGasUsed":"0xc350","gasUsed":"0x4dc","effectiveGasPrice":"0x2540be400","logs":[],"status":"0x1",` +
-		`"logsBloom":"0x` + strings.Repeat("00", 256) + `"}}`
+	// the receipt carries the hash of the block it belongs to, as every node's does
+	receiptBlockHash := "0x78bfef68fccd4507f9f4804ba5c65eb2f928ea45b3383ade88aaa720f1209cba"
+	receipt := func() string {
+		return `{"jsonrpc":"2.0","id":1,"result":{"transactionHash":"0x88df016429689c079f3b2f6ad39fa052532c56795b733da78a91ebe6a713944b",` +
+			`"transactionIndex":"0x0","blockNumber":"0x5","blockHash":"` + receiptBlockHash + `",` +
+			`"cumulativeGasUsed":"0xc350","gasUsed":"0x4dc","effectiveGasPrice":"0x2540be400","logs":[],"status":"0x1",` +
+			`"logsBloom":"0x` + strings.Repeat("00", 256) + `"}}`
+	}
 	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 		switch {
 		case req.RequestURI == thorclient.ChainVersionEndpoint:
@@ -131,7 +136,7 @@ func (s *BlockScannerTestSuite) TestContentErrorIsSkippedNotFatal(c *C) {
 			case "eth_getBlockReceipts":
 				_, _ = rw.Write([]byte(`{"jsonrpc":"2.0","id":1,"error":{"code":-32601,"message":"method not found"}}`))
 			case "eth_getTransactionReceipt":
-				_, _ = rw.Write([]byte(receipt))
+				_, _ = rw.Write([]byte(receipt()))
 			default:
 				_, _ = rw.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":"0x1"}`))
 			}
@@ -170,7 +175,17 @@ func (s *BlockScannerTestSuite) TestContentErrorIsSkippedNotFatal(c *C) {
 	c.Assert(err, ErrorMatches, "fail to get sender.*")
 	c.Assert(item, IsNil)
 
-	txIn, err := bs.extractTxs(makeReceiptsTestBlock(5, []*etypes.Transaction{tx}))
+	block := makeReceiptsTestBlock(5, []*etypes.Transaction{tx})
+	receiptBlockHash = block.Hash().Hex()
+	txIn, err := bs.extractTxs(block)
 	c.Assert(err, IsNil) // skipped, the block completes
 	c.Assert(txIn.TxArray, HasLen, 0)
+
+	// the same receipt from another block (a node on another fork, or one that
+	// reorged since the block was read) fails the block so it is retried: it must
+	// not be observed, nor reach the content checks, from the wrong fork
+	receiptBlockHash = "0x1111111111111111111111111111111111111111111111111111111111111111"
+	_, err = bs.extractTxs(block)
+	c.Assert(err, ErrorMatches, "(?s).*belongs to block 0x1111.*not the scanned block.*")
+	c.Assert(errors.Is(err, errReceiptUnavailable), Equals, true)
 }

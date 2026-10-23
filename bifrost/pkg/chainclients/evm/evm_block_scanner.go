@@ -49,9 +49,8 @@ import (
 ////////////////////////////////////////////////////////////////////////////////////////
 
 type EVMScanner struct {
-	// endpointMgr is set by the client; with several endpoints, reorg
-	// re-confirmation is answered by the active endpoint once it has reached the
-	// reorg tip (evm.ReorgWitness)
+	// endpointMgr is set by the client; with several endpoints, a reorg is read
+	// from one witness endpoint proven on the scanned block's fork (evm.ReorgWitness)
 	endpointMgr     *endpoints.Manager
 	cfg             config.BifrostBlockScannerConfiguration
 	logger          zerolog.Logger
@@ -335,8 +334,11 @@ func (e *EVMScanner) processBlock(block *etypes.Block) (stypes.TxIn, error) {
 
 	// Reorg handling is planned first and committed last: errata, repaired block
 	// metas and the rescanned observations are reported and persisted only once the
-	// current block has been extracted too. If any step fails nothing was written, so
-	// the retry of this height detects the reorg again and redoes all of it.
+	// current block has been extracted too. If any step fails none of them was
+	// written, so the retry of this height detects the reorg again and redoes all of
+	// it. (Extraction's own cleanup, the signed-tx items and signer-cache entries of
+	// outbounds seen in a block and stored token metadata, may already have run; it
+	// is idempotent and the retry redoes it.)
 	var plan *reorgPlan
 	if e.cfg.MaxReorgRescanBlocks > 0 {
 		var err error
@@ -418,10 +420,19 @@ func (e *EVMScanner) getTxInOptimized(method string, block *etypes.Block) (stype
 	// every transaction the block lists must have a receipt: a null or short answer
 	// means the node has not imported the block yet (a lagging endpoint after a
 	// failover) and the block must be retried, not scanned with transactions missing
+	blockHash := block.Hash()
 	have := 0
 	for _, receipt := range receipts {
 		if receipt == nil {
 			continue
+		}
+		// receipts are asked for by number, so a node that reorged since the block was
+		// read, or another endpoint on another fork, can answer for a different block
+		// at the same height: never observe those (BSC, BASE and POL compute the same
+		// block hash as their nodes; AVAX does not, and does not take this path)
+		if receipt.BlockHash != blockHash {
+			return stypes.TxIn{}, nil, fmt.Errorf("block %d: %s returned a receipt of block %s, not of the scanned block %s",
+				block.NumberU64(), method, receipt.BlockHash.Hex(), blockHash.Hex())
 		}
 		if _, ok := txByHash[receipt.TxHash.String()]; ok {
 			have++
@@ -749,10 +760,13 @@ type reorgPlan struct {
 
 // planReorg compares the block's parent hash with the stored block hash. On a reorg
 // it re-confirms the transactions of every cached block in the reorg window, works
-// out the repaired metas, and rescans the blocks whose hash changed, reading all of
-// it from one witness endpoint (evm.ReorgWitness). It reports and persists nothing
-// (commitReorg does, once the current block is done too), and any read that cannot
-// be answered aborts it, so the scan step is retried as a whole.
+// out the repaired metas, and rescans the blocks whose hash changed, taking headers,
+// re-confirmations and rescanned blocks from one witness endpoint
+// (evm.ReorgWitness); on BSC, BASE and POL the rescans' receipts must carry the
+// rescanned block's hash (getTxInOptimized). It reports and persists no reorg state
+// (commitReorg does, once the current block is done too; the rescans' extraction
+// cleanup is idempotent), and any read that cannot be answered aborts it, so the scan
+// step is retried as a whole.
 func (e *EVMScanner) planReorg(header *etypes.Header) (*reorgPlan, error) {
 	previousHeight := header.Number.Int64() - 1
 	prevBlockMeta, err := e.blockMetaAccessor.GetBlockMeta(previousHeight)

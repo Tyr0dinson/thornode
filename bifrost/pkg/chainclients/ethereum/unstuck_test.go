@@ -42,6 +42,7 @@ type UnstuckTestSuite struct {
 var _ = Suite(&UnstuckTestSuite{})
 
 func (s *UnstuckTestSuite) SetUpTest(c *C) {
+	served := &servedBlock{}
 	s.m = GetMetricForTest(c)
 	c.Assert(s.m, NotNil)
 	setupMocknetThorConfig()
@@ -145,7 +146,7 @@ func (s *UnstuckTestSuite) SetUpTest(c *C) {
 				err = json.Unmarshal(rpcRequest.Params, &params)
 				c.Assert(err, IsNil)
 
-				_, err = rw.Write([]byte(`{
+				_, err = rw.Write(served.receipt(`{
 						"jsonrpc": "2.0",
 						"id": 1,
 						"result": {
@@ -246,7 +247,7 @@ func (s *UnstuckTestSuite) SetUpTest(c *C) {
 					c.Assert(err, IsNil)
 				}
 			case "eth_getBlockByNumber":
-				_, err = rw.Write([]byte(`{
+				served.serve(c, rw, `{
 						"jsonrpc": "2.0",
 						"id": 1,
 						"result": {
@@ -268,13 +269,12 @@ func (s *UnstuckTestSuite) SetUpTest(c *C) {
 							"stateRoot": "0x1c84090d7f5dc8137d6762e3d4babe10b30bf61fa827618346ae1ba8600a9629",
 							"timestamp": "0x6008f03a",
 							"totalDifficulty": "0xd7",
-							"transactions": [` + string(lastBroadcastTxJSON) + `],
+							"transactions": [`+string(lastBroadcastTxJSON)+`],
 							"transactionsRoot": "0x4247bb112edbe20ee8cf406864b335f4a3aa215f65ea686c9820f056c637aca6",
 							"uncles": []
 						}
 					}
-					`))
-				c.Assert(err, IsNil)
+					`)
 			}
 		}
 	}))

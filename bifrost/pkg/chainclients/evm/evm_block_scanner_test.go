@@ -1153,6 +1153,23 @@ func (s *BlockScannerTestSuite) TestProcessReOrg(c *C) {
 	c.Assert(bs.blockMetaAccessor.SaveBlockMeta(0, blockMeta), IsNil)
 	bs.globalErrataQueue = make(chan stypes.ErrataBlock, 1)
 	storedHash := blockMeta.BlockHash
+
+	// a reorg is pending, but the current block cannot be extracted (its receipts are
+	// not served): processBlock fails with nothing of the reorg reported or written,
+	// so the retry of this height detects it again
+	bs.cfg.MaxReorgRescanBlocks = 10
+	to := common.HexToAddress("0xf02c1c8e6114b1dbe8937a39260b5b0a374432bb")
+	current := etypes.NewBlockWithHeader(blockNew).WithBody(etypes.Body{Transactions: []*etypes.Transaction{
+		etypes.NewTx(&etypes.LegacyTx{Nonce: 1, To: &to, Value: big.NewInt(1), Gas: 21000, GasPrice: big.NewInt(1)}),
+	}})
+	_, err = bs.processBlock(current)
+	c.Assert(err, NotNil)
+	c.Assert(bs.globalErrataQueue, HasLen, 0)
+	blockMeta, err = bs.blockMetaAccessor.GetBlockMeta(0)
+	c.Assert(err, IsNil)
+	c.Assert(blockMeta.BlockHash, Equals, storedHash)
+	c.Assert(blockMeta.Transactions, HasLen, 1)
+
 	plan, err := bs.planReorg(blockNew)
 	c.Assert(err, IsNil)
 	c.Assert(plan, NotNil)

@@ -56,10 +56,12 @@ const (
 
 // ETHScanner is a scanner that understand how to interact with ETH chain ,and scan block , parse smart contract etc
 type ETHScanner struct {
-	// endpointMgr is set by the client; with several endpoints, reorg
-	// re-confirmation is answered by the active endpoint once it has reached the
-	// reorg tip (evm.ReorgWitness)
-	endpointMgr     *endpoints.Manager
+	// endpointMgr is set by the client; with several endpoints, a reorg is read
+	// from one witness endpoint proven on the scanned block's fork (evm.ReorgWitness)
+	endpointMgr *endpoints.Manager
+	// metaMu serializes the read-modify-write of stored block metas between the
+	// observer's onObservedTxIn and a reorg commit, so neither loses the other's write
+	metaMu          sync.Mutex
 	cfg             config.BifrostBlockScannerConfiguration
 	logger          zerolog.Logger
 	db              blockscanner.ScannerStorage
@@ -369,8 +371,11 @@ func (e *ETHScanner) processBlock(block *etypes.Block) (stypes.TxIn, error) {
 
 	// Reorg handling is planned first and committed last: errata, repaired block
 	// metas and the rescanned observations are reported and persisted only once the
-	// current block has been extracted too. If any step fails nothing was written, so
-	// the retry of this height detects the reorg again and redoes all of it.
+	// current block has been extracted too. If any step fails none of them was
+	// written, so the retry of this height detects the reorg again and redoes all of
+	// it. (Extraction's own cleanup, the signed-tx items and signer-cache entries of
+	// outbounds seen in a block and stored token metadata, may already have run; it
+	// is idempotent and the retry redoes it.)
 	plan, err := e.planReorg(block.Header())
 	if err != nil {
 		e.logger.Error().Err(err).Msgf("fail to process reorg for block %d", block.NumberU64())
@@ -472,7 +477,7 @@ func (e *ETHScanner) extractTxs(block *etypes.Block) (stypes.TxIn, error) {
 			e.logger.Err(err).Msgf("fail to remove signed tx item, hash:%s", tx.Hash().String())
 		}
 
-		txInItem, err := e.fromTxToTxInWithReceipts(tx, receipts)
+		txInItem, err := e.fromTxToTxInWithReceipts(tx, receipts, block.Hash())
 		if err != nil {
 			e.logger.Error().Err(err).Str("hash", tx.Hash().Hex()).Msg("fail to get one tx from server")
 			if errors.Is(err, errReceiptUnavailable) {
@@ -522,6 +527,8 @@ func (e *ETHScanner) extractTxs(block *etypes.Block) (stypes.TxIn, error) {
 }
 
 func (e *ETHScanner) onObservedTxIn(txIn stypes.TxInItem, blockHeight int64) {
+	e.metaMu.Lock()
+	defer e.metaMu.Unlock()
 	blockMeta, err := e.blockMetaAccessor.GetBlockMeta(blockHeight)
 	if err != nil {
 		e.logger.Err(err).Msgf("fail to get block meta on block height(%d)", blockHeight)
@@ -554,14 +561,19 @@ type reorgPlan struct {
 	errata []stypes.ErrataBlock
 	metas  []*types.BlockMeta
 	txIns  []stypes.TxIn
+	// planned holds, per height, the transactions each stored meta had when the plan
+	// read it; a transaction recorded after that (onObservedTxIn) is kept on commit
+	planned map[int64]map[string]bool
 }
 
 // planReorg compares the block's parent hash with the stored hash of the previous
 // height. On a reorg it re-confirms the transactions of every cached block, works out
-// the repaired metas, and rescans the blocks whose hash changed, reading all of it
-// from one witness endpoint (evm.ReorgWitness). It reports and persists nothing
-// (commitReorg does, once the current block is done too), and any read that cannot
-// be answered aborts it, so the scan step is retried as a whole.
+// the repaired metas, and rescans the blocks whose hash changed, taking headers,
+// re-confirmations and rescanned blocks from one witness endpoint
+// (evm.ReorgWitness); the rescans' receipts must carry the rescanned block's hash
+// (extractTxs). It reports and persists no reorg state (commitReorg does, once the
+// current block is done too; the rescans' extraction cleanup is idempotent), and
+// any read that cannot be answered aborts it, so the scan step is retried as a whole.
 func (e *ETHScanner) planReorg(header *etypes.Header) (*reorgPlan, error) {
 	previousHeight := header.Number.Int64() - 1
 	prevBlockMeta, err := e.blockMetaAccessor.GetBlockMeta(previousHeight)
@@ -582,13 +594,21 @@ func (e *ETHScanner) planReorg(header *etypes.Header) (*reorgPlan, error) {
 	if err != nil {
 		return nil, fmt.Errorf("fail to get block metas from local storage: %w", err)
 	}
+	planned := make(map[int64]map[string]bool, len(blockMetas))
+	for _, blockMeta := range blockMetas {
+		txs := make(map[string]bool, len(blockMeta.Transactions))
+		for _, tx := range blockMeta.Transactions {
+			txs[tx.Hash] = true
+		}
+		planned[blockMeta.Height] = txs
+	}
 	wctx, wcancel := e.getContext()
 	witness, err := evm.ReorgWitness(wctx, e.endpointMgr, e.client, previousHeight, header.ParentHash)
 	wcancel()
 	if err != nil {
 		return nil, fmt.Errorf("reorg at height %d: %w", header.Number.Int64(), err)
 	}
-	plan := &reorgPlan{}
+	plan := &reorgPlan{planned: planned}
 	var rescanHeights []int64
 	for _, blockMeta := range blockMetas {
 		// the witness's header first: it proves the witness has this height before
@@ -657,7 +677,24 @@ func (e *ETHScanner) commitReorg(plan *reorgPlan) {
 	for _, errata := range plan.errata {
 		e.globalErrataQueue <- errata
 	}
+	// errata are queued before the lock is taken: the observer may hold its own lock
+	// while waiting on metaMu, and must never wait on a blocked errata send
+	e.metaMu.Lock()
+	defer e.metaMu.Unlock()
 	for _, blockMeta := range plan.metas {
+		// keep a transaction the observer recorded at this height after the plan read
+		// it (an errata'd one was there when the plan read it, so it is not re-added)
+		if current, err := e.blockMetaAccessor.GetBlockMeta(blockMeta.Height); err == nil && current != nil {
+			have := make(map[string]bool, len(blockMeta.Transactions))
+			for _, tx := range blockMeta.Transactions {
+				have[tx.Hash] = true
+			}
+			for _, tx := range current.Transactions {
+				if !plan.planned[blockMeta.Height][tx.Hash] && !have[tx.Hash] {
+					blockMeta.Transactions = append(blockMeta.Transactions, tx)
+				}
+			}
+		}
 		if err := e.blockMetaAccessor.SaveBlockMeta(blockMeta.Height, blockMeta); err != nil {
 			e.logger.Err(err).Msgf("fail to save block meta of height: %d ", blockMeta.Height)
 		}
@@ -1107,13 +1144,15 @@ func (e *ETHScanner) getTxInFromTransaction(tx *etypes.Transaction, receipt *ety
 }
 
 func (e *ETHScanner) fromTxToTxIn(tx *etypes.Transaction) (*stypes.TxInItem, error) {
-	return e.fromTxToTxInWithReceipts(tx, nil)
+	return e.fromTxToTxInWithReceipts(tx, nil, ecommon.Hash{})
 }
 
 // fromTxToTxInWithReceipts converts the transaction to a TxInItem, taking its
 // receipt from the supplied block-receipts map when present and falling back
-// to an individual eth_getTransactionReceipt lookup otherwise.
-func (e *ETHScanner) fromTxToTxInWithReceipts(tx *etypes.Transaction, receipts map[ecommon.Hash]*etypes.Receipt) (*stypes.TxInItem, error) {
+// to an individual eth_getTransactionReceipt lookup otherwise. A fallback receipt
+// must belong to blockHash, the block being scanned (the zero hash skips the check
+// for callers without a block).
+func (e *ETHScanner) fromTxToTxInWithReceipts(tx *etypes.Transaction, receipts map[ecommon.Hash]*etypes.Receipt, blockHash ecommon.Hash) (*stypes.TxInItem, error) {
 	if tx == nil || tx.To() == nil {
 		return nil, nil
 	}
@@ -1131,6 +1170,13 @@ func (e *ETHScanner) fromTxToTxInWithReceipts(tx *etypes.Transaction, receipts m
 				return nil, fmt.Errorf("%w: receipt for tx %s in block is not available on this node yet: %w", errReceiptUnavailable, tx.Hash().Hex(), err)
 			}
 			return nil, fmt.Errorf("%w: fail to get transaction receipt: %w", errReceiptUnavailable, err)
+		}
+		// a receipt of another block (the answering node is on another fork, or
+		// reorged since the block was read) describes another execution of this
+		// transaction: retry the block instead of observing it from the wrong fork
+		if blockHash != (ecommon.Hash{}) && receipt.BlockHash != blockHash {
+			return nil, fmt.Errorf("%w: receipt for tx %s belongs to block %s, not the scanned block %s",
+				errReceiptUnavailable, tx.Hash().Hex(), receipt.BlockHash.Hex(), blockHash.Hex())
 		}
 	}
 	if receipt.Status != 1 {

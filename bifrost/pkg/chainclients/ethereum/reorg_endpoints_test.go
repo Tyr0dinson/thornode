@@ -7,6 +7,7 @@ import (
 	"math/big"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"time"
 
 	ecommon "github.com/ethereum/go-ethereum/common"
@@ -16,6 +17,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/evm/types"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pubkeymanager"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
+	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/config"
 )
@@ -136,4 +138,156 @@ func (s *UnstuckTestSuite) TestReorgIsReadFromOneCaughtUpWitness(c *C) {
 	plan, err = one.planReorg(block100)
 	c.Assert(err, IsNil)
 	c.Assert(plan.errata, HasLen, 1)
+}
+
+// rescanProxy serves a non-empty replacement block 99 holding tx, answers its
+// receipt (bulk and per transaction) with one that carries *receiptBlock as its block
+// hash, and forwards everything else to target.
+func rescanProxy(target, blockAnswer string, tx *etypes.Transaction, receiptBlock *string) *httptest.Server {
+	return httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		body, _ := io.ReadAll(req.Body)
+		var rpcReq struct {
+			Method string          `json:"method"`
+			ID     json.RawMessage `json:"id"`
+		}
+		_ = json.Unmarshal(body, &rpcReq)
+		rw.Header().Set("Content-Type", "application/json")
+		answer := func(result string) {
+			_, _ = rw.Write([]byte(`{"jsonrpc":"2.0","id":` + string(rpcReq.ID) + `,"result":` + result + `}`))
+		}
+		receipt := `{"transactionHash":"` + tx.Hash().Hex() + `","transactionIndex":"0x0","blockNumber":"0x63",` +
+			`"blockHash":"` + *receiptBlock + `","cumulativeGasUsed":"0x5208","gasUsed":"0x5208","effectiveGasPrice":"0x1",` +
+			`"logs":[],"status":"0x1","type":"0x0","logsBloom":"0x` + strings.Repeat("00", 256) + `"}`
+		switch rpcReq.Method {
+		case "eth_getTransactionByHash":
+			answer("null")
+		case "eth_getBlockByNumber":
+			answer(blockAnswer)
+		case "eth_getBlockReceipts":
+			answer("[" + receipt + "]")
+		case "eth_getTransactionReceipt":
+			answer(receipt)
+		default:
+			resp, err := http.Post(target+req.URL.Path, "application/json", bytes.NewReader(body))
+			if err != nil {
+				http.Error(rw, err.Error(), http.StatusBadGateway)
+				return
+			}
+			defer func() { _ = resp.Body.Close() }()
+			rw.WriteHeader(resp.StatusCode)
+			_, _ = io.Copy(rw, resp.Body)
+		}
+	}))
+}
+
+// A reorg rescans the replacement block; its receipts must belong to that block. A
+// receipt of another block at the same height (a node on the other fork, or one
+// that reorged again since the block was read) fails the plan, so nothing is
+// committed and the step is retried; it is never observed from the wrong fork.
+func (s *UnstuckTestSuite) TestReorgRescanRejectsReceiptsOfAnotherBlock(c *C) {
+	config.Init()
+	to := ecommon.HexToAddress("0x9f4aab49a9cd8fc54dcb3701846f608a6f2c44da")
+	tx := etypes.NewTx(&etypes.LegacyTx{Nonce: 0, To: &to, Value: big.NewInt(1), Gas: 21000, GasPrice: big.NewInt(1)})
+	txJSON, err := json.Marshal(tx)
+	c.Assert(err, IsNil)
+	blockAnswer := strings.Replace(strings.Replace(reorgBlockJSON,
+		`"transactions":[]`, `"transactions":[`+string(txJSON)+`]`, 1),
+		`"transactionsRoot":"0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421"`,
+		`"transactionsRoot":"0x`+strings.Repeat("ab", 32)+`"`, 1)
+	var header etypes.Header
+	c.Assert(json.Unmarshal([]byte(blockAnswer), &header), IsNil)
+	replacement := header.Hash()
+
+	receiptBlock := "0x" + strings.Repeat("11", 32)
+	node := rescanProxy(s.server.URL, blockAnswer, tx, &receiptBlock)
+	defer node.Close()
+	pubkeyMgr, err := pubkeymanager.NewPubKeyManager(s.bridge, s.m)
+	c.Assert(err, IsNil)
+	e, err := NewClient(s.thorKeys, config.BifrostChainConfiguration{
+		ChainID: common.ETHChain,
+		RPCHost: node.URL,
+		BlockScanner: config.BifrostBlockScannerConfiguration{
+			ChainID:            common.ETHChain,
+			StartBlockHeight:   1,
+			HTTPRequestTimeout: time.Second * 10,
+			GasCacheBlocks:     40,
+			Concurrency:        1,
+			GasPriceResolution: 10_000_000_000,
+			FixedGasRate:       10_000_000_000,
+		},
+	}, nil, s.bridge, s.m, pubkeyMgr, thorclient.NewPoolMgr(s.bridge))
+	c.Assert(err, IsNil)
+	scanner := e.ethScanner
+	c.Assert(scanner.blockMetaAccessor.SaveBlockMeta(99, &types.BlockMeta{
+		Height:    99,
+		BlockHash: "0x00000000000000000000000000000000000000000000000000000000000000dd",
+	}), IsNil)
+	block100 := &etypes.Header{Number: big.NewInt(100), ParentHash: replacement}
+
+	// receipts of another block: the plan fails and the stored record is untouched
+	_, err = scanner.planReorg(block100)
+	c.Assert(err, ErrorMatches, "(?s).*not the scanned block.*")
+	meta, err := scanner.blockMetaAccessor.GetBlockMeta(99)
+	c.Assert(err, IsNil)
+	c.Assert(meta.BlockHash, Equals, "0x00000000000000000000000000000000000000000000000000000000000000dd")
+
+	// receipts of the replacement block: the plan completes and repairs the record
+	receiptBlock = replacement.Hex()
+	plan, err := scanner.planReorg(block100)
+	c.Assert(err, IsNil)
+	c.Assert(plan.metas, HasLen, 1)
+	c.Assert(plan.metas[0].BlockHash, Equals, replacement.Hex())
+}
+
+// A transaction the observer records at a height while a reorg plan is being worked
+// out (onObservedTxIn) survives the commit, which repairs the same record: neither
+// write is lost, so a later reorg still re-checks that transaction.
+func (s *UnstuckTestSuite) TestCommitReorgKeepsTransactionsObservedMeanwhile(c *C) {
+	config.Init()
+	node := witnessProxy(s.server.URL, false)
+	defer node.Close()
+	pubkeyMgr, err := pubkeymanager.NewPubKeyManager(s.bridge, s.m)
+	c.Assert(err, IsNil)
+	e, err := NewClient(s.thorKeys, config.BifrostChainConfiguration{
+		ChainID: common.ETHChain,
+		RPCHost: node.URL,
+		BlockScanner: config.BifrostBlockScannerConfiguration{
+			ChainID:            common.ETHChain,
+			StartBlockHeight:   1,
+			HTTPRequestTimeout: time.Second * 10,
+			GasCacheBlocks:     40,
+			Concurrency:        1,
+			GasPriceResolution: 10_000_000_000,
+			FixedGasRate:       10_000_000_000,
+		},
+	}, nil, s.bridge, s.m, pubkeyMgr, thorclient.NewPoolMgr(s.bridge))
+	c.Assert(err, IsNil)
+	scanner := e.ethScanner
+	scanner.globalErrataQueue = make(chan stypes.ErrataBlock, 4)
+	held := "0x88df016429689c079f3b2f6ad39fa052532c56795b733da78a91ebe6a713944b"
+	c.Assert(scanner.blockMetaAccessor.SaveBlockMeta(99, &types.BlockMeta{
+		Height:       99,
+		BlockHash:    "0x00000000000000000000000000000000000000000000000000000000000000dd",
+		Transactions: []types.TransactionMeta{{Hash: held, BlockHeight: 99}},
+	}), IsNil)
+	var parentHeader etypes.Header
+	c.Assert(json.Unmarshal([]byte(reorgBlockJSON), &parentHeader), IsNil)
+
+	plan, err := scanner.planReorg(&etypes.Header{Number: big.NewInt(100), ParentHash: parentHeader.Hash()})
+	c.Assert(err, IsNil)
+	c.Assert(plan.errata, HasLen, 1)
+
+	// meanwhile the observer records another transaction at height 99
+	observed := "0x" + strings.Repeat("cd", 32)
+	scanner.onObservedTxIn(stypes.TxInItem{Tx: observed}, 99)
+
+	scanner.commitReorg(plan)
+	meta, err := scanner.blockMetaAccessor.GetBlockMeta(99)
+	c.Assert(err, IsNil)
+	c.Assert(meta.BlockHash, Equals, parentHeader.Hash().Hex()) // repaired
+	hashes := make([]string, 0, len(meta.Transactions))
+	for _, tx := range meta.Transactions {
+		hashes = append(hashes, tx.Hash)
+	}
+	c.Assert(hashes, DeepEquals, []string{observed}) // errata'd tx gone, observed one kept
 }

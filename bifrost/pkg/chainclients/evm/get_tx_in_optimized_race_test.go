@@ -7,6 +7,7 @@ import (
 	"math/big"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -53,6 +54,9 @@ func TestGetTxInOptimizedConcurrentReceipts(t *testing.T) {
 
 	// half the txs pay the vault, half go elsewhere
 	var txs etypes.Transactions
+	// every receipt carries the hash of the block the scanner is given below, as a
+	// real node's does
+	blockHash := etypes.NewBlockWithHeader(&etypes.Header{Number: big.NewInt(100)}).Hash()
 	var receipts []*etypes.Receipt
 	for i := 0; i < numTxs; i++ {
 		key, keyErr := crypto.HexToECDSA(fmt.Sprintf("%064x", i+1))
@@ -85,6 +89,7 @@ func TestGetTxInOptimizedConcurrentReceipts(t *testing.T) {
 			GasUsed:           21000,
 			EffectiveGasPrice: big.NewInt(2e9),
 			BlockNumber:       big.NewInt(100),
+			BlockHash:         blockHash,
 		})
 	}
 	receiptsJSON, err := json.Marshal(receipts)
@@ -182,5 +187,44 @@ func TestGetTxInOptimizedConcurrentReceipts(t *testing.T) {
 		if len(res.txIn.TxArray) != numTxs/2 {
 			t.Fatalf("concurrency %d: got %d inbounds, want %d", concurrency, len(res.txIn.TxArray), numTxs/2)
 		}
+	}
+
+	// the same receipts stamped with another block at this height (a node that
+	// reorged since the block was read, or another endpoint on another fork) fail
+	// the block so it is retried: they are never observed
+	for _, r := range receipts {
+		r.BlockHash = common.HexToHash("0x1111111111111111111111111111111111111111111111111111111111111111")
+	}
+	otherJSON, merr := json.Marshal(receipts)
+	if merr != nil {
+		t.Fatal(merr)
+	}
+	other := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		_, _ = io.ReadAll(req.Body)
+		_, _ = rw.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":` + string(otherJSON) + `}`))
+	}))
+	defer other.Close()
+	otherClient, derr := ethclient.Dial(other.URL)
+	if derr != nil {
+		t.Fatal(derr)
+	}
+	cfg := getConfigForTest()
+	cfg.ChainID = thorcommon.BASEChain
+	cfg.Concurrency = 4
+	scanner := &EVMScanner{
+		cfg:               cfg,
+		ethClient:         otherClient,
+		blockMetaAccessor: blockMetaAccessor,
+		bridge:            testMimirBridge{getMimir: func(string) (int64, error) { return -1, nil }},
+		pubkeyMgr:         pkm,
+		eipSigner:         signer,
+		tokenManager:      tokenManager,
+	}
+	txIn, _, gerr := scanner.getTxInOptimized("eth_getBlockReceipts", block)
+	if gerr == nil || !strings.Contains(gerr.Error(), "not of the scanned block") {
+		t.Fatalf("receipts of another block: got err %v, want a scanned-block mismatch", gerr)
+	}
+	if len(txIn.TxArray) != 0 {
+		t.Fatalf("receipts of another block: got %d inbounds, want none", len(txIn.TxArray))
 	}
 }
