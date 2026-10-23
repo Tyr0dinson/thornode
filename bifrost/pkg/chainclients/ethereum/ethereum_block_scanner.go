@@ -402,6 +402,14 @@ func (e *ETHScanner) processBlock(block *etypes.Block) (stypes.TxIn, error) {
 	return txIn, nil
 }
 
+// errReceiptUnavailable marks a receipt that could not be read at all: the node
+// does not have it yet (a lagging endpoint after a failover, or a reorg), or the
+// request failed. Only this class of error fails the block so it is retried. Every
+// other error is about the transaction's content (an unparsable log, an unknown
+// sender) and would fail the same way on every retry, so it is logged and the
+// transaction skipped, as before.
+var errReceiptUnavailable = errors.New("receipt unavailable")
+
 func (e *ETHScanner) extractTxs(block *etypes.Block) (stypes.TxIn, error) {
 	txInbound := stypes.TxIn{
 		Chain:    common.ETHChain,
@@ -420,9 +428,11 @@ func (e *ETHScanner) extractTxs(block *etypes.Block) (stypes.TxIn, error) {
 	sem := semaphore.NewWeighted(e.cfg.Concurrency)
 	mu := sync.Mutex{}
 	wg := sync.WaitGroup{}
-	// the first failure fails the whole block: a transaction whose receipt could not
-	// be read must not be dropped while the block is marked scanned (it would never
-	// be revisited, since reorg detection only looks at the block hash)
+	// the first unavailable receipt fails the whole block: a transaction whose receipt
+	// could not be read must not be dropped while the block is marked scanned (it
+	// would never be revisited, since reorg detection only looks at the block hash).
+	// Content errors do not fail the block: they are deterministic and would stall
+	// the scanner forever.
 	var firstErr error
 	fail := func(err error) {
 		mu.Lock()
@@ -455,7 +465,9 @@ func (e *ETHScanner) extractTxs(block *etypes.Block) (stypes.TxIn, error) {
 		txInItem, err := e.fromTxToTxInWithReceipts(tx, receipts)
 		if err != nil {
 			e.logger.Error().Err(err).Str("hash", tx.Hash().Hex()).Msg("fail to get one tx from server")
-			fail(fmt.Errorf("tx %s: %w", tx.Hash().Hex(), err))
+			if errors.Is(err, errReceiptUnavailable) {
+				fail(fmt.Errorf("tx %s: %w", tx.Hash().Hex(), err))
+			}
 			return
 		}
 		if txInItem == nil {
@@ -1062,9 +1074,9 @@ func (e *ETHScanner) fromTxToTxInWithReceipts(tx *etypes.Transaction, receipts m
 				// the block yet (a lagging endpoint after a failover) or dropped it
 				// in a reorg. Either way the block must be retried, never scanned
 				// with the transaction silently missing.
-				return nil, fmt.Errorf("receipt for tx %s in block is not available on this node yet: %w", tx.Hash().Hex(), err)
+				return nil, fmt.Errorf("%w: receipt for tx %s in block is not available on this node yet: %w", errReceiptUnavailable, tx.Hash().Hex(), err)
 			}
-			return nil, fmt.Errorf("fail to get transaction receipt: %w", err)
+			return nil, fmt.Errorf("%w: fail to get transaction receipt: %w", errReceiptUnavailable, err)
 		}
 	}
 	if receipt.Status != 1 {
