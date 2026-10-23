@@ -2,6 +2,8 @@ package tron
 
 import (
 	"context"
+	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/http/httputil"
@@ -120,4 +122,102 @@ func (s *TronTestSuite) TestVerifyBroadcastAsksEveryEndpoint(c *C) {
 	mgr.Disable("b", "identity")
 	mgr.Disable("a", "identity")
 	c.Assert(tronVerifyBroadcast(context.Background(), mgr, apiClient, known, time.Hour), Equals, signercache.LookupAmbiguous)
+}
+
+// tronHostPair serves a TRON api_host (getnowblock, getblockbynum) and rpc_host
+// (eth_blockNumber, eth_chainId, eth_getBlockByNumber) whose block ids agree unless
+// apiBlockID differs from rpcHash.
+func tronHostPair(apiBlockID, rpcHash string) (api, rpc *httptest.Server) {
+	api = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/wallet/getnowblock":
+			_, _ = w.Write([]byte(`{"blockID":"tip","block_header":{"raw_data":{"number":1000}}}`))
+		case "/wallet/getblockbynum":
+			body, _ := io.ReadAll(r.Body)
+			if string(body) != `{"num":980}` {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			_, _ = w.Write([]byte(`{"blockID":"` + apiBlockID + `","block_header":{"raw_data":{"number":980}}}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	rpc = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Method string            `json:"method"`
+			Params []json.RawMessage `json:"params"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		w.Header().Set("Content-Type", "application/json")
+		switch req.Method {
+		case "eth_blockNumber":
+			_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":"0x3e8"}`))
+		case "eth_chainId":
+			_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":"0x2b6653dc"}`))
+		case "eth_getBlockByNumber":
+			if len(req.Params) == 0 || string(req.Params[0]) != `"0x3d4"` {
+				_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":null}`))
+				return
+			}
+			_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{"hash":"0x` + rpcHash + `"}}`))
+		default:
+			_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"error":{"code":-32601,"message":"nope"}}`))
+		}
+	}))
+	return api, rpc
+}
+
+// The api_host must serve the same network as the rpc_host: identity verification
+// compares a recent block id across the two. Agreement yields the chain id; with a
+// pinned identity a disagreement yields a distinct identity (disabled, fatal for
+// priority 1); unpinned it leaves the endpoint unverified.
+func (s *TronTestSuite) TestAPIHostIdentityMustMatchRPCHost(c *C) {
+	const id = "00000000000003d4aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	const other = "00000000000003d4bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	build := func(api, rpc *httptest.Server, expected string) func(context.Context, string) (string, error) {
+		e := config.ChainEndpointConfig{Name: "a", RPCHost: rpc.URL, APIHost: api.URL, Priority: 1}
+		return tronAPIIdentity("a", endpoints.HTTPPostJSON(e, e.APIHost, time.Second), endpoints.NewEVMProbe(e, time.Second), expected, zerolog.Nop())
+	}
+
+	api, rpc := tronHostPair(id, id)
+	defer api.Close()
+	defer rpc.Close()
+	got, err := build(api, rpc, "")(context.Background(), "0x2b6653dc")
+	c.Assert(err, IsNil)
+	c.Assert(got, Equals, "0x2b6653dc")
+
+	badAPI, rpc2 := tronHostPair(other, id)
+	defer badAPI.Close()
+	defer rpc2.Close()
+	_, err = build(badAPI, rpc2, "")(context.Background(), "0x2b6653dc")
+	c.Assert(err, ErrorMatches, ".*disagree on a recent block.*")
+	got, err = build(badAPI, rpc2, "0x2b6653dc")(context.Background(), "0x2b6653dc")
+	c.Assert(err, IsNil)
+	c.Assert(got, Not(Equals), "0x2b6653dc")
+	c.Assert(got, Matches, `0x2b6653dc \(api_host block .* != rpc_host .*\)`)
+
+	// through the manager: the pinned mismatch is fatal for priority 1
+	e := config.ChainEndpointConfig{Name: "a", RPCHost: rpc2.URL, APIHost: badAPI.URL, Priority: 1}
+	fc := config.BifrostChainConfiguration{ChainID: common.TRONChain}.GetFailoverConfig()
+	mgr, err := endpoints.NewManager(common.TRONChain, []config.ChainEndpointConfig{e}, fc, zerolog.Nop(), endpoints.WithExpectedIdentity("0x2b6653dc"))
+	c.Assert(err, IsNil)
+	rpcProbe := endpoints.NewEVMProbe(e, time.Second)
+	probe := endpoints.CompoundProbe{Probe: rpcProbe, ExtraIdentity: tronAPIIdentity("a", endpoints.HTTPPostJSON(e, e.APIHost, time.Second), rpcProbe, "0x2b6653dc", zerolog.Nop())}
+	err = mgr.Bootstrap(context.Background(), []endpoints.Probe{probe})
+	c.Assert(err, ErrorMatches, `(?s).*priority-1 endpoint a reports identity "0x2b6653dc \(api_host block .*but expected_identity is "0x2b6653dc".*`)
+}
+
+func (s *TronTestSuite) TestTronIdentity(c *C) {
+	got, err := tronIdentity("0x1", "0xABC", "abc", "")
+	c.Assert(err, IsNil)
+	c.Assert(got, Equals, "0x1")
+	_, err = tronIdentity("0x1", "0xabc", "def", "")
+	c.Assert(err, NotNil)
+	got, err = tronIdentity("0x1", "0xabc", "def", "0x1")
+	c.Assert(err, IsNil)
+	c.Assert(got, Equals, "0x1 (api_host block def != rpc_host abc)")
+	_, err = tronIdentity("0x1", "", "", "")
+	c.Assert(err, NotNil)
 }

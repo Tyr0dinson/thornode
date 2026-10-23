@@ -434,49 +434,69 @@ func NewXRPProbe(e config.ChainEndpointConfig, timeout time.Duration) Probe {
 	return p.asProbe()
 }
 
+// HTTPPostJSON returns a poster bound to an endpoint's REST host and credentials: it
+// POSTs body (JSON) to base+path and returns the response as a JSON object. A 429 is
+// reported as ErrRateLimited; any other non-200 status, or a body that is not a JSON
+// object, is an error. Errors never carry the URL or the credentials.
+func HTTPPostJSON(e config.ChainEndpointConfig, base string, timeout time.Duration) func(ctx context.Context, path, body string) (map[string]json.RawMessage, error) {
+	u, err := url.Parse(NormalizeHost(base))
+	if err != nil || u.Host == "" {
+		return func(context.Context, string, string) (map[string]json.RawMessage, error) {
+			return nil, fmt.Errorf("endpoint %s: invalid url", e.Name)
+		}
+	}
+	auth, clean := authFor(e, u)
+	secrets := SecretsOf(clean, auth.secrets()...)
+	hc := &http.Client{Timeout: timeout}
+	return func(ctx context.Context, path, body string) (map[string]json.RawMessage, error) {
+		target := *clean
+		target.Path = strings.TrimSuffix(clean.Path, "/") + "/" + strings.TrimPrefix(path, "/")
+		if body == "" {
+			body = "{}"
+		}
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, target.String(), strings.NewReader(body))
+		if err != nil {
+			return nil, Redact(err, secrets)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		auth.apply(req.Header)
+		resp, err := hc.Do(req)
+		if err != nil {
+			return nil, Redact(err, secrets)
+		}
+		raw, rerr := io.ReadAll(io.LimitReader(resp.Body, maxProbeBody))
+		_ = resp.Body.Close()
+		if resp.StatusCode == http.StatusTooManyRequests {
+			return nil, fmt.Errorf("%s: http 429: %w", path, ErrRateLimited)
+		}
+		if resp.StatusCode != http.StatusOK {
+			return nil, fmt.Errorf("%s: http status %d", path, resp.StatusCode)
+		}
+		if rerr != nil {
+			return nil, Redact(fmt.Errorf("%s: %w", path, rerr), secrets)
+		}
+		var obj map[string]json.RawMessage
+		if err := json.Unmarshal(raw, &obj); err != nil {
+			return nil, fmt.Errorf("%s: response is not a JSON object", path)
+		}
+		return obj, nil
+	}
+}
+
 // HTTPPostCheck returns an extra liveness check for CompoundProbe that POSTs an
 // empty JSON object to base+path with the endpoint's credentials and requires a 200
 // whose JSON body contains every field in wantFields. The field requirement is what
 // separates a real chain API from a proxy or a captive portal that answers 200 to
 // anything. TRON uses it against api_host/wallet/getnowblock with "blockID".
 func HTTPPostCheck(e config.ChainEndpointConfig, base, path string, timeout time.Duration, wantFields ...string) func(ctx context.Context) error {
-	u, err := url.Parse(NormalizeHost(base))
-	if err != nil || u.Host == "" {
-		return func(context.Context) error { return fmt.Errorf("invalid url") }
-	}
-	auth, clean := authFor(e, u)
-	target := *clean
-	target.Path = strings.TrimSuffix(clean.Path, "/") + "/" + strings.TrimPrefix(path, "/")
-	secrets := SecretsOf(clean, auth.secrets()...)
-	hc := &http.Client{Timeout: timeout}
+	post := HTTPPostJSON(e, base, timeout)
 	return func(ctx context.Context) error {
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, target.String(), strings.NewReader("{}"))
+		obj, err := post(ctx, path, "{}")
 		if err != nil {
-			return Redact(err, secrets)
-		}
-		req.Header.Set("Content-Type", "application/json")
-		auth.apply(req.Header)
-		resp, err := hc.Do(req)
-		if err != nil {
-			return Redact(err, secrets)
-		}
-		raw, rerr := io.ReadAll(io.LimitReader(resp.Body, maxProbeBody))
-		_ = resp.Body.Close()
-		if resp.StatusCode == http.StatusTooManyRequests {
-			return fmt.Errorf("%s: http 429: %w", path, ErrRateLimited)
-		}
-		if resp.StatusCode != http.StatusOK {
-			return fmt.Errorf("%s: http status %d", path, resp.StatusCode)
-		}
-		if len(wantFields) == 0 {
-			return nil
-		}
-		if rerr != nil {
-			return Redact(fmt.Errorf("%s: %w", path, rerr), secrets)
-		}
-		var obj map[string]json.RawMessage
-		if err := json.Unmarshal(raw, &obj); err != nil {
-			return fmt.Errorf("%s: response is not a JSON object", path)
+			if len(wantFields) == 0 && strings.HasSuffix(err.Error(), "response is not a JSON object") {
+				return nil // liveness only: any 200 answers
+			}
+			return err
 		}
 		for _, f := range wantFields {
 			if _, ok := obj[f]; !ok {

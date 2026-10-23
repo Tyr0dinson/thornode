@@ -200,6 +200,79 @@ type TronClient struct {
 	stopchan     chan struct{}
 }
 
+// tronIdentityDepth is how far below the api_host tip the block compared across
+// api_host and rpc_host is taken: deep enough that both hosts have it, shallow
+// enough for lite full nodes that keep only recent history.
+const tronIdentityDepth = 20
+
+// tronIdentity combines the rpc_host chain id with the api_host cross-check into the
+// identity the endpoint manager verifies: a TRON block id equals the JSON-RPC block
+// hash of the same block, so the two hosts serve the same network exactly when they
+// agree on it. With an expected identity a disagreement is reported as a distinct
+// identity, so the endpoint is disabled (fatal at startup for priority 1); without
+// one it is an error that leaves the endpoint unverified, never letting either host
+// latch the reference.
+func tronIdentity(chainID, rpcHash, apiBlockID, expected string) (string, error) {
+	norm := func(h string) string { return strings.ToLower(strings.TrimPrefix(strings.TrimPrefix(h, "0x"), "0X")) }
+	if norm(rpcHash) == norm(apiBlockID) && norm(rpcHash) != "" {
+		return chainID, nil
+	}
+	if expected != "" {
+		return fmt.Sprintf("%s (api_host block %s != rpc_host %s)", chainID, norm(apiBlockID), norm(rpcHash)), nil
+	}
+	return "", fmt.Errorf("api_host and rpc_host disagree on a recent block (api %q, rpc %q): different networks?", norm(apiBlockID), norm(rpcHash))
+}
+
+// tronAPIIdentity is the CompoundProbe identity hook for one TRON endpoint: given
+// the verified rpc_host chain id it reads the api_host tip, takes the block
+// tronIdentityDepth below it, and compares its id across api_host
+// (/wallet/getblockbynum) and rpc_host (eth_getBlockByNumber). Transport failures
+// leave the endpoint unverified until a later cycle.
+func tronAPIIdentity(name string, apiPost func(ctx context.Context, path, body string) (map[string]json.RawMessage, error), rpcProbe endpoints.Probe, expected string, logger zerolog.Logger) func(ctx context.Context, chainID string) (string, error) {
+	hp, ok := rpcProbe.(endpoints.HashProbe)
+	return func(ctx context.Context, chainID string) (string, error) {
+		if !ok {
+			return "", fmt.Errorf("endpoint %s: rpc probe cannot fetch block hashes", name)
+		}
+		now, err := apiPost(ctx, "/wallet/getnowblock", "{}")
+		if err != nil {
+			return "", fmt.Errorf("api identity: %w", err)
+		}
+		var hdr struct {
+			BlockHeader struct {
+				RawData struct {
+					Number int64 `json:"number"`
+				} `json:"raw_data"`
+			} `json:"block_header"`
+		}
+		if err = json.Unmarshal(now["block_header"], &hdr.BlockHeader); err != nil || hdr.BlockHeader.RawData.Number <= 0 {
+			return "", fmt.Errorf("api identity: getnowblock has no block number")
+		}
+		h := hdr.BlockHeader.RawData.Number - tronIdentityDepth
+		if h < 1 {
+			h = 1
+		}
+		blk, err := apiPost(ctx, "/wallet/getblockbynum", fmt.Sprintf(`{"num":%d}`, h))
+		if err != nil {
+			return "", fmt.Errorf("api identity: %w", err)
+		}
+		var apiID string
+		if err = json.Unmarshal(blk["blockID"], &apiID); err != nil || apiID == "" {
+			return "", fmt.Errorf("api identity: getblockbynum %d has no blockID", h)
+		}
+		rpcHash, err := hp.HashAt(ctx, h)
+		if err != nil {
+			return "", fmt.Errorf("api identity: %w", err)
+		}
+		id, ierr := tronIdentity(chainID, rpcHash, apiID, expected)
+		if ierr != nil {
+			logger.Error().Err(ierr).Str("endpoint", name).Int64("height", h).
+				Msg("endpoint api_host and rpc_host disagree on the network; the endpoint stays unverified")
+		}
+		return id, ierr
+	}
+}
+
 // NewTronClient creates a new instance of a Tron chain client
 func NewTronClient(
 	thorKeys *thorclient.Keys,
@@ -231,12 +304,15 @@ func NewTronClient(
 
 	// endpoint manager (#2828): one router for api_host (/wallet/*) and one for
 	// rpc_host (JSON-RPC), both following the same active endpoint. Probes check
-	// eth_blockNumber / eth_chainId on rpc_host and /wallet/getnowblock on api_host.
+	// eth_blockNumber / eth_chainId on rpc_host and /wallet/getnowblock on api_host,
+	// and identity verification proves both hosts serve the same network by
+	// comparing a recent block id across them (tronAPIIdentity).
 	failoverCfg := config.GetFailoverConfig()
 	endpointCfgs := config.GetEndpoints()
+	expectedIdentity := strings.ToLower(config.ExpectedIdentity)
 	mgrOpts := []endpoints.Option{endpoints.WithMetrics(endpoints.DefaultMetrics())}
-	if config.ExpectedIdentity != "" {
-		mgrOpts = append(mgrOpts, endpoints.WithExpectedIdentity(strings.ToLower(config.ExpectedIdentity)))
+	if expectedIdentity != "" {
+		mgrOpts = append(mgrOpts, endpoints.WithExpectedIdentity(expectedIdentity))
 	}
 	endpointMgr, err := endpoints.NewManager(config.ChainID, endpointCfgs, failoverCfg, logger, mgrOpts...)
 	if err != nil {
@@ -245,9 +321,12 @@ func NewTronClient(
 	ordered := endpoints.OrderedEndpoints(endpointMgr, endpointCfgs)
 	probes := make([]endpoints.Probe, len(ordered))
 	for i, e := range ordered {
+		rpcProbe := endpoints.NewEVMProbe(e, failoverCfg.HealthCheckTimeout)
+		apiPost := endpoints.HTTPPostJSON(e, e.APIHost, failoverCfg.HealthCheckTimeout)
 		probes[i] = endpoints.CompoundProbe{
-			Probe: endpoints.NewEVMProbe(e, failoverCfg.HealthCheckTimeout),
-			Extra: endpoints.HTTPPostCheck(e, e.APIHost, "/wallet/getnowblock", failoverCfg.HealthCheckTimeout, "blockID"),
+			Probe:         rpcProbe,
+			Extra:         endpoints.HTTPPostCheck(e, e.APIHost, "/wallet/getnowblock", failoverCfg.HealthCheckTimeout, "blockID"),
+			ExtraIdentity: tronAPIIdentity(e.Name, apiPost, rpcProbe, expectedIdentity, logger),
 		}
 	}
 	if err = endpointMgr.Bootstrap(context.Background(), probes); err != nil {
