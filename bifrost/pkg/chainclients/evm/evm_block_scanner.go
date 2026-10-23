@@ -350,7 +350,7 @@ func (e *EVMScanner) processBlock(block *etypes.Block) (stypes.TxIn, error) {
 	}
 
 	// collect all relevant transactions from the block and their gas prices
-	txInBlock, gasPrices, err := e.getTxIn(block)
+	txInBlock, gasPrices, err := e.getTxIn(block, "")
 	if err != nil {
 		return txIn, err
 	}
@@ -375,7 +375,7 @@ func (e *EVMScanner) processBlock(block *etypes.Block) (stypes.TxIn, error) {
 	return txIn, nil
 }
 
-func (e *EVMScanner) getTxInOptimized(method string, block *etypes.Block) (stypes.TxIn, []*big.Int, error) {
+func (e *EVMScanner) getTxInOptimized(method string, block *etypes.Block, pin string) (stypes.TxIn, []*big.Int, error) {
 	// Use custom method name as it varies between implementation
 	// It should be akin to: "fetch all transaction receipts within a block", e.g. getBlockReceipts
 	// This has shown to be more efficient than getTransactionReceipt in a batch call
@@ -407,7 +407,8 @@ func (e *EVMScanner) getTxInOptimized(method string, block *etypes.Block) (stype
 
 	var receipts []*etypes.Receipt
 	blockNumStr := hexutil.EncodeBig(block.Number())
-	err := e.ethClient.Client().Call(
+	err := e.ethClient.Client().CallContext(
+		endpoints.PinContext(context.Background(), pin),
 		&receipts,
 		method,
 		blockNumStr,
@@ -513,12 +514,15 @@ func (e *EVMScanner) getTxInOptimized(method string, block *etypes.Block) (stype
 	return txInbound, gasPrices, nil
 }
 
-func (e *EVMScanner) getTxIn(block *etypes.Block) (stypes.TxIn, []*big.Int, error) {
+// getTxIn reads the receipts of block's transactions from the endpoint named by pin
+// ("" for unpinned: the router picks), so a reorg rescan reads them from its witness,
+// the endpoint whose block it extracts.
+func (e *EVMScanner) getTxIn(block *etypes.Block, pin string) (stypes.TxIn, []*big.Int, error) {
 	// CHANGEME: if an EVM chain supports some way of fetching all transaction receipts
 	// within a block, register it here.
 	switch e.cfg.ChainID {
 	case common.BASEChain, common.BSCChain, common.POLChain:
-		return e.getTxInOptimized("eth_getBlockReceipts", block)
+		return e.getTxInOptimized("eth_getBlockReceipts", block, pin)
 	}
 
 	txInbound := stypes.TxIn{
@@ -569,7 +573,7 @@ func (e *EVMScanner) getTxIn(block *etypes.Block) (stypes.TxIn, []*big.Int, erro
 		}
 
 		// send the batch rpc request
-		err := e.ethClient.Client().BatchCall(rpcBatch)
+		err := e.ethClient.Client().BatchCallContext(endpoints.PinContext(context.Background(), pin), rpcBatch)
 		if err != nil {
 			e.logger.Error().Int("size", len(batch)).Err(err).Msg("failed to batch fetch transaction receipts")
 			return stypes.TxIn{}, nil, err
@@ -852,7 +856,7 @@ func (e *EVMScanner) planReorg(header *etypes.Header) (*reorgPlan, error) {
 		if block.Transactions().Len() == 0 {
 			continue
 		}
-		txIn, _, xerr := e.getTxIn(block) // discard gas prices during reorg rescan
+		txIn, _, xerr := e.getTxIn(block, witness) // discard gas prices during reorg rescan
 		if xerr != nil {
 			return nil, fmt.Errorf("rescan height %d: %w", rescanHeight, xerr)
 		}

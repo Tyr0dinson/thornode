@@ -169,7 +169,7 @@ func TestGetTxInOptimizedConcurrentReceipts(t *testing.T) {
 		}
 		done := make(chan result, 1)
 		go func() {
-			txIn, gasPrices, err := scanner.getTxInOptimized("eth_getBlockReceipts", block)
+			txIn, gasPrices, err := scanner.getTxInOptimized("eth_getBlockReceipts", block, "")
 			done <- result{txIn, gasPrices, err}
 		}()
 		var res result
@@ -220,7 +220,7 @@ func TestGetTxInOptimizedConcurrentReceipts(t *testing.T) {
 		eipSigner:         signer,
 		tokenManager:      tokenManager,
 	}
-	txIn, _, gerr := scanner.getTxInOptimized("eth_getBlockReceipts", block)
+	txIn, _, gerr := scanner.getTxInOptimized("eth_getBlockReceipts", block, "")
 	if gerr == nil || !strings.Contains(gerr.Error(), "not of the scanned block") {
 		t.Fatalf("receipts of another block: got err %v, want a scanned-block mismatch", gerr)
 	}

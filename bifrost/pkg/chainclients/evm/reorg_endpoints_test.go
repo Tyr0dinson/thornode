@@ -8,12 +8,14 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	ecommon "github.com/ethereum/go-ethereum/common"
 	etypes "github.com/ethereum/go-ethereum/core/types"
 	. "gopkg.in/check.v1"
 
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/endpoints"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/evm/types"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pubkeymanager"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
@@ -236,4 +238,98 @@ func (s *UnstuckTestSuite) TestReorgRescanRejectsReceiptsOfAnotherBlock(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(plan.metas, HasLen, 1)
 	c.Assert(plan.metas[0].BlockHash, Equals, replacement.Hex())
+}
+
+// receiptGate forwards every request to target, counting receipt reads in hits and
+// answering them with HTTP 500 when fail is set.
+func receiptGate(target string, fail bool, hits *atomic.Int32) *httptest.Server {
+	return httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		body, _ := io.ReadAll(req.Body)
+		if bytes.Contains(body, []byte(`"eth_getBlockReceipts"`)) || bytes.Contains(body, []byte(`"eth_getTransactionReceipt"`)) {
+			hits.Add(1)
+			if fail {
+				http.Error(rw, "receipts unavailable", http.StatusInternalServerError)
+				return
+			}
+		}
+		resp, err := http.Post(target+req.URL.Path, "application/json", bytes.NewReader(body))
+		if err != nil {
+			http.Error(rw, err.Error(), http.StatusBadGateway)
+			return
+		}
+		defer func() { _ = resp.Body.Close() }()
+		rw.Header().Set("Content-Type", resp.Header.Get("Content-Type"))
+		rw.WriteHeader(resp.StatusCode)
+		_, _ = io.Copy(rw, resp.Body)
+	}))
+}
+
+// A reorg rescan reads its receipts from the witness only, the endpoint whose block
+// it extracts: when the witness cannot serve them the step fails and is retried, and
+// another endpoint, even one holding the right receipts, is never asked, so a plan
+// never mixes two nodes' views of the chain.
+func (s *UnstuckTestSuite) TestReorgRescanReadsReceiptsFromTheWitnessOnly(c *C) {
+	config.Init()
+	to := ecommon.HexToAddress("0x9f4aab49a9cd8fc54dcb3701846f608a6f2c44da")
+	tx := etypes.NewTx(&etypes.LegacyTx{Nonce: 0, To: &to, Value: big.NewInt(1), Gas: 21000, GasPrice: big.NewInt(1)})
+	txJSON, err := json.Marshal(tx)
+	c.Assert(err, IsNil)
+	blockAnswer := strings.Replace(strings.Replace(reorgBlockJSON,
+		`"transactions":[]`, `"transactions":[`+string(txJSON)+`]`, 1),
+		`"transactionsRoot":"0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421"`,
+		`"transactionsRoot":"0x`+strings.Repeat("ab", 32)+`"`, 1)
+	var header etypes.Header
+	c.Assert(json.Unmarshal([]byte(blockAnswer), &header), IsNil)
+	replacement := header.Hash()
+
+	receiptBlock := replacement.Hex()
+	node := rescanProxy(s.server.URL, blockAnswer, tx, &receiptBlock)
+	defer node.Close()
+	var witnessHits, otherHits atomic.Int32
+	witness := receiptGate(node.URL, true, &witnessHits)
+	defer witness.Close()
+	other := receiptGate(node.URL, false, &otherHits)
+	defer other.Close()
+	pubkeyMgr, err := pubkeymanager.NewPubKeyManager(s.bridge, s.m)
+	c.Assert(err, IsNil)
+	e, err := NewEVMClient(s.thorKeys, config.BifrostChainConfiguration{
+		ChainID:        common.BSCChain,
+		RPCHost:        witness.URL,
+		SolvencyBlocks: 10,
+		Endpoints: []config.ChainEndpointConfig{
+			{Name: "witness", RPCHost: witness.URL, Priority: 1},
+			{Name: "other", RPCHost: other.URL, Priority: 2},
+		},
+		BlockScanner: config.BifrostBlockScannerConfiguration{
+			ChainID:              common.BSCChain,
+			StartBlockHeight:     1,
+			HTTPRequestTimeout:   time.Second * 10,
+			GasCacheBlocks:       40,
+			Concurrency:          1,
+			MaxReorgRescanBlocks: 96,
+		},
+	}, nil, s.bridge, s.m, pubkeyMgr, thorclient.NewPoolMgr(s.bridge))
+	c.Assert(err, IsNil)
+	scanner := e.evmScanner
+	// both endpoints in rotation, so an unpinned read would fail over to the other
+	for _, en := range scanner.endpointMgr.Entries() {
+		for i := 0; i < 5 && en.State() != endpoints.StateHealthy; i++ {
+			en.RecordHealthCheck(true, scanner.endpointMgr.Config())
+		}
+		c.Assert(en.Eligible(), Equals, true)
+	}
+	c.Assert(scanner.endpointMgr.Active().Name, Equals, "witness")
+	c.Assert(scanner.blockMetaAccessor.SaveBlockMeta(99, &types.BlockMeta{
+		Height:    99,
+		BlockHash: "0x00000000000000000000000000000000000000000000000000000000000000dd",
+	}), IsNil)
+	block100 := &etypes.Header{Number: big.NewInt(100), ParentHash: replacement}
+
+	_, err = scanner.planReorg(block100)
+	c.Assert(err, NotNil)
+	c.Assert(witnessHits.Load() > 0, Equals, true)
+	c.Assert(otherHits.Load(), Equals, int32(0))
+	meta, err := scanner.blockMetaAccessor.GetBlockMeta(99)
+	c.Assert(err, IsNil)
+	c.Assert(meta.BlockHash, Equals, "0x00000000000000000000000000000000000000000000000000000000000000dd")
 }

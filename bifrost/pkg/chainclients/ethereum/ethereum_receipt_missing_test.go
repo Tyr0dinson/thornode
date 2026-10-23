@@ -90,7 +90,7 @@ func (s *BlockScannerTestSuite) TestMissingReceiptFailsTheBlock(c *C) {
 	c.Assert(item, IsNil)
 
 	// and the block scan fails as a whole, so the block is retried
-	_, err = bs.extractTxs(block)
+	_, err = bs.extractTxs(block, "")
 	c.Assert(err, ErrorMatches, "block 5: tx 0x.*not available on this node yet.*")
 }
 
@@ -177,7 +177,7 @@ func (s *BlockScannerTestSuite) TestContentErrorIsSkippedNotFatal(c *C) {
 
 	block := makeReceiptsTestBlock(5, []*etypes.Transaction{tx})
 	receiptBlockHash = block.Hash().Hex()
-	txIn, err := bs.extractTxs(block)
+	txIn, err := bs.extractTxs(block, "")
 	c.Assert(err, IsNil) // skipped, the block completes
 	c.Assert(txIn.TxArray, HasLen, 0)
 
@@ -185,7 +185,7 @@ func (s *BlockScannerTestSuite) TestContentErrorIsSkippedNotFatal(c *C) {
 	// reorged since the block was read) fails the block so it is retried: it must
 	// not be observed, nor reach the content checks, from the wrong fork
 	receiptBlockHash = "0x1111111111111111111111111111111111111111111111111111111111111111"
-	_, err = bs.extractTxs(block)
+	_, err = bs.extractTxs(block, "")
 	c.Assert(err, ErrorMatches, "(?s).*belongs to block 0x1111.*not the scanned block.*")
 	c.Assert(errors.Is(err, errReceiptUnavailable), Equals, true)
 }

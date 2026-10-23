@@ -384,7 +384,7 @@ func (e *ETHScanner) processBlock(block *etypes.Block) (stypes.TxIn, error) {
 
 	var txInBlock stypes.TxIn
 	if block.Transactions().Len() > 0 {
-		txInBlock, err = e.extractTxs(block)
+		txInBlock, err = e.extractTxs(block, "")
 		if err != nil {
 			return txIn, err
 		}
@@ -424,7 +424,10 @@ func (e *ETHScanner) processBlock(block *etypes.Block) (stypes.TxIn, error) {
 // transaction skipped, as before.
 var errReceiptUnavailable = errors.New("receipt unavailable")
 
-func (e *ETHScanner) extractTxs(block *etypes.Block) (stypes.TxIn, error) {
+// extractTxs reads the receipts of block's transactions from the endpoint named by
+// pin ("" for unpinned: the router picks), so a reorg rescan reads them from its
+// witness, the endpoint whose block it extracts.
+func (e *ETHScanner) extractTxs(block *etypes.Block, pin string) (stypes.TxIn, error) {
 	txInbound := stypes.TxIn{
 		Chain:    common.ETHChain,
 		Filtered: false,
@@ -436,7 +439,7 @@ func (e *ETHScanner) extractTxs(block *etypes.Block) (stypes.TxIn, error) {
 	// all of them, when the call fails) fall back to individual
 	// eth_getTransactionReceipt lookups below.
 	receiptsCtx, receiptsCancel := e.getContext()
-	receipts := fetchBlockReceipts(receiptsCtx, e.client.Client(), e.logger, block)
+	receipts := fetchBlockReceipts(endpoints.PinContext(receiptsCtx, pin), e.client.Client(), e.logger, block)
 	receiptsCancel()
 
 	// at least one worker: a semaphore smaller than one Acquire never grants it
@@ -477,7 +480,7 @@ func (e *ETHScanner) extractTxs(block *etypes.Block) (stypes.TxIn, error) {
 			e.logger.Err(err).Msgf("fail to remove signed tx item, hash:%s", tx.Hash().String())
 		}
 
-		txInItem, err := e.fromTxToTxInWithReceipts(tx, receipts, block.Hash())
+		txInItem, err := e.fromTxToTxInWithReceipts(tx, receipts, block.Hash(), pin)
 		if err != nil {
 			e.logger.Error().Err(err).Str("hash", tx.Hash().Hex()).Msg("fail to get one tx from server")
 			if errors.Is(err, errReceiptUnavailable) {
@@ -657,7 +660,7 @@ func (e *ETHScanner) planReorg(header *etypes.Header) (*reorgPlan, error) {
 		if block.Transactions().Len() == 0 {
 			continue
 		}
-		txIn, xerr := e.extractTxs(block)
+		txIn, xerr := e.extractTxs(block, witness)
 		if xerr != nil {
 			return nil, fmt.Errorf("rescan block %d: %w", height, xerr)
 		}
@@ -758,10 +761,11 @@ func (e *ETHScanner) checkTransaction(pin, hash string) (evm.TxPresence, error) 
 	return evm.TxOnChain, nil
 }
 
-func (e *ETHScanner) getReceipt(hash string) (*etypes.Receipt, error) {
+// getReceipt reads a receipt from the endpoint named by pin ("" for unpinned).
+func (e *ETHScanner) getReceipt(pin, hash string) (*etypes.Receipt, error) {
 	ctx, cancel := e.getContext()
 	defer cancel()
-	return e.client.TransactionReceipt(ctx, ecommon.HexToHash(hash))
+	return e.client.TransactionReceipt(endpoints.PinContext(ctx, pin), ecommon.HexToHash(hash))
 }
 
 func (e *ETHScanner) getBlock(height int64) (*etypes.Block, error) {
@@ -1144,7 +1148,7 @@ func (e *ETHScanner) getTxInFromTransaction(tx *etypes.Transaction, receipt *ety
 }
 
 func (e *ETHScanner) fromTxToTxIn(tx *etypes.Transaction) (*stypes.TxInItem, error) {
-	return e.fromTxToTxInWithReceipts(tx, nil, ecommon.Hash{})
+	return e.fromTxToTxInWithReceipts(tx, nil, ecommon.Hash{}, "")
 }
 
 // fromTxToTxInWithReceipts converts the transaction to a TxInItem, taking its
@@ -1152,14 +1156,14 @@ func (e *ETHScanner) fromTxToTxIn(tx *etypes.Transaction) (*stypes.TxInItem, err
 // to an individual eth_getTransactionReceipt lookup otherwise. A fallback receipt
 // must belong to blockHash, the block being scanned (the zero hash skips the check
 // for callers without a block).
-func (e *ETHScanner) fromTxToTxInWithReceipts(tx *etypes.Transaction, receipts map[ecommon.Hash]*etypes.Receipt, blockHash ecommon.Hash) (*stypes.TxInItem, error) {
+func (e *ETHScanner) fromTxToTxInWithReceipts(tx *etypes.Transaction, receipts map[ecommon.Hash]*etypes.Receipt, blockHash ecommon.Hash, pin string) (*stypes.TxInItem, error) {
 	if tx == nil || tx.To() == nil {
 		return nil, nil
 	}
 	receipt := receipts[tx.Hash()]
 	if receipt == nil {
 		var err error
-		receipt, err = e.getReceipt(tx.Hash().Hex())
+		receipt, err = e.getReceipt(pin, tx.Hash().Hex())
 		if err != nil {
 			if errors.Is(err, ethereum.NotFound) {
 				// the block lists this transaction, so a node that has the block has
