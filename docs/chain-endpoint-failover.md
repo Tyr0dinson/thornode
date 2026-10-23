@@ -19,8 +19,9 @@ caller's business and is never charged: bifrost calls optional methods
 (`eth_getBlockReceipts`) and falls back itself when a node lacks them. On XRP, a
 provider answering `lgrNotFound` is asked last: the other endpoints are tried first and
 nothing is charged. Writes (broadcasts) are sent once, to the active endpoint, with the
-caller's whole timeout, and never duplicated elsewhere; the XRP transport retry wrapper
-never replays `submit` either.
+caller's whole timeout, and never duplicated elsewhere: a write moves to the next
+endpoint only when connecting to the active one failed before anything was sent (gRPC
+writes never move). The XRP transport retry wrapper never replays `submit` either.
 
 A read attempt is cut at the attempt timeout (half of `http_request_timeout`, at most
 10s) only while another candidate is left to try; the last or only candidate keeps the
@@ -36,16 +37,29 @@ every RPC bifrost calls (`txindex=1` included). An endpoint that answered a read
 application error ("no such transaction") is authoritative over one that failed.
 
 Several UTXO decisions ask only the primary daemon and fail closed when it cannot
-answer: reorg re-confirmation, block-meta pruning (kept while our own broadcast may still
-be in the primary's mempool, listed via `getrawmempool` on daemons without
-`getmempoolentry`, such as Zebra), and the mempool-ancestor check before spending an
-unconfirmed UTXO (the UTXO is skipped that round). Reorg re-confirmation needs the
-primary's positive "not found" before it reports an errata, and the primary must have
-reached the reorg tip first: a resyncing or lagging primary answers "not found" for
-everything above its own tip. While the primary cannot answer, or is below the reorg
-tip, the scan of the block that revealed the reorg fails and is retried, so that
-chain's scanner waits. A long primary outage therefore delays reorg handling, retains
-block meta and spends only confirmed UTXOs.
+answer: block-meta pruning (kept while our own broadcast may still be in the primary's
+mempool, listed via `getrawmempool` on daemons without `getmempoolentry`, such as Zebra;
+while the health checks keep the primary out of rotation the meta is kept without
+asking), the mempool-ancestor check before spending an unconfirmed UTXO (the UTXO is
+skipped that round), the relay fee that sets the outbound fee floor on LTC, BCH, DOGE and
+ZEC (the last value is kept; a fallback provider's is never taken, since every signer
+must compute the same fee), ZEC input selection (checked against the primary's own
+height, as the inputs come from the primary), retiring an expired ZEC payload (only once
+the primary has reached the expiry height), and reorg re-confirmation. A long primary
+outage therefore retains block meta and spends only confirmed UTXOs.
+
+A UTXO reorg is walked back by block hash from the scanned block: each earlier block is
+fetched by the hash its child names, so an endpoint that is behind or still on the old
+fork cannot answer for another chain, and a reorg without customer transactions is
+resolved through any endpoint that has the new blocks. The walk stops at the first stored
+block on the new chain, or where no stored block is left in the window; a height with no
+stored block (a gap a skip-ahead left) is walked through by hash. A customer
+transaction becomes an errata only on the primary's positive "not found", and only once
+the primary's block at the scanned block's height minus one is the scanned block's
+parent (the primary is caught up and on the new chain); one contained in the scanned
+block, or in a new-chain block the walk has fetched, counts as on chain without asking.
+While the primary cannot give that answer, the scan of the block that revealed the reorg
+fails and is retried, so that chain's scanner waits.
 
 On every failover chain with reorg handling (UTXO, ETH, and the EVM chains whose
 `max_reorg_rescan_blocks` is above 0, so not AVAX) a reorg is resolved all or nothing:
@@ -53,7 +67,11 @@ the errata, the repaired block records and the observations of the rescanned blo
 reported and written only once the whole scan of the block that revealed the reorg has
 succeeded. A transaction lookup that cannot be answered fails the scan, which is
 retried, so it never turns into an errata (on ETH and the EVM chains a receipt that
-cannot be read keeps the observation, as before). A failed attempt may already have
+cannot be read keeps the observation, as before). A receipt read for a scanned or
+rescanned block must carry that block's hash, or the scan fails and is retried; this is
+checked on ETH and on BSC, BASE and POL, whose block hash bifrost computes exactly as
+their nodes do, but not on AVAX, whose C-Chain header bifrost cannot hash and which has
+instant finality. A failed attempt may already have
 removed the signed-transaction and signer-cache entries of outbounds seen in the
 rescanned blocks, which is what the retry does anyway; UTXO undoes the
 observed-transaction marks the failed attempt set. With several endpoints, ETH and the
@@ -75,14 +93,25 @@ A background health check runs every `health_check_interval` against every endpo
 - **Liveness.** A probe that errors or exceeds `health_check_timeout` is a strike.
 - **Lag.** When at least two endpoints agree on a tip (within `max_block_lag`), an
   endpoint further behind than `max_block_lag` gets a strike each cycle. With a single
-  endpoint, the block scanner's own height is the baseline instead.
+  endpoint, the block scanner's own height is the baseline instead. With exactly two
+  endpoints, two heights that agree leave neither behind and two that do not agree form
+  no tip, so lag never evicts either one: two endpoints fail over on errors only, a
+  stalled endpoint that still answers stays active, and one recovering from an outage is
+  not held back while it resyncs (with `prefer_higher_priority`, traffic can move back to
+  it early). Lag protection needs three or more endpoints.
 - **Identity.** Every endpoint must report the same chain identity (EVM `eth_chainId`,
   UTXO genesis block hash, Cosmos `node_info.network`, Solana genesis hash, XRP
   `network_id`). The reference is `expected_identity` when set, otherwise the priority-1
   endpoint's, otherwise one held by a strict majority (and at least two) of the
   endpoints that reported an identity. A single reachable endpoint never becomes the
   reference: it would otherwise disable your own node when it came back. Until a
-  reference exists, endpoints serve but none can be disabled for a mismatch. Once one
+  reference exists, endpoints serve but none can be disabled for a mismatch. The EVM
+  chains need a reference to start, as they sign with the verified chain id: with two
+  or more endpoints, the priority-1 endpoint unreachable at startup, and no
+  `expected_identity`, the chain client starts only when at least two endpoints reported
+  an identity and a strict majority of them agree; otherwise it does not start (it is
+  retried every minute). Pin `expected_identity` to let it start on a single reachable
+  backup. Once one
   exists, an endpoint on another network is disabled permanently, and the priority-1
   endpoint disagreeing with `expected_identity` stops the chain client from starting.
   Identity is required whenever there is more than one endpoint **or** `expected_identity`
@@ -108,9 +137,10 @@ A background health check runs every `health_check_interval` against every endpo
   before it may serve traffic, even as an all-down fallback. Without a strict majority
   (a tie, or a plurality such as H, H, X, Y) nothing is evicted or cleared and the
   disagreement is logged. With fewer than two agreeing endpoints there is no tip and the
-  check does not run, which also means a quarantined endpoint cannot be cleared: it
-  needs healthy endpoints at a common height to compare against, so with no second
-  healthy endpoint it stays out until one comes back or bifrost is restarted.
+  check does not run. A quarantined endpoint is cleared once it serves the same hash as
+  a healthy endpoint at a common height (its own probed height counts toward that tip),
+  so one healthy endpoint is enough; with none it stays out until one comes back or
+  bifrost is restarted.
 
 `error_threshold` consecutive probe strikes, or `error_threshold` consecutive inline
 request errors no more than `error_window` apart, mark an endpoint **unhealthy**. If it
@@ -119,7 +149,8 @@ are re-probed every `recovery_check_interval` and return to healthy after
 `min_recovery_checks` consecutive passing probes. Traffic moves back to a recovered
 higher-priority endpoint only when `prefer_higher_priority` is true.
 
-A rate limit (HTTP 429, gRPC `ResourceExhausted`, JSON-RPC -32005 / -32029) never marks
+A rate limit (HTTP 429, gRPC `ResourceExhausted`, JSON-RPC -32005 / -32029; on Solana
+-32005 means the node is behind and is charged as an endpoint error instead) never marks
 an endpoint unhealthy and never counts as a strike, including when a health probe is
 rate limited: the endpoint enters a cooldown of `rate_limit_backoff`, a healthy endpoint
 is not probed while cooling down (recovery probes of an unhealthy one still run), and
@@ -153,6 +184,11 @@ If every endpoint is unhealthy, bifrost logs an error, sets
 | XRP                             | routed                                                                                                          | `submit` sent once                                                                                                            |
 | TRON                            | `api_host` and `rpc_host` routed together; each endpoint needs both; both are probed                            | `/wallet/broadcasttransaction` sent once                                                                                      |
 | XMR                             | not supported; the Monero client talks to its signer sidecar only                                               |                                                                                                                               |
+
+On Solana, a vault with more than one page (1,000) of new signatures has all its pages
+listed by one endpoint: a node that does not have a page's last signature answers the
+next page with an empty list, which would end the scan early and skip the older
+signatures for good.
 
 `authorization_bearer` and `username` / `password` set on an `endpoints:` entry are
 honored on every chain (gRPC sends them as `authorization` metadata). A legacy
@@ -205,13 +241,18 @@ does not necessarily reuse the original's nonce or sequence: Cosmos signs with i
 locally cached sequence (which the broadcast advanced), and a Solana durable-nonce
 outbound does not expire with its blockhash. A dead endpoint left in an EVM, Cosmos or
 Solana list therefore blocks the automatic re-sign of a stuck outbound until it answers
-again or is removed from the list. TRON is the exception: its transactions expire 20
-minutes after creation, so an endpoint continuously unhealthy for longer than
-`signer_cache_expiry` is skipped there.
+again or is removed from the list. An endpoint whose identity has not been verified since
+bifrost started (one unreachable at startup, which may hold a broadcast from before a
+restart) counts the same way: it cannot be asked, so absence is not proven while it is
+configured. A disabled endpoint (proven to be on another network) does not count. TRON is
+the exception: its transactions expire 20 minutes after creation, so an endpoint
+continuously unhealthy for longer than `signer_cache_expiry` is skipped there.
 
 An endpoint's identity is verified once, when it is first reached. A provider URL
-repointed at another network after bifrost started is not re-verified; the only
-later defence is the block-hash integrity check, and that check has limits. It needs
+repointed at another network after bifrost started is not re-verified, except a Cosmos
+gRPC host, whose network is compared with the verified identity on every probe (a
+mismatch disables the endpoint). Otherwise the only later defence is the block-hash
+integrity check, and that check has limits. It needs
 a height quorum (two endpoints within `max_block_lag` of each other), so it never
 runs with a single endpoint. It evicts an endpoint only when a strict majority of the
 healthy endpoints that answered agree on another hash, so with two endpoints a
@@ -233,7 +274,9 @@ supports it (UTXO, EVM, GAIA, NOBLE, SOL, XRP, TRON; an `endpoints` list on any 
 chain is rejected at startup). If `endpoints` is omitted, bifrost falls back to the
 existing `rpc_host` / `api_host` fields (backward-compatible), which must still satisfy
 the chain's host rules (GAIA and NOBLE need `cosmos_grpc_host` too, TRON needs `api_host`
-too).
+too). Hosts use http or https; a `tcp://` host is read as `http://`, and any other
+scheme (for example `ws://`) is refused at startup, since the endpoint router speaks
+HTTP only.
 
 ```yaml
 chains:
@@ -255,7 +298,7 @@ chains:
       min_recovery_checks: 3 # passing checks required to restore an endpoint
       recovery_check_interval: 30s
       prefer_higher_priority: false # set true to actively fail back to lower-priority-number endpoints
-      rate_limit_backoff: 30s # cooldown after a rate limit (429, -32005): the endpoint is skipped this long and traffic moves on at once. UTXO chains also sleep it once when the primary was rate limited and nothing else served the read
+      rate_limit_backoff: 30s # cooldown after a rate limit (429; -32005 except on Solana): the endpoint is skipped this long and traffic moves on at once. UTXO chains also sleep it once when the primary was rate limited and nothing else served the read
       health_check_timeout: 5s # a probe slower than this is a strike; clamped to half of health_check_interval when larger
       integrity_check_depth: 20 # compare block hashes at tip - depth across endpoints; 0 disables
     expected_identity: "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f" # optional network pin
@@ -295,7 +338,8 @@ BIFROST_CHAINS_<CHAIN>_ENDPOINTS_<N>_<FIELD>
 ```
 
 where `<CHAIN>` is the chain symbol (e.g. `BTC`, `ETH`, `GAIA`) and `<N>` is the 1-based
-endpoint index. Every endpoint needs a distinct `NAME`. An endpoint with no explicit
+endpoint index (at most 16: a higher number is refused at startup, and `0` is ignored
+with a warning). Every endpoint needs a distinct `NAME`. An endpoint with no explicit
 `PRIORITY` defaults to its index, so `ENDPOINTS_1` is preferred over `ENDPOINTS_2`. Supported fields (case-insensitive):
 
 | Env field              | Maps to                |
