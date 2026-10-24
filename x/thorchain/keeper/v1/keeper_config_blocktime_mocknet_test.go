@@ -176,6 +176,8 @@ func (s *KeeperConfigSuite) TestBlockTimeHistory(c *C) {
 	c.Check(k.GetBlockTimeHistory(ctx), HasLen, 0)
 	c.Check(k.RefWindowStart(ctx, 30), Equals, int64(70))
 	c.Check(k.RefWindowEnd(ctx, 30), Equals, int64(130))
+	c.Check(k.RefWindowStart(ctx, 0), Equals, int64(100))
+	c.Check(k.RefWindowStart(ctx, -1), Equals, int64(101))
 
 	// each change is appended
 	k.SetMimir(ctx, constants.BlockTimeMs.String(), 500)

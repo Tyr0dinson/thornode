@@ -160,8 +160,12 @@ func (k KVStore) rateLimitBlockTime(ctx cosmos.Context, current, target int64) i
 // first height a signing-period scan must cover. Across a block time change it
 // measures the window in wall-clock time, so an outbound scheduled under a
 // faster block time is still covered; without one it is now - refBlocks
-// scaled to the current block time. The result can be below 1.
+// scaled to the current block time. The result can be below 1, and above now
+// for a negative refBlocks: refBlocks <= 0 is plain now - refBlocks.
 func (k KVStore) RefWindowStart(ctx cosmos.Context, refBlocks int64) int64 {
+	if refBlocks <= 0 {
+		return ctx.BlockHeight() - refBlocks
+	}
 	refMs := constants.ThorchainBlockTime.Milliseconds()
 	if refBlocks > math.MaxInt64/refMs {
 		return 1
