@@ -690,7 +690,7 @@ func (c *SOLClient) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *
 			return c.dropRejectedForReschedule(tx, height, "spl_halted_dropped", c.logger.Warn(),
 				"SPL signing halted by HaltSOLTokens, dropping for reschedule")
 		}
-		if _, err := c.splOutboundParams(tx); errors.Is(err, errSPLSelfSend) {
+		if _, err = c.splOutboundParams(tx); errors.Is(err, errSPLSelfSend) {
 			return c.dropRejectedForReschedule(tx, height, "spl_self_send_dropped", c.logger.Warn(),
 				"SPL outbound to its own vault would be an unobservable no-op, dropping for reschedule")
 		}
