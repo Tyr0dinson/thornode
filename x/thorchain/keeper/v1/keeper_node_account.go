@@ -41,8 +41,15 @@ func (k KVStore) getNodeAccount(ctx cosmos.Context, key []byte, record *NodeAcco
 	if k.memoDecodeNodeAccount(key, bz, record) {
 		return true, nil
 	}
-	if err := k.cdc.Unmarshal(bz, record); err != nil {
-		return true, dbError(ctx, fmt.Sprintf("Unmarshal kvstore: (%T) %s", record, key), err)
+	// Only bytes the memo cannot decode get here. They are decoded into a
+	// value of their own and copied over (the codec resets its target first,
+	// so the result is the same): handed to the codec interface or to fmt,
+	// record itself would move to the heap on every read.
+	decoded := new(NodeAccount)
+	err := k.cdc.Unmarshal(bz, decoded)
+	*record = *decoded
+	if err != nil {
+		return true, dbError(ctx, fmt.Sprintf("Unmarshal kvstore: (%T) %s", decoded, key), err)
 	}
 	return true, nil
 }
@@ -95,18 +102,22 @@ func (k KVStore) ListValidatorsByStatus(ctx cosmos.Context, status NodeStatus) (
 // is the same as for an unlimited listing; past the limit, matching records
 // are just not copied out.
 func (k KVStore) listValidatorsByStatus(ctx cosmos.Context, status NodeStatus, limit int) (NodeAccounts, error) {
-	nodeAccounts := make(NodeAccounts, 0)
+	// The matches are gathered first and copied out together, into one
+	// exactly sized list (keeper.DetachNodeAccounts); ~100 pointers fit on
+	// the stack.
+	var buf [128]*NodeAccount
+	matches := buf[:0]
 	naIterator := k.GetNodeAccountIterator(ctx)
 	defer naIterator.Close()
 	for ; naIterator.Valid(); naIterator.Next() {
-		full := limit >= 0 && len(nodeAccounts) >= limit
+		full := limit >= 0 && len(matches) >= limit
 		// Node accounts rarely change, so the decoding of nearly every record,
 		// matching or not (e.g. ~100 of ~190 are active), is memoized under its
 		// exact bytes: filter on it and copy out only the matches. The
 		// iteration, and so the store access, is unchanged.
 		if na := nodeAccountDecodeMemo.shared(k, naIterator.Key(), naIterator.Value()); na != nil {
 			if !full && na.Type == NodeTypeValidator && na.Status == status {
-				nodeAccounts = append(nodeAccounts, keeper.CloneNodeAccount(*na))
+				matches = append(matches, na)
 			}
 			continue
 		}
@@ -114,13 +125,24 @@ func (k KVStore) listValidatorsByStatus(ctx cosmos.Context, status NodeStatus, l
 		// not, fails the listing with its unmarshal error.
 		var na NodeAccount
 		if err := k.unmarshalNodeAccount(naIterator.Value(), &na); err != nil {
-			return nodeAccounts, dbError(ctx, "Unmarshal: node account", err)
+			return copyNodeAccounts(matches), dbError(ctx, "Unmarshal: node account", err)
 		}
 		if !full && na.Type == NodeTypeValidator && na.Status == status {
-			nodeAccounts = append(nodeAccounts, na)
+			matches = append(matches, &na)
 		}
 	}
-	return nodeAccounts, nil
+	return copyNodeAccounts(matches), nil
+}
+
+// copyNodeAccounts returns copies of *nas, in order, sharing nothing mutable
+// with them: matches of a listing may be memoized values.
+func copyNodeAccounts(nas []*NodeAccount) NodeAccounts {
+	out := make(NodeAccounts, len(nas))
+	for i, na := range nas {
+		out[i] = *na
+	}
+	keeper.DetachNodeAccounts(out)
+	return out
 }
 
 // CountActiveValidators is len(ListActiveValidators(ctx)) without copying the
@@ -409,12 +431,17 @@ func (k KVStore) GetLowestActiveVersion(ctx cosmos.Context) semver.Version {
 
 // GetNodeAccount try to get node account with the given address from db
 func (k KVStore) GetNodeAccount(ctx cosmos.Context, addr cosmos.AccAddress) (NodeAccount, error) {
-	emptyPubKeySet := common.PubKeySet{
-		Secp256k1: common.EmptyPubKey,
-		Ed25519:   common.EmptyPubKey,
+	// A stored record replaces the whole default (the memo copies over it, the
+	// codec resets it first), so the default is built only when there is none.
+	var record NodeAccount
+	found, err := k.getNodeAccount(ctx, k.GetKey(prefixNodeAccount, addr.String()), &record)
+	if !found {
+		emptyPubKeySet := common.PubKeySet{
+			Secp256k1: common.EmptyPubKey,
+			Ed25519:   common.EmptyPubKey,
+		}
+		return NewNodeAccount(addr, NodeUnknown, emptyPubKeySet, "", cosmos.ZeroUint(), "", ctx.BlockHeight()), err
 	}
-	record := NewNodeAccount(addr, NodeUnknown, emptyPubKeySet, "", cosmos.ZeroUint(), "", ctx.BlockHeight())
-	_, err := k.getNodeAccount(ctx, k.GetKey(prefixNodeAccount, addr.String()), &record)
 	return record, err
 }
 
