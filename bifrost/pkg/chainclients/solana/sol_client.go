@@ -675,10 +675,12 @@ func (c *SOLClient) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *
 	}
 
 	// An SPL self-send can never be observed (errSPLSelfSend). Drop it rather than
-	// retain it: a retained item would hold the vault's signing slot every pass.
+	// retain it: a retained item would hold the vault's signing slot every pass. Both
+	// drops below are remembered as rejected, so the serialize gate does not hold the
+	// vault's later durable siblings behind an outbound no node will sign.
 	if isSPLOutbound(tx) {
 		if _, err := c.splOutboundParams(tx); errors.Is(err, errSPLSelfSend) {
-			return c.dropForReschedule(tx, "spl_self_send_dropped", c.logger.Warn(),
+			return c.dropRejectedForReschedule(tx, height, "spl_self_send_dropped", c.logger.Warn(),
 				"SPL outbound to its own vault would be an unobservable no-op, dropping for reschedule")
 		}
 		// Nor is one paid to a recipient address that is itself a token account or a
@@ -690,7 +692,7 @@ func (c *SOLClient) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *
 			return nil, nil, nil, fmt.Errorf("fail to check SPL recipient; retaining outbound: %w", err)
 		}
 		if isTokenAccount {
-			return c.dropForReschedule(tx, "spl_recipient_token_account_dropped", c.logger.Warn(),
+			return c.dropRejectedForReschedule(tx, height, "spl_recipient_token_account_dropped", c.logger.Warn(),
 				"SPL outbound recipient is a token account, not a wallet, so the tokens would be unrecoverable; dropping for reschedule")
 		}
 	}
