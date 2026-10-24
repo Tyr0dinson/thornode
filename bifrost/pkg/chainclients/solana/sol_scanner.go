@@ -858,7 +858,8 @@ func (s *SOLScanner) calculateFeeRatesFromTransactions(transactions []*rpc.Trans
 }
 
 // Create a TxInItem for a SOL transfer transaction. This function will only return a
-// TxInItem if the transaction contains exactly one SOL transfer instruction to the vault.
+// TxInItem if the transaction contains exactly one SOL transfer instruction, or exactly
+// one from or to a vault among several (the others, such as a Jito tip, are ignored).
 // Otherwise, it will return nil.
 func (s *SOLScanner) getTxInItem(txn *rpc.TransactionResult, blockHeight int64) *stypes.TxInItem {
 	item, _ := s.txInItem(txn, blockHeight)
@@ -991,12 +992,25 @@ func (s *SOLScanner) txInItem(txn *rpc.TransactionResult, blockHeight int64) (*s
 		}
 	}
 
+	// A Jito tip or a frontend fee beside a SOL deposit is a SystemProgram transfer that
+	// touches no vault. Among several transfers, only the one from or to a vault is
+	// observed; several touching vaults are never guessed between.
 	if len(solTransfers) > 1 {
-		s.logger.Warn().
-			Int("transferCount", len(solTransfers)).
-			Str("txID", txn.Transaction.Signatures[0]).
-			Msg("Rejected transaction with multiple transfer instructions")
-		return nil, nil
+		var vaultTransfers []solTransfer
+		for _, t := range solTransfers {
+			if s.isVaultAddress(t.from) || s.isVaultAddress(t.to) {
+				vaultTransfers = append(vaultTransfers, t)
+			}
+		}
+		if len(vaultTransfers) != 1 {
+			s.logger.Warn().
+				Int("transferCount", len(solTransfers)).
+				Int("vaultTransferCount", len(vaultTransfers)).
+				Str("txID", txn.Transaction.Signatures[0]).
+				Msg("Rejected transaction without exactly one transfer to or from a vault")
+			return nil, nil
+		}
+		solTransfers = vaultTransfers
 	}
 	var fromAccount, toAccount string
 	var amountMoved uint64

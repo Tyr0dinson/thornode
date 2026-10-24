@@ -8,6 +8,8 @@ THORChain runs four standalone clients: Solana, XRP, Tron, and Monero.
 
 Folder `solana/`, gas asset SOL. The client runs its own block scanner and shares neither the UTXO nor the EVM model.
 
+A SOL deposit is a top-level System Program transfer to the vault, with the memo in a Memo program instruction in the same transaction. Other System Program transfers that touch no vault, such as a Jito tip or a frontend fee, are ignored. A transaction with more than one transfer from or to a vault is not observed.
+
 The client supports native SOL and whitelisted SPL tokens of the classic SPL Token program. It scans each vault's associated token account for every whitelisted mint alongside the vault itself, and builds token outbounds as `CreateIdempotent` + `TransferChecked`. See [Token Support on Solana](./token-lists.md#token-support-on-solana).
 
 ## XRP

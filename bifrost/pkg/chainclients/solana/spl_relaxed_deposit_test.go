@@ -63,15 +63,15 @@ func (s *SPLScannerSuite) TestDepositWithTipObserved(c *C) {
 // A SOL transfer to or from a vault keeps the transaction on the SOL path, exactly as
 // before SPL support, whatever else it carries.
 func (s *SPLScannerSuite) TestSOLTransferTouchingVaultKeepsSOLPath(c *C) {
-	txn := splInbound(c, 12_345_678)
-	withSOLTransfers(txn, 10_000, testJitoTip, testVault)
-	c.Check(newRelaxedTestScanner().getTxInItem(txn, 100), IsNil) // two SOL transfers, one to a vault
-
-	txn = splInbound(c, 12_345_678)
-	withSOLTransfers(txn, 1_000_000_000, testVault)
-	item := newRelaxedTestScanner().getTxInItem(txn, 100)
-	c.Assert(item, NotNil)
-	c.Check(item.Coins[0].Asset, Equals, common.SOLAsset)
+	for name, tips := range map[string][]string{"no tip": nil, "with a tip": {testJitoTip}} {
+		txn := splInbound(c, 12_345_678)
+		withSOLTransfers(txn, 10_000, tips...)
+		withSOLTransfers(txn, 1_000_000_000, testVault)
+		item := newRelaxedTestScanner().getTxInItem(txn, 100)
+		c.Assert(item, NotNil, Commentf(name))
+		c.Check(item.Coins[0].Asset, Equals, common.SOLAsset, Commentf(name))
+		c.Check(item.Coins[0].Amount.Equal(convertLamportsToTHORChain(1_000_000_000)), Equals, true, Commentf(name))
+	}
 }
 
 // splSponsoredDeposit is a deposit whose fee is paid by a sponsor that takes its fee
