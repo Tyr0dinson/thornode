@@ -610,7 +610,8 @@ func (s *KeeperVaultSecuritySuite) TestTxOutWindowMatchesDevelop(c *C) {
 	c.Check(k.newTxOutWindow(ctx, 5, 4).keys, HasLen, 0)
 }
 
-// getPendingOutboundsOracle is GetPendingOutbounds as on develop.
+// getPendingOutboundsOracle is GetPendingOutbounds as on develop, plus the
+// staged mempool outbounds this branch counts as pending.
 func getPendingOutboundsOracle(k KVStore, ctx cosmos.Context, asset common.Asset) []TxOutItem {
 	signingPeriod := k.GetConfigInt64(ctx, constants.SigningTransactionPeriod)
 	standardStartHeight := ctx.BlockHeight() - signingPeriod
@@ -729,6 +730,24 @@ func getPendingOutboundsOracle(k KVStore, ctx cosmos.Context, asset common.Asset
 			outbounds = append(outbounds, txOutItem)
 		}
 	}
+
+	// Also include staged outbounds (mempool swaps waiting for inbound finalization)
+	stagedIter := k.GetStagedOutboundIterator(ctx)
+	defer stagedIter.Close()
+	for ; stagedIter.Valid(); stagedIter.Next() {
+		var stagedList StagedOutboundList
+		if err := k.cdc.Unmarshal(stagedIter.Value(), &stagedList); err != nil {
+			continue
+		}
+		for _, staged := range stagedList.Items {
+			item := staged.TxOutItem
+			if !item.Coin.Asset.Equals(asset) || !item.OutHash.IsEmpty() {
+				continue
+			}
+			outbounds = append(outbounds, item)
+		}
+	}
+
 	return outbounds
 }
 
@@ -791,6 +810,10 @@ func (s *KeeperVaultSecuritySuite) TestGetPendingOutboundsMatchesDevelop(c *C) {
 	migrate.VaultPubKey = retiring.PubKey
 	migrate.Memo = fmt.Sprintf("MIGRATE:%d", staleHeight)
 	setTxOut(staleHeight, migrate, item(common.ETHAsset, 9, false))
+	// staged mempool outbounds, one of them already sent
+	for _, staged := range []TxOutItem{item(common.ETHAsset, 11, false), item(common.ETHAsset, 12, true), item(common.BTCAsset, 13, false)} {
+		c.Assert(k.SetStagedOutbound(ctx, staged, bh+1), IsNil)
+	}
 
 	check := func(stop string) {
 		for _, cached := range []bool{false, true} {
@@ -808,7 +831,7 @@ func (s *KeeperVaultSecuritySuite) TestGetPendingOutboundsMatchesDevelop(c *C) {
 					got := k.GetPendingOutbounds(ctx2, asset)
 					c.Check(got, DeepEquals, want, comment)
 					if asset.Equals(common.ETHAsset) {
-						c.Check(want, HasLen, 9, comment) // incl. the partly decoded and the migrate item
+						c.Check(want, HasLen, 10, comment) // incl. the partly decoded, the migrate and the staged item
 					}
 				}
 			}
