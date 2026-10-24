@@ -878,22 +878,29 @@ func (s *SOLScanner) getTxInItem(txn *rpc.TransactionResult, blockHeight int64) 
 	return item
 }
 
+// solTransfer is a top-level SystemProgram transfer.
+type solTransfer struct {
+	from, to string
+	lamports uint64
+}
+
 // txInItem is getTxInItem that also reports a transient RPC failure that must not
 // drop the observation: the caller fails the scan so the cursor is not advanced
 // and the transaction is re-read on the next pass.
 func (s *SOLScanner) txInItem(txn *rpc.TransactionResult, blockHeight int64) (*stypes.TxInItem, error) {
 	memo := ""
-	var transferCount int
-	var fromAccount, toAccount string
+	// solTransfers are the top-level SystemProgram transfers, in order.
+	var solTransfers []solTransfer
 	// advancedNonceAcct is the account an AdvanceNonceAccount instruction advanced,
 	// if any; attested below when it is the sender vault's own nonce account.
 	var advancedNonceAcct string
-	var amountMoved uint64
-	// tokenTransfers are the top-level SPL Token transfers. They are observed only
-	// when the transaction has no SystemProgram transfer, so a transaction that moves
-	// SOL is observed exactly as it was before SPL support. A vault's own token
-	// transfer is always observed; one from outside the vaults only from the SPL
-	// activation slot on, whichever address's scan returned the transaction.
+	// tokenTransfers are the top-level SPL Token transfers; splTxInItem also reads the
+	// ones invoked by other programs. They are observed unless a SystemProgram transfer
+	// is from or to a vault, so a transaction that moves a vault's SOL is observed
+	// exactly as it was before SPL support, while a Jito tip or a fee in SOL beside a
+	// token deposit is ignored. A vault's own token transfer is always observed; one
+	// from outside the vaults only from the SPL activation slot on, whichever address's
+	// scan returned the transaction.
 	var tokenTransfers []splTransfer
 	fee := txn.Meta.Fee
 
@@ -961,15 +968,6 @@ func (s *SOLScanner) txInItem(txn *rpc.TransactionResult, blockHeight int64) (*s
 
 		// Check for transfer instruction
 		if len(data) >= 1 && data[0] == 2 { // `2` indicates a System Program transfer instruction
-			transferCount++
-			if transferCount > 1 {
-				s.logger.Warn().
-					Int("transferCount", transferCount).
-					Str("txID", txn.Transaction.Signatures[0]).
-					Msg("Rejected transaction with multiple transfer instructions")
-				return nil, nil
-			}
-
 			if len(instruction.Accounts) < 2 {
 				s.logger.Debug().Msg("Instruction does not contain enough accounts for transfer")
 				return nil, nil
@@ -983,23 +981,46 @@ func (s *SOLScanner) txInItem(txn *rpc.TransactionResult, blockHeight int64) (*s
 				s.logger.Debug().Msg("Account index out of range")
 				return nil, nil
 			}
-			fromAccount = accounts[fromIdx]
-			toAccount = accounts[toIdx]
 
 			if len(data) < 12 {
 				s.logger.Debug().Msg("Transfer instruction data too short")
 				return nil, nil
 			}
-			amountMoved = binary.LittleEndian.Uint64(data[4:12])
+			solTransfers = append(solTransfers, solTransfer{
+				from:     accounts[fromIdx],
+				to:       accounts[toIdx],
+				lamports: binary.LittleEndian.Uint64(data[4:12]),
+			})
 		}
 	}
 
-	if transferCount == 0 && len(tokenTransfers) > 0 && s.spl != nil && len(s.spl.tokens) > 0 {
-		return s.splTxInItem(txn, blockHeight, memo, tokenTransfers, accounts, advancedNonceAcct)
+	if s.spl != nil && len(s.spl.tokens) > 0 && !s.solTransfersTouchVault(solTransfers) {
+		innerTransfers, innerMemo := s.splInnerInstructions(txn, accountByIndex)
+		tokenTransfers = append(tokenTransfers, innerTransfers...)
+		if len(tokenTransfers) > 0 {
+			// A top-level memo takes precedence over one written through a CPI.
+			if memo == "" {
+				memo = innerMemo
+			}
+			return s.splTxInItem(txn, blockHeight, memo, tokenTransfers, accounts, advancedNonceAcct)
+		}
+	}
+
+	if len(solTransfers) > 1 {
+		s.logger.Warn().
+			Int("transferCount", len(solTransfers)).
+			Str("txID", txn.Transaction.Signatures[0]).
+			Msg("Rejected transaction with multiple transfer instructions")
+		return nil, nil
+	}
+	var fromAccount, toAccount string
+	var amountMoved uint64
+	if len(solTransfers) == 1 {
+		fromAccount, toAccount, amountMoved = solTransfers[0].from, solTransfers[0].to, solTransfers[0].lamports
 	}
 
 	// Skip if no valid transfer was found or amount is zero
-	if transferCount == 0 || amountMoved == 0 {
+	if len(solTransfers) == 0 || amountMoved == 0 {
 		s.logger.Debug().
 			Str("txID", txn.Transaction.Signatures[0]).
 			Msg("No valid transfer found or amount is zero")

@@ -253,10 +253,12 @@ func (s *SPLScannerSuite) TestRejectedShapes(c *C) {
 		"account index out of range": func(txn *rpc.TransactionResult) {
 			txn.Transaction.Message.Instructions[0].Accounts = []int{1, 3, 42, 0}
 		},
-		// The sender is the source's owner before the transaction: one created (or
-		// funded and reassigned) within it has no pre-state owner to trust.
-		"source has no pre-transaction owner": func(txn *rpc.TransactionResult) {
+		// The sender is the source's owner before the transaction. One created within
+		// it is trusted only if its owner signed the transfer: an owner set after the
+		// transfer, here a vault, would forge a vault sender.
+		"source created in the transaction and handed to a vault": func(txn *rpc.TransactionResult) {
 			txn.Meta.PreTokenBalances = txn.Meta.PreTokenBalances[1:]
+			tokenBalanceEntry(txn.Meta.PostTokenBalances[0])["owner"] = testVault
 		},
 		"source owner reassigned in the transaction": func(txn *rpc.TransactionResult) {
 			tokenBalanceEntry(txn.Meta.PostTokenBalances[0])["owner"] = testVault
@@ -284,9 +286,10 @@ func (s *SPLScannerSuite) TestNoWhitelistIgnoresTokens(c *C) {
 }
 
 func (s *SPLScannerSuite) TestSOLTransferTakesPrecedence(c *C) {
-	// A tx that moves SOL is observed exactly as before SPL support: as the SOL
-	// transfer, ignoring the token transfer beside it.
+	// A tx that moves SOL to or from a vault is observed exactly as before SPL support:
+	// as the SOL transfer, ignoring the token transfer beside it.
 	scanner := newSPLTestScanner()
+	scanner.pubKeyMgr = splVaultAddrs{addrs: map[string]bool{testVault: true}}
 	txn := splInbound(c, 12_345_678)
 	txn.Transaction.Message.AccountKeys = append(txn.Transaction.Message.AccountKeys, testVault, testSystemProgram)
 	txn.Transaction.Message.Instructions = append(txn.Transaction.Message.Instructions,
