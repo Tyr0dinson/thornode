@@ -373,7 +373,7 @@ Operational notes:
 - `OracleUpdateInterval`#: Milliseconds between Bifrost oracle price updates
 - `RequiredPriceFeeds`: Price feeds the oracle must report
 - `ObservationDelayFlexibility`\*: Number of blocks of flexibility for a validator to get their slash points taken off for making an observation
-- `BlockTimeMs`\*: Target block interval in milliseconds (`1500`-`10000`). While set above zero, each node steers its CometBFT commit wait (`timeout_commit`) every block so the mean interval between block header times tracks the target. Unset or `0` leaves `timeout_commit` at the node's configured value; setting `0` after a target restores it. The constant (the default block time) is not applied on its own. Economic mimir (2/3 supermajority); block-count durations scale with it (see [Block Time](#block-time))
+- `BlockTimeMs`\*: Target block interval in milliseconds (`1500`-`10000`). While set above zero, each node steers its CometBFT commit wait (`timeout_commit`) every block so the mean interval between block header times tracks the target. The wait never drops below 200ms (or the whole target, if that is shorter), so the next proposer still collects late precommits; a target the network cannot reach with that wait runs slow. Unset or `0` leaves `timeout_commit` at the node's configured value; setting `0` after a target restores it. The constant (the default block time) is not applied on its own. Economic mimir (2/3 supermajority); block-count durations scale with it (see [Block Time](#block-time))
 
 ### Router Upgrading (DO NOT TOUCH!)
 

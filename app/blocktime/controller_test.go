@@ -181,15 +181,36 @@ func TestControllerFallback(t *testing.T) {
 	if w, _ := c.Next(6*time.Second, h.Add(2*target)); w != 4900*time.Millisecond {
 		t.Fatalf("reset wait %v", w)
 	}
-	// the wait never goes negative or above the target
+	// the wait never goes below the floor or above the target
 	c.Reset(1500 * time.Millisecond)
 	for i := 0; i < 50; i++ {
 		h = h.Add(14 * time.Second)
-		if w, _ := c.Next(1500*time.Millisecond, h); w < 0 || w > 1500*time.Millisecond {
+		if w, _ := c.Next(1500*time.Millisecond, h); w < minWait || w > 1500*time.Millisecond {
 			t.Fatalf("wait out of range: %v", w)
 		}
 	}
-	if c.Wait() != 0 {
+	if c.Wait() != minWait {
 		t.Fatalf("wait %v after sustained overruns", c.Wait())
+	}
+}
+
+func TestControllerMinWait(t *testing.T) {
+	// overhead above the target drives the wait down, but it stops at the
+	// floor so the proposer still collects late precommits
+	for _, target := range []time.Duration{500 * time.Millisecond, 1500 * time.Millisecond} {
+		res := simulate(target, 300, 100, func(*rand.Rand) time.Duration { return 2 * target })
+		if res.meanWait != minWait || minWait < 200*time.Millisecond {
+			t.Errorf("target %v: mean wait %v, floor %v", target, res.meanWait, minWait)
+		}
+	}
+	// a target below the floor waits the whole target
+	var c Controller
+	target := minWait / 2
+	h := time.Unix(1_700_000_000, 0)
+	for i := 0; i < 50; i++ {
+		h = h.Add(3 * target)
+		if w, _ := c.Next(target, h); w != target {
+			t.Fatalf("target %v: wait %v", target, w)
+		}
 	}
 }

@@ -100,8 +100,8 @@ func TestHookClampsStoredTarget(t *testing.T) {
 }
 
 func TestControllerWaitWithinTarget(t *testing.T) {
-	// whatever intervals it sees, the wait stays in [0, target], so with no
-	// overhead the interval cannot exceed BlockTimeMsMax
+	// whatever intervals it sees, the wait stays in [min(minWait, target),
+	// target], so with no overhead the interval cannot exceed BlockTimeMsMax
 	r := rand.New(rand.NewSource(2)) //nolint:gosec // deterministic test RNG
 	for _, ms := range []int64{constants.BlockTimeMsMin, 1500, 6000, constants.BlockTimeMsMax} {
 		target := time.Duration(ms) * time.Millisecond
@@ -109,7 +109,7 @@ func TestControllerWaitWithinTarget(t *testing.T) {
 		h := time.Unix(1_700_000_000, 0)
 		for i := 0; i < 5000; i++ {
 			h = h.Add(time.Duration(r.Int63n(int64(3 * target))))
-			if w, _ := c.Next(target, h); w < 0 || w > target || w > constants.BlockTimeMsMax*time.Millisecond {
+			if w, _ := c.Next(target, h); w < min(minWait, target) || w > target || w > constants.BlockTimeMsMax*time.Millisecond {
 				t.Fatalf("target %v: wait %v", target, w)
 			}
 		}

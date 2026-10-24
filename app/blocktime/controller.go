@@ -31,6 +31,14 @@ const (
 	// integralMax bounds the accumulated error (anti-windup) to this many
 	// targets.
 	integralMax = 3
+
+	// minWait floors the commit wait (capped at the target). The wait is
+	// also when the next proposer collects the precommits that arrive after
+	// +2/3, and each one missing from LastCommit costs its validator miss-sign
+	// slash points. On a 5-validator mocknet a wait under 100ms left 4/5
+	// signatures on most blocks. A higher floor costs accuracy at mainnet's
+	// lowest target: 200ms keeps 1500ms within 1%, 300ms runs it ~2% slow.
+	minWait = 200 * time.Millisecond
 )
 
 // Controller computes the commit wait for the next height from BFT header
@@ -73,7 +81,7 @@ func (c *Controller) Next(target time.Duration, header time.Time) (wait time.Dur
 	// a target change that happens to land on it does not count). Otherwise the error of the initial climb (overhead
 	// far from initialOverhead, e.g. ~25ms on a one-node mocknet, or the old
 	// wait after a target change) holds the wait at the target for hundreds
-	// of blocks. Saturating at zero wait still accumulates: that is the debt
+	// of blocks. Saturating at the minimum wait still accumulates: that is the debt
 	// from slow rounds the integral pays back to keep the mean on target.
 	if c.inBand < settleBlocks {
 		if err.Abs() <= target/settleBand {
@@ -85,13 +93,13 @@ func (c *Controller) Next(target time.Duration, header time.Time) (wait time.Dur
 	if c.inBand >= settleBlocks {
 		c.integral = clamp(c.integral+err, -integralMax*target, integralMax*target)
 	}
-	c.wait = clamp(c.wait-err*kNum/gainDen-c.integral*kiNum/gainDen, 0, target)
+	c.wait = clamp(c.wait-err*kNum/gainDen-c.integral*kiNum/gainDen, min(minWait, target), target)
 	return c.wait, true
 }
 
 // Reset forgets all measurements and restarts at target.
 func (c *Controller) Reset(target time.Duration) {
-	*c = Controller{target: target, wait: clamp(target-initialOverhead, 0, target)}
+	*c = Controller{target: target, wait: clamp(target-initialOverhead, min(minWait, target), target)}
 }
 
 // Interval returns the last measured header interval.
