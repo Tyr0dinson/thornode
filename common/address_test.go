@@ -61,6 +61,18 @@ func (s *AddressSuite) TestAddressEqualsXMRIsCaseSensitive(c *C) {
 	c.Check(AddressEquals(XMRChain, original, Address(" "+original.String())), Equals, false)
 }
 
+// TestAddressEqualsSOLIsCaseSensitive documents that case is part of Solana address
+// identity: base58 with no checksum, so a case variant is another valid account.
+func (s *AddressSuite) TestAddressEqualsSOLIsCaseSensitive(c *C) {
+	original := Address("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v")
+	caseVariant := Address("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1V")
+	c.Assert(IsValidSOLAddress(caseVariant.String()), Equals, true)
+
+	c.Check(AddressEquals(SOLChain, original, original), Equals, true)
+	c.Check(AddressEquals(SOLChain, original, caseVariant), Equals, false)
+	c.Check(EquivalentAddresses(SOLChain, original, caseVariant), Equals, false)
+}
+
 // TestAddressEqualsNonXMRPreservesLegacyBehavior protects the case-insensitive
 // fallback used before the chain-aware helper was introduced.
 func (s *AddressSuite) TestAddressEqualsNonXMRPreservesLegacyBehavior(c *C) {

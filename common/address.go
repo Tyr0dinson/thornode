@@ -553,9 +553,11 @@ func (addr Address) Equals(addr2 Address) bool {
 }
 
 // AddressEquals compares addresses using the identity rules of their chain.
-// Monero base58 is case-sensitive; legacy chains retain Address.Equals.
+// Monero and Solana base58 are case-sensitive: a Solana address has no checksum, so
+// one that differs from another only in letter case is a different, valid account.
+// Legacy chains retain Address.Equals.
 func AddressEquals(chain Chain, addr, addr2 Address) bool {
-	if chain.Equals(XMRChain) {
+	if chain.Equals(XMRChain) || chain.Equals(SOLChain) {
 		return addr.String() == addr2.String()
 	}
 	return addr.Equals(addr2)

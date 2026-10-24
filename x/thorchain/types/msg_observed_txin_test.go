@@ -34,6 +34,52 @@ func (s *MsgObservedTxInSuite) TestRejectsXMRVaultAddressCaseVariant(c *C) {
 	c.Assert(msg.ValidateBasic(), NotNil)
 }
 
+// solCaseVariantForMsgTest flips one lowercase letter of a SOL address to uppercase,
+// keeping a valid address: base58 has no checksum, so it names another account.
+func solCaseVariantForMsgTest(c *C, addr common.Address) common.Address {
+	str := addr.String()
+	for i := 0; i < len(str); i++ {
+		ch := str[i]
+		if ch < 'a' || ch > 'z' || ch == 'i' || ch == 'o' { // I and O are not base58
+			continue
+		}
+		variant := str[:i] + string(ch-'a'+'A') + str[i+1:]
+		if common.IsValidSOLAddress(variant) {
+			return common.Address(variant)
+		}
+	}
+	c.Fatalf("no case variant of %s", str)
+	return common.NoAddress
+}
+
+// solObservedTxForMsgTest is a SOL transfer observed against vault pk.
+func solObservedTxForMsgTest(pk common.PubKey, from, to common.Address) common.ObservedTx {
+	return common.NewObservedTx(common.Tx{
+		ID:          GetRandomTxHash(),
+		Chain:       common.SOLChain,
+		FromAddress: from,
+		ToAddress:   to,
+		Coins:       common.NewCoins(common.NewCoin(common.SOLAsset, cosmos.NewUint(100))),
+		Gas:         common.Gas{common.NewCoin(common.SOLAsset, cosmos.OneUint())},
+	}, 55, pk, 55)
+}
+
+// A SOL inbound must be to the observed vault's exact address: a case variant is
+// another account, so funds sent to it never reached the vault.
+func (s *MsgObservedTxInSuite) TestRejectsSOLVaultAddressCaseVariant(c *C) {
+	pk := GetRandomEd25519PubKey()
+	vaultAddress, err := pk.GetAddress(common.SOLChain)
+	c.Assert(err, IsNil)
+	sender, err := GetRandomEd25519PubKey().GetAddress(common.SOLChain)
+	c.Assert(err, IsNil)
+
+	exact := solObservedTxForMsgTest(pk, sender, vaultAddress)
+	c.Assert(NewMsgObservedTxIn(common.ObservedTxs{exact}, GetRandomBech32Addr()).ValidateBasic(), IsNil)
+
+	variant := solObservedTxForMsgTest(pk, sender, solCaseVariantForMsgTest(c, vaultAddress))
+	c.Assert(NewMsgObservedTxIn(common.ObservedTxs{variant}, GetRandomBech32Addr()).ValidateBasic(), NotNil)
+}
+
 func (s *MsgObservedTxInSuite) TestRejectsInboundXMROutboundMetadata(c *C) {
 	pk := getRandomXMRPubKeyForMsgTest(c)
 	toAddress, err := pk.GetAddress(common.XMRChain)

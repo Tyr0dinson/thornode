@@ -175,6 +175,20 @@ func (s *MsgObservedTxOutSuite) TestRejectsXMRVaultAddressCaseVariant(c *C) {
 	c.Assert(msg.ValidateBasic(), NotNil)
 }
 
+func (s *MsgObservedTxOutSuite) TestRejectsSOLVaultAddressCaseVariant(c *C) {
+	pk := GetRandomEd25519PubKey()
+	vaultAddress, err := pk.GetAddress(common.SOLChain)
+	c.Assert(err, IsNil)
+	recipient, err := GetRandomEd25519PubKey().GetAddress(common.SOLChain)
+	c.Assert(err, IsNil)
+
+	exact := solObservedTxForMsgTest(pk, vaultAddress, recipient)
+	c.Assert(NewMsgObservedTxOut(common.ObservedTxs{exact}, GetRandomBech32Addr()).ValidateBasic(), IsNil)
+
+	variant := solObservedTxForMsgTest(pk, solCaseVariantForMsgTest(c, vaultAddress), recipient)
+	c.Assert(NewMsgObservedTxOut(common.ObservedTxs{variant}, GetRandomBech32Addr()).ValidateBasic(), NotNil)
+}
+
 func (s *MsgObservedTxOutSuite) TestMsgObservedTxOutAllowsOptionalXMRSpentRefs(c *C) {
 	pk := getRandomXMRPubKeyForMsgTest(c)
 	fromAddress, err := pk.GetAddress(common.XMRChain)

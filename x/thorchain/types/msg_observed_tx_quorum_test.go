@@ -69,6 +69,23 @@ func (s *MsgObservedTxQuorumSuite) TestRejectsXMRVaultAddressCaseVariants(c *C) 
 	c.Assert(msg.ValidateBasic(), NotNil)
 }
 
+func (s *MsgObservedTxQuorumSuite) TestRejectsSOLVaultAddressCaseVariants(c *C) {
+	pk := GetRandomEd25519PubKey()
+	vaultAddress, err := pk.GetAddress(common.SOLChain)
+	c.Assert(err, IsNil)
+	variantAddress := solCaseVariantForMsgTest(c, vaultAddress)
+	otherAddress, err := GetRandomEd25519PubKey().GetAddress(common.SOLChain)
+	c.Assert(err, IsNil)
+	quorum := func(tx common.ObservedTx, inbound bool) error {
+		return NewMsgObservedTxQuorum(&common.QuorumTx{ObsTx: tx, Inbound: inbound}, GetRandomBech32Addr()).ValidateBasic()
+	}
+
+	c.Assert(quorum(solObservedTxForMsgTest(pk, otherAddress, vaultAddress), true), IsNil)
+	c.Assert(quorum(solObservedTxForMsgTest(pk, otherAddress, variantAddress), true), NotNil)
+	c.Assert(quorum(solObservedTxForMsgTest(pk, vaultAddress, otherAddress), false), IsNil)
+	c.Assert(quorum(solObservedTxForMsgTest(pk, variantAddress, otherAddress), false), NotNil)
+}
+
 func (s *MsgObservedTxQuorumSuite) TestMsgObservedTxQuorumRejectsInboundXMRMetadata(c *C) {
 	pk := getRandomXMRPubKeyForMsgTest(c)
 	toAddress, err := pk.GetAddress(common.XMRChain)
