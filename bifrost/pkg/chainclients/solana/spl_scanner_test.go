@@ -47,8 +47,7 @@ func testSPLRegistry(whitelist ...string) *splRegistry {
 
 var _ = Suite(&SPLScannerSuite{})
 
-// newSPLTestScanner is a scanner with USDC and USDT whitelisted and SPL active from
-// slot 1 (as by the SOLTokens mimir).
+// newSPLTestScanner is a scanner with USDC and USDT whitelisted.
 func newSPLTestScanner() *SOLScanner {
 	logger := log.Logger.With().Str("module", "test").Logger()
 	s := &SOLScanner{
@@ -56,7 +55,6 @@ func newSPLTestScanner() *SOLScanner {
 		logger: logger,
 		spl:    testSPLRegistry(testUSDCMint, testUSDTMint),
 	}
-	s.spl.activeFrom.Store(1)
 	return s
 }
 
@@ -155,20 +153,6 @@ func (s *SPLScannerSuite) TestInboundTransferChecked(c *C) {
 	c.Assert(item.Gas, HasLen, 1)
 	c.Check(item.Gas[0].Asset, Equals, common.SOLAsset)
 	c.Check(item.Gas[0].Amount.String(), Equals, convertLamportsToTHORChain(5000).String())
-}
-
-// TestInboundBeforeActivationNotObserved: a token transfer is observed only from the
-// SPL activation slot on, whichever address's scan returned it. A vault wallet's scan
-// can return an old deposit that also lists the wallet (for example one that created
-// the vault's token account) when a node rescans the wallet's history.
-func (s *SPLScannerSuite) TestInboundBeforeActivationNotObserved(c *C) {
-	scanner := newSPLTestScanner()
-	scanner.spl.activeFrom.Store(2000)
-	c.Check(scanner.getTxInItem(splInbound(c, 12_345_678), 1999), IsNil)
-	c.Check(scanner.getTxInItem(splInbound(c, 12_345_678), 2000), NotNil)
-
-	scanner.spl.activeFrom.Store(0) // SPL off
-	c.Check(scanner.getTxInItem(splInbound(c, 12_345_678), 2000), IsNil)
 }
 
 func (s *SPLScannerSuite) TestInboundPlainTransfer(c *C) {
@@ -366,32 +350,6 @@ func (s *SPLScannerSuite) TestVaultOutboundBooksRentAsGas(c *C) {
 	c.Check(item.Gas[0].Amount.String(), Equals, convertLamportsToTHORChain(5000).String())
 }
 
-// TestVaultTokenTransferObservedWhenInactive: SOLTokens gates only new SPL value from
-// outside the vaults. THORChain keeps scheduling outbounds, refunds and migrations of
-// the tokens it already holds after the mimir is turned back off (or re-set to a
-// later slot), and Bifrost keeps signing them; a vault transfer that lands but is
-// never observed is re-issued. So a vault's own token transfer is observed whether
-// SPL is active or not, and whatever the activation slot.
-func (s *SPLScannerSuite) TestVaultTokenTransferObservedWhenInactive(c *C) {
-	scanner := newSPLTestScanner()
-	scanner.pubKeyMgr = splVaultAddrs{addrs: map[string]bool{testVault: true}}
-
-	scanner.spl.activeFrom.Store(0) // turned back off
-	item := scanner.getTxInItem(splVaultOutbound(c, testVault, 25_000_000), 200)
-	c.Assert(item, NotNil)
-	c.Check(item.Sender, Equals, testVault)
-	c.Check(item.To, Equals, testSender)
-	c.Check(item.Coins[0].Asset.String(), Equals, testUSDCAssetStr)
-
-	scanner.spl.activeFrom.Store(5000) // re-enabled from a later slot
-	c.Check(scanner.getTxInItem(splVaultOutbound(c, testVault, 25_000_000), 200), NotNil)
-
-	// A deposit from outside the vaults stays gated in both cases.
-	c.Check(scanner.getTxInItem(splInbound(c, 1_000_000), 200), IsNil)
-	scanner.spl.activeFrom.Store(0)
-	c.Check(scanner.getTxInItem(splInbound(c, 1_000_000), 200), IsNil)
-}
-
 // TestDepositBelowMinimumNotObserved: a token's min_deposit (base units) floors the
 // deposits Bifrost observes from outside the vaults, as the dust threshold does for
 // SOL. Without it an SPL deposit costs only the ~5,000-lamport fee, the cheapest way
@@ -401,7 +359,6 @@ func (s *SPLScannerSuite) TestDepositBelowMinimumNotObserved(c *C) {
 	tokens := []tokenlist.ERC20Token{{Address: testUSDCMint, Symbol: "USDC", Name: "USD Coin", Decimals: 6, MinDeposit: 100_000}}
 	scanner := newSPLTestScanner()
 	scanner.spl = newSPLRegistryFromTokens(common.SOLChain, []string{testUSDCMint}, tokens, log.Logger)
-	scanner.spl.activeFrom.Store(1)
 	scanner.pubKeyMgr = splVaultAddrs{addrs: map[string]bool{testVault: true}}
 
 	c.Check(scanner.getTxInItem(splInbound(c, 99_999), 200), IsNil)

@@ -144,6 +144,16 @@ func (s *SolTestSuite) SetUpSuite(c *C) {
 				_, _ = rw.Write([]byte(`{}`))
 				return
 			}
+			// HaltSOLTokens as the test sets it (0 by default: SPL live).
+			if strings.HasPrefix(req.RequestURI, "/thorchain/mimir/key/"+constants.MimirKeyHaltSOLTokens) {
+				rw.Header().Set("Content-Type", "application/json")
+				if testHaltSOLTokensFail.Load() {
+					_, _ = rw.Write([]byte(`not json`))
+					return
+				}
+				_, _ = fmt.Fprint(rw, testHaltSOLTokens.Load())
+				return
+			}
 			// Anchor margin unset, as a deleted mimir reads on mainnet (-1 -> 15s default).
 			if strings.HasPrefix(req.RequestURI, "/thorchain/mimir/key/"+constants.MimirKeySOLAnchorMarginSeconds) {
 				rw.Header().Set("Content-Type", "application/json")

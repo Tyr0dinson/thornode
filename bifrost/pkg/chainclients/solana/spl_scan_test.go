@@ -15,7 +15,6 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/signercache"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/solana/rpc"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pubkeymanager"
-	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/config"
@@ -103,8 +102,8 @@ func drainTxIns(ch chan stypes.TxIn) []stypes.TxIn {
 }
 
 // TestScanTokenAccounts drives scan() over a vault and its USDC token account:
-//   - the token account's history before the SPL activation slot is skipped (but the
-//     cursor moves past it);
+//   - the token account is first scanned from the start of its history, as a new
+//     vault wallet is, so a deposit made before this node first saw it is observed;
 //   - a new transfer that lists both the vault and its token account is observed
 //     once, though both addresses return it.
 func (s *BlockScannerTestSuite) TestScanTokenAccounts(c *C) {
@@ -124,17 +123,21 @@ func (s *BlockScannerTestSuite) TestScanTokenAccounts(c *C) {
 		getTxHit: map[string]int{},
 	}
 	m.set(1000, map[string][]rpc.SignaturesForAddressResult{
-		tokenAccount: {{Signature: oldSig, Slot: 900}}, // predates activation
+		tokenAccount: {{Signature: oldSig, Slot: 900}},
 	})
 	server := m.server(c)
 	defer server.Close()
 
-	scanner, storage, txIns := s.newTokenScanTestScanner(c, server, vault, 950)
+	scanner, storage, txIns := s.newTokenScanTestScanner(c, server, vault)
 
-	// Pass 1: the slot-900 deposit is not observed, and the cursor moves to it.
+	// Pass 1: the slot-900 deposit, made before this node first scanned the token
+	// account, is observed, and the cursor moves to it.
 	scanner.scan()
-	c.Check(drainTxIns(txIns), HasLen, 0)
-	c.Check(m.getTxHit[oldSig], Equals, 0)
+	first := drainTxIns(txIns)
+	c.Assert(first, HasLen, 1)
+	c.Assert(first[0].TxArray, HasLen, 1)
+	c.Check(first[0].TxArray[0].Tx, Equals, oldSig)
+	c.Check(m.getTxHit[oldSig], Equals, 1)
 	c.Check(scanner.IsHealthy(), Equals, true)
 	time.Sleep(50 * time.Millisecond) // scan status writes are async
 	sig, _, err := storage.GetScanStatus(tokenAccount)
@@ -164,8 +167,8 @@ func (s *BlockScannerTestSuite) TestScanTokenAccounts(c *C) {
 	}
 }
 
-// TestScanTokenAccountObservesDepositsBeforeFirstScan: the floor is the activation
-// slot, not when this node first scans the token account. Nodes that are not members
+// TestScanTokenAccountObservesDepositsBeforeFirstScan: a token account's history is
+// read from its start, not from when this node first scans it. Nodes that are not members
 // learn of a churned-in vault only once it is active and published in
 // inbound_addresses, and a node that was offline over a churn learns of it later
 // still. A deposit to such a vault's token account made before this node's first
@@ -189,7 +192,7 @@ func (s *BlockScannerTestSuite) TestScanTokenAccountObservesDepositsBeforeFirstS
 	server := m.server(c)
 	defer server.Close()
 
-	scanner, storage, txIns := s.newTokenScanTestScanner(c, server, vault, 800)
+	scanner, storage, txIns := s.newTokenScanTestScanner(c, server, vault)
 	// This node scanned the vault before; it makes no difference to its token account.
 	c.Assert(storage.SetScanStatus(vaultAddr.String(), "", 850), IsNil)
 	scanner.scan()
@@ -206,8 +209,8 @@ func (s *BlockScannerTestSuite) TestScanTokenAccountObservesDepositsBeforeFirstS
 }
 
 // TestScanTokenAccountObservesLateIndexedDeposits: a token account with no
-// signatures yet keeps the activation slot as its floor as the scan advances, across
-// a restart, so a deposit an RPC indexes late is still observed.
+// signatures yet keeps no cursor as the scan advances, across a restart, so a deposit
+// an RPC indexes late is still observed.
 func (s *BlockScannerTestSuite) TestScanTokenAccountObservesLateIndexedDeposits(c *C) {
 	vault := types2.GetRandomEd25519PubKey()
 	vaultAddr, err := vault.GetAddress(common.SOLChain)
@@ -222,14 +225,14 @@ func (s *BlockScannerTestSuite) TestScanTokenAccountObservesLateIndexedDeposits(
 	server := m.server(c)
 	defer server.Close()
 
-	scanner, _, txIns := s.newTokenScanTestScanner(c, server, vault, 1000)
+	scanner, _, txIns := s.newTokenScanTestScanner(c, server, vault)
 	scanner.scan()
 	m.set(3000, nil)
 	scanner.scan()
 	c.Check(drainTxIns(txIns), HasLen, 0)
 
 	// The scanner restarts (in-memory state lost); the deposit at slot 2000 (below the
-	// latest scan slot, above the activation slot) is indexed only now.
+	// latest scan slot) is indexed only now.
 	time.Sleep(50 * time.Millisecond) // scan status writes are async
 	scanner.vaultScanStatuses = map[string]vaultScanStatus{}
 	m.set(4000, map[string][]rpc.SignaturesForAddressResult{tokenAccount: {{Signature: lateSig, Slot: 2000}}})
@@ -239,11 +242,10 @@ func (s *BlockScannerTestSuite) TestScanTokenAccountObservesLateIndexedDeposits(
 	c.Check(got[0].TxArray[0].Tx, Equals, lateSig)
 }
 
-// TestScanObservesVaultTokenTransferWhenInactive drives scan() with SPL off (the
-// SOLTokens mimir turned back off after activation): the vault's token account is
-// not scanned, but the vault's own token outbound lists the vault wallet, so the
-// wallet's scan returns it, and it is observed.
-func (s *BlockScannerTestSuite) TestScanObservesVaultTokenTransferWhenInactive(c *C) {
+// TestScanObservesVaultTokenOutboundThroughWallet: the vault's own token outbound
+// lists the vault wallet, so the wallet's scan returns it even when the token
+// account's scan does not, and it is observed.
+func (s *BlockScannerTestSuite) TestScanObservesVaultTokenOutboundThroughWallet(c *C) {
 	vault := types2.GetRandomEd25519PubKey()
 	vaultAddr, err := vault.GetAddress(common.SOLChain)
 	c.Assert(err, IsNil)
@@ -258,7 +260,7 @@ func (s *BlockScannerTestSuite) TestScanObservesVaultTokenTransferWhenInactive(c
 	server := m.server(c)
 	defer server.Close()
 
-	scanner, _, txIns := s.newTokenScanTestScanner(c, server, vault, 0)
+	scanner, _, txIns := s.newTokenScanTestScanner(c, server, vault)
 	scanner.pubKeyMgr = singleVaultPubKeys{
 		vault:           vault,
 		PubKeyValidator: splVaultAddrs{addrs: map[string]bool{vaultAddr.String(): true}},
@@ -274,10 +276,9 @@ func (s *BlockScannerTestSuite) TestScanObservesVaultTokenTransferWhenInactive(c
 	c.Check(scanner.IsHealthy(), Equals, true)
 }
 
-// newTokenScanTestScanner builds a scanner over one vault with USDC whitelisted and
-// SPL active from activationSlot (as by the SOLTokens mimir), served by m, and
-// returns it with its storage and observation queue.
-func (s *BlockScannerTestSuite) newTokenScanTestScanner(c *C, server *httptest.Server, vault common.PubKey, activationSlot uint64) (*SOLScanner, *blockscanner.BlockScannerStorageSolana, chan stypes.TxIn) {
+// newTokenScanTestScanner builds a scanner over one vault with USDC whitelisted,
+// served by m, and returns it with its storage and observation queue.
+func (s *BlockScannerTestSuite) newTokenScanTestScanner(c *C, server *httptest.Server, vault common.PubKey) (*SOLScanner, *blockscanner.BlockScannerStorageSolana, chan stypes.TxIn) {
 	storage, err := blockscanner.NewBlockScannerStorageSolana("", config.LevelDBOptions{})
 	c.Assert(err, IsNil)
 	scm, err := signercache.NewSignerCacheManager(storage.GetInternalDb())
@@ -292,89 +293,8 @@ func (s *BlockScannerTestSuite) newTokenScanTestScanner(c *C, server *httptest.S
 		singleVaultPubKeys{vault: vault}, func(int64) error { return nil }, scm)
 	c.Assert(err, IsNil)
 	scanner.spl = testSPLRegistry(testUSDCMint) // independent of the build's token list
-	scanner.spl.activeFrom.Store(activationSlot)
 	txIns := make(chan stypes.TxIn, 10)
 	scanner.globalTxsQueue = txIns
 	scanner.lastMimirCheck = time.Now() // skip the mimir reads
 	return scanner, storage, txIns
-}
-
-// mimirBridge serves THORChain mimirs (unset reads 0) and a block height; scan()'s
-// pause and SPL gate checks use nothing else.
-type mimirBridge struct {
-	thorclient.ThorchainBridge
-	mu     sync.Mutex
-	values map[string]int64
-}
-
-func (b *mimirBridge) GetBlockHeight() (int64, error) { return 100, nil }
-
-func (b *mimirBridge) GetMimir(key string) (int64, error) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.values[key], nil
-}
-
-func (b *mimirBridge) set(key string, v int64) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	b.values[key] = v
-}
-
-// TestScanSPLGatedBySOLTokensMimir: until THORChain's SOLTokens mimir is set, the
-// scanner neither scans vault token accounts nor reports token deposits from outside
-// the vaults (TestScanObservesVaultTokenTransferWhenInactive covers the vaults' own
-// transfers, which are observed regardless). A thornode
-// without SPL support has no such mimir, so a Bifrost upgraded early never feeds it
-// SPL deposits it would credit (and later pay out through signers that cannot sign
-// SPL). Once the mimir is set, its value is the activation slot: deposits before it
-// are never observed, on every node alike.
-func (s *BlockScannerTestSuite) TestScanSPLGatedBySOLTokensMimir(c *C) {
-	vault := types2.GetRandomEd25519PubKey()
-	vaultAddr, err := vault.GetAddress(common.SOLChain)
-	c.Assert(err, IsNil)
-	tokenAccount := ata(c, vaultAddr.String(), testUSDCMint)
-
-	const depositSig = "GatedDeposit11111111111111111111111111111111111111111111111111111111"
-	const laterSig = "EnabledDeposit111111111111111111111111111111111111111111111111111111"
-	deposit := splInboundTo(c, vaultAddr.String(), 6_000_000)
-	deposit.Transaction.Signatures = []string{depositSig}
-	later := splInboundTo(c, vaultAddr.String(), 7_000_000)
-	later.Transaction.Signatures = []string{laterSig}
-	m := &splScanRPC{txs: map[string]*rpc.TransactionResult{depositSig: deposit, laterSig: later}, getTxHit: map[string]int{}}
-	m.set(1000, map[string][]rpc.SignaturesForAddressResult{
-		tokenAccount: {{Signature: depositSig, Slot: 1500}},
-	})
-	server := m.server(c)
-	defer server.Close()
-
-	scanner, storage, txIns := s.newTokenScanTestScanner(c, server, vault, 0)
-	bridge := &mimirBridge{values: map[string]int64{}}
-	scanner.bridge = bridge
-	scanner.lastMimirCheck = time.Time{} // read the mimirs this pass
-
-	scanner.scan()
-	c.Check(drainTxIns(txIns), HasLen, 0)
-	c.Check(m.getTxHit[depositSig], Equals, 0)
-	_, _, err = storage.GetScanStatus(tokenAccount)
-	c.Check(err, NotNil) // never tracked
-
-	bridge.set("SOLTokens", 2000)
-	scanner.lastMimirCheck = time.Time{}
-	m.set(2200, map[string][]rpc.SignaturesForAddressResult{
-		tokenAccount: {{Signature: depositSig, Slot: 1500}},
-	})
-	scanner.scan()
-	c.Check(scanner.spl.activationSlot(), Equals, uint64(2000))
-	c.Check(drainTxIns(txIns), HasLen, 0) // before the activation slot
-	c.Check(m.getTxHit[depositSig], Equals, 0)
-
-	m.set(3000, map[string][]rpc.SignaturesForAddressResult{
-		tokenAccount: {{Signature: laterSig, Slot: 2500}, {Signature: depositSig, Slot: 1500}},
-	})
-	scanner.scan()
-	got := drainTxIns(txIns)
-	c.Assert(got, HasLen, 1)
-	c.Check(got[0].TxArray[0].Tx, Equals, laterSig)
-	c.Check(m.getTxHit[depositSig], Equals, 0)
 }

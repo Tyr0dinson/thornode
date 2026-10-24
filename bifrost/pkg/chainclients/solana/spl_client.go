@@ -8,12 +8,33 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/solana/types"
 	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
+	"gitlab.com/thorchain/thornode/v3/constants"
 )
 
 // isSPLOutbound reports whether the outbound's coin is a token rather than SOL.
 // Callers have already required exactly one coin.
 func isSPLOutbound(tx stypes.TxOutItem) bool {
 	return len(tx.Coins) == 1 && !tx.Coins[0].Asset.Equals(common.SOLAsset)
+}
+
+// splHaltedAt reports whether THORChain's HaltSOLTokens mimir pauses SPL signing at
+// the keysign height. It is read as of that height, so every keysign party decides
+// alike. A bridge that cannot read at a height (tests) falls back to the live read.
+func (c *SOLClient) splHaltedAt(height int64) (bool, error) {
+	if c.bridge == nil {
+		return false, nil
+	}
+	var value int64
+	var err error
+	if r, ok := c.bridge.(mimirHeightReader); ok {
+		value, err = r.GetMimirAtHeight(constants.MimirKeyHaltSOLTokens, height)
+	} else {
+		value, err = c.bridge.GetMimir(constants.MimirKeyHaltSOLTokens)
+	}
+	if err != nil {
+		return false, err
+	}
+	return splHaltActive(value, height), nil
 }
 
 // errSPLSelfSend refuses an SPL outbound from a vault to its own address. It would

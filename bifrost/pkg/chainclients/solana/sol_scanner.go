@@ -57,10 +57,10 @@ type SOLScanner struct {
 	solvencyReporter   shtypes.SolvencyReporter
 	signerCacheManager *signercache.CacheManager
 
-	// spl is the SPL token whitelist and its activation. Once active, each vault's
-	// associated token account for a whitelisted mint is scanned alongside the vault
-	// itself: a plain token transfer to the vault references only that token account,
-	// never the vault wallet.
+	// spl is the SPL token whitelist and its halt. Each vault's associated token
+	// account for a whitelisted mint is scanned alongside the vault itself, unless
+	// HaltSOLTokens is in force: a plain token transfer to the vault references only
+	// that token account, never the vault wallet.
 	spl *splRegistry
 
 	globalNetworkFeeQueue chan common.NetworkFee
@@ -207,7 +207,7 @@ func (s *SOLScanner) Start() {
 func (s *SOLScanner) scan() {
 	if time.Since(s.lastMimirCheck) >= constants.ThorchainBlockTime {
 		s.isChainPaused = blockscanner.IsChainPaused(s.cfg, s.logger, s.bridge)
-		s.refreshSPLGate()
+		s.refreshSPLHalt()
 		s.lastMimirCheck = time.Now()
 	}
 
@@ -218,14 +218,13 @@ func (s *SOLScanner) scan() {
 	}
 
 	// vaultAddrs are the addresses scanned this pass, each with its own signature
-	// cursor: every vault wallet and, while SPL is active, its associated token account
-	// for each whitelisted mint. minSlots[i] is the lowest slot observed for
-	// vaultAddrs[i]: 0 for a wallet, the SPL activation slot for a token account.
-	// Anyone can create and fund a vault's token account long before activation, and
-	// THORChain agrees on that slot, so every node skips the same history.
+	// cursor: every vault wallet and its associated token account for each whitelisted
+	// mint. A token account, like a new vault wallet, is first scanned from the start of
+	// its history, so every node observes the same transactions. While HaltSOLTokens is
+	// in force the token accounts are skipped, so their cursors stay put and the
+	// deposits made meanwhile are observed once it is cleared.
 	var vaultAddrs []string
-	var minSlots []uint64
-	splSlot := s.spl.activationSlot()
+	splHalted := s.spl.isHalted()
 	for _, vault := range s.pubKeyMgr.GetAlgoPubKeys(common.SigningAlgoEd25519, s.cfg.Solana.ScanInactiveVaults) {
 		vaultAddrSol, err := vault.GetAddress(common.SOLChain)
 		if err != nil {
@@ -233,9 +232,8 @@ func (s *SOLScanner) scan() {
 			continue
 		}
 		vaultAddrs = append(vaultAddrs, vaultAddrSol.String())
-		minSlots = append(minSlots, 0)
 
-		if splSlot == 0 {
+		if splHalted {
 			continue
 		}
 		tokenAccounts, err := s.spl.vaultTokenAccounts(vaultAddrSol.String())
@@ -245,7 +243,6 @@ func (s *SOLScanner) scan() {
 		}
 		for _, ta := range tokenAccounts {
 			vaultAddrs = append(vaultAddrs, ta.address)
-			minSlots = append(minSlots, splSlot)
 		}
 	}
 
@@ -361,7 +358,7 @@ func (s *SOLScanner) scan() {
 			queryLastSig = ""
 		}
 
-		go s.scanVault(vaultAddr, i, queryLastSig, minContextSlot, minSlots[i], &seenSigs, setUnhealthy, countTxs, successfulQueries, newLastSigs, &wg)
+		go s.scanVault(vaultAddr, i, queryLastSig, minContextSlot, &seenSigs, setUnhealthy, countTxs, successfulQueries, newLastSigs, &wg)
 	}
 	wg.Wait()
 
@@ -458,14 +455,12 @@ func (s *SOLScanner) scan() {
 // If queryLastSig is empty, it will query all transactions for the vault address that exist on the node.
 // minContextSlot is the minimum slot to query for transactions. It does not set a bound on the query,
 // but does ensure that history exists on the RPC node until at least this slot.
-// minSlot, when non-zero, skips signatures below it (a token account's SPL activation slot);
-// skipped signatures still advance the cursor. seen dedupes signatures across the pass's addresses.
+// seen dedupes signatures across the pass's addresses.
 func (s *SOLScanner) scanVault(
 	vaultAddr string,
 	i int,
 	queryLastSig string,
 	minContextSlot uint64,
-	minSlot uint64,
 	seen *sync.Map,
 	setUnhealthy func(),
 	txCounts []int,
@@ -518,9 +513,6 @@ func (s *SOLScanner) scanVault(
 		// limit the number of concurrent tx queries to the RPC node
 		eg.SetLimit(maxConcurrentTxQueries)
 		for _, sig := range res {
-			if minSlot > 0 && sig.Slot < minSlot {
-				continue
-			}
 			// Whichever address claims a signature first observes it. If that
 			// observation fails, its own cursor stays put and it re-reads the
 			// signature next pass.
@@ -556,10 +548,6 @@ func (s *SOLScanner) scanVault(
 		}
 
 		if len(res) < transactionQueryLimit {
-			break
-		}
-		// Signatures come newest first, so every older page is below the floor too.
-		if minSlot > 0 && res[len(res)-1].Slot < minSlot {
 			break
 		}
 		before = res[len(res)-1].Signature
@@ -679,28 +667,27 @@ func (s *SOLScanner) IsHealthy() bool {
 	return s.healthy.Load()
 }
 
-// refreshSPLGate reads THORChain's SOLTokens mimir, the Solana slot from which SPL
-// tokens are active (constants.MimirKeySOLTokens). It gates only token deposits from
-// outside the vaults: a vault's own token transfers and its token balances of
-// whitelisted mints are observed and reported whatever its value. A thornode without
-// SPL support has no such mimir and reads as off. A failed read keeps the last value:
-// briefly missing token accounts is recoverable (their cursors resume), but a
-// flapping gate is not worth the noise.
-func (s *SOLScanner) refreshSPLGate() {
+// refreshSPLHalt reads THORChain's HaltSOLTokens mimir (constants.MimirKeyHaltSOLTokens)
+// against the current THORChain height. A failed read keeps the last value: briefly
+// scanning or skipping the token accounts is recoverable, since a skipped account's
+// cursor resumes, but a flapping halt is not worth the noise.
+func (s *SOLScanner) refreshSPLHalt() {
 	if s.spl == nil || len(s.spl.tokens) == 0 || s.bridge == nil {
 		return
 	}
-	value, err := s.bridge.GetMimir(constants.MimirKeySOLTokens)
+	height, err := s.bridge.GetBlockHeight()
 	if err != nil {
-		s.logger.Error().Err(err).Msgf("fail to get mimir %s; keeping SPL activation slot %d", constants.MimirKeySOLTokens, s.spl.activationSlot())
+		s.logger.Error().Err(err).Bool("halted", s.spl.isHalted()).Msg("fail to get THORChain height for the SPL halt; keeping the last value")
 		return
 	}
-	slot := uint64(0)
-	if value > 0 {
-		slot = uint64(value)
+	value, err := s.bridge.GetMimir(constants.MimirKeyHaltSOLTokens)
+	if err != nil {
+		s.logger.Error().Err(err).Bool("halted", s.spl.isHalted()).Msgf("fail to get mimir %s; keeping the last value", constants.MimirKeyHaltSOLTokens)
+		return
 	}
-	if prev := s.spl.activeFrom.Swap(slot); prev != slot {
-		s.logger.Info().Uint64("activation_slot", slot).Uint64("previous", prev).Msg("SPL token activation set by the SOLTokens mimir")
+	halted := splHaltActive(value, height)
+	if prev := s.spl.halted.Swap(halted); prev != halted {
+		s.logger.Info().Bool("halted", halted).Int64("halt_height", value).Msg("SPL halt changed by the HaltSOLTokens mimir")
 	}
 }
 
@@ -898,9 +885,7 @@ func (s *SOLScanner) txInItem(txn *rpc.TransactionResult, blockHeight int64) (*s
 	// ones invoked by other programs. They are observed unless a SystemProgram transfer
 	// is from or to a vault, so a transaction that moves a vault's SOL is observed
 	// exactly as it was before SPL support, while a Jito tip or a fee in SOL beside a
-	// token deposit is ignored. A vault's own token transfer is always observed; one
-	// from outside the vaults only from the SPL activation slot on, whichever address's
-	// scan returned the transaction.
+	// token deposit is ignored.
 	var tokenTransfers []splTransfer
 	fee := txn.Meta.Fee
 

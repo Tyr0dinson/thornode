@@ -161,12 +161,11 @@ func (s *SOLScanner) splTxInItem(
 		logger.Debug().Msg("cannot resolve token transfer source or destination owner")
 		return nil, nil
 	}
-	// The SOLTokens mimir gates only deposits from outside the vaults. A vault's own
-	// transfer (an outbound, refund or migration of tokens THORChain already holds) is
-	// observed whether SPL is active or not, and whatever the activation slot:
-	// THORChain keeps scheduling those and re-issues one that is never observed.
-	if !s.spl.activeAt(blockHeight) && !s.isVaultAddress(sender) {
-		logger.Debug().Str("sender", sender).Msg("token transfer from outside the vaults before SPL activation")
+	// While HaltSOLTokens is in force a token deposit from outside the vaults is not
+	// observed here: the vault token account's scan, paused meanwhile, observes it once
+	// the halt is cleared. A vault's own transfer is observed regardless.
+	if s.spl.isHalted() && !s.isVaultAddress(sender) {
+		logger.Debug().Str("sender", sender).Msg("SPL halted: token deposit left for its token account's scan")
 		return nil, nil
 	}
 

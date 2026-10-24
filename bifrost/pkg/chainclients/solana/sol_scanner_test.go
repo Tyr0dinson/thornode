@@ -196,7 +196,7 @@ func (s *BlockScannerTestSuite) TestScanVaultOmitsMinContextSlotWithUntilCursor(
 		wg.Add(1)
 		unhealthy := false
 		ok := make([]bool, 1)
-		scanner.scanVault("Vault1111111111111111111111111111111111111", 0, cursor, minCtx, 0, nil,
+		scanner.scanVault("Vault1111111111111111111111111111111111111", 0, cursor, minCtx, nil,
 			func() { unhealthy = true }, make([]int, 1), ok, make([]string, 1), &wg)
 		wg.Wait()
 		c.Assert(unhealthy, Equals, false)

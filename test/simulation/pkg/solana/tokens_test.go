@@ -107,8 +107,7 @@ func TestMocknetSPLAccountLayout(t *testing.T) {
 
 // TestMocknetSPLConfigInSync checks every place the mocknet mint must appear: the
 // mocknet SOL token list Bifrost embeds, the Bifrost whitelist in docker-compose,
-// and the validator entrypoint's --account flags; and that mocknet activates SPL
-// from slot 1 through the SOLTokens mimir.
+// and the validator entrypoint's --account flags.
 func TestMocknetSPLConfigInSync(t *testing.T) {
 	mint := MocknetTKNMint().String()
 	masterATA, err := stypes.FindAssociatedTokenAddress(stypes.MustPublicKeyFromString(MocknetMasterAddress), MocknetTKNMint())
@@ -145,11 +144,6 @@ func TestMocknetSPLConfigInSync(t *testing.T) {
 	}
 	if !strings.Contains(string(compose), `AIRDROP_ADDRESS: "`+MocknetMasterAddress+`"`) {
 		t.Fatal("docker-compose solana airdrop address is not the simulation master")
-	}
-	// Without the SOLTokens mimir THORChain no-ops SPL deposits and Bifrost does not
-	// scan token accounts, so every SPL simulation flow would silently do nothing.
-	if !strings.Contains(string(compose), "SOL_TOKENS: 1") {
-		t.Fatal("docker-compose does not enable the SOLTokens mimir (SOL_TOKENS) on thornode")
 	}
 
 	entrypoint, err := os.ReadFile(filepath.Join(repoRoot, "build/docker/mocknet/solana/entrypoint.sh"))

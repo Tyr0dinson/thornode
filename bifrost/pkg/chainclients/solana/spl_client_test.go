@@ -215,20 +215,10 @@ func (s *SolTestSuite) TestSPLGetAccountByAddress(c *C) {
 		spl:       testSPLRegistry(testUSDCMint, testUSDTMint),
 	}
 
-	// Token balances are reported whether or not SPL is active: once THORChain holds
-	// tokens, turning the SOLTokens mimir back off must not make the vaults look
-	// insolvent in them.
-	for _, activeFrom := range []uint64{0, 1} {
-		cl.spl.activeFrom.Store(activeFrom)
-		acct, readErr := cl.GetAccountByAddress(vaultAddr.String(), nil)
-		c.Assert(readErr, IsNil)
-		c.Assert(acct.Coins, HasLen, 3, Commentf("active from %d", activeFrom))
-		c.Check(acct.Coins.GetCoin(usdcAsset(c)).Amount.String(), Equals, "1234567800")
-	}
-
 	acct, err := cl.GetAccountByAddress(vaultAddr.String(), nil)
 	c.Assert(err, IsNil)
 	c.Assert(acct.Coins, HasLen, 3)
+	c.Check(acct.Coins.GetCoin(usdcAsset(c)).Amount.String(), Equals, "1234567800")
 	c.Check(acct.Coins.GetCoin(common.SOLAsset).Amount.String(), Equals, "500000000")
 	usdc := acct.Coins.GetCoin(usdcAsset(c))
 	c.Check(usdc.Amount.String(), Equals, "1234567800")

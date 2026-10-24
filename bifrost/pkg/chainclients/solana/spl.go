@@ -32,20 +32,30 @@ type splToken struct {
 	minDeposit uint64
 }
 
-// splRegistry maps the whitelisted SPL mints to their THORChain assets and holds
-// THORChain's activation of them. Activation gates only token deposits from outside
-// the vaults: a vault's own token transfers and its token balances of whitelisted
-// mints are always observed and reported. Mints are case-sensitive base58 while asset
-// symbols are uppercased, so outbounds resolve an asset to its mint through this
-// registry, never by parsing the symbol. The client and scanner share one registry.
+// splRegistry maps the whitelisted SPL mints to their THORChain assets. Mints are
+// case-sensitive base58 while asset symbols are uppercased, so outbounds resolve an
+// asset to its mint through this registry, never by parsing the symbol. The client and
+// scanner share one registry.
 type splRegistry struct {
 	tokens []splToken // config order, so every iteration is deterministic
 	byMint map[string]splToken
 
-	// activeFrom mirrors THORChain's SOLTokens mimir (constants.MimirKeySOLTokens): the
-	// Solana slot from which token deposits from outside the vaults are observed, or 0
-	// while they are off.
-	activeFrom atomic.Uint64
+	// halted mirrors THORChain's HaltSOLTokens mimir (constants.MimirKeyHaltSOLTokens)
+	// as the scanner last read it: while set, the vaults' token accounts are not
+	// scanned and token deposits from outside the vaults are not observed. Signing
+	// reads the mimir at the keysign height instead (SOLClient.splHaltedAt).
+	halted atomic.Bool
+}
+
+// splHaltActive reports whether a HaltSOLTokens value pauses SPL at THORChain height
+// height: a positive height that has been reached, as Halt<Chain>Chain is read.
+func splHaltActive(haltHeight, height int64) bool {
+	return haltHeight > 0 && height >= haltHeight
+}
+
+// isHalted reports whether the scanner last read HaltSOLTokens as in force.
+func (r *splRegistry) isHalted() bool {
+	return r != nil && r.halted.Load()
 }
 
 // vaultTokenAccount is a vault's associated token account for one whitelisted mint.
@@ -130,25 +140,6 @@ func (r *splRegistry) tokenByAsset(asset common.Asset) (splToken, bool) {
 		}
 	}
 	return splToken{}, false
-}
-
-// activationSlot returns the Solana slot from which SPL tokens are active: vault
-// token accounts are scanned from it, and token transfers from outside the vaults at
-// or after it are observed. 0 means SPL is off. A vault's own token transfers and its
-// token balances do not depend on it.
-func (r *splRegistry) activationSlot() uint64 {
-	if r == nil || len(r.tokens) == 0 {
-		return 0
-	}
-	return r.activeFrom.Load()
-}
-
-// activeAt reports whether a token transfer from outside the vaults at slot is
-// observed: SPL is active and the slot is not before the activation slot. A vault's
-// own token transfer is observed regardless.
-func (r *splRegistry) activeAt(slot int64) bool {
-	from := r.activationSlot()
-	return from > 0 && slot >= 0 && uint64(slot) >= from
 }
 
 // vaultTokenAccounts returns the vault's associated token account for every

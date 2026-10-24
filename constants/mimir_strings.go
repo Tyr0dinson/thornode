@@ -34,29 +34,15 @@ const (
 	// MimirTemplateSOLNonceClear.
 	MimirKeySOLDurableNonce = "SOLDurableNonce"
 
-	// MimirKeySOLTokens activates Solana SPL tokens; its value is the Solana slot they
-	// are active from. It gates only token deposits from outside the vaults: whatever
-	// its value, bifrost observes the vaults' own token transfers (outbounds, refunds,
-	// migrations) and reports vault token balances of every whitelisted mint.
-	// Unset/<=0: THORChain no-ops any observed SPL token deposit from outside its
-	// vaults (no credit, swap or refund), and bifrost neither scans vault token
-	// accounts nor reports token transfers from outside the vaults. Positive: bifrost
-	// scans vault token accounts and observes token transfers from outside the vaults
-	// at or after that slot, never earlier ones. Anyone can create and fund a vault's
-	// token account at any time, so a slot every node agrees on is what keeps their
-	// observations of that history identical. Set it to a recent finalized slot, at or
-	// before the slot the vote lands in: a later slot leaves deposits made before it
-	// unobserved.
-	//
-	// Set it only once every node that can sign for a vault (active, and churned-out
-	// members of retiring vaults) runs SPL-aware bifrost: an older bifrost signs any
-	// SOL-chain outbound as a native SOL transfer of the coin amount, so an SPL
-	// outbound would pay SOL instead of the token. Keeping SPL value out keeps SPL
-	// outbounds from ever being scheduled. Turning it back off, or re-setting it to a
-	// later slot, stops new deposits only: transfers between vaults (migrations) are
-	// still credited, and the vaults' outbounds and refunds of tokens THORChain already
-	// holds are still observed.
-	MimirKeySOLTokens = "SOLTokens"
+	// MimirKeyHaltSOLTokens pauses Solana SPL tokens from the THORChain height it is set
+	// to, read like Halt<Chain>Chain: unset, <= 0, or a height not reached yet leaves
+	// them live. Read by bifrost only. While it is in force bifrost neither observes SPL
+	// deposits from outside the vaults nor signs SPL outbounds: it stops scanning the
+	// vaults' token accounts, whose cursors stay put, so the deposits made meanwhile are
+	// observed once it is cleared, and SPL outbounds (refunds and migrations included)
+	// wait and are re-issued. The vaults' own token transfers already signed are still
+	// observed. SOL is unaffected; HaltSOLTrading also stops swaps into SPL tokens.
+	MimirKeyHaltSOLTokens = "HaltSOLTokens" //nolint:gosec // G101: a Mimir key, not a credential
 
 	// MimirKeySOLAnchorMarginSeconds tunes how far (seconds) bifrost steps back from
 	// the THORChain keysign block time to pick the SOL consensus blockhash anchor.

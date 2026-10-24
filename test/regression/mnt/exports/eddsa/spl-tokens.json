@@ -12,7 +12,7 @@
             "@type": "/cosmos.crypto.secp256k1.PubKey",
             "key": "AmF4AUTWZEUSBtgqiR5n2Lgic/Yrr1mWupMo5TAubNRO"
           },
-          "sequence": "7"
+          "sequence": "3"
         },
         {
           "@type": "/cosmos.auth.v1beta1.ModuleAccount",
@@ -138,7 +138,7 @@
           "address": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
           "coins": [
             {
-              "amount": "301007613150",
+              "amount": "301003440524",
               "denom": "rune"
             }
           ]
@@ -147,7 +147,7 @@
           "address": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
           "coins": [
             {
-              "amount": "34999996014166",
+              "amount": "34999996453616",
               "denom": "rune"
             }
           ]
@@ -174,7 +174,7 @@
           "address": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
           "coins": [
             {
-              "amount": "4999998372684",
+              "amount": "5000002105860",
               "denom": "rune"
             }
           ]
@@ -223,10 +223,10 @@
       "last_chain_heights": [
         {
           "chain": "SOL",
-          "height": "104"
+          "height": "100"
         }
       ],
-      "last_signed_height": "6",
+      "last_signed_height": "4",
       "liquidity_providers": [
         {
           "asset": "BTC.BTC",
@@ -262,16 +262,12 @@
           "units": "100000000000"
         }
       ],
-      "mimirs": [
-        {
-          "key": "SOLTOKENS"
-        }
-      ],
+      "mimirs": [],
       "network": {
         "LPIncomeSplit": "9398",
         "NodeIncomeSplit": "602",
-        "bond_reward_rune": "2372684",
-        "total_bond_units": "9"
+        "bond_reward_rune": "2105860",
+        "total_bond_units": "5"
       },
       "network_fees": [
         {
@@ -285,16 +281,11 @@
           "transaction_size": "5000"
         }
       ],
-      "nodeMimirs": [
-        {
-          "key": "SOLTOKENS",
-          "signer": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m"
-        }
-      ],
+      "nodeMimirs": [],
       "node_accounts": [
         {
           "active_block_height": "1",
-          "bond": "4999996000000",
+          "bond": "5000000000000",
           "bond_address": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
           "ip_address": "1.1.1.1",
           "node_address": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
@@ -314,7 +305,7 @@
           "asset": "SOL.SOL"
         },
         {
-          "amount": "20844003",
+          "amount": "20843786",
           "asset": "SOL.USDC-EPJFWDD5AUFQSSQEM2QN1XZYBAPC8G4WEGGKZWYTDT1V"
         }
       ],
@@ -324,7 +315,7 @@
           "asset": "SOL.SOL"
         },
         {
-          "amount": "689676019181",
+          "amount": "689676019038",
           "asset": "SOL.USDC-EPJFWDD5AUFQSSQEM2QN1XZYBAPC8G4WEGGKZWYTDT1V"
         }
       ],
@@ -333,7 +324,7 @@
           "LP_units": "100000000000",
           "asset": "BTC.BTC",
           "balance_asset": "100000000",
-          "balance_rune": "100002430619",
+          "balance_rune": "100001042049",
           "decimals": "8",
           "pending_inbound_asset": "0",
           "pending_inbound_rune": "0",
@@ -344,7 +335,7 @@
           "LP_units": "100000000000",
           "asset": "SOL.SOL",
           "balance_asset": "990182019",
-          "balance_rune": "101003534404",
+          "balance_rune": "101002131959",
           "decimals": "9",
           "pending_inbound_asset": "0",
           "pending_inbound_rune": "0",
@@ -354,8 +345,8 @@
         {
           "LP_units": "100000000000",
           "asset": "SOL.USDC-EPJFWDD5AUFQSSQEM2QN1XZYBAPC8G4WEGGKZWYTDT1V",
-          "balance_asset": "100021157000",
-          "balance_rune": "100001648127",
+          "balance_asset": "100021150100",
+          "balance_rune": "100000266516",
           "decimals": "6",
           "pending_inbound_asset": "0",
           "pending_inbound_rune": "0",
@@ -380,13 +371,13 @@
         {
           "address": "4giBTiV26iXMoyUEPokPVHhAPdnJxbgyNbG8CzBR6p8V",
           "reclaimed": "0",
-          "score": "24460945",
+          "score": "24460845",
           "spent": "0"
         },
         {
           "address": "tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej",
           "reclaimed": "0",
-          "score": "5048923",
+          "score": "5048958",
           "spent": "0"
         }
       ],
@@ -423,7 +414,7 @@
               "decimals": "9"
             },
             {
-              "amount": "100021157000",
+              "amount": "100021150100",
               "asset": "SOL.USDC-EPJFWDD5AUFQSSQEM2QN1XZYBAPC8G4WEGGKZWYTDT1V",
               "decimals": "6"
             }
@@ -489,5 +480,5 @@
       }
     }
   },
-  "initial_height": 10
+  "initial_height": 6
 }

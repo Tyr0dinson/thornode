@@ -21,7 +21,7 @@ asserts:
   - .[0].coins[] | select(.asset == "SOL.USDC-EPJFWDD5AUFQSSQEM2QN1XZYBAPC8G4WEGGKZWYTDT1V") | .amount == "100000000000"
 ---
 ########################################################################################
-# SOLTokens unset: an SPL deposit from outside the vaults is a no-op
+# An SPL deposit is credited and swapped
 ########################################################################################
 type: tx-observed-in
 signer: {{ addr_thor_dog }}
@@ -47,60 +47,6 @@ type: create-blocks
 count: 1
 ---
 type: check
-endpoint: http://localhost:1317/thorchain/queue/outbound
-asserts:
-  - .|length == 0
----
-type: check
-endpoint: http://localhost:1317/thorchain/vaults/asgard
-asserts:
-  - .[0].coins[] | select(.asset == "SOL.USDC-EPJFWDD5AUFQSSQEM2QN1XZYBAPC8G4WEGGKZWYTDT1V") | .amount == "100000000000"
----
-type: check
-endpoint: http://localhost:1317/thorchain/pool/SOL.USDC-EPJFWDD5AUFQSSQEM2QN1XZYBAPC8G4WEGGKZWYTDT1V
-asserts:
-  - .balance_asset == "100000000000"
----
-########################################################################################
-# SOLTokens set: the same deposit is credited and swapped
-########################################################################################
-type: tx-mimir
-key: SOLTokens
-value: 1
-signer: {{ addr_thor_dog }}
----
-type: create-blocks
-count: 1
----
-type: check
-endpoint: http://localhost:1317/thorchain/mimir/key/SOLTokens
-asserts:
-  - . == 1
----
-type: tx-observed-in
-signer: {{ addr_thor_dog }}
-txs:
-  - tx:
-      id: "{{ observe_txid 2 }}"
-      chain: SOL
-      from_address: {{ addr_sol_fox }}
-      to_address: 3LoLDuMFEeMzVUVyFUnNtr7AMBNNap1FrnTJ1tpFXGNL
-      coins:
-        - amount: "1000000000"
-          asset: "SOL.USDC-EPJFWDD5AUFQSSQEM2QN1XZYBAPC8G4WEGGKZWYTDT1V"
-          decimals: 6
-      gas:
-        - amount: "500"
-          asset: "SOL.SOL"
-      memo: "=:SOL.SOL:{{ addr_sol_fox }}"
-    block_height: 101
-    finalise_height: 101
-    observed_pub_key: tthorpub1zcjduepqytyuhhzn286vccztkdns982ad0snfa68k3zjlcm2j2ae6rffhxssu9zuek
----
-type: create-blocks
-count: 1
----
-type: check
 endpoint: http://localhost:1317/thorchain/pool/SOL.USDC-EPJFWDD5AUFQSSQEM2QN1XZYBAPC8G4WEGGKZWYTDT1V
 asserts:
   - .balance_asset == "101000000000"
@@ -112,13 +58,13 @@ asserts:
   - .[0].to_address == "{{ addr_sol_fox }}"
   - .[0].coin.asset == "SOL.SOL"
   - .[0].coin.amount == "${SOL_OUT=9613053}"
-  - .[0].in_hash == "{{ observe_txid 2 }}"
+  - .[0].in_hash == "{{ observe_txid 1 }}"
 ---
 type: tx-observed-out
 signer: {{ addr_thor_dog }}
 txs:
   - tx:
-      id: "{{ observe_txid 3 }}"
+      id: "{{ observe_txid 2 }}"
       chain: SOL
       from_address: 3LoLDuMFEeMzVUVyFUnNtr7AMBNNap1FrnTJ1tpFXGNL
       to_address: {{ addr_sol_fox }}
@@ -129,9 +75,9 @@ txs:
       gas:
         - amount: "500"
           asset: "SOL.SOL"
-      memo: "OUT:{{ observe_txid 2 }}"
-    block_height: 102
-    finalise_height: 102
+      memo: "OUT:{{ observe_txid 1 }}"
+    block_height: 101
+    finalise_height: 101
     observed_pub_key: tthorpub1zcjduepqytyuhhzn286vccztkdns982ad0snfa68k3zjlcm2j2ae6rffhxssu9zuek
 ---
 type: create-blocks
@@ -157,7 +103,7 @@ asserts:
   # at the pool prices after the quoted swap. Without the surcharge it would be about
   # 51000 (0.0005 USDC).
   - .fees.outbound == "20848900"
-  - .expected_amount_out == "978843000"
+  - .expected_amount_out == "978849900"
 ---
 type: tx-deposit
 signer: {{ addr_thor_cat }}
@@ -175,27 +121,18 @@ asserts:
   - .|length == 1
   - .[0].to_address == "{{ addr_sol_fox }}"
   - .[0].coin.asset == "SOL.USDC-EPJFWDD5AUFQSSQEM2QN1XZYBAPC8G4WEGGKZWYTDT1V"
-  - .[0].coin.amount == "${USDC_OUT=978843000}"
+  - .[0].coin.amount == "${USDC_OUT=978849900}"
   - .[0].vault_pub_key_eddsa == "tthorpub1zcjduepqytyuhhzn286vccztkdns982ad0snfa68k3zjlcm2j2ae6rffhxssu9zuek"
   - .[0].max_gas[0].asset == "SOL.SOL"
 ---
 ########################################################################################
-# SOLTokens turned back off: the vault's SPL outbound is still matched, and a new
-# deposit from outside the vaults is a no-op again
+# The vault's SPL outbound, which created the recipient's token account, is matched
 ########################################################################################
-type: tx-mimir
-key: SOLTokens
-value: 0
-signer: {{ addr_thor_dog }}
----
-type: create-blocks
-count: 1
----
 type: tx-observed-out
 signer: {{ addr_thor_dog }}
 txs:
   - tx:
-      id: "{{ observe_txid 4 }}"
+      id: "{{ observe_txid 3 }}"
       chain: SOL
       from_address: 3LoLDuMFEeMzVUVyFUnNtr7AMBNNap1FrnTJ1tpFXGNL
       to_address: {{ addr_sol_fox }}
@@ -208,9 +145,9 @@ txs:
       gas:
         - amount: "204428"
           asset: "SOL.SOL"
-      memo: "OUT:{{ native_txid -2 }}"
-    block_height: 103
-    finalise_height: 103
+      memo: "OUT:{{ native_txid -1 }}"
+    block_height: 102
+    finalise_height: 102
     observed_pub_key: tthorpub1zcjduepqytyuhhzn286vccztkdns982ad0snfa68k3zjlcm2j2ae6rffhxssu9zuek
 ---
 type: create-blocks
@@ -233,38 +170,5 @@ endpoint: http://localhost:1317/thorchain/vaults/asgard
 asserts:
   # 1000000000 - 9613053 (SOL out) - 500 (its gas) - 204428 (the SPL outbound's gas)
   - .[0].coins[] | select(.asset == "SOL.SOL") | .amount == "990182019"
-  # 100000000000 + 1000000000 (credited deposit) - 978843000 (SPL outbound)
-  - .[0].coins[] | select(.asset == "SOL.USDC-EPJFWDD5AUFQSSQEM2QN1XZYBAPC8G4WEGGKZWYTDT1V") | .amount == "100021157000"
----
-type: tx-observed-in
-signer: {{ addr_thor_dog }}
-txs:
-  - tx:
-      id: "{{ observe_txid 5 }}"
-      chain: SOL
-      from_address: {{ addr_sol_fox }}
-      to_address: 3LoLDuMFEeMzVUVyFUnNtr7AMBNNap1FrnTJ1tpFXGNL
-      coins:
-        - amount: "1000000000"
-          asset: "SOL.USDC-EPJFWDD5AUFQSSQEM2QN1XZYBAPC8G4WEGGKZWYTDT1V"
-          decimals: 6
-      gas:
-        - amount: "500"
-          asset: "SOL.SOL"
-      memo: "=:SOL.SOL:{{ addr_sol_fox }}"
-    block_height: 104
-    finalise_height: 104
-    observed_pub_key: tthorpub1zcjduepqytyuhhzn286vccztkdns982ad0snfa68k3zjlcm2j2ae6rffhxssu9zuek
----
-type: create-blocks
-count: 1
----
-type: check
-endpoint: http://localhost:1317/thorchain/queue/outbound
-asserts:
-  - .|length == 0
----
-type: check
-endpoint: http://localhost:1317/thorchain/vaults/asgard
-asserts:
-  - .[0].coins[] | select(.asset == "SOL.USDC-EPJFWDD5AUFQSSQEM2QN1XZYBAPC8G4WEGGKZWYTDT1V") | .amount == "100021157000"
+  # 100000000000 + 1000000000 (credited deposit) - 978849900 (SPL outbound)
+  - .[0].coins[] | select(.asset == "SOL.USDC-EPJFWDD5AUFQSSQEM2QN1XZYBAPC8G4WEGGKZWYTDT1V") | .amount == "100021150100"

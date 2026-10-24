@@ -83,7 +83,7 @@ type SOLClient struct {
 	rpcClient           *rpc.SolRPC
 	m                   *metrics.Metrics
 
-	// spl is the SPL token whitelist and its activation, shared with the scanner. Nil
+	// spl is the SPL token whitelist, shared with the scanner. Nil
 	// (as in clients built directly by tests) means SOL only.
 	spl *splRegistry
 
@@ -363,9 +363,8 @@ func (c *SOLClient) GetAccountByAddress(addr string, height *big.Int) (common.Ac
 		common.NewCoin(common.SOLAsset, amount),
 	}
 
-	// Token balances of the whitelisted mints, whether or not SPL is active: the
-	// vaults keep holding tokens after the SOLTokens mimir is turned back off, and a
-	// token missing here would make them look insolvent in it.
+	// Token balances of the whitelisted mints: a token missing here would make the
+	// vault look insolvent in it.
 	tokenCoins, err := c.splTokenCoins(addr)
 	if err != nil {
 		return common.Account{}, fmt.Errorf("fail to get token balances: %w", err)
@@ -679,6 +678,18 @@ func (c *SOLClient) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *
 	// drops below are remembered as rejected, so the serialize gate does not hold the
 	// vault's later durable siblings behind an outbound no node will sign.
 	if isSPLOutbound(tx) {
+		// HaltSOLTokens pauses SPL signing. Dropped like the drops below, a halted
+		// outbound is re-issued and signed once the halt is cleared. An unreadable
+		// mimir retains it and retries rather than sign through a halt.
+		halted, err := c.splHaltedAt(height)
+		if err != nil {
+			c.countAbstain("spl_halt_read_error")
+			return nil, nil, nil, fmt.Errorf("fail to read %s; retaining outbound: %w", constants.MimirKeyHaltSOLTokens, err)
+		}
+		if halted {
+			return c.dropRejectedForReschedule(tx, height, "spl_halted_dropped", c.logger.Warn(),
+				"SPL signing halted by HaltSOLTokens, dropping for reschedule")
+		}
 		if _, err := c.splOutboundParams(tx); errors.Is(err, errSPLSelfSend) {
 			return c.dropRejectedForReschedule(tx, height, "spl_self_send_dropped", c.logger.Warn(),
 				"SPL outbound to its own vault would be an unobservable no-op, dropping for reschedule")
