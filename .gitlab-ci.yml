@@ -783,6 +783,30 @@ pages:
   script:
     - make docs-generate
 
+# The MR widget's "View app" button. huginn's visual-review service builds a
+# review page for every open non-draft MR and publishes it to Cloudflare Pages
+# at this URL (it also keeps the link at the top of the MR description). This
+# job only records the deployment GitLab needs to show the button: no secrets,
+# no checkout. The page appears a few minutes to an hour after a new head.
+visual-review:
+  tags: !reference [.small-runner, tags]
+  stage: test
+  needs: []
+  rules:
+    - if: $CI_MERGE_REQUEST_SOURCE_PROJECT_PATH && $CI_MERGE_REQUEST_SOURCE_PROJECT_PATH != $CI_MERGE_REQUEST_PROJECT_PATH
+      when: never
+    - if: $CI_MERGE_REQUEST_IID
+  allow_failure: true
+  variables:
+    GIT_STRATEGY: none
+  environment:
+    name: review/mr-$CI_MERGE_REQUEST_IID
+    url: https://mr-$CI_MERGE_REQUEST_IID.thorchain-mr-reviews.pages.dev
+    deployment_tier: development
+    auto_stop_in: 2 weeks
+  script:
+    - echo "Visual review page at $CI_ENVIRONMENT_URL"
+
 # Copy third-party images the dind jobs pull into this project's registry,
 # registry to registry with `docker buildx imagetools`, so no dind daemon is
 # involved. Running on protected branches only is not a registry ACL: any
