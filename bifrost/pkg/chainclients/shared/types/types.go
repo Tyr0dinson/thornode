@@ -103,6 +103,16 @@ type SpentOutputRefsApplier interface {
 	ApplySpentOutputRefsWithOutcome(request SpentOutputRefsImport, onOutcome func(applied bool))
 }
 
+// SpentOutputRefsGuard orders an import and its durable effects against
+// height-scoped errata cleanup. Rejected admission must prevent all mutation.
+type SpentOutputRefsGuard func(common.ObservedTx) (release func(), ok bool)
+
+// SpentOutputRefsGuardSetter wires durable Observer admission before the
+// client starts, covering live imports, retries and periodic recovery.
+type SpentOutputRefsGuardSetter interface {
+	SetSpentOutputRefsGuard(SpentOutputRefsGuard)
+}
+
 // CustomKeygenRequest carries common keygen context for chain-specific hooks.
 type CustomKeygenRequest struct {
 	Members         []string

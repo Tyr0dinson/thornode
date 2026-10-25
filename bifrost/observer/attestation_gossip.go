@@ -480,6 +480,45 @@ func (s *AttestationGossip) SetObserverApplySpentOutputRefs(fn func(request spen
 	s.observerApplySpentOutputRefs = fn
 }
 
+// acquireXMRSpentRefsAttempt orders one mutation against durable errata
+// admission. Retry waits and metadata queries run outside this barrier.
+func (s *AttestationGossip) acquireXMRSpentRefsAttempt(tx common.ObservedTx) (func(), bool) {
+	if !tx.Tx.Chain.Equals(common.XMRChain) {
+		return func() {}, true
+	}
+	s.xmrErrataBarrier.RLock()
+	s.mu.Lock()
+	admitted, err := s.admitXMRObservationLocked(tx)
+	s.mu.Unlock()
+	if err != nil || !admitted {
+		s.xmrErrataBarrier.RUnlock()
+		return nil, false
+	}
+	return s.xmrErrataBarrier.RUnlock, true
+}
+
+// spentRefsOutcome rechecks admission because cleanup may finish between the
+// client's last durable write and Observer's successful outcome bookkeeping.
+// Successful XMR outcomes call onOutcome while holding the errata barrier's
+// read lock. Callbacks must not reacquire the barrier as a reader or writer,
+// enter errata cleanup, or invert the barrier-before-bookkeeping lock order.
+func (s *AttestationGossip) spentRefsOutcome(tx common.ObservedTx, onOutcome func(bool)) func(bool) {
+	return func(applied bool) {
+		if onOutcome == nil {
+			return
+		}
+		if applied {
+			release, admitted := s.acquireXMRSpentRefsAttempt(tx)
+			if !admitted {
+				onOutcome(false)
+				return
+			}
+			defer release()
+		}
+		onOutcome(applied)
+	}
+}
+
 // SetObserverApplyCommittedSpentRefs wires the consensus-backed import used by
 // live quorum notifications. The notification supplies only a vault and tx ID;
 // the client must return the canonical transaction it reconstructed and applied.
@@ -512,7 +551,7 @@ func (s *AttestationGossip) applySpentRefsAsyncWithLimit(
 		return
 	}
 	s.runSpentRefsAsyncWithLimit(request.Tx.Tx.ID, sem, origin, onOutcome, func() {
-		s.observerApplySpentOutputRefs(request, onOutcome)
+		s.observerApplySpentOutputRefs(request, s.spentRefsOutcome(request.Tx, onOutcome))
 	})
 }
 
@@ -537,7 +576,7 @@ func (s *AttestationGossip) applyCommittedSpentRefsAsync(
 	s.runSpentRefsAsyncWithLimit(txID, s.applyCommittedSpentRefsSem, "committed", onRejected, func() {
 		imported, applied := s.observerApplyCommittedSpentRefs(s.lifecycleContext(), vaultPubKey, txID)
 		if onOutcome != nil {
-			onOutcome(imported, applied)
+			s.spentRefsOutcome(imported, func(ok bool) { onOutcome(imported, ok) })(applied)
 		}
 	})
 }

@@ -164,6 +164,18 @@ func NewObserver(pubkeyMgr *pubkeymanager.PubKeyManager,
 		}
 	}
 
+	var spentRefsGuardSetter chainclients.SpentOutputRefsGuardSetter
+	if xmrClient, ok := chains[common.XMRChain]; ok {
+		if attestationGossip == nil {
+			return nil, errors.New("XMR spent-reference recovery requires errata admission")
+		}
+		var supported bool
+		spentRefsGuardSetter, supported = xmrClient.(chainclients.SpentOutputRefsGuardSetter)
+		if !supported {
+			return nil, errors.New("XMR chain client does not support spent-reference errata admission")
+		}
+	}
+
 	storage, err := NewObserverStorage(dataPath, cfg.ObserverLevelDB)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create observer storage: %w", err)
@@ -216,6 +228,9 @@ func NewObserver(pubkeyMgr *pubkeymanager.PubKeyManager,
 		attestationGossip.SetObserverStorage(observer.storage)
 		attestationGossip.SetObserverHandleObservedTxCommitted(observer)
 		attestationGossip.SetObserverHandleErrataTxCommitted(observer)
+		if spentRefsGuardSetter != nil {
+			spentRefsGuardSetter.SetSpentOutputRefsGuard(attestationGossip.acquireXMRSpentRefsAttempt)
+		}
 	}
 	return observer, nil
 }

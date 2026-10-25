@@ -24,6 +24,7 @@ import (
 	"google.golang.org/grpc"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/p2p"
+	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	tctypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/ebifrost"
@@ -37,6 +38,7 @@ type cancellationQueryBridge struct {
 	vault   func(context.Context, string) (thortypes.Vault, error)
 	keysign func(context.Context, int64, string) (tctypes.TxOut, error)
 	voter   func(context.Context, string) (*thortypes.QueryObservedTxVoter, error)
+	pending func(context.Context, int64) ([]thorclient.PendingOutbound, error)
 }
 
 // Cancel at the first context check after authorization reserves an identity.
@@ -243,6 +245,13 @@ func (b *cancellationQueryBridge) GetKeysignWithContext(ctx context.Context, hei
 	return b.GetKeysign(height, key)
 }
 
+func (b *cancellationQueryBridge) GetPendingOutboundsWithContext(ctx context.Context, height int64) ([]thorclient.PendingOutbound, error) {
+	if b.pending != nil {
+		return b.pending(ctx, height)
+	}
+	return b.GetPendingOutbounds(height)
+}
+
 func (b *cancellationQueryBridge) GetObservedTxVoterWithContext(ctx context.Context, id string) (*thortypes.QueryObservedTxVoter, error) {
 	if b.voter != nil {
 		return b.voter(ctx, id)
@@ -332,7 +341,7 @@ func TestStateCancellationReleasesExportAdmissionWhileStateLocked(t *testing.T) 
 }
 
 func TestStateCancellationLatePlanThenSuccessfulCaller(t *testing.T) {
-	for _, kind := range []string{"keysign", "voter"} {
+	for _, kind := range []string{"keysign", "voter", "ragnarok queue", "ragnarok retry"} {
 		t.Run(kind, func(t *testing.T) {
 			s, _, _, _, legacy, _ := setupTestGossip(t)
 			tx, plan := observerTestXMRPlan(t)
@@ -341,13 +350,14 @@ func TestStateCancellationLatePlanThenSuccessfulCaller(t *testing.T) {
 			started, exited := make(chan struct{}), make(chan struct{})
 			bridge := &cancellationQueryBridge{MockThorchainBridge: legacy}
 			wait := func(ctx context.Context) { close(started); <-ctx.Done(); close(exited) }
-			if kind == "keysign" {
+			switch kind {
+			case "keysign":
 				legacy.getKeysignFunc = observerTestKeysignFunc(plan)
 				bridge.keysign = func(ctx context.Context, h int64, k string) (tctypes.TxOut, error) {
 					wait(ctx)
 					return legacy.GetKeysign(h, k)
 				}
-			} else {
+			case "voter":
 				inbound := common.TxID(observerTestHash("cancellation-inbound"))
 				tx.Tx.Memo = "OUT:" + inbound.String()
 				plan.memo = tx.Tx.Memo
@@ -355,6 +365,36 @@ func TestStateCancellationLatePlanThenSuccessfulCaller(t *testing.T) {
 				bridge.voter = func(ctx context.Context, id string) (*thortypes.QueryObservedTxVoter, error) {
 					wait(ctx)
 					return legacy.GetObservedTxVoter(id)
+				}
+			case "ragnarok queue", "ragnarok retry":
+				const originalHeight, retryHeight = int64(123), int64(1040)
+				tx.Tx.Memo = "RAGNAROK:123"
+				plan.memo, plan.wireMemo = tx.Tx.Memo, tx.Tx.Memo
+				original := plan
+				original.outHash = common.BlankTxID
+				legacy.getKeysignFunc = func(height int64, key string) (tctypes.TxOut, error) {
+					if height == originalHeight {
+						return observerTestKeysignFunc(original)(height, key)
+					}
+					require.Equal(t, retryHeight, height)
+					return observerTestKeysignFunc(plan)(height, key)
+				}
+				legacy.getPendingOutboundsFunc = func(height int64) ([]thorclient.PendingOutbound, error) {
+					require.Zero(t, height)
+					return []thorclient.PendingOutbound{{Chain: "XMR", Memo: tx.Tx.Memo, Height: retryHeight}}, nil
+				}
+				if kind == "ragnarok queue" {
+					bridge.pending = func(ctx context.Context, height int64) ([]thorclient.PendingOutbound, error) {
+						wait(ctx)
+						return legacy.GetPendingOutbounds(height)
+					}
+				} else {
+					bridge.keysign = func(ctx context.Context, height int64, key string) (tctypes.TxOut, error) {
+						if height == retryHeight {
+							wait(ctx)
+						}
+						return legacy.GetKeysign(height, key)
+					}
 				}
 			}
 			s.bridge = bridge
@@ -381,11 +421,11 @@ func TestStateCancellationLatePlanThenSuccessfulCaller(t *testing.T) {
 			waitStateBounds(t, exited)
 			require.Zero(t, calls.Load())
 			require.Zero(t, cancellationTestReservationCount(s))
-			bridge.keysign, bridge.voter = nil, nil
+			bridge.keysign, bridge.voter, bridge.pending = nil, nil, nil
 			require.NoError(t, s.processAttestationStateBatchWithContext(context.Background(), s.logger, batch))
 			select {
 			case request := <-applied:
-				// Both context query paths must preserve the wire memo derived
+				// Context query paths must preserve the wire memo derived
 				// from OriginalMemo when the planned Memo is empty.
 				require.Equal(t, tx.Tx.Memo, request.Tx.Tx.Memo)
 				require.Equal(t, tx.Tx.Memo, request.WireMemo)

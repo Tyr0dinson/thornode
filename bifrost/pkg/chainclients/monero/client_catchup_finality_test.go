@@ -100,11 +100,13 @@ func TestCatchupReusableAliasFinalityTransitions(t *testing.T) {
 					peer := common.NewObservedTx(tx, 100, vault, 100)
 					peer.SpentOutputRefs = []common.OutputRef{*ref}
 					peer.XmrTxKey = voter.Tx.XmrTxKey
+					allowSpentOutputRefsImports(client)
 					applied, retry := client.applySpentOutputRefsOnce(chainclienttypes.SpentOutputRefsImport{Tx: peer, WireMemo: peer.Tx.Memo})
 					require.True(t, applied)
 					require.False(t, retry)
 					assertBlocked()
 
+					allowSpentOutputRefsImports(client)
 					client.catchupSpentOutputRefs()
 					importCount := 2
 					if heights[0] <= 0 || heights[1] <= 0 {
@@ -117,6 +119,7 @@ func TestCatchupReusableAliasFinalityTransitions(t *testing.T) {
 					voter.Tx.BlockHeight = 100
 					voter.Tx.FinaliseHeight = 100
 					voter.FinalisedHeight = 110
+					allowSpentOutputRefsImports(client)
 					client.catchupSpentOutputRefs()
 					importCount++
 					require.Len(t, imports, importCount)
@@ -133,6 +136,7 @@ func TestCatchupReusableAliasFinalityTransitions(t *testing.T) {
 					require.NoError(t, err)
 					require.NoError(t, store.Reserve(next), "final catch-up must release the reusable alias")
 					// Periodic replay of the old final result must not poison its successor.
+					allowSpentOutputRefsImports(client)
 					client.catchupSpentOutputRefs()
 					require.Len(t, imports, 1)
 					require.NoError(t, store.Reserve(next))
