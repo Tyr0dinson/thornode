@@ -21,13 +21,7 @@
       "Program MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr success"
     ],
     "postBalances": [
-      9999990000,
-      2039280,
-      2039280,
-      1461600,
-      929020800,
-      521498880,
-      1000000000
+      9999990000, 2039280, 2039280, 1461600, 929020800, 521498880, 1000000000
     ],
     "postTokenBalances": [
       {
@@ -56,13 +50,7 @@
       }
     ],
     "preBalances": [
-      9999995000,
-      2039280,
-      2039280,
-      1461600,
-      929020800,
-      521498880,
-      1000000000
+      9999995000, 2039280, 2039280, 1461600, 929020800, 521498880, 1000000000
     ],
     "preTokenBalances": [
       {
@@ -114,20 +102,13 @@
       },
       "instructions": [
         {
-          "accounts": [
-            1,
-            3,
-            2,
-            0
-          ],
+          "accounts": [1, 3, 2, 0],
           "data": "hjt27wSFrm677",
           "programIdIndex": 4,
           "stackHeight": 1
         },
         {
-          "accounts": [
-            0
-          ],
+          "accounts": [0],
           "data": "4mNPZGXvLKAiEeTHQqseCzGZ6tbh6",
           "programIdIndex": 5,
           "stackHeight": 1

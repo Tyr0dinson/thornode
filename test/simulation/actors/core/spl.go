@@ -206,7 +206,7 @@ func (a *SPLFreshRecipientSwapActor) solanaReader(config *OpConfig) (*solana.Cli
 // SPLRefundActor
 ////////////////////////////////////////////////////////////////////////////////////////
 
-// SPLRefundActor sends an SPL token deposit with an unparseable memo and checks
+// SPLRefundActor sends an SPL token deposit with an unparsable memo and checks
 // THORChain refunds the token to the sender's wallet: a REFUND outbound of the same
 // token to the sender, landing in its associated token account.
 type SPLRefundActor struct {

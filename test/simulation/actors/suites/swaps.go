@@ -77,7 +77,7 @@ func Swaps(rng *rand.Rand) *Actor {
 
 		// add SPL tokens to swap pools, plus SPL-specific coverage: a swap out to
 		// a wallet with no token account (created by the vault, rent charged) and
-		// a refund of an unparseable SPL deposit
+		// a refund of an unparsable SPL deposit
 		if chain.Equals(common.SOLChain) {
 			for asset := range solana.Tokens() {
 				swapPools = append(swapPools, asset)

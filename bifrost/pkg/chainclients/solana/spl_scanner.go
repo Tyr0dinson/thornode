@@ -101,7 +101,7 @@ func (s *SOLScanner) splTxInItem(
 ) (*stypes.TxInItem, error) {
 	txID := txn.Transaction.Signatures[0]
 	logger := s.logger.With().Str("txID", txID).Logger()
-	accountAt := func(i int) string {
+	accountByIndex := func(i int) string {
 		if i < 0 || i >= len(accounts) {
 			return ""
 		}
@@ -114,7 +114,7 @@ func (s *SOLScanner) splTxInItem(
 	if len(transfers) > 1 {
 		var vaultTransfers []splTransfer
 		for _, tr := range transfers {
-			if s.splTransferTouchesVault(tr, pre, post, accountAt) {
+			if s.splTransferTouchesVault(tr, pre, post, accountByIndex) {
 				vaultTransfers = append(vaultTransfers, tr)
 			}
 		}
@@ -129,7 +129,7 @@ func (s *SOLScanner) splTxInItem(
 		logger.Debug().Msg("malformed token transfer instruction")
 		return nil, nil
 	}
-	if accountAt(t.source) == "" || accountAt(t.dest) == "" {
+	if accountByIndex(t.source) == "" || accountByIndex(t.dest) == "" {
 		logger.Debug().Msg("token transfer account index out of range")
 		return nil, nil
 	}
@@ -150,13 +150,13 @@ func (s *SOLScanner) splTxInItem(
 	}
 	if dstPost.UITokenAmount.Decimals != token.decimals ||
 		(t.decimals >= 0 && t.decimals != token.decimals) ||
-		(t.mint >= 0 && accountAt(t.mint) != dstPost.Mint) {
+		(t.mint >= 0 && accountByIndex(t.mint) != dstPost.Mint) {
 		logger.Warn().Str("mint", dstPost.Mint).Int("decimals", dstPost.UITokenAmount.Decimals).
 			Int("whitelist_decimals", token.decimals).Msg("token transfer does not match the whitelisted mint")
 		return nil, nil
 	}
 
-	sender, ok := s.splTransferSender(t, pre, post, dstPost.Mint, accountAt, logger)
+	sender, ok := s.splTransferSender(t, pre, post, dstPost.Mint, accountByIndex, logger)
 	if !ok || dstPost.Owner == "" {
 		logger.Debug().Msg("cannot resolve token transfer source or destination owner")
 		return nil, nil
@@ -183,8 +183,8 @@ func (s *SOLScanner) splTxInItem(
 		return nil, nil
 	}
 	canonical, err := types.FindAssociatedTokenAddress(dstOwner, token.mint)
-	if err != nil || canonical.String() != accountAt(t.dest) {
-		logger.Debug().Str("destination", accountAt(t.dest)).Str("owner", dstPost.Owner).
+	if err != nil || canonical.String() != accountByIndex(t.dest) {
+		logger.Debug().Str("destination", accountByIndex(t.dest)).Str("owner", dstPost.Owner).
 			Msg("token transfer destination is not the owner's associated token account")
 		return nil, nil
 	}
@@ -220,7 +220,7 @@ func (s *SOLScanner) splTxInItem(
 	}
 
 	gasLamports := txn.Meta.Fee
-	if accountAt(0) == sender && len(txn.Meta.PreBalances) > 0 && len(txn.Meta.PostBalances) > 0 &&
+	if accountByIndex(0) == sender && len(txn.Meta.PreBalances) > 0 && len(txn.Meta.PostBalances) > 0 &&
 		txn.Meta.PreBalances[0] > txn.Meta.PostBalances[0] {
 		if spent := txn.Meta.PreBalances[0] - txn.Meta.PostBalances[0]; spent > gasLamports {
 			gasLamports = spent
@@ -270,7 +270,7 @@ func (s *SOLScanner) splTransferSender(
 	t splTransfer,
 	pre, post []rpc.RPCTokenBalance,
 	mint string,
-	accountAt func(int) string,
+	accountByIndex func(int) string,
 	logger zerolog.Logger,
 ) (string, bool) {
 	srcPost, hasPost := rpc.FindTokenBalance(post, t.source)
@@ -288,8 +288,8 @@ func (s *SOLScanner) splTransferSender(
 	if !hasPost || srcPost.Mint != mint || srcPost.Owner == "" {
 		return "", false
 	}
-	if accountAt(t.authority) != srcPost.Owner || s.isVaultAddress(srcPost.Owner) {
-		logger.Warn().Str("owner", srcPost.Owner).Str("authority", accountAt(t.authority)).
+	if accountByIndex(t.authority) != srcPost.Owner || s.isVaultAddress(srcPost.Owner) {
+		logger.Warn().Str("owner", srcPost.Owner).Str("authority", accountByIndex(t.authority)).
 			Msg("token transfer from a source created in the transaction was not signed by its owner")
 		return "", false
 	}
@@ -300,7 +300,7 @@ func (s *SOLScanner) splTransferSender(
 // canonical token account for a whitelisted mint, or out of a token account a vault
 // owned before the transaction. Among several token transfers, only such a transfer is
 // observed.
-func (s *SOLScanner) splTransferTouchesVault(t splTransfer, pre, post []rpc.RPCTokenBalance, accountAt func(int) string) bool {
+func (s *SOLScanner) splTransferTouchesVault(t splTransfer, pre, post []rpc.RPCTokenBalance, accountByIndex func(int) string) bool {
 	if !t.valid {
 		return false
 	}
@@ -320,7 +320,7 @@ func (s *SOLScanner) splTransferTouchesVault(t splTransfer, pre, post []rpc.RPCT
 		return false
 	}
 	canonical, err := types.FindAssociatedTokenAddress(owner, token.mint)
-	return err == nil && canonical.String() == accountAt(t.dest)
+	return err == nil && canonical.String() == accountByIndex(t.dest)
 }
 
 // splInnerInstructions returns the SPL Token transfers among the transaction's inner
