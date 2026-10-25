@@ -1397,7 +1397,9 @@ func (c *SOLClient) durableDestinationExcluded(tx stypes.TxOutItem) bool {
 	if err != nil {
 		return false
 	}
-	if tx.ToAddress.Equals(vaultAddr) {
+	// Exactly: base58 is case-sensitive, so a case variant of the vault address is
+	// another account (Address.Equals ignores case).
+	if tx.ToAddress.String() == vaultAddr.String() {
 		return true
 	}
 	vaultPubKey, err := types.PublicKeyFromString(vaultAddr.String())

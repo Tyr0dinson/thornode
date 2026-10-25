@@ -481,6 +481,44 @@ func (s *PubKeyMgrSuite) TestRemovePubKeyNonExistent(c *C) {
 	c.Check(pubkeyMgr.HasPubKey(pk1), Equals, true)
 }
 
+// A Solana address is base58 with no checksum, so one that differs from a vault's only
+// in letter case is a different account and must never match the vault. Other chains
+// keep matching without regard to case (see TestPoolAddressLookupCache).
+func (s *PubKeyMgrSuite) TestSolanaPoolAddressMatchesExactly(c *C) {
+	pk := types.GetRandomEd25519PubKey()
+	pubkeyMgr, err := NewPubKeyManager(nil, nil)
+	c.Assert(err, IsNil)
+	pubkeyMgr.AddPubKey(pk, false, common.SigningAlgoEd25519)
+	addr, err := pk.GetAddress(common.SOLChain)
+	c.Assert(err, IsNil)
+
+	ok, cpi := pubkeyMgr.IsValidPoolAddress(addr.String(), common.SOLChain)
+	c.Assert(ok, Equals, true)
+	c.Check(cpi.PubKey.Equals(pk), Equals, true)
+	ok, cpi = pubkeyMgr.IsActivePoolAddress(addr.String(), common.SOLChain)
+	c.Assert(ok, Equals, true)
+	c.Check(cpi.PubKey.Equals(pk), Equals, true)
+
+	flipped := []byte(addr.String())
+	for i, ch := range flipped {
+		if ch >= 'a' && ch <= 'z' {
+			flipped[i] = ch - 'a' + 'A'
+			break
+		}
+	}
+	for _, variant := range []string{string(flipped), strings.ToLower(addr.String()), strings.ToUpper(addr.String())} {
+		if variant == addr.String() {
+			continue
+		}
+		ok, _ = pubkeyMgr.IsValidPoolAddress(variant, common.SOLChain)
+		c.Check(ok, Equals, false, Commentf("%s matched vault %s", variant, addr))
+		ok, _ = pubkeyMgr.IsActivePoolAddress(variant, common.SOLChain)
+		c.Check(ok, Equals, false, Commentf("%s matched vault %s", variant, addr))
+		ok, _ = matchAddress(variant, common.SOLChain, pk)
+		c.Check(ok, Equals, false, Commentf("%s matched vault %s", variant, addr))
+	}
+}
+
 func (s *PubKeyMgrSuite) TestIsValidPoolAddressAlgoFiltering(c *C) {
 	pk1 := types.GetRandomPubKey()
 

@@ -51,11 +51,12 @@ type poolAddressCacheKey struct {
 	IncludeInactive bool
 }
 
-// poolAddressSet maps lowercased pool addresses to the first matching vault.
+// poolAddressSet maps normalized pool addresses (normalizePoolAddress) to the first
+// matching vault.
 type poolAddressSet struct {
 	byAddress map[string]common.ChainPoolInfo
 	// allASCII reports whether every pool address in the set is ASCII; only
-	// then does a lowercase lookup agree with strings.EqualFold matching.
+	// then does a normalized lookup agree with poolAddressMatches.
 	allASCII bool
 }
 
@@ -319,8 +320,27 @@ func (pkm *PubKeyManager) updatePubKeys() {
 	}
 }
 
-func normalizePoolAddress(addr string) string {
+// caseSensitivePoolAddresses reports whether chain's pool addresses must match
+// exactly. A Solana address is base58 with no checksum, so one that differs from a
+// vault's only in letter case is a different, valid account: matched without regard
+// to case, a transfer to it would be taken for one to the vault.
+func caseSensitivePoolAddresses(chain common.Chain) bool {
+	return chain.Equals(common.SOLChain)
+}
+
+func normalizePoolAddress(chain common.Chain, addr string) string {
+	if caseSensitivePoolAddresses(chain) {
+		return addr
+	}
 	return strings.ToLower(addr)
+}
+
+// poolAddressMatches reports whether addr is poolAddr on chain.
+func poolAddressMatches(chain common.Chain, poolAddr, addr string) bool {
+	if caseSensitivePoolAddresses(chain) {
+		return poolAddr == addr
+	}
+	return strings.EqualFold(poolAddr, addr)
 }
 
 func (pkm *PubKeyManager) invalidatePoolAddressCacheNoLock() {
@@ -356,7 +376,7 @@ func (pkm *PubKeyManager) buildPoolAddressCacheNoLock(chain common.Chain, includ
 		if !isASCII(poolAddress) {
 			allASCII = false
 		}
-		normalizedAddress := normalizePoolAddress(poolAddress)
+		normalizedAddress := normalizePoolAddress(chain, poolAddress)
 		if _, ok := result[normalizedAddress]; ok {
 			continue
 		}
@@ -397,7 +417,7 @@ func (pkm *PubKeyManager) poolAddresses(chain common.Chain, includeInactive bool
 }
 
 func (pkm *PubKeyManager) isPoolAddress(addr string, chain common.Chain, includeInactive bool) (bool, common.ChainPoolInfo) {
-	normalizedAddress := normalizePoolAddress(addr)
+	normalizedAddress := normalizePoolAddress(chain, addr)
 	if normalizedAddress == "" {
 		return false, common.EmptyChainPoolInfo
 	}
@@ -414,7 +434,7 @@ func matchAddress(addr string, chain common.Chain, key common.PubKey) (bool, com
 	if err != nil {
 		return false, common.EmptyChainPoolInfo
 	}
-	if strings.EqualFold(cpi.PoolAddress.String(), addr) {
+	if poolAddressMatches(chain, cpi.PoolAddress.String(), addr) {
 		return true, cpi
 	}
 	return false, common.EmptyChainPoolInfo
@@ -422,14 +442,14 @@ func matchAddress(addr string, chain common.Chain, key common.PubKey) (bool, com
 
 // IsValidPoolAddress check whether the given address is a pool addr
 func (pkm *PubKeyManager) IsValidPoolAddress(addr string, chain common.Chain) (bool, common.ChainPoolInfo) {
-	// For ASCII strings strings.EqualFold is exactly lowercase equality, so a
-	// non-empty ASCII addr can be served from the cache (which keeps the first
-	// matching vault in pubkey order, like the loop below). Anything else takes
-	// the loop: an empty addr matches a vault whose address is empty, and
-	// EqualFold folds some non-ASCII runes onto ASCII ones.
+	// For ASCII strings poolAddressMatches is exactly equality after
+	// normalizePoolAddress, so a non-empty ASCII addr can be served from the cache
+	// (which keeps the first matching vault in pubkey order, like the loop below).
+	// Anything else takes the loop: an empty addr matches a vault whose address is
+	// empty, and EqualFold folds some non-ASCII runes onto ASCII ones.
 	if addr != "" && isASCII(addr) {
 		if cached := pkm.poolAddresses(chain, true); cached.allASCII {
-			if cpi, ok := cached.byAddress[normalizePoolAddress(addr)]; ok {
+			if cpi, ok := cached.byAddress[normalizePoolAddress(chain, addr)]; ok {
 				return true, cpi
 			}
 			return false, common.EmptyChainPoolInfo
