@@ -71,15 +71,17 @@ func (e *EthRPC) GetBlockHeight() (int64, error) {
 	return int64(height), nil
 }
 
+// GetBlockHeightSafe returns the height of the "safe" block. Only the header
+// is fetched: the scanner decodes each block's transactions in FetchTxs.
 func (e *EthRPC) GetBlockHeightSafe() (int64, error) {
 	ctx, cancel := e.getContext()
 	defer cancel()
-	block, err := e.client.BlockByNumber(ctx, big.NewInt(rpc.SafeBlockNumber.Int64()))
+	header, err := e.client.HeaderByNumber(ctx, big.NewInt(rpc.SafeBlockNumber.Int64()))
 	if err != nil {
 		e.logger.Info().Err(err).Msg("failed to get block")
 		return -1, fmt.Errorf("fail to get block: %w", err)
 	}
-	return block.Number().Int64(), nil
+	return header.Number.Int64(), nil
 }
 
 func (e *EthRPC) GetBlock(height int64) (*etypes.Block, error) {

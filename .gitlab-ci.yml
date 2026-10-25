@@ -523,7 +523,40 @@ test-mocknet-scripts:
   image: $CI_TOOLS_IMAGE
   script:
     - python3 -m unittest discover -s build/scripts/tests -v
-    - python3 -m unittest discover -s scripts/tests -p 'test_quality_*_test.py' -v
+    - python3 -m unittest discover -s scripts/tests -p 'test_*_test.py' -v
+
+# Fails an MR that deletes a test file or regression suite, leaves a test file
+# with fewer tests, or changes a regression golden (other than adding one with
+# a new suite), until a human adds the goldens-reviewed label (rules in
+# scripts/test-integrity-guard.py). Branches have gone green by agreeing with a
+# bug: !4459 deleted a unit test case, then a bot commit deleted the regression
+# exports and blocks that caught the same funds-level bug, test-regression
+# wrote new ones and passed, and auto-merge was switched on; !4602 rewrote 134
+# goldens, a consensus-visible change with no version gate, and nobody flagged
+# it. Of the 279 MRs merged 2026-04-19..10-17 it would have stopped 44 (16%):
+# 37 for goldens, 9 for test files left with fewer tests, 5 for deleted test
+# files, 1 for a deleted suite. It reads the MR's own diff, never the merged
+# result, so develop's own golden updates do not trip it.
+# It runs in .post with no `needs`, so it starts after every other job: any
+# failed job cancels the pipeline (workflow auto_cancel), and running last
+# lets a tripped MR still get its lint, unit, regression and simulation
+# results. That adds about a minute to the end of the pipeline. GitLab reads
+# labels when it creates a pipeline, merge train ones included, so the label
+# takes effect in the next pipeline. Unlike the jobs on *rules it also runs on
+# fork MRs: it needs no credentials, and the branch pipeline
+# `make gitlab-trigger-ci` starts for a fork is not an MR pipeline.
+test-integrity:
+  tags: !reference [.small-runner, tags]
+  rules:
+    - if: $CI_MERGE_REQUEST_IID
+  stage: .post
+  image: alpine:3.21
+  variables:
+    PKGS: git python3
+  before_script:
+    - !reference [.pkg-install, before_script]
+  script:
+    - python3 scripts/test-integrity-guard.py
 
 xmr-e2e-gates:
   tags: !reference [.small-runner, tags]

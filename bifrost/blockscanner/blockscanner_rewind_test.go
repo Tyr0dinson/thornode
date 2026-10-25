@@ -427,6 +427,20 @@ func waitForFetchCalls(fetchCount func(int64) int, height int64, wanted int) boo
 	return false
 }
 
+// waitForAborts polls because abandoned prefetch goroutines release their
+// reservations asynchronously after clearPrefetch closes their abandoned
+// channel; the scanner may refetch the height before that goroutine runs.
+func waitForAborts(aborts *atomic.Int64, wanted int64) bool {
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if aborts.Load() >= wanted {
+			return true
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	return false
+}
+
 func (s *BlockScannerExtraSuite) TestTypedCursorRewindClearsStalePrefetch(c *C) {
 	server, bridge := s.newRewindTestBridge(c)
 	defer server.Close()
@@ -450,6 +464,7 @@ func (s *BlockScannerExtraSuite) TestTypedCursorRewindClearsStalePrefetch(c *C) 
 	c.Assert(waitForFetchCalls(fetcher.callCount, 12, 2), Equals, true)
 	c.Check(fetcher.callCount(9) > 0, Equals, true)
 	c.Check(fetcher.errorAborts.Load(), Equals, int64(1))
+	c.Assert(waitForAborts(&fetcher.discardedAborts, 1), Equals, true)
 	c.Check(fetcher.discardedAborts.Load(), Equals, int64(1))
 }
 
@@ -487,6 +502,7 @@ func (s *BlockScannerExtraSuite) TestRollbackChannelClearsStalePrefetch(c *C) {
 	// The prefetched height 12 from before rollback must not survive the move
 	// back to height 9.
 	c.Assert(waitForFetchCalls(fetcher.callCount, 12, 2), Equals, true)
+	c.Assert(waitForAborts(&fetcher.discardedAborts, 1), Equals, true)
 	c.Check(fetcher.discardedAborts.Load(), Equals, int64(1))
 }
 

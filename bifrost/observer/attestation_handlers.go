@@ -81,16 +81,17 @@ func closeStream(logger zerolog.Logger, stream network.Stream) {
 	if err := stream.Close(); err != nil {
 		logger.Error().Err(err).Msg("fail to close stream")
 	}
-	go func() {
-		// Give some time for the remote side to process
-		// NOTE: remove this after upgrading to libp2p v0.12.0+, because
-		// then Close() will close both write and read sides of the stream.
-		// In v0.11.0, it only closes the write side.
-		time.Sleep(10 * time.Second)
+	// Give some time for the remote side to process
+	// NOTE: remove this after upgrading to libp2p v0.12.0+, because
+	// then Close() will close both write and read sides of the stream.
+	// In v0.11.0, it only closes the write side.
+	// A timer rather than a sleeping goroutine: thousands of these resets are
+	// pending at any time, and parked goroutines cost stack memory and GC work.
+	time.AfterFunc(10*time.Second, func() {
 		if err := stream.Reset(); err != nil {
 			logger.Error().Err(err).Msg("fail to reset stream after delay")
 		}
-	}()
+	})
 }
 
 // AttestNetworkFee creates and broadcasts an attestation for a network fee

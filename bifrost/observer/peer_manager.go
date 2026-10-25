@@ -49,6 +49,8 @@ type peerManager struct {
 	semaphores map[peer.ID]*peerSemaphore
 	mu         sync.Mutex
 	limit      int
+	// acquireTimeout bounds how long acquireContext waits for a token.
+	acquireTimeout time.Duration
 
 	breakers map[peer.ID]*peerBreaker
 	bmu      sync.Mutex
@@ -58,11 +60,12 @@ type peerManager struct {
 
 func newPeerManager(logger zerolog.Logger, limit int) *peerManager {
 	return &peerManager{
-		logger:     logger.With().Str("component", "peer_manager").Logger(),
-		semaphores: make(map[peer.ID]*peerSemaphore),
-		limit:      limit,
-		breakers:   make(map[peer.ID]*peerBreaker),
-		nowFn:      time.Now,
+		logger:         logger.With().Str("component", "peer_manager").Logger(),
+		semaphores:     make(map[peer.ID]*peerSemaphore),
+		limit:          limit,
+		acquireTimeout: semAcquireTimeout,
+		breakers:       make(map[peer.ID]*peerBreaker),
+		nowFn:          time.Now,
 	}
 }
 
@@ -242,7 +245,7 @@ func (m *peerManager) acquireContext(ctx context.Context, peer peer.ID) (*peerSe
 	sem := m.getSemaphoreForAcquire(peer)
 
 	// Create a timeout channel
-	timer := time.NewTimer(semAcquireTimeout)
+	timer := time.NewTimer(m.acquireTimeout)
 	defer timer.Stop()
 
 	sem.mu.Lock()

@@ -152,6 +152,43 @@ CI=1 make test-simulation-no-reset > sim.log 2>&1 &
 tail -f sim.log
 ```
 
+### XMR keygen timeout recovery
+
+Run the dedicated regression on a disposable local mocknet cluster:
+
+```bash
+CI=1 COMPOSE_PROJECT_NAME=xmr-keygen-recovery make test-simulation-xmr-keygen-recovery
+```
+
+This resets that Compose project's cluster. It completes seed/bootstrap before
+adding 500 ms network delay on the Bifrost P2P port, and gives only pig a 100 ms
+mocknet round-3 deadline. The delay must still allow the regular Asgard keygen to
+finish. Override these with `XMR_KEYGEN_RECOVERY_NETEM_DELAY_MS` and
+`XMR_KEYGEN_RECOVERY_ROUND3_TIMEOUT_MS` if necessary; increasing the deadline can
+prevent the fault and must cause the regression to fail.
+
+The `xmr-keygen-recovery` stage requires pig's existing structured logs through
+`XMR_KEYGEN_RECOVERY_LOG`, mounted read-only by the target. It requires the
+override, actual round-3 timeout, and quorum-result adoption with a locally
+finalized keyshare for the **same ceremony**. The adopted address must match a
+new active four-member XMR vault with exactly the active node membership, and
+all four nodes must have submitted successful keygen results for that vault.
+These conditions must remain true for 30 seconds. Any observed
+`failed to vote keygen in time` jail fails immediately, even before activation.
+The actor has a 20-minute deadline; running the stage without its log source
+fails before triggering churn.
+
+This replaces the obsolete jail-positive reproduction. It covers keygen timeout
+recovery, not attributed keysign failure or keysign jailing. No production
+consensus or penalty policy is changed.
+
+The target leaves its cluster available for inspection. Remove only that
+project's resources when finished:
+
+```bash
+COMPOSE_PROJECT_NAME=xmr-keygen-recovery make stop-mocknet-cluster
+```
+
 ## Design
 
 The simulation test framework will accept a test suite defined as a DAG of actors. Each actor defines operations that are executed sequentially, but may be randomly delayed and interleaved with operations from other concurrently running actors. Unlike regression tests where operations are structs, in the dynamic world of simulation tests every operation is a function which receives config and a mutable state, and returns an error, a bool whether to continue to the next operation in the test, and a bool to mark the test as finished.

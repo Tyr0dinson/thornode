@@ -406,18 +406,30 @@ func TestBroadcastToUnresponsivePeerTripsBreaker(t *testing.T) {
 	// isolates the ACK-timeout behaviour from the peer timeout. Pre-change code
 	// (ACK read bound only by peerTimeout) would hold the token ~5s per send and
 	// fail the per-send assertion below.
-	batcher := NewAttestationBatcher(mockHost, logger, nil, time.Hour, 10, 5*time.Second, 4)
+	// A single send slot makes every subsequent attempt depend on the previous
+	// timeout returning its token.
+	batcher := NewAttestationBatcher(mockHost, logger, nil, time.Hour, 10, 5*time.Second, 1)
 	batcher.ackTimeout = 200 * time.Millisecond
 
 	payload := []byte("batch")
 
-	// Each failed send must return within ~the ACK timeout (not the 5s peer
-	// timeout): a non-ACKing peer must free its send token fast.
+	// The elapsed time includes CI scheduling delays as well as the 200ms ACK
+	// timeout. Allow headroom while still rejecting the full 5s peer timeout.
 	for i := 0; i < peerBreakerThreshold; i++ {
 		start := time.Now()
 		batcher.broadcastToPeer(context.Background(), peerID, payload)
-		require.Less(t, time.Since(start), 1*time.Second,
+		require.Less(t, time.Since(start), 2*time.Second,
 			"send to a non-ACKing peer must free the token via the short ACK timeout, not ride the 5s peer timeout")
+
+		batcher.peerMgr.mu.Lock()
+		sem := batcher.peerMgr.semaphores[peerID]
+		batcher.peerMgr.mu.Unlock()
+		require.NotNil(t, sem)
+		sem.mu.Lock()
+		available, references := len(sem.tokens), sem.refCount
+		sem.mu.Unlock()
+		require.Equal(t, 1, available, "timed-out send must return its token")
+		require.Zero(t, references, "timed-out send must release its semaphore reference")
 	}
 
 	mockHost.mu.Lock()

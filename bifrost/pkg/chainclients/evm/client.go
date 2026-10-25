@@ -342,10 +342,13 @@ func (c *EVMClient) reconstructLiabilities() {
 
 	// WaitGroup for local reconstruction routine
 	var reconWg sync.WaitGroup
-	sem := make(chan struct{}, c.cfg.EVM.ReconstructLiabilitiesConcurrency)
+	// at least one worker: with an unbuffered semaphore the first send blocks
+	// forever and signing never becomes ready
+	concurrency := max(c.cfg.EVM.ReconstructLiabilitiesConcurrency, 1)
+	sem := make(chan struct{}, concurrency)
 	c.logger.Info().
 		Int("vault_count", len(vaultAddresses)).
-		Int("concurrency", c.cfg.EVM.ReconstructLiabilitiesConcurrency).
+		Int("concurrency", concurrency).
 		Msg("starting liability reconstruction for vaults")
 
 	for _, vaultAddr := range vaultAddresses {

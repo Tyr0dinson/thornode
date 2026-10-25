@@ -89,6 +89,7 @@ type thorchainBridge struct {
 	seqNumber     uint64
 	httpClient    *retryablehttp.Client
 	broadcastLock *sync.RWMutex
+	activeNodes   activeNodesMemo
 }
 
 // KeysignPolicy is thornode's signer eligibility view for one vault at one
@@ -661,7 +662,15 @@ func (b *thorchainBridge) EnsureNodeWhitelisted() error {
 }
 
 func (b *thorchainBridge) FetchActiveNodes() ([]common.PubKey, error) {
-	na, err := b.GetNodeAccounts()
+	body, err := b.getNodeAccountsBody()
+	if err != nil {
+		return nil, fmt.Errorf("fail to get node accounts: %w", err)
+	}
+	// sendDeck calls this every second, but the body only changes once per block
+	if active, ok := b.activeNodes.get(body); ok {
+		return active, nil
+	}
+	na, err := decodeNodeAccounts(body)
 	if err != nil {
 		return nil, fmt.Errorf("fail to get node accounts: %w", err)
 	}
@@ -672,6 +681,7 @@ func (b *thorchainBridge) FetchActiveNodes() ([]common.PubKey, error) {
 			active = append(active, item.PubKeySet.Secp256k1)
 		}
 	}
+	b.activeNodes.set(body, active)
 	return active, nil
 }
 

@@ -633,9 +633,9 @@ services:
       BIFROST_THORCHAIN_CHAIN_EBIFROST: thornode-pig:50051
       BIFROST_CHAINS_XMR_SIGNER_ENDPOINT: "http://xmr-frost-signer-pig:8283"
       SIGNER_SEED_PHRASE: "pig pig pig pig pig pig pig pig pig pig pig pig pig pig pig pig pig pig pig pig pig pig pig quick"
-      # Test-only FROST DKG fault injection for `make test-simulation-keygen-jail`;
+      # Test-only FROST DKG fault injection for `make test-simulation-xmr-keygen-recovery`;
       # empty (the default) is a no-op.
-      XMR_FROST_KEYGEN_TEST_ROUND3_TIMEOUT_MS: ${XMR_KEYGEN_JAIL_ROUND3_TIMEOUT_MS:-}
+      XMR_FROST_KEYGEN_TEST_ROUND3_TIMEOUT_MS: ${XMR_KEYGEN_RECOVERY_ROUND3_TIMEOUT_MS:-}
     ports:
       - 5040
       - 6043:6040 # host-side simulation readiness probe
@@ -1182,7 +1182,10 @@ services:
       - mocknet
       - mocknet-cluster
     restart: unless-stopped
-    image: ${DOCKER_MIRROR:-}0xpolygon/bor:2.5.9
+    # Docker Hub's 0xpolygon/bor is gone; Polygon publishes bor on ghcr.io now
+    # (oldest tag there is v2.6.3). Not behind DOCKER_MIRROR: the GitLab
+    # dependency proxy only proxies Docker Hub.
+    image: ghcr.io/0xpolygon/bor:v2.6.3@sha256:8d6bbd1cbdaa0e70746b95e375fed5fb4d6eae58edfdf3d49138c7a334449a95
     ports:
       - 8548:8545
     volumes:

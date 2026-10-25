@@ -970,3 +970,21 @@ func TestHistoricalXMRRefundStageRequiresExplicitSelection(t *testing.T) {
 		}
 	}
 }
+
+func TestXMRKeygenRecoveryStageRequiresExplicitSelection(t *testing.T) {
+	for _, explicit := range []bool{false, true} {
+		stages := selectedSimulationStages(map[string]bool{"all": true, "xmr-keygen-recovery": explicit})
+		found := false
+		for _, stage := range stages {
+			if stage.name == "xmr-keygen-recovery" {
+				found = true
+				if stage.defaultOn || stage.constructor == nil {
+					t.Fatal("recovery requires an explicit, executable stage")
+				}
+			}
+		}
+		if found != explicit {
+			t.Fatalf("recovery selection: explicit=%v found=%v", explicit, found)
+		}
+	}
+}

@@ -3,6 +3,7 @@ package keeperv1
 import (
 	"bytes"
 	"fmt"
+	"math/big"
 	"reflect"
 	"sort"
 	"strings"
@@ -478,4 +479,67 @@ func (s *DecodeMemoSuite) TestPoolMutationIsolation(c *C) {
 	var got Pool
 	c.Assert(k.memoDecodePool(key, bz, &got), Equals, true)
 	c.Assert(got, DeepEquals, want)
+}
+
+// slabUints are amounts of one, several and no words, and the zero value.
+func slabUints() []cosmos.Uint {
+	return []cosmos.Uint{
+		cosmos.NewUint(7),
+		cosmos.NewUintFromString("340282366920938463463374607431768211457"), // 2^128+1
+		cosmos.ZeroUint(),
+		{},
+		cosmos.NewUint(common.One),
+		cosmos.NewUintFromString("18446744073709551617"), // 2^64+1
+	}
+}
+
+func (s *DecodeMemoSuite) TestUintWordsCloneIsolation(c *C) {
+	src := slabUints()
+	n := 0
+	for _, u := range src {
+		n += wordCount(u)
+	}
+	words := make(uintWords, 0, n)
+	clones := make([]cosmos.Uint, len(src))
+	for i, u := range src {
+		clones[i] = words.clone(u)
+		c.Assert(clones[i], DeepEquals, u, Commentf("uint %d", i))
+	}
+	c.Assert(cap(words), Equals, n) // the slab was sized right: one allocation
+
+	want := slabUints()
+	for i := range clones {
+		if clones[i].IsNil() {
+			continue
+		}
+		// growing a clone in place must not run into its neighbours, nor
+		// writing into it reach the source
+		b := clones[i].BigIntMut()
+		b.Lsh(b, 100)
+		b.Add(b, big.NewInt(3))
+		want[i] = cosmos.NewUintFromBigInt(b)
+		for j := range clones {
+			c.Assert(clones[j], DeepEquals, want[j], Commentf("grew %d, uint %d", i, j))
+		}
+	}
+	c.Assert(src, DeepEquals, slabUints())
+}
+
+func (s *DecodeMemoSuite) TestClonePoolAllocs(c *C) {
+	p := testPool(1)
+	var got Pool
+	allocs := testing.AllocsPerRun(100, func() { got = clonePool(p) })
+	c.Assert(got, DeepEquals, p)
+	// a big.Int per amount and one slab for all of their words
+	c.Assert(allocs, Equals, float64(6+1))
+}
+
+func (s *DecodeMemoSuite) TestCloneVaultAllocs(c *C) {
+	v := testVault(1)
+	v.Membership, v.Chains, v.PendingTxBlockHeights, v.Routers, v.Frozen = nil, nil, nil, nil, nil
+	var got Vault
+	allocs := testing.AllocsPerRun(100, func() { got = cloneVault(v) })
+	c.Assert(got, DeepEquals, v)
+	// both coin lists, a big.Int per amount and one slab for all of their words
+	c.Assert(allocs, Equals, float64(2+len(v.Coins)+len(v.Deficit)+1))
 }

@@ -270,14 +270,34 @@ func (s *HandlerQuorumHelpersSuite) TestAttestationBech32PubCache(c *C) {
 	att := signAttestation(c, privKey, signBz)
 	_, err = verifyQuorumAttestation(NodeAccounts{node}, signBz, att, nil)
 	c.Assert(err, IsNil)
+	prefix := cosmos.GetConfig().GetBech32AccountPubPrefix()
 	attestationBech32CacheMu.RLock()
-	cached, ok := attestationBech32Cache[attestationBech32CacheKey(key)]
+	cached, ok := attestationBech32Cache[string(key)]
 	attestationBech32CacheMu.RUnlock()
 	c.Assert(ok, Equals, true)
-	c.Assert(cached, Equals, want)
+	c.Assert(cached, Equals, attestationBech32Entry{prefix: prefix, bech32Pub: want})
 	got, err := attestationBech32Pub(key)
 	c.Assert(err, IsNil)
 	c.Assert(got, Equals, want)
+
+	// served encodings do not allocate
+	allocs := testing.AllocsPerRun(100, func() {
+		_, _ = attestationBech32Pub(key)
+	})
+	c.Assert(allocs, Equals, 0.0)
+
+	// an encoding made under another prefix is never served, and is replaced
+	attestationBech32CacheMu.Lock()
+	attestationBech32Cache[string(key)] = attestationBech32Entry{prefix: "other", bech32Pub: "otherpub1"}
+	attestationBech32CacheMu.Unlock()
+	got, err = attestationBech32Pub(key)
+	c.Assert(err, IsNil)
+	c.Assert(got, Equals, want)
+	rememberAttestationBech32Pub(key, want)
+	attestationBech32CacheMu.RLock()
+	cached = attestationBech32Cache[string(key)]
+	attestationBech32CacheMu.RUnlock()
+	c.Assert(cached, Equals, attestationBech32Entry{prefix: prefix, bech32Pub: want})
 
 	// keys of inactive signers are encoded but never stored
 	other := secp256k1.GenPrivKey()
@@ -285,7 +305,7 @@ func (s *HandlerQuorumHelpersSuite) TestAttestationBech32PubCache(c *C) {
 	_, err = verifyQuorumAttestation(NodeAccounts{node}, signBz, otherAtt, nil)
 	c.Assert(err, NotNil)
 	attestationBech32CacheMu.RLock()
-	_, ok = attestationBech32Cache[attestationBech32CacheKey(otherAtt.PubKey)]
+	_, ok = attestationBech32Cache[string(otherAtt.PubKey)]
 	attestationBech32CacheMu.RUnlock()
 	c.Assert(ok, Equals, false)
 	wantOther, err := encode(otherAtt.PubKey)
