@@ -25,9 +25,8 @@ import (
 	tcommon "gitlab.com/thorchain/thornode/v3/common"
 )
 
-func (t *TssServer) waitForSignatures(msgID, poolPubKey string, msgsToSign [][]byte, algo tcommon.SigningAlgo, sigChan chan string) (keysign.Response, error) {
-	// TSS keysign include both form party and keysign itself, thus we wait twice of the timeout
-	data, err := t.signatureNotifier.WaitForSignature(msgID, msgsToSign, poolPubKey, t.conf.KeySignTimeout, sigChan)
+func (t *TssServer) waitForSignatures(msgID, poolPubKey string, msgsToSign [][]byte, algo tcommon.SigningAlgo, timeout time.Duration, sigChan chan string) (keysign.Response, error) {
+	data, err := t.signatureNotifier.WaitForSignature(msgID, msgsToSign, poolPubKey, timeout, sigChan)
 	if err != nil {
 		return keysign.Response{}, err
 	}
@@ -319,7 +318,7 @@ func (t *TssServer) KeySign(req keysign.Request) (keysign.Response, error) {
 	// we wait for signatures
 	go func() {
 		defer wg.Done()
-		receivedSig, errWait = t.waitForSignatures(msgID, req.PoolPubKey, msgsCopy, algo, sigChan)
+		receivedSig, errWait = t.waitForSignatures(msgID, req.PoolPubKey, msgsCopy, algo, t.keysignSignatureWaitTimeout(req.Version), sigChan)
 		// we received an valid signature indeed
 		if errWait == nil {
 			sigChan <- "signature received"
