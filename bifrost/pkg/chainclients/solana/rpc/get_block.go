@@ -84,12 +84,28 @@ func (s *SolRPC) GetBlockhashAtSlot(slot uint64) (string, error) {
 
 // Get a list of confirmed blocks in a range
 func (s *SolRPC) GetBlockHeights(startSlot, endSlot uint64) ([]uint64, error) {
+	return s.getBlocks(startSlot, endSlot, map[string]interface{}{
+		"commitment": "finalized",
+	})
+}
+
+// GetBlockHeightsWithMinContextSlot lists finalized blocks in a range, but only
+// from a node whose finalized root has reached minContextSlot. Agave silently
+// clamps a getBlocks range to the serving node's root, so behind a load balancer
+// a lagging backend would return a truncated (or empty) listing; with
+// minContextSlot set it rejects the request instead, surfacing as an RPC error.
+func (s *SolRPC) GetBlockHeightsWithMinContextSlot(startSlot, endSlot, minContextSlot uint64) ([]uint64, error) {
+	return s.getBlocks(startSlot, endSlot, map[string]interface{}{
+		"commitment":     "finalized",
+		"minContextSlot": minContextSlot,
+	})
+}
+
+func (s *SolRPC) getBlocks(startSlot, endSlot uint64, config map[string]interface{}) ([]uint64, error) {
 	params := []interface{}{
 		startSlot,
 		endSlot,
-		map[string]interface{}{
-			"commitment": "finalized",
-		},
+		config,
 	}
 
 	var response struct {

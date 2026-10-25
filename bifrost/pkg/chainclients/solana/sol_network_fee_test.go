@@ -56,6 +56,10 @@ type networkFeeRPC struct {
 	floor       uint64
 	floorError  bool
 	windows     [][2]uint64
+	// root simulates a load-balanced getBlocks backend whose finalized root lags
+	// getSlot; zero means the listing backend is caught up.
+	root            uint64
+	minContextSlots []uint64
 }
 
 func newNetworkFeeScanner(t *testing.T, fixture *networkFeeRPC) *SOLScanner {
@@ -88,10 +92,36 @@ func newNetworkFeeScanner(t *testing.T, fixture *networkFeeRPC) *SOLScanner {
 				http.Error(w, "invalid slot range", http.StatusBadRequest)
 				return
 			}
+			var config struct {
+				MinContextSlot *uint64 `json:"minContextSlot"`
+			}
+			if len(request.Params) > 2 && json.Unmarshal(request.Params[2], &config) != nil {
+				http.Error(w, "invalid getBlocks config", http.StatusBadRequest)
+				return
+			}
+			if config.MinContextSlot != nil {
+				fixture.minContextSlots = append(fixture.minContextSlots, *config.MinContextSlot)
+			}
 			fixture.windows = append(fixture.windows, [2]uint64{first, last})
 			switch {
 			case fixture.fail:
 				response["error"] = map[string]any{"code": -32000, "message": "temporary sampling failure"}
+			case fixture.root != 0 && config.MinContextSlot != nil && *config.MinContextSlot > fixture.root:
+				response["error"] = map[string]any{"code": -32016, "message": "Minimum context slot has not been reached"}
+			case fixture.root != 0:
+				// Agave clamps a finalized listing to the serving backend's root
+				// without reporting that the requested range was truncated.
+				listed := fixture.blocks
+				if listed == nil {
+					listed = []uint64{last}
+				}
+				clamped := make([]uint64, 0, len(listed))
+				for _, b := range listed {
+					if b <= min(last, fixture.root) {
+						clamped = append(clamped, b)
+					}
+				}
+				response["result"] = clamped
 			case fixture.blocks != nil:
 				response["result"] = fixture.blocks
 			default:
@@ -436,4 +466,37 @@ func TestSOLNetworkFeePrunedWindowReanchorsWithoutCompleting(t *testing.T) {
 	require.Nil(t, scanner.netFeePendingSlot)
 	require.Equal(t, uint64(4), scanner.netFeeSlotMultiple)
 	require.Equal(t, int64(200), (<-scanner.globalNetworkFeeQueue).Height)
+}
+
+func TestSOLNetworkFeeLaggingListingBackendRetries(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		root uint64
+	}{
+		{name: "truncated", root: 147},
+		{name: "empty", root: 130},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fixture := &networkFeeRPC{
+				tip: 201, rate: 7000, root: tc.root, blocks: []uint64{141, 145, 150},
+				blockFees: map[uint64][]uint64{145: {9000, 9000, 9000, 9000}},
+			}
+			scanner := newNetworkFeeScanner(t, fixture)
+			scanner.scan()
+			require.Empty(t, scanner.globalNetworkFeeQueue, "a listing clamped below the boundary must not be voted")
+			require.Equal(t, uint64(2), scanner.netFeeSlotMultiple, "a lagging listing backend must not complete the boundary")
+			fixture.mu.Lock()
+			fixture.root = 0
+			fixture.mu.Unlock()
+			scanner.scan()
+			require.Len(t, scanner.globalNetworkFeeQueue, 1)
+			fee := <-scanner.globalNetworkFeeQueue
+			require.Equal(t, int64(150), fee.Height)
+			require.Equal(t, uint64(7000), fee.TransactionRate)
+			require.Equal(t, uint64(3), scanner.netFeeSlotMultiple)
+			fixture.mu.Lock()
+			defer fixture.mu.Unlock()
+			require.Equal(t, []uint64{150, 150}, fixture.minContextSlots, "the boundary must be the listing's minimum context slot")
+		})
+	}
 }

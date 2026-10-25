@@ -591,7 +591,9 @@ func (s *SOLScanner) checkRecentBlocksAndUpdateNetworkFee(slot uint64) error {
 		firstSlot = slot - s.cfg.Solana.FeeSampleSlots
 	}
 
-	blocks, err := s.solRpc.GetBlockHeights(firstSlot, slot)
+	// getSlot and getBlocks may hit different backends; requiring the boundary as
+	// the minimum context slot rejects a listing clamped to a lagging root.
+	blocks, err := s.solRpc.GetBlockHeightsWithMinContextSlot(firstSlot, slot, slot)
 	if err != nil {
 		return fmt.Errorf("%w: failed to get finalized blocks for slots %d-%d: %w", errSOLFeeSampleUnavailable, firstSlot, slot, err)
 	}
