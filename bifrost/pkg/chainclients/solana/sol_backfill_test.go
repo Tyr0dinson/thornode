@@ -264,14 +264,10 @@ func (s *BackfillSuite) TestCalculateFeeRatesFromTransactions(c *C) {
 	defer server.Close()
 	scanner, _ := s.newScannerWithServer(c, "http://"+server.Listener.Addr().String())
 
-	// empty block - should add base fee
-	count := scanner.calculateFeeRatesFromTransactions(nil)
+	// An empty block returns the base fee without mutating report state.
+	rate, count := scanner.calculateFeeRatesFromTransactions(nil)
 	c.Assert(count, Equals, 0)
-	c.Assert(len(scanner.feeRateCache), Equals, 1)
-	c.Assert(scanner.feeRateCache[0], Equals, uint64(baseFeePerSigLamports))
-
-	// reset
-	scanner.feeRateCache = make([]uint64, 0)
+	c.Assert(rate, Equals, uint64(baseFeePerSigLamports))
 
 	// single tx with 10000 fee and 1 sig
 	txns := []*rpc.TransactionResult{
@@ -284,13 +280,9 @@ func (s *BackfillSuite) TestCalculateFeeRatesFromTransactions(c *C) {
 			},
 		},
 	}
-	count = scanner.calculateFeeRatesFromTransactions(txns)
+	rate, count = scanner.calculateFeeRatesFromTransactions(txns)
 	c.Assert(count, Equals, 1)
-	c.Assert(len(scanner.feeRateCache), Equals, 1)
-	c.Assert(scanner.feeRateCache[0], Equals, uint64(10000))
-
-	// reset
-	scanner.feeRateCache = make([]uint64, 0)
+	c.Assert(rate, Equals, uint64(10000))
 
 	// multiple txs - median should be used
 	txns = []*rpc.TransactionResult{
@@ -307,10 +299,9 @@ func (s *BackfillSuite) TestCalculateFeeRatesFromTransactions(c *C) {
 			Meta:        rpc.RPCMeta{Fee: 30000},
 		},
 	}
-	count = scanner.calculateFeeRatesFromTransactions(txns)
+	rate, count = scanner.calculateFeeRatesFromTransactions(txns)
 	c.Assert(count, Equals, 3)
-	c.Assert(len(scanner.feeRateCache), Equals, 1)
-	c.Assert(scanner.feeRateCache[0], Equals, uint64(20000)) // median of 10k, 20k, 30k
+	c.Assert(rate, Equals, uint64(20000)) // median of 10k, 20k, 30k
 }
 
 func (s *BackfillSuite) TestCalculateFeeRatesSkipsFailedTxs(c *C) {
@@ -324,7 +315,7 @@ func (s *BackfillSuite) TestCalculateFeeRatesSkipsFailedTxs(c *C) {
 			Meta:        rpc.RPCMeta{Fee: 10000, Err: "some error"},
 		},
 	}
-	count := scanner.calculateFeeRatesFromTransactions(txns)
+	_, count := scanner.calculateFeeRatesFromTransactions(txns)
 	c.Assert(count, Equals, 0) // skipped
 }
 
@@ -340,9 +331,9 @@ func (s *BackfillSuite) TestCalculateFeeRatesFloorToBaseFee(c *C) {
 			Meta:        rpc.RPCMeta{Fee: 6000},
 		},
 	}
-	count := scanner.calculateFeeRatesFromTransactions(txns)
+	rate, count := scanner.calculateFeeRatesFromTransactions(txns)
 	c.Assert(count, Equals, 1)
-	c.Assert(scanner.feeRateCache[0], Equals, uint64(baseFeePerSigLamports))
+	c.Assert(rate, Equals, uint64(baseFeePerSigLamports))
 }
 
 func (s *BackfillSuite) TestCalculateFeeRatesSkipsNoSigOrNoFee(c *C) {
@@ -360,7 +351,7 @@ func (s *BackfillSuite) TestCalculateFeeRatesSkipsNoSigOrNoFee(c *C) {
 			Meta:        rpc.RPCMeta{Fee: 0},
 		},
 	}
-	count := scanner.calculateFeeRatesFromTransactions(txns)
+	_, count := scanner.calculateFeeRatesFromTransactions(txns)
 	c.Assert(count, Equals, 0) // both skipped
 }
 
@@ -368,14 +359,22 @@ func (s *BackfillSuite) TestCalculateFeeRatesSkipsNoSigOrNoFee(c *C) {
 // sendNetworkFeeIfNecessary
 // -------------------------------------------------------------------------
 
+type backfillFeeBridge struct {
+	thorclient.ThorchainBridge
+	rate uint64
+}
+
+func (b *backfillFeeBridge) GetNetworkFee(common.Chain) (uint64, uint64, error) {
+	return 1, b.rate, nil
+}
+
 func (s *BackfillSuite) TestSendNetworkFeeIfNecessaryEmptyCache(c *C) {
 	server := makeSolRPCServer(c, map[string]string{})
 	defer server.Close()
 	scanner, _ := s.newScannerWithServer(c, "http://"+server.Listener.Addr().String())
 	scanner.globalNetworkFeeQueue = make(chan common.NetworkFee, 1)
 
-	scanner.feeRateCache = []uint64{}
-	scanner.sendNetworkFeeIfNecessary(100)
+	c.Assert(scanner.sendNetworkFeeIfNecessary(100, nil), NotNil)
 
 	select {
 	case <-scanner.globalNetworkFeeQueue:
@@ -385,21 +384,20 @@ func (s *BackfillSuite) TestSendNetworkFeeIfNecessaryEmptyCache(c *C) {
 	}
 }
 
-func (s *BackfillSuite) TestSendNetworkFeeIfNecessaryNotEnoughTxsAfterInit(c *C) {
+func (s *BackfillSuite) TestSendNetworkFeeIfNecessarySingleBlockAfterInit(c *C) {
 	server := makeSolRPCServer(c, map[string]string{})
 	defer server.Close()
 	scanner, _ := s.newScannerWithServer(c, "http://"+server.Listener.Addr().String())
 	scanner.globalNetworkFeeQueue = make(chan common.NetworkFee, 1)
 
-	scanner.netFeeInit = true
-	scanner.feeRateCache = []uint64{5000} // less than GasCacheBlocks
-	scanner.sendNetworkFeeIfNecessary(100)
+	scanner.bridge = &backfillFeeBridge{rate: 5000}
+	c.Assert(scanner.sendNetworkFeeIfNecessary(100, []uint64{7000}), IsNil)
 
 	select {
-	case <-scanner.globalNetworkFeeQueue:
-		c.Fatal("should not have sent network fee")
+	case fee := <-scanner.globalNetworkFeeQueue:
+		c.Assert(fee.TransactionRate, Equals, uint64(7000))
 	default:
-		// expected
+		c.Fatal("expected fee from complete single-block sample")
 	}
 }
 
@@ -409,10 +407,9 @@ func (s *BackfillSuite) TestSendNetworkFeeIfNecessarySendsInitialFee(c *C) {
 	scanner, _ := s.newScannerWithServer(c, "http://"+server.Listener.Addr().String())
 	scanner.globalNetworkFeeQueue = make(chan common.NetworkFee, 1)
 
-	scanner.netFeeInit = false
-	scanner.feeRateCache = []uint64{5000}
+	scanner.bridge = &backfillFeeBridge{}
 	scanner.cfg.GasPriceResolution = 1
-	scanner.sendNetworkFeeIfNecessary(100)
+	c.Assert(scanner.sendNetworkFeeIfNecessary(100, []uint64{5000}), IsNil)
 
 	select {
 	case fee := <-scanner.globalNetworkFeeQueue:
@@ -422,7 +419,7 @@ func (s *BackfillSuite) TestSendNetworkFeeIfNecessarySendsInitialFee(c *C) {
 	default:
 		c.Fatal("expected network fee to be sent")
 	}
-	c.Assert(scanner.netFeeInit, Equals, true)
+	c.Assert(scanner.lastFeeRate.Load(), Equals, uint64(5000))
 }
 
 func (s *BackfillSuite) TestSendNetworkFeeIfNecessarySkipsZeroFee(c *C) {
@@ -431,10 +428,8 @@ func (s *BackfillSuite) TestSendNetworkFeeIfNecessarySkipsZeroFee(c *C) {
 	scanner, _ := s.newScannerWithServer(c, "http://"+server.Listener.Addr().String())
 	scanner.globalNetworkFeeQueue = make(chan common.NetworkFee, 1)
 
-	scanner.netFeeInit = false
-	scanner.feeRateCache = []uint64{0}
 	scanner.cfg.GasPriceResolution = 1
-	scanner.sendNetworkFeeIfNecessary(100)
+	c.Assert(scanner.sendNetworkFeeIfNecessary(100, []uint64{0}), NotNil)
 
 	select {
 	case <-scanner.globalNetworkFeeQueue:
@@ -450,38 +445,35 @@ func (s *BackfillSuite) TestSendNetworkFeeIfNecessarySkipsSameRate(c *C) {
 	scanner, _ := s.newScannerWithServer(c, "http://"+server.Listener.Addr().String())
 	scanner.globalNetworkFeeQueue = make(chan common.NetworkFee, 1)
 
-	scanner.netFeeInit = true
-	scanner.lastFeeRate.Store(5000)
+	scanner.lastFeeRate.Store(9000)
+	scanner.bridge = &backfillFeeBridge{rate: 5000}
 	scanner.cfg.GasPriceResolution = 1
-	// enough txs to pass the check
-	scanner.feeRateCache = make([]uint64, 101)
-	for i := range scanner.feeRateCache {
-		scanner.feeRateCache[i] = 5000
-	}
-	scanner.sendNetworkFeeIfNecessary(100)
+	c.Assert(scanner.sendNetworkFeeIfNecessary(100, []uint64{5000}), IsNil)
 
 	select {
 	case <-scanner.globalNetworkFeeQueue:
 		c.Fatal("should not resend same fee")
 	default:
-		// expected - fee rate hasn't changed
+		// The agreed fee matches, regardless of the previous local rate.
 	}
+	c.Assert(scanner.lastFeeRate.Load(), Equals, uint64(5000))
 }
 
-func (s *BackfillSuite) TestSendNetworkFeeIfNecessaryTruncatesCache(c *C) {
+func (s *BackfillSuite) TestSendNetworkFeeIfNecessaryUsesCompleteSample(c *C) {
 	server := makeSolRPCServer(c, map[string]string{})
 	defer server.Close()
 	scanner, _ := s.newScannerWithServer(c, "http://"+server.Listener.Addr().String())
 	scanner.globalNetworkFeeQueue = make(chan common.NetworkFee, 1)
 
-	scanner.netFeeInit = false
+	scanner.bridge = &backfillFeeBridge{}
 	scanner.cfg.GasPriceResolution = 1
 	scanner.cfg.GasCacheBlocks = 5
-	scanner.feeRateCache = []uint64{1000, 2000, 3000, 4000, 5000, 6000, 7000}
-	scanner.sendNetworkFeeIfNecessary(100)
+	sample := []uint64{5000, 6000, 7000, 8000, 9000, 10000, 11000}
+	c.Assert(scanner.sendNetworkFeeIfNecessary(100, sample), IsNil)
 
-	// should truncate to last 5
-	c.Assert(len(scanner.feeRateCache), Equals, 5)
+	// The transaction target must not truncate or mix block samples.
+	c.Assert((<-scanner.globalNetworkFeeQueue).TransactionRate, Equals, uint64(8000))
+	c.Assert(sample, DeepEquals, []uint64{5000, 6000, 7000, 8000, 9000, 10000, 11000})
 }
 
 // -------------------------------------------------------------------------
@@ -1488,6 +1480,7 @@ func (s *BackfillSuite) TestCheckRecentBlocksAndUpdateNetworkFee(c *C) {
 	scanner.globalNetworkFeeQueue = make(chan common.NetworkFee, 1)
 	scanner.cfg.Solana.FeeSampleSlots = 100
 	scanner.cfg.GasCacheBlocks = 5
+	scanner.bridge = &backfillFeeBridge{rate: 5000}
 
 	err := scanner.checkRecentBlocksAndUpdateNetworkFee(200)
 	c.Assert(err, IsNil)
@@ -1502,28 +1495,31 @@ func (s *BackfillSuite) TestCheckRecentBlocksAndUpdateNetworkFee(c *C) {
 	}
 }
 
-func (s *BackfillSuite) TestCheckRecentBlocksNotEnoughTxs(c *C) {
+func (s *BackfillSuite) TestCheckRecentBlocksEmptyTransactions(c *C) {
 	// Returns empty blocks (no transactions)
 	blockResponse := `{"jsonrpc":"2.0","result":{"blockhash":"testblockhash","previousBlockhash":"prev","parentSlot":99,"transactions":[]},"id":1}`
 	blockHeightsResponse := `{"jsonrpc":"2.0","result":[100],"id":1}`
 
 	server := makeSolRPCServer(c, map[string]string{
-		"getSlot":   `{"jsonrpc":"2.0","result":200,"id":1}`,
-		"getBlocks": blockHeightsResponse,
-		"getBlock":  blockResponse,
+		"getSlot":                `{"jsonrpc":"2.0","result":200,"id":1}`,
+		"getBlocks":              blockHeightsResponse,
+		"getBlock":               blockResponse,
+		"getFirstAvailableBlock": `{"jsonrpc":"2.0","result":0,"id":1}`,
 	})
 	defer server.Close()
 	scanner, _ := s.newScannerWithServer(c, "http://"+server.Listener.Addr().String())
 	scanner.globalNetworkFeeQueue = make(chan common.NetworkFee, 1)
 	scanner.cfg.Solana.FeeSampleSlots = 100
 	scanner.cfg.GasCacheBlocks = 100
+	scanner.bridge = &backfillFeeBridge{rate: 7000}
 
 	err := scanner.checkRecentBlocksAndUpdateNetworkFee(200)
-	c.Assert(err, NotNil) // "not enough transactions"
+	c.Assert(err, IsNil)
+	c.Assert((<-scanner.globalNetworkFeeQueue).TransactionRate, Equals, uint64(baseFeePerSigLamports))
 }
 
 func (s *BackfillSuite) TestCheckRecentBlocksNilBlock(c *C) {
-	// Returns null block (skipped slot)
+	// A listed block that is subsequently unavailable is not a skipped slot.
 	blockHeightsResponse := `{"jsonrpc":"2.0","result":[100],"id":1}`
 
 	server := makeSolRPCServer(c, map[string]string{
@@ -1538,7 +1534,9 @@ func (s *BackfillSuite) TestCheckRecentBlocksNilBlock(c *C) {
 	scanner.cfg.GasCacheBlocks = 100
 
 	err := scanner.checkRecentBlocksAndUpdateNetworkFee(200)
-	c.Assert(err, NotNil) // "not enough transactions"
+	c.Assert(err, NotNil)
+	c.Assert(err.Error(), Matches, ".*finalized block 100 missing")
+	c.Assert(len(scanner.globalNetworkFeeQueue), Equals, 0)
 }
 
 func (s *BackfillSuite) TestCheckRecentBlocksBlockStatusNotAvailable(c *C) {
@@ -1557,7 +1555,7 @@ func (s *BackfillSuite) TestCheckRecentBlocksBlockStatusNotAvailable(c *C) {
 
 	err := scanner.checkRecentBlocksAndUpdateNetworkFee(200)
 	c.Assert(err, NotNil)
-	c.Assert(err.Error(), Equals, "block status not yet available for slot 100")
+	c.Assert(err.Error(), Matches, ".*failed to get finalized block 100: RPC Error: Block status not yet available for slot 100")
 }
 
 func (s *BackfillSuite) TestCheckRecentBlocksGetBlocksError(c *C) {

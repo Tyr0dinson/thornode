@@ -4,10 +4,10 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"math"
 	"math/big"
 	"slices"
 	"sort"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -41,6 +41,11 @@ const (
 	maxConcurrentTxQueries = 5 // maximum number of concurrent tx queries to the RPC node
 )
 
+var (
+	errNoSOLFeeSampleBlocks    = errors.New("no finalized blocks in SOL fee sample")
+	errSOLFeeSampleUnavailable = errors.New("SOL fee sample unavailable")
+)
+
 ////////////////////////////////////////////////////////////////////////////////////////
 // SOLScanner
 ////////////////////////////////////////////////////////////////////////////////////////
@@ -60,11 +65,7 @@ type SOLScanner struct {
 	globalNetworkFeeQueue chan common.NetworkFee
 	globalTxsQueue        chan stypes.TxIn
 
-	// fee rate
-	// Guards feeRateCache/netFeeInit across startup and scan fee-refresh helpers.
-	networkFeeMu sync.Mutex
-	feeRateCache []uint64
-	lastFeeRate  atomic.Uint64
+	lastFeeRate atomic.Uint64
 
 	healthy *atomic.Bool
 
@@ -76,9 +77,10 @@ type SOLScanner struct {
 	// persisted resume cursor, which is only advanced after a scan completes).
 	currentScanSlot atomic.Int64
 
-	// network fee state
+	// Network fee scheduling is owned by the scan goroutine. The pending slot
+	// anchors startup or pruned-history recovery until that boundary completes.
 	netFeeSlotMultiple uint64
-	netFeeInit         bool
+	netFeePendingSlot  *uint64
 
 	lastLog time.Time
 	// counter for observed txs since last log
@@ -136,7 +138,6 @@ func NewSOLScanner(
 		bridge:             bridge,
 		solvencyReporter:   solvencyReporter,
 		signerCacheManager: signerCacheManager,
-		feeRateCache:       make([]uint64, 0),
 		stopChan:           stopChan,
 		healthy:            &atomic.Bool{},
 		initialHeight:      make(map[string]struct{}),
@@ -174,12 +175,9 @@ func (s *SOLScanner) Start() {
 	}
 	s.setLastHeight(lastHeight)
 
-	// initialize the network fee slot multiple to the closest multiple of NetFeeUpdateInterval beneath the initial slot
-	s.netFeeSlotMultiple = initialSlot / s.cfg.Solana.FeeUpdateInterval
-
-	// attempt to initialize the network fee. In simtest environment, we will not have enough tx history
-	// so the initial netfee will be sent upon first tx(s) observation
-	if err := s.checkRecentBlocksAndUpdateNetworkFee(s.netFeeSlotMultiple * s.cfg.Solana.FeeUpdateInterval); err != nil {
+	// Anchor startup near the tip, but retain this boundary on failure instead of
+	// replaying from zero or silently skipping it when the tip advances.
+	if err := s.initializeNetworkFee(initialSlot); err != nil {
 		s.logger.Error().Err(err).Msg("failed to check recent blocks and update network fee")
 	}
 
@@ -225,21 +223,9 @@ func (s *SOLScanner) scan() {
 		return
 	}
 
-	if currentSlot > (s.netFeeSlotMultiple+1)*s.cfg.Solana.FeeUpdateInterval {
-		var thorRate uint64
-		_, thorRate, err = s.bridge.GetNetworkFee(common.SOLChain)
-		if err != nil {
-			s.logger.Error().Err(err).Msg("failed to get network fee")
-		} else {
-			s.lastFeeRate.Store(thorRate)
-		}
-
-		// we crossed the threshold for updating the network fee, so check the last N blocks
-		//  up to the rounded slot for deterministic behavior across nodes.
-		s.netFeeSlotMultiple = currentSlot / s.cfg.Solana.FeeUpdateInterval
-		if err = s.checkRecentBlocksAndUpdateNetworkFee(s.netFeeSlotMultiple * s.cfg.Solana.FeeUpdateInterval); err != nil {
-			s.logger.Error().Err(err).Msg("failed to check recent blocks and update network fee")
-		}
+	// Only one fee boundary per pass so catch-up cannot starve vault scanning.
+	if err = s.updateNetworkFee(currentSlot); err != nil {
+		s.logger.Error().Err(err).Msg("failed to check recent blocks and update network fee")
 	}
 
 	lastSlot := s.getLastHeight()
@@ -331,13 +317,10 @@ func (s *SOLScanner) scan() {
 
 	s.healthy.Store(healthy)
 
-	var numTxs int
-
 	for i, vaultAddr := range vaultAddrs {
 		txCount := countTxs[i]
 
 		// increment tx counts for this scan iteration and also since last log.
-		numTxs += txCount
 		s.txCount += txCount
 
 		if successfulQueries[i] {
@@ -373,15 +356,6 @@ func (s *SOLScanner) scan() {
 		}
 	}
 
-	// The SOL scan goroutine reads netFeeInit here, sendNetworkFeeIfNecessary writes it during fee refresh.
-	s.networkFeeMu.Lock()
-	shouldInitNetworkFee := !s.netFeeInit && numTxs > 0
-	s.networkFeeMu.Unlock()
-	if shouldInitNetworkFee {
-		// this should really only happen (and is only necessary) in test environments to initialize the network fee,
-		// because we expect to have enough observed txs in the checkRecentBlocksAndUpdateNetworkFee above.
-		s.sendNetworkFeeIfNecessary(currentSlot)
-	}
 	// Record the slot being scanned before reporting so ReportSolvency can
 	// distinguish this scan-driven call from a SolvencyCheckRunner call (which
 	// passes the live chain tip). Without this, the unhealthy-scanner guard in
@@ -518,13 +492,99 @@ func (s *SOLScanner) scanVault(
 	}
 }
 
-// Since we don't scan all txs in every block, in order to get a good perspective of the network fee
-// we need to check the last N blocks and calculate the median fee rate.
-func (s *SOLScanner) checkRecentBlocksAndUpdateNetworkFee(slot uint64) error {
-	defer s.sendNetworkFeeIfNecessary(slot)
+func (s *SOLScanner) initializeNetworkFee(initialSlot uint64) error {
+	interval := s.cfg.Solana.FeeUpdateInterval
+	if interval == 0 {
+		return errors.New("SOL fee update interval must be positive")
+	}
+	if initialSlot > interval {
+		slot := ((initialSlot - 1) / interval) * interval
+		s.netFeePendingSlot = &slot
+	}
+	return s.updateNetworkFee(initialSlot)
+}
 
-	numTxs := 0
-	var lastSlot uint64
+func (s *SOLScanner) updateNetworkFee(currentSlot uint64) error {
+	interval := s.cfg.Solana.FeeUpdateInterval
+	if interval == 0 {
+		return errors.New("SOL fee update interval must be positive")
+	}
+	if currentSlot == 0 {
+		return nil
+	}
+	latestMultiple := (currentSlot - 1) / interval
+	var slot uint64
+	if s.netFeePendingSlot != nil {
+		slot = *s.netFeePendingSlot
+		if currentSlot <= slot {
+			return nil
+		}
+	} else {
+		// Division first avoids overflow and waits until the boundary is crossed.
+		if s.netFeeSlotMultiple >= latestMultiple {
+			return nil
+		}
+		slot = (s.netFeeSlotMultiple + 1) * interval
+	}
+	// Retain only the latest crossed boundary and its predecessor. An archive
+	// RPC must not cause a long outage to replay hours-old fee observations.
+	if latestMultiple > 1 && slot/interval < latestMultiple-1 {
+		nextSlot := (latestMultiple - 1) * interval
+		s.logger.Warn().Uint64("first_skipped_slot", slot).
+			Uint64("last_skipped_slot", nextSlot-interval).
+			Uint64("next_slot", nextSlot).Msg("bounding SOL network fee catch-up")
+		slot = nextSlot
+		s.netFeePendingSlot = &nextSlot
+	}
+	if err := s.checkRecentBlocksAndUpdateNetworkFee(slot); err != nil {
+		select {
+		case <-s.stopChan:
+			return err
+		default:
+		}
+		latestSlot := latestMultiple * interval
+		if slot < latestSlot && (errors.Is(err, errNoSOLFeeSampleBlocks) || errors.Is(err, errSOLFeeSampleUnavailable)) {
+			// A retention floor is evidence of lost history; an RPC error or an
+			// empty listing alone is not. Re-anchor in one step, but do not mark
+			// the new boundary complete until its own sample succeeds.
+			firstSlot := uint64(0)
+			if slot > s.cfg.Solana.FeeSampleSlots {
+				firstSlot = slot - s.cfg.Solana.FeeSampleSlots
+			}
+			floor, floorErr := s.solRpc.GetFirstAvailableBlock()
+			if floorErr == nil && floor > firstSlot {
+				s.netFeePendingSlot = &latestSlot
+				s.logger.Warn().Uint64("slot", slot).Uint64("retention_floor", floor).
+					Uint64("next_slot", latestSlot).Msg("re-anchoring SOL fee sampling past pruned history")
+				return err
+			}
+		}
+		if !errors.Is(err, errNoSOLFeeSampleBlocks) {
+			return err
+		}
+		// A complete empty listing has no fee to report. It must not wedge
+		// subsequent boundaries or relabel a previous sample as current.
+	}
+	s.netFeeSlotMultiple = slot / interval
+	s.netFeePendingSlot = nil
+	return nil
+}
+
+// Sample only this boundary's finalized lookback. GasCacheBlocks remains the SOL
+// eligible-transaction target, not a rolling block-cache length. A fully fetched
+// low-volume window is usable even when it does not reach that target.
+func (s *SOLScanner) checkRecentBlocksAndUpdateNetworkFee(slot uint64) error {
+	if s.cfg.Solana.FeeSampleSlots == 0 || s.cfg.GasCacheBlocks <= 0 || s.cfg.GasPriceResolution <= 0 {
+		return errors.New("SOL fee sample slots, transaction target and price resolution must be positive")
+	}
+	if slot > math.MaxInt64 {
+		return errors.New("SOL network fee slot exceeds int64")
+	}
+	select {
+	case <-s.stopChan:
+		return errors.New("SOL network fee sampling stopped")
+	default:
+	}
 
 	var firstSlot uint64
 	if slot > s.cfg.Solana.FeeSampleSlots {
@@ -533,44 +593,77 @@ func (s *SOLScanner) checkRecentBlocksAndUpdateNetworkFee(slot uint64) error {
 
 	blocks, err := s.solRpc.GetBlockHeights(firstSlot, slot)
 	if err != nil {
-		return fmt.Errorf("failed to get confirmed blocks: %w", err)
+		return fmt.Errorf("%w: failed to get finalized blocks for slots %d-%d: %w", errSOLFeeSampleUnavailable, firstSlot, slot, err)
 	}
-
-	// reverse the blocks to get the most recent first
-	slices.Reverse(blocks)
-
-	for _, b := range blocks {
+	if blocks == nil {
+		return fmt.Errorf("%w: missing finalized block listing for slots %d-%d", errSOLFeeSampleUnavailable, firstSlot, slot)
+	}
+	if len(blocks) == 0 {
+		if err := s.checkNetworkFeeHistory(firstSlot); err != nil {
+			return err
+		}
+		return fmt.Errorf("%w at slots %d-%d", errNoSOLFeeSampleBlocks, firstSlot, slot)
+	}
+	slices.Sort(blocks)
+	for i, b := range blocks {
+		if b < firstSlot || b > slot || (i > 0 && b == blocks[i-1]) {
+			return fmt.Errorf("invalid finalized block listing at slot %d for range %d-%d", b, firstSlot, slot)
+		}
+	}
+	feeRates := make([]uint64, 0, len(blocks))
+	remainingTxs := s.cfg.GasCacheBlocks
+	for i := len(blocks) - 1; i >= 0; i-- {
+		select {
+		case <-s.stopChan:
+			return errors.New("SOL network fee sampling stopped")
+		default:
+		}
+		b := blocks[i]
 		block, err := s.solRpc.GetBlock(b)
 		if err != nil {
-			if strings.Contains(err.Error(), "Block status not yet available for slot") {
-				// This can happen if the RPC is overwhelmed. give up for now.
-				return fmt.Errorf("block status not yet available for slot %d", b)
+			return fmt.Errorf("%w: failed to get finalized block %d: %w", errSOLFeeSampleUnavailable, b, err)
+		}
+		// Real skipped slots are absent from getBlocks. A listed block that is
+		// missing cannot safely be dropped from this boundary's sample.
+		if block == nil || block.Transactions == nil {
+			return fmt.Errorf("%w: finalized block %d missing", errSOLFeeSampleUnavailable, b)
+		}
+		for _, txn := range block.Transactions {
+			if txn == nil {
+				return fmt.Errorf("null transaction in finalized block %d for SOL fee sample", b)
 			}
-			s.logger.Error().Err(err).Msg("failed to get block to determine netfee")
-			continue
 		}
-		if block == nil {
-			s.logger.Debug().Msgf("block %d is nil", b)
-			continue
-		}
-		if lastSlot == 0 {
-			lastSlot = b
-		}
-
-		numTxsInBlock := s.calculateFeeRatesFromTransactions(block.Transactions)
-		numTxs += numTxsInBlock
-
-		if numTxs > s.cfg.GasCacheBlocks {
-			// We have enough transactions to calculate the network fee
-			s.logger.Info().Uint64("first_slot", b).Uint64("last_slot", lastSlot).Msg("found enough transactions to calculate network fee")
+		feeRate, numTxs := s.calculateFeeRatesFromTransactions(block.Transactions)
+		feeRates = append(feeRates, feeRate)
+		if numTxs >= remainingTxs {
+			remainingTxs = 0
 			break
 		}
+		remainingTxs -= numTxs
 	}
-
-	if numTxs < s.cfg.GasCacheBlocks {
-		return fmt.Errorf("not enough transactions")
+	if remainingTxs > 0 {
+		// getBlocks may silently omit pruned blocks. A low-count fallback is
+		// valid only when the complete requested window remains available.
+		if err := s.checkNetworkFeeHistory(firstSlot); err != nil {
+			return err
+		}
 	}
+	return s.sendNetworkFeeIfNecessary(slot, feeRates)
+}
 
+func (s *SOLScanner) checkNetworkFeeHistory(firstSlot uint64) error {
+	select {
+	case <-s.stopChan:
+		return errors.New("SOL network fee sampling stopped")
+	default:
+	}
+	floor, err := s.solRpc.GetFirstAvailableBlock()
+	if err != nil {
+		return fmt.Errorf("%w: failed to check retention for slot %d: %w", errSOLFeeSampleUnavailable, firstSlot, err)
+	}
+	if floor > firstSlot {
+		return fmt.Errorf("%w: window starts at slot %d below retention floor %d", errSOLFeeSampleUnavailable, firstSlot, floor)
+	}
 	return nil
 }
 
@@ -630,66 +723,51 @@ func (s *SOLScanner) GetNetworkFee() (transactionSize, transactionFeeRate uint64
 	return 1, s.lastFeeRate.Load()
 }
 
-func (s *SOLScanner) sendNetworkFeeIfNecessary(height uint64) {
-	networkFee, roundedFeeRate, postNetworkFee := func() (common.NetworkFee, uint64, bool) {
-		// Startup and scan fee-refresh paths publish from feeRateCache and mark netFeeInit here.
-		s.networkFeeMu.Lock()
-		defer s.networkFeeMu.Unlock()
-
-		if len(s.feeRateCache) == 0 {
-			// Not enough txs yet
-			return common.NetworkFee{}, 0, false
-		}
-
-		if len(s.feeRateCache) < s.cfg.GasCacheBlocks && s.netFeeInit {
-			// We are beyond the initial fee post, but not enough txs yet
-			return common.NetworkFee{}, 0, false
-		}
-
-		// Calculate the median fee rate from the gas cache
-		medianFeeRate := calculateMedian(s.feeRateCache)
-
-		// round medianFeeRate to the nearest resolution
-		resolution := uint64(s.cfg.GasPriceResolution)
-		roundedFeeRate := ((medianFeeRate + (resolution / 2)) / resolution) * resolution
-
-		// truncate gas prices older than our max cached transactions
-		if len(s.feeRateCache) > s.cfg.GasCacheBlocks {
-			s.feeRateCache = s.feeRateCache[(len(s.feeRateCache) - s.cfg.GasCacheBlocks):]
-		}
-
-		if roundedFeeRate == 0 {
-			s.logger.Debug().Msg("network fee is 0")
-			return common.NetworkFee{}, 0, false
-		}
-
-		s.netFeeInit = true
-
-		// Update the fee rate if it has changed
-		if roundedFeeRate == s.lastFeeRate.Load() {
-			s.logger.Info().Uint64("fee", roundedFeeRate).Msg("network fee is already up to date")
-			return common.NetworkFee{}, 0, false
-		}
-
-		s.lastFeeRate.Store(roundedFeeRate)
-		return common.NetworkFee{
-			Chain:           common.SOLChain,
-			Height:          int64(height),
-			TransactionSize: 1,
-			TransactionRate: roundedFeeRate,
-		}, roundedFeeRate, true
-	}()
-	if !postNetworkFee {
-		return
+func (s *SOLScanner) sendNetworkFeeIfNecessary(height uint64, feeRates []uint64) error {
+	if len(feeRates) == 0 || s.cfg.GasPriceResolution <= 0 || height > math.MaxInt64 {
+		return errors.New("invalid SOL network fee sample, resolution or height")
 	}
-
-	// The fee decision is made while holding networkFeeMu above, but the channel send
-	// happens after releasing the lock so blocked consumers cannot stall fee-state updates.
-	s.globalNetworkFeeQueue <- networkFee
-	s.logger.Info().
-		Uint64("fee", roundedFeeRate).
-		Uint64("height", height).
-		Msg("sent network fee to THORChain")
+	medianFeeRate := calculateMedian(feeRates)
+	resolution := uint64(s.cfg.GasPriceResolution)
+	remainder := medianFeeRate % resolution
+	roundedFeeRate := medianFeeRate - remainder
+	if remainder >= resolution-resolution/2 {
+		if roundedFeeRate > math.MaxUint64-resolution {
+			return errors.New("SOL network fee rounding overflow")
+		}
+		roundedFeeRate += resolution
+	}
+	if roundedFeeRate == 0 {
+		return errors.New("SOL network fee rounds to zero")
+	}
+	select {
+	case <-s.stopChan:
+		return errors.New("SOL network fee reporting stopped")
+	default:
+	}
+	_, agreedFeeRate, err := s.bridge.GetNetworkFee(common.SOLChain)
+	if err != nil {
+		return fmt.Errorf("failed to get agreed SOL network fee: %w", err)
+	}
+	select {
+	case <-s.stopChan:
+		return errors.New("SOL network fee reporting stopped")
+	default:
+	}
+	// Suppress only against a fresh agreed fee, never the previous local sample.
+	if roundedFeeRate != agreedFeeRate {
+		select {
+		case <-s.stopChan:
+			return errors.New("SOL network fee reporting stopped")
+		case s.globalNetworkFeeQueue <- common.NetworkFee{
+			Chain: common.SOLChain, Height: int64(height), TransactionSize: 1, TransactionRate: roundedFeeRate,
+		}:
+		}
+		s.logger.Info().Uint64("fee", roundedFeeRate).Uint64("height", height).
+			Msg("sent network fee to THORChain")
+	}
+	s.lastFeeRate.Store(roundedFeeRate)
+	return nil
 }
 
 // --------------------------------- extraction ---------------------------------
@@ -731,8 +809,11 @@ func calculateMedian(arr []uint64) uint64 {
 	sort.Slice(sorted, func(i, j int) bool { return sorted[i] < sorted[j] })
 	arr = sorted
 	n := len(arr)
+	if n == 0 {
+		return 0
+	}
 	if n%2 == 0 {
-		return (arr[n/2-1] + arr[n/2]) / 2
+		return arr[n/2-1] + (arr[n/2]-arr[n/2-1])/2
 	}
 	return arr[n/2]
 }
@@ -740,12 +821,12 @@ func calculateMedian(arr []uint64) uint64 {
 // calculateFeeRatesFromTransactions extracts fee rates from transactions for network fee calculation.
 // Unlike getTxIn, this does not validate transactions or filter for THORChain inbounds.
 // It processes ALL transactions in the block to get an accurate network fee measurement.
-func (s *SOLScanner) calculateFeeRatesFromTransactions(transactions []*rpc.TransactionResult) int {
+func (s *SOLScanner) calculateFeeRatesFromTransactions(transactions []*rpc.TransactionResult) (uint64, int) {
 	txFeeRates := []uint64{}
 
 	for _, txn := range transactions {
 		// skip transactions with no signatures or no fee
-		if len(txn.Transaction.Signatures) == 0 || txn.Meta.Fee == 0 {
+		if txn == nil || len(txn.Transaction.Signatures) == 0 || txn.Meta.Fee == 0 {
 			continue
 		}
 
@@ -766,23 +847,10 @@ func (s *SOLScanner) calculateFeeRatesFromTransactions(transactions []*rpc.Trans
 		txFeeRates = append(txFeeRates, feeRate)
 	}
 
-	// Startup and scan fee-refresh paths append block fee samples before publishing network fee.
-	s.networkFeeMu.Lock()
-	defer s.networkFeeMu.Unlock()
-
-	// update the fee rate cache
-	switch {
-	case len(txFeeRates) == 1:
-		s.feeRateCache = append(s.feeRateCache, txFeeRates[0])
-	case len(txFeeRates) > 1:
-		medianFeeRate := calculateMedian(txFeeRates)
-		s.feeRateCache = append(s.feeRateCache, medianFeeRate)
-	case len(txFeeRates) == 0:
-		// if no transactions in the block, just add the base fee
-		s.feeRateCache = append(s.feeRateCache, baseFeePerSigLamports)
+	if len(txFeeRates) == 0 {
+		return baseFeePerSigLamports, 0
 	}
-
-	return len(txFeeRates)
+	return calculateMedian(txFeeRates), len(txFeeRates)
 }
 
 // Create a TxInItem for a SOL transfer transaction. This function will only return a

@@ -114,7 +114,7 @@ func (s *SolRPC) GetBlockHeights(startSlot, endSlot uint64) ([]uint64, error) {
 // this floor says where the ledger genuinely begins.
 func (s *SolRPC) GetFirstAvailableBlock() (uint64, error) {
 	var response struct {
-		Result uint64    `json:"result"`
+		Result *uint64   `json:"result"`
 		Error  *RPCError `json:"error"`
 	}
 	if err := s.post("getFirstAvailableBlock", []interface{}{}, &response); err != nil {
@@ -125,5 +125,9 @@ func (s *SolRPC) GetFirstAvailableBlock() (uint64, error) {
 		return 0, fmt.Errorf("RPC Error %d: %s", response.Error.Code, response.Error.Message)
 	}
 
-	return response.Result, nil
+	if response.Result == nil {
+		return 0, fmt.Errorf("RPC Error: result is nil")
+	}
+
+	return *response.Result, nil
 }
