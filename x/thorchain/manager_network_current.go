@@ -1424,16 +1424,6 @@ func (vm *NetworkMgr) addPOLLiquidity(
 	// if there are no units, this is the initial deposit
 	depositUnits := runeAmt
 
-	// compute the new provider units
-	if !runePool.TotalUnits().IsZero() {
-		var rpValue cosmos.Uint
-		rpValue, err = polValue.runePoolValue(ctx, mgr)
-		if err != nil {
-			return fmt.Errorf("fail to get rune pool value: %s", err)
-		}
-		depositUnits = common.GetSafeShare(runeAmt, rpValue, runePool.TotalUnits())
-	}
-
 	// check balance
 	bal := mgr.Keeper().GetRuneBalanceOfModule(ctx, ReserveName)
 	if runeAmt.GT(bal) {
@@ -1443,9 +1433,25 @@ func (vm *NetworkMgr) addPOLLiquidity(
 		return err
 	}
 
+	// Most adds fail validation (e.g. paused deposits), so the rune pool value
+	// is read only once the deposit succeeds. The deposit runs in a cache
+	// context, so ctx still holds the pools, synth supply and POL position from
+	// before it; the reserve to asgard send above changes none of them.
+	depositCtx, commitDeposit := ctx.CacheContext()
 	tx := common.NewTx(common.BlankTxID, polAddress, asgardAddress, coins, nil, "THOR-POL-ADD")
 	msg := NewMsgAddLiquidity(tx, pool.Asset, runeAmt, cosmos.ZeroUint(), polAddress, common.NoAddress, common.NoAddress, cosmos.ZeroUint(), signer)
-	_, err = handler(ctx, msg)
+	_, err = handler(depositCtx, msg)
+
+	// compute the new provider units
+	if err == nil && !runePool.TotalUnits().IsZero() {
+		var rpValue cosmos.Uint
+		rpValue, err = polValue.runePoolValue(ctx, mgr)
+		if err != nil {
+			err = fmt.Errorf("fail to get rune pool value: %s", err)
+		} else {
+			depositUnits = common.GetSafeShare(runeAmt, rpValue, runePool.TotalUnits())
+		}
+	}
 	if err != nil {
 		handlerErr := err
 		// revert the rune back to the reserve
@@ -1454,6 +1460,7 @@ func (vm *NetworkMgr) addPOLLiquidity(
 		}
 		return handlerErr
 	}
+	commitDeposit()
 	polValue.reset()
 
 	// deposit was successful, update the rune pool units accordingly
