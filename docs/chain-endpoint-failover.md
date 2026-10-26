@@ -51,7 +51,12 @@ must compute the same fee), ZEC input selection (checked against the primary's o
 height, as the inputs come from the primary), retiring an expired ZEC payload (only once
 the primary has reached the expiry height, read before the transaction is looked up),
 and reorg re-confirmation. A long primary
-outage therefore retains block meta and spends only confirmed UTXOs.
+outage therefore retains block meta and spends only confirmed UTXOs. While the health
+checks hold the primary out of rotation and a fallback serves the scan, the per-block
+reads only the primary can answer do not wait for it: the relay fee keeps its last
+value, the solvency report (read from the primary's wallet) is skipped, and a reorg
+with customer transactions fails at once and is retried; without a fallback the
+primary is asked as before.
 
 A UTXO reorg is walked back by block hash from the scanned block: each earlier block is
 fetched by the hash its child names, so an endpoint that is behind or still on the old
@@ -102,13 +107,16 @@ A background health check runs every `health_check_interval` against every endpo
 - **Liveness.** A probe that errors or exceeds `health_check_timeout` is a strike.
 - **Lag.** When at least two usable endpoints (not disabled, and with their network
   verified when that is required) agree on a tip (within `max_block_lag`), an
-  endpoint further behind than `max_block_lag` gets a strike each cycle. With a single
-  endpoint, the block scanner's own height is the baseline instead. With exactly two
-  endpoints, two heights that agree leave neither behind and two that do not agree form
-  no tip, so lag never evicts either one: two endpoints fail over on errors only, a
-  stalled endpoint that still answers stays active, and one recovering from an outage is
-  not held back while it resyncs (with `prefer_higher_priority`, traffic can move back to
-  it early). Lag protection needs three or more endpoints.
+  endpoint further behind than `max_block_lag` gets a strike each cycle. With two or
+  more endpoints, THORChain's last observed height for the chain is a second reference:
+  an endpoint more than `max_block_lag` below it gets a strike. That height is set only
+  once 2/3 of nodes agree and never goes back, so no endpoint or single node can move
+  it, and it can only strike an endpoint behind what the network has already observed,
+  never one at the tip. This is what lets two endpoints, which form no tip when they
+  disagree, evict a stalled endpoint that still answers. When THORChain's height is
+  unavailable, does not answer within `health_check_timeout`, or has not moved (a
+  halted or quiet chain), it strikes nothing. With a single endpoint, the block
+  scanner's own height is the baseline instead.
 - **Identity.** Every endpoint must report the same chain identity (EVM `eth_chainId`,
   UTXO genesis block hash, Cosmos `node_info.network`, Solana genesis hash, XRP
   `network_id`). The reference is `expected_identity` when set, otherwise the priority-1
@@ -160,7 +168,7 @@ are re-probed every `recovery_check_interval` and return to healthy after
 higher-priority endpoint only when `prefer_higher_priority` is true.
 
 A rate limit (HTTP 429, gRPC `ResourceExhausted` or a gateway's HTTP 429, JSON-RPC -32005 / -32029; on Solana
--32005 means the node is behind and is charged as an endpoint error instead) never marks
+-32005 means the node is behind and is charged as an endpoint error instead, as is -32016) never marks
 an endpoint unhealthy and never counts as a strike, including when a health probe is
 rate limited: the endpoint enters a cooldown of `rate_limit_backoff`, a healthy endpoint
 is not probed while cooling down (recovery probes of an unhealthy one still run), and
@@ -200,7 +208,12 @@ If every endpoint is unhealthy, bifrost logs an error, sets
 On Solana, a vault with more than one page (1,000) of new signatures has all its pages
 listed by one endpoint: a node that does not have a page's last signature answers the
 next page with an empty list, which would end the scan early and skip the older
-signatures for good.
+signatures for good. A vault's listing resumes from its cursor signature with that
+signature's own slot as `minContextSlot`: Agave ignores a cursor it does not know and
+lists the whole history it holds, so a node that has not yet finalized the cursor's slot
+(an endpoint behind the previous one) must refuse with -32016 instead, which on Solana is
+an endpoint error, so the read moves to the next endpoint. A cursor stored before its
+slot was kept has none until the vault's next new signature.
 
 `authorization_bearer` and `username` / `password` set on an `endpoints:` entry are
 honored on every chain (gRPC sends them as `authorization` metadata). A legacy
@@ -258,7 +271,12 @@ bifrost started (one unreachable at startup, which may hold a broadcast from bef
 restart) counts the same way: it cannot be asked, so absence is not proven while it is
 configured. A disabled endpoint (proven to be on another network) does not count. TRON is
 the exception: its transactions expire 20 minutes after creation, so an endpoint
-continuously unhealthy for longer than `signer_cache_expiry` is skipped there.
+continuously unhealthy for longer than `signer_cache_expiry` is skipped there. Each
+verification left ambiguous this way counts on
+`bifrost_endpoint_verification_blocked_total{chain,endpoint}` against the endpoint that
+blocked it, and a warning naming that endpoint is logged at most every five minutes.
+Alert on a rising rate, and remove an endpoint that stays dead from the configuration
+(and restart bifrost) so stuck outbounds can be signed again.
 
 An endpoint's identity is verified once, when it is first reached. A provider URL
 repointed at another network after bifrost started is not re-verified, except a Cosmos
@@ -396,3 +414,4 @@ Prometheus metrics (labels `chain`, `endpoint`):
 | `bifrost_endpoint_failovers_total{from,to,event}` | active endpoint changes; event is failover or failback             |
 | `bifrost_endpoint_recoveries_total`               | returns to healthy                                                 |
 | `bifrost_endpoint_all_down`                       | 1 when no endpoint of the chain is healthy. Alert on this.         |
+| `bifrost_endpoint_verification_blocked_total`     | verifications this endpoint left ambiguous (re-sign blocked)       |
