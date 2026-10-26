@@ -142,8 +142,8 @@ func (s *LuviGuardSuite) TestGuardPassesLegitimateFlows(c *C) {
 
 		// a donation only raises G
 		err = e.runGuarded(e.guardMsg(), func(ctx cosmos.Context) {
-			pool, err := e.mgr.Keeper().GetPool(ctx, e.asset)
-			c.Assert(err, IsNil)
+			pool, perr := e.mgr.Keeper().GetPool(ctx, e.asset)
+			c.Assert(perr, IsNil)
 			pool.BalanceRune = pool.BalanceRune.AddUint64(common.One)
 			c.Assert(e.mgr.Keeper().SetPool(ctx, pool), IsNil)
 		})
@@ -184,8 +184,8 @@ func (s *LuviGuardSuite) TestGuardLedger(c *C) {
 
 	// an errata names the pool: its unit burn emits no unit event
 	err = e.runGuarded(&MsgOutboundTx{}, func(ctx cosmos.Context) {
-		pool, err := e.mgr.Keeper().GetPool(ctx, e.asset)
-		c.Assert(err, IsNil)
+		pool, perr := e.mgr.Keeper().GetPool(ctx, e.asset)
+		c.Assert(perr, IsNil)
 		pool.LPUnits = pool.LPUnits.QuoUint64(2)
 		pool.BalanceRune = pool.BalanceRune.QuoUint64(2)
 		pool.BalanceAsset = pool.BalanceAsset.QuoUint64(2)
@@ -209,8 +209,8 @@ func (s *LuviGuardSuite) TestGuardDepletedPool(c *C) {
 	// with every LP unit gone there is nothing to lose (the ledger still has
 	// to match, so pair it with withdraw events)
 	err = e.runGuarded(e.guardMsg(), func(ctx cosmos.Context) {
-		pool, err := e.mgr.Keeper().GetPool(ctx, e.asset)
-		c.Assert(err, IsNil)
+		pool, perr := e.mgr.Keeper().GetPool(ctx, e.asset)
+		c.Assert(perr, IsNil)
 		units := pool.LPUnits
 		pool.LPUnits = cosmos.ZeroUint()
 		pool.BalanceRune = cosmos.ZeroUint()
