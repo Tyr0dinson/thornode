@@ -383,3 +383,20 @@ func (s *LuviGuardSuite) TestEndBlockAdvancesAccumulator(c *C) {
 	c.Assert(found, Equals, true)
 	c.Check(rec.Height, Equals, e.ctx.BlockHeight())
 }
+
+func (s *LuviGuardSuite) TestEndBlockScopeSkipsInnerReports(c *C) {
+	e := newLuviEnv(c, luviRegime{"no synths", 0})
+	ctx, outer := beginLuviScope(e.ctx, e.mgr.Keeper(), "endblock/test", "", false)
+	// a report-only handler inside the step reports the theft once
+	cacheCtx, commit := ctx.CacheContext()
+	c.Assert(runLuviGuarded(ctx, cacheCtx, e.mgr, &MsgOutboundTx{}, func(runCtx cosmos.Context) error { e.steal(runCtx, 10); return nil }), IsNil)
+	commit()
+	outer.end(ctx, e.mgr)
+	c.Check(luviLossEvents(e.ctx), HasLen, 1)
+
+	// a loss the inner scope did not see is still reported by the step
+	ctx, outer = beginLuviScope(e.ctx, e.mgr.Keeper(), "endblock/test", "", false)
+	e.steal(ctx, 10)
+	outer.end(ctx, e.mgr)
+	c.Check(luviLossEvents(e.ctx), HasLen, 2)
+}

@@ -147,6 +147,13 @@ func (s *luviScope) check(ctx cosmos.Context, k keeper.Keeper) ([]*types.EventLu
 			enforce = virtualSynthDepth <= int64(constants.MaxBasisPts)
 		}
 		loss := func(kind string, dG, norm, allowed cosmos.Dec, over bool) {
+			// an inner scope (a handler run inside this EndBlock step) already
+			// reported this pool: repeat it only if this step is the first to
+			// find an excess
+			if ev.Reported[pool] && (!over || ev.ReportedExcess[pool]) {
+				excess = excess || (over && enforce)
+				return
+			}
 			losses = append(losses, &types.EventLuviLoss{
 				Pool:             asset,
 				Scope:            s.name,

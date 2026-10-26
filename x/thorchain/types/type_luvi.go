@@ -345,6 +345,10 @@ type LuviStepEvents struct {
 	Withdrawn map[string][]cosmos.Uint
 	Errata    map[string]bool
 	Swaps     map[string]int
+	// Reported and ReportedExcess name the pools an inner scope already
+	// reported a luvi_loss for (excess: beyond its allowance).
+	Reported       map[string]bool
+	ReportedExcess map[string]bool
 }
 
 // NewLuviStepEvents parses flattened events (type under "type", attributes by
@@ -356,6 +360,9 @@ func NewLuviStepEvents(events []map[string]string) LuviStepEvents {
 		Withdrawn: map[string][]cosmos.Uint{},
 		Errata:    map[string]bool{},
 		Swaps:     map[string]int{},
+
+		Reported:       map[string]bool{},
+		ReportedExcess: map[string]bool{},
 	}
 	for _, e := range events {
 		switch e["type"] {
@@ -394,6 +401,11 @@ func NewLuviStepEvents(events []map[string]string) LuviStepEvents {
 			out.Errata[e["asset"]] = true
 		case SwapEventType:
 			out.Swaps[e["pool"]]++
+		case LuviLossEventType:
+			out.Reported[e["pool"]] = true
+			if e["excess"] == "true" {
+				out.ReportedExcess[e["pool"]] = true
+			}
 		}
 	}
 	return out
