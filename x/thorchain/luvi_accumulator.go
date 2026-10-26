@@ -81,9 +81,16 @@ func advanceLuviAccumulator(ctx cosmos.Context, k keeper.Keeper, pool Pool) erro
 	return nil
 }
 
+// luviStatesEqual compares two states; a nil value only equals a nil value.
 func luviStatesEqual(a, b types.LuviState) bool {
-	return a.BalanceRune.Equal(b.BalanceRune) && a.BalanceAsset.Equal(b.BalanceAsset) &&
-		a.LPUnits.Equal(b.LPUnits) && a.SynthSupply.Equal(b.SynthSupply) && a.PoolUnits.Equal(b.PoolUnits)
+	eq := func(x, y cosmos.Uint) bool {
+		if x.IsNil() || y.IsNil() {
+			return x.IsNil() == y.IsNil()
+		}
+		return x.Equal(y)
+	}
+	return eq(a.BalanceRune, b.BalanceRune) && eq(a.BalanceAsset, b.BalanceAsset) &&
+		eq(a.LPUnits, b.LPUnits) && eq(a.SynthSupply, b.SynthSupply) && eq(a.PoolUnits, b.PoolUnits)
 }
 
 func luviRaw(i cosmos.Int) *big.Int {

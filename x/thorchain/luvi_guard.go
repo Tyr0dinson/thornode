@@ -104,7 +104,9 @@ func luviMsgTxID(msg cosmos.Msg) common.TxID {
 func luviPoolState(ctx cosmos.Context, k keeper.Keeper, asset common.Asset) types.LuviState {
 	pool, err := k.GetPool(ctx, asset)
 	if err != nil {
-		return types.LuviState{}
+		// an unreadable pool counts as empty; zero values keep IsValid safe
+		zero := cosmos.ZeroUint()
+		return types.LuviState{BalanceRune: zero, BalanceAsset: zero, LPUnits: zero, SynthSupply: zero, PoolUnits: zero}
 	}
 	return types.NewLuviState(pool, k.GetTotalSupply(ctx, asset.GetSyntheticAsset()))
 }

@@ -162,24 +162,13 @@ func (am AppModule) RegisterServices(cfg module.Configurator) {
 	types.RegisterQueryServer(cfg.QueryServer(), am.queryServer)
 	wasmtypes.RegisterQueryServer(cfg.QueryServer(), wasmkeeper.Querier(&am.mgr.wasmKeeper))
 
+	// Each migration runs in a report-only LUVI scope (luvi_migration.go);
+	// register new ones in Migrator.luviMigrations.
 	m := NewMigrator(am.mgr)
-	if err := cfg.RegisterMigration(types.ModuleName, 15, m.Migrate15to16); err != nil {
-		panic(fmt.Sprintf("failed to migrate x/thorchain from version 15 to 16: %v", err))
-	}
-	if err := cfg.RegisterMigration(types.ModuleName, 16, m.Migrate16to17); err != nil {
-		panic(fmt.Sprintf("failed to migrate x/thorchain from version 16 to 17: %v", err))
-	}
-	if err := cfg.RegisterMigration(types.ModuleName, 17, m.Migrate17to18); err != nil {
-		panic(fmt.Sprintf("failed to migrate x/thorchain from version 17 to 18: %v", err))
-	}
-	if err := cfg.RegisterMigration(types.ModuleName, 18, m.Migrate18to19); err != nil {
-		panic(fmt.Sprintf("failed to migrate x/thorchain from version 18 to 19: %v", err))
-	}
-	if err := cfg.RegisterMigration(types.ModuleName, 19, m.Migrate19to20); err != nil {
-		panic(fmt.Sprintf("failed to migrate x/thorchain from version 19 to 20: %v", err))
-	}
-	if err := cfg.RegisterMigration(types.ModuleName, 20, m.Migrate20to21); err != nil {
-		panic(fmt.Sprintf("failed to migrate x/thorchain from version 20 to 21: %v", err))
+	for _, mig := range m.luviMigrations() {
+		if err := cfg.RegisterMigration(types.ModuleName, mig.from, luviGuardMigration(am.mgr, mig.from, mig.run)); err != nil {
+			panic(fmt.Sprintf("failed to migrate x/thorchain from version %d to %d: %v", mig.from, mig.from+1, err))
+		}
 	}
 }
 
