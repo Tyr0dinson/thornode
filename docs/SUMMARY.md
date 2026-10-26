@@ -68,6 +68,7 @@
 - [Internals & Math](concepts/code-libraries.md)
 
   - [Math](concepts/math.md)
+  - [LUVI Invariant](concepts/luvi-invariant.md)
 
 - [Aggregators](aggregators/aggregator-overview.md)
 
