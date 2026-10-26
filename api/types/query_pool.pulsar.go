@@ -4110,8 +4110,8 @@ type QueryPoolResponse struct {
 	LuviG string `protobuf:"bytes,34,opt,name=luvi_g,json=luviG,proto3" json:"luvi_g,omitempty"`
 	// accumulated synth repricing term C of LUVI*
 	LuviC string `protobuf:"bytes,35,opt,name=luvi_c,json=luviC,proto3" json:"luvi_c,omitempty"`
-	// synth-aware index LUVI* = lp_equity_per_unit + luvi_c; only meaningful
-	// when synth_overhang is false
+	// synth-aware index LUVI* = lp_equity_per_unit + luvi_c as of luvi_height;
+	// only meaningful when synth_overhang is false
 	LuviStar string `protobuf:"bytes,36,opt,name=luvi_star,json=luviStar,proto3" json:"luvi_star,omitempty"`
 	// the last block's change in G divided by the previous sqrt(asset * rune)
 	LuviLastNormalizedDeltaG string `protobuf:"bytes,37,opt,name=luvi_last_normalized_delta_g,json=luviLastNormalizedDeltaG,proto3" json:"luvi_last_normalized_delta_g,omitempty"`

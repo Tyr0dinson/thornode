@@ -3515,8 +3515,8 @@ components:
           example: "0.000001000000000000"
           type: string
         luvi_star:
-          description: synth-aware index LUVI* = lp_equity_per_unit + luvi_c; only
-            meaningful when synth_overhang is false
+          description: synth-aware index LUVI* = lp_equity_per_unit + luvi_c as of
+            luvi_height; only meaningful when synth_overhang is false
           example: "1.500001000000000000"
           type: string
         luvi_last_normalized_delta_g:

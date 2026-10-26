@@ -36,7 +36,7 @@ Name | Type | Description | Notes
 **SynthOverhang** | **bool** | whether synth supply is at or above twice the asset depth; synth units are clamped and LP units can redeem almost nothing while this is true | 
 **LuviG** | Pointer to **string** | LUVI accumulator, the accumulated change in hedged LP equity G in sqrt(asset * rune) units since tracking began; absent until the pool has been observed at the end of a block | [optional] 
 **LuviC** | Pointer to **string** | accumulated synth repricing term C of LUVI* | [optional] 
-**LuviStar** | Pointer to **string** | synth-aware index LUVI* &#x3D; lp_equity_per_unit + luvi_c; only meaningful when synth_overhang is false | [optional] 
+**LuviStar** | Pointer to **string** | synth-aware index LUVI* &#x3D; lp_equity_per_unit + luvi_c as of luvi_height; only meaningful when synth_overhang is false | [optional] 
 **LuviLastNormalizedDeltaG** | Pointer to **string** | the last accumulator step&#39;s change in G divided by the previous sqrt(asset * rune) | [optional] 
 **LuviHeight** | Pointer to **int64** | height of the last LUVI accumulator step | [optional] 
 

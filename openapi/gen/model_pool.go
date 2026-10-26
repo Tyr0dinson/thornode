@@ -72,7 +72,7 @@ type Pool struct {
 	LuviG *string `json:"luvi_g,omitempty"`
 	// accumulated synth repricing term C of LUVI*
 	LuviC *string `json:"luvi_c,omitempty"`
-	// synth-aware index LUVI* = lp_equity_per_unit + luvi_c; only meaningful when synth_overhang is false
+	// synth-aware index LUVI* = lp_equity_per_unit + luvi_c as of luvi_height; only meaningful when synth_overhang is false
 	LuviStar *string `json:"luvi_star,omitempty"`
 	// the last accumulator step's change in G divided by the previous sqrt(asset * rune)
 	LuviLastNormalizedDeltaG *string `json:"luvi_last_normalized_delta_g,omitempty"`

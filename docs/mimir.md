@@ -129,6 +129,7 @@ Operational notes:
 - `PauseAsymWithdrawal-<Chain>`#: Forces dual-address liquidity providers to withdraw symmetrically rather than asymmetrically.
 - `PauseLPDeposit-<Asset>`#: pauses the ability to add liquidity into that pool. E.g. `PAUSELPDEPOSIT-BTC-BTC=1` suspends deposits for the BTC pool
 - `LUVIOverhangGuard`\*: When above `0` (the default is `1`), rejects liquidity adds, from users and from POL, into a pool in synth overhang (synth supply at least twice the pool's asset depth), and POL skips such pools. Withdrawals are unaffected. `0` turns the guard off
+- `LUVIGuard`\*: When above `0` (the default is `1`), checks every handler run and EndBlock step for drops in the hedged LP equity G of the pools it wrote (see `x/thorchain/types/type_luvi.go`). A user value flow (swap, add or withdraw liquidity, donate, trade/secured asset, RUNEPool and TCY messages) that lowers a pool's G beyond the computed allowance for gas, slashes, LP-flow rounding and synth mints is rejected and refunded. Other handlers and EndBlock steps only report. Every drop beyond the allowance, and every drop above 1e-6 of the pool's sqrt(A*R), emits a `luvi_loss` event naming the pool, the scope and the inbound tx. `0` turns the guard and the events off; the per-pool G accumulator on the pool endpoints always runs
 
 ## RunePool
 

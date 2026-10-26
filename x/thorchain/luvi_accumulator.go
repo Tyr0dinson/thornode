@@ -116,8 +116,9 @@ func luviStateFromRecord(r types.PoolLuvi) types.LuviState {
 	}
 }
 
-// setPoolLuviAccumulatorFields fills a pool response's LUVI accumulator fields.
-func setPoolLuviAccumulatorFields(ctx cosmos.Context, k keeper.Keeper, p *types.QueryPoolResponse, pool Pool, synthSupply cosmos.Uint) {
+// setPoolLuviAccumulatorFields fills a pool response's LUVI accumulator
+// fields, all as of the last accumulator step (luvi_height).
+func setPoolLuviAccumulatorFields(ctx cosmos.Context, k keeper.Keeper, p *types.QueryPoolResponse, pool Pool) {
 	record, found, err := k.GetPoolLuviAccumulator(ctx, pool.Asset)
 	if err != nil || !found {
 		return
@@ -131,9 +132,5 @@ func setPoolLuviAccumulatorFields(ctx cosmos.Context, k keeper.Keeper, p *types.
 	p.LuviC = tracker.C().String()
 	p.LuviLastNormalizedDeltaG = record.LastNormalizedDeltaG.String()
 	p.LuviHeight = record.Height
-	// LUVI* at the current state, which may be ahead of the last step when
-	// queried mid-block; C only changes at the next step
-	if st := types.NewLuviState(pool, synthSupply); st.IsValid() {
-		p.LuviStar = st.LPEquityPerUnit().Add(tracker.C()).String()
-	}
+	p.LuviStar = tracker.LuviStar().String()
 }
