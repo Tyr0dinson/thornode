@@ -126,7 +126,7 @@ func runLuviMigrationGate(c *C, ctx cosmos.Context, mgr *Mgrs, scope string, run
 	return luviMigrationGateFailures(scope, changes), nil
 }
 
-func luviLossEvents(ctx cosmos.Context) []sdk.Event {
+func luviMigrationLossEvents(ctx cosmos.Context) []sdk.Event {
 	var out []sdk.Event
 	for _, e := range ctx.EventManager().Events() {
 		if e.Type == types.LuviLossEventType {
@@ -242,9 +242,9 @@ func (s *LuviMigrateGateSuite) TestGateAcceptsDeclaredWriteDown(c *C) {
 // registered wrapper: it succeeds, and emits a loss event in its scope.
 func (s *LuviMigrateGateSuite) TestWrapperReportsWriteDown(c *C) {
 	ctx, mgr := setupLuviMigrationFixture(c)
-	before := len(luviLossEvents(ctx))
+	before := len(luviMigrationLossEvents(ctx))
 	c.Assert(luviGuardMigration(mgr, 99, luviWriteDownETH(mgr))(ctx), IsNil)
-	events := luviLossEvents(ctx)[before:]
+	events := luviMigrationLossEvents(ctx)[before:]
 	c.Assert(events, HasLen, 1)
 	c.Check(luviEventAttr(events[0], "pool"), Equals, "ETH.ETH")
 	c.Check(luviEventAttr(events[0], "scope"), Equals, "migration/99to100")
@@ -267,12 +267,12 @@ func (s *LuviMigrateGateSuite) TestWrapperSeesRawStoreWrites(c *C) {
 		return nil
 	}
 	c.Assert(k.PoolExist(ctx, common.DOGEAsset), Equals, true)
-	before := len(luviLossEvents(ctx))
+	before := len(luviMigrationLossEvents(ctx))
 	c.Assert(luviGuardMigration(mgr, 99, rawDelete)(ctx), IsNil)
 	c.Assert(k.PoolExist(ctx, common.DOGEAsset), Equals, false)
 	// the LP units vanished without withdraw events (ledger) and the pool's
 	// LP value with them (removed)
-	events := luviLossEvents(ctx)[before:]
+	events := luviMigrationLossEvents(ctx)[before:]
 	c.Assert(events, HasLen, 2)
 	for i, kind := range []string{"ledger", "removed"} {
 		c.Check(luviEventAttr(events[i], "pool"), Equals, "DOGE.DOGE")
@@ -343,7 +343,7 @@ func (s *LuviMigrateGateSuite) TestWrapperIgnoresNeutralAndNewPools(c *C) {
 
 func (s *LuviMigrateGateSuite) TestWrapperPassesThroughErrors(c *C) {
 	ctx, mgr := setupLuviMigrationFixture(c)
-	before := len(luviLossEvents(ctx))
+	before := len(luviMigrationLossEvents(ctx))
 	failing := func(ctx sdk.Context) error {
 		if err := luviWriteDownETH(mgr)(ctx); err != nil {
 			return err
@@ -352,7 +352,7 @@ func (s *LuviMigrateGateSuite) TestWrapperPassesThroughErrors(c *C) {
 	}
 	err := luviGuardMigration(mgr, 99, failing)(ctx)
 	c.Assert(err, ErrorMatches, "boom")
-	c.Check(luviLossEvents(ctx)[before:], HasLen, 0)
+	c.Check(luviMigrationLossEvents(ctx)[before:], HasLen, 0)
 }
 
 func (s *LuviMigrateGateSuite) TestWrapperRespectsLUVIGuardMimir(c *C) {
@@ -363,9 +363,9 @@ func (s *LuviMigrateGateSuite) TestWrapperRespectsLUVIGuardMimir(c *C) {
 	c.Check(scope.changes(scopeCtx, mgr.Keeper()), HasLen, 0)
 	scope.endMigration(scopeCtx, mgr.Keeper()) // nil scope: no-op
 
-	before := len(luviLossEvents(ctx))
+	before := len(luviMigrationLossEvents(ctx))
 	c.Assert(luviGuardMigration(mgr, 99, luviWriteDownETH(mgr))(ctx), IsNil)
-	c.Check(luviLossEvents(ctx)[before:], HasLen, 0)
+	c.Check(luviMigrationLossEvents(ctx)[before:], HasLen, 0)
 }
 
 func (s *LuviMigrateGateSuite) TestLuviStatesEqual(c *C) {
