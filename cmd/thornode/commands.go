@@ -168,6 +168,7 @@ func addModuleInitFlags(startCmd *cobra.Command) {
 
 		// replace sdk logger with thorlog
 		if zl, ok := serverCtx.Logger.Impl().(*zerolog.Logger); ok {
+			zl = consoleLogOutput(zl, serverCtx.Viper, cmd.OutOrStdout())
 			logger := zl.With().CallerWithSkipFrameCount(3).Logger()
 			serverCtx.Logger = thorlog.SdkLogWrapper{
 				Logger: &logger,
