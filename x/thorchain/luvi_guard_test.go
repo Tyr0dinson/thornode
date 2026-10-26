@@ -373,3 +373,13 @@ func (s *LuviGuardSuite) TestAccumulator(c *C) {
 	setPoolLuviAccumulatorFields(e.ctx, k, &empty, pool)
 	c.Check(empty.LuviG, Equals, "")
 }
+
+func (s *LuviGuardSuite) TestEndBlockAdvancesAccumulator(c *C) {
+	e := newLuviEnv(c, luviRegime{"light synths", 40})
+	_, err := NewAppModule(e.mgr, false, true).EndBlock(e.ctx)
+	c.Assert(err, IsNil)
+	rec, found, err := e.mgr.Keeper().GetPoolLuviAccumulator(e.ctx, e.asset)
+	c.Assert(err, IsNil)
+	c.Assert(found, Equals, true)
+	c.Check(rec.Height, Equals, e.ctx.BlockHeight())
+}

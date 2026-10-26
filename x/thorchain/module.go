@@ -421,6 +421,11 @@ func (am AppModule) EndBlock(goCtx context.Context) ([]abci.ValidatorUpdate, err
 	am.mgr.Keeper().PruneRefundCleanups(ctx)
 	telemetry.ModuleMeasureSince("prune_refund_cleanups", start, "thornode", "block", "endblock")
 
+	// last, so each accumulator step covers the whole block
+	start = telemetry.Now()
+	advanceLuviAccumulators(ctx, am.mgr.Keeper())
+	telemetry.ModuleMeasureSince("luvi_accumulators", start, "thornode", "block", "endblock")
+
 	return validators, nil
 }
 
