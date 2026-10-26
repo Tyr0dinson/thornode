@@ -12,12 +12,11 @@ import "gogoproto/gogo.proto";
 // waits for a solvency consensus, reached after it was parked, that attests its
 // vault solvent at or above the inbound's external block height.
 message SolvencyGatedInbound {
-  string chain = 1
-      [ (gogoproto.casttype) = "gitlab.com/thorchain/thornode/v3/common.Chain" ];
+  string chain = 1 [ (gogoproto.casttype) =
+                         "gitlab.com/thorchain/thornode/v3/common.Chain" ];
   // vault the inbound was sent to
-  string pub_key = 2
-      [ (gogoproto.casttype) =
-            "gitlab.com/thorchain/thornode/v3/common.PubKey" ];
+  string pub_key = 2 [ (gogoproto.casttype) =
+                           "gitlab.com/thorchain/thornode/v3/common.PubKey" ];
   // external chain height of the inbound
   int64 height = 3;
   string tx_id = 4 [
