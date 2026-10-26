@@ -70,7 +70,8 @@ func (s *DashSuite) TestInstantSendHaltBoundariesAndReadErrors(c *C) {
 	}
 	allReads := append([]string{"height"}, keys...)
 	for i, failed := range allReads {
-		bridge := &dashHaltBridge{ThorchainBridge: base,
+		bridge := &dashHaltBridge{
+			ThorchainBridge: base,
 			getHeight: func() (int64, error) {
 				if failed == "height" {
 					return 0, errors.New("height unavailable")
@@ -93,55 +94,145 @@ func (s *DashSuite) TestInstantSendHaltBoundariesAndReadErrors(c *C) {
 }
 
 func (s *DashSuite) TestInstantSendEarlyHaltRetainsReservationsAndResumes(c *C) {
-	client, f, cleanup := newDashMempoolFixture(c)
-	defer cleanup()
-	client.m = GetMetricForTest(c, common.DASHChain)
-	counter := client.m.GetCounter(metrics.DashInstantSendObserved)
-	before := testutil.ToFloat64(counter)
-	// Already delivered deposits stay charged while new queued candidates wait.
-	_, err := client.claimInstantSendBatch([]*types.TxInItem{instantSendTestItem(f, f.inbound)}, instantSendAdmission{allowed: true})
-	c.Assert(err, IsNil)
-	client.instantSendTxQueue = instantSendObservationGroups(common.DASHChain,
-		map[int64][]*types.TxInItem{100: {instantSendTestItem(f, f.lowFeeInbound)}})
-	client.nextMempoolScan = scanInstantSend
-	base := client.bridge
-	paused := true
-	client.bridge = &dashHaltBridge{ThorchainBridge: base, getMimir: func(key string) (int64, error) {
-		if paused && key == "HaltDASHChain" {
-			return 100, nil
+	for _, key := range []string{"HaltDASHChain", "SolvencyHaltDASHChain", "HaltChainGlobal", "NodePauseChainGlobal"} {
+		c.Logf("halt control: %s", key)
+		client, f, cleanup := newDashMempoolFixture(c)
+		defer cleanup()
+		client.m = GetMetricForTest(c, common.DASHChain)
+		counter := client.m.GetCounter(metrics.DashInstantSendObserved)
+		before := testutil.ToFloat64(counter)
+		batch, err := client.FetchMemPool(123)
+		c.Assert(err, IsNil)
+		c.Assert(batch.MemPool, Equals, true)
+		c.Assert(batch.TxArray, HasLen, 2)
+		// Already delivered deposits stay charged while new queued candidates wait.
+		_, err = client.claimInstantSendBatch([]*types.TxInItem{instantSendTestItem(f, f.inbound)}, instantSendAdmission{allowed: true})
+		c.Assert(err, IsNil)
+		client.instantSendTxQueue = instantSendObservationGroups(common.DASHChain,
+			map[int64][]*types.TxInItem{100: {instantSendTestItem(f, f.lowFeeInbound)}})
+		base := client.bridge
+		phase := "halted"
+		client.bridge = &dashHaltBridge{ThorchainBridge: base, getMimir: func(k string) (int64, error) {
+			if k == key {
+				switch phase {
+				case "halted":
+					return 100, nil
+				case "failed refresh":
+					return -1, errors.New("halt refresh failed")
+				}
+			}
+			return base.GetMimir(k)
+		}}
+		var state sharedutxo.InstantSendState
+		var marked bool
+		for _, nextPhase := range []string{"halted", "failed refresh"} {
+			phase = nextPhase
+			batch, err = client.FetchMemPool(123)
+			c.Assert(err, IsNil)
+			c.Assert(batch.MemPool, Equals, true)
+			c.Assert(batch.TxArray, HasLen, 0) // ordinary outbounds were already delivered
+			c.Assert(f.instantSendCalls, Equals, 0)
+			c.Assert(client.instantSendTxQueue, HasLen, 0)
+			c.Assert(client.nextMempoolScan, Equals, scanOutbounds)
+			state, err = client.temporalStorage.GetInstantSendState()
+			c.Assert(err, IsNil)
+			c.Assert(state.Reserved, Equals, uint64(common.One/10))
+			marked, err = client.temporalStorage.HasObservedTx(f.lowFeeInbound)
+			c.Assert(err, IsNil)
+			c.Assert(marked, Equals, false)
+			c.Assert(testutil.ToFloat64(client.m.GetGauge(metrics.InstantSendAvailable)), Equals, float64(0))
+			c.Assert(testutil.ToFloat64(counter), Equals, before)
 		}
-		return base.GetMimir(key)
-	}}
-	batch, err := client.FetchMemPool(123)
-	c.Assert(err, IsNil)
-	c.Assert(batch.MemPool, Equals, true)
-	c.Assert(batch.TxArray, HasLen, 2)
-	c.Assert(f.instantSendCalls, Equals, 0)
-	c.Assert(client.instantSendTxQueue, HasLen, 0)
-	c.Assert(client.nextMempoolScan, Equals, scanOutbounds)
-	state, err := client.temporalStorage.GetInstantSendState()
-	c.Assert(err, IsNil)
-	c.Assert(state.Reserved, Equals, uint64(common.One/10))
-	marked, err := client.temporalStorage.HasObservedTx(f.lowFeeInbound)
-	c.Assert(err, IsNil)
-	c.Assert(marked, Equals, false)
-	c.Assert(testutil.ToFloat64(client.m.GetGauge(metrics.InstantSendAvailable)), Equals, float64(0))
-	c.Assert(testutil.ToFloat64(counter), Equals, before)
+		c.Assert(f.ordinaryCalls, Equals, 3)
 
-	paused = false
-	batch, err = client.FetchMemPool(123)
-	c.Assert(err, IsNil)
-	c.Assert(batch.MemPool, Equals, true)
-	batch, err = client.FetchMemPool(123)
-	c.Assert(err, IsNil)
-	c.Assert(batch.MemPool, Equals, false)
-	c.Assert(batch.TxArray, HasLen, 1)
-	c.Assert(batch.TxArray[0].Tx, Equals, f.lowFeeInbound)
+		phase = "recovered"
+		batch, err = client.FetchMemPool(123)
+		c.Assert(err, IsNil)
+		c.Assert(batch.MemPool, Equals, true)
+		batch, err = client.FetchMemPool(123)
+		c.Assert(err, IsNil)
+		c.Assert(batch.MemPool, Equals, false)
+		c.Assert(batch.TxArray, HasLen, 1)
+		c.Assert(batch.TxArray[0].Tx, Equals, f.lowFeeInbound)
+		// Neither the earlier reservation nor the resumed observation is emitted twice.
+		_, err = client.FetchMemPool(123)
+		c.Assert(err, IsNil)
+		batch, err = client.FetchMemPool(123)
+		c.Assert(err, IsNil)
+		c.Assert(batch.TxArray, HasLen, 0)
+	}
+}
+
+func (s *DashSuite) TestInstantSendEarlyLookupFailureAndRecovery(c *C) {
+	for _, lookup := range []string{"height", "HaltDASHChain", "SolvencyHaltDASHChain", "HaltChainGlobal", "NodePauseChainGlobal", "missing bridge"} {
+		c.Logf("failed lookup: %s", lookup)
+		client, f, cleanup := newDashMempoolFixture(c)
+		defer cleanup()
+		base := client.bridge
+		client.bridge = &dashHaltBridge{
+			ThorchainBridge: base,
+			getHeight: func() (int64, error) {
+				if lookup == "height" {
+					return 0, errors.New("height unavailable")
+				}
+				return base.GetBlockHeight()
+			},
+			getMimir: func(key string) (int64, error) {
+				if lookup == key {
+					return -1, errors.New("Mimir unavailable")
+				}
+				return base.GetMimir(key)
+			},
+		}
+		entries := f.entries
+		if lookup == "missing bridge" {
+			client.bridge = nil
+			// No vault lookup is needed, even if the seeded address cache expires.
+			f.entries = nil
+		}
+		client.nextMempoolScan = scanInstantSend
+		client.instantSendTxQueue = instantSendObservationGroups(common.DASHChain,
+			map[int64][]*types.TxInItem{100: {instantSendTestItem(f, f.inbound)}})
+		batch, err := client.FetchMemPool(123)
+		c.Assert(err, IsNil)
+		c.Assert(batch.MemPool, Equals, true)
+		if lookup == "missing bridge" {
+			c.Assert(batch.TxArray, HasLen, 0)
+		} else {
+			c.Assert(batch.TxArray, HasLen, 2)
+			for _, item := range batch.TxArray {
+				c.Assert(item.Sender, Equals, f.asgard)
+			}
+		}
+		c.Assert(f.ordinaryCalls, Equals, 1)
+		c.Assert(f.instantSendCalls, Equals, 0)
+		c.Assert(client.instantSendTxQueue, HasLen, 0)
+		c.Assert(client.nextMempoolScan, Equals, scanOutbounds)
+		var marked bool
+		for _, id := range []string{f.inbound, f.lowFeeInbound} {
+			marked, err = client.temporalStorage.HasObservedTx(id)
+			c.Assert(err, IsNil)
+			c.Assert(marked, Equals, false)
+		}
+		state, err := client.temporalStorage.GetInstantSendState()
+		c.Assert(err, IsNil)
+		c.Assert(state.Reserved, Equals, uint64(0))
+
+		client.bridge = base
+		f.entries = entries
+		_, err = client.FetchMemPool(123)
+		c.Assert(err, IsNil)
+		batch, err = client.FetchMemPool(123)
+		c.Assert(err, IsNil)
+		c.Assert(batch.MemPool, Equals, false)
+		c.Assert(batch.TxArray, HasLen, 2)
+	}
 }
 
 func (s *DashSuite) TestInstantSendLateHaltFallsBackWithoutClaims(c *C) {
 	for _, queued := range []bool{false, true} {
-		for _, unavailable := range []bool{false, true} {
+		for _, failure := range []string{"halt", "height", "HaltDASHChain", "SolvencyHaltDASHChain", "HaltChainGlobal", "NodePauseChainGlobal"} {
+			c.Logf("queued: %v, late failure: %s", queued, failure)
 			client, f, cleanup := newDashMempoolFixture(c)
 			defer cleanup()
 			client.m = GetMetricForTest(c, common.DASHChain)
@@ -159,15 +250,26 @@ func (s *DashSuite) TestInstantSendLateHaltFallsBackWithoutClaims(c *C) {
 				}
 			}
 			base := client.bridge
-			client.bridge = &dashHaltBridge{ThorchainBridge: base, getMimir: func(key string) (int64, error) {
-				if key == "HaltDASHChain" && paused.Load() {
-					if unavailable {
-						return -1, errors.New("Mimir unavailable")
+			client.bridge = &dashHaltBridge{
+				ThorchainBridge: base,
+				getHeight: func() (int64, error) {
+					if paused.Load() && failure == "height" {
+						return 0, errors.New("height unavailable")
 					}
-					return 100, nil
-				}
-				return base.GetMimir(key)
-			}}
+					return base.GetBlockHeight()
+				},
+				getMimir: func(key string) (int64, error) {
+					if paused.Load() {
+						if key == failure {
+							return -1, errors.New("Mimir unavailable")
+						}
+						if key == "HaltDASHChain" && failure == "halt" {
+							return 100, nil
+						}
+					}
+					return base.GetMimir(key)
+				},
+			}
 			batch, err := client.FetchMemPool(123)
 			c.Assert(err, IsNil)
 			c.Assert(batch.MemPool, Equals, true)

@@ -77,12 +77,15 @@ func (s *DashSuite) TestDashSignTxCheckpointAndBroadcast(c *C) {
 			var id string
 			c.Assert(json.Unmarshal(req.Params[0], &id), IsNil)
 			if id == strings.Repeat("2", 64) {
-				result = map[string]any{"txid": id, "instantlock": true,
-					"vin": []any{map[string]any{"txid": strings.Repeat("3", 64), "vout": 0}}}
+				result = map[string]any{
+					"txid": id, "instantlock": true,
+					"vin": []any{map[string]any{"txid": strings.Repeat("3", 64), "vout": 0}},
+				}
 			} else {
 				c.Assert(id, Equals, strings.Repeat("3", 64))
 				result = map[string]any{"txid": id, "vout": []any{map[string]any{
-					"n": 0, "value": 0.6, "scriptPubKey": map[string]any{"hex": customerScript, "type": "pubkeyhash"}}}}
+					"n": 0, "value": 0.6, "scriptPubKey": map[string]any{"hex": customerScript, "type": "pubkeyhash"},
+				}}}
 			}
 		case "sendrawtransaction":
 			c.Assert(req.Params, HasLen, 2)

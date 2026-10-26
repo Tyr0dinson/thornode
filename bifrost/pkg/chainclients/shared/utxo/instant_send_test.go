@@ -34,9 +34,12 @@ func TestInstantSendAllowanceSelectionAndSettlement(t *testing.T) {
 	store, _ := openObservationMarkerStorage(t, t.TempDir(), nil)
 	readyInstantSendStore(t, store)
 	claims := []InstantSendClaim{
-		{TxID: "oversize", Amount: 101}, {TxID: "small", Amount: 9},
-		{TxID: "FIRST", Amount: 60}, {TxID: "first", Amount: 60},
-		{TxID: "second", Amount: 40}, {TxID: "waiting", Amount: 10},
+		{TxID: "oversize", Amount: 101},
+		{TxID: "small", Amount: 9},
+		{TxID: "FIRST", Amount: 60},
+		{TxID: "first", Amount: 60},
+		{TxID: "second", Amount: 40},
+		{TxID: "waiting", Amount: 10},
 		{TxID: "vault", Amount: 500, Exempt: true},
 	}
 	accepted, err := store.ClaimInstantSendTxs(claims, 10, 100, true, 1)

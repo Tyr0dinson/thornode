@@ -1,12 +1,8 @@
 package features
 
 import (
-	"bufio"
 	"fmt"
 	rand "math/rand/v2"
-	"net/http"
-	"strconv"
-	"strings"
 	"time"
 
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -16,27 +12,40 @@ import (
 	"gitlab.com/thorchain/thornode/v3/test/simulation/pkg/utxo"
 )
 
+const (
+	dashInstantSendSmallPayment = 18 * common.One / 10
+	dashInstantSendLargePayment = 22 * common.One / 10
+)
+
 type DashInstantSendActor struct {
 	Actor
 
 	account *User
 	inbound common.Address
 	dash    *utxo.Client
+
+	getMimir      func(string) (int64, error)
+	readMetrics   func() (instantSendMetrics, error)
+	readyDeadline time.Time
+	readyError    error
 }
 
 // DashInstantSend wires up a feature actor that exercises different InstantSend paths.
 func DashInstantSend(rng *rand.Rand) *Actor {
 	a := &DashInstantSendActor{
-		Actor: *NewActor("Feature-DASH-InstantSend", rng),
+		Actor:       *NewActor("Feature-DASH-InstantSend", rng),
+		readMetrics: readInstantSendMetrics,
 	}
 	a.Timeout = 5 * time.Minute
+	a.Interval = time.Second
 
 	a.Ops = []Op{
+		a.waitForReadiness,
 		a.acquireUser,
 		a.initContext,
-		a.happyPathInstantSend,
-		a.largerPaymentInstantSend,
-		a.lowFeeInstantSend,
+		a.happyPath,
+		a.largerPayment,
+		a.lowFee,
 		a.releaseAccount,
 	}
 
@@ -82,113 +91,56 @@ func (a *DashInstantSendActor) initContext(_ *OpConfig) OpResult {
 	return OpResult{Continue: true}
 }
 
-// happyPathInstantSend checks that a standard deposit is observed before mining.
-func (a *DashInstantSendActor) happyPathInstantSend(_ *OpConfig) OpResult {
-	return a.observeInstantSend("happy-path", 18*common.One/10, 0)
+// happyPath checks that a standard deposit is finalised before mining.
+func (a *DashInstantSendActor) happyPath(_ *OpConfig) OpResult {
+	return a.observePayment("happy-path", dashInstantSendSmallPayment, 0)
 }
 
-// observeInstantSend verifies that Bifrost accepted a DASH transaction via the mempool path.
-//
-// Verification method: we poll Bifrost's Prometheus counter
-// `dash_instantsend_observed_total` (served on `http://localhost:9000/metrics`).
-// The actor records the counter value before broadcast and expects it to increase
-// shortly after broadcast. This is a Bifrost-side signal (tx observed and processed),
-// not just a Dash-side signal (tx `instantlock=true` in RPC).
-//
-// Thornode does not receive a "mempool vs mined" flag, nor any InstantSend/InstantLock
-// indicator. So Thornode endpoints alone can't prove a tx was accepted from the Dash
-// mempool. Instead, we combine signals:
-//  1. Bifrost metric increments (Bifrost observed InstantSend in mempool), and
-//  2. Thornode exposes tx stages for the txid, and at that exact moment we confirm
-//     via Dash RPC that the tx is still unconfirmed and still in the mempool, and the
-//     Dash height hasn't advanced since broadcast.
-func (a *DashInstantSendActor) observeInstantSend(name string, amount, feeSats uint64) OpResult {
+// observePayment requires THORChain to finalise this transaction while Dash
+// still reports it as InstantSend locked and unconfirmed in the mempool. The Dash
+// height must remain unchanged since broadcast so a mined observation cannot pass.
+func (a *DashInstantSendActor) observePayment(name string, amount, feeSats uint64) (result OpResult) {
+	// A failed scenario has no later release operation; release its account here.
+	defer func() {
+		if result.Finish {
+			a.releaseAccount(nil)
+		}
+	}()
 	if a.dash == nil {
 		return OpResult{Finish: true, Error: fmt.Errorf("Dash client not initialized")}
 	}
 
 	const (
 		maxAttempts      = 10
-		metricWaitWindow = 12 * time.Second
 		thornodeWaitMax  = 25 * time.Second
 		blockSyncTimeout = 30 * time.Second
 	)
 
-	var sawMempoolLock bool
-	var sawConfirmedBeforeLock bool
-	var sawThornodeTx bool
-
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
-		startMetric, _ := readInstantSendMetric()
-
-		// Broadcast right after a new DASH block to maximize time in the mempool before the next block.
-		broadcastHeight := int64(0)
-		_, height, err := a.dash.WaitForBlockAdvance(blockSyncTimeout)
-		if err == nil {
-			broadcastHeight = height
-		} else {
+		// Broadcast right after a new DASH block to maximize time before mining.
+		_, broadcastHeight, err := a.dash.WaitForBlockAdvance(blockSyncTimeout)
+		if err != nil {
 			a.Log().Debug().Err(err).Msg("failed to sync to next DASH block before broadcast")
+			broadcastHeight, err = a.dash.GetBlockCount()
+			if err != nil {
+				return OpResult{Finish: true, Error: fmt.Errorf("read Dash height before broadcast: %w", err)}
+			}
 		}
 
 		txID, err := a.broadcastTx(name, amount, feeSats)
 		if err != nil {
 			return OpResult{Finish: true, Error: err}
 		}
-		if broadcastHeight == 0 {
-			height, err := a.dash.GetBlockCount()
-			if err == nil {
-				broadcastHeight = height
-			}
-		}
 
-		// Treat InstantSend as "accepted" when Bifrost observes it (metric increments),
-		// then additionally prove Thornode observed it before mining by correlating with Dash RPC.
-		attemptSawMempoolLock := false
-		metricObserved := false
-		metricDeadline := time.Now().Add(metricWaitWindow)
-		for time.Now().Before(metricDeadline) {
-			currentMetric, _ := readInstantSendMetric()
-			// analyze-ignore(float-comparison)
-			if currentMetric-startMetric > 0 {
-				metricObserved = true
-				break
-			}
-
-			txInfo, err := a.dash.GetRawTransactionVerbose(txID)
-			if err == nil {
-				if txInfo.Confirmations == 0 && txInfo.InstantLock {
-					attemptSawMempoolLock = true
-					sawMempoolLock = true
-				}
-				// If the tx makes it into a block before we see an InstantLock while unconfirmed,
-				// this attempt cannot succeed via the mempool path.
-				if txInfo.Confirmations > 0 && !attemptSawMempoolLock {
-					sawConfirmedBeforeLock = true
-					break
-				}
-			}
-
-			time.Sleep(200 * time.Millisecond)
-		}
-
-		if !metricObserved {
-			a.Log().Info().Int("attempt", attempt).Str("txid", txID).Msg("InstantSend metric did not move; retrying")
-			time.Sleep(time.Second)
-			continue
-		}
-
-		// Wait for Thornode to expose tx stages for this txid, but only count success if the tx
-		// is still in Dash mempool (confirmations=0 + mempool entry exists) and the Dash tip
-		// hasn't advanced since broadcast.
 		thornodeDeadline := time.Now().Add(thornodeWaitMax)
 		for time.Now().Before(thornodeDeadline) {
-			// Bail early if Dash has mined a new block since broadcast; this attempt can no longer
-			// prove "observed by Thornode before mining".
-			if broadcastHeight > 0 {
-				currentHeight, err := a.dash.GetBlockCount()
-				if err == nil && currentHeight != broadcastHeight {
-					break
-				}
+			currentHeight, err := a.dash.GetBlockCount()
+			if err != nil {
+				time.Sleep(250 * time.Millisecond)
+				continue
+			}
+			if currentHeight != broadcastHeight {
+				break
 			}
 
 			stages, err := thornode.GetTxStages(txID)
@@ -196,67 +148,58 @@ func (a *DashInstantSendActor) observeInstantSend(name string, amount, feeSats u
 				time.Sleep(250 * time.Millisecond)
 				continue
 			}
-
-			sawTx := stages.InboundObserved.FinalCount > 0 || stages.InboundObserved.Completed
-			if pre, ok := stages.InboundObserved.GetPreConfirmationCountOk(); ok && *pre > 0 {
-				sawTx = true
-			}
-			if !sawTx {
+			if stages.InboundFinalised == nil || !stages.InboundFinalised.Completed {
 				time.Sleep(250 * time.Millisecond)
 				continue
 			}
-			sawThornodeTx = true
 
-			// Re-check the constraints at the moment Thornode sees the tx.
-			currentHeight, err := a.dash.GetBlockCount()
-			if err != nil || broadcastHeight == 0 || currentHeight != broadcastHeight {
-				break
-			}
-
+			// Check Dash after THORChain finalisation, for this exact transaction.
 			txInfo, err := a.dash.GetRawTransactionVerbose(txID)
-			if err != nil || txInfo.Confirmations != 0 {
+			if err != nil {
+				time.Sleep(250 * time.Millisecond)
+				continue
+			}
+			if txInfo.Confirmations != 0 {
 				break
 			}
-
+			if !txInfo.InstantSendLocked() {
+				time.Sleep(250 * time.Millisecond)
+				continue
+			}
 			_, err = a.dash.GetMempoolEntry(txID)
 			if err != nil {
 				break
 			}
+			currentHeight, err = a.dash.GetBlockCount()
+			if err != nil || currentHeight != broadcastHeight {
+				break
+			}
 
-			a.Log().
-				Info().
+			a.Log().Info().
 				Int("attempt", attempt).
 				Str("txid", txID).
 				Int64("dash_height", broadcastHeight).
-				Msg("InstantSend observed by Thornode while tx remained in Dash mempool")
+				Msg("InstantSend finalised by THORChain while tx remained locked in Dash mempool")
 			return OpResult{Continue: true}
 		}
 
-		a.Log().Info().Int("attempt", attempt).Str("txid", txID).Msg("InstantSend metric moved, but tx was not provably observed before mining; retrying")
+		a.Log().Info().Int("attempt", attempt).Str("txid", txID).
+			Msg("could not verify InstantSend finalisation before mining; retrying")
 		time.Sleep(time.Second)
 	}
 
-	switch {
-	case sawThornodeTx:
-		return OpResult{Finish: true, Error: fmt.Errorf("failed to confirm observation before mining")}
-	case sawMempoolLock:
-		return OpResult{Finish: true, Error: fmt.Errorf("InstantSend-locked tx not observed by THORChain before mining")}
-	case sawConfirmedBeforeLock:
-		return OpResult{Finish: true, Error: fmt.Errorf("tx mined before InstantSend lock; increase Dash mocknet block time")}
-	default:
-		return OpResult{Finish: true, Error: fmt.Errorf("InstantSend lock not observed via mempool")}
-	}
+	return OpResult{Finish: true, Error: fmt.Errorf("failed to finalise inbound on THORChain while InstantSend locked in Dash mempool")}
 }
 
-// largerPaymentInstantSend checks a payment above the former $100 simulation limit
+// largerPayment checks a payment above the former $100 simulation limit
 // at the fixed $50 DASH price.
-func (a *DashInstantSendActor) largerPaymentInstantSend(_ *OpConfig) OpResult {
-	return a.observeInstantSend("larger-payment", 22*common.One/10, 0)
+func (a *DashInstantSendActor) largerPayment(_ *OpConfig) OpResult {
+	return a.observePayment("larger-payment", dashInstantSendLargePayment, 0)
 }
 
-// lowFeeInstantSend checks a fee below the former InstantSend floor while still paying for relay.
-func (a *DashInstantSendActor) lowFeeInstantSend(_ *OpConfig) OpResult {
-	return a.observeInstantSend("low-fee", 18*common.One/10, 600)
+// lowFee checks a fee below the former InstantSend floor while still paying for relay.
+func (a *DashInstantSendActor) lowFee(_ *OpConfig) OpResult {
+	return a.observePayment("low-fee", dashInstantSendSmallPayment, 600)
 }
 
 // releaseAccount makes the account available to other actors and finishes this actor.
@@ -271,6 +214,11 @@ func (a *DashInstantSendActor) releaseAccount(_ *OpConfig) OpResult {
 
 // broadcastTx signs and broadcasts a NOOP deposit with the scenario's amount and fee override.
 func (a *DashInstantSendActor) broadcastTx(scenario string, amount uint64, feeSats uint64) (string, error) {
+	// Recheck after block synchronization, before spending funds on this attempt.
+	_, err := a.checkReadiness(amount, amount)
+	if err != nil {
+		return "", fmt.Errorf("InstantSend not ready for %s: %w", scenario, err)
+	}
 	// Build memo and tx with a fixed fee override tuned for the scenario.
 	// Use NOOP to avoid pool-availability issues.
 	// This actor is focused on InstantSend finality paths, not swap execution.
@@ -300,27 +248,4 @@ func (a *DashInstantSendActor) broadcastTx(scenario string, amount uint64, feeSa
 		Msg("broadcasted DASH tx")
 
 	return txID, nil
-}
-
-// readInstantSendMetric scrapes the local Bifrost metrics endpoint for the
-// InstantSend observation counter.
-func readInstantSendMetric() (float64, error) {
-	resp, err := http.Get("http://localhost:9000/metrics")
-	if err != nil {
-		return 0, err
-	}
-	defer resp.Body.Close()
-
-	scanner := bufio.NewScanner(resp.Body)
-	for scanner.Scan() {
-		line := scanner.Text()
-		if strings.HasPrefix(line, "dash_instantsend_observed_total") {
-			parts := strings.Fields(line)
-			if len(parts) == 2 {
-				return strconv.ParseFloat(parts[1], 64)
-			}
-		}
-	}
-
-	return 0, scanner.Err()
 }

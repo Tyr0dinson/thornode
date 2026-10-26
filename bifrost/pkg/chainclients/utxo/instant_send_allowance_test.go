@@ -41,8 +41,10 @@ func (b *instantSendPolicyBridge) GetMimir(key string) (int64, error) {
 func (b *instantSendPolicyBridge) FetchNodeStatus() (ttypes.NodeStatus, error) { return b.status, nil }
 
 func instantSendTestItem(f *dashMempoolFixture, id string) *types.TxInItem {
-	return &types.TxInItem{Tx: id, Sender: f.user, To: f.asgard, BlockHeight: 100,
-		Coins: common.NewCoins(common.NewCoin(common.DASHAsset, cosmos.NewUint(common.One/10)))}
+	return &types.TxInItem{
+		Tx: id, Sender: f.user, To: f.asgard, BlockHeight: 100,
+		Coins: common.NewCoins(common.NewCoin(common.DASHAsset, cosmos.NewUint(common.One/10))),
+	}
 }
 
 func freshInstantSendJournal(c *C, client *Client) func() {
@@ -71,8 +73,10 @@ func (s *DashSuite) TestInstantSendAllowanceWaitsForExactChainLock(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(marked, Equals, false)
 	// A higher block that does not include our inbound cannot refill the budget.
-	c.Assert(client.reconcileInstantSendBlock(&btcjson.GetBlockVerboseTxResult{Height: 200,
-		Tx: []btcjson.TxRawResult{{Txid: f.lockedOutbound}}}), IsNil)
+	c.Assert(client.reconcileInstantSendBlock(&btcjson.GetBlockVerboseTxResult{
+		Height: 200,
+		Tx:     []btcjson.TxRawResult{{Txid: f.lockedOutbound}},
+	}), IsNil)
 	state, err = client.temporalStorage.GetInstantSendState()
 	c.Assert(err, IsNil)
 	c.Assert(state.Available(client.instantSendMaxAmount), Equals, uint64(0))
@@ -492,8 +496,10 @@ func (s *DashSuite) TestInstantSendWarmupNeedsActiveNodeAndCompletedScannerHeigh
 	client, cleanup := newDashClientForRPCServer(c, server.URL)
 	defer cleanup()
 	defer freshInstantSendJournal(c, client)()
-	bridge := &instantSendPolicyBridge{status: ttypes.NodeStatus_Active,
-		values: map[string]int64{DashInstantSendEnabledMimirKey: 1, DashInstantSendMaxAmountMimirKey: 100 * common.One}}
+	bridge := &instantSendPolicyBridge{
+		status: ttypes.NodeStatus_Active,
+		values: map[string]int64{DashInstantSendEnabledMimirKey: 1, DashInstantSendMaxAmountMimirKey: 100 * common.One},
+	}
 	client.bridge = bridge
 	// An inactive or unhealthy node must not initialize an empty allowance.
 	admission, err := client.prepareInstantSendAllowance(nil)

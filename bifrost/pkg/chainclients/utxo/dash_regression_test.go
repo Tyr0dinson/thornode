@@ -140,8 +140,10 @@ func (s *DashSuite) TestDashObservationGroupsClaimOnlyDeliveredTransactions(c *C
 	defer cleanup()
 	first, second := fixture.inbound, fixture.lowFeeInbound
 	item := func(id string, height int64) *types.TxInItem {
-		return &types.TxInItem{Tx: id, BlockHeight: height, Sender: fixture.user, To: fixture.asgard,
-			Coins: common.NewCoins(common.NewCoin(common.DASHAsset, cosmos.NewUint(common.One/10)))}
+		return &types.TxInItem{
+			Tx: id, BlockHeight: height, Sender: fixture.user, To: fixture.asgard,
+			Coins: common.NewCoins(common.NewCoin(common.DASHAsset, cosmos.NewUint(common.One/10))),
+		}
 	}
 	groups := instantSendObservationGroups(client.GetChain(), map[int64][]*types.TxInItem{
 		200: {item(second, 200)},
@@ -190,8 +192,10 @@ func (s *DashSuite) TestDashObservationBatchPreservesOrderAndFirstItem(c *C) {
 func (s *DashSuite) TestDashObservationStorageFailureRetainsPendingGroup(c *C) {
 	client, fixture, cleanup := newDashMempoolFixture(c)
 	defer cleanup()
-	item := &types.TxInItem{Tx: fixture.inbound, BlockHeight: 100, Sender: fixture.user, To: fixture.asgard,
-		Coins: common.NewCoins(common.NewCoin(common.DASHAsset, cosmos.NewUint(common.One/10)))}
+	item := &types.TxInItem{
+		Tx: fixture.inbound, BlockHeight: 100, Sender: fixture.user, To: fixture.asgard,
+		Coins: common.NewCoins(common.NewCoin(common.DASHAsset, cosmos.NewUint(common.One/10))),
+	}
 	client.instantSendTxQueue = instantSendObservationGroups(client.GetChain(), map[int64][]*types.TxInItem{100: {item}})
 	closed, closeStorage := newDashClientForRPCServer(c, "http://localhost:1")
 	healthyStorage := client.temporalStorage

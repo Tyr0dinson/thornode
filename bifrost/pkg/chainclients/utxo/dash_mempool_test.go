@@ -51,8 +51,10 @@ func newDashMempoolFixture(c *C) (*Client, *dashMempoolFixture, func()) {
 		f.txs[id] = map[string]any{
 			"txid": id, "hash": id, "version": 2, "instantlock": locked,
 			"vin": []any{map[string]any{"txid": prev, "vout": 0, "sequence": uint32(4294967295)}},
-			"vout": []any{output(destination, 0.1), map[string]any{"n": 1, "value": 0,
-				"scriptPubKey": map[string]any{"hex": newDashMemoScriptHex(c, memo), "type": "nulldata"}}},
+			"vout": []any{output(destination, 0.1), map[string]any{
+				"n": 1, "value": 0,
+				"scriptPubKey": map[string]any{"hex": newDashMemoScriptHex(c, memo), "type": "nulldata"},
+			}},
 		}
 		f.entries[id] = dashTestMempoolEntry()
 		f.entries[id]["instantlock"] = strconv.FormatBool(locked)
@@ -119,8 +121,10 @@ func newDashMempoolFixture(c *C) (*Client, *dashMempoolFixture, func()) {
 				return map[string]any{"hash": hash, "height": 100, "confirmations": 1}
 			}
 			c.Assert(hash, Equals, blockHash)
-			return map[string]any{"hash": hash, "height": 150, "chainlock": f.chainLocked,
-				"tx": []any{f.txs[f.lockedOutbound], f.txs[f.unlockedOutbound]}}
+			return map[string]any{
+				"hash": hash, "height": 150, "chainlock": f.chainLocked,
+				"tx": []any{f.txs[f.lockedOutbound], f.txs[f.unlockedOutbound]},
+			}
 		default:
 			c.Fatalf("unexpected RPC %s", method)
 			return nil

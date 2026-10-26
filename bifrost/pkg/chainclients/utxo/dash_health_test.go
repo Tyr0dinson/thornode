@@ -63,6 +63,7 @@ func (*dashHealthFetcher) GetNetworkFee() (uint64, uint64) { return 1, 1 }
 func (*dashHealthFetcher) FetchTxs(int64, int64) (types.TxIn, error) {
 	return types.TxIn{}, nil
 }
+
 func (*dashHealthFetcher) FetchMemPool(int64) (types.TxIn, error) {
 	return types.TxIn{}, nil
 }

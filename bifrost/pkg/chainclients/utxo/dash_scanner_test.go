@@ -43,6 +43,7 @@ func (*dashCatchUpBridge) GetLastObservedInHeight(common.Chain) (int64, error) {
 func (*dashCatchUpBridge) FetchNodeStatus() (ttypes.NodeStatus, error) {
 	return ttypes.NodeStatus_Standby, nil
 }
+
 func (b *dashCatchUpBridge) GetAsgards() (ttypes.Vaults, error) {
 	b.asgardReads.Add(1)
 	return nil, nil
