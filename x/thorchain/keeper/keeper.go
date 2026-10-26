@@ -530,6 +530,12 @@ type KeeperSolvencyVoter interface {
 	GetSolvencyVoter(_ cosmos.Context, _ common.TxID, _ common.Chain) (SolvencyVoter, error)
 	GetSolvencyVoterQuota(ctx cosmos.Context, chain common.Chain, signer cosmos.AccAddress) (window, used uint64, err error)
 	SetSolvencyVoterQuota(ctx cosmos.Context, chain common.Chain, signer cosmos.AccAddress, window, used uint64)
+	SetSolvencyGatedInbound(ctx cosmos.Context, in SolvencyGatedInbound) error
+	DeleteSolvencyGatedInbound(ctx cosmos.Context, in SolvencyGatedInbound)
+	GetSolvencyGatedInbounds(ctx cosmos.Context, chain common.Chain, limit int) ([]SolvencyGatedInbound, error)
+	GetSolvencyGatedInboundIterator(ctx cosmos.Context) cosmos.Iterator
+	SetSolvencyConfirmation(ctx cosmos.Context, chain common.Chain, pubKey common.PubKey, externalHeight int64) error
+	GetSolvencyConfirmation(ctx cosmos.Context, chain common.Chain, pubKey common.PubKey) (externalHeight, thorHeight int64, err error)
 }
 
 type KeeperOracle interface {

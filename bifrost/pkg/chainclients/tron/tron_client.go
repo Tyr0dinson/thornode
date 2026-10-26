@@ -912,6 +912,11 @@ func (c *TronClient) ReportSolvency(height int64) error {
 		msgs = solventMsgs
 		solvent = true
 	}
+	// A solvency-gated chain also needs solvent reports while it is running.
+	if runners.ShouldReportSolventVaults(c.bridge, c.config.ChainID, halted, haltErr, len(msgs)) && len(solventMsgs) > 0 {
+		msgs = solventMsgs
+		solvent = true
+	}
 
 	for _, msg := range msgs {
 		c.logger.Info().

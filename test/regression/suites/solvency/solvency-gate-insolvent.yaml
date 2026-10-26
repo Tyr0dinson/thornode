@@ -1,0 +1,81 @@
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-eth-pool-state.yaml" }}
+---
+type: state
+genesis:
+  app_state:
+    thorchain:
+      mimirs:
+        - key: DollarsPerRune
+          value: "500000000"
+        - key: SolvencyGateInbound-BTC
+          value: "1"
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# an inbound whose funds never reached the vault, with a memo that would be refunded
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+- tx:
+    id: '{{ observe_txid 1 }}'
+    chain: BTC
+    from_address: {{ addr_btc_fox }}
+    to_address: {{ addr_btc_dog }}
+    coins:
+      - amount: "50000000"
+        asset: "BTC.BTC"
+        decimals: 8
+    gas:
+      - amount: "10000"
+        asset: "BTC.BTC"
+    memo: "not a memo"
+  block_height: 1
+  finalise_height: 1
+  observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - length == 0
+---
+########################################################################################
+# the wallet never received it: the chain halts and nothing is refunded
+########################################################################################
+type: tx-solvency
+signer: {{ addr_thor_dog }}
+chain: "BTC"
+pub_key: {{ pubkey_dog }}
+coins:
+  - amount: "100000000"
+    asset: "BTC.BTC"
+    decimals: 8
+Height: 1
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/mimir
+asserts:
+  - .["SOLVENCYHALTBTCCHAIN"] == 3
+---
+type: create-blocks
+count: 2
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - length == 0
+---
+type: check
+endpoint: http://localhost:1317/thorchain/vaults/asgard
+asserts:
+  - .[0].coins[]|select(.asset == "BTC.BTC")|.amount == "150000000"

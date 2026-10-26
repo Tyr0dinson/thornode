@@ -69,6 +69,7 @@ type (
 	RagnarokWithdrawPosition = types.RagnarokWithdrawPosition
 	ChainContract            = types.ChainContract
 	SolvencyVoter            = types.SolvencyVoter
+	SolvencyGatedInbound     = types.SolvencyGatedInbound
 	SolVaultNonce            = types.SolVaultNonce
 	SolNonceAttestVoter      = types.SolNonceAttestVoter
 	ReferenceMemo            = types.ReferenceMemo

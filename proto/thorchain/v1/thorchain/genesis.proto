@@ -16,6 +16,7 @@ import "types/type_pol_reserve.proto";
 import "types/type_reserve_contributor.proto";
 import "types/type_vault.proto";
 import "types/type_sol_vault_nonce.proto";
+import "types/type_solvency_gate.proto";
 import "types/type_tx_out.proto";
 import "types/type_mimir.proto";
 import "types/type_node_account.proto";
@@ -141,4 +142,8 @@ message GenesisState {
       [ (gogoproto.nullable) = false ];
   repeated types.SolVaultNonce sol_vault_nonces = 50
       [ (gogoproto.nullable) = false ];
+  repeated types.SolvencyGatedInbound solvency_gated_inbounds = 51 [
+    (gogoproto.nullable) = false,
+    (gogoproto.jsontag) = "solvency_gated_inbounds,omitempty"
+  ];
 }

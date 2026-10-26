@@ -23,6 +23,12 @@ func ValidateGenesis(data GenesisState) error {
 		}
 	}
 
+	for i := range data.SolvencyGatedInbounds {
+		if err := data.SolvencyGatedInbounds[i].Valid(); err != nil {
+			return err
+		}
+	}
+
 	for _, record := range data.Pools {
 		if err := record.Valid(); err != nil {
 			return err
@@ -430,6 +436,14 @@ func initGenesis(ctx cosmos.Context, keeper keeper.Keeper, data GenesisState) []
 	// still land (double pay).
 	for _, record := range data.SolVaultNonces {
 		keeper.SetSolVaultNonce(ctx, record)
+	}
+
+	// Restore solvency-gated inbounds. They are already credited to their vaults,
+	// so dropping them would leave the funds in the vault with no swap or refund.
+	for _, record := range data.SolvencyGatedInbounds {
+		if err := keeper.SetSolvencyGatedInbound(ctx, record); err != nil {
+			panic(err)
+		}
 	}
 
 	reserveAddr, _ := keeper.GetModuleAddress(ReserveName)
@@ -933,6 +947,24 @@ func ExportGenesis(ctx cosmos.Context, k keeper.Keeper) GenesisState {
 		solVaultNonces = append(solVaultNonces, record)
 	}
 
+	// Parked inbounds have no outbound yet, so the tx out scan above skipped their
+	// voters; export those too, or a parked inbound could not execute after import.
+	var solvencyGatedInbounds []types.SolvencyGatedInbound
+	iterSolvencyGate := k.GetSolvencyGatedInboundIterator(ctx)
+	defer iterSolvencyGate.Close()
+	for ; iterSolvencyGate.Valid(); iterSolvencyGate.Next() {
+		var record types.SolvencyGatedInbound
+		k.Cdc().MustUnmarshal(iterSolvencyGate.Value(), &record)
+		solvencyGatedInbounds = append(solvencyGatedInbounds, record)
+		var txInVoter ObservedTxVoter
+		txInVoter, err = k.GetObservedTxInVoter(ctx, record.TxID)
+		if err != nil {
+			ctx.Logger().Error("fail to get observed tx in", "error", err, "hash", record.TxID.String())
+			continue
+		}
+		observedTxInVoters = append(observedTxInVoters, txInVoter)
+	}
+
 	return GenesisState{
 		Pools:                             pools,
 		LiquidityProviders:                liquidityProviders,
@@ -971,5 +1003,6 @@ func ExportGenesis(ctx cosmos.Context, k keeper.Keeper) GenesisState {
 		LastObservedDynamicFeeEpochBlocks: lastObservedDynamicFeeEpochBlocks,
 		StableReserveCredits:              stableReserveCredits,
 		SolVaultNonces:                    solVaultNonces,
+		SolvencyGatedInbounds:             solvencyGatedInbounds,
 	}
 }

@@ -273,7 +273,19 @@ func (am AppModule) EndBlock(goCtx context.Context) ([]abci.ValidatorUpdate, err
 	// telemetry: telemetry.Now() and ModuleMeasureSince are no-ops when the SDK
 	// telemetry sink is disabled, and neither reads nor writes keeper state. The
 	// order of the manager calls and their error handling are unchanged.
+	// Before the swap queues, so a released swap is processed in this block.
 	start := telemetry.Now()
+	if err := releaseSolvencyGatedInbounds(ctx, am.mgr); err != nil {
+		ctx.Logger().Error("fail to release solvency gated inbounds", "error", err)
+		telemetry.IncrCounterWithLabels(
+			[]string{"thornode", "endblock", "manager_error"},
+			float32(1),
+			[]metrics.Label{telemetry.NewLabel("manager", "solvency_gate")},
+		)
+	}
+	telemetry.ModuleMeasureSince("solvency_gate", start, "thornode", "block", "endblock")
+
+	start = telemetry.Now()
 	luviCtx, luviStep := beginLuviScope(ctx, am.mgr.Keeper(), "endblock/swap_queue", "", false)
 	if err := runTracedManager(tracer, managerSwapQueue, operationEndBlock, func() error {
 		return am.mgr.SwapQ().EndBlock(luviCtx, am.mgr)

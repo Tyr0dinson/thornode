@@ -1,0 +1,29 @@
+syntax = "proto3";
+package types;
+
+option go_package = "gitlab.com/thorchain/thornode/v3/x/thorchain/types";
+option (gogoproto.goproto_stringer_all) = false;
+option (gogoproto.stringer_all) = false;
+option (gogoproto.goproto_getters_all) = false;
+
+import "gogoproto/gogo.proto";
+
+// SolvencyGatedInbound is a finalised, vault-credited inbound whose processing
+// waits for a solvency consensus, reached after it was parked, that attests its
+// vault solvent at or above the inbound's external block height.
+message SolvencyGatedInbound {
+  string chain = 1
+      [ (gogoproto.casttype) = "gitlab.com/thorchain/thornode/v3/common.Chain" ];
+  // vault the inbound was sent to
+  string pub_key = 2
+      [ (gogoproto.casttype) =
+            "gitlab.com/thorchain/thornode/v3/common.PubKey" ];
+  // external chain height of the inbound
+  int64 height = 3;
+  string tx_id = 4 [
+    (gogoproto.casttype) = "gitlab.com/thorchain/thornode/v3/common.TxID",
+    (gogoproto.customname) = "TxID"
+  ];
+  // THORChain height at which the inbound was parked
+  int64 parked_at = 5;
+}

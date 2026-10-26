@@ -958,6 +958,29 @@ func (k KVStoreDummy) GetSolvencyVoterQuota(_ cosmos.Context, _ common.Chain, _ 
 func (k KVStoreDummy) SetSolvencyVoterQuota(_ cosmos.Context, _ common.Chain, _ cosmos.AccAddress, _, _ uint64) {
 }
 
+func (k KVStoreDummy) SetSolvencyGatedInbound(_ cosmos.Context, _ SolvencyGatedInbound) error {
+	return kaboom
+}
+
+func (k KVStoreDummy) DeleteSolvencyGatedInbound(_ cosmos.Context, _ SolvencyGatedInbound) {
+}
+
+func (k KVStoreDummy) GetSolvencyGatedInbounds(_ cosmos.Context, _ common.Chain, _ int) ([]SolvencyGatedInbound, error) {
+	return nil, kaboom
+}
+
+func (k KVStoreDummy) GetSolvencyGatedInboundIterator(_ cosmos.Context) cosmos.Iterator {
+	return nil
+}
+
+func (k KVStoreDummy) SetSolvencyConfirmation(_ cosmos.Context, _ common.Chain, _ common.PubKey, _ int64) error {
+	return kaboom
+}
+
+func (k KVStoreDummy) GetSolvencyConfirmation(_ cosmos.Context, _ common.Chain, _ common.PubKey) (int64, int64, error) {
+	return 0, 0, kaboom
+}
+
 func (k KVStoreDummy) THORNameExists(ctx cosmos.Context, _ string) bool { return false }
 func (k KVStoreDummy) GetTHORName(ctx cosmos.Context, _ string) (THORName, error) {
 	return THORName{}, kaboom

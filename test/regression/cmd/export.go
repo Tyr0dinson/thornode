@@ -259,6 +259,18 @@ func checkExportInvariants(out io.Writer, genesis map[string]any) error {
 		}
 	}
 
+	// adjust vault depths to account for solvency-gated inbounds: they are credited
+	// to the vault but not yet executed
+	for _, in := range genesisState.SolvencyGatedInbounds {
+		for _, voter := range genesisState.ObservedTxInVoters {
+			if voter.TxID.Equals(in.TxID) {
+				for _, coin := range voter.Tx.Tx.Coins {
+					sumVaultAsset = sumVaultAsset.SafeSub(coin)
+				}
+			}
+		}
+	}
+
 	// print any discrepancies
 	for _, coin := range sumPoolAsset {
 		for _, vaultCoin := range sumVaultAsset {

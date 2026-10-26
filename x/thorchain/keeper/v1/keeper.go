@@ -111,6 +111,8 @@ const (
 	prefixChainContract             types.DbPrefix = "chain_contract/"
 	prefixSolvencyVoter             types.DbPrefix = "solvency_voter/"
 	prefixSolvencyVoterQuota        types.DbPrefix = "solvency_voter_quota/"
+	prefixSolvencyGatedInbound      types.DbPrefix = "solvency_gated_inbound/"
+	prefixSolvencyConfirmation      types.DbPrefix = "solvency_confirmation/"
 	prefixTHORName                  types.DbPrefix = "thorname/"
 	prefixAffiliateCollector        types.DbPrefix = "affcol_name/"
 	prefixAffiliateLiquidityFee     types.DbPrefix = "affiliate_liquidity_fee/"

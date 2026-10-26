@@ -445,6 +445,37 @@ func handleObservedTxInQuorum(
 		return nil
 	}
 
+	// On a solvency-gated chain the inbound waits here, already credited to the
+	// vault, until a solvency consensus shows the vault holds what it was credited.
+	// An inbound whose funds never arrived then halts the chain before any swap or
+	// refund pays out.
+	parked, err := parkSolvencyGatedInbound(ctx, mgr, voter)
+	if err != nil {
+		return err
+	}
+	if parked {
+		return nil
+	}
+
+	return processFinalisedObservedTxIn(ctx, mgr, signer, handler, tx, voter, vault, memo)
+}
+
+// processFinalisedObservedTxIn executes a finalised inbound's memo: a swap is
+// queued, any other memo runs its handler, and an inbound that cannot be executed
+// is refunded. The vault has already been credited.
+func processFinalisedObservedTxIn(
+	ctx cosmos.Context,
+	mgr Manager,
+	signer cosmos.AccAddress,
+	handler cosmos.Handler,
+	tx common.ObservedTx,
+	voter ObservedTxVoter,
+	vault Vault,
+	memo mem.Memo,
+) error {
+	k := mgr.Keeper()
+	var err error
+
 	// Resolve reference memo before any finalized refund path. In particular,
 	// an inactive-vault XMR refund needs the registered ADD asset address rather
 	// than the unavailable observed sender encoded by the raw r:<ref> memo.

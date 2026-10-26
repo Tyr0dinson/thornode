@@ -727,3 +727,42 @@ func (s *SolvencyTestSuite) TestIsHaltedOnChain(c *C) {
 		server.Close()
 	}
 }
+
+func (s *SolvencyTestSuite) TestShouldReportSolventVaults(c *C) {
+	mimirMap := map[string]int{"SOLVENCYGATEINBOUND-GAIA": 1}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.RequestURI, thorclient.MimirEndpoint) {
+			parts := strings.Split(r.RequestURI, "/key/")
+			if _, err := w.Write([]byte(strconv.Itoa(mimirMap[strings.ToUpper(parts[1])]))); err != nil {
+				c.Error(err)
+			}
+		}
+	}))
+	defer server.Close()
+	failing := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "bad request", http.StatusInternalServerError)
+	}))
+	defer failing.Close()
+	newBridge := func(server *httptest.Server) thorclient.ThorchainBridge {
+		bridge, err := thorclient.NewThorchainBridge(config.BifrostClientConfiguration{
+			ChainID:         "thorchain",
+			ChainHost:       server.Listener.Addr().String(),
+			ChainRPC:        server.Listener.Addr().String(),
+			SignerName:      "bob",
+			SignerPasswd:    "password",
+			ChainHomeFolder: ".",
+		}, s.m, s.keys)
+		c.Assert(err, IsNil)
+		return bridge
+	}
+
+	c.Assert(ShouldReportSolventVaults(newBridge(server), common.GAIAChain, false, nil, 0), Equals, true)
+	// Ungated chain.
+	c.Assert(ShouldReportSolventVaults(newBridge(server), common.BTCChain, false, nil, 0), Equals, false)
+	// An insolvent vault is reported alone.
+	c.Assert(ShouldReportSolventVaults(newBridge(server), common.GAIAChain, false, nil, 1), Equals, false)
+	// A halted chain keeps the all-clear rules.
+	c.Assert(ShouldReportSolventVaults(newBridge(server), common.GAIAChain, true, nil, 0), Equals, false)
+	c.Assert(ShouldReportSolventVaults(newBridge(server), common.GAIAChain, false, fmt.Errorf("halt state unknown"), 0), Equals, false)
+	c.Assert(ShouldReportSolventVaults(newBridge(failing), common.GAIAChain, false, nil, 0), Equals, false)
+}

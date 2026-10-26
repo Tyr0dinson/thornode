@@ -126,6 +126,12 @@ const (
 	MimirKeyHaltTradingGlobal              = "HaltTrading"                  // Global trading halt
 	MimirTemplateAllowNoVault              = "AllowNoVault-%s"              // Use with Chain; authorizes noop:novault vault debits on that chain
 
+	// MimirTemplateSolvencyGateInbound, when above 0, holds every finalised inbound on the
+	// chain until its vault is attested solvent at or above the inbound's external block
+	// height. An inbound credited without the funds arriving then halts the chain through
+	// the solvency checker before any swap or refund is paid out. Use with Chain.
+	MimirTemplateSolvencyGateInbound = "SolvencyGateInbound-%s"
+
 	MimirRefL1           = "L1"           // Use with SwapSlipBasisPoints
 	MimirRefSynth        = "Synth"        // Use with SwapSlipBasisPoints
 	MimirRefTradeAccount = "TradeAccount" // Use with SwapSlipBasisPoints

@@ -881,6 +881,10 @@ func (k *TestObservedTxInHandleKeeper) GetMimir(_ cosmos.Context, key string) (i
 	if strings.HasPrefix(key, compromisedVaultMimirKeyPrefix) {
 		return -1, nil
 	}
+	// Inbounds are not solvency-gated.
+	if strings.HasPrefix(key, "SolvencyGateInbound-") {
+		return -1, nil
+	}
 	return 0, fmt.Errorf("mimir not found")
 }
 
