@@ -301,6 +301,12 @@ func (k KVStoreDummy) GetPoolLUVI(ctx cosmos.Context, asset common.Asset) (cosmo
 	return cosmos.ZeroUint(), kaboom
 }
 
+func (k KVStoreDummy) GetPoolLuviAccumulator(ctx cosmos.Context, asset common.Asset) (types.PoolLuvi, bool, error) {
+	return types.PoolLuvi{}, false, kaboom
+}
+func (k KVStoreDummy) SetPoolLuviAccumulator(ctx cosmos.Context, record types.PoolLuvi) {}
+func (k KVStoreDummy) RemovePoolLuviAccumulator(ctx cosmos.Context, asset common.Asset) {}
+
 func (k KVStoreDummy) GetStreamingSwapIterator(ctx cosmos.Context) cosmos.Iterator { return nil }
 func (k KVStoreDummy) SetStreamingSwap(ctx cosmos.Context, _ StreamingSwap)        {}
 func (k KVStoreDummy) GetStreamingSwap(ctx cosmos.Context, _ common.TxID) (StreamingSwap, error) {

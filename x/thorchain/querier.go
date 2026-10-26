@@ -1911,6 +1911,7 @@ func (qs queryServer) queryPool(ctx cosmos.Context, req *types.QueryPoolRequest)
 	p.SynthSupplyRemaining = synthSupplyRemaining.String()
 	p.DerivedDepthBps = dbps.String()
 	setPoolLuviFields(&p, pool, synthSupply)
+	setPoolLuviAccumulatorFields(ctx, qs.mgr.Keeper(), &p, pool, synthSupply)
 
 	polReserveDeposit, err := qs.mgr.Keeper().GetPOLReserveDeposit(ctx, pool.Asset)
 	if err == nil {
@@ -2059,6 +2060,7 @@ func (qs queryServer) queryPools(ctx cosmos.Context, _ *types.QueryPoolsRequest)
 		p.SynthSupplyRemaining = synthSupplyRemaining.String()
 		p.DerivedDepthBps = dbps.String()
 		setPoolLuviFields(&p, pool, synthSupply)
+		setPoolLuviAccumulatorFields(ctx, qs.mgr.Keeper(), &p, pool, synthSupply)
 
 		polReserveDeposit, polErr := qs.mgr.Keeper().GetPOLReserveDeposit(ctx, pool.Asset)
 		if polErr == nil {

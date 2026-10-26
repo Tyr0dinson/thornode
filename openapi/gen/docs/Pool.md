@@ -34,6 +34,11 @@ Name | Type | Description | Notes
 **LpEquityPerUnit** | **string** | lp_equity / LP_units; equals luvi (up to rounding) unless synth_overhang is true | 
 **SynthPerPoolDepthBps** | **string** | synth supply relative to twice the asset depth, in basis points | 
 **SynthOverhang** | **bool** | whether synth supply is at or above twice the asset depth; synth units are clamped and LP units can redeem almost nothing while this is true | 
+**LuviG** | Pointer to **string** | LUVI accumulator, the accumulated change in hedged LP equity G in sqrt(asset * rune) units since tracking began; absent until the pool has been observed at the end of a block | [optional] 
+**LuviC** | Pointer to **string** | accumulated synth repricing term C of LUVI* | [optional] 
+**LuviStar** | Pointer to **string** | synth-aware index LUVI* &#x3D; lp_equity_per_unit + luvi_c; only meaningful when synth_overhang is false | [optional] 
+**LuviLastNormalizedDeltaG** | Pointer to **string** | the last accumulator step&#39;s change in G divided by the previous sqrt(asset * rune) | [optional] 
+**LuviHeight** | Pointer to **int64** | height of the last LUVI accumulator step | [optional] 
 
 ## Methods
 
@@ -688,6 +693,131 @@ and a boolean to check if the value has been set.
 
 SetSynthOverhang sets SynthOverhang field to given value.
 
+
+### GetLuviG
+
+`func (o *Pool) GetLuviG() string`
+
+GetLuviG returns the LuviG field if non-nil, zero value otherwise.
+
+### GetLuviGOk
+
+`func (o *Pool) GetLuviGOk() (*string, bool)`
+
+GetLuviGOk returns a tuple with the LuviG field if it's non-nil, zero value otherwise
+and a boolean to check if the value has been set.
+
+### SetLuviG
+
+`func (o *Pool) SetLuviG(v string)`
+
+SetLuviG sets LuviG field to given value.
+
+### HasLuviG
+
+`func (o *Pool) HasLuviG() bool`
+
+HasLuviG returns a boolean if a field has been set.
+
+### GetLuviC
+
+`func (o *Pool) GetLuviC() string`
+
+GetLuviC returns the LuviC field if non-nil, zero value otherwise.
+
+### GetLuviCOk
+
+`func (o *Pool) GetLuviCOk() (*string, bool)`
+
+GetLuviCOk returns a tuple with the LuviC field if it's non-nil, zero value otherwise
+and a boolean to check if the value has been set.
+
+### SetLuviC
+
+`func (o *Pool) SetLuviC(v string)`
+
+SetLuviC sets LuviC field to given value.
+
+### HasLuviC
+
+`func (o *Pool) HasLuviC() bool`
+
+HasLuviC returns a boolean if a field has been set.
+
+### GetLuviStar
+
+`func (o *Pool) GetLuviStar() string`
+
+GetLuviStar returns the LuviStar field if non-nil, zero value otherwise.
+
+### GetLuviStarOk
+
+`func (o *Pool) GetLuviStarOk() (*string, bool)`
+
+GetLuviStarOk returns a tuple with the LuviStar field if it's non-nil, zero value otherwise
+and a boolean to check if the value has been set.
+
+### SetLuviStar
+
+`func (o *Pool) SetLuviStar(v string)`
+
+SetLuviStar sets LuviStar field to given value.
+
+### HasLuviStar
+
+`func (o *Pool) HasLuviStar() bool`
+
+HasLuviStar returns a boolean if a field has been set.
+
+### GetLuviLastNormalizedDeltaG
+
+`func (o *Pool) GetLuviLastNormalizedDeltaG() string`
+
+GetLuviLastNormalizedDeltaG returns the LuviLastNormalizedDeltaG field if non-nil, zero value otherwise.
+
+### GetLuviLastNormalizedDeltaGOk
+
+`func (o *Pool) GetLuviLastNormalizedDeltaGOk() (*string, bool)`
+
+GetLuviLastNormalizedDeltaGOk returns a tuple with the LuviLastNormalizedDeltaG field if it's non-nil, zero value otherwise
+and a boolean to check if the value has been set.
+
+### SetLuviLastNormalizedDeltaG
+
+`func (o *Pool) SetLuviLastNormalizedDeltaG(v string)`
+
+SetLuviLastNormalizedDeltaG sets LuviLastNormalizedDeltaG field to given value.
+
+### HasLuviLastNormalizedDeltaG
+
+`func (o *Pool) HasLuviLastNormalizedDeltaG() bool`
+
+HasLuviLastNormalizedDeltaG returns a boolean if a field has been set.
+
+### GetLuviHeight
+
+`func (o *Pool) GetLuviHeight() int64`
+
+GetLuviHeight returns the LuviHeight field if non-nil, zero value otherwise.
+
+### GetLuviHeightOk
+
+`func (o *Pool) GetLuviHeightOk() (*int64, bool)`
+
+GetLuviHeightOk returns a tuple with the LuviHeight field if it's non-nil, zero value otherwise
+and a boolean to check if the value has been set.
+
+### SetLuviHeight
+
+`func (o *Pool) SetLuviHeight(v int64)`
+
+SetLuviHeight sets LuviHeight field to given value.
+
+### HasLuviHeight
+
+`func (o *Pool) HasLuviHeight() bool`
+
+HasLuviHeight returns a boolean if a field has been set.
 
 
 [[Back to Model list]](../README.md#documentation-for-models) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to README]](../README.md)

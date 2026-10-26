@@ -2290,6 +2290,27 @@ components:
           type: boolean
           example: false
           description: whether synth supply is at or above twice the asset depth; synth units are clamped and LP units can redeem almost nothing while this is true
+        luvi_g:
+          type: string
+          example: "1234.500000000000000000"
+          description: LUVI accumulator, the accumulated change in hedged LP equity G in sqrt(asset * rune) units since tracking began; absent until the pool has been observed at the end of a block
+        luvi_c:
+          type: string
+          example: "0.000001000000000000"
+          description: accumulated synth repricing term C of LUVI*
+        luvi_star:
+          type: string
+          example: "1.500001000000000000"
+          description: synth-aware index LUVI* = lp_equity_per_unit + luvi_c; only meaningful when synth_overhang is false
+        luvi_last_normalized_delta_g:
+          type: string
+          example: "0.000000010000000000"
+          description: the last accumulator step's change in G divided by the previous sqrt(asset * rune)
+        luvi_height:
+          type: integer
+          format: int64
+          example: 21000000
+          description: height of the last LUVI accumulator step
     DerivedPool:
       type: object
       required:

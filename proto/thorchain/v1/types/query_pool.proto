@@ -78,6 +78,19 @@ message QueryPoolResponse {
   // whether synth supply is at or above twice the asset depth; synth units are
   // clamped and LP units can redeem almost nothing while this is true
   bool synth_overhang = 33 [ (gogoproto.jsontag) = "synth_overhang" ];
+  // LUVI accumulator, advanced once per block (see PoolLuvi); absent until the
+  // pool has been observed at the end of a block.
+  // accumulated change in hedged LP equity G, in sqrt(asset * rune) units
+  string luvi_g = 34;
+  // accumulated synth repricing term C of LUVI*
+  string luvi_c = 35;
+  // synth-aware index LUVI* = lp_equity_per_unit + luvi_c; only meaningful
+  // when synth_overhang is false
+  string luvi_star = 36;
+  // the last block's change in G divided by the previous sqrt(asset * rune)
+  string luvi_last_normalized_delta_g = 37;
+  // height of the last accumulator step
+  int64 luvi_height = 38;
 }
 
 message QueryPoolsRequest { string height = 1; }

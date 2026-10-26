@@ -68,6 +68,16 @@ type Pool struct {
 	SynthPerPoolDepthBps string `json:"synth_per_pool_depth_bps"`
 	// whether synth supply is at or above twice the asset depth; synth units are clamped and LP units can redeem almost nothing while this is true
 	SynthOverhang bool `json:"synth_overhang"`
+	// LUVI accumulator, the accumulated change in hedged LP equity G in sqrt(asset * rune) units since tracking began; absent until the pool has been observed at the end of a block
+	LuviG *string `json:"luvi_g,omitempty"`
+	// accumulated synth repricing term C of LUVI*
+	LuviC *string `json:"luvi_c,omitempty"`
+	// synth-aware index LUVI* = lp_equity_per_unit + luvi_c; only meaningful when synth_overhang is false
+	LuviStar *string `json:"luvi_star,omitempty"`
+	// the last accumulator step's change in G divided by the previous sqrt(asset * rune)
+	LuviLastNormalizedDeltaG *string `json:"luvi_last_normalized_delta_g,omitempty"`
+	// height of the last LUVI accumulator step
+	LuviHeight *int64 `json:"luvi_height,omitempty"`
 }
 
 // NewPool instantiates a new Pool object
@@ -886,6 +896,166 @@ func (o *Pool) SetSynthOverhang(v bool) {
 	o.SynthOverhang = v
 }
 
+// GetLuviG returns the LuviG field value if set, zero value otherwise.
+func (o *Pool) GetLuviG() string {
+	if o == nil || o.LuviG == nil {
+		var ret string
+		return ret
+	}
+	return *o.LuviG
+}
+
+// GetLuviGOk returns a tuple with the LuviG field value if set, nil otherwise
+// and a boolean to check if the value has been set.
+func (o *Pool) GetLuviGOk() (*string, bool) {
+	if o == nil || o.LuviG == nil {
+		return nil, false
+	}
+	return o.LuviG, true
+}
+
+// HasLuviG returns a boolean if a field has been set.
+func (o *Pool) HasLuviG() bool {
+	if o != nil && o.LuviG != nil {
+		return true
+	}
+
+	return false
+}
+
+// SetLuviG gets a reference to the given string and assigns it to the LuviG field.
+func (o *Pool) SetLuviG(v string) {
+	o.LuviG = &v
+}
+
+// GetLuviC returns the LuviC field value if set, zero value otherwise.
+func (o *Pool) GetLuviC() string {
+	if o == nil || o.LuviC == nil {
+		var ret string
+		return ret
+	}
+	return *o.LuviC
+}
+
+// GetLuviCOk returns a tuple with the LuviC field value if set, nil otherwise
+// and a boolean to check if the value has been set.
+func (o *Pool) GetLuviCOk() (*string, bool) {
+	if o == nil || o.LuviC == nil {
+		return nil, false
+	}
+	return o.LuviC, true
+}
+
+// HasLuviC returns a boolean if a field has been set.
+func (o *Pool) HasLuviC() bool {
+	if o != nil && o.LuviC != nil {
+		return true
+	}
+
+	return false
+}
+
+// SetLuviC gets a reference to the given string and assigns it to the LuviC field.
+func (o *Pool) SetLuviC(v string) {
+	o.LuviC = &v
+}
+
+// GetLuviStar returns the LuviStar field value if set, zero value otherwise.
+func (o *Pool) GetLuviStar() string {
+	if o == nil || o.LuviStar == nil {
+		var ret string
+		return ret
+	}
+	return *o.LuviStar
+}
+
+// GetLuviStarOk returns a tuple with the LuviStar field value if set, nil otherwise
+// and a boolean to check if the value has been set.
+func (o *Pool) GetLuviStarOk() (*string, bool) {
+	if o == nil || o.LuviStar == nil {
+		return nil, false
+	}
+	return o.LuviStar, true
+}
+
+// HasLuviStar returns a boolean if a field has been set.
+func (o *Pool) HasLuviStar() bool {
+	if o != nil && o.LuviStar != nil {
+		return true
+	}
+
+	return false
+}
+
+// SetLuviStar gets a reference to the given string and assigns it to the LuviStar field.
+func (o *Pool) SetLuviStar(v string) {
+	o.LuviStar = &v
+}
+
+// GetLuviLastNormalizedDeltaG returns the LuviLastNormalizedDeltaG field value if set, zero value otherwise.
+func (o *Pool) GetLuviLastNormalizedDeltaG() string {
+	if o == nil || o.LuviLastNormalizedDeltaG == nil {
+		var ret string
+		return ret
+	}
+	return *o.LuviLastNormalizedDeltaG
+}
+
+// GetLuviLastNormalizedDeltaGOk returns a tuple with the LuviLastNormalizedDeltaG field value if set, nil otherwise
+// and a boolean to check if the value has been set.
+func (o *Pool) GetLuviLastNormalizedDeltaGOk() (*string, bool) {
+	if o == nil || o.LuviLastNormalizedDeltaG == nil {
+		return nil, false
+	}
+	return o.LuviLastNormalizedDeltaG, true
+}
+
+// HasLuviLastNormalizedDeltaG returns a boolean if a field has been set.
+func (o *Pool) HasLuviLastNormalizedDeltaG() bool {
+	if o != nil && o.LuviLastNormalizedDeltaG != nil {
+		return true
+	}
+
+	return false
+}
+
+// SetLuviLastNormalizedDeltaG gets a reference to the given string and assigns it to the LuviLastNormalizedDeltaG field.
+func (o *Pool) SetLuviLastNormalizedDeltaG(v string) {
+	o.LuviLastNormalizedDeltaG = &v
+}
+
+// GetLuviHeight returns the LuviHeight field value if set, zero value otherwise.
+func (o *Pool) GetLuviHeight() int64 {
+	if o == nil || o.LuviHeight == nil {
+		var ret int64
+		return ret
+	}
+	return *o.LuviHeight
+}
+
+// GetLuviHeightOk returns a tuple with the LuviHeight field value if set, nil otherwise
+// and a boolean to check if the value has been set.
+func (o *Pool) GetLuviHeightOk() (*int64, bool) {
+	if o == nil || o.LuviHeight == nil {
+		return nil, false
+	}
+	return o.LuviHeight, true
+}
+
+// HasLuviHeight returns a boolean if a field has been set.
+func (o *Pool) HasLuviHeight() bool {
+	if o != nil && o.LuviHeight != nil {
+		return true
+	}
+
+	return false
+}
+
+// SetLuviHeight gets a reference to the given int64 and assigns it to the LuviHeight field.
+func (o *Pool) SetLuviHeight(v int64) {
+	o.LuviHeight = &v
+}
+
 func (o Pool) MarshalJSON_deprecated() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if true {
@@ -977,6 +1147,21 @@ func (o Pool) MarshalJSON_deprecated() ([]byte, error) {
 	}
 	if true {
 		toSerialize["synth_overhang"] = o.SynthOverhang
+	}
+	if o.LuviG != nil {
+		toSerialize["luvi_g"] = o.LuviG
+	}
+	if o.LuviC != nil {
+		toSerialize["luvi_c"] = o.LuviC
+	}
+	if o.LuviStar != nil {
+		toSerialize["luvi_star"] = o.LuviStar
+	}
+	if o.LuviLastNormalizedDeltaG != nil {
+		toSerialize["luvi_last_normalized_delta_g"] = o.LuviLastNormalizedDeltaG
+	}
+	if o.LuviHeight != nil {
+		toSerialize["luvi_height"] = o.LuviHeight
 	}
 	return json.Marshal(toSerialize)
 }

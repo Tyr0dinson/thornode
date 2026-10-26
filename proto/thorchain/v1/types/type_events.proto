@@ -782,3 +782,53 @@ message EventPOLReserveDeploy {
     (gogoproto.nullable) = false
   ];
 }
+
+// EventLuviLoss reports a drop in a pool's hedged LP equity G (see
+// x/thorchain/types/type_luvi.go) over one LUVI scope: a handler run or an
+// EndBlock step. Emitted when the normalized drop exceeds the rounding
+// tolerance, whether or not the computed allowance (gas, slashes, LP-flow
+// rounding) covers it, and when the LP-unit ledger does not match the scope's
+// add_liquidity and withdraw events.
+message EventLuviLoss {
+  common.Asset pool = 1 [
+    (gogoproto.nullable) = false,
+    (gogoproto.customtype) = "gitlab.com/thorchain/thornode/v3/common.Asset"
+  ];
+  // the handler's message type URL, or the EndBlock step
+  string scope = 2;
+  // the inbound tx the scope processed, if any
+  string tx_id = 3 [
+    (gogoproto.casttype) = "gitlab.com/thorchain/thornode/v3/common.TxID",
+    (gogoproto.customname) = "TxID"
+  ];
+  // change in G, in sqrt(asset * RUNE) base units
+  string delta_g = 4 [
+    (gogoproto.customtype) = "cosmossdk.io/math.LegacyDec",
+    (gogoproto.nullable) = false
+  ];
+  // delta_g / sqrt(A * R) before the scope
+  string normalized_delta_g = 5 [
+    (gogoproto.customtype) = "cosmossdk.io/math.LegacyDec",
+    (gogoproto.nullable) = false
+  ];
+  // the normalized drop the scope was allowed (tolerance plus allowances)
+  string allowed = 6 [
+    (gogoproto.customtype) = "cosmossdk.io/math.LegacyDec",
+    (gogoproto.nullable) = false
+  ];
+  // "drop" (G fell beyond the tolerance) or "ledger" (LP units moved without
+  // matching unit events)
+  string kind = 7;
+  // true when the drop exceeded the allowance (or the ledger did not match)
+  bool excess = 8;
+  // true when the LUVI guard rejected the scope and its changes were reverted
+  bool rejected = 9;
+  string lp_units_before = 10 [
+    (gogoproto.customtype) = "cosmossdk.io/math.Uint",
+    (gogoproto.nullable) = false
+  ];
+  string lp_units_after = 11 [
+    (gogoproto.customtype) = "cosmossdk.io/math.Uint",
+    (gogoproto.nullable) = false
+  ];
+}
