@@ -176,7 +176,7 @@ func (s *luviScope) check(ctx cosmos.Context, k keeper.Keeper) ([]*types.EventLu
 			if post.LPUnits.IsZero() {
 				continue
 			}
-			allowed := tolerance.Add(types.LuviAllowance(pre, pre, ev.AssetPaidOf(pool), ev.Flows(pool)))
+			allowed := tolerance.Add(types.LuviAllowance(pre, pre, ev.AssetPaidOf(pool), ev.RoundingOps(pool)))
 			minusOne := cosmos.NewDec(-1)
 			loss("drop", pre.SqrtAR().Neg(), minusOne, allowed, minusOne.LT(allowed.Neg()))
 			continue
@@ -193,7 +193,7 @@ func (s *luviScope) check(ctx cosmos.Context, k keeper.Keeper) ([]*types.EventLu
 		if step.NormalizedDeltaG.GTE(tolerance.Neg()) {
 			continue
 		}
-		allowed := tolerance.Add(types.LuviAllowance(pre, post, ev.AssetPaidOf(pool), ev.Flows(pool)))
+		allowed := tolerance.Add(types.LuviAllowance(pre, post, ev.AssetPaidOf(pool), ev.RoundingOps(pool)))
 		over := step.NormalizedDeltaG.LT(allowed.Neg())
 		if over || step.NormalizedDeltaG.LT(luviReportThreshold.Neg()) {
 			loss("drop", step.DeltaG, step.NormalizedDeltaG, allowed, over)

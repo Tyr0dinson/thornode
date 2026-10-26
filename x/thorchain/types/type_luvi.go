@@ -344,6 +344,7 @@ type LuviStepEvents struct {
 	Added     map[string][]cosmos.Uint
 	Withdrawn map[string][]cosmos.Uint
 	Errata    map[string]bool
+	Swaps     map[string]int
 }
 
 // NewLuviStepEvents parses flattened events (type under "type", attributes by
@@ -354,6 +355,7 @@ func NewLuviStepEvents(events []map[string]string) LuviStepEvents {
 		Added:     map[string][]cosmos.Uint{},
 		Withdrawn: map[string][]cosmos.Uint{},
 		Errata:    map[string]bool{},
+		Swaps:     map[string]int{},
 	}
 	for _, e := range events {
 		switch e["type"] {
@@ -390,6 +392,8 @@ func NewLuviStepEvents(events []map[string]string) LuviStepEvents {
 			}
 		case ErrataEventType:
 			out.Errata[e["asset"]] = true
+		case SwapEventType:
+			out.Swaps[e["pool"]]++
 		}
 	}
 	return out
@@ -406,6 +410,13 @@ func (e LuviStepEvents) AssetPaidOf(pool string) cosmos.Uint {
 // Flows returns the number of LP flows (adds and withdraws) for a pool.
 func (e LuviStepEvents) Flows(pool string) int {
 	return len(e.Added[pool]) + len(e.Withdrawn[pool])
+}
+
+// RoundingOps returns the number of operations in the step that round a
+// pool's balances to whole base units: LP flows, swap legs, and one for the
+// step's other writes. Each can move G by up to 1/A + 1/R of sqrt(A*R).
+func (e LuviStepEvents) RoundingOps(pool string) int {
+	return e.Flows(pool) + e.Swaps[pool] + 1
 }
 
 // FlattenLuviEvents converts SDK events to the flattened form

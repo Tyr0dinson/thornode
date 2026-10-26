@@ -63,6 +63,8 @@ func (LuviAllowanceSuite) TestStepEvents(c *C) {
 	c.Check(ev.AssetPaidOf("BTC.BTC").String(), Equals, "7")
 	c.Check(ev.AssetPaidOf("DOGE.DOGE").IsZero(), Equals, true)
 	c.Check(ev.Flows("ETH.ETH"), Equals, 2)
+	c.Check(ev.RoundingOps("ETH.ETH"), Equals, 4)
+	c.Check(ev.RoundingOps("DOGE.DOGE"), Equals, 1)
 	c.Check(ev.Errata["LTC.LTC"], Equals, true)
 	c.Check(ev.Errata["ETH.ETH"], Equals, false)
 }
