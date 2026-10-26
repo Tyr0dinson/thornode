@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/rs/zerolog"
@@ -855,4 +856,27 @@ func (s *HealthSuite) TestThorchainHeightBreaksTheTwoEndpointTie(c *C) {
 	// a single endpoint is not judged against it
 	m = run(at(150), 100)
 	c.Assert(m.Entry("a").State(), Equals, endpoints.StateHealthy)
+}
+
+// A THORChain height read that hangs is not started again while it is in flight: a
+// stalled thornode costs one waiting goroutine, not one per health cycle.
+func (s *HealthSuite) TestHangingReferenceReadIsNotRestartedEachCycle(c *C) {
+	a := &fakeProbe{name: "a", height: 100, identity: "g"}
+	b := &fakeProbe{name: "b", height: 100, identity: "g"}
+	cfg := healthCfg()
+	cfg.HealthCheckTimeout = 20 * time.Millisecond
+	m, ps := newHealthMgr(c, cfg, nil, a, b)
+	c.Assert(m.Bootstrap(ctxBg(), ps), IsNil)
+	var calls atomic.Int32
+	release := make(chan struct{})
+	m.SetReferenceHeight(func() (int64, error) {
+		calls.Add(1)
+		<-release
+		return 100, nil
+	})
+	for i := 0; i < 3; i++ {
+		m.Cycle(ctxBg())
+	}
+	c.Assert(calls.Load(), Equals, int32(1))
+	close(release)
 }

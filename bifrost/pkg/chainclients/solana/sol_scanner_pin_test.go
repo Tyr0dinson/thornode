@@ -235,14 +235,14 @@ func (s *SolTestSuite) TestVaultCursorSlotIsKept(c *C) {
 	defer func() { _ = storage.Close() }()
 	c.Assert(storage.SetScanStatus("legacy", "oldsig", 900), IsNil)
 	first := &SOLScanner{logger: zerolog.Nop(), db: storage, vaultScanStatuses: map[string]vaultScanStatus{}}
-	c.Assert(first.saveVaultScanStatus("vault", vaultScanStatus{lastSig: "sig", lastSlot: 1000, cursorSlot: 990}), IsNil)
+	c.Assert(first.storeVaultScanStatus("vault", vaultScanStatus{lastSig: "sig", lastSlot: 1000, cursorSlot: 990}), IsNil)
 
 	restarted := &SOLScanner{logger: zerolog.Nop(), db: storage, vaultScanStatuses: map[string]vaultScanStatus{}}
 	vss, err := restarted.loadVaultScanStatus("vault")
 	c.Assert(err, IsNil)
 	c.Assert(vss, DeepEquals, vaultScanStatus{lastSig: "sig", lastSlot: 1000, cursorSlot: 990})
 	// the cursor and its slot are one write: a later status replaces both together
-	c.Assert(first.saveVaultScanStatus("vault", vaultScanStatus{lastSig: "sig2", lastSlot: 1100, cursorSlot: 1050}), IsNil)
+	c.Assert(first.storeVaultScanStatus("vault", vaultScanStatus{lastSig: "sig2", lastSlot: 1100, cursorSlot: 1050}), IsNil)
 	sig, slot, cursorSlot, err := storage.GetScanStatusWithCursor("vault")
 	c.Assert(err, IsNil)
 	c.Assert([]any{sig, slot, cursorSlot}, DeepEquals, []any{"sig2", uint64(1100), uint64(1050)})

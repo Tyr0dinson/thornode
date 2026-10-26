@@ -723,11 +723,6 @@ func isDialError(err error) bool {
 	return errors.As(err, &dnsErr)
 }
 
-// drain discards a rejected response so its connection can be reused, but only for
-// drainTimeout: an endpoint that sends an error status and then stalls the body
-// would otherwise hold the whole remaining deadline (the per-attempt timer is
-// disarmed once headers arrive) and starve the next candidate. On timeout, cancel
-// aborts the attempt and the connection is dropped instead.
 // jsonRPCErrorText returns "json-rpc error <code>: <message>" for a JSON-RPC error
 // object read from body (at most sniffLimit bytes), or "" when there is none. The
 // message is cut to 200 bytes.
@@ -752,6 +747,11 @@ func jsonRPCErrorText(body io.Reader) string {
 	return fmt.Sprintf("json-rpc error %d: %s", env.Error.Code, msg)
 }
 
+// drain discards a rejected response so its connection can be reused, but only for
+// drainTimeout: an endpoint that sends an error status and then stalls the body
+// would otherwise hold the whole remaining deadline (the per-attempt timer is
+// disarmed once headers arrive) and starve the next candidate. On timeout, cancel
+// aborts the attempt and the connection is dropped instead.
 func drain(resp *http.Response, cancel context.CancelFunc) {
 	t := time.AfterFunc(drainTimeout, cancel)
 	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))

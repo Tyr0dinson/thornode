@@ -213,13 +213,19 @@ func (m *Manager) SetReferenceHeight(fn func() (int64, error)) {
 
 // reference returns THORChain's observed height for this cycle, or 0 when there is
 // none to use: a single endpoint, no reference set, an error, or no answer within
-// health_check_timeout (a slow thornode must not hold up the health loop).
+// health_check_timeout (a slow thornode must not hold up the health loop). A read
+// that has not answered yet is not started again, so a hanging thornode leaves one
+// waiting goroutine, not one per cycle.
 func (m *Manager) reference(ctx context.Context) int64 {
 	if m.referenceHeight == nil || len(m.entries) < 2 {
 		return 0
 	}
+	if !m.referenceBusy.CompareAndSwap(false, true) {
+		return 0
+	}
 	answer := make(chan int64, 1)
 	go func() {
+		defer m.referenceBusy.Store(false)
 		h, err := m.referenceHeight()
 		if err != nil {
 			h = 0

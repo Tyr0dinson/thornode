@@ -114,9 +114,10 @@ A background health check runs every `health_check_interval` against every endpo
   it, and it can only strike an endpoint behind what the network has already observed,
   never one at the tip. This is what lets two endpoints, which form no tip when they
   disagree, evict a stalled endpoint that still answers. When THORChain's height is
-  unavailable, does not answer within `health_check_timeout`, or has not moved (a
-  halted or quiet chain), it strikes nothing. With a single endpoint, the block
-  scanner's own height is the baseline instead.
+  unavailable, does not answer within `health_check_timeout`, or no usable endpoint has
+  reached it (within `max_block_lag`), it strikes nothing; a height that stops moving (a
+  halted or quiet chain) is still used, but cannot strike an endpoint at or above it.
+  With a single endpoint, the block scanner's own height is the baseline instead.
 - **Identity.** Every endpoint must report the same chain identity (EVM `eth_chainId`,
   UTXO genesis block hash, Cosmos `node_info.network`, Solana genesis hash, XRP
   `network_id`). The reference is `expected_identity` when set, otherwise the priority-1

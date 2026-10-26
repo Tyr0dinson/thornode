@@ -152,6 +152,37 @@ func (s *LevelDBSolanaSuite) TestSolanaGetSetScanPos(c *C) {
 	c.Check(pos, Equals, uint64(200))
 }
 
+// The cursor slot is saved with the scan status in one write and read back with it;
+// a status saved before the cursor slot was kept reads as slot 0, and an account
+// never saved is not found.
+func (s *LevelDBSolanaSuite) TestSolanaScanStatusWithCursor(c *C) {
+	db := newMemLevelDB(c)
+	defer db.Close()
+	store, _ := NewLevelDBScannerStorageSolana(db)
+
+	_, _, _, err := store.GetScanStatusWithCursor("never")
+	c.Check(errors.Is(err, leveldb.ErrNotFound), Equals, true)
+
+	c.Assert(store.SetScanStatusWithCursor("vault", "sig1", 1000, 990), IsNil)
+	sig, slot, cursorSlot, err := store.GetScanStatusWithCursor("vault")
+	c.Assert(err, IsNil)
+	c.Check(sig, Equals, "sig1")
+	c.Check(slot, Equals, uint64(1000))
+	c.Check(cursorSlot, Equals, uint64(990))
+	// the plain status reader still sees the same record
+	sig, slot, err = store.GetScanStatus("vault")
+	c.Assert(err, IsNil)
+	c.Check(sig, Equals, "sig1")
+	c.Check(slot, Equals, uint64(1000))
+
+	c.Assert(store.SetScanStatus("legacy", "old", 500), IsNil)
+	sig, slot, cursorSlot, err = store.GetScanStatusWithCursor("legacy")
+	c.Assert(err, IsNil)
+	c.Check(sig, Equals, "old")
+	c.Check(slot, Equals, uint64(500))
+	c.Check(cursorSlot, Equals, uint64(0))
+}
+
 func (s *LevelDBSolanaSuite) TestSolanaGetSetScanStatus(c *C) {
 	db := newMemLevelDB(c)
 	defer db.Close()

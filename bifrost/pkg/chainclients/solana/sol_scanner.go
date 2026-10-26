@@ -561,12 +561,6 @@ func (s *SOLScanner) loadVaultScanStatus(vaultAddr string) (vaultScanStatus, err
 	return vss, nil
 }
 
-// saveVaultScanStatus records a vault's scan status in memory and in storage.
-func (s *SOLScanner) saveVaultScanStatus(vaultAddr string, vss vaultScanStatus) error {
-	s.vaultScanStatuses[vaultAddr] = vss
-	return s.storeVaultScanStatus(vaultAddr, vss)
-}
-
 // storeVaultScanStatus writes a vault's scan status to storage.
 func (s *SOLScanner) storeVaultScanStatus(vaultAddr string, vss vaultScanStatus) error {
 	return s.db.SetScanStatusWithCursor(vaultAddr, vss.lastSig, vss.lastSlot, vss.cursorSlot)

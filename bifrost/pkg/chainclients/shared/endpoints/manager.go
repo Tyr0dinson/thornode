@@ -51,6 +51,7 @@ type Manager struct {
 	// referenceHeight is THORChain's last observed height for the chain (2/3
 	// consensus), a lag reference independent of every endpoint
 	referenceHeight func() (int64, error)
+	referenceBusy   atomic.Bool // a referenceHeight read is still in flight
 
 	// last warning per endpoint about blocking signer-cache verification
 	blockedWarnedAt map[string]time.Time
