@@ -8156,6 +8156,14 @@
       "symbol": "YUM",
       "decimals": 18,
       "logoURI": "https://assets.coingecko.com/coins/images/39116/small/yum.png"
+    },
+    {
+      "address": "0x68749665FF8D2d112Fa859AA293F07A622782F38",
+      "chainId": 1,
+      "name": "Tether Gold",
+      "symbol": "XAUt",
+      "decimals": 6,
+      "logoURI": "https://tokens.1inch.io/0x68749665ff8d2d112fa859aa293f07a622782f38.png"
     }
   ],
   "logoURI": "https://1inch.exchange/assets/images/logo.png"
