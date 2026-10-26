@@ -585,6 +585,21 @@
         "rune_amt": "5000051256",
         "transaction_count": "1",
         "type": "gas"
+      },
+      {
+        "allowed": "0.002500000910999898",
+        "delta_g": "-12507885.995716109497455557",
+        "excess": "false",
+        "kind": "drop",
+        "lp_units_after": "100000000000",
+        "lp_units_before": "100000000000",
+        "mode": "EndBlock",
+        "normalized_delta_g": "-0.001250782176121192",
+        "pool": "AVAX.AVAX",
+        "rejected": "false",
+        "scope": "endblock/gas",
+        "tx_id": "",
+        "type": "luvi_loss"
       }
     ],
     "txs": [
@@ -1423,6 +1438,36 @@
               "msg_index": "0",
               "pool": "AVAX.AVAX",
               "type": "slash"
+            },
+            {
+              "allowed": "0.012810027937508414",
+              "delta_g": "-653219842.820506939409957360",
+              "excess": "false",
+              "kind": "drop",
+              "lp_units_after": "100000000000",
+              "lp_units_before": "100000000000",
+              "msg_index": "0",
+              "normalized_delta_g": "-0.006425658502850522",
+              "pool": "AVAX.USDX-0X9999999999999999999999999999999999999999",
+              "rejected": "false",
+              "scope": "/types.MsgOutboundTx",
+              "tx_id": "0000000000000000000000000000000000000000000000000000000000000002",
+              "type": "luvi_loss"
+            },
+            {
+              "allowed": "1.000000001063155290",
+              "delta_g": "-9987543469.472414685155891178",
+              "excess": "false",
+              "kind": "drop",
+              "lp_units_after": "100000000000",
+              "lp_units_before": "100000000000",
+              "msg_index": "0",
+              "normalized_delta_g": "-1.000000000000000000",
+              "pool": "AVAX.AVAX",
+              "rejected": "false",
+              "scope": "/types.MsgOutboundTx",
+              "tx_id": "0000000000000000000000000000000000000000000000000000000000000002",
+              "type": "luvi_loss"
             },
             {
               "chain": "AVAX",

@@ -1880,6 +1880,21 @@
               "msg_index": "0",
               "pool": "BTC.BTC",
               "type": "slash"
+            },
+            {
+              "allowed": "0.000098845237340073",
+              "delta_g": "-156278.573112269346009855",
+              "excess": "false",
+              "kind": "drop",
+              "lp_units_after": "100000000000",
+              "lp_units_before": "100000000000",
+              "msg_index": "0",
+              "normalized_delta_g": "-0.000049418834903464",
+              "pool": "BTC.BTC",
+              "rejected": "false",
+              "scope": "/types.MsgRefundTx",
+              "tx_id": "0000000000000000000000000000000000000000000000000000000000000005",
+              "type": "luvi_loss"
             }
           ]
         }

@@ -517,6 +517,21 @@
         "rune_amt": "100097599609",
         "transaction_count": "1",
         "type": "gas"
+      },
+      {
+        "allowed": "1.000000001010999840",
+        "delta_g": "-10000079908.430732134896379961",
+        "excess": "false",
+        "kind": "drop",
+        "lp_units_after": "100000000000",
+        "lp_units_before": "100000000000",
+        "mode": "EndBlock",
+        "normalized_delta_g": "-1.000000000000000000",
+        "pool": "ETH.ETH",
+        "rejected": "false",
+        "scope": "endblock/gas",
+        "tx_id": "",
+        "type": "luvi_loss"
       }
     ],
     "txs": [

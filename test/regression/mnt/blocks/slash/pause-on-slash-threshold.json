@@ -1286,6 +1286,36 @@
               "msg_index": "0",
               "pool": "ETH.ETH",
               "type": "slash"
+            },
+            {
+              "allowed": "0.016203178538422156",
+              "delta_g": "-820587449.978331962367689351",
+              "excess": "false",
+              "kind": "drop",
+              "lp_units_after": "100000000000",
+              "lp_units_before": "100000000000",
+              "msg_index": "0",
+              "normalized_delta_g": "-0.008134675731751522",
+              "pool": "ETH.USDX-0X9999999999999999999999999999999999999999",
+              "rejected": "false",
+              "scope": "/types.MsgOutboundTx",
+              "tx_id": "0000000000000000000000000000000000000000000000000000000000000001",
+              "type": "luvi_loss"
+            },
+            {
+              "allowed": "0.002500001110999961",
+              "delta_g": "-12507847.778170370359424599",
+              "excess": "false",
+              "kind": "drop",
+              "lp_units_after": "100000000000",
+              "lp_units_before": "100000000000",
+              "msg_index": "0",
+              "normalized_delta_g": "-0.001250782279106758",
+              "pool": "ETH.ETH",
+              "rejected": "false",
+              "scope": "/types.MsgOutboundTx",
+              "tx_id": "0000000000000000000000000000000000000000000000000000000000000001",
+              "type": "luvi_loss"
             }
           ]
         }

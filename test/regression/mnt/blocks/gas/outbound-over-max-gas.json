@@ -735,6 +735,21 @@
         "rune_amt": "5000019560",
         "transaction_count": "1",
         "type": "gas"
+      },
+      {
+        "allowed": "0.002500000910999962",
+        "delta_g": "-12507846.370619120198888373",
+        "excess": "false",
+        "kind": "drop",
+        "lp_units_after": "100000000000",
+        "lp_units_before": "100000000000",
+        "mode": "EndBlock",
+        "normalized_delta_g": "-0.001250782178026567",
+        "pool": "ETH.ETH",
+        "rejected": "false",
+        "scope": "endblock/gas",
+        "tx_id": "",
+        "type": "luvi_loss"
       }
     ],
     "txs": [
@@ -1636,6 +1651,36 @@
               "msg_index": "0",
               "pool": "ETH.ETH",
               "type": "slash"
+            },
+            {
+              "allowed": "0.012835483829485748",
+              "delta_g": "-653859828.240304472212998364",
+              "excess": "false",
+              "kind": "drop",
+              "lp_units_after": "100000000000",
+              "lp_units_before": "100000000000",
+              "msg_index": "0",
+              "normalized_delta_g": "-0.006438468846120261",
+              "pool": "ETH.USDX-0X9999999999999999999999999999999999999999",
+              "rejected": "false",
+              "scope": "/types.MsgOutboundTx",
+              "tx_id": "0000000000000000000000000000000000000000000000000000000000000002",
+              "type": "luvi_loss"
+            },
+            {
+              "allowed": "0.002770084159816671",
+              "delta_g": "-13842711.833781034975865865",
+              "excess": "false",
+              "kind": "drop",
+              "lp_units_after": "100000000000",
+              "lp_units_before": "100000000000",
+              "msg_index": "0",
+              "normalized_delta_g": "-0.001386002048570042",
+              "pool": "ETH.ETH",
+              "rejected": "false",
+              "scope": "/types.MsgOutboundTx",
+              "tx_id": "0000000000000000000000000000000000000000000000000000000000000002",
+              "type": "luvi_loss"
             }
           ]
         }
