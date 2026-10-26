@@ -3348,22 +3348,28 @@ components:
         rolling_pool_liquidity_fee_rune: "12345678"
         synth_units: "0"
         savers_depth: "199998"
+        fair_value_oracle_price_rune: "4.000000000000000000"
         derived_depth_bps: "123456"
         luvi: "1.500000000000375000"
         balance_asset: "3197744873"
         synth_per_pool_depth_bps: "2500"
+        lp_unit_fair_value_asset: "1.500000000000000000"
         synth_supply: "0"
         asset_tor_price: "123456"
         synth_mint_paused: true
         pol_reserve_rune_deposited: "10000000000"
         balance_rune: "13460619152985"
+        lp_unit_spot_value_rune: "6.000000000000000000"
         pool_units: "14694928607473"
         short_code: b
         volume_rune: "123456"
         lp_equity_per_unit: "1.500000000000000000"
+        lp_unit_fair_value_rune: "6.000000000000000000"
         volume_asset: "123456"
         savers_fill_bps: "4500"
         savers_units: "199998"
+        lp_fair_spot_deviation_bps: "0"
+        lp_fair_value_overhang: false
         savers_capacity_remaining: "1000"
         trading_halted: false
         pending_inbound_rune: "464993836"
@@ -3497,6 +3503,42 @@ components:
           description: whether synth supply is at or above twice the asset depth;
             synth units are clamped and LP units can redeem almost nothing while this
             is true
+          example: false
+          type: boolean
+        lp_unit_fair_value_rune:
+          description: "fair LP-side value per LP unit in RUNE at the oracle price\
+            \ P of the asset in RUNE, (2 * sqrt(balance_asset * balance_rune * P)\
+            \ - synth_supply * P) / LP_units, clamped at zero; swaps cannot move it.\
+            \ Only present when the oracle has a current price for the asset and RUNE"
+          example: "6.000000000000000000"
+          type: string
+        lp_unit_fair_value_asset:
+          description: "lp_unit_fair_value_rune / P, in the asset. Only present with\
+            \ an oracle price"
+          example: "1.500000000000000000"
+          type: string
+        lp_unit_spot_value_rune:
+          description: "spot LP-side value per LP unit in RUNE, (2 * balance_rune\
+            \ - synth_supply * balance_rune / balance_asset) / LP_units, clamped at\
+            \ zero. Only present with an oracle price"
+          example: "6.000000000000000000"
+          type: string
+        lp_fair_spot_deviation_bps:
+          description: "(lp_unit_spot_value_rune - lp_unit_fair_value_rune) / lp_unit_fair_value_rune\
+            \ in basis points, a pool price manipulation signal. Absent without an\
+            \ oracle price or when lp_fair_value_overhang is true"
+          example: "0"
+          type: string
+        fair_value_oracle_price_rune:
+          description: the oracle price P of one unit of the asset in RUNE (oracle
+            USD price of the asset / oracle USD price of RUNE) used for the fair values.
+            Only present with an oracle price
+          example: "4.000000000000000000"
+          type: string
+        lp_fair_value_overhang:
+          description: "whether the synth liability is at or above the pool's fair\
+            \ value, so the LP side is worth nothing at the oracle price. Only present\
+            \ (true) with an oracle price"
           example: false
           type: boolean
       required:

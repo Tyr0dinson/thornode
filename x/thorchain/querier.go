@@ -1911,6 +1911,11 @@ func (qs queryServer) queryPool(ctx cosmos.Context, req *types.QueryPoolRequest)
 	p.SynthSupplyRemaining = synthSupplyRemaining.String()
 	p.DerivedDepthBps = dbps.String()
 	setPoolLuviFields(&p, pool, synthSupply)
+	if !pool.Asset.IsSyntheticAsset() {
+		setPoolFairValueFields(&p, pool, synthSupply,
+			oraclePriceUSD(ctx, qs.mgr.Keeper(), pool.Asset.Ticker.String()),
+			oraclePriceUSD(ctx, qs.mgr.Keeper(), common.RuneAsset().Ticker.String()))
+	}
 
 	polReserveDeposit, err := qs.mgr.Keeper().GetPOLReserveDeposit(ctx, pool.Asset)
 	if err == nil {
@@ -1944,8 +1949,46 @@ func setPoolLuviFields(p *types.QueryPoolResponse, pool Pool, synthSupply cosmos
 	p.SynthOverhang = !st.SynthSupply.IsZero() && st.IsOverhang()
 }
 
+// oraclePriceUSD returns the oracle USD price of symbol, or "" when the
+// oracle has none. The price store is wiped every BeginBlock and refilled only
+// with the symbols that reached quorum in that block, so a price that exists
+// is the current block's.
+func oraclePriceUSD(ctx cosmos.Context, k keeper.Keeper, symbol string) string {
+	price, err := k.GetPrice(ctx, symbol)
+	if err != nil {
+		return ""
+	}
+	return price.Price
+}
+
+// setPoolFairValueFields fills the oracle-priced (fair) LP unit value fields of
+// a pool response. They are left unset unless both USD prices are present and
+// valid, and the pool has depth and LP units. See types/type_luvi_fair.go.
+func setPoolFairValueFields(p *types.QueryPoolResponse, pool Pool, synthSupply cosmos.Uint, assetUSD, runeUSD string) {
+	if assetUSD == "" || runeUSD == "" {
+		return
+	}
+	price, err := types.NewLuviPriceFromUSD(assetUSD, runeUSD)
+	if err != nil {
+		return
+	}
+	fv, err := types.NewLuviState(pool, synthSupply).FairValue(price)
+	if err != nil {
+		return
+	}
+	p.LpUnitFairValueRune = fv.UnitFairValueRune.String()
+	p.LpUnitFairValueAsset = fv.UnitFairValueAsset.String()
+	p.LpUnitSpotValueRune = fv.UnitSpotValueRune.String()
+	p.FairValueOraclePriceRune = fv.OraclePriceRune.String()
+	p.LpFairValueOverhang = fv.Overhang
+	if fv.HasDeviation {
+		p.LpFairSpotDeviationBps = fv.DeviationBps.String()
+	}
+}
+
 func (qs queryServer) queryPools(ctx cosmos.Context, _ *types.QueryPoolsRequest) (*types.QueryPoolsResponse, error) {
 	dollarsPerRune := dollarsPerRuneIgnoreHalt(ctx, qs.mgr.Keeper())
+	runeUSD := oraclePriceUSD(ctx, qs.mgr.Keeper(), common.RuneAsset().Ticker.String())
 
 	isGlobalTradingHalted := qs.mgr.Keeper().IsGlobalTradingHalted(ctx)
 	isChainOrChainTradingHalted := map[common.Chain]bool{}
@@ -2059,6 +2102,7 @@ func (qs queryServer) queryPools(ctx cosmos.Context, _ *types.QueryPoolsRequest)
 		p.SynthSupplyRemaining = synthSupplyRemaining.String()
 		p.DerivedDepthBps = dbps.String()
 		setPoolLuviFields(&p, pool, synthSupply)
+		setPoolFairValueFields(&p, pool, synthSupply, oraclePriceUSD(ctx, qs.mgr.Keeper(), pool.Asset.Ticker.String()), runeUSD)
 
 		polReserveDeposit, polErr := qs.mgr.Keeper().GetPOLReserveDeposit(ctx, pool.Asset)
 		if polErr == nil {

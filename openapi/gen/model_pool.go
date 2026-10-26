@@ -68,6 +68,18 @@ type Pool struct {
 	SynthPerPoolDepthBps string `json:"synth_per_pool_depth_bps"`
 	// whether synth supply is at or above twice the asset depth; synth units are clamped and LP units can redeem almost nothing while this is true
 	SynthOverhang bool `json:"synth_overhang"`
+	// fair LP-side value per LP unit in RUNE at the oracle price P of the asset in RUNE, (2 * sqrt(balance_asset * balance_rune * P) - synth_supply * P) / LP_units, clamped at zero; swaps cannot move it. Only present when the oracle has a current price for the asset and RUNE
+	LpUnitFairValueRune *string `json:"lp_unit_fair_value_rune,omitempty"`
+	// lp_unit_fair_value_rune / P, in the asset. Only present with an oracle price
+	LpUnitFairValueAsset *string `json:"lp_unit_fair_value_asset,omitempty"`
+	// spot LP-side value per LP unit in RUNE, (2 * balance_rune - synth_supply * balance_rune / balance_asset) / LP_units, clamped at zero. Only present with an oracle price
+	LpUnitSpotValueRune *string `json:"lp_unit_spot_value_rune,omitempty"`
+	// (lp_unit_spot_value_rune - lp_unit_fair_value_rune) / lp_unit_fair_value_rune in basis points, a pool price manipulation signal. Absent without an oracle price or when lp_fair_value_overhang is true
+	LpFairSpotDeviationBps *string `json:"lp_fair_spot_deviation_bps,omitempty"`
+	// the oracle price P of one unit of the asset in RUNE (oracle USD price of the asset / oracle USD price of RUNE) used for the fair values. Only present with an oracle price
+	FairValueOraclePriceRune *string `json:"fair_value_oracle_price_rune,omitempty"`
+	// whether the synth liability is at or above the pool's fair value, so the LP side is worth nothing at the oracle price. Only present (true) with an oracle price
+	LpFairValueOverhang *bool `json:"lp_fair_value_overhang,omitempty"`
 }
 
 // NewPool instantiates a new Pool object
@@ -886,6 +898,198 @@ func (o *Pool) SetSynthOverhang(v bool) {
 	o.SynthOverhang = v
 }
 
+// GetLpUnitFairValueRune returns the LpUnitFairValueRune field value if set, zero value otherwise.
+func (o *Pool) GetLpUnitFairValueRune() string {
+	if o == nil || o.LpUnitFairValueRune == nil {
+		var ret string
+		return ret
+	}
+	return *o.LpUnitFairValueRune
+}
+
+// GetLpUnitFairValueRuneOk returns a tuple with the LpUnitFairValueRune field value if set, nil otherwise
+// and a boolean to check if the value has been set.
+func (o *Pool) GetLpUnitFairValueRuneOk() (*string, bool) {
+	if o == nil || o.LpUnitFairValueRune == nil {
+		return nil, false
+	}
+	return o.LpUnitFairValueRune, true
+}
+
+// HasLpUnitFairValueRune returns a boolean if a field has been set.
+func (o *Pool) HasLpUnitFairValueRune() bool {
+	if o != nil && o.LpUnitFairValueRune != nil {
+		return true
+	}
+
+	return false
+}
+
+// SetLpUnitFairValueRune gets a reference to the given string and assigns it to the LpUnitFairValueRune field.
+func (o *Pool) SetLpUnitFairValueRune(v string) {
+	o.LpUnitFairValueRune = &v
+}
+
+// GetLpUnitFairValueAsset returns the LpUnitFairValueAsset field value if set, zero value otherwise.
+func (o *Pool) GetLpUnitFairValueAsset() string {
+	if o == nil || o.LpUnitFairValueAsset == nil {
+		var ret string
+		return ret
+	}
+	return *o.LpUnitFairValueAsset
+}
+
+// GetLpUnitFairValueAssetOk returns a tuple with the LpUnitFairValueAsset field value if set, nil otherwise
+// and a boolean to check if the value has been set.
+func (o *Pool) GetLpUnitFairValueAssetOk() (*string, bool) {
+	if o == nil || o.LpUnitFairValueAsset == nil {
+		return nil, false
+	}
+	return o.LpUnitFairValueAsset, true
+}
+
+// HasLpUnitFairValueAsset returns a boolean if a field has been set.
+func (o *Pool) HasLpUnitFairValueAsset() bool {
+	if o != nil && o.LpUnitFairValueAsset != nil {
+		return true
+	}
+
+	return false
+}
+
+// SetLpUnitFairValueAsset gets a reference to the given string and assigns it to the LpUnitFairValueAsset field.
+func (o *Pool) SetLpUnitFairValueAsset(v string) {
+	o.LpUnitFairValueAsset = &v
+}
+
+// GetLpUnitSpotValueRune returns the LpUnitSpotValueRune field value if set, zero value otherwise.
+func (o *Pool) GetLpUnitSpotValueRune() string {
+	if o == nil || o.LpUnitSpotValueRune == nil {
+		var ret string
+		return ret
+	}
+	return *o.LpUnitSpotValueRune
+}
+
+// GetLpUnitSpotValueRuneOk returns a tuple with the LpUnitSpotValueRune field value if set, nil otherwise
+// and a boolean to check if the value has been set.
+func (o *Pool) GetLpUnitSpotValueRuneOk() (*string, bool) {
+	if o == nil || o.LpUnitSpotValueRune == nil {
+		return nil, false
+	}
+	return o.LpUnitSpotValueRune, true
+}
+
+// HasLpUnitSpotValueRune returns a boolean if a field has been set.
+func (o *Pool) HasLpUnitSpotValueRune() bool {
+	if o != nil && o.LpUnitSpotValueRune != nil {
+		return true
+	}
+
+	return false
+}
+
+// SetLpUnitSpotValueRune gets a reference to the given string and assigns it to the LpUnitSpotValueRune field.
+func (o *Pool) SetLpUnitSpotValueRune(v string) {
+	o.LpUnitSpotValueRune = &v
+}
+
+// GetLpFairSpotDeviationBps returns the LpFairSpotDeviationBps field value if set, zero value otherwise.
+func (o *Pool) GetLpFairSpotDeviationBps() string {
+	if o == nil || o.LpFairSpotDeviationBps == nil {
+		var ret string
+		return ret
+	}
+	return *o.LpFairSpotDeviationBps
+}
+
+// GetLpFairSpotDeviationBpsOk returns a tuple with the LpFairSpotDeviationBps field value if set, nil otherwise
+// and a boolean to check if the value has been set.
+func (o *Pool) GetLpFairSpotDeviationBpsOk() (*string, bool) {
+	if o == nil || o.LpFairSpotDeviationBps == nil {
+		return nil, false
+	}
+	return o.LpFairSpotDeviationBps, true
+}
+
+// HasLpFairSpotDeviationBps returns a boolean if a field has been set.
+func (o *Pool) HasLpFairSpotDeviationBps() bool {
+	if o != nil && o.LpFairSpotDeviationBps != nil {
+		return true
+	}
+
+	return false
+}
+
+// SetLpFairSpotDeviationBps gets a reference to the given string and assigns it to the LpFairSpotDeviationBps field.
+func (o *Pool) SetLpFairSpotDeviationBps(v string) {
+	o.LpFairSpotDeviationBps = &v
+}
+
+// GetFairValueOraclePriceRune returns the FairValueOraclePriceRune field value if set, zero value otherwise.
+func (o *Pool) GetFairValueOraclePriceRune() string {
+	if o == nil || o.FairValueOraclePriceRune == nil {
+		var ret string
+		return ret
+	}
+	return *o.FairValueOraclePriceRune
+}
+
+// GetFairValueOraclePriceRuneOk returns a tuple with the FairValueOraclePriceRune field value if set, nil otherwise
+// and a boolean to check if the value has been set.
+func (o *Pool) GetFairValueOraclePriceRuneOk() (*string, bool) {
+	if o == nil || o.FairValueOraclePriceRune == nil {
+		return nil, false
+	}
+	return o.FairValueOraclePriceRune, true
+}
+
+// HasFairValueOraclePriceRune returns a boolean if a field has been set.
+func (o *Pool) HasFairValueOraclePriceRune() bool {
+	if o != nil && o.FairValueOraclePriceRune != nil {
+		return true
+	}
+
+	return false
+}
+
+// SetFairValueOraclePriceRune gets a reference to the given string and assigns it to the FairValueOraclePriceRune field.
+func (o *Pool) SetFairValueOraclePriceRune(v string) {
+	o.FairValueOraclePriceRune = &v
+}
+
+// GetLpFairValueOverhang returns the LpFairValueOverhang field value if set, zero value otherwise.
+func (o *Pool) GetLpFairValueOverhang() bool {
+	if o == nil || o.LpFairValueOverhang == nil {
+		var ret bool
+		return ret
+	}
+	return *o.LpFairValueOverhang
+}
+
+// GetLpFairValueOverhangOk returns a tuple with the LpFairValueOverhang field value if set, nil otherwise
+// and a boolean to check if the value has been set.
+func (o *Pool) GetLpFairValueOverhangOk() (*bool, bool) {
+	if o == nil || o.LpFairValueOverhang == nil {
+		return nil, false
+	}
+	return o.LpFairValueOverhang, true
+}
+
+// HasLpFairValueOverhang returns a boolean if a field has been set.
+func (o *Pool) HasLpFairValueOverhang() bool {
+	if o != nil && o.LpFairValueOverhang != nil {
+		return true
+	}
+
+	return false
+}
+
+// SetLpFairValueOverhang gets a reference to the given bool and assigns it to the LpFairValueOverhang field.
+func (o *Pool) SetLpFairValueOverhang(v bool) {
+	o.LpFairValueOverhang = &v
+}
+
 func (o Pool) MarshalJSON_deprecated() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if true {
@@ -977,6 +1181,24 @@ func (o Pool) MarshalJSON_deprecated() ([]byte, error) {
 	}
 	if true {
 		toSerialize["synth_overhang"] = o.SynthOverhang
+	}
+	if o.LpUnitFairValueRune != nil {
+		toSerialize["lp_unit_fair_value_rune"] = o.LpUnitFairValueRune
+	}
+	if o.LpUnitFairValueAsset != nil {
+		toSerialize["lp_unit_fair_value_asset"] = o.LpUnitFairValueAsset
+	}
+	if o.LpUnitSpotValueRune != nil {
+		toSerialize["lp_unit_spot_value_rune"] = o.LpUnitSpotValueRune
+	}
+	if o.LpFairSpotDeviationBps != nil {
+		toSerialize["lp_fair_spot_deviation_bps"] = o.LpFairSpotDeviationBps
+	}
+	if o.FairValueOraclePriceRune != nil {
+		toSerialize["fair_value_oracle_price_rune"] = o.FairValueOraclePriceRune
+	}
+	if o.LpFairValueOverhang != nil {
+		toSerialize["lp_fair_value_overhang"] = o.LpFairValueOverhang
 	}
 	return json.Marshal(toSerialize)
 }

@@ -529,6 +529,12 @@ var (
 	fd_QueryPoolResponse_lp_equity_per_unit              protoreflect.FieldDescriptor
 	fd_QueryPoolResponse_synth_per_pool_depth_bps        protoreflect.FieldDescriptor
 	fd_QueryPoolResponse_synth_overhang                  protoreflect.FieldDescriptor
+	fd_QueryPoolResponse_lp_unit_fair_value_rune         protoreflect.FieldDescriptor
+	fd_QueryPoolResponse_lp_unit_fair_value_asset        protoreflect.FieldDescriptor
+	fd_QueryPoolResponse_lp_unit_spot_value_rune         protoreflect.FieldDescriptor
+	fd_QueryPoolResponse_lp_fair_spot_deviation_bps      protoreflect.FieldDescriptor
+	fd_QueryPoolResponse_fair_value_oracle_price_rune    protoreflect.FieldDescriptor
+	fd_QueryPoolResponse_lp_fair_value_overhang          protoreflect.FieldDescriptor
 )
 
 func init() {
@@ -564,6 +570,12 @@ func init() {
 	fd_QueryPoolResponse_lp_equity_per_unit = md_QueryPoolResponse.Fields().ByName("lp_equity_per_unit")
 	fd_QueryPoolResponse_synth_per_pool_depth_bps = md_QueryPoolResponse.Fields().ByName("synth_per_pool_depth_bps")
 	fd_QueryPoolResponse_synth_overhang = md_QueryPoolResponse.Fields().ByName("synth_overhang")
+	fd_QueryPoolResponse_lp_unit_fair_value_rune = md_QueryPoolResponse.Fields().ByName("lp_unit_fair_value_rune")
+	fd_QueryPoolResponse_lp_unit_fair_value_asset = md_QueryPoolResponse.Fields().ByName("lp_unit_fair_value_asset")
+	fd_QueryPoolResponse_lp_unit_spot_value_rune = md_QueryPoolResponse.Fields().ByName("lp_unit_spot_value_rune")
+	fd_QueryPoolResponse_lp_fair_spot_deviation_bps = md_QueryPoolResponse.Fields().ByName("lp_fair_spot_deviation_bps")
+	fd_QueryPoolResponse_fair_value_oracle_price_rune = md_QueryPoolResponse.Fields().ByName("fair_value_oracle_price_rune")
+	fd_QueryPoolResponse_lp_fair_value_overhang = md_QueryPoolResponse.Fields().ByName("lp_fair_value_overhang")
 }
 
 var _ protoreflect.Message = (*fastReflection_QueryPoolResponse)(nil)
@@ -811,6 +823,42 @@ func (x *fastReflection_QueryPoolResponse) Range(f func(protoreflect.FieldDescri
 			return
 		}
 	}
+	if x.LpUnitFairValueRune != "" {
+		value := protoreflect.ValueOfString(x.LpUnitFairValueRune)
+		if !f(fd_QueryPoolResponse_lp_unit_fair_value_rune, value) {
+			return
+		}
+	}
+	if x.LpUnitFairValueAsset != "" {
+		value := protoreflect.ValueOfString(x.LpUnitFairValueAsset)
+		if !f(fd_QueryPoolResponse_lp_unit_fair_value_asset, value) {
+			return
+		}
+	}
+	if x.LpUnitSpotValueRune != "" {
+		value := protoreflect.ValueOfString(x.LpUnitSpotValueRune)
+		if !f(fd_QueryPoolResponse_lp_unit_spot_value_rune, value) {
+			return
+		}
+	}
+	if x.LpFairSpotDeviationBps != "" {
+		value := protoreflect.ValueOfString(x.LpFairSpotDeviationBps)
+		if !f(fd_QueryPoolResponse_lp_fair_spot_deviation_bps, value) {
+			return
+		}
+	}
+	if x.FairValueOraclePriceRune != "" {
+		value := protoreflect.ValueOfString(x.FairValueOraclePriceRune)
+		if !f(fd_QueryPoolResponse_fair_value_oracle_price_rune, value) {
+			return
+		}
+	}
+	if x.LpFairValueOverhang != false {
+		value := protoreflect.ValueOfBool(x.LpFairValueOverhang)
+		if !f(fd_QueryPoolResponse_lp_fair_value_overhang, value) {
+			return
+		}
+	}
 }
 
 // Has reports whether a field is populated.
@@ -886,6 +934,18 @@ func (x *fastReflection_QueryPoolResponse) Has(fd protoreflect.FieldDescriptor) 
 		return x.SynthPerPoolDepthBps != ""
 	case "types.QueryPoolResponse.synth_overhang":
 		return x.SynthOverhang != false
+	case "types.QueryPoolResponse.lp_unit_fair_value_rune":
+		return x.LpUnitFairValueRune != ""
+	case "types.QueryPoolResponse.lp_unit_fair_value_asset":
+		return x.LpUnitFairValueAsset != ""
+	case "types.QueryPoolResponse.lp_unit_spot_value_rune":
+		return x.LpUnitSpotValueRune != ""
+	case "types.QueryPoolResponse.lp_fair_spot_deviation_bps":
+		return x.LpFairSpotDeviationBps != ""
+	case "types.QueryPoolResponse.fair_value_oracle_price_rune":
+		return x.FairValueOraclePriceRune != ""
+	case "types.QueryPoolResponse.lp_fair_value_overhang":
+		return x.LpFairValueOverhang != false
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.QueryPoolResponse"))
@@ -962,6 +1022,18 @@ func (x *fastReflection_QueryPoolResponse) Clear(fd protoreflect.FieldDescriptor
 		x.SynthPerPoolDepthBps = ""
 	case "types.QueryPoolResponse.synth_overhang":
 		x.SynthOverhang = false
+	case "types.QueryPoolResponse.lp_unit_fair_value_rune":
+		x.LpUnitFairValueRune = ""
+	case "types.QueryPoolResponse.lp_unit_fair_value_asset":
+		x.LpUnitFairValueAsset = ""
+	case "types.QueryPoolResponse.lp_unit_spot_value_rune":
+		x.LpUnitSpotValueRune = ""
+	case "types.QueryPoolResponse.lp_fair_spot_deviation_bps":
+		x.LpFairSpotDeviationBps = ""
+	case "types.QueryPoolResponse.fair_value_oracle_price_rune":
+		x.FairValueOraclePriceRune = ""
+	case "types.QueryPoolResponse.lp_fair_value_overhang":
+		x.LpFairValueOverhang = false
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.QueryPoolResponse"))
@@ -1068,6 +1140,24 @@ func (x *fastReflection_QueryPoolResponse) Get(descriptor protoreflect.FieldDesc
 	case "types.QueryPoolResponse.synth_overhang":
 		value := x.SynthOverhang
 		return protoreflect.ValueOfBool(value)
+	case "types.QueryPoolResponse.lp_unit_fair_value_rune":
+		value := x.LpUnitFairValueRune
+		return protoreflect.ValueOfString(value)
+	case "types.QueryPoolResponse.lp_unit_fair_value_asset":
+		value := x.LpUnitFairValueAsset
+		return protoreflect.ValueOfString(value)
+	case "types.QueryPoolResponse.lp_unit_spot_value_rune":
+		value := x.LpUnitSpotValueRune
+		return protoreflect.ValueOfString(value)
+	case "types.QueryPoolResponse.lp_fair_spot_deviation_bps":
+		value := x.LpFairSpotDeviationBps
+		return protoreflect.ValueOfString(value)
+	case "types.QueryPoolResponse.fair_value_oracle_price_rune":
+		value := x.FairValueOraclePriceRune
+		return protoreflect.ValueOfString(value)
+	case "types.QueryPoolResponse.lp_fair_value_overhang":
+		value := x.LpFairValueOverhang
+		return protoreflect.ValueOfBool(value)
 	default:
 		if descriptor.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.QueryPoolResponse"))
@@ -1148,6 +1238,18 @@ func (x *fastReflection_QueryPoolResponse) Set(fd protoreflect.FieldDescriptor, 
 		x.SynthPerPoolDepthBps = value.Interface().(string)
 	case "types.QueryPoolResponse.synth_overhang":
 		x.SynthOverhang = value.Bool()
+	case "types.QueryPoolResponse.lp_unit_fair_value_rune":
+		x.LpUnitFairValueRune = value.Interface().(string)
+	case "types.QueryPoolResponse.lp_unit_fair_value_asset":
+		x.LpUnitFairValueAsset = value.Interface().(string)
+	case "types.QueryPoolResponse.lp_unit_spot_value_rune":
+		x.LpUnitSpotValueRune = value.Interface().(string)
+	case "types.QueryPoolResponse.lp_fair_spot_deviation_bps":
+		x.LpFairSpotDeviationBps = value.Interface().(string)
+	case "types.QueryPoolResponse.fair_value_oracle_price_rune":
+		x.FairValueOraclePriceRune = value.Interface().(string)
+	case "types.QueryPoolResponse.lp_fair_value_overhang":
+		x.LpFairValueOverhang = value.Bool()
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.QueryPoolResponse"))
@@ -1228,6 +1330,18 @@ func (x *fastReflection_QueryPoolResponse) Mutable(fd protoreflect.FieldDescript
 		panic(fmt.Errorf("field synth_per_pool_depth_bps of message types.QueryPoolResponse is not mutable"))
 	case "types.QueryPoolResponse.synth_overhang":
 		panic(fmt.Errorf("field synth_overhang of message types.QueryPoolResponse is not mutable"))
+	case "types.QueryPoolResponse.lp_unit_fair_value_rune":
+		panic(fmt.Errorf("field lp_unit_fair_value_rune of message types.QueryPoolResponse is not mutable"))
+	case "types.QueryPoolResponse.lp_unit_fair_value_asset":
+		panic(fmt.Errorf("field lp_unit_fair_value_asset of message types.QueryPoolResponse is not mutable"))
+	case "types.QueryPoolResponse.lp_unit_spot_value_rune":
+		panic(fmt.Errorf("field lp_unit_spot_value_rune of message types.QueryPoolResponse is not mutable"))
+	case "types.QueryPoolResponse.lp_fair_spot_deviation_bps":
+		panic(fmt.Errorf("field lp_fair_spot_deviation_bps of message types.QueryPoolResponse is not mutable"))
+	case "types.QueryPoolResponse.fair_value_oracle_price_rune":
+		panic(fmt.Errorf("field fair_value_oracle_price_rune of message types.QueryPoolResponse is not mutable"))
+	case "types.QueryPoolResponse.lp_fair_value_overhang":
+		panic(fmt.Errorf("field lp_fair_value_overhang of message types.QueryPoolResponse is not mutable"))
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.QueryPoolResponse"))
@@ -1300,6 +1414,18 @@ func (x *fastReflection_QueryPoolResponse) NewField(fd protoreflect.FieldDescrip
 	case "types.QueryPoolResponse.synth_per_pool_depth_bps":
 		return protoreflect.ValueOfString("")
 	case "types.QueryPoolResponse.synth_overhang":
+		return protoreflect.ValueOfBool(false)
+	case "types.QueryPoolResponse.lp_unit_fair_value_rune":
+		return protoreflect.ValueOfString("")
+	case "types.QueryPoolResponse.lp_unit_fair_value_asset":
+		return protoreflect.ValueOfString("")
+	case "types.QueryPoolResponse.lp_unit_spot_value_rune":
+		return protoreflect.ValueOfString("")
+	case "types.QueryPoolResponse.lp_fair_spot_deviation_bps":
+		return protoreflect.ValueOfString("")
+	case "types.QueryPoolResponse.fair_value_oracle_price_rune":
+		return protoreflect.ValueOfString("")
+	case "types.QueryPoolResponse.lp_fair_value_overhang":
 		return protoreflect.ValueOfBool(false)
 	default:
 		if fd.IsExtension() {
@@ -1486,6 +1612,29 @@ func (x *fastReflection_QueryPoolResponse) ProtoMethods() *protoiface.Methods {
 		if x.SynthOverhang {
 			n += 3
 		}
+		l = len(x.LpUnitFairValueRune)
+		if l > 0 {
+			n += 2 + l + runtime.Sov(uint64(l))
+		}
+		l = len(x.LpUnitFairValueAsset)
+		if l > 0 {
+			n += 2 + l + runtime.Sov(uint64(l))
+		}
+		l = len(x.LpUnitSpotValueRune)
+		if l > 0 {
+			n += 2 + l + runtime.Sov(uint64(l))
+		}
+		l = len(x.LpFairSpotDeviationBps)
+		if l > 0 {
+			n += 2 + l + runtime.Sov(uint64(l))
+		}
+		l = len(x.FairValueOraclePriceRune)
+		if l > 0 {
+			n += 2 + l + runtime.Sov(uint64(l))
+		}
+		if x.LpFairValueOverhang {
+			n += 3
+		}
 		if x.unknownFields != nil {
 			n += len(x.unknownFields)
 		}
@@ -1514,6 +1663,63 @@ func (x *fastReflection_QueryPoolResponse) ProtoMethods() *protoiface.Methods {
 		if x.unknownFields != nil {
 			i -= len(x.unknownFields)
 			copy(dAtA[i:], x.unknownFields)
+		}
+		if x.LpFairValueOverhang {
+			i--
+			if x.LpFairValueOverhang {
+				dAtA[i] = 1
+			} else {
+				dAtA[i] = 0
+			}
+			i--
+			dAtA[i] = 0x2
+			i--
+			dAtA[i] = 0xe8
+		}
+		if len(x.FairValueOraclePriceRune) > 0 {
+			i -= len(x.FairValueOraclePriceRune)
+			copy(dAtA[i:], x.FairValueOraclePriceRune)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.FairValueOraclePriceRune)))
+			i--
+			dAtA[i] = 0x2
+			i--
+			dAtA[i] = 0xe2
+		}
+		if len(x.LpFairSpotDeviationBps) > 0 {
+			i -= len(x.LpFairSpotDeviationBps)
+			copy(dAtA[i:], x.LpFairSpotDeviationBps)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.LpFairSpotDeviationBps)))
+			i--
+			dAtA[i] = 0x2
+			i--
+			dAtA[i] = 0xda
+		}
+		if len(x.LpUnitSpotValueRune) > 0 {
+			i -= len(x.LpUnitSpotValueRune)
+			copy(dAtA[i:], x.LpUnitSpotValueRune)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.LpUnitSpotValueRune)))
+			i--
+			dAtA[i] = 0x2
+			i--
+			dAtA[i] = 0xd2
+		}
+		if len(x.LpUnitFairValueAsset) > 0 {
+			i -= len(x.LpUnitFairValueAsset)
+			copy(dAtA[i:], x.LpUnitFairValueAsset)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.LpUnitFairValueAsset)))
+			i--
+			dAtA[i] = 0x2
+			i--
+			dAtA[i] = 0xca
+		}
+		if len(x.LpUnitFairValueRune) > 0 {
+			i -= len(x.LpUnitFairValueRune)
+			copy(dAtA[i:], x.LpUnitFairValueRune)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.LpUnitFairValueRune)))
+			i--
+			dAtA[i] = 0x2
+			i--
+			dAtA[i] = 0xc2
 		}
 		if x.SynthOverhang {
 			i--
@@ -2722,6 +2928,186 @@ func (x *fastReflection_QueryPoolResponse) ProtoMethods() *protoiface.Methods {
 					}
 				}
 				x.SynthOverhang = bool(v != 0)
+			case 40:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field LpUnitFairValueRune", wireType)
+				}
+				var stringLen uint64
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					stringLen |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				intStringLen := int(stringLen)
+				if intStringLen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + intStringLen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.LpUnitFairValueRune = string(dAtA[iNdEx:postIndex])
+				iNdEx = postIndex
+			case 41:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field LpUnitFairValueAsset", wireType)
+				}
+				var stringLen uint64
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					stringLen |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				intStringLen := int(stringLen)
+				if intStringLen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + intStringLen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.LpUnitFairValueAsset = string(dAtA[iNdEx:postIndex])
+				iNdEx = postIndex
+			case 42:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field LpUnitSpotValueRune", wireType)
+				}
+				var stringLen uint64
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					stringLen |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				intStringLen := int(stringLen)
+				if intStringLen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + intStringLen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.LpUnitSpotValueRune = string(dAtA[iNdEx:postIndex])
+				iNdEx = postIndex
+			case 43:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field LpFairSpotDeviationBps", wireType)
+				}
+				var stringLen uint64
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					stringLen |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				intStringLen := int(stringLen)
+				if intStringLen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + intStringLen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.LpFairSpotDeviationBps = string(dAtA[iNdEx:postIndex])
+				iNdEx = postIndex
+			case 44:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field FairValueOraclePriceRune", wireType)
+				}
+				var stringLen uint64
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					stringLen |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				intStringLen := int(stringLen)
+				if intStringLen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + intStringLen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.FairValueOraclePriceRune = string(dAtA[iNdEx:postIndex])
+				iNdEx = postIndex
+			case 45:
+				if wireType != 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field LpFairValueOverhang", wireType)
+				}
+				var v int
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					v |= int(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				x.LpFairValueOverhang = bool(v != 0)
 			default:
 				iNdEx = preIndex
 				skippy, err := runtime.Skip(dAtA[iNdEx:])
@@ -3790,6 +4176,33 @@ type QueryPoolResponse struct {
 	// whether synth supply is at or above twice the asset depth; synth units are
 	// clamped and LP units can redeem almost nothing while this is true
 	SynthOverhang bool `protobuf:"varint,33,opt,name=synth_overhang,json=synthOverhang,proto3" json:"synth_overhang,omitempty"`
+	// Fields 40-45 value the pool's LP side at the oracle price P of the asset
+	// in RUNE (oracle USD price of the asset / oracle USD price of RUNE) instead
+	// of the pool's own price. Swaps leave sqrt(balance_asset * balance_rune)
+	// unchanged, so the fair value cannot be moved by a swap or sandwich. They
+	// are only set when the oracle has a price for both the asset ticker and
+	// RUNE at this height (the price store holds only the current block's
+	// quorum prices).
+	//
+	// fair LP-side value per LP unit, in RUNE:
+	// (2 * sqrt(balance_asset * balance_rune * P) - synth_supply * P) / LP_units,
+	// clamped at zero
+	LpUnitFairValueRune string `protobuf:"bytes,40,opt,name=lp_unit_fair_value_rune,json=lpUnitFairValueRune,proto3" json:"lp_unit_fair_value_rune,omitempty"`
+	// lp_unit_fair_value_rune / P, in the asset
+	LpUnitFairValueAsset string `protobuf:"bytes,41,opt,name=lp_unit_fair_value_asset,json=lpUnitFairValueAsset,proto3" json:"lp_unit_fair_value_asset,omitempty"`
+	// spot LP-side value per LP unit, in RUNE:
+	// (2 * balance_rune - synth_supply * balance_rune / balance_asset) /
+	// LP_units, clamped at zero
+	LpUnitSpotValueRune string `protobuf:"bytes,42,opt,name=lp_unit_spot_value_rune,json=lpUnitSpotValueRune,proto3" json:"lp_unit_spot_value_rune,omitempty"`
+	// (lp_unit_spot_value_rune - lp_unit_fair_value_rune) /
+	// lp_unit_fair_value_rune in basis points: how far the pool price has been
+	// pushed from the oracle; unset when lp_fair_value_overhang is true
+	LpFairSpotDeviationBps string `protobuf:"bytes,43,opt,name=lp_fair_spot_deviation_bps,json=lpFairSpotDeviationBps,proto3" json:"lp_fair_spot_deviation_bps,omitempty"`
+	// the oracle price P of one unit of the asset in RUNE
+	FairValueOraclePriceRune string `protobuf:"bytes,44,opt,name=fair_value_oracle_price_rune,json=fairValueOraclePriceRune,proto3" json:"fair_value_oracle_price_rune,omitempty"`
+	// whether the synth liability is at or above the pool's fair value, so the
+	// LP side is worth nothing at the oracle price
+	LpFairValueOverhang bool `protobuf:"varint,45,opt,name=lp_fair_value_overhang,json=lpFairValueOverhang,proto3" json:"lp_fair_value_overhang,omitempty"`
 }
 
 func (x *QueryPoolResponse) Reset() {
@@ -4022,6 +4435,48 @@ func (x *QueryPoolResponse) GetSynthOverhang() bool {
 	return false
 }
 
+func (x *QueryPoolResponse) GetLpUnitFairValueRune() string {
+	if x != nil {
+		return x.LpUnitFairValueRune
+	}
+	return ""
+}
+
+func (x *QueryPoolResponse) GetLpUnitFairValueAsset() string {
+	if x != nil {
+		return x.LpUnitFairValueAsset
+	}
+	return ""
+}
+
+func (x *QueryPoolResponse) GetLpUnitSpotValueRune() string {
+	if x != nil {
+		return x.LpUnitSpotValueRune
+	}
+	return ""
+}
+
+func (x *QueryPoolResponse) GetLpFairSpotDeviationBps() string {
+	if x != nil {
+		return x.LpFairSpotDeviationBps
+	}
+	return ""
+}
+
+func (x *QueryPoolResponse) GetFairValueOraclePriceRune() string {
+	if x != nil {
+		return x.FairValueOraclePriceRune
+	}
+	return ""
+}
+
+func (x *QueryPoolResponse) GetLpFairValueOverhang() bool {
+	if x != nil {
+		return x.LpFairValueOverhang
+	}
+	return false
+}
+
 type QueryPoolsRequest struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
@@ -4102,7 +4557,7 @@ var file_types_query_pool_proto_rawDesc = []byte{
 	0x6f, 0x6c, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x12, 0x14, 0x0a, 0x05, 0x61, 0x73, 0x73,
 	0x65, 0x74, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x05, 0x61, 0x73, 0x73, 0x65, 0x74, 0x12,
 	0x16, 0x0a, 0x06, 0x68, 0x65, 0x69, 0x67, 0x68, 0x74, 0x18, 0x02, 0x20, 0x01, 0x28, 0x09, 0x52,
-	0x06, 0x68, 0x65, 0x69, 0x67, 0x68, 0x74, 0x22, 0xfb, 0x0d, 0x0a, 0x11, 0x51, 0x75, 0x65, 0x72,
+	0x06, 0x68, 0x65, 0x69, 0x67, 0x68, 0x74, 0x22, 0xd0, 0x10, 0x0a, 0x11, 0x51, 0x75, 0x65, 0x72,
 	0x79, 0x50, 0x6f, 0x6f, 0x6c, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x12, 0x1f, 0x0a,
 	0x05, 0x61, 0x73, 0x73, 0x65, 0x74, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x42, 0x09, 0xea, 0xde,
 	0x1f, 0x05, 0x61, 0x73, 0x73, 0x65, 0x74, 0x52, 0x05, 0x61, 0x73, 0x73, 0x65, 0x74, 0x12, 0x1d,
@@ -4214,23 +4669,44 @@ var file_types_query_pool_proto_rawDesc = []byte{
 	0x6e, 0x74, 0x68, 0x5f, 0x6f, 0x76, 0x65, 0x72, 0x68, 0x61, 0x6e, 0x67, 0x18, 0x21, 0x20, 0x01,
 	0x28, 0x08, 0x42, 0x12, 0xea, 0xde, 0x1f, 0x0e, 0x73, 0x79, 0x6e, 0x74, 0x68, 0x5f, 0x6f, 0x76,
 	0x65, 0x72, 0x68, 0x61, 0x6e, 0x67, 0x52, 0x0d, 0x73, 0x79, 0x6e, 0x74, 0x68, 0x4f, 0x76, 0x65,
-	0x72, 0x68, 0x61, 0x6e, 0x67, 0x22, 0x2b, 0x0a, 0x11, 0x51, 0x75, 0x65, 0x72, 0x79, 0x50, 0x6f,
-	0x6f, 0x6c, 0x73, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x12, 0x16, 0x0a, 0x06, 0x68, 0x65,
-	0x69, 0x67, 0x68, 0x74, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x06, 0x68, 0x65, 0x69, 0x67,
-	0x68, 0x74, 0x22, 0x44, 0x0a, 0x12, 0x51, 0x75, 0x65, 0x72, 0x79, 0x50, 0x6f, 0x6f, 0x6c, 0x73,
-	0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x12, 0x2e, 0x0a, 0x05, 0x70, 0x6f, 0x6f, 0x6c,
-	0x73, 0x18, 0x01, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x18, 0x2e, 0x74, 0x79, 0x70, 0x65, 0x73, 0x2e,
-	0x51, 0x75, 0x65, 0x72, 0x79, 0x50, 0x6f, 0x6f, 0x6c, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73,
-	0x65, 0x52, 0x05, 0x70, 0x6f, 0x6f, 0x6c, 0x73, 0x42, 0x7f, 0x0a, 0x09, 0x63, 0x6f, 0x6d, 0x2e,
-	0x74, 0x79, 0x70, 0x65, 0x73, 0x42, 0x0e, 0x51, 0x75, 0x65, 0x72, 0x79, 0x50, 0x6f, 0x6f, 0x6c,
-	0x50, 0x72, 0x6f, 0x74, 0x6f, 0x50, 0x01, 0x5a, 0x2a, 0x67, 0x69, 0x74, 0x6c, 0x61, 0x62, 0x2e,
-	0x63, 0x6f, 0x6d, 0x2f, 0x74, 0x68, 0x6f, 0x72, 0x63, 0x68, 0x61, 0x69, 0x6e, 0x2f, 0x74, 0x68,
-	0x6f, 0x72, 0x6e, 0x6f, 0x64, 0x65, 0x2f, 0x76, 0x33, 0x2f, 0x61, 0x70, 0x69, 0x2f, 0x74, 0x79,
-	0x70, 0x65, 0x73, 0xa2, 0x02, 0x03, 0x54, 0x58, 0x58, 0xaa, 0x02, 0x05, 0x54, 0x79, 0x70, 0x65,
-	0x73, 0xca, 0x02, 0x05, 0x54, 0x79, 0x70, 0x65, 0x73, 0xe2, 0x02, 0x11, 0x54, 0x79, 0x70, 0x65,
-	0x73, 0x5c, 0x47, 0x50, 0x42, 0x4d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0xea, 0x02, 0x05,
-	0x54, 0x79, 0x70, 0x65, 0x73, 0xc8, 0xe2, 0x1e, 0x01, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f,
-	0x33,
+	0x72, 0x68, 0x61, 0x6e, 0x67, 0x12, 0x34, 0x0a, 0x17, 0x6c, 0x70, 0x5f, 0x75, 0x6e, 0x69, 0x74,
+	0x5f, 0x66, 0x61, 0x69, 0x72, 0x5f, 0x76, 0x61, 0x6c, 0x75, 0x65, 0x5f, 0x72, 0x75, 0x6e, 0x65,
+	0x18, 0x28, 0x20, 0x01, 0x28, 0x09, 0x52, 0x13, 0x6c, 0x70, 0x55, 0x6e, 0x69, 0x74, 0x46, 0x61,
+	0x69, 0x72, 0x56, 0x61, 0x6c, 0x75, 0x65, 0x52, 0x75, 0x6e, 0x65, 0x12, 0x36, 0x0a, 0x18, 0x6c,
+	0x70, 0x5f, 0x75, 0x6e, 0x69, 0x74, 0x5f, 0x66, 0x61, 0x69, 0x72, 0x5f, 0x76, 0x61, 0x6c, 0x75,
+	0x65, 0x5f, 0x61, 0x73, 0x73, 0x65, 0x74, 0x18, 0x29, 0x20, 0x01, 0x28, 0x09, 0x52, 0x14, 0x6c,
+	0x70, 0x55, 0x6e, 0x69, 0x74, 0x46, 0x61, 0x69, 0x72, 0x56, 0x61, 0x6c, 0x75, 0x65, 0x41, 0x73,
+	0x73, 0x65, 0x74, 0x12, 0x34, 0x0a, 0x17, 0x6c, 0x70, 0x5f, 0x75, 0x6e, 0x69, 0x74, 0x5f, 0x73,
+	0x70, 0x6f, 0x74, 0x5f, 0x76, 0x61, 0x6c, 0x75, 0x65, 0x5f, 0x72, 0x75, 0x6e, 0x65, 0x18, 0x2a,
+	0x20, 0x01, 0x28, 0x09, 0x52, 0x13, 0x6c, 0x70, 0x55, 0x6e, 0x69, 0x74, 0x53, 0x70, 0x6f, 0x74,
+	0x56, 0x61, 0x6c, 0x75, 0x65, 0x52, 0x75, 0x6e, 0x65, 0x12, 0x3a, 0x0a, 0x1a, 0x6c, 0x70, 0x5f,
+	0x66, 0x61, 0x69, 0x72, 0x5f, 0x73, 0x70, 0x6f, 0x74, 0x5f, 0x64, 0x65, 0x76, 0x69, 0x61, 0x74,
+	0x69, 0x6f, 0x6e, 0x5f, 0x62, 0x70, 0x73, 0x18, 0x2b, 0x20, 0x01, 0x28, 0x09, 0x52, 0x16, 0x6c,
+	0x70, 0x46, 0x61, 0x69, 0x72, 0x53, 0x70, 0x6f, 0x74, 0x44, 0x65, 0x76, 0x69, 0x61, 0x74, 0x69,
+	0x6f, 0x6e, 0x42, 0x70, 0x73, 0x12, 0x3e, 0x0a, 0x1c, 0x66, 0x61, 0x69, 0x72, 0x5f, 0x76, 0x61,
+	0x6c, 0x75, 0x65, 0x5f, 0x6f, 0x72, 0x61, 0x63, 0x6c, 0x65, 0x5f, 0x70, 0x72, 0x69, 0x63, 0x65,
+	0x5f, 0x72, 0x75, 0x6e, 0x65, 0x18, 0x2c, 0x20, 0x01, 0x28, 0x09, 0x52, 0x18, 0x66, 0x61, 0x69,
+	0x72, 0x56, 0x61, 0x6c, 0x75, 0x65, 0x4f, 0x72, 0x61, 0x63, 0x6c, 0x65, 0x50, 0x72, 0x69, 0x63,
+	0x65, 0x52, 0x75, 0x6e, 0x65, 0x12, 0x33, 0x0a, 0x16, 0x6c, 0x70, 0x5f, 0x66, 0x61, 0x69, 0x72,
+	0x5f, 0x76, 0x61, 0x6c, 0x75, 0x65, 0x5f, 0x6f, 0x76, 0x65, 0x72, 0x68, 0x61, 0x6e, 0x67, 0x18,
+	0x2d, 0x20, 0x01, 0x28, 0x08, 0x52, 0x13, 0x6c, 0x70, 0x46, 0x61, 0x69, 0x72, 0x56, 0x61, 0x6c,
+	0x75, 0x65, 0x4f, 0x76, 0x65, 0x72, 0x68, 0x61, 0x6e, 0x67, 0x22, 0x2b, 0x0a, 0x11, 0x51, 0x75,
+	0x65, 0x72, 0x79, 0x50, 0x6f, 0x6f, 0x6c, 0x73, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x12,
+	0x16, 0x0a, 0x06, 0x68, 0x65, 0x69, 0x67, 0x68, 0x74, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52,
+	0x06, 0x68, 0x65, 0x69, 0x67, 0x68, 0x74, 0x22, 0x44, 0x0a, 0x12, 0x51, 0x75, 0x65, 0x72, 0x79,
+	0x50, 0x6f, 0x6f, 0x6c, 0x73, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x12, 0x2e, 0x0a,
+	0x05, 0x70, 0x6f, 0x6f, 0x6c, 0x73, 0x18, 0x01, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x18, 0x2e, 0x74,
+	0x79, 0x70, 0x65, 0x73, 0x2e, 0x51, 0x75, 0x65, 0x72, 0x79, 0x50, 0x6f, 0x6f, 0x6c, 0x52, 0x65,
+	0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x52, 0x05, 0x70, 0x6f, 0x6f, 0x6c, 0x73, 0x42, 0x7f, 0x0a,
+	0x09, 0x63, 0x6f, 0x6d, 0x2e, 0x74, 0x79, 0x70, 0x65, 0x73, 0x42, 0x0e, 0x51, 0x75, 0x65, 0x72,
+	0x79, 0x50, 0x6f, 0x6f, 0x6c, 0x50, 0x72, 0x6f, 0x74, 0x6f, 0x50, 0x01, 0x5a, 0x2a, 0x67, 0x69,
+	0x74, 0x6c, 0x61, 0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x74, 0x68, 0x6f, 0x72, 0x63, 0x68, 0x61,
+	0x69, 0x6e, 0x2f, 0x74, 0x68, 0x6f, 0x72, 0x6e, 0x6f, 0x64, 0x65, 0x2f, 0x76, 0x33, 0x2f, 0x61,
+	0x70, 0x69, 0x2f, 0x74, 0x79, 0x70, 0x65, 0x73, 0xa2, 0x02, 0x03, 0x54, 0x58, 0x58, 0xaa, 0x02,
+	0x05, 0x54, 0x79, 0x70, 0x65, 0x73, 0xca, 0x02, 0x05, 0x54, 0x79, 0x70, 0x65, 0x73, 0xe2, 0x02,
+	0x11, 0x54, 0x79, 0x70, 0x65, 0x73, 0x5c, 0x47, 0x50, 0x42, 0x4d, 0x65, 0x74, 0x61, 0x64, 0x61,
+	0x74, 0x61, 0xea, 0x02, 0x05, 0x54, 0x79, 0x70, 0x65, 0x73, 0xc8, 0xe2, 0x1e, 0x01, 0x62, 0x06,
+	0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
 }
 
 var (

@@ -34,6 +34,12 @@ Name | Type | Description | Notes
 **LpEquityPerUnit** | **string** | lp_equity / LP_units; equals luvi (up to rounding) unless synth_overhang is true | 
 **SynthPerPoolDepthBps** | **string** | synth supply relative to twice the asset depth, in basis points | 
 **SynthOverhang** | **bool** | whether synth supply is at or above twice the asset depth; synth units are clamped and LP units can redeem almost nothing while this is true | 
+**LpUnitFairValueRune** | Pointer to **string** | fair LP-side value per LP unit in RUNE at the oracle price P of the asset in RUNE, (2 * sqrt(balance_asset * balance_rune * P) - synth_supply * P) / LP_units, clamped at zero; swaps cannot move it. Only present when the oracle has a current price for the asset and RUNE | [optional] 
+**LpUnitFairValueAsset** | Pointer to **string** | lp_unit_fair_value_rune / P, in the asset. Only present with an oracle price | [optional] 
+**LpUnitSpotValueRune** | Pointer to **string** | spot LP-side value per LP unit in RUNE, (2 * balance_rune - synth_supply * balance_rune / balance_asset) / LP_units, clamped at zero. Only present with an oracle price | [optional] 
+**LpFairSpotDeviationBps** | Pointer to **string** | (lp_unit_spot_value_rune - lp_unit_fair_value_rune) / lp_unit_fair_value_rune in basis points, a pool price manipulation signal. Absent without an oracle price or when lp_fair_value_overhang is true | [optional] 
+**FairValueOraclePriceRune** | Pointer to **string** | the oracle price P of one unit of the asset in RUNE (oracle USD price of the asset / oracle USD price of RUNE) used for the fair values. Only present with an oracle price | [optional] 
+**LpFairValueOverhang** | Pointer to **bool** | whether the synth liability is at or above the pool&#39;s fair value, so the LP side is worth nothing at the oracle price. Only present (true) with an oracle price | [optional] 
 
 ## Methods
 
@@ -688,6 +694,156 @@ and a boolean to check if the value has been set.
 
 SetSynthOverhang sets SynthOverhang field to given value.
 
+
+### GetLpUnitFairValueRune
+
+`func (o *Pool) GetLpUnitFairValueRune() string`
+
+GetLpUnitFairValueRune returns the LpUnitFairValueRune field if non-nil, zero value otherwise.
+
+### GetLpUnitFairValueRuneOk
+
+`func (o *Pool) GetLpUnitFairValueRuneOk() (*string, bool)`
+
+GetLpUnitFairValueRuneOk returns a tuple with the LpUnitFairValueRune field if it's non-nil, zero value otherwise
+and a boolean to check if the value has been set.
+
+### SetLpUnitFairValueRune
+
+`func (o *Pool) SetLpUnitFairValueRune(v string)`
+
+SetLpUnitFairValueRune sets LpUnitFairValueRune field to given value.
+
+### HasLpUnitFairValueRune
+
+`func (o *Pool) HasLpUnitFairValueRune() bool`
+
+HasLpUnitFairValueRune returns a boolean if a field has been set.
+
+### GetLpUnitFairValueAsset
+
+`func (o *Pool) GetLpUnitFairValueAsset() string`
+
+GetLpUnitFairValueAsset returns the LpUnitFairValueAsset field if non-nil, zero value otherwise.
+
+### GetLpUnitFairValueAssetOk
+
+`func (o *Pool) GetLpUnitFairValueAssetOk() (*string, bool)`
+
+GetLpUnitFairValueAssetOk returns a tuple with the LpUnitFairValueAsset field if it's non-nil, zero value otherwise
+and a boolean to check if the value has been set.
+
+### SetLpUnitFairValueAsset
+
+`func (o *Pool) SetLpUnitFairValueAsset(v string)`
+
+SetLpUnitFairValueAsset sets LpUnitFairValueAsset field to given value.
+
+### HasLpUnitFairValueAsset
+
+`func (o *Pool) HasLpUnitFairValueAsset() bool`
+
+HasLpUnitFairValueAsset returns a boolean if a field has been set.
+
+### GetLpUnitSpotValueRune
+
+`func (o *Pool) GetLpUnitSpotValueRune() string`
+
+GetLpUnitSpotValueRune returns the LpUnitSpotValueRune field if non-nil, zero value otherwise.
+
+### GetLpUnitSpotValueRuneOk
+
+`func (o *Pool) GetLpUnitSpotValueRuneOk() (*string, bool)`
+
+GetLpUnitSpotValueRuneOk returns a tuple with the LpUnitSpotValueRune field if it's non-nil, zero value otherwise
+and a boolean to check if the value has been set.
+
+### SetLpUnitSpotValueRune
+
+`func (o *Pool) SetLpUnitSpotValueRune(v string)`
+
+SetLpUnitSpotValueRune sets LpUnitSpotValueRune field to given value.
+
+### HasLpUnitSpotValueRune
+
+`func (o *Pool) HasLpUnitSpotValueRune() bool`
+
+HasLpUnitSpotValueRune returns a boolean if a field has been set.
+
+### GetLpFairSpotDeviationBps
+
+`func (o *Pool) GetLpFairSpotDeviationBps() string`
+
+GetLpFairSpotDeviationBps returns the LpFairSpotDeviationBps field if non-nil, zero value otherwise.
+
+### GetLpFairSpotDeviationBpsOk
+
+`func (o *Pool) GetLpFairSpotDeviationBpsOk() (*string, bool)`
+
+GetLpFairSpotDeviationBpsOk returns a tuple with the LpFairSpotDeviationBps field if it's non-nil, zero value otherwise
+and a boolean to check if the value has been set.
+
+### SetLpFairSpotDeviationBps
+
+`func (o *Pool) SetLpFairSpotDeviationBps(v string)`
+
+SetLpFairSpotDeviationBps sets LpFairSpotDeviationBps field to given value.
+
+### HasLpFairSpotDeviationBps
+
+`func (o *Pool) HasLpFairSpotDeviationBps() bool`
+
+HasLpFairSpotDeviationBps returns a boolean if a field has been set.
+
+### GetFairValueOraclePriceRune
+
+`func (o *Pool) GetFairValueOraclePriceRune() string`
+
+GetFairValueOraclePriceRune returns the FairValueOraclePriceRune field if non-nil, zero value otherwise.
+
+### GetFairValueOraclePriceRuneOk
+
+`func (o *Pool) GetFairValueOraclePriceRuneOk() (*string, bool)`
+
+GetFairValueOraclePriceRuneOk returns a tuple with the FairValueOraclePriceRune field if it's non-nil, zero value otherwise
+and a boolean to check if the value has been set.
+
+### SetFairValueOraclePriceRune
+
+`func (o *Pool) SetFairValueOraclePriceRune(v string)`
+
+SetFairValueOraclePriceRune sets FairValueOraclePriceRune field to given value.
+
+### HasFairValueOraclePriceRune
+
+`func (o *Pool) HasFairValueOraclePriceRune() bool`
+
+HasFairValueOraclePriceRune returns a boolean if a field has been set.
+
+### GetLpFairValueOverhang
+
+`func (o *Pool) GetLpFairValueOverhang() bool`
+
+GetLpFairValueOverhang returns the LpFairValueOverhang field if non-nil, zero value otherwise.
+
+### GetLpFairValueOverhangOk
+
+`func (o *Pool) GetLpFairValueOverhangOk() (*bool, bool)`
+
+GetLpFairValueOverhangOk returns a tuple with the LpFairValueOverhang field if it's non-nil, zero value otherwise
+and a boolean to check if the value has been set.
+
+### SetLpFairValueOverhang
+
+`func (o *Pool) SetLpFairValueOverhang(v bool)`
+
+SetLpFairValueOverhang sets LpFairValueOverhang field to given value.
+
+### HasLpFairValueOverhang
+
+`func (o *Pool) HasLpFairValueOverhang() bool`
+
+HasLpFairValueOverhang returns a boolean if a field has been set.
 
 
 [[Back to Model list]](../README.md#documentation-for-models) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to README]](../README.md)
