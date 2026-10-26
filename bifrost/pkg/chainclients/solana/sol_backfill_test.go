@@ -361,11 +361,16 @@ func (s *BackfillSuite) TestCalculateFeeRatesSkipsNoSigOrNoFee(c *C) {
 
 type backfillFeeBridge struct {
 	thorclient.ThorchainBridge
-	rate uint64
+	rate           uint64
+	lastObservedIn int64 // 0 never matches a boundary
 }
 
 func (b *backfillFeeBridge) GetNetworkFee(common.Chain) (uint64, uint64, error) {
 	return 1, b.rate, nil
+}
+
+func (b *backfillFeeBridge) GetLastObservedInHeight(common.Chain) (int64, error) {
+	return b.lastObservedIn, nil
 }
 
 func (s *BackfillSuite) TestSendNetworkFeeIfNecessaryEmptyCache(c *C) {

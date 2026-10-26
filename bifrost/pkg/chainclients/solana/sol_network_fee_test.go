@@ -22,15 +22,25 @@ import (
 
 type networkFeeBridge struct {
 	thorclient.ThorchainBridge
-	err    error
-	called chan struct{}
+	err            error
+	called         chan struct{}
+	agreed         uint64 // 0 keeps the default agreed fee of 5000
+	lastObservedIn int64  // 0 never matches a boundary
+	lastErr        error
 }
 
 func (b *networkFeeBridge) GetNetworkFee(common.Chain) (uint64, uint64, error) {
 	if b.called != nil {
 		close(b.called)
 	}
+	if b.agreed != 0 {
+		return 1, b.agreed, b.err
+	}
 	return 1, 5000, b.err
+}
+
+func (b *networkFeeBridge) GetLastObservedInHeight(common.Chain) (int64, error) {
+	return b.lastObservedIn, b.lastErr
 }
 
 type networkFeePubKeys struct{ pubkeymanager.PubKeyValidator }
@@ -497,6 +507,71 @@ func TestSOLNetworkFeeLaggingListingBackendRetries(t *testing.T) {
 			fixture.mu.Lock()
 			defer fixture.mu.Unlock()
 			require.Equal(t, []uint64{150, 150}, fixture.minContextSlots, "the boundary must be the listing's minimum context slot")
+		})
+	}
+}
+
+func TestSOLNetworkFeeLateNodeAttestsCommittedBoundary(t *testing.T) {
+	fixture := &networkFeeRPC{tip: 201, rate: 7000}
+	scanner := newNetworkFeeScanner(t, fixture)
+	// Consensus for slot 200 at 7000 already landed before this node sampled it.
+	scanner.bridge = &networkFeeBridge{agreed: 7000, lastObservedIn: 200}
+	require.NoError(t, scanner.checkRecentBlocksAndUpdateNetworkFee(200))
+	require.Len(t, scanner.globalNetworkFeeQueue, 1, "late signer must attest to earn the refund")
+	fee := <-scanner.globalNetworkFeeQueue
+	require.Equal(t, int64(200), fee.Height)
+	require.Equal(t, uint64(7000), fee.TransactionRate)
+
+	// An unchanged fee agreed at an earlier boundary stays suppressed.
+	scanner.bridge = &networkFeeBridge{agreed: 7000, lastObservedIn: 150}
+	require.NoError(t, scanner.checkRecentBlocksAndUpdateNetworkFee(250))
+	require.Empty(t, scanner.globalNetworkFeeQueue)
+}
+
+func TestSOLNetworkFeeLateSignerLookupFailureRetries(t *testing.T) {
+	fixture := &networkFeeRPC{tip: 201, rate: 7000}
+	scanner := newNetworkFeeScanner(t, fixture)
+	bridge := &networkFeeBridge{agreed: 7000, lastObservedIn: 150, lastErr: errors.New("THORChain API temporarily unavailable")}
+	scanner.bridge = bridge
+	scanner.scan()
+	require.Empty(t, scanner.globalNetworkFeeQueue)
+	require.Equal(t, uint64(2), scanner.netFeeSlotMultiple, "an unknown agreed height must keep the boundary pending")
+	bridge.lastErr = nil
+	scanner.scan()
+	require.Len(t, scanner.globalNetworkFeeQueue, 1)
+	require.Equal(t, int64(150), (<-scanner.globalNetworkFeeQueue).Height)
+	require.Equal(t, uint64(3), scanner.netFeeSlotMultiple)
+}
+
+func TestSOLNetworkFeeDeadbandAroundAgreedFee(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		agreed         uint64
+		sample         uint64
+		lastObservedIn int64
+		publish        bool
+	}{
+		{name: "one_step_up", agreed: 5000, sample: 5100},
+		{name: "one_step_down", agreed: 5000, sample: 4900},
+		{name: "two_steps_up", agreed: 5000, sample: 5200, publish: true},
+		{name: "two_steps_down", agreed: 5000, sample: 4800, publish: true},
+		{name: "no_agreed_fee", agreed: 0, sample: 5000, publish: true},
+		{name: "within_band_at_agreed_height", agreed: 5000, sample: 5100, lastObservedIn: 200},
+		{name: "equal_at_agreed_height", agreed: 5000, sample: 5000, lastObservedIn: 200, publish: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			scanner := newNetworkFeeScanner(t, &networkFeeRPC{tip: 201})
+			scanner.bridge = &backfillFeeBridge{rate: tc.agreed, lastObservedIn: tc.lastObservedIn}
+			require.NoError(t, scanner.sendNetworkFeeIfNecessary(200, []uint64{tc.sample}))
+			if tc.publish {
+				require.Len(t, scanner.globalNetworkFeeQueue, 1)
+				fee := <-scanner.globalNetworkFeeQueue
+				require.Equal(t, int64(200), fee.Height)
+				require.Equal(t, tc.sample, fee.TransactionRate)
+			} else {
+				require.Empty(t, scanner.globalNetworkFeeQueue)
+			}
+			require.Equal(t, tc.sample, scanner.lastFeeRate.Load(), "lastFeeRate records the local sample even when suppressed")
 		})
 	}
 }

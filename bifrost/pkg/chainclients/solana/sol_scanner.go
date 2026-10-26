@@ -39,6 +39,12 @@ const (
 	transactionQueryLimit = 1000 // maximum number of transactions to query in a single request
 
 	maxConcurrentTxQueries = 5 // maximum number of concurrent tx queries to the RPC node
+
+	// solFeeReportDeadbandSteps is the minimum distance, in GasPriceResolution steps,
+	// between a sampled fee and the agreed fee before a node votes. Single-block
+	// medians move by about one step most boundaries; voting on each move would make
+	// nearly every boundary a quorum.
+	solFeeReportDeadbandSteps = 2
 )
 
 var (
@@ -65,7 +71,7 @@ type SOLScanner struct {
 	globalNetworkFeeQueue chan common.NetworkFee
 	globalTxsQueue        chan stypes.TxIn
 
-	lastFeeRate atomic.Uint64
+	lastFeeRate atomic.Uint64 // latest local sample, not THORChain's agreed fee
 
 	healthy *atomic.Bool
 
@@ -756,8 +762,26 @@ func (s *SOLScanner) sendNetworkFeeIfNecessary(height uint64, feeRates []uint64)
 		return errors.New("SOL network fee reporting stopped")
 	default:
 	}
-	// Suppress only against a fresh agreed fee, never the previous local sample.
-	if roundedFeeRate != agreedFeeRate {
+	// Vote only when the sample leaves the deadband around a fresh agreed fee.
+	var diff uint64
+	if roundedFeeRate > agreedFeeRate {
+		diff = roundedFeeRate - agreedFeeRate
+	} else {
+		diff = agreedFeeRate - roundedFeeRate
+	}
+	publish := agreedFeeRate == 0 || diff/resolution >= solFeeReportDeadbandSteps
+	if !publish && roundedFeeRate == agreedFeeRate {
+		// A node that reads this boundary's own quorum result must still attest:
+		// THORNode charged it LackOfObservationPenalty as a non-signer and refunds
+		// only late signers within ObservationDelayFlexibility. Observed txs also
+		// set this height, so require an exact match.
+		lastSlot, err := s.bridge.GetLastObservedInHeight(common.SOLChain)
+		if err != nil {
+			return fmt.Errorf("failed to get last agreed SOL height: %w", err)
+		}
+		publish = lastSlot == int64(height)
+	}
+	if publish {
 		select {
 		case <-s.stopChan:
 			return errors.New("SOL network fee reporting stopped")
