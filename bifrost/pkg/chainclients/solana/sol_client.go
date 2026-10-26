@@ -70,6 +70,12 @@ func (c *SOLClient) getSignerCacheExpiry() time.Duration {
 // variable so tests can override it.
 var broadcastLookupDelay = 3 * time.Second
 
+// solEndpointErrorCodes are the JSON-RPC codes that mean a Solana node cannot serve
+// the request because it is behind, so the read moves to the next endpoint and this
+// one is charged: -32005 "node is unhealthy" (a rate limit on other chains) and
+// -32016 "minimum context slot has not been reached".
+var solEndpointErrorCodes = []int{-32005, -32016}
+
 // SOLClient is a client for the Solana blockchain
 type SOLClient struct {
 	logger              zerolog.Logger
@@ -229,8 +235,8 @@ func NewSOLClient(
 		WriteMethods:   []string{"sendTransaction"},
 		DialTimeout:    failoverCfg.HealthCheckTimeout,
 		AttemptTimeout: evm.AttemptTimeout(cfg.BlockScanner.HTTPRequestTimeout),
-		// Solana's -32005 is "node unhealthy" (behind), not a rate limit
-		EndpointErrorCodes: []int{-32005},
+		// Solana's -32005 and -32016 mean the node is behind, not a rate limit
+		EndpointErrorCodes: solEndpointErrorCodes,
 	}, log.Logger)
 	if err != nil {
 		return nil, fmt.Errorf("fail to create endpoint router: %w", err)
@@ -315,6 +321,7 @@ func (c *SOLClient) Start(
 			h, _ := c.solScanner.ScanHeight()
 			return h
 		})
+		c.endpointMgr.SetReferenceHeight(func() (int64, error) { return c.bridge.GetLastObservedInHeight(c.GetChain()) })
 		c.endpointMgr.Start()
 	}
 	c.wg.Add(1)
@@ -2002,10 +2009,11 @@ func (c *SOLClient) verifyBroadcast(sig string, tx stypes.TxOutItem) signercache
 	// still let it land
 	candidates, unverified := c.endpointMgr.VerificationCandidates(0)
 	if len(candidates) == 0 {
+		c.endpointMgr.NoteAmbiguousVerification(0)
 		return signercache.LookupAmbiguous // absence needs at least one witness
 	}
 	perEndpoint := evm.VerificationBudget(ctx, len(candidates))
-	ambiguous := false
+	var failed []string
 	for _, e := range candidates {
 		ectx, ecancel := context.WithTimeout(endpoints.PinContext(ctx, e.Name), perEndpoint)
 		res, landedFailed := lookup(ectx)
@@ -2018,10 +2026,11 @@ func (c *SOLClient) verifyBroadcast(sig string, tx stypes.TxOutItem) signercache
 			// never land, whatever the other endpoints say (#3089 re-signs it)
 			return signercache.LookupNotFound
 		case res == signercache.LookupAmbiguous:
-			ambiguous = true
+			failed = append(failed, e.Name)
 		}
 	}
-	if ambiguous || unverified > 0 {
+	if len(failed) > 0 || unverified > 0 {
+		c.endpointMgr.NoteAmbiguousVerification(0, failed...)
 		return signercache.LookupAmbiguous
 	}
 	return signercache.LookupNotFound

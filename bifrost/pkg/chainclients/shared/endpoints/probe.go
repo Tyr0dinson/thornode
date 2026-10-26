@@ -427,7 +427,7 @@ func NewSolanaProbe(e config.ChainEndpointConfig, timeout time.Duration) Probe {
 	p.heightMethod, p.parseHeight = "getSlot", parseNumber
 	p.heightParams = []any{map[string]any{"commitment": "finalized"}}
 	p.identityMethod, p.parseIdentity = "getGenesisHash", parseString
-	p.endpointErrorCodes = []int{-32005} // "node is unhealthy" (behind), not a rate limit
+	p.endpointErrorCodes = []int{-32005, -32016} // "node is unhealthy", "minimum context slot not reached": behind, not a rate limit
 	return p.asProbe()
 }
 

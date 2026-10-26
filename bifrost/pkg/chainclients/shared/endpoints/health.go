@@ -198,6 +198,46 @@ func (m *Manager) SetScannerHeight(fn func() int64) {
 	m.scannerHeight = fn
 }
 
+// SetReferenceHeight installs THORChain's last observed height for the chain as a
+// lag reference for managers with two or more endpoints. It is set only after 2/3 of
+// nodes agree and never goes back, so no single endpoint (or node) can move it: an
+// endpoint more than max_block_lag below it is behind what the network has already
+// observed. This breaks the tie two endpoints cannot (two heights that disagree form
+// no quorum tip). Must be called before Start.
+func (m *Manager) SetReferenceHeight(fn func() (int64, error)) {
+	if m == nil {
+		return
+	}
+	m.referenceHeight = fn
+}
+
+// reference returns THORChain's observed height for this cycle, or 0 when there is
+// none to use: a single endpoint, no reference set, an error, or no answer within
+// health_check_timeout (a slow thornode must not hold up the health loop).
+func (m *Manager) reference(ctx context.Context) int64 {
+	if m.referenceHeight == nil || len(m.entries) < 2 {
+		return 0
+	}
+	answer := make(chan int64, 1)
+	go func() {
+		h, err := m.referenceHeight()
+		if err != nil {
+			h = 0
+		}
+		answer <- h
+	}()
+	timer := time.NewTimer(m.cfg.HealthCheckTimeout)
+	defer timer.Stop()
+	select {
+	case h := <-answer:
+		return h
+	case <-timer.C:
+		return 0
+	case <-ctx.Done():
+		return 0
+	}
+}
+
 func (m *Manager) bindProbes(probes []Probe) error {
 	if len(probes) != len(m.entries) {
 		return fmt.Errorf("chain %s: %d probes for %d endpoints", m.chain, len(probes), len(m.entries))
@@ -363,9 +403,27 @@ func (m *Manager) Cycle(ctx context.Context) {
 	if m.scannerHeight != nil && len(m.entries) == 1 {
 		scanner = m.scannerHeight()
 	}
+	observed := m.reference(ctx)
+	// trust THORChain's height only once a usable endpoint has reached it (within
+	// max_block_lag): a height no endpoint shows (forced on THORChain, or every
+	// endpoint behind) must not strike all of them and take the chain down
+	if observed > 0 {
+		reached := false
+		for _, h := range heights {
+			if h+m.cfg.MaxBlockLag >= observed {
+				reached = true
+			}
+		}
+		if !reached {
+			observed = 0
+		}
+	}
 	lagging := func(h int64) (bool, string) {
 		if quorum && tip-h > m.cfg.MaxBlockLag {
 			return true, fmt.Sprintf("behind consensus tip %d by %d blocks", tip, tip-h)
+		}
+		if observed > 0 && observed-h > m.cfg.MaxBlockLag {
+			return true, fmt.Sprintf("behind THORChain's observed height %d by %d blocks", observed, observed-h)
 		}
 		if scanner > 0 && scanner-h > m.cfg.MaxBlockLag {
 			return true, fmt.Sprintf("behind scanner height %d by %d blocks", scanner, scanner-h)

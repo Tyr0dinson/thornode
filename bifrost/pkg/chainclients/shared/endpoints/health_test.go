@@ -804,3 +804,55 @@ func (s *HealthSuite) TestUnverifiedEndpointsDoNotVoteOnTheTip(c *C) {
 	c.Assert(m.Entry("a").State(), Equals, endpoints.StateHealthy)
 	c.Assert(m.Active().Name, Equals, "a")
 }
+
+// With exactly two endpoints no quorum tip exists when they disagree, so THORChain's
+// last observed height (agreed by 2/3 of nodes, never from one of our endpoints)
+// breaks the tie: an endpoint more than max_block_lag below it is lagging. It can
+// only strike an endpoint behind what the network has already observed, never one
+// at the tip, and a missing, failing, slow or lower reference strikes nothing. A
+// single endpoint keeps the scanner baseline only.
+func (s *HealthSuite) TestThorchainHeightBreaksTheTwoEndpointTie(c *C) {
+	run := func(ref func() (int64, error), heights ...int64) *endpoints.Manager {
+		probes := []*fakeProbe{{name: "a", height: heights[0], identity: "g"}}
+		if len(heights) > 1 {
+			probes = append(probes, &fakeProbe{name: "b", height: heights[1], identity: "g"})
+		}
+		m, ps := newHealthMgr(c, healthCfg(), nil, probes...)
+		c.Assert(m.Bootstrap(ctxBg(), ps), IsNil)
+		m.SetReferenceHeight(ref)
+		for i := 0; i < 3; i++ {
+			m.Cycle(ctxBg())
+		}
+		return m
+	}
+	at := func(h int64) func() (int64, error) { return func() (int64, error) { return h, nil } }
+
+	// stalled primary at 100, backup at 200, the network has observed 150
+	m := run(at(150), 100, 200)
+	c.Assert(m.Entry("a").State(), Equals, endpoints.StateUnhealthy)
+	c.Assert(m.Entry("b").State(), Equals, endpoints.StateHealthy)
+	c.Assert(m.Active().Name, Equals, "b")
+
+	// no reference, a failing one, or one below both endpoints: nothing struck
+	for _, ref := range []func() (int64, error){nil, func() (int64, error) { return 0, errors.New("thornode down") }, at(50)} {
+		m = run(ref, 100, 200)
+		c.Assert(m.Entry("a").State(), Equals, endpoints.StateHealthy)
+		c.Assert(m.Active().Name, Equals, "a")
+	}
+
+	// a reference no usable endpoint has reached (forced on THORChain, or every
+	// endpoint behind) is not trusted: nothing struck, the chain does not go all-down
+	m = run(at(500), 100, 200)
+	c.Assert(m.Entry("a").State(), Equals, endpoints.StateHealthy)
+	c.Assert(m.Entry("b").State(), Equals, endpoints.StateHealthy)
+
+	// a reference that does not answer within the probe timeout is skipped
+	release := make(chan struct{})
+	defer close(release)
+	m = run(func() (int64, error) { <-release; return 150, nil }, 100, 200)
+	c.Assert(m.Entry("a").State(), Equals, endpoints.StateHealthy)
+
+	// a single endpoint is not judged against it
+	m = run(at(150), 100)
+	c.Assert(m.Entry("a").State(), Equals, endpoints.StateHealthy)
+}

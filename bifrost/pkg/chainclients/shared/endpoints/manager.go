@@ -47,6 +47,14 @@ type Manager struct {
 	stopOnce      sync.Once
 	startOnce     sync.Once
 	wg            sync.WaitGroup
+
+	// referenceHeight is THORChain's last observed height for the chain (2/3
+	// consensus), a lag reference independent of every endpoint
+	referenceHeight func() (int64, error)
+
+	// last warning per endpoint about blocking signer-cache verification
+	blockedWarnedAt map[string]time.Time
+	blockedMu       sync.Mutex
 }
 
 // Option customizes a Manager.
@@ -414,21 +422,81 @@ func (m *Manager) logTransition(e *Entry, from, to State, why string) {
 // about whether a transaction an endpoint accepted can still settle.
 func (m *Manager) VerificationCandidates(maxDown time.Duration) (candidates []*Entry, unverified int) {
 	for _, e := range m.entries {
-		if e.State() == StateDisabled {
-			continue
-		}
-		if maxDown > 0 && e.NonHealthyFor() > maxDown {
+		switch verificationExclusion(e, maxDown) {
+		case "":
+			candidates = append(candidates, e)
+		case exclusionDown:
 			m.log.Info().Str("endpoint", e.Name).Dur("down", e.NonHealthyFor()).
 				Msg("skipping long-dead endpoint for broadcast verification")
-			continue
-		}
-		if !e.Usable() {
+		case exclusionUnverified:
 			unverified++
-			continue
 		}
-		candidates = append(candidates, e)
 	}
 	return candidates, unverified
+}
+
+const (
+	exclusionDisabled   = "disabled"
+	exclusionDown       = "down"
+	exclusionUnverified = "unverified"
+)
+
+// verificationExclusion says why VerificationCandidates leaves e out ("" when it is a
+// candidate): disabled (another network), down for longer than maxDown, or
+// unverified (counted, since it may hold a broadcast from before a restart).
+func verificationExclusion(e *Entry, maxDown time.Duration) string {
+	switch {
+	case e.State() == StateDisabled:
+		return exclusionDisabled
+	case maxDown > 0 && e.NonHealthyFor() > maxDown:
+		return exclusionDown
+	case !e.Usable():
+		return exclusionUnverified
+	}
+	return ""
+}
+
+// blockedWarnEvery bounds the warning about an endpoint blocking verification.
+const blockedWarnEvery = 5 * time.Minute
+
+// NoteAmbiguousVerification records that a signer-cache verification stayed
+// ambiguous, which blocks automatic re-sign, because of the endpoints named in
+// failed (their lookup could not answer) and of every endpoint
+// VerificationCandidates(maxDown) counted as unverified. Each is counted on
+// verification_blocked_total and named in a warning at most every five minutes: an
+// endpoint that stays dead keeps blocking re-sign until it answers or is removed
+// from the config.
+func (m *Manager) NoteAmbiguousVerification(maxDown time.Duration, failed ...string) {
+	if m == nil {
+		return
+	}
+	type blocker struct{ name, why string }
+	blockers := make([]blocker, 0, len(failed)+1)
+	for _, name := range failed {
+		blockers = append(blockers, blocker{name, "its lookup did not answer"})
+	}
+	for _, e := range m.entries {
+		if verificationExclusion(e, maxDown) == exclusionUnverified {
+			blockers = append(blockers, blocker{e.Name, "its network is not verified"})
+		}
+	}
+	now := m.now()
+	m.blockedMu.Lock()
+	defer m.blockedMu.Unlock()
+	if m.blockedWarnedAt == nil {
+		m.blockedWarnedAt = map[string]time.Time{}
+	}
+	for _, b := range blockers {
+		if m.metrics != nil {
+			m.metrics.verificationBlocked.WithLabelValues(m.chain.String(), b.name).Inc()
+		}
+		if last, ok := m.blockedWarnedAt[b.name]; ok && now.Sub(last) < blockedWarnEvery {
+			continue
+		}
+		m.blockedWarnedAt[b.name] = now
+		m.log.Warn().Str("endpoint", b.name).Str("reason", b.why).
+			Msg("endpoint keeps broadcast verification ambiguous and blocks automatic re-sign until it answers or is removed from the config")
+	}
 }
 
 // Status returns a snapshot of every endpoint in priority order.

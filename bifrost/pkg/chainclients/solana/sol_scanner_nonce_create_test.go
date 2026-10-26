@@ -164,7 +164,7 @@ func (s *ScannerNonceCreateSuite) TestNonceReadErrorRetriesScan(c *C) {
 		wg.Add(1)
 		okQ, counts, sigs := make([]bool, 1), make([]int, 1), make([]string, 1)
 		healthy = true
-		scanner.scanVault(vault, 0, "", 0, func() { healthy = false }, counts, okQ, sigs, &wg)
+		scanner.scanVault(vault, 0, "", 0, 0, func() { healthy = false }, counts, okQ, sigs, make([]uint64, 1), &wg)
 		wg.Wait()
 		return okQ[0], healthy, sigs[0]
 	}

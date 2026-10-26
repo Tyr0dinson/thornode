@@ -390,6 +390,7 @@ func (c *CosmosClient) Start(
 	c.blockScanner.Start(globalTxsQueue, globalNetworkFeeQueue)
 	if c.endpointMgr != nil {
 		c.endpointMgr.SetScannerHeight(c.blockScanner.PreviousHeight)
+		c.endpointMgr.SetReferenceHeight(func() (int64, error) { return c.thorchainBridge.GetLastObservedInHeight(c.GetChain()) })
 		c.endpointMgr.Start()
 	}
 	c.wg.Add(1)
@@ -581,9 +582,10 @@ func (c *CosmosClient) mempoolLookup(ctx context.Context, sig string) signercach
 // anything else, including no endpoint at all, is Ambiguous.
 func (c *CosmosClient) mempoolLookupOnCandidates(ctx context.Context, sig string, candidates []*endpoints.Entry, unverified int, perEndpoint time.Duration) signercache.LookupResult {
 	if len(candidates) == 0 {
+		c.endpointMgr.NoteAmbiguousVerification(0)
 		return signercache.LookupAmbiguous // absence needs at least one witness
 	}
-	ambiguous := false
+	var failed []string
 	for _, e := range candidates {
 		ectx, cancel := context.WithTimeout(endpoints.PinContext(ctx, e.Name), perEndpoint)
 		res := mempoolLookupOn(ectx, c.cometRPC, sig)
@@ -592,10 +594,11 @@ func (c *CosmosClient) mempoolLookupOnCandidates(ctx context.Context, sig string
 		case signercache.LookupFound:
 			return signercache.LookupFound
 		case signercache.LookupAmbiguous:
-			ambiguous = true
+			failed = append(failed, e.Name)
 		}
 	}
-	if ambiguous || unverified > 0 {
+	if len(failed) > 0 || unverified > 0 {
+		c.endpointMgr.NoteAmbiguousVerification(0, failed...)
 		return signercache.LookupAmbiguous
 	}
 	return signercache.LookupNotFound
@@ -652,12 +655,13 @@ func (c *CosmosClient) verifyBroadcast(sig string) signercache.LookupResult {
 	// (BroadcastTx increments it), not necessarily the original one
 	candidates, unverified := c.endpointMgr.VerificationCandidates(0)
 	if len(candidates) == 0 {
+		c.endpointMgr.NoteAmbiguousVerification(0)
 		return signercache.LookupAmbiguous // absence needs at least one witness
 	}
 	// the fixed budget has to cover up to two pinned round trips per endpoint
 	// (GetTx here, then UnconfirmedTxs in mempoolLookup), so bound each one
 	perEndpoint := evm.VerificationBudget(ctx, 2*len(candidates))
-	ambiguous := false
+	var failed []string
 	for _, e := range candidates {
 		ectx, cancel := context.WithTimeout(endpoints.PinContext(ctx, e.Name), perEndpoint)
 		_, txErr := c.txClient.GetTx(ectx, &txtypes.GetTxRequest{Hash: sig})
@@ -666,10 +670,11 @@ func (c *CosmosClient) verifyBroadcast(sig string) signercache.LookupResult {
 		case txErr == nil:
 			return signercache.LookupFound
 		case status.Code(txErr) != codes.NotFound:
-			ambiguous = true
+			failed = append(failed, e.Name)
 		}
 	}
-	if ambiguous {
+	if len(failed) > 0 {
+		c.endpointMgr.NoteAmbiguousVerification(0, failed...)
 		return signercache.LookupAmbiguous
 	}
 	return c.mempoolLookupOnCandidates(ctx, sig, candidates, unverified, perEndpoint)

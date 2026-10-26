@@ -370,6 +370,7 @@ func (c *Client) Start(
 	c.blockScanner.Start(globalTxsQueue, globalNetworkFeeQueue)
 	if c.endpointMgr != nil {
 		c.endpointMgr.SetScannerHeight(c.blockScanner.PreviousHeight)
+		c.endpointMgr.SetReferenceHeight(func() (int64, error) { return c.bridge.GetLastObservedInHeight(c.GetChain()) })
 		c.endpointMgr.Start()
 	}
 	c.wg.Add(1)
@@ -908,6 +909,12 @@ func (c *Client) ReportSolvency(height int64) error {
 	defer c.solvencyLock.Unlock()
 
 	if !c.shouldReportSolvency(height) {
+		return nil
+	}
+	// balances come from the primary's wallet: while the health checks hold it out
+	// (a fallback serves the scan), skip instead of running its retry loop per vault
+	if c.rpc.PrimaryOutWithFallback() {
+		c.log.Info().Int64("height", height).Msg("primary out of rotation: solvency not reported")
 		return nil
 	}
 

@@ -287,6 +287,9 @@ func (c *Client) storedMetaBelow(height, earliest int64) (bool, error) {
 // A primary that is behind, or still on the old fork, would call a transaction of the
 // new chain absent; the reorg step is then retried.
 func (c *Client) requirePrimaryOnChainOf(block *btcjson.GetBlockVerboseTxResult) error {
+	if c.rpc.PrimaryOutWithFallback() {
+		return fmt.Errorf("the primary is out of rotation, so it cannot re-confirm transactions yet")
+	}
 	hash, err := c.rpc.GetBlockHashPrimary(block.Height - 1)
 	if err != nil {
 		return fmt.Errorf("cannot read block %d from the primary: %w", block.Height-1, err)
@@ -485,7 +488,11 @@ func (c *Client) updateNetworkInfo() {
 	}
 	// the relay fee is read from the primary only: a fallback provider may run another
 	// daemon version with another default, and the fee floor must be this node's own
-	// daemon's (when the primary cannot answer, the last value is kept)
+	// daemon's (when the primary cannot answer, or is out of rotation, the last value
+	// is kept)
+	if c.rpc.PrimaryOutWithFallback() {
+		return
+	}
 	networkInfo, err := c.rpc.GetNetworkInfoPrimary()
 	if err != nil {
 		c.log.Err(err).Msg("fail to get network info")

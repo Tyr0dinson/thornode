@@ -2,6 +2,7 @@ package blockscanner
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 
@@ -23,6 +24,10 @@ type SolanaAccountScanStatus struct {
 
 func accountScanStatusKey(account string) string {
 	return fmt.Sprintf("scanstat-%s", account)
+}
+
+func accountCursorSlotKey(account string) string {
+	return fmt.Sprintf("scancursor-%s", account)
 }
 
 // NewLevelDBScannerStorageSolana create a new instance of LevelDBScannerStorageSolana
@@ -52,6 +57,40 @@ func (ldbss *LevelDBScannerStorageSolana) SetScanStatus(account, lastSignature s
 	return ldbss.db.Put([]byte(key), buf, nil)
 }
 
+// GetScanStatusWithCursor returns the account's scan status and the slot of its
+// cursor signature (0 when none was stored: a status saved before the cursor slot
+// was kept).
+func (ldbss *LevelDBScannerStorageSolana) GetScanStatusWithCursor(account string) (string, uint64, uint64, error) {
+	sig, slot, err := ldbss.GetScanStatus(account)
+	if err != nil {
+		return "", 0, 0, err
+	}
+	buf, err := ldbss.db.Get([]byte(accountCursorSlotKey(account)), nil)
+	if errors.Is(err, leveldb.ErrNotFound) {
+		return sig, slot, 0, nil
+	}
+	if err != nil {
+		return "", 0, 0, err
+	}
+	cursorSlot, _ := binary.Uvarint(buf)
+	return sig, slot, cursorSlot, nil
+}
+
+// SetScanStatusWithCursor saves the account's scan status and the slot of its cursor
+// signature in one batch, so a cursor is never stored with another cursor's slot.
+// The slot has its own key, so the scan status record keeps its format.
+func (ldbss *LevelDBScannerStorageSolana) SetScanStatusWithCursor(account, lastSignature string, lastSlot, cursorSlot uint64) error {
+	status := make([]byte, 8+len(lastSignature))
+	_ = binary.PutUvarint(status, lastSlot)
+	copy(status[8:], lastSignature)
+	slot := make([]byte, binary.MaxVarintLen64)
+	n := binary.PutUvarint(slot, cursorSlot)
+	batch := new(leveldb.Batch)
+	batch.Put([]byte(accountScanStatusKey(account)), status)
+	batch.Put([]byte(accountCursorSlotKey(account)), slot[:n])
+	return ldbss.db.Write(batch, nil)
+}
+
 // GetScanPos get current Scan Pos
 func (ldbss *LevelDBScannerStorageSolana) GetScanPos() (uint64, error) {
 	buf, err := ldbss.db.Get([]byte(ScanPosKey), nil)
@@ -77,6 +116,8 @@ func (ldbss *LevelDBScannerStorageSolana) Close() error {
 type ScannerStorageSolana interface {
 	GetScanStatus(account string) (string, uint64, error)
 	SetScanStatus(account, lastSignature string, lastSlot uint64) error
+	GetScanStatusWithCursor(account string) (string, uint64, uint64, error)
+	SetScanStatusWithCursor(account, lastSignature string, lastSlot, cursorSlot uint64) error
 	GetScanPos() (uint64, error)
 	SetScanPos(block uint64) error
 	GetInternalDb() *leveldb.DB

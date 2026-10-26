@@ -8,6 +8,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/btcsuite/btcd/btcjson"
 	"github.com/btcsuite/btcutil"
 	"github.com/rs/zerolog"
 	. "gopkg.in/check.v1"
@@ -16,8 +17,11 @@ import (
 	chainclienttypes "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/types"
 	sutxo "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/utxo"
 	utxorpcc "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/rpc"
+	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
+	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/config"
+	ttypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
 // zecDaemon answers getblockcount with tip and getrawtransaction with "not found".
@@ -228,4 +232,65 @@ func (s *ZcashSignerSuite) TestZECListUnspentCountsConfirmationsOnThePrimary(c *
 	fixture.heightErr.Store(true)
 	_, err = rpcClient.ListUnspent(address.String())
 	c.Assert(err, NotNil)
+}
+
+// While the health checks hold the primary out and a fallback serves reads, the
+// per-block reads only the primary can answer (relay fee, solvency from its wallet,
+// a reorg's re-confirmation) are skipped or fail at once instead of running the
+// primary's retry loop on every block, so the fallback keeps the scanner at the tip.
+// Without a fallback nothing changes.
+func (s *CoverageBackfillSuite) TestPrimaryOutOfRotationDoesNotSlowTheScan(c *C) {
+	savedChain, savedRPC, savedBridge := s.client.cfg.ChainID, s.client.rpc, s.client.bridge
+	defer func() { s.client.cfg.ChainID, s.client.rpc, s.client.bridge = savedChain, savedRPC, savedBridge }()
+	var asked atomic.Int32
+	primary := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var request struct {
+			ID int `json:"id"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&request)
+		asked.Add(1)
+		_ = json.NewEncoder(w).Encode(map[string]any{"id": request.ID, "result": nil, "error": map[string]any{"code": -28, "message": "Loading block index"}})
+	}))
+	defer primary.Close()
+	other := relayDaemon(0.0001)
+	defer other.Close()
+	fallback, err := utxorpcc.NewClient(other.Listener.Addr().String(), "", "", 0, time.Second, common.BTCChain, s.client.log)
+	c.Assert(err, IsNil)
+	eps := []config.ChainEndpointConfig{{Name: "primary", RPCHost: primary.URL, Priority: 1}, {Name: "fallback", RPCHost: other.URL, Priority: 2}}
+	mgr, err := endpoints.NewManager(common.BTCChain, eps, config.BifrostChainConfiguration{ChainID: common.BTCChain}.GetFailoverConfig(), zerolog.Nop())
+	c.Assert(err, IsNil)
+	for _, e := range mgr.Entries() {
+		e.SetIdentity("btc")
+	}
+	rpcClient, err := utxorpcc.NewClientWithFallbacks(primary.Listener.Addr().String(), "", "", "", 0, time.Second, common.BTCChain, s.client.log, []utxorpcc.UTXOReader{fallback}, 0)
+	c.Assert(err, IsNil)
+	s.client.rpc = rpcClient.WithEndpointManager(mgr, eps)
+	mgr.Entry("primary").MarkUnhealthy(endpoints.ErrorKindTransport)
+
+	// solvency is read from the primary's wallet: skipped
+	vault := ttypes.Vault{PubKey: ttypes.GetRandomPubKey(), Coins: common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(100_000_000)))}
+	s.client.bridge = &solvencyGateBridge{ThorchainBridge: s.bridge, asgards: ttypes.Vaults{vault}}
+	s.client.globalSolvencyQueue = make(chan stypes.Solvency, 10)
+	s.client.lastSolvencyCheckHeight.Store(0)
+	c.Assert(s.client.ReportSolvency(100), IsNil)
+	c.Assert(asked.Load(), Equals, int32(0))
+
+	// a reorg's re-confirmation cannot be answered yet: it fails at once
+	err = s.client.requirePrimaryOnChainOf(&btcjson.GetBlockVerboseTxResult{Height: 100, PreviousHash: "parent"})
+	c.Assert(err, ErrorMatches, ".*out of rotation.*")
+	c.Assert(asked.Load(), Equals, int32(0))
+
+	// the relay fee keeps its last value (LTC: BTC's floor is fixed)
+	s.client.cfg.ChainID = common.LTCChain
+	s.client.minRelayFeeSats.Store(1000)
+	s.client.updateNetworkInfo()
+	c.Assert(s.client.minRelayFeeSats.Load(), Equals, uint64(1000))
+	c.Assert(asked.Load(), Equals, int32(0))
+
+	// without a fallback the primary is still asked, as before failover existed
+	single, err := utxorpcc.NewClient(primary.Listener.Addr().String(), "", "", 0, time.Second, common.LTCChain, s.client.log)
+	c.Assert(err, IsNil)
+	s.client.rpc = single
+	s.client.updateNetworkInfo()
+	c.Assert(asked.Load(), Equals, int32(1))
 }

@@ -27,6 +27,9 @@ type Metrics struct {
 	failovers    *prometheus.CounterVec
 	recoveries   *prometheus.CounterVec
 	allDown      *prometheus.GaugeVec
+	// verificationBlocked counts signer-cache verifications left ambiguous (automatic
+	// re-sign blocked) by an endpoint that could not answer or was never verified
+	verificationBlocked *prometheus.CounterVec
 }
 
 var (
@@ -86,8 +89,12 @@ func NewMetrics(reg prometheus.Registerer) (*Metrics, error) {
 			Namespace: ns, Subsystem: sub, Name: "all_down",
 			Help: "1 when no endpoint of the chain is healthy. Alert on this.",
 		}, []string{"chain"}),
+		verificationBlocked: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Namespace: ns, Subsystem: sub, Name: "verification_blocked_total",
+			Help: "Signer-cache verifications left ambiguous by this endpoint (lookup failed or network never verified): automatic re-sign is blocked until it answers or is removed from the config. Alert on a rising rate.",
+		}, labels),
 	}
-	for _, col := range []prometheus.Collector{m.state, m.active, m.height, m.probeLatency, m.errors, m.failovers, m.recoveries, m.allDown} {
+	for _, col := range []prometheus.Collector{m.state, m.active, m.height, m.probeLatency, m.errors, m.failovers, m.recoveries, m.allDown, m.verificationBlocked} {
 		if err := reg.Register(col); err != nil {
 			return nil, fmt.Errorf("register bifrost_endpoint metrics: %w", err)
 		}
@@ -103,6 +110,9 @@ func (m *Metrics) ActiveGauge() *prometheus.GaugeVec { return m.active }
 
 // HeightGauge exposes the height vector.
 func (m *Metrics) HeightGauge() *prometheus.GaugeVec { return m.height }
+
+// VerificationBlockedCounter exposes the verification_blocked_total vector.
+func (m *Metrics) VerificationBlockedCounter() *prometheus.CounterVec { return m.verificationBlocked }
 
 // AllDownGauge exposes the all_down vector.
 func (m *Metrics) AllDownGauge() *prometheus.GaugeVec { return m.allDown }

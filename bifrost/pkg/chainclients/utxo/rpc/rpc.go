@@ -395,6 +395,16 @@ func (c *Client) PrimaryInRotation() bool {
 	return e != nil && e.Eligible()
 }
 
+// PrimaryOutWithFallback reports whether the health checks hold the primary daemon
+// out of rotation while a fallback serves reads. A per-block read only the primary
+// can answer is then skipped (or fails at once) instead of running the primary's
+// retry loop on every block, which would keep the fallback from holding the scanner
+// at the tip. Without a fallback it is false: there is nothing else to scan from, so
+// the primary is asked as before failover existed.
+func (c *Client) PrimaryOutWithFallback() bool {
+	return len(c.fallbacks) > 0 && !c.PrimaryInRotation()
+}
+
 // GetBlockHashPrimary returns the primary daemon's own block hash at a height, so a
 // decision that trusts the primary's "not found" can first check the primary is on
 // the chain in question.

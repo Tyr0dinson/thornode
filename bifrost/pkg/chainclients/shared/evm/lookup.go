@@ -62,10 +62,11 @@ func VerificationBudget(ctx context.Context, queries int) time.Duration {
 func FindTxEverywhere(ctx context.Context, mgr *endpoints.Manager, client *ethclient.Client, hash ecommon.Hash, maxDown time.Duration) (*etypes.Transaction, bool, signercache.LookupResult) {
 	candidates, unverified := mgr.VerificationCandidates(maxDown)
 	if len(candidates) == 0 {
+		mgr.NoteAmbiguousVerification(maxDown)
 		return nil, false, signercache.LookupAmbiguous
 	}
 	perEndpoint := VerificationBudget(ctx, len(candidates))
-	ambiguous := false
+	var failed []string
 	for _, e := range candidates {
 		ectx, cancel := context.WithTimeout(endpoints.PinContext(ctx, e.Name), perEndpoint)
 		tx, pending, err := client.TransactionByHash(ectx, hash)
@@ -74,10 +75,11 @@ func FindTxEverywhere(ctx context.Context, mgr *endpoints.Manager, client *ethcl
 		case err == nil && tx != nil:
 			return tx, pending, signercache.LookupFound
 		case err != nil && !errors.Is(err, ethereum.NotFound):
-			ambiguous = true
+			failed = append(failed, e.Name)
 		}
 	}
-	if ambiguous || unverified > 0 {
+	if len(failed) > 0 || unverified > 0 {
+		mgr.NoteAmbiguousVerification(maxDown, failed...)
 		return nil, false, signercache.LookupAmbiguous
 	}
 	return nil, false, signercache.LookupNotFound

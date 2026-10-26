@@ -196,8 +196,8 @@ func (s *BlockScannerTestSuite) TestScanVaultOmitsMinContextSlotWithUntilCursor(
 		wg.Add(1)
 		unhealthy := false
 		ok := make([]bool, 1)
-		scanner.scanVault("Vault1111111111111111111111111111111111111", 0, cursor, minCtx,
-			func() { unhealthy = true }, make([]int, 1), ok, make([]string, 1), &wg)
+		scanner.scanVault("Vault1111111111111111111111111111111111111", 0, cursor, minCtx, 0,
+			func() { unhealthy = true }, make([]int, 1), ok, make([]string, 1), make([]uint64, 1), &wg)
 		wg.Wait()
 		c.Assert(unhealthy, Equals, false)
 		c.Assert(ok[0], Equals, true)
@@ -271,8 +271,8 @@ func (s *BlockScannerTestSuite) TestScanVaultNullTransactionKeepsCursor(c *C) {
 	unhealthy := false
 	ok := make([]bool, 1)
 	newLastSigs := make([]string, 1)
-	scanner.scanVault("Vault1111111111111111111111111111111111111", 0, "", 0,
-		func() { unhealthy = true }, make([]int, 1), ok, newLastSigs, &wg)
+	scanner.scanVault("Vault1111111111111111111111111111111111111", 0, "", 0, 0,
+		func() { unhealthy = true }, make([]int, 1), ok, newLastSigs, make([]uint64, 1), &wg)
 	wg.Wait()
 	c.Assert(unhealthy, Equals, true)
 	c.Assert(ok[0], Equals, false)

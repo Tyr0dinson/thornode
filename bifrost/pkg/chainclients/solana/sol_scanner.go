@@ -103,6 +103,9 @@ type SOLScanner struct {
 type vaultScanStatus struct {
 	lastSig  string
 	lastSlot uint64
+	// cursorSlot is lastSig's own slot (0 when unknown): a listing that resumes from
+	// lastSig asks for it as minContextSlot
+	cursorSlot uint64
 }
 
 // NewSOLScanner create a new instance of SOLScanner.
@@ -276,27 +279,19 @@ func (s *SOLScanner) scan() {
 	successfulQueries := make([]bool, len(vaultAddrs))
 	countTxs := make([]int, len(vaultAddrs))
 	vaultLastSigs := make([]string, len(vaultAddrs))
+	newLastSlots := make([]uint64, len(vaultAddrs))
+	vaultCursorSlots := make([]uint64, len(vaultAddrs))
 	for i, vaultAddr := range vaultAddrs {
-		var lastSig string
-		var vaultLastSlot uint64
-		if vss, ok := s.vaultScanStatuses[vaultAddr]; ok {
-			lastSig = vss.lastSig
-			vaultLastSlot = vss.lastSlot
-		} else {
-			lastSig, vaultLastSlot, err = s.db.GetScanStatus(vaultAddr)
-			// if err is ErrNotFound, then we set to "" and 0.
-			if err != nil && !errors.Is(err, leveldb.ErrNotFound) {
-				s.logger.Error().Err(err).Str("vault", vaultAddr).Msg("failed to get vault scan status from db")
-				setUnhealthy()
-				wg.Done()
-				continue
-			}
-			s.vaultScanStatuses[vaultAddr] = vaultScanStatus{
-				lastSig:  lastSig,
-				lastSlot: vaultLastSlot,
-			}
+		vss, statusErr := s.loadVaultScanStatus(vaultAddr)
+		if statusErr != nil {
+			s.logger.Error().Err(statusErr).Str("vault", vaultAddr).Msg("failed to get vault scan status from db")
+			setUnhealthy()
+			wg.Done()
+			continue
 		}
+		lastSig, vaultLastSlot := vss.lastSig, vss.lastSlot
 		vaultLastSigs[i] = lastSig
+		vaultCursorSlots[i] = vss.cursorSlot
 
 		var minContextSlot uint64
 		var queryLastSig string
@@ -328,7 +323,11 @@ func (s *SOLScanner) scan() {
 			queryLastSig = ""
 		}
 
-		go s.scanVault(vaultAddr, i, queryLastSig, minContextSlot, setUnhealthy, countTxs, successfulQueries, newLastSigs, &wg)
+		var cursorSlot uint64
+		if queryLastSig != "" {
+			cursorSlot = vaultCursorSlots[i]
+		}
+		go s.scanVault(vaultAddr, i, queryLastSig, minContextSlot, cursorSlot, setUnhealthy, countTxs, successfulQueries, newLastSigs, newLastSlots, &wg)
 	}
 	wg.Wait()
 
@@ -349,11 +348,9 @@ func (s *SOLScanner) scan() {
 
 			// since tx query was successful, we want to update last scanned slot for this vault. We may or may not have queried new txs.
 			// If no txs were queried, we want to retain the last sig from the db.
-			var lastSig string
-			if txCount == 0 {
-				lastSig = vaultLastSigs[i]
-			} else {
-				lastSig = newLastSigs[i]
+			lastSig, cursorSlot := vaultLastSigs[i], vaultCursorSlots[i]
+			if txCount > 0 {
+				lastSig, cursorSlot = newLastSigs[i], newLastSlots[i]
 			}
 
 			// we have not scanned this vault before, so we mark it as such so that
@@ -362,14 +359,12 @@ func (s *SOLScanner) scan() {
 				s.initialHeight[vaultAddr] = struct{}{}
 			}
 
-			s.vaultScanStatuses[vaultAddr] = vaultScanStatus{
-				lastSig:  lastSig,
-				lastSlot: currentSlot,
-			}
+			vss := vaultScanStatus{lastSig: lastSig, lastSlot: currentSlot, cursorSlot: cursorSlot}
+			s.vaultScanStatuses[vaultAddr] = vss
 
 			// update the db in a goroutine, we don't need to block here
 			go func() {
-				if scanStatusErr := s.db.SetScanStatus(vaultAddr, lastSig, currentSlot); scanStatusErr != nil {
+				if scanStatusErr := s.storeVaultScanStatus(vaultAddr, vss); scanStatusErr != nil {
 					s.logger.Error().Err(scanStatusErr).Str("vault", vaultAddr).Msg("failed to set vault scan status")
 				}
 			}()
@@ -425,21 +420,26 @@ func (s *SOLScanner) scan() {
 // If queryLastSig is empty, it will query all transactions for the vault address that exist on the node.
 // minContextSlot is the minimum slot to query for transactions. It does not set a bound on the query,
 // but does ensure that history exists on the RPC node until at least this slot.
+// cursorSlot is queryLastSig's own slot (0 when unknown); newLastSlots receives the
+// slot of the newest signature listed.
 func (s *SOLScanner) scanVault(
 	vaultAddr string,
 	i int,
 	queryLastSig string,
 	minContextSlot uint64,
+	cursorSlot uint64,
 	setUnhealthy func(),
 	txCounts []int,
 	successfulQueries []bool,
 	newLastSigs []string,
+	newLastSlots []uint64,
 	wg *sync.WaitGroup,
 ) {
 	defer wg.Done()
 
 	var totalTxs int
 	var newestSig string
+	var newestSlot uint64
 	before := ""
 	listing, pinned := s.solRpc, false
 	for {
@@ -449,15 +449,19 @@ func (s *SOLScanner) scanVault(
 			Until:      queryLastSig,
 			Limit:      transactionQueryLimit,
 		}
-		// Only pin minContextSlot when there is no until-cursor. With an until-cursor,
-		// minContextSlot tracks the scanner's near-tip position, which for an idle
-		// vault (no new tx) can exceed the cursor signature's slot. The RPC then
-		// returns -32020 "Transaction not found" trying to resolve a cursor below the
-		// required context, which marks the whole scanner unhealthy and halts signing
-		// and observation for the chain. The until-cursor already bounds the query, so
-		// minContextSlot is redundant once a cursor is set.
+		// Without an until-cursor, minContextSlot is the scanner's position. With one,
+		// it is the cursor's own slot, never the scanner's near-tip position: for an
+		// idle vault that position can exceed the cursor's slot, and the RPC then
+		// returns -32020 "Transaction not found" resolving the cursor, which marks the
+		// whole scanner unhealthy. The cursor's slot is needed because Agave ignores an
+		// "until" it does not know and lists the address's whole history: a node that
+		// has not finalized the cursor's slot (a lagging endpoint after a failover)
+		// must refuse (-32016) instead. 0 (a cursor stored before its slot was kept)
+		// sends none, as before.
 		if queryLastSig == "" {
 			params.MinContextSlot = minContextSlot
+		} else {
+			params.MinContextSlot = cursorSlot
 		}
 		res, err := listing.GetSignaturesForAddressUntil(vaultAddr, params)
 		if err != nil {
@@ -487,7 +491,7 @@ func (s *SOLScanner) scanVault(
 
 		totalTxs += len(res)
 		if newestSig == "" {
-			newestSig = res[0].Signature
+			newestSig, newestSlot = res[0].Signature, res[0].Slot
 		}
 
 		var eg errgroup.Group
@@ -538,8 +542,34 @@ func (s *SOLScanner) scanVault(
 	successfulQueries[i] = true
 	txCounts[i] = totalTxs
 	if totalTxs > 0 {
-		newLastSigs[i] = newestSig
+		newLastSigs[i], newLastSlots[i] = newestSig, newestSlot
 	}
+}
+
+// loadVaultScanStatus returns a vault's scan status from memory, or from storage the
+// first time (an empty status when none was stored).
+func (s *SOLScanner) loadVaultScanStatus(vaultAddr string) (vaultScanStatus, error) {
+	if vss, ok := s.vaultScanStatuses[vaultAddr]; ok {
+		return vss, nil
+	}
+	lastSig, lastSlot, cursorSlot, err := s.db.GetScanStatusWithCursor(vaultAddr)
+	if err != nil && !errors.Is(err, leveldb.ErrNotFound) {
+		return vaultScanStatus{}, err
+	}
+	vss := vaultScanStatus{lastSig: lastSig, lastSlot: lastSlot, cursorSlot: cursorSlot}
+	s.vaultScanStatuses[vaultAddr] = vss
+	return vss, nil
+}
+
+// saveVaultScanStatus records a vault's scan status in memory and in storage.
+func (s *SOLScanner) saveVaultScanStatus(vaultAddr string, vss vaultScanStatus) error {
+	s.vaultScanStatuses[vaultAddr] = vss
+	return s.storeVaultScanStatus(vaultAddr, vss)
+}
+
+// storeVaultScanStatus writes a vault's scan status to storage.
+func (s *SOLScanner) storeVaultScanStatus(vaultAddr string, vss vaultScanStatus) error {
+	return s.db.SetScanStatusWithCursor(vaultAddr, vss.lastSig, vss.lastSlot, vss.cursorSlot)
 }
 
 // Since we don't scan all txs in every block, in order to get a good perspective of the network fee

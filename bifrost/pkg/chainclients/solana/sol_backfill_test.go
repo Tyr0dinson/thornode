@@ -1596,7 +1596,7 @@ func (s *BackfillSuite) TestScanVaultNoNewTxs(c *C) {
 	healthy := true
 	setUnhealthy := func() { healthy = false }
 
-	scanner.scanVault("testvault", 0, "", 0, setUnhealthy, txCounts, successfulQueries, newLastSigs, &wg)
+	scanner.scanVault("testvault", 0, "", 0, 0, setUnhealthy, txCounts, successfulQueries, newLastSigs, make([]uint64, 1), &wg)
 
 	wg.Wait()
 	c.Assert(successfulQueries[0], Equals, true)
@@ -1629,7 +1629,7 @@ func (s *BackfillSuite) TestScanVaultWithTxs(c *C) {
 	healthy := true
 	setUnhealthy := func() { healthy = false }
 
-	scanner.scanVault("testvault", 0, "", 0, setUnhealthy, txCounts, successfulQueries, newLastSigs, &wg)
+	scanner.scanVault("testvault", 0, "", 0, 0, setUnhealthy, txCounts, successfulQueries, newLastSigs, make([]uint64, 1), &wg)
 
 	wg.Wait()
 	c.Assert(successfulQueries[0], Equals, true)
@@ -1656,7 +1656,7 @@ func (s *BackfillSuite) TestScanVaultGetSigsError(c *C) {
 	healthy := true
 	setUnhealthy := func() { healthy = false }
 
-	scanner.scanVault("testvault", 0, "", 0, setUnhealthy, txCounts, successfulQueries, newLastSigs, &wg)
+	scanner.scanVault("testvault", 0, "", 0, 0, setUnhealthy, txCounts, successfulQueries, newLastSigs, make([]uint64, 1), &wg)
 
 	wg.Wait()
 	c.Assert(successfulQueries[0], Equals, false) // not successful
@@ -1683,7 +1683,7 @@ func (s *BackfillSuite) TestScanVaultFailedTxSkipped(c *C) {
 	successfulQueries := make([]bool, 1)
 	newLastSigs := make([]string, 1)
 
-	scanner.scanVault("testvault", 0, "", 0, func() {}, txCounts, successfulQueries, newLastSigs, &wg)
+	scanner.scanVault("testvault", 0, "", 0, 0, func() {}, txCounts, successfulQueries, newLastSigs, make([]uint64, 1), &wg)
 
 	wg.Wait()
 	c.Assert(successfulQueries[0], Equals, true)

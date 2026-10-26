@@ -471,6 +471,7 @@ func (c *TronClient) Start(
 	c.tssKeyManager.Start()
 	if c.endpointMgr != nil {
 		c.endpointMgr.SetScannerHeight(c.blockScanner.PreviousHeight)
+		c.endpointMgr.SetReferenceHeight(func() (int64, error) { return c.bridge.GetLastObservedInHeight(c.GetChain()) })
 		c.endpointMgr.Start()
 	}
 
@@ -655,10 +656,11 @@ func tronVerifyBroadcast(ctx context.Context, mgr *endpoints.Manager, tronAPI *a
 	}
 	candidates, unverified := mgr.VerificationCandidates(maxDown)
 	if len(candidates) == 0 {
+		mgr.NoteAmbiguousVerification(maxDown)
 		return signercache.LookupAmbiguous // absence needs at least one witness
 	}
 	perEndpoint := evm.VerificationBudget(ctx, len(candidates))
-	ambiguous := false
+	var failed []string
 	for _, e := range candidates {
 		ectx, cancel := context.WithTimeout(endpoints.PinContext(ctx, e.Name), perEndpoint)
 		res := lookup(ectx)
@@ -667,10 +669,11 @@ func tronVerifyBroadcast(ctx context.Context, mgr *endpoints.Manager, tronAPI *a
 		case signercache.LookupFound:
 			return signercache.LookupFound
 		case signercache.LookupAmbiguous:
-			ambiguous = true
+			failed = append(failed, e.Name)
 		}
 	}
-	if ambiguous || unverified > 0 {
+	if len(failed) > 0 || unverified > 0 {
+		mgr.NoteAmbiguousVerification(maxDown, failed...)
 		return signercache.LookupAmbiguous
 	}
 	return signercache.LookupNotFound

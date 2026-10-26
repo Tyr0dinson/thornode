@@ -9,6 +9,7 @@ import (
 
 	ecommon "github.com/ethereum/go-ethereum/common"
 	etypes "github.com/ethereum/go-ethereum/core/types"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/rs/zerolog"
 	. "gopkg.in/check.v1"
 
@@ -139,6 +140,44 @@ func (s *LookupSuite) TestLookupTxEverywhere(c *C) {
 	fc4.Manager.Disable("a", "identity")
 	fc4.Manager.Disable("b", "identity")
 	c.Assert(evm.LookupTxEverywhere(context.Background(), fc4.Manager, fc4.Client, ecommonHash(), time.Hour), Equals, signercache.LookupAmbiguous)
+}
+
+// An ambiguous verification is counted against the endpoint that kept it ambiguous
+// (here one whose lookup failed, then one never verified); an answer found elsewhere,
+// or absence proven everywhere, counts nothing.
+func (s *LookupSuite) TestAmbiguousLookupIsCountedAgainstTheBlockingEndpoint(c *C) {
+	known, absent, txerror, broken := txServer("known"), txServer("absent"), txServer("txerror"), txServer("broken")
+	defer known.Close()
+	defer absent.Close()
+	defer txerror.Close()
+	defer broken.Close()
+	blocked := func(name string) float64 {
+		return testutil.ToFloat64(endpoints.DefaultMetrics().VerificationBlockedCounter().WithLabelValues("AVAX", name))
+	}
+	lookup := func(a, b *httptest.Server) signercache.LookupResult {
+		fc := lookupClient(c, a, b)
+		defer fc.Manager.Stop()
+		defer fc.Client.Close()
+		return evm.LookupTxEverywhere(context.Background(), fc.Manager, fc.Client, ecommonHash(), time.Hour)
+	}
+	a0, b0 := blocked("a"), blocked("b")
+	c.Assert(lookup(absent, txerror), Equals, signercache.LookupAmbiguous)
+	c.Assert(blocked("a"), Equals, a0)
+	c.Assert(blocked("b"), Equals, b0+1)
+	c.Assert(lookup(absent, broken), Equals, signercache.LookupAmbiguous)
+	c.Assert(blocked("b"), Equals, b0+2)
+	// no endpoint can be asked at all (a disabled, b never verified): b still counted
+	fc := lookupClient(c, absent, broken)
+	fc.Manager.Disable("a", "identity")
+	c.Assert(evm.LookupTxEverywhere(context.Background(), fc.Manager, fc.Client, ecommonHash(), time.Hour), Equals, signercache.LookupAmbiguous)
+	fc.Manager.Stop()
+	fc.Client.Close()
+	c.Assert(blocked("a"), Equals, a0)
+	c.Assert(blocked("b"), Equals, b0+3)
+	c.Assert(lookup(txerror, known), Equals, signercache.LookupFound)
+	c.Assert(lookup(absent, absent), Equals, signercache.LookupNotFound)
+	c.Assert(blocked("a"), Equals, a0)
+	c.Assert(blocked("b"), Equals, b0+3)
 }
 
 func (s *LookupSuite) TestLookupSkipsLongDeadEndpoints(c *C) {

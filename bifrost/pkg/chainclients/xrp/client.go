@@ -229,6 +229,7 @@ func (c *Client) Start(globalTxsQueue chan stypes.TxIn, globalErrataQueue chan s
 	c.blockScanner.Start(globalTxsQueue, globalNetworkFeeQueue)
 	if c.endpointMgr != nil {
 		c.endpointMgr.SetScannerHeight(c.blockScanner.PreviousHeight)
+		c.endpointMgr.SetReferenceHeight(func() (int64, error) { return c.thorchainBridge.GetLastObservedInHeight(c.GetChain()) })
 		c.endpointMgr.Start()
 	}
 	c.wg.Add(1)
