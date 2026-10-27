@@ -37,8 +37,15 @@ func NewInternalHandler(mgr Manager) cosmos.Handler {
 		// to the underlying context when commit() is called. Call commit() only when
 		// the handler succeeds, otherwise return error and the changes will be discarded.
 		// On commit, cached events also have to be explicitly emitted.
+		// The LUVI guard (luvi_guard.go) checks the pools the handler wrote and
+		// fails a user value flow that lowers their LP value beyond rounding.
 		cacheCtx, commit := ctx.CacheContext()
-		res, err := h.Run(cacheCtx, msg)
+		var res *cosmos.Result
+		err := runLuviGuarded(ctx, cacheCtx, mgr, msg, func(runCtx cosmos.Context) error {
+			var runErr error
+			res, runErr = h.Run(runCtx, msg)
+			return runErr
+		})
 		if err == nil {
 			// Success, commit the cached changes and events
 			commit()

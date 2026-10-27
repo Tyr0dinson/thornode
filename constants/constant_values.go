@@ -218,6 +218,7 @@ const (
 	MissingObservationGuardMaxBlocks
 
 	LUVIOverhangGuard
+	LUVIGuard
 )
 
 // ConstantValues define methods used to get constant values

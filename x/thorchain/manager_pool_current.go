@@ -686,7 +686,7 @@ func (pm *PoolMgr) checkSaversUtilization(ctx cosmos.Context, mgr Manager) error
 	var (
 		synthPool           Pool
 		maxUtilizationRatio = sdkmath.ZeroUint()
-		handler             = NewInternalHandler(mgr)
+		handler             = newLuviProtocolHandler(mgr)
 		signer              = nodeAccounts[0].NodeAddress
 		synthCap            = mgr.Keeper().GetConfigInt64(ctx, constants.MaxSynthPerPoolDepth)
 	)
@@ -818,6 +818,13 @@ func (pm *PoolMgr) commitPendingLiquidity(ctx cosmos.Context, pool Pool, mgr Man
 		return nil
 	}
 
+	// the add liquidity handler rejects adds into a pool in synth overhang:
+	// leave the liquidity pending (and withdrawable) until the pool leaves it
+	if isLUVIOverhangGuarded(ctx, mgr.Keeper(), pool, mgr.Keeper().GetTotalSupply(ctx, pool.Asset.GetSyntheticAsset())) {
+		ctx.Logger().Info("skip committing pending liquidity, pool is in synth overhang", "pool", pool.Asset)
+		return nil
+	}
+
 	// get a signer of the txn
 	nodeAccounts, err := mgr.Keeper().ListActiveValidators(ctx)
 	if err != nil {
@@ -828,7 +835,7 @@ func (pm *PoolMgr) commitPendingLiquidity(ctx cosmos.Context, pool Pool, mgr Man
 	}
 	signer := nodeAccounts[0].NodeAddress
 
-	handler := NewInternalHandler(mgr)
+	handler := newLuviProtocolHandler(mgr)
 	pendingLiquidityAgeLimit := mgr.Keeper().GetConfigInt64(ctx, constants.PendingLiquidityAgeLimit)
 
 	iterator := mgr.Keeper().GetLiquidityProviderIterator(ctx, pool.Asset)

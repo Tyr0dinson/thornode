@@ -1299,7 +1299,7 @@ func (vm *NetworkMgr) POLReserveCycle(ctx cosmos.Context, mgr Manager) error {
 		return err
 	}
 
-	handler := NewInternalHandler(mgr)
+	handler := newLuviProtocolHandler(mgr)
 	coins := common.NewCoins(common.NewCoin(common.RuneAsset(), runeAmt))
 
 	// Use CacheContext for atomicity: all state mutations succeed or none persist
@@ -1409,7 +1409,7 @@ func (vm *NetworkMgr) addPOLLiquidity(
 	mgr Manager,
 	polValue *polValueMemo,
 ) error {
-	handler := NewInternalHandler(mgr)
+	handler := newLuviProtocolHandler(mgr)
 
 	// NOTE: move is in hundredths of a basis point
 	move := synthPerPoolDepth.Sub(targetSynthPerPoolDepth).MulUint64(100)
@@ -1491,7 +1491,7 @@ func (vm *NetworkMgr) removePOLLiquidity(
 	maxMovement, synthPerPoolDepth, targetSynthPerPoolDepth cosmos.Uint,
 	mgr Manager,
 ) error {
-	handler := NewInternalHandler(mgr)
+	handler := newLuviProtocolHandler(mgr)
 
 	lp, err := mgr.Keeper().GetLiquidityProvider(ctx, pool.Asset, polAddress)
 	if err != nil {
@@ -1787,7 +1787,7 @@ func (vm *NetworkMgr) cleanupAsgardIndex(ctx cosmos.Context) error {
 }
 
 func (vm *NetworkMgr) withdrawSavers(ctx cosmos.Context, pool Pool, na NodeAccount, mgr Manager) (done bool, err error) {
-	handler := NewInternalHandler(mgr)
+	handler := newLuviProtocolHandler(mgr)
 	lpPerIteration := mgr.Keeper().GetConfigInt64(ctx, constants.RagnarokProcessNumOfLPPerIteration)
 	totalCount := int64(0)
 
@@ -1863,7 +1863,7 @@ func (vm *NetworkMgr) withdrawSavers(ctx cosmos.Context, pool Pool, na NodeAccou
 }
 
 func (vm *NetworkMgr) withdrawLPs(ctx cosmos.Context, pool Pool, na NodeAccount, mgr Manager) (done bool) {
-	handler := NewInternalHandler(mgr)
+	handler := newLuviProtocolHandler(mgr)
 	lpPerIteration := mgr.Keeper().GetConfigInt64(ctx, constants.RagnarokProcessNumOfLPPerIteration)
 	totalCount := int64(0)
 	// retryRemaining tracks whether any LP could not be withdrawn for a
@@ -2352,6 +2352,7 @@ func (vm *NetworkMgr) UpdateNetwork(ctx cosmos.Context, mgr Manager) error {
 	// are to be passed on as bond rewards, so pool reward transfers should be processed before the bond reward transfer.
 
 	var evtPools []PoolAmt
+	var luviReward *luviRewardCheck
 
 	if !totalPoolRewards.IsZero() { // If Pool Rewards to hand out
 		var rewardAmts []cosmos.Uint
@@ -2382,7 +2383,8 @@ func (vm *NetworkMgr) UpdateNetwork(ctx cosmos.Context, mgr Manager) error {
 			rewardPools = append(rewardPools, pool)
 
 		}
-		// Pay out
+		// Pay out, checked by the LUVI reward allocation check (report-only)
+		luviReward = beginLuviRewardCheck(cacheCtx, vm.k, rewardAmts, rewardPools)
 		if err = vm.payPoolRewards(cacheCtx, rewardAmts, rewardPools); err != nil {
 			return err
 		}
@@ -2402,6 +2404,7 @@ func (vm *NetworkMgr) UpdateNetwork(ctx cosmos.Context, mgr Manager) error {
 	if err = eventMgr.EmitEvent(cacheCtx, rewardEvt); err != nil {
 		return fmt.Errorf("fail to emit reward event: %w", err)
 	}
+	luviReward.end(cacheCtx, vm.k, eventMgr, rewardEvt)
 	i, err := getTotalActiveNodeWithBond(cacheCtx, vm.k)
 	if err != nil {
 		return fmt.Errorf("fail to get total active node account: %w", err)

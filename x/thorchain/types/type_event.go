@@ -18,6 +18,8 @@ const (
 	ReBondEventType                 = "rebond"
 	DonateEventType                 = "donate"
 	ErrataEventType                 = "errata"
+	LuviLossEventType               = "luvi_loss"
+	LuviRewardEventType             = "luvi_reward"
 	FeeEventType                    = "fee"
 	GasEventType                    = "gas"
 	OutboundEventType               = "outbound"
@@ -1629,6 +1631,51 @@ func (m *EventFailedOutboundRecovery) Events() (cosmos.Events, error) {
 		cosmos.NewAttribute("recovery_type", m.RecoveryType),
 		cosmos.NewAttribute("destination", m.Destination.String()),
 		cosmos.NewAttribute("memo", m.Memo),
+	)
+	return cosmos.Events{evt}, nil
+}
+
+// Type returns the luvi loss event type
+func (m *EventLuviLoss) Type() string {
+	return LuviLossEventType
+}
+
+// Events returns a cosmos.Events type
+func (m *EventLuviLoss) Events() (cosmos.Events, error) {
+	evt := cosmos.NewEvent(m.Type(),
+		cosmos.NewAttribute("pool", m.Pool.String()),
+		cosmos.NewAttribute("scope", m.Scope),
+		cosmos.NewAttribute("tx_id", m.TxID.String()),
+		cosmos.NewAttribute("kind", m.Kind),
+		cosmos.NewAttribute("delta_g", m.DeltaG.String()),
+		cosmos.NewAttribute("normalized_delta_g", m.NormalizedDeltaG.String()),
+		cosmos.NewAttribute("allowed", m.Allowed.String()),
+		cosmos.NewAttribute("excess", strconv.FormatBool(m.Excess)),
+		cosmos.NewAttribute("rejected", strconv.FormatBool(m.Rejected)),
+		cosmos.NewAttribute("lp_units_before", m.LpUnitsBefore.String()),
+		cosmos.NewAttribute("lp_units_after", m.LpUnitsAfter.String()),
+	)
+	return cosmos.Events{evt}, nil
+}
+
+// Type returns the luvi reward event type
+func (m *EventLuviReward) Type() string {
+	return LuviRewardEventType
+}
+
+// Events returns a cosmos.Events type
+func (m *EventLuviReward) Events() (cosmos.Events, error) {
+	evt := cosmos.NewEvent(m.Type(),
+		cosmos.NewAttribute("pool", m.Pool.String()),
+		cosmos.NewAttribute("kind", m.Kind),
+		cosmos.NewAttribute("reward_rune", m.RewardRune.String()),
+		cosmos.NewAttribute("reported_rune", m.ReportedRune.String()),
+		cosmos.NewAttribute("delta_g", m.DeltaG.String()),
+		cosmos.NewAttribute("expected_delta_g", m.ExpectedDeltaG.String()),
+		cosmos.NewAttribute("lp_share_bps", strconv.FormatInt(m.LpShareBps, 10)),
+		cosmos.NewAttribute("expected_lp_share_bps", strconv.FormatInt(m.ExpectedLpShareBps, 10)),
+		cosmos.NewAttribute("ok", strconv.FormatBool(m.Ok)),
+		cosmos.NewAttribute("reason", m.Reason),
 	)
 	return cosmos.Events{evt}, nil
 }

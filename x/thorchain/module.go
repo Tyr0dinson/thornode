@@ -162,24 +162,13 @@ func (am AppModule) RegisterServices(cfg module.Configurator) {
 	types.RegisterQueryServer(cfg.QueryServer(), am.queryServer)
 	wasmtypes.RegisterQueryServer(cfg.QueryServer(), wasmkeeper.Querier(&am.mgr.wasmKeeper))
 
+	// Each migration runs in a report-only LUVI scope (luvi_migration.go);
+	// register new ones in Migrator.luviMigrations.
 	m := NewMigrator(am.mgr)
-	if err := cfg.RegisterMigration(types.ModuleName, 15, m.Migrate15to16); err != nil {
-		panic(fmt.Sprintf("failed to migrate x/thorchain from version 15 to 16: %v", err))
-	}
-	if err := cfg.RegisterMigration(types.ModuleName, 16, m.Migrate16to17); err != nil {
-		panic(fmt.Sprintf("failed to migrate x/thorchain from version 16 to 17: %v", err))
-	}
-	if err := cfg.RegisterMigration(types.ModuleName, 17, m.Migrate17to18); err != nil {
-		panic(fmt.Sprintf("failed to migrate x/thorchain from version 17 to 18: %v", err))
-	}
-	if err := cfg.RegisterMigration(types.ModuleName, 18, m.Migrate18to19); err != nil {
-		panic(fmt.Sprintf("failed to migrate x/thorchain from version 18 to 19: %v", err))
-	}
-	if err := cfg.RegisterMigration(types.ModuleName, 19, m.Migrate19to20); err != nil {
-		panic(fmt.Sprintf("failed to migrate x/thorchain from version 19 to 20: %v", err))
-	}
-	if err := cfg.RegisterMigration(types.ModuleName, 20, m.Migrate20to21); err != nil {
-		panic(fmt.Sprintf("failed to migrate x/thorchain from version 20 to 21: %v", err))
+	for _, mig := range m.luviMigrations() {
+		if err := cfg.RegisterMigration(types.ModuleName, mig.from, luviGuardMigration(am.mgr, mig.from, mig.run)); err != nil {
+			panic(fmt.Sprintf("failed to migrate x/thorchain from version %d to %d: %v", mig.from, mig.from+1, err))
+		}
 	}
 }
 
@@ -249,7 +238,8 @@ func (am AppModule) EndBlock(goCtx context.Context) ([]abci.ValidatorUpdate, err
 	// telemetry sink is disabled, and neither reads nor writes keeper state. The
 	// order of the manager calls and their error handling are unchanged.
 	start := telemetry.Now()
-	if err := am.mgr.SwapQ().EndBlock(ctx, am.mgr); err != nil {
+	luviCtx, luviStep := beginLuviScope(ctx, am.mgr.Keeper(), "endblock/swap_queue", "", false)
+	if err := am.mgr.SwapQ().EndBlock(luviCtx, am.mgr); err != nil {
 		ctx.Logger().Error("fail to process swap queue", "error", err)
 		telemetry.IncrCounterWithLabels(
 			[]string{"thornode", "endblock", "manager_error"},
@@ -257,10 +247,12 @@ func (am AppModule) EndBlock(goCtx context.Context) ([]abci.ValidatorUpdate, err
 			[]metrics.Label{telemetry.NewLabel("manager", "swap_queue")},
 		)
 	}
+	luviStep.end(luviCtx, am.mgr)
 	telemetry.ModuleMeasureSince("swap_queue", start, "thornode", "block", "endblock")
 
 	start = telemetry.Now()
-	if err := am.mgr.AdvSwapQueueMgr().EndBlock(ctx, am.mgr, am.telemetryEnabled); err != nil {
+	luviCtx, luviStep = beginLuviScope(ctx, am.mgr.Keeper(), "endblock/adv_swap_queue", "", false)
+	if err := am.mgr.AdvSwapQueueMgr().EndBlock(luviCtx, am.mgr, am.telemetryEnabled); err != nil {
 		ctx.Logger().Error("fail to process adv swap queue", "error", err)
 		telemetry.IncrCounterWithLabels(
 			[]string{"thornode", "endblock", "manager_error"},
@@ -268,10 +260,12 @@ func (am AppModule) EndBlock(goCtx context.Context) ([]abci.ValidatorUpdate, err
 			[]metrics.Label{telemetry.NewLabel("manager", "adv_swap_queue")},
 		)
 	}
+	luviStep.end(luviCtx, am.mgr)
 	telemetry.ModuleMeasureSince("adv_swap_queue", start, "thornode", "block", "endblock")
 
 	start = telemetry.Now()
-	if err := am.mgr.Slasher().LackSigning(ctx, am.mgr); err != nil {
+	luviCtx, luviStep = beginLuviScope(ctx, am.mgr.Keeper(), "endblock/lack_signing", "", false)
+	if err := am.mgr.Slasher().LackSigning(luviCtx, am.mgr); err != nil {
 		ctx.Logger().Error("Unable to slash for lack of signing:", "error", err)
 		telemetry.IncrCounterWithLabels(
 			[]string{"thornode", "endblock", "manager_error"},
@@ -279,10 +273,12 @@ func (am AppModule) EndBlock(goCtx context.Context) ([]abci.ValidatorUpdate, err
 			[]metrics.Label{telemetry.NewLabel("manager", "lack_signing")},
 		)
 	}
+	luviStep.end(luviCtx, am.mgr)
 	telemetry.ModuleMeasureSince("lack_signing", start, "thornode", "block", "endblock")
 
 	start = telemetry.Now()
-	if err := am.mgr.PoolMgr().EndBlock(ctx, am.mgr); err != nil {
+	luviCtx, luviStep = beginLuviScope(ctx, am.mgr.Keeper(), "endblock/pool", "", false)
+	if err := am.mgr.PoolMgr().EndBlock(luviCtx, am.mgr); err != nil {
 		ctx.Logger().Error("fail to process pools", "error", err)
 		telemetry.IncrCounterWithLabels(
 			[]string{"thornode", "endblock", "manager_error"},
@@ -290,6 +286,7 @@ func (am AppModule) EndBlock(goCtx context.Context) ([]abci.ValidatorUpdate, err
 			[]metrics.Label{telemetry.NewLabel("manager", "pool")},
 		)
 	}
+	luviStep.end(luviCtx, am.mgr)
 	telemetry.ModuleMeasureSince("pool", start, "thornode", "block", "endblock")
 
 	start = telemetry.Now()
@@ -298,7 +295,8 @@ func (am AppModule) EndBlock(goCtx context.Context) ([]abci.ValidatorUpdate, err
 
 	// update network data to account for block rewards and reward units
 	start = telemetry.Now()
-	if err := am.mgr.NetworkMgr().UpdateNetwork(ctx, am.mgr); err != nil {
+	luviCtx, luviStep = beginLuviScope(ctx, am.mgr.Keeper(), "endblock/update_network", "", false)
+	if err := am.mgr.NetworkMgr().UpdateNetwork(luviCtx, am.mgr); err != nil {
 		ctx.Logger().Error("fail to update network data", "error", err)
 		telemetry.IncrCounterWithLabels(
 			[]string{"thornode", "endblock", "manager_error"},
@@ -306,10 +304,12 @@ func (am AppModule) EndBlock(goCtx context.Context) ([]abci.ValidatorUpdate, err
 			[]metrics.Label{telemetry.NewLabel("manager", "update_network")},
 		)
 	}
+	luviStep.end(luviCtx, am.mgr)
 	telemetry.ModuleMeasureSince("update_network", start, "thornode", "block", "endblock")
 
 	start = telemetry.Now()
-	if err := am.mgr.StableReserveManager().EndBlock(ctx, am.mgr); err != nil {
+	luviCtx, luviStep = beginLuviScope(ctx, am.mgr.Keeper(), "endblock/stable_reserve", "", false)
+	if err := am.mgr.StableReserveManager().EndBlock(luviCtx, am.mgr); err != nil {
 		ctx.Logger().Error("fail to process stable reserve", "error", err)
 		telemetry.IncrCounterWithLabels(
 			[]string{"thornode", "endblock", "manager_error"},
@@ -317,10 +317,12 @@ func (am AppModule) EndBlock(goCtx context.Context) ([]abci.ValidatorUpdate, err
 			[]metrics.Label{telemetry.NewLabel("manager", "stable_reserve")},
 		)
 	}
+	luviStep.end(luviCtx, am.mgr)
 	telemetry.ModuleMeasureSince("stable_reserve", start, "thornode", "block", "endblock")
 
 	start = telemetry.Now()
-	if err := am.mgr.NetworkMgr().EndBlock(ctx, am.mgr); err != nil {
+	luviCtx, luviStep = beginLuviScope(ctx, am.mgr.Keeper(), "endblock/network", "", false)
+	if err := am.mgr.NetworkMgr().EndBlock(luviCtx, am.mgr); err != nil {
 		ctx.Logger().Error("fail to end block for vault manager", "error", err)
 		telemetry.IncrCounterWithLabels(
 			[]string{"thornode", "endblock", "manager_error"},
@@ -328,6 +330,7 @@ func (am AppModule) EndBlock(goCtx context.Context) ([]abci.ValidatorUpdate, err
 			[]metrics.Label{telemetry.NewLabel("manager", "network")},
 		)
 	}
+	luviStep.end(luviCtx, am.mgr)
 	telemetry.ModuleMeasureSince("network", start, "thornode", "block", "endblock")
 
 	start = telemetry.Now()
@@ -342,11 +345,14 @@ func (am AppModule) EndBlock(goCtx context.Context) ([]abci.ValidatorUpdate, err
 	telemetry.ModuleMeasureSince("observation_tally", start, "thornode", "block", "endblock")
 
 	start = telemetry.Now()
-	validators := am.mgr.ValidatorMgr().EndBlock(ctx, am.mgr)
+	luviCtx, luviStep = beginLuviScope(ctx, am.mgr.Keeper(), "endblock/validators", "", false)
+	validators := am.mgr.ValidatorMgr().EndBlock(luviCtx, am.mgr)
+	luviStep.end(luviCtx, am.mgr)
 	telemetry.ModuleMeasureSince("validator", start, "thornode", "block", "endblock")
 
 	start = telemetry.Now()
-	if err := am.mgr.TxOutStore().EndBlock(ctx, am.mgr); err != nil {
+	luviCtx, luviStep = beginLuviScope(ctx, am.mgr.Keeper(), "endblock/txout", "", false)
+	if err := am.mgr.TxOutStore().EndBlock(luviCtx, am.mgr); err != nil {
 		ctx.Logger().Error("fail to process txout endblock", "error", err)
 		telemetry.IncrCounterWithLabels(
 			[]string{"thornode", "endblock", "manager_error"},
@@ -354,10 +360,13 @@ func (am AppModule) EndBlock(goCtx context.Context) ([]abci.ValidatorUpdate, err
 			[]metrics.Label{telemetry.NewLabel("manager", "txout")},
 		)
 	}
+	luviStep.end(luviCtx, am.mgr)
 	telemetry.ModuleMeasureSince("txout", start, "thornode", "block", "endblock")
 
 	start = telemetry.Now()
-	am.mgr.GasMgr().EndBlock(ctx, am.mgr.Keeper(), am.mgr.EventMgr())
+	luviCtx, luviStep = beginLuviScope(ctx, am.mgr.Keeper(), "endblock/gas", "", false)
+	am.mgr.GasMgr().EndBlock(luviCtx, am.mgr.Keeper(), am.mgr.EventMgr())
+	luviStep.end(luviCtx, am.mgr)
 	telemetry.ModuleMeasureSince("gas", start, "thornode", "block", "endblock")
 
 	// telemetry
@@ -411,6 +420,11 @@ func (am AppModule) EndBlock(goCtx context.Context) ([]abci.ValidatorUpdate, err
 	start = telemetry.Now()
 	am.mgr.Keeper().PruneRefundCleanups(ctx)
 	telemetry.ModuleMeasureSince("prune_refund_cleanups", start, "thornode", "block", "endblock")
+
+	// last, so each accumulator step covers the whole block
+	start = telemetry.Now()
+	advanceLuviAccumulators(ctx, am.mgr.Keeper())
+	telemetry.ModuleMeasureSince("luvi_accumulators", start, "thornode", "block", "endblock")
 
 	return validators, nil
 }
