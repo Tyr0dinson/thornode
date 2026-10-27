@@ -7,7 +7,6 @@ package luvicheck
 import (
 	"fmt"
 	"sort"
-	"strings"
 
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
@@ -20,7 +19,7 @@ import (
 // On top of it, each pool gets computed allowances per block (see allowance)
 // for gas and slash reimbursements, LP-flow rounding, and the error from
 // valuing the block's LP flows at the previous block's unit value.
-var DefaultTolerance = cosmos.NewDecWithPrec(1, 12)
+var DefaultTolerance = types.LuviDefaultTolerance
 
 // PoolSnapshot is the subset of a /thorchain/pools entry the check needs.
 type PoolSnapshot struct {
@@ -113,9 +112,8 @@ func NewMonitor() *Monitor {
 // tracked pool that disappears or empties gets a final check (see retire) and
 // is then forgotten.
 func (m *Monitor) ObserveBlock(height int64, pools []PoolSnapshot, events []map[string]string) ([]Violation, error) {
-	added, withdrawn := unitEvents(events)
-	errata := errataPools(events)
-	paid := assetPaidEvents(events)
+	ev := types.NewLuviStepEvents(events)
+	added, withdrawn, errata, paid := ev.Added, ev.Withdrawn, ev.Errata, ev.AssetPaid
 
 	var violations []Violation
 	seen := map[string]bool{}
@@ -216,39 +214,9 @@ func retire(asset string, height int64, prev, state types.LuviState, allowed cos
 	return violations
 }
 
-// allowance returns the normalized drop in G a block can show without any
-// value leaving LPs unexpectedly, beyond the tolerance:
-//
-//   - Gas and vault slashes: the pool pays g asset and is reimbursed in RUNE
-//     at spot price, which costs 1 - sqrt(1 - (g/A)^2) ~ (g/A)^2/2 of
-//     sqrt(A*R). The allowance is (g/A)^2, about twice that, as the spot
-//     price moves within the block. It ignores the RUNE the event reports, so an
-//     under-reimbursement (such as a slash the bond can't cover) is a drop.
-//   - LP flow rounding: each add or withdraw rounds its share of each side to
-//     the nearest base unit (common.GetSafeShare), in either direction, which
-//     is worth up to 1/A + 1/R of sqrt(A*R) per flow. In a small pool one
-//     base unit of the asset can be worth thousands of RUNE base units.
-//   - LP flow timing: G values the block's LP unit change dL at the previous
-//     block's unit value v_prev, but a flow that runs after the block's other
-//     changes happens at a value between v_prev and v_new. The error is at most
-//     |dL| * |v_new - v_prev|, a fraction dL/L of the block's value change, so
-//     it can only hide a proportional share of a real loss.
+// allowance is types.LuviAllowance; see there for what it covers.
 func allowance(prev, next types.LuviState, assetPaid cosmos.Uint, flows int) cosmos.Dec {
-	total := cosmos.ZeroDec()
-	if !assetPaid.IsZero() {
-		e := toDec(assetPaid).Quo(toDec(prev.BalanceAsset))
-		if e.GT(cosmos.NewDec(1)) {
-			e = cosmos.NewDec(1)
-		}
-		// 1 - sqrt(1 - e^2) <= e^2, and ~e^2/2 for small e
-		total = total.Add(e.Mul(e))
-	}
-	perFlow := cosmos.NewDec(1).Quo(toDec(prev.BalanceAsset)).Add(cosmos.NewDec(1).Quo(toDec(prev.BalanceRune)))
-	total = total.Add(perFlow.MulInt64(int64(flows)))
-
-	dL := toDec(next.LPUnits).Sub(toDec(prev.LPUnits)).Abs()
-	dV := next.ChainLuvi().Sub(prev.ChainLuvi()).Abs()
-	return total.Add(dL.Mul(dV).Quo(prev.SqrtAR()))
+	return types.LuviAllowance(prev, next, assetPaid, flows)
 }
 
 // retireAllowance is allowance without the LP flow timing term, which values
@@ -262,76 +230,6 @@ func assetPaidOf(paid map[string]cosmos.Uint, asset string) cosmos.Uint {
 		return g
 	}
 	return cosmos.ZeroUint()
-}
-
-func toDec(u cosmos.Uint) cosmos.Dec {
-	return cosmos.NewDecFromBigInt(u.BigInt())
-}
-
-// assetPaidEvents sums, per pool, the asset paid out by gas events and taken
-// by vault slashes (a slash event lists each pool's change under its asset,
-// negative when the pool pays).
-func assetPaidEvents(events []map[string]string) map[string]cosmos.Uint {
-	paid := map[string]cosmos.Uint{}
-	for _, e := range events {
-		var pool, amt string
-		switch e["type"] {
-		case types.GasEventType:
-			pool, amt = e["asset"], e["asset_amt"]
-		case types.SlashEventType:
-			pool = e["pool"]
-			var ok bool
-			if amt, ok = strings.CutPrefix(e[pool], "-"); !ok {
-				continue
-			}
-		default:
-			continue
-		}
-		g, err := cosmos.ParseUint(amt)
-		if err != nil {
-			continue
-		}
-		if prev, ok := paid[pool]; ok {
-			g = g.Add(prev)
-		}
-		paid[pool] = g
-	}
-	return paid
-}
-
-// unitEvents collects the LP units added and withdrawn per pool.
-func unitEvents(events []map[string]string) (added, withdrawn map[string][]cosmos.Uint) {
-	added = map[string][]cosmos.Uint{}
-	withdrawn = map[string][]cosmos.Uint{}
-	for _, e := range events {
-		var into map[string][]cosmos.Uint
-		switch e["type"] {
-		case types.AddLiquidityEventType:
-			into = added
-		case types.WithdrawEventType:
-			into = withdrawn
-		default:
-			continue
-		}
-		u, err := cosmos.ParseUint(e["liquidity_provider_units"])
-		if err != nil {
-			continue
-		}
-		into[e["pool"]] = append(into[e["pool"]], u)
-	}
-	return added, withdrawn
-}
-
-// errataPools returns the pools named by errata events. An errata of an add
-// burns the depositor's units without emitting a unit event.
-func errataPools(events []map[string]string) map[string]bool {
-	pools := map[string]bool{}
-	for _, e := range events {
-		if e["type"] == types.ErrataEventType {
-			pools[e["asset"]] = true
-		}
-	}
-	return pools
 }
 
 // LossEventPools returns the pools named by events that can legitimately

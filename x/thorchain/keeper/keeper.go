@@ -120,6 +120,9 @@ type KeeperPool interface {
 	RemovePool(ctx cosmos.Context, asset common.Asset)
 	SetPoolLUVI(ctx cosmos.Context, asset common.Asset, luvi cosmos.Uint)
 	GetPoolLUVI(ctx cosmos.Context, asset common.Asset) (cosmos.Uint, error)
+	GetPoolLuviAccumulator(ctx cosmos.Context, asset common.Asset) (types.PoolLuvi, bool, error)
+	SetPoolLuviAccumulator(ctx cosmos.Context, record types.PoolLuvi)
+	RemovePoolLuviAccumulator(ctx cosmos.Context, asset common.Asset)
 }
 
 type KeeperLastHeight interface {

@@ -14,6 +14,14 @@ THORNode follows a custom variation of semantic version structure: `MAJOR.MINOR.
 2. Tag issues and PRs using the milestone, so we can identify which PR is on which version.
 3. PRs require 3 approvals from the dev team - once approved, merge to `develop` branch.
 
+## Store Migrations and LP Value
+
+Store migrations are `Migrator.MigrateNtoN+1` methods in `x/thorchain/migrations*.go` (larger bodies in `migration_*.go`). Register a new one in `Migrator.luviMigrations` (`x/thorchain/luvi_migration.go`), not directly in `RegisterServices`, and bump `ConsensusVersion` in `x/thorchain/module.go`. The upgrade handler (`app/upgrades/`) runs them through the module manager.
+
+Every registered migration runs inside a report-only LUVI scope named `migration/<from>to<to>`. If any pool's hedged LP equity G drops, the chain emits a `luvi_loss` event with that scope and logs one line per changed pool. The scope compares every pool before and after, so it also catches raw store writes. It never fails or reverts the upgrade, and the `LUVIGuard` Mimir turns it off.
+
+The CI gate (`LuviMigrateGateSuite` in `x/thorchain/luvi_migration_test.go`) runs every registered migration against a fixture built from mainnet pools, with LPs, POL and synths. `LuviMigrateMainnetGateSuite` runs the pool-moving steps of the mainnet migration bodies; the mainnet migration job of `make test-network-specific` (run by `make test`) runs it. Either suite fails when a pool's normalized G drop is beyond the LUVI tolerance, unless `luviDeclaredWriteDowns` in `x/thorchain/luvi_migration.go` declares the drop. Each entry names the migration scope, the pool, the largest allowed drop and a one-line reason. A migration that moves LP value on purpose must add an entry, and reviewers should check every entry.
+
 ## Stagenet Release
 
 1. Create a new RC release at https://gitlab.com/thorchain/thornode/-/releases for the version (e.g. `v3.7.0-rc1`) with the last commit for the release in `develop` as the tag target. Run `uv run ./scripts/release/prlog.py Release-3.7.0` to generate the output for the change log.

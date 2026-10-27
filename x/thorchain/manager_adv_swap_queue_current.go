@@ -939,7 +939,12 @@ func (vm *SwapQueueAdv) EndBlock(ctx cosmos.Context, mgr Manager, telemetryEnabl
 
 			// make the primary swap using the cached context
 			var settleMsg string
-			_, emit, effectiveInput, handleErr := swapHandler.runWithEmitAndInput(cacheCtx, msg)
+			emit, effectiveInput := cosmos.ZeroUint(), cosmos.ZeroUint()
+			handleErr := runLuviGuarded(ctx, cacheCtx, mgr, msg, func(runCtx cosmos.Context) error {
+				var runErr error
+				_, emit, effectiveInput, runErr = swapHandler.runWithEmitAndInput(runCtx, msg)
+				return runErr
+			})
 			// Every handler invocation consumes execution budget. State progression
 			// may still be skipped for failed market swaps on rapid iterations, but
 			// failures must not make MaxSwapsPerBlock ineffective as a CPU bound.

@@ -33,8 +33,9 @@ All live in `.claude/skills/health/` and `.claude/skills/tc-debug/`, paths relat
 | `tc-debug/classify_input.py <input>`                | tx hash / vault / address / description, with chain hint                     |
 | `tc-debug/discover_loki.py [addr]`                  | Loki job labels, cached to `/tmp/tc_loki_jobs.json`                          |
 | `tc-debug/parse_tx_status.py [height]`              | `/thorchain/tx/status` to phase + stuck verdict (stdin)                      |
+| `tc-debug/luvi_forensics.py <rpc> <from> [to]`      | `luvi_loss` events per tx / EndBlock step (`--pool`, `--tx`, `--parse`)      |
 
-All read stdin from `curl` except `classify_input.py`, `discover_loki.py`, and `fetch_logs.py`, which take their arguments on the command line.
+All read stdin from `curl` except `classify_input.py`, `discover_loki.py`, `fetch_logs.py`, and `luvi_forensics.py`, which take their arguments on the command line.
 
 ## Naming and units
 

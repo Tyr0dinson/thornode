@@ -16,6 +16,8 @@ import (
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/signercache"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/rs/zerolog"
 	. "gopkg.in/check.v1"
 
@@ -94,11 +96,16 @@ func emptyTxServer() *httptest.Server {
 }
 
 func (s *TronTestSuite) TestVerifyBroadcastAsksEveryEndpoint(c *C) {
-	const known = "77ddfa70000000000000000000000000000000000000000000000000000000000"
+	const known = "77ddfa7093cc5f745c0d3a54abb89ef070f983343c05e0f89e5a52f3e5401299"
 	absent := emptyTxServer()
 	defer absent.Close()
+	// b holds the payment, solidified and successful
+	paid := &failedRetryRPC{fallback: s.api.Config.Handler}
+	paid.evidence(known, "", "SUCCESS", 99)
+	bNode := httptest.NewServer(paid)
+	defer bNode.Close()
 	var bDown atomic.Bool
-	b := flakyProxy(s.api.URL, &bDown) // the mock knows txs starting with 77ddfa70
+	b := flakyProxy(bNode.URL, &bDown)
 	defer b.Close()
 	cfgEps := []config.ChainEndpointConfig{
 		{Name: "a", RPCHost: s.rpc.URL, APIHost: absent.URL, Priority: 1},
@@ -125,6 +132,50 @@ func (s *TronTestSuite) TestVerifyBroadcastAsksEveryEndpoint(c *C) {
 	mgr.Disable("b", "identity")
 	mgr.Disable("a", "identity")
 	c.Assert(tronVerifyBroadcast(context.Background(), mgr, apiClient, known, time.Hour), Equals, signercache.LookupAmbiguous)
+}
+
+// A solidified failed execution seen on any endpoint is final on TRON, so it allows
+// the failed-payment recovery even when another endpoint has not seen the
+// transaction; a success seen on any endpoint always wins over it.
+func (s *TronTestSuite) TestVerifyBroadcastFailedOnOneEndpoint(c *C) {
+	const sig = "77ddfa7093cc5f745c0d3a54abb89ef070f983343c05e0f89e5a52f3e5401299"
+	absent := emptyTxServer()
+	defer absent.Close()
+	failed := &failedRetryRPC{fallback: s.api.Config.Handler}
+	failed.evidence(sig, "FAILED", "REVERT", 99)
+	failedNode := httptest.NewServer(failed)
+	defer failedNode.Close()
+	paid := &failedRetryRPC{fallback: s.api.Config.Handler}
+	paid.evidence(sig, "", "SUCCESS", 99)
+	paidNode := httptest.NewServer(paid)
+	defer paidNode.Close()
+	verify := func(a, b *httptest.Server) signercache.LookupResult {
+		cfgEps := []config.ChainEndpointConfig{
+			{Name: "a", RPCHost: s.rpc.URL, APIHost: a.URL, Priority: 1},
+			{Name: "b", RPCHost: s.rpc.URL, APIHost: b.URL, Priority: 2},
+		}
+		fc := config.BifrostChainConfiguration{ChainID: common.TRONChain}.GetFailoverConfig()
+		mgr, err := endpoints.NewManager(common.TRONChain, cfgEps, fc, zerolog.Nop())
+		c.Assert(err, IsNil)
+		for _, e := range mgr.Entries() {
+			e.SetIdentity("0x2b6653dc")
+		}
+		targets, err := endpoints.TargetsFrom(cfgEps, endpoints.APIHost)
+		c.Assert(err, IsNil)
+		router, err := endpoints.NewHTTPRouter(mgr, endpoints.HTTPRouterConfig{Base: endpoints.SyntheticBase(common.TRONChain), Targets: targets}, zerolog.Nop())
+		c.Assert(err, IsNil)
+		apiClient := api.NewTronAPIWithClient(endpoints.SyntheticBase(common.TRONChain).String(), 2*time.Second, &http.Client{Transport: router, Timeout: 2 * time.Second})
+		return tronVerifyBroadcast(context.Background(), mgr, apiClient, sig, time.Hour)
+	}
+	down := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer down.Close()
+	c.Assert(verify(absent, failedNode), Equals, signercache.LookupFailed)
+	// another endpoint that cannot answer does not hide the failure
+	c.Assert(verify(down, failedNode), Equals, signercache.LookupFailed)
+	c.Assert(verify(failedNode, paidNode), Equals, signercache.LookupFound)
+	c.Assert(verify(paidNode, failedNode), Equals, signercache.LookupFound)
 }
 
 // An endpoint whose identity was never verified in this process (unreachable at
@@ -265,4 +316,65 @@ func (s *TronTestSuite) TestTronIdentity(c *C) {
 	c.Assert(got, Equals, "0x1 (api_host block def != rpc_host abc)")
 	_, err = tronIdentity("0x1", "", "", "")
 	c.Assert(err, NotNil)
+}
+
+// Only an endpoint whose reads failed is reported as blocking re-sign; one that
+// answered with evidence that does not prove the outcome yet (a receipt above its
+// solidified height) keeps the result ambiguous without being blamed.
+func (s *TronTestSuite) TestVerifyBroadcastBlamesOnlyEndpointsThatDidNotAnswer(c *C) {
+	const sig = "77ddfa7093cc5f745c0d3a54abb89ef070f983343c05e0f89e5a52f3e5401299"
+	pending := &failedRetryRPC{fallback: s.api.Config.Handler}
+	pending.evidence(sig, "", "SUCCESS", 101) // above the solidified height 100
+	pendingNode := httptest.NewServer(pending)
+	defer pendingNode.Close()
+	down := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer down.Close()
+	cfgEps := []config.ChainEndpointConfig{
+		{Name: "pending", RPCHost: s.rpc.URL, APIHost: pendingNode.URL, Priority: 1},
+		{Name: "down", RPCHost: s.rpc.URL, APIHost: down.URL, Priority: 2},
+	}
+	metrics, err := endpoints.NewMetrics(prometheus.NewRegistry())
+	c.Assert(err, IsNil)
+	fc := config.BifrostChainConfiguration{ChainID: common.TRONChain}.GetFailoverConfig()
+	mgr, err := endpoints.NewManager(common.TRONChain, cfgEps, fc, zerolog.Nop(), endpoints.WithMetrics(metrics))
+	c.Assert(err, IsNil)
+	for _, e := range mgr.Entries() {
+		e.SetIdentity("0x2b6653dc")
+	}
+	targets, err := endpoints.TargetsFrom(cfgEps, endpoints.APIHost)
+	c.Assert(err, IsNil)
+	router, err := endpoints.NewHTTPRouter(mgr, endpoints.HTTPRouterConfig{Base: endpoints.SyntheticBase(common.TRONChain), Targets: targets}, zerolog.Nop())
+	c.Assert(err, IsNil)
+	apiClient := api.NewTronAPIWithClient(endpoints.SyntheticBase(common.TRONChain).String(), 2*time.Second, &http.Client{Transport: router, Timeout: 2 * time.Second})
+
+	c.Assert(tronVerifyBroadcast(context.Background(), mgr, apiClient, sig, time.Hour), Equals, signercache.LookupAmbiguous)
+	blocked := func(name string) float64 {
+		return testutil.ToFloat64(metrics.VerificationBlockedCounter().WithLabelValues("TRON", name))
+	}
+	c.Assert(blocked("down"), Equals, 1.0)
+	c.Assert(blocked("pending"), Equals, 0.0)
+
+	// the pending endpoint alone: ambiguous, nobody blamed
+	mgr.Disable("down", "identity")
+	c.Assert(tronVerifyBroadcast(context.Background(), mgr, apiClient, sig, time.Hour), Equals, signercache.LookupAmbiguous)
+	c.Assert(blocked("pending"), Equals, 0.0)
+}
+
+// A verification has the API timeout for each of its reads on one endpoint, as each
+// read had before it went through every endpoint; without a timeout it has none.
+func (s *TronTestSuite) TestVerificationContextCoversEveryRead(c *C) {
+	client := &TronClient{config: config.BifrostChainConfiguration{BlockScanner: config.BifrostBlockScannerConfiguration{HTTPRequestTimeout: 30 * time.Second}}}
+	ctx, cancel := client.verificationContext()
+	defer cancel()
+	deadline, ok := ctx.Deadline()
+	c.Assert(ok, Equals, true)
+	c.Assert(time.Until(deadline) > 89*time.Second && time.Until(deadline) <= 90*time.Second, Equals, true)
+
+	client.config.BlockScanner.HTTPRequestTimeout = 0
+	ctx2, cancel2 := client.verificationContext()
+	defer cancel2()
+	_, ok = ctx2.Deadline()
+	c.Assert(ok, Equals, false)
 }

@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -82,14 +84,70 @@ func (api *TronApi) GetBlock(height int64) (Block, error) {
 	return block, nil
 }
 
+// GetSolidBlockHeight returns the node's latest solidified block height. Read
+// this before a receipt lookup, then require its block to be at or below this
+// height; a receipt read before finality could describe a reverted fork.
+func (api *TronApi) GetSolidBlockHeight() (int64, error) {
+	ctx, cancel := api.getContext()
+	defer cancel()
+	return api.GetSolidBlockHeightWithContext(ctx)
+}
+
+// GetSolidBlockHeightWithContext is GetSolidBlockHeight with a caller-supplied
+// context (for example one pinned to a specific endpoint with endpoints.PinContext).
+func (api *TronApi) GetSolidBlockHeightWithContext(ctx context.Context) (int64, error) {
+	data, err := api.postWithContext(ctx, "getnodeinfo", nil)
+	if err != nil {
+		return 0, err
+	}
+	var response *struct {
+		SolidityBlock string          `json:"solidityBlock"`
+		Error         json.RawMessage `json:"Error"`
+	}
+	if err = json.Unmarshal(data, &response); err != nil {
+		return 0, fmt.Errorf("failed to unmarshal node info: %w", err)
+	}
+	if response == nil || len(response.Error) != 0 {
+		return 0, fmt.Errorf("unavailable node info")
+	}
+
+	// Java-TRON's BlockId.getString emits Num:<height>,ID:<block hash>.
+	// Its block hash also embeds the height in its first eight bytes.
+	value, ok := strings.CutPrefix(response.SolidityBlock, "Num:")
+	if !ok {
+		return 0, fmt.Errorf("invalid solidity block")
+	}
+	number, hash, ok := strings.Cut(value, ",ID:")
+	if !ok {
+		return 0, fmt.Errorf("invalid solidity block")
+	}
+	height, err := strconv.ParseInt(number, 10, 64)
+	if err != nil || height <= 0 || strconv.FormatInt(height, 10) != number {
+		return 0, fmt.Errorf("invalid solidity block height")
+	}
+	blockID, err := hex.DecodeString(hash)
+	if err != nil || len(blockID) != 32 || binary.BigEndian.Uint64(blockID[:8]) != uint64(height) {
+		return 0, fmt.Errorf("invalid solidity block ID")
+	}
+	return height, nil
+}
+
 func (api *TronApi) GetTransactionInfo(
 	hash string,
 ) (TransactionInfo, error) {
+	ctx, cancel := api.getContext()
+	defer cancel()
+	return api.GetTransactionInfoWithContext(ctx, hash)
+}
+
+// GetTransactionInfoWithContext is GetTransactionInfo with a caller-supplied context
+// (for example one pinned to a specific endpoint with endpoints.PinContext).
+func (api *TronApi) GetTransactionInfoWithContext(ctx context.Context, hash string) (TransactionInfo, error) {
 	params := map[string]any{
 		"value": hash,
 	}
 
-	data, err := api.post("gettransactioninfobyid", params)
+	data, err := api.postWithContext(ctx, "gettransactioninfobyid", params)
 	if err != nil {
 		return TransactionInfo{}, err
 	}
@@ -151,18 +209,37 @@ func (api *TronApi) GetTransactionWithContext(ctx context.Context, hash string) 
 		"value": hash,
 	}
 
-	data, err := api.doWithContext(ctx, "POST", "gettransactionbyid", params)
+	data, err := api.postWithContext(ctx, "gettransactionbyid", params)
 	if err != nil {
-		api.logger.Err(err).Str("method", "gettransactionbyid").Msg("failed to call tron api")
-		return Transaction{}, fmt.Errorf("failed to call %s: %w", "gettransactionbyid", err)
+		return Transaction{}, err
 	}
 
-	var tx Transaction
-	if err = json.Unmarshal(data, &tx); err != nil {
+	var response *struct {
+		Transaction
+		Error json.RawMessage `json:"Error"`
+	}
+	if err = json.Unmarshal(data, &response); err != nil {
 		return Transaction{}, fmt.Errorf("failed to unmarshal response: %w", err)
 	}
+	if response == nil {
+		return Transaction{}, fmt.Errorf("empty transaction response")
+	}
+	if len(response.Error) != 0 {
+		return Transaction{}, fmt.Errorf("transaction lookup failed: %s", response.Error)
+	}
+	if response.TxId == "" {
+		// Only an empty JSON object is the API's positive not-found response.
+		// A partial transaction or application error must not authorize a retry.
+		var fields map[string]json.RawMessage
+		if err = json.Unmarshal(data, &fields); err != nil {
+			return Transaction{}, fmt.Errorf("failed to unmarshal response: %w", err)
+		}
+		if len(fields) != 0 {
+			return Transaction{}, fmt.Errorf("transaction response is missing txID")
+		}
+	}
 
-	return tx, nil
+	return response.Transaction, nil
 }
 
 func (api *TronApi) GetBalance(
@@ -369,7 +446,17 @@ func (api *TronApi) post(
 	method string,
 	params map[string]any,
 ) ([]byte, error) {
-	data, err := api.do("POST", method, params)
+	ctx, cancel := api.getContext()
+	defer cancel()
+	return api.postWithContext(ctx, method, params)
+}
+
+func (api *TronApi) postWithContext(
+	ctx context.Context,
+	method string,
+	params map[string]any,
+) ([]byte, error) {
+	data, err := api.doWithContext(ctx, "POST", method, params)
 	if err != nil {
 		api.logger.Err(err).Str("method", method).Msg("failed to call tron api")
 		return nil, fmt.Errorf("failed to call %s: %w", method, err)

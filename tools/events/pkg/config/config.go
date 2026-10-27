@@ -141,11 +141,14 @@ type Config struct {
 
 		// TssKeysignFailure configures statistical alerting on tss_keysign_failure
 		// events (moving window with mean + sigma * stddev thresholds).
+		// MinFailures is an absolute floor on the window count, so a near-zero
+		// baseline does not alert on a couple of isolated failures.
 		TssKeysignFailure struct {
 			WindowBlocks int64   `mapstructure:"window_blocks"`
 			Sigma        float64 `mapstructure:"sigma"`
 			MinSnapshots int     `mapstructure:"min_snapshots"`
 			MaxSnapshots int     `mapstructure:"max_snapshots"`
+			MinFailures  int     `mapstructure:"min_failures"`
 		} `mapstructure:"tss_keysign_failure"`
 	} `mapstructure:"thresholds"`
 
@@ -246,6 +249,7 @@ func init() {
 	config.Thresholds.TssKeysignFailure.Sigma = 3.0        // 3 sigma detection
 	config.Thresholds.TssKeysignFailure.MinSnapshots = 60  // ~3 days
 	config.Thresholds.TssKeysignFailure.MaxSnapshots = 140 // ~7 days
+	config.Thresholds.TssKeysignFailure.MinFailures = 5
 
 	// rate limits
 	config.RateLimits.FailedTransactions.Burst = 10

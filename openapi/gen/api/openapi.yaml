@@ -3348,22 +3348,33 @@ components:
         rolling_pool_liquidity_fee_rune: "12345678"
         synth_units: "0"
         savers_depth: "199998"
+        fair_value_oracle_price_rune: "4.000000000000000000"
         derived_depth_bps: "123456"
         luvi: "1.500000000000375000"
         balance_asset: "3197744873"
         synth_per_pool_depth_bps: "2500"
+        lp_unit_fair_value_asset: "1.500000000000000000"
         synth_supply: "0"
+        luvi_height: 21000000
         asset_tor_price: "123456"
         synth_mint_paused: true
+        luvi_c: "0.000001000000000000"
+        luvi_g: "1234.500000000000000000"
         pol_reserve_rune_deposited: "10000000000"
         balance_rune: "13460619152985"
+        lp_unit_spot_value_rune: "6.000000000000000000"
         pool_units: "14694928607473"
+        luvi_last_normalized_delta_g: "0.000000010000000000"
         short_code: b
         volume_rune: "123456"
         lp_equity_per_unit: "1.500000000000000000"
+        lp_unit_fair_value_rune: "6.000000000000000000"
         volume_asset: "123456"
         savers_fill_bps: "4500"
         savers_units: "199998"
+        lp_fair_spot_deviation_bps: "0"
+        luvi_star: "1.500001000000000000"
+        lp_fair_value_overhang: false
         savers_capacity_remaining: "1000"
         trading_halted: false
         pending_inbound_rune: "464993836"
@@ -3497,6 +3508,69 @@ components:
           description: whether synth supply is at or above twice the asset depth;
             synth units are clamped and LP units can redeem almost nothing while this
             is true
+          example: false
+          type: boolean
+        luvi_g:
+          description: "LUVI accumulator, the accumulated change in hedged LP equity\
+            \ G in sqrt(asset * rune) units since tracking began; absent until the\
+            \ pool has been observed at the end of a block"
+          example: "1234.500000000000000000"
+          type: string
+        luvi_c:
+          description: accumulated synth repricing term C of LUVI*
+          example: "0.000001000000000000"
+          type: string
+        luvi_star:
+          description: synth-aware index LUVI* = lp_equity_per_unit + luvi_c as of
+            luvi_height; only meaningful when synth_overhang is false
+          example: "1.500001000000000000"
+          type: string
+        luvi_last_normalized_delta_g:
+          description: the last accumulator step's change in G divided by the previous
+            sqrt(asset * rune)
+          example: "0.000000010000000000"
+          type: string
+        luvi_height:
+          description: height of the last LUVI accumulator step
+          example: 21000000
+          format: int64
+          type: integer
+        lp_unit_fair_value_rune:
+          description: "fair LP-side value per LP unit in RUNE at the oracle price\
+            \ P of the asset in RUNE, (2 * sqrt(balance_asset * balance_rune * P)\
+            \ - synth_supply * P) / LP_units, clamped at zero; a layer-1 swap cannot\
+            \ lower it (fees raise it), while synth mints and burns move it unless\
+            \ P equals the pool price. Only present when the oracle has a current\
+            \ price for the asset and RUNE"
+          example: "6.000000000000000000"
+          type: string
+        lp_unit_fair_value_asset:
+          description: "lp_unit_fair_value_rune / P, in the asset. Only present with\
+            \ an oracle price"
+          example: "1.500000000000000000"
+          type: string
+        lp_unit_spot_value_rune:
+          description: "spot LP-side value per LP unit in RUNE, (2 * balance_rune\
+            \ - synth_supply * balance_rune / balance_asset) / LP_units, clamped at\
+            \ zero. Only present with an oracle price"
+          example: "6.000000000000000000"
+          type: string
+        lp_fair_spot_deviation_bps:
+          description: "(lp_unit_spot_value_rune - lp_unit_fair_value_rune) / lp_unit_fair_value_rune\
+            \ in basis points, a pool price manipulation signal. Absent without an\
+            \ oracle price or when lp_fair_value_overhang is true"
+          example: "0"
+          type: string
+        fair_value_oracle_price_rune:
+          description: the oracle price P of one unit of the asset in RUNE (oracle
+            USD price of the asset / oracle USD price of RUNE) used for the fair values.
+            Only present with an oracle price
+          example: "4.000000000000000000"
+          type: string
+        lp_fair_value_overhang:
+          description: "whether the synth liability is at or above the pool's fair\
+            \ value, so the LP side is worth nothing at the oracle price. Only present\
+            \ (true) with an oracle price"
           example: false
           type: boolean
       required:

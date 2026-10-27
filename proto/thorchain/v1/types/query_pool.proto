@@ -78,6 +78,48 @@ message QueryPoolResponse {
   // whether synth supply is at or above twice the asset depth; synth units are
   // clamped and LP units can redeem almost nothing while this is true
   bool synth_overhang = 33 [ (gogoproto.jsontag) = "synth_overhang" ];
+  // LUVI accumulator, advanced once per block (see PoolLuvi); absent until the
+  // pool has been observed at the end of a block.
+  // accumulated change in hedged LP equity G, in sqrt(asset * rune) units
+  string luvi_g = 34;
+  // accumulated synth repricing term C of LUVI*
+  string luvi_c = 35;
+  // synth-aware index LUVI* = lp_equity_per_unit + luvi_c as of luvi_height;
+  // only meaningful when synth_overhang is false
+  string luvi_star = 36;
+  // the last block's change in G divided by the previous sqrt(asset * rune)
+  string luvi_last_normalized_delta_g = 37;
+  // height of the last accumulator step
+  int64 luvi_height = 38;
+  // Fields 40-45 value the pool's LP side at the oracle price P of the asset
+  // in RUNE (oracle USD price of the asset / oracle USD price of RUNE) instead
+  // of the pool's own price. A layer-1 swap never lowers
+  // sqrt(balance_asset * balance_rune) (fees raise it), so a layer-1 swap or
+  // sandwich cannot push the fair value down. Synth mints and burns change
+  // balance_rune and synth_supply with balance_asset fixed, so they move it
+  // either way unless P equals the pool price. They are only set when the
+  // oracle has a price for both the asset ticker and RUNE at this height (the
+  // price store holds only the current block's quorum prices).
+  //
+  // fair LP-side value per LP unit, in RUNE:
+  // (2 * sqrt(balance_asset * balance_rune * P) - synth_supply * P) / LP_units,
+  // clamped at zero
+  string lp_unit_fair_value_rune = 40;
+  // lp_unit_fair_value_rune / P, in the asset
+  string lp_unit_fair_value_asset = 41;
+  // spot LP-side value per LP unit, in RUNE:
+  // (2 * balance_rune - synth_supply * balance_rune / balance_asset) /
+  // LP_units, clamped at zero
+  string lp_unit_spot_value_rune = 42;
+  // (lp_unit_spot_value_rune - lp_unit_fair_value_rune) /
+  // lp_unit_fair_value_rune in basis points: how far the pool price has been
+  // pushed from the oracle; unset when lp_fair_value_overhang is true
+  string lp_fair_spot_deviation_bps = 43;
+  // the oracle price P of one unit of the asset in RUNE
+  string fair_value_oracle_price_rune = 44;
+  // whether the synth liability is at or above the pool's fair value, so the
+  // LP side is worth nothing at the oracle price
+  bool lp_fair_value_overhang = 45;
 }
 
 message QueryPoolsRequest { string height = 1; }

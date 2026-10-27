@@ -33,6 +33,7 @@ import (
 	tcmetrics "gitlab.com/thorchain/thornode/v3/bifrost/metrics"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/runners"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/signercache"
+	chainclienttypes "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/types"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/tron/api"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/tron/rpc"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pubkeymanager"
@@ -636,23 +637,18 @@ func (c *TronClient) ConfirmationCountReady(_ types.TxIn) bool {
 func (c *TronClient) OnObservedTxIn(_ types.TxInItem, _ int64) {}
 
 // tronVerifyBroadcast is the signer-cache verifyFn. With an endpoint manager, every
-// usable endpoint is asked with a pinned request: a tx known to any endpoint is
-// Found, any transport error, no queried endpoint, or an endpoint left unasked
-// (unverified) is Ambiguous, and only absence on every endpoint is NotFound. Without a manager it asks the single API.
+// usable endpoint is asked with pinned requests (verifyTronBroadcastOn): a successful
+// payment on any endpoint is Found, a solidified failed execution on any endpoint is
+// Failed (final on TRON, so no other endpoint can make it land), absence on every
+// endpoint is NotFound, and anything else (a lookup error, no queried endpoint, an
+// endpoint left unasked because it is unverified, or an answer that proves nothing
+// yet, such as a receipt not solidified) is Ambiguous. Only endpoints whose reads
+// failed, and unverified ones, are reported as blocking re-sign. Without a manager it
+// asks the single API.
 func tronVerifyBroadcast(ctx context.Context, mgr *endpoints.Manager, tronAPI *api.TronApi, sig string, maxDown time.Duration) signercache.LookupResult {
-	lookup := func(ctx context.Context) signercache.LookupResult {
-		tx, txErr := tronAPI.GetTransactionWithContext(ctx, sig)
-		switch {
-		case txErr == nil && tx.TxId != "":
-			return signercache.LookupFound
-		case txErr == nil, isTronNotFoundErr(txErr):
-			return signercache.LookupNotFound
-		default:
-			return signercache.LookupAmbiguous
-		}
-	}
 	if mgr == nil {
-		return lookup(ctx)
+		res, _ := verifyTronBroadcastOn(ctx, tronAPI, sig)
+		return res
 	}
 	candidates, unverified := mgr.VerificationCandidates(maxDown)
 	if len(candidates) == 0 {
@@ -661,19 +657,31 @@ func tronVerifyBroadcast(ctx context.Context, mgr *endpoints.Manager, tronAPI *a
 	}
 	perEndpoint := evm.VerificationBudget(ctx, len(candidates))
 	var failed []string
+	provenFailed, unproven := false, false
 	for _, e := range candidates {
 		ectx, cancel := context.WithTimeout(endpoints.PinContext(ctx, e.Name), perEndpoint)
-		res := lookup(ectx)
+		res, readFailed := verifyTronBroadcastOn(ectx, tronAPI, sig)
 		cancel()
-		switch res {
-		case signercache.LookupFound:
+		switch {
+		case res == signercache.LookupFound:
 			return signercache.LookupFound
-		case signercache.LookupAmbiguous:
+		case res == signercache.LookupFailed:
+			provenFailed = true
+		case res == signercache.LookupAmbiguous && readFailed:
 			failed = append(failed, e.Name)
+		case res == signercache.LookupAmbiguous:
+			unproven = true // it answered, but nothing it holds proves the outcome yet
 		}
+	}
+	if provenFailed {
+		// a success seen on any endpoint returned Found above
+		return signercache.LookupFailed
 	}
 	if len(failed) > 0 || unverified > 0 {
 		mgr.NoteAmbiguousVerification(maxDown, failed...)
+		return signercache.LookupAmbiguous
+	}
+	if unproven {
 		return signercache.LookupAmbiguous
 	}
 	return signercache.LookupNotFound
@@ -689,23 +697,14 @@ func (c *TronClient) SignTx(
 	txOutItem types.TxOutItem,
 	thorchainHeight int64,
 ) ([]byte, []byte, *types.TxInItem, error) {
-	// Signer-cache check, standardized across chains: respect the cache while fresh;
-	// after the expiry window, only bypass when the operational SkipSignerCache<Chain>
-	// mimir is set AND the recorded broadcast is verified absent on chain.
+	// Recovery remains expiry- and mimir-gated. An existing transaction may
+	// only be replaced once its execution is definitively failed and solidified.
 	mimirKey := fmt.Sprintf(constants.MimirTemplateSkipSignerCache, c.config.ChainID)
 	gateFn := func() bool {
 		skipCache, err := c.bridge.GetMimir(mimirKey)
 		return err == nil && skipCache > 0
 	}
-	// gettransactionbyid reports presence regardless of confirmation, so the
-	// verification path can positively decide whether the recorded broadcast is on
-	// chain before clearing the cache: a populated TxId means present (respect the
-	// cache), an empty result with no error means absent (safe to clear and
-	// re-sign). Transport errors stay ambiguous (fail-closed, cache respected).
-	verifyFn := func(sig string) signercache.LookupResult {
-		return tronVerifyBroadcast(context.Background(), c.endpointMgr, c.api, sig, c.getSignerCacheExpiry())
-	}
-	check := c.signerCacheManager.SignTxCacheCheck(txOutItem.CacheHash(), gateFn, verifyFn)
+	check := c.signerCacheManager.SignTxCacheCheck(txOutItem.CacheHash(), gateFn, c.verifyCachedTransaction)
 	if check.Phase != signercache.PhaseNoEntry {
 		ev := c.logger.Info()
 		if check.Noteworthy() {
@@ -742,6 +741,9 @@ func (c *TronClient) SignTx(
 		tronTx, err = decodeTronSignCheckpoint(txOutItem.Checkpoint, txOutItem)
 		if err != nil {
 			c.logger.Err(err).Msg("failed to restore unsigned TRON transaction")
+			return nil, nil, nil, err
+		}
+		if err = validateTronRecoveryAttempt(tronTx, check); err != nil {
 			return nil, nil, nil, err
 		}
 		c.logger.Info().Str("txid", tronTx.TxId).Msg("using checkpointed unsigned TRON transaction")
@@ -855,6 +857,12 @@ func (c *TronClient) SignTx(
 		return nil, nil, nil, err
 	}
 
+	if err = validateTronRecoveryAttempt(tronTx, check); err != nil {
+		return nil, nil, nil, err
+	}
+	if check.Phase == signercache.PhaseVerifiedFailed && tronTx.RawData.Expiration <= time.Now().UnixMilli() {
+		return nil, nil, nil, fmt.Errorf("TRON replacement transaction is already expired")
+	}
 	checkpoint, err := encodeTronSignCheckpoint(tronTx, txOutItem)
 	if err != nil {
 		c.logger.Err(err).Msg("failed to checkpoint unsigned TRON transaction")
@@ -961,8 +969,92 @@ func (c *TronClient) BroadcastTx(
 	return response.TxId, nil
 }
 
-func isTronNotFoundErr(err error) bool {
-	return err != nil && strings.Contains(err.Error(), "response status: 404")
+// verifyCachedTransaction is only called after the cache expires and the
+// operational gate opens. It checks the recorded broadcast on every usable
+// endpoint (tronVerifyBroadcast).
+func (c *TronClient) verifyCachedTransaction(sig string) signercache.LookupResult {
+	ctx, cancel := c.verificationContext()
+	defer cancel()
+	return tronVerifyBroadcast(ctx, c.endpointMgr, c.api, sig, c.getSignerCacheExpiry())
+}
+
+// tronVerifyReads is the number of sequential reads verifyTronBroadcastOn makes on
+// one endpoint.
+const tronVerifyReads = 3
+
+// verificationContext bounds one verification by the API timeout for each of the
+// reads on one endpoint: a single endpoint gets what each read had on its own, and
+// several share it evenly (evm.VerificationBudget).
+func (c *TronClient) verificationContext() (context.Context, context.CancelFunc) {
+	if t := c.config.BlockScanner.HTTPRequestTimeout; t > 0 {
+		return context.WithTimeout(context.Background(), tronVerifyReads*t)
+	}
+	return context.WithCancel(context.Background())
+}
+
+// verifyTronBroadcastOn checks a recorded broadcast on one endpoint: every read
+// uses ctx, which the caller pins to that endpoint, so the solidified height and the
+// receipt come from the same node. A full-node transaction lookup alone proves
+// neither successful payment nor finality. readFailed reports that a read itself
+// failed, as opposed to an answer that does not prove the outcome.
+func verifyTronBroadcastOn(ctx context.Context, tronAPI *api.TronApi, sig string) (_ signercache.LookupResult, readFailed bool) {
+	tx, err := tronAPI.GetTransactionWithContext(ctx, sig)
+	if err != nil {
+		return signercache.LookupAmbiguous, true
+	}
+	if tx.TxId == "" {
+		return signercache.LookupNotFound, false
+	}
+	hash, err := hex.DecodeString(sig)
+	if err != nil || len(hash) != sha256.Size || !strings.EqualFold(tx.TxId, sig) {
+		return signercache.LookupAmbiguous, false
+	}
+
+	// Capture finality BEFORE reading the receipt. Reading a failed receipt
+	// first could retain a pre-reorg result while the subsequent finality
+	// query refers to a different chain. Any receipt read afterward at or
+	// below this floor is solidified under TRON's finality guarantee.
+	solidHeight, err := tronAPI.GetSolidBlockHeightWithContext(ctx)
+	if err != nil {
+		return signercache.LookupAmbiguous, true
+	}
+	info, err := tronAPI.GetTransactionInfoWithContext(ctx, sig)
+	if err != nil {
+		return signercache.LookupAmbiguous, true
+	}
+	if !strings.EqualFold(info.ID, sig) || info.BlockNumber <= 0 || info.BlockNumber > solidHeight {
+		return signercache.LookupAmbiguous, false
+	}
+	if info.Receipt.Result == "SUCCESS" {
+		return signercache.LookupFound, false
+	}
+	if info.Result != "FAILED" {
+		return signercache.LookupAmbiguous, false
+	}
+	// Explicit failures only: absent receipts, DEFAULT, UNKNOWN and future
+	// execution results are not proof that no payment was made.
+	switch info.Receipt.Result {
+	case "REVERT", "BAD_JUMP_DESTINATION", "OUT_OF_MEMORY", "PRECOMPILED_CONTRACT",
+		"STACK_TOO_SMALL", "STACK_TOO_LARGE", "ILLEGAL_OPERATION", "STACK_OVERFLOW",
+		"OUT_OF_ENERGY", "OUT_OF_TIME", "JVM_STACK_OVER_FLOW", "TRANSFER_FAILED", "INVALID_CODE":
+		return signercache.LookupFailed, false
+	default:
+		return signercache.LookupAmbiguous, false
+	}
+}
+
+func validateTronRecoveryAttempt(tx api.Transaction, check signercache.CacheCheck) error {
+	if check.Phase != signercache.PhaseVerifiedFailed {
+		return nil
+	}
+	// Retain the failed cache record until BroadcastTx replaces it. If a
+	// restart restores the old checkpoint, retire that local attempt without
+	// observing success; THORChain owns rescheduling at a fresh height. A
+	// different checkpoint must remain pinned after partial signature exposure.
+	if strings.EqualFold(tx.TxId, check.Sig) {
+		return fmt.Errorf("TRON failed attempt requires a fresh outbound schedule: %w", chainclienttypes.ErrTxExpired)
+	}
+	return nil
 }
 
 // GetGasEstimateForSolvency returns the current gas fee estimate used by solvency checks.

@@ -1295,7 +1295,7 @@ func (vm *ValidatorMgr) ragnarokPools(ctx cosmos.Context, nth int64, mgr Manager
 					na.NodeAddress,
 				)
 
-				handler := NewInternalHandler(mgr)
+				handler := newLuviProtocolHandler(mgr)
 				_, err = handler(ctx, withdrawMsg)
 				if err != nil {
 					ctx.Logger().Error("fail to withdraw", "liquidity provider", lp.RuneAddress, "error", err)
