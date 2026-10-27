@@ -66,12 +66,11 @@ full simulation's container and mocknet setup must be isolated from other
 concurrent test work.
 
 The curated mutation runner is committed with this branch. Its fast mode runs
-for relevant MRs with a 30 minute runner budget; its deep mode runs on
-scheduled pipelines with a 55 minute budget. Both preserve JSON summaries and
-fail for unexpected surviving mutations. Run them locally with
-`python3 scripts/test-security-mutations.py --mode fast --summary /tmp/mutations-fast.json`
-or `python3 scripts/test-security-mutations.py --mode deep --budget-seconds 3300 --summary /tmp/mutations-deep.json`; the runner owns the build
-lock. The determinism and fuzz workspaces still own their standalone runners.
+for relevant MRs with a 30 minute runner budget, preserves a JSON summary, and
+fails for unexpected surviving mutations. Every mutant is in the fast set, so
+there is no separate deep job. Run it locally with
+`python3 scripts/test-security-mutations.py --mode fast --summary /tmp/mutations-fast.json`;
+the runner owns the build lock. The determinism and fuzz workspaces still own their standalone runners.
 Wire those jobs only after their runner, corpus or seed persistence, and failure
 semantics are committed and verified.
 

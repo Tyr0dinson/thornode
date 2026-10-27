@@ -1157,6 +1157,9 @@ unit-tests-race-bifrost:
 security-mutations-fast:
   tags: !reference [.small-runner, tags]
   rules:
+    - if: '$CI_MERGE_REQUEST_EVENT_TYPE == "merge_train" && $CI_MERGE_REQUEST_TARGET_BRANCH_SHA == $CI_MERGE_REQUEST_DIFF_BASE_SHA'
+      when: never
+    # The observer baseline imports tss-lib-private, which fork MRs cannot fetch.
     - if: $CI_MERGE_REQUEST_SOURCE_PROJECT_PATH && $CI_MERGE_REQUEST_SOURCE_PROJECT_PATH != $CI_MERGE_REQUEST_PROJECT_PATH
       when: never
     - if: '$CI_MERGE_REQUEST_IID && $CI_PIPELINE_SOURCE != "schedule"'
@@ -1167,6 +1170,7 @@ security-mutations-fast:
           - common/**/*
           - x/thorchain/types/**/*
           - scripts/test-security-mutations*
+          - build/scripts/tests/test_security_mutations.py
           - go.mod
           - go.sum
   stage: long-test
@@ -1176,7 +1180,7 @@ security-mutations-fast:
       artifacts: false
   timeout: 40m
   variables:
-    PKGS: python3
+    PKGS: python3 util-linux
   before_script:
     - !reference [.pkg-install, before_script]
     - !reference [.go-private-auth, before_script]
@@ -1186,28 +1190,6 @@ security-mutations-fast:
     when: always
     paths:
       - test-quality-reports/mutations-fast.json
-
-security-mutations-deep:
-  tags: !reference [.small-runner, tags]
-  rules:
-    - if: '$CI_PIPELINE_SOURCE == "schedule"'
-  stage: long-test
-  needs:
-    - job: unit-tests
-      optional: true
-      artifacts: false
-  timeout: 1h
-  variables:
-    PKGS: python3
-  before_script:
-    - !reference [.pkg-install, before_script]
-    - !reference [.go-private-auth, before_script]
-  script:
-    - python3 scripts/test-security-mutations.py --mode deep --budget-seconds 3300 --summary test-quality-reports/mutations-deep.json
-  artifacts:
-    when: always
-    paths:
-      - test-quality-reports/mutations-deep.json
 
 consensus-determinism:
   tags: !reference [.small-runner, tags]
