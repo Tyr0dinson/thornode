@@ -275,6 +275,12 @@ func keygenResolvedByVaults(keygen Keygen, vaults Vaults) bool {
 }
 
 func (vm *ValidatorMgr) churn(ctx cosmos.Context) error {
+	// Before markReadyActors resets StatusSince of the nodes it moves, and outside
+	// the churn's cache context so that a failed churn does not drop it and leave a
+	// later churn to record a newer height.
+	if err := vm.recordNodeFirstSeen(ctx); err != nil {
+		return err
+	}
 	cacheCtx, commit := ctx.CacheContext()
 	if err := vm.churnInner(cacheCtx); err != nil {
 		return err
@@ -2082,6 +2088,11 @@ func (vm *ValidatorMgr) nextVaultNodeAccounts(ctx cosmos.Context, targetCount in
 		return ready[i].Bond.GT(ready[j].Bond)
 	})
 
+	ready, tooYoung, err := vm.splitByChurnInAge(ctx, ready)
+	if err != nil {
+		return nil, false, err
+	}
+
 	active, err := vm.k.ListActiveValidators(ctx)
 	if err != nil {
 		return nil, false, err
@@ -2161,6 +2172,16 @@ func (vm *ValidatorMgr) nextVaultNodeAccounts(ctx cosmos.Context, targetCount in
 		}
 	}
 
+	// The age filter alone must not take the set below the BFT floor, which would
+	// start a ragnarok, so the nodes it held back fill the gap, largest bond first.
+	for _, na := range tooYoung {
+		if len(active) >= int(minimumNodesForBFT) || len(active) >= targetCount {
+			break
+		}
+		rotation = true
+		active = append(active, na)
+	}
+
 	if !rotation {
 		needsKeygen, keygenErr := vm.regularVaultMembershipNeedsKeygen(ctx, active)
 		if keygenErr != nil {
@@ -2170,6 +2191,111 @@ func (vm *ValidatorMgr) nextVaultNodeAccounts(ctx cosmos.Context, targetCount in
 	}
 
 	return active, rotation, nil
+}
+
+// splitByChurnInAge splits the Ready nodes, keeping their order, into those that are
+// at least ChurnInMinNodeAgeBlocks old and may churn in, and those that are younger.
+// With the mimir unset or 0 every node may churn in.
+func (vm *ValidatorMgr) splitByChurnInAge(ctx cosmos.Context, ready NodeAccounts) (NodeAccounts, NodeAccounts, error) {
+	minAge, err := vm.k.GetMimir(ctx, constants.MimirKeyChurnInMinNodeAgeBlocks)
+	if err != nil {
+		return nil, nil, fmt.Errorf("fail to get %s: %w", constants.MimirKeyChurnInMinNodeAgeBlocks, err)
+	}
+	if minAge <= 0 {
+		return ready, nil, nil
+	}
+	var old, young NodeAccounts
+	for _, na := range ready {
+		firstSeen, seenErr := vm.nodeFirstSeen(ctx, na)
+		if seenErr != nil {
+			// one unreadable record holds back only its own node
+			ctx.Logger().Error("fail to get node age, holding it back", "error", seenErr)
+			young = append(young, na)
+			continue
+		}
+		if ctx.BlockHeight()-firstSeen >= minAge {
+			old = append(old, na)
+		} else {
+			young = append(young, na)
+		}
+	}
+	if len(young) > 0 {
+		ctx.Logger().Info("churn-in held back nodes younger than the minimum age",
+			"min_age", minAge,
+			"held", len(young),
+			"eligible", len(old),
+		)
+	}
+	return old, young, nil
+}
+
+// nodeFirstSeen returns the height from which the node counts as registered: the
+// recorded height, or for a node not yet recorded, nodeFirstSeenFloor.
+func (vm *ValidatorMgr) nodeFirstSeen(ctx cosmos.Context, na NodeAccount) (int64, error) {
+	height, ok, err := vm.k.GetNodeFirstSeen(ctx, na.NodeAddress)
+	if err != nil {
+		return 0, fmt.Errorf("fail to get first seen height of node %s: %w", na.NodeAddress, err)
+	}
+	if !ok {
+		return nodeFirstSeenFloor(na), nil
+	}
+	return height, nil
+}
+
+// nodeFirstSeenFloor is the earliest height a node account still holds: StatusSince,
+// or ActiveBlockHeight when that is earlier. Both are at or after the node's real
+// registration, which was not stored for nodes registered before the first-seen
+// record, so a node judged by it can only look younger than it is, never older.
+func nodeFirstSeenFloor(na NodeAccount) int64 {
+	floor := na.StatusSince
+	if na.ActiveBlockHeight > 0 && na.ActiveBlockHeight < floor {
+		floor = na.ActiveBlockHeight
+	}
+	return floor
+}
+
+// recordNodeFirstSeen records nodeFirstSeenFloor for every node account that has no
+// first-seen height and can still churn in. A node bonded since the record exists
+// gets its bond height in the bond handler; this covers the nodes registered before,
+// once. It runs at every churn, before markReadyActors moves Standby nodes to Ready
+// and resets their StatusSince, so it keeps the earliest floor a node has.
+func (vm *ValidatorMgr) recordNodeFirstSeen(ctx cosmos.Context) error {
+	unrecorded, err := vm.unrecordedNodes(ctx)
+	if err != nil {
+		return err
+	}
+	// written once the iterator is closed, so it never sees its own writes
+	for _, na := range unrecorded {
+		vm.k.SetNodeFirstSeen(ctx, na.NodeAddress, nodeFirstSeenFloor(na))
+	}
+	return nil
+}
+
+// unrecordedNodes returns the node accounts that have no first-seen height, leaving
+// out Disabled nodes, which never churn in again.
+func (vm *ValidatorMgr) unrecordedNodes(ctx cosmos.Context) (NodeAccounts, error) {
+	var unrecorded NodeAccounts
+	iter := vm.k.GetNodeAccountIterator(ctx)
+	defer iter.Close()
+	for ; iter.Valid(); iter.Next() {
+		var na NodeAccount
+		if err := vm.k.Cdc().Unmarshal(iter.Value(), &na); err != nil {
+			return nil, fmt.Errorf("fail to unmarshal node account: %w", err)
+		}
+		if na.IsEmpty() || na.Status == NodeDisabled {
+			continue
+		}
+		_, ok, err := vm.k.GetNodeFirstSeen(ctx, na.NodeAddress)
+		if err != nil {
+			// left unrecorded: splitByChurnInAge holds the node back
+			ctx.Logger().Error("fail to get first seen height", "node address", na.NodeAddress, "error", err)
+			continue
+		}
+		if !ok {
+			unrecorded = append(unrecorded, na)
+		}
+	}
+	return unrecorded, nil
 }
 
 // chainSetFaultyNodes returns, in node-address order, the given Active nodes whose most

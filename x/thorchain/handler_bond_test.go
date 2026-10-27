@@ -127,6 +127,37 @@ func (HandlerBondSuite) TestBondHandler_Run(c *C) {
 	c.Assert(err, IsNil)
 }
 
+func (HandlerBondSuite) TestBondRecordsNodeFirstSeen(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	nodeAddress := GetRandomValidatorNode(NodeStandby).NodeAddress
+	bondAddress := GetRandomRUNEAddress()
+	operator, err := bondAddress.AccAddress()
+	c.Assert(err, IsNil)
+
+	bond := func(height int64) {
+		amount := cosmos.NewUint(10 * common.One)
+		FundModule(c, ctx, k, BondName, amount.Uint64())
+		txIn := GetRandomTx()
+		txIn.Coins = common.NewCoins(common.NewCoin(common.RuneAsset(), amount))
+		msg := NewMsgBond(txIn, nodeAddress, amount, bondAddress, nil, operator, -1)
+		_, err = NewBondHandler(NewDummyMgrWithKeeper(k)).Run(ctx.WithBlockHeight(height), msg)
+		c.Assert(err, IsNil)
+	}
+	firstSeen := func() int64 {
+		height, ok, getErr := k.GetNodeFirstSeen(ctx, nodeAddress)
+		c.Assert(getErr, IsNil)
+		c.Assert(ok, Equals, true)
+		return height
+	}
+
+	// A new node account counts from its first bond.
+	bond(500)
+	c.Check(firstSeen(), Equals, int64(500))
+	// More bond to the same node does not make it younger.
+	bond(600)
+	c.Check(firstSeen(), Equals, int64(500))
+}
+
 func (HandlerBondSuite) TestBondHandlerFailValidation(c *C) {
 	ctx, k := setupKeeperForTest(c)
 	standbyNodeAccount := GetRandomValidatorNode(NodeStandby)

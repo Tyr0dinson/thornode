@@ -130,6 +130,15 @@ func (s *KeeperMimirSuite) TestIsOperationalMimirPreflightChainSetDisabled(c *C)
 	c.Check(constants.IsOperationalMimir(strings.ToUpper(constants.MimirKeyPreflightChainSetDisabled)), Equals, true)
 }
 
+func (s *KeeperMimirSuite) TestIsOperationalMimirChurnInMinNodeAge(c *C) {
+	// It holds new nodes out of the churn during a security-sensitive period, so a
+	// few votes must be able to set it quickly.
+	c.Check(constants.IsOperationalMimir(constants.MimirKeyChurnInMinNodeAgeBlocks), Equals, true)
+	c.Check(constants.IsOperationalMimir(strings.ToUpper(constants.MimirKeyChurnInMinNodeAgeBlocks)), Equals, true)
+	// The churn size it works next to stays economic.
+	c.Check(constants.IsOperationalMimir(constants.NumberOfNewNodesPerChurn.String()), Equals, false)
+}
+
 func (s *KeeperMimirSuite) TestIsOperationalMimirCompromisedVault(c *C) {
 	c.Check(constants.IsOperationalMimir("CompromisedVault-tthorpub1addwnpepq0"), Equals, true)
 	c.Check(constants.IsOperationalMimir("COMPROMISEDVAULT-TTHORPUB1ADDWNPEPQ0"), Equals, true)

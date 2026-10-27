@@ -293,6 +293,7 @@ Operational notes:
 - `DesiredValidatorSet`\*: Maximum number of validators
 - `FundMigrationInterval`\*: Number of blocks between attempts to migrate funds between asgard vaults during a migration
 - `NumberOfNewNodesPerChurn`#: Number of targeted additional nodes added to the validator set each churn
+- `ChurnInMinNodeAgeBlocks`#: Operational. While set, only Ready nodes registered at least this many blocks ago fill churn-in slots; younger nodes join only to keep the set at `MinimumNodesForBFT`. Removals are unchanged, so the set shrinks when fewer old-enough nodes are Ready than leave. A node's age counts from the bond that created its node account; nodes registered before this key existed count from the earliest status height their account held at the first churn after the upgrade. Unset or `0` (the default) turns it off. Operational votes are cleared at churn while the effective value persists, so fresh votes are needed to change it back
 - `BadValidatorRedline`\*: Redline multiplier to find a multitude of bad actors
 - `LowBondValidatorRate`: Rate to mark a validator to be rotated out for low bond (not used)
 - `MaxNodeToChurnOutForLowVersion`\*: Maximum number of validators to churn out for low version each churn

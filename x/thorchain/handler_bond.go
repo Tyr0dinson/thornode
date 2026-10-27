@@ -144,6 +144,8 @@ func (h BondHandler) handle(ctx cosmos.Context, msg MsgBond) (err error) {
 		}
 		// white list the given bep address
 		nodeAccount = NewNodeAccount(msg.NodeAddress, NodeWhiteListed, emptyPubKeySet, "", cosmos.ZeroUint(), msg.BondAddress, ctx.BlockHeight())
+		// the node's age starts at the bond that creates its node account
+		h.mgr.Keeper().SetNodeFirstSeen(ctx, msg.NodeAddress, ctx.BlockHeight())
 		ctx.EventManager().EmitEvent(
 			cosmos.NewEvent(
 				"new_node",

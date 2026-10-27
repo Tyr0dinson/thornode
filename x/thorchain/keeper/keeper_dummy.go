@@ -369,6 +369,10 @@ func (k KVStoreDummy) EnsureNodeKeysUnique(_ cosmos.Context, _ string, _ common.
 	return kaboom
 }
 func (k KVStoreDummy) GetNodeAccountIterator(_ cosmos.Context) cosmos.Iterator { return nil }
+func (k KVStoreDummy) GetNodeFirstSeen(_ cosmos.Context, _ cosmos.AccAddress) (int64, bool, error) {
+	return 0, false, kaboom
+}
+func (k KVStoreDummy) SetNodeFirstSeen(_ cosmos.Context, _ cosmos.AccAddress, _ int64) {}
 
 func (k KVStoreDummy) GetNodeAccountSlashPoints(_ cosmos.Context, _ cosmos.AccAddress) (int64, error) {
 	return 0, kaboom

@@ -105,6 +105,11 @@ const (
 	// created without, and bounds it: when more nodes are faulty than this, none are
 	// marked (a stall that many nodes cause is for governance). Unset or 0 disables it.
 	MimirKeyChainSetChurnOutMax = "ChainSetChurnOutMax"
+	// MimirKeyChurnInMinNodeAgeBlocks keeps a Ready node out of the churn-in selection
+	// until it is at least this many blocks old (see NodeFirstSeen), for periods when a
+	// newly registered node must not become Active. It is operational, so a few votes
+	// can set it quickly. Unset or 0 disables it.
+	MimirKeyChurnInMinNodeAgeBlocks = "ChurnInMinNodeAgeBlocks"
 
 	MimirTemplateEVMAllowanceCheck         = "EVMAllowanceCheck-%s"         // Use with Chain
 	MimirTemplateEVMDirectERC20Inbound     = "EVMDirectERC20Inbound-%s"     // Use with Chain
@@ -160,6 +165,7 @@ func IsOperationalMimir(key string) bool {
 		POLReserveSystemIncomeBps.String(),
 		StableReserveOraclePricing.String(),
 		MimirKeyPreflightChainSetDisabled,
+		MimirKeyChurnInMinNodeAgeBlocks,
 	}
 	for i := range exactMatches {
 		if strings.EqualFold(key, exactMatches[i]) {

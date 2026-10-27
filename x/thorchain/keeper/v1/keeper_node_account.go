@@ -525,6 +525,20 @@ func VotePrefix(name string) string {
 	return fmt.Sprintf("%s%s/", prefixUpgradeVotes, name)
 }
 
+// GetNodeFirstSeen returns the height from which the given node counts as
+// registered, and whether a height is recorded for it.
+func (k KVStore) GetNodeFirstSeen(ctx cosmos.Context, addr cosmos.AccAddress) (int64, bool, error) {
+	record := int64(0)
+	ok, err := k.getInt64(ctx, k.GetKey(prefixNodeFirstSeen, addr.String()), &record)
+	return record, ok, err
+}
+
+// SetNodeFirstSeen records the height from which the given node counts as
+// registered.
+func (k KVStore) SetNodeFirstSeen(ctx cosmos.Context, addr cosmos.AccAddress, height int64) {
+	k.setInt64(ctx, k.GetKey(prefixNodeFirstSeen, addr.String()), height)
+}
+
 // GetNodeAccountSlashPoints - get the slash points associated with the given
 // node address
 func (k KVStore) GetNodeAccountSlashPoints(ctx cosmos.Context, addr cosmos.AccAddress) (int64, error) {

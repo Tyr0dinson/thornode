@@ -301,6 +301,28 @@ func (s *KeeperNodeAccountSuite) TestNodeAccountSlashPoints(c *C) {
 	k.ResetNodeAccountSlashPoints(ctx, GetRandomBech32Addr())
 }
 
+func (s *KeeperNodeAccountSuite) TestNodeFirstSeen(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	addr := GetRandomBech32Addr()
+
+	_, ok, err := k.GetNodeFirstSeen(ctx, addr)
+	c.Assert(err, IsNil)
+	c.Check(ok, Equals, false)
+
+	k.SetNodeFirstSeen(ctx, addr, 42)
+	height, ok, err := k.GetNodeFirstSeen(ctx, addr)
+	c.Assert(err, IsNil)
+	c.Check(ok, Equals, true)
+	c.Check(height, Equals, int64(42))
+
+	// A genesis node's floor is height 0, which must still read as recorded.
+	k.SetNodeFirstSeen(ctx, addr, 0)
+	height, ok, err = k.GetNodeFirstSeen(ctx, addr)
+	c.Assert(err, IsNil)
+	c.Check(ok, Equals, true)
+	c.Check(height, Equals, int64(0))
+}
+
 func (s *KeeperNodeAccountSuite) TestJail(c *C) {
 	ctx, k := setupKeeperForTest(c)
 	addr := GetRandomBech32Addr()

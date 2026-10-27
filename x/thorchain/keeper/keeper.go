@@ -190,6 +190,8 @@ type KeeperNodeAccount interface {
 	SetNodeAccount(ctx cosmos.Context, na NodeAccount) error
 	EnsureNodeKeysUnique(ctx cosmos.Context, consensusPubKey string, pubKeys common.PubKeySet) error
 	GetNodeAccountIterator(ctx cosmos.Context) cosmos.Iterator
+	GetNodeFirstSeen(ctx cosmos.Context, addr cosmos.AccAddress) (int64, bool, error)
+	SetNodeFirstSeen(ctx cosmos.Context, addr cosmos.AccAddress, height int64)
 	GetNodeAccountSlashPoints(_ cosmos.Context, _ cosmos.AccAddress) (int64, error)
 	SetNodeAccountSlashPoints(_ cosmos.Context, _ cosmos.AccAddress, _ int64)
 	IncNodeAccountSlashPoints(_ cosmos.Context, _ cosmos.AccAddress, _ int64) error

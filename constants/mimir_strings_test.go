@@ -164,6 +164,7 @@ func (s *ConstantsTestSuite) TestIsOperationalMimir_CompleteCoverage(c *C) {
 		POLReserveSystemIncomeBps.String(),
 		StableReserveOraclePricing.String(),
 		MimirKeyPreflightChainSetDisabled,
+		MimirKeyChurnInMinNodeAgeBlocks,
 	}
 
 	for _, mimir := range exactOperationalMimirs {

@@ -1,0 +1,143 @@
+{{ template "default-state.yaml" }}
+---
+## ChurnInMinNodeAgeBlocks keeps Ready nodes younger than the minimum age out of the
+## churn-in selection:
+## - cat, pig and fish are Standby at genesis, so their age counts from height 0
+## - fox registers (first bond) at height 35, after the mimir is set
+## - the regular churn at height 60 selects dog, cat, pig and fish but not fox, though
+##   fox has the largest bond and an unfiltered churn would pick it first
+type: state
+genesis:
+  app_state:
+    bank:
+      balances:
+        - address: {{ addr_module_bond }}
+          coins:
+            - amount: "5300000000000"
+              denom: rune
+    thorchain:
+      node_accounts:
+        - bond: "100000000000"
+          ip_address: 1.1.1.2
+          node_address: {{ addr_thor_cat }}
+          bond_address: {{ addr_thor_cat }}
+          pub_key_set:
+            secp256k1: {{ pubkey_cat }}
+            ed25519: {{ pubkey_cat_eddsa }}
+          status: Standby
+          validator_cons_pub_key: {{ cons_pubkey_cat }}
+          version: {{ version }}
+        - bond: "100000000000"
+          ip_address: 1.1.1.3
+          node_address: {{ addr_thor_pig }}
+          bond_address: {{ addr_thor_pig }}
+          pub_key_set:
+            secp256k1: {{ pubkey_pig }}
+            ed25519: {{ pubkey_pig_eddsa }}
+          status: Standby
+          validator_cons_pub_key: {{ cons_pubkey_pig }}
+          version: {{ version }}
+        - bond: "100000000000"
+          ip_address: 1.1.1.4
+          node_address: {{ addr_thor_fish }}
+          bond_address: {{ addr_thor_fish }}
+          pub_key_set:
+            secp256k1: {{ pubkey_fish }}
+            ed25519: {{ pubkey_fish_eddsa }}
+          status: Standby
+          validator_cons_pub_key: {{ cons_pubkey_fish }}
+          version: {{ version }}
+---
+type: create-blocks
+count: 1
+---
+type: tx-mimir
+signer: {{ addr_thor_dog }}
+key: ChurnInMinNodeAgeBlocks
+value: 40
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/mimir/key/ChurnInMinNodeAgeBlocks
+asserts:
+  - . == 40
+---
+type: create-blocks
+count: 32
+---
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "2000000000000"
+    asset: "rune"
+memo: "BOND:{{ addr_thor_fox }}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/lastblock
+asserts:
+  - .[0].thorchain == 35
+---
+type: tx-set-node-keys
+signer: {{ addr_thor_fox }}
+pub_key_set:
+  secp256k1: {{ pubkey_fox }}
+  ed25519: {{ pubkey_fox_eddsa }}
+validator_cons_pub_key: {{ cons_pubkey_fox }}
+---
+type: create-blocks
+count: 1
+---
+type: tx-set-ip-address
+signer: {{ addr_thor_fox }}
+ip_address: 1.1.1.5
+---
+type: create-blocks
+count: 1
+---
+type: tx-version
+signer: {{ addr_thor_fox }}
+version: {{ version }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_fox }}
+asserts:
+  - .status == "Standby"
+  - .total_bond | tonumber > 100000000000
+  - .pub_key_set.secp256k1 == "{{ pubkey_fox }}"
+  - .ip_address == "1.1.1.5"
+---
+type: create-blocks
+count: 23
+---
+type: check
+endpoint: http://localhost:1317/thorchain/lastblock
+asserts:
+  - .[0].thorchain == 61
+---
+type: check
+endpoint: http://localhost:1317/thorchain/keygen/60/{{ pubkey_dog }}
+asserts:
+  # the Asgard and the XMR monovault keygens both take the selected set
+  - .keygen_block.keygens | length == 2
+  - .keygen_block.keygens[0].type == "AsgardKeygen"
+  - .keygen_block.keygens[1].type == "XMRMonovaultKeygen"
+  - .keygen_block.keygens[0].members | length == 4
+  - .keygen_block.keygens[0].members | index("{{ pubkey_dog }}") != null
+  - .keygen_block.keygens[0].members | index("{{ pubkey_cat }}") != null
+  - .keygen_block.keygens[0].members | index("{{ pubkey_pig }}") != null
+  - .keygen_block.keygens[0].members | index("{{ pubkey_fish }}") != null
+  - .keygen_block.keygens[0].members | index("{{ pubkey_fox }}") == null
+  - .keygen_block.keygens[1].members == .keygen_block.keygens[0].members
+---
+type: check
+endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_fox }}
+asserts:
+  - .status == "Ready"
