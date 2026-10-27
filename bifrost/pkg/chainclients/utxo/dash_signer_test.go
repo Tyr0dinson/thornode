@@ -177,7 +177,8 @@ func (s *DashSuite) TestDashSignTxCheckpointAndBroadcast(c *C) {
 	for _, output := range decoded.TxOut[3:] {
 		c.Assert(dashtxscript.GetScriptClass(output.PkScript), Equals, dashtxscript.PubKeyHashTy)
 		c.Assert(output.Value, Equals, common.DASHChain.P2WPKHOutputValue())
-		chunks, err := dashtxscript.PushedData(output.PkScript)
+		var chunks [][]byte
+		chunks, err = dashtxscript.PushedData(output.PkScript)
 		c.Assert(err, IsNil)
 		c.Assert(chunks, HasLen, 1)
 		recoveredMemo = append(recoveredMemo, chunks[0]...)

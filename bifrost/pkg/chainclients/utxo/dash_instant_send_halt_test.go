@@ -280,7 +280,8 @@ func (s *DashSuite) TestInstantSendLateHaltFallsBackWithoutClaims(c *C) {
 			c.Assert(err, IsNil)
 			c.Assert(state.Reserved, Equals, uint64(0))
 			for _, id := range []string{f.inbound, f.lowFeeInbound, f.lockedOutbound} {
-				marked, err := client.temporalStorage.HasObservedTx(id)
+				var marked bool
+				marked, err = client.temporalStorage.HasObservedTx(id)
 				c.Assert(err, IsNil)
 				c.Assert(marked, Equals, false)
 			}

@@ -85,7 +85,8 @@ func (s *DashSuite) TestInstantSendAllowanceWaitsForExactChainLock(c *C) {
 	block := &btcjson.GetBlockVerboseTxResult{Height: 201}
 	for _, id := range []string{f.inbound, f.lowFeeInbound} {
 		var raw btcjson.TxRawResult
-		data, err := json.Marshal(f.txs[id])
+		var data []byte
+		data, err = json.Marshal(f.txs[id])
 		c.Assert(err, IsNil)
 		c.Assert(json.Unmarshal(data, &raw), IsNil)
 		block.Tx = append(block.Tx, raw)
@@ -132,10 +133,17 @@ func (s *DashSuite) TestInstantSendMimirDefaultsChangesAndFailures(c *C) {
 	client, f, cleanup := newDashMempoolFixture(c)
 	defer cleanup()
 	// Use 1.5 DASH deposits to exercise lowering the limit below usage.
-	for _, id := range []string{f.inbound, f.lowFeeInbound} {
-		f.txs[id]["vout"].([]any)[0].(map[string]any)["value"] = 1.5
+	for id, amount := range map[string]float64{
+		f.inbound:               1.5,
+		f.lowFeeInbound:         1.5,
+		strings.Repeat("f", 64): 1.50002,
+	} {
+		outputs, ok := f.txs[id]["vout"].([]any)
+		c.Assert(ok, Equals, true)
+		output, ok := outputs[0].(map[string]any)
+		c.Assert(ok, Equals, true)
+		output["value"] = amount
 	}
-	f.txs[strings.Repeat("f", 64)]["vout"].([]any)[0].(map[string]any)["value"] = 1.50002
 	bridge := &instantSendPolicyBridge{values: make(map[string]int64), status: ttypes.NodeStatus_Active}
 	client.bridge = bridge
 	c.Assert(client.refreshInstantSendSettings(), IsNil)
@@ -371,7 +379,8 @@ func (s *DashSuite) TestInstantSendSnapshotIgnoresMarkersAndNewPolicy(c *C) {
 	c.Assert(client.temporalStorage.StartInstantSendWarmup(100, []string{f.inbound, f.lowFeeInbound, f.lockedOutbound}), IsNil)
 	client.cfg.UTXO.TransactionBatchSize = 1 // bounded work, persisted between calls
 	for range 3 {
-		state, err := client.temporalStorage.GetInstantSendState()
+		var state sharedutxo.InstantSendState
+		state, err = client.temporalStorage.GetInstantSendState()
 		c.Assert(err, IsNil)
 		c.Assert(client.classifyInstantSendSnapshot(state), IsNil)
 	}

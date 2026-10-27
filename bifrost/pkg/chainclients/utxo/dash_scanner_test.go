@@ -19,6 +19,7 @@ import (
 
 	btypes "gitlab.com/thorchain/thornode/v3/bifrost/blockscanner/types"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/runners"
+	sharedutxo "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/utxo"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/cmd"
@@ -175,7 +176,8 @@ func (s *DashSuite) TestDashScannerCatchesUpThroughAvailableBlocks(c *C) {
 			c.Assert(client.IsBlockScannerHealthy(), Equals, false)
 			c.Assert(f.bridge.asgardReads.Load(), Equals, int64(0))
 			for height := int64(971); height <= 999; height++ {
-				meta, err := client.temporalStorage.GetBlockMeta(height)
+				var meta *sharedutxo.BlockMeta
+				meta, err = client.temporalStorage.GetBlockMeta(height)
 				c.Assert(err, IsNil)
 				c.Assert(meta, NotNil) // Every intervening block was fetched; none skipped.
 				c.Assert(meta.BlockHash, Equals, dashCatchUpHash(height))

@@ -20,6 +20,7 @@ import (
 	sharedutxo "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/utxo"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/rpc"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
+	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/config"
@@ -705,7 +706,8 @@ func (s *DashSuite) TestDashInstantSendAcceptsLargeLowFeePaymentsWithoutPricing(
 	// A large locked payment is eligible with a low fee or without fee metadata.
 	for _, withFee := range []bool{true, false} {
 		includeFee = withFee
-		groups, err := client.scanInstantSend(123)
+		var groups []types.TxIn
+		groups, err = client.scanInstantSend(123)
 		c.Assert(err, IsNil)
 		c.Assert(groups, HasLen, 1)
 		c.Assert(groups[0].MemPool, Equals, false)

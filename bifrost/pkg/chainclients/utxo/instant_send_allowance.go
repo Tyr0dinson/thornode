@@ -116,7 +116,8 @@ func (c *Client) prepareInstantSendAllowance(err error) (instantSendAdmission, e
 		if c.blockScanner == nil || !c.IsBlockScannerHealthy() {
 			return blocked, nil
 		}
-		height, err := c.GetHeight()
+		var height int64
+		height, err = c.GetHeight()
 		if err != nil {
 			return blocked, err
 		}
@@ -124,7 +125,8 @@ func (c *Client) prepareInstantSendAllowance(err error) (instantSendAdmission, e
 		if !c.IsBlockScannerHealthy() || c.blockScanner.PreviousHeight() < height {
 			return blocked, nil
 		}
-		mempool, err := c.rpc.GetRawMempoolVerbose()
+		var mempool map[string]rpc.GetRawMempoolVerboseResult
+		mempool, err = c.rpc.GetRawMempoolVerbose()
 		if err != nil {
 			return blocked, err
 		}
@@ -134,7 +136,7 @@ func (c *Client) prepareInstantSendAllowance(err error) (instantSendAdmission, e
 				ids = append(ids, id)
 			}
 		}
-		if err := c.temporalStorage.StartInstantSendWarmup(height, ids); err != nil {
+		if err = c.temporalStorage.StartInstantSendWarmup(height, ids); err != nil {
 			return blocked, err
 		}
 		state, err = c.temporalStorage.GetInstantSendState()
@@ -146,7 +148,7 @@ func (c *Client) prepareInstantSendAllowance(err error) (instantSendAdmission, e
 		if c.bridge == nil {
 			return blocked, nil
 		}
-		if err := c.classifyInstantSendSnapshot(state); err != nil {
+		if err = c.classifyInstantSendSnapshot(state); err != nil {
 			return blocked, err
 		}
 		if c.blockScanner == nil {
@@ -154,7 +156,7 @@ func (c *Client) prepareInstantSendAllowance(err error) (instantSendAdmission, e
 		}
 		// PreviousHeight advances after scanner delivery; currentBlockHeight is
 		// updated while fetching and cannot prove that catch-up has completed.
-		if err := c.temporalStorage.CompleteInstantSendWarmup(c.blockScanner.PreviousHeight()); err != nil {
+		if err = c.temporalStorage.CompleteInstantSendWarmup(c.blockScanner.PreviousHeight()); err != nil {
 			return blocked, err
 		}
 		state, err = c.temporalStorage.GetInstantSendState()
@@ -171,7 +173,8 @@ func (c *Client) prepareInstantSendAllowance(err error) (instantSendAdmission, e
 			break
 		}
 		if _, stillReserved := state.Reservations[id]; stillReserved {
-			tx, err := c.rpc.GetRawTransactionVerbose(id)
+			var tx *rpc.TxResult
+			tx, err = c.rpc.GetRawTransactionVerbose(id)
 			var rpcErr *btcjson.RPCError
 			if err != nil && !(errors.As(err, &rpcErr) && rpcErr.Code == btcjson.ErrRPCInvalidAddressOrKey) {
 				return blocked, err
@@ -179,7 +182,8 @@ func (c *Client) prepareInstantSendAllowance(err error) (instantSendAdmission, e
 			// An unknown or evicted transaction remains charged. It is not proof
 			// that a previously reported deposit is safe to forget.
 			if err == nil {
-				settled, err := c.settleInstantSendTransaction(id, tx)
+				var settled bool
+				settled, err = c.settleInstantSendTransaction(id, tx)
 				if err != nil {
 					return blocked, err
 				}
@@ -242,14 +246,16 @@ func (c *Client) classifyInstantSendSnapshot(state sharedutxo.InstantSendState) 
 			continue
 		}
 		tx := txs[i]
-		settled, err := c.settleInstantSendTransaction(id, tx)
+		var settled bool
+		settled, err = c.settleInstantSendTransaction(id, tx)
 		if err != nil {
 			failures = append(failures, err)
 			break // do not repeat slow failed RPCs while blocking settlement
 		}
 		if settled {
 			// Inclusion also removes other snapshot IDs found in this block.
-			current, err := c.temporalStorage.GetInstantSendState()
+			var current sharedutxo.InstantSendState
+			current, err = c.temporalStorage.GetInstantSendState()
 			if err != nil {
 				return err
 			}
@@ -259,7 +265,8 @@ func (c *Client) classifyInstantSendSnapshot(state sharedutxo.InstantSendState) 
 			}
 			continue
 		}
-		amount, err := c.instantSendSnapshotAmount(tx)
+		var amount uint64
+		amount, err = c.instantSendSnapshotAmount(tx)
 		if err != nil {
 			failures = append(failures, err)
 			break
@@ -269,7 +276,7 @@ func (c *Client) classifyInstantSendSnapshot(state sharedutxo.InstantSendState) 
 			reservations = append(reservations, sharedutxo.InstantSendReservation{TxID: id, Amount: amount, CreatedAt: time.Now().Unix()})
 		}
 	}
-	if err := c.temporalStorage.RecordInstantSendSnapshot(classified, reservations); err != nil {
+	if err = c.temporalStorage.RecordInstantSendSnapshot(classified, reservations); err != nil {
 		return err
 	}
 	return errors.Join(failures...)
@@ -452,15 +459,17 @@ func (c *Client) claimInstantSendBatch(items []*types.TxInItem, admission instan
 		if _, skipped := byID[claim.TxID]; !skipped || claim.Exempt {
 			continue
 		}
-		if observed, err := c.temporalStorage.HasObservedTx(claim.TxID); err == nil && observed {
+		var observed bool
+		if observed, err = c.temporalStorage.HasObservedTx(claim.TxID); err == nil && observed {
 			continue // another scanner already delivered this transaction
 		}
 		reason := "allowance"
-		if state.Reservations[claim.TxID].Origin == sharedutxo.InstantSendSnapshot {
+		switch {
+		case state.Reservations[claim.TxID].Origin == sharedutxo.InstantSendSnapshot:
 			reason = "startup_snapshot"
-		} else if !admission.allowed {
+		case !admission.allowed:
 			reason = admission.reason
-		} else if claim.Amount < c.instantSendMinAmount {
+		case claim.Amount < c.instantSendMinAmount:
 			reason = "minimum"
 		}
 		c.deferInstantSend(reason)

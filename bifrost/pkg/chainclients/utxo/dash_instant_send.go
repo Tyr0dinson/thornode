@@ -37,8 +37,9 @@ func (c *Client) isInstantSendPaused() bool {
 		c.log.Err(err).Msg("fail to get THORChain height for InstantSend halt check")
 		return true
 	}
+	var height int64
 	for _, key := range []string{"HaltDASHChain", "SolvencyHaltDASHChain", "HaltChainGlobal"} {
-		height, err := c.bridge.GetMimir(key)
+		height, err = c.bridge.GetMimir(key)
 		if err != nil {
 			c.log.Err(err).Str("key", key).Msg("fail to read InstantSend halt setting")
 			return true
@@ -47,7 +48,7 @@ func (c *Client) isInstantSendPaused() bool {
 			return true
 		}
 	}
-	height, err := c.bridge.GetMimir("NodePauseChainGlobal")
+	height, err = c.bridge.GetMimir("NodePauseChainGlobal")
 	if err != nil {
 		c.log.Err(err).Msg("fail to read InstantSend node pause setting")
 		return true
@@ -213,9 +214,9 @@ func (c *Client) scanInstantSend(height int64) ([]types.TxIn, error) {
 	group.SetLimit(workers)
 	for i, id := range ids {
 		group.Go(func() error {
-			tx, err := c.rpc.GetRawTransactionVerbose(id)
-			if err != nil {
-				c.log.Debug().Err(err).Str("txid", id).Msg("retry InstantSend mempool transaction later")
+			tx, rpcErr := c.rpc.GetRawTransactionVerbose(id)
+			if rpcErr != nil {
+				c.log.Debug().Err(rpcErr).Str("txid", id).Msg("retry InstantSend mempool transaction later")
 			} else if strings.EqualFold(tx.Txid, id) && tx.InstantSendLocked() {
 				raw[i] = tx
 			}

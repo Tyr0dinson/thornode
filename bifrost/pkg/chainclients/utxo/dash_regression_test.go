@@ -101,7 +101,8 @@ func (s *DashSuite) TestDashLockedBalance(c *C) {
 	for _, flag := range []string{"instantlock", "instantlock_internal", "chainlock"} {
 		lockFlag = flag
 		rawCalls = 0
-		account, err := client.GetAccount(pubKey, nil)
+		var account common.Account
+		account, err = client.GetAccount(pubKey, nil)
 		c.Assert(err, IsNil)
 		c.Assert(account.Coins.GetCoin(common.DASHAsset).Amount.Uint64(), Equals, uint64(common.One/5))
 		c.Assert(rawCalls, Equals, 1) // multiple outputs share the lookup

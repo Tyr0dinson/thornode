@@ -154,7 +154,8 @@ func (s *DashSuite) TestDashFetchMemPoolOutboundsAndFinalObservations(c *C) {
 		c.Assert(item.Sender, Equals, f.asgard)
 		c.Assert(item.To, Equals, f.user)
 		c.Assert(item.BlockHeight, Equals, int64(123))
-		observed, err := client.temporalStorage.HasObservedTx(item.Tx)
+		var observed bool
+		observed, err = client.temporalStorage.HasObservedTx(item.Tx)
 		c.Assert(err, IsNil)
 		c.Assert(observed, Equals, false) // final block observation is still needed
 	}

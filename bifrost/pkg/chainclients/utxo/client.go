@@ -647,7 +647,8 @@ func (c *Client) FetchMemPool(height int64) (types.TxIn, error) {
 	if !c.cfg.InstantSend.Enabled {
 		c.instantSendTxQueue = nil
 		c.nextMempoolScan = scanOutbounds
-		admission, err := c.prepareInstantSendAllowance(err)
+		var admission instantSendAdmission
+		admission, err = c.prepareInstantSendAllowance(err)
 		if err != nil {
 			c.log.Err(err).Msg("fail to maintain InstantSend allowance while disabled")
 		}
@@ -662,7 +663,7 @@ func (c *Client) FetchMemPool(height int64) (types.TxIn, error) {
 		c.instantSendTxQueue = nil
 		c.nextMempoolScan = scanOutbounds
 		// Keep existing recovery moving, without starting a new allowance snapshot.
-		if _, err := c.prepareInstantSendAllowance(errInstantSendPaused); err != nil {
+		if _, err = c.prepareInstantSendAllowance(errInstantSendPaused); err != nil {
 			c.log.Err(err).Msg("fail to maintain InstantSend allowance while halted")
 		}
 		c.publishInstantSendAllowance(instantSendAdmission{reason: "halt"})
@@ -675,13 +676,15 @@ func (c *Client) FetchMemPool(height int64) (types.TxIn, error) {
 	switch c.nextMempoolScan {
 	case scanInstantSend:
 		c.nextMempoolScan = scanOutbounds
-		admission, err := c.prepareInstantSendAllowance(err)
+		var admission instantSendAdmission
+		admission, err = c.prepareInstantSendAllowance(err)
 		if err != nil {
 			c.log.Err(err).Msg("customer InstantSend observations paused")
 		}
 		// Publish after this scan's preparation and claims, using its own decision.
 		defer func() { c.publishInstantSendAllowance(admission) }()
-		batch, err := c.fetchInstantSendBatch(height, admission)
+		var batch types.TxIn
+		batch, err = c.fetchInstantSendBatch(height, admission)
 		if errors.Is(err, errInstantSendPaused) {
 			// The halt became visible during the scan. No claims were written.
 			c.instantSendTxQueue = nil
