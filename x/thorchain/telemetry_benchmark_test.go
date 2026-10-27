@@ -1,6 +1,8 @@
 package thorchain
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"strings"
 	"sync"
@@ -60,6 +62,19 @@ func enableBenchTelemetry(b testing.TB) {
 	}
 }
 
+// benchETHAddress is a random ETH address in the lowercase form
+// GetRandomETHAddress returns. That one derives each address from a fresh
+// secp256k1 key, which at the seed's ~34k addresses was most of its cost, and
+// nothing here uses the key.
+func benchETHAddress(b testing.TB) common.Address {
+	b.Helper()
+	var raw [20]byte
+	if _, err := rand.Read(raw[:]); err != nil {
+		b.Fatal(err)
+	}
+	return common.Address("0x" + hex.EncodeToString(raw[:]))
+}
+
 // seedTelemetryState populates the stores the per-block telemetry path walks.
 func seedTelemetryState(b testing.TB, ctx cosmos.Context, mgr *Mgrs) {
 	b.Helper()
@@ -85,7 +100,7 @@ func seedTelemetryState(b testing.TB, ctx cosmos.Context, mgr *Mgrs) {
 			k.SetLiquidityProvider(ctx, LiquidityProvider{
 				Asset:        asset,
 				RuneAddress:  GetRandomRUNEAddress(),
-				AssetAddress: GetRandomETHAddress(),
+				AssetAddress: benchETHAddress(b),
 				Units:        cosmos.NewUint(uint64(j+1) * common.One),
 				PendingRune:  cosmos.ZeroUint(),
 				PendingAsset: cosmos.ZeroUint(),
@@ -130,7 +145,7 @@ func seedTelemetryState(b testing.TB, ctx cosmos.Context, mgr *Mgrs) {
 	}
 	// A router and a pending upgrade with one vote, so the router_info and
 	// upgrade_proposal branches execute.
-	k.SetChainContract(ctx, ChainContract{Chain: common.ETHChain, Router: GetRandomETHAddress()})
+	k.SetChainContract(ctx, ChainContract{Chain: common.ETHChain, Router: benchETHAddress(b)})
 	if err := k.ProposeUpgrade(ctx, "bench", types.UpgradeProposal{Height: ctx.BlockHeight() + 1000, Info: "bench", Proposer: standby.NodeAddress}); err != nil {
 		b.Fatalf("propose upgrade: %v", err)
 	}
@@ -183,7 +198,7 @@ func seedTelemetryState(b testing.TB, ctx cosmos.Context, mgr *Mgrs) {
 		for j := 0; j < 3; j++ {
 			txOut.TxArray = append(txOut.TxArray, TxOutItem{
 				Chain:       common.ETHChain,
-				ToAddress:   GetRandomETHAddress(),
+				ToAddress:   benchETHAddress(b),
 				VaultPubKey: GetRandomPubKey(),
 				Coin:        common.NewCoin(assets[j%len(assets)], cosmos.NewUint(common.One)),
 				Memo:        "OUT:" + GetRandomTxHash().String(),
@@ -214,7 +229,7 @@ func seedTelemetryState(b testing.TB, ctx cosmos.Context, mgr *Mgrs) {
 	// The gated stores.
 	for i := 0; i < benchTCYClaimers; i++ {
 		if err := k.SetTCYClaimer(ctx, TCYClaimer{
-			Asset: assets[i%len(assets)], L1Address: GetRandomETHAddress(), Amount: cosmos.NewUint(uint64(i + 1)),
+			Asset: assets[i%len(assets)], L1Address: benchETHAddress(b), Amount: cosmos.NewUint(uint64(i + 1)),
 		}); err != nil {
 			b.Fatalf("set tcy claimer %d: %v", i, err)
 		}
@@ -238,7 +253,7 @@ func seedTelemetryState(b testing.TB, ctx cosmos.Context, mgr *Mgrs) {
 		}
 	}
 	for i := 0; i < benchCredits; i++ {
-		if err := k.SetStableReserveCredit(ctx, assets[i%len(assets)], GetRandomETHAddress(), cosmos.NewUint(uint64(i+1)*common.One)); err != nil {
+		if err := k.SetStableReserveCredit(ctx, assets[i%len(assets)], benchETHAddress(b), cosmos.NewUint(uint64(i+1)*common.One)); err != nil {
 			b.Fatalf("set credit %d: %v", i, err)
 		}
 	}

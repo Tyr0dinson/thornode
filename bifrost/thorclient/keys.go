@@ -16,6 +16,7 @@ import (
 	ckeys "github.com/cosmos/cosmos-sdk/crypto/keyring"
 	cryptokeysed25519 "github.com/cosmos/cosmos-sdk/crypto/keys/ed25519"
 	cryptokeyssecp256k1 "github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
+	cryptotypes "github.com/cosmos/cosmos-sdk/crypto/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"gitlab.com/thorchain/thornode/v3/common/crypto/ed25519"
 )
@@ -111,16 +112,33 @@ func (k *Keys) GetSignerInfo() *ckeys.Record {
 	return record
 }
 
-// GetPrivateKey return the ecdsa private key
-func (k *Keys) GetPrivateKey() (*cryptokeyssecp256k1.PrivKey, error) {
-	// return k.kb.ExportPrivateKeyObject(k.signerName)
-	privKeyArmor, err := k.kb.ExportPrivKeyArmor(k.signerName, k.password)
+// privKeyExporter is implemented by the SDK keyring. Its ExportPrivKeyArmor is
+// ExportPrivateKeyObject plus an argon2 encryption that unarmoring only undoes.
+type privKeyExporter interface {
+	ExportPrivateKeyObject(uid string) (cryptotypes.PrivKey, error)
+}
+
+// exportPrivKey return the private key of the given key name
+func (k *Keys) exportPrivKey(name string) (cryptotypes.PrivKey, error) {
+	if exporter, ok := k.kb.(privKeyExporter); ok {
+		return exporter.ExportPrivateKeyObject(name)
+	}
+	privKeyArmor, err := k.kb.ExportPrivKeyArmor(name, k.password)
 	if err != nil {
 		return nil, err
 	}
 	priKey, _, err := crypto.UnarmorDecryptPrivKey(privKeyArmor, k.password)
 	if err != nil {
 		return nil, fmt.Errorf("fail to unarmor private key: %w", err)
+	}
+	return priKey, nil
+}
+
+// GetPrivateKey return the ecdsa private key
+func (k *Keys) GetPrivateKey() (*cryptokeyssecp256k1.PrivKey, error) {
+	priKey, err := k.exportPrivKey(k.signerName)
+	if err != nil {
+		return nil, err
 	}
 	secpKey, ok := priKey.(*cryptokeyssecp256k1.PrivKey)
 	if !ok {
@@ -132,14 +150,9 @@ func (k *Keys) GetPrivateKey() (*cryptokeyssecp256k1.PrivKey, error) {
 // GetPrivateKeyEDDSA return the eddsa private key
 func (k *Keys) GetPrivateKeyEDDSA() (*cryptokeysed25519.PrivKey, error) {
 	signerNameEDDSA := ed25519.SignerNameEDDSA(k.signerName)
-	// return k.kb.ExportPrivateKeyObject(k.signerName)
-	privKeyArmor, err := k.kb.ExportPrivKeyArmor(signerNameEDDSA, k.password)
+	priKey, err := k.exportPrivKey(signerNameEDDSA)
 	if err != nil {
 		return nil, err
-	}
-	priKey, _, err := crypto.UnarmorDecryptPrivKey(privKeyArmor, k.password)
-	if err != nil {
-		return nil, fmt.Errorf("fail to unarmor private key: %w", err)
 	}
 	eddsaKey, ok := priKey.(*cryptokeysed25519.PrivKey)
 	if !ok {

@@ -90,6 +90,10 @@ func TestXMRKeygenPolicyContinuation(t *testing.T) {
 }
 
 func TestXMRKeygenPolicyWorkerHandoff(t *testing.T) {
+	// Registered before the signer's cleanup, so it runs after the workers stop.
+	recheck := xmrKeygenRecheckInterval
+	xmrKeygenRecheckInterval = 10 * time.Millisecond
+	t.Cleanup(func() { xmrKeygenRecheckInterval = recheck })
 	signer, bridge, client := replacementTestSigner(t, nil)
 	signer.tssKeygen = &tss.KeyGen{}
 	block := newSingleFlightXMRKeygen(t, 2700)
@@ -112,10 +116,11 @@ func TestXMRKeygenPolicyWorkerHandoff(t *testing.T) {
 	pending := newSingleFlightXMRKeygen(t, 2701)
 	signer.processKeygenBlock(pending)
 	bridge.setLookupFailure(constants.MimirKeyEnableMonovaultKeygen, nil)
+	// The worker resumes on its recheck interval, well inside one block time.
 	select {
 	case <-client.firstStarted:
-	case <-time.After(3 * constants.ThorchainBlockTime):
-		t.Fatal("retained worker never resumed its admitted request")
+	case <-time.After(constants.ThorchainBlockTime / 2):
+		t.Fatal("retained worker did not resume its admitted request on its recheck interval")
 	}
 	client.releaseFirst()
 	finished := make(chan struct{})

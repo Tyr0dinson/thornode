@@ -223,6 +223,7 @@ func (s *BlockScannerExtraSuite) startStalledScanner(c *C, err error) int64 {
 
 	storage := NewMockScannerStorage()
 	c.Assert(storage.SetScanPos(2800), IsNil)
+	fetcher := &configFetcher{chainHeight: 1000000, fetchErr: err}
 	scanner, scanErr := NewBlockScanner(config.BifrostBlockScannerConfiguration{
 		BlockScanProcessors:        1,
 		HTTPRequestTimeout:         time.Second,
@@ -230,15 +231,18 @@ func (s *BlockScannerExtraSuite) startStalledScanner(c *C, err error) int64 {
 		BlockRetryInterval:         time.Millisecond,
 		ChainID:                    common.ETHChain,
 		MaxResumeBlockLag:          time.Hour,
-	}, storage, m, &stallBridge{ThorchainBridge: s.makeBridge(c, server)}, &configFetcher{chainHeight: 1000000, fetchErr: err})
+	}, storage, m, &stallBridge{ThorchainBridge: s.makeBridge(c, server)}, fetcher)
 	c.Assert(scanErr, IsNil)
 	armStall(scanner, 2801)
 	scanner.healthy.Store(true)
 
 	scanner.Start(make(chan types.TxIn, 1), make(chan common.NetworkFee, 1))
 	defer scanner.Stop()
+	// The stall clock is already expired, so a failure that may skip does so on
+	// its first fetch of 2801; 50 failed fetches with the cursor unmoved mean it
+	// never will.
 	for i := 0; i < 200; i++ {
-		if scanner.PreviousHeight() != 2800 {
+		if scanner.PreviousHeight() != 2800 || fetcher.fetches.Load() >= 50 {
 			break
 		}
 		time.Sleep(10 * time.Millisecond)

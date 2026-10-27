@@ -335,6 +335,9 @@ type MockStream struct {
 	peer   peer.ID
 
 	mu *sync.Mutex
+	// remoteClosed marks a reader that already holds everything the remote
+	// will send, so its EOF is final rather than "not written yet".
+	remoteClosed bool
 }
 
 func NewMockStream(reader io.Reader, writer io.Writer, peer peer.ID) *MockStream {
@@ -359,7 +362,7 @@ func (m *MockStream) Read(p []byte) (n int, err error) {
 		if err == nil {
 			break
 		}
-		if err != io.EOF {
+		if err != io.EOF || m.remoteClosed {
 			return n, err
 		}
 		m.mu.Unlock()
