@@ -472,6 +472,16 @@ func (tos *TxOutStorage) selectFallbackVault(ctx cosmos.Context, toi TxOutItem, 
 	return bestVault
 }
 
+// roundOutboundAmount rounds an outbound amount of asset down to the asset's decimals.
+// If the outbound coin is synthetic, respecting decimals is unnecessary and leaves
+// unburnt synths in the Pool Module, so its amount is kept as is.
+func roundOutboundAmount(amount cosmos.Uint, asset common.Asset, decimals int64) cosmos.Uint {
+	if asset.IsSyntheticAsset() {
+		return amount
+	}
+	return cosmos.RoundToDecimal(amount, decimals)
+}
+
 // pendingOutboundsForVaultSelection returns the pending outbounds to deduct from vaults
 // before one is chosen, or checked, to pay an outbound of asset on chain. Every chain
 // deducts the pending outbounds of the same asset. A SOL outbound deducts every pending
@@ -984,8 +994,10 @@ func (tos *TxOutStorage) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem) ([]
 				}
 
 				// Check for zero coin BEFORE making any state changes (Finding 2)
-				// This prevents pool balance corruption and fee event inconsistency
-				if coinAmountAfterFee.IsZero() {
+				// This prevents pool balance corruption and fee event inconsistency.
+				// The amount is rounded to the asset's decimals below, so an amount
+				// below one unit of the asset counts as zero here.
+				if roundOutboundAmount(coinAmountAfterFee, outputs[i].Coin.Asset, pool.Decimals).IsZero() {
 					ctx.Logger().Info("tx out item would have zero coin after fee, checking if withdrawal", "tx_out", outputs[i].String())
 					// Need to determine whether the outbound is triggered by a withdrawal request
 					if !outputs[i].InHash.IsEmpty() && !outputs[i].InHash.Equals(common.BlankTxID) {
@@ -1051,6 +1063,10 @@ func (tos *TxOutStorage) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem) ([]
 				feeEvents = append(feeEvents, NewEventFee(outputs[i].InHash, fee, cosmos.ZeroUint()))
 			}
 		}
+		// sanity check: ensure outbound amount respect asset decimals, before the
+		// zero check below, so that no amount which rounds to zero is scheduled
+		outputs[i].Coin.Amount = roundOutboundAmount(outputs[i].Coin.Amount, outputs[i].Coin.Asset, pool.Decimals)
+
 		// After applying all fees, check if the coin is still empty
 		// (this can happen for RUNE outputs where the fee equals the amount)
 		if outputs[i].Coin.IsEmpty() {
@@ -1083,13 +1099,6 @@ func (tos *TxOutStorage) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem) ([]
 			}
 			dropped("zero_coin")
 			continue
-		}
-
-		// If the outbound coin is synthetic, respecting decimals is unnecessary
-		// and leaves unburnt synths in the Pool Module
-		if !outputs[i].Coin.Asset.IsSyntheticAsset() {
-			// sanity check: ensure outbound amount respect asset decimals
-			outputs[i].Coin.Amount = cosmos.RoundToDecimal(outputs[i].Coin.Amount, pool.Decimals)
 		}
 
 		if !outputs[i].InHash.Equals(common.BlankTxID) {
