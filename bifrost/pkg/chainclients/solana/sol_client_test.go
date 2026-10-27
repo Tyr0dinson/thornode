@@ -223,6 +223,34 @@ func (s *SolTestSuite) TestGetGasEstimateForSolvency(c *C) {
 	c.Assert(got.Equal(cosmos.NewUint(600)), Equals, true)
 }
 
+// solNetworkFeeBridge serves a fixed THORChain network fee for SOL.
+type solNetworkFeeBridge struct {
+	thorclient.ThorchainBridge
+	rate uint64
+	err  error
+}
+
+func (b *solNetworkFeeBridge) GetNetworkFee(common.Chain) (uint64, uint64, error) {
+	return 1, b.rate, b.err
+}
+
+// TestGetGasEstimateForSolvencyFallsBackToNetworkFee verifies a node whose
+// scanner has not refreshed its fee (e.g. restarted while SOL is halted) still
+// gets a non-zero solvency gas estimate from THORChain's network fee.
+func (s *SolTestSuite) TestGetGasEstimateForSolvencyFallsBackToNetworkFee(c *C) {
+	bridge := &solNetworkFeeBridge{rate: 2_000}
+	client := &SOLClient{
+		cfg:        config.BifrostChainConfiguration{ChainID: common.SOLChain},
+		solScanner: &SOLScanner{},
+		bridge:     bridge,
+	}
+
+	c.Assert(client.GetGasEstimateForSolvency().Equal(cosmos.NewUint(600)), Equals, true)
+
+	bridge.err = errors.New("network fee unavailable")
+	c.Assert(client.GetGasEstimateForSolvency().IsZero(), Equals, true)
+}
+
 func (s *SolTestSuite) TestCreateAndSerializeTx(c *C) {
 	pubkeyMgr, err := pubkeymanager.NewPubKeyManager(s.bridge, s.m)
 	c.Assert(err, IsNil)

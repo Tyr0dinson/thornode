@@ -41,13 +41,11 @@ func expectedReportHeightForTest(chain common.Chain, cfg config.BifrostChainConf
 		case common.ETHChain:
 			blocks = 20
 		case common.SOLChain:
-			blocks = 50
-		case common.GAIAChain, common.NOBLEChain, common.TRONChain, common.DOGEChain, common.ZECChain, common.XMRChain:
+			blocks = 500
+		case common.GAIAChain, common.NOBLEChain, common.TRONChain, common.DOGEChain, common.ZECChain, common.LTCChain, common.XMRChain:
 			blocks = 10
 		case common.BTCChain, common.BCHChain:
 			blocks = 2
-		case common.LTCChain:
-			blocks = 5
 		default:
 			blocks = 1
 		}
@@ -1106,8 +1104,8 @@ func (s *SolvencySuite) TestShouldReportAtHeightSolChainUsesDefaultCadence(c *C)
 	reporter := newSolvencyReporter(client, &thorMockBridge{})
 	reporter.setLastSolvencyCheckHeight(0)
 
-	c.Assert(reporter.shouldReportAtHeight(50), Equals, false)
-	c.Assert(reporter.shouldReportAtHeight(51), Equals, true)
+	c.Assert(reporter.shouldReportAtHeight(500), Equals, false)
+	c.Assert(reporter.shouldReportAtHeight(501), Equals, true)
 }
 
 func (s *SolvencySuite) TestShouldReportAtHeightEVMUsesCrossedConfiguredBoundary(c *C) {

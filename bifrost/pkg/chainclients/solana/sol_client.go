@@ -378,6 +378,15 @@ func (c *SOLClient) GetVaultLock(vaultPubKey string) *sync.Mutex {
 // GetGasEstimateForSolvency returns the current gas fee estimate used by solvency checks.
 func (c *SOLClient) GetGasEstimateForSolvency() cosmos.Uint {
 	txSize, feeRate := c.solScanner.GetNetworkFee()
+	if feeRate == 0 {
+		// The scanner only refreshes its fee while unpaused, so a node restarted
+		// during a halt falls back to THORChain's network fee to keep reporting.
+		var err error
+		txSize, feeRate, err = c.bridge.GetNetworkFee(common.SOLChain)
+		if err != nil {
+			return cosmos.ZeroUint()
+		}
+	}
 	nativeCurrentFee := cosmos.NewUint(3).MulUint64(txSize).MulUint64(feeRate)
 	return c.cfg.ChainID.NativeGasToThorchain(nativeCurrentFee)
 }

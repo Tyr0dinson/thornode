@@ -366,13 +366,11 @@ func (r *solvencyReporter) solvencyBlocks() int64 {
 	case common.ETHChain:
 		return 20
 	case common.SOLChain:
-		return 50
-	case common.GAIAChain, common.NOBLEChain, common.TRONChain, common.DOGEChain, common.ZECChain, common.XMRChain:
+		return 500
+	case common.GAIAChain, common.NOBLEChain, common.TRONChain, common.DOGEChain, common.ZECChain, common.LTCChain, common.XMRChain:
 		return 10
 	case common.BTCChain, common.BCHChain:
 		return 2
-	case common.LTCChain:
-		return 5
 	default:
 		return 1 // default to 1 if not set, to allow reporting every block
 	}

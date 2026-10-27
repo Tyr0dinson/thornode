@@ -270,9 +270,10 @@ func (s *CoverageSuite) TestGetSolvencyMsg_EmptyCoins(c *C) {
 	coins := common.Coins{
 		common.NewCoin(common.ETHAsset, cosmos.ZeroUint()),
 	}
-	// coins with zero amount get filtered by NoneEmpty
+	// zero-amount coins are retained so the voter Id matches raw attestations
 	msg := s.bridge.GetSolvencyMsg(1024, common.ETHChain, pk, coins)
 	c.Assert(msg, NotNil)
+	c.Assert(msg.Coins, HasLen, 1)
 }
 
 // ---- GetKeygenStdTx ----

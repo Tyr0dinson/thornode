@@ -551,9 +551,9 @@ func (b *thorchainBridge) GetErrataMsg(txID common.TxID, chain common.Chain) sdk
 
 // GetSolvencyMsg create MsgSolvency from the given parameters
 func (b *thorchainBridge) GetSolvencyMsg(height int64, chain common.Chain, pubKey common.PubKey, coins common.Coins) *stypes.MsgSolvency {
-	// To prevent different MsgSolvency ID incompatibility between nodes with different coin-observation histories,
-	// only report coins for which the amounts are not currently 0.
-	coins = coins.NoneEmpty()
+	// Coins are kept verbatim, including zero balances (e.g. drained EVM tokens):
+	// the solvency voter Id hashes Coins.String(), so filtering here would split
+	// votes against nodes that attest the chain client's raw vault coins.
 	signerAddr, err := b.keys.GetSignerInfo().GetAddress()
 	if err != nil {
 		panic(err)
