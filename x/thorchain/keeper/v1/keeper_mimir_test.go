@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"gitlab.com/thorchain/thornode/v3/constants"
+	keeperpkg "gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
 
 	. "gopkg.in/check.v1"
 )
@@ -25,6 +26,65 @@ func (s *KeeperMimirSuite) TestMimir(c *C) {
 	val, err = k.GetMimir(ctx, "bogus")
 	c.Assert(err, IsNil)
 	c.Check(val, Equals, int64(-1))
+}
+
+func (s *KeeperMimirSuite) TestScopedMimirCacheIsSnapshot(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	k.SetMimir(ctx, "foo", 14)
+	cachedCtx := keeperpkg.WithMimirCache(ctx)
+
+	value, err := k.GetMimir(cachedCtx, "foo")
+	c.Assert(err, IsNil)
+	c.Assert(value, Equals, int64(14))
+
+	// The scoped context retains its first read, while an uncached context sees
+	// the updated store value.
+	k.SetMimir(ctx, "foo", 15)
+	value, err = k.GetMimir(cachedCtx, "foo")
+	c.Assert(err, IsNil)
+	c.Assert(value, Equals, int64(14))
+	value, err = k.GetMimir(ctx, "foo")
+	c.Assert(err, IsNil)
+	c.Assert(value, Equals, int64(15))
+}
+
+func (s *KeeperMimirSuite) TestScopedMimirCacheDisabledByWrite(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	k.SetMimir(ctx, "HaltTrading", 0)
+	k.SetMimir(ctx, "foo", 7)
+	cachedCtx := keeperpkg.WithMimirCache(ctx)
+
+	value, err := k.GetMimir(cachedCtx, "HaltTrading")
+	c.Assert(err, IsNil)
+	c.Assert(value, Equals, int64(0))
+
+	// A write through a context carrying the cache (as the MaxRuneSupply circuit
+	// breaker does mid-EndBlock) must be visible to every later read.
+	k.SetMimir(cachedCtx, "HaltTrading", 1)
+	value, err = k.GetMimir(cachedCtx, "HaltTrading")
+	c.Assert(err, IsNil)
+	c.Assert(value, Equals, int64(1))
+
+	// A write inside a discarded cache context must not be snapshotted into the
+	// shared cache and leak to the parent context.
+	childCtx, _ := cachedCtx.CacheContext()
+	k.SetMimir(childCtx, "foo", 8)
+	value, err = k.GetMimir(childCtx, "foo")
+	c.Assert(err, IsNil)
+	c.Assert(value, Equals, int64(8))
+	value, err = k.GetMimir(cachedCtx, "foo")
+	c.Assert(err, IsNil)
+	c.Assert(value, Equals, int64(7))
+
+	// DeleteMimir disables a fresh cache too.
+	cachedCtx = keeperpkg.WithMimirCache(ctx)
+	value, err = k.GetMimir(cachedCtx, "foo")
+	c.Assert(err, IsNil)
+	c.Assert(value, Equals, int64(7))
+	c.Assert(k.DeleteMimir(cachedCtx, "foo"), IsNil)
+	value, err = k.GetMimir(cachedCtx, "foo")
+	c.Assert(err, IsNil)
+	c.Assert(value, Equals, int64(-1))
 }
 
 func (s *KeeperMimirSuite) TestIsOperationalMimirPOLReserveBlackList(c *C) {

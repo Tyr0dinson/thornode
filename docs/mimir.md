@@ -128,6 +128,7 @@ Operational notes:
 - `PendingLiquidityAgeLimit`: The number of blocks the network waits before initiating pending liquidity cleanup. Cleanup of all pools lasts for the same duration.
 - `PauseAsymWithdrawal-<Chain>`#: Forces dual-address liquidity providers to withdraw symmetrically rather than asymmetrically.
 - `PauseLPDeposit-<Asset>`#: pauses the ability to add liquidity into that pool. E.g. `PAUSELPDEPOSIT-BTC-BTC=1` suspends deposits for the BTC pool
+- `LUVIOverhangGuard`\*: When above `0` (the default is `1`), rejects liquidity adds, from users and from POL, into a pool in synth overhang (synth supply at least twice the pool's asset depth), and POL skips such pools. Withdrawals are unaffected. `0` turns the guard off
 
 ## RunePool
 
@@ -141,6 +142,7 @@ Operational notes:
 - `HaltTrading`: Stops swaps and additions, if done, will result in refunds. Observations still occur.
 - `Halt<chain>Chain`#: Pause a specific blockchain
 - `SolvencyHalt<Chain>`# Halts a chain if the solvency checker for that chain fails.
+- `HaltScannerXMR`#: Bifrost-only XMR scanner activation switch. `0` explicitly enables block scanning and spent-reference catch-up, positive values pause them. Missing or negative values and lookup errors fail closed. This does not set THORNode's XMR chain-halt state or directly pause churn. A paused scanner also blocks normal XMR signing through the scanner-health check, so funded vault migrations can still stall and subsequently block churn. See [XMR Scanner Activation](./concepts/network-halts.md#xmr-scanner-activation) for rollout and voting requirements.
 - `NodePauseChainGlobal`#: Individual node controlled means to pause all chains
 - `NodePauseChainBlocks`: Number of block a node operator can pause/resume the chains for
 - `BlocksPerYear`: Blocks in a year
@@ -214,6 +216,12 @@ Operational notes:
 - `BadValidatorRedline`\*: Redline multiplier to find a multitude of bad actors
 - `LowBondValidatorRate`: Rate to mark a validator to be rotated out for low bond
 - `MaxNodeToChurnOutForLowVersion`\*: Maximum number of validators to churn out for low version each churn
+- `MaxMissingObservationChurnOut`\*: Maximum number of validators to churn out each churn for missing most of the observations on a chain; `0` (the default) turns the mark off, while the tallies are still kept
+- `MissingObservationChurnOutBps`\*: A validator is marked when, on any chain, the share of voters it failed to sign within `ObservationDelayFlexibility` is above this, in basis points
+- `MissingObservationGuardBps`\*: A voter is not counted against anyone when more than this share of the validators missed it (a shared outage), in basis points, not counting validators already failing its chain that missed it; `10000` turns the guard off
+- `MissingObservationGuardMaxBlocks`\*: The guard's grace on each chain, in blocks (default one churn interval). Skipping the chain's voters uses it up, time in which they pass the guard refills it at the same rate, and once it is used up the voters count again, so a group failing above the guard share is not immune for good; `0` keeps the guard open indefinitely
+- `MissingObservationHalfLife`\*: Number of blocks between halvings of the missed-observation tallies, which restart at churn-in
+- `MissingObservationMinSamples`\*: Minimum number of voters on a chain, after decay, before a validator's missed share on it counts
 - `MigrationVaultSecurityBps`: Vault bond must be greater than bps of funds value in rune to receive migrations
 
 ## Economics

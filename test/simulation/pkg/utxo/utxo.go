@@ -18,7 +18,7 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/dashutil"
-	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/zecutil"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/zcash"
 
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/btcjson"
@@ -270,19 +270,39 @@ func (c *Client) SignTx(tx SimTx) ([]byte, error) {
 
 	// only used for zcash
 	var height int64
-	var zecTx *zecutil.MsgTx
+	var zecTx *zcash.Tx
+	var zecHashes *zcash.SigHashes
 	if c.chain.Equals(common.ZECChain) {
 		height, err = c.rpc.GetBlockCount()
 		if err != nil {
 			return nil, fmt.Errorf("fail to get block count: %w", err)
 		}
 
-		redeemTx.Version = 4
-		// set arbitrary high number for expiry height
-		// to use correct branch id for signing
-		zecTx = &zecutil.MsgTx{
-			MsgTx:        redeemTx,
-			ExpiryHeight: uint32(height + 20),
+		var consensus zcash.ConsensusState
+		if err := c.rpc.Call(&consensus, "getblockchaininfo"); err != nil {
+			return nil, err
+		}
+		if height < 0 || height >= 5e8 {
+			return nil, fmt.Errorf("invalid ZEC height")
+		}
+		branch, expiry, err := consensus.PaymentState(uint32(height), 20)
+		if err != nil {
+			return nil, err
+		}
+		redeemTx.Version = 6
+		zecTx = &zcash.Tx{MsgTx: redeemTx, ExpiryHeight: expiry, ConsensusBranchID: branch}
+		inputs := make([]*btcwire.TxOut, len(redeemTx.TxIn))
+		for i, input := range redeemTx.TxIn {
+			key := fmt.Sprintf("%s-%d", input.PreviousOutPoint.Hash, input.PreviousOutPoint.Index)
+			amount, exists := amounts[key]
+			if !exists || amount <= 0 {
+				return nil, fmt.Errorf("invalid ZEC input amount: %s", key)
+			}
+			inputs[i] = btcwire.NewTxOut(amount, sourceScript)
+		}
+		zecHashes, err = zcash.NewSigHashes(zecTx, inputs)
+		if err != nil {
+			return nil, err
 		}
 	}
 
@@ -308,7 +328,7 @@ func (c *Client) SignTx(tx SimTx) ([]byte, error) {
 			case common.DASHChain:
 				err = c.signUTXODASH(stx.(*btcwire.MsgTx), amount, sourceScript, i)
 			case common.ZECChain:
-				err = c.signUTXOZEC(zecTx, amount, sourceScript, i)
+				err = c.signUTXOZEC(zecTx, zecHashes, i)
 			default:
 				log.Fatal().Msg("unsupported chain")
 			}
@@ -348,7 +368,7 @@ func (c *Client) SignTx(tx SimTx) ([]byte, error) {
 	var signedTx bytes.Buffer
 	switch c.chain {
 	case common.ZECChain:
-		err = zecTx.ZecEncode(&signedTx, 0, wire.BaseEncoding)
+		err = zecTx.Serialize(&signedTx)
 	default:
 		err = redeemTx.Serialize(&signedTx)
 	}
@@ -369,9 +389,17 @@ func (c *Client) BroadcastTx(payload []byte) (string, error) {
 	if c.chain.Equals(common.ZECChain) {
 		var hash string
 		payloadHex := hex.EncodeToString(payload)
-		txID := chainhash.DoubleHashH(payload).String() // Our ZEC encoder emits v4.
+		tx, err := zcash.ParseTx(payload)
+		if err != nil {
+			return "", err
+		}
+		id, err := tx.ID()
+		if err != nil {
+			return "", err
+		}
+		txID := id.String()
 		args := []any{payloadHex}
-		err := c.rpc.Call(&hash, "sendrawtransaction", args...)
+		err = c.rpc.Call(&hash, "sendrawtransaction", args...)
 		if err == nil && !strings.EqualFold(hash, txID) {
 			err = fmt.Errorf("unexpected ZEC broadcast txid: got %q, expected %s", hash, txID)
 		}
@@ -498,12 +526,11 @@ func (c *Client) getSourceScript(tx SimTx) ([]byte, error) {
 		return dashtxscript.PayToAddrScript(addr)
 	case common.ZECChain:
 		params := c.getChainCfgZEC()
-		var addr btcutil.Address
-		addr, err := zecutil.DecodeAddress(c.address.String(), params.Name)
+		addr, err := zcash.DecodeAddress(c.address.String(), params.Name)
 		if err != nil {
 			return nil, fmt.Errorf("fail to decode source address(%s): %w", c.address, err)
 		}
-		return zecutil.PayToAddrScript(addr)
+		return addr.Script()
 	default:
 		log.Fatal().Msg("unsupported chain")
 		return nil, nil
@@ -615,9 +642,9 @@ func (c *Client) getMemoScripts(memo string) ([][]byte, error) {
 	case common.BTCChain:
 		return memoToScripts(memo, btctxscript.MaxDataCarrierSize, btctxscript.NullDataScript, btctxscript.PayToWitnessScript)
 	case common.DASHChain:
-		return memoToScripts(memo, dashtxscript.MaxDataCarrierSize, dashtxscript.NullDataScript, zecutil.PayToPubKeyHashScript)
+		return memoToScripts(memo, dashtxscript.MaxDataCarrierSize, dashtxscript.NullDataScript, zcash.PayToPubKeyHashScript)
 	case common.ZECChain:
-		return memoToScripts(memo, btctxscript.MaxDataCarrierSize, btctxscript.NullDataScript, zecutil.PayToPubKeyHashScript)
+		return memoToScripts(memo, btctxscript.MaxDataCarrierSize, btctxscript.NullDataScript, zcash.PayToPubKeyHashScript)
 	default:
 		log.Fatal().Msg("unsupported chain")
 		return nil, nil
@@ -815,12 +842,12 @@ func (c *Client) buildTx(tx SimTx, sourceScript []byte) (
 			return nil, nil, fmt.Errorf("fail to get pay to address script: %w", err)
 		}
 	case common.ZECChain:
-		var outputAddr btcutil.Address
-		outputAddr, err = zecutil.DecodeAddress(tx.ToAddress.String(), c.getChainCfgZEC().Name)
+		var outputAddr *zcash.Address
+		outputAddr, err = zcash.DecodeAddress(tx.ToAddress.String(), c.getChainCfgZEC().Name)
 		if err != nil {
 			return nil, nil, fmt.Errorf("fail to decode next address: %w", err)
 		}
-		buf, err = zecutil.PayToAddrScript(outputAddr)
+		buf, err = outputAddr.Script()
 		if err != nil {
 			return nil, nil, fmt.Errorf("fail to get pay to address script: %w", err)
 		}
@@ -915,12 +942,7 @@ func (c *Client) getChainCfgDOGE() *dogechaincfg.Params {
 }
 
 func (c *Client) getChainCfgZEC() *btcchaincfg.Params {
-	switch common.CurrentChainNetwork {
-	case common.MockNet:
-		return &btcchaincfg.Params{Name: "testnet3"}
-	default:
-		return &btcchaincfg.Params{Name: "mainnet"}
-	}
+	return &btcchaincfg.Params{Name: common.ZECNetworkName()}
 }
 
 // getChainCfgDASH selects Dash parameters for the configured simulation network.
@@ -1054,15 +1076,10 @@ func (c *Client) signUTXODASH(redeemTx *btcwire.MsgTx, amount int64, sourceScrip
 	return nil
 }
 
-func (c *Client) signUTXOZEC(zecTx *zecutil.MsgTx, amount int64, sourceScript []byte, idx int) (err error) {
+func (c *Client) signUTXOZEC(zecTx *zcash.Tx, hashes *zcash.SigHashes, idx int) (err error) {
 	signable := btctxscript.NewPrivateKeySignable(c.privKey)
 
-	var cache *zecutil.TxSigHashes
-	if cache, err = zecutil.NewTxSigHashes(zecTx); err != nil {
-		return err
-	}
-
-	blakeHash, err := zecutil.Blake2bSignatureHash(sourceScript, cache, txscript.SigHashAll, zecTx, idx, amount)
+	blakeHash, err := hashes.SignatureHash(idx)
 	if err != nil {
 		return err
 	}

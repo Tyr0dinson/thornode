@@ -12,7 +12,7 @@ import (
 	dashbtcutil "github.com/dashpay/dashd-go/btcutil"
 	dashtxscript "github.com/dashpay/dashd-go/txscript"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/dashutil"
-	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/zecutil"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/zcash"
 
 	"github.com/eager7/dogutil"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/signing"
@@ -51,9 +51,15 @@ func (c *Client) getMaximumUtxosToSpend() int64 {
 	return utxosToSpend
 }
 
-// getAllUtxos will iterate unspend utxos for the given address and return the oldest
-// set of utxos that can cover the amount.
-func (c *Client) getUtxoToSpend(pubKey common.PubKey, total btcutil.Amount) ([]btcjson.ListUnspentResult, error) {
+// getUtxoToSpend will iterate unspend utxos for the given address and return the oldest
+// set of utxos that can cover the total.
+//
+// A positive floor (at most total) relaxes that requirement: when every eligible UTXO
+// together falls short of total but still covers floor, all of them are returned. An
+// outbound's total includes its MaxGas, which only bounds the fee, so a vault holding
+// less than amount + MaxGas may still afford amount + the actual fee; buildTx checks
+// that once the fee is known. A floor of zero requires the full total.
+func (c *Client) getUtxoToSpend(pubKey common.PubKey, total, floor btcutil.Amount) ([]btcjson.ListUnspentResult, error) {
 	// get all unspent utxos
 	addr, err := pubKey.GetAddress(c.cfg.ChainID)
 	if err != nil {
@@ -162,7 +168,19 @@ func (c *Client) getUtxoToSpend(pubKey common.PubKey, total btcutil.Amount) ([]b
 	// If we couldn't collect enough UTXOs to cover the required amount, return an error
 	// to avoid confusing downstream errors about negative balance
 	if toSpend < total {
-		return nil, insufficientUTXOsError(addr, total, toSpend, len(result), utxos, excluded)
+		if floor <= 0 || toSpend < floor {
+			need := total
+			if floor > 0 {
+				need = floor
+			}
+			return nil, insufficientUTXOsError(addr, need, toSpend, len(result), utxos, excluded)
+		}
+		c.log.Info().
+			Int64("available", int64(toSpend)).
+			Int64("total", int64(total)).
+			Int64("floor", int64(floor)).
+			Int("utxos", len(result)).
+			Msg("eligible UTXOs cover the payment but not its full max gas, spending all of them")
 	}
 
 	return result, nil
@@ -337,12 +355,11 @@ func (c *Client) getSourceScript(tx stypes.TxOutItem) ([]byte, error) {
 		return dashtxscript.PayToAddrScript(addr)
 	case common.ZECChain:
 		params := c.getChainCfgZEC()
-		var addr btcutil.Address
-		addr, err := zecutil.DecodeAddress(sourceAddr.String(), params.Name)
+		addr, err := zcash.DecodeAddress(sourceAddr.String(), params.Name)
 		if err != nil {
 			return nil, fmt.Errorf("fail to decode source address(%s): %w", sourceAddr.String(), err)
 		}
-		return zecutil.PayToAddrScript(addr)
+		return addr.Script()
 	default:
 		c.log.Fatal().Msg("unsupported chain")
 		return nil, nil
@@ -515,7 +532,10 @@ func (c *Client) buildTx(tx stypes.TxOutItem, sourceScript []byte, zecReference 
 	var txes []btcjson.ListUnspentResult
 	var err error
 	if c.cfg.ChainID != common.ZECChain {
-		txes, err = c.getUtxoToSpend(tx.VaultPubKey, c.getPaymentAmount(tx))
+		// MaxGas is only a fee ceiling, so a vault short of amount + MaxGas may still pay
+		// the actual fee; the balance check below rejects it if not.
+		floor := btcutil.Amount(tx.Coins.GetCoin(c.cfg.ChainID.GetGasAsset()).Amount.Uint64())
+		txes, err = c.getUtxoToSpend(tx.VaultPubKey, c.getPaymentAmount(tx), floor)
 		if err != nil {
 			return nil, nil, fmt.Errorf("fail to get unspent UTXO: %w", err)
 		}
@@ -600,16 +620,16 @@ func (c *Client) buildTx(tx stypes.TxOutItem, sourceScript []byte, zecReference 
 			return nil, nil, fmt.Errorf("fail to build memo scripts: %w", err)
 		}
 	case common.ZECChain:
-		var outputAddr btcutil.Address
-		outputAddr, err = zecutil.DecodeAddress(tx.ToAddress.String(), c.getChainCfgZEC().Name)
+		var outputAddr *zcash.Address
+		outputAddr, err = zcash.DecodeAddress(tx.ToAddress.String(), c.getChainCfgZEC().Name)
 		if err != nil {
 			return nil, nil, fmt.Errorf("fail to decode next address: %w", err)
 		}
-		buf, err = zecutil.PayToAddrScript(outputAddr)
+		buf, err = outputAddr.Script()
 		if err != nil {
 			return nil, nil, fmt.Errorf("fail to get pay to address script: %w", err)
 		}
-		nullDataScripts, err = MemoToScripts(tx.Memo, btctxscript.MaxDataCarrierSize, btctxscript.NullDataScript, zecutil.PayToPubKeyHashScript)
+		nullDataScripts, err = MemoToScripts(tx.Memo, btctxscript.MaxDataCarrierSize, btctxscript.NullDataScript, zcash.PayToPubKeyHashScript)
 		if err != nil {
 			return nil, nil, fmt.Errorf("fail to generate null data script: %w", err)
 		}
@@ -648,11 +668,17 @@ func (c *Client) buildTx(tx stypes.TxOutItem, sourceScript []byte, zecReference 
 			return nil, nil, fmt.Errorf("ZEC input target exceeds the supported amount range")
 		}
 		amount := btcutil.Amount(target.BigInt().Int64())
-		if !consolidate && tx.MaxGas.IsEmpty() {
-			txes, err = c.selectZecUtxos(tx.VaultPubKey, amount, zecReference, false, func(inputCount int) btcutil.Amount {
+		switch {
+		case !consolidate && tx.MaxGas.IsEmpty():
+			txes, err = c.selectZecUtxos(tx.VaultPubKey, amount, 0, zecReference, false, func(inputCount int) btcutil.Amount {
 				return zecFeeForInputCount(inputCount, memo.String())
 			})
-		} else {
+		case !consolidate:
+			// as for other chains, MaxGas only bounds the fee: inputs covering the payment
+			// without it may still pay the actual fee, which the balance check verifies
+			floor := amount - btcutil.Amount(tx.MaxGas.ToCoins().GetCoin(common.ZECAsset).Amount.Uint64())
+			txes, err = c.selectZecUtxos(tx.VaultPubKey, amount, floor, zecReference, false, nil)
+		default:
 			txes, err = c.getZecUtxoToSpend(tx.VaultPubKey, amount, zecReference, consolidate)
 		}
 		if err != nil {
@@ -762,7 +788,8 @@ func (c *Client) buildTx(tx stypes.TxOutItem, sourceScript []byte, zecReference 
 	// Now properly account for P2WPKH outputs cost
 	c.log.Info().Msgf("total: %d, to customer: %d, gas: %d, p2wpkh_outputs_cost: %d", totalAmt, redeemTxOut.Value, int64(gasAmt), p2wpkhOutputsCost)
 	if balance < 0 {
-		return nil, nil, fmt.Errorf("not enough balance to pay customer: %d", balance)
+		return nil, nil, fmt.Errorf("not enough balance to pay customer: %d (inputs: %d, to customer: %d, gas: %d)",
+			balance, totalAmt, toCustomer, gasAmtSats)
 	}
 	if balance > 0 {
 		c.log.Info().Msgf("send %d back to self", balance)
@@ -913,6 +940,27 @@ func MemoToScripts(memo string, maxDataCarrierSize int, nullDataScript, payToCon
 // UTXO Consolidation
 ////////////////////////////////////////////////////////////////////////////////////////
 
+// consolidateKeysignBlockCadence is the spacing, in THORChain blocks, of the
+// shared boundaries that UTXO-consolidation keysigns anchor on (~5 min at
+// 6s/block). A consolidation signed anywhere within one cadence window hands
+// go-tss boundary×cadence as its signing height, so every vault member converges
+// on one leader and one keysign session instead of splitting across per-node
+// tips. Matches keepAliveThorBlockCadence used by the SOL keep-alive anchor.
+const consolidateKeysignBlockCadence = 50
+
+// anchorConsolidateHeight quantizes a raw THORChain tip to the shared cadence
+// boundary that every vault member converges on for a consolidation keysign. The
+// result is ≤ height (so it stays a valid signing_height the keysign-party query
+// accepts — future heights are rejected) and equal for any two tips in the same
+// cadence window. Below one cadence it returns the height unchanged so an early
+// chain cannot anchor to 0.
+func anchorConsolidateHeight(height int64) int64 {
+	if height < consolidateKeysignBlockCadence {
+		return height
+	}
+	return height / consolidateKeysignBlockCadence * consolidateKeysignBlockCadence
+}
+
 func (c *Client) consolidateVaultUTXOs(vault types.Vault, utxosToSpend, scannedHeight int64) error {
 	lock := c.GetVaultLock(vault.PubKey.String())
 
@@ -939,7 +987,7 @@ func (c *Client) consolidateVaultUTXOs(vault types.Vault, utxosToSpend, scannedH
 		utxos, err = c.getZecUtxoToSpend(vault.PubKey, 0, int64(expiry)-int64(ZecTxExpiry), true)
 	} else {
 		// Probe the existing consolidation input target on other UTXO chains.
-		utxos, err = c.getUtxoToSpend(vault.PubKey, 0)
+		utxos, err = c.getUtxoToSpend(vault.PubKey, 0, 0)
 	}
 	if err != nil {
 		return fmt.Errorf("get utxos to spend: %w", err)
@@ -960,6 +1008,17 @@ func (c *Client) consolidateVaultUTXOs(vault types.Vault, utxosToSpend, scannedH
 		if err != nil {
 			return fmt.Errorf("get THORChain block height: %w", err)
 		}
+		// A consolidation is not a consensus txOut, so unlike a scheduled outbound
+		// it carries no agreed signing height — every vault member reads its own
+		// tip here, which differs by a few blocks across the fleet. The keysign
+		// leader is derived from this height (sha256(msgID‖height‖peer)) and go-tss
+		// batches keysign tasks by {algo, height}, so a per-node tip splits members
+		// across different leaders and keysign sessions: the consolidate
+		// leader-blame race that jails whichever node a sub-party elects. Anchoring
+		// to the shared cadence boundary gives every member the same, valid height,
+		// exactly the convergence a scheduled outbound gets from its consensus
+		// txOut.Height. (ZEC derives its height from the expiry window above.)
+		height = anchorConsolidateHeight(height)
 	}
 
 	rawTx, _, _, err := c.SignTx(txOutItem, height)

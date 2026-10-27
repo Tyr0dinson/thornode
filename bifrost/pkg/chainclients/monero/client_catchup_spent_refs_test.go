@@ -3,13 +3,16 @@ package monero
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -157,7 +160,9 @@ func TestCommittedPayoutReconcilesAfterScanAndRestartWithoutSourceVote(t *testin
 				db, err = leveldb.OpenFile(dbPath, nil)
 				require.NoError(t, err)
 				reorgStore = NewReorgStore(db)
-				signer, signerErr := sidecar.NewClientWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
+				signer, signerErr := sidecar.NewClientWithEndpoint(config.BifrostChainConfiguration{
+					SignerExpectedNetwork: "mocknet",
+				}, server.URL)
 				require.NoError(t, signerErr)
 				scanner := NewScanner(testLogger(), signer, &scannerMemoBridge{}, common.XMRChain, common.EmptyPubKey, 72)
 				scanner.SetManualVaultAddress(source, voter.Tx.Tx.FromAddress.String())
@@ -169,6 +174,7 @@ func TestCommittedPayoutReconcilesAfterScanAndRestartWithoutSourceVote(t *testin
 						observedByTx: map[string]*ttypes.QueryObservedTxVoter{txID: voter},
 					},
 				}
+				allowSpentOutputRefsImports(c)
 			}
 			openClient()
 			defer func() { _ = db.Close() }()
@@ -322,6 +328,7 @@ func TestCatchupSpentOutputRefsReadsFromQueryAndCallsSidecar(t *testing.T) {
 			ObservedPubKey: frostKey,
 			FinaliseHeight: 100,
 			XmrTxKey:       strings.Repeat("5", 64),
+			XmrMinedHeight: 94,
 		},
 	}
 
@@ -333,10 +340,19 @@ func TestCatchupSpentOutputRefsReadsFromQueryAndCallsSidecar(t *testing.T) {
 			spentRefsByVaultKey: map[string][]*common.OutputRef{frostKey.String(): refs},
 			observedByTx:        map[string]*ttypes.QueryObservedTxVoter{spendTxHash: voter},
 			pubKeys:             []thorclient.PubKeyContractAddressPair{{PubKey: frostKey, Algo: common.SigningAlgoEd25519}},
+			mimirValues:         map[string]int64{"HaltScannerXMR": 0},
 		},
 	}
 
+	allowSpentOutputRefsImports(c)
 	c.catchupSpentOutputRefs()
+
+	queried, retry, found := queryConsensusObservedXMRTx(voter, common.TxID(spendTxHash))
+	require.False(t, retry)
+	require.True(t, found)
+	height, heightErr := queried.CanonicalMinedHeight()
+	require.NoError(t, heightErr)
+	require.Equal(t, int64(94), height)
 
 	mu.Lock()
 	defer mu.Unlock()
@@ -439,12 +455,14 @@ func TestCatchupSpentOutputRefsRecoversMigrationFromEmptySidecarRecord(t *testin
 			spentRefsByVaultKey: map[string][]*common.OutputRef{sourceVault.String(): refs},
 			observedByTx:        map[string]*ttypes.QueryObservedTxVoter{spendTxHash: voter},
 			pubKeys:             []thorclient.PubKeyContractAddressPair{{PubKey: sourceVault, Algo: common.SigningAlgoEd25519}},
+			mimirValues:         map[string]int64{"HaltScannerXMR": 0},
 		},
 	}
 
 	mu.Lock()
 	assert.Nil(t, stored, "test must begin without a sidecar outgoing record")
 	mu.Unlock()
+	allowSpentOutputRefsImports(c)
 	c.catchupSpentOutputRefs()
 
 	mu.Lock()
@@ -509,9 +527,11 @@ func TestCatchupSpentOutputRefsDefersReplayAfterSignedStatePersistenceFailure(t 
 			spentRefsByVaultKey: map[string][]*common.OutputRef{sourceVault.String(): refs},
 			observedByTx:        map[string]*ttypes.QueryObservedTxVoter{spendTxHash: voter},
 			pubKeys:             []thorclient.PubKeyContractAddressPair{{PubKey: sourceVault, Algo: common.SigningAlgoEd25519}},
+			mimirValues:         map[string]int64{"HaltScannerXMR": 0},
 		},
 	}
 
+	allowSpentOutputRefsImports(c)
 	c.catchupSpentOutputRefs()
 	mu.Lock()
 	assert.Zero(t, locationCalls, "replay enrollment must wait for durable signer state")
@@ -520,6 +540,7 @@ func TestCatchupSpentOutputRefsDefersReplayAfterSignedStatePersistenceFailure(t 
 	// The periodic catch-up scan is the retry owner. Once persistence recovers,
 	// a later scan reaches replay enrollment without any per-import goroutine.
 	c.signedTxPayloadStore = newTestSignedTxPayloadStore(t)
+	allowSpentOutputRefsImports(c)
 	c.catchupSpentOutputRefs()
 	mu.Lock()
 	assert.Equal(t, 1, locationCalls)
@@ -577,9 +598,11 @@ func TestCatchupSpentOutputRefsIncludesInactiveVaultFromPubkeys(t *testing.T) {
 			spentRefsByVaultKey: map[string][]*common.OutputRef{frostKey.String(): refs},
 			observedByTx:        map[string]*ttypes.QueryObservedTxVoter{spendTxHash: voter},
 			pubKeys:             []thorclient.PubKeyContractAddressPair{{PubKey: frostKey, Algo: common.SigningAlgoEd25519, Inactive: true}},
+			mimirValues:         map[string]int64{"HaltScannerXMR": 0},
 		},
 	}
 
+	allowSpentOutputRefsImports(c)
 	c.catchupSpentOutputRefs()
 
 	assert.Equal(t, 1, calls)
@@ -603,10 +626,12 @@ func TestCatchupSpentOutputRefsSkipsVaultsWithoutFrost(t *testing.T) {
 		sidecar: signer,
 		logger:  testLogger(),
 		thorchainBridge: &mockMoneroBridge{
-			pubKeys: []thorclient.PubKeyContractAddressPair{{PubKey: testVaultPubKey(t, "secp-only-catchup"), Algo: common.SigningAlgoSecp256k1}},
+			pubKeys:     []thorclient.PubKeyContractAddressPair{{PubKey: testVaultPubKey(t, "secp-only-catchup"), Algo: common.SigningAlgoSecp256k1}},
+			mimirValues: map[string]int64{"HaltScannerXMR": 0},
 		},
 	}
 
+	allowSpentOutputRefsImports(c)
 	c.catchupSpentOutputRefs()
 
 	assert.Equal(t, 0, calls)
@@ -630,10 +655,12 @@ func TestCatchupSpentOutputRefsSkipsVaultsWithNoRefs(t *testing.T) {
 		sidecar: signer,
 		logger:  testLogger(),
 		thorchainBridge: &mockMoneroBridge{
-			pubKeys: []thorclient.PubKeyContractAddressPair{{PubKey: testVaultPubKey(t, "frost-norefs"), Algo: common.SigningAlgoEd25519}},
+			pubKeys:     []thorclient.PubKeyContractAddressPair{{PubKey: testVaultPubKey(t, "frost-norefs"), Algo: common.SigningAlgoEd25519}},
+			mimirValues: map[string]int64{"HaltScannerXMR": 0},
 		},
 	}
 
+	allowSpentOutputRefsImports(c)
 	c.catchupSpentOutputRefs()
 
 	assert.Equal(t, 0, calls)
@@ -700,4 +727,327 @@ func newXMRCatchupReplayScanner(
 	scanner.SetAuthenticatedInternalInboundReplayStore(replayStore)
 	scanner.SetReorgStore(reorgStore)
 	return scanner, replayStore, reorgStore
+}
+
+type spentRefsScannerGateBridge struct {
+	thorclient.ThorchainBridge
+
+	mimirValue  int64
+	mimirErr    error
+	mimirCalls  atomic.Int32
+	pubKeyCalls atomic.Int32
+	mimirKey    string
+}
+
+func (b *spentRefsScannerGateBridge) GetMimir(key string) (int64, error) {
+	b.mimirCalls.Add(1)
+	b.mimirKey = key
+	return b.mimirValue, b.mimirErr
+}
+
+func (b *spentRefsScannerGateBridge) GetPubKeys() ([]thorclient.PubKeyContractAddressPair, error) {
+	b.pubKeyCalls.Add(1)
+	return nil, nil
+}
+
+func TestCatchupSpentOutputRefsHonorsScannerHalt(t *testing.T) {
+	tests := []struct {
+		name            string
+		mimirValue      int64
+		mimirErr        error
+		wantPubKeyCalls int32
+	}{
+		{name: "unset fails closed", mimirValue: -1},
+		{name: "other negative values fail closed", mimirValue: -7},
+		{name: "zero opens catch-up", wantPubKeyCalls: 1},
+		{name: "positive value halts", mimirValue: 1},
+		{name: "all positive values halt", mimirValue: 101},
+		{name: "mimir query error fails closed", mimirErr: errors.New("mimir unavailable")},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var sidecarCalls atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				sidecarCalls.Add(1)
+				_ = json.NewEncoder(w).Encode(sidecar.MarkSpentResp{})
+			}))
+			t.Cleanup(server.Close)
+			signer, err := sidecar.NewClientWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
+			require.NoError(t, err)
+
+			bridge := &spentRefsScannerGateBridge{
+				mimirValue: test.mimirValue,
+				mimirErr:   test.mimirErr,
+			}
+			client := &Client{
+				chain:           common.XMRChain,
+				sidecar:         signer,
+				logger:          testLogger(),
+				thorchainBridge: bridge,
+			}
+
+			client.catchupSpentOutputRefs()
+
+			assert.Equal(t, int32(1), bridge.mimirCalls.Load())
+			assert.Equal(t, "HaltScannerXMR", bridge.mimirKey)
+			assert.Equal(t, test.wantPubKeyCalls, bridge.pubKeyCalls.Load())
+			assert.Zero(t, sidecarCalls.Load())
+		})
+	}
+}
+
+func TestCatchupSpentOutputRefsRetriesScannerPolicyAfterFailure(t *testing.T) {
+	bridge := &spentRefsScannerGateBridge{mimirErr: errors.New("scanner policy unavailable")}
+	server := httptest.NewServer(http.NotFoundHandler())
+	t.Cleanup(server.Close)
+	signer, err := sidecar.NewClientWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
+	require.NoError(t, err)
+	client := &Client{chain: common.XMRChain, sidecar: signer, logger: testLogger(), thorchainBridge: bridge}
+
+	client.catchupSpentOutputRefs()
+	assert.Zero(t, bridge.pubKeyCalls.Load())
+	bridge.mimirErr = nil
+	client.catchupSpentOutputRefs()
+	assert.Equal(t, int32(1), bridge.pubKeyCalls.Load(), "the next catch-up must re-read policy and resume")
+	bridge.mimirValue = 1
+	client.catchupSpentOutputRefs()
+	assert.Equal(t, int32(1), bridge.pubKeyCalls.Load(), "renewed halt must stop catch-up before vault discovery")
+	assert.Equal(t, int32(3), bridge.mimirCalls.Load())
+}
+
+func spentOutputRefsCatchupVoter(
+	t *testing.T,
+	vault common.PubKey,
+	spendTxHash string,
+	minedHeight int64,
+) *ttypes.QueryObservedTxVoter {
+	t.Helper()
+	vaultAddr, err := vault.GetAddress(common.XMRChain)
+	require.NoError(t, err)
+	finaliseHeight := minedHeight + 6
+	return &ttypes.QueryObservedTxVoter{
+		TxID:   common.TxID(spendTxHash),
+		Height: 1000,
+		Tx: ttypes.QueryObservedTx{
+			Tx: common.Tx{
+				ID:          common.TxID(spendTxHash),
+				Chain:       common.XMRChain,
+				FromAddress: vaultAddr,
+				ToAddress:   testOutboundXMRDestination(),
+				Coins:       common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(50))),
+				Gas:         common.Gas{common.NewCoin(common.XMRAsset, cosmos.NewUint(1))},
+			},
+			BlockHeight:    finaliseHeight,
+			ObservedPubKey: vault,
+			FinaliseHeight: finaliseHeight,
+			XmrTxKey:       strings.Repeat("5", 64),
+			XmrMinedHeight: minedHeight,
+		},
+	}
+}
+
+func spentOutputRefsCatchupClient(
+	t *testing.T,
+	endpoint string,
+	vault common.PubKey,
+	refs []*common.OutputRef,
+	voters map[string]*ttypes.QueryObservedTxVoter,
+) *Client {
+	t.Helper()
+	signer, err := sidecar.NewClientWithEndpoint(config.BifrostChainConfiguration{}, endpoint)
+	require.NoError(t, err)
+	return &Client{
+		chain:   common.XMRChain,
+		sidecar: signer,
+		logger:  testLogger(),
+		thorchainBridge: &mockMoneroBridge{
+			mimirValues:         map[string]int64{"HaltScannerXMR": 0},
+			spentRefsByVaultKey: map[string][]*common.OutputRef{vault.String(): refs},
+			observedByTx:        voters,
+			pubKeys:             []thorclient.PubKeyContractAddressPair{{PubKey: vault, Algo: common.SigningAlgoEd25519}},
+		},
+	}
+}
+
+func TestCatchupSpentOutputRefsRejectsRevertedVoterBeforeMutation(t *testing.T) {
+	vault := testVaultPubKey(t, "frost-catchup-reverted")
+	spendTxHash := testXMRHash("catchup-reverted-spend")
+	refs := []*common.OutputRef{testXMROutputRef("catchup-reverted-ref", 0, spendTxHash)}
+	voter := spentOutputRefsCatchupVoter(t, vault, spendTxHash, 100)
+	voter.Reverted = true
+
+	var sidecarCalls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		sidecarCalls.Add(1)
+		_ = json.NewEncoder(w).Encode(sidecar.MarkSpentResp{Marked: 1})
+	}))
+	defer server.Close()
+
+	client := spentOutputRefsCatchupClient(t, server.URL, vault, refs, map[string]*ttypes.QueryObservedTxVoter{
+		spendTxHash: voter,
+	})
+	var guardCalls atomic.Int32
+	client.SetSpentOutputRefsGuard(func(common.ObservedTx) (func(), bool) {
+		guardCalls.Add(1)
+		return func() {}, true
+	})
+
+	client.catchupSpentOutputRefs()
+
+	assert.Zero(t, sidecarCalls.Load())
+	assert.Zero(t, guardCalls.Load(), "a reverted voter must stop before errata admission")
+}
+
+func TestCatchupSpentOutputRefsUsesCanonicalHeightErrataGuard(t *testing.T) {
+	vault := testVaultPubKey(t, "frost-catchup-canonical-height")
+	orphanHash := testXMRHash("catchup-orphaned-spend")
+	reminedHash := testXMRHash("catchup-remined-spend")
+	refs := []*common.OutputRef{
+		testXMROutputRef("catchup-orphaned-ref", 0, orphanHash),
+		testXMROutputRef("catchup-remined-ref", 0, reminedHash),
+	}
+	voters := map[string]*ttypes.QueryObservedTxVoter{
+		orphanHash:  spentOutputRefsCatchupVoter(t, vault, orphanHash, 100),
+		reminedHash: spentOutputRefsCatchupVoter(t, vault, reminedHash, 101),
+	}
+
+	mutated := make(chan string, 2)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req sidecar.MarkSpentReq
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		mutated <- req.TxHash
+		_ = json.NewEncoder(w).Encode(sidecar.MarkSpentResp{Marked: len(req.SpentRefs)})
+	}))
+	defer server.Close()
+
+	client := spentOutputRefsCatchupClient(t, server.URL, vault, refs, voters)
+	var releases atomic.Int32
+	client.SetSpentOutputRefsGuard(func(tx common.ObservedTx) (func(), bool) {
+		minedHeight, err := tx.CanonicalMinedHeight()
+		require.NoError(t, err)
+		if minedHeight == 100 {
+			return nil, false
+		}
+		return func() { releases.Add(1) }, true
+	})
+
+	client.catchupSpentOutputRefs()
+
+	select {
+	case got := <-mutated:
+		assert.Equal(t, reminedHash, got, "only the different-height canonical re-mine may mutate the sidecar")
+	default:
+		t.Fatal("canonical re-mine did not reach the sidecar")
+	}
+	select {
+	case unexpected := <-mutated:
+		t.Fatalf("tombstoned spend reached the sidecar: %s", unexpected)
+	default:
+	}
+	assert.Equal(t, int32(1), releases.Load())
+}
+
+func TestCatchupSpentOutputRefsReleasesBarrierBetweenAttempts(t *testing.T) {
+	vault := testVaultPubKey(t, "frost-catchup-barrier")
+	firstHash := testXMRHash("catchup-barrier-first")
+	secondHash := testXMRHash("catchup-barrier-second")
+	refs := []*common.OutputRef{
+		testXMROutputRef("catchup-barrier-first-ref", 0, firstHash),
+		testXMROutputRef("catchup-barrier-second-ref", 0, secondHash),
+	}
+	voters := map[string]*ttypes.QueryObservedTxVoter{
+		firstHash:  spentOutputRefsCatchupVoter(t, vault, firstHash, 100),
+		secondHash: spentOutputRefsCatchupVoter(t, vault, secondHash, 101),
+	}
+
+	started := make(chan string, 2)
+	releaseFirst := make(chan struct{})
+	var releaseFirstOnce sync.Once
+	var sidecarCalls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req sidecar.MarkSpentReq
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		started <- req.TxHash
+		if sidecarCalls.Add(1) == 1 {
+			<-releaseFirst
+		}
+		_ = json.NewEncoder(w).Encode(sidecar.MarkSpentResp{Marked: len(req.SpentRefs)})
+	}))
+	t.Cleanup(server.Close)
+
+	client := spentOutputRefsCatchupClient(t, server.URL, vault, refs, voters)
+	var barrier sync.RWMutex
+	client.SetSpentOutputRefsGuard(func(common.ObservedTx) (func(), bool) {
+		barrier.RLock()
+		return barrier.RUnlock, true
+	})
+
+	done := make(chan struct{})
+	go func() {
+		client.catchupSpentOutputRefs()
+		close(done)
+	}()
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for the first catch-up attempt")
+	}
+
+	writerAcquired := make(chan struct{})
+	releaseWriter := make(chan struct{})
+	var releaseWriterOnce sync.Once
+	go func() {
+		barrier.Lock()
+		close(writerAcquired)
+		<-releaseWriter
+		barrier.Unlock()
+	}()
+	t.Cleanup(func() {
+		releaseFirstOnce.Do(func() { close(releaseFirst) })
+		releaseWriterOnce.Do(func() { close(releaseWriter) })
+	})
+
+	deadline := time.Now().Add(time.Second)
+	for {
+		if !barrier.TryRLock() {
+			break
+		}
+		barrier.RUnlock()
+		if time.Now().After(deadline) {
+			t.Fatal("timed out waiting for the errata writer to queue")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	releaseFirstOnce.Do(func() { close(releaseFirst) })
+	select {
+	case <-writerAcquired:
+	case txHash := <-started:
+		t.Fatalf("second catch-up mutation %s bypassed the queued errata writer", txHash)
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for the errata writer")
+	}
+
+	select {
+	case txHash := <-started:
+		t.Fatalf("catch-up mutation %s started while the errata writer held the barrier", txHash)
+	case <-time.After(25 * time.Millisecond):
+	}
+	releaseWriterOnce.Do(func() { close(releaseWriter) })
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for catch-up to resume after errata cleanup")
+	}
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for catch-up completion")
+	}
 }

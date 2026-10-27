@@ -11,20 +11,26 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rs/zerolog/log"
 	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/syndtr/goleveldb/leveldb/opt"
 	"github.com/syndtr/goleveldb/leveldb/util"
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/constants"
+	memo "gitlab.com/thorchain/thornode/v3/x/thorchain/memo"
 )
 
 const (
 	authenticatedInternalInboundReplayPrefix = "xmr-authenticated-internal-replay-v1-"
 	maxAuthenticatedInternalInboundReplays   = 128
+	authenticatedReplayCursorKey             = "xmr-authenticated-replay-cursor-v1"
+	// The empty kind retains the existing migration record format. Payouts
+	// share its capacity and leases but can only produce a source observation.
+	authenticatedReplaySourcePayout = "source-payout"
 	// Reconciliation performs a remote canonical-proof request per claim. Keep
-	// the scan path bounded to one endpoint timeout per block; migrations are
-	// rare and the durable outbox will retry the remainder on later blocks.
+	// the scan path bounded to one claim per block. Payouts additionally recheck
+	// the location after MarkObserved; remaining work retries on later blocks.
 	maxAuthenticatedInternalInboundClaims  = 1
 	authenticatedInternalInboundClaimLease = 2 * time.Minute
 )
@@ -34,7 +40,9 @@ var syncInternalInboundReplayWrite = &opt.WriteOptions{Sync: true}
 // authenticatedInternalInboundReplay is created only after MarkSpent has
 // authenticated an exact vault-origin transaction. Unlike the former raw
 // pending-inbound design, scanner-controlled input can never create a record.
+// The kind explicitly separates migration pairing from source-only payouts.
 type authenticatedInternalInboundReplay struct {
+	Kind                   string                          `json:"kind,omitempty"`
 	TxID                   string                          `json:"tx_id"`
 	TxKey                  string                          `json:"tx_key"`
 	BlockHeight            int64                           `json:"block_height"`
@@ -63,7 +71,7 @@ func (r authenticatedInternalInboundReplay) key() string {
 }
 
 func (r authenticatedInternalInboundReplay) sameExact(other authenticatedInternalInboundReplay) bool {
-	return normalizeTxID(r.TxID) == normalizeTxID(other.TxID) &&
+	return r.Kind == other.Kind && normalizeTxID(r.TxID) == normalizeTxID(other.TxID) &&
 		strings.EqualFold(strings.TrimSpace(r.TxKey), strings.TrimSpace(other.TxKey)) &&
 		r.BlockHeight == other.BlockHeight &&
 		strings.EqualFold(strings.TrimSpace(r.BlockHash), strings.TrimSpace(other.BlockHash)) &&
@@ -109,6 +117,13 @@ func authenticatedInternalSpentRefsEqual(lhs, rhs []authenticatedInternalSpentRe
 type authenticatedInternalInboundClaim struct {
 	Record authenticatedInternalInboundReplay
 	Token  string
+}
+
+// authenticatedReplayCursor keeps retry order independent of claim leases and
+// block timing. It survives acknowledgment, relocation and startup claim reset.
+type authenticatedReplayCursor struct {
+	BlockHeight int64  `json:"block_height"`
+	TxID        string `json:"tx_id"`
 }
 
 type authenticatedInternalInboundReplayStore struct {
@@ -214,7 +229,9 @@ func (s *authenticatedInternalInboundReplayStore) Enqueue(record authenticatedIn
 }
 
 // Claim marks at most limit records in-flight. A claim remains exclusive until
-// the observer explicitly acknowledges or rejects it.
+// the observer explicitly acknowledges or rejects it. Start after the previous
+// attempt and wrap once, so a released or expired oldest claim cannot starve
+// younger payouts or migration credits.
 func (s *authenticatedInternalInboundReplayStore) Claim(limit int) ([]authenticatedInternalInboundClaim, error) {
 	if s == nil || s.db == nil {
 		return nil, nil
@@ -228,6 +245,10 @@ func (s *authenticatedInternalInboundReplayStore) Claim(limit int) ([]authentica
 	if err != nil {
 		return nil, err
 	}
+	start, err := s.claimStartLocked(records)
+	if err != nil {
+		return nil, err
+	}
 	claims := make([]authenticatedInternalInboundClaim, 0, limit)
 	batch := new(leveldb.Batch)
 	now := time.Now()
@@ -235,7 +256,8 @@ func (s *authenticatedInternalInboundReplayStore) Claim(limit int) ([]authentica
 		now = s.now()
 	}
 	staleBefore := now.Add(-authenticatedInternalInboundClaimLease).Unix()
-	for _, record := range records {
+	for offset := range records {
+		record := records[(start+offset)%len(records)]
 		reverted, revertedErr := isRevertedTxQuarantined(s.db, record.TxID)
 		if revertedErr != nil {
 			return nil, revertedErr
@@ -260,12 +282,58 @@ func (s *authenticatedInternalInboundReplayStore) Claim(limit int) ([]authentica
 		batch.Put([]byte(record.key()), encoded)
 		claims = append(claims, authenticatedInternalInboundClaim{Record: record, Token: record.ClaimToken})
 	}
+	if len(claims) > 0 {
+		last := claims[len(claims)-1].Record
+		cursor, cursorErr := json.Marshal(authenticatedReplayCursor{
+			BlockHeight: last.BlockHeight, TxID: normalizeTxID(last.TxID),
+		})
+		if cursorErr != nil {
+			return nil, fmt.Errorf("encode xmr authenticated replay cursor: %w", cursorErr)
+		}
+		// Advance retry position atomically with the claim, including when a
+		// process stops before performing any remote work.
+		batch.Put([]byte(authenticatedReplayCursorKey), cursor)
+	}
 	if batch.Len() > 0 {
 		if err = s.db.Write(batch, syncInternalInboundReplayWrite); err != nil {
 			return nil, fmt.Errorf("claim authenticated internal inbound replays: %w", err)
 		}
 	}
 	return claims, nil
+}
+
+// claimStartLocked finds the first record after the persisted (height, txid)
+// position. The referenced record need not still exist or have the same height.
+func (s *authenticatedInternalInboundReplayStore) claimStartLocked(records []authenticatedInternalInboundReplay) (int, error) {
+	if len(records) == 0 {
+		return 0, nil
+	}
+	value, err := s.db.Get([]byte(authenticatedReplayCursorKey), nil)
+	if errors.Is(err, leveldb.ErrNotFound) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, fmt.Errorf("read xmr authenticated replay cursor: %w", err)
+	}
+	var cursor authenticatedReplayCursor
+	if err = json.Unmarshal(value, &cursor); err == nil {
+		if cursor.BlockHeight <= 0 {
+			err = errors.New("xmr authenticated replay cursor has invalid height")
+		} else {
+			err = validateAuthenticatedInternalFixedHex(cursor.TxID, 32, "xmr authenticated replay cursor tx hash")
+		}
+	}
+	if err != nil {
+		// This metadata only selects retry order. Validated jobs and live
+		// leases stay authoritative; the next claim batch repairs the cursor.
+		log.Warn().Err(err).Msg("restart xmr authenticated replay rotation after malformed cursor")
+		return 0, nil
+	}
+	start := sort.Search(len(records), func(i int) bool {
+		return records[i].BlockHeight > cursor.BlockHeight ||
+			(records[i].BlockHeight == cursor.BlockHeight && normalizeTxID(records[i].TxID) > normalizeTxID(cursor.TxID))
+	})
+	return start % len(records), nil
 }
 
 func (s *authenticatedInternalInboundReplayStore) Release(claim authenticatedInternalInboundClaim) error {
@@ -469,8 +537,22 @@ func validateAuthenticatedInternalInboundReplay(record authenticatedInternalInbo
 	if record.ClaimedAtUnix < 0 || (record.ClaimToken == "") != (record.ClaimedAtUnix == 0) {
 		return fmt.Errorf("xmr internal replay %s has inconsistent claim lease", record.TxID)
 	}
-	if len(record.Memo) > constants.MaxMemoSize || !isXMRTxMigrateMemo(record.Memo) {
-		return fmt.Errorf("xmr internal replay %s has invalid migration memo", record.TxID)
+	if len(record.Memo) > constants.MaxMemoSize {
+		return fmt.Errorf("xmr authenticated replay %s memo is too long", record.TxID)
+	}
+	switch record.Kind {
+	case "":
+		if !isXMRTxMigrateMemo(record.Memo) {
+			return fmt.Errorf("xmr internal replay %s has invalid migration memo", record.TxID)
+		}
+	case authenticatedReplaySourcePayout:
+		parsed, err := memo.ParseMemo(common.LatestVersion, record.Memo)
+		if err != nil || !parsed.IsOutbound() || record.DestinationVaultPubKey != "" ||
+			!common.XMRChain.IsValidAddress(common.Address(record.ToAddress)) {
+			return fmt.Errorf("xmr source payout replay %s has invalid payment identity", record.TxID)
+		}
+	default:
+		return fmt.Errorf("xmr authenticated replay %s has unknown kind %q", record.TxID, record.Kind)
 	}
 	sourceVault, err := common.NewPubKey(strings.TrimSpace(record.SourceVaultPubKey))
 	if err != nil || sourceVault.IsEmpty() {
@@ -479,6 +561,9 @@ func validateAuthenticatedInternalInboundReplay(record authenticatedInternalInbo
 	source, err := sourceVault.GetAddress(common.XMRChain)
 	if err != nil || source.IsEmpty() || !common.AddressEquals(common.XMRChain, source, common.Address(record.SourceAddress)) {
 		return fmt.Errorf("xmr internal replay %s source address does not match source vault", record.TxID)
+	}
+	if record.Kind == authenticatedReplaySourcePayout {
+		return nil
 	}
 	destinationVault, err := common.NewPubKey(strings.TrimSpace(record.DestinationVaultPubKey))
 	if err != nil || destinationVault.IsEmpty() {

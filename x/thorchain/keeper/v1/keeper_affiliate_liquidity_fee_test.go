@@ -6,8 +6,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/cosmos/cosmos-sdk/runtime"
-
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 
 	. "gopkg.in/check.v1"
@@ -67,7 +65,7 @@ func (s *KeeperAffiliateLiquidityFeeSuite) TestGetAffiliateLiquidityFeesSkipsCor
 	// Write raw garbage at the B_BAD key so getUint64 will fail to
 	// Unmarshal into ProtoUint64. This simulates state corruption (or a
 	// future encoding skew) for a single accumulator entry.
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	store.Set(k.GetKey(prefixAffiliateLiquidityFee, "B_BAD"), []byte{0xff, 0xff, 0xff, 0xff})
 
 	// One bad entry must not cause every sibling's attribution to be

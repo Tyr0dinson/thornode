@@ -40,6 +40,8 @@ type BondYieldState struct {
 	collectorBeforeAutoClaim cosmos.Uint
 	collectorAfterAutoClaim  cosmos.Uint
 	skipReason               string
+	// leaveStatusSince is the target's status_since when its leave was requested.
+	leaveStatusSince int64
 }
 
 // NewBondYieldState creates the shared state carried across the Bond Yield scenario actors.
@@ -155,13 +157,14 @@ func NewBondYieldCleanupActor(rng *rand.Rand) *Actor {
 		// set by core.ScheduleChurn for the cluster churn and the churn-out
 		{constants.ChurnInterval.String(), defaults.GetInt64Value(constants.ChurnInterval)},
 	} {
-		a.Append(newMultiNodeMimirActor(setting.key, setting.value, rng))
+		a.Append(NewMultiNodeMimirActor(setting.key, setting.value, rng))
 	}
 	return a
 }
 
 type bondYieldNode struct {
 	Status            string `json:"status"`
+	StatusSince       int64  `json:"status_since"`
 	TotalBond         string `json:"total_bond"`
 	RequestedToLeave  bool   `json:"requested_to_leave"`
 	CurrentAward      string `json:"current_award"`
@@ -579,6 +582,13 @@ func (a *BondYieldTargetAutoClaimActor) waitTargetAutoClaimConfigured(config *Op
 
 // requestTargetLeave asks the target node to leave so auto-claim can be tested during churn-out.
 func (a *BondYieldChurnOutActor) requestTargetLeave(config *OpConfig) OpResult {
+	node, err := getBondYieldNode(a.state.nodeAddress)
+	if err != nil {
+		a.Log().Error().Err(err).Msg("failed to query target node before leave")
+		return OpResult{Continue: false}
+	}
+	a.state.leaveStatusSince = node.StatusSince
+
 	txid, err := broadcastLeave(a.state.node, a.state.nodeAddress)
 	if err != nil {
 		a.Log().Error().Err(err).Msg("failed to broadcast target leave")
@@ -599,6 +609,14 @@ func (a *BondYieldChurnOutActor) scheduleTargetChurnOut(config *OpConfig) OpResu
 	return OpResult{Continue: true}
 }
 
+// bondYieldTargetChurnedOut reports whether the target left the active set after its
+// leave request. Removal clears RequestedToLeave (ValidatorMgr.EndBlock), so a churn
+// that fires as soon as the migration ends can mark the node Ready and re-admit it
+// before the next poll sees Standby. Any status change since the leave counts.
+func bondYieldTargetChurnedOut(node bondYieldNode, leaveStatusSince int64) bool {
+	return node.Status != atypes.NodeStatus_Active.String() || node.StatusSince != leaveStatusSince
+}
+
 // waitTargetChurnedOut verifies churn-out auto-claim moved yield into the payout THORName collector.
 func (a *BondYieldChurnOutActor) waitTargetChurnedOut(config *OpConfig) OpResult {
 	node, _, ok, err := getBondYieldNodeProvider(a.state.nodeAddress, a.state.providerAddress.String())
@@ -610,7 +628,7 @@ func (a *BondYieldChurnOutActor) waitTargetChurnedOut(config *OpConfig) OpResult
 		a.Log().Info().Stringer("provider", a.state.providerAddress).Msg("waiting for target bond provider")
 		return OpResult{Continue: false}
 	}
-	if node.Status != atypes.NodeStatus_Standby.String() {
+	if !bondYieldTargetChurnedOut(node, a.state.leaveStatusSince) {
 		a.Log().Info().Str("status", node.Status).Bool("requested_to_leave", node.RequestedToLeave).Msg("waiting for target node to churn out")
 		return OpResult{Continue: false}
 	}
@@ -621,7 +639,7 @@ func (a *BondYieldChurnOutActor) waitTargetChurnedOut(config *OpConfig) OpResult
 		return OpResult{Continue: false}
 	}
 	if network.VaultsMigrating {
-		a.Log().Info().Msg("waiting for churn-out migration to finish")
+		a.Log().Info().Str("status", node.Status).Msg("waiting for churn-out migration to finish")
 		return OpResult{Continue: false}
 	}
 

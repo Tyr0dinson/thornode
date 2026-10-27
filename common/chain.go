@@ -99,7 +99,7 @@ func NewChain(chainID string) (Chain, error) {
 
 // Equals compare two chain to see whether they represent the same chain
 func (c Chain) Equals(c2 Chain) bool {
-	return strings.EqualFold(c.String(), c2.String())
+	return equalFoldUpper(string(c), string(c2))
 }
 
 func (c Chain) OneOf(chains ...Chain) bool {
@@ -118,6 +118,26 @@ func (c Chain) IsTHORChain() bool {
 
 func (c Chain) IsBSCChain() bool {
 	return c.Equals(BSCChain)
+}
+
+// SupportsSolvencyObservationSlashing reports whether ordinary solvency
+// observation slash accounting is safe for the chain. TRON account and TRC-20
+// balance reads cannot be pinned to the report height, so honest payloads can
+// fragment (#3098).
+func (c Chain) SupportsSolvencyObservationSlashing() bool {
+	return !c.Equals(TRONChain)
+}
+
+// SolvencyVoterQuota returns the THORChain block window and maximum new voters
+// per validator. Zero values mean no quota. TRON uses this bound because ordinary
+// solvency observation slashing is disabled, with headroom for reporting bursts
+// across active and retiring vaults. This limits creation rate, not lifetime
+// storage or bytes.
+func (c Chain) SolvencyVoterQuota() (windowBlocks int64, limit uint64) {
+	if c.Equals(TRONChain) {
+		return 10, 32
+	}
+	return 0, 0
 }
 
 // GetEVMChains returns all "EVM" chains connected to THORChain
@@ -348,6 +368,19 @@ func (c Chain) GetGasAssetDecimal() int64 {
 	default:
 		return cosmos.DefaultCoinDecimals
 	}
+}
+
+// RequiresTerminalErrataOutcome reports whether delivery alone is insufficient
+// to retire errata retries, including transactions with no known observation.
+func (c Chain) RequiresTerminalErrataOutcome() bool {
+	return c.Equals(XMRChain)
+}
+
+// UsesHeightScopedErrata reports whether local orphan-location barriers need
+// explicit mined-height observation identity. It does not change the chain's
+// consensus errata voter or permanent TxID reversal policy.
+func (c Chain) UsesHeightScopedErrata() bool {
+	return c.Equals(XMRChain)
 }
 
 // RequiresExplicitRefundAddress reports whether an inbound observation may be

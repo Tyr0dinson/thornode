@@ -1284,7 +1284,8 @@
                       "id": "D96B553D63BCC6DB749B184F566BF0B37B595B026E9AA7B35B5C7D654237C965",
                       "memo": "OUT:D96B553D63BCC6DB749B184F566BF0B37B595B026E9AA7B35B5C7D654237C965",
                       "to_address": "bcrt1q3wrmhnh2qe98rjse30pl7u6jxszjjwl44ls6uw"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }

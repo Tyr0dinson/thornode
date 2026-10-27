@@ -42,6 +42,8 @@ type TxIn struct {
 	// Persisted is an optional local durability acknowledgement. Chain scanners
 	// with a restart journal use it to retain replay data until BlockScanner has
 	// queued the observations and durably advanced its scan position.
+	// Producers must provide a buffered channel with room for one result.
+	// Observer does not block if the acknowledgement receiver is unavailable.
 	Persisted chan error `json:"-"`
 	// FinalizePersistence atomically publishes any chain-scanner replay metadata
 	// after Observer persistence succeeds but before BlockScanner advances its

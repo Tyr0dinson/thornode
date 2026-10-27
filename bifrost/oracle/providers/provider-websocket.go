@@ -19,6 +19,11 @@ const (
 	keepaliveCheckInterval = time.Second * 2
 )
 
+// wsSettleDelay is how long connect waits after closing an old connection and
+// after subscribing, before Start begins reading. A variable so tests of every
+// provider need not wait for real.
+var wsSettleDelay = time.Second
+
 type websocketProvider struct {
 	*baseProvider
 	wsEndpoint      string
@@ -102,7 +107,7 @@ func (p *websocketProvider) connect() error {
 
 	if p.ws != nil {
 		_ = p.ws.Close(websocket.StatusNormalClosure, "")
-		time.Sleep(time.Second)
+		time.Sleep(wsSettleDelay)
 	}
 
 	err := p.preconnect()
@@ -125,7 +130,7 @@ func (p *websocketProvider) connect() error {
 
 	p.lastKeepalive = time.Now()
 
-	time.Sleep(time.Second)
+	time.Sleep(wsSettleDelay)
 
 	return nil
 }

@@ -151,7 +151,7 @@ Add liquidity to a pool.
 
 **`ADD:POOL:PAIREDADDR:AFFILIATE:FEE`**
 
-There are rules for adding liquidity, see [the rules here](https://docs.thorchain.org/learn/getting-started#entering-and-leaving-a-pool).
+There are rules for adding liquidity, see [the rules here](https://docs.thorchain.org/thornodes/frequently-asked-questions/liquidity-providers#entering-and-leaving-a-pool).
 
 | Parameter     | Notes                                                                                                                                                                                                                                  | Conditions                                                                  |
 | ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |

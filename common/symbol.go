@@ -36,7 +36,7 @@ func (s Symbol) Ticker() Ticker {
 
 // Equals check whether two symbol are the same
 func (s Symbol) Equals(s2 Symbol) bool {
-	return strings.EqualFold(s.String(), s2.String())
+	return equalFoldUpper(string(s), string(s2))
 }
 
 // IsEmpty return true when symbol is just empty string

@@ -1,6 +1,7 @@
 package rpc
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"strconv"
@@ -83,6 +84,9 @@ type RPCVersion struct {
 }
 
 func (v *RPCVersion) UnmarshalJSON(b []byte) error {
+	if len(b) == 0 || bytes.Equal(bytes.TrimSpace(b), []byte("null")) {
+		return fmt.Errorf("invalid RPC version")
+	}
 	if b[0] == '"' {
 		return json.Unmarshal(b, &v.Value)
 	}

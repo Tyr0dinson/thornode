@@ -21,6 +21,13 @@ const (
 	CapabilityScannerBoundedRewind   = "scanner-bounded-rewind-v1"
 	CapabilitySharePlanQuarantine    = "share-issued-plan-quarantine-v1"
 	CapabilityVerifiedAbsenceBalance = "verified-absence-balance-quarantine-v1"
+	CapabilityCanonicalObservation   = "canonical-outgoing-observation-v1"
+	CapabilityCanonicalTxLocation    = "canonical-tx-location-v1"
+	CapabilityMoneroNetworkIdentity  = "monero-network-identity-v1"
+
+	MoneroMainnetGenesisHash  = "418015bb9ae982a1975da7d79277c2705727a56894ba0fb246adaabb1f4632e3"
+	MoneroTestnetGenesisHash  = "48ca7cd3c8de5b6a4d53d2861fbdaedca141553559f9be9520068053cda8430b"
+	MoneroStagenetGenesisHash = "76ee3cc98646292206cd3e86f74d88b4dcc1d937088645e9b0cbca84b7ce74eb"
 
 	// CapabilityIdempotentCombine asserts that the signer durably replays combine
 	// by (msg_id, session_id, all_shares), so a retried combine cannot produce a
@@ -37,13 +44,15 @@ const (
 // It is not an artifact-authentication mechanism; the configured image digest
 // and release provenance remain the trust root.
 type Info struct {
-	Protocol        string   `json:"protocol"`
-	APIMajor        int      `json:"api_major"`
-	SoftwareVersion string   `json:"software_version"`
-	GitCommit       string   `json:"git_commit"`
-	Network         string   `json:"network"`
-	StateSchema     int      `json:"state_schema"`
-	Capabilities    []string `json:"capabilities"`
+	Protocol          string   `json:"protocol"`
+	APIMajor          int      `json:"api_major"`
+	SoftwareVersion   string   `json:"software_version"`
+	GitCommit         string   `json:"git_commit"`
+	Network           string   `json:"network"`
+	MoneroNettype     string   `json:"monero_nettype"`
+	MoneroGenesisHash string   `json:"monero_genesis_hash"`
+	StateSchema       int      `json:"state_schema"`
+	Capabilities      []string `json:"capabilities"`
 }
 
 func (i Info) HasCapability(required string) bool {
@@ -262,6 +271,7 @@ type RegisterVaultReq struct {
 
 type RegisterVaultResp struct {
 	Registered         bool    `json:"registered"`
+	EffectiveBirthday  uint64  `json:"effective_birthday"`
 	ResetEpoch         uint64  `json:"reset_epoch"`
 	ExpectedNextHeight *uint64 `json:"expected_next_height,omitempty"`
 }
@@ -273,6 +283,7 @@ type RegisterVaultResp struct {
 func (r *RegisterVaultResp) UnmarshalJSON(data []byte) error {
 	type wireResponse struct {
 		Registered         *bool   `json:"registered"`
+		EffectiveBirthday  *uint64 `json:"effective_birthday"`
 		ResetEpoch         *uint64 `json:"reset_epoch"`
 		ExpectedNextHeight *uint64 `json:"expected_next_height"`
 	}
@@ -284,12 +295,16 @@ func (r *RegisterVaultResp) UnmarshalJSON(data []byte) error {
 	if wire.Registered == nil {
 		return fmt.Errorf("register vault response omitted registered")
 	}
+	if wire.EffectiveBirthday == nil {
+		return fmt.Errorf("register vault response omitted effective_birthday")
+	}
 	if wire.ResetEpoch == nil {
 		return fmt.Errorf("register vault response omitted reset_epoch")
 	}
 
 	*r = RegisterVaultResp{
 		Registered:         *wire.Registered,
+		EffectiveBirthday:  *wire.EffectiveBirthday,
 		ResetEpoch:         *wire.ResetEpoch,
 		ExpectedNextHeight: wire.ExpectedNextHeight,
 	}
@@ -540,6 +555,24 @@ type ChainBlock struct {
 	Hash         string
 	PreviousHash string
 	TxHashes     []string
+}
+
+// ChainBlockHeightMismatchError rejects a chain response that is not bound to
+// the height requested by Bifrost, regardless of which transport supplied it.
+type ChainBlockHeightMismatchError struct {
+	RequestedHeight int64
+	ReturnedHeight  int64
+}
+
+func (e *ChainBlockHeightMismatchError) Error() string {
+	if e == nil {
+		return "monero chain block height mismatch"
+	}
+	return fmt.Sprintf(
+		"monero chain block requested height %d but returned height %d",
+		e.RequestedHeight,
+		e.ReturnedHeight,
+	)
 }
 
 // VaultKey describes the sidecar's knowledge of a single vault's threshold

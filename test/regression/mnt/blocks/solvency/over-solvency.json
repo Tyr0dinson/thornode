@@ -706,7 +706,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000001",
                       "memo": "noop",
                       "to_address": "bcrt1qzf3gsk7edzwl9syyefvfhle37cjtql35tlzesk"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }

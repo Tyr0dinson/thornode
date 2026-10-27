@@ -1375,7 +1375,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000001",
                       "memo": "=:THOR.RUNE:tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr::test:500",
                       "to_address": "bcrt1qzf3gsk7edzwl9syyefvfhle37cjtql35tlzesk"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }
@@ -2144,7 +2145,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000002",
                       "memo": "OUT:3761FF40D4C6CE570B3A10B558DA32AAC9F5A6CC91F3F91222E85C73AF9509E8",
                       "to_address": "bcrt1quuds8pd92qnnq0udw0rpg0szpgcslc9pm6tzal"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }
@@ -2924,7 +2926,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000003",
                       "memo": "OUT:4B5C6CD0C2AF2BE321094ED5967AD4E064E4E26491BE88731B58088A92B479F0",
                       "to_address": "bcrt1quuds8pd92qnnq0udw0rpg0szpgcslc9pm6tzal"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }
@@ -3285,7 +3288,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000004",
                       "memo": "=:THOR.RUNE:tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr::test:1000",
                       "to_address": "bcrt1qzf3gsk7edzwl9syyefvfhle37cjtql35tlzesk"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }
@@ -3735,7 +3739,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000005",
                       "memo": "OUT:C3ED9A4B91884C692B924E38706085217974753504C756F83FD446CB6CA07313",
                       "to_address": "bcrt1qqk8c8sfrmfm0tkncs0zxeutc8v5mx3pjw22g33"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }
@@ -4072,7 +4077,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000005",
                       "memo": "=:THOR.RUNE:tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr::test:500",
                       "to_address": "bcrt1qzf3gsk7edzwl9syyefvfhle37cjtql35tlzesk"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }
@@ -4962,7 +4968,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000006",
                       "memo": "OUT:F7B3511C55618B34293F9BC879D703152966A25AC8F346506F4017C1F23A39B5",
                       "to_address": "0x1b03d088612a00df0049634e9cc8684d622cada2"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }
@@ -5299,7 +5306,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000006",
                       "memo": "=:THOR.RUNE:tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr::test:600",
                       "to_address": "0xd58610f89265a2fb637ac40edf59141ff873b266"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }
@@ -6003,7 +6011,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000008",
                       "memo": "=:THOR.RUNE:tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr::test:600",
                       "to_address": "0xd58610f89265a2fb637ac40edf59141ff873b266"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }
@@ -6720,7 +6729,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000009",
                       "memo": "=:THOR.RUNE:tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr::test:1000",
                       "to_address": "bcrt1qzf3gsk7edzwl9syyefvfhle37cjtql35tlzesk"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }
@@ -7170,7 +7180,8 @@
                       "id": "000000000000000000000000000000000000000000000000000000000000000a",
                       "memo": "OUT:E05C988A10E1DE9C2538EA8888772A95F199F1DD96FA4E1F43401BFF2A0F33D1",
                       "to_address": "bcrt1qqk8c8sfrmfm0tkncs0zxeutc8v5mx3pjw22g33"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }

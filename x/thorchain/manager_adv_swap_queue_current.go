@@ -93,8 +93,10 @@ func newSwapQueueAdv(k keeper.Keeper) *SwapQueueAdv {
 
 // FetchQueue - grabs all swap queue items from the kvstore and returns them
 func (vm *SwapQueueAdv) FetchQueue(ctx cosmos.Context, mgr Manager, pairs tradePairs, pools Pools, todo tradePairs) (swapItems, error) { // nolint
-	items := make(swapItems, 0)
+	return vm.fetchQueue(ctx, mgr, pairs, pools, todo, nil)
+}
 
+func (vm *SwapQueueAdv) fetchQueue(ctx cosmos.Context, mgr Manager, pairs tradePairs, pools Pools, todo tradePairs, activeLimitPairs tradePairSet) (swapItems, error) { // nolint
 	// if the network is doing a pool cycle, no swaps are executed this
 	// block. This is because the change of active pools can cause the
 	// mechanism to index/encode the selected pools/trading pairs that need to
@@ -114,6 +116,7 @@ func (vm *SwapQueueAdv) FetchQueue(ctx cosmos.Context, mgr Manager, pairs tradeP
 	if err != nil {
 		return nil, err
 	}
+	items := make(swapItems, 0, len(marketItems))
 	for _, item := range marketItems {
 		msg, err := vm.k.GetAdvSwapQueueItem(ctx, item.TxID, item.Index)
 		if err != nil {
@@ -136,11 +139,56 @@ func (vm *SwapQueueAdv) FetchQueue(ctx cosmos.Context, mgr Manager, pairs tradeP
 	}
 
 	for _, pair := range todo {
+		if activeLimitPairs != nil {
+			if _, ok := activeLimitPairs[pair]; !ok {
+				continue
+			}
+		}
 		newItems := vm.discoverLimitSwaps(ctx, mgr, pair, pools)
 		items = append(items, newItems...)
 	}
 
 	return items, nil
+}
+
+// getActiveLimitPairs returns the populated limit pairs when the number of
+// price buckets is cheaper to scan than probing every possible pool pair. If
+// the scan crosses maxBuckets it returns nil, causing fetchQueue to retain its
+// bounded O(P^2) pair-probe path instead of becoming O(queue size).
+func (vm *SwapQueueAdv) getActiveLimitPairs(ctx cosmos.Context, maxBuckets int) tradePairSet {
+	result := make(tradePairSet)
+	iter := vm.k.GetAdvSwapQueueLimitIndexIterator(ctx)
+	if iter == nil {
+		return result
+	}
+	defer iter.Close()
+	buckets := 0
+	for ; iter.Valid(); iter.Next() {
+		buckets++
+		if buckets > maxBuckets {
+			return nil
+		}
+		// Keys are aqlim//SOURCE>TARGET/RATIO/. Work from the end so a
+		// future prefix spelling change does not affect pair extraction.
+		parts := strings.Split(string(iter.Key()), "/")
+		if len(parts) < 4 {
+			continue
+		}
+		pairParts := strings.SplitN(parts[len(parts)-3], ">", 2)
+		if len(pairParts) != 2 {
+			continue
+		}
+		source, err := common.NewAsset(pairParts[0])
+		if err != nil {
+			continue
+		}
+		target, err := common.NewAsset(pairParts[1])
+		if err != nil {
+			continue
+		}
+		result[genTradePair(source, target)] = struct{}{}
+	}
+	return result
 }
 
 func (vm *SwapQueueAdv) isSwapReady(ctx cosmos.Context, msg MsgSwap) bool {
@@ -463,12 +511,50 @@ func (vm *SwapQueueAdv) hasSufficientTradeOrSecuredLimitBalance(ctx cosmos.Conte
 	return !common.GetSafeShare(amount, balance, units).IsZero()
 }
 
-// getAssetPairs - fetches a list of strings that represents directional trading pairs
+// getAssetPairs fetches available pools and builds their directional pair
+// cross-product.
 func (vm *SwapQueueAdv) getAssetPairs(ctx cosmos.Context) (tradePairs, Pools) {
-	result := make(tradePairs, 0)
-	var pools Pools
+	pools := vm.getAvailablePools(ctx)
+	return buildAssetPairs(pools), pools
+}
 
-	assets := []common.Asset{common.RuneAsset()}
+// buildAssetPairs builds the directional pair cross-product of RUNE and the
+// given pools, in pool order.
+func buildAssetPairs(pools Pools) tradePairs {
+	assets := make([]common.Asset, 0, len(pools)+1)
+	assets = append(assets, common.RuneAsset())
+	for _, pool := range pools {
+		assets = append(assets, pool.Asset)
+	}
+
+	result := make(tradePairs, 0, len(assets)*(len(assets)-1))
+	for _, a1 := range assets {
+		for _, a2 := range assets {
+			if a1.Equals(a2) {
+				continue
+			}
+			result = append(result, genTradePair(a1, a2))
+		}
+	}
+	return result
+}
+
+// samePoolAssets reports whether two getAvailablePools results hold the same
+// pool assets in the same order. Balances are ignored.
+func samePoolAssets(a, b Pools) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if !a[i].Asset.Equals(b[i].Asset) {
+			return false
+		}
+	}
+	return true
+}
+
+func (vm *SwapQueueAdv) getAvailablePools(ctx cosmos.Context) Pools {
+	pools := make(Pools, 0)
 	iterator := vm.k.GetPoolIterator(ctx)
 	defer iterator.Close()
 	for ; iterator.Valid(); iterator.Next() {
@@ -484,20 +570,9 @@ func (vm *SwapQueueAdv) getAssetPairs(ctx cosmos.Context) (tradePairs, Pools) {
 		if pool.Asset.IsSyntheticAsset() {
 			continue
 		}
-		assets = append(assets, pool.Asset)
 		pools = append(pools, pool)
 	}
-
-	for _, a1 := range assets {
-		for _, a2 := range assets {
-			if a1.Equals(a2) {
-				continue
-			}
-			result = append(result, genTradePair(a1, a2))
-		}
-	}
-
-	return result, pools
+	return pools
 }
 
 func (vm *SwapQueueAdv) getMaxSwapQuantity(ctx cosmos.Context, mgr Manager, sourceAsset, targetAsset common.Asset, msg MsgSwap) (uint64, error) {
@@ -692,8 +767,37 @@ func (vm *SwapQueueAdv) AddSwapQueueItem(ctx cosmos.Context, mgr Manager, msg *M
 	return nil
 }
 
+// advSwapQueueMaxFailedReasons bounds the per-item FailedSwapReasons telemetry
+// slice that EndBlock persists on every re-write of a streaming swap. Without a
+// bound each failed sub-swap appends a full error string that is never trimmed,
+// growing the stored MsgSwap blob to megabytes for a long-lived failing swap and
+// pinning that blob in the IAVL node cache (the dominant driver of validator RSS
+// growth to GOMEMLIMIT). Only the error-string history is trimmed; FailedSwaps
+// is deliberately left intact so FailCount()/SuccessCount() are unchanged.
+const advSwapQueueMaxFailedReasons = 10
+
+// capFailedSwapReasons trims msg.State.FailedSwapReasons to the most recent
+// advSwapQueueMaxFailedReasons entries. It copies into a fresh slice (rather than
+// re-slicing) so the discarded strings and the original backing array become
+// unreachable and can be freed. FailedSwaps is intentionally NOT touched: its
+// length is FailCount(), which drives SuccessCount() and limit-swap settlement.
+func capFailedSwapReasons(msg *MsgSwap) {
+	if msg == nil || msg.State == nil {
+		return
+	}
+	if n := len(msg.State.FailedSwapReasons); n > advSwapQueueMaxFailedReasons {
+		msg.State.FailedSwapReasons = append([]string(nil), msg.State.FailedSwapReasons[n-advSwapQueueMaxFailedReasons:]...)
+	}
+}
+
 // EndBlock trigger the real swap to be processed
 func (vm *SwapQueueAdv) EndBlock(ctx cosmos.Context, mgr Manager, telemetryEnabled bool) error {
+	// Readiness and handler validation repeatedly query the same Mimir/halt
+	// keys for every queue item. Any Mimir write during this EndBlock (e.g. the
+	// MaxRuneSupply circuit breaker) disables the cache for the rest of it.
+	ctx = keeper.WithMimirCache(ctx)
+	ctx = WithMemoCache(ctx)
+
 	swapHandler := NewSwapHandler(mgr)
 
 	minSwapsPerBlock, err := vm.k.GetMimir(ctx, constants.MinSwapsPerBlock.String())
@@ -716,8 +820,11 @@ func (vm *SwapQueueAdv) EndBlock(ctx cosmos.Context, mgr Manager, telemetryEnabl
 	isSimulation := ctx.Value(constants.CtxSimulationMode) == true
 
 	todo := make(tradePairs, 0)
+	todoSeen := make(tradePairSet)
 	var pairs tradePairs
+	var pairIndex tradePairIndex
 	var pools Pools
+	var activeLimitPairs tradePairSet
 	iterationCount := int64(0)
 
 	// Telemetry tracking variables (counts reflect successful swap executions only)
@@ -745,13 +852,21 @@ func (vm *SwapQueueAdv) EndBlock(ctx cosmos.Context, mgr Manager, telemetryEnabl
 
 		iterationCount = iteration + 1
 
-		// Re-fetch pools each iteration so limit swap discovery and scoring
-		// use up-to-date balances after swaps committed in prior iterations.
+		// Refresh balances each iteration, but only rebuild the O(P^2) pair
+		// list when pool membership changes. A swap through a derived asset
+		// can reactivate (or suspend) its virtual pool mid-EndBlock, and later
+		// iterations must see the same pairs a per-iteration rebuild would.
 		if !isSimulation {
-			pairs, pools = vm.getAssetPairs(ctx)
+			newPools := vm.getAvailablePools(ctx)
+			if iteration == 0 || !samePoolAssets(pools, newPools) {
+				pairs = buildAssetPairs(newPools)
+				pairIndex = newTradePairIndex(pairs)
+				activeLimitPairs = vm.getActiveLimitPairs(ctx, len(pairs))
+			}
+			pools = newPools
 		}
 
-		swaps, err := vm.FetchQueue(ctx, mgr, pairs, pools, todo)
+		swaps, err := vm.fetchQueue(ctx, mgr, pairs, pools, todo, activeLimitPairs)
 		if err != nil {
 			ctx.Logger().Error("fail to fetch swap queue from store", "error", err)
 			return err
@@ -776,6 +891,12 @@ func (vm *SwapQueueAdv) EndBlock(ctx cosmos.Context, mgr Manager, telemetryEnabl
 			if attempted >= budget {
 				break
 			}
+			// Direction checks are read-only, so perform them before cloning the
+			// message. Later rapid iterations can skip a large fraction of the
+			// queue; avoid a protobuf marshal+unmarshal for every skipped item.
+			if shouldSkipRapidSwapDirection(pick.msg, lastPoolDir, iteration) {
+				continue
+			}
 			data, marshalErr := proto.Marshal(&pick.msg)
 			if marshalErr != nil {
 				ctx.Logger().Error("fail to marshal msg swap", "error", marshalErr)
@@ -788,14 +909,6 @@ func (vm *SwapQueueAdv) EndBlock(ctx cosmos.Context, mgr Manager, telemetryEnabl
 			msg := &MsgSwap{}
 			if marshalErr = proto.Unmarshal(data, msg); marshalErr != nil {
 				ctx.Logger().Error("fail to unmarshal msg swap", "error", marshalErr)
-				continue
-			}
-
-			// Skip market swaps that would go in the same direction as a previous
-			// swap through any pool they touch, preventing pool draining.
-			// Direction-skipped swaps do NOT consume a budget slot, so the budget
-			// is a cap on actual swap attempts, not candidates considered.
-			if shouldSkipRapidSwapDirection(*msg, lastPoolDir, iteration) {
 				continue
 			}
 
@@ -827,15 +940,18 @@ func (vm *SwapQueueAdv) EndBlock(ctx cosmos.Context, mgr Manager, telemetryEnabl
 			// make the primary swap using the cached context
 			var settleMsg string
 			_, emit, effectiveInput, handleErr := swapHandler.runWithEmitAndInput(cacheCtx, msg)
+			// Every handler invocation consumes execution budget. State progression
+			// may still be skipped for failed market swaps on rapid iterations, but
+			// failures must not make MaxSwapsPerBlock ineffective as a CPU bound.
+			attempted++
 			if handleErr != nil {
 				// On iteration 1+ (second rapid swap iteration and beyond), failed market swaps
-				// should not count as attempts. This prevents rapid swaps from burning through
+				// should not advance state. This prevents rapid swaps from burning through
 				// all subswaps of a streaming swap in a single block - it behaves like rapid
 				// swaps don't exist when swaps can't execute ("escalator becomes stairs").
 				if iteration > 0 && msg.IsMarketSwap() {
 					continue
 				}
-				attempted++
 				// Telemetry only: bucket the failure into a fixed reason set so a
 				// block where every attempt failed is distinguishable from a block
 				// with no swaps at all (both read zero on the success counters).
@@ -856,8 +972,6 @@ func (vm *SwapQueueAdv) EndBlock(ctx cosmos.Context, mgr Manager, telemetryEnabl
 				msg.State.FailedSwapReasons = append(msg.State.FailedSwapReasons, handleErr.Error())
 				settleMsg = handleErr.Error()
 			} else {
-				attempted++
-
 				// Update state for successful swap execution (in memory only)
 				msg.State.In = msg.State.In.Add(effectiveInput)
 				msg.State.Out = msg.State.Out.Add(emit)
@@ -870,7 +984,8 @@ func (vm *SwapQueueAdv) EndBlock(ctx cosmos.Context, mgr Manager, telemetryEnabl
 				msg.State.LastHeight = ctx.BlockHeight()
 				msg.Tx.Coins[0].Amount = originalAmount
 				msg.TradeTarget = originalTradeTarget
-				if err := vm.k.SetAdvSwapQueueItem(cacheCtx, *msg); err != nil {
+				capFailedSwapReasons(msg)
+				if err := vm.k.SetAdvSwapQueueItemState(cacheCtx, *msg); err != nil {
 					ctx.Logger().Error("fail to save swap item in cache context, discarding swap", "error", err)
 					continue
 				}
@@ -893,7 +1008,7 @@ func (vm *SwapQueueAdv) EndBlock(ctx cosmos.Context, mgr Manager, telemetryEnabl
 
 				// Only populate todo for limit swap discovery during real execution (not simulations)
 				if !isSimulation {
-					todo = todo.findMatchingTrades(genTradePair(msg.Tx.Coins[0].Asset, msg.TargetAsset), pairs)
+					todo = todo.findMatchingTradesIndexed(genTradePair(msg.Tx.Coins[0].Asset, msg.TargetAsset), pairIndex, todoSeen)
 				}
 
 				// Track successful swap types for telemetry
@@ -920,7 +1035,8 @@ func (vm *SwapQueueAdv) EndBlock(ctx cosmos.Context, mgr Manager, telemetryEnabl
 			msg.TradeTarget = originalTradeTarget
 
 			// Save the updated swap state (failure path — no pool commit to be inconsistent with)
-			if err := vm.k.SetAdvSwapQueueItem(ctx, *msg); err != nil {
+			capFailedSwapReasons(msg)
+			if err := vm.k.SetAdvSwapQueueItemState(ctx, *msg); err != nil {
 				ctx.Logger().Error("fail to save swap item", "error", err)
 			}
 			if vm.IsDone(ctx, *msg) {
@@ -1073,8 +1189,10 @@ func (vm *SwapQueueAdv) addLiquidityFee(ctx cosmos.Context, pool Pool, sourceCoi
 		X = pool.BalanceAsset
 	}
 
-	X = common.GetUncappedShare(cosmos.NewUint(uint64(virtualDepthMult)), cosmos.NewUint(10_000), X)
-	Y = common.GetUncappedShare(cosmos.NewUint(uint64(virtualDepthMult)), cosmos.NewUint(10_000), Y)
+	if virtualDepthMult != 10_000 {
+		X = common.GetUncappedShare(cosmos.NewUint(uint64(virtualDepthMult)), cosmos.NewUint(10_000), X)
+		Y = common.GetUncappedShare(cosmos.NewUint(uint64(virtualDepthMult)), cosmos.NewUint(10_000), Y)
+	}
 
 	swapper, err := GetSwapper(vm.k.GetVersion())
 	if err != nil {
@@ -1191,100 +1309,117 @@ func (vm *SwapQueueAdv) emitAdvSwapQueueTelemetry(ctx cosmos.Context, mgr Manage
 
 // emitQueueDepthTelemetry emits queue depth metrics per trading pair
 func (vm *SwapQueueAdv) emitQueueDepthTelemetry(ctx cosmos.Context, mgr Manager) {
-	pairs, _ := vm.getAssetPairs(ctx)
-
 	// Get 1 RUNE price in USD for value conversions
 	runeUSDPrice := vm.telem(mgr.Keeper().DollarsPerRune(ctx))
 
 	totalLimitSwaps := int64(0)
 	totalLimitSwapValue := cosmos.ZeroUint()
 
-	// Iterate through each trading pair to collect metrics
-	for _, pair := range pairs {
-		limitSwapCount := int64(0)
-		limitSwapValue := cosmos.ZeroUint()
+	// The old telemetry path opened a limit-index iterator for every
+	// directional pool pair, even when nearly all pairs were empty. Scan the
+	// queue item store once and aggregate in memory instead. This is telemetry
+	// only and changes no consensus state.
+	type pairStats struct {
+		count int64
+		value cosmos.Uint
+	}
+	pools := vm.getAvailablePools(ctx)
+	availableAssets := make(map[common.Asset]struct{}, len(pools)+1)
+	poolByAsset := make(map[common.Asset]Pool, len(pools))
+	availableAssets[common.RuneAsset()] = struct{}{}
+	for _, pool := range pools {
+		availableAssets[pool.Asset] = struct{}{}
+		poolByAsset[pool.Asset] = pool
+	}
 
-		// Get limit swap iterator for this pair
-		iter := vm.k.GetAdvSwapQueueIndexIterator(ctx, LimitSwap, pair.source, pair.target)
-		if iter != nil {
-			func() { // Use anonymous function to ensure defer works properly
-				defer iter.Close()
-				for ; iter.Valid(); iter.Next() {
-					record := make([]string, 0)
-					value := ProtoStrings{Value: record}
-					if err := vm.k.Cdc().Unmarshal(iter.Value(), &value); err != nil {
-						continue
-					}
-
-					for _, rec := range value.Value {
-						lastHyphenIndex := strings.LastIndex(rec, "-")
-						if lastHyphenIndex == -1 {
-							continue
-						}
-						parts := []string{rec[:lastHyphenIndex], rec[lastHyphenIndex+1:]}
-						if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
-							continue
-						}
-
-						hash, err := common.NewTxID(parts[0])
-						if err != nil {
-							continue
-						}
-
-						index, err := strconv.Atoi(parts[1])
-						if err != nil {
-							continue
-						}
-
-						msg, err := vm.k.GetAdvSwapQueueItem(ctx, hash, index)
-						if err != nil {
-							continue
-						}
-
-						if msg.IsLimitSwap() {
-							limitSwapCount++
-							// Add the swap value (remaining deposit amount)
-							remainingValue := common.SafeSub(msg.State.Deposit, msg.State.In)
-
-							// Convert to RUNE value if source asset is not RUNE
-							runeValue := remainingValue
-							if !msg.Tx.Coins[0].Asset.IsRune() {
-								// Get the pool to convert asset value to RUNE
-								if pool, err := vm.k.GetPool(ctx, msg.Tx.Coins[0].Asset.GetLayer1Asset()); err == nil {
-									runeValue = pool.AssetValueInRune(remainingValue)
-								}
-							}
-
-							limitSwapValue = limitSwapValue.Add(runeValue)
-						}
-					}
-				}
-			}()
+	stats := make(map[tradePair]pairStats)
+	pairOrder := make(tradePairs, 0)
+	marketSwapsQueued := int64(0)
+	queuedItems := int64(0)
+	oldestAgeBlocks := int64(0)
+	iter := vm.k.GetAdvSwapQueueItemIterator(ctx)
+	for ; iter.Valid(); iter.Next() {
+		var msg MsgSwap
+		if err := vm.k.Cdc().Unmarshal(iter.Value(), &msg); err != nil {
+			continue
 		}
 
-		totalLimitSwaps += limitSwapCount
-		totalLimitSwapValue = totalLimitSwapValue.Add(limitSwapValue)
+		// Oldest queued adv-swap age: a limit swap whose TTL settle keeps failing, or
+		// a market swap whose pool went unavailable, sits here forever while newer
+		// swaps churn past it, so queue depth alone cannot see it. Only adv-queue
+		// items carry InitialBlockHeight (set in AddSwapQueueItem); legacy items
+		// carry 0 and are skipped. Counted before the pair filters below so depth
+		// covers every stored item, not just the ones that feed the pair gauges.
+		queuedItems++
+		if msg.InitialBlockHeight > 0 {
+			if age := ctx.BlockHeight() - msg.InitialBlockHeight; age > oldestAgeBlocks {
+				oldestAgeBlocks = age
+			}
+		}
 
-		// Emit per-trading-pair metrics with labels (only if there are swaps)
-		if limitSwapCount > 0 {
+		if msg.State == nil || len(msg.Tx.Coins) != 1 {
+			continue
+		}
+		if msg.IsMarketSwap() {
+			marketSwapsQueued++
+			continue
+		}
+		if !msg.IsLimitSwap() {
+			continue
+		}
+
+		source := msg.Tx.Coins[0].Asset.GetLayer1Asset()
+		target := msg.TargetAsset.GetLayer1Asset()
+		if _, ok := availableAssets[source]; !ok {
+			continue
+		}
+		if _, ok := availableAssets[target]; !ok {
+			continue
+		}
+
+		pair := genTradePair(source, target)
+		stat, exists := stats[pair]
+		if !exists {
+			stat.value = cosmos.ZeroUint()
+			pairOrder = append(pairOrder, pair)
+		}
+		stat.count++
+		remainingValue := common.SafeSub(msg.State.Deposit, msg.State.In)
+		runeValue := remainingValue
+		if !source.IsRune() {
+			if pool, ok := poolByAsset[source]; ok {
+				runeValue = pool.AssetValueInRune(remainingValue)
+			}
+		}
+		stat.value = stat.value.Add(runeValue)
+		stats[pair] = stat
+	}
+	iter.Close()
+
+	for _, pair := range pairOrder {
+		stat := stats[pair]
+		totalLimitSwaps += stat.count
+		totalLimitSwapValue = totalLimitSwapValue.Add(stat.value)
+
+		if stat.count > 0 {
 			labels := []metrics.Label{
 				telemetry.NewLabel("source_asset", pair.source.String()),
 				telemetry.NewLabel("target_asset", pair.target.String()),
 			}
 			telemetry.SetGaugeWithLabels(
 				[]string{"thornode", "adv_swap_queue", "limit_swaps_by_pair"},
-				float32(limitSwapCount),
+				float32(stat.count),
 				labels,
 			)
 			// Emit both RUNE and USD values for trading pair
 			telemetry.SetGaugeWithLabels(
 				[]string{"thornode", "adv_swap_queue", "limit_swap_value_by_pair", "rune"},
-				vm.telem(limitSwapValue),
+				vm.telem(stat.value),
 				labels,
 			)
 			telemetry.SetGaugeWithLabels(
 				[]string{"thornode", "adv_swap_queue", "limit_swap_value_by_pair", "usd"},
-				vm.telem(limitSwapValue)*runeUSDPrice,
+				vm.telem(stat.value)*runeUSDPrice,
 				labels,
 			)
 		}
@@ -1295,40 +1430,9 @@ func (vm *SwapQueueAdv) emitQueueDepthTelemetry(ctx cosmos.Context, mgr Manager)
 	telemetry.SetGauge(vm.telem(totalLimitSwapValue), "thornode", "adv_swap_queue", "total_limit_swap_value", "rune")
 	telemetry.SetGauge(vm.telem(totalLimitSwapValue)*runeUSDPrice, "thornode", "adv_swap_queue", "total_limit_swap_value", "usd")
 
-	// Count market swaps currently in queue
-	marketItems, err := vm.k.GetAdvSwapQueueIndex(ctx, MsgSwap{SwapType: MarketSwap})
-	if err == nil {
-		telemetry.SetGauge(float32(len(marketItems)), "thornode", "adv_swap_queue", "market_swaps_queued")
-	}
-
-	// Oldest queued adv-swap age: a limit swap whose TTL settle keeps failing, or a
-	// market swap whose pool went unavailable, sits here forever while newer swaps
-	// churn past it, so queue depth alone cannot see it. Only adv-queue items carry
-	// InitialBlockHeight (set in AddSwapQueueItem); legacy items carry 0 and are skipped.
-	// Read-only pass, reached only from the telemetry-gated path.
-	itemIter := vm.k.GetAdvSwapQueueItemIterator(ctx)
-	if itemIter != nil {
-		queuedItems := int64(0)
-		oldestAgeBlocks := int64(0)
-		func() { // Use anonymous function to ensure defer works properly
-			defer itemIter.Close()
-			for ; itemIter.Valid(); itemIter.Next() {
-				var qmsg MsgSwap
-				if uerr := vm.k.Cdc().Unmarshal(itemIter.Value(), &qmsg); uerr != nil {
-					continue
-				}
-				queuedItems++
-				if qmsg.InitialBlockHeight <= 0 {
-					continue
-				}
-				if age := ctx.BlockHeight() - qmsg.InitialBlockHeight; age > oldestAgeBlocks {
-					oldestAgeBlocks = age
-				}
-			}
-		}()
-		telemetry.SetGauge(float32(queuedItems), "thornode", "adv_swap_queue", "items")
-		telemetry.SetGauge(float32(oldestAgeBlocks), "thornode", "adv_swap_queue", "oldest_swap_age_blocks")
-	}
+	telemetry.SetGauge(float32(marketSwapsQueued), "thornode", "adv_swap_queue", "market_swaps_queued")
+	telemetry.SetGauge(float32(queuedItems), "thornode", "adv_swap_queue", "items")
+	telemetry.SetGauge(float32(oldestAgeBlocks), "thornode", "adv_swap_queue", "oldest_swap_age_blocks")
 }
 
 // telem converts cosmos.Uint to float32 for telemetry (similar to helpers.go)

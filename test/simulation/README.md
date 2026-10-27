@@ -8,6 +8,32 @@ The initial implementation will leverage a static actor DAG that runs to complet
 
 ## Running Simulation Tests
 
+### Hermetic unit suite
+
+The simulation code is a separate Go module, so a root `go test ./...` does not
+run its unit tests. From the repository root, run:
+
+```bash
+scripts/test-simulation-unit.sh /tmp/simulation-unit.jsonl
+```
+
+The script runs every package in `test/simulation` with the `mocknet` build tag,
+Go 1.26.10, limited build parallelism, and the shared test-quality build lock.
+The JSON Lines report contains per-test results for CI or local inspection. It
+rejects unexpected skips and clears integration RPC settings, so it never
+connects to a live chain. `TestDogeStalledBroadcastIsNotDuplicated` and
+`TestZecIsolatedFunding` require separately provisioned isolated daemons and
+are the only expected skips. To check test order isolation, run from
+`test/simulation` with the same build lock:
+
+```bash
+flock -w 1200 /tmp/thornode-test-quality-build.lock env GOMAXPROCS=4 GOTOOLCHAIN=go1.26.10 go test -p 2 -tags mocknet -count=5 -shuffle=on ./pkg/types ./pkg/dag ./pkg/solana
+flock -w 1200 /tmp/thornode-test-quality-build.lock env GOMAXPROCS=4 GOTOOLCHAIN=go1.26.10 go test -p 2 -tags mocknet -count=5 -run '^Test$' -v ./pkg/types -check.f NewUser
+```
+
+These commands use only local fixtures. The second command exercises the
+gocheck account case by itself, without depending on other suite tests.
+
 Simulation tests can be run with the following command from the repo root:
 
 ```bash
@@ -15,6 +41,11 @@ make test-simulation
 ```
 
 This will internally build the simulation framework image, start mocknet, and run the tests from a Docker container with host mode networking to reach the local mocknet.
+
+The `swaps` stage always schedules two required swaps to ZEC: one with a normal
+transparent destination and one with a TEX destination. Mocknet uses `tm` and
+`textest` in place of mainnet's `t1` and `tex`. Both swaps must complete, and their
+outbound actions and observations must use the normal transparent address.
 
 ### Inactive-vault refunds
 
@@ -66,6 +97,45 @@ negative control, cover Active/Retiring/Inactive source vaults, restart before
 certificate delivery, high-value batches, pruned journals, and queue saturation.
 The cluster supplements those tests; it does not replace their crash injection.
 
+### TRON solvency slashing (#3098)
+
+The default `make test-simulation-cluster` stages include
+`tron-solvency-fragmentation`. To run just its setup and validator test, use:
+
+```bash
+make test-simulation-cluster \
+  TEST_SIMULATION_CLUSTER_STAGES=seed,bootstrap,churn,tron-solvency-fragmentation
+```
+
+This rebuilds and **resets the local mocknet cluster**. Keep `churn` in this
+focused stage selection so the validators are activated before the test.
+Bootstrap creates pools but leaves the other validators on standby with churning
+halted. The existing churn stage activates the cluster before the TRON actor
+selects the active simulation clients. At least four validators must be active,
+and each active validator must have exactly one matching client. Extra standby
+clients are excluded from client locks and slash-point snapshots. Missing activation is a
+setup error, not a five-minute wait or a successful slashing test. On an already
+activated cluster the TRON stage can run alone; do not churn it again just to
+satisfy a stage-name requirement.
+
+The actor injects differing TRX/USDT solvency payloads at the same stale height,
+checks that ordinary observations leave slash points unchanged, and verifies the
+duplicate-message penalty. Slash points are compared only from the block before
+to the block of each injected transaction. Bifrost observations in those blocks
+can still change them, so a mismatch is measured again with fresh voters, up to
+five attempts. It tests handler accounting, not historical TRON RPC
+balances or Bifrost gossip/quorum dispatch. Other cluster readiness/keygen errors
+can still prevent this test from running.
+
+When both `cluster-churn` (or its `bond-yield` alias) and `tron-solvency-fragmentation` are selected, the TRON
+assertions run inside the Bond Yield sequence, immediately after initial
+activation and before target selection and voluntary leave. Bond Yield then
+verifies the churn-out payout and completed migration, restores its Mimir
+settings, and lets later stages proceed without waiting for the validator to
+churn back in. This avoids an extra restoration churn solely for TRON's
+requirement for at least four matching active validators. Selecting `churn` as well does not add a second
+activation. Stage selection order does not override these dependencies.
+
 ### Faster reruns
 
 `make test-simulation` rebuilds the mocknet images and resets chain state on every invocation, so the first run is expensive. When iterating, reuse the running mocknet instead of rebuilding it:
@@ -80,6 +150,43 @@ For background or non-interactive runs, set `CI=1` so Docker is not started with
 ```bash
 CI=1 make test-simulation-no-reset > sim.log 2>&1 &
 tail -f sim.log
+```
+
+### XMR keygen timeout recovery
+
+Run the dedicated regression on a disposable local mocknet cluster:
+
+```bash
+CI=1 COMPOSE_PROJECT_NAME=xmr-keygen-recovery make test-simulation-xmr-keygen-recovery
+```
+
+This resets that Compose project's cluster. It completes seed/bootstrap before
+adding 500 ms network delay on the Bifrost P2P port, and gives only pig a 100 ms
+mocknet round-3 deadline. The delay must still allow the regular Asgard keygen to
+finish. Override these with `XMR_KEYGEN_RECOVERY_NETEM_DELAY_MS` and
+`XMR_KEYGEN_RECOVERY_ROUND3_TIMEOUT_MS` if necessary; increasing the deadline can
+prevent the fault and must cause the regression to fail.
+
+The `xmr-keygen-recovery` stage requires pig's existing structured logs through
+`XMR_KEYGEN_RECOVERY_LOG`, mounted read-only by the target. It requires the
+override, actual round-3 timeout, and quorum-result adoption with a locally
+finalized keyshare for the **same ceremony**. The adopted address must match a
+new active four-member XMR vault with exactly the active node membership, and
+all four nodes must have submitted successful keygen results for that vault.
+These conditions must remain true for 30 seconds. Any observed
+`failed to vote keygen in time` jail fails immediately, even before activation.
+The actor has a 20-minute deadline; running the stage without its log source
+fails before triggering churn.
+
+This replaces the obsolete jail-positive reproduction. It covers keygen timeout
+recovery, not attributed keysign failure or keysign jailing. No production
+consensus or penalty policy is changed.
+
+The target leaves its cluster available for inspection. Remove only that
+project's resources when finished:
+
+```bash
+COMPOSE_PROJECT_NAME=xmr-keygen-recovery make stop-mocknet-cluster
 ```
 
 ## Design

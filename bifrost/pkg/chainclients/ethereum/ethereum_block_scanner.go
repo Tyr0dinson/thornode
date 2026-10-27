@@ -409,7 +409,16 @@ func (e *ETHScanner) extractTxs(block *etypes.Block) (stypes.TxIn, error) {
 		MemPool:  false,
 	}
 
-	sem := semaphore.NewWeighted(e.cfg.Concurrency)
+	// Fetch the whole block's receipts with one eth_getBlockReceipts call
+	// where the node supports it; transactions missing from the result (or
+	// all of them, when the call fails) fall back to individual
+	// eth_getTransactionReceipt lookups below.
+	receiptsCtx, receiptsCancel := e.getContext()
+	receipts := fetchBlockReceipts(receiptsCtx, e.client.Client(), e.logger, block)
+	receiptsCancel()
+
+	// at least one worker: a semaphore smaller than one Acquire never grants it
+	sem := semaphore.NewWeighted(max(e.cfg.Concurrency, 1))
 	mu := sync.Mutex{}
 	wg := sync.WaitGroup{}
 
@@ -432,7 +441,7 @@ func (e *ETHScanner) extractTxs(block *etypes.Block) (stypes.TxIn, error) {
 			e.logger.Err(err).Msgf("fail to remove signed tx item, hash:%s", tx.Hash().String())
 		}
 
-		txInItem, err := e.fromTxToTxIn(tx)
+		txInItem, err := e.fromTxToTxInWithReceipts(tx, receipts)
 		if err != nil {
 			e.logger.Error().Err(err).Str("hash", tx.Hash().Hex()).Msg("fail to get one tx from server")
 			return
@@ -735,13 +744,29 @@ func (e *ETHScanner) getSymbol(token string) (string, error) {
 func (e *ETHScanner) isToValidContractAddress(addr *ecommon.Address, includeWhiteList bool) bool {
 	// get the smart contract used by thornode
 	contractAddresses := e.pubkeyMgr.GetContracts(common.ETHChain, false)
-	if includeWhiteList || useWhitelistSmartContract {
-		contractAddresses = append(contractAddresses, whitelistSmartContractAddress...)
+	includeWhiteList = includeWhiteList || useWhitelistSmartContract
+
+	// addrString is EqualFold-equal to the checksummed addr.String(), without
+	// a keccak256 per comparison. Like addr.String() before, it is derived
+	// only once there is something to compare against.
+	var addrString string
+	for _, item := range contractAddresses {
+		if addrString == "" {
+			addrString = evm.LowerHexAddress(*addr)
+		}
+		if strings.EqualFold(item.String(), addrString) {
+			return true
+		}
 	}
 	// combine the whitelist smart contract address
-	for _, item := range contractAddresses {
-		if strings.EqualFold(item.String(), addr.String()) {
-			return true
+	if includeWhiteList {
+		for _, item := range whitelistSmartContractAddress {
+			if addrString == "" {
+				addrString = evm.LowerHexAddress(*addr)
+			}
+			if strings.EqualFold(item.String(), addrString) {
+				return true
+			}
 		}
 	}
 	return false
@@ -884,7 +909,7 @@ func (e *ETHScanner) getTxInFromSmartContract(tx *etypes.Transaction, receipt *e
 	txInItem := &stypes.TxInItem{
 		Tx: tx.Hash().Hex()[2:],
 	}
-	sender, err := e.eipSigner.Sender(tx)
+	sender, err := etypes.Sender(e.eipSigner, tx)
 	if err != nil {
 		return nil, fmt.Errorf("fail to get sender: %w", err)
 	}
@@ -957,7 +982,7 @@ func (e *ETHScanner) getTxInFromTransaction(tx *etypes.Transaction, receipt *ety
 		Tx: tx.Hash().Hex()[2:],
 	}
 	asset := common.ETHAsset
-	sender, err := e.eipSigner.Sender(tx)
+	sender, err := etypes.Sender(e.eipSigner, tx)
 	if err != nil {
 		return nil, fmt.Errorf("fail to get sender: %w", err)
 	}
@@ -1017,15 +1042,26 @@ func (e *ETHScanner) getTxInFromTransaction(tx *etypes.Transaction, receipt *ety
 }
 
 func (e *ETHScanner) fromTxToTxIn(tx *etypes.Transaction) (*stypes.TxInItem, error) {
+	return e.fromTxToTxInWithReceipts(tx, nil)
+}
+
+// fromTxToTxInWithReceipts converts the transaction to a TxInItem, taking its
+// receipt from the supplied block-receipts map when present and falling back
+// to an individual eth_getTransactionReceipt lookup otherwise.
+func (e *ETHScanner) fromTxToTxInWithReceipts(tx *etypes.Transaction, receipts map[ecommon.Hash]*etypes.Receipt) (*stypes.TxInItem, error) {
 	if tx == nil || tx.To() == nil {
 		return nil, nil
 	}
-	receipt, err := e.getReceipt(tx.Hash().Hex())
-	if err != nil {
-		if errors.Is(err, ethereum.NotFound) {
-			return nil, nil
+	receipt := receipts[tx.Hash()]
+	if receipt == nil {
+		var err error
+		receipt, err = e.getReceipt(tx.Hash().Hex())
+		if err != nil {
+			if errors.Is(err, ethereum.NotFound) {
+				return nil, nil
+			}
+			return nil, fmt.Errorf("fail to get transaction receipt: %w", err)
 		}
-		return nil, fmt.Errorf("fail to get transaction receipt: %w", err)
 	}
 	if receipt.Status != 1 {
 		// a transaction that is failed
@@ -1049,7 +1085,7 @@ func (e *ETHScanner) fromTxToTxIn(tx *etypes.Transaction) (*stypes.TxInItem, err
 		isToVault, _ := e.pubkeyMgr.IsValidPoolAddress(destination.String(), e.cfg.ChainID)
 
 		// resolve sender upfront to check vault outbounds (approvals, cancels, etc.)
-		sender, senderErr := e.eipSigner.Sender(tx)
+		sender, senderErr := etypes.Sender(e.eipSigner, tx)
 		var isFromVault bool
 		if senderErr == nil {
 			isFromVault, _ = e.pubkeyMgr.IsValidPoolAddress(sender.String(), e.cfg.ChainID)
@@ -1098,7 +1134,7 @@ func (e *ETHScanner) fromTxToTxIn(tx *etypes.Transaction) (*stypes.TxInItem, err
 			return e.getTxInFromSmartContract(tx, receipt, 0)
 		}
 		// check if tx is to or from a vault
-		sender, err := e.eipSigner.Sender(tx)
+		sender, err := etypes.Sender(e.eipSigner, tx)
 		if err != nil {
 			return nil, nil // ignore tx if we cannot determine sender
 		}
@@ -1136,7 +1172,7 @@ func (e *ETHScanner) getTxInFromFailedTransaction(tx *etypes.Transaction, receip
 		e.logger.Info().Str("hash", tx.Hash().String()).Msg("success transaction should not get into getTxInFromFailedTransaction")
 		return nil
 	}
-	fromAddr, err := e.eipSigner.Sender(tx)
+	fromAddr, err := etypes.Sender(e.eipSigner, tx)
 	if err != nil {
 		e.logger.Err(err).Msg("fail to get from address")
 		return nil

@@ -413,9 +413,32 @@ func (b *BlockScanner) scanMempool() {
 	}
 }
 
+const mimirHaltScannerXMR = "HaltScannerXMR"
+
+// IsXMRScannerPaused checks the Bifrost-only XMR scanner switch. A missing or
+// unreadable setting fails closed so deploying the monovault cannot implicitly
+// enable economic activity. Zero explicitly enables scanning; any positive
+// value pauses it.
+func IsXMRScannerPaused(logger zerolog.Logger, bridge thorclient.ThorchainBridge) bool {
+	halted, err := bridge.GetMimir(mimirHaltScannerXMR)
+	if err != nil {
+		logger.Error().Err(err).Str("mimir", mimirHaltScannerXMR).Msg("fail to get XMR scanner halt")
+		return true
+	}
+	if halted < 0 {
+		logger.Debug().Str("mimir", mimirHaltScannerXMR).Msg("XMR scanner halt is unset; keeping scanner paused")
+		return true
+	}
+	return halted > 0
+}
+
 // Checks current mimir settings to determine if the current chain is paused
 // either globally or specifically
 func IsChainPaused(cfg config.BifrostBlockScannerConfiguration, logger zerolog.Logger, bridge thorclient.ThorchainBridge) bool {
+	if cfg.ChainID.Equals(common.XMRChain) && IsXMRScannerPaused(logger, bridge) {
+		return true
+	}
+
 	thorHeight, err := bridge.GetBlockHeight()
 	if err != nil {
 		logger.Error().Err(err).Msg("fail to get THORChain block height")

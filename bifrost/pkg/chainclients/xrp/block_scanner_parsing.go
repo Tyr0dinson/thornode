@@ -31,8 +31,7 @@ func (c *XrpBlockScanner) processPayment(flatTx map[string]any) (*transaction.Pa
 
 	var memoData []byte
 	if flatTx["Memos"] != nil {
-		// trunk-ignore(golangci-lint/govet): shadow
-		memos, ok := flatTx["Memos"].([]any)
+		memos, ok := flatTx["Memos"].([]any) //nolint:govet // shadow
 		if !ok {
 			return nil, fmt.Errorf("cannot cast memos to []any")
 		}

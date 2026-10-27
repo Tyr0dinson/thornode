@@ -419,3 +419,17 @@ func (GenesisTestSuite) TestGenesisSolVaultNonceRoundTrip(c *C) {
 	bad.SolVaultNonces = []SolVaultNonce{{VaultPubKey: vaultPK, NonceAccount: record.NonceAccount, Slot: 1}}
 	c.Assert(ValidateGenesis(bad), NotNil)
 }
+
+func (GenesisTestSuite) TestExportSwapperCloutBase58(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	transparent, _, _, _ := zecTxOutAddresses()
+	clout := NewSwapperClout(transparent)
+	clout.Score = cosmos.NewUint(1000)
+	c.Assert(mgr.Keeper().SetSwapperClout(ctx, clout), IsNil)
+
+	// Store keys are uppercased, so the export must not rebuild base58 addresses from them.
+	gs := ExportGenesis(ctx, mgr.Keeper())
+	c.Assert(gs.SwapperClout, HasLen, 1)
+	c.Check(gs.SwapperClout[0].Address, Equals, transparent)
+	c.Check(gs.SwapperClout[0].Score.String(), Equals, "1000")
+}

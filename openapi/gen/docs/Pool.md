@@ -29,12 +29,17 @@ Name | Type | Description | Notes
 **VolumeRune** | Pointer to **string** | 24h volume in rune | [optional] 
 **PolReserveRuneDeposited** | Pointer to **string** | cumulative RUNE deposited by POL Reserve into this pool | [optional] 
 **RollingPoolLiquidityFeeRune** | Pointer to **string** | rolling liquidity fees accumulated (in RUNE) since the last pool cycle reset; used as the numerator of the POL Reserve deployment score | [optional] 
+**Luvi** | **string** | Liquidity Unit Value Index as the chain values a pool unit, sqrt(balance_asset * balance_rune) / pool_units (synth-unit clamp included) | 
+**LpEquity** | **string** | LP equity net of the synth liability in sqrt(asset * rune) units, sqrt(balance_asset * balance_rune) * (2 * balance_asset - synth_supply) / (2 * balance_asset); zero or negative when synth_overhang is true | 
+**LpEquityPerUnit** | **string** | lp_equity / LP_units; equals luvi (up to rounding) unless synth_overhang is true | 
+**SynthPerPoolDepthBps** | **string** | synth supply relative to twice the asset depth, in basis points | 
+**SynthOverhang** | **bool** | whether synth supply is at or above twice the asset depth; synth units are clamped and LP units can redeem almost nothing while this is true | 
 
 ## Methods
 
 ### NewPool
 
-`func NewPool(asset string, status string, pendingInboundAsset string, pendingInboundRune string, balanceAsset string, balanceRune string, assetTorPrice string, poolUnits string, lPUnits string, synthUnits string, synthSupply string, saversDepth string, saversUnits string, saversFillBps string, saversCapacityRemaining string, synthMintPaused bool, synthSupplyRemaining string, derivedDepthBps string, ) *Pool`
+`func NewPool(asset string, status string, pendingInboundAsset string, pendingInboundRune string, balanceAsset string, balanceRune string, assetTorPrice string, poolUnits string, lPUnits string, synthUnits string, synthSupply string, saversDepth string, saversUnits string, saversFillBps string, saversCapacityRemaining string, synthMintPaused bool, synthSupplyRemaining string, derivedDepthBps string, luvi string, lpEquity string, lpEquityPerUnit string, synthPerPoolDepthBps string, synthOverhang bool, ) *Pool`
 
 NewPool instantiates a new Pool object
 This constructor will assign default values to properties that have it defined,
@@ -583,6 +588,106 @@ SetRollingPoolLiquidityFeeRune sets RollingPoolLiquidityFeeRune field to given v
 `func (o *Pool) HasRollingPoolLiquidityFeeRune() bool`
 
 HasRollingPoolLiquidityFeeRune returns a boolean if a field has been set.
+
+### GetLuvi
+
+`func (o *Pool) GetLuvi() string`
+
+GetLuvi returns the Luvi field if non-nil, zero value otherwise.
+
+### GetLuviOk
+
+`func (o *Pool) GetLuviOk() (*string, bool)`
+
+GetLuviOk returns a tuple with the Luvi field if it's non-nil, zero value otherwise
+and a boolean to check if the value has been set.
+
+### SetLuvi
+
+`func (o *Pool) SetLuvi(v string)`
+
+SetLuvi sets Luvi field to given value.
+
+
+### GetLpEquity
+
+`func (o *Pool) GetLpEquity() string`
+
+GetLpEquity returns the LpEquity field if non-nil, zero value otherwise.
+
+### GetLpEquityOk
+
+`func (o *Pool) GetLpEquityOk() (*string, bool)`
+
+GetLpEquityOk returns a tuple with the LpEquity field if it's non-nil, zero value otherwise
+and a boolean to check if the value has been set.
+
+### SetLpEquity
+
+`func (o *Pool) SetLpEquity(v string)`
+
+SetLpEquity sets LpEquity field to given value.
+
+
+### GetLpEquityPerUnit
+
+`func (o *Pool) GetLpEquityPerUnit() string`
+
+GetLpEquityPerUnit returns the LpEquityPerUnit field if non-nil, zero value otherwise.
+
+### GetLpEquityPerUnitOk
+
+`func (o *Pool) GetLpEquityPerUnitOk() (*string, bool)`
+
+GetLpEquityPerUnitOk returns a tuple with the LpEquityPerUnit field if it's non-nil, zero value otherwise
+and a boolean to check if the value has been set.
+
+### SetLpEquityPerUnit
+
+`func (o *Pool) SetLpEquityPerUnit(v string)`
+
+SetLpEquityPerUnit sets LpEquityPerUnit field to given value.
+
+
+### GetSynthPerPoolDepthBps
+
+`func (o *Pool) GetSynthPerPoolDepthBps() string`
+
+GetSynthPerPoolDepthBps returns the SynthPerPoolDepthBps field if non-nil, zero value otherwise.
+
+### GetSynthPerPoolDepthBpsOk
+
+`func (o *Pool) GetSynthPerPoolDepthBpsOk() (*string, bool)`
+
+GetSynthPerPoolDepthBpsOk returns a tuple with the SynthPerPoolDepthBps field if it's non-nil, zero value otherwise
+and a boolean to check if the value has been set.
+
+### SetSynthPerPoolDepthBps
+
+`func (o *Pool) SetSynthPerPoolDepthBps(v string)`
+
+SetSynthPerPoolDepthBps sets SynthPerPoolDepthBps field to given value.
+
+
+### GetSynthOverhang
+
+`func (o *Pool) GetSynthOverhang() bool`
+
+GetSynthOverhang returns the SynthOverhang field if non-nil, zero value otherwise.
+
+### GetSynthOverhangOk
+
+`func (o *Pool) GetSynthOverhangOk() (*bool, bool)`
+
+GetSynthOverhangOk returns a tuple with the SynthOverhang field if it's non-nil, zero value otherwise
+and a boolean to check if the value has been set.
+
+### SetSynthOverhang
+
+`func (o *Pool) SetSynthOverhang(v bool)`
+
+SetSynthOverhang sets SynthOverhang field to given value.
+
 
 
 [[Back to Model list]](../README.md#documentation-for-models) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to README]](../README.md)

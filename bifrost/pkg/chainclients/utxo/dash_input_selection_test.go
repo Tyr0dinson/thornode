@@ -56,7 +56,7 @@ func (s *DashSuite) TestDashInputSelectionIgnoresLocalLocks(c *C) {
 			for _, key := range []string{"instantlock", "instantlock_internal", "chainlock"} {
 				f.txs[id][key] = key == flag
 			}
-			outputs, err := client.getUtxoToSpend(pubKey, common.One/10)
+			outputs, err := client.getUtxoToSpend(pubKey, common.One/10, 0)
 			c.Assert(err, IsNil, Commentf("%s, %s", tc.name, flag))
 			want := 1
 			if tc.eligible {
@@ -70,7 +70,7 @@ func (s *DashSuite) TestDashInputSelectionIgnoresLocalLocks(c *C) {
 			// If the extra output is needed to pay, it must pass the same policy.
 			amount, err := btcutil.NewAmount(tc.amount)
 			c.Assert(err, IsNil)
-			_, err = client.getUtxoToSpend(pubKey, common.One/10+amount)
+			_, err = client.getUtxoToSpend(pubKey, common.One/10+amount, 0)
 			if tc.eligible {
 				c.Assert(err, IsNil)
 			} else {
@@ -97,17 +97,17 @@ func (s *DashSuite) TestDashInputSelectionKeepsMempoolLimits(c *C) {
 		}
 		f.utxos = []btcjson.ListUnspentResult{{TxID: id, ScriptPubKey: newDashP2PKHScriptHex(c, f.asgard), Amount: 0.1}}
 		client.cfg.UTXO.MaxMempoolAncestors = 2
-		_, err := client.getUtxoToSpend(pubKey, 1)
+		_, err := client.getUtxoToSpend(pubKey, 1, 0)
 		c.Assert(err, ErrorMatches, "insufficient available UTXOs:.*mempool chain limit=1.*")
 		client.cfg.UTXO.MaxMempoolAncestors = 3
-		outputs, err := client.getUtxoToSpend(pubKey, 1)
+		outputs, err := client.getUtxoToSpend(pubKey, 1, 0)
 		c.Assert(err, IsNil)
 		c.Assert(outputs, HasLen, 1)
 		f.failMempoolEntry = true
-		_, err = client.getUtxoToSpend(pubKey, 1)
+		_, err = client.getUtxoToSpend(pubKey, 1, 0)
 		c.Assert(err, ErrorMatches, "check Dash input mempool limits:.*")
 		client.cfg.UTXO.MaxMempoolAncestors = 0
-		outputs, err = client.getUtxoToSpend(pubKey, 1)
+		outputs, err = client.getUtxoToSpend(pubKey, 1, 0)
 		c.Assert(err, IsNil)
 		c.Assert(outputs, HasLen, 1)
 	}

@@ -1130,7 +1130,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000001",
                       "memo": "+:BTC/BTC",
                       "to_address": "bcrt1qzf3gsk7edzwl9syyefvfhle37cjtql35tlzesk"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }
@@ -6172,7 +6173,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000002",
                       "memo": "+:BTC/BTC::nothorname:1000",
                       "to_address": "bcrt1qzf3gsk7edzwl9syyefvfhle37cjtql35tlzesk"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }
@@ -6614,7 +6616,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000003",
                       "memo": "REFUND:0000000000000000000000000000000000000000000000000000000000000002",
                       "to_address": "bcrt1qqk8c8sfrmfm0tkncs0zxeutc8v5mx3pjw22g33"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }
@@ -7105,7 +7108,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000004",
                       "memo": "+:BTC/BTC::fishthorname:1000",
                       "to_address": "bcrt1qzf3gsk7edzwl9syyefvfhle37cjtql35tlzesk"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }
@@ -7547,7 +7551,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000005",
                       "memo": "REFUND:0000000000000000000000000000000000000000000000000000000000000004",
                       "to_address": "bcrt1qqk8c8sfrmfm0tkncs0zxeutc8v5mx3pjw22g33"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }
@@ -8070,7 +8075,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000006",
                       "memo": "+:BTC/BTC::fishthorname:1000",
                       "to_address": "bcrt1qzf3gsk7edzwl9syyefvfhle37cjtql35tlzesk"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }
@@ -8764,7 +8770,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000007",
                       "memo": "+:BTC/BTC::bcrt1qanq4fk6l89w3sfuxehwyprxqjdj3kuzp4ttaep:1000",
                       "to_address": "bcrt1qzf3gsk7edzwl9syyefvfhle37cjtql35tlzesk"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }

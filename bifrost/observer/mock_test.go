@@ -229,6 +229,7 @@ type MockThorchainBridge struct {
 	getKeysignPolicyFunc        func(common.PubKey, int64) (thorclient.KeysignPolicy, error)
 	getVaultFunc                func(string) (stypes.Vault, error)
 	getKeysignFunc              func(int64, string) (tctypes.TxOut, error)
+	getPendingOutboundsFunc     func(int64) ([]thorclient.PendingOutbound, error)
 	getBlockHeightFunc          func() (int64, error)
 	getBlockHeightFreshFunc     func() (int64, error)
 	getObservedTxVoterFunc      func(string) (*stypes.QueryObservedTxVoter, error)
@@ -292,6 +293,13 @@ func (m *MockThorchainBridge) GetKeysign(blockHeight int64, pk string) (tctypes.
 		return m.getKeysignFunc(blockHeight, pk)
 	}
 	return tctypes.TxOut{}, nil
+}
+
+func (m *MockThorchainBridge) GetPendingOutbounds(height int64) ([]thorclient.PendingOutbound, error) {
+	if m.getPendingOutboundsFunc != nil {
+		return m.getPendingOutboundsFunc(height)
+	}
+	return nil, nil
 }
 
 func (m *MockThorchainBridge) GetObservedTxVoter(txID string) (*stypes.QueryObservedTxVoter, error) {

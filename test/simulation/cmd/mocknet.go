@@ -404,7 +404,14 @@ func InitConfig(parallelism int, seed bool, rng *rand.Rand) *OpConfig {
 		}
 
 		if chain.Equals(common.XMRChain) {
-			fundUserXMRAccounts(master, funded, chainSeedAmount)
+			// In its own goroutine like the other chains: it waits for the
+			// faucet outputs to unlock, and inline it held back every chain
+			// after XMR in SimChains (POL, ZEC) for ~30s.
+			wg.Add(1)
+			go func(amount sdkmath.Uint) {
+				defer wg.Done()
+				fundUserXMRAccounts(master, funded, amount)
+			}(chainSeedAmount)
 			continue
 		}
 		if chain.Equals(common.ZECChain) {
@@ -450,6 +457,33 @@ func waitForZecFunding(client LiteChainClient, target sdkmath.Uint, now func() t
 
 // nolint:typecheck
 func fundUserChainAccounts(master *User, users []*User, chain common.Chain, amount sdkmath.Uint) {
+	// Solana transfers carry no account nonce, so the master funds every user
+	// at once; one at a time, each waited ~13s for finalized confirmation.
+	if chain.Equals(common.SOLChain) {
+		wg := &sync.WaitGroup{}
+		for _, user := range users {
+			wg.Add(1)
+			go func(user *User) {
+				defer wg.Done()
+				fundUserChainAccount(master, user, chain, amount)
+			}(user)
+		}
+		wg.Wait()
+		return
+	}
+	// EVM funding sends every user's transfers back to back and then waits for
+	// the receipts; one receipt at a time it took ~4s per transfer (2 per user)
+	// and made POL the last chain to finish.
+	if client, ok := master.ChainClients[chain].(*evm.Client); ok {
+		client.DeferReceipts()
+		for _, user := range users {
+			fundUserChainAccount(master, user, chain, amount)
+		}
+		if err := client.FlushReceipts(); err != nil {
+			log.Fatal().Err(err).Stringer("chain", chain).Msg("funding tx failed")
+		}
+		return
+	}
 	for _, user := range users {
 		fundUserChainAccount(master, user, chain, amount)
 	}

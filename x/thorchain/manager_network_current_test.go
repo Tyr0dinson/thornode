@@ -1,6 +1,8 @@
 package thorchain
 
 import (
+	"fmt"
+
 	"cosmossdk.io/math"
 	. "gopkg.in/check.v1"
 
@@ -689,6 +691,134 @@ func (*NetworkManagerTestSuite) TestProcessGenesisSetup(c *C) {
 	helper.failGetActiveAsgardVault = true
 	c.Assert(networkMgr.migrateFunds(ctx, mgr), NotNil)
 	helper.failGetActiveAsgardVault = false
+}
+
+func (*NetworkManagerTestSuite) TestProcessGenesisSetupExistingVaultSkipsDelayedXMRKeygen(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	ctx = ctx.WithBlockHeight(genesisBlockHeight)
+	networkMgr := newNetworkMgr(mgr.Keeper(), mgr.TxOutStore(), mgr.EventMgr())
+
+	existing := NewVault(
+		genesisBlockHeight,
+		ActiveVault,
+		AsgardVault,
+		GetRandomPubKey(),
+		common.Chains{common.THORChain, common.BTCChain}.Strings(),
+		nil,
+	)
+	c.Assert(mgr.Keeper().SetVault(ctx, existing), IsNil)
+
+	c.Assert(networkMgr.processGenesisSetup(ctx), IsNil)
+
+	keygenBlock, err := mgr.Keeper().GetKeygenBlock(ctx, xmrMonovaultGenesisKeygenHeight(ctx.BlockHeight()))
+	c.Assert(err, IsNil)
+	c.Assert(keygenBlock.Keygens, HasLen, 0)
+
+	vaults, err := mgr.Keeper().GetAsgardVaults(ctx)
+	c.Assert(err, IsNil)
+	c.Assert(vaults, HasLen, 1)
+	c.Assert(vaults[0].PubKey.Equals(existing.PubKey), Equals, true)
+}
+
+// TestFreshGenesisEarlyXMRKeygensRotateSequentially characterizes a fresh
+// mocknet chain where churn at height 61 can schedule XMR before the delayed
+// genesis keygen at height 129. The records are in distinct keygen blocks, so
+// the TSS activation boundary evaluates and rotates each generation on its own.
+// This pins the current fresh-chain behavior, not a requirement to retain two
+// generations: if future pending-keygen suppression is added, replace the
+// early-generation assertions with the new single-generation contract.
+func (*NetworkManagerTestSuite) TestFreshGenesisEarlyXMRKeygensRotateSequentially(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	ctx = ctx.WithBlockHeight(genesisBlockHeight)
+	networkMgr := newNetworkMgr(mgr.Keeper(), mgr.TxOutStore(), mgr.EventMgr())
+
+	membership := make(common.PubKeys, 0, 4)
+	for i := 0; i < 4; i++ {
+		na := GetRandomValidatorNode(NodeActive)
+		c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
+		membership = append(membership, na.PubKeySet.Secp256k1)
+	}
+
+	c.Assert(networkMgr.processGenesisSetup(ctx), IsNil)
+	delayedHeight := xmrMonovaultGenesisKeygenHeight(ctx.BlockHeight())
+	delayedBlock, err := mgr.Keeper().GetKeygenBlock(ctx, delayedHeight)
+	c.Assert(err, IsNil)
+	c.Assert(delayedBlock.Keygens, HasLen, 1)
+	c.Assert(delayedBlock.Keygens[0].Type, Equals, XMRMonovaultKeygen)
+
+	regular := NewVault(
+		genesisBlockHeight,
+		ActiveVault,
+		AsgardVault,
+		GetRandomPubKey(),
+		common.Chains{common.THORChain, common.BTCChain}.Strings(),
+		nil,
+	)
+	regular.Membership = membership.Strings()
+	c.Assert(mgr.Keeper().SetVault(ctx, regular), IsNil)
+
+	earlyCtx := ctx.WithBlockHeight(61)
+	mgr.Keeper().SetMimir(earlyCtx, constants.ChurnInterval.String(), 60)
+	mgr.Keeper().SetMimir(earlyCtx, constants.DesiredValidatorSet.String(), 4)
+	mgr.Keeper().SetMimir(earlyCtx, constants.AsgardSize.String(), 10)
+	c.Assert(mgr.ValidatorMgr().BeginBlock(earlyCtx, mgr, nil), IsNil)
+	earlyBlock, err := mgr.Keeper().GetKeygenBlock(earlyCtx, earlyCtx.BlockHeight())
+	c.Assert(err, IsNil)
+	c.Assert(earlyBlock.Keygens, HasLen, 1)
+	c.Assert(earlyBlock.Keygens[0].Type, Equals, XMRMonovaultKeygen)
+	c.Assert(earlyBlock.Keygens[0].ID, Not(Equals), delayedBlock.Keygens[0].ID)
+
+	handler := NewTssHandler(mgr)
+	earlyVault := NewVaultV2(
+		earlyCtx.BlockHeight(),
+		InitVault,
+		AsgardVault,
+		GetRandomPubKey(),
+		xmrMonovaultChains().Strings(),
+		nil,
+		common.EmptyPubKey,
+	)
+	earlyVault.Membership = earlyBlock.Keygens[0].Members
+	earlyVault.PubKeyFrost = GetRandomEd25519PubKey()
+	c.Assert(mgr.Keeper().SetVault(earlyCtx, earlyVault), IsNil)
+	c.Assert(handler.rotateReadyKeygenVaultFamilies(earlyCtx, earlyBlock), IsNil)
+
+	earlyVault, err = mgr.Keeper().GetVault(earlyCtx, earlyVault.PubKey)
+	c.Assert(err, IsNil)
+	c.Assert(earlyVault.Status, Equals, ActiveVault)
+
+	delayedCtx := ctx.WithBlockHeight(delayedHeight)
+	delayedVault := NewVaultV2(
+		delayedCtx.BlockHeight(),
+		InitVault,
+		AsgardVault,
+		GetRandomPubKey(),
+		xmrMonovaultChains().Strings(),
+		nil,
+		common.EmptyPubKey,
+	)
+	delayedVault.Membership = delayedBlock.Keygens[0].Members
+	delayedVault.PubKeyFrost = GetRandomEd25519PubKey()
+	c.Assert(mgr.Keeper().SetVault(delayedCtx, delayedVault), IsNil)
+	c.Assert(handler.rotateReadyKeygenVaultFamilies(delayedCtx, delayedBlock), IsNil)
+
+	activeVaults, err := mgr.Keeper().GetAsgardVaultsByStatus(delayedCtx, ActiveVault)
+	c.Assert(err, IsNil)
+	c.Assert(activeVaults, HasLen, 2)
+	activeXMR := filterVaultsByChain(activeVaults, common.XMRChain)
+	c.Assert(activeXMR, HasLen, 1)
+	c.Assert(activeXMR[0].PubKey.Equals(delayedVault.PubKey), Equals, true)
+
+	initVaults, err := mgr.Keeper().GetAsgardVaultsByStatus(delayedCtx, InitVault)
+	c.Assert(err, IsNil)
+	c.Assert(filterVaultsByChain(initVaults, common.XMRChain), HasLen, 0)
+
+	earlyVault, err = mgr.Keeper().GetVault(delayedCtx, earlyVault.PubKey)
+	c.Assert(err, IsNil)
+	c.Assert(earlyVault.Status, Equals, RetiringVault)
+	delayedVault, err = mgr.Keeper().GetVault(delayedCtx, delayedVault.PubKey)
+	c.Assert(err, IsNil)
+	c.Assert(delayedVault.Status, Equals, ActiveVault)
 }
 
 func (*NetworkManagerTestSuite) TestMigrateFundsPropagatesVaultPubKeyFrost(c *C) {
@@ -2347,21 +2477,21 @@ func (*NetworkManagerTestSuite) TestPOLLiquidityAdd(c *C) {
 	// hit max
 	util := cosmos.NewUint(1500)
 	target := cosmos.NewUint(1000)
-	c.Assert(net.addPOLLiquidity(ctx, btcPool, polAddress, asgardAddress, signer, max, util, target, mgr), IsNil)
+	c.Assert(net.addPOLLiquidity(ctx, btcPool, polAddress, asgardAddress, signer, max, util, target, mgr, nil), IsNil)
 	lp, err := mgr.Keeper().GetLiquidityProvider(ctx, btcPool.Asset, polAddress)
 	c.Assert(err, IsNil)
 	c.Check(lp.Units.Uint64(), Equals, uint64(7), Commentf("%d", lp.Units.Uint64()))
 
 	// doesn't hit max
 	util = cosmos.NewUint(1050)
-	c.Assert(net.addPOLLiquidity(ctx, btcPool, polAddress, asgardAddress, signer, max, util, target, mgr), IsNil)
+	c.Assert(net.addPOLLiquidity(ctx, btcPool, polAddress, asgardAddress, signer, max, util, target, mgr, nil), IsNil)
 	lp, err = mgr.Keeper().GetLiquidityProvider(ctx, btcPool.Asset, polAddress)
 	c.Assert(err, IsNil)
 	c.Check(lp.Units.Uint64(), Equals, uint64(10), Commentf("%d", lp.Units.Uint64()))
 
 	// no change needed
 	util = cosmos.NewUint(1000)
-	c.Assert(net.addPOLLiquidity(ctx, btcPool, polAddress, asgardAddress, signer, max, util, target, mgr), IsNil)
+	c.Assert(net.addPOLLiquidity(ctx, btcPool, polAddress, asgardAddress, signer, max, util, target, mgr, nil), IsNil)
 	lp, err = mgr.Keeper().GetLiquidityProvider(ctx, btcPool.Asset, polAddress)
 	c.Assert(err, IsNil)
 	c.Check(lp.Units.Uint64(), Equals, uint64(10), Commentf("%d", lp.Units.Uint64()))
@@ -2370,10 +2500,74 @@ func (*NetworkManagerTestSuite) TestPOLLiquidityAdd(c *C) {
 	max = cosmos.NewUint(1000000)
 	util = cosmos.NewUint(50_000)
 	btcPool.BalanceRune = cosmos.NewUint(90000000000 * common.One)
-	c.Assert(net.addPOLLiquidity(ctx, btcPool, polAddress, asgardAddress, signer, max, util, target, mgr), IsNil)
+	c.Assert(net.addPOLLiquidity(ctx, btcPool, polAddress, asgardAddress, signer, max, util, target, mgr, nil), IsNil)
 	lp, err = mgr.Keeper().GetLiquidityProvider(ctx, btcPool.Asset, polAddress)
 	c.Assert(err, IsNil)
 	c.Check(lp.Units.Uint64(), Equals, uint64(10), Commentf("%d", lp.Units.Uint64()))
+}
+
+// The rune pool value behind the reserve's new RUNEPool units is read only
+// once a POL add succeeds, and still from the state before the deposit.
+func (*NetworkManagerTestSuite) TestPOLLiquidityAddValueBeforeDeposit(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	k := mgr.Keeper()
+
+	net := newNetworkMgr(k, NewTxStoreDummy(), NewDummyEventMgr())
+	polAddress, err := k.GetModuleAddress(ReserveName)
+	c.Assert(err, IsNil)
+	asgardAddress, err := k.GetModuleAddress(AsgardName)
+	c.Assert(err, IsNil)
+	na := GetRandomValidatorNode(NodeActive)
+	c.Assert(k.SetNodeAccount(ctx, na), IsNil)
+
+	btcPool := NewPool()
+	btcPool.Asset = common.BTCAsset
+	btcPool.BalanceRune = cosmos.NewUint(2000 * common.One)
+	btcPool.BalanceAsset = cosmos.NewUint(20 * common.One)
+	btcPool.LPUnits = cosmos.NewUint(2000 * common.One)
+	c.Assert(k.SetPool(ctx, btcPool), IsNil)
+	k.SetLiquidityProvider(ctx, LiquidityProvider{
+		Asset:       common.BTCAsset,
+		RuneAddress: polAddress,
+		Units:       cosmos.NewUint(500 * common.One),
+	})
+	k.SetRUNEPool(ctx, RUNEPool{
+		PoolUnits:    cosmos.NewUint(100 * common.One),
+		ReserveUnits: cosmos.NewUint(900 * common.One),
+	})
+
+	max := cosmos.NewUint(10000)
+	util := cosmos.NewUint(1500)
+	target := cosmos.NewUint(1000)
+	runeAmt := common.GetSafeShare(max, cosmos.NewUint(1000_000), btcPool.BalanceRune)
+	reserveBefore := k.GetRuneBalanceOfModule(ctx, ReserveName)
+
+	// a failed add leaves everything as it was and never computes the value
+	k.SetMimir(ctx, fmt.Sprintf(constants.MimirTemplatePauseLPDeposit, common.BTCAsset.MimirString()), 1)
+	polValue := &polValueMemo{}
+	c.Assert(net.addPOLLiquidity(ctx, btcPool, polAddress, asgardAddress, na.NodeAddress, max, util, target, mgr, polValue), NotNil)
+	c.Check(polValue.ok, Equals, false)
+	c.Check(k.GetRuneBalanceOfModule(ctx, ReserveName).String(), Equals, reserveBefore.String())
+	runePool, err := k.GetRUNEPool(ctx)
+	c.Assert(err, IsNil)
+	c.Check(runePool.ReserveUnits.String(), Equals, cosmos.NewUint(900*common.One).String())
+
+	// a successful add prices the reserve's units at the value before the deposit
+	k.SetMimir(ctx, fmt.Sprintf(constants.MimirTemplatePauseLPDeposit, common.BTCAsset.MimirString()), 0)
+	valueBefore, err := runePoolValue(ctx, mgr)
+	c.Assert(err, IsNil)
+	c.Assert(valueBefore.IsZero(), Equals, false)
+	c.Assert(net.addPOLLiquidity(ctx, btcPool, polAddress, asgardAddress, na.NodeAddress, max, util, target, mgr, polValue), IsNil)
+	valueAfter, err := runePoolValue(ctx, mgr)
+	c.Assert(err, IsNil)
+	c.Assert(valueAfter.GT(valueBefore), Equals, true, Commentf("the deposit should raise the value"))
+
+	expected := cosmos.NewUint(900 * common.One).Add(common.GetSafeShare(runeAmt, valueBefore, cosmos.NewUint(1000*common.One)))
+	runePool, err = k.GetRUNEPool(ctx)
+	c.Assert(err, IsNil)
+	c.Check(runePool.ReserveUnits.String(), Equals, expected.String())
+	c.Check(k.GetRuneBalanceOfModule(ctx, ReserveName).String(), Equals, reserveBefore.Sub(runeAmt).String())
+	c.Check(polValue.ok, Equals, false, Commentf("a committed add resets the memo"))
 }
 
 func (*NetworkManagerTestSuite) TestPOLLiquidityWithdraw(c *C) {

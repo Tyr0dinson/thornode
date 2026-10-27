@@ -316,17 +316,9 @@ func (s *StableReserveMgr) TrySwap(ctx cosmos.Context, mgr Manager, msg MsgSwap)
 }
 
 func (s *StableReserveMgr) isTORAnchor(ctx cosmos.Context, asset common.Asset) bool {
-	l1 := asset.GetLayer1Asset()
 	// Mirror keeper.GetAnchors(TOR) semantics without scanning and unmarshalling
-	// the whole pool store on every swap: an asset is a TOR anchor iff a pool
-	// exists for it and its TorAnchor-<asset> mimir is positive. The key format
-	// matches keeper_anchors.go (and IsPOLReserveEligiblePool).
-	if !s.keeper.PoolExist(ctx, l1) {
-		return false
-	}
-	anchorKey := strings.ReplaceAll(fmt.Sprintf("TorAnchor-%s", l1.String()), ".", "-")
-	val, err := s.keeper.GetMimir(ctx, anchorKey)
-	return err == nil && val > 0
+	// the whole pool store on every swap
+	return isTORAnchorAsset(ctx, s.keeper, asset.GetLayer1Asset())
 }
 
 func (s *StableReserveMgr) stableReservePoolPrice(ctx cosmos.Context, asset common.Asset) (string, bool) {

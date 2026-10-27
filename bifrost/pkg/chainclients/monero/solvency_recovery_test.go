@@ -24,7 +24,13 @@ import (
 
 type recoverySolvencyBridge struct{ solvencyBridge }
 
-func (*recoverySolvencyBridge) GetMimir(string) (int64, error)                     { return -1, nil }
+func (*recoverySolvencyBridge) GetMimir(key string) (int64, error) {
+	if key == "HaltScannerXMR" {
+		return 0, nil
+	}
+	return -1, nil
+}
+
 func (*recoverySolvencyBridge) GetBlockHeight() (int64, error)                     { return 1000, nil }
 func (*recoverySolvencyBridge) GetNetworkFee(common.Chain) (uint64, uint64, error) { return 1, 1, nil }
 

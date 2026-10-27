@@ -168,6 +168,58 @@ func (s *BlockScannerTestSuite) TestProcessTxs(c *C) {
 	c.Assert(txInItems[0].Memo, Equals, "hello")
 }
 
+// TestProcessTxsInnerBatchZeroFee covers a Batch inner transaction
+// (tfInnerBatchTxn): it pays Fee=0, which previously produced a zero-amount gas
+// coin that the observer strips to empty, failing MsgObservedTxIn ValidateBasic.
+// The inbound gas must be floored to the XRP minimum (1 drop = 100 THORChain
+// units) so the observation is valid and the deposit is processed.
+func (s *BlockScannerTestSuite) TestProcessTxsInnerBatchZeroFee(c *C) {
+	cfg := config.BifrostBlockScannerConfiguration{ChainID: common.XRPChain}
+	blockScanner := XrpBlockScanner{
+		cfg:    cfg,
+		logger: log.Logger.With().Str("module", "blockscanner").Str("chain", common.XRPChain.String()).Logger(),
+	}
+
+	innerBatch := map[string]any{
+		"tx_json": map[string]any{
+			"Account":     "rs3xN42EFLE23gUDG2Rw4rwxhR9MnjwZKQ",
+			"Destination": "rELnd6Ae5ZYDhHkaqjSVg2vgtBnzjeDshm",
+			"Fee":         "0",                // inner batch txns pay no fee of their own
+			"Flags":       uint32(0x40000000), // tfInnerBatchTxn
+			"Memos": []any{
+				map[string]any{
+					"Memo": map[string]any{
+						"MemoData": hex.EncodeToString([]byte("=:a:0x1878")),
+					},
+				},
+			},
+			"SigningPubKey":   "03dd7eb4b0479d2898cabdd4ccfd30f2277e57cb9c13ccabb8ec5170ed13dd149a",
+			"TransactionType": "Payment",
+		},
+		"hash": "HASH_INNER_BATCH",
+		"meta": map[string]any{
+			"TransactionResult": "tesSUCCESS",
+			"delivered_amount":  "2005980", // 2.00598 XRP, above the 1 XRP dust threshold
+		},
+		"validated": true,
+	}
+
+	txInItems, err := blockScanner.processTxs(1, []transaction.FlatTransaction{innerBatch})
+	c.Assert(err, IsNil)
+	c.Assert(len(txInItems), Equals, 1)
+	c.Assert(txInItems[0].Tx, Equals, "HASH_INNER_BATCH")
+	// Gas must be present and floored to 1 drop (100 THORChain units), not empty.
+	c.Assert(txInItems[0].Gas, HasLen, 1)
+	c.Check(txInItems[0].Gas[0].Amount.Equal(sdkmath.NewUint(100)), Equals, true,
+		Commentf("expected 1-drop floor (100), got %s", txInItems[0].Gas[0].Amount))
+	c.Check(txInItems[0].Gas[0].Asset.Equals(common.XRPAsset), Equals, true)
+	// The validation that previously failed: the stripped observed tx must keep a gas coin.
+	c.Check(txInItems[0].Gas.NoneEmpty(), HasLen, 1)
+	// The synthetic 1-drop floor must never seed the fee cache (the zero fee is
+	// skipped before updateFeeCache; updateFeeCache would also drop it via fee.Valid()).
+	c.Check(len(blockScanner.feeCache), Equals, 0)
+}
+
 // Simulates requesting txs by hash
 // Number of expanded transactions required == 2, number of expanded transactions provided == 1
 // Mock response will return the second transaction

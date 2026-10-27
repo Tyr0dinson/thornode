@@ -291,15 +291,8 @@ func (HandlerRagnarokSuite) TestSlash(c *C) {
 	c.Assert(keeper.activeNodeAccount.Bond, DeepEquals, cosmos.NewUint(9999983464))
 }
 
-// A Zcash ragnarok outbound scheduled to a tex address is broadcast to - and
-// observed as - the P2PKH form of that same address, because the signer leaves
-// tex destinations unencoded while observers report what the daemon decoded.
-// Comparing the two spellings byte for byte strands the payout three ways at
-// once: OutHash is never written so the item looks unfulfilled forever, the
-// pending ragnarok count never drops so ragnarok never finishes, and the vault
-// is slashed over a transaction the network itself ordered.
 func (HandlerRagnarokSuite) TestRagnarokZecTexDestination(c *C) {
-	p2pkhAddress, err := common.NewAddress("tmEp4k7dSU8eGj32uJPi2wBSGuiNaVFBLN7")
+	p2pkhAddress, err := GetRandomPubKey().GetAddress(common.ZECChain)
 	c.Assert(err, IsNil)
 	texAddress, err := p2pkhAddress.ToTexAddress()
 	c.Assert(err, IsNil)
@@ -377,9 +370,8 @@ func (HandlerRagnarokSuite) TestRagnarokZecTexDestination(c *C) {
 	c.Check(keeper.activeNodeAccount.Bond.String(), Equals, cosmos.NewUint(100*common.One).String(),
 		Commentf("vault must not be slashed for an outbound the network ordered"))
 
-	// Control: an unrelated Zcash destination is still no match, so the slash
-	// above is genuinely withheld rather than simply unreachable in this setup.
-	strangerAddress, err := common.NewAddress("tmAbHS91acTju5QaDawZ1M5Pkbv2FFnRwUX")
+	// An unrelated destination must still fail to match.
+	strangerAddress, err := GetRandomPubKey().GetAddress(common.ZECChain)
 	c.Assert(err, IsNil)
 	ctx, keeper, handler, msg = setup(strangerAddress)
 	_, err = handler.handle(ctx, msg)

@@ -4,12 +4,11 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/cosmos/cosmos-sdk/runtime"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 )
 
 func (k KVStore) setTHORName(ctx cosmos.Context, key []byte, record THORName) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	buf := k.cdc.MustMarshal(&record)
 	if buf == nil {
 		store.Delete(key)
@@ -19,7 +18,7 @@ func (k KVStore) setTHORName(ctx cosmos.Context, key []byte, record THORName) {
 }
 
 func (k KVStore) getTHORName(ctx cosmos.Context, key []byte, record *THORName) (bool, error) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	if !store.Has(key) {
 		return false, nil
 	}
@@ -87,7 +86,7 @@ func (k KVStore) DeleteTHORName(ctx cosmos.Context, name string) error {
 // AffiliateFeeCollector
 
 func (k KVStore) setAffiliateCollector(ctx cosmos.Context, key []byte, record AffiliateFeeCollector) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	buf := k.cdc.MustMarshal(&record)
 	if buf == nil {
 		store.Delete(key)
@@ -97,7 +96,7 @@ func (k KVStore) setAffiliateCollector(ctx cosmos.Context, key []byte, record Af
 }
 
 func (k KVStore) getAffilateCollector(ctx cosmos.Context, key []byte, record *AffiliateFeeCollector) (bool, error) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	if !store.Has(key) {
 		return false, nil
 	}

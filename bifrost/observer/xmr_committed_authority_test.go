@@ -166,13 +166,14 @@ func TestXMRCommittedAuthorityHistoricalCombination(t *testing.T) {
 	payload, err := observed.GetSignablePayloadWithInbound(false)
 	require.NoError(t, err)
 	payloadHash := sha256.Sum256(payload)
-	require.Empty(t, ag.historicalXMRSpentRefAttestations(payloadHash), "ordinary shares are not archived automatically")
+	_, historical, _, _ := ag.historicalXMRSpentRefCertificateSnapshotWithContext(context.Background(), payloadHash)
+	require.Empty(t, historical, "ordinary shares are not archived automatically")
 
 	// A former live signer now supplies the same share through the historical
 	// route. Its duplicate must not turn two unique members into a quorum.
 	require.NoError(t, ag.acceptHistoricalXMRSpentRefCertificate(shares[0], ""))
-	combined := ag.mergeHistoricalXMRCertificateAttestations(payloadHash, ag.observedXMRPayloadAttestations(observed, payloadHash))
-	count, total, quorum := ag.sourceVaultAttestationQuorum(observed.ObservedPubKey, combined)
+	combined := ag.mergeHistoricalXMRCertificateAttestationsWithContext(context.Background(), payloadHash, ag.observedXMRPayloadAttestations(observed, payloadHash))
+	count, total, quorum := ag.sourceVaultAttestationQuorumWithLoader(observed.ObservedPubKey, combined, bridge.GetVault)
 	assert.Equal(t, 2, count)
 	require.Equal(t, 4, total)
 	require.False(t, quorum)
@@ -191,7 +192,8 @@ func TestXMRCommittedAuthorityHistoricalCombination(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("committed live shares and the historical certificate must combine to authorize import")
 	}
-	require.Len(t, ag.historicalXMRSpentRefAttestations(payloadHash), 2)
+	_, historical, _, _ = ag.historicalXMRSpentRefCertificateSnapshotWithContext(context.Background(), payloadHash)
+	require.Len(t, historical, 2)
 	require.True(t, observedXMRPayloadApplied(t, ag, observedTxKey(observed, false, false)))
 }
 

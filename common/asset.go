@@ -3,8 +3,8 @@ package common
 import (
 	"encoding/json"
 	"fmt"
-	"regexp"
 	"strings"
+	"sync"
 
 	"github.com/blang/semver"
 	"github.com/gogo/protobuf/jsonpb"
@@ -78,9 +78,13 @@ func NewAsset(input string) (Asset, error) {
 	var asset Asset
 	var sym string
 	var parts []string
-	re := regexp.MustCompile("[~./-]")
 
-	match := re.FindString(input)
+	// first separator, as regexp "[~./-]" FindString did (without compiling a
+	// regexp on every call)
+	match := ""
+	if i := strings.IndexAny(input, "~./-"); i >= 0 {
+		match = input[i : i+1]
+	}
 
 	switch match {
 	case "~":
@@ -126,7 +130,9 @@ func NewAssetWithShortCodes(version semver.Version, input string) (Asset, error)
 	return NewAssetWithShortCodesV3_1_0(input)
 }
 
-func NewAssetWithShortCodesV3_1_0(input string) (Asset, error) {
+// assetShortCodes maps short codes to the asset strings they expand to. The
+// assets are fixed package values, so the map is built once.
+var assetShortCodes = sync.OnceValue(func() map[string]string {
 	shorts := make(map[string]string)
 
 	shorts[ATOMAsset.ShortCode()] = ATOMAsset.String()
@@ -151,7 +157,11 @@ func NewAssetWithShortCodesV3_1_0(input string) (Asset, error) {
 	shorts[DOTAsset.ShortCode()] = DOTAsset.String()
 	shorts[DASHAsset.ShortCode()] = DASHAsset.String()
 
-	long, ok := shorts[input]
+	return shorts
+})
+
+func NewAssetWithShortCodesV3_1_0(input string) (Asset, error) {
+	long, ok := assetShortCodes()[input]
 	if ok {
 		input = long
 	}
@@ -330,7 +340,7 @@ func (a Asset) String() string {
 	if a.Secured {
 		div = "-"
 	}
-	return fmt.Sprintf("%s%s%s", a.Chain.String(), div, a.Symbol.String())
+	return a.Chain.String() + div + a.Symbol.String()
 }
 
 // ShortCode returns the short code for the asset.

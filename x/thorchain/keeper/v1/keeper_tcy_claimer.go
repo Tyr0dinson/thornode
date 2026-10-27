@@ -4,14 +4,13 @@ import (
 	"fmt"
 
 	"cosmossdk.io/math"
-	"github.com/cosmos/cosmos-sdk/runtime"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper/types"
 )
 
 func (k KVStore) setTCYClaimer(ctx cosmos.Context, key []byte, record TCYClaimer) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	buf := k.cdc.MustMarshal(&record)
 	if buf == nil {
 		store.Delete(key)
@@ -21,7 +20,7 @@ func (k KVStore) setTCYClaimer(ctx cosmos.Context, key []byte, record TCYClaimer
 }
 
 func (k KVStore) getTCYClaimer(ctx cosmos.Context, key []byte, record *TCYClaimer) (bool, error) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	if !store.Has(key) {
 		return false, nil
 	}
@@ -91,7 +90,7 @@ func (k KVStore) ListTCYClaimersFromL1Address(ctx cosmos.Context, l1Address comm
 
 // TCYClaimerExists checks if claimer already exists
 func (k KVStore) TCYClaimerExists(ctx cosmos.Context, l1Address common.Address, asset common.Asset) bool {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	key := k.GetKey(prefixTCYClaimer, fmt.Sprintf("%s/%s", l1Address.String(), asset.String()))
 	return store.Has(key)
 }

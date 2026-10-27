@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strings"
 
+	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
@@ -39,6 +40,11 @@ func handleThornodeApi(w http.ResponseWriter, r *http.Request) {
 		writeText("[]", w)
 	case "/thorchain/vaults":
 		file = "tss/keysign_party"
+	case "/thorchain/vaults/pubkeys":
+		file = "endpoints/vaults/pubKeys"
+		if common.CurrentChainNetwork == common.MainNet {
+			file = "endpoints/vaults/pubKeys-Mainnet"
+		}
 	case "/thorchain/version":
 		writeText(`{"current":"`+types.GetCurrentVersion().String()+`"}`, w)
 	default:

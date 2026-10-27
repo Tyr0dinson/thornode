@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/cometbft/cometbft/crypto/secp256k1"
+	gosecp256k1 "github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -101,21 +102,21 @@ func signAttestation(c *C, privKey secp256k1.PrivKey, signBz []byte) *common.Att
 }
 
 func (s *HandlerQuorumHelpersSuite) TestVerifyQuorumAttestationNilAttestation(c *C) {
-	_, err := verifyQuorumAttestation(NodeAccounts{}, []byte("data"), nil)
+	_, err := verifyQuorumAttestation(NodeAccounts{}, []byte("data"), nil, nil)
 	c.Assert(err, NotNil)
 	c.Assert(err.Error(), Equals, "attestation is nil")
 }
 
 func (s *HandlerQuorumHelpersSuite) TestVerifyQuorumAttestationEmptyPubKey(c *C) {
 	att := &common.Attestation{PubKey: []byte{}, Signature: []byte("sig")}
-	_, err := verifyQuorumAttestation(NodeAccounts{}, []byte("data"), att)
+	_, err := verifyQuorumAttestation(NodeAccounts{}, []byte("data"), att, nil)
 	c.Assert(err, NotNil)
 	c.Assert(err.Error(), Equals, "pubkey is empty")
 }
 
 func (s *HandlerQuorumHelpersSuite) TestVerifyQuorumAttestationEmptySignature(c *C) {
 	att := &common.Attestation{PubKey: []byte("pubkey"), Signature: []byte{}}
-	_, err := verifyQuorumAttestation(NodeAccounts{}, []byte("data"), att)
+	_, err := verifyQuorumAttestation(NodeAccounts{}, []byte("data"), att, nil)
 	c.Assert(err, NotNil)
 	c.Assert(err.Error(), Equals, "signature is empty")
 }
@@ -130,7 +131,7 @@ func (s *HandlerQuorumHelpersSuite) TestVerifyQuorumAttestationSignerNotActive(c
 	otherPrivKey := secp256k1.GenPrivKey()
 	otherNode := makeActiveNode(c, otherPrivKey)
 
-	_, err := verifyQuorumAttestation(NodeAccounts{otherNode}, signBz, att)
+	_, err := verifyQuorumAttestation(NodeAccounts{otherNode}, signBz, att, nil)
 	c.Assert(err, NotNil)
 	c.Assert(err.Error(), Matches, "signer is not an active node account:.*")
 }
@@ -140,7 +141,7 @@ func (s *HandlerQuorumHelpersSuite) TestVerifyQuorumAttestationEmptyActiveNodes(
 	signBz := []byte("some data")
 	att := signAttestation(c, privKey, signBz)
 
-	_, err := verifyQuorumAttestation(NodeAccounts{}, signBz, att)
+	_, err := verifyQuorumAttestation(NodeAccounts{}, signBz, att, nil)
 	c.Assert(err, NotNil)
 	c.Assert(err.Error(), Matches, "signer is not an active node account:.*")
 }
@@ -153,7 +154,7 @@ func (s *HandlerQuorumHelpersSuite) TestVerifyQuorumAttestationInvalidSignature(
 	// Sign different data than what we verify against
 	att := signAttestation(c, privKey, []byte("original data"))
 
-	_, err := verifyQuorumAttestation(NodeAccounts{node}, []byte("different data"), att)
+	_, err := verifyQuorumAttestation(NodeAccounts{node}, []byte("different data"), att, nil)
 	c.Assert(err, NotNil)
 	c.Assert(err.Error(), Matches, "failed to verify signature:.*")
 }
@@ -164,7 +165,7 @@ func (s *HandlerQuorumHelpersSuite) TestVerifyQuorumAttestationValid(c *C) {
 	signBz := []byte("valid data to sign")
 	att := signAttestation(c, privKey, signBz)
 
-	addr, err := verifyQuorumAttestation(NodeAccounts{node}, signBz, att)
+	addr, err := verifyQuorumAttestation(NodeAccounts{node}, signBz, att, nil)
 	c.Assert(err, IsNil)
 	c.Assert(addr, NotNil)
 	// The returned address should match the node's address
@@ -188,13 +189,13 @@ func (s *HandlerQuorumHelpersSuite) TestVerifyQuorumAttestationMultipleActiveNod
 	// Sign with node2's key
 	att := signAttestation(c, privKey2, signBz)
 
-	addr, err := verifyQuorumAttestation(activeNodes, signBz, att)
+	addr, err := verifyQuorumAttestation(activeNodes, signBz, att, nil)
 	c.Assert(err, IsNil)
 	c.Assert(addr.Equals(node2.NodeAddress), Equals, true)
 
 	// Sign with node3's key
 	att3 := signAttestation(c, privKey3, signBz)
-	addr3, err := verifyQuorumAttestation(activeNodes, signBz, att3)
+	addr3, err := verifyQuorumAttestation(activeNodes, signBz, att3, nil)
 	c.Assert(err, IsNil)
 	c.Assert(addr3.Equals(node3.NodeAddress), Equals, true)
 }
@@ -211,6 +212,105 @@ func (s *HandlerQuorumHelpersSuite) TestVerifyQuorumAttestationInvalidPubKeyByte
 		Signature: []byte("fake-sig"),
 	}
 
-	_, err := verifyQuorumAttestation(NodeAccounts{node}, []byte("data"), att)
+	_, err := verifyQuorumAttestation(NodeAccounts{node}, []byte("data"), att, nil)
 	c.Assert(err, NotNil)
+}
+
+func (s *HandlerQuorumHelpersSuite) TestPreverifyAttestationsMatchesSequential(c *C) {
+	signBz := []byte("payload")
+	var active NodeAccounts
+	var checks []attestationCheck
+	for i := 0; i < 40; i++ {
+		privKey := secp256k1.GenPrivKey()
+		payload := signBz
+		if i%7 == 3 {
+			payload = []byte("other payload") // bad signature
+		}
+		att := signAttestation(c, privKey, payload)
+		if i%5 != 4 { // every fifth signer is not active
+			active = append(active, makeActiveNode(c, privKey))
+		}
+		checks = append(checks, attestationCheck{att: att, signBz: signBz})
+	}
+	checks = append(checks,
+		attestationCheck{att: nil, signBz: signBz},
+		attestationCheck{att: &common.Attestation{}, signBz: signBz},
+	)
+
+	sigs := preverifyAttestations(active, checks)
+	for _, ch := range checks {
+		wantAddr, wantErr := verifyQuorumAttestation(active, ch.signBz, ch.att, nil)
+		gotAddr, gotErr := verifyQuorumAttestation(active, ch.signBz, ch.att, sigs)
+		c.Assert(gotAddr, DeepEquals, wantAddr)
+		if wantErr == nil {
+			c.Assert(gotErr, IsNil)
+		} else {
+			c.Assert(gotErr, NotNil)
+			c.Assert(gotErr.Error(), Equals, wantErr.Error())
+		}
+	}
+	// inactive signers are never verified ahead of the checks
+	c.Assert(len(sigs), Equals, 32)
+}
+
+func (s *HandlerQuorumHelpersSuite) TestAttestationBech32PubCache(c *C) {
+	encode := func(key []byte) (string, error) {
+		pk := gosecp256k1.PubKey{Key: key}
+		return cosmos.Bech32ifyPubKey(cosmos.Bech32PubKeyTypeAccPub, &pk)
+	}
+	privKey := secp256k1.GenPrivKey()
+	node := makeActiveNode(c, privKey)
+	key := privKey.PubKey().Bytes()
+	want, err := encode(key)
+	c.Assert(err, IsNil)
+	c.Assert(want, Equals, node.PubKeySet.Secp256k1.String())
+
+	// an active signer is stored once verified; cached and uncached agree
+	signBz := []byte("payload")
+	att := signAttestation(c, privKey, signBz)
+	_, err = verifyQuorumAttestation(NodeAccounts{node}, signBz, att, nil)
+	c.Assert(err, IsNil)
+	prefix := cosmos.GetConfig().GetBech32AccountPubPrefix()
+	attestationBech32CacheMu.RLock()
+	cached, ok := attestationBech32Cache[string(key)]
+	attestationBech32CacheMu.RUnlock()
+	c.Assert(ok, Equals, true)
+	c.Assert(cached, Equals, attestationBech32Entry{prefix: prefix, bech32Pub: want})
+	got, err := attestationBech32Pub(key)
+	c.Assert(err, IsNil)
+	c.Assert(got, Equals, want)
+
+	// served encodings do not allocate
+	allocs := testing.AllocsPerRun(100, func() {
+		_, _ = attestationBech32Pub(key)
+	})
+	c.Assert(allocs, Equals, 0.0)
+
+	// an encoding made under another prefix is never served, and is replaced
+	attestationBech32CacheMu.Lock()
+	attestationBech32Cache[string(key)] = attestationBech32Entry{prefix: "other", bech32Pub: "otherpub1"}
+	attestationBech32CacheMu.Unlock()
+	got, err = attestationBech32Pub(key)
+	c.Assert(err, IsNil)
+	c.Assert(got, Equals, want)
+	rememberAttestationBech32Pub(key, want)
+	attestationBech32CacheMu.RLock()
+	cached = attestationBech32Cache[string(key)]
+	attestationBech32CacheMu.RUnlock()
+	c.Assert(cached, Equals, attestationBech32Entry{prefix: prefix, bech32Pub: want})
+
+	// keys of inactive signers are encoded but never stored
+	other := secp256k1.GenPrivKey()
+	otherAtt := signAttestation(c, other, signBz)
+	_, err = verifyQuorumAttestation(NodeAccounts{node}, signBz, otherAtt, nil)
+	c.Assert(err, NotNil)
+	attestationBech32CacheMu.RLock()
+	_, ok = attestationBech32Cache[string(otherAtt.PubKey)]
+	attestationBech32CacheMu.RUnlock()
+	c.Assert(ok, Equals, false)
+	wantOther, err := encode(otherAtt.PubKey)
+	c.Assert(err, IsNil)
+	gotOther, err := attestationBech32Pub(otherAtt.PubKey)
+	c.Assert(err, IsNil)
+	c.Assert(gotOther, Equals, wantOther)
 }

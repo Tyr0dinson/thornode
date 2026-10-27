@@ -107,7 +107,8 @@ func TestScannerFetchTxsDetectsReorgAfterEmptyCatchupAndRestart(t *testing.T) {
 				http.Error(w, decodeErr.Error(), http.StatusBadRequest)
 				return
 			}
-			if rewindReq.ExpectedResetEpoch != resetEpoch ||
+			if rewindReq.Network != "mocknet" ||
+				rewindReq.ExpectedResetEpoch != resetEpoch ||
 				rewindReq.ExpectedNextHeight != nextHeight ||
 				rewindReq.TargetNextHeight != 99 ||
 				rewindReq.AnchorHeight != 98 ||
@@ -168,7 +169,7 @@ func TestScannerFetchTxsDetectsReorgAfterEmptyCatchupAndRestart(t *testing.T) {
 	defer frostServer.Close()
 
 	frostSigner, err := sidecar.NewClientWithEndpoint(
-		config.BifrostChainConfiguration{},
+		config.BifrostChainConfiguration{SignerExpectedNetwork: "mocknet"},
 		frostServer.URL,
 	)
 	if err != nil {

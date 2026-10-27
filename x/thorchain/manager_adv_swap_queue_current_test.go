@@ -3,6 +3,7 @@ package thorchain
 import (
 	"fmt"
 	"sort"
+	"strings"
 
 	. "gopkg.in/check.v1"
 
@@ -16,6 +17,33 @@ import (
 type AdvSwapQueueSuite struct{}
 
 var _ = Suite(&AdvSwapQueueSuite{})
+
+type countingLimitIteratorKeeper struct {
+	keeper.Keeper
+	limitIteratorCalls int
+}
+
+func (k *countingLimitIteratorKeeper) GetAdvSwapQueueIndexIterator(ctx cosmos.Context, swapType types.SwapType, source, target common.Asset) cosmos.Iterator {
+	if swapType == types.SwapType_limit {
+		k.limitIteratorCalls++
+	}
+	return k.Keeper.GetAdvSwapQueueIndexIterator(ctx, swapType, source, target)
+}
+
+// haltOnFirstSwapKeeper halts trading from inside the first committed swap's
+// cache context, as the MaxRuneSupply circuit breaker in MintToModule does.
+type haltOnFirstSwapKeeper struct {
+	keeper.Keeper
+	halted bool
+}
+
+func (k *haltOnFirstSwapKeeper) SetAdvSwapQueueItemState(ctx cosmos.Context, msg MsgSwap) error {
+	if !k.halted {
+		k.halted = true
+		k.Keeper.SetMimir(ctx, "HaltTrading", ctx.BlockHeight())
+	}
+	return k.Keeper.SetAdvSwapQueueItemState(ctx, msg)
+}
 
 type ExpiredLimitSwapRetryTestKeeper struct {
 	keeper.Keeper
@@ -555,6 +583,16 @@ func (s AdvSwapQueueSuite) TestFetchQueue(c *C) {
 
 	pairs, pools := book.getAssetPairs(ctx)
 
+	// The bounded limit-index scan should identify the one populated pair,
+	// deduplicating its two price buckets and excluding the market queue.
+	activeLimitPairs := book.getActiveLimitPairs(ctx, len(pairs))
+	c.Assert(activeLimitPairs, HasLen, 1)
+	_, ok := activeLimitPairs[genTradePair(common.BTCAsset, common.ETHAsset)]
+	c.Assert(ok, Equals, true)
+	// A bucket count above the supplied work bound must fall back to probing
+	// the finite pool-pair set rather than scaling with queue cardinality.
+	c.Assert(book.getActiveLimitPairs(ctx, 1), IsNil)
+
 	items, err := book.FetchQueue(ctx, mgr, pairs, pools, make(tradePairs, 0))
 	c.Assert(err, IsNil)
 
@@ -587,6 +625,30 @@ func (s AdvSwapQueueSuite) TestFetchQueue(c *C) {
 	c.Check(items, HasLen, 3, Commentf("%d", len(items))) // Market swap + 2 limit swaps expected (all pairs checked)
 }
 
+func (s AdvSwapQueueSuite) TestFetchQueueOnlyProbesPopulatedLimitPairs(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	countingKeeper := &countingLimitIteratorKeeper{Keeper: mgr.Keeper()}
+	book := newSwapQueueAdv(countingKeeper)
+	pairs := tradePairs{
+		genTradePair(common.RuneAsset(), common.BTCAsset),
+		genTradePair(common.BTCAsset, common.RuneAsset()),
+		genTradePair(common.RuneAsset(), common.ETHAsset),
+		genTradePair(common.ETHAsset, common.RuneAsset()),
+		genTradePair(common.BTCAsset, common.ETHAsset),
+		genTradePair(common.ETHAsset, common.BTCAsset),
+	}
+	active := tradePairSet{genTradePair(common.BTCAsset, common.ETHAsset): {}}
+
+	_, err := book.fetchQueue(ctx, mgr, pairs, nil, nil, active)
+	c.Assert(err, IsNil)
+	c.Assert(countingKeeper.limitIteratorCalls, Equals, 1)
+
+	countingKeeper.limitIteratorCalls = 0
+	_, err = book.fetchQueue(ctx, mgr, pairs, nil, nil, make(tradePairSet))
+	c.Assert(err, IsNil)
+	c.Assert(countingKeeper.limitIteratorCalls, Equals, 0)
+}
+
 func (s AdvSwapQueueSuite) TestgetAssetPairs(c *C) {
 	ctx, k := setupKeeperForTest(c)
 
@@ -615,25 +677,28 @@ func (s AdvSwapQueueSuite) TestTradePairsTodo(c *C) {
 
 	// RUNE --> ETH
 	todo := make(tradePairs, 0)
-	todo = todo.findMatchingTrades(genTradePair(common.RuneAsset(), common.ETHAsset), pairs)
+	seen := make(tradePairSet)
+	todo = todo.findMatchingTrades(genTradePair(common.RuneAsset(), common.ETHAsset), pairs, seen)
 	c.Check(todo, HasLen, 2, Commentf("%d", len(todo)))
 	c.Check(todo[0].Equals(genTradePair(common.ETHAsset, common.RuneAsset())), Equals, true, Commentf("%s", todo[0]))
 	c.Check(todo[1].Equals(genTradePair(common.ETHAsset, common.BTCAsset)), Equals, true, Commentf("%s", todo[1]))
 
 	// ensure we don't duplicate
-	todo = todo.findMatchingTrades(genTradePair(common.RuneAsset(), common.ETHAsset), pairs)
+	todo = todo.findMatchingTrades(genTradePair(common.RuneAsset(), common.ETHAsset), pairs, seen)
 	c.Check(todo, HasLen, 2, Commentf("%d", len(todo)))
 
 	// BTC --> RUNE
 	todo = make(tradePairs, 0)
-	todo = todo.findMatchingTrades(genTradePair(common.BTCAsset, common.RuneAsset()), pairs)
+	seen = make(tradePairSet)
+	todo = todo.findMatchingTrades(genTradePair(common.BTCAsset, common.RuneAsset()), pairs, seen)
 	c.Check(todo, HasLen, 2, Commentf("%d", len(todo)))
 	c.Check(todo[0].Equals(genTradePair(common.RuneAsset(), common.BTCAsset)), Equals, true, Commentf("%s", todo[0]))
 	c.Check(todo[1].Equals(genTradePair(common.ETHAsset, common.BTCAsset)), Equals, true, Commentf("%s", todo[1]))
 
 	// BTC --> ETH
 	todo = make(tradePairs, 0)
-	todo = todo.findMatchingTrades(genTradePair(common.BTCAsset, common.ETHAsset), pairs)
+	seen = make(tradePairSet)
+	todo = todo.findMatchingTrades(genTradePair(common.BTCAsset, common.ETHAsset), pairs, seen)
 	c.Check(todo, HasLen, 3, Commentf("%d", len(todo)))
 	c.Check(todo[0].Equals(genTradePair(common.ETHAsset, common.RuneAsset())), Equals, true, Commentf("%s", todo[0]))
 	c.Check(todo[1].Equals(genTradePair(common.RuneAsset(), common.BTCAsset)), Equals, true, Commentf("%s", todo[1]))
@@ -2127,7 +2192,7 @@ func (s AdvSwapQueueSuite) TestRapidSwapTodoListPassing(c *C) {
 
 	// Create initial empty todo and test findMatchingTrades
 	emptyTodoTest := make(tradePairs, 0)
-	matchingTrades := emptyTodoTest.findMatchingTrades(testPair, pairs)
+	matchingTrades := emptyTodoTest.findMatchingTrades(testPair, pairs, make(tradePairSet))
 
 	// Should find trades related to the RUNE->ETH swap
 	c.Assert(len(matchingTrades) > 0, Equals, true) // Should find trades related to RUNE->ETH swap
@@ -2190,15 +2255,16 @@ func (s AdvSwapQueueSuite) TestRapidSwapTodoListPassing(c *C) {
 	// Test 6: Test todo accumulation behavior
 	// Start with empty todo
 	todo := make(tradePairs, 0)
+	todoSeen := make(tradePairSet)
 
 	// Simulate building todo list through successful swaps
 	swapPair1 := genTradePair(common.RuneAsset(), common.ETHAsset)
-	todo = todo.findMatchingTrades(swapPair1, pairs)
+	todo = todo.findMatchingTrades(swapPair1, pairs, todoSeen)
 	initialTodoSize := len(todo)
 
 	// Add another swap result
 	swapPair2 := genTradePair(common.ETHAsset, common.BTCAsset)
-	todo = todo.findMatchingTrades(swapPair2, pairs)
+	todo = todo.findMatchingTrades(swapPair2, pairs, todoSeen)
 
 	// Todo list should have grown (accumulative)
 	c.Assert(len(todo) >= initialTodoSize, Equals, true) // Todo list should have grown (accumulative)
@@ -4898,6 +4964,145 @@ func (s AdvSwapQueueSuite) TestRapidSwapFailedMarketSwapSkip(c *C) {
 		Commentf("Count should be 1 (only iteration 0 should count failed attempts), got %d", updatedSwap.State.Count))
 	c.Assert(len(updatedSwap.State.FailedSwaps), Equals, 1,
 		Commentf("FailedSwaps should have 1 entry (only iteration 0), got %d", len(updatedSwap.State.FailedSwaps)))
+}
+
+// TestRapidSwapFailedMarketConsumesExecutionBudget verifies that a failed
+// RunWithEmit on iteration 1+ does not advance the stream but still consumes
+// the per-iteration computational budget.
+func (s AdvSwapQueueSuite) TestRapidSwapFailedMarketConsumesExecutionBudget(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	seedActiveAdvSwapVault(c, ctx, mgr)
+	book := newSwapQueueAdv(mgr.Keeper())
+
+	for _, asset := range []common.Asset{common.BTCAsset, common.ETHAsset} {
+		pool := NewPool()
+		pool.Asset = asset
+		pool.BalanceAsset = cosmos.NewUint(100000 * common.One)
+		pool.BalanceRune = cosmos.NewUint(100000 * common.One)
+		pool.Status = PoolAvailable
+		c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+	}
+
+	mgr.Keeper().SetMimir(ctx, constants.AdvSwapQueueRapidSwapMax.String(), 3)
+	mgr.Keeper().SetMimir(ctx, constants.MinSwapsPerBlock.String(), 1)
+	mgr.Keeper().SetMimir(ctx, constants.MaxSwapsPerBlock.String(), 1)
+
+	makeSwap := func(asset common.Asset, amount uint64, target cosmos.Uint, idSuffix uint64) *MsgSwap {
+		tx := GetRandomTx()
+		tx.ID = common.TxID(fmt.Sprintf("%064X", idSuffix))
+		tx.Coins = common.NewCoins(common.NewCoin(common.RuneAsset(), cosmos.NewUint(amount)))
+		destination := GetRandomETHAddress()
+		if asset.Equals(common.BTCAsset) {
+			destination = GetRandomBTCAddress()
+		}
+		tx.Memo = fmt.Sprintf("=:%s:%s", asset, destination)
+		msg := NewMsgSwap(
+			tx, asset, destination, target,
+			common.NoAddress, cosmos.ZeroUint(),
+			"", "", nil, types.SwapType_market,
+			0, 0, types.SwapVersion_v2, GetRandomBech32Addr(),
+		)
+		msg.State = &types.SwapState{
+			Quantity:   5,
+			Interval:   0,
+			Deposit:    cosmos.NewUint(amount),
+			In:         cosmos.ZeroUint(),
+			Out:        cosmos.ZeroUint(),
+			LastHeight: ctx.BlockHeight() - 1,
+		}
+		c.Assert(mgr.Keeper().SetAdvSwapQueueItem(ctx, *msg), IsNil)
+		return msg
+	}
+
+	// Iteration 0 spends its one-slot budget on the highest-fee successful
+	// BTC swap, enabling iteration 1.
+	seed := makeSwap(common.BTCAsset, 100*common.One, cosmos.ZeroUint(), 1)
+	// On iteration 1 the seed is direction-skipped. This ETH swap fails and
+	// must consume the only execution slot without advancing State.Count.
+	failed := makeSwap(common.ETHAsset, 10*common.One, cosmos.NewUint(999999*common.One), 2)
+	// This lower-fee successful swap exposes the old budget bypass.
+	tail := makeSwap(common.ETHAsset, common.One, cosmos.ZeroUint(), 3)
+
+	c.Assert(book.EndBlock(ctx, mgr, false), IsNil)
+
+	seedResult, err := mgr.Keeper().GetAdvSwapQueueItem(ctx, seed.Tx.ID, 0)
+	c.Assert(err, IsNil)
+	c.Assert(seedResult.State.Count, Equals, uint64(1))
+	failedResult, err := mgr.Keeper().GetAdvSwapQueueItem(ctx, failed.Tx.ID, 0)
+	c.Assert(err, IsNil)
+	c.Assert(failedResult.State.Count, Equals, uint64(0))
+	tailResult, err := mgr.Keeper().GetAdvSwapQueueItem(ctx, tail.Tx.ID, 0)
+	c.Assert(err, IsNil)
+	c.Assert(tailResult.State.Count, Equals, uint64(0),
+		Commentf("lower-priority swap must not execute after the budgeted failure"))
+}
+
+// TestMidBlockHaltStopsLaterSwaps verifies that a Mimir halt written while
+// the queue executes is seen by later swaps in the same EndBlock, rather than
+// being masked by the Mimir snapshot cache.
+func (s AdvSwapQueueSuite) TestMidBlockHaltStopsLaterSwaps(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	seedActiveAdvSwapVault(c, ctx, mgr)
+	haltKeeper := &haltOnFirstSwapKeeper{Keeper: mgr.Keeper()}
+	book := newSwapQueueAdv(haltKeeper)
+
+	for _, asset := range []common.Asset{common.BTCAsset, common.ETHAsset} {
+		pool := NewPool()
+		pool.Asset = asset
+		pool.BalanceAsset = cosmos.NewUint(100000 * common.One)
+		pool.BalanceRune = cosmos.NewUint(100000 * common.One)
+		pool.Status = PoolAvailable
+		c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+	}
+
+	mgr.Keeper().SetMimir(ctx, constants.AdvSwapQueueRapidSwapMax.String(), 1)
+	mgr.Keeper().SetMimir(ctx, constants.MinSwapsPerBlock.String(), 2)
+	mgr.Keeper().SetMimir(ctx, constants.MaxSwapsPerBlock.String(), 2)
+
+	makeSwap := func(asset common.Asset, amount uint64, idSuffix uint64) *MsgSwap {
+		tx := GetRandomTx()
+		tx.ID = common.TxID(fmt.Sprintf("%064X", idSuffix))
+		tx.Coins = common.NewCoins(common.NewCoin(common.RuneAsset(), cosmos.NewUint(amount)))
+		destination := GetRandomETHAddress()
+		if asset.Equals(common.BTCAsset) {
+			destination = GetRandomBTCAddress()
+		}
+		tx.Memo = fmt.Sprintf("=:%s:%s", asset, destination)
+		msg := NewMsgSwap(
+			tx, asset, destination, cosmos.ZeroUint(),
+			common.NoAddress, cosmos.ZeroUint(),
+			"", "", nil, types.SwapType_market,
+			0, 0, types.SwapVersion_v2, GetRandomBech32Addr(),
+		)
+		msg.State = &types.SwapState{
+			Quantity:   5,
+			Interval:   0,
+			Deposit:    cosmos.NewUint(amount),
+			In:         cosmos.ZeroUint(),
+			Out:        cosmos.ZeroUint(),
+			LastHeight: ctx.BlockHeight() - 1,
+		}
+		c.Assert(mgr.Keeper().SetAdvSwapQueueItem(ctx, *msg), IsNil)
+		return msg
+	}
+
+	// The higher-fee swap executes first and trips the halt on commit.
+	first := makeSwap(common.BTCAsset, 100*common.One, 1)
+	second := makeSwap(common.ETHAsset, common.One, 2)
+
+	c.Assert(book.EndBlock(ctx, mgr, false), IsNil)
+	c.Assert(haltKeeper.halted, Equals, true)
+
+	firstResult, err := mgr.Keeper().GetAdvSwapQueueItem(ctx, first.Tx.ID, 0)
+	c.Assert(err, IsNil)
+	c.Assert(firstResult.State.Out.IsZero(), Equals, false)
+	secondResult, err := mgr.Keeper().GetAdvSwapQueueItem(ctx, second.Tx.ID, 0)
+	c.Assert(err, IsNil)
+	c.Assert(secondResult.State.Out.IsZero(), Equals, true,
+		Commentf("swap after the halt must not execute"))
+	c.Assert(secondResult.State.FailedSwapReasons, HasLen, 1)
+	c.Assert(strings.Contains(secondResult.State.FailedSwapReasons[0], "halt"), Equals, true,
+		Commentf("%v", secondResult.State.FailedSwapReasons))
 }
 
 func (s AdvSwapQueueSuite) TestScoreMsgsUsesSubSwapSize(c *C) {
@@ -8107,6 +8312,14 @@ func (k *failSetAdvSwapKeeper) SetAdvSwapQueueItem(ctx cosmos.Context, msg MsgSw
 	return k.Keeper.SetAdvSwapQueueItem(ctx, msg)
 }
 
+func (k *failSetAdvSwapKeeper) SetAdvSwapQueueItemState(ctx cosmos.Context, msg MsgSwap) error {
+	k.callCount++
+	if k.callCount > k.allowedCalls {
+		return fmt.Errorf("injected SetAdvSwapQueueItemState failure")
+	}
+	return k.Keeper.SetAdvSwapQueueItemState(ctx, msg)
+}
+
 // TestEndBlockSetAdvSwapQueueItemFailureDiscardsBookkeeping verifies that when
 // RunWithEmit succeeds but SetAdvSwapQueueItem(cacheCtx, *msg) fails, the swap
 // is fully discarded: pool state is not committed, telemetry is not updated,
@@ -8178,4 +8391,144 @@ func (s AdvSwapQueueSuite) TestEndBlockSetAdvSwapQueueItemFailureDiscardsBookkee
 	c.Assert(err, IsNil)
 	c.Assert(len(items), Equals, 0,
 		Commentf("outbound items created despite SetAdvSwapQueueItem failure: got %d", len(items)))
+}
+
+// TestRapidSwapRefreshesPairsWhenDerivedPoolReactivates verifies that a
+// derived pool reactivated by a swap mid-EndBlock joins the cached pair list,
+// pair index and todo fallback, so its limit swaps fill in the next rapid iteration
+// instead of waiting a block (or expiring).
+func (s AdvSwapQueueSuite) TestRapidSwapRefreshesPairsWhenDerivedPoolReactivates(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	seedActiveAdvSwapVault(c, ctx, mgr)
+	book := newSwapQueueAdv(mgr.Keeper())
+
+	mgr.Keeper().SetMimir(ctx, "EnableDerivedAssets", 1)
+	mgr.Keeper().SetMimir(ctx, "DerivedDepthBasisPts", 10_000)
+	mgr.Keeper().SetMimir(ctx, "AdvSwapQueueRapidSwapMax", 2)
+
+	// Anchor pool for THOR.ETH: 10000 RUNE / 1000 ETH (1 ETH ≈ 10 RUNE)
+	ethPool := NewPool()
+	ethPool.Asset = common.ETHAsset
+	ethPool.BalanceAsset = cosmos.NewUint(1000 * common.One)
+	ethPool.BalanceRune = cosmos.NewUint(10000 * common.One)
+	ethPool.Status = PoolAvailable
+	c.Assert(mgr.Keeper().SetPool(ctx, ethPool), IsNil)
+
+	// THOR.ETH starts suspended, so the first iteration's pairs exclude it.
+	derivedAsset := common.ETHAsset.GetDerivedAsset()
+	derivedPool := NewPool()
+	derivedPool.Asset = derivedAsset
+	derivedPool.BalanceAsset = cosmos.NewUint(1000 * common.One)
+	derivedPool.BalanceRune = cosmos.NewUint(10000 * common.One)
+	derivedPool.Status = PoolSuspended
+	derivedPool.StatusSince = ctx.BlockHeight() - 1
+	c.Assert(mgr.Keeper().SetPool(ctx, derivedPool), IsNil)
+
+	// Derived-pool swaps burn their input from Asgard.
+	fund := func(coin common.Coin) {
+		c.Assert(mgr.Keeper().MintToModule(ctx, ModuleName, coin), IsNil)
+		c.Assert(mgr.Keeper().SendFromModuleToModule(ctx, ModuleName, AsgardName, common.NewCoins(coin)), IsNil)
+	}
+
+	// Market RUNE -> THOR.ETH: SpawnDerivedAsset in swapOne reactivates the pool.
+	marketCoin := common.NewCoin(common.RuneAsset(), cosmos.NewUint(10*common.One))
+	fund(marketCoin)
+	marketTx := GetRandomTx()
+	marketTx.Coins = common.NewCoins(marketCoin)
+	marketDest := GetRandomTHORAddress()
+	marketTx.Memo = fmt.Sprintf("=:%s:%s", derivedAsset, marketDest)
+	market := NewMsgSwap(
+		marketTx, derivedAsset, marketDest, cosmos.ZeroUint(),
+		"", cosmos.ZeroUint(), "", "", nil,
+		types.SwapType_market,
+		0, 0, types.SwapVersion_v2, GetRandomBech32Addr(),
+	)
+	market.State = &types.SwapState{
+		Quantity:   1,
+		Deposit:    marketCoin.Amount,
+		In:         cosmos.ZeroUint(),
+		Out:        cosmos.ZeroUint(),
+		LastHeight: ctx.BlockHeight() - 1,
+	}
+	c.Assert(mgr.Keeper().SetAdvSwapQueueItem(ctx, *market), IsNil)
+
+	// Limit THOR.ETH -> RUNE with an easily met target. Its pair only enters
+	// todo via the reverse of the market trade above.
+	limitCoin := common.NewCoin(derivedAsset, cosmos.NewUint(1*common.One))
+	fund(limitCoin)
+	limitTx := GetRandomTx()
+	limitTx.Coins = common.NewCoins(limitCoin)
+	limitDest := GetRandomTHORAddress()
+	limitTx.Memo = fmt.Sprintf("=<:%s:%s:%d", common.RuneAsset(), limitDest, uint64(common.One))
+	limit := NewMsgSwap(
+		limitTx, common.RuneAsset(), limitDest, cosmos.NewUint(common.One),
+		"", cosmos.ZeroUint(), "", "", nil,
+		types.SwapType_limit,
+		0, 0, types.SwapVersion_v2, GetRandomBech32Addr(),
+	)
+	limit.InitialBlockHeight = ctx.BlockHeight()
+	limit.State = &types.SwapState{
+		Quantity:   1,
+		Deposit:    limitCoin.Amount,
+		In:         cosmos.ZeroUint(),
+		Out:        cosmos.ZeroUint(),
+		LastHeight: ctx.BlockHeight() - 1,
+	}
+	c.Assert(mgr.Keeper().SetAdvSwapQueueItem(ctx, *limit), IsNil)
+
+	c.Assert(book.EndBlock(ctx, mgr, false), IsNil)
+
+	pool, err := mgr.Keeper().GetPool(ctx, derivedAsset)
+	c.Assert(err, IsNil)
+	c.Assert(pool.Status, Equals, PoolAvailable, Commentf("market swap should reactivate %s", derivedAsset))
+	c.Assert(mgr.Keeper().HasAdvSwapQueueItem(ctx, market.Tx.ID, 0), Equals, false,
+		Commentf("market swap should have completed"))
+
+	// Iteration 1 must see THOR.ETH in pairs/index/todo and fill the limit.
+	c.Assert(mgr.Keeper().HasAdvSwapQueueItem(ctx, limit.Tx.ID, 0), Equals, false,
+		Commentf("limit swap on reactivated derived pool should fill in the same block"))
+}
+
+// TestCapFailedSwapReasons verifies capFailedSwapReasons trims the
+// FailedSwapReasons telemetry slice to the most recent
+// advSwapQueueMaxFailedReasons entries while leaving FailedSwaps untouched, so
+// FailCount()/SuccessCount() are unchanged (the cap is a storage bound, not a
+// consensus-accounting change).
+func (s AdvSwapQueueSuite) TestCapFailedSwapReasons(c *C) {
+	const n = 55
+	reasons := make([]string, n)
+	fails := make([]uint64, n)
+	for i := 0; i < n; i++ {
+		reasons[i] = fmt.Sprintf("reason-%d", i)
+		fails[i] = uint64(i)
+	}
+	msg := &MsgSwap{
+		State: &types.SwapState{
+			Count:             100,
+			FailedSwaps:       append([]uint64(nil), fails...),
+			FailedSwapReasons: append([]string(nil), reasons...),
+		},
+	}
+	beforeFail := msg.FailCount()
+	beforeSuccess := msg.SuccessCount()
+
+	capFailedSwapReasons(msg)
+
+	// reasons trimmed to the last advSwapQueueMaxFailedReasons, order preserved
+	c.Check(msg.State.FailedSwapReasons, HasLen, advSwapQueueMaxFailedReasons)
+	c.Check(msg.State.FailedSwapReasons[0], Equals, fmt.Sprintf("reason-%d", n-advSwapQueueMaxFailedReasons))
+	c.Check(msg.State.FailedSwapReasons[advSwapQueueMaxFailedReasons-1], Equals, fmt.Sprintf("reason-%d", n-1))
+	// FailedSwaps untouched -> FailCount/SuccessCount unchanged (consensus-safe)
+	c.Check(msg.State.FailedSwaps, HasLen, n)
+	c.Check(msg.FailCount(), Equals, beforeFail)
+	c.Check(msg.SuccessCount(), Equals, beforeSuccess)
+
+	// at/below the cap: unchanged
+	small := &MsgSwap{State: &types.SwapState{FailedSwapReasons: []string{"a", "b"}}}
+	capFailedSwapReasons(small)
+	c.Check(small.State.FailedSwapReasons, HasLen, 2)
+
+	// nil-safe
+	capFailedSwapReasons(nil)
+	capFailedSwapReasons(&MsgSwap{})
 }

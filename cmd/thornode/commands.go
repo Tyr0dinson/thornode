@@ -136,7 +136,12 @@ func initRootCmd(
 		cmd.GetValidateSeedPhraseCmd(),
 	)
 
-	server.AddCommands(rootCmd, app.DefaultNodeHome, newApp, appExport, addModuleInitFlags)
+	// AddCommandsWithStartCmdOptions, unlike AddCommands, does not register
+	// module-hash-by-height, so add it here to keep it in every build.
+	startOpts := startCmdOptions(addModuleInitFlags)
+	startOpts.DBOpener = openAppDB
+	server.AddCommandsWithStartCmdOptions(rootCmd, app.DefaultNodeHome, newApp, appExport, startOpts)
+	rootCmd.AddCommand(server.ModuleHashByHeightQuery(newApp))
 	wasmcli.ExtendUnsafeResetAllCmd(rootCmd)
 
 	// add keybase, auxiliary RPC, query, genesis, and tx child commands
@@ -163,6 +168,7 @@ func addModuleInitFlags(startCmd *cobra.Command) {
 
 		// replace sdk logger with thorlog
 		if zl, ok := serverCtx.Logger.Impl().(*zerolog.Logger); ok {
+			zl = consoleLogOutput(zl, serverCtx.Viper, cmd.OutOrStdout())
 			logger := zl.With().CallerWithSkipFrameCount(3).Logger()
 			serverCtx.Logger = thorlog.SdkLogWrapper{
 				Logger: &logger,

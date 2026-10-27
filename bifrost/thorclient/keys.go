@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"sync/atomic"
 
 	"github.com/cosmos/cosmos-sdk/codec"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
@@ -33,6 +34,10 @@ type Keys struct {
 	signerName string
 	password   string // TODO this is a bad way , need to fix it
 	kb         Keyring
+
+	// signerInfo caches the signer's keyring record after the first
+	// successful read; reading it from the file keyring decrypts the entry.
+	signerInfo atomic.Pointer[ckeys.Record]
 }
 
 // NewKeysWithKeybase create a new instance of Keys
@@ -91,12 +96,18 @@ func getKeybase(thorchainHome string, reader io.Reader) (ckeys.Keyring, error) {
 	return ckeys.New(sdk.KeyringServiceName(), ckeys.BackendFile, cliDir, reader, cdc)
 }
 
-// GetSignerInfo return signer info
+// GetSignerInfo return signer info. The record is read from the keyring once
+// and then cached: every caller only reads its address or public key, and a
+// file keyring decrypts (PBKDF2) the entry on every read.
 func (k *Keys) GetSignerInfo() *ckeys.Record {
+	if record := k.signerInfo.Load(); record != nil {
+		return record
+	}
 	record, err := k.kb.Key(k.signerName)
 	if err != nil {
 		panic(err)
 	}
+	k.signerInfo.Store(record)
 	return record
 }
 

@@ -52,8 +52,8 @@ func (s *FreshQuerySuite) TestFreshSpentRefsBypassesLockedCacheWithoutReplacingI
 	httpResponseCachesMu.Unlock()
 	c.Assert(cache, NotNil)
 	func() {
-		cache.httpResponseMu.Lock()
-		defer cache.httpResponseMu.Unlock()
+		c.Assert(cache.lock(context.Background()), IsNil)
+		defer cache.unlock()
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 		defer cancel()
 		type response struct {

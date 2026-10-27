@@ -11,6 +11,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	. "gopkg.in/check.v1"
 	"gopkg.in/yaml.v2"
@@ -23,6 +24,11 @@ func TestPackage(t *testing.T) { TestingT(t) }
 type Test struct{}
 
 var _ = Suite(&Test{})
+
+func (Test) SetUpSuite(c *C) {
+	// failure-path fetch tests retry MaxRetries times; keep the retries, skip the waiting
+	RetryBackoff = time.Millisecond
+}
 
 func (Test) TestAllChainsReturned(c *C) {
 	b := Bifrost{}
@@ -1146,4 +1152,14 @@ func (Test) TestBifrostOracleConfigFields(c *C) {
 	}
 	c.Assert(oracle.Enabled, Equals, true)
 	c.Assert(oracle.LogLevel, Equals, "info")
+}
+
+func (Test) TestAttestationStateSyncTimeoutDefault(c *C) {
+	confMap := map[interface{}]interface{}{}
+	c.Assert(yaml.Unmarshal(defaultConfig, &confMap), IsNil)
+	bifrostMap, ok := confMap["bifrost"].(map[interface{}]interface{})
+	c.Assert(ok, Equals, true)
+	gossipMap, ok := bifrostMap["attestation_gossip"].(map[interface{}]interface{})
+	c.Assert(ok, Equals, true)
+	c.Assert(gossipMap["state_sync_timeout"], Equals, "30m")
 }

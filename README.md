@@ -60,11 +60,11 @@ ln -sf $(which gawk) /usr/local/bin/awk
 
 Install [Docker and Docker Compose V2](https://docs.docker.com/engine/install/).
 
-This project must be built with **Go `1.26.4`** (see `go.mod` and `.go-version`).<br/>
+This project must be built with **Go `1.26.10`** (see `go.mod` and `.go-version`).<br/>
 If your workspace has multiple Go versions, set:
 
 ```bash
-go env -w GOTOOLCHAIN=go1.26.4
+go env -w GOTOOLCHAIN=go1.26.10
 ```
 
 Ensure go modules are enabled.<br/>
@@ -148,6 +148,19 @@ make test-simulation
 make format
 ```
 
+### Pre-push checks
+
+About half of the failures CI catches are lint, format or generated-file failures.
+Install a git pre-push hook that runs `make lint-ci`, the checks of CI's `lint` job, before every push:
+
+```bash
+make install-git-hooks
+```
+
+It usually takes under a minute once its caches are warm; the first run in a new checkout takes a few minutes.
+`PRE_PUSH_GENERATE=1 git push` also runs CI's `generate` check: `make generate` must leave the tree unchanged. That needs Docker and takes about 30 seconds once its images are pulled.
+Skip the hook once with `SKIP_PRE_PUSH=1 git push` or `git push --no-verify`.
+
 ### Test
 
 Run tests
@@ -185,6 +198,8 @@ RUN=mimir/deprecate-ilp test-regression
 # overwrite export state
 EXPORT=1 make test-regression
 ```
+
+The `test-integrity` CI job, the last job in a merge request pipeline, fails when the merge request changes or deletes the exports or blocks under `test/regression/mnt/`, deletes a test file or a regression suite, or leaves a test file with fewer tests. Exports and blocks added together with a new suite are fine. A reviewer clears it by confirming the change with the `goldens-reviewed` label and running a new pipeline.
 
 ### Ledger CLI Support
 

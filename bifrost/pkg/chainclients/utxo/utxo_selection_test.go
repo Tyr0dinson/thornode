@@ -54,7 +54,7 @@ func (s *DogecoinSignerSuite) TestUTXOShortfallReportsCoinsAbsentFromNode(c *C) 
 	vault, addr, _ := s.vaultScript(c)
 	defer s.useListUnspent(c, `[]`).Close()
 
-	_, err := s.client.getUtxoToSpend(vault, btcutil.Amount(1224487968695))
+	_, err := s.client.getUtxoToSpend(vault, btcutil.Amount(1224487968695), 0)
 	c.Check(err, ErrorMatches, `insufficient available UTXOs: need 1224487968695, node lists no UTXOs for `+addr.String()+` .*coins absent.*`)
 }
 
@@ -66,7 +66,7 @@ func (s *DogecoinSignerSuite) TestUTXOShortfallReportsListedButExcludedCoins(c *
 		{"txid":"`+fakeTxID(2)+`","vout":0,"address":"`+addr.String()+`","scriptPubKey":"6a","amount":7000,"confirmations":10,"spendable":true}
 	]`).Close()
 
-	_, err := s.client.getUtxoToSpend(vault, btcutil.Amount(1224487968695))
+	_, err := s.client.getUtxoToSpend(vault, btcutil.Amount(1224487968695), 0)
 	c.Check(err, ErrorMatches, `insufficient available UTXOs: need 1224487968695, only have 0 available from 0 UTXOs; `+
 		`node lists 2 UTXOs worth 1200000000000 for `+addr.String()+`, excluded: invalid script=1, `+
 		`unconfirmed or dust not from asgard=1, mempool chain limit=0, spent check failed=0, already spent=0`)
@@ -79,7 +79,7 @@ func (s *DogecoinSignerSuite) TestUTXOSelectionSpendsListedConfirmedCoins(c *C) 
 		{"txid":"`+fakeTxID(1)+`","vout":0,"address":"`+addr.String()+`","scriptPubKey":"`+script+`","amount":12244.87968695,"confirmations":3,"spendable":true}
 	]`).Close()
 
-	utxos, err := s.client.getUtxoToSpend(vault, btcutil.Amount(1224487968695))
+	utxos, err := s.client.getUtxoToSpend(vault, btcutil.Amount(1224487968695), 0)
 	c.Assert(err, IsNil)
 	c.Assert(utxos, HasLen, 1)
 	c.Check(utxos[0].TxID, Equals, fakeTxID(1))

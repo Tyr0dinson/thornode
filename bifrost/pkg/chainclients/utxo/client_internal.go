@@ -215,7 +215,30 @@ func (c *Client) canDeleteBlock(blockMeta *utxo.BlockMeta) bool {
 	return true
 }
 
+// btcFixedMinRelayFeeSats is the daemon-independent BTC min-relay-fee floor (sats).
+// It MUST be identical on every node: it is signing-consensus-relevant (see
+// updateNetworkInfo). 1000 sat == Bitcoin Core's historical 0.00001 BTC/kvB default
+// (<=29.0), which the network majority runs; pinning here keeps all nodes aligned
+// regardless of Core version. Do not make this per-node configurable.
+const btcFixedMinRelayFeeSats uint64 = 1000
+
 func (c *Client) updateNetworkInfo() {
+	// For BTC the min-relay-fee floor is signing-consensus-relevant: minRelayFeeSats
+	// feeds both the reported network fee (sendNetworkFee) and the outbound fee floor
+	// (applyFeeLimits), which shape the change output, its sighash and the TSS message
+	// id. Bitcoin Core <=29.0 reports relayfee 0.00001 BTC/kvB (1000 sat) while 29.1+
+	// and 30.x default to 0.000001 (100 sat), so a daemon-derived floor makes nodes on
+	// different Core lines build different change outputs for the same outbound — the
+	// minority then signs a different message, is absent from the majority's party, and
+	// is blamed/jailed with no error in its own log. Pin BTC to a fixed floor
+	// independent of the daemon — and independent of whether the GetNetworkInfo RPC
+	// succeeds, so an RPC failure can never leave the BTC floor at 0 — so every node
+	// computes the same fee regardless of Core version. Other UTXO chains keep their
+	// daemon-derived relay fee.
+	if c.cfg.ChainID.Equals(common.BTCChain) {
+		c.minRelayFeeSats.Store(btcFixedMinRelayFeeSats)
+		return
+	}
 	networkInfo, err := c.rpc.GetNetworkInfo()
 	if err != nil {
 		c.log.Err(err).Msg("fail to get network info")
@@ -414,6 +437,14 @@ func (c *Client) getBlock(height int64) (*btcjson.GetBlockVerboseTxResult, error
 	if c.cfg.ChainID == common.DASHChain {
 		if !block.ChainLock || block.Height != height || !strings.EqualFold(block.Hash, hash) {
 			return nil, btypes.ErrUnavailableBlock
+		}
+	}
+	if block.Hash == hash {
+		// Remember the coinbase value for the confirmation count of this block.
+		var value int64
+		value, err = coinbaseValue(&block.GetBlockVerboseTxResult)
+		if err == nil {
+			c.coinbases.put(height, hash, value)
 		}
 	}
 	return &block.GetBlockVerboseTxResult, nil
@@ -1147,19 +1178,31 @@ func (c *Client) getGas(tx *btcjson.TxRawResult, isInbound bool) (common.Gas, er
 }
 
 func (c *Client) getCoinbaseValue(blockHeight int64) (int64, error) {
-	// TODO: this is inefficient, in particular for dogecoin, investigate coinbase cache
-	result, err := c.getBlock(blockHeight)
+	hash, err := c.rpc.GetBlockHash(blockHeight)
 	if err != nil {
 		return 0, fmt.Errorf("fail to get block verbose tx: %w", err)
 	}
+	// A block's content is fixed by its hash, so reuse the value computed when
+	// this block was scanned instead of fetching the whole block again.
+	if value, ok := c.coinbases.get(blockHeight, hash); ok {
+		return value, nil
+	}
+	result, err := c.rpc.GetBlockVerboseTxs(hash)
+	if err != nil {
+		return 0, fmt.Errorf("fail to get block verbose tx: %w", err)
+	}
+	return coinbaseValue(&result.GetBlockVerboseTxResult)
+}
+
+// coinbaseValue returns the total output value of the block's coinbase tx.
+func coinbaseValue(result *btcjson.GetBlockVerboseTxResult) (int64, error) {
 	for _, tx := range result.Tx {
 		if len(tx.Vin) == 1 && tx.Vin[0].IsCoinBase() {
 			total := float64(0)
 			for _, opt := range tx.Vout {
 				total += opt.Value
 			}
-			var amt btcutil.Amount
-			amt, err = btcutil.NewAmount(total)
+			amt, err := btcutil.NewAmount(total)
 			if err != nil {
 				return 0, fmt.Errorf("fail to parse amount: %w", err)
 			}

@@ -955,6 +955,14 @@ func TestFrostKeygenRound1RejectsVerifierEquivocation(t *testing.T) {
 
 	coord := newTestFrostKeygenCoordinator(testPubKeys[0], "msg-id", msgChan, 30*time.Millisecond)
 	initTestFrostKeygenRoundState(t, coord, activeSet, participantIndexMap)
+	// Equivocation is only reported when the round times out. Route both votes
+	// before the round timer exists: left queued, a loaded runner can fire the
+	// timer before select drains them and the timeout carries no equivocation.
+	for range 2 {
+		if response := coord.routeVerificationMessage(<-msgChan.verify, frostDKGRound1); response != nil {
+			t.Fatalf("equivocating vote failed before the round timeout: %+v", response)
+		}
+	}
 	_, failResp := coord.exchangeRound1(activeSet, participantIndexMap, peerIDs, localPayload)
 	if failResp == nil {
 		t.Fatalf("expected verifier equivocation failure")
@@ -1486,7 +1494,9 @@ func TestFrostKeygenRetainsFutureRoundTraffic(t *testing.T) {
 	)
 	enqueueVerifyMessage(t, inbox, "msg-id", testPubKeys[1], frostDKGRound2, round2TranscriptHash)
 
-	coord := newTestFrostKeygenCoordinator(testPubKeys[0], "msg-id", inbox, 100*time.Millisecond)
+	// Every message is already queued, so the timeout only bounds CPU time; a
+	// 100ms bound timed out under -race on a loaded runner.
+	coord := newTestFrostKeygenCoordinator(testPubKeys[0], "msg-id", inbox, time.Second)
 	initTestFrostKeygenRoundState(t, coord, activeSet, participantIndexMap)
 	shares, failure := coord.exchangeRound2(activeSet, participantIndexMap, peerIDs, localRound2)
 	if failure != nil {
@@ -1567,7 +1577,9 @@ func TestFrostKeygenEarlyResultQuorumSurvivesRound3(t *testing.T) {
 		t.Fatalf("expected local round3 timeout, got %+v", failure)
 	}
 
-	response, err := coord.WaitForResult(members, 2, 20*time.Millisecond)
+	// Both results were queued before round3 started, so this deadline only bounds
+	// a hang; a short one loses the race on a loaded -race runner.
+	response, err := coord.WaitForResult(members, 2, 10*time.Second)
 	if err != nil {
 		t.Fatalf("early result quorum was lost: %v", err)
 	}

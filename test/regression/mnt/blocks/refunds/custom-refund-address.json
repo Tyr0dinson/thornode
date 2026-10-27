@@ -371,7 +371,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000001",
                       "memo": "=:ETH.ETH:0xe3c64974c78f5693bd2bc68b3221d58df5c6e877/bcrt1quuds8pd92qnnq0udw0rpg0szpgcslc9pm6tzal:100000000000",
                       "to_address": "bcrt1qzf3gsk7edzwl9syyefvfhle37cjtql35tlzesk"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }
@@ -630,7 +631,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000002",
                       "memo": "REFUND:0000000000000000000000000000000000000000000000000000000000000001",
                       "to_address": "bcrt1quuds8pd92qnnq0udw0rpg0szpgcslc9pm6tzal"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }
@@ -929,7 +931,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000003",
                       "memo": "=:ETH.ETH:0xe3c64974c78f5693bd2bc68b3221d58df5c6e877/bc1badaddress:100000000000",
                       "to_address": "bcrt1qzf3gsk7edzwl9syyefvfhle37cjtql35tlzesk"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }
@@ -1188,7 +1191,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000004",
                       "memo": "REFUND:0000000000000000000000000000000000000000000000000000000000000003",
                       "to_address": "bcrt1q3wrmhnh2qe98rjse30pl7u6jxszjjwl44ls6uw"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }
@@ -1487,7 +1491,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000005",
                       "memo": "=:ETH.ETH:0xe3c64974c78f5693bd2bc68b3221d58df5c6e877/:100000000000",
                       "to_address": "bcrt1qzf3gsk7edzwl9syyefvfhle37cjtql35tlzesk"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }
@@ -1746,7 +1751,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000006",
                       "memo": "REFUND:0000000000000000000000000000000000000000000000000000000000000005",
                       "to_address": "bcrt1q3wrmhnh2qe98rjse30pl7u6jxszjjwl44ls6uw"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }
@@ -2045,7 +2051,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000007",
                       "memo": "=:ETH.ETH:0xe3c64974c78f5693bd2bc68b3221d58df5c6e877/0x1b03d088612a00df0049634e9cc8684d622cada2:100000000000",
                       "to_address": "bcrt1qzf3gsk7edzwl9syyefvfhle37cjtql35tlzesk"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }
@@ -2304,7 +2311,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000008",
                       "memo": "REFUND:0000000000000000000000000000000000000000000000000000000000000007",
                       "to_address": "bcrt1q3wrmhnh2qe98rjse30pl7u6jxszjjwl44ls6uw"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }

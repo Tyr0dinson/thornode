@@ -5,7 +5,6 @@ import (
 	"testing"
 	"time"
 
-	"gitlab.com/thorchain/thornode/v3/bifrost/p2p"
 	"gitlab.com/thorchain/thornode/v3/bifrost/p2p/conversion"
 	"gitlab.com/thorchain/thornode/v3/bifrost/p2p/messages"
 )
@@ -49,7 +48,7 @@ func TestFrostExchangePreprocessIgnoresRemovedEligiblePeer(t *testing.T) {
 	remotePayload := payloadFor(testPubKeys[1], "bb")
 	removedPayload := payloadFor(testPubKeys[2], "cc")
 
-	msgChan := make(chan *p2p.Message, 8)
+	msgChan := newFrostSignInbox()
 	// Frames the removed peer queued before narrowing arrive first.
 	enqueueKeySignMessage(t, msgChan, messages.TSSFrostPreprocessMsg, "msg-id", testPubKeys[2], removedPayload)
 	enqueueKeySignMessage(t, msgChan, messages.TSSFrostVerifyMsg, "msg-id", testPubKeys[2], FrostVerifyPayload{
@@ -76,6 +75,7 @@ func TestFrostExchangePreprocessIgnoresRemovedEligiblePeer(t *testing.T) {
 	})
 
 	coord := newTestFrostSignCoordinator(testPubKeys[0], "msg-id", msgChan, time.Second)
+	initTestFrostSignRoundState(t, coord, activeSet, participantIndexMap)
 	values, failResp := coord.exchangePreprocess(activeSet, participantIndexMap, peerIDs, localPayload)
 	if failResp != nil {
 		t.Fatalf("a removed peer's queued frames failed the round: %+v", failResp)

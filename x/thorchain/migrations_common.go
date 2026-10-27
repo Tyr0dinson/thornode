@@ -446,3 +446,78 @@ func (m Migrator) Migrate18to19(ctx cosmos.Context) error {
 	commit()
 	return nil
 }
+
+// Migrate19to20 merges swapper clout recorded under ZEC TEX addresses into the
+// transparent address record. Outbounds now go to the transparent address, and
+// the keeper credits, spends and reclaims clout under that form.
+func (m Migrator) Migrate19to20(ctx cosmos.Context) error {
+	if err := m.mgr.LoadManagerIfNecessary(ctx); err != nil {
+		return err
+	}
+	k := m.mgr.Keeper()
+	type entry struct {
+		key   []byte
+		clout SwapperClout
+	}
+	var entries []entry
+	iter := k.GetSwapperCloutIterator(ctx)
+	for ; iter.Valid(); iter.Next() {
+		clout := NewSwapperClout(common.NoAddress)
+		if err := k.Cdc().Unmarshal(iter.Value(), &clout); err != nil {
+			ctx.Logger().Error("fail to read swapper clout", "key", string(iter.Key()), "error", err)
+			continue
+		}
+		if strings.HasPrefix(clout.Address.String(), "tex") {
+			entries = append(entries, entry{append([]byte(nil), iter.Key()...), clout})
+		}
+	}
+	iter.Close()
+
+	// Iterators are closed before writes. Restore each record before merging so a
+	// recent spend on one cannot keep the other's stale spend outstanding.
+	cloutReset := k.GetConfigInt64(ctx, constants.CloutReset)
+	for _, item := range entries {
+		transparent, err := common.ConvertToZECTransparentAddress(item.clout.Address)
+		if err != nil {
+			ctx.Logger().Error("fail to convert swapper clout address", "address", item.clout.Address, "error", err)
+			continue
+		}
+		merged, err := k.GetSwapperClout(ctx, transparent)
+		if err != nil {
+			ctx.Logger().Error("fail to get swapper clout", "address", transparent, "error", err)
+			continue
+		}
+		merged.Restore(ctx.BlockHeight(), cloutReset)
+		item.clout.Restore(ctx.BlockHeight(), cloutReset)
+		merged.Score = merged.Score.Add(item.clout.Score)
+		merged.Spent = merged.Spent.Add(item.clout.Spent)
+		merged.Reclaimed = merged.Reclaimed.Add(item.clout.Reclaimed)
+		merged.LastSpentHeight = max(merged.LastSpentHeight, item.clout.LastSpentHeight)
+		merged.LastReclaimHeight = max(merged.LastReclaimHeight, item.clout.LastReclaimHeight)
+		if err := k.SetSwapperClout(ctx, merged); err != nil {
+			ctx.Logger().Error("fail to save swapper clout", "address", transparent, "error", err)
+			continue
+		}
+		k.DeleteKey(ctx, item.key)
+		ctx.Logger().Info("merged TEX swapper clout", "tex", item.clout.Address, "address", transparent)
+	}
+	// Mainnet-only follow-on steps (no-op off mainnet): reverse the erroneous rzxslmgc /
+	// h28181638 ZEC / h28172517 TRON slashes + refund bond providers, donate the Secured-Ops
+	// LP positions + repay NDT, restore ETH.THOR depth, and retire the low-synth pools. Run
+	// AFTER the TEX clout merge so develop's step semantics are unchanged; each sub-step
+	// soft-skips on drift and the whole set is gated behind mainnetDonationSpecComplete.
+	if err := m.migrate19to20Mainnet(ctx); err != nil {
+		return err
+	}
+	return nil
+}
+
+// Migrate20to21 writes down the GAIA.ATOM that vault ...jy4h was credited for
+// five inbounds it never received on the Cosmos Hub, and replenishes the
+// GAIA.ATOM pool with Reserve RUNE. Mainnet only; the step soft-skips on drift.
+func (m Migrator) Migrate20to21(ctx cosmos.Context) error {
+	if err := m.mgr.LoadManagerIfNecessary(ctx); err != nil {
+		return err
+	}
+	return m.migrate20to21Mainnet(ctx)
+}

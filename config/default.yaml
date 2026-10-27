@@ -53,6 +53,7 @@ bifrost:
     max_batch_size: 100
     batch_interval: 2s
     peer_timeout: 20s
+    state_sync_timeout: 30m
     peer_concurrent_sends: 4
     peer_concurrent_receives: 5
   signer:
@@ -475,6 +476,12 @@ bifrost:
         chain_id: XRP
         gas_price_resolution: 100 # drops
         observation_flexibility_blocks: 40
+        # XRP closes a ledger every ~4s, so retry/timeout budgets are kept far
+        # tighter than the 30s/10 defaults inherited by slower chains. 5s also
+        # matches the xrpl-go rpc client's internal per-request context
+        # deadline, which caps any larger configured value.
+        http_request_timeout: 5s
+        max_http_request_retry: 3
       mempool_tx_id_cache_size: 0
       scanner_leveldb: *default-leveldb
 
@@ -482,6 +489,7 @@ bifrost:
       <<: *default-chain
       disabled: true
       chain_id: XMR
+      chain_network: "" # required daemon identity: mocknet, mainnet, stagenet, or testnet
       min_confirmations: 10
       signer_backend: "tss" # monero signer backend
       signer_endpoint: "http://127.0.0.1:8283" # this node's xmr tss signer endpoint

@@ -33,6 +33,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/constants"
 
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/client/cli"
+	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 
 	wasmkeeper "github.com/CosmWasm/wasmd/x/wasm/keeper"
@@ -146,7 +147,7 @@ func (AppModule) IsAppModule() {}
 func (AppModule) IsOnePerModuleType() {}
 
 func (AppModule) ConsensusVersion() uint64 {
-	return 19
+	return 21
 }
 
 func (am AppModule) RegisterInvariants(_ sdk.InvariantRegistry) {}
@@ -174,12 +175,21 @@ func (am AppModule) RegisterServices(cfg module.Configurator) {
 	if err := cfg.RegisterMigration(types.ModuleName, 18, m.Migrate18to19); err != nil {
 		panic(fmt.Sprintf("failed to migrate x/thorchain from version 18 to 19: %v", err))
 	}
+	if err := cfg.RegisterMigration(types.ModuleName, 19, m.Migrate19to20); err != nil {
+		panic(fmt.Sprintf("failed to migrate x/thorchain from version 19 to 20: %v", err))
+	}
+	if err := cfg.RegisterMigration(types.ModuleName, 20, m.Migrate20to21); err != nil {
+		panic(fmt.Sprintf("failed to migrate x/thorchain from version 20 to 21: %v", err))
+	}
 }
 
 // BeginBlock called when a block get proposed
 func (am AppModule) BeginBlock(goCtx context.Context) error {
 	ctx := sdk.UnwrapSDKContext(goCtx)
 	ctx = ctx.WithLogger(ctx.Logger().With("module", "x/"+ModuleName, "height", ctx.BlockHeight()))
+	// BeginBlock lists the active validators several times; share one decode
+	// until a node account is written. Not in DeliverTx: gas_used would change.
+	ctx = keeper.WithActiveValidatorsCache(ctx)
 
 	votes := ctx.CometInfo().GetLastCommit().Votes()
 	var existingValidators []string
@@ -228,6 +238,9 @@ func (am AppModule) BeginBlock(goCtx context.Context) error {
 func (am AppModule) EndBlock(goCtx context.Context) ([]abci.ValidatorUpdate, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
 	ctx = ctx.WithLogger(ctx.Logger().With("module", "x/"+ModuleName, "height", ctx.BlockHeight()))
+	// EndBlock lists the active validators many times (per POL pool, per
+	// outbound, per manager); share one decode until a node account is written.
+	ctx = keeper.WithActiveValidatorsCache(ctx)
 
 	ctx.Logger().Debug("End Block")
 
@@ -316,6 +329,17 @@ func (am AppModule) EndBlock(goCtx context.Context) ([]abci.ValidatorUpdate, err
 		)
 	}
 	telemetry.ModuleMeasureSince("network", start, "thornode", "block", "endblock")
+
+	start = telemetry.Now()
+	if err := processObservationTallies(ctx, am.mgr); err != nil {
+		ctx.Logger().Error("fail to process observation tallies", "error", err)
+		telemetry.IncrCounterWithLabels(
+			[]string{"thornode", "endblock", "manager_error"},
+			float32(1),
+			[]metrics.Label{telemetry.NewLabel("manager", "observation_tally")},
+		)
+	}
+	telemetry.ModuleMeasureSince("observation_tally", start, "thornode", "block", "endblock")
 
 	start = telemetry.Now()
 	validators := am.mgr.ValidatorMgr().EndBlock(ctx, am.mgr)

@@ -15,7 +15,8 @@ PEER="${PEER:=none}"          # the hostname of a seed node set as tendermint pe
 PEER_API="${PEER_API:=$PEER}" # the hostname of a seed node API if different
 
 # Inspect registration before init_chain can create a temporary genesis file.
-# Existing initialized volumes without a marker retain their normal startup.
+# Existing initialized volumes without a marker retain their normal startup. An
+# incomplete registration resumes from the state already committed on chain.
 registration_state=""
 registration_state_file="$HOME/.thornode/mocknet-registration.state"
 if [ "$NET" = "mocknet" ] && [ -e "$registration_state_file" ]; then
@@ -23,8 +24,7 @@ if [ "$NET" = "mocknet" ] && [ -e "$registration_state_file" ]; then
   case "$registration_state" in
   registered) ;;
   registering)
-    echo "Mocknet registration is incomplete or uncertain; refusing to submit again. Inspect committed transactions before recovering $registration_state_file." >&2
-    exit 1
+    echo "Resuming incomplete mocknet registration from committed chain state"
     ;;
   *)
     echo "Invalid mocknet registration state in $registration_state_file; inspect it before recovery." >&2
@@ -33,9 +33,12 @@ if [ "$NET" = "mocknet" ] && [ -e "$registration_state_file" ]; then
   esac
 fi
 
-if [ ! -f ~/.thornode/config/genesis.json ] && [ "$registration_state" != "registered" ]; then
+if { [ ! -f ~/.thornode/config/genesis.json ] && [ "$registration_state" != "registered" ]; } ||
+  [ "$registration_state" = "registering" ]; then
   if [ "$NET" = "mocknet" ]; then
     write_mocknet_registration_state "$registration_state_file" registering || exit 1
+    # A restart can leave the temporary genesis file that init_chain refuses to overwrite.
+    rm -f ~/.thornode/config/genesis.json
   fi
   echo "Setting THORNode as Validator node"
 

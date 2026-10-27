@@ -45,7 +45,7 @@ Note the context/background should be written in the present tense.
 - [012 - Scale Lending](./adr-012-scale-lending.md)
 - [013 - Synth Backstop](./adr-013-synth-backstop.md)
 - [014 - Reduce Saver Yield Synth Target to Match POL Target](./adr-014-reduce-saver-yield-target.md)
-- [015 - Refund Synth Positions After Ragnarok](architecture/adr-015-refund-synth-positions-after-ragnarok.md)
+- [015 - Refund Synth Positions After Ragnarok](./adr-015-refund-synth-positions-after-ragnarok.md)
 
 ### Accepted
 

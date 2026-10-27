@@ -1438,3 +1438,72 @@ func (s *PoolMgrSuite) TestCommitPendingLiquidity(c *C) {
 	c.Check(lp.PendingRune.Uint64(), Equals, uint64(0), Commentf("%d", lp.PendingRune.Uint64()))
 	c.Check(lp.PendingAsset.Uint64(), Equals, uint64(811), Commentf("%d", lp.PendingAsset.Uint64()))
 }
+
+func (s *PoolMgrSuite) TestCleanupPendingLiquidityDueAndTVLCap(c *C) {
+	type tc struct {
+		name      string
+		due       bool
+		tvlCapped bool
+		committed bool
+	}
+	for _, t := range []tc{
+		{"due, under the TVL cap", true, false, true},
+		{"due, at the TVL cap", true, true, false},
+		{"not due, under the TVL cap", false, false, false},
+		{"not due, at the TVL cap", false, true, false},
+	} {
+		ctx, mgr := setupManagerForTest(c)
+		ageLimit := mgr.Keeper().GetConfigInt64(ctx, constants.PendingLiquidityAgeLimit)
+		c.Assert(ageLimit > 1, Equals, true)
+		// one pool with pending liquidity: it is due when height % ageLimit == 0
+		height := 3 * ageLimit
+		if !t.due {
+			height++
+		}
+		ctx = ctx.WithBlockHeight(height)
+		na := GetRandomValidatorNode(NodeActive)
+		na.Bond = cosmos.NewUint(1)
+		c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
+
+		pool := NewPool()
+		pool.Asset = common.BTCAsset
+		pool.Status = PoolAvailable
+		pool.BalanceRune = cosmos.NewUint(100_000)
+		pool.BalanceAsset = cosmos.NewUint(100_000)
+		pool.PendingInboundRune = cosmos.NewUint(501)
+		pool.LPUnits = cosmos.NewUint(1000)
+		c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+		lp := LiquidityProvider{
+			Asset:         pool.Asset,
+			RuneAddress:   GetRandomRUNEAddress(),
+			AssetAddress:  GetRandomBTCAddress(),
+			PendingRune:   cosmos.NewUint(501),
+			Units:         cosmos.NewUint(300),
+			LastAddHeight: 1,
+		}
+		mgr.Keeper().SetLiquidityProvider(ctx, lp)
+
+		if t.tvlCapped {
+			// a 1-unit bond secures a vault holding 10k BTC units
+			mgr.constAccessor = constants.NewDummyConstants(nil, map[constants.ConstantName]bool{
+				constants.StrictBondLiquidityRatio: true,
+			}, nil)
+			vault := GetRandomVault()
+			vault.Coins = common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(10_000))}
+			c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+		}
+		c.Assert(atTVLCap(ctx, nil, mgr), Equals, t.tvlCapped, Commentf(t.name))
+
+		newPoolMgr().cleanupPendingLiquidity(ctx, mgr)
+
+		got, err := mgr.Keeper().GetLiquidityProvider(ctx, pool.Asset, lp.GetAddress())
+		c.Assert(err, IsNil)
+		if t.committed {
+			c.Check(got.PendingRune.IsZero(), Equals, true, Commentf(t.name))
+			c.Check(got.Units.Uint64() > 300, Equals, true, Commentf(t.name))
+		} else {
+			c.Check(got.PendingRune.Uint64(), Equals, uint64(501), Commentf(t.name))
+			c.Check(got.Units.Uint64(), Equals, uint64(300), Commentf(t.name))
+		}
+	}
+}

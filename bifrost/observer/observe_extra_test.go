@@ -1128,9 +1128,9 @@ func (s *ObserveExtraSuite) TestAttestationStateAddAttestation(c *C) {
 	c.Assert(state.AttestationCount(), Equals, 1)
 	c.Assert(state.UnsentCount(), Equals, 1)
 
-	// Duplicate signature - should be ignored
+	// The same signer and signature is an idempotent replay.
 	err = state.AddAttestation(&common.Attestation{
-		PubKey:    []byte("pk2"),
+		PubKey:    []byte("pk1"),
 		Signature: []byte("sig1"),
 	})
 	c.Assert(err, IsNil)
@@ -1550,24 +1550,20 @@ func (s *ObserveExtraSuite) TestHandleQuorumTxCommittedWithOurAttestation(c *C) 
 }
 
 // ---------------------------------------------------------------------------
-// sendToQuorumChecker basic test
+// sendObservedTxs basic test
 // ---------------------------------------------------------------------------
 
-func (s *ObserveExtraSuite) TestSendToQuorumCheckerEmptyDeck(c *C) {
+func (s *ObserveExtraSuite) TestSendObservedTxsEmpty(c *C) {
 	obs := &Observer{
 		logger:              log.Logger,
 		errCounter:          s.m.GetCounterVec(metrics.ObserverError),
 		tssKeysignMetricMgr: metrics.NewTssKeysignMetricMgr(),
 	}
 
-	// Empty deck - should return no invalid indices
-	deck := &types.TxIn{
-		Chain:   common.BTCChain,
-		TxArray: []*types.TxInItem{},
+	obs.sendObservedTxsFn = func(common.ObservedTxs, bool) {
+		c.Fatal("empty observations must not be submitted")
 	}
-
-	invalidIndices := obs.sendToQuorumChecker(deck, false, 100)
-	c.Assert(len(invalidIndices), Equals, 0)
+	obs.sendObservedTxs(nil, false)
 }
 
 // ---------------------------------------------------------------------------
@@ -2016,8 +2012,9 @@ func (s *ObserveExtraSuite) TestAttestPriceFeed(c *C) {
 	ag, _ := newTestAttestationGossip(c, []peer.ID{"self", "peer1"})
 
 	pf := common.PriceFeed{
-		Time:  time.Now().Unix(),
-		Rates: []*common.OraclePrice{{Amount: 100, Decimals: 8}},
+		Time:    time.Now().Unix(),
+		Rates:   []*common.OraclePrice{{Amount: 100, Decimals: 8}},
+		Version: make([]byte, 8),
 	}
 
 	err := ag.AttestPriceFeed(context.Background(), pf)
@@ -2170,8 +2167,9 @@ func (s *ObserveExtraSuite) TestHandlePriceFeedAttestation(c *C) {
 
 	// Generate a valid signature for the price feed
 	pf := &common.PriceFeed{
-		Time:  time.Now().Unix(),
-		Rates: []*common.OraclePrice{{Amount: 100, Decimals: 8}},
+		Time:    time.Now().Unix(),
+		Rates:   []*common.OraclePrice{{Amount: 100, Decimals: 8}},
+		Version: make([]byte, 8),
 	}
 	signBz, err := pf.GetSignablePayload()
 	c.Assert(err, IsNil)
@@ -2478,7 +2476,7 @@ func (s *ObserveExtraSuite) TestProcessAttestationStateBatch(c *C) {
 		},
 		QuoNetworkFees: []*common.QuorumNetworkFee{
 			{
-				NetworkFee:   &common.NetworkFee{Chain: common.ETHChain, Height: 50},
+				NetworkFee:   &common.NetworkFee{Chain: common.ETHChain, Height: 50, TransactionSize: 100, TransactionRate: 2},
 				Attestations: []*common.Attestation{{PubKey: []byte("pk2"), Signature: []byte("sig2")}},
 			},
 		},
@@ -2496,7 +2494,7 @@ func (s *ObserveExtraSuite) TestProcessAttestationStateBatch(c *C) {
 		},
 	}
 
-	ag.processAttestationStateBatch(log.Logger, batch)
+	c.Assert(ag.processAttestationStateBatch(log.Logger, batch), IsNil)
 
 	// Give goroutine a moment to process
 	time.Sleep(50 * time.Millisecond)
@@ -2723,23 +2721,23 @@ func (s *ObserveExtraSuite) TestSendErrataAttestationsGrpcError(c *C) {
 }
 
 // ---------------------------------------------------------------------------
-// askForAttestationState - no peers
+// attestationStatePeers - no eligible peers
 // ---------------------------------------------------------------------------
 
-func (s *ObserveExtraSuite) TestAskForAttestationStateNoPeers(c *C) {
+func (s *ObserveExtraSuite) TestAttestationStatePeersNoPeers(c *C) {
 	ag, _ := newTestAttestationGossip(c, []peer.ID{"self"})
 	ag.host = NewMockHost([]peer.ID{}) // no peers at all
-	ag.askForAttestationState(context.Background())
+	c.Assert(ag.attestationStatePeers(), HasLen, 0)
 }
 
-func (s *ObserveExtraSuite) TestAskForAttestationStateNoActiveValPeers(c *C) {
+func (s *ObserveExtraSuite) TestAttestationStatePeersNoActiveValPeers(c *C) {
 	ag, _ := newTestAttestationGossip(c, []peer.ID{"self", "peer1", "peer2"})
 	// Only self is active, so peers without me that are active = 0
 	ag.avMu.Lock()
 	ag.activeVals = map[peer.ID]bool{"self": true}
 	ag.avMu.Unlock()
 
-	ag.askForAttestationState(context.Background())
+	c.Assert(ag.attestationStatePeers(), HasLen, 0)
 }
 
 // ---------------------------------------------------------------------------
@@ -2834,6 +2832,8 @@ func (s *ObserveExtraSuite) TestHandleStreamAttestationStateBatchBeginNoInit(c *
 func (s *ObserveExtraSuite) TestHandleStreamAttestationStateBatchBeginUnauthorized(c *C) {
 	ag, _ := newTestAttestationGossip(c, []peer.ID{"self"})
 	ag.stateInitMu.Lock()
+	ag.stateInitContext = context.Background()
+	ag.stateInitWorkers = new(sync.WaitGroup)
 	ag.stateInitPeers = map[peer.ID]bool{"authorized_peer": true}
 	ag.stateInitMu.Unlock()
 
@@ -2852,6 +2852,8 @@ func (s *ObserveExtraSuite) TestHandleStreamAttestationStateBatchBeginUnauthoriz
 func (s *ObserveExtraSuite) TestHandleStreamAttestationStateBatchBeginAuthorized(c *C) {
 	ag, _ := newTestAttestationGossip(c, []peer.ID{"self"})
 	ag.stateInitMu.Lock()
+	ag.stateInitContext = context.Background()
+	ag.stateInitWorkers = new(sync.WaitGroup)
 	ag.stateInitPeers = map[peer.ID]bool{"peer1": true}
 	ag.stateInitMu.Unlock()
 
@@ -3440,7 +3442,7 @@ func (s *ObserveExtraSuite) TestGetOracleMimirsInterval(c *C) {
 func (s *ObserveExtraSuite) TestProcessAttestationStateBatchEmpty(c *C) {
 	ag, _ := newTestAttestationGossip(c, []peer.ID{"self"})
 	// Empty batch should not panic
-	ag.processAttestationStateBatch(log.Logger, common.QuorumState{})
+	c.Assert(ag.processAttestationStateBatch(log.Logger, common.QuorumState{}), IsNil)
 }
 
 // ---------------------------------------------------------------------------

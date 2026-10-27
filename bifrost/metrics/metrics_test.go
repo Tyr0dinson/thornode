@@ -204,6 +204,11 @@ func TestNewMetrics(t *testing.T) {
 	if cv := m.GetCounterVec(BlockScanError(common.ETHChain)); cv == nil {
 		t.Error("expected chain counter vec BlockScanError(ETH) to be registered")
 	}
+	for _, name := range []MetricName{SolvencyPayloads, SolvencyRoundsStarted, SolvencyRounds, SolvencyRoundAttestations} {
+		if cv := m.GetCounterVec(name); cv == nil {
+			t.Errorf("expected counter vec %s to be registered", name)
+		}
+	}
 }
 
 func TestNewMetrics_PprofEnabled(t *testing.T) {

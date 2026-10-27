@@ -89,7 +89,7 @@ func (a *FrostAdapter) FrostSignPartial(req tssp.FrostSidecarPartialReq) (tssp.F
 	if a == nil || a.client == nil {
 		return tssp.FrostSidecarPartialResp{}, fmt.Errorf("frost adapter is not initialized")
 	}
-	resp, err := a.client.SignPartial(SignPartialReq{
+	resp, err := a.client.SignPartialContext(a.ctx, SignPartialReq{
 		MsgID:           req.MsgID,
 		SessionID:       req.SessionID,
 		AllPreprocesses: req.AllPreprocesses,

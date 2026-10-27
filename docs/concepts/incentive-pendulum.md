@@ -11,7 +11,7 @@ The Incentive Pendulum splits rewards between node operators and liquidity provi
 - **Total Effective Bond**: The sum of all active nodes bond up to the **Bond Hard Cap**. For each node, the effective bond amount that receives rewards and is acknowledged by the Incentive Pendulum is capped by the Bond Hard Cap. This maintains a balanced and secure network by encouraging additional bond increase only of the 2/3 of nodes with the lowest bond.
 - **Vault Liquidity**: Sum value of L1 assets within all Asgard Vaults valued in RUNE. Includes Pooled Assets, Trade Assets, Secure Assets, streaming swap Assets, and Oversolvencies.
 - [**Total Pooled**](https://runescan.io/address/thor1g98cy3n9mmjrpn0sxmn63lztelera37n8n67c0): Sum of RUNE liquidity in all available [pools](https://runescan.io/pools) by liquidity providers. Total Pooled is within Vault Liquidity.
-- **Total Rewards**: Block rewards as per the [block emission schedule](https://docs.thorchain.org/how-it-works/emission-schedule) plus liquidity fees within one block, after `DevFundSystemIncomeBps`, `SystemIncomeBurnRateBps` and `TCYStakeSystemIncomeBps` have been deducted.
+- **Total Rewards**: Block rewards as per the [block emission schedule](./economic-model.md#emission-schedule) plus liquidity fees within one block, after `DevFundSystemIncomeBps`, `SystemIncomeBurnRateBps` and `TCYStakeSystemIncomeBps` have been deducted.
 - **TVL Cap Basis Points**: Basis points defining the maximum allowed liquidity relative to total bonded RUNE before deposits are blocked.
 
 ## Pendulum Reward Cap and TVL Cap

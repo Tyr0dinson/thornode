@@ -1,6 +1,7 @@
 package utxo
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -29,6 +30,7 @@ import (
 	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
 	sdktypes "github.com/cosmos/cosmos-sdk/types"
 	"github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/rs/zerolog"
 	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/syndtr/goleveldb/leveldb/storage"
 	. "gopkg.in/check.v1"
@@ -47,6 +49,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/config"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain"
+	mem "gitlab.com/thorchain/thornode/v3/x/thorchain/memo"
 	types2 "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
@@ -674,4 +677,214 @@ func (s *BitcoinSignerSuite) TestToAddressCanNotRoundTripShouldBlock(c *C) {
 	buf, _, _, err := s.client.SignTx(txOutItem, 1)
 	c.Assert(err, IsNil)
 	c.Assert(buf, IsNil)
+}
+
+// A negative relayFee makes getnetworkinfo fail, including on a fresh client.
+func feeFloorTestRPC(c *C, chain common.Chain, relayFee float64, utxos ...btcjson.ListUnspentResult) (*rpc.Client, func()) {
+	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		var request struct {
+			ID     json.RawMessage `json:"id"`
+			Method string          `json:"method"`
+		}
+		c.Assert(json.NewDecoder(req.Body).Decode(&request), IsNil)
+		var result any
+		var rpcErr *btcjson.RPCError
+		switch request.Method {
+		case "getnetworkinfo":
+			if relayFee < 0 {
+				rpcErr = &btcjson.RPCError{Code: -28, Message: "daemon warming up"}
+			} else {
+				result = btcjson.GetNetworkInfoResult{RelayFee: relayFee}
+			}
+		case "listunspent":
+			result = utxos
+		case "getblockhash":
+			result = fakeTxID(2)
+		case "getblockstats":
+			result = btcjson.GetBlockStatsResult{AverageFeeRate: 1}
+		case "getblockcount":
+			result = 100
+		default:
+			rpcErr = &btcjson.RPCError{Code: -32601, Message: "unexpected method: " + request.Method}
+		}
+		rw.Header().Set("Content-Type", "application/json")
+		c.Check(json.NewEncoder(rw).Encode(map[string]any{
+			"jsonrpc": "2.0", "id": request.ID, "result": result, "error": rpcErr,
+		}), IsNil)
+	}))
+	client, err := rpc.NewClient(server.URL, bob, password, 0, 0, chain, zerolog.Nop())
+	c.Assert(err, IsNil)
+	return client, server.Close
+}
+
+func (s *BitcoinSignerSuite) btcFeeFloorFixture(c *C) (stypes.TxOutItem, btcjson.ListUnspentResult, []byte) {
+	s.setNodeSignerForTest(c)
+	s.client.cfg.UTXO.MaxSatsPerVByte = 9765
+	vault := s.client.nodePubKey
+	tx := stypes.TxOutItem{
+		Chain:       common.BTCChain,
+		VaultPubKey: vault,
+		Coins:       common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(10_000))),
+		MaxGas:      common.Gas{common.NewCoin(common.BTCAsset, cosmos.NewUint(2_000))},
+		GasRate:     3,
+		InHash:      common.TxID(strings.Repeat("ab", 32)),
+	}
+	tx.Memo = "OUT:" + tx.InHash.String()
+	var err error
+	tx.ToAddress, err = types2.GetRandomPubKey().GetAddress(common.BTCChain)
+	c.Assert(err, IsNil)
+	sourceScript, err := s.client.getSourceScript(tx)
+	c.Assert(err, IsNil)
+	vaultAddress, err := vault.GetAddress(common.BTCChain)
+	c.Assert(err, IsNil)
+	input := btcjson.ListUnspentResult{
+		TxID: fakeTxID(1), Address: vaultAddress.String(), ScriptPubKey: hex.EncodeToString(sourceScript),
+		Amount: btcutil.Amount(100_000).ToBTC(), Confirmations: 10, Spendable: true,
+	}
+	return tx, input, sourceScript
+}
+
+func (s *BitcoinSignerSuite) TestBTCFeeFloorTransactionAndSighash(c *C) {
+	tx, input, script := s.btcFeeFloorFixture(c)
+	for _, tc := range []struct {
+		name    string
+		gasRate int64
+		maxGas  uint64
+	}{
+		{"below floor", 3, 2_000},
+		{"above floor", 10, 10_000},
+		{"MaxGas below floor", 3, 600},
+		{"no MaxGas", 3, 0},
+	} {
+		tx.GasRate = tc.gasRate
+		tx.MaxGas = nil
+		if tc.maxGas > 0 {
+			tx.MaxGas = common.Gas{common.NewCoin(common.BTCAsset, cosmos.NewUint(tc.maxGas))}
+		}
+		var legacyBytes, legacySighash []byte
+		// Old Core default, 29.1+ default, custom policy, zero and RPC failure.
+		for _, relayFee := range []float64{0.00001, 0.000001, 0.00002, 0, -1} {
+			var closeRPC func()
+			s.client.rpc, closeRPC = feeFloorTestRPC(c, common.BTCChain, relayFee, input)
+			defer closeRPC()
+			s.client.minRelayFeeSats.Store(0)
+			s.client.updateNetworkInfo()
+			redeemTx, _, err := s.client.buildTx(tx, script, 0)
+			c.Assert(err, IsNil, Commentf("%s, relay fee %g", tc.name, relayFee))
+			var serialized bytes.Buffer
+			c.Assert(redeemTx.Serialize(&serialized), IsNil)
+			sighash, err := txscript.CalcWitnessSigHash(script, txscript.NewTxSigHashes(redeemTx),
+				txscript.SigHashAll, redeemTx, 0, 100_000)
+			c.Assert(err, IsNil)
+			c.Assert(sighash, HasLen, 32)
+			if legacyBytes == nil {
+				legacyBytes, legacySighash = serialized.Bytes(), sighash
+			}
+			c.Check(serialized.Bytes(), DeepEquals, legacyBytes, Commentf("%s, relay fee %g", tc.name, relayFee))
+			c.Check(sighash, DeepEquals, legacySighash, Commentf("%s, relay fee %g", tc.name, relayFee))
+			fee := checkSpendsAmountPlusFee(c, redeemTx, 100_000, 10_000, script)
+			switch tc.name {
+			case "above floor":
+				memoScripts, memoErr := MemoToScripts(tx.Memo, txscript.MaxDataCarrierSize, txscript.NullDataScript, txscript.PayToWitnessScript)
+				c.Assert(memoErr, IsNil)
+				size := s.client.estimateTxSize([]btcjson.ListUnspentResult{input}, memoScripts, redeemTx.TxOut[0].PkScript, script)
+				c.Check(fee, Equals, tc.gasRate*size)
+				c.Assert(fee > 1_000, Equals, true)
+			case "MaxGas below floor":
+				c.Check(fee, Equals, int64(600))
+			default:
+				c.Check(fee, Equals, int64(1_000))
+			}
+		}
+	}
+}
+
+func (s *BitcoinSignerSuite) TestBTCFeeFloorNetworkFeeReport(c *C) {
+	s.client.cfg.UTXO.EstimatedAverageTxSize = 250
+	s.client.cfg.UTXO.MinSatsPerVByte = 1
+	s.client.cfg.BlockScanner.GasCacheBlocks = 0
+	for _, relayFee := range []float64{0.00001, 0.000001, 0.00002, 0, -1} {
+		var closeRPC func()
+		s.client.rpc, closeRPC = feeFloorTestRPC(c, common.BTCChain, relayFee)
+		defer closeRPC()
+		s.client.minRelayFeeSats.Store(0)
+		s.client.lastFeeRate.Store(0)
+		reports := make(chan common.NetworkFee, 1)
+		s.client.globalNetworkFeeQueue = reports
+		s.client.updateNetworkInfo()
+		c.Assert(s.client.sendNetworkFee(100), IsNil)
+		select {
+		case report := <-reports:
+			c.Check(report, DeepEquals, common.NetworkFee{
+				Chain: common.BTCChain, Height: 100, TransactionSize: 250, TransactionRate: 4,
+			}, Commentf("relay fee %g", relayFee))
+		default:
+			c.Fatal("network fee report was not queued")
+		}
+	}
+}
+
+func (s *BitcoinSignerSuite) TestBTCFeeFloorBoundaries(c *C) {
+	s.client.minRelayFeeSats.Store(0)
+	s.client.updateNetworkInfo()
+	tx := stypes.TxOutItem{Chain: common.BTCChain}
+	memo := mem.NewOutboundMemo(common.TxID(strings.Repeat("ab", 32)))
+	for _, tc := range []struct{ fee, want uint64 }{
+		{0, 1_000}, {100, 1_000}, {999, 1_000}, {1_000, 1_000}, {1_001, 1_001},
+	} {
+		fee, customer := s.client.applyFeeLimits(tx, memo, tc.fee, 10_000, 10_000)
+		c.Check(fee, Equals, tc.want)
+		c.Check(customer, Equals, uint64(10_000))
+	}
+}
+
+func (s *BitcoinSignerSuite) TestBTCFeeFloorKeepsOtherChainPolicy(c *C) {
+	for _, chain := range []common.Chain{common.LTCChain, common.BCHChain, common.DOGEChain, common.ZECChain} {
+		s.client.cfg.ChainID = chain
+		for _, tc := range []struct {
+			relay float64
+			want  uint64
+		}{
+			{0.00001, 1_000}, {0.000001, 100}, {0.00002, 2_000}, {-1, 2_000},
+		} {
+			var closeRPC func()
+			s.client.rpc, closeRPC = feeFloorTestRPC(c, chain, tc.relay)
+			defer closeRPC()
+			s.client.updateNetworkInfo()
+			c.Check(s.client.minRelayFeeSats.Load(), Equals, tc.want, Commentf("%s relay %g", chain, tc.relay))
+		}
+	}
+}
+
+func (s *BitcoinSignerSuite) TestBTCFeeFloorPreservesCheckpoint(c *C) {
+	tx, input, script := s.btcFeeFloorFixture(c)
+	var closeRPC func()
+	s.client.rpc, closeRPC = feeFloorTestRPC(c, common.BTCChain, 0.000001, input)
+	defer closeRPC()
+
+	// Construct a checkpoint at the old, daemon-dependent 100-sat floor.
+	s.client.minRelayFeeSats.Store(100)
+	unsigned, amounts, err := s.client.buildTx(tx, script, 0)
+	c.Assert(err, IsNil)
+	c.Assert(checkSpendsAmountPlusFee(c, unsigned, 100_000, 10_000, script) < 1_000, Equals, true)
+	var serialized bytes.Buffer
+	c.Assert(unsigned.Serialize(&serialized), IsNil)
+	tx.Checkpoint, err = json.Marshal(utxo.SignCheckpoint{
+		UnsignedTx: serialized.Bytes(), IndividualAmounts: amounts,
+	})
+	c.Assert(err, IsNil)
+
+	// Refresh the fixed policy, then retry through SignTx. A possibly signed
+	// checkpoint must keep its original bytes rather than adopt the new floor.
+	s.client.updateNetworkInfo()
+	c.Assert(s.client.minRelayFeeSats.Load(), Equals, uint64(1_000))
+	s.client.nodePubKey = types2.GetRandomPubKey()
+	s.client.tssKeySigner = &keysignFailKeyManager{
+		blame: types2.Blame{FailReason: blame.TssTimeout, Round: messages.KEYSIGN2Unicast},
+	}
+	signed, retained, _, err := s.client.SignTx(tx, 100)
+	c.Assert(err, NotNil)
+	c.Assert(strings.Contains(err.Error(), blame.TssTimeout), Equals, true)
+	c.Assert(signed, IsNil)
+	c.Assert(retained, DeepEquals, tx.Checkpoint)
 }

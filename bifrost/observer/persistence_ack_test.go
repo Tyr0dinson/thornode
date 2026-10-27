@@ -184,7 +184,7 @@ func TestProcessErrataWithoutAckPreservesLegacyOneShotPath(t *testing.T) {
 	waitObserverLoop(t, done)
 }
 
-func TestProcessErrataReturnsAttestationFailureWithoutDroppingOutbox(t *testing.T) {
+func TestProcessErrataAcknowledgesCleanupDespiteAttestationFailure(t *testing.T) {
 	storage, tempDir := setupTestDB(t)
 	defer cleanupTestDB(t, storage, tempDir)
 
@@ -214,7 +214,11 @@ func TestProcessErrataReturnsAttestationFailureWithoutDroppingOutbox(t *testing.
 		Txs:        []types.ErrataTx{tx},
 		Persisted:  persisted,
 	}
-	require.ErrorContains(t, waitPersistenceAck(t, persisted), "skipping attest errata tx: not active")
+	require.NoError(t, waitPersistenceAck(t, persisted))
+	require.Eventually(t, func() bool {
+		record, found, err := storage.GetPendingErrataTx(tx)
+		return err == nil && found && record.AttestationAttempts == 1
+	}, time.Second, time.Millisecond)
 
 	record, found, err := storage.GetPendingErrataTx(tx)
 	require.NoError(t, err)
@@ -223,9 +227,9 @@ func TestProcessErrataReturnsAttestationFailureWithoutDroppingOutbox(t *testing.
 	assert.Equal(t, uint32(1), record.AttestationAttempts)
 	assert.False(t, record.Committed)
 
-	// A scanner redelivery forces another real attempt even though the
-	// autonomous outbox is still inside its retry delay. It must not receive a
-	// false-success acknowledgement for deferred work.
+	// Scanner redelivery acknowledges the same durable cleanup. It must not
+	// bypass the retry ledger's backoff or make network availability part of
+	// the scanner's persistence handoff.
 	retryAck := make(chan error, 1)
 	observer.globalErrataQueue <- types.ErrataBlock{
 		Height:     457,
@@ -233,11 +237,11 @@ func TestProcessErrataReturnsAttestationFailureWithoutDroppingOutbox(t *testing.
 		Txs:        []types.ErrataTx{tx},
 		Persisted:  retryAck,
 	}
-	require.ErrorContains(t, waitPersistenceAck(t, retryAck), "skipping attest errata tx: not active")
+	require.NoError(t, waitPersistenceAck(t, retryAck))
 	record, found, err = storage.GetPendingErrataTx(tx)
 	require.NoError(t, err)
 	require.True(t, found)
-	assert.Equal(t, uint32(2), record.AttestationAttempts)
+	assert.Equal(t, uint32(1), record.AttestationAttempts)
 
 	close(stop)
 	waitObserverLoop(t, done)
@@ -267,6 +271,7 @@ func TestQuorumErrataCommitCompletesDurableOutbox(t *testing.T) {
 	}
 	gossip.SetObserverHandleErrataTxCommitted(observer)
 	quorumErrata := common.QuorumErrataTx{
+		Outcome:  common.ErrataTxOutcome_ERRATA_TX_OUTCOME_NO_APPLICABLE_OBSERVATION,
 		ErrataTx: &common.ErrataTx{Chain: tx.Chain, Id: tx.TxID},
 		Attestations: []*common.Attestation{{
 			PubKey: gossip.pubKey,
@@ -296,7 +301,7 @@ func TestErrataAttestationRetryIsBackedOffAndTerminal(t *testing.T) {
 	require.True(t, recorded)
 
 	observer := &Observer{logger: log.Logger, storage: storage}
-	require.NoError(t, observer.broadcastErrataBlock(context.Background(), block, now, false))
+	require.NoError(t, observer.broadcastErrataBlock(context.Background(), block, now))
 	record, found, err := storage.GetPendingErrataTx(tx)
 	require.NoError(t, err)
 	require.True(t, found)
@@ -308,12 +313,7 @@ func TestErrataAttestationRetryIsBackedOffAndTerminal(t *testing.T) {
 
 	// Terminal quarantine suppresses later sends even when no gossip client is
 	// configured; without it this call would try to attest and fail.
-	require.NoError(t, observer.broadcastErrataBlock(context.Background(), block, now.Add(time.Hour), false))
-	require.ErrorContains(
-		t,
-		observer.broadcastErrataBlock(context.Background(), block, now.Add(time.Hour), true),
-		"operator recovery required",
-	)
+	require.NoError(t, observer.broadcastErrataBlock(context.Background(), block, now.Add(time.Hour)))
 	record, found, err = storage.GetPendingErrataTx(tx)
 	require.NoError(t, err)
 	require.True(t, found)

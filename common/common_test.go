@@ -94,6 +94,7 @@ func (s CommonSuite) TestObservedTxSignablePayloadFieldCoverage(c *C) {
 		"AggregatorTargetLimit": func(o *ObservedTx) { l := cosmos.NewUint(2000); o.AggregatorTargetLimit = &l },
 		"SpentOutputRefs":       func(o *ObservedTx) { o.SpentOutputRefs = []OutputRef{{TxHash: "different"}} },
 		"XmrTxKey":              func(o *ObservedTx) { o.XmrTxKey = "def456" },
+		"XmrMinedHeight":        func(o *ObservedTx) { o.XmrMinedHeight = 99 },
 		// The attested durable-nonce update is committed on-chain, so it must be
 		// signed: a proposer must not be able to swap the value observers attested.
 		"SolNonce": func(o *ObservedTx) { o.SolNonce = &SolNonceUpdate{NonceAccount: "acct", Nonce: "nonce", Slot: 1} },

@@ -149,6 +149,9 @@ func setupTestGossip(t *testing.T) (*AttestationGossip, *MockHost, *MockKeys, *M
 
 	// Set active validators
 	ag.setActiveValidators([]common.PubKey{common.PubKey(pubKey), pubKey2, pubKey3})
+	storage, tempDir := setupTestDB(t)
+	t.Cleanup(func() { cleanupTestDB(t, storage, tempDir) })
+	ag.SetObserverStorage(storage)
 
 	return ag, host, keys, grpcClient, bridge, eventClient
 }

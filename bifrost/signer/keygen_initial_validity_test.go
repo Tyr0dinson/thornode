@@ -13,18 +13,25 @@ import (
 // reject a result window that has already closed, before starting any DKG.
 func TestXMRKeygenInitialValidity(t *testing.T) {
 	minimum := int64((6*time.Minute + constants.ThorchainBlockTime - 1) / constants.ThorchainBlockTime)
+	def := constants.NewConstantValue().GetInt64Value(constants.ChurnRetryInterval)
+	// The acceptance window ends one block before the retry tick (mirror of
+	// THORNode's keygenResultValidityBlocks returning N-1): the last valid age is
+	// N-1 and age N — the block the churn retry fires — is already expired, so a
+	// stale result cannot finalize a vault on the block its replacement is
+	// scheduled. churn==0 keeps the disabled-retry sentinel (delivery block only).
 	for _, test := range []struct {
 		name           string
 		churn, elapsed int64
 		wantRuns       int
 	}{
 		{"current", 1000, 0, 1},
-		{"inclusive expiry", 1000, 1000, 1},
-		{"expired first delivery", 1000, 1001, 0},
-		{"unset default boundary", -1, constants.NewConstantValue().GetInt64Value(constants.ChurnRetryInterval), 1},
-		{"unset default expired", -1, constants.NewConstantValue().GetInt64Value(constants.ChurnRetryInterval) + 1, 0},
-		{"XMR minimum boundary", 1, minimum, 1},
-		{"XMR minimum expired", 1, minimum + 1, 0},
+		{"last valid before retry tick", 1000, 999, 1},
+		{"expired at retry tick", 1000, 1000, 0},
+		{"expired past retry tick", 1000, 1001, 0},
+		{"unset default last valid", -1, def - 1, 1},
+		{"unset default expired at tick", -1, def, 0},
+		{"XMR minimum last valid", 1, minimum - 1, 1},
+		{"XMR minimum expired at tick", 1, minimum, 0},
 		{"zero window same block", 0, 0, 1},
 		{"zero window next block", 0, 1, 0},
 	} {

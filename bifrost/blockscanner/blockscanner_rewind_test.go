@@ -403,6 +403,8 @@ func (f *rollbackPrefetchFetcher) callCount(height int64) int {
 func (s *BlockScannerExtraSuite) newRewindTestBridge(c *C) (*httptest.Server, thorclient.ThorchainBridge) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
+		case strings.HasSuffix(r.RequestURI, "/key/HaltScannerXMR"):
+			_, _ = w.Write([]byte(`0`))
 		case strings.HasPrefix(r.RequestURI, thorclient.MimirEndpoint):
 			_, _ = w.Write([]byte(`-1`))
 		case strings.HasPrefix(r.RequestURI, "/thorchain/lastblock"):
@@ -421,6 +423,33 @@ func waitForFetchCalls(fetchCount func(int64) int, height int64, wanted int) boo
 			return true
 		}
 		time.Sleep(5 * time.Millisecond)
+	}
+	return false
+}
+
+// waitForAborts polls because abandoned prefetch goroutines release their
+// reservations asynchronously after clearPrefetch closes their abandoned
+// channel; the scanner may refetch the height before that goroutine runs.
+func waitForAborts(aborts *atomic.Int64, wanted int64) bool {
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if aborts.Load() >= wanted {
+			return true
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	return false
+}
+
+// waitForUnhealthy polls because backoffAfterPersistenceFailure marks the
+// scanner unhealthy only after the fetcher's failure hook has returned.
+func waitForUnhealthy(scanner *BlockScanner) bool {
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		if !scanner.IsHealthy() {
+			return true
+		}
+		time.Sleep(time.Millisecond)
 	}
 	return false
 }
@@ -448,6 +477,7 @@ func (s *BlockScannerExtraSuite) TestTypedCursorRewindClearsStalePrefetch(c *C) 
 	c.Assert(waitForFetchCalls(fetcher.callCount, 12, 2), Equals, true)
 	c.Check(fetcher.callCount(9) > 0, Equals, true)
 	c.Check(fetcher.errorAborts.Load(), Equals, int64(1))
+	c.Assert(waitForAborts(&fetcher.discardedAborts, 1), Equals, true)
 	c.Check(fetcher.discardedAborts.Load(), Equals, int64(1))
 }
 
@@ -485,6 +515,7 @@ func (s *BlockScannerExtraSuite) TestRollbackChannelClearsStalePrefetch(c *C) {
 	// The prefetched height 12 from before rollback must not survive the move
 	// back to height 9.
 	c.Assert(waitForFetchCalls(fetcher.callCount, 12, 2), Equals, true)
+	c.Assert(waitForAborts(&fetcher.discardedAborts, 1), Equals, true)
 	c.Check(fetcher.discardedAborts.Load(), Equals, int64(1))
 }
 
@@ -634,9 +665,11 @@ func (s *BlockScannerExtraSuite) TestPersistenceFailuresBackOffAndReportUnhealth
 		case <-time.After(time.Second):
 			c.Fatalf("mode %s did not reach persistence failure", mode)
 		}
+		// The failure hook runs before the scanner marks itself unhealthy, so
+		// poll rather than read health right after the hook fires.
+		c.Check(waitForUnhealthy(scanner), Equals, true, Commentf("mode %s reported healthy", mode))
 		time.Sleep(30 * time.Millisecond)
 		c.Check(fetcher.calls.Load(), Equals, int64(1), Commentf("mode %s retried without backoff", mode))
-		c.Check(scanner.IsHealthy(), Equals, false, Commentf("mode %s reported healthy", mode))
 		scanner.Stop()
 	}
 }

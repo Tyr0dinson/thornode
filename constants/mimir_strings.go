@@ -74,6 +74,11 @@ const (
 	// node out of the Ready set after it reported an asgard keygen chain set that
 	// omitted a chain the active vaults serve. Set above 0 to disable the check.
 	MimirKeyPreflightChainSetDisabled = "PreflightChainSetDisabled"
+	// MimirKeyChainSetChurnOutMax arms the churn-out mark for Active nodes whose asgard
+	// keygen report omitted a chain that a pending vault of this churn cycle was then
+	// created without, and bounds it: when more nodes are faulty than this, none are
+	// marked (a stall that many nodes cause is for governance). Unset or 0 disables it.
+	MimirKeyChainSetChurnOutMax = "ChainSetChurnOutMax"
 
 	MimirTemplateEVMAllowanceCheck         = "EVMAllowanceCheck-%s"         // Use with Chain
 	MimirTemplateEVMDirectERC20Inbound     = "EVMDirectERC20Inbound-%s"     // Use with Chain

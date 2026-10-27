@@ -213,6 +213,8 @@ type Client struct {
 
 	spentRefsRetryInterval    time.Duration
 	spentRefsRetryMaxAttempts int
+	spentRefsGuardMu          sync.RWMutex
+	spentRefsGuard            types.SpentOutputRefsGuard
 
 	recoveryRetryInterval    time.Duration
 	recoveryRetryMaxAttempts int
@@ -222,6 +224,20 @@ type Client struct {
 // drifting independently. A missing final-outcome hook must be a build error,
 // not a runtime assertion miss which lets the signer discard the outbound.
 var _ types.SpentOutputRefsApplier = (*Client)(nil)
+
+// validateMoneroDaemonNetwork binds THORChain mainnet builds to Monero mainnet.
+// Other deployments may choose a different daemon network; the sidecar
+// compatibility check validates its supported value and reported identity.
+func validateMoneroDaemonNetwork(thorNetwork common.ChainNetwork, chainNetwork string) error {
+	network := strings.ToLower(strings.TrimSpace(chainNetwork))
+	if network == "" {
+		return errors.New("xmr chain_network is required for daemon identity verification")
+	}
+	if thorNetwork == common.MainNet && network != "mainnet" {
+		return fmt.Errorf("xmr chain_network must be mainnet for a THORChain mainnet build, got %q", network)
+	}
+	return nil
+}
 
 // NewClient creates a monero chain client backed by the shared block scanner.
 func NewClient(
@@ -234,6 +250,8 @@ func NewClient(
 	if !cfg.ChainID.Equals(common.XMRChain) {
 		return nil, fmt.Errorf("monero client requires chain id %s, got %s", common.XMRChain, cfg.ChainID)
 	}
+	// Avoid starting a polling loop for XMR's disabled mempool scanner.
+	cfg.BlockScanner.ScanMemPool = false
 	if cfg.BlockScanner.PrefetchBlocks > 1 {
 		return nil, fmt.Errorf("xmr block prefetch must be 0 or 1 to preserve scanner height order")
 	}
@@ -245,6 +263,9 @@ func NewClient(
 	}
 	if tssServer == nil {
 		return nil, errors.New("tss server is nil")
+	}
+	if err := validateMoneroDaemonNetwork(common.CurrentChainNetwork, cfg.ChainNetwork); err != nil {
+		return nil, err
 	}
 	logger := log.With().Str("module", cfg.ChainID.String()).Logger()
 	sc, err := sidecar.NewClient(cfg)
@@ -267,6 +288,9 @@ func NewClient(
 		sidecar.CapabilityScannerBoundedRewind,
 		sidecar.CapabilitySharePlanQuarantine,
 		sidecar.CapabilityVerifiedAbsenceBalance,
+		sidecar.CapabilityCanonicalObservation,
+		sidecar.CapabilityCanonicalTxLocation,
+		sidecar.CapabilityMoneroNetworkIdentity,
 	)
 	if compatibilityErr != nil {
 		return nil, fmt.Errorf("xmr signer compatibility check failed: %w", compatibilityErr)
@@ -279,6 +303,8 @@ func NewClient(
 	logger.Info().
 		Str("signer_revision", info.GitCommit).
 		Str("signer_network", info.Network).
+		Str("monero_nettype", info.MoneroNettype).
+		Str("monero_genesis_hash", info.MoneroGenesisHash).
 		Int("signer_state_schema", info.StateSchema).
 		Bool("idempotent_combine", idempotentCombine).
 		Msg("verified xmr signer compatibility contract")
@@ -401,11 +427,19 @@ func (c *Client) Start(
 	}()
 }
 
+// BlockPermanentErrataBroadcast fences the signed hash before receipt delivery.
+func (c *Client) BlockPermanentErrataBroadcast(errata common.ErrataTx) error {
+	if !errata.Chain.Equals(common.XMRChain) || errata.Id.IsEmpty() {
+		return errors.New("invalid XMR permanent errata broadcast block request")
+	}
+	return c.signedTxPayloadStore.BlockRevertedTxHash(errata.Id.String())
+}
+
 // QuarantinePermanentErrata closes the event-first gap where THORChain can
 // commit a Reverted voter before this node's Scanner has produced a receipt
 // callback. The exact signed artifact is blocked first, then the scanner's
 // permanent TxID filter is fsynced. Both writes are idempotent, so Observer can
-// safely replay every tombstone during startup or after a partial failure.
+// safely retry unfinished quarantine after a partial failure or restart.
 func (c *Client) QuarantinePermanentErrata(errata common.ErrataTx, orphanHeight int64) error {
 	if !errata.Chain.Equals(common.XMRChain) || errata.Id.IsEmpty() {
 		return errors.New("invalid XMR permanent errata quarantine request")
@@ -749,6 +783,9 @@ func (c *Client) catchupSpentOutputRefs() {
 	if c.thorchainBridge == nil || c.sidecar == nil {
 		return
 	}
+	if blockscanner.IsXMRScannerPaused(c.logger, c.thorchainBridge) {
+		return
+	}
 	vaultKeys, err := c.getSpentOutputCatchupVaultKeys()
 	if err != nil {
 		c.logger.Err(err).Msg("xmr catchup: failed to get vault pubkeys")
@@ -1030,6 +1067,7 @@ func queryConsensusObservedXMRTx(
 		AggregatorTargetLimit: candidate.AggregatorTargetLimit,
 		SpentOutputRefs:       xmrOutputRefsFromPointers(candidate.GetSpentOutputRefs()),
 		XmrTxKey:              candidate.GetXmrTxKey(),
+		XmrMinedHeight:        candidate.GetXmrMinedHeight(),
 	}, false, true
 }
 
@@ -2825,6 +2863,53 @@ func (c *Client) ApplySpentOutputRefsWithOutcome(request types.SpentOutputRefsIm
 	c.applySpentOutputRefs(request, onOutcome)
 }
 
+// SetSpentOutputRefsGuard connects Observer's durable admission before startup.
+// All import paths share it, including local signing when Observer is wired.
+func (c *Client) SetSpentOutputRefsGuard(guard types.SpentOutputRefsGuard) {
+	c.spentRefsGuardMu.Lock()
+	defer c.spentRefsGuardMu.Unlock()
+	c.spentRefsGuard = guard
+}
+
+func (c *Client) spentOutputRefsAdmission(ctx context.Context, request types.SpentOutputRefsImport) func() (func(), bool) {
+	c.spentRefsGuardMu.RLock()
+	guard := c.spentRefsGuard
+	c.spentRefsGuardMu.RUnlock()
+	return func() (func(), bool) {
+		if ctx.Err() != nil {
+			return nil, false
+		}
+		select {
+		case <-c.stopchan:
+			return nil, false
+		default:
+		}
+		if guard == nil {
+			// Only standalone local signing can run without Observer. Imported
+			// consensus or peer evidence must never bypass durable admission.
+			if request.ChainCommitted || request.ReplaySource {
+				return nil, false
+			}
+			return func() {}, true
+		}
+		release, ok := guard(request.Tx)
+		if !ok || release == nil {
+			return nil, false
+		}
+		if ctx.Err() != nil {
+			release()
+			return nil, false
+		}
+		select {
+		case <-c.stopchan:
+			release()
+			return nil, false
+		default:
+		}
+		return release, true
+	}
+}
+
 // applySpentOutputRefs centralizes the first attempt and final-outcome callback
 // so observer conflict bookkeeping can wait for retry exhaustion or success.
 func (c *Client) applySpentOutputRefs(
@@ -2956,6 +3041,19 @@ func (c *Client) applySpentOutputRefsOnceContext(ctx context.Context, request ty
 	if ctx.Err() != nil {
 		return false, false
 	}
+	guard := c.spentOutputRefsAdmission(ctx, request)
+	release, admitted := guard()
+	if !admitted {
+		return false, false
+	}
+	guarded := true
+	defer func() {
+		if guarded {
+			release()
+		}
+	}()
+	// MarkSpent changes accounting. Keep admission through durable signer
+	// bookkeeping so errata cleanup cannot be followed by a stale import.
 	result, err := c.sidecar.MarkSpent(vaultPubKey, txHash, refs, false, outbound)
 	if err != nil {
 		// Peer pre-quorum imports cannot rely on Thornode catchup until the refs
@@ -3001,6 +3099,11 @@ func (c *Client) applySpentOutputRefsOnceContext(ctx context.Context, request ty
 			Msg("refuse to enroll xmr spent-ref import without authenticated durable signer state")
 		return false, false
 	}
+	// Reorg scanning holds scanMu while waiting for Observer cleanup. Release
+	// the admission reader before replay takes scanMu; replay reacquires it
+	// under that lock before any sidecar or durable mutation.
+	release()
+	guarded = false
 	if request.ReplaySource && !request.ChainCommitted && c.scanner == nil {
 		return false, true
 	}
@@ -3014,20 +3117,29 @@ func (c *Client) applySpentOutputRefsOnceContext(ctx context.Context, request ty
 			// Migrations already bind their journal and mark the source mined
 			// through the destination-replay path below. Ordinary committed
 			// payouts need the same accounting reconciliation, but no replay.
-			if reconcileErr := c.scanner.ReconcileCommittedOutbound(tx); reconcileErr != nil {
+			if reconcileErr := c.scanner.reconcileCommittedOutboundGuarded(tx, guard); reconcileErr != nil {
+				if errors.Is(reconcileErr, errXMRSpentRefsAdmissionRejected) {
+					return false, false
+				}
 				c.logger.Warn().Err(reconcileErr).Str("tx_hash", txHash).
 					Msg("committed xmr payout mined reconciliation will retry")
 				return false, true
 			}
 		}
 		if request.ReplaySource && !request.ChainCommitted {
-			if _, replayErr := c.scanner.EnqueueAuthenticatedOutboundReplay(tx); replayErr != nil {
+			if _, replayErr := c.scanner.enqueueAuthenticatedOutboundReplayGuarded(tx, guard); replayErr != nil {
+				if errors.Is(replayErr, errXMRSpentRefsAdmissionRejected) {
+					return false, false
+				}
 				c.logger.Error().Err(replayErr).Str("tx_hash", txHash).Msg("failed to queue authenticated xmr payout replay")
 				return false, true
 			}
 		}
-		queued, replayErr := c.scanner.EnqueueAuthenticatedInternalInboundReplay(tx)
+		queued, replayErr := c.scanner.enqueueAuthenticatedInternalInboundReplayGuarded(tx, guard)
 		if replayErr != nil {
+			if errors.Is(replayErr, errXMRSpentRefsAdmissionRejected) {
+				return false, false
+			}
 			c.logger.Error().Err(replayErr).Str("tx_hash", txHash).
 				Msg("failed to queue authenticated xmr migration replay")
 			// MarkSpent is idempotent. Retry the complete import so a transient
@@ -4187,7 +4299,16 @@ func (c *Client) ReportSolvency(height int64) error {
 		return nil
 	}
 
-	if !c.IsBlockScannerHealthy() && !deferredForReconciliation && checkedVaults > 0 && len(solventMsgs) == checkedVaults {
+	// Report all vaults solvent only while THORChain itself has XMR halted or solvency-halted and
+	// this node's scanner is paused for it: the same gate as the other chain clients. A scanner
+	// that is unhealthy for a local reason (daemon or sidecar lag) must stay silent, because an
+	// all-clear only one node sends can never reach consensus and each one costs that node an
+	// unrefunded observation slash point. On a bridge error stay silent; the runner retries.
+	halted, haltErr := runners.IsHaltedOnChain(c.thorchainBridge, c.chain)
+	if haltErr != nil {
+		c.logger.Err(haltErr).Msg("fail to read chain halt state, skipping solvency all-clear")
+	}
+	if halted && !c.IsBlockScannerHealthy() && !deferredForReconciliation && checkedVaults > 0 && len(solventMsgs) == checkedVaults {
 		msgs = solventMsgs
 	}
 

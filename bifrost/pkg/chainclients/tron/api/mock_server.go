@@ -57,6 +57,26 @@ func NewMockServer() *httptest.Server {
 			w.WriteHeader(http.StatusNotFound)
 			_, _ = w.Write(nil)
 
+		case "gettransactioninfobyblocknum":
+			var height int64
+
+			switch v := params["num"].(type) {
+			case float64:
+				height = int64(v)
+			case int64:
+				height = v
+			}
+
+			if height == 69351239 {
+				w.WriteHeader(http.StatusOK)
+				data, _ := responses.ReadFile("test-tron/gettransactioninfobyblocknum_69351239.json")
+				_, _ = w.Write(data)
+				return
+			}
+
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write(nil)
+
 		case "gettransactioninfobyid":
 			value, found := params["value"]
 

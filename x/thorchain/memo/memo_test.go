@@ -100,7 +100,7 @@ func (s *MemoSuite) SetUpSuite(c *C) {
 		nil,
 		authtypes.NewModuleAddress(types.ModuleName).String(),
 	)
-	s.k = kv1.NewKVStore(encodingConfig.Codec, runtime.NewKVStoreService(keyThorchain), bk, ak, uk, types.GetCurrentVersion())
+	s.k = kv1.NewKVStore(encodingConfig.Codec, keyThorchain, bk, ak, uk, types.GetCurrentVersion())
 }
 
 func (s *MemoSuite) TestTxType(c *C) {
@@ -1190,4 +1190,80 @@ func (s *MemoSuite) TestReferenceWriteMemoValidation(c *C) {
 	_, err = ParseMemoWithTHORNames(ctx, k, invalidMemo3)
 	c.Assert(err, Not(IsNil))
 	c.Assert(strings.Contains(err.Error(), "embedded memo is invalid"), Equals, true)
+}
+
+func (s *MemoSuite) TestParseMemoWithTHORNamesCached(c *C) {
+	// CacheContext discards THORName writes so they do not leak into other tests.
+	baseCtx, _ := s.ctx.CacheContext()
+	k := s.k
+
+	thorAddr := types.GetRandomTHORAddress()
+	resolveMemo := "=:THOR.RUNE:cachetest"
+	otherMemo := "=:THOR.RUNE:" + thorAddr.String()
+
+	// no cache on the context: falls through to an uncached parse
+	_, err := ParseMemoWithTHORNamesCached(baseCtx, k, resolveMemo)
+	c.Assert(err, NotNil)
+	c.Check(baseCtx.Value(memoCacheKey{}), IsNil)
+
+	ctx := WithMemoCache(baseCtx)
+
+	// miss: the unregistered THORName fails to parse and the error is cached
+	_, err = ParseMemoWithTHORNamesCached(ctx, k, resolveMemo)
+	c.Assert(err, NotNil)
+	cachedErr := err
+
+	name := types.NewTHORName("cachetest", 50, []types.THORNameAlias{{Chain: common.THORChain, Address: thorAddr}})
+	k.SetTHORName(ctx, name)
+
+	// hit: the cached error is reused even though the THORName now resolves
+	_, err = ParseMemoWithTHORNamesCached(ctx, k, resolveMemo)
+	c.Check(err, Equals, cachedErr)
+	_, err = ParseMemoWithTHORNames(ctx, k, resolveMemo)
+	c.Assert(err, IsNil)
+
+	// a distinct memo string is a separate entry
+	mem, err := ParseMemoWithTHORNamesCached(ctx, k, otherMemo)
+	c.Assert(err, IsNil)
+	c.Check(mem.GetDestination(), Equals, thorAddr)
+
+	// a fresh cache does not share entries with the previous one
+	freshCtx := WithMemoCache(baseCtx)
+	mem, err = ParseMemoWithTHORNamesCached(freshCtx, k, resolveMemo)
+	c.Assert(err, IsNil)
+	c.Check(mem.GetDestination(), Equals, thorAddr)
+
+	// hit: the cached success survives the THORName changing underneath it
+	newAddr := types.GetRandomTHORAddress()
+	name.Aliases = []types.THORNameAlias{{Chain: common.THORChain, Address: newAddr}}
+	k.SetTHORName(freshCtx, name)
+	mem, err = ParseMemoWithTHORNamesCached(freshCtx, k, resolveMemo)
+	c.Assert(err, IsNil)
+	c.Check(mem.GetDestination(), Equals, thorAddr)
+	mem, err = ParseMemoWithTHORNames(freshCtx, k, resolveMemo)
+	c.Assert(err, IsNil)
+	c.Check(mem.GetDestination(), Equals, newAddr)
+
+	// contexts derived from a cached context share its cache
+	childCtx, _ := freshCtx.CacheContext()
+	mem, err = ParseMemoWithTHORNamesCached(childCtx, k, resolveMemo)
+	c.Assert(err, IsNil)
+	c.Check(mem.GetDestination(), Equals, thorAddr)
+}
+
+func (s *MemoSuite) TestParseMemoWithTHORNamesCachedSharesSlices(c *C) {
+	ctx := WithMemoCache(s.ctx)
+	aff1 := types.GetRandomTHORAddress()
+	aff2 := types.GetRandomTHORAddress()
+	ms := fmt.Sprintf("=:e:0x90f2b1ae50e6018230e90a33f98c7844a0ab635a::%s/%s:10/20", aff1, aff2)
+
+	first, err := ParseMemoWithTHORNamesCached(ctx, s.k, ms)
+	c.Assert(err, IsNil)
+	second, err := ParseMemoWithTHORNamesCached(ctx, s.k, ms)
+	c.Assert(err, IsNil)
+
+	// cached Memo values alias the same backing arrays, so callers must not mutate them
+	c.Assert(len(first.GetAffiliates()), Equals, 2)
+	c.Check(&first.GetAffiliates()[0] == &second.GetAffiliates()[0], Equals, true)
+	c.Check(&first.GetAffiliatesBasisPoints()[0] == &second.GetAffiliatesBasisPoints()[0], Equals, true)
 }

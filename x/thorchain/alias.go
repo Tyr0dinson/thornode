@@ -263,15 +263,17 @@ var (
 	NewMsgTCYUnstake               = types.NewMsgTCYUnstake
 
 	// Memo
-	ParseMemo              = mem.ParseMemo
-	ParseMemoWithTHORNames = mem.ParseMemoWithTHORNames
-	StringToTxType         = mem.StringToTxType
-	FetchAddress           = mem.FetchAddress
-	NewRefundMemo          = mem.NewRefundMemo
-	NewOutboundMemo        = mem.NewOutboundMemo
-	NewRagnarokMemo        = mem.NewRagnarokMemo
-	NewMigrateMemo         = mem.NewMigrateMemo
-	NewReferenceReadMemo   = mem.NewReferenceReadMemo
+	ParseMemo                    = mem.ParseMemo
+	ParseMemoWithTHORNames       = mem.ParseMemoWithTHORNames
+	ParseMemoWithTHORNamesCached = mem.ParseMemoWithTHORNamesCached
+	WithMemoCache                = mem.WithMemoCache
+	StringToTxType               = mem.StringToTxType
+	FetchAddress                 = mem.FetchAddress
+	NewRefundMemo                = mem.NewRefundMemo
+	NewOutboundMemo              = mem.NewOutboundMemo
+	NewRagnarokMemo              = mem.NewRagnarokMemo
+	NewMigrateMemo               = mem.NewMigrateMemo
+	NewReferenceReadMemo         = mem.NewReferenceReadMemo
 
 	FetchDexAggregator         = aggregators.FetchDexAggregator
 	FetchDexAggregatorGasLimit = aggregators.FetchDexAggregatorGasLimit

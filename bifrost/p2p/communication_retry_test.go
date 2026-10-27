@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"io"
 	"sync/atomic"
 	"testing"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/libp2p/go-libp2p-core/network"
 	"github.com/libp2p/go-libp2p-core/peer"
+	"github.com/rs/zerolog"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/p2p/messages"
 )
@@ -347,5 +349,62 @@ func TestFrostDKGRetryFanoutCostAt95Participants(t *testing.T) {
 	}
 	if failureMaxPerNode != 1_128 || failureMaxNetwork != 107_160 {
 		t.Fatalf("failure-only max per-node=%d network=%d", failureMaxPerNode, failureMaxNetwork)
+	}
+}
+
+// Keysign deliberately makes one write attempt. A failed connection or write
+// must terminate that attempt without poisoning a subsequent session's stream.
+func TestFrostKeysignTransportFailureLeavesNextSessionUsable(t *testing.T) {
+	for _, topic := range []messages.THORChainTSSMessageType{
+		messages.TSSFrostPreprocessMsg, messages.TSSFrostShareMsg,
+		messages.TSSFrostVerifyMsg, messages.TSSFrostResultMsg,
+	} {
+		t.Run(topic.String(), func(t *testing.T) {
+			failed := newRetryWriteStream()
+			failed.writeErr = errors.New("transient payload write failure")
+			healthy := newRetryWriteStream()
+			opens := 0
+			comm := &Communication{logger: zerolog.Nop(), stopChan: make(chan struct{}), streamMgr: NewStreamMgr()}
+			comm.connectToOnePeerFn = func(peer.ID) (network.Stream, error) {
+				opens++
+				switch opens {
+				case 1:
+					return nil, errors.New("transient connection failure")
+				case 2:
+					return failed, nil
+				default:
+					return healthy, nil
+				}
+			}
+			policy := streamPolicyFor(topic)
+			if policy.attempts != 1 || !policy.fullClose {
+				t.Fatalf("keysign transport policy changed: %+v", policy)
+			}
+			for i := range 2 {
+				attempts, writeErr := comm.writeToStreamWithRetryDelay(peer.ID("receiver"), []byte("failed-session"),
+					fmt.Sprintf("failed-keysign-%d", i), policy.attempts, policy.fullClose, 0)
+				if writeErr == nil || attempts != 1 || opens != i+1 {
+					t.Fatalf("failure %d: attempts=%d opens=%d err=%v", i, attempts, opens, writeErr)
+				}
+				if parkedStreamCount(comm.streamMgr) != 0 {
+					t.Fatal("failed keysign attempt retained a ceremony-owned stream")
+				}
+			}
+			if failed.resetCount.Load() != 1 || failed.closeCount.Load() != 0 {
+				t.Fatal("failed write did not reset its stream exactly once")
+			}
+			payload := frostTestFrame(t, topic, "subsequent-valid-keysign")
+			attempts, writeErr := comm.writeToStreamWithRetryDelay(peer.ID("receiver"), payload,
+				"subsequent-valid-keysign", policy.attempts, policy.fullClose, 0)
+			if writeErr != nil || attempts != 1 || opens != 3 {
+				t.Fatalf("subsequent session did not progress: attempts=%d opens=%d err=%v", attempts, opens, writeErr)
+			}
+			if !bytes.Equal(healthy.written.Bytes(), framedPayload(payload)) || healthy.closeCount.Load() != 1 || healthy.resetCount.Load() != 0 {
+				t.Fatal("subsequent session did not write its exact frame and close once")
+			}
+			if parkedStreamCount(comm.streamMgr) != 0 {
+				t.Fatal("subsequent session parked a successful FROST stream")
+			}
+		})
 	}
 }

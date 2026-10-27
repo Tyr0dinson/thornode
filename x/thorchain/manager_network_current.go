@@ -38,8 +38,6 @@ type overSolvencyEventGroup struct {
 	assets []types.AssetOverSolvency
 }
 
-const xmrMonovaultGenesisBootstrapDelayBlocks int64 = 128
-
 func xmrMonovaultGenesisKeygenHeight(currentHeight int64) int64 {
 	if currentHeight < 1 {
 		currentHeight = 1
@@ -1151,6 +1149,9 @@ func (vm *NetworkMgr) POLCycle(ctx cosmos.Context, mgr Manager) error {
 		return fmt.Errorf("no POL pools")
 	}
 
+	// polPoolValue only changes when a POL add commits or POL is removed;
+	// most adds fail validation (e.g. paused deposits) and leave it as is
+	polValue := &polValueMemo{}
 	for idx, pool := range pools {
 		val := mimirVals[idx]
 
@@ -1166,6 +1167,7 @@ func (vm *NetworkMgr) POLCycle(ctx cosmos.Context, mgr Manager) error {
 			if err := vm.removePOLLiquidity(ctx, pool, polAddress, asgardAddress, signer, maxMovement, synthPerPoolDepth, cosmos.NewUint(10_000), mgr); err != nil {
 				ctx.Logger().Error("fail to manage POL in pool", "pool", pool.Asset.String(), "error", err)
 			}
+			polValue.reset()
 			continue
 		}
 
@@ -1175,7 +1177,11 @@ func (vm *NetworkMgr) POLCycle(ctx cosmos.Context, mgr Manager) error {
 				ctx.Logger().Info("maximum rune deployed from POL")
 				continue
 			}
-			if err := vm.addPOLLiquidity(ctx, pool, polAddress, asgardAddress, signer, maxMovement, synthPerPoolDepth, loopTarget, mgr); err != nil {
+			if isLUVIOverhangGuarded(ctx, mgr.Keeper(), pool, synthSupply) {
+				ctx.Logger().Info("skip POL deposit, pool is in synth overhang", "pool", pool.Asset.String(), "synth supply", synthSupply.String(), "asset depth", pool.BalanceAsset.String())
+				continue
+			}
+			if err := vm.addPOLLiquidity(ctx, pool, polAddress, asgardAddress, signer, maxMovement, synthPerPoolDepth, loopTarget, mgr, polValue); err != nil {
 				ctx.Logger().Error("fail to manage POL in pool", "pool", pool.Asset.String(), "error", err)
 			}
 			continue
@@ -1186,6 +1192,7 @@ func (vm *NetworkMgr) POLCycle(ctx cosmos.Context, mgr Manager) error {
 			if err := vm.removePOLLiquidity(ctx, pool, polAddress, asgardAddress, signer, maxMovement, synthPerPoolDepth, loopTarget, mgr); err != nil {
 				ctx.Logger().Error("fail to manage POL in pool", "pool", pool.Asset.String(), "error", err)
 			}
+			polValue.reset()
 		}
 	}
 
@@ -1244,6 +1251,10 @@ func (vm *NetworkMgr) POLReserveCycle(ctx cosmos.Context, mgr Manager) error {
 			continue
 		}
 		if !mgr.Keeper().IsPOLReserveEligiblePool(ctx, pool.Asset) {
+			continue
+		}
+		// the add liquidity handler would reject the deposit; pick another pool
+		if isLUVIOverhangGuarded(ctx, mgr.Keeper(), pool, mgr.Keeper().GetTotalSupply(ctx, pool.Asset.GetSyntheticAsset())) {
 			continue
 		}
 
@@ -1397,6 +1408,7 @@ func (vm *NetworkMgr) addPOLLiquidity(
 	signer cosmos.AccAddress,
 	maxMovement, synthPerPoolDepth, targetSynthPerPoolDepth cosmos.Uint,
 	mgr Manager,
+	polValue *polValueMemo,
 ) error {
 	handler := NewInternalHandler(mgr)
 
@@ -1421,16 +1433,6 @@ func (vm *NetworkMgr) addPOLLiquidity(
 	// if there are no units, this is the initial deposit
 	depositUnits := runeAmt
 
-	// compute the new provider units
-	if !runePool.TotalUnits().IsZero() {
-		var rpValue cosmos.Uint
-		rpValue, err = runePoolValue(ctx, mgr)
-		if err != nil {
-			return fmt.Errorf("fail to get rune pool value: %s", err)
-		}
-		depositUnits = common.GetSafeShare(runeAmt, rpValue, runePool.TotalUnits())
-	}
-
 	// check balance
 	bal := mgr.Keeper().GetRuneBalanceOfModule(ctx, ReserveName)
 	if runeAmt.GT(bal) {
@@ -1440,9 +1442,25 @@ func (vm *NetworkMgr) addPOLLiquidity(
 		return err
 	}
 
+	// Most adds fail validation (e.g. paused deposits), so the rune pool value
+	// is read only once the deposit succeeds. The deposit runs in a cache
+	// context, so ctx still holds the pools, synth supply and POL position from
+	// before it; the reserve to asgard send above changes none of them.
+	depositCtx, commitDeposit := ctx.CacheContext()
 	tx := common.NewTx(common.BlankTxID, polAddress, asgardAddress, coins, nil, "THOR-POL-ADD")
 	msg := NewMsgAddLiquidity(tx, pool.Asset, runeAmt, cosmos.ZeroUint(), polAddress, common.NoAddress, common.NoAddress, cosmos.ZeroUint(), signer)
-	_, err = handler(ctx, msg)
+	_, err = handler(depositCtx, msg)
+
+	// compute the new provider units
+	if err == nil && !runePool.TotalUnits().IsZero() {
+		var rpValue cosmos.Uint
+		rpValue, err = polValue.runePoolValue(ctx, mgr)
+		if err != nil {
+			err = fmt.Errorf("fail to get rune pool value: %s", err)
+		} else {
+			depositUnits = common.GetSafeShare(runeAmt, rpValue, runePool.TotalUnits())
+		}
+	}
 	if err != nil {
 		handlerErr := err
 		// revert the rune back to the reserve
@@ -1451,6 +1469,8 @@ func (vm *NetworkMgr) addPOLLiquidity(
 		}
 		return handlerErr
 	}
+	commitDeposit()
+	polValue.reset()
 
 	// deposit was successful, update the rune pool units accordingly
 	runePool.ReserveUnits = runePool.ReserveUnits.Add(depositUnits)

@@ -4,14 +4,13 @@ import (
 	"crypto/sha256"
 	"fmt"
 
-	"github.com/cosmos/cosmos-sdk/runtime"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 )
 
 // SetSolVaultNonce saves a Solana vault's committed durable nonce.
 func (k KVStore) SetSolVaultNonce(ctx cosmos.Context, record SolVaultNonce) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	key := k.GetKey(prefixSolVaultNonce, record.VaultPubKey.String())
 	store.Set(key, k.cdc.MustMarshal(&record))
 }
@@ -19,7 +18,7 @@ func (k KVStore) SetSolVaultNonce(ctx cosmos.Context, record SolVaultNonce) {
 // GetSolVaultNonce returns a Solana vault's committed durable nonce. found is false
 // (and the record empty) when the vault has none.
 func (k KVStore) GetSolVaultNonce(ctx cosmos.Context, vaultPubKey common.PubKey) (SolVaultNonce, bool, error) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	key := k.GetKey(prefixSolVaultNonce, vaultPubKey.String())
 	var record SolVaultNonce
 	if !store.Has(key) {
@@ -46,7 +45,7 @@ func solNonceAttestVoterKey(vaultPubKey common.PubKey, nonceAccount, nonce strin
 
 // SetSolNonceAttestVoter saves the votes for one re-attested durable-nonce value.
 func (k KVStore) SetSolNonceAttestVoter(ctx cosmos.Context, voter SolNonceAttestVoter) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	key := k.GetKey(prefixSolNonceAttestVoter, solNonceAttestVoterKey(voter.VaultPubKey, voter.NonceAccount, voter.Nonce, voter.LastTx, voter.Slot))
 	store.Set(key, k.cdc.MustMarshal(&voter))
 }
@@ -54,7 +53,7 @@ func (k KVStore) SetSolNonceAttestVoter(ctx cosmos.Context, voter SolNonceAttest
 // GetSolNonceAttestVoter returns the votes for one re-attested durable-nonce value
 // (an empty voter carrying the value when there are none yet).
 func (k KVStore) GetSolNonceAttestVoter(ctx cosmos.Context, vaultPubKey common.PubKey, nonceAccount, nonce string, lastTx common.TxID, slot int64) (SolNonceAttestVoter, error) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	key := k.GetKey(prefixSolNonceAttestVoter, solNonceAttestVoterKey(vaultPubKey, nonceAccount, nonce, lastTx, slot))
 	voter := SolNonceAttestVoter{VaultPubKey: vaultPubKey, NonceAccount: nonceAccount, Nonce: nonce, LastTx: lastTx, Slot: slot}
 	if !store.Has(key) {

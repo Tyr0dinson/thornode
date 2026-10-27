@@ -3349,7 +3349,9 @@ components:
         synth_units: "0"
         savers_depth: "199998"
         derived_depth_bps: "123456"
+        luvi: "1.500000000000375000"
         balance_asset: "3197744873"
+        synth_per_pool_depth_bps: "2500"
         synth_supply: "0"
         asset_tor_price: "123456"
         synth_mint_paused: true
@@ -3358,6 +3360,7 @@ components:
         pool_units: "14694928607473"
         short_code: b
         volume_rune: "123456"
+        lp_equity_per_unit: "1.500000000000000000"
         volume_asset: "123456"
         savers_fill_bps: "4500"
         savers_units: "199998"
@@ -3366,6 +3369,8 @@ components:
         pending_inbound_rune: "464993836"
         decimals: 6
         LP_units: "14694928607473"
+        synth_overhang: false
+        lp_equity: "1500000000000.000000000000000000"
         asset: BTC.BTC
         synth_supply_remaining: "123456"
         status: Available
@@ -3468,6 +3473,32 @@ components:
             score
           example: "12345678"
           type: string
+        luvi:
+          description: "Liquidity Unit Value Index as the chain values a pool unit,\
+            \ sqrt(balance_asset * balance_rune) / pool_units (synth-unit clamp included)"
+          example: "1.500000000000375000"
+          type: string
+        lp_equity:
+          description: "LP equity net of the synth liability in sqrt(asset * rune)\
+            \ units, sqrt(balance_asset * balance_rune) * (2 * balance_asset - synth_supply)\
+            \ / (2 * balance_asset); zero or negative when synth_overhang is true"
+          example: "1500000000000.000000000000000000"
+          type: string
+        lp_equity_per_unit:
+          description: lp_equity / LP_units; equals luvi (up to rounding) unless synth_overhang
+            is true
+          example: "1.500000000000000000"
+          type: string
+        synth_per_pool_depth_bps:
+          description: "synth supply relative to twice the asset depth, in basis points"
+          example: "2500"
+          type: string
+        synth_overhang:
+          description: whether synth supply is at or above twice the asset depth;
+            synth units are clamped and LP units can redeem almost nothing while this
+            is true
+          example: false
+          type: boolean
       required:
       - LP_units
       - asset
@@ -3475,6 +3506,9 @@ components:
       - balance_asset
       - balance_rune
       - derived_depth_bps
+      - lp_equity
+      - lp_equity_per_unit
+      - luvi
       - pending_inbound_asset
       - pending_inbound_rune
       - pool_units
@@ -3484,6 +3518,8 @@ components:
       - savers_units
       - status
       - synth_mint_paused
+      - synth_overhang
+      - synth_per_pool_depth_bps
       - synth_supply
       - synth_supply_remaining
       - synth_units
@@ -4515,6 +4551,7 @@ components:
         - E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
         - E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
         external_observed_height: 7581334
+        xmr_mined_height: 7581328
         status: done
       properties:
         tx:
@@ -4573,6 +4610,12 @@ components:
             recipient outputs.
           example: "1111111111111111111111111111111111111111111111111111111111111111"
           type: string
+        xmr_mined_height:
+          description: "Original XMR mined height, retained when observation height\
+            \ changes at finalization. Zero means unavailable or pre-mining."
+          example: 7581328
+          format: int64
+          type: integer
         status:
           enum:
           - done
@@ -5573,6 +5616,7 @@ components:
           - E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
           - E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
           external_observed_height: 7581334
+          xmr_mined_height: 7581328
           status: done
         keysign_metric:
           tx_id: tx_id
@@ -5652,6 +5696,7 @@ components:
           - E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
           - E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
           external_observed_height: 7581334
+          xmr_mined_height: 7581328
           status: done
         out_txs:
         - chain: BTC
@@ -5794,6 +5839,7 @@ components:
           - E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
           - E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
           external_observed_height: 7581334
+          xmr_mined_height: 7581328
           status: done
         - tx:
             chain: BTC
@@ -5839,6 +5885,7 @@ components:
           - E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
           - E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
           external_observed_height: 7581334
+          xmr_mined_height: 7581328
           status: done
         finalised_height: 7581334
         reverted: false
@@ -5934,6 +5981,7 @@ components:
           - E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
           - E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
           external_observed_height: 7581334
+          xmr_mined_height: 7581328
           status: done
         out_txs:
         - chain: BTC
@@ -6076,6 +6124,7 @@ components:
           - E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
           - E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
           external_observed_height: 7581334
+          xmr_mined_height: 7581328
           status: done
         - tx:
             chain: BTC
@@ -6121,6 +6170,7 @@ components:
           - E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
           - E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
           external_observed_height: 7581334
+          xmr_mined_height: 7581328
           status: done
         finalised_height: 7581334
         reverted: false

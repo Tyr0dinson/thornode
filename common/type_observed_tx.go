@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
+	"unsafe"
 
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 )
@@ -54,7 +56,42 @@ func (m *ObservedTx) Valid() error {
 	if err := ValidateSolNonceUpdate(m.Tx.Chain, m.SolNonce); err != nil {
 		return err
 	}
+	// Zero remains valid for pre-mining outbound observations. Inbound
+	// admission and height-scoped decisions require CanonicalMinedHeight.
+	if m.XmrMinedHeight != 0 {
+		if _, err := m.CanonicalMinedHeight(); err != nil {
+			return err
+		}
+	}
 	return nil
+}
+
+// CanonicalMinedHeight resolves the location used by height-scoped errata.
+// Finalization rewrites BlockHeight, so XMR must carry its original location.
+// An absent/zero field is unavailable, never a fallback to the rewritten height.
+func (m ObservedTx) CanonicalMinedHeight() (int64, error) {
+	if !m.Tx.Chain.UsesHeightScopedErrata() {
+		if m.XmrMinedHeight != 0 {
+			return 0, errors.New("xmr mined height is only valid for XMR observed txs")
+		}
+		if m.BlockHeight <= 0 {
+			return 0, errors.New("canonical mined height must be positive")
+		}
+		return m.BlockHeight, nil
+	}
+	if m.XmrMinedHeight <= 0 {
+		return 0, errors.New("xmr canonical mined height is unavailable")
+	}
+	if m.BlockHeight <= 0 || m.FinaliseHeight <= 0 || m.BlockHeight > m.FinaliseHeight {
+		return 0, errors.New("xmr observed and finalization heights are invalid")
+	}
+	if m.XmrMinedHeight > m.BlockHeight {
+		return 0, errors.New("xmr mined height exceeds the reported observation height")
+	}
+	if !m.IsFinal() && m.XmrMinedHeight != m.BlockHeight {
+		return 0, errors.New("non-final xmr observation must report its block height as the mined height")
+	}
+	return m.XmrMinedHeight, nil
 }
 
 func ValidateXMRTxKey(chain Chain, txKey string) error {
@@ -145,6 +182,9 @@ func (m ObservedTx) Equals(tx2 ObservedTx) bool {
 	if m.FinaliseHeight != tx2.FinaliseHeight {
 		return false
 	}
+	if !m.HasEquivalentCanonicalMinedHeight(tx2) {
+		return false
+	}
 	if !strings.EqualFold(m.Aggregator, tx2.Aggregator) {
 		return false
 	}
@@ -197,22 +237,80 @@ func (m ObservedTx) HasEquivalentXMRTxKey(tx2 ObservedTx) bool {
 	return normalizeString(m.XmrTxKey) == normalizeString(tx2.XmrTxKey)
 }
 
+// HasEquivalentCanonicalMinedHeight keeps unavailable and valid locations in
+// separate voter buckets, including gas-agnostic consensus comparisons. This
+// consensus identity changes only at the scheduled v3.21 executable switch.
+func (m ObservedTx) HasEquivalentCanonicalMinedHeight(tx2 ObservedTx) bool {
+	if !m.Tx.Chain.UsesHeightScopedErrata() && !tx2.Tx.Chain.UsesHeightScopedErrata() {
+		return true
+	}
+	return m.XmrMinedHeight == tx2.XmrMinedHeight
+}
+
 func (m ObservedTx) EqualsConsensus(tx2 ObservedTx) bool {
 	return m.ObservedPubKey.Equals(tx2.ObservedPubKey) &&
 		m.Tx.EqualsEx(tx2.Tx) &&
 		m.HasEquivalentSpentOutputRefs(tx2) &&
-		m.HasEquivalentXMRTxKey(tx2)
+		m.HasEquivalentXMRTxKey(tx2) &&
+		m.HasEquivalentCanonicalMinedHeight(tx2)
 }
 
 func (m ObservedTx) EqualsConsensusIgnoreGas(tx2 ObservedTx) bool {
 	return m.ObservedPubKey.Equals(tx2.ObservedPubKey) &&
 		m.Tx.EqualsExIgnoreGas(tx2.Tx) &&
 		m.HasEquivalentSpentOutputRefs(tx2) &&
-		m.HasEquivalentXMRTxKey(tx2)
+		m.HasEquivalentXMRTxKey(tx2) &&
+		m.HasEquivalentCanonicalMinedHeight(tx2)
+}
+
+// EqualsInboundObservationCredit allows legacy XMR observations without a mined
+// height to receive slash-point credit alongside the same mined inbound. Both
+// observations must accommodate the concrete height and have the same finality.
+// This does not change stored heights, quorum identity, or errata matching.
+func (m ObservedTx) EqualsInboundObservationCredit(tx2 ObservedTx) bool {
+	if m.Tx.Chain.Equals(XMRChain) && tx2.Tx.Chain.Equals(XMRChain) {
+		if m.XmrMinedHeight != 0 && tx2.XmrMinedHeight == 0 {
+			m, tx2 = tx2, m
+		}
+		if m.XmrMinedHeight == 0 && tx2.XmrMinedHeight > 0 && m.IsFinal() == tx2.IsFinal() {
+			m.XmrMinedHeight = tx2.XmrMinedHeight
+			_, legacyErr := m.CanonicalMinedHeight()
+			_, minedErr := tx2.CanonicalMinedHeight()
+			if legacyErr != nil || minedErr != nil {
+				return false
+			}
+		}
+	}
+	return m.EqualsConsensusIgnoreGas(tx2)
+}
+
+// EqualsOutboundObservationCredit matches observations for outbound slash-point
+// credit only. Legacy non-final and final pre-mining XMR observations can match
+// a valid mined one of the same finality, but two different concrete mining
+// locations remain distinct. Consensus and gas correction stay strict.
+func (m ObservedTx) EqualsOutboundObservationCredit(tx2 ObservedTx) bool {
+	if !m.IsFinal() || !tx2.IsFinal() {
+		return m.EqualsInboundObservationCredit(tx2)
+	}
+	// A final sign-time observation can precede the actual mined block, so it
+	// cannot be validated with the borrowed height like a legacy non-final one.
+	if m.Tx.Chain.Equals(XMRChain) && tx2.Tx.Chain.Equals(XMRChain) {
+		// Normalize local copies so the pre-mining observation is on the left.
+		if m.XmrMinedHeight != 0 && tx2.XmrMinedHeight == 0 {
+			m, tx2 = tx2, m
+		}
+		if m.XmrMinedHeight == 0 && tx2.XmrMinedHeight > 0 &&
+			m.BlockHeight > 0 && m.IsFinal() && tx2.IsFinal() {
+			if _, err := tx2.CanonicalMinedHeight(); err == nil {
+				m.XmrMinedHeight = tx2.XmrMinedHeight
+			}
+		}
+	}
+	return m.EqualsConsensusIgnoreGas(tx2)
 }
 
 func (m ObservedTx) AttestationUniqueHash() string {
-	base := observedTxXMRMetadataUniqueHash(m.Tx.Hash(m.BlockHeight), m.Tx.Chain, m.XmrTxKey, m.SpentOutputRefs)
+	base := observedTxXMRMetadataUniqueHash(m.Tx.Hash(m.BlockHeight), m.Tx.Chain, m.XmrTxKey, m.SpentOutputRefs, m.XmrMinedHeight)
 	return solNonceUniqueHash(base, m.Tx.Chain, m.SolNonce)
 }
 
@@ -233,11 +331,74 @@ func (m *ObservedTx) GetOutHashes() TxIDs {
 	return txIDs
 }
 
+// signerAddressCache memoizes bech32 signer string -> address decoding. Voters
+// re-decode the same ~100 node addresses on every attestation, and decoding is a
+// pure function of the string and the account prefix, so the cache cannot change
+// results. Bounded: once full, new strings are decoded without being stored.
+var (
+	signerAddressCache   = make(map[signerAddressKey]cosmos.AccAddress)
+	signerAddressCacheMu sync.RWMutex
+)
+
+// signerAddressKey keys signerAddressCache: the account prefix the string was
+// decoded under, and the string.
+type signerAddressKey struct{ prefix, signer string }
+
+const signerAddressCacheMax = 4096
+
+// signerAddress is cosmos.AccAddressFromBech32 with memoization of successes.
+// The returned address is a fresh copy the caller may modify.
+func signerAddress(signer string) (cosmos.AccAddress, error) {
+	addr, cached, err := lookupSignerAddress(signer)
+	if cached {
+		return append(cosmos.AccAddress(nil), addr...), nil
+	}
+	return addr, err
+}
+
+// lookupSignerAddress is cosmos.AccAddressFromBech32 with memoization of
+// successes. If cached, addr is the memoized copy, which is never written and
+// must not be modified; otherwise it is the caller's own.
+func lookupSignerAddress(signer string) (addr cosmos.AccAddress, cached bool, err error) {
+	key := signerAddressKey{cosmos.GetConfig().GetBech32AccountAddrPrefix(), signer}
+	signerAddressCacheMu.RLock()
+	addr, ok := signerAddressCache[key]
+	signerAddressCacheMu.RUnlock()
+	if ok {
+		return addr, true, nil
+	}
+	addr, err = cosmos.AccAddressFromBech32(signer)
+	if err != nil {
+		return nil, false, err
+	}
+	signerAddressCacheMu.Lock()
+	if len(signerAddressCache) < signerAddressCacheMax {
+		signerAddressCache[key] = append(cosmos.AccAddress(nil), addr...)
+	}
+	signerAddressCacheMu.Unlock()
+	return addr, false, nil
+}
+
+// SignerAddressString returns the bytes of the address GetSigners yields for
+// signer, as a string, or false if GetSigners skips signer (it does not decode).
+// It allocates only when the decoding is not memoized.
+func SignerAddressString(signer string) (string, bool) {
+	addr, cached, err := lookupSignerAddress(signer)
+	if err != nil {
+		return "", false
+	}
+	if cached && len(addr) > 0 {
+		// the memoized copy is never written, so it can back a string
+		return unsafe.String(&addr[0], len(addr)), true
+	}
+	return string(addr), true
+}
+
 // GetSigners return all the node address that had sign the tx
 func (m *ObservedTx) GetSigners() []cosmos.AccAddress {
 	addrs := make([]cosmos.AccAddress, 0)
 	for _, a := range m.Signers {
-		addr, err := cosmos.AccAddressFromBech32(a)
+		addr, err := signerAddress(a)
 		if err != nil {
 			continue
 		}
@@ -253,8 +414,16 @@ func (m *ObservedTx) String() string {
 
 // HasSigned - check if given address has signed
 func (m *ObservedTx) HasSigned(signer cosmos.AccAddress) bool {
-	for _, sign := range m.GetSigners() {
-		if sign.Equals(signer) {
+	// Same result as scanning GetSigners(): a signer string can only decode to
+	// signer if it equals signer's bech32 encoding up to case, so only such
+	// strings need decoding.
+	encoded := signer.String()
+	for _, a := range m.Signers {
+		if !strings.EqualFold(a, encoded) {
+			continue
+		}
+		addr, err := signerAddress(a)
+		if err == nil && addr.Equals(signer) {
 			return true
 		}
 	}

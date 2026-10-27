@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	tctypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
@@ -83,6 +84,7 @@ func observerTestXMRPlan(t *testing.T) (common.ObservedTx, plannedXMROutbound) {
 		8,
 	)
 	obsTx.SpentOutputRefs = []common.OutputRef{observerTestOutputRef("xmr-peer-spent-ref", txID.String())}
+	obsTx.XmrMinedHeight = obsTx.BlockHeight
 
 	planned := plannedXMROutbound{
 		chain:            common.XMRChain,
@@ -547,9 +549,9 @@ func TestSingleVaultMemberCannotScheduleSpentRefVariantFlood(t *testing.T) {
 	}
 
 	assertNoSpentRefImportDuring(t, applied, 100*time.Millisecond)
-	ag.mu.Lock()
+	ag.authorizedXMRSpentRefsMu.Lock()
 	require.Empty(t, ag.authorizedXMRSpentRefs)
-	ag.mu.Unlock()
+	ag.authorizedXMRSpentRefsMu.Unlock()
 	require.Empty(t, ag.applySpentRefsSem)
 }
 
@@ -721,7 +723,7 @@ func TestXMRPlannedOutboundMatcherUsesInboundVoterActions(t *testing.T) {
 }
 
 // TestXMRPlannedOutboundMatcherUsesKeysignHeightForRagnarok verifies the
-// RAGNAROK path uses the same keysign-height planned txout lookup as MIGRATE.
+// RAGNAROK path first checks the keysign height recorded in the memo.
 // Without this path, pre-quorum peer spent-ref imports would be disabled for
 // XMR ragnarok outbounds even when the observation exactly matches the plan.
 func TestXMRPlannedOutboundMatcherUsesKeysignHeightForRagnarok(t *testing.T) {
@@ -730,6 +732,7 @@ func TestXMRPlannedOutboundMatcherUsesKeysignHeightForRagnarok(t *testing.T) {
 	ragnarokMemo := memo.NewRagnarokMemo(123).String()
 	obsTx.Tx.Memo = ragnarokMemo
 	planned.memo = ragnarokMemo
+	planned.wireMemo = ragnarokMemo
 	bridge.getKeysignFunc = observerTestKeysignFunc(planned)
 
 	_, ok := ag.plannedXMRWireMemo(obsTx)
@@ -740,6 +743,306 @@ func TestXMRPlannedOutboundMatcherUsesKeysignHeightForRagnarok(t *testing.T) {
 	obsTx.Tx.ToAddress = common.Address(common.XMRSeededDummyAddress('8', []byte("wrong-ragnarok-dest")))
 	_, ok = ag.plannedXMRWireMemo(obsTx)
 	assert.False(t, ok)
+}
+
+func TestXMRPlannedOutboundMatcherResolvesRagnarokRetry(t *testing.T) {
+	const originalHeight, retryHeight = int64(123), int64(1040)
+	type fixture struct {
+		observation common.ObservedTx
+		original    []plannedXMROutbound
+		retries     map[int64][]plannedXMROutbound
+		pending     []thorclient.PendingOutbound
+		queueErr    error
+		keysignErrs map[int64]error
+	}
+	tests := []struct {
+		name          string
+		change        func(*fixture)
+		want          bool
+		wantHeights   []int64
+		wantQueueCall bool
+	}{
+		{
+			name: "same vault retry at coalesced height", want: true,
+			wantHeights: []int64{originalHeight, retryHeight}, wantQueueCall: true,
+		},
+		{
+			name: "retry discovery uses the semantic original memo",
+			change: func(f *fixture) {
+				f.pending = []thorclient.PendingOutbound{{
+					Chain: "XMR", OriginalMemo: f.observation.Tx.Memo, Height: retryHeight,
+				}}
+			},
+			want: true, wantHeights: []int64{originalHeight, retryHeight}, wantQueueCall: true,
+		},
+		{
+			name: "retry discovery preserves a forced memo over the original memo",
+			change: func(f *fixture) {
+				f.pending = []thorclient.PendingOutbound{{
+					Chain: "XMR", Memo: f.observation.Tx.Memo, OriginalMemo: "RAGNAROK:999", Height: retryHeight,
+				}}
+			},
+			want: true, wantHeights: []int64{originalHeight, retryHeight}, wantQueueCall: true,
+		},
+		{
+			name: "retry completed between queue and keysign reads",
+			change: func(f *fixture) {
+				f.retries[retryHeight][0].outHash = f.observation.Tx.ID
+			},
+			want: true, wantHeights: []int64{originalHeight, retryHeight}, wantQueueCall: true,
+		},
+		{
+			name: "completed retry absent from pending queue declines peer import",
+			change: func(f *fixture) {
+				f.retries[retryHeight][0].outHash = f.observation.Tx.ID
+				f.pending = nil
+			},
+			wantHeights: []int64{originalHeight}, wantQueueCall: true,
+		},
+		{
+			name: "retry is validated against updated payment fields",
+			change: func(f *fixture) {
+				coins := common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(123456)))
+				f.retries[retryHeight][0].coins = coins
+				f.observation.Tx.Coins = coins
+			},
+			want: true, wantHeights: []int64{originalHeight, retryHeight}, wantQueueCall: true,
+		},
+		{
+			name: "cancelled original without a pending retry",
+			change: func(f *fixture) {
+				f.pending = nil
+			},
+			wantHeights: []int64{originalHeight}, wantQueueCall: true,
+		},
+		{
+			name: "queue hint without an authoritative plan",
+			change: func(f *fixture) {
+				f.retries = nil
+			},
+			wantHeights: []int64{originalHeight, retryHeight}, wantQueueCall: true,
+		},
+		{
+			name: "retry cancelled after queue read",
+			change: func(f *fixture) {
+				f.retries[retryHeight][0].outHash = common.BlankTxID
+			},
+			wantHeights: []int64{originalHeight, retryHeight}, wantQueueCall: true,
+		},
+		{
+			name: "retry completed with another transaction",
+			change: func(f *fixture) {
+				f.retries[retryHeight][0].outHash = common.TxID(observerTestHash("other-ragnarok-spend"))
+			},
+			wantHeights: []int64{originalHeight, retryHeight}, wantQueueCall: true,
+		},
+		{
+			name: "retry destination mismatch",
+			change: func(f *fixture) {
+				f.retries[retryHeight][0].toAddress = common.Address(common.XMRSeededDummyAddress('8', []byte("different-retry-destination")))
+			},
+			wantHeights: []int64{originalHeight, retryHeight}, wantQueueCall: true,
+		},
+		{
+			name: "retry amount mismatch",
+			change: func(f *fixture) {
+				f.retries[retryHeight][0].coins = common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(1)))
+			},
+			wantHeights: []int64{originalHeight, retryHeight}, wantQueueCall: true,
+		},
+		{
+			name: "retry gas budget mismatch",
+			change: func(f *fixture) {
+				f.retries[retryHeight][0].maxGas = common.Gas{common.NewCoin(common.XMRAsset, cosmos.NewUint(1))}
+			},
+			wantHeights: []int64{originalHeight, retryHeight}, wantQueueCall: true,
+		},
+		{
+			name: "retry vault mismatch",
+			change: func(f *fixture) {
+				f.retries[retryHeight][0].vaultPubKeyFrost = common.EmptyPubKey
+				f.retries[retryHeight][0].vaultPubKey = common.EmptyPubKey
+			},
+			wantHeights: []int64{originalHeight, retryHeight}, wantQueueCall: true,
+		},
+		{
+			name: "retry memo mismatch",
+			change: func(f *fixture) {
+				f.retries[retryHeight][0].memo = memo.NewRagnarokMemo(originalHeight + 1).String()
+				f.retries[retryHeight][0].wireMemo = f.retries[retryHeight][0].memo
+			},
+			wantHeights: []int64{originalHeight, retryHeight}, wantQueueCall: true,
+		},
+		{
+			name: "queue lookup failure",
+			change: func(f *fixture) {
+				f.queueErr = fmt.Errorf("queue unavailable")
+			},
+			wantHeights: []int64{originalHeight}, wantQueueCall: true,
+		},
+		{
+			name: "retry keysign lookup failure",
+			change: func(f *fixture) {
+				f.keysignErrs = map[int64]error{retryHeight: fmt.Errorf("keysign unavailable")}
+			},
+			wantHeights: []int64{originalHeight, retryHeight}, wantQueueCall: true,
+		},
+		{
+			name: "unreadable retry before a valid candidate fails closed",
+			change: func(f *fixture) {
+				f.keysignErrs = map[int64]error{retryHeight - 40: fmt.Errorf("keysign unavailable")}
+				f.pending = append(f.pending, thorclient.PendingOutbound{
+					Chain: "XMR", Memo: f.observation.Tx.Memo, Height: retryHeight - 40,
+				})
+			},
+			wantHeights: []int64{originalHeight, retryHeight - 40}, wantQueueCall: true,
+		},
+		{
+			name: "unreadable retry after a valid candidate fails closed",
+			change: func(f *fixture) {
+				f.keysignErrs = map[int64]error{retryHeight + 40: fmt.Errorf("keysign unavailable")}
+				f.pending = append(f.pending, thorclient.PendingOutbound{
+					Chain: "XMR", Memo: f.observation.Tx.Memo, Height: retryHeight + 40,
+				})
+			},
+			wantHeights: []int64{originalHeight, retryHeight, retryHeight + 40}, wantQueueCall: true,
+		},
+		{
+			name: "exact original mismatch never falls back",
+			change: func(f *fixture) {
+				exact := f.original[0]
+				exact.outHash = f.observation.Tx.ID
+				exact.coins = nil
+				f.original = append(f.original, exact)
+			},
+			wantHeights: []int64{originalHeight},
+		},
+		{
+			name: "exact retry mismatch overrides another pending match",
+			change: func(f *fixture) {
+				exact := f.retries[retryHeight][0]
+				exact.outHash = f.observation.Tx.ID
+				exact.coins = nil
+				f.retries[retryHeight+40] = []plannedXMROutbound{exact}
+				f.pending = append(f.pending, thorclient.PendingOutbound{
+					Chain: "XMR", Memo: f.observation.Tx.Memo, Height: retryHeight + 40,
+				})
+			},
+			wantHeights: []int64{originalHeight, retryHeight, retryHeight + 40}, wantQueueCall: true,
+		},
+		{
+			name: "conflicting retry wire memos fail closed",
+			change: func(f *fixture) {
+				other := f.retries[retryHeight][0]
+				other.wireMemo = strings.ToLower(other.wireMemo)
+				f.retries[retryHeight] = append(f.retries[retryHeight], other)
+			},
+			wantHeights: []int64{originalHeight, retryHeight}, wantQueueCall: true,
+		},
+		{
+			name: "exact retry hash disambiguates wire memo",
+			change: func(f *fixture) {
+				other := f.retries[retryHeight][0]
+				other.wireMemo = strings.ToLower(other.wireMemo)
+				f.retries[retryHeight][0].outHash = f.observation.Tx.ID
+				f.retries[retryHeight] = append(f.retries[retryHeight], other)
+			},
+			want: true, wantHeights: []int64{originalHeight, retryHeight}, wantQueueCall: true,
+		},
+		{
+			name: "too many retry heights are rejected before keysign lookups",
+			change: func(f *fixture) {
+				f.pending = nil
+				for i := int64(0); i < 17; i++ {
+					f.pending = append(f.pending, thorclient.PendingOutbound{
+						Chain: "XMR", Memo: f.observation.Tx.Memo, Height: retryHeight + i,
+					})
+				}
+			},
+			wantHeights: []int64{originalHeight}, wantQueueCall: true,
+		},
+		{
+			name: "original pending plan needs no retry lookup",
+			change: func(f *fixture) {
+				f.original[0].outHash = common.TxID("")
+			},
+			want: true, wantHeights: []int64{originalHeight},
+		},
+		{
+			name: "completed original needs no retry lookup",
+			change: func(f *fixture) {
+				f.original[0].outHash = f.observation.Tx.ID
+			},
+			want: true, wantHeights: []int64{originalHeight},
+		},
+		{
+			name: "different completed original does not authorize retry lookup",
+			change: func(f *fixture) {
+				f.original[0].outHash = common.TxID(observerTestHash("different-original-spend"))
+			},
+			wantHeights: []int64{originalHeight},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			ag, _, _, _, bridge, _ := setupTestGossip(t)
+			obsTx, planned := observerTestXMRPlan(t)
+			obsTx.Tx.Memo = memo.NewRagnarokMemo(originalHeight).String()
+			planned.memo, planned.wireMemo = obsTx.Tx.Memo, obsTx.Tx.Memo
+			original := planned
+			original.outHash = common.BlankTxID
+			f := fixture{
+				observation: obsTx,
+				original:    []plannedXMROutbound{original},
+				retries:     map[int64][]plannedXMROutbound{retryHeight: {planned}},
+				pending: []thorclient.PendingOutbound{
+					{Chain: "XMR", Memo: obsTx.Tx.Memo, Height: retryHeight},
+					{Chain: "XMR", Memo: obsTx.Tx.Memo, Height: retryHeight},
+					{Chain: "XMR", Memo: obsTx.Tx.Memo, Height: originalHeight},
+					{Chain: "XMR", Memo: "RAGNAROK:999", Height: retryHeight + 1},
+					{Chain: "BTC", Memo: obsTx.Tx.Memo, Height: retryHeight + 2},
+				},
+			}
+			if test.change != nil {
+				test.change(&f)
+			}
+			var heights []int64
+			bridge.getKeysignFunc = func(height int64, pk string) (tctypes.TxOut, error) {
+				require.Empty(t, pk)
+				heights = append(heights, height)
+				plans := f.original
+				if height != originalHeight {
+					if err := f.keysignErrs[height]; err != nil {
+						return tctypes.TxOut{}, err
+					}
+					plans = f.retries[height]
+				}
+				out := tctypes.TxOut{Height: height}
+				for _, plan := range plans {
+					item, err := observerTestKeysignFunc(plan)(height, pk)
+					require.NoError(t, err)
+					out.TxArray = append(out.TxArray, item.TxArray...)
+				}
+				return out, nil
+			}
+			queueCalled := false
+			bridge.getPendingOutboundsFunc = func(height int64) ([]thorclient.PendingOutbound, error) {
+				require.Zero(t, height, "retry discovery must use the live queue")
+				queueCalled = true
+				return f.pending, f.queueErr
+			}
+
+			wireMemo, ok := ag.plannedXMRWireMemo(f.observation)
+			assert.Equal(t, test.want, ok)
+			if test.want {
+				assert.Equal(t, obsTx.Tx.Memo, wireMemo)
+			} else {
+				assert.Empty(t, wireMemo)
+			}
+			assert.Equal(t, test.wantHeights, heights)
+			assert.Equal(t, test.wantQueueCall, queueCalled)
+		})
+	}
 }
 
 // TestXMRPlannedOutboundMatcherAcceptsLegacyVaultPubKey keeps the matcher
@@ -801,6 +1104,7 @@ func observerTestKeysignFunc(planned plannedXMROutbound) func(int64, string) (tc
 					Memo:             planned.wireMemo,
 					OriginalMemo:     planned.memo,
 					MaxGas:           planned.maxGas,
+					OutHash:          planned.outHash,
 				},
 			},
 		}, nil
@@ -827,6 +1131,7 @@ func observerTestObservedTxVoterFunc(inboundID common.TxID, planned plannedXMROu
 					Memo:             planned.wireMemo,
 					OriginalMemo:     planned.memo,
 					MaxGas:           planned.maxGas,
+					OutHash:          planned.outHash,
 				},
 			},
 		}, nil
@@ -908,8 +1213,8 @@ func observerTestSpentRefsApplied(t *testing.T, ag *AttestationGossip, obsTx com
 // observerTestConflictState exposes only the import state for conflict-map
 // assertions; the tests should not depend on timestamps or map entry internals.
 func observerTestConflictState(ag *AttestationGossip, obsTx common.ObservedTx) (xmrSpentRefsImportState, bool) {
-	ag.mu.Lock()
-	defer ag.mu.Unlock()
+	ag.authorizedXMRSpentRefsMu.Lock()
+	defer ag.authorizedXMRSpentRefsMu.Unlock()
 	entry, ok := ag.authorizedXMRSpentRefs[xmrSpentRefsConflictKeyFor(obsTx)]
 	if !ok {
 		return 0, false
@@ -1013,6 +1318,12 @@ func TestAuthorizedXMRSpentRefsLifecycle(t *testing.T) {
 	ag.resolveAuthorizedXMRSpentRefs(key, identityA, false)
 	require.True(t, ag.rememberAuthorizedXMRSpentRefs(differing))
 
+	// Cancellation cleanup for the old identity must leave the replacement pending.
+	ag.releaseAuthorizedXMRSpentRefs(key, identityA)
+	replacementState, exists := observerTestConflictState(ag, differing)
+	require.True(t, exists)
+	require.Equal(t, xmrSpentRefsImportPending, replacementState)
+
 	// A late outcome for the replaced identity must not clobber the new entry.
 	ag.resolveAuthorizedXMRSpentRefs(key, identityA, true)
 	require.False(t, ag.rememberAuthorizedXMRSpentRefs(obsTx))
@@ -1046,15 +1357,65 @@ func TestPruneAuthorizedXMRSpentRefsExpiresOldEntries(t *testing.T) {
 		ttl = 2 * defaultNonQuorumTimeout
 	}
 
-	ag.mu.Lock()
-	ag.pruneAuthorizedXMRSpentRefsLocked(time.Now().Add(ttl / 2))
+	ag.pruneAuthorizedXMRSpentRefs(time.Now().Add(ttl / 2))
+	ag.authorizedXMRSpentRefsMu.Lock()
 	surviving := len(ag.authorizedXMRSpentRefs)
-	ag.mu.Unlock()
+	ag.authorizedXMRSpentRefsMu.Unlock()
 	assert.Equal(t, 1, surviving, "entry within TTL must survive pruning")
 
-	ag.mu.Lock()
-	ag.pruneAuthorizedXMRSpentRefsLocked(time.Now().Add(ttl + time.Minute))
+	ag.pruneAuthorizedXMRSpentRefs(time.Now().Add(ttl + time.Minute))
+	ag.authorizedXMRSpentRefsMu.Lock()
 	remaining := len(ag.authorizedXMRSpentRefs)
-	ag.mu.Unlock()
+	ag.authorizedXMRSpentRefsMu.Unlock()
 	assert.Equal(t, 0, remaining, "entry past TTL must be pruned")
+}
+
+func TestSelectPlannedXMROutboundExactHashPrecedence(t *testing.T) {
+	obsTx, planned := observerTestXMRPlan(t)
+	planned.outHash = obsTx.Tx.ID
+
+	t.Run("exact hash mismatch fails closed instead of falling back", func(t *testing.T) {
+		mismatchedExact := planned
+		mismatchedExact.toAddress = common.Address(common.XMRSeededDummyAddress('8', []byte("wrong-exact-hash-dest")))
+		matchingUnhashed := planned
+		matchingUnhashed.outHash = common.TxID("")
+
+		for _, candidates := range [][]plannedXMROutbound{
+			{mismatchedExact, matchingUnhashed},
+			{matchingUnhashed, mismatchedExact},
+		} {
+			_, ok := selectPlannedXMROutbound(obsTx, candidates)
+			assert.False(t, ok)
+		}
+	})
+
+	t.Run("exact hash disambiguates matching plans", func(t *testing.T) {
+		matchingUnhashed := planned
+		matchingUnhashed.outHash = common.TxID("")
+		matchingUnhashed.wireMemo = "unhashed-wire-memo"
+		matchingExact := planned
+		matchingExact.wireMemo = "exact-wire-memo"
+
+		selected, ok := selectPlannedXMROutbound(obsTx, []plannedXMROutbound{
+			matchingUnhashed,
+			matchingExact,
+		})
+		require.True(t, ok)
+		assert.Equal(t, matchingExact.wireMemo, selected.wireMemo)
+	})
+
+	t.Run("unhashed plan is used only when no exact hash exists", func(t *testing.T) {
+		matchingUnhashed := planned
+		matchingUnhashed.outHash = common.TxID("")
+		matchingUnhashed.wireMemo = "unhashed-wire-memo"
+		matchingWrongHash := planned
+		matchingWrongHash.outHash = common.TxID(observerTestHash("other-outbound"))
+
+		selected, ok := selectPlannedXMROutbound(obsTx, []plannedXMROutbound{
+			matchingWrongHash,
+			matchingUnhashed,
+		})
+		require.True(t, ok)
+		assert.Equal(t, matchingUnhashed.wireMemo, selected.wireMemo)
+	})
 }

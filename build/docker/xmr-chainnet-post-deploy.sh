@@ -93,6 +93,7 @@ mimir NumberOfNewNodesPerChurn 3
 mimir ChurnInterval 10
 mimir ChurnRetryInterval 10
 mimir MinimumBondInRune 1
+mimir HaltScannerXMR 0
 
 echo ""
 echo "[3/8] Waiting for dog bifrost to report XMR fee + chain tip (sole active node = 1 attestation quorum)..."

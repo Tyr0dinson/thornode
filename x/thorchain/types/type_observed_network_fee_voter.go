@@ -33,12 +33,7 @@ func (m *ObservedNetworkFeeVoter) GetSigners() []cosmos.AccAddress {
 
 // HasSigned - check if given address has signed
 func (m *ObservedNetworkFeeVoter) HasSigned(signer cosmos.AccAddress) bool {
-	for _, sign := range m.GetSigners() {
-		if sign.Equals(signer) {
-			return true
-		}
-	}
-	return false
+	return signersInclude(m.Signers, signer)
 }
 
 // Sign this voter with given signer address
@@ -52,12 +47,7 @@ func (m *ObservedNetworkFeeVoter) Sign(signer cosmos.AccAddress) bool {
 
 // HasConsensus Determine if this errata has enough signers
 func (m *ObservedNetworkFeeVoter) HasConsensus(nas NodeAccounts) bool {
-	var count int
-	for _, signer := range m.GetSigners() {
-		if nas.IsNodeKeys(signer) {
-			count++
-		}
-	}
+	count := countActiveSigners(m.Signers, nas)
 	return HasSuperMajority(count, len(nas))
 }
 

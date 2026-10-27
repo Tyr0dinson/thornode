@@ -116,3 +116,36 @@ func (k KVStore) GetLastKeygenChains(ctx cosmos.Context, address cosmos.AccAddre
 	}
 	return reportHeight, chains, nil
 }
+
+// SetChainSetStall records that a pending asgard vault was created without a chain the
+// active asgard vaults serve, during the churn cycle identified by cycleHeight: the
+// creation height of the newest active asgard vault. One key per chain holds the latest
+// cycle it stalled in, so records from a completed cycle are simply superseded.
+func (k KVStore) SetChainSetStall(ctx cosmos.Context, chain common.Chain, cycleHeight int64) {
+	k.setInt64(ctx, k.GetKey(prefixChainSetStall, chain.String()), cycleHeight)
+}
+
+// GetChainSetStalls returns the chains recorded as stalled in the given churn cycle, in
+// ascending chain order.
+func (k KVStore) GetChainSetStalls(ctx cosmos.Context, cycleHeight int64) (common.Chains, error) {
+	prefixKey := k.GetKey(prefixChainSetStall, "")
+	iter := k.getIterator(ctx, types.DbPrefix(prefixKey))
+	defer iter.Close()
+	chains := make(common.Chains, 0)
+	for ; iter.Valid(); iter.Next() {
+		value := ProtoInt64{}
+		if err := k.cdc.Unmarshal(iter.Value(), &value); err != nil {
+			return nil, dbError(ctx, "Unmarshal: chain set stall", err)
+		}
+		if value.Value != cycleHeight {
+			continue
+		}
+		chain, err := common.NewChain(strings.TrimPrefix(string(iter.Key()), string(prefixKey)))
+		if err != nil {
+			ctx.Logger().Error("fail to parse chain set stall chain", "error", err, "key", string(iter.Key()))
+			continue
+		}
+		chains = append(chains, chain)
+	}
+	return chains, nil
+}

@@ -8,8 +8,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/cosmos/cosmos-sdk/runtime"
-
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 )
@@ -68,7 +66,7 @@ func (k KVStore) SetXMRSpentOutputRefs(ctx cosmos.Context, vaultPubKey common.Pu
 		observedHeight = finalisedHeight
 	}
 
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	for _, ref := range refs {
 		key := xmrSpentOutputRefKey(vaultPubKey, observedHeight, finalisedHeight, ref)
 		store.Set(key, k.cdc.MustMarshal(&ref))
@@ -124,7 +122,7 @@ func (k KVStore) pruneXMRSpentOutputRefs(ctx cosmos.Context, vaultPubKey common.
 		}
 	}
 
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	for _, key := range deleteKeys {
 		store.Delete(key)
 	}
