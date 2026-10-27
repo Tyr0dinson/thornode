@@ -837,7 +837,19 @@ func applyTxOutAttestation(
 			}
 		}
 	}
-	if !ok && voter.HasConsensus(nas) && !tx.IsFinal() && voter.FinalisedHeight == 0 {
+	// A Solana outbound acts only on FINAL consensus. Bifrost reads Solana at
+	// "finalized" commitment, so every scanner observation is final; the only
+	// non-final votes are the signing party's sign-time "instant" observations,
+	// sent before the tx lands. Acting on them would irrevocably mark paid (and
+	// debit the vault for) a tx that can still fail: a failed durable tx is then
+	// reported, final, in the nonce-creation shape and never processed as the
+	// outbound, and a failed non-durable tx is never observed at all. Those votes
+	// stay recorded above but never form consensus here, so the final consensus,
+	// success or failure, is processed exactly once by the branch above. Checked on
+	// the consensus tx, not this vote, so a later vote of another chain cannot
+	// trigger it.
+	if !ok && voter.HasConsensus(nas) && !tx.IsFinal() && voter.FinalisedHeight == 0 &&
+		!voter.GetTx(nas).Tx.Chain.Equals(common.SOLChain) {
 		if voter.Height == 0 {
 			telemetry.IncrCounterWithLabels(
 				[]string{"thornode", "observe", "consensus"}, 1,
