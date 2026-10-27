@@ -991,10 +991,14 @@ const (
 // nonceCreateTxInItem observes a vault's durable-nonce account creation (see
 // isDurableNonceCreateTx): the funding vault sends the rent into its nonce account.
 // THORChain books the rent and fee as vault gas and commits the vault's initial
-// durable nonce from it. It is observed ONLY when the created account is the funding
-// vault's own seed-derived nonce account and its post-creation nonce (authority ==
-// funder) can be read; otherwise it is not observed at all, because without an
-// attested nonce it would reach THORChain as an unmatched vault outflow.
+// durable nonce from it. It is observed ONLY when the funder is a vault, the created
+// account is that vault's own seed-derived nonce account, and its post-creation nonce
+// (authority == funder) can be read; otherwise it is not observed at all, because
+// without an attested nonce it would reach THORChain as an unmatched vault outflow.
+// A non-vault funder is skipped before any read, so an outsider's creation listing a
+// vault cannot fail the vault's scan. A created account that is missing has been
+// closed since (retirement), so the creation is skipped too; any other read failure
+// fails the scan so the tx is re-read.
 func (s *SOLScanner) nonceCreateTxInItem(txn *rpc.TransactionResult, blockHeight int64, instructions []rpc.RPCInstruction, accountByIndex func(int) string) (*stypes.TxInItem, error) {
 	var funder, created string
 	var rent uint64
@@ -1040,8 +1044,21 @@ func (s *SOLScanner) nonceCreateTxInItem(txn *rpc.TransactionResult, blockHeight
 	if creates != 1 || funder == "" || created == "" || rent == 0 || len(txn.Transaction.Signatures) == 0 {
 		return nil, nil
 	}
+	// Only a vault's own creation is observed. Anyone can list a vault as an extra
+	// account of a tx creating their own nonce account, so check before any read.
+	if s.pubKeyMgr == nil {
+		return nil, nil
+	}
+	if isVault, _ := s.pubKeyMgr.IsValidPoolAddress(funder, common.SOLChain); !isVault {
+		return nil, nil
+	}
 	txID := txn.Transaction.Signatures[0]
 	nonce, err := s.readSolNonce(created, funder, blockHeight)
+	if errors.Is(err, rpc.ErrNonceAccountNotProvisioned) {
+		// Closed since (a retired vault reclaims its rent): nothing durable can wedge
+		// on it any more, and failing the scan would stall the vault's cursor for good.
+		return nil, nil
+	}
 	if err != nil {
 		// A transient read failure must not drop the creation: without it the vault's
 		// nonce never commits and its rent is never booked. Fail the scan instead.

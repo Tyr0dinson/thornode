@@ -113,6 +113,7 @@ func (s *NonceAdoptSuite) TestScannerObservesAdoption(c *C) {
 	defer srv.Close()
 	scanner := newTestScanner()
 	scanner.solRpc = rpc.NewSolRPC(srv.URL, time.Second)
+	scanner.pubKeyMgr = poolAddrs{addrs: map[string]bool{vaultStr: true}}
 
 	adopt := toRPCTx(soltypes.NewAdoptNonceAccountTransaction(vault, nonce, solNonceSeed, nonceAccountRentLamports, "4sGjMW1sUnHzSxGspuhpqLDx6wiyjNtZAMdL4VZHirAn"), 5000)
 	item := scanner.getTxInItem(adopt, 100)

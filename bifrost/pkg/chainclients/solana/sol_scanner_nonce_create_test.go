@@ -71,6 +71,7 @@ func (s *ScannerNonceCreateSuite) TestObservesOwnNonceCreation(c *C) {
 	vault, nonceAcct := attestFixture(c)
 	scanner, done := s.scanner(&nonceRPC{authority: vault})
 	defer done()
+	scanner.pubKeyMgr = poolAddrs{addrs: map[string]bool{vault: true}}
 
 	item := scanner.getTxInItem(nonceCreateTx(vault, nonceAcct), 100)
 	c.Assert(item, NotNil)
@@ -95,14 +96,17 @@ func (s *ScannerNonceCreateSuite) TestNotObservedWithoutAttestedNonce(c *C) {
 
 	scanner, done := s.scanner(&nonceRPC{authority: vault})
 	defer done()
+	scanner.pubKeyMgr = poolAddrs{addrs: map[string]bool{vault: true}}
 	c.Assert(scanner.getTxInItem(nonceCreateTx(vault, foreign), 100), IsNil) // not derived from the funder
 
 	scanner2, done2 := s.scanner(&nonceRPC{authority: foreign})
 	defer done2()
+	scanner2.pubKeyMgr = poolAddrs{addrs: map[string]bool{vault: true}}
 	c.Assert(scanner2.getTxInItem(nonceCreateTx(vault, nonceAcct), 100), IsNil) // authority is not the vault
 
 	scanner3, done3 := s.scanner(&nonceRPC{authority: vault, fail: true})
 	defer done3()
+	scanner3.pubKeyMgr = poolAddrs{addrs: map[string]bool{vault: true}}
 	c.Assert(scanner3.getTxInItem(nonceCreateTx(vault, nonceAcct), 100), IsNil) // unreadable
 
 	twice := nonceCreateTx(vault, nonceAcct)
@@ -157,6 +161,7 @@ func (s *ScannerNonceCreateSuite) TestNonceReadErrorRetriesScan(c *C) {
 	scanner := newTestScanner()
 	scanner.cfg.ChainID = common.SOLChain
 	scanner.solRpc = rpc.NewSolRPC(srv.URL, time.Second)
+	scanner.pubKeyMgr = poolAddrs{addrs: map[string]bool{vault: true}}
 	scanner.globalTxsQueue = make(chan stypes.TxIn, 10)
 
 	scan := func() (ok, healthy bool, cursor string) {
