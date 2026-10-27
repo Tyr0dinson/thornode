@@ -170,9 +170,6 @@ func (am AppModule) RegisterServices(cfg module.Configurator) {
 			panic(fmt.Sprintf("failed to migrate x/thorchain from version %d to %d: %v", mig.from, mig.from+1, err))
 		}
 	}
-	if err := cfg.RegisterMigration(types.ModuleName, 21, m.Migrate21to22); err != nil {
-		panic(fmt.Sprintf("failed to migrate x/thorchain from version 21 to 22: %v", err))
-	}
 }
 
 // BeginBlock called when a block get proposed
