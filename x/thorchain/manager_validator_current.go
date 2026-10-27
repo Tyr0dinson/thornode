@@ -3,6 +3,7 @@ package thorchain
 import (
 	"errors"
 	"fmt"
+	"math"
 	"net"
 	"sort"
 
@@ -2181,6 +2182,7 @@ func (vm *ValidatorMgr) nextVaultNodeAccounts(ctx cosmos.Context, targetCount in
 		rotation = true
 		active = append(active, na)
 	}
+	vm.logChurnInAgeHeldBack(ctx, tooYoung, active)
 
 	if !rotation {
 		needsKeygen, keygenErr := vm.regularVaultMembershipNeedsKeygen(ctx, active)
@@ -2209,7 +2211,7 @@ func (vm *ValidatorMgr) splitByChurnInAge(ctx cosmos.Context, ready NodeAccounts
 		firstSeen, seenErr := vm.nodeFirstSeen(ctx, na)
 		if seenErr != nil {
 			// one unreadable record holds back only its own node
-			ctx.Logger().Error("fail to get node age, holding it back", "error", seenErr)
+			ctx.Logger().Error("fail to get node age, holding it back", "node_address", na.NodeAddress.String(), "error", seenErr)
 			young = append(young, na)
 			continue
 		}
@@ -2219,14 +2221,47 @@ func (vm *ValidatorMgr) splitByChurnInAge(ctx cosmos.Context, ready NodeAccounts
 			young = append(young, na)
 		}
 	}
-	if len(young) > 0 {
-		ctx.Logger().Info("churn-in held back nodes younger than the minimum age",
+	return old, young, nil
+}
+
+// logChurnInAgeHeldBack logs the too-young Ready nodes that the BFT floor fill did not
+// take into next, one line per node, so an operator can find its node and the height
+// from which its age no longer keeps it out. It still needs a churn at or after that
+// height and a bond that ranks it in.
+func (vm *ValidatorMgr) logChurnInAgeHeldBack(ctx cosmos.Context, tooYoung, next NodeAccounts) {
+	if len(tooYoung) == 0 {
+		return
+	}
+	minAge, err := vm.k.GetMimir(ctx, constants.MimirKeyChurnInMinNodeAgeBlocks)
+	if err != nil {
+		return
+	}
+	held := 0
+	for _, na := range tooYoung {
+		if next.Contains(na) {
+			continue
+		}
+		held++
+		firstSeen, seenErr := vm.nodeFirstSeen(ctx, na)
+		if seenErr != nil {
+			continue // already logged by splitByChurnInAge
+		}
+		oldEnoughFrom := firstSeen + minAge
+		if oldEnoughFrom < firstSeen {
+			oldEnoughFrom = math.MaxInt64
+		}
+		ctx.Logger().Info("churn-in age filter kept node out",
+			"node_address", na.NodeAddress.String(),
 			"min_age", minAge,
-			"held", len(young),
-			"eligible", len(old),
+			"first_seen", firstSeen,
+			"old_enough_from", oldEnoughFrom,
 		)
 	}
-	return old, young, nil
+	ctx.Logger().Info("churn-in age filter summary",
+		"min_age", minAge,
+		"held", held,
+		"bft_fill", len(tooYoung)-held,
+	)
 }
 
 // nodeFirstSeen returns the height from which the node counts as registered: the
@@ -2288,7 +2323,7 @@ func (vm *ValidatorMgr) unrecordedNodes(ctx cosmos.Context) (NodeAccounts, error
 		_, ok, err := vm.k.GetNodeFirstSeen(ctx, na.NodeAddress)
 		if err != nil {
 			// left unrecorded: splitByChurnInAge holds the node back
-			ctx.Logger().Error("fail to get first seen height", "node address", na.NodeAddress, "error", err)
+			ctx.Logger().Error("fail to get first seen height", "node_address", na.NodeAddress.String(), "error", err)
 			continue
 		}
 		if !ok {
