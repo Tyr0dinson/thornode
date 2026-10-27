@@ -819,14 +819,14 @@ func (f *failedRetryFixture) assertCached(c *C, tx types.TxOutItem, id string) {
 }
 
 func (f *failedRetryFixture) signedTransaction(c *C, tx types.TxOutItem) (api.Transaction, []byte) {
-	signed, checkpoint, observation, err := f.client.SignTx(tx, tx.Height)
+	signed, checkpoint, observation, err := f.client.SignTx([]types.TxOutItem{tx}, tx.Height)
 	c.Assert(err, IsNil)
 	c.Assert(signed, NotNil)
 	c.Assert(checkpoint, IsNil)
-	c.Assert(observation, NotNil)
+	c.Assert(observation, HasLen, 1)
 	var transaction api.Transaction
 	c.Assert(json.Unmarshal(signed, &transaction), IsNil)
-	c.Assert(observation.Tx, Equals, transaction.TxId)
+	c.Assert(observation[0].Tx, Equals, transaction.TxId)
 	c.Assert(transaction.Signature, HasLen, 1)
 	return transaction, signed
 }
@@ -862,7 +862,7 @@ func (s *TronTestSuite) TestFailedPaymentRecoveryNewScheduleAndRestart(c *C) {
 	c.Assert(id, Equals, replacement.TxId)
 	f.reopen(c)
 	f.assertCached(c, retry, replacement.TxId)
-	signed, checkpoint, observation, err := f.client.SignTx(retry, retry.Height)
+	signed, checkpoint, observation, err := f.client.SignTx([]types.TxOutItem{retry}, retry.Height)
 	c.Assert(err, IsNil)
 	c.Assert(signed, IsNil)
 	c.Assert(checkpoint, IsNil)
@@ -929,7 +929,7 @@ func (s *TronTestSuite) TestFailedPaymentRecoveryUncertainEvidenceRetainsCache(c
 		f.rpc.mu.Lock()
 		tc.modify(f.rpc)
 		f.rpc.mu.Unlock()
-		signed, checkpoint, observation, err := f.client.SignTx(tx, tx.Height)
+		signed, checkpoint, observation, err := f.client.SignTx([]types.TxOutItem{tx}, tx.Height)
 		c.Assert(err, IsNil, Commentf("%s", tc.name))
 		c.Assert(signed, IsNil, Commentf("%s", tc.name))
 		c.Assert(checkpoint, IsNil)
@@ -964,7 +964,7 @@ func (s *TronTestSuite) TestFailedPaymentRecoveryGateBoundaries(c *C) {
 		default:
 			f.cache(c, tx, id, expiry)
 		}
-		signed, _, _, err := f.client.SignTx(tx, tx.Height)
+		signed, _, _, err := f.client.SignTx([]types.TxOutItem{tx}, tx.Height)
 		c.Assert(err, IsNil, Commentf("%s", name))
 		calls, _ := f.rpc.recoveryCalls()
 		if name == "expired" {
@@ -1000,7 +1000,7 @@ func (s *TronTestSuite) TestFailedPaymentRecoveryCheckpointsAndConstruction(c *C
 	for _, checkpoint := range [][]byte{oldCheckpoint, nil} {
 		f.reopen(c)
 		original.Checkpoint = checkpoint
-		signed, returned, observation, signErr := f.client.SignTx(original, original.Height)
+		signed, returned, observation, signErr := f.client.SignTx([]types.TxOutItem{original}, original.Height)
 		c.Assert(errors.Is(signErr, chainclienttypes.ErrTxExpired), Equals, true)
 		c.Assert(signed, IsNil)
 		c.Assert(returned, IsNil)
@@ -1014,7 +1014,7 @@ func (s *TronTestSuite) TestFailedPaymentRecoveryCheckpointsAndConstruction(c *C
 	f.rpc.mu.Lock()
 	f.rpc.failCreate = true
 	f.rpc.mu.Unlock()
-	signed, checkpoint, observation, err := f.client.SignTx(retry, retry.Height)
+	signed, checkpoint, observation, err := f.client.SignTx([]types.TxOutItem{retry}, retry.Height)
 	c.Assert(err, NotNil)
 	c.Assert(signed, IsNil)
 	c.Assert(checkpoint, IsNil)
@@ -1057,7 +1057,7 @@ func (s *TronTestSuite) TestFailedPaymentRecoveryExpiredReplacementCheckpoint(c 
 
 	// A fresh construction at a stale schedule is retryable, never evidence
 	// that an already exposed replacement checkpoint can be retired.
-	signed, returned, observation, err := f.client.SignTx(tx, tx.Height)
+	signed, returned, observation, err := f.client.SignTx([]types.TxOutItem{tx}, tx.Height)
 	c.Assert(err, NotNil)
 	c.Assert(errors.Is(err, chainclienttypes.ErrTxExpired), Equals, false)
 	c.Assert(signed, IsNil)
@@ -1083,7 +1083,7 @@ func (s *TronTestSuite) TestFailedPaymentRecoveryExpiredReplacementCheckpoint(c 
 	// must stop another recovery attempt.
 	f.cache(c, tx, expired.TxId, time.Now().Add(-time.Minute).UnixMilli())
 	f.rpc.evidence(expired.TxId, "", "SUCCESS", 100)
-	signed, returned, observation, err = f.client.SignTx(tx, tx.Height)
+	signed, returned, observation, err = f.client.SignTx([]types.TxOutItem{tx}, tx.Height)
 	c.Assert(err, IsNil)
 	c.Assert(signed, IsNil)
 	c.Assert(returned, IsNil)
