@@ -2915,6 +2915,21 @@
         "type": "security"
       },
       {
+        "allowed": "0.000000005020997337",
+        "delta_g": "-75803.751860266030428858",
+        "excess": "true",
+        "kind": "drop",
+        "lp_units_after": "100000000000",
+        "lp_units_before": "100000000000",
+        "mode": "EndBlock",
+        "normalized_delta_g": "-0.000023969655008774",
+        "pool": "BTC.BTC",
+        "rejected": "false",
+        "scope": "endblock/lack_signing",
+        "tx_id": "",
+        "type": "luvi_loss"
+      },
+      {
         "amount": "532723rune",
         "mode": "EndBlock",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
