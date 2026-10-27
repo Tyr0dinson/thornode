@@ -1873,7 +1873,7 @@
         }
       },
       "last_commit_hash": "",
-      "data_hash": "49CBC650C8DEB3302999714CECE47B65E9AE937F6E24ABEB2707F3C020F51544",
+      "data_hash": "097D52C8E9C04F97E70FE21FF896A9EF8BC05A6E298914CE1EE4E04086C6AD1D",
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
@@ -1972,7 +1972,7 @@
     ],
     "txs": [
       {
-        "hash": "F5C6EE8102EEE841D9F7F2672E207191981D3389790C5C7A1831F48375DD0AB8",
+        "hash": "1ADCF0D086AF51F7BB28EECBED1DABA784467DA3D7DFD13691E738983FBFE625",
         "tx": {
           "auth_info": {
             "fee": {
@@ -2021,7 +2021,7 @@
             "unordered": false
           },
           "signatures": [
-            "pUYWywh5z9xPL9O40ZKy7mtndATQDadgPxFl0ZpFUH1UeutX7u9W73jLd2odEoDIkU/ubPhS/lxusvaS0LL+bQ=="
+            "x2vQNyys6SuKhY/HPTzwAQRqDJFTX5UrpXSwbTukPOtU/353Mz/gEM5wrRyUVEEneHhfaadRF8cvWC6WuI0Kww=="
           ]
         },
         "result": {
@@ -2054,7 +2054,7 @@
               "type": "tx"
             },
             {
-              "signature": "pUYWywh5z9xPL9O40ZKy7mtndATQDadgPxFl0ZpFUH1UeutX7u9W73jLd2odEoDIkU/ubPhS/lxusvaS0LL+bQ==",
+              "signature": "x2vQNyys6SuKhY/HPTzwAQRqDJFTX5UrpXSwbTukPOtU/353Mz/gEM5wrRyUVEEneHhfaadRF8cvWC6WuI0Kww==",
               "type": "tx"
             },
             {
@@ -2089,7 +2089,7 @@
               "type": "message"
             },
             {
-              "THOR_txid": "F5C6EE8102EEE841D9F7F2672E207191981D3389790C5C7A1831F48375DD0AB8",
+              "THOR_txid": "1ADCF0D086AF51F7BB28EECBED1DABA784467DA3D7DFD13691E738983FBFE625",
               "XMR_txid": "0000000000000000000000000000000000000000000000000000000000000003",
               "asset_address": "44UKNaihc7FDYawyhVNqpXCcFqWfPGWhYbpUdgXEQxWm3xFK4S6mgJ46oAXAxDJXbPbGME2xWBgFdSUzrxhiKLiqGfCXeaE",
               "asset_amount": "10000000000",
