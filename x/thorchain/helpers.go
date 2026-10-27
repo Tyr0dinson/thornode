@@ -94,6 +94,8 @@ func observedVaultHasEffectiveRefundFunds(ctx cosmos.Context, tx ObservedTx, mgr
 		ctx.Logger().Error("fail to get max gas for observed refund vault", "tx_id", tx.Tx.ID, "chain", coin.Asset.GetChain(), "error", err)
 		return false
 	}
+	// A token refund also reserves its token outbound surcharge (zero for a gas asset).
+	maxGasCoin = withTokenOutboundSurcharge(ctx, mgr.Keeper(), maxGasCoin, coin.Asset)
 
 	requiredCoinAmount := coin.Amount
 	if coin.Asset.Equals(maxGasCoin.Asset) {

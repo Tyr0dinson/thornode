@@ -659,6 +659,9 @@ func (s *SlasherImpl) LackSigning(ctx cosmos.Context, mgr Manager) error {
 					if err != nil {
 						ctx.Logger().Error("fail to get max gas", "error", err)
 					}
+					// A token outbound's max gas includes its surcharge (zero for a gas asset),
+					// both for the vault it needs and for the MaxGas it is rescheduled with.
+					maxGasCoin = withTokenOutboundSurcharge(ctx, s.keeper, maxGasCoin, toi.Coin.Asset)
 					if mainCoin.Asset.Equals(maxGasCoin.Asset) {
 						// If the main coin and the gas coin are the same asset,
 						// ensure the assigned vault has enough available for both.

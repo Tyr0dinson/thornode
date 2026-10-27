@@ -926,7 +926,7 @@
         "coin_decimals": "0",
         "gas_rate": "1",
         "in_hash": "9283993AEC297528A20A07BA52A71C22B00AED21B21C380F1C0683165F3899D2",
-        "max_gas_amount_0": "500",
+        "max_gas_amount_0": "204500",
         "max_gas_asset_0": "SOL.SOL",
         "max_gas_decimals_0": "9",
         "memo": "",

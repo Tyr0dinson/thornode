@@ -64,6 +64,7 @@ func unsafeAddRefundOutbound(ctx cosmos.Context, mgr *Mgrs, inHash, destAddr str
 	if err != nil {
 		return fmt.Errorf("fail to get max gas: %w", err)
 	}
+	maxGasCoin = withTokenOutboundSurcharge(ctx, mgr.Keeper(), maxGasCoin, coin.Asset)
 
 	txOut := TxOutItem{
 		Chain:            coin.Asset.GetChain(),
@@ -123,6 +124,7 @@ func requeueDanglingSettlementOutbound(ctx cosmos.Context, mgr *Mgrs, spec dangl
 	if err != nil {
 		return fmt.Errorf("fail to get max gas: %w", err)
 	}
+	maxGasCoin = withTokenOutboundSurcharge(ctx, mgr.Keeper(), maxGasCoin, action.Coin.Asset)
 
 	vault, err := selectDanglingSettlementVault(ctx, mgr, action, maxGasCoin)
 	if err != nil {

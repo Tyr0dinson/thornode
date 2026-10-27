@@ -904,7 +904,15 @@ func (vm *NetworkMgr) migrateFunds(ctx cosmos.Context, mgr Manager) error {
 						amt = coin.Amount
 					}
 
-					gasAmount := gas.Amount.MulUint64(uint64(vault.CoinLengthByChain(coin.Asset.GetChain())))
+					// Hold back the max gas of a migration of each of the vault's coins on
+					// this chain, this one included; a token's includes its surcharge.
+					gasAmount := cosmos.ZeroUint()
+					for _, chainCoin := range vault.Coins {
+						if !chainCoin.Asset.GetChain().Equals(chain) || chainCoin.Amount.IsZero() {
+							continue
+						}
+						gasAmount = gasAmount.Add(withTokenOutboundSurcharge(ctx, vm.k, gas, chainCoin.Asset).Amount)
+					}
 
 					// deduct estimated transaction fee from send amount
 					amt = common.SafeSub(amt, gasAmount)

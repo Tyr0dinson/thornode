@@ -89,13 +89,15 @@ func (tos *TxOutStorage) EndBlock(ctx cosmos.Context, mgr Manager) error {
 			gasRateCache[tx.Chain] = gasRate
 		}
 
-		if len(tx.MaxGas) == 0 || (!maxGasCoin.IsEmpty() && !maxGasCoin.Amount.Equal(tx.MaxGas[0].Amount)) {
+		// The cache holds the chain's max gas; a token outbound also reserves its surcharge.
+		itemMaxGas := withTokenOutboundSurcharge(ctx, tos.keeper, maxGasCoin, tx.Coin.Asset)
+		if len(tx.MaxGas) == 0 || (!itemMaxGas.IsEmpty() && !itemMaxGas.Amount.Equal(tx.MaxGas[0].Amount)) {
 			// Update MaxGas in ObservedTxVoter action first; only update txOut if voter update succeeds
 			// to maintain consistency between the txOut item and the voter action.
-			if err := updateTxOutGas(ctx, tos.keeper, tx, common.Gas{maxGasCoin}); err != nil {
+			if err := updateTxOutGas(ctx, tos.keeper, tx, common.Gas{itemMaxGas}); err != nil {
 				ctx.Logger().Error("Failed to update MaxGas of action in ObservedTxVoter", "hash", tx.InHash, "error", err)
 			} else {
-				txOut.TxArray[i].MaxGas = common.Gas{maxGasCoin}
+				txOut.TxArray[i].MaxGas = common.Gas{itemMaxGas}
 			}
 		}
 		if gasRate > 0 && txOut.TxArray[i].GasRate != gasRate {
@@ -792,6 +794,9 @@ func (tos *TxOutStorage) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem) ([]
 	if err != nil {
 		return nil, cosmos.ZeroUint(), fmt.Errorf("fail to get max gas details: %w", err)
 	}
+	// A token outbound's max gas includes its surcharge (zero for a gas asset), so the
+	// vault selected below must hold it too, and the outbound's MaxGas reserves it.
+	maxGasCoin = withTokenOutboundSurcharge(ctx, tos.keeper, maxGasCoin, toi.Coin.Asset)
 
 	// Here is the VaultPubKey selection, if not a THORChain-native outbound.
 	if toi.Chain.IsTHORChain() {

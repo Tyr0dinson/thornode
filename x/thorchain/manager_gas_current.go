@@ -214,6 +214,22 @@ func tokenOutboundSurcharge(ctx cosmos.Context, k keeper.Keeper, asset common.As
 	return chain.TokenOutboundSurcharge()
 }
 
+// withTokenOutboundSurcharge returns the max gas an outbound of asset reserves: maxGas,
+// its chain's max gas, plus the asset's token outbound surcharge. Vault selection, the
+// outbound's MaxGas, and with it the pending reservation of its vault's gas asset, all
+// use this amount, so a vault is chosen only when it can pay the surcharge too.
+func withTokenOutboundSurcharge(ctx cosmos.Context, k keeper.Keeper, maxGas common.Coin, asset common.Asset) common.Coin {
+	if maxGas.IsEmpty() || !maxGas.Asset.Equals(asset.GetChain().GetGasAsset()) {
+		return maxGas
+	}
+	surcharge := tokenOutboundSurcharge(ctx, k, asset)
+	if surcharge.IsZero() {
+		return maxGas
+	}
+	maxGas.Amount = maxGas.Amount.Add(surcharge)
+	return maxGas
+}
+
 // CalcOutboundFeeMultiplier returns the current outbound fee multiplier based on current and target outbound fee surplus
 func (gm *GasMgr) CalcOutboundFeeMultiplier(ctx cosmos.Context, targetSurplusRune, gasSpentRune, gasWithheldRune, maxMultiplier, minMultiplier cosmos.Uint) cosmos.Uint {
 	// Sanity check
