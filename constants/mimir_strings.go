@@ -127,9 +127,10 @@ const (
 	MimirTemplateAllowNoVault              = "AllowNoVault-%s"              // Use with Chain; authorizes noop:novault vault debits on that chain
 
 	// MimirTemplateSolvencyGateInbound, when above 0, holds every finalised inbound on the
-	// chain until its vault is attested solvent at or above the inbound's external block
-	// height. An inbound credited without the funds arriving then halts the chain through
-	// the solvency checker before any swap or refund is paid out. Use with Chain.
+	// chain until its vault's wallet is attested to cover its ledger at or above the
+	// inbound's external block height. An inbound credited without the funds arriving
+	// then stays parked, and halts the chain through the solvency checker once the
+	// shortfall exceeds the permitted gap. See docs/mimir.md for the bound. Use with Chain.
 	MimirTemplateSolvencyGateInbound = "SolvencyGateInbound-%s"
 
 	MimirRefL1           = "L1"           // Use with SwapSlipBasisPoints

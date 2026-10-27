@@ -457,12 +457,13 @@ func handleObservedTxInQuorum(
 		return nil
 	}
 
-	return processFinalisedObservedTxIn(ctx, mgr, signer, handler, tx, voter, vault, memo)
+	return processFinalisedObservedTxIn(ctx, mgr, signer, handler, tx, voter, vault, memo, ctx.BlockHeight())
 }
 
 // processFinalisedObservedTxIn executes a finalised inbound's memo: a swap is
 // queued, any other memo runs its handler, and an inbound that cannot be executed
-// is refunded. The vault has already been credited.
+// is refunded. The vault has already been credited. finalisedAt is the THORChain
+// height at which the inbound finalised; a reference memo is resolved as of then.
 func processFinalisedObservedTxIn(
 	ctx cosmos.Context,
 	mgr Manager,
@@ -472,6 +473,7 @@ func processFinalisedObservedTxIn(
 	voter ObservedTxVoter,
 	vault Vault,
 	memo mem.Memo,
+	finalisedAt int64,
 ) error {
 	k := mgr.Keeper()
 	var err error
@@ -490,7 +492,7 @@ func processFinalisedObservedTxIn(
 		referenceAsset = tx.Tx.Coins[0].Asset
 	}
 	referenceResolved := false
-	if resolvedMemo, ok := resolveReferenceMemo(ctx, mgr, k, &tx, &voter); ok {
+	if resolvedMemo, ok := resolveReferenceMemo(ctx, mgr, k, &tx, &voter, finalisedAt); ok {
 		memo = resolvedMemo
 		referenceResolved = true
 	}
@@ -2055,7 +2057,7 @@ func findOriginalMemoForOutbound(ctx cosmos.Context, mgr Manager, tx common.Obse
 // memoless transactions are halted, an otherwise-valid reference is resolved
 // only into the in-flight copy so it can provide a safe refund address without
 // becoming executable.
-func resolveReferenceMemo(ctx cosmos.Context, mgr Manager, k keeper.Keeper, tx *common.ObservedTx, voter *ObservedTxVoter) (mem.Memo, bool) {
+func resolveReferenceMemo(ctx cosmos.Context, mgr Manager, k keeper.Keeper, tx *common.ObservedTx, voter *ObservedTxVoter, finalisedAt int64) (mem.Memo, bool) {
 	if len(tx.Tx.Coins) == 0 {
 		return mem.EmptyMemo, false
 	}
@@ -2067,7 +2069,7 @@ func resolveReferenceMemo(ctx cosmos.Context, mgr Manager, k keeper.Keeper, tx *
 	}
 
 	asset := tx.Tx.Coins[0].Asset
-	lookup := lookupMemoFromReference(ctx, mgr, asset, voter.Tx.Tx, voter.UnfinalizedHeight)
+	lookup := lookupMemoFromReference(ctx, mgr, asset, voter.Tx.Tx, voter.UnfinalizedHeight, finalisedAt)
 	resolvedMemo := lookup.memo
 	// The voter memo is the source used by processOneTxIn. Store the lookup
 	// result even when it is empty so a missing, expired, or exhausted
@@ -2124,7 +2126,7 @@ type referenceMemoLookupResult struct {
 // fetchMemoFromReference fetches a memo without consuming the reference. Usage
 // is recorded only after the resolved transaction has been accepted for execution.
 func fetchMemoFromReference(ctx cosmos.Context, mgr Manager, asset common.Asset, tx common.Tx, txObservationHeight int64) string {
-	lookup := lookupMemoFromReference(ctx, mgr, asset, tx, txObservationHeight)
+	lookup := lookupMemoFromReference(ctx, mgr, asset, tx, txObservationHeight, ctx.BlockHeight())
 	if lookup.halted {
 		return ""
 	}
@@ -2135,7 +2137,7 @@ func fetchMemoFromReference(ctx cosmos.Context, mgr Manager, asset common.Asset,
 // operational halt. Callers that process transactions must still reject a
 // halted lookup, while refund handling can use an otherwise-valid memo solely
 // to recover its explicit refund address.
-func lookupMemoFromReference(ctx cosmos.Context, mgr Manager, asset common.Asset, tx common.Tx, txObservationHeight int64) referenceMemoLookupResult {
+func lookupMemoFromReference(ctx cosmos.Context, mgr Manager, asset common.Asset, tx common.Tx, txObservationHeight, expiryHeight int64) referenceMemoLookupResult {
 	mem, err := ParseMemoWithTHORNames(ctx, mgr.Keeper(), tx.Memo)
 	if err != nil {
 		ctx.Logger().Debug("failed to parse memo in fetchMemoFromReference", "error", err, "memo", tx.Memo, "txid", tx.ID)
@@ -2174,10 +2176,13 @@ func lookupMemoFromReference(ctx cosmos.Context, mgr Manager, asset common.Asset
 		}
 
 		ttl := mgr.Keeper().GetConfigInt64(ctx, constants.MemolessTxnTTL)
-		if !refMemo.IsExpired(ctx.BlockHeight(), ttl) {
-			// Check usage limit
+		// Expiry is judged at expiryHeight, the height the inbound finalised: a
+		// solvency-gated inbound executes later, but with the instruction it finalised with.
+		if !refMemo.IsExpired(expiryHeight, ttl) {
+			// Check usage limit. A solvency-gated inbound recorded its own use when it
+			// was parked, so that use does not count against it.
 			maxUse := mgr.Keeper().GetConfigInt64(ctx, constants.MemolessTxnMaxUse)
-			if maxUse > 0 && refMemo.GetUsageCount() >= maxUse {
+			if maxUse > 0 && refMemo.GetUsageCount() >= maxUse && !refMemo.HasBeenUsedBy(tx.ID) {
 				ctx.Logger().Info("reference memo usage limit exceeded in fetchMemoFromReference", "reference", m.Reference, "usage_count", refMemo.GetUsageCount(), "max_use", maxUse)
 				return result
 			}

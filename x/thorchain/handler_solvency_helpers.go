@@ -245,7 +245,7 @@ func processSolvencyAttestation(
 		// every chain it serves.
 		clearVaultInsolvent(ctx, k, voter.PubKey, voter.Chain)
 		// Release this vault's solvency-gated inbounds up to the report height.
-		confirmSolvencyGate(ctx, k, voter.Chain, voter.PubKey, s.Height)
+		confirmSolvencyGate(ctx, mgr, vault, voter.Coins, voter.Chain, s.Height)
 	}
 
 	// If the chain was halted this block, leave it halted without overriding.

@@ -27,28 +27,75 @@ func (s *SolvencyGateKeeperSuite) TestGatedInboundsOrderedByHeightPerChain(c *C)
 	}
 	c.Assert(k.SetSolvencyGatedInbound(ctx, SolvencyGatedInbound{Chain: common.GAIAChain, Height: -1}), NotNil)
 
-	got, err := k.GetSolvencyGatedInbounds(ctx, common.GAIAChain, 10)
+	got, err := k.GetSolvencyGatedInbounds(ctx, common.GAIAChain, pk1, 10)
 	c.Assert(err, IsNil)
-	c.Assert(got, HasLen, 3)
-	for i, want := range []SolvencyGatedInbound{inbounds[1], inbounds[2], inbounds[0]} {
+	c.Assert(got, HasLen, 2)
+	for i, want := range []SolvencyGatedInbound{inbounds[2], inbounds[0]} {
 		c.Assert(got[i], DeepEquals, want)
 	}
 
-	got, err = k.GetSolvencyGatedInbounds(ctx, common.GAIAChain, 2)
+	got, err = k.GetSolvencyGatedInbounds(ctx, common.GAIAChain, pk1, 1)
 	c.Assert(err, IsNil)
-	c.Assert(got, HasLen, 2)
+	c.Assert(got, HasLen, 1)
 
-	got, err = k.GetSolvencyGatedInbounds(ctx, common.SOLChain, 10)
+	got, err = k.GetSolvencyGatedInbounds(ctx, common.GAIAChain, pk2, 10)
+	c.Assert(err, IsNil)
+	c.Assert(got, HasLen, 1)
+	c.Assert(got[0], DeepEquals, inbounds[1])
+
+	got, err = k.GetSolvencyGatedInbounds(ctx, common.SOLChain, pk1, 10)
 	c.Assert(err, IsNil)
 	c.Assert(got, HasLen, 1)
 	c.Assert(got[0].TxID, Equals, solTxID)
 
+	c.Assert(k.HasSolvencyGatedInbound(ctx, inbounds[2]), Equals, true)
+	c.Assert(k.HasSolvencyGatedInboundsForVault(ctx, common.GAIAChain, pk1), Equals, true)
+	c.Assert(k.HasSolvencyGatedInboundsForVault(ctx, common.BTCChain, pk1), Equals, false)
 	k.DeleteSolvencyGatedInbound(ctx, inbounds[2])
-	got, err = k.GetSolvencyGatedInbounds(ctx, common.GAIAChain, 10)
+	c.Assert(k.HasSolvencyGatedInbound(ctx, inbounds[2]), Equals, false)
+	got, err = k.GetSolvencyGatedInbounds(ctx, common.GAIAChain, pk1, 10)
 	c.Assert(err, IsNil)
-	c.Assert(got, HasLen, 2)
-	c.Assert(got[0].TxID, Equals, inbounds[1].TxID)
-	c.Assert(got[1].TxID, Equals, inbounds[0].TxID)
+	c.Assert(got, HasLen, 1)
+	c.Assert(got[0].TxID, Equals, inbounds[0].TxID)
+	k.DeleteSolvencyGatedInbound(ctx, inbounds[0])
+	c.Assert(k.HasSolvencyGatedInboundsForVault(ctx, common.GAIAChain, pk1), Equals, false)
+}
+
+// Heads are each vault's lowest-height inbound, one per vault however many it has.
+func (s *SolvencyGateKeeperSuite) TestGatedInboundHeadsOnePerVault(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	pks := []common.PubKey{GetRandomPubKey(), GetRandomPubKey(), GetRandomPubKey()}
+	lowest := map[common.PubKey]int64{}
+	for i, pk := range pks {
+		for h := int64(5); h > 0; h-- {
+			height := h*10 + int64(i)
+			c.Assert(k.SetSolvencyGatedInbound(ctx, SolvencyGatedInbound{Chain: common.GAIAChain, PubKey: pk, Height: height, TxID: GetRandomTxHash()}), IsNil)
+			lowest[pk] = height
+		}
+	}
+	c.Assert(k.SetSolvencyGatedInbound(ctx, SolvencyGatedInbound{Chain: common.BTCChain, PubKey: pks[0], Height: 1, TxID: GetRandomTxHash()}), IsNil)
+
+	heads, err := k.GetSolvencyGatedInboundHeads(ctx, common.GAIAChain, 10)
+	c.Assert(err, IsNil)
+	c.Assert(heads, HasLen, 3)
+	seen := map[common.PubKey]bool{}
+	for i, in := range heads {
+		c.Assert(in.Chain, Equals, common.GAIAChain)
+		c.Assert(in.Height, Equals, lowest[in.PubKey])
+		c.Assert(seen[in.PubKey], Equals, false)
+		seen[in.PubKey] = true
+		if i > 0 {
+			c.Assert(heads[i-1].PubKey.String() < in.PubKey.String(), Equals, true)
+		}
+	}
+
+	heads, err = k.GetSolvencyGatedInboundHeads(ctx, common.GAIAChain, 2)
+	c.Assert(err, IsNil)
+	c.Assert(heads, HasLen, 2)
+
+	heads, err = k.GetSolvencyGatedInboundHeads(ctx, common.ETHChain, 10)
+	c.Assert(err, IsNil)
+	c.Assert(heads, HasLen, 0)
 }
 
 func (s *SolvencyGateKeeperSuite) TestSolvencyConfirmationNeverMovesBackwards(c *C) {

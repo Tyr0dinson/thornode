@@ -2382,7 +2382,7 @@ func (s *HandlerObservedTxInSuite) TestResolveReferenceMemoUpdatesObservedTxCopy
 	voter.Tx = tx
 	voter.UnfinalizedHeight = 15
 
-	resolvedMemo, ok := resolveReferenceMemo(ctx, mgr, mgr.Keeper(), &tx, &voter)
+	resolvedMemo, ok := resolveReferenceMemo(ctx, mgr, mgr.Keeper(), &tx, &voter, ctx.BlockHeight())
 
 	// Refund paths parse tx.Tx.Memo, while processing uses voter.Tx.Tx.Memo.
 	// Both copies and downstream completion logic must use the registered memo.
@@ -2449,7 +2449,7 @@ func (s *HandlerObservedTxInSuite) TestResolveReferenceMemoPreservesRawMemoOnFai
 		voter.Tx = tx
 		voter.UnfinalizedHeight = 15
 
-		resolvedMemo, ok := resolveReferenceMemo(ctx, mgr, mgr.Keeper(), &tx, &voter)
+		resolvedMemo, ok := resolveReferenceMemo(ctx, mgr, mgr.Keeper(), &tx, &voter, ctx.BlockHeight())
 
 		c.Check(ok, Equals, false, Commentf(tc.name))
 		c.Check(resolvedMemo.IsEmpty(), Equals, true, Commentf(tc.name))

@@ -3115,6 +3115,41 @@ func (vm *NetworkMgr) calculateNetworkSolvency(ctx cosmos.Context, mgr Manager) 
 		assetAmounts[pool.Asset] = assetAmounts[pool.Asset].Sub(pendingInbound)
 	}
 
+	// Step 2b: Subtract inbounds parked by the solvency gate. They are credited to
+	// their vault but not yet in any pool or swap queue; without this the parked
+	// principal reads as surplus and could be swept while the inbound still executes.
+	// Only active vault coins are counted above, so only their parked inbounds are
+	// subtracted.
+	parkedIterator := vm.k.GetSolvencyGatedInboundIterator(ctx)
+	defer parkedIterator.Close()
+	for ; parkedIterator.Valid(); parkedIterator.Next() {
+		var parked types.SolvencyGatedInbound
+		if err := vm.k.Cdc().Unmarshal(parkedIterator.Value(), &parked); err != nil {
+			return nil, fmt.Errorf("fail to unmarshal solvency gated inbound: %w", err)
+		}
+		parkedVault, err := vm.k.GetVault(ctx, parked.PubKey)
+		if err != nil {
+			return nil, fmt.Errorf("fail to get vault of solvency gated inbound: %w", err)
+		}
+		if parkedVault.Status != ActiveVault {
+			continue
+		}
+		parkedVoter, err := vm.k.GetObservedTxInVoter(ctx, parked.TxID)
+		if err != nil {
+			return nil, fmt.Errorf("fail to get voter of solvency gated inbound: %w", err)
+		}
+		// Only an inbound that credited its vault left principal there.
+		if parkedVoter.Reverted || !parkedVoter.UpdatedVault || parkedVoter.Tx.Tx.FromAddress.Equals(parkedVoter.Tx.Tx.ToAddress) {
+			continue
+		}
+		for _, coin := range parkedVoter.Tx.Tx.Coins {
+			if _, ok := assetAmounts[coin.Asset]; ok {
+				coinAmount := math.NewIntFromBigInt(coin.Amount.BigInt())
+				assetAmounts[coin.Asset] = assetAmounts[coin.Asset].Sub(coinAmount)
+			}
+		}
+	}
+
 	// Step 3: Subtract swap queue items (legacy)
 	swapQueueIterator := vm.k.GetSwapQueueIterator(ctx)
 	defer swapQueueIterator.Close()

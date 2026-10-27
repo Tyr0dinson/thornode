@@ -965,7 +965,19 @@ func (k KVStoreDummy) SetSolvencyGatedInbound(_ cosmos.Context, _ SolvencyGatedI
 func (k KVStoreDummy) DeleteSolvencyGatedInbound(_ cosmos.Context, _ SolvencyGatedInbound) {
 }
 
-func (k KVStoreDummy) GetSolvencyGatedInbounds(_ cosmos.Context, _ common.Chain, _ int) ([]SolvencyGatedInbound, error) {
+func (k KVStoreDummy) HasSolvencyGatedInbound(_ cosmos.Context, _ SolvencyGatedInbound) bool {
+	return false
+}
+
+func (k KVStoreDummy) HasSolvencyGatedInboundsForVault(_ cosmos.Context, _ common.Chain, _ common.PubKey) bool {
+	return false
+}
+
+func (k KVStoreDummy) GetSolvencyGatedInbounds(_ cosmos.Context, _ common.Chain, _ common.PubKey, _ int) ([]SolvencyGatedInbound, error) {
+	return nil, kaboom
+}
+
+func (k KVStoreDummy) GetSolvencyGatedInboundHeads(_ cosmos.Context, _ common.Chain, _ int) ([]SolvencyGatedInbound, error) {
 	return nil, kaboom
 }
 

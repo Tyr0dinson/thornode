@@ -423,8 +423,10 @@ func (qs queryServer) queryAsgardVaults(ctx cosmos.Context, _ *types.QueryAsgard
 
 	// Inactive Asgard vaults are removed from the Asgard index, but every vault
 	// carrying an unsettled deficit must remain observable until the deficit is
-	// resolved. Preserve the existing indexed order and append only missing
-	// deficit-bearing Asgard vaults from the canonical vault store.
+	// resolved, and every vault with solvency-gated inbounds parked must remain
+	// observable so Bifrost reports its solvency and they can be released.
+	// Preserve the existing indexed order and append only missing deficit-bearing
+	// or parked-inbound Asgard vaults from the canonical vault store.
 	indexed := make(map[string]struct{}, len(vaults))
 	for _, vault := range vaults {
 		indexed[vault.PubKey.String()] = struct{}{}
@@ -436,7 +438,7 @@ func (qs queryServer) queryAsgardVaults(ctx cosmos.Context, _ *types.QueryAsgard
 		if err := qs.mgr.Keeper().Cdc().Unmarshal(iter.Value(), &vault); err != nil {
 			return nil, fmt.Errorf("fail to unmarshal vault: %w", err)
 		}
-		if !vault.IsAsgard() || !vault.HasDeficit() {
+		if !vault.IsAsgard() || !(vault.HasDeficit() || hasSolvencyGatedInbounds(ctx, qs.mgr.Keeper(), vault)) {
 			continue
 		}
 		if _, ok := indexed[vault.PubKey.String()]; ok {
@@ -448,7 +450,9 @@ func (qs queryServer) queryAsgardVaults(ctx cosmos.Context, _ *types.QueryAsgard
 
 	var vaultsWithFunds []*types.QueryVaultResponse
 	for _, vault := range vaults {
-		if vault.Status == InactiveVault && !vault.HasDeficit() {
+		// An inactive vault with solvency-gated inbounds parked stays listed, so
+		// Bifrost reports its solvency and a solvent report releases them.
+		if vault.Status == InactiveVault && !vault.HasDeficit() && !hasSolvencyGatedInbounds(ctx, qs.mgr.Keeper(), vault) {
 			continue
 		}
 		if !vault.IsAsgard() {

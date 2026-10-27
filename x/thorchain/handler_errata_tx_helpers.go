@@ -173,6 +173,22 @@ func processErrataTx(ctx cosmos.Context, mgr Manager, er *common.ErrataTx) (comm
 		return common.ErrataTxOutcome_ERRATA_TX_OUTCOME_REVERTED, nil
 	}
 
+	// A finalised inbound still parked by the solvency gate was credited to its
+	// vault but never executed: no pool depth or liquidity units were added for it,
+	// so there is nothing to unwind beyond the vault debit above. Unpark it so it
+	// can never execute.
+	parked := keeper.SolvencyGatedInbound{
+		Chain:  observedVoter.Tx.Tx.Chain,
+		PubKey: observedVoter.Tx.ObservedPubKey,
+		Height: observedVoter.Tx.BlockHeight,
+		TxID:   observedVoter.Tx.Tx.ID,
+	}
+	if k.HasSolvencyGatedInbound(ctx, parked) {
+		k.DeleteSolvencyGatedInbound(ctx, parked)
+		ctx.Logger().Info("errata reverted a solvency gated inbound before it executed", "tx_id", er.Id)
+		return common.ErrataTxOutcome_ERRATA_TX_OUTCOME_REVERTED, nil
+	}
+
 	memo, _ := ParseMemoWithTHORNames(ctx, k, tx.Memo)
 	// if the tx is a migration , from old valut to new vault , then the inbound tx must have a related outbound tx as well
 	if memo.IsInternal() {

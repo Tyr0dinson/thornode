@@ -532,7 +532,10 @@ type KeeperSolvencyVoter interface {
 	SetSolvencyVoterQuota(ctx cosmos.Context, chain common.Chain, signer cosmos.AccAddress, window, used uint64)
 	SetSolvencyGatedInbound(ctx cosmos.Context, in SolvencyGatedInbound) error
 	DeleteSolvencyGatedInbound(ctx cosmos.Context, in SolvencyGatedInbound)
-	GetSolvencyGatedInbounds(ctx cosmos.Context, chain common.Chain, limit int) ([]SolvencyGatedInbound, error)
+	HasSolvencyGatedInbound(ctx cosmos.Context, in SolvencyGatedInbound) bool
+	HasSolvencyGatedInboundsForVault(ctx cosmos.Context, chain common.Chain, pubKey common.PubKey) bool
+	GetSolvencyGatedInbounds(ctx cosmos.Context, chain common.Chain, pubKey common.PubKey, limit int) ([]SolvencyGatedInbound, error)
+	GetSolvencyGatedInboundHeads(ctx cosmos.Context, chain common.Chain, limit int) ([]SolvencyGatedInbound, error)
 	GetSolvencyGatedInboundIterator(ctx cosmos.Context) cosmos.Iterator
 	SetSolvencyConfirmation(ctx cosmos.Context, chain common.Chain, pubKey common.PubKey, externalHeight int64) error
 	GetSolvencyConfirmation(ctx cosmos.Context, chain common.Chain, pubKey common.PubKey) (externalHeight, thorHeight int64, err error)
