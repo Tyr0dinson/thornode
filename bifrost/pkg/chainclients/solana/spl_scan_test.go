@@ -33,12 +33,16 @@ func (p singleVaultPubKeys) GetAlgoPubKeys(common.SigningAlgo, bool) common.PubK
 
 // splScanRPC serves getSlot, per-address getSignaturesForAddress (honouring the
 // until cursor) and getTransaction, and counts getTransaction calls per signature.
+// sigsDelay delays an address's signature listing, and failTxOnce makes the first
+// getTransaction of a signature fail, so tests can order and break the scans.
 type splScanRPC struct {
-	mu       sync.Mutex
-	slot     uint64
-	sigs     map[string][]rpc.SignaturesForAddressResult // address -> newest first
-	txs      map[string]*rpc.TransactionResult
-	getTxHit map[string]int
+	mu         sync.Mutex
+	slot       uint64
+	sigs       map[string][]rpc.SignaturesForAddressResult // address -> newest first
+	txs        map[string]*rpc.TransactionResult
+	getTxHit   map[string]int
+	sigsDelay  map[string]time.Duration
+	failTxOnce map[string]bool
 }
 
 func (m *splScanRPC) server(c *C) *httptest.Server {
@@ -49,6 +53,14 @@ func (m *splScanRPC) server(c *C) *httptest.Server {
 			Params []json.RawMessage `json:"params"`
 		}
 		_ = json.Unmarshal(body, &r)
+		if r.Method == "getSignaturesForAddress" && len(r.Params) > 0 {
+			var addr string
+			_ = json.Unmarshal(r.Params[0], &addr)
+			m.mu.Lock()
+			delay := m.sigsDelay[addr]
+			m.mu.Unlock()
+			time.Sleep(delay)
+		}
 		m.mu.Lock()
 		defer m.mu.Unlock()
 		write := func(v interface{}) {
@@ -75,6 +87,11 @@ func (m *splScanRPC) server(c *C) *httptest.Server {
 			var sig string
 			_ = json.Unmarshal(r.Params[0], &sig)
 			m.getTxHit[sig]++
+			if m.failTxOnce[sig] {
+				delete(m.failTxOnce, sig)
+				_, _ = fmt.Fprint(rw, `{"jsonrpc":"2.0","id":1,"error":{"code":-32603,"message":"internal error"}}`)
+				return
+			}
 			write(m.txs[sig])
 		default:
 			write(nil)

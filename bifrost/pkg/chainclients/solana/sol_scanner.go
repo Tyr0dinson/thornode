@@ -299,7 +299,8 @@ func (s *SOLScanner) scan() {
 
 	// seenSigs dedupes signatures across this pass's addresses: a vault outbound or
 	// an inbound that creates the vault's token account lists both the vault and its
-	// token account, so it is returned for each.
+	// token account, so it is returned for each. Each entry is the claim of the
+	// address that observes the signature (see scanVault).
 	var seenSigs sync.Map
 
 	newLastSigs := make([]string, len(vaultAddrs))
@@ -450,12 +451,21 @@ func (s *SOLScanner) scan() {
 	}()
 }
 
+// sigClaim is one address's claim, within a scan pass, to observe a signature. The
+// claiming address sets failed and then closes done when its observation ends, so an
+// address that skipped the signature can learn whether it was observed.
+type sigClaim struct {
+	done   chan struct{}
+	failed bool // written before done is closed, read only after it is closed
+}
+
 // scanVault scans a vault for new transactions. It will query the RPC node for the vault's
 // address and get any transactions involving the address, starting from most recent until queryLastSig.
 // If queryLastSig is empty, it will query all transactions for the vault address that exist on the node.
 // minContextSlot is the minimum slot to query for transactions. It does not set a bound on the query,
 // but does ensure that history exists on the RPC node until at least this slot.
-// seen dedupes signatures across the pass's addresses.
+// seen dedupes signatures across the pass's addresses: it maps each signature to the
+// *sigClaim of the address that observes it.
 func (s *SOLScanner) scanVault(
 	vaultAddr string,
 	i int,
@@ -512,16 +522,36 @@ func (s *SOLScanner) scanVault(
 		var eg errgroup.Group
 		// limit the number of concurrent tx queries to the RPC node
 		eg.SetLimit(maxConcurrentTxQueries)
+		// claims of signatures this address skipped because another address of the
+		// pass claimed them first
+		var skipped []*sigClaim
 		for _, sig := range res {
-			// Whichever address claims a signature first observes it. If that
-			// observation fails, its own cursor stays put and it re-reads the
-			// signature next pass.
+			// Whichever address claims a signature first observes it, and the others
+			// skip it. A skipping address counts its pass successful only if that
+			// observation succeeded. If it failed, neither cursor moves past the
+			// signature, so every address that lists it re-reads it next pass, and
+			// one still scanned observes it even when the claimer is no longer
+			// scanned (a token account under HaltSOLTokens).
+			var claim *sigClaim
 			if seen != nil {
-				if _, dup := seen.LoadOrStore(sig.Signature, struct{}{}); dup {
+				claim = &sigClaim{done: make(chan struct{})}
+				if prev, dup := seen.LoadOrStore(sig.Signature, claim); dup {
+					if prevClaim, ok := prev.(*sigClaim); ok {
+						skipped = append(skipped, prevClaim)
+					}
 					continue
 				}
 			}
-			eg.Go(func() error {
+			eg.Go(func() (err error) {
+				if claim != nil {
+					// settle the claim on every exit path, so skipping addresses never
+					// wait forever
+					defer func() {
+						claim.failed = err != nil
+						close(claim.done)
+					}()
+				}
+
 				tx, err := s.solRpc.GetTransaction(sig.Signature)
 				if err != nil {
 					setUnhealthy()
@@ -545,6 +575,19 @@ func (s *SOLScanner) scanVault(
 			setUnhealthy()
 			s.logger.Error().Err(err).Msgf("failed to process transactions")
 			return
+		}
+
+		// Only now, with every claim of this address settled by eg.Wait and outside
+		// any worker, wait for the claims it skipped. A claimer never waits on
+		// another address, so this cannot deadlock. A failed claim leaves this
+		// cursor in place, as a failed observation of its own would (the claimer
+		// has already marked the scanner unhealthy).
+		for _, claim := range skipped {
+			<-claim.done
+			if claim.failed {
+				s.logger.Debug().Msgf("another address failed to observe a transaction of address %s, retrying it next pass", vaultAddr)
+				return
+			}
 		}
 
 		if len(res) < transactionQueryLimit {
