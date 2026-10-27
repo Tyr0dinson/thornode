@@ -561,6 +561,17 @@ func (c *SOLClient) dropForReschedule(tx stypes.TxOutItem, reason string, ev *ze
 	return nil, nil, nil, nil
 }
 
+// dropRejectedForReschedule is dropForReschedule for an outbound this node will never
+// sign, whatever the vault's nonce: it is also remembered (markDurableRejected) so the
+// durable-nonce serialize gate does not hold the vault's later siblings behind it.
+// THORChain keeps the item pending and, while the vault's nonce has not moved,
+// reschedules it on the same vault ahead of those siblings, so one such outbound would
+// otherwise stall every later durable outbound of the vault.
+func (c *SOLClient) dropRejectedForReschedule(tx stypes.TxOutItem, height int64, reason string, ev *zerolog.Event, msg string) ([]byte, []byte, *stypes.TxInItem, error) {
+	c.markDurableRejected(tx, height)
+	return c.dropForReschedule(tx, reason, ev, msg)
+}
+
 // countAbstain increments the SOL keysign-abstain metric by reason, so a fleet-wide
 // stall (all nodes failing the blockhash gate) is observable rather than looking like
 // routine keysign non-selection. Nil-safe: directly-constructed test clients omit m.
@@ -593,10 +604,11 @@ func (c *SOLClient) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *
 	}
 	// Never build or sign an asset this client cannot send (canSendAsset). Drop rather
 	// than retain: this node steps aside instead of holding the vault's signing slot
-	// every pass, and a node that can send the asset signs it after reschedule.
+	// every pass, and a node that can send the asset signs it after reschedule. It is
+	// remembered as rejected so it does not hold later durable siblings behind it.
 	for _, coin := range tx.Coins {
 		if !c.canSendAsset(coin.Asset) {
-			return c.dropForReschedule(tx, "non_sol_asset_dropped",
+			return c.dropRejectedForReschedule(tx, height, "non_sol_asset_dropped",
 				c.logger.Warn().Str("asset", coin.Asset.String()),
 				"outbound asset is not native SOL, not signing, dropping for reschedule")
 		}
