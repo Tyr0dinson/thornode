@@ -1523,3 +1523,89 @@ func (s *MempoolSwapLifecycleIntegrationSuite) TestRollbackPoolEventsMatchPoolBa
 		}
 	}
 }
+
+// An EVM router or aggregator deposit re-included after a reorg keeps its hash
+// while its emitted coins can change. If that observation is the one that
+// finalizes, the lifecycle admitted with the old amount must not complete: it
+// is rolled back with the admitted values and the finalized amount runs as an
+// ordinary finalized swap.
+func (s *MempoolSwapLifecycleIntegrationSuite) TestFinalityWithDifferentPayloadRollsBackAndReprocesses(c *C) {
+	ctx, mgr, fixture := setupMempoolSwapLifecycleFixture(c)
+	c.Assert(mgr.AdvSwapQueueMgr().EndBlock(ctx, mgr, false), IsNil)
+	executed, err := mgr.Keeper().GetPool(ctx, common.BTCAsset)
+	c.Assert(err, IsNil)
+	c.Assert(executed, Not(DeepEquals), fixture.sourcePool)
+	vaultBefore, err := mgr.Keeper().GetVault(ctx, fixture.vault.PubKey)
+	c.Assert(err, IsNil)
+
+	finalAmount := cosmos.NewUint(common.One / 2)
+	final := fixture.voter.Tx
+	final.Tx.Coins = common.Coins{common.NewCoin(common.BTCAsset, finalAmount)}
+	final.BlockHeight++
+	final.FinaliseHeight = final.BlockHeight
+	voter, err := mgr.Keeper().GetObservedTxInVoter(ctx, fixture.voter.TxID)
+	c.Assert(err, IsNil)
+	voter.Txs = append(voter.Txs, final)
+	voter.Tx = final
+	voter.FinalisedHeight = ctx.BlockHeight()
+
+	err = handleObservedTxInQuorum(
+		ctx,
+		mgr,
+		fixture.node.NodeAddress,
+		NodeAccounts{fixture.node},
+		NewInternalHandler(mgr),
+		final,
+		voter,
+		[]cosmos.AccAddress{fixture.node.NodeAddress},
+		true,
+	)
+	c.Assert(err, IsNil)
+
+	// The speculative execution of the admitted 1 BTC is fully unwound.
+	pool, err := mgr.Keeper().GetPool(ctx, common.BTCAsset)
+	c.Assert(err, IsNil)
+	c.Check(pool, DeepEquals, fixture.sourcePool)
+	c.Check(mgr.Keeper().HasMempoolSwap(ctx, fixture.voter.TxID, 0), Equals, false)
+	c.Check(mgr.Keeper().GetMempoolSwapUsageTOR(ctx).IsZero(), Equals, true)
+	c.Check(mgr.Keeper().GetMempoolSwapCount(ctx).IsZero(), Equals, true)
+
+	// The vault holds the finalized amount, and only that amount is queued.
+	vaultAfter, err := mgr.Keeper().GetVault(ctx, fixture.vault.PubKey)
+	c.Assert(err, IsNil)
+	c.Check(vaultAfter.GetCoin(common.BTCAsset).Amount.String(), Equals,
+		vaultBefore.GetCoin(common.BTCAsset).Amount.Add(finalAmount).String())
+	queued, err := mgr.Keeper().GetAdvSwapQueueItem(ctx, fixture.voter.TxID, 0)
+	c.Assert(err, IsNil)
+	c.Check(queued.State.Deposit.String(), Equals, finalAmount.String())
+	c.Check(queued.State.Count, Equals, uint64(0))
+
+	stored, err := mgr.Keeper().GetObservedTxInVoter(ctx, fixture.voter.TxID)
+	c.Assert(err, IsNil)
+	c.Check(stored.Reverted, Equals, false)
+	c.Check(stored.Tx.Tx.Coins, DeepEquals, final.Tx.Coins)
+	c.Check(stored.MempoolSwapTOR.IsZero(), Equals, true)
+}
+
+// Completion refuses a mismatched payload directly, so the recovery worker
+// can never finish a lifecycle against a finalized inbound it did not execute.
+func (s *MempoolSwapLifecycleIntegrationSuite) TestCompletionRefusesDifferentFinalizedPayload(c *C) {
+	ctx, mgr, fixture := setupMempoolSwapLifecycleFixture(c)
+	c.Assert(mgr.AdvSwapQueueMgr().EndBlock(ctx, mgr, false), IsNil)
+
+	voter, err := mgr.Keeper().GetObservedTxInVoter(ctx, fixture.voter.TxID)
+	c.Assert(err, IsNil)
+	voter.Tx.Tx.Coins = common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(common.One/2))}
+	voter.Tx.FinaliseHeight = voter.Tx.BlockHeight
+	voter.FinalisedHeight = ctx.BlockHeight()
+	voter.UpdatedVault = true
+	mgr.Keeper().SetObservedTxInVoter(ctx, voter)
+
+	err = completeMempoolSwapAtomic(ctx, mgr, voter)
+	c.Assert(err, NotNil)
+	c.Check(err, ErrorMatches, ".*differ from admitted deposit.*")
+	record, found, err := mgr.Keeper().GetMempoolSwap(ctx, fixture.voter.TxID, 0)
+	c.Assert(err, IsNil)
+	c.Assert(found, Equals, true)
+	c.Check(record.Status, Not(Equals), types.MempoolSwapStatus_FINALIZED)
+}

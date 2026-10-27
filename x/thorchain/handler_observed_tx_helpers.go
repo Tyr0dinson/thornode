@@ -574,6 +574,28 @@ func handleObservedTxInQuorum(
 			return nil
 		}
 		if found {
+			if mismatchErr := checkMempoolSwapAdmittedPayload(record, voter.Tx); mismatchErr != nil {
+				// The finalized inbound is not the one that was executed. Unwind
+				// the speculative lifecycle with its admitted values, then process
+				// the finalized payload below exactly as if it had never been
+				// admitted. The vault was already credited with the finalized coins.
+				ctx.Logger().Error("finalized inbound differs from admitted mempool swap, rolling back",
+					"hash", voter.TxID, "reason", mismatchErr)
+				rollbackCtx, commitRollback := ctx.CacheContext()
+				restored, rollbackErr := rollbackMismatchedMempoolSwapCached(rollbackCtx, mgr, voter, record)
+				if rollbackErr != nil {
+					// Completion refuses the mismatched payload, so the lifecycle
+					// stays owned by the bounded recovery worker.
+					ctx.Logger().Error("fail to roll back mismatched mempool swap", "error", rollbackErr, "hash", voter.TxID)
+					return nil
+				}
+				commitRollback()
+				incrMempoolSwapCounter("rolled_back_total", []metrics.Label{telemetry.NewLabel("reason", "payload_mismatch")})
+				voter = restored
+				found = false
+			}
+		}
+		if found {
 			record.UpdatedHeight = ctx.BlockHeight()
 			record.NextRecoveryHeight = mempoolSwapRecoveryHeight(ctx, k, record.LatestSwap, record.Status)
 			if lifecycleErr = k.SetMempoolSwap(ctx, record); lifecycleErr != nil {

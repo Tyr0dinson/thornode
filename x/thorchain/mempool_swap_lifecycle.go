@@ -224,6 +224,88 @@ func releaseMempoolSwapLifecycleCached(
 	return voter, nil
 }
 
+// mempoolSwapAdmittedDeposit returns the source coin a lifecycle was admitted
+// and executed with. Queue execution restores Tx.Coins after every slice, and
+// State.Deposit is fixed when the item is first queued.
+func mempoolSwapAdmittedDeposit(record types.MempoolSwap) (common.Coin, error) {
+	if len(record.LatestSwap.Tx.Coins) != 1 {
+		return common.NoCoin, fmt.Errorf("mempool swap %s admitted snapshot has %d source coins", record.TxId, len(record.LatestSwap.Tx.Coins))
+	}
+	deposit := record.LatestSwap.Tx.Coins[0]
+	if record.LatestSwap.State != nil && !record.LatestSwap.State.Deposit.IsZero() {
+		deposit.Amount = record.LatestSwap.State.Deposit
+	}
+	return deposit, nil
+}
+
+// checkMempoolSwapAdmittedPayload rejects a finalized inbound whose economic
+// payload differs from the one the lifecycle was admitted and executed with.
+// A transaction hash alone does not pin the payload: an EVM router or
+// aggregator deposit re-included after a reorg keeps its hash while its
+// emitted coins can change, and bifrost observes that as a new final
+// observation without errata. Completing the old snapshot against the new
+// vault credit would leave unbacked pool depth and payouts.
+//
+// Block height, gas, signers, and the memo (synthesized and resolved
+// reference memos differ by design, and calldata is fixed by the hash) are
+// expected to vary and are not compared.
+func checkMempoolSwapAdmittedPayload(record types.MempoolSwap, final common.ObservedTx) error {
+	admitted := record.LatestSwap.Tx
+	deposit, err := mempoolSwapAdmittedDeposit(record)
+	if err != nil {
+		return err
+	}
+	switch {
+	case !final.Tx.ID.Equals(record.TxId):
+		return fmt.Errorf("finalized tx %s does not match admitted mempool swap %s", final.Tx.ID, record.TxId)
+	case !final.Tx.Chain.Equals(admitted.Chain):
+		return fmt.Errorf("finalized chain %s differs from admitted chain %s", final.Tx.Chain, admitted.Chain)
+	case !final.Tx.FromAddress.Equals(admitted.FromAddress):
+		return fmt.Errorf("finalized sender %s differs from admitted sender %s", final.Tx.FromAddress, admitted.FromAddress)
+	case !final.Tx.ToAddress.Equals(admitted.ToAddress):
+		return fmt.Errorf("finalized recipient %s differs from admitted recipient %s", final.Tx.ToAddress, admitted.ToAddress)
+	case !final.ObservedPubKey.Equals(record.VaultPubKey):
+		return fmt.Errorf("finalized vault %s differs from admitted vault %s", final.ObservedPubKey, record.VaultPubKey)
+	case len(final.Tx.Coins) != 1 || !final.Tx.Coins[0].Equals(deposit):
+		return fmt.Errorf("finalized coins %s differ from admitted deposit %s", final.Tx.Coins, deposit)
+	}
+	return nil
+}
+
+// rollbackMismatchedMempoolSwapCached unwinds a lifecycle whose finalized
+// inbound carries a different payload than the admitted one. Rollback reads
+// the source from voter.Tx, so it runs against the admitted values; the
+// finalized observation and its vault credit are then restored on the voter so
+// the caller can process the real inbound through the ordinary finalized path.
+// The voter is not marked reverted: the inbound did finalize.
+func rollbackMismatchedMempoolSwapCached(ctx cosmos.Context, mgr Manager, voter ObservedTxVoter, record types.MempoolSwap) (ObservedTxVoter, error) {
+	k := mgr.Keeper()
+	deposit, err := mempoolSwapAdmittedDeposit(record)
+	if err != nil {
+		return voter, err
+	}
+	final := voter.Tx
+	admitted := voter
+	admitted.Tx.Tx.Chain = record.LatestSwap.Tx.Chain
+	admitted.Tx.Tx.FromAddress = record.LatestSwap.Tx.FromAddress
+	admitted.Tx.Tx.ToAddress = record.LatestSwap.Tx.ToAddress
+	admitted.Tx.Tx.Coins = common.Coins{deposit}
+	admitted.Tx.ObservedPubKey = record.VaultPubKey
+	if err = rollbackMempoolSwapCached(ctx, k, mgr, admitted); err != nil {
+		return voter, fmt.Errorf("fail to roll back mismatched mempool swap %s: %w", voter.TxID, err)
+	}
+	restored, err := k.GetObservedTxInVoter(ctx, voter.TxID)
+	if err != nil || restored.IsEmpty() {
+		if err == nil {
+			err = fmt.Errorf("observed tx voter is empty")
+		}
+		return voter, fmt.Errorf("fail to reload rolled-back mempool voter %s: %w", voter.TxID, err)
+	}
+	restored.Tx = final
+	k.SetObservedTxInVoter(ctx, restored)
+	return restored, nil
+}
+
 // completeMempoolSwapCached transitions speculative ownership at inbound
 // finality. A terminal swap applies every effect and materializes staged work
 // immediately. A stream with queue work remaining releases TOR but retains its
@@ -255,6 +337,9 @@ func completeMempoolSwapCached(ctx cosmos.Context, mgr Manager, voter ObservedTx
 	}
 	if voter.FinalisedHeight == 0 {
 		return fmt.Errorf("cannot complete unfinalized mempool swap %s", voter.TxID)
+	}
+	if err = checkMempoolSwapAdmittedPayload(record, voter.Tx); err != nil {
+		return fmt.Errorf("cannot complete mempool swap against a different finalized payload: %w", err)
 	}
 	if record.Status == types.MempoolSwapStatus_ROLLBACK_PENDING {
 		return fmt.Errorf("cannot complete mempool swap %s while rollback is pending", voter.TxID)

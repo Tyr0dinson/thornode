@@ -44,10 +44,21 @@ func seedMempoolSwapRecoveryRecord(
 	c.Assert(voter.Tx.Tx.Coins.IsEmpty(), Equals, false)
 	sourceCoin := voter.Tx.Tx.Coins[0]
 	sourceChain := sourceCoin.Asset.GetChain()
-	fromAddress, err := GetRandomPubKey().GetAddress(sourceChain)
-	c.Assert(err, IsNil)
-	toAddress, err := vaultPubKey.GetAddress(sourceChain)
-	c.Assert(err, IsNil)
+	// The lifecycle snapshot is built from the admitted inbound, so reuse the
+	// voter's addresses (filling any the caller left empty) to keep the seeded
+	// record consistent with the finalized observation it will complete against.
+	fromAddress := voter.Tx.Tx.FromAddress
+	if fromAddress.IsEmpty() {
+		var err error
+		fromAddress, err = GetRandomPubKey().GetAddress(sourceChain)
+		c.Assert(err, IsNil)
+	}
+	toAddress := voter.Tx.Tx.ToAddress
+	if toAddress.IsEmpty() {
+		var err error
+		toAddress, err = vaultPubKey.GetAddress(sourceChain)
+		c.Assert(err, IsNil)
+	}
 
 	gas := voter.Tx.Tx.Gas
 	if !sourceChain.IsTHORChain() && gas.IsEmpty() {
@@ -84,6 +95,9 @@ func seedMempoolSwapRecoveryRecord(
 	msg.InitialBlockHeight = ctx.BlockHeight()
 
 	voter.Tx.ObservedPubKey = vaultPubKey
+	voter.Tx.Tx.Chain = msg.Tx.Chain
+	voter.Tx.Tx.FromAddress = fromAddress
+	voter.Tx.Tx.ToAddress = toAddress
 	if voter.MempoolSwapTOR.IsZero() {
 		voter.MempoolSwapTOR = cosmos.OneUint()
 	}
