@@ -4,6 +4,7 @@ import (
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/solana/rpc"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/solana/types"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pubkeymanager"
 	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -13,11 +14,12 @@ import (
 // A Solana address is base58 with no checksum, so one that differs from a vault's only
 // in letter case is a different, valid account. Funds sent to it never reach the vault,
 // so a transaction paying it must never be reported as an inbound to the vault, even
-// when it also references the vault and so is returned by the vault's scan. These tests
-// use the production pubkey manager.
+// when it also references the vault and so is returned by the vault's scans. These
+// tests use the production pubkey manager: splVaultAddrs matches exactly, so it cannot
+// show the difference.
 
 // base58CaseVariant flips one lowercase letter of addr to uppercase, keeping a valid
-// Solana address: another account than addr.
+// 32-byte public key: another account than addr.
 func base58CaseVariant(c *C, addr string) string {
 	for i := 0; i < len(addr); i++ {
 		ch := addr[i]
@@ -25,7 +27,7 @@ func base58CaseVariant(c *C, addr string) string {
 			continue
 		}
 		variant := addr[:i] + string(ch-'a'+'A') + addr[i+1:]
-		if common.IsValidSOLAddress(variant) {
+		if _, err := types.PublicKeyFromStringStrict(variant); err == nil {
 			return variant
 		}
 	}
@@ -54,40 +56,56 @@ func reportedAsVaultInbound(pkm *pubkeymanager.PubKeyManager, item *stypes.TxInI
 	return ok
 }
 
-// solTransferWithMemo is a SOL transfer of lamports from testSender to to, with a memo.
-func solTransferWithMemo(to string, lamports uint64) *rpc.TransactionResult {
-	return &rpc.TransactionResult{
-		Slot: 100,
-		Meta: rpc.RPCMeta{
-			Fee:          5000,
-			PreBalances:  []uint64{100_000_000_000, 0, 1, 1},
-			PostBalances: []uint64{100_000_000_000 - lamports - 5000, lamports, 1, 1},
-		},
-		Transaction: rpc.RPCTxnData{
-			Signatures: []string{testTxSig},
-			Message: rpc.RPCMessage{
-				AccountKeys: []string{testSender, to, testSystemProgram, testMemoProgram},
-				Instructions: []rpc.RPCInstruction{
-					{ProgramIdIndex: 2, Accounts: []int{0, 1}, Data: makeTransferData(lamports)},
-					{ProgramIdIndex: 3, Accounts: []int{0}, Data: makeMemoData("=:BTC.BTC:bc1qxyz")},
-				},
-			},
-		},
-	}
-}
-
 func (s *GetTxInItemSuite) TestSOLTransferToVaultCaseVariantNotAVaultInbound(c *C) {
 	pkm, vault, variant := caseTestVault(c)
-	scanner := newTestScanner()
+	scanner := newSPLTestScanner()
+	scanner.pubKeyMgr = pkm
+	c.Check(scanner.isVaultAddress(vault), Equals, true)
+	c.Check(scanner.isVaultAddress(variant), Equals, false)
+
+	item := scanner.getTxInItem(solDeposit(solTransferSpec{to: variant, lamports: 5_000_000_000}), 100)
+	c.Assert(item, NotNil)
+	c.Check(item.To, Equals, variant)
+	c.Check(reportedAsVaultInbound(pkm, item), Equals, false)
+
+	// Beside a deposit to the vault itself, the variant is just another transfer that
+	// touches no vault: the deposit is observed, for its own amount.
+	item = scanner.getTxInItem(solDeposit(
+		solTransferSpec{to: vault, lamports: 1_000_000_000},
+		solTransferSpec{to: variant, lamports: 5_000_000_000},
+	), 100)
+	c.Assert(item, NotNil)
+	c.Check(item.To, Equals, vault)
+	c.Check(item.Coins[0].Amount.Equal(convertLamportsToTHORChain(1_000_000_000)), Equals, true)
+	c.Check(reportedAsVaultInbound(pkm, item), Equals, true)
+}
+
+func (s *SPLScannerSuite) TestTokenTransferToVaultCaseVariantNotAVaultInbound(c *C) {
+	pkm, vault, variant := caseTestVault(c)
+	scanner := newSPLTestScanner()
 	scanner.pubKeyMgr = pkm
 
-	item := scanner.getTxInItem(solTransferWithMemo(variant, 5_000_000_000), 100)
+	// USDC into the variant's associated token account, in a transaction that also
+	// (idempotently) creates the vault's own token account, so the vault wallet's and
+	// token account's scans both return it.
+	txn := splInboundTo(c, variant, 12_345_678)
+	msg := &txn.Transaction.Message
+	msg.AccountKeys = append(msg.AccountKeys, vault, ata(c, vault, testUSDCMint), testATAProgram, testSystemProgram)
+	n := len(msg.AccountKeys)
+	msg.Instructions = append(msg.Instructions, rpc.RPCInstruction{
+		// CreateIdempotent: payer, associated account, wallet, mint, system, token program
+		ProgramIdIndex: n - 2, Accounts: []int{0, n - 3, n - 4, 3, n - 1, 4}, Data: "2",
+	})
+	txn.Meta.PreBalances = append(txn.Meta.PreBalances, 0, 2_039_280, 1, 1)
+	txn.Meta.PostBalances = append(txn.Meta.PostBalances, 0, 2_039_280, 1, 1)
+
+	item := scanner.getTxInItem(txn, 100)
 	c.Assert(item, NotNil)
 	c.Check(item.To, Equals, variant)
 	c.Check(reportedAsVaultInbound(pkm, item), Equals, false)
 
 	// The same deposit to the vault itself is a vault inbound.
-	item = scanner.getTxInItem(solTransferWithMemo(vault, 5_000_000_000), 100)
+	item = scanner.getTxInItem(splInboundTo(c, vault, 12_345_678), 100)
 	c.Assert(item, NotNil)
 	c.Check(item.To, Equals, vault)
 	c.Check(reportedAsVaultInbound(pkm, item), Equals, true)
