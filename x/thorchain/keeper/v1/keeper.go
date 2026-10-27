@@ -103,7 +103,7 @@ const (
 	prefixMinJoinLast               types.DbPrefix = "minjoinlast/"
 	prefixNodeMimir                 types.DbPrefix = "nodemimir/"
 	prefixNodePauseChain            types.DbPrefix = "node_pause_chain/"
-	prefixNodeFirstSeen             types.DbPrefix = "node_first_seen/"
+	prefixNodeAgeStart              types.DbPrefix = "node_age_start/"
 	prefixNetworkFee                types.DbPrefix = "network_fee/"
 	prefixNetworkFeeVoter           types.DbPrefix = "network_fee_voter/"
 	prefixTssKeygenMetric           types.DbPrefix = "tss_keygen_metric/"

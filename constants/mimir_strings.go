@@ -106,9 +106,10 @@ const (
 	// marked (a stall that many nodes cause is for governance). Unset or 0 disables it.
 	MimirKeyChainSetChurnOutMax = "ChainSetChurnOutMax"
 	// MimirKeyChurnInMinNodeAgeBlocks keeps a Ready node out of the churn-in selection
-	// until it is at least this many blocks old (see NodeFirstSeen), for periods when a
-	// newly registered node must not become Active. It is operational, so a few votes
-	// can set it quickly. Unset or 0 disables it.
+	// until it is at least this many blocks old, counted from when its bond last reached
+	// MinimumBondInRune (see GetNodeAgeStart), for periods when a newly registered node
+	// must not become Active. It is operational, so a few votes can set it quickly, and
+	// it counts for at most 3 churn intervals. Unset or 0 disables it.
 	MimirKeyChurnInMinNodeAgeBlocks = "ChurnInMinNodeAgeBlocks"
 
 	MimirTemplateEVMAllowanceCheck         = "EVMAllowanceCheck-%s"         // Use with Chain

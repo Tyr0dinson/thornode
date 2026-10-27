@@ -12,6 +12,7 @@ import (
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/constants"
 	keeperpkg "gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
@@ -301,26 +302,118 @@ func (s *KeeperNodeAccountSuite) TestNodeAccountSlashPoints(c *C) {
 	k.ResetNodeAccountSlashPoints(ctx, GetRandomBech32Addr())
 }
 
-func (s *KeeperNodeAccountSuite) TestNodeFirstSeen(c *C) {
+func (s *KeeperNodeAccountSuite) TestNodeAgeStart(c *C) {
 	ctx, k := setupKeeperForTest(c)
-	addr := GetRandomBech32Addr()
+	k.SetMimir(ctx, constants.MinimumBondInRune.String(), 100*common.One)
+	ageStart := func(addr cosmos.AccAddress) (int64, bool) {
+		height, ok, err := k.GetNodeAgeStart(ctx, addr)
+		c.Assert(err, IsNil)
+		return height, ok
+	}
+	write := func(na *NodeAccount, height int64, bond uint64) {
+		na.Bond = cosmos.NewUint(bond * common.One)
+		c.Assert(k.SetNodeAccount(ctx.WithBlockHeight(height), *na), IsNil)
+	}
 
-	_, ok, err := k.GetNodeFirstSeen(ctx, addr)
-	c.Assert(err, IsNil)
+	_, ok := ageStart(GetRandomBech32Addr())
 	c.Check(ok, Equals, false)
 
-	k.SetNodeFirstSeen(ctx, addr, 42)
-	height, ok, err := k.GetNodeFirstSeen(ctx, addr)
-	c.Assert(err, IsNil)
+	// A node account written without a stored one, as at genesis, is not judged until
+	// it is stored; then it counts from the earliest height it holds.
+	na := GetRandomValidatorNode(NodeActive)
+	na.StatusSince = 300
+	na.ActiveBlockHeight = 200
+	write(&na, 1000, 100)
+	_, ok = ageStart(na.NodeAddress)
+	c.Check(ok, Equals, false)
+	k.SyncNodeAgeStart(ctx, na)
+	height, ok := ageStart(na.NodeAddress)
 	c.Check(ok, Equals, true)
-	c.Check(height, Equals, int64(42))
+	c.Check(height, Equals, int64(200))
+	// A bond below the minimum clears it, and reaching the minimum again starts it at
+	// that height; more bond keeps it.
+	write(&na, 1100, 99)
+	_, ok = ageStart(na.NodeAddress)
+	c.Check(ok, Equals, false)
+	write(&na, 1200, 100)
+	height, _ = ageStart(na.NodeAddress)
+	c.Check(height, Equals, int64(1200))
+	write(&na, 1300, 500)
+	height, _ = ageStart(na.NodeAddress)
+	c.Check(height, Equals, int64(1200))
+	// A reset clears it until the next write that holds the minimum.
+	k.ResetNodeAgeStart(ctx, na.NodeAddress)
+	_, ok = ageStart(na.NodeAddress)
+	c.Check(ok, Equals, false)
+	write(&na, 1400, 500)
+	height, _ = ageStart(na.NodeAddress)
+	c.Check(height, Equals, int64(1400))
 
-	// A genesis node's floor is height 0, which must still read as recorded.
-	k.SetNodeFirstSeen(ctx, addr, 0)
-	height, ok, err = k.GetNodeFirstSeen(ctx, addr)
-	c.Assert(err, IsNil)
+	// A genesis node's floor is height 0, which still reads as an age start.
+	genesis := GetRandomValidatorNode(NodeStandby)
+	genesis.StatusSince = 0
+	write(&genesis, 0, 100)
+	k.SyncNodeAgeStart(ctx, genesis)
+	height, ok = ageStart(genesis.NodeAddress)
 	c.Check(ok, Equals, true)
 	c.Check(height, Equals, int64(0))
+
+	// An account imported below the minimum is not judged either, since the imported
+	// MinimumBondInRune may still lower it; then it counts from its floor.
+	imported := GetRandomValidatorNode(NodeStandby)
+	imported.StatusSince = 30
+	write(&imported, 1000, 60)
+	k.SetMimir(ctx, constants.MinimumBondInRune.String(), 50*common.One)
+	k.SyncNodeAgeStart(ctx.WithBlockHeight(1000), imported)
+	height, _ = ageStart(imported.NodeAddress)
+	c.Check(height, Equals, int64(30))
+	k.SetMimir(ctx, constants.MinimumBondInRune.String(), 100*common.One)
+
+	// Accounts stored before the age start existed: one that held the minimum counts
+	// from the floor of its stored account, even when the write resets StatusSince;
+	// one below the minimum counts from the write that reaches it.
+	held := GetRandomValidatorNode(NodeActive)
+	held.Bond = cosmos.NewUint(100 * common.One)
+	held.StatusSince = 50
+	held.ActiveBlockHeight = 20
+	k.setNodeAccount(ctx, k.GetKey(prefixNodeAccount, held.NodeAddress.String()), held)
+	held.UpdateStatus(NodeStandby, 1500)
+	write(&held, 1500, 100)
+	height, _ = ageStart(held.NodeAddress)
+	c.Check(height, Equals, int64(20))
+	dust := GetRandomValidatorNode(NodeStandby)
+	dust.Bond = cosmos.NewUint(common.One)
+	dust.StatusSince = 5
+	k.setNodeAccount(ctx, k.GetKey(prefixNodeAccount, dust.NodeAddress.String()), dust)
+	write(&dust, 1500, 100)
+	height, _ = ageStart(dust.NodeAddress)
+	c.Check(height, Equals, int64(1500))
+
+	// A change of MinimumBondInRune writes no node account; SyncNodeAgeStart applies it.
+	k.SetMimir(ctx, constants.MinimumBondInRune.String(), 200*common.One)
+	k.SyncNodeAgeStart(ctx.WithBlockHeight(1600), dust)
+	_, ok = ageStart(dust.NodeAddress)
+	c.Check(ok, Equals, false)
+	k.SetMimir(ctx, constants.MinimumBondInRune.String(), 50*common.One)
+	k.SyncNodeAgeStart(ctx.WithBlockHeight(1700), dust)
+	height, _ = ageStart(dust.NodeAddress)
+	c.Check(height, Equals, int64(1700))
+
+	// A nil bond is stored as 0, so it is below the minimum.
+	nilBond := GetRandomValidatorNode(NodeStandby)
+	nilBond.Bond = cosmos.Uint{}
+	c.Assert(k.SetNodeAccount(ctx, nilBond), IsNil)
+	k.SyncNodeAgeStart(ctx, nilBond)
+	_, ok = ageStart(nilBond.NodeAddress)
+	c.Check(ok, Equals, false)
+
+	// An unreadable age start fails the read, and the next sync restarts it.
+	k.kvStore(ctx).Set(k.GetKey(prefixNodeAgeStart, dust.NodeAddress.String()), []byte{0xff})
+	_, _, err := k.GetNodeAgeStart(ctx, dust.NodeAddress)
+	c.Check(err, NotNil)
+	k.SyncNodeAgeStart(ctx.WithBlockHeight(1800), dust)
+	height, _ = ageStart(dust.NodeAddress)
+	c.Check(height, Equals, int64(1800))
 }
 
 func (s *KeeperNodeAccountSuite) TestJail(c *C) {

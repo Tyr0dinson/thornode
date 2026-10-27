@@ -4,16 +4,29 @@
 ## churn-in selection:
 ## - cat, pig and fish are Standby at genesis, so their age counts from height 0
 ## - fox registers (first bond) at height 35, after the mimir is set
-## - the regular churn at height 60 selects dog, cat, pig and fish but not fox, though
-##   fox has the largest bond and an unfiltered churn would pick it first
+## - goat registers at height 3 with a bond below MinimumBondInRune (1 RUNE on mocknet)
+##   and reaches it at height 35, so its age also counts from height 35
+## - the regular churn at height 60 selects dog, cat, pig and fish but neither fox nor
+##   goat, though they have the largest bonds and an unfiltered churn would pick them
 type: state
 genesis:
   app_state:
+    auth:
+      accounts:
+        - "@type": /cosmos.auth.v1beta1.BaseAccount
+          address: {{ addr_thor_goat }}
+          pub_key: null
+          account_number: "10"
+          sequence: "0"
     bank:
       balances:
         - address: {{ addr_module_bond }}
           coins:
             - amount: "5300000000000"
+              denom: rune
+        - address: {{ addr_thor_goat }}
+          coins:
+            - amount: "2500000000000"
               denom: rune
     thorchain:
       node_accounts:
@@ -64,8 +77,24 @@ endpoint: http://localhost:1317/thorchain/mimir/key/ChurnInMinNodeAgeBlocks
 asserts:
   - . == 40
 ---
+type: tx-deposit
+signer: {{ addr_thor_goat }}
+coins:
+  - amount: "50000000"
+    asset: "rune"
+memo: "BOND:{{ addr_thor_goat }}"
+---
 type: create-blocks
-count: 32
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_goat }}
+asserts:
+  - .status == "Whitelisted"
+  - .total_bond == "50000000"
+---
+type: create-blocks
+count: 31
 ---
 type: tx-deposit
 signer: {{ addr_thor_fox }}
@@ -73,6 +102,13 @@ coins:
   - amount: "2000000000000"
     asset: "rune"
 memo: "BOND:{{ addr_thor_fox }}"
+---
+type: tx-deposit
+signer: {{ addr_thor_goat }}
+coins:
+  - amount: "2000000000000"
+    asset: "rune"
+memo: "BOND:{{ addr_thor_goat }}"
 ---
 type: create-blocks
 count: 1
@@ -89,6 +125,13 @@ pub_key_set:
   ed25519: {{ pubkey_fox_eddsa }}
 validator_cons_pub_key: {{ cons_pubkey_fox }}
 ---
+type: tx-set-node-keys
+signer: {{ addr_thor_goat }}
+pub_key_set:
+  secp256k1: {{ pubkey_goat }}
+  ed25519: {{ pubkey_goat_eddsa }}
+validator_cons_pub_key: {{ cons_pubkey_goat }}
+---
 type: create-blocks
 count: 1
 ---
@@ -96,11 +139,19 @@ type: tx-set-ip-address
 signer: {{ addr_thor_fox }}
 ip_address: 1.1.1.5
 ---
+type: tx-set-ip-address
+signer: {{ addr_thor_goat }}
+ip_address: 1.1.1.6
+---
 type: create-blocks
 count: 1
 ---
 type: tx-version
 signer: {{ addr_thor_fox }}
+version: {{ version }}
+---
+type: tx-version
+signer: {{ addr_thor_goat }}
 version: {{ version }}
 ---
 type: create-blocks
@@ -113,6 +164,14 @@ asserts:
   - .total_bond | tonumber > 100000000000
   - .pub_key_set.secp256k1 == "{{ pubkey_fox }}"
   - .ip_address == "1.1.1.5"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_goat }}
+asserts:
+  - .status == "Standby"
+  - .total_bond | tonumber > 100000000000
+  - .pub_key_set.secp256k1 == "{{ pubkey_goat }}"
+  - .ip_address == "1.1.1.6"
 ---
 type: create-blocks
 count: 23
@@ -135,9 +194,15 @@ asserts:
   - .keygen_block.keygens[0].members | index("{{ pubkey_pig }}") != null
   - .keygen_block.keygens[0].members | index("{{ pubkey_fish }}") != null
   - .keygen_block.keygens[0].members | index("{{ pubkey_fox }}") == null
+  - .keygen_block.keygens[0].members | index("{{ pubkey_goat }}") == null
   - .keygen_block.keygens[1].members == .keygen_block.keygens[0].members
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_fox }}
+asserts:
+  - .status == "Ready"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_goat }}
 asserts:
   - .status == "Ready"

@@ -127,8 +127,9 @@ func (HandlerBondSuite) TestBondHandler_Run(c *C) {
 	c.Assert(err, IsNil)
 }
 
-func (HandlerBondSuite) TestBondRecordsNodeFirstSeen(c *C) {
+func (HandlerBondSuite) TestBondStartsNodeAge(c *C) {
 	ctx, k := setupKeeperForTest(c)
+	k.SetMimir(ctx, constants.MinimumBondInRune.String(), 25*common.One)
 	nodeAddress := GetRandomValidatorNode(NodeStandby).NodeAddress
 	bondAddress := GetRandomRUNEAddress()
 	operator, err := bondAddress.AccAddress()
@@ -143,19 +144,29 @@ func (HandlerBondSuite) TestBondRecordsNodeFirstSeen(c *C) {
 		_, err = NewBondHandler(NewDummyMgrWithKeeper(k)).Run(ctx.WithBlockHeight(height), msg)
 		c.Assert(err, IsNil)
 	}
-	firstSeen := func() int64 {
-		height, ok, getErr := k.GetNodeFirstSeen(ctx, nodeAddress)
+	ageStart := func() (int64, bool) {
+		height, ok, getErr := k.GetNodeAgeStart(ctx, nodeAddress)
 		c.Assert(getErr, IsNil)
-		c.Assert(ok, Equals, true)
-		return height
+		return height, ok
 	}
 
-	// A new node account counts from its first bond.
+	// Below the minimum bond (the first bond also pays 1 RUNE to the node address)
+	// the new node has no age.
 	bond(500)
-	c.Check(firstSeen(), Equals, int64(500))
-	// More bond to the same node does not make it younger.
+	_, ok := ageStart()
+	c.Check(ok, Equals, false)
 	bond(600)
-	c.Check(firstSeen(), Equals, int64(500))
+	_, ok = ageStart()
+	c.Check(ok, Equals, false)
+	// Its age starts at the bond that reaches the minimum.
+	bond(700)
+	height, ok := ageStart()
+	c.Check(ok, Equals, true)
+	c.Check(height, Equals, int64(700))
+	// More bond does not make it younger.
+	bond(800)
+	height, _ = ageStart()
+	c.Check(height, Equals, int64(700))
 }
 
 func (HandlerBondSuite) TestBondHandlerFailValidation(c *C) {

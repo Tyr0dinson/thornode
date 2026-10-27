@@ -20,6 +20,7 @@ type churnInAgeTest struct {
 func newChurnInAgeTest(c *C, active int) churnInAgeTest {
 	ctx, mgr := setupManagerForTest(c)
 	ctx = ctx.WithBlockHeight(1000)
+	mgr.Keeper().SetMimir(ctx, constants.ChurnInterval.String(), 60)
 	for i := 0; i < active; i++ {
 		c.Assert(mgr.Keeper().SetNodeAccount(ctx, GetRandomValidatorNode(NodeActive)), IsNil)
 	}
@@ -30,14 +31,17 @@ func newChurnInAgeTest(c *C, active int) churnInAgeTest {
 	}
 }
 
-// ready stores a Ready node bonding the given RUNE, first seen at the given height
-// (none recorded when 0).
-func (t churnInAgeTest) ready(c *C, bond uint64, firstSeen int64) NodeAccount {
+// ready stores a Ready node bonding the given RUNE whose age starts at the given
+// height, or that has no age when it is negative.
+func (t churnInAgeTest) ready(c *C, bond uint64, ageStart int64) NodeAccount {
 	na := GetRandomValidatorNode(NodeReady)
 	na.Bond = cosmos.NewUint(bond * common.One)
+	na.StatusSince = max(ageStart, 0)
 	c.Assert(t.mgr.Keeper().SetNodeAccount(t.ctx, na), IsNil)
-	if firstSeen > 0 {
-		t.mgr.Keeper().SetNodeFirstSeen(t.ctx, na.NodeAddress, firstSeen)
+	// as at the churn: a stored account with no age start counts from its StatusSince
+	t.mgr.Keeper().SyncNodeAgeStart(t.ctx, na)
+	if ageStart < 0 {
+		t.mgr.Keeper().ResetNodeAgeStart(t.ctx, na.NodeAddress)
 	}
 	return na
 }
@@ -47,44 +51,61 @@ func (t churnInAgeTest) ready(c *C, bond uint64, firstSeen int64) NodeAccount {
 func (t churnInAgeTest) selected(c *C, target int, nodes ...NodeAccount) ([]bool, int) {
 	next, _, err := t.vm.nextVaultNodeAccounts(t.ctx, target)
 	c.Assert(err, IsNil)
+	return contains(next, nodes...), len(next)
+}
+
+// contains reports, per given node, whether it is in set.
+func contains(set NodeAccounts, nodes ...NodeAccount) []bool {
 	out := make([]bool, len(nodes))
 	for i, na := range nodes {
-		for _, n := range next {
-			if n.NodeAddress.Equals(na.NodeAddress) {
-				out[i] = true
-			}
-		}
+		out[i] = set.Contains(na)
 	}
-	return out, len(next)
+	return out
 }
 
 // TestChurnInMinNodeAge asserts that with ChurnInMinNodeAgeBlocks set only Ready nodes
-// at least that many blocks old are selected, and that unset or 0 selects as before.
+// at least that many blocks old are selected, that a node without an age is not, and
+// that unset or 0 selects as before.
 func (vts *ValidatorMgrTestSuite) TestChurnInMinNodeAge(c *C) {
 	t := newChurnInAgeTest(c, 4)
 	t.mgr.Keeper().SetMimir(t.ctx, constants.NumberOfNewNodesPerChurn.String(), 10)
 	young := t.ready(c, 300, 990)
 	underAge := t.ready(c, 250, 951) // 49 blocks old
 	atAge := t.ready(c, 200, 950)    // 50 blocks old
-	unrecorded := t.ready(c, 150, 0) // judged by StatusSince 1
-	old := t.ready(c, 100, 100)
-	unrecordedYoung := GetRandomValidatorNode(NodeReady) // judged by StatusSince 990
-	unrecordedYoung.StatusSince = 990
-	c.Assert(t.mgr.Keeper().SetNodeAccount(t.ctx, unrecordedYoung), IsNil)
-	nodes := []NodeAccount{young, underAge, atAge, unrecorded, old, unrecordedYoung}
+	old := t.ready(c, 150, 100)
+	noAge := t.ready(c, 100, -1)
+	nodes := []NodeAccount{young, underAge, atAge, old, noAge}
 
 	got, size := t.selected(c, 20, nodes...)
-	c.Check(got, DeepEquals, []bool{true, true, true, true, true, true}, Commentf("unset must select every Ready node"))
-	c.Check(size, Equals, 10)
+	c.Check(got, DeepEquals, []bool{true, true, true, true, true}, Commentf("unset must select every Ready node"))
+	c.Check(size, Equals, 9)
 
 	t.mgr.Keeper().SetMimir(t.ctx, constants.MimirKeyChurnInMinNodeAgeBlocks, 50)
 	got, size = t.selected(c, 20, nodes...)
-	c.Check(got, DeepEquals, []bool{false, false, true, true, true, false})
-	c.Check(size, Equals, 7)
+	c.Check(got, DeepEquals, []bool{false, false, true, true, false})
+	c.Check(size, Equals, 6)
 
 	t.mgr.Keeper().SetMimir(t.ctx, constants.MimirKeyChurnInMinNodeAgeBlocks, 0)
 	got, _ = t.selected(c, 20, nodes...)
-	c.Check(got, DeepEquals, []bool{true, true, true, true, true, true}, Commentf("0 must select every Ready node"))
+	c.Check(got, DeepEquals, []bool{true, true, true, true, true}, Commentf("0 must select every Ready node"))
+}
+
+// TestChurnInMinNodeAgeCap asserts ChurnInMinNodeAgeBlocks counts for at most
+// churnInMinNodeAgeMaxChurns churn intervals.
+func (vts *ValidatorMgrTestSuite) TestChurnInMinNodeAgeCap(c *C) {
+	t := newChurnInAgeTest(c, 4)
+	t.mgr.Keeper().SetMimir(t.ctx, constants.NumberOfNewNodesPerChurn.String(), 10)
+	t.mgr.Keeper().SetMimir(t.ctx, constants.MimirKeyChurnInMinNodeAgeBlocks, 1_000_000_000)
+	atCap := t.ready(c, 200, 820)    // 180 blocks old: 3 churn intervals of 60
+	underCap := t.ready(c, 100, 821) // 179 blocks old
+
+	got, _ := t.selected(c, 20, atCap, underCap)
+	c.Check(got, DeepEquals, []bool{true, false})
+
+	// the cap follows ChurnInterval
+	t.mgr.Keeper().SetMimir(t.ctx, constants.ChurnInterval.String(), 100)
+	got, _ = t.selected(c, 20, atCap, underCap)
+	c.Check(got, DeepEquals, []bool{false, false})
 }
 
 // TestChurnInMinNodeAgeKeepsBFTFloor asserts the age filter alone never leaves the next
@@ -111,55 +132,178 @@ func (vts *ValidatorMgrTestSuite) TestChurnInMinNodeAgeKeepsBFTFloor(c *C) {
 	c.Check(size, Equals, 6)
 }
 
-// TestRecordNodeFirstSeen asserts a node without a first-seen height gets the earliest
-// height its account holds, that a recorded one keeps its height, and that the record
-// taken before markReadyActors survives it resetting StatusSince.
-func (vts *ValidatorMgrTestSuite) TestRecordNodeFirstSeen(c *C) {
+// rotationTest is a churn at height 1000 over nine Active nodes at capacity, in which
+// the node with the lowest bond and the oldest node are two different nodes.
+type rotationTest struct {
+	churnInAgeTest
+	network *NetworkMgrDummy
+	lowBond NodeAccount
+	oldest  NodeAccount
+	leaving NodeAccount
+	actives NodeAccounts
+}
+
+func newRotationTest(c *C, requestLeave bool) rotationTest {
+	ctx, k := setupKeeperForTest(c)
+	ctx = ctx.WithBlockHeight(1000)
+	mgr := NewDummyMgrWithKeeper(k)
+	network, ok := mgr.NetworkMgr().(*NetworkMgrDummy)
+	c.Assert(ok, Equals, true)
+	k.SetMimir(ctx, constants.DesiredValidatorSet.String(), 9)
+	k.SetMimir(ctx, constants.AsgardSize.String(), 10)
+	k.SetMimir(ctx, constants.ChurnInterval.String(), 60)
+
+	t := rotationTest{network: network}
+	membership := make([]string, 0, 9)
+	for i := 0; i < 9; i++ {
+		na := GetRandomValidatorNode(NodeActive)
+		na.StatusSince = int64(100 + i)
+		switch i {
+		case 0:
+			t.oldest = na
+		case 1:
+			na.Bond = cosmos.NewUint(500 * common.One)
+			t.lowBond = na
+		case 2:
+			if requestLeave {
+				na.RequestedToLeave = true
+				na.LeaveScore = 1
+				t.leaving = na
+			}
+		}
+		c.Assert(k.SetNodeAccount(ctx, na), IsNil)
+		membership = append(membership, na.PubKeySet.Secp256k1.String())
+		t.actives = append(t.actives, na)
+	}
+	vault := NewVault(1, ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.THORChain}.Strings(), nil)
+	vault.Membership = membership
+	c.Assert(k.SetVault(ctx, vault), IsNil)
+
+	t.churnInAgeTest = churnInAgeTest{
+		ctx: ctx,
+		vm:  newValidatorMgr(k, mgr.NetworkMgr(), mgr.TxOutStore(), mgr.EventMgr()),
+	}
+	return t
+}
+
+// readyNode stores a Ready node whose age starts at the given height.
+func (t rotationTest) readyNode(c *C, ageStart int64) NodeAccount {
+	na := GetRandomValidatorNode(NodeReady)
+	na.Bond = cosmos.NewUint(2000 * common.One)
+	na.StatusSince = ageStart
+	c.Assert(t.vm.k.SetNodeAccount(t.ctx, na), IsNil)
+	t.vm.k.SyncNodeAgeStart(t.ctx, na)
+	return na
+}
+
+// next runs churnInner and returns the set it selected, which the XMR keygen takes
+// (no XMR vault exists, so it runs every churn).
+func (t rotationTest) next(c *C) NodeAccounts {
+	c.Assert(t.vm.churnInner(t.ctx), IsNil)
+	return t.network.xmrNas
+}
+
+// TestChurnInMinNodeAgeLimitsRotation asserts that with the age filter on, the low
+// bond and age marks take no more nodes than the Ready nodes old enough to churn in
+// that the other removals leave over, and that the other removals still happen.
+func (vts *ValidatorMgrTestSuite) TestChurnInMinNodeAgeLimitsRotation(c *C) {
+	// Off: the low bond and oldest nodes leave, both Ready nodes join.
+	t := newRotationTest(c, false)
+	young1, young2 := t.readyNode(c, 990), t.readyNode(c, 990)
+	next := t.next(c)
+	c.Check(next, HasLen, 9)
+	c.Check(contains(next, t.lowBond, t.oldest, young1, young2), DeepEquals, []bool{false, false, true, true})
+
+	// On, no Ready node old enough: nobody is marked, the set keeps its size.
+	t = newRotationTest(c, false)
+	t.vm.k.SetMimir(t.ctx, constants.MimirKeyChurnInMinNodeAgeBlocks, 50)
+	young1, young2 = t.readyNode(c, 990), t.readyNode(c, 990)
+	next = t.next(c)
+	c.Check(next, HasLen, 9)
+	c.Check(contains(next, t.lowBond, t.oldest, young1, young2), DeepEquals, []bool{true, true, false, false})
+	for _, na := range t.actives {
+		got, err := t.vm.k.GetNodeAccount(t.ctx, na.NodeAddress)
+		c.Assert(err, IsNil)
+		c.Check(got.LeaveScore, Equals, uint64(0), Commentf("no node may be marked to make room"))
+	}
+
+	// On, one Ready node old enough: only the low bond node makes room for it.
+	t = newRotationTest(c, false)
+	t.vm.k.SetMimir(t.ctx, constants.MimirKeyChurnInMinNodeAgeBlocks, 50)
+	old := t.readyNode(c, 100)
+	young1 = t.readyNode(c, 990)
+	next = t.next(c)
+	c.Check(next, HasLen, 9)
+	c.Check(contains(next, t.lowBond, t.oldest, old, young1), DeepEquals, []bool{false, true, true, false})
+
+	// On, one Ready node old enough, which replaces a node that asked to leave: no node
+	// is marked to make room, the set keeps its size.
+	t = newRotationTest(c, true)
+	t.vm.k.SetMimir(t.ctx, constants.MimirKeyChurnInMinNodeAgeBlocks, 50)
+	old = t.readyNode(c, 100)
+	next = t.next(c)
+	c.Check(next, HasLen, 9)
+	c.Check(contains(next, t.leaving, t.lowBond, t.oldest, old), DeepEquals, []bool{false, true, true, true})
+
+	// On, no Ready node old enough: a node that asked to leave still leaves.
+	t = newRotationTest(c, true)
+	t.vm.k.SetMimir(t.ctx, constants.MimirKeyChurnInMinNodeAgeBlocks, 50)
+	young1 = t.readyNode(c, 990)
+	next = t.next(c)
+	c.Check(next, HasLen, 8)
+	c.Check(contains(next, t.leaving, t.lowBond, t.oldest, young1), DeepEquals, []bool{false, true, true, false})
+}
+
+// TestSyncNodeAgeStarts asserts the churn judges node accounts stored without an age
+// start, applies a change of MinimumBondInRune, leaves Disabled nodes alone, and that
+// the age start survives markReadyActors resetting StatusSince.
+func (vts *ValidatorMgrTestSuite) TestSyncNodeAgeStarts(c *C) {
 	t := newChurnInAgeTest(c, 0)
 	k := t.mgr.Keeper()
+	ageStart := func(na NodeAccount) (int64, bool) {
+		height, ok, err := k.GetNodeAgeStart(t.ctx, na.NodeAddress)
+		c.Assert(err, IsNil)
+		return height, ok
+	}
 
-	active := GetRandomValidatorNode(NodeActive)
-	active.StatusSince = 400
-	active.ActiveBlockHeight = 10
-	c.Assert(k.SetNodeAccount(t.ctx, active), IsNil)
+	// written as at genesis: not stored before, so not judged yet
 	standby := GetRandomValidatorNode(NodeStandby)
 	standby.StatusSince = 700
 	c.Assert(k.SetNodeAccount(t.ctx, standby), IsNil)
-	recorded := GetRandomValidatorNode(NodeStandby)
-	recorded.StatusSince = 800
-	c.Assert(k.SetNodeAccount(t.ctx, recorded), IsNil)
-	k.SetNodeFirstSeen(t.ctx, recorded.NodeAddress, 5)
 	disabled := GetRandomValidatorNode(NodeDisabled)
 	c.Assert(k.SetNodeAccount(t.ctx, disabled), IsNil)
+	_, ok := ageStart(standby)
+	c.Check(ok, Equals, false)
 
-	c.Assert(t.vm.recordNodeFirstSeen(t.ctx), IsNil)
-	c.Assert(t.vm.markReadyActors(t.ctx), IsNil)
-
-	_, ok, err := k.GetNodeFirstSeen(t.ctx, disabled.NodeAddress)
-	c.Assert(err, IsNil)
+	c.Assert(t.vm.syncNodeAgeStarts(t.ctx), IsNil)
+	height, ok := ageStart(standby)
+	c.Check(ok, Equals, true)
+	c.Check(height, Equals, int64(700))
+	_, ok = ageStart(disabled)
 	c.Check(ok, Equals, false, Commentf("a Disabled node never churns in again"))
 
-	for _, tc := range []struct {
-		na   NodeAccount
-		want int64
-	}{
-		{active, 10},
-		{standby, 700},
-		{recorded, 5},
-	} {
-		height, found, getErr := k.GetNodeFirstSeen(t.ctx, tc.na.NodeAddress)
-		c.Assert(getErr, IsNil)
-		c.Check(found, Equals, true)
-		c.Check(height, Equals, tc.want)
-	}
+	// raised above the bond (100 RUNE): the node loses its age
+	k.SetMimir(t.ctx, constants.MinimumBondInRune.String(), 150*common.One)
+	c.Assert(t.vm.syncNodeAgeStarts(t.ctx), IsNil)
+	_, ok = ageStart(standby)
+	c.Check(ok, Equals, false)
 
-	// markReadyActors moved the standby node to Ready at 1000; its age still counts
-	// from 700.
+	// lowered below it: its age starts at this churn
+	k.SetMimir(t.ctx, constants.MinimumBondInRune.String(), 50*common.One)
+	c.Assert(t.vm.syncNodeAgeStarts(t.ctx.WithBlockHeight(900)), IsNil)
+	height, _ = ageStart(standby)
+	c.Check(height, Equals, int64(900))
+
+	// markReadyActors moves the standby node to Ready at 1000; its age still counts
+	// from 900.
+	c.Assert(t.vm.markReadyActors(t.ctx), IsNil)
 	na, err := k.GetNodeAccount(t.ctx, standby.NodeAddress)
 	c.Assert(err, IsNil)
 	c.Assert(na.Status, Equals, NodeReady)
 	c.Assert(na.StatusSince, Equals, int64(1000))
-	k.SetMimir(t.ctx, constants.MimirKeyChurnInMinNodeAgeBlocks, 300)
+	height, _ = ageStart(standby)
+	c.Check(height, Equals, int64(900))
+	k.SetMimir(t.ctx, constants.MimirKeyChurnInMinNodeAgeBlocks, 100)
 	got, _ := t.selected(c, 10, standby)
 	c.Check(got, DeepEquals, []bool{true})
 }
@@ -173,53 +317,50 @@ func (k churnFailKeeper) ListValidatorsByStatus(_ cosmos.Context, _ NodeStatus) 
 	return nil, errKaboom
 }
 
-// TestChurnKeepsFirstSeenWhenItFails asserts the first-seen records of a churn survive
-// that churn failing, so a later churn cannot record a newer StatusSince instead.
-func (vts *ValidatorMgrTestSuite) TestChurnKeepsFirstSeenWhenItFails(c *C) {
+// TestChurnKeepsAgeStartsWhenItFails asserts the age starts a churn syncs survive that
+// churn failing.
+func (vts *ValidatorMgrTestSuite) TestChurnKeepsAgeStartsWhenItFails(c *C) {
 	t := newChurnInAgeTest(c, 0)
 	standby := GetRandomValidatorNode(NodeStandby)
-	standby.StatusSince = 700
 	c.Assert(t.mgr.Keeper().SetNodeAccount(t.ctx, standby), IsNil)
+	t.mgr.Keeper().SyncNodeAgeStart(t.ctx, standby)
+	_, ok, err := t.mgr.Keeper().GetNodeAgeStart(t.ctx, standby.NodeAddress)
+	c.Assert(err, IsNil)
+	c.Assert(ok, Equals, true)
+	t.mgr.Keeper().SetMimir(t.ctx, constants.MinimumBondInRune.String(), 150*common.One)
 
 	vm := newValidatorMgr(churnFailKeeper{t.mgr.Keeper()}, t.mgr.NetworkMgr(), t.mgr.TxOutStore(), t.mgr.EventMgr())
 	c.Assert(vm.churn(t.ctx), NotNil)
 
-	height, ok, err := t.mgr.Keeper().GetNodeFirstSeen(t.ctx, standby.NodeAddress)
+	_, ok, err = t.mgr.Keeper().GetNodeAgeStart(t.ctx, standby.NodeAddress)
 	c.Assert(err, IsNil)
-	c.Check(ok, Equals, true)
-	c.Check(height, Equals, int64(700))
+	c.Check(ok, Equals, false)
 }
 
-// firstSeenFailKeeper fails to read the first-seen record of one node.
-type firstSeenFailKeeper struct {
+// ageStartFailKeeper fails to read the age start of one node.
+type ageStartFailKeeper struct {
 	keeper.Keeper
 	bad cosmos.AccAddress
 }
 
-func (k firstSeenFailKeeper) GetNodeFirstSeen(ctx cosmos.Context, addr cosmos.AccAddress) (int64, bool, error) {
+func (k ageStartFailKeeper) GetNodeAgeStart(ctx cosmos.Context, addr cosmos.AccAddress) (int64, bool, error) {
 	if addr.Equals(k.bad) {
 		return 0, false, errKaboom
 	}
-	return k.Keeper.GetNodeFirstSeen(ctx, addr)
+	return k.Keeper.GetNodeAgeStart(ctx, addr)
 }
 
-// TestChurnInMinNodeAgeUnreadableRecord asserts an unreadable first-seen record holds
-// back only its own node and fails neither the backfill nor the selection.
+// TestChurnInMinNodeAgeUnreadableRecord asserts an unreadable age start holds back
+// only its own node and fails neither the sync nor the selection.
 func (vts *ValidatorMgrTestSuite) TestChurnInMinNodeAgeUnreadableRecord(c *C) {
 	t := newChurnInAgeTest(c, 4)
 	t.mgr.Keeper().SetMimir(t.ctx, constants.MimirKeyChurnInMinNodeAgeBlocks, 50)
 	good := t.ready(c, 200, 1)
 	bad := t.ready(c, 300, 1)
-	vm := newValidatorMgr(firstSeenFailKeeper{t.mgr.Keeper(), bad.NodeAddress}, t.mgr.NetworkMgr(), t.mgr.TxOutStore(), t.mgr.EventMgr())
+	vm := newValidatorMgr(ageStartFailKeeper{t.mgr.Keeper(), bad.NodeAddress}, t.mgr.NetworkMgr(), t.mgr.TxOutStore(), t.mgr.EventMgr())
 
-	c.Assert(vm.recordNodeFirstSeen(t.ctx), IsNil)
+	c.Assert(vm.syncNodeAgeStarts(t.ctx), IsNil)
 	next, _, err := vm.nextVaultNodeAccounts(t.ctx, 20)
 	c.Assert(err, IsNil)
-	var hasGood, hasBad bool
-	for _, na := range next {
-		hasGood = hasGood || na.NodeAddress.Equals(good.NodeAddress)
-		hasBad = hasBad || na.NodeAddress.Equals(bad.NodeAddress)
-	}
-	c.Check(hasGood, Equals, true)
-	c.Check(hasBad, Equals, false)
+	c.Check(contains(next, good, bad), DeepEquals, []bool{true, false})
 }

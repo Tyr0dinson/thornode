@@ -29,6 +29,16 @@
           ]
         },
         {
+          "@type": "/cosmos.auth.v1beta1.BaseAccount",
+          "account_number": "10",
+          "address": "tthor1xkz88t875m7ms7wa6220estwwdlc86pqsccrvm",
+          "pub_key": {
+            "@type": "/cosmos.crypto.secp256k1.PubKey",
+            "key": "AxM8YN2N3Rpv2za31hmhLGUnKldrnrZWjf7/n+IYXyMa"
+          },
+          "sequence": "5"
+        },
+        {
           "@type": "/cosmos.auth.v1beta1.ModuleAccount",
           "base_account": {
             "account_number": "1",
@@ -135,10 +145,19 @@
           ]
         },
         {
+          "address": "tthor1xkz88t875m7ms7wa6220estwwdlc86pqsccrvm",
+          "coins": [
+            {
+              "amount": "499946000000",
+              "denom": "rune"
+            }
+          ]
+        },
+        {
           "address": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
           "coins": [
             {
-              "amount": "35000010000000",
+              "amount": "35000020000000",
               "denom": "rune"
             }
           ]
@@ -165,7 +184,7 @@
           "address": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
           "coins": [
             {
-              "amount": "7299992000000",
+              "amount": "9300036000000",
               "denom": "rune"
             }
           ]
@@ -179,7 +198,7 @@
       "send_enabled": [],
       "supply": [
         {
-          "amount": "50300000000000",
+          "amount": "52800000000000",
           "denom": "rune"
         }
       ]
@@ -226,6 +245,16 @@
           "node_address": "tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej",
           "node_operator_fee": "0",
           "providers": []
+        },
+        {
+          "node_address": "tthor1xkz88t875m7ms7wa6220estwwdlc86pqsccrvm",
+          "node_operator_fee": "500",
+          "providers": [
+            {
+              "bond": "2000050000000",
+              "bond_address": "tthor1xkz88t875m7ms7wa6220estwwdlc86pqsccrvm"
+            }
+          ]
         },
         {
           "node_address": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
@@ -308,6 +337,19 @@
           "status": "Ready",
           "status_since": "60",
           "validator_cons_pub_key": "tthorcpub1zcjduepqj78u6rt597vlvfmrr8sn8qfs2j9qm6z44vt43a3nuk0zduew5y8qf3s6hx"
+        },
+        {
+          "bond": "2000044000000",
+          "bond_address": "tthor1xkz88t875m7ms7wa6220estwwdlc86pqsccrvm",
+          "ip_address": "1.1.1.6",
+          "node_address": "tthor1xkz88t875m7ms7wa6220estwwdlc86pqsccrvm",
+          "pub_key_set": {
+            "ed25519": "tthorpub1zcjduepqmf6ezgwfpre56mdpw0ye0ssqmhy08n3jm7l6lmvvl87aqugym2rqdw3ufz",
+            "secp256k1": "tthorpub1addwnpepqvfnccxa3hw35m7mx6mavxdp93jjw2jhdw0tv45dlmlelcsctu335w2yw3u"
+          },
+          "status": "Ready",
+          "status_since": "60",
+          "validator_cons_pub_key": "tthorcpub1zcjduepqe4ek6z27scfutp6whq5ug2plglertjw7z473nny2yu46r7gxp07s92jckg"
         },
         {
           "active_block_height": "1",

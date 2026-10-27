@@ -527,7 +527,9 @@ func (vts *ValidatorMgrTestSuite) TestMarkLowBondActorOnlyAtCapacity(c *C) {
 	higherBond.Bond = cosmos.NewUint(10)
 	c.Assert(mgr.Keeper().SetNodeAccount(ctx, higherBond), IsNil)
 
-	c.Assert(networkMgr.markLowBondActor(ctx, 3), IsNil)
+	marked, err := networkMgr.markLowBondActor(ctx, 3)
+	c.Assert(err, IsNil)
+	c.Assert(marked, Equals, false)
 	lowBondAfter, err := mgr.Keeper().GetNodeAccount(ctx, lowBond.NodeAddress)
 	c.Assert(err, IsNil)
 	c.Assert(lowBondAfter.LeaveScore, Equals, uint64(0))
@@ -536,7 +538,9 @@ func (vts *ValidatorMgrTestSuite) TestMarkLowBondActorOnlyAtCapacity(c *C) {
 	highestBond.Bond = cosmos.NewUint(11)
 	c.Assert(mgr.Keeper().SetNodeAccount(ctx, highestBond), IsNil)
 
-	c.Assert(networkMgr.markLowBondActor(ctx, 3), IsNil)
+	marked, err = networkMgr.markLowBondActor(ctx, 3)
+	c.Assert(err, IsNil)
+	c.Assert(marked, Equals, true)
 	lowBondAfter, err = mgr.Keeper().GetNodeAccount(ctx, lowBond.NodeAddress)
 	c.Assert(err, IsNil)
 	c.Assert(lowBondAfter.LeaveScore > 0, Equals, true)

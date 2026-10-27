@@ -276,10 +276,9 @@ func keygenResolvedByVaults(keygen Keygen, vaults Vaults) bool {
 }
 
 func (vm *ValidatorMgr) churn(ctx cosmos.Context) error {
-	// Before markReadyActors resets StatusSince of the nodes it moves, and outside
-	// the churn's cache context so that a failed churn does not drop it and leave a
-	// later churn to record a newer height.
-	if err := vm.recordNodeFirstSeen(ctx); err != nil {
+	// Outside the churn's cache context, so that a failed churn does not drop the age
+	// starts it set and leave a later churn to set them at a later height.
+	if err := vm.syncNodeAgeStarts(ctx); err != nil {
 		return err
 	}
 	cacheCtx, commit := ctx.CacheContext()
@@ -306,16 +305,25 @@ func (vm *ValidatorMgr) churnInner(ctx cosmos.Context) error {
 		return err
 	}
 
+	// The low bond and age marks only make room for Ready nodes. With the churn-in
+	// age filter on, they come after every other mark (see markRotationActorsWithinRoom).
+	oldEnough, limited, err := vm.churnInOldEnoughReady(ctx)
+	if err != nil {
+		return err
+	}
+
 	// Mark bad, old, low bond, and old version validators
 	// mark someone to get churned out for bad behavior
-	_, err := vm.markBadActor(ctx, minSlashPointsForBadValidator, redline)
+	_, err = vm.markBadActor(ctx, minSlashPointsForBadValidator, redline)
 	if err != nil {
 		return err
 	}
 
 	// mark someone to get churned out for low bond only once the active set is at capacity
-	if err = vm.markLowBondActor(ctx, desiredValidatorSet); err != nil {
-		return err
+	if !limited {
+		if _, err = vm.markLowBondActor(ctx, desiredValidatorSet); err != nil {
+			return err
+		}
 	}
 
 	// mark someone to get churned out for low version
@@ -324,8 +332,10 @@ func (vm *ValidatorMgr) churnInner(ctx cosmos.Context) error {
 	}
 
 	// mark someone to get churned out for age
-	if err = vm.markOldActor(ctx); err != nil {
-		return err
+	if !limited {
+		if err = vm.markOldActor(ctx); err != nil {
+			return err
+		}
 	}
 
 	// mark someone(s) for not signing blocks
@@ -341,6 +351,12 @@ func (vm *ValidatorMgr) churnInner(ctx cosmos.Context) error {
 	// mark someone(s) for missing observations on a chain
 	if err = vm.markMissingObservationActors(ctx); err != nil {
 		return err
+	}
+
+	if limited {
+		if err = vm.markRotationActorsWithinRoom(ctx, desiredValidatorSet, oldEnough); err != nil {
+			return err
+		}
 	}
 
 	next, ok, err := vm.nextVaultNodeAccounts(ctx, int(desiredValidatorSet))
@@ -1754,6 +1770,38 @@ func (vm *ValidatorMgr) markActor(ctx cosmos.Context, na NodeAccount, reason str
 	return nil
 }
 
+// markRotationActorsWithinRoom makes the low bond and age marks while the churn-in age
+// filter is on. They only make room for Ready nodes, so they come after every other mark
+// and take no more nodes than the oldEnough Ready nodes left over once the nodes already
+// marked are replaced. Then the filter does not shrink the active set by itself; the
+// other marks still apply.
+func (vm *ValidatorMgr) markRotationActorsWithinRoom(ctx cosmos.Context, desiredValidatorSet int64, oldEnough int) error {
+	active, err := vm.k.ListActiveValidators(ctx)
+	if err != nil {
+		return err
+	}
+	room := oldEnough
+	for _, na := range active {
+		if na.LeaveScore > 0 {
+			room--
+		}
+	}
+	if room <= 0 {
+		return nil
+	}
+	marked, err := vm.markLowBondActor(ctx, desiredValidatorSet)
+	if err != nil {
+		return err
+	}
+	if marked {
+		room--
+	}
+	if room <= 0 {
+		return nil
+	}
+	return vm.markOldActor(ctx)
+}
+
 // Mark an old actor to be churned out
 func (vm *ValidatorMgr) markOldActor(ctx cosmos.Context) error {
 	na, err := vm.findOldActor(ctx)
@@ -1766,26 +1814,27 @@ func (vm *ValidatorMgr) markOldActor(ctx cosmos.Context) error {
 	return nil
 }
 
-// Mark a low bond actor to be churned out once the active set is at capacity.
-func (vm *ValidatorMgr) markLowBondActor(ctx cosmos.Context, desiredValidatorSet int64) error {
+// Mark a low bond actor to be churned out once the active set is at capacity, and
+// report whether one was marked.
+func (vm *ValidatorMgr) markLowBondActor(ctx cosmos.Context, desiredValidatorSet int64) (bool, error) {
 	if desiredValidatorSet > 0 {
 		nas, err := vm.k.ListActiveValidators(ctx)
 		if err != nil {
-			return err
+			return false, err
 		}
 		if int64(len(nas)) < desiredValidatorSet {
-			return nil
+			return false, nil
 		}
 	}
 
 	na, err := vm.findLowBondActor(ctx)
 	if err != nil {
-		return err
+		return false, err
 	}
 	if err := vm.markActor(ctx, na, "for low bond"); err != nil {
-		return err
+		return false, err
 	}
-	return nil
+	return !na.IsEmpty(), nil
 }
 
 // Mark a bad actor to be churned out
@@ -2195,27 +2244,68 @@ func (vm *ValidatorMgr) nextVaultNodeAccounts(ctx cosmos.Context, targetCount in
 	return active, rotation, nil
 }
 
-// splitByChurnInAge splits the Ready nodes, keeping their order, into those that are
-// at least ChurnInMinNodeAgeBlocks old and may churn in, and those that are younger.
-// With the mimir unset or 0 every node may churn in.
-func (vm *ValidatorMgr) splitByChurnInAge(ctx cosmos.Context, ready NodeAccounts) (NodeAccounts, NodeAccounts, error) {
+// churnInMinNodeAgeMaxChurns caps ChurnInMinNodeAgeBlocks at this many churn intervals,
+// so that the few votes an operational mimir needs cannot hold new nodes out for longer.
+const churnInMinNodeAgeMaxChurns = 3
+
+// churnInMinNodeAge returns ChurnInMinNodeAgeBlocks capped at churnInMinNodeAgeMaxChurns
+// churn intervals, or 0 when it is unset or not positive.
+func (vm *ValidatorMgr) churnInMinNodeAge(ctx cosmos.Context) (int64, error) {
 	minAge, err := vm.k.GetMimir(ctx, constants.MimirKeyChurnInMinNodeAgeBlocks)
 	if err != nil {
-		return nil, nil, fmt.Errorf("fail to get %s: %w", constants.MimirKeyChurnInMinNodeAgeBlocks, err)
+		return 0, fmt.Errorf("fail to get %s: %w", constants.MimirKeyChurnInMinNodeAgeBlocks, err)
+	}
+	if minAge <= 0 {
+		return 0, nil
+	}
+	churnInterval := vm.k.GetConfigInt64(ctx, constants.ChurnInterval)
+	if churnInterval > 0 && churnInterval <= math.MaxInt64/churnInMinNodeAgeMaxChurns {
+		minAge = min(minAge, churnInMinNodeAgeMaxChurns*churnInterval)
+	}
+	return minAge, nil
+}
+
+// churnInOldEnoughReady returns how many Ready nodes are old enough to churn in, and
+// whether the churn-in age filter is on; with it off, the count is not limiting.
+func (vm *ValidatorMgr) churnInOldEnoughReady(ctx cosmos.Context) (int, bool, error) {
+	minAge, err := vm.churnInMinNodeAge(ctx)
+	if err != nil || minAge <= 0 {
+		return 0, false, err
+	}
+	ready, err := vm.k.ListValidatorsByStatus(ctx, NodeReady)
+	if err != nil {
+		return 0, false, err
+	}
+	old, _, err := vm.splitByChurnInAge(ctx, ready)
+	if err != nil {
+		return 0, false, err
+	}
+	return len(old), true, nil
+}
+
+// splitByChurnInAge splits the Ready nodes, keeping their order, into those that are
+// old enough to churn in and those that are not (see churnInMinNodeAge). A node's age
+// is the time since its bond last reached MinimumBondInRune (see GetNodeAgeStart).
+// With the mimir unset or 0 every node may churn in.
+func (vm *ValidatorMgr) splitByChurnInAge(ctx cosmos.Context, ready NodeAccounts) (NodeAccounts, NodeAccounts, error) {
+	minAge, err := vm.churnInMinNodeAge(ctx)
+	if err != nil {
+		return nil, nil, err
 	}
 	if minAge <= 0 {
 		return ready, nil, nil
 	}
 	var old, young NodeAccounts
 	for _, na := range ready {
-		firstSeen, seenErr := vm.nodeFirstSeen(ctx, na)
-		if seenErr != nil {
+		start, ok, startErr := vm.k.GetNodeAgeStart(ctx, na.NodeAddress)
+		if startErr != nil {
 			// one unreadable record holds back only its own node
-			ctx.Logger().Error("fail to get node age, holding it back", "node_address", na.NodeAddress.String(), "error", seenErr)
+			ctx.Logger().Error("fail to get node age, holding it back", "node_address", na.NodeAddress.String(), "error", startErr)
 			young = append(young, na)
 			continue
 		}
-		if ctx.BlockHeight()-firstSeen >= minAge {
+		// without an age start the bond is below the minimum, so the node has no age
+		if ok && ctx.BlockHeight()-start >= minAge {
 			old = append(old, na)
 		} else {
 			young = append(young, na)
@@ -2232,7 +2322,7 @@ func (vm *ValidatorMgr) logChurnInAgeHeldBack(ctx cosmos.Context, tooYoung, next
 	if len(tooYoung) == 0 {
 		return
 	}
-	minAge, err := vm.k.GetMimir(ctx, constants.MimirKeyChurnInMinNodeAgeBlocks)
+	minAge, err := vm.churnInMinNodeAge(ctx)
 	if err != nil {
 		return
 	}
@@ -2242,18 +2332,26 @@ func (vm *ValidatorMgr) logChurnInAgeHeldBack(ctx cosmos.Context, tooYoung, next
 			continue
 		}
 		held++
-		firstSeen, seenErr := vm.nodeFirstSeen(ctx, na)
-		if seenErr != nil {
+		start, ok, startErr := vm.k.GetNodeAgeStart(ctx, na.NodeAddress)
+		if startErr != nil {
 			continue // already logged by splitByChurnInAge
 		}
-		oldEnoughFrom := firstSeen + minAge
-		if oldEnoughFrom < firstSeen {
+		if !ok {
+			ctx.Logger().Info("churn-in age filter kept node out",
+				"node_address", na.NodeAddress.String(),
+				"min_age", minAge,
+				"age_start", "none, bond below the minimum",
+			)
+			continue
+		}
+		oldEnoughFrom := start + minAge
+		if oldEnoughFrom < start {
 			oldEnoughFrom = math.MaxInt64
 		}
 		ctx.Logger().Info("churn-in age filter kept node out",
 			"node_address", na.NodeAddress.String(),
 			"min_age", minAge,
-			"first_seen", firstSeen,
+			"age_start", start,
 			"old_enough_from", oldEnoughFrom,
 		)
 	}
@@ -2264,52 +2362,26 @@ func (vm *ValidatorMgr) logChurnInAgeHeldBack(ctx cosmos.Context, tooYoung, next
 	)
 }
 
-// nodeFirstSeen returns the height from which the node counts as registered: the
-// recorded height, or for a node not yet recorded, nodeFirstSeenFloor.
-func (vm *ValidatorMgr) nodeFirstSeen(ctx cosmos.Context, na NodeAccount) (int64, error) {
-	height, ok, err := vm.k.GetNodeFirstSeen(ctx, na.NodeAddress)
-	if err != nil {
-		return 0, fmt.Errorf("fail to get first seen height of node %s: %w", na.NodeAddress, err)
-	}
-	if !ok {
-		return nodeFirstSeenFloor(na), nil
-	}
-	return height, nil
-}
-
-// nodeFirstSeenFloor is the earliest height a node account still holds: StatusSince,
-// or ActiveBlockHeight when that is earlier. Both are at or after the node's real
-// registration, which was not stored for nodes registered before the first-seen
-// record, so a node judged by it can only look younger than it is, never older.
-func nodeFirstSeenFloor(na NodeAccount) int64 {
-	floor := na.StatusSince
-	if na.ActiveBlockHeight > 0 && na.ActiveBlockHeight < floor {
-		floor = na.ActiveBlockHeight
-	}
-	return floor
-}
-
-// recordNodeFirstSeen records nodeFirstSeenFloor for every node account that has no
-// first-seen height and can still churn in. A node bonded since the record exists
-// gets its bond height in the bond handler; this covers the nodes registered before,
-// once. It runs at every churn, before markReadyActors moves Standby nodes to Ready
-// and resets their StatusSince, so it keeps the earliest floor a node has.
-func (vm *ValidatorMgr) recordNodeFirstSeen(ctx cosmos.Context) error {
-	unrecorded, err := vm.unrecordedNodes(ctx)
+// syncNodeAgeStarts brings the age start of every node that can still churn in in line
+// with its bond (see SyncNodeAgeStart) before the churn judges node ages. Node account
+// writes keep it in line; this covers the accounts not written since MinimumBondInRune
+// last changed, or since before the age start existed.
+func (vm *ValidatorMgr) syncNodeAgeStarts(ctx cosmos.Context) error {
+	nodes, err := vm.churnInCandidates(ctx)
 	if err != nil {
 		return err
 	}
 	// written once the iterator is closed, so it never sees its own writes
-	for _, na := range unrecorded {
-		vm.k.SetNodeFirstSeen(ctx, na.NodeAddress, nodeFirstSeenFloor(na))
+	for _, na := range nodes {
+		vm.k.SyncNodeAgeStart(ctx, na)
 	}
 	return nil
 }
 
-// unrecordedNodes returns the node accounts that have no first-seen height, leaving
-// out Disabled nodes, which never churn in again.
-func (vm *ValidatorMgr) unrecordedNodes(ctx cosmos.Context) (NodeAccounts, error) {
-	var unrecorded NodeAccounts
+// churnInCandidates returns the node accounts that can still churn in: all but the
+// Disabled ones, which never churn in again.
+func (vm *ValidatorMgr) churnInCandidates(ctx cosmos.Context) (NodeAccounts, error) {
+	var nodes NodeAccounts
 	iter := vm.k.GetNodeAccountIterator(ctx)
 	defer iter.Close()
 	for ; iter.Valid(); iter.Next() {
@@ -2320,17 +2392,9 @@ func (vm *ValidatorMgr) unrecordedNodes(ctx cosmos.Context) (NodeAccounts, error
 		if na.IsEmpty() || na.Status == NodeDisabled {
 			continue
 		}
-		_, ok, err := vm.k.GetNodeFirstSeen(ctx, na.NodeAddress)
-		if err != nil {
-			// left unrecorded: splitByChurnInAge holds the node back
-			ctx.Logger().Error("fail to get first seen height", "node_address", na.NodeAddress.String(), "error", err)
-			continue
-		}
-		if !ok {
-			unrecorded = append(unrecorded, na)
-		}
+		nodes = append(nodes, na)
 	}
-	return unrecorded, nil
+	return nodes, nil
 }
 
 // chainSetFaultyNodes returns, in node-address order, the given Active nodes whose most
