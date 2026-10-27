@@ -3,10 +3,12 @@ package types
 import (
 	"fmt"
 	"math/big"
+	"strconv"
 	"strings"
 
 	sdkmath "cosmossdk.io/math"
 
+	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 )
 
@@ -332,6 +334,39 @@ func LuviAllowance(prev, next LuviState, assetPaid cosmos.Uint, flows int) cosmo
 	return total.Add(dL.Mul(dV).Quo(sqrtAR))
 }
 
+// LuviSynthSubsidyAllowance returns the normalized drop in G that synth swap
+// legs priced at a virtual pool depth can cause. With
+// VirtualMultSynthsBasisPoints m above 1x, a synth mint or burn is priced
+// against depths m times the real ones, so the swapper receives (emit + fee)
+// as if the pool were deeper: a configured subsidy from LPs to synth traders.
+// For a leg with input r times its real input-side depth the extra paid out is
+// r^2 * (1 - 1/m) / ((1 + r/m) * (1 + r)) of the output depth, which moves G
+// by about half that; the allowance is the full amount. r comes from the leg's
+// pool slip s = x/(x + m*X) as r = m*s/(1 - s), with s rounded up one basis
+// point. Zero when m <= 1x, as on mainnet by default.
+func LuviSynthSubsidyAllowance(slipBps []int64, multBps int64) cosmos.Dec {
+	total := cosmos.ZeroDec()
+	if multBps <= 10_000 {
+		return total
+	}
+	one := cosmos.NewDec(1)
+	m := cosmos.NewDec(multBps).QuoInt64(10_000)
+	keep := one.Sub(one.Quo(m)) // 1 - 1/m
+	for _, bps := range slipBps {
+		if bps < 0 {
+			continue
+		}
+		if bps+1 >= 10_000 {
+			return one
+		}
+		s := cosmos.NewDec(bps + 1).QuoInt64(10_000)
+		r := m.Mul(s).Quo(one.Sub(s))
+		den := one.Add(r.Quo(m)).Mul(one.Add(r))
+		total = total.Add(r.Mul(r).Mul(keep).Quo(den))
+	}
+	return total
+}
+
 func luviUintToDec(u cosmos.Uint) cosmos.Dec {
 	return cosmos.NewDecFromBigInt(u.BigInt())
 }
@@ -345,6 +380,9 @@ type LuviStepEvents struct {
 	Withdrawn map[string][]cosmos.Uint
 	Errata    map[string]bool
 	Swaps     map[string]int
+	// SynthSlips lists the pool slip, in basis points, of each swap leg that
+	// mints or burns a pool's synth.
+	SynthSlips map[string][]int64
 	// Reported and ReportedExcess name the pools an inner scope already
 	// reported a luvi_loss for (excess: beyond its allowance).
 	Reported       map[string]bool
@@ -361,6 +399,7 @@ func NewLuviStepEvents(events []map[string]string) LuviStepEvents {
 		Errata:    map[string]bool{},
 		Swaps:     map[string]int{},
 
+		SynthSlips:     map[string][]int64{},
 		Reported:       map[string]bool{},
 		ReportedExcess: map[string]bool{},
 	}
@@ -401,6 +440,11 @@ func NewLuviStepEvents(events []map[string]string) LuviStepEvents {
 			out.Errata[e["asset"]] = true
 		case SwapEventType:
 			out.Swaps[e["pool"]]++
+			if luviSynthLeg(e["coin"]) || luviSynthLeg(e["emit_asset"]) {
+				if bps, err := strconv.ParseInt(e["pool_slip"], 10, 64); err == nil {
+					out.SynthSlips[e["pool"]] = append(out.SynthSlips[e["pool"]], bps)
+				}
+			}
 		case LuviLossEventType:
 			out.Reported[e["pool"]] = true
 			if e["excess"] == "true" {
@@ -409,6 +453,13 @@ func NewLuviStepEvents(events []map[string]string) LuviStepEvents {
 		}
 	}
 	return out
+}
+
+// luviSynthLeg reports whether a swap event coin ("<amount> <asset>") is a
+// synth.
+func luviSynthLeg(coin string) bool {
+	c, err := common.ParseCoin(coin)
+	return err == nil && c.Asset.IsSyntheticAsset()
 }
 
 // AssetPaidOf returns the asset paid by gas and slashes for a pool.

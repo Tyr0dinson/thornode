@@ -28,7 +28,9 @@ var errLuviGuard = errors.New("luvi guard: pool LP value dropped")
 // luviReportThreshold is the normalized drop in G above which a scope reports
 // an EventLuviLoss even when the allowance covers it (a vault slash, a large
 // gas reimbursement, an errata, a write-down). Smaller covered drops are
-// routine rounding and gas, and are not reported.
+// routine rounding and gas, and are not reported. The virtual synth depth
+// subsidy is a configured transfer on every synth swap, so it is deducted
+// first: a covered drop is reported only past the subsidy.
 var luviReportThreshold = cosmos.NewDecWithPrec(1, 6)
 
 // luviEnforcedMsgs are the messages a user can send or trigger directly, whose
@@ -128,6 +130,12 @@ func (s *luviScope) check(ctx cosmos.Context, k keeper.Keeper) ([]*types.EventLu
 	var losses []*types.EventLuviLoss
 	excess := false
 	virtualSynthDepth := int64(-1) // read lazily: only steps that move synths need it
+	synthDepth := func() int64 {
+		if virtualSynthDepth < 0 {
+			virtualSynthDepth = k.GetConfigInt64(ctx, constants.VirtualMultSynthsBasisPoints)
+		}
+		return virtualSynthDepth
+	}
 	for _, asset := range s.journal.Assets() {
 		pre, _ := s.journal.Pre(asset)
 		if !pre.IsValid() {
@@ -138,13 +146,16 @@ func (s *luviScope) check(ctx cosmos.Context, k keeper.Keeper) ([]*types.EventLu
 		pool := asset.String()
 		// A virtual synth depth above 1x prices synth swaps against a deeper
 		// pool than the real one: a configured subsidy from LPs to synth
-		// traders, which the allowance does not model. Report, don't enforce.
+		// traders. The allowance estimates it per synth leg from the leg's
+		// slip; as an estimate it only reports, it doesn't enforce.
 		enforce := true
 		if !pre.SynthSupply.Equal(post.SynthSupply) {
-			if virtualSynthDepth < 0 {
-				virtualSynthDepth = k.GetConfigInt64(ctx, constants.VirtualMultSynthsBasisPoints)
-			}
-			enforce = virtualSynthDepth <= int64(constants.MaxBasisPts)
+			enforce = synthDepth() <= int64(constants.MaxBasisPts)
+		}
+		// the virtual depth subsidy of the step's synth swap legs
+		subsidy := cosmos.ZeroDec()
+		if slips := ev.SynthSlips[pool]; len(slips) > 0 {
+			subsidy = types.LuviSynthSubsidyAllowance(slips, synthDepth())
 		}
 		loss := func(kind string, dG, norm, allowed cosmos.Dec, over bool) {
 			// an inner scope (a handler run inside this EndBlock step) already
@@ -183,7 +194,7 @@ func (s *luviScope) check(ctx cosmos.Context, k keeper.Keeper) ([]*types.EventLu
 			if post.LPUnits.IsZero() {
 				continue
 			}
-			allowed := tolerance.Add(types.LuviAllowance(pre, pre, ev.AssetPaidOf(pool), ev.RoundingOps(pool)))
+			allowed := tolerance.Add(types.LuviAllowance(pre, pre, ev.AssetPaidOf(pool), ev.RoundingOps(pool))).Add(subsidy)
 			minusOne := cosmos.NewDec(-1)
 			loss("drop", pre.SqrtAR().Neg(), minusOne, allowed, minusOne.LT(allowed.Neg()))
 			continue
@@ -200,9 +211,9 @@ func (s *luviScope) check(ctx cosmos.Context, k keeper.Keeper) ([]*types.EventLu
 		if step.NormalizedDeltaG.GTE(tolerance.Neg()) {
 			continue
 		}
-		allowed := tolerance.Add(types.LuviAllowance(pre, post, ev.AssetPaidOf(pool), ev.RoundingOps(pool)))
+		allowed := tolerance.Add(types.LuviAllowance(pre, post, ev.AssetPaidOf(pool), ev.RoundingOps(pool))).Add(subsidy)
 		over := step.NormalizedDeltaG.LT(allowed.Neg())
-		if over || step.NormalizedDeltaG.LT(luviReportThreshold.Neg()) {
+		if over || step.NormalizedDeltaG.Add(subsidy).LT(luviReportThreshold.Neg()) {
 			loss("drop", step.DeltaG, step.NormalizedDeltaG, allowed, over)
 		}
 	}
