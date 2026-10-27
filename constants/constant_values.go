@@ -218,7 +218,6 @@ const (
 	MissingObservationGuardMaxBlocks
 
 	LUVIOverhangGuard
-	SOLTokenOutboundSurcharge
 )
 
 // ConstantValues define methods used to get constant values

@@ -120,6 +120,14 @@ func (s ChainSuite) TestChain(c *C) {
 	c.Assert(ETHChain.SupportsSolvencyObservationSlashing(), Equals, true)
 }
 
+func (s ChainSuite) TestTokenOutboundSurcharge(c *C) {
+	// SOL token outbounds carry the rent of the recipient's token account.
+	c.Check(SOLChain.TokenOutboundSurcharge().Uint64(), Equals, uint64(204_000))
+	for _, chain := range []Chain{THORChain, BTCChain, ETHChain, BSCChain, TRONChain, XRPChain, GAIAChain} {
+		c.Check(chain.TokenOutboundSurcharge().IsZero(), Equals, true, Commentf("%s", chain))
+	}
+}
+
 // NativeGasToThorCoinCeil rounds up when the gas asset has more decimals
 // than THORChain (1e8) and any sub-1e8 native precision would otherwise
 // be silently dropped. Exercise both the exact-amount path (no ceil)

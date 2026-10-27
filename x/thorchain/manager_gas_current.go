@@ -164,7 +164,7 @@ func (gm *GasMgr) GetAssetOutboundFee(ctx cosmos.Context, asset common.Asset, in
 		fee = minAsset
 	}
 
-	fee = fee.Add(gm.solTokenOutboundSurcharge(ctx, asset))
+	fee = fee.Add(tokenOutboundSurcharge(ctx, gm.keeper, asset))
 
 	// If feeAsset = gas asset && inRune = false, we are in the correct units, return
 	if asset.Equals(asset.GetChain().GetGasAsset()) && !inRune {
@@ -195,22 +195,23 @@ func (gm *GasMgr) GetAssetOutboundFee(ctx cosmos.Context, asset common.Asset, in
 	return assetPool.RuneValueInAsset(fee), nil
 }
 
-// solTokenOutboundSurcharge returns the SOL (1e8) added to an SPL token outbound's
-// fee. Bifrost creates the recipient's associated token account when it is missing
-// and the vault pays its rent, which is booked as gas and reimbursed by the Reserve.
-// THORChain cannot know whether the account exists, so every token outbound pays
-// the surcharge: without it the rent exceeds the minimum outbound fee, and since a
-// recipient can close the account and keep the rent, small swaps to fresh wallets
-// would drain the Reserve.
-func (gm *GasMgr) solTokenOutboundSurcharge(ctx cosmos.Context, asset common.Asset) cosmos.Uint {
-	if !asset.GetChain().Equals(common.SOLChain) || asset.Equals(common.SOLAsset) {
+// tokenOutboundSurcharge returns the surcharge, in 1e8 units of its chain's gas asset,
+// that an outbound of asset adds to its outbound fee and reserves with its max gas: the
+// TokenOutboundSurcharge-<CHAIN> mimir when set (0 switches it off), else the chain's
+// default (common.Chain.TokenOutboundSurcharge). Gas assets pay none; trade, synth and
+// secured assets report chain THOR, which has none.
+func tokenOutboundSurcharge(ctx cosmos.Context, k keeper.Keeper, asset common.Asset) cosmos.Uint {
+	if asset.IsGasAsset() {
 		return cosmos.ZeroUint()
 	}
-	surcharge := gm.keeper.GetConfigInt64(ctx, constants.SOLTokenOutboundSurcharge)
-	if surcharge <= 0 {
-		return cosmos.ZeroUint()
+	chain := asset.GetChain()
+	value, err := k.GetMimirWithRef(ctx, constants.MimirTemplateTokenOutboundSurcharge, chain.String())
+	if err != nil {
+		ctx.Logger().Error("fail to get token outbound surcharge mimir", "chain", chain, "error", err)
+	} else if value >= 0 {
+		return cosmos.NewUint(uint64(value))
 	}
-	return cosmos.NewUint(uint64(surcharge))
+	return chain.TokenOutboundSurcharge()
 }
 
 // CalcOutboundFeeMultiplier returns the current outbound fee multiplier based on current and target outbound fee surplus

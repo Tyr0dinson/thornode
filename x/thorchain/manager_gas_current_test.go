@@ -1,6 +1,7 @@
 package thorchain
 
 import (
+	"fmt"
 	"strings"
 
 	. "gopkg.in/check.v1"
@@ -148,14 +149,14 @@ func (GasManagerTestSuite) TestGetAssetOutboundFeeSOLTokenSurcharge(c *C) {
 	// A token outbound pays the SOL fee plus the default token account rent surcharge.
 	usdcFee, err := gasMgr.GetAssetOutboundFee(ctx, usdc, false)
 	c.Assert(err, IsNil)
-	defaultSurcharge := constants.GetConstantValues(GetCurrentVersion()).GetInt64Value(constants.SOLTokenOutboundSurcharge)
-	c.Assert(defaultSurcharge, Equals, int64(204_000))
-	c.Check(usdcFee.String(), Equals, solFee.AddUint64(uint64(defaultSurcharge)).String())
+	defaultSurcharge := common.SOLChain.TokenOutboundSurcharge()
+	c.Assert(defaultSurcharge.Uint64(), Equals, uint64(204_000))
+	c.Check(usdcFee.String(), Equals, solFee.Add(defaultSurcharge).String())
 
 	// The same surcharge in RUNE.
 	usdcFeeRune, err := gasMgr.GetAssetOutboundFee(ctx, usdc, true)
 	c.Assert(err, IsNil)
-	c.Check(usdcFeeRune.String(), Equals, solFee.AddUint64(uint64(defaultSurcharge)).String())
+	c.Check(usdcFeeRune.String(), Equals, solFee.Add(defaultSurcharge).String())
 
 	// SOL itself never pays it, and neither do trade or synth forms of the token.
 	solFeeAgain, err := gasMgr.GetAssetOutboundFee(ctx, common.SOLAsset, false)
@@ -167,13 +168,14 @@ func (GasManagerTestSuite) TestGetAssetOutboundFeeSOLTokenSurcharge(c *C) {
 	c.Check(tradeFee.IsZero(), Equals, true)
 
 	// Governance can tune it.
-	k.SetMimir(ctx, constants.SOLTokenOutboundSurcharge.String(), 300_000)
+	surchargeKey := fmt.Sprintf(constants.MimirTemplateTokenOutboundSurcharge, common.SOLChain.String())
+	k.SetMimir(ctx, surchargeKey, 300_000)
 	usdcFee, err = gasMgr.GetAssetOutboundFee(ctx, usdc, false)
 	c.Assert(err, IsNil)
 	c.Check(usdcFee.String(), Equals, solFee.AddUint64(300_000).String())
 
 	// Or switch it off.
-	k.SetMimir(ctx, constants.SOLTokenOutboundSurcharge.String(), 0)
+	k.SetMimir(ctx, surchargeKey, 0)
 	usdcFee, err = gasMgr.GetAssetOutboundFee(ctx, usdc, false)
 	c.Assert(err, IsNil)
 	c.Check(usdcFee.String(), Equals, solFee.String())

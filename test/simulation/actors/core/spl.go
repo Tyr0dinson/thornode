@@ -35,17 +35,18 @@ func freshSolanaAddress(rng *rand.Rand) common.Address {
 	return common.Address(stypes.PublicKeyFromBytes(pub).String())
 }
 
-// solTokenOutboundSurcharge returns the SOLTokenOutboundSurcharge in effect.
+// solTokenOutboundSurcharge returns the token outbound surcharge in effect on SOL: the
+// TokenOutboundSurcharge-SOL mimir, or SOL's default.
 func solTokenOutboundSurcharge() (sdkmath.Uint, error) {
 	mimirs, err := thornode.GetMimirs()
 	if err != nil {
 		return sdkmath.ZeroUint(), err
 	}
-	if v, ok := mimirs[strings.ToUpper(constants.SOLTokenOutboundSurcharge.String())]; ok && v >= 0 {
+	key := fmt.Sprintf(constants.MimirTemplateTokenOutboundSurcharge, common.SOLChain.String())
+	if v, ok := mimirs[strings.ToUpper(key)]; ok && v >= 0 {
 		return sdkmath.NewUint(uint64(v)), nil
 	}
-	v := constants.NewConstantValue().GetInt64Value(constants.SOLTokenOutboundSurcharge)
-	return sdkmath.NewUint(uint64(v)), nil
+	return common.SOLChain.TokenOutboundSurcharge(), nil
 }
 
 func poolBalances(asset common.Asset) (runeAmt, assetAmt sdkmath.Uint, err error) {
@@ -85,8 +86,8 @@ func tokenFeeInSOL(token common.Asset, fee sdkmath.Uint) (sdkmath.Uint, error) {
 //     so the vault created it (CreateIdempotent) and paid into it;
 //   - the observed outbound gas includes that account's rent, so THORChain booked
 //     the vault's real SOL spend;
-//   - the token's outbound fee covers SOLTokenOutboundSurcharge, so users, not the
-//     Reserve, pay that rent.
+//   - the token's outbound fee covers SOL's token outbound surcharge, so users, not
+//     the Reserve, pay that rent.
 type SPLFreshRecipientSwapActor struct {
 	SwapActor
 	outboundVerified bool
@@ -168,7 +169,7 @@ func (a *SPLFreshRecipientSwapActor) verifyFreshRecipient(config *OpConfig) OpRe
 	// The token's outbound fee covers the rent surcharge.
 	surcharge, err := solTokenOutboundSurcharge()
 	if err != nil {
-		a.Log().Warn().Err(err).Msg("failed to read SOLTokenOutboundSurcharge")
+		a.Log().Warn().Err(err).Msg("failed to read the SOL token outbound surcharge")
 		return OpResult{Continue: false}
 	}
 	fee, err := thornode.GetOutboundFee(a.to)

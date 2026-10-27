@@ -526,6 +526,26 @@ func (c Chain) DustThreshold() cosmos.Uint {
 	}
 }
 
+// TokenOutboundSurcharge returns the chain's default surcharge, in 1e8 units of its
+// gas asset, added to the outbound fee of a token (a non-gas asset) on the chain and
+// reserved as gas with that outbound. Chains whose token outbounds cost only network
+// gas return zero.
+func (c Chain) TokenOutboundSurcharge() cosmos.Uint {
+	switch c {
+	case SOLChain:
+		// The vault creates the recipient's associated token account when it is
+		// missing and pays its rent-exempt minimum, 2,039,280 lamports (203,928 in
+		// 1e8 units, rounded up here), booked as gas. THORChain cannot know whether
+		// the account exists, so every token outbound pays and reserves it: the rent
+		// exceeds the minimum outbound fee, and since a recipient can close the
+		// account and keep the rent, small swaps to fresh wallets would otherwise
+		// drain the Reserve.
+		return cosmos.NewUint(204_000) // 0.00204 SOL
+	default:
+		return cosmos.ZeroUint()
+	}
+}
+
 // P2WPKHOutputValue returns the value for P2WPKH outputs used for memo data
 func (c Chain) P2WPKHOutputValue() int64 {
 	switch c {
