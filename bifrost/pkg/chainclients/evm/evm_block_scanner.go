@@ -673,7 +673,7 @@ func (e *EVMScanner) receiptToTxInItem(tx *etypes.Transaction, receipt *etypes.R
 		isToVault, _ := e.pubkeyMgr.IsValidPoolAddress(destination.String(), e.cfg.ChainID)
 
 		// resolve sender upfront to check vault outbounds (approvals, cancels, etc.)
-		sender, senderErr := e.eipSigner.Sender(tx)
+		sender, senderErr := etypes.Sender(e.eipSigner, tx)
 		var isFromVault bool
 		if senderErr == nil {
 			isFromVault, _ = e.pubkeyMgr.IsValidPoolAddress(sender.String(), e.cfg.ChainID)
@@ -722,7 +722,7 @@ func (e *EVMScanner) receiptToTxInItem(tx *etypes.Transaction, receipt *etypes.R
 			return e.getTxInFromSmartContract(tx, receipt, 0)
 		}
 		// check if tx is to or from a vault
-		sender, err := e.eipSigner.Sender(tx)
+		sender, err := etypes.Sender(e.eipSigner, tx)
 		if err != nil {
 			return nil, nil // ignore tx if we cannot determine sender
 		}
@@ -1047,7 +1047,7 @@ func (e *EVMScanner) getTxInFromTransaction(tx *etypes.Transaction, receipt *ety
 		Tx: tx.Hash().Hex()[2:], // drop the "0x" prefix
 	}
 
-	sender, err := e.eipSigner.Sender(tx)
+	sender, err := etypes.Sender(e.eipSigner, tx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get sender: %w", err)
 	}
@@ -1118,15 +1118,20 @@ func (e *EVMScanner) isToValidContractAddress(addr *ecommon.Address, includeWhit
 	}
 	// get the smart contract used by thornode
 	contractAddresses := e.pubkeyMgr.GetContracts(e.cfg.ChainID, false)
-	if includeWhiteList {
-		contractAddresses = append(contractAddresses, e.whitelistContracts...)
-	}
 
-	// combine the whitelist smart contract address
-	addrString := addr.String() // this hashes internally so do it once
+	// EqualFold-equal to the checksummed addr.String(), without its keccak256
+	addrString := evm.LowerHexAddress(*addr)
 	for _, item := range contractAddresses {
 		if strings.EqualFold(item.String(), addrString) {
 			return true
+		}
+	}
+	// combine the whitelist smart contract address
+	if includeWhiteList {
+		for _, item := range e.whitelistContracts {
+			if strings.EqualFold(item.String(), addrString) {
+				return true
+			}
 		}
 	}
 	return false
@@ -1181,7 +1186,7 @@ func (e *EVMScanner) getTxInFromSmartContract(tx *etypes.Transaction, receipt *e
 	txInItem := &stypes.TxInItem{
 		Tx: tx.Hash().Hex()[2:], // drop the "0x" prefix
 	}
-	sender, err := e.eipSigner.Sender(tx)
+	sender, err := etypes.Sender(e.eipSigner, tx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get sender: %w", err)
 	}
@@ -1283,7 +1288,7 @@ func (e *EVMScanner) getTxInFromFailedTransaction(tx *etypes.Transaction, receip
 		e.logger.Info().Str("hash", tx.Hash().String()).Msg("success transaction should not get into getTxInFromFailedTransaction")
 		return nil
 	}
-	fromAddr, err := e.eipSigner.Sender(tx)
+	fromAddr, err := etypes.Sender(e.eipSigner, tx)
 	if err != nil {
 		e.logger.Err(err).Msg("failed to get from address")
 		return nil

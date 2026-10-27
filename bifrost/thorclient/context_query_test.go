@@ -241,6 +241,20 @@ func TestContextQueriesCancelRequestAndRetries(t *testing.T) {
 			},
 		},
 		{
+			name: "live pending outbounds",
+			call: func(ctx context.Context, bridge *thorchainBridge) error {
+				_, err := bridge.GetPendingOutboundsWithContext(ctx, 0)
+				return err
+			},
+		},
+		{
+			name: "historical pending outbounds",
+			call: func(ctx context.Context, bridge *thorchainBridge) error {
+				_, err := bridge.GetPendingOutboundsWithContext(ctx, 123)
+				return err
+			},
+		},
+		{
 			name: "observed tx voter",
 			call: func(ctx context.Context, bridge *thorchainBridge) error {
 				_, err := bridge.GetObservedTxVoterWithContext(ctx, "txid")

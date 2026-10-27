@@ -128,6 +128,7 @@ Operational notes:
 - `PendingLiquidityAgeLimit`: The number of blocks the network waits before initiating pending liquidity cleanup. Cleanup of all pools lasts for the same duration.
 - `PauseAsymWithdrawal-<Chain>`#: Forces dual-address liquidity providers to withdraw symmetrically rather than asymmetrically.
 - `PauseLPDeposit-<Asset>`#: pauses the ability to add liquidity into that pool. E.g. `PAUSELPDEPOSIT-BTC-BTC=1` suspends deposits for the BTC pool
+- `LUVIOverhangGuard`\*: When above `0` (the default is `1`), rejects liquidity adds, from users and from POL, into a pool in synth overhang (synth supply at least twice the pool's asset depth), and POL skips such pools. Withdrawals are unaffected. `0` turns the guard off
 
 ## RunePool
 

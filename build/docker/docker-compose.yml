@@ -1182,7 +1182,10 @@ services:
       - mocknet
       - mocknet-cluster
     restart: unless-stopped
-    image: ${DOCKER_MIRROR:-}0xpolygon/bor:2.5.9
+    # Docker Hub's 0xpolygon/bor is gone; Polygon publishes bor on ghcr.io now
+    # (oldest tag there is v2.6.3). Not behind DOCKER_MIRROR: the GitLab
+    # dependency proxy only proxies Docker Hub.
+    image: ghcr.io/0xpolygon/bor:v2.6.3@sha256:8d6bbd1cbdaa0e70746b95e375fed5fb4d6eae58edfdf3d49138c7a334449a95
     ports:
       - 8548:8545
     volumes:

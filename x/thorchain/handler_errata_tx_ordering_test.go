@@ -2,6 +2,7 @@ package thorchain
 
 import (
 	"context"
+	"fmt"
 	"os"
 
 	"cosmossdk.io/log"
@@ -24,9 +25,9 @@ var _ = Suite(&ErrataOrderingSuite{})
 // assertions. The notes beside each probe explain the unresolved accounting
 // behavior. All other ordering tests run normally. Remove each opt-in guard
 // once the underlying fix makes the original safety assertions pass in normal CI.
-func requireKnownErrataIssue(c *C, reason string) {
+func requireKnownErrataIssue(c *C, reason string, issue int) {
 	if os.Getenv("RUN_KNOWN_ERRATA_ISSUES") != "1" {
-		c.Skip(reason + "; set RUN_KNOWN_ERRATA_ISSUES=1 to reproduce; follow-up tracking: https://gitlab.com/thorchain/thornode/-/merge_requests/4983#focused-mr-series-expected---may-change")
+		c.Skip(fmt.Sprintf("%s; set RUN_KNOWN_ERRATA_ISSUES=1 to reproduce; tracked in https://gitlab.com/thorchain/thornode/-/issues/%d", reason, issue))
 	}
 }
 
@@ -691,7 +692,7 @@ func (*ErrataOrderingSuite) TestErrataMigrationSourceAndDestinationOrder(c *C) {
 // this ordering. A fix must assess that and distinguish stale evidence from a
 // valid re-mine before choosing a policy. Keep the original convergence assertions.
 func (*ErrataOrderingSuite) TestErrataOrderingOrphanedOutboundPermutationsConverge(c *C) {
-	requireKnownErrataIssue(c, "deferred: unknown-first errata terminality leaves a late outbound debit")
+	requireKnownErrataIssue(c, "deferred: unknown-first errata terminality leaves a late outbound debit", 3431)
 	f := newErrataOrderingFixture(c, false)
 	initial := f.ctx
 	var balances []uint64
@@ -726,7 +727,7 @@ func (*ErrataOrderingSuite) TestErrataOrderingOrphanedOutboundPermutationsConver
 // same proposal must cancel unexecuted input without paying out an orphaned
 // deposit or subtracting input from a pool that never received it.
 func (*ErrataOrderingSuite) TestErrataOrderingQueuedErrataCancelsUnexecutedSwap(c *C) {
-	requireKnownErrataIssue(c, "known accounting issue: errata does not cancel an already queued, unexecuted swap")
+	requireKnownErrataIssue(c, "known accounting issue: errata does not cancel an already queued, unexecuted swap", 3298)
 	for _, advanced := range []int64{0, 1} {
 		for _, committedFirst := range []bool{false, true} {
 			f := newErrataOrderingFixture(c, true)

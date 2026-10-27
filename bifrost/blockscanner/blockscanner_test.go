@@ -37,6 +37,8 @@ type BlockScannerTestSuite struct {
 	bridge thorclient.ThorchainBridge
 	cfg    config.BifrostClientConfiguration
 	keys   *thorclient.Keys
+
+	blockTime time.Duration
 }
 
 var _ = Suite(&BlockScannerTestSuite{})
@@ -79,6 +81,20 @@ func (s *BlockScannerTestSuite) SetUpSuite(c *C) {
 }
 
 func (s *BlockScannerTestSuite) TearDownSuite(c *C) {
+}
+
+// SetUpTest shortens the THORChain block time for each test. It paces the scan
+// loop's paused-chain sleep, its mimir re-checks and the bridge's response
+// cache; the mimir fixture halts the chain, so at the mocknet 1s every Stop,
+// rollback and cache expiry here would wait out whole seconds. Each test stops
+// its scanner before TearDownTest restores the value.
+func (s *BlockScannerTestSuite) SetUpTest(c *C) {
+	s.blockTime = constants.ThorchainBlockTime
+	constants.ThorchainBlockTime = 50 * time.Millisecond
+}
+
+func (s *BlockScannerTestSuite) TearDownTest(c *C) {
+	constants.ThorchainBlockTime = s.blockTime
 }
 
 func (s *BlockScannerTestSuite) TestNewBlockScanner(c *C) {
@@ -124,6 +140,32 @@ const (
 	lastBlockResult = `[ { "chain": "ETH", "last_observed_in": 1, "last_signed_out": 1, "thorchain": 3 }]`
 )
 
+// pauseCheckCountingBridge counts the scan loop's chain-pause checks
+// (IsChainPaused reads the THORChain height once per check), so a test can wait
+// for the loop to make progress instead of sleeping.
+type pauseCheckCountingBridge struct {
+	thorclient.ThorchainBridge
+	checks atomic.Int64
+}
+
+func (b *pauseCheckCountingBridge) GetBlockHeight() (int64, error) {
+	b.checks.Add(1)
+	return b.ThorchainBridge.GetBlockHeight()
+}
+
+// waitForPauseChecks waits until the scan loop has run n chain-pause checks.
+// Checks are a THORChain block time apart, so n >= 2 means at least one full
+// pass of the loop, through its paused sleep or its discover backoff.
+func waitForPauseChecks(c *C, b *pauseCheckCountingBridge, n int64) {
+	deadline := time.Now().Add(10 * time.Second)
+	for b.checks.Load() < n {
+		if time.Now().After(deadline) {
+			c.Fatalf("scan loop ran %d chain-pause checks, want %d", b.checks.Load(), n)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
 func (s *BlockScannerTestSuite) TestBlockScanner(c *C) {
 	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
@@ -158,6 +200,7 @@ func (s *BlockScannerTestSuite) TestBlockScanner(c *C) {
 	}, s.m, s.keys)
 	c.Assert(err, IsNil)
 
+	counting := &pauseCheckCountingBridge{ThorchainBridge: bridge}
 	cbs, err := NewBlockScanner(config.BifrostBlockScannerConfiguration{
 		StartBlockHeight:           1, // avoids querying thorchain for block height
 		BlockScanProcessors:        1,
@@ -168,7 +211,7 @@ func (s *BlockScannerTestSuite) TestBlockScanner(c *C) {
 		BlockHeightDiscoverBackoff: time.Second,
 		BlockRetryInterval:         time.Second,
 		ChainID:                    common.ETHChain,
-	}, mss, m, bridge, DummyFetcher{})
+	}, mss, m, counting, DummyFetcher{})
 	c.Check(cbs, NotNil)
 	c.Check(err, IsNil)
 	var counter int
@@ -181,7 +224,7 @@ func (s *BlockScannerTestSuite) TestBlockScanner(c *C) {
 	globalChan := make(chan types.TxIn)
 	nfChan := make(chan common.NetworkFee)
 	cbs.Start(globalChan, nfChan)
-	time.Sleep(time.Second * 1)
+	waitForPauseChecks(c, counting, 2)
 	cbs.Stop()
 }
 
@@ -212,6 +255,7 @@ func (s *BlockScannerTestSuite) TestBadBlock(c *C) {
 		ChainHomeFolder: ".",
 	}, s.m, s.keys)
 	c.Assert(err, IsNil)
+	counting := &pauseCheckCountingBridge{ThorchainBridge: bridge}
 	cbs, err := NewBlockScanner(config.BifrostBlockScannerConfiguration{
 		StartBlockHeight:           1, // avoids querying thorchain for block height
 		BlockScanProcessors:        1,
@@ -219,14 +263,14 @@ func (s *BlockScannerTestSuite) TestBadBlock(c *C) {
 		HTTPRequestReadTimeout:     time.Second * 30,
 		HTTPRequestWriteTimeout:    time.Second * 30,
 		MaxHTTPRequestRetry:        3,
-		BlockHeightDiscoverBackoff: time.Second,
+		BlockHeightDiscoverBackoff: 10 * time.Millisecond,
 		BlockRetryInterval:         time.Second,
 		ChainID:                    common.ETHChain,
-	}, mss, m, bridge, DummyFetcher{})
+	}, mss, m, counting, DummyFetcher{})
 	c.Check(cbs, NotNil)
 	c.Check(err, IsNil)
 	cbs.Start(make(chan types.TxIn), make(chan common.NetworkFee))
-	time.Sleep(time.Second * 1)
+	waitForPauseChecks(c, counting, 2)
 	cbs.Stop()
 }
 
@@ -252,6 +296,7 @@ func (s *BlockScannerTestSuite) TestBadConnection(c *C) {
 	}, s.m, s.keys)
 	c.Assert(err, IsNil)
 
+	counting := &pauseCheckCountingBridge{ThorchainBridge: bridge}
 	cbs, err := NewBlockScanner(config.BifrostBlockScannerConfiguration{
 		StartBlockHeight:           1, // avoids querying thorchain for block height
 		BlockScanProcessors:        1,
@@ -262,11 +307,11 @@ func (s *BlockScannerTestSuite) TestBadConnection(c *C) {
 		BlockHeightDiscoverBackoff: time.Second,
 		BlockRetryInterval:         time.Second,
 		ChainID:                    common.ETHChain,
-	}, mss, m, bridge, DummyFetcher{})
+	}, mss, m, counting, DummyFetcher{})
 	c.Check(cbs, NotNil)
 	c.Check(err, IsNil)
 	cbs.Start(make(chan types.TxIn), make(chan common.NetworkFee))
-	time.Sleep(time.Second * 1)
+	waitForPauseChecks(c, counting, 2)
 	cbs.Stop()
 }
 
@@ -433,15 +478,14 @@ func (s *BlockScannerTestSuite) TestRollbackScanner(c *C) {
 	cbs.Start(globalChan, nfChan)
 	defer cbs.Stop()
 
-	// Allow scanner to initialize
-	time.Sleep(time.Second)
-
 	// Call rollback
 	err = cbs.RollbackToLastObserved()
 	c.Assert(err, IsNil)
 
-	// Allow time for rollback to be processed
-	time.Sleep(time.Second * 2)
+	// rollbackChan is unbuffered and the scan loop applies a rollback before it
+	// receives the next one, so a repeat request returns only once the first has
+	// been applied. At the same target the repeat is a no-op.
+	c.Assert(cbs.RollbackToLastObserved(), IsNil)
 
 	// Verify rollback occurred
 	currentHeight := cbs.PreviousHeight()
@@ -464,8 +508,8 @@ func (s *BlockScannerTestSuite) TestRollbackScanner(c *C) {
 	err = cbs.RollbackToLastObserved()
 	c.Assert(err, IsNil)
 
-	// Allow time for rollback to process
-	time.Sleep(time.Second * 2)
+	// Wait for that rollback to be applied (see above)
+	c.Assert(cbs.RollbackToLastObserved(), IsNil)
 
 	// Verify height didn't change (since we were already below the rollback point)
 	c.Assert(cbs.PreviousHeight(), Equals, lowerHeight, Commentf("Height should not change when already below rollback point"))

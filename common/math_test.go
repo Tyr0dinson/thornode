@@ -3,6 +3,8 @@ package common
 import (
 	"errors"
 	"math/big"
+	"slices"
+	"sort"
 
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	. "gopkg.in/check.v1"
@@ -128,4 +130,45 @@ func (s *MathSuite) TestMedianAverageDeviation(c *C) {
 		c.Assert(deviation.Text('f', 2), Equals, tc.Deviation)
 		c.Assert(median.Text('f', 2), Equals, tc.Median)
 	}
+}
+
+// TestMedianAbsoluteDeviationOperands checks what callers see beyond the
+// values: the input slice ends up stably sorted (among equal values the same
+// *big.Float is the median), no input is modified, and the deviation keeps
+// the precision, mode and accuracy of |value - median| computed into fresh
+// Floats.
+func (s *MathSuite) TestMedianAbsoluteDeviationOperands(c *C) {
+	// few distinct values, so many ties, each object at its own precision
+	values := make([]*big.Float, 31)
+	for i := range values {
+		values[i] = new(big.Float).SetPrec(uint(64 + i)).SetInt64(int64(i*7%5) - 2)
+	}
+	before := map[*big.Float]string{}
+	for _, v := range values {
+		before[v] = v.Text('p', 0)
+	}
+	want := slices.Clone(values)
+	sort.SliceStable(want, func(i, j int) bool { return want[i].Cmp(want[j]) < 0 })
+	wantMedian := want[len(want)/2]
+	refs := make([]*big.Float, len(want))
+	for i, v := range want {
+		refs[i] = new(big.Float).Abs(new(big.Float).Sub(v, wantMedian))
+	}
+	sort.SliceStable(refs, func(i, j int) bool { return refs[i].Cmp(refs[j]) < 0 })
+	wantMAD := refs[len(refs)/2]
+
+	deviation, median, err := MedianAbsoluteDeviation(values)
+	c.Assert(err, IsNil)
+
+	c.Assert(median == wantMedian, Equals, true)
+	for i := range values {
+		c.Assert(values[i] == want[i], Equals, true, Commentf("index %d", i))
+	}
+	for v, text := range before {
+		c.Assert(v.Text('p', 0), Equals, text)
+	}
+	c.Assert(deviation.Text('p', 0), Equals, wantMAD.Text('p', 0))
+	c.Assert(deviation.Prec(), Equals, wantMAD.Prec())
+	c.Assert(deviation.Mode(), Equals, wantMAD.Mode())
+	c.Assert(deviation.Acc(), Equals, wantMAD.Acc())
 }

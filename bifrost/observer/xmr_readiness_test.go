@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients"
@@ -294,10 +295,12 @@ func (s *ObserverSuite) TestXMRMaintenanceDeliveryAndStopOwnership(c *check.C) {
 	c.Assert(err, check.IsNil)
 	chain := &xmrStopTestChain{stopped: make(chan struct{})}
 	btc := &xmrStopTestChain{stopped: make(chan struct{})}
+	guardedXMR := &spentRefsGuardChain{ChainClient: chain}
+	gossip := &AttestationGossip{logger: zerolog.Nop()}
 	o, err := NewObserver(pkm, map[common.Chain]chainclients.ChainClient{
-		common.XMRChain: chain, common.BTCChain: btc,
+		common.XMRChain: guardedXMR, common.BTCChain: btc,
 	},
-		s.bridge, s.metrics, c.MkDir(), metrics.NewTssKeysignMetricMgr(), nil, "")
+		s.bridge, s.metrics, c.MkDir(), metrics.NewTssKeysignMetricMgr(), gossip, "")
 	c.Assert(err, check.IsNil)
 	deferred, startupErr := o.startRestoredChainClients()
 	c.Assert(startupErr, check.IsNil)

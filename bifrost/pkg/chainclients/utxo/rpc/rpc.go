@@ -979,6 +979,10 @@ func extractBTCError(err error) error {
 	return btcjson.NewRPCError(response.Error.Code, response.Error.Message)
 }
 
+// retrySleep waits out a retry backoff. Tests replace it to record the
+// backoffs instead of sleeping through them.
+var retrySleep = time.Sleep
+
 // retry will wrap the function call with a retry loop on specific errors - namely 500
 // response when the daemon is overloaded the the work queue is exceeded. We use a
 // simple static backoff of 1 second for now.
@@ -1017,7 +1021,7 @@ func (c *Client) retry(fn func() error) error {
 		c.log.Err(c.redact(0, err)).
 			Str("backoff", backoff.String()).
 			Msgf("retrying %d/%d after backoff", i+1, c.maxRetries)
-		time.Sleep(backoff)
+		retrySleep(backoff)
 
 		// exponential backoff, max 10 seconds
 		backoff *= 2

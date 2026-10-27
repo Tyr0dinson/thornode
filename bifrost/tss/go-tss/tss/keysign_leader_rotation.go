@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/libp2p/go-libp2p-core/peer"
 
@@ -17,14 +18,20 @@ import (
 const (
 	// keysignLeaderRotationVersion gates the GG20/ECDSA keysign leader rotation +
 	// no-blame-on-sync-failure behavior. The version flows from the THORChain network
-	// consensus version (GetThorchainVersion), so the whole fleet flips to the new
-	// party-formation protocol atomically at this release — a rotating node derives a
-	// distinct per-attempt join id and cannot form a party with a pre-rotation peer, so
-	// an atomic, consensus-synchronized switch is mandatory. Mirrors frostJoinRotationVersion.
-	keysignLeaderRotationVersion = "3.21.1"
+	// consensus version (GetThorchainVersion), which is the lowest version among active
+	// validators, so the whole fleet flips to the new party-formation protocol atomically
+	// once the last active node runs this release — a rotating node derives a distinct
+	// per-attempt join id and cannot form a party with a pre-rotation peer, so an atomic,
+	// consensus-synchronized switch is mandatory. The gate must therefore be the first
+	// release that ships this code: a lower gate would switch nodes on one by one as they
+	// upgrade from a release that already meets it. Mirrors frostJoinRotationVersion.
+	keysignLeaderRotationVersion = "3.21.2"
 	// keysignJoinAttemptDomain separates GG20 join-attempt digests from the FROST ones so
 	// the two protocols can never collide on a shared msgID.
 	keysignJoinAttemptDomain = "thorchain-keysign-join-attempt-v1"
+	// keysignSignatureWaitSlack pads the rotated signature wait for start skew between
+	// nodes, matching the slack FROST adds to its result wait (KeySignTimeout+5s).
+	keysignSignatureWaitSlack = 5 * time.Second
 )
 
 // keysignLeaderRotationEnabled reports whether the gated GG20 keysign leader-rotation /
@@ -35,6 +42,21 @@ func keysignLeaderRotationEnabled(version string) (bool, error) {
 		return false, fmt.Errorf("fail to parse keysign leader rotation version: %w", err)
 	}
 	return !old, nil
+}
+
+// keysignSignatureWaitTimeout bounds how long a node waits for a peer's keysign signature.
+// With leader rotation a party can form on any of frostMaxJoinLeaderAttempts join attempts,
+// each bounded by the party timeout, before the signing ceremony itself starts. The wait
+// adds those attempts and keysignSignatureWaitSlack to the keysign timeout, so a signature
+// from a party formed on a later attempt, or by a peer that started a little later, still
+// arrives while this node listens and can abort its own remaining attempts. It is a
+// best-effort budget, not a hard bound: the keysign timeout is an idle timeout, so a
+// ceremony that keeps exchanging messages can run past it.
+func (t *TssServer) keysignSignatureWaitTimeout(version string) time.Duration {
+	if enabled, err := keysignLeaderRotationEnabled(version); err == nil && enabled {
+		return t.conf.KeySignTimeout + keysignSignatureWaitSlack + frostMaxJoinLeaderAttempts*t.conf.PartyTimeout
+	}
+	return t.conf.KeySignTimeout
 }
 
 // keysignJoinAttemptID derives a unique, ephemeral join-party session id for one GG20
@@ -82,7 +104,7 @@ func keysignJoinAttemptID(msgID, leader string, eligiblePeers []string, attempt 
 // same leader — and it emits NO blame between attempts (a join timeout is not signed evidence
 // against any node). Mirrors joinFrostKeySignParty; GG20 keysign has no pre-share state, so
 // rotating a coordinator cannot create a second signing attempt. Attempts are capped at
-// frostMaxJoinLeaderAttempts so the total join budget stays within the keysign timeout.
+// frostMaxJoinLeaderAttempts; keysignSignatureWaitTimeout covers that whole join budget.
 // Quorum-only validation (threshold+1) — unlike FROST the GG20 leader need not be a signer,
 // so there is no leader-presence requirement.
 func (t *TssServer) joinKeySignParty(

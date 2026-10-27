@@ -28,6 +28,11 @@ const (
 	RemoteSignTimeout = 5 * time.Minute
 )
 
+// KeySignBatchInterval is how long the task queue must stay quiet before the
+// queued messages are sent to TSS. Exposed so tests with a fake TSS server can
+// skip the real waiting.
+var KeySignBatchInterval = time.Second
+
 type tssServer interface {
 	KeySign(req keysign.Request) (keysign.Response, error)
 }
@@ -182,7 +187,7 @@ func (s *KeySign) processKeySignTasks() {
 				tasks[t.PoolPubKey] = append(tasks[t.PoolPubKey], t)
 			}
 			taskLock.Unlock()
-		case <-time.After(time.Second):
+		case <-time.After(KeySignBatchInterval):
 			// This implementation will check the tasks every second , and send whatever is in the queue to TSS
 			// if it has more than maxKeysignPerRequest(15) in the queue , it will only send the first maxKeysignPerRequest(15) of them
 			// the reset will be send in the next request

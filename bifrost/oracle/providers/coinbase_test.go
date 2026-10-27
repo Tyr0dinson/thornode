@@ -29,8 +29,12 @@ func (s *ProviderTestSuite) TestCoinbaseProvider(c *C) {
 
 	// test polling
 
-	// does one request per asset, so wait for them to complete
-	pollAndWait(c, provider.websocketProvider, provider.Poll, "BTC/USD", "ETH/USD")
+	provider.Poll()
+
+	waitForPrices(provider, 2, map[string]string{
+		"BTC/USD": "108769.08",
+		"ETH/USD": "2613.33",
+	})
 
 	tickers, err := provider.GetTickers()
 	c.Assert(err, IsNil)
@@ -57,14 +61,15 @@ func (s *ProviderTestSuite) TestCoinbaseProvider(c *C) {
 
 	// test websocket
 
-	// Start polls REST before connecting; finish that poll first so a late
-	// REST response cannot overwrite the websocket prices asserted below.
-	provider.poll = func() {
-		pollAndWait(c, provider.websocketProvider, provider.Poll, "BTC/USD", "ETH/USD")
-	}
+	// Start polls in background goroutines before connecting
+	settleStartPoll(provider.websocketProvider, 2, map[string]string{
+		"BTC/USD": "108769.08",
+		"ETH/USD": "2613.33",
+	})
+
 	provider.Start()
 
-	waitForTickerPrices(c, provider.websocketProvider, map[string]string{
+	waitForPrices(provider, 2, map[string]string{
 		"BTC/USD": "108741.64",
 		"ETH/USD": "2610.05",
 	})

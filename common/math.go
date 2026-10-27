@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"slices"
 	"sort"
 
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
@@ -114,8 +115,9 @@ func MedianAbsoluteDeviation(values []*big.Float) (*big.Float, *big.Float, error
 
 	deviations := make([]*big.Float, len(values))
 	for i, value := range values {
+		// difference is fresh, so Abs can reuse it
 		difference := new(big.Float).Sub(value, median)
-		deviations[i] = new(big.Float).Abs(difference)
+		deviations[i] = difference.Abs(difference)
 	}
 
 	mad, err := GetMedianBigFloat(deviations)
@@ -134,9 +136,7 @@ func GetMedianBigFloat(values []*big.Float) (*big.Float, error) {
 		return values[0], nil
 	}
 
-	sort.SliceStable(values, func(i, j int) bool {
-		return values[i].Cmp(values[j]) < 0
-	})
+	slices.SortStableFunc(values, (*big.Float).Cmp)
 
 	if len(values)%2 > 0 {
 		return values[len(values)/2], nil

@@ -75,6 +75,7 @@ func TestCatchupConsolidationImportKeepsNextConsolidationReservable(t *testing.T
 		},
 	}
 
+	allowSpentOutputRefsImports(c)
 	c.catchupSpentOutputRefs()
 	require.EqualValues(t, 1, marked.Load(), "catch-up must import the consolidation")
 

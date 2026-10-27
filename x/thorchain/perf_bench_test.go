@@ -494,11 +494,14 @@ func BenchmarkPerfObservedTxQuorumIn(b *testing.B) {
 		name      string
 		pre       int // attestations already recorded before the measured msg
 		attesting int
+		coldSigs  bool // verify every signature inline: none warmed by ebifrost
 	}{
-		{"fresh-1", 0, 1},
-		{"batch-quorum", 0, quorum},
-		{"batch-all", 0, len(f.nodes)},
-		{"late-1-after-quorum", quorum, 1},
+		{"fresh-1", 0, 1, false},
+		{"batch-quorum", 0, quorum, false},
+		{"batch-all", 0, len(f.nodes), false},
+		{"late-1-after-quorum", quorum, 1, false},
+		{"batch-quorum-cold-sigs", 0, quorum, true},
+		{"batch-all-cold-sigs", 0, len(f.nodes), true},
 	}
 	for _, tc := range cases {
 		b.Run(tc.name, func(b *testing.B) {
@@ -526,6 +529,9 @@ func BenchmarkPerfObservedTxQuorumIn(b *testing.B) {
 				}
 			}
 			fx.measure(b, height, func(ctx cosmos.Context) error {
+				if tc.coldSigs {
+					common.ResetVerifiedAttestationSigs()
+				}
 				_, err := h.Run(ctx, msg)
 				return err
 			})
@@ -600,9 +606,11 @@ func BenchmarkPerfObservedTxQuorumOut(b *testing.B) {
 	cases := []struct {
 		name      string
 		attesting int
+		coldSigs  bool // verify every signature inline: none warmed by ebifrost
 	}{
-		{"fresh-1", 1},
-		{"batch-quorum", quorum},
+		{"fresh-1", 1, false},
+		{"batch-quorum", quorum, false},
+		{"batch-quorum-cold-sigs", quorum, true},
 	}
 	for _, tc := range cases {
 		b.Run(tc.name, func(b *testing.B) {
@@ -619,6 +627,9 @@ func BenchmarkPerfObservedTxQuorumOut(b *testing.B) {
 				}
 			}
 			f.measure(b, height+3, func(ctx cosmos.Context) error {
+				if tc.coldSigs {
+					common.ResetVerifiedAttestationSigs()
+				}
 				_, err := h.Run(ctx, msg)
 				return err
 			})
@@ -663,6 +674,16 @@ func BenchmarkPerfTssKeysignFail(b *testing.B) {
 // ---------------------------------------------------------------------------
 
 func BenchmarkPerfPriceFeedQuorumBatch(b *testing.B) {
+	benchmarkPerfPriceFeedQuorumBatch(b, false)
+}
+
+// BenchmarkPerfPriceFeedQuorumBatchColdSigs verifies every feed signature
+// inline, as when none were warmed by ebifrost before the block.
+func BenchmarkPerfPriceFeedQuorumBatchColdSigs(b *testing.B) {
+	benchmarkPerfPriceFeedQuorumBatch(b, true)
+}
+
+func benchmarkPerfPriceFeedQuorumBatch(b *testing.B, coldSigs bool) {
 	f := newPerfFixture(b)
 	height := f.ctx.BlockHeight() + 1
 	symbols := strings.Split(f.mgr.GetConstants().GetStringValue(constants.RequiredPriceFeeds), ",")
@@ -694,6 +715,9 @@ func BenchmarkPerfPriceFeedQuorumBatch(b *testing.B) {
 	}
 	h := NewPriceFeedQuorumBatchHandler(f.mgr)
 	f.measure(b, height, func(ctx cosmos.Context) error {
+		if coldSigs {
+			common.ResetVerifiedAttestationSigs()
+		}
 		_, err := h.Run(ctx, msg)
 		return err
 	})

@@ -23,7 +23,8 @@ The JSON Lines report contains per-test results for CI or local inspection. It
 rejects unexpected skips and clears integration RPC settings, so it never
 connects to a live chain. `TestDogeStalledBroadcastIsNotDuplicated` and
 `TestZecIsolatedFunding` require separately provisioned isolated daemons and
-are the only expected skips. To check test order isolation, run from
+are the only expected skips. The `test-utxo-daemons` CI job runs them against
+fresh mocknet daemons (see `make test-utxo-daemons`). To check test order isolation, run from
 `test/simulation` with the same build lock:
 
 ```bash

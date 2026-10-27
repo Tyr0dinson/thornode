@@ -187,7 +187,7 @@ func GetTxInFromDirectERC20Transfer(
 			return nil, errors.New("signer is nil")
 		}
 		var err error
-		sender, err = opts.Signer.Sender(tx)
+		sender, err = etypes.Sender(opts.Signer, tx)
 		if err != nil {
 			if opts.SenderErrorMessage == "" {
 				opts.SenderErrorMessage = "failed to get sender"

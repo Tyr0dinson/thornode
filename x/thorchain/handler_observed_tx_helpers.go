@@ -19,8 +19,9 @@ import (
 	mem "gitlab.com/thorchain/thornode/v3/x/thorchain/memo"
 )
 
-// processTxInAttestation processes a single attestation for an observed tx.
-// This is used by both MsgObservedTxIn (single attester) and MsgObservedTxInQuorum (multiple attesters).
+// processTxInAttestation applies a single attestation for an observed tx and saves
+// the voter. MsgObservedTxIn (single attester) uses it; MsgObservedTxQuorum applies
+// its attestations with applyTxInAttestation and saves the voter once.
 func processTxInAttestation(
 	ctx cosmos.Context,
 	mgr Manager,
@@ -30,6 +31,26 @@ func processTxInAttestation(
 	signer cosmos.AccAddress,
 	shouldSlashForDuplicate bool,
 ) (ObservedTxVoter, bool) {
+	voter, ok, added := applyTxInAttestation(ctx, mgr, voter, nas, tx, signer, shouldSlashForDuplicate)
+	if added {
+		mgr.Keeper().SetObservedTxInVoter(ctx, voter)
+	}
+	return voter, ok
+}
+
+// applyTxInAttestation records a single attestation on the voter without saving
+// it, so a quorum message can save the voter once after all its attestations.
+// It returns the voter, whether this attestation brought it to consensus, and
+// whether it was recorded: false for a duplicate, which leaves the voter unchanged.
+func applyTxInAttestation(
+	ctx cosmos.Context,
+	mgr Manager,
+	voter ObservedTxVoter,
+	nas NodeAccounts,
+	tx ObservedTx,
+	signer cosmos.AccAddress,
+	shouldSlashForDuplicate bool,
+) (ObservedTxVoter, bool, bool) {
 	k := mgr.Keeper()
 	slasher := mgr.Slasher()
 
@@ -78,7 +99,7 @@ func processTxInAttestation(
 			[]metrics.Label{obsChain, obsDir, telemetry.NewLabel("result", "duplicate")},
 		)
 		// A duplicate message, so do nothing further.
-		return voter, ok
+		return voter, ok, false
 	}
 
 	// Single mutually-exclusive attestation result per call; late wins over redundant.
@@ -169,10 +190,7 @@ func processTxInAttestation(
 		[]metrics.Label{obsChain, obsDir, telemetry.NewLabel("result", attResult)},
 	)
 
-	k.SetObservedTxInVoter(ctx, voter)
-
-	// Check to see if we have enough identical observations to process the transaction
-	return voter, ok
+	return voter, ok, true
 }
 
 // ensureVaultAndGetTxInVoter will make sure the vault exists, then get the ObservedTxInVoter from the store.
@@ -647,8 +665,9 @@ func xmrMigrateInboundMatchesTxOut(tx common.Tx, item TxOutItem) bool {
 	return !received.LT(minReceived) && !received.GT(maxReceived)
 }
 
-// processTxOutAttestation processes a single attestation for an observed tx.
-// This is used by both MsgObservedTxOut (single attester) and MsgObservedTxOutQuorum (multiple attesters).
+// processTxOutAttestation applies a single attestation for an observed tx and saves
+// the voter. MsgObservedTxOut (single attester) uses it; MsgObservedTxQuorum applies
+// its attestations with applyTxOutAttestation and saves the voter once.
 func processTxOutAttestation(
 	ctx cosmos.Context,
 	mgr Manager,
@@ -658,6 +677,26 @@ func processTxOutAttestation(
 	signer cosmos.AccAddress,
 	shouldSlashForDuplicate bool,
 ) (ObservedTxVoter, bool) {
+	voter, ok, added := applyTxOutAttestation(ctx, mgr, voter, nas, tx, signer, shouldSlashForDuplicate)
+	if added {
+		mgr.Keeper().SetObservedTxOutVoter(ctx, voter)
+	}
+	return voter, ok
+}
+
+// applyTxOutAttestation records a single attestation on the voter without saving
+// it, so a quorum message can save the voter once after all its attestations.
+// It returns the voter, whether this attestation brought it to consensus, and
+// whether it was recorded: false for a duplicate, which leaves the voter unchanged.
+func applyTxOutAttestation(
+	ctx cosmos.Context,
+	mgr Manager,
+	voter ObservedTxVoter,
+	nas NodeAccounts,
+	tx ObservedTx,
+	signer cosmos.AccAddress,
+	shouldSlashForDuplicate bool,
+) (ObservedTxVoter, bool, bool) {
 	k := mgr.Keeper()
 	slasher := mgr.Slasher()
 
@@ -706,7 +745,7 @@ func processTxOutAttestation(
 			[]metrics.Label{obsChain, obsDir, telemetry.NewLabel("result", "duplicate")},
 		)
 		// A duplicate message, so do nothing further.
-		return voter, ok
+		return voter, ok, false
 	}
 
 	// Single mutually-exclusive attestation result per call; late wins over redundant.
@@ -854,10 +893,7 @@ func processTxOutAttestation(
 		[]metrics.Label{obsChain, obsDir, telemetry.NewLabel("result", attResult)},
 	)
 
-	k.SetObservedTxOutVoter(ctx, voter)
-
-	// Check to see if we have enough identical observations to process the transaction
-	return voter, ok
+	return voter, ok, true
 }
 
 // countMatchingSigners counts the number of unique active node signers that have observed

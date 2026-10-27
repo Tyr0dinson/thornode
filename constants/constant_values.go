@@ -216,6 +216,8 @@ const (
 	MissingObservationHalfLife
 	MissingObservationMinSamples
 	MissingObservationGuardMaxBlocks
+
+	LUVIOverhangGuard
 )
 
 // ConstantValues define methods used to get constant values

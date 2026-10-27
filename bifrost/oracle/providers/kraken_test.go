@@ -2,7 +2,6 @@ package providers
 
 import (
 	"encoding/json"
-	"time"
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	. "gopkg.in/check.v1"
@@ -64,7 +63,10 @@ func (s *ProviderTestSuite) TestKrakenProvider(c *C) {
 
 	provider.Start()
 
-	time.Sleep(500 * time.Millisecond)
+	waitForPrices(provider, 2, map[string]string{
+		"BTC/USD": "109699.90",
+		"ETH/USD": "2663.37",
+	})
 
 	tickers, err = provider.GetTickers()
 	c.Assert(err, IsNil)

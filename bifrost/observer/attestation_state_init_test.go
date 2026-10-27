@@ -1235,8 +1235,11 @@ func TestAskStreamForStateEmptyState(t *testing.T) {
 
 // stateSyncTestFrameTimeout replaces the ordinary per-frame read deadline in
 // the deadline tests; their stalls, slow batches and budgets are multiples of
-// it. Local pipes answer in microseconds, so a quarter second is ample.
-const stateSyncTestFrameTimeout = 250 * time.Millisecond
+// it. It also bounds how long the sender waits for the receiver to process
+// each batch, which includes leveldb writes. 250ms was too short on a loaded
+// CI runner: TestStateSyncExportReleaseOnEveryExit failed its retry step in
+// 1 of 70 to 1 of 280 subtests with 8 copies in parallel; 1s gave 0 of 1,120.
+const stateSyncTestFrameTimeout = time.Second
 
 // Successful stream cleanup may log after the handler and its test return.
 type stateSyncLogBuffer struct {

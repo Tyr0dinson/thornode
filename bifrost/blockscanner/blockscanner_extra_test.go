@@ -25,6 +25,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/cmd"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/config"
+	"gitlab.com/thorchain/thornode/v3/constants"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain"
 )
 
@@ -42,6 +43,28 @@ var errTest = errors.New("test error")
 
 var initMetricsOnce sync.Once
 
+// waitForScanner polls until cond holds, so a test waits for the scan loop
+// state it asserts on instead of sleeping a fixed time.
+func waitForScanner(c *C, cond func() bool, what string) {
+	deadline := time.Now().Add(30 * time.Second)
+	for !cond() {
+		if time.Now().After(deadline) {
+			c.Fatalf("timed out waiting for %s", what)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+// withShortBlockTime runs the rest of a test with a 50ms THORChain block time,
+// which paces the scan loop's paused-chain sleep (see
+// BlockScannerTestSuite.SetUpTest). Stop the scanner before the returned
+// restore runs.
+func withShortBlockTime() (restore func()) {
+	previous := constants.ThorchainBlockTime
+	constants.ThorchainBlockTime = 50 * time.Millisecond
+	return func() { constants.ThorchainBlockTime = previous }
+}
+
 // ---------------------------------------------------------------------------
 // configurable mock fetcher
 // ---------------------------------------------------------------------------
@@ -53,6 +76,8 @@ type configFetcher struct {
 	chainHeightErr error
 	networkFeeSize uint64
 	networkFeeRate uint64
+
+	fetches atomic.Int64 // FetchTxs calls
 }
 
 func (f *configFetcher) FetchMemPool(height int64) (types.TxIn, error) {
@@ -60,6 +85,7 @@ func (f *configFetcher) FetchMemPool(height int64) (types.TxIn, error) {
 }
 
 func (f *configFetcher) FetchTxs(fetchHeight, chainHeight int64) (types.TxIn, error) {
+	f.fetches.Add(1)
 	return f.txIn, f.fetchErr
 }
 
@@ -842,7 +868,9 @@ func (s *BlockScannerExtraSuite) TestStartStopWithMempoolDisabled(c *C) {
 		}
 	}))
 	defer server.Close()
-	bridge := s.makeBridge(c, server)
+	// The mimir fixture halts the chain, so Stop waits out a paused-chain sleep.
+	defer withShortBlockTime()()
+	bridge := &pauseCheckCountingBridge{ThorchainBridge: s.makeBridge(c, server)}
 
 	mss := NewMockScannerStorage()
 	scanner, err := NewBlockScanner(config.BifrostBlockScannerConfiguration{
@@ -859,7 +887,7 @@ func (s *BlockScannerExtraSuite) TestStartStopWithMempoolDisabled(c *C) {
 	globalChan := make(chan types.TxIn)
 	nfChan := make(chan common.NetworkFee)
 	scanner.Start(globalChan, nfChan)
-	time.Sleep(500 * time.Millisecond)
+	waitForPauseChecks(c, bridge, 2)
 	scanner.Stop()
 }
 
@@ -962,7 +990,7 @@ func (s *BlockScannerExtraSuite) TestScanBlocksWithPrefetch(c *C) {
 	globalChan := make(chan types.TxIn, 20)
 	nfChan := make(chan common.NetworkFee, 5)
 	scanner.Start(globalChan, nfChan)
-	time.Sleep(2 * time.Second)
+	waitForScanner(c, func() bool { return scanner.PreviousHeight() >= 10 }, "scan to the chain tip")
 	scanner.Stop()
 
 	c.Check(scanner.PreviousHeight() > 1, Equals, true)
@@ -997,7 +1025,7 @@ func (s *BlockScannerExtraSuite) TestScanMempoolEnabled(c *C) {
 		StartBlockHeight:           1,
 		BlockScanProcessors:        1,
 		HTTPRequestTimeout:         time.Second,
-		BlockHeightDiscoverBackoff: time.Second,
+		BlockHeightDiscoverBackoff: 10 * time.Millisecond,
 		BlockRetryInterval:         time.Second,
 		ChainID:                    common.ETHChain,
 		ScanMemPool:                true,
@@ -1007,7 +1035,7 @@ func (s *BlockScannerExtraSuite) TestScanMempoolEnabled(c *C) {
 	globalChan := make(chan types.TxIn, 10)
 	nfChan := make(chan common.NetworkFee, 5)
 	scanner.Start(globalChan, nfChan)
-	time.Sleep(2 * time.Second)
+	waitForScanner(c, func() bool { return len(globalChan) > 0 }, "a queued mempool tx")
 	scanner.Stop()
 
 	// Mempool txs should have been queued
@@ -1044,7 +1072,8 @@ func (s *BlockScannerExtraSuite) TestScanBlocksUnhealthy(c *C) {
 	globalChan := make(chan types.TxIn, 100)
 	nfChan := make(chan common.NetworkFee, 5)
 	scanner.Start(globalChan, nfChan)
-	time.Sleep(1 * time.Second)
+	// health is set on every scanned block
+	waitForScanner(c, func() bool { return scanner.PreviousHeight() > 1 }, "a scanned block")
 	scanner.Stop()
 
 	// Scanner should be unhealthy when significantly behind
@@ -1117,7 +1146,8 @@ func (s *BlockScannerExtraSuite) TestScanBlocksFetchError(c *C) {
 	globalChan := make(chan types.TxIn, 20)
 	nfChan := make(chan common.NetworkFee, 5)
 	scanner.Start(globalChan, nfChan)
-	time.Sleep(1 * time.Second)
+	// a second fetch means the first failure was handled and backed off
+	waitForScanner(c, func() bool { return fetcher.fetches.Load() >= 2 }, "a retried fetch")
 	scanner.Stop()
 
 	// Scanner should become unhealthy on fetch errors

@@ -2,6 +2,7 @@ package keeperv1
 
 import (
 	"bytes"
+	"math/big"
 	"slices"
 	"sync"
 
@@ -126,8 +127,9 @@ var vaultDecodeMemo = newDecodeMemo(vaultMemoMaxEntries,
 // other field of a Vault, and of its Coins and Routers, is a value or an
 // immutable string. nil slices stay nil.
 func cloneVault(v Vault) Vault {
-	v.Coins = cloneCoins(v.Coins)
-	v.Deficit = cloneCoins(v.Deficit)
+	words := make(uintWords, 0, coinsWordCount(v.Coins)+coinsWordCount(v.Deficit))
+	v.Coins = words.cloneCoins(v.Coins)
+	v.Deficit = words.cloneCoins(v.Deficit)
 	v.Membership = slices.Clone(v.Membership)
 	v.Chains = slices.Clone(v.Chains)
 	v.PendingTxBlockHeights = slices.Clone(v.PendingTxBlockHeights)
@@ -136,11 +138,52 @@ func cloneVault(v Vault) Vault {
 	return v
 }
 
-// cloneCoins returns a copy of cs sharing no memory with it; nil stays nil.
-func cloneCoins(cs common.Coins) common.Coins {
+// uintWords is a slab that cloned Uints take their words from: copying a
+// record's amounts with cloneUint costs a big.Int and a word slice each,
+// through the slab only the big.Int (a Uint can only wrap one it allocated).
+// Each clone's words are clipped to their length, so growing one in place
+// reallocates instead of running into the next. Sized with wordCount, the
+// slab is one allocation.
+type uintWords []big.Word
+
+// wordCount is the number of words cloning u takes from a uintWords.
+func wordCount(u cosmos.Uint) int {
+	if u.IsNil() {
+		return 0
+	}
+	return len(u.BigIntMut().Bits())
+}
+
+// coinsWordCount is the number of words cloning cs's amounts takes from a
+// uintWords.
+func coinsWordCount(cs common.Coins) int {
+	n := 0
+	for i := range cs {
+		n += wordCount(cs[i].Amount)
+	}
+	return n
+}
+
+// clone is cloneUint with u's words carved out of w.
+func (w *uintWords) clone(u cosmos.Uint) cosmos.Uint {
+	if u.IsNil() {
+		return u
+	}
+	c := cosmos.ZeroUint()
+	if bits := u.BigIntMut().Bits(); len(bits) > 0 {
+		start := len(*w)
+		*w = append(*w, bits...)
+		c.BigIntMut().SetBits((*w)[start:len(*w):len(*w)])
+	}
+	return c
+}
+
+// cloneCoins returns a copy of cs sharing no memory with it, its amounts'
+// words carved out of w; nil stays nil.
+func (w *uintWords) cloneCoins(cs common.Coins) common.Coins {
 	cs = slices.Clone(cs)
 	for i := range cs {
-		cs[i].Amount = cloneUint(cs[i].Amount)
+		cs[i].Amount = w.clone(cs[i].Amount)
 	}
 	return cs
 }
@@ -164,12 +207,15 @@ var poolDecodeMemo = newDecodeMemo(poolMemoMaxEntries,
 // clonePool returns a copy of p sharing no big.Int with it. Its Asset holds
 // only strings and every other field is a value.
 func clonePool(p Pool) Pool {
-	p.BalanceRune = cloneUint(p.BalanceRune)
-	p.BalanceAsset = cloneUint(p.BalanceAsset)
-	p.LPUnits = cloneUint(p.LPUnits)
-	p.SynthUnits = cloneUint(p.SynthUnits)
-	p.PendingInboundRune = cloneUint(p.PendingInboundRune)
-	p.PendingInboundAsset = cloneUint(p.PendingInboundAsset)
+	words := make(uintWords, 0, wordCount(p.BalanceRune)+wordCount(p.BalanceAsset)+
+		wordCount(p.LPUnits)+wordCount(p.SynthUnits)+
+		wordCount(p.PendingInboundRune)+wordCount(p.PendingInboundAsset))
+	p.BalanceRune = words.clone(p.BalanceRune)
+	p.BalanceAsset = words.clone(p.BalanceAsset)
+	p.LPUnits = words.clone(p.LPUnits)
+	p.SynthUnits = words.clone(p.SynthUnits)
+	p.PendingInboundRune = words.clone(p.PendingInboundRune)
+	p.PendingInboundAsset = words.clone(p.PendingInboundAsset)
 	return p
 }
 

@@ -2,7 +2,6 @@ package providers
 
 import (
 	"encoding/json"
-	"time"
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	. "gopkg.in/check.v1"
@@ -59,7 +58,10 @@ func (s *ProviderTestSuite) TestBitfinexProvider(c *C) {
 
 	provider.Start()
 
-	time.Sleep(500 * time.Millisecond)
+	waitForPrices(provider, 2, map[string]string{
+		"BTC/USD": "109830.00",
+		"ETH/USD": "2726.70",
+	})
 
 	tickers, err = provider.GetTickers()
 	c.Assert(err, IsNil)
