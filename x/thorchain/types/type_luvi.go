@@ -410,6 +410,11 @@ func NewLuviStepEvents(events []map[string]string) LuviStepEvents {
 		case SwapEventType:
 			out.Swaps[e["pool"]]++
 		case LuviLossEventType:
+			// a rejected flow's state changes were reverted, so its loss is
+			// not part of the enclosing step's change in G
+			if e["rejected"] == "true" {
+				continue
+			}
 			out.Reported[e["pool"]] = true
 			if e["excess"] == "true" {
 				out.ReportedExcess[e["pool"]] = true

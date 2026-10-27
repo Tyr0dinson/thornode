@@ -610,6 +610,25 @@ func (s *LuviGuardSuite) TestPendingCommitSkipsOverhangPool(c *C) {
 	c.Check(got.PendingRune.IsZero(), Equals, true)
 }
 
+func (s *LuviGuardSuite) TestEndBlockScopeIgnoresRejectedInnerReports(c *C) {
+	e := newLuviEnv(c, luviRegime{"no synths", 0})
+	ctx, outer := beginLuviScope(e.ctx, e.mgr.Keeper(), "endblock/test", "", false)
+	// a user flow inside the step is rejected: its loss is reported on the
+	// step context, but its changes are reverted
+	cacheCtx, _ := ctx.CacheContext()
+	err := runLuviGuarded(ctx, cacheCtx, e.mgr, e.guardMsg(), func(runCtx cosmos.Context) error { e.steal(runCtx, 10); return nil })
+	c.Assert(errors.Is(err, errLuviGuard), Equals, true)
+	c.Assert(luviLossEvents(e.ctx), HasLen, 1)
+	// a loss the step itself causes is still reported
+	e.steal(ctx, 10)
+	outer.end(ctx, e.mgr)
+	evts := luviLossEvents(e.ctx)
+	c.Assert(evts, HasLen, 2)
+	c.Check(evts[1]["scope"], Equals, "endblock/test")
+	c.Check(evts[1]["excess"], Equals, "true")
+	c.Check(evts[1]["rejected"], Equals, "false")
+}
+
 func (s *LuviGuardSuite) TestLuviStatesEqualNil(c *C) {
 	one := cosmos.OneUint()
 	full := types2.LuviState{BalanceRune: one, BalanceAsset: one, LPUnits: one, SynthSupply: one, PoolUnits: one}
