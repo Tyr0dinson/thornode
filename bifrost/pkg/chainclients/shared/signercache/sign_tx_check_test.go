@@ -174,6 +174,37 @@ func (s *SignTxCheckSuite) TestSignTxCacheCheck_PhaseVerifiedAbsentCleared(c *C)
 	c.Assert(mock.removeSignedCalls, DeepEquals, []string{testSig})
 }
 
+// Final failure is distinct from absence: retaining the failed broadcast lets
+// the caller reject its checkpoint again if construction fails or it restarts.
+func (s *SignTxCheckSuite) TestSignTxCacheCheck_PhaseVerifiedFailed(c *C) {
+	cm, mock := makeManager(true, true, testSig, true)
+	verify := &recordingVerify{result: LookupFailed}
+
+	for i := 0; i < 2; i++ {
+		got := cm.SignTxCacheCheck(testCacheHash, gateOn, verify.fn)
+
+		c.Assert(got.SkipSign, Equals, false)
+		c.Assert(got.Phase, Equals, PhaseVerifiedFailed)
+		c.Assert(got.Sig, Equals, testSig)
+		c.Assert(got.Noteworthy(), Equals, true)
+		c.Assert(mock.removeSignedCalls, IsNil)
+	}
+	c.Assert(verify.calls, DeepEquals, []string{testSig, testSig})
+}
+
+func (s *SignTxCheckSuite) TestSignTxCacheCheck_UnknownLookupRetainsCache(c *C) {
+	cm, mock := makeManager(true, true, testSig, true)
+	verify := &recordingVerify{result: LookupResult(999)}
+
+	got := cm.SignTxCacheCheck(testCacheHash, gateOn, verify.fn)
+
+	c.Assert(got.SkipSign, Equals, true)
+	c.Assert(got.Phase, Equals, PhaseVerifiedAmbiguous)
+	c.Assert(got.Sig, Equals, testSig)
+	c.Assert(verify.calls, DeepEquals, []string{testSig})
+	c.Assert(mock.removeSignedCalls, IsNil)
+}
+
 // VerifyFn is invoked at most once per call. Tests above already enforce
 // "at least once" via DeepEquals; this guards against a future refactor
 // adding redundant lookups (e.g. retry loops).
@@ -242,6 +273,7 @@ func (s *SignTxCheckSuite) TestCacheCheckPhaseStrings(c *C) {
 		PhaseVerifiedFound,
 		PhaseVerifiedAmbiguous,
 		PhaseVerifiedAbsentCleared,
+		PhaseVerifiedFailed,
 	}
 	seen := map[string]bool{}
 	for _, p := range phases {
@@ -256,4 +288,17 @@ func (s *SignTxCheckSuite) TestCacheCheckPhaseStrings(c *C) {
 // Unrecognized phase value falls through to "unknown phase".
 func (s *SignTxCheckSuite) TestCacheCheckPhaseStringUnknown(c *C) {
 	c.Assert(CacheCheckPhase(999).String(), Equals, "unknown phase")
+}
+
+func (s *SignTxCheckSuite) TestCacheCheckNoteworthy(c *C) {
+	for _, phase := range []CacheCheckPhase{
+		PhaseNoEntry, PhaseFresh, PhaseExpiredGateOff, PhaseExpiredNoSig, PhaseVerifiedFound,
+	} {
+		c.Assert((CacheCheck{Phase: phase}).Noteworthy(), Equals, false)
+	}
+	for _, phase := range []CacheCheckPhase{
+		PhaseVerifiedAmbiguous, PhaseVerifiedAbsentCleared, PhaseVerifiedFailed,
+	} {
+		c.Assert((CacheCheck{Phase: phase}).Noteworthy(), Equals, true)
+	}
 }
