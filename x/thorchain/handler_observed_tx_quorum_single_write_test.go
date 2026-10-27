@@ -3,8 +3,8 @@ package thorchain
 import (
 	"bytes"
 
-	storetypes "cosmossdk.io/store/types"
 	"github.com/cometbft/cometbft/crypto/secp256k1"
+	storetypes "github.com/cosmos/cosmos-sdk/store/v2/types"
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/v3/common"

@@ -54,6 +54,11 @@ var (
 
 const attestationBech32CacheMax = 4096
 
+// attestationSDKConfig is the process's SDK config. sdk.GetConfig rebuilds its
+// registry key (executable, hostname, pid) on every call, which allocates, and
+// the registry hands back the same *Config for the life of the process.
+var attestationSDKConfig = sync.OnceValue(cosmos.GetConfig)
+
 // attestationBech32Entry is a key's encoding and the account pubkey prefix it
 // was made under. The cache is keyed by the raw key bytes, so lookups do not
 // allocate; an entry made under another prefix is never served.
@@ -67,7 +72,7 @@ func attestationBech32Pub(key []byte) (string, error) {
 	attestationBech32CacheMu.RLock()
 	e, ok := attestationBech32Cache[string(key)]
 	attestationBech32CacheMu.RUnlock()
-	if ok && e.prefix == cosmos.GetConfig().GetBech32AccountPubPrefix() {
+	if ok && e.prefix == attestationSDKConfig().GetBech32AccountPubPrefix() {
 		return e.bech32Pub, nil
 	}
 	pk := secp256k1.PubKey{Key: key}
@@ -77,7 +82,7 @@ func attestationBech32Pub(key []byte) (string, error) {
 // rememberAttestationBech32Pub stores a successful encoding of an active
 // node's key, replacing one made under another prefix.
 func rememberAttestationBech32Pub(key []byte, bech32Pub string) {
-	prefix := cosmos.GetConfig().GetBech32AccountPubPrefix()
+	prefix := attestationSDKConfig().GetBech32AccountPubPrefix()
 	attestationBech32CacheMu.Lock()
 	if e, ok := attestationBech32Cache[string(key)]; ok && e.prefix != prefix || !ok && len(attestationBech32Cache) < attestationBech32CacheMax {
 		attestationBech32Cache[string(key)] = attestationBech32Entry{prefix: prefix, bech32Pub: bech32Pub}

@@ -1,7 +1,6 @@
 package tss
 
 import (
-	"context"
 	"encoding/base64"
 	"encoding/json"
 	"os"
@@ -9,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/libp2p/go-libp2p-core/peer"
 	tnet "github.com/libp2p/go-libp2p-testing/net"
+	"github.com/libp2p/go-libp2p/core/peer"
 	mocknet "github.com/libp2p/go-libp2p/p2p/net/mock"
 	"github.com/rs/zerolog"
 	tsslibcommon "gitlab.com/thorchain/tss/tss-lib-private.git/v3/common"
@@ -154,7 +153,7 @@ func TestWaitForSignaturesReceivesSignatureFromRotatedParty(t *testing.T) {
 		{"3.22.0", true},
 	}
 	for _, c := range cases {
-		mn := mocknet.New(context.Background())
+		mn := mocknet.New()
 		h1, err := mn.AddPeer(tnet.RandIdentityOrFatal(t).PrivateKey(), tnet.RandLocalTCPAddress())
 		if err != nil {
 			t.Fatal(err)
