@@ -609,3 +609,12 @@ func (s *LuviGuardSuite) TestPendingCommitSkipsOverhangPool(c *C) {
 	c.Assert(err, IsNil)
 	c.Check(got.PendingRune.IsZero(), Equals, true)
 }
+
+func (s *LuviGuardSuite) TestLuviStatesEqualNil(c *C) {
+	one := cosmos.OneUint()
+	full := types2.LuviState{BalanceRune: one, BalanceAsset: one, LPUnits: one, SynthSupply: one, PoolUnits: one}
+	c.Check(luviStatesEqual(full, full), Equals, true)
+	c.Check(luviStatesEqual(types2.LuviState{}, types2.LuviState{}), Equals, true)
+	c.Check(luviStatesEqual(full, types2.LuviState{}), Equals, false)
+	c.Check(luviStatesEqual(types2.LuviState{}, full), Equals, false)
+}
