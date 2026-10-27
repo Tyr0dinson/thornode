@@ -567,6 +567,10 @@ func (k KVStoreDummy) SortBySecurity(_ cosmos.Context, _ Vaults, _ int64) Vaults
 func (k KVStoreDummy) GetPendingOutbounds(_ cosmos.Context, _ common.Asset) []TxOutItem {
 	return nil
 }
+
+func (k KVStoreDummy) GetPendingOutboundsByChain(_ cosmos.Context, _ common.Chain) []TxOutItem {
+	return nil
+}
 func (k KVStoreDummy) DeleteVault(_ cosmos.Context, _ common.PubKey) error { return kaboom }
 
 func (k KVStoreDummy) HasValidVaultPools(_ cosmos.Context) (bool, error)         { return false, kaboom }

@@ -333,15 +333,33 @@ func (k KVStore) getSortedVaultSecurity(ctx cosmos.Context, vaults Vaults, signi
 // GetPendingOutbounds selects txouts in the outbound and scheduled outbound queues (for deduction to leave only 'available' balances),
 // as the amounts of both types of txout items are yet to be deducted from the vault balances.
 func (k KVStore) GetPendingOutbounds(ctx cosmos.Context, asset common.Asset) []TxOutItem {
+	// Use the longest period the requested asset's underlying chain can contain.
+	// GetChain reports THOR for synth, trade, and secured assets, so use the L1
+	// chain to retain any EVM/XMR-backed liabilities conservatively.
+	return k.getPendingOutbounds(ctx, asset.GetLayer1Asset().Chain, func(txOutItem *TxOutItem) bool {
+		// only need to look at outbounds for the same asset
+		return txOutItem.Coin.Asset.Equals(asset)
+	})
+}
+
+// GetPendingOutboundsByChain is GetPendingOutbounds for every outbound on chain,
+// whatever its asset, selected in one walk of the same window: each one's MaxGas
+// holds its vault's gas asset of chain.
+func (k KVStore) GetPendingOutboundsByChain(ctx cosmos.Context, chain common.Chain) []TxOutItem {
+	return k.getPendingOutbounds(ctx, chain, func(txOutItem *TxOutItem) bool {
+		return txOutItem.Chain.Equals(chain)
+	})
+}
+
+// getPendingOutbounds selects the pending outbounds for which include returns true,
+// scanning the longest signing period an outbound on scanChain can have.
+func (k KVStore) getPendingOutbounds(ctx cosmos.Context, scanChain common.Chain, include func(*TxOutItem) bool) []TxOutItem {
 	signingPeriod := k.GetConfigInt64(ctx, constants.SigningTransactionPeriod)
 	standardStartHeight := ctx.BlockHeight() - signingPeriod
 	if standardStartHeight < 1 {
 		standardStartHeight = 1
 	}
-	// Use the longest period the requested asset's underlying chain can contain.
-	// GetChain reports THOR for synth, trade, and secured assets, so use the L1
-	// chain to retain any EVM/XMR-backed liabilities conservatively.
-	scanPeriod := thortypes.MaxTxOutSigningTransactionPeriodForChain(asset.GetLayer1Asset().Chain, signingPeriod)
+	scanPeriod := thortypes.MaxTxOutSigningTransactionPeriodForChain(scanChain, signingPeriod)
 	startHeight := ctx.BlockHeight() - scanPeriod
 	if startHeight < 1 {
 		startHeight = 1
@@ -354,8 +372,7 @@ func (k KVStore) GetPendingOutbounds(ctx cosmos.Context, asset common.Asset) []T
 	// only its own signing period. Durable stale migrate markers are added below.
 	appendPendingOutbounds := func(blockOut *TxOut) {
 		for i, txOutItem := range blockOut.TxArray {
-			// only need to look at outbounds for the same asset
-			if !txOutItem.Coin.Asset.Equals(asset) {
+			if !include(&txOutItem) {
 				continue
 			}
 			// only still outstanding txout will be considered
@@ -434,7 +451,7 @@ func (k KVStore) GetPendingOutbounds(ctx cosmos.Context, asset common.Asset) []T
 		}
 		eligibleVaults := stalePendingVaultsByHeight[height]
 		for i, txOutItem := range blockOut.TxArray {
-			if !txOutItem.Coin.Asset.Equals(asset) || !txOutItem.OutHash.IsEmpty() {
+			if !include(&txOutItem) || !txOutItem.OutHash.IsEmpty() {
 				continue
 			}
 			if _, ok := eligibleVaults[txOutItem.VaultPubKey]; !ok {

@@ -472,6 +472,22 @@ func (tos *TxOutStorage) selectFallbackVault(ctx cosmos.Context, toi TxOutItem, 
 	return bestVault
 }
 
+// pendingOutboundsForVaultSelection returns the pending outbounds to deduct from vaults
+// before one is chosen, or checked, to pay an outbound of asset on chain. Every chain
+// deducts the pending outbounds of the same asset. A SOL outbound deducts every pending
+// SOL outbound: each one's MaxGas holds its vault's SOL (for a token outbound, network
+// gas plus the recipient token account's rent), whatever the asset it pays out, so an
+// outbound of any asset must not be paid from SOL that another one already holds.
+// DeductVaultPendingOutbounds deducts each item's coin from that asset only and its
+// MaxGas from the gas asset, so the vault's SOL and asset balances it leaves are both
+// right for the outbound. Both lists come from one walk of the same tx-out window.
+func pendingOutboundsForVaultSelection(ctx cosmos.Context, k keeper.Keeper, chain common.Chain, asset common.Asset) []TxOutItem {
+	if chain.Equals(common.SOLChain) {
+		return k.GetPendingOutboundsByChain(ctx, chain)
+	}
+	return k.GetPendingOutbounds(ctx, asset)
+}
+
 func (tos *TxOutStorage) emitInsufficientAvailableBalanceSecurityEvent(ctx cosmos.Context, toi TxOutItem, maxGasCoin common.Coin) {
 	if toi.MaxGas.IsEmpty() && !maxGasCoin.IsEmpty() {
 		toi.MaxGas = common.Gas{maxGasCoin}
@@ -807,9 +823,9 @@ func (tos *TxOutStorage) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem) ([]
 			outputs = append(outputs, toi)
 		} else {
 			// THORNode don't have a vault already selected to send from, discover one.
-			// List all pending outbounds for the asset, this will be used
-			// to deduct balances of vaults that have outstanding txs assigned
-			pendingOutbounds := tos.keeper.GetPendingOutbounds(ctx, toi.Coin.Asset)
+			// List all pending outbounds for the asset (on SOL, of every asset), this
+			// will be used to deduct balances of vaults that have outstanding txs assigned
+			pendingOutbounds := pendingOutboundsForVaultSelection(ctx, tos.keeper, toi.Chain, toi.Coin.Asset)
 
 			signingTransactionPeriod := tos.constAccessor.GetInt64Value(constants.SigningTransactionPeriod)
 

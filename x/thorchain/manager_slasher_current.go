@@ -634,8 +634,9 @@ func (s *SlasherImpl) LackSigning(ctx cosmos.Context, mgr Manager) error {
 					// for rescheduling; do not pick that same compromised vault again.
 					active = filterCompromisedVaults(ctx, s.keeper, active)
 					active = filterActiveVaultsForOutboundChain(active, toi.Chain)
-					// Deduct the asset's pending outbound funds to represent only the available funds.
-					pendingOutbounds := mgr.Keeper().GetPendingOutbounds(ctx, toi.Coin.Asset)
+					// Deduct the asset's pending outbound funds (on SOL, every asset's) to
+					// represent only the available funds.
+					pendingOutbounds := pendingOutboundsForVaultSelection(ctx, mgr.Keeper(), toi.Chain, toi.Coin.Asset)
 					for i := range active {
 						active[i].DeductVaultPendingOutbounds(pendingOutbounds)
 

@@ -82,7 +82,7 @@ func observedVaultHasEffectiveRefundFunds(ctx cosmos.Context, tx ObservedTx, mgr
 
 	// Pending outbounds are already committed to this vault, even though the
 	// vault ledger will not be debited until those outbounds are observed.
-	availableVault.DeductVaultPendingOutbounds(mgr.Keeper().GetPendingOutbounds(ctx, coin.Asset))
+	availableVault.DeductVaultPendingOutbounds(pendingOutboundsForVaultSelection(ctx, mgr.Keeper(), coin.Asset.GetChain(), coin.Asset))
 
 	// Native THORChain outbounds do not need L1 gas reservation.
 	if coin.Asset.GetChain().IsTHORChain() {

@@ -203,7 +203,7 @@ func selectDanglingSettlementVault(ctx cosmos.Context, mgr *Mgrs, action TxOutIt
 		return Vault{}, fmt.Errorf("no active asgard vaults available for chain %s", action.Chain.String())
 	}
 
-	pendingOutbounds := mgr.Keeper().GetPendingOutbounds(ctx, action.Coin.Asset)
+	pendingOutbounds := pendingOutboundsForVaultSelection(ctx, mgr.Keeper(), action.Chain, action.Coin.Asset)
 	for i := range activeAsgards {
 		activeAsgards[i].DeductVaultPendingOutbounds(pendingOutbounds)
 	}
