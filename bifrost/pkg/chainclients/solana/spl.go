@@ -1,6 +1,7 @@
 package solana
 
 import (
+	"errors"
 	"fmt"
 	"math/big"
 	"sync/atomic"
@@ -172,6 +173,10 @@ func splToTHORChain(amount *big.Int, decimals int) (cosmos.Uint, error) {
 	return cosmos.NewUintFromBigInt(v), nil
 }
 
+// errSPLAmountOverflow refuses an amount too large for the u64 a token transfer
+// carries in the mint's base units. Like errSPLZeroAmount, no node can ever sign it.
+var errSPLAmountOverflow = errors.New("token amount overflows u64")
+
 // splFromTHORChain converts a THORChain 1e8 amount to the mint's base units,
 // truncating precision the mint cannot express.
 func splFromTHORChain(amount cosmos.Uint, decimals int) (uint64, error) {
@@ -180,7 +185,7 @@ func splFromTHORChain(amount cosmos.Uint, decimals int) (uint64, error) {
 		return 0, err
 	}
 	if !v.IsUint64() {
-		return 0, fmt.Errorf("token amount %s overflows u64", v)
+		return 0, fmt.Errorf("%w: %s", errSPLAmountOverflow, v)
 	}
 	return v.Uint64(), nil
 }

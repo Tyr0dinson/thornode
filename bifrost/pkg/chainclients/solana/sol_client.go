@@ -673,10 +673,18 @@ func (c *SOLClient) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *
 		return nil, nil, nil, nil
 	}
 
-	// An SPL self-send can never be observed (errSPLSelfSend). Drop it rather than
-	// retain it: a retained item would hold the vault's signing slot every pass. Both
-	// drops below are remembered as rejected, so the serialize gate does not hold the
-	// vault's later durable siblings behind an outbound no node will sign.
+	// Drop, rather than retain, an SPL outbound no node will sign: a retained item
+	// would hold the vault's signing slot every pass. The drops below are:
+	//   - any SPL outbound while HaltSOLTokens is set;
+	//   - a self-send, which can never be observed (errSPLSelfSend);
+	//   - an amount that is zero in the mint's base units (errSPLZeroAmount) or too
+	//     large for them (errSPLAmountOverflow);
+	//   - a recipient that is itself a token account or a mint.
+	// Each is remembered as rejected, so the serialize gate does not hold the vault's
+	// later durable siblings behind it. The self-send and amount drops come from the
+	// outbound and the whitelist alone, so every node drops alike. Any other
+	// splOutboundParams error (a vault or recipient key, or a token account address,
+	// that cannot be derived) is left to the builder, which retains the outbound.
 	if isSPLOutbound(tx) {
 		// HaltSOLTokens pauses SPL signing. Dropped like the drops below, a halted
 		// outbound is re-issued and signed once the halt is cleared. An unreadable
@@ -690,9 +698,17 @@ func (c *SOLClient) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *
 			return c.dropRejectedForReschedule(tx, height, "spl_halted_dropped", c.logger.Warn(),
 				"SPL signing halted by HaltSOLTokens, dropping for reschedule")
 		}
-		if _, err = c.splOutboundParams(tx); errors.Is(err, errSPLSelfSend) {
+		_, err = c.splOutboundParams(tx)
+		switch {
+		case errors.Is(err, errSPLSelfSend):
 			return c.dropRejectedForReschedule(tx, height, "spl_self_send_dropped", c.logger.Warn(),
 				"SPL outbound to its own vault would be an unobservable no-op, dropping for reschedule")
+		case errors.Is(err, errSPLZeroAmount):
+			return c.dropRejectedForReschedule(tx, height, "spl_zero_amount_dropped", c.logger.Warn(),
+				"SPL outbound amount is zero in the token's base units, so there is nothing to send; dropping for reschedule")
+		case errors.Is(err, errSPLAmountOverflow):
+			return c.dropRejectedForReschedule(tx, height, "spl_amount_overflow_dropped", c.logger.Warn(),
+				"SPL outbound amount overflows the token's u64 base units, so it can never be sent; dropping for reschedule")
 		}
 		// Nor is one paid to a recipient address that is itself a token account or a
 		// mint (splRecipientIsTokenAccount): the tokens would be unrecoverable. Dropped,

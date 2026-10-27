@@ -44,6 +44,11 @@ func (c *SOLClient) splHaltedAt(height int64) (bool, error) {
 // it, burning a fee on every attempt.
 var errSPLSelfSend = errors.New("SPL self-send cannot be observed")
 
+// errSPLZeroAmount refuses an SPL outbound whose amount is zero in the mint's base
+// units: a zero amount, or one below one base unit once converted from THORChain's
+// 1e8 units. There is nothing to transfer, so no node can ever sign it.
+var errSPLZeroAmount = errors.New("token value is zero")
+
 // splRecipientIsTokenAccount reports whether an SPL outbound's recipient address is
 // itself a token account or a mint, that is, an account owned by a token program. The
 // outbound pays the recipient's associated token account, derived from the address as
@@ -80,7 +85,7 @@ func (c *SOLClient) splTransferParams(tx stypes.TxOutItem, vault, recipient type
 		return types.SPLTransferParams{}, fmt.Errorf("fail to convert %s amount: %w", coin.Asset, err)
 	}
 	if amount == 0 {
-		return types.SPLTransferParams{}, errors.New("token value is zero")
+		return types.SPLTransferParams{}, errSPLZeroAmount
 	}
 	source, err := types.FindAssociatedTokenAddress(vault, token.mint)
 	if err != nil {
