@@ -230,6 +230,36 @@ func (idx *activeNodeIndex) build(accounts NodeAccounts) {
 	idx.voted = make([]bool, idx.n)
 }
 
+// countActiveSigners is the number of signers that decode, as GetSigners
+// decodes them, to the address of an active node in accounts. A repeated
+// signer counts each time, as when IsNodeKeys is called per GetSigners entry,
+// but each signer is a map lookup instead of a decode and a linear scan.
+func countActiveSigners(signers []string, accounts NodeAccounts) int {
+	var idx activeNodeIndex
+	count := 0
+	for _, signer := range signers {
+		if !idx.built {
+			idx.build(accounts)
+		}
+		if idx.signerSlot(signer) >= 0 {
+			count++
+		}
+	}
+	return count
+}
+
+// signersInclude reports whether any of signers decodes, as GetSigners decodes
+// it, to signer. Decoded signers are non-empty, so AccAddress.Equals on them is
+// byte equality.
+func signersInclude(signers []string, signer cosmos.AccAddress) bool {
+	for _, a := range signers {
+		if addr, ok := common.SignerAddressString(a); ok && addr == string(signer) {
+			return true
+		}
+	}
+	return false
+}
+
 func (m *ObservedTxVoter) getConsensusTx(accounts NodeAccounts, final bool, idx *activeNodeIndex) common.ObservedTx {
 	// accounts.IsNodeKeys(signer) for every signer is a linear scan; index the
 	// active node addresses once. Signers decode to non-empty addresses, for
