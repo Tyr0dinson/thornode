@@ -1176,6 +1176,10 @@ func (vm *NetworkMgr) POLCycle(ctx cosmos.Context, mgr Manager) error {
 				ctx.Logger().Info("maximum rune deployed from POL")
 				continue
 			}
+			if isLUVIOverhangGuarded(ctx, mgr.Keeper(), pool, synthSupply) {
+				ctx.Logger().Info("skip POL deposit, pool is in synth overhang", "pool", pool.Asset.String(), "synth supply", synthSupply.String(), "asset depth", pool.BalanceAsset.String())
+				continue
+			}
 			if err := vm.addPOLLiquidity(ctx, pool, polAddress, asgardAddress, signer, maxMovement, synthPerPoolDepth, loopTarget, mgr, polValue); err != nil {
 				ctx.Logger().Error("fail to manage POL in pool", "pool", pool.Asset.String(), "error", err)
 			}
@@ -1246,6 +1250,10 @@ func (vm *NetworkMgr) POLReserveCycle(ctx cosmos.Context, mgr Manager) error {
 			continue
 		}
 		if !mgr.Keeper().IsPOLReserveEligiblePool(ctx, pool.Asset) {
+			continue
+		}
+		// the add liquidity handler would reject the deposit; pick another pool
+		if isLUVIOverhangGuarded(ctx, mgr.Keeper(), pool, mgr.Keeper().GetTotalSupply(ctx, pool.Asset.GetSyntheticAsset())) {
 			continue
 		}
 
