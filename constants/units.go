@@ -327,6 +327,7 @@ var constantUnits = map[ConstantName]Unit{
 	MissingObservationMinSamples:        UnitCount,
 	MissingObservationGuardMaxBlocks:    UnitDuration,
 	LUVIOverhangGuard:                   UnitCount,     // on/off flag
+	LUVIGuard:                           UnitCount,     // on/off flag
 	BlockTimeMs:                         UnitWallClock, // milliseconds; the scale itself
 }
 
