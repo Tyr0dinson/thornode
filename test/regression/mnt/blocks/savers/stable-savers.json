@@ -1481,21 +1481,6 @@
         "type": "add_liquidity"
       },
       {
-        "allowed": "0.000000079797681803",
-        "delta_g": "-2444828.339610705160507813",
-        "excess": "true",
-        "kind": "drop",
-        "lp_units_after": "100000000000",
-        "lp_units_before": "100000000000",
-        "mode": "EndBlock",
-        "normalized_delta_g": "-0.000024448070822101",
-        "pool": "ETH.USDC-0X9999999999999999999999999999999999999999",
-        "rejected": "false",
-        "scope": "/types.MsgSwap",
-        "tx_id": "0000000000000000000000000000000000000000000000000000000000000003",
-        "type": "luvi_loss"
-      },
-      {
         "amount": "72175eth/usdc-0x9999999999999999999999999999999999999999",
         "mode": "EndBlock",
         "receiver": "tthor1v8ppstuf6e3x0r4glqc68d5jqcs2tf38ulmsrp",

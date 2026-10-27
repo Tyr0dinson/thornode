@@ -12733,21 +12733,6 @@
         "type": "swap"
       },
       {
-        "allowed": "0.000034055950943564",
-        "delta_g": "-80658.920871537146225933",
-        "excess": "false",
-        "kind": "drop",
-        "lp_units_after": "100000000000",
-        "lp_units_before": "100000000000",
-        "mode": "EndBlock",
-        "normalized_delta_g": "-0.000005903046524011",
-        "pool": "ETH.ETH",
-        "rejected": "false",
-        "scope": "/types.MsgSwap",
-        "tx_id": "DB631CBCF71524D9BF1141566D8A11E887B426D0C1FDDB6510EA99041220A36F",
-        "type": "luvi_loss"
-      },
-      {
         "amount": "319440217rune",
         "mode": "EndBlock",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
@@ -13055,21 +13040,6 @@
         "type": "swap"
       },
       {
-        "allowed": "0.000034055951479616",
-        "delta_g": "-78428.343322952347715439",
-        "excess": "false",
-        "kind": "drop",
-        "lp_units_after": "100000000000",
-        "lp_units_before": "100000000000",
-        "mode": "EndBlock",
-        "normalized_delta_g": "-0.000005903049330043",
-        "pool": "ETH.ETH",
-        "rejected": "false",
-        "scope": "/types.MsgSwap",
-        "tx_id": "DB631CBCF71524D9BF1141566D8A11E887B426D0C1FDDB6510EA99041220A36F",
-        "type": "luvi_loss"
-      },
-      {
         "amount": "302783889rune",
         "mode": "EndBlock",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
@@ -13254,21 +13224,6 @@
         "swap_target": "0",
         "to": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "swap"
-      },
-      {
-        "allowed": "0.000034055952046554",
-        "delta_g": "-76259.559429102957212335",
-        "excess": "false",
-        "kind": "drop",
-        "lp_units_after": "100000000000",
-        "lp_units_before": "100000000000",
-        "mode": "EndBlock",
-        "normalized_delta_g": "-0.000005903048743153",
-        "pool": "ETH.ETH",
-        "rejected": "false",
-        "scope": "/types.MsgSwap",
-        "tx_id": "DB631CBCF71524D9BF1141566D8A11E887B426D0C1FDDB6510EA99041220A36F",
-        "type": "luvi_loss"
       },
       {
         "amount": "286962042rune",
@@ -13457,21 +13412,6 @@
         "type": "swap"
       },
       {
-        "allowed": "0.000034055952646156",
-        "delta_g": "-74150.913039355794573660",
-        "excess": "false",
-        "kind": "drop",
-        "lp_units_after": "100000000000",
-        "lp_units_before": "100000000000",
-        "mode": "EndBlock",
-        "normalized_delta_g": "-0.000005903049977495",
-        "pool": "ETH.ETH",
-        "rejected": "false",
-        "scope": "/types.MsgSwap",
-        "tx_id": "DB631CBCF71524D9BF1141566D8A11E887B426D0C1FDDB6510EA99041220A36F",
-        "type": "luvi_loss"
-      },
-      {
         "amount": "271936983rune",
         "mode": "EndBlock",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
@@ -13656,21 +13596,6 @@
         "swap_target": "0",
         "to": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "swap"
-      },
-      {
-        "allowed": "0.000034055953280302",
-        "delta_g": "-72100.662993890637790305",
-        "excess": "false",
-        "kind": "drop",
-        "lp_units_after": "100000000000",
-        "lp_units_before": "100000000000",
-        "mode": "EndBlock",
-        "normalized_delta_g": "-0.000005903047880328",
-        "pool": "ETH.ETH",
-        "rejected": "false",
-        "scope": "/types.MsgSwap",
-        "tx_id": "DB631CBCF71524D9BF1141566D8A11E887B426D0C1FDDB6510EA99041220A36F",
-        "type": "luvi_loss"
       },
       {
         "amount": "257672235rune",
@@ -13859,21 +13784,6 @@
         "type": "swap"
       },
       {
-        "allowed": "0.000034055953950982",
-        "delta_g": "-70107.234203676986059396",
-        "excess": "false",
-        "kind": "drop",
-        "lp_units_after": "100000000000",
-        "lp_units_before": "100000000000",
-        "mode": "EndBlock",
-        "normalized_delta_g": "-0.000005903046679840",
-        "pool": "ETH.ETH",
-        "rejected": "false",
-        "scope": "/types.MsgSwap",
-        "tx_id": "DB631CBCF71524D9BF1141566D8A11E887B426D0C1FDDB6510EA99041220A36F",
-        "type": "luvi_loss"
-      },
-      {
         "amount": "244132579rune",
         "mode": "EndBlock",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
@@ -14058,21 +13968,6 @@
         "swap_target": "0",
         "to": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "swap"
-      },
-      {
-        "allowed": "0.000034055954660302",
-        "delta_g": "-68169.070634294608171725",
-        "excess": "false",
-        "kind": "drop",
-        "lp_units_after": "100000000000",
-        "lp_units_before": "100000000000",
-        "mode": "EndBlock",
-        "normalized_delta_g": "-0.000005903048752856",
-        "pool": "ETH.ETH",
-        "rejected": "false",
-        "scope": "/types.MsgSwap",
-        "tx_id": "DB631CBCF71524D9BF1141566D8A11E887B426D0C1FDDB6510EA99041220A36F",
-        "type": "luvi_loss"
       },
       {
         "amount": "231284047rune",
@@ -14261,21 +14156,6 @@
         "type": "swap"
       },
       {
-        "allowed": "0.000034055955410486",
-        "delta_g": "-66284.531220072945309015",
-        "excess": "false",
-        "kind": "drop",
-        "lp_units_after": "100000000000",
-        "lp_units_before": "100000000000",
-        "mode": "EndBlock",
-        "normalized_delta_g": "-0.000005903045179364",
-        "pool": "ETH.ETH",
-        "rejected": "false",
-        "scope": "/types.MsgSwap",
-        "tx_id": "DB631CBCF71524D9BF1141566D8A11E887B426D0C1FDDB6510EA99041220A36F",
-        "type": "luvi_loss"
-      },
-      {
         "amount": "219093937rune",
         "mode": "EndBlock",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
@@ -14462,21 +14342,6 @@
         "type": "swap"
       },
       {
-        "allowed": "0.000034055956203888",
-        "delta_g": "-64452.237317733996971674",
-        "excess": "false",
-        "kind": "drop",
-        "lp_units_after": "100000000000",
-        "lp_units_before": "100000000000",
-        "mode": "EndBlock",
-        "normalized_delta_g": "-0.000005903046061442",
-        "pool": "ETH.ETH",
-        "rejected": "false",
-        "scope": "/types.MsgSwap",
-        "tx_id": "DB631CBCF71524D9BF1141566D8A11E887B426D0C1FDDB6510EA99041220A36F",
-        "type": "luvi_loss"
-      },
-      {
         "amount": "207530798rune",
         "mode": "EndBlock",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
@@ -14661,21 +14526,6 @@
         "swap_target": "0",
         "to": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "swap"
-      },
-      {
-        "allowed": "0.000034055957042998",
-        "delta_g": "-62670.688233249301406783",
-        "excess": "false",
-        "kind": "drop",
-        "lp_units_after": "100000000000",
-        "lp_units_before": "100000000000",
-        "mode": "EndBlock",
-        "normalized_delta_g": "-0.000005903047206778",
-        "pool": "ETH.ETH",
-        "rejected": "false",
-        "scope": "/types.MsgSwap",
-        "tx_id": "DB631CBCF71524D9BF1141566D8A11E887B426D0C1FDDB6510EA99041220A36F",
-        "type": "luvi_loss"
       },
       {
         "amount": "92263674120rune",

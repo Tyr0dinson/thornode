@@ -1352,21 +1352,6 @@
         "type": "swap"
       },
       {
-        "allowed": "0.132812509552250091",
-        "delta_g": "-168696690.445937339026421828",
-        "excess": "false",
-        "kind": "drop",
-        "lp_units_after": "100000000000",
-        "lp_units_before": "100000000000",
-        "mode": "EndBlock",
-        "normalized_delta_g": "-0.053346287445560873",
-        "pool": "BTC.BTC",
-        "rejected": "false",
-        "scope": "/types.MsgSwap",
-        "tx_id": "506631CF180A23EA2CF212CAD267E54D9892DCAEACA3491387708FE382314B7F",
-        "type": "luvi_loss"
-      },
-      {
         "amount": "49999999btc/btc",
         "mode": "EndBlock",
         "spender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
@@ -2413,21 +2398,6 @@
         "swap_target": "0",
         "to": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "swap"
-      },
-      {
-        "allowed": "0.008111681699655790",
-        "delta_g": "-2561441.377511734356861067",
-        "excess": "false",
-        "kind": "drop",
-        "lp_units_after": "100397379725",
-        "lp_units_before": "100397379725",
-        "mode": "EndBlock",
-        "normalized_delta_g": "-0.000435677000027660",
-        "pool": "BTC.BTC",
-        "rejected": "false",
-        "scope": "/types.MsgSwap",
-        "tx_id": "2E76F7D3819660BC419E082D3189017C5F027EE7B00D17942912F5AE14BE333C",
-        "type": "luvi_loss"
       },
       {
         "amount": "67187425676rune",

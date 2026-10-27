@@ -1041,21 +1041,6 @@
         "type": "swap"
       },
       {
-        "allowed": "0.132812509552249873",
-        "delta_g": "-168691458.659585816777008199",
-        "excess": "false",
-        "kind": "drop",
-        "lp_units_after": "100000000000",
-        "lp_units_before": "100000000000",
-        "mode": "EndBlock",
-        "normalized_delta_g": "-0.053344342923585771",
-        "pool": "BTC.BTC",
-        "rejected": "false",
-        "scope": "/types.MsgSwap",
-        "tx_id": "506631CF180A23EA2CF212CAD267E54D9892DCAEACA3491387708FE382314B7F",
-        "type": "luvi_loss"
-      },
-      {
         "amount": "49999999btc/btc",
         "mode": "EndBlock",
         "spender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
@@ -1907,21 +1892,6 @@
         "type": "swap"
       },
       {
-        "allowed": "0.132812509536866209",
-        "delta_g": "-23556883.377311595337783365",
-        "excess": "false",
-        "kind": "drop",
-        "lp_units_after": "119224000395",
-        "lp_units_before": "119224000395",
-        "mode": "EndBlock",
-        "normalized_delta_g": "-0.003578746891277955",
-        "pool": "BTC.BTC",
-        "rejected": "false",
-        "scope": "/types.MsgSwap",
-        "tx_id": "20586CC05316E530EB8DCAF8A248577F2312328B5F7F4982632070F64A050313",
-        "type": "luvi_loss"
-      },
-      {
         "amount": "138651211707rune",
         "mode": "EndBlock",
         "spender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
@@ -2043,21 +2013,6 @@
         "swap_target": "0",
         "to": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "swap"
-      },
-      {
-        "allowed": "0.008111354698043583",
-        "delta_g": "-2221333.625742479197874965",
-        "excess": "false",
-        "kind": "drop",
-        "lp_units_after": "119224000395",
-        "lp_units_before": "119224000395",
-        "mode": "EndBlock",
-        "normalized_delta_g": "-0.000435663639507280",
-        "pool": "BTC.BTC",
-        "rejected": "false",
-        "scope": "/types.MsgSwap",
-        "tx_id": "A9BC609F7662B2E2D7936F9158CCAC9AB2FFCF0D39262CD7E2A42C0144F39D82",
-        "type": "luvi_loss"
       },
       {
         "amount": "50532391967rune",

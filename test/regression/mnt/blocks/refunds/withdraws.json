@@ -786,21 +786,6 @@
         "type": "add_liquidity"
       },
       {
-        "allowed": "0.039517856291771815",
-        "delta_g": "-134993195.556014815533645530",
-        "excess": "false",
-        "kind": "drop",
-        "lp_units_after": "133333333333",
-        "lp_units_before": "133333333333",
-        "mode": "EndBlock",
-        "normalized_delta_g": "-0.030185154971480646",
-        "pool": "BTC.BTC",
-        "rejected": "false",
-        "scope": "/types.MsgSwap",
-        "tx_id": "0000000000000000000000000000000000000000000000000000000000000003",
-        "type": "luvi_loss"
-      },
-      {
         "amount": "4707156btc/btc",
         "mode": "EndBlock",
         "receiver": "tthor1v8ppstuf6e3x0r4glqc68d5jqcs2tf38ulmsrp",
@@ -1198,21 +1183,6 @@
         "rune_address": "",
         "rune_amount": "0",
         "type": "add_liquidity"
-      },
-      {
-        "allowed": "0.039517844268321741",
-        "delta_g": "-426886011.793967294455247786",
-        "excess": "false",
-        "kind": "drop",
-        "lp_units_after": "133333333333",
-        "lp_units_before": "133333333333",
-        "mode": "EndBlock",
-        "normalized_delta_g": "-0.030185158168457413",
-        "pool": "ETH.ETH",
-        "rejected": "false",
-        "scope": "/types.MsgSwap",
-        "tx_id": "0000000000000000000000000000000000000000000000000000000000000004",
-        "type": "luvi_loss"
       },
       {
         "amount": "47074175eth/eth",
