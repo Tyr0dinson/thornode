@@ -4415,6 +4415,76 @@ func (s *NetworkManagerTestSuite) TestProcessOverSolvencyUsesPerAssetBps(c *C) {
 	c.Assert(ethSwaps, Equals, 0)
 }
 
+func (s *NetworkManagerTestSuite) TestProcessOverSolvencyDefersUnfinalizedMempoolSwapPool(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	nmgr := newNetworkMgr(mgr.Keeper(), NewTxStoreDummy(), NewDummyEventMgr())
+	mgr.Keeper().SetMimir(ctx, constants.EnableAdvSwapQueue.String(), 1)
+
+	ctx = ctx.WithBlockHeight(432000)
+	mgr.Keeper().SetMimir(ctx, constants.OverSolvencyCheckInterval.String(), 432000)
+	mgr.Keeper().SetMimir(ctx, constants.OverSolvencyToTreasuryBps.String(), 5000)
+
+	// A settled mempool swap whose outbound was dropped (no queue, txout or
+	// staged item) leaves only the speculative BTC pool decrease behind.
+	_, record, btcPool := setupMempoolSwapEffectsSwap(c, ctx, mgr, 0)
+	effect := newMempoolSwapPoolEffect(common.BTCAsset)
+	effect.BalanceAssetDecrease = cosmos.NewUint(10 * common.One)
+	record.PendingEffects.Pools = []types.MempoolSwapPoolEffect{effect}
+	record.Status = types.MempoolSwapStatus_SETTLED
+	c.Assert(mgr.Keeper().SetMempoolSwap(ctx, record), IsNil)
+	btcPool.BalanceAsset = btcPool.BalanceAsset.Sub(effect.BalanceAssetDecrease)
+	c.Assert(mgr.Keeper().SetPool(ctx, btcPool), IsNil)
+
+	ethPool := NewPool()
+	ethPool.Asset = common.ETHAsset
+	ethPool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	ethPool.BalanceRune = cosmos.NewUint(100 * common.One)
+	ethPool.Status = PoolAvailable
+	c.Assert(mgr.Keeper().SetPool(ctx, ethPool), IsNil)
+
+	vault := NewVault(ctx.BlockHeight(), ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BTCChain, common.ETHChain}.Strings(), []ChainContract{})
+	vault.AddFunds(common.Coins{
+		common.NewCoin(common.BTCAsset, cosmos.NewUint(100*common.One)),
+		common.NewCoin(common.ETHAsset, cosmos.NewUint(160*common.One)),
+	})
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+
+	// The BTC decrease reads as surplus even though rollback would restore it.
+	solvency, err := nmgr.calculateNetworkSolvency(ctx, mgr)
+	c.Assert(err, IsNil)
+	for _, amt := range solvency {
+		if amt.Asset.Equals(common.BTCAsset) {
+			c.Check(amt.Amount.String(), Equals, cosmos.NewInt(10*common.One).String())
+		}
+	}
+
+	sweptAmounts := func() map[common.Asset]cosmos.Uint {
+		swept := make(map[common.Asset]cosmos.Uint)
+		iter := mgr.Keeper().GetAdvSwapQueueItemIterator(ctx)
+		defer iter.Close()
+		for ; iter.Valid(); iter.Next() {
+			var msg types.MsgSwap
+			c.Assert(mgr.Keeper().Cdc().Unmarshal(iter.Value(), &msg), IsNil)
+			swept[msg.Tx.Coins[0].Asset] = msg.Tx.Coins[0].Amount
+		}
+		return swept
+	}
+
+	c.Assert(nmgr.processOverSolvency(ctx, mgr), IsNil)
+	swept := sweptAmounts()
+	c.Assert(swept, HasLen, 1)
+	c.Check(swept[common.ETHAsset].String(), Equals, cosmos.NewUint(30*common.One).String())
+	_, ok := swept[common.BTCAsset]
+	c.Check(ok, Equals, false)
+
+	// Once the lifecycle finalizes, the BTC surplus is real and is swept.
+	finalizeMempoolSwapPoolGateRecord(c, ctx, mgr, &record)
+	ctx = ctx.WithBlockHeight(2 * 432000)
+	c.Assert(nmgr.processOverSolvency(ctx, mgr), IsNil)
+	swept = sweptAmounts()
+	c.Check(swept[common.BTCAsset].String(), Equals, cosmos.NewUint(5*common.One).String())
+}
+
 func (s *NetworkManagerTestSuite) TestCreateSwapToOverSolvency(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	nmgr := newNetworkMgr(mgr.Keeper(), NewTxStoreDummy(), NewDummyEventMgr())

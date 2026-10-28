@@ -3690,6 +3690,19 @@ func (vm *NetworkMgr) processOverSolvency(ctx cosmos.Context, mgr Manager) error
 		if err != nil || pool.Status != PoolAvailable {
 			continue
 		}
+		// A reversible mempool swap can leave a pool decrease with no queued,
+		// scheduled or staged output (e.g. a dropped null-address outbound or a
+		// deferred payout cleanup), which reads as surplus here. Sweeping it
+		// would preempt and roll back the owner, restoring that balance after
+		// the RUNE has already gone to treasury. Defer until the pool resolves.
+		balanceAffected, supplyAffected, err := mempoolSwapPoolFinalityAffected(ctx, mgr.Keeper(), assetAmt.Asset)
+		if err != nil {
+			return fmt.Errorf("fail to check mempool swap finality for %s: %w", assetAmt.Asset, err)
+		}
+		if balanceAffected || supplyAffected {
+			ctx.Logger().Info("deferring over-solvency sweep for unfinalized mempool swap", "asset", assetAmt.Asset)
+			continue
+		}
 		overSolventAssets = append(overSolventAssets, assetAmt)
 	}
 
