@@ -1378,6 +1378,116 @@ func (qs queryServer) queryNodes(ctx cosmos.Context, _ *types.QueryNodesRequest)
 	return &types.QueryNodesResponse{Nodes: result}, nil
 }
 
+// queryNodeBlame returns blame record for a specific node
+func (qs queryServer) queryNodeBlame(ctx cosmos.Context, req *types.QueryNodeBlameRequest) (*types.QueryNodeBlameResponse, error) {
+	if len(req.Address) == 0 {
+		return nil, errors.New("node address not provided")
+	}
+
+	addr, err := cosmos.AccAddressFromBech32(req.Address)
+	if err != nil {
+		return nil, fmt.Errorf("invalid address: %w", err)
+	}
+
+	record, err := qs.mgr.Keeper().GetNodeBlameRecord(ctx, addr)
+	if err != nil {
+		return nil, err
+	}
+
+	nodeAcc, err := qs.mgr.Keeper().GetNodeAccount(ctx, addr)
+	if err != nil {
+		return nil, fmt.Errorf("fail to get node account: %w", err)
+	}
+
+	return &types.QueryNodeBlameResponse{
+		NodeAddress:                 record.NodeAddress,
+		NodeOperatorAddress:         nodeAcc.BondAddress.String(),
+		KeygenBlameCountTotal:       record.KeygenBlameCountTotal,
+		KeysignBlameCountTotal:      record.KeysignBlameCountTotal,
+		KeygenBlameCountSinceChurn:  record.KeygenBlameCountSinceChurn,
+		KeysignBlameCountSinceChurn: record.KeysignBlameCountSinceChurn,
+	}, nil
+}
+
+// queryNodeBlames returns blame counters for every active node. Active nodes
+// with no stored blame record are reported with zero counters.
+//
+// Supported query args:
+//   - sort_by: keygen_since_churn (default), keysign_since_churn, keygen_total, keysign_total
+//   - sort_order: desc (default), asc
+func (qs queryServer) queryNodeBlames(ctx cosmos.Context, req *types.QueryNodeBlamesRequest) (*types.QueryNodeBlamesResponse, error) {
+	keyFn, err := nodeBlameSortKey(req.SortBy)
+	if err != nil {
+		return nil, err
+	}
+	descending, err := nodeBlameSortDescending(req.SortOrder)
+	if err != nil {
+		return nil, err
+	}
+
+	activeNodes, err := qs.mgr.Keeper().ListActiveValidators(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("fail to list active validators: %w", err)
+	}
+
+	result := make([]*types.QueryNodeBlameResponse, 0, len(activeNodes))
+	for _, na := range activeNodes {
+		record, err := qs.mgr.Keeper().GetNodeBlameRecord(ctx, na.NodeAddress)
+		if err != nil {
+			return nil, fmt.Errorf("fail to get node blame record: %w", err)
+		}
+		result = append(result, &types.QueryNodeBlameResponse{
+			NodeAddress:                 na.NodeAddress,
+			NodeOperatorAddress:         na.BondAddress.String(),
+			KeygenBlameCountTotal:       record.KeygenBlameCountTotal,
+			KeysignBlameCountTotal:      record.KeysignBlameCountTotal,
+			KeygenBlameCountSinceChurn:  record.KeygenBlameCountSinceChurn,
+			KeysignBlameCountSinceChurn: record.KeysignBlameCountSinceChurn,
+		})
+	}
+
+	// Records with equal sort keys are ordered by node address.
+	sort.Slice(result, func(i, j int) bool {
+		ki, kj := keyFn(result[i]), keyFn(result[j])
+		if ki != kj {
+			if descending {
+				return ki > kj
+			}
+			return ki < kj
+		}
+		return result[i].NodeAddress.String() < result[j].NodeAddress.String()
+	})
+
+	return &types.QueryNodeBlamesResponse{Blames: result}, nil
+}
+
+// nodeBlameSortKey returns the field accessor for the given sort_by value.
+func nodeBlameSortKey(sortBy string) (func(*types.QueryNodeBlameResponse) int64, error) {
+	switch sortBy {
+	case "", "keygen_since_churn":
+		return func(r *types.QueryNodeBlameResponse) int64 { return r.KeygenBlameCountSinceChurn }, nil
+	case "keysign_since_churn":
+		return func(r *types.QueryNodeBlameResponse) int64 { return r.KeysignBlameCountSinceChurn }, nil
+	case "keygen_total":
+		return func(r *types.QueryNodeBlameResponse) int64 { return r.KeygenBlameCountTotal }, nil
+	case "keysign_total":
+		return func(r *types.QueryNodeBlameResponse) int64 { return r.KeysignBlameCountTotal }, nil
+	default:
+		return nil, fmt.Errorf("invalid sort_by: %q (expected one of: keygen_since_churn, keysign_since_churn, keygen_total, keysign_total)", sortBy)
+	}
+}
+
+func nodeBlameSortDescending(sortOrder string) (bool, error) {
+	switch sortOrder {
+	case "", "desc":
+		return true, nil
+	case "asc":
+		return false, nil
+	default:
+		return false, fmt.Errorf("invalid sort_order: %q (expected: asc or desc)", sortOrder)
+	}
+}
+
 func newSaver(lp LiquidityProvider, pool Pool) *types.QuerySaverResponse {
 	assetRedeemableValue := lp.GetSaversAssetRedeemValue(pool)
 
