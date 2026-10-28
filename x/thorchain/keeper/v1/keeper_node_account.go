@@ -469,9 +469,11 @@ func (k KVStore) SetNodeAccount(ctx cosmos.Context, na NodeAccount) error {
 		}
 	}
 
-	// before the write, so that a node without an age start is judged by its stored account
-	k.SyncNodeAgeStart(ctx, na)
-	k.setNodeAccount(ctx, k.GetKey(prefixNodeAccount, na.NodeAddress.String()), na)
+	addr := na.NodeAddress.String()
+	key := k.GetKey(prefixNodeAccount, addr)
+	// before the write, so that the stored account still holds the bond before it
+	k.syncNodeAgeStart(ctx, na, addr, key)
+	k.setNodeAccount(ctx, key, na)
 	return nil
 }
 
@@ -555,22 +557,29 @@ func (k KVStore) ResetNodeAgeStart(ctx cosmos.Context, addr cosmos.AccAddress) {
 // stored, so the stored account holds the bond before the write. A change of
 // MinimumBondInRune writes no node account, so the churn calls it as well.
 func (k KVStore) SyncNodeAgeStart(ctx cosmos.Context, na NodeAccount) {
+	addr := na.NodeAddress.String()
+	k.syncNodeAgeStart(ctx, na, addr, k.GetKey(prefixNodeAccount, addr))
+}
+
+// syncNodeAgeStart is SyncNodeAgeStart for the node at addr, whose account is stored at
+// naKey.
+func (k KVStore) syncNodeAgeStart(ctx cosmos.Context, na NodeAccount, addr string, naKey []byte) {
 	minBond := cosmos.NewUint(uint64(k.GetConfigInt64(ctx, constants.MinimumBondInRune)))
-	held := holdsMinBond(na, minBond)
-	key := k.GetKey(prefixNodeAgeStart, na.NodeAddress.String())
+	held := holdsMinBond(na.Bond, minBond)
+	key := k.GetKey(prefixNodeAgeStart, addr)
 	start := int64(0)
 	ok, err := k.getInt64(ctx, key, &start)
 	switch {
 	case err != nil:
 		// restarted, which can only make the node younger
-		ctx.Logger().Error("fail to get node age start, restarting it", "node_address", na.NodeAddress.String(), "error", err)
+		ctx.Logger().Error("fail to get node age start, restarting it", "node_address", addr, "error", err)
 		start = nodeAgeStartBelowMinBond
 		if held {
 			start = ctx.BlockHeight()
 		}
 		k.setInt64(ctx, key, start)
 	case !ok:
-		if first, judged := k.firstNodeAgeStart(ctx, na, held, minBond); judged {
+		if first, judged := k.firstNodeAgeStart(ctx, addr, naKey, held, minBond); judged {
 			k.setInt64(ctx, key, first)
 		}
 	case !held:
@@ -579,24 +588,29 @@ func (k KVStore) SyncNodeAgeStart(ctx cosmos.Context, na NodeAccount) {
 		}
 	case start < 0:
 		k.setInt64(ctx, key, ctx.BlockHeight())
-	case k.storedBelowMinBond(ctx, na, minBond):
+	case k.storedBelowMinBond(ctx, addr, naKey, minBond):
 		// MinimumBondInRune rose above the stored bond since the last sync, and this
 		// write reaches it
 		k.setInt64(ctx, key, ctx.BlockHeight())
 	}
 }
 
-// storedBelowMinBond reports whether the stored account of the given node holds less
-// than minBond. An account that cannot be read counts as below it, which can only make
-// the node younger.
-func (k KVStore) storedBelowMinBond(ctx cosmos.Context, na NodeAccount, minBond cosmos.Uint) bool {
-	var stored NodeAccount
-	found, err := k.getNodeAccount(ctx, k.GetKey(prefixNodeAccount, na.NodeAddress.String()), &stored)
-	if err != nil {
-		ctx.Logger().Error("fail to get node account, restarting its age", "node_address", na.NodeAddress.String(), "error", err)
+// storedBelowMinBond reports whether the node account stored at naKey holds less than
+// minBond. It runs on most node account writes, so it reads the bond from the
+// shared decode memo (the write's caller has usually just read the same bytes) instead
+// of copying the account out. An account that cannot be decoded counts as below the
+// minimum, which can only make the node younger.
+func (k KVStore) storedBelowMinBond(ctx cosmos.Context, addr string, naKey []byte, minBond cosmos.Uint) bool {
+	bz := k.kvStore(ctx).Get(naKey)
+	if bz == nil {
+		return false
+	}
+	stored := nodeAccountDecodeMemo.shared(k, naKey, bz) // read only
+	if stored == nil {
+		ctx.Logger().Error("fail to decode node account, restarting its age", "node_address", addr)
 		return true
 	}
-	return found && !holdsMinBond(stored, minBond)
+	return !holdsMinBond(stored.Bond, minBond)
 }
 
 // firstNodeAgeStart returns the age start of a node that has none recorded: an account
@@ -607,12 +621,12 @@ func (k KVStore) storedBelowMinBond(ctx cosmos.Context, na NodeAccount, minBond 
 // If its bond reaches the minimum with this write, the age starts now. It returns false
 // for an account not stored yet, as during the genesis import, before the mimirs are:
 // that one is judged at its next write or at the churn.
-func (k KVStore) firstNodeAgeStart(ctx cosmos.Context, na NodeAccount, held bool, minBond cosmos.Uint) (int64, bool) {
+func (k KVStore) firstNodeAgeStart(ctx cosmos.Context, addr string, naKey []byte, held bool, minBond cosmos.Uint) (int64, bool) {
 	var stored NodeAccount
-	found, err := k.getNodeAccount(ctx, k.GetKey(prefixNodeAccount, na.NodeAddress.String()), &stored)
+	found, err := k.getNodeAccount(ctx, naKey, &stored)
 	switch {
 	case err != nil:
-		ctx.Logger().Error("fail to get node account, judging its age by this write", "node_address", na.NodeAddress.String(), "error", err)
+		ctx.Logger().Error("fail to get node account, judging its age by this write", "node_address", addr, "error", err)
 		if held {
 			return ctx.BlockHeight(), true
 		}
@@ -621,7 +635,7 @@ func (k KVStore) firstNodeAgeStart(ctx cosmos.Context, na NodeAccount, held bool
 		return 0, false
 	case !held:
 		return nodeAgeStartBelowMinBond, true
-	case !holdsMinBond(stored, minBond):
+	case !holdsMinBond(stored.Bond, minBond):
 		return ctx.BlockHeight(), true
 	}
 	start := stored.StatusSince
@@ -631,10 +645,8 @@ func (k KVStore) firstNodeAgeStart(ctx cosmos.Context, na NodeAccount, held bool
 	return start, true
 }
 
-// holdsMinBond reports whether the node's bond is at least minBond. A nil bond is
-// stored as 0.
-func holdsMinBond(na NodeAccount, minBond cosmos.Uint) bool {
-	bond := na.Bond
+// holdsMinBond reports whether bond is at least minBond. A nil bond is stored as 0.
+func holdsMinBond(bond cosmos.Uint, minBond cosmos.Uint) bool {
 	if bond.IsNil() {
 		bond = cosmos.ZeroUint()
 	}
