@@ -150,7 +150,7 @@ func (GasManagerTestSuite) TestGetAssetOutboundFeeSOLTokenSurcharge(c *C) {
 	usdcFee, err := gasMgr.GetAssetOutboundFee(ctx, usdc, false)
 	c.Assert(err, IsNil)
 	defaultSurcharge := common.SOLChain.TokenOutboundSurcharge()
-	c.Assert(defaultSurcharge.Uint64(), Equals, uint64(204_000))
+	c.Assert(defaultSurcharge.Uint64(), Equals, uint64(148_900))
 	c.Check(usdcFee.String(), Equals, solFee.Add(defaultSurcharge).String())
 
 	// The same surcharge in RUNE.

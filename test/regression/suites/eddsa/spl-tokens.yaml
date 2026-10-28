@@ -99,11 +99,11 @@ params:
   amount: 1000000000
   destination: {{ addr_sol_fox }}
 asserts:
-  # 0.0000050 SOL network fee plus SOL's 0.00204 SOL token outbound surcharge, in USDC
+  # 0.0000050 SOL network fee plus SOL's 0.001489 SOL token outbound surcharge, in USDC
   # at the pool prices after the quoted swap. Without the surcharge it would be about
   # 51000 (0.0005 USDC).
-  - .fees.outbound == "20848900"
-  - .expected_amount_out == "978849900"
+  - .fees.outbound == "15231400"
+  - .expected_amount_out == "984467400"
 ---
 type: tx-deposit
 signer: {{ addr_thor_cat }}
@@ -121,11 +121,11 @@ asserts:
   - .|length == 1
   - .[0].to_address == "{{ addr_sol_fox }}"
   - .[0].coin.asset == "SOL.USDC-EPJFWDD5AUFQSSQEM2QN1XZYBAPC8G4WEGGKZWYTDT1V"
-  - .[0].coin.amount == "${USDC_OUT=978849900}"
+  - .[0].coin.amount == "${USDC_OUT=984467400}"
   - .[0].vault_pub_key_eddsa == "tthorpub1zcjduepqytyuhhzn286vccztkdns982ad0snfa68k3zjlcm2j2ae6rffhxssu9zuek"
   - .[0].max_gas[0].asset == "SOL.SOL"
-  # network gas (500) plus the 204000 token outbound surcharge, the rent it may pay
-  - .[0].max_gas[0].amount == "204500"
+  # network gas (500) plus the 148900 token outbound surcharge, the rent it may pay
+  - .[0].max_gas[0].amount == "149400"
 ---
 ########################################################################################
 # The vault's SPL outbound, which created the recipient's token account, is matched
@@ -142,11 +142,11 @@ txs:
         - amount: "${USDC_OUT}"
           asset: "SOL.USDC-EPJFWDD5AUFQSSQEM2QN1XZYBAPC8G4WEGGKZWYTDT1V"
           decimals: 6
-      # The vault's whole lamport spend: the 5000-lamport fee plus the 2039280-lamport
+      # The vault's whole lamport spend: the 5000-lamport fee plus the 1488440-lamport
       # rent of the recipient token account it created, far above network gas (500)
-      # but within max_gas (204500), which reserved the rent.
+      # but within max_gas (149400), which reserved the rent.
       gas:
-        - amount: "204428"
+        - amount: "149344"
           asset: "SOL.SOL"
       memo: "OUT:{{ native_txid -1 }}"
     block_height: 102
@@ -171,7 +171,7 @@ asserts:
 type: check
 endpoint: http://localhost:1317/thorchain/vaults/asgard
 asserts:
-  # 1000000000 - 9613053 (SOL out) - 500 (its gas) - 204428 (the SPL outbound's gas)
-  - .[0].coins[] | select(.asset == "SOL.SOL") | .amount == "990182019"
-  # 100000000000 + 1000000000 (credited deposit) - 978849900 (SPL outbound)
-  - .[0].coins[] | select(.asset == "SOL.USDC-EPJFWDD5AUFQSSQEM2QN1XZYBAPC8G4WEGGKZWYTDT1V") | .amount == "100021150100"
+  # 1000000000 - 9613053 (SOL out) - 500 (its gas) - 149344 (the SPL outbound's gas)
+  - .[0].coins[] | select(.asset == "SOL.SOL") | .amount == "990237103"
+  # 100000000000 + 1000000000 (credited deposit) - 984467400 (SPL outbound)
+  - .[0].coins[] | select(.asset == "SOL.USDC-EPJFWDD5AUFQSSQEM2QN1XZYBAPC8G4WEGGKZWYTDT1V") | .amount == "100015532600"

@@ -534,13 +534,20 @@ func (c Chain) TokenOutboundSurcharge() cosmos.Uint {
 	switch c {
 	case SOLChain:
 		// The vault creates the recipient's associated token account when it is
-		// missing and pays its rent-exempt minimum, 2,039,280 lamports (203,928 in
-		// 1e8 units, rounded up here), booked as gas. THORChain cannot know whether
-		// the account exists, so every token outbound pays and reserves it: the rent
-		// exceeds the minimum outbound fee, and since a recipient can close the
-		// account and keep the rent, small swaps to fresh wallets would otherwise
-		// drain the Reserve.
-		return cosmos.NewUint(204_000) // 0.00204 SOL
+		// missing and pays its rent-exempt minimum, booked as gas. THORChain cannot
+		// know whether the account exists, so every token outbound pays and reserves
+		// it: the rent exceeds the minimum outbound fee, and since a recipient can
+		// close the account and keep the rent, small swaps to fresh wallets would
+		// otherwise drain the Reserve.
+		//
+		// The rent of a 165-byte token account is 1,488,440 lamports at 5080 lamports
+		// per byte, live on mainnet since slot 446,256,000 (148,844 in 1e8 units,
+		// rounded up here). Below the real rent (as on a network running an Agave
+		// from before the cut), a vault is reserved less SOL than the outbound spends
+		// and the Reserve pays the difference; above it, users overpay. Solana has
+		// staged further cuts (2575, then 1322 lamports per byte): as they activate,
+		// set TokenOutboundSurcharge-SOL to the new rent.
+		return cosmos.NewUint(148_900) // 0.001489 SOL
 	default:
 		return cosmos.ZeroUint()
 	}

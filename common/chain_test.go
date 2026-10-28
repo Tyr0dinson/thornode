@@ -121,8 +121,9 @@ func (s ChainSuite) TestChain(c *C) {
 }
 
 func (s ChainSuite) TestTokenOutboundSurcharge(c *C) {
-	// SOL token outbounds carry the rent of the recipient's token account.
-	c.Check(SOLChain.TokenOutboundSurcharge().Uint64(), Equals, uint64(204_000))
+	// SOL token outbounds carry the rent of the recipient's token account: 1,488,440
+	// lamports at mainnet's current 5080 lamports per byte, rounded up.
+	c.Check(SOLChain.TokenOutboundSurcharge().Uint64(), Equals, uint64(148_900))
 	for _, chain := range []Chain{THORChain, BTCChain, ETHChain, BSCChain, TRONChain, XRPChain, GAIAChain} {
 		c.Check(chain.TokenOutboundSurcharge().IsZero(), Equals, true, Commentf("%s", chain))
 	}

@@ -138,7 +138,7 @@
           "address": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
           "coins": [
             {
-              "amount": "301003440524",
+              "amount": "301003440092",
               "denom": "rune"
             }
           ]
@@ -147,7 +147,7 @@
           "address": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
           "coins": [
             {
-              "amount": "34999996453616",
+              "amount": "34999996454033",
               "denom": "rune"
             }
           ]
@@ -174,7 +174,7 @@
           "address": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
           "coins": [
             {
-              "amount": "5000002105860",
+              "amount": "5000002105875",
               "denom": "rune"
             }
           ]
@@ -266,7 +266,7 @@
       "network": {
         "LPIncomeSplit": "9398",
         "NodeIncomeSplit": "602",
-        "bond_reward_rune": "2105860",
+        "bond_reward_rune": "2105875",
         "total_bond_units": "5"
       },
       "network_fees": [
@@ -305,7 +305,7 @@
           "asset": "SOL.SOL"
         },
         {
-          "amount": "20843786",
+          "amount": "15227338",
           "asset": "SOL.USDC-EPJFWDD5AUFQSSQEM2QN1XZYBAPC8G4WEGGKZWYTDT1V"
         }
       ],
@@ -315,7 +315,7 @@
           "asset": "SOL.SOL"
         },
         {
-          "amount": "689676019038",
+          "amount": "689670403007",
           "asset": "SOL.USDC-EPJFWDD5AUFQSSQEM2QN1XZYBAPC8G4WEGGKZWYTDT1V"
         }
       ],
@@ -324,7 +324,7 @@
           "LP_units": "100000000000",
           "asset": "BTC.BTC",
           "balance_asset": "100000000",
-          "balance_rune": "100001042049",
+          "balance_rune": "100001042042",
           "decimals": "8",
           "pending_inbound_asset": "0",
           "pending_inbound_rune": "0",
@@ -334,8 +334,8 @@
         {
           "LP_units": "100000000000",
           "asset": "SOL.SOL",
-          "balance_asset": "990182019",
-          "balance_rune": "101002131959",
+          "balance_asset": "990237103",
+          "balance_rune": "100996515504",
           "decimals": "9",
           "pending_inbound_asset": "0",
           "pending_inbound_rune": "0",
@@ -345,8 +345,8 @@
         {
           "LP_units": "100000000000",
           "asset": "SOL.USDC-EPJFWDD5AUFQSSQEM2QN1XZYBAPC8G4WEGGKZWYTDT1V",
-          "balance_asset": "100021150100",
-          "balance_rune": "100000266516",
+          "balance_asset": "100015532600",
+          "balance_rune": "100005882546",
           "decimals": "6",
           "pending_inbound_asset": "0",
           "pending_inbound_rune": "0",
@@ -409,12 +409,12 @@
               "decimals": "8"
             },
             {
-              "amount": "990182019",
+              "amount": "990237103",
               "asset": "SOL.SOL",
               "decimals": "9"
             },
             {
-              "amount": "100021150100",
+              "amount": "100015532600",
               "asset": "SOL.USDC-EPJFWDD5AUFQSSQEM2QN1XZYBAPC8G4WEGGKZWYTDT1V",
               "decimals": "6"
             }

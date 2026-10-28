@@ -15,8 +15,8 @@ import (
 // pending token outbound holds that amount of its vault's SOL.
 
 // solTokenRentSurcharge is the default token outbound surcharge on SOL: the rent of a
-// token account (2,039,280 lamports), in 1e8 units.
-const solTokenRentSurcharge = 204_000
+// token account (1,488,440 lamports at 5080 lamports per byte), in 1e8 units, rounded up.
+const solTokenRentSurcharge = 148_900
 
 type solTokenRentFixture struct {
 	w       handlerTestWrapper
