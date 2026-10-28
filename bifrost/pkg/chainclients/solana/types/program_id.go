@@ -3,6 +3,11 @@ package types
 var (
 	SystemProgramID = MustPublicKeyFromString("11111111111111111111111111111111")
 	MemoProgramID   = MustPublicKeyFromString("MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr")
+	// MemoV1ProgramID is the first SPL Memo program. It is deprecated but still deployed,
+	// and older wallets write deposit memos with it.
+	MemoV1ProgramID = MustPublicKeyFromString("Memo1UhkJRfHyvLMcVucJwxXeuD728EqVDDwQDxFMNo")
+	// ComputeBudgetProgramID sets a transaction's compute-unit limit and price.
+	ComputeBudgetProgramID = MustPublicKeyFromString("ComputeBudget111111111111111111111111111111")
 	// SysVarRecentBlockhashesID is the RecentBlockhashes sysvar, a required account
 	// of the SystemProgram AdvanceNonceAccount instruction used by durable-nonce
 	// transactions.

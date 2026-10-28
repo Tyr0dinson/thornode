@@ -222,8 +222,10 @@ func (s *SOLScanner) scan() {
 	// mint. A token account, like a new vault wallet, is first scanned from the start of
 	// its history, so every node observes the same transactions. While HaltSOLTokens is
 	// in force the token accounts are skipped, so their cursors stay put and the
-	// deposits made meanwhile are observed once it is cleared.
+	// deposits made meanwhile are observed once it is cleared. isTokenAccount marks the
+	// token accounts among them.
 	var vaultAddrs []string
+	isTokenAccount := map[string]bool{}
 	splHalted := s.spl.isHalted()
 	for _, vault := range s.pubKeyMgr.GetAlgoPubKeys(common.SigningAlgoEd25519, s.cfg.Solana.ScanInactiveVaults) {
 		vaultAddrSol, err := vault.GetAddress(common.SOLChain)
@@ -243,6 +245,7 @@ func (s *SOLScanner) scan() {
 		}
 		for _, ta := range tokenAccounts {
 			vaultAddrs = append(vaultAddrs, ta.address)
+			isTokenAccount[ta.address] = true
 		}
 	}
 
@@ -359,7 +362,7 @@ func (s *SOLScanner) scan() {
 			queryLastSig = ""
 		}
 
-		go s.scanVault(vaultAddr, i, queryLastSig, minContextSlot, &seenSigs, setUnhealthy, countTxs, successfulQueries, newLastSigs, &wg)
+		go s.scanAddress(vaultAddr, isTokenAccount[vaultAddr], i, queryLastSig, minContextSlot, &seenSigs, setUnhealthy, countTxs, successfulQueries, newLastSigs, &wg)
 	}
 	wg.Wait()
 
@@ -459,15 +462,38 @@ type sigClaim struct {
 	failed bool // written before done is closed, read only after it is closed
 }
 
-// scanVault scans a vault for new transactions. It will query the RPC node for the vault's
+// scanVault is scanAddress for a vault wallet.
+func (s *SOLScanner) scanVault(
+	vaultAddr string,
+	i int,
+	queryLastSig string,
+	minContextSlot uint64,
+	seen *sync.Map,
+	setUnhealthy func(),
+	txCounts []int,
+	successfulQueries []bool,
+	newLastSigs []string,
+	wg *sync.WaitGroup,
+) {
+	s.scanAddress(vaultAddr, false, i, queryLastSig, minContextSlot, seen, setUnhealthy, txCounts, successfulQueries, newLastSigs, wg)
+}
+
+// scanAddress scans a vault for new transactions. It will query the RPC node for the vault's
 // address and get any transactions involving the address, starting from most recent until queryLastSig.
 // If queryLastSig is empty, it will query all transactions for the vault address that exist on the node.
+// vaultAddr is a vault wallet, or, when tokenAccount is set, a vault's token account.
 // minContextSlot is the minimum slot to query for transactions. It does not set a bound on the query,
 // but does ensure that history exists on the RPC node until at least this slot.
 // seen dedupes signatures across the pass's addresses: it maps each signature to the
 // *sigClaim of the address that observes it.
-func (s *SOLScanner) scanVault(
+//
+// A token account's scan skips its failed signatures unfetched: a failed transaction
+// moves no tokens, and anyone can pad a token account's history with them for the fee
+// alone. A vault's own failed durable transaction lists the vault wallet as fee payer,
+// so the wallet's scan, which fetches failed signatures, still observes it.
+func (s *SOLScanner) scanAddress(
 	vaultAddr string,
+	tokenAccount bool,
 	i int,
 	queryLastSig string,
 	minContextSlot uint64,
@@ -526,6 +552,11 @@ func (s *SOLScanner) scanVault(
 		// pass claimed them first
 		var skipped []*sigClaim
 		for _, sig := range res {
+			// Unclaimed, so the vault wallet's scan still claims a failed tx it lists;
+			// this cursor moves past it all the same.
+			if tokenAccount && sig.Err != nil {
+				continue
+			}
 			// Whichever address claims a signature first observes it, and the others
 			// skip it. A skipping address counts its pass successful only if that
 			// observation succeeded. If it failed, neither cursor moves past the
@@ -960,7 +991,7 @@ func (s *SOLScanner) txInItem(txn *rpc.TransactionResult, blockHeight int64) (*s
 		programID := accountByIndex(instruction.ProgramIdIndex)
 
 		// Handle memo
-		if types.MemoProgramID.EqualsString(programID) {
+		if isMemoProgram(programID) {
 			memoBytes, err := base58.Decode(instruction.Data)
 			if err == nil {
 				memo = string(memoBytes)
@@ -971,9 +1002,7 @@ func (s *SOLScanner) txInItem(txn *rpc.TransactionResult, blockHeight int64) (*s
 		}
 
 		if types.TokenProgramID.EqualsString(programID) {
-			if transfer, isTransfer := parseSPLTransfer(instruction); isTransfer {
-				tokenTransfers = append(tokenTransfers, transfer)
-			}
+			tokenTransfers = append(tokenTransfers, parseSPLTransfers(instruction)...)
 			continue
 		}
 
@@ -1355,7 +1384,7 @@ func isDurableNonceCreateTx(instructions []rpc.RPCInstruction, accountByIndex fu
 	creates, allocates, transfers, inits := 0, 0, 0, 0
 	for _, ins := range instructions {
 		programID := accountByIndex(ins.ProgramIdIndex)
-		if types.MemoProgramID.EqualsString(programID) {
+		if isMemoProgram(programID) {
 			return false // a memo -> not a bare create-nonce tx
 		}
 		if !types.SystemProgramID.EqualsString(programID) {
@@ -1413,6 +1442,12 @@ func isDurableNonceCreateTx(instructions []rpc.RPCInstruction, accountByIndex fu
 }
 
 // --------------------------------- helpers ---------------------------------
+
+// isMemoProgram reports whether programID is an SPL Memo program: v2, or v1, which is
+// deprecated but still deployed, and which older wallets write deposit memos with.
+func isMemoProgram(programID string) bool {
+	return types.MemoProgramID.EqualsString(programID) || types.MemoV1ProgramID.EqualsString(programID)
+}
 
 // Function to convert lamports to sdk.Uint
 func convertLamportsToTHORChain(lamports uint64) sdk.Uint {

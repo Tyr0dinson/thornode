@@ -13,8 +13,12 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common"
 )
 
+// tokenInstructionBatch is p-token's Batch, which replaced the SPL Token program at
+// the same address on mainnet: one instruction packing several token instructions.
+const tokenInstructionBatch = 255
+
 // splTransfer is an SPL Token Transfer or TransferChecked instruction, top-level or
-// invoked by another program (CPI).
+// invoked by another program (CPI), on its own or packed in a Batch.
 type splTransfer struct {
 	valid     bool // false when the instruction is a transfer but malformed
 	source    int  // account index of the source token account
@@ -25,41 +29,78 @@ type splTransfer struct {
 	amount    uint64
 }
 
-// parseSPLTransfer reports whether ins (already known to target the SPL Token
-// program) is a Transfer or TransferChecked, and decodes it. A malformed transfer is
-// still reported as a transfer (valid=false) so it counts toward the one-transfer
-// rule instead of being silently ignored.
-func parseSPLTransfer(ins rpc.RPCInstruction) (splTransfer, bool) {
+// parseSPLTransfers returns the token transfers of ins (already known to target the
+// SPL Token program): ins itself when it is a Transfer or TransferChecked, or the
+// Transfer and TransferChecked entries of a Batch, so each counts exactly as the same
+// instruction on its own would.
+func parseSPLTransfers(ins rpc.RPCInstruction) []splTransfer {
 	data, err := base58.Decode(ins.Data)
 	if err != nil || len(data) == 0 {
+		return nil
+	}
+	if data[0] != tokenInstructionBatch {
+		if t, isTransfer := parseSPLTransfer(data, ins.Accounts); isTransfer {
+			return []splTransfer{t}
+		}
+		return nil
+	}
+	// Batch: disc | entries, each [number of accounts u8][data length u8][data], taking
+	// its accounts in order from the instruction's. p-token fails the whole transaction
+	// on a malformed Batch (a short header, empty or overlong data, too few accounts, a
+	// nested Batch), so such a Batch is reported as one malformed transfer, and none of
+	// its entries is credited.
+	var transfers []splTransfer
+	rest, accounts := data[1:], ins.Accounts
+	for {
+		if len(rest) < 2 || rest[1] == 0 || len(rest) < 2+int(rest[1]) || len(accounts) < int(rest[0]) ||
+			rest[2] == tokenInstructionBatch {
+			return []splTransfer{{}}
+		}
+		n, end := int(rest[0]), 2+int(rest[1])
+		if t, isTransfer := parseSPLTransfer(rest[2:end], accounts[:n]); isTransfer {
+			transfers = append(transfers, t)
+		}
+		rest, accounts = rest[end:], accounts[n:]
+		if len(rest) == 0 {
+			return transfers
+		}
+	}
+}
+
+// parseSPLTransfer reports whether the token instruction with data and accounts (an
+// instruction of its own or an entry of a Batch) is a Transfer or TransferChecked, and
+// decodes it. A malformed transfer is still reported as a transfer (valid=false) so it
+// counts toward the one-transfer rule instead of being silently ignored.
+func parseSPLTransfer(data []byte, accounts []int) (splTransfer, bool) {
+	if len(data) == 0 {
 		return splTransfer{}, false
 	}
 	switch data[0] {
 	case types.TokenInstructionTransfer:
 		// data: disc | amount u64 ; accounts: source, destination, authority(, signers)
-		if len(data) < 9 || len(ins.Accounts) < 3 {
+		if len(data) < 9 || len(accounts) < 3 {
 			return splTransfer{}, true
 		}
 		return splTransfer{
 			valid:     true,
-			source:    ins.Accounts[0],
-			dest:      ins.Accounts[1],
+			source:    accounts[0],
+			dest:      accounts[1],
 			mint:      -1,
-			authority: ins.Accounts[2],
+			authority: accounts[2],
 			decimals:  -1,
 			amount:    binary.LittleEndian.Uint64(data[1:9]),
 		}, true
 	case types.TokenInstructionTransferChecked:
 		// data: disc | amount u64 | decimals u8 ; accounts: source, mint, destination, authority(, signers)
-		if len(data) < 10 || len(ins.Accounts) < 4 {
+		if len(data) < 10 || len(accounts) < 4 {
 			return splTransfer{}, true
 		}
 		return splTransfer{
 			valid:     true,
-			source:    ins.Accounts[0],
-			mint:      ins.Accounts[1],
-			dest:      ins.Accounts[2],
-			authority: ins.Accounts[3],
+			source:    accounts[0],
+			mint:      accounts[1],
+			dest:      accounts[2],
+			authority: accounts[3],
 			decimals:  int(data[9]),
 			amount:    binary.LittleEndian.Uint64(data[1:9]),
 		}, true
@@ -69,9 +110,10 @@ func parseSPLTransfer(ins rpc.RPCInstruction) (splTransfer, bool) {
 }
 
 // splTxInItem observes the SPL Token transfer of a whitelisted mint that a transaction
-// makes to or from a vault, top-level or invoked by another program (CPI). Wallets
-// commonly add a Jito tip, a fee in SOL or tokens, or run the transfer from a smart
-// wallet; everything that touches no vault is ignored. Every field comes from the
+// makes to or from a vault, top-level or invoked by another program (CPI), on its own
+// or packed in a p-token Batch (whose transfers count as separate instructions would).
+// Wallets commonly add a Jito tip, a fee in SOL or tokens, or run the transfer from a
+// smart wallet; everything that touches no vault is ignored. Every field comes from the
 // finalized transaction (its instructions, inner instructions and meta token
 // balances), never from current account state, so every observer derives the same
 // item.
@@ -324,8 +366,9 @@ func (s *SOLScanner) splTransferTouchesVault(t splTransfer, pre, post []rpc.RPCT
 }
 
 // splInnerInstructions returns the SPL Token transfers among the transaction's inner
-// instructions (CPIs), in execution order, and the last memo written through one.
-// Smart wallets and other programs move tokens and write memos this way.
+// instructions (CPIs), Batch entries included, in execution order, and the last memo
+// written through one. Smart wallets and other programs move tokens and write memos
+// this way.
 func (s *SOLScanner) splInnerInstructions(txn *rpc.TransactionResult, accountByIndex func(int) string) ([]splTransfer, string) {
 	var transfers []splTransfer
 	memo := ""
@@ -333,10 +376,8 @@ func (s *SOLScanner) splInnerInstructions(txn *rpc.TransactionResult, accountByI
 		programID := accountByIndex(ins.ProgramIdIndex)
 		switch {
 		case types.TokenProgramID.EqualsString(programID):
-			if transfer, isTransfer := parseSPLTransfer(ins); isTransfer {
-				transfers = append(transfers, transfer)
-			}
-		case types.MemoProgramID.EqualsString(programID):
+			transfers = append(transfers, parseSPLTransfers(ins)...)
+		case isMemoProgram(programID):
 			memoBytes, err := base58.Decode(ins.Data)
 			if err != nil {
 				s.logger.Error().Err(err).Str("memoData", ins.Data).Msg("Failed to decode inner memo")
