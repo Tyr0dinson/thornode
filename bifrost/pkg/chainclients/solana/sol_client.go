@@ -679,9 +679,12 @@ func (c *SOLClient) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *
 	//   - a self-send, which can never be observed (errSPLSelfSend);
 	//   - an amount that is zero in the mint's base units (errSPLZeroAmount) or too
 	//     large for them (errSPLAmountOverflow);
-	//   - a recipient that is itself a token account or a mint.
+	//   - a recipient that is itself a token account or a mint;
+	//   - a recipient whose associated token account exists but is owned by another
+	//     address or frozen, so the outbound fails on chain every time.
 	// Each is remembered as rejected, so the serialize gate does not hold the vault's
-	// later durable siblings behind it. The self-send and amount drops come from the
+	// later durable siblings behind it. They run before either signing path, recent
+	// blockhash or durable nonce. The self-send and amount drops come from the
 	// outbound and the whitelist alone, so every node drops alike. Any other
 	// splOutboundParams error (a vault or recipient key, or a token account address,
 	// that cannot be derived) is left to the builder, which retains the outbound.
@@ -698,15 +701,15 @@ func (c *SOLClient) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *
 			return c.dropRejectedForReschedule(tx, height, "spl_halted_dropped", c.logger.Warn(),
 				"SPL signing halted by HaltSOLTokens, dropping for reschedule")
 		}
-		_, err = c.splOutboundParams(tx)
+		params, paramsErr := c.splOutboundParams(tx)
 		switch {
-		case errors.Is(err, errSPLSelfSend):
+		case errors.Is(paramsErr, errSPLSelfSend):
 			return c.dropRejectedForReschedule(tx, height, "spl_self_send_dropped", c.logger.Warn(),
 				"SPL outbound to its own vault would be an unobservable no-op, dropping for reschedule")
-		case errors.Is(err, errSPLZeroAmount):
+		case errors.Is(paramsErr, errSPLZeroAmount):
 			return c.dropRejectedForReschedule(tx, height, "spl_zero_amount_dropped", c.logger.Warn(),
 				"SPL outbound amount is zero in the token's base units, so there is nothing to send; dropping for reschedule")
-		case errors.Is(err, errSPLAmountOverflow):
+		case errors.Is(paramsErr, errSPLAmountOverflow):
 			return c.dropRejectedForReschedule(tx, height, "spl_amount_overflow_dropped", c.logger.Warn(),
 				"SPL outbound amount overflows the token's u64 base units, so it can never be sent; dropping for reschedule")
 		}
@@ -721,6 +724,27 @@ func (c *SOLClient) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *
 		if isTokenAccount {
 			return c.dropRejectedForReschedule(tx, height, "spl_recipient_token_account_dropped", c.logger.Warn(),
 				"SPL outbound recipient is a token account, not a wallet, so the tokens would be unrecoverable; dropping for reschedule")
+		}
+		// Nor is one whose recipient token account exists but is owned by another
+		// address or frozen (splRecipientUndeliverable): it would fail on chain every
+		// time, after a keysign every signing period. This only saves keysigns, since
+		// broadcast preflight keeps such a transaction from landing, so a failed read
+		// fails open, as the durable pre-sign filter's reads do.
+		if paramsErr == nil {
+			ownerReassigned, frozen, destErr := c.splRecipientUndeliverable(params)
+			switch {
+			case destErr != nil:
+				c.logger.Warn().Err(destErr).Str("token_account", params.DestATA.String()).
+					Msg("fail to read SPL recipient token account; not filtering")
+			case ownerReassigned:
+				return c.dropRejectedForReschedule(tx, height, "spl_recipient_ata_owner_reassigned_dropped",
+					c.logger.Warn().Str("token_account", params.DestATA.String()),
+					"SPL outbound recipient's token account is owned by another address, so creating it fails on chain; dropping for reschedule")
+			case frozen:
+				return c.dropRejectedForReschedule(tx, height, "spl_recipient_ata_frozen_dropped",
+					c.logger.Warn().Str("token_account", params.DestATA.String()),
+					"SPL outbound recipient's token account is frozen, so the transfer fails on chain; dropping for reschedule")
+			}
 		}
 	}
 

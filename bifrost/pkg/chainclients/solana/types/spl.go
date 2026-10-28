@@ -14,6 +14,27 @@ const (
 // it does not exist and succeeds without change if it does.
 const AssociatedTokenInstructionCreateIdempotent = 1
 
+// ComputeBudgetInstructionSetComputeUnitLimit is the ComputeBudget program's
+// SetComputeUnitLimit discriminator (first data byte).
+const ComputeBudgetInstructionSetComputeUnitLimit = 2
+
+// splOutboundComputeUnitLimit is the compute-unit limit an SPL outbound requests.
+// Without one it requests the default 200,000 units per non-builtin instruction (memo,
+// CreateIdempotent, TransferChecked: about 600,000), and since it pays no priority fee
+// the leader's scheduler ranks it under congestion by fee per requested unit. Measured
+// on mainnet it uses well under 50,000: CreateIdempotent costs 13,400 to 15,000 units
+// when it creates the account, and a p-token transfer a few hundred.
+const splOutboundComputeUnitLimit = 200_000
+
+// NewCompiledSetComputeUnitLimitInstruction builds the ComputeBudget
+// SetComputeUnitLimit instruction: no accounts, and the limit as a u32 LE.
+func NewCompiledSetComputeUnitLimitInstruction(programIndex int, units uint32) CompiledInstruction {
+	data := make([]byte, 0, 5)
+	data = append(data, ComputeBudgetInstructionSetComputeUnitLimit)
+	data = binary.LittleEndian.AppendUint32(data, units)
+	return NewCompiledInstruction(programIndex, []int{}, data)
+}
+
 // NewCompiledTransferCheckedInstruction builds the SPL Token TransferChecked
 // instruction. Account order is fixed by the Token program:
 //
@@ -137,15 +158,17 @@ type NonceParams struct {
 }
 
 // NewSPLTransferTransaction builds a vault SPL token outbound anchored on a recent
-// blockhash: an optional memo, CreateIdempotent for the recipient's associated token
-// account (the vault pays rent only if it is missing), then TransferChecked.
+// blockhash: a SetComputeUnitLimit (splOutboundComputeUnitLimit), an optional memo,
+// CreateIdempotent for the recipient's associated token account (the vault pays rent
+// only if it is missing), then TransferChecked.
 func NewSPLTransferTransaction(p SPLTransferParams, recentBlockHash string) Transaction {
 	return newSPLTransferTransaction(p, nil, recentBlockHash)
 }
 
 // NewNonceSPLTransferTransaction builds the same outbound as NewSPLTransferTransaction
 // anchored on a durable nonce: AdvanceNonceAccount is instruction[0], as Solana
-// requires, and the message's recentBlockhash field carries the stored nonce.
+// requires, followed by the SetComputeUnitLimit, and the message's recentBlockhash
+// field carries the stored nonce.
 func NewNonceSPLTransferTransaction(p SPLTransferParams, nonce NonceParams) Transaction {
 	return newSPLTransferTransaction(p, &nonce, nonce.Value)
 }
@@ -169,16 +192,19 @@ func newSPLTransferTransaction(p SPLTransferParams, nonce *NonceParams, blockhas
 	if p.Memo != "" {
 		b.add(MemoProgramID, false, false)
 	}
+	b.add(ComputeBudgetProgramID, false, false)
 	accounts, idx, header := b.compile()
 
-	instructions := make([]CompiledInstruction, 0, 4)
+	instructions := make([]CompiledInstruction, 0, 5)
 	if nonce != nil {
 		instructions = append(instructions, NewCompiledAdvanceNonceInstruction(
 			idx[SystemProgramID], idx[nonce.Account], idx[SysVarRecentBlockhashesID], idx[p.Vault],
 		))
 	}
+	// The compute-unit limit comes first, after AdvanceNonceAccount on the durable path.
+	instructions = append(instructions, NewCompiledSetComputeUnitLimitInstruction(idx[ComputeBudgetProgramID], splOutboundComputeUnitLimit))
 	if p.Memo != "" {
-		// Memo first, matching the SOL transfer builders.
+		// Memo before the token instructions, matching the SOL transfer builders.
 		instructions = append(instructions, NewCompiledInstruction(idx[MemoProgramID], []int{idx[p.Vault]}, []byte(p.Memo)))
 	}
 	instructions = append(instructions,

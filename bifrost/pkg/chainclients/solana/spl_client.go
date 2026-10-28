@@ -67,6 +67,31 @@ func (c *SOLClient) splRecipientIsTokenAccount(tx stypes.TxOutItem) (bool, error
 	return meta.Owner == types.TokenProgramID.String() || meta.Owner == types.Token2022ProgramID.String(), nil
 }
 
+// splRecipientUndeliverable reads the recipient's associated token account of an SPL
+// outbound and reports whether it exists but can never receive the outbound, which
+// runs CreateIdempotent on it and then TransferChecked into it. Both fail on chain
+// every time when the account:
+//   - is owned by an address other than the recipient (ownerReassigned): SPL Token
+//     lets an account's owner be reassigned (SetAuthority AccountOwner), after which
+//     CreateIdempotent fails with InvalidOwner;
+//   - is frozen, e.g. by the issuer, after which the transfer fails.
+//
+// A missing account is created by the outbound. A failed read is returned as an error;
+// the caller fails open.
+func (c *SOLClient) splRecipientUndeliverable(p types.SPLTransferParams) (ownerReassigned, frozen bool, err error) {
+	if c.rpcClient == nil {
+		return false, false, nil
+	}
+	dest, err := c.rpcClient.GetTokenAccount(p.DestATA.String(), "confirmed")
+	if err != nil {
+		return false, false, fmt.Errorf("fail to read recipient token account %s: %w", p.DestATA, err)
+	}
+	if !dest.Exists {
+		return false, false, nil
+	}
+	return dest.Owner != p.Recipient.String(), dest.State == "frozen", nil
+}
+
 // splTransferParams resolves an SPL outbound: the whitelisted mint, the amount in
 // the mint's base units, and the vault's and recipient's associated token accounts.
 // Everything is derived from the outbound and the whitelist alone, so every keysign

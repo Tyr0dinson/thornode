@@ -105,15 +105,16 @@ func (s *SPLTestSuite) TestNewSPLTransferTransactionLayout(c *C) {
 	tx := NewSPLTransferTransaction(p, "EkSnNWid2cvwEVnVx9aBqawnmiCNiDgp3gUdkDPTKN1N")
 	m := tx.Message
 
-	c.Check(m.Header, DeepEquals, MessageHeader{NumRequireSignatures: 1, NumReadonlySignedAccounts: 0, NumReadonlyUnsignedAccounts: 6})
+	c.Check(m.Header, DeepEquals, MessageHeader{NumRequireSignatures: 1, NumReadonlySignedAccounts: 0, NumReadonlyUnsignedAccounts: 7})
 	c.Check(m.Accounts, DeepEquals, []PublicKey{
 		p.Vault, p.SourceATA, p.DestATA,
-		p.Recipient, p.Mint, SystemProgramID, TokenProgramID, AssociatedTokenProgramID, MemoProgramID,
+		p.Recipient, p.Mint, SystemProgramID, TokenProgramID, AssociatedTokenProgramID, MemoProgramID, ComputeBudgetProgramID,
 	})
-	c.Assert(m.Instructions, HasLen, 3)
-	c.Check(m.Instructions[0], DeepEquals, NewCompiledInstruction(8, []int{0}, []byte("OUT:ABCDEF")))
-	c.Check(m.Instructions[1], DeepEquals, NewCompiledCreateAssociatedTokenAccountIdempotentInstruction(7, 0, 2, 3, 4, 5, 6))
-	c.Check(m.Instructions[2], DeepEquals, NewCompiledTransferCheckedInstruction(6, 1, 4, 2, 0, 2_500_000, 6))
+	c.Assert(m.Instructions, HasLen, 4)
+	c.Check(m.Instructions[0], DeepEquals, NewCompiledSetComputeUnitLimitInstruction(9, 200_000))
+	c.Check(m.Instructions[1], DeepEquals, NewCompiledInstruction(8, []int{0}, []byte("OUT:ABCDEF")))
+	c.Check(m.Instructions[2], DeepEquals, NewCompiledCreateAssociatedTokenAccountIdempotentInstruction(7, 0, 2, 3, 4, 5, 6))
+	c.Check(m.Instructions[3], DeepEquals, NewCompiledTransferCheckedInstruction(6, 1, 4, 2, 0, 2_500_000, 6))
 	c.Check(tx.Signatures, HasLen, 1)
 
 	_, err := tx.Serialize()
@@ -123,10 +124,10 @@ func (s *SPLTestSuite) TestNewSPLTransferTransactionLayout(c *C) {
 func (s *SPLTestSuite) TestNewSPLTransferTransactionNoMemo(c *C) {
 	p := splTestParams(c, "")
 	tx := NewSPLTransferTransaction(p, "EkSnNWid2cvwEVnVx9aBqawnmiCNiDgp3gUdkDPTKN1N")
-	c.Check(tx.Message.Accounts, HasLen, 8)
-	c.Check(tx.Message.Header.NumReadonlyUnsignedAccounts, Equals, uint8(5))
-	c.Assert(tx.Message.Instructions, HasLen, 2)
-	c.Check(tx.Message.Instructions[0].Data, DeepEquals, []byte{AssociatedTokenInstructionCreateIdempotent})
+	c.Check(tx.Message.Accounts, HasLen, 9)
+	c.Check(tx.Message.Header.NumReadonlyUnsignedAccounts, Equals, uint8(6))
+	c.Assert(tx.Message.Instructions, HasLen, 3)
+	c.Check(tx.Message.Instructions[1].Data, DeepEquals, []byte{AssociatedTokenInstructionCreateIdempotent})
 }
 
 func (s *SPLTestSuite) TestNewSPLTransferTransactionDedupsRecipient(c *C) {
@@ -161,15 +162,16 @@ func (s *SPLTestSuite) TestNewNonceSPLTransferTransactionLayout(c *C) {
 	c.Check(m.RecentBlockHash, Equals, nonceValue)
 	c.Check(m.Accounts, DeepEquals, []PublicKey{
 		p.Vault, nonceAccount, p.SourceATA, p.DestATA,
-		SysVarRecentBlockhashesID, p.Recipient, p.Mint, SystemProgramID, TokenProgramID, AssociatedTokenProgramID, MemoProgramID,
+		SysVarRecentBlockhashesID, p.Recipient, p.Mint, SystemProgramID, TokenProgramID, AssociatedTokenProgramID, MemoProgramID, ComputeBudgetProgramID,
 	})
-	c.Check(m.Header, DeepEquals, MessageHeader{NumRequireSignatures: 1, NumReadonlySignedAccounts: 0, NumReadonlyUnsignedAccounts: 7})
-	c.Assert(m.Instructions, HasLen, 4)
+	c.Check(m.Header, DeepEquals, MessageHeader{NumRequireSignatures: 1, NumReadonlySignedAccounts: 0, NumReadonlyUnsignedAccounts: 8})
+	c.Assert(m.Instructions, HasLen, 5)
 	// AdvanceNonceAccount must be instruction[0].
 	c.Check(m.Instructions[0], DeepEquals, NewCompiledAdvanceNonceInstruction(7, 1, 4, 0))
-	c.Check(m.Instructions[1], DeepEquals, NewCompiledInstruction(10, []int{0}, []byte("OUT:ABCDEF")))
-	c.Check(m.Instructions[2], DeepEquals, NewCompiledCreateAssociatedTokenAccountIdempotentInstruction(9, 0, 3, 5, 6, 7, 8))
-	c.Check(m.Instructions[3], DeepEquals, NewCompiledTransferCheckedInstruction(8, 2, 6, 3, 0, 2_500_000, 6))
+	c.Check(m.Instructions[1], DeepEquals, NewCompiledSetComputeUnitLimitInstruction(11, 200_000))
+	c.Check(m.Instructions[2], DeepEquals, NewCompiledInstruction(10, []int{0}, []byte("OUT:ABCDEF")))
+	c.Check(m.Instructions[3], DeepEquals, NewCompiledCreateAssociatedTokenAccountIdempotentInstruction(9, 0, 3, 5, 6, 7, 8))
+	c.Check(m.Instructions[4], DeepEquals, NewCompiledTransferCheckedInstruction(8, 2, 6, 3, 0, 2_500_000, 6))
 }
 
 func (s *SPLTestSuite) TestSPLTransferDeterministic(c *C) {
