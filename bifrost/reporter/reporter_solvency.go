@@ -445,6 +445,9 @@ func (r *solvencyReporter) isVaultSolvent(account common.Account, vault types.Va
 		if !asgardCoin.Asset.Chain.Equals(chain) {
 			continue
 		}
+		if asgardCoin.Amount.IsZero() {
+			continue
+		}
 
 		walletAmt := cosmos.ZeroUint()
 		walletCoin := account.Coins.GetCoin(asgardCoin.Asset)

@@ -48,6 +48,14 @@ transparent destination and one with a TEX destination. Mocknet uses `tm` and
 `textest` in place of mainnet's `t1` and `tex`. Both swaps must complete, and their
 outbound actions and observations must use the normal transparent address.
 
+### Insolvency simulation
+
+The opt-in `insolvency` stage uses the node user's direct signer to change a
+vault's external balance and verify halt/recovery. It excludes XMR even when
+XMR is enabled for other stages: the node user's EdDSA key cannot spend the
+FROST vault. XMR solvency reporting still has focused client and reporter
+tests; this stage does not provide end-to-end XMR insolvency coverage.
+
 ### Inactive-vault refunds
 
 The cluster profile runs `inactive-vault-refunds` after churn, when eligible

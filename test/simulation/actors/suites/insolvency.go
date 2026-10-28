@@ -21,10 +21,12 @@ import (
 // The suite:
 //  1. enables log-only mode for the solvency-halt watcher,
 //  2. applies deterministic USD config mimirs used by solvency threshold logic,
-//  3. runs one insolvency actor per simulation chain sequentially, with each
+//  3. runs one insolvency actor per supported simulation chain sequentially, with each
 //     actor proving two distinct halt/unhalt cycles,
 //  4. waits for all solvency halts to clear,
 //  5. restores watcher behavior to fatal mode.
+//
+// XMR is excluded: its FROST vault cannot be spent by the node user's direct signer.
 func Insolvency(rng *rand.Rand) *Actor {
 	a := NewActor("Insolvency", rng)
 	a.Ops = append(a.Ops, func(config *OpConfig) OpResult {
@@ -43,11 +45,16 @@ func Insolvency(rng *rand.Rand) *Actor {
 
 	tests := NewActor("Insolvency-Launcher", rng)
 
-	chains := append([]common.Chain(nil), acommon.SimChains...)
+	chains := make([]common.Chain, 0, len(acommon.SimChains))
 
 	// In mocknet, insolvency actors contend for the same node lock/account,
 	// so we chain them sequentially instead of running as parallel children.
-	for _, chain := range chains {
+	for _, chain := range acommon.SimChains {
+		if chain.Equals(common.XMRChain) {
+			a.Log().Warn().Msg("skipping XMR insolvency simulation: direct signer cannot spend the FROST vault")
+			continue
+		}
+		chains = append(chains, chain)
 		tests.Append(core.NewInsolvencyActor(chain, rng))
 	}
 	a.Append(tests)

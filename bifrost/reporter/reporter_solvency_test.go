@@ -74,6 +74,7 @@ type mockChainClient struct {
 	blockScannerHeight    int64
 	blockScannerIsHealthy bool
 	chainHeight           int64
+	heightErr             error
 	getHeightCalls        atomic.Int64
 	vaultAccountHeights   []int64
 }
@@ -117,7 +118,7 @@ func (m *mockChainClient) Start(globalTxsQueue chan types.TxIn, globalErrataQueu
 func (m *mockChainClient) Stop() {}
 func (m *mockChainClient) GetHeight() (int64, error) {
 	m.getHeightCalls.Add(1)
-	return m.chainHeight, nil
+	return m.chainHeight, m.heightErr
 }
 func (m *mockChainClient) OnObservedTxIn(txIn types.TxInItem, blockHeight int64) {}
 func (m *mockChainClient) GetAccountByAddress(address string, _ *big.Int) (common.Account, error) {
@@ -213,6 +214,7 @@ func (mm *mimirMap) get(key string) int64 {
 type thorMockBridge struct {
 	thorclient.ThorchainBridge
 	getAsgardsFunc      func() (ctypes.Vaults, error)
+	getMimirFunc        func(string) (int64, error)
 	fetchNodeStatusFunc func() (ctypes.NodeStatus, error)
 	msgs                []ctypes.MsgSolvency
 	mimir               mimirMap
@@ -261,6 +263,9 @@ func (b *thorMockBridge) Broadcast(msgs ...sdk.Msg) (common.TxID, error) {
 }
 
 func (b *thorMockBridge) GetMimir(key string) (int64, error) {
+	if b.getMimirFunc != nil {
+		return b.getMimirFunc(key)
+	}
 	return b.mimir.get(key), nil
 }
 
@@ -841,6 +846,163 @@ func (s *SolvencySuite) TestDispatcherGatesRunnerBeforeResolvingChainHeight(c *C
 	c.Assert(client.getHeightCalls.Load(), Equals, int64(1))
 }
 
+func (s *SolvencySuite) TestDispatcherWithholdsAllClearOnMimirError(c *C) {
+	for _, failedKey := range []string{"HaltETHChain", "SolvencyHaltETHChain"} {
+		for _, failAfterHeight := range []bool{false, true} {
+			vault := ctypes.Vault{
+				PubKey: ctypes.GetRandomPubKey(),
+				Coins:  common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(100))),
+			}
+			client := &mockChainClient{
+				chain:       common.ETHChain,
+				cfg:         config.BifrostChainConfiguration{SolvencyBlocks: 20},
+				gas:         cosmos.NewUint(1),
+				account:     common.Account{Coins: vault.Coins},
+				chainHeight: 100,
+			}
+			bridge := &thorMockBridge{thorchainHeight: 100}
+			bridge.mimir.set("HaltETHChain", 100)
+			bridge.mimir.set("SolvencyHaltETHChain", 100)
+			failing := true
+			reads := 0
+			failAt := 1
+			if failAfterHeight {
+				failAt = 2
+			}
+			bridge.getMimirFunc = func(key string) (int64, error) {
+				if key == failedKey {
+					reads++
+					if failing && reads >= failAt {
+						return 0, fmt.Errorf("mimir unavailable")
+					}
+				}
+				return bridge.mimir.get(key), nil
+			}
+			collections := 0
+			bridge.getAsgardsFunc = func() (ctypes.Vaults, error) {
+				collections++
+				return ctypes.Vaults{vault}, nil
+			}
+			rep := newSolvencyReporter(client, bridge)
+			d := &dispatcher{
+				logger:      log.Logger,
+				reportQueue: make(chan ReportBatch, 1),
+				stopper:     make(chan struct{}),
+				chains:      map[common.Chain]ChainClient{common.ETHChain: client},
+				reporters:   map[common.Chain]Reporters{common.ETHChain: {rep}},
+			}
+			comment := Commentf("key=%s after_height=%v", failedKey, failAfterHeight)
+			d.processInternal(common.ETHChain, fromRunner, 0)
+			c.Assert(reads, Equals, failAt, comment)
+			c.Assert(collections, Equals, 0, comment)
+			c.Assert(d.reportQueue, HasLen, 0, comment)
+			c.Assert(rep.getLastSolvencyAttemptHeight(), Equals, int64(0), comment)
+			if failAfterHeight {
+				c.Assert(client.getHeightCalls.Load(), Equals, int64(1), comment)
+			} else {
+				c.Assert(client.getHeightCalls.Load(), Equals, int64(0), comment)
+			}
+
+			// A failed read must retain eligibility for the same recovery window.
+			failing = false
+			d.processInternal(common.ETHChain, fromRunner, 0)
+			c.Assert(collections, Equals, 1, comment)
+			c.Assert(d.reportQueue, HasLen, 1, comment)
+			batch := <-d.reportQueue
+			c.Assert(batch, HasLen, 1, comment)
+			msg, ok := batch[0].(*ctypes.MsgSolvency)
+			c.Assert(ok, Equals, true, comment)
+			c.Assert(msg.PubKey, Equals, vault.PubKey, comment)
+			c.Assert(msg.Height, Equals, int64(100), comment)
+		}
+	}
+}
+
+func (s *SolvencySuite) TestDispatcherRetriesRunnerAfterHeightError(c *C) {
+	vault := ctypes.Vault{
+		PubKey: ctypes.GetRandomPubKey(),
+		Coins:  common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(100))),
+	}
+	client := &mockChainClient{
+		chain:       common.ETHChain,
+		cfg:         config.BifrostChainConfiguration{SolvencyBlocks: 20},
+		gas:         cosmos.NewUint(1),
+		account:     common.Account{Coins: vault.Coins},
+		chainHeight: 100,
+		heightErr:   fmt.Errorf("external height unavailable"),
+	}
+	collections := 0
+	bridge := &thorMockBridge{
+		thorchainHeight: 100,
+		getAsgardsFunc: func() (ctypes.Vaults, error) {
+			collections++
+			return ctypes.Vaults{vault}, nil
+		},
+	}
+	bridge.mimir.set("SolvencyHaltETHChain", 100)
+	rep := newSolvencyReporter(client, bridge)
+	d := &dispatcher{
+		logger:      log.Logger,
+		reportQueue: make(chan ReportBatch, 1),
+		stopper:     make(chan struct{}),
+		chains:      map[common.Chain]ChainClient{common.ETHChain: client},
+		reporters:   map[common.Chain]Reporters{common.ETHChain: {rep}},
+	}
+	d.processInternal(common.ETHChain, fromRunner, 0)
+	c.Assert(client.getHeightCalls.Load(), Equals, int64(1))
+	c.Assert(collections, Equals, 0)
+	c.Assert(d.reportQueue, HasLen, 0)
+	c.Assert(rep.getLastSolvencyAttemptHeight(), Equals, int64(0))
+
+	client.heightErr = nil
+	d.processInternal(common.ETHChain, fromRunner, 0)
+	c.Assert(client.getHeightCalls.Load(), Equals, int64(2))
+	c.Assert(collections, Equals, 1)
+	c.Assert(d.reportQueue, HasLen, 1)
+}
+
+func (s *SolvencySuite) TestIsVaultSolventPreservesAssetAndGasRules(c *C) {
+	token, err := common.NewAsset("ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48")
+	c.Assert(err, IsNil)
+	eth := func(amount uint64) common.Coin { return common.NewCoin(common.ETHAsset, cosmos.NewUint(amount)) }
+	usdc := func(amount uint64) common.Coin { return common.NewCoin(token, cosmos.NewUint(amount)) }
+	for _, tc := range []struct {
+		name   string
+		vault  common.Coins
+		wallet common.Coins
+		gas    uint64
+		want   bool
+	}{
+		{name: "equal gas", vault: common.NewCoins(eth(100)), wallet: common.NewCoins(eth(100)), want: true},
+		{name: "gas surplus", vault: common.NewCoins(eth(100)), wallet: common.NewCoins(eth(101)), want: true},
+		{name: "within gas allowance", vault: common.NewCoins(eth(100)), wallet: common.NewCoins(eth(91)), gas: 1, want: true},
+		{name: "at gas allowance", vault: common.NewCoins(eth(100)), wallet: common.NewCoins(eth(90)), gas: 1},
+		{name: "above gas allowance", vault: common.NewCoins(eth(100)), wallet: common.NewCoins(eth(89)), gas: 1},
+		{name: "missing gas", vault: common.NewCoins(eth(100))},
+		{name: "missing token from empty wallet", vault: common.NewCoins(usdc(100))},
+		{name: "missing token", vault: common.NewCoins(eth(100), usdc(1)), wallet: common.NewCoins(eth(100)), gas: 100},
+		{name: "unrelated vault asset", vault: common.NewCoins(eth(100), common.NewCoin(common.BTCAsset, cosmos.NewUint(100))), wallet: common.NewCoins(eth(100)), want: true},
+		{name: "token shortfall has no gas allowance", vault: common.NewCoins(usdc(100)), wallet: common.NewCoins(usdc(99)), gas: 100},
+		{name: "token surplus", vault: common.NewCoins(usdc(100)), wallet: common.NewCoins(usdc(101)), want: true},
+		{name: "equal token", vault: common.NewCoins(usdc(100)), wallet: common.NewCoins(usdc(100)), want: true},
+	} {
+		rep := newSolvencyReporter(&mockChainClient{chain: common.ETHChain}, nil)
+		got := rep.isVaultSolvent(common.Account{Coins: tc.wallet}, ctypes.Vault{Coins: tc.vault}, cosmos.NewUint(tc.gas))
+		c.Assert(got, Equals, tc.want, Commentf(tc.name))
+	}
+}
+
+func (s *SolvencySuite) TestIsVaultSolventSkipsZeroAmountVaultCoins(c *C) {
+	token, err := common.NewAsset("ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48")
+	c.Assert(err, IsNil)
+	rep := newSolvencyReporter(&mockChainClient{chain: common.ETHChain}, nil)
+	var buf bytes.Buffer
+	rep.logger = zerolog.New(&buf)
+	vault := ctypes.Vault{Coins: common.NewCoins(common.NewCoin(token, cosmos.ZeroUint()))}
+	c.Assert(rep.isVaultSolvent(common.Account{}, vault, cosmos.ZeroUint()), Equals, true)
+	c.Assert(strings.Contains(buf.String(), "insolvent"), Equals, false)
+}
+
 // TestCollectSkipsSolventVaultsWhenInsolventPresent ensures a runner collect only reports
 // insolvent vaults when both solvent and insolvent vaults exist.
 func (s *SolvencySuite) TestCollectSkipsSolventVaultsWhenInsolventPresent(c *C) {
@@ -1286,6 +1448,33 @@ func (s *SolvencySuite) TestReportHeightBoundaryStraddleConvergesNextBucket(c *C
 	c.Assert(height, Equals, int64(140))
 }
 
+func (s *SolvencySuite) TestShouldReportAtHeightPreservesDefaultCadences(c *C) {
+	for _, tc := range []struct {
+		chain  common.Chain
+		blocks int64
+	}{
+		{common.ETHChain, 20},
+		{common.GAIAChain, 10},
+		{common.NOBLEChain, 10},
+		{common.TRONChain, 10},
+		{common.DOGEChain, 10},
+		{common.ZECChain, 10},
+		{common.XMRChain, 10},
+		{common.LTCChain, 10},
+		{common.BTCChain, 2},
+		{common.BCHChain, 2},
+	} {
+		rep := newSolvencyReporter(&mockChainClient{chain: tc.chain}, nil)
+		last := 4 * tc.blocks
+		if tc.chain.Equals(common.TRONChain) {
+			last -= 19
+		}
+		rep.setLastSolvencyCheckHeight(last)
+		c.Assert(rep.shouldReportAtHeight(5*tc.blocks-1), Equals, false, Commentf("chain=%s", tc.chain))
+		c.Assert(rep.shouldReportAtHeight(5*tc.blocks), Equals, true, Commentf("chain=%s", tc.chain))
+	}
+}
+
 func (s *SolvencySuite) TestShouldReportRequiresNonZeroGas(c *C) {
 	gaiaAsset, err := common.NewAsset("gaia.atom")
 	c.Assert(err, IsNil)
@@ -1296,7 +1485,10 @@ func (s *SolvencySuite) TestShouldReportRequiresNonZeroGas(c *C) {
 		asset common.Asset
 	}{
 		{name: "gaia", chain: common.GAIAChain, asset: gaiaAsset},
+		{name: "noble", chain: common.NOBLEChain, asset: common.NOBLEChain.GetGasAsset()},
 		{name: "sol", chain: common.SOLChain, asset: common.SOLAsset},
+		{name: "xrp", chain: common.XRPChain, asset: common.XRPAsset},
+		{name: "xmr", chain: common.XMRChain, asset: common.XMRAsset},
 	}
 
 	for _, tc := range testCases {
@@ -1316,6 +1508,8 @@ func (s *SolvencySuite) TestShouldReportRequiresNonZeroGas(c *C) {
 		reporter.setLastSolvencyCheckHeight(0)
 
 		c.Assert(reporter.ShouldReport(fromBlockScanner, 20), Equals, false, Commentf(tc.name))
+		client.gas = cosmos.NewUint(1)
+		c.Assert(reporter.ShouldReport(fromBlockScanner, 20), Equals, true, Commentf(tc.name))
 	}
 }
 
