@@ -167,6 +167,12 @@ func (HandlerBondSuite) TestBondStartsNodeAge(c *C) {
 	bond(800)
 	height, _ = ageStart()
 	c.Check(height, Equals, int64(700))
+	// A higher minimum, then a bond that reaches it before any churn: the age starts
+	// at that bond.
+	k.SetMimir(ctx, constants.MinimumBondInRune.String(), 45*common.One)
+	bond(900)
+	height, _ = ageStart()
+	c.Check(height, Equals, int64(900))
 }
 
 func (HandlerBondSuite) TestBondHandlerFailValidation(c *C) {

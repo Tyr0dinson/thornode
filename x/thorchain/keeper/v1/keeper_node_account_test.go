@@ -341,6 +341,18 @@ func (s *KeeperNodeAccountSuite) TestNodeAgeStart(c *C) {
 	write(&na, 1300, 500)
 	height, _ = ageStart(na.NodeAddress)
 	c.Check(height, Equals, int64(1200))
+	// MinimumBondInRune rises above the bond, which writes no account: the next write
+	// that reaches it starts the age again, even before any churn syncs it.
+	k.SetMimir(ctx, constants.MinimumBondInRune.String(), 600*common.One)
+	write(&na, 1350, 600)
+	height, _ = ageStart(na.NodeAddress)
+	c.Check(height, Equals, int64(1350))
+	k.SetMimir(ctx, constants.MinimumBondInRune.String(), 100*common.One)
+	// A stored account that cannot be read counts as below the minimum.
+	k.kvStore(ctx).Set(k.GetKey(prefixNodeAccount, na.NodeAddress.String()), []byte{0xff})
+	write(&na, 1360, 600)
+	height, _ = ageStart(na.NodeAddress)
+	c.Check(height, Equals, int64(1360))
 	// A reset clears it until the next write that holds the minimum.
 	k.ResetNodeAgeStart(ctx, na.NodeAddress)
 	_, ok = ageStart(na.NodeAddress)
