@@ -114,3 +114,10 @@ func (cm *CacheManager) RemoveSigned(transactionHash string) {
 		cm.logger.Err(err).Msgf("fail to remove signed transaction hash: %s", transactionHash)
 	}
 }
+
+// ProtectSigned makes an existing payment record non-expiring without changing
+// its transaction mappings or vault metadata. Callers must serialize the entire
+// decision with competing writers; this is a safety hold, not cache deletion.
+func (cm *CacheManager) ProtectSigned(txOutItemHash string) error {
+	return cm.storageAccessor.SetSigned(txOutItemHash)
+}

@@ -175,6 +175,14 @@ func (cm *CacheManager) SignTxCacheCheck(
 		cm.RemoveSigned(sig)
 		return CacheCheck{SkipSign: false, Phase: PhaseVerifiedAbsentCleared, Sig: sig}
 	case LookupFailed:
+		// Verification can block on RPC while another vault records a newer
+		// broadcast or an observer records success. Evidence about the old
+		// attempt does not authorize replacing the current cache entry.
+		stillSigned, stillExpired := cm.HasSignedWithExpiry(cacheHash)
+		currentSig, currentOK := cm.GetSignedTxHash(cacheHash)
+		if !stillSigned || !stillExpired || !currentOK || currentSig != sig {
+			return CacheCheck{SkipSign: true, Phase: PhaseVerifiedAmbiguous, Sig: sig}
+		}
 		return CacheCheck{SkipSign: false, Phase: PhaseVerifiedFailed, Sig: sig}
 	default: // LookupAmbiguous
 		return CacheCheck{SkipSign: true, Phase: PhaseVerifiedAmbiguous, Sig: sig}

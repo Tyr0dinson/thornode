@@ -127,6 +127,23 @@ var (
 
 const secp256k1VerificationSignatureTimeout = tss.RemoteSignTimeout + 30*time.Second
 
+// txOutLocker owns a payment-specific sign-and-broadcast boundary. The returned
+// release function must also retire any per-attempt lock bookkeeping.
+type txOutLocker interface {
+	LockTxOut(tx types.TxOutItem) func()
+}
+
+func lockChainTxOut(chain chainclients.ChainClient, tx types.TxOutItem) func() {
+	if lockable, ok := chain.(txOutLocker); ok {
+		return lockable.LockTxOut(tx)
+	}
+	if lock := chainVaultLock(chain, chainVaultLockKey(chain, tx)); lock != nil {
+		lock.Lock()
+		return lock.Unlock
+	}
+	return func() {}
+}
+
 type vaultLocker interface {
 	GetVaultLock(vaultPubKey string) *sync.Mutex
 }
@@ -1345,13 +1362,10 @@ func (s *Signer) signAndBroadcast(item TxOutStoreItem) ([]byte, *types.TxInItem,
 		break
 	}
 
-	// If the chain client exposes a vault lock, hold it for sign+broadcast so
-	// chain-specific consolidation routines cannot race normal outbounds.
-	lockKey := chainVaultLockKey(chain, tx)
-	if lock := chainVaultLock(chain, lockKey); lock != nil {
-		lock.Lock()
-		defer lock.Unlock()
-	}
+	// Chain-specific payment locks cover cross-vault retries; existing vault
+	// locks continue to serialize UTXO consolidation with ordinary outbounds.
+	releaseTxOut := lockChainTxOut(chain, tx)
+	defer releaseTxOut()
 
 	// If SignedTx is set, we already signed and should only retry broadcast.
 	var signedTx, checkpoint []byte

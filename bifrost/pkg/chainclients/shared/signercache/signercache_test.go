@@ -661,3 +661,23 @@ func (s *SignerCacheSuite) TestCacheStoreSetLatestRecordedTxOverwrite(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(result, Equals, "tx-2")
 }
+
+func (s *SignerCacheSuite) TestProtectSignedPreservesTransactionAndVaultMetadata(c *C) {
+	db := newTestDB(c)
+	defer db.Close()
+	manager, err := NewSignerCacheManager(db)
+	c.Assert(err, IsNil)
+	c.Assert(manager.SetSignedWithExpiry("payment", "vault-b", "broadcast-b", time.Now().Add(-time.Hour).UnixMilli()), IsNil)
+	c.Assert(manager.ProtectSigned("payment"), IsNil)
+	signed, expired := manager.HasSignedWithExpiry("payment")
+	c.Assert(signed, Equals, true)
+	c.Assert(expired, Equals, false)
+	current, err := manager.GetTransactionHash("payment")
+	c.Assert(err, IsNil)
+	c.Assert(current, Equals, "broadcast-b")
+	latest, err := manager.GetLatestRecordedTx("vault-b")
+	c.Assert(err, IsNil)
+	c.Assert(latest, Equals, "broadcast-b")
+	_, err = manager.GetLatestRecordedTx("vault-a")
+	c.Assert(err, Equals, leveldb.ErrNotFound)
+}

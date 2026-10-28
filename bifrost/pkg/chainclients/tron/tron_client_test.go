@@ -48,11 +48,12 @@ import (
 func TestPackage(t *testing.T) { TestingT(t) }
 
 type TronTestSuite struct {
-	tmpdir  string
-	metrics *metrics.Metrics
-	client  *TronClient
-	api     *httptest.Server
-	rpc     *httptest.Server
+	thorKeys *thorclient.Keys
+	tmpdir   string
+	metrics  *metrics.Metrics
+	client   *TronClient
+	api      *httptest.Server
+	rpc      *httptest.Server
 }
 
 // mockBridge is a mock implementation of ThorchainBridge for testing
@@ -144,6 +145,7 @@ func (s *TronTestSuite) SetUpSuite(c *C) {
 	keys := thorclient.NewKeysWithKeybase(
 		kb, clientConfig.SignerName, clientConfig.SignerPasswd,
 	)
+	s.thorKeys = keys
 	c.Assert(err, IsNil)
 
 	localKeyManager, err := NewLocalKeyManager(keys)
@@ -307,7 +309,7 @@ func (s *TronTestSuite) TestSignAndBroadcastTx(c *C) {
 	c.Assert(txId, Equals, "77ddfa7093cc5f745c0d3a54abb89ef070f983343c05e0f89e5a52f3e5401299")
 }
 
-func (s *TronTestSuite) TestSignTxReSignsWhenCachedBroadcastIsMissingFromChain(c *C) {
+func (s *TronTestSuite) TestSignTxRetainsCacheWhenBroadcastLookupIsEmpty(c *C) {
 	coins := []common.Coin{{
 		Asset:    common.TRXAsset,
 		Amount:   cosmos.NewUint(150_000_000_000),
@@ -329,9 +331,8 @@ func (s *TronTestSuite) TestSignTxReSignsWhenCachedBroadcastIsMissingFromChain(c
 		GasRate:     1,
 	}
 
-	// Expired cache entry + operational mimir set: verifyFn checks the recorded
-	// broadcast on chain; "missing-txid" is absent (gettransactionbyid returns {}),
-	// so the cache is cleared and the tx re-signs.
+	// An empty lookup cannot prove that a broadcast never paid. Keep the
+	// cache even with expiry and the operational recovery gate enabled.
 	mb, ok := s.client.bridge.(*mockBridge)
 	c.Assert(ok, Equals, true)
 	mb.skipCacheMimir = 1
@@ -339,14 +340,15 @@ func (s *TronTestSuite) TestSignTxReSignsWhenCachedBroadcastIsMissingFromChain(c
 	err := s.client.signerCacheManager.SetSignedWithExpiry(
 		txOutItem.CacheHash(),
 		txOutItem.CacheVault(s.client.GetChain()),
-		"missing-txid",
+		strings.Repeat("a", 64),
 		time.Now().Add(-time.Hour).UnixMilli(),
 	)
 	c.Assert(err, IsNil)
 
 	signed, _, _, err := s.client.SignTx(txOutItem, 1)
 	c.Assert(err, IsNil)
-	c.Assert(signed, NotNil)
+	c.Assert(signed, IsNil)
+	c.Assert(s.client.signerCacheManager.HasSigned(txOutItem.CacheHash()), Equals, true)
 }
 
 func (s *TronTestSuite) TestSignTxSkipsWhenCachedBroadcastStillExistsOnChain(c *C) {
@@ -670,7 +672,7 @@ func (b *failedRetryBridge) GetBlockTimestamp(height int64) (time.Time, error) {
 type failedRetryRPC struct {
 	mu                 sync.Mutex
 	transaction        string
-	node               string
+	solidReceipt       string
 	receipt            string
 	statusPath         string
 	failCreate         bool
@@ -690,7 +692,7 @@ func (r *failedRetryRPC) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	}
 	var response string
 	switch req.URL.Path {
-	case "/wallet/gettransactionbyid", "/wallet/gettransactioninfobyid":
+	case "/wallet/gettransactionbyid", "/wallet/gettransactioninfobyid", "/walletsolidity/gettransactioninfobyid":
 		var params struct {
 			Value string `json:"value"`
 		}
@@ -703,8 +705,12 @@ func (r *failedRetryRPC) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		if req.URL.Path == "/wallet/gettransactioninfobyid" {
 			response = r.receipt
 		}
-	case "/wallet/getnodeinfo":
-		response = r.node
+		if req.URL.Path == "/walletsolidity/gettransactioninfobyid" {
+			response = r.receipt
+			if r.solidReceipt != "" {
+				response = r.solidReceipt
+			}
+		}
 	case "/wallet/broadcasttransaction":
 		var tx api.Transaction
 		if err := json.NewDecoder(req.Body).Decode(&tx); err != nil {
@@ -727,7 +733,6 @@ func (r *failedRetryRPC) evidence(id, result, execution string, height int64) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.transaction = fmt.Sprintf(`{"txID":%q,"ret":[{"contractRet":%q}]}`, id, execution)
-	r.node = `{"solidityBlock":"Num:100,ID:0000000000000064` + strings.Repeat("a", 48) + `"}`
 	r.receipt = fmt.Sprintf(`{"id":%q,"blockNumber":%d,"result":%q,"receipt":{"result":%q,"energy_usage_total":100}}`, id, height, result, execution)
 }
 
@@ -736,7 +741,7 @@ func (r *failedRetryRPC) recoveryCalls() ([]string, []string) {
 	defer r.mu.Unlock()
 	var calls []string
 	for _, path := range r.calls {
-		if path == "/wallet/gettransactionbyid" || path == "/wallet/getnodeinfo" || path == "/wallet/gettransactioninfobyid" {
+		if path == "/wallet/gettransactionbyid" || path == "/wallet/gettransactioninfobyid" || path == "/walletsolidity/gettransactioninfobyid" {
 			calls = append(calls, path)
 		}
 	}
@@ -744,12 +749,13 @@ func (r *failedRetryRPC) recoveryCalls() ([]string, []string) {
 }
 
 type failedRetryFixture struct {
-	client *TronClient
-	bridge *failedRetryBridge
-	rpc    *failedRetryRPC
-	db     *leveldb.DB
-	path   string
-	server *httptest.Server
+	client         *TronClient
+	bridge         *failedRetryBridge
+	rpc            *failedRetryRPC
+	db             *leveldb.DB
+	path           string
+	server         *httptest.Server
+	solidityServer *httptest.Server
 }
 
 func (s *TronTestSuite) newFailedRetryFixture(c *C) *failedRetryFixture {
@@ -759,7 +765,20 @@ func (s *TronTestSuite) newFailedRetryFixture(c *C) *failedRetryFixture {
 	}
 	rpc := &failedRetryRPC{fallback: s.api.Config.Handler}
 	rpc.evidence(strings.Repeat("a", 64), "FAILED", "OUT_OF_ENERGY", 100)
-	server := httptest.NewServer(rpc)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/walletsolidity/") {
+			http.NotFound(w, r)
+			return
+		}
+		rpc.ServeHTTP(w, r)
+	}))
+	solidityServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/walletsolidity/gettransactioninfobyid" {
+			http.NotFound(w, r)
+			return
+		}
+		rpc.ServeHTTP(w, r)
+	}))
 	tronAPI := api.NewTronApi(server.URL, 2*time.Second)
 	path := filepath.Join(c.MkDir(), "cache")
 	db, err := leveldb.OpenFile(path, nil)
@@ -771,7 +790,10 @@ func (s *TronTestSuite) newFailedRetryFixture(c *C) *failedRetryFixture {
 		config:             s.client.config,
 		bridge:             bridge,
 		api:                tronAPI,
+		solidityAPI:        api.NewTronApi(solidityServer.URL, 2*time.Second),
 		localKeyManager:    s.client.localKeyManager,
+		whitelist:          s.client.whitelist,
+		abi:                s.client.abi,
 		signerCacheManager: manager,
 		tronScanner: &TronBlockScanner{
 			api: tronAPI,
@@ -783,7 +805,9 @@ func (s *TronTestSuite) newFailedRetryFixture(c *C) *failedRetryFixture {
 		},
 	}
 	client.config.SignerCacheExpiry = time.Hour
-	fixture := &failedRetryFixture{client: client, bridge: bridge, rpc: rpc, db: db, path: path, server: server}
+	client.config.APIHost = server.URL
+	client.config.SolidityAPIHost = solidityServer.URL
+	fixture := &failedRetryFixture{client: client, bridge: bridge, rpc: rpc, db: db, path: path, server: server, solidityServer: solidityServer}
 	return fixture
 }
 
@@ -795,6 +819,7 @@ func (s *TronTestSuite) failedRetryTxOut(amount uint64) types.TxOutItem {
 
 func (f *failedRetryFixture) close(c *C) {
 	f.server.Close()
+	f.solidityServer.Close()
 	c.Check(f.db.Close(), IsNil)
 }
 
@@ -853,8 +878,8 @@ func (s *TronTestSuite) TestFailedPaymentRecoveryNewScheduleAndRestart(c *C) {
 	// Signing alone must leave the failed attempt durable until broadcast.
 	f.assertCached(c, retry, failed.TxId)
 	calls, ids := f.rpc.recoveryCalls()
-	c.Assert(calls, DeepEquals, []string{"/wallet/gettransactionbyid", "/wallet/getnodeinfo", "/wallet/gettransactioninfobyid"})
-	c.Assert(ids, DeepEquals, []string{failed.TxId, failed.TxId})
+	c.Assert(calls, DeepEquals, []string{"/walletsolidity/gettransactioninfobyid"})
+	c.Assert(ids, DeepEquals, []string{failed.TxId})
 
 	id, err = f.client.BroadcastTx(retry, replacementBytes)
 	c.Assert(err, IsNil)
@@ -867,7 +892,7 @@ func (s *TronTestSuite) TestFailedPaymentRecoveryNewScheduleAndRestart(c *C) {
 	c.Assert(checkpoint, IsNil)
 	c.Assert(observation, IsNil)
 	after, _ := f.rpc.recoveryCalls()
-	c.Assert(after, DeepEquals, calls)
+	c.Assert(after, DeepEquals, append(calls, "/walletsolidity/gettransactioninfobyid"))
 }
 
 func (s *TronTestSuite) TestFailedPaymentRecoveryUncertainEvidenceRetainsCache(c *C) {
@@ -879,9 +904,8 @@ func (s *TronTestSuite) TestFailedPaymentRecoveryUncertainEvidenceRetainsCache(c
 		{"successful payment", func(r *failedRetryRPC) {
 			r.receipt = fmt.Sprintf(`{"id":%q,"blockNumber":100,"receipt":{"result":"SUCCESS"}}`, id)
 		}},
-		{"not solidified", func(r *failedRetryRPC) {
-			r.receipt = fmt.Sprintf(`{"id":%q,"blockNumber":101,"result":"FAILED","receipt":{"result":"REVERT"}}`, id)
-		}},
+		{"head failure is not solidified", func(r *failedRetryRPC) { r.solidReceipt = `{}` }},
+		{"empty lookup is inconclusive", func(r *failedRetryRPC) { r.transaction = `{}`; r.receipt = `{}` }},
 		{"pending", func(r *failedRetryRPC) { r.receipt = `{}` }},
 		{"missing receipt", func(r *failedRetryRPC) { r.receipt = fmt.Sprintf(`{"id":%q,"blockNumber":100,"result":"FAILED"}`, id) }},
 		{"missing height", func(r *failedRetryRPC) {
@@ -905,18 +929,10 @@ func (s *TronTestSuite) TestFailedPaymentRecoveryUncertainEvidenceRetainsCache(c
 		{"wrong receipt id", func(r *failedRetryRPC) {
 			r.receipt = fmt.Sprintf(`{"id":%q,"blockNumber":100,"result":"FAILED","receipt":{"result":"REVERT"}}`, strings.Repeat("b", 64))
 		}},
-		{"wrong transaction id", func(r *failedRetryRPC) { r.transaction = fmt.Sprintf(`{"txID":%q}`, strings.Repeat("b", 64)) }},
-		{"transaction error envelope", func(r *failedRetryRPC) { r.transaction = `{"Error":"lookup unavailable"}` }},
-		{"null transaction", func(r *failedRetryRPC) { r.transaction = `null` }},
-		{"malformed transaction", func(r *failedRetryRPC) { r.transaction = `{` }},
 		{"receipt error envelope", func(r *failedRetryRPC) { r.receipt = `{"Error":"lookup unavailable"}` }},
 		{"malformed receipt", func(r *failedRetryRPC) { r.receipt = `{` }},
 		{"null receipt", func(r *failedRetryRPC) { r.receipt = `null` }},
-		{"missing solid floor", func(r *failedRetryRPC) { r.node = `{}` }},
-		{"malformed solid floor", func(r *failedRetryRPC) { r.node = `{"solidityBlock":"Num:100,ID:not-a-block-id"}` }},
-		{"transaction RPC error", func(r *failedRetryRPC) { r.statusPath = "/wallet/gettransactionbyid" }},
-		{"finality RPC error", func(r *failedRetryRPC) { r.statusPath = "/wallet/getnodeinfo" }},
-		{"receipt RPC error", func(r *failedRetryRPC) { r.statusPath = "/wallet/gettransactioninfobyid" }},
+		{"receipt RPC error", func(r *failedRetryRPC) { r.statusPath = "/walletsolidity/gettransactioninfobyid" }},
 	}
 	for _, tc := range cases {
 		c.Log(tc.name)
@@ -939,7 +955,7 @@ func (s *TronTestSuite) TestFailedPaymentRecoveryUncertainEvidenceRetainsCache(c
 
 func (s *TronTestSuite) TestFailedPaymentRecoveryGateBoundaries(c *C) {
 	id := strings.Repeat("a", 64)
-	for _, name := range []string{"fresh", "gate off", "gate error", "legacy", "missing hash", "expired"} {
+	for _, name := range []string{"fresh", "gate off", "gate error", "legacy", "missing hash", "missing solidity endpoint", "expired"} {
 		c.Log(name)
 		f := s.newFailedRetryFixture(c)
 		defer f.close(c)
@@ -955,6 +971,10 @@ func (s *TronTestSuite) TestFailedPaymentRecoveryGateBoundaries(c *C) {
 		if name == "gate error" {
 			f.bridge.gateErr = errors.New("mimir unavailable")
 		}
+		if name == "missing solidity endpoint" {
+			f.client.config.SolidityAPIHost = ""
+			f.client.solidityAPI = nil
+		}
 		switch name {
 		case "legacy":
 			c.Assert(f.client.signerCacheManager.SetSigned(tx.CacheHash(), tx.CacheVault(tx.Chain), id), IsNil)
@@ -968,7 +988,7 @@ func (s *TronTestSuite) TestFailedPaymentRecoveryGateBoundaries(c *C) {
 		calls, _ := f.rpc.recoveryCalls()
 		if name == "expired" {
 			c.Assert(signed, NotNil)
-			c.Assert(calls, HasLen, 3)
+			c.Assert(calls, HasLen, 1)
 		} else {
 			c.Assert(signed, IsNil)
 			c.Assert(calls, HasLen, 0)
@@ -1088,4 +1108,351 @@ func (s *TronTestSuite) TestFailedPaymentRecoveryExpiredReplacementCheckpoint(c 
 	c.Assert(returned, IsNil)
 	c.Assert(observation, IsNil)
 	f.assertCached(c, tx, expired.TxId)
+}
+
+func (s *TronTestSuite) TestFailedPaymentRecoveryNewerCacheDuringLookup(c *C) {
+	for _, observed := range []bool{false, true} {
+		f := s.newFailedRetryFixture(c)
+		tx := s.failedRetryTxOut(11305)
+		tx.Height = 100
+		failedID := strings.Repeat("a", 64)
+		replacementID := strings.Repeat("b", 64)
+		f.cache(c, tx, failedID, time.Now().Add(-time.Minute).UnixMilli())
+		arrived := make(chan struct{})
+		release := make(chan struct{})
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			if strings.HasSuffix(req.URL.Path, "/gettransactioninfobyid") {
+				close(arrived)
+				<-release
+			}
+			f.rpc.ServeHTTP(w, req)
+		}))
+		f.client.solidityAPI = api.NewTronApi(server.URL, 10*time.Second)
+		type result struct {
+			signed []byte
+			err    error
+		}
+		done := make(chan result, 1)
+		go func() {
+			signed, _, _, err := f.client.SignTx(tx, tx.Height)
+			done <- result{signed: signed, err: err}
+		}()
+		select {
+		case <-arrived:
+		case <-time.After(5 * time.Second):
+			close(release)
+			server.Close()
+			f.close(c)
+			c.Fatal("recovery did not reach the receipt lookup")
+		}
+		// Another vault pipeline broadcasts B, or a successful observation is
+		// recorded, while A's network verification is in flight.
+		var writeErr error
+		if observed {
+			writeErr = f.client.signerCacheManager.SetSigned(tx.CacheHash(), tx.CacheVault(tx.Chain), replacementID)
+		} else {
+			writeErr = f.client.signerCacheManager.SetSignedWithExpiry(tx.CacheHash(), tx.CacheVault(tx.Chain), replacementID, time.Now().Add(time.Hour).UnixMilli())
+		}
+		close(release)
+		got := <-done
+		server.Close()
+		c.Assert(writeErr, IsNil)
+		c.Assert(got.err, IsNil)
+		c.Check(got.signed, IsNil, Commentf("observation = %v", observed))
+		f.reopen(c)
+		c.Assert(f.client.signerCacheManager.HasSigned(tx.CacheHash()), Equals, true)
+		id, err := f.client.signerCacheManager.GetTransactionHash(tx.CacheHash())
+		c.Assert(err, IsNil)
+		c.Assert(id, Equals, replacementID)
+		f.close(c)
+	}
+}
+
+func (s *TronTestSuite) TestBroadcastFailedDuplicateRetiresOnlyOldAttempt(c *C) {
+	f := s.newFailedRetryFixture(c)
+	defer f.close(c)
+	tx := s.failedRetryTxOut(11306)
+	tx.Height = 100
+	failed, signed := f.signedTransaction(c, tx)
+	f.rpc.evidence(failed.TxId, "FAILED", "REVERT", 100)
+	f.rpc.mu.Lock()
+	f.rpc.broadcastDuplicate = true
+	f.rpc.mu.Unlock()
+	replacementID := strings.Repeat("b", 64)
+	f.cache(c, tx, replacementID, time.Now().Add(time.Hour).UnixMilli())
+	id, err := f.client.BroadcastTx(tx, signed)
+	c.Check(errors.Is(err, chainclienttypes.ErrTxExpired), Equals, true)
+	c.Check(id, Equals, "")
+	f.reopen(c)
+	f.assertCached(c, tx, replacementID)
+}
+
+func (s *TronTestSuite) TestFailedPaymentRecoveryTRC20AndInternalTransfers(c *C) {
+	for _, memo := range []string{"OUT:" + strings.Repeat("C", 64), "REFUND:" + strings.Repeat("D", 64), "MIGRATE:100", "RAGNAROK:100", "consolidate"} {
+		f := s.newFailedRetryFixture(c)
+		tx := s.failedRetryTxOut(11307)
+		tx.Height = 100
+		tx.Memo = memo
+		// Internal transfer memos must keep their own identities. No TRON
+		// consolidation scheduler exists, but SignTx must not reinterpret one
+		// as an OUT/REFUND or weaken the shared UTXO cache decisions.
+		tx.Coins[0].Asset = f.client.whitelist["TG3XXyExBkPp9nzdajDZsozEu4BkaSJozs"].Asset(common.TRONChain)
+		failed, signed := f.signedTransaction(c, tx)
+		_, err := f.client.BroadcastTx(tx, signed)
+		c.Assert(err, IsNil)
+		f.cache(c, tx, failed.TxId, time.Now().Add(-time.Minute).UnixMilli())
+		f.rpc.evidence(failed.TxId, "FAILED", "OUT_OF_ENERGY", 100)
+		tx.Height++
+		replacement, _ := f.signedTransaction(c, tx)
+		c.Assert(replacement.TxId == failed.TxId, Equals, false)
+		c.Assert(replacement.RawData.Data, Equals, hex.EncodeToString([]byte(memo)))
+		f.assertCached(c, tx, failed.TxId)
+		f.close(c)
+	}
+}
+
+func (s *TronTestSuite) TestBroadcastDuplicateUncertainOrSuccessful(c *C) {
+	for _, execution := range []string{"SUCCESS", "DEFAULT", "UNKNOWN", "missing", "unavailable"} {
+		f := s.newFailedRetryFixture(c)
+		tx := s.failedRetryTxOut(11308)
+		tx.Height = 100
+		transaction, signed := f.signedTransaction(c, tx)
+		f.rpc.evidence(transaction.TxId, "", execution, 100)
+		f.rpc.mu.Lock()
+		f.rpc.broadcastDuplicate = true
+		if execution == "missing" {
+			f.rpc.solidReceipt = `{}`
+		}
+		if execution == "unavailable" {
+			f.rpc.statusPath = "/walletsolidity/gettransactioninfobyid"
+		}
+		f.rpc.mu.Unlock()
+		id, err := f.client.BroadcastTx(tx, signed)
+		c.Assert(err, IsNil)
+		c.Assert(id, Equals, transaction.TxId)
+		f.reopen(c)
+		f.assertCached(c, tx, transaction.TxId)
+		f.close(c)
+	}
+}
+
+func (s *TronTestSuite) TestBroadcastConflictRetainsProtectionAcrossRestart(c *C) {
+	for _, duplicate := range []bool{false, true} {
+		f := s.newFailedRetryFixture(c)
+		tx := s.failedRetryTxOut(11309)
+		tx.Height = 100
+		old, signed := f.signedTransaction(c, tx)
+		newerID := strings.Repeat("b", 64)
+		cachedTx := tx
+		cachedTx.VaultPubKey = common.PubKey("vault-b")
+		f.cache(c, cachedTx, newerID, time.Now().Add(-time.Minute).UnixMilli())
+		f.rpc.mu.Lock()
+		f.rpc.broadcastDuplicate = duplicate
+		f.rpc.solidReceipt = `{}`
+		f.rpc.mu.Unlock()
+		id, err := f.client.BroadcastTx(tx, signed)
+		c.Assert(err, ErrorMatches, ".*reconciliation required")
+		c.Assert(id, Equals, "")
+		f.reopen(c)
+		signedFlag, expired := f.client.signerCacheManager.HasSignedWithExpiry(tx.CacheHash())
+		c.Assert(signedFlag, Equals, true)
+		c.Assert(expired, Equals, false)
+		current, err := f.client.signerCacheManager.GetTransactionHash(tx.CacheHash())
+		c.Assert(err, IsNil)
+		c.Assert(current, Equals, newerID)
+		_, err = f.client.signerCacheManager.GetLatestRecordedTx(tx.CacheVault(tx.Chain))
+		c.Assert(err, Equals, leveldb.ErrNotFound)
+		latest, err := f.client.signerCacheManager.GetLatestRecordedTx(cachedTx.CacheVault(tx.Chain))
+		c.Assert(err, IsNil)
+		c.Assert(latest, Equals, newerID)
+		// Even learning that the retained attempt failed cannot discard the
+		// uncertainty about the other already accepted transaction.
+		f.rpc.mu.Lock()
+		f.rpc.solidReceipt = ""
+		f.rpc.mu.Unlock()
+		f.rpc.evidence(newerID, "FAILED", "REVERT", 100)
+		tx.Height++
+		retry, _, _, err := f.client.SignTx(tx, tx.Height)
+		c.Assert(err, IsNil)
+		c.Assert(retry, IsNil)
+		c.Assert(old.TxId == newerID, Equals, false)
+		f.close(c)
+	}
+}
+
+func (s *TronTestSuite) TestDuplicateReplacementCanReplaceProvenFailure(c *C) {
+	f := s.newFailedRetryFixture(c)
+	defer f.close(c)
+	tx := s.failedRetryTxOut(11310)
+	tx.Height = 100
+	failed, signed := f.signedTransaction(c, tx)
+	_, err := f.client.BroadcastTx(tx, signed)
+	c.Assert(err, IsNil)
+	f.cache(c, tx, failed.TxId, time.Now().Add(-time.Minute).UnixMilli())
+	f.rpc.evidence(failed.TxId, "FAILED", "REVERT", 100)
+	tx.Height++
+	replacement, signed := f.signedTransaction(c, tx)
+	f.rpc.mu.Lock()
+	f.rpc.broadcastDuplicate = true
+	f.rpc.mu.Unlock()
+	id, err := f.client.BroadcastTx(tx, signed)
+	c.Assert(err, IsNil)
+	c.Assert(id, Equals, replacement.TxId)
+	f.reopen(c)
+	f.assertCached(c, tx, replacement.TxId)
+}
+
+func TestTronOutboundLockIdentityAndCleanup(t *testing.T) {
+	client := &TronClient{}
+	tx := types.TxOutItem{Chain: common.TRONChain, Memo: "OUT:payment", VaultPubKey: "vault-a"}
+	releaseA := client.LockTxOut(tx)
+	retry := tx
+	retry.VaultPubKey = "vault-b"
+	retry.Height++
+	acquired := make(chan func(), 1)
+	go func() { acquired <- client.LockTxOut(retry) }()
+	// Wait for B to reserve its reference, establishing that it reached the
+	// lock, instead of inferring exclusion from a goroutine scheduling delay.
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		client.outboundLocksMu.Lock()
+		users := client.outboundLocks[tx.CacheHash()].users
+		client.outboundLocksMu.Unlock()
+		if users == 2 {
+			break
+		}
+		if time.Now().After(deadline) {
+			releaseA()
+			t.Fatal("replacement did not reach payment lock")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	select {
+	case release := <-acquired:
+		release()
+		releaseA()
+		t.Fatal("different vault acquired the same payment before release")
+	default:
+	}
+	other := tx
+	other.Memo = "consolidate"
+	releaseOther := client.LockTxOut(other)
+	releaseOther()
+	releaseA()
+	select {
+	case releaseB := <-acquired:
+		releaseB()
+	case <-time.After(5 * time.Second):
+		t.Fatal("replacement remained blocked after release")
+	}
+	client.outboundLocksMu.Lock()
+	defer client.outboundLocksMu.Unlock()
+	if len(client.outboundLocks) != 0 {
+		t.Fatalf("completed payment locks retained: %d", len(client.outboundLocks))
+	}
+}
+
+func (s *TronTestSuite) TestBroadcastRetainsSameIDExpiryAndLegacyProtection(c *C) {
+	for _, legacy := range []bool{false, true} {
+		f := s.newFailedRetryFixture(c)
+		tx := s.failedRetryTxOut(11311)
+		tx.Height = 100
+		transaction, signed := f.signedTransaction(c, tx)
+		if legacy {
+			c.Assert(f.client.signerCacheManager.SetSigned(tx.CacheHash(), tx.CacheVault(tx.Chain), transaction.TxId), IsNil)
+		} else {
+			f.cache(c, tx, transaction.TxId, time.Now().Add(-time.Minute).UnixMilli())
+		}
+		_, err := f.client.BroadcastTx(tx, signed)
+		if legacy {
+			c.Assert(err, ErrorMatches, ".*reconciliation required")
+		} else {
+			c.Assert(err, IsNil)
+		}
+		f.reopen(c)
+		signedFlag, expired := f.client.signerCacheManager.HasSignedWithExpiry(tx.CacheHash())
+		c.Assert(signedFlag, Equals, true)
+		c.Assert(expired, Equals, !legacy)
+		f.close(c)
+	}
+}
+
+func (s *TronTestSuite) TestFailedPaymentRecoverySeparateSolidityEndpoint(c *C) {
+	id := strings.Repeat("a", 64)
+	for _, name := range []string{"success", "unconfirmed", "RPC error", "unavailable", "wrong base URL"} {
+		c.Log(name)
+		f := s.newFailedRetryFixture(c)
+		defer f.close(c)
+		tx := s.failedRetryTxOut(11400)
+		tx.Height = 100
+		f.cache(c, tx, id, time.Now().Add(-time.Minute).UnixMilli())
+		// The ordinary API retains a failed receipt. Only the independently
+		// configured solidity endpoint can authorize recovery from that attempt.
+		f.rpc.mu.Lock()
+		switch name {
+		case "success":
+			f.rpc.solidReceipt = fmt.Sprintf(`{"id":%q,"blockNumber":100,"receipt":{"result":"SUCCESS"}}`, id)
+		case "unconfirmed":
+			f.rpc.solidReceipt = `{}`
+		case "RPC error":
+			f.rpc.statusPath = "/walletsolidity/gettransactioninfobyid"
+		}
+		f.rpc.mu.Unlock()
+		if name == "unavailable" {
+			f.solidityServer.Close()
+		}
+		if name == "wrong base URL" {
+			f.client.solidityAPI = api.NewTronApi(f.solidityServer.URL+"/wrong", time.Second)
+		}
+		signed, checkpoint, observation, err := f.client.SignTx(tx, tx.Height)
+		c.Assert(err, IsNil, Commentf("%s", name))
+		c.Assert(signed, IsNil, Commentf("%s", name))
+		c.Assert(checkpoint, IsNil)
+		c.Assert(observation, IsNil)
+		f.assertCached(c, tx, id)
+		calls, ids := f.rpc.recoveryCalls()
+		if name == "unavailable" || name == "wrong base URL" {
+			c.Assert(calls, HasLen, 0)
+		} else {
+			c.Assert(calls, DeepEquals, []string{"/walletsolidity/gettransactioninfobyid"})
+			wantIDs := []string{id}
+			if name == "RPC error" {
+				// The injected HTTP error is returned before the body is decoded.
+				wantIDs = nil
+			}
+			c.Assert(ids, DeepEquals, wantIDs)
+		}
+	}
+}
+
+func (s *TronTestSuite) TestTronClientConstructorUsesSolidityAPIHost(c *C) {
+	for _, configured := range []bool{false, true} {
+		f := s.newFailedRetryFixture(c)
+		defer f.close(c)
+		cfg := f.client.config
+		cfg.BlockScanner.ChainID = common.TRONChain
+		cfg.BlockScanner.StartBlockHeight = 1
+		cfg.BlockScanner.WhitelistTokens = nil
+		cfg.BlockScanner.DBPath = ""
+		if !configured {
+			cfg.SolidityAPIHost = ""
+		}
+		client, err := NewTronClient(s.thorKeys, cfg, nil, f.bridge, s.metrics,
+			&pubkeymanager.MockPoolAddressValidator{}, nil)
+		c.Assert(err, IsNil)
+		c.Assert(client, NotNil)
+		defer func() { c.Check(client.storage.GetInternalDb().Close(), IsNil) }()
+		id := strings.Repeat("a", 64)
+		result := client.verifyCachedTransaction(id)
+		calls, ids := f.rpc.recoveryCalls()
+		if configured {
+			c.Assert(result, Equals, signercache.LookupFailed)
+			c.Assert(calls, DeepEquals, []string{"/walletsolidity/gettransactioninfobyid"})
+			c.Assert(ids, DeepEquals, []string{id})
+		} else {
+			c.Assert(client.solidityAPI, IsNil)
+			c.Assert(result, Equals, signercache.LookupAmbiguous)
+			c.Assert(calls, HasLen, 0)
+		}
+	}
 }

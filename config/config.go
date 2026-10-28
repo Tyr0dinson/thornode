@@ -871,9 +871,12 @@ type BifrostChainConfiguration struct {
 	WalletUserName string `mapstructure:"wallet_username"`
 	// WalletPassword configures dedicated basic-auth credentials for wallet RPC.
 	// When unset, wallet RPC falls back to username/password.
-	WalletPassword      string                           `mapstructure:"wallet_password"`
-	RPCHost             string                           `mapstructure:"rpc_host"`
-	APIHost             string                           `mapstructure:"api_host"`
+	WalletPassword string `mapstructure:"wallet_password"`
+	RPCHost        string `mapstructure:"rpc_host"`
+	APIHost        string `mapstructure:"api_host"`
+	// SolidityAPIHost is the optional TRON solidity HTTP API base URL.
+	// Failed-payment recovery stays blocked when it is unset or unavailable.
+	SolidityAPIHost     string                           `mapstructure:"solidity_api_host"`
 	CosmosGRPCHost      string                           `mapstructure:"cosmos_grpc_host"`
 	CosmosGRPCTLS       bool                             `mapstructure:"cosmos_grpc_tls"`
 	CosmosChainID       string                           `mapstructure:"cosmos_chain_id"`

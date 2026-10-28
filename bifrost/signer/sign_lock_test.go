@@ -96,3 +96,23 @@ func TestChainVaultLockKeyUsesResolverWhenAvailable(t *testing.T) {
 		t.Fatalf("expected resolver key %q, got %q", "thorpub1eddsa", got)
 	}
 }
+
+func TestLockChainTxOutPreservesVaultLockForConsolidation(t *testing.T) {
+	lock := &sync.Mutex{}
+	client := &mockChainWithVaultLock{lock: lock}
+	release := lockChainTxOut(client, thtypes.TxOutItem{VaultPubKey: "vault"})
+	if lock.TryLock() {
+		lock.Unlock()
+		release()
+		t.Fatal("ordinary outbound did not hold the existing consolidation vault lock")
+	}
+	release()
+	if !lock.TryLock() {
+		t.Fatal("vault lock was not released")
+	}
+	lock.Unlock()
+
+	// Chains without either capability continue without a lock.
+	release = lockChainTxOut(&mockChainNoVaultLock{}, thtypes.TxOutItem{})
+	release()
+}

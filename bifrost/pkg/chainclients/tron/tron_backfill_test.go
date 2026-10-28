@@ -437,6 +437,7 @@ func (s *BackfillSuite) TestBroadcastTxRecordsExpiringEntry(c *C) {
 		VaultPubKey: s.client.localKeyManager.Pubkey(),
 		Coins:       common.Coins{{Asset: common.TRXAsset, Amount: cosmos.NewUint(100)}},
 		GasRate:     1,
+		InHash:      common.TxID("unique-expiring-entry"),
 	}
 	txBytes, _ := json.Marshal(api.Transaction{TxId: "expiring-entry"})
 

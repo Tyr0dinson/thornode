@@ -1162,3 +1162,15 @@ func (Test) TestAttestationStateSyncTimeoutDefault(c *C) {
 	c.Assert(ok, Equals, true)
 	c.Assert(gossipMap["state_sync_timeout"], Equals, "30m")
 }
+
+func TestTRONSolidityAPIHostEnvironment(t *testing.T) {
+	savedConfig := config
+	defer func() { config = savedConfig }()
+	for _, endpoint := range []string{"", "http://tron-daemon:8091"} {
+		t.Setenv("BIFROST_CHAINS_TRON_SOLIDITY_API_HOST", endpoint)
+		Init()
+		if got := GetBifrost().Chains.TRON.SolidityAPIHost; got != endpoint {
+			t.Fatalf("TRON solidity API host = %q, want %q", got, endpoint)
+		}
+	}
+}

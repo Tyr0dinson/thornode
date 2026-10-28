@@ -302,3 +302,25 @@ func (s *SignTxCheckSuite) TestCacheCheckNoteworthy(c *C) {
 		c.Assert((CacheCheck{Phase: phase}).Noteworthy(), Equals, true)
 	}
 }
+
+func (s *SignTxCheckSuite) TestFailedLookupCannotAuthorizeNewerCache(c *C) {
+	for _, change := range []string{"renewed", "replaced expired", "observed", "removed"} {
+		cm, store := makeManager(true, true, testSig, true)
+		check := cm.SignTxCacheCheck(testCacheHash, gateOn, func(string) LookupResult {
+			switch change {
+			case "renewed":
+				store.hasSignedExpiredResult = false
+			case "replaced expired":
+				store.getSignedTxHashResult = "replacement"
+			case "observed":
+				store.getSignedTxHashOk = false
+			case "removed":
+				store.hasSignedResult = false
+			}
+			return LookupFailed
+		})
+		c.Assert(check.SkipSign, Equals, true, Commentf("cache changed: %s", change))
+		c.Assert(check.Phase, Equals, PhaseVerifiedAmbiguous)
+		c.Assert(store.removeSignedCalls, IsNil)
+	}
+}
