@@ -1267,6 +1267,30 @@ security-fuzz-deep:
     FUZZ_TIME: 20s
     FUZZ_CORPUS_DIR: "$CI_PROJECT_DIR/.security-fuzz-corpus"
 
+accounting-properties-deep:
+  tags: !reference [.small-runner, tags]
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+  stage: long-test
+  needs:
+    - job: unit-tests
+      optional: true
+      artifacts: false
+  timeout: 30m
+  variables:
+    PKGS: util-linux
+  before_script:
+    - !reference [.pkg-install, before_script]
+    - !reference [.go-private-auth, before_script]
+    - !reference [.stable-mtimes, before_script]
+  script:
+    - mkdir -p test-quality-reports
+    - sh -c 'scripts/test-accounting-property.sh campaign > test-quality-reports/accounting-properties-deep.log 2>&1; rc=$?; cat test-quality-reports/accounting-properties-deep.log; exit "$rc"'
+  artifacts:
+    when: always
+    paths:
+      - test-quality-reports/accounting-properties-deep.log
+
 test-regression:
   tags: !reference [.small-runner, tags]
   rules:
