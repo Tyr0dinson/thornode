@@ -56,7 +56,8 @@ Loki is optional. Check for `logcli`; if present, verify `localhost:3100` and as
 
 ## Handing off between skills
 
-| You have                                        | Use        |
-| ----------------------------------------------- | ---------- |
-| Nothing specific, want the current state        | `health`   |
-| A tx hash, address, vault, or described problem | `tc-debug` |
+| You have                                                  | Use            |
+| --------------------------------------------------------- | -------------- |
+| Nothing specific, want the current state                  | `health`       |
+| A tx hash, address, vault, or described problem           | `tc-debug`     |
+| Writing, changing, or reviewing bifrost chain-client code | `chain-client` |
