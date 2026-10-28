@@ -160,7 +160,7 @@ Operational notes:
 - `TNSFeeOnSale`: fee for TNS sale in basis points
 - `TNSFeePerBlock`: per block cost for TNS, in RUNE
 - `MinimumL1OutboundFeeUSD`: Minimum L1 outbound fee in USD (1e8 notation)
-- `TokenOutboundSurcharge-<Chain>`#: Gas asset (1e8 notation) added to the outbound fee of every token (non-gas asset) outbound on the chain and reserved with its max gas. Unset, it is the chain's default: 204000 (0.00204 SOL) on SOL, the rent the vault pays to create the recipient's token account, and 0 elsewhere; 0 disables it
+- `TokenOutboundSurcharge-<Chain>`#: Gas asset (1e8 notation) added to the outbound fee of every token (non-gas asset) outbound on the chain and reserved with its max gas. Unset, it is the chain's default: 148900 (0.001489 SOL) on SOL, the rent the vault pays to create the recipient's token account (1,488,440 lamports at 5080 lamports per byte), and 0 elsewhere; 0 disables it. Below the real rent the Reserve pays the difference; set it to the new rent as Solana's staged rent cuts activate
 - `TargetOutboundFeeSurplusRune`\*: Target RUNE surplus per asset (withheld - spent) for outbound fee calculations (1e8 notation)
 - `MaxOutboundFeeMultiplierBasisPoints`\*: Maximum outbound fee multiplier in basis points
 - `MinOutboundFeeMultiplierBasisPoints`\*: Minimum outbound fee multiplier in basis points
