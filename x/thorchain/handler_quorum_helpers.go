@@ -173,8 +173,7 @@ func verifyAttestationSig(c attestationCheck) (verified, ok bool) {
 			verified, ok = false, false
 		}
 	}()
-	pk := secp256k1.PubKey{Key: c.att.PubKey}
-	return pk.VerifySignature(c.signBz, c.att.Signature), true
+	return common.VerifyAttestationSignature(c.att.PubKey, c.att.Signature, c.signBz), true
 }
 
 func verifyQuorumAttestation(activeNodeAccounts NodeAccounts, signBz []byte, att *common.Attestation, sigs attestationSigs) (cosmos.AccAddress, error) {
@@ -237,7 +236,7 @@ func verifyQuorumAttestation(activeNodeAccounts NodeAccounts, signBz []byte, att
 
 	verified, ok := sigs[att]
 	if !ok {
-		verified = pk.VerifySignature(signBz, att.Signature)
+		verified = common.VerifyAttestationSignature(att.PubKey, att.Signature, signBz)
 	}
 	if !verified {
 		// A node signing payloads the rest of the network cannot verify is on a

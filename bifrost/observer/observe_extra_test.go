@@ -39,15 +39,17 @@ func encodeStreamMsg(data []byte) []byte {
 	return append(header, data...)
 }
 
-// NewMockStreamWithData creates a mock stream that reads provided data in p2p wire format
+// NewMockStreamWithData creates a mock stream that reads provided data in p2p wire format.
+// The remote sends nothing more, so reads past the data hit EOF at once.
 func NewMockStreamWithData(data []byte, peerID peer.ID) *MockStream {
 	var buf bytes.Buffer
 	buf.Write(encodeStreamMsg(data))
 	return &MockStream{
-		reader: &buf,
-		writer: io.Discard,
-		peer:   peerID,
-		mu:     &sync.Mutex{},
+		reader:       &buf,
+		writer:       io.Discard,
+		peer:         peerID,
+		mu:           &sync.Mutex{},
+		remoteClosed: true,
 	}
 }
 
@@ -2996,13 +2998,16 @@ func (s *ObserveExtraSuite) TestSendAttestationStateWithData(c *C) {
 	ag.networkFees[*nf] = nfState
 	ag.mu.Unlock()
 
-	// Create a bidirectional stream - we write responses the sender expects
+	// Create a bidirectional stream whose remote never acks
 	var readBuf, writeBuf bytes.Buffer
-	stream := &MockStream{reader: &readBuf, writer: &writeBuf, peer: "peer1", mu: &sync.Mutex{}}
+	stream := &MockStream{reader: &readBuf, writer: &writeBuf, peer: "peer1", mu: &sync.Mutex{}, remoteClosed: true}
 
 	// sendAttestationState will write batch begin, then try to read ack.
 	// Since readBuf is empty, it'll get EOF and return early.
 	ag.sendAttestationState(stream)
+
+	// Both items fit one frame, so batch begin announced a single batch.
+	c.Assert(writeBuf.Bytes(), DeepEquals, encodeStreamMsg(append(append([]byte{}, prefixBatchBegin...), 1, 0, 0, 0)))
 }
 
 // ---------------------------------------------------------------------------

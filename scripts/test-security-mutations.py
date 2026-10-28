@@ -13,39 +13,95 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 MANIFEST = Path(__file__).with_suffix(".json")
-LOCK = "/tmp/thornode-test-quality-build.lock"
+LOCK = os.environ.get(
+    "THORNODE_TEST_QUALITY_LOCK", "/tmp/thornode-test-quality-build.lock"
+)
 
 
 def lock_timeout(_signum, _frame):
     raise TimeoutError("build lock wait exceeded")
 
 
-def invoke(package, test, overlay, seconds, toolchain, budget_capped=False):
+def positive_int(value):
+    # setitimer(0) disarms the lock timer and a negative one raises, so every
+    # bound must be at least one second.
+    number = int(value)
+    if number < 1:
+        raise argparse.ArgumentTypeError(f"must be at least 1, got {number}")
+    return number
+
+
+def kill_group(proc):
+    try:
+        os.killpg(proc.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+
+
+def terminate(signum, _frame):
+    # Turn SIGTERM/SIGHUP (CI cancel, closed terminal) into an exception so
+    # run_group's cleanup kills the go test group before the lock is released.
+    raise SystemExit(128 + signum)
+
+
+def run_group(command, env, seconds):
+    """Run command in its own process group; on timeout, interrupt or any other
+    exception kill and reap the whole group before returning or re-raising.
+
+    start_new_session keeps the terminal's Ctrl-C away from go test, so the
+    runner itself is responsible for tearing the group down."""
+    proc = subprocess.Popen(
+        command,
+        cwd=ROOT,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        start_new_session=True,
+    )
+    try:
+        stdout, stderr = proc.communicate(timeout=seconds)
+    except subprocess.TimeoutExpired:
+        kill_group(proc)
+        stdout, stderr = proc.communicate()
+        raise subprocess.TimeoutExpired(command, seconds, output=stdout, stderr=stderr)
+    except BaseException:
+        # KeyboardInterrupt, SystemExit from terminate(), or anything else:
+        # never leave compiler/test processes running past the runner.
+        kill_group(proc)
+        proc.wait()
+        raise
+    finally:
+        # go test may leave compiler/test descendants behind even on a normal
+        # exit path; never release the build lock while any are still alive.
+        kill_group(proc)
+    return subprocess.CompletedProcess(command, proc.returncode, stdout, stderr)
+
+
+def invoke(package, test, overlay, seconds, toolchain, deadline):
     command = ["go", "test", "-json", "-count=1", "-p", "2", "-run", test]
     if overlay:
         command += ["-overlay", str(overlay)]
     command += [package]
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        return {
+            "status": "timeout",
+            "reason": "suite execution budget exhausted",
+            "command": command,
+        }
+    seconds = min(seconds, remaining)
     env = dict(os.environ, GOMAXPROCS="4", GOTOOLCHAIN=toolchain)
     env.setdefault("GOCACHE", "/tmp/thornode-test-quality-mutation-gocache")
     start = time.monotonic()
     try:
-        result = subprocess.run(
-            command, cwd=ROOT, env=env, capture_output=True, text=True, timeout=seconds
-        )
+        result = run_group(command, env, seconds)
     except subprocess.TimeoutExpired as exc:
         return {
             "status": "timeout",
-            "reason": (
-                "suite execution budget exhausted"
-                if budget_capped
-                else f"go test exceeded {seconds}s"
-            ),
+            "reason": f"go test exceeded {round(seconds, 2)}s",
             "command": command,
-            "output": (
-                (exc.stdout or b"")[-3000:].decode(errors="replace")
-                if isinstance(exc.stdout, bytes)
-                else (exc.stdout or "")[-3000:]
-            ),
+            "output": (exc.output or "")[-3000:],
         }
     events = []
     for line in result.stdout.splitlines():
@@ -85,9 +141,9 @@ def main():
     parser.add_argument(
         "--summary", type=Path, default=Path("security-mutations-summary.json")
     )
-    parser.add_argument("--seconds-per-command", type=int, default=300)
-    parser.add_argument("--lock-wait", type=int, default=600)
-    parser.add_argument("--budget-seconds", type=int, default=1800)
+    parser.add_argument("--seconds-per-command", type=positive_int, default=300)
+    parser.add_argument("--lock-wait", type=positive_int, default=600)
+    parser.add_argument("--budget-seconds", type=positive_int, default=1800)
     args = parser.parse_args()
     data = json.loads(MANIFEST.read_text())
     toolchain = next(
@@ -110,32 +166,24 @@ def main():
         "counts": {},
         "runner_command": sys.argv,
     }
+    for signum in (signal.SIGTERM, signal.SIGHUP):
+        signal.signal(signum, terminate)
     started = time.monotonic()
+    # One deadline bounds baseline, control and mutant runs; each go test
+    # timeout is capped by whatever budget remains.
     deadline = started + args.budget_seconds
-
-    def run_within_budget(package, test, overlay):
-        # The suite budget is a hard deadline: no command starts after it and
-        # none runs past it.
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
-            return {"status": "timeout", "reason": "suite execution budget exhausted"}
-        seconds = min(args.seconds_per_command, remaining)
-        return invoke(
-            package,
-            test,
-            overlay,
-            seconds,
-            toolchain,
-            budget_capped=seconds < args.seconds_per_command,
-        )
-
     baseline_keys = list(dict.fromkeys((m["package"], m["test"]) for m in mutants))
     control = data["control"]
     control_mutant = next(m for m in mutants if m["id"] == control["mutant"])
     baseline_keys.append((control_mutant["package"], control["test"]))
     with open(LOCK, "a+") as lock:
         previous_handler = signal.signal(signal.SIGALRM, lock_timeout)
-        signal.setitimer(signal.ITIMER_REAL, min(args.lock_wait, args.budget_seconds))
+        # The lock wait counts against the suite deadline too: flock blocks
+        # before invoke() can check the remaining budget.
+        signal.setitimer(
+            signal.ITIMER_REAL,
+            min(args.lock_wait, max(deadline - time.monotonic(), 0.001)),
+        )
         try:
             fcntl.flock(lock, fcntl.LOCK_EX)
         except TimeoutError:
@@ -153,7 +201,14 @@ def main():
             ) as temp:
                 tempdir = Path(temp)
                 for package, test in baseline_keys:
-                    result = run_within_budget(package, test, None)
+                    result = invoke(
+                        package,
+                        test,
+                        None,
+                        args.seconds_per_command,
+                        toolchain,
+                        deadline,
+                    )
                     summary["baseline"].append(
                         {"package": package, "test": test, **result}
                     )
@@ -187,8 +242,13 @@ def main():
                                     )
                                 )
                                 test = control["test"] if index == 0 else mutant["test"]
-                                result = run_within_budget(
-                                    mutant["package"], test, overlay
+                                result = invoke(
+                                    mutant["package"],
+                                    test,
+                                    overlay,
+                                    args.seconds_per_command,
+                                    toolchain,
+                                    deadline,
                                 )
                                 if result["status"] == "passed":
                                     result["status"] = "survived"

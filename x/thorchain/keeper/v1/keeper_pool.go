@@ -6,6 +6,8 @@ import (
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
+	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
 func (k KVStore) setPool(ctx cosmos.Context, key []byte, record Pool) {
@@ -72,6 +74,7 @@ func (k KVStore) SetPool(ctx cosmos.Context, pool Pool) error {
 	if pool.Asset.IsEmpty() {
 		return errors.New("cannot save a pool with an empty asset")
 	}
+	keeper.RecordLuviTouch(ctx, pool.Asset, k.luviCapture(ctx))
 	k.setPool(ctx, k.GetKey(prefixPool, pool.Asset.String()), pool)
 	return nil
 }
@@ -82,7 +85,11 @@ func (k KVStore) PoolExist(ctx cosmos.Context, asset common.Asset) bool {
 }
 
 func (k KVStore) RemovePool(ctx cosmos.Context, asset common.Asset) {
+	keeper.RecordLuviTouch(ctx, asset, k.luviCapture(ctx))
 	k.del(ctx, k.GetKey(prefixPool, asset.String()))
+	// a re-created pool starts a fresh accumulator rather than observing a
+	// step from the removed pool's last state
+	k.RemovePoolLuviAccumulator(ctx, asset)
 }
 
 func (k KVStore) SetPoolLUVI(ctx cosmos.Context, asset common.Asset, luvi cosmos.Uint) {
@@ -95,4 +102,43 @@ func (k KVStore) GetPoolLUVI(ctx cosmos.Context, asset common.Asset) (cosmos.Uin
 	record := cosmos.ZeroUint()
 	_, err := k.getUint(ctx, key, &record)
 	return record, err
+}
+
+// GetPoolLuviAccumulator returns the pool's LUVI accumulator, and whether one
+// is stored.
+func (k KVStore) GetPoolLuviAccumulator(ctx cosmos.Context, asset common.Asset) (types.PoolLuvi, bool, error) {
+	var record types.PoolLuvi
+	store := k.kvStore(ctx)
+	key := k.GetKey(prefixPoolLuviAccumulator, asset.String())
+	bz := store.Get(key)
+	if bz == nil {
+		return record, false, nil
+	}
+	if err := k.cdc.Unmarshal(bz, &record); err != nil {
+		return record, true, dbError(ctx, fmt.Sprintf("Unmarshal kvstore: (%T) %s", &record, key), err)
+	}
+	return record, true, nil
+}
+
+// SetPoolLuviAccumulator saves the pool's LUVI accumulator.
+func (k KVStore) SetPoolLuviAccumulator(ctx cosmos.Context, record types.PoolLuvi) {
+	k.kvStore(ctx).Set(k.GetKey(prefixPoolLuviAccumulator, record.Asset.String()), k.cdc.MustMarshal(&record))
+}
+
+// RemovePoolLuviAccumulator deletes the pool's LUVI accumulator.
+func (k KVStore) RemovePoolLuviAccumulator(ctx cosmos.Context, asset common.Asset) {
+	k.del(ctx, k.GetKey(prefixPoolLuviAccumulator, asset.String()))
+}
+
+// luviCapture reads a layer-1 pool's current LUVI state, for the LUVI journal
+// (see keeper.LuviJournal).
+func (k KVStore) luviCapture(ctx cosmos.Context) func(common.Asset) types.LuviState {
+	return func(asset common.Asset) types.LuviState {
+		pool, err := k.GetPool(ctx, asset)
+		if err != nil {
+			// an unreadable pool counts as empty
+			return types.EmptyLuviState()
+		}
+		return types.NewLuviState(pool, k.GetTotalSupply(ctx, asset.GetSyntheticAsset()))
+	}
 }

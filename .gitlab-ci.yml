@@ -493,6 +493,102 @@ test-mainnet-monero:
     paths:
       - test-quality-reports/root-mainnet-monero/
 
+# The tests in `make test-utxo-daemons` skip in unit-tests and
+# test-simulation-unit because they need a real daemon. Here each daemon is
+# fresh and owned by this job, so the tests cannot spend funds a simulation
+# needs. zebrad is copied out of the mocknet Zebra image, so the ZEC signing
+# tests validate against the same official binary mocknet runs. The default
+# trixie Go image is required: zebrad 6.4.2 links against trixie's glibc, which
+# rules out the Alpine tools image and the bookworm docker-ce packages.
+test-utxo-daemons:
+  tags: !reference [.small-runner, tags]
+  rules:
+    - if: '$CI_MERGE_REQUEST_EVENT_TYPE == "merge_train" && $CI_MERGE_REQUEST_TARGET_BRANCH_SHA == $CI_MERGE_REQUEST_DIFF_BASE_SHA'
+      when: never
+    - *rules
+  stage: test
+  needs: []
+  timeout: 30m
+  variables:
+    PKGS: python3 docker-cli
+    # Not ZEBRA_*: zebrad reads ZEBRA_<FIELD> env vars as config overrides, and
+    # the signing tests' zebrad inherits the job environment, so ZEBRA_IMAGE
+    # makes it reject the unknown config field `image`.
+    ZEC_IMAGE: zfnd/zebra:6.4.2
+    DOGE_IMAGE: registry.gitlab.com/thorchain/devops/node-launcher:dogecoin-daemon-1.14.9
+  services:
+    - docker:28.5.2-dind
+  before_script:
+    - !reference [.pkg-install, before_script]
+    - !reference [.wait-for-dind, before_script]
+    - !reference [.go-private-auth, before_script]
+    - !reference [.stable-mtimes, before_script]
+    - !reference [.dind-registries, before_script]
+  script:
+    # .dind-registries probes the mirror with buildx, which docker-cli lacks,
+    # so try the dependency proxy with a plain pull before Docker Hub.
+    - |
+      if [ -n "${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX:-}" ] &&
+         docker pull -q "$CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX/$ZEC_IMAGE"; then
+        ZEC_IMAGE="$CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX/$ZEC_IMAGE"
+      else
+        docker pull -q "$ZEC_IMAGE" || exit 75
+      fi
+      docker pull -q "$DOGE_IMAGE" || exit 75
+    - |
+      zebra=$(docker create "$ZEC_IMAGE")
+      docker cp "$zebra:/usr/local/bin/zebrad" /usr/local/bin/zebrad
+      docker rm "$zebra"
+      zebrad --version
+    # The same images, entrypoints and settings as the mocknet compose services.
+    - |
+      mocknet="$CI_PROJECT_DIR/build/docker/mocknet"
+      docker run -d --name dogecoin --user root -p 18332:18332 -v "$mocknet:/mocknet" \
+        -e BLOCK_TIME=1 -e DOGE_MASTER_ADDR=mnaioCtEGdw6bd6rWJ13Mbre1kN5rPa2Mo \
+        --entrypoint /mocknet/dogecoin-entrypoint.sh "$DOGE_IMAGE"
+      docker run -d --name zcash -p 18232:18232 -e BLOCK_TIME=1 \
+        -v "$mocknet/zcash/zebrad.toml:/etc/zebrad.toml" -v "$mocknet/zcash/entrypoint.sh:/etc/entrypoint.sh" \
+        --entrypoint /etc/entrypoint.sh "$ZEC_IMAGE"
+    # Wait for the initial blocks each entrypoint mines to the master address.
+    - |
+      height() {
+        curl -s --max-time 5 "$@" -H 'Content-Type: application/json' \
+          -d '{"jsonrpc":"1.0","id":1,"method":"getblockcount","params":[]}' |
+          python3 -c 'import json, sys; print(json.load(sys.stdin)["result"])' 2>/dev/null || echo 0
+      }
+      for i in $(seq 1 150); do
+        doge=$(height --user thorchain:password http://docker:18332/)
+        zec=$(height http://docker:18232/)
+        [ "$doge" -ge 1000 ] && [ "$zec" -gt 400 ] && break
+        if [ "$i" = 150 ]; then
+          echo "daemons not ready after 5 minutes: dogecoin=$doge zcash=$zec"
+          exit 1
+        fi
+        sleep 2
+      done
+      echo "dogecoin height $doge, zcash height $zec"
+    - |
+      export ZEC_DAEMON=/usr/local/bin/zebrad
+      export DOGE_SIM_INTEGRATION_RPC_URL=http://thorchain:password@docker:18332
+      export ZEC_SIM_INTEGRATION_RPC_URL=http://docker:18232
+      make test-utxo-daemons
+  after_script:
+    - |
+      if [ "$CI_JOB_STATUS" != "success" ]; then
+        mkdir -p logs
+        docker logs dogecoin > logs/dogecoin.log 2>&1 || true
+        docker logs zcash > logs/zcash.log 2>&1 || true
+      fi
+  artifacts:
+    when: always
+    reports:
+      junit:
+        - test-quality-reports/utxo-daemons-zebra/junit.xml
+        - test-quality-reports/utxo-daemons-simulation/junit.xml
+    paths:
+      - test-quality-reports/utxo-daemons-*/
+      - logs/
+
 # The simulation directory has its own go.mod and is not reached by root ./....
 test-simulation-unit:
   tags: !reference [.small-runner, tags]
@@ -1061,6 +1157,9 @@ unit-tests-race-bifrost:
 security-mutations-fast:
   tags: !reference [.small-runner, tags]
   rules:
+    - if: '$CI_MERGE_REQUEST_EVENT_TYPE == "merge_train" && $CI_MERGE_REQUEST_TARGET_BRANCH_SHA == $CI_MERGE_REQUEST_DIFF_BASE_SHA'
+      when: never
+    # The observer baseline imports tss-lib-private, which fork MRs cannot fetch.
     - if: $CI_MERGE_REQUEST_SOURCE_PROJECT_PATH && $CI_MERGE_REQUEST_SOURCE_PROJECT_PATH != $CI_MERGE_REQUEST_PROJECT_PATH
       when: never
     - if: '$CI_MERGE_REQUEST_IID && $CI_PIPELINE_SOURCE != "schedule"'
@@ -1071,6 +1170,7 @@ security-mutations-fast:
           - common/**/*
           - x/thorchain/types/**/*
           - scripts/test-security-mutations*
+          - build/scripts/tests/test_security_mutations.py
           - go.mod
           - go.sum
   stage: long-test
@@ -1080,7 +1180,7 @@ security-mutations-fast:
       artifacts: false
   timeout: 40m
   variables:
-    PKGS: python3
+    PKGS: python3 util-linux
   before_script:
     - !reference [.pkg-install, before_script]
     - !reference [.go-private-auth, before_script]
@@ -1090,28 +1190,6 @@ security-mutations-fast:
     when: always
     paths:
       - test-quality-reports/mutations-fast.json
-
-security-mutations-deep:
-  tags: !reference [.small-runner, tags]
-  rules:
-    - if: '$CI_PIPELINE_SOURCE == "schedule"'
-  stage: long-test
-  needs:
-    - job: unit-tests
-      optional: true
-      artifacts: false
-  timeout: 1h
-  variables:
-    PKGS: python3
-  before_script:
-    - !reference [.pkg-install, before_script]
-    - !reference [.go-private-auth, before_script]
-  script:
-    - python3 scripts/test-security-mutations.py --mode deep --budget-seconds 3300 --summary test-quality-reports/mutations-deep.json
-  artifacts:
-    when: always
-    paths:
-      - test-quality-reports/mutations-deep.json
 
 consensus-determinism:
   tags: !reference [.small-runner, tags]

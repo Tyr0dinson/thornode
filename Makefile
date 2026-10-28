@@ -364,6 +364,21 @@ test-quality-simulation:
 test-quality-mainnet:
 	@python3 scripts/test-quality-run.py --tags mainnet --fresh --run '^TestNewClientRejectsNonMainnetDaemonOnMainnet$$' --require-test TestNewClientRejectsNonMainnetDaemonOnMainnet --report-dir test-quality-reports/root-mainnet-monero ./bifrost/pkg/chainclients/monero
 
+# Tests that need a real L1 daemon. Each daemon must be fresh and used by no
+# simulation, because the tests spend from the mocknet master address. Set
+# ZEC_DAEMON to an official zebrad binary, and DOGE_SIM_INTEGRATION_RPC_URL and
+# ZEC_SIM_INTEGRATION_RPC_URL to the mocknet dogecoind and Zebra RPC endpoints.
+# A skipped test fails the run, so an unset variable cannot pass unnoticed.
+.PHONY: test-utxo-daemons
+test-utxo-daemons:
+	@python3 scripts/test-quality-run.py --tags mocknet --fresh --run '^TestV[56]Zebra$$' \
+		--require-test TestV5Zebra --require-test TestV6Zebra --max-skips 0 \
+		--report-dir test-quality-reports/utxo-daemons-zebra ./bifrost/pkg/chainclients/utxo/zcash
+	@python3 scripts/test-quality-run.py --module test/simulation --tags mocknet --fresh \
+		--run '^(TestDogeStalledBroadcastIsNotDuplicated|TestZecIsolatedFunding)$$' \
+		--require-test TestDogeStalledBroadcastIsNotDuplicated --require-test TestZecIsolatedFunding --max-skips 0 \
+		--report-dir test-quality-reports/utxo-daemons-simulation ./pkg/utxo
+
 # ------------------------------ Performance Tests ------------------------------
 
 # Run comprehensive benchmarks with profiling (recommended)

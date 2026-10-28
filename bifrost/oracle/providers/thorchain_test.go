@@ -1,6 +1,7 @@
 package providers
 
 import (
+	"context"
 	"time"
 
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -16,7 +17,12 @@ func (s *ProviderTestSuite) TestThorchainProvider(c *C) {
 		"RUJI/RUNE",
 	}
 
-	provider, err := NewThorchainProvider(s.ctx, s.logger, config, s.metrics)
+	// poll every 10ms, not the suite's 1s, and stop when the test ends
+	config.PollingInterval = 10 * time.Millisecond
+	ctx, cancel := context.WithCancel(s.ctx)
+	defer cancel()
+
+	provider, err := NewThorchainProvider(ctx, s.logger, config, s.metrics)
 	c.Assert(err, IsNil)
 	c.Assert(provider, NotNil)
 	c.Assert(provider.pairs, HasLen, 1)
@@ -30,7 +36,9 @@ func (s *ProviderTestSuite) TestThorchainProvider(c *C) {
 
 	provider.Start()
 
-	time.Sleep(2 * time.Second)
+	waitForPrices(provider, 4, map[string]string{
+		"RUNE/USD": "1.2486",
+	})
 
 	tickers, err := provider.GetTickers()
 	c.Assert(err, IsNil)

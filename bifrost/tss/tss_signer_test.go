@@ -24,9 +24,23 @@ import (
 	stypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
-type KeySignTestSuite struct{}
+type KeySignTestSuite struct {
+	batchInterval time.Duration
+}
 
 var _ = Suite(&KeySignTestSuite{})
+
+// The mock TSS server answers at once; keep the keysign batching but skip its
+// real 1s wait for a quiet queue. Every test stops its KeySign, so no batch
+// loop is running when the suite restores the interval.
+func (s *KeySignTestSuite) SetUpSuite(c *C) {
+	s.batchInterval = KeySignBatchInterval
+	KeySignBatchInterval = 10 * time.Millisecond
+}
+
+func (s *KeySignTestSuite) TearDownSuite(c *C) {
+	KeySignBatchInterval = s.batchInterval
+}
 
 // ---------------------------------------------------------------------------
 // Mock tssServer
@@ -393,6 +407,32 @@ func (s *KeySignTestSuite) TestRemoteSignSecp256k1Success(c *C) {
 	c.Assert(sig, NotNil)
 	c.Assert(len(sig), Equals, 64)
 	c.Assert(recovery, NotNil)
+}
+
+func (s *KeySignTestSuite) TestRemoteSignUsesBatchInterval(c *C) {
+	msg := []byte("test msg")
+	sigBytes := make([]byte, 64)
+	sigBytes[0] = 0x01
+	server := &mockTssServer{
+		resp: keysign.Response{
+			Signatures: []keysign.Signature{
+				{Msg: base64.StdEncoding.EncodeToString(msg), S: base64.StdEncoding.EncodeToString(sigBytes)},
+			},
+			Status: tsscommon.Success,
+		},
+	}
+	ks, err := NewKeySign(server, &mockBridgeForKeysign{version: semver.MustParse("1.0.0")})
+	c.Assert(err, IsNil)
+	ks.Start()
+	defer ks.Stop()
+
+	start := time.Now()
+	sig, _, err := ks.RemoteSign(msg, common.SigningAlgoEd25519, "poolpub", 100)
+	elapsed := time.Since(start)
+	c.Assert(err, IsNil)
+	c.Assert(sig, DeepEquals, sigBytes)
+	// The default interval alone takes a second.
+	c.Assert(elapsed < time.Second, Equals, true, Commentf("keysign took %s, want it to follow KeySignBatchInterval (%s)", elapsed, KeySignBatchInterval))
 }
 
 func (s *KeySignTestSuite) TestRemoteSignEd25519Success(c *C) {
