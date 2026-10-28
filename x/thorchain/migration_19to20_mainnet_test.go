@@ -20,14 +20,7 @@ import (
 // behind a future 20->21 migration. This tripwire fails CI on any >=3.21.0 build whose spec is not
 // complete; it passes below 3.21.0, so pre-cut development is unaffected. At
 // the cut: re-pin the amounts from live and set mainnetDonationSpecComplete=true.
-//
-// TODO(!5078): remove this 4.x skip before the SDK v0.54 branch merges. v4 must
-// not ship before the 3.21.0 cut flips the flag, which the 3.x check enforces;
-// the skip only keeps the v4 branch's CI usable until then.
 func (s *Migration19to20Suite) TestMainnetDonationSpecCompleteForRelease(c *C) {
-	if GetCurrentVersion().GTE(semver.MustParse("4.0.0")) && !mainnetDonationSpecComplete {
-		c.Skip("v4 branch predates the 3.21.0 donation spec cut; see TODO(!5078)")
-	}
 	if GetCurrentVersion().GTE(semver.MustParse("3.21.0")) {
 		c.Assert(mainnetDonationSpecComplete, Equals, true,
 			Commentf("re-pin the Migrate19to20 amounts from live and set mainnetDonationSpecComplete=true before the 3.21.0 cut"))
