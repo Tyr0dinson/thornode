@@ -11,8 +11,36 @@ THORNode follows a custom variation of semantic version structure: `MAJOR.MINOR.
 ## Release Preparation
 
 1. Create a milestone using the release version (e.g. [Release-3.7.0](https://gitlab.com/thorchain/thornode/-/milestones/161)).
-2. Tag issues and PRs using the milestone, so we can identify which PR is on which version.
+2. Tag issues and PRs using the milestone, so we can identify which PR is on which version. The milestone is the release record in this repository; a `mainnet-X.Y.Z` branch here is optional and, when used, is managed the same way as the private one (see [Release Branches](#release-branches)).
 3. PRs require 3 approvals from the dev team - once approved, merge to `develop` branch.
+4. Keep the private repository's `develop` in sync with this repository's `develop` through a single MR (`develop` ← upstream `develop`). Merge with a merge commit, never a rebase, so history and signatures are kept. Where both sides changed a file, keep the private override, but never drop an upstream consensus fix to do so. List every conflict and how it was resolved in the MR description.
+
+## Release Branches
+
+Each release is assembled in the private repository on two branches per version, `stagenet-X.Y.Z` and `mainnet-X.Y.Z` (e.g. `stagenet-3.7.0`, `mainnet-3.7.0`). Release maintainers manage these branches directly: changes land by cherry-pick and direct push, not through per-change MRs, because every change on them was already reviewed and merged on a `develop` branch.
+
+1. Merge the change to `develop` first (public or private). Only merged changes are picked.
+2. Cherry-pick it onto both release branches with `-x`, so each commit records its source and keeps its author:
+
+   ```bash
+   git fetch origin
+   git checkout -B mainnet-3.7.0 origin/mainnet-3.7.0
+   git cherry-pick -x <commit hash>
+   ```
+
+3. Before every push, check that:
+   - the change is safe for the release type: no consensus changes in a patch release (see [Bifrost-Only Patch Release](#bifrost-only-patch-release));
+   - `go build ./...`, the unit tests and `go test -race` on the touched packages pass;
+   - the push goes to the project repository, never to a fork.
+4. Push the branch directly (fast-forward only):
+
+   ```bash
+   git push origin mainnet-3.7.0
+   ```
+
+5. Once every change is in and the release has been tested on `stagenet`, open one MR in the private repository from `mainnet-X.Y.Z` to `mainnet`. It carries all public and private changes for the release and is the only MR on the release path (see [Mainnet Release](#mainnet-release)).
+
+Branch protection supports this in both repositories: `mainnet-*` allows push for Maintainers with force push disabled, while `mainnet` itself only accepts changes through a merged MR.
 
 ## Store Migrations and LP Value
 
@@ -24,7 +52,7 @@ The CI gate (`LuviMigrateGateSuite` in `x/thorchain/luvi_migration_test.go`) run
 
 ## Stagenet Release
 
-1. Create a new RC release at https://gitlab.com/thorchain/thornode/-/releases for the version (e.g. `v3.7.0-rc1`) with the last commit for the release in `develop` as the tag target. Run `uv run ./scripts/release/prlog.py Release-3.7.0` to generate the output for the change log.
+1. Create a new RC release at https://gitlab.com/thorchain/thornode/-/releases for the version (e.g. `v3.7.0-rc1`) with the tip of the `stagenet-X.Y.Z` release branch (see [Release Branches](#release-branches)) as the tag target. Run `uv run ./scripts/release/prlog.py Release-3.7.0` to generate the output for the change log.
 2. Checkout the release commit locally, then create the `stagenet` branch from it, and push it to the remote (force push may be necessary):
 
    ```bash
@@ -49,22 +77,15 @@ The CI gate (`LuviMigrateGateSuite` in `x/thorchain/luvi_migration_test.go`) run
    - Ensure `stagenet` successfully completes a churn.
    - Operators of `stagenet` should test any node or operator specific functionality changes.
    - UIs should be sanity checked against any new API changes.
-9. If there are bugs requiring a re-cut of the release, create a new release candidate (e.g. `v3.7.0-rc2`) and repeat the process from step 1, but add an additional commit directly on the `stagenet` branch before pushing that includes a patch release version bump ([example](https://gitlab.com/thorchain/thornode/-/commit/aea4146d05f9a94fbaf3105205f536a6b5b77a14)). Since the embedded version cannot support the RC suffix, subsequent RCs on `stagenet` will correspond to a patch version bump on `stagenet` only (e.g. `3.7.1` for `v3.7.0-rc2`).
+9. If there are bugs requiring a re-cut of the release, merge the fixes to `develop`, cherry-pick them onto `stagenet-X.Y.Z` and `mainnet-X.Y.Z` (see [Release Branches](#release-branches)), then create a new release candidate (e.g. `v3.7.0-rc2`) and repeat the process from step 1, but add an additional commit directly on the `stagenet` branch before pushing that includes a patch release version bump ([example](https://gitlab.com/thorchain/thornode/-/commit/aea4146d05f9a94fbaf3105205f536a6b5b77a14)). Since the embedded version cannot support the RC suffix, subsequent RCs on `stagenet` will correspond to a patch version bump on `stagenet` only (e.g. `3.7.1` for `v3.7.0-rc2`).
 10. Once `stagenet` has baked for the agreed period with no further issues, proceed with the `mainnet` release process.
 
 ## Mainnet Release
 
 1. Determine the upgrade height and time - this must be at least 1 week out to accommodate agreements with exchanges and other stakeholders.
-2. Checkout the release commit locally, then create the `mainnet` branch from it, and push it to the remote (force push may be necessary):
+2. Open one MR in the private repository from `mainnet-X.Y.Z` to `mainnet` (see [Release Branches](#release-branches)). It must contain every public and private change in the release and nothing that was not tested on `stagenet`. Merge it once approved; `mainnet` does not accept direct pushes.
 
-   ```bash
-   git checkout v3.7.0-rc1
-   git branch -D mainnet
-   git checkout -b mainnet
-   git push -f origin mainnet
-   ```
-
-3. Copy the contents of the final RC release (e.g. `v3.7.0-rc1`) to a new release (e.g. `v3.7.0`) at https://gitlab.com/thorchain/thornode/-/releases, create the version tag on the `mainnet` branch you just pushed, and include the upgrade height and time in the release description in the following format:
+3. Copy the contents of the final RC release (e.g. `v3.7.0-rc1`) to a new release (e.g. `v3.7.0`) at https://gitlab.com/thorchain/thornode/-/releases, create the version tag on the `mainnet` branch you just merged, and include the upgrade height and time in the release description in the following format:
 
    ```text
    - **Proposed Block**: `21210000`
@@ -135,7 +156,7 @@ The CI gate (`LuviMigrateGateSuite` in `x/thorchain/luvi_migration_test.go`) run
 
 In the case of a private mainnet release with security patches, the process remains the same with the following additions:
 
-1. Push all public code included in the release to the `mainnet` branch as normal, but do not include the private security commits. After pushing the branch, stop the pipeline before it builds the image.
+1. Land all public code included in the release on this repository's `mainnet` branch through an MR from its `mainnet-X.Y.Z` branch (see [Release Branches](#release-branches)), but do not include the private security commits. After the merge, stop the pipeline before it builds the image.
 2. Add the following line to the release description before the changelog:
 
    ```text
@@ -155,18 +176,17 @@ Bifrost-only patches do not break consensus and can generally be released withou
 
 1. Merge the patch PR(s) to `develop`.
 
-2. Ensure your local `mainnet` branch is up to date with `origin`:
+2. Create the patch release branch `mainnet-X.Y.Z` from the current `mainnet`, or reuse it if it already exists:
 
    ```bash
-   git checkout origin/mainnet
-   git branch -D mainnet
-   git checkout -b mainnet
+   git fetch origin
+   git checkout -B mainnet-3.15.1 origin/mainnet
    ```
 
-3. Cherry pick the patch commit(s) from `develop` to `mainnet`:
+3. Cherry pick the patch commit(s) from `develop` to `mainnet-X.Y.Z` (see [Release Branches](#release-branches) for the checks before each push):
 
    ```bash
-   git cherry-pick <commit hash>
+   git cherry-pick -x <commit hash>
    ```
 
 4. Create a commit (example: https://gitlab.com/thorchain/thornode/-/commit/989f58a4402640f5d82a606d81a42676030a2f23) with the version upgrade titled in the form `Release 3.15.1` containing:
@@ -175,13 +195,13 @@ Bifrost-only patches do not break consensus and can generally be released withou
    - Committed changes after `make generate`.
    - Update `app/upgrades.go` following the detailed instructions in the file comments to explicitly create a `standard.NewUpgrade` using the current network consensus version. Otherwise the patch version will be automatically set in the app upgrades and cause consensus failure when a node is updated.
 
-5. Push the `mainnet` branch to the remote:
+5. Push `mainnet-X.Y.Z` directly, then open one MR from it to `mainnet` and merge it once approved:
 
    ```bash
-   git push origin mainnet
+   git push origin mainnet-3.15.1
    ```
 
-6. Create a new release at https://gitlab.com/thorchain/thornode/-/releases for the patch version (e.g. `v3.15.1`) creating the tag based on the tip commit of the just pushed `mainnet` branch.
+6. Create a new release at https://gitlab.com/thorchain/thornode/-/releases for the patch version (e.g. `v3.15.1`) creating the tag based on the tip commit of the just merged `mainnet` branch.
 
 7. The `build-thornode` job in the pipeline for the `mainnet` branch will build and push the release image.
 
