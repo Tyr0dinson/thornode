@@ -48,12 +48,18 @@ func TestKeepAliveDue(t *testing.T) {
 // BLOCKTIMEMS changes THORChain's block time.
 func TestKeepAliveDueIgnoresBlockTime(t *testing.T) {
 	refreshBlocks := int64(14400)
-	threshold := uint64(refreshBlocks) * solSlotsPerThorchainBlock()
+	c, _ := newSlotMsClient(nil, nil)
+	baseSlots, err := c.solSlotsPerThorchainBlock(10)
+	require.NoError(t, err)
+	threshold := uint64(refreshBlocks) * baseSlots
 	t.Cleanup(func() { blocktime.Set(constants.ThorchainBlockTime.Milliseconds()) })
 	for _, ms := range []int64{constants.ThorchainBlockTime.Milliseconds(), constants.ThorchainBlockTime.Milliseconds() / 2} {
 		blocktime.Set(ms)
-		require.False(t, keepAliveDue(1_000_000+threshold, 1_000_000, refreshBlocks))
-		require.True(t, keepAliveDue(1_000_000+threshold+1, 1_000_000, refreshBlocks))
+		slotsPerThorBlock, err := c.solSlotsPerThorchainBlock(10)
+		require.NoError(t, err)
+		require.Equal(t, baseSlots, slotsPerThorBlock)
+		require.False(t, keepAliveDue(1_000_000+threshold, 1_000_000, refreshBlocks, slotsPerThorBlock))
+		require.True(t, keepAliveDue(1_000_000+threshold+1, 1_000_000, refreshBlocks, slotsPerThorBlock))
 	}
 }
 
