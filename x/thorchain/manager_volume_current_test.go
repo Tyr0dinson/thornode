@@ -1,11 +1,14 @@
 package thorchain
 
 import (
+	"bytes"
 	"time"
 
+	"github.com/rs/zerolog"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/constants"
+	thorlog "gitlab.com/thorchain/thornode/v3/log"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 	. "gopkg.in/check.v1"
 )
@@ -16,6 +19,80 @@ var _ = Suite(&VolumeManagerSuite{})
 
 func (s *VolumeManagerSuite) TestConstant(c *C) {
 	c.Assert(constants.VolumeBucketSeconds, Equals, int64(900))
+}
+
+func (s *VolumeManagerSuite) TestIsBaseLayerPool(c *C) {
+	testCases := []struct {
+		name     string
+		asset    common.Asset
+		expected bool
+	}{
+		{name: "external L1", asset: common.BTCAsset, expected: true},
+		{name: "TCY", asset: common.TCY, expected: true},
+		{name: "whitelisted native asset", asset: common.RUJI, expected: true},
+		{name: "RUNE", asset: common.RuneAsset(), expected: false},
+		{name: "synthetic asset", asset: common.BTCAsset.GetSyntheticAsset(), expected: false},
+		{name: "trade asset", asset: common.BTCAsset.GetTradeAsset(), expected: false},
+		{name: "derived asset", asset: common.BTCAsset.GetDerivedAsset(), expected: false},
+		{name: "secured asset", asset: common.BTCAsset.GetSecuredAsset(), expected: false},
+		{name: "TOR", asset: common.TOR, expected: false},
+		{name: "empty asset", asset: common.EmptyAsset, expected: false},
+	}
+
+	for _, tc := range testCases {
+		c.Check(isBaseLayerPool(tc.asset), Equals, tc.expected, Commentf(tc.name))
+	}
+}
+
+func (s *VolumeManagerSuite) TestMissingVolumeDoesNotLogError(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	pool := NewPool()
+	pool.Asset = common.BTCAsset
+	c.Assert(mgr.K.SetPool(ctx, pool), IsNil)
+
+	var output bytes.Buffer
+	logger := zerolog.New(&output)
+	ctx = ctx.WithLogger(thorlog.SdkLogWrapper{Logger: &logger})
+
+	c.Assert(mgr.volumeManager.EndBlock(ctx), IsNil)
+	c.Assert(output.String(), Equals, "")
+}
+
+func (s *VolumeManagerSuite) TestSkipsSyntheticAndDerivedPools(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	derivedAsset := common.BTCAsset.GetDerivedAsset()
+	derivedPool := NewPool()
+	derivedPool.Asset = derivedAsset
+	c.Assert(mgr.K.SetPool(ctx, derivedPool), IsNil)
+
+	derivedVolume := types.NewVolume(derivedAsset)
+	derivedVolume.ChangeRune = cosmos.NewUint(10)
+	c.Assert(mgr.K.SetVolume(ctx, derivedVolume), IsNil)
+
+	synthAsset := common.ETHAsset.GetSyntheticAsset()
+	synthPool := NewPool()
+	synthPool.Asset = synthAsset
+	c.Assert(mgr.K.SetPool(ctx, synthPool), IsNil)
+
+	synthVolume := types.NewVolume(synthAsset)
+	synthVolume.ChangeAsset = cosmos.NewUint(20)
+	c.Assert(mgr.K.SetVolume(ctx, synthVolume), IsNil)
+
+	c.Assert(mgr.volumeManager.EndBlock(ctx), IsNil)
+
+	derivedVolume, err := mgr.K.GetVolume(ctx, derivedAsset)
+	c.Assert(err, IsNil)
+	c.Assert(derivedVolume.ChangeRune.String(), Equals, "10")
+	c.Assert(derivedVolume.TotalRune.IsZero(), Equals, true)
+	c.Assert(derivedVolume.LastBucket, Equals, int64(-1))
+
+	synthVolume, err = mgr.K.GetVolume(ctx, synthAsset)
+	c.Assert(err, IsNil)
+	c.Assert(synthVolume.ChangeAsset.String(), Equals, "20")
+	c.Assert(synthVolume.TotalAsset.IsZero(), Equals, true)
+	c.Assert(synthVolume.LastBucket, Equals, int64(-1))
 }
 
 func (s *VolumeManagerSuite) TestBuckets(c *C) {
