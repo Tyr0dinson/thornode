@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -733,6 +734,15 @@ func applyTxOutAttestation(
 	// unlimited gas/height variants at zero cost to erase the per-observation charge.
 	redundantReObservation := voter.ShouldRefundRedundantOutboundObservation(tx, signer)
 
+	// A SOL sign-time vote arriving after the final consensus missed the
+	// redemption made there (see below), so redeem it on arrival, unless that
+	// redemption already covered an earlier sign-time vote of this signer.
+	lateSolSignTimeVote := voter.FinalisedHeight > 0 && !tx.IsFinal() &&
+		voter.Tx.Tx.Chain.Equals(common.SOLChain) &&
+		!slices.ContainsFunc(voter.Txs, func(existing common.ObservedTx) bool {
+			return !existing.IsFinal() && existing.HasSigned(signer)
+		})
+
 	obsChain := telemetry.NewLabel("chain", telemChain(tx.Tx.Chain))
 	obsDir := telemetry.NewLabel("direction", "out")
 
@@ -757,6 +767,9 @@ func applyTxOutAttestation(
 	// counts toward consensus and gas correction.
 	if redundantReObservation {
 		attResult = "redundant"
+		slasher.DecSlashPoints(slashCtx, observeSlashPoints, signer)
+	}
+	if lateSolSignTimeVote {
 		slasher.DecSlashPoints(slashCtx, observeSlashPoints, signer)
 	}
 
@@ -805,6 +818,14 @@ func applyTxOutAttestation(
 			nonSigners := getNonSigners(nas, signers)
 			slasher.DecSlashPoints(slashCtx, observeSlashPoints, signers...)
 			slasher.IncSlashPoints(slashCtx, lackOfObservationPenalty, nonSigners...)
+			// A SOL outbound's non-final votes, the signing party's sign-time votes,
+			// never form a consensus of their own (see below). Redeem them now, once
+			// per signer, whatever shape the final consensus has. Only on the voter's
+			// first consensus: one that formed non-final consensus before that
+			// guard existed has already redeemed them.
+			if ok && voter.Tx.Tx.Chain.Equals(common.SOLChain) {
+				slasher.DecSlashPoints(slashCtx, observeSlashPoints, nonFinalObserveSigners(voter)...)
+			}
 			// Record the credited gas-agnostic observers on the consensus Tx so the
 			// ObservationDelayFlexibility branch below (keyed off Tx.HasSigned) does
 			// not refund the same node a second time when its own gas-used
@@ -845,8 +866,10 @@ func applyTxOutAttestation(
 	// reported, final, in the nonce-creation shape and never processed as the
 	// outbound, and a failed non-durable tx is never observed at all. Those votes
 	// stay recorded above but never form consensus here, so the final consensus,
-	// success or failure, is processed exactly once by the branch above. Checked on
-	// the consensus tx, not this vote, so a later vote of another chain cannot
+	// success or failure, is processed exactly once by the branch above. Their
+	// observe points are redeemed instead when the final consensus forms, or on
+	// arrival for a vote that comes after it, once per signer. Checked on the
+	// consensus tx, not this vote, so a later vote of another chain cannot
 	// trigger it.
 	if !ok && voter.HasConsensus(nas) && !tx.IsFinal() && voter.FinalisedHeight == 0 &&
 		!voter.GetTx(nas).Tx.Chain.Equals(common.SOLChain) {
@@ -906,6 +929,25 @@ func applyTxOutAttestation(
 	)
 
 	return voter, ok, true
+}
+
+// nonFinalObserveSigners returns each distinct signer of the voter's non-final
+// entries, in the voter's order.
+func nonFinalObserveSigners(voter ObservedTxVoter) []cosmos.AccAddress {
+	seen := make(map[string]bool) // membership only, never iterated
+	var signers []cosmos.AccAddress
+	for _, tx := range voter.Txs {
+		if tx.IsFinal() {
+			continue
+		}
+		for _, s := range tx.GetSigners() {
+			if !seen[s.String()] {
+				seen[s.String()] = true
+				signers = append(signers, s)
+			}
+		}
+	}
+	return signers
 }
 
 // countMatchingSigners counts the number of unique active node signers that have observed
