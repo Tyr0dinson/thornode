@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 
+	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
@@ -18,8 +19,9 @@ import (
 // and synth units moves G by well under 1e-15.
 //
 // On top of it, each pool gets computed allowances per block (see allowance)
-// for gas and slash reimbursements, LP-flow rounding, and the error from
-// valuing the block's LP flows at the previous block's unit value.
+// for gas and slash reimbursements, the rounding of LP flows and outbound fee
+// conversions, and the error from valuing the block's LP flows at the previous
+// block's unit value.
 var DefaultTolerance = cosmos.NewDecWithPrec(1, 12)
 
 // PoolSnapshot is the subset of a /thorchain/pools entry the check needs.
@@ -114,6 +116,8 @@ func NewMonitor() *Monitor {
 // is then forgotten.
 func (m *Monitor) ObserveBlock(height int64, pools []PoolSnapshot, events []map[string]string) ([]Violation, error) {
 	added, withdrawn := unitEvents(events)
+	conversions := feeConversionEvents(events)
+	flows := func(asset string) int { return len(added[asset]) + len(withdrawn[asset]) + conversions[asset] }
 	errata := errataPools(events)
 	paid := assetPaidEvents(events)
 
@@ -128,7 +132,7 @@ func (m *Monitor) ObserveBlock(height int64, pools []PoolSnapshot, events []map[
 		pt := m.pools[p.Asset]
 		if !state.IsValid() {
 			if pt != nil {
-				allowed := m.Tolerance.Add(retireAllowance(pt.prev, assetPaidOf(paid, p.Asset), len(added[p.Asset])+len(withdrawn[p.Asset])))
+				allowed := m.Tolerance.Add(retireAllowance(pt.prev, assetPaidOf(paid, p.Asset), flows(p.Asset)))
 				violations = append(violations, retire(p.Asset, height, pt.prev, state, allowed, added, withdrawn, errata[p.Asset])...)
 				delete(m.pools, p.Asset)
 			}
@@ -157,7 +161,7 @@ func (m *Monitor) ObserveBlock(height int64, pools []PoolSnapshot, events []map[
 			return nil, err
 		}
 		prevState := pt.prev
-		allowed := m.Tolerance.Add(allowance(prevState, state, assetPaidOf(paid, p.Asset), len(added[p.Asset])+len(withdrawn[p.Asset])))
+		allowed := m.Tolerance.Add(allowance(prevState, state, assetPaidOf(paid, p.Asset), flows(p.Asset)))
 		pt.prev = state
 		if step.NormalizedDeltaG.LT(allowed.Neg()) {
 			violations = append(violations, Violation{
@@ -175,7 +179,7 @@ func (m *Monitor) ObserveBlock(height int64, pools []PoolSnapshot, events []map[
 				BalanceRune: cosmos.ZeroUint(), BalanceAsset: cosmos.ZeroUint(), LPUnits: cosmos.ZeroUint(),
 				PoolUnits: cosmos.ZeroUint(), SynthSupply: cosmos.ZeroUint(),
 			}
-			allowed := m.Tolerance.Add(retireAllowance(pt.prev, assetPaidOf(paid, asset), len(added[asset])+len(withdrawn[asset])))
+			allowed := m.Tolerance.Add(retireAllowance(pt.prev, assetPaidOf(paid, asset), flows(asset)))
 			violations = append(violations, retire(asset, height, pt.prev, gone, allowed, added, withdrawn, errata[asset])...)
 			delete(m.pools, asset)
 		}
@@ -228,6 +232,10 @@ func retire(asset string, height int64, prev, state types.LuviState, allowed cos
 //     the nearest base unit (common.GetSafeShare), in either direction, which
 //     is worth up to 1/A + 1/R of sqrt(A*R) per flow. In a small pool one
 //     base unit of the asset can be worth thousands of RUNE base units.
+//   - Outbound fee conversions: an outbound fee paid in the pool's asset is
+//     swapped for the RUNE it is worth at the pool's price
+//     (RuneDisbursementForAssetAdd), rounded half up, so the pool can pay up
+//     to half a RUNE base unit too much. Each counts as one more flow.
 //   - LP flow timing: G values the block's LP unit change dL at the previous
 //     block's unit value v_prev, but a flow that runs after the block's other
 //     changes happens at a value between v_prev and v_new. The error is at most
@@ -297,6 +305,29 @@ func assetPaidEvents(events []map[string]string) map[string]cosmos.Uint {
 		paid[pool] = g
 	}
 	return paid
+}
+
+// feeConversionEvents counts, per pool, the fee events that converted an
+// outbound fee paid in the pool's asset to RUNE taken from the pool. The fee
+// is charged to the pool of the coin's layer-1 asset, as the txout manager
+// does.
+func feeConversionEvents(events []map[string]string) map[string]int {
+	conversions := map[string]int{}
+	for _, e := range events {
+		if e["type"] != types.FeeEventType {
+			continue
+		}
+		deduct, err := cosmos.ParseUint(e["pool_deduct"])
+		if err != nil || deduct.IsZero() {
+			continue
+		}
+		coin, err := common.ParseCoin(e["coins"])
+		if err != nil || coin.Asset.IsRune() {
+			continue
+		}
+		conversions[coin.Asset.GetLayer1Asset().String()]++
+	}
+	return conversions
 }
 
 // unitEvents collects the LP units added and withdrawn per pool.

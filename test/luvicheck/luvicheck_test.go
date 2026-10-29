@@ -423,3 +423,43 @@ func TestLPFlowRoundingAllowance(t *testing.T) {
 	observe(t, m, 1, []PoolSnapshot{prev})
 	expectOne(t, observe(t, m, 2, []PoolSnapshot{next}, event("errata", "asset", btc)), btc, Drop)
 }
+
+func TestOutboundFeeConversionRoundingAllowance(t *testing.T) {
+	// An outbound fee paid in a pool's asset is converted to RUNE with
+	// RuneDisbursementForAssetAdd, rounded half up: here 201500 TKN for
+	// 1121796.94 RUNE base units, paid as 1121797. In a ~140 RUNE pool that
+	// fraction of a unit is ~2e-12 of sqrt(AR)
+	// (!5273 test-simulation, SOL.TKN-55HZVPDVGF3VYJ6DUSKU4NMBWXCSU2PABKDSNSS8BWZT at height 212).
+	const tkn = "SOL.TKN-55HZVPDVGF3VYJ6DUSKU4NMBWXCSU2PABKDSNSS8BWZT"
+	prev := PoolSnapshot{
+		Asset: tkn, BalanceRune: "13990479118", BalanceAsset: "2512803700",
+		LPUnits: "14061625000", PoolUnits: "14061625000", SynthSupply: "0",
+	}
+	next := prev
+	next.BalanceRune, next.BalanceAsset = "13989357321", "2513005200"
+	fee := func(pool string, deduct uint64) map[string]string {
+		return event("fee", "tx_id", "A1B2C3", "coins", "201500 "+pool, "pool_deduct", fmt.Sprint(deduct))
+	}
+
+	m := NewMonitor()
+	observe(t, m, 1, []PoolSnapshot{prev})
+	expectNone(t, observe(t, m, 2, []PoolSnapshot{next}, fee(tkn, 1121797)))
+
+	// the same state change without its fee event is a drop
+	m = NewMonitor()
+	observe(t, m, 1, []PoolSnapshot{prev})
+	expectOne(t, observe(t, m, 2, []PoolSnapshot{next}), tkn, Drop)
+
+	// a fee event of another pool excuses nothing here
+	m = NewMonitor()
+	observe(t, m, 1, []PoolSnapshot{prev})
+	expectOne(t, observe(t, m, 2, []PoolSnapshot{next}, fee(btc, 1121797)), tkn, Drop)
+
+	// a fee converted at twice its value is a first-order loss the allowance
+	// can't cover
+	over := next
+	over.BalanceRune = "13988235524"
+	m = NewMonitor()
+	observe(t, m, 1, []PoolSnapshot{prev})
+	expectOne(t, observe(t, m, 2, []PoolSnapshot{over}, fee(tkn, 2243594)), tkn, Drop)
+}
