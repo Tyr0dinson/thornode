@@ -246,3 +246,36 @@ func (s *VolumeManagerSuite) TestBucketWrites(c *C) {
 		}
 	}
 }
+
+// A pool that has never been swapped has no volume record: EndBlock skips it
+// without logging an error (it did so for every such pool, every block) and
+// writes nothing for it.
+func (s *VolumeManagerSuite) TestEndBlockSkipsPoolsWithoutVolume(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	for _, asset := range []common.Asset{common.BTCAsset, common.ETHAsset} {
+		pool := NewPool()
+		pool.Asset = asset
+		c.Assert(mgr.K.SetPool(ctx, pool), IsNil)
+	}
+	volume := types.NewVolume(common.BTCAsset)
+	volume.ChangeRune = cosmos.NewUint(123)
+	c.Assert(mgr.K.SetVolume(ctx, volume), IsNil)
+
+	var logs bytes.Buffer
+	logger := zerolog.New(&logs)
+	ctx = ctx.WithLogger(thorlog.SdkLogWrapper{Logger: &logger})
+	c.Assert(mgr.volumeManager.EndBlock(ctx), IsNil)
+	c.Check(logs.String(), Not(Matches), "(?s).*fail to get volume.*")
+
+	// the pool with a volume still rolls over; the other still has none
+	volume, err := mgr.K.GetVolume(ctx, common.BTCAsset)
+	c.Assert(err, IsNil)
+	c.Check(volume.ChangeRune.IsZero(), Equals, true)
+	c.Check(volume.TotalRune.Uint64(), Equals, uint64(123))
+	_, err = mgr.K.GetVolume(ctx, common.ETHAsset)
+	c.Check(err, NotNil)
+	iterator := mgr.K.GetVolumeBucketIterator(ctx, common.ETHAsset)
+	c.Check(iterator.Valid(), Equals, false)
+	c.Assert(iterator.Close(), IsNil)
+}

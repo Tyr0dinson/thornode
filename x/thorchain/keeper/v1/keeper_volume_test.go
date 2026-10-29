@@ -30,6 +30,7 @@ func (s KeeperVolumeSuite) TestVolume(c *C) {
 	_, err = k.GetVolume(ctx, common.ETHAsset)
 	c.Assert(err, NotNil)
 	c.Assert(errors.Is(err, kvTypes.ErrVolumeNotFound), Equals, true)
+	c.Assert(err.Error(), Equals, "total volume not found: pool=ETH.ETH")
 }
 
 func (s KeeperVolumeSuite) TestVolumeBucket(c *C) {
