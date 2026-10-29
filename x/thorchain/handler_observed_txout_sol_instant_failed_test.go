@@ -47,10 +47,11 @@ func (s *SolNonceCreateSuite) TestInstantPayoutThenFailedDurableTx(c *C) {
 		c.Assert(runErr, IsNil)
 	}
 
-	// 1. The signers' instant observation of the payout as broadcast: non-final, to the
-	// recipient with the outbound memo. Three of four is a supermajority.
+	// 1. The signers' instant observation of the payout as broadcast, in the shape the
+	// observer sends it (signTimeVote), to the recipient with the outbound memo. Three of
+	// four is a supermajority.
 	txID := GetRandomTxHash()
-	instant := f.obs(txID, nil, false)
+	instant := signTimeVote(f.obs(txID, nil, false), issuedAt)
 	instant.Tx.ToAddress = recipient
 	instant.Tx.Coins = common.NewCoins(payout)
 	instant.Tx.Gas = common.Gas{common.NewCoin(common.SOLAsset, cosmos.NewUint(solNonceFee))}
@@ -120,7 +121,7 @@ func (s *SolNonceCreateSuite) TestInstantPayoutThenLandedDurableTx(c *C) {
 		c.Assert(runErr, IsNil)
 	}
 	txID := GetRandomTxHash()
-	instant := f.obs(txID, nil, false)
+	instant := signTimeVote(f.obs(txID, nil, false), issuedAt)
 	instant.Tx.ToAddress = recipient
 	instant.Tx.Coins = common.NewCoins(payout)
 	instant.Tx.Gas = common.Gas{common.NewCoin(common.SOLAsset, cosmos.NewUint(solNonceFee))}
@@ -131,8 +132,9 @@ func (s *SolNonceCreateSuite) TestInstantPayoutThenLandedDurableTx(c *C) {
 
 	ctx = ctx.WithBlockHeight(1001)
 	newNonce := solNonceValue(c)
+	// The scanners report the landed tx at its slot, final.
 	landed := instant
-	landed.FinaliseHeight = landed.BlockHeight
+	landed.BlockHeight, landed.FinaliseHeight = 1000, 1000
 	landed.SolNonce = &common.SolNonceUpdate{NonceAccount: f.nonceAcct, Nonce: newNonce, Slot: 1000}
 	c.Assert(landed.IsFinal(), Equals, true)
 	for _, na := range f.nas {
@@ -154,6 +156,16 @@ func (s *SolNonceCreateSuite) TestInstantPayoutThenLandedDurableTx(c *C) {
 		c.Assert(err, IsNil)
 		c.Check(after.Bond.Equal(na.Bond), Equals, true, Commentf("no slash"))
 	}
+}
+
+// signTimeVote gives an observation the shape in which Bifrost sends a signer's
+// sign-time observation of a SOL outbound: SOLClient.finishSign uses the outbound's
+// THORChain height as the block height, and the observer sends it non-final
+// (bifrost/observer TestSOLSignTimeObservationReachesThorchainNonFinal).
+func signTimeVote(tx common.ObservedTx, outboundHeight int64) common.ObservedTx {
+	tx.BlockHeight = outboundHeight
+	tx.FinaliseHeight = outboundHeight + 1
+	return tx
 }
 
 func (f solNonceFixture) vaultSOL(c *C, ctx cosmos.Context, mgr Manager) uint64 {

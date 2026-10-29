@@ -86,6 +86,13 @@ type durableObservedTxCommitter interface {
 	OnObservedTxInDurable(txIn types.TxInItem, blockHeight int64) error
 }
 
+// isSOLSignTimeObservation reports whether txIn is a signer's sign-time observation
+// of a SOL outbound: only the signer produces SOL MemPool TxIns, the SOL scanner
+// never sets MemPool.
+func isSOLSignTimeObservation(txIn *types.TxIn) bool {
+	return txIn.Chain.Equals(common.SOLChain) && txIn.MemPool
+}
+
 func TxInKey(txIn *types.TxIn) txInKey {
 	return txInKey{
 		chain:                  txIn.Chain,
@@ -546,8 +553,12 @@ func (o *Observer) handleObservedTxCommitted(tx common.ObservedTx, allowFutureOb
 				return
 			}
 		}
-		if isFinal {
-			o.logger.Debug().Msgf("tx final %s - %s removing from tx array", tx.Tx.Chain, tx.Tx.ID)
+		// A SOL sign-time observation is sent non-final on purpose (see
+		// processObservedTx) and is never sent again as final: the SOL scanner
+		// reports the landed or failed tx as its own final observation. Once
+		// THORNode has committed it, nothing is left to send, so drop it.
+		if isFinal || isSOLSignTimeObservation(deck) {
+			o.logger.Debug().Msgf("tx committed %s - %s removing from tx array (final: %t)", tx.Tx.Chain, tx.Tx.ID, isFinal)
 			updated := *deck
 			updated.TxArray = slices.Delete(slices.Clone(deck.TxArray), j, j+1)
 			if len(updated.TxArray) == 0 {
@@ -966,6 +977,14 @@ func (o *Observer) processObservedTx(txIn types.TxIn) error {
 			o.logger.Error().Err(err).Msg("fail to get chain client for confirmation count")
 		}
 		o.logger.Debug().Msgf("filterObservations took %s", time.Since(filterStart))
+	}
+
+	// THORNode acts on a SOL outbound only on final consensus, and a sign-time
+	// observation is sent before the tx lands, so it must reach THORNode non-final.
+	// One required confirmation puts both the deck key and the FinaliseHeight sent
+	// (and echoed back on commit) one past BlockHeight.
+	if isSOLSignTimeObservation(&txIn) && txIn.ConfirmationRequired < 1 {
+		txIn.ConfirmationRequired = 1
 	}
 
 	if o.beforeObservedTxDeckLock != nil {
