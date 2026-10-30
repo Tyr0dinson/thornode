@@ -527,7 +527,7 @@ func rescheduledOutbounds(height int64, event map[string]string) bool {
 
 // scheduledOutbound is called for scheduled_outbound block and tx events. It assumes
 // all events are for multi-output outbounds corresponding to the same inbound.
-func scheduledOutbound(height int64, events []map[string]string) {
+func scheduledOutbound(height int64, events []map[string]string, streaming bool) {
 	// skip migrate outbounds
 	if reMemoMigration.MatchString(events[0]["memo"]) {
 		return
@@ -669,7 +669,6 @@ func scheduledOutbound(height int64, events []map[string]string) {
 	// add the inbound coins for inbound swap or outbound refund
 	if (memoType == thorchain.TxSwap || reMemoRefund.MatchString(events[0]["memo"])) && status.Tx != nil && len(status.Tx.Coins) > 0 {
 		inboundCoin := util.CoinToCommon(status.Tx.Coins[0])
-		inboundUSDValue := util.USDValue(height, inboundCoin)
 		fields.Set("Inbound Amount", fmt.Sprintf(
 			"%f %s (%s)",
 			float64(inboundCoin.Amount.Uint64())/common.One,
@@ -677,10 +676,20 @@ func scheduledOutbound(height int64, events []map[string]string) {
 			util.USDValueString(height, inboundCoin),
 		))
 
+		// value streaming swaps at the prices before the stream started, since the
+		// swap itself may have moved a shallow pool far from market by the last block
+		priceHeight := height
+		if streaming {
+			priceHeight = streamStartPriceHeight(height, events[0]["in_hash"])
+		}
+
 		// add the delta
-		delta := usdValue - inboundUSDValue
+		delta, inboundUSDValue := swapDeltaUSD(priceHeight, inboundCoin, coins)
 		deltaBasisPoints := int64(float64(delta) / inboundUSDValue * 10000)
 		deltaStr := fmt.Sprintf("%s (%.02f%%)", util.FormatUSD(delta), float64(delta)/inboundUSDValue*100)
+		if priceHeight != height {
+			deltaStr += fmt.Sprintf(" _(stream start prices @ %d)_", priceHeight)
+		}
 		if int(delta) > 0 {
 			// red triangle if perceived value increased
 			deltaStr = config.EmojiSmallRedTriangle + " " + deltaStr
@@ -803,6 +812,14 @@ func ScheduledOutbounds(block *thorscan.BlockResponse) {
 		}
 	}
 
+	// gather streaming swaps that completed in this block
+	streamingSwaps := map[string]bool{}
+	for _, event := range append(block.EndBlockEvents, block.FinalizeBlockEvents...) {
+		if event["type"] == types.StreamingSwapEventType {
+			streamingSwaps[event["tx_id"]] = true
+		}
+	}
+
 	// coalesce scheduled outbounds by inbound hash
 	scheduledOutbounds := map[string][]map[string]string{}
 	for _, event := range events {
@@ -813,9 +830,36 @@ func ScheduledOutbounds(block *thorscan.BlockResponse) {
 	}
 
 	// send notifications for each in hash scheduled outbounds
-	for _, events := range scheduledOutbounds {
-		scheduledOutbound(block.Header.Height, events)
+	for inHash, events := range scheduledOutbounds {
+		scheduledOutbound(block.Header.Height, events, streamingSwaps[inHash])
 	}
+}
+
+// streamStartPriceHeight returns the height whose prices precede the first
+// sub-swap of the streaming swap, falling back to the provided height.
+func streamStartPriceHeight(height int64, inHash string) int64 {
+	details := openapi.TxDetailsResponse{}
+	err := util.ThornodeCachedRetryGet(fmt.Sprintf("thorchain/tx/details/%s", inHash), height, &details)
+	if err != nil {
+		log.Error().Err(err).Str("txid", inHash).Msg("failed to get transaction details")
+		return height
+	}
+	consensusHeight := details.GetConsensusHeight()
+	if consensusHeight <= 0 || consensusHeight >= height {
+		return height
+	}
+	return consensusHeight - 1
+}
+
+// swapDeltaUSD returns the USD value of the outbound coins minus the inbound
+// coin, and the inbound coin USD value, using the prices at the given height.
+func swapDeltaUSD(height int64, inbound common.Coin, outbounds []common.Coin) (float64, float64) {
+	inboundUSDValue := util.USDValue(height, inbound)
+	outboundUSDValue := 0.0
+	for _, coin := range outbounds {
+		outboundUSDValue += util.USDValue(height, coin)
+	}
+	return outboundUSDValue - inboundUSDValue, inboundUSDValue
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////
