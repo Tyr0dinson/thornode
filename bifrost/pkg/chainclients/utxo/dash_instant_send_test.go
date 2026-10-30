@@ -103,8 +103,12 @@ func newRPCTestServer(c *C, handler func(method string, params []json.RawMessage
 	}))
 }
 
-func newDashClientForRPCServer(c *C, serverURL string) (*Client, func()) {
-	rpcClient, err := rpc.NewClient(serverURL, "thorchain", "password", 0, time.Second, common.DASHChain, zerolog.Nop())
+func newDashClientForRPCServer(c *C, serverURL string, rpcTimeout ...time.Duration) (*Client, func()) {
+	timeout := time.Second
+	if len(rpcTimeout) > 0 {
+		timeout = rpcTimeout[0]
+	}
+	rpcClient, err := rpc.NewClient(serverURL, "thorchain", "password", 0, timeout, common.DASHChain, zerolog.Nop())
 	c.Assert(err, IsNil)
 
 	path := c.MkDir()
@@ -129,6 +133,7 @@ func newDashClientForRPCServer(c *C, serverURL string) (*Client, func()) {
 			},
 		},
 		bridge:                    &dashMempoolPolicyBridge{enabled: 1},
+		instantSendEnabled:        true,
 		instantSendMinAmount:      defaultInstantSendMinAmount,
 		instantSendMaxAmount:      100_000 * common.One,
 		instantSendRecovery:       instantSendRecovery{loaded: true},

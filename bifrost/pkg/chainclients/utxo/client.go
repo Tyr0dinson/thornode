@@ -93,15 +93,19 @@ type Client struct {
 	instantSendTxQueue []types.TxIn
 	// Selects the next mempool scan; starts with scanOutbounds.
 	nextMempoolScan mempoolScanType
+	// Effective switch after applying Mimir; cfg retains the startup value.
+	instantSendEnabled bool
 	// Amount settings are owned by the mempool scanner.
 	// Both amounts and their Mimir values use duffs (common.One per DASH).
 	instantSendMinAmount uint64
 	instantSendMaxAmount uint64
-	// Serializes finality checks and allowance writes with ChainLock settlement.
-	// Also protects recovery progress, which settlement failures can reset.
-	// Guards Mimir updates to cfg.InstantSend against GetConfig copies.
-	instantSendAllowanceMu sync.Mutex
-	instantSendRecovery    instantSendRecovery
+	// Serializes allowance writes, recovery progress, revision and switch updates.
+	// Release during RPCs so ChainLock settlement can continue. After relocking,
+	// check the revision and keep the lock through the resulting state updates.
+	instantSendStateMu sync.Mutex
+	// Incremented on settlement attempts to reject stale RPC results.
+	instantSendRevision uint64
+	instantSendRecovery instantSendRecovery
 
 	// ---------- fees / solvency ----------
 	minRelayFeeSats         stdatomic.Uint64
@@ -184,6 +188,7 @@ func NewClient(
 		vaultLocks:                make(map[string]*sync.Mutex),
 		stopchan:                  make(chan struct{}),
 		bridge:                    bridge,
+		instantSendEnabled:        cfg.InstantSend.Enabled,
 		regexpRemoveTrailingZeros: regexp.MustCompile(`(?:00)+$`),
 	}
 
@@ -231,10 +236,8 @@ func NewClient(
 	return c, nil
 }
 
-// GetConfig returns the chain configuration, including InstantSend Mimir overrides.
+// GetConfig returns the startup chain configuration.
 func (c *Client) GetConfig() config.BifrostChainConfiguration {
-	c.instantSendAllowanceMu.Lock()
-	defer c.instantSendAllowanceMu.Unlock()
 	return c.cfg
 }
 
@@ -638,13 +641,13 @@ func (c *Client) FetchMemPool(height int64) (types.TxIn, error) {
 		return c.fetchMemPoolTransactions(height, false)
 	}
 
-	previousConfig := c.cfg.InstantSend
+	previousEnabled := c.instantSendEnabled
 	err := c.refreshInstantSendSettings()
 	if err != nil {
-		c.log.Err(err).Msg("customer InstantSend observations paused")
+		c.log.Err(err).Msg("fail to refresh InstantSend settings")
 		c.publishInstantSendAllowance(instantSendAdmission{reason: "settings"})
 	}
-	if !c.cfg.InstantSend.Enabled {
+	if !c.instantSendEnabled {
 		c.instantSendTxQueue = nil
 		c.nextMempoolScan = scanOutbounds
 		var admission instantSendAdmission
@@ -655,8 +658,8 @@ func (c *Client) FetchMemPool(height int64) (types.TxIn, error) {
 		c.publishInstantSendAllowance(admission)
 		return c.fetchMemPoolTransactions(height, true)
 	}
-	if c.cfg.InstantSend != previousConfig {
-		// Rebuild queued batches using the new observation settings.
+	if c.instantSendEnabled != previousEnabled {
+		// Rebuild queued batches after the enabled switch changes.
 		c.instantSendTxQueue = nil
 	}
 	if c.isInstantSendPaused() {

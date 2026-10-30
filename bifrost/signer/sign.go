@@ -283,6 +283,15 @@ func (s *Signer) shouldSign(tx types.TxOutItem) bool {
 }
 
 func (s *Signer) shouldAutoObserve(tx types.TxOutItem) bool {
+	// Dash already reports outbounds from the mempool and once more with lock
+	// finality. An automatic observation would add a third, chargeable variant.
+	if tx.Chain.Equals(common.DASHChain) {
+		chain, ok := s.chains[tx.Chain]
+		if ok && chain.GetConfig().BlockScanner.ScanMemPool {
+			return false
+		}
+	}
+
 	// Monero outbounds need sign-time observation even when global auto-observe is disabled.
 	// The chain scanner can later see the mined tx as an incoming change output, which is
 	// insufficient to attribute the scheduled outbound on THORChain.

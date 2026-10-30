@@ -610,7 +610,7 @@ bifrost:
         <<: *default-block-scanner
         max_reorg_rescan_blocks: 288 # 12h at 2.5 min blocks
         chain_id: DASH
-        gas_price_resolution: 10 # sats/vbyte
+        gas_price_resolution: 10 # unused by Dash fee reporting
         gas_cache_blocks: 10
         observation_flexibility_blocks: 3
         scan_mempool: true

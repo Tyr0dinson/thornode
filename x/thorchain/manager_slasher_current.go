@@ -1033,14 +1033,19 @@ func (s *SlasherImpl) sendFailedSwapReverseSwap(ctx cosmos.Context, mgr Manager,
 	// Determine destination address: use custom refund address if specified, otherwise original sender
 	destination := originalTx.Tx.FromAddress
 	if !swapMemo.GetRefundAddress().IsEmpty() {
-		// Validate that refund address is on the correct chain
-		if swapMemo.GetRefundAddress().IsChain(originalTx.Tx.Coins[0].Asset.GetChain()) {
-			destination = swapMemo.GetRefundAddress()
+		refundAddress := swapMemo.GetRefundAddress()
+		chain := originalTx.Tx.Coins[0].Asset.GetChain()
+		validRefundAddress := refundAddress.IsChain(chain)
+		if chain.Equals(common.DASHChain) {
+			validRefundAddress = validRefundAddress && refundAddress.IsCurrentNetwork(chain)
+		}
+		if validRefundAddress {
+			destination = refundAddress
 			ctx.Logger().Info("using custom refund address for reverse swap", "address", destination)
 		} else {
-			ctx.Logger().Info("custom refund address chain mismatch, using original sender",
-				"refund_address", swapMemo.GetRefundAddress(),
-				"expected_chain", originalTx.Tx.Coins[0].Asset.GetChain())
+			ctx.Logger().Info("invalid custom refund address, using original sender",
+				"refund_address", refundAddress,
+				"expected_chain", chain)
 		}
 	}
 

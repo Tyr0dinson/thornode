@@ -1,6 +1,6 @@
 # UTXO Chain Clients
 
-THORChain supports several UTXO-based chains: Bitcoin, Litecoin, Bitcoin Cash, Dogecoin, and Zcash. These chains share a common implementation based on `utxo/client.go`, which handles block scanning, mempool observations, signing, consolidation, and solvency reporting.
+THORChain supports several UTXO-based chains: Bitcoin, Litecoin, Bitcoin Cash, Dogecoin, Zcash, and Dash. These chains share a common implementation based on `utxo/client.go`, which handles block scanning, mempool observations, signing, consolidation, and solvency reporting.
 
 ## Shared Architecture
 
@@ -18,6 +18,7 @@ Each chain has a per-chain configuration file within the `utxo/` directory:
 /bifrost/pkg/chainclients/utxo/bitcoincash.go
 /bifrost/pkg/chainclients/utxo/dogecoin.go
 /bifrost/pkg/chainclients/utxo/zcash.go
+/bifrost/pkg/chainclients/utxo/dash.go
 ```
 
 The shared logic handles:
@@ -50,21 +51,35 @@ shared across all of its vaults. This limits the amount that node reports before
 ChainLock settlement. It is a local soft limit, not a network-wide cap or a guarantee
 against an InstantSend failure.
 
+When Dash mempool scanning is enabled, it supplies the early vault-outbound
+observations. The signer skips its automatic observation after broadcast to avoid
+a third observation variant when InstantSend or ChainLock finality is reported.
+The first report waits for scanning and can be delayed by slow RPCs.
+Disabling mempool scanning retains the existing signer auto-observe rules.
+
 | Mimir                             | Units            | Default / unset                      | Effect                                                                                                                                                            |
 | --------------------------------- | ---------------- | ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DashInstantSendEnabled`          | switch           | Bifrost config; see below            | Zero disables InstantSend observation, including vault senders. A positive value enables it.                                                                      |
 | `DashInstantSendMaxAmount`        | duffs            | `0`                                  | Maximum outstanding customer InstantSend amount per node. Set `100000000000` for 1,000 DASH. Zero or a deleted value stops new customer InstantSend observations. |
 | `DashInstantSendMinAmount`        | duffs            | `1000000` (0.01 DASH)                | Minimum customer deposit for InstantSend. Zero removes this extra minimum; the existing chain dust threshold still applies.                                       |
-| `ObservationDelayFlexibilityDASH` | THORChain blocks | Global `ObservationDelayFlexibility` | Allows later matching transaction observations to recover slash points. Zero is a valid override.                                                                 |
+| `ObservationDelayFlexibilityDASH` | THORChain blocks | Global `ObservationDelayFlexibility` | Sets the late-observation slash-refund window and tally deadline for DASH transactions. Zero is a valid override.                                                 |
 
 Both amount Mimirs use duffs, matching internal accounting: `100000000` duffs is
 1 DASH (`common.One` in Go). This also supports amounts such as 0.01 DASH.
 
-`DashInstantSendEnabled` and the existing maximum mempool age policy still apply.
+An unset or negative `DashInstantSendEnabled` restores Bifrost's startup
+`instant_send.enabled` configuration, which defaults to `true` for DASH. Deleting
+an override takes effect on the next settings refresh without a restart. A failed
+read disables all InstantSend observations for that scan, including vault senders.
+Ordinary vault-outbound observations and ChainLock settlement continue; existing
+allowance reservations remain charged. The maximum mempool age policy still applies.
 A failed read of either amount Mimir pauses customer admission until both reads
 succeed. Lowering the limit below current usage leaves zero available; raising it
 exposes the difference. Deleting either amount Mimir restores the default above.
 Vault senders bypass the new allowance and minimum, including vault migrations,
 consolidation and outbounds. They neither consume nor refill customer allowance.
+They still require InstantSend to be enabled; setting only the amount limit to zero
+does not disable their InstantSend observations.
 The allowance does not change signing or input selection.
 
 For example, setting `DashInstantSendMaxAmount=1000000000` gives a 10 DASH allowance.
@@ -109,7 +124,12 @@ observation window is in **THORChain blocks**, not Dash blocks, and does not pos
 the initial missing-observation penalty or guarantee that every delayed observation
 will arrive in time. Other chains keep the global window unless their own
 `ObservationDelayFlexibility<CHAIN>` override is configured. The override applies
-to transaction observations, not network-fee, solvency or TSS votes.
+to inbound and outbound transaction late-credit checks and tally scheduling, not
+network-fee, solvency, errata or TSS votes. For example, with a global window of 20
+and a DASH window of 50, a matching DASH observation 25 blocks after consensus gets
+its slash points refunded and is credited when the tally is scored 50 blocks after consensus.
+Configure the window before enabling InstantSend: queued tally deadlines do not
+change when Mimir changes, while late-credit checks use the current setting.
 
 Monitor `dash_instantsend_reserved_duffs`, `dash_instantsend_available_duffs`,
 `dash_instantsend_pending_transactions`, `dash_instantsend_warming_up`, and
@@ -120,11 +140,17 @@ reenabling customer observations; do not delete the journal to clear reservation
 
 ## Confirmation Counting
 
-THORChain dynamically delays finality based on transaction value and miner incentives.
+For UTXO chains other than Dash, THORChain dynamically delays finality based on
+transaction value and miner incentives. Dash instead accepts an eligible InstantSend
+lock or inclusion in a ChainLocked block, without a value-based confirmation delay.
+Dash quotes use a conservative estimate of one inbound block; an eligible InstantSend
+deposit can be observed sooner.
 
 See [Finality & Confirmation Counting](../bifrost/how-bifrost-works.md#finality--pre-confirmation).
 
 ### UTXO Specifics
+
+The value-based calculation for chains other than Dash uses:
 
 - `txValue` is the sum of all vault-receiving outputs
 - `blockReward` includes the subsidy + miner fees
@@ -138,7 +164,10 @@ Fee is calculated as:
 Fee = total inputs - total outputs
 ```
 
-Reported to THORChain as `sats/byte` based on the previous block and max of last 20.
+Reported to THORChain as `sats/byte` (duffs per byte for Dash). Dash uses the scanned
+block's average fee rate, applies the configured fee floors, and takes the maximum
+over its `gas_cache_blocks` window (10 by default). Dash's fee-reporting path does
+not read `gas_price_resolution`; changing it does not round or change the reported rate.
 
 See [Gas Tracking](../bifrost/how-bifrost-works.md#gas-tracking).
 
@@ -146,7 +175,8 @@ See [Gas Tracking](../bifrost/how-bifrost-works.md#gas-tracking).
 
 ## Vault Address Derivation
 
-UTXO vaults use compressed ECDSA public keys to derive P2WPKH addresses.
+UTXO vaults derive addresses from compressed ECDSA public keys. The address type
+depends on the chain: BTC and LTC use P2WPKH, while Dash uses P2PKH.
 
 ```go
 btcec.PublicKey.SerializeCompressed()

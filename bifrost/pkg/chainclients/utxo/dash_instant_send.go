@@ -57,19 +57,28 @@ func (c *Client) isInstantSendPaused() bool {
 }
 
 // refreshInstantSendSettings reads the InstantSend switch and amount policy.
+// An unset switch restores the startup default; a failed read disables InstantSend.
 func (c *Client) refreshInstantSendSettings() error {
+	var enabled int64
+	var err error
 	if c.bridge == nil {
-		return errors.New("InstantSend settings bridge unavailable")
+		err = errors.New("InstantSend settings bridge unavailable")
+	} else {
+		enabled, err = c.bridge.GetMimir(DashInstantSendEnabledMimirKey)
 	}
 
-	// Load InstantSend Enabled mimir override.
-	enabled, err := c.bridge.GetMimir(DashInstantSendEnabledMimirKey)
+	effectiveEnabled := false
+	if err == nil {
+		effectiveEnabled = c.cfg.InstantSend.Enabled
+		if enabled >= 0 {
+			effectiveEnabled = enabled > 0
+		}
+	}
+	c.instantSendStateMu.Lock()
+	c.instantSendEnabled = effectiveEnabled
+	c.instantSendStateMu.Unlock()
 	if err != nil {
-		c.log.Err(err).Msg("fail to get DashInstantSendEnabled mimir")
-	} else if enabled >= 0 {
-		c.instantSendAllowanceMu.Lock()
-		c.cfg.InstantSend.Enabled = enabled > 0
-		c.instantSendAllowanceMu.Unlock()
+		return fmt.Errorf("fail to read InstantSend enabled switch: %w", err)
 	}
 	minAmount, err := c.bridge.GetMimir(DashInstantSendMinAmountMimirKey)
 	if err != nil {
@@ -164,7 +173,7 @@ func (c *Client) fetchInstantSendBatch(height int64, admission instantSendAdmiss
 	}
 	batch := c.instantSendTxQueue[0]
 	// A cycle group can span several mempool batches. Bound the fresh finality
-	// check performed while holding the allowance lock, keeping its remainder queued.
+	// RPC and allowance write batch, keeping the remainder queued.
 	count := min(len(batch.TxArray), c.instantSendWorkLimit())
 	batch.TxArray = batch.TxArray[:count]
 	var err error

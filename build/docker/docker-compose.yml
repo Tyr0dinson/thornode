@@ -788,7 +788,7 @@ services:
     entrypoint: "/mocknet/entrypoint-genesis.sh"
     ports:
       - "19898:19898" # regtest RPC
-      - "28332:28332" # regtest P2P
+      - "28332:28332" # ZMQ notifications
 
   dash2:
     container_name: dash-2

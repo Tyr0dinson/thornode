@@ -31,8 +31,7 @@ masternode() {
 
   ownerAddress=$(dash-cli getnewaddress "")
   collateralAddress=$(dash-cli getnewaddress "")
-  # These values are also printed by printmasternodeconfig in core.sh, so keep
-  # them as explicit variables even though register_fund could inline them.
+  # Masternode registration values used by protx register_fund below.
   collateralVout=1
   ipPort="$NODE_IP:19899"
   votingAddress=$(dash-cli getnewaddress "")

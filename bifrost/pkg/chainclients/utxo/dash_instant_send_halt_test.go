@@ -311,6 +311,10 @@ func (s *DashSuite) TestInstantSendVaultHaltIncludesStorageFallback(c *C) {
 		checks := 0
 		base := client.bridge
 		client.bridge = &dashHaltBridge{ThorchainBridge: base, getHeight: func() (int64, error) {
+			// Both the initial guard and the storage-fallback guard must let
+			// block settlement acquire the allowance lock while the bridge waits.
+			c.Assert(client.instantSendStateMu.TryLock(), Equals, true)
+			client.instantSendStateMu.Unlock()
 			checks++
 			if !corrupt || checks > 1 {
 				return 0, errors.New("height unavailable")

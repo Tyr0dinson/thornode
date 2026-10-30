@@ -88,6 +88,118 @@ func (s *ObservationTallySuite) TestScoredWhenWindowCloses(c *C) {
 	checkTally(c, ctx, mgr, nas[0], common.ETHChain, 0, 1)
 }
 
+// TestTransactionWindowCreditsLateSigners checks slash refunds and persisted
+// tallies together, including a ChainLock observation with a later mined height.
+func (s *ObservationTallySuite) TestTransactionWindowCreditsLateSigners(c *C) {
+	for _, outbound := range []bool{false, true} {
+		for _, delay := range []int64{3, 5, 6} {
+			ctx, mgr, nas := setupObservationTallyTest(c)
+			k := mgr.Keeper()
+			k.SetMimir(ctx, constants.ObservationDelayFlexibility.String(), 2)
+			k.SetMimir(ctx, "ObservationDelayFlexibilityDASH", 5)
+			// A skipped voter must not hide an incorrect miss or scoring deadline.
+			k.SetMimir(ctx, constants.MissingObservationGuardBps.String(), 10_000)
+			late := nas[19].NodeAddress
+			k.SetNodeAccountSlashPoints(ctx, late, 50)
+			tx := observeSlashOutboundTx(GetRandomTxHash(), GetRandomPubKey(), 1000, 100)
+			tx.Tx.Chain = common.DASHChain
+			tx.Tx.Coins = common.NewCoins(common.NewCoin(common.DASHAsset, cosmos.NewUint(common.One)))
+			tx.Tx.Gas = common.Gas{common.NewCoin(common.DASHAsset, cosmos.NewUint(1000))}
+			process := processTxInAttestation
+			if outbound {
+				process = processTxOutAttestation
+			} else {
+				tx.Tx.Memo = "NOOP"
+			}
+			voter := NewObservedTxVoter(tx.Tx.ID, nil)
+			for _, na := range nas[:19] {
+				voter, _ = process(ctx, mgr, voter, nas, tx, na.NodeAddress, false)
+			}
+			consensusHeight := ctx.BlockHeight()
+			c.Assert(voter.FinalisedHeight, Equals, consensusHeight)
+			lack := mgr.GetConstants().GetInt64Value(constants.LackOfObservationPenalty)
+			points, err := k.GetNodeAccountSlashPoints(ctx, late)
+			c.Assert(err, IsNil)
+			c.Assert(points, Equals, int64(50)+lack)
+
+			for elapsed := int64(2); elapsed <= 6; elapsed++ {
+				ctx = ctx.WithBlockHeight(consensusHeight + elapsed)
+				if elapsed == delay {
+					tx.BlockHeight = 101
+					tx.FinaliseHeight = 101
+					voter, _ = process(ctx, mgr, voter, nas, tx, late, false)
+				}
+				c.Assert(processObservationTallies(ctx, mgr), IsNil)
+				if elapsed < 5 {
+					checkTally(c, ctx, mgr, nas[19], common.DASHChain, 0, 0)
+					continue
+				}
+				var missed int64
+				if delay > 5 {
+					missed = 1
+				}
+				checkTally(c, ctx, mgr, nas[19], common.DASHChain, missed, 1)
+				checkTally(c, ctx, mgr, nas[0], common.DASHChain, 0, 1)
+			}
+			points, err = k.GetNodeAccountSlashPoints(ctx, late)
+			c.Assert(err, IsNil)
+			want := int64(50)
+			if delay > 5 {
+				want += lack + mgr.GetConstants().GetInt64Value(constants.ObserveSlashPoints)
+			}
+			c.Check(points, Equals, want, Commentf("outbound=%v delay=%d", outbound, delay))
+		}
+	}
+}
+
+// TestQueueWindowByVoterKind checks override/fallback scheduling without changing
+// the global window used by network-fee, solvency and errata voters.
+func (s *ObservationTallySuite) TestQueueWindowByVoterKind(c *C) {
+	for _, tc := range []struct {
+		name     string
+		chain    common.Chain
+		override int64
+		readFail bool
+		window   int64
+	}{
+		{"DASH override", common.DASHChain, 5, false, 5},
+		{"zero override", common.DASHChain, 0, false, 0},
+		{"unset override", common.DASHChain, -1, false, 2},
+		{"failed read", common.DASHChain, 5, true, 2},
+		{"other chain", common.BTCChain, 5, false, 2},
+	} {
+		for _, kind := range []string{
+			observationTallyKindTxIn, observationTallyKindTxOut,
+			observationTallyKindNetworkFee, observationTallyKindSolvency, observationTallyKindErrata,
+		} {
+			ctx, mgr := setupManagerForTest(c)
+			ctx = ctx.WithBlockHeight(100)
+			k := mgr.Keeper()
+			k.SetMimir(ctx, constants.ObservationDelayFlexibility.String(), 2)
+			k.SetMimir(ctx, "ObservationDelayFlexibilityDASH", tc.override)
+			if tc.readFail {
+				k = failingObservationFlexKeeper{k}
+			}
+			queueObservationTally(ctx, k, kind, tc.chain, "voter")
+			window := int64(2)
+			if kind == observationTallyKindTxIn || kind == observationTallyKindTxOut {
+				window = tc.window
+			}
+			dueHeight := ctx.BlockHeight() + window
+			info := Commentf("%s kind=%s", tc.name, kind)
+			entries, err := k.PopObservationTallies(ctx, dueHeight-1)
+			c.Assert(err, IsNil)
+			c.Assert(entries, HasLen, 0, info)
+			entries, err = k.PopObservationTallies(ctx, dueHeight)
+			c.Assert(err, IsNil)
+			c.Assert(entries, DeepEquals, []kvTypes.ObservationTallyEntry{{
+				DueHeight: dueHeight, ConsensusHeight: ctx.BlockHeight(),
+				Kind: kind, Chain: tc.chain, Ref: []string{"voter"},
+			}}, info)
+		}
+	}
+}
+
 func (s *ObservationTallySuite) TestGuardSkipsSharedEvent(c *C) {
 	ctx, mgr, nas := setupObservationTallyTest(c)
 	flex := mgr.Keeper().GetConfigInt64(ctx, constants.ObservationDelayFlexibility)

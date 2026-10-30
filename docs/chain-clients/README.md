@@ -17,16 +17,16 @@ Chain clients are located in:
 
 Each chain lives in its own folder and typically inherits logic from a shared implementation:
 
-| Client Folder | Purpose                 | Used For                 |
-| ------------- | ----------------------- | ------------------------ |
-| `ethereum/`   | Ethereum-specific logic | ETH                      |
-| `evm/`        | Shared EVM logic        | AVAX, BSC, BASE, POL     |
-| `utxo/`       | Shared UTXO logic       | BTC, LTC, BCH, DOGE, ZEC |
-| `gaia/`       | Cosmos SDK-based chains | GAIA, NOBLE              |
-| `solana/`     | Solana-specific logic   | SOL                      |
-| `tron/`       | Tron-specific logic     | TRON                     |
-| `xrp/`        | XRP-specific logic      | XRP                      |
-| `monero/`     | Monero-specific logic   | XMR                      |
+| Client Folder | Purpose                 | Used For                       |
+| ------------- | ----------------------- | ------------------------------ |
+| `ethereum/`   | Ethereum-specific logic | ETH                            |
+| `evm/`        | Shared EVM logic        | AVAX, BSC, BASE, POL           |
+| `utxo/`       | Shared UTXO logic       | BTC, LTC, BCH, DOGE, ZEC, DASH |
+| `gaia/`       | Cosmos SDK-based chains | GAIA, NOBLE                    |
+| `solana/`     | Solana-specific logic   | SOL                            |
+| `tron/`       | Tron-specific logic     | TRON                           |
+| `xrp/`        | XRP-specific logic      | XRP                            |
+| `monero/`     | Monero-specific logic   | XMR                            |
 
 Chains that do not fit a shared model can implement their own logic from scratch. For UTXO-based chains, the `Client` is constructed using the shared implementation in `utxo/client.go`, which handles block scanning, mempool fetches, reorg tracking, and solvency reporting. Each specific chain (BTC, LTC, DOGE, etc.) has a per-chain file (e.g., `utxo/bitcoin.go`, `utxo/litecoin.go`) that provides chain-specific configuration.
 

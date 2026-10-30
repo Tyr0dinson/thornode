@@ -406,10 +406,23 @@ func (addr Address) GetChain() Chain {
 }
 
 // IsCurrentNetwork checks network compatibility for an already validated address.
-// ZEC requires an exact network match; other chains use SoftEquals.
+// ZEC and DASH require an exact network match; other chains use SoftEquals.
 func (addr Address) IsCurrentNetwork(chain Chain) bool {
 	if chain.Equals(ZECChain) {
 		_, err := zcash.DecodeAddress(addr.String(), ZECNetworkName())
+		return err == nil
+	}
+	if chain.Equals(DASHChain) {
+		var params *dashchaincfg.Params
+		switch CurrentChainNetwork {
+		case MockNet:
+			params = &dashchaincfg.RegressionNetParams
+		case MainNet, StageNet, ChainNet:
+			params = &dashchaincfg.MainNetParams
+		default:
+			return false
+		}
+		_, err := dashutil.DecodeAddress(addr.String(), params)
 		return err == nil
 	}
 	return CurrentChainNetwork.SoftEquals(addr.GetNetwork(chain))

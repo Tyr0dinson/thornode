@@ -17,6 +17,9 @@ import (
 	ttypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
+// errInstantSendStateChanged defers RPC results invalidated by block settlement.
+var errInstantSendStateChanged = errors.New("InstantSend state changed during RPC checks")
+
 // instantSendAdmission belongs to one scan, so a previous success cannot hide a
 // failed settings read or preparation error on the next scan.
 type instantSendAdmission struct {
@@ -26,7 +29,7 @@ type instantSendAdmission struct {
 
 // instantSendRecovery tracks the reservation checks for this process. It does
 // not own the durable reservations or require them all to settle before completion.
-// All access is protected by instantSendAllowanceMu.
+// All access is protected by instantSendStateMu.
 type instantSendRecovery struct {
 	loaded       bool
 	pendingTxIDs []string
@@ -69,8 +72,15 @@ func (r *instantSendRecovery) Reset() {
 	*r = instantSendRecovery{}
 }
 
+// lockAndCheckInstantSendRevision locks state and checks whether the revision is unchanged.
+// The mutex remains locked on both true and false returns.
+func (c *Client) lockAndCheckInstantSendRevision(revision uint64) bool {
+	c.instantSendStateMu.Lock()
+	return revision == c.instantSendRevision
+}
+
 // currentInstantSendAdmission rechecks recovery immediately before reserving
-// allowance or reporting availability. Call with instantSendAllowanceMu held.
+// allowance or reporting availability. Call with instantSendStateMu held.
 func (c *Client) currentInstantSendAdmission(admission instantSendAdmission) instantSendAdmission {
 	if !admission.allowed {
 		if admission.reason == "" {
@@ -78,7 +88,7 @@ func (c *Client) currentInstantSendAdmission(admission instantSendAdmission) ins
 		}
 		return admission
 	}
-	if !c.cfg.InstantSend.Enabled || c.instantSendMaxAmount == 0 || c.cfg.BlockScanner.DBPath == "" || !c.instantSendRecovery.Complete() {
+	if !c.instantSendEnabled || c.instantSendMaxAmount == 0 || c.cfg.BlockScanner.DBPath == "" || !c.instantSendRecovery.Complete() {
 		return instantSendAdmission{reason: "not_ready"}
 	}
 	return admission
@@ -88,8 +98,10 @@ func (c *Client) currentInstantSendAdmission(admission instantSendAdmission) ins
 // Only a missing journal needs a snapshot. Existing reservations survive restarts,
 // disabled InstantSend, Mimir changes, mempool eviction and lost lock flags.
 func (c *Client) prepareInstantSendAllowance(err error) (instantSendAdmission, error) {
-	c.instantSendAllowanceMu.Lock()
-	defer c.instantSendAllowanceMu.Unlock()
+	c.instantSendStateMu.Lock()
+	// Every RPC section reacquires the lock before returning, so this stays balanced.
+	defer c.instantSendStateMu.Unlock()
+	revision := c.instantSendRevision
 	blocked := instantSendAdmission{reason: "not_ready"}
 	if err != nil {
 		blocked.reason = "settings"
@@ -100,9 +112,15 @@ func (c *Client) prepareInstantSendAllowance(err error) (instantSendAdmission, e
 	// Disabling admission must not prevent settlement of an existing journal.
 	canAdmit := false
 	var statusErr error
-	if c.cfg.InstantSend.Enabled && err == nil && c.instantSendMaxAmount > 0 && c.bridge != nil {
+	if c.instantSendEnabled && err == nil && c.instantSendMaxAmount > 0 && c.bridge != nil {
 		var status ttypes.NodeStatus
+		// Allow settlement while waiting for THORNode's status response.
+		c.instantSendStateMu.Unlock()
 		status, statusErr = c.bridge.FetchNodeStatus()
+		// Check for intervening settlement before using the response.
+		if !c.lockAndCheckInstantSendRevision(revision) {
+			return blocked, nil
+		}
 		canAdmit = statusErr == nil && status == ttypes.NodeStatus_Active
 	}
 	state, err := c.temporalStorage.GetInstantSendState()
@@ -117,7 +135,12 @@ func (c *Client) prepareInstantSendAllowance(err error) (instantSendAdmission, e
 			return blocked, nil
 		}
 		var height int64
+		// Allow settlement while reading the Dash height.
+		c.instantSendStateMu.Unlock()
 		height, err = c.GetHeight()
+		if !c.lockAndCheckInstantSendRevision(revision) {
+			return blocked, nil
+		}
 		if err != nil {
 			return blocked, err
 		}
@@ -126,7 +149,12 @@ func (c *Client) prepareInstantSendAllowance(err error) (instantSendAdmission, e
 			return blocked, nil
 		}
 		var mempool map[string]rpc.GetRawMempoolVerboseResult
+		// Allow settlement while fetching the mempool snapshot.
+		c.instantSendStateMu.Unlock()
 		mempool, err = c.rpc.GetRawMempoolVerbose()
+		if !c.lockAndCheckInstantSendRevision(revision) {
+			return blocked, nil
+		}
 		if err != nil {
 			return blocked, err
 		}
@@ -149,8 +177,13 @@ func (c *Client) prepareInstantSendAllowance(err error) (instantSendAdmission, e
 			return blocked, nil
 		}
 		if err = c.classifyInstantSendSnapshot(state); err != nil {
+			if errors.Is(err, errInstantSendStateChanged) {
+				return blocked, nil
+			}
 			return blocked, err
 		}
+		// Classification can itself settle a verified block while holding the lock.
+		revision = c.instantSendRevision
 		if c.blockScanner == nil {
 			return blocked, nil
 		}
@@ -174,26 +207,37 @@ func (c *Client) prepareInstantSendAllowance(err error) (instantSendAdmission, e
 		}
 		if _, stillReserved := state.Reservations[id]; stillReserved {
 			var tx *rpc.TxResult
+			var settled []string
+			// Inclusion checks use RPCs; block settlement must be able to run meanwhile.
+			c.instantSendStateMu.Unlock()
 			tx, err = c.rpc.GetRawTransactionVerbose(id)
 			var rpcErr *btcjson.RPCError
-			if err != nil && !(errors.As(err, &rpcErr) && rpcErr.Code == btcjson.ErrRPCInvalidAddressOrKey) {
-				return blocked, err
-			}
 			// An unknown or evicted transaction remains charged. It is not proof
 			// that a previously reported deposit is safe to forget.
 			if err == nil {
-				var settled bool
-				settled, err = c.settleInstantSendTransaction(id, tx)
-				if err != nil {
+				settled, err = c.getInstantSendSettlement(id, tx)
+			} else if errors.As(err, &rpcErr) && rpcErr.Code == btcjson.ErrRPCInvalidAddressOrKey {
+				err = nil
+			}
+			// Settlement may have reset recovery; check before advancing its cursor.
+			if !c.lockAndCheckInstantSendRevision(revision) {
+				return blocked, nil
+			}
+			if next, ok := c.instantSendRecovery.Next(); !ok || next != id {
+				return blocked, nil
+			}
+			if err != nil {
+				return blocked, err
+			}
+			if len(settled) > 0 {
+				if err = c.releaseInstantSendReservations(settled); err != nil {
 					return blocked, err
 				}
-				if settled {
-					// One block can settle many pending IDs. Avoid fetching the
-					// same full block for each of those transactions.
-					state, err = c.temporalStorage.GetInstantSendState()
-					if err != nil {
-						return blocked, err
-					}
+				revision = c.instantSendRevision
+				// One block can settle many pending IDs. Avoid fetching it again.
+				state, err = c.temporalStorage.GetInstantSendState()
+				if err != nil {
+					return blocked, err
 				}
 			}
 		}
@@ -216,13 +260,28 @@ func (c *Client) instantSendWorkLimit() int {
 
 // classifyInstantSendSnapshot ignores observed markers and the new minimum/age
 // gates: these deposits might already have been credited before this startup.
-// Call with instantSendAllowanceMu held, so settlement cannot race a snapshot reservation.
+// Call with instantSendStateMu held; it is held again on every return.
+// Network work temporarily releases it so block settlement can continue;
+// a changed revision prevents stale results from restoring settled reservations.
 func (c *Client) classifyInstantSendSnapshot(state sharedutxo.InstantSendState) error {
 	if len(state.SnapshotPending) == 0 {
 		return nil
 	}
+	revision := c.instantSendRevision
+	ids := state.SnapshotPending[:min(len(state.SnapshotPending), c.instantSendWorkLimit())]
 	// A failed vault-list refresh must not classify a deposit as irrelevant.
-	if _, err := c.getAsgardAddress(); err != nil {
+	var txs []*rpc.TxResult
+	var txErrors []error
+	// Vault refresh and transaction lookups can both wait on the network.
+	c.instantSendStateMu.Unlock()
+	_, err := c.getAsgardAddress()
+	if err == nil {
+		txs, txErrors, err = c.rpc.BatchGetRawTransactionVerbose(ids)
+	}
+	if !c.lockAndCheckInstantSendRevision(revision) {
+		return errInstantSendStateChanged
+	}
+	if err != nil {
 		return err
 	}
 	var classified []string
@@ -231,11 +290,6 @@ func (c *Client) classifyInstantSendSnapshot(state sharedutxo.InstantSendState) 
 	pending := make(map[string]bool, len(state.SnapshotPending))
 	for _, id := range state.SnapshotPending {
 		pending[id] = true
-	}
-	ids := state.SnapshotPending[:min(len(state.SnapshotPending), c.instantSendWorkLimit())]
-	txs, txErrors, err := c.rpc.BatchGetRawTransactionVerbose(ids)
-	if err != nil {
-		return err
 	}
 	for i, id := range ids {
 		if !pending[id] {
@@ -246,13 +300,27 @@ func (c *Client) classifyInstantSendSnapshot(state sharedutxo.InstantSendState) 
 			continue
 		}
 		tx := txs[i]
-		var settled bool
-		settled, err = c.settleInstantSendTransaction(id, tx)
+		var settled []string
+		var amount uint64
+		// Inclusion, sender and vault lookups run unlocked to allow settlement.
+		c.instantSendStateMu.Unlock()
+		settled, err = c.getInstantSendSettlement(id, tx)
+		if err == nil && len(settled) == 0 {
+			amount, err = c.instantSendSnapshotAmount(tx)
+		}
+		// Reject results if settlement changed the snapshot while we were waiting.
+		if !c.lockAndCheckInstantSendRevision(revision) {
+			return errInstantSendStateChanged
+		}
 		if err != nil {
 			failures = append(failures, err)
-			break // do not repeat slow failed RPCs while blocking settlement
+			break // retry the remaining snapshot on a later scan
 		}
-		if settled {
+		if len(settled) > 0 {
+			if err = c.releaseInstantSendReservations(settled); err != nil {
+				return err
+			}
+			revision = c.instantSendRevision
 			// Inclusion also removes other snapshot IDs found in this block.
 			var current sharedutxo.InstantSendState
 			current, err = c.temporalStorage.GetInstantSendState()
@@ -264,12 +332,6 @@ func (c *Client) classifyInstantSendSnapshot(state sharedutxo.InstantSendState) 
 				pending[id] = true
 			}
 			continue
-		}
-		var amount uint64
-		amount, err = c.instantSendSnapshotAmount(tx)
-		if err != nil {
-			failures = append(failures, err)
-			break
 		}
 		classified = append(classified, id)
 		if amount > 0 {
@@ -330,32 +392,32 @@ func (c *Client) instantSendSnapshotAmount(tx *rpc.TxResult) (uint64, error) {
 	return uint64(amount), nil
 }
 
-// settleInstantSendTransaction requires actual inclusion in a canonical
-// ChainLocked block. A height advance or a transaction flag alone cannot refill
-// the allowance. Call with instantSendAllowanceMu held.
-func (c *Client) settleInstantSendTransaction(id string, tx *rpc.TxResult) (bool, error) {
+// getInstantSendSettlement verifies inclusion in a canonical ChainLocked block
+// and returns its transaction IDs. It performs RPCs without changing the journal;
+// call without instantSendStateMu held.
+func (c *Client) getInstantSendSettlement(id string, tx *rpc.TxResult) ([]string, error) {
 	if !strings.EqualFold(id, tx.Txid) {
-		return false, errors.New("InstantSend transaction ID mismatch")
+		return nil, errors.New("InstantSend transaction ID mismatch")
 	}
 	if !tx.ChainLock {
-		return false, nil
+		return nil, nil
 	}
 	if tx.BlockHash == "" {
-		return false, errors.New("ChainLocked transaction has no block hash")
+		return nil, errors.New("ChainLocked transaction has no block hash")
 	}
 	block, err := c.rpc.GetBlockVerboseTxs(tx.BlockHash)
 	if err != nil {
-		return false, err
+		return nil, err
 	}
 	if !block.ChainLock || block.Height < 0 || !strings.EqualFold(block.Hash, tx.BlockHash) {
-		return false, errors.New("invalid ChainLocked transaction block")
+		return nil, errors.New("invalid ChainLocked transaction block")
 	}
 	hash, err := c.rpc.GetBlockHash(block.Height)
 	if err != nil {
-		return false, err
+		return nil, err
 	}
 	if !strings.EqualFold(hash, block.Hash) {
-		return false, errors.New("ChainLocked transaction is not in the active chain")
+		return nil, errors.New("ChainLocked transaction is not in the active chain")
 	}
 	ids := make([]string, 0, len(block.Tx))
 	found := false
@@ -366,21 +428,16 @@ func (c *Client) settleInstantSendTransaction(id string, tx *rpc.TxResult) (bool
 		}
 	}
 	if !found {
-		return false, errors.New("transaction missing from ChainLocked block")
+		return nil, errors.New("transaction missing from ChainLocked block")
 	}
-	return true, c.temporalStorage.ReleaseInstantSendReservations(ids)
+	return ids, nil
 }
 
-// reconcileInstantSendBlock releases reservations for transactions in an already
-// verified ChainLocked block. A settlement failure resets recovery so customer
-// admission stays paused until the outstanding reservations are checked again.
-func (c *Client) reconcileInstantSendBlock(block *btcjson.GetBlockVerboseTxResult) error {
-	c.instantSendAllowanceMu.Lock()
-	defer c.instantSendAllowanceMu.Unlock()
-	ids := make([]string, 0, len(block.Tx))
-	for _, tx := range block.Tx {
-		ids = append(ids, tx.Txid)
-	}
+// releaseInstantSendReservations invalidates outstanding RPC results even when
+// settlement fails. A failure resets recovery before further customer admission.
+// Call with instantSendStateMu held, after verifying ChainLock inclusion.
+func (c *Client) releaseInstantSendReservations(ids []string) error {
+	c.instantSendRevision++
 	err := c.temporalStorage.ReleaseInstantSendReservations(ids)
 	if err != nil {
 		// Retry inclusion checks before any further customer admission.
@@ -389,11 +446,27 @@ func (c *Client) reconcileInstantSendBlock(block *btcjson.GetBlockVerboseTxResul
 	return err
 }
 
-// claimInstantSendBatch rechecks locks and atomically claims allowance and observation
-// markers while excluding concurrent block settlement. Vault senders bypass the allowance.
+// reconcileInstantSendBlock releases reservations for transactions in an already
+// verified ChainLocked block without waiting for mempool network calls.
+func (c *Client) reconcileInstantSendBlock(block *btcjson.GetBlockVerboseTxResult) error {
+	ids := make([]string, 0, len(block.Tx))
+	for _, tx := range block.Tx {
+		ids = append(ids, tx.Txid)
+	}
+	// Keep the revision increment, reservation release and recovery reset together.
+	c.instantSendStateMu.Lock()
+	defer c.instantSendStateMu.Unlock()
+	return c.releaseInstantSendReservations(ids)
+}
+
+// claimInstantSendBatch checks finality without the allowance lock, then atomically
+// claims allowance and markers only if settlement has not invalidated those checks.
+// Vault senders bypass the allowance.
 func (c *Client) claimInstantSendBatch(items []*types.TxInItem, admission instantSendAdmission) ([]*types.TxInItem, error) {
-	c.instantSendAllowanceMu.Lock()
-	defer c.instantSendAllowanceMu.Unlock()
+	c.instantSendStateMu.Lock()
+	// Every RPC section reacquires the lock before returning, so this stays balanced.
+	defer c.instantSendStateMu.Unlock()
+	revision := c.instantSendRevision
 	claims := make([]sharedutxo.InstantSendClaim, 0, len(items))
 	byID := make(map[string]*types.TxInItem, len(items))
 	ids := make([]string, 0, len(items))
@@ -409,13 +482,21 @@ func (c *Client) claimInstantSendBatch(items []*types.TxInItem, admission instan
 	if len(ids) == 0 {
 		return nil, nil
 	}
-	// Queued batches may outlive a block scan. Recheck under the same lock as
-	// settlement. One bounded RPC batch avoids a timeout for each candidate.
+	// Queued batches may outlive a block scan. Recheck finality without holding
+	// up settlement, then reject the results if settlement happened meanwhile.
+	c.instantSendStateMu.Unlock()
 	txs, txErrors, err := c.rpc.BatchGetRawTransactionVerbose(ids)
+	// Recheck the revision under the lock before using these finality results.
+	if !c.lockAndCheckInstantSendRevision(revision) {
+		c.deferInstantSend("finality")
+		return nil, nil
+	}
 	if err != nil {
 		c.deferInstantSend("finality")
 		return nil, err
 	}
+	// Vault-cache refreshes and the halt check below can make network calls.
+	c.instantSendStateMu.Unlock()
 	for i, id := range ids {
 		tx := txs[i]
 		if txErrors[i] != nil || !strings.EqualFold(tx.Txid, id) || tx.ChainLock || !tx.InstantSendLocked() {
@@ -429,12 +510,19 @@ func (c *Client) claimInstantSendBatch(items []*types.TxInItem, admission instan
 		}
 		claims = append(claims, sharedutxo.InstantSendClaim{TxID: id, Amount: item.Coins.GetCoin(c.cfg.ChainID.GetGasAsset()).Amount.Uint64(), Exempt: vaultSender})
 	}
-	admission = c.currentInstantSendAdmission(admission)
 	// Check after the finality and sender lookups, immediately before any writes.
 	// Vault senders bypass the amount allowance, but must still respect halts.
-	if c.isInstantSendPaused() {
+	paused := c.isInstantSendPaused()
+	// Hold through the revision check and claim so settlement cannot slip between them.
+	c.instantSendStateMu.Lock()
+	if paused {
 		return nil, errInstantSendPaused
 	}
+	if revision != c.instantSendRevision {
+		c.deferInstantSend("finality")
+		return nil, nil
+	}
+	admission = c.currentInstantSendAdmission(admission)
 	accepted, err := c.temporalStorage.ClaimInstantSendTxs(claims, c.instantSendMinAmount, c.instantSendMaxAmount, admission.allowed, time.Now().Unix())
 	if err != nil {
 		c.deferInstantSend("storage")
@@ -444,8 +532,17 @@ func (c *Client) claimInstantSendBatch(items []*types.TxInItem, admission instan
 		}
 		// A damaged allowance journal must not stop vault transactions. They use
 		// the existing observation-marker store without touching the allowance.
-		if c.isInstantSendPaused() {
+		// Release again for the fresh halt lookup needed by this fallback.
+		c.instantSendStateMu.Unlock()
+		paused = c.isInstantSendPaused()
+		// Protect the final checks and fallback marker write together.
+		c.instantSendStateMu.Lock()
+		if paused {
 			return nil, errInstantSendPaused
+		}
+		if revision != c.instantSendRevision {
+			c.deferInstantSend("finality")
+			return nil, nil
 		}
 		return c.trackObservedTxs(exempt)
 	}
@@ -490,8 +587,8 @@ func (c *Client) publishInstantSendAllowance(admission instantSendAdmission) {
 	if c.m == nil {
 		return
 	}
-	c.instantSendAllowanceMu.Lock()
-	defer c.instantSendAllowanceMu.Unlock()
+	c.instantSendStateMu.Lock()
+	defer c.instantSendStateMu.Unlock()
 	state, err := c.temporalStorage.GetInstantSendState()
 	if err != nil {
 		c.m.GetGauge(metrics.InstantSendAvailable).Set(0)

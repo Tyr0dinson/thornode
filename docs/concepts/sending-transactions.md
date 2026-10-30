@@ -11,9 +11,9 @@ You are ready to make the transaction and swap via THORChain.
 
 ## UTXO Chains
 
-### Memo less or equal 80 characters
+### Memo of 80 bytes or fewer
 
-For UTXO-based chains (e.g., BTC, BCH, LTC, DOGE), transactions must follow a specific structure to be processed by THORChain. Ensure the following steps are completed to avoid transaction failures or loss of funds.
+For UTXO-based chains (e.g., BTC, BCH, LTC, DOGE, DASH), transactions must follow a specific structure to be processed by THORChain. Memo lengths refer to UTF-8 bytes, not characters. Ensure the following steps are completed to avoid transaction failures or loss of funds.
 
 #### Checklist for UTXO Transactions
 
@@ -26,16 +26,16 @@ For UTXO-based chains (e.g., BTC, BCH, LTC, DOGE), transactions must follow a sp
 - [ ] **Limit to 10 outputs**: Ensure the transaction has no more than 10 outputs to comply with THORChain’s processing limits.
 - [ ] Do not send funds that are part of a transaction with more than 10 outputs
 
-### Memo greater than 80 characters
+### Memo longer than 80 bytes
 
 - [ ] Ensure the [address type](./querying-thorchain.md#supported-address-formats) is supported
 - [ ] Send the transaction with Asgard vault as VOUT0
 - [ ] Pass all change back to the VIN0 address in a subsequent VOUT e.g. VOUT1
-- [ ] Take the first 79 characters of the memo and append '^' and use that as an OP_RETURN in a subsequent VOUT e.g. VOUT2
-- [ ] Add remaining characters encoded as p2wpkh address as subsequent VOUT
-  - [ ] encode remaining characters to hex representation
-  - [ ] split the resulting string into chunks of 40 characters each, append "00" to the last chunk until its length also matches 40 characters
-  - [ ] for each hex encoded chunk, create a VOUT sending the [minimum allowed amount of sats](../../x/thorchain/querier_quotes.go#L39) for the specific chain to the script pub key: '0014' + `<chunk>`
+- [ ] Take the first 79 bytes of the memo, append `^`, and use those 80 bytes as an OP_RETURN in a subsequent VOUT, e.g. VOUT2
+- [ ] Add the remaining memo bytes as subsequent continuation outputs
+  - [ ] Split the remaining bytes into 20-byte chunks and pad the final chunk with zero bytes to reach 20 bytes
+  - [ ] Hex encode each chunk to obtain 40 hex characters
+  - [ ] Use the chain's continuation script and output amount from the examples below. BTC/LTC use P2WPKH (`0014<chunk>`). Dash uses P2PKH (`76a914<chunk>88ac`) with 546 duffs per output; do not use the P2WPKH shape for Dash.
 - [ ] Use a high enough `gas_rate` to be included
 - [ ] Do not send below the dust threshold (10k Sats BTC, BCH, LTC, 1m DOGE), exhaustive values can be found on the [Inbound Addresses](https://gateway.liquify.com/chain/thorchain_api/thorchain/inbound_addresses) endpoint
 
@@ -46,7 +46,7 @@ For UTXO-based chains (e.g., BTC, BCH, LTC, DOGE), transactions must follow a sp
 Memo:
 `SWAP:GAIA.ATOM:cosmos1fegapd4jc3ejqeg0eu3jk4hvr74hg66076gyyd/bc1qnfw0gkk05qxl38mslc69hc6vc64mksyw6zzxhg`
 
-1. Put first 79 characters + `^` into `OP_RETURN`: `SWAP:GAIA.ATOM:cosmos1fegapd4jc3ejqeg0eu3jk4hvr74hg66076gyyd/bc1qnfw0gkk05qxl38^`
+1. Put first 79 bytes + `^` into `OP_RETURN`: `SWAP:GAIA.ATOM:cosmos1fegapd4jc3ejqeg0eu3jk4hvr74hg66076gyyd/bc1qnfw0gkk05qxl38^`
 2. Hex encode remaining string `mslc69hc6vc64mksyw6zzxhg` and split it into chunks of 40 characters (fill the last chunk with zeros): `6d736c633639686336766336346d6b737977367a`, `7a78686700000000000000000000000000000000`
 3. Create two subsequent VOUTs (prepend `0014`):
    1. send 294sats (2940sats on LTC) to: `00146d736c633639686336766336346d6b737977367a`
@@ -61,7 +61,7 @@ Memo:
 Memo:
 `SWAP:GAIA.ATOM:cosmos1fegapd4jc3ejqeg0eu3jk4hvr74hg66076gyyd/bc1qnfw0gkk05qxl38mslc69hc6vc64mksyw6zzxhg`
 
-1. Put first 79 characters + `^` into `OP_RETURN`: `SWAP:GAIA.ATOM:cosmos1fegapd4jc3ejqeg0eu3jk4hvr74hg66076gyyd/bc1qnfw0gkk05qxl38^`
+1. Put first 79 bytes + `^` into `OP_RETURN`: `SWAP:GAIA.ATOM:cosmos1fegapd4jc3ejqeg0eu3jk4hvr74hg66076gyyd/bc1qnfw0gkk05qxl38^`
 2. Hex encode remaining string `mslc69hc6vc64mksyw6zzxhg` and split it into chunks of 40 characters (fill the last chunk with zeros): `6d736c633639686336766336346d6b737977367a`, `7a78686700000000000000000000000000000000`
 3. Create two subsequent VOUTs (prepend `76a914` & append `88ac`):
    1. send 546sats to: `76a9146d736c633639686336766336346d6b737977367a88ac`
@@ -71,12 +71,24 @@ Memo:
       - BCH: qpa8s6r8qqqqqqqqqqqqqqqqqqqqqqqqqq99h3g9e2
       - DOGE: DGJfDk6cwyNpzebP7MyzueRtXEWGEaaHz9
 
+#### P2PKH (DASH)
+
+Using the same 103-byte memo above:
+
+1. Put the first 79 bytes plus `^` into `OP_RETURN`: `SWAP:GAIA.ATOM:cosmos1fegapd4jc3ejqeg0eu3jk4hvr74hg66076gyyd/bc1qnfw0gkk05qxl38^`
+2. Split the remaining 24 bytes, `mslc69hc6vc64mksyw6zzxhg`, into 20-byte chunks, padding the last chunk with zero bytes.
+3. Add these two continuation outputs, in this order, each with **546 duffs (0.00000546 DASH)**:
+   - `76a9146d736c633639686336766336346d6b737977367a88ac`
+   - `76a9147a7868670000000000000000000000000000000088ac`
+
+The 546-duff amount is for memo continuation outputs. The deposit sent to the vault must still exceed the separate chain dust threshold from the Inbound Addresses endpoint.
+
 ```admonish warning
 Inbound transactions must not be delayed to avoid sending funds to an outdated Asgard vault address, which may be unreachable. Use standard transactions, verify the latest Asgard vault address via the [Inbound Addresses](https://gateway.liquify.com/chain/thorchain_api/thorchain/inbound_addresses) endpoint, and use the recommended `gas_rate` to ensure confirmation in the next block.
 ```
 
 ```admonish info
-Memo limited to 80 bytes in `OP_RETURN` on BTC, BCH, LTC and DOGE. Use [abbreviated options](./memo-length-reduction.md) where possible. When shortening is not enough, or for reusable memos, see [Memoless Swaps](../swap-guide/memoless-swaps.md).
+Memo limited to 80 bytes in `OP_RETURN` on BTC, BCH, LTC, DOGE and DASH. Use [abbreviated options](./memo-length-reduction.md) where possible. When shortening is not enough, or for reusable memos, see [Memoless Swaps](../swap-guide/memoless-swaps.md).
 ```
 
 ```admonish warning

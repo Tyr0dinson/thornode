@@ -581,9 +581,9 @@ func (c Chain) MaxMemoLength() int {
 	}
 }
 
-// DefaultCoinbase returns the default coinbase address for each chain, returns 0 if no
-// coinbase emission is used. This is used used at the time of writing as a fallback
-// value in Bifrost, and for inbound confirmation count estimates in the quote APIs.
+// DefaultCoinbase returns a default block subsidy in whole coins, or 0 when none
+// is defined. Bifrost and quote APIs use it for block-fee and confirmation estimates.
+// Dash's fee-reporting, confirmation and quote paths do not use this value.
 func (c Chain) DefaultCoinbase() float64 {
 	switch c {
 	case BTCChain:
@@ -599,12 +599,8 @@ func (c Chain) DefaultCoinbase() float64 {
 	case XMRChain:
 		return 0.6
 	case DASHChain:
-		// Dash subsidy declines ~7.1%/year (not a halving schedule). As of
-		// 2026-Q2 the block reward is ~1.55 DASH/block — see
-		// https://docs.dash.org/en/stable/docs/user/mining/index.html.
-		// DefaultCoinbase is a fallback for confirmation-count estimation
-		// when dynamic block-fee derivation is unavailable; precision matters
-		// less than direction. Revisit if drift exceeds 10%.
+		// Retained fallback; currently unused by Dash fee reporting,
+		// confirmation counting and quotes.
 		return 1.55
 	default:
 		return 0

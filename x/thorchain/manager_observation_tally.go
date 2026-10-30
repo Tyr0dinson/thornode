@@ -21,7 +21,7 @@ import (
 //
 // Every voter the slasher scores for lack of observation (observed txs in and out,
 // network fee, solvency, errata) is queued when it reaches consensus and scored
-// when its ObservationDelayFlexibility window closes. Scoring at consensus would be
+// when its observation window closes. Scoring at consensus would be
 // wrong: consensus forms at a supermajority, so up to a third of the Active set has
 // not signed yet, and most of those sign within the window. At the close of the
 // window the voter's signers are exactly the ones the slasher credited, since a
@@ -65,9 +65,16 @@ const (
 )
 
 // queueObservationTally schedules a voter that reached consensus in this block to
-// be scored when its ObservationDelayFlexibility window closes.
+// be scored when its observation window closes. Transaction voters use the
+// per-chain override when set; other voter kinds use the global window.
 func queueObservationTally(ctx cosmos.Context, k keeper.Keeper, kind string, chain common.Chain, ref ...string) {
-	observeFlex := k.GetConfigInt64(ctx, constants.ObservationDelayFlexibility)
+	var observeFlex int64
+	switch kind {
+	case observationTallyKindTxIn, observationTallyKindTxOut:
+		observeFlex = observationDelayFlexibility(ctx, k, chain)
+	default:
+		observeFlex = k.GetConfigInt64(ctx, constants.ObservationDelayFlexibility)
+	}
 	k.QueueObservationTally(ctx, kvTypes.ObservationTallyEntry{
 		DueHeight:       ctx.BlockHeight() + max(observeFlex, 0),
 		ConsensusHeight: ctx.BlockHeight(),
@@ -81,9 +88,8 @@ func queueObservationTally(ctx cosmos.Context, k keeper.Keeper, kind string, cha
 // voter whose window closed at or before this block, then halves all tallies on a
 // half-life boundary.
 //
-// Voters that reached consensus in the same block are due in the same block, so a
-// chain's guarded heights are only needed for this call: guardedAt holds, per chain,
-// the consensus height of the last voter above the guard share.
+// guardedAt holds, per chain, the consensus height of the last voter above the
+// guard share in this call. Another voter from that height must not close the run.
 func processObservationTallies(ctx cosmos.Context, mgr Manager) error {
 	k := mgr.Keeper()
 	if err := endHaltedObservationGuardRuns(ctx, k); err != nil {

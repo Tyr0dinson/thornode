@@ -97,7 +97,7 @@ func (s *DashSuite) TestDashLockedBalance(c *C) {
 	defer server.Close()
 	client, cleanup := newDashClientForRPCServer(c, server.URL)
 	defer cleanup()
-	client.cfg.InstantSend.Enabled = false
+	client.instantSendEnabled = false
 	for _, flag := range []string{"instantlock", "instantlock_internal", "chainlock"} {
 		lockFlag = flag
 		rawCalls = 0

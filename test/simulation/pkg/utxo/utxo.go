@@ -605,8 +605,8 @@ func (c *Client) GetGasSats() uint64 {
 	case common.ZECChain:
 		return 100_000
 	case common.DASHChain:
-		// Keep the default Dash tx comfortably above relay / InstantSend policy floors.
-		// Scenarios that need a low-fee fallback override FeeSats directly.
+		// Fixed fee for ordinary Dash simulation transactions; InstantSend has no extra fee gate.
+		// Scenarios that need a lower fee override FeeSats directly.
 		return 15_000
 	default:
 		log.Fatal().Msg("unsupported chain")
