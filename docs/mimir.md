@@ -142,7 +142,7 @@ Operational notes:
 - `HaltChainGlobal`#: Pause observations on all chains (chain clients)
 - `HaltTrading`: Stops swaps and additions, if done, will result in refunds. Observations still occur.
 - `Halt<chain>Chain`#: Pause a specific blockchain
-- `SolvencyHalt<Chain>`# Halts a chain if the solvency checker for that chain fails.
+- `SolvencyHalt<Chain>`# Halts a chain if the solvency checker for that chain fails. The checker lifts it once no Active or Retiring vault on the chain is still flagged insolvent. While it holds, a flagged vault's outbounds released after it was flagged no longer offset its shortfall, since Bifrost doesn't sign them.
 - `HaltScannerXMR`#: Bifrost-only XMR scanner activation switch. `0` explicitly enables block scanning and spent-reference catch-up, positive values pause them. Missing or negative values and lookup errors fail closed. This does not set THORNode's XMR chain-halt state or directly pause churn. A paused scanner also blocks normal XMR signing through the scanner-health check, so funded vault migrations can still stall and subsequently block churn. See [XMR Scanner Activation](./concepts/network-halts.md#xmr-scanner-activation) for rollout and voting requirements.
 - `NodePauseChainGlobal`#: Individual node controlled means to pause all chains
 - `NodePauseChainBlocks`: Number of block a node operator can pause/resume the chains for
