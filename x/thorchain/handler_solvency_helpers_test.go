@@ -1092,30 +1092,50 @@ func (s *HandlerSolvencyHelpersSuite) TestInsolvencyCheck_SolvencyHaltNetsOutOnl
 	}
 }
 
+// markCopyObserved sets an observed hash on the copy of item in the block at height,
+// as the outbound handler does once the payment is observed.
+func markCopyObserved(c *C, ctx cosmos.Context, mgr Manager, item TxOutItem, height int64) {
+	txOut, err := mgr.Keeper().GetTxOut(ctx, height)
+	c.Assert(err, IsNil)
+	for i := range txOut.TxArray {
+		if txOut.TxArray[i].InHash.Equals(item.InHash) && txOut.TxArray[i].Coin.Equals(item.Coin) && txOut.TxArray[i].OutHash.IsEmpty() {
+			txOut.TxArray[i].OutHash = GetRandomTxHash()
+			c.Assert(mgr.Keeper().SetTxOut(ctx, txOut), IsNil)
+			return
+		}
+	}
+	c.Fatalf("no unsent copy at %d", height)
+}
+
 func (s *HandlerSolvencyHelpersSuite) TestInsolvencyCheck_SolvencyHaltCountsReplacedOutbounds(c *C) {
-	// The chain halted at 1000, so the cutoff is 1003, and the check runs at 1024.
-	// Each vault books 1000 ETH; payouts are 150 ETH unless a case says otherwise.
+	// The chain halted at 1000, so the cutoff is 1003. LackSigning replaces an item
+	// 300 blocks after its block (the signing period) and adds the copy there, so an
+	// item from 710 is replaced at 1010, after the cutoff. Each vault books 1000 ETH
+	// unless book says otherwise; payouts are 150 ETH. The check runs at 1024 unless
+	// at says otherwise.
 	testCases := []struct {
 		name       string
 		coalesce   int64 // RescheduleCoalesceBlocks Mimir; 0 leaves it unset
+		at         int64
 		setup      func(c *C, ctx cosmos.Context, mgr Manager, vault, other Vault)
 		checkOther bool // check the other vault instead of this one
+		book       uint64
 		wallet     uint64
 		insolvent  bool
 	}{
 		{
-			name: "replaced after the cutoff: the original nets out",
+			name: "replaced after the cutoff, copy unsent: the original nets out",
 			setup: func(c *C, ctx cosmos.Context, mgr Manager, vault, _ Vault) {
-				item := queuePendingOutbound(c, ctx, mgr, vault, 990, 150)
-				replaceOutbound(c, ctx, mgr, item, 990, 1010, vault.PubKey)
+				item := queuePendingOutbound(c, ctx, mgr, vault, 710, 150)
+				replaceOutbound(c, ctx, mgr, item, 710, 1010, vault.PubKey)
 			},
 			wallet: 850,
 		},
 		{
 			name: "replaced before the cutoff: only the copy nets out, not the original too",
 			setup: func(c *C, ctx cosmos.Context, mgr Manager, vault, _ Vault) {
-				item := queuePendingOutbound(c, ctx, mgr, vault, 900, 150)
-				replaceOutbound(c, ctx, mgr, item, 900, 960, vault.PubKey)
+				item := queuePendingOutbound(c, ctx, mgr, vault, 690, 150)
+				replaceOutbound(c, ctx, mgr, item, 690, 990, vault.PubKey)
 			},
 			wallet:    700,
 			insolvent: true,
@@ -1124,17 +1144,37 @@ func (s *HandlerSolvencyHelpersSuite) TestInsolvencyCheck_SolvencyHaltCountsRepl
 			name:     "copy coalesced past the cutoff: the original nets out",
 			coalesce: 20,
 			setup: func(c *C, ctx cosmos.Context, mgr Manager, vault, _ Vault) {
-				// LackSigning ran at 1001, before the cutoff, but the copy landed at 1020.
+				// Replaced at 1001, before the cutoff, but the copy landed at 1020.
 				item := queuePendingOutbound(c, ctx, mgr, vault, 701, 150)
 				replaceOutbound(c, ctx, mgr, item, 701, 1020, vault.PubKey)
 			},
 			wallet: 850,
 		},
 		{
-			name: "replaced long before the cutoff, copy not found: doesn't count",
+			name: "copy observed after the cutoff: already debited, so the original doesn't count again",
 			setup: func(c *C, ctx cosmos.Context, mgr Manager, vault, _ Vault) {
-				item := queuePendingOutbound(c, ctx, mgr, vault, 600, 150)
-				replaceOutbound(c, ctx, mgr, item, 600, 0, vault.PubKey)
+				item := queuePendingOutbound(c, ctx, mgr, vault, 703, 150)
+				replaceOutbound(c, ctx, mgr, item, 703, 1003, vault.PubKey)
+				markCopyObserved(c, ctx, mgr, item, 1003)
+			},
+			book:      850,
+			wallet:    750,
+			insolvent: true,
+		},
+		{
+			name: "replaced without a copy (treasury recovery): doesn't count",
+			setup: func(c *C, ctx cosmos.Context, mgr Manager, vault, _ Vault) {
+				item := queuePendingOutbound(c, ctx, mgr, vault, 701, 150)
+				replaceOutbound(c, ctx, mgr, item, 701, 0, vault.PubKey)
+			},
+			wallet:    850,
+			insolvent: true,
+		},
+		{
+			name: "copy at another height (a SOL reissue): doesn't count",
+			setup: func(c *C, ctx cosmos.Context, mgr Manager, vault, _ Vault) {
+				item := queuePendingOutbound(c, ctx, mgr, vault, 710, 150)
+				replaceOutbound(c, ctx, mgr, item, 710, 1015, vault.PubKey)
 			},
 			wallet:    850,
 			insolvent: true,
@@ -1150,8 +1190,8 @@ func (s *HandlerSolvencyHelpersSuite) TestInsolvencyCheck_SolvencyHaltCountsRepl
 					Memo:        NewMigrateMemo(500).String(),
 					Coin:        common.NewCoin(common.ETHAsset, cosmos.NewUint(150*common.One)),
 				}
-				appendTxOutItem(c, ctx, mgr, 990, item)
-				replaceOutbound(c, ctx, mgr, item, 990, 0, vault.PubKey)
+				appendTxOutItem(c, ctx, mgr, 710, item)
+				replaceOutbound(c, ctx, mgr, item, 710, 1010, vault.PubKey)
 			},
 			wallet:    850,
 			insolvent: true,
@@ -1159,16 +1199,16 @@ func (s *HandlerSolvencyHelpersSuite) TestInsolvencyCheck_SolvencyHaltCountsRepl
 		{
 			name: "reassigned after the cutoff: nets out for the original vault",
 			setup: func(c *C, ctx cosmos.Context, mgr Manager, vault, other Vault) {
-				item := queuePendingOutbound(c, ctx, mgr, vault, 990, 150)
-				replaceOutbound(c, ctx, mgr, item, 990, 1010, other.PubKey)
+				item := queuePendingOutbound(c, ctx, mgr, vault, 710, 150)
+				replaceOutbound(c, ctx, mgr, item, 710, 1010, other.PubKey)
 			},
 			wallet: 850,
 		},
 		{
 			name: "reassigned after the cutoff: doesn't net out for the new vault",
 			setup: func(c *C, ctx cosmos.Context, mgr Manager, vault, other Vault) {
-				item := queuePendingOutbound(c, ctx, mgr, vault, 990, 150)
-				replaceOutbound(c, ctx, mgr, item, 990, 1010, other.PubKey)
+				item := queuePendingOutbound(c, ctx, mgr, vault, 710, 150)
+				replaceOutbound(c, ctx, mgr, item, 710, 1010, other.PubKey)
 			},
 			checkOther: true,
 			wallet:     850,
@@ -1177,8 +1217,8 @@ func (s *HandlerSolvencyHelpersSuite) TestInsolvencyCheck_SolvencyHaltCountsRepl
 		{
 			name: "another vault's replaced original doesn't count",
 			setup: func(c *C, ctx cosmos.Context, mgr Manager, _, other Vault) {
-				item := queuePendingOutbound(c, ctx, mgr, other, 990, 150)
-				replaceOutbound(c, ctx, mgr, item, 990, 1010, other.PubKey)
+				item := queuePendingOutbound(c, ctx, mgr, other, 710, 150)
+				replaceOutbound(c, ctx, mgr, item, 710, 1010, other.PubKey)
 			},
 			wallet:    850,
 			insolvent: true,
@@ -1186,8 +1226,8 @@ func (s *HandlerSolvencyHelpersSuite) TestInsolvencyCheck_SolvencyHaltCountsRepl
 		{
 			name: "a sibling released after the cutoff doesn't drop the earlier payout",
 			setup: func(c *C, ctx cosmos.Context, mgr Manager, vault, _ Vault) {
-				payout := queuePendingOutbound(c, ctx, mgr, vault, 990, 150)
-				replaceOutbound(c, ctx, mgr, payout, 990, 1010, vault.PubKey)
+				payout := queuePendingOutbound(c, ctx, mgr, vault, 710, 150)
+				replaceOutbound(c, ctx, mgr, payout, 710, 1010, vault.PubKey)
 				refund := payout
 				refund.ToAddress = GetRandomETHAddress()
 				refund.Coin = common.NewCoin(common.ETHAsset, cosmos.NewUint(100*common.One))
@@ -1198,8 +1238,8 @@ func (s *HandlerSolvencyHelpersSuite) TestInsolvencyCheck_SolvencyHaltCountsRepl
 		{
 			name: "a sibling released after the cutoff doesn't net out itself",
 			setup: func(c *C, ctx cosmos.Context, mgr Manager, vault, _ Vault) {
-				payout := queuePendingOutbound(c, ctx, mgr, vault, 990, 150)
-				replaceOutbound(c, ctx, mgr, payout, 990, 1010, vault.PubKey)
+				payout := queuePendingOutbound(c, ctx, mgr, vault, 710, 150)
+				replaceOutbound(c, ctx, mgr, payout, 710, 1010, vault.PubKey)
 				refund := payout
 				refund.ToAddress = GetRandomETHAddress()
 				refund.Coin = common.NewCoin(common.ETHAsset, cosmos.NewUint(100*common.One))
@@ -1209,13 +1249,48 @@ func (s *HandlerSolvencyHelpersSuite) TestInsolvencyCheck_SolvencyHaltCountsRepl
 			insolvent: true,
 		},
 		{
-			name: "an identical unsent outbound in the same block isn't taken for the copy",
+			name: "replaced twice, latest copy unsent: the original nets out",
+			at:   1320,
 			setup: func(c *C, ctx cosmos.Context, mgr Manager, vault, _ Vault) {
-				item := queuePendingOutbound(c, ctx, mgr, vault, 990, 150)
-				appendTxOutItem(c, ctx, mgr, 990, item)
-				replaceOutbound(c, ctx, mgr, item, 990, 1010, vault.PubKey)
+				item := queuePendingOutbound(c, ctx, mgr, vault, 710, 150)
+				replaceOutbound(c, ctx, mgr, item, 710, 1010, vault.PubKey)
+				replaceOutbound(c, ctx, mgr, item, 1010, 1310, vault.PubKey)
+			},
+			wallet: 850,
+		},
+		{
+			name: "replaced twice, latest copy observed: doesn't count again",
+			at:   1320,
+			setup: func(c *C, ctx cosmos.Context, mgr Manager, vault, _ Vault) {
+				item := queuePendingOutbound(c, ctx, mgr, vault, 710, 150)
+				replaceOutbound(c, ctx, mgr, item, 710, 1010, vault.PubKey)
+				replaceOutbound(c, ctx, mgr, item, 1010, 1310, vault.PubKey)
+				markCopyObserved(c, ctx, mgr, item, 1310)
+			},
+			book:      850,
+			wallet:    750,
+			insolvent: true,
+		},
+		{
+			name: "two identical originals with two copies: both net out",
+			setup: func(c *C, ctx cosmos.Context, mgr Manager, vault, _ Vault) {
+				item := queuePendingOutbound(c, ctx, mgr, vault, 710, 150)
+				appendTxOutItem(c, ctx, mgr, 710, item)
+				replaceOutbound(c, ctx, mgr, item, 710, 1010, vault.PubKey)
+				replaceOutbound(c, ctx, mgr, item, 710, 1010, vault.PubKey)
 			},
 			wallet: 700,
+		},
+		{
+			name: "two identical originals with one copy: only one nets out",
+			setup: func(c *C, ctx cosmos.Context, mgr Manager, vault, _ Vault) {
+				item := queuePendingOutbound(c, ctx, mgr, vault, 710, 150)
+				appendTxOutItem(c, ctx, mgr, 710, item)
+				replaceOutbound(c, ctx, mgr, item, 710, 1010, vault.PubKey)
+				replaceOutbound(c, ctx, mgr, item, 710, 0, vault.PubKey)
+			},
+			wallet:    700,
+			insolvent: true,
 		},
 		{
 			name: "an unsent outbound within its signing period at the cutoff counts after it runs out",
@@ -1237,6 +1312,9 @@ func (s *HandlerSolvencyHelpersSuite) TestInsolvencyCheck_SolvencyHaltCountsRepl
 	for _, tc := range testCases {
 		c.Logf("case: %s", tc.name)
 		ctx, mgr, _, vault := setupSolvencyHelpersTest(c)
+		if tc.at != 0 {
+			ctx = ctx.WithBlockHeight(tc.at)
+		}
 		other := NewVault(1024, ActiveVault, AsgardVault, GetRandomPubKey(), []string{common.ETHChain.String()}, nil)
 		other.AddFunds(common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(1000*common.One))))
 		c.Assert(mgr.Keeper().SetVault(ctx, other), IsNil)
@@ -1249,6 +1327,9 @@ func (s *HandlerSolvencyHelpersSuite) TestInsolvencyCheck_SolvencyHaltCountsRepl
 		checked := vault
 		if tc.checkOther {
 			checked = other
+		}
+		if tc.book != 0 {
+			checked.Coins = common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(tc.book*common.One)))
 		}
 		walletCoins := common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(tc.wallet*common.One)))
 		c.Check(insolvencyCheck(ctx, mgr, checked, walletCoins, common.ETHChain), Equals, tc.insolvent, Commentf(tc.name))
@@ -1283,14 +1364,15 @@ func (s *HandlerSolvencyHelpersSuite) TestProcessSolvencyAttestation_HaltBacklog
 	queuePendingOutbound(c, ctx, mgr, vault, 1015, 70)
 
 	// The wallet is unchanged at the next report, so the vault is still short. The
-	// chain stays halted at the height it began, with the vault still flagged.
+	// chain stays halted at the height it began, and the vault's flag now carries
+	// this latest insolvent report.
 	reportSolvency(c, ctx, mgr, nas, vault.PubKey, 900, 101)
 	halt, err = mgr.Keeper().GetMimir(ctx, "SolvencyHaltETHChain")
 	c.Assert(err, IsNil)
 	c.Assert(halt, Equals, int64(1000))
 	flag, err := mgr.Keeper().GetMimir(ctx, solvencyHaltVaultKey(vault.PubKey, common.ETHChain))
 	c.Assert(err, IsNil)
-	c.Assert(flag, Equals, int64(1000))
+	c.Assert(flag, Equals, ctx.BlockHeight())
 }
 
 func (s *HandlerSolvencyHelpersSuite) TestProcessSolvencyAttestation_ScheduledHaltDatesTheCutoff(c *C) {
@@ -1471,4 +1553,60 @@ func (s *HandlerSolvencyHelpersSuite) TestInsolvencyCheck_SolvencyHaltCoalescedC
 
 	walletCoins := common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(850*common.One)))
 	c.Assert(insolvencyCheck(ctx, mgr, vault, walletCoins, common.BTCChain), Equals, false)
+}
+
+func (s *HandlerSolvencyHelpersSuite) TestProcessSolvencyAttestation_SilentFlaggedVaultStopsHoldingHalt(c *C) {
+	// Vault B was found short and halted the chain at 1000. Vault A sent a 50 ETH
+	// outbound just before the halt that the paused scanner never observed, so its
+	// wallet holds 950 ETH against the 1000 booked; Bifrost's own check fails for A,
+	// and it reports A alone. THORNode nets that outbound out and finds A solvent.
+	// B's gap was then fixed, so Bifrost stopped reporting B.
+	testCases := []struct {
+		name     string
+		at       int64 // height of A's report
+		bAgainAt int64 // height of a later insolvent report for B; 0 for none
+		noLimit  bool  // set SolvencyHaltHoldBlocks to 0 by Mimir
+		lifted   bool
+	}{
+		{name: "B reported 500 blocks ago: still holds the halt", at: 1500},
+		{name: "B reported more than 1200 blocks ago: no longer holds it", at: 2300, lifted: true},
+		{name: "B still being reported: holds the halt", at: 2300, bAgainAt: 2000},
+		{name: "hold window set to 0 by Mimir: holds without limit", at: 2300, noLimit: true},
+	}
+	for _, tc := range testCases {
+		c.Logf("case: %s", tc.name)
+		ctx, mgr, nas, vaultA := setupSolvencyHelpersTest(c)
+		vaultB := NewVault(500, ActiveVault, AsgardVault, GetRandomPubKey(), []string{common.ETHChain.String()}, nil)
+		vaultB.AddFunds(common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(1000*common.One))))
+		c.Assert(mgr.Keeper().SetVault(ctx, vaultB), IsNil)
+		if tc.noLimit {
+			mgr.Keeper().SetMimir(ctx, constants.SolvencyHaltHoldBlocks.String(), 0)
+		}
+
+		reportSolvency(c, ctx.WithBlockHeight(1000), mgr, nas, vaultB.PubKey, 900, 100)
+		queuePendingOutbound(c, ctx, mgr, vaultA, 995, 50)
+		if tc.bAgainAt != 0 {
+			reportSolvency(c, ctx.WithBlockHeight(tc.bAgainAt), mgr, nas, vaultB.PubKey, 900, 200)
+		}
+		reportSolvency(c, ctx.WithBlockHeight(tc.at), mgr, nas, vaultA.PubKey, 950, 300)
+
+		halt, err := mgr.Keeper().GetMimir(ctx, "SolvencyHaltETHChain")
+		c.Assert(err, IsNil)
+		if tc.lifted {
+			c.Check(halt, Equals, int64(0), Commentf(tc.name))
+		} else {
+			c.Check(halt, Equals, int64(1000), Commentf(tc.name))
+		}
+	}
+}
+
+func (s *HandlerSolvencyHelpersSuite) TestFlagVaultInsolvent_TracksLatestInsolventReport(c *C) {
+	ctx, mgr, _, vault := setupSolvencyHelpersTest(c)
+	key := solvencyHaltVaultKey(vault.PubKey, common.ETHChain)
+	for _, height := range []int64{1000, 1100, 1100} {
+		flagVaultInsolvent(ctx.WithBlockHeight(height), mgr.Keeper(), vault.PubKey, common.ETHChain)
+	}
+	flag, err := mgr.Keeper().GetMimir(ctx, key)
+	c.Assert(err, IsNil)
+	c.Assert(flag, Equals, int64(1100))
 }

@@ -223,6 +223,7 @@ const (
 	LUVIGuard
 
 	SolvencyHaltSigningLagBlocks
+	SolvencyHaltHoldBlocks
 )
 
 // ConstantValues define methods used to get constant values

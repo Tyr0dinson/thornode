@@ -186,6 +186,7 @@ func NewConstantValue() *ConstantVals {
 			LUVIOverhangGuard:                   1,                  // reject liquidity adds (user and POL) into pools whose synth supply is at least twice the asset depth (<= 0 = off)
 			LUVIGuard:                           1,                  // 1 = reject user swaps/LP flows that lower a pool's LP value (G) beyond the allowance, and emit LUVI loss events; 0 = off (the per-pool G accumulator always runs)
 			SolvencyHaltSigningLagBlocks:        3,                  // blocks after a solvency halt in which Bifrost may still sign before it sees the halt; outbounds released later stop offsetting a vault's shortfall
+			SolvencyHaltHoldBlocks:              1200,               // blocks a vault's latest insolvent report keeps another vault's solvent report from lifting a solvency halt (0 = without limit)
 		},
 		boolValues: map[ConstantName]bool{
 			StrictBondLiquidityRatio: true,

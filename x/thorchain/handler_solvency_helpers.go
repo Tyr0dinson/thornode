@@ -275,7 +275,7 @@ func processSolvencyAttestation(
 	}
 
 	// If not insolvent and the chain is halted from an earlier block height, unhalt the chain,
-	// unless another vault on the chain is still flagged insolvent.
+	// unless another vault on the chain was recently reported insolvent.
 	if !isInsolvent && haltChain > 1 {
 		held, err := otherVaultFlaggedInsolvent(ctx, k, voter.PubKey, voter.Chain)
 		if err != nil {
@@ -283,7 +283,7 @@ func processSolvencyAttestation(
 			return nil
 		}
 		if held {
-			ctx.Logger().Info("solvency halt kept: another vault on the chain is flagged insolvent", "chain", voter.Chain, "solvent vault", voter.PubKey)
+			ctx.Logger().Info("solvency halt kept: another vault on the chain was recently reported insolvent", "chain", voter.Chain, "solvent vault", voter.PubKey)
 			return nil
 		}
 		// if the chain was halted by previous solvency checker, auto unhalt it
@@ -314,25 +314,26 @@ func solvencyHaltVaultKey(pubKey common.PubKey, chain common.Chain) string {
 // chain so it can be excluded from inbound-address election. A compromised key
 // that drains one chain leaves the same vault's other chains exposed, so the
 // whole vault must stop being advertised for deposits, not just the halted chain.
-// It only writes on the transition into insolvency, so the stored height records
-// when the vault was first flagged and a still-insolvent vault does not incur a
-// state write every solvency cycle.
+// The stored height is that of the vault's latest insolvent report, so
+// otherVaultFlaggedInsolvent can tell a vault Bifrost still reports insolvent from
+// one it has stopped reporting.
 func flagVaultInsolvent(ctx cosmos.Context, k keeper.Keeper, pubKey common.PubKey, chain common.Chain) {
 	key := solvencyHaltVaultKey(pubKey, chain)
-	if flagged, err := k.GetMimir(ctx, key); err == nil && flagged > 0 {
+	flagged, err := k.GetMimir(ctx, key)
+	if err != nil || flagged <= 0 {
+		// Transition into insolvency. This is the moment a vault stops being
+		// advertised for deposits, which no existing metric exposes.
+		telemetry.IncrCounterWithLabels(
+			[]string{"thornode", "vault", "insolvent_flagged"},
+			1,
+			[]metrics.Label{
+				telemetry.NewLabel("chain", telemChain(chain)),
+				telemetry.NewLabel("pubkey", pubKey.String()),
+			},
+		)
+	} else if flagged >= ctx.BlockHeight() {
 		return
 	}
-	// Transition into insolvency only - the guard above makes the steady state
-	// free. This is the moment a vault stops being advertised for deposits, which
-	// no existing metric exposes.
-	telemetry.IncrCounterWithLabels(
-		[]string{"thornode", "vault", "insolvent_flagged"},
-		1,
-		[]metrics.Label{
-			telemetry.NewLabel("chain", telemChain(chain)),
-			telemetry.NewLabel("pubkey", pubKey.String()),
-		},
-	)
 	k.SetMimir(ctx, key, ctx.BlockHeight())
 }
 
@@ -370,11 +371,17 @@ func isVaultInsolvent(ctx cosmos.Context, k keeper.Keeper, vault Vault) (bool, e
 }
 
 // otherVaultFlaggedInsolvent reports whether an Active or Retiring vault other
-// than pubKey, holding funds on the chain, is flagged insolvent on it. A flag is
-// cleared only by a report for that vault, and Bifrost reports only vaults with
-// funds on the chain and stops reporting Inactive vaults, so other flags can go
-// stale. On KV read failure it returns true so callers keep the chain halted.
+// than pubKey, holding funds on the chain, was reported insolvent on it within
+// SolvencyHaltHoldBlocks (0 = without limit). A flag is cleared only by a report
+// for that vault, and Bifrost doesn't report every vault: none without funds on
+// the chain, no Inactive one, and, while the chain is halted, a vault that passes
+// its own check only when every vault does. A fixed vault therefore goes silent
+// while another vault's unobserved outbound keeps it from that all-clear. Bifrost
+// re-reports a vault that is still short every solvency cycle, so a flag that
+// stops being refreshed no longer holds the halt. On KV read failure it returns
+// true so callers keep the chain halted.
 func otherVaultFlaggedInsolvent(ctx cosmos.Context, k keeper.Keeper, pubKey common.PubKey, chain common.Chain) (bool, error) {
+	hold := k.GetConfigInt64(ctx, constants.SolvencyHaltHoldBlocks)
 	for _, status := range []VaultStatus{ActiveVault, RetiringVault} {
 		vaults, err := k.GetAsgardVaultsByStatus(ctx, status)
 		if err != nil {
@@ -388,7 +395,7 @@ func otherVaultFlaggedInsolvent(ctx cosmos.Context, k keeper.Keeper, pubKey comm
 			if err != nil {
 				return true, err
 			}
-			if flagged > 0 {
+			if flagged > 0 && (hold <= 0 || ctx.BlockHeight()-flagged <= hold) {
 				return true, nil
 			}
 		}
@@ -600,12 +607,11 @@ func excludePendingOutboundFromVault(ctx cosmos.Context, mgr Manager, vault Vaul
 // window. At an earlier height, the solvency-halt cutoff, only blocks before it
 // count, as they stood then:
 //   - an item still unsent counts while its signing period at height lasts;
-//   - an item replaced since (OutHash BlankTxID, as LackSigning and the SOL
-//     reissue mark the original of the copy they add) counts when its replacement
-//     isn't in those blocks, since the replacement then carries it past height.
+//   - an item LackSigning replaced at or after height (OutHash BlankTxID) counts
+//     while its copy, which landed past height, is still unsent.
 //
-// Blocks from height on hold only outbounds released since and replacements of
-// earlier ones, none of which Bifrost could have sent.
+// Blocks from height on hold only outbounds released since and copies of earlier
+// ones, none of which Bifrost could have sent.
 func excludeOutboundsPendingAt(ctx cosmos.Context, mgr Manager, vault Vault, chain common.Chain, height int64) (Vault, map[string]cosmos.Uint, error) {
 	// Deep copy vault coins to avoid mutating the caller's slice backing array.
 	// Element-by-element copy ensures the pass-by-value contract is honored,
@@ -658,7 +664,12 @@ func excludeOutboundsPendingAt(ctx cosmos.Context, mgr Manager, vault Vault, cha
 		}
 		blocks = append(blocks, blockOut)
 	}
-	blocks = append(blocks, replacedOutboundsCarriedPast(ctx, mgr.Keeper(), blocks, chain, height, signingPeriod, coalesce))
+	carried, err := replacedOutboundsCarriedPast(ctx, mgr.Keeper(), blocks, chain, height, signingPeriod, coalesce)
+	if err != nil {
+		ctx.Logger().Error("fail to follow replaced outbounds", "error", err)
+		return vault, pendingOutbounds, err
+	}
+	blocks = append(blocks, carried)
 
 	pendingCtx := ctx.WithBlockHeight(height)
 	for _, blockOut := range blocks {
@@ -668,53 +679,92 @@ func excludeOutboundsPendingAt(ctx cosmos.Context, mgr Manager, vault Vault, cha
 }
 
 // replacedOutboundsCarriedPast returns, as one unsent block at height, the items
-// in blocks that were replaced and whose replacement isn't among blocks;
-// deductVaultBlockPendingOutbound then keeps the reporting vault's. A replacement
-// keeps the chain, inbound hash, destination and coin, and lands in a later block,
-// so it is matched on those to the oldest waiting original, whichever vault holds
-// either: LackSigning can reassign. Only a replacement made at or after
-// height - coalesce can land past height, so older replaced items are left out.
-// So are migrations and consolidations, which are re-planned rather than copied.
-func replacedOutboundsCarriedPast(ctx cosmos.Context, k keeper.Keeper, blocks []*TxOut, chain common.Chain, height, signingPeriod, coalesce int64) *TxOut {
-	type replaced struct {
-		item        TxOutItem
-		blockHeight int64
-		matched     bool
+// in blocks that LackSigning replaced at or after height with a copy that is still
+// unsent; deductVaultBlockPendingOutbound then keeps the reporting vault's.
+//
+// LackSigning handles an item once its signing period has passed. It adds the copy
+// at that height, rounded up to the coalescing interval, with the same chain,
+// inbound hash, destination and coin; the vault can differ when it reassigns. A
+// copy that is itself replaced is followed the same way. The original doesn't
+// count when its copy landed before height (the copy then counts for itself), was
+// observed (its observation already debited the vault), or isn't there (treasury
+// recovery, or a SOL reissue at another height). Migrations and consolidations are
+// re-planned rather than copied, so a replaced one doesn't count either.
+func replacedOutboundsCarriedPast(ctx cosmos.Context, k keeper.Keeper, blocks []*TxOut, chain common.Chain, height, signingPeriod, coalesce int64) (*TxOut, error) {
+	rescheduledAt := func(blockHeight int64, item TxOutItem) int64 {
+		at := blockHeight + item.SigningTransactionPeriod(signingPeriod)
+		if coalesce > 1 && at%coalesce != 0 {
+			at += coalesce - at%coalesce
+		}
+		return at
 	}
-	var candidates []*replaced
-	waiting := make(map[string][]*replaced)
+	copyBlocks := make(map[int64]*TxOut)
+	usedCopies := make(map[int64]map[int]bool)
+	// copyOf returns the not yet claimed item of the block at blockHeight with the
+	// fields a copy of item keeps.
+	copyOf := func(blockHeight int64, item TxOutItem) (TxOutItem, bool, error) {
+		block, ok := copyBlocks[blockHeight]
+		if !ok {
+			var err error
+			block, err = k.GetTxOut(ctx, blockHeight)
+			if err != nil {
+				return TxOutItem{}, false, fmt.Errorf("fail to get block tx out, err: %w", err)
+			}
+			copyBlocks[blockHeight] = block
+			usedCopies[blockHeight] = make(map[int]bool)
+		}
+		for i, candidate := range block.TxArray {
+			if usedCopies[blockHeight][i] || !candidate.Chain.Equals(item.Chain) || !candidate.InHash.Equals(item.InHash) ||
+				!candidate.ToAddress.Equals(item.ToAddress) || !candidate.Coin.Equals(item.Coin) {
+				continue
+			}
+			usedCopies[blockHeight][i] = true
+			return candidate, true, nil
+		}
+		return TxOutItem{}, false, nil
+	}
+
+	carried := &TxOut{Height: height}
 	for _, block := range blocks {
 		for _, item := range block.TxArray {
-			if !item.Chain.Equals(chain) {
+			if !item.Chain.Equals(chain) || !item.OutHash.Equals(common.BlankTxID) {
 				continue
 			}
-			key := fmt.Sprintf("%s|%s|%s", item.InHash, item.ToAddress, item.Coin)
-			if w := waiting[key]; len(w) > 0 && w[0].blockHeight < block.Height {
-				w[0].matched = true
-				waiting[key] = w[1:]
-			}
-			if !item.OutHash.Equals(common.BlankTxID) {
-				continue
-			}
-			if block.Height+item.SigningTransactionPeriod(signingPeriod)+coalesce < height {
+			at := rescheduledAt(block.Height, item)
+			if at < height {
 				continue
 			}
 			if memo, _ := ParseMemoWithTHORNames(ctx, k, item.GetMemo()); memo.IsInternal() {
 				continue
 			}
-			c := &replaced{item: item, blockHeight: block.Height}
-			candidates = append(candidates, c)
-			waiting[key] = append(waiting[key], c)
+			unsent := false
+			for current := item; ; {
+				copied, found, err := copyOf(at, current)
+				if err != nil {
+					return nil, err
+				}
+				if !found || (!copied.OutHash.IsEmpty() && !copied.OutHash.Equals(common.BlankTxID)) {
+					break
+				}
+				if copied.OutHash.IsEmpty() {
+					unsent = true
+					break
+				}
+				// A copy that is itself replaced has its own copy one period on; a
+				// copy LackSigning hasn't reached yet can't be replaced.
+				next := rescheduledAt(at, copied)
+				if next > ctx.BlockHeight()+coalesce {
+					break
+				}
+				current, at = copied, next
+			}
+			if unsent {
+				item.OutHash = ""
+				carried.TxArray = append(carried.TxArray, item)
+			}
 		}
 	}
-	carried := &TxOut{Height: height}
-	for _, c := range candidates {
-		if !c.matched {
-			c.item.OutHash = ""
-			carried.TxArray = append(carried.TxArray, c.item)
-		}
-	}
-	return carried
+	return carried, nil
 }
 
 func deductVaultBlockPendingOutbound(ctx cosmos.Context, mgr Manager, vault Vault, block *TxOut, pendingOutbounds map[string]cosmos.Uint, chain common.Chain, signingPeriod int64) (Vault, map[string]cosmos.Uint) {
