@@ -142,7 +142,7 @@ Operational notes:
 - `HaltChainGlobal`#: Pause observations on all chains (chain clients)
 - `HaltTrading`: Stops swaps and additions, if done, will result in refunds. Observations still occur.
 - `Halt<chain>Chain`#: Pause a specific blockchain
-- `SolvencyHalt<Chain>`# Halts a chain if the solvency checker for that chain fails. The checker lifts it once no Active or Retiring vault on the chain is still flagged insolvent. While it holds, a flagged vault's outbounds released after it was flagged no longer offset its shortfall, since Bifrost doesn't sign them.
+- `SolvencyHalt<Chain>`# Halts a chain if the solvency checker for that chain fails. Its value is the height the halt began; the checker doesn't move it while vaults stay insolvent, and lifts it once no Active or Retiring vault holding funds on the chain is still flagged insolvent. While it holds, outbounds released from `SolvencyHaltSigningLagBlocks` after that height no longer offset a vault's shortfall, since Bifrost doesn't sign them.
 - `HaltScannerXMR`#: Bifrost-only XMR scanner activation switch. `0` explicitly enables block scanning and spent-reference catch-up, positive values pause them. Missing or negative values and lookup errors fail closed. This does not set THORNode's XMR chain-halt state or directly pause churn. A paused scanner also blocks normal XMR signing through the scanner-health check, so funded vault migrations can still stall and subsequently block churn. See [XMR Scanner Activation](./concepts/network-halts.md#xmr-scanner-activation) for rollout and voting requirements.
 - `NodePauseChainGlobal`#: Individual node controlled means to pause all chains
 - `NodePauseChainBlocks`: Number of block a node operator can pause/resume the chains for
@@ -175,6 +175,7 @@ Operational notes:
 - `OverSolvencyToTreasuryBps-<asset>`#: Per-asset basis points (0-10000) of over-solvent liquidity to swap to RUNE and transfer to the over-solvency sweep destination address, for example `OverSolvencyToTreasuryBps-BTC-BTC`. Falls back to `OverSolvencyToTreasuryBps` when unset.
 - `PermittedSolvencyGap`: (deprecated) The amount of funds permitted to be "insolvent" as a percentage (basis points). Replaced by `PermittedSolvencyGapUSD`.
 - `PermittedSolvencyGapUSD`: The permitted solvency gap in USD (1e8 notation). Vault insolvency below this USD value will not trigger a chain halt. Default is $500 (500_00000000).
+- `SolvencyHaltSigningLagBlocks`#: Blocks after a `SolvencyHalt<Chain>` height in which Bifrost may still sign, before its scanner sees the halt. Outbounds released within it still offset a vault's shortfall during the halt. Default 3.
 
 ## Node Management
 

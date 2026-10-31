@@ -185,6 +185,7 @@ func NewConstantValue() *ConstantVals {
 			MissingObservationGuardMaxBlocks:    43200,              // the shared-event guard's grace per chain, in blocks: used up while its voters are skipped, refilled at the same rate while they pass (0 = never expires)
 			LUVIOverhangGuard:                   1,                  // reject liquidity adds (user and POL) into pools whose synth supply is at least twice the asset depth (<= 0 = off)
 			LUVIGuard:                           1,                  // 1 = reject user swaps/LP flows that lower a pool's LP value (G) beyond the allowance, and emit LUVI loss events; 0 = off (the per-pool G accumulator always runs)
+			SolvencyHaltSigningLagBlocks:        3,                  // blocks after a solvency halt in which Bifrost may still sign before it sees the halt; outbounds released later stop offsetting a vault's shortfall
 		},
 		boolValues: map[ConstantName]bool{
 			StrictBondLiquidityRatio: true,

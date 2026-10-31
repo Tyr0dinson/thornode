@@ -255,41 +255,28 @@ func processSolvencyAttestation(
 		return nil
 	}
 
-	// If insolvent: halt the chain if unhalted, or refresh the halt height if already halted
-	// from an earlier block. Refreshing the halt height prevents a different solvent vault
-	// from unhalting the chain while this vault remains insolvent.
-	if isInsolvent {
-		if haltChain <= 0 {
-			// Attribute the halt to the automatic solvency checker. Transition only:
-			// the refresh branch below re-fires every cycle while a vault stays
-			// insolvent. thornode_chain_halted carries no cause.
-			telemetry.IncrCounterWithLabels(
-				[]string{"thornode", "solvency", "chain_halt"},
-				1,
-				[]metrics.Label{telemetry.NewLabel("chain", telemChain(voter.Chain))},
-			)
-			k.SetMimir(ctx, haltChainKey, ctx.BlockHeight())
-			mimirEvent := NewEventSetMimir(strings.ToUpper(haltChainKey), strconv.FormatInt(ctx.BlockHeight(), 10))
-			if err := mgr.EventMgr().EmitEvent(ctx, mimirEvent); err != nil {
-				ctx.Logger().Error("fail to emit set_mimir event", "error", err)
-			}
-			ctx.Logger().Info("chain is insolvent, halt until it is resolved", "chain", voter.Chain)
-			// Bifrost signed for this chain until now, so a flag left from an earlier
-			// halt must not date this one: insolvencyCheck reads the flag height as
-			// the point after which the vault's outbounds can't have been sent.
-			restampInsolventVaultFlags(ctx, k, voter.PubKey, voter.Chain)
-		} else if haltChain > 1 && haltChain < ctx.BlockHeight() {
-			// Refresh halt height to current block so a solvent vault can't unhalt next block
-			k.SetMimir(ctx, haltChainKey, ctx.BlockHeight())
+	// If insolvent and the chain is unhalted, halt it. An existing halt keeps its
+	// height: it marks when Bifrost stopped signing the chain, which insolvencyCheck
+	// needs, so it is not moved forward while vaults stay insolvent.
+	if isInsolvent && haltChain <= 0 {
+		// Attribute the halt to the automatic solvency checker. This is the
+		// transition only. thornode_chain_halted carries no cause.
+		telemetry.IncrCounterWithLabels(
+			[]string{"thornode", "solvency", "chain_halt"},
+			1,
+			[]metrics.Label{telemetry.NewLabel("chain", telemChain(voter.Chain))},
+		)
+		k.SetMimir(ctx, haltChainKey, ctx.BlockHeight())
+		mimirEvent := NewEventSetMimir(strings.ToUpper(haltChainKey), strconv.FormatInt(ctx.BlockHeight(), 10))
+		if err := mgr.EventMgr().EmitEvent(ctx, mimirEvent); err != nil {
+			ctx.Logger().Error("fail to emit set_mimir event", "error", err)
 		}
+		ctx.Logger().Info("chain is insolvent, halt until it is resolved", "chain", voter.Chain)
 	}
 
-	// If not insolvent and the chain is halted from an earlier block height, unhalt the chain.
-	// A different insolvent vault on the same chain will have refreshed haltChain to the current
-	// block, preventing this unhalt via the guard at line 106 (haltChain >= ctx.BlockHeight()).
+	// If not insolvent and the chain is halted from an earlier block height, unhalt the chain,
+	// unless another vault on the chain is still flagged insolvent.
 	if !isInsolvent && haltChain > 1 {
-		// The refresh above only covers reports landing in the same block, so also
-		// keep the halt while any other vault on the chain is still flagged insolvent.
 		held, err := otherVaultFlaggedInsolvent(ctx, k, voter.PubKey, voter.Chain)
 		if err != nil {
 			ctx.Logger().Error("fail to read vault insolvency flags, keeping the chain halted", "chain", voter.Chain, "error", err)
@@ -382,16 +369,10 @@ func isVaultInsolvent(ctx cosmos.Context, k keeper.Keeper, vault Vault) (bool, e
 	return false, nil
 }
 
-// solvencyHaltSigningLagBlocks is how long after a vault is flagged its newly
-// released outbounds still count as possibly sent. Bifrost stops signing a chain
-// once its block scanner sees the solvency halt, and the scanner re-reads Mimir
-// about once per THORChain block, so an outbound released at or just after the
-// halt height can still be signed and broadcast.
-const solvencyHaltSigningLagBlocks = 3
-
 // otherVaultFlaggedInsolvent reports whether an Active or Retiring vault other
-// than pubKey is flagged insolvent on the chain. Inactive vaults are left out:
-// Bifrost stops reporting them once they hold no deficit, so their flags can go
+// than pubKey, holding funds on the chain, is flagged insolvent on it. A flag is
+// cleared only by a report for that vault, and Bifrost reports only vaults with
+// funds on the chain and stops reporting Inactive vaults, so other flags can go
 // stale. On KV read failure it returns true so callers keep the chain halted.
 func otherVaultFlaggedInsolvent(ctx cosmos.Context, k keeper.Keeper, pubKey common.PubKey, chain common.Chain) (bool, error) {
 	for _, status := range []VaultStatus{ActiveVault, RetiringVault} {
@@ -400,7 +381,7 @@ func otherVaultFlaggedInsolvent(ctx cosmos.Context, k keeper.Keeper, pubKey comm
 			return true, err
 		}
 		for _, vault := range vaults {
-			if vault.PubKey.Equals(pubKey) {
+			if vault.PubKey.Equals(pubKey) || !vault.HasFundsForChain(chain) {
 				continue
 			}
 			flagged, err := k.GetMimir(ctx, solvencyHaltVaultKey(vault.PubKey, chain))
@@ -415,76 +396,47 @@ func otherVaultFlaggedInsolvent(ctx cosmos.Context, k keeper.Keeper, pubKey comm
 	return false, nil
 }
 
-// restampInsolventVaultFlags dates the chain's insolvency flags to the current
-// block as the chain enters a solvency halt: the reporting vault's, and those of
-// Active and Retiring vaults still flagged from before. Bifrost could sign for
-// the chain until now, so an older flag height no longer marks the point after
-// which a vault's outbounds stayed in its wallet.
-func restampInsolventVaultFlags(ctx cosmos.Context, k keeper.Keeper, pubKey common.PubKey, chain common.Chain) {
-	restamp := func(key string) {
-		flagged, err := k.GetMimir(ctx, key)
-		if err != nil {
-			ctx.Logger().Error("fail to read solvency-halt vault mimir", "key", key, "error", err)
-			return
-		}
-		if flagged > 0 && flagged < ctx.BlockHeight() {
-			k.SetMimir(ctx, key, ctx.BlockHeight())
-		}
-	}
-	restamp(solvencyHaltVaultKey(pubKey, chain))
-	for _, status := range []VaultStatus{ActiveVault, RetiringVault} {
-		vaults, err := k.GetAsgardVaultsByStatus(ctx, status)
-		if err != nil {
-			ctx.Logger().Error("fail to get asgard vaults", "status", status.String(), "error", err)
-			continue
-		}
-		for _, vault := range vaults {
-			if !vault.PubKey.Equals(pubKey) {
-				restamp(solvencyHaltVaultKey(vault.PubKey, chain))
-			}
-		}
-	}
-}
-
-// solvencyHaltReleaseCutoff returns the height from which the vault's pending
-// outbounds stop counting as funds that may already have left its wallet, or 0
-// when all of them still count.
+// solvencyHaltReleaseCutoff returns the first height at which Bifrost can no
+// longer have signed for the chain, or 0 when the chain isn't solvency-halted or
+// the halt has no height (a manual 1). A cutoff that hasn't passed yet leaves
+// every pending outbound counting.
 //
-// insolvencyCheck nets pending outbounds out of the vault because a broadcast
-// outbound leaves the wallet before its observation reaches the vault. A solvency
-// halt stops Bifrost scanning and signing the chain, so once the chain is halted
-// and the vault flagged, an outbound released later is still in the wallet.
-// Netting those out too lets the backlog the halt itself builds cover the gap,
-// and the halt then lifts while the vault is still short.
-func solvencyHaltReleaseCutoff(ctx cosmos.Context, k keeper.Keeper, pubKey common.PubKey, chain common.Chain) (int64, error) {
+// insolvencyCheck nets pending outbounds out of a vault because a broadcast
+// outbound leaves the wallet before its observation reaches the vault. A
+// solvency halt stops Bifrost scanning and signing the chain, so an outbound
+// released after the cutoff is still in the wallet. Netting those out too lets
+// the backlog the halt itself builds cover the gap, and the halt then lifts
+// while the vault is still short. SolvencyHaltSigningLagBlocks covers the
+// delay before Bifrost sees the halt.
+func solvencyHaltReleaseCutoff(ctx cosmos.Context, k keeper.Keeper, chain common.Chain) (int64, error) {
 	haltChain, err := k.GetMimir(ctx, fmt.Sprintf(`SolvencyHalt%sChain`, chain))
 	if err != nil {
 		return 0, err
 	}
-	// Same test Bifrost applies: a halt height in the future hasn't stopped signing yet.
-	if haltChain <= 0 || haltChain > ctx.BlockHeight() {
+	if haltChain <= 1 {
 		return 0, nil
 	}
-	flagged, err := k.GetMimir(ctx, solvencyHaltVaultKey(pubKey, chain))
-	if err != nil {
-		return 0, err
+	lag := k.GetConfigInt64(ctx, constants.SolvencyHaltSigningLagBlocks)
+	if lag < 0 {
+		lag = 0
 	}
-	if flagged <= 0 {
-		return 0, nil
-	}
-	return flagged + solvencyHaltSigningLagBlocks, nil
+	return haltChain + lag, nil
 }
 
 // insolvencyCheck compare the coins in vault against the coins report by solvency message
 // insolvent usually means vault has more coins than wallet
 // return true means the vault is insolvent , the network should halt , otherwise false
 func insolvencyCheck(ctx cosmos.Context, mgr Manager, vault Vault, coins common.Coins, chain common.Chain) bool {
-	releasedBefore, err := solvencyHaltReleaseCutoff(ctx, mgr.Keeper(), vault.PubKey, chain)
+	cutoff, err := solvencyHaltReleaseCutoff(ctx, mgr.Keeper(), chain)
 	if err != nil {
 		ctx.Logger().Error("fail to read solvency halt state, assuming insolvent", "error", err)
 		return true
 	}
-	adjustVault, pendingOutbounds, err := excludePendingOutboundFromVaultReleasedBefore(ctx, mgr, vault, chain, releasedBefore)
+	pendingAt := ctx.BlockHeight()
+	if cutoff > 0 && cutoff < pendingAt {
+		pendingAt = cutoff
+	}
+	adjustVault, pendingOutbounds, err := excludeOutboundsPendingAt(ctx, mgr, vault, chain, pendingAt)
 	if err != nil {
 		ctx.Logger().Error("fail to exclude pending outbound from vault, assuming insolvent", "error", err)
 		return true
@@ -604,7 +556,7 @@ func insolvencyCheck(ctx cosmos.Context, mgr Manager, vault Vault, coins common.
 			return true
 		}
 		if gapInRune.GT(permittedGapInRune) {
-			ctx.Logger().Info("vault insolvent", "asset", c.Asset.String(), "vault amount", c.Amount.String(), "wallet amount", walletCoin.Amount.String(), "gap", gap.String(), "gap in rune", gapInRune.String(), "permitted gap in rune", permittedGapInRune.String(), "pending released before", releasedBefore)
+			ctx.Logger().Info("vault insolvent", "asset", c.Asset.String(), "vault amount", c.Amount.String(), "wallet amount", walletCoin.Amount.String(), "gap", gap.String(), "gap in rune", gapInRune.String(), "permitted gap in rune", permittedGapInRune.String(), "pending as of", pendingAt)
 			return true
 		}
 	}
@@ -640,14 +592,21 @@ func pendingRagnarokOutboundsExplainGap(
 }
 
 func excludePendingOutboundFromVault(ctx cosmos.Context, mgr Manager, vault Vault, chain common.Chain) (Vault, map[string]cosmos.Uint, error) {
-	return excludePendingOutboundFromVaultReleasedBefore(ctx, mgr, vault, chain, 0)
+	return excludeOutboundsPendingAt(ctx, mgr, vault, chain, ctx.BlockHeight())
 }
 
-// excludePendingOutboundFromVaultReleasedBefore is excludePendingOutboundFromVault
-// limited, when releasedBefore is positive, to outbounds released before that
-// height. An item in a block at or after it counts only when it is LackSigning's
-// reschedule of an outbound released earlier.
-func excludePendingOutboundFromVaultReleasedBefore(ctx cosmos.Context, mgr Manager, vault Vault, chain common.Chain, releasedBefore int64) (Vault, map[string]cosmos.Uint, error) {
+// excludeOutboundsPendingAt nets out of the vault the outbounds that were pending
+// at height. At the current block that is every unsent outbound in the signing
+// window. At an earlier height, the solvency-halt cutoff, only blocks before it
+// count, as they stood then:
+//   - an item still unsent counts while its signing period at height lasts;
+//   - an item replaced since (OutHash BlankTxID, as LackSigning and the SOL
+//     reissue mark the original of the copy they add) counts when its replacement
+//     isn't in those blocks, since the replacement then carries it past height.
+//
+// Blocks from height on hold only outbounds released since and replacements of
+// earlier ones, none of which Bifrost could have sent.
+func excludeOutboundsPendingAt(ctx cosmos.Context, mgr Manager, vault Vault, chain common.Chain, height int64) (Vault, map[string]cosmos.Uint, error) {
 	// Deep copy vault coins to avoid mutating the caller's slice backing array.
 	// Element-by-element copy ensures the pass-by-value contract is honored,
 	// even if future code modifies Amount in-place rather than via SafeSub.
@@ -663,51 +622,99 @@ func excludePendingOutboundFromVaultReleasedBefore(ctx cosmos.Context, mgr Manag
 	// solvency accounting aligned with LackSigning without retaining ordinary
 	// outbounds for too long.
 	signingPeriod := mgr.Keeper().GetConfigInt64(ctx, constants.SigningTransactionPeriod)
-	startHeight := ctx.BlockHeight() - thortypes.MaxTxOutSigningTransactionPeriodForChain(chain, signingPeriod)
+	window := thortypes.MaxTxOutSigningTransactionPeriodForChain(chain, signingPeriod)
+	if height >= ctx.BlockHeight() {
+		startHeight := ctx.BlockHeight() - window
+		if startHeight < 1 {
+			startHeight = 1
+		}
+		for i := startHeight; i < ctx.BlockHeight(); i++ {
+			blockOut, err := mgr.Keeper().GetTxOut(ctx, i)
+			if err != nil {
+				ctx.Logger().Error("fail to get block tx out", "error", err)
+				return vault, pendingOutbounds, fmt.Errorf("fail to get block tx out, err: %w", err)
+			}
+			vault, pendingOutbounds = deductVaultBlockPendingOutbound(ctx, mgr, vault, blockOut, pendingOutbounds, chain, signingPeriod)
+		}
+		return vault, pendingOutbounds, nil
+	}
+
+	// LackSigning's copy lands up to RescheduleCoalesceBlocks after it runs, so look
+	// back that much further for originals it may have carried past height.
+	coalesce := mgr.Keeper().GetConfigInt64(ctx, constants.RescheduleCoalesceBlocks)
+	if coalesce < 0 {
+		coalesce = 0
+	}
+	startHeight := height - window - coalesce
 	if startHeight < 1 {
 		startHeight = 1
 	}
-	for i := startHeight; i < ctx.BlockHeight(); i++ {
+	blocks := make([]*TxOut, 0, height-startHeight+1)
+	for i := startHeight; i < height; i++ {
 		blockOut, err := mgr.Keeper().GetTxOut(ctx, i)
 		if err != nil {
 			ctx.Logger().Error("fail to get block tx out", "error", err)
 			return vault, pendingOutbounds, fmt.Errorf("fail to get block tx out, err: %w", err)
 		}
-		if releasedBefore > 0 && i >= releasedBefore {
-			blockOut, err = rescheduledOutboundsReleasedBefore(ctx, mgr.Keeper(), blockOut, vault.PubKey, chain, releasedBefore)
-			if err != nil {
-				ctx.Logger().Error("fail to classify pending outbounds", "error", err)
-				return vault, pendingOutbounds, err
-			}
-		}
-		vault, pendingOutbounds = deductVaultBlockPendingOutbound(ctx, mgr, vault, blockOut, pendingOutbounds, chain, signingPeriod)
+		blocks = append(blocks, blockOut)
+	}
+	blocks = append(blocks, replacedOutboundsCarriedPast(ctx, mgr.Keeper(), blocks, chain, height, signingPeriod, coalesce))
+
+	pendingCtx := ctx.WithBlockHeight(height)
+	for _, blockOut := range blocks {
+		vault, pendingOutbounds = deductVaultBlockPendingOutbound(pendingCtx, mgr, vault, blockOut, pendingOutbounds, chain, signingPeriod)
 	}
 	return vault, pendingOutbounds, nil
 }
 
-// rescheduledOutboundsReleasedBefore keeps the vault's items in the block that
-// LackSigning rescheduled from an outbound released before the cutoff. A
-// reschedule adds the unsent item to the current block and leaves its inbound
-// voter's OutboundHeight alone, while scheduling a new outbound raises
-// OutboundHeight to the height it is released at.
-func rescheduledOutboundsReleasedBefore(ctx cosmos.Context, k keeper.Keeper, block *TxOut, pubKey common.PubKey, chain common.Chain, cutoff int64) (*TxOut, error) {
-	kept := &TxOut{Height: block.Height}
-	for _, item := range block.TxArray {
-		if !item.Chain.Equals(chain) || !item.VaultPubKey.Equals(pubKey) || !item.OutHash.IsEmpty() {
-			continue
-		}
-		if item.InHash.IsEmpty() || item.InHash.Equals(common.BlankTxID) {
-			continue
-		}
-		voter, err := k.GetObservedTxInVoter(ctx, item.InHash)
-		if err != nil {
-			return nil, fmt.Errorf("fail to get observed tx in voter: %w", err)
-		}
-		if voter.OutboundHeight > 0 && voter.OutboundHeight < cutoff {
-			kept.TxArray = append(kept.TxArray, item)
+// replacedOutboundsCarriedPast returns, as one unsent block at height, the items
+// in blocks that were replaced and whose replacement isn't among blocks;
+// deductVaultBlockPendingOutbound then keeps the reporting vault's. A replacement
+// keeps the chain, inbound hash, destination and coin, and lands in a later block,
+// so it is matched on those to the oldest waiting original, whichever vault holds
+// either: LackSigning can reassign. Only a replacement made at or after
+// height - coalesce can land past height, so older replaced items are left out.
+// So are migrations and consolidations, which are re-planned rather than copied.
+func replacedOutboundsCarriedPast(ctx cosmos.Context, k keeper.Keeper, blocks []*TxOut, chain common.Chain, height, signingPeriod, coalesce int64) *TxOut {
+	type replaced struct {
+		item        TxOutItem
+		blockHeight int64
+		matched     bool
+	}
+	var candidates []*replaced
+	waiting := make(map[string][]*replaced)
+	for _, block := range blocks {
+		for _, item := range block.TxArray {
+			if !item.Chain.Equals(chain) {
+				continue
+			}
+			key := fmt.Sprintf("%s|%s|%s", item.InHash, item.ToAddress, item.Coin)
+			if w := waiting[key]; len(w) > 0 && w[0].blockHeight < block.Height {
+				w[0].matched = true
+				waiting[key] = w[1:]
+			}
+			if !item.OutHash.Equals(common.BlankTxID) {
+				continue
+			}
+			if block.Height+item.SigningTransactionPeriod(signingPeriod)+coalesce < height {
+				continue
+			}
+			if memo, _ := ParseMemoWithTHORNames(ctx, k, item.GetMemo()); memo.IsInternal() {
+				continue
+			}
+			c := &replaced{item: item, blockHeight: block.Height}
+			candidates = append(candidates, c)
+			waiting[key] = append(waiting[key], c)
 		}
 	}
-	return kept, nil
+	carried := &TxOut{Height: height}
+	for _, c := range candidates {
+		if !c.matched {
+			c.item.OutHash = ""
+			carried.TxArray = append(carried.TxArray, c.item)
+		}
+	}
+	return carried
 }
 
 func deductVaultBlockPendingOutbound(ctx cosmos.Context, mgr Manager, vault Vault, block *TxOut, pendingOutbounds map[string]cosmos.Uint, chain common.Chain, signingPeriod int64) (Vault, map[string]cosmos.Uint) {

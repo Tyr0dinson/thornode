@@ -7,6 +7,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/constants"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
+	thortypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 	. "gopkg.in/check.v1"
 )
 
@@ -950,11 +951,11 @@ func (s *HandlerSolvencyHelpersSuite) TestProcessSolvencyAttestation_InsolventBu
 	err := processSolvencyAttestation(ctx, mgr, &voter, nas[2].NodeAddress, nas, sol, false)
 	c.Assert(err, IsNil)
 
-	// Halt value should be refreshed to the current block height to prevent
-	// a different solvent vault from unhalting the chain prematurely.
+	// The halt keeps the height it began at: insolvencyCheck dates its cutoff from
+	// it, and other vaults' flags, not a refreshed height, keep it from lifting.
 	halt, err := mgr.Keeper().GetMimir(ctx, "SolvencyHaltETHChain")
 	c.Assert(err, IsNil)
-	c.Assert(halt, Equals, ctx.BlockHeight())
+	c.Assert(halt, Equals, int64(500))
 }
 
 func (s *HandlerSolvencyHelpersSuite) TestProcessSolvencyAttestation_InsolventAndUnhalted(c *C) {
@@ -1010,48 +1011,70 @@ func (s *HandlerSolvencyHelpersSuite) TestProcessSolvencyAttestation_ConsensusAl
 	c.Assert(err, IsNil)
 }
 
-// queuePendingOutbound adds an unsent ETH outbound from the vault to the block at
-// height, for an inbound whose voter records outboundHeight as its release height.
-func queuePendingOutbound(c *C, ctx cosmos.Context, mgr Manager, vault Vault, height, outboundHeight int64, amount uint64) {
+// queuePendingOutbound adds an unsent ETH outbound of amount from the vault to the
+// block at height and returns it.
+func queuePendingOutbound(c *C, ctx cosmos.Context, mgr Manager, vault Vault, height int64, amount uint64) TxOutItem {
 	inHash := GetRandomTxHash()
-	voter := NewObservedTxVoter(inHash, nil)
-	voter.OutboundHeight = outboundHeight
-	mgr.Keeper().SetObservedTxInVoter(ctx, voter)
-
-	txOut, err := mgr.Keeper().GetTxOut(ctx, height)
-	c.Assert(err, IsNil)
-	txOut.TxArray = append(txOut.TxArray, TxOutItem{
+	item := TxOutItem{
 		Chain:       common.ETHChain,
+		ToAddress:   GetRandomETHAddress(),
 		VaultPubKey: vault.PubKey,
 		InHash:      inHash,
+		Memo:        "OUT:" + inHash.String(),
 		Coin:        common.NewCoin(common.ETHAsset, cosmos.NewUint(amount*common.One)),
-	})
+	}
+	appendTxOutItem(c, ctx, mgr, height, item)
+	return item
+}
+
+func appendTxOutItem(c *C, ctx cosmos.Context, mgr Manager, height int64, item TxOutItem) {
+	txOut, err := mgr.Keeper().GetTxOut(ctx, height)
+	c.Assert(err, IsNil)
+	txOut.TxArray = append(txOut.TxArray, item)
 	c.Assert(mgr.Keeper().SetTxOut(ctx, txOut), IsNil)
 }
 
-func (s *HandlerSolvencyHelpersSuite) TestInsolvencyCheck_SolvencyHaltLimitsPendingOutbounds(c *C) {
+// replaceOutbound marks the unsent item in the block at from as replaced and, when
+// to is positive, adds its copy for vault to the block at to, as LackSigning does.
+func replaceOutbound(c *C, ctx cosmos.Context, mgr Manager, item TxOutItem, from, to int64, vault common.PubKey) {
+	txOut, err := mgr.Keeper().GetTxOut(ctx, from)
+	c.Assert(err, IsNil)
+	found := false
+	for i := range txOut.TxArray {
+		if txOut.TxArray[i].InHash.Equals(item.InHash) && txOut.TxArray[i].Coin.Equals(item.Coin) && txOut.TxArray[i].OutHash.IsEmpty() {
+			txOut.TxArray[i].OutHash = common.BlankTxID
+			found = true
+			break
+		}
+	}
+	c.Assert(found, Equals, true)
+	c.Assert(mgr.Keeper().SetTxOut(ctx, txOut), IsNil)
+	if to > 0 {
+		item.VaultPubKey = vault
+		appendTxOutItem(c, ctx, mgr, to, item)
+	}
+}
+
+func (s *HandlerSolvencyHelpersSuite) TestInsolvencyCheck_SolvencyHaltNetsOutOnlyEarlierOutbounds(c *C) {
 	// The vault books 1000 ETH and its wallet holds 900 ETH. A 150 ETH outbound is
-	// queued; whether it may net out the 100 ETH gap depends on whether it could
-	// have left the wallet. The vault is flagged insolvent at 1000 where flagged.
+	// queued; whether it may net out the 100 ETH gap depends on whether Bifrost could
+	// have sent it before the halt stopped signing.
 	testCases := []struct {
-		name           string
-		halt           int64 // SolvencyHaltETHChain; 0 leaves it unset
-		flagged        bool
-		block          int64 // block holding the queued outbound
-		outboundHeight int64 // its inbound voter's OutboundHeight
-		insolvent      bool
+		name      string
+		halt      int64 // SolvencyHaltETHChain; 0 leaves it unset
+		lag       int64 // SolvencyHaltSigningLagBlocks Mimir; 0 keeps the default
+		block     int64 // block holding the outbound
+		insolvent bool
 	}{
-		{name: "not halted: a queued outbound nets out", block: 1010, outboundHeight: 1010},
-		{name: "not halted, vault still flagged: nets out", flagged: true, block: 1010, outboundHeight: 1010},
-		{name: "halted: released after the flag, still in the wallet", halt: 1020, flagged: true, block: 1010, outboundHeight: 1010, insolvent: true},
-		{name: "halted: released before the flag nets out", halt: 1020, flagged: true, block: 999, outboundHeight: 999},
-		{name: "halted: released within the signing lag nets out", halt: 1020, flagged: true, block: 1002, outboundHeight: 1002},
-		{name: "halted: released once the signing lag ends, still in the wallet", halt: 1020, flagged: true, block: 1003, outboundHeight: 1003, insolvent: true},
-		{name: "halted: a reschedule of an outbound released before the flag nets out", halt: 1020, flagged: true, block: 1010, outboundHeight: 990},
-		{name: "halted: an outbound with no inbound voter after the flag stays", halt: 1020, flagged: true, block: 1010, outboundHeight: 0, insolvent: true},
-		{name: "halted manually: released after the flag, still in the wallet", halt: 1, flagged: true, block: 1010, outboundHeight: 1010, insolvent: true},
-		{name: "halted, vault not flagged: nets out", halt: 1020, block: 1010, outboundHeight: 1010},
-		{name: "halt scheduled for a later height: nets out", halt: 2000, flagged: true, block: 1010, outboundHeight: 1010},
+		{name: "not halted: nets out", block: 1010},
+		{name: "halted at 1000: released after the halt, still in the wallet", halt: 1000, block: 1010, insolvent: true},
+		{name: "halted at 1000: released before the halt nets out", halt: 1000, block: 999},
+		{name: "halted at 1000: released within the signing lag nets out", halt: 1000, block: 1002},
+		{name: "halted at 1000: released once the signing lag ends, still in the wallet", halt: 1000, block: 1003, insolvent: true},
+		{name: "halted at 1000, lag set to 20 by Mimir: nets out", halt: 1000, lag: 20, block: 1010},
+		{name: "halted at 1022: the signing lag hasn't passed, nets out", halt: 1022, block: 1023},
+		{name: "halted manually (1), with no height: nets out", halt: 1, block: 1010},
+		{name: "halt scheduled for 2000: nets out", halt: 2000, block: 1010},
 	}
 	for _, tc := range testCases {
 		c.Logf("case: %s", tc.name)
@@ -1059,86 +1082,264 @@ func (s *HandlerSolvencyHelpersSuite) TestInsolvencyCheck_SolvencyHaltLimitsPend
 		if tc.halt != 0 {
 			mgr.Keeper().SetMimir(ctx, "SolvencyHaltETHChain", tc.halt)
 		}
-		if tc.flagged {
-			flagVaultInsolvent(ctx.WithBlockHeight(1000), mgr.Keeper(), vault.PubKey, common.ETHChain)
+		if tc.lag != 0 {
+			mgr.Keeper().SetMimir(ctx, constants.SolvencyHaltSigningLagBlocks.String(), tc.lag)
 		}
-		queuePendingOutbound(c, ctx, mgr, vault, tc.block, tc.outboundHeight, 150)
+		queuePendingOutbound(c, ctx, mgr, vault, tc.block, 150)
 
 		walletCoins := common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(900*common.One)))
 		c.Check(insolvencyCheck(ctx, mgr, vault, walletCoins, common.ETHChain), Equals, tc.insolvent, Commentf(tc.name))
 	}
 }
 
+func (s *HandlerSolvencyHelpersSuite) TestInsolvencyCheck_SolvencyHaltCountsReplacedOutbounds(c *C) {
+	// The chain halted at 1000, so the cutoff is 1003, and the check runs at 1024.
+	// Each vault books 1000 ETH; payouts are 150 ETH unless a case says otherwise.
+	testCases := []struct {
+		name       string
+		coalesce   int64 // RescheduleCoalesceBlocks Mimir; 0 leaves it unset
+		setup      func(c *C, ctx cosmos.Context, mgr Manager, vault, other Vault)
+		checkOther bool // check the other vault instead of this one
+		wallet     uint64
+		insolvent  bool
+	}{
+		{
+			name: "replaced after the cutoff: the original nets out",
+			setup: func(c *C, ctx cosmos.Context, mgr Manager, vault, _ Vault) {
+				item := queuePendingOutbound(c, ctx, mgr, vault, 990, 150)
+				replaceOutbound(c, ctx, mgr, item, 990, 1010, vault.PubKey)
+			},
+			wallet: 850,
+		},
+		{
+			name: "replaced before the cutoff: only the copy nets out, not the original too",
+			setup: func(c *C, ctx cosmos.Context, mgr Manager, vault, _ Vault) {
+				item := queuePendingOutbound(c, ctx, mgr, vault, 900, 150)
+				replaceOutbound(c, ctx, mgr, item, 900, 960, vault.PubKey)
+			},
+			wallet:    700,
+			insolvent: true,
+		},
+		{
+			name:     "copy coalesced past the cutoff: the original nets out",
+			coalesce: 20,
+			setup: func(c *C, ctx cosmos.Context, mgr Manager, vault, _ Vault) {
+				// LackSigning ran at 1001, before the cutoff, but the copy landed at 1020.
+				item := queuePendingOutbound(c, ctx, mgr, vault, 701, 150)
+				replaceOutbound(c, ctx, mgr, item, 701, 1020, vault.PubKey)
+			},
+			wallet: 850,
+		},
+		{
+			name: "replaced long before the cutoff, copy not found: doesn't count",
+			setup: func(c *C, ctx cosmos.Context, mgr Manager, vault, _ Vault) {
+				item := queuePendingOutbound(c, ctx, mgr, vault, 600, 150)
+				replaceOutbound(c, ctx, mgr, item, 600, 0, vault.PubKey)
+			},
+			wallet:    850,
+			insolvent: true,
+		},
+		{
+			name: "replaced migration: doesn't count",
+			setup: func(c *C, ctx cosmos.Context, mgr Manager, vault, _ Vault) {
+				item := TxOutItem{
+					Chain:       common.ETHChain,
+					ToAddress:   GetRandomETHAddress(),
+					VaultPubKey: vault.PubKey,
+					InHash:      common.BlankTxID,
+					Memo:        NewMigrateMemo(500).String(),
+					Coin:        common.NewCoin(common.ETHAsset, cosmos.NewUint(150*common.One)),
+				}
+				appendTxOutItem(c, ctx, mgr, 990, item)
+				replaceOutbound(c, ctx, mgr, item, 990, 0, vault.PubKey)
+			},
+			wallet:    850,
+			insolvent: true,
+		},
+		{
+			name: "reassigned after the cutoff: nets out for the original vault",
+			setup: func(c *C, ctx cosmos.Context, mgr Manager, vault, other Vault) {
+				item := queuePendingOutbound(c, ctx, mgr, vault, 990, 150)
+				replaceOutbound(c, ctx, mgr, item, 990, 1010, other.PubKey)
+			},
+			wallet: 850,
+		},
+		{
+			name: "reassigned after the cutoff: doesn't net out for the new vault",
+			setup: func(c *C, ctx cosmos.Context, mgr Manager, vault, other Vault) {
+				item := queuePendingOutbound(c, ctx, mgr, vault, 990, 150)
+				replaceOutbound(c, ctx, mgr, item, 990, 1010, other.PubKey)
+			},
+			checkOther: true,
+			wallet:     850,
+			insolvent:  true,
+		},
+		{
+			name: "another vault's replaced original doesn't count",
+			setup: func(c *C, ctx cosmos.Context, mgr Manager, _, other Vault) {
+				item := queuePendingOutbound(c, ctx, mgr, other, 990, 150)
+				replaceOutbound(c, ctx, mgr, item, 990, 1010, other.PubKey)
+			},
+			wallet:    850,
+			insolvent: true,
+		},
+		{
+			name: "a sibling released after the cutoff doesn't drop the earlier payout",
+			setup: func(c *C, ctx cosmos.Context, mgr Manager, vault, _ Vault) {
+				payout := queuePendingOutbound(c, ctx, mgr, vault, 990, 150)
+				replaceOutbound(c, ctx, mgr, payout, 990, 1010, vault.PubKey)
+				refund := payout
+				refund.ToAddress = GetRandomETHAddress()
+				refund.Coin = common.NewCoin(common.ETHAsset, cosmos.NewUint(100*common.One))
+				appendTxOutItem(c, ctx, mgr, 1005, refund)
+			},
+			wallet: 850,
+		},
+		{
+			name: "a sibling released after the cutoff doesn't net out itself",
+			setup: func(c *C, ctx cosmos.Context, mgr Manager, vault, _ Vault) {
+				payout := queuePendingOutbound(c, ctx, mgr, vault, 990, 150)
+				replaceOutbound(c, ctx, mgr, payout, 990, 1010, vault.PubKey)
+				refund := payout
+				refund.ToAddress = GetRandomETHAddress()
+				refund.Coin = common.NewCoin(common.ETHAsset, cosmos.NewUint(100*common.One))
+				appendTxOutItem(c, ctx, mgr, 1005, refund)
+			},
+			wallet:    750,
+			insolvent: true,
+		},
+		{
+			name: "an identical unsent outbound in the same block isn't taken for the copy",
+			setup: func(c *C, ctx cosmos.Context, mgr Manager, vault, _ Vault) {
+				item := queuePendingOutbound(c, ctx, mgr, vault, 990, 150)
+				appendTxOutItem(c, ctx, mgr, 990, item)
+				replaceOutbound(c, ctx, mgr, item, 990, 1010, vault.PubKey)
+			},
+			wallet: 700,
+		},
+		{
+			name: "an unsent outbound within its signing period at the cutoff counts after it runs out",
+			setup: func(c *C, ctx cosmos.Context, mgr Manager, vault, _ Vault) {
+				// 293 blocks old at the cutoff, 314 at the check.
+				queuePendingOutbound(c, ctx, mgr, vault, 710, 150)
+			},
+			wallet: 850,
+		},
+		{
+			name: "an unsent outbound past its signing period at the cutoff doesn't count",
+			setup: func(c *C, ctx cosmos.Context, mgr Manager, vault, _ Vault) {
+				queuePendingOutbound(c, ctx, mgr, vault, 650, 150)
+			},
+			wallet:    850,
+			insolvent: true,
+		},
+	}
+	for _, tc := range testCases {
+		c.Logf("case: %s", tc.name)
+		ctx, mgr, _, vault := setupSolvencyHelpersTest(c)
+		other := NewVault(1024, ActiveVault, AsgardVault, GetRandomPubKey(), []string{common.ETHChain.String()}, nil)
+		other.AddFunds(common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(1000*common.One))))
+		c.Assert(mgr.Keeper().SetVault(ctx, other), IsNil)
+		mgr.Keeper().SetMimir(ctx, "SolvencyHaltETHChain", 1000)
+		if tc.coalesce != 0 {
+			mgr.Keeper().SetMimir(ctx, constants.RescheduleCoalesceBlocks.String(), tc.coalesce)
+		}
+		tc.setup(c, ctx, mgr, vault, other)
+
+		checked := vault
+		if tc.checkOther {
+			checked = other
+		}
+		walletCoins := common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(tc.wallet*common.One)))
+		c.Check(insolvencyCheck(ctx, mgr, checked, walletCoins, common.ETHChain), Equals, tc.insolvent, Commentf(tc.name))
+	}
+}
+
+// reportSolvency brings a solvency report for the vault with the wallet coins to
+// consensus at ctx's height.
+func reportSolvency(c *C, ctx cosmos.Context, mgr Manager, nas NodeAccounts, pubKey common.PubKey, wallet uint64, height int64) {
+	coins := common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(wallet*common.One)))
+	voter := NewSolvencyVoter(GetRandomTxHash(), common.ETHChain, pubKey, coins, height)
+	sol := &common.Solvency{
+		Id: voter.Id, Chain: voter.Chain, PubKey: voter.PubKey, Coins: voter.Coins, Height: voter.Height,
+	}
+	bringVoterToConsensus(&voter, nas)
+	voter.ConsensusBlockHeight = 0
+	c.Assert(processSolvencyAttestation(ctx, mgr, &voter, nas[2].NodeAddress, nas, sol, false), IsNil)
+}
+
 func (s *HandlerSolvencyHelpersSuite) TestProcessSolvencyAttestation_HaltBacklogDoesNotLiftHalt(c *C) {
 	ctx, mgr, nas, vault := setupSolvencyHelpersTest(c)
-	walletCoins := common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(900*common.One)))
-	report := func(ctx cosmos.Context, height int64) {
-		voter := NewSolvencyVoter(GetRandomTxHash(), common.ETHChain, vault.PubKey, walletCoins, height)
-		sol := &common.Solvency{
-			Id: voter.Id, Chain: voter.Chain, PubKey: voter.PubKey, Coins: voter.Coins, Height: voter.Height,
-		}
-		bringVoterToConsensus(&voter, nas)
-		voter.ConsensusBlockHeight = 0
-		c.Assert(processSolvencyAttestation(ctx, mgr, &voter, nas[2].NodeAddress, nas, sol, false), IsNil)
-	}
 
 	// The vault books 1000 ETH but its wallet holds 900 ETH: the first report halts the chain.
-	report(ctx.WithBlockHeight(1000), 100)
+	reportSolvency(c, ctx.WithBlockHeight(1000), mgr, nas, vault.PubKey, 900, 100)
 	halt, err := mgr.Keeper().GetMimir(ctx, "SolvencyHaltETHChain")
 	c.Assert(err, IsNil)
 	c.Assert(halt, Equals, int64(1000))
 
 	// While halted, swaps keep scheduling ETH outbounds from the vault that nobody
 	// signs. The queue soon exceeds the gap.
-	queuePendingOutbound(c, ctx, mgr, vault, 1010, 1010, 80)
-	queuePendingOutbound(c, ctx, mgr, vault, 1015, 1015, 70)
+	queuePendingOutbound(c, ctx, mgr, vault, 1010, 80)
+	queuePendingOutbound(c, ctx, mgr, vault, 1015, 70)
 
-	// The wallet is unchanged at the next report, so the vault is still short and
-	// the chain must stay halted, with the vault still flagged from the first report.
-	report(ctx, 101)
+	// The wallet is unchanged at the next report, so the vault is still short. The
+	// chain stays halted at the height it began, with the vault still flagged.
+	reportSolvency(c, ctx, mgr, nas, vault.PubKey, 900, 101)
 	halt, err = mgr.Keeper().GetMimir(ctx, "SolvencyHaltETHChain")
 	c.Assert(err, IsNil)
-	c.Assert(halt, Equals, ctx.BlockHeight())
+	c.Assert(halt, Equals, int64(1000))
 	flag, err := mgr.Keeper().GetMimir(ctx, solvencyHaltVaultKey(vault.PubKey, common.ETHChain))
 	c.Assert(err, IsNil)
 	c.Assert(flag, Equals, int64(1000))
+}
+
+func (s *HandlerSolvencyHelpersSuite) TestProcessSolvencyAttestation_ScheduledHaltDatesTheCutoff(c *C) {
+	ctx, mgr, nas, vault := setupSolvencyHelpersTest(c)
+
+	// A halt is scheduled for 1000. A report at 900 finds the vault 100 ETH short and
+	// flags it; the halt isn't active yet, so it stays as scheduled.
+	mgr.Keeper().SetMimir(ctx, "SolvencyHaltETHChain", 1000)
+	reportSolvency(c, ctx.WithBlockHeight(900), mgr, nas, vault.PubKey, 900, 100)
+	flag, err := mgr.Keeper().GetMimir(ctx, solvencyHaltVaultKey(vault.PubKey, common.ETHChain))
+	c.Assert(err, IsNil)
+	c.Assert(flag, Equals, int64(900))
+
+	// The gap is covered, and a 100 ETH outbound released at 998 is sent before
+	// signing stops. The halted scanner never observes it, so the wallet holds 900
+	// ETH against the 1000 booked.
+	queuePendingOutbound(c, ctx, mgr, vault, 998, 100)
+
+	// The cutoff comes from the halt, not the earlier flag: the outbound nets out,
+	// the vault is solvent and the halt lifts.
+	reportSolvency(c, ctx, mgr, nas, vault.PubKey, 900, 101)
+	halt, err := mgr.Keeper().GetMimir(ctx, "SolvencyHaltETHChain")
+	c.Assert(err, IsNil)
+	c.Assert(halt, Equals, int64(0))
+	insolvent, err := isVaultInsolvent(ctx, mgr.Keeper(), vault)
+	c.Assert(err, IsNil)
+	c.Assert(insolvent, Equals, false)
 }
 
 func (s *HandlerSolvencyHelpersSuite) TestProcessSolvencyAttestation_FlaggedVaultKeepsHalt(c *C) {
 	for _, status := range []VaultStatus{ActiveVault, RetiringVault} {
 		c.Logf("flagged vault status: %s", status)
 		ctx, mgr, nas, vault := setupSolvencyHelpersTest(c)
-		coins := common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(1000*common.One)))
 
-		// Another vault is still flagged insolvent from the halt at 500.
+		// Another vault, still holding ETH, is flagged insolvent from the halt at 500.
 		flaggedVault := NewVault(500, status, AsgardVault, GetRandomPubKey(), []string{common.ETHChain.String()}, nil)
-		flaggedVault.AddFunds(coins)
+		flaggedVault.AddFunds(common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(1000*common.One))))
 		c.Assert(mgr.Keeper().SetVault(ctx, flaggedVault), IsNil)
 		mgr.Keeper().SetMimir(ctx, "SolvencyHaltETHChain", 500)
 		flagVaultInsolvent(ctx.WithBlockHeight(500), mgr.Keeper(), flaggedVault.PubKey, common.ETHChain)
 
 		// A solvent report from this vault in a later block must not lift the halt.
-		voter := NewSolvencyVoter(GetRandomTxHash(), common.ETHChain, vault.PubKey, coins, 1024)
-		sol := &common.Solvency{
-			Id: voter.Id, Chain: voter.Chain, PubKey: voter.PubKey, Coins: voter.Coins, Height: voter.Height,
-		}
-		bringVoterToConsensus(&voter, nas)
-		voter.ConsensusBlockHeight = 0
-		c.Assert(processSolvencyAttestation(ctx, mgr, &voter, nas[2].NodeAddress, nas, sol, false), IsNil)
-
+		reportSolvency(c, ctx, mgr, nas, vault.PubKey, 1000, 1024)
 		halt, err := mgr.Keeper().GetMimir(ctx, "SolvencyHaltETHChain")
 		c.Assert(err, IsNil)
 		c.Assert(halt, Equals, int64(500))
 
 		// Once the flagged vault reports solvent too, the halt lifts.
-		voter = NewSolvencyVoter(GetRandomTxHash(), common.ETHChain, flaggedVault.PubKey, coins, 1024)
-		sol = &common.Solvency{
-			Id: voter.Id, Chain: voter.Chain, PubKey: voter.PubKey, Coins: voter.Coins, Height: voter.Height,
-		}
-		bringVoterToConsensus(&voter, nas)
-		voter.ConsensusBlockHeight = 0
-		c.Assert(processSolvencyAttestation(ctx, mgr, &voter, nas[2].NodeAddress, nas, sol, false), IsNil)
-
+		reportSolvency(c, ctx, mgr, nas, flaggedVault.PubKey, 1000, 1024)
 		halt, err = mgr.Keeper().GetMimir(ctx, "SolvencyHaltETHChain")
 		c.Assert(err, IsNil)
 		c.Assert(halt, Equals, int64(0))
@@ -1148,117 +1349,126 @@ func (s *HandlerSolvencyHelpersSuite) TestProcessSolvencyAttestation_FlaggedVaul
 	}
 }
 
-func (s *HandlerSolvencyHelpersSuite) TestProcessSolvencyAttestation_InactiveVaultFlagDoesNotKeepHalt(c *C) {
-	ctx, mgr, nas, vault := setupSolvencyHelpersTest(c)
-	coins := common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(1000*common.One)))
-
-	// An Inactive vault's flag can be stale, so it doesn't hold the halt.
-	inactive := NewVault(400, InactiveVault, AsgardVault, GetRandomPubKey(), []string{common.ETHChain.String()}, nil)
-	c.Assert(mgr.Keeper().SetVault(ctx, inactive), IsNil)
-	mgr.Keeper().SetMimir(ctx, "SolvencyHaltETHChain", 500)
-	flagVaultInsolvent(ctx.WithBlockHeight(400), mgr.Keeper(), inactive.PubKey, common.ETHChain)
-
-	voter := NewSolvencyVoter(GetRandomTxHash(), common.ETHChain, vault.PubKey, coins, 1024)
-	sol := &common.Solvency{
-		Id: voter.Id, Chain: voter.Chain, PubKey: voter.PubKey, Coins: voter.Coins, Height: voter.Height,
-	}
-	bringVoterToConsensus(&voter, nas)
-	voter.ConsensusBlockHeight = 0
-	c.Assert(processSolvencyAttestation(ctx, mgr, &voter, nas[2].NodeAddress, nas, sol, false), IsNil)
-
-	halt, err := mgr.Keeper().GetMimir(ctx, "SolvencyHaltETHChain")
-	c.Assert(err, IsNil)
-	c.Assert(halt, Equals, int64(0))
-}
-
-func (s *HandlerSolvencyHelpersSuite) TestProcessSolvencyAttestation_NewHaltRestampsFlags(c *C) {
-	ctx, mgr, nas, vault := setupSolvencyHelpersTest(c)
-
-	// Flags left from an earlier halt that was lifted by hand: the reporting
-	// vault's, an Active vault's and an Inactive vault's.
-	other := NewVault(400, ActiveVault, AsgardVault, GetRandomPubKey(), []string{common.ETHChain.String()}, nil)
-	c.Assert(mgr.Keeper().SetVault(ctx, other), IsNil)
-	inactive := NewVault(300, InactiveVault, AsgardVault, GetRandomPubKey(), []string{common.ETHChain.String()}, nil)
-	c.Assert(mgr.Keeper().SetVault(ctx, inactive), IsNil)
-	unflagged := NewVault(400, ActiveVault, AsgardVault, GetRandomPubKey(), []string{common.ETHChain.String()}, nil)
-	c.Assert(mgr.Keeper().SetVault(ctx, unflagged), IsNil)
-	flagVaultInsolvent(ctx.WithBlockHeight(500), mgr.Keeper(), vault.PubKey, common.ETHChain)
-	flagVaultInsolvent(ctx.WithBlockHeight(400), mgr.Keeper(), other.PubKey, common.ETHChain)
-	flagVaultInsolvent(ctx.WithBlockHeight(300), mgr.Keeper(), inactive.PubKey, common.ETHChain)
-
-	// An insolvent report halts the unhalted chain again.
-	voter := NewSolvencyVoter(
-		GetRandomTxHash(), common.ETHChain, vault.PubKey,
-		common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(900*common.One))),
-		1024,
-	)
-	sol := &common.Solvency{
-		Id: voter.Id, Chain: voter.Chain, PubKey: voter.PubKey, Coins: voter.Coins, Height: voter.Height,
-	}
-	bringVoterToConsensus(&voter, nas)
-	voter.ConsensusBlockHeight = 0
-	c.Assert(processSolvencyAttestation(ctx, mgr, &voter, nas[2].NodeAddress, nas, sol, false), IsNil)
-
-	halt, err := mgr.Keeper().GetMimir(ctx, "SolvencyHaltETHChain")
-	c.Assert(err, IsNil)
-	c.Assert(halt, Equals, ctx.BlockHeight())
-	for _, tc := range []struct {
-		pubKey common.PubKey
-		flag   int64
+func (s *HandlerSolvencyHelpersSuite) TestProcessSolvencyAttestation_StaleFlagsDoNotKeepHalt(c *C) {
+	// Bifrost no longer reports either vault, so their flags can't clear.
+	testCases := []struct {
+		name   string
+		status VaultStatus
+		funds  uint64
 	}{
-		{vault.PubKey, ctx.BlockHeight()},
-		{other.PubKey, ctx.BlockHeight()},
-		{inactive.PubKey, 300},
-		{unflagged.PubKey, -1}, // no flag is created for a vault that had none
-	} {
-		flag, err := mgr.Keeper().GetMimir(ctx, solvencyHaltVaultKey(tc.pubKey, common.ETHChain))
+		{name: "Active vault written down to no ETH", status: ActiveVault},
+		{name: "Inactive vault", status: InactiveVault, funds: 1000},
+	}
+	for _, tc := range testCases {
+		c.Logf("case: %s", tc.name)
+		ctx, mgr, nas, vault := setupSolvencyHelpersTest(c)
+		stale := NewVault(400, tc.status, AsgardVault, GetRandomPubKey(), []string{common.ETHChain.String()}, nil)
+		if tc.funds > 0 {
+			stale.AddFunds(common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(tc.funds*common.One))))
+		}
+		c.Assert(mgr.Keeper().SetVault(ctx, stale), IsNil)
+		mgr.Keeper().SetMimir(ctx, "SolvencyHaltETHChain", 500)
+		flagVaultInsolvent(ctx.WithBlockHeight(400), mgr.Keeper(), stale.PubKey, common.ETHChain)
+
+		reportSolvency(c, ctx, mgr, nas, vault.PubKey, 1000, 1024)
+		halt, err := mgr.Keeper().GetMimir(ctx, "SolvencyHaltETHChain")
 		c.Assert(err, IsNil)
-		c.Check(flag, Equals, tc.flag)
+		c.Check(halt, Equals, int64(0), Commentf(tc.name))
 	}
 }
 
 func (s *HandlerSolvencyHelpersSuite) TestInsolvencyCheck_LackSigningRescheduleStillNetsOut(c *C) {
-	ctx, mgr, _, vault := setupSolvencyHelpersTest(c)
-	signingPeriod := mgr.Keeper().GetConfigInt64(ctx, constants.SigningTransactionPeriod)
+	testCases := []struct {
+		name     string
+		coalesce int64
+		original int64 // block of the outbound, released before the halt at 1000
+	}{
+		{name: "copy in the current block", original: 900},
+		{name: "copy coalesced into a later block, not yet reached", coalesce: 20, original: 901},
+	}
+	for _, tc := range testCases {
+		c.Logf("case: %s", tc.name)
+		ctx, mgr, _, vault := setupSolvencyHelpersTest(c)
+		if tc.coalesce != 0 {
+			mgr.Keeper().SetMimir(ctx, constants.RescheduleCoalesceBlocks.String(), tc.coalesce)
+		}
+		signingPeriod := mgr.Keeper().GetConfigInt64(ctx, constants.SigningTransactionPeriod)
 
-	// A 150 ETH outbound released at 900 was broadcast, but its observation is
-	// held up: the chain halted at 1000 with the vault flagged. The wallet holds
-	// 850 ETH against the 1000 ETH booked.
+		// A 150 ETH outbound was broadcast, but its observation is held up: the
+		// chain halted at 1000. The wallet holds 850 ETH against the 1000 booked.
+		inHash := GetRandomTxHash()
+		item := TxOutItem{
+			Chain:       common.ETHChain,
+			ToAddress:   GetRandomETHAddress(),
+			VaultPubKey: vault.PubKey,
+			InHash:      inHash,
+			Memo:        "OUT:" + inHash.String(),
+			Coin:        common.NewCoin(common.ETHAsset, cosmos.NewUint(150*common.One)),
+		}
+		voter := NewObservedTxVoter(inHash, nil)
+		voter.FinalisedHeight = tc.original
+		voter.Actions = []TxOutItem{item}
+		mgr.Keeper().SetObservedTxInVoter(ctx, voter)
+		appendTxOutItem(c, ctx, mgr, tc.original, item)
+		mgr.Keeper().SetMimir(ctx, "SolvencyHaltETHChain", 1000)
+
+		// After the signing period LackSigning marks the original replaced and adds
+		// the copy, rounded up to the coalescing interval.
+		rescheduled := ctx.WithBlockHeight(tc.original + signingPeriod)
+		c.Assert(mgr.Slasher().LackSigning(rescheduled, mgr), IsNil)
+		copyHeight := rescheduled.BlockHeight()
+		if tc.coalesce > 1 && copyHeight%tc.coalesce != 0 {
+			copyHeight += tc.coalesce - copyHeight%tc.coalesce
+		}
+		moved, err := mgr.Keeper().GetTxOut(rescheduled, copyHeight)
+		c.Assert(err, IsNil)
+		c.Assert(moved.TxArray, HasLen, 1)
+		c.Assert(moved.TxArray[0].InHash.Equals(inHash), Equals, true)
+		original, err := mgr.Keeper().GetTxOut(rescheduled, tc.original)
+		c.Assert(err, IsNil)
+		c.Assert(original.TxArray[0].OutHash.Equals(common.BlankTxID), Equals, true)
+
+		// The outbound still nets out, so the vault is not reported short.
+		check := rescheduled.WithBlockHeight(rescheduled.BlockHeight() + 1)
+		walletCoins := common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(850*common.One)))
+		c.Check(insolvencyCheck(check, mgr, vault, walletCoins, common.ETHChain), Equals, false, Commentf(tc.name))
+	}
+}
+
+func (s *HandlerSolvencyHelpersSuite) TestInsolvencyCheck_SolvencyHaltCoalescedCopyOnShortWindowChain(c *C) {
+	// BTC's signing window is the plain SigningTransactionPeriod, so the original
+	// of a copy coalesced past the cutoff sits before the window and is reached only
+	// through the coalescing allowance.
+	ctx, mgr, _, _ := setupSolvencyHelpersTest(c)
+	signingPeriod := mgr.Keeper().GetConfigInt64(ctx, constants.SigningTransactionPeriod)
+	c.Assert(thortypes.MaxTxOutSigningTransactionPeriodForChain(common.BTCChain, signingPeriod), Equals, signingPeriod)
+
+	vault := NewVault(1024, ActiveVault, AsgardVault, GetRandomPubKey(), []string{common.BTCChain.String()}, nil)
+	vault.AddFunds(common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(1000*common.One))))
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+	btcPool := NewPool()
+	btcPool.Asset = common.BTCAsset
+	btcPool.BalanceAsset = cosmos.NewUint(1000 * common.One)
+	btcPool.BalanceRune = cosmos.NewUint(10000 * common.One)
+	btcPool.Status = PoolAvailable
+	c.Assert(mgr.Keeper().SetPool(ctx, btcPool), IsNil)
+	mgr.Keeper().SetMimir(ctx, "SolvencyHaltBTCChain", 1000)
+	mgr.Keeper().SetMimir(ctx, constants.RescheduleCoalesceBlocks.String(), 20)
+
+	// Released at 701 and broadcast; LackSigning ran at 1001, before the cutoff at
+	// 1003, and its copy landed at 1020.
 	inHash := GetRandomTxHash()
 	item := TxOutItem{
-		Chain:       common.ETHChain,
-		ToAddress:   GetRandomETHAddress(),
+		Chain:       common.BTCChain,
+		ToAddress:   GetRandomBTCAddress(),
 		VaultPubKey: vault.PubKey,
 		InHash:      inHash,
 		Memo:        "OUT:" + inHash.String(),
-		Coin:        common.NewCoin(common.ETHAsset, cosmos.NewUint(150*common.One)),
+		Coin:        common.NewCoin(common.BTCAsset, cosmos.NewUint(150*common.One)),
 	}
-	voter := NewObservedTxVoter(inHash, nil)
-	voter.FinalisedHeight = 900
-	voter.OutboundHeight = 900
-	voter.Actions = []TxOutItem{item}
-	mgr.Keeper().SetObservedTxInVoter(ctx, voter)
-	txOut := NewTxOut(900)
-	txOut.TxArray = []TxOutItem{item}
-	c.Assert(mgr.Keeper().SetTxOut(ctx, txOut), IsNil)
-	mgr.Keeper().SetMimir(ctx, "SolvencyHaltETHChain", 1000)
-	flagVaultInsolvent(ctx.WithBlockHeight(1000), mgr.Keeper(), vault.PubKey, common.ETHChain)
+	appendTxOutItem(c, ctx, mgr, 701, item)
+	replaceOutbound(c, ctx, mgr, item, 701, 1020, vault.PubKey)
 
-	// After the signing period LackSigning moves the item into the current block,
-	// past the cutoff, and leaves the voter's release height alone.
-	rescheduled := ctx.WithBlockHeight(900 + signingPeriod)
-	c.Assert(mgr.Slasher().LackSigning(rescheduled, mgr), IsNil)
-	moved, err := mgr.Keeper().GetTxOut(rescheduled, rescheduled.BlockHeight())
-	c.Assert(err, IsNil)
-	c.Assert(moved.TxArray, HasLen, 1)
-	c.Assert(moved.TxArray[0].InHash.Equals(inHash), Equals, true)
-	c.Assert(moved.TxArray[0].VaultPubKey.Equals(vault.PubKey), Equals, true)
-	voter, err = mgr.Keeper().GetObservedTxInVoter(rescheduled, inHash)
-	c.Assert(err, IsNil)
-	c.Assert(voter.OutboundHeight, Equals, int64(900))
-
-	// The copy still nets out, so the vault is not reported short.
-	check := rescheduled.WithBlockHeight(rescheduled.BlockHeight() + 1)
-	walletCoins := common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(850*common.One)))
-	c.Assert(insolvencyCheck(check, mgr, vault, walletCoins, common.ETHChain), Equals, false)
+	walletCoins := common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(850*common.One)))
+	c.Assert(insolvencyCheck(ctx, mgr, vault, walletCoins, common.BTCChain), Equals, false)
 }
