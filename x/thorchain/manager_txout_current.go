@@ -489,6 +489,30 @@ func (tos *TxOutStorage) emitInsufficientAvailableBalanceSecurityEvent(ctx cosmo
 }
 
 func (tos *TxOutStorage) DiscoverOutbounds(ctx cosmos.Context, transactionFeeAmount cosmos.Uint, maxGasCoin common.Coin, toi TxOutItem, vaults Vaults) ([]TxOutItem, cosmos.Uint) {
+	tokenGasReserve := tos.keeper.GetConfigInt64(ctx, constants.VaultTokenGasReserve)
+	return tos.discoverOutbounds(ctx, transactionFeeAmount, maxGasCoin, toi, vaults, tokenGasReserve)
+}
+
+// nonGasTokenCount counts the non-gas assets on chain that the vault holds a
+// non-zero amount of.
+func nonGasTokenCount(vault Vault, chain common.Chain) uint64 {
+	gasAsset := chain.GetGasAsset()
+	var count uint64
+	for _, coin := range vault.Coins {
+		if coin.Asset.GetChain().Equals(chain) && !coin.Asset.Equals(gasAsset) && !coin.Amount.IsZero() {
+			count++
+		}
+	}
+	return count
+}
+
+// discoverOutbounds is DiscoverOutbounds with the VaultTokenGasReserve Mimir
+// already read. When tokenGasReserve is above zero, a gas-asset outbound leaves
+// tokenGasReserve x MaxGas in each vault per token it holds on the chain, so
+// the vault can still send those tokens out. If the vaults cannot fill the
+// outbound with that reserve held back, the reserve is dropped and selection
+// runs as it did before the Mimir existed.
+func (tos *TxOutStorage) discoverOutbounds(ctx cosmos.Context, transactionFeeAmount cosmos.Uint, maxGasCoin common.Coin, toi TxOutItem, vaults Vaults, tokenGasReserve int64) ([]TxOutItem, cosmos.Uint) {
 	var outputs []TxOutItem
 
 	// Save original vaults before any filtering for potential fallback selection.
@@ -562,68 +586,16 @@ func (tos *TxOutStorage) DiscoverOutbounds(ctx cosmos.Context, transactionFeeAmo
 		}
 	}
 
-	for _, vault := range vaults {
-		// Ensure THORNode are not sending from and to the same address
-		fromAddr, err := vault.GetAddress(toi.Chain)
-		if err != nil || fromAddr.IsEmpty() || toi.ToAddress.Equals(fromAddr) {
-			continue
-		}
-
-		vaultCoinAmount := vault.GetCoin(toi.Coin.Asset).Amount
-		// if the asset in the vault is not enough to pay for the fee , then skip it
-		if vaultCoinAmount.LTE(transactionFeeAmount) {
-			continue
-		}
-		// if the vault doesn't have gas asset in it , or it doesn't have enough to pay for gas
-		gasAsset := vault.GetCoin(toi.Chain.GetGasAsset())
-		if gasAsset.IsEmpty() || gasAsset.Amount.LT(maxGasCoin.Amount) {
-			continue
-		}
-
-		// If the outbound Asset is the gas Asset, assigning to the limit would go over the limit,
-		// so reduce the available vaultCoinAmount by that MaxGas Amount.
-		if toi.Coin.Asset.Equals(maxGasCoin.Asset) && !isRagnarok {
-			vaultCoinAmount = common.SafeSub(vaultCoinAmount, maxGasCoin.Amount)
-			if vaultCoinAmount.IsZero() {
-				continue
-			}
-		}
-
-		// XRP wallets must keep 1 XRP (the dust threshold) in the wallet
-		if toi.Coin.Asset.Equals(common.XRPAsset) {
-			vaultCoinAmount = common.SafeSub(vaultCoinAmount, common.XRPChain.DustThreshold())
-			if vaultCoinAmount.IsZero() {
-				continue
-			}
-		}
-
-		// SOL Ragnarok sweeps must leave enough balance for the source account to
-		// remain rent-exempt. Without this cap, the txout item can drain the vault
-		// down to gas-sized dust: signing succeeds, but Solana rejects every
-		// broadcast with "insufficient funds for rent" and Ragnarok cannot finish.
-		// Reuse the chain dust threshold here because migration already treats it
-		// as SOL's account-reserve amount when draining retiring vaults.
-		if isRagnarok && toi.Coin.Asset.Equals(common.SOLAsset) {
-			vaultCoinAmount = common.SafeSub(vaultCoinAmount, common.SOLChain.DustThreshold())
-			if vaultCoinAmount.IsZero() {
-				continue
-			}
-		}
-
-		toi.VaultPubKey = vault.PubKey
-		toi.VaultPubKeyEddsa = txOutVaultPubKeyEddsa(toi.Chain, vault.PubKeyEddsa)
-		toi.VaultPubKeyFrost = vault.PubKeyFrost
-
-		if toi.Coin.Amount.LTE(vaultCoinAmount) {
-			outputs = append(outputs, toi)
-			toi.Coin.Amount = cosmos.ZeroUint()
-			break
-		} else {
-			remainingAmount := common.SafeSub(toi.Coin.Amount, vaultCoinAmount)
-			toi.Coin.Amount = common.SafeSub(toi.Coin.Amount, remainingAmount)
-			outputs = append(outputs, toi)
-			toi.Coin.Amount = remainingAmount
-		}
+	// Only gas-asset outbounds hold back gas for the vault's tokens. Ragnarok
+	// sweeps everything, so it never does.
+	if tokenGasReserve <= 0 || isRagnarok || !toi.Coin.Asset.Equals(maxGasCoin.Asset) {
+		tokenGasReserve = 0
+	}
+	original := toi
+	outputs, toi = allocateOutbounds(transactionFeeAmount, maxGasCoin, toi, vaults, isRagnarok, tokenGasReserve)
+	if tokenGasReserve > 0 && !toi.Coin.Amount.IsZero() {
+		// The reserve must not block an outbound the vaults can pay without it.
+		outputs, toi = allocateOutbounds(transactionFeeAmount, maxGasCoin, original, vaults, isRagnarok, 0)
 	}
 
 	// Ragnarok can intentionally leave a chain-specific residual behind, such as
@@ -711,6 +683,90 @@ func (tos *TxOutStorage) DiscoverOutbounds(ctx cosmos.Context, transactionFeeAmo
 	}
 
 	return outputs, toi.Coin.Amount
+}
+
+// allocateOutbounds assigns toi across the vaults in order and returns the
+// outputs and what is left of toi. When tokenGasReserve is above zero each vault
+// keeps tokenGasReserve x MaxGas of the gas asset per token it holds on the
+// chain; callers pass it only for gas-asset outbounds.
+func allocateOutbounds(transactionFeeAmount cosmos.Uint, maxGasCoin common.Coin, toi TxOutItem, vaults Vaults, isRagnarok bool, tokenGasReserve int64) ([]TxOutItem, TxOutItem) {
+	var outputs []TxOutItem
+	for _, vault := range vaults {
+		// Ensure THORNode are not sending from and to the same address
+		fromAddr, err := vault.GetAddress(toi.Chain)
+		if err != nil || fromAddr.IsEmpty() || toi.ToAddress.Equals(fromAddr) {
+			continue
+		}
+
+		vaultCoinAmount := vault.GetCoin(toi.Coin.Asset).Amount
+		// if the asset in the vault is not enough to pay for the fee , then skip it
+		if vaultCoinAmount.LTE(transactionFeeAmount) {
+			continue
+		}
+		// if the vault doesn't have gas asset in it , or it doesn't have enough to pay for gas
+		gasAsset := vault.GetCoin(toi.Chain.GetGasAsset())
+		if gasAsset.IsEmpty() || gasAsset.Amount.LT(maxGasCoin.Amount) {
+			continue
+		}
+
+		// If the outbound Asset is the gas Asset, assigning to the limit would go over the limit,
+		// so reduce the available vaultCoinAmount by that MaxGas Amount.
+		if toi.Coin.Asset.Equals(maxGasCoin.Asset) && !isRagnarok {
+			vaultCoinAmount = common.SafeSub(vaultCoinAmount, maxGasCoin.Amount)
+			if vaultCoinAmount.IsZero() {
+				continue
+			}
+		}
+
+		// XRP wallets must keep 1 XRP (the dust threshold) in the wallet
+		if toi.Coin.Asset.Equals(common.XRPAsset) {
+			vaultCoinAmount = common.SafeSub(vaultCoinAmount, common.XRPChain.DustThreshold())
+			if vaultCoinAmount.IsZero() {
+				continue
+			}
+		}
+
+		// SOL Ragnarok sweeps must leave enough balance for the source account to
+		// remain rent-exempt. Without this cap, the txout item can drain the vault
+		// down to gas-sized dust: signing succeeds, but Solana rejects every
+		// broadcast with "insufficient funds for rent" and Ragnarok cannot finish.
+		// Reuse the chain dust threshold here because migration already treats it
+		// as SOL's account-reserve amount when draining retiring vaults.
+		if isRagnarok && toi.Coin.Asset.Equals(common.SOLAsset) {
+			vaultCoinAmount = common.SafeSub(vaultCoinAmount, common.SOLChain.DustThreshold())
+			if vaultCoinAmount.IsZero() {
+				continue
+			}
+		}
+
+		// Keep enough gas for the vault to send out the tokens it holds on
+		// this chain, so a gas-asset outbound cannot strand them.
+		if tokenGasReserve > 0 {
+			if tokens := nonGasTokenCount(vault, toi.Chain); tokens > 0 {
+				reserve := maxGasCoin.Amount.MulUint64(uint64(tokenGasReserve)).MulUint64(tokens)
+				vaultCoinAmount = common.SafeSub(vaultCoinAmount, reserve)
+				if vaultCoinAmount.IsZero() {
+					continue
+				}
+			}
+		}
+
+		toi.VaultPubKey = vault.PubKey
+		toi.VaultPubKeyEddsa = txOutVaultPubKeyEddsa(toi.Chain, vault.PubKeyEddsa)
+		toi.VaultPubKeyFrost = vault.PubKeyFrost
+
+		if toi.Coin.Amount.LTE(vaultCoinAmount) {
+			outputs = append(outputs, toi)
+			toi.Coin.Amount = cosmos.ZeroUint()
+			break
+		} else {
+			remainingAmount := common.SafeSub(toi.Coin.Amount, vaultCoinAmount)
+			toi.Coin.Amount = common.SafeSub(toi.Coin.Amount, remainingAmount)
+			outputs = append(outputs, toi)
+			toi.Coin.Amount = remainingAmount
+		}
+	}
+	return outputs, toi
 }
 
 // prepareTxOutItem will do some data validation which include the following
@@ -804,7 +860,17 @@ func (tos *TxOutStorage) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem) ([]
 			// THORNode don't have a vault already selected to send from, discover one.
 			// List all pending outbounds for the asset, this will be used
 			// to deduct balances of vaults that have outstanding txs assigned
-			pendingOutbounds := tos.keeper.GetPendingOutbounds(ctx, toi.Coin.Asset)
+			// With VaultTokenGasReserve on, count every pending outbound on the
+			// chain, so the gas check sees gas already committed to queued
+			// outbounds of other assets (a token outbound behind queued
+			// gas-asset outbounds from the same vault, and the reverse).
+			tokenGasReserve := tos.keeper.GetConfigInt64(ctx, constants.VaultTokenGasReserve)
+			var pendingOutbounds []TxOutItem
+			if tokenGasReserve > 0 {
+				pendingOutbounds = tos.keeper.GetPendingOutboundsByChain(ctx, toi.Chain)
+			} else {
+				pendingOutbounds = tos.keeper.GetPendingOutbounds(ctx, toi.Coin.Asset)
+			}
 
 			signingTransactionPeriod := tos.constAccessor.GetInt64Value(constants.SigningTransactionPeriod)
 
@@ -851,7 +917,7 @@ func (tos *TxOutStorage) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem) ([]
 			// iterate over discovered vaults and find vaults to send funds from
 
 			// All else being equal, choose active Asgards over retiring Asgards.
-			outputs, remaining = tos.DiscoverOutbounds(ctx, transactionFeeAmount, maxGasCoin, toi, append(activeAsgards, retiringAsgards...))
+			outputs, remaining = tos.discoverOutbounds(ctx, transactionFeeAmount, maxGasCoin, toi, append(activeAsgards, retiringAsgards...), tokenGasReserve)
 
 			// Check we found enough funds to satisfy the request, error if we didn't
 			if !remaining.IsZero() {

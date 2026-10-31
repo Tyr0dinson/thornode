@@ -1894,3 +1894,219 @@ func (s TxOutStoreSuite) TestDiscoverOutboundsRagnarokSOLLeavesRentReserve(c *C)
 	c.Assert(remaining.IsZero(), Equals, true)
 	c.Assert(eventMgr.securityEvents(), HasLen, 0)
 }
+
+// tokenGasReserveVaults returns a vault holding ETH and USDT and a vault holding
+// only ethInGasOnly ETH, both saved to the keeper.
+func tokenGasReserveVaults(c *C, ctx cosmos.Context, mgr Manager, usdt common.Asset, ethInGasOnly uint64) (Vault, Vault) {
+	withTokens := GetRandomVault()
+	withTokens.Type = AsgardVault
+	withTokens.Status = ActiveVault
+	withTokens.Coins = common.Coins{
+		common.NewCoin(common.ETHAsset, cosmos.NewUint(100*common.One)),
+		common.NewCoin(usdt, cosmos.NewUint(1000*common.One)),
+	}
+	c.Assert(mgr.Keeper().SetVault(ctx, withTokens), IsNil)
+
+	gasOnly := GetRandomVault()
+	gasOnly.Type = AsgardVault
+	gasOnly.Status = ActiveVault
+	gasOnly.Coins = common.Coins{
+		common.NewCoin(common.ETHAsset, cosmos.NewUint(ethInGasOnly*common.One)),
+	}
+	c.Assert(mgr.Keeper().SetVault(ctx, gasOnly), IsNil)
+	return withTokens, gasOnly
+}
+
+// TestDiscoverOutboundsTokenGasReserve proves that with VaultTokenGasReserve on,
+// a gas-asset outbound leaves reserve x MaxGas per token in a vault that holds
+// tokens, spilling the rest onto other vaults, and that it changes nothing when
+// off, for token outbounds, or for Ragnarok.
+func (s TxOutStoreSuite) TestDiscoverOutboundsTokenGasReserve(c *C) {
+	usdt, err := common.NewAsset("ETH.USDT-0XDAC17F958D2EE523A2206206994597C13D831EC7")
+	c.Assert(err, IsNil)
+	maxGas := common.NewCoin(common.ETHAsset, cosmos.NewUint(common.One))
+	fee := cosmos.NewUint(1000)
+	ethOut := func(amount uint64, memo string) TxOutItem {
+		return TxOutItem{
+			Chain:     common.ETHChain,
+			ToAddress: GetRandomETHAddress(),
+			InHash:    GetRandomTxHash(),
+			Coin:      common.NewCoin(common.ETHAsset, cosmos.NewUint(amount*common.One)),
+			Memo:      memo,
+		}
+	}
+
+	// Off: the token vault pays 95 of its 100 ETH alone, as before.
+	ctx, mgr := setupManagerForTest(c)
+	withTokens, gasOnly := tokenGasReserveVaults(c, ctx, mgr, usdt, 50)
+	store := newTxOutStorage(mgr.Keeper(), mgr.GetConstants(), newRecordingEventMgr(), mgr.GasMgr())
+	outputs, remaining := store.DiscoverOutbounds(ctx, fee, maxGas, ethOut(95, ""), Vaults{withTokens, gasOnly})
+	c.Assert(remaining.IsZero(), Equals, true)
+	c.Assert(outputs, HasLen, 1)
+	c.Check(outputs[0].VaultPubKey.Equals(withTokens.PubKey), Equals, true)
+	c.Check(outputs[0].Coin.Amount.Equal(cosmos.NewUint(95*common.One)), Equals, true)
+
+	// On (10): the token vault keeps 1 MaxGas for this outbound plus 10 for its
+	// USDT, so it pays 89 and the gas-only vault pays the other 6.
+	ctx, mgr = setupManagerForTest(c)
+	mgr.Keeper().SetMimir(ctx, constants.VaultTokenGasReserve.String(), 10)
+	withTokens, gasOnly = tokenGasReserveVaults(c, ctx, mgr, usdt, 50)
+	eventMgr := newRecordingEventMgr()
+	store = newTxOutStorage(mgr.Keeper(), mgr.GetConstants(), eventMgr, mgr.GasMgr())
+	outputs, remaining = store.DiscoverOutbounds(ctx, fee, maxGas, ethOut(95, ""), Vaults{withTokens, gasOnly})
+	c.Assert(remaining.IsZero(), Equals, true)
+	c.Assert(outputs, HasLen, 2)
+	c.Check(outputs[0].VaultPubKey.Equals(withTokens.PubKey), Equals, true)
+	c.Check(outputs[0].Coin.Amount.Equal(cosmos.NewUint(89*common.One)), Equals, true)
+	c.Check(outputs[1].VaultPubKey.Equals(gasOnly.PubKey), Equals, true)
+	c.Check(outputs[1].Coin.Amount.Equal(cosmos.NewUint(6*common.One)), Equals, true)
+	c.Check(eventMgr.securityEvents(), HasLen, 0)
+
+	// On, but the vaults cannot pay 95 with the reserve held back (89 + 2):
+	// the reserve is dropped and the token vault pays it all, as before.
+	ctx, mgr = setupManagerForTest(c)
+	mgr.Keeper().SetMimir(ctx, constants.VaultTokenGasReserve.String(), 10)
+	withTokens, gasOnly = tokenGasReserveVaults(c, ctx, mgr, usdt, 3)
+	eventMgr = newRecordingEventMgr()
+	store = newTxOutStorage(mgr.Keeper(), mgr.GetConstants(), eventMgr, mgr.GasMgr())
+	outputs, remaining = store.DiscoverOutbounds(ctx, fee, maxGas, ethOut(95, ""), Vaults{withTokens, gasOnly})
+	c.Assert(remaining.IsZero(), Equals, true)
+	c.Assert(outputs, HasLen, 1)
+	c.Check(outputs[0].VaultPubKey.Equals(withTokens.PubKey), Equals, true)
+	c.Check(outputs[0].Coin.Amount.Equal(cosmos.NewUint(95*common.One)), Equals, true)
+	c.Check(eventMgr.securityEvents(), HasLen, 0)
+
+	// On: a token outbound holds nothing back.
+	ctx, mgr = setupManagerForTest(c)
+	mgr.Keeper().SetMimir(ctx, constants.VaultTokenGasReserve.String(), 10)
+	withTokens, _ = tokenGasReserveVaults(c, ctx, mgr, usdt, 50)
+	store = newTxOutStorage(mgr.Keeper(), mgr.GetConstants(), newRecordingEventMgr(), mgr.GasMgr())
+	tokenOut := ethOut(0, "")
+	tokenOut.Coin = common.NewCoin(usdt, cosmos.NewUint(1000*common.One))
+	outputs, remaining = store.DiscoverOutbounds(ctx, fee, maxGas, tokenOut, Vaults{withTokens})
+	c.Assert(remaining.IsZero(), Equals, true)
+	c.Assert(outputs, HasLen, 1)
+	c.Check(outputs[0].Coin.Amount.Equal(cosmos.NewUint(1000*common.One)), Equals, true)
+
+	// On: Ragnarok sweeps the vault's gas asset without a reserve.
+	ctx, mgr = setupManagerForTest(c)
+	mgr.Keeper().SetMimir(ctx, constants.VaultTokenGasReserve.String(), 10)
+	withTokens, _ = tokenGasReserveVaults(c, ctx, mgr, usdt, 50)
+	store = newTxOutStorage(mgr.Keeper(), mgr.GetConstants(), newRecordingEventMgr(), mgr.GasMgr())
+	outputs, remaining = store.DiscoverOutbounds(ctx, fee, maxGas, ethOut(100, NewRagnarokMemo(ctx.BlockHeight()).String()), Vaults{withTokens})
+	c.Assert(remaining.IsZero(), Equals, true)
+	c.Assert(outputs, HasLen, 1)
+	c.Check(outputs[0].Coin.Amount.Equal(cosmos.NewUint(100*common.One)), Equals, true)
+}
+
+func (s TxOutStoreSuite) TestNonGasTokenCount(c *C) {
+	usdt, err := common.NewAsset("ETH.USDT-0XDAC17F958D2EE523A2206206994597C13D831EC7")
+	c.Assert(err, IsNil)
+	usdc, err := common.NewAsset("ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48")
+	c.Assert(err, IsNil)
+	vault := GetRandomVault()
+	vault.Coins = common.Coins{
+		common.NewCoin(common.ETHAsset, cosmos.NewUint(common.One)),
+		common.NewCoin(usdt, cosmos.NewUint(common.One)),
+		common.NewCoin(usdc, cosmos.ZeroUint()),
+		common.NewCoin(common.BTCAsset, cosmos.NewUint(common.One)),
+	}
+	c.Check(nonGasTokenCount(vault, common.ETHChain), Equals, uint64(1))
+	c.Check(nonGasTokenCount(vault, common.BTCChain), Equals, uint64(0))
+	c.Check(nonGasTokenCount(vault, common.TRONChain), Equals, uint64(0))
+}
+
+// TestPrepareTxOutItemCountsPendingGasOutbounds proves that with
+// VaultTokenGasReserve on, a token outbound's gas check subtracts the gas asset
+// already committed to queued gas-asset outbounds from the same vault, so it
+// is not assigned to a vault that will have no gas left to send it.
+func (s TxOutStoreSuite) TestPrepareTxOutItemCountsPendingGasOutbounds(c *C) {
+	usdt, err := common.NewAsset("ETH.USDT-0XDAC17F958D2EE523A2206206994597C13D831EC7")
+	c.Assert(err, IsNil)
+
+	// run returns which vault the USDT outbound was assigned to.
+	run := func(reserve int64) string {
+		w := getHandlerTestWrapper(c, 1, true, true)
+		if reserve > 0 {
+			w.keeper.SetMimir(w.ctx, constants.VaultTokenGasReserve.String(), reserve)
+		}
+		for _, asset := range []common.Asset{common.ETHAsset, usdt} {
+			pool := NewPool()
+			pool.Asset = asset
+			pool.Status = PoolAvailable
+			pool.BalanceAsset = cosmos.NewUint(100000 * common.One)
+			pool.BalanceRune = cosmos.NewUint(100000 * common.One)
+			pool.LPUnits = cosmos.NewUint(100000 * common.One)
+			c.Assert(w.keeper.SetPool(w.ctx, pool), IsNil)
+		}
+
+		// drained has more USDT, so it is tried first, but all its ETH is
+		// committed to a queued ETH outbound.
+		drained := GetRandomVault()
+		drained.Type = AsgardVault
+		drained.Status = ActiveVault
+		drained.Coins = common.Coins{
+			common.NewCoin(common.ETHAsset, cosmos.NewUint(10*common.One)),
+			common.NewCoin(usdt, cosmos.NewUint(1000*common.One)),
+		}
+		c.Assert(w.keeper.SetVault(w.ctx, drained), IsNil)
+		funded := GetRandomVault()
+		funded.Type = AsgardVault
+		funded.Status = ActiveVault
+		funded.Coins = common.Coins{
+			common.NewCoin(common.ETHAsset, cosmos.NewUint(10*common.One)),
+			common.NewCoin(usdt, cosmos.NewUint(600*common.One)),
+		}
+		c.Assert(w.keeper.SetVault(w.ctx, funded), IsNil)
+		// Any active vault left by the wrapper must not take the outbound.
+		vaults, err := w.keeper.GetAsgardVaultsByStatus(w.ctx, ActiveVault)
+		c.Assert(err, IsNil)
+		for _, v := range vaults {
+			if !v.PubKey.Equals(drained.PubKey) && !v.PubKey.Equals(funded.PubKey) {
+				v.Status = InactiveVault
+				c.Assert(w.keeper.SetVault(w.ctx, v), IsNil)
+			}
+		}
+
+		c.Assert(w.keeper.AppendTxOut(w.ctx, w.ctx.BlockHeight(), TxOutItem{
+			Chain:       common.ETHChain,
+			ToAddress:   GetRandomETHAddress(),
+			VaultPubKey: drained.PubKey,
+			InHash:      GetRandomTxHash(),
+			Coin:        common.NewCoin(common.ETHAsset, cosmos.NewUint(10*common.One)),
+			MaxGas:      common.Gas{common.NewCoin(common.ETHAsset, cosmos.NewUint(common.One))},
+		}), IsNil)
+
+		inTxID := GetRandomTxHash()
+		w.keeper.SetObservedTxInVoter(w.ctx, NewObservedTxVoter(inTxID, common.ObservedTxs{
+			common.ObservedTx{
+				Tx:             GetRandomTx(),
+				Status:         common.Status_incomplete,
+				BlockHeight:    1,
+				Signers:        []string{w.activeNodeAccount.NodeAddress.String()},
+				FinaliseHeight: 1,
+			},
+		}))
+		store := newTxOutStorage(w.keeper, w.mgr.GetConstants(), w.mgr.EventMgr(), w.mgr.GasMgr())
+		outputs, _, err := store.prepareTxOutItem(w.ctx, TxOutItem{
+			Chain:     common.ETHChain,
+			ToAddress: GetRandomETHAddress(),
+			InHash:    inTxID,
+			Coin:      common.NewCoin(usdt, cosmos.NewUint(600*common.One)),
+		})
+		c.Assert(err, IsNil)
+		c.Assert(outputs, HasLen, 1)
+		switch {
+		case outputs[0].VaultPubKey.Equals(drained.PubKey):
+			return "drained"
+		case outputs[0].VaultPubKey.Equals(funded.PubKey):
+			return "funded"
+		}
+		return outputs[0].VaultPubKey.String()
+	}
+
+	// Off: the queued ETH outbound is ignored and the drained vault is chosen.
+	c.Check(run(0), Equals, "drained")
+	// On: the drained vault has no ETH left after its queue, so the funded vault pays.
+	c.Check(run(1), Equals, "funded")
+}

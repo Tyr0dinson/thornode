@@ -185,6 +185,7 @@ func NewConstantValue() *ConstantVals {
 			MissingObservationGuardMaxBlocks:    43200,              // the shared-event guard's grace per chain, in blocks: used up while its voters are skipped, refilled at the same rate while they pass (0 = never expires)
 			LUVIOverhangGuard:                   1,                  // reject liquidity adds (user and POL) into pools whose synth supply is at least twice the asset depth (<= 0 = off)
 			LUVIGuard:                           1,                  // 1 = reject user swaps/LP flows that lower a pool's LP value (G) beyond the allowance, and emit LUVI loss events; 0 = off (the per-pool G accumulator always runs)
+			VaultTokenGasReserve:                0,                  // MaxGas a vault keeps per token it holds on a chain when picked for that chain's gas-asset outbound; > 0 also counts every pending outbound on the chain against vault balances (0 = off)
 		},
 		boolValues: map[ConstantName]bool{
 			StrictBondLiquidityRatio: true,

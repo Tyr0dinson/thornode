@@ -1,0 +1,44 @@
+{{ template "default-state.yaml" }}
+---
+{{ template "eth-usdc-token-gas-reserve-state.yaml" }}
+---
+type: state
+genesis:
+  app_state:
+    thorchain:
+      mimirs:
+        - key: VaultTokenGasReserve
+          value: "1000"
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# VaultTokenGasReserve=1000: holding back 9.6 ETH leaves the dog vault 5.3904 ETH,
+# and with the cat vault's 4.9904 the two cannot pay 12 ETH. The reserve must not
+# block a payable outbound, so selection drops it and the dog vault pays it all.
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - amount: "0"
+    asset: "rune"
+memo: "-:ETH.ETH:6000"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 1
+  - .[0].vault_pub_key == "{{ pubkey_dog }}"
+  - .[0].coin.amount|tonumber == ${DOG_OUT=1199360000}
+---
+########################################################################################
+# no insufficient-balance security event: the outbound fits once the reserve is dropped
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - '[.. | select(.type? == "security")] | length == 0'

@@ -221,6 +221,8 @@ const (
 
 	LUVIOverhangGuard
 	LUVIGuard
+
+	VaultTokenGasReserve
 )
 
 // ConstantValues define methods used to get constant values

@@ -444,3 +444,47 @@ func (s *KeeperVaultSuite) TestGetMostSecureStrict(c *C) {
 	vault = k.GetMostSecureStrict(ctx, vaults, signingPeriod)
 	c.Assert(vault.IsEmpty(), Equals, true)
 }
+
+// TestGetPendingOutboundsByChain proves the chain variant returns every
+// outstanding outbound on the chain, whatever its asset, while the asset
+// variant keeps returning only its own asset.
+func (s *KeeperVaultSuite) TestGetPendingOutboundsByChain(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	ctx = ctx.WithBlockHeight(100)
+	usdt, err := common.NewAsset("ETH.USDT-0XDAC17F958D2EE523A2206206994597C13D831EC7")
+	c.Assert(err, IsNil)
+
+	vault := GetRandomPubKey()
+	item := func(chain common.Chain, asset common.Asset) TxOutItem {
+		return TxOutItem{
+			Chain:       chain,
+			ToAddress:   GetRandomETHAddress(),
+			VaultPubKey: vault,
+			Coin:        common.NewCoin(asset, cosmos.NewUint(common.One)),
+			Memo:        "OUT:" + GetRandomTxHash().String(),
+		}
+	}
+	signed := item(common.ETHChain, common.ETHAsset)
+	signed.OutHash = GetRandomTxHash()
+
+	txOut := NewTxOut(ctx.BlockHeight())
+	txOut.TxArray = []TxOutItem{
+		item(common.ETHChain, common.ETHAsset),
+		item(common.ETHChain, usdt),
+		item(common.BTCChain, common.BTCAsset),
+		signed,
+	}
+	c.Assert(k.SetTxOut(ctx, txOut), IsNil)
+
+	byChain := k.GetPendingOutboundsByChain(ctx, common.ETHChain)
+	c.Assert(byChain, HasLen, 2)
+	c.Check(byChain[0].Coin.Asset.Equals(common.ETHAsset), Equals, true)
+	c.Check(byChain[1].Coin.Asset.Equals(usdt), Equals, true)
+
+	byAsset := k.GetPendingOutbounds(ctx, common.ETHAsset)
+	c.Assert(byAsset, HasLen, 1)
+	c.Check(byAsset[0].Coin.Asset.Equals(common.ETHAsset), Equals, true)
+
+	c.Check(k.GetPendingOutboundsByChain(ctx, common.BTCChain), HasLen, 1)
+	c.Check(k.GetPendingOutboundsByChain(ctx, common.TRONChain), HasLen, 0)
+}

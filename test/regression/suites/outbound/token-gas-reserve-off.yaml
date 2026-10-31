@@ -1,0 +1,29 @@
+{{ template "default-state.yaml" }}
+---
+{{ template "eth-usdc-token-gas-reserve-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# VaultTokenGasReserve unset (off): a 12 ETH withdraw is paid by the dog vault
+# alone, leaving it about 3 ETH for its 1000 USDC, as before the Mimir existed
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - amount: "0"
+    asset: "rune"
+memo: "-:ETH.ETH:6000"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 1
+  - .[0].vault_pub_key == "{{ pubkey_dog }}"
+  - .[0].coin.asset == "ETH.ETH"
+  - .[0].coin.amount|tonumber == ${DOG_OUT=1199360000}
+  - .[0].max_gas[0].amount|tonumber == 960000

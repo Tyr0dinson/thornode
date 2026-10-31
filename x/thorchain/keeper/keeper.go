@@ -361,6 +361,7 @@ type KeeperVault interface {
 	GetMostSecureStrict(_ cosmos.Context, _ Vaults, _ int64) Vault
 	SortBySecurity(_ cosmos.Context, _ Vaults, _ int64) Vaults
 	GetPendingOutbounds(_ cosmos.Context, _ common.Asset) []TxOutItem
+	GetPendingOutboundsByChain(_ cosmos.Context, _ common.Chain) []TxOutItem
 	DeleteVault(ctx cosmos.Context, pk common.PubKey) error
 	RemoveFromAsgardIndex(ctx cosmos.Context, pubkey common.PubKey) error
 }

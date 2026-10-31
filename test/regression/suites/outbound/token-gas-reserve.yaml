@@ -1,0 +1,96 @@
+{{ template "default-state.yaml" }}
+---
+{{ template "eth-usdc-token-gas-reserve-state.yaml" }}
+---
+type: state
+genesis:
+  app_state:
+    thorchain:
+      mimirs:
+        - key: VaultTokenGasReserve
+          value: "500"
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# VaultTokenGasReserve=500: a gas-asset outbound leaves 500 x MaxGas (4.8 ETH) per
+# token in the dog vault. Of its 15 ETH it can give 15 - 0.0096 - 4.8 = 10.1904,
+# and the cat vault pays the other 1.8096 ETH of the 12 ETH withdraw.
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - amount: "0"
+    asset: "rune"
+memo: "-:ETH.ETH:6000"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 2
+  - .[0].vault_pub_key == "{{ pubkey_dog }}"
+  - .[0].coin.amount|tonumber == ${DOG_OUT=1018400000}
+  - .[1].vault_pub_key == "{{ pubkey_cat }}"
+  - .[1].coin.amount|tonumber == ${CAT_OUT=180320000}
+---
+type: tx-observed-out
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 1 }}"
+      chain: ETH
+      from_address: {{ addr_eth_dog }}
+      to_address: {{ addr_eth_fox }}
+      coins:
+        - amount: "${DOG_OUT}"
+          asset: "ETH.ETH"
+          decimals: 8
+      gas:
+        - amount: "960000"
+          asset: "ETH.ETH"
+      memo: "OUT:{{ native_txid -1 }}"
+    block_height: 2
+    finalise_height: 2
+    observed_pub_key: {{ pubkey_dog }}
+  - tx:
+      id: "{{ observe_txid 2 }}"
+      chain: ETH
+      from_address: {{ addr_eth_cat }}
+      to_address: {{ addr_eth_fox }}
+      coins:
+        - amount: "${CAT_OUT}"
+          asset: "ETH.ETH"
+          decimals: 8
+      gas:
+        - amount: "960000"
+          asset: "ETH.ETH"
+      memo: "OUT:{{ native_txid -1 }}"
+    block_height: 2
+    finalise_height: 2
+    observed_pub_key: {{ pubkey_cat }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 0
+---
+########################################################################################
+# the dog vault keeps its reserve: at least 500 x MaxGas of ETH for its USDC
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/vault/{{ pubkey_dog }}
+asserts:
+  - .coins[]|select(.asset == "ETH.ETH")|.amount|tonumber >= 500*960000
+  - .coins[]|select(.asset == "ETH.USDC-0X9999999999999999999999999999999999999999")|.amount|tonumber == 100000000000
+---
+type: check
+endpoint: http://localhost:1317/thorchain/vault/{{ pubkey_cat }}
+asserts:
+  - .coins[]|select(.asset == "ETH.ETH")|.amount|tonumber == 500000000-${CAT_OUT}-960000
