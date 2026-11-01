@@ -3118,8 +3118,14 @@ func (vm *NetworkMgr) calculateNetworkSolvency(ctx cosmos.Context, mgr Manager) 
 	// Step 2b: Subtract inbounds parked by the solvency gate. They are credited to
 	// their vault but not yet in any pool or swap queue; without this the parked
 	// principal reads as surplus and could be swept while the inbound still executes.
-	// Only active vault coins are counted above, so only their parked inbounds are
-	// subtracted.
+	// Only active vault coins are counted above. An inbound parked on a vault that
+	// has since left the active set still owes its principal, and churn migrates
+	// that vault's coins, parked principal included, into an active vault, where
+	// step 1 counts them. So it is subtracted too, except for the part its own vault
+	// still holds, which step 1 did not count. heldByInactive tracks, per such vault
+	// and asset, what it holds that is not yet matched to one of its parked inbounds.
+	// It is only looked up, never iterated.
+	heldByInactive := make(map[string]cosmos.Uint)
 	parkedIterator := vm.k.GetSolvencyGatedInboundIterator(ctx)
 	defer parkedIterator.Close()
 	for ; parkedIterator.Valid(); parkedIterator.Next() {
@@ -3131,9 +3137,6 @@ func (vm *NetworkMgr) calculateNetworkSolvency(ctx cosmos.Context, mgr Manager) 
 		if err != nil {
 			return nil, fmt.Errorf("fail to get vault of solvency gated inbound: %w", err)
 		}
-		if parkedVault.Status != ActiveVault {
-			continue
-		}
 		parkedVoter, err := vm.k.GetObservedTxInVoter(ctx, parked.TxID)
 		if err != nil {
 			return nil, fmt.Errorf("fail to get voter of solvency gated inbound: %w", err)
@@ -3143,10 +3146,21 @@ func (vm *NetworkMgr) calculateNetworkSolvency(ctx cosmos.Context, mgr Manager) 
 			continue
 		}
 		for _, coin := range parkedVoter.Tx.Tx.Coins {
-			if _, ok := assetAmounts[coin.Asset]; ok {
-				coinAmount := math.NewIntFromBigInt(coin.Amount.BigInt())
-				assetAmounts[coin.Asset] = assetAmounts[coin.Asset].Sub(coinAmount)
+			if _, ok := assetAmounts[coin.Asset]; !ok {
+				continue
 			}
+			owed := coin.Amount
+			if parkedVault.Status != ActiveVault {
+				heldKey := parkedVault.PubKey.String() + "/" + coin.Asset.String()
+				held, seen := heldByInactive[heldKey]
+				if !seen {
+					held = parkedVault.GetCoin(coin.Asset).Amount
+				}
+				covered := cosmos.MinUint(owed, held)
+				heldByInactive[heldKey] = common.SafeSub(held, covered)
+				owed = common.SafeSub(owed, covered)
+			}
+			assetAmounts[coin.Asset] = assetAmounts[coin.Asset].Sub(math.NewIntFromBigInt(owed.BigInt()))
 		}
 	}
 

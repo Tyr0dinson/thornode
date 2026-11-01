@@ -462,21 +462,10 @@ func (s *SolvencyGateSuite) TestErrataOfParkedInboundSkipsPoolUnwind(c *C) {
 // Parked principal is a liability, not network surplus.
 func (s *SolvencyGateSuite) TestNetworkSolvencyExcludesParkedPrincipal(c *C) {
 	f := newSolvencyGateFixture(c, true)
-	network := newNetworkMgr(f.mgr.Keeper(), f.mgr.TxOutStore(), f.mgr.EventMgr())
-	atom := func() int64 {
-		amounts, err := network.calculateNetworkSolvency(f.ctx, f.mgr)
-		c.Assert(err, IsNil)
-		for _, a := range amounts {
-			if a.Asset.Equals(common.ATOMAsset) {
-				return a.Amount.Int64()
-			}
-		}
-		return 0
-	}
-	before := atom()
+	before := f.networkSolvencyATOM(c)
 	f.observe(c, "DONATE:GAIA.ATOM", 50)
 	c.Assert(f.vaultATOM(c).Equal(cosmos.NewUint(100*common.One)), Equals, true)
-	c.Assert(atom(), Equals, before)
+	c.Assert(f.networkSolvencyATOM(c), Equals, before)
 }
 
 // A failed or panicking release commits nothing.
@@ -562,4 +551,121 @@ func (s *SolvencyGateSuite) TestParkingReservesReference(c *C) {
 	ref, err := k.GetReferenceMemo(f.ctx, common.ATOMAsset, "40000")
 	c.Assert(err, IsNil)
 	c.Assert(ref.HasBeenUsedBy(tx.Tx.ID), Equals, true)
+}
+
+// networkSolvencyATOM returns the network's ATOM solvency: vault holdings less
+// every liability.
+func (f *solvencyGateFixture) networkSolvencyATOM(c *C) int64 {
+	network := newNetworkMgr(f.mgr.Keeper(), f.mgr.TxOutStore(), f.mgr.EventMgr())
+	amounts, err := network.calculateNetworkSolvency(f.ctx, f.mgr)
+	c.Assert(err, IsNil)
+	for _, a := range amounts {
+		if a.Asset.Equals(common.ATOMAsset) {
+			return a.Amount.Int64()
+		}
+	}
+	return 0
+}
+
+// observeMigrate brings both sides of a scheduled migrate outbound, paying its
+// full MaxGas, to consensus, and returns the gas paid.
+func (f *solvencyGateFixture) observeMigrate(c *C, item TxOutItem, to Vault) cosmos.Uint {
+	from, err := item.VaultPubKey.GetAddress(common.GAIAChain)
+	c.Assert(err, IsNil)
+	tx := common.Tx{
+		ID:          GetRandomTxHash(),
+		Chain:       common.GAIAChain,
+		FromAddress: from,
+		ToAddress:   item.ToAddress,
+		Coins:       common.Coins{item.Coin},
+		Gas:         item.MaxGas,
+		Memo:        item.Memo,
+	}
+	height := f.ctx.BlockHeight()
+	out := common.NewObservedTx(tx, height, item.VaultPubKey, height)
+	in := common.NewObservedTx(tx, height, to.PubKey, height)
+	for _, na := range f.nodes {
+		_, err = NewObservedTxOutHandler(f.mgr).handle(f.ctx, *NewMsgObservedTxOut(common.ObservedTxs{out}, na.NodeAddress))
+		c.Assert(err, IsNil)
+		_, err = NewObservedTxInHandler(f.mgr).handle(f.ctx, *NewMsgObservedTxIn(common.ObservedTxs{in}, na.NodeAddress))
+		c.Assert(err, IsNil)
+	}
+	return item.MaxGas.ToCoins().GetCoin(common.ATOMAsset).Amount
+}
+
+// Churn migrates a vault's coins, parked principal included, into an active vault,
+// while the inbound stays parked on the drained vault. The principal is still owed,
+// so it is not network surplus that the over-solvency sweep could take.
+func (s *SolvencyGateSuite) TestNetworkSolvencyKeepsParkedPrincipalAfterMigration(c *C) {
+	f := newSolvencyGateFixture(c, true)
+	k := f.mgr.Keeper()
+	network := newNetworkMgr(k, f.mgr.TxOutStore(), f.mgr.EventMgr())
+	k.SetMimir(f.ctx, constants.FundMigrationInterval.String(), 1)
+
+	before := f.networkSolvencyATOM(c)
+	f.observe(c, "DONATE:GAIA.ATOM", 50)
+	c.Assert(f.parked(c), HasLen, 1)
+	c.Assert(f.networkSolvencyATOM(c), Equals, before)
+
+	// Churn: the parking vault retires and a new active vault takes over.
+	next := NewVault(f.ctx.BlockHeight(), ActiveVault, AsgardVault, GetRandomPubKey(), []string{common.GAIAChain.String()}, nil)
+	c.Assert(k.SetVault(f.ctx, next), IsNil)
+	retiring, err := k.GetVault(f.ctx, f.vault.PubKey)
+	c.Assert(err, IsNil)
+	retiring.UpdateStatus(RetiringVault, f.ctx.BlockHeight())
+	c.Assert(k.SetVault(f.ctx, retiring), IsNil)
+
+	gasPaid := cosmos.ZeroUint()
+	for round := 0; round < 10; round++ {
+		f.nextBlock()
+		c.Assert(network.migrateFunds(f.ctx, f.mgr), IsNil)
+		retiring, err = k.GetVault(f.ctx, f.vault.PubKey)
+		c.Assert(err, IsNil)
+		if retiring.Status == InactiveVault {
+			break
+		}
+		for _, item := range f.outbounds(c) {
+			if item.VaultPubKey.Equals(f.vault.PubKey) && item.OutHash.IsEmpty() {
+				gasPaid = gasPaid.Add(f.observeMigrate(c, item, next))
+			}
+		}
+	}
+	c.Assert(retiring.Status, Equals, InactiveVault)
+	c.Assert(retiring.HasFunds(), Equals, false)
+	next, err = k.GetVault(f.ctx, next.PubKey)
+	c.Assert(err, IsNil)
+	c.Assert(next.GetCoin(common.ATOMAsset).Amount.Add(gasPaid).Equal(cosmos.NewUint(100*common.One)), Equals, true)
+	parked := f.parked(c)
+	c.Assert(parked, HasLen, 1)
+	c.Assert(parked[0].PubKey.Equals(f.vault.PubKey), Equals, true)
+
+	// The migrated principal is still owed. Only the gas the migration spent, not
+	// yet reimbursed from the pool, leaves the network short.
+	c.Assert(f.networkSolvencyATOM(c), Equals, before-int64(gasPaid.Uint64()))
+}
+
+// The part of a parked inbound's principal that its inactive vault still holds is
+// not counted as vault holdings, so it is not subtracted as a liability either.
+func (s *SolvencyGateSuite) TestNetworkSolvencyNetsParkedPrincipalHeldByInactiveVault(c *C) {
+	f := newSolvencyGateFixture(c, true)
+	k := f.mgr.Keeper()
+	before := f.networkSolvencyATOM(c)
+
+	// Two 1 ATOM inbounds parked on an inactive vault that still holds 1.5 ATOM.
+	inactive := NewVault(1, InactiveVault, AsgardVault, GetRandomPubKey(), []string{common.GAIAChain.String()}, nil)
+	inactive.AddFunds(common.NewCoins(common.NewCoin(common.ATOMAsset, cosmos.NewUint(common.One*3/2))))
+	c.Assert(k.SetVault(f.ctx, inactive), IsNil)
+	for _, in := range []types.SolvencyGatedInbound{f.parkWithVoter(c, inactive.PubKey, 10), f.parkWithVoter(c, inactive.PubKey, 11)} {
+		voter, err := k.GetObservedTxInVoter(f.ctx, in.TxID)
+		c.Assert(err, IsNil)
+		voter.UpdatedVault = true
+		k.SetObservedTxInVoter(f.ctx, voter)
+	}
+
+	// The 0.5 ATOM it no longer holds sits in an active vault, which counts it.
+	vault, err := k.GetVault(f.ctx, f.vault.PubKey)
+	c.Assert(err, IsNil)
+	vault.AddFunds(common.NewCoins(common.NewCoin(common.ATOMAsset, cosmos.NewUint(common.One/2))))
+	c.Assert(k.SetVault(f.ctx, vault), IsNil)
+	c.Assert(f.networkSolvencyATOM(c), Equals, before)
 }
