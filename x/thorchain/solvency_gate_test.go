@@ -50,6 +50,12 @@ func newSolvencyGateFixture(c *C, gated bool) *solvencyGateFixture {
 
 // observe brings a finalised 100 ATOM inbound at the external height to consensus.
 func (f *solvencyGateFixture) observe(c *C, memo string, height int64) common.ObservedTx {
+	return f.observeAs(c, memo, height, f.vault.PubKey)
+}
+
+// observeAs is observe with the vault observed under the given pubkey, as an
+// EdDSA or FROST chain observes it.
+func (f *solvencyGateFixture) observeAs(c *C, memo string, height int64, observedPubKey common.PubKey) common.ObservedTx {
 	to, err := f.vault.PubKey.GetAddress(common.GAIAChain)
 	c.Assert(err, IsNil)
 	tx := common.NewObservedTx(common.Tx{
@@ -60,7 +66,7 @@ func (f *solvencyGateFixture) observe(c *C, memo string, height int64) common.Ob
 		Coins:       common.NewCoins(common.NewCoin(common.ATOMAsset, cosmos.NewUint(100*common.One))),
 		Gas:         common.Gas{common.NewCoin(common.ATOMAsset, cosmos.NewUint(common.One/100))},
 		Memo:        memo,
-	}, height, f.vault.PubKey, height)
+	}, height, observedPubKey, height)
 	handler := NewObservedTxInHandler(f.mgr)
 	for _, na := range f.nodes {
 		_, err = handler.handle(f.ctx, *NewMsgObservedTxIn(common.ObservedTxs{tx}, na.NodeAddress))
@@ -457,6 +463,34 @@ func (s *SolvencyGateSuite) TestErrataOfParkedInboundSkipsPoolUnwind(c *C) {
 	c.Assert(f.parked(c), HasLen, 0)
 	c.Assert(f.poolAsset(c).Equal(before), Equals, true)
 	c.Assert(f.vaultATOM(c).IsZero(), Equals, true)
+}
+
+// An inbound observed under the vault's EdDSA or FROST key, as on SOL and XMR, is
+// parked under the primary pubkey that solvency confirms, so a solvent report
+// releases it, and errata still finds it.
+func (s *SolvencyGateSuite) TestInboundObservedUnderAlternateKeyParksUnderPrimary(c *C) {
+	f := newSolvencyGateFixture(c, true)
+	f.vault.PubKeyEddsa = GetRandomPubKey()
+	c.Assert(f.mgr.Keeper().SetVault(f.ctx, f.vault), IsNil)
+	before := f.poolAsset(c)
+	f.observeAs(c, "DONATE:GAIA.ATOM", 50, f.vault.PubKeyEddsa)
+	parked := f.parked(c)
+	c.Assert(parked, HasLen, 1)
+	c.Assert(parked[0].PubKey.Equals(f.vault.PubKey), Equals, true)
+	c.Assert(hasSolvencyGatedInbounds(f.ctx, f.mgr.Keeper(), f.vault), Equals, true)
+
+	f.nextBlock()
+	f.reportSolvency(c, 100*common.One, 60)
+	f.endBlock(c)
+	c.Assert(f.parked(c), HasLen, 0)
+	c.Assert(f.poolAsset(c).Equal(before.Add(cosmos.NewUint(100*common.One))), Equals, true)
+
+	tx := f.observeAs(c, "DONATE:GAIA.ATOM", 70, f.vault.PubKeyEddsa)
+	c.Assert(f.parked(c), HasLen, 1)
+	outcome, err := processErrataTx(f.ctx, f.mgr, &common.ErrataTx{Id: tx.Tx.ID, Chain: common.GAIAChain})
+	c.Assert(err, IsNil)
+	c.Assert(outcome, Equals, common.ErrataTxOutcome_ERRATA_TX_OUTCOME_REVERTED)
+	c.Assert(f.parked(c), HasLen, 0)
 }
 
 // Parked principal is a liability, not network surplus.

@@ -449,7 +449,7 @@ func handleObservedTxInQuorum(
 	// vault, until a solvency consensus shows the vault holds what it was credited.
 	// An inbound whose funds never arrived then halts the chain before any swap or
 	// refund pays out.
-	parked, err := parkSolvencyGatedInbound(ctx, mgr, voter)
+	parked, err := parkSolvencyGatedInbound(ctx, mgr, voter, vault)
 	if err != nil {
 		return err
 	}

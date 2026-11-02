@@ -50,8 +50,10 @@ func isSolvencyGated(ctx cosmos.Context, k keeper.Keeper, chain common.Chain) bo
 }
 
 // parkSolvencyGatedInbound parks a finalised, vault-credited inbound if its chain
-// is solvency-gated, and reports whether it did.
-func parkSolvencyGatedInbound(ctx cosmos.Context, mgr Manager, voter ObservedTxVoter) (bool, error) {
+// is solvency-gated, and reports whether it did. It is parked under the vault's
+// primary pubkey, which solvency confirmations are keyed by, not the observed
+// pubkey, which is the vault's EdDSA or FROST key on SOL and XMR.
+func parkSolvencyGatedInbound(ctx cosmos.Context, mgr Manager, voter ObservedTxVoter, vault Vault) (bool, error) {
 	k := mgr.Keeper()
 	tx := voter.Tx
 	if !isSolvencyGated(ctx, k, tx.Tx.Chain) {
@@ -59,7 +61,7 @@ func parkSolvencyGatedInbound(ctx cosmos.Context, mgr Manager, voter ObservedTxV
 	}
 	in := types.SolvencyGatedInbound{
 		Chain:    tx.Tx.Chain,
-		PubKey:   tx.ObservedPubKey,
+		PubKey:   vault.PubKey,
 		Height:   tx.BlockHeight,
 		TxID:     tx.Tx.ID,
 		ParkedAt: ctx.BlockHeight(),
