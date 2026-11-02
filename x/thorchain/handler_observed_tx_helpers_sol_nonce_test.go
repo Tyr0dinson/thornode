@@ -566,3 +566,35 @@ func (s *SolVaultNonceSuite) TestReissueRespectsLandedCopyAndAttemptBudget(c *C)
 	b.commit(c)
 	c.Assert(b.reissued(c), HasLen, 0)
 }
+
+// After a block time change the re-issue window and attempt budget are measured
+// in wall-clock time, as LackSigning measures them, not in blocks at the current
+// block time.
+func (s *SolVaultNonceSuite) TestReissueAfterBlockTimeChange(c *C) {
+	refMs := constants.ThorchainBlockTime.Milliseconds()
+	c.Assert(constants.GetConstantValues(GetCurrentVersion()).GetInt64Value(constants.SigningTransactionPeriod), Equals, int64(300))
+	// Back to the default block time at 1250 after quarter blocks from 100: at
+	// 1300 the waiter issued at 950 is far less than a SigningTransactionPeriod
+	// old in time, so LackSigning has not seen it yet, though it lies more than
+	// 300 blocks back.
+	r := newReissueFixture(c, true)
+	r.ctx = r.ctx.WithBlockHeight(1300)
+	r.mgr.Keeper().SetBlockTimeHistory(r.ctx, refMs, constants.BlockTimeHistory{{Height: 100, Ms: refMs / 4}, {Height: 1250, Ms: refMs}})
+	r.commit(c)
+	re := r.reissued(c)
+	c.Assert(re, HasLen, 1)
+	c.Assert(re[0].InHash.Equals(r.y.InHash), Equals, true)
+
+	// Finalised 300 blocks ago, 290 of them quarter blocks: about 82 reference
+	// blocks in time, so its first attempt has not run out yet.
+	b := newReissueFixture(c, true)
+	b.mgr.Keeper().SetBlockTimeHistory(b.ctx, refMs, constants.BlockTimeHistory{{Height: 100, Ms: refMs / 4}, {Height: 990, Ms: refMs}})
+	b.mgr.Keeper().SetMimir(b.ctx, constants.MaxOutboundAttempts.String(), 1)
+	inVoter := NewObservedTxVoter(b.y.InHash, nil)
+	inVoter.FinalisedHeight = b.ctx.BlockHeight() - 300
+	b.mgr.Keeper().SetObservedTxInVoter(b.ctx, inVoter)
+	b.commit(c)
+	re = b.reissued(c)
+	c.Assert(re, HasLen, 1)
+	c.Assert(re[0].InHash.Equals(b.y.InHash), Equals, true)
+}

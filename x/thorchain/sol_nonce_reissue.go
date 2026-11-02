@@ -42,7 +42,9 @@ func reissueSupersededSolDurable(ctx cosmos.Context, mgr Manager, vault Vault, p
 func reissueSolDurableAt(ctx cosmos.Context, mgr Manager, vault Vault, prevHeight int64, consumed *common.ObservedTx, at int64, respectBudget bool, siblings solSiblingCache) {
 	k := mgr.Keeper()
 	now := ctx.BlockHeight()
-	signingTransPeriod := k.GetConfigInt64(ctx, constants.SigningTransactionPeriod)
+	// in reference blocks: the window and the attempt count are measured in
+	// wall-clock time, as LackSigning measures them
+	refSigningTransPeriod := k.GetConfigInt64Ref(ctx, constants.SigningTransactionPeriod)
 	maxOutboundAttempts := k.GetConfigInt64(ctx, constants.MaxOutboundAttempts)
 	// Bifrost signs these destinations on the recent-blockhash path even for a
 	// durable vault (durableDestinationExcluded), so a consumed nonce does not kill
@@ -61,8 +63,8 @@ func reissueSolDurableAt(ctx cosmos.Context, mgr Manager, vault Vault, prevHeigh
 	}
 	start := prevHeight
 	// Older heights have already been through LackSigning.
-	if signingTransPeriod > 0 && start < now-signingTransPeriod {
-		start = now - signingTransPeriod
+	if refSigningTransPeriod > 0 {
+		start = max(start, k.RefWindowStart(ctx, refSigningTransPeriod))
 	}
 	if start < 1 {
 		start = 1
@@ -94,8 +96,8 @@ func reissueSolDurableAt(ctx cosmos.Context, mgr Manager, vault Vault, prevHeigh
 			}
 			// Past the attempt budget, stop refreshing the height so LackSigning's
 			// recovery (attempt limit, treasury) still reaches the item.
-			if respectBudget && maxOutboundAttempts > 0 && signingTransPeriod > 0 &&
-				(now-inVoter.FinalisedHeight)/signingTransPeriod >= maxOutboundAttempts {
+			if respectBudget && maxOutboundAttempts > 0 && refSigningTransPeriod > 0 &&
+				outboundAttempts(ctx, k, inVoter.FinalisedHeight, txOutSigningPeriod(item, refSigningTransPeriod)) >= maxOutboundAttempts {
 				continue
 			}
 			// A re-attestation can sit on top of a successful, finalised vault payment,
