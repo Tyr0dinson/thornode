@@ -1,6 +1,7 @@
 package utxo
 
 import (
+	"encoding/json"
 	"errors"
 	"strings"
 	"sync/atomic"
@@ -340,20 +341,56 @@ func (s *DashSuite) TestInstantSendVaultHaltIncludesStorageFallback(c *C) {
 	}
 }
 
+// TestInstantSendHaltDoesNotStartWarmup exercises the InstantSend turn with an
+// otherwise healthy scanner, then proves removing the halt starts the snapshot.
 func (s *DashSuite) TestInstantSendHaltDoesNotStartWarmup(c *C) {
-	client, f, cleanup := newDashMempoolFixture(c)
-	defer cleanup()
-	defer freshInstantSendJournal(c, client)()
-	client.bridge = &dashHaltBridge{ThorchainBridge: client.bridge, getHeight: func() (int64, error) {
-		return 0, errors.New("height unavailable")
-	}}
-	batch, err := client.FetchMemPool(123)
-	c.Assert(err, IsNil)
-	c.Assert(batch.MemPool, Equals, true)
-	c.Assert(f.instantSendCalls, Equals, 0)
-	state, err := client.temporalStorage.GetInstantSendState()
-	c.Assert(err, IsNil)
-	c.Assert(state.Started, Equals, false)
+	for _, scenario := range []string{"halt", "height unavailable"} {
+		func() {
+			c.Log(scenario)
+			var snapshots atomic.Int64
+			client, _, cleanup := newInstantSendWarmupClient(c, func(method string, params []json.RawMessage) any {
+				c.Assert(method, Equals, "getrawmempool")
+				if len(params) > 0 {
+					snapshots.Add(1)
+					return map[string]any{}
+				}
+				return []string{}
+			})
+			defer cleanup()
+			base := client.bridge
+			bridge := &dashHaltBridge{ThorchainBridge: base}
+			if scenario == "halt" {
+				bridge.getMimir = func(key string) (int64, error) {
+					if key == "HaltDASHChain" {
+						return 1, nil
+					}
+					return base.GetMimir(key)
+				}
+			} else {
+				bridge.getHeight = func() (int64, error) {
+					return 0, errors.New("height unavailable")
+				}
+			}
+			client.bridge = bridge
+			client.nextMempoolScan = scanInstantSend
+			batch, err := client.FetchMemPool(123)
+			c.Assert(err, IsNil)
+			c.Assert(batch.MemPool, Equals, true)
+			c.Assert(snapshots.Load(), Equals, int64(0))
+			state, err := client.temporalStorage.GetInstantSendState()
+			c.Assert(err, IsNil)
+			c.Assert(state.Started, Equals, false)
+
+			client.bridge = base
+			client.nextMempoolScan = scanInstantSend
+			_, err = client.FetchMemPool(123)
+			c.Assert(err, IsNil)
+			state, err = client.temporalStorage.GetInstantSendState()
+			c.Assert(err, IsNil)
+			c.Assert(state.Started, Equals, true)
+			c.Assert(snapshots.Load() > 0, Equals, true)
+		}()
+	}
 }
 
 func (s *DashSuite) TestInstantSendHaltStillSettlesVerifiedReservations(c *C) {

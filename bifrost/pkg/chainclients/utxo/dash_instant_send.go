@@ -36,7 +36,7 @@ type instantSendHandler struct {
 	minAmount uint64
 	maxAmount uint64
 
-	// Serializes allowance writes, recovery progress, revision and switch updates.
+	// Serializes allowance writes, recovery progress, block height, revision and switch updates.
 	// Release during RPCs so ChainLock settlement can continue. After relocking,
 	// check the revision and keep the lock through the resulting state updates.
 	stateMu sync.Mutex
@@ -45,6 +45,8 @@ type instantSendHandler struct {
 	// Incremented on settlement attempts to reject stale RPC results.
 	revision uint64
 	recovery instantSendRecovery
+	// Last processed block; zero before scanning. Protected by stateMu.
+	lastBlockHeight int64
 }
 
 const (

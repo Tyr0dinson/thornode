@@ -108,19 +108,26 @@ func (s *DashSuite) TestGetAddressesFromScriptPubKeyDASH(c *C) {
 		Script()
 	c.Assert(err, IsNil)
 
+	expectedAddress := "XanAvE5GMB8CsPH78B9moJq9viEVKvCS4f"
+	if common.CurrentChainNetwork == common.MockNet {
+		expectedAddress = "yLQmwB9hninHD8Ceh2UAqLFWCzirppNLik"
+	}
 	testCases := []struct {
 		ScriptPubKeyResult btcjson.ScriptPubKeyResult
 		ShouldReturnNil    bool
+		Expected           []string
 	}{
 		{
 			ScriptPubKeyResult: btcjson.ScriptPubKeyResult{
 				Addresses: []string{"XhkcLQT9RKiRyTDpecLtPDL6z6M4v1ZiE3"},
 			},
+			Expected: []string{"XhkcLQT9RKiRyTDpecLtPDL6z6M4v1ZiE3"},
 		},
 		{
 			ScriptPubKeyResult: btcjson.ScriptPubKeyResult{
 				Hex: hex.EncodeToString(script),
 			},
+			Expected: []string{expectedAddress},
 		},
 		{
 			ShouldReturnNil:    true,
@@ -141,6 +148,7 @@ func (s *DashSuite) TestGetAddressesFromScriptPubKeyDASH(c *C) {
 		if tc.ShouldReturnNil {
 			c.Assert(addresses, IsNil)
 		} else {
+			c.Assert(addresses, DeepEquals, tc.Expected)
 			for _, address := range addresses {
 				c.Assert(common.IsValidDASHAddress(address), Equals, true)
 			}

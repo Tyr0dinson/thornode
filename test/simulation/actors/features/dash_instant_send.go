@@ -15,6 +15,8 @@ import (
 const (
 	dashInstantSendSmallPayment = 18 * common.One / 10
 	dashInstantSendLargePayment = 22 * common.One / 10
+	dashInstantSendMaxAttempts  = 10
+	dashInstantSendLowFee       = 600
 )
 
 type DashInstantSendActor struct {
@@ -52,7 +54,14 @@ func DashInstantSend(rng *rand.Rand) *Actor {
 	return &a.Actor
 }
 
-// acquireUser reserves an available account with a Dash client for these scenarios.
+// requiredBalance covers every scenario's full retry budget, including fees.
+func (a *DashInstantSendActor) requiredBalance(defaultFee uint64) uint64 {
+	const payments = 2*dashInstantSendSmallPayment + dashInstantSendLargePayment
+	fees := 2*defaultFee + dashInstantSendLowFee
+	return dashInstantSendMaxAttempts * (payments + fees)
+}
+
+// acquireUser reserves an available Dash account that can fund every retry.
 func (a *DashInstantSendActor) acquireUser(config *OpConfig) OpResult {
 	for _, user := range config.Users {
 		client, ok := user.ChainClients[common.DASHChain].(*utxo.Client)
@@ -63,13 +72,31 @@ func (a *DashInstantSendActor) acquireUser(config *OpConfig) OpResult {
 			continue
 		}
 
+		account, err := client.GetAccount(nil)
+		if err != nil {
+			a.Log().Error().Err(err).Str("user", user.Name()).Msg("failed to read DASH balance")
+			user.Release()
+			continue
+		}
+		required := cosmos.NewUint(a.requiredBalance(client.GetGasSats()))
+		balance := account.Coins.GetCoin(common.DASHAsset).Amount
+		if balance.LT(required) {
+			a.Log().Info().Str("user", user.Name()).Stringer("balance", balance).
+				Stringer("required", required).Msg("insufficient DASH for InstantSend retry budget")
+			user.Release()
+			continue
+		}
+
 		a.account = user
 		a.dash = client
 		a.SetLogger(a.Log().With().Str("user", user.Name()).Logger())
 		break
 	}
 
-	return OpResult{Continue: a.account != nil}
+	if a.account == nil {
+		return OpResult{Error: fmt.Errorf("no available DASH account can fund the InstantSend retry budget")}
+	}
+	return OpResult{Continue: true}
 }
 
 // initContext fetches the inbound address for the scenarios.
@@ -111,12 +138,11 @@ func (a *DashInstantSendActor) observePayment(name string, amount, feeSats uint6
 	}
 
 	const (
-		maxAttempts      = 10
 		thornodeWaitMax  = 25 * time.Second
 		blockSyncTimeout = 30 * time.Second
 	)
 
-	for attempt := 1; attempt <= maxAttempts; attempt++ {
+	for attempt := 1; attempt <= dashInstantSendMaxAttempts; attempt++ {
 		// Broadcast right after a new DASH block to maximize time before mining.
 		_, broadcastHeight, err := a.dash.WaitForBlockAdvance(blockSyncTimeout)
 		if err != nil {
@@ -199,7 +225,7 @@ func (a *DashInstantSendActor) largerPayment(_ *OpConfig) OpResult {
 
 // lowFee checks a fee below the former InstantSend floor while still paying for relay.
 func (a *DashInstantSendActor) lowFee(_ *OpConfig) OpResult {
-	return a.observePayment("low-fee", dashInstantSendSmallPayment, 600)
+	return a.observePayment("low-fee", dashInstantSendSmallPayment, dashInstantSendLowFee)
 }
 
 // releaseAccount makes the account available to other actors and finishes this actor.

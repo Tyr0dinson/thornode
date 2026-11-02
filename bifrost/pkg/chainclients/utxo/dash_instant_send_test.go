@@ -14,7 +14,6 @@ import (
 	"github.com/rs/zerolog"
 	. "gopkg.in/check.v1"
 
-	dashchaincfg "github.com/dashpay/dashd-go/chaincfg"
 	dashtxscript "github.com/dashpay/dashd-go/txscript"
 	"gitlab.com/thorchain/thornode/v3/bifrost/blockscanner"
 	sharedutxo "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/utxo"
@@ -41,15 +40,19 @@ func (b dashOracleBridge) GetOraclePrice(symbol string) (cosmos.Uint, error) {
 	return b.getPrice(symbol)
 }
 
+// newDashTestAddress uses the same network as the client's script decoder.
 func newDashTestAddress(c *C, seed byte) string {
 	hash := bytes.Repeat([]byte{seed}, 20)
-	addr, err := btcutil.NewAddressPubKeyHash(hash, &dashchaincfg.RegressionNetParams)
+	params := newDashClientForUnitTest().getChainCfgDASH()
+	addr, err := btcutil.NewAddressPubKeyHash(hash, params)
 	c.Assert(err, IsNil)
 	return addr.String()
 }
 
+// newDashP2PKHScriptHex builds an output script for the active test network.
 func newDashP2PKHScriptHex(c *C, address string) string {
-	addr, err := btcutil.DecodeAddress(address, &dashchaincfg.RegressionNetParams)
+	params := newDashClientForUnitTest().getChainCfgDASH()
+	addr, err := btcutil.DecodeAddress(address, params)
 	c.Assert(err, IsNil)
 	script, err := dashtxscript.PayToAddrScript(addr)
 	c.Assert(err, IsNil)

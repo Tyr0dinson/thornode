@@ -155,11 +155,11 @@ Operational notes:
 
 ### Dash InstantSend
 
-- `DashInstantSendEnabled`: `0` disables InstantSend observation; a positive value enables it. Unset or negative values restore Bifrost's startup `instant_send.enabled` config (`true` for DASH by default) on the next settings refresh. A failed read disables all InstantSend observations for that scan, including vault senders. Ordinary vault-outbound observations and ChainLock settlement continue, and existing allowance reservations remain charged.
-- `DashInstantSendMaxAmount`: Per-node customer InstantSend allowance in duffs (`100000000000` means 1,000 DASH); unset or non-positive values stop new customer InstantSend observations. See [Dash InstantSend allowance](chain-clients/utxo.md#dash-instantsend-allowance).
-- `DashInstantSendMinAmount`: Minimum customer InstantSend deposit in duffs; unset or negative values default to `1000000` (0.01 DASH). Zero removes this extra minimum while keeping the chain dust check.
+- `DashInstantSendEnabled`#: `0` disables InstantSend observation; a positive value enables it. Unset or negative values restore Bifrost's startup `instant_send.enabled` config (`true` for DASH by default) on the next settings refresh. A failed read disables all InstantSend observations for that scan, including vault senders. Ordinary vault-outbound observations and ChainLock settlement continue, and existing allowance reservations remain charged.
+- `DashInstantSendMaxAmount`#: Per-node customer InstantSend allowance in duffs (`100000000000` means 1,000 DASH); unset or non-positive values stop new customer InstantSend observations. See [Dash InstantSend allowance](chain-clients/utxo.md#dash-instantsend-allowance).
+- `DashInstantSendMinAmount`#: Minimum customer InstantSend deposit in duffs; unset or negative values default to `1000000` (0.01 DASH). Zero removes this extra minimum while keeping the chain dust check.
 
-Vault senders, including vault migrations and consolidation, bypass both amount limits. The enabled switch still applies to them: setting only `DashInstantSendMaxAmount=0` does not disable vault-sender InstantSend observations.
+Eligible vault-to-vault transfers, including migrations and consolidation, bypass both amount limits. The enabled switch still applies to them: setting only `DashInstantSendMaxAmount=0` does not disable their InstantSend observations. With mempool scanning enabled, ordinary vault payments to customers receive non-final mempool observations and final ChainLock observations.
 
 ### Fee Management
 
@@ -202,7 +202,7 @@ Vault senders, including vault migrations and consolidation, bypass both amount 
 - `FailKeysignSlashPoints`: Slash for 2 blocks
 - `ObserveSlashPoints`: The number of slashpoints for making an observation (redeems later if observation reaches consensus)
 - `ObservationDelayFlexibility`: Number of blocks of flexibility for a validator to get their slash points taken off for making an observation
-- `ObservationDelayFlexibility<CHAIN>`: Optional per-chain observation window, in THORChain blocks (for example `ObservationDelayFlexibilityDASH`). A nonnegative value overrides the global window; unset values or read errors use the global setting. Inbound, outbound, network-fee, solvency and errata observations use the same window for late-observation slash refunds and tally scheduling, preserving existing slashing exemptions. It does not postpone initial penalties or apply to TSS votes. Queued tallies retain their original deadline if the setting changes, while late-credit checks use the current setting.
+- `ObservationDelayFlexibility<CHAIN>`#: Optional per-chain observation window, in THORChain blocks (for example `ObservationDelayFlexibilityDASH`). A nonnegative value overrides the global window; unset values or read errors use the global setting. Inbound, outbound, network-fee, solvency and errata observations use the same window for late-observation slash refunds and tally scheduling, preserving existing slashing exemptions. It does not postpone initial penalties or apply to TSS votes. Queued tallies retain their original deadline if the setting changes, while late-credit checks use the current setting.
 - `JailTimeKeygen`: Blocks a node account is jailed for failing to keygen. DO NOT drop below TSS timeout
 - `JailTimeKeysign`: Blocks a node account is jailed for failing to keysign. DO NOT drop below TSS timeout
 - `BondSlashBan`: RUNE amount to slash bond of banned node

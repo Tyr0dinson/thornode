@@ -212,7 +212,7 @@ func (h *instantSendHandler) prepareAllowance(err error) (instantSendAdmission, 
 			return blocked, err
 		}
 	}
-	// The block scanner may start beyond transactions mined while we were offline.
+	// Startup or a runtime scanner jump may skip blocks containing reservations.
 	// Check every existing reservation once before using the restored allowance.
 	h.recovery.Load(state.Reservations)
 	for range h.workLimit() {
@@ -538,6 +538,7 @@ func (h *instantSendHandler) releaseReservations(ids []string) error {
 
 // reconcileBlock releases reservations for transactions in an already
 // verified ChainLocked block without waiting for mempool network calls.
+// A skipped range restarts recovery to check reservations mined in those blocks.
 func (h *instantSendHandler) reconcileBlock(block *btcjson.GetBlockVerboseTxResult) error {
 	ids := make([]string, 0, len(block.Tx))
 	for _, tx := range block.Tx {
@@ -546,6 +547,10 @@ func (h *instantSendHandler) reconcileBlock(block *btcjson.GetBlockVerboseTxResu
 	// Keep the revision increment, reservation release and recovery reset together.
 	h.stateMu.Lock()
 	defer h.stateMu.Unlock()
+	if h.lastBlockHeight > 0 && block.Height > h.lastBlockHeight+1 {
+		h.recovery.Reset()
+	}
+	h.lastBlockHeight = block.Height
 	return h.releaseReservations(ids)
 }
 

@@ -1,0 +1,2 @@
+# Without a DASH override, inbound and outbound observations use the global window.
+{{ template "dash-transaction-window.yaml" 2 }}

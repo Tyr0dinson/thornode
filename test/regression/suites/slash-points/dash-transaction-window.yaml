@@ -1,0 +1,2 @@
+# Late DASH inbound and outbound observations use the longer DASH window.
+{{ template "dash-transaction-window.yaml" 5 }}

@@ -348,7 +348,7 @@ func (s *LitecoinFeeCapSuite) TestFeeCapHoldsForFinalSignedSize(c *C) {
 
 // TestMaxFeeSatsSignatureSizes checks the fee cap against transactions whose final
 // signatures are shorter than the estimate, with and without change. Segwit chains
-// carry the signature in the discounted witness; DOGE and BCH carry it in the
+// carry the signature in the discounted witness; DOGE, BCH and DASH carry it in the
 // scriptSig, where every byte counts in full.
 func (s *LitecoinFeeCapSuite) TestMaxFeeSatsSignatureSizes(c *C) {
 	// output script contents only affect the size, so LTC scripts stand in for every chain
@@ -359,7 +359,7 @@ func (s *LitecoinFeeCapSuite) TestMaxFeeSatsSignatureSizes(c *C) {
 	memoScripts, err := MemoToScripts("MIGRATE:1024", ltctxscript.MaxDataCarrierSize, ltctxscript.NullDataScript, ltctxscript.PayToWitnessScript)
 	c.Assert(err, IsNil)
 
-	for _, chain := range []common.Chain{common.LTCChain, common.BTCChain, common.DOGEChain, common.BCHChain} {
+	for _, chain := range []common.Chain{common.LTCChain, common.BTCChain, common.DOGEChain, common.BCHChain, common.DASHChain} {
 		s.client.cfg.ChainID = chain
 		segwit := s.client.isSegwitChain()
 		for _, inputs := range []int{1, 2, 5, 20, 100} {
@@ -414,16 +414,23 @@ func (s *LitecoinFeeCapSuite) TestMaxFeeSatsClampedToBroadcastLimit(c *C) {
 	script, err := s.client.getSourceScript(stypes.TxOutItem{Chain: common.LTCChain, VaultPubKey: s.client.nodePubKey})
 	c.Assert(err, IsNil)
 	utxos := []btcjson.ListUnspentResult{{TxID: thorchain.GetRandomTxHash().String()}}
-	s.client.cfg.UTXO.MaxSatsPerVByte = 2 * broadcastMaxSatsPerVByte
-
-	for _, chain := range []common.Chain{common.LTCChain, common.BTCChain, common.DOGEChain, common.BCHChain} {
-		s.client.cfg.ChainID = chain
-		size := s.client.estimateTxSizeWithSigLen(utxos, nil, script, nil, feeCapSigLen)
-		want := size * s.client.cfg.UTXO.MaxSatsPerVByte
-		if chain == common.LTCChain || chain == common.BTCChain {
-			want = size * broadcastMaxSatsPerVByte
+	for _, tc := range []struct {
+		chain common.Chain
+		rates []int64
+	}{
+		{common.LTCChain, []int64{9765, 10_000, 10_000}},
+		{common.BTCChain, []int64{9765, 10_000, 10_000}},
+		{common.DASHChain, []int64{9765, 10_000, 10_000}},
+		{common.DOGEChain, []int64{9765, 10_000, 20_000}},
+		{common.BCHChain, []int64{9765, 10_000, 20_000}},
+	} {
+		s.client.cfg.ChainID = tc.chain
+		for i, rate := range []int64{9765, 10_000, 20_000} {
+			s.client.cfg.UTXO.MaxSatsPerVByte = rate
+			size := s.client.estimateTxSizeWithSigLen(utxos, nil, script, nil, feeCapSigLen)
+			c.Check(s.client.maxFeeSats(utxos, nil, script, nil), Equals, size*tc.rates[i],
+				Commentf("chain=%s configured rate=%d", tc.chain, rate))
 		}
-		c.Check(s.client.maxFeeSats(utxos, nil, script, nil), Equals, want, Commentf("chain=%s", chain))
 	}
 	c.Check(broadcastMaxSatsPerVByte, Equals, int64(10_000))
 }

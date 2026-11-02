@@ -518,9 +518,22 @@ func (s *DashSuite) TestInstantSendSnapshotIgnoresMarkersAndNewPolicy(c *C) {
 	client.instantSend.recovery.Load(nil)
 	client.instantSend.maxAmount = common.One
 	client.instantSend.minAmount = 0
+	client.cfg.UTXO.TransactionBatchSize = 10 // reach the customer candidate in this scan
+	calls := countInstantSendRPCs(c, f)
 	batch, err := client.instantSend.fetchBatch(123, instantSendAdmission{allowed: true})
 	c.Assert(err, IsNil)
 	c.Assert(batch.TxArray, HasLen, 0) // snapshot deposits remain ChainLock-only
+	// Both scan and final claim checks reached this deposit; it was not skipped
+	// because of pagination, an observed marker or the old amount policy.
+	c.Assert(calls("getislocks/"+f.lowFeeInbound), Equals, 1)
+	c.Assert(calls("getrawtransaction/"+f.lowFeeInbound), Equals, 2)
+	marked, err = client.temporalStorage.HasObservedTx(f.lowFeeInbound)
+	c.Assert(err, IsNil)
+	c.Assert(marked, Equals, false)
+	state, err = client.temporalStorage.GetInstantSendState()
+	c.Assert(err, IsNil)
+	c.Assert(state.Reserved, Equals, uint64(common.One/5))
+	c.Assert(state.Reservations[f.lowFeeInbound].Origin, Equals, sharedutxo.InstantSendSnapshot)
 }
 
 func (s *DashSuite) TestInstantSendSnapshotRetriesMissingTransaction(c *C) {

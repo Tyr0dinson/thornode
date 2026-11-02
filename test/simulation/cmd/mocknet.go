@@ -87,6 +87,8 @@ const (
 	masterAccountRetryAttempts        = 30
 	masterAccountFundingRetryAttempts = int((10 * time.Minute) / masterAccountRetryDelay)
 	mocknetInitConcurrency            = 2
+	// Covers the InstantSend actor's 58 DASH retry budget with room for earlier stages.
+	dashUserSeedAmount = 100 * common.One
 )
 
 // getHeightProvider lets chains with non-replayable mock histories seed
@@ -344,7 +346,7 @@ func InitConfig(parallelism int, seed bool, rng *rand.Rand) *OpConfig {
 	}
 
 	if _, ok := liteClientConstructors[common.DASHChain]; ok {
-		requiredDash := sdkmath.NewUint(uint64(len(funded)) * 10 * common.One)
+		requiredDash := sdkmath.NewUint(uint64(len(funded)) * dashUserSeedAmount)
 		client, ok := master.ChainClients[common.DASHChain]
 		if !ok {
 			log.Warn().Stringer("chain", common.DASHChain).Msg("no chain client found for chain, skipping funding wait")
@@ -379,8 +381,10 @@ func InitConfig(parallelism int, seed bool, rng *rand.Rand) *OpConfig {
 		// determine the amount of txs for seeding, to create multiple utxos
 		chainSeedTxs := 1
 		switch chain {
-		case common.BTCChain, common.LTCChain, common.BCHChain, common.DASHChain:
+		case common.BTCChain, common.LTCChain, common.BCHChain:
 			chainSeedAmount = sdkmath.NewUint(10 * common.One)
+		case common.DASHChain:
+			chainSeedAmount = sdkmath.NewUint(dashUserSeedAmount)
 		case common.BSCChain, common.BASEChain, common.ETHChain, common.SOLChain:
 			chainSeedAmount = sdkmath.NewUint(100 * common.One)
 		case common.ZECChain:

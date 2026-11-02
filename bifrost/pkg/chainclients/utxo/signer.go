@@ -58,10 +58,9 @@ const ZecTxExpiry = uint32(40)
 
 const zecHeightReportInterval = int64(ZecTxExpiry) / 4
 
-// broadcastMaxFeeRate is the "maxfeerate" passed to sendrawtransaction for BTC and
-// LTC. It is denominated in BTC/kvB, not sats - Core multiplies by 1e8 itself and
-// rejects anything >= 1 BTC/kvB. 0.1 is Core's own default (10,000 sat/vB); the fee
-// cap in buildTx must keep the signed transaction within it (see maxFeeSats).
+// broadcastMaxFeeRate is the "maxfeerate" passed to sendrawtransaction for BTC,
+// LTC and DASH, in coins per kvB (0.1 means 10,000 base units per vbyte).
+// The fee cap in buildTx must keep the signed transaction within it (see maxFeeSats).
 const broadcastMaxFeeRate = 0.1
 
 // broadcastMaxSatsPerVByte is broadcastMaxFeeRate in sats per vbyte (1e8 / 1000).

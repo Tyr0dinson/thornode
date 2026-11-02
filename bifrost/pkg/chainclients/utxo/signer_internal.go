@@ -397,7 +397,7 @@ func (c *Client) estimateTxSize(txes []btcjson.ListUnspentResult, memoScripts []
 func (c *Client) maxFeeSats(txes []btcjson.ListUnspentResult, memoScripts [][]byte, customerScript, changeScript []byte) int64 {
 	satsPerVByte := c.cfg.UTXO.MaxSatsPerVByte
 	switch c.cfg.ChainID {
-	case common.BTCChain, common.LTCChain:
+	case common.BTCChain, common.LTCChain, common.DASHChain:
 		// never exceed the maxfeerate BroadcastTx asks the daemon to enforce
 		satsPerVByte = min(satsPerVByte, broadcastMaxSatsPerVByte)
 	}

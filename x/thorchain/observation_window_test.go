@@ -11,13 +11,14 @@ import (
 // TestChainWindowPreservesMixedGuardGrace keeps passing and guarded voter kinds
 // together, in either order, until the shared outage has used its actual grace.
 func (s *ObservationTallySuite) TestChainWindowPreservesMixedGuardGrace(c *C) {
+	const window, grace int64 = 5, 4
 	for _, guardedIn := range []bool{false, true} {
 		ctx, mgr, nas := setupObservationTallyTest(c)
 		k := mgr.Keeper()
 		k.SetMimir(ctx, constants.ObservationDelayFlexibility.String(), 2)
-		k.SetMimir(ctx, "ObservationDelayFlexibilityDASH", 5)
+		k.SetMimir(ctx, "ObservationDelayFlexibilityDASH", window)
 		k.SetMimir(ctx, constants.MissingObservationGuardBps.String(), 1000)
-		k.SetMimir(ctx, constants.MissingObservationGuardMaxBlocks.String(), 4)
+		k.SetMimir(ctx, constants.MissingObservationGuardMaxBlocks.String(), grace)
 		k.SetMimir(ctx, constants.MissingObservationHalfLife.String(), 0)
 		start := ctx.BlockHeight()
 		for elapsed := int64(0); elapsed <= 13; elapsed++ {
@@ -54,7 +55,13 @@ func (s *ObservationTallySuite) TestChainWindowPreservesMixedGuardGrace(c *C) {
 				checkTally(c, ctx, mgr, nas[19], common.DASHChain, missed, elapsed-4+missed)
 				since, err := k.GetObservationGuardSince(ctx, common.DASHChain)
 				c.Assert(err, IsNil)
-				c.Assert(since, Equals, start)
+				c.Assert(since > 0, Equals, true)
+				// Passing then guarded voters close and reopen the run at the same
+				// height, retaining at most four spent blocks. Check the remaining grace,
+				// since the stored start can move once that grace is exhausted.
+				consensusHeight := ctx.BlockHeight() - window
+				remaining := max(grace-(consensusHeight-since), 0)
+				c.Assert(remaining, Equals, max(grace-(elapsed-window), 0))
 			}
 		}
 		checkTally(c, ctx, mgr, nas[19], common.DASHChain, 4, 14)

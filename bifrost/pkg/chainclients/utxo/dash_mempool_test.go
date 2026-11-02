@@ -27,6 +27,7 @@ type dashMempoolFixture struct {
 	ordinaryCalls, instantSendCalls                          int
 	beforeRawTransaction                                     func(string)
 	beforeRPC                                                func(string, []json.RawMessage)
+	overrideRPC                                              func(string, []json.RawMessage) (any, bool)
 	utxos                                                    []btcjson.ListUnspentResult
 	failMempoolEntry                                         bool
 }
@@ -73,6 +74,11 @@ func newDashMempoolFixture(c *C, rpcTimeout ...time.Duration) (*Client, *dashMem
 	server := newRPCTestServer(c, func(method string, params []json.RawMessage) any {
 		if f.beforeRPC != nil {
 			f.beforeRPC(method, params)
+		}
+		if f.overrideRPC != nil {
+			if result, overridden := f.overrideRPC(method, params); overridden {
+				return result
+			}
 		}
 		switch method {
 		case "listunspent":

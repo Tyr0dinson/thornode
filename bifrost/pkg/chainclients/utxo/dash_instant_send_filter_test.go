@@ -90,13 +90,16 @@ func (s *DashSuite) TestInstantSendFilterKeepsVaultPayments(c *C) {
 				client.instantSend.maxAmount = 0 // vault senders still bypass allowance
 				memo = "CONSOLIDATE"
 			}
+			// Omit addresses to exercise script decoding, but keep the RPC script
+			// types so the consolidation memo is recognised as OP_RETURN data.
 			f.txs[f.inbound]["vout"] = []any{map[string]any{
-				"n": 0, "value": 0.1, "scriptPubKey": map[string]any{"hex": newDashP2PKHScriptHex(c, f.asgard)},
-			}, map[string]any{"n": 1, "value": 0, "scriptPubKey": map[string]any{"hex": newDashMemoScriptHex(c, memo)}}}
+				"n": 0, "value": 0.1, "scriptPubKey": map[string]any{"hex": newDashP2PKHScriptHex(c, f.asgard), "type": "pubkeyhash"},
+			}, map[string]any{"n": 1, "value": 0, "scriptPubKey": map[string]any{"hex": newDashMemoScriptHex(c, memo), "type": "nulldata"}}}
 			batch, err := client.instantSend.fetchBatch(123, instantSendAdmission{allowed: !vaultSender})
 			c.Assert(err, IsNil)
 			c.Assert(batch.TxArray, HasLen, 1)
 			c.Assert(batch.TxArray[0].Tx, Equals, f.inbound)
+			c.Assert(batch.TxArray[0].Memo, Equals, memo)
 			c.Assert(client.instantSend.ignored, HasLen, 0)
 			state, err := client.temporalStorage.GetInstantSendState()
 			c.Assert(err, IsNil)

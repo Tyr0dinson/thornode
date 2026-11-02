@@ -51,8 +51,12 @@ shared across all of its vaults. This limits the amount that node reports before
 ChainLock settlement. It is a local soft limit, not a network-wide cap or a guarantee
 against an InstantSend failure.
 
-When Dash mempool scanning is enabled, it supplies the early vault-outbound
-observations. The signer skips its automatic observation after broadcast to avoid
+When Dash mempool scanning is enabled, it supplies early, non-final observations
+of vault outbounds. Payments from a vault to a customer receive their final
+observation from a ChainLocked block. The InstantSend path supplies final
+observations only for eligible transactions received by a vault, including
+customer deposits, vault migrations and consolidation.
+The signer skips its automatic observation after broadcast to avoid
 a third observation variant when InstantSend or ChainLock finality is reported.
 The first report waits for scanning and can be delayed by slow RPCs.
 Disabling mempool scanning retains the existing signer auto-observe rules.
@@ -76,10 +80,11 @@ allowance reservations remain charged. The maximum mempool age policy still appl
 A failed read of either amount Mimir pauses customer admission until both reads
 succeed. Lowering the limit below current usage leaves zero available; raising it
 exposes the difference. Deleting either amount Mimir restores the default above.
-Vault senders bypass the new allowance and minimum, including vault migrations,
-consolidation and outbounds. They neither consume nor refill customer allowance.
-They still require InstantSend to be enabled; setting only the amount limit to zero
-does not disable their InstantSend observations.
+Eligible vault-to-vault transfers, including migrations and consolidation,
+bypass the allowance and minimum. They neither consume nor refill customer
+allowance. Their InstantSend observations still require InstantSend to be enabled;
+setting only the amount limit to zero does not disable them. Ordinary outbounds
+to customers use the non-final mempool and final ChainLock paths described above.
 The allowance does not change signing or input selection.
 
 InstantSend scans check transaction outputs before looking up locks or parent
