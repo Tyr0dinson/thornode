@@ -178,7 +178,7 @@ func BenchmarkReceiptToTxInItem(b *testing.B) {
 		b.ReportAllocs()
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			item, err := scanner.receiptToTxInItem(decodeBenchTx(b, raw), receipt)
+			item, err := scanner.receiptToTxInItem(decodeBenchTx(b, raw), receipt, false)
 			if err != nil || item == nil {
 				b.Fatalf("unexpected result: %v %v", item, err)
 			}
@@ -191,7 +191,7 @@ func BenchmarkReceiptToTxInItem(b *testing.B) {
 		b.ReportAllocs()
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			item, err := scanner.receiptToTxInItem(decodeBenchTx(b, raw), receipt)
+			item, err := scanner.receiptToTxInItem(decodeBenchTx(b, raw), receipt, false)
 			if err != nil || item != nil {
 				b.Fatalf("unexpected result: %v %v", item, err)
 			}
@@ -204,7 +204,7 @@ func BenchmarkReceiptToTxInItem(b *testing.B) {
 		b.ReportAllocs()
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			item, err := scanner.receiptToTxInItem(decodeBenchTx(b, raw), contractReceipt)
+			item, err := scanner.receiptToTxInItem(decodeBenchTx(b, raw), contractReceipt, false)
 			if err != nil || item != nil {
 				b.Fatalf("unexpected result: %v %v", item, err)
 			}
