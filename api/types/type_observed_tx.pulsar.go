@@ -167,54 +167,100 @@ func (x *_ObservedTxVoter_6_list) IsValid() bool {
 	return x.list != nil
 }
 
-var _ protoreflect.List = (*_ObservedTxVoter_13_list)(nil)
+var _ protoreflect.List = (*_ObservedTxVoter_16_list)(nil)
 
-type _ObservedTxVoter_13_list struct {
-	list *[]*ObservedTxVote
+type _ObservedTxVoter_16_list struct {
+	list *[]string
 }
 
-func (x *_ObservedTxVoter_13_list) Len() int {
+func (x *_ObservedTxVoter_16_list) Len() int {
 	if x.list == nil {
 		return 0
 	}
 	return len(*x.list)
 }
 
-func (x *_ObservedTxVoter_13_list) Get(i int) protoreflect.Value {
+func (x *_ObservedTxVoter_16_list) Get(i int) protoreflect.Value {
+	return protoreflect.ValueOfString((*x.list)[i])
+}
+
+func (x *_ObservedTxVoter_16_list) Set(i int, value protoreflect.Value) {
+	valueUnwrapped := value.String()
+	concreteValue := valueUnwrapped
+	(*x.list)[i] = concreteValue
+}
+
+func (x *_ObservedTxVoter_16_list) Append(value protoreflect.Value) {
+	valueUnwrapped := value.String()
+	concreteValue := valueUnwrapped
+	*x.list = append(*x.list, concreteValue)
+}
+
+func (x *_ObservedTxVoter_16_list) AppendMutable() protoreflect.Value {
+	panic(fmt.Errorf("AppendMutable can not be called on message ObservedTxVoter at list field ExcusedObservers as it is not of Message kind"))
+}
+
+func (x *_ObservedTxVoter_16_list) Truncate(n int) {
+	*x.list = (*x.list)[:n]
+}
+
+func (x *_ObservedTxVoter_16_list) NewElement() protoreflect.Value {
+	v := ""
+	return protoreflect.ValueOfString(v)
+}
+
+func (x *_ObservedTxVoter_16_list) IsValid() bool {
+	return x.list != nil
+}
+
+var _ protoreflect.List = (*_ObservedTxVoter_17_list)(nil)
+
+type _ObservedTxVoter_17_list struct {
+	list *[]*ObservedTxVote
+}
+
+func (x *_ObservedTxVoter_17_list) Len() int {
+	if x.list == nil {
+		return 0
+	}
+	return len(*x.list)
+}
+
+func (x *_ObservedTxVoter_17_list) Get(i int) protoreflect.Value {
 	return protoreflect.ValueOfMessage((*x.list)[i].ProtoReflect())
 }
 
-func (x *_ObservedTxVoter_13_list) Set(i int, value protoreflect.Value) {
+func (x *_ObservedTxVoter_17_list) Set(i int, value protoreflect.Value) {
 	valueUnwrapped := value.Message()
 	concreteValue := valueUnwrapped.Interface().(*ObservedTxVote)
 	(*x.list)[i] = concreteValue
 }
 
-func (x *_ObservedTxVoter_13_list) Append(value protoreflect.Value) {
+func (x *_ObservedTxVoter_17_list) Append(value protoreflect.Value) {
 	valueUnwrapped := value.Message()
 	concreteValue := valueUnwrapped.Interface().(*ObservedTxVote)
 	*x.list = append(*x.list, concreteValue)
 }
 
-func (x *_ObservedTxVoter_13_list) AppendMutable() protoreflect.Value {
+func (x *_ObservedTxVoter_17_list) AppendMutable() protoreflect.Value {
 	v := new(ObservedTxVote)
 	*x.list = append(*x.list, v)
 	return protoreflect.ValueOfMessage(v.ProtoReflect())
 }
 
-func (x *_ObservedTxVoter_13_list) Truncate(n int) {
+func (x *_ObservedTxVoter_17_list) Truncate(n int) {
 	for i := n; i < len(*x.list); i++ {
 		(*x.list)[i] = nil
 	}
 	*x.list = (*x.list)[:n]
 }
 
-func (x *_ObservedTxVoter_13_list) NewElement() protoreflect.Value {
+func (x *_ObservedTxVoter_17_list) NewElement() protoreflect.Value {
 	v := new(ObservedTxVote)
 	return protoreflect.ValueOfMessage(v.ProtoReflect())
 }
 
-func (x *_ObservedTxVoter_13_list) IsValid() bool {
+func (x *_ObservedTxVoter_17_list) IsValid() bool {
 	return x.list != nil
 }
 
@@ -231,6 +277,7 @@ var (
 	fd_ObservedTxVoter_reverted            protoreflect.FieldDescriptor
 	fd_ObservedTxVoter_outbound_height     protoreflect.FieldDescriptor
 	fd_ObservedTxVoter_unfinalized_height  protoreflect.FieldDescriptor
+	fd_ObservedTxVoter_excused_observers   protoreflect.FieldDescriptor
 	fd_ObservedTxVoter_latest_votes        protoreflect.FieldDescriptor
 	fd_ObservedTxVoter_bounce_credit_floor protoreflect.FieldDescriptor
 )
@@ -249,6 +296,7 @@ func init() {
 	fd_ObservedTxVoter_reverted = md_ObservedTxVoter.Fields().ByName("reverted")
 	fd_ObservedTxVoter_outbound_height = md_ObservedTxVoter.Fields().ByName("outbound_height")
 	fd_ObservedTxVoter_unfinalized_height = md_ObservedTxVoter.Fields().ByName("unfinalized_height")
+	fd_ObservedTxVoter_excused_observers = md_ObservedTxVoter.Fields().ByName("excused_observers")
 	fd_ObservedTxVoter_latest_votes = md_ObservedTxVoter.Fields().ByName("latest_votes")
 	fd_ObservedTxVoter_bounce_credit_floor = md_ObservedTxVoter.Fields().ByName("bounce_credit_floor")
 }
@@ -384,8 +432,14 @@ func (x *fastReflection_ObservedTxVoter) Range(f func(protoreflect.FieldDescript
 			return
 		}
 	}
+	if len(x.ExcusedObservers) != 0 {
+		value := protoreflect.ValueOfList(&_ObservedTxVoter_16_list{list: &x.ExcusedObservers})
+		if !f(fd_ObservedTxVoter_excused_observers, value) {
+			return
+		}
+	}
 	if len(x.LatestVotes) != 0 {
-		value := protoreflect.ValueOfList(&_ObservedTxVoter_13_list{list: &x.LatestVotes})
+		value := protoreflect.ValueOfList(&_ObservedTxVoter_17_list{list: &x.LatestVotes})
 		if !f(fd_ObservedTxVoter_latest_votes, value) {
 			return
 		}
@@ -433,6 +487,8 @@ func (x *fastReflection_ObservedTxVoter) Has(fd protoreflect.FieldDescriptor) bo
 		return x.OutboundHeight != int64(0)
 	case "types.ObservedTxVoter.unfinalized_height":
 		return x.UnfinalizedHeight != int64(0)
+	case "types.ObservedTxVoter.excused_observers":
+		return len(x.ExcusedObservers) != 0
 	case "types.ObservedTxVoter.latest_votes":
 		return len(x.LatestVotes) != 0
 	case "types.ObservedTxVoter.bounce_credit_floor":
@@ -475,6 +531,8 @@ func (x *fastReflection_ObservedTxVoter) Clear(fd protoreflect.FieldDescriptor) 
 		x.OutboundHeight = int64(0)
 	case "types.ObservedTxVoter.unfinalized_height":
 		x.UnfinalizedHeight = int64(0)
+	case "types.ObservedTxVoter.excused_observers":
+		x.ExcusedObservers = nil
 	case "types.ObservedTxVoter.latest_votes":
 		x.LatestVotes = nil
 	case "types.ObservedTxVoter.bounce_credit_floor":
@@ -537,11 +595,17 @@ func (x *fastReflection_ObservedTxVoter) Get(descriptor protoreflect.FieldDescri
 	case "types.ObservedTxVoter.unfinalized_height":
 		value := x.UnfinalizedHeight
 		return protoreflect.ValueOfInt64(value)
+	case "types.ObservedTxVoter.excused_observers":
+		if len(x.ExcusedObservers) == 0 {
+			return protoreflect.ValueOfList(&_ObservedTxVoter_16_list{})
+		}
+		listValue := &_ObservedTxVoter_16_list{list: &x.ExcusedObservers}
+		return protoreflect.ValueOfList(listValue)
 	case "types.ObservedTxVoter.latest_votes":
 		if len(x.LatestVotes) == 0 {
-			return protoreflect.ValueOfList(&_ObservedTxVoter_13_list{})
+			return protoreflect.ValueOfList(&_ObservedTxVoter_17_list{})
 		}
-		listValue := &_ObservedTxVoter_13_list{list: &x.LatestVotes}
+		listValue := &_ObservedTxVoter_17_list{list: &x.LatestVotes}
 		return protoreflect.ValueOfList(listValue)
 	case "types.ObservedTxVoter.bounce_credit_floor":
 		value := x.BounceCreditFloor
@@ -594,9 +658,13 @@ func (x *fastReflection_ObservedTxVoter) Set(fd protoreflect.FieldDescriptor, va
 		x.OutboundHeight = value.Int()
 	case "types.ObservedTxVoter.unfinalized_height":
 		x.UnfinalizedHeight = value.Int()
+	case "types.ObservedTxVoter.excused_observers":
+		lv := value.List()
+		clv := lv.(*_ObservedTxVoter_16_list)
+		x.ExcusedObservers = *clv.list
 	case "types.ObservedTxVoter.latest_votes":
 		lv := value.List()
-		clv := lv.(*_ObservedTxVoter_13_list)
+		clv := lv.(*_ObservedTxVoter_17_list)
 		x.LatestVotes = *clv.list
 	case "types.ObservedTxVoter.bounce_credit_floor":
 		x.BounceCreditFloor = value.Int()
@@ -643,11 +711,17 @@ func (x *fastReflection_ObservedTxVoter) Mutable(fd protoreflect.FieldDescriptor
 		}
 		value := &_ObservedTxVoter_6_list{list: &x.OutTxs}
 		return protoreflect.ValueOfList(value)
+	case "types.ObservedTxVoter.excused_observers":
+		if x.ExcusedObservers == nil {
+			x.ExcusedObservers = []string{}
+		}
+		value := &_ObservedTxVoter_16_list{list: &x.ExcusedObservers}
+		return protoreflect.ValueOfList(value)
 	case "types.ObservedTxVoter.latest_votes":
 		if x.LatestVotes == nil {
 			x.LatestVotes = []*ObservedTxVote{}
 		}
-		value := &_ObservedTxVoter_13_list{list: &x.LatestVotes}
+		value := &_ObservedTxVoter_17_list{list: &x.LatestVotes}
 		return protoreflect.ValueOfList(value)
 	case "types.ObservedTxVoter.tx_id":
 		panic(fmt.Errorf("field tx_id of message types.ObservedTxVoter is not mutable"))
@@ -704,9 +778,12 @@ func (x *fastReflection_ObservedTxVoter) NewField(fd protoreflect.FieldDescripto
 		return protoreflect.ValueOfInt64(int64(0))
 	case "types.ObservedTxVoter.unfinalized_height":
 		return protoreflect.ValueOfInt64(int64(0))
+	case "types.ObservedTxVoter.excused_observers":
+		list := []string{}
+		return protoreflect.ValueOfList(&_ObservedTxVoter_16_list{list: &list})
 	case "types.ObservedTxVoter.latest_votes":
 		list := []*ObservedTxVote{}
-		return protoreflect.ValueOfList(&_ObservedTxVoter_13_list{list: &list})
+		return protoreflect.ValueOfList(&_ObservedTxVoter_17_list{list: &list})
 	case "types.ObservedTxVoter.bounce_credit_floor":
 		return protoreflect.ValueOfInt64(int64(0))
 	default:
@@ -822,10 +899,16 @@ func (x *fastReflection_ObservedTxVoter) ProtoMethods() *protoiface.Methods {
 		if x.UnfinalizedHeight != 0 {
 			n += 1 + runtime.Sov(uint64(x.UnfinalizedHeight))
 		}
+		if len(x.ExcusedObservers) > 0 {
+			for _, s := range x.ExcusedObservers {
+				l = len(s)
+				n += 2 + l + runtime.Sov(uint64(l))
+			}
+		}
 		if len(x.LatestVotes) > 0 {
 			for _, e := range x.LatestVotes {
 				l = options.Size(e)
-				n += 1 + l + runtime.Sov(uint64(l))
+				n += 2 + l + runtime.Sov(uint64(l))
 			}
 		}
 		if x.BounceCreditFloor != 0 {
@@ -860,11 +943,6 @@ func (x *fastReflection_ObservedTxVoter) ProtoMethods() *protoiface.Methods {
 			i -= len(x.unknownFields)
 			copy(dAtA[i:], x.unknownFields)
 		}
-		if x.BounceCreditFloor != 0 {
-			i = runtime.EncodeVarint(dAtA, i, uint64(x.BounceCreditFloor))
-			i--
-			dAtA[i] = 0x78
-		}
 		if len(x.LatestVotes) > 0 {
 			for iNdEx := len(x.LatestVotes) - 1; iNdEx >= 0; iNdEx-- {
 				encoded, err := options.Marshal(x.LatestVotes[iNdEx])
@@ -878,8 +956,26 @@ func (x *fastReflection_ObservedTxVoter) ProtoMethods() *protoiface.Methods {
 				copy(dAtA[i:], encoded)
 				i = runtime.EncodeVarint(dAtA, i, uint64(len(encoded)))
 				i--
-				dAtA[i] = 0x6a
+				dAtA[i] = 0x1
+				i--
+				dAtA[i] = 0x8a
 			}
+		}
+		if len(x.ExcusedObservers) > 0 {
+			for iNdEx := len(x.ExcusedObservers) - 1; iNdEx >= 0; iNdEx-- {
+				i -= len(x.ExcusedObservers[iNdEx])
+				copy(dAtA[i:], x.ExcusedObservers[iNdEx])
+				i = runtime.EncodeVarint(dAtA, i, uint64(len(x.ExcusedObservers[iNdEx])))
+				i--
+				dAtA[i] = 0x1
+				i--
+				dAtA[i] = 0x82
+			}
+		}
+		if x.BounceCreditFloor != 0 {
+			i = runtime.EncodeVarint(dAtA, i, uint64(x.BounceCreditFloor))
+			i--
+			dAtA[i] = 0x78
 		}
 		if x.UnfinalizedHeight != 0 {
 			i = runtime.EncodeVarint(dAtA, i, uint64(x.UnfinalizedHeight))
@@ -1325,7 +1421,39 @@ func (x *fastReflection_ObservedTxVoter) ProtoMethods() *protoiface.Methods {
 						break
 					}
 				}
-			case 13:
+			case 16:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field ExcusedObservers", wireType)
+				}
+				var stringLen uint64
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					stringLen |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				intStringLen := int(stringLen)
+				if intStringLen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + intStringLen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.ExcusedObservers = append(x.ExcusedObservers, string(dAtA[iNdEx:postIndex]))
+				iNdEx = postIndex
+			case 17:
 				if wireType != 2 {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field LatestVotes", wireType)
 				}
@@ -1910,6 +2038,10 @@ type ObservedTxVoter struct {
 	Reverted          bool                 `protobuf:"varint,9,opt,name=reverted,proto3" json:"reverted,omitempty"`
 	OutboundHeight    int64                `protobuf:"varint,10,opt,name=outbound_height,json=outboundHeight,proto3" json:"outbound_height,omitempty"`
 	UnfinalizedHeight int64                `protobuf:"varint,11,opt,name=unfinalized_height,json=unfinalizedHeight,proto3" json:"unfinalized_height,omitempty"`
+	// Nodes spared LackOfObservationPenalty at non-final consensus, or refunded
+	// it within its flex window, because they observed the tx in the final tier.
+	// Cleared at final consensus.
+	ExcusedObservers []string `protobuf:"bytes,16,rep,name=excused_observers,json=excusedObservers,proto3" json:"excused_observers,omitempty"`
 	// latest_votes records, per signer, which entry of txs that signer filed most
 	// recently at each finality level. An entry keeps the signatures it once held
 	// forever, so without this a verdict the network has moved off of could be
@@ -1920,7 +2052,7 @@ type ObservedTxVoter struct {
 	// (outbound observations) writes it, and only once a signer has signed a
 	// second entry at a finality level, so inbound (Add-only) voters never
 	// populate it and their consensus is unchanged.
-	LatestVotes []*ObservedTxVote `protobuf:"bytes,13,rep,name=latest_votes,json=latestVotes,proto3" json:"latest_votes,omitempty"`
+	LatestVotes []*ObservedTxVote `protobuf:"bytes,17,rep,name=latest_votes,json=latestVotes,proto3" json:"latest_votes,omitempty"`
 	// bounce_credit_floor is the highest external finalise height of a Bounced
 	// verdict that a correction to delivered has superseded. A later correction
 	// back to Bounced (crediting the coins again) must be at a strictly greater
@@ -2025,6 +2157,13 @@ func (x *ObservedTxVoter) GetUnfinalizedHeight() int64 {
 		return x.UnfinalizedHeight
 	}
 	return 0
+}
+
+func (x *ObservedTxVoter) GetExcusedObservers() []string {
+	if x != nil {
+		return x.ExcusedObservers
+	}
+	return nil
 }
 
 func (x *ObservedTxVoter) GetLatestVotes() []*ObservedTxVote {
@@ -2134,7 +2273,7 @@ var file_types_type_observed_tx_proto_rawDesc = []byte{
 	0x64, 0x5f, 0x68, 0x65, 0x69, 0x67, 0x68, 0x74, 0x18, 0x0b, 0x20, 0x01, 0x28, 0x03, 0x52, 0x11,
 	0x75, 0x6e, 0x66, 0x69, 0x6e, 0x61, 0x6c, 0x69, 0x7a, 0x65, 0x64, 0x48, 0x65, 0x69, 0x67, 0x68,
 	0x74, 0x12, 0x58, 0x0a, 0x0c, 0x6c, 0x61, 0x74, 0x65, 0x73, 0x74, 0x5f, 0x76, 0x6f, 0x74, 0x65,
-	0x73, 0x18, 0x0d, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x15, 0x2e, 0x74, 0x79, 0x70, 0x65, 0x73, 0x2e,
+	0x73, 0x18, 0x11, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x15, 0x2e, 0x74, 0x79, 0x70, 0x65, 0x73, 0x2e,
 	0x4f, 0x62, 0x73, 0x65, 0x72, 0x76, 0x65, 0x64, 0x54, 0x78, 0x56, 0x6f, 0x74, 0x65, 0x42, 0x1e,
 	0xc8, 0xde, 0x1f, 0x00, 0xea, 0xde, 0x1f, 0x16, 0x6c, 0x61, 0x74, 0x65, 0x73, 0x74, 0x5f, 0x76,
 	0x6f, 0x74, 0x65, 0x73, 0x2c, 0x6f, 0x6d, 0x69, 0x74, 0x65, 0x6d, 0x70, 0x74, 0x79, 0x52, 0x0b,

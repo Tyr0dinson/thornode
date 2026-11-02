@@ -46,7 +46,7 @@ message ObservedTxVoter {
   // (outbound observations) writes it, and only once a signer has signed a
   // second entry at a finality level, so inbound (Add-only) voters never
   // populate it and their consensus is unchanged.
-  repeated ObservedTxVote latest_votes = 13 [
+  repeated ObservedTxVote latest_votes = 17 [
     (gogoproto.nullable) = false,
     (gogoproto.jsontag) = "latest_votes,omitempty"
   ];
