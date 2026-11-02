@@ -593,8 +593,9 @@ func (tos *TxOutStorage) discoverOutbounds(ctx cosmos.Context, transactionFeeAmo
 	}
 	original := toi
 	outputs, toi = allocateOutbounds(transactionFeeAmount, maxGasCoin, toi, vaults, isRagnarok, tokenGasReserve)
-	if tokenGasReserve > 0 && !toi.Coin.Amount.IsZero() {
-		// The reserve must not block an outbound the vaults can pay without it.
+	if tokenGasReserve > 0 && (!toi.Coin.Amount.IsZero() || hasUnpayableFragment(outputs, transactionFeeAmount, toi.Chain.DustThreshold())) {
+		// The reserve must not block an outbound the vaults can pay without it,
+		// nor split off a fragment that the fee deduction would drop as dust.
 		outputs, toi = allocateOutbounds(transactionFeeAmount, maxGasCoin, original, vaults, isRagnarok, 0)
 	}
 
@@ -767,6 +768,19 @@ func allocateOutbounds(transactionFeeAmount cosmos.Uint, maxGasCoin common.Coin,
 		}
 	}
 	return outputs, toi
+}
+
+// hasUnpayableFragment reports whether any output is too small to survive the
+// outbound fee: prepareTxOutItem drops a gas-asset output whose amount after
+// the fee is below the dust threshold, after the inbound was already debited.
+func hasUnpayableFragment(outputs []TxOutItem, transactionFeeAmount, dustThreshold cosmos.Uint) bool {
+	minimum := transactionFeeAmount.Add(dustThreshold)
+	for _, output := range outputs {
+		if output.Coin.Amount.LTE(transactionFeeAmount) || output.Coin.Amount.LT(minimum) {
+			return true
+		}
+	}
+	return false
 }
 
 // prepareTxOutItem will do some data validation which include the following

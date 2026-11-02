@@ -1,0 +1,72 @@
+{{ template "default-state.yaml" }}
+---
+{{ template "eth-usdc-token-gas-reserve-state.yaml" }}
+---
+type: state
+genesis:
+  app_state:
+    thorchain:
+      mimirs:
+        - key: VaultTokenGasReserve
+          value: "500"
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# VaultTokenGasReserve=500: with the reserve held back the dog vault can give
+# 15 - 0.0096 - 4.8 = 10.1904 ETH, so a 10.196 ETH withdraw would leave the cat
+# vault a 0.0056 ETH tail. That is below the 0.0064 ETH outbound fee, and the fee
+# deduction would drop it after the withdraw debited the pool. Selection drops
+# the reserve instead, and the dog vault pays the whole withdraw.
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - amount: "0"
+    asset: "rune"
+memo: "-:ETH.ETH:5098"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 1
+  - .[0].vault_pub_key == "{{ pubkey_dog }}"
+  - .[0].coin.asset == "ETH.ETH"
+  - .[0].coin.amount|tonumber == ${DOG_OUT=1018960000}
+---
+type: tx-observed-out
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 1 }}"
+      chain: ETH
+      from_address: {{ addr_eth_dog }}
+      to_address: {{ addr_eth_fox }}
+      coins:
+        - amount: "${DOG_OUT}"
+          asset: "ETH.ETH"
+          decimals: 8
+      gas:
+        - amount: "960000"
+          asset: "ETH.ETH"
+      memo: "OUT:{{ native_txid -1 }}"
+    block_height: 2
+    finalise_height: 2
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 0
+---
+type: check
+endpoint: http://localhost:1317/thorchain/vault/{{ pubkey_cat }}
+asserts:
+  - .coins[]|select(.asset == "ETH.ETH")|.amount|tonumber == 500000000

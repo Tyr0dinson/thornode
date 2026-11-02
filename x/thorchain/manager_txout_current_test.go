@@ -1976,6 +1976,33 @@ func (s TxOutStoreSuite) TestDiscoverOutboundsTokenGasReserve(c *C) {
 	c.Check(outputs[0].Coin.Amount.Equal(cosmos.NewUint(95*common.One)), Equals, true)
 	c.Check(eventMgr.securityEvents(), HasLen, 0)
 
+	// On, but the reserve split would leave the gas-only vault a tail smaller
+	// than the fee plus dust, which prepareTxOutItem drops after the inbound was
+	// debited: the reserve is dropped and the token vault pays it all.
+	ctx, mgr = setupManagerForTest(c)
+	mgr.Keeper().SetMimir(ctx, constants.VaultTokenGasReserve.String(), 10)
+	withTokens, gasOnly = tokenGasReserveVaults(c, ctx, mgr, usdt, 50)
+	store = newTxOutStorage(mgr.Keeper(), mgr.GetConstants(), newRecordingEventMgr(), mgr.GasMgr())
+	tail := ethOut(89, "")
+	tail.Coin.Amount = tail.Coin.Amount.Add(fee.QuoUint64(2))
+	outputs, _ = allocateOutbounds(fee, maxGas, tail, Vaults{withTokens, gasOnly}, false, 10)
+	c.Assert(outputs, HasLen, 2)
+	c.Check(hasUnpayableFragment(outputs, fee, common.ETHChain.DustThreshold()), Equals, true)
+	outputs, remaining = store.DiscoverOutbounds(ctx, fee, maxGas, tail, Vaults{withTokens, gasOnly})
+	c.Assert(remaining.IsZero(), Equals, true)
+	c.Assert(outputs, HasLen, 1)
+	c.Check(outputs[0].VaultPubKey.Equals(withTokens.PubKey), Equals, true)
+	c.Check(outputs[0].Coin.Amount.Equal(tail.Coin.Amount), Equals, true)
+
+	// A tail that clears the fee plus dust keeps the reserve split.
+	tail = ethOut(89, "")
+	tail.Coin.Amount = tail.Coin.Amount.Add(fee.Add(common.ETHChain.DustThreshold()))
+	outputs, remaining = store.DiscoverOutbounds(ctx, fee, maxGas, tail, Vaults{withTokens, gasOnly})
+	c.Assert(remaining.IsZero(), Equals, true)
+	c.Assert(outputs, HasLen, 2)
+	c.Check(outputs[1].VaultPubKey.Equals(gasOnly.PubKey), Equals, true)
+	c.Check(outputs[1].Coin.Amount.Equal(fee.Add(common.ETHChain.DustThreshold())), Equals, true)
+
 	// On: a token outbound holds nothing back.
 	ctx, mgr = setupManagerForTest(c)
 	mgr.Keeper().SetMimir(ctx, constants.VaultTokenGasReserve.String(), 10)
