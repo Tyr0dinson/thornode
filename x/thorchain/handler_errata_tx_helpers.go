@@ -26,7 +26,7 @@ func processErrataTxAttestation(
 
 	observeSlashPoints := mgr.GetConstants().GetInt64Value(constants.ObserveSlashPoints)
 	lackOfObservationPenalty := mgr.GetConstants().GetInt64Value(constants.LackOfObservationPenalty)
-	observeFlex := k.GetConfigInt64(ctx, constants.ObservationDelayFlexibility)
+	observeFlex := observationDelayFlexibility(ctx, k, voter.Chain)
 
 	slashCtx := ctx.WithContext(context.WithValue(ctx.Context(), constants.CtxMetricLabels, []metrics.Label{ // nolint
 		telemetry.NewLabel("reason", "failed_observe_errata"),

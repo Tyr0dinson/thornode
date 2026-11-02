@@ -152,8 +152,7 @@ func (s *ObservationTallySuite) TestTransactionWindowCreditsLateSigners(c *C) {
 	}
 }
 
-// TestQueueWindowByVoterKind checks override/fallback scheduling without changing
-// the global window used by network-fee, solvency and errata voters.
+// TestQueueWindowByVoterKind checks that every kind uses the same override or fallback.
 func (s *ObservationTallySuite) TestQueueWindowByVoterKind(c *C) {
 	for _, tc := range []struct {
 		name     string
@@ -181,11 +180,7 @@ func (s *ObservationTallySuite) TestQueueWindowByVoterKind(c *C) {
 				k = failingObservationFlexKeeper{k}
 			}
 			queueObservationTally(ctx, k, kind, tc.chain, "voter")
-			window := int64(2)
-			if kind == observationTallyKindTxIn || kind == observationTallyKindTxOut {
-				window = tc.window
-			}
-			dueHeight := ctx.BlockHeight() + window
+			dueHeight := ctx.BlockHeight() + tc.window
 			info := Commentf("%s kind=%s", tc.name, kind)
 			entries, err := k.PopObservationTallies(ctx, dueHeight-1)
 			c.Assert(err, IsNil)

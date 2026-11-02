@@ -87,25 +87,9 @@ type Client struct {
 	bridge      thorclient.ThorchainBridge
 	asgardCache stdatomic.Pointer[utxo.AsgardCache]
 
-	// Owned by the single mempool scanner; queued batches are rebuilt after restart.
-	instantSendMempoolCursor string
-	// Transaction batches awaiting final checks and delivery.
-	instantSendTxQueue []types.TxIn
+	instantSend instantSendHandler
 	// Selects the next mempool scan; starts with scanOutbounds.
 	nextMempoolScan mempoolScanType
-	// Effective switch after applying Mimir; cfg retains the startup value.
-	instantSendEnabled bool
-	// Amount settings are owned by the mempool scanner.
-	// Both amounts and their Mimir values use duffs (common.One per DASH).
-	instantSendMinAmount uint64
-	instantSendMaxAmount uint64
-	// Serializes allowance writes, recovery progress, revision and switch updates.
-	// Release during RPCs so ChainLock settlement can continue. After relocking,
-	// check the revision and keep the lock through the resulting state updates.
-	instantSendStateMu sync.Mutex
-	// Incremented on settlement attempts to reject stale RPC results.
-	instantSendRevision uint64
-	instantSendRecovery instantSendRecovery
 
 	// ---------- fees / solvency ----------
 	minRelayFeeSats         stdatomic.Uint64
@@ -188,9 +172,9 @@ func NewClient(
 		vaultLocks:                make(map[string]*sync.Mutex),
 		stopchan:                  make(chan struct{}),
 		bridge:                    bridge,
-		instantSendEnabled:        cfg.InstantSend.Enabled,
 		regexpRemoveTrailingZeros: regexp.MustCompile(`(?:00)+$`),
 	}
+	c.instantSend = instantSendHandler{client: c, enabled: cfg.InstantSend.Enabled}
 
 	// Seed the BTC min-relay-fee floor to its fixed, daemon-independent value so it is
 	// never 0 before the first updateNetworkInfo tick (the floor is signing-consensus-
@@ -641,35 +625,35 @@ func (c *Client) FetchMemPool(height int64) (types.TxIn, error) {
 		return c.fetchMemPoolTransactions(height, false)
 	}
 
-	previousEnabled := c.instantSendEnabled
-	err := c.refreshInstantSendSettings()
+	previousEnabled := c.instantSend.enabled
+	err := c.instantSend.refreshSettings()
 	if err != nil {
 		c.log.Err(err).Msg("fail to refresh InstantSend settings")
-		c.publishInstantSendAllowance(instantSendAdmission{reason: "settings"})
+		c.instantSend.publishAllowance(instantSendAdmission{reason: "settings"})
 	}
-	if !c.instantSendEnabled {
-		c.instantSendTxQueue = nil
+	if !c.instantSend.enabled {
+		c.instantSend.txQueue = nil
 		c.nextMempoolScan = scanOutbounds
 		var admission instantSendAdmission
-		admission, err = c.prepareInstantSendAllowance(err)
+		admission, err = c.instantSend.prepareAllowance(err)
 		if err != nil {
 			c.log.Err(err).Msg("fail to maintain InstantSend allowance while disabled")
 		}
-		c.publishInstantSendAllowance(admission)
+		c.instantSend.publishAllowance(admission)
 		return c.fetchMemPoolTransactions(height, true)
 	}
-	if c.instantSendEnabled != previousEnabled {
+	if c.instantSend.enabled != previousEnabled {
 		// Rebuild queued batches after the enabled switch changes.
-		c.instantSendTxQueue = nil
+		c.instantSend.txQueue = nil
 	}
-	if c.isInstantSendPaused() {
-		c.instantSendTxQueue = nil
+	if c.instantSend.isPaused() {
+		c.instantSend.txQueue = nil
 		c.nextMempoolScan = scanOutbounds
 		// Keep existing recovery moving, without starting a new allowance snapshot.
-		if _, err = c.prepareInstantSendAllowance(errInstantSendPaused); err != nil {
+		if _, err = c.instantSend.prepareAllowance(errInstantSendPaused); err != nil {
 			c.log.Err(err).Msg("fail to maintain InstantSend allowance while halted")
 		}
-		c.publishInstantSendAllowance(instantSendAdmission{reason: "halt"})
+		c.instantSend.publishAllowance(instantSendAdmission{reason: "halt"})
 		return c.fetchMemPoolTransactions(height, true)
 	}
 
@@ -680,17 +664,17 @@ func (c *Client) FetchMemPool(height int64) (types.TxIn, error) {
 	case scanInstantSend:
 		c.nextMempoolScan = scanOutbounds
 		var admission instantSendAdmission
-		admission, err = c.prepareInstantSendAllowance(err)
+		admission, err = c.instantSend.prepareAllowance(err)
 		if err != nil {
 			c.log.Err(err).Msg("customer InstantSend observations paused")
 		}
 		// Publish after this scan's preparation and claims, using its own decision.
-		defer func() { c.publishInstantSendAllowance(admission) }()
+		defer func() { c.instantSend.publishAllowance(admission) }()
 		var batch types.TxIn
-		batch, err = c.fetchInstantSendBatch(height, admission)
+		batch, err = c.instantSend.fetchBatch(height, admission)
 		if errors.Is(err, errInstantSendPaused) {
 			// The halt became visible during the scan. No claims were written.
-			c.instantSendTxQueue = nil
+			c.instantSend.txQueue = nil
 			c.nextMempoolScan = scanOutbounds
 			admission = instantSendAdmission{reason: "halt"}
 			return c.fetchMemPoolTransactions(height, true)

@@ -59,7 +59,7 @@ func (s *DashSuite) TestInstantSendHaltBoundariesAndReadErrors(c *C) {
 			if key == "NodePauseChainGlobal" {
 				want = value > 0 && value >= 100
 			}
-			c.Assert(client.isInstantSendPaused(), Equals, want, Commentf("%s=%d", key, value))
+			c.Assert(client.instantSend.isPaused(), Equals, want, Commentf("%s=%d", key, value))
 			if want {
 				c.Assert(bridge.reads, HasLen, i+2) // height and keys through the active halt
 			} else {
@@ -86,11 +86,11 @@ func (s *DashSuite) TestInstantSendHaltBoundariesAndReadErrors(c *C) {
 			},
 		}
 		client.bridge = bridge
-		c.Assert(client.isInstantSendPaused(), Equals, true)
+		c.Assert(client.instantSend.isPaused(), Equals, true)
 		c.Assert(bridge.reads, DeepEquals, allReads[:i+1]) // no calls after the failure
 	}
 	client.bridge = nil
-	c.Assert(client.isInstantSendPaused(), Equals, true)
+	c.Assert(client.instantSend.isPaused(), Equals, true)
 }
 
 func (s *DashSuite) TestInstantSendEarlyHaltRetainsReservationsAndResumes(c *C) {
@@ -106,9 +106,9 @@ func (s *DashSuite) TestInstantSendEarlyHaltRetainsReservationsAndResumes(c *C) 
 		c.Assert(batch.MemPool, Equals, true)
 		c.Assert(batch.TxArray, HasLen, 2)
 		// Already delivered deposits stay charged while new queued candidates wait.
-		_, err = client.claimInstantSendBatch([]*types.TxInItem{instantSendTestItem(f, f.inbound)}, instantSendAdmission{allowed: true})
+		_, err = client.instantSend.claimBatch([]*types.TxInItem{instantSendTestItem(f, f.inbound)}, instantSendAdmission{allowed: true})
 		c.Assert(err, IsNil)
-		client.instantSendTxQueue = instantSendObservationGroups(common.DASHChain,
+		client.instantSend.txQueue = instantSendObservationGroups(common.DASHChain,
 			map[int64][]*types.TxInItem{100: {instantSendTestItem(f, f.lowFeeInbound)}})
 		base := client.bridge
 		phase := "halted"
@@ -132,7 +132,7 @@ func (s *DashSuite) TestInstantSendEarlyHaltRetainsReservationsAndResumes(c *C) 
 			c.Assert(batch.MemPool, Equals, true)
 			c.Assert(batch.TxArray, HasLen, 0) // ordinary outbounds were already delivered
 			c.Assert(f.instantSendCalls, Equals, 0)
-			c.Assert(client.instantSendTxQueue, HasLen, 0)
+			c.Assert(client.instantSend.txQueue, HasLen, 0)
 			c.Assert(client.nextMempoolScan, Equals, scanOutbounds)
 			state, err = client.temporalStorage.GetInstantSendState()
 			c.Assert(err, IsNil)
@@ -191,7 +191,7 @@ func (s *DashSuite) TestInstantSendEarlyLookupFailureAndRecovery(c *C) {
 			f.entries = nil
 		}
 		client.nextMempoolScan = scanInstantSend
-		client.instantSendTxQueue = instantSendObservationGroups(common.DASHChain,
+		client.instantSend.txQueue = instantSendObservationGroups(common.DASHChain,
 			map[int64][]*types.TxInItem{100: {instantSendTestItem(f, f.inbound)}})
 		batch, err := client.FetchMemPool(123)
 		c.Assert(err, IsNil)
@@ -206,7 +206,7 @@ func (s *DashSuite) TestInstantSendEarlyLookupFailureAndRecovery(c *C) {
 		}
 		c.Assert(f.ordinaryCalls, Equals, 1)
 		c.Assert(f.instantSendCalls, Equals, 0)
-		c.Assert(client.instantSendTxQueue, HasLen, 0)
+		c.Assert(client.instantSend.txQueue, HasLen, 0)
 		c.Assert(client.nextMempoolScan, Equals, scanOutbounds)
 		var marked bool
 		for _, id := range []string{f.inbound, f.lowFeeInbound} {
@@ -240,7 +240,7 @@ func (s *DashSuite) TestInstantSendLateHaltFallsBackWithoutClaims(c *C) {
 			before := testutil.ToFloat64(counter)
 			client.nextMempoolScan = scanInstantSend
 			if queued {
-				client.instantSendTxQueue = instantSendObservationGroups(common.DASHChain,
+				client.instantSend.txQueue = instantSendObservationGroups(common.DASHChain,
 					map[int64][]*types.TxInItem{100: {instantSendTestItem(f, f.inbound)}})
 			}
 			var paused atomic.Bool
@@ -274,7 +274,7 @@ func (s *DashSuite) TestInstantSendLateHaltFallsBackWithoutClaims(c *C) {
 			c.Assert(err, IsNil)
 			c.Assert(batch.MemPool, Equals, true)
 			c.Assert(batch.TxArray, HasLen, 2)
-			c.Assert(client.instantSendTxQueue, HasLen, 0)
+			c.Assert(client.instantSend.txQueue, HasLen, 0)
 			c.Assert(client.nextMempoolScan, Equals, scanOutbounds)
 			state, err := client.temporalStorage.GetInstantSendState()
 			c.Assert(err, IsNil)
@@ -288,7 +288,7 @@ func (s *DashSuite) TestInstantSendLateHaltFallsBackWithoutClaims(c *C) {
 			c.Assert(testutil.ToFloat64(client.m.GetGauge(metrics.InstantSendAvailable)), Equals, float64(0))
 			c.Assert(testutil.ToFloat64(counter), Equals, before)
 			// A deferred deposit remains eligible for the normal block observation.
-			c.Assert(client.reconcileInstantSendBlock(&btcjson.GetBlockVerboseTxResult{Tx: []btcjson.TxRawResult{{Txid: f.inbound}}}), IsNil)
+			c.Assert(client.instantSend.reconcileBlock(&btcjson.GetBlockVerboseTxResult{Tx: []btcjson.TxRawResult{{Txid: f.inbound}}}), IsNil)
 			accepted, err := client.trackObservedTxs([]*types.TxInItem{instantSendTestItem(f, f.inbound)})
 			c.Assert(err, IsNil)
 			c.Assert(accepted, HasLen, 1)
@@ -313,8 +313,8 @@ func (s *DashSuite) TestInstantSendVaultHaltIncludesStorageFallback(c *C) {
 		client.bridge = &dashHaltBridge{ThorchainBridge: base, getHeight: func() (int64, error) {
 			// Both the initial guard and the storage-fallback guard must let
 			// block settlement acquire the allowance lock while the bridge waits.
-			c.Assert(client.instantSendStateMu.TryLock(), Equals, true)
-			client.instantSendStateMu.Unlock()
+			c.Assert(client.instantSend.stateMu.TryLock(), Equals, true)
+			client.instantSend.stateMu.Unlock()
 			checks++
 			if !corrupt || checks > 1 {
 				return 0, errors.New("height unavailable")
@@ -324,7 +324,7 @@ func (s *DashSuite) TestInstantSendVaultHaltIncludesStorageFallback(c *C) {
 		item := instantSendTestItem(f, f.lockedOutbound)
 		item.Sender = f.asgard
 		item.To = f.asgard // vault-to-vault still obeys emergency halts
-		accepted, err := client.claimInstantSendBatch([]*types.TxInItem{item}, instantSendAdmission{})
+		accepted, err := client.instantSend.claimBatch([]*types.TxInItem{item}, instantSendAdmission{})
 		c.Assert(errors.Is(err, errInstantSendPaused), Equals, true)
 		c.Assert(accepted, HasLen, 0)
 		marked, err := client.temporalStorage.HasObservedTx(item.Tx)
@@ -334,7 +334,7 @@ func (s *DashSuite) TestInstantSendVaultHaltIncludesStorageFallback(c *C) {
 			c.Assert(checks, Equals, 2) // second guard protects the marker-only fallback
 		}
 		client.bridge = base
-		accepted, err = client.claimInstantSendBatch([]*types.TxInItem{item}, instantSendAdmission{})
+		accepted, err = client.instantSend.claimBatch([]*types.TxInItem{item}, instantSendAdmission{})
 		c.Assert(err, IsNil)
 		c.Assert(accepted, HasLen, 1)
 	}
@@ -363,7 +363,7 @@ func (s *DashSuite) TestInstantSendHaltStillSettlesVerifiedReservations(c *C) {
 		{TxID: f.lockedOutbound, Amount: 60}, {TxID: f.inbound, Amount: 40},
 	}, 0, 100, true, 1)
 	c.Assert(err, IsNil)
-	client.instantSendRecovery.Reset()
+	client.instantSend.recovery.Reset()
 	f.chainLocked = true
 	f.txs[f.lockedOutbound]["chainlock"] = true
 	f.txs[f.lockedOutbound]["blockhash"] = strings.Repeat("2", 64)
@@ -383,5 +383,5 @@ func (s *DashSuite) TestInstantSendHaltStillSettlesVerifiedReservations(c *C) {
 	c.Assert(state.Reserved, Equals, uint64(40))
 	c.Assert(state.Reservations, HasLen, 1)
 	c.Assert(state.Reservations[f.inbound].Amount, Equals, uint64(40))
-	c.Assert(client.instantSendRecovery.Complete(), Equals, true)
+	c.Assert(client.instantSend.recovery.Complete(), Equals, true)
 }

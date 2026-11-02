@@ -122,7 +122,7 @@ func newDashClientForRPCServer(c *C, serverURL string, rpcTimeout ...time.Durati
 	c.Assert(temporalStorage.StartInstantSendWarmup(0, nil), IsNil)
 	c.Assert(temporalStorage.CompleteInstantSendWarmup(1), IsNil)
 
-	return &Client{
+	client := &Client{
 		cfg: config.BifrostChainConfiguration{
 			ChainID:             common.DASHChain,
 			ParallelMempoolScan: 1,
@@ -133,15 +133,19 @@ func newDashClientForRPCServer(c *C, serverURL string, rpcTimeout ...time.Durati
 			},
 		},
 		bridge:                    &dashMempoolPolicyBridge{enabled: 1},
-		instantSendEnabled:        true,
-		instantSendMinAmount:      defaultInstantSendMinAmount,
-		instantSendMaxAmount:      100_000 * common.One,
-		instantSendRecovery:       instantSendRecovery{loaded: true},
 		log:                       zerolog.Nop(),
 		regexpRemoveTrailingZeros: regexp.MustCompile(`(00)+$`),
 		rpc:                       rpcClient,
 		temporalStorage:           temporalStorage,
-	}, cleanup
+	}
+	client.instantSend = instantSendHandler{
+		client:    client,
+		enabled:   client.cfg.InstantSend.Enabled,
+		minAmount: defaultInstantSendMinAmount,
+		maxAmount: 100_000 * common.One,
+		recovery:  instantSendRecovery{loaded: true},
+	}
+	return client, cleanup
 }
 
 func dashTestMempoolEntry() map[string]any {
@@ -252,7 +256,7 @@ func (s *DashSuite) TestDashGetInstantSendLocksSkipsCachedBeforeRawTxFetch(c *C)
 	c.Assert(err, IsNil)
 	c.Assert(added, Equals, true)
 
-	txIn, err := client.fetchInstantSendBatch(123, instantSendAdmission{allowed: true})
+	txIn, err := client.instantSend.fetchBatch(123, instantSendAdmission{allowed: true})
 	c.Assert(err, IsNil)
 	c.Assert(len(txIn.TxArray), Equals, 0)
 	c.Assert(rawLookups, DeepEquals, []string{fresh})
@@ -304,7 +308,7 @@ func (s *DashSuite) TestDashGetInstantSendLocksCapsMempoolWork(c *C) {
 	client.cfg.UTXO.TransactionBatchSize = 1
 	client.cfg.UTXO.MaxMempoolBatches = 1
 
-	txIn, err := client.fetchInstantSendBatch(123, instantSendAdmission{allowed: true})
+	txIn, err := client.instantSend.fetchBatch(123, instantSendAdmission{allowed: true})
 	c.Assert(err, IsNil)
 	c.Assert(len(txIn.TxArray), Equals, 0)
 	c.Assert(rawLookups, Equals, 1)
@@ -380,7 +384,7 @@ func (s *DashSuite) TestDashGetInstantSendLocksBatchesLockLookupAndCachesCycleHe
 	client.cfg.UTXO.TransactionBatchSize = 10
 	client.cfg.UTXO.MaxMempoolBatches = 1
 
-	txIn, err := client.fetchInstantSendBatch(123, instantSendAdmission{allowed: true})
+	txIn, err := client.instantSend.fetchBatch(123, instantSendAdmission{allowed: true})
 	c.Assert(err, IsNil)
 	c.Assert(len(txIn.TxArray), Equals, 0)
 	c.Assert(lockBatches, HasLen, 1)
@@ -412,16 +416,16 @@ func (s *DashSuite) TestDashCycleHeightIndependentOfScanner(c *C) {
 	// A lagging scanner and a cycle outside its reorg window are both valid.
 	for _, want := range []int64{124, 1} {
 		height = want
-		got, err := client.instantSendObservationHeight(lock, 123)
+		got, err := client.instantSend.observationHeight(lock, 123)
 		c.Assert(err, IsNil)
 		c.Assert(got, Equals, want)
 	}
 	confirmations = -1
-	_, err := client.instantSendObservationHeight(lock, 123)
+	_, err := client.instantSend.observationHeight(lock, 123)
 	c.Assert(err, NotNil)
 	confirmations = 1
 	returnedHash = "different"
-	_, err = client.instantSendObservationHeight(lock, 123)
+	_, err = client.instantSend.observationHeight(lock, 123)
 	c.Assert(err, NotNil)
 }
 
@@ -429,11 +433,12 @@ func (s *DashSuite) TestDashAllowInstantSendAgeBoundaries(c *C) {
 	client := Client{cfg: config.BifrostChainConfiguration{
 		InstantSend: config.InstantSendConfiguration{MaxMempoolAge: 2 * time.Minute},
 	}}
+	client.instantSend = instantSendHandler{client: &client, enabled: client.cfg.InstantSend.Enabled}
 	for _, age := range []time.Duration{0, time.Minute, 2 * time.Minute} {
-		allow, reason := client.allowInstantSend(age)
+		allow, reason := client.instantSend.allowAge(age)
 		c.Assert(allow, Equals, true, Commentf(reason))
 	}
-	allow, reason := client.allowInstantSend(2*time.Minute + time.Nanosecond)
+	allow, reason := client.instantSend.allowAge(2*time.Minute + time.Nanosecond)
 	c.Assert(allow, Equals, false)
 	c.Assert(reason, Matches, "mempool age too high:.*")
 }
@@ -576,7 +581,7 @@ func (s *DashSuite) TestDashGetInstantSendLocksFiltersUnlockedTxs(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(item.IsEmpty(), Equals, false)
 
-	txIn, err := client.fetchInstantSendBatch(123, instantSendAdmission{allowed: true})
+	txIn, err := client.instantSend.fetchBatch(123, instantSendAdmission{allowed: true})
 	c.Assert(err, IsNil)
 	c.Assert(txIn.MemPool, Equals, false)
 	c.Assert(txIn.ConfirmationRequired, Equals, int64(0))
@@ -593,7 +598,7 @@ func (s *DashSuite) TestDashGetInstantSendLocksFiltersUnlockedTxs(c *C) {
 	c.Assert(txIn.Persisted, IsNil)
 	c.Assert(txIn.TxArray[0].OnObservedTxStored, IsNil)
 	// No Observer acknowledgement is needed; a lost handoff is not retried.
-	retry, err := client.fetchInstantSendBatch(123, instantSendAdmission{allowed: true})
+	retry, err := client.instantSend.fetchBatch(123, instantSendAdmission{allowed: true})
 	c.Assert(err, IsNil)
 	c.Assert(retry.TxArray, HasLen, 0)
 	// Mining the InstantSend transaction must not create another observation.
@@ -712,7 +717,7 @@ func (s *DashSuite) TestDashInstantSendAcceptsLargeLowFeePaymentsWithoutPricing(
 	for _, withFee := range []bool{true, false} {
 		includeFee = withFee
 		var groups []types.TxIn
-		groups, err = client.scanInstantSend(123)
+		groups, err = client.instantSend.scan(123)
 		c.Assert(err, IsNil)
 		c.Assert(groups, HasLen, 1)
 		c.Assert(groups[0].MemPool, Equals, false)
@@ -724,16 +729,16 @@ func (s *DashSuite) TestDashInstantSendAcceptsLargeLowFeePaymentsWithoutPricing(
 
 	// Age and dust checks still apply, and rejection must not suppress a retry.
 	entryTime = time.Now().Add(-3 * time.Minute).Unix()
-	groups, err := client.scanInstantSend(123)
+	groups, err := client.instantSend.scan(123)
 	c.Assert(err, IsNil)
 	c.Assert(groups, HasLen, 0)
 	entryTime = time.Now().Unix()
 	amount = 0.00000001
-	groups, err = client.scanInstantSend(123)
+	groups, err = client.instantSend.scan(123)
 	c.Assert(err, IsNil)
 	c.Assert(groups, HasLen, 0)
 	amount = 1000
-	txIn, err := client.fetchInstantSendBatch(123, instantSendAdmission{allowed: true})
+	txIn, err := client.instantSend.fetchBatch(123, instantSendAdmission{allowed: true})
 	c.Assert(err, IsNil)
 	c.Assert(txIn.TxArray, HasLen, 1)
 	c.Assert(txIn.TxArray[0].Tx, Equals, mempoolLocked)
@@ -743,7 +748,8 @@ func (s *DashSuite) TestDashInstantSendSkipsUnsupportedChains(c *C) {
 	for _, chain := range []common.Chain{common.BTCChain, common.BCHChain, common.LTCChain, common.DOGEChain, common.ZECChain, common.EmptyChain} {
 		// No RPC client or storage: unsupported chains must return before using either.
 		client := &Client{cfg: config.BifrostChainConfiguration{ChainID: chain}}
-		groups, err := client.scanInstantSend(123)
+		client.instantSend = instantSendHandler{client: client, enabled: client.cfg.InstantSend.Enabled}
+		groups, err := client.instantSend.scan(123)
 		c.Assert(err, IsNil, Commentf("chain: %s", chain))
 		c.Assert(groups, IsNil, Commentf("chain: %s", chain))
 	}

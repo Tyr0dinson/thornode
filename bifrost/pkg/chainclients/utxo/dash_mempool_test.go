@@ -26,6 +26,7 @@ type dashMempoolFixture struct {
 	failOrdinary, failInstantSend, chainLocked               bool
 	ordinaryCalls, instantSendCalls                          int
 	beforeRawTransaction                                     func(string)
+	beforeRPC                                                func(string, []json.RawMessage)
 	utxos                                                    []btcjson.ListUnspentResult
 	failMempoolEntry                                         bool
 }
@@ -70,6 +71,9 @@ func newDashMempoolFixture(c *C, rpcTimeout ...time.Duration) (*Client, *dashMem
 	blockHash := strings.Repeat("2", 64)
 	cycleHash := strings.Repeat("3", 64)
 	server := newRPCTestServer(c, func(method string, params []json.RawMessage) any {
+		if f.beforeRPC != nil {
+			f.beforeRPC(method, params)
+		}
 		switch method {
 		case "listunspent":
 			return f.utxos
@@ -244,14 +248,14 @@ func (s *DashSuite) TestDashMempoolRestartKeepsLockObservation(c *C) {
 		c.Assert(err, IsNil)
 		client.signerCacheManager, err = signercache.NewSignerCacheManager(storage.GetInternalDb())
 		c.Assert(err, IsNil)
-		client.instantSendRecovery.Reset()
+		client.instantSend.recovery.Reset()
 		batch, err = client.fetchMemPoolTransactions(124, true)
 		c.Assert(err, IsNil)
 		c.Assert(batch.TxArray, HasLen, 0) // persisted mempool markers survive restart
 		wantMined := 2
 		if migration {
-			client.instantSendMaxAmount = 0 // vault senders remain exempt
-			batch, err = client.fetchInstantSendBatch(124, instantSendAdmission{})
+			client.instantSend.maxAmount = 0 // vault senders remain exempt
+			batch, err = client.instantSend.fetchBatch(124, instantSendAdmission{})
 			c.Assert(err, IsNil)
 			c.Assert(batch.MemPool, Equals, false)
 			c.Assert(batch.TxArray, HasLen, 1)
@@ -304,7 +308,7 @@ func (s *DashSuite) TestDashFetchMemPoolWithInstantSendDisabled(c *C) {
 	bridge := &dashMempoolPolicyBridge{enabled: 0}
 	client.bridge = bridge
 	// A disabled policy must discard any previously prepared final batches.
-	client.instantSendTxQueue = instantSendObservationGroups(common.DASHChain,
+	client.instantSend.txQueue = instantSendObservationGroups(common.DASHChain,
 		map[int64][]*types.TxInItem{100: {{Tx: "stale-policy-batch"}}})
 	for i := 0; i < 2; i++ {
 		batch, err := client.FetchMemPool(123)
@@ -316,7 +320,7 @@ func (s *DashSuite) TestDashFetchMemPoolWithInstantSendDisabled(c *C) {
 			c.Assert(batch.TxArray, HasLen, 0)
 		}
 	}
-	c.Assert(client.instantSendTxQueue, HasLen, 0)
+	c.Assert(client.instantSend.txQueue, HasLen, 0)
 	c.Assert(f.ordinaryCalls, Equals, 2)
 	c.Assert(f.instantSendCalls, Equals, 0)
 	bridge.enabled = 1

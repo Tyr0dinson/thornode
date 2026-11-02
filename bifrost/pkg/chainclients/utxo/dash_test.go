@@ -26,11 +26,13 @@ var _ = Suite(&DashSuite{})
 // RPC, signer, or block scanner involvement. Use the full Client constructor
 // for anything that talks to the chain.
 func newDashClientForUnitTest() *Client {
-	return &Client{
+	client := &Client{
 		cfg:                       config.BifrostChainConfiguration{ChainID: common.DASHChain},
 		log:                       zerolog.Nop(),
 		regexpRemoveTrailingZeros: regexp.MustCompile(`(00)+$`),
 	}
+	client.instantSend = instantSendHandler{client: client, enabled: client.cfg.InstantSend.Enabled}
+	return client
 }
 
 // TestPayToPubKeyHashDash verifies the script builder produces a

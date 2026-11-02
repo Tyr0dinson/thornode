@@ -99,7 +99,7 @@ func (s *DashSuite) TestInstantSendWarmupDiscardsStaleSnapshot(c *C) {
 			var admission instantSendAdmission
 			go func() {
 				var scanErr error
-				admission, scanErr = client.prepareInstantSendAllowance(nil)
+				admission, scanErr = client.instantSend.prepareAllowance(nil)
 				finished <- scanErr
 			}()
 			select {
@@ -108,7 +108,7 @@ func (s *DashSuite) TestInstantSendWarmupDiscardsStaleSnapshot(c *C) {
 				c.Fatal("warmup did not reach the blocked RPC")
 			}
 			settled := make(chan error, 1)
-			go func() { settled <- client.reconcileInstantSendBlock(&btcjson.GetBlockVerboseTxResult{Height: 101}) }()
+			go func() { settled <- client.instantSend.reconcileBlock(&btcjson.GetBlockVerboseTxResult{Height: 101}) }()
 			select {
 			case err = <-settled:
 				c.Assert(err, IsNil)
@@ -144,7 +144,7 @@ func testInstantSendUnlockedSettlement(c *C, stage string, failSettlement bool) 
 			{TxID: f.inbound, Amount: common.One / 10},
 		}, 0, common.One, true, 1)
 		c.Assert(err, IsNil)
-		client.instantSendRecovery.Reset()
+		client.instantSend.recovery.Reset()
 	case "status":
 		prepare = true
 	case "vaults":
@@ -192,9 +192,9 @@ func testInstantSendUnlockedSettlement(c *C, stage string, failSettlement bool) 
 	go func() {
 		var scanErr error
 		if prepare {
-			admission, scanErr = client.prepareInstantSendAllowance(nil)
+			admission, scanErr = client.instantSend.prepareAllowance(nil)
 		} else {
-			accepted, scanErr = client.claimInstantSendBatch([]*types.TxInItem{instantSendTestItem(f, f.inbound)}, instantSendAdmission{allowed: true})
+			accepted, scanErr = client.instantSend.claimBatch([]*types.TxInItem{instantSendTestItem(f, f.inbound)}, instantSendAdmission{allowed: true})
 		}
 		finished <- scanErr
 	}()
@@ -206,17 +206,17 @@ func testInstantSendUnlockedSettlement(c *C, stage string, failSettlement bool) 
 	settled := make(chan error, 1)
 	go func() {
 		if failSettlement {
-			client.instantSendStateMu.Lock()
+			client.instantSend.stateMu.Lock()
 			client.temporalStorage = brokenStorage
-			client.instantSendStateMu.Unlock()
+			client.instantSend.stateMu.Unlock()
 		}
-		settlementErr := client.reconcileInstantSendBlock(&btcjson.GetBlockVerboseTxResult{
+		settlementErr := client.instantSend.reconcileBlock(&btcjson.GetBlockVerboseTxResult{
 			Height: 101, Tx: []btcjson.TxRawResult{{Txid: f.inbound}},
 		})
 		if failSettlement {
-			client.instantSendStateMu.Lock()
+			client.instantSend.stateMu.Lock()
 			client.temporalStorage = healthyStorage
-			client.instantSendStateMu.Unlock()
+			client.instantSend.stateMu.Unlock()
 		}
 		settled <- settlementErr
 	}()
@@ -230,7 +230,7 @@ func testInstantSendUnlockedSettlement(c *C, stage string, failSettlement bool) 
 	c.Assert(<-finished, IsNil)
 	c.Assert(accepted, HasLen, 0)
 	c.Assert(admission.allowed, Equals, false)
-	c.Assert(client.instantSendRevision, Equals, uint64(1))
+	c.Assert(client.instantSend.revision, Equals, uint64(1))
 	state, err := client.temporalStorage.GetInstantSendState()
 	c.Assert(err, IsNil)
 	wantReserved := uint64(0)
@@ -242,10 +242,10 @@ func testInstantSendUnlockedSettlement(c *C, stage string, failSettlement bool) 
 	c.Assert(err, IsNil)
 	c.Assert(marked, Equals, stage == "recovery") // only the pre-existing claim
 	if failSettlement {
-		c.Assert(client.instantSendRecovery.loaded, Equals, false)
-		c.Assert(client.instantSendRecovery.pendingTxIDs, HasLen, 0)
+		c.Assert(client.instantSend.recovery.loaded, Equals, false)
+		c.Assert(client.instantSend.recovery.pendingTxIDs, HasLen, 0)
 	} else if stage == "recovery" {
-		next, pending := client.instantSendRecovery.Next()
+		next, pending := client.instantSend.recovery.Next()
 		c.Assert(pending, Equals, true)
 		c.Assert(next, Equals, f.inbound) // the stale RPC must not advance the cursor
 	}

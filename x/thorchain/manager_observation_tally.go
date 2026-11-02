@@ -65,16 +65,10 @@ const (
 )
 
 // queueObservationTally schedules a voter that reached consensus in this block to
-// be scored when its observation window closes. Transaction voters use the
-// per-chain override when set; other voter kinds use the global window.
+// be scored when its observation window closes. All voter kinds use the same
+// per-chain window so voters from one consensus height are scored together.
 func queueObservationTally(ctx cosmos.Context, k keeper.Keeper, kind string, chain common.Chain, ref ...string) {
-	var observeFlex int64
-	switch kind {
-	case observationTallyKindTxIn, observationTallyKindTxOut:
-		observeFlex = observationDelayFlexibility(ctx, k, chain)
-	default:
-		observeFlex = k.GetConfigInt64(ctx, constants.ObservationDelayFlexibility)
-	}
+	observeFlex := observationDelayFlexibility(ctx, k, chain)
 	k.QueueObservationTally(ctx, kvTypes.ObservationTallyEntry{
 		DueHeight:       ctx.BlockHeight() + max(observeFlex, 0),
 		ConsensusHeight: ctx.BlockHeight(),

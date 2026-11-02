@@ -24,7 +24,7 @@ func processNetworkFeeAttestation(
 ) error {
 	observeSlashPoints := mgr.GetConstants().GetInt64Value(constants.ObserveSlashPoints)
 	lackOfObservationPenalty := mgr.GetConstants().GetInt64Value(constants.LackOfObservationPenalty)
-	observeFlex := mgr.Keeper().GetConfigInt64(ctx, constants.ObservationDelayFlexibility)
+	observeFlex := observationDelayFlexibility(ctx, mgr.Keeper(), voter.Chain)
 
 	slashCtx := ctx.WithContext(context.WithValue(ctx.Context(), constants.CtxMetricLabels, []metrics.Label{
 		telemetry.NewLabel("reason", "failed_observe_network_fee"),

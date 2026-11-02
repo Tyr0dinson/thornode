@@ -1,0 +1,116 @@
+# Reuse the same reports for each signer. BTC is the global-window control.
+{{ define "dash-window-reports" }}
+type: tx-network-fee
+signer: {{ . }}
+block_height: 100
+chain: DASH
+transaction_size: 2000
+transaction_rate: 2
+---
+type: tx-network-fee
+signer: {{ . }}
+block_height: 100
+chain: BTC
+transaction_size: 2000
+transaction_rate: 2
+---
+type: tx-solvency
+signer: {{ . }}
+chain: DASH
+pub_key: {{ pubkey_dog }}
+coins:
+  - asset: DASH.DASH
+    amount: "100000000"
+    decimals: 8
+height: 100
+---
+type: tx-errata-tx
+signer: {{ . }}
+tx_id: "{{ observe_txid 1 }}"
+chain: DASH
+{{ end }}
+{{ template "6-validators-btc-eth-pool-state.yaml" }}
+---
+type: state
+genesis:
+  app_state:
+    thorchain:
+      mimirs:
+        - key: ObservationDelayFlexibility
+          value: "2"
+        - key: ObservationDelayFlexibilityDASH
+          value: "5"
+        - key: MissingObservationGuardBps
+          value: "10000"
+        - key: StopSolvencyCheck
+          value: "1"
+      # A known inbound without consensus lets errata reach quorum without
+      # reversing funds. This suite tests observation credit, not reversals.
+      observed_tx_in_voters:
+        - tx_id: "{{ observe_txid 1 }}"
+          txs:
+            - tx:
+                id: "{{ observe_txid 1 }}"
+                chain: DASH
+                from_address: {{ addr_dash_fox }}
+                to_address: {{ addr_dash_dog }}
+                coins:
+                  - asset: DASH.DASH
+                    amount: "100000000"
+                    decimals: 8
+                gas:
+                  - asset: DASH.DASH
+                    amount: "1000"
+                memo: NOOP
+              block_height: 1
+              finalise_height: 1
+              observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+{{ template "dash-window-reports" addr_thor_cat }}
+---
+{{ template "dash-window-reports" addr_thor_fox }}
+---
+{{ template "dash-window-reports" addr_thor_pig }}
+---
+{{ template "dash-window-reports" addr_thor_frog }}
+---
+# All four voters reach consensus at THORChain height 2.
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/nodes
+asserts:
+  - .[] | select(.node_address == "{{ addr_thor_cat }}") | .slash_points == 0
+  - .[] | select(.node_address == "{{ addr_thor_goat }}") | .slash_points == 8
+  - .[] | select(.node_address == "{{ addr_thor_hawk }}") | .slash_points == 8
+---
+type: create-blocks
+count: 4
+---
+# Goat arrives at height 7: exactly the DASH deadline, after BTC's deadline.
+{{ template "dash-window-reports" addr_thor_goat }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/nodes
+asserts:
+  - .[] | select(.node_address == "{{ addr_thor_goat }}") | .slash_points == 2
+  - .[] | select(.node_address == "{{ addr_thor_hawk }}") | .slash_points == 8
+---
+# Hawk arrives at height 8: outside both windows, so no penalty is refunded.
+{{ template "dash-window-reports" addr_thor_hawk }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/nodes
+asserts:
+  - .[] | select(.node_address == "{{ addr_thor_goat }}") | .slash_points == 2
+  - .[] | select(.node_address == "{{ addr_thor_hawk }}") | .slash_points == 8

@@ -56,15 +56,15 @@ func freshInstantSendJournal(c *C, client *Client) func() {
 	client.temporalStorage, err = sharedutxo.NewTemporalStorage(storage.GetInternalDb(), 0)
 	c.Assert(err, IsNil)
 	client.cfg.BlockScanner.DBPath = path
-	client.instantSendRecovery.Reset()
+	client.instantSend.recovery.Reset()
 	return func() { _ = storage.Close() }
 }
 
 func (s *DashSuite) TestInstantSendAllowanceWaitsForExactChainLock(c *C) {
 	client, f, cleanup := newDashMempoolFixture(c)
 	defer cleanup()
-	client.instantSendMaxAmount = common.One / 10
-	batch, err := client.fetchInstantSendBatch(123, instantSendAdmission{allowed: true})
+	client.instantSend.maxAmount = common.One / 10
+	batch, err := client.instantSend.fetchBatch(123, instantSendAdmission{allowed: true})
 	c.Assert(err, IsNil)
 	c.Assert(batch.TxArray, HasLen, 1)
 	c.Assert(batch.TxArray[0].Tx, Equals, f.inbound)
@@ -75,13 +75,13 @@ func (s *DashSuite) TestInstantSendAllowanceWaitsForExactChainLock(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(marked, Equals, false)
 	// A higher block that does not include our inbound cannot refill the budget.
-	c.Assert(client.reconcileInstantSendBlock(&btcjson.GetBlockVerboseTxResult{
+	c.Assert(client.instantSend.reconcileBlock(&btcjson.GetBlockVerboseTxResult{
 		Height: 200,
 		Tx:     []btcjson.TxRawResult{{Txid: f.lockedOutbound}},
 	}), IsNil)
 	state, err = client.temporalStorage.GetInstantSendState()
 	c.Assert(err, IsNil)
-	c.Assert(state.Available(client.instantSendMaxAmount), Equals, uint64(0))
+	c.Assert(state.Available(client.instantSend.maxAmount), Equals, uint64(0))
 	// Both deposits reach a block. The early one is settled before deduplication;
 	// the deferred one is emitted by the ordinary ChainLock path exactly once.
 	block := &btcjson.GetBlockVerboseTxResult{Height: 201}
@@ -94,7 +94,7 @@ func (s *DashSuite) TestInstantSendAllowanceWaitsForExactChainLock(c *C) {
 		block.Tx = append(block.Tx, raw)
 	}
 	client.disableVinZeroBatch = true
-	client.instantSendEnabled = false // settlement continues while disabled
+	client.instantSend.enabled = false // settlement continues while disabled
 	batch, err = client.extractTxs(block)
 	c.Assert(err, IsNil)
 	c.Assert(batch.TxArray, HasLen, 1)
@@ -111,24 +111,24 @@ func (s *DashSuite) TestInstantSendAllowanceClaimsOnlyOneBoundedDeliveryBatch(c 
 	client, f, cleanup := newDashMempoolFixture(c)
 	defer cleanup()
 	client.cfg.UTXO.TransactionBatchSize = 1
-	client.instantSendTxQueue = instantSendObservationGroups(common.DASHChain, map[int64][]*types.TxInItem{
+	client.instantSend.txQueue = instantSendObservationGroups(common.DASHChain, map[int64][]*types.TxInItem{
 		100: {instantSendTestItem(f, f.inbound), instantSendTestItem(f, f.lowFeeInbound)},
 	})
-	batch, err := client.fetchInstantSendBatch(123, instantSendAdmission{allowed: true})
+	batch, err := client.instantSend.fetchBatch(123, instantSendAdmission{allowed: true})
 	c.Assert(err, IsNil)
 	c.Assert(batch.TxArray, HasLen, 1)
-	c.Assert(client.instantSendTxQueue, HasLen, 1)
-	c.Assert(client.instantSendTxQueue[0].TxArray, HasLen, 1)
+	c.Assert(client.instantSend.txQueue, HasLen, 1)
+	c.Assert(client.instantSend.txQueue[0].TxArray, HasLen, 1)
 	state, err := client.temporalStorage.GetInstantSendState()
 	c.Assert(err, IsNil)
 	c.Assert(state.Reserved, Equals, uint64(common.One/10))
 	marked, err := client.temporalStorage.HasObservedTx(f.lowFeeInbound)
 	c.Assert(err, IsNil)
 	c.Assert(marked, Equals, false)
-	batch, err = client.fetchInstantSendBatch(123, instantSendAdmission{allowed: true})
+	batch, err = client.instantSend.fetchBatch(123, instantSendAdmission{allowed: true})
 	c.Assert(err, IsNil)
 	c.Assert(batch.TxArray, HasLen, 1)
-	c.Assert(client.instantSendTxQueue, HasLen, 0)
+	c.Assert(client.instantSend.txQueue, HasLen, 0)
 }
 
 func (s *DashSuite) TestInstantSendMimirDefaultsChangesAndFailures(c *C) {
@@ -148,67 +148,67 @@ func (s *DashSuite) TestInstantSendMimirDefaultsChangesAndFailures(c *C) {
 	}
 	bridge := &instantSendPolicyBridge{values: make(map[string]int64), status: ttypes.NodeStatus_Active}
 	client.bridge = bridge
-	c.Assert(client.refreshInstantSendSettings(), IsNil)
-	c.Assert(client.instantSendMinAmount, Equals, uint64(common.One/100))
-	c.Assert(client.instantSendMaxAmount, Equals, uint64(0))
-	admission, err := client.prepareInstantSendAllowance(nil)
+	c.Assert(client.instantSend.refreshSettings(), IsNil)
+	c.Assert(client.instantSend.minAmount, Equals, uint64(common.One/100))
+	c.Assert(client.instantSend.maxAmount, Equals, uint64(0))
+	admission, err := client.instantSend.prepareAllowance(nil)
 	c.Assert(err, IsNil)
 	c.Assert(admission.allowed, Equals, false)
 	bridge.values[DashInstantSendMinAmountMimirKey] = 0
 	bridge.values[DashInstantSendMaxAmountMimirKey] = 2 * common.One
-	c.Assert(client.refreshInstantSendSettings(), IsNil)
-	c.Assert(client.instantSendMaxAmount, Equals, uint64(2*common.One))
-	admission, err = client.prepareInstantSendAllowance(nil)
+	c.Assert(client.instantSend.refreshSettings(), IsNil)
+	c.Assert(client.instantSend.maxAmount, Equals, uint64(2*common.One))
+	admission, err = client.instantSend.prepareAllowance(nil)
 	c.Assert(err, IsNil)
 	c.Assert(admission.allowed, Equals, true)
-	batch, err := client.fetchInstantSendBatch(123, admission)
+	batch, err := client.instantSend.fetchBatch(123, admission)
 	c.Assert(err, IsNil)
 	c.Assert(batch.TxArray, HasLen, 1)
 	// A reduced limit retains the first transaction's full reservation.
 	bridge.values[DashInstantSendMaxAmountMimirKey] = common.One
-	c.Assert(client.refreshInstantSendSettings(), IsNil)
+	c.Assert(client.instantSend.refreshSettings(), IsNil)
 	state, err := client.temporalStorage.GetInstantSendState()
 	c.Assert(err, IsNil)
 	c.Assert(state.Reserved, Equals, uint64(3*common.One/2))
-	c.Assert(state.Available(client.instantSendMaxAmount), Equals, uint64(0))
+	c.Assert(state.Available(client.instantSend.maxAmount), Equals, uint64(0))
 	bridge.values[DashInstantSendMaxAmountMimirKey] = 3 * common.One
 	bridge.fail = DashInstantSendMinAmountMimirKey
-	err = client.refreshInstantSendSettings()
+	err = client.instantSend.refreshSettings()
 	c.Assert(err, NotNil)
-	admission, err = client.prepareInstantSendAllowance(err)
+	admission, err = client.instantSend.prepareAllowance(err)
 	c.Assert(err, IsNil)
 	c.Assert(admission.allowed, Equals, false)
 	c.Assert(admission.reason, Equals, "settings")
-	batch, err = client.fetchInstantSendBatch(123, admission)
+	batch, err = client.instantSend.fetchBatch(123, admission)
 	c.Assert(err, IsNil)
 	c.Assert(batch.TxArray, HasLen, 0)
 	bridge.fail = ""
 	bridge.values[DashInstantSendMinAmountMimirKey] = 2 * common.One
-	c.Assert(client.refreshInstantSendSettings(), IsNil)
-	admission, err = client.prepareInstantSendAllowance(nil)
+	c.Assert(client.instantSend.refreshSettings(), IsNil)
+	admission, err = client.instantSend.prepareAllowance(nil)
 	c.Assert(err, IsNil)
-	batch, err = client.fetchInstantSendBatch(123, admission)
+	batch, err = client.instantSend.fetchBatch(123, admission)
 	c.Assert(err, IsNil)
 	c.Assert(batch.TxArray, HasLen, 0) // minimum now exceeds the deposit
 	delete(bridge.values, DashInstantSendMinAmountMimirKey)
-	c.Assert(client.refreshInstantSendSettings(), IsNil)
-	c.Assert(client.instantSendMinAmount, Equals, defaultInstantSendMinAmount)
-	admission, err = client.prepareInstantSendAllowance(nil)
+	c.Assert(client.instantSend.refreshSettings(), IsNil)
+	c.Assert(client.instantSend.minAmount, Equals, defaultInstantSendMinAmount)
+	admission, err = client.instantSend.prepareAllowance(nil)
 	c.Assert(err, IsNil)
-	batch, err = client.fetchInstantSendBatch(123, admission)
+	batch, err = client.instantSend.fetchBatch(123, admission)
 	c.Assert(err, IsNil)
 	c.Assert(batch.TxArray, HasLen, 1)
 	c.Assert(batch.TxArray[0].Tx, Equals, f.lowFeeInbound)
 	delete(bridge.values, DashInstantSendMaxAmountMimirKey)
-	c.Assert(client.refreshInstantSendSettings(), IsNil)
-	c.Assert(client.instantSendMaxAmount, Equals, uint64(0))
+	c.Assert(client.instantSend.refreshSettings(), IsNil)
+	c.Assert(client.instantSend.maxAmount, Equals, uint64(0))
 }
 
 func (s *DashSuite) TestInstantSendEnabledMimirDefaultsAndFailures(c *C) {
 	for _, defaultEnabled := range []bool{false, true} {
 		client, cleanup := newDashClientForRPCServer(c, "http://localhost:1")
 		defer cleanup()
-		client.instantSendEnabled = defaultEnabled
+		client.instantSend.enabled = defaultEnabled
 		client.cfg.InstantSend.Enabled = defaultEnabled
 		bridge := &instantSendPolicyBridge{values: make(map[string]int64)}
 		client.bridge = bridge
@@ -238,9 +238,9 @@ func (s *DashSuite) TestInstantSendEnabledMimirDefaultsAndFailures(c *C) {
 				bridge.fail = DashInstantSendEnabledMimirKey
 			}
 			bridge.reads = nil
-			err := client.refreshInstantSendSettings()
+			err := client.instantSend.refreshSettings()
 			c.Check(err != nil, Equals, tc.fail)
-			c.Check(client.instantSendEnabled, Equals, tc.want,
+			c.Check(client.instantSend.enabled, Equals, tc.want,
 				Commentf("default: %t, value: %d, failed read: %t", defaultEnabled, tc.value, tc.fail))
 			c.Check(client.GetConfig().InstantSend.Enabled, Equals, defaultEnabled)
 			if tc.fail {
@@ -249,10 +249,10 @@ func (s *DashSuite) TestInstantSendEnabledMimirDefaultsAndFailures(c *C) {
 		}
 		// Losing the bridge must also disable a previously enabled switch.
 		bridge.values[DashInstantSendEnabledMimirKey] = 1
-		c.Assert(client.refreshInstantSendSettings(), IsNil)
+		c.Assert(client.instantSend.refreshSettings(), IsNil)
 		client.bridge = nil
-		c.Check(client.refreshInstantSendSettings(), NotNil)
-		c.Check(client.instantSendEnabled, Equals, false)
+		c.Check(client.instantSend.refreshSettings(), NotNil)
+		c.Check(client.instantSend.enabled, Equals, false)
 		c.Check(client.GetConfig().InstantSend.Enabled, Equals, defaultEnabled)
 	}
 }
@@ -287,19 +287,19 @@ func (s *DashSuite) TestInstantSendConfigConcurrentReads(c *C) {
 		if value == 2 {
 			bridge.fail = DashInstantSendEnabledMimirKey
 		}
-		err := client.refreshInstantSendSettings()
+		err := client.instantSend.refreshSettings()
 		c.Assert(err != nil, Equals, value == 2)
 		cfg := client.GetConfig()
 		c.Assert(cfg, DeepEquals, initialConfig)
-		c.Assert(client.instantSendEnabled, Equals, value == -1 || value == 1)
+		c.Assert(client.instantSend.enabled, Equals, value == -1 || value == 1)
 	}
 }
 
 func (s *DashSuite) TestInstantSendEnabledReadFailureKeepsOutboundsAndSettlement(c *C) {
 	client, f, cleanup := newDashMempoolFixture(c)
 	defer cleanup()
-	client.instantSendMaxAmount = common.One / 10
-	batch, err := client.fetchInstantSendBatch(123, instantSendAdmission{allowed: true})
+	client.instantSend.maxAmount = common.One / 10
+	batch, err := client.instantSend.fetchBatch(123, instantSendAdmission{allowed: true})
 	c.Assert(err, IsNil)
 	c.Assert(batch.TxArray, HasLen, 1)
 	c.Assert(batch.TxArray[0].Tx, Equals, f.inbound)
@@ -311,7 +311,7 @@ func (s *DashSuite) TestInstantSendEnabledReadFailureKeepsOutboundsAndSettlement
 	client.nextMempoolScan = scanInstantSend
 	vaultItem := instantSendTestItem(f, f.lockedOutbound)
 	vaultItem.Sender = f.asgard
-	client.instantSendTxQueue = instantSendObservationGroups(common.DASHChain,
+	client.instantSend.txQueue = instantSendObservationGroups(common.DASHChain,
 		map[int64][]*types.TxInItem{100: {instantSendTestItem(f, f.lowFeeInbound), vaultItem}})
 	instantSendCalls := f.instantSendCalls
 
@@ -319,7 +319,7 @@ func (s *DashSuite) TestInstantSendEnabledReadFailureKeepsOutboundsAndSettlement
 	c.Assert(err, IsNil)
 	c.Check(batch.MemPool, Equals, true)
 	c.Check(batch.TxArray, HasLen, 2)
-	c.Check(client.instantSendTxQueue, HasLen, 0)
+	c.Check(client.instantSend.txQueue, HasLen, 0)
 	c.Check(client.nextMempoolScan, Equals, scanOutbounds)
 	c.Check(f.instantSendCalls, Equals, instantSendCalls)
 	c.Check(bridge.reads, DeepEquals, []string{DashInstantSendEnabledMimirKey})
@@ -334,7 +334,7 @@ func (s *DashSuite) TestInstantSendEnabledReadFailureKeepsOutboundsAndSettlement
 	}
 
 	// Settlement releases the existing reservation while the switch is disabled.
-	c.Assert(client.reconcileInstantSendBlock(&btcjson.GetBlockVerboseTxResult{
+	c.Assert(client.instantSend.reconcileBlock(&btcjson.GetBlockVerboseTxResult{
 		Height: 200, Tx: []btcjson.TxRawResult{{Txid: f.inbound}},
 	}), IsNil)
 	state, err = client.temporalStorage.GetInstantSendState()
@@ -370,31 +370,31 @@ func (s *DashSuite) TestInstantSendAmountMimirsUseDuffs(c *C) {
 	} {
 		bridge.values[DashInstantSendMinAmountMimirKey] = tc.value
 		bridge.values[DashInstantSendMaxAmountMimirKey] = tc.value
-		c.Assert(client.refreshInstantSendSettings(), IsNil)
-		c.Assert(client.instantSendMinAmount, Equals, tc.minimum, Commentf("Mimir value %d", tc.value))
-		c.Assert(client.instantSendMaxAmount, Equals, tc.maximum, Commentf("Mimir value %d", tc.value))
+		c.Assert(client.instantSend.refreshSettings(), IsNil)
+		c.Assert(client.instantSend.minAmount, Equals, tc.minimum, Commentf("Mimir value %d", tc.value))
+		c.Assert(client.instantSend.maxAmount, Equals, tc.maximum, Commentf("Mimir value %d", tc.value))
 	}
 	bridge.values[DashInstantSendMaxAmountMimirKey] = 1000 * common.One
-	c.Assert(client.refreshInstantSendSettings(), IsNil)
+	c.Assert(client.instantSend.refreshSettings(), IsNil)
 	bridge.fail = DashInstantSendMaxAmountMimirKey
-	c.Assert(client.refreshInstantSendSettings(), NotNil)
+	c.Assert(client.instantSend.refreshSettings(), NotNil)
 	bridge.fail = ""
 	delete(bridge.values, DashInstantSendMaxAmountMimirKey)
-	c.Assert(client.refreshInstantSendSettings(), IsNil)
-	c.Assert(client.instantSendMaxAmount, Equals, uint64(0))
+	c.Assert(client.instantSend.refreshSettings(), IsNil)
+	c.Assert(client.instantSend.maxAmount, Equals, uint64(0))
 }
 
 func (s *DashSuite) TestInstantSendVaultSenderBypassesAllowance(c *C) {
 	client, f, cleanup := newDashMempoolFixture(c)
 	defer cleanup()
-	client.instantSendMaxAmount = 0
-	client.instantSendMinAmount = 100 * common.One
+	client.instantSend.maxAmount = 0
+	client.instantSend.minAmount = 100 * common.One
 	client.cfg.BlockScanner.DBPath = "" // customer observations require durable storage
 	item := instantSendTestItem(f, f.lockedOutbound)
 	item.Sender = f.asgard
 	for _, destination := range []string{f.user, f.asgard} {
 		item.To = destination // outbound and vault-to-vault have the same exemption
-		accepted, err := client.claimInstantSendBatch([]*types.TxInItem{instantSendTestItem(f, f.inbound), item}, instantSendAdmission{})
+		accepted, err := client.instantSend.claimBatch([]*types.TxInItem{instantSendTestItem(f, f.inbound), item}, instantSendAdmission{})
 		c.Assert(err, IsNil)
 		c.Assert(accepted, HasLen, 1)
 		c.Assert(accepted[0].Tx, Equals, f.lockedOutbound)
@@ -447,7 +447,7 @@ func (s *DashSuite) TestInstantSendFetchMemPoolPausesOnAmountReadFailure(c *C) {
 func (s *DashSuite) TestInstantSendSettlementFailureInvalidatesPreparedAdmission(c *C) {
 	client, f, cleanup := newDashMempoolFixture(c)
 	defer cleanup()
-	admission, err := client.prepareInstantSendAllowance(nil)
+	admission, err := client.instantSend.prepareAllowance(nil)
 	c.Assert(err, IsNil)
 	c.Assert(admission.allowed, Equals, true)
 
@@ -458,13 +458,13 @@ func (s *DashSuite) TestInstantSendSettlementFailureInvalidatesPreparedAdmission
 	healthyStorage := client.temporalStorage
 	client.temporalStorage = closed.temporalStorage
 	closeStorage()
-	err = client.reconcileInstantSendBlock(&btcjson.GetBlockVerboseTxResult{Tx: []btcjson.TxRawResult{{Txid: f.lockedOutbound}}})
+	err = client.instantSend.reconcileBlock(&btcjson.GetBlockVerboseTxResult{Tx: []btcjson.TxRawResult{{Txid: f.lockedOutbound}}})
 	c.Assert(err, NotNil)
-	c.Assert(client.instantSendRecovery.Complete(), Equals, false)
+	c.Assert(client.instantSend.recovery.Complete(), Equals, false)
 	client.temporalStorage = healthyStorage
 
 	item := instantSendTestItem(f, f.inbound)
-	accepted, err := client.claimInstantSendBatch([]*types.TxInItem{item}, admission)
+	accepted, err := client.instantSend.claimBatch([]*types.TxInItem{item}, admission)
 	c.Assert(err, IsNil)
 	c.Assert(accepted, HasLen, 0)
 	state, err := client.temporalStorage.GetInstantSendState()
@@ -475,11 +475,11 @@ func (s *DashSuite) TestInstantSendSettlementFailureInvalidatesPreparedAdmission
 	c.Assert(observed, Equals, false)
 
 	// An empty journal becomes ready only after recovery has loaded it again.
-	admission, err = client.prepareInstantSendAllowance(nil)
+	admission, err = client.instantSend.prepareAllowance(nil)
 	c.Assert(err, IsNil)
 	c.Assert(admission.allowed, Equals, true)
-	c.Assert(client.instantSendRecovery.Complete(), Equals, true)
-	accepted, err = client.claimInstantSendBatch([]*types.TxInItem{item}, admission)
+	c.Assert(client.instantSend.recovery.Complete(), Equals, true)
+	accepted, err = client.instantSend.claimBatch([]*types.TxInItem{item}, admission)
 	c.Assert(err, IsNil)
 	c.Assert(accepted, HasLen, 1)
 }
@@ -490,8 +490,8 @@ func (s *DashSuite) TestInstantSendSnapshotIgnoresMarkersAndNewPolicy(c *C) {
 	defer freshInstantSendJournal(c, client)()
 	_, err := client.temporalStorage.TrackObservedTx(f.inbound)
 	c.Assert(err, IsNil)
-	client.instantSendMinAmount = common.One
-	client.instantSendMaxAmount = common.One / 10
+	client.instantSend.minAmount = common.One
+	client.instantSend.maxAmount = common.One / 10
 	f.entries[f.inbound]["time"] = time.Now().Add(-time.Hour).Unix()
 	c.Assert(client.temporalStorage.StartInstantSendWarmup(100, []string{f.inbound, f.lowFeeInbound, f.lockedOutbound}), IsNil)
 	client.cfg.UTXO.TransactionBatchSize = 1 // bounded work, persisted between calls
@@ -499,9 +499,9 @@ func (s *DashSuite) TestInstantSendSnapshotIgnoresMarkersAndNewPolicy(c *C) {
 		var state sharedutxo.InstantSendState
 		state, err = client.temporalStorage.GetInstantSendState()
 		c.Assert(err, IsNil)
-		client.instantSendStateMu.Lock()
-		err = client.classifyInstantSendSnapshot(state)
-		client.instantSendStateMu.Unlock()
+		client.instantSend.stateMu.Lock()
+		err = client.instantSend.classifySnapshot(state)
+		client.instantSend.stateMu.Unlock()
 		c.Assert(err, IsNil)
 	}
 	state, err := client.temporalStorage.GetInstantSendState()
@@ -515,10 +515,10 @@ func (s *DashSuite) TestInstantSendSnapshotIgnoresMarkersAndNewPolicy(c *C) {
 	c.Assert(marked, Equals, false)
 	c.Assert(client.temporalStorage.CompleteInstantSendWarmup(101), IsNil)
 
-	client.instantSendRecovery.Load(nil)
-	client.instantSendMaxAmount = common.One
-	client.instantSendMinAmount = 0
-	batch, err := client.fetchInstantSendBatch(123, instantSendAdmission{allowed: true})
+	client.instantSend.recovery.Load(nil)
+	client.instantSend.maxAmount = common.One
+	client.instantSend.minAmount = 0
+	batch, err := client.instantSend.fetchBatch(123, instantSendAdmission{allowed: true})
 	c.Assert(err, IsNil)
 	c.Assert(batch.TxArray, HasLen, 0) // snapshot deposits remain ChainLock-only
 }
@@ -542,17 +542,17 @@ func (s *DashSuite) TestInstantSendSnapshotRetriesMissingTransaction(c *C) {
 	c.Assert(client.temporalStorage.StartInstantSendWarmup(10, []string{id}), IsNil)
 	state, err := client.temporalStorage.GetInstantSendState()
 	c.Assert(err, IsNil)
-	client.instantSendStateMu.Lock()
-	err = client.classifyInstantSendSnapshot(state)
-	client.instantSendStateMu.Unlock()
+	client.instantSend.stateMu.Lock()
+	err = client.instantSend.classifySnapshot(state)
+	client.instantSend.stateMu.Unlock()
 	c.Assert(err, NotNil)
 	state, err = client.temporalStorage.GetInstantSendState()
 	c.Assert(err, IsNil)
 	c.Assert(state.SnapshotPending, DeepEquals, []string{id})
 	fail.Store(false)
-	client.instantSendStateMu.Lock()
-	err = client.classifyInstantSendSnapshot(state)
-	client.instantSendStateMu.Unlock()
+	client.instantSend.stateMu.Lock()
+	err = client.instantSend.classifySnapshot(state)
+	client.instantSend.stateMu.Unlock()
 	c.Assert(err, IsNil)
 	state, err = client.temporalStorage.GetInstantSendState()
 	c.Assert(err, IsNil)
@@ -583,7 +583,7 @@ func (s *DashSuite) TestInstantSendQueuedTransactionCannotReReserveAfterSettleme
 	var accepted []*types.TxInItem
 	go func() {
 		var err error
-		accepted, err = client.claimInstantSendBatch([]*types.TxInItem{item}, instantSendAdmission{allowed: true})
+		accepted, err = client.instantSend.claimBatch([]*types.TxInItem{item}, instantSendAdmission{allowed: true})
 		claimed <- err
 	}()
 	select {
@@ -593,7 +593,7 @@ func (s *DashSuite) TestInstantSendQueuedTransactionCannotReReserveAfterSettleme
 	}
 	settled := make(chan error, 1)
 	go func() {
-		settled <- client.reconcileInstantSendBlock(&btcjson.GetBlockVerboseTxResult{Tx: []btcjson.TxRawResult{{Txid: id}}})
+		settled <- client.instantSend.reconcileBlock(&btcjson.GetBlockVerboseTxResult{Tx: []btcjson.TxRawResult{{Txid: id}}})
 	}()
 	select {
 	case err := <-settled:
@@ -614,7 +614,7 @@ func (s *DashSuite) TestInstantSendQueuedTransactionCannotReReserveAfterSettleme
 	// marker). The fresh ChainLock read prevents a new reservation.
 	c.Assert(client.temporalStorage.UntrackObservedTx(id), IsNil)
 	locked.Store(true)
-	accepted, err = client.claimInstantSendBatch([]*types.TxInItem{item}, instantSendAdmission{allowed: true})
+	accepted, err = client.instantSend.claimBatch([]*types.TxInItem{item}, instantSendAdmission{allowed: true})
 	c.Assert(err, IsNil)
 	c.Assert(accepted, HasLen, 0)
 	state, err = client.temporalStorage.GetInstantSendState()
@@ -655,7 +655,7 @@ func (s *DashSuite) TestInstantSendWarmupNeedsActiveNodeAndCompletedScannerHeigh
 	}
 	client.bridge = bridge
 	// An inactive or unhealthy node must not initialize an empty allowance.
-	admission, err := client.prepareInstantSendAllowance(nil)
+	admission, err := client.instantSend.prepareAllowance(nil)
 	c.Assert(err, IsNil)
 	c.Assert(admission.allowed, Equals, false)
 	c.Assert(snapshots.Load(), Equals, int64(0))
@@ -692,24 +692,24 @@ func (s *DashSuite) TestInstantSendWarmupNeedsActiveNodeAndCompletedScannerHeigh
 	}
 	bridge.fail = ""
 	bridge.status = ttypes.NodeStatus_Standby
-	admission, err = client.prepareInstantSendAllowance(nil)
+	admission, err = client.instantSend.prepareAllowance(nil)
 	c.Assert(err, IsNil)
 	c.Assert(admission.allowed, Equals, false)
 	c.Assert(snapshots.Load(), Equals, int64(0))
 	bridge.status = ttypes.NodeStatus_Active
-	admission, err = client.prepareInstantSendAllowance(nil)
+	admission, err = client.instantSend.prepareAllowance(nil)
 	c.Assert(err, IsNil)
 	c.Assert(admission.allowed, Equals, false)
 	c.Assert(snapshots.Load(), Equals, int64(1))
 	client.currentBlockHeight.Store(1000) // prefetched height is not completed work
-	admission, err = client.prepareInstantSendAllowance(nil)
+	admission, err = client.instantSend.prepareAllowance(nil)
 	c.Assert(err, IsNil)
 	c.Assert(admission.allowed, Equals, false)
 	c.Assert(snapshots.Load(), Equals, int64(1)) // finite snapshot, not rebuilt each poll
 	height.Store(101)
 	fetcher.height.Store(101)
 	waitForDashCatchUp(c, func() bool { return scanner.PreviousHeight() == 101 })
-	admission, err = client.prepareInstantSendAllowance(nil)
+	admission, err = client.instantSend.prepareAllowance(nil)
 	c.Assert(err, IsNil)
 	c.Assert(admission.allowed, Equals, true)
 }
@@ -747,26 +747,26 @@ func (s *DashSuite) TestInstantSendRestoredAllowanceRequiresInclusionProof(c *C)
 		{TxID: mined, Amount: 60}, {TxID: missing, Amount: 40},
 	}, 0, 100, true, 1)
 	c.Assert(err, IsNil)
-	client.instantSendMaxAmount = 100
-	client.instantSendRecovery.Reset()
+	client.instantSend.maxAmount = 100
+	client.instantSend.recovery.Reset()
 	client.cfg.UTXO.TransactionBatchSize = 1
-	admission, err := client.prepareInstantSendAllowance(nil)
+	admission, err := client.instantSend.prepareAllowance(nil)
 	c.Assert(err, NotNil) // ChainLock flag alone cannot release the reservation
 	c.Assert(admission.allowed, Equals, false)
-	next, pending := client.instantSendRecovery.Next()
+	next, pending := client.instantSend.recovery.Next()
 	c.Assert(pending, Equals, true)
 	c.Assert(next, Equals, mined) // failed checks retain their position for retry
 	state, err := client.temporalStorage.GetInstantSendState()
 	c.Assert(err, IsNil)
 	c.Assert(state.Reserved, Equals, uint64(100))
 	valid.Store(true)
-	admission, err = client.prepareInstantSendAllowance(nil)
+	admission, err = client.instantSend.prepareAllowance(nil)
 	c.Assert(err, IsNil)
 	c.Assert(admission.allowed, Equals, false) // bounded restoration has another ID to check
-	admission, err = client.prepareInstantSendAllowance(nil)
+	admission, err = client.instantSend.prepareAllowance(nil)
 	c.Assert(err, IsNil)
 	c.Assert(admission.allowed, Equals, true)
-	c.Assert(client.instantSendRecovery.Complete(), Equals, true)
+	c.Assert(client.instantSend.recovery.Complete(), Equals, true)
 	state, err = client.temporalStorage.GetInstantSendState()
 	c.Assert(err, IsNil)
 	c.Assert(state.Reserved, Equals, uint64(40)) // vanished transaction stays charged
@@ -788,10 +788,10 @@ func (s *DashSuite) TestInstantSendRestoredAllowanceRequiresInclusionProof(c *C)
 		store, closeStore := newDashClientForRPCServer(c, server.URL)
 		_, err := store.temporalStorage.ClaimInstantSendTxs([]sharedutxo.InstantSendClaim{{TxID: mined, Amount: 60}}, 0, 100, true, 1)
 		c.Assert(err, IsNil)
-		store.instantSendRecovery.Reset()
-		store.instantSendEnabled = !tc.disabled
-		store.instantSendMaxAmount = tc.limit
-		admission, err := store.prepareInstantSendAllowance(tc.settingsErr)
+		store.instantSend.recovery.Reset()
+		store.instantSend.enabled = !tc.disabled
+		store.instantSend.maxAmount = tc.limit
+		admission, err := store.instantSend.prepareAllowance(tc.settingsErr)
 		c.Assert(err, IsNil)
 		c.Assert(admission.allowed, Equals, false)
 		if tc.settingsErr != nil {

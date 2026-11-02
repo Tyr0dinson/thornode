@@ -62,7 +62,7 @@ Disabling mempool scanning retains the existing signer auto-observe rules.
 | `DashInstantSendEnabled`          | switch           | Bifrost config; see below            | Zero disables InstantSend observation, including vault senders. A positive value enables it.                                                                      |
 | `DashInstantSendMaxAmount`        | duffs            | `0`                                  | Maximum outstanding customer InstantSend amount per node. Set `100000000000` for 1,000 DASH. Zero or a deleted value stops new customer InstantSend observations. |
 | `DashInstantSendMinAmount`        | duffs            | `1000000` (0.01 DASH)                | Minimum customer deposit for InstantSend. Zero removes this extra minimum; the existing chain dust threshold still applies.                                       |
-| `ObservationDelayFlexibilityDASH` | THORChain blocks | Global `ObservationDelayFlexibility` | Sets the late-observation slash-refund window and tally deadline for DASH transactions. Zero is a valid override.                                                 |
+| `ObservationDelayFlexibilityDASH` | THORChain blocks | Global `ObservationDelayFlexibility` | Sets the late-observation slash-refund window and tally deadline for all DASH observation types. Zero is a valid override.                                        |
 
 Both amount Mimirs use duffs, matching internal accounting: `100000000` duffs is
 1 DASH (`common.One` in Go). This also supports amounts such as 0.01 DASH.
@@ -82,6 +82,13 @@ They still require InstantSend to be enabled; setting only the amount limit to z
 does not disable their InstantSend observations.
 The allowance does not change signing or input selection.
 
+InstantSend scans check transaction outputs before looking up locks or parent
+transactions. Transactions with no vault output are cached in memory, up to
+`mempool_tx_id_cache_size` entries; nonpositive values disable this cache. Entries
+are removed when they leave the mempool, and the cache is cleared when the vault
+address set changes. Lookup failures or uncertain scripts are not cached as
+unrelated. This cache does not mark transactions as observed or reserve allowance.
+
 For example, setting `DashInstantSendMaxAmount=1000000000` gives a 10 DASH allowance.
 An early 7 DASH observation leaves 3 DASH.
 A 4 DASH deposit waits for a ChainLock; a later 2 DASH deposit can still be reported
@@ -99,18 +106,35 @@ the scanner may have passed while the node was offline.
 
 Customer InstantSend requires a persistent block-scanner database. With no journal
 (including an upgrade from the earlier client), the node starts with no available
-allowance. Once active and caught up, it saves a finite snapshot of potential
-InstantSend transactions in its local mempool and classifies it in bounded batches.
+allowance. Once active and caught up, it saves a finite snapshot of transactions
+reported as InstantSend-locked (`instantlock: "true"`) in its local mempool and
+classifies it in bounded batches. Entries with `instantlock: "false"` are excluded.
+An unknown, missing or unexpected lock status postpones the entire snapshot;
+the next attempt reads a fresh mempool before saving anything.
 It counts relevant customer deposits regardless of old observation markers or the
-new age/minimum policy. RPC errors leave work pending for retry. Completion requires
-both full classification and the completed scanner height passing the initial
-ChainLock height. Snapshot deposits remain ChainLock-only and stay reserved until
-included in a ChainLocked block, even if their total exceeds the configured limit.
+new age/minimum policy. Completion requires both full classification and the
+completed scanner height passing the initial ChainLock height. Classified snapshot
+deposits remain ChainLock-only and stay reserved until included in a ChainLocked
+block, even if their total exceeds the configured limit.
 Only the remaining allowance admits new deposits. An intact journal resumes instead
 of taking a fresh snapshot; invalid journal data does not silently reset usage.
 
+An unresolved snapshot entry can be dropped after a newer ChainLocked block has
+been fully scanned. Its transaction lookup must start after that scan and return
+the explicit transaction-not-found error (`-5`). Bifrost then verifies that the
+scanner is healthy and caught up to a fresh ChainLock height, and confirms the ID
+is absent from a freshly fetched mempool. Other RPC errors, including missing
+parent transactions, leave the entry pending. A failed or null mempool response
+also leaves it pending. Successful removals are logged after the database write.
+This rule also applies to existing unfinished snapshots. The wait uses the saved
+snapshot height, not a full elapsed block interval or a new wait after restart.
+Known reservations and observation markers are preserved; recovery makes only the
+unused allowance available.
+
 This startup approach has an accepted gap: a previously credited transaction that
-is absent from the local snapshot cannot be reconstructed from it. A new or recovered
+is absent from the local snapshot, or dropped by this recovery rule, cannot be
+accounted for from that snapshot. A newer ChainLock and local mempool absence do
+not prove that the transaction was never credited elsewhere. A new or recovered
 node may therefore make fresh allowance available while that older exposure remains.
 Persisting the database avoids losing known reservations, but a local snapshot is
 not a complete network exposure history. A crash between persisting a final marker
@@ -124,12 +148,15 @@ observation window is in **THORChain blocks**, not Dash blocks, and does not pos
 the initial missing-observation penalty or guarantee that every delayed observation
 will arrive in time. Other chains keep the global window unless their own
 `ObservationDelayFlexibility<CHAIN>` override is configured. The override applies
-to inbound and outbound transaction late-credit checks and tally scheduling, not
-network-fee, solvency, errata or TSS votes. For example, with a global window of 20
-and a DASH window of 50, a matching DASH observation 25 blocks after consensus gets
+to inbound, outbound, network-fee, solvency and errata late-credit checks and tally
+scheduling, preserving existing slashing exemptions. It does not apply to TSS votes.
+For example, with a global window of 20 and a DASH window of 50, a matching DASH
+observation 25 blocks after consensus gets
 its slash points refunded and is credited when the tally is scored 50 blocks after consensus.
 Configure the window before enabling InstantSend: queued tally deadlines do not
 change when Mimir changes, while late-credit checks use the current setting.
+Changing a window while tallies are pending can temporarily mix old and new
+deadlines; the shared-outage guard assumes a consistent window for each chain.
 
 Monitor `dash_instantsend_reserved_duffs`, `dash_instantsend_available_duffs`,
 `dash_instantsend_pending_transactions`, `dash_instantsend_warming_up`, and

@@ -723,7 +723,7 @@ func (c *Client) extractTxs(block *btcjson.GetBlockVerboseTxResult) (types.TxIn,
 	// FetchTxs only passes verified ChainLocked Dash blocks. Settle raw txids
 	// before parsing or observed-marker filtering can discard an already seen tx.
 	if c.cfg.ChainID.Equals(common.DASHChain) {
-		if err := c.reconcileInstantSendBlock(block); err != nil {
+		if err := c.instantSend.reconcileBlock(block); err != nil {
 			// Keep ChainLock observations available. Failed settlement retains the
 			// reservation and pauses customer admission until it can be retried.
 			c.log.Err(err).Msg("fail to settle InstantSend allowance")
