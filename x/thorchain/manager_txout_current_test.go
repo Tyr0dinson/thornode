@@ -685,6 +685,49 @@ func (s TxOutStoreSuite) TestCalcTxOutHeight(c *C) {
 	// the outbound is scheduled for one block later, 739.
 }
 
+// The outbound delay keeps its wall-clock length at any block time: the
+// backlog's rate reduction is applied in reference blocks and the result
+// converted once. Scaling the threshold and rate first scaled the reduction by
+// the square of the block time ratio, so faster blocks over-delayed and slower
+// blocks under-delayed.
+func (s TxOutStoreSuite) TestCalcTxOutHeightKeepsWallClockDelay(c *C) {
+	c.Assert(constants.ThorchainBlockTime.Milliseconds(), Equals, int64(1000))
+	for _, tc := range []struct {
+		ms, blocks int64
+	}{
+		{0, 8},    // reference: 129 / (25 - 258/25) ~= 8.8 blocks
+		{500, 16}, // twice the blocks (the old code hit the 1440 offset cap)
+		{2000, 4}, // half the blocks (the old code gave 2)
+	} {
+		ctx, keeper := setupKeeperForTest(c)
+		if tc.ms > 0 {
+			keeper.SetBlockTimeHistory(ctx, tc.ms, constants.BlockTimeHistory{{Height: 10, Ms: tc.ms}})
+		}
+		pool := NewPool()
+		pool.Asset = common.ETHAsset
+		pool.BalanceRune = cosmos.NewUint(90527581399649)
+		pool.BalanceAsset = cosmos.NewUint(1402011488988)
+		c.Assert(keeper.SetPool(ctx, pool), IsNil)
+		keeper.SetMimir(ctx, "MinTxOutVolumeThreshold", 2500000000)
+		keeper.SetMimir(ctx, "TxOutDelayRate", 2500000000)
+		keeper.SetMimir(ctx, "MaxTxOutOffset", 720)
+		keeper.SetMimir(ctx, "TxOutDelayMax", 17280)
+
+		txout, err := GetTxOutStore(GetCurrentVersion(), keeper, NewDummyEventMgr(), NewDummyGasManager())
+		c.Assert(err, IsNil)
+		toi := TxOutItem{
+			Coin: common.NewCoin(common.ETHAsset, cosmos.NewUint(2*common.One)),
+			Memo: "OUT:nomnomnom",
+		}
+		// one equal outbound (129 RUNE) already queued: a 258 RUNE backlog
+		c.Assert(keeper.AppendTxOut(ctx, ctx.BlockHeight()+1, toi), IsNil)
+
+		targetBlock, _, err := txout.CalcTxOutHeight(ctx, keeper.GetVersion(), toi)
+		c.Assert(err, IsNil)
+		c.Check(targetBlock-ctx.BlockHeight(), Equals, tc.blocks, Commentf("block time %d ms", tc.ms))
+	}
+}
+
 func (s TxOutStoreSuite) TestAddOutTxItem_MultipleOutboundWillNotBeScheduledAtTheSameBlockHeight(c *C) {
 	SetupConfigForTest()
 	w := getHandlerTestWrapper(c, 1, true, true)

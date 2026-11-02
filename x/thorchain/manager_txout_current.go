@@ -1295,22 +1295,27 @@ func (tos *TxOutStorage) CalcTxOutHeight(ctx cosmos.Context, version semver.Vers
 		return ctx.BlockHeight(), cosmos.ZeroUint(), nil
 	}
 
-	minTxOutVolumeThreshold := tos.keeper.GetConfigInt64(ctx, constants.MinTxOutVolumeThreshold)
-	txOutDelayRate := tos.keeper.GetConfigInt64(ctx, constants.TxOutDelayRate)
+	// The delay is computed in reference blocks and converted once: scaling the
+	// threshold and rate first would scale the backlog's rate reduction by the
+	// square of the block time ratio. The scaled threshold is only the
+	// per-block capacity below.
+	minTxOutVolumeThresholdRef := tos.keeper.GetConfigInt64Ref(ctx, constants.MinTxOutVolumeThreshold)
+	minTxOutVolumeThreshold := tos.keeper.ScaleConfigInt64(ctx, constants.MinTxOutVolumeThreshold, minTxOutVolumeThresholdRef)
+	txOutDelayRateRef := tos.keeper.GetConfigInt64Ref(ctx, constants.TxOutDelayRate)
 	txOutDelayMaxRef := tos.keeper.GetConfigInt64Ref(ctx, constants.TxOutDelayMax)
 	txOutDelayMax := tos.keeper.ScaleConfigInt64(ctx, constants.TxOutDelayMax, txOutDelayMaxRef)
 	maxTxOutOffsetRef := tos.keeper.GetConfigInt64Ref(ctx, constants.MaxTxOutOffset)
-	maxTxOutOffset := tos.keeper.ScaleConfigInt64(ctx, constants.MaxTxOutOffset, maxTxOutOffsetRef)
 
 	// only delay if volume threshold and delay rate are positive
-	if minTxOutVolumeThreshold <= 0 || txOutDelayRate <= 0 || maxTxOutOffset <= 0 {
+	if minTxOutVolumeThresholdRef <= 0 || txOutDelayRateRef <= 0 || maxTxOutOffsetRef <= 0 {
 		return ctx.BlockHeight(), cosmos.ZeroUint(), nil
 	}
 
 	// convert to big ints for safer math
-	minVolumeThreshold := cosmos.NewUint(uint64(minTxOutVolumeThreshold))
-	delayRate := cosmos.NewUint(uint64(txOutDelayRate))
-	maxOffset := cosmos.NewUint(uint64(maxTxOutOffset))
+	minVolumeThresholdRef := cosmos.NewUint(uint64(minTxOutVolumeThresholdRef))
+	minVolumeThreshold := cosmos.NewUint(uint64(max(minTxOutVolumeThreshold, 0)))
+	delayRate := cosmos.NewUint(uint64(txOutDelayRateRef))
+	maxOffsetRef := cosmos.NewUint(uint64(maxTxOutOffsetRef))
 
 	// get txout item value in rune
 	runeValue, _ := tos.keeper.GetTOIsValue(ctx, toi)
@@ -1351,7 +1356,7 @@ func (tos *TxOutStorage) CalcTxOutHeight(ctx cosmos.Context, version semver.Vers
 	// own transaction(s), reducing the attack's effectiveness.
 	// The common.One is because delayRate, sumValue, and minVolumeThreshold
 	// all have the same number of decimals (which cancel otherwise).
-	rateReduction := cosmos.NewUint(common.One).Mul(common.SafeSub(sumValue, cloutValue)).Quo(minVolumeThreshold)
+	rateReduction := cosmos.NewUint(common.One).Mul(common.SafeSub(sumValue, cloutValue)).Quo(minVolumeThresholdRef)
 	if rateReduction.GTE(delayRate) {
 		delayRate = cosmos.NewUint(1)
 	} else {
@@ -1360,11 +1365,11 @@ func (tos *TxOutStorage) CalcTxOutHeight(ctx cosmos.Context, version semver.Vers
 
 	// calculate the minimum number of blocks in the future the txn has to be.
 	// min shouldn't be anything longer than the max txout offset
-	minBlocks := runeValue.Quo(delayRate)
-	if minBlocks.GT(maxOffset) {
-		minBlocks = maxOffset
+	minRefBlocks := runeValue.Quo(delayRate)
+	if minRefBlocks.GT(maxOffsetRef) {
+		minRefBlocks = maxOffsetRef
 	}
-	targetBlock := ctx.BlockHeight() + int64(minBlocks.Uint64())
+	targetBlock := ctx.BlockHeight() + tos.keeper.RefBlocks(ctx, int64(minRefBlocks.Uint64()))
 
 	// find targetBlock that has space for new txout item.
 	count := int64(0)
