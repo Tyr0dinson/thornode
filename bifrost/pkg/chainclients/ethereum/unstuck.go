@@ -56,7 +56,11 @@ func (c *Client) unstuckAction() {
 	// (behavior post https://gitlab.com/thorchain/thornode/-/merge_requests/3266 should
 	// not) or adjust gas values for the tx out. This should result in no more than one
 	// sign and broadcast per signing period for a given outbound.
-	constValues, err := c.bridge.GetConstants()
+	// The signing period is in blocks at the block time it was read with, and
+	// the buffer in reference blocks of wall-clock time, so read the constants
+	// and the block time as one snapshot: an old period paired with a new
+	// block time would open the unstuck window early.
+	constValues, blockTimeMs, history, err := signing.ReadConstants(c.bridge)
 	if err != nil {
 		c.logger.Err(err).Msg("failed to get THORChain constants")
 		return
@@ -64,13 +68,6 @@ func (c *Client) unstuckAction() {
 	signingPeriod := constValues[constants.SigningTransactionPeriod.String()]
 	if signingPeriod <= 0 {
 		c.logger.Err(err).Int64("signingPeriod", signingPeriod).Msg("invalid signing period")
-		return
-	}
-	// the buffer is configured in reference blocks of wall-clock time, while the
-	// signing period above is in blocks at the current block time
-	blockTimeMs, history, err := c.bridge.GetBlockTime()
-	if err != nil {
-		c.logger.Err(err).Msg("failed to get THORChain block time")
 		return
 	}
 	bufferRefBlocks := config.GetBifrost().Signer.RescheduleBufferBlocks

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sync"
 
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/signing"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/v3/constants"
 )
@@ -76,7 +77,7 @@ func (cp *ConstantsProvider) EnsureConstants(thorchainBlockHeight int64) error {
 	if err != nil {
 		return fmt.Errorf("fail to get block time: %w", err)
 	}
-	if ms != blockTimeMs || !sameRevision(latest, history) {
+	if ms != blockTimeMs || !signing.SameRevision(latest, history) {
 		return cp.getConstantsFromThorchain(thorchainBlockHeight)
 	}
 	// Thorchain will have new version and constants only when new node get rotated in , and the new version get consensus
@@ -87,39 +88,15 @@ func (cp *ConstantsProvider) EnsureConstants(thorchainBlockHeight int64) error {
 }
 
 func (cp *ConstantsProvider) getConstantsFromThorchain(height int64) error {
-	// Read the block time on both sides of the constants and retry if it moved
-	// in between: constants scaled to one block time must not be paired with
-	// another.
-	for range 3 {
-		before, beforeHistory, err := cp.bridge.GetBlockTime()
-		if err != nil {
-			return fmt.Errorf("fail to get block time: %w", err)
-		}
-		values, err := cp.bridge.GetConstants()
-		if err != nil {
-			return fmt.Errorf("fail to get constants: %w", err)
-		}
-		blockTimeMs, history, err := cp.bridge.GetBlockTime()
-		if err != nil {
-			return fmt.Errorf("fail to get block time: %w", err)
-		}
-		if blockTimeMs != before || !sameRevision(history, beforeHistory) {
-			continue
-		}
-		cp.constantsLock.Lock()
-		cp.constants = values
-		cp.blockTimeMs = blockTimeMs
-		cp.history = history
-		cp.requestHeight = height
-		cp.constantsLock.Unlock()
-		return nil
+	values, blockTimeMs, history, err := signing.ReadConstants(cp.bridge)
+	if err != nil {
+		return err
 	}
-	return fmt.Errorf("block time kept changing while reading constants")
-}
-
-// sameRevision reports whether two reads of the block time history are the
-// same revision. THORChain only ever appends to it, so the length and the last
-// segment identify one.
-func sameRevision(a, b constants.BlockTimeHistory) bool {
-	return len(a) == len(b) && (len(a) == 0 || a[len(a)-1] == b[len(b)-1])
+	cp.constantsLock.Lock()
+	cp.constants = values
+	cp.blockTimeMs = blockTimeMs
+	cp.history = history
+	cp.requestHeight = height
+	cp.constantsLock.Unlock()
+	return nil
 }

@@ -26,6 +26,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/config"
+	"gitlab.com/thorchain/thornode/v3/constants"
 	openapi "gitlab.com/thorchain/thornode/v3/openapi/gen"
 	types2 "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 	. "gopkg.in/check.v1"
@@ -377,4 +378,94 @@ func (s *UnstuckTestSuite) TestUnstuckProcess(c *C) {
 
 	// after one block the goroutine should remove from signer cache
 	c.Assert(e.signerCacheManager.HasSigned(toi.CacheHash()), Equals, false)
+}
+
+// halvingBridge serves THORChain halving its block time (to half the
+// reference at height 1000) between unstuck's reads: the first constants read
+// returns the old SigningTransactionPeriod (300), and from then on the block
+// time, its history and the constants are the new ones (600 blocks at half
+// the block time), as when the bridge cache refreshes between two requests.
+type halvingBridge struct {
+	thorclient.ThorchainBridge
+	armed, halved bool
+}
+
+func (b *halvingBridge) GetConstants() (map[string]int64, error) {
+	values, err := b.ThorchainBridge.GetConstants()
+	if err != nil || !b.armed {
+		return values, err
+	}
+	period := int64(300)
+	if b.halved {
+		period = 600
+	}
+	b.halved = true
+	values[constants.SigningTransactionPeriod.String()] = period
+	return values, nil
+}
+
+func (b *halvingBridge) GetBlockTime() (int64, constants.BlockTimeHistory, error) {
+	if !b.halved {
+		return b.ThorchainBridge.GetBlockTime()
+	}
+	half := constants.ThorchainBlockTime.Milliseconds() / 2
+	return half, constants.BlockTimeHistory{{Height: 1000, Ms: half}}, nil
+}
+
+// An outbound signed one block ago is inside its signing period. Unstuck must
+// pair the constants with the block time they are scaled to: the old period
+// with the new, halved block time opens the window at once and would cancel
+// the outbound while the signer can still re-sign it.
+func (s *UnstuckTestSuite) TestUnstuckReadsConstantsWithBlockTime(c *C) {
+	config.Init()
+	pubkeyMgr, err := pubkeymanager.NewPubKeyManager(s.bridge, s.m)
+	c.Assert(err, IsNil)
+	poolMgr := thorclient.NewPoolMgr(s.bridge)
+	bridge := &halvingBridge{ThorchainBridge: s.bridge}
+	e, err := NewClient(s.thorKeys, config.BifrostChainConfiguration{
+		ChainID: common.ETHChain,
+		RPCHost: "http://" + s.server.Listener.Addr().String(),
+		BlockScanner: config.BifrostBlockScannerConfiguration{
+			ChainID:            common.ETHChain,
+			StartBlockHeight:   1, // avoids querying thorchain for block height
+			HTTPRequestTimeout: time.Second * 10,
+			GasCacheBlocks:     40,
+			Concurrency:        1,
+			GasPriceResolution: 10_000_000_000,
+			FixedGasRate:       10_000_000_000,
+		},
+	}, nil, bridge, s.m, pubkeyMgr, poolMgr)
+	c.Assert(err, IsNil)
+	e.ethScanner.globalNetworkFeeQueue = make(chan common.NetworkFee, 1)
+	c.Assert(pubkeyMgr.Start(), IsNil)
+	defer func() { c.Assert(pubkeyMgr.Stop(), IsNil) }()
+
+	inHash := types2.GetRandomTxHash()
+	toi := ttypes.TxOutItem{
+		Chain:       e.GetChain(),
+		ToAddress:   types2.GetRandomETHAddress(),
+		VaultPubKey: e.kw.GetPubKey(),
+		Coins:       common.Coins{common.NewCoin(e.GetChain().GetGasAsset(), cosmos.NewUint(100000000))},
+		Memo:        "OUT:" + inHash.String(),
+		MaxGas:      common.Gas(common.NewCoins(common.NewCoin(e.GetChain().GetGasAsset(), cosmos.NewUint(100000000)))),
+		GasRate:     5,
+		InHash:      inHash,
+		Height:      1023,
+	}
+	stuckTxID := "0x88df016429689c079f3b2f6ad39fa052532c56795b733da78a91ebe6a713944b"
+	c.Assert(e.signerCacheManager.SetSigned(toi.CacheHash(), toi.CacheVault(e.GetChain()), stuckTxID), IsNil)
+	c.Assert(e.ethScanner.blockMetaAccessor.AddSignedTxItem(types.SignedTxItem{
+		Hash:        stuckTxID,
+		Height:      1023,
+		VaultPubKey: e.kw.GetPubKey().String(),
+		TxOutItem:   &toi,
+	}), IsNil)
+
+	bridge.armed = true
+	e.unstuckAction()
+	c.Assert(bridge.halved, Equals, true)
+	items, err := e.ethScanner.blockMetaAccessor.GetSignedTxItems()
+	c.Assert(err, IsNil)
+	c.Check(items, HasLen, 1)
+	c.Check(e.signerCacheManager.HasSigned(toi.CacheHash()), Equals, true)
 }
