@@ -1,21 +1,16 @@
 package utxo
 
 import (
-	"bytes"
-	"encoding/hex"
 	"encoding/json"
-	"net/http"
-	"net/http/httptest"
-	"regexp"
+	"fmt"
+	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/btcsuite/btcd/btcjson"
-	"github.com/dashpay/dashd-go/btcutil"
-	"github.com/rs/zerolog"
 	. "gopkg.in/check.v1"
 
-	dashtxscript "github.com/dashpay/dashd-go/txscript"
-	"gitlab.com/thorchain/thornode/v3/bifrost/blockscanner"
 	sharedutxo "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/utxo"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/rpc"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
@@ -25,12 +20,6 @@ import (
 	"gitlab.com/thorchain/thornode/v3/config"
 )
 
-type rpcRequest struct {
-	Method string            `json:"method"`
-	Params []json.RawMessage `json:"params"`
-	ID     any               `json:"id"`
-}
-
 type dashOracleBridge struct {
 	thorclient.ThorchainBridge
 	getPrice func(string) (cosmos.Uint, error)
@@ -38,179 +27,6 @@ type dashOracleBridge struct {
 
 func (b dashOracleBridge) GetOraclePrice(symbol string) (cosmos.Uint, error) {
 	return b.getPrice(symbol)
-}
-
-// newDashTestAddress uses the same network as the client's script decoder.
-func newDashTestAddress(c *C, seed byte) string {
-	hash := bytes.Repeat([]byte{seed}, 20)
-	params := newDashClientForUnitTest().getChainCfgDASH()
-	addr, err := btcutil.NewAddressPubKeyHash(hash, params)
-	c.Assert(err, IsNil)
-	return addr.String()
-}
-
-// newDashP2PKHScriptHex builds an output script for the active test network.
-func newDashP2PKHScriptHex(c *C, address string) string {
-	params := newDashClientForUnitTest().getChainCfgDASH()
-	addr, err := btcutil.DecodeAddress(address, params)
-	c.Assert(err, IsNil)
-	script, err := dashtxscript.PayToAddrScript(addr)
-	c.Assert(err, IsNil)
-	return hex.EncodeToString(script)
-}
-
-func newDashMemoScriptHex(c *C, memo string) string {
-	script, err := dashtxscript.NullDataScript([]byte(memo))
-	c.Assert(err, IsNil)
-	return hex.EncodeToString(script)
-}
-
-func newRPCTestServer(c *C, handler func(method string, params []json.RawMessage) any) *httptest.Server {
-	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		defer r.Body.Close()
-
-		var body json.RawMessage
-		err := json.NewDecoder(r.Body).Decode(&body)
-		if err != nil {
-			c.Fatalf("decode request: %v", err)
-		}
-		respond := func(req rpcRequest) map[string]any {
-			result := handler(req.Method, req.Params)
-			if rpcErr, ok := result.(*btcjson.RPCError); ok {
-				return map[string]any{"jsonrpc": "2.0", "id": req.ID, "error": rpcErr}
-			}
-			return map[string]any{
-				"jsonrpc": "2.0",
-				"id":      req.ID,
-				"result":  result,
-			}
-		}
-		var resp any
-		if bytes.HasPrefix(bytes.TrimSpace(body), []byte("[")) {
-			var requests []rpcRequest
-			c.Assert(json.Unmarshal(body, &requests), IsNil)
-			responses := make([]map[string]any, len(requests))
-			for i, req := range requests {
-				responses[i] = respond(req)
-			}
-			resp = responses
-		} else {
-			var req rpcRequest
-			c.Assert(json.Unmarshal(body, &req), IsNil)
-			resp = respond(req)
-		}
-		err = json.NewEncoder(w).Encode(resp)
-		if err != nil {
-			c.Fatalf("encode response: %v", err)
-		}
-	}))
-}
-
-func newDashClientForRPCServer(c *C, serverURL string, rpcTimeout ...time.Duration) (*Client, func()) {
-	timeout := time.Second
-	if len(rpcTimeout) > 0 {
-		timeout = rpcTimeout[0]
-	}
-	rpcClient, err := rpc.NewClient(serverURL, "thorchain", "password", 0, timeout, common.DASHChain, zerolog.Nop())
-	c.Assert(err, IsNil)
-
-	path := c.MkDir()
-	storage, err := blockscanner.NewBlockScannerStorage(path, config.LevelDBOptions{})
-	c.Assert(err, IsNil)
-	cleanup := func() { _ = storage.Close() }
-
-	temporalStorage, err := sharedutxo.NewTemporalStorage(storage.GetInternalDb(), 1000)
-	c.Assert(err, IsNil)
-	// Existing InstantSend tests start with a fully warmed, durable allowance.
-	c.Assert(temporalStorage.StartInstantSendWarmup(0, nil), IsNil)
-	c.Assert(temporalStorage.CompleteInstantSendWarmup(1), IsNil)
-
-	client := &Client{
-		cfg: config.BifrostChainConfiguration{
-			ChainID:             common.DASHChain,
-			ParallelMempoolScan: 1,
-			BlockScanner:        config.BifrostBlockScannerConfiguration{ChainID: common.DASHChain, DBPath: path},
-			InstantSend: config.InstantSendConfiguration{
-				Enabled:       true,
-				MaxMempoolAge: 2 * time.Minute,
-			},
-		},
-		bridge:                    &dashMempoolPolicyBridge{enabled: 1},
-		log:                       zerolog.Nop(),
-		regexpRemoveTrailingZeros: regexp.MustCompile(`(00)+$`),
-		rpc:                       rpcClient,
-		temporalStorage:           temporalStorage,
-	}
-	client.instantSend = instantSendHandler{
-		client:    client,
-		enabled:   client.cfg.InstantSend.Enabled,
-		minAmount: defaultInstantSendMinAmount,
-		maxAmount: 100_000 * common.One,
-		recovery:  instantSendRecovery{loaded: true},
-	}
-	return client, cleanup
-}
-
-func dashTestMempoolEntry() map[string]any {
-	return map[string]any{
-		"size":   200,
-		"vsize":  200,
-		"weight": 800,
-		"fees": map[string]any{
-			"base": 0.00002,
-		},
-		"time":   time.Now().Unix(),
-		"height": 123,
-	}
-}
-
-func dashUnlockedRawTx(txID string) map[string]any {
-	return map[string]any{
-		"txid":                 txID,
-		"hash":                 txID,
-		"version":              2,
-		"locktime":             0,
-		"confirmations":        0,
-		"instantlock":          false,
-		"instantlock_internal": false,
-	}
-}
-
-func dashLockedRawTx(txID string) map[string]any {
-	tx := dashUnlockedRawTx(txID)
-	tx["instantlock"] = true
-	return tx
-}
-
-func (s *DashSuite) TestDashGetHeightUsesBestChainLock(c *C) {
-	hash := "0000000000000000000000000000000000000000000000000000000000000123"
-	known := true
-	activeHash := hash
-	server := newRPCTestServer(c, func(method string, _ []json.RawMessage) any {
-		switch method {
-		case "getbestchainlock":
-			return map[string]any{"blockhash": hash, "height": 321, "known_block": known}
-		case "getblockcount":
-			return 322
-		case "getblockhash":
-			return activeHash
-		}
-		c.Fatalf("unexpected method %s", method)
-		return nil
-	})
-	defer server.Close()
-	client, cleanup := newDashClientForRPCServer(c, server.URL)
-	defer cleanup()
-	height, err := client.GetHeight()
-	c.Assert(err, IsNil)
-	c.Assert(height, Equals, int64(321))
-	known = false
-	_, err = client.GetHeight()
-	c.Assert(err, NotNil)
-	known = true
-	activeHash = "different"
-	_, err = client.GetHeight()
-	c.Assert(err, NotNil)
 }
 
 // TestDashGetInstantSendLocksSkipsCachedBeforeRawTxFetch protects the cheap
@@ -432,20 +248,6 @@ func (s *DashSuite) TestDashCycleHeightIndependentOfScanner(c *C) {
 	c.Assert(err, NotNil)
 }
 
-func (s *DashSuite) TestDashAllowInstantSendAgeBoundaries(c *C) {
-	client := Client{cfg: config.BifrostChainConfiguration{
-		InstantSend: config.InstantSendConfiguration{MaxMempoolAge: 2 * time.Minute},
-	}}
-	client.instantSend = instantSendHandler{client: &client, enabled: client.cfg.InstantSend.Enabled}
-	for _, age := range []time.Duration{0, time.Minute, 2 * time.Minute} {
-		allow, reason := client.instantSend.allowAge(age)
-		c.Assert(allow, Equals, true, Commentf(reason))
-	}
-	allow, reason := client.instantSend.allowAge(2*time.Minute + time.Nanosecond)
-	c.Assert(allow, Equals, false)
-	c.Assert(reason, Matches, "mempool age too high:.*")
-}
-
 func (s *DashSuite) TestDashGetInstantSendLocksFiltersUnlockedTxs(c *C) {
 	asgardAddress := newDashTestAddress(c, 0x11)
 	senderAddress := newDashTestAddress(c, 0x22)
@@ -599,11 +401,12 @@ func (s *DashSuite) TestDashGetInstantSendLocksFiltersUnlockedTxs(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(observed, Equals, true)
 	c.Assert(txIn.Persisted, IsNil)
-	c.Assert(txIn.TxArray[0].OnObservedTxStored, IsNil)
-	// No Observer acknowledgement is needed; a lost handoff is not retried.
+	c.Assert(txIn.TxArray[0].OnObservedTxStored, NotNil)
+	// A pending claim is not retried through the InstantSend path.
 	retry, err := client.instantSend.fetchBatch(123, instantSendAdmission{allowed: true})
 	c.Assert(err, IsNil)
 	c.Assert(retry.TxArray, HasLen, 0)
+	txIn.TxArray[0].OnObservedTxStored()
 	// Mining the InstantSend transaction must not create another observation.
 	client.disableVinZeroBatch = true
 	mined, err := client.extractTxs(&btcjson.GetBlockVerboseTxResult{Height: 150, Tx: []btcjson.TxRawResult{rawTx.TxRawResult}})
@@ -755,5 +558,262 @@ func (s *DashSuite) TestDashInstantSendSkipsUnsupportedChains(c *C) {
 		groups, err := client.instantSend.scan(123)
 		c.Assert(err, IsNil, Commentf("chain: %s", chain))
 		c.Assert(groups, IsNil, Commentf("chain: %s", chain))
+	}
+}
+
+// newInstantSendScanFixture fills the mempool with distinct customer deposits.
+func newInstantSendScanFixture(c *C, count int) (*Client, *dashMempoolFixture, []string, func()) {
+	client, fixture, cleanup := newDashMempoolFixture(c)
+	client.cfg.UTXO.TransactionBatchSize = count
+	fixture.entries = make(map[string]map[string]any, count)
+	ids := make([]string, count)
+	for i := range ids {
+		id := fmt.Sprintf("%064x", i+1)
+		ids[i] = id
+		tx := make(map[string]any)
+		for key, value := range fixture.txs[fixture.inbound] {
+			tx[key] = value
+		}
+		tx["txid"], tx["hash"] = id, id
+		fixture.txs[id] = tx
+		fixture.entries[id] = dashTestMempoolEntry()
+		fixture.entries[id]["instantlock"] = "true"
+	}
+	return client, fixture, ids, cleanup
+}
+
+// assertInstantSendScanClaims checks that only delivered deposits consumed allowance
+// and received durable observation markers, so failed lookups remain retryable.
+func assertInstantSendScanClaims(c *C, client *Client, ids, delivered []string) {
+	accepted := make(map[string]bool, len(delivered))
+	for _, id := range delivered {
+		accepted[id] = true
+	}
+	for _, id := range ids {
+		observed, err := client.temporalStorage.HasObservedTx(id)
+		c.Assert(err, IsNil)
+		c.Assert(observed, Equals, accepted[id], Commentf("txid %s", id))
+	}
+	state, err := client.temporalStorage.GetInstantSendState()
+	c.Assert(err, IsNil)
+	c.Assert(state.Reservations, HasLen, len(delivered))
+	c.Assert(state.Reserved, Equals, uint64(len(delivered))*common.One/10)
+}
+
+// TestDashInstantSendRetriesUnavailableLocks preserves good deposits while null,
+// None and failed cycle lookups wait for a later scan without claiming allowance.
+func (s *DashSuite) TestDashInstantSendRetriesUnavailableLocks(c *C) {
+	client, fixture, ids, cleanup := newInstantSendScanFixture(c, 4)
+	defer cleanup()
+	var recovered atomic.Bool
+	failedCycle := strings.Repeat("4", 64)
+	fixture.overrideRPC = func(method string, params []json.RawMessage) (any, bool) {
+		switch method {
+		case "getislocks":
+			var requested []string
+			c.Assert(json.Unmarshal(params[0], &requested), IsNil)
+			locks := make([]any, len(requested))
+			for i, id := range requested {
+				if !recovered.Load() && id == ids[0] {
+					continue // JSON null
+				}
+				if !recovered.Load() && id == ids[1] {
+					locks[i] = "None"
+					continue
+				}
+				cycle := strings.Repeat("3", 64)
+				if !recovered.Load() && id == ids[2] {
+					cycle = failedCycle
+				}
+				locks[i] = map[string]any{"txid": id, "cycleHash": cycle}
+			}
+			return locks, true
+		case "getblock":
+			var hash string
+			c.Assert(json.Unmarshal(params[0], &hash), IsNil)
+			if hash == failedCycle {
+				return &btcjson.RPCError{Code: btcjson.ErrRPCInternal.Code, Message: "cycle unavailable"}, true
+			}
+		}
+		return nil, false
+	}
+	batch, err := client.instantSend.fetchBatch(123, instantSendAdmission{allowed: true})
+	c.Assert(err, IsNil)
+	c.Assert(batch.TxArray, HasLen, 1)
+	c.Assert(batch.TxArray[0].Tx, Equals, ids[3])
+	assertInstantSendScanClaims(c, client, ids, ids[3:])
+
+	recovered.Store(true)
+	batch, err = client.instantSend.fetchBatch(123, instantSendAdmission{allowed: true})
+	c.Assert(err, IsNil)
+	c.Assert(batch.TxArray, HasLen, 3)
+	for i, item := range batch.TxArray {
+		c.Assert(item.Tx, Equals, ids[i])
+	}
+	assertInstantSendScanClaims(c, client, ids, ids)
+}
+
+// TestDashInstantSendKeepsSuccessfulLockChunks checks partial progress across the
+// RPC's 100-ID boundary and delivery of the failed chunk after RPC recovery.
+func (s *DashSuite) TestDashInstantSendKeepsSuccessfulLockChunks(c *C) {
+	client, fixture, ids, cleanup := newInstantSendScanFixture(c, 101)
+	defer cleanup()
+	var recovered atomic.Bool
+	calls := countInstantSendRPCs(c, fixture)
+	fixture.overrideRPC = func(method string, params []json.RawMessage) (any, bool) {
+		if method != "getislocks" {
+			return nil, false
+		}
+		var requested []string
+		c.Assert(json.Unmarshal(params[0], &requested), IsNil)
+		if requested[0] == ids[100] && !recovered.Load() {
+			c.Assert(requested, HasLen, 1)
+			return &btcjson.RPCError{Code: btcjson.ErrRPCInternal.Code, Message: "second chunk unavailable"}, true
+		}
+		return nil, false
+	}
+	batch, err := client.instantSend.fetchBatch(123, instantSendAdmission{allowed: true})
+	c.Assert(err, IsNil)
+	c.Assert(batch.TxArray, HasLen, 100)
+	for i, item := range batch.TxArray {
+		c.Assert(item.Tx, Equals, ids[i])
+	}
+	c.Assert(calls("getislocks"), Equals, 2)
+	assertInstantSendScanClaims(c, client, ids, ids[:100])
+
+	recovered.Store(true)
+	batch, err = client.instantSend.fetchBatch(123, instantSendAdmission{allowed: true})
+	c.Assert(err, IsNil)
+	c.Assert(batch.TxArray, HasLen, 1)
+	c.Assert(batch.TxArray[0].Tx, Equals, ids[100])
+	c.Assert(calls("getislocks"), Equals, 3)
+	assertInstantSendScanClaims(c, client, ids, ids)
+}
+
+// TestDashInstantSendDoesNotCacheCycleFailures retries a shared cycle for the next
+// candidate in the same scan, then caches only its successful height lookup.
+func (s *DashSuite) TestDashInstantSendDoesNotCacheCycleFailures(c *C) {
+	client, fixture, ids, cleanup := newInstantSendScanFixture(c, 3)
+	defer cleanup()
+	var cycleReads atomic.Int64
+	fixture.overrideRPC = func(method string, _ []json.RawMessage) (any, bool) {
+		if method == "getblock" && cycleReads.Add(1) == 1 {
+			return &btcjson.RPCError{Code: btcjson.ErrRPCInternal.Code, Message: "cycle unavailable"}, true
+		}
+		return nil, false
+	}
+	batch, err := client.instantSend.fetchBatch(123, instantSendAdmission{allowed: true})
+	c.Assert(err, IsNil)
+	c.Assert(batch.TxArray, HasLen, 2)
+	c.Assert(batch.TxArray[0].Tx, Equals, ids[1])
+	c.Assert(batch.TxArray[1].Tx, Equals, ids[2])
+	c.Assert(cycleReads.Load(), Equals, int64(2))
+	assertInstantSendScanClaims(c, client, ids, ids[1:])
+
+	batch, err = client.instantSend.fetchBatch(123, instantSendAdmission{allowed: true})
+	c.Assert(err, IsNil)
+	c.Assert(batch.TxArray, HasLen, 1)
+	c.Assert(batch.TxArray[0].Tx, Equals, ids[0])
+	c.Assert(cycleReads.Load(), Equals, int64(3))
+	assertInstantSendScanClaims(c, client, ids, ids)
+}
+
+// TestDashInstantSendHexOnlyAddresses exercises the deposit and parent parsing
+// used by dashd versions that omit scriptPubKey.addresses from RPC responses.
+func (s *DashSuite) TestDashInstantSendHexOnlyAddresses(c *C) {
+	client, fixture, ids, cleanup := newInstantSendScanFixture(c, 1)
+	defer cleanup()
+	for _, tx := range fixture.txs {
+		outputs, ok := tx["vout"].([]any)
+		c.Assert(ok, Equals, true)
+		for _, value := range outputs {
+			var output map[string]any
+			output, ok = value.(map[string]any)
+			c.Assert(ok, Equals, true)
+			var script map[string]any
+			script, ok = output["scriptPubKey"].(map[string]any)
+			c.Assert(ok, Equals, true)
+			delete(script, "addresses")
+			delete(script, "address")
+		}
+	}
+	batch, err := client.instantSend.fetchBatch(123, instantSendAdmission{allowed: true})
+	c.Assert(err, IsNil)
+	c.Assert(batch.TxArray, HasLen, 1)
+	c.Assert(batch.TxArray[0].Tx, Equals, ids[0])
+	c.Assert(batch.TxArray[0].Sender, Equals, fixture.user)
+	c.Assert(batch.TxArray[0].To, Equals, fixture.asgard)
+	c.Assert(batch.TxArray[0].Memo, Equals, "NOOP")
+	assertInstantSendScanClaims(c, client, ids, ids)
+}
+
+func (s *DashSuite) TestDashDifferentCyclesDeliveredSeparately(c *C) {
+	ids := []string{strings.Repeat("a", 64), strings.Repeat("b", 64)}
+	cycles := []string{strings.Repeat("1", 64), strings.Repeat("2", 64)}
+	previous := strings.Repeat("c", 64)
+	vault := newDashTestAddress(c, 0x11)
+	sender := newDashTestAddress(c, 0x22)
+	vaultScript := newDashP2PKHScriptHex(c, vault)
+	senderScript := newDashP2PKHScriptHex(c, sender)
+	memo := newDashMemoScriptHex(c, "NOOP")
+	secondFetched := make(chan struct{})
+	var once sync.Once
+	server := newRPCTestServer(c, func(method string, params []json.RawMessage) any {
+		switch method {
+		case "getrawmempool":
+			return map[string]any{ids[0]: dashTestMempoolEntry(), ids[1]: dashTestMempoolEntry()}
+		case "getrawtransaction":
+			var id string
+			c.Assert(json.Unmarshal(params[0], &id), IsNil)
+			if id == previous {
+				return btcjson.TxRawResult{Txid: id, Vout: []btcjson.Vout{{Value: 0.10002, ScriptPubKey: btcjson.ScriptPubKeyResult{Hex: senderScript, Type: "pubkeyhash", Addresses: []string{sender}}}}}
+			}
+			if id == ids[0] {
+				<-secondFetched
+			} else {
+				once.Do(func() { close(secondFetched) })
+			}
+			return rpc.TxResult{InstantLock: true, InstantLockInternal: true, TxRawResult: btcjson.TxRawResult{
+				Txid: id, LockTime: 201, Vin: []btcjson.Vin{{Txid: previous, Sequence: 0xfffffffd}},
+				Vout: []btcjson.Vout{
+					{Value: 0.1, ScriptPubKey: btcjson.ScriptPubKeyResult{Hex: vaultScript, Type: "pubkeyhash", Addresses: []string{vault}}},
+					{N: 1, ScriptPubKey: btcjson.ScriptPubKeyResult{Hex: memo, Type: "nulldata"}},
+				},
+			}}
+		case "getislocks":
+			var requested []string
+			c.Assert(json.Unmarshal(params[0], &requested), IsNil)
+			locks := make([]rpc.ISLockResult, len(requested))
+			for i, id := range requested {
+				index := 0
+				if id == ids[1] {
+					index = 1
+				}
+				locks[i] = rpc.ISLockResult{TxID: id, CycleHash: cycles[index]}
+			}
+			return locks
+		case "getblock":
+			var hash string
+			c.Assert(json.Unmarshal(params[0], &hash), IsNil)
+			height := int64(100)
+			if hash == cycles[1] {
+				height = 200
+			}
+			return btcjson.GetBlockVerboseResult{Hash: hash, Height: height, Confirmations: 1}
+		}
+		c.Fatalf("unexpected RPC %s", method)
+		return nil
+	})
+	defer server.Close()
+	client, cleanup := newDashClientForRPCServer(c, server.URL)
+	defer cleanup()
+	client.cfg.ParallelMempoolScan = 2
+	client.asgardCache.Store(&sharedutxo.AsgardCache{Addresses: []common.Address{common.Address(vault)}, FetchedAt: time.Now()})
+	for i, height := range []int64{100, 200} {
+		batch, err := client.instantSend.fetchBatch(201, instantSendAdmission{allowed: true})
+		c.Assert(err, IsNil)
+		c.Assert(batch.TxArray, HasLen, 1)
+		c.Assert(batch.TxArray[0].Tx, Equals, ids[i])
+		c.Assert(batch.TxArray[0].BlockHeight, Equals, height)
 	}
 }

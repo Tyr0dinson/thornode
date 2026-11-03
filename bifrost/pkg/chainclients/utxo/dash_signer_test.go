@@ -4,27 +4,37 @@ import (
 	"bytes"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/btcjson"
+	"github.com/btcsuite/btcutil"
+	"github.com/cometbft/cometbft/crypto/secp256k1"
 	"github.com/cosmos/cosmos-sdk/codec"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
 	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 	"github.com/cosmos/cosmos-sdk/crypto/hd"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
+	dashbtcec "github.com/dashpay/dashd-go/btcec/v2"
+	dashecdsa "github.com/dashpay/dashd-go/btcec/v2/ecdsa"
+	dashbtcutil "github.com/dashpay/dashd-go/btcutil"
+	"github.com/dashpay/dashd-go/chaincfg/chainhash"
 	dashtxscript "github.com/dashpay/dashd-go/txscript"
 	dashwire "github.com/dashpay/dashd-go/wire"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
+	sharedutxo "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/utxo"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/dashutil"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
+	"gitlab.com/thorchain/thornode/v3/bifrost/tss"
 	"gitlab.com/thorchain/thornode/v3/cmd"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
@@ -216,4 +226,197 @@ func (s *DashSuite) TestDashSignTxCheckpointAndBroadcast(c *C) {
 	c.Assert(hash, Equals, decoded.TxHash().String())
 	c.Assert(broadcastBytes, DeepEquals, resumed)
 	c.Assert(broadcastMaxFee, Equals, float64(0.1))
+}
+
+func (s *DashSuite) TestDashInputSelectionIgnoresLocalLocks(c *C) {
+	for _, tc := range []struct {
+		name          string
+		confirmations int64
+		minimum       int64
+		amount        float64
+		self, vault   bool
+		eligible      bool
+	}{
+		{name: "customer without confirmations", minimum: 1, amount: 0.1},
+		{name: "confirmed customer", confirmations: 1, minimum: 1, amount: 0.1, eligible: true},
+		{name: "higher confirmation minimum", confirmations: 1, minimum: 2, amount: 0.1},
+		{name: "explicit zero minimum", amount: 0.1, eligible: true},
+		{name: "confirmed dust", confirmations: 10, minimum: 1, amount: 0.00000001},
+		{name: "self change", minimum: 1, amount: 0.1, self: true, eligible: true},
+		{name: "vault transfer", minimum: 1, amount: 0.1, vault: true, eligible: true},
+		{name: "self dust", minimum: 1, amount: 0.00000001, self: true, eligible: true},
+		{name: "vault dust", minimum: 1, amount: 0.00000001, vault: true, eligible: true},
+	} {
+		client, f, cleanup := newDashMempoolFixture(c)
+		defer cleanup()
+		pubKey := ttypes.GetRandomPubKey()
+		id := f.inbound
+		if tc.vault {
+			id = f.lockedOutbound
+		}
+		client.cfg.UTXO.MinUTXOConfirmations = tc.minimum
+		client.cfg.UTXO.MaxUTXOsToSpend = 2
+		client.cfg.UTXO.MaxMempoolAncestors = 3
+		confirmedID := strings.Repeat("9", 64)
+		script := newDashP2PKHScriptHex(c, f.asgard)
+		// Deliberately list the newer output first. Selection must retain its
+		// confirmation ordering regardless of local lock visibility.
+		f.utxos = []btcjson.ListUnspentResult{
+			{TxID: id, ScriptPubKey: script, Amount: tc.amount, Confirmations: tc.confirmations},
+			{TxID: confirmedID, ScriptPubKey: script, Amount: 0.1, Confirmations: 20},
+		}
+		if tc.self {
+			c.Assert(client.temporalStorage.SaveBlockMeta(1, &sharedutxo.BlockMeta{SelfTransactions: []string{id}}), IsNil)
+		}
+		for _, flag := range []string{"unlocked", "instantlock", "instantlock_internal", "chainlock"} {
+			for _, key := range []string{"instantlock", "instantlock_internal", "chainlock"} {
+				f.txs[id][key] = key == flag
+			}
+			outputs, err := client.getUtxoToSpend(pubKey, common.One/10, 0)
+			c.Assert(err, IsNil, Commentf("%s, %s", tc.name, flag))
+			want := 1
+			if tc.eligible {
+				want = 2
+			}
+			c.Assert(outputs, HasLen, want)
+			c.Assert(outputs[0].TxID, Equals, confirmedID)
+			if tc.eligible {
+				c.Assert(outputs[1].TxID, Equals, id)
+			}
+			// If the extra output is needed to pay, it must pass the same policy.
+			amount, err := btcutil.NewAmount(tc.amount)
+			c.Assert(err, IsNil)
+			_, err = client.getUtxoToSpend(pubKey, common.One/10+amount, 0)
+			if tc.eligible {
+				c.Assert(err, IsNil)
+			} else {
+				c.Assert(err, ErrorMatches, "insufficient available UTXOs:.*")
+			}
+		}
+	}
+}
+
+func (s *DashSuite) TestDashInputSelectionKeepsMempoolLimits(c *C) {
+	for _, source := range []string{"self", "vault", "zero minimum"} {
+		client, f, cleanup := newDashMempoolFixture(c)
+		defer cleanup()
+		pubKey := ttypes.GetRandomPubKey()
+		id := f.inbound
+		client.cfg.UTXO.MinUTXOConfirmations = 1
+		switch source {
+		case "self":
+			c.Assert(client.temporalStorage.SaveBlockMeta(1, &sharedutxo.BlockMeta{SelfTransactions: []string{id}}), IsNil)
+		case "vault":
+			id = f.lockedOutbound
+		case "zero minimum":
+			client.cfg.UTXO.MinUTXOConfirmations = 0
+		}
+		f.utxos = []btcjson.ListUnspentResult{{TxID: id, ScriptPubKey: newDashP2PKHScriptHex(c, f.asgard), Amount: 0.1}}
+		client.cfg.UTXO.MaxMempoolAncestors = 2
+		_, err := client.getUtxoToSpend(pubKey, 1, 0)
+		c.Assert(err, ErrorMatches, "insufficient available UTXOs:.*mempool chain limit=1.*")
+		client.cfg.UTXO.MaxMempoolAncestors = 3
+		outputs, err := client.getUtxoToSpend(pubKey, 1, 0)
+		c.Assert(err, IsNil)
+		c.Assert(outputs, HasLen, 1)
+		f.failMempoolEntry = true
+		_, err = client.getUtxoToSpend(pubKey, 1, 0)
+		c.Assert(err, ErrorMatches, "check Dash input mempool limits:.*")
+		client.cfg.UTXO.MaxMempoolAncestors = 0
+		outputs, err = client.getUtxoToSpend(pubKey, 1, 0)
+		c.Assert(err, IsNil)
+		c.Assert(outputs, HasLen, 1)
+	}
+}
+
+func (s *DashSuite) TestDashSignsPreparedInputs(c *C) {
+	client := newDashClientForUnitTest()
+	key, pubKey := btcec.PrivKeyFromBytes(btcec.S256(), []byte{1})
+	client.nodePrivKey = key
+	var err error
+	client.nodePubKey, err = common.NewPubKeyFromCrypto(secp256k1.PubKey(pubKey.SerializeCompressed()))
+	c.Assert(err, IsNil)
+	address, err := dashbtcutil.NewAddressPubKeyHash(dashbtcutil.Hash160(pubKey.SerializeCompressed()), client.getChainCfgDASH())
+	c.Assert(err, IsNil)
+	source, err := dashtxscript.PayToAddrScript(address)
+	c.Assert(err, IsNil)
+	tx := dashwire.NewMsgTx(2)
+	previous := make([]*dashwire.TxOut, 24)
+	for i := range previous {
+		tx.AddTxIn(dashwire.NewTxIn(dashwire.NewOutPoint(&chainhash.Hash{byte(i + 1)}, 0), nil, nil))
+		previous[i] = dashwire.NewTxOut(100000, source)
+	}
+	tx.AddTxOut(dashwire.NewTxOut(2300000, source))
+	hashes, err := dashutil.SignatureHashes(tx, previous)
+	c.Assert(err, IsNil)
+	scripts := make([][]byte, len(hashes))
+	failures := make([]error, len(hashes))
+	var wg sync.WaitGroup
+	for i := range hashes {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			scripts[i], failures[i] = client.signUTXODASH(hashes[i], stypes.TxOutItem{VaultPubKey: client.nodePubKey}, 1)
+		}()
+	}
+	wg.Wait()
+	for i, script := range scripts {
+		c.Assert(failures[i], IsNil)
+		tx.TxIn[i].SignatureScript = script
+	}
+	c.Assert(dashutil.VerifyTransaction(tx, previous), IsNil)
+	tx.TxOut[0].Value++
+	c.Assert(dashutil.VerifyTransaction(tx, previous), NotNil)
+}
+
+type dashTestKeyManager struct {
+	tss.ThorchainKeyManager
+	sign func([]byte, common.SigningAlgo, string, int64) ([]byte, []byte, error)
+}
+
+func (k *dashTestKeyManager) RemoteSign(digest []byte, algo common.SigningAlgo, pubKey string, height int64) ([]byte, []byte, error) {
+	return k.sign(digest, algo, pubKey, height)
+}
+
+func (s *DashSuite) TestDashTSSSigning(c *C) {
+	client := newDashClientForUnitTest()
+	key, pubKey := dashbtcec.PrivKeyFromBytes([]byte{1})
+	vault, err := common.NewPubKeyFromCrypto(secp256k1.PubKey(pubKey.SerializeCompressed()))
+	c.Assert(err, IsNil)
+	digest := bytes.Repeat([]byte{2}, 32)
+	compact, err := dashecdsa.SignCompact(key, digest, true)
+	c.Assert(err, IsNil)
+	remoteErr := errors.New("TSS failed")
+	for _, tc := range []struct {
+		raw                []byte
+		remoteErr, wantErr error
+		valid              bool
+	}{
+		{raw: compact[1:], valid: true},
+		{wantErr: tss.ErrNotSelectedForKeysign},
+		{raw: []byte{1}},
+		{raw: bytes.Repeat([]byte{1}, 64)}, // Correct shape, wrong signature.
+		{remoteErr: remoteErr, wantErr: remoteErr},
+	} {
+		client.tssKeySigner = &dashTestKeyManager{sign: func(got []byte, algo common.SigningAlgo, pubKey string, height int64) ([]byte, []byte, error) {
+			c.Assert(got, DeepEquals, digest)
+			c.Assert(algo, Equals, common.SigningAlgoSecp256k1)
+			c.Assert(pubKey, Equals, vault.String())
+			c.Assert(height, Equals, int64(123))
+			return tc.raw, nil, tc.remoteErr
+		}}
+		script, err := client.signUTXODASH(digest, stypes.TxOutItem{VaultPubKey: vault}, 123)
+		if tc.valid {
+			c.Assert(err, IsNil)
+			want, scriptErr := dashutil.SignatureScript(digest, dashecdsa.Sign(key, digest), pubKey)
+			c.Assert(scriptErr, IsNil)
+			c.Assert(script, DeepEquals, want)
+		} else {
+			c.Assert(err, NotNil)
+			c.Assert(script, IsNil)
+			if tc.wantErr != nil {
+				c.Assert(errors.Is(err, tc.wantErr), Equals, true)
+			}
+		}
+	}
 }

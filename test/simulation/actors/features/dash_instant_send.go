@@ -1,8 +1,13 @@
 package features
 
 import (
+	"bufio"
 	"fmt"
+	"math"
 	rand "math/rand/v2"
+	"net/http"
+	"strconv"
+	"strings"
 	"time"
 
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -274,4 +279,163 @@ func (a *DashInstantSendActor) broadcastTx(scenario string, amount uint64, feeSa
 		Msg("broadcasted DASH tx")
 
 	return txID, nil
+}
+
+// waitForReadiness waits for local Bifrost admission before acquiring an account.
+// The actor retries this operation once per second, for at most two minutes.
+func (a *DashInstantSendActor) waitForReadiness(config *OpConfig) OpResult {
+	if config == nil || len(config.NodeUsers) == 0 {
+		return OpResult{Finish: true, Error: fmt.Errorf("InstantSend readiness requires a node THORChain bridge")}
+	}
+	node := config.NodeUsers[0]
+	if node == nil || node.Thorchain == nil {
+		return OpResult{Finish: true, Error: fmt.Errorf("InstantSend readiness requires a node THORChain bridge")}
+	}
+	// The per-key endpoint includes mocknet environment defaults; the bulk endpoint does not.
+	a.getMimir = node.Thorchain.GetMimir
+	if a.readyDeadline.IsZero() {
+		a.readyDeadline = time.Now().Add(2 * time.Minute)
+	}
+	if !time.Now().Before(a.readyDeadline) {
+		return a.readinessTimeout()
+	}
+	// GetMimir has no cancellation parameter. Keep only one check in flight and
+	// bound the wait even if that bridge call stalls. No account is held here.
+	result := make(chan OpResult, 1)
+	go func() {
+		retry, err := a.checkReadiness(dashInstantSendSmallPayment, dashInstantSendLargePayment)
+		result <- OpResult{Continue: err == nil, Finish: err != nil && !retry, Error: err}
+	}()
+	timer := time.NewTimer(time.Until(a.readyDeadline))
+	defer timer.Stop()
+	select {
+	case check := <-result:
+		a.readyError = check.Error
+		return check
+	case <-timer.C:
+		return a.readinessTimeout()
+	}
+}
+
+// readinessTimeout retains the last completed check's failure for diagnosis.
+func (a *DashInstantSendActor) readinessTimeout() OpResult {
+	if a.readyError != nil {
+		return OpResult{Finish: true, Error: fmt.Errorf("timed out waiting for InstantSend readiness: %w", a.readyError)}
+	}
+	return OpResult{Finish: true, Error: fmt.Errorf("timed out waiting for InstantSend readiness: Mimir or metrics lookup did not finish")}
+}
+
+// checkReadiness validates the payment range and local Bifrost allowance.
+// Only lookup errors and temporary admission states are retryable during startup.
+func (a *DashInstantSendActor) checkReadiness(minPayment, maxPayment uint64) (bool, error) {
+	if a.getMimir == nil {
+		return false, fmt.Errorf("InstantSend Mimir reader unavailable")
+	}
+	enabled, err := a.getMimir("DashInstantSendEnabled")
+	if err != nil {
+		return true, fmt.Errorf("read InstantSend enabled setting: %w", err)
+	}
+	if enabled == 0 {
+		return false, fmt.Errorf("DashInstantSendEnabled explicitly disables InstantSend")
+	}
+	// An unset enabled Mimir retains the mocknet Bifrost configuration, which enables InstantSend.
+	minAmount, err := a.getMimir("DashInstantSendMinAmount")
+	if err != nil {
+		return true, fmt.Errorf("read InstantSend minimum amount: %w", err)
+	}
+	if minAmount < 0 {
+		minAmount = common.One / 100 // client default: 0.01 DASH
+	}
+	if uint64(minAmount) > minPayment {
+		return false, fmt.Errorf("DashInstantSendMinAmount=%d exceeds payment %d duffs", minAmount, minPayment)
+	}
+	maxAmount, err := a.getMimir("DashInstantSendMaxAmount")
+	if err != nil {
+		return true, fmt.Errorf("read InstantSend maximum amount: %w", err)
+	}
+	if maxAmount <= 0 {
+		return false, fmt.Errorf("DashInstantSendMaxAmount must be positive (got %d)", maxAmount)
+	}
+	if uint64(maxAmount) < maxPayment {
+		return false, fmt.Errorf("DashInstantSendMaxAmount=%d cannot cover payment %d duffs", maxAmount, maxPayment)
+	}
+	state, err := a.readMetrics()
+	if err != nil {
+		return true, fmt.Errorf("read InstantSend metrics: %w", err)
+	}
+	if state.warmingUp {
+		return true, fmt.Errorf("InstantSend allowance is warming up")
+	}
+	if state.available < float64(maxPayment) {
+		return true, fmt.Errorf("InstantSend available allowance %.0f is below payment %d duffs", state.available, maxPayment)
+	}
+	return false, nil
+}
+
+type instantSendMetrics struct {
+	available float64 // duffs
+	warmingUp bool
+}
+
+// readInstantSendMetrics reads the Bifrost instance used by this simulation.
+func readInstantSendMetrics() (instantSendMetrics, error) {
+	return scrapeInstantSendMetrics("http://localhost:9000/metrics")
+}
+
+// scrapeInstantSendMetrics requires the allowance and warm-up gauges from a successful scrape.
+// Missing or invalid samples must not look like a ready allowance.
+func scrapeInstantSendMetrics(endpoint string) (instantSendMetrics, error) {
+	var state instantSendMetrics
+	client := http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Get(endpoint)
+	if err != nil {
+		return state, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return state, fmt.Errorf("Bifrost metrics returned HTTP %d", resp.StatusCode)
+	}
+	var warmingUp float64
+	values := map[string]*float64{
+		"dash_instantsend_available_duffs": &state.available,
+		"dash_instantsend_warming_up":      &warmingUp,
+	}
+	scanner := bufio.NewScanner(resp.Body)
+	for scanner.Scan() {
+		parts := strings.Fields(scanner.Text())
+		if len(parts) == 0 {
+			continue
+		}
+		target, ok := values[parts[0]]
+		if !ok {
+			continue
+		}
+		if len(parts) != 2 {
+			return state, fmt.Errorf("malformed InstantSend metric %s", parts[0])
+		}
+		var value float64
+		value, err = strconv.ParseFloat(parts[1], 64)
+		if err != nil {
+			return state, fmt.Errorf("parse InstantSend metric %s: %w", parts[0], err)
+		}
+		if math.IsNaN(value) || math.IsInf(value, 0) || value < 0 {
+			return state, fmt.Errorf("invalid InstantSend metric %s: %s", parts[0], parts[1])
+		}
+		*target = value
+		delete(values, parts[0])
+	}
+	if err = scanner.Err(); err != nil {
+		return state, err
+	}
+	for name := range values {
+		return state, fmt.Errorf("missing InstantSend metric %s", name)
+	}
+	switch warmingUp {
+	case 0:
+	case 1:
+		state.warmingUp = true
+	default:
+		return state, fmt.Errorf("invalid InstantSend warm-up status: %g", warmingUp)
+	}
+	return state, nil
 }

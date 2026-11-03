@@ -3,7 +3,6 @@ package utxo
 import (
 	"encoding/json"
 	"errors"
-	"math"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -68,6 +67,7 @@ func (s *DashSuite) TestInstantSendAllowanceWaitsForExactChainLock(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(batch.TxArray, HasLen, 1)
 	c.Assert(batch.TxArray[0].Tx, Equals, f.inbound)
+	batch.TxArray[0].OnObservedTxStored()
 	state, err := client.temporalStorage.GetInstantSendState()
 	c.Assert(err, IsNil)
 	c.Assert(state.Reserved, Equals, uint64(common.One/10))
@@ -125,263 +125,12 @@ func (s *DashSuite) TestInstantSendAllowanceClaimsOnlyOneBoundedDeliveryBatch(c 
 	marked, err := client.temporalStorage.HasObservedTx(f.lowFeeInbound)
 	c.Assert(err, IsNil)
 	c.Assert(marked, Equals, false)
+	// Acknowledgement completes the first marker without changing the allowance.
+	batch.TxArray[0].OnObservedTxStored()
 	batch, err = client.instantSend.fetchBatch(123, instantSendAdmission{allowed: true})
 	c.Assert(err, IsNil)
 	c.Assert(batch.TxArray, HasLen, 1)
 	c.Assert(client.instantSend.txQueue, HasLen, 0)
-}
-
-func (s *DashSuite) TestInstantSendMimirDefaultsChangesAndFailures(c *C) {
-	client, f, cleanup := newDashMempoolFixture(c)
-	defer cleanup()
-	// Use 1.5 DASH deposits to exercise lowering the limit below usage.
-	for id, amount := range map[string]float64{
-		f.inbound:               1.5,
-		f.lowFeeInbound:         1.5,
-		strings.Repeat("f", 64): 1.50002,
-	} {
-		outputs, ok := f.txs[id]["vout"].([]any)
-		c.Assert(ok, Equals, true)
-		output, ok := outputs[0].(map[string]any)
-		c.Assert(ok, Equals, true)
-		output["value"] = amount
-	}
-	bridge := &instantSendPolicyBridge{values: make(map[string]int64), status: ttypes.NodeStatus_Active}
-	client.bridge = bridge
-	c.Assert(client.instantSend.refreshSettings(), IsNil)
-	c.Assert(client.instantSend.minAmount, Equals, uint64(common.One/100))
-	c.Assert(client.instantSend.maxAmount, Equals, uint64(0))
-	admission, err := client.instantSend.prepareAllowance(nil)
-	c.Assert(err, IsNil)
-	c.Assert(admission.allowed, Equals, false)
-	bridge.values[DashInstantSendMinAmountMimirKey] = 0
-	bridge.values[DashInstantSendMaxAmountMimirKey] = 2 * common.One
-	c.Assert(client.instantSend.refreshSettings(), IsNil)
-	c.Assert(client.instantSend.maxAmount, Equals, uint64(2*common.One))
-	admission, err = client.instantSend.prepareAllowance(nil)
-	c.Assert(err, IsNil)
-	c.Assert(admission.allowed, Equals, true)
-	batch, err := client.instantSend.fetchBatch(123, admission)
-	c.Assert(err, IsNil)
-	c.Assert(batch.TxArray, HasLen, 1)
-	// A reduced limit retains the first transaction's full reservation.
-	bridge.values[DashInstantSendMaxAmountMimirKey] = common.One
-	c.Assert(client.instantSend.refreshSettings(), IsNil)
-	state, err := client.temporalStorage.GetInstantSendState()
-	c.Assert(err, IsNil)
-	c.Assert(state.Reserved, Equals, uint64(3*common.One/2))
-	c.Assert(state.Available(client.instantSend.maxAmount), Equals, uint64(0))
-	bridge.values[DashInstantSendMaxAmountMimirKey] = 3 * common.One
-	bridge.fail = DashInstantSendMinAmountMimirKey
-	err = client.instantSend.refreshSettings()
-	c.Assert(err, NotNil)
-	admission, err = client.instantSend.prepareAllowance(err)
-	c.Assert(err, IsNil)
-	c.Assert(admission.allowed, Equals, false)
-	c.Assert(admission.reason, Equals, "settings")
-	batch, err = client.instantSend.fetchBatch(123, admission)
-	c.Assert(err, IsNil)
-	c.Assert(batch.TxArray, HasLen, 0)
-	bridge.fail = ""
-	bridge.values[DashInstantSendMinAmountMimirKey] = 2 * common.One
-	c.Assert(client.instantSend.refreshSettings(), IsNil)
-	admission, err = client.instantSend.prepareAllowance(nil)
-	c.Assert(err, IsNil)
-	batch, err = client.instantSend.fetchBatch(123, admission)
-	c.Assert(err, IsNil)
-	c.Assert(batch.TxArray, HasLen, 0) // minimum now exceeds the deposit
-	delete(bridge.values, DashInstantSendMinAmountMimirKey)
-	c.Assert(client.instantSend.refreshSettings(), IsNil)
-	c.Assert(client.instantSend.minAmount, Equals, defaultInstantSendMinAmount)
-	admission, err = client.instantSend.prepareAllowance(nil)
-	c.Assert(err, IsNil)
-	batch, err = client.instantSend.fetchBatch(123, admission)
-	c.Assert(err, IsNil)
-	c.Assert(batch.TxArray, HasLen, 1)
-	c.Assert(batch.TxArray[0].Tx, Equals, f.lowFeeInbound)
-	delete(bridge.values, DashInstantSendMaxAmountMimirKey)
-	c.Assert(client.instantSend.refreshSettings(), IsNil)
-	c.Assert(client.instantSend.maxAmount, Equals, uint64(0))
-}
-
-func (s *DashSuite) TestInstantSendEnabledMimirDefaultsAndFailures(c *C) {
-	for _, defaultEnabled := range []bool{false, true} {
-		client, cleanup := newDashClientForRPCServer(c, "http://localhost:1")
-		defer cleanup()
-		client.instantSend.enabled = defaultEnabled
-		client.cfg.InstantSend.Enabled = defaultEnabled
-		bridge := &instantSendPolicyBridge{values: make(map[string]int64)}
-		client.bridge = bridge
-		for _, tc := range []struct {
-			value int64
-			fail  bool
-			want  bool
-		}{
-			{-1, true, false},
-			{-1, false, defaultEnabled},
-			{1, false, true},
-			{-1, false, defaultEnabled},
-			{0, false, false},
-			{-1, false, defaultEnabled},
-			{1, false, true},
-			{1, true, false},
-			{-1, false, defaultEnabled},
-			{1, false, true},
-			{-2, false, defaultEnabled},
-		} {
-			bridge.values[DashInstantSendEnabledMimirKey] = tc.value
-			if tc.value == -1 {
-				delete(bridge.values, DashInstantSendEnabledMimirKey)
-			}
-			bridge.fail = ""
-			if tc.fail {
-				bridge.fail = DashInstantSendEnabledMimirKey
-			}
-			bridge.reads = nil
-			err := client.instantSend.refreshSettings()
-			c.Check(err != nil, Equals, tc.fail)
-			c.Check(client.instantSend.enabled, Equals, tc.want,
-				Commentf("default: %t, value: %d, failed read: %t", defaultEnabled, tc.value, tc.fail))
-			c.Check(client.GetConfig().InstantSend.Enabled, Equals, defaultEnabled)
-			if tc.fail {
-				c.Check(bridge.reads, DeepEquals, []string{DashInstantSendEnabledMimirKey})
-			}
-		}
-		// Losing the bridge must also disable a previously enabled switch.
-		bridge.values[DashInstantSendEnabledMimirKey] = 1
-		c.Assert(client.instantSend.refreshSettings(), IsNil)
-		client.bridge = nil
-		c.Check(client.instantSend.refreshSettings(), NotNil)
-		c.Check(client.instantSend.enabled, Equals, false)
-		c.Check(client.GetConfig().InstantSend.Enabled, Equals, defaultEnabled)
-	}
-}
-
-func (s *DashSuite) TestInstantSendConfigConcurrentReads(c *C) {
-	client, cleanup := newDashClientForRPCServer(c, "http://localhost:1")
-	defer cleanup()
-	bridge := &instantSendPolicyBridge{values: make(map[string]int64)}
-	client.bridge = bridge
-	initialConfig := client.GetConfig()
-	started, stop := make(chan struct{}), make(chan struct{})
-	var readers sync.WaitGroup
-	readers.Add(1)
-	go func() {
-		defer readers.Done()
-		close(started)
-		for {
-			select {
-			case <-stop:
-				return
-			default:
-				_ = client.GetConfig()
-			}
-		}
-	}()
-	<-started
-	defer func() { close(stop); readers.Wait() }()
-	for i := range 100 {
-		value := int64(i%4) - 1
-		bridge.values[DashInstantSendEnabledMimirKey] = value
-		bridge.fail = ""
-		if value == 2 {
-			bridge.fail = DashInstantSendEnabledMimirKey
-		}
-		err := client.instantSend.refreshSettings()
-		c.Assert(err != nil, Equals, value == 2)
-		cfg := client.GetConfig()
-		c.Assert(cfg, DeepEquals, initialConfig)
-		c.Assert(client.instantSend.enabled, Equals, value == -1 || value == 1)
-	}
-}
-
-func (s *DashSuite) TestInstantSendEnabledReadFailureKeepsOutboundsAndSettlement(c *C) {
-	client, f, cleanup := newDashMempoolFixture(c)
-	defer cleanup()
-	client.instantSend.maxAmount = common.One / 10
-	batch, err := client.instantSend.fetchBatch(123, instantSendAdmission{allowed: true})
-	c.Assert(err, IsNil)
-	c.Assert(batch.TxArray, HasLen, 1)
-	c.Assert(batch.TxArray[0].Tx, Equals, f.inbound)
-	bridge := &instantSendPolicyBridge{
-		values: map[string]int64{DashInstantSendEnabledMimirKey: 1, DashInstantSendMaxAmountMimirKey: common.One},
-		status: ttypes.NodeStatus_Active, fail: DashInstantSendEnabledMimirKey,
-	}
-	client.bridge = bridge
-	client.nextMempoolScan = scanInstantSend
-	vaultItem := instantSendTestItem(f, f.lockedOutbound)
-	vaultItem.Sender = f.asgard
-	client.instantSend.txQueue = instantSendObservationGroups(common.DASHChain,
-		map[int64][]*types.TxInItem{100: {instantSendTestItem(f, f.lowFeeInbound), vaultItem}})
-	instantSendCalls := f.instantSendCalls
-
-	batch, err = client.FetchMemPool(123)
-	c.Assert(err, IsNil)
-	c.Check(batch.MemPool, Equals, true)
-	c.Check(batch.TxArray, HasLen, 2)
-	c.Check(client.instantSend.txQueue, HasLen, 0)
-	c.Check(client.nextMempoolScan, Equals, scanOutbounds)
-	c.Check(f.instantSendCalls, Equals, instantSendCalls)
-	c.Check(bridge.reads, DeepEquals, []string{DashInstantSendEnabledMimirKey})
-	state, err := client.temporalStorage.GetInstantSendState()
-	c.Assert(err, IsNil)
-	c.Check(state.Reserved, Equals, uint64(common.One/10))
-	for _, id := range []string{f.lowFeeInbound, f.lockedOutbound} {
-		var observed bool
-		observed, err = client.temporalStorage.HasObservedTx(id)
-		c.Assert(err, IsNil)
-		c.Check(observed, Equals, false)
-	}
-
-	// Settlement releases the existing reservation while the switch is disabled.
-	c.Assert(client.instantSend.reconcileBlock(&btcjson.GetBlockVerboseTxResult{
-		Height: 200, Tx: []btcjson.TxRawResult{{Txid: f.inbound}},
-	}), IsNil)
-	state, err = client.temporalStorage.GetInstantSendState()
-	c.Assert(err, IsNil)
-	c.Check(state.Reserved, Equals, uint64(0))
-	bridge.fail = ""
-	_, err = client.FetchMemPool(123)
-	c.Assert(err, IsNil)
-	batch, err = client.FetchMemPool(123)
-	c.Assert(err, IsNil)
-	c.Check(batch.MemPool, Equals, false)
-	c.Assert(batch.TxArray, HasLen, 1)
-	c.Check(batch.TxArray[0].Tx, Equals, f.lowFeeInbound)
-}
-
-func (s *DashSuite) TestInstantSendAmountMimirsUseDuffs(c *C) {
-	client, cleanup := newDashClientForRPCServer(c, "http://localhost:1")
-	defer cleanup()
-	bridge := &instantSendPolicyBridge{values: make(map[string]int64)}
-	client.bridge = bridge
-	for _, tc := range []struct {
-		value   int64
-		minimum uint64
-		maximum uint64
-	}{
-		{-1, common.One / 100, 0},
-		{0, 0, 0},
-		{1, 1, 1},
-		{common.One / 100, common.One / 100, common.One / 100},
-		{common.One, common.One, common.One},
-		{1000 * common.One, 1000 * common.One, 1000 * common.One},
-		{math.MaxInt64, math.MaxInt64, math.MaxInt64},
-	} {
-		bridge.values[DashInstantSendMinAmountMimirKey] = tc.value
-		bridge.values[DashInstantSendMaxAmountMimirKey] = tc.value
-		c.Assert(client.instantSend.refreshSettings(), IsNil)
-		c.Assert(client.instantSend.minAmount, Equals, tc.minimum, Commentf("Mimir value %d", tc.value))
-		c.Assert(client.instantSend.maxAmount, Equals, tc.maximum, Commentf("Mimir value %d", tc.value))
-	}
-	bridge.values[DashInstantSendMaxAmountMimirKey] = 1000 * common.One
-	c.Assert(client.instantSend.refreshSettings(), IsNil)
-	bridge.fail = DashInstantSendMaxAmountMimirKey
-	c.Assert(client.instantSend.refreshSettings(), NotNil)
-	bridge.fail = ""
-	delete(bridge.values, DashInstantSendMaxAmountMimirKey)
-	c.Assert(client.instantSend.refreshSettings(), IsNil)
-	c.Assert(client.instantSend.maxAmount, Equals, uint64(0))
 }
 
 func (s *DashSuite) TestInstantSendVaultSenderBypassesAllowance(c *C) {
@@ -389,7 +138,6 @@ func (s *DashSuite) TestInstantSendVaultSenderBypassesAllowance(c *C) {
 	defer cleanup()
 	client.instantSend.maxAmount = 0
 	client.instantSend.minAmount = 100 * common.One
-	client.cfg.BlockScanner.DBPath = "" // customer observations require durable storage
 	item := instantSendTestItem(f, f.lockedOutbound)
 	item.Sender = f.asgard
 	for _, destination := range []string{f.user, f.asgard} {
@@ -401,46 +149,8 @@ func (s *DashSuite) TestInstantSendVaultSenderBypassesAllowance(c *C) {
 		state, err := client.temporalStorage.GetInstantSendState()
 		c.Assert(err, IsNil)
 		c.Assert(state.Reserved, Equals, uint64(0))
+		c.Assert(client.temporalStorage.CompleteInstantSendObservations([]string{item.Tx}), IsNil)
 		c.Assert(client.temporalStorage.UntrackObservedTx(item.Tx), IsNil)
-	}
-}
-
-func (s *DashSuite) TestInstantSendFetchMemPoolPausesOnAmountReadFailure(c *C) {
-	for _, key := range []string{DashInstantSendMinAmountMimirKey, DashInstantSendMaxAmountMimirKey} {
-		client, f, cleanup := newDashMempoolFixture(c)
-		defer cleanup()
-		client.cfg.UTXO.TransactionBatchSize = 1
-		client.cfg.UTXO.MaxMempoolBatches = 10
-		bridge := &instantSendPolicyBridge{
-			values: map[string]int64{DashInstantSendEnabledMimirKey: 1, DashInstantSendMaxAmountMimirKey: common.One},
-			status: ttypes.NodeStatus_Active,
-		}
-		client.bridge = bridge
-		client.nextMempoolScan = scanInstantSend
-		batch, err := client.FetchMemPool(123)
-		c.Assert(err, IsNil)
-		c.Assert(batch.TxArray, HasLen, 1)
-		c.Assert(batch.TxArray[0].Tx, Equals, f.inbound)
-
-		// The next scan must not reuse the previous scan's successful admission.
-		bridge.fail = key
-		client.nextMempoolScan = scanInstantSend
-		batch, err = client.FetchMemPool(123)
-		c.Assert(err, IsNil)
-		c.Assert(batch.TxArray, HasLen, 0)
-		state, err := client.temporalStorage.GetInstantSendState()
-		c.Assert(err, IsNil)
-		c.Assert(state.Reserved, Equals, uint64(common.One/10))
-		observed, err := client.temporalStorage.HasObservedTx(f.lowFeeInbound)
-		c.Assert(err, IsNil)
-		c.Assert(observed, Equals, false)
-
-		bridge.fail = ""
-		client.nextMempoolScan = scanInstantSend
-		batch, err = client.FetchMemPool(123)
-		c.Assert(err, IsNil)
-		c.Assert(batch.TxArray, HasLen, 1)
-		c.Assert(batch.TxArray[0].Tx, Equals, f.lowFeeInbound)
 	}
 }
 
@@ -453,7 +163,7 @@ func (s *DashSuite) TestInstantSendSettlementFailureInvalidatesPreparedAdmission
 
 	// A failed block settlement between preparation and delivery resets recovery.
 	closed, closeStorage := newDashClientForRPCServer(c, "http://localhost:1")
-	_, err = closed.temporalStorage.ClaimInstantSendTxs([]sharedutxo.InstantSendClaim{{TxID: f.lockedOutbound, Amount: 1}}, 0, 100, true, 1)
+	_, err = closed.temporalStorage.AdmitInstantSendTxs([]sharedutxo.InstantSendClaim{{TxID: f.lockedOutbound, Amount: 1}}, 0, 100, true, 1)
 	c.Assert(err, IsNil)
 	healthyStorage := client.temporalStorage
 	client.temporalStorage = closed.temporalStorage
@@ -756,7 +466,7 @@ func (s *DashSuite) TestInstantSendRestoredAllowanceRequiresInclusionProof(c *C)
 	defer server.Close()
 	client, cleanup := newDashClientForRPCServer(c, server.URL)
 	defer cleanup()
-	_, err := client.temporalStorage.ClaimInstantSendTxs([]sharedutxo.InstantSendClaim{
+	_, err := client.temporalStorage.AdmitInstantSendTxs([]sharedutxo.InstantSendClaim{
 		{TxID: mined, Amount: 60}, {TxID: missing, Amount: 40},
 	}, 0, 100, true, 1)
 	c.Assert(err, IsNil)
@@ -799,7 +509,7 @@ func (s *DashSuite) TestInstantSendRestoredAllowanceRequiresInclusionProof(c *C)
 		{limit: 100, settingsErr: errInstantSendPaused},
 	} {
 		store, closeStore := newDashClientForRPCServer(c, server.URL)
-		_, err := store.temporalStorage.ClaimInstantSendTxs([]sharedutxo.InstantSendClaim{{TxID: mined, Amount: 60}}, 0, 100, true, 1)
+		_, err := store.temporalStorage.AdmitInstantSendTxs([]sharedutxo.InstantSendClaim{{TxID: mined, Amount: 60}}, 0, 100, true, 1)
 		c.Assert(err, IsNil)
 		store.instantSend.recovery.Reset()
 		store.instantSend.enabled = !tc.disabled

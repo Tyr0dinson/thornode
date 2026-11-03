@@ -6,6 +6,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/stretchr/testify/require"
 	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/syndtr/goleveldb/leveldb/opt"
 	"github.com/syndtr/goleveldb/leveldb/storage"
@@ -42,7 +43,7 @@ func TestInstantSendAllowanceSelectionAndSettlement(t *testing.T) {
 		{TxID: "waiting", Amount: 10},
 		{TxID: "vault", Amount: 500, Exempt: true},
 	}
-	accepted, err := store.ClaimInstantSendTxs(claims, 10, 100, true, 1)
+	accepted, err := store.AdmitInstantSendTxs(claims, 10, 100, true, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,12 +81,12 @@ func TestInstantSendAllowanceSelectionAndSettlement(t *testing.T) {
 	if s.Reserved != 40 || s.Available(100) != 60 {
 		t.Fatal(s)
 	}
-	accepted, err = store.ClaimInstantSendTxs([]InstantSendClaim{{TxID: "waiting", Amount: 10}}, 10, 100, true, 2)
+	accepted, err = store.AdmitInstantSendTxs([]InstantSendClaim{{TxID: "waiting", Amount: 10}}, 10, 100, true, 2)
 	if err != nil || !slices.Equal(accepted, []string{"waiting"}) {
 		t.Fatalf("retry: %v %v", accepted, err)
 	}
 	// Settlement removes the reservation, never the observed marker.
-	accepted, err = store.ClaimInstantSendTxs(claims, 0, 1000, true, 3)
+	accepted, err = store.AdmitInstantSendTxs(claims, 0, 1000, true, 3)
 	if err != nil || slices.Contains(accepted, "first") {
 		t.Fatalf("duplicate: %v %v", accepted, err)
 	}
@@ -98,7 +99,7 @@ func TestInstantSendConcurrentAllowanceClaims(t *testing.T) {
 	results := make(chan []string, 100)
 	for i := range 100 {
 		wg.Go(func() {
-			ids, err := store.ClaimInstantSendTxs([]InstantSendClaim{{TxID: fmt.Sprint(i), Amount: 7}, {TxID: "shared", Amount: 3}}, 0, 100, true, 1)
+			ids, err := store.AdmitInstantSendTxs([]InstantSendClaim{{TxID: fmt.Sprint(i), Amount: 7}, {TxID: "shared", Amount: 3}}, 0, 100, true, 1)
 			if err != nil {
 				t.Error(err)
 			}
@@ -165,7 +166,7 @@ func TestInstantSendWarmupSurvivesRestartAndKeepsSnapshotChainLockOnly(t *testin
 	if !s.Ready || s.Reserved != 120 || s.Available(100) != 0 || s.Available(200) != 80 {
 		t.Fatal(s)
 	}
-	accepted, err := store.ClaimInstantSendTxs([]InstantSendClaim{{TxID: "pending", Amount: 40}, {TxID: "new", Amount: 10}}, 0, 200, true, 2)
+	accepted, err := store.AdmitInstantSendTxs([]InstantSendClaim{{TxID: "pending", Amount: 40}, {TxID: "new", Amount: 10}}, 0, 200, true, 2)
 	if err != nil || !slices.Equal(accepted, []string{"new"}) {
 		t.Fatal(accepted, err)
 	}
@@ -187,7 +188,7 @@ func TestInstantSendAtomicWriteFailureAndRestart(t *testing.T) {
 	path := t.TempDir()
 	store, db := openObservationMarkerStorage(t, path, nil)
 	readyInstantSendStore(t, store)
-	accepted, err := store.ClaimInstantSendTxs([]InstantSendClaim{{TxID: "known", Amount: 20}}, 0, 100, true, 1)
+	accepted, err := store.AdmitInstantSendTxs([]InstantSendClaim{{TxID: "known", Amount: 20}}, 0, 100, true, 1)
 	if err != nil || len(accepted) != 1 {
 		t.Fatal(accepted, err)
 	}
@@ -195,7 +196,7 @@ func TestInstantSendAtomicWriteFailureAndRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	store, db = openObservationMarkerStorage(t, path, &opt.Options{ReadOnly: true})
-	accepted, err = store.ClaimInstantSendTxs([]InstantSendClaim{{TxID: "new", Amount: 30}, {TxID: "vault", Exempt: true}}, 0, 100, true, 2)
+	accepted, err = store.AdmitInstantSendTxs([]InstantSendClaim{{TxID: "new", Amount: 30}, {TxID: "vault", Exempt: true}}, 0, 100, true, 2)
 	if err == nil || len(accepted) != 0 {
 		t.Fatal("failed write accepted batch", accepted, err)
 	}
@@ -229,7 +230,7 @@ func TestInstantSendAtomicWriteFailureAndRestart(t *testing.T) {
 func TestInstantSendVaultsBypassClosedAllowance(t *testing.T) {
 	store, _ := openObservationMarkerStorage(t, t.TempDir(), nil)
 	// Brand-new storage, customer policy unavailable, and no allowance.
-	accepted, err := store.ClaimInstantSendTxs([]InstantSendClaim{{TxID: "in", Amount: 10}, {TxID: "vault", Amount: 1, Exempt: true}}, 100, 0, false, 1)
+	accepted, err := store.AdmitInstantSendTxs([]InstantSendClaim{{TxID: "in", Amount: 10}, {TxID: "vault", Amount: 1, Exempt: true}}, 100, 0, false, 1)
 	if err != nil || !slices.Equal(accepted, []string{"vault"}) {
 		t.Fatal(accepted, err)
 	}
@@ -250,7 +251,7 @@ func TestInstantSendCorruptJournalDoesNotReset(t *testing.T) {
 		if err := store.StartInstantSendWarmup(10, nil); err == nil {
 			t.Fatal("overwrote corrupt metadata")
 		}
-		accepted, err := store.ClaimInstantSendTxs([]InstantSendClaim{{TxID: "new", Amount: 10}}, 0, 100, true, 1)
+		accepted, err := store.AdmitInstantSendTxs([]InstantSendClaim{{TxID: "new", Amount: 10}}, 0, 100, true, 1)
 		if err == nil || len(accepted) != 0 {
 			t.Fatal("admitted with corrupt metadata", accepted, err)
 		}
@@ -270,7 +271,7 @@ func TestInstantSendOneSyncForReservationAndMarkerBatch(t *testing.T) {
 	}
 	readyInstantSendStore(t, store)
 	before := files.syncs.Load()
-	accepted, err := store.ClaimInstantSendTxs([]InstantSendClaim{{TxID: "one", Amount: 10}, {TxID: "two", Amount: 20}, {TxID: "vault", Exempt: true}}, 0, 100, true, 1)
+	accepted, err := store.AdmitInstantSendTxs([]InstantSendClaim{{TxID: "one", Amount: 10}, {TxID: "two", Amount: 20}, {TxID: "vault", Exempt: true}}, 0, 100, true, 1)
 	if err != nil || len(accepted) != 3 {
 		t.Fatal(accepted, err)
 	}
@@ -299,4 +300,170 @@ func TestInstantSendSnapshotDoesNotRestoreSettledReservation(t *testing.T) {
 	if s.Reserved != 0 || len(s.SnapshotPending) != 0 {
 		t.Fatal(s)
 	}
+}
+
+// Pending and completed claims survive restart, but only pending claims allow block fallback.
+func TestInstantSendMarkersSurviveRestartAndSettlement(t *testing.T) {
+	path := t.TempDir()
+	store, db := openObservationMarkerStorage(t, path, nil)
+	readyInstantSendStore(t, store)
+	claims := []InstantSendClaim{{TxID: "pending", Amount: 10}, {TxID: "accepted", Amount: 20}, {TxID: "vault", Exempt: true}}
+	ids, err := store.AdmitInstantSendTxs(claims, 0, 100, true, 1)
+	require.NoError(t, err)
+	require.Len(t, ids, 3)
+	require.NoError(t, store.CompleteInstantSendObservations([]string{"ACCEPTED", "missing"}))
+	require.EqualValues(t, 30, instantSendState(t, store).Reserved)
+	require.NoError(t, db.Close())
+	store, db = openObservationMarkerStorage(t, path, nil)
+	ids, err = store.AdmitInstantSendTxs(claims, 0, 100, true, 2)
+	require.NoError(t, err)
+	require.Empty(t, ids, "pending handoffs must not reserve or emit again")
+	require.NoError(t, store.ReleaseInstantSendReservations([]string{"pending", "accepted", "vault"}))
+	require.Zero(t, instantSendState(t, store).Reserved)
+	require.NoError(t, db.Close())
+	store, _ = openObservationMarkerStorage(t, path, nil)
+	ids, err = store.TrackInstantSendBlockTxs([]string{"pending", "accepted", "vault", "PENDING", "new"})
+	require.NoError(t, err)
+	require.Equal(t, []string{"pending", "vault", "new"}, ids)
+	require.NoError(t, store.CompleteInstantSendObservations([]string{"pending", "vault"}))
+	ids, err = store.TrackInstantSendBlockTxs([]string{"pending", "accepted", "vault", "new"})
+	require.NoError(t, err)
+	require.Empty(t, ids)
+	marked, err := store.HasObservedTx("missing")
+	require.NoError(t, err)
+	require.False(t, marked, "a late acknowledgement cannot create a missing claim")
+}
+
+// Acknowledgements and fallback claims each need only one sync, with no allowance mutation.
+func TestInstantSendMarkerBatchesSyncOnce(t *testing.T) {
+	files := &observationJournalStorage{Storage: storage.NewMemStorage()}
+	db, err := leveldb.Open(files, nil)
+	require.NoError(t, err)
+	defer db.Close()
+	store, err := NewTemporalStorage(db, 0)
+	require.NoError(t, err)
+	readyInstantSendStore(t, store)
+	before := files.syncs.Load()
+	_, err = store.AdmitInstantSendTxs([]InstantSendClaim{{TxID: "one", Amount: 10}, {TxID: "two", Amount: 10}, {TxID: "three", Amount: 10}}, 0, 100, true, 1)
+	require.NoError(t, err)
+	require.EqualValues(t, 1, files.syncs.Load()-before)
+	require.NoError(t, store.CompleteInstantSendObservations([]string{"one", "two", "ONE"}))
+	require.EqualValues(t, 2, files.syncs.Load()-before)
+	require.NoError(t, store.CompleteInstantSendObservations([]string{"one", "missing"}))
+	require.EqualValues(t, 2, files.syncs.Load()-before)
+	ids, err := store.TrackInstantSendBlockTxs([]string{"one", "three", "new", "THREE"})
+	require.NoError(t, err)
+	require.Equal(t, []string{"three", "new"}, ids)
+	require.EqualValues(t, 3, files.syncs.Load()-before)
+	require.EqualValues(t, 30, instantSendState(t, store).Reserved)
+}
+
+// Failed writes cannot complete pending markers or partially reserve an admission batch.
+func TestInstantSendMarkerWriteFailuresKeepFallback(t *testing.T) {
+	path := t.TempDir()
+	store, db := openObservationMarkerStorage(t, path, nil)
+	readyInstantSendStore(t, store)
+	_, err := store.AdmitInstantSendTxs([]InstantSendClaim{{TxID: "pending", Amount: 10}}, 0, 100, true, 1)
+	require.NoError(t, err)
+	require.NoError(t, db.Close())
+	store, db = openObservationMarkerStorage(t, path, &opt.Options{ReadOnly: true})
+	require.Error(t, store.CompleteInstantSendObservations([]string{"pending"}))
+	ids, err := store.TrackInstantSendBlockTxs([]string{"pending", "new"})
+	require.Error(t, err)
+	require.Empty(t, ids)
+	ids, err = store.AdmitInstantSendTxs([]InstantSendClaim{{TxID: "new", Amount: 20}}, 0, 100, true, 2)
+	require.Error(t, err)
+	require.Empty(t, ids)
+	ids, err = store.MarkInstantSendExemptTxsPending([]InstantSendClaim{{TxID: "vault", Exempt: true}})
+	require.Error(t, err)
+	require.Empty(t, ids)
+	require.EqualValues(t, 10, instantSendState(t, store).Reserved)
+	require.NoError(t, db.Close())
+	store, _ = openObservationMarkerStorage(t, path, nil)
+	for _, id := range []string{"new", "vault"} {
+		var marked bool
+		marked, err = store.HasObservedTx(id)
+		require.NoError(t, err)
+		require.False(t, marked)
+	}
+	ids, err = store.TrackInstantSendBlockTxs([]string{"pending"})
+	require.NoError(t, err)
+	require.Equal(t, []string{"pending"}, ids)
+}
+
+// Acknowledgement and block claims may win in either order; settlement never removes the marker.
+func TestInstantSendMarkerConcurrentFallback(t *testing.T) {
+	store, _ := openObservationMarkerStorage(t, t.TempDir(), nil)
+	readyInstantSendStore(t, store)
+	for i := range 32 {
+		id := fmt.Sprintf("pending-%d", i)
+		_, err := store.AdmitInstantSendTxs([]InstantSendClaim{{TxID: id, Amount: 10}}, 0, 100, true, 1)
+		require.NoError(t, err)
+		var wg sync.WaitGroup
+		start := make(chan struct{})
+		failures := make(chan error, 3)
+		claimed := make(chan []string, 1)
+		wg.Go(func() { <-start; failures <- store.CompleteInstantSendObservations([]string{id}) })
+		wg.Go(func() { <-start; failures <- store.ReleaseInstantSendReservations([]string{id}) })
+		wg.Go(func() {
+			<-start
+			ids, claimErr := store.TrackInstantSendBlockTxs([]string{id, id})
+			claimed <- ids
+			failures <- claimErr
+		})
+		close(start)
+		wg.Wait()
+		close(failures)
+		for range 3 {
+			require.NoError(t, <-failures)
+		}
+		require.LessOrEqual(t, len(<-claimed), 1)
+		ids, err := store.TrackInstantSendBlockTxs([]string{id})
+		require.NoError(t, err)
+		require.Empty(t, ids)
+		require.Zero(t, instantSendState(t, store).Reserved)
+	}
+}
+
+// Only the DASH fallback interprets pending markers; legacy and other-chain claims stay suppressed.
+func TestInstantSendMarkerCompatibility(t *testing.T) {
+	store, db := openObservationMarkerStorage(t, t.TempDir(), nil)
+	readyInstantSendStore(t, store)
+	_, err := store.TrackObservedTxs([]string{"legacy"})
+	require.NoError(t, err)
+	_, err = store.AdmitInstantSendTxs([]InstantSendClaim{{TxID: "pending", Amount: 10}}, 0, 100, true, 1)
+	require.NoError(t, err)
+	ids, err := store.TrackObservedTxs([]string{"pending", "legacy"})
+	require.NoError(t, err)
+	require.Empty(t, ids)
+	ids, err = store.TrackInstantSendBlockTxs([]string{"legacy", "pending"})
+	require.NoError(t, err)
+	require.Equal(t, []string{"pending"}, ids)
+	value, err := db.Get([]byte(store.getObservedTxKey("legacy")), nil)
+	require.NoError(t, err)
+	require.Equal(t, "legacy", string(value))
+}
+
+// Exempt vaults use the same pending-marker contract without reading corrupt allowance metadata.
+func TestInstantSendVaultPendingFallback(t *testing.T) {
+	store, db := openObservationMarkerStorage(t, t.TempDir(), nil)
+	require.NoError(t, db.Put([]byte(instantSendStateKey), []byte("broken"), nil))
+	ids, err := store.MarkInstantSendExemptTxsPending([]InstantSendClaim{{TxID: "VAULT", Exempt: true}, {TxID: "vault", Exempt: true}})
+	require.NoError(t, err)
+	require.Equal(t, []string{"vault"}, ids)
+	ids, err = store.MarkInstantSendExemptTxsPending([]InstantSendClaim{{TxID: "vault", Exempt: true}})
+	require.NoError(t, err)
+	require.Empty(t, ids)
+	ids, err = store.TrackInstantSendBlockTxs([]string{"vault"})
+	require.NoError(t, err)
+	require.Equal(t, []string{"vault"}, ids)
+	ids, err = store.MarkInstantSendExemptTxsPending([]InstantSendClaim{{TxID: "other", Exempt: true}, {TxID: "customer"}})
+	require.Error(t, err)
+	require.Empty(t, ids)
+	marked, err := store.HasObservedTx("other")
+	require.NoError(t, err)
+	require.False(t, marked)
+	value, err := db.Get([]byte(instantSendStateKey), nil)
+	require.NoError(t, err)
+	require.Equal(t, "broken", string(value))
 }

@@ -140,7 +140,7 @@ func testInstantSendUnlockedSettlement(c *C, stage string, failSettlement bool) 
 		c.Assert(client.temporalStorage.StartInstantSendWarmup(100, []string{f.inbound}), IsNil)
 	case "recovery":
 		prepare = true
-		_, err = client.temporalStorage.ClaimInstantSendTxs([]sharedutxo.InstantSendClaim{
+		_, err = client.temporalStorage.AdmitInstantSendTxs([]sharedutxo.InstantSendClaim{
 			{TxID: f.inbound, Amount: common.One / 10},
 		}, 0, common.One, true, 1)
 		c.Assert(err, IsNil)
@@ -156,7 +156,7 @@ func testInstantSendUnlockedSettlement(c *C, stage string, failSettlement bool) 
 	if failSettlement {
 		closed, closeStorage := newDashClientForRPCServer(c, "http://localhost:1")
 		// Force a write: settling an empty journal is a no-op even on a closed DB.
-		_, err = closed.temporalStorage.ClaimInstantSendTxs([]sharedutxo.InstantSendClaim{
+		_, err = closed.temporalStorage.AdmitInstantSendTxs([]sharedutxo.InstantSendClaim{
 			{TxID: f.inbound, Amount: 1},
 		}, 0, 100, true, 1)
 		c.Assert(err, IsNil)

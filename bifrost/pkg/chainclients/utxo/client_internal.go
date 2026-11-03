@@ -765,8 +765,8 @@ func (c *Client) extractTxs(block *btcjson.GetBlockVerboseTxResult) (types.TxIn,
 	return txIn, err
 }
 
-// trackObservedTxs claims a scanner's batch before delivery. Markers remain even
-// if Observer never receives it, favoring missed observations over duplicate delivery.
+// trackObservedTxs claims a block batch before delivery. DASH also accepts pending
+// InstantSend handoffs. Completed block markers remain even if Observer misses delivery.
 func (c *Client) trackObservedTxs(items []*types.TxInItem) ([]*types.TxInItem, error) {
 	if len(items) == 0 {
 		return nil, nil
@@ -784,7 +784,13 @@ func (c *Client) trackObservedTxs(items []*types.TxInItem) ([]*types.TxInItem, e
 		ids = append(ids, id)
 		byID[id] = item
 	}
-	added, err := c.temporalStorage.TrackObservedTxs(ids)
+	var added []string
+	var err error
+	if c.cfg.ChainID == common.DASHChain {
+		added, err = c.temporalStorage.TrackInstantSendBlockTxs(ids)
+	} else {
+		added, err = c.temporalStorage.TrackObservedTxs(ids)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("persist observed transaction markers: %w", err)
 	}

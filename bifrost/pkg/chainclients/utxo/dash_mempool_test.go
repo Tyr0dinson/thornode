@@ -266,6 +266,7 @@ func (s *DashSuite) TestDashMempoolRestartKeepsLockObservation(c *C) {
 			c.Assert(batch.MemPool, Equals, false)
 			c.Assert(batch.TxArray, HasLen, 1)
 			c.Assert(batch.TxArray[0].Tx, Equals, f.lockedOutbound)
+			batch.TxArray[0].OnObservedTxStored()
 			wantMined = 1 // InstantSend already supplied the migration's final observation
 		}
 		f.chainLocked = true

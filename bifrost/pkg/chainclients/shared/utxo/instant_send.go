@@ -146,8 +146,8 @@ func (t *TemporalStorage) GetInstantSendState() (InstantSendState, error) {
 	return t.loadInstantSendState()
 }
 
-// updateInstantSend writes changed reservations, metadata and any observation
-// markers together. An unsuccessful write never publishes the tentative state.
+// updateInstantSend writes reservations, metadata and observation markers
+// together. An unsuccessful write never publishes the tentative state.
 func (t *TemporalStorage) updateInstantSend(update func(*InstantSendState, *leveldb.Batch) error) error {
 	t.observedTxMu.Lock()
 	defer t.observedTxMu.Unlock()
@@ -310,9 +310,10 @@ type InstantSendClaim struct {
 	Exempt bool
 }
 
-// ClaimInstantSendTxs atomically selects a batch against the shared allowance.
+// AdmitInstantSendTxs marks accepted transactions pending for early observation.
+// Non-exempt transactions also reserve allowance in the same atomic write.
 // The caller serializes its fresh finality checks with block reconciliation.
-func (t *TemporalStorage) ClaimInstantSendTxs(claims []InstantSendClaim, minimum, limit uint64, customersAllowed bool, now int64) ([]string, error) {
+func (t *TemporalStorage) AdmitInstantSendTxs(claims []InstantSendClaim, minimum, limit uint64, customersAllowed bool, now int64) ([]string, error) {
 	var accepted []string
 	err := t.updateInstantSend(func(s *InstantSendState, batch *leveldb.Batch) error {
 		seen := make(map[string]bool)
@@ -348,13 +349,111 @@ func (t *TemporalStorage) ClaimInstantSendTxs(claims []InstantSendClaim, minimum
 				s.Reservations[id] = InstantSendReservation{TxID: id, Amount: claim.Amount, Origin: InstantSendObservation, CreatedAt: now}
 				s.Reserved += claim.Amount
 			}
-			batch.Put([]byte(t.getObservedTxKey(id)), []byte(id))
+			batch.Put([]byte(t.getObservedTxKey(id)), []byte(instantSendPendingMarker))
 			accepted = append(accepted, id)
 		}
 		return nil
 	})
 	if err != nil {
 		return nil, err
+	}
+	return accepted, nil
+}
+
+// A pending marker suppresses another InstantSend claim, but allows the
+// ChainLock block scan to recover a lost handoff. Completed markers retain
+// their original value (the transaction ID), including markers from older nodes.
+const instantSendPendingMarker = "instant-send-pending-v1"
+
+// CompleteInstantSendObservations promotes only pending markers after Observer
+// stores their observations. Allowance remains reserved until verified ChainLock.
+func (t *TemporalStorage) CompleteInstantSendObservations(ids []string) error {
+	_, err := t.trackInstantSendObservations(ids, false)
+	return err
+}
+
+// TrackInstantSendBlockTxs claims a verified ChainLock block's new or pending
+// transactions. Like ordinary block claims, its markers precede Observer delivery.
+// Only the DASH block scanner uses this fallback; other chains retain TrackObservedTxs.
+func (t *TemporalStorage) TrackInstantSendBlockTxs(ids []string) ([]string, error) {
+	return t.trackInstantSendObservations(ids, true)
+}
+
+// trackInstantSendObservations serializes acknowledgements with block claims.
+// An acknowledgement cannot recreate a missing marker or undo a completed claim.
+func (t *TemporalStorage) trackInstantSendObservations(ids []string, claimNew bool) ([]string, error) {
+	t.observedTxMu.Lock()
+	defer t.observedTxMu.Unlock()
+	batch := new(leveldb.Batch)
+	seen := make(map[string]bool)
+	var accepted []string
+	for _, id := range ids {
+		id = strings.ToLower(id)
+		if id == "" {
+			return nil, errors.New("empty InstantSend transaction ID")
+		}
+		if seen[id] {
+			continue
+		}
+		seen[id] = true
+		key := []byte(t.getObservedTxKey(id))
+		value, err := t.db.Get(key, nil)
+		switch {
+		case errors.Is(err, leveldb.ErrNotFound):
+			if !claimNew {
+				continue
+			}
+		case err != nil:
+			return nil, err
+		case string(value) != instantSendPendingMarker:
+			continue
+		}
+		batch.Put(key, []byte(id))
+		accepted = append(accepted, id)
+	}
+	if batch.Len() > 0 {
+		if err := t.db.Write(batch, &opt.WriteOptions{Sync: true}); err != nil {
+			return nil, err
+		}
+	}
+	return accepted, nil
+}
+
+// MarkInstantSendExemptTxsPending writes pending markers for exempt transfers
+// without reading or changing allowance metadata. It returns only newly marked IDs.
+func (t *TemporalStorage) MarkInstantSendExemptTxsPending(claims []InstantSendClaim) ([]string, error) {
+	t.observedTxMu.Lock()
+	defer t.observedTxMu.Unlock()
+	batch := new(leveldb.Batch)
+	seen := make(map[string]bool)
+	var accepted []string
+	for _, claim := range claims {
+		if !claim.Exempt {
+			return nil, errors.New("customer transaction in InstantSend vault fallback")
+		}
+		id := strings.ToLower(claim.TxID)
+		if id == "" {
+			return nil, errors.New("empty InstantSend transaction ID")
+		}
+		if seen[id] {
+			continue
+		}
+		seen[id] = true
+		key := []byte(t.getObservedTxKey(id))
+		observed, err := t.db.Has(key, nil)
+		if err != nil {
+			return nil, err
+		}
+		if observed {
+			continue
+		}
+		batch.Put(key, []byte(instantSendPendingMarker))
+		accepted = append(accepted, id)
+	}
+	if batch.Len() > 0 {
+		if err := t.db.Write(batch, &opt.WriteOptions{Sync: true}); err != nil {
+			return nil, err
+		}
 	}
 	return accepted, nil
 }

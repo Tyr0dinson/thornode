@@ -3,18 +3,29 @@ package utxo
 import (
 	"bytes"
 	"encoding/hex"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/btcsuite/btcd/btcjson"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
+	"github.com/cometbft/cometbft/crypto/secp256k1"
+	"github.com/dashpay/dashd-go/btcutil"
 	dashchaincfg "github.com/dashpay/dashd-go/chaincfg"
 	dashtxscript "github.com/dashpay/dashd-go/txscript"
 	"github.com/rs/zerolog"
+	. "gopkg.in/check.v1"
+
+	"gitlab.com/thorchain/thornode/v3/bifrost/blockscanner"
+	sharedutxo "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/utxo"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/rpc"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/config"
-	. "gopkg.in/check.v1"
+	"gitlab.com/thorchain/thornode/v3/constants"
 )
 
 type DashSuite struct{}
@@ -273,4 +284,217 @@ func (s *DashSuite) TestDashWireConversion(c *C) {
 	out = dashToWire(dashTx)
 	c.Assert(out.TxIn[1].SignatureScript, DeepEquals, []byte{0x53})
 	c.Assert(out.TxHash().String(), Equals, dashTx.TxHash().String())
+}
+
+type rpcRequest struct {
+	Method string            `json:"method"`
+	Params []json.RawMessage `json:"params"`
+	ID     any               `json:"id"`
+}
+
+// newDashTestAddress uses the same network as the client's script decoder.
+func newDashTestAddress(c *C, seed byte) string {
+	hash := bytes.Repeat([]byte{seed}, 20)
+	params := newDashClientForUnitTest().getChainCfgDASH()
+	addr, err := btcutil.NewAddressPubKeyHash(hash, params)
+	c.Assert(err, IsNil)
+	return addr.String()
+}
+
+// newDashP2PKHScriptHex builds an output script for the active test network.
+func newDashP2PKHScriptHex(c *C, address string) string {
+	params := newDashClientForUnitTest().getChainCfgDASH()
+	addr, err := btcutil.DecodeAddress(address, params)
+	c.Assert(err, IsNil)
+	script, err := dashtxscript.PayToAddrScript(addr)
+	c.Assert(err, IsNil)
+	return hex.EncodeToString(script)
+}
+
+func newDashMemoScriptHex(c *C, memo string) string {
+	script, err := dashtxscript.NullDataScript([]byte(memo))
+	c.Assert(err, IsNil)
+	return hex.EncodeToString(script)
+}
+
+func newRPCTestServer(c *C, handler func(method string, params []json.RawMessage) any) *httptest.Server {
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer r.Body.Close()
+
+		var body json.RawMessage
+		err := json.NewDecoder(r.Body).Decode(&body)
+		if err != nil {
+			c.Fatalf("decode request: %v", err)
+		}
+		respond := func(req rpcRequest) map[string]any {
+			result := handler(req.Method, req.Params)
+			if rpcErr, ok := result.(*btcjson.RPCError); ok {
+				return map[string]any{"jsonrpc": "2.0", "id": req.ID, "error": rpcErr}
+			}
+			return map[string]any{
+				"jsonrpc": "2.0",
+				"id":      req.ID,
+				"result":  result,
+			}
+		}
+		var resp any
+		if bytes.HasPrefix(bytes.TrimSpace(body), []byte("[")) {
+			var requests []rpcRequest
+			c.Assert(json.Unmarshal(body, &requests), IsNil)
+			responses := make([]map[string]any, len(requests))
+			for i, req := range requests {
+				responses[i] = respond(req)
+			}
+			resp = responses
+		} else {
+			var req rpcRequest
+			c.Assert(json.Unmarshal(body, &req), IsNil)
+			resp = respond(req)
+		}
+		err = json.NewEncoder(w).Encode(resp)
+		if err != nil {
+			c.Fatalf("encode response: %v", err)
+		}
+	}))
+}
+
+func newDashClientForRPCServer(c *C, serverURL string, rpcTimeout ...time.Duration) (*Client, func()) {
+	timeout := time.Second
+	if len(rpcTimeout) > 0 {
+		timeout = rpcTimeout[0]
+	}
+	rpcClient, err := rpc.NewClient(serverURL, "thorchain", "password", 0, timeout, common.DASHChain, zerolog.Nop())
+	c.Assert(err, IsNil)
+
+	path := c.MkDir()
+	storage, err := blockscanner.NewBlockScannerStorage(path, config.LevelDBOptions{})
+	c.Assert(err, IsNil)
+	cleanup := func() { _ = storage.Close() }
+
+	temporalStorage, err := sharedutxo.NewTemporalStorage(storage.GetInternalDb(), 1000)
+	c.Assert(err, IsNil)
+	// Existing InstantSend tests start with a fully warmed, durable allowance.
+	c.Assert(temporalStorage.StartInstantSendWarmup(0, nil), IsNil)
+	c.Assert(temporalStorage.CompleteInstantSendWarmup(1), IsNil)
+
+	client := &Client{
+		cfg: config.BifrostChainConfiguration{
+			ChainID:             common.DASHChain,
+			ParallelMempoolScan: 1,
+			BlockScanner:        config.BifrostBlockScannerConfiguration{ChainID: common.DASHChain, DBPath: path},
+			InstantSend: config.InstantSendConfiguration{
+				Enabled:       true,
+				MaxMempoolAge: 2 * time.Minute,
+			},
+		},
+		bridge:                    &dashMempoolPolicyBridge{enabled: 1},
+		log:                       zerolog.Nop(),
+		regexpRemoveTrailingZeros: regexp.MustCompile(`(00)+$`),
+		rpc:                       rpcClient,
+		temporalStorage:           temporalStorage,
+	}
+	client.instantSend = instantSendHandler{
+		client:    client,
+		enabled:   client.cfg.InstantSend.Enabled,
+		minAmount: defaultInstantSendMinAmount,
+		maxAmount: 100_000 * common.One,
+		recovery:  instantSendRecovery{loaded: true},
+	}
+	return client, cleanup
+}
+
+func dashTestMempoolEntry() map[string]any {
+	return map[string]any{
+		"size":   200,
+		"vsize":  200,
+		"weight": 800,
+		"fees": map[string]any{
+			"base": 0.00002,
+		},
+		"time":   time.Now().Unix(),
+		"height": 123,
+	}
+}
+
+func dashUnlockedRawTx(txID string) map[string]any {
+	return map[string]any{
+		"txid":                 txID,
+		"hash":                 txID,
+		"version":              2,
+		"locktime":             0,
+		"confirmations":        0,
+		"instantlock":          false,
+		"instantlock_internal": false,
+	}
+}
+
+func dashLockedRawTx(txID string) map[string]any {
+	tx := dashUnlockedRawTx(txID)
+	tx["instantlock"] = true
+	return tx
+}
+
+func (s *DashSuite) TestDashLockedBalance(c *C) {
+	pubKey, err := common.NewPubKeyFromCrypto(secp256k1.GenPrivKey().PubKey())
+	c.Assert(err, IsNil)
+	id := strings.Repeat("a", 64)
+	script := newDashP2PKHScriptHex(c, newDashTestAddress(c, 0x11))
+	amount := 0.1
+	txID := id
+	lockFlag := "instantlock"
+	rawCalls := 0
+	server := newRPCTestServer(c, func(method string, _ []json.RawMessage) any {
+		switch method {
+		case "listunspent":
+			return []btcjson.ListUnspentResult{
+				{TxID: id, Vout: 0, ScriptPubKey: script, Amount: amount},
+				{TxID: id, Vout: 1, ScriptPubKey: script, Amount: amount},
+			}
+		case "getrawtransaction":
+			rawCalls++
+			return map[string]any{"txid": txID, lockFlag: true}
+		}
+		c.Fatalf("unexpected RPC %s", method)
+		return nil
+	})
+	defer server.Close()
+	client, cleanup := newDashClientForRPCServer(c, server.URL)
+	defer cleanup()
+	client.instantSend.enabled = false
+	for _, flag := range []string{"instantlock", "instantlock_internal", "chainlock"} {
+		lockFlag = flag
+		rawCalls = 0
+		var account common.Account
+		account, err = client.GetAccount(pubKey, nil)
+		c.Assert(err, IsNil)
+		c.Assert(account.Coins.GetCoin(common.DASHAsset).Amount.Uint64(), Equals, uint64(common.One/5))
+		c.Assert(rawCalls, Equals, 1) // multiple outputs share the lookup
+	}
+	lockFlag = "unlocked"
+	account, err := client.GetAccount(pubKey, nil)
+	c.Assert(err, IsNil)
+	c.Assert(account.Coins.GetCoin(common.DASHAsset).Amount.IsZero(), Equals, true)
+	txID = "wrong response"
+	_, err = client.GetAccount(pubKey, nil)
+	c.Assert(err, NotNil) // never report an incomplete balance
+}
+
+func (s *DashSuite) TestDashMemoRoundTrip(c *C) {
+	client := newDashClientForUnitTest()
+	for _, length := range []int{4, 79, 80, 81, 99, 100, constants.MaxMemoSize} {
+		memo := strings.Repeat("a", length)
+		scripts, err := MemoToScripts(memo, dashtxscript.MaxDataCarrierSize, dashtxscript.NullDataScript, payToPubKeyHashMemoScript)
+		c.Assert(err, IsNil)
+		tx := &btcjson.TxRawResult{}
+		for i, script := range scripts {
+			kind := "pubkeyhash"
+			if i == 0 {
+				kind = "nulldata"
+			}
+			tx.Vout = append(tx.Vout, btcjson.Vout{ScriptPubKey: btcjson.ScriptPubKeyResult{Type: kind, Hex: hex.EncodeToString(script), Asm: "untrusted RPC display"}})
+		}
+		decoded, err := client.getMemo(tx)
+		c.Assert(err, IsNil)
+		c.Assert(decoded, Equals, memo)
+	}
 }

@@ -486,7 +486,7 @@ func (h *instantSendHandler) snapshotAmount(tx *rpc.TxResult) (uint64, error) {
 // and returns its transaction IDs. It performs RPCs without changing the journal;
 // call without stateMu held.
 func (h *instantSendHandler) getSettlement(id string, tx *rpc.TxResult) ([]string, error) {
-	if !strings.EqualFold(id, tx.Txid) {
+	if tx == nil || !strings.EqualFold(id, tx.Txid) {
 		return nil, errors.New("InstantSend transaction ID mismatch")
 	}
 	if !tx.ChainLock {
@@ -555,9 +555,13 @@ func (h *instantSendHandler) reconcileBlock(block *btcjson.GetBlockVerboseTxResu
 }
 
 // claimBatch checks finality without the allowance lock, then atomically
-// claims allowance and markers only if settlement has not invalidated those checks.
+// saves allowance and pending markers only if settlement has not invalidated those checks.
 // Vault senders bypass the allowance.
 func (h *instantSendHandler) claimBatch(items []*types.TxInItem, admission instantSendAdmission) ([]*types.TxInItem, error) {
+	// Even exempt transfers need a durable pending marker before delivery.
+	if h.client.cfg.BlockScanner.DBPath == "" {
+		return nil, nil
+	}
 	h.stateMu.Lock()
 	// Every RPC section reacquires the lock before returning, so this stays balanced.
 	defer h.stateMu.Unlock()
@@ -565,7 +569,7 @@ func (h *instantSendHandler) claimBatch(items []*types.TxInItem, admission insta
 	claims := make([]sharedutxo.InstantSendClaim, 0, len(items))
 	byID := make(map[string]*types.TxInItem, len(items))
 	ids := make([]string, 0, len(items))
-	var exempt []*types.TxInItem
+	var exempt []sharedutxo.InstantSendClaim
 	for _, item := range items {
 		id := strings.ToLower(item.Tx)
 		if _, duplicate := byID[id]; duplicate {
@@ -600,10 +604,14 @@ func (h *instantSendHandler) claimBatch(items []*types.TxInItem, admission insta
 		}
 		item := byID[id]
 		vaultSender := h.client.isAsgardAddress(item.Sender)
-		if vaultSender {
-			exempt = append(exempt, item)
+		claim := sharedutxo.InstantSendClaim{
+			TxID: id, Amount: item.Coins.GetCoin(h.client.cfg.ChainID.GetGasAsset()).Amount.Uint64(),
+			Exempt: vaultSender,
 		}
-		claims = append(claims, sharedutxo.InstantSendClaim{TxID: id, Amount: item.Coins.GetCoin(h.client.cfg.ChainID.GetGasAsset()).Amount.Uint64(), Exempt: vaultSender})
+		if vaultSender {
+			exempt = append(exempt, claim)
+		}
+		claims = append(claims, claim)
 	}
 	// Check after the finality and sender lookups, immediately before any writes.
 	// Vault senders bypass the amount allowance, but must still respect halts.
@@ -618,15 +626,15 @@ func (h *instantSendHandler) claimBatch(items []*types.TxInItem, admission insta
 		return nil, nil
 	}
 	admission = h.currentAdmission(admission)
-	accepted, err := h.client.temporalStorage.ClaimInstantSendTxs(claims, h.minAmount, h.maxAmount, admission.allowed, time.Now().Unix())
+	accepted, err := h.client.temporalStorage.AdmitInstantSendTxs(claims, h.minAmount, h.maxAmount, admission.allowed, time.Now().Unix())
 	if err != nil {
 		h.recordDeferral("storage")
 		h.client.log.Err(err).Msg("fail to reserve InstantSend allowance")
 		if len(exempt) == 0 {
 			return nil, err
 		}
-		// A damaged allowance journal must not stop vault transactions. They use
-		// the existing observation-marker store without touching the allowance.
+		// A damaged allowance journal must not stop vault transactions. Save their
+		// pending markers without touching the allowance metadata.
 		// Release again for the fresh halt lookup needed by this fallback.
 		h.stateMu.Unlock()
 		paused = h.isPaused()
@@ -639,7 +647,10 @@ func (h *instantSendHandler) claimBatch(items []*types.TxInItem, admission insta
 			h.recordDeferral("finality")
 			return nil, nil
 		}
-		return h.client.trackObservedTxs(exempt)
+		accepted, err = h.client.temporalStorage.MarkInstantSendExemptTxsPending(exempt)
+		if err != nil {
+			return nil, err
+		}
 	}
 	result := make([]*types.TxInItem, 0, len(accepted))
 	for _, id := range accepted {

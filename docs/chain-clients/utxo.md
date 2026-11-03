@@ -101,19 +101,22 @@ early. A new ChainLock restores the 7 DASH only if its block actually contains t
 transaction. Merely advancing the height, losing the transaction from the mempool,
 or reaching THORChain consensus does not restore capacity.
 
-Reservations and final observation markers are written together in one synchronous
-database batch before delivery. A deferred deposit gets no final marker, so the
-ordinary ChainLock scanner can observe it later. Reservations survive restarts and
-settings changes. Block scans settle raw transaction IDs before parsing and duplicate
-filtering, including while InstantSend is disabled. On restart, pending reservations
-are also checked for inclusion in canonical ChainLocked blocks, covering blocks
-the scanner may have passed while the node was offline.
+Reservations and pending observation markers are written together in one
+synchronous database batch before delivery. A deferred deposit gets no marker,
+so the ordinary ChainLock scanner can observe it later. Reservations
+survive restarts and settings changes. Block scans settle raw transaction IDs before
+parsing and duplicate filtering, including while InstantSend is disabled. On
+restart, pending reservations are also checked for inclusion in canonical
+ChainLocked blocks, covering blocks the scanner may have passed while the node
+was offline.
 
-Customer InstantSend requires a persistent block-scanner database. With no journal
-(including an upgrade from the earlier client), the node starts with no available
-allowance. Once active and caught up, it saves a finite snapshot of transactions
-reported as InstantSend-locked (`instantlock: "true"`) in its local mempool and
-classifies it in bounded batches. Entries with `instantlock: "false"` are excluded.
+Early InstantSend observation requires a persistent block-scanner database, including
+for vault transfers. Without it, ordinary outbound and ChainLock scanning continue.
+With no allowance journal (including an upgrade from the earlier client), the node
+starts with no available allowance. Once active and caught up, it saves a finite
+snapshot of transactions reported as InstantSend-locked (`instantlock: "true"`) in
+its local mempool and classifies it in bounded batches. Entries with
+`instantlock: "false"` are excluded.
 An unknown, missing or unexpected lock status postpones the entire snapshot;
 the next attempt reads a fresh mempool before saving anything.
 It counts relevant customer deposits regardless of old observation markers or the
@@ -142,9 +145,33 @@ accounted for from that snapshot. A newer ChainLock and local mempool absence do
 not prove that the transaction was never credited elsewhere. A new or recovered
 node may therefore make fresh allowance available while that older exposure remains.
 Persisting the database avoids losing known reservations, but a local snapshot is
-not a complete network exposure history. A crash between persisting a final marker
-and handing the batch to Observer can still miss that node's observation; this
-retains the existing preference for avoiding duplicate delivery.
+not a complete network exposure history.
+
+InstantSend admission atomically saves an allowance reservation and a pending
+observation marker. The pending marker prevents another InstantSend claim, but
+allows the later ChainLock block scan to observe the transaction. Observer's
+per-item callbacks complete accepted markers in one synchronous write after the
+batch's callbacks finish. Rejected items remain pending. A missing callback or
+failed acknowledgement write also leaves the block fallback available, including
+after restart. Only verified ChainLock releases the allowance; local rejection
+cannot prove that other nodes have not already observed the deposit.
+
+There is no separate delivery queue or retry worker. A lost InstantSend handoff
+waits for the normal ChainLock block scan, even when InstantSend or mempool
+scanning is disabled. Chain halts still control scanning normally. A completed
+marker suppresses the later block observation. Legacy markers remain completed;
+this change cannot recover observations already lost under those markers.
+Vault senders remain exempt from the amount limits.
+
+Observer acceptance and block claims update markers under the same storage lock.
+If Observer stores a transaction before its acknowledgement completes, the block
+scan can still emit a second observation at the actual mined height. Existing
+consensus handling prevents another payment. This has an accepted bounded cost:
+a vault transfer may already have ordinary mempool and InstantSend observations,
+so the additional ChainLock variant can retain an extra `ObserveSlashPoints`
+charge per affected inbound/outbound voter. The ordinary block path still marks
+before delivery and retains its existing crash trade-off; this change restores
+the block fallback without making all block delivery restart-safe.
 
 For rollout, keep `DashInstantSendEnabled=0` while upgrading nodes. Configure a
 positive pending-amount limit, the desired minimum and a DASH observation window,

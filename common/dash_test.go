@@ -1,13 +1,17 @@
 package common
 
 import (
+	"bytes"
 	"encoding/hex"
 
 	"github.com/blang/semver"
 	"github.com/cometbft/cometbft/crypto/secp256k1"
 	"github.com/cosmos/cosmos-sdk/crypto/codec"
-	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"github.com/dashpay/dashd-go/btcutil"
+	"github.com/dashpay/dashd-go/chaincfg"
 	. "gopkg.in/check.v1"
+
+	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 )
 
 // TestDashPubKeyAddress pins the address derived from a compressed public key
@@ -50,4 +54,24 @@ func (s *AssetSuite) TestDashShortCode(c *C) {
 	asset, err := NewAssetWithShortCodes(semver.MustParse("999.0.0"), "dh")
 	c.Assert(err, IsNil)
 	c.Assert(asset, Equals, DASHAsset)
+}
+
+func (s *AddressSuite) TestDashIsCurrentNetwork(c *C) {
+	for _, params := range []*chaincfg.Params{&chaincfg.MainNetParams, &chaincfg.RegressionNetParams, &chaincfg.TestNet3Params} {
+		p2pkh, err := btcutil.NewAddressPubKeyHash(bytes.Repeat([]byte{1}, 20), params)
+		c.Assert(err, IsNil)
+		p2sh, err := btcutil.NewAddressScriptHashFromHash(bytes.Repeat([]byte{2}, 20), params)
+		c.Assert(err, IsNil)
+		for _, addr := range []btcutil.Address{p2pkh, p2sh} {
+			want := (params != &chaincfg.MainNetParams) == (CurrentChainNetwork == MockNet)
+			c.Check(Address(addr.String()).IsCurrentNetwork(DASHChain), Equals, want,
+				Commentf("address: %s, build network: %s", addr, CurrentChainNetwork))
+		}
+	}
+	for _, addr := range []Address{
+		"", "invalid", "1BoatSLRHtKNngkdXEeobR76b53LETtpyT",
+		"0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+	} {
+		c.Check(addr.IsCurrentNetwork(DASHChain), Equals, false, Commentf("address: %s", addr))
+	}
 }
