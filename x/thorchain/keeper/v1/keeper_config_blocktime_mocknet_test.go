@@ -429,3 +429,53 @@ func (s *KeeperConfigSuite) TestBlockTimeChangeKeepsQueueContiguous(c *C) {
 	c.Check(heights, DeepEquals, []int64{103, 105, 107, 109, 111, 112, 113, 114})
 	c.Check(k.GetPendingOutbounds(ctx, common.BTCAsset), HasLen, 8)
 }
+
+// An outbound can be queued up to TxOutDelayMax past the offset, so a block
+// time change converts the whole queue out to there. Converting only up to
+// TxOutDelayMax left the tail at its old heights, behind a gap that scans stop
+// at, and solvency checks then missed those unpaid outbounds.
+func (s *KeeperConfigSuite) TestBlockTimeChangeConvertsQueueTail(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	k.SetMimir(ctx, constants.MaxTxOutOffset.String(), 5)
+	k.SetMimir(ctx, constants.TxOutDelayMax.String(), 10)
+	const h = int64(100)
+	ctx = ctx.WithBlockHeight(h - 1)
+	// a backlog filling every height out to offset + delay max (99 + 15)
+	const queued = 15
+	for d := int64(1); d <= queued; d++ {
+		c.Assert(k.AppendTxOut(ctx, h-1+d, TxOutItem{
+			Chain:     common.BTCChain,
+			ToAddress: GetRandomBTCAddress(),
+			InHash:    GetRandomTxHash(),
+			Coin:      common.NewCoin(common.BTCAsset, cosmos.NewUint(common.One)),
+		}), IsNil)
+	}
+
+	k.SetMimir(ctx, constants.BlockTimeMs.String(), 2000)
+	ctx = ctx.WithBlockHeight(h)
+	k.UpdateBlockTime(ctx)
+	c.Assert(k.GetBlockTimeMs(ctx), Equals, int64(2000))
+
+	// every outbound is still queued, with no empty height between them (the
+	// old scan left 110-114 where they were, behind empty 105-109)
+	var heights []int64
+	items := 0
+	for hh := h; hh <= h+2*queued; hh++ {
+		txOut, err := k.GetTxOut(ctx, hh)
+		c.Assert(err, IsNil)
+		if len(txOut.TxArray) > 0 {
+			heights = append(heights, hh)
+			items += len(txOut.TxArray)
+		}
+	}
+	c.Assert(items, Equals, queued)
+	for i := 1; i < len(heights); i++ {
+		c.Check(heights[i]-heights[i-1], Equals, int64(1), Commentf("gap before %d in %v", heights[i], heights))
+	}
+	// and the pending-outbound scan that solvency checks rely on sees every one
+	// of them at once, at slower blocks the whole backlog is within reach (the
+	// old scan saw 10 until height 106)
+	for hh := h; hh <= heights[len(heights)-1]; hh++ {
+		c.Check(k.GetPendingOutbounds(ctx.WithBlockHeight(hh), common.BTCAsset), HasLen, queued, Commentf("height %d", hh))
+	}
+}
