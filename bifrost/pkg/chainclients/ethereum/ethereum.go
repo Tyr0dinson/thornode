@@ -34,6 +34,7 @@ import (
 	tssp "gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/tss"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/blockscanner"
+	"gitlab.com/thorchain/thornode/v3/bifrost/blocktime"
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pubkeymanager"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
@@ -263,7 +264,8 @@ func (c *Client) Start(globalTxsQueue chan stypes.TxIn, globalErrataQueue chan s
 	c.wg.Add(1)
 	go c.unstuck()
 	c.wg.Add(1)
-	go runners.SolvencyCheckRunner(c.GetChain(), c, c.bridge, c.stopchan, c.wg, constants.ThorchainBlockTime)
+	// a zero backoff polls once per THORChain block at its current block time
+	go runners.SolvencyCheckRunner(c.GetChain(), c, c.bridge, c.stopchan, c.wg, 0)
 	c.wg.Add(1)
 	go c.reconstructLiabilities()
 }
@@ -1483,7 +1485,7 @@ func (c *Client) GetConfirmationCount(txIn stypes.TxIn) int64 {
 }
 
 func (c *Client) getAsgardAddress() ([]common.Address, error) {
-	return utxo.GetAsgardAddressCached(&c.asgardCache, common.ETHChain, c.bridge, constants.ThorchainBlockTime)
+	return utxo.GetAsgardAddressCached(&c.asgardCache, common.ETHChain, c.bridge, blocktime.Get())
 }
 
 // OnObservedTxIn gets called from observer when we have a valid observation

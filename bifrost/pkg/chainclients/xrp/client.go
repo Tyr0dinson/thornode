@@ -184,7 +184,8 @@ func (c *Client) Start(globalTxsQueue chan stypes.TxIn, globalErrataQueue chan s
 	c.tssKeyManager.Start()
 	c.blockScanner.Start(globalTxsQueue, globalNetworkFeeQueue)
 	c.wg.Add(1)
-	go runners.SolvencyCheckRunner(c.GetChain(), c, c.thorchainBridge, c.stopchan, c.wg, constants.ThorchainBlockTime)
+	// a zero backoff polls once per THORChain block at its current block time
+	go runners.SolvencyCheckRunner(c.GetChain(), c, c.thorchainBridge, c.stopchan, c.wg, 0)
 }
 
 // Stop Xrp chain client

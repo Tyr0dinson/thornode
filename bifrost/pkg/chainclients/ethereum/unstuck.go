@@ -13,6 +13,7 @@ import (
 	etypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/rs/zerolog"
 
+	"gitlab.com/thorchain/thornode/v3/bifrost/blocktime"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/evm/types"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/signing"
 	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
@@ -30,7 +31,7 @@ func (c *Client) unstuck() {
 		case <-c.stopchan:
 			// time to exit
 			return
-		case <-time.After(constants.ThorchainBlockTime):
+		case <-time.After(blocktime.Get()):
 			c.unstuckAction()
 		}
 	}
