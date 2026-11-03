@@ -282,9 +282,10 @@ func processSolvencyAttestation(
 		// can have gone short during the halt, and consensus on its first report can land
 		// just after this one. If this report lifted the halt, that report would run
 		// unhalted and net out the backlog the halt built, hiding the new gap. The next
-		// solvent report, a solvency cycle later, lifts it.
+		// solvent report can lift it. That can be another vault's from the same cycle, so
+		// this doesn't close the race when a never-flagged vault's report nets solvent.
 		if recovered {
-			ctx.Logger().Info("solvency halt kept: vault reported solvent, the next solvent report can lift it", "chain", voter.Chain, "solvent vault", voter.PubKey)
+			ctx.Logger().Info("solvency halt kept: this report cleared its vault's flag or could not read it, the next solvent report can lift it", "chain", voter.Chain, "vault", voter.PubKey)
 			return nil
 		}
 		held, err := otherVaultFlaggedInsolvent(ctx, k, voter.PubKey, voter.Chain)
