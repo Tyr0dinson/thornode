@@ -1,21 +1,27 @@
 # Reuse the same reports for each signer. BTC is the global-window control.
-{{ define "dash-window-reports" }}
+# Each signer sends four transactions before a block, so set their sequences explicitly.
+{{ define "dash-window-fee" }}
 type: tx-network-fee
 signer: {{ . }}
+sequence: 0
 block_height: 100
 chain: DASH
 transaction_size: 2000
 transaction_rate: 2
----
+{{ end }}
+{{ define "btc-window-fee" }}
 type: tx-network-fee
 signer: {{ . }}
+sequence: 1
 block_height: 100
 chain: BTC
 transaction_size: 2000
 transaction_rate: 2
----
+{{ end }}
+{{ define "dash-window-solvency" }}
 type: tx-solvency
 signer: {{ . }}
+sequence: 2
 chain: DASH
 pub_key: {{ pubkey_dog }}
 coins:
@@ -23,9 +29,11 @@ coins:
     amount: "100000000"
     decimals: 8
 height: 100
----
+{{ end }}
+{{ define "dash-window-errata" }}
 type: tx-errata-tx
 signer: {{ . }}
+sequence: 3
 tx_id: "{{ observe_txid 1 }}"
 chain: DASH
 {{ end }}
@@ -57,25 +65,49 @@ genesis:
                 coins:
                   - asset: DASH.DASH
                     amount: "100000000"
-                    decimals: 8
+                    decimals: "8"
                 gas:
                   - asset: DASH.DASH
                     amount: "1000"
                 memo: NOOP
-              block_height: 1
-              finalise_height: 1
+              block_height: "1"
+              finalise_height: "1"
               observed_pub_key: {{ pubkey_dog }}
 ---
 type: create-blocks
 count: 1
 ---
-{{ template "dash-window-reports" addr_thor_cat }}
+{{ template "dash-window-fee" addr_thor_cat }}
 ---
-{{ template "dash-window-reports" addr_thor_fox }}
+{{ template "btc-window-fee" addr_thor_cat }}
 ---
-{{ template "dash-window-reports" addr_thor_pig }}
+{{ template "dash-window-solvency" addr_thor_cat }}
 ---
-{{ template "dash-window-reports" addr_thor_frog }}
+{{ template "dash-window-errata" addr_thor_cat }}
+---
+{{ template "dash-window-fee" addr_thor_fox }}
+---
+{{ template "btc-window-fee" addr_thor_fox }}
+---
+{{ template "dash-window-solvency" addr_thor_fox }}
+---
+{{ template "dash-window-errata" addr_thor_fox }}
+---
+{{ template "dash-window-fee" addr_thor_pig }}
+---
+{{ template "btc-window-fee" addr_thor_pig }}
+---
+{{ template "dash-window-solvency" addr_thor_pig }}
+---
+{{ template "dash-window-errata" addr_thor_pig }}
+---
+{{ template "dash-window-fee" addr_thor_frog }}
+---
+{{ template "btc-window-fee" addr_thor_frog }}
+---
+{{ template "dash-window-solvency" addr_thor_frog }}
+---
+{{ template "dash-window-errata" addr_thor_frog }}
 ---
 # All four voters reach consensus at THORChain height 2.
 type: create-blocks
@@ -92,7 +124,13 @@ type: create-blocks
 count: 4
 ---
 # Goat arrives at height 7: exactly the DASH deadline, after BTC's deadline.
-{{ template "dash-window-reports" addr_thor_goat }}
+{{ template "dash-window-fee" addr_thor_goat }}
+---
+{{ template "btc-window-fee" addr_thor_goat }}
+---
+{{ template "dash-window-solvency" addr_thor_goat }}
+---
+{{ template "dash-window-errata" addr_thor_goat }}
 ---
 type: create-blocks
 count: 1
@@ -104,7 +142,13 @@ asserts:
   - .[] | select(.node_address == "{{ addr_thor_hawk }}") | .slash_points == 8
 ---
 # Hawk arrives at height 8: outside both windows, so no penalty is refunded.
-{{ template "dash-window-reports" addr_thor_hawk }}
+{{ template "dash-window-fee" addr_thor_hawk }}
+---
+{{ template "btc-window-fee" addr_thor_hawk }}
+---
+{{ template "dash-window-solvency" addr_thor_hawk }}
+---
+{{ template "dash-window-errata" addr_thor_hawk }}
 ---
 type: create-blocks
 count: 1
