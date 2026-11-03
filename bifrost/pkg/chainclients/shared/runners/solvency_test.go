@@ -634,9 +634,6 @@ func (s *SolvencyTestSuite) TestIsVaultSolventMissingZeroAmountAssetDoesNotLogIn
 	c.Assert(strings.Contains(buf.String(), "insolvent"), Equals, false)
 }
 
-// IsHaltedOnChain is the gate that decides whether a chain client may send a solvency
-// "all clear". It must be true only for the network's own halt state, never for
-// anything local to a node, and it must fail closed on a bridge error.
 func (s *SolvencyTestSuite) TestRecoveredVaultReports(c *C) {
 	flagged := types.GetRandomPubKey()
 	unflagged := types.GetRandomPubKey()
@@ -675,6 +672,9 @@ func (s *SolvencyTestSuite) TestRecoveredVaultReports(c *C) {
 	c.Check(RecoveredVaultReports(bridge, common.ETHChain, nil), HasLen, 0)
 }
 
+// IsHaltedOnChain is the gate that decides whether a chain client may send a solvency
+// "all clear". It must be true only for the network's own halt state, never for
+// anything local to a node, and it must fail closed on a bridge error.
 func (s *SolvencyTestSuite) TestIsHaltedOnChain(c *C) {
 	type testCase struct {
 		name               string

@@ -232,6 +232,7 @@ func processSolvencyAttestation(
 
 	isInsolvent := insolvencyCheck(ctx, mgr, vault, voter.Coins, voter.Chain)
 
+	recovered := false
 	if isInsolvent {
 		// Flag this specific vault as insolvent so it is excluded from
 		// inbound-address election on every chain it serves, not just the
@@ -243,7 +244,7 @@ func processSolvencyAttestation(
 		// Vault is solvent again on this chain; clear its per-chain exclusion
 		// flag so it can be re-elected for inbound addresses once solvent on
 		// every chain it serves.
-		clearVaultInsolvent(ctx, k, voter.PubKey, voter.Chain)
+		recovered = clearVaultInsolvent(ctx, k, voter.PubKey, voter.Chain)
 	}
 
 	// If the chain was halted this block, leave it halted without overriding.
@@ -277,6 +278,15 @@ func processSolvencyAttestation(
 	// If not insolvent and the chain is halted from an earlier block height, unhalt the chain,
 	// unless another vault on the chain is flagged insolvent.
 	if !isInsolvent && haltChain > 1 {
+		// A report that clears its vault's flag doesn't also lift the halt. Another vault
+		// can have gone short during the halt, and consensus on its first report can land
+		// just after this one. If this report lifted the halt, that report would run
+		// unhalted and net out the backlog the halt built, hiding the new gap. The next
+		// solvent report, a solvency cycle later, lifts it.
+		if recovered {
+			ctx.Logger().Info("solvency halt kept: vault reported solvent, the next solvent report can lift it", "chain", voter.Chain, "solvent vault", voter.PubKey)
+			return nil
+		}
 		held, err := otherVaultFlaggedInsolvent(ctx, k, voter.PubKey, voter.Chain)
 		if err != nil {
 			ctx.Logger().Error("fail to read vault insolvency flags, keeping the chain halted", "chain", voter.Chain, "error", err)
@@ -334,17 +344,20 @@ func flagVaultInsolvent(ctx cosmos.Context, k keeper.Keeper, pubKey common.PubKe
 // observed solvent again on that chain, allowing it to be re-elected for deposits.
 // It only writes when the flag is actually set, so the common case - a solvent
 // vault reporting solvency every cycle - does not create a zeroed entry for every
-// vault+chain and bloat the Mimir store.
-func clearVaultInsolvent(ctx cosmos.Context, k keeper.Keeper, pubKey common.PubKey, chain common.Chain) {
+// vault+chain and bloat the Mimir store. It returns whether the vault was flagged,
+// and true on a read failure so callers keep the chain halted.
+func clearVaultInsolvent(ctx cosmos.Context, k keeper.Keeper, pubKey common.PubKey, chain common.Chain) bool {
 	key := solvencyHaltVaultKey(pubKey, chain)
 	flagged, err := k.GetMimir(ctx, key)
 	if err != nil {
 		ctx.Logger().Error("fail to read solvency-halt vault mimir", "pub_key", pubKey.String(), "chain", chain.String(), "error", err)
-		return
+		return true
 	}
-	if flagged > 0 {
-		k.SetMimir(ctx, key, 0)
+	if flagged <= 0 {
+		return false
 	}
+	k.SetMimir(ctx, key, 0)
+	return true
 }
 
 // isVaultInsolvent reports whether the vault is flagged insolvent on any of the
