@@ -71,3 +71,52 @@ func (*NetworkManagerTestSuite) TestMigrateFundsRoundsAcrossBlockTimeChange(c *C
 		165: common.SafeSub(cosmos.NewUint(100*common.One), gas.Amount), // past the last round: all of it
 	})
 }
+
+// A block time change keeps every queued outbound visible to the solvency
+// scan, including a backlog that runs past TxOutDelayMax: unpaid outbounds are
+// still subtracted from the vault, so they are not counted as surplus.
+func (*NetworkManagerTestSuite) TestSolvencyCountsQueueTailAfterBlockTimeChange(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	nmgr := newNetworkMgr(mgr.Keeper(), NewTxStoreDummy(), NewDummyEventMgr())
+	k := mgr.Keeper()
+	k.SetMimir(ctx, constants.MaxTxOutOffset.String(), 5)
+	k.SetMimir(ctx, constants.TxOutDelayMax.String(), 10)
+
+	pool := NewPool()
+	pool.Asset = common.BTCAsset
+	pool.BalanceAsset = cosmos.NewUint(85 * common.One)
+	pool.BalanceRune = cosmos.NewUint(85 * common.One)
+	pool.Status = PoolAvailable
+	c.Assert(k.SetPool(ctx, pool), IsNil)
+	vault := GetRandomVault()
+	vault.Type = AsgardVault
+	vault.Status = ActiveVault
+	vault.Coins = common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(100*common.One))}
+	c.Assert(k.SetVault(ctx, vault), IsNil)
+
+	// 15 unpaid 1 BTC outbounds, one per height out to offset + delay max
+	const h = int64(100)
+	ctx = ctx.WithBlockHeight(h - 1)
+	for d := int64(1); d <= 15; d++ {
+		c.Assert(k.AppendTxOut(ctx, h-1+d, TxOutItem{
+			Chain:       common.BTCChain,
+			ToAddress:   GetRandomBTCAddress(),
+			VaultPubKey: vault.PubKey,
+			InHash:      GetRandomTxHash(),
+			Coin:        common.NewCoin(common.BTCAsset, cosmos.NewUint(common.One)),
+		}), IsNil)
+	}
+
+	// blocks slow down at h
+	k.SetMimir(ctx, constants.BlockTimeMs.String(), constants.ThorchainBlockTime.Milliseconds()*2)
+	ctx = ctx.WithBlockHeight(h)
+	k.UpdateBlockTime(ctx)
+
+	// 100 held - 85 owed to the pool - 15 queued: nothing over (converting only
+	// to TxOutDelayMax left 5 BTC behind a gap, counted as surplus)
+	solvency, err := nmgr.calculateNetworkSolvency(ctx, mgr)
+	c.Assert(err, IsNil)
+	c.Assert(solvency, HasLen, 1)
+	c.Check(solvency[0].Asset.Equals(common.BTCAsset), Equals, true)
+	c.Check(solvency[0].Amount.String(), Equals, "0")
+}
