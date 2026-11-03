@@ -142,7 +142,7 @@ Operational notes:
 - `HaltChainGlobal`#: Pause observations on all chains (chain clients)
 - `HaltTrading`: Stops swaps and additions, if done, will result in refunds. Observations still occur.
 - `Halt<chain>Chain`#: Pause a specific blockchain
-- `SolvencyHalt<Chain>`# Halts a chain if the solvency checker for that chain fails. Its value is the height the halt began; the checker doesn't move it while vaults stay insolvent. A solvent report lifts it unless another Active or Retiring vault holding funds on the chain was reported insolvent within `SolvencyHaltHoldBlocks`. While it holds, outbounds released from `SolvencyHaltSigningLagBlocks` after that height no longer offset a vault's shortfall, since Bifrost doesn't sign them.
+- `SolvencyHalt<Chain>`# Halts a chain if the solvency checker for that chain fails. Its value is the height the halt began; the checker doesn't move it while vaults stay insolvent. A solvent report lifts it unless another Active or Retiring vault holding funds on the chain is flagged insolvent; only that vault's own solvent report clears its flag, and Bifrost sends one for a flagged vault as soon as it passes its check. While it holds, outbounds released from `SolvencyHaltSigningLagBlocks` after that height no longer offset a vault's shortfall, since Bifrost doesn't sign them.
 - `HaltScannerXMR`#: Bifrost-only XMR scanner activation switch. `0` explicitly enables block scanning and spent-reference catch-up, positive values pause them. Missing or negative values and lookup errors fail closed. This does not set THORNode's XMR chain-halt state or directly pause churn. A paused scanner also blocks normal XMR signing through the scanner-health check, so funded vault migrations can still stall and subsequently block churn. See [XMR Scanner Activation](./concepts/network-halts.md#xmr-scanner-activation) for rollout and voting requirements.
 - `NodePauseChainGlobal`#: Individual node controlled means to pause all chains
 - `NodePauseChainBlocks`: Number of block a node operator can pause/resume the chains for
@@ -176,7 +176,7 @@ Operational notes:
 - `PermittedSolvencyGap`: (deprecated) The amount of funds permitted to be "insolvent" as a percentage (basis points). Replaced by `PermittedSolvencyGapUSD`.
 - `PermittedSolvencyGapUSD`: The permitted solvency gap in USD (1e8 notation). Vault insolvency below this USD value will not trigger a chain halt. Default is $500 (500_00000000).
 - `SolvencyHaltSigningLagBlocks`\*: Blocks after a `SolvencyHalt<Chain>` height in which Bifrost may still sign, before its scanner sees the halt. Outbounds released within it still offset a vault's shortfall during the halt. Default 3.
-- `SolvencyHaltHoldBlocks`\*: How long a vault's latest insolvent report keeps another vault's solvent report from lifting `SolvencyHalt<Chain>`. Bifrost re-reports a vault that is still short every solvency cycle, so the window only has to cover the longest gap between those reports. Default 1200; `0` means without limit.
+- `SolvencyHaltHoldBlocks`\*: How long a vault's latest insolvent report keeps another vault's solvent report from lifting `SolvencyHalt<Chain>`. Default `0`: a flagged vault holds the halt until it reports solvent. Silence isn't recovery, so set this only as a way out when a flagged vault can't report at all, and with care: once its window passes, a vault that is still short no longer holds the halt.
 
 ## Node Management
 

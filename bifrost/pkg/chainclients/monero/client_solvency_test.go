@@ -295,6 +295,74 @@ func TestReportSolvencyAutoUnhaltUsesCheckedVaultCount(t *testing.T) {
 	}
 }
 
+func TestReportSolvencyWhileHaltedReportsRecoveredVaultAlongsideInsolvent(t *testing.T) {
+	t.Parallel()
+
+	shortPubKey, shortAddress := testVaultPubKeyAndAddress(t)
+	recoveredPubKey, recoveredAddress := testVaultPubKeyAndAddress(t)
+	quietPubKey, quietAddress := testVaultPubKeyAndAddress(t)
+	reconciled := func(balance uint64) sidecar.Balance {
+		return sidecar.Balance{
+			Balance:              balance,
+			UnlockedBalance:      balance,
+			SpendableBalance:     uint64Ptr(balance),
+			ReconciliationState:  "reconciled",
+			PendingOutgoingCount: intPtr(0),
+		}
+	}
+	balanceServer := newFrostBalanceServer(t, map[string]sidecar.Balance{
+		shortPubKey.String():     reconciled(10 * moneroAtomicToThorchain),
+		recoveredPubKey.String(): reconciled(500 * moneroAtomicToThorchain),
+		quietPubKey.String():     reconciled(500 * moneroAtomicToThorchain),
+	})
+	defer balanceServer.Close()
+
+	frostSigner, err := sidecar.NewClientWithEndpoint(
+		config.BifrostChainConfiguration{},
+		balanceServer.URL,
+	)
+	if err != nil {
+		t.Fatalf("new frost signer: %v", err)
+	}
+
+	vault := func(pubKey common.PubKey) ttypes.Vault {
+		return ttypes.Vault{PubKey: pubKey, PubKeyEddsa: pubKey, PubKeyFrost: pubKey, Coins: common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(500)))}
+	}
+	queue := make(chan stypes.Solvency, 3)
+	c := &Client{
+		logger: log.Logger,
+		cfg:    config.BifrostChainConfiguration{SolvencyBlocks: 10},
+		chain:  common.XMRChain,
+		thorchainBridge: &solvencyBridge{
+			solvencyHalted: true,
+			asgards:        ttypes.Vaults{vault(quietPubKey), vault(recoveredPubKey), vault(shortPubKey)},
+			mimirs:         map[string]int64{ttypes.SolvencyHaltVaultKey(recoveredPubKey, common.XMRChain): 50},
+		},
+		scanner:             &Scanner{lastFee: atomic.NewUint64(10)},
+		sidecar:             frostSigner,
+		globalSolvencyQueue: queue,
+		vaultAddressMap: map[string]common.Address{
+			shortPubKey.String():     shortAddress,
+			recoveredPubKey.String(): recoveredAddress,
+			quietPubKey.String():     quietAddress,
+		},
+		lastSolvencyCheckHeight: atomic.NewInt64(0),
+	}
+
+	if err := c.ReportSolvency(10); err != nil {
+		t.Fatalf("report solvency: %v", err)
+	}
+	if len(queue) != 2 {
+		t.Fatalf("expected the insolvent and the recovered vault, got %d messages", len(queue))
+	}
+	if msg := <-queue; !msg.PubKey.Equals(shortPubKey) {
+		t.Fatalf("expected the insolvent vault %s first, got %s", shortPubKey, msg.PubKey)
+	}
+	if msg := <-queue; !msg.PubKey.Equals(recoveredPubKey) {
+		t.Fatalf("expected the recovered vault %s, got %s", recoveredPubKey, msg.PubKey)
+	}
+}
+
 func TestReportSolvencyDeferralEscalationCounter(t *testing.T) {
 	t.Parallel()
 

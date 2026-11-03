@@ -4308,8 +4308,14 @@ func (c *Client) ReportSolvency(height int64) error {
 	if haltErr != nil {
 		c.logger.Err(haltErr).Msg("fail to read chain halt state, skipping solvency all-clear")
 	}
-	if halted && !c.IsBlockScannerHealthy() && !deferredForReconciliation && checkedVaults > 0 && len(solventMsgs) == checkedVaults {
-		msgs = solventMsgs
+	if halted && !c.IsBlockScannerHealthy() && !deferredForReconciliation && checkedVaults > 0 {
+		if len(solventMsgs) == checkedVaults {
+			msgs = solventMsgs
+		} else {
+			// Alongside insolvent vaults, report only the solvent vaults THORChain still has
+			// flagged insolvent, since nothing else can clear those flags.
+			msgs = append(msgs, runners.RecoveredVaultReports(c.thorchainBridge, c.chain, solventMsgs)...)
+		}
 	}
 
 	for i := range msgs {

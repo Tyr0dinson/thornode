@@ -1,6 +1,7 @@
 package thorchain
 
 import (
+	"sort"
 	"testing"
 
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -1555,23 +1556,28 @@ func (s *HandlerSolvencyHelpersSuite) TestInsolvencyCheck_SolvencyHaltCoalescedC
 	c.Assert(insolvencyCheck(ctx, mgr, vault, walletCoins, common.BTCChain), Equals, false)
 }
 
-func (s *HandlerSolvencyHelpersSuite) TestProcessSolvencyAttestation_SilentFlaggedVaultStopsHoldingHalt(c *C) {
+func (s *HandlerSolvencyHelpersSuite) TestProcessSolvencyAttestation_FlaggedVaultHoldsHaltUntilItReportsSolvent(c *C) {
 	// Vault B was found short and halted the chain at 1000. Vault A sent a 50 ETH
 	// outbound just before the halt that the paused scanner never observed, so its
 	// wallet holds 950 ETH against the 1000 booked; Bifrost's own check fails for A,
-	// and it reports A alone. THORNode nets that outbound out and finds A solvent.
-	// B's gap was then fixed, so Bifrost stopped reporting B.
+	// and it reports A. THORNode nets that outbound out and finds A solvent.
 	testCases := []struct {
-		name     string
-		at       int64 // height of A's report
-		bAgainAt int64 // height of a later insolvent report for B; 0 for none
-		noLimit  bool  // set SolvencyHaltHoldBlocks to 0 by Mimir
-		lifted   bool
+		name       string
+		at         int64 // height of A's report
+		bAgainAt   int64 // height of a later insolvent report for B; 0 for none
+		bFixedAt   int64 // height of B's solvent report; 0 for none
+		holdBlocks int64 // SolvencyHaltHoldBlocks set by Mimir; 0 keeps the default
+		lifted     bool
 	}{
-		{name: "B reported 500 blocks ago: still holds the halt", at: 1500},
-		{name: "B reported more than 1200 blocks ago: no longer holds it", at: 2300, lifted: true},
+		{name: "B silent for 500 blocks: holds the halt", at: 1500},
+		{name: "B silent for 1300 blocks, maybe still short: holds the halt", at: 2300},
+		{name: "B silent for 100000 blocks: still holds the halt", at: 101000},
 		{name: "B still being reported: holds the halt", at: 2300, bAgainAt: 2000},
-		{name: "hold window set to 0 by Mimir: holds without limit", at: 2300, noLimit: true},
+		{name: "B fixed and reports solvent before A: the halt lifts and A keeps it lifted", at: 1200, bFixedAt: 1100, lifted: true},
+		{name: "B fixed and reports solvent after A: B's own report lifts the halt", at: 1300, bFixedAt: 1400, lifted: true},
+		{name: "window set by Mimir, B silent within it: holds the halt", at: 1500, holdBlocks: 1200},
+		{name: "window set by Mimir, B silent past it: no longer holds it", at: 2300, holdBlocks: 1200, lifted: true},
+		{name: "window set by Mimir, B still being reported: holds the halt", at: 2300, bAgainAt: 2000, holdBlocks: 1200},
 	}
 	for _, tc := range testCases {
 		c.Logf("case: %s", tc.name)
@@ -1579,16 +1585,29 @@ func (s *HandlerSolvencyHelpersSuite) TestProcessSolvencyAttestation_SilentFlagg
 		vaultB := NewVault(500, ActiveVault, AsgardVault, GetRandomPubKey(), []string{common.ETHChain.String()}, nil)
 		vaultB.AddFunds(common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(1000*common.One))))
 		c.Assert(mgr.Keeper().SetVault(ctx, vaultB), IsNil)
-		if tc.noLimit {
-			mgr.Keeper().SetMimir(ctx, constants.SolvencyHaltHoldBlocks.String(), 0)
+		if tc.holdBlocks != 0 {
+			mgr.Keeper().SetMimir(ctx, constants.SolvencyHaltHoldBlocks.String(), tc.holdBlocks)
 		}
+
+		type report struct {
+			at     int64
+			pubKey common.PubKey
+			wallet uint64
+		}
+		reports := []report{{tc.at, vaultA.PubKey, 950}}
+		if tc.bAgainAt != 0 {
+			reports = append(reports, report{tc.bAgainAt, vaultB.PubKey, 900})
+		}
+		if tc.bFixedAt != 0 {
+			reports = append(reports, report{tc.bFixedAt, vaultB.PubKey, 1000})
+		}
+		sort.Slice(reports, func(i, j int) bool { return reports[i].at < reports[j].at })
 
 		reportSolvency(c, ctx.WithBlockHeight(1000), mgr, nas, vaultB.PubKey, 900, 100)
 		queuePendingOutbound(c, ctx, mgr, vaultA, 995, 50)
-		if tc.bAgainAt != 0 {
-			reportSolvency(c, ctx.WithBlockHeight(tc.bAgainAt), mgr, nas, vaultB.PubKey, 900, 200)
+		for i, r := range reports {
+			reportSolvency(c, ctx.WithBlockHeight(r.at), mgr, nas, r.pubKey, r.wallet, int64(200+i))
 		}
-		reportSolvency(c, ctx.WithBlockHeight(tc.at), mgr, nas, vaultA.PubKey, 950, 300)
 
 		halt, err := mgr.Keeper().GetMimir(ctx, "SolvencyHaltETHChain")
 		c.Assert(err, IsNil)
@@ -1598,6 +1617,30 @@ func (s *HandlerSolvencyHelpersSuite) TestProcessSolvencyAttestation_SilentFlagg
 			c.Check(halt, Equals, int64(1000), Commentf(tc.name))
 		}
 	}
+}
+
+func (s *HandlerSolvencyHelpersSuite) TestProcessSolvencyAttestation_SilentShortVaultKeepsBacklogFromCoveringItsGap(c *C) {
+	// B is 100 ETH short and its reports stop reaching consensus for longer than any
+	// fixed window. If A's report lifted the halt, B's next report would run unhalted,
+	// net out the backlog the halt built, and clear its own flag, so the chain would
+	// go on paying out with B still short.
+	ctx, mgr, nas, vaultA := setupSolvencyHelpersTest(c)
+	vaultB := NewVault(500, ActiveVault, AsgardVault, GetRandomPubKey(), []string{common.ETHChain.String()}, nil)
+	vaultB.AddFunds(common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(1000*common.One))))
+	c.Assert(mgr.Keeper().SetVault(ctx, vaultB), IsNil)
+
+	reportSolvency(c, ctx.WithBlockHeight(1000), mgr, nas, vaultB.PubKey, 900, 100)
+	queuePendingOutbound(c, ctx, mgr, vaultA, 995, 50)
+	reportSolvency(c, ctx.WithBlockHeight(2300), mgr, nas, vaultA.PubKey, 950, 300)
+	queuePendingOutbound(c, ctx, mgr, vaultB, 2290, 150)
+	reportSolvency(c, ctx.WithBlockHeight(2301), mgr, nas, vaultB.PubKey, 900, 301)
+
+	halt, err := mgr.Keeper().GetMimir(ctx, "SolvencyHaltETHChain")
+	c.Assert(err, IsNil)
+	c.Check(halt, Equals, int64(1000))
+	flag, err := mgr.Keeper().GetMimir(ctx, solvencyHaltVaultKey(vaultB.PubKey, common.ETHChain))
+	c.Assert(err, IsNil)
+	c.Check(flag, Equals, int64(2301))
 }
 
 func (s *HandlerSolvencyHelpersSuite) TestFlagVaultInsolvent_TracksLatestInsolventReport(c *C) {

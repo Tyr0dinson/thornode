@@ -8,6 +8,7 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
+	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/constants"
@@ -101,6 +102,31 @@ func IsHaltedOnChain(bridge thorclient.ThorchainBridge, chain common.Chain) (boo
 	// to the current THORChain height by the solvency handler.
 	solvencyHalted := solvencyHaltHeight > 0 && thorHeight >= solvencyHaltHeight
 	return chainHalted || solvencyHalted, nil
+}
+
+// RecoveredVaultReports returns the reports in solvent for vaults THORChain still
+// has flagged insolvent on the chain.
+//
+// A chain client sends a solvent vault's report only in an all-clear, and a halted
+// chain can't reach one while another vault has an outbound the paused scanner can't
+// see land. A vault that has been fixed would then stay silent, and its flag would
+// keep holding the halt. THORChain can't take silence as recovery, because a vault
+// that is still short and failing to report is silent too, so a fixed vault has to
+// say so. Vaults that were never flagged have nothing to clear and stay quiet. On a
+// bridge error the vault is skipped; the next solvency cycle retries it.
+func RecoveredVaultReports(bridge thorclient.ThorchainBridge, chain common.Chain, solvent []stypes.Solvency) []stypes.Solvency {
+	var recovered []stypes.Solvency
+	for _, msg := range solvent {
+		flagged, err := bridge.GetMimir(types.SolvencyHaltVaultKey(msg.PubKey, chain))
+		if err != nil {
+			log.Logger.Err(err).Str("chain", chain.String()).Stringer("asgard", msg.PubKey).Msg("fail to read vault insolvency flag, skipping its solvent report")
+			continue
+		}
+		if flagged > 0 {
+			recovered = append(recovered, msg)
+		}
+	}
+	return recovered
 }
 
 // IsVaultSolvent checks whether the chain-specific portion of the given vault is solvent.

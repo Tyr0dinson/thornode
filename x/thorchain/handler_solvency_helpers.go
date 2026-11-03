@@ -275,7 +275,7 @@ func processSolvencyAttestation(
 	}
 
 	// If not insolvent and the chain is halted from an earlier block height, unhalt the chain,
-	// unless another vault on the chain was recently reported insolvent.
+	// unless another vault on the chain is flagged insolvent.
 	if !isInsolvent && haltChain > 1 {
 		held, err := otherVaultFlaggedInsolvent(ctx, k, voter.PubKey, voter.Chain)
 		if err != nil {
@@ -283,7 +283,7 @@ func processSolvencyAttestation(
 			return nil
 		}
 		if held {
-			ctx.Logger().Info("solvency halt kept: another vault on the chain was recently reported insolvent", "chain", voter.Chain, "solvent vault", voter.PubKey)
+			ctx.Logger().Info("solvency halt kept: another vault on the chain is flagged insolvent", "chain", voter.Chain, "solvent vault", voter.PubKey)
 			return nil
 		}
 		// if the chain was halted by previous solvency checker, auto unhalt it
@@ -298,25 +298,18 @@ func processSolvencyAttestation(
 	return nil
 }
 
-// solvencyHaltVaultKeyPrefix flags a specific vault as insolvent on a specific
-// chain. It is keyed by both vault pubkey and chain because a vault can be
-// insolvent on one chain while remaining solvent on others; the per-chain
-// granularity lets a recovered chain clear its own flag without prematurely
-// re-electing a vault that is still insolvent elsewhere.
-const solvencyHaltVaultKeyPrefix = "SolvencyHaltVault-"
-
 // solvencyHaltVaultKey returns the Mimir key flagging a vault insolvent on a chain.
 func solvencyHaltVaultKey(pubKey common.PubKey, chain common.Chain) string {
-	return fmt.Sprintf("%s%s-%s", solvencyHaltVaultKeyPrefix, pubKey.String(), chain.String())
+	return thortypes.SolvencyHaltVaultKey(pubKey, chain)
 }
 
 // flagVaultInsolvent records that the given vault is insolvent on the given
 // chain so it can be excluded from inbound-address election. A compromised key
 // that drains one chain leaves the same vault's other chains exposed, so the
 // whole vault must stop being advertised for deposits, not just the halted chain.
-// The stored height is that of the vault's latest insolvent report, so
-// otherVaultFlaggedInsolvent can tell a vault Bifrost still reports insolvent from
-// one it has stopped reporting.
+// The stored height is that of the vault's latest insolvent report, so a
+// SolvencyHaltHoldBlocks set by Mimir can tell a vault still being reported
+// insolvent from one that has gone silent.
 func flagVaultInsolvent(ctx cosmos.Context, k keeper.Keeper, pubKey common.PubKey, chain common.Chain) {
 	key := solvencyHaltVaultKey(pubKey, chain)
 	flagged, err := k.GetMimir(ctx, key)
@@ -371,15 +364,15 @@ func isVaultInsolvent(ctx cosmos.Context, k keeper.Keeper, vault Vault) (bool, e
 }
 
 // otherVaultFlaggedInsolvent reports whether an Active or Retiring vault other
-// than pubKey, holding funds on the chain, was reported insolvent on it within
-// SolvencyHaltHoldBlocks (0 = without limit). A flag is cleared only by a report
-// for that vault, and Bifrost doesn't report every vault: none without funds on
-// the chain, no Inactive one, and, while the chain is halted, a vault that passes
-// its own check only when every vault does. A fixed vault therefore goes silent
-// while another vault's unobserved outbound keeps it from that all-clear. Bifrost
-// re-reports a vault that is still short every solvency cycle, so a flag that
-// stops being refreshed no longer holds the halt. On KV read failure it returns
-// true so callers keep the chain halted.
+// than pubKey, holding funds on the chain, is flagged insolvent on it. A flag is
+// cleared only by a solvent report for that vault, which Bifrost sends for a flagged
+// vault that passes its own check (runners.RecoveredVaultReports), and silence isn't
+// recovery: a vault that is still short goes silent too when its reports stop reaching
+// consensus. Bifrost doesn't report a vault without funds on the chain or an Inactive
+// one, so those can't hold the halt. SolvencyHaltHoldBlocks, 0 by default, is the way
+// out if a flagged vault can't report at all: set by Mimir, a flag stops holding the
+// halt once its latest insolvent report is that many blocks old. On KV read failure it
+// returns true so callers keep the chain halted.
 func otherVaultFlaggedInsolvent(ctx cosmos.Context, k keeper.Keeper, pubKey common.PubKey, chain common.Chain) (bool, error) {
 	hold := k.GetConfigInt64(ctx, constants.SolvencyHaltHoldBlocks)
 	for _, status := range []VaultStatus{ActiveVault, RetiringVault} {

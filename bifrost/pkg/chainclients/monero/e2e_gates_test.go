@@ -78,6 +78,8 @@ type solvencyBridge struct {
 	// only state in which ReportSolvency sends an all-solvent report.
 	solvencyHalted bool
 	asgards        ttypes.Vaults
+	// mimirs holds any other Mimir values, such as a vault's insolvency flag.
+	mimirs map[string]int64
 }
 
 func (b *solvencyBridge) GetAsgards() (ttypes.Vaults, error) {
@@ -88,7 +90,7 @@ func (b *solvencyBridge) GetMimir(key string) (int64, error) {
 	if b.solvencyHalted && key == "SolvencyHaltXMRChain" {
 		return 1, nil
 	}
-	return 0, nil
+	return b.mimirs[key], nil
 }
 
 func (b *solvencyBridge) GetBlockHeight() (int64, error) {

@@ -23,6 +23,7 @@ import (
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
+	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/cmd"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
@@ -636,6 +637,44 @@ func (s *SolvencyTestSuite) TestIsVaultSolventMissingZeroAmountAssetDoesNotLogIn
 // IsHaltedOnChain is the gate that decides whether a chain client may send a solvency
 // "all clear". It must be true only for the network's own halt state, never for
 // anything local to a node, and it must fail closed on a bridge error.
+func (s *SolvencyTestSuite) TestRecoveredVaultReports(c *C) {
+	flagged := types.GetRandomPubKey()
+	unflagged := types.GetRandomPubKey()
+	unreadable := types.GetRandomPubKey()
+	cleared := types.GetRandomPubKey()
+	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch strings.Split(r.RequestURI, "/key/")[1] {
+		case types.SolvencyHaltVaultKey(flagged, common.ETHChain):
+			_, _ = w.Write([]byte("1000"))
+		case types.SolvencyHaltVaultKey(cleared, common.ETHChain):
+			_, _ = w.Write([]byte("0"))
+		case types.SolvencyHaltVaultKey(unreadable, common.ETHChain):
+			w.WriteHeader(http.StatusInternalServerError)
+		default:
+			_, _ = w.Write([]byte("-1"))
+		}
+	})
+	server := httptest.NewServer(h)
+	defer server.Close()
+	bridge, err := thorclient.NewThorchainBridge(config.BifrostClientConfiguration{
+		ChainID:         "thorchain",
+		ChainHost:       server.Listener.Addr().String(),
+		ChainRPC:        server.Listener.Addr().String(),
+		SignerName:      "bob",
+		SignerPasswd:    "password",
+		ChainHomeFolder: ".",
+	}, s.m, s.keys)
+	c.Assert(err, IsNil)
+
+	reports := []stypes.Solvency{{PubKey: unflagged}, {PubKey: flagged, Height: 7}, {PubKey: unreadable}, {PubKey: cleared}}
+	recovered := RecoveredVaultReports(bridge, common.ETHChain, reports)
+	c.Assert(recovered, HasLen, 1)
+	c.Check(recovered[0].PubKey.Equals(flagged), Equals, true)
+	c.Check(recovered[0].Height, Equals, int64(7))
+
+	c.Check(RecoveredVaultReports(bridge, common.ETHChain, nil), HasLen, 0)
+}
+
 func (s *SolvencyTestSuite) TestIsHaltedOnChain(c *C) {
 	type testCase struct {
 		name               string

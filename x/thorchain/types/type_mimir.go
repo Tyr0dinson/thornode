@@ -1,10 +1,24 @@
 package types
 
 import (
+	"fmt"
 	"strings"
 
+	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 )
+
+// solvencyHaltVaultKeyPrefix flags a specific vault as insolvent on a specific
+// chain. It is keyed by both vault pubkey and chain because a vault can be
+// insolvent on one chain while remaining solvent on others; the per-chain
+// granularity lets a recovered chain clear its own flag without prematurely
+// re-electing a vault that is still insolvent elsewhere.
+const solvencyHaltVaultKeyPrefix = "SolvencyHaltVault-"
+
+// SolvencyHaltVaultKey returns the Mimir key flagging a vault insolvent on a chain.
+func SolvencyHaltVaultKey(pubKey common.PubKey, chain common.Chain) string {
+	return fmt.Sprintf("%s%s-%s", solvencyHaltVaultKeyPrefix, pubKey.String(), chain.String())
+}
 
 func (m NodeMimirs) Has(key string, acc cosmos.AccAddress) bool {
 	for _, mim := range m.Mimirs {

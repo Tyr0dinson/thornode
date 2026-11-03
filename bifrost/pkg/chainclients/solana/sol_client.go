@@ -466,8 +466,9 @@ func (c *SOLClient) ReportSolvency(height int64) error {
 	// a healthy scanner can still reach here from the scan path. Its all-clear would carry the
 	// scanned height rather than the runner's, a different voter, and so would be a lone vote too.
 	// On a bridge error stay silent; the runner retries.
-	// If there are any insolvent vaults, report only them.
-	// Not reporting both solvent and insolvent vaults is to avoid noise (spam):
+	// If there are any insolvent vaults, report them, and with them only the solvent vaults that
+	// THORChain still has flagged insolvent, since nothing else can clear those flags.
+	// Not reporting every solvent vault alongside the insolvent ones is to avoid noise (spam):
 	// Reporting both could halt-and-unhalt SolvencyHalt in the same THOR block
 	// (resetting its height), plus making it harder to know at a glance from solvency reports which vaults were insolvent.
 	solvent := false
@@ -476,9 +477,13 @@ func (c *SOLClient) ReportSolvency(height int64) error {
 	if haltErr != nil {
 		c.logger.Err(haltErr).Msg("fail to read chain halt state, skipping solvency all-clear")
 	}
-	if halted && !c.IsBlockScannerHealthy() && allVaultsProcessed && len(solventMsgs) == processedVaults {
-		msgs = solventMsgs
-		solvent = true
+	if halted && !c.IsBlockScannerHealthy() && allVaultsProcessed {
+		if len(solventMsgs) == processedVaults {
+			msgs = solventMsgs
+			solvent = true
+		} else {
+			msgs = append(msgs, runners.RecoveredVaultReports(c.bridge, c.cfg.ChainID, solventMsgs)...)
+		}
 	}
 
 	for i := range msgs {
