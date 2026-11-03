@@ -1,0 +1,31 @@
+# Documentation: https://docs.gitlab.com/user/project/codeowners/
+# This is the only CODEOWNERS file. GitLab reads /CODEOWNERS before
+# docs/CODEOWNERS and .gitlab/CODEOWNERS.
+
+[Wasm Permissions][2]
+/common/wasmpermissions/ @NoahSaso @codehans @zefiro576 @snoyberg
+
+# Every path needs 3 approvals from 3 different owners listed here, except the
+# exclusions below. huginn-bot is one owner, so that is at least 2 humans.
+# New paths are covered automatically. Excluded paths keep the dev-team rule
+# (2 approvals). Editing this file is itself a [Core] change.
+[Core][3] @son-of-odin @zlyzol @ahdzib @Bitol @starsquid @asaf45 @pratikasr @huginn-bot
+*
+!/docs/**
+!/test/**
+!/tools/analyze/**
+!/tools/ci-health/**
+!/tools/events/**
+!/tools/mimir-ids/**
+!/tools/p2p-check/**
+!/tools/perf/**
+!/tools/pubkey2address/**
+!/tools/stagenet/**
+!/tools/thorscan/**
+!/.editorconfig
+!/.gitignore
+!/.isort.cfg
+!/LICENSE
+!/README.md
+!/bugbounty.md
+!/spec.md
