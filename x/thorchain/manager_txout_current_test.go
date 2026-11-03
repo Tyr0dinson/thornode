@@ -773,6 +773,80 @@ func (s TxOutStoreSuite) TestAddOutTxItemCreditsStreamingWallClockTime(c *C) {
 	c.Check(txOut.TxArray, HasLen, 1)
 }
 
+// Streaming time since inbound consensus is credited against the outbound
+// delay as wall-clock time, not as a count of blocks: a stream that ran on fast
+// blocks and finished after they slowed down earns only the time that really
+// passed, so the outbound still waits out its full security delay.
+func (s TxOutStoreSuite) TestAddOutTxItemStreamingCreditUsesWallClock(c *C) {
+	ref := constants.ThorchainBlockTime.Milliseconds()
+	const now = int64(740)
+	for _, tc := range []struct {
+		name     string
+		inbound  int64
+		history  constants.BlockTimeHistory
+		expected int64
+	}{
+		// 100 blocks of streaming at the reference block time: 100 credited,
+		// 1460 - 100 = 1360, exactly the old block count
+		{"unchanged", 640, nil, 1360},
+		// 720 quarter-length blocks then 10 reference blocks: 190 reference
+		// blocks of wall-clock time credited, 1460 - 190 = 1270 (the old block
+		// count gave 730, a quarter of the 720-block wait)
+		{"fast then slow", 10, constants.BlockTimeHistory{{Height: 11, Ms: ref / 4}, {Height: 731, Ms: ref}}, 1270},
+		// 720 four-times-length blocks: more than the whole delay has passed,
+		// so the outbound goes out now
+		{"slow then fast", 10, constants.BlockTimeHistory{{Height: 11, Ms: ref * 4}, {Height: 731, Ms: ref}}, now},
+	} {
+		SetupConfigForTest()
+		w := getHandlerTestWrapper(c, 1, true, true)
+		ctx := w.ctx.WithBlockHeight(now)
+		if tc.history != nil {
+			w.keeper.SetBlockTimeHistory(ctx, ref, tc.history)
+		}
+		c.Assert(w.keeper.GetBlockTimeMs(ctx), Equals, ref)
+		vault := GetRandomVault()
+		vault.Coins = common.Coins{
+			common.NewCoin(common.RuneAsset(), cosmos.NewUint(10000*common.One)),
+			common.NewCoin(common.DOGEAsset, cosmos.NewUint(1000000*common.One)),
+		}
+		c.Assert(w.keeper.SetVault(ctx, vault), IsNil)
+		w.keeper.SetMimir(ctx, constants.MinTxOutVolumeThreshold.String(), 100000000000)
+		w.keeper.SetMimir(ctx, constants.TxOutDelayRate.String(), 2500000000)
+		w.keeper.SetMimir(ctx, constants.MaxTxOutOffset.String(), 720)
+
+		inTxID := GetRandomTxHash()
+		voter := NewObservedTxVoter(inTxID, common.ObservedTxs{
+			common.ObservedTx{Tx: GetRandomTx(), BlockHeight: 1, FinaliseHeight: 1},
+		})
+		voter.Height = tc.inbound
+		w.keeper.SetObservedTxInVoter(ctx, voter)
+
+		// large enough that the delay is capped at MaxTxOutOffset (720)
+		item := TxOutItem{
+			Chain:     common.DOGEChain,
+			ToAddress: GetRandomDOGEAddress(),
+			InHash:    inTxID,
+			Coin:      common.NewCoin(common.DOGEAsset, cosmos.NewUint(100000*common.One)),
+		}
+		txOutStore := newTxOutStorage(w.keeper, w.mgr.GetConstants(), w.mgr.EventMgr(), w.mgr.GasMgr())
+		ok, err := txOutStore.TryAddTxOutItem(ctx, w.mgr, item, cosmos.ZeroUint())
+		c.Assert(err, IsNil)
+		c.Assert(ok, Equals, true)
+
+		after, err := w.keeper.GetObservedTxInVoter(ctx, inTxID)
+		c.Assert(err, IsNil)
+		c.Check(after.OutboundHeight, Equals, tc.expected, Commentf(tc.name))
+		txOut, err := w.keeper.GetTxOut(ctx, tc.expected)
+		c.Assert(err, IsNil)
+		c.Check(txOut.TxArray, HasLen, 1, Commentf(tc.name))
+		if tc.expected > now {
+			// the full 720 reference blocks of wall-clock time have passed by
+			// the outbound height, and not one block earlier
+			c.Check(w.keeper.RefHeightAfter(ctx, tc.inbound, 720), Equals, tc.expected, Commentf(tc.name))
+		}
+	}
+}
+
 func (s TxOutStoreSuite) TestAddOutTxItem_MultipleOutboundWillNotBeScheduledAtTheSameBlockHeight(c *C) {
 	SetupConfigForTest()
 	w := getHandlerTestWrapper(c, 1, true, true)
