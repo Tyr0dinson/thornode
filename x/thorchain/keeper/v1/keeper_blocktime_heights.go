@@ -91,9 +91,13 @@ func (k KVStore) convertJailReleaseHeights(ctx cosmos.Context, convert func(int6
 
 func (k KVStore) convertTxOutQueue(ctx cosmos.Context, convert func(int64) int64) {
 	height := ctx.BlockHeight()
-	// the queue as scheduled under every earlier block time, as GetPendingOutbounds scans it
-	scanEnd := k.RefWindowEnd(ctx, k.GetConfigInt64Ref(ctx, constants.TxOutDelayMax))
-	offsetEnd := k.RefWindowEnd(ctx, k.GetConfigInt64Ref(ctx, constants.MaxTxOutOffset))
+	// the whole queue as scheduled under every earlier block time: outbounds
+	// go up to TxOutDelayMax + MaxTxOutOffset ahead (as txOutScanEnd), and any
+	// left unconverted would sit past a gap that scans of the queue stop at
+	maxOffset := k.GetConfigInt64Ref(ctx, constants.MaxTxOutOffset)
+	refWindow := max(k.GetConfigInt64Ref(ctx, constants.TxOutDelayMax), 0) + max(maxOffset, 0)
+	scanEnd := k.RefWindowEnd(ctx, max(refWindow, constants.TxOutQueueScanBlocks))
+	offsetEnd := k.RefWindowEnd(ctx, maxOffset)
 	var queued []*TxOut
 	for h := height + 1; h <= scanEnd; h++ {
 		txOut, err := k.GetTxOut(ctx, h)

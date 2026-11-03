@@ -728,6 +728,51 @@ func (s TxOutStoreSuite) TestCalcTxOutHeightKeepsWallClockDelay(c *C) {
 	}
 }
 
+// The time a streaming swap spent since inbound consensus is credited against
+// the outbound delay as wall-clock time: a stream that ran over fast blocks
+// and finished after the blocks slowed down earns the time it took, not its
+// count of fast blocks at the slower block time.
+func (s TxOutStoreSuite) TestAddOutTxItemCreditsStreamingWallClockTime(c *C) {
+	SetupConfigForTest()
+	c.Assert(constants.ThorchainBlockTime.Milliseconds(), Equals, int64(1000))
+	w := getHandlerTestWrapper(c, 1, true, true)
+	vault := GetRandomVault()
+	vault.Coins = common.Coins{common.NewCoin(common.DOGEAsset, cosmos.NewUint(10000*common.One))}
+	c.Assert(w.keeper.SetVault(w.ctx, vault), IsNil)
+
+	// the delay is capped at the 720 block offset
+	w.keeper.SetMimir(w.ctx, constants.MinTxOutVolumeThreshold.String(), 100000000000)
+	w.keeper.SetMimir(w.ctx, constants.TxOutDelayRate.String(), 1)
+	w.keeper.SetMimir(w.ctx, constants.MaxTxOutOffset.String(), 720)
+
+	// inbound consensus at 10, then 399 blocks of 250ms and 11 of 1000ms by
+	// 420: 110.75 s, so 110 blocks of credit at 1000ms (not 410)
+	ctx := w.ctx.WithBlockHeight(420)
+	w.keeper.SetBlockTimeHistory(ctx, 1000, constants.BlockTimeHistory{{Height: 10, Ms: 250}, {Height: 410, Ms: 1000}})
+	inTxID := GetRandomTxHash()
+	voter := NewObservedTxVoter(inTxID, nil)
+	voter.Height = 10
+	w.keeper.SetObservedTxInVoter(ctx, voter)
+
+	item := TxOutItem{
+		Chain:     common.DOGEChain,
+		ToAddress: GetRandomDOGEAddress(),
+		InHash:    inTxID,
+		Coin:      common.NewCoin(common.DOGEAsset, cosmos.NewUint(80*common.One)),
+	}
+	txOutStore := newTxOutStorage(w.keeper, w.mgr.GetConstants(), w.mgr.EventMgr(), w.mgr.GasMgr())
+	ok, err := txOutStore.TryAddTxOutItem(ctx, w.mgr, item, cosmos.ZeroUint())
+	c.Assert(err, IsNil)
+	c.Assert(ok, Equals, true)
+
+	afterVoter, err := w.keeper.GetObservedTxInVoter(ctx, inTxID)
+	c.Assert(err, IsNil)
+	c.Check(afterVoter.OutboundHeight, Equals, int64(420+720-110))
+	txOut, err := w.keeper.GetTxOut(ctx, 420+720-110)
+	c.Assert(err, IsNil)
+	c.Check(txOut.TxArray, HasLen, 1)
+}
+
 func (s TxOutStoreSuite) TestAddOutTxItem_MultipleOutboundWillNotBeScheduledAtTheSameBlockHeight(c *C) {
 	SetupConfigForTest()
 	w := getHandlerTestWrapper(c, 1, true, true)

@@ -2478,18 +2478,13 @@ func maxTxOutWindow(ctx cosmos.Context, k keeper.Keeper) int64 {
 	return k.RefWindowEnd(ctx, refWindow) - ctx.BlockHeight()
 }
 
-// txOutQueueScanBlocks is the least span, in reference blocks, that a scan of
-// the scheduled outbound queue covers: the fixed span it covered before the
-// span followed the delay settings.
-const txOutQueueScanBlocks = 17280
-
 // txOutScanEnd returns the last height a scan of the scheduled outbound queue
 // must reach. Outbounds are scheduled at most maxTxOutWindow ahead, but
 // lowering TxOutDelayMax or MaxTxOutOffset leaves already queued outbounds
-// where they are, so it never ends before txOutQueueScanBlocks of wall-clock
+// where they are, so it never ends before TxOutQueueScanBlocks of wall-clock
 // time ahead. Scans still stop at the first empty height past MaxTxOutOffset.
 func txOutScanEnd(ctx cosmos.Context, k keeper.Keeper) int64 {
-	return max(ctx.BlockHeight()+maxTxOutWindow(ctx, k), k.RefWindowEnd(ctx, txOutQueueScanBlocks))
+	return max(ctx.BlockHeight()+maxTxOutWindow(ctx, k), k.RefWindowEnd(ctx, constants.TxOutQueueScanBlocks))
 }
 
 // thorchainBlockMs returns the approximate THORChain block interval in

@@ -319,9 +319,12 @@ func (tos *TxOutStorage) cachedTryAddTxOutItem(ctx cosmos.Context, mgr Manager, 
 			ctx.Logger().Error("failed to calc target block height for txout item", "error", err)
 		}
 
-		// adjust delay to include streaming swap time since inbound consensus
+		// adjust delay to include streaming swap time since inbound consensus:
+		// the wall-clock time since then, in whole blocks at the current block
+		// time (ctx.BlockHeight() - voter.Height without a block time change)
 		if voter.Height > 0 {
-			targetHeight = (targetHeight - ctx.BlockHeight()) + voter.Height
+			elapsedMs := tos.keeper.GetBlockTimeHistory(ctx).ElapsedMs(voter.Height, ctx.BlockHeight(), constants.ThorchainBlockTime.Milliseconds())
+			targetHeight -= elapsedMs / tos.keeper.GetBlockTimeMs(ctx)
 		}
 
 		if targetHeight > outboundHeight {

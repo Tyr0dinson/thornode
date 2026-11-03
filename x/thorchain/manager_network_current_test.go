@@ -3255,6 +3255,73 @@ func (s *NetworkManagerTestSuite) TestGetTCYStakeAmountToDistribute(c *C) {
 	c.Assert(result.Equal(cosmos.NewUint(amoutMul2)), Equals, true)
 }
 
+// When the block time goes back up, the whole outbound queue an earlier,
+// faster block time scheduled (up to TxOutDelayMax + MaxTxOutOffset ahead) is
+// converted, not just the TxOutDelayMax window, so no gap opens in it: an
+// unpaid outbound beyond such a gap would be missed by the solvency scan,
+// which stops at the first empty height past the offset, and read as surplus.
+func (s *NetworkManagerTestSuite) TestCalculateNetworkSolvencyAfterBlockTimeIncrease(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	k := mgr.Keeper()
+	c.Assert(constants.ThorchainBlockTime.Milliseconds(), Equals, int64(1000))
+	nmgr := newNetworkMgr(k, NewTxStoreDummy(), NewDummyEventMgr())
+
+	pool := NewPool()
+	pool.Asset = common.BTCAsset
+	pool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	pool.BalanceRune = cosmos.NewUint(100 * common.One)
+	pool.Status = PoolAvailable
+	c.Assert(k.SetPool(ctx, pool), IsNil)
+	vault := GetRandomVault()
+	vault.Type = AsgardVault
+	vault.Status = ActiveVault
+	vault.Coins = common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(150*common.One))}
+	c.Assert(k.SetVault(ctx, vault), IsNil)
+
+	k.SetMimir(ctx, constants.MaxTxOutOffset.String(), 5)
+	k.SetMimir(ctx, constants.TxOutDelayMax.String(), 10)
+	k.SetMimir(ctx, constants.BlockTimeMs.String(), 500)
+	k.UpdateBlockTime(ctx.WithBlockHeight(50))
+	// at 500ms, from 99 the offset reaches 109 and the queue 129: a run of
+	// unpaid outbounds past the offset, out to the end of the queue (the
+	// TxOutDelayMax window alone ends at 119)
+	ctx = ctx.WithBlockHeight(99)
+	for h := int64(110); h <= 129; h++ {
+		c.Assert(k.AppendTxOut(ctx, h, TxOutItem{
+			Chain:       common.BTCChain,
+			ToAddress:   GetRandomBTCAddress(),
+			VaultPubKey: vault.PubKey,
+			InHash:      GetRandomTxHash(),
+			Coin:        common.NewCoin(common.BTCAsset, cosmos.NewUint(common.One)),
+		}), IsNil)
+	}
+
+	// back to 1000ms at 100: the run halves in blocks and stays contiguous
+	k.SetMimir(ctx, constants.BlockTimeMs.String(), 0)
+	ctx = ctx.WithBlockHeight(100)
+	k.UpdateBlockTime(ctx)
+	c.Assert(k.GetBlockTimeMs(ctx), Equals, int64(1000))
+
+	var heights []int64
+	var queued int
+	for h := int64(101); h <= 129; h++ {
+		txOut, err := k.GetTxOut(ctx, h)
+		c.Assert(err, IsNil)
+		if len(txOut.TxArray) > 0 {
+			heights = append(heights, h)
+			queued += len(txOut.TxArray)
+		}
+	}
+	c.Check(heights, DeepEquals, []int64{105, 106, 107, 108, 109, 110, 111, 112, 113, 114})
+	c.Check(queued, Equals, 20)
+
+	// 150 held - 100 owed - 20 unpaid outbounds
+	solvency, err := nmgr.calculateNetworkSolvency(ctx, mgr)
+	c.Assert(err, IsNil)
+	c.Assert(solvency, HasLen, 1)
+	c.Check(solvency[0].Amount.String(), Equals, math.NewInt(30*common.One).String())
+}
+
 func (s *NetworkManagerTestSuite) TestCalculateNetworkSolvency(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	nmgr := newNetworkMgr(mgr.Keeper(), NewTxStoreDummy(), NewDummyEventMgr())

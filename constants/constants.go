@@ -50,6 +50,11 @@ const StreamingSwapMinBPFeeMulti = int64(100)
 // window before retrying a dead migrate.
 const StaleMigratePendingSigningPeriodMultiplier = int64(10)
 
+// TxOutQueueScanBlocks is the least span, in reference blocks, that a scan of
+// the scheduled outbound queue covers: the fixed span it covered before the
+// span followed the delay settings.
+const TxOutQueueScanBlocks = int64(17280)
+
 // "width" of a volume bucket (15min)
 const VolumeBucketSeconds = int64(900)
 
