@@ -878,7 +878,14 @@ func (tos *TxOutStorage) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem) ([]
 			// chain, so the gas check sees gas already committed to queued
 			// outbounds of other assets (a token outbound behind queued
 			// gas-asset outbounds from the same vault, and the reverse).
+			// Ragnarok selects as if the Mimir were off: it zeroes any
+			// residual the vaults cannot pay instead of sending it to
+			// recovery, so a vault skipped for gas committed elsewhere would
+			// lose that part of the payout.
 			tokenGasReserve := tos.keeper.GetConfigInt64(ctx, constants.VaultTokenGasReserve)
+			if memo, memoErr := ParseMemo(tos.keeper.GetVersion(), toi.GetMemo()); memoErr == nil && memo.IsType(TxRagnarok) {
+				tokenGasReserve = 0
+			}
 			var pendingOutbounds []TxOutItem
 			if tokenGasReserve > 0 {
 				pendingOutbounds = tos.keeper.GetPendingOutboundsByChain(ctx, toi.Chain)

@@ -2051,8 +2051,8 @@ func (s TxOutStoreSuite) TestPrepareTxOutItemCountsPendingGasOutbounds(c *C) {
 	usdt, err := common.NewAsset("ETH.USDT-0XDAC17F958D2EE523A2206206994597C13D831EC7")
 	c.Assert(err, IsNil)
 
-	// run returns which vault the USDT outbound was assigned to.
-	run := func(reserve int64) string {
+	// prepare schedules a USDT outbound with memo for amount and returns its outputs.
+	prepare := func(reserve int64, memo string, amount uint64) (Vault, Vault, []TxOutItem) {
 		w := getHandlerTestWrapper(c, 1, true, true)
 		if reserve > 0 {
 			w.keeper.SetMimir(w.ctx, constants.VaultTokenGasReserve.String(), reserve)
@@ -2119,9 +2119,16 @@ func (s TxOutStoreSuite) TestPrepareTxOutItemCountsPendingGasOutbounds(c *C) {
 			Chain:     common.ETHChain,
 			ToAddress: GetRandomETHAddress(),
 			InHash:    inTxID,
-			Coin:      common.NewCoin(usdt, cosmos.NewUint(600*common.One)),
+			Coin:      common.NewCoin(usdt, cosmos.NewUint(amount*common.One)),
+			Memo:      memo,
 		})
 		c.Assert(err, IsNil)
+		return drained, funded, outputs
+	}
+
+	// run returns which vault the USDT outbound was assigned to.
+	run := func(reserve int64) string {
+		drained, funded, outputs := prepare(reserve, "", 600)
 		c.Assert(outputs, HasLen, 1)
 		switch {
 		case outputs[0].VaultPubKey.Equals(drained.PubKey):
@@ -2136,4 +2143,17 @@ func (s TxOutStoreSuite) TestPrepareTxOutItemCountsPendingGasOutbounds(c *C) {
 	c.Check(run(0), Equals, "drained")
 	// On: the drained vault has no ETH left after its queue, so the funded vault pays.
 	c.Check(run(1), Equals, "funded")
+
+	// On, Ragnarok: selection ignores the Mimir, so the drained vault still
+	// pays its USDT. Skipping it would leave a residual that Ragnarok zeroes
+	// after the pool was already debited.
+	for _, reserve := range []int64{0, 1} {
+		ragnarok := NewRagnarokMemo(1).String()
+		drained, funded, outputs := prepare(reserve, ragnarok, 1200)
+		c.Assert(outputs, HasLen, 2)
+		c.Check(outputs[0].VaultPubKey.Equals(drained.PubKey), Equals, true)
+		c.Check(outputs[0].Coin.Amount.Equal(cosmos.NewUint(1000*common.One)), Equals, true)
+		c.Check(outputs[1].VaultPubKey.Equals(funded.PubKey), Equals, true)
+		c.Check(outputs[1].Coin.Amount.Equal(cosmos.NewUint(200*common.One)), Equals, true)
+	}
 }
