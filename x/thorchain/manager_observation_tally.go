@@ -192,12 +192,16 @@ func scoreObservationTally(ctx cosmos.Context, k keeper.Keeper, active NodeAccou
 			if err != nil {
 				return err
 			}
-			var unrefilled int64
-			if fullAt > entry.ConsensusHeight {
-				unrefilled = k.RefBlocksSince(ctx.WithBlockHeight(fullAt), entry.ConsensusHeight)
-			}
+			// The grace is kept to the millisecond: rounded to whole reference
+			// blocks, at faster blocks a short recovery would erase the debt of
+			// a short run every time.
 			refMs := constants.ThorchainBlockTime.Milliseconds()
-			guardSince = k.GetBlockTimeHistory(ctx).HeightAgo(entry.ConsensusHeight, unrefilled*refMs, refMs)
+			history := k.GetBlockTimeHistory(ctx)
+			var unrefilledMs int64
+			if fullAt > entry.ConsensusHeight {
+				unrefilledMs = history.ElapsedMs(entry.ConsensusHeight, fullAt, refMs)
+			}
+			guardSince = history.HeightAgo(entry.ConsensusHeight, unrefilledMs, refMs)
 			k.SetObservationGuardSince(ctx, entry.Chain, guardSince)
 			if fullAt > 0 {
 				k.SetObservationGuardFullAt(ctx, entry.Chain, 0)
@@ -248,13 +252,16 @@ func endHaltedObservationGuardRuns(ctx cosmos.Context, k keeper.Keeper) error {
 
 // endObservationGuardRun ends the chain's open run of guarded voters at height. The
 // grace the run used, up to the limit, refills one block per block from there, so it
-// is full again that many blocks on. Both are wall-clock time, in reference
-// blocks; UpdateBlockTime moves the full-at height across a block time change.
+// is full again that many blocks on. Both are wall-clock time, kept to the
+// millisecond (the limit is in reference blocks); UpdateBlockTime moves the
+// full-at height across a block time change.
 func endObservationGuardRun(ctx cosmos.Context, k keeper.Keeper, chain common.Chain, guardSince, height int64) {
 	k.SetObservationGuardSince(ctx, chain, 0)
 	if guardMax := k.GetConfigInt64Ref(ctx, constants.MissingObservationGuardMaxBlocks); guardMax > 0 {
-		used := min(k.RefBlocksSince(ctx.WithBlockHeight(height), guardSince), guardMax)
-		k.SetObservationGuardFullAt(ctx, chain, k.RefHeightAfter(ctx, height, used))
+		refMs := constants.ThorchainBlockTime.Milliseconds()
+		history := k.GetBlockTimeHistory(ctx)
+		usedMs := min(history.ElapsedMs(guardSince, height, refMs), min(guardMax, (1<<62)/refMs)*refMs)
+		k.SetObservationGuardFullAt(ctx, chain, history.HeightAfter(height, usedMs, refMs))
 	}
 }
 
