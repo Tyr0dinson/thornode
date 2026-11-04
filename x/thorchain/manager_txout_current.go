@@ -597,6 +597,11 @@ func (tos *TxOutStorage) discoverOutbounds(ctx cosmos.Context, transactionFeeAmo
 		// The reserve must not block an outbound the vaults can pay without it,
 		// nor split off a fragment that the fee deduction would drop as dust.
 		outputs, toi = allocateOutbounds(transactionFeeAmount, maxGasCoin, original, vaults, isRagnarok, 0)
+		// The fallback still sees vault balances net of the gas committed to
+		// queued outbounds of other assets, so it can split off a fragment that
+		// selection with the Mimir off would not. Fold any such fragment into
+		// the largest output instead of letting prepareTxOutItem drop it as dust.
+		outputs, toi.Coin.Amount = foldUnpayableFragments(outputs, toi.Coin.Amount, transactionFeeAmount, toi.Chain.DustThreshold())
 	}
 
 	// Ragnarok can intentionally leave a chain-specific residual behind, such as
@@ -774,13 +779,49 @@ func allocateOutbounds(transactionFeeAmount cosmos.Uint, maxGasCoin common.Coin,
 // outbound fee: prepareTxOutItem drops a gas-asset output whose amount after
 // the fee is below the dust threshold, after the inbound was already debited.
 func hasUnpayableFragment(outputs []TxOutItem, transactionFeeAmount, dustThreshold cosmos.Uint) bool {
-	minimum := transactionFeeAmount.Add(dustThreshold)
 	for _, output := range outputs {
-		if output.Coin.Amount.LTE(transactionFeeAmount) || output.Coin.Amount.LT(minimum) {
+		if isUnpayableFragment(output, transactionFeeAmount, dustThreshold) {
 			return true
 		}
 	}
 	return false
+}
+
+func isUnpayableFragment(output TxOutItem, transactionFeeAmount, dustThreshold cosmos.Uint) bool {
+	return output.Coin.Amount.LTE(transactionFeeAmount) || output.Coin.Amount.LT(transactionFeeAmount.Add(dustThreshold))
+}
+
+// foldUnpayableFragments adds every output of a multi-vault split that is too
+// small to survive the outbound fee to the largest output that is not. The
+// allocation capped that output's vault before the fee, and the vault sends the
+// amount after the fee, so one fragment below fee plus dust overruns its
+// available balance by at most the dust threshold; anything larger fails at
+// signing and goes through the usual reschedule. If no output survives the
+// fee, the fragments go back into remaining for the caller's recovery flow. A
+// single output is returned as is: an outbound too small to pay its own fee is
+// dropped as dust, as before.
+func foldUnpayableFragments(outputs []TxOutItem, remaining, transactionFeeAmount, dustThreshold cosmos.Uint) ([]TxOutItem, cosmos.Uint) {
+	if len(outputs) < 2 || !hasUnpayableFragment(outputs, transactionFeeAmount, dustThreshold) {
+		return outputs, remaining
+	}
+	kept := make([]TxOutItem, 0, len(outputs))
+	folded := cosmos.ZeroUint()
+	largest := -1
+	for _, output := range outputs {
+		if isUnpayableFragment(output, transactionFeeAmount, dustThreshold) {
+			folded = folded.Add(output.Coin.Amount)
+			continue
+		}
+		if largest < 0 || output.Coin.Amount.GT(kept[largest].Coin.Amount) {
+			largest = len(kept)
+		}
+		kept = append(kept, output)
+	}
+	if largest < 0 {
+		return kept, remaining.Add(folded)
+	}
+	kept[largest].Coin.Amount = kept[largest].Coin.Amount.Add(folded)
+	return kept, remaining
 }
 
 // prepareTxOutItem will do some data validation which include the following

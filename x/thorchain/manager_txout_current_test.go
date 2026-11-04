@@ -2157,3 +2157,187 @@ func (s TxOutStoreSuite) TestPrepareTxOutItemCountsPendingGasOutbounds(c *C) {
 		c.Check(outputs[1].Coin.Amount.Equal(cosmos.NewUint(200*common.One)), Equals, true)
 	}
 }
+
+// TestDiscoverOutboundsTokenGasReserveFallbackFoldsFragment proves that when
+// the reserve-free fallback itself splits off a fragment too small to survive
+// the outbound fee, the fragment is not left for prepareTxOutItem to drop: it
+// is folded into the largest output, which survives the fee.
+func (s TxOutStoreSuite) TestDiscoverOutboundsTokenGasReserveFallbackFoldsFragment(c *C) {
+	usdt, err := common.NewAsset("ETH.USDT-0XDAC17F958D2EE523A2206206994597C13D831EC7")
+	c.Assert(err, IsNil)
+	maxGas := common.NewCoin(common.ETHAsset, cosmos.NewUint(common.One))
+	fee := cosmos.NewUint(1000)
+	// The token vault can give 99 ETH without the reserve and 89 with it; the
+	// gas-only vault 2, so the reserve pass falls short and the fallback runs.
+	// Asking for 99 + fee/2 leaves the gas-only vault a fee/2 fragment.
+	amount := cosmos.NewUint(99 * common.One).Add(fee.QuoUint64(2))
+	ethOut := TxOutItem{
+		Chain:     common.ETHChain,
+		ToAddress: GetRandomETHAddress(),
+		InHash:    GetRandomTxHash(),
+		Coin:      common.NewCoin(common.ETHAsset, amount),
+	}
+
+	// The fallback allocation on its own splits off the fragment.
+	ctx, mgr := setupManagerForTest(c)
+	withTokens, gasOnly := tokenGasReserveVaults(c, ctx, mgr, usdt, 3)
+	outputs, left := allocateOutbounds(fee, maxGas, ethOut, Vaults{withTokens, gasOnly}, false, 0)
+	c.Assert(left.Coin.Amount.IsZero(), Equals, true)
+	c.Assert(outputs, HasLen, 2)
+	c.Check(outputs[1].Coin.Amount.Equal(fee.QuoUint64(2)), Equals, true)
+
+	// Off: selection is unchanged from before the Mimir existed.
+	store := newTxOutStorage(mgr.Keeper(), mgr.GetConstants(), newRecordingEventMgr(), mgr.GasMgr())
+	outputs, remaining := store.DiscoverOutbounds(ctx, fee, maxGas, ethOut, Vaults{withTokens, gasOnly})
+	c.Assert(remaining.IsZero(), Equals, true)
+	c.Assert(outputs, HasLen, 2)
+
+	// On: the fragment is folded into the token vault's output, so the whole
+	// amount stays in one output that survives the fee. The vault can pay it
+	// (the fee comes out of what it sends), so no security event is raised.
+	ctx, mgr = setupManagerForTest(c)
+	mgr.Keeper().SetMimir(ctx, constants.VaultTokenGasReserve.String(), 10)
+	withTokens, gasOnly = tokenGasReserveVaults(c, ctx, mgr, usdt, 3)
+	eventMgr := newRecordingEventMgr()
+	store = newTxOutStorage(mgr.Keeper(), mgr.GetConstants(), eventMgr, mgr.GasMgr())
+	outputs, remaining = store.DiscoverOutbounds(ctx, fee, maxGas, ethOut, Vaults{withTokens, gasOnly})
+	c.Assert(remaining.IsZero(), Equals, true)
+	c.Assert(outputs, HasLen, 1)
+	c.Check(outputs[0].VaultPubKey.Equals(withTokens.PubKey), Equals, true)
+	c.Check(outputs[0].Coin.Amount.Equal(amount), Equals, true)
+	c.Check(eventMgr.securityEvents(), HasLen, 0)
+}
+
+func (s TxOutStoreSuite) TestFoldUnpayableFragments(c *C) {
+	fee := cosmos.NewUint(1000)
+	dust := common.ETHChain.DustThreshold()
+	out := func(amount cosmos.Uint) TxOutItem {
+		return TxOutItem{Coin: common.NewCoin(common.ETHAsset, amount)}
+	}
+	big := out(cosmos.NewUint(common.One))
+	payable := out(fee.Add(dust))
+	tiny := out(fee)
+
+	// A single output is never folded, however small.
+	outputs, remaining := foldUnpayableFragments([]TxOutItem{tiny}, cosmos.ZeroUint(), fee, dust)
+	c.Check(outputs, HasLen, 1)
+	c.Check(remaining.IsZero(), Equals, true)
+
+	// Payable outputs are kept as they are.
+	outputs, remaining = foldUnpayableFragments([]TxOutItem{big, payable}, cosmos.NewUint(7), fee, dust)
+	c.Check(outputs, HasLen, 2)
+	c.Check(remaining.Equal(cosmos.NewUint(7)), Equals, true)
+
+	// Fragments are folded into the largest output, wherever it sits.
+	outputs, remaining = foldUnpayableFragments([]TxOutItem{payable, tiny, big, tiny}, cosmos.ZeroUint(), fee, dust)
+	c.Assert(outputs, HasLen, 2)
+	c.Check(outputs[0].Coin.Amount.Equal(payable.Coin.Amount), Equals, true)
+	c.Check(outputs[1].Coin.Amount.Equal(big.Coin.Amount.Add(fee.MulUint64(2))), Equals, true)
+	c.Check(remaining.IsZero(), Equals, true)
+	// The input is not modified.
+	c.Check(big.Coin.Amount.Equal(cosmos.NewUint(common.One)), Equals, true)
+
+	// All fragments: nothing is kept and everything goes back to remaining.
+	outputs, remaining = foldUnpayableFragments([]TxOutItem{tiny, tiny}, cosmos.ZeroUint(), fee, dust)
+	c.Check(outputs, HasLen, 0)
+	c.Check(remaining.Equal(fee.MulUint64(2)), Equals, true)
+}
+
+// TestPrepareTxOutItemReserveFallbackKeepsFragment is the end-to-end case: with
+// VaultTokenGasReserve on, gas committed to a queued token outbound lowers the
+// token vault's ETH, so the reserve-free fallback for an ETH outbound spills a
+// sub-fee fragment onto a second vault. That fragment must not be dropped after
+// the inbound was debited: every unit of the outbound is either sent or taken
+// as the fee.
+func (s TxOutStoreSuite) TestPrepareTxOutItemReserveFallbackKeepsFragment(c *C) {
+	usdt, err := common.NewAsset("ETH.USDT-0XDAC17F958D2EE523A2206206994597C13D831EC7")
+	c.Assert(err, IsNil)
+
+	run := func(reserve int64) (Vault, cosmos.Uint, cosmos.Uint, []TxOutItem) {
+		w := getHandlerTestWrapper(c, 1, true, true)
+		if reserve > 0 {
+			w.keeper.SetMimir(w.ctx, constants.VaultTokenGasReserve.String(), reserve)
+		}
+		for _, asset := range []common.Asset{common.ETHAsset, usdt} {
+			pool := NewPool()
+			pool.Asset = asset
+			pool.Status = PoolAvailable
+			pool.BalanceAsset = cosmos.NewUint(100000 * common.One)
+			pool.BalanceRune = cosmos.NewUint(100000 * common.One)
+			pool.LPUnits = cosmos.NewUint(100000 * common.One)
+			c.Assert(w.keeper.SetPool(w.ctx, pool), IsNil)
+		}
+		maxGas, _, err := w.mgr.GasMgr().GetGasDetails(w.ctx, common.ETHChain)
+		c.Assert(err, IsNil)
+		fee, err := w.mgr.GasMgr().GetAssetOutboundFee(w.ctx, common.ETHAsset, false)
+		c.Assert(err, IsNil)
+		c.Assert(fee.QuoUint64(2).LT(maxGas.Amount), Equals, true)
+
+		withTokens := GetRandomVault()
+		withTokens.Type = AsgardVault
+		withTokens.Status = ActiveVault
+		withTokens.Coins = common.Coins{
+			common.NewCoin(common.ETHAsset, cosmos.NewUint(15*common.One)),
+			common.NewCoin(usdt, cosmos.NewUint(1000*common.One)),
+		}
+		c.Assert(w.keeper.SetVault(w.ctx, withTokens), IsNil)
+		// The gas-only vault can pay a fragment, but not the reserve shortfall.
+		gasOnly := GetRandomVault()
+		gasOnly.Type = AsgardVault
+		gasOnly.Status = ActiveVault
+		gasOnly.Coins = common.Coins{
+			common.NewCoin(common.ETHAsset, maxGas.Amount.MulUint64(5)),
+		}
+		c.Assert(w.keeper.SetVault(w.ctx, gasOnly), IsNil)
+		vaults, err := w.keeper.GetAsgardVaultsByStatus(w.ctx, ActiveVault)
+		c.Assert(err, IsNil)
+		for _, v := range vaults {
+			if !v.PubKey.Equals(withTokens.PubKey) && !v.PubKey.Equals(gasOnly.PubKey) {
+				v.Status = InactiveVault
+				c.Assert(w.keeper.SetVault(w.ctx, v), IsNil)
+			}
+		}
+
+		// A queued USDT outbound from the token vault commits MaxGas of its ETH.
+		c.Assert(w.keeper.AppendTxOut(w.ctx, w.ctx.BlockHeight(), TxOutItem{
+			Chain:       common.ETHChain,
+			ToAddress:   GetRandomETHAddress(),
+			VaultPubKey: withTokens.PubKey,
+			InHash:      GetRandomTxHash(),
+			Coin:        common.NewCoin(usdt, cosmos.NewUint(100*common.One)),
+			MaxGas:      common.Gas{maxGas},
+		}), IsNil)
+
+		// Without the reserve the token vault can give 15 - 2 x MaxGas; ask for
+		// half a fee more than that.
+		amount := common.SafeSub(cosmos.NewUint(15*common.One), maxGas.Amount.MulUint64(2)).Add(fee.QuoUint64(2))
+		inTxID := GetRandomTxHash()
+		w.keeper.SetObservedTxInVoter(w.ctx, NewObservedTxVoter(inTxID, common.ObservedTxs{
+			common.ObservedTx{
+				Tx:             GetRandomTx(),
+				Status:         common.Status_incomplete,
+				BlockHeight:    1,
+				Signers:        []string{w.activeNodeAccount.NodeAddress.String()},
+				FinaliseHeight: 1,
+			},
+		}))
+		store := newTxOutStorage(w.keeper, w.mgr.GetConstants(), w.mgr.EventMgr(), w.mgr.GasMgr())
+		outputs, _, err := store.prepareTxOutItem(w.ctx, TxOutItem{
+			Chain:     common.ETHChain,
+			ToAddress: GetRandomETHAddress(),
+			InHash:    inTxID,
+			Coin:      common.NewCoin(common.ETHAsset, amount),
+			Memo:      NewOutboundMemo(inTxID).String(),
+		})
+		c.Assert(err, IsNil)
+		return withTokens, amount, fee, outputs
+	}
+
+	for _, reserve := range []int64{0, 10} {
+		withTokens, amount, fee, outputs := run(reserve)
+		c.Assert(outputs, HasLen, 1, Commentf("reserve %d", reserve))
+		c.Check(outputs[0].VaultPubKey.Equals(withTokens.PubKey), Equals, true, Commentf("reserve %d", reserve))
+		c.Check(outputs[0].Coin.Amount.Add(fee).Equal(amount), Equals, true,
+			Commentf("reserve %d: sent %s + fee %s != %s", reserve, outputs[0].Coin.Amount, fee, amount))
+	}
+}

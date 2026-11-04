@@ -1,0 +1,69 @@
+{{ template "default-state.yaml" }}
+---
+{{ template "eth-usdc-token-gas-reserve-state.yaml" }}
+---
+type: state
+genesis:
+  app_state:
+    thorchain:
+      mimirs:
+        - key: VaultTokenGasReserve
+          value: "1000"
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Queue a USDC outbound from the dog vault: it commits 0.0096 ETH of dog's gas.
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - amount: "0"
+    asset: "rune"
+memo: "-:ETH.USDC-0X9999999999999999999999999999999999999999:1000"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 1
+  - .[0].vault_pub_key == "{{ pubkey_dog }}"
+  - .[0].coin.asset == "ETH.USDC-0X9999999999999999999999999999999999999999"
+---
+########################################################################################
+# VaultTokenGasReserve=1000, chain-wide pending: dog has 15 - 0.0096 = 14.9904 ETH
+# available. With the 9.6 ETH reserve held back the vaults cannot pay a 14.986 ETH
+# withdraw, so selection drops the reserve. That fallback gives dog
+# 14.9904 - 0.0096 = 14.9808 ETH and leaves cat a 0.0052 ETH fragment, below the
+# 0.0064 ETH fee, which the fee deduction would drop after the withdraw debited the
+# pool. The fragment is folded back into dog's output instead, so the whole withdraw
+# is paid from dog.
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - amount: "0"
+    asset: "rune"
+memo: "-:ETH.ETH:7493"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 2
+  - '[.[]|select(.coin.asset == "ETH.ETH")]|length == 1'
+  - .[]|select(.coin.asset == "ETH.ETH")|.vault_pub_key == "{{ pubkey_dog }}"
+  - .[]|select(.coin.asset == "ETH.ETH")|.coin.amount|tonumber == ${DOG_OUT=1497960000}
+---
+########################################################################################
+# dog can pay it (the fee comes out of what it sends): no insufficient-balance event
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - '[.. | select(.type? == "security")] | length == 0'
