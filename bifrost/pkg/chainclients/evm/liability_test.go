@@ -50,7 +50,7 @@ func (s *EVMSuite) TestSignTxRetriesWithLiability(c *C) {
 	}
 	addr, err := tx.VaultPubKey.GetAddress(tx.Chain)
 	c.Assert(err, IsNil)
-	raw, checkpoint, obs, err := e.SignTx(tx, 100)
+	raw, checkpoint, obs, err := e.SignTx([]stypes.TxOutItem{tx}, 100)
 	c.Assert(err, IsNil)
 	c.Assert(raw, NotNil)
 	c.Assert(obs, NotNil)
@@ -70,7 +70,7 @@ func (s *EVMSuite) TestSignTxRetriesWithLiability(c *C) {
 	c.Assert(e.signerCacheManager.SetSignedWithExpiry(tx.CacheHash(), tx.VaultPubKey.String(),
 		signed.Hash().Hex(), time.Now().Add(-time.Minute).UnixMilli()), IsNil)
 	c.Assert(e.signerCacheManager.HasSigned(tx.CacheHash()), Equals, true)
-	raw, retryCheckpoint, obs, err := e.SignTx(tx, 101)
+	raw, retryCheckpoint, obs, err := e.SignTx([]stypes.TxOutItem{tx}, 101)
 	c.Assert(err, IsNil, Commentf("same-nonce signing retry must not reserve the payment twice"))
 	c.Assert(raw, NotNil)
 	c.Assert(obs, NotNil)
@@ -96,7 +96,7 @@ func (s *EVMSuite) TestSignTxRetriesWithLiability(c *C) {
 		{11, true}, // Genuinely exceeds the mock's confirmed balance of 10.
 	} {
 		tx.Coins = common.NewCoins(common.NewCoin(common.AVAXAsset, cosmos.NewUint(tc.amount*common.One)))
-		raw, retryCheckpoint, obs, err = e.SignTx(tx, 102)
+		raw, retryCheckpoint, obs, err = e.SignTx([]stypes.TxOutItem{tx}, 102)
 		if tc.insufficient {
 			c.Assert(err, ErrorMatches, "insufficient gas asset balance.*", Commentf("amount %d", tc.amount))
 			c.Assert(raw, IsNil)

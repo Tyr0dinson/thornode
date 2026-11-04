@@ -71,7 +71,7 @@ func (s *EVMSuite) TestNonselectedEVMOutboundRetainsNonce(c *C) {
 	var err error
 	client.kw, err = shared.NewKeySignWrapper(client.kw.GetPrivKey(), common.EmptyPubKey, nonselectedKeyManager{}, big.NewInt(15), "AVAX")
 	c.Assert(err, IsNil)
-	raw, checkpoint, _, err := client.SignTx(tx, 100)
+	raw, checkpoint, _, err := client.SignTx([]stypes.TxOutItem{tx}, 100)
 	c.Assert(errors.Is(err, tss.ErrNotSelectedForKeysign), Equals, true)
 	c.Assert(raw, IsNil)
 	var saved signingCheckpoint
@@ -229,7 +229,7 @@ func (s *EVMSuite) TestApprovalSearchHeightSkippedForNativeTransfer(c *C) {
 	rpc.heightError, rpc.approvalReads = true, nil
 	rpc.Unlock()
 
-	raw, checkpoint, observation, err := client.SignTx(tx, 100)
+	raw, checkpoint, observation, err := client.SignTx([]stypes.TxOutItem{tx}, 100)
 	c.Assert(err, IsNil)
 	c.Assert(raw, NotNil)
 	c.Assert(string(checkpoint), Equals, "0")
@@ -249,7 +249,7 @@ func (s *EVMSuite) TestApprovalSearchHeightSkippedWhenAllowanceDisabled(c *C) {
 	rpc.heightError, rpc.approvalReads = true, nil
 	rpc.Unlock()
 
-	raw, checkpoint, observation, err := client.SignTx(tx, 100)
+	raw, checkpoint, observation, err := client.SignTx([]stypes.TxOutItem{tx}, 100)
 	c.Assert(err, IsNil)
 	c.Assert(raw, NotNil)
 	c.Assert(string(checkpoint), Equals, "0")
@@ -266,7 +266,7 @@ func (s *EVMSuite) TestApprovalSearchHeightFailureStopsApproval(c *C) {
 	rpc.heightError, rpc.approvalReads = true, nil
 	rpc.Unlock()
 
-	raw, checkpoint, observation, err := client.SignTx(tx, 100)
+	raw, checkpoint, observation, err := client.SignTx([]stypes.TxOutItem{tx}, 100)
 	c.Assert(err, ErrorMatches, "get approval search height: height unavailable")
 	c.Assert(raw, IsNil)
 	c.Assert(checkpoint, IsNil)
@@ -284,7 +284,7 @@ func (s *EVMSuite) TestApprovalSearchHeightPrecedesAllowanceAndNonce(c *C) {
 	rpc.approvalReads = nil
 	rpc.Unlock()
 
-	raw, checkpoint, observation, err := client.SignTx(tx, 100)
+	raw, checkpoint, observation, err := client.SignTx([]stypes.TxOutItem{tx}, 100)
 	c.Assert(errors.Is(err, errApprovalPending), Equals, true)
 	c.Assert(raw, IsNil)
 	c.Assert(observation, IsNil)
@@ -319,7 +319,7 @@ func mineApproval(c *C, client *EVMClient, tx stypes.TxOutItem, rpc *approvalRPC
 func (s *EVMSuite) TestApprovalRetryAfterPeerCompletion(c *C) {
 	client, tx, rpc, cleanup := s.approvalRetryFixture(c)
 	defer cleanup()
-	raw, checkpoint, _, err := client.SignTx(tx, 100)
+	raw, checkpoint, _, err := client.SignTx([]stypes.TxOutItem{tx}, 100)
 	c.Assert(errors.Is(err, errApprovalPending), Equals, true)
 	c.Assert(raw, IsNil)
 	c.Assert(rpc.submitted, HasLen, 0) // No side effect before durable preparation.
@@ -327,11 +327,11 @@ func (s *EVMSuite) TestApprovalRetryAfterPeerCompletion(c *C) {
 	// This reproduces cat's stale nonce 0 and peer approval at 1.
 	// Recovery must choose exactly 2 for the transfer.
 	mineApproval(c, client, tx, rpc, 1)
-	_, checkpoint, _, err = client.SignTx(tx, 100)
+	_, checkpoint, _, err = client.SignTx([]stypes.TxOutItem{tx}, 100)
 	c.Assert(errors.Is(err, errApprovalPending), Equals, true)
 	assertUnsignedNonce(c, checkpoint, 2)
 	tx.Checkpoint = checkpoint
-	raw, checkpoint, _, err = client.SignTx(tx, 100)
+	raw, checkpoint, _, err = client.SignTx([]stypes.TxOutItem{tx}, 100)
 	c.Assert(err, IsNil)
 	var transfer etypes.Transaction
 	c.Assert(transfer.UnmarshalJSON(raw), IsNil)
@@ -343,19 +343,19 @@ func (s *EVMSuite) TestApprovalRetryAfterPeerCompletion(c *C) {
 func (s *EVMSuite) TestApprovalRetryAmbiguousBroadcast(c *C) {
 	client, tx, rpc, cleanup := s.approvalRetryFixture(c)
 	defer cleanup()
-	_, checkpoint, _, err := client.SignTx(tx, 100)
+	_, checkpoint, _, err := client.SignTx([]stypes.TxOutItem{tx}, 100)
 	c.Assert(errors.Is(err, errApprovalPending), Equals, true)
 	tx.Checkpoint = checkpoint
-	_, checkpoint, _, err = client.SignTx(tx, 100)
+	_, checkpoint, _, err = client.SignTx([]stypes.TxOutItem{tx}, 100)
 	c.Assert(errors.Is(err, errApprovalPending), Equals, true)
 	tx.Checkpoint = checkpoint
 	rpc.broadcastError = "connection lost after submission"
-	_, retry, _, err := client.SignTx(tx, 100)
+	_, retry, _, err := client.SignTx([]stypes.TxOutItem{tx}, 100)
 	c.Assert(err, ErrorMatches, "broadcast approval:.*")
 	c.Assert(retry, DeepEquals, checkpoint)
 	c.Assert(rpc.submitted, HasLen, 1)
 	mineApproval(c, client, tx, rpc, 0)
-	_, retry, _, err = client.SignTx(tx, 100)
+	_, retry, _, err = client.SignTx([]stypes.TxOutItem{tx}, 100)
 	c.Assert(errors.Is(err, errApprovalPending), Equals, true)
 	assertUnsignedNonce(c, retry, 1)
 	c.Assert(rpc.submitted, HasLen, 1)
@@ -365,17 +365,17 @@ func (s *EVMSuite) TestApprovalRetryUnprovenCompletion(c *C) {
 	client, tx, rpc, cleanup := s.approvalRetryFixture(c)
 	defer cleanup()
 	for i := 0; i < 2; i++ {
-		_, checkpoint, _, err := client.SignTx(tx, 100)
+		_, checkpoint, _, err := client.SignTx([]stypes.TxOutItem{tx}, 100)
 		c.Assert(errors.Is(err, errApprovalPending), Equals, true)
 		tx.Checkpoint = checkpoint
 	}
 	rpc.broadcastError = "nonce too low"
-	_, retry, _, err := client.SignTx(tx, 100)
+	_, retry, _, err := client.SignTx([]stypes.TxOutItem{tx}, 100)
 	c.Assert(errors.Is(err, errApprovalPending), Equals, true)
 	c.Assert(retry, DeepEquals, tx.Checkpoint)
 	mineApproval(c, client, tx, rpc, 0)
 	rpc.receiptStatus = etypes.ReceiptStatusFailed
-	raw, retry, observation, err := client.SignTx(tx, 100)
+	raw, retry, observation, err := client.SignTx([]stypes.TxOutItem{tx}, 100)
 	c.Assert(err, IsNil)
 	c.Assert(raw, IsNil)
 	c.Assert(retry, IsNil)
@@ -385,7 +385,7 @@ func (s *EVMSuite) TestApprovalRetryUnprovenCompletion(c *C) {
 func (s *EVMSuite) TestApprovalRetryRestartAndNonselection(c *C) {
 	client, tx, rpc, cleanup := s.approvalRetryFixture(c)
 	defer cleanup()
-	_, checkpoint, _, err := client.SignTx(tx, 100)
+	_, checkpoint, _, err := client.SignTx([]stypes.TxOutItem{tx}, 100)
 	c.Assert(errors.Is(err, errApprovalPending), Equals, true)
 	path := filepath.Join(c.MkDir(), "checkpoint")
 	c.Assert(os.WriteFile(path, checkpoint, 0o600), IsNil)
@@ -399,13 +399,13 @@ func (s *EVMSuite) TestApprovalRetryRestartAndNonselection(c *C) {
 	localSigner := restarted.kw
 	restarted.kw, err = shared.NewKeySignWrapper(localSigner.GetPrivKey(), common.EmptyPubKey, nonselectedKeyManager{}, big.NewInt(15), "AVAX")
 	c.Assert(err, IsNil)
-	_, retry, _, err := restarted.SignTx(tx, 100)
+	_, retry, _, err := restarted.SignTx([]stypes.TxOutItem{tx}, 100)
 	c.Assert(errors.Is(err, tss.ErrNotSelectedForKeysign), Equals, true)
 	c.Assert(retry, DeepEquals, checkpoint)
 	c.Assert(rpc.submitted, HasLen, 0)
 	restarted.kw = localSigner
 	mineApproval(c, client, tx, rpc, 0)
-	_, retry, _, err = restarted.SignTx(tx, 100)
+	_, retry, _, err = restarted.SignTx([]stypes.TxOutItem{tx}, 100)
 	c.Assert(errors.Is(err, errApprovalPending), Equals, true)
 	assertUnsignedNonce(c, retry, 1)
 }
@@ -417,7 +417,7 @@ func (s *EVMSuite) TestApprovalRetryLegacyTransferNonceIsImmutable(c *C) {
 	// Even with insufficient allowance and a different live nonce, an old
 	// numeric checkpoint must not trigger another approval or advance the nonce.
 	rpc.pendingNonce = 12
-	raw, checkpoint, _, err := client.SignTx(tx, 100)
+	raw, checkpoint, _, err := client.SignTx([]stypes.TxOutItem{tx}, 100)
 	c.Assert(err, IsNil)
 	var transfer etypes.Transaction
 	c.Assert(transfer.UnmarshalJSON(raw), IsNil)
@@ -426,7 +426,7 @@ func (s *EVMSuite) TestApprovalRetryLegacyTransferNonceIsImmutable(c *C) {
 	c.Assert(rpc.submitted, HasLen, 0)
 	for _, invalid := range []string{"", " ", "null", "-1", "1.5", "18446744073709551616", `{}`, `{"version":2}`} {
 		tx.Checkpoint = []byte(invalid)
-		raw, _, _, err = client.SignTx(tx, 100)
+		raw, _, _, err = client.SignTx([]stypes.TxOutItem{tx}, 100)
 		c.Assert(err, NotNil, Commentf("checkpoint %s", invalid))
 		c.Assert(raw, IsNil)
 	}
@@ -435,7 +435,7 @@ func (s *EVMSuite) TestApprovalRetryLegacyTransferNonceIsImmutable(c *C) {
 func (s *EVMSuite) TestApprovalRetryRejectsUnrelatedEvidence(c *C) {
 	client, tx, rpc, cleanup := s.approvalRetryFixture(c)
 	defer cleanup()
-	_, checkpoint, _, err := client.SignTx(tx, 100)
+	_, checkpoint, _, err := client.SignTx([]stypes.TxOutItem{tx}, 100)
 	c.Assert(errors.Is(err, errApprovalPending), Equals, true)
 	tx.Checkpoint = checkpoint
 	mineApproval(c, client, tx, rpc, 0)
@@ -446,13 +446,13 @@ func (s *EVMSuite) TestApprovalRetryRejectsUnrelatedEvidence(c *C) {
 	c.Assert(err, IsNil)
 	rpc.logs[0].TxHash = rpc.mined.Hash()
 	rpc.nonceError = true
-	raw, retry, observation, err := client.SignTx(tx, 100)
+	raw, retry, observation, err := client.SignTx([]stypes.TxOutItem{tx}, 100)
 	c.Assert(err, NotNil)
 	c.Assert(raw, IsNil)
 	c.Assert(observation, IsNil)
 	c.Assert(retry, DeepEquals, tx.Checkpoint)
 	rpc.nonceError = false
-	raw, retry, observation, err = client.SignTx(tx, 100)
+	raw, retry, observation, err = client.SignTx([]stypes.TxOutItem{tx}, 100)
 	c.Assert(err, IsNil)
 	c.Assert(raw, IsNil)
 	c.Assert(retry, IsNil)
@@ -461,7 +461,7 @@ func (s *EVMSuite) TestApprovalRetryRejectsUnrelatedEvidence(c *C) {
 	rpc.mined = original
 	rpc.logs[0].TxHash = original.Hash()
 	rpc.logs[0].Removed = true
-	raw, retry, observation, err = client.SignTx(tx, 100)
+	raw, retry, observation, err = client.SignTx([]stypes.TxOutItem{tx}, 100)
 	c.Assert(err, IsNil)
 	c.Assert(raw, IsNil)
 	c.Assert(retry, IsNil)
@@ -475,7 +475,7 @@ func (s *EVMSuite) TestReviewSubmittedApprovalDoesNotRepeat(c *C) {
 	keyManager := &countingKeyManager{key: client.kw.GetPrivKey()}
 	client.kw, _ = shared.NewKeySignWrapper(keyManager.key, common.EmptyPubKey, keyManager, big.NewInt(15), "AVAX")
 	for i := 0; i < 6; i++ {
-		_, checkpoint, _, err := client.SignTx(tx, 100)
+		_, checkpoint, _, err := client.SignTx([]stypes.TxOutItem{tx}, 100)
 		c.Assert(errors.Is(err, errApprovalPending), Equals, true)
 		tx.Checkpoint = checkpoint
 	}
@@ -485,7 +485,7 @@ func (s *EVMSuite) TestReviewSubmittedApprovalDoesNotRepeat(c *C) {
 	restarted, _, stop := s.newRetryClient(c)
 	defer stop()
 	restarted.kw = client.kw
-	_, retry, _, err := restarted.SignTx(tx, 100)
+	_, retry, _, err := restarted.SignTx([]stypes.TxOutItem{tx}, 100)
 	c.Assert(errors.Is(err, errApprovalPending), Equals, true)
 	c.Assert(retry, DeepEquals, tx.Checkpoint)
 	c.Assert(keyManager.calls, Equals, 1)
@@ -496,7 +496,7 @@ func (s *EVMSuite) TestReviewSubmittedApprovalDoesNotRepeat(c *C) {
 	rpc.confirmedNonce = 1
 	rpc.pendingNonce = 1
 	rpc.lookupError = true
-	_, retry, _, err = restarted.SignTx(tx, 100)
+	_, retry, _, err = restarted.SignTx([]stypes.TxOutItem{tx}, 100)
 	c.Assert(errors.Is(err, errApprovalPending), Equals, true)
 	assertUnsignedNonce(c, retry, 1)
 	c.Assert(keyManager.calls, Equals, 1)
@@ -529,7 +529,7 @@ func (s *EVMSuite) TestReviewMissingApprovalRebroadcastsExactBytes(c *C) {
 	keyManager := &countingKeyManager{key: client.kw.GetPrivKey()}
 	client.kw, _ = shared.NewKeySignWrapper(keyManager.key, common.EmptyPubKey, keyManager, big.NewInt(15), "AVAX")
 	for i := 0; i < 3; i++ {
-		_, checkpoint, _, err := client.SignTx(tx, 100)
+		_, checkpoint, _, err := client.SignTx([]stypes.TxOutItem{tx}, 100)
 		c.Assert(errors.Is(err, errApprovalPending), Equals, true)
 		tx.Checkpoint = checkpoint
 	}
@@ -540,7 +540,7 @@ func (s *EVMSuite) TestReviewMissingApprovalRebroadcastsExactBytes(c *C) {
 	client.evmScanner.gasPrice.Store(big.NewInt(80_000_000_000))
 	keyManager.err = tss.NewKeysignError(ttypes.Blame{FailReason: blame.TssSyncFail})
 	rpc.known = nil // Dropped from the RPC mempool.
-	_, checkpoint, _, err := client.SignTx(tx, 100)
+	_, checkpoint, _, err := client.SignTx([]stypes.TxOutItem{tx}, 100)
 	c.Assert(errors.Is(err, errApprovalPending), Equals, true)
 	c.Assert(checkpoint, DeepEquals, tx.Checkpoint)
 	c.Assert(rpc.submitted, HasLen, 2)
@@ -549,7 +549,7 @@ func (s *EVMSuite) TestReviewMissingApprovalRebroadcastsExactBytes(c *C) {
 	c.Assert(second, DeepEquals, first)
 	c.Assert(keyManager.calls, Equals, 1)
 	rpc.hashError = true
-	_, _, _, err = client.SignTx(tx, 100)
+	_, _, _, err = client.SignTx([]stypes.TxOutItem{tx}, 100)
 	c.Assert(err, ErrorMatches, "lookup signed approval:.*")
 	c.Assert(rpc.submitted, HasLen, 2)
 	c.Assert(keyManager.calls, Equals, 1)
@@ -561,15 +561,15 @@ func (s *EVMSuite) TestReviewUnsignedTransferReleasedByChainNonce(c *C) {
 	tx.Coins = common.NewCoins(common.NewCoin(common.AVAXAsset, cosmos.NewUint(common.One)))
 	keyManager := &countingKeyManager{key: client.kw.GetPrivKey(), err: tss.ErrNotSelectedForKeysign}
 	client.kw, _ = shared.NewKeySignWrapper(keyManager.key, common.EmptyPubKey, keyManager, big.NewInt(15), "AVAX")
-	_, checkpoint, _, err := client.SignTx(tx, 100)
+	_, checkpoint, _, err := client.SignTx([]stypes.TxOutItem{tx}, 100)
 	c.Assert(errors.Is(err, tss.ErrNotSelectedForKeysign), Equals, true)
 	assertUnsignedNonce(c, checkpoint, 0)
 	tx.Checkpoint = checkpoint
 	// Both unchanged and unavailable nonce evidence must retain the item.
-	_, _, _, err = client.SignTx(tx, 100)
+	_, _, _, err = client.SignTx([]stypes.TxOutItem{tx}, 100)
 	c.Assert(errors.Is(err, tss.ErrNotSelectedForKeysign), Equals, true)
 	rpc.nonceError = true
-	_, _, _, err = client.SignTx(tx, 100)
+	_, _, _, err = client.SignTx([]stypes.TxOutItem{tx}, 100)
 	c.Assert(err, ErrorMatches, "check checkpoint confirmed nonce:.*")
 	rpc.nonceError = false
 	rpc.pendingNonce = 1
@@ -578,7 +578,7 @@ func (s *EVMSuite) TestReviewUnsignedTransferReleasedByChainNonce(c *C) {
 	restarted, _, stop := s.newRetryClient(c)
 	defer stop()
 	restarted.kw = client.kw
-	raw, saved, obs, err := restarted.SignTx(tx, 100)
+	raw, saved, obs, err := restarted.SignTx([]stypes.TxOutItem{tx}, 100)
 	c.Assert(err, IsNil)
 	c.Assert(raw, IsNil)
 	c.Assert(saved, IsNil)
@@ -594,11 +594,11 @@ func (s *EVMSuite) TestReviewLegacyNonceRequiresConfirmation(c *C) {
 	keyManager := &countingKeyManager{key: client.kw.GetPrivKey(), err: tss.ErrNotSelectedForKeysign}
 	client.kw, _ = shared.NewKeySignWrapper(keyManager.key, common.EmptyPubKey, keyManager, big.NewInt(15), "AVAX")
 	rpc.pendingNonce = 1
-	_, saved, _, err := client.SignTx(tx, 100)
+	_, saved, _, err := client.SignTx([]stypes.TxOutItem{tx}, 100)
 	c.Assert(errors.Is(err, tss.ErrNotSelectedForKeysign), Equals, true)
 	c.Assert(string(saved), Equals, "0") // Never relabel possible exposure as unsigned.
 	rpc.confirmedNonce = 1
-	raw, saved, _, err := client.SignTx(tx, 100)
+	raw, saved, _, err := client.SignTx([]stypes.TxOutItem{tx}, 100)
 	c.Assert(err, IsNil)
 	c.Assert(raw, IsNil)
 	c.Assert(saved, IsNil)
@@ -610,7 +610,7 @@ func (s *EVMSuite) TestReviewEmptyCheckpointIsRejected(c *C) {
 	defer cleanup()
 	for _, checkpoint := range [][]byte{[]byte(""), []byte(" "), []byte("\n\t")} {
 		tx.Checkpoint = checkpoint
-		raw, saved, _, err := client.SignTx(tx, 100)
+		raw, saved, _, err := client.SignTx([]stypes.TxOutItem{tx}, 100)
 		c.Assert(err, ErrorMatches, "empty transaction checkpoint")
 		c.Assert(raw, IsNil)
 		c.Assert(saved, IsNil)
@@ -632,7 +632,7 @@ func (s *EVMSuite) TestApprovalGasSplitConvergesAfterJoinFailure(c *C) {
 	checkpoints := make([][]byte, 2)
 	for i, fee := range []int64{50_000_000_000, 80_000_000_000} {
 		client.evmScanner.gasPrice.Store(big.NewInt(fee))
-		_, checkpoint, _, err := client.SignTx(tx, 100)
+		_, checkpoint, _, err := client.SignTx([]stypes.TxOutItem{tx}, 100)
 		c.Assert(errors.Is(err, errApprovalPending), Equals, true)
 		checkpoints[i] = checkpoint
 	}
@@ -646,7 +646,7 @@ func (s *EVMSuite) TestApprovalGasSplitConvergesAfterJoinFailure(c *C) {
 		tx.Checkpoint = checkpoint
 		var original signingCheckpoint
 		c.Assert(json.Unmarshal(checkpoint, &original), IsNil)
-		raw, next, observation, signErr := client.SignTx(tx, 100)
+		raw, next, observation, signErr := client.SignTx([]stypes.TxOutItem{tx}, 100)
 		c.Assert(signErr, NotNil)
 		c.Assert(raw, IsNil)
 		c.Assert(observation, IsNil)
@@ -663,7 +663,7 @@ func (s *EVMSuite) TestApprovalGasSplitConvergesAfterJoinFailure(c *C) {
 		c.Assert(manager.calls, Equals, 1)
 		// Carry the returned checkpoint into another actual SignTx attempt.
 		tx.Checkpoint = next
-		_, retained, _, err := client.SignTx(tx, 100)
+		_, retained, _, err := client.SignTx([]stypes.TxOutItem{tx}, 100)
 		c.Assert(err, NotNil)
 		c.Assert(retained, DeepEquals, next)
 		c.Assert(manager.calls, Equals, 2)
@@ -677,7 +677,7 @@ func (s *EVMSuite) TestApprovalTerminalFailureRetainsCheckpointWithChangedFee(c 
 	client, tx, rpc, cleanup := s.approvalRetryFixture(c)
 	defer cleanup()
 	client.evmScanner.gasPrice.Store(big.NewInt(50_000_000_000))
-	_, saved, _, err := client.SignTx(tx, 100)
+	_, saved, _, err := client.SignTx([]stypes.TxOutItem{tx}, 100)
 	c.Assert(errors.Is(err, errApprovalPending), Equals, true)
 	tx.Checkpoint = saved
 	manager := &countingKeyManager{key: client.kw.GetPrivKey(), err: tss.NewKeysignError(ttypes.Blame{Round: "SignRound9Message"})}
@@ -685,7 +685,7 @@ func (s *EVMSuite) TestApprovalTerminalFailureRetainsCheckpointWithChangedFee(c 
 	c.Assert(err, IsNil)
 	// A changed fee must not hide the terminal-round error or reprice its checkpoint.
 	client.evmScanner.gasPrice.Store(big.NewInt(80_000_000_000))
-	raw, retained, observation, err := client.SignTx(tx, 100)
+	raw, retained, observation, err := client.SignTx([]stypes.TxOutItem{tx}, 100)
 	var terminal tss.KeysignError
 	c.Assert(errors.As(err, &terminal), Equals, true)
 	c.Assert(terminal.IsTerminalRound(), Equals, true)
@@ -702,14 +702,14 @@ func (s *EVMSuite) TestApprovalRepricingRecoversEarlierExposedVariant(c *C) {
 			client, tx, rpc, cleanup := s.approvalRetryFixture(c)
 			defer cleanup()
 			client.evmScanner.gasPrice.Store(big.NewInt(50_000_000_000))
-			_, original, _, err := client.SignTx(tx, 100)
+			_, original, _, err := client.SignTx([]stypes.TxOutItem{tx}, 100)
 			c.Assert(errors.Is(err, errApprovalPending), Equals, true)
 			tx.Checkpoint = original
 			localSigner := client.kw
 			manager := &countingKeyManager{key: localSigner.GetPrivKey(), err: tss.NewKeysignError(ttypes.Blame{Round: "SignRound9Message"})}
 			client.kw, err = shared.NewKeySignWrapper(manager.key, common.EmptyPubKey, manager, big.NewInt(15), "AVAX")
 			c.Assert(err, IsNil)
-			_, retained, _, err := client.SignTx(tx, 100)
+			_, retained, _, err := client.SignTx([]stypes.TxOutItem{tx}, 100)
 			var terminal tss.KeysignError
 			c.Assert(errors.As(err, &terminal), Equals, true)
 			c.Assert(terminal.IsTerminalRound(), Equals, true)
@@ -718,7 +718,7 @@ func (s *EVMSuite) TestApprovalRepricingRecoversEarlierExposedVariant(c *C) {
 			// the fee at the same nonce and retain the original search boundary.
 			client.evmScanner.gasPrice.Store(big.NewInt(80_000_000_000))
 			manager.err = tss.NewKeysignError(ttypes.Blame{FailReason: blame.TssSyncFail})
-			_, repriced, _, err := client.SignTx(tx, 100)
+			_, repriced, _, err := client.SignTx([]stypes.TxOutItem{tx}, 100)
 			c.Assert(errors.Is(err, errApprovalPending), Equals, true)
 			c.Assert(repriced, Not(DeepEquals), original)
 			mineApproval(c, client, tx, rpc, 0) // The peer still has the old fee variant.
@@ -749,12 +749,12 @@ func (s *EVMSuite) TestApprovalRepricingRecoversEarlierExposedVariant(c *C) {
 				c.Assert(err, IsNil)
 				if reverted {
 					rpc.nonceError = true
-					_, retained, _, lookupErr := restarted.SignTx(tx, 100)
+					_, retained, _, lookupErr := restarted.SignTx([]stypes.TxOutItem{tx}, 100)
 					c.Assert(lookupErr, NotNil)
 					c.Assert(retained, DeepEquals, checkpoint)
 					rpc.nonceError = false
 				}
-				raw, next, observation, signErr := restarted.SignTx(tx, 100)
+				raw, next, observation, signErr := restarted.SignTx([]stypes.TxOutItem{tx}, 100)
 				c.Assert(raw, IsNil)
 				c.Assert(observation, IsNil)
 				if reverted {
@@ -765,7 +765,7 @@ func (s *EVMSuite) TestApprovalRepricingRecoversEarlierExposedVariant(c *C) {
 					assertUnsignedNonce(c, next, 1)
 					restarted.kw = localSigner
 					tx.Checkpoint = next
-					raw, _, _, err = restarted.SignTx(tx, 100)
+					raw, _, _, err = restarted.SignTx([]stypes.TxOutItem{tx}, 100)
 					c.Assert(err, IsNil)
 					var transfer etypes.Transaction
 					c.Assert(transfer.UnmarshalJSON(raw), IsNil)
@@ -796,7 +796,7 @@ func (s *EVMSuite) TestApprovalRetirementRequiresProvenMinedFailure(c *C) {
 			client, tx, rpc, cleanup := s.approvalRetryFixture(c)
 			defer cleanup()
 			for i := 0; i < 2; i++ {
-				_, checkpoint, _, err := client.SignTx(tx, 100)
+				_, checkpoint, _, err := client.SignTx([]stypes.TxOutItem{tx}, 100)
 				c.Assert(errors.Is(err, errApprovalPending), Equals, true)
 				tx.Checkpoint = checkpoint
 			}
@@ -806,7 +806,7 @@ func (s *EVMSuite) TestApprovalRetirementRequiresProvenMinedFailure(c *C) {
 			rpc.receiptMissing, rpc.receiptError = tc.missing, tc.rpcError
 			rpc.receiptWrongHash, rpc.receiptNoBlock = tc.wrongHash, tc.noBlock
 			rpc.Unlock()
-			raw, checkpoint, observation, err := client.SignTx(tx, 100)
+			raw, checkpoint, observation, err := client.SignTx([]stypes.TxOutItem{tx}, 100)
 			c.Assert(raw, IsNil, Commentf("%s", tc.name))
 			c.Assert(observation, IsNil, Commentf("%s", tc.name))
 			if tc.retire {

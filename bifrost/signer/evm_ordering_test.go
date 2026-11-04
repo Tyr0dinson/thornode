@@ -30,7 +30,8 @@ type evmOrderingClient struct {
 	nonceAdvanced bool
 }
 
-func (c *evmOrderingClient) SignTx(tx types.TxOutItem, height int64) ([]byte, []byte, *types.TxInItem, error) {
+func (c *evmOrderingClient) SignTx(txs []types.TxOutItem, height int64) ([]byte, []byte, []*types.TxInItem, error) {
+	tx := txs[0]
 	c.Lock()
 	c.attempts = append(c.attempts, tx.Memo)
 	c.Unlock()
@@ -40,7 +41,7 @@ func (c *evmOrderingClient) SignTx(tx types.TxOutItem, height int64) ([]byte, []
 		}
 		return nil, []byte("0"), nil, tss.ErrNotSelectedForKeysign
 	}
-	return c.MockSuccessChainClient.SignTx(tx, height)
+	return c.MockSuccessChainClient.SignTx(txs, height)
 }
 
 func (s *SignCoverageSuite) TestEVMNonselectionPreservesPipelineOrderAcrossRestart(c *C) {
