@@ -31,7 +31,6 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/p2p/conversion"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
-	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/config"
 	"gitlab.com/thorchain/thornode/v3/constants"
 	openapi "gitlab.com/thorchain/thornode/v3/openapi/gen"
@@ -127,7 +126,6 @@ type ThorchainBridge interface {
 	GetMimirWithRef(template, ref string) (int64, error)
 	GetInboundOutbound(txIns common.ObservedTxs) (common.ObservedTxs, common.ObservedTxs, error)
 	GetPools() (stypes.Pools, error)
-	GetOraclePrice(symbol string) (cosmos.Uint, error)
 	GetPubKeys() ([]PubKeyContractAddressPair, error)
 	GetAsgardPubKeys() ([]PubKeyContractAddressPair, error)
 	GetSolvencyMsg(height int64, chain common.Chain, pubKey common.PubKey, coins common.Coins) *stypes.MsgSolvency

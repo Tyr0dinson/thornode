@@ -9,10 +9,13 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/btcsuite/btcd/btcjson"
+	"github.com/btcsuite/btcd/wire"
 	"github.com/cometbft/cometbft/crypto/secp256k1"
 	"github.com/spf13/viper"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/rpc"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -23,7 +26,7 @@ import (
 )
 
 func TestValidateRelayFee(t *testing.T) {
-	for _, chain := range []common.Chain{common.BTCChain, common.LTCChain, common.BCHChain, common.DOGEChain, common.DASHChain} {
+	for _, chain := range []common.Chain{common.BTCChain, common.LTCChain, common.BCHChain, common.DOGEChain, common.ZECChain, common.DASHChain} {
 		t.Run(chain.String(), func(t *testing.T) {
 			client := &Client{cfg: config.BifrostChainConfiguration{ChainID: chain}}
 			for _, tc := range []struct {
@@ -46,18 +49,13 @@ func TestValidateRelayFee(t *testing.T) {
 			} {
 				t.Run(tc.name, func(t *testing.T) {
 					client.minRelayFeeSats.Store(tc.relay)
-					if err := client.validateRelayFee(tc.fee, tc.size); (err != nil) != tc.wantErr {
-						t.Fatalf("validateRelayFee: got %v, want error %v", err, tc.wantErr)
+					wantErr := chain == common.DASHChain && tc.wantErr
+					if err := client.validateRelayFee(tc.fee, tc.size); (err != nil) != wantErr {
+						t.Fatalf("validateRelayFee: got %v, want error %v", err, wantErr)
 					}
 				})
 			}
 		})
-	}
-	// ZEC's ZIP-317 fee must not be compared against a byte-based minimum.
-	zec := &Client{cfg: config.BifrostChainConfiguration{ChainID: common.ZECChain}}
-	zec.minRelayFeeSats.Store(1000)
-	if err := zec.validateRelayFee(1, 2000); err != nil {
-		t.Fatal(err)
 	}
 }
 
@@ -65,6 +63,73 @@ type relayFeeBridge struct{ thorclient.ThorchainBridge }
 
 // Use the configured consolidation target, rather than a Mimir override.
 func (relayFeeBridge) GetMimir(string) (int64, error) { return 0, nil }
+
+// TestBuildTxPreservesOtherChainFeeBudgets keeps the DASH relay check from
+// changing existing chains' outbounds and migrations with many inputs.
+func (s *SignerInternalSuite) TestBuildTxPreservesOtherChainFeeBudgets(c *C) {
+	vault := ttypes.GetRandomPubKey()
+	const inputCount = 40
+	const maxGas = uint64(1000)
+	const total = uint64(inputCount) * common.One
+	for _, chain := range []common.Chain{common.BTCChain, common.LTCChain, common.BCHChain, common.DOGEChain} {
+		func() {
+			client := s.client
+			client.cfg.ChainID = chain
+			client.bridge = relayFeeBridge{}
+			client.minRelayFeeSats.Store(1000)
+			address, err := vault.GetAddress(chain)
+			c.Assert(err, IsNil)
+			sourceScript, err := client.getSourceScript(stypes.TxOutItem{VaultPubKey: vault})
+			c.Assert(err, IsNil)
+			utxos := make([]btcjson.ListUnspentResult, inputCount)
+			for i := range utxos {
+				utxos[i] = btcjson.ListUnspentResult{
+					TxID: fmt.Sprintf("%064x", i+1), Amount: 1,
+					ScriptPubKey: hex.EncodeToString(sourceScript), Confirmations: 10, Spendable: true,
+				}
+			}
+			server := newRPCTestServer(c, func(method string, _ []json.RawMessage) any {
+				c.Check(method, Equals, "listunspent")
+				return utxos
+			})
+			defer server.Close()
+			client.rpc, err = rpc.NewClient(server.URL, "thorchain", "password", 0, time.Second, chain, client.log)
+			c.Assert(err, IsNil)
+			for _, migrate := range []bool{false, true} {
+				payment := total - common.One/2
+				memo := "OUT:" + strings.Repeat("a", 64)
+				if migrate {
+					payment = total - maxGas
+					memo = "MIGRATE:1"
+				}
+				tx := stypes.TxOutItem{
+					Chain: chain, VaultPubKey: vault, ToAddress: address,
+					Coins:   common.NewCoins(common.NewCoin(chain.GetGasAsset(), cosmos.NewUint(payment))),
+					MaxGas:  common.Gas{common.NewCoin(chain.GetGasAsset(), cosmos.NewUint(maxGas))},
+					GasRate: 1, Memo: memo,
+				}
+				var built *wire.MsgTx
+				built, _, err = client.buildTx(tx, sourceScript, 0)
+				c.Assert(err, IsNil, Commentf("%s migrate=%t", chain, migrate))
+				c.Assert(built.TxIn, HasLen, inputCount)
+				c.Check(built.TxOut[0].Value, Equals, int64(payment))
+				fee := int64(total)
+				for _, output := range built.TxOut {
+					fee -= output.Value
+				}
+				c.Check(fee, Equals, int64(maxGas))
+				changeScript := sourceScript
+				if migrate {
+					changeScript = nil
+				}
+				memoScript := built.TxOut[len(built.TxOut)-1].PkScript
+				size := client.estimateTxSize(utxos, [][]byte{memoScript}, built.TxOut[0].PkScript, changeScript)
+				// At 1,000 units/kB the size-scaled relay minimum exceeds the budget.
+				c.Assert(size > int64(maxGas), Equals, true)
+			}
+		}()
+	}
+}
 
 func (s *DashSuite) TestDashBuildTxRelayFee(c *C) {
 	vault, err := common.NewPubKeyFromCrypto(secp256k1.GenPrivKey().PubKey())

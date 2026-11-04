@@ -75,7 +75,7 @@ func (s *DashSuite) TestInstantSendFiltersUnrelatedTransactions(c *C) {
 	}, map[string]any{"n": 1, "value": 0, "scriptPubKey": map[string]any{"hex": newDashMemoScriptHex(c, "NOOP")}}}
 	calls := countInstantSendRPCs(c, f)
 	for range 3 {
-		groups, err := client.instantSend.scan(123)
+		groups, err := client.instantSend.scan()
 		c.Assert(err, IsNil)
 		c.Assert(groups, HasLen, 0)
 	}
@@ -115,7 +115,7 @@ func (s *DashSuite) TestInstantSendFilterKeepsVaultPayments(c *C) {
 			f.txs[f.inbound]["vout"] = []any{map[string]any{
 				"n": 0, "value": 0.1, "scriptPubKey": map[string]any{"hex": newDashP2PKHScriptHex(c, f.asgard), "type": "pubkeyhash"},
 			}, map[string]any{"n": 1, "value": 0, "scriptPubKey": map[string]any{"hex": newDashMemoScriptHex(c, memo), "type": "nulldata"}}}
-			batch, err := client.instantSend.fetchBatch(123, instantSendAdmission{allowed: !vaultSender})
+			batch, err := client.instantSend.fetchBatch(instantSendAdmission{allowed: !vaultSender})
 			c.Assert(err, IsNil)
 			c.Assert(batch.TxArray, HasLen, 1)
 			c.Assert(batch.TxArray[0].Tx, Equals, f.inbound)
@@ -148,22 +148,22 @@ func (s *DashSuite) TestInstantSendFilterInvalidation(c *C) {
 	}
 	setVaults(f.asgard, other)
 	calls := countInstantSendRPCs(c, f)
-	_, err := client.instantSend.scan(123)
+	_, err := client.instantSend.scan()
 	c.Assert(err, IsNil)
 	setVaults(other, f.asgard, other) // same set, different order and duplicate
-	_, err = client.instantSend.scan(123)
+	_, err = client.instantSend.scan()
 	c.Assert(err, IsNil)
 	c.Assert(calls("getrawtransaction/"+f.lockedOutbound), Equals, 1)
 	delete(f.entries, f.lockedOutbound)
-	_, err = client.instantSend.scan(123)
+	_, err = client.instantSend.scan()
 	c.Assert(err, IsNil)
 	c.Assert(client.instantSend.ignored, HasLen, 0)
 	f.entries[f.lockedOutbound] = dashTestMempoolEntry()
-	_, err = client.instantSend.scan(123)
+	_, err = client.instantSend.scan()
 	c.Assert(err, IsNil)
 	c.Assert(calls("getrawtransaction/"+f.lockedOutbound), Equals, 2)
 	setVaults(f.asgard, f.user)
-	groups, err := client.instantSend.scan(123)
+	groups, err := client.instantSend.scan()
 	c.Assert(err, IsNil)
 	c.Assert(groups, HasLen, 1)
 	c.Assert(groups[0].TxArray, HasLen, 1)
@@ -186,7 +186,7 @@ func (s *DashSuite) TestInstantSendFilterCacheBound(c *C) {
 			}
 			calls := countInstantSendRPCs(c, f)
 			for range 3 {
-				_, err := client.instantSend.scan(123)
+				_, err := client.instantSend.scan()
 				c.Assert(err, IsNil)
 				c.Assert(len(client.instantSend.ignored) <= max(capacity, 0), Equals, true)
 			}
@@ -222,11 +222,11 @@ func (s *DashSuite) TestInstantSendFilterRetriesUnknownTransactions(c *C) {
 			original := f.txs[f.lockedOutbound][tc.field]
 			f.txs[f.lockedOutbound][tc.field] = tc.value
 			calls := countInstantSendRPCs(c, f)
-			_, err := client.instantSend.scan(123)
+			_, err := client.instantSend.scan()
 			c.Assert(err, IsNil)
 			c.Assert(client.instantSend.ignored, HasLen, 0)
 			f.txs[f.lockedOutbound][tc.field] = original
-			_, err = client.instantSend.scan(123)
+			_, err = client.instantSend.scan()
 			c.Assert(err, IsNil)
 			c.Assert(calls("getrawtransaction/"+f.lockedOutbound), Equals, 2)
 			c.Assert(client.instantSend.ignored, HasLen, 1)
@@ -248,19 +248,19 @@ func (s *DashSuite) TestInstantSendFilterBypassesUnavailableVaults(c *C) {
 	client.cfg.MempoolTxIDCacheSize = 10
 	f.entries = map[string]map[string]any{f.lockedOutbound: dashTestMempoolEntry()}
 	calls := countInstantSendRPCs(c, f)
-	_, err := client.instantSend.scan(123)
+	_, err := client.instantSend.scan()
 	c.Assert(err, IsNil)
 	c.Assert(client.instantSend.ignored, HasLen, 1)
 	bridge := client.bridge
 	client.bridge = instantSendVaultErrorBridge{bridge}
 	client.asgardCache.Store(&sharedutxo.AsgardCache{Addresses: []common.Address{common.Address(f.asgard)}})
-	_, err = client.instantSend.scan(123)
+	_, err = client.instantSend.scan()
 	c.Assert(err, IsNil)
 	c.Assert(client.instantSend.ignored, HasLen, 0)
 	c.Assert(calls("getrawtransaction/"+f.lockedOutbound), Equals, 2)
 	client.bridge = bridge
 	client.asgardCache.Store(nil) // a successful refresh with no usable vaults
-	_, err = client.instantSend.scan(123)
+	_, err = client.instantSend.scan()
 	c.Assert(err, IsNil)
 	c.Assert(client.instantSend.ignored, HasLen, 0)
 	c.Assert(calls("getrawtransaction/"+f.lockedOutbound), Equals, 3)
@@ -301,58 +301,60 @@ func deliveryBlock(c *C, client *Client, f *dashMempoolFixture, ids ...string) *
 // Restart must preserve the block fallback for dropped/rejected handoffs, even with InstantSend disabled.
 func (s *DashSuite) TestInstantSendDeliveryRestartUsesChainLockFallback(c *C) {
 	for _, outcome := range []string{"missing", "rejected", "stored"} {
-		client, f, cleanup := newDashMempoolFixture(c)
-		defer cleanup()
-		f.entries = map[string]map[string]any{f.inbound: dashTestMempoolEntry()}
-		path := c.MkDir()
-		storage, err := blockscanner.NewBlockScannerStorage(path, config.LevelDBOptions{})
-		c.Assert(err, IsNil)
-		client.cfg.BlockScanner.DBPath = path
-		client.temporalStorage, err = sharedutxo.NewTemporalStorage(storage.GetInternalDb(), 0)
-		c.Assert(err, IsNil)
-		c.Assert(client.temporalStorage.StartInstantSendWarmup(0, nil), IsNil)
-		c.Assert(client.temporalStorage.CompleteInstantSendWarmup(1), IsNil)
-		batch, err := client.instantSend.fetchBatch(123, instantSendAdmission{allowed: true})
-		c.Assert(err, IsNil)
-		c.Assert(batch.TxArray, HasLen, 1)
-		c.Assert(batch.TxArray[0].BlockHeight, Equals, int64(100))
-		switch outcome {
-		case "rejected":
-			batch.TxArray[0].OnObservedTxRejected(errors.New("Observer status unknown"))
-		case "stored":
-			batch.TxArray[0].OnObservedTxStored()
-		}
-		state, err := client.temporalStorage.GetInstantSendState()
-		c.Assert(err, IsNil)
-		c.Assert(state.Reserved, Equals, uint64(common.One/10))
-		c.Assert(storage.Close(), IsNil)
-		storage, err = blockscanner.NewBlockScannerStorage(path, config.LevelDBOptions{})
-		c.Assert(err, IsNil)
-		defer storage.Close()
-		client.temporalStorage, err = sharedutxo.NewTemporalStorage(storage.GetInternalDb(), 0)
-		c.Assert(err, IsNil)
-		client.instantSend.txQueue = nil
-		client.instantSend.enabled = false
-		client.cfg.InstantSend.Enabled = false
-		client.cfg.BlockScanner.ScanMemPool = false
-		block := deliveryBlock(c, client, f, f.inbound)
-		batch, err = client.extractTxs(block)
-		c.Assert(err, IsNil)
-		want := 1
-		if outcome == "stored" {
-			want = 0
-		}
-		c.Assert(batch.TxArray, HasLen, want, Commentf("handoff %s", outcome))
-		if want > 0 {
-			c.Assert(batch.TxArray[0].Tx, Equals, f.inbound)
-			c.Assert(batch.TxArray[0].BlockHeight, Equals, int64(150))
-		}
-		state, err = client.temporalStorage.GetInstantSendState()
-		c.Assert(err, IsNil)
-		c.Assert(state.Reserved, Equals, uint64(0))
-		batch, err = client.extractTxs(block)
-		c.Assert(err, IsNil)
-		c.Assert(batch.TxArray, HasLen, 0)
+		func() {
+			client, f, cleanup := newDashMempoolFixture(c)
+			defer cleanup()
+			f.entries = map[string]map[string]any{f.inbound: dashTestMempoolEntry()}
+			path := c.MkDir()
+			storage, err := blockscanner.NewBlockScannerStorage(path, config.LevelDBOptions{})
+			c.Assert(err, IsNil)
+			client.cfg.BlockScanner.DBPath = path
+			client.temporalStorage, err = sharedutxo.NewTemporalStorage(storage.GetInternalDb(), 0)
+			c.Assert(err, IsNil)
+			c.Assert(client.temporalStorage.StartInstantSendWarmup(0, nil), IsNil)
+			c.Assert(client.temporalStorage.CompleteInstantSendWarmup(1), IsNil)
+			batch, err := client.instantSend.fetchBatch(instantSendAdmission{allowed: true})
+			c.Assert(err, IsNil)
+			c.Assert(batch.TxArray, HasLen, 1)
+			c.Assert(batch.TxArray[0].BlockHeight, Equals, int64(100))
+			switch outcome {
+			case "rejected":
+				batch.TxArray[0].OnObservedTxRejected(errors.New("Observer status unknown"))
+			case "stored":
+				batch.TxArray[0].OnObservedTxStored()
+			}
+			state, err := client.temporalStorage.GetInstantSendState()
+			c.Assert(err, IsNil)
+			c.Assert(state.Reserved, Equals, uint64(common.One/10))
+			c.Assert(storage.Close(), IsNil)
+			storage, err = blockscanner.NewBlockScannerStorage(path, config.LevelDBOptions{})
+			c.Assert(err, IsNil)
+			defer storage.Close()
+			client.temporalStorage, err = sharedutxo.NewTemporalStorage(storage.GetInternalDb(), 0)
+			c.Assert(err, IsNil)
+			client.instantSend.txQueue = nil
+			client.instantSend.enabled = false
+			client.cfg.InstantSend.Enabled = false
+			client.cfg.BlockScanner.ScanMemPool = false
+			block := deliveryBlock(c, client, f, f.inbound)
+			batch, err = client.extractTxs(block)
+			c.Assert(err, IsNil)
+			want := 1
+			if outcome == "stored" {
+				want = 0
+			}
+			c.Assert(batch.TxArray, HasLen, want, Commentf("handoff %s", outcome))
+			if want > 0 {
+				c.Assert(batch.TxArray[0].Tx, Equals, f.inbound)
+				c.Assert(batch.TxArray[0].BlockHeight, Equals, int64(150))
+			}
+			state, err = client.temporalStorage.GetInstantSendState()
+			c.Assert(err, IsNil)
+			c.Assert(state.Reserved, Equals, uint64(0))
+			batch, err = client.extractTxs(block)
+			c.Assert(err, IsNil)
+			c.Assert(batch.TxArray, HasLen, 0)
+		}()
 	}
 }
 
@@ -363,16 +365,16 @@ func (s *DashSuite) TestInstantSendDeliveryDoesNotRetryOrBlockNewClaims(c *C) {
 	client.cfg.UTXO.TransactionBatchSize = 1
 	client.instantSend.txQueue = instantSendObservationGroups(common.DASHChain,
 		map[int64][]*types.TxInItem{100: {instantSendTestItem(f, f.inbound), instantSendTestItem(f, f.lowFeeInbound)}})
-	first, err := client.instantSend.fetchBatch(123, instantSendAdmission{allowed: true})
+	first, err := client.instantSend.fetchBatch(instantSendAdmission{allowed: true})
 	c.Assert(err, IsNil)
 	c.Assert(first.TxArray, HasLen, 1)
 	first.TxArray[0].OnObservedTxRejected(errors.New("storage unavailable"))
-	second, err := client.instantSend.fetchBatch(123, instantSendAdmission{allowed: true})
+	second, err := client.instantSend.fetchBatch(instantSendAdmission{allowed: true})
 	c.Assert(err, IsNil)
 	c.Assert(second.TxArray, HasLen, 1)
 	c.Assert(second.TxArray[0].Tx, Equals, f.lowFeeInbound)
 	second.TxArray[0].OnObservedTxStored()
-	retry, err := client.instantSend.fetchBatch(124, instantSendAdmission{allowed: true})
+	retry, err := client.instantSend.fetchBatch(instantSendAdmission{allowed: true})
 	c.Assert(err, IsNil)
 	c.Assert(retry.TxArray, HasLen, 0)
 	state, err := client.temporalStorage.GetInstantSendState()
@@ -388,7 +390,7 @@ func (s *DashSuite) TestInstantSendDeliveryDoesNotRetryOrBlockNewClaims(c *C) {
 func (s *DashSuite) TestInstantSendDeliveryPartialAcceptance(c *C) {
 	client, f, cleanup := newDashMempoolFixture(c)
 	defer cleanup()
-	batch, err := client.instantSend.fetchBatch(123, instantSendAdmission{allowed: true})
+	batch, err := client.instantSend.fetchBatch(instantSendAdmission{allowed: true})
 	c.Assert(err, IsNil)
 	c.Assert(batch.TxArray, HasLen, 2)
 	first, second := batch.TxArray[0], batch.TxArray[1]
@@ -409,7 +411,7 @@ func (s *DashSuite) TestInstantSendDeliveryPartialAcceptance(c *C) {
 func (s *DashSuite) TestInstantSendDeliveryLateCallbackAfterBlock(c *C) {
 	client, f, cleanup := newDashMempoolFixture(c)
 	defer cleanup()
-	batch, err := client.instantSend.fetchBatch(123, instantSendAdmission{allowed: true})
+	batch, err := client.instantSend.fetchBatch(instantSendAdmission{allowed: true})
 	c.Assert(err, IsNil)
 	c.Assert(batch.TxArray, HasLen, 2)
 	// One callback is missing, so the collector leaves both markers pending.
@@ -428,7 +430,7 @@ func (s *DashSuite) TestInstantSendDeliveryLateCallbackAfterBlock(c *C) {
 func (s *DashSuite) TestInstantSendDeliveryAcknowledgementWriteFailure(c *C) {
 	client, f, cleanup := newDashMempoolFixture(c)
 	defer cleanup()
-	batch, err := client.instantSend.fetchBatch(123, instantSendAdmission{allowed: true})
+	batch, err := client.instantSend.fetchBatch(instantSendAdmission{allowed: true})
 	c.Assert(err, IsNil)
 	c.Assert(batch.TxArray, HasLen, 2)
 	cleanup() // shutdown closes the store captured by the callbacks
@@ -479,7 +481,7 @@ func (s *DashSuite) TestDashObservationGroupsClaimOnlyDeliveredTransactions(c *C
 		100: {item(strings.ToUpper(first), 100)},
 	})
 	client.instantSend.txQueue = groups
-	batch, err := client.instantSend.fetchBatch(300, instantSendAdmission{allowed: true})
+	batch, err := client.instantSend.fetchBatch(instantSendAdmission{allowed: true})
 	c.Assert(err, IsNil)
 	c.Assert(batch.TxArray, HasLen, 1)
 	c.Assert(batch.TxArray[0].BlockHeight, Equals, int64(100))
@@ -495,7 +497,7 @@ func (s *DashSuite) TestDashObservationGroupsClaimOnlyDeliveredTransactions(c *C
 	accepted, err := client.trackObservedTxs([]*types.TxInItem{{Tx: second}})
 	c.Assert(err, IsNil)
 	c.Assert(accepted, HasLen, 1)
-	batch, err = client.instantSend.fetchBatch(300, instantSendAdmission{allowed: true})
+	batch, err = client.instantSend.fetchBatch(instantSendAdmission{allowed: true})
 	c.Assert(err, IsNil)
 	c.Assert(batch.TxArray, HasLen, 0)
 	// Changing case cannot bypass the persistent marker.
@@ -516,7 +518,7 @@ func (s *DashSuite) TestDashObservationStorageFailureRetainsPendingGroup(c *C) {
 	healthyStorage := client.temporalStorage
 	client.temporalStorage = closed.temporalStorage
 	closeStorage()
-	batch, err := client.instantSend.fetchBatch(200, instantSendAdmission{allowed: true})
+	batch, err := client.instantSend.fetchBatch(instantSendAdmission{allowed: true})
 	c.Assert(err, NotNil)
 	c.Assert(batch.TxArray, HasLen, 0)
 	c.Assert(client.instantSend.txQueue, HasLen, 1)
@@ -524,7 +526,7 @@ func (s *DashSuite) TestDashObservationStorageFailureRetainsPendingGroup(c *C) {
 
 	// Once storage is available, retry the queued group without another RPC scan.
 	client.temporalStorage = healthyStorage
-	batch, err = client.instantSend.fetchBatch(200, instantSendAdmission{allowed: true})
+	batch, err = client.instantSend.fetchBatch(instantSendAdmission{allowed: true})
 	c.Assert(err, IsNil)
 	c.Assert(batch.TxArray, DeepEquals, []*types.TxInItem{item})
 	c.Assert(client.instantSend.txQueue, HasLen, 0)

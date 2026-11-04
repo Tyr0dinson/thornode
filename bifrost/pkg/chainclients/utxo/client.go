@@ -671,7 +671,7 @@ func (c *Client) FetchMemPool(height int64) (types.TxIn, error) {
 		// Publish after this scan's preparation and claims, using its own decision.
 		defer func() { c.instantSend.publishAllowance(admission) }()
 		var batch types.TxIn
-		batch, err = c.instantSend.fetchBatch(height, admission)
+		batch, err = c.instantSend.fetchBatch(admission)
 		if errors.Is(err, errInstantSendPaused) {
 			// The halt became visible during the scan. No claims were written.
 			c.instantSend.txQueue = nil

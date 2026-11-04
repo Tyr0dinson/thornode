@@ -131,6 +131,8 @@ func testInstantSendUnlockedSettlement(c *C, stage string, failSettlement bool) 
 	c.Logf("blocked call: %s, failed settlement: %v", stage, failSettlement)
 	client, f, cleanup := newDashMempoolFixture(c, 10*time.Second)
 	defer cleanup()
+	// Exercise consecutive settlement, without a first-block recovery reset.
+	client.instantSend.lastBlockHeight = 100
 	var err error
 	prepare := false
 	switch stage {

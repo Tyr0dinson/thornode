@@ -97,7 +97,7 @@ func (h *instantSendHandler) refreshSettings() error {
 
 // observationHeight uses the lock's network-agreed cycle, independent
 // of scanner lag and reorg retention settings. Core validates quorum eligibility.
-func (h *instantSendHandler) observationHeight(lock *rpc.ISLockResult, _ int64) (int64, error) {
+func (h *instantSendHandler) observationHeight(lock *rpc.ISLockResult) (int64, error) {
 	if lock == nil || strings.TrimSpace(lock.CycleHash) == "" {
 		return 0, errors.New("missing InstantSend cycle hash")
 	}
@@ -146,7 +146,7 @@ func (h *instantSendHandler) candidates(mempool map[string]rpc.GetRawMempoolVerb
 
 // scan collects a bounded set of locked mempool candidates, grouped by
 // lock cycle height. Allowance checks and observation claims happen before delivery.
-func (h *instantSendHandler) scan(height int64) ([]types.TxIn, error) {
+func (h *instantSendHandler) scan() ([]types.TxIn, error) {
 	// Only Dash currently supports the lock RPCs used by this scan.
 	if !h.client.GetChain().Equals(common.DASHChain) {
 		return nil, nil
@@ -217,7 +217,7 @@ func (h *instantSendHandler) scan(height int64) ([]types.TxIn, error) {
 		}
 		anchor, found := cycleHeights[lock.CycleHash]
 		if !found {
-			anchor, err = h.observationHeight(lock, height)
+			anchor, err = h.observationHeight(lock)
 			if err != nil {
 				h.client.log.Debug().Err(err).Str("txid", lock.TxID).Msg("retry InstantSend cycle lookup later")
 				continue

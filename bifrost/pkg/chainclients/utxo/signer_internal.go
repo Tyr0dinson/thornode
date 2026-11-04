@@ -807,14 +807,10 @@ func (c *Client) buildTx(tx stypes.TxOutItem, sourceScript []byte, zecReference 
 	return redeemTx, individualAmounts, nil
 }
 
-// validateRelayFee checks that the final fee covers the size-scaled relay minimum.
+// validateRelayFee checks that the final DASH fee covers the size-scaled relay minimum.
 // It only vetoes the transaction; it never raises a fee beyond its assigned budget.
 func (c *Client) validateRelayFee(fee uint64, vSize int64) error {
-	switch c.cfg.ChainID {
-	case common.BTCChain, common.LTCChain, common.BCHChain, common.DOGEChain, common.DASHChain:
-		// These chains express the daemon's relay fee per 1,000 bytes/vbytes.
-	default:
-		// ZEC has separate ZIP-317 fee handling.
+	if c.cfg.ChainID != common.DASHChain {
 		return nil
 	}
 	if vSize <= 0 {

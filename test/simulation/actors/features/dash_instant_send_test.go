@@ -201,10 +201,15 @@ func TestInstantSendReadinessTimeoutWithStalledLookup(t *testing.T) {
 	})
 }
 
-func TestInstantSendReadinessRunsBeforeAcquiringAccount(t *testing.T) {
+func TestInstantSendSetupRunsBeforeAcquiringAccount(t *testing.T) {
 	a := DashInstantSend(rand.New(rand.NewPCG(1, 2)))
-	if !strings.Contains(a.Ops[0].String(), "waitForReadiness") || a.Interval != time.Second {
-		t.Fatal("readiness must be the first operation, retried once per second")
+	for i, name := range []string{"waitForReadiness", "initContext", "acquireUser"} {
+		if !strings.Contains(a.Ops[i].String(), name) {
+			t.Fatalf("operation %d must be %s so setup failures cannot lock an account", i, name)
+		}
+	}
+	if a.Interval != time.Second {
+		t.Fatal("setup must retry once per second")
 	}
 	for _, config := range []*OpConfig{nil, {}, {NodeUsers: []*User{nil}}, {NodeUsers: []*User{{}}}} {
 		result := a.Ops[0](config)

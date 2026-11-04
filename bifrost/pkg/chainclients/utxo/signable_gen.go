@@ -46,8 +46,7 @@ func (ts *tssSignableBCH) SignECDSA(payload []byte) (*bchec.Signature, error) {
 	sig.R = new(big.Int).SetBytes(result[:32])
 	sig.S = new(big.Int).SetBytes(result[32:])
 
-	// SECURITY FIX (Layer 3): Verify the signature and fail-fast on verification failure.
-	// Invalid signatures must be rejected immediately to prevent NULLFAIL errors and signature mispairing.
+	// Verify the signature matches this message before including it in the transaction.
 	if sig.Verify(payload, ts.GetPubKey()) {
 		ts.log.Info().Msg("signature verified successfully")
 	} else {
@@ -110,8 +109,7 @@ func (ts *tssSignableBTC) Sign(payload []byte) (*btcec.Signature, error) {
 	sig.R = new(big.Int).SetBytes(result[:32])
 	sig.S = new(big.Int).SetBytes(result[32:])
 
-	// SECURITY FIX (Layer 3): Verify the signature and fail-fast on verification failure.
-	// Invalid signatures must be rejected immediately to prevent NULLFAIL errors and signature mispairing.
+	// Verify the signature matches this message before including it in the transaction.
 	if sig.Verify(payload, ts.GetPubKey()) {
 		ts.log.Info().Msg("signature verified successfully")
 	} else {
@@ -169,8 +167,7 @@ func (ts *tssSignableDOGE) Sign(payload []byte) (*dogeec.Signature, error) {
 	sig.R = new(big.Int).SetBytes(result[:32])
 	sig.S = new(big.Int).SetBytes(result[32:])
 
-	// SECURITY FIX (Layer 3): Verify the signature and fail-fast on verification failure.
-	// Invalid signatures must be rejected immediately to prevent NULLFAIL errors and signature mispairing.
+	// Verify the signature matches this message before including it in the transaction.
 	if sig.Verify(payload, ts.GetPubKey()) {
 		ts.log.Info().Msg("signature verified successfully")
 	} else {
@@ -228,8 +225,7 @@ func (ts *tssSignableLTC) Sign(payload []byte) (*ltcec.Signature, error) {
 	sig.R = new(big.Int).SetBytes(result[:32])
 	sig.S = new(big.Int).SetBytes(result[32:])
 
-	// SECURITY FIX (Layer 3): Verify the signature and fail-fast on verification failure.
-	// Invalid signatures must be rejected immediately to prevent NULLFAIL errors and signature mispairing.
+	// Verify the signature matches this message before including it in the transaction.
 	if sig.Verify(payload, ts.GetPubKey()) {
 		ts.log.Info().Msg("signature verified successfully")
 	} else {

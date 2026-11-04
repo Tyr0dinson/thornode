@@ -215,70 +215,72 @@ func (s *DashSuite) TestDashFetchMemPoolOutboundsAndFinalObservations(c *C) {
 // reopened storage, including the commit callback between the observations.
 func (s *DashSuite) TestDashMempoolRestartKeepsLockObservation(c *C) {
 	for _, migration := range []bool{false, true} {
-		client, f, cleanup := newDashMempoolFixture(c)
-		defer cleanup()
-		if migration {
-			to := newDashTestAddress(c, 0x33)
-			client.asgardCache.Store(&sharedutxo.AsgardCache{
-				Addresses: []common.Address{common.Address(f.asgard), common.Address(to)}, FetchedAt: time.Now(),
-			})
-			f.txs[f.lockedOutbound]["vout"] = []any{
-				map[string]any{"n": 0, "value": 0.1, "scriptPubKey": map[string]any{
-					"hex": newDashP2PKHScriptHex(c, to), "type": "pubkeyhash", "addresses": []string{to},
-				}},
-				map[string]any{"n": 1, "value": 0, "scriptPubKey": map[string]any{
-					"hex": newDashMemoScriptHex(c, "MIGRATE:90"), "type": "nulldata",
-				}},
+		func() {
+			client, f, cleanup := newDashMempoolFixture(c)
+			defer cleanup()
+			if migration {
+				to := newDashTestAddress(c, 0x33)
+				client.asgardCache.Store(&sharedutxo.AsgardCache{
+					Addresses: []common.Address{common.Address(f.asgard), common.Address(to)}, FetchedAt: time.Now(),
+				})
+				f.txs[f.lockedOutbound]["vout"] = []any{
+					map[string]any{"n": 0, "value": 0.1, "scriptPubKey": map[string]any{
+						"hex": newDashP2PKHScriptHex(c, to), "type": "pubkeyhash", "addresses": []string{to},
+					}},
+					map[string]any{"n": 1, "value": 0, "scriptPubKey": map[string]any{
+						"hex": newDashMemoScriptHex(c, "MIGRATE:90"), "type": "nulldata",
+					}},
+				}
+				f.entries[f.lockedOutbound]["time"] = time.Now().Unix()
 			}
-			f.entries[f.lockedOutbound]["time"] = time.Now().Unix()
-		}
-		path := c.MkDir()
-		storage, err := blockscanner.NewBlockScannerStorage(path, config.LevelDBOptions{})
-		c.Assert(err, IsNil)
-		client.cfg.BlockScanner.DBPath = path
-		client.temporalStorage, err = sharedutxo.NewTemporalStorage(storage.GetInternalDb(), 1000)
-		c.Assert(err, IsNil)
-		client.signerCacheManager, err = signercache.NewSignerCacheManager(storage.GetInternalDb())
-		c.Assert(err, IsNil)
-		batch, err := client.fetchMemPoolTransactions(123, true)
-		c.Assert(err, IsNil)
-		c.Assert(batch.TxArray, HasLen, 2)
-		for _, item := range batch.TxArray {
-			client.OnObservedTxIn(*item, item.BlockHeight)
-		}
-		c.Assert(storage.Close(), IsNil)
-		storage, err = blockscanner.NewBlockScannerStorage(path, config.LevelDBOptions{})
-		c.Assert(err, IsNil)
-		defer storage.Close()
-		client.temporalStorage, err = sharedutxo.NewTemporalStorage(storage.GetInternalDb(), 1000)
-		c.Assert(err, IsNil)
-		client.signerCacheManager, err = signercache.NewSignerCacheManager(storage.GetInternalDb())
-		c.Assert(err, IsNil)
-		client.instantSend.recovery.Reset()
-		batch, err = client.fetchMemPoolTransactions(124, true)
-		c.Assert(err, IsNil)
-		c.Assert(batch.TxArray, HasLen, 0) // persisted mempool markers survive restart
-		wantMined := 2
-		if migration {
-			client.instantSend.maxAmount = 0 // vault senders remain exempt
-			batch, err = client.instantSend.fetchBatch(124, instantSendAdmission{})
+			path := c.MkDir()
+			storage, err := blockscanner.NewBlockScannerStorage(path, config.LevelDBOptions{})
 			c.Assert(err, IsNil)
-			c.Assert(batch.MemPool, Equals, false)
-			c.Assert(batch.TxArray, HasLen, 1)
-			c.Assert(batch.TxArray[0].Tx, Equals, f.lockedOutbound)
-			batch.TxArray[0].OnObservedTxStored()
-			wantMined = 1 // InstantSend already supplied the migration's final observation
-		}
-		f.chainLocked = true
-		block, err := client.getBlock(150)
-		c.Assert(err, IsNil)
-		client.disableVinZeroBatch = true
-		batch, err = client.extractTxs(block)
-		c.Assert(err, IsNil)
-		c.Assert(batch.TxArray, HasLen, wantMined)
-		batch, err = client.extractTxs(block)
-		c.Assert(err, IsNil)
-		c.Assert(batch.TxArray, HasLen, 0)
+			client.cfg.BlockScanner.DBPath = path
+			client.temporalStorage, err = sharedutxo.NewTemporalStorage(storage.GetInternalDb(), 1000)
+			c.Assert(err, IsNil)
+			client.signerCacheManager, err = signercache.NewSignerCacheManager(storage.GetInternalDb())
+			c.Assert(err, IsNil)
+			batch, err := client.fetchMemPoolTransactions(123, true)
+			c.Assert(err, IsNil)
+			c.Assert(batch.TxArray, HasLen, 2)
+			for _, item := range batch.TxArray {
+				client.OnObservedTxIn(*item, item.BlockHeight)
+			}
+			c.Assert(storage.Close(), IsNil)
+			storage, err = blockscanner.NewBlockScannerStorage(path, config.LevelDBOptions{})
+			c.Assert(err, IsNil)
+			defer storage.Close()
+			client.temporalStorage, err = sharedutxo.NewTemporalStorage(storage.GetInternalDb(), 1000)
+			c.Assert(err, IsNil)
+			client.signerCacheManager, err = signercache.NewSignerCacheManager(storage.GetInternalDb())
+			c.Assert(err, IsNil)
+			client.instantSend.recovery.Reset()
+			batch, err = client.fetchMemPoolTransactions(124, true)
+			c.Assert(err, IsNil)
+			c.Assert(batch.TxArray, HasLen, 0) // persisted mempool markers survive restart
+			wantMined := 2
+			if migration {
+				client.instantSend.maxAmount = 0 // vault senders remain exempt
+				batch, err = client.instantSend.fetchBatch(instantSendAdmission{})
+				c.Assert(err, IsNil)
+				c.Assert(batch.MemPool, Equals, false)
+				c.Assert(batch.TxArray, HasLen, 1)
+				c.Assert(batch.TxArray[0].Tx, Equals, f.lockedOutbound)
+				batch.TxArray[0].OnObservedTxStored()
+				wantMined = 1 // InstantSend already supplied the migration's final observation
+			}
+			f.chainLocked = true
+			block, err := client.getBlock(150)
+			c.Assert(err, IsNil)
+			client.disableVinZeroBatch = true
+			batch, err = client.extractTxs(block)
+			c.Assert(err, IsNil)
+			c.Assert(batch.TxArray, HasLen, wantMined)
+			batch, err = client.extractTxs(block)
+			c.Assert(err, IsNil)
+			c.Assert(batch.TxArray, HasLen, 0)
+		}()
 	}
 }
 

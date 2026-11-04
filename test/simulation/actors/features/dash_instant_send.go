@@ -48,8 +48,9 @@ func DashInstantSend(rng *rand.Rand) *Actor {
 
 	a.Ops = []Op{
 		a.waitForReadiness,
-		a.acquireUser,
+		// Finish setup before reserving an account so failed setup cannot leave it locked.
 		a.initContext,
+		a.acquireUser,
 		a.happyPath,
 		a.largerPayment,
 		a.lowFee,

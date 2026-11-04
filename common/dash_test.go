@@ -56,15 +56,29 @@ func (s *AssetSuite) TestDashShortCode(c *C) {
 	c.Assert(asset, Equals, DASHAsset)
 }
 
-func (s *AddressSuite) TestDashIsCurrentNetwork(c *C) {
+// TestDashAddressAcceptance checks parsing and network detection for both address types.
+func (s *AddressSuite) TestDashAddressAcceptance(c *C) {
 	for _, params := range []*chaincfg.Params{&chaincfg.MainNetParams, &chaincfg.RegressionNetParams, &chaincfg.TestNet3Params} {
 		p2pkh, err := btcutil.NewAddressPubKeyHash(bytes.Repeat([]byte{1}, 20), params)
 		c.Assert(err, IsNil)
 		p2sh, err := btcutil.NewAddressScriptHashFromHash(bytes.Repeat([]byte{2}, 20), params)
 		c.Assert(err, IsNil)
+		wantNetwork := MockNet
+		if params == &chaincfg.MainNetParams {
+			wantNetwork = CurrentChainNetwork
+			if CurrentChainNetwork == MockNet {
+				wantNetwork = MainNet
+			}
+		}
 		for _, addr := range []btcutil.Address{p2pkh, p2sh} {
+			var address Address
+			address, err = NewAddress(addr.String())
+			c.Assert(err, IsNil, Commentf("address: %s", addr))
+			c.Check(address.String(), Equals, addr.String())
+			c.Check(address.IsChain(DASHChain), Equals, true)
+			c.Check(address.GetNetwork(DASHChain), Equals, wantNetwork)
 			want := (params != &chaincfg.MainNetParams) == (CurrentChainNetwork == MockNet)
-			c.Check(Address(addr.String()).IsCurrentNetwork(DASHChain), Equals, want,
+			c.Check(address.IsCurrentNetwork(DASHChain), Equals, want,
 				Commentf("address: %s, build network: %s", addr, CurrentChainNetwork))
 		}
 	}

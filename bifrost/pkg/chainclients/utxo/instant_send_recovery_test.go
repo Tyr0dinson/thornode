@@ -452,144 +452,148 @@ func startInstantSendWarmupScanner(c *C, client *Client, fetcher *dashHealthFetc
 func (s *DashSuite) TestInstantSendWarmupRetriesUnavailableLockStatus(c *C) {
 	oldID, newID, uncertainID := strings.Repeat("a", 64), strings.Repeat("b", 64), strings.Repeat("c", 64)
 	for _, status := range []string{"unknown", "missing", "unexpected", "rpc_error"} {
-		var healthy atomic.Bool
-		var snapshots, lookups atomic.Int64
-		client, fetcher, cleanup := newInstantSendWarmupClient(c, func(method string, params []json.RawMessage) any {
-			switch method {
-			case "getrawmempool":
-				snapshots.Add(1)
-				if healthy.Load() {
-					return map[string]any{
-						newID: map[string]any{"instantlock": "true"},
-						oldID: map[string]any{"instantlock": "false"},
+		func() {
+			var healthy atomic.Bool
+			var snapshots, lookups atomic.Int64
+			client, fetcher, cleanup := newInstantSendWarmupClient(c, func(method string, params []json.RawMessage) any {
+				switch method {
+				case "getrawmempool":
+					snapshots.Add(1)
+					if healthy.Load() {
+						return map[string]any{
+							newID: map[string]any{"instantlock": "true"},
+							oldID: map[string]any{"instantlock": "false"},
+						}
 					}
+					if status == "rpc_error" {
+						return &btcjson.RPCError{Code: btcjson.ErrRPCInternal.Code, Message: "offline"}
+					}
+					entry := map[string]any{}
+					if status != "missing" {
+						entry["instantlock"] = status
+					}
+					return map[string]any{oldID: map[string]any{"instantlock": "true"}, uncertainID: entry}
+				case "getrawtransaction":
+					lookups.Add(1)
+					var id string
+					c.Assert(json.Unmarshal(params[0], &id), IsNil)
+					c.Assert(id, Equals, newID) // retry must classify the fresh list
+					return dashLockedRawTx(id)
+				default:
+					c.Fatalf("unexpected RPC %s", method)
+					return nil
 				}
-				if status == "rpc_error" {
-					return &btcjson.RPCError{Code: btcjson.ErrRPCInternal.Code, Message: "offline"}
-				}
-				entry := map[string]any{}
-				if status != "missing" {
-					entry["instantlock"] = status
-				}
-				return map[string]any{oldID: map[string]any{"instantlock": "true"}, uncertainID: entry}
-			case "getrawtransaction":
-				lookups.Add(1)
-				var id string
-				c.Assert(json.Unmarshal(params[0], &id), IsNil)
-				c.Assert(id, Equals, newID) // retry must classify the fresh list
-				return dashLockedRawTx(id)
-			default:
-				c.Fatalf("unexpected RPC %s", method)
-				return nil
+			})
+			defer cleanup()
+			admission, err := client.instantSend.prepareAllowance(nil)
+			c.Assert(err, NotNil, Commentf("status: %s", status))
+			if status != "rpc_error" {
+				c.Assert(err.Error(), Equals, "InstantSend mempool lock status unavailable")
 			}
-		})
-		defer cleanup()
-		admission, err := client.instantSend.prepareAllowance(nil)
-		c.Assert(err, NotNil, Commentf("status: %s", status))
-		if status != "rpc_error" {
-			c.Assert(err.Error(), Equals, "InstantSend mempool lock status unavailable")
-		}
-		c.Assert(admission.allowed, Equals, false)
-		state, err := client.temporalStorage.GetInstantSendState()
-		c.Assert(err, IsNil)
-		c.Assert(state.Started, Equals, false)
-		c.Assert(state.Ready, Equals, false)
-		c.Assert(state.SnapshotPending, HasLen, 0)
-		c.Assert(state.Reserved, Equals, uint64(0))
-		c.Assert(lookups.Load(), Equals, int64(0))
+			c.Assert(admission.allowed, Equals, false)
+			state, err := client.temporalStorage.GetInstantSendState()
+			c.Assert(err, IsNil)
+			c.Assert(state.Started, Equals, false)
+			c.Assert(state.Ready, Equals, false)
+			c.Assert(state.SnapshotPending, HasLen, 0)
+			c.Assert(state.Reserved, Equals, uint64(0))
+			c.Assert(lookups.Load(), Equals, int64(0))
 
-		healthy.Store(true)
-		admission, err = client.instantSend.prepareAllowance(nil)
-		c.Assert(err, IsNil)
-		c.Assert(admission.allowed, Equals, false) // still waiting for scanner progress
-		c.Assert(snapshots.Load(), Equals, int64(2))
-		c.Assert(lookups.Load(), Equals, int64(1))
-		fetcher.height.Store(101)
-		waitForDashCatchUp(c, func() bool { return client.blockScanner.PreviousHeight() == 101 })
-		admission, err = client.instantSend.prepareAllowance(nil)
-		c.Assert(err, IsNil)
-		c.Assert(admission.allowed, Equals, true)
-		c.Assert(snapshots.Load(), Equals, int64(2))
+			healthy.Store(true)
+			admission, err = client.instantSend.prepareAllowance(nil)
+			c.Assert(err, IsNil)
+			c.Assert(admission.allowed, Equals, false) // still waiting for scanner progress
+			c.Assert(snapshots.Load(), Equals, int64(2))
+			c.Assert(lookups.Load(), Equals, int64(1))
+			fetcher.height.Store(101)
+			waitForDashCatchUp(c, func() bool { return client.blockScanner.PreviousHeight() == 101 })
+			admission, err = client.instantSend.prepareAllowance(nil)
+			c.Assert(err, IsNil)
+			c.Assert(admission.allowed, Equals, true)
+			c.Assert(snapshots.Load(), Equals, int64(2))
+		}()
 	}
 }
 
 func (s *DashSuite) TestInstantSendWarmupSelectsOnlyLockedTransactions(c *C) {
 	lockedID, unlockedID := strings.Repeat("a", 64), strings.Repeat("b", 64)
 	for _, scenario := range []string{"empty", "unlocked", "mixed"} {
-		var snapshots, lookups atomic.Int64
-		client, fetcher, cleanup := newInstantSendWarmupClient(c, func(method string, params []json.RawMessage) any {
-			switch method {
-			case "getrawmempool":
-				snapshots.Add(1)
-				entries := map[string]any{}
-				if scenario != "empty" {
-					entries[unlockedID] = map[string]any{"instantlock": "false"}
+		func() {
+			var snapshots, lookups atomic.Int64
+			client, fetcher, cleanup := newInstantSendWarmupClient(c, func(method string, params []json.RawMessage) any {
+				switch method {
+				case "getrawmempool":
+					snapshots.Add(1)
+					entries := map[string]any{}
+					if scenario != "empty" {
+						entries[unlockedID] = map[string]any{"instantlock": "false"}
+					}
+					if scenario == "mixed" {
+						entries[lockedID] = map[string]any{"instantlock": "true"}
+					}
+					return entries
+				case "getrawtransaction":
+					lookups.Add(1)
+					var id string
+					c.Assert(json.Unmarshal(params[0], &id), IsNil)
+					c.Assert(id, Equals, lockedID)
+					return &btcjson.RPCError{Code: btcjson.ErrRPCInvalidAddressOrKey, Message: "not found"}
+				default:
+					c.Fatalf("unexpected RPC %s", method)
+					return nil
 				}
-				if scenario == "mixed" {
-					entries[lockedID] = map[string]any{"instantlock": "true"}
-				}
-				return entries
-			case "getrawtransaction":
-				lookups.Add(1)
-				var id string
-				c.Assert(json.Unmarshal(params[0], &id), IsNil)
-				c.Assert(id, Equals, lockedID)
-				return &btcjson.RPCError{Code: btcjson.ErrRPCInvalidAddressOrKey, Message: "not found"}
-			default:
-				c.Fatalf("unexpected RPC %s", method)
-				return nil
+			})
+			defer cleanup()
+			admission, err := client.instantSend.prepareAllowance(nil)
+			if scenario == "mixed" {
+				c.Assert(err, NotNil)
+			} else {
+				c.Assert(err, IsNil)
+				c.Assert(lookups.Load(), Equals, int64(0))
 			}
-		})
-		defer cleanup()
-		admission, err := client.instantSend.prepareAllowance(nil)
-		if scenario == "mixed" {
-			c.Assert(err, NotNil)
-		} else {
-			c.Assert(err, IsNil)
-			c.Assert(lookups.Load(), Equals, int64(0))
-		}
-		c.Assert(admission.allowed, Equals, false)
-		state, err := client.temporalStorage.GetInstantSendState()
-		c.Assert(err, IsNil)
-		c.Assert(state.Started, Equals, true)
-		c.Assert(state.Ready, Equals, false)
-		if scenario == "mixed" {
-			c.Assert(state.SnapshotPending, DeepEquals, []string{lockedID})
-		} else {
-			c.Assert(state.SnapshotPending, HasLen, 0)
-		}
-
-		fetcher.height.Store(101)
-		waitForDashCatchUp(c, func() bool { return client.blockScanner.PreviousHeight() == 101 })
-		admission, err = client.instantSend.prepareAllowance(nil)
-		if scenario == "mixed" {
-			c.Assert(err, NotNil)
 			c.Assert(admission.allowed, Equals, false)
-			c.Assert(lookups.Load(), Equals, int64(2))
-		} else {
+			state, err := client.temporalStorage.GetInstantSendState()
 			c.Assert(err, IsNil)
-			c.Assert(admission.allowed, Equals, true)
-		}
-		state, err = client.temporalStorage.GetInstantSendState()
-		c.Assert(err, IsNil)
-		if scenario == "mixed" {
-			// A missing transaction still listed in the fresh mempool stays pending.
-			c.Assert(state.SnapshotPending, DeepEquals, []string{lockedID})
-			c.Assert(snapshots.Load(), Equals, int64(2))
-		} else {
-			c.Assert(snapshots.Load(), Equals, int64(1))
-		}
+			c.Assert(state.Started, Equals, true)
+			c.Assert(state.Ready, Equals, false)
+			if scenario == "mixed" {
+				c.Assert(state.SnapshotPending, DeepEquals, []string{lockedID})
+			} else {
+				c.Assert(state.SnapshotPending, HasLen, 0)
+			}
+
+			fetcher.height.Store(101)
+			waitForDashCatchUp(c, func() bool { return client.blockScanner.PreviousHeight() == 101 })
+			admission, err = client.instantSend.prepareAllowance(nil)
+			if scenario == "mixed" {
+				c.Assert(err, NotNil)
+				c.Assert(admission.allowed, Equals, false)
+				c.Assert(lookups.Load(), Equals, int64(2))
+			} else {
+				c.Assert(err, IsNil)
+				c.Assert(admission.allowed, Equals, true)
+			}
+			state, err = client.temporalStorage.GetInstantSendState()
+			c.Assert(err, IsNil)
+			if scenario == "mixed" {
+				// A missing transaction still listed in the fresh mempool stays pending.
+				c.Assert(state.SnapshotPending, DeepEquals, []string{lockedID})
+				c.Assert(snapshots.Load(), Equals, int64(2))
+			} else {
+				c.Assert(snapshots.Load(), Equals, int64(1))
+			}
+		}()
 	}
 }
 
-// TestInstantSendBlockGapsRestartRecovery distinguishes skipped ranges from
-// first blocks, normal progress, retries and scanner rewinds.
+// TestInstantSendBlockGapsRestartRecovery resets on first blocks and skipped
+// ranges, but preserves recovery on normal progress, retries and scanner rewinds.
 func (s *DashSuite) TestInstantSendBlockGapsRestartRecovery(c *C) {
 	for _, tc := range []struct {
 		previous, next int64
 		reset          bool
 	}{
-		{0, 100, false},
+		{0, 100, true},
 		{100, 101, false},
 		{100, 100, false},
 		{100, 90, false},
@@ -616,92 +620,109 @@ func (s *DashSuite) TestInstantSendBlockGapsRestartRecovery(c *C) {
 }
 
 // TestInstantSendGapRecoveryRequiresInclusion verifies bounded recovery after a
-// runtime jump, retaining missing and unsettled reservations and retrying errors.
+// first block or runtime jump, including reservations checked before a partial
+// recovery was reset. Missing and unsettled reservations stay charged.
 func (s *DashSuite) TestInstantSendGapRecoveryRequiresInclusion(c *C) {
-	mined, missing, unsettled := strings.Repeat("a", 64), strings.Repeat("b", 64), strings.Repeat("c", 64)
-	hash := strings.Repeat("d", 64)
-	var failed, valid atomic.Bool
-	failed.Store(true)
-	server := newRPCTestServer(c, func(method string, params []json.RawMessage) any {
-		switch method {
-		case "getrawtransaction":
-			var id string
-			c.Assert(json.Unmarshal(params[0], &id), IsNil)
-			switch id {
-			case missing:
-				return &btcjson.RPCError{Code: btcjson.ErrRPCInvalidAddressOrKey, Message: "not found"}
-			case unsettled:
-				return dashLockedRawTx(id)
-			default:
-				if failed.Load() {
-					return &btcjson.RPCError{Code: btcjson.ErrRPCInternal.Code, Message: "offline"}
+	for _, tc := range []struct {
+		previous int64
+		partial  bool
+	}{{0, false}, {0, true}, {100, false}} {
+		func() {
+			c.Logf("previous=%d partial=%t", tc.previous, tc.partial)
+			mined, missing, unsettled := strings.Repeat("a", 64), strings.Repeat("b", 64), strings.Repeat("c", 64)
+			hash := strings.Repeat("d", 64)
+			var failed, valid atomic.Bool
+			failed.Store(true)
+			server := newRPCTestServer(c, func(method string, params []json.RawMessage) any {
+				switch method {
+				case "getrawtransaction":
+					var id string
+					c.Assert(json.Unmarshal(params[0], &id), IsNil)
+					switch id {
+					case missing:
+						return &btcjson.RPCError{Code: btcjson.ErrRPCInvalidAddressOrKey, Message: "not found"}
+					case unsettled:
+						return dashLockedRawTx(id)
+					default:
+						if failed.Load() {
+							return &btcjson.RPCError{Code: btcjson.ErrRPCInternal.Code, Message: "offline"}
+						}
+						return map[string]any{"txid": id, "chainlock": true, "blockhash": hash}
+					}
+				case "getblockhash":
+					return hash
+				case "getblock":
+					ids := []any{}
+					if valid.Load() {
+						ids = append(ids, map[string]any{"txid": mined})
+					}
+					return map[string]any{"hash": hash, "height": 101, "chainlock": true, "tx": ids}
+				default:
+					c.Fatalf("unexpected RPC %s", method)
+					return nil
 				}
-				return map[string]any{"txid": id, "chainlock": true, "blockhash": hash}
+			})
+			defer server.Close()
+			client, cleanup := newDashClientForRPCServer(c, server.URL)
+			defer cleanup()
+			_, err := client.temporalStorage.AdmitInstantSendTxs([]sharedutxo.InstantSendClaim{
+				{TxID: mined, Amount: 60}, {TxID: missing, Amount: 20}, {TxID: unsettled, Amount: 20},
+			}, 0, 100, true, 3)
+			c.Assert(err, IsNil)
+			h := &client.instantSend
+			h.maxAmount = 100
+			h.lastBlockHeight = tc.previous
+			client.cfg.UTXO.TransactionBatchSize = 1
+			c.Assert(h.recovery.Complete(), Equals, true)
+			if tc.partial {
+				// The mined reservation was checked before the scanner skipped its block.
+				h.recovery.pendingTxIDs = []string{missing, unsettled}
 			}
-		case "getblockhash":
-			return hash
-		case "getblock":
-			ids := []any{}
-			if valid.Load() {
-				ids = append(ids, map[string]any{"txid": mined})
+			c.Assert(h.reconcileBlock(&btcjson.GetBlockVerboseTxResult{Height: 110}), IsNil)
+			c.Assert(h.currentAdmission(instantSendAdmission{allowed: true}).allowed, Equals, false)
+
+			admission, err := h.prepareAllowance(nil)
+			c.Assert(err, ErrorMatches, ".*offline.*")
+			c.Check(admission.allowed, Equals, false)
+			failed.Store(false)
+			admission, err = h.prepareAllowance(nil)
+			c.Assert(err, ErrorMatches, "transaction missing from ChainLocked block")
+			c.Check(admission.allowed, Equals, false)
+			state, err := client.temporalStorage.GetInstantSendState()
+			c.Assert(err, IsNil)
+			c.Check(state.Reserved, Equals, uint64(100))
+			next, pending := h.recovery.Next()
+			c.Check(pending, Equals, true)
+			c.Check(next, Equals, mined)
+
+			valid.Store(true)
+			admission, err = h.prepareAllowance(nil)
+			c.Assert(err, IsNil)
+			c.Check(admission.allowed, Equals, false) // two more reservations need checking
+			state, err = client.temporalStorage.GetInstantSendState()
+			c.Assert(err, IsNil)
+			c.Check(state.Reserved, Equals, uint64(40))
+			admission, err = h.prepareAllowance(nil)
+			c.Assert(err, IsNil)
+			c.Check(admission.allowed, Equals, false) // missing remains charged; continue the pass
+			admission, err = h.prepareAllowance(nil)
+			c.Assert(err, IsNil)
+			c.Check(admission.allowed, Equals, true)
+			state, err = client.temporalStorage.GetInstantSendState()
+			c.Assert(err, IsNil)
+			c.Check(state.Reserved, Equals, uint64(40))
+			c.Check(state.Available(100), Equals, uint64(60))
+			// Once recovery completes, consecutive blocks must not restart it.
+			c.Assert(h.reconcileBlock(&btcjson.GetBlockVerboseTxResult{Height: 111}), IsNil)
+			c.Check(h.recovery.Complete(), Equals, true)
+			c.Check(h.currentAdmission(instantSendAdmission{allowed: true}).allowed, Equals, true)
+			for _, id := range []string{mined, missing, unsettled} {
+				var marked bool
+				marked, err = client.temporalStorage.HasObservedTx(id)
+				c.Assert(err, IsNil)
+				c.Check(marked, Equals, true) // recovery must never enable duplicate observations
 			}
-			return map[string]any{"hash": hash, "height": 101, "chainlock": true, "tx": ids}
-		default:
-			c.Fatalf("unexpected RPC %s", method)
-			return nil
-		}
-	})
-	defer server.Close()
-	client, cleanup := newDashClientForRPCServer(c, server.URL)
-	defer cleanup()
-	_, err := client.temporalStorage.AdmitInstantSendTxs([]sharedutxo.InstantSendClaim{
-		{TxID: mined, Amount: 60}, {TxID: missing, Amount: 20}, {TxID: unsettled, Amount: 20},
-	}, 0, 100, true, 3)
-	c.Assert(err, IsNil)
-	h := &client.instantSend
-	h.maxAmount = 100
-	client.cfg.UTXO.TransactionBatchSize = 1
-	c.Assert(h.recovery.Complete(), Equals, true)
-	c.Assert(h.reconcileBlock(&btcjson.GetBlockVerboseTxResult{Height: 100}), IsNil)
-	c.Assert(h.reconcileBlock(&btcjson.GetBlockVerboseTxResult{Height: 110}), IsNil)
-	c.Assert(h.currentAdmission(instantSendAdmission{allowed: true}).allowed, Equals, false)
-
-	admission, err := h.prepareAllowance(nil)
-	c.Assert(err, ErrorMatches, ".*offline.*")
-	c.Check(admission.allowed, Equals, false)
-	failed.Store(false)
-	admission, err = h.prepareAllowance(nil)
-	c.Assert(err, ErrorMatches, "transaction missing from ChainLocked block")
-	c.Check(admission.allowed, Equals, false)
-	state, err := client.temporalStorage.GetInstantSendState()
-	c.Assert(err, IsNil)
-	c.Check(state.Reserved, Equals, uint64(100))
-	next, pending := h.recovery.Next()
-	c.Check(pending, Equals, true)
-	c.Check(next, Equals, mined)
-
-	valid.Store(true)
-	admission, err = h.prepareAllowance(nil)
-	c.Assert(err, IsNil)
-	c.Check(admission.allowed, Equals, false) // two more reservations need checking
-	state, err = client.temporalStorage.GetInstantSendState()
-	c.Assert(err, IsNil)
-	c.Check(state.Reserved, Equals, uint64(40))
-	admission, err = h.prepareAllowance(nil)
-	c.Assert(err, IsNil)
-	c.Check(admission.allowed, Equals, false) // missing remains charged; continue the pass
-	admission, err = h.prepareAllowance(nil)
-	c.Assert(err, IsNil)
-	c.Check(admission.allowed, Equals, true)
-	state, err = client.temporalStorage.GetInstantSendState()
-	c.Assert(err, IsNil)
-	c.Check(state.Reserved, Equals, uint64(40))
-	c.Check(state.Available(100), Equals, uint64(60))
-	for _, id := range []string{mined, missing, unsettled} {
-		var marked bool
-		marked, err = client.temporalStorage.HasObservedTx(id)
-		c.Assert(err, IsNil)
-		c.Check(marked, Equals, true) // recovery must never enable duplicate observations
+		}()
 	}
 }
 

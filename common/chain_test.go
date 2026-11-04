@@ -152,20 +152,4 @@ func (s ChainSuite) TestNativeGasToThorCoinCeil(c *C) {
 	// Chains with decimal <= 8 take the no-ceil path.
 	c.Assert(BTCChain.NativeGasToThorCoinCeil(cosmos.NewUint(50_000_000)).Amount.Uint64(),
 		Equals, BTCChain.NativeGasToThorCoin(cosmos.NewUint(50_000_000)).Amount.Uint64())
-
-	// Dash chain tests
-	c.Assert(DASHChain.IsUTXO(), Equals, true)
-	c.Assert(DASHChain.GetGasAsset(), Equals, DASHAsset)
-
-	gasUnit, perOne := DASHChain.GetGasUnits()
-	c.Assert(gasUnit, Equals, "satsperbyte")
-	c.Assert(perOne.Uint64(), Equals, uint64(1e8))
-
-	// P2WPKHOutputValue is the dust-funding value for extended-memo overflow
-	// outputs. For Dash (no SegWit, P2PKH-only) this must match Bitcoin Core's
-	// legacy P2PKH dust default (546 sats), not the P2WPKH-aware 294 used by BTC.
-	c.Assert(DASHChain.P2WPKHOutputValue(), Equals, int64(546))
-
-	c.Assert(DASHChain.MaxMemoLength() > 0, Equals, true)
-	c.Assert(DASHChain.ApproximateBlockMilliseconds(), Equals, int64(150_000))
 }

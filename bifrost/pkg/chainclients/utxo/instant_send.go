@@ -117,12 +117,12 @@ func (h *instantSendHandler) mayPayVault(tx *rpc.TxResult) bool {
 
 // fetchBatch claims one bounded batch and attaches Observer acknowledgements.
 // Lost handoffs remain pending for the ChainLock scan instead of being retried here.
-func (h *instantSendHandler) fetchBatch(height int64, admission instantSendAdmission) (types.TxIn, error) {
+func (h *instantSendHandler) fetchBatch(admission instantSendAdmission) (types.TxIn, error) {
 	if h.client.cfg.BlockScanner.DBPath == "" {
 		return types.TxIn{Chain: h.client.GetChain()}, nil
 	}
 	if len(h.txQueue) == 0 {
-		groups, err := h.scan(height)
+		groups, err := h.scan()
 		if err != nil {
 			return types.TxIn{}, err
 		}
@@ -210,6 +210,8 @@ func instantSendObservationGroups(chain common.Chain, byHeight map[int64][]*type
 
 // watchDelivery completes accepted markers in one write after the batch's
 // callbacks finish. Rejected or lost handoffs remain pending for the block scan.
+// Observer resolves the whole batch in one pass. A missing callback leaves even
+// stored siblings pending, so the ChainLock scan can deliver them again.
 // This collector belongs to the batch; callbacks do not take the handler state lock.
 func (h *instantSendHandler) watchDelivery(items []*types.TxInItem) {
 	store := h.client.temporalStorage

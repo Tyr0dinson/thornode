@@ -63,7 +63,7 @@ func (s *DashSuite) TestInstantSendAllowanceWaitsForExactChainLock(c *C) {
 	client, f, cleanup := newDashMempoolFixture(c)
 	defer cleanup()
 	client.instantSend.maxAmount = common.One / 10
-	batch, err := client.instantSend.fetchBatch(123, instantSendAdmission{allowed: true})
+	batch, err := client.instantSend.fetchBatch(instantSendAdmission{allowed: true})
 	c.Assert(err, IsNil)
 	c.Assert(batch.TxArray, HasLen, 1)
 	c.Assert(batch.TxArray[0].Tx, Equals, f.inbound)
@@ -114,7 +114,7 @@ func (s *DashSuite) TestInstantSendAllowanceClaimsOnlyOneBoundedDeliveryBatch(c 
 	client.instantSend.txQueue = instantSendObservationGroups(common.DASHChain, map[int64][]*types.TxInItem{
 		100: {instantSendTestItem(f, f.inbound), instantSendTestItem(f, f.lowFeeInbound)},
 	})
-	batch, err := client.instantSend.fetchBatch(123, instantSendAdmission{allowed: true})
+	batch, err := client.instantSend.fetchBatch(instantSendAdmission{allowed: true})
 	c.Assert(err, IsNil)
 	c.Assert(batch.TxArray, HasLen, 1)
 	c.Assert(client.instantSend.txQueue, HasLen, 1)
@@ -127,7 +127,7 @@ func (s *DashSuite) TestInstantSendAllowanceClaimsOnlyOneBoundedDeliveryBatch(c 
 	c.Assert(marked, Equals, false)
 	// Acknowledgement completes the first marker without changing the allowance.
 	batch.TxArray[0].OnObservedTxStored()
-	batch, err = client.instantSend.fetchBatch(123, instantSendAdmission{allowed: true})
+	batch, err = client.instantSend.fetchBatch(instantSendAdmission{allowed: true})
 	c.Assert(err, IsNil)
 	c.Assert(batch.TxArray, HasLen, 1)
 	c.Assert(client.instantSend.txQueue, HasLen, 0)
@@ -230,7 +230,7 @@ func (s *DashSuite) TestInstantSendSnapshotIgnoresMarkersAndNewPolicy(c *C) {
 	client.instantSend.minAmount = 0
 	client.cfg.UTXO.TransactionBatchSize = 10 // reach the customer candidate in this scan
 	calls := countInstantSendRPCs(c, f)
-	batch, err := client.instantSend.fetchBatch(123, instantSendAdmission{allowed: true})
+	batch, err := client.instantSend.fetchBatch(instantSendAdmission{allowed: true})
 	c.Assert(err, IsNil)
 	c.Assert(batch.TxArray, HasLen, 0) // snapshot deposits remain ChainLock-only
 	// Both scan and final claim checks reached this deposit; it was not skipped
@@ -297,6 +297,8 @@ func (s *DashSuite) TestInstantSendQueuedTransactionCannotReReserveAfterSettleme
 	defer server.Close()
 	client, cleanup := newDashClientForRPCServer(c, server.URL, 10*time.Second)
 	defer cleanup()
+	// Keep admission ready so the second claim must check finality again.
+	client.instantSend.lastBlockHeight = 100
 	var releaseOnce sync.Once
 	unblock := func() { releaseOnce.Do(func() { close(release) }) }
 	defer unblock()
@@ -316,7 +318,7 @@ func (s *DashSuite) TestInstantSendQueuedTransactionCannotReReserveAfterSettleme
 	}
 	settled := make(chan error, 1)
 	go func() {
-		settled <- client.instantSend.reconcileBlock(&btcjson.GetBlockVerboseTxResult{Tx: []btcjson.TxRawResult{{Txid: id}}})
+		settled <- client.instantSend.reconcileBlock(&btcjson.GetBlockVerboseTxResult{Height: 101, Tx: []btcjson.TxRawResult{{Txid: id}}})
 	}()
 	select {
 	case err := <-settled:
