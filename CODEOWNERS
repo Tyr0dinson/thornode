@@ -11,17 +11,15 @@
 # (2 approvals). Editing this file is itself a [Core] change.
 [Core][3] @son-of-odin @zlyzol @ahdzib @Bitol @starsquid @asaf45 @pratikasr @huginn-bot
 *
-!/docs/**
+!/docs/
 !/test/**
-!/tools/analyze/**
-!/tools/ci-health/**
-!/tools/events/**
-!/tools/mimir-ids/**
-!/tools/p2p-check/**
-!/tools/perf/**
-!/tools/pubkey2address/**
-!/tools/stagenet/**
-!/tools/thorscan/**
+!/tools/ci-health/
+!/tools/events/
+!/tools/mimir-ids/
+!/tools/p2p-check/
+!/tools/perf/
+!/tools/pubkey2address/
+!/tools/stagenet/
 !/.editorconfig
 !/.gitignore
 !/.isort.cfg
