@@ -543,8 +543,11 @@ func (s *KeepAliveNonceCovSuite) TestNonceProvisionCheckGates(c *C) {
 		f.client.bridge = &covPendingBridge{covBridge: f.bridge}
 		mutate(f)
 		f.client.nonceProvisionCheck(covAnchorHeight)
+		// getAccountInfo is reached only through provisionNonceForVault, so it is
+		// the race-free signal that provisioning was gated. getSlot is not: once the
+		// mimir reads enabled, the consensus blockhash prewarm goroutine may call it
+		// before a later gate skips provisioning.
 		c.Check(f.rpc.count("getAccountInfo"), Equals, 0, Commentf(name))
-		c.Check(f.rpc.count("getSlot"), Equals, 0, Commentf(name))
 		f.server.Close()
 	}
 }
