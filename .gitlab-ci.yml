@@ -865,6 +865,22 @@ go-tss:
     paths:
       - test-quality-reports/root-mocknet-go-tss/
 
+# Loads the keysign fixtures, written by an ungarbled keygen like every keyshare
+# on a node today, through a garbled bifrost's keyshare loader. The simulation
+# cannot catch a LocalPartySaveData that garble renamed, because garbled keygen
+# writes the keyshares that garbled keysign reads back there.
+check-garble-keyshares:
+  tags: !reference [.small-runner, tags]
+  rules: *rules
+  stage: test
+  needs: []
+  variables:
+    GARBLE: "1"
+  before_script:
+    - !reference [.go-private-auth, before_script]
+  script:
+    - make check-garble-keyshares
+
 pages:
   rules:
     - if: $CI_MERGE_REQUEST_SOURCE_PROJECT_PATH && $CI_MERGE_REQUEST_SOURCE_PROJECT_PATH != $CI_MERGE_REQUEST_PROJECT_PATH

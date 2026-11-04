@@ -32,5 +32,6 @@ RUN --mount=type=secret,id=go_private_auth,required=false \
 COPY . .
 
 ARG COMMIT=unknown
+ARG GARBLE=
 
-RUN --mount=type=cache,target=/root/.cache/go-build make _build-test-regression
+RUN --mount=type=cache,target=/root/.cache/go-build make _build-test-regression GARBLE=$GARBLE
