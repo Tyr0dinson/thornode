@@ -336,10 +336,11 @@ func (s *HandlerSolvencyTestSuite) TestInsolvencyCheckFlagsUnpriceableGapWithout
 	c.Assert(insolvencyCheck(ctx, mgr, vault, common.NewCoins(), common.BCHChain), Equals, true)
 }
 
-// TestSolvencyOscillationPrevention tests that when multiple vaults report different
-// solvency states, the chain remains halted and doesn't oscillate between halt/unhalt.
-// This tests the fix for the bug where a solvent vault could unhalt a chain that
-// an insolvent vault had just halted.
+// TestSolvencyOscillationPrevention tests how the solvency halt behaves when multiple
+// vaults on the same chain report different solvency states. A solvent vault cannot
+// unhalt the chain in the same block that an insolvent vault refreshed the halt.
+// The protection only covers that block: a solvent report reaching consensus in a
+// later block still unhalts the chain until the insolvent vault re-halts it (Step 5).
 func (s *HandlerSolvencyTestSuite) TestSolvencyOscillationPrevention(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	height := int64(100)
@@ -469,7 +470,7 @@ func (s *HandlerSolvencyTestSuite) TestSolvencyOscillationPrevention(c *C) {
 	height++
 	ctx = ctx.WithBlockHeight(height)
 
-	// Both vaults now report solvent
+	// The previously insolvent vault now reports solvent, which unhalts the chain on its own
 	runToConsensus(vault1, cosmos.NewUint(1000*common.One), 1010)
 
 	halt, err = mgr.Keeper().GetMimir(ctx, "SolvencyHaltETHChain")
