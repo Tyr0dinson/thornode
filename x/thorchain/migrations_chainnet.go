@@ -119,3 +119,10 @@ func (m Migrator) migrate19to20Mainnet(_ sdk.Context) error {
 func (m Migrator) migrate20to21Mainnet(_ sdk.Context) error {
 	return nil
 }
+
+// migrate21to22Mainnet (on mainnet) reimburses the treasury for the GAIA vault
+// solvency top-up in RUNE from the Reserve. No-op off mainnet: the
+// reimbursement is mainnet state.
+func (m Migrator) migrate21to22Mainnet(_ sdk.Context) error {
+	return nil
+}

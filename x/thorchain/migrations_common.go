@@ -521,3 +521,13 @@ func (m Migrator) Migrate20to21(ctx cosmos.Context) error {
 	}
 	return m.migrate20to21Mainnet(ctx)
 }
+
+// Migrate21to22 reimburses the treasury for the GAIA vault solvency top-up in
+// RUNE from the Reserve. Mainnet only; the step soft-skips on insufficient
+// Reserve.
+func (m Migrator) Migrate21to22(ctx cosmos.Context) error {
+	if err := m.mgr.LoadManagerIfNecessary(ctx); err != nil {
+		return err
+	}
+	return m.migrate21to22Mainnet(ctx)
+}

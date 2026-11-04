@@ -39,6 +39,7 @@ func (m Migrator) luviMigrations() []luviMigration {
 		{18, m.Migrate18to19},
 		{19, m.Migrate19to20},
 		{20, m.Migrate20to21},
+		{21, m.Migrate21to22},
 	}
 }
 
