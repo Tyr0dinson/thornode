@@ -19,12 +19,16 @@ import (
 // upgrade) if the Reserve cannot cover it.
 const (
 	gaiaReimburseRecipient = "thor1gkvvzfnkyqv8dfhk0593tfhgr03a3ndgjqdalf"
-	// gaiaReimburseRune is the reimbursement in 1e8 RUNE. It is the USD value of
-	// the top-up ($727 = 515.77 ATOM at CoinGecko $1.41/ATOM) divided by the RUNE
-	// price at the time the top-up broadcast: CoinGecko RUNE/USD $0.625863
-	// (2026-11-04T14:20:00Z, the nearest sample to the 14:22:03Z broadcast).
-	// $727 / $0.625863 = 1,161.59587071 RUNE. Hardcoded so every node applies the
-	// identical amount (deterministic).
+	// gaiaReimburseRune is the reimbursement in 1e8 RUNE: the USD value of the
+	// top-up divided by the RUNE price at the moment the top-up broadcast.
+	//   USD value : $727 (515.77 ATOM x CoinGecko ATOM/USD $1.41)
+	//   RUNE price: CoinGecko RUNE/USD 0.6258631063781314, sampled at
+	//               2026-11-04T14:20:00Z (the nearest point to the 14:22:03Z
+	//               broadcast; ~$0.625863 rounded)
+	//   $727 / 0.6258631063781314 = 1,161.59587071 RUNE
+	// The constant is computed from the full-precision price; the rounded
+	// $0.625863 does not reproduce its last digits. Hardcoded in 1e8 so every
+	// node applies the identical amount (deterministic).
 	gaiaReimburseRune = uint64(116_159_587_071) // 1,161.59587071 RUNE
 	// gaiaReimburseTopUpTx is the treasury's GAIA vault solvency top-up
 	// transaction (Cosmos Hub).

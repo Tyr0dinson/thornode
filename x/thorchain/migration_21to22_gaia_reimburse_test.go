@@ -10,9 +10,9 @@ import (
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
 )
 
-type GaiaReimburseSuite struct{}
+type MigrateGaiaReimburseSuite struct{}
 
-var _ = Suite(&GaiaReimburseSuite{})
+var _ = Suite(&MigrateGaiaReimburseSuite{})
 
 // setReserveRune sets the Reserve module's RUNE balance to exactly amt.
 func setReserveRune(c *C, ctx cosmos.Context, k keeper.Keeper, amt uint64) {
@@ -34,7 +34,7 @@ func acctRune(ctx cosmos.Context, k keeper.Keeper, addr cosmos.AccAddress) uint6
 
 // The reimbursement debits the Reserve and credits tcso by exactly the
 // hardcoded amount, run only through its registered migration slot.
-func (s *GaiaReimburseSuite) TestReimburseCreditsTreasury(c *C) {
+func (s *MigrateGaiaReimburseSuite) TestReimburseCreditsTreasury(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	k := mgr.Keeper()
 	setReserveRune(c, ctx, k, gaiaReimburseRune*2)
@@ -55,7 +55,7 @@ func (s *GaiaReimburseSuite) TestReimburseCreditsTreasury(c *C) {
 }
 
 // Soft-skip when the Reserve cannot cover the amount: returns nil, moves nothing.
-func (s *GaiaReimburseSuite) TestReimburseSoftSkipsReserveShort(c *C) {
+func (s *MigrateGaiaReimburseSuite) TestReimburseSoftSkipsReserveShort(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	k := mgr.Keeper()
 	setReserveRune(c, ctx, k, gaiaReimburseRune-1)
@@ -72,7 +72,7 @@ func (s *GaiaReimburseSuite) TestReimburseSoftSkipsReserveShort(c *C) {
 }
 
 // Soft-skip on an unparseable recipient: returns nil, moves nothing.
-func (s *GaiaReimburseSuite) TestReimburseSoftSkipsBadRecipient(c *C) {
+func (s *MigrateGaiaReimburseSuite) TestReimburseSoftSkipsBadRecipient(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	k := mgr.Keeper()
 	setReserveRune(c, ctx, k, gaiaReimburseRune*2)

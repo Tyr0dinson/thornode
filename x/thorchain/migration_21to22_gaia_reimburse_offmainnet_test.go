@@ -6,14 +6,14 @@ import (
 	. "gopkg.in/check.v1"
 )
 
-type GaiaReimburseOffMainnetSuite struct{}
+type MigrateGaiaReimburseOffMainnetSuite struct{}
 
-var _ = Suite(&GaiaReimburseOffMainnetSuite{})
+var _ = Suite(&MigrateGaiaReimburseOffMainnetSuite{})
 
 // Off mainnet the reimbursement migration is a no-op: migrate21to22Mainnet is a
 // stub, so running the registered slot moves no Reserve RUNE even with the
 // Reserve funded well above any plausible amount.
-func (s *GaiaReimburseOffMainnetSuite) TestReimburseNoOpOffMainnet(c *C) {
+func (s *MigrateGaiaReimburseOffMainnetSuite) TestReimburseNoOpOffMainnet(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	k := mgr.Keeper()
 	FundModule(c, ctx, k, ReserveName, 500_000_000_000)
