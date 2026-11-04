@@ -1226,6 +1226,16 @@ type BifrostTSSConfiguration struct {
 	InfoAddress                  string   `mapstructure:"info_address"`
 	ExternalIP                   string   `mapstructure:"external_ip"`
 	MaxKeyshareRecoverScanBlocks int64    `mapstructure:"max_keyshare_recover_scan_blocks"`
+	// KeyshareArchiveRPC is an OPTIONAL operator-configured THORChain RPC endpoint
+	// with deeper (unpruned) block history. When a legacy keyshare backup is in the
+	// pruned part of this node's history — the whole scan window below the block-store
+	// floor, or just the clamped sub-window of a partly-available window — recovery
+	// makes ONE bounded attempt to fetch the TssPool backup from this endpoint before
+	// starting degraded. The
+	// endpoint is never trusted: a fetched backup is accepted only if it decrypts
+	// with this node's key AND the recovered share's pubkey equals the vault pubkey
+	// from THORChain. Default empty (no hardcoded third party) → the fetch is skipped.
+	KeyshareArchiveRPC string `mapstructure:"keyshare_archive_rpc"`
 }
 
 type BifrostOracleConfiguration struct {
