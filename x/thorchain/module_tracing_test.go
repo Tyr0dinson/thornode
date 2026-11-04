@@ -83,7 +83,7 @@ func (m lifecycleGas) BeginBlock() {
 	m.recorder.record("gas/begin")
 }
 
-func (m lifecycleGas) EndBlock(cosmos.Context, keeper.Keeper, EventManager) {
+func (m lifecycleGas) EndBlock(cosmos.Context, Manager) {
 	m.recorder.record("gas/end")
 }
 
