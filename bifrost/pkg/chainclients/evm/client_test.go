@@ -175,6 +175,10 @@ func (s *EVMSuite) SetUpTest(c *C) {
 				_, err = rw.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":"0x8ac7230489e80000"}`))
 				c.Assert(err, IsNil)
 			}
+			if rpcRequest.Method == "eth_getTransactionByHash" {
+				_, err = rw.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":null}`))
+				c.Assert(err, IsNil)
+			}
 			if rpcRequest.Method == "eth_getTransactionCount" {
 				_, err = rw.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":"0x0"}`))
 				c.Assert(err, IsNil)
@@ -912,6 +916,7 @@ func (s *EVMSuite) TestSignTxChecksMemLiability(c *C) {
 
 	// Second transaction should fail due to accumulated liability
 	txOutItem2 := stypes.TxOutItem{
+		Checkpoint:  []byte("1"),
 		Chain:       common.AVAXChain,
 		ToAddress:   addr,
 		VaultPubKey: e.localPubKey,

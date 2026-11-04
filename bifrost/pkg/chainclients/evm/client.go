@@ -283,9 +283,10 @@ func NewEVMClient(
 	return c, nil
 }
 
-// getPendingLiability returns the sum of all pending (signed but unconfirmed) liabilities
-// for the given vault address, and prunes entries for nonces that have already been confirmed.
-func (c *EVMClient) getPendingLiability(vaultAddr string, confirmedNonce uint64) *big.Int {
+// getPendingLiability sums pending liabilities at other nonces for the vault and
+// prunes confirmed entries. Transactions competing at signingNonce cannot both spend,
+// so its existing reservation must not be charged again when checking a replacement.
+func (c *EVMClient) getPendingLiability(vaultAddr string, confirmedNonce, signingNonce uint64) *big.Int {
 	c.liabilityMu.Lock()
 	defer c.liabilityMu.Unlock()
 
@@ -301,12 +302,15 @@ func (c *EVMClient) getPendingLiability(vaultAddr string, confirmedNonce uint64)
 			delete(vaultLiabilities, nonce)
 			continue
 		}
-		total.Add(total, amount)
+		if nonce != signingNonce {
+			total.Add(total, amount)
+		}
 	}
 	return total
 }
 
-// recordLiability records the liability (value + estimated fee) for a signed transaction.
+// recordLiability retains the largest signed cost at each nonce. A replacement
+// does not guarantee that the older transaction cannot still be mined.
 func (c *EVMClient) recordLiability(vaultAddr string, nonce uint64, amount *big.Int) {
 	c.liabilityMu.Lock()
 	defer c.liabilityMu.Unlock()
@@ -314,7 +318,10 @@ func (c *EVMClient) recordLiability(vaultAddr string, nonce uint64, amount *big.
 	if c.pendingLiabilities[vaultAddr] == nil {
 		c.pendingLiabilities[vaultAddr] = make(map[uint64]*big.Int)
 	}
-	c.pendingLiabilities[vaultAddr][nonce] = amount
+	previous := c.pendingLiabilities[vaultAddr][nonce]
+	if previous == nil || amount.Cmp(previous) > 0 {
+		c.pendingLiabilities[vaultAddr][nonce] = new(big.Int).Set(amount)
+	}
 }
 
 // reconstructLiabilities scans the pending block on startup to reconstruct
@@ -1195,9 +1202,10 @@ func (c *EVMClient) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *
 		return nil, nil, nil, fmt.Errorf("fail to get gas asset balance: %w", err)
 	}
 
-	// Subtract pending liabilities (signed but unconfirmed transactions) from the balance
+	// Reserve other pending nonces; this nonce's competing transactions can only
+	// spend once, and the replacement's required balance is checked below.
 	confirmedNonce, _ := c.evmScanner.GetNonceFinalized(fromAddr.String())
-	pendingLiability := c.getPendingLiability(fromAddr.String(), confirmedNonce)
+	pendingLiability := c.getPendingLiability(fromAddr.String(), confirmedNonce, nonce)
 	effectiveBalance := new(big.Int).Sub(gasBalance, pendingLiability)
 
 	// Calculate required balance (value + estimated fee)
