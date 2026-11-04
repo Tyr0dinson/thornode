@@ -166,10 +166,50 @@ func (Test) TestInit(c *C) {
 	// After Init, the global config should be populated from defaults
 	tn := GetThornode()
 	c.Assert(tn.Tendermint.Consensus.TimeoutCommit > 0, Equals, true)
+	c.Assert(tn.Telemetry.TraceManagers, Equals, false)
+	c.Assert(tn.Telemetry.TraceHandlers, Equals, false)
+	c.Assert(tn.Telemetry.TraceContracts, Equals, false)
+	c.Assert(tn.Telemetry.TracePayloads, Equals, false)
 
 	bf := GetBifrost()
 	c.Assert(bf.Metrics.Enabled, Equals, true)
 	c.Assert(bf.TSS.Rendezvous, Equals, "asgard")
+}
+
+func (Test) TestTelemetryEnvOverrides(c *C) {
+	envKeys := []string{
+		"THOR_TELEMETRY_TRACE_MANAGERS",
+		"THOR_TELEMETRY_TRACE_HANDLERS",
+		"THOR_TELEMETRY_TRACE_CONTRACTS",
+		"THOR_TELEMETRY_TRACE_PAYLOADS",
+	}
+	type envValue struct {
+		value string
+		set   bool
+	}
+	originals := make(map[string]envValue, len(envKeys))
+	for _, key := range envKeys {
+		value, set := os.LookupEnv(key)
+		originals[key] = envValue{value: value, set: set}
+		c.Assert(os.Setenv(key, "true"), IsNil)
+	}
+	defer func() {
+		for key, original := range originals {
+			if original.set {
+				_ = os.Setenv(key, original.value)
+			} else {
+				_ = os.Unsetenv(key)
+			}
+		}
+		Init()
+	}()
+
+	Init()
+	tn := GetThornode()
+	c.Assert(tn.Telemetry.TraceManagers, Equals, true)
+	c.Assert(tn.Telemetry.TraceHandlers, Equals, true)
+	c.Assert(tn.Telemetry.TraceContracts, Equals, true)
+	c.Assert(tn.Telemetry.TracePayloads, Equals, true)
 }
 
 func (Test) TestGetThornode(c *C) {

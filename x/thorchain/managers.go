@@ -55,6 +55,7 @@ type Manager interface {
 	SwitchManager() SwitchManager
 	ScheduledMigrationManager() ScheduledMigrationManager
 	DynamicFeeMgr() DynamicFeeManager
+	Tracer() *Tracer
 }
 
 type TradeAccountManager interface {
@@ -316,7 +317,10 @@ type Mgrs struct {
 	wasmKeeper    wasmkeeper.Keeper
 	storeKey      *storetypes.KVStoreKey
 	storeService  store.KVStoreService
+	tracer        *Tracer
 }
+
+var _ Manager = (*Mgrs)(nil)
 
 // NewManagers  create a new Manager
 func NewManagers(
@@ -327,6 +331,7 @@ func NewManagers(
 	accountKeeper authkeeper.AccountKeeper,
 	upgradeKeeper *upgradekeeper.Keeper,
 	wasmKeeper wasmkeeper.Keeper,
+	tracer *Tracer,
 ) *Mgrs {
 	return &Mgrs{
 		K:             keeper,
@@ -337,7 +342,12 @@ func NewManagers(
 		wasmKeeper:    wasmKeeper,
 		storeKey:      storeKey,
 		storeService:  runtime.NewKVStoreService(storeKey),
+		tracer:        tracer,
 	}
+}
+
+func (mgr *Mgrs) Tracer() *Tracer {
+	return mgr.tracer
 }
 
 func (mgr *Mgrs) GetVersion() semver.Version {
@@ -460,7 +470,7 @@ func (mgr *Mgrs) recreateManagers(ctx cosmos.Context, v semver.Version) error {
 		return fmt.Errorf("fail to create stable reserve manager: %w", err)
 	}
 
-	wasmManager, err := GetWasmManager(ctx, k, mgr.wasmKeeper, eventMgr)
+	wasmManager, err := GetWasmManager(ctx, k, mgr.wasmKeeper, eventMgr, mgr.tracer)
 	if err != nil {
 		return fmt.Errorf("fail to create wasm manager: %w", err)
 	}
@@ -733,8 +743,8 @@ func GetStableReserveManager(version semver.Version, keeper keeper.Keeper, event
 	return newStableReserveMgr(keeper, eventMgr), nil
 }
 
-func GetWasmManager(ctx cosmos.Context, keeper keeper.Keeper, wasmKeeper wasmkeeper.Keeper, eventMgr EventManager) (WasmManager, error) {
-	return newWasmMgr(keeper, wasmKeeper, wasmpermissions.GetWasmPermissions(), eventMgr)
+func GetWasmManager(ctx cosmos.Context, keeper keeper.Keeper, wasmKeeper wasmkeeper.Keeper, eventMgr EventManager, tracer *Tracer) (WasmManager, error) {
+	return newWasmMgr(keeper, wasmKeeper, wasmpermissions.GetWasmPermissions(), eventMgr, tracer)
 }
 
 func GetSwitchManager(version semver.Version, keeper keeper.Keeper, eventMgr EventManager) (SwitchManager, error) {

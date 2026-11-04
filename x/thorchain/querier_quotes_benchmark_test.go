@@ -195,7 +195,7 @@ func setupBenchmarkManagerWith(b testing.TB, bootstrapValidator bool) (cosmos.Co
 		b.Fatal(err)
 	}
 
-	mgr := NewManagers(k, encodingConfig.Codec, keyThornodeBench, bk, ak, uk, wk)
+	mgr := NewManagers(k, encodingConfig.Codec, keyThornodeBench, bk, ak, uk, wk, nil)
 
 	err = mgr.LoadManagerIfNecessary(ctx)
 	if err != nil {

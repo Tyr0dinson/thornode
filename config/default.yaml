@@ -1058,6 +1058,10 @@ thor:
   telemetry:
     slash_points: false
     price_per_node: false
+    trace_managers: false
+    trace_handlers: false
+    trace_contracts: false
+    trace_payloads: false
 
   # these suppress stdout only: api.logs capture records a line before the
   # filter runs, so a filtered module still appears in /thorchain/logs

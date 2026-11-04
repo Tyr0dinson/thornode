@@ -71,12 +71,14 @@ import (
 	stakingkeeper "github.com/cosmos/cosmos-sdk/x/staking/keeper"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 	"github.com/cosmos/gogoproto/proto"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/spf13/cast"
 
 	"github.com/CosmWasm/wasmd/x/wasm"
 	wasmkeeper "github.com/CosmWasm/wasmd/x/wasm/keeper"
 	wasmtypes "github.com/CosmWasm/wasmd/x/wasm/types"
 	appparams "gitlab.com/thorchain/thornode/v3/app/params"
+	thornodeconfig "gitlab.com/thorchain/thornode/v3/config"
 	"gitlab.com/thorchain/thornode/v3/constants"
 	thorlog "gitlab.com/thorchain/thornode/v3/log"
 	"gitlab.com/thorchain/thornode/v3/openapi"
@@ -425,16 +427,32 @@ func NewChainApp(
 		authtypes.NewModuleAddress(thorchain.ModuleName).String(),
 	)
 
+	// --- Module Options ---
+	telemetryEnabled := cast.ToBool(appOpts.Get("telemetry.enabled"))
+	telemetryConfig := thornodeconfig.GetThornode().Telemetry
+	testApp := cast.ToBool(appOpts.Get(TestApp))
+
+	tracer, err := thorchain.NewTracer(thorchain.TraceConfig{
+		TraceManagers:  telemetryConfig.TraceManagers,
+		TraceHandlers:  telemetryConfig.TraceHandlers,
+		TraceContracts: telemetryConfig.TraceContracts,
+		TracePayloads:  telemetryConfig.TracePayloads,
+	}, telemetryEnabled, prometheus.DefaultRegisterer)
+	if err != nil {
+		logger.Error("failed to initialize execution tracer; tracing disabled", "error", err)
+		tracer = &thorchain.Tracer{}
+	}
+
+	tracingWasmKeeper := schedulerkeeper.NewTracingWasmKeeper(
+		wasmkeeper.NewDefaultPermissionKeeper(&app.WasmKeeper),
+		tracer,
+	)
 	app.SchedulerKeeper = schedulerkeeper.NewKeeper(
 		app.appCodec,
 		runtime.NewKVStoreService(keys[schedulertypes.StoreKey]),
-		wasmkeeper.NewDefaultPermissionKeeper(&app.WasmKeeper),
+		tracingWasmKeeper,
 		authtypes.NewModuleAddress(thorchain.ModuleName).String(),
 	)
-
-	// --- Module Options ---
-	telemetryEnabled := cast.ToBool(appOpts.Get("telemetry.enabled"))
-	testApp := cast.ToBool(appOpts.Get(TestApp))
 
 	// default true when the key is absent (e.g. preserved pre-upgrade app.toml);
 	// routing degrades to ABCI on its own if the gRPC server is not running
@@ -443,7 +461,7 @@ func NewChainApp(
 		app.restQueryViaGRPC = cast.ToBool(v)
 	}
 
-	mgrs := thorchain.NewManagers(app.ThorchainKeeper, app.appCodec, keys[thorchaintypes.StoreKey], app.BankKeeper, app.AccountKeeper, app.UpgradeKeeper, app.WasmKeeper)
+	mgrs := thorchain.NewManagers(app.ThorchainKeeper, app.appCodec, keys[thorchaintypes.StoreKey], app.BankKeeper, app.AccountKeeper, app.UpgradeKeeper, app.WasmKeeper, tracer)
 	app.msgServiceRouter.AddCustomRoute("cosmos.bank.v1beta1.Msg", thorchain.NewBankSendHandler(thorchain.NewSendHandler(mgrs)))
 
 	thorchainModule := thorchain.NewAppModule(mgrs, telemetryEnabled, testApp)

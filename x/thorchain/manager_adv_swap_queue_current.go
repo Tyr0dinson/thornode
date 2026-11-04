@@ -817,7 +817,7 @@ func (vm *SwapQueueAdv) EndBlock(ctx cosmos.Context, mgr Manager, telemetryEnabl
 	rapidSwapMax := mgr.Keeper().GetConfigInt64(ctx, constants.AdvSwapQueueRapidSwapMax)
 
 	// During simulations, keep todo empty to avoid limit swap discovery blocking on iterators
-	isSimulation := ctx.Value(constants.CtxSimulationMode) == true
+	isSimulation := isSimulationMode(ctx)
 
 	todo := make(tradePairs, 0)
 	todoSeen := make(tradePairSet)
@@ -939,12 +939,21 @@ func (vm *SwapQueueAdv) EndBlock(ctx cosmos.Context, mgr Manager, telemetryEnabl
 
 			// make the primary swap using the cached context
 			var settleMsg string
-			emit, effectiveInput := cosmos.ZeroUint(), cosmos.ZeroUint()
-			handleErr := runLuviGuarded(ctx, cacheCtx, mgr, msg, func(runCtx cosmos.Context) error {
-				var runErr error
-				_, emit, effectiveInput, runErr = swapHandler.runWithEmitAndInput(runCtx, msg)
-				return runErr
-			})
+			effectiveInput := cosmos.ZeroUint()
+			emit, handleErr := runTracedHandler(
+				cacheCtx,
+				mgr.Tracer(),
+				handlerTrace{path: pathAdvancedSwapQueue, msg: msg},
+				func() (cosmos.Uint, error) {
+					result := cosmos.ZeroUint()
+					err := runLuviGuarded(ctx, cacheCtx, mgr, msg, func(runCtx cosmos.Context) error {
+						var runErr error
+						_, result, effectiveInput, runErr = swapHandler.runWithEmitAndInput(runCtx, msg)
+						return runErr
+					})
+					return result, err
+				},
+			)
 			// Every handler invocation consumes execution budget. State progression
 			// may still be skipped for failed market swaps on rapid iterations, but
 			// failures must not make MaxSwapsPerBlock ineffective as a CPU bound.

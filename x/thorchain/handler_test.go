@@ -212,7 +212,7 @@ func setupManagerWith(c testFatal, mkdir func() string, lg thorlog.SdkLogWrapper
 	}))
 
 	os.Setenv("NET", "mocknet")
-	mgr := NewManagers(k, encodingConfig.Codec, keyThorchain, bk, ak, uk, wk)
+	mgr := NewManagers(k, encodingConfig.Codec, keyThorchain, bk, ak, uk, wk, nil)
 	constants.SWVersion = GetCurrentVersion()
 
 	_, hasVerStored := k.GetVersionWithCtx(ctx)

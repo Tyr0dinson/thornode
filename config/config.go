@@ -532,6 +532,16 @@ type Thornode struct {
 		// PricePerNode enables oracle price telemetry. This tracks the reported
 		// price per asset and per node, updated every block.
 		PricePerNode bool `mapstructure:"price_per_node"`
+		// TraceManagers records manager runs and runtimes in Prometheus.
+		TraceManagers bool `mapstructure:"trace_managers"`
+		// TraceHandlers records handler runs and runtimes in Prometheus.
+		TraceHandlers bool `mapstructure:"trace_handlers"`
+		// TraceContracts records contract runs, payload sizes, and runtimes in
+		// Prometheus, labeled by contract address.
+		TraceContracts bool `mapstructure:"trace_contracts"`
+		// TracePayloads writes contract payloads and metadata to debug logs.
+		// It requires TraceContracts.
+		TracePayloads bool `mapstructure:"trace_payloads"`
 	} `mapstructure:"telemetry"`
 
 	// LogFilter will drop logs matching the modules and messages when not in debug level.
