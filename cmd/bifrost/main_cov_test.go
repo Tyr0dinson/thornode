@@ -82,16 +82,18 @@ func TestRecoverLegacyKeysharesBeforeStartupCov(t *testing.T) {
 
 	// immediate success
 	b := &bridgeCov{}
-	start, degraded := recoverLegacyKeysharesBeforeStartup(config.Bifrost{}, b)
+	start, degraded, recoverAt := recoverLegacyKeysharesBeforeStartup(config.Bifrost{}, b)
 	require.True(t, start)
 	require.False(t, degraded)
+	require.Zero(t, recoverAt)
 	require.Equal(t, int32(1), b.calls.Load())
 
 	// transient failures are retried in the foreground until they succeed
 	b = &bridgeCov{failFor: 2}
-	start, degraded = recoverLegacyKeysharesBeforeStartup(config.Bifrost{}, b)
+	start, degraded, recoverAt = recoverLegacyKeysharesBeforeStartup(config.Bifrost{}, b)
 	require.True(t, start)
 	require.False(t, degraded)
+	require.Zero(t, recoverAt)
 	require.Equal(t, int32(3), b.calls.Load())
 }
 
@@ -106,7 +108,7 @@ func TestRecoverLegacyKeysharesInterruptedCov(t *testing.T) {
 	}}
 	done := make(chan [2]bool, 1)
 	go func() {
-		s, d := recoverLegacyKeysharesBeforeStartup(config.Bifrost{}, b)
+		s, d, _ := recoverLegacyKeysharesBeforeStartup(config.Bifrost{}, b)
 		done <- [2]bool{s, d}
 	}()
 	select {

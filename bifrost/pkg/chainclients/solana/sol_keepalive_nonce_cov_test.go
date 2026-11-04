@@ -212,7 +212,16 @@ func newCovFixture(c *C) *covFixture {
 // keep-alive
 // -------------------------------------------------------------------------
 
-const covAnchorHeight = int64(500)
+const (
+	covAnchorHeight = int64(500)
+	// covSlotsPerThorBlock is 6000ms per THORChain block over the 214ms SOL slot time.
+	covSlotsPerThorBlock = uint64(28)
+)
+
+// keepAlive runs keepAliveVault at a fixed scan slot and refresh threshold.
+func (f *covFixture) keepAlive(vault types2.Vault, anchorHeight int64) error {
+	return f.client.keepAliveVault(vault, 1_000_000, 1, anchorHeight, covSlotsPerThorBlock)
+}
 
 // staleSigs makes the vault's newest signature far older than the refresh threshold.
 func (f *covFixture) staleSigs() {
@@ -244,12 +253,12 @@ func (s *KeepAliveNonceCovSuite) TestKeepAliveVaultSkipsWhenNotDue(c *C) {
 
 	// no history: nothing to keep fresh
 	f.rpc.setResult("getSignaturesForAddress", `[]`)
-	c.Assert(f.client.keepAliveVault(f.vault, 1_000_000, 1, covAnchorHeight), IsNil)
+	c.Assert(f.keepAlive(f.vault, covAnchorHeight), IsNil)
 	c.Assert(f.rpc.count("getBalance"), Equals, 0)
 
 	// fresh signature: not due
 	f.rpc.setResult("getSignaturesForAddress", `[{"signature":"new","slot":999990}]`)
-	c.Assert(f.client.keepAliveVault(f.vault, 1_000_000, 1, covAnchorHeight), IsNil)
+	c.Assert(f.keepAlive(f.vault, covAnchorHeight), IsNil)
 	c.Assert(f.rpc.count("getBalance"), Equals, 0)
 	c.Assert(f.rpc.count("sendTransaction"), Equals, 0)
 }
@@ -259,36 +268,37 @@ func (s *KeepAliveNonceCovSuite) TestKeepAliveVaultErrors(c *C) {
 	defer f.server.Close()
 
 	f.rpc.setError("getSignaturesForAddress", "sigs down")
-	err := f.client.keepAliveVault(f.vault, 1_000_000, 1, covAnchorHeight)
+	err := f.keepAlive(f.vault, covAnchorHeight)
 	c.Assert(err, ErrorMatches, "fail to get newest signature.*sigs down.*")
 
 	f.staleSigs()
 	f.rpc.setError("getBalance", "balance down")
-	err = f.client.keepAliveVault(f.vault, 1_000_000, 1, covAnchorHeight)
+	err = f.keepAlive(f.vault, covAnchorHeight)
 	c.Assert(err, ErrorMatches, "fail to get vault balance.*")
 
 	// balance below amount + fee margin: skipped without signing
 	f.rpc.setResult("getBalance", `{"context":{"slot":1},"value":1}`)
-	c.Assert(f.client.keepAliveVault(f.vault, 1_000_000, 1, covAnchorHeight), IsNil)
+	c.Assert(f.keepAlive(f.vault, covAnchorHeight), IsNil)
 	c.Assert(f.rpc.count("sendTransaction"), Equals, 0)
 
-	// signing fails: consensus blockhash cannot be derived
+	// signing fails: consensus blockhash cannot be derived. The rounds above already
+	// prewarmed covAnchorHeight, so this needs a height with no memoized blockhash.
 	f.rpc.setResult("getBalance", `{"context":{"slot":1},"value":100000000000}`)
 	f.rpc.setError("getSlot", "slot down")
-	err = f.client.keepAliveVault(f.vault, 1_000_000, 1, covAnchorHeight)
-	c.Assert(err, ErrorMatches, "fail to sign keep-alive tx.*")
+	err = f.keepAlive(f.vault, covAnchorHeight+2)
+	c.Assert(err, ErrorMatches, "fail to sign keep-alive tx.*fail to derive consensus blockhash.*slot down.*")
 
 	// broadcast fails
 	f.rpc.clear("getSlot")
 	f.rpc.setError("sendTransaction", "rejected")
 	f.rpc.setError("getTransaction", "missing")
-	err = f.client.keepAliveVault(f.vault, 1_000_000, 1, covAnchorHeight+1)
+	err = f.keepAlive(f.vault, covAnchorHeight+1)
 	c.Assert(err, ErrorMatches, "fail to broadcast keep-alive tx.*")
 
 	// a vault whose eddsa key cannot form an address
 	bad := f.vault
 	bad.PubKeyEddsa = common.PubKey("bogus")
-	err = f.client.keepAliveVault(bad, 1_000_000, 1, covAnchorHeight)
+	err = f.keepAlive(bad, covAnchorHeight)
 	c.Assert(err, ErrorMatches, "fail to get vault address.*")
 }
 
@@ -300,7 +310,7 @@ func (s *KeepAliveNonceCovSuite) TestKeepAliveVaultNotSelected(c *C) {
 	// remote signing that is not selected returns no signature and no error
 	f.client.localPubKey = "not-local"
 	f.client.tssKeyManager = &mockSOLThorchainKeyManager{}
-	c.Assert(f.client.keepAliveVault(f.vault, 1_000_000, 1, covAnchorHeight), IsNil)
+	c.Assert(f.keepAlive(f.vault, covAnchorHeight), IsNil)
 	c.Assert(f.rpc.count("sendTransaction"), Equals, 0)
 }
 

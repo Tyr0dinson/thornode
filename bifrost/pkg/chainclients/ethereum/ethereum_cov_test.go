@@ -544,7 +544,7 @@ func TestCovReconstructVaultLiability(t *testing.T) {
 		t.Fatal("expected ready after reconstructing all pending transactions")
 	}
 	// Only our pending nonce counts, including value + gasFeeCap*gas.
-	if got := c.getPendingLiability(vault, 0); got.Cmp(big.NewInt(211_000)) != 0 {
+	if got := c.getPendingLiability(vault, 0, 5); got.Cmp(big.NewInt(211_000)) != 0 {
 		t.Fatalf("liability = %s", got)
 	}
 
@@ -555,7 +555,7 @@ func TestCovReconstructVaultLiability(t *testing.T) {
 	if !c.signingReady.Load() {
 		t.Fatal("expected signing ready after reconstructing pending liabilities")
 	}
-	if got := c.getPendingLiability(vault, 4); got.Cmp(big.NewInt(211_000)) != 0 {
+	if got := c.getPendingLiability(vault, 4, 5); got.Cmp(big.NewInt(211_000)) != 0 {
 		t.Fatalf("liability after retry = %s", got)
 	}
 
@@ -565,7 +565,7 @@ func TestCovReconstructVaultLiability(t *testing.T) {
 	if err != nil || ready {
 		t.Fatalf("missing pending transaction: ready=%v err=%v", ready, err)
 	}
-	if got := c.getPendingLiability(vault, 4); got.Cmp(big.NewInt(211_000)) != 0 {
+	if got := c.getPendingLiability(vault, 4, 6); got.Cmp(big.NewInt(211_000)) != 0 {
 		t.Fatalf("partial liability = %s", got)
 	}
 
@@ -787,7 +787,7 @@ func TestCovSignTxPaths(t *testing.T) {
 	if txIn.BlockHeight != 16 || !strings.EqualFold(txIn.Sender, env.vaultAddr.String()) {
 		t.Fatalf("txIn = %+v", txIn)
 	}
-	if got := c.getPendingLiability(env.vaultAddr.String(), 5); got.Sign() <= 0 {
+	if got := c.getPendingLiability(env.vaultAddr.String(), 5, 6); got.Sign() <= 0 {
 		t.Fatalf("liability should be recorded, got %s", got)
 	}
 

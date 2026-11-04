@@ -279,12 +279,6 @@ func (s *TronTestSuite) TestRollbackAndVaultTxsCov(c *C) {
 	c.Check(broadcast, Equals, "BROADCAST")
 }
 
-func (s *TronTestSuite) TestIsTronNotFoundErrCov(c *C) {
-	c.Check(isTronNotFoundErr(nil), Equals, false)
-	c.Check(isTronNotFoundErr(errors.New("failed to call x: response status: 404")), Equals, true)
-	c.Check(isTronNotFoundErr(errors.New("failed to call x: response status: 500")), Equals, false)
-}
-
 func (s *TronTestSuite) TestRemoteSignCov(c *C) {
 	bridge := &tronCovBridge{}
 	client := s.newTronCovClient(c, bridge, 1)
@@ -471,8 +465,8 @@ func (s *TronTestSuite) TestSignTxErrorPathsCov(c *C) {
 	c.Check(err, ErrorMatches, "no ref blocks found")
 	client.tronScanner.refBlocks = saved
 
-	// The node 404s everything: an expired cache entry whose broadcast is
-	// definitively unknown is cleared, then building the transfer fails.
+	// The node 404s everything: an expired cache entry whose lookup fails is
+	// ambiguous, so the cache is respected and nothing is signed.
 	notFound := staticTronServerCov(http.StatusNotFound, "")
 	defer notFound.Close()
 	client.api = api.NewTronApi(notFound.URL, time.Second)
@@ -480,9 +474,14 @@ func (s *TronTestSuite) TestSignTxErrorPathsCov(c *C) {
 	txOut := trxTxOutCov(vault, 2_000_000)
 	c.Assert(client.signerCacheManager.SetSignedWithExpiry(txOut.CacheHash(),
 		txOut.CacheVault(common.TRONChain), "GONE", time.Now().Add(-time.Hour).UnixMilli()), IsNil)
-	_, _, _, err = client.SignTx(txOut, 1)
+	raw, _, _, err := client.SignTx(txOut, 1)
+	c.Check(err, IsNil)
+	c.Check(raw, IsNil)
+	c.Check(client.signerCacheManager.HasSigned(txOut.CacheHash()), Equals, true)
+
+	// Without a cache entry, building the transfer fails.
+	_, _, _, err = client.SignTx(trxTxOutCov(vault, 3_000_000), 1)
 	c.Check(err, ErrorMatches, ".*createtransaction.*404")
-	c.Check(client.signerCacheManager.HasSigned(txOut.CacheHash()), Equals, false)
 }
 
 func (s *TronTestSuite) TestReportSolvencyCov(c *C) {

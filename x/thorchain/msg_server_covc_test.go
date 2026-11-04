@@ -25,32 +25,33 @@ func (f covCFuncHandler) Run(ctx cosmos.Context, msg cosmos.Msg) (*cosmos.Result
 }
 
 func (s *MsgServerCovCSuite) TestExternalHandlerCovC(c *C) {
-	ctx, _ := setupManagerForTest(c)
+	ctx, mgr := setupManagerForTest(c)
+	ms := msgServer{mgr: mgr}
 	msg := &types.MsgBan{}
 
 	// success returns an empty response
-	res, err := externalHandler(ctx, covCFuncHandler(func(cosmos.Context, cosmos.Msg) (*cosmos.Result, error) {
+	res, err := ms.externalHandler(ctx, covCFuncHandler(func(cosmos.Context, cosmos.Msg) (*cosmos.Result, error) {
 		return &cosmos.Result{}, nil
 	}), msg)
 	c.Assert(err, IsNil)
 	c.Check(res, DeepEquals, &types.MsgEmpty{})
 
 	// nil result is fine too
-	res, err = externalHandler(ctx, covCFuncHandler(func(cosmos.Context, cosmos.Msg) (*cosmos.Result, error) {
+	res, err = ms.externalHandler(ctx, covCFuncHandler(func(cosmos.Context, cosmos.Msg) (*cosmos.Result, error) {
 		return nil, nil
 	}), msg)
 	c.Assert(err, IsNil)
 	c.Check(res, NotNil)
 
 	// non-empty results are rejected
-	res, err = externalHandler(ctx, covCFuncHandler(func(cosmos.Context, cosmos.Msg) (*cosmos.Result, error) {
+	res, err = ms.externalHandler(ctx, covCFuncHandler(func(cosmos.Context, cosmos.Msg) (*cosmos.Result, error) {
 		return &cosmos.Result{Log: "something"}, nil
 	}), msg)
 	c.Check(err, ErrorMatches, "external handler, handler returned non-empty result.*")
 	c.Check(res, IsNil)
 
 	// plain (code 1, redacted) errors are wrapped as internal errors
-	res, err = externalHandler(ctx, covCFuncHandler(func(cosmos.Context, cosmos.Msg) (*cosmos.Result, error) {
+	res, err = ms.externalHandler(ctx, covCFuncHandler(func(cosmos.Context, cosmos.Msg) (*cosmos.Result, error) {
 		return nil, errKaboom
 	}), msg)
 	c.Check(res, IsNil)
@@ -59,7 +60,7 @@ func (s *MsgServerCovCSuite) TestExternalHandlerCovC(c *C) {
 	c.Check(err.Error(), Matches, "kaboom.*")
 
 	// registered sdk errors pass through untouched
-	res, err = externalHandler(ctx, covCFuncHandler(func(cosmos.Context, cosmos.Msg) (*cosmos.Result, error) {
+	res, err = ms.externalHandler(ctx, covCFuncHandler(func(cosmos.Context, cosmos.Msg) (*cosmos.Result, error) {
 		return nil, errorsmod.Wrap(se.ErrUnauthorized, "nope")
 	}), msg)
 	c.Check(res, IsNil)
@@ -67,7 +68,7 @@ func (s *MsgServerCovCSuite) TestExternalHandlerCovC(c *C) {
 	c.Check(errors.Is(err, errInternal), Equals, false)
 
 	// panics are recovered and returned as errors
-	res, err = externalHandler(ctx, covCFuncHandler(func(cosmos.Context, cosmos.Msg) (*cosmos.Result, error) {
+	res, err = ms.externalHandler(ctx, covCFuncHandler(func(cosmos.Context, cosmos.Msg) (*cosmos.Result, error) {
 		panic("boom")
 	}), msg)
 	c.Check(res, IsNil)

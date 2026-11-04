@@ -461,6 +461,11 @@ func TestCovSignTxValidation(t *testing.T) {
 	bad = good
 	bad.Checkpoint = []byte("not-json")
 	_, _, _, err = c.SignTx(bad, 1)
+	require.ErrorContains(t, err, "invalid transfer nonce checkpoint")
+
+	bad = good
+	bad.Checkpoint = []byte("4x")
+	_, _, _, err = c.SignTx(bad, 1)
 	require.ErrorContains(t, err, "fail to unmarshal checkpoint")
 
 	// pending nonce far ahead of the finalized nonce
@@ -471,7 +476,7 @@ func TestCovSignTxValidation(t *testing.T) {
 		return "0x0", nil
 	})
 	_, _, _, err = c.SignTx(good, 1)
-	require.ErrorContains(t, err, "pending nonce too far in future")
+	require.ErrorContains(t, err, "pending nonce outside finalized nonce window")
 
 	// finalized nonce lookup failure
 	env.rpc.set("eth_getTransactionCount", func(params []json.RawMessage) (any, error) {
@@ -508,7 +513,7 @@ func TestCovSignTxPaths(t *testing.T) {
 	require.Equal(t, uint64(4), signed.Nonce())
 
 	// liability for nonce 4 was recorded
-	liab := c.getPendingLiability(env.vaultAddr(t).String(), 0)
+	liab := c.getPendingLiability(env.vaultAddr(t).String(), 0, 5)
 	require.Positive(t, liab.Sign())
 
 	// chain height failure falls back to scanner height
@@ -569,13 +574,15 @@ func TestCovSignTxRemoteSigner(t *testing.T) {
 		c.kw = kw
 	}
 
-	// not selected for keysign
+	// not selected for keysign: the nonce is retained as an unsigned checkpoint
 	setTSS(tss.ErrNotSelectedForKeysign)
 	raw, cp, obs, err := c.SignTx(toi, 1)
-	require.NoError(t, err)
+	require.ErrorIs(t, err, tss.ErrNotSelectedForKeysign)
 	require.Nil(t, raw)
-	require.Nil(t, cp)
 	require.Nil(t, obs)
+	want, err := unsignedTransferCheckpoint(toi, 0)
+	require.NoError(t, err)
+	require.Equal(t, want, cp)
 
 	// generic keysign failure keeps the checkpoint
 	setTSS(errors.New("tss down"))
@@ -617,13 +624,13 @@ func TestCovCheckAndApproveAllowance(t *testing.T) {
 
 	// mimir lookup error -> skip
 	env.bridge.mimirErr = errors.New("mimir down")
-	tx, err := c.checkAndApproveAllowance(toi, 0)
+	tx, _, err := c.checkAndApproveAllowance(toi, 0)
 	require.NoError(t, err)
 	require.Nil(t, tx)
 	env.bridge.mimirErr = nil
 
 	// mimir disabled -> skip
-	tx, err = c.checkAndApproveAllowance(toi, 0)
+	tx, _, err = c.checkAndApproveAllowance(toi, 0)
 	require.NoError(t, err)
 	require.Nil(t, tx)
 
@@ -632,41 +639,41 @@ func TestCovCheckAndApproveAllowance(t *testing.T) {
 	// no coins -> skip
 	none := toi
 	none.Coins = nil
-	tx, err = c.checkAndApproveAllowance(none, 0)
+	tx, _, err = c.checkAndApproveAllowance(none, 0)
 	require.NoError(t, err)
 	require.Nil(t, tx)
 
 	// multiple coins -> error
 	multi := toi
 	multi.Coins = common.Coins{toi.Coins[0], common.NewCoin(common.AVAXAsset, cosmos.NewUint(1))}
-	_, err = c.checkAndApproveAllowance(multi, 0)
+	_, _, err = c.checkAndApproveAllowance(multi, 0)
 	require.ErrorContains(t, err, "more than 1 coin")
 
 	// native asset never needs approval
-	tx, err = c.checkAndApproveAllowance(covTxOut(t, env, 1000), 0)
+	tx, _, err = c.checkAndApproveAllowance(covTxOut(t, env, 1000), 0)
 	require.NoError(t, err)
 	require.Nil(t, tx)
 
 	// invalid vault pubkey
 	badVault := toi
 	badVault.VaultPubKey = common.PubKey("bogus")
-	_, err = c.checkAndApproveAllowance(badVault, 0)
+	_, _, err = c.checkAndApproveAllowance(badVault, 0)
 	require.ErrorContains(t, err, "fail to get vault address")
 
 	// vault without router
 	noRouter := toi
 	noRouter.VaultPubKey = ttypes.GetRandomPubKey()
-	_, err = c.checkAndApproveAllowance(noRouter, 0)
+	_, _, err = c.checkAndApproveAllowance(noRouter, 0)
 	require.ErrorContains(t, err, "no router contract")
 
 	// allowance call failure
 	env.rpc.setError("eth_call", "call failed")
-	_, err = c.checkAndApproveAllowance(toi, 0)
+	_, _, err = c.checkAndApproveAllowance(toi, 0)
 	require.ErrorContains(t, err, "fail to call allowance")
 
 	// malformed allowance result
 	env.rpc.setResult("eth_call", "0x01")
-	_, err = c.checkAndApproveAllowance(toi, 0)
+	_, _, err = c.checkAndApproveAllowance(toi, 0)
 	require.ErrorContains(t, err, "fail to unpack allowance")
 
 	// sufficient allowance (max) -> no approval
@@ -677,14 +684,14 @@ func TestCovCheckAndApproveAllowance(t *testing.T) {
 		}
 		return "0x0000000000000000000000000000000000000000000000000000000000000012", nil
 	})
-	tx, err = c.checkAndApproveAllowance(toi, 0)
+	tx, _, err = c.checkAndApproveAllowance(toi, 0)
 	require.NoError(t, err)
 	require.Nil(t, tx)
 
 	// insufficient allowance -> approval tx using rounded network gas price
 	maxAllowance = "0x" + strings.Repeat("0", 64)
 	c.evmScanner.gasPrice.Store(big.NewInt(5e10 + 7))
-	tx, err = c.checkAndApproveAllowance(toi, 9)
+	tx, _, err = c.checkAndApproveAllowance(toi, 9)
 	require.NoError(t, err)
 	require.NotNil(t, tx)
 	require.Equal(t, uint64(9), tx.Nonce())
@@ -698,13 +705,13 @@ func TestCovCheckAndApproveAllowance(t *testing.T) {
 	// tiny network gas price rounds up to the minimum then bounded by outbound rate
 	c.evmScanner.gasPrice.Store(big.NewInt(5))
 	toi.GasRate = 30 // 30 gwei -> lower bound 20 gwei
-	tx, err = c.checkAndApproveAllowance(toi, 9)
+	tx, _, err = c.checkAndApproveAllowance(toi, 9)
 	require.NoError(t, err)
 	require.Equal(t, big.NewInt(2e10+1), tx.GasPrice())
 
 	// zero network gas price uses the outbound rate directly
 	c.evmScanner.gasPrice.Store(big.NewInt(0))
-	tx, err = c.checkAndApproveAllowance(toi, 9)
+	tx, _, err = c.checkAndApproveAllowance(toi, 9)
 	require.NoError(t, err)
 	require.Equal(t, big.NewInt(3e10+1), tx.GasPrice())
 }
@@ -728,32 +735,56 @@ func TestCovSignTxApprovalErrors(t *testing.T) {
 	_, _, _, err = c.SignTx(multi, 1)
 	require.ErrorContains(t, err, "more than 1 coin")
 
-	// approval broadcast failure returns the checkpoint nonce
+	// the approval is checkpointed before anything is signed
 	toi := covTxOut(t, env, 1000)
 	toi.Coins = common.Coins{common.NewCoin(tkn, cosmos.NewUint(1000))}
 	env.rpc.setError("eth_sendRawTransaction", "rejected")
-	_, cp, _, err := c.SignTx(toi, 1)
-	require.ErrorContains(t, err, "fail to broadcast approval transaction")
-	require.Equal(t, "0", string(cp))
+	env.rpc.setResult("eth_getLogs", []any{})
+	env.rpc.setResult("eth_getTransactionByHash", nil)
+	_, prepared, _, err := c.SignTx(toi, 1)
+	require.ErrorIs(t, err, errApprovalPending)
+	var checkpoint signingCheckpoint
+	require.NoError(t, json.Unmarshal(prepared, &checkpoint))
+	require.NotNil(t, checkpoint.Transaction)
+	require.Nil(t, checkpoint.SignedApproval)
 
-	// approval signing via TSS: not selected -> nothing, other error -> checkpoint
+	// the next attempt signs it and persists the bytes before submission
+	toi.Checkpoint = prepared
+	_, signed, _, err := c.SignTx(toi, 1)
+	require.ErrorIs(t, err, errApprovalPending)
+	var saved signingCheckpoint
+	require.NoError(t, json.Unmarshal(signed, &saved))
+	require.NotNil(t, saved.SignedApproval)
+
+	// a rejected broadcast keeps the signed checkpoint for a retry
+	toi.Checkpoint = signed
+	_, retry, _, err := c.SignTx(toi, 1)
+	require.ErrorContains(t, err, "broadcast approval")
+	require.Equal(t, signed, retry)
+
+	// approval signing via TSS keeps the prepared checkpoint on every failure
 	remoteVault := ttypes.GetRandomPubKey()
 	env.pkm.add(remoteVault, covRouter)
 	toi.VaultPubKey = remoteVault
+	toi.Checkpoint = nil
+	_, prepared, _, err = c.SignTx(toi, 1)
+	require.ErrorIs(t, err, errApprovalPending)
+	toi.Checkpoint = prepared
+
 	kw, err := evm.NewKeySignWrapper(c.kw.GetPrivKey(), c.localPubKey, &covTSS{err: tss.ErrNotSelectedForKeysign}, covChainID, "AVAX")
 	require.NoError(t, err)
 	c.kw = kw
-	raw, cp, _, err := c.SignTx(toi, 1)
-	require.NoError(t, err)
+	raw, retry, _, err := c.SignTx(toi, 1)
+	require.ErrorIs(t, err, tss.ErrNotSelectedForKeysign)
 	require.Nil(t, raw)
-	require.Nil(t, cp)
+	require.Equal(t, prepared, retry)
 
 	kw, err = evm.NewKeySignWrapper(c.kw.GetPrivKey(), c.localPubKey, &covTSS{err: errors.New("tss down")}, covChainID, "AVAX")
 	require.NoError(t, err)
 	c.kw = kw
-	_, cp, _, err = c.SignTx(toi, 1)
-	require.ErrorContains(t, err, "fail to sign approval transaction")
-	require.Equal(t, "0", string(cp))
+	_, retry, _, err = c.SignTx(toi, 1)
+	require.ErrorContains(t, err, "sign approval")
+	require.Equal(t, prepared, retry)
 }
 
 // ---------------------------------------------------------------------------
@@ -985,21 +1016,21 @@ func TestCovReconstructVaultLiability(t *testing.T) {
 	expected := new(big.Int).Add(ours.Value(), ours2.Value())
 	expected.Add(expected, new(big.Int).Mul(ours.GasFeeCap(), new(big.Int).SetUint64(ours.Gas())))
 	expected.Add(expected, new(big.Int).Mul(ours2.GasFeeCap(), new(big.Int).SetUint64(ours2.Gas())))
-	require.Equal(t, expected, c.getPendingLiability(vault, 0))
+	require.Equal(t, expected, c.getPendingLiability(vault, 0, 4))
 
 	// Startup becomes ready with pending liabilities, and retries do not double count.
 	c.signingReady.Store(false)
 	c.wg.Add(1)
 	c.reconstructLiabilities()
 	require.True(t, c.signingReady.Load())
-	require.Equal(t, expected, c.getPendingLiability(vault, 2))
+	require.Equal(t, expected, c.getPendingLiability(vault, 2, 4))
 
 	// A transaction missing from the pending block keeps the vault unready.
 	nonces("0x2", "0x5")
 	ready, err = c.reconstructVaultLiability(vault)
 	require.NoError(t, err)
 	require.False(t, ready)
-	require.Equal(t, expected, c.getPendingLiability(vault, 2))
+	require.Equal(t, expected, c.getPendingLiability(vault, 2, 5))
 }
 
 func TestCovReconstructLiabilities(t *testing.T) {

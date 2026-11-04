@@ -577,6 +577,7 @@ func TestInfoCovTssKeysignFailureSnapshotAndNetworkAlert(t *testing.T) {
 	cfg.Thresholds.TssKeysignFailure.Sigma = 0
 	cfg.Thresholds.TssKeysignFailure.MinSnapshots = 2
 	cfg.Thresholds.TssKeysignFailure.MaxSnapshots = 2
+	cfg.Thresholds.TssKeysignFailure.MinFailures = 0
 	config.Set(cfg)
 
 	vault := "tthorpub1vaultVLT1"

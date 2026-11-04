@@ -213,7 +213,8 @@ func (s *RecoverKeysharesCovSuite) TestRecoverLegacyKeySharesErrors(c *C) {
 	err := RecoverKeyShares(recoveryConfCov("mocknet"), bridge)
 	c.Assert(err, NotNil)
 	c.Check(err, ErrorMatches, "(?s).*fail to get creation height of "+unknown.String()+".*")
-	c.Check(err, ErrorMatches, "(?s).*fail to decode tx.*")
+	// the undecodable tx is skipped, so the scan completes as a plain miss
+	c.Check(errors.Is(err, errRecoveryBackupNotFound), Equals, true)
 
 	// block fetch failure without a floor change stays retryable
 	bridge.comet.txs = map[int64][]cmttypes.Tx{}
@@ -221,14 +222,15 @@ func (s *RecoverKeysharesCovSuite) TestRecoverLegacyKeySharesErrors(c *C) {
 	err = RecoverLegacyKeyShares(recoveryConfCov("mocknet"), bridge)
 	c.Assert(err, NotNil)
 	c.Check(err, ErrorMatches, "(?s).*fail to get block: rpc down.*")
-	c.Check(IsUnrecoverableKeyshareError(err), Equals, false)
+	c.Check(IsPermanentKeyshareRecoveryFailure(err), Equals, false)
+	c.Check(HasRetryableKeyshareComponent(err), Equals, true)
 
 	// the floor advanced past the failing height: the miss becomes unrecoverable
 	bridge.comet.statusCalls = 0
 	bridge.comet.earliestAfterFirst = 15
 	err = RecoverLegacyKeyShares(recoveryConfCov("mocknet"), bridge)
 	c.Assert(err, NotNil)
-	c.Check(IsUnrecoverableKeyshareError(err), Equals, true)
+	c.Check(errors.Is(err, errRecoveryBackupUnrecoverable), Equals, true)
 	c.Check(err, ErrorMatches, "(?s).*clamped to the node's earliest available block 15.*")
 }
 
@@ -245,19 +247,24 @@ func (s *RecoverKeysharesCovSuite) TestRecoverLegacyKeySharesPrunedAndMissing(c 
 	bridge.comet.latest = 200
 	err := RecoverLegacyKeyShares(recoveryConfCov("mocknet"), bridge)
 	c.Assert(err, NotNil)
-	c.Check(IsUnrecoverableKeyshareError(err), Equals, true)
+	c.Check(errors.Is(err, errRecoveryBackupUnrecoverable), Equals, true)
 	c.Check(bridge.comet.blockCalls, HasLen, 0)
 
-	// an inactive vault with unrecoverable shares is skipped so bifrost can start
+	// an inactive vault still signs refunds, so its shares are never skipped: the
+	// failure surfaces as permanent and the startup barrier starts bifrost degraded
 	bridge.vaults[0].Status = types.VaultStatus_InactiveVault
-	c.Assert(RecoverLegacyKeyShares(recoveryConfCov("mocknet"), bridge), IsNil)
+	err = RecoverLegacyKeyShares(recoveryConfCov("mocknet"), bridge)
+	c.Assert(err, NotNil)
+	c.Check(IsPermanentKeyshareRecoveryFailure(err), Equals, true)
 
-	// status failure: scan from vault height with no floor, and a plain miss is
-	// retryable even for an inactive vault
+	// status failure: scan from vault height with no floor, and the miss is an
+	// incomplete scan that stays retryable even for an inactive vault
 	bridge.comet.statusErr = errors.New("status down")
 	err = RecoverLegacyKeyShares(recoveryConfCov("mocknet"), bridge)
 	c.Assert(err, NotNil)
-	c.Check(errors.Is(err, errRecoveryBackupNotFound), Equals, true)
+	c.Check(err, ErrorMatches, "(?s).*key share recovery scan for .* incomplete.*")
+	c.Check(IsPermanentKeyshareRecoveryFailure(err), Equals, false)
+	c.Check(HasRetryableKeyshareComponent(err), Equals, true)
 	c.Check(bridge.comet.blockCalls, DeepEquals, []int64{10, 9, 8, 7, 6})
 
 	// eddsa key with no matching vault height cannot be recovered
@@ -468,5 +475,4 @@ func (s *RecoverKeysharesCovSuite) TestRecoverScanBoundsEdges(c *C) {
 	c.Check(recoverScanLowerBound(0, 5), Equals, int64(0))
 	c.Check(recoverScanLowerBound(3, 5), Equals, int64(0))
 	c.Check(msgMatchesRecoveryTarget(&types.MsgTssPool{}, nil, keyshareRecoveryTarget{kind: recoveryTargetKind(9)}), Equals, false)
-	c.Check(allUnrecoverable(nil), Equals, false)
 }
