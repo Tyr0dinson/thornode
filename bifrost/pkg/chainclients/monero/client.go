@@ -4311,9 +4311,11 @@ func (c *Client) ReportSolvency(height int64) error {
 	if halted && !c.IsBlockScannerHealthy() && !deferredForReconciliation && checkedVaults > 0 && len(solventMsgs) == checkedVaults {
 		msgs = solventMsgs
 	}
-	// A solvency-gated chain also needs solvent reports while it is running.
-	if !deferredForReconciliation && runners.ShouldReportSolventVaults(c.thorchainBridge, c.chain, halted, haltErr, len(msgs)) && len(solventMsgs) > 0 {
-		msgs = solventMsgs
+	// On a solvency-gated chain that is running, also report the solvent vaults, after the
+	// insolvent ones, so one vault reading short does not hold back every other vault's parked
+	// inbounds (see the other chain clients).
+	if !deferredForReconciliation && runners.ShouldReportSolventVaults(c.thorchainBridge, c.chain, halted, haltErr) {
+		msgs = append(msgs, solventMsgs...)
 	}
 
 	for i := range msgs {

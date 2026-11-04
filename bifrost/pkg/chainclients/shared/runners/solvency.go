@@ -104,13 +104,14 @@ func IsHaltedOnChain(bridge thorclient.ThorchainBridge, chain common.Chain) (boo
 }
 
 // ShouldReportSolventVaults reports whether a chain client should report its solvent
-// vaults even though none is insolvent and the chain is not halted. THORChain holds a
-// solvency-gated chain's inbounds (SolvencyGateInbound-<CHAIN>) until a solvent
-// consensus at or above their height, so those chains need positive reports. Every
-// healthy node reads the same network state here, so their reports reach consensus.
-// On a bridge error it returns false and the inbounds wait for the next report.
-func ShouldReportSolventVaults(bridge thorclient.ThorchainBridge, chain common.Chain, halted bool, haltErr error, insolventVaults int) bool {
-	if halted || haltErr != nil || insolventVaults > 0 {
+// vaults while the chain is not halted, alongside any insolvent ones. THORChain holds a
+// solvency-gated chain's inbounds (SolvencyGateInbound-<CHAIN>) until that vault's own
+// solvent consensus at or above their height, so those chains need positive reports, and
+// one vault reading short must not hold back the others. Every healthy node reads the same
+// network state here, so their reports reach consensus. On a bridge error it returns false
+// and the inbounds wait for the next report.
+func ShouldReportSolventVaults(bridge thorclient.ThorchainBridge, chain common.Chain, halted bool, haltErr error) bool {
+	if halted || haltErr != nil {
 		return false
 	}
 	gate, err := bridge.GetMimir(fmt.Sprintf(constants.MimirTemplateSolvencyGateInbound, chain))

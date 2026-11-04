@@ -756,13 +756,11 @@ func (s *SolvencyTestSuite) TestShouldReportSolventVaults(c *C) {
 		return bridge
 	}
 
-	c.Assert(ShouldReportSolventVaults(newBridge(server), common.GAIAChain, false, nil, 0), Equals, true)
+	c.Assert(ShouldReportSolventVaults(newBridge(server), common.GAIAChain, false, nil), Equals, true)
 	// Ungated chain.
-	c.Assert(ShouldReportSolventVaults(newBridge(server), common.BTCChain, false, nil, 0), Equals, false)
-	// An insolvent vault is reported alone.
-	c.Assert(ShouldReportSolventVaults(newBridge(server), common.GAIAChain, false, nil, 1), Equals, false)
+	c.Assert(ShouldReportSolventVaults(newBridge(server), common.BTCChain, false, nil), Equals, false)
 	// A halted chain keeps the all-clear rules.
-	c.Assert(ShouldReportSolventVaults(newBridge(server), common.GAIAChain, true, nil, 0), Equals, false)
-	c.Assert(ShouldReportSolventVaults(newBridge(server), common.GAIAChain, false, fmt.Errorf("halt state unknown"), 0), Equals, false)
-	c.Assert(ShouldReportSolventVaults(newBridge(failing), common.GAIAChain, false, nil, 0), Equals, false)
+	c.Assert(ShouldReportSolventVaults(newBridge(server), common.GAIAChain, true, nil), Equals, false)
+	c.Assert(ShouldReportSolventVaults(newBridge(server), common.GAIAChain, false, fmt.Errorf("halt state unknown")), Equals, false)
+	c.Assert(ShouldReportSolventVaults(newBridge(failing), common.GAIAChain, false, nil), Equals, false)
 }

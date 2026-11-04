@@ -114,18 +114,47 @@ func hasSolvencyGatedInbounds(ctx cosmos.Context, k keeper.Keeper, vault Vault) 
 // confirmSolvencyGate records a solvent consensus for the vault on a gated chain
 // at the given external height. Inbounds parked in an earlier THORChain block at
 // or below that height are released by the next EndBlock.
-func confirmSolvencyGate(ctx cosmos.Context, mgr Manager, vault Vault, walletCoins common.Coins, chain common.Chain, height int64) {
+func confirmSolvencyGate(ctx cosmos.Context, mgr Manager, vault Vault, walletCoins common.Coins, chain common.Chain, height int64) (gated bool) {
 	k := mgr.Keeper()
 	if !isSolvencyGated(ctx, k, chain) {
-		return
+		return false
 	}
 	if !solventForSolvencyGate(ctx, mgr, vault, walletCoins, chain) {
 		ctx.Logger().Info("vault solvent but its wallet does not cover its ledger, solvency gated inbounds stay parked", "chain", chain, "vault", vault.PubKey)
-		return
+		return true
 	}
 	if err := k.SetSolvencyConfirmation(ctx, chain, vault.PubKey, height); err != nil {
 		ctx.Logger().Error("fail to set solvency confirmation", "chain", chain, "vault", vault.PubKey, "error", err)
 	}
+	return true
+}
+
+// otherVaultFlaggedInsolvent reports whether an Asgard vault other than pubKey that
+// still holds funds on the chain is flagged insolvent there
+// (SolvencyHaltVault-<pubkey>-<chain>). On a solvency-gated chain Bifrost reports
+// solvent vaults alongside insolvent ones, and their consensuses can land in
+// different blocks, so a solvent report must not lift a halt another vault still
+// holds. Vaults without funds on the chain are skipped: Bifrost does not report
+// them, so they could never clear their flag. A read error returns true, which
+// keeps the chain halted.
+func otherVaultFlaggedInsolvent(ctx cosmos.Context, k keeper.Keeper, pubKey common.PubKey, chain common.Chain) (bool, error) {
+	vaults, err := k.GetAsgardVaults(ctx)
+	if err != nil {
+		return true, fmt.Errorf("fail to get asgard vaults: %w", err)
+	}
+	for _, vault := range vaults {
+		if vault.PubKey.Equals(pubKey) || !vault.HasFundsForChain(chain) {
+			continue
+		}
+		flagged, err := k.GetMimir(ctx, solvencyHaltVaultKey(vault.PubKey, chain))
+		if err != nil {
+			return true, fmt.Errorf("fail to get solvency halt vault mimir: %w", err)
+		}
+		if flagged > 0 {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // solventForSolvencyGate is stricter than insolvencyCheck. That check lowers the

@@ -822,7 +822,8 @@ func (c *Client) ReportSolvency(height int64) error {
 	// a healthy scanner can still reach here from the scan path. Its all-clear would carry the
 	// scanned height rather than the runner's, a different voter, and so would be a lone vote too.
 	// On a bridge error stay silent; the runner retries.
-	// If there are any insolvent vaults, report only them.
+	// Otherwise, if there are any insolvent vaults, report only them (except on a solvency-gated
+	// chain, below).
 	// Not reporting both solvent and insolvent vaults is to avoid noise (spam):
 	// Reporting both could halt-and-unhalt SolvencyHalt in the same THOR block
 	// (resetting its height), plus making it harder to know at a glance from solvency reports which vaults were insolvent.
@@ -836,17 +837,21 @@ func (c *Client) ReportSolvency(height int64) error {
 		msgs = solventMsgs
 		solvent = true
 	}
-	// A solvency-gated chain also needs solvent reports while it is running.
-	if runners.ShouldReportSolventVaults(c.bridge, c.cfg.ChainID, halted, haltErr, len(msgs)) && len(solventMsgs) > 0 {
-		msgs = solventMsgs
-		solvent = true
+	// On a solvency-gated chain that is running, also report the solvent vaults, after the
+	// insolvent ones. THORChain releases a vault's parked inbounds only on that vault's own
+	// solvent consensus, so one vault reading short must not hold back every other vault's
+	// inbounds. On a gated chain THORChain does not let a solvent report lift a solvency halt
+	// while another funded vault is flagged insolvent, so the mixed reports cannot flicker it.
+	insolventCount := len(msgs)
+	if !solvent && runners.ShouldReportSolventVaults(c.bridge, c.cfg.ChainID, halted, haltErr) {
+		msgs = append(msgs, solventMsgs...)
 	}
 
 	for i := range msgs {
 		c.log.Info().
 			Stringer("asgard", msgs[i].PubKey).
 			Interface("coins", msgs[i].Coins).
-			Bool("solvent", solvent).
+			Bool("solvent", solvent || i >= insolventCount).
 			Msg("reporting solvency")
 
 		// send solvency to thorchain via global queue consumed by the observer

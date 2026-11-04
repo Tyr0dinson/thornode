@@ -703,3 +703,72 @@ func (s *SolvencyGateSuite) TestNetworkSolvencyNetsParkedPrincipalHeldByInactive
 	c.Assert(k.SetVault(f.ctx, vault), IsNil)
 	c.Assert(f.networkSolvencyATOM(c), Equals, before)
 }
+
+// reportVaultSolvency brings a solvency report of a vault's ATOM wallet balance at
+// the external height to consensus.
+func (f *solvencyGateFixture) reportVaultSolvency(c *C, pubKey common.PubKey, wallet uint64, height int64) {
+	msg, err := NewMsgSolvency(common.GAIAChain, pubKey,
+		common.NewCoins(common.NewCoin(common.ATOMAsset, cosmos.NewUint(wallet))), height, f.nodes[0].NodeAddress)
+	c.Assert(err, IsNil)
+	handler := NewSolvencyHandler(f.mgr)
+	for _, na := range f.nodes {
+		msg.Signer = na.NodeAddress
+		_, err = handler.Run(f.ctx, msg)
+		c.Assert(err, IsNil)
+	}
+}
+
+// On a solvency-gated chain Bifrost reports solvent vaults alongside insolvent ones,
+// and their consensuses can land in different blocks. A solvent vault's report in the
+// block after another vault's insolvent consensus halted the chain must not lift the
+// halt while that vault, still holding funds on the chain, is flagged insolvent.
+func (s *SolvencyGateSuite) TestOtherFlaggedVaultKeepsChainHalted(c *C) {
+	const haltKey = "SolvencyHaltGAIAChain"
+	run := func(gated, drainedHasFunds bool) (haltAfterSolvent, haltAfterRecovery int64) {
+		f := newSolvencyGateFixture(c, gated)
+		k := f.mgr.Keeper()
+		ledger := common.NewCoins(common.NewCoin(common.ATOMAsset, cosmos.NewUint(100*common.One)))
+		// The fixture vault is drained: its wallet holds nothing against 100 ATOM.
+		f.vault.Coins = ledger
+		c.Assert(k.SetVault(f.ctx, f.vault), IsNil)
+		other := NewVault(1, ActiveVault, AsgardVault, GetRandomPubKey(), []string{common.GAIAChain.String()}, nil)
+		other.Coins = ledger
+		c.Assert(k.SetVault(f.ctx, other), IsNil)
+
+		f.reportVaultSolvency(c, f.vault.PubKey, 0, 50)
+		halt, err := k.GetMimir(f.ctx, haltKey)
+		c.Assert(err, IsNil)
+		c.Assert(halt, Equals, f.ctx.BlockHeight())
+		flagged, err := k.GetMimir(f.ctx, solvencyHaltVaultKey(f.vault.PubKey, common.GAIAChain))
+		c.Assert(err, IsNil)
+		c.Assert(flagged > 0, Equals, true)
+
+		if !drainedHasFunds {
+			f.vault.Coins = nil
+			c.Assert(k.SetVault(f.ctx, f.vault), IsNil)
+		}
+		f.nextBlock()
+		f.reportVaultSolvency(c, other.PubKey, 100*common.One, 50)
+		haltAfterSolvent, err = k.GetMimir(f.ctx, haltKey)
+		c.Assert(err, IsNil)
+
+		// The drained vault recovers and lifts the halt itself.
+		f.nextBlock()
+		f.reportVaultSolvency(c, f.vault.PubKey, 100*common.One, 51)
+		haltAfterRecovery, err = k.GetMimir(f.ctx, haltKey)
+		c.Assert(err, IsNil)
+		return haltAfterSolvent, haltAfterRecovery
+	}
+
+	// Gated: the halt holds until the flagged vault reports solvent.
+	held, recovered := run(true, true)
+	c.Assert(held, Equals, int64(100))
+	c.Assert(recovered, Equals, int64(0))
+	// Gated, but the flagged vault holds nothing on the chain: Bifrost would never
+	// report it, so its flag must not hold the chain.
+	held, _ = run(true, false)
+	c.Assert(held, Equals, int64(0))
+	// Ungated: unchanged from before the gate, the solvent report unhalts.
+	held, _ = run(false, true)
+	c.Assert(held, Equals, int64(0))
+}

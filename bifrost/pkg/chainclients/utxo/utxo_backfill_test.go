@@ -1173,6 +1173,7 @@ type solvencyGateBridge struct {
 	thorclient.ThorchainBridge
 	asgards        ttypes.Vaults
 	solvencyHalted bool
+	inboundGated   bool
 	mimirErr       error
 }
 
@@ -1185,6 +1186,9 @@ func (b *solvencyGateBridge) GetMimir(key string) (int64, error) {
 		return 0, b.mimirErr
 	}
 	if b.solvencyHalted && key == "SolvencyHaltBTCChain" {
+		return 1, nil
+	}
+	if b.inboundGated && key == "SolvencyGateInbound-BTC" {
 		return 1, nil
 	}
 	return 0, nil
@@ -1238,6 +1242,47 @@ func (s *CoverageBackfillSuite) TestReportSolvencyNoAllClearWhenNotHaltedOnChain
 func (s *CoverageBackfillSuite) TestReportSolvencyNoAllClearWhenHaltStateUnreadable(c *C) {
 	_, queued := s.reportSolventVault(c, &solvencyGateBridge{solvencyHalted: true, mimirErr: fmt.Errorf("bridge unavailable")})
 	c.Assert(queued, HasLen, 0)
+}
+
+// reportShortAndSolventVaults runs ReportSolvency against two BTC vaults: one
+// whose ledger (100 BTC) the listunspent fixture (25.02 BTC) does not cover and one
+// it does, and returns them with what was queued.
+func (s *CoverageBackfillSuite) reportShortAndSolventVaults(c *C, bridge *solvencyGateBridge) (short, solvent ttypes.Vault, queued []stypes.Solvency) {
+	short = ttypes.Vault{
+		PubKey: ttypes.GetRandomPubKey(),
+		Coins:  common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(100*common.One))),
+	}
+	solvent = ttypes.Vault{
+		PubKey: ttypes.GetRandomPubKey(),
+		Coins:  common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(common.One))),
+	}
+	bridge.ThorchainBridge = s.bridge
+	bridge.asgards = ttypes.Vaults{short, solvent}
+	s.client.bridge = bridge
+	queue := make(chan stypes.Solvency, 10)
+	s.client.globalSolvencyQueue = queue
+	s.client.lastSolvencyCheckHeight.Store(0)
+
+	c.Assert(s.client.ReportSolvency(100), IsNil)
+	close(queue)
+	for msg := range queue {
+		queued = append(queued, msg)
+	}
+	return short, solvent, queued
+}
+
+// On a solvency-gated chain one vault reading short must not hold back the other
+// vaults' solvent reports, which release their parked inbounds: both are queued,
+// insolvent first. An ungated chain still reports only the short vault.
+func (s *CoverageBackfillSuite) TestReportSolvencyGatedReportsSolventAlongsideInsolvent(c *C) {
+	short, solvent, queued := s.reportShortAndSolventVaults(c, &solvencyGateBridge{inboundGated: true})
+	c.Assert(queued, HasLen, 2)
+	c.Assert(queued[0].PubKey.Equals(short.PubKey), Equals, true)
+	c.Assert(queued[1].PubKey.Equals(solvent.PubKey), Equals, true)
+
+	short, _, queued = s.reportShortAndSolventVaults(c, &solvencyGateBridge{})
+	c.Assert(queued, HasLen, 1)
+	c.Assert(queued[0].PubKey.Equals(short.PubKey), Equals, true)
 }
 
 func (s *CoverageBackfillSuite) TestRegisterPublicKey(c *C) {

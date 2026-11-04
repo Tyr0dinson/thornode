@@ -232,6 +232,7 @@ func processSolvencyAttestation(
 
 	isInsolvent := insolvencyCheck(ctx, mgr, vault, voter.Coins, voter.Chain)
 
+	gated := false
 	if isInsolvent {
 		// Flag this specific vault as insolvent so it is excluded from
 		// inbound-address election on every chain it serves, not just the
@@ -245,7 +246,7 @@ func processSolvencyAttestation(
 		// every chain it serves.
 		clearVaultInsolvent(ctx, k, voter.PubKey, voter.Chain)
 		// Release this vault's solvency-gated inbounds up to the report height.
-		confirmSolvencyGate(ctx, mgr, vault, voter.Coins, voter.Chain, s.Height)
+		gated = confirmSolvencyGate(ctx, mgr, vault, voter.Coins, voter.Chain, s.Height)
 	}
 
 	// If the chain was halted this block, leave it halted without overriding.
@@ -286,6 +287,19 @@ func processSolvencyAttestation(
 	// A different insolvent vault on the same chain will have refreshed haltChain to the current
 	// block, preventing this unhalt via the guard at line 106 (haltChain >= ctx.BlockHeight()).
 	if !isInsolvent && haltChain > 1 {
+		// On a solvency-gated chain a solvent report can arrive while another vault's
+		// insolvent consensus from an earlier block holds the halt; that vault lifts the
+		// halt itself once it reports solvent. Ungated chains skip this check.
+		if gated {
+			held, err := otherVaultFlaggedInsolvent(ctx, k, voter.PubKey, voter.Chain)
+			if err != nil {
+				ctx.Logger().Error("fail to check other vaults' solvency, chain stays halted", "chain", voter.Chain, "error", err)
+			}
+			if held {
+				ctx.Logger().Info("another vault is still flagged insolvent, chain stays halted", "chain", voter.Chain, "vault", voter.PubKey)
+				return nil
+			}
+		}
 		// if the chain was halted by previous solvency checker, auto unhalt it
 		ctx.Logger().Info("auto un-halt", "chain", voter.Chain, "previous halt height", haltChain, "current block height", ctx.BlockHeight())
 		k.SetMimir(ctx, haltChainKey, 0)
