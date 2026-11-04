@@ -5,6 +5,7 @@ package thorchain
 import (
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
 )
 
 // Reimburse the treasury for the GAIA vault solvency top-up. The treasury
@@ -34,34 +35,38 @@ const (
 // top-up in RUNE from the Reserve. Mainnet only; soft-skips on insufficient
 // Reserve rather than halting the upgrade.
 func (m Migrator) migrate21to22Mainnet(ctx cosmos.Context) error {
-	k := m.mgr.Keeper()
+	return reimburseGaiaVaultTopUp(ctx, m.mgr.Keeper(), gaiaReimburseRecipient, gaiaReimburseRune, gaiaReimburseTopUpTx)
+}
 
-	recipient, err := cosmos.AccAddressFromBech32(gaiaReimburseRecipient)
+// reimburseGaiaVaultTopUp sends runeAmt (in 1e8 RUNE) from the Reserve to
+// recipientStr. It soft-skips (logs and returns nil, never halting the upgrade)
+// if the recipient is unparseable or the Reserve cannot cover the amount, and
+// moves nothing in either case.
+func reimburseGaiaVaultTopUp(ctx cosmos.Context, k keeper.Keeper, recipientStr string, runeAmt uint64, topUpTx string) error {
+	recipient, err := cosmos.AccAddressFromBech32(recipientStr)
 	if err != nil {
-		// Soft-skip rather than halt the upgrade; the recipient is a fixed,
-		// test-validated constant so this cannot happen in practice.
 		ctx.Logger().Error("GAIA vault solvency top-up reimbursement skipped: bad recipient",
-			"error", err, "recipient", gaiaReimburseRecipient)
+			"error", err, "recipient", recipientStr)
 		return nil
 	}
 
-	amount := cosmos.NewUint(gaiaReimburseRune)
+	amount := cosmos.NewUint(runeAmt)
 	coins := common.NewCoins(common.NewCoin(common.RuneAsset(), amount))
 
 	if bal := k.GetRuneBalanceOfModule(ctx, ReserveName); bal.LT(amount) {
 		ctx.Logger().Error("GAIA vault solvency top-up reimbursement skipped: Reserve below amount",
-			"reserve", bal.String(), "amount", amount.String(), "topup_tx", gaiaReimburseTopUpTx)
+			"reserve", bal.String(), "amount", amount.String(), "topup_tx", topUpTx)
 		return nil
 	}
 
 	if err := k.SendFromModuleToAccount(ctx, ReserveName, recipient, coins); err != nil {
 		ctx.Logger().Error("fail to reimburse treasury for GAIA vault solvency top-up",
 			"error", err, "recipient", recipient.String(),
-			"amount", amount.String(), "topup_tx", gaiaReimburseTopUpTx)
+			"amount", amount.String(), "topup_tx", topUpTx)
 		return nil
 	}
 
 	ctx.Logger().Info("reimbursed treasury for GAIA vault solvency top-up",
-		"recipient", recipient.String(), "amount", amount.String(), "topup_tx", gaiaReimburseTopUpTx)
+		"recipient", recipient.String(), "amount", amount.String(), "topup_tx", topUpTx)
 	return nil
 }
