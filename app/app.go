@@ -391,7 +391,8 @@ func NewChainApp(
 		wasmOpts,
 		wasmkeeper.WithQueryPlugins(
 			&wasmkeeper.QueryPlugins{
-				Grpc: wrappedGrpcQuerier,
+				Grpc:   wrappedGrpcQuerier,
+				Custom: app.cosmosKVQuery,
 			},
 		),
 		wasmkeeper.WithGasRegister(WasmGasRegister),
