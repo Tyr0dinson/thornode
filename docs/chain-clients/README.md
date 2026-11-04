@@ -176,11 +176,11 @@ All chain clients must handle the following responsibilities consistently:
 - Clients receive `TxOut` instructions from THORChain to spend funds from vaults.
 - Bifrost handles TSS signing.
 - Clients broadcast the transaction and submit `MsgObservedTxOut`.
-- Outbound transactions are also instantly observed using [AutoObserve](../bifrost/how-bifrost-works.md#autoobserve)
+- Outbound transactions can also be observed immediately using [AutoObserve](../bifrost/how-bifrost-works.md#autoobserve). DASH skips signer AutoObserve when mempool scanning is enabled; its first report waits for a scan. Early DASH vault-outbound observations can finalise on THORChain without waiting for a Dash lock. See [DASH observation policy](utxo.md#dash-instantsend-allowance).
 
 ### Confirmation Counting
 
-- For delayed-finality chains (UTXO, Ethereum), transactions require dynamic confirmations based on transaction value relative to block rewards.
+- For the UTXO chains listed below and Ethereum, transactions require dynamic confirmations based on transaction value relative to block rewards. DASH uses a separate observation policy.
 
 - **UTXO chains** (BTC, BCH, LTC, DOGE, ZEC — see `utxo/client_internal.go`) compute a confirmation value from `ConfMultiplier` (a basis-points parameter) and block reward, then divide the transaction value by it:
 
@@ -201,6 +201,8 @@ All chain clients must handle the following responsibilities consistently:
 ```
 
 - Finality is only reached after this threshold is met.
+
+- **DASH** adds no generic confirmation delay. Customer deposits require an eligible InstantSend lock or a ChainLocked block; vault outbounds can finalise on THORChain through early mempool observations. See [DASH confirmation counting](utxo.md#confirmation-counting).
 
 - Chains with instant finality (Cosmos, Solana, XRP, Avalanche) return 0 confirmations.
 

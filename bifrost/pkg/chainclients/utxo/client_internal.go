@@ -542,7 +542,7 @@ func (c *Client) isRBFEnabled(tx *btcjson.TxRawResult) bool {
 
 func (c *Client) getTxIn(tx *btcjson.TxRawResult, height int64, isMemPool bool, vinZeroTxs map[string]*btcjson.TxRawResult) (types.TxInItem, error) {
 	if c.ignoreTx(tx, height) {
-		c.log.Debug().Int64("height", height).Str("txid", tx.Hash).Msg("ignore tx not matching format")
+		c.log.Debug().Int64("height", height).Str("txid", tx.Txid).Msg("ignore tx not matching format")
 		return types.TxInItem{}, nil
 	}
 	// RBF enabled transaction will not be observed until committed to block
@@ -567,7 +567,7 @@ func (c *Client) getTxIn(tx *btcjson.TxRawResult, height int64, isMemPool bool, 
 	output, err := c.getOutput(sender, tx, m.IsType(mem.TxConsolidate))
 	if err != nil {
 		if errors.Is(err, btypes.ErrFailOutputMatchCriteria) {
-			c.log.Debug().Int64("height", height).Str("txid", tx.Hash).Msg("ignore tx not matching format")
+			c.log.Debug().Int64("height", height).Str("txid", tx.Txid).Msg("ignore tx not matching format")
 			return types.TxInItem{}, nil
 		}
 		return types.TxInItem{}, fmt.Errorf("fail to get output from tx: %w", err)
@@ -741,8 +741,12 @@ func (c *Client) extractTxs(block *btcjson.GetBlockVerboseTxResult) (types.TxIn,
 
 	var txItems []*types.TxInItem
 	for idx, tx := range block.Tx {
-		// mempool transaction get committed to block , thus remove it from mempool cache
-		c.removeFromMemPoolCache(tx.Hash)
+		// A mined transaction no longer needs its mempool work marker.
+		id := tx.Hash
+		if c.cfg.ChainID == common.DASHChain {
+			id = tx.Txid // Dash Core does not return a transaction hash field.
+		}
+		c.removeFromMemPoolCache(id)
 		var txInItem types.TxInItem
 		txInItem, err = c.getTxIn(&block.Tx[idx], block.Height, false, vinZeroTxs)
 		if err != nil {

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/btcsuite/btcd/btcjson"
@@ -54,7 +55,7 @@ func newDashMempoolFixture(c *C, rpcTimeout ...time.Duration) (*Client, *dashMem
 		}
 		locked := id != f.unlockedOutbound
 		f.txs[id] = map[string]any{
-			"txid": id, "hash": id, "version": 2, "instantlock": locked,
+			"txid": id, "version": 2, "instantlock": locked,
 			"vin": []any{map[string]any{"txid": prev, "vout": 0, "sequence": uint32(4294967295)}},
 			"vout": []any{output(destination, 0.1), map[string]any{
 				"n": 1, "value": 0,
@@ -152,6 +153,233 @@ func newDashMempoolFixture(c *C, rpcTimeout ...time.Duration) (*Client, *dashMem
 	return client, f, func() { server.Close(); cleanup() }
 }
 
+// TestDashBlockClearsMempoolMarkers covers Dash responses without a transaction
+// hash, including ignored transactions and entries already marked observed.
+func (s *DashSuite) TestDashBlockClearsMempoolMarkers(c *C) {
+	for _, cacheSize := range []int{0, 10} {
+		func() {
+			client, f, cleanup := newDashMempoolFixture(c)
+			defer cleanup()
+			storage, err := blockscanner.NewBlockScannerStorage(c.MkDir(), config.LevelDBOptions{})
+			c.Assert(err, IsNil)
+			defer storage.Close()
+			db := storage.GetInternalDb()
+			client.temporalStorage, err = sharedutxo.NewTemporalStorage(db, cacheSize)
+			c.Assert(err, IsNil)
+			client.disableVinZeroBatch = true
+
+			batch, err := client.fetchMemPoolTransactions(123, true)
+			c.Assert(err, IsNil)
+			c.Assert(batch.TxArray, HasLen, 2)
+			added, err := client.temporalStorage.TrackObservedTx(f.lockedOutbound)
+			c.Assert(err, IsNil)
+			c.Assert(added, Equals, true)
+			ignored := strings.Repeat("9", 64)
+			added, err = client.temporalStorage.TrackMempoolTx(ignored)
+			c.Assert(err, IsNil)
+			c.Assert(added, Equals, true)
+
+			f.chainLocked = true
+			block, err := client.getBlock(150)
+			c.Assert(err, IsNil)
+			for _, tx := range block.Tx {
+				c.Assert(tx.Hash, Equals, "") // Dash Core supplies txid, not hash.
+			}
+			block.Tx = append(block.Tx, btcjson.TxRawResult{Txid: ignored})
+			batch, err = client.extractTxs(block)
+			c.Assert(err, IsNil)
+			c.Assert(batch.TxArray, HasLen, 1)
+			c.Assert(batch.TxArray[0].Tx, Equals, f.unlockedOutbound)
+
+			for _, id := range []string{f.lockedOutbound, f.unlockedOutbound, ignored} {
+				var tracked bool
+				tracked, err = db.Has([]byte(sharedutxo.PrefixMempool+id), nil)
+				c.Assert(err, IsNil)
+				c.Check(tracked, Equals, false, Commentf("cache size %d, mined tx %s", cacheSize, id))
+				// The in-memory cache must also allow tracking the ID again.
+				added, err = client.temporalStorage.TrackMempoolTx(id)
+				c.Assert(err, IsNil)
+				c.Check(added, Equals, true)
+			}
+			for _, id := range []string{f.inbound, f.lowFeeInbound} {
+				added, err = client.temporalStorage.TrackMempoolTx(id)
+				c.Assert(err, IsNil)
+				c.Check(added, Equals, false) // Still pending in the mempool.
+			}
+			observed, err := client.temporalStorage.HasObservedTx(f.lockedOutbound)
+			c.Assert(err, IsNil)
+			c.Check(observed, Equals, true)
+		}()
+	}
+}
+
+// TestBlockMempoolCleanupPreservesOtherChains pins the existing cleanup key
+// for non-Dash chains when hash and txid differ.
+func (s *DashSuite) TestBlockMempoolCleanupPreservesOtherChains(c *C) {
+	for _, chain := range []common.Chain{common.BTCChain, common.LTCChain, common.BCHChain, common.DOGEChain, common.ZECChain} {
+		func() {
+			client, f, cleanup := newDashMempoolFixture(c)
+			defer cleanup()
+			client.cfg.ChainID = chain
+			client.disableVinZeroBatch = true
+			id, hash := f.inbound, strings.Repeat("9", 64)
+			for _, key := range []string{id, hash} {
+				added, err := client.temporalStorage.TrackMempoolTx(key)
+				c.Assert(err, IsNil)
+				c.Assert(added, Equals, true)
+			}
+			_, err := client.extractTxs(&btcjson.GetBlockVerboseTxResult{
+				Height: 150, Tx: []btcjson.TxRawResult{{Txid: id, Hash: hash}},
+			})
+			c.Assert(err, IsNil)
+			added, err := client.temporalStorage.TrackMempoolTx(hash)
+			c.Assert(err, IsNil)
+			c.Check(added, Equals, true, Commentf("chain: %s", chain))
+			added, err = client.temporalStorage.TrackMempoolTx(id)
+			c.Assert(err, IsNil)
+			c.Check(added, Equals, false, Commentf("chain: %s", chain))
+		}()
+	}
+}
+
+// TestMempoolChainLockFilter skips only ChainLocked Dash transactions, preserving
+// other outbounds in the batch and the existing policy for non-Dash chains.
+func (s *DashSuite) TestMempoolChainLockFilter(c *C) {
+	for _, tc := range []struct {
+		name          string
+		chain         common.Chain
+		chainLock     bool
+		instantLock   bool
+		confirmations int
+		want          int
+	}{
+		{"dash chainlocked", common.DASHChain, true, false, 1, 1},
+		{"dash instantsend", common.DASHChain, false, true, 0, 2},
+		{"dash mined without chainlock", common.DASHChain, false, false, 1, 2},
+		{"bitcoin ignores chainlock field", common.BTCChain, true, false, 1, 2},
+	} {
+		func() {
+			client, f, cleanup := newDashMempoolFixture(c)
+			defer cleanup()
+			client.cfg.ChainID = tc.chain
+			f.entries = map[string]map[string]any{
+				f.lockedOutbound:   dashTestMempoolEntry(),
+				f.unlockedOutbound: dashTestMempoolEntry(),
+			}
+			f.txs[f.lockedOutbound]["chainlock"] = tc.chainLock
+			f.txs[f.lockedOutbound]["instantlock"] = tc.instantLock
+			f.txs[f.lockedOutbound]["confirmations"] = tc.confirmations
+
+			batch, err := client.fetchMemPoolTransactions(123, true)
+			c.Assert(err, IsNil)
+			c.Check(batch.TxArray, HasLen, tc.want, Commentf("%s", tc.name))
+			seen := make(map[string]bool)
+			for _, tx := range batch.TxArray {
+				seen[tx.Tx] = true
+			}
+			c.Check(seen[f.unlockedOutbound], Equals, true)
+			c.Check(seen[f.lockedOutbound], Equals, tc.want == 2)
+			// A skipped transaction must not leave the new mempool work marker.
+			added, err := client.temporalStorage.TrackMempoolTx(f.lockedOutbound)
+			c.Assert(err, IsNil)
+			c.Check(added, Equals, tc.want == 1)
+		}()
+	}
+}
+
+// TestDashMempoolSnapshotAcrossBlockCleanup ensures a delayed mempool response
+// cannot re-emit ChainLocked outbounds or recreate their cleaned cache entries.
+func (s *DashSuite) TestDashMempoolSnapshotAcrossBlockCleanup(c *C) {
+	for _, cacheSize := range []int{0, 10} {
+		func() {
+			client, f, cleanup := newDashMempoolFixture(c, 10*time.Second)
+			defer cleanup()
+			storage, err := blockscanner.NewBlockScannerStorage(c.MkDir(), config.LevelDBOptions{})
+			c.Assert(err, IsNil)
+			defer storage.Close()
+			db := storage.GetInternalDb()
+			client.temporalStorage, err = sharedutxo.NewTemporalStorage(db, cacheSize)
+			c.Assert(err, IsNil)
+			client.disableVinZeroBatch = true
+			f.entries = map[string]map[string]any{
+				f.lockedOutbound:   dashTestMempoolEntry(),
+				f.unlockedOutbound: dashTestMempoolEntry(),
+			}
+			first, err := client.fetchMemPoolTransactions(123, true)
+			c.Assert(err, IsNil)
+			c.Assert(first.TxArray, HasLen, 2)
+
+			entered, release := make(chan struct{}), make(chan struct{})
+			var enteredOnce, releaseOnce sync.Once
+			unblock := func() { releaseOnce.Do(func() { close(release) }) }
+			f.overrideRPC = func(method string, _ []json.RawMessage) (any, bool) {
+				if method != "getrawmempool" {
+					return nil, false
+				}
+				// Capture the list before mining, then delay its delivery.
+				ids := []string{f.lockedOutbound, f.unlockedOutbound}
+				enteredOnce.Do(func() { close(entered) })
+				<-release
+				return ids, true
+			}
+			var replay struct {
+				batch types.TxIn
+				err   error
+			}
+			completed := make(chan struct{})
+			go func() {
+				defer close(completed)
+				replay.batch, replay.err = client.fetchMemPoolTransactions(149, true)
+			}()
+			defer func() {
+				unblock()
+				select {
+				case <-completed:
+				case <-time.After(5 * time.Second):
+					c.Error("mempool scan did not stop after releasing the RPC")
+				}
+			}()
+			select {
+			case <-entered:
+			case <-time.After(5 * time.Second):
+				c.Fatal("mempool request did not reach the RPC")
+			}
+
+			f.chainLocked = true
+			for _, id := range []string{f.lockedOutbound, f.unlockedOutbound} {
+				f.txs[id]["chainlock"] = true
+				f.txs[id]["confirmations"] = 1
+			}
+			block, err := client.getBlock(150)
+			c.Assert(err, IsNil)
+			mined, err := client.extractTxs(block)
+			c.Assert(err, IsNil)
+			c.Assert(mined.TxArray, HasLen, 2)
+			unblock()
+			select {
+			case <-completed:
+			case <-time.After(5 * time.Second):
+				c.Fatal("mempool scan did not finish")
+			}
+			c.Assert(replay.err, IsNil)
+			c.Check(replay.batch.TxArray, HasLen, 0, Commentf("cache size %d", cacheSize))
+			for _, id := range []string{f.lockedOutbound, f.unlockedOutbound} {
+				var tracked, observed, added bool
+				tracked, err = db.Has([]byte(sharedutxo.PrefixMempool+id), nil)
+				c.Assert(err, IsNil)
+				c.Check(tracked, Equals, false)
+				observed, err = client.temporalStorage.HasObservedTx(id)
+				c.Assert(err, IsNil)
+				c.Check(observed, Equals, true)
+				// Also verify removal from the optional in-memory cache.
+				added, err = client.temporalStorage.TrackMempoolTx(id)
+				c.Assert(err, IsNil)
+				c.Check(added, Equals, true)
+			}
+		}()
+	}
+}
+
 func (s *DashSuite) TestDashFetchMemPoolOutboundsAndFinalObservations(c *C) {
 	client, f, cleanup := newDashMempoolFixture(c)
 	defer cleanup()
@@ -170,7 +398,7 @@ func (s *DashSuite) TestDashFetchMemPoolOutboundsAndFinalObservations(c *C) {
 		var observed bool
 		observed, err = client.temporalStorage.HasObservedTx(item.Tx)
 		c.Assert(err, IsNil)
-		c.Assert(observed, Equals, false) // final block observation is still needed
+		c.Assert(observed, Equals, false) // Keep the later block observation available.
 	}
 	c.Assert(seen, DeepEquals, map[string]bool{f.lockedOutbound: true, f.unlockedOutbound: true})
 
@@ -189,7 +417,7 @@ func (s *DashSuite) TestDashFetchMemPoolOutboundsAndFinalObservations(c *C) {
 	retry, err := client.FetchMemPool(123)
 	c.Assert(err, IsNil)
 	c.Assert(retry.MemPool, Equals, true)
-	c.Assert(retry.TxArray, HasLen, 0) // non-final mempool deduplication
+	c.Assert(retry.TxArray, HasLen, 0) // Ordinary mempool deduplication.
 
 	// Both outbounds can still be observed once mined in a ChainLocked block.
 	_, err = client.getBlock(150)

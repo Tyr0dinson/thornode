@@ -209,12 +209,20 @@ If a double-spend or failed outbound is not properly suppressed, it can lead to 
 
 THORChain uses two processes to deal with this scenario:
 
-- AutoObserve instantly observes signed outbounds so they are not rescheduled to a secondary vault.
+- AutoObserve reports outbounds immediately after broadcast where the signer policy enables it. DASH skips this when mempool scanning is enabled and waits for a scanner observation instead.
 - LackSigning is a fallback process that will reassign an outbound transaction if no observation is detected. Reassignment occurs only after a sufficient delay and typically only if the initial outbound signing failed or the observation was not received by THORNode.
 
 ### AutoObserve
 
 AutoObserve enables immediate observation of outbound transactions. Within the ChainClient, during the `SignTx` function of an outbound transaction, a `TxInItem` is created. If AutoObserve is enabled, this `TxInItem` is immediately marked as observed. The `TxInItem` is then sent from Bifrost to THORNode for processing. This prevents the `LackSigning` mechanism from reassigning the same outbound transaction to a secondary vault.
+
+**DASH exception:** With mempool scanning enabled, the signer skips AutoObserve,
+including for memoless outbounds. The first report waits for scanning and can be
+delayed by RPC failures. Ordinary vault-outbound observations require no
+InstantSend lock or ChainLock and can finalise on THORChain once they reach quorum.
+Customer inbounds still require an eligible InstantSend lock or a ChainLocked block.
+Disabling DASH mempool scanning restores the existing signer AutoObserve rules.
+See [DASH observation policy](../chain-clients/utxo.md#dash-instantsend-allowance).
 
 **Key characteristics:**
 

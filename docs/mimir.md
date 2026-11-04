@@ -159,7 +159,7 @@ Operational notes:
 - `DashInstantSendMaxAmount`#: Per-node customer InstantSend allowance in duffs (`100000000000` means 1,000 DASH); unset or non-positive values stop new customer InstantSend observations. See [Dash InstantSend allowance](chain-clients/utxo.md#dash-instantsend-allowance).
 - `DashInstantSendMinAmount`#: Minimum customer InstantSend deposit in duffs; unset or negative values default to `1000000` (0.01 DASH). Zero removes this extra minimum while keeping the chain dust check.
 
-Eligible vault-to-vault transfers, including migrations and consolidation, bypass both amount limits. The enabled switch still applies to them: setting only `DashInstantSendMaxAmount=0` does not disable their InstantSend observations. With mempool scanning enabled, ordinary vault payments to customers receive non-final mempool observations and final ChainLock observations.
+Eligible vault-to-vault transfers, including migrations and consolidation, bypass both amount limits. The enabled switch still applies to their InstantSend observations: setting only `DashInstantSendMaxAmount=0` does not disable those observations. With mempool scanning enabled, ordinary vault outbounds can finalise on THORChain once their early mempool observations reach quorum, without an InstantSend lock or ChainLock. A later ChainLock scan can report the mined transaction again. Customer deposits still require an eligible InstantSend lock or inclusion in a ChainLocked block.
 
 ### Fee Management
 

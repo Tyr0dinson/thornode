@@ -615,8 +615,8 @@ func (c *Client) FetchTxs(height, chainHeight int64) (types.TxIn, error) {
 type mempoolScanType uint8
 
 const (
-	scanOutbounds   mempoolScanType = iota // Non-final observations of vault-sent transactions.
-	scanInstantSend                        // Final observations of InstantSend transactions received by vaults.
+	scanOutbounds   mempoolScanType = iota // Early vault-outbound observations, without requiring a lock.
+	scanInstantSend                        // Lock-verified InstantSend observations received by vaults.
 )
 
 // FetchMemPool retrieves txs from mempool
@@ -657,8 +657,8 @@ func (c *Client) FetchMemPool(height int64) (types.TxIn, error) {
 		return c.fetchMemPoolTransactions(height, true)
 	}
 
-	// Each batch has one finality flag, so alternate ordinary vault outbounds
-	// and finalized InstantSend observations, starting with outbounds.
+	// Each batch has one MemPool flag, so alternate ordinary vault outbounds
+	// and lock-verified InstantSend observations, starting with outbounds.
 	// Select the next scan before fetching so errors cannot stall either path.
 	switch c.nextMempoolScan {
 	case scanInstantSend:
@@ -686,9 +686,10 @@ func (c *Client) FetchMemPool(height int64) (types.TxIn, error) {
 	}
 }
 
-// fetchMemPoolTransactions returns non-final observations. Dash restricts this
-// path to vault senders so incoming deposits retain their InstantSend policy.
-// Mempool work markers must not claim the final observation used by block scans.
+// fetchMemPoolTransactions returns early mempool observations. Dash restricts this
+// path to vault senders; their observations can finalise on THORChain without a lock.
+// Customer deposits retain their InstantSend/ChainLock checks. Mempool work markers
+// must not suppress the later observation from a block scan.
 func (c *Client) fetchMemPoolTransactions(height int64, onlyAsgardSenders bool) (types.TxIn, error) {
 	hashes, err := c.rpc.GetRawMempool()
 	if err != nil {
@@ -763,6 +764,12 @@ func (c *Client) fetchMemPoolTransactions(height int64, onlyAsgardSenders bool) 
 				c.log.Err(err).Str("hash", batch[i]).Msg("fail to get raw transaction verbose")
 				continue
 			}
+			// The mempool list may predate block cleanup. Do not re-emit a
+			// ChainLocked Dash transaction or recreate its mempool work marker.
+			if c.cfg.ChainID == common.DASHChain && result.ChainLock {
+				c.removeFromMemPoolCache(batch[i])
+				continue
+			}
 
 			// filter transactions
 			var txInItem types.TxInItem
@@ -805,9 +812,9 @@ func (c *Client) fetchMemPoolTransactions(height int64, onlyAsgardSenders bool) 
 // Thorchain.
 func (c *Client) GetConfirmationCount(txIn types.TxIn) int64 {
 	if c.cfg.ChainID.Equals(common.DASHChain) {
-		// Dash observations are emitted only after Dash-specific finality:
-		// either InstantSend-lock from mempool or inclusion under the chainlocked tip.
-		// Once emitted, no additional generic PoW confirmation depth is required.
+		// Dash customer deposits require InstantSend or ChainLock before emission.
+		// Vault outbounds can be emitted earlier from the mempool. Neither path
+		// adds a generic PoW confirmation delay.
 		return 0
 	}
 
@@ -839,8 +846,8 @@ func (c *Client) GetConfirmationCount(txIn types.TxIn) int64 {
 // https://medium.com/coinmonks/1confvalue-a-simple-pow-confirmation-rule-of-thumb-a8d9c6c483dd
 func (c *Client) ConfirmationCountReady(txIn types.TxIn) bool {
 	if c.cfg.ChainID.Equals(common.DASHChain) {
-		// Dash txs only reach this stage once they have already met Dash finality.
-		// There is no extra generic confirmation-counting wait after observation.
+		// Dash checks customer-inbound finality during scanning and allows early
+		// vault outbounds. No additional confirmation wait is applied here.
 		return true
 	}
 

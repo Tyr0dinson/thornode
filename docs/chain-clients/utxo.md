@@ -51,11 +51,16 @@ shared across all of its vaults. This limits the amount that node reports before
 ChainLock settlement. It is a local soft limit, not a network-wide cap or a guarantee
 against an InstantSend failure.
 
-When Dash mempool scanning is enabled, it supplies early, non-final observations
-of vault outbounds. Payments from a vault to a customer receive their final
-observation from a ChainLocked block. The InstantSend path supplies final
-observations only for eligible transactions received by a vault, including
-customer deposits, vault migrations and consolidation.
+When Dash mempool scanning is enabled, it supplies early observations of vault
+outbounds without requiring an InstantSend lock or ChainLock. These observations
+require no additional confirmations, so an observation quorum can finalise the
+outbound on THORChain and update vault accounting while the transaction is still
+in Dash's mempool. A later ChainLock scan can report the mined transaction again;
+THORChain does not wait for that report to finalise the earlier observation.
+
+Customer deposits still require an eligible InstantSend lock or inclusion in a
+ChainLocked block. The InstantSend path only observes transactions received by a
+vault, including customer deposits, vault migrations and consolidation.
 The signer skips its automatic observation after broadcast to avoid
 a third observation variant when InstantSend or ChainLock finality is reported.
 The first report waits for scanning and can be delayed by slow RPCs.
@@ -84,7 +89,8 @@ Eligible vault-to-vault transfers, including migrations and consolidation,
 bypass the allowance and minimum. They neither consume nor refill customer
 allowance. Their InstantSend observations still require InstantSend to be enabled;
 setting only the amount limit to zero does not disable them. Ordinary outbounds
-to customers use the non-final mempool and final ChainLock paths described above.
+to customers can finalise on THORChain through the early mempool observations
+described above, before Dash ChainLock finality.
 The allowance does not change signing or input selection.
 
 InstantSend scans check transaction outputs before looking up locks or parent
@@ -200,8 +206,10 @@ reenabling customer observations; do not delete the journal to clear reservation
 ## Confirmation Counting
 
 For UTXO chains other than Dash, THORChain dynamically delays finality based on
-transaction value and miner incentives. Dash instead accepts an eligible InstantSend
-lock or inclusion in a ChainLocked block, without a value-based confirmation delay.
+transaction value and miner incentives. Dash customer deposits instead require an
+eligible InstantSend lock or inclusion in a ChainLocked block, without a value-based
+confirmation delay. Vault outbounds can finalise on THORChain from early mempool
+observations without either lock, as described in [Dash InstantSend allowance](#dash-instantsend-allowance).
 Dash quotes use a conservative estimate of one inbound block; an eligible InstantSend
 deposit can be observed sooner.
 

@@ -283,8 +283,8 @@ func (s *Signer) shouldSign(tx types.TxOutItem) bool {
 }
 
 func (s *Signer) shouldAutoObserve(tx types.TxOutItem) bool {
-	// Dash already reports outbounds from the mempool and once more with lock
-	// finality. An automatic observation would add a third, chargeable variant.
+	// Dash can finalise outbounds on THORChain through mempool observations and
+	// report them again after a lock. Avoid a third, chargeable sign-time variant.
 	if tx.Chain.Equals(common.DASHChain) {
 		chain, ok := s.chains[tx.Chain]
 		if ok && chain.GetConfig().BlockScanner.ScanMemPool {
@@ -300,8 +300,9 @@ func (s *Signer) shouldAutoObserve(tx types.TxOutItem) bool {
 	}
 
 	// Memoless outbounds are intentionally broadcast without the canonical memo on-chain.
-	// The signer still has OriginalMemo, so submit the observation directly instead of
-	// waiting for a scanner observation that cannot reconstruct the inbound linkage.
+	// For the remaining chains, submit an early report when OriginalMemo identifies
+	// the outbound. THORChain can recover the memo from its scheduled outbound;
+	// this avoids waiting for a scanner report.
 	return s.cfg.Signer.AutoObserve || (tx.Memo == "" && tx.OriginalMemo != "")
 }
 
