@@ -596,12 +596,14 @@ func (tos *TxOutStorage) discoverOutbounds(ctx cosmos.Context, transactionFeeAmo
 	if tokenGasReserve > 0 && (!toi.Coin.Amount.IsZero() || hasUnpayableFragment(outputs, transactionFeeAmount, toi.Chain.DustThreshold())) {
 		// The reserve must not block an outbound the vaults can pay without it,
 		// nor split off a fragment that the fee deduction would drop as dust.
-		outputs, toi = allocateOutbounds(transactionFeeAmount, maxGasCoin, original, vaults, isRagnarok, 0)
+		var capacity []cosmos.Uint
+		outputs, capacity, toi = allocateOutboundsWithCapacity(transactionFeeAmount, maxGasCoin, original, vaults, isRagnarok, 0)
 		// The fallback still sees vault balances net of the gas committed to
 		// queued outbounds of other assets, so it can split off a fragment that
-		// selection with the Mimir off would not. Fold any such fragment into
-		// the largest output instead of letting prepareTxOutItem drop it as dust.
-		outputs, toi.Coin.Amount = foldUnpayableFragments(outputs, toi.Coin.Amount, transactionFeeAmount, toi.Chain.DustThreshold())
+		// selection with the Mimir off would not. Fold each such fragment into
+		// an output whose vault can still pay it, instead of letting
+		// prepareTxOutItem drop it as dust.
+		outputs, toi.Coin.Amount = foldUnpayableFragments(outputs, capacity, toi.Coin.Amount, transactionFeeAmount, toi.Chain.DustThreshold())
 	}
 
 	// Ragnarok can intentionally leave a chain-specific residual behind, such as
@@ -696,7 +698,16 @@ func (tos *TxOutStorage) discoverOutbounds(ctx cosmos.Context, transactionFeeAmo
 // keeps tokenGasReserve x MaxGas of the gas asset per token it holds on the
 // chain; callers pass it only for gas-asset outbounds.
 func allocateOutbounds(transactionFeeAmount cosmos.Uint, maxGasCoin common.Coin, toi TxOutItem, vaults Vaults, isRagnarok bool, tokenGasReserve int64) ([]TxOutItem, TxOutItem) {
+	outputs, _, toi := allocateOutboundsWithCapacity(transactionFeeAmount, maxGasCoin, toi, vaults, isRagnarok, tokenGasReserve)
+	return outputs, toi
+}
+
+// allocateOutboundsWithCapacity is allocateOutbounds that also returns, for
+// each output, the most its vault can send: the vault's balance less the gas
+// and reserves the allocation held back.
+func allocateOutboundsWithCapacity(transactionFeeAmount cosmos.Uint, maxGasCoin common.Coin, toi TxOutItem, vaults Vaults, isRagnarok bool, tokenGasReserve int64) ([]TxOutItem, []cosmos.Uint, TxOutItem) {
 	var outputs []TxOutItem
+	var capacity []cosmos.Uint
 	for _, vault := range vaults {
 		// Ensure THORNode are not sending from and to the same address
 		fromAddr, err := vault.GetAddress(toi.Chain)
@@ -761,6 +772,7 @@ func allocateOutbounds(transactionFeeAmount cosmos.Uint, maxGasCoin common.Coin,
 		toi.VaultPubKeyEddsa = txOutVaultPubKeyEddsa(toi.Chain, vault.PubKeyEddsa)
 		toi.VaultPubKeyFrost = vault.PubKeyFrost
 
+		capacity = append(capacity, vaultCoinAmount)
 		if toi.Coin.Amount.LTE(vaultCoinAmount) {
 			outputs = append(outputs, toi)
 			toi.Coin.Amount = cosmos.ZeroUint()
@@ -772,7 +784,7 @@ func allocateOutbounds(transactionFeeAmount cosmos.Uint, maxGasCoin common.Coin,
 			toi.Coin.Amount = remainingAmount
 		}
 	}
-	return outputs, toi
+	return outputs, capacity, toi
 }
 
 // hasUnpayableFragment reports whether any output is too small to survive the
@@ -791,36 +803,72 @@ func isUnpayableFragment(output TxOutItem, transactionFeeAmount, dustThreshold c
 	return output.Coin.Amount.LTE(transactionFeeAmount) || output.Coin.Amount.LT(transactionFeeAmount.Add(dustThreshold))
 }
 
-// foldUnpayableFragments adds every output of a multi-vault split that is too
-// small to survive the outbound fee to the largest output that is not. The
-// allocation capped that output's vault before the fee, and the vault sends the
-// amount after the fee, so one fragment below fee plus dust overruns its
-// available balance by at most the dust threshold; anything larger fails at
-// signing and goes through the usual reschedule. If no output survives the
-// fee, the fragments go back into remaining for the caller's recovery flow. A
-// single output is returned as is: an outbound too small to pay its own fee is
-// dropped as dust, as before.
-func foldUnpayableFragments(outputs []TxOutItem, remaining, transactionFeeAmount, dustThreshold cosmos.Uint) ([]TxOutItem, cosmos.Uint) {
+// foldUnpayableFragments adds each output of a multi-vault split that is too
+// small to survive the outbound fee to an output that is not, as long as that
+// output's vault can still pay it. capacity[i] is the most the vault of
+// outputs[i] can send. prepareTxOutItem deducts the fee from the output and the
+// vault sends the rest, so an output can grow to its capacity plus the fee and
+// its vault still pays the payout and gas. Fragments go largest first to the
+// output with the most room.
+//
+// A fragment no output has room for stays an output of its own, so
+// prepareTxOutItem drops it as dust exactly as it does with the Mimir off.
+// Sending it to the recovery flow instead would add it to a payable output
+// that its vault can then not sign. If no output survives the fee, every
+// fragment goes back into remaining for the caller's recovery flow, which
+// picks one vault for the whole amount. A single output is returned as is: an
+// outbound too small to pay its own fee is dropped as dust, as before.
+func foldUnpayableFragments(outputs []TxOutItem, capacity []cosmos.Uint, remaining, transactionFeeAmount, dustThreshold cosmos.Uint) ([]TxOutItem, cosmos.Uint) {
 	if len(outputs) < 2 || !hasUnpayableFragment(outputs, transactionFeeAmount, dustThreshold) {
 		return outputs, remaining
 	}
-	kept := make([]TxOutItem, 0, len(outputs))
-	folded := cosmos.ZeroUint()
-	largest := -1
-	for _, output := range outputs {
+	var payable, fragments []int
+	for i, output := range outputs {
 		if isUnpayableFragment(output, transactionFeeAmount, dustThreshold) {
-			folded = folded.Add(output.Coin.Amount)
+			fragments = append(fragments, i)
+		} else {
+			payable = append(payable, i)
+		}
+	}
+	if len(payable) == 0 {
+		for _, i := range fragments {
+			remaining = remaining.Add(outputs[i].Coin.Amount)
+		}
+		return nil, remaining
+	}
+
+	result := make([]TxOutItem, len(outputs))
+	copy(result, outputs)
+	room := make([]cosmos.Uint, len(outputs))
+	for _, i := range payable {
+		room[i] = common.SafeSub(capacity[i].Add(transactionFeeAmount), outputs[i].Coin.Amount)
+	}
+	sort.SliceStable(fragments, func(a, b int) bool {
+		return outputs[fragments[a]].Coin.Amount.GT(outputs[fragments[b]].Coin.Amount)
+	})
+	folded := make([]bool, len(outputs))
+	for _, f := range fragments {
+		amount := outputs[f].Coin.Amount
+		best := -1
+		for _, i := range payable {
+			if room[i].GTE(amount) && (best < 0 || room[i].GT(room[best])) {
+				best = i
+			}
+		}
+		if best < 0 {
 			continue
 		}
-		if largest < 0 || output.Coin.Amount.GT(kept[largest].Coin.Amount) {
-			largest = len(kept)
+		result[best].Coin.Amount = result[best].Coin.Amount.Add(amount)
+		room[best] = common.SafeSub(room[best], amount)
+		folded[f] = true
+	}
+
+	kept := result[:0]
+	for i := range result {
+		if !folded[i] {
+			kept = append(kept, result[i])
 		}
-		kept = append(kept, output)
 	}
-	if largest < 0 {
-		return kept, remaining.Add(folded)
-	}
-	kept[largest].Coin.Amount = kept[largest].Coin.Amount.Add(folded)
 	return kept, remaining
 }
 

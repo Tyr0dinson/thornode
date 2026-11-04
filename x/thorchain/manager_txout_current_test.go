@@ -2208,6 +2208,76 @@ func (s TxOutStoreSuite) TestDiscoverOutboundsTokenGasReserveFallbackFoldsFragme
 	c.Check(eventMgr.securityEvents(), HasLen, 0)
 }
 
+// TestDiscoverOutboundsReserveFallbackFoldsWithinCapacity is the multi-fragment
+// case: two vaults whose whole balance less MaxGas is below the fee both spill a
+// fragment. Only one fragment fits in the payable output's room (one fee), so
+// the other stays its own output and is handled as with the Mimir off. Every
+// output that survives the fee is still payable, with gas, by its vault.
+func (s TxOutStoreSuite) TestDiscoverOutboundsReserveFallbackFoldsWithinCapacity(c *C) {
+	maxGas := common.NewCoin(common.ETHAsset, cosmos.NewUint(960000)) // 0.0096 ETH
+	fee := cosmos.NewUint(1920000)                                    // 0.0192 ETH
+	smallBalance := cosmos.NewUint(2870000)                           // 0.0287 ETH
+	fragment := common.SafeSub(smallBalance, maxGas.Amount)           // 0.0191 ETH
+	mainCapacity := common.SafeSub(cosmos.NewUint(100*common.One), maxGas.Amount)
+	amount := mainCapacity.Add(fragment.MulUint64(2)) // 100.0286 ETH
+	ethOut := TxOutItem{
+		Chain:     common.ETHChain,
+		ToAddress: GetRandomETHAddress(),
+		InHash:    GetRandomTxHash(),
+		Coin:      common.NewCoin(common.ETHAsset, amount),
+	}
+	setup := func(reserve int64) (cosmos.Context, *TxOutStorage, *recordingEventMgr, Vaults) {
+		ctx, mgr := setupManagerForTest(c)
+		if reserve > 0 {
+			mgr.Keeper().SetMimir(ctx, constants.VaultTokenGasReserve.String(), reserve)
+		}
+		vaults := Vaults{}
+		for _, balance := range []cosmos.Uint{cosmos.NewUint(100 * common.One), smallBalance, smallBalance} {
+			v := GetRandomVault()
+			v.Type = AsgardVault
+			v.Status = ActiveVault
+			v.Coins = common.Coins{common.NewCoin(common.ETHAsset, balance)}
+			c.Assert(mgr.Keeper().SetVault(ctx, v), IsNil)
+			vaults = append(vaults, v)
+		}
+		eventMgr := newRecordingEventMgr()
+		return ctx, newTxOutStorage(mgr.Keeper(), mgr.GetConstants(), eventMgr, mgr.GasMgr()), eventMgr, vaults
+	}
+
+	// Off: three outputs, the two fragments are later dropped as dust.
+	ctx, store, _, vaults := setup(0)
+	outputs, remaining := store.DiscoverOutbounds(ctx, fee, maxGas, ethOut, vaults)
+	c.Assert(remaining.IsZero(), Equals, true)
+	c.Assert(outputs, HasLen, 3)
+	c.Check(outputs[0].Coin.Amount.Equal(mainCapacity), Equals, true)
+
+	// On: one fragment is folded into the main output, the other is kept.
+	ctx, store, eventMgr, vaults := setup(10)
+	outputs, remaining = store.DiscoverOutbounds(ctx, fee, maxGas, ethOut, vaults)
+	c.Assert(remaining.IsZero(), Equals, true)
+	c.Assert(outputs, HasLen, 2)
+	c.Check(outputs[0].VaultPubKey.Equals(vaults[0].PubKey), Equals, true)
+	c.Check(outputs[0].Coin.Amount.Equal(mainCapacity.Add(fragment)), Equals, true)
+	c.Check(outputs[1].Coin.Amount.Equal(fragment), Equals, true)
+	c.Check(eventMgr.securityEvents(), HasLen, 0)
+	total := cosmos.ZeroUint()
+	balances := map[string]cosmos.Uint{}
+	for _, v := range vaults {
+		balances[v.PubKey.String()] = v.GetCoin(common.ETHAsset).Amount
+	}
+	for _, output := range outputs {
+		total = total.Add(output.Coin.Amount)
+		if isUnpayableFragment(output, fee, common.ETHChain.DustThreshold()) {
+			continue
+		}
+		// The payout after the fee, plus gas, fits in the vault.
+		spend := common.SafeSub(output.Coin.Amount, fee).Add(maxGas.Amount)
+		c.Check(spend.LTE(balances[output.VaultPubKey.String()]), Equals, true,
+			Commentf("output %s spends %s of %s", output.VaultPubKey, spend, balances[output.VaultPubKey.String()]))
+	}
+	c.Check(total.Equal(amount), Equals, true)
+}
+
 func (s TxOutStoreSuite) TestFoldUnpayableFragments(c *C) {
 	fee := cosmos.NewUint(1000)
 	dust := common.ETHChain.DustThreshold()
@@ -2217,28 +2287,56 @@ func (s TxOutStoreSuite) TestFoldUnpayableFragments(c *C) {
 	big := out(cosmos.NewUint(common.One))
 	payable := out(fee.Add(dust))
 	tiny := out(fee)
+	amounts := func(outputs []TxOutItem) []uint64 {
+		var result []uint64
+		for _, o := range outputs {
+			result = append(result, o.Coin.Amount.Uint64())
+		}
+		return result
+	}
+	caps := func(values ...cosmos.Uint) []cosmos.Uint { return values }
 
 	// A single output is never folded, however small.
-	outputs, remaining := foldUnpayableFragments([]TxOutItem{tiny}, cosmos.ZeroUint(), fee, dust)
+	outputs, remaining := foldUnpayableFragments([]TxOutItem{tiny}, caps(tiny.Coin.Amount), cosmos.ZeroUint(), fee, dust)
 	c.Check(outputs, HasLen, 1)
 	c.Check(remaining.IsZero(), Equals, true)
 
 	// Payable outputs are kept as they are.
-	outputs, remaining = foldUnpayableFragments([]TxOutItem{big, payable}, cosmos.NewUint(7), fee, dust)
-	c.Check(outputs, HasLen, 2)
+	outputs, remaining = foldUnpayableFragments([]TxOutItem{big, payable}, caps(big.Coin.Amount, payable.Coin.Amount), cosmos.NewUint(7), fee, dust)
+	c.Check(amounts(outputs), DeepEquals, []uint64{big.Coin.Amount.Uint64(), payable.Coin.Amount.Uint64()})
 	c.Check(remaining.Equal(cosmos.NewUint(7)), Equals, true)
 
-	// Fragments are folded into the largest output, wherever it sits.
-	outputs, remaining = foldUnpayableFragments([]TxOutItem{payable, tiny, big, tiny}, cosmos.ZeroUint(), fee, dust)
-	c.Assert(outputs, HasLen, 2)
-	c.Check(outputs[0].Coin.Amount.Equal(payable.Coin.Amount), Equals, true)
-	c.Check(outputs[1].Coin.Amount.Equal(big.Coin.Amount.Add(fee.MulUint64(2))), Equals, true)
+	// An output below its vault's capacity takes every fragment that fits.
+	outputs, remaining = foldUnpayableFragments([]TxOutItem{payable, tiny, big, tiny},
+		caps(payable.Coin.Amount, tiny.Coin.Amount, big.Coin.Amount.MulUint64(2), tiny.Coin.Amount), cosmos.ZeroUint(), fee, dust)
+	c.Check(amounts(outputs), DeepEquals, []uint64{payable.Coin.Amount.Uint64(), big.Coin.Amount.Add(fee.MulUint64(2)).Uint64()})
 	c.Check(remaining.IsZero(), Equals, true)
 	// The input is not modified.
 	c.Check(big.Coin.Amount.Equal(cosmos.NewUint(common.One)), Equals, true)
 
+	// Outputs at capacity have room for one fee each, so the fragments spread
+	// over them, largest fragment first to the output with the most room.
+	smaller := out(fee.QuoUint64(2))
+	outputs, remaining = foldUnpayableFragments([]TxOutItem{big, smaller, payable, tiny},
+		caps(big.Coin.Amount, smaller.Coin.Amount, payable.Coin.Amount, tiny.Coin.Amount), cosmos.ZeroUint(), fee, dust)
+	c.Check(amounts(outputs), DeepEquals, []uint64{big.Coin.Amount.Add(fee).Uint64(), payable.Coin.Amount.Add(smaller.Coin.Amount).Uint64()})
+	c.Check(remaining.IsZero(), Equals, true)
+
+	// A fragment no output has room for stays its own output, as with the
+	// Mimir off; it is not added to an output its vault cannot then pay.
+	outputs, remaining = foldUnpayableFragments([]TxOutItem{big, tiny, tiny},
+		caps(big.Coin.Amount, tiny.Coin.Amount, tiny.Coin.Amount), cosmos.ZeroUint(), fee, dust)
+	c.Check(amounts(outputs), DeepEquals, []uint64{big.Coin.Amount.Add(fee).Uint64(), fee.Uint64()})
+	c.Check(remaining.IsZero(), Equals, true)
+	// A fragment above one fee does not fit an output at capacity.
+	wide := out(fee.Add(dust).SubUint64(1))
+	outputs, remaining = foldUnpayableFragments([]TxOutItem{big, wide},
+		caps(big.Coin.Amount, wide.Coin.Amount), cosmos.ZeroUint(), fee, dust)
+	c.Check(amounts(outputs), DeepEquals, []uint64{big.Coin.Amount.Uint64(), wide.Coin.Amount.Uint64()})
+	c.Check(remaining.IsZero(), Equals, true)
+
 	// All fragments: nothing is kept and everything goes back to remaining.
-	outputs, remaining = foldUnpayableFragments([]TxOutItem{tiny, tiny}, cosmos.ZeroUint(), fee, dust)
+	outputs, remaining = foldUnpayableFragments([]TxOutItem{tiny, tiny}, caps(tiny.Coin.Amount, tiny.Coin.Amount), cosmos.ZeroUint(), fee, dust)
 	c.Check(outputs, HasLen, 0)
 	c.Check(remaining.Equal(fee.MulUint64(2)), Equals, true)
 }
