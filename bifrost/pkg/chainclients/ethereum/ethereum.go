@@ -784,6 +784,20 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 		if err = json.Unmarshal(tx.Checkpoint, &nonce); err != nil {
 			return nil, nil, nil, fmt.Errorf("fail to deserialize checkpoint: %w", err)
 		}
+		// A numeric checkpoint may already represent an exposed transfer
+		// signature. Never advance it from allowance or pending-nonce evidence.
+		// Once its nonce is mined, retire this local attempt instead of signing
+		// a transfer at a spent approval nonce; observation/rescheduling owns
+		// the remaining on-chain obligation.
+		confirmed, nonceErr := c.GetNonceFinalized(fromAddr.String())
+		if nonceErr != nil {
+			return nil, tx.Checkpoint, nil, fmt.Errorf("check checkpoint confirmed nonce: %w", nonceErr)
+		}
+		if confirmed > nonce {
+			c.logger.Info().Uint64("nonce", nonce).Uint64("confirmed_nonce", confirmed).
+				Msg("retiring consumed transaction checkpoint")
+			return nil, nil, nil, nil
+		}
 	} else {
 		nonce, err = c.GetNonce(fromAddr.String())
 		if err != nil {
@@ -812,11 +826,15 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 		return nil, nil, nil, fmt.Errorf("fail to marshal nonce: %w", err)
 	}
 
-	// Check if allowance approval is needed (wrapped with mimir check)
-	approvalTx, err := c.checkAndApproveAllowance(tx, nonce)
-	if err != nil {
-		c.logger.Err(err).Msg("fail to check allowance")
-		return nil, nil, nil, err
+	// Numeric checkpoints may already have exposed a transfer signature.
+	// Never create another approval or advance that fixed nonce on retry.
+	var approvalTx *etypes.Transaction
+	if tx.Checkpoint == nil {
+		approvalTx, err = c.checkAndApproveAllowance(tx, nonce)
+		if err != nil {
+			c.logger.Err(err).Msg("fail to check allowance")
+			return nil, nil, nil, err
+		}
 	}
 
 	// If approval transaction was created, sign and broadcast it before building the outbound.
@@ -845,7 +863,20 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 		ctx, cancel := c.getContext()
 		defer cancel()
 		err = c.client.SendTransaction(ctx, broadcastTx)
-		if err != nil && err.Error() != txpool.ErrAlreadyKnown.Error() && err.Error() != ecore.ErrNonceTooLow.Error() {
+		// A peer can mine this exact approval before our submission reaches the
+		// node. Geth adds nonce details to ErrNonceTooLow; the error alone does
+		// not prove which transaction consumed the nonce. Require this approval's
+		// successful receipt before advancing the outbound checkpoint.
+		if err != nil && strings.HasPrefix(err.Error(), ecore.ErrNonceTooLow.Error()) {
+			receipt, receiptErr := c.client.TransactionReceipt(ctx, broadcastTx.Hash())
+			if receiptErr == nil && receipt.TxHash == broadcastTx.Hash() &&
+				receipt.BlockNumber != nil && receipt.Status == etypes.ReceiptStatusSuccessful {
+				c.logger.Info().Str("approval_txid", broadcastTx.Hash().String()).
+					Msg("approval already mined; advancing outbound nonce")
+				err = nil
+			}
+		}
+		if err != nil && err.Error() != txpool.ErrAlreadyKnown.Error() {
 			c.logger.Err(err).Str("hash", broadcastTx.Hash().String()).Msg("fail to broadcast approval transaction")
 			return nil, nonceBytes, nil, fmt.Errorf("fail to broadcast approval transaction: %w", err)
 		}

@@ -1,6 +1,8 @@
 package ethereum
 
 import (
+	"bytes"
+	"encoding/hex"
 	"encoding/json"
 	"io"
 	"math/big"
@@ -8,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -16,6 +19,9 @@ import (
 	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 	"github.com/cosmos/cosmos-sdk/crypto/hd"
 	cKeys "github.com/cosmos/cosmos-sdk/crypto/keyring"
+	ecommon "github.com/ethereum/go-ethereum/common"
+	etypes "github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/magiconair/properties/assert"
 	. "gopkg.in/check.v1"
 
@@ -1126,4 +1132,279 @@ func (s *EthereumSuite) TestSignTxWithAllowanceFlow(c *C) {
 	err = json.Unmarshal(checkpoint, &nonce)
 	c.Assert(err, IsNil)
 	c.Assert(nonce, Equals, uint64(1))
+}
+
+func (s *EthereumSuite) newApprovalBroadcastFixture(c *C) (*Client, stypes.TxOutItem, func()) {
+	s.mimirOverrides = map[string]string{"EVMAllowanceCheck-ETH": "1"}
+	pubkeyMgr, err := pubkeymanager.NewPubKeyManager(s.bridge, s.m)
+	c.Assert(err, IsNil)
+	c.Assert(pubkeyMgr.Start(), IsNil)
+	cfg := config.BifrostChainConfiguration{
+		ChainID: common.ETHChain, RPCHost: s.server.URL,
+		BlockScanner: config.BifrostBlockScannerConfiguration{
+			StartBlockHeight: 1, MaxGasLimit: 80000, HTTPRequestTimeout: time.Second,
+		},
+	}
+	cfg.EVM.TokenMaxGasMultiplier = 3
+	e, err := NewClient(s.thorKeys, cfg, nil, s.bridge, s.m, pubkeyMgr, thorclient.NewPoolMgr(s.bridge))
+	c.Assert(err, IsNil)
+	e.signingReady.Store(true)
+	originalClient := e.client
+	pubkeys := pubkeyMgr.GetPubKeys()
+	address, err := pubkeys[len(pubkeys)-1].GetAddress(common.ETHChain)
+	c.Assert(err, IsNil)
+	asset, err := common.NewAsset("ETH.TKN-0x17AB05351FC94A1A67BF3F56DDBB941AE6C63E25")
+	c.Assert(err, IsNil)
+	txOut := stypes.TxOutItem{
+		Chain: common.ETHChain, ToAddress: address, VaultPubKey: e.localPubKey,
+		Coins:   common.Coins{common.NewCoin(asset, cosmos.NewUint(common.One))},
+		MaxGas:  common.Gas{common.NewCoin(common.ETHAsset, cosmos.NewUint(80000*8))},
+		GasRate: 1, Memo: "MIGRATE:524",
+	}
+	return e, txOut, func() {
+		originalClient.Close()
+		c.Assert(pubkeyMgr.Stop(), IsNil)
+	}
+}
+
+// Exercise SignTx, not just error classification: peers submitting the same
+// mined approval must produce a transfer at nonce 1, never the spent nonce 0.
+func (s *EthereumSuite) TestSignTxMinedApprovalNonce(c *C) {
+	e, txOut, cleanup := s.newApprovalBroadcastFixture(c)
+	defer cleanup()
+	var err error
+	for _, tc := range []struct {
+		name, sendError, receipt string
+		success                  bool
+	}{
+		{"detailed nonce error", "nonce too low: next nonce 1, tx nonce 0", "mined", true},
+		{"bare nonce error", "nonce too low", "mined", true},
+		{"receipt absent", "nonce too low: next nonce 1, tx nonce 0", "missing", false},
+		{"approval reverted", "nonce too low", "reverted", false},
+		{"different transaction", "nonce too low", "wrong hash", false},
+		{"receipt has no block", "nonce too low", "no block", false},
+		{"receipt RPC failed", "nonce too low", "RPC error", false},
+		{"unrelated broadcast error", "insufficient funds", "mined", false},
+	} {
+		// Handler failures are reported back to the test goroutine.
+		events := make(chan string, 16)
+		var approvalHash ecommon.Hash
+		var retrying, nonceRPCError atomic.Bool
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			body, readErr := io.ReadAll(r.Body)
+			var req struct {
+				ID     json.RawMessage   `json:"id"`
+				Method string            `json:"method"`
+				Params []json.RawMessage `json:"params"`
+			}
+			if readErr != nil || json.Unmarshal(body, &req) != nil {
+				events <- "bad request"
+				http.Error(w, "bad request", http.StatusBadRequest)
+				return
+			}
+			response := map[string]interface{}{"jsonrpc": "2.0", "id": req.ID}
+			switch req.Method {
+			case "eth_getTransactionCount":
+				if !retrying.Load() {
+					r.Body = io.NopCloser(bytes.NewReader(body))
+					s.server.Config.Handler.ServeHTTP(w, r)
+					return
+				}
+				events <- "checkpoint nonce checked"
+				if len(req.Params) != 2 || string(req.Params[1]) != `"latest"` {
+					events <- "checkpoint used unconfirmed nonce"
+				}
+				if nonceRPCError.Load() {
+					response["error"] = map[string]interface{}{"code": -32000, "message": "nonce lookup unavailable"}
+				} else {
+					response["result"] = "0x1"
+				}
+			case "eth_call":
+				var args struct{ Data, Input string }
+				if retrying.Load() && len(req.Params) > 0 && json.Unmarshal(req.Params[0], &args) == nil &&
+					(strings.HasPrefix(args.Data, "0xdd62ed3e") || strings.HasPrefix(args.Input, "0xdd62ed3e")) {
+					// Allowance can become visible while the exact receipt is absent.
+					// It must not advance a fixed nonce checkpoint.
+					events <- "retry allowance read"
+					response["result"] = "0x" + strings.Repeat("f", 64)
+				} else {
+					r.Body = io.NopCloser(bytes.NewReader(body))
+					s.server.Config.Handler.ServeHTTP(w, r)
+					return
+				}
+			case "eth_sendRawTransaction":
+				var raw string
+				if len(req.Params) != 1 || json.Unmarshal(req.Params[0], &raw) != nil {
+					events <- "bad transaction request"
+					http.Error(w, "bad transaction", http.StatusBadRequest)
+					return
+				}
+				encoded, decodeErr := hex.DecodeString(strings.TrimPrefix(raw, "0x"))
+				var signed etypes.Transaction
+				if decodeErr != nil || signed.UnmarshalBinary(encoded) != nil {
+					events <- "bad signed transaction"
+					http.Error(w, "bad transaction", http.StatusBadRequest)
+					return
+				}
+				if signed.Nonce() != 0 || len(signed.Data()) < 4 || hex.EncodeToString(signed.Data()[:4]) != "095ea7b3" {
+					events <- "not the expected approval"
+				}
+				approvalHash = signed.Hash()
+				events <- "approval submitted"
+				response["error"] = map[string]interface{}{"code": -32000, "message": tc.sendError}
+			case "eth_getTransactionReceipt":
+				events <- "receipt requested"
+				var hash ecommon.Hash
+				if len(req.Params) != 1 || json.Unmarshal(req.Params[0], &hash) != nil || hash != approvalHash {
+					events <- "wrong receipt requested"
+				}
+				receipt := &etypes.Receipt{
+					TxHash: approvalHash, BlockNumber: big.NewInt(313),
+					Status: etypes.ReceiptStatusSuccessful, Logs: []*etypes.Log{},
+				}
+				switch tc.receipt {
+				case "missing":
+					receipt = nil
+				case "reverted":
+					receipt.Status = etypes.ReceiptStatusFailed
+				case "wrong hash":
+					receipt.TxHash = ecommon.HexToHash("0x1234")
+				case "no block":
+					receipt.BlockNumber = nil
+				}
+				if tc.receipt == "RPC error" {
+					response["error"] = map[string]interface{}{"code": -32000, "message": "temporary receipt failure"}
+				} else {
+					response["result"] = receipt
+				}
+			default:
+				r.Body = io.NopCloser(bytes.NewReader(body))
+				s.server.Config.Handler.ServeHTTP(w, r)
+				return
+			}
+			if encodeErr := json.NewEncoder(w).Encode(response); encodeErr != nil {
+				events <- "response write failed"
+			}
+		}))
+		e.client, err = ethclient.Dial(server.URL)
+		c.Assert(err, IsNil)
+		result, checkpoint, observation, signErr := e.SignTx(txOut, 524)
+		var nonce uint64
+		c.Assert(json.Unmarshal(checkpoint, &nonce), IsNil, Commentf("%s", tc.name))
+		if tc.success {
+			c.Assert(signErr, IsNil, Commentf("%s", tc.name))
+			c.Assert(nonce, Equals, uint64(1), Commentf("%s", tc.name))
+			c.Assert(observation, NotNil)
+			var transfer etypes.Transaction
+			c.Assert(transfer.UnmarshalJSON(result), IsNil)
+			c.Assert(transfer.Nonce(), Equals, uint64(1))
+		} else {
+			c.Assert(signErr, NotNil, Commentf("%s", tc.name))
+			c.Assert(result, IsNil)
+			c.Assert(observation, IsNil)
+			c.Assert(nonce, Equals, uint64(0))
+		}
+		expected := map[string]int{"approval submitted": 1}
+		if strings.HasPrefix(tc.sendError, "nonce too low") {
+			expected["receipt requested"] = 1
+			if !tc.success {
+				retry := txOut
+				retry.Checkpoint = checkpoint
+				retrying.Store(true)
+				nonceRPCError.Store(true)
+				raw, retained, obs, retryErr := e.SignTx(retry, 524)
+				c.Assert(retryErr, NotNil, Commentf("%s", tc.name))
+				c.Assert(raw, IsNil)
+				c.Assert(obs, IsNil)
+				c.Assert(retained, DeepEquals, checkpoint)
+				nonceRPCError.Store(false)
+				raw, retired, obs, retryErr := e.SignTx(retry, 524)
+				c.Assert(retryErr, IsNil, Commentf("%s", tc.name))
+				c.Assert(raw, IsNil, Commentf("must not sign a transfer at spent nonce 0: %s", tc.name))
+				c.Assert(retired, IsNil)
+				c.Assert(obs, IsNil)
+				expected["checkpoint nonce checked"] = 2
+			}
+		}
+		e.client.Close()
+		server.Close()
+		close(events)
+		seen := make(map[string]int)
+		for event := range events {
+			seen[event]++
+		}
+		c.Assert(seen, DeepEquals, expected, Commentf("%s", tc.name))
+	}
+}
+
+func (s *EthereumSuite) TestSignTxLegacyCheckpointNeverApprovesOrAdvances(c *C) {
+	e, txOut, cleanup := s.newApprovalBroadcastFixture(c)
+	defer cleanup()
+	txOut.Checkpoint = []byte("7") // May already have exposed a transfer signature.
+	events := make(chan string, 8)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, readErr := io.ReadAll(r.Body)
+		var req struct {
+			ID     json.RawMessage   `json:"id"`
+			Method string            `json:"method"`
+			Params []json.RawMessage `json:"params"`
+		}
+		if readErr != nil || json.Unmarshal(body, &req) != nil {
+			events <- "invalid request"
+			http.Error(w, "invalid request", http.StatusBadRequest)
+			return
+		}
+		response := map[string]interface{}{"jsonrpc": "2.0", "id": req.ID}
+		switch req.Method {
+		case "eth_getTransactionCount":
+			if len(req.Params) == 2 && string(req.Params[1]) == `"latest"` {
+				events <- "confirmed nonce checked"
+				response["result"] = "0x7"
+			} else {
+				events <- "pending nonce checked"
+				response["result"] = "0x9"
+			}
+		case "eth_call":
+			var args struct{ Data, Input string }
+			if len(req.Params) > 0 && json.Unmarshal(req.Params[0], &args) == nil &&
+				(strings.HasPrefix(args.Data, "0xdd62ed3e") || strings.HasPrefix(args.Input, "0xdd62ed3e")) {
+				events <- "allowance checked"
+				response["result"] = "0x" + strings.Repeat("0", 64)
+			} else {
+				r.Body = io.NopCloser(bytes.NewReader(body))
+				s.server.Config.Handler.ServeHTTP(w, r)
+				return
+			}
+		case "eth_sendRawTransaction":
+			events <- "approval submitted"
+			response["error"] = map[string]interface{}{"code": -32000, "message": "must not approve a numeric checkpoint"}
+		default:
+			r.Body = io.NopCloser(bytes.NewReader(body))
+			s.server.Config.Handler.ServeHTTP(w, r)
+			return
+		}
+		if encodeErr := json.NewEncoder(w).Encode(response); encodeErr != nil {
+			events <- "response write failed"
+		}
+	}))
+	defer server.Close()
+	var err error
+	e.client, err = ethclient.Dial(server.URL)
+	c.Assert(err, IsNil)
+	defer e.client.Close()
+	raw, checkpoint, observation, err := e.SignTx(txOut, 524)
+	c.Assert(err, IsNil)
+	c.Assert(raw, NotNil)
+	c.Assert(observation, NotNil)
+	c.Assert(checkpoint, DeepEquals, txOut.Checkpoint)
+	var transfer etypes.Transaction
+	c.Assert(transfer.UnmarshalJSON(raw), IsNil)
+	c.Assert(transfer.Nonce(), Equals, uint64(7))
+	server.Close()
+	close(events)
+	seen := make(map[string]int)
+	for event := range events {
+		seen[event]++
+	}
+	c.Assert(seen, DeepEquals, map[string]int{"confirmed nonce checked": 2})
 }

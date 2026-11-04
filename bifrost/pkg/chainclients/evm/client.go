@@ -1,6 +1,7 @@
 package evm
 
 import (
+	"bytes"
 	"context"
 	_ "embed"
 	"encoding/base64"
@@ -1079,110 +1080,87 @@ func (c *EVMClient) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *
 		}
 	}
 
-	// the nonce is stored as the transaction checkpoint, if it is set deserialize it
-	// so we only retry with the same nonce to avoid double spend
+	// Approval checkpoints resume only the approval phase. Numeric checkpoints,
+	// including legacy ones, pin the transfer nonce and must never run approval
+	// again: another signer may already have exposed the transfer signature.
+	hasCheckpoint := tx.Checkpoint != nil
+	tx.Checkpoint = bytes.TrimSpace(tx.Checkpoint)
+	if hasCheckpoint && len(tx.Checkpoint) == 0 {
+		return nil, nil, nil, errors.New("empty transaction checkpoint")
+	}
+	fromAddr, addressErr := tx.VaultPubKey.GetAddress(c.cfg.ChainID)
+	if addressErr != nil {
+		return nil, nil, nil, fmt.Errorf("fail to get vault address: %w", addressErr)
+	}
 	var nonce uint64
-	var fromAddr common.Address
-	var err error
-	fromAddr, err = tx.VaultPubKey.GetAddress(c.cfg.ChainID)
-	if tx.Checkpoint != nil {
-		if err = json.Unmarshal(tx.Checkpoint, &nonce); err != nil {
+	unsigned := !hasCheckpoint
+	if len(tx.Checkpoint) > 0 {
+		if tx.Checkpoint[0] == '{' {
+			var checkpoint signingCheckpoint
+			if err := json.Unmarshal(tx.Checkpoint, &checkpoint); err != nil {
+				return nil, nil, nil, fmt.Errorf("decode signing checkpoint: %w", err)
+			}
+			if checkpoint.UnsignedTransferNonce == nil {
+				next, err := c.retryApproval(tx, height)
+				return nil, next, nil, err
+			}
+			if checkpoint.Version != 1 || checkpoint.Outbound != tx.Hash() || checkpoint.Transaction != nil || checkpoint.SignedApproval != nil {
+				return nil, nil, nil, errors.New("invalid unsigned transfer checkpoint")
+			}
+			nonce, unsigned = *checkpoint.UnsignedTransferNonce, true
+		} else if tx.Checkpoint[0] < '0' || tx.Checkpoint[0] > '9' {
+			return nil, nil, nil, errors.New("invalid transfer nonce checkpoint")
+		} else if err := json.Unmarshal(tx.Checkpoint, &nonce); err != nil {
 			return nil, nil, nil, fmt.Errorf("fail to unmarshal checkpoint: %w", err)
 		}
-		c.logger.Warn().Stringer("in_hash", tx.InHash).Uint64("nonce", nonce).Msg("using checkpoint nonce")
-	} else {
+		c.logger.Warn().Stringer("in_hash", tx.InHash).Uint64("nonce", nonce).Bool("unsigned", unsigned).
+			Msg("using checkpoint nonce")
+		confirmed, err := c.evmScanner.GetNonceFinalized(fromAddr.String())
 		if err != nil {
-			return nil, nil, nil, fmt.Errorf("fail to get %s address for pub key(%s): %w", c.GetChain().String(), tx.VaultPubKey, err)
+			return nil, nil, nil, fmt.Errorf("check checkpoint confirmed nonce: %w", err)
+		}
+		if confirmed > nonce {
+			c.logger.Info().Uint64("nonce", nonce).Uint64("confirmed_nonce", confirmed).Msg("checkpoint nonce already consumed")
+			return nil, nil, nil, nil
+		}
+		if unsigned {
+			pending, err := c.evmScanner.GetNonce(fromAddr.String())
+			if err != nil {
+				return nil, nil, nil, fmt.Errorf("check unsigned checkpoint pending nonce: %w", err)
+			}
+			if pending > nonce {
+				c.logger.Info().Uint64("nonce", nonce).Uint64("pending_nonce", pending).Msg("peers consumed unsigned checkpoint nonce")
+				return nil, nil, nil, nil
+			}
+		}
+	} else {
+		// Read allowance before the pending nonce: a peer's approval becoming
+		// visible must not leave us using the pre-approval nonce for a transfer.
+		// Search from before that read to recover approval mined during setup.
+		approval, approvalHeight, err := c.checkAndApproveAllowance(tx, 0)
+		if err != nil {
+			return nil, nil, nil, err
 		}
 		nonce, err = c.evmScanner.GetNonce(fromAddr.String())
 		if err != nil {
 			return nil, nil, nil, fmt.Errorf("fail to fetch account(%s) nonce: %w", fromAddr, err)
 		}
-
-		// abort signing if the pending nonce is too far in the future
-		var finalizedNonce uint64
-		finalizedNonce, err = c.evmScanner.GetNonceFinalized(fromAddr.String())
+		finalizedNonce, err := c.evmScanner.GetNonceFinalized(fromAddr.String())
 		if err != nil {
-			return nil, nil, nil, fmt.Errorf("fail to fetch account(%s) finalized nonce: %w", fromAddr, err)
+			return nil, nil, nil, fmt.Errorf("fail to fetch finalized nonce: %w", err)
 		}
-		if (nonce - finalizedNonce) > c.cfg.MaxPendingNonces {
-			c.logger.Warn().
-				Uint64("nonce", nonce).
-				Uint64("finalizedNonce", finalizedNonce).
-				Msg("pending nonce too far in future")
-			return nil, nil, nil, fmt.Errorf("pending nonce too far in future")
+		if nonce < finalizedNonce || nonce-finalizedNonce > c.cfg.MaxPendingNonces {
+			return nil, nil, nil, fmt.Errorf("pending nonce outside finalized nonce window")
+		}
+		if approval != nil {
+			approval = etypes.NewTransaction(nonce, *approval.To(), approval.Value(), approval.Gas(), approval.GasPrice(), approval.Data())
+			checkpoint, err := c.prepareApproval(tx, approval, approvalHeight)
+			return nil, checkpoint, nil, err
 		}
 	}
-
-	// serialize nonce for later
 	nonceBytes, err := json.Marshal(nonce)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("fail to marshal nonce: %w", err)
-	}
-
-	// Check if allowance approval is needed (wrapped with mimir check)
-	approvalTx, err := c.checkAndApproveAllowance(tx, nonce)
-	if err != nil {
-		c.logger.Err(err).Msg("fail to check allowance")
 		return nil, nil, nil, err
-	}
-
-	// If approval transaction was created, sign and broadcast it before building the outbound.
-	// The V6 router uses transferFrom for ERC20 transfers, which requires the vault to have
-	// approved the router. The approval must be on-chain before gas estimation for the outbound
-	// can succeed, so we broadcast it first and let the outbound be rescheduled if needed.
-	if approvalTx != nil {
-		// Sign approval transaction
-		var approvalRawTx []byte
-		approvalRawTx, err = c.sign(approvalTx, tx.VaultPubKey, height, tx)
-		if err != nil {
-			if errors.Is(err, tss.ErrNotSelectedForKeysign) {
-				return nil, nil, nil, nil
-			}
-			c.logger.Err(err).Msg("fail to sign approval transaction")
-			return nil, nonceBytes, nil, fmt.Errorf("fail to sign approval transaction: %w", err)
-		}
-
-		// Broadcast approval transaction
-		broadcastTx := &etypes.Transaction{}
-		if err = broadcastTx.UnmarshalJSON(approvalRawTx); err != nil {
-			c.logger.Err(err).Msg("fail to unmarshal approval tx")
-			return nil, nonceBytes, nil, fmt.Errorf("fail to unmarshal approval transaction: %w", err)
-		}
-
-		ctx, cancel := c.getTimeoutContext()
-		defer cancel()
-		err = c.evmScanner.ethClient.SendTransaction(ctx, broadcastTx)
-		if !isAcceptableError(err) {
-			c.logger.Err(err).Str("hash", broadcastTx.Hash().String()).Msg("fail to broadcast approval transaction")
-			return nil, nonceBytes, nil, fmt.Errorf("fail to broadcast approval transaction: %w", err)
-		}
-
-		tokenAddr := c.getTokenAddressFromAsset(tx.Coins[0].Asset)
-		contractAddr := c.getSmartContractAddr(tx.VaultPubKey)
-
-		c.logger.Info().
-			Str("approval_txid", broadcastTx.Hash().String()).
-			Str("token", tokenAddr).
-			Str("router", contractAddr.String()).
-			Msg("successfully broadcast approval transaction")
-
-		// Update nonce past the approval tx
-		nonce++
-
-		// Update the checkpoint nonce so the rescheduled outbound uses the correct nonce
-		nonceBytes, err = json.Marshal(nonce)
-		if err != nil {
-			return nil, nil, nil, fmt.Errorf("fail to marshal nonce: %w", err)
-		}
-
-		// Wait for the approval to be mined before estimating gas for the outbound.
-		// The transferFrom will revert if the approval isn't on-chain yet. This only
-		// happens once per vault per token, so the one-time delay is acceptable.
-		// If the approval is still not mined in time, the outbound will be rescheduled.
-		wait := time.Duration(c.cfg.ChainID.ApproximateBlockMilliseconds()*3) * time.Millisecond
-		c.logger.Info().Dur("wait", wait).Msg("waiting for approval transaction to be mined")
-		time.Sleep(wait)
 	}
 
 	outboundTx, err := c.buildOutboundTx(tx, memo, nonce)
@@ -1224,8 +1202,20 @@ func (c *EVMClient) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *
 	// Sign main transaction
 	rawTx, err = c.sign(outboundTx, tx.VaultPubKey, height, tx)
 	if err != nil || len(rawTx) == 0 {
-		if errors.Is(err, tss.ErrNotSelectedForKeysign) {
-			return nil, nil, nil, nil
+		// Nonselection without a received signature is unfinished work. Keep
+		// this outbound (and nonce) queued ahead of the next vault/chain item.
+		if err == nil {
+			err = errors.New("empty signed transaction")
+		}
+		if unsigned && errors.Is(err, tss.ErrNotSelectedForKeysign) {
+			// Unlike a generic signing error, nonselection exposes no signature.
+			// Preserve that fact across restart so chain evidence can release the
+			// lane promptly when peers broadcast, even before THORNode observes it.
+			checkpoint, checkpointErr := unsignedTransferCheckpoint(tx, nonce)
+			if checkpointErr != nil {
+				return nil, nonceBytes, nil, checkpointErr
+			}
+			return nil, checkpoint, nil, err
 		}
 		return nil, nonceBytes, nil, fmt.Errorf("fail to sign message: %w", err)
 	}
@@ -1246,7 +1236,7 @@ func (c *EVMClient) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *
 
 	signedTx := &etypes.Transaction{}
 	if err = signedTx.UnmarshalJSON(rawTx); err != nil {
-		return nil, rawTx, nil, fmt.Errorf("fail to unmarshal signed tx: %w", err)
+		return nil, nonceBytes, nil, fmt.Errorf("fail to unmarshal signed tx: %w", err)
 	}
 
 	txIn := stypes.NewTxInItem(
@@ -1268,25 +1258,26 @@ func (c *EVMClient) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *
 	return rawTx, nonceBytes, txIn, nil
 }
 
-// checkAndApproveAllowance checks if token allowance is sufficient and creates an approval transaction if needed
-func (c *EVMClient) checkAndApproveAllowance(tx stypes.TxOutItem, nonce uint64) (*etypes.Transaction, error) {
+// checkAndApproveAllowance creates an approval if needed and returns its recovery
+// search height, captured before reading the allowance.
+func (c *EVMClient) checkAndApproveAllowance(tx stypes.TxOutItem, nonce uint64) (*etypes.Transaction, uint64, error) {
 	// Check if mimir is enabled for allowance checks
 	allowanceCheckEnabled, err := c.bridge.GetMimir(fmt.Sprintf(constants.MimirTemplateEVMAllowanceCheck, c.cfg.ChainID))
 	if err != nil {
 		c.logger.Err(err).Msg("fail to get EVMAllowanceCheck mimir")
-		return nil, nil // Continue without approval check if mimir lookup fails
+		return nil, 0, nil // Continue without approval check if mimir lookup fails
 	}
 
 	// If mimir is not set or is 0, skip allowance check
 	if allowanceCheckEnabled <= 0 {
-		return nil, nil
+		return nil, 0, nil
 	}
 
 	// Only check allowance for single token transfers (not native asset transfers)
 	if len(tx.Coins) == 0 {
-		return nil, nil
+		return nil, 0, nil
 	} else if len(tx.Coins) > 1 {
-		return nil, errors.New("evm token tx cannot have more than 1 coin")
+		return nil, 0, errors.New("evm token tx cannot have more than 1 coin")
 	}
 
 	coin := tx.Coins[0]
@@ -1294,20 +1285,20 @@ func (c *EVMClient) checkAndApproveAllowance(tx stypes.TxOutItem, nonce uint64) 
 
 	// Skip native token transfers (ETH, BNB, etc.) - they don't need approval
 	if strings.EqualFold(tokenAddr, evm.NativeTokenAddr) {
-		return nil, nil
+		return nil, 0, nil
 	}
 
 	// Get vault and router addresses
 	vaultAddr, err := tx.VaultPubKey.GetAddress(c.cfg.ChainID)
 	if err != nil {
 		c.logger.Err(err).Msg("fail to get vault address")
-		return nil, errors.New("fail to get vault address")
+		return nil, 0, errors.New("fail to get vault address")
 	}
 
 	contractAddr := c.getSmartContractAddr(tx.VaultPubKey)
 	if contractAddr.IsEmpty() {
 		c.logger.Debug().Msg("no router contract found, skipping allowance check")
-		return nil, errors.New("no router contract found for vault")
+		return nil, 0, errors.New("no router contract found for vault")
 	}
 
 	// Check current allowance: erc20.allowance(vault, router)
@@ -1315,11 +1306,20 @@ func (c *EVMClient) checkAndApproveAllowance(tx stypes.TxOutItem, nonce uint64) 
 	allowanceCallData, err := c.evmScanner.erc20ABI.Pack("allowance", ecommon.HexToAddress(vaultAddr.String()), ecommon.HexToAddress(contractAddr.String()))
 	if err != nil {
 		c.logger.Err(err).Msg("fail to pack allowance call data")
-		return nil, errors.New("fail to pack allowance call data")
+		return nil, 0, errors.New("fail to pack allowance call data")
+	}
+
+	// Only approval-eligible transfers need a recovery search height. Capture it
+	// before the allowance read so a peer's approval mined during setup is covered.
+	ctx, cancel := c.getTimeoutContext()
+	approvalHeight, err := c.ethClient.BlockNumber(ctx)
+	cancel()
+	if err != nil {
+		return nil, 0, fmt.Errorf("get approval search height: %w", err)
 	}
 
 	// Call allowance function on the token contract
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*30)
+	ctx, cancel = context.WithTimeout(context.Background(), time.Second*30)
 	defer cancel()
 
 	tokenContractAddr := ecommon.HexToAddress(tokenAddr)
@@ -1329,25 +1329,25 @@ func (c *EVMClient) checkAndApproveAllowance(tx stypes.TxOutItem, nonce uint64) 
 	}, nil)
 	if err != nil {
 		c.logger.Err(err).Str("token", tokenAddr).Msg("fail to call allowance function")
-		return nil, errors.New("fail to call allowance function on token contract")
+		return nil, 0, errors.New("fail to call allowance function on token contract")
 	}
 
 	// Unpack allowance result
 	allowanceResult, err := c.evmScanner.erc20ABI.Unpack("allowance", result)
 	if err != nil {
 		c.logger.Err(err).Msg("fail to unpack allowance result")
-		return nil, errors.New("fail to unpack allowance result")
+		return nil, 0, errors.New("fail to unpack allowance result")
 	}
 
 	if len(allowanceResult) == 0 {
 		c.logger.Debug().Msg("empty allowance result")
-		return nil, errors.New("empty allowance result")
+		return nil, 0, errors.New("empty allowance result")
 	}
 
 	currentAllowance, ok := allowanceResult[0].(*big.Int)
 	if !ok {
 		c.logger.Error().Msg("invalid allowance result type")
-		return nil, errors.New("invalid allowance result type")
+		return nil, 0, errors.New("invalid allowance result type")
 	}
 
 	// Convert coin amount to proper decimals for comparison
@@ -1364,7 +1364,7 @@ func (c *EVMClient) checkAndApproveAllowance(tx stypes.TxOutItem, nonce uint64) 
 			Str("currentAllowance", currentAllowance.String()).
 			Str("requiredAmount", transferAmount.String()).
 			Msg("allowance sufficient, no approval needed")
-		return nil, nil
+		return nil, 0, nil
 	}
 
 	c.logger.Info().
@@ -1382,35 +1382,10 @@ func (c *EVMClient) checkAndApproveAllowance(tx stypes.TxOutItem, nonce uint64) 
 
 	approvalData, err := c.evmScanner.erc20ABI.Pack("approve", ecommon.HexToAddress(contractAddr.String()), maxUint256)
 	if err != nil {
-		return nil, fmt.Errorf("fail to pack approval data: %w", err)
+		return nil, 0, fmt.Errorf("fail to pack approval data: %w", err)
 	}
 
-	// Use the same gas price calculation as the main transaction
-	_, gasRateUnitsPerOne := c.cfg.ChainID.GetGasUnits()
-	toiGasRateWei := cosmos.NewUint(uint64(tx.GasRate)).MulUint64(common.WeiPerOne).Quo(gasRateUnitsPerOne).BigInt()
-
-	gasPrice := c.GetGasPrice()
-	if c.cfg.BlockScanner.FixedGasRate > 0 || gasPrice.Sign() == 0 {
-		gasPrice = toiGasRateWei
-	} else {
-		// Apply same gas price logic as main transaction
-		lowerBound := toiGasRateWei
-		lowerBound.Mul(lowerBound, big.NewInt(2))
-		lowerBound.Div(lowerBound, big.NewInt(3))
-
-		gasPrice.Div(gasPrice, big.NewInt(common.One*100))
-		if gasPrice.Sign() == 0 {
-			gasPrice = big.NewInt(1)
-		}
-		gasPrice.Mul(gasPrice, big.NewInt(common.One*100))
-
-		if gasPrice.Cmp(lowerBound) < 0 {
-			gasPrice = lowerBound
-		}
-	}
-
-	// Avoid transaction hash collision between chains in mocknet (same chain id)
-	gasPrice.Add(gasPrice, c.evmScanner.ApprovalTxRateDustWei())
+	gasPrice := c.approvalGasPrice(tx)
 
 	// Use the same gas limit as other non-aggregator transactions
 	approvalGasLimit := c.cfg.BlockScanner.MaxGasLimit
@@ -1434,7 +1409,7 @@ func (c *EVMClient) checkAndApproveAllowance(tx stypes.TxOutItem, nonce uint64) 
 		Str("gasPrice", gasPrice.String()).
 		Msg("created approval transaction")
 
-	return approvalTx, nil
+	return approvalTx, approvalHeight, nil
 }
 
 // sign is design to sign a given message with keysign party and keysign wrapper
