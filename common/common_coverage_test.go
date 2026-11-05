@@ -1271,7 +1271,7 @@ func (s *CoverageSuite) TestChainDefaultCoinbase(c *C) {
 func (s *CoverageSuite) TestChainApproximateBlockMilliseconds(c *C) {
 	c.Assert(BTCChain.ApproximateBlockMilliseconds(), Equals, int64(600_000))
 	c.Assert(ETHChain.ApproximateBlockMilliseconds(), Equals, int64(12_000))
-	c.Assert(SOLChain.ApproximateBlockMilliseconds(), Equals, int64(300))
+	c.Assert(SOLChain.ApproximateBlockMilliseconds(), Equals, int64(214))
 	c.Assert(SUIChain.ApproximateBlockMilliseconds(), Equals, int64(250))
 	c.Assert(ADAChain.ApproximateBlockMilliseconds(), Equals, int64(20_000))
 	c.Assert(EmptyChain.ApproximateBlockMilliseconds(), Equals, int64(0))

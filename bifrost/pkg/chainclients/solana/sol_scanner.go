@@ -259,8 +259,8 @@ func (s *SOLScanner) scan() {
 	// coalesce scan to configured scan interval
 	solanaBlockTime := time.Duration(common.SOLChain.ApproximateBlockMilliseconds()) * time.Millisecond
 	lag := time.Duration(currentSlot-lastSlot) * solanaBlockTime
-	if lag < s.cfg.Solana.ScanInterval {
-		time.Sleep(s.cfg.Solana.ScanInterval)
+	if wait := scanCoalesceWait(lag, s.cfg.Solana.ScanInterval); wait > 0 {
+		time.Sleep(wait)
 		return
 	}
 
@@ -1189,4 +1189,15 @@ func isDurableNonceCreateTx(instructions []rpc.RPCInstruction, accountByIndex fu
 func convertLamportsToTHORChain(lamports uint64) sdk.Uint {
 	lamportsBig := new(big.Int).SetUint64(lamports)
 	return sdk.NewUintFromBigInt(lamportsBig.Quo(lamportsBig, big.NewInt(10)))
+}
+
+// scanCoalesceWait is how long to wait before scanning when the unscanned slots
+// span lag: nothing once lag reaches the scan interval, otherwise only the rest
+// of the interval. Sleeping a whole interval instead adds up to another interval
+// to every observation.
+func scanCoalesceWait(lag, interval time.Duration) time.Duration {
+	if lag >= interval {
+		return 0
+	}
+	return interval - lag
 }

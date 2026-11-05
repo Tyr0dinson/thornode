@@ -560,6 +560,59 @@ paths:
               schema:
                 $ref: "#/components/schemas/NodesResponse"
 
+  /thorchain/blame/node/{address}:
+    parameters:
+      - $ref: "#/components/parameters/queryHeight"
+      - $ref: "#/components/parameters/address"
+    get:
+      description: Returns TSS keygen and keysign blame counters for the given node address.
+      operationId: nodeBlame
+      tags:
+        - Nodes
+      responses:
+        200:
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NodeBlameResponse"
+
+  /thorchain/blame/nodes:
+    parameters:
+      - $ref: "#/components/parameters/queryHeight"
+      - in: query
+        name: sort_by
+        description: Field to sort by.
+        schema:
+          type: string
+          enum:
+            - keygen_since_churn
+            - keysign_since_churn
+            - keygen_total
+            - keysign_total
+          default: keygen_since_churn
+      - in: query
+        name: sort_order
+        description: Sort order.
+        schema:
+          type: string
+          enum:
+            - desc
+            - asc
+          default: desc
+    get:
+      description: Returns TSS keygen and keysign blame counters for all currently active nodes, sortable by blame counter fields.
+      operationId: nodeBlames
+      tags:
+        - Nodes
+      responses:
+        200:
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NodeBlamesResponse"
+
   # ------------------------------ vaults ------------------------------
 
   /thorchain/vaults/asgard:
@@ -4285,6 +4338,44 @@ components:
       type: array
       items:
         $ref: "#/components/schemas/Node"
+
+    NodeBlameResponse:
+      type: object
+      required:
+        - node_address
+        - node_operator_address
+        - keygen_blame_count_total
+        - keysign_blame_count_total
+        - keygen_blame_count_since_churn
+        - keysign_blame_count_since_churn
+      properties:
+        node_address:
+          type: string
+          description: Node address (bech32-encoded thor1... validator address).
+        node_operator_address:
+          type: string
+          description: Operator (bond) address associated with the node.
+        keygen_blame_count_total:
+          type: integer
+          format: int64
+          description: Lifetime count of keygen blame attributions for this node.
+        keysign_blame_count_total:
+          type: integer
+          format: int64
+          description: Lifetime count of keysign blame attributions for this node.
+        keygen_blame_count_since_churn:
+          type: integer
+          format: int64
+          description: Keygen blame attributions since this node's counters were last reset. Both since-churn counters reset for a node when a regular Asgard keygen it is a member of succeeds, and for all nodes when a regular churn completes; XMR monovault keygens reset neither. During a multi-Asgard churn, members of an already-succeeded vault can therefore read 0 before the churn completes.
+        keysign_blame_count_since_churn:
+          type: integer
+          format: int64
+          description: Keysign blame attributions since this node's counters were last reset. Both since-churn counters reset for a node when a regular Asgard keygen it is a member of succeeds, and for all nodes when a regular churn completes; XMR monovault keygens reset neither. During a multi-Asgard churn, members of an already-succeeded vault can therefore read 0 before the churn completes.
+
+    NodeBlamesResponse:
+      type: array
+      items:
+        $ref: "#/components/schemas/NodeBlameResponse"
 
     StreamingSwapsResponse:
       type: array

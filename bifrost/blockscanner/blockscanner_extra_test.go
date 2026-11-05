@@ -15,6 +15,7 @@ import (
 	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 	"github.com/cosmos/cosmos-sdk/crypto/hd"
 	ckeys "github.com/cosmos/cosmos-sdk/crypto/keyring"
+	"github.com/rs/zerolog"
 	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/syndtr/goleveldb/leveldb/storage"
 	. "gopkg.in/check.v1"
@@ -1068,6 +1069,9 @@ func (s *BlockScannerExtraSuite) TestScanBlocksUnhealthy(c *C) {
 		MaxHealthyLag:              time.Second, // very short lag threshold
 	}, mss, m, bridge, fetcher)
 	c.Assert(err, IsNil)
+	// An unhealthy scanner logs every block; a second of that at full speed
+	// overflows the CI job log and hides whichever test actually failed.
+	scanner.logger = zerolog.Nop()
 
 	globalChan := make(chan types.TxIn, 100)
 	nfChan := make(chan common.NetworkFee, 5)

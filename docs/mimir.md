@@ -195,6 +195,8 @@ Operational notes:
 - `ObserveSlashPoints`: The number of slashpoints for making an observation (redeems later if observation reaches consensus)
 - `ObservationDelayFlexibility`: Number of blocks of flexibility for a validator to get their slash points taken off for making an observation
 - `JailTimeKeygen`: Blocks a node account is jailed for failing to keygen. DO NOT drop below TSS timeout
+- `JailTimeKeygenBase`: Base blocks a non-active node account is jailed for failing to keygen, multiplied by its keygen blames since the last churn. DO NOT drop below `JailTimeKeygen`
+- `MaxKeygenBlameMultiplier`\*: Cap on the keygen blame multiplier applied to `JailTimeKeygenBase` and `FailKeygenSlashPoints` for non-active nodes (0 = no cap)
 - `JailTimeKeysign`: Blocks a node account is jailed for failing to keysign. DO NOT drop below TSS timeout
 - `BondSlashBan`: RUNE amount to slash bond of banned node
 

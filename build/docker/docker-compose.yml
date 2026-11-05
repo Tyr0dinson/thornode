@@ -1215,7 +1215,7 @@ services:
     restart: unless-stopped
     entrypoint: ["/etc/entrypoint.sh"]
     environment:
-      BLOCK_TIME: ${BLOCK_TIME:-1}
+      BLOCK_TIME: ${BLOCK_TIME:-5}
     volumes:
       - "./mocknet/zcash/zebrad.toml:/etc/zebrad.toml"
       - "./mocknet/zcash/entrypoint.sh:/etc/entrypoint.sh"

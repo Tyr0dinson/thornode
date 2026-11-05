@@ -52,8 +52,9 @@ const nonceProvisionFeeMarginLamports = 100_000
 
 // nonceProvisionThorBlockCadence is the durable-nonce PROVISIONING cadence in
 // THORChain blocks (~2 min at 6s/block). Chosen below the keep-alive's 50 for faster
-// provisioning while staying safely above one create keysign's full life (keysign
-// ~45s + Solana finalization ~13s + margin): a create attempt finalizes before the
+// provisioning while staying safely above one create attempt's full life (derive +
+// keysign + broadcast, within the ~32s blockhash validity at the ~214ms measured slot,
+// plus Solana finalization): a create attempt finalizes before the
 // next boundary, so the same vault's create never overlaps itself and the idempotent
 // finalized check simply skips a re-fire. boundary × cadence is a shared consensus
 // height, so every member's create keysign converges. A create fires at most once per
@@ -144,6 +145,20 @@ func (c *SOLClient) nonceProvisionCheck(anchorHeight int64) {
 		return
 	}
 	provisioningEnabled := enabled > 0
+
+	// Warm the consensus-blockhash cache off the critical path HERE, the earliest point
+	// the durable-nonce gate is known, so the galloping derivation overlaps the reads that
+	// still precede the create keysign — GetAsgards and GetPendingOutbounds below, then
+	// provisionNonceForVault's own inline derivation for the idempotency check joins this
+	// via singleflight as a cache hit. This is the create path (the 34/34-DOA broadcast),
+	// so the overlap has to start before those reads, not after them. Gated on
+	// provisioningEnabled (no create keysign can run otherwise); the worker is bounded by
+	// solMaxOutstandingPrewarms and harmless when a later gate (halt / unhealthy / no
+	// member vault / all-pending) skips provisioning this boundary.
+	if provisioningEnabled {
+		c.prewarmConsensusBlockHash(anchorHeight)
+	}
+
 	if signing.IsSigningHalted(c.bridge, c.cfg.ChainID, c.logger) {
 		return
 	}

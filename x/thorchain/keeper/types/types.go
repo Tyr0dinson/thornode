@@ -42,3 +42,6 @@ type ObservationTally struct {
 
 // ErrVaultNotFound an error indicate vault can't be found
 var ErrVaultNotFound = errors.New("vault not found")
+
+// ErrVolumeNotFound indicates that a pool has no volume record yet.
+var ErrVolumeNotFound = errors.New("total volume not found")

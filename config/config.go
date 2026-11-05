@@ -539,6 +539,16 @@ type Thornode struct {
 		// PricePerNode enables oracle price telemetry. This tracks the reported
 		// price per asset and per node, updated every block.
 		PricePerNode bool `mapstructure:"price_per_node"`
+		// TraceManagers records manager runs and runtimes in Prometheus.
+		TraceManagers bool `mapstructure:"trace_managers"`
+		// TraceHandlers records handler runs and runtimes in Prometheus.
+		TraceHandlers bool `mapstructure:"trace_handlers"`
+		// TraceContracts records contract runs, payload sizes, and runtimes in
+		// Prometheus, labeled by contract address.
+		TraceContracts bool `mapstructure:"trace_contracts"`
+		// TracePayloads writes contract payloads and metadata to debug logs.
+		// It requires TraceContracts.
+		TracePayloads bool `mapstructure:"trace_payloads"`
 	} `mapstructure:"telemetry"`
 
 	// LogFilter will drop logs matching the modules and messages when not in debug level.
@@ -1699,6 +1709,16 @@ type BifrostTSSConfiguration struct {
 	InfoAddress                  string   `mapstructure:"info_address"`
 	ExternalIP                   string   `mapstructure:"external_ip"`
 	MaxKeyshareRecoverScanBlocks int64    `mapstructure:"max_keyshare_recover_scan_blocks"`
+	// KeyshareArchiveRPC is an OPTIONAL operator-configured THORChain RPC endpoint
+	// with deeper (unpruned) block history. When a legacy keyshare backup is in the
+	// pruned part of this node's history — the whole scan window below the block-store
+	// floor, or just the clamped sub-window of a partly-available window — recovery
+	// makes ONE bounded attempt to fetch the TssPool backup from this endpoint before
+	// starting degraded. The
+	// endpoint is never trusted: a fetched backup is accepted only if it decrypts
+	// with this node's key AND the recovered share's pubkey equals the vault pubkey
+	// from THORChain. Default empty (no hardcoded third party) → the fetch is skipped.
+	KeyshareArchiveRPC string `mapstructure:"keyshare_archive_rpc"`
 }
 
 type BifrostOracleConfiguration struct {

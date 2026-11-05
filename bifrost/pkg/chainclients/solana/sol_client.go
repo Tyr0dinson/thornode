@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/endpoints"
@@ -55,9 +56,9 @@ var signerCacheExpiryOverride time.Duration
 // invalidates, because thorchain observation consensus can lag actual Solana
 // inclusion and re-signing a landed-but-not-yet-observed tx would double-spend.
 //
-// The configured 2h (config signer_cache_expiry) is well past Solana's ~45s
-// blockhash validity (MAX_PROCESSING_AGE = 150 blocks at ~300ms) and generous against
-// prolonged scanner or consensus lag.
+// The configured 2h (config signer_cache_expiry) is well past Solana's ~32s
+// blockhash validity (MAX_PROCESSING_AGE = 150 blocks at the ~214ms measured slot) and
+// generous against prolonged scanner or consensus lag.
 func (c *SOLClient) getSignerCacheExpiry() time.Duration {
 	if signerCacheExpiryOverride > 0 {
 		return signerCacheExpiryOverride
@@ -151,6 +152,10 @@ type SOLClient struct {
 	consensusHashes     map[int64]consensusBlockHashEntry
 	consensusHashNewest int64
 	consensusHashGroup  singleflight.Group
+
+	// prewarmInFlight counts outstanding prewarmConsensusBlockHash goroutines so a
+	// stalled timestamp RPC cannot let them accumulate without bound (see that func).
+	prewarmInFlight atomic.Int32
 
 	// resignDeadHash remembers blockhashes whose expiry was confirmed at or
 	// beyond their anchor slot. SignTx can then drop other items using the same
@@ -662,7 +667,7 @@ func (c *SOLClient) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *
 	// the EVM/UTXO/Cosmos/TRON/XRP clients (which gate the verification path
 	// behind a SkipSignerCache<Chain> mimir), Solana enables verification
 	// unconditionally because the broadcast's blockhash already constrains
-	// re-sign safety to a tight window (~45s).
+	// re-sign safety to a tight window (~32s at the ~214ms measured slot).
 	verifyFn := func(sig string) signercache.LookupResult {
 		return c.verifyBroadcast(sig, tx)
 	}
@@ -947,27 +952,36 @@ const (
 	// in whole seconds and only ever combined with time.Time.Unix() values, so there
 	// is no time.Duration unit hazard.
 	//
-	// HARD FLOOR ~13s: Solana `finalized` commitment lags ~13s (rooted, ~31 confs),
-	// so the newest finalized slot is always ~13s old. The bracket guard's upper
-	// witness requires a finalized slot NEWER than target = (t - margin); if margin
-	// drops below the finalization lag, target is newer than the finalization
-	// frontier on EVERY node -> all abstain -> the outbound stalls. 15s = ~13s
-	// finalization + ~2s fleet-lag spread, and frees ~5s vs the prior 20s toward the
-	// ~45s blockhash-liveness budget for keysign (tc-vals timing, 2026-08-31). Do NOT
-	// go below ~15s without first measuring the fleet's real p95 finalization lag.
+	// HARD FLOOR = the finalization lag: Solana `finalized` is rooted ~31 confs behind
+	// the tip, so the newest finalized slot is always ~32 slots old — in WALL-CLOCK
+	// that is slot-rate-dependent: ~13s at 400ms, ~7s at the ~214ms measured 2026-10-27.
+	// The bracket guard's upper witness requires a finalized slot NEWER than target =
+	// (t - margin); if margin drops below the finalization lag, target is newer than the
+	// finalization frontier on EVERY node -> all abstain -> the outbound stalls. 15s
+	// covers the ~13s worst-case lag + ~2s fleet-lag spread. The blockhash-liveness
+	// budget this margin spends against is 150 blocks, which is also slot-rate-dependent:
+	// ~45s at 300ms but only ~32s at 214ms, so faster slots leave less room for keysign
+	// + broadcast — the pipeline-shortening prewarm (prewarmConsensusBlockHash) reclaims
+	// it on the derivation side. Do NOT go below ~15s without first measuring the fleet's
+	// real p95 finalization lag.
 	//
 	// This is the DEFAULT; MimirKeySOLAnchorMarginSeconds overrides it at the keysign
 	// height (see anchorMarginAtHeight), clamped to
 	// [solAnchorMarginMinSeconds, solAnchorMarginMaxSeconds].
 	solFinalizationMarginSeconds = int64(15)
 
-	// solAnchorMarginMinSeconds floors the mimir override. At ~300ms slots the
-	// ~32-slot finalization lag is ~9-10s, plus ~2s fleet spread; below that every
-	// node abstains and SOL outbounds stall.
+	// solAnchorMarginMinSeconds floors the mimir override. The ~32-slot finalization lag
+	// is ~7s at the ~214ms measured slot (was ~13s at 400ms, ~9-10s at 300ms), plus ~2s
+	// fleet spread; set the margin below the lag and every node abstains → SOL outbounds
+	// stall. 12s is safe at today's ~214ms slot but is BELOW the ~13s lag at 400ms, so if
+	// slot time rises back toward 400ms an operator must NOT floor the margin — leave it
+	// at the 15s default. The floor is a backstop against a fat-finger vote, not a
+	// safe operating point at every slot rate.
 	solAnchorMarginMinSeconds = int64(12)
 
 	// solAnchorMarginMaxSeconds caps the mimir override: a larger margin only eats the
-	// 150-block (~40-45s) blockhash validity budget left for keysign + broadcast.
+	// 150-block blockhash validity budget (~32s at 214ms, ~45s at 300ms) left for
+	// keysign + broadcast.
 	solAnchorMarginMaxSeconds = int64(30)
 
 	// solConsensusInitialLookbackSlots is the first getBlocks lookback below the
@@ -988,19 +1002,37 @@ const (
 	// solConsensusCacheWindow bounds the consensus-blockhash memo: entries more than
 	// this many THORChain heights behind the newest stored height are evicted on
 	// insert. Keysign heights only move forward and a derived hash is only usable
-	// for ~45s at ~300ms slots (~7-8 heights), so 128 heights (~13 min) is ample while keeping the
-	// map to at most window+1 entries.
+	// for ~32s at ~214ms slots (~5-6 THORChain heights), so 128 heights (~13 min) is
+	// ample while keeping the map to at most window+1 entries.
 	solConsensusCacheWindow = int64(128)
 
 	// solMaxProcessingAgeBlocks mirrors Solana's MAX_PROCESSING_AGE: a transaction is
 	// rejected once more than this many BLOCKS have been produced after the block whose
 	// blockhash it carries. The unit is load-bearing and is neither seconds nor slots.
-	// At the nominal ~300ms slot 150 blocks is ~45s, but a cluster slowdown stretches the
-	// same 150 blocks over several minutes, and skipped slots stretch them over more
+	// At the ~214ms measured slot 150 blocks is ~32s (was ~45s at 300ms), but a cluster
+	// slowdown stretches the same 150 blocks over several minutes, and skipped slots stretch them over more
 	// than 150 slots. A wall-clock or slot-count stand-in therefore drifts from the real
 	// rule in one direction or the other; the expiry proof in consensusBlockHash counts
 	// blocks and nothing else.
 	solMaxProcessingAgeBlocks = 150
+
+	// solSlotMillisecondsMin / solSlotMillisecondsMax bound the MimirKeySOLSlotMilliseconds
+	// override (see solSlotMillisecondsAtHeight). The floor keeps the divisor in
+	// solSlotsPerThorchainBlock strictly positive; the ceiling stops a stray vote from
+	// stretching the keep-alive staleness threshold absurdly. The window is wide enough
+	// to cover any realistic Solana slot time (historically ~400ms, now ~214ms) with
+	// headroom in both directions.
+	solSlotMillisecondsMin = int64(50)
+	solSlotMillisecondsMax = int64(2000)
+
+	// solMaxOutstandingPrewarms bounds concurrent prewarmConsensusBlockHash goroutines.
+	// The worker derives via GetBlockTimestamp, which runs on context.Background() with
+	// no per-call deadline, so if that RPC wedges while the LCD/Solana endpoints stay up
+	// the keep-alive loop keeps advancing and could otherwise launch a fresh worker
+	// (distinct height, so singleflight cannot coalesce) every boundary. The cap makes
+	// accumulation impossible: once this many are stuck, further prewarms are skipped and
+	// the derivation simply happens inline on the synchronous keysign path as before.
+	solMaxOutstandingPrewarms = int32(4)
 )
 
 // errTooManyProbes caps the getBlockTime fan-out inside consensusBlockHash.
@@ -1047,6 +1079,55 @@ func (c *SOLClient) cachedConsensusBlockHash(height int64) (string, int64, error
 		return "", 0, fmt.Errorf("unexpected consensus blockhash cache value %T", v)
 	}
 	return e.hash, e.slot, nil
+}
+
+// prewarmConsensusBlockHash derives and caches the consensus blockhash for a keysign
+// height AHEAD of the keysign that needs it, off the critical path, so the galloping
+// getBlocks / getBlockTime derivation (consensusBlockHash) runs concurrently with the RPC
+// reads that precede the keysign and is a cache hit by keysign time — trimming it out of
+// the anchor->broadcast window the SOL recent-blockhash path (nonce create + keep-alive)
+// must fit inside the ~150-block (~32s at 214ms slots) blockhash lifetime. That is the
+// pipeline-shortening half of the SOL "Blockhash not found" fix. To ACTUALLY overlap, each
+// caller launches it BEFORE the reads the keysign path must wait on anyway:
+//   - nonceProvisionCheck (the create path — the broadcast that was 34/34 DOA): right after
+//     the durable-nonce gate is read, so it overlaps GetAsgards + GetPendingOutbounds and is
+//     cached before provisionNonceForVault's inline derivation for the idempotency check.
+//   - keepAliveVault: once a vault is confirmed keepAliveDue, overlapping its GetBalance.
+//
+// Determinism-neutral: the cached value is a pure function of height (identical whenever
+// derived), singleflight coalesces this with the later synchronous call (no double RPC),
+// and a failed/expired derivation is never memoized — so a keysign-path call made AFTER
+// the prewarm finishes re-derives exactly as it would without the prewarm, and one that
+// joins a still-in-flight prewarm shares its outcome (a live hash, or equally a transient
+// RPC error / errAnchorExpired / ("",0,nil) abstention) and retries next boundary. Either
+// way it never sees a wrong or stale hash; the prewarm only changes timing, not the result.
+//
+// The goroutine is intentionally NOT wg-tracked and NOT stopchan-cancellable: consensusBlockHash
+// reaches GetBlockTimestamp, which runs on context.Background() with no per-call deadline, so a
+// wg-tracked worker could wedge Stop() on a stalled THORChain RPC. Fire-and-forget avoids that,
+// and solMaxOutstandingPrewarms bounds accumulation: a caller may fire this on a boundary where
+// the keysign does not ultimately run (a vault later skipped for a pending outbound, a balance
+// read that errors or is underfunded), so without the cap a stalled GetBlockTimestamp — LCD and
+// Solana still healthy, loop still advancing — could leak one worker per boundary at distinct
+// heights singleflight cannot coalesce. At the cap, prewarms are skipped and the derivation just
+// happens inline on the synchronous keysign path as before.
+func (c *SOLClient) prewarmConsensusBlockHash(height int64) {
+	if height <= 0 {
+		return
+	}
+	if _, ok := c.lookupConsensusBlockHash(height); ok {
+		return // already derived for this height; nothing to warm
+	}
+	// Reserve a slot atomically (Add, then undo if over) rather than Load-then-Add, so the
+	// cap holds even if a future caller runs off the keep-alive loop goroutine.
+	if c.prewarmInFlight.Add(1) > solMaxOutstandingPrewarms {
+		c.prewarmInFlight.Add(-1)
+		return // too many stuck/in-flight derivations; let the inline keysign path derive
+	}
+	go func() {
+		defer c.prewarmInFlight.Add(-1)
+		_, _, _ = c.cachedConsensusBlockHash(height)
+	}()
 }
 
 // lookupConsensusBlockHash returns the memoized derivation for height, if any.
@@ -1307,7 +1388,7 @@ func (c *SOLClient) consensusBlockHash(height int64) (string, int64, error) {
 		}
 
 		// Blockhash only: the full block body (transaction list) is megabytes on
-		// mainnet and would be downloaded inside the ~45s liveness budget and dropped.
+		// mainnet and would be downloaded inside the ~32s (214ms-slot) liveness budget and dropped.
 		blockhash, err := c.rpcClient.GetBlockhashAtSlot(best)
 		if err != nil {
 			return "", 0, fmt.Errorf("fail to fetch consensus blockhash for slot %d: %w", best, err)
@@ -1517,6 +1598,54 @@ func clampAnchorMargin(v int64) int64 {
 		return solAnchorMarginMinSeconds
 	case v > solAnchorMarginMaxSeconds:
 		return solAnchorMarginMaxSeconds
+	default:
+		return v
+	}
+}
+
+// solSlotMillisecondsAtHeight returns bifrost's slot-time estimate (ms), read from
+// MimirKeySOLSlotMilliseconds at the consensus keysign height so every member derives
+// the same value (mirrors anchorMarginAtHeight). An UNSET mimir (<=0) falls back to the
+// common.SOLChain.ApproximateBlockMilliseconds() code constant — uniform on every node,
+// so no divergence. A set value is clamped to [solSlotMillisecondsMin,
+// solSlotMillisecondsMax] so a stray vote can neither zero the divisor in
+// solSlotsPerThorchainBlock nor explode the keep-alive threshold.
+//
+// A READ ERROR is PROPAGATED (not swallowed into the constant): the caller skips the
+// keep-alive this boundary instead of acting on a value that peers — whose read
+// succeeded — do not share. Swallowing the error would let one node use 214 while
+// another uses the voted value, splitting the keepAliveDue result and the keysign party
+// for that round. The feature is liveness-only (the skipped node retries next boundary),
+// so fail-closed costs nothing and the pre-fix pure-constant uniformity is preserved.
+func (c *SOLClient) solSlotMillisecondsAtHeight(height int64) (int64, error) {
+	var (
+		v   int64
+		err error
+	)
+	if r, ok := c.bridge.(mimirHeightReader); ok {
+		v, err = r.GetMimirAtHeight(constants.MimirKeySOLSlotMilliseconds, height)
+	} else {
+		v, err = c.bridge.GetMimir(constants.MimirKeySOLSlotMilliseconds)
+	}
+	if err != nil {
+		return 0, err
+	}
+	if v <= 0 {
+		return common.SOLChain.ApproximateBlockMilliseconds(), nil
+	}
+	return clampSolSlotMilliseconds(v), nil
+}
+
+// clampSolSlotMilliseconds bounds the slot-time estimate to a sane range. The floor
+// keeps solSlotsPerThorchainBlock's divisor > 0; the ceiling stops a bad vote from
+// stretching the keep-alive staleness threshold absurdly. A value inside the range is
+// used as-is.
+func clampSolSlotMilliseconds(v int64) int64 {
+	switch {
+	case v < solSlotMillisecondsMin:
+		return solSlotMillisecondsMin
+	case v > solSlotMillisecondsMax:
+		return solSlotMillisecondsMax
 	default:
 		return v
 	}

@@ -41,6 +41,28 @@ import (
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 )
 
+const (
+	managerAdvancedSwapQueue  = "advanced_swap_queue"
+	managerDynamicFee         = "dynamic_fee"
+	managerGas                = "gas"
+	managerNetwork            = "network"
+	managerObserver           = "observer"
+	managerOracle             = "oracle"
+	managerPool               = "pool"
+	managerScheduledMigration = "scheduled_migration"
+	managerSlasher            = "slasher"
+	managerStableReserve      = "stable_reserve"
+	managerSwapQueue          = "swap_queue"
+	managerTxOut              = "tx_out"
+	managerValidator          = "validator"
+	managerVolume             = "volume"
+
+	operationBeginBlock    = "begin_block"
+	operationEndBlock      = "end_block"
+	operationLackSigning   = "lack_signing"
+	operationUpdateNetwork = "update_network"
+)
+
 // type check to ensure the interface is properly implemented
 var (
 	_ module.AppModule           = AppModule{}
@@ -179,6 +201,7 @@ func (am AppModule) BeginBlock(goCtx context.Context) error {
 	// BeginBlock lists the active validators several times; share one decode
 	// until a node account is written. Not in DeliverTx: gas_used would change.
 	ctx = keeper.WithActiveValidatorsCache(ctx)
+	tracer := am.mgr.Tracer()
 
 	votes := ctx.CometInfo().GetLastCommit().Votes()
 	var existingValidators []string
@@ -201,18 +224,30 @@ func (am AppModule) BeginBlock(goCtx context.Context) error {
 	}
 
 	// Clear all oracle prices
-	if err := am.mgr.OracleManager().BeginBlock(ctx); err != nil {
+	if err := runTracedManager(tracer, managerOracle, operationBeginBlock, func() error {
+		return am.mgr.OracleManager().BeginBlock(ctx)
+	}); err != nil {
 		ctx.Logger().Error("fail to process oracle manager", "error", err)
 	}
 
 	am.mgr.Keeper().ClearObservingAddresses(ctx)
 
-	am.mgr.GasMgr().BeginBlock()
-	if err := am.mgr.NetworkMgr().BeginBlock(ctx, am.mgr); err != nil {
+	_ = runTracedManager(tracer, managerGas, operationBeginBlock, func() error {
+		am.mgr.GasMgr().BeginBlock()
+		return nil
+	})
+	if err := runTracedManager(tracer, managerNetwork, operationBeginBlock, func() error {
+		return am.mgr.NetworkMgr().BeginBlock(ctx, am.mgr)
+	}); err != nil {
 		ctx.Logger().Error("fail to begin network manager", "error", err)
 	}
-	am.mgr.Slasher().BeginBlock(ctx, am.mgr.GetConstants())
-	if err := am.mgr.ValidatorMgr().BeginBlock(ctx, am.mgr, existingValidators); err != nil {
+	_ = runTracedManager(tracer, managerSlasher, operationBeginBlock, func() error {
+		am.mgr.Slasher().BeginBlock(ctx, am.mgr.GetConstants())
+		return nil
+	})
+	if err := runTracedManager(tracer, managerValidator, operationBeginBlock, func() error {
+		return am.mgr.ValidatorMgr().BeginBlock(ctx, am.mgr, existingValidators)
+	}); err != nil {
 		ctx.Logger().Error("Fail to begin block on validator", "error", err)
 	}
 
@@ -230,6 +265,7 @@ func (am AppModule) EndBlock(goCtx context.Context) ([]abci.ValidatorUpdate, err
 	// EndBlock lists the active validators many times (per POL pool, per
 	// outbound, per manager); share one decode until a node account is written.
 	ctx = keeper.WithActiveValidatorsCache(ctx)
+	tracer := am.mgr.Tracer()
 
 	ctx.Logger().Debug("End Block")
 
@@ -239,7 +275,9 @@ func (am AppModule) EndBlock(goCtx context.Context) ([]abci.ValidatorUpdate, err
 	// order of the manager calls and their error handling are unchanged.
 	start := telemetry.Now()
 	luviCtx, luviStep := beginLuviScope(ctx, am.mgr.Keeper(), "endblock/swap_queue", "", false)
-	if err := am.mgr.SwapQ().EndBlock(luviCtx, am.mgr); err != nil {
+	if err := runTracedManager(tracer, managerSwapQueue, operationEndBlock, func() error {
+		return am.mgr.SwapQ().EndBlock(luviCtx, am.mgr)
+	}); err != nil {
 		ctx.Logger().Error("fail to process swap queue", "error", err)
 		telemetry.IncrCounterWithLabels(
 			[]string{"thornode", "endblock", "manager_error"},
@@ -252,7 +290,9 @@ func (am AppModule) EndBlock(goCtx context.Context) ([]abci.ValidatorUpdate, err
 
 	start = telemetry.Now()
 	luviCtx, luviStep = beginLuviScope(ctx, am.mgr.Keeper(), "endblock/adv_swap_queue", "", false)
-	if err := am.mgr.AdvSwapQueueMgr().EndBlock(luviCtx, am.mgr, am.telemetryEnabled); err != nil {
+	if err := runTracedManager(tracer, managerAdvancedSwapQueue, operationEndBlock, func() error {
+		return am.mgr.AdvSwapQueueMgr().EndBlock(luviCtx, am.mgr, am.telemetryEnabled)
+	}); err != nil {
 		ctx.Logger().Error("fail to process adv swap queue", "error", err)
 		telemetry.IncrCounterWithLabels(
 			[]string{"thornode", "endblock", "manager_error"},
@@ -265,7 +305,9 @@ func (am AppModule) EndBlock(goCtx context.Context) ([]abci.ValidatorUpdate, err
 
 	start = telemetry.Now()
 	luviCtx, luviStep = beginLuviScope(ctx, am.mgr.Keeper(), "endblock/lack_signing", "", false)
-	if err := am.mgr.Slasher().LackSigning(luviCtx, am.mgr); err != nil {
+	if err := runTracedManager(tracer, managerSlasher, operationLackSigning, func() error {
+		return am.mgr.Slasher().LackSigning(luviCtx, am.mgr)
+	}); err != nil {
 		ctx.Logger().Error("Unable to slash for lack of signing:", "error", err)
 		telemetry.IncrCounterWithLabels(
 			[]string{"thornode", "endblock", "manager_error"},
@@ -278,7 +320,9 @@ func (am AppModule) EndBlock(goCtx context.Context) ([]abci.ValidatorUpdate, err
 
 	start = telemetry.Now()
 	luviCtx, luviStep = beginLuviScope(ctx, am.mgr.Keeper(), "endblock/pool", "", false)
-	if err := am.mgr.PoolMgr().EndBlock(luviCtx, am.mgr); err != nil {
+	if err := runTracedManager(tracer, managerPool, operationEndBlock, func() error {
+		return am.mgr.PoolMgr().EndBlock(luviCtx, am.mgr)
+	}); err != nil {
 		ctx.Logger().Error("fail to process pools", "error", err)
 		telemetry.IncrCounterWithLabels(
 			[]string{"thornode", "endblock", "manager_error"},
@@ -290,13 +334,18 @@ func (am AppModule) EndBlock(goCtx context.Context) ([]abci.ValidatorUpdate, err
 	telemetry.ModuleMeasureSince("pool", start, "thornode", "block", "endblock")
 
 	start = telemetry.Now()
-	am.mgr.ObMgr().EndBlock(ctx, am.mgr.Keeper())
+	_ = runTracedManager(tracer, managerObserver, operationEndBlock, func() error {
+		am.mgr.ObMgr().EndBlock(ctx, am.mgr.Keeper())
+		return nil
+	})
 	telemetry.ModuleMeasureSince("observer", start, "thornode", "block", "endblock")
 
 	// update network data to account for block rewards and reward units
 	start = telemetry.Now()
 	luviCtx, luviStep = beginLuviScope(ctx, am.mgr.Keeper(), "endblock/update_network", "", false)
-	if err := am.mgr.NetworkMgr().UpdateNetwork(luviCtx, am.mgr); err != nil {
+	if err := runTracedManager(tracer, managerNetwork, operationUpdateNetwork, func() error {
+		return am.mgr.NetworkMgr().UpdateNetwork(luviCtx, am.mgr)
+	}); err != nil {
 		ctx.Logger().Error("fail to update network data", "error", err)
 		telemetry.IncrCounterWithLabels(
 			[]string{"thornode", "endblock", "manager_error"},
@@ -309,7 +358,9 @@ func (am AppModule) EndBlock(goCtx context.Context) ([]abci.ValidatorUpdate, err
 
 	start = telemetry.Now()
 	luviCtx, luviStep = beginLuviScope(ctx, am.mgr.Keeper(), "endblock/stable_reserve", "", false)
-	if err := am.mgr.StableReserveManager().EndBlock(luviCtx, am.mgr); err != nil {
+	if err := runTracedManager(tracer, managerStableReserve, operationEndBlock, func() error {
+		return am.mgr.StableReserveManager().EndBlock(luviCtx, am.mgr)
+	}); err != nil {
 		ctx.Logger().Error("fail to process stable reserve", "error", err)
 		telemetry.IncrCounterWithLabels(
 			[]string{"thornode", "endblock", "manager_error"},
@@ -322,7 +373,9 @@ func (am AppModule) EndBlock(goCtx context.Context) ([]abci.ValidatorUpdate, err
 
 	start = telemetry.Now()
 	luviCtx, luviStep = beginLuviScope(ctx, am.mgr.Keeper(), "endblock/network", "", false)
-	if err := am.mgr.NetworkMgr().EndBlock(luviCtx, am.mgr); err != nil {
+	if err := runTracedManager(tracer, managerNetwork, operationEndBlock, func() error {
+		return am.mgr.NetworkMgr().EndBlock(luviCtx, am.mgr)
+	}); err != nil {
 		ctx.Logger().Error("fail to end block for vault manager", "error", err)
 		telemetry.IncrCounterWithLabels(
 			[]string{"thornode", "endblock", "manager_error"},
@@ -346,13 +399,19 @@ func (am AppModule) EndBlock(goCtx context.Context) ([]abci.ValidatorUpdate, err
 
 	start = telemetry.Now()
 	luviCtx, luviStep = beginLuviScope(ctx, am.mgr.Keeper(), "endblock/validators", "", false)
-	validators := am.mgr.ValidatorMgr().EndBlock(luviCtx, am.mgr)
+	var validators []abci.ValidatorUpdate
+	_ = runTracedManager(tracer, managerValidator, operationEndBlock, func() error {
+		validators = am.mgr.ValidatorMgr().EndBlock(luviCtx, am.mgr)
+		return nil
+	})
 	luviStep.end(luviCtx, am.mgr)
 	telemetry.ModuleMeasureSince("validator", start, "thornode", "block", "endblock")
 
 	start = telemetry.Now()
 	luviCtx, luviStep = beginLuviScope(ctx, am.mgr.Keeper(), "endblock/txout", "", false)
-	if err := am.mgr.TxOutStore().EndBlock(luviCtx, am.mgr); err != nil {
+	if err := runTracedManager(tracer, managerTxOut, operationEndBlock, func() error {
+		return am.mgr.TxOutStore().EndBlock(luviCtx, am.mgr)
+	}); err != nil {
 		ctx.Logger().Error("fail to process txout endblock", "error", err)
 		telemetry.IncrCounterWithLabels(
 			[]string{"thornode", "endblock", "manager_error"},
@@ -365,7 +424,10 @@ func (am AppModule) EndBlock(goCtx context.Context) ([]abci.ValidatorUpdate, err
 
 	start = telemetry.Now()
 	luviCtx, luviStep = beginLuviScope(ctx, am.mgr.Keeper(), "endblock/gas", "", false)
-	am.mgr.GasMgr().EndBlock(luviCtx, am.mgr.Keeper(), am.mgr.EventMgr())
+	_ = runTracedManager(tracer, managerGas, operationEndBlock, func() error {
+		am.mgr.GasMgr().EndBlock(luviCtx, am.mgr.Keeper(), am.mgr.EventMgr())
+		return nil
+	})
 	luviStep.end(luviCtx, am.mgr)
 	telemetry.ModuleMeasureSince("gas", start, "thornode", "block", "endblock")
 
@@ -385,7 +447,9 @@ func (am AppModule) EndBlock(goCtx context.Context) ([]abci.ValidatorUpdate, err
 
 	// update volumes
 	start = telemetry.Now()
-	if err := am.mgr.VolumeManager().EndBlock(ctx); err != nil {
+	if err := runTracedManager(tracer, managerVolume, operationEndBlock, func() error {
+		return am.mgr.VolumeManager().EndBlock(ctx)
+	}); err != nil {
 		ctx.Logger().Error("fail update volumes", "error", err)
 		telemetry.IncrCounterWithLabels(
 			[]string{"thornode", "endblock", "manager_error"},
@@ -396,7 +460,9 @@ func (am AppModule) EndBlock(goCtx context.Context) ([]abci.ValidatorUpdate, err
 	telemetry.ModuleMeasureSince("volume", start, "thornode", "block", "endblock")
 
 	start = telemetry.Now()
-	if err := am.mgr.DynamicFeeMgr().EndBlock(ctx); err != nil {
+	if err := runTracedManager(tracer, managerDynamicFee, operationEndBlock, func() error {
+		return am.mgr.DynamicFeeMgr().EndBlock(ctx)
+	}); err != nil {
 		ctx.Logger().Error("fail to end block for dynamic fee manager", "error", err)
 		telemetry.IncrCounterWithLabels(
 			[]string{"thornode", "endblock", "manager_error"},
@@ -407,7 +473,9 @@ func (am AppModule) EndBlock(goCtx context.Context) ([]abci.ValidatorUpdate, err
 	telemetry.ModuleMeasureSince("dynamic_fee", start, "thornode", "block", "endblock")
 
 	start = telemetry.Now()
-	if err := am.mgr.ScheduledMigrationManager().EndBlock(ctx, am.mgr); err != nil {
+	if err := runTracedManager(tracer, managerScheduledMigration, operationEndBlock, func() error {
+		return am.mgr.ScheduledMigrationManager().EndBlock(ctx, am.mgr)
+	}); err != nil {
 		ctx.Logger().Error("fail to process scheduled migration", "error", err)
 		telemetry.IncrCounterWithLabels(
 			[]string{"thornode", "endblock", "manager_error"},
