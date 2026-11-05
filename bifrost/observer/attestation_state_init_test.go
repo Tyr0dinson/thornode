@@ -1970,12 +1970,18 @@ func TestStartupStateSyncCancellationAndWindow(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			now := time.Now()
+			// The test needs the dial to happen before the budget expires.
+			// The window starts here, before the dial goroutines run, so a
+			// 50ms window could expire on a loaded runner before NewStream,
+			// and stream.started never closed. The attempt budget starts
+			// inside the per-peer goroutine just before NewStream, so only a
+			// preemption in that gap can end the attempt before the dial.
 			window := time.Hour
 			if mode == "window" {
-				window = 50 * time.Millisecond
+				window = stateSyncTestFrameTimeout
 			}
 			if mode == "attempt" {
-				g.config.StateSyncTimeout = 50 * time.Millisecond
+				g.config.StateSyncTimeout = stateSyncTestFrameTimeout
 			}
 			g.startupState = newAttestationStateCollection(ctx, now, window, 50)
 			g.tickAttestationStateSync(ctx, true, false, now)

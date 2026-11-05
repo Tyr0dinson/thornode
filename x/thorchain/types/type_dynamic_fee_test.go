@@ -1,17 +1,30 @@
 package types
 
 import (
+	"flag"
 	"testing"
 
 	"cosmossdk.io/math"
 	. "gopkg.in/check.v1"
 )
 
-func TestDynamicFeeTypes(t *testing.T) { TestingT(t) }
+// TestDynamicFeeTypes runs only DynamicFeeTypesSuite. The suite is not
+// registered with Suite: TestingT runs every registered suite, which would run
+// the whole package a second time next to TestPackage.
+func TestDynamicFeeTypes(t *testing.T) {
+	flagValue := func(name string) string { return flag.Lookup(name).Value.String() }
+	result := Run(&DynamicFeeTypesSuite{}, &RunConf{
+		Filter:  flagValue("check.f"),
+		Verbose: flagValue("check.v") == "true",
+		Stream:  flagValue("check.vv") == "true",
+	})
+	println(result.String())
+	if !result.Passed() {
+		t.Fail()
+	}
+}
 
 type DynamicFeeTypesSuite struct{}
-
-var _ = Suite(&DynamicFeeTypesSuite{})
 
 func (s *DynamicFeeTypesSuite) TestNormalizePairKey(c *C) {
 	a, b := NormalizePairAssets("ETH.ETH", "BTC.BTC")

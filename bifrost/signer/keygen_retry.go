@@ -83,8 +83,10 @@ func keygenHeightInWindow(height, keygenHeight, validity int64) bool {
 // keygenCurrentHeight requires an endpoint at least as current as the delivered
 // request. A lagging/cached response cannot prove expiry or that a height-based
 // halt is still in the future. Treat it like a lookup failure and retain work.
+// The height is read uncached, as the scanner reads it: a cached height can be
+// one block behind a keygen the scanner has just delivered.
 func (s *Signer) keygenCurrentHeight(keygenHeight int64) (int64, error) {
-	height, err := s.thorchainBridge.GetBlockHeight()
+	height, err := currentThorchainHeight(s.thorchainBridge)
 	if err == nil && (height <= 0 || height < keygenHeight) {
 		err = fmt.Errorf("THORChain height %d is not current for keygen height %d", height, keygenHeight)
 	}

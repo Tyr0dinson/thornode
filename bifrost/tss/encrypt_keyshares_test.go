@@ -2,6 +2,7 @@ package tss
 
 import (
 	"bytes"
+	"encoding/binary"
 	"encoding/json"
 	"os"
 	"strings"
@@ -62,10 +63,19 @@ func (s *EncryptKeysharesSuite) TestEncryptKeysharesMissingFile(c *C) {
 }
 
 func (s *EncryptKeysharesSuite) TestEncryptKeysharesCompression(c *C) {
+	// the ratio and the dictionary are properties of the production level
+	defer func(level int) { lzmaLevel = level }(lzmaLevel)
+	lzmaLevel = productionLzmaLevel
+
+	raw, err := EncryptRawKeyshares([]byte("deadbeefcafebabe"), Mnemonic)
+	c.Assert(err, IsNil)
+	c.Assert(lzmaDictSize(c, raw), Equals, uint32(1)<<27)
+
 	// encrypt
 	ks, err := EncryptKeyshares(LocalStateTestFile, Mnemonic)
 	c.Assert(err, IsNil)
 	c.Assert(ks, NotNil)
+	c.Assert(lzmaDictSize(c, ks), Equals, uint32(1)<<27)
 
 	// ensure we achieved expected compression ratio
 	fi, err := os.Stat(LocalStateTestFile)
@@ -73,6 +83,25 @@ func (s *EncryptKeysharesSuite) TestEncryptKeysharesCompression(c *C) {
 	if float64(len(ks))/float64(fi.Size()) > 0.4 {
 		c.Fatalf("compression ratio over expected: %f", float64(len(ks))/float64(fi.Size()))
 	}
+}
+
+func (s *EncryptKeysharesSuite) TestEncryptKeysharesUseLzmaLevel(c *C) {
+	ks, err := EncryptKeyshares(LocalStateTestFile, Mnemonic)
+	c.Assert(err, IsNil)
+	c.Assert(lzmaDictSize(c, ks), Equals, uint32(1)<<16)
+
+	ks, err = EncryptRawKeyshares([]byte("deadbeefcafebabe"), Mnemonic)
+	c.Assert(err, IsNil)
+	c.Assert(lzmaDictSize(c, ks), Equals, uint32(1)<<16)
+}
+
+// lzmaDictSize reads the dictionary size from the lzma header of encrypted
+// keyshares: one properties byte, then the size as a little-endian uint32.
+func lzmaDictSize(c *C, encrypted []byte) uint32 {
+	compressed, err := DecryptKeyshares(encrypted, Mnemonic)
+	c.Assert(err, IsNil)
+	c.Assert(len(compressed) >= 5, Equals, true)
+	return binary.LittleEndian.Uint32(compressed[1:5])
 }
 
 func (s *EncryptKeysharesSuite) TestEncryptKeyshares(c *C) {
