@@ -211,6 +211,7 @@ docs-init:
 
 docs-generate: docs-init
 	@cd docs && mdbook build -d ../public
+	@python3 scripts/docs-seo.py --book docs --out public || echo "WARNING: docs-seo.py failed; docs published without SEO files"
 
 docs-dev: docs-init
 	@cd docs && mdbook serve -d ../public --open
