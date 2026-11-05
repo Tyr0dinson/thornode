@@ -347,7 +347,7 @@ func TestGetTxInSkipsReceiptsForUnrelatedBlock(t *testing.T) {
 	f := newGateFixture(t, thorcommon.BSCChain, routerAddr())
 	block := gateBlock(big.NewInt(0), gateNoRouterBloom, f.userTx(t, &gateElsewhere, nil, 1e9))
 
-	txIn, _, err := f.scanner.getTxIn(block)
+	txIn, _, err := f.scanner.getTxIn(block, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -397,7 +397,7 @@ func TestGetTxInSkippedBlockGasPricesMatchReceipts(t *testing.T) {
 	}
 	block := gateBlock(big.NewInt(2e9), gateNoRouterBloom, capped, tipped, legacy, create, blob)
 
-	_, skipped, err := f.scanner.getTxIn(block)
+	_, skipped, err := f.scanner.getTxIn(block, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -412,7 +412,7 @@ func TestGetTxInSkippedBlockGasPricesMatchReceipts(t *testing.T) {
 		gateReceipt(create, 1, big.NewInt(9e9)),
 		gateReceipt(blob, 1, big.NewInt(3e9)),
 	}
-	_, fetched, err := f.scanner.getTxInOptimized("eth_getBlockReceipts", block)
+	_, fetched, err := f.scanner.getTxInOptimized("eth_getBlockReceipts", block, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -431,7 +431,7 @@ func TestGetTxInSkippedBlockRemovesSignedTxItems(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, _, err := f.scanner.getTxIn(gateBlock(big.NewInt(0), gateNoRouterBloom, tx)); err != nil {
+	if _, _, err := f.scanner.getTxIn(gateBlock(big.NewInt(0), gateNoRouterBloom, tx), 0); err != nil {
 		t.Fatal(err)
 	}
 	items, err := f.scanner.blockMetaAccessor.GetSignedTxItems()
@@ -466,7 +466,7 @@ func TestGetTxInFetchesReceiptsWhenRouterInBloom(t *testing.T) {
 	}
 	f.receipts = []*etypes.Receipt{gateReceipt(tx, 1, big.NewInt(1e9), log)}
 
-	txIn, _, err := f.scanner.getTxIn(gateBlock(big.NewInt(0), bloomOf(gateRouter.Bytes()), tx))
+	txIn, _, err := f.scanner.getTxIn(gateBlock(big.NewInt(0), bloomOf(gateRouter.Bytes()), tx), 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -484,7 +484,7 @@ func TestGetTxInFetchesReceiptsWhenAnyRouterInBloom(t *testing.T) {
 	tx := f.userTx(t, &gateElsewhere, nil, 1e9)
 	f.receipts = []*etypes.Receipt{gateReceipt(tx, 1, big.NewInt(1e9))}
 
-	if _, _, err := f.scanner.getTxIn(gateBlock(big.NewInt(0), bloomOf(gateOldRouter.Bytes()), tx)); err != nil {
+	if _, _, err := f.scanner.getTxIn(gateBlock(big.NewInt(0), bloomOf(gateOldRouter.Bytes()), tx), 0); err != nil {
 		t.Fatal(err)
 	}
 	if got := f.receiptCalls.Load(); got != 1 {
@@ -498,7 +498,7 @@ func TestGetTxInFetchesReceiptsForTxToVault(t *testing.T) {
 	tx := f.userTx(t, &f.vault, []byte("SWAP:THOR.RUNE"), 1e9)
 	f.receipts = []*etypes.Receipt{gateReceipt(tx, 1, big.NewInt(1e9))}
 
-	txIn, _, err := f.scanner.getTxIn(gateBlock(big.NewInt(0), gateNoRouterBloom, tx))
+	txIn, _, err := f.scanner.getTxIn(gateBlock(big.NewInt(0), gateNoRouterBloom, tx), 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -517,7 +517,7 @@ func TestGetTxInFetchesReceiptsForFailedVaultTx(t *testing.T) {
 	tx := f.vaultTx(t, &gateRouter, []byte{1, 2, 3, 4})
 	f.receipts = []*etypes.Receipt{gateReceipt(tx, 0, big.NewInt(3e9))}
 
-	txIn, _, err := f.scanner.getTxIn(gateBlock(big.NewInt(0), gateNoRouterBloom, tx))
+	txIn, _, err := f.scanner.getTxIn(gateBlock(big.NewInt(0), gateNoRouterBloom, tx), 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -547,7 +547,7 @@ func TestGetTxInFetchesCachedOutboundAfterVaultRemoval(t *testing.T) {
 				otherReceipt := gateReceipt(other, 1, other.GasPrice(), f.depositLog(t, gateElsewhere, other))
 				f.receipts = []*etypes.Receipt{gateReceipt(tx, status, tx.GasPrice()), otherReceipt}
 				block := gateBlock(big.NewInt(0), etypes.CreateBloom(otherReceipt), tx, other)
-				if _, _, err := f.scanner.getTxIn(block); err != nil {
+				if _, _, err := f.scanner.getTxIn(block, 0); err != nil {
 					t.Fatal(err)
 				}
 				if got := f.receiptCalls.Load(); got != 1 {
@@ -568,7 +568,7 @@ func TestGetTxInFetchesReceiptsForTxFromVault(t *testing.T) {
 	tx := f.vaultTx(t, &gateToken, []byte{0x09, 0x5e, 0xa7, 0xb3})
 	f.receipts = []*etypes.Receipt{gateReceipt(tx, 1, big.NewInt(3e9))}
 
-	if _, _, err := f.scanner.getTxIn(gateBlock(big.NewInt(0), gateNoRouterBloom, tx)); err != nil {
+	if _, _, err := f.scanner.getTxIn(gateBlock(big.NewInt(0), gateNoRouterBloom, tx), 0); err != nil {
 		t.Fatal(err)
 	}
 	if got := f.receiptCalls.Load(); got != 1 {
@@ -585,7 +585,7 @@ func TestGetTxInUsesSenderReportedByRPC(t *testing.T) {
 		f.receipts = []*etypes.Receipt{gateReceipt(tx, 1, big.NewInt(1e9))}
 		block := f.decodedBlock(t, tx, f.vault)
 
-		if _, _, err := f.scanner.getTxIn(block); err != nil {
+		if _, _, err := f.scanner.getTxIn(block, 0); err != nil {
 			t.Fatal(err)
 		}
 		if got := f.receiptCalls.Load(); got != 1 {
@@ -597,7 +597,7 @@ func TestGetTxInUsesSenderReportedByRPC(t *testing.T) {
 		tx := f.vaultTx(t, &gateToken, nil)
 		block := f.decodedBlock(t, tx, gateElsewhere)
 
-		if _, _, err := f.scanner.getTxIn(block); err != nil {
+		if _, _, err := f.scanner.getTxIn(block, 0); err != nil {
 			t.Fatal(err)
 		}
 		if got := f.receiptCalls.Load(); got != 0 {
@@ -617,7 +617,7 @@ func TestGetTxInSenderLookupNeverCallsRPC(t *testing.T) {
 		gateReceipt(vaultTx, 1, big.NewInt(3e9)),
 	}
 
-	if _, _, err := f.scanner.getTxIn(gateBlock(big.NewInt(0), gateNoRouterBloom, tx, vaultTx)); err != nil {
+	if _, _, err := f.scanner.getTxIn(gateBlock(big.NewInt(0), gateNoRouterBloom, tx, vaultTx), 0); err != nil {
 		t.Fatal(err)
 	}
 	if got := f.otherCalls.Load(); got != 0 {
@@ -710,7 +710,7 @@ func TestGetTxInSkipsReceiptsForTxToKnownContractWithoutRouterLog(t *testing.T) 
 						bloom.Add(gateToken.Bytes())
 						block := gateBlock(big.NewInt(0), bloom, tx)
 
-						txIn, _, err := f.scanner.getTxIn(block)
+						txIn, _, err := f.scanner.getTxIn(block, 0)
 						if err != nil {
 							t.Fatal(err)
 						}
@@ -721,7 +721,7 @@ func TestGetTxInSkipsReceiptsForTxToKnownContractWithoutRouterLog(t *testing.T) 
 							t.Fatalf("got %d observations, want 0", len(txIn.TxArray))
 						}
 
-						viaReceipts, _, err := f.scanner.getTxInOptimized("eth_getBlockReceipts", block)
+						viaReceipts, _, err := f.scanner.getTxInOptimized("eth_getBlockReceipts", block, false)
 						if err != nil {
 							t.Fatal(err)
 						}
@@ -747,7 +747,7 @@ func TestGetTxInFetchesReceiptsForDepositThroughKnownContract(t *testing.T) {
 					tx := f.userTx(t, &to, []byte{1, 2, 3, 4}, 1e9)
 					f.receipts = []*etypes.Receipt{gateReceipt(tx, 1, big.NewInt(1e9), f.depositLog(t, gateRouter, tx))}
 
-					txIn, _, err := f.scanner.getTxIn(gateBlock(big.NewInt(0), truthfulBloom(f.receipts), tx))
+					txIn, _, err := f.scanner.getTxIn(gateBlock(big.NewInt(0), truthfulBloom(f.receipts), tx), 0)
 					if err != nil {
 						t.Fatal(err)
 					}
@@ -775,7 +775,7 @@ func TestGetTxInFetchesReceiptsForVaultTxToKnownContract(t *testing.T) {
 					tx := f.vaultTx(t, &to, []byte{1, 2, 3, 4})
 					f.receipts = []*etypes.Receipt{gateReceipt(tx, status, big.NewInt(3e9))}
 
-					txIn, _, err := f.scanner.getTxIn(gateBlock(big.NewInt(0), gateNoRouterBloom, tx))
+					txIn, _, err := f.scanner.getTxIn(gateBlock(big.NewInt(0), gateNoRouterBloom, tx), 0)
 					if err != nil {
 						t.Fatal(err)
 					}
@@ -859,7 +859,7 @@ func TestGetTxInMatchesReceiptsPathOnRandomBlocks(t *testing.T) {
 					block := gateBlock(big.NewInt(0), truthfulBloom(f.receipts), txs...)
 
 					before := f.receiptCalls.Load()
-					txIn, prices, err := f.scanner.getTxIn(block)
+					txIn, prices, err := f.scanner.getTxIn(block, 0)
 					if err != nil {
 						t.Fatal(err)
 					}
@@ -874,7 +874,7 @@ func TestGetTxInMatchesReceiptsPathOnRandomBlocks(t *testing.T) {
 						fetched++
 					}
 
-					viaReceipts, receiptPrices, err := f.scanner.getTxInOptimized("eth_getBlockReceipts", block)
+					viaReceipts, receiptPrices, err := f.scanner.getTxInOptimized("eth_getBlockReceipts", block, false)
 					if err != nil {
 						t.Fatal(err)
 					}
@@ -905,7 +905,7 @@ func TestGetTxInFetchesReceiptsOnAllZeroBloom(t *testing.T) {
 				tx := f.userTx(t, &to, []byte{1, 2, 3, 4}, 1e9)
 				f.receipts = []*etypes.Receipt{gateReceipt(tx, 1, big.NewInt(1e9), f.depositLog(t, gateRouter, tx))}
 
-				txIn, _, err := f.scanner.getTxIn(gateBlock(big.NewInt(0), etypes.Bloom{}, tx))
+				txIn, _, err := f.scanner.getTxIn(gateBlock(big.NewInt(0), etypes.Bloom{}, tx), 0)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -919,7 +919,7 @@ func TestGetTxInFetchesReceiptsOnAllZeroBloom(t *testing.T) {
 		}
 		t.Run("no txs", func(t *testing.T) {
 			f := newGateFixture(t, chain, routerAddr())
-			if _, _, err := f.scanner.getTxIn(gateBlock(big.NewInt(0), etypes.Bloom{})); err != nil {
+			if _, _, err := f.scanner.getTxIn(gateBlock(big.NewInt(0), etypes.Bloom{}), 0); err != nil {
 				t.Fatal(err)
 			}
 			if got := f.receiptCalls.Load(); got != 0 {
@@ -935,7 +935,7 @@ func TestGetTxInFetchesReceiptsForERC20TransferToVault(t *testing.T) {
 	tx := f.userTx(t, &gateToken, erc20TransferData(f.vault), 1e9)
 	f.receipts = []*etypes.Receipt{gateReceipt(tx, 1, big.NewInt(1e9))}
 
-	if _, _, err := f.scanner.getTxIn(gateBlock(big.NewInt(0), gateNoRouterBloom, tx)); err != nil {
+	if _, _, err := f.scanner.getTxIn(gateBlock(big.NewInt(0), gateNoRouterBloom, tx), 0); err != nil {
 		t.Fatal(err)
 	}
 	if got := f.receiptCalls.Load(); got != 1 {
@@ -988,7 +988,7 @@ func TestGetTxInDirectERC20TransferRecipient(t *testing.T) {
 			receipt := gateReceipt(tx, etypes.ReceiptStatusSuccessful, tx.GasPrice(), transfer(gateElsewhere, 9e17), transfer(f.vault, 1e17))
 			f.receipts = []*etypes.Receipt{receipt}
 			block := gateBlock(big.NewInt(0), etypes.CreateBloom(receipt), tx)
-			txIn, _, err := f.scanner.getTxIn(block)
+			txIn, _, err := f.scanner.getTxIn(block, 0)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -996,7 +996,7 @@ func TestGetTxInDirectERC20TransferRecipient(t *testing.T) {
 				if got := f.receiptCalls.Load(); got != 0 || len(txIn.TxArray) != 0 {
 					t.Fatalf("incidental transfer: %d receipt calls, %d observations", got, len(txIn.TxArray))
 				}
-				full, _, err := f.scanner.getTxInOptimized("eth_getBlockReceipts", block)
+				full, _, err := f.scanner.getTxInOptimized("eth_getBlockReceipts", block, false)
 				if err != nil || len(full.TxArray) != 0 {
 					t.Fatalf("receipt path credited an incidental transfer: observations=%v err=%v", full.TxArray, err)
 				}
@@ -1021,7 +1021,7 @@ func TestGetTxInFetchesReceiptsWhenGateCannotDecide(t *testing.T) {
 		f := newGateFixture(t, thorcommon.BSCChain)
 		tx := f.userTx(t, &gateElsewhere, nil, 1e9)
 		f.receipts = []*etypes.Receipt{gateReceipt(tx, 1, big.NewInt(1e9))}
-		if _, _, err := f.scanner.getTxIn(gateBlock(big.NewInt(0), gateNoRouterBloom, tx)); err != nil {
+		if _, _, err := f.scanner.getTxIn(gateBlock(big.NewInt(0), gateNoRouterBloom, tx), 0); err != nil {
 			t.Fatal(err)
 		}
 		if got := f.receiptCalls.Load(); got != 1 {
@@ -1042,7 +1042,7 @@ func TestGetTxInFetchesReceiptsWhenGateCannotDecide(t *testing.T) {
 			t.Fatal(err)
 		}
 		f.receipts = []*etypes.Receipt{}
-		if _, _, err = f.scanner.getTxIn(gateBlock(big.NewInt(0), gateNoRouterBloom, tx)); err != nil {
+		if _, _, err = f.scanner.getTxIn(gateBlock(big.NewInt(0), gateNoRouterBloom, tx), 0); err != nil {
 			t.Fatal(err)
 		}
 		if got := f.receiptCalls.Load(); got != 1 {
@@ -1053,7 +1053,7 @@ func TestGetTxInFetchesReceiptsWhenGateCannotDecide(t *testing.T) {
 		f := newGateFixture(t, thorcommon.BSCChain, routerAddr())
 		tx := f.userTx(t, &gateElsewhere, nil, 1e9)
 		f.receipts = []*etypes.Receipt{gateReceipt(tx, 1, big.NewInt(1e9))}
-		if _, _, err := f.scanner.getTxIn(gateBlock(big.NewInt(2e9), gateNoRouterBloom, tx)); err != nil {
+		if _, _, err := f.scanner.getTxIn(gateBlock(big.NewInt(2e9), gateNoRouterBloom, tx), 0); err != nil {
 			t.Fatal(err)
 		}
 		if got := f.receiptCalls.Load(); got != 1 {
@@ -1064,7 +1064,7 @@ func TestGetTxInFetchesReceiptsWhenGateCannotDecide(t *testing.T) {
 		f := newGateFixture(t, thorcommon.BSCChain, routerAddr())
 		tx := f.userTx(t, &gateToken, []byte{0xa9, 0x05, 0x9c, 0xbb, 0x01}, 1e9)
 		f.receipts = []*etypes.Receipt{gateReceipt(tx, 1, big.NewInt(1e9))}
-		if _, _, err := f.scanner.getTxIn(gateBlock(big.NewInt(0), gateNoRouterBloom, tx)); err != nil {
+		if _, _, err := f.scanner.getTxIn(gateBlock(big.NewInt(0), gateNoRouterBloom, tx), 0); err != nil {
 			t.Fatal(err)
 		}
 		if got := f.receiptCalls.Load(); got != 1 {
@@ -1075,7 +1075,7 @@ func TestGetTxInFetchesReceiptsWhenGateCannotDecide(t *testing.T) {
 		f := newGateFixture(t, thorcommon.BSCChain, routerAddr())
 		tx := f.userTx(t, &gateElsewhere, nil, 1e9)
 		f.receipts = []*etypes.Receipt{gateReceipt(tx, 1, big.NewInt(1e9))}
-		if _, _, err := f.scanner.getTxIn(gateBlock(nil, gateNoRouterBloom, tx)); err != nil {
+		if _, _, err := f.scanner.getTxIn(gateBlock(nil, gateNoRouterBloom, tx), 0); err != nil {
 			t.Fatal(err)
 		}
 		if got := f.receiptCalls.Load(); got != 1 {
@@ -1099,7 +1099,7 @@ func TestGetTxInSkipsUnrelatedBlockOnEachFilteredChain(t *testing.T) {
 	forEachFilteredChain(t, func(t *testing.T, chain thorcommon.Chain) {
 		f := newGateFixture(t, chain, routerAddr())
 		block := gateBlock(big.NewInt(0), gateNoRouterBloom, f.userTx(t, &gateElsewhere, nil, 1e9))
-		txIn, prices, err := f.scanner.getTxIn(block)
+		txIn, prices, err := f.scanner.getTxIn(block, 0)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1137,7 +1137,7 @@ func TestGetTxInFetchesWhenBlockMayBeObservedOnEachFilteredChain(t *testing.T) {
 				f := newGateFixture(t, chain, routerAddr())
 				block := tc.block(t, f)
 				f.receipts = []*etypes.Receipt{gateReceipt(block.Transactions()[0], 1, big.NewInt(1e9))}
-				if _, _, err := f.scanner.getTxIn(block); err != nil {
+				if _, _, err := f.scanner.getTxIn(block, 0); err != nil {
 					t.Fatal(err)
 				}
 				if f.receiptCalls.Load() == 0 {
@@ -1170,7 +1170,7 @@ func TestGetTxInAVAXAlwaysLooksUpReceipts(t *testing.T) {
 				TxHash: tx.Hash(),
 			})}
 
-			txIn, prices, err := f.scanner.getTxIn(gateBlock(big.NewInt(0), bloom, tx))
+			txIn, prices, err := f.scanner.getTxIn(gateBlock(big.NewInt(0), bloom, tx), 0)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -1203,7 +1203,7 @@ func TestGetTxInBASESkippedBlockPricesDepositTxAtZero(t *testing.T) {
 	user := f.userTx(t, &gateElsewhere, nil, 3e9)
 	block := gateBlock(big.NewInt(2e9), gateNoRouterBloom, deposit, user)
 
-	_, skipped, err := f.scanner.getTxIn(block)
+	_, skipped, err := f.scanner.getTxIn(block, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1211,7 +1211,7 @@ func TestGetTxInBASESkippedBlockPricesDepositTxAtZero(t *testing.T) {
 		t.Fatalf("got %d receipt calls, want 0", got)
 	}
 	f.receipts = []*etypes.Receipt{gateReceipt(deposit, 1, big.NewInt(0)), gateReceipt(user, 1, big.NewInt(3e9))}
-	_, fetched, err := f.scanner.getTxInOptimized("eth_getBlockReceipts", block)
+	_, fetched, err := f.scanner.getTxInOptimized("eth_getBlockReceipts", block, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1234,7 +1234,7 @@ func TestGetTxInBASEFetchesForDepositTxTouchingVault(t *testing.T) {
 			f := newGateFixture(t, thorcommon.BASEChain, routerAddr())
 			tx := tc.tx(f)
 			f.receipts = []*etypes.Receipt{gateReceipt(tx, 1, big.NewInt(0))}
-			if _, _, err := f.scanner.getTxIn(gateBlock(big.NewInt(0), gateNoRouterBloom, tx)); err != nil {
+			if _, _, err := f.scanner.getTxIn(gateBlock(big.NewInt(0), gateNoRouterBloom, tx), 0); err != nil {
 				t.Fatal(err)
 			}
 			if got := f.receiptCalls.Load(); got != 1 {
@@ -1249,7 +1249,7 @@ func TestGetTxInBASEFetchesForDepositTxTouchingVault(t *testing.T) {
 func TestGetTxInBASEDepositTxWithElsewhereSenderSkips(t *testing.T) {
 	f := newGateFixture(t, thorcommon.BASEChain, routerAddr())
 	tx := gateDepositTx(gateElsewhere, &gateToken)
-	if _, _, err := f.scanner.getTxIn(gateBlock(big.NewInt(0), gateNoRouterBloom, tx)); err != nil {
+	if _, _, err := f.scanner.getTxIn(gateBlock(big.NewInt(0), gateNoRouterBloom, tx), 0); err != nil {
 		t.Fatal(err)
 	}
 	if got := f.receiptCalls.Load(); got != 0 {
@@ -1262,7 +1262,7 @@ func TestGetTxInStillFetchesReceiptsOnPOL(t *testing.T) {
 	f := newGateFixture(t, thorcommon.POLChain, routerAddr())
 	tx := f.userTx(t, &gateElsewhere, nil, 1e9)
 	f.receipts = []*etypes.Receipt{gateReceipt(tx, 1, big.NewInt(1e9))}
-	if _, _, err := f.scanner.getTxIn(gateBlock(big.NewInt(0), gateNoRouterBloom, tx)); err != nil {
+	if _, _, err := f.scanner.getTxIn(gateBlock(big.NewInt(0), gateNoRouterBloom, tx), 0); err != nil {
 		t.Fatal(err)
 	}
 	if got := f.receiptCalls.Load(); got != 1 {

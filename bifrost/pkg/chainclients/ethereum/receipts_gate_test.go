@@ -607,7 +607,7 @@ func TestExtractTxsDirectERC20TransferRecipient(t *testing.T) {
 		txIn := f.scan(t, gateBlock(etypes.CreateBloom(receipt), tx), receipt)
 		if !tc.addressedToVault {
 			f.assertSkipped(t, txIn)
-			full, err := f.scanner.fromTxToTxInWithReceipts(tx, map[ecommon.Hash]*etypes.Receipt{tx.Hash(): receipt})
+			full, err := f.scanner.fromTxToTxInWithReceipts(tx, map[ecommon.Hash]*etypes.Receipt{tx.Hash(): receipt}, false)
 			if err != nil || full != nil {
 				t.Fatalf("receipt path credited an incidental transfer: observation=%v err=%v", full, err)
 			}
