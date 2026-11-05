@@ -165,6 +165,9 @@ func addModuleInitFlags(startCmd *cobra.Command) {
 		if err := serverCtx.Viper.BindPFlags(cmd.Flags()); err != nil {
 			return fmt.Errorf("fail to bind flags,err: %w", err)
 		}
+		if err := setAppDBBlockCache(serverCtx.Viper); err != nil {
+			return err
+		}
 
 		// replace sdk logger with thorlog
 		if zl, ok := serverCtx.Logger.Impl().(*zerolog.Logger); ok {
