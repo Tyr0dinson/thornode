@@ -64,6 +64,23 @@ type EVMSuite struct {
 
 var _ = Suite(&EVMSuite{})
 
+// mimirOverrideBridge answers GetMimir from the suite's mimir overrides before
+// the bridge's one-block HTTP response cache, so a test can switch a mimir
+// mid-test without sleeping out the cache TTL.
+type mimirOverrideBridge struct {
+	thorclient.ThorchainBridge
+	s *EVMSuite
+}
+
+func (b mimirOverrideBridge) GetMimir(key string) (int64, error) {
+	if value, exists := b.s.mimirOverrides[key]; exists {
+		var v int64
+		err := json.Unmarshal([]byte(value), &v)
+		return v, err
+	}
+	return b.ThorchainBridge.GetMimir(key)
+}
+
 var m *metrics.Metrics
 
 func GetMetricForTest(c *C) *metrics.Metrics {
@@ -952,7 +969,7 @@ func (s *EVMSuite) TestCheckAndApproveAllowance(c *C) {
 		},
 	}
 
-	e, err := NewEVMClient(s.thorKeys, chainConfig, nil, s.bridge, s.m, pubkeyMgr, poolMgr)
+	e, err := NewEVMClient(s.thorKeys, chainConfig, nil, mimirOverrideBridge{ThorchainBridge: s.bridge, s: s}, s.m, pubkeyMgr, poolMgr)
 	c.Assert(err, IsNil)
 	c.Assert(e, NotNil)
 
@@ -979,10 +996,6 @@ func (s *EVMSuite) TestCheckAndApproveAllowance(c *C) {
 	s.mimirOverrides = map[string]string{
 		"EVMAllowanceCheck-AVAX": "1",
 	}
-	// Sleep for the bridge HTTP cache TTL (ThorchainBlockTime) so the new
-	// mimir value is picked up on the next query.
-	time.Sleep(constants.ThorchainBlockTime)
-
 	// Test 2: Native asset → Skip approval (even with mimir enabled)
 	txOutItemNative := txOutItem
 	txOutItemNative.Coins = common.Coins{
@@ -1038,7 +1051,7 @@ func (s *EVMSuite) TestSignTxWithAllowanceFlow(c *C) {
 	}
 	chainConfig.EVM.TokenMaxGasMultiplier = 3
 
-	e, err := NewEVMClient(s.thorKeys, chainConfig, nil, s.bridge, s.m, pubkeyMgr, poolMgr)
+	e, err := NewEVMClient(s.thorKeys, chainConfig, nil, mimirOverrideBridge{ThorchainBridge: s.bridge, s: s}, s.m, pubkeyMgr, poolMgr)
 	c.Assert(err, IsNil)
 	c.Assert(e, NotNil)
 	e.signingReady.Store(true)
@@ -1098,9 +1111,6 @@ func (s *EVMSuite) TestSignTxWithAllowanceFlow(c *C) {
 	err = json.Unmarshal(checkpoint, &nonce)
 	c.Assert(err, IsNil)
 	c.Assert(nonce, Equals, uint64(0)) // First transaction from address
-
-	// Sleep for bridge cache TTL so the disabled mimir response expires
-	time.Sleep(constants.ThorchainBlockTime)
 
 	// Enable the allowance check via mimir
 	s.mimirOverrides = map[string]string{

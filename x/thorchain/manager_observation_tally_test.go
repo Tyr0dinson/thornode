@@ -244,23 +244,23 @@ func (s *ObservationTallySuite) TestGuardBriefRecoveriesDoNotResetGrace(c *C) {
 }
 
 func (s *ObservationTallySuite) TestGuardCountsEveryVoterAtAGuardedHeight(c *C) {
-	// From empty tallies, ten network fee voters reach consensus in every block for 300
+	// From empty tallies, ten network fee voters reach consensus in every block for 60
 	// blocks. Nodes 17-19 (15%) miss nine of them; all sign the tenth, which is scored
 	// after the nine or before them. A height with any voter above the guard share uses
 	// up grace in either order, so the passing voter cannot end the run at that height:
-	// the first 100 blocks are skipped and the nine misses of each of the other 200
+	// the first 20 blocks are skipped and the nine misses of each of the other 40
 	// count.
 	for _, passingRef := range []int64{90_000, 10_000} {
 		ctx, mgr, nas := setupObservationTallyTest(c)
 		k := mgr.Keeper()
-		k.SetMimir(ctx, constants.MissingObservationGuardMaxBlocks.String(), 100)
+		k.SetMimir(ctx, constants.MissingObservationGuardMaxBlocks.String(), 20)
 		k.SetMimir(ctx, constants.MaxMissingObservationChurnOut.String(), 3)
 		flex := k.GetConfigInt64(ctx, constants.ObservationDelayFlexibility)
 
 		start := ctx.BlockHeight()
-		for h := start; h < start+300+flex; h++ {
+		for h := start; h < start+60+flex; h++ {
 			ctx = ctx.WithBlockHeight(h)
-			if h < start+300 {
+			if h < start+60 {
 				for v := int64(0); v < 9; v++ {
 					nf := &common.NetworkFee{Chain: common.ETHChain, Height: 20_000 + 10*h + v, TransactionRate: 7, TransactionSize: 9}
 					signNetworkFee(c, ctx, mgr, nas, nf, indexes(0, 17)...)
@@ -271,9 +271,9 @@ func (s *ObservationTallySuite) TestGuardCountsEveryVoterAtAGuardedHeight(c *C) 
 			c.Assert(processObservationTallies(ctx, mgr), IsNil)
 		}
 		for _, i := range []int{17, 18, 19} {
-			checkTally(c, ctx, mgr, nas[i], common.ETHChain, 1800, 2100)
+			checkTally(c, ctx, mgr, nas[i], common.ETHChain, 360, 420)
 		}
-		checkTally(c, ctx, mgr, nas[0], common.ETHChain, 0, 2100)
+		checkTally(c, ctx, mgr, nas[0], common.ETHChain, 0, 420)
 
 		vm := newValidatorMgr(k, mgr.NetworkMgr(), mgr.TxOutStore(), mgr.EventMgr())
 		c.Assert(vm.markMissingObservationActors(ctx), IsNil)
