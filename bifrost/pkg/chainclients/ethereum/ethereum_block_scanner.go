@@ -409,6 +409,11 @@ func (e *ETHScanner) extractTxs(block *etypes.Block) (stypes.TxIn, error) {
 		MemPool:  false,
 	}
 
+	if !e.receiptsMayProduceObservation(block) {
+		e.removeSignedTxItems(block)
+		return stypes.TxIn{}, nil
+	}
+
 	// Fetch the whole block's receipts with one eth_getBlockReceipts call
 	// where the node supports it; transactions missing from the result (or
 	// all of them, when the call fails) fall back to individual
@@ -481,6 +486,111 @@ func (e *ETHScanner) extractTxs(block *etypes.Block) (stypes.TxIn, error) {
 	}
 	e.logger.Debug().Int64("block", int64(block.NumberU64())).Msgf("there are %d tx in this block need to process", count)
 	return txInbound, nil
+}
+
+// canceledContext is for ethclient calls that must not reach the server.
+var canceledContext = func() context.Context {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	return ctx
+}()
+
+// receiptsMayProduceObservation reports whether the block's receipts could lead to
+// an observation. It is false only if the block alone rules that out, so the caller
+// can skip fetching them. Gas prices don't depend on this: processBlock reads them
+// from the tx fields.
+//
+// Only logs emitted by a router are parsed, and logsBloom has no false negatives, so
+// a block whose bloom lacks every router has no router log. That has to come from
+// the bloom: with the contract whitelist off, a deposit can arrive through any
+// contract, so tx.To cannot find it. It also settles txs sent to a router or a
+// whitelisted aggregator, which are often in a block: without a router log, parsing
+// them finds nothing. Everything else fromTxToTxInWithReceipts observes is visible in
+// the tx: sends to and from a vault (including failed ones, which have no logs) and
+// direct ERC20 transfers to a vault.
+//
+// Senders are taken as the RPC reported them where possible, see txSender. A provider
+// that lied about a sender could hide that tx from this check, but it could equally
+// leave the tx out of the block or misreport its receipt.
+func (e *ETHScanner) receiptsMayProduceObservation(block *etypes.Block) bool {
+	bloom := block.Bloom()
+	// A block with txs and no bits set says more about whoever filled in the bloom
+	// than about the block, and fetching is correct either way.
+	if bloom == (etypes.Bloom{}) {
+		return true
+	}
+	routers := e.pubkeyMgr.GetContracts(common.ETHChain, false)
+	if len(routers) == 0 {
+		return true
+	}
+	emitters := routers
+	if useWhitelistSmartContract { // the log parser accepts these too, see isToValidContractAddress
+		emitters = append(append([]common.Address{}, routers...), whitelistSmartContractAddress...)
+	}
+	for _, emitter := range emitters {
+		if etypes.BloomLookup(bloom, ecommon.HexToAddress(emitter.String())) {
+			return true
+		}
+	}
+
+	for i, tx := range block.Transactions() {
+		// extractTxs never parses these
+		if tx.Type() == etypes.BlobTxType || tx.To() == nil {
+			continue
+		}
+		if e.txMayBeObserved(tx, block.Hash(), uint(i)) {
+			return true
+		}
+	}
+	return false
+}
+
+// txMayBeObserved reports whether tx's own fields could make
+// fromTxToTxInWithReceipts observe it, leaving aside logs emitted by a router.
+func (e *ETHScanner) txMayBeObserved(tx *etypes.Transaction, blockHash ecommon.Hash, index uint) bool {
+	if e.isPoolAddress(*tx.To()) {
+		return true
+	}
+	if evm.HasERC20TransferSelector(tx) {
+		// transfer(address,uint256): the recipient is the first argument
+		const recipientEnd = 4 + ecommon.HashLength
+		data := tx.Data()
+		if len(data) < recipientEnd || e.isPoolAddress(ecommon.BytesToAddress(data[4:recipientEnd])) {
+			return true
+		}
+	}
+	sender, err := e.txSender(tx, blockHash, index)
+	return err != nil || e.isPoolAddress(sender)
+}
+
+// txSender returns the sender the RPC reported when the block was decoded, which
+// ethclient keeps with the tx, and otherwise recovers it from the signature. Recovery
+// costs most of a block's time in receiptsMayProduceObservation.
+func (e *ETHScanner) txSender(tx *etypes.Transaction, blockHash ecommon.Hash, index uint) (ecommon.Address, error) {
+	// On a miss TransactionSender asks the server. The cancelled context turns that
+	// into an error, so a block without reported senders cannot cost one call per tx.
+	if sender, err := e.client.TransactionSender(canceledContext, tx, blockHash, index); err == nil {
+		return sender, nil
+	}
+	return e.eipSigner.Sender(tx)
+}
+
+func (e *ETHScanner) isPoolAddress(addr ecommon.Address) bool {
+	ok, _ := e.pubkeyMgr.IsValidPoolAddress(evm.LowerHexAddress(addr), e.cfg.ChainID)
+	return ok
+}
+
+// removeSignedTxItems clears a skipped block's txs from the signed items, the same
+// ones extractTxs would clear when it parses them.
+func (e *ETHScanner) removeSignedTxItems(block *etypes.Block) {
+	for _, tx := range block.Transactions() {
+		if tx.Type() == etypes.BlobTxType || tx.To() == nil {
+			continue
+		}
+		if err := e.blockMetaAccessor.RemoveSignedTxItem(tx.Hash().String()); err != nil {
+			e.logger.Err(err).Msgf("fail to remove signed tx item, hash:%s", tx.Hash().String())
+		}
+	}
 }
 
 func (e *ETHScanner) onObservedTxIn(txIn stypes.TxInItem, blockHeight int64) {
