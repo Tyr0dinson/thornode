@@ -281,7 +281,7 @@ func (f *gateFixture) scan(t *testing.T, block *etypes.Block, receipts ...*etype
 		r.BlockHash = block.Hash()
 	}
 	f.receipts = receipts
-	txIn, err := f.scanner.extractTxs(block)
+	txIn, err := f.scanner.extractTxs(block, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
