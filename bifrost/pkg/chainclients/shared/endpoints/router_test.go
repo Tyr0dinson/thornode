@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -879,4 +880,64 @@ func (s *RouterSuite) TestEndpointErrorKeepsTheNodesCodeAndMessage(c *C) {
 	_, err = post(c, routerFor(c, m, targets, nil), base(m), "eth_call")
 	c.Assert(err, ErrorMatches, `.*endpoint only: json-rpc error -32603: missing trie node.*`)
 	c.Assert(m.Entry("only").State(), Equals, endpoints.StateUnhealthy)
+}
+
+// A caller that cancels after the response headers arrived, while the router is
+// still reading the start of the body, is not the endpoint's failure: the cancel is
+// returned and nothing is charged. A caller deadline that runs out there still is.
+func (s *RouterSuite) TestCancelDuringBodyCheckIsNotCharged(c *C) {
+	release := make(chan struct{})
+	defer close(release)
+	stalled := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+		select {
+		case <-release:
+		case <-r.Context().Done():
+		}
+	}))
+	defer stalled.Close()
+	body := []byte(`{"jsonrpc":"2.0","id":1,"method":"eth_blockNumber","params":[]}`)
+
+	m, targets := twoEndpointMgr(c, common.ETHChain, []config.ChainEndpointConfig{{Name: "stalled", RPCHost: stalled.URL, Priority: 1}}, 1)
+	r, err := endpoints.NewHTTPRouter(m, endpoints.HTTPRouterConfig{Base: endpoints.SyntheticBase(m.Chain()), Targets: targets}, zerolog.Nop())
+	c.Assert(err, IsNil)
+	ctx, cancel := context.WithCancel(context.Background())
+	time.AfterFunc(200*time.Millisecond, cancel)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, base(m), bytes.NewReader(body))
+	c.Assert(err, IsNil)
+	_, err = (&http.Client{Transport: r, Timeout: 5 * time.Second}).Do(req)
+	c.Assert(errors.Is(err, context.Canceled), Equals, true, Commentf("%v", err))
+	c.Assert(m.Entry("stalled").State(), Equals, endpoints.StateHealthy)
+
+	m2, targets2 := twoEndpointMgr(c, common.ETHChain, []config.ChainEndpointConfig{{Name: "stalled", RPCHost: stalled.URL, Priority: 1}}, 1)
+	r2, err := endpoints.NewHTTPRouter(m2, endpoints.HTTPRouterConfig{Base: endpoints.SyntheticBase(m2.Chain()), Targets: targets2}, zerolog.Nop())
+	c.Assert(err, IsNil)
+	_, err = post(c, &http.Client{Transport: r2, Timeout: 300 * time.Millisecond}, base(m2), "eth_blockNumber")
+	c.Assert(err, NotNil)
+	c.Assert(m2.Entry("stalled").State(), Equals, endpoints.StateUnhealthy)
+}
+
+// An endpoint URL whose path holds an escaped reserved character (a key with %2F) is
+// called with that exact path, as the health probe calls it, never the decoded one.
+func (s *RouterSuite) TestEscapedEndpointPathIsKept(c *C) {
+	var got atomic.Value
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got.Store(r.RequestURI)
+		_, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":"0x1"}`))
+	}))
+	defer srv.Close()
+	m, targets := twoEndpointMgr(c, common.ETHChain, []config.ChainEndpointConfig{{Name: "keyed", RPCHost: srv.URL + "/rpc/KEY%2Fx", Priority: 1}}, 1)
+	r, err := endpoints.NewHTTPRouter(m, endpoints.HTTPRouterConfig{Base: endpoints.SyntheticBase(m.Chain()), Targets: targets}, zerolog.Nop())
+	c.Assert(err, IsNil)
+	resp, err := post(c, &http.Client{Transport: r, Timeout: 2 * time.Second}, base(m), "eth_blockNumber")
+	c.Assert(err, IsNil)
+	_ = resp.Body.Close()
+	c.Assert(got.Load(), Equals, "/rpc/KEY%2Fx")
 }

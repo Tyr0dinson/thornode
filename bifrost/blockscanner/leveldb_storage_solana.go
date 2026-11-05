@@ -53,13 +53,18 @@ func (ldbss *LevelDBScannerStorageSolana) SetScanStatus(account, lastSignature s
 	_ = binary.PutUvarint(buf, lastSlot)
 	copy(buf[8:], lastSignature)
 
-	key := accountScanStatusKey(account)
-	return ldbss.db.Put([]byte(key), buf, nil)
+	// a status saved without its cursor slot drops the slot of an earlier cursor, so
+	// it reads as unknown (0) and is never paired with the new signature
+	batch := new(leveldb.Batch)
+	batch.Put([]byte(accountScanStatusKey(account)), buf)
+	batch.Delete([]byte(accountCursorSlotKey(account)))
+	return ldbss.db.Write(batch, nil)
 }
 
 // GetScanStatusWithCursor returns the account's scan status and the slot of its
-// cursor signature (0 when none was stored: a status saved before the cursor slot
-// was kept).
+// cursor signature: 0 when none was stored for that signature (a status saved
+// before the cursor slot was kept, or rewritten since by a binary that does not
+// keep it, such as after a rollback).
 func (ldbss *LevelDBScannerStorageSolana) GetScanStatusWithCursor(account string) (string, uint64, uint64, error) {
 	sig, slot, err := ldbss.GetScanStatus(account)
 	if err != nil {
@@ -72,22 +77,27 @@ func (ldbss *LevelDBScannerStorageSolana) GetScanStatusWithCursor(account string
 	if err != nil {
 		return "", 0, 0, err
 	}
-	cursorSlot, _ := binary.Uvarint(buf)
+	cursorSlot, n := binary.Uvarint(buf)
+	if n <= 0 || string(buf[n:]) != sig {
+		return sig, slot, 0, nil // the slot of another signature
+	}
 	return sig, slot, cursorSlot, nil
 }
 
 // SetScanStatusWithCursor saves the account's scan status and the slot of its cursor
-// signature in one batch, so a cursor is never stored with another cursor's slot.
-// The slot has its own key, so the scan status record keeps its format.
+// signature in one batch. The slot has its own key, so the scan status record keeps
+// its format, and is stored with the signature it belongs to, so it is never read
+// for another cursor.
 func (ldbss *LevelDBScannerStorageSolana) SetScanStatusWithCursor(account, lastSignature string, lastSlot, cursorSlot uint64) error {
 	status := make([]byte, 8+len(lastSignature))
 	_ = binary.PutUvarint(status, lastSlot)
 	copy(status[8:], lastSignature)
-	slot := make([]byte, binary.MaxVarintLen64)
+	slot := make([]byte, binary.MaxVarintLen64, binary.MaxVarintLen64+len(lastSignature))
 	n := binary.PutUvarint(slot, cursorSlot)
+	slot = append(slot[:n], lastSignature...)
 	batch := new(leveldb.Batch)
 	batch.Put([]byte(accountScanStatusKey(account)), status)
-	batch.Put([]byte(accountCursorSlotKey(account)), slot[:n])
+	batch.Put([]byte(accountCursorSlotKey(account)), slot)
 	return ldbss.db.Write(batch, nil)
 }
 

@@ -459,7 +459,7 @@ func HTTPPostJSON(e config.ChainEndpointConfig, base string, timeout time.Durati
 	hc := &http.Client{Timeout: timeout}
 	return func(ctx context.Context, path, body string) (map[string]json.RawMessage, error) {
 		target := *clean
-		target.Path = strings.TrimSuffix(clean.Path, "/") + "/" + strings.TrimPrefix(path, "/")
+		setEscapedPath(&target, strings.TrimSuffix(clean.EscapedPath(), "/")+"/"+strings.TrimPrefix(path, "/"))
 		if body == "" {
 			body = "{}"
 		}

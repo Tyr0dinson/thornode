@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"sync/atomic"
 	"time"
 
 	. "gopkg.in/check.v1"
@@ -310,4 +311,19 @@ func (s *ProbeSuite) TestHTTPPostCheckLivenessOnlyAcceptsAnyOK(c *C) {
 	e := config.ChainEndpointConfig{Name: "a"}
 	c.Assert(endpoints.HTTPPostCheck(e, plain.URL, "/health", time.Second)(ctxBg()), IsNil)
 	c.Assert(endpoints.HTTPPostCheck(e, plain.URL, "/health", time.Second, "blockID")(ctxBg()), ErrorMatches, ".*not a JSON object.*")
+}
+
+// HTTPPostJSON keeps an escaped reserved character in the endpoint's path (a key
+// with %2F) when it appends the API path.
+func (s *ProbeSuite) TestHTTPPostJSONKeepsAnEscapedPath(c *C) {
+	var got atomic.Value
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got.Store(r.RequestURI)
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer srv.Close()
+	post := endpoints.HTTPPostJSON(config.ChainEndpointConfig{Name: "a"}, srv.URL+"/api/KEY%2Fx", time.Second)
+	_, err := post(ctxBg(), "/wallet/getnowblock", "{}")
+	c.Assert(err, IsNil)
+	c.Assert(got.Load(), Equals, "/api/KEY%2Fx/wallet/getnowblock")
 }

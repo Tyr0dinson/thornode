@@ -1,6 +1,7 @@
 package blockscanner
 
 import (
+	"encoding/binary"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -201,6 +202,27 @@ func (s *LevelDBSolanaSuite) TestSolanaScanStatusWithCursor(c *C) {
 	c.Assert(err, IsNil)
 	c.Check(sig, Equals, "sig1")
 	c.Check(slot, Equals, uint64(1000))
+
+	// a plain status write leaves no cursor slot of an earlier signature behind
+	c.Assert(store.SetScanStatus("vault", "sig2", 1100), IsNil)
+	sig, slot, cursorSlot, err = store.GetScanStatusWithCursor("vault")
+	c.Assert(err, IsNil)
+	c.Check(sig, Equals, "sig2")
+	c.Check(slot, Equals, uint64(1100))
+	c.Check(cursorSlot, Equals, uint64(0))
+
+	// a binary without the cursor slot (a rollback) rewrites only the status record:
+	// the slot stored for the earlier signature must not be paired with the new one
+	c.Assert(store.SetScanStatusWithCursor("rolled", "sig1", 1000, 990), IsNil)
+	raw := make([]byte, 8+len("sig9"))
+	_ = binary.PutUvarint(raw, 2000)
+	copy(raw[8:], "sig9")
+	c.Assert(db.Put([]byte("scanstat-rolled"), raw, nil), IsNil)
+	sig, slot, cursorSlot, err = store.GetScanStatusWithCursor("rolled")
+	c.Assert(err, IsNil)
+	c.Check(sig, Equals, "sig9")
+	c.Check(slot, Equals, uint64(2000))
+	c.Check(cursorSlot, Equals, uint64(0))
 
 	c.Assert(store.SetScanStatus("legacy", "old", 500), IsNil)
 	sig, slot, cursorSlot, err = store.GetScanStatusWithCursor("legacy")

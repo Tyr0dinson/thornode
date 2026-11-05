@@ -314,6 +314,16 @@ func (r *HTTPRouter) RoundTrip(req *http.Request) (*http.Response, error) {
 		resp.Body = ab
 		verdict, kind, fromBody := r.classify(resp, isWrite)
 		stopTimer()
+		if verdict == verdictEndpointError && kind == ErrorKindTransport && !fromBody &&
+			errors.Is(req.Context().Err(), context.Canceled) {
+			// the caller cancelled while the start of the body was read: not the
+			// endpoint's failure, so nothing is charged (a caller deadline still is)
+			_ = resp.Body.Close()
+			if deferred != nil {
+				return deferred, nil
+			}
+			return nil, req.Context().Err()
+		}
 		switch verdict {
 		case verdictOK, verdictAppError:
 			if deferred != nil {
@@ -676,9 +686,8 @@ func (r *HTTPRouter) isWrite(req *http.Request, body []byte) bool {
 func (r *HTTPRouter) rewrite(req *http.Request, t Target, body []byte) *http.Request {
 	out := req.Clone(req.Context())
 	u := *t.URL
-	suffix := strings.TrimPrefix(req.URL.Path, r.cfg.Base.Path)
-	u.Path = joinPath(t.URL.Path, suffix)
-	u.RawPath = ""
+	suffix := strings.TrimPrefix(req.URL.EscapedPath(), r.cfg.Base.EscapedPath())
+	setEscapedPath(&u, joinPath(t.URL.EscapedPath(), suffix))
 	q := t.URL.Query()
 	for k, vs := range req.URL.Query() {
 		for _, v := range vs {
@@ -698,6 +707,17 @@ func (r *HTTPRouter) rewrite(req *http.Request, t Target, body []byte) *http.Req
 		out.ContentLength = 0
 	}
 	return out
+}
+
+// setEscapedPath sets u's path from its escaped form, so an escaped reserved
+// character in an endpoint's path (a key holding %2F) is sent as configured and as
+// the health probes send it, not decoded.
+func setEscapedPath(u *url.URL, escaped string) {
+	if p, err := url.PathUnescape(escaped); err == nil {
+		u.Path, u.RawPath = p, escaped
+		return
+	}
+	u.Path, u.RawPath = escaped, ""
 }
 
 func joinPath(base, suffix string) string {
