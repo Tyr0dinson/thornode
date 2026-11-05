@@ -36,11 +36,11 @@ asserts:
 ########################################################################################
 # VaultTokenGasReserve=1000, chain-wide pending: dog has 15 - 0.0096 = 14.9904 ETH
 # available. With the 9.6 ETH reserve held back the vaults cannot pay a 14.986 ETH
-# withdraw, so selection drops the reserve. That fallback gives dog
-# 14.9904 - 0.0096 = 14.9808 ETH and leaves cat a 0.0052 ETH fragment, below the
-# 0.0064 ETH fee, which the fee deduction would drop after the withdraw debited the
-# pool. The fragment is folded back into dog's output instead, so the whole withdraw
-# is paid from dog.
+# withdraw, so selection drops the reserve. Still net of the USDC outbound's gas,
+# that fallback would give dog 14.9904 - 0.0096 = 14.9808 ETH and leave cat a
+# 0.0052 ETH fragment, below the 0.0064 ETH fee, which the fee deduction would drop
+# after the withdraw debited the pool. The fallback selects exactly as with the
+# Mimir off instead (pending outbounds of ETH only), so dog pays the whole withdraw.
 ########################################################################################
 type: tx-deposit
 signer: {{ addr_thor_cat }}

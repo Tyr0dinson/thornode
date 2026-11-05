@@ -490,7 +490,19 @@ func (tos *TxOutStorage) emitInsufficientAvailableBalanceSecurityEvent(ctx cosmo
 
 func (tos *TxOutStorage) DiscoverOutbounds(ctx cosmos.Context, transactionFeeAmount cosmos.Uint, maxGasCoin common.Coin, toi TxOutItem, vaults Vaults) ([]TxOutItem, cosmos.Uint) {
 	tokenGasReserve := tos.keeper.GetConfigInt64(ctx, constants.VaultTokenGasReserve)
-	return tos.discoverOutbounds(ctx, transactionFeeAmount, maxGasCoin, toi, vaults, tokenGasReserve)
+	return tos.discoverOutbounds(ctx, transactionFeeAmount, maxGasCoin, toi, vaults, vaults, tokenGasReserve)
+}
+
+// vaultsNetOfPending returns copies of vaults with the pending outbounds
+// deducted, leaving vaults unchanged.
+func vaultsNetOfPending(vaults Vaults, pending []TxOutItem) Vaults {
+	result := make(Vaults, len(vaults))
+	for i := range vaults {
+		result[i] = vaults[i]
+		result[i].Coins = vaults[i].Coins.Copy()
+		result[i].DeductVaultPendingOutbounds(pending)
+	}
+	return result
 }
 
 // nonGasTokenCount counts the non-gas assets on chain that the vault holds a
@@ -506,23 +518,10 @@ func nonGasTokenCount(vault Vault, chain common.Chain) uint64 {
 	return count
 }
 
-// discoverOutbounds is DiscoverOutbounds with the VaultTokenGasReserve Mimir
-// already read. When tokenGasReserve is above zero, a gas-asset outbound leaves
-// tokenGasReserve x MaxGas in each vault per token it holds on the chain, so
-// the vault can still send those tokens out. If the vaults cannot fill the
-// outbound with that reserve held back, the reserve is dropped and selection
-// runs as it did before the Mimir existed.
-func (tos *TxOutStorage) discoverOutbounds(ctx cosmos.Context, transactionFeeAmount cosmos.Uint, maxGasCoin common.Coin, toi TxOutItem, vaults Vaults, tokenGasReserve int64) ([]TxOutItem, cosmos.Uint) {
-	var outputs []TxOutItem
-
-	// Save original vaults before any filtering for potential fallback selection.
-	// We need this because the sort logic below may filter out vaults with zero available balance.
-	originalVaults := vaults
-	isRagnarok := false
-	if memo, err := ParseMemo(tos.keeper.GetVersion(), toi.GetMemo()); err == nil {
-		isRagnarok = memo.IsType(TxRagnarok)
-	}
-
+// sortOutboundVaults orders vaults for an outbound of toi: by how many vaults of
+// their size the outbound would need, fewest first, skipping vaults without
+// the asset and vaults frozen on the chain.
+func sortOutboundVaults(ctx cosmos.Context, toi TxOutItem, maxGasCoin common.Coin, vaults Vaults) Vaults {
 	// When there is more than one vault, sort the vaults by
 	// (as an integer) how many vaults of that size
 	// would be necessary to fulfill the outbound (smallest number first).
@@ -585,26 +584,44 @@ func (tos *TxOutStorage) discoverOutbounds(ctx cosmos.Context, transactionFeeAmo
 			vaults[i] = v.Vault
 		}
 	}
+	return vaults
+}
+
+// discoverOutbounds is DiscoverOutbounds with the VaultTokenGasReserve Mimir
+// already read. When tokenGasReserve is above zero, a gas-asset outbound leaves
+// tokenGasReserve x MaxGas in each vault per token it holds on the chain, so
+// the vault can still send those tokens out. vaults are then net of every
+// pending outbound on the chain. If the vaults cannot fill the outbound with
+// that reserve held back, or doing so would split off an output the fee would
+// drop as dust, selection runs exactly as with the Mimir off, on
+// fallbackVaults: the same vaults net only of pending outbounds of the asset.
+func (tos *TxOutStorage) discoverOutbounds(ctx cosmos.Context, transactionFeeAmount cosmos.Uint, maxGasCoin common.Coin, toi TxOutItem, vaults, fallbackVaults Vaults, tokenGasReserve int64) ([]TxOutItem, cosmos.Uint) {
+	isRagnarok := false
+	if memo, err := ParseMemo(tos.keeper.GetVersion(), toi.GetMemo()); err == nil {
+		isRagnarok = memo.IsType(TxRagnarok)
+	}
 
 	// Only gas-asset outbounds hold back gas for the vault's tokens. Ragnarok
 	// sweeps everything, so it never does.
-	if tokenGasReserve <= 0 || isRagnarok || !toi.Coin.Asset.Equals(maxGasCoin.Asset) {
-		tokenGasReserve = 0
+	if tokenGasReserve > 0 && !isRagnarok && toi.Coin.Asset.Equals(maxGasCoin.Asset) {
+		outputs, left := allocateOutbounds(transactionFeeAmount, maxGasCoin, toi, sortOutboundVaults(ctx, toi, maxGasCoin, vaults), false, tokenGasReserve)
+		if left.Coin.Amount.IsZero() && !hasUnpayableFragment(outputs, transactionFeeAmount, toi.Chain.DustThreshold()) {
+			return outputs, cosmos.ZeroUint()
+		}
+		// The reserve must not block an outbound the vaults can pay without
+		// it, nor split off a fragment the fee deduction would drop as dust.
+		// The fallback also drops the chain-wide pending deduction: on vaults
+		// net of gas committed to queued outbounds of other assets it could
+		// split off a sub-fee fragment that selection with the Mimir off does
+		// not.
+		vaults = fallbackVaults
 	}
-	original := toi
-	outputs, toi = allocateOutbounds(transactionFeeAmount, maxGasCoin, toi, vaults, isRagnarok, tokenGasReserve)
-	if tokenGasReserve > 0 && (!toi.Coin.Amount.IsZero() || hasUnpayableFragment(outputs, transactionFeeAmount, toi.Chain.DustThreshold())) {
-		// The reserve must not block an outbound the vaults can pay without it,
-		// nor split off a fragment that the fee deduction would drop as dust.
-		var capacity []cosmos.Uint
-		outputs, capacity, toi = allocateOutboundsWithCapacity(transactionFeeAmount, maxGasCoin, original, vaults, isRagnarok, 0)
-		// The fallback still sees vault balances net of the gas committed to
-		// queued outbounds of other assets, so it can split off a fragment that
-		// selection with the Mimir off would not. Fold each such fragment into
-		// an output whose vault can still pay it, instead of letting
-		// prepareTxOutItem drop it as dust.
-		outputs, toi.Coin.Amount = foldUnpayableFragments(outputs, capacity, toi.Coin.Amount, transactionFeeAmount, toi.Chain.DustThreshold())
-	}
+
+	// Save original vaults before any filtering for potential fallback selection.
+	// We need this because the sort logic below may filter out vaults with zero available balance.
+	originalVaults := vaults
+	vaults = sortOutboundVaults(ctx, toi, maxGasCoin, vaults)
+	outputs, toi := allocateOutbounds(transactionFeeAmount, maxGasCoin, toi, vaults, isRagnarok, 0)
 
 	// Ragnarok can intentionally leave a chain-specific residual behind, such as
 	// XRP's account reserve or SOL's rent reserve. Do not route that
@@ -698,16 +715,7 @@ func (tos *TxOutStorage) discoverOutbounds(ctx cosmos.Context, transactionFeeAmo
 // keeps tokenGasReserve x MaxGas of the gas asset per token it holds on the
 // chain; callers pass it only for gas-asset outbounds.
 func allocateOutbounds(transactionFeeAmount cosmos.Uint, maxGasCoin common.Coin, toi TxOutItem, vaults Vaults, isRagnarok bool, tokenGasReserve int64) ([]TxOutItem, TxOutItem) {
-	outputs, _, toi := allocateOutboundsWithCapacity(transactionFeeAmount, maxGasCoin, toi, vaults, isRagnarok, tokenGasReserve)
-	return outputs, toi
-}
-
-// allocateOutboundsWithCapacity is allocateOutbounds that also returns, for
-// each output, the most its vault can send: the vault's balance less the gas
-// and reserves the allocation held back.
-func allocateOutboundsWithCapacity(transactionFeeAmount cosmos.Uint, maxGasCoin common.Coin, toi TxOutItem, vaults Vaults, isRagnarok bool, tokenGasReserve int64) ([]TxOutItem, []cosmos.Uint, TxOutItem) {
 	var outputs []TxOutItem
-	var capacity []cosmos.Uint
 	for _, vault := range vaults {
 		// Ensure THORNode are not sending from and to the same address
 		fromAddr, err := vault.GetAddress(toi.Chain)
@@ -772,7 +780,6 @@ func allocateOutboundsWithCapacity(transactionFeeAmount cosmos.Uint, maxGasCoin 
 		toi.VaultPubKeyEddsa = txOutVaultPubKeyEddsa(toi.Chain, vault.PubKeyEddsa)
 		toi.VaultPubKeyFrost = vault.PubKeyFrost
 
-		capacity = append(capacity, vaultCoinAmount)
 		if toi.Coin.Amount.LTE(vaultCoinAmount) {
 			outputs = append(outputs, toi)
 			toi.Coin.Amount = cosmos.ZeroUint()
@@ -784,7 +791,7 @@ func allocateOutboundsWithCapacity(transactionFeeAmount cosmos.Uint, maxGasCoin 
 			toi.Coin.Amount = remainingAmount
 		}
 	}
-	return outputs, capacity, toi
+	return outputs, toi
 }
 
 // hasUnpayableFragment reports whether any output is too small to survive the
@@ -801,75 +808,6 @@ func hasUnpayableFragment(outputs []TxOutItem, transactionFeeAmount, dustThresho
 
 func isUnpayableFragment(output TxOutItem, transactionFeeAmount, dustThreshold cosmos.Uint) bool {
 	return output.Coin.Amount.LTE(transactionFeeAmount) || output.Coin.Amount.LT(transactionFeeAmount.Add(dustThreshold))
-}
-
-// foldUnpayableFragments adds each output of a multi-vault split that is too
-// small to survive the outbound fee to an output that is not, as long as that
-// output's vault can still pay it. capacity[i] is the most the vault of
-// outputs[i] can send. prepareTxOutItem deducts the fee from the output and the
-// vault sends the rest, so an output can grow to its capacity plus the fee and
-// its vault still pays the payout and gas. Fragments go largest first to the
-// output with the most room.
-//
-// A fragment no output has room for stays an output of its own, so
-// prepareTxOutItem drops it as dust exactly as it does with the Mimir off.
-// Sending it to the recovery flow instead would add it to a payable output
-// that its vault can then not sign. If no output survives the fee, every
-// fragment goes back into remaining for the caller's recovery flow, which
-// picks one vault for the whole amount. A single output is returned as is: an
-// outbound too small to pay its own fee is dropped as dust, as before.
-func foldUnpayableFragments(outputs []TxOutItem, capacity []cosmos.Uint, remaining, transactionFeeAmount, dustThreshold cosmos.Uint) ([]TxOutItem, cosmos.Uint) {
-	if len(outputs) < 2 || !hasUnpayableFragment(outputs, transactionFeeAmount, dustThreshold) {
-		return outputs, remaining
-	}
-	var payable, fragments []int
-	for i, output := range outputs {
-		if isUnpayableFragment(output, transactionFeeAmount, dustThreshold) {
-			fragments = append(fragments, i)
-		} else {
-			payable = append(payable, i)
-		}
-	}
-	if len(payable) == 0 {
-		for _, i := range fragments {
-			remaining = remaining.Add(outputs[i].Coin.Amount)
-		}
-		return nil, remaining
-	}
-
-	result := make([]TxOutItem, len(outputs))
-	copy(result, outputs)
-	room := make([]cosmos.Uint, len(outputs))
-	for _, i := range payable {
-		room[i] = common.SafeSub(capacity[i].Add(transactionFeeAmount), outputs[i].Coin.Amount)
-	}
-	sort.SliceStable(fragments, func(a, b int) bool {
-		return outputs[fragments[a]].Coin.Amount.GT(outputs[fragments[b]].Coin.Amount)
-	})
-	folded := make([]bool, len(outputs))
-	for _, f := range fragments {
-		amount := outputs[f].Coin.Amount
-		best := -1
-		for _, i := range payable {
-			if room[i].GTE(amount) && (best < 0 || room[i].GT(room[best])) {
-				best = i
-			}
-		}
-		if best < 0 {
-			continue
-		}
-		result[best].Coin.Amount = result[best].Coin.Amount.Add(amount)
-		room[best] = common.SafeSub(room[best], amount)
-		folded[f] = true
-	}
-
-	kept := result[:0]
-	for i := range result {
-		if !folded[i] {
-			kept = append(kept, result[i])
-		}
-	}
-	return kept, remaining
 }
 
 // prepareTxOutItem will do some data validation which include the following
@@ -975,9 +913,17 @@ func (tos *TxOutStorage) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem) ([]
 			if memo, memoErr := ParseMemo(tos.keeper.GetVersion(), toi.GetMemo()); memoErr == nil && memo.IsType(TxRagnarok) {
 				tokenGasReserve = 0
 			}
-			var pendingOutbounds []TxOutItem
+			var pendingOutbounds, pendingOfAsset []TxOutItem
 			if tokenGasReserve > 0 {
 				pendingOutbounds = tos.keeper.GetPendingOutboundsByChain(ctx, toi.Chain)
+				// The reserve-free fallback selects as with the Mimir off, so it
+				// deducts only the pending outbounds of the asset. They are the
+				// ones GetPendingOutbounds returns.
+				for _, item := range pendingOutbounds {
+					if item.Coin.Asset.Equals(toi.Coin.Asset) {
+						pendingOfAsset = append(pendingOfAsset, item)
+					}
+				}
 			} else {
 				pendingOutbounds = tos.keeper.GetPendingOutbounds(ctx, toi.Coin.Asset)
 			}
@@ -998,6 +944,10 @@ func (tos *TxOutStorage) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem) ([]
 			activeAsgards = tos.keeper.SortBySecurity(ctx, activeAsgards, signingTransactionPeriod)
 			activeAsgards = filterActiveVaultsForOutboundChain(activeAsgards, toi.Chain)
 
+			var fallbackActive Vaults
+			if tokenGasReserve > 0 {
+				fallbackActive = vaultsNetOfPending(activeAsgards, pendingOfAsset)
+			}
 			for i := range activeAsgards {
 				// having sorted by security, deduct the value of any assigned pending outbounds
 				activeAsgards[i].DeductVaultPendingOutbounds(pendingOutbounds)
@@ -1018,6 +968,10 @@ func (tos *TxOutStorage) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem) ([]
 			retiringAsgards = tos.keeper.SortBySecurity(ctx, retiringAsgards, signingTransactionPeriod)
 			retiringAsgards = filterActiveVaultsForOutboundChain(retiringAsgards, toi.Chain)
 
+			var fallbackRetiring Vaults
+			if tokenGasReserve > 0 {
+				fallbackRetiring = vaultsNetOfPending(retiringAsgards, pendingOfAsset)
+			}
 			for i := range retiringAsgards {
 				// having sorted by security, deduct the value of any assigned pending outbounds
 				retiringAsgards[i].DeductVaultPendingOutbounds(pendingOutbounds)
@@ -1027,7 +981,16 @@ func (tos *TxOutStorage) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem) ([]
 			// iterate over discovered vaults and find vaults to send funds from
 
 			// All else being equal, choose active Asgards over retiring Asgards.
-			outputs, remaining = tos.discoverOutbounds(ctx, transactionFeeAmount, maxGasCoin, toi, append(activeAsgards, retiringAsgards...), tokenGasReserve)
+			vaults := make(Vaults, 0, len(activeAsgards)+len(retiringAsgards))
+			vaults = append(vaults, activeAsgards...)
+			vaults = append(vaults, retiringAsgards...)
+			fallbackVaults := vaults
+			if tokenGasReserve > 0 {
+				fallbackVaults = make(Vaults, 0, len(fallbackActive)+len(fallbackRetiring))
+				fallbackVaults = append(fallbackVaults, fallbackActive...)
+				fallbackVaults = append(fallbackVaults, fallbackRetiring...)
+			}
+			outputs, remaining = tos.discoverOutbounds(ctx, transactionFeeAmount, maxGasCoin, toi, vaults, fallbackVaults, tokenGasReserve)
 
 			// Check we found enough funds to satisfy the request, error if we didn't
 			if !remaining.IsZero() {
