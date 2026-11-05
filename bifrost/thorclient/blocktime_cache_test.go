@@ -22,6 +22,7 @@ import (
 func TestResponseCacheFollowsBlockTime(t *testing.T) {
 	ref := constants.ThorchainBlockTime
 	t.Cleanup(func() { blocktime.Set(ref.Milliseconds()) })
+	resetHTTPResponseCaches(t)
 	blockMs := ref.Milliseconds()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, ThorchainConstants) {
@@ -34,11 +35,9 @@ func TestResponseCacheFollowsBlockTime(t *testing.T) {
 	bridge := &thorchainBridge{httpClient: client, cfg: config.BifrostClientConfiguration{ChainHost: server.URL}}
 
 	url := t.Name()
-	cache := &httpResponseCache{httpResponse: []byte("cached"), httpResponseLock: make(chan struct{}, 1)}
-	httpResponseCachesMu.Lock()
-	httpResponseCaches[url] = cache
-	httpResponseCachesMu.Unlock()
-	t.Cleanup(func() { httpResponseCachesMu.Lock(); delete(httpResponseCaches, url); httpResponseCachesMu.Unlock() })
+	// held for the whole test, so the cache's idle sweep keeps the entry
+	cache := acquireHTTPResponseCache(url)
+	defer releaseHTTPResponseCache(cache)
 	fresh := func() ([]byte, int, error) { return []byte("fresh"), http.StatusOK, nil }
 	read := func() string {
 		cache.httpResponse = []byte("cached")
