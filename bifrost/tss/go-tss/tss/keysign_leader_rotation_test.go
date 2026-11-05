@@ -30,10 +30,11 @@ func TestKeysignLeaderRotationVersionGate(t *testing.T) {
 	}{
 		{"3.20.3", false, false}, // pre-gate bifrost patch
 		{"3.21.0", false, false}, // pre-gate release
-		{"3.21.1", false, false}, // the release before the gate; mainnet 3.21.1 does not ship rotation
-		{"3.21.2", true, false},  // gate opens exactly here
-		{"3.21.3", true, false},  // later patch
-		{"3.22.0", true, false},  // later minor
+		{"3.21.1", false, false}, // mainnet 3.21.1 does not ship rotation
+		{"3.21.2", false, false}, // 3.21.2 is before the gate; it does not ship rotation (it depends on 3.22.0 work)
+		{"3.21.3", false, false}, // still before the gate
+		{"3.22.0", true, false},  // gate opens exactly here
+		{"3.22.1", true, false},  // later patch
 		{"not-a-version", false, true},
 	}
 	for _, c := range cases {
@@ -110,7 +111,7 @@ func TestKeysignSignatureWaitTimeoutCoversRotatedJoins(t *testing.T) {
 		want    time.Duration
 	}{
 		{"3.21.1", 45 * time.Second},  // pre-gate: legacy wait unchanged
-		{"3.21.2", 185 * time.Second}, // keysign timeout + slack + 3 rotated join attempts
+		{"3.22.0", 185 * time.Second}, // gated: keysign timeout + slack + 3 rotated join attempts
 		{"not-a-version", 45 * time.Second},
 	}
 	for _, c := range cases {
@@ -150,7 +151,7 @@ func TestWaitForSignaturesReceivesSignatureFromRotatedParty(t *testing.T) {
 		wantSig bool
 	}{
 		{"3.21.1", false}, // pre-gate wait has already expired
-		{"3.21.2", true},
+		{"3.22.0", true},
 	}
 	for _, c := range cases {
 		mn := mocknet.New(context.Background())
