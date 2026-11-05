@@ -64,7 +64,8 @@ bifrost:
       chain_id: ThorChain
       start_block_height: 0
       block_retry_interval: 10s
-      block_height_discover_back_off: 5s
+      # polls the local thornode; a short backoff gets new blocks to keysign sooner
+      block_height_discover_back_off: 1s
       block_scan_processors: 1
       start_block: "0"
       http_request_timeout: 30s

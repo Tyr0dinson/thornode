@@ -66,8 +66,27 @@ func (b *ThorchainBlockScan) GetKeygenMessages() <-chan ttypes.KeygenBlock {
 	return b.keygenChan
 }
 
+// uncachedHeightBridge is implemented by bridges that can read the THORChain
+// height past the bridge's one-block GET cache.
+type uncachedHeightBridge interface {
+	GetBlockHeightUncached() (int64, error)
+}
+
+// currentThorchainHeight reads the height uncached when the bridge supports it.
+// Everything that compares against a scanned block height must use it, or it
+// can see a cached height one block behind the block it is handling.
+func currentThorchainHeight(thorchain thorclient.ThorchainBridge) (int64, error) {
+	if bridge, ok := thorchain.(uncachedHeightBridge); ok {
+		return bridge.GetBlockHeightUncached()
+	}
+	return thorchain.GetBlockHeight()
+}
+
+// GetHeight reads the height uncached. A cached height can be a full block time
+// old, which delays every outbound's keysign by up to a block on top of the
+// scanner's discover backoff.
 func (b *ThorchainBlockScan) GetHeight() (int64, error) {
-	return b.thorchain.GetBlockHeight()
+	return currentThorchainHeight(b.thorchain)
 }
 
 // ThorchainBlockScan's GetNetworkFee only exists to satisfy the BlockScannerFetcher interface
