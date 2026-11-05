@@ -819,6 +819,14 @@ func (vm *SwapQueueAdv) EndBlock(ctx cosmos.Context, mgr Manager, telemetryEnabl
 	// During simulations, keep todo empty to avoid limit swap discovery blocking on iterators
 	isSimulation := isSimulationMode(ctx)
 
+	// Stable-to-stable checks and DollarsPerRune read the TOR anchors for every
+	// swap. Not in simulations: a WASM QuoteSwap runs them inside a tx, where
+	// the skipped store reads would change gas_used. A cache the caller
+	// attached (tests) is used as is.
+	if !isSimulation && keeper.AnchorsCacheFromContext(ctx) == nil {
+		ctx = keeper.WithAnchorsCache(ctx)
+	}
+
 	todo := make(tradePairs, 0)
 	todoSeen := make(tradePairSet)
 	var pairs tradePairs
@@ -875,6 +883,14 @@ func (vm *SwapQueueAdv) EndBlock(ctx cosmos.Context, mgr Manager, telemetryEnabl
 		// Exit early if no swaps found
 		if len(swaps) == 0 {
 			break
+		}
+
+		// Fill the anchors cache before any swap runs. A pool write before the
+		// first fill disables it, and only double swaps read the anchors
+		// before their pools are written (scoring and the swap's own
+		// stable-to-stable check); every swap reads them after, for its fees.
+		if iteration == 0 && !isSimulation {
+			vm.k.GetAnchors(ctx, common.TOR)
 		}
 
 		swaps, err = vm.scoreMsgs(ctx, swaps, synthVirtualDepthMult)
