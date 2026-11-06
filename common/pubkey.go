@@ -30,6 +30,7 @@ import (
 	"golang.org/x/crypto/blake2b"
 
 	adacommon "github.com/blinklabs-io/gouroboros/ledger/common"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/firoutil"
 	xrpkm "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/xrp/keymanager"
 	"gitlab.com/thorchain/thornode/v3/common/crypto/ss58"
 
@@ -260,6 +261,16 @@ func (p PubKey) GetAddress(chain Chain) (Address, error) {
 		addr, err := bchutil.NewAddressPubKeyHash(pk.Address().Bytes(), net)
 		if err != nil {
 			return NoAddress, fmt.Errorf("fail to encode the address, err: %w", err)
+		}
+		addressString = addr.String()
+	case FIROChain:
+		pk, err := p.Decode()
+		if err != nil {
+			return NoAddress, err
+		}
+		addr, err := firoutil.NewExchangeAddress(pk.Bytes(), firoNetwork(chainNetwork))
+		if err != nil {
+			return NoAddress, err
 		}
 		addressString = addr.String()
 	case DASHChain:

@@ -26,7 +26,7 @@ import (
 )
 
 func TestValidateRelayFee(t *testing.T) {
-	for _, chain := range []common.Chain{common.BTCChain, common.LTCChain, common.BCHChain, common.DOGEChain, common.ZECChain, common.DASHChain} {
+	for _, chain := range []common.Chain{common.BTCChain, common.LTCChain, common.BCHChain, common.DOGEChain, common.ZECChain, common.DASHChain, common.FIROChain} {
 		t.Run(chain.String(), func(t *testing.T) {
 			client := &Client{cfg: config.BifrostChainConfiguration{ChainID: chain}}
 			for _, tc := range []struct {
@@ -49,13 +49,56 @@ func TestValidateRelayFee(t *testing.T) {
 			} {
 				t.Run(tc.name, func(t *testing.T) {
 					client.minRelayFeeSats.Store(tc.relay)
-					wantErr := chain == common.DASHChain && tc.wantErr
+					wantErr := chain.OneOf(common.DASHChain, common.FIROChain) && tc.wantErr
 					if err := client.validateRelayFee(tc.fee, tc.size); (err != nil) != wantErr {
 						t.Fatalf("validateRelayFee: got %v, want error %v", err, wantErr)
 					}
 				})
 			}
 		})
+	}
+}
+
+// FIRO shares the fee arithmetic but retains its native inputs and output scripts.
+// Large transactions must fail before signing when the assigned budget is too low.
+func (s *FiroSuite) TestFiroBuildTxRelayFeeBudget(c *C) {
+	for _, migrate := range []bool{false, true} {
+		for _, maxGas := range []uint64{1000, 10000} {
+			func() {
+				client, f, cleanup := newFiroFixture(c)
+				defer cleanup()
+				const inputCount = 40
+				const total = uint64(inputCount) * common.One
+				for i := int64(0); i < inputCount; i++ {
+					parent := f.funding(200+i, 12, 1, f.vault)
+					f.utxos = append(f.utxos, f.listed(parent))
+				}
+				payment := total - common.One/2
+				memo := "OUT:" + strings.Repeat("a", 64)
+				if migrate {
+					payment, memo = total-maxGas, "MIGRATE:1"
+				}
+				out := stypes.TxOutItem{
+					Chain: common.FIROChain, VaultPubKey: f.pubkey, ToAddress: common.Address(f.user.String()),
+					Coins:  common.NewCoins(common.NewCoin(common.FIROAsset, cosmos.NewUint(payment))),
+					MaxGas: common.Gas{common.NewCoin(common.FIROAsset, cosmos.NewUint(maxGas))}, GasRate: 3, Memo: memo,
+				}
+				built, _, err := client.buildTx(out, f.vault.Script(), 0)
+				if maxGas == 1000 {
+					c.Assert(err, ErrorMatches, "FIRO fee .* is below relay minimum .*")
+					c.Assert(built, IsNil)
+					return
+				}
+				c.Assert(err, IsNil)
+				c.Assert(built.TxIn, HasLen, inputCount)
+				fee := int64(total)
+				for _, output := range built.TxOut {
+					fee -= output.Value
+				}
+				c.Assert(fee > 0 && uint64(fee) <= maxGas, Equals, true)
+				c.Assert(built.TxOut[0].Value, Equals, int64(payment))
+			}()
+		}
 	}
 }
 

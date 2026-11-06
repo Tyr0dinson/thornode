@@ -36,14 +36,14 @@ type GetRawMempoolVerboseResult struct {
 // MempoolFees holds DASH's nested mempool fee fields.
 type MempoolFees = dashjson.MempoolFees
 
-// QuorumLocked reports DASH's daemon-validated InstantSend or ChainLock finality.
+// QuorumLockedDASH reports DASH's daemon-validated InstantSend or ChainLock finality.
 // Bifrost's observation policy is applied separately by the chain client.
-func (tx *TxResult) QuorumLocked() bool {
+func (tx *TxResult) QuorumLockedDASH() bool {
 	return tx.InstantLock || tx.InstantLockInternal || tx.ChainLock
 }
 
-// InstantSendLocked interprets DASH's internal and combined InstantSend flags.
-func (tx *TxResult) InstantSendLocked() bool {
+// InstantSendLockedDASH interprets DASH's internal and combined InstantSend flags.
+func (tx *TxResult) InstantSendLockedDASH() bool {
 	return tx.InstantLockInternal || (tx.InstantLock && !tx.ChainLock)
 }
 
@@ -63,29 +63,29 @@ type ISLockResult struct {
 	Hex       string        `json:"hex"`
 }
 
-// GetBestChainLock retrieves DASH's best ChainLock.
-func (c *Client) GetBestChainLock() (*GetBestChainLockResult, error) {
+// GetBestChainLockDASH retrieves DASH's best ChainLock.
+func (c *Client) GetBestChainLockDASH() (*GetBestChainLockResult, error) {
 	var result GetBestChainLockResult
 	err := c.Call(&result, "getbestchainlock")
 	return &result, extractBTCError(err)
 }
 
-// GetRawMempoolVerbose retrieves DASH's lock-aware mempool entries.
-func (c *Client) GetRawMempoolVerbose() (map[string]GetRawMempoolVerboseResult, error) {
+// GetRawMempoolVerboseDASH retrieves DASH's lock-aware mempool entries.
+func (c *Client) GetRawMempoolVerboseDASH() (map[string]GetRawMempoolVerboseResult, error) {
 	result := make(map[string]GetRawMempoolVerboseResult)
 	err := c.Call(&result, "getrawmempool", true)
 	return result, extractBTCError(err)
 }
 
-// GetISLocks retrieves DASH's InstantSend locks and preserves input order,
+// GetISLocksDASH retrieves DASH's InstantSend locks and preserves input order,
 // including missing locks. Failed chunks remain nil and are reported in the
 // error; callers may still use successful chunks.
-func (c *Client) GetISLocks(txIDs []string) ([]*ISLockResult, error) {
+func (c *Client) GetISLocksDASH(txIDs []string) ([]*ISLockResult, error) {
 	locks := make([]*ISLockResult, len(txIDs))
 	var failures error
 	for start := 0; start < len(txIDs); start += 100 {
 		end := min(start+100, len(txIDs))
-		batch, err := c.getISLocksBatch(txIDs[start:end])
+		batch, err := c.getISLocksBatchDASH(txIDs[start:end])
 		if err != nil {
 			failures = errors.Join(failures, fmt.Errorf("getislocks batch %d: %w", start/100, err))
 			continue
@@ -95,8 +95,8 @@ func (c *Client) GetISLocks(txIDs []string) ([]*ISLockResult, error) {
 	return locks, failures
 }
 
-// getISLocksBatch decodes one DASH getislocks response.
-func (c *Client) getISLocksBatch(txIDs []string) ([]*ISLockResult, error) {
+// getISLocksBatchDASH decodes one DASH getislocks response.
+func (c *Client) getISLocksBatchDASH(txIDs []string) ([]*ISLockResult, error) {
 	var rawLocks []json.RawMessage
 	err := c.Call(&rawLocks, "getislocks", txIDs)
 	if err != nil {

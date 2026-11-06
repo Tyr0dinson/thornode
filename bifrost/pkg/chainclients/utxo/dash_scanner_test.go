@@ -8,7 +8,6 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
-	"testing"
 	"time"
 
 	"github.com/btcsuite/btcd/btcjson"
@@ -208,7 +207,7 @@ func (s *DashSuite) TestDashScannerHeightValidation(c *C) {
 		height, err := client.GetHeight()
 		c.Assert(err, IsNil)
 		c.Assert(height, Equals, int64(1000))
-		c.Assert(client.chainLockHeightHealth.Load().isHealthy(time.Now(), 980), Equals, false)
+		c.Assert(client.finality.Load().isHealthyDASH(time.Now(), 980), Equals, false)
 		c.Assert(f.maxRequested.Load(), Equals, int64(0)) // No lookup of the unavailable target.
 		c.Assert(client.ReportSolvency(height), NotNil)
 		c.Assert(f.bridge.asgardReads.Load(), Equals, int64(0))
@@ -223,11 +222,11 @@ func (s *DashSuite) TestDashScannerHeightValidation(c *C) {
 		{local: 1000, locked: 1000, failMethod: "getblockhash"},
 	} {
 		f.state.Store(&state)
-		stale := &chainLockHeightHealth{1000, 1000, time.Now().Add(-time.Hour)}
-		client.chainLockHeightHealth.Store(stale)
+		stale := &finalitySnapshot{blockHeight: 1000, chainLockHeight: 1000, checkedAt: time.Now().Add(-time.Hour)}
+		client.finality.Store(stale)
 		_, err := client.GetHeight()
 		c.Assert(err, NotNil)
-		c.Assert(client.chainLockHeightHealth.Load(), Equals, stale)
+		c.Assert(client.finality.Load(), Equals, stale)
 	}
 	for _, invalid := range []string{"unlocked", "height", "hash"} {
 		f.state.Store(&dashCatchUpState{local: 980, locked: 1000, badBlock: invalid})
@@ -345,37 +344,6 @@ func (s *DashSuite) TestDashGetHeightUsesBestChainLock(c *C) {
 	c.Assert(err, NotNil)
 }
 
-func TestDashHeightHealthBoundaries(t *testing.T) {
-	now := time.Now()
-	for _, tc := range []struct {
-		name    string
-		health  *chainLockHeightHealth
-		scanned int64
-		want    bool
-	}{
-		{"no successful read", nil, 100, false},
-		{"missing timestamp", &chainLockHeightHealth{blockHeight: 100, chainLockHeight: 100}, 100, false},
-		{"caught up", &chainLockHeightHealth{100, 100, now}, 100, true},
-		{"one block finality gap", &chainLockHeightHealth{101, 100, now}, 100, true},
-		{"two block finality gap", &chainLockHeightHealth{102, 100, now}, 100, false},
-		{"just before expiry", &chainLockHeightHealth{100, 100, now.Add(-150*time.Second + time.Nanosecond)}, 100, true},
-		{"at expiry", &chainLockHeightHealth{100, 100, now.Add(-150 * time.Second)}, 100, false},
-		{"after expiry", &chainLockHeightHealth{100, 100, now.Add(-time.Hour)}, 100, false},
-		{"locks recovered but scanner behind", &chainLockHeightHealth{110, 110, now}, 100, false},
-		{"one block scanner gap", &chainLockHeightHealth{110, 110, now}, 109, true},
-		{"two block scanner gap", &chainLockHeightHealth{110, 110, now}, 108, false},
-		{"combined gap exceeds limit", &chainLockHeightHealth{110, 109, now}, 108, false},
-		{"daemon behind ChainLock", &chainLockHeightHealth{980, 1000, now}, 980, false},
-		{"daemon one block behind ChainLock", &chainLockHeightHealth{999, 1000, now}, 999, false},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := tc.health.isHealthy(now, tc.scanned); got != tc.want {
-				t.Fatalf("health = %v, want %v", got, tc.want)
-			}
-		})
-	}
-}
-
 type dashHealthBridge struct{ thorclient.ThorchainBridge }
 
 func (dashHealthBridge) GetBlockHeight() (int64, error) { return 1, nil }
@@ -453,7 +421,7 @@ func (s *DashSuite) TestDashScannerHeightHealth(c *C) {
 	_, err = client.GetHeight()
 	c.Assert(err, IsNil)
 	c.Assert(client.IsBlockScannerHealthy(), Equals, false)
-	client.chainLockHeightHealth.Store(nil)
+	client.finality.Store(nil)
 	scanner.Start(make(chan types.TxIn), make(chan common.NetworkFee))
 	defer scanner.Stop()
 	waitForScan := func(height int64) {
@@ -500,12 +468,12 @@ func (s *DashSuite) TestDashScannerHeightHealth(c *C) {
 		{block: 120, locked: 120, wrongHash: true},
 		{block: 120, locked: -1},
 	} {
-		stale := &chainLockHeightHealth{120, 120, time.Now().Add(-time.Hour)}
-		client.chainLockHeightHealth.Store(stale)
+		stale := &finalitySnapshot{blockHeight: 120, chainLockHeight: 120, checkedAt: time.Now().Add(-time.Hour)}
+		client.finality.Store(stale)
 		state.Store(&failure)
 		_, err = client.GetHeight()
 		c.Assert(err, NotNil)
-		c.Assert(client.chainLockHeightHealth.Load(), Equals, stale)
+		c.Assert(client.finality.Load(), Equals, stale)
 		c.Assert(scanner.IsHealthy(), Equals, true)
 		c.Assert(client.IsBlockScannerHealthy(), Equals, false)
 	}
@@ -523,18 +491,18 @@ func (s *DashSuite) TestDashScannerHeightHealth(c *C) {
 	c.Assert(client.IsBlockScannerHealthy(), Equals, false)
 
 	// With no completed reads (including a hung RPC), the snapshot expires.
-	client.chainLockHeightHealth.Store(&chainLockHeightHealth{120, 120, time.Now().Add(-time.Hour)})
+	client.finality.Store(&finalitySnapshot{blockHeight: 120, chainLockHeight: 120, checkedAt: time.Now().Add(-time.Hour)})
 	c.Assert(client.IsBlockScannerHealthy(), Equals, false)
 
 	// Other UTXO chains still use the shared scanner flag and ordinary height.
-	client.chainLockHeightHealth.Store(nil)
+	client.finality.Store(nil)
 	for _, chain := range []common.Chain{common.BTCChain, common.BCHChain, common.LTCChain, common.DOGEChain, common.ZECChain} {
 		client.cfg.ChainID = chain
 		state.Store(&rpcState{block: 125, locked: 120, failMethod: "getbestchainlock"})
 		height, err = client.GetHeight()
 		c.Assert(err, IsNil)
 		c.Assert(height, Equals, int64(125))
-		c.Assert(client.chainLockHeightHealth.Load(), IsNil)
+		c.Assert(client.finality.Load(), IsNil)
 		c.Assert(client.IsBlockScannerHealthy(), Equals, true)
 	}
 }

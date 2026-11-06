@@ -113,7 +113,7 @@ func (s *DashSuite) TestInstantSendSnapshotRecoveryChecks(c *C) {
 					if !retry.Load() {
 						switch scenario {
 						case "stale health":
-							client.chainLockHeightHealth.Store(&chainLockHeightHealth{
+							client.finality.Store(&finalitySnapshot{
 								blockHeight: 101, chainLockHeight: 101, checkedAt: time.Now().Add(-time.Hour),
 							})
 						case "locked", "unlocked", "unknown":
@@ -436,9 +436,9 @@ func startInstantSendWarmupScanner(c *C, client *Client, fetcher *dashHealthFetc
 	c.Assert(err, IsNil)
 	height := fetcher.height.Load()
 	scanner, err := blockscanner.NewBlockScanner(config.BifrostBlockScannerConfiguration{
-		ChainID: common.DASHChain, StartBlockHeight: height - 1,
+		ChainID: client.GetChain(), StartBlockHeight: height - 1,
 		BlockHeightDiscoverBackoff: time.Millisecond, MaxHealthyLag: 30 * time.Minute,
-	}, storage, GetMetricForTest(c, common.DASHChain), dashHealthBridge{}, fetcher)
+	}, storage, GetMetricForTest(c, client.GetChain()), dashHealthBridge{}, fetcher)
 	c.Assert(err, IsNil)
 	client.blockScanner = scanner
 	scanner.Start(make(chan types.TxIn), make(chan common.NetworkFee))

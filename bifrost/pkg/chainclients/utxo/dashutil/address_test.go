@@ -8,7 +8,31 @@ import (
 	"github.com/dashpay/dashd-go/btcec/v2"
 	"github.com/dashpay/dashd-go/btcutil"
 	"github.com/dashpay/dashd-go/chaincfg"
+	"github.com/dashpay/dashd-go/txscript"
 )
+
+func TestPayToPubKeyHashScript(t *testing.T) {
+	hash := make([]byte, 20)
+	for i := range hash {
+		hash[i] = byte(i)
+	}
+	script, err := PayToPubKeyHashScript(hash)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// OP_DUP OP_HASH160 <20-byte hash> OP_EQUALVERIFY OP_CHECKSIG.
+	const want = "76a914000102030405060708090a0b0c0d0e0f1011121388ac"
+	if got := hex.EncodeToString(script); got != want {
+		t.Fatalf("P2PKH script = %s, want %s", got, want)
+	}
+	class, _, _, err := txscript.ExtractPkScriptAddrs(script, &chaincfg.MainNetParams)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if class != txscript.PubKeyHashTy {
+		t.Fatalf("script class = %s, want %s", class, txscript.PubKeyHashTy)
+	}
+}
 
 func TestDashAddressNetworks(t *testing.T) {
 	// Pin the Dash Core prefixes and BIP32 identifiers across upstream upgrades.

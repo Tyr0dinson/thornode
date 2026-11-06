@@ -28,6 +28,7 @@ import (
 	"github.com/btcsuite/btcutil"
 	btctxscript "gitlab.com/thorchain/thornode/v3/bifrost/txscript/txscript"
 
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/firoutil"
 	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
@@ -60,6 +61,9 @@ func (c *Client) getMaximumUtxosToSpend() int64 {
 // less than amount + MaxGas may still afford amount + the actual fee; buildTx checks
 // that once the fee is known. A floor of zero requires the full total.
 func (c *Client) getUtxoToSpend(pubKey common.PubKey, total, floor btcutil.Amount) ([]btcjson.ListUnspentResult, error) {
+	if c.cfg.ChainID == common.FIROChain {
+		return c.getUtxoToSpendFIRO(pubKey, total, floor)
+	}
 	// get all unspent utxos
 	addr, err := pubKey.GetAddress(c.cfg.ChainID)
 	if err != nil {
@@ -319,6 +323,13 @@ func (c *Client) getSourceScript(tx stypes.TxOutItem) ([]byte, error) {
 	}
 
 	switch c.cfg.ChainID {
+	case common.FIROChain:
+		var addr *firoutil.Address
+		addr, err = firoutil.DecodeAddress(sourceAddr.String(), common.FIRONetwork())
+		if err != nil {
+			return nil, err
+		}
+		return addr.Script(), nil
 	case common.DOGEChain:
 		var addr dogutil.Address
 		addr, err = dogutil.DecodeAddress(sourceAddr.String(), c.getChainCfgDOGE())
@@ -470,7 +481,7 @@ func (c *Client) isSegwitChain() bool {
 	switch c.cfg.ChainID {
 	case common.BTCChain, common.LTCChain:
 		return true
-	case common.DOGEChain, common.BCHChain, common.ZECChain, common.DASHChain:
+	case common.DOGEChain, common.BCHChain, common.ZECChain, common.DASHChain, common.FIROChain:
 		return false
 	default:
 		c.log.Fatal().Msgf("unsupported chain: %s", c.cfg.ChainID)
@@ -479,6 +490,13 @@ func (c *Client) isSegwitChain() bool {
 }
 
 func (c *Client) getGasCoin(tx stypes.TxOutItem, vSize int64) common.Coin {
+	if c.cfg.ChainID == common.FIROChain {
+		rate := tx.GasRate
+		if rate <= 0 {
+			rate = firoDefaultFeeRate
+		}
+		return common.NewCoin(common.FIROAsset, cosmos.NewUint(uint64(vSize)).MulUint64(uint64(rate)))
+	}
 	gasRate := tx.GasRate
 
 	// if the gas rate is zero, try to get from last transaction fee
@@ -531,7 +549,7 @@ func zecFeeForInputCount(inputCount int, memo string) btcutil.Amount {
 func (c *Client) buildTx(tx stypes.TxOutItem, sourceScript []byte, zecReference int64) (*wire.MsgTx, map[string]int64, error) {
 	var txes []btcjson.ListUnspentResult
 	var err error
-	if c.cfg.ChainID != common.ZECChain {
+	if !c.cfg.ChainID.OneOf(common.ZECChain, common.FIROChain) {
 		// MaxGas is only a fee ceiling, so a vault short of amount + MaxGas may still pay
 		// the actual fee; the balance check below rejects it if not.
 		floor := btcutil.Amount(tx.Coins.GetCoin(c.cfg.ChainID.GetGasAsset()).Amount.Uint64())
@@ -543,6 +561,17 @@ func (c *Client) buildTx(tx stypes.TxOutItem, sourceScript []byte, zecReference 
 	var buf []byte
 	var nullDataScripts [][]byte
 	switch c.cfg.ChainID {
+	case common.FIROChain:
+		var addr *firoutil.Address
+		addr, err = firoutil.DecodeAddress(tx.ToAddress.String(), common.FIRONetwork())
+		if err != nil {
+			return nil, nil, err
+		}
+		buf = addr.Script()
+		nullDataScripts, err = MemoToScripts(tx.Memo, btctxscript.MaxDataCarrierSize, btctxscript.NullDataScript, firoutil.PayToPubKeyHashScript)
+		if err != nil {
+			return nil, nil, err
+		}
 	case common.DOGEChain:
 		var outputAddr dogutil.Address
 		outputAddr, err = dogutil.DecodeAddress(tx.ToAddress.String(), c.getChainCfgDOGE())
@@ -610,12 +639,12 @@ func (c *Client) buildTx(tx stypes.TxOutItem, sourceScript []byte, zecReference 
 			return nil, nil, fmt.Errorf("fail to build payment script: %w", err)
 		}
 		// Dash has no SegWit. Extended memos >80 bytes use the fake-address-dust
-		// pattern with P2PKH-shaped outputs (payToPubKeyHashMemoScript); DOGE/BCH
+		// pattern with P2PKH-shaped outputs (dashutil.PayToPubKeyHashScript); DOGE/BCH
 		// use the P2WPKH shape, but dashd 23's TxoutType enum has no
 		// WITNESS_V0_KEYHASH variant so those outputs would be rejected as
 		// NONSTANDARD. getMemo on the observer side already handles the P2PKH
 		// overflow shape (client_internal.go: pubkeyhash scriptType branch).
-		nullDataScripts, err = MemoToScripts(tx.Memo, dashtxscript.MaxDataCarrierSize, dashtxscript.NullDataScript, payToPubKeyHashMemoScript)
+		nullDataScripts, err = MemoToScripts(tx.Memo, dashtxscript.MaxDataCarrierSize, dashtxscript.NullDataScript, dashutil.PayToPubKeyHashScript)
 		if err != nil {
 			return nil, nil, fmt.Errorf("fail to build memo scripts: %w", err)
 		}
@@ -655,7 +684,13 @@ func (c *Client) buildTx(tx stypes.TxOutItem, sourceScript []byte, zecReference 
 		}
 	}
 
-	if c.cfg.ChainID == common.ZECChain {
+	switch c.cfg.ChainID {
+	case common.FIROChain:
+		txes, err = c.selectFiroInputs(tx, sourceScript, buf, nullDataScripts, memo.GetType() == mem.TxConsolidate)
+		if err != nil {
+			return nil, nil, err
+		}
+	case common.ZECChain:
 		consolidate := memo.GetType() == mem.TxConsolidate
 		target := tx.Coins.GetCoin(common.ZECAsset).Amount
 		if !tx.MaxGas.IsEmpty() {
@@ -807,10 +842,10 @@ func (c *Client) buildTx(tx stypes.TxOutItem, sourceScript []byte, zecReference 
 	return redeemTx, individualAmounts, nil
 }
 
-// validateRelayFee checks that the final DASH fee covers the size-scaled relay minimum.
+// validateRelayFee checks that the final DASH/FIRO fee covers the size-scaled relay minimum.
 // It only vetoes the transaction; it never raises a fee beyond its assigned budget.
 func (c *Client) validateRelayFee(fee uint64, vSize int64) error {
-	if c.cfg.ChainID != common.DASHChain {
+	if !c.cfg.ChainID.OneOf(common.DASHChain, common.FIROChain) {
 		return nil
 	}
 	if vSize <= 0 {
@@ -958,6 +993,9 @@ func anchorConsolidateHeight(height int64) int64 {
 }
 
 func (c *Client) consolidateVaultUTXOs(vault types.Vault, utxosToSpend, scannedHeight int64) error {
+	if c.cfg.ChainID == common.FIROChain && !c.IsBlockScannerHealthy() {
+		return fmt.Errorf("FIRO scanner is not healthy")
+	}
 	lock := c.GetVaultLock(vault.PubKey.String())
 
 	// Hold the vault lock through broadcast to avoid local double-spend on failure/timeout.
@@ -1052,6 +1090,15 @@ func (c *Client) buildConsolidateTxOutItem(vault types.Vault, utxos []btcjson.Li
 
 	// THORChain usually pays 1.5 of the last observed fee rate.
 	feeRate := math.Ceil(float64(c.lastFeeRate.Load()) * 3 / 2)
+	if c.cfg.ChainID == common.FIROChain {
+		// Consolidation is not a scheduled outbound; use the committed network fee.
+		var rate uint64
+		_, rate, err = c.bridge.GetNetworkFee(common.FIROChain)
+		if err != nil {
+			return stypes.TxOutItem{}, err
+		}
+		feeRate = math.Ceil(float64(rate) * 3 / 2)
+	}
 
 	return stypes.TxOutItem{
 		Chain:            c.cfg.ChainID,

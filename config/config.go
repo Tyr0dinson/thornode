@@ -677,6 +677,7 @@ type Bifrost struct {
 		SUI   BifrostChainConfiguration `mapstructure:"sui"`
 		ADA   BifrostChainConfiguration `mapstructure:"ada"`
 		DASH  BifrostChainConfiguration `mapstructure:"dash"`
+		FIRO  BifrostChainConfiguration `mapstructure:"firo"`
 	} `mapstructure:"chains"`
 	TSS             BifrostTSSConfiguration    `mapstructure:"tss"`
 	ObserverLevelDB LevelDBOptions             `mapstructure:"observer_leveldb"`
@@ -726,6 +727,7 @@ func (b Bifrost) GetChains() map[common.Chain]BifrostChainConfiguration {
 		common.SUIChain:   b.Chains.SUI,
 		common.ADAChain:   b.Chains.ADA,
 		common.DASHChain:  b.Chains.DASH,
+		common.FIROChain:  b.Chains.FIRO,
 	}
 }
 
@@ -1002,7 +1004,7 @@ type BifrostChainConfiguration struct {
 		ReconstructLiabilitiesConcurrency int `mapstructure:"reconstruct_liabilities_concurrency"`
 	} `mapstructure:"evm"`
 
-	// InstantSend contains Dash-specific mempool observation controls.
+	// InstantSend contains optional quorum-finalized mempool observation controls.
 	InstantSend InstantSendConfiguration `mapstructure:"instant_send"`
 
 	// UTXO contains UTXO chain specific configuration.

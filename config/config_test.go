@@ -30,9 +30,72 @@ func (Test) SetUpSuite(c *C) {
 	RetryBackoff = time.Millisecond
 }
 
+// Keep expectations explicit so production enumeration cannot silently reduce
+// the set of chains checked by these tests.
+func expectedBifrostChains(b *Bifrost) map[common.Chain]*BifrostChainConfiguration {
+	return map[common.Chain]*BifrostChainConfiguration{
+		common.AVAXChain:  &b.Chains.AVAX,
+		common.BCHChain:   &b.Chains.BCH,
+		common.BSCChain:   &b.Chains.BSC,
+		common.BTCChain:   &b.Chains.BTC,
+		common.DOGEChain:  &b.Chains.DOGE,
+		common.ETHChain:   &b.Chains.ETH,
+		common.GAIAChain:  &b.Chains.GAIA,
+		common.NOBLEChain: &b.Chains.NOBLE,
+		common.LTCChain:   &b.Chains.LTC,
+		common.BASEChain:  &b.Chains.BASE,
+		common.TRONChain:  &b.Chains.TRON,
+		common.XRPChain:   &b.Chains.XRP,
+		common.XMRChain:   &b.Chains.XMR,
+		common.SOLChain:   &b.Chains.SOL,
+		common.POLChain:   &b.Chains.POL,
+		common.ZECChain:   &b.Chains.ZEC,
+		common.SUIChain:   &b.Chains.SUI,
+		common.ADAChain:   &b.Chains.ADA,
+		common.DASHChain:  &b.Chains.DASH,
+		common.FIROChain:  &b.Chains.FIRO,
+	}
+}
+
+func assertBifrostChainMappings(c *C, b *Bifrost) {
+	expected := expectedBifrostChains(b)
+	// Require an explicit test expectation when a new chain field is added.
+	c.Assert(reflect.TypeOf(b.Chains).NumField(), Equals, len(expected))
+	actual := b.GetChains()
+	c.Assert(actual, HasLen, len(expected))
+	for chain, want := range expected {
+		got, ok := actual[chain]
+		c.Assert(ok, Equals, true, Commentf("missing chain: %s", chain))
+		c.Check(got, DeepEquals, *want, Commentf("chain: %s", chain))
+	}
+}
+
 func (Test) TestAllChainsReturned(c *C) {
 	b := Bifrost{}
-	c.Assert(len(b.GetChains()), Equals, reflect.TypeOf(b.Chains).NumField())
+	for chain, cfg := range expectedBifrostChains(&b) {
+		// Distinct values catch swapped mappings; disabled chains must also appear.
+		cfg.ChainID = chain
+		cfg.BlockScanner.ChainID = chain
+		cfg.BlockScanner.DBPath = chain.String()
+		cfg.Disabled = true
+	}
+	assertBifrostChainMappings(c, &b)
+}
+
+func (Test) TestFiroInstantSendDefault(c *C) {
+	confMap := map[interface{}]interface{}{}
+	c.Assert(yaml.Unmarshal(defaultConfig, &confMap), IsNil)
+	bifrostMap, ok := confMap["bifrost"].(map[interface{}]interface{})
+	c.Assert(ok, Equals, true)
+	chains, ok := bifrostMap["chains"].(map[interface{}]interface{})
+	c.Assert(ok, Equals, true)
+	firo, ok := chains["firo"].(map[interface{}]interface{})
+	c.Assert(ok, Equals, true)
+	c.Assert(firo["disabled"], Equals, true)
+	settings, ok := firo["instant_send"].(map[interface{}]interface{})
+	c.Assert(ok, Equals, true)
+	c.Assert(settings["enabled"], Equals, false)
+	c.Assert(settings["max_mempool_age"], Equals, "2m")
 }
 
 func (Test) TestAllDefaultDefined(c *C) {
@@ -182,8 +245,11 @@ func (Test) TestGetThornode(c *C) {
 func (Test) TestGetBifrost(c *C) {
 	Init()
 	bf := GetBifrost()
-	chains := bf.GetChains()
-	c.Assert(len(chains) > 0, Equals, true)
+	assertBifrostChainMappings(c, &bf)
+	for chain, cfg := range expectedBifrostChains(&bf) {
+		c.Check(cfg.ChainID, Equals, chain, Commentf("chain: %s", chain))
+		c.Check(cfg.BlockScanner.ChainID, Equals, chain, Commentf("scanner chain: %s", chain))
+	}
 }
 
 func (Test) TestInitSetsListenAddresses(c *C) {
@@ -210,26 +276,11 @@ func (Test) TestInitBifrost(c *C) {
 	tmpDir := c.MkDir()
 	config.Bifrost.Signer.SignerDbPath = filepath.Join(tmpDir, "signer")
 
-	// Override all chain scanner DB paths
-	config.Bifrost.Chains.BTC.BlockScanner.DBPath = filepath.Join(tmpDir, "btc")
-	config.Bifrost.Chains.ETH.BlockScanner.DBPath = filepath.Join(tmpDir, "eth")
-	config.Bifrost.Chains.AVAX.BlockScanner.DBPath = filepath.Join(tmpDir, "avax")
-	config.Bifrost.Chains.BCH.BlockScanner.DBPath = filepath.Join(tmpDir, "bch")
-	config.Bifrost.Chains.BSC.BlockScanner.DBPath = filepath.Join(tmpDir, "bsc")
-	config.Bifrost.Chains.DOGE.BlockScanner.DBPath = filepath.Join(tmpDir, "doge")
-	config.Bifrost.Chains.GAIA.BlockScanner.DBPath = filepath.Join(tmpDir, "gaia")
-	config.Bifrost.Chains.NOBLE.BlockScanner.DBPath = filepath.Join(tmpDir, "noble")
-	config.Bifrost.Chains.LTC.BlockScanner.DBPath = filepath.Join(tmpDir, "ltc")
-	config.Bifrost.Chains.BASE.BlockScanner.DBPath = filepath.Join(tmpDir, "base")
-	config.Bifrost.Chains.TRON.BlockScanner.DBPath = filepath.Join(tmpDir, "tron")
-	config.Bifrost.Chains.XRP.BlockScanner.DBPath = filepath.Join(tmpDir, "xrp")
-	config.Bifrost.Chains.XMR.BlockScanner.DBPath = filepath.Join(tmpDir, "xmr")
-	config.Bifrost.Chains.SOL.BlockScanner.DBPath = filepath.Join(tmpDir, "sol")
-	config.Bifrost.Chains.POL.BlockScanner.DBPath = filepath.Join(tmpDir, "pol")
-	config.Bifrost.Chains.ZEC.BlockScanner.DBPath = filepath.Join(tmpDir, "zec")
-	config.Bifrost.Chains.SUI.BlockScanner.DBPath = filepath.Join(tmpDir, "sui")
-	config.Bifrost.Chains.ADA.BlockScanner.DBPath = filepath.Join(tmpDir, "ada")
-	config.Bifrost.Chains.DASH.BlockScanner.DBPath = filepath.Join(tmpDir, "dash")
+	// Set up every expected chain independently of GetChains and configured IDs.
+	expected := expectedBifrostChains(&config.Bifrost)
+	for chain, cfg := range expected {
+		cfg.BlockScanner.DBPath = filepath.Join(tmpDir, strings.ToLower(chain.String()))
+	}
 
 	// Clear bootstrap peers so it uses getSeedAddrs (returns empty in mocknet)
 	config.Bifrost.TSS.BootstrapPeers = nil
@@ -239,10 +290,13 @@ func (Test) TestInitBifrost(c *C) {
 	// Verify directories were created
 	_, err := os.Stat(filepath.Join(tmpDir, "signer"))
 	c.Assert(err, IsNil)
-	_, err = os.Stat(filepath.Join(tmpDir, "btc"))
-	c.Assert(err, IsNil)
-	_, err = os.Stat(filepath.Join(tmpDir, "eth"))
-	c.Assert(err, IsNil)
+	for chain, cfg := range expected {
+		path := filepath.Join(tmpDir, strings.ToLower(chain.String()))
+		c.Assert(cfg.BlockScanner.DBPath, Equals, path, Commentf("chain: %s", chain))
+		info, err := os.Stat(path)
+		c.Assert(err, IsNil, Commentf("chain: %s", chain))
+		c.Check(info.IsDir(), Equals, true, Commentf("chain: %s", chain))
+	}
 }
 
 // -------------------------------------------------------------------------------------

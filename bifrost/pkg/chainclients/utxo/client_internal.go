@@ -20,6 +20,7 @@ import (
 	btypes "gitlab.com/thorchain/thornode/v3/bifrost/blockscanner/types"
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/utxo"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/firoutil"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
@@ -223,22 +224,26 @@ func (c *Client) canDeleteBlock(blockMeta *utxo.BlockMeta) bool {
 const btcFixedMinRelayFeeSats uint64 = 1000
 
 func (c *Client) updateNetworkInfo() {
-	// For BTC the min-relay-fee floor is signing-consensus-relevant: minRelayFeeSats
-	// feeds both the reported network fee (sendNetworkFee) and the outbound fee floor
-	// (applyFeeLimits), which shape the change output, its sighash and the TSS message
-	// id. Bitcoin Core <=29.0 reports relayfee 0.00001 BTC/kvB (1000 sat) while 29.1+
-	// and 30.x default to 0.000001 (100 sat), so a daemon-derived floor makes nodes on
-	// different Core lines build different change outputs for the same outbound — the
-	// minority then signs a different message, is absent from the majority's party, and
-	// is blamed/jailed with no error in its own log. Pin BTC to a fixed floor
-	// independent of the daemon — and independent of whether the GetNetworkInfo RPC
-	// succeeds, so an RPC failure can never leave the BTC floor at 0 — so every node
-	// computes the same fee regardless of Core version. Other UTXO chains keep their
-	// daemon-derived relay fee.
-	if c.cfg.ChainID.Equals(common.BTCChain) {
+	switch c.cfg.ChainID {
+	case common.FIROChain:
+		c.minRelayFeeSats.Store(firoRelayFeePerKB)
+		return
+	case common.BTCChain:
+		// For BTC the min-relay-fee floor is signing-consensus-relevant: minRelayFeeSats
+		// feeds both the reported network fee (sendNetworkFee) and the outbound fee floor
+		// (applyFeeLimits), which shape the change output, its sighash and the TSS message
+		// id. Bitcoin Core <=29.0 reports relayfee 0.00001 BTC/kvB (1000 sat) while 29.1+
+		// and 30.x default to 0.000001 (100 sat), so a daemon-derived floor makes nodes on
+		// different Core lines build different change outputs for the same outbound — the
+		// minority then signs a different message, is absent from the majority's party, and
+		// is blamed/jailed with no error in its own log. Pin BTC to a fixed floor
+		// independent of the daemon — and independent of whether the GetNetworkInfo RPC
+		// succeeds, so an RPC failure can never leave the BTC floor at 0 — so every node
+		// computes the same fee regardless of Core version.
 		c.minRelayFeeSats.Store(btcFixedMinRelayFeeSats)
 		return
 	}
+	// The remaining chains use their daemon-derived relay fee.
 	networkInfo, err := c.rpc.GetNetworkInfo()
 	if err != nil {
 		c.log.Err(err).Msg("fail to get network info")
@@ -426,6 +431,9 @@ func (c *Client) sendNetworkFeeFromBlock(blockResult *btcjson.GetBlockVerboseTxR
 }
 
 func (c *Client) getBlock(height int64) (*btcjson.GetBlockVerboseTxResult, error) {
+	if c.cfg.ChainID == common.FIROChain {
+		return c.getBlockFIRO(height)
+	}
 	hash, err := c.rpc.GetBlockHash(height)
 	if err != nil {
 		return &btcjson.GetBlockVerboseTxResult{}, err
@@ -524,6 +532,10 @@ func (c *Client) isValidUTXO(hexPubKey string) bool {
 		default:
 			return len(addresses) == 1 && requireSigs == 1
 		}
+
+	case common.FIROChain:
+		_, err := firoutil.AddressFromScript(buf, common.FIRONetwork())
+		return err == nil
 
 	default:
 		c.log.Fatal().Msg("unsupported chain")
@@ -716,18 +728,21 @@ func (c *Client) getVinZeroTxs(block *btcjson.GetBlockVerboseTxResult) (map[stri
 }
 
 func (c *Client) extractTxs(block *btcjson.GetBlockVerboseTxResult) (types.TxIn, error) {
-	txIn := types.TxIn{
-		Chain:   c.GetChain(),
-		MemPool: false,
-	}
-	// FetchTxs only passes verified ChainLocked Dash blocks. Settle raw txids
+	// For DASH/FIRO, FetchTxs passes only verified ChainLocked blocks. Settle raw txids
 	// before parsing or observed-marker filtering can discard an already seen tx.
-	if c.cfg.ChainID.Equals(common.DASHChain) {
+	if c.cfg.ChainID.OneOf(common.DASHChain, common.FIROChain) {
 		if err := c.instantSend.reconcileBlock(block); err != nil {
 			// Keep ChainLock observations available. Failed settlement retains the
 			// reservation and pauses customer admission until it can be retried.
 			c.log.Err(err).Msg("fail to settle InstantSend allowance")
 		}
+	}
+	if c.cfg.ChainID == common.FIROChain {
+		return c.extractTxsFIRO(block)
+	}
+	txIn := types.TxIn{
+		Chain:   c.GetChain(),
+		MemPool: false,
 	}
 
 	var vinZeroTxs map[string]*btcjson.TxRawResult
@@ -769,7 +784,7 @@ func (c *Client) extractTxs(block *btcjson.GetBlockVerboseTxResult) (types.TxIn,
 	return txIn, err
 }
 
-// trackObservedTxs claims a block batch before delivery. DASH also accepts pending
+// trackObservedTxs claims a block batch before delivery. InstantSend clients accept pending
 // InstantSend handoffs. Completed block markers remain even if Observer misses delivery.
 func (c *Client) trackObservedTxs(items []*types.TxInItem) ([]*types.TxInItem, error) {
 	if len(items) == 0 {
@@ -790,7 +805,7 @@ func (c *Client) trackObservedTxs(items []*types.TxInItem) ([]*types.TxInItem, e
 	}
 	var added []string
 	var err error
-	if c.cfg.ChainID == common.DASHChain {
+	if c.instantSend.backend != nil {
 		added, err = c.temporalStorage.TrackInstantSendBlockTxs(ids)
 	} else {
 		added, err = c.temporalStorage.TrackObservedTxs(ids)
@@ -958,10 +973,12 @@ func (c *Client) getSender(tx *btcjson.TxRawResult, vinZeroTxs map[string]*btcjs
 }
 
 func (c *Client) getAddressesFromScriptPubKey(scriptPubKey btcjson.ScriptPubKeyResult) []string {
-	if c.cfg.ChainID.Equals(common.BTCChain) {
+	switch c.cfg.ChainID {
+	case common.FIROChain:
+		return c.getAddressesFromScriptPubKeyFIRO(scriptPubKey)
+	case common.BTCChain:
 		return c.getAddressesFromScriptPubKeyBTC(scriptPubKey)
-	}
-	if c.cfg.ChainID.Equals(common.DASHChain) {
+	case common.DASHChain:
 		// Dash v23 (Bitcoin Core 23.x) removed the scriptPubKey.addresses
 		// array from raw-tx JSON output; only the singular scriptPubKey.address
 		// is returned now, and the btcjson struct doesn't surface it. Fall
@@ -1012,7 +1029,7 @@ func (c *Client) getMemo(tx *btcjson.TxRawResult) (string, error) {
 			asm, err = ltctxscript.DisasmString(buf)
 		case common.DASHChain:
 			asm, err = dashtxscript.DisasmString(buf)
-		case common.BTCChain, common.ZECChain:
+		case common.BTCChain, common.ZECChain, common.FIROChain:
 			asm, err = btctxscript.DisasmString(buf)
 		default:
 			c.log.Fatal().Msg("unsupported chain")

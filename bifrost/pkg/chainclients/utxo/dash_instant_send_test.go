@@ -219,22 +219,23 @@ func (s *DashSuite) TestDashCycleHeightIndependentOfScanner(c *C) {
 	defer server.Close()
 	client, cleanup := newDashClientForRPCServer(c, server.URL)
 	defer cleanup()
+	backend := dashInstantSendBackend{h: &client.instantSend}
 	client.cfg.BlockScanner.MaxReorgRescanBlocks = 1
 	client.updateCurrentBlockHeight(123)
 	lock := &rpc.ISLockResult{CycleHash: cycleHash}
 	// A lagging scanner and a cycle outside its reorg window are both valid.
 	for _, want := range []int64{124, 1} {
 		height = want
-		got, err := client.instantSend.observationHeight(lock)
+		got, err := backend.observationHeight(lock)
 		c.Assert(err, IsNil)
 		c.Assert(got, Equals, want)
 	}
 	confirmations = -1
-	_, err := client.instantSend.observationHeight(lock)
+	_, err := backend.observationHeight(lock)
 	c.Assert(err, NotNil)
 	confirmations = 1
 	returnedHash = "different"
-	_, err = client.instantSend.observationHeight(lock)
+	_, err = backend.observationHeight(lock)
 	c.Assert(err, NotNil)
 }
 
@@ -540,7 +541,7 @@ func (s *DashSuite) TestDashInstantSendSkipsUnsupportedChains(c *C) {
 	for _, chain := range []common.Chain{common.BTCChain, common.BCHChain, common.LTCChain, common.DOGEChain, common.ZECChain, common.EmptyChain} {
 		// No RPC client or storage: unsupported chains must return before using either.
 		client := &Client{cfg: config.BifrostChainConfiguration{ChainID: chain}}
-		client.instantSend = instantSendHandler{client: client, enabled: client.cfg.InstantSend.Enabled}
+		client.initInstantSend()
 		groups, err := client.instantSend.scan()
 		c.Assert(err, IsNil, Commentf("chain: %s", chain))
 		c.Assert(groups, IsNil, Commentf("chain: %s", chain))

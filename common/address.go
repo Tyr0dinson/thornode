@@ -22,6 +22,7 @@ import (
 	"github.com/ltcsuite/ltcutil"
 	"github.com/mr-tron/base58"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/dashutil"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/firoutil"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/zcash"
 	"gitlab.com/thorchain/thornode/v3/common/crypto/ss58"
 
@@ -100,6 +101,10 @@ func NewAddress(address string) (Address, error) {
 	}
 
 	if IsValidDOTAddress(address) {
+		return Address(address), nil
+	}
+
+	if IsValidFIROAddress(address) {
 		return Address(address), nil
 	}
 
@@ -387,6 +392,8 @@ func (addr Address) IsChain(chain Chain) bool {
 		return IsValidSUIAddress(addr.String())
 	case ADAChain:
 		return IsValidADAAddress(addr.String())
+	case FIROChain:
+		return IsValidFIROAddress(addr.String())
 	case DASHChain:
 		return IsValidDASHAddress(addr.String())
 	default:
@@ -397,7 +404,7 @@ func (addr Address) IsChain(chain Chain) bool {
 // Note that this will always return ETHChain for an AVAXChain address,
 // so perhaps only use it when determining a network (e.g. mainnet/testnet).
 func (addr Address) GetChain() Chain {
-	for _, chain := range []Chain{ETHChain, THORChain, BTCChain, LTCChain, BCHChain, DOGEChain, GAIAChain, AVAXChain, XRPChain, TRONChain, SOLChain, XMRChain, ZECChain, SUIChain, TAOChain, DOTChain, ADAChain, DASHChain} {
+	for _, chain := range []Chain{ETHChain, THORChain, BTCChain, LTCChain, BCHChain, DOGEChain, GAIAChain, AVAXChain, XRPChain, TRONChain, SOLChain, XMRChain, ZECChain, SUIChain, TAOChain, DOTChain, ADAChain, DASHChain, FIROChain} {
 		if addr.IsChain(chain) {
 			return chain
 		}
@@ -406,8 +413,12 @@ func (addr Address) GetChain() Chain {
 }
 
 // IsCurrentNetwork checks network compatibility for an already validated address.
-// ZEC and DASH require an exact network match; other chains use SoftEquals.
+// ZEC, DASH and FIRO require an exact network match; other chains use SoftEquals.
 func (addr Address) IsCurrentNetwork(chain Chain) bool {
+	if chain.Equals(FIROChain) {
+		_, err := firoutil.DecodeAddress(addr.String(), FIRONetwork())
+		return err == nil
+	}
 	if chain.Equals(ZECChain) {
 		_, err := zcash.DecodeAddress(addr.String(), ZECNetworkName())
 		return err == nil
@@ -577,6 +588,16 @@ func (addr Address) GetNetwork(chain Chain) ChainNetwork {
 		if strings.HasPrefix(addrStr, "addr_test1") {
 			return MockNet
 		}
+	case FIROChain:
+		_, err := firoutil.DecodeAddress(addr.String(), firoutil.MainNet)
+		if err == nil {
+			return mainNetPredicate()
+		}
+		_, err = firoutil.DecodeAddress(addr.String(), firoutil.RegTest)
+		if err == nil {
+			return MockNet
+		}
+		return TestNet
 	case DASHChain:
 		_, err := dashutil.DecodeAddress(addr.String(), &dashchaincfg.MainNetParams)
 		if err == nil {
@@ -605,7 +626,7 @@ func (addr Address) Equals(addr2 Address) bool {
 // AddressEquals compares addresses using the identity rules of their chain.
 // Monero base58 is case-sensitive; legacy chains retain Address.Equals.
 func AddressEquals(chain Chain, addr, addr2 Address) bool {
-	if chain.Equals(XMRChain) {
+	if chain.Equals(XMRChain) || chain.Equals(FIROChain) {
 		return addr.String() == addr2.String()
 	}
 	return addr.Equals(addr2)

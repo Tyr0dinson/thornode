@@ -22,6 +22,7 @@ import (
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/blockscanner"
 	sharedutxo "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/utxo"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/dashutil"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/rpc"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/config"
@@ -42,45 +43,13 @@ func newDashClientForUnitTest() *Client {
 		log:                       zerolog.Nop(),
 		regexpRemoveTrailingZeros: regexp.MustCompile(`(00)+$`),
 	}
-	client.instantSend = instantSendHandler{client: client, enabled: client.cfg.InstantSend.Enabled}
+	client.initInstantSend()
 	return client
-}
-
-// TestPayToPubKeyHashDash verifies the script builder produces a
-// standard P2PKH scriptPubKey (OP_DUP OP_HASH160 <20-byte hash> OP_EQUALVERIFY
-// OP_CHECKSIG). This is the key divergence from DOGE/BCH, which use the
-// P2WPKH shape (OP_0 <20-byte hash>) — dashd 23 has no WITNESS_V0_KEYHASH
-// variant and would reject that shape as NONSTANDARD. A regression here
-// causes extended-memo outbounds to be rejected on broadcast.
-func (s *DashSuite) TestPayToPubKeyHashDash(c *C) {
-	hash := make([]byte, 20)
-	for i := range hash {
-		hash[i] = byte(i)
-	}
-
-	script, err := payToPubKeyHashMemoScript(hash)
-	c.Assert(err, IsNil)
-
-	// Expected: 0x76 (OP_DUP) 0xa9 (OP_HASH160) 0x14 (push 20) <20 bytes> 0x88 (OP_EQUALVERIFY) 0xac (OP_CHECKSIG)
-	c.Assert(len(script), Equals, 25, Commentf("P2PKH scriptPubKey is always 25 bytes; got %d", len(script)))
-	c.Assert(script[0], Equals, byte(dashtxscript.OP_DUP))
-	c.Assert(script[1], Equals, byte(dashtxscript.OP_HASH160))
-	c.Assert(script[2], Equals, byte(0x14)) // push 20 bytes
-	c.Assert(bytes.Equal(script[3:23], hash), Equals, true, Commentf("hash bytes must match input"))
-	c.Assert(script[23], Equals, byte(dashtxscript.OP_EQUALVERIFY))
-	c.Assert(script[24], Equals, byte(dashtxscript.OP_CHECKSIG))
-
-	// Round-trip: the script must parse back as a pubkeyhash script under
-	// Dash's chain params, not as witness_v0_keyhash.
-	class, _, _, err := dashtxscript.ExtractPkScriptAddrs(script, &dashchaincfg.MainNetParams)
-	c.Assert(err, IsNil)
-	c.Assert(class, Equals, dashtxscript.PubKeyHashTy,
-		Commentf("must classify as PubKeyHashTy, not WitnessV0KeyHashTy; got %s", class))
 }
 
 // TestMemoToScripts verifies the full MemoToScripts pipeline produces
 // P2PKH-shaped overflow scripts when called with Dash's
-// payToPubKeyHashMemoScript callback. This is the integration between the
+// dashutil.PayToPubKeyHashScript callback. This is the integration between the
 // shape-agnostic MemoToScripts and the Dash-specific script builder.
 func (s *DashSuite) TestMemoToScripts(c *C) {
 	// Memo > MaxDataCarrierSize (80) forces a continuation, which creates
@@ -88,7 +57,7 @@ func (s *DashSuite) TestMemoToScripts(c *C) {
 	longMemo := strings.Repeat("a", 100) // 100 > 80 triggers overflow
 
 	scripts, err := MemoToScripts(longMemo, dashtxscript.MaxDataCarrierSize,
-		dashtxscript.NullDataScript, payToPubKeyHashMemoScript)
+		dashtxscript.NullDataScript, dashutil.PayToPubKeyHashScript)
 	c.Assert(err, IsNil)
 	c.Assert(len(scripts) >= 2, Equals, true,
 		Commentf("expected at least one OP_RETURN + one overflow; got %d", len(scripts)))
@@ -393,13 +362,10 @@ func newDashClientForRPCServer(c *C, serverURL string, rpcTimeout ...time.Durati
 		rpc:                       rpcClient,
 		temporalStorage:           temporalStorage,
 	}
-	client.instantSend = instantSendHandler{
-		client:    client,
-		enabled:   client.cfg.InstantSend.Enabled,
-		minAmount: defaultInstantSendMinAmount,
-		maxAmount: 100_000 * common.One,
-		recovery:  instantSendRecovery{loaded: true},
-	}
+	client.initInstantSend()
+	client.instantSend.minAmount = defaultInstantSendMinAmount
+	client.instantSend.maxAmount = 100_000 * common.One
+	client.instantSend.recovery = instantSendRecovery{loaded: true}
 	return client, cleanup
 }
 
@@ -483,7 +449,7 @@ func (s *DashSuite) TestDashMemoRoundTrip(c *C) {
 	client := newDashClientForUnitTest()
 	for _, length := range []int{4, 79, 80, 81, 99, 100, constants.MaxMemoSize} {
 		memo := strings.Repeat("a", length)
-		scripts, err := MemoToScripts(memo, dashtxscript.MaxDataCarrierSize, dashtxscript.NullDataScript, payToPubKeyHashMemoScript)
+		scripts, err := MemoToScripts(memo, dashtxscript.MaxDataCarrierSize, dashtxscript.NullDataScript, dashutil.PayToPubKeyHashScript)
 		c.Assert(err, IsNil)
 		tx := &btcjson.TxRawResult{}
 		for i, script := range scripts {

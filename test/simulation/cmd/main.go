@@ -68,6 +68,7 @@ var liteClientConstructors = map[common.Chain]LiteChainClientConstructor{
 	common.BCHChain:   utxo.NewConstructor(chainRPCs[common.BCHChain]),
 	common.DOGEChain:  utxo.NewConstructor(chainRPCs[common.DOGEChain]),
 	common.DASHChain:  utxo.NewConstructor(chainRPCs[common.DASHChain]),
+	common.FIROChain:  utxo.NewConstructor(chainRPCs[common.FIROChain]),
 	common.ETHChain:   evm.NewConstructor(chainRPCs[common.ETHChain]),
 	common.AVAXChain:  evm.NewConstructor(chainRPCs[common.AVAXChain]),
 	common.GAIAChain:  pkgcosmos.NewConstructor(chainRPCs[common.GAIAChain]),
@@ -306,6 +307,11 @@ func main() {
 	}
 	if err := waitForZecRPCReadiness(chainRPCs[common.ZECChain]); err != nil {
 		log.Fatal().Err(err).Msg("failed waiting for zec rpc readiness")
+	}
+
+	err := waitForFiroRPCReadiness(chainRPCs[common.FIROChain])
+	if err != nil {
+		log.Fatal().Err(err).Msg("failed waiting for FIRO quorum readiness")
 	}
 
 	for _, chain := range []common.Chain{

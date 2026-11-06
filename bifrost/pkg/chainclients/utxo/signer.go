@@ -17,6 +17,7 @@ import (
 	ltcwire "github.com/ltcsuite/ltcd/wire"
 	"github.com/ltcsuite/ltcutil"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/dashutil"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/firoutil"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/zcash"
 
 	ltctxscript "gitlab.com/thorchain/thornode/v3/bifrost/txscript/ltcd-txscript"
@@ -89,6 +90,13 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []b
 		if !tx.ToAddress.IsValidBCHAddress() {
 			c.log.Error().Msgf("to address: %s is legacy not allowed ", tx.ToAddress)
 			return nil, nil, nil, nil
+		}
+	}
+
+	if c.cfg.ChainID == common.FIROChain {
+		_, err := c.requireFiroFinalityReady()
+		if err != nil {
+			return nil, tx.Checkpoint, nil, err
 		}
 	}
 
@@ -166,6 +174,12 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []b
 			return nil, nil, nil, fmt.Errorf("decoded btc address has unexpected type %T", outputAddr)
 		}
 		outputAddrStr = btcAddr.String()
+	case common.FIROChain:
+		outputAddr, err = firoutil.DecodeAddress(tx.ToAddress.String(), common.FIRONetwork())
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		outputAddrStr = outputAddr.String()
 	case common.DASHChain:
 		outputAddr, err = dashutil.DecodeAddress(tx.ToAddress.String(), c.getChainCfgDASH())
 		if err != nil {
@@ -320,6 +334,8 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []b
 		stx = wireToLTC(redeemTx)
 	case common.BTCChain:
 		stx = wireToBTC(redeemTx)
+	case common.FIROChain:
+		// Ordinary FIRO transactions already use Bitcoin wire serialization.
 	case common.DASHChain:
 		dashTx = wireToDASH(redeemTx)
 	case common.ZECChain:
@@ -381,7 +397,10 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []b
 
 	var dashPrevOutputs []*dashwire.TxOut
 	var dashSignatureHashes, dashSignatureScripts [][]byte
-	if c.cfg.ChainID == common.DASHChain {
+	var firoPrevOutputs []*btcwire.TxOut
+	var firoSignatureHashes, firoSignatureScripts [][]byte
+	switch c.cfg.ChainID {
+	case common.DASHChain:
 		dashPrevOutputs = make([]*dashwire.TxOut, len(signings))
 		for i, signing := range signings {
 			dashPrevOutputs[i] = dashwire.NewTxOut(signing.amount, sourceScript)
@@ -391,6 +410,16 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []b
 			return nil, checkpointBytes, nil, err
 		}
 		dashSignatureScripts = make([][]byte, len(signings))
+	case common.FIROChain:
+		firoPrevOutputs, err = c.getSigningPrevOutputsFIRO(redeemTx, sourceScript, checkpoint.IndividualAmounts)
+		if err != nil {
+			return nil, checkpointBytes, nil, err
+		}
+		firoSignatureHashes, err = firoutil.SignatureHashes(redeemTx, firoPrevOutputs)
+		if err != nil {
+			return nil, checkpointBytes, nil, err
+		}
+		firoSignatureScripts = make([][]byte, len(signings))
 	}
 
 	// sign the tx
@@ -434,6 +463,8 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []b
 					break
 				}
 				signErr = c.signUTXOBTC(msgTx, tx, amount, sourceScript, i, thorchainHeight)
+			case common.FIROChain:
+				firoSignatureScripts[i], signErr = c.signUTXOFIRO(firoSignatureHashes[i], tx, thorchainHeight)
 			case common.DASHChain:
 				dashSignatureScripts[i], signErr = c.signUTXODASH(dashSignatureHashes[i], tx, thorchainHeight)
 			case common.ZECChain:
@@ -475,7 +506,16 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []b
 		return nil, checkpointBytes, nil, fmt.Errorf("fail to sign the message: %w", err)
 	}
 
-	if c.cfg.ChainID == common.DASHChain {
+	switch c.cfg.ChainID {
+	case common.FIROChain:
+		for i, script := range firoSignatureScripts {
+			redeemTx.TxIn[i].SignatureScript = script
+		}
+		err = firoutil.VerifyTransaction(redeemTx, firoPrevOutputs)
+		if err != nil {
+			return nil, checkpointBytes, nil, err
+		}
+	case common.DASHChain:
 		for i, script := range dashSignatureScripts {
 			dashTx.TxIn[i].SignatureScript = script
 		}
@@ -532,6 +572,8 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []b
 			return nil, checkpointBytes, nil, fmt.Errorf("unexpected btc signed tx type %T", stx)
 		}
 		redeemTx = btcToWire(msgTx)
+	case common.FIROChain:
+		// Signatures were attached to redeemTx after all workers completed.
 	case common.DASHChain:
 		redeemTx = dashToWire(dashTx)
 	case common.ZECChain:
@@ -800,8 +842,19 @@ func (c *Client) BroadcastTx(txOut stypes.TxOutItem, payload []byte) (string, er
 			return "", fmt.Errorf("fail to deserialize payload: %w", err)
 		}
 
+		if c.cfg.ChainID == common.FIROChain {
+			if buf.Len() != 0 {
+				return "", fmt.Errorf("trailing FIRO transaction payload")
+			}
+			err = c.validateBroadcastFIRO(txOut, redeemTx)
+			if err != nil {
+				return "", err
+			}
+		}
 		var maxFee any
 		switch c.cfg.ChainID {
+		case common.FIROChain:
+			maxFee = false
 		case common.DOGEChain, common.BCHChain:
 			maxFee = true // "allowHighFees"
 		case common.LTCChain, common.BTCChain, common.DASHChain:
@@ -809,6 +862,9 @@ func (c *Client) BroadcastTx(txOut stypes.TxOutItem, payload []byte) (string, er
 		}
 
 		txID, err = c.rpc.SendRawTransaction(redeemTx, maxFee)
+		if c.cfg.ChainID == common.FIROChain && err == nil && txID != redeemTx.TxHash().String() {
+			return "", fmt.Errorf("FIRO broadcast transaction ID mismatch")
+		}
 	}
 
 	if txID != "" {

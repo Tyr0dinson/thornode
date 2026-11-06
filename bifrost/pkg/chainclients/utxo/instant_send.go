@@ -1,19 +1,13 @@
 package utxo
 
 import (
-	"encoding/hex"
 	"errors"
 	"fmt"
-	"slices"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/btcsuite/btcd/txscript"
-
-	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
-	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/rpc"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
 )
@@ -21,7 +15,9 @@ import (
 // instantSendHandler owns InstantSend scanning, allowance and recovery state.
 // It shares the client's dependencies and must not be copied after first use.
 type instantSendHandler struct {
-	client *Client
+	client  *Client
+	backend instantSendBackend
+	policy  instantSendPolicy
 
 	// Owned by the single mempool scanner; rebuilt after restart.
 	mempoolCursor string
@@ -31,7 +27,7 @@ type instantSendHandler struct {
 	// Transaction batches awaiting final checks and delivery.
 	txQueue []types.TxIn
 	// Amount settings are owned by the mempool scanner.
-	// Both amounts and their Mimir values use duffs (common.One per DASH).
+	// Both amounts and their Mimir values use base units (common.One per coin).
 	minAmount uint64
 	maxAmount uint64
 
@@ -48,7 +44,83 @@ type instantSendHandler struct {
 	lastBlockHeight int64
 }
 
+const defaultInstantSendMinAmount uint64 = common.One / 100 // 0.01 coin, in base units
+
 var errInstantSendPaused = errors.New("InstantSend observations paused")
+
+// isPaused follows blockscanner.IsChainPaused on successful reads.
+// Unlike the shared scanner, it defers final observations if any read fails.
+func (h *instantSendHandler) isPaused() bool {
+	if h.client.bridge == nil {
+		h.client.log.Error().Msg("InstantSend halt bridge unavailable")
+		return true
+	}
+	thorHeight, err := h.client.bridge.GetBlockHeight()
+	if err != nil {
+		h.client.log.Err(err).Msg("fail to get THORChain height for InstantSend halt check")
+		return true
+	}
+	var height int64
+	for _, key := range []string{"Halt" + h.client.GetChain().String() + "Chain", "SolvencyHalt" + h.client.GetChain().String() + "Chain", "HaltChainGlobal"} {
+		height, err = h.client.bridge.GetMimir(key)
+		if err != nil {
+			h.client.log.Err(err).Str("key", key).Msg("fail to read InstantSend halt setting")
+			return true
+		}
+		if height > 0 && thorHeight >= height {
+			return true
+		}
+	}
+	height, err = h.client.bridge.GetMimir("NodePauseChainGlobal")
+	if err != nil {
+		h.client.log.Err(err).Msg("fail to read InstantSend node pause setting")
+		return true
+	}
+	return height > 0 && thorHeight <= height
+}
+
+// refreshSettings reads the InstantSend switch and amount policy.
+// An unset switch restores the startup default; a failed read disables InstantSend.
+func (h *instantSendHandler) refreshSettings() error {
+	var enabled int64
+	var err error
+	if h.client.bridge == nil {
+		err = errors.New("InstantSend settings bridge unavailable")
+	} else {
+		enabled, err = h.client.bridge.GetMimir(h.policy.enabled)
+	}
+
+	effectiveEnabled := false
+	if err == nil {
+		effectiveEnabled = h.client.cfg.InstantSend.Enabled
+		if enabled >= 0 {
+			effectiveEnabled = enabled > 0
+		}
+	}
+	h.stateMu.Lock()
+	h.enabled = effectiveEnabled
+	h.stateMu.Unlock()
+	if err != nil {
+		return fmt.Errorf("fail to read InstantSend enabled switch: %w", err)
+	}
+	minAmount, err := h.client.bridge.GetMimir(h.policy.minimum)
+	if err != nil {
+		return fmt.Errorf("fail to read InstantSend minimum amount: %w", err)
+	}
+	maxAmount, err := h.client.bridge.GetMimir(h.policy.maximum)
+	if err != nil {
+		return fmt.Errorf("fail to read InstantSend maximum amount: %w", err)
+	}
+	h.minAmount = defaultInstantSendMinAmount
+	if minAmount >= 0 {
+		h.minAmount = uint64(minAmount)
+	}
+	h.maxAmount = 0
+	if maxAmount > 0 {
+		h.maxAmount = uint64(maxAmount)
+	}
+	return nil
+}
 
 // allowAge applies our InstantSend policy for mempool observations.
 //
@@ -62,57 +134,75 @@ func (h *instantSendHandler) allowAge(age time.Duration) (bool, string) {
 	return true, ""
 }
 
-// refreshVaults invalidates unrelated transaction IDs when vaults change
-// and prunes IDs that left the mempool. Only the mempool scanner owns this cache.
-func (h *instantSendHandler) refreshVaults(mempool map[string]rpc.GetRawMempoolVerboseResult) {
-	addresses, err := h.client.getAsgardAddress()
-	if err != nil {
-		h.client.log.Debug().Err(err).Msg("skip InstantSend output filter while vault addresses are unavailable")
-		clear(h.ignored)
-		h.vaults = nil
-		return
+// scan delegates only the native candidate extraction, never allowance ownership.
+func (h *instantSendHandler) scan() ([]types.TxIn, error) {
+	if h.backend == nil {
+		return nil, nil
 	}
-	vaults := make([]string, 0, len(addresses))
-	for _, address := range addresses {
-		if !address.IsEmpty() {
-			vaults = append(vaults, strings.ToLower(address.String()))
-		}
-	}
-	slices.Sort(vaults)
-	vaults = slices.Compact(vaults)
-	if !slices.Equal(vaults, h.vaults) || h.client.cfg.MempoolTxIDCacheSize <= 0 {
-		clear(h.ignored)
-	}
-	h.vaults = vaults
-	for id := range h.ignored {
-		if _, present := mempool[id]; !present {
-			delete(h.ignored, id)
-		}
-	}
+	return h.backend.scan()
 }
 
-// mayPayVault excludes only transactions with clearly unrelated outputs.
-// Missing vault data or uncertain script decoding leaves the normal scan in charge.
-func (h *instantSendHandler) mayPayVault(tx *rpc.TxResult) bool {
-	if len(h.vaults) == 0 || len(tx.Vout) == 0 {
-		return true
+// fetchMemPool alternates early vault outbounds and lock-verified inbound batches.
+func (h *instantSendHandler) fetchMemPool(height int64) (types.TxIn, error) {
+	previousEnabled := h.enabled
+	err := h.refreshSettings()
+	if err != nil {
+		h.client.log.Err(err).Msg("fail to refresh InstantSend settings")
+		h.publishAllowance(instantSendAdmission{reason: "settings"})
 	}
-	for _, out := range tx.Vout {
-		addresses := h.client.getAddressesFromScriptPubKey(out.ScriptPubKey)
-		if len(addresses) == 0 {
-			// OP_RETURN cannot pay a vault; other undecoded scripts remain retryable.
-			script, err := hex.DecodeString(out.ScriptPubKey.Hex)
-			if err != nil || len(script) == 0 || script[0] != txscript.OP_RETURN {
-				return true
-			}
+	if !h.enabled {
+		h.txQueue = nil
+		h.client.nextMempoolScan = scanOutbounds
+		var admission instantSendAdmission
+		admission, err = h.prepareAllowance(err)
+		if err != nil {
+			h.client.log.Err(err).Msg("fail to maintain InstantSend allowance while disabled")
 		}
-		for _, address := range addresses {
-			if _, found := slices.BinarySearch(h.vaults, strings.ToLower(address)); found {
-				return true
-			}
-		}
+		h.publishAllowance(admission)
+		return h.backend.outbounds(height)
 	}
-	return false
+	if h.enabled != previousEnabled {
+		// Rebuild queued batches after the enabled switch changes.
+		h.txQueue = nil
+	}
+	if h.isPaused() {
+		h.txQueue = nil
+		h.client.nextMempoolScan = scanOutbounds
+		// Keep existing recovery moving, without starting a new allowance snapshot.
+		if _, err = h.prepareAllowance(errInstantSendPaused); err != nil {
+			h.client.log.Err(err).Msg("fail to maintain InstantSend allowance while halted")
+		}
+		h.publishAllowance(instantSendAdmission{reason: "halt"})
+		return h.backend.outbounds(height)
+	}
+
+	// Each batch has one MemPool flag, so alternate ordinary vault outbounds
+	// and lock-verified InstantSend observations, starting with outbounds.
+	// Select the next scan before fetching so errors cannot stall either path.
+	switch h.client.nextMempoolScan {
+	case scanInstantSend:
+		h.client.nextMempoolScan = scanOutbounds
+		var admission instantSendAdmission
+		admission, err = h.prepareAllowance(err)
+		if err != nil {
+			h.client.log.Err(err).Msg("customer InstantSend observations paused")
+		}
+		// Publish after this scan's preparation and claims, using its own decision.
+		defer func() { h.publishAllowance(admission) }()
+		var batch types.TxIn
+		batch, err = h.fetchBatch(admission)
+		if errors.Is(err, errInstantSendPaused) {
+			// The halt became visible during the scan. No claims were written.
+			h.txQueue = nil
+			h.client.nextMempoolScan = scanOutbounds
+			admission = instantSendAdmission{reason: "halt"}
+			return h.backend.outbounds(height)
+		}
+		return batch, err
+	default: // scanOutbounds is the initial scan and the fallback.
+		h.client.nextMempoolScan = scanInstantSend
+		return h.backend.outbounds(height)
+	}
 }
 
 // fetchBatch claims one bounded batch and attaches Observer acknowledgements.
@@ -132,7 +222,7 @@ func (h *instantSendHandler) fetchBatch(admission instantSendAdmission) (types.T
 		return types.TxIn{Chain: h.client.GetChain()}, nil
 	}
 	batch := h.txQueue[0]
-	// A cycle group can span several mempool batches. Bound the fresh finality
+	// A reference-height group can span several mempool batches. Bound the fresh finality
 	// RPC and allowance write batch, keeping the remainder queued.
 	count := min(len(batch.TxArray), h.workLimit())
 	batch.TxArray = batch.TxArray[:count]
@@ -148,7 +238,7 @@ func (h *instantSendHandler) fetchBatch(admission instantSendAdmission) (types.T
 		h.txQueue[0].TxArray = h.txQueue[0].TxArray[count:]
 	}
 	if h.client.m != nil {
-		if counter := h.client.m.GetCounter(metrics.DashInstantSendObserved); counter != nil {
+		if counter := h.client.m.GetCounter(h.policy.metrics.observed); counter != nil {
 			counter.Add(float64(len(batch.TxArray)))
 		}
 	}
@@ -156,37 +246,8 @@ func (h *instantSendHandler) fetchBatch(admission instantSendAdmission) (types.T
 	return batch, nil
 }
 
-// buildTxInItem extracts a vault inbound at the lock cycle height.
-// It returns nil if extraction fails or the recipient, dust, or age checks reject it.
-func (h *instantSendHandler) buildTxInItem(tx *rpc.TxResult, anchor int64, entry rpc.GetRawMempoolVerboseResult) *types.TxInItem {
-	item, err := h.client.getTxIn(&tx.TxRawResult, anchor, true, nil)
-	if err != nil {
-		h.client.log.Debug().Err(err).Str("txid", tx.Txid).Msg("retry InstantSend inbound extraction later")
-		return nil
-	}
-	if item.IsEmpty() || item.Coins.IsEmpty() {
-		return nil
-	}
-	if !h.client.isAsgardAddress(item.To) {
-		return nil
-	}
-	if item.Coins[0].Amount.LT(h.client.cfg.ChainID.DustThreshold()) {
-		return nil
-	}
-	var age time.Duration
-	if entry.Time > 0 {
-		age = time.Since(time.Unix(entry.Time, 0))
-	}
-	allow, reason := h.allowAge(age)
-	if !allow {
-		h.client.log.Debug().Str("txid", item.Tx).Str("reason", reason).Msg("InstantSend transaction waiting for block observation")
-		return nil
-	}
-	return &item
-}
-
-// instantSendObservationGroups builds final batches ordered by lock cycle height.
-// Observer uses a single finalization height for each batch. Mixing cycle heights
+// instantSendObservationGroups builds final batches ordered by reference height.
+// Observer uses a single finalization height for each batch. Mixing reference heights
 // would make the signed observation depend on which worker happened to finish first.
 func instantSendObservationGroups(chain common.Chain, byHeight map[int64][]*types.TxInItem) []types.TxIn {
 	heights := make([]int64, 0, len(byHeight))
@@ -206,6 +267,39 @@ func instantSendObservationGroups(chain common.Chain, byHeight map[int64][]*type
 		})
 	}
 	return groups
+}
+
+// pendingCandidates rotates through the mempool so a bounded scan cannot starve
+// later txids behind candidates whose locks or policy checks are still pending.
+func (h *instantSendHandler) pendingCandidates(mempool map[string]instantSendMempoolEntry) ([]string, error) {
+	ids := make([]string, 0, len(mempool))
+	for id, entry := range mempool {
+		if entry.lock != instantSendUnlocked {
+			ids = append(ids, id)
+		}
+	}
+	sort.Strings(ids)
+	limit := len(ids)
+	if h.client.cfg.UTXO.TransactionBatchSize > 0 && h.client.cfg.UTXO.MaxMempoolBatches > 0 {
+		limit = min(limit, h.client.cfg.UTXO.TransactionBatchSize*h.client.cfg.UTXO.MaxMempoolBatches)
+	}
+	start := sort.Search(len(ids), func(i int) bool { return ids[i] > h.mempoolCursor })
+	candidates := make([]string, 0, limit)
+	for offset := 0; offset < len(ids) && len(candidates) < limit; offset++ {
+		id := ids[(start+offset)%len(ids)]
+		h.mempoolCursor = id
+		if _, ignored := h.ignored[id]; ignored {
+			continue
+		}
+		observed, err := h.client.temporalStorage.HasObservedTx(strings.ToLower(id))
+		if err != nil {
+			return nil, fmt.Errorf("fail to check observation marker for %s: %w", id, err)
+		}
+		if !observed {
+			candidates = append(candidates, id)
+		}
+	}
+	return candidates, nil
 }
 
 // watchDelivery completes accepted markers in one write after the batch's

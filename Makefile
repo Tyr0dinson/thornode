@@ -379,6 +379,24 @@ test-utxo-daemons:
 		--require-test TestDogeStalledBroadcastIsNotDuplicated --require-test TestZecIsolatedFunding --max-skips 0 \
 		--report-dir test-quality-reports/utxo-daemons-simulation ./pkg/utxo
 
+# FIRO's real-node tests prepare their own daemon, framework and build tools.
+# Each suite owns a temporary six-node network inside the test container.
+.PHONY: test-firo-integration build-test-firo-integration
+test-firo-integration: build-test-firo-integration
+	@docker run --rm --init --platform linux/amd64 ${DOCKER_TTY_ARGS} thornode-firo-integration
+
+build-test-firo-integration:
+	@DOCKER_BUILDKIT=1 docker build build/docker/firo \
+		--platform linux/amd64 \
+		-t thornode-firo:0.14.18.2 \
+		--build-arg DOCKER_MIRROR
+	@DOCKER_BUILDKIT=1 docker build . \
+		--platform linux/amd64 \
+		-t thornode-firo-integration \
+		-f ci/Dockerfile.firo-integration \
+		--build-arg DOCKER_MIRROR \
+		$(DOCKER_BUILD_SECRETS)
+
 # ------------------------------ Performance Tests ------------------------------
 
 # Run comprehensive benchmarks with profiling (recommended)
@@ -766,17 +784,16 @@ _build-native-simtest:
 MOCKNET_CLUSTER_XMR_SIGNER_SERVICES := xmr-frost-signer xmr-frost-signer-cat \
 	xmr-frost-signer-fox xmr-frost-signer-frog xmr-frost-signer-pig xmr-sim-helper
 
-# Images that do not need the Go binaries. The runtime image (apt and pip in an
-# empty dind), the monero image and the signer pulls took ~1.5 min after the Go
-# build; build-mocknet-cluster-native runs them alongside it, and each other.
+# Images that do not need the Go binaries. Build the runtime, Monero and FIRO
+# images and pull the signers alongside the Go build.
 _build-native-base-images:
 	@DOCKER_BUILDKIT=1 docker build build/docker -f build/docker/Dockerfile \
 		--target runtime -t thornode-runtime:mocknet --build-arg DOCKER_MIRROR & runtime_pid=$$!; \
-	docker compose $(DOCKER_COMPOSE_FILES) --profile mocknet-cluster build monero-daemon & monero_pid=$$!; \
+	docker compose $(DOCKER_COMPOSE_FILES) --profile mocknet-cluster build monero-daemon firo1 & chains_pid=$$!; \
 	docker compose $(DOCKER_COMPOSE_FILES) --profile mocknet-cluster \
 		pull $(MOCKNET_CLUSTER_XMR_SIGNER_SERVICES); pull_rc=$$?; \
-	wait $$runtime_pid; runtime_rc=$$?; wait $$monero_pid; monero_rc=$$?; \
-	[ $$pull_rc -eq 0 ] && [ $$runtime_rc -eq 0 ] && [ $$monero_rc -eq 0 ]
+	wait $$runtime_pid; runtime_rc=$$?; wait $$chains_pid; chains_rc=$$?; \
+	[ $$pull_rc -eq 0 ] && [ $$runtime_rc -eq 0 ] && [ $$chains_rc -eq 0 ]
 
 build-mocknet-cluster-native:
 	@rm -rf $(NATIVE_SIM_DIR) && mkdir -p $(NATIVE_SIM_DIR)

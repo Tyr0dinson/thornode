@@ -7,9 +7,7 @@ import (
 	"time"
 
 	"github.com/btcsuite/btcd/btcjson"
-	"github.com/btcsuite/btcutil"
 
-	btypes "gitlab.com/thorchain/thornode/v3/bifrost/blockscanner/types"
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
 	sharedutxo "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/utxo"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/rpc"
@@ -144,7 +142,7 @@ func (h *instantSendHandler) prepareAllowance(err error) (instantSendAdmission, 
 			return blocked, nil
 		}
 		var height int64
-		// Allow settlement while reading the Dash height.
+		// Allow settlement while reading the finalized height.
 		h.stateMu.Unlock()
 		height, err = h.client.GetHeight()
 		if !h.lockAndCheckRevision(revision) {
@@ -157,10 +155,10 @@ func (h *instantSendHandler) prepareAllowance(err error) (instantSendAdmission, 
 		if !h.client.IsBlockScannerHealthy() || h.client.blockScanner.PreviousHeight() < height {
 			return blocked, nil
 		}
-		var mempool map[string]rpc.GetRawMempoolVerboseResult
+		var mempool map[string]instantSendMempoolEntry
 		// Allow settlement while fetching the mempool snapshot.
 		h.stateMu.Unlock()
-		mempool, err = h.client.rpc.GetRawMempoolVerbose()
+		mempool, err = h.backend.mempool()
 		if !h.lockAndCheckRevision(revision) {
 			return blocked, nil
 		}
@@ -169,10 +167,10 @@ func (h *instantSendHandler) prepareAllowance(err error) (instantSendAdmission, 
 		}
 		ids := make([]string, 0, len(mempool))
 		for id, entry := range mempool {
-			switch entry.InstantLock {
-			case "true":
+			switch entry.lock {
+			case instantSendLocked:
 				ids = append(ids, id)
-			case "false":
+			case instantSendUnlocked:
 				continue
 			default:
 				// Retry a fresh mempool rather than persist an uncertain snapshot.
@@ -225,12 +223,12 @@ func (h *instantSendHandler) prepareAllowance(err error) (instantSendAdmission, 
 			var settled []string
 			// Inclusion checks use RPCs; block settlement must be able to run meanwhile.
 			h.stateMu.Unlock()
-			tx, err = h.client.rpc.GetRawTransactionVerbose(id)
+			tx, err = h.backend.transaction(id)
 			var rpcErr *btcjson.RPCError
 			// An unknown or evicted transaction remains charged. It is not proof
 			// that a previously reported deposit is safe to forget.
 			if err == nil {
-				settled, err = h.getSettlement(id, tx)
+				settled, err = h.backend.getChainLockedBlockTxIDs(id, tx)
 			} else if errors.As(err, &rpcErr) && rpcErr.Code == btcjson.ErrRPCInvalidAddressOrKey {
 				err = nil
 			}
@@ -296,7 +294,7 @@ func (h *instantSendHandler) classifySnapshot(state sharedutxo.InstantSendState)
 	h.stateMu.Unlock()
 	_, err := h.client.getAsgardAddress()
 	if err == nil {
-		txs, txErrors, err = h.client.rpc.BatchGetRawTransactionVerbose(ids)
+		txs, txErrors, err = h.backend.transactions(ids)
 	}
 	if !h.lockAndCheckRevision(revision) {
 		return errInstantSendStateChanged
@@ -332,9 +330,9 @@ func (h *instantSendHandler) classifySnapshot(state sharedutxo.InstantSendState)
 		var amount uint64
 		// Inclusion, sender and vault lookups run unlocked to allow settlement.
 		h.stateMu.Unlock()
-		settled, err = h.getSettlement(id, tx)
+		settled, err = h.backend.getChainLockedBlockTxIDs(id, tx)
 		if err == nil && len(settled) == 0 {
-			amount, err = h.snapshotAmount(tx)
+			amount, err = h.backend.snapshotAmount(tx)
 		}
 		// Reject results if settlement changed the snapshot while we were waiting.
 		if !h.lockAndCheckRevision(revision) {
@@ -408,10 +406,10 @@ func (h *instantSendHandler) recoverSnapshot(ids []string, snapshotHeight, scann
 	// Allow settlement while checking the current ChainLock and mempool.
 	h.stateMu.Unlock()
 	height, err := h.client.GetHeight()
-	var mempool map[string]rpc.GetRawMempoolVerboseResult
+	var mempool map[string]instantSendMempoolEntry
 	caughtUp := height > snapshotHeight && scannedHeight >= height
 	if err == nil && caughtUp && h.client.IsBlockScannerHealthy() {
-		mempool, err = h.client.rpc.GetRawMempoolVerbose()
+		mempool, err = h.backend.mempool()
 		if err == nil && mempool == nil {
 			err = errors.New("missing InstantSend recovery mempool response")
 		}
@@ -432,95 +430,6 @@ func (h *instantSendHandler) recoverSnapshot(ids []string, snapshotHeight, scann
 		}
 	}
 	return removed, nil
-}
-
-// snapshotAmount returns the customer deposit amount to reserve during
-// startup, in duffs. Vault senders are exempt; current minimum and age limits do not apply.
-func (h *instantSendHandler) snapshotAmount(tx *rpc.TxResult) (uint64, error) {
-	if !tx.InstantSendLocked() || len(tx.Vin) == 0 {
-		return 0, nil
-	}
-	// Avoid fetching parents for unrelated mempool traffic.
-	relevant := false
-	for _, out := range tx.Vout {
-		addresses := h.client.getAddressesFromScriptPubKey(out.ScriptPubKey)
-		if len(addresses) == 1 && h.client.isAsgardAddress(addresses[0]) {
-			relevant = true
-			break
-		}
-	}
-	if !relevant {
-		return 0, nil
-	}
-	sender, err := h.client.getSender(&tx.TxRawResult, nil)
-	if errors.Is(err, errInvalidSenderUTXO) {
-		return 0, nil
-	}
-	if err != nil {
-		return 0, err
-	}
-	if h.client.isAsgardAddress(sender) {
-		return 0, nil
-	}
-	out, err := h.client.getOutput(sender, &tx.TxRawResult, false)
-	if errors.Is(err, btypes.ErrFailOutputMatchCriteria) {
-		return 0, nil
-	}
-	if err != nil {
-		return 0, err
-	}
-	if !h.client.isValidUTXO(out.ScriptPubKey.Hex) {
-		return 0, nil
-	}
-	amount, err := btcutil.NewAmount(out.Value)
-	if err != nil {
-		return 0, err
-	}
-	if amount <= 0 || uint64(amount) < h.client.cfg.ChainID.DustThreshold().Uint64() {
-		return 0, nil
-	}
-	return uint64(amount), nil
-}
-
-// getSettlement verifies inclusion in a canonical ChainLocked block
-// and returns its transaction IDs. It performs RPCs without changing the journal;
-// call without stateMu held.
-func (h *instantSendHandler) getSettlement(id string, tx *rpc.TxResult) ([]string, error) {
-	if tx == nil || !strings.EqualFold(id, tx.Txid) {
-		return nil, errors.New("InstantSend transaction ID mismatch")
-	}
-	if !tx.ChainLock {
-		return nil, nil
-	}
-	if tx.BlockHash == "" {
-		return nil, errors.New("ChainLocked transaction has no block hash")
-	}
-	block, err := h.client.rpc.GetBlockVerboseTxs(tx.BlockHash)
-	if err != nil {
-		return nil, err
-	}
-	if !block.ChainLock || block.Height < 0 || !strings.EqualFold(block.Hash, tx.BlockHash) {
-		return nil, errors.New("invalid ChainLocked transaction block")
-	}
-	hash, err := h.client.rpc.GetBlockHash(block.Height)
-	if err != nil {
-		return nil, err
-	}
-	if !strings.EqualFold(hash, block.Hash) {
-		return nil, errors.New("ChainLocked transaction is not in the active chain")
-	}
-	ids := make([]string, 0, len(block.Tx))
-	found := false
-	for _, item := range block.Tx {
-		ids = append(ids, item.Txid)
-		if strings.EqualFold(item.Txid, id) {
-			found = true
-		}
-	}
-	if !found {
-		return nil, errors.New("transaction missing from ChainLocked block")
-	}
-	return ids, nil
 }
 
 // releaseReservations invalidates outstanding RPC results even when
@@ -585,7 +494,7 @@ func (h *instantSendHandler) claimBatch(items []*types.TxInItem, admission insta
 	// Queued batches may outlive a block scan. Recheck finality without holding
 	// up settlement, then reject the results if settlement happened meanwhile.
 	h.stateMu.Unlock()
-	txs, txErrors, err := h.client.rpc.BatchGetRawTransactionVerbose(ids)
+	txs, txErrors, err := h.backend.transactions(ids)
 	// Recheck the revision under the lock before using these finality results.
 	if !h.lockAndCheckRevision(revision) {
 		h.recordDeferral("finality")
@@ -599,12 +508,16 @@ func (h *instantSendHandler) claimBatch(items []*types.TxInItem, admission insta
 	h.stateMu.Unlock()
 	for i, id := range ids {
 		tx := txs[i]
-		if txErrors[i] != nil || !strings.EqualFold(tx.Txid, id) || tx.ChainLock || !tx.InstantSendLocked() {
+		if txErrors[i] != nil || tx == nil || !strings.EqualFold(tx.Txid, id) {
 			h.recordDeferral("finality")
 			continue
 		}
 		item := byID[id]
-		vaultSender := h.client.isAsgardAddress(item.Sender)
+		valid, vaultSender, checkErr := h.backend.checkClaimFinality(item, tx)
+		if checkErr != nil || !valid {
+			h.recordDeferral("finality")
+			continue
+		}
 		claim := sharedutxo.InstantSendClaim{
 			TxID: id, Amount: item.Coins.GetCoin(h.client.cfg.ChainID.GetGasAsset()).Amount.Uint64(),
 			Exempt: vaultSender,
@@ -684,7 +597,7 @@ func (h *instantSendHandler) claimBatch(items []*types.TxInItem, admission insta
 // recordDeferral records an observation deferral in the metric for its reason.
 func (h *instantSendHandler) recordDeferral(reason string) {
 	if h.client.m != nil {
-		h.client.m.GetCounterVec(metrics.InstantSendDeferred).WithLabelValues(reason).Inc()
+		h.client.m.GetCounterVec(h.policy.metrics.deferred).WithLabelValues(reason).Inc()
 	}
 }
 
@@ -698,7 +611,7 @@ func (h *instantSendHandler) publishAllowance(admission instantSendAdmission) {
 	defer h.stateMu.Unlock()
 	state, err := h.client.temporalStorage.GetInstantSendState()
 	if err != nil {
-		h.client.m.GetGauge(metrics.InstantSendAvailable).Set(0)
+		h.client.m.GetGauge(h.policy.metrics.available).Set(0)
 		return
 	}
 	warming := float64(1)
@@ -710,10 +623,10 @@ func (h *instantSendHandler) publishAllowance(admission instantSendAdmission) {
 		available = 0
 	}
 	for metric, value := range map[metrics.MetricName]float64{
-		metrics.InstantSendReserved:  float64(state.Reserved),
-		metrics.InstantSendAvailable: float64(available),
-		metrics.InstantSendPending:   float64(state.Count),
-		metrics.InstantSendWarmingUp: warming,
+		h.policy.metrics.reserved:  float64(state.Reserved),
+		h.policy.metrics.available: float64(available),
+		h.policy.metrics.pending:   float64(state.Count),
+		h.policy.metrics.warming:   warming,
 	} {
 		h.client.m.GetGauge(metric).Set(value)
 	}

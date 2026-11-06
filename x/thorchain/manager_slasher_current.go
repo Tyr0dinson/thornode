@@ -1036,7 +1036,7 @@ func (s *SlasherImpl) sendFailedSwapReverseSwap(ctx cosmos.Context, mgr Manager,
 		refundAddress := swapMemo.GetRefundAddress()
 		chain := originalTx.Tx.Coins[0].Asset.GetChain()
 		validRefundAddress := refundAddress.IsChain(chain)
-		if chain.Equals(common.DASHChain) {
+		if chain.OneOf(common.DASHChain, common.FIROChain) {
 			validRefundAddress = validRefundAddress && refundAddress.IsCurrentNetwork(chain)
 		}
 		if validRefundAddress {

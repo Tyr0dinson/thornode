@@ -39,13 +39,7 @@ const (
 	ObserverError MetricName = `observer_error`
 	SignerError   MetricName = `signer_error`
 
-	PubKeyManagerError      MetricName = `pubkey_manager_error`
-	DashInstantSendObserved MetricName = `dash_instantsend_observed`
-	InstantSendDeferred     MetricName = `dash_instantsend_deferred`
-	InstantSendReserved     MetricName = `dash_instantsend_reserved`
-	InstantSendAvailable    MetricName = `dash_instantsend_available`
-	InstantSendPending      MetricName = `dash_instantsend_pending`
-	InstantSendWarmingUp    MetricName = `dash_instantsend_warming_up`
+	PubKeyManagerError MetricName = `pubkey_manager_error`
 
 	BatchSends      MetricName = `batch_sends`
 	BatchClears     MetricName = `batch_clears`
@@ -121,12 +115,6 @@ var (
 			Name:      "tx_to_thorchain_signed_total",
 			Help:      "number of tx observer signed successfully",
 		}),
-		DashInstantSendObserved: prometheus.NewCounter(prometheus.CounterOpts{
-			Namespace: "dash",
-			Subsystem: "instantsend",
-			Name:      "observed_total",
-			Help:      "number of Dash InstantSend observations accepted from mempool",
-		}),
 		BatchSends: prometheus.NewCounter(prometheus.CounterOpts{
 			Namespace: "observer",
 			Subsystem: "attestation_batcher",
@@ -141,10 +129,6 @@ var (
 		}),
 	}
 	counterVecs = map[MetricName]*prometheus.CounterVec{
-		InstantSendDeferred: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Namespace: "dash", Subsystem: "instantsend", Name: "deferred_total",
-			Help: "InstantSend admission attempts deferred, by reason; repeated attempts are counted.",
-		}, []string{"reason"}),
 		CommonBlockScannerError: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Namespace: "block_scanner",
 			Subsystem: "common_block_scanner",
@@ -288,22 +272,6 @@ var (
 	}
 
 	gauges = map[MetricName]prometheus.Gauge{
-		InstantSendReserved: prometheus.NewGauge(prometheus.GaugeOpts{
-			Namespace: "dash", Subsystem: "instantsend", Name: "reserved_duffs",
-			Help: "Customer InstantSend amount awaiting ChainLock settlement, in duffs.",
-		}),
-		InstantSendAvailable: prometheus.NewGauge(prometheus.GaugeOpts{
-			Namespace: "dash", Subsystem: "instantsend", Name: "available_duffs",
-			Help: "Available customer InstantSend allowance at the last mempool scan, in duffs.",
-		}),
-		InstantSendPending: prometheus.NewGauge(prometheus.GaugeOpts{
-			Namespace: "dash", Subsystem: "instantsend", Name: "pending_transactions",
-			Help: "Customer InstantSend reservations awaiting ChainLock settlement.",
-		}),
-		InstantSendWarmingUp: prometheus.NewGauge(prometheus.GaugeOpts{
-			Namespace: "dash", Subsystem: "instantsend", Name: "warming_up",
-			Help: "One while the startup InstantSend snapshot has not completed, zero once ready.",
-		}),
 		XMRPendingCertificates: prometheus.NewGauge(prometheus.GaugeOpts{
 			Namespace: "observer", Subsystem: "xmr_certificate_outbox", Name: "pending",
 			Help: "Pending certificates at the last successful bounded reconciliation scan, including retries in backoff.",

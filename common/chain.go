@@ -37,6 +37,7 @@ const (
 	TAOChain   = Chain("TAO")
 	DOTChain   = Chain("DOT")
 	DASHChain  = Chain("DASH")
+	FIROChain  = Chain("FIRO")
 
 	SigningAlgoSecp256k1 = SigningAlgo("secp256k1")
 	SigningAlgoEd25519   = SigningAlgo("ed25519")
@@ -63,6 +64,7 @@ var AllChains = [...]Chain{
 	TAOChain,
 	DOTChain,
 	DASHChain,
+	FIROChain,
 }
 
 type SigningAlgo string
@@ -157,7 +159,7 @@ func GetSubstrateChains() []Chain {
 
 // GetUTXOChains returns all "UTXO" chains connected to THORChain.
 func GetUTXOChains() []Chain {
-	return []Chain{BTCChain, LTCChain, BCHChain, DOGEChain, ZECChain, DASHChain}
+	return []Chain{BTCChain, LTCChain, BCHChain, DOGEChain, ZECChain, DASHChain, FIROChain}
 }
 
 // IsEVM returns true if given chain is an EVM chain.
@@ -255,6 +257,8 @@ func (c Chain) GetGasAsset() Asset {
 		return ZECAsset
 	case XMRChain:
 		return XMRAsset
+	case FIROChain:
+		return FIROAsset
 	case DASHChain:
 		return DASHAsset
 	case POLChain:
@@ -285,7 +289,7 @@ func (c Chain) GetGasUnits() (gasRateUnits string, gasRateUnitsPerOne cosmos.Uin
 		return "drop", cosmos.NewUint(1e6)
 	case TRONChain:
 		return "sun", cosmos.NewUint(1e6)
-	case BTCChain, BCHChain, LTCChain, DOGEChain, ZECChain, DASHChain:
+	case BTCChain, BCHChain, LTCChain, DOGEChain, ZECChain, DASHChain, FIROChain:
 		return "satsperbyte", cosmos.NewUint(1e8)
 	case ETHChain, BSCChain, POLChain:
 		return "gwei", cosmos.NewUint(1e9)
@@ -393,6 +397,9 @@ func (c Chain) RequiresExplicitRefundAddress() bool {
 // IsValidAddress make sure the address is correct for the chain
 // And this also make sure mocknet doesn't use mainnet address vice versa
 func (c Chain) IsValidAddress(addr Address) bool {
+	if c.Equals(FIROChain) {
+		return addr.IsCurrentNetwork(FIROChain)
+	}
 	if c.Equals(XMRChain) {
 		if !IsValidXMRAddress(addr.String()) {
 			return false
@@ -452,6 +459,8 @@ func (c Chain) AddressPrefix(cn ChainNetwork) string {
 		case DASHChain:
 			// Dash regtest/devnet P2PKH prefix byte is 0x8c → base58 starts with "y".
 			return "y"
+		case FIROChain:
+			return "EXR"
 		}
 	case MainNet, StageNet, ChainNet:
 		switch c {
@@ -476,6 +485,12 @@ func (c Chain) AddressPrefix(cn ChainNetwork) string {
 		case DASHChain:
 			// Dash mainnet P2PKH prefix byte is 0x4c → base58 starts with "X".
 			return "X"
+		case FIROChain:
+			return "EXX"
+		}
+	case TestNet:
+		if c == FIROChain {
+			return "EXT"
 		}
 	}
 	return ""
@@ -499,7 +514,7 @@ func (c Chain) DustThreshold() cosmos.Uint {
 		return cosmos.NewUint(15_000)
 	case DOGEChain:
 		return cosmos.NewUint(100_000_000)
-	case DASHChain:
+	case FIROChain, DASHChain:
 		return cosmos.NewUint(10_000)
 	case ETHChain, BASEChain:
 		return cosmos.NewUint(1_000)
@@ -559,6 +574,8 @@ func (c Chain) P2WPKHOutputValue() int64 {
 	case ZECChain:
 		// TODO: validate on node
 		return 2730
+	case FIROChain:
+		return 546 // Integration policy for P2PKH memo continuation outputs.
 	case DASHChain:
 		// Dash has no SegWit, so P2PKH dust (546 sats) applies rather than the
 		// P2WPKH-aware 294 sats used for BTCChain above. Value follows Bitcoin
@@ -572,7 +589,7 @@ func (c Chain) P2WPKHOutputValue() int64 {
 // MaxMemoLength returns the max memo length for each chain.
 func (c Chain) MaxMemoLength() int {
 	switch c {
-	case BTCChain, LTCChain, BCHChain, DOGEChain, ZECChain, DASHChain:
+	case BTCChain, LTCChain, BCHChain, DOGEChain, ZECChain, DASHChain, FIROChain:
 		return constants.MaxOpReturnDataSize
 	default:
 		// Default to the max memo size that we will process, regardless
@@ -675,7 +692,7 @@ func (c Chain) ApproximateBlockMilliseconds() int64 {
 		return 75_000
 	case XMRChain:
 		return 120_000
-	case DASHChain:
+	case FIROChain, DASHChain:
 		return 150_000 // ~2.5 minutes
 	case POLChain:
 		return 2_000
@@ -690,6 +707,8 @@ func (c Chain) ApproximateBlockMilliseconds() int64 {
 
 func (c Chain) InboundNotes() string {
 	switch c {
+	case FIROChain:
+		return "Send transparent FIRO to the exchange inbound_address with the memo in OP_RETURN (80 bytes, or use the extended quote outputs). First move Spark funds to a transparent address; direct Spark deposits are rejected by FIRO. Deposits require a ChainLocked block. Use P2PKH, P2SH or exchange addresses and do not send below the dust threshold."
 	case LTCChain:
 		return "First output should be to inbound_address, second output should be change back to self, third output should be OP_RETURN, limited to 80 bytes. Do not send below the dust threshold. Do not use exotic spend scripts, locks or address formats. MWEB addresses are not supported; do not use ltcmweb1 addresses or peg-in transactions."
 	case BTCChain, BCHChain, DOGEChain, ZECChain, DASHChain:

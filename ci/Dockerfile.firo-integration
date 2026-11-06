@@ -1,0 +1,52 @@
+ARG DOCKER_MIRROR=
+FROM ${DOCKER_MIRROR}golang:1.26.10-bookworm AS go
+
+# Built by make from the same official-image wrapper used by mocknet.
+FROM thornode-firo:0.14.18.2
+
+USER root
+# Keep distro packages current, as in the other chain images.
+# hadolint ignore=DL3008
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential ca-certificates git python3-venv \
+    && rm -rf /var/lib/apt/lists/* \
+    && mkdir -p /app /go && chown firod:firod /app /go
+
+COPY --from=go /usr/local/go /usr/local/go
+RUN python3 -m venv /opt/firo-python \
+    && /opt/firo-python/bin/pip install --no-cache-dir pyasyncore==1.0.5
+
+# Only the Python test framework is used; the daemon stays the official binary.
+RUN git clone --depth 1 --branch v0.14.18.2 https://github.com/firoorg/firo.git /opt/firo \
+    && test "$(git -C /opt/firo rev-parse HEAD)" = 420fdb81d33a822fe830a918aadfd200801461ed \
+    && rm -rf /opt/firo/.git
+
+ENV PATH=/opt/firo-python/bin:/usr/local/go/bin:$PATH \
+    GOPATH=/go \
+    GOPRIVATE=gitlab.com/thorchain/tss/tss-lib-private.git \
+    FIRO_SOURCE=/opt/firo \
+    FIROD=/bin/firod \
+    FIROCLI=/bin/firo-cli \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+WORKDIR /app
+USER firod
+COPY --chown=firod:firod go.mod go.sum ./
+# Keep modules in the image: the scripts also call go test at runtime.
+# The secret belongs to the official image's firod user (1001:1001).
+RUN --mount=type=secret,id=go_private_auth,required=false,uid=1001,gid=1001 \
+    if [ -s /run/secrets/go_private_auth ]; then \
+      git config --global url."https://$(cat /run/secrets/go_private_auth)@gitlab.com/thorchain/tss/".insteadOf "https://gitlab.com/thorchain/tss/"; \
+    fi && \
+    go mod download && \
+    rm -f /home/firod/.gitconfig
+
+COPY --chown=firod:firod . .
+# Warm the Go build cache without starting daemons. Keeping the module cache also
+# preserves WasmVM's shared library at the path linked into the test executable.
+RUN go test -mod=readonly -tags mocknet -run '^$' ./bifrost/pkg/chainclients/utxo \
+    && python3 -c "import sys; sys.path.insert(0, '/opt/firo/qa/rpc-tests'); from test_framework.test_framework import EvoZnodeTestFramework"
+
+HEALTHCHECK NONE
+ENTRYPOINT ["bash", "/app/test/integration/firo/run.sh"]

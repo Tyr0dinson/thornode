@@ -18,8 +18,8 @@ import (
 )
 
 // A nil batch acknowledgement does not mean that an inactive Observer accepted
-// a DASH item. The producer must use the per-item stored/rejected callbacks.
-func TestDashDeliveryRejectsInactiveObserverBeforeAcceptingBlockFallback(t *testing.T) {
+// an InstantSend item. The producer must use the per-item stored/rejected callbacks.
+func TestInstantSendDeliveryRejectsInactiveObserverBeforeAcceptingBlockFallback(t *testing.T) {
 	for _, status := range []stypes.NodeStatus{stypes.NodeStatus_Unknown, stypes.NodeStatus_Standby} {
 		t.Run(status.String(), func(t *testing.T) {
 			storage, tempDir := setupTestDB(t)
@@ -38,7 +38,7 @@ func TestDashDeliveryRejectsInactiveObserverBeforeAcceptingBlockFallback(t *test
 				return types.TxIn{
 					Chain: common.DASHChain, Filtered: true, Persisted: make(chan error, 1),
 					TxArray: []*types.TxInItem{{
-						Tx: "dash-delivery", BlockHeight: 123,
+						Tx: "instant-send-delivery", BlockHeight: 123,
 						OnObservedTxStored:   func() { stored <- struct{}{} },
 						OnObservedTxRejected: func(err error) { rejected <- err },
 					}},
@@ -51,7 +51,7 @@ func TestDashDeliveryRejectsInactiveObserverBeforeAcceptingBlockFallback(t *test
 			case err := <-rejected:
 				require.ErrorIs(t, err, errObservedTxInactive)
 			default:
-				t.Fatal("inactive Observer did not reject the DASH delivery")
+				t.Fatal("inactive Observer did not reject the InstantSend delivery")
 			}
 			require.Empty(t, stored)
 			observer.lastNodeStatusMu.Lock()
@@ -75,7 +75,7 @@ func TestDashDeliveryRejectsInactiveObserverBeforeAcceptingBlockFallback(t *test
 }
 
 // Observer acceptance must complete the pending marker without releasing allowance.
-func TestDashDeliveryCompletesMarkerAfterObserverPersistence(t *testing.T) {
+func TestInstantSendDeliveryCompletesMarkerAfterObserverPersistence(t *testing.T) {
 	db, err := leveldb.OpenFile(t.TempDir(), nil)
 	require.NoError(t, err)
 	defer db.Close()
@@ -83,13 +83,13 @@ func TestDashDeliveryCompletesMarkerAfterObserverPersistence(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, scanner.StartInstantSendWarmup(10, nil))
 	require.NoError(t, scanner.CompleteInstantSendWarmup(11))
-	ids, err := scanner.AdmitInstantSendTxs([]sharedutxo.InstantSendClaim{{TxID: "dash-delivery", Amount: 10}}, 0, 100, true, 1)
+	ids, err := scanner.AdmitInstantSendTxs([]sharedutxo.InstantSendClaim{{TxID: "instant-send-delivery", Amount: 10}}, 0, 100, true, 1)
 	require.NoError(t, err)
 	path := t.TempDir()
 	storage, err := NewObserverStorage(path, config.LevelDBOptions{})
 	require.NoError(t, err)
 	observer := &Observer{logger: zerolog.Nop(), storage: storage, lock: &sync.Mutex{}, onDeck: make(map[txInKey]*types.TxIn)}
-	item := &types.TxInItem{Tx: "dash-delivery", BlockHeight: 123, Memo: "NOOP"}
+	item := &types.TxInItem{Tx: "instant-send-delivery", BlockHeight: 123, Memo: "NOOP"}
 	item.OnObservedTxStored = func() { require.NoError(t, scanner.CompleteInstantSendObservations(ids)) }
 	require.NoError(t, observer.processObservedTx(types.TxIn{Chain: common.DASHChain, Filtered: true, TxArray: []*types.TxInItem{item}}))
 	require.NoError(t, storage.Close())
@@ -111,7 +111,7 @@ func TestDashDeliveryCompletesMarkerAfterObserverPersistence(t *testing.T) {
 
 // A failed first write must reject the handoff without publishing an in-memory
 // deck entry that could falsely acknowledge the next retry.
-func TestDashDeliveryRejectsFailedInitialObserverWrite(t *testing.T) {
+func TestInstantSendDeliveryRejectsFailedInitialObserverWrite(t *testing.T) {
 	path := t.TempDir()
 	storage, err := NewObserverStorage(path, config.LevelDBOptions{})
 	require.NoError(t, err)
@@ -122,7 +122,7 @@ func TestDashDeliveryRejectsFailedInitialObserverWrite(t *testing.T) {
 	stored, rejected := 0, 0
 	observation := func() types.TxIn {
 		return types.TxIn{Chain: common.DASHChain, Filtered: true, TxArray: []*types.TxInItem{{
-			Tx: "dash-delivery", BlockHeight: 123,
+			Tx: "instant-send-delivery", BlockHeight: 123,
 			OnObservedTxStored:   func() { stored++ },
 			OnObservedTxRejected: func(error) { rejected++ },
 		}}}
@@ -144,7 +144,7 @@ func TestDashDeliveryRejectsFailedInitialObserverWrite(t *testing.T) {
 }
 
 // Multiple vault views share one completion callback, as needed for migrations.
-func TestDashDeliveryVaultViewsAcknowledgeOnce(t *testing.T) {
+func TestInstantSendDeliveryVaultViewsAcknowledgeOnce(t *testing.T) {
 	stored := make(chan struct{}, 2)
 	source := &types.TxInItem{Tx: "migration", OnObservedTxStored: func() { stored <- struct{}{} }}
 	views := []*types.TxInItem{source.Copy(), source.Copy()}

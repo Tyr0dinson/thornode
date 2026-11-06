@@ -23,6 +23,7 @@ bifrost:
       - BCH
       - BTC
       - DASH
+      - FIRO
       - DOGE
       - ETH
       - GAIA
@@ -598,6 +599,32 @@ bifrost:
         min_sats_per_vbyte: 2
         estimated_average_tx_size: 1
         max_mempool_ancestors: 0
+
+    # Transparent FIRO support is opt-in until all validators are upgraded.
+    firo:
+      <<: *default-chain
+      disabled: true
+      chain_id: FIRO
+      rpc_host: firo:8888
+      instant_send:
+        <<: *default-instant-send
+        enabled: false
+        max_mempool_age: 2m
+      block_scanner:
+        <<: *default-block-scanner
+        chain_id: FIRO
+        scan_mempool: true # vault outbounds; opt-in InstantSend vault inbounds
+        max_reorg_rescan_blocks: 288
+        max_resume_block_lag: 0s # never skip a deposit during recovery
+        max_healthy_lag: 150s
+        observation_flexibility_blocks: 3
+      min_confirmations: 0 # deposits require ChainLocks; vault outbounds can be observed earlier
+      utxo:
+        <<: *utxo
+        block_cache_count: 576
+        estimated_average_tx_size: 2000
+        min_utxo_confirmations: 1
+        max_mempool_ancestors: 0 # no unconfirmed inputs, including change
 
     dash:
       <<: *default-chain

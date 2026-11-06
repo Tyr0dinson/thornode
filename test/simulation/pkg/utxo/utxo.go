@@ -47,6 +47,7 @@ import (
 	"github.com/ltcsuite/ltcutil"
 	ltctxscript "gitlab.com/thorchain/thornode/v3/bifrost/txscript/ltcd-txscript"
 
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/firoutil"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/rpc"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -194,6 +195,9 @@ func (c *Client) GetAccount(pk *common.PubKey) (*common.Account, error) {
 	// sum balance
 	total := 0.0
 	for _, item := range utxos {
+		if c.chain == common.FIROChain && item.Confirmations < 1 {
+			continue // match FIRO input selection, including initial master funding
+		}
 		total += item.Amount
 	}
 	totalAmt, err := btcutil.NewAmount(total)
@@ -235,6 +239,9 @@ func (c *Client) SignTx(tx SimTx) ([]byte, error) {
 
 	if len(redeemTx.TxIn) == 0 {
 		return nil, fmt.Errorf("tx has no vin")
+	}
+	if c.chain == common.FIROChain {
+		return c.signFIRO(redeemTx, amounts, sourceScript)
 	}
 
 	// create the list of signing requests
@@ -427,6 +434,8 @@ func (c *Client) BroadcastTx(payload []byte) (string, error) {
 
 	var maxFee any
 	switch c.chain {
+	case common.FIROChain:
+		maxFee = false // FIRO's second argument is allowhighfees, a boolean.
 	case common.DOGEChain, common.BCHChain:
 		maxFee = true // "allowHighFees"
 	case common.LTCChain, common.BTCChain, common.DASHChain:
@@ -490,6 +499,12 @@ func (c *Client) payloadAccepted(txid, payloadHex string) (accepted, absent bool
 
 func (c *Client) getSourceScript(tx SimTx) ([]byte, error) {
 	switch c.chain {
+	case common.FIROChain:
+		address, err := firoutil.DecodeAddress(c.address.String(), common.FIRONetwork())
+		if err != nil {
+			return nil, err
+		}
+		return address.Script(), nil
 	case common.DOGEChain:
 		var addr dogutil.Address
 		addr, err := dogutil.DecodeAddress(c.address.String(), c.getChainCfgDOGE())
@@ -563,6 +578,9 @@ func (c *Client) getUtxoToSpend(total float64) ([]btcjson.ListUnspentResult, err
 	}
 
 	for _, item := range utxos {
+		if c.chain == common.FIROChain && item.Confirmations < 1 {
+			continue
+		}
 		if c.chain.Equals(common.ZECChain) {
 			key := fmt.Sprintf("%s-%d", item.TxID, item.Vout)
 
@@ -594,6 +612,8 @@ func (c *Client) getUtxoToSpend(total float64) ([]btcjson.ListUnspentResult, err
 // scenarios stay deterministic.
 func (c *Client) GetGasSats() uint64 {
 	switch c.chain {
+	case common.FIROChain:
+		return 50_000
 	case common.DOGEChain:
 		return 10_000_000
 	case common.BCHChain:
@@ -633,6 +653,8 @@ func (c *Client) getPaymentAmount(tx SimTx) float64 {
 
 func (c *Client) getMemoScripts(memo string) ([][]byte, error) {
 	switch c.chain {
+	case common.FIROChain:
+		return memoToScripts(memo, 80, btctxscript.NullDataScript, firoutil.PayToPubKeyHashScript)
 	case common.DOGEChain:
 		return memoToScripts(memo, dogetxscript.MaxDataCarrierSize, dogetxscript.NullDataScript, dogetxscript.PayToWitnessScript)
 	case common.BCHChain:
@@ -792,6 +814,12 @@ func (c *Client) buildTx(tx SimTx, sourceScript []byte) (
 
 	var buf []byte
 	switch c.chain {
+	case common.FIROChain:
+		address, err := firoutil.DecodeAddress(tx.ToAddress.String(), common.FIRONetwork())
+		if err != nil {
+			return nil, nil, err
+		}
+		buf = address.Script()
 	case common.DOGEChain:
 		var outputAddr dogutil.Address
 		outputAddr, err = dogutil.DecodeAddress(tx.ToAddress.String(), c.getChainCfgDOGE())

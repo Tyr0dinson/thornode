@@ -78,7 +78,7 @@ func (s *ObservationTallySuite) TestChainWindowPreservesMixedGuardGrace(c *C) {
 // handlers against their tally deadlines, including TRON's solvency exemption.
 func (s *ObservationTallySuite) TestOtherObservationWindowsCreditLateSigners(c *C) {
 	for _, kind := range []string{observationTallyKindNetworkFee, observationTallyKindSolvency, observationTallyKindErrata} {
-		for _, chain := range []common.Chain{common.DASHChain, common.BTCChain, common.TRONChain} {
+		for _, chain := range []common.Chain{common.DASHChain, common.FIROChain, common.BTCChain, common.TRONChain} {
 			if chain == common.TRONChain && kind != observationTallyKindSolvency {
 				continue
 			}
@@ -95,6 +95,7 @@ func checkOtherObservationWindow(c *C, kind string, chain common.Chain, delay in
 	k := mgr.Keeper()
 	k.SetMimir(ctx, constants.ObservationDelayFlexibility.String(), 2)
 	k.SetMimir(ctx, "ObservationDelayFlexibilityDASH", 5)
+	k.SetMimir(ctx, "ObservationDelayFlexibilityFIRO", 5)
 	k.SetMimir(ctx, "ObservationDelayFlexibilityTRON", 5)
 	k.SetMimir(ctx, constants.MissingObservationGuardBps.String(), 10_000)
 	k.SetMimir(ctx, "StopSolvencyCheck", 1)

@@ -56,6 +56,7 @@ lint:
       paths:
         - ci/Dockerfile.regtest.dockerignore
         - ci/Dockerfile.simtest.dockerignore
+        - ci/Dockerfile.firo-integration.dockerignore
     - linters:
         - codespell
       paths:

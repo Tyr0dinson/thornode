@@ -92,7 +92,7 @@ func (s *DashSuite) TestInstantSendWarmupDiscardsStaleSnapshot(c *C) {
 			client.blockScanner.Start(make(chan types.TxIn), make(chan common.NetworkFee))
 			defer client.blockScanner.Stop()
 			waitForDashCatchUp(c, func() bool { return client.blockScanner.PreviousHeight() == 100 && client.blockScanner.IsHealthy() })
-			client.chainLockHeightHealth.Store(&chainLockHeightHealth{
+			client.finality.Store(&finalitySnapshot{
 				blockHeight: 100, chainLockHeight: 100, checkedAt: time.Now(),
 			})
 			finished := make(chan error, 1)

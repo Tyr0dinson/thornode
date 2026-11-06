@@ -49,6 +49,7 @@ var chainRPCs = map[common.Chain]string{
 	common.SOLChain:   "http://127.0.0.1:8899",
 	common.XMRChain:   envOrDefault("XMR_SIM_HELPER_ENDPOINT", "http://127.0.0.1:8284"),
 	common.DASHChain:  "http://127.0.0.1:19898",
+	common.FIROChain:  "http://127.0.0.1:28888",
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////
@@ -214,8 +215,12 @@ func InitConfig(parallelism int, seed bool, rng *rand.Rand) *OpConfig {
 				{common.DOGEChain, 1000, 1500000},
 				{common.TRONChain, 1, 1_000_000},
 				{common.DASHChain, 2000, 10},
+				{common.FIROChain, 2000, 25},
 			}
 			for _, fee := range defaultFees {
+				if _, enabled := liteClientConstructors[fee.chain]; !enabled {
+					continue
+				}
 				log.Info().Msgf("posting %s network fee", fee.chain)
 				for {
 					height, err := getHeight(fee.chain, a.ChainClients)
@@ -381,7 +386,7 @@ func InitConfig(parallelism int, seed bool, rng *rand.Rand) *OpConfig {
 		// determine the amount of txs for seeding, to create multiple utxos
 		chainSeedTxs := 1
 		switch chain {
-		case common.BTCChain, common.LTCChain, common.BCHChain:
+		case common.BTCChain, common.LTCChain, common.BCHChain, common.FIROChain:
 			chainSeedAmount = sdkmath.NewUint(10 * common.One)
 		case common.DASHChain:
 			chainSeedAmount = sdkmath.NewUint(dashUserSeedAmount)
@@ -570,8 +575,8 @@ func broadcastFunding(master, user *User, chain common.Chain, fundingAmount sdkm
 		Msg("account funded")
 }
 
-// signAndBroadcastFundingTx restores Dash funding retries while preserving the
-// chain client's terminal uncertainty result after a possibly accepted broadcast.
+// signAndBroadcastFundingTx retries Dash funding and waits for FIRO change to
+// become spendable, preserving uncertainty after a possibly accepted broadcast.
 func signAndBroadcastFundingTx(client LiteChainClient, tx SimTx, sleep func(time.Duration)) (string, error) {
 	maxAttempts := 1
 	if tx.Chain.Equals(common.DASHChain) {
@@ -580,6 +585,10 @@ func signAndBroadcastFundingTx(client LiteChainClient, tx SimTx, sleep func(time
 	for attempt := 1; ; attempt++ {
 		txID, err := SignAndBroadcastTx(client, tx)
 		if err == nil {
+			if tx.Chain.Equals(common.FIROChain) {
+				// Each following transfer may need the confirmed change from this one.
+				return txID, waitForFiroFunding(client, txID, sleep)
+			}
 			return txID, nil
 		}
 		if errors.Is(err, ErrSimTxUncertain) || txID != "" {
@@ -872,7 +881,7 @@ func isMasterAccountReady(chain common.Chain, account *common.Account, minAmount
 }
 
 func requiresFundedMasterAccount(chain common.Chain) bool {
-	return chain.Equals(common.XRPChain) || chain.Equals(common.SOLChain)
+	return chain.OneOf(common.XRPChain, common.SOLChain, common.FIROChain)
 }
 
 func isRetryableZeroBalanceStartupState(chain common.Chain, account *common.Account) bool {

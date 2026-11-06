@@ -9,14 +9,15 @@ import (
 	"github.com/dashpay/dashd-go/wire"
 )
 
-// TSSSignature converts TSS's fixed-width R || S result to the upstream type.
-func TSSSignature(raw []byte) (*ecdsa.Signature, error) {
+// ParseSignatureRS parses two 32-byte, big-endian ECDSA scalars in R || S order.
+// It validates the scalar ranges; it does not verify the signature against a message.
+func ParseSignatureRS(raw []byte) (*ecdsa.Signature, error) {
 	if len(raw) != 64 {
-		return nil, fmt.Errorf("Dash TSS signature: got %d bytes, want 64", len(raw))
+		return nil, fmt.Errorf("signature R || S: got %d bytes, want 64", len(raw))
 	}
 	var r, s btcec.ModNScalar
 	if r.SetByteSlice(raw[:32]) || s.SetByteSlice(raw[32:]) || r.IsZero() || s.IsZero() {
-		return nil, fmt.Errorf("invalid Dash TSS signature scalar")
+		return nil, fmt.Errorf("invalid signature scalar")
 	}
 	return ecdsa.NewSignature(&r, &s), nil
 }

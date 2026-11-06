@@ -103,7 +103,7 @@ func (s *DashSuite) TestInstantSendEarlyHaltRetainsReservationsAndResumes(c *C) 
 		client, f, cleanup := newDashMempoolFixture(c)
 		defer cleanup()
 		client.m = GetMetricForTest(c, common.DASHChain)
-		counter := client.m.GetCounter(metrics.DashInstantSendObserved)
+		counter := client.m.GetCounter(metrics.InstantSendObserved(common.DASHChain))
 		before := testutil.ToFloat64(counter)
 		batch, err := client.FetchMemPool(123)
 		c.Assert(err, IsNil)
@@ -145,7 +145,7 @@ func (s *DashSuite) TestInstantSendEarlyHaltRetainsReservationsAndResumes(c *C) 
 			marked, err = client.temporalStorage.HasObservedTx(f.lowFeeInbound)
 			c.Assert(err, IsNil)
 			c.Assert(marked, Equals, false)
-			c.Assert(testutil.ToFloat64(client.m.GetGauge(metrics.InstantSendAvailable)), Equals, float64(0))
+			c.Assert(testutil.ToFloat64(client.m.GetGauge(metrics.InstantSendAvailable(common.DASHChain))), Equals, float64(0))
 			c.Assert(testutil.ToFloat64(counter), Equals, before)
 		}
 		c.Assert(f.ordinaryCalls, Equals, 3)
@@ -241,7 +241,7 @@ func (s *DashSuite) TestInstantSendLateHaltFallsBackWithoutClaims(c *C) {
 			client, f, cleanup := newDashMempoolFixture(c)
 			defer cleanup()
 			client.m = GetMetricForTest(c, common.DASHChain)
-			counter := client.m.GetCounter(metrics.DashInstantSendObserved)
+			counter := client.m.GetCounter(metrics.InstantSendObserved(common.DASHChain))
 			before := testutil.ToFloat64(counter)
 			client.nextMempoolScan = scanInstantSend
 			if queued {
@@ -290,7 +290,7 @@ func (s *DashSuite) TestInstantSendLateHaltFallsBackWithoutClaims(c *C) {
 				c.Assert(err, IsNil)
 				c.Assert(marked, Equals, false)
 			}
-			c.Assert(testutil.ToFloat64(client.m.GetGauge(metrics.InstantSendAvailable)), Equals, float64(0))
+			c.Assert(testutil.ToFloat64(client.m.GetGauge(metrics.InstantSendAvailable(common.DASHChain))), Equals, float64(0))
 			c.Assert(testutil.ToFloat64(counter), Equals, before)
 			// A deferred deposit remains eligible for the normal block observation.
 			c.Assert(client.instantSend.reconcileBlock(&btcjson.GetBlockVerboseTxResult{Tx: []btcjson.TxRawResult{{Txid: f.inbound}}}), IsNil)

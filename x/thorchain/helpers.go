@@ -155,7 +155,7 @@ func refundTx(ctx cosmos.Context, tx ObservedTx, mgr Manager, refundCode uint32,
 				if coin.Asset.GetChain().RequiresExplicitRefundAddress() {
 					validRefundAddress = validRefundAddress && coin.Asset.GetChain().IsValidAddress(refundAddress)
 				}
-				if coin.Asset.GetChain().OneOf(common.ZECChain, common.DASHChain) {
+				if coin.Asset.GetChain().OneOf(common.ZECChain, common.DASHChain, common.FIROChain) {
 					validRefundAddress = validRefundAddress && refundAddress.IsCurrentNetwork(coin.Asset.GetChain())
 				}
 				if validRefundAddress {

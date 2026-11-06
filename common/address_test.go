@@ -78,7 +78,7 @@ func (s *AddressSuite) TestEquivalentAddressesDefersToAddressEquals(c *C) {
 }
 
 func (s *AddressSuite) TestAddress(c *C) {
-	c.Assert(AllChains, HasLen, 20)
+	c.Assert(AllChains, HasLen, 21)
 
 	c.Check(Address("").IsEmpty(), Equals, true)
 	c.Check(NoAddress.Equals(Address("")), Equals, true)
@@ -285,6 +285,7 @@ func (s *AddressSuite) TestAddress(c *C) {
 		{
 			Address: "TKSrg7Ffs81r8QsLMfqRHG82hbFYz2Bw5W",
 			Chain:   TRONChain,
+			Chains:  Chains{FIROChain}, // FIRO test/regtest P2PKH shares TRON's 0x41 prefix.
 			Network: CurrentChainNetwork,
 		},
 		{

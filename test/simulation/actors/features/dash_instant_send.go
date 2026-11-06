@@ -194,7 +194,7 @@ func (a *DashInstantSendActor) observePayment(name string, amount, feeSats uint6
 			if txInfo.Confirmations != 0 {
 				break
 			}
-			if !txInfo.InstantSendLocked() {
+			if !txInfo.InstantSendLockedDASH() {
 				time.Sleep(250 * time.Millisecond)
 				continue
 			}

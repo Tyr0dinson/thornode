@@ -283,9 +283,9 @@ func (s *Signer) shouldSign(tx types.TxOutItem) bool {
 }
 
 func (s *Signer) shouldAutoObserve(tx types.TxOutItem) bool {
-	// Dash can finalise outbounds on THORChain through mempool observations and
-	// report them again after a lock. Avoid a third, chargeable sign-time variant.
-	if tx.Chain.Equals(common.DASHChain) {
+	// Dash and FIRO can finalise outbounds on THORChain through mempool observations
+	// and report them again after a lock. Avoid a third, chargeable sign-time variant.
+	if tx.Chain.OneOf(common.DASHChain, common.FIROChain) {
 		chain, ok := s.chains[tx.Chain]
 		if ok && chain.GetConfig().BlockScanner.ScanMemPool {
 			return false

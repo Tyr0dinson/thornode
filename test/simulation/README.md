@@ -48,6 +48,28 @@ transparent destination and one with a TEX destination. Mocknet uses `tm` and
 `textest` in place of mainnet's `t1` and `tex`. Both swaps must complete, and their
 outbound actions and observations must use the normal transparent address.
 
+### FIRO mocknet coverage
+
+FIRO is included by default in the `mocknet` and `mocknet-cluster` Compose profiles
+and in the simulation chain set. Standard runs bootstrap its pool and exercise
+swaps, consolidation, solvency and Ragnarok. Cluster runs also cover churn and
+inactive-vault refunds through the shared stages. Customer deposits require ChainLocks;
+FIRO InstantSend stays disabled.
+
+For an existing single-node mocknet, build/start the updated services and run:
+
+```sh
+make build-mocknet
+make run-mocknet
+make test-simulation-no-reset
+```
+
+The six-node FIRO quorum is created automatically. Simulation waits for exchange
+activation, advancing ChainLocks and confirmed funding. The RPC endpoint
+is `http://127.0.0.1:28888`.
+Production FIRO enablement is independent and remains opt-in. See the
+[FIRO client guide](../../docs/chain-clients/firo.md#local-mocknet-quorum).
+
 ### Inactive-vault refunds
 
 The cluster profile runs `inactive-vault-refunds` after churn, when eligible

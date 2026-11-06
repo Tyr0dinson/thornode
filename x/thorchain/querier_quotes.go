@@ -28,6 +28,7 @@ import (
 	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
 	cryptotypes "github.com/cosmos/cosmos-sdk/crypto/types"
 
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/firoutil"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/config"
@@ -456,7 +457,7 @@ func quoteInboundInfo(ctx cosmos.Context, mgr *Mgrs, amount sdkmath.Uint, chain 
 		}
 	}
 
-	if chain.Equals(common.DASHChain) {
+	if chain.Equals(common.DASHChain) || chain.Equals(common.FIROChain) {
 		// Quote one block for inbounds that need ChainLock finality. Bifrost's
 		// local InstantSend policy can allow earlier observation, but a quote
 		// cannot guarantee that the eventual transaction will qualify.
@@ -1382,6 +1383,12 @@ func (qs queryServer) queryQuoteSwap(ctx cosmos.Context, req *types.QueryQuoteSw
 			var bz [20]byte
 			copy(bz[:], data[:20])
 			hash, err := zcash.NewAddressPubKeyHash(bz, params)
+			if err != nil {
+				return nil, err
+			}
+			address = hash.String()
+		case common.FIROChain:
+			hash, err := firoutil.NewAddress(data, firoutil.PubKeyHash, common.FIRONetwork())
 			if err != nil {
 				return nil, err
 			}

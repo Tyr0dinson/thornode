@@ -24,7 +24,7 @@ func (s *DashSuite) TestDashAllowInstantSendAgeBoundaries(c *C) {
 	client := Client{cfg: config.BifrostChainConfiguration{
 		InstantSend: config.InstantSendConfiguration{MaxMempoolAge: 2 * time.Minute},
 	}}
-	client.instantSend = instantSendHandler{client: &client, enabled: client.cfg.InstantSend.Enabled}
+	client.initInstantSend()
 	for _, age := range []time.Duration{0, time.Minute, 2 * time.Minute} {
 		allow, reason := client.instantSend.allowAge(age)
 		c.Assert(allow, Equals, true, Commentf(reason))
@@ -270,6 +270,7 @@ func (s *DashSuite) TestInstantSendFilterBypassesUnavailableVaults(c *C) {
 func (s *DashSuite) TestInstantSendCandidatesSkipIgnoredWithoutStarving(c *C) {
 	client, _, cleanup := newDashMempoolFixture(c)
 	defer cleanup()
+	backend := dashInstantSendBackend{h: &client.instantSend}
 	client.cfg.UTXO.TransactionBatchSize = 2
 	ids := []string{strings.Repeat("a", 64), strings.Repeat("b", 64), strings.Repeat("c", 64), strings.Repeat("d", 64), strings.Repeat("e", 64)}
 	mempool := make(map[string]rpc.GetRawMempoolVerboseResult)
@@ -278,7 +279,7 @@ func (s *DashSuite) TestInstantSendCandidatesSkipIgnoredWithoutStarving(c *C) {
 	}
 	client.instantSend.ignored = map[string]struct{}{ids[0]: {}, ids[2]: {}}
 	for _, want := range [][]string{{ids[1], ids[3]}, {ids[4], ids[1]}, {ids[3], ids[4]}} {
-		got, err := client.instantSend.candidates(mempool)
+		got, err := backend.candidates(mempool)
 		c.Assert(err, IsNil)
 		c.Assert(got, DeepEquals, want)
 	}

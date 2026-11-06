@@ -133,15 +133,15 @@ func TestConcurrentDashSigningAndVerification(t *testing.T) {
 	}
 }
 
-func TestDashTSSSignature(t *testing.T) {
+func TestParseSignatureRS(t *testing.T) {
 	key, pubKey := btcec.PrivKeyFromBytes(bytes.Repeat([]byte{1}, 32))
 	digest := bytes.Repeat([]byte{2}, 32)
 	compact, err := ecdsa.SignCompact(key, digest, true)
 	if err != nil {
 		t.Fatal(err)
 	}
-	raw := compact[1:] // TSS returns fixed-width R || S without the recovery byte.
-	signature, err := TSSSignature(raw)
+	raw := compact[1:] // Remove the recovery byte to obtain fixed-width R || S.
+	signature, err := ParseSignatureRS(raw)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -168,7 +168,7 @@ func TestDashTSSSignature(t *testing.T) {
 	var scalar btcec.ModNScalar
 	scalar.SetByteSlice(highS[32:])
 	scalar.Negate().PutBytesUnchecked(highS[32:])
-	signature, err = TSSSignature(highS)
+	signature, err = ParseSignatureRS(highS)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -189,9 +189,9 @@ func TestDashTSSSignature(t *testing.T) {
 		"overflow S": append(append([]byte(nil), raw[:32]...), bytes.Repeat([]byte{0xff}, 32)...),
 	} {
 		t.Run(name, func(t *testing.T) {
-			_, err := TSSSignature(invalid)
+			_, err := ParseSignatureRS(invalid)
 			if err == nil {
-				t.Fatal("invalid TSS signature accepted")
+				t.Fatal("invalid R || S signature accepted")
 			}
 		})
 	}

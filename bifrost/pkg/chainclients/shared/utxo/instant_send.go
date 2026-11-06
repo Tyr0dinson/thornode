@@ -374,7 +374,7 @@ func (t *TemporalStorage) CompleteInstantSendObservations(ids []string) error {
 
 // TrackInstantSendBlockTxs claims a verified ChainLock block's new or pending
 // transactions. Like ordinary block claims, its markers precede Observer delivery.
-// Only the DASH block scanner uses this fallback; other chains retain TrackObservedTxs.
+// Block scanners with InstantSend support use this fallback, even while early observation is disabled.
 func (t *TemporalStorage) TrackInstantSendBlockTxs(ids []string) ([]string, error) {
 	return t.trackInstantSendObservations(ids, true)
 }

@@ -1,0 +1,14 @@
+# Configuration template: copy to /data/firo.conf and set unique RPC credentials.
+# Restrict RPC access to the Bifrost network; do not expose RPC publicly.
+server=1
+txindex=1
+prune=0
+disablewallet=0
+rpcbind=0.0.0.0
+rpcallowip=172.16.0.0/12
+rpcport=8888
+rpcuser=REPLACE_WITH_BIFROST_USERNAME
+rpcpassword=REPLACE_WITH_RANDOM_PASSWORD
+# Bifrost signs at a fixed 1000 atoms/kB relay floor; higher local policy
+# can reject a signed payment but must never change its signing digest.
+minrelaytxfee=0.00001

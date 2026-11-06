@@ -721,71 +721,48 @@ func TestWaitForMasterAccountRetriesTransientXMRDaemonHeightError(t *testing.T) 
 	}
 }
 
-func TestWaitForMasterAccountRetriesZeroBalanceXRPStartupState(t *testing.T) {
-	wantAccount := &common.Account{
-		Coins: common.NewCoins(common.NewCoin(common.XRPAsset, sdkmath.NewUint(25*common.One))),
-	}
+func TestWaitForMasterAccountRetriesZeroBalanceStartupState(t *testing.T) {
+	for _, tc := range []struct {
+		chain common.Chain
+		asset common.Asset
+	}{
+		{common.XRPChain, common.XRPAsset},
+		{common.SOLChain, common.SOLAsset},
+		{common.FIROChain, common.FIROAsset},
+	} {
+		t.Run(tc.chain.String(), func(t *testing.T) {
+			wantAccount := &common.Account{
+				Coins: common.NewCoins(common.NewCoin(tc.asset, sdkmath.NewUint(25*common.One))),
+			}
 
-	client := &stubLiteChainClient{}
-	client.getAccount = func(_ *common.PubKey) (*common.Account, error) {
-		client.calls++
-		if client.calls < 3 {
-			return &common.Account{
-				Coins: common.NewCoins(common.NewCoin(common.XRPAsset, sdkmath.ZeroUint())),
-			}, nil
-		}
-		return wantAccount, nil
-	}
+			client := &stubLiteChainClient{}
+			client.getAccount = func(_ *common.PubKey) (*common.Account, error) {
+				client.calls++
+				if client.calls < 3 {
+					return &common.Account{
+						Coins: common.NewCoins(common.NewCoin(tc.asset, sdkmath.ZeroUint())),
+					}, nil
+				}
+				return wantAccount, nil
+			}
 
-	sleepCalls := 0
-	got, err := waitForMasterAccountWithMinAmountAndSleep(common.XRPChain, client, sdkmath.ZeroUint(), masterAccountRetryAttempts, func(time.Duration) {
-		sleepCalls++
-	})
-	if err != nil {
-		t.Fatalf("expected transient XRP zero-balance startup state to recover, got %v", err)
-	}
-	if got != wantAccount {
-		t.Fatal("expected recovered XRP account to be returned")
-	}
-	if client.calls != 3 {
-		t.Fatalf("expected 3 XRP account attempts, got %d", client.calls)
-	}
-	if sleepCalls != 2 {
-		t.Fatalf("expected 2 retry sleeps, got %d", sleepCalls)
-	}
-}
-
-func TestWaitForMasterAccountRetriesZeroBalanceSOLStartupState(t *testing.T) {
-	wantAccount := &common.Account{
-		Coins: common.NewCoins(common.NewCoin(common.SOLAsset, sdkmath.NewUint(25*common.One))),
-	}
-
-	client := &stubLiteChainClient{}
-	client.getAccount = func(_ *common.PubKey) (*common.Account, error) {
-		client.calls++
-		if client.calls < 3 {
-			return &common.Account{
-				Coins: common.NewCoins(common.NewCoin(common.SOLAsset, sdkmath.ZeroUint())),
-			}, nil
-		}
-		return wantAccount, nil
-	}
-
-	sleepCalls := 0
-	got, err := waitForMasterAccountWithMinAmountAndSleep(common.SOLChain, client, sdkmath.ZeroUint(), masterAccountRetryAttempts, func(time.Duration) {
-		sleepCalls++
-	})
-	if err != nil {
-		t.Fatalf("expected transient Solana zero-balance startup state to recover, got %v", err)
-	}
-	if got != wantAccount {
-		t.Fatal("expected recovered Solana account to be returned")
-	}
-	if client.calls != 3 {
-		t.Fatalf("expected 3 Solana account attempts, got %d", client.calls)
-	}
-	if sleepCalls != 2 {
-		t.Fatalf("expected 2 retry sleeps, got %d", sleepCalls)
+			sleepCalls := 0
+			got, err := waitForMasterAccountWithMinAmountAndSleep(tc.chain, client, sdkmath.ZeroUint(), masterAccountRetryAttempts, func(time.Duration) {
+				sleepCalls++
+			})
+			if err != nil {
+				t.Fatalf("expected zero-balance startup state to recover, got %v", err)
+			}
+			if got != wantAccount {
+				t.Fatal("expected recovered account to be returned")
+			}
+			if client.calls != 3 {
+				t.Fatalf("expected 3 account attempts, got %d", client.calls)
+			}
+			if sleepCalls != 2 {
+				t.Fatalf("expected 2 retry sleeps, got %d", sleepCalls)
+			}
+		})
 	}
 }
 

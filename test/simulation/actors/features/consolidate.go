@@ -26,6 +26,8 @@ func Consolidate(rng *rand.Rand) *Actor {
 	// Mocknet may not mine that parent/child package until several minutes after broadcast.
 	a.Children[NewConsolidateActor(common.DASHAsset, 15, 15*time.Minute, rng)] = true
 	a.Children[NewConsolidateActor(common.DOGEAsset, 10, 0, rng)] = true
+	// Donations and their change must confirm before the next spend.
+	a.Children[NewConsolidateActor(common.FIROAsset, 15, 15*time.Minute, rng)] = true
 	a.Children[NewConsolidateActor(common.LTCAsset, 10, 0, rng)] = true
 	a.Children[NewConsolidateActor(common.ZECAsset, 10, 0, rng)] = true
 

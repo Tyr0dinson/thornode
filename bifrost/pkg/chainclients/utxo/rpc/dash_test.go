@@ -38,7 +38,7 @@ func TestSharedRPCResultDecoding(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !tx.QuorumLocked() || !tx.InstantSendLocked() || !tx.ChainLock {
+	if !tx.QuorumLockedDASH() || !tx.InstantSendLockedDASH() || !tx.ChainLock {
 		t.Fatal("shared response lost Dash finality")
 	}
 	if got := tx.TxRawResult; !reflect.DeepEqual(got, wantTx) {
@@ -105,7 +105,7 @@ func TestISLocksBatchesAndPreservesMissingResults(t *testing.T) {
 			for i := range ids {
 				ids[i] = fmt.Sprintf("%064x", i)
 			}
-			locks, err := client.GetISLocks(ids)
+			locks, err := client.GetISLocksDASH(ids)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -170,7 +170,7 @@ func TestISLocksFailedChunksDoNotDiscardSuccessfulChunks(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			locks, err := client.GetISLocks(ids)
+			locks, err := client.GetISLocksDASH(ids)
 			if err == nil {
 				t.Fatal("failed lock batch returned no error")
 			}
@@ -214,7 +214,7 @@ func TestQuorumLockFields(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if tx.QuorumLocked() != tc.final || tx.InstantSendLocked() != tc.instant {
+		if tx.QuorumLockedDASH() != tc.final || tx.InstantSendLockedDASH() != tc.instant {
 			t.Fatalf("wrong finality for %s", tc.json)
 		}
 	}

@@ -12,6 +12,7 @@ var allSimChains = []common.Chain{
 	common.BCHChain,
 	common.BTCChain,
 	common.DASHChain,
+	common.FIROChain,
 	common.DOGEChain,
 	common.ETHChain,
 	common.GAIAChain,
