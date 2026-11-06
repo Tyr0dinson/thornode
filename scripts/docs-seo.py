@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """Add search and AI discovery data to the built developer docs site.
 
-`make docs-generate` runs this after `mdbook build`. It is warn-only there: a
-failure prints a warning and the docs still publish (--strict makes any
-warning fail, for tests). It writes only into the output directory and never
-edits the sources under docs/.
+`make docs-generate` runs this after `mdbook build`. If anything fails it
+writes nothing and exits non-zero; the Makefile turns that into a warning, so
+the docs still publish unchanged. --strict also exits 1 on warnings, after
+writing (for tests).
+It writes only into the output directory and never edits the sources under
+docs/.
 
 - The host comes only from `[output.html] site-url` in docs/book.toml.
 - docs/theme/index.hbs must keep the `<!-- thorchain-seo -->` marker after the
@@ -13,7 +15,10 @@ edits the sources under docs/.
 - Each page's meta description is its first paragraph (cut near 160 chars),
   falling back to the book description.
 - robots.txt points at sitemap.xml; sitemap.xml, llms.txt and llms-full.txt
-  follow docs/SUMMARY.md order and paths.
+  follow docs/SUMMARY.md order and paths. Relative links in llms-full.txt are
+  rewritten to absolute page URLs.
+- Archived pages and the ADR template get noindex instead of a canonical, and
+  are left out of the sitemap. The paths below must exist in SUMMARY.md.
 """
 
 import argparse
@@ -37,6 +42,13 @@ SUMMARY_LINK_RE = re.compile(
     r"^(\s*)(?:[-*+]\s+)?\[((?:\\.|[^\]\\])*)\]\(([^)]*)\)\s*$"
 )
 EMBED_RE = re.compile(r"^[ \t]*\{\{#embed\s+(\S+)\s*\}\}[ \t]*$", re.MULTILINE)
+# Inline markdown link targets: [text](target "title"). A bare target may contain
+# one level of balanced parentheses: foo_(bar).md
+LINK_RE = re.compile(r"(\]\(\s*)(<[^>]*>|(?:\([^()\s]*\)|[^()\s])+)")
+# Fences may open on a list item line ("- ```go") or inside a blockquote ("> ```").
+FENCE_RE = re.compile(r"^\s*(?:>\s*)*(?:(?:[-*+]|\d+[.)])\s+)?(`{3,}|~{3,})(.*)$")
+CODE_SPAN_RE = re.compile(r"(`+)(?:(?!\1).)*?\1")
+SCHEME_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.-]*:")
 # Sections whose paragraphs are bookkeeping, not a summary (ADR headers).
 SKIP_SECTIONS = {"changelog", "status"}
 URL_ONLY_RE = re.compile(r"^\S+://\S+$")
@@ -56,11 +68,11 @@ VOID_TAGS = {
     "wbr",
 }
 
-# Retired features: built, but left out of the sitemap and both llms files.
+# Retired features: built and noindex; left out of the sitemap and both llms files.
 ARCHIVED_ROOTS = {"archived/archived.md"}
-# Decision records: under "## Optional" in llms.txt, left out of llms-full.txt.
-HISTORY_ROOTS = {"architecture/README.md"}
-# Pages that are not content (a blank ADR skeleton): built, but listed nowhere.
+# Architecture decision records: under "## Optional" in llms.txt, left out of llms-full.txt.
+ADR_ROOTS = {"architecture/README.md"}
+# Pages that are not content (a blank ADR skeleton): built and noindex, listed nowhere.
 UNLISTED = {"architecture/TEMPLATE.md"}
 NOINDEX = '<meta name="robots" content="noindex">'
 
@@ -153,6 +165,86 @@ def html_path(md):
     if name.lower() == "readme.md":
         name = "index.md"
     return posixpath.join(directory, name[: -len(".md")] + ".html")
+
+
+def page_url(site, md):
+    """Return a page's canonical URL; the root index is the site root itself."""
+    path = html_path(md)
+    return site + ("" if path == "index.html" else path)
+
+
+def absolute_link(target, md, site):
+    """Resolve a link target in page md to an absolute URL.
+
+    Links with a scheme (https:, mailto:, ...) and links outside the book are
+    returned unchanged. A directory link ("dir/") resolves to its index page.
+    """
+    wrapped = target.startswith("<") and target.endswith(">")
+    bare = target[1:-1] if wrapped else target
+    if not bare or SCHEME_RE.match(bare) or bare.startswith("//"):
+        return target
+    path, hash_, anchor = bare.partition("#")
+    path, qmark, query = path.partition("?")
+    if not path:
+        url = page_url(site, md)
+    else:
+        if path.startswith("/"):
+            joined = path.lstrip("/")
+        else:
+            joined = posixpath.join(posixpath.dirname(md), path)
+        if path.endswith("/") or posixpath.basename(path) in (".", ".."):
+            joined = posixpath.join(joined, "README.md")
+        joined = posixpath.normpath(joined)
+        if joined.startswith("../"):
+            return target
+        url = page_url(site, joined) if joined.endswith(".md") else site + joined
+    url += qmark + query + hash_ + anchor
+    return f"<{url}>" if wrapped else url
+
+
+def absolutize_links(text, md, site):
+    """Rewrite relative markdown links to absolute URLs, outside code.
+
+    Fenced code blocks and single-line inline code spans are left alone.
+    Admonish blocks are markdown, so links inside them are rewritten. Not
+    detected (the docs don't use them): indented 4-space code blocks, code
+    spans that wrap across lines, reference-style link definitions, escaped
+    brackets or parentheses, and links inside raw HTML.
+    """
+
+    def fix(m):
+        return m.group(1) + absolute_link(m.group(2), md, site)
+
+    def fix_line(line):
+        parts, last = [], 0
+        for span in CODE_SPAN_RE.finditer(line):
+            start = span.start()
+            parts.append(LINK_RE.sub(fix, line[last:start]))
+            parts.append(span.group(0))
+            last = span.end()
+        parts.append(LINK_RE.sub(fix, line[last:]))
+        return "".join(parts)
+
+    out, fences = [], []  # fences: (marker char, length, kind) of open blocks
+    for line in text.split("\n"):
+        match = FENCE_RE.match(line)
+        if match:
+            marker, info = match.group(1), match.group(2).strip()
+            # A backtick fence's info string cannot contain backticks (CommonMark);
+            # such a line starts with an inline code span instead.
+            if marker[0] == "`" and "`" in info:
+                match = None
+        if match:
+            top = fences[-1] if fences else None
+            if top and not info and marker[0] == top[0] and len(marker) >= top[1]:
+                fences.pop()
+            elif top is None or top[2] == "admonish":
+                kind = "admonish" if info.split()[:1] == ["admonish"] else "code"
+                fences.append((marker[0], len(marker), kind))
+        elif not any(kind == "code" for _, _, kind in fences):
+            line = fix_line(line)
+        out.append(line)
+    return "\n".join(out)
 
 
 class ParagraphParser(HTMLParser):
@@ -274,8 +366,6 @@ def inject(page_html, description, tags):
     match = MARKER_LINE_RE.search(page_html)
     if not match:
         return None
-    if not DESCRIPTION_RE.search(page_html):
-        warn("description meta not found")
     escaped = html.escape(description, quote=True)
     page_html = DESCRIPTION_RE.sub(
         lambda _: f'<meta name="description" content="{escaped}">', page_html, 1
@@ -304,10 +394,9 @@ def llms_entry(page):
     return f"- {md_link(page['title'], page['url'])}{note}"
 
 
-def build_llms(config, roots, pages):
+def build_llms(config, roots, pages, hidden):
     """Return llms.txt: a linked index of every page plus API pointers."""
-    history = subtree(roots, HISTORY_ROOTS)
-    hidden = subtree(roots, ARCHIVED_ROOTS) | UNLISTED
+    adrs = subtree(roots, ADR_ROOTS)
     lines = [
         f"# {config['title']}",
         "",
@@ -320,7 +409,7 @@ def build_llms(config, roots, pages):
         entries = [
             pages[c.md]
             for c in root.walk()
-            if c.md in pages and c.md not in history and c.md not in hidden
+            if c.md in pages and c.md not in adrs and c.md not in hidden
         ]
         if entries:
             lines += [f"## {root.title}", ""]
@@ -340,34 +429,37 @@ def build_llms(config, roots, pages):
     lines += [
         llms_entry(page)
         for md, page in pages.items()
-        if md in history and md not in hidden
+        if md in adrs and md not in hidden
     ]
     return "\n".join(lines) + "\n"
 
 
-def build_llms_full(config, roots, pages):
-    """Return llms-full.txt: the markdown source of each page in SUMMARY order."""
-    excluded = subtree(roots, HISTORY_ROOTS | ARCHIVED_ROOTS) | UNLISTED
+def build_llms_full(config, roots, pages, hidden, problems):
+    """Return llms-full.txt: the markdown source of each page in SUMMARY order.
+
+    A missing source file is added to problems, so nothing is written.
+    """
+    excluded = hidden | subtree(roots, ADR_ROOTS)
     out = [f"# {config['title']}\n\n> {config['description']}\n"]
     for md, page in pages.items():
         if md in excluded:
             continue
         source = config["src"] / md
         if not source.is_file():
-            warn(f"source {source} not found")
+            problems.append(f"source {source} not found")
             continue
         text = EMBED_RE.sub(r"Embedded source: \1", source.read_text())
+        text = absolutize_links(text, md, config["site"])
         out.append(f"\n---\nSource: {page['url']}\n\n{text.rstrip()}\n")
     return "".join(out)
 
 
-def build_sitemap(roots, pages):
+def build_sitemap(pages, hidden):
     """Return sitemap.xml listing the canonical URL of every current page."""
-    excluded = subtree(roots, ARCHIVED_ROOTS) | UNLISTED
     urls = "".join(
         f"  <url><loc>{xml_escape(p['url'])}</loc></url>\n"
         for md, p in pages.items()
-        if md not in excluded
+        if md not in hidden
     )
     return (
         '<?xml version="1.0" encoding="UTF-8"?>\n'
@@ -376,7 +468,7 @@ def build_sitemap(roots, pages):
     )
 
 
-def check(writes, chapter_files):
+def check(writes, canonical_files, noindex_files):
     """Return a list of problems with the output; empty means safe to write."""
     problems = []
     for file, text in writes.items():
@@ -385,8 +477,14 @@ def check(writes, chapter_files):
         head_end = text.find("</head>")
         if head_end < 0 or MARKER in text:
             problems.append(f"{file}: bad head after injection")
-        elif file in chapter_files and text.count('rel="canonical"', 0, head_end) != 1:
+        elif (
+            file in canonical_files and text.count('rel="canonical"', 0, head_end) != 1
+        ):
             problems.append(f"{file}: expected one canonical tag in the head")
+        elif file in noindex_files and (
+            NOINDEX not in text[:head_end] or 'rel="canonical"' in text[:head_end]
+        ):
+            problems.append(f"{file}: expected noindex and no canonical")
     if "sitemap.xml" in {f.name for f in writes}:
         sitemap = next(t for f, t in writes.items() if f.name == "sitemap.xml")
         try:
@@ -444,6 +542,11 @@ def main():
 
     writes = {}  # output file -> new content
     problems = []  # anything here means nothing is written
+    listed = {c.md for r in roots for c in r.walk()}
+    for path in sorted((ARCHIVED_ROOTS | ADR_ROOTS | UNLISTED) - listed):
+        problems.append(f"{path} is configured in docs-seo.py but not in SUMMARY.md")
+    noindex_pages = subtree(roots, ARCHIVED_ROOTS) | UNLISTED
+    canonical_files, noindex_files = set(), set()
     pages = {}  # md path -> page info, SUMMARY order, de-duplicated
     for chapter in (c for r in roots for c in r.walk()):
         if chapter.md is None or chapter.md in pages:
@@ -455,16 +558,24 @@ def main():
             continue
         root_page = path == "index.html"
         page_html = file.read_text()
+        if not DESCRIPTION_RE.search(page_html):
+            problems.append(f"{file}: description meta not found")
+            continue
         description = describe(page_html)
         pages[chapter.md] = page = {
             "title": config["title"] if root_page else chapter.title,
-            "url": config["site"] + ("" if root_page else path),
+            "url": page_url(config["site"], chapter.md),
             "description": description or config["description"],
             "fallback": description is None,
         }
-        tags = head_tags(
-            page["url"], page["title"], page["description"], config["title"]
-        )
+        if chapter.md in noindex_pages:
+            tags = [NOINDEX]
+            noindex_files.add(file)
+        else:
+            tags = head_tags(
+                page["url"], page["title"], page["description"], config["title"]
+            )
+            canonical_files.add(file)
         updated = inject(page_html, page["description"], tags)
         if updated is None:
             problems.append(f"{file}: marker {MARKER} not found")
@@ -479,13 +590,16 @@ def main():
         text = file.read_text()
         if MARKER in text:
             match = MARKER_LINE_RE.search(text)
+            if not match:
+                problems.append(f"{file}: marker {MARKER} not on its own line")
+                continue
             noindex = f"{match.group(1)}{NOINDEX}\n" if file.name == "404.html" else ""
             writes[file] = MARKER_LINE_RE.sub(lambda _: noindex, text, 1)
 
     files = {
-        "sitemap.xml": build_sitemap(roots, pages),
-        "llms.txt": build_llms(config, roots, pages),
-        "llms-full.txt": build_llms_full(config, roots, pages),
+        "sitemap.xml": build_sitemap(pages, noindex_pages),
+        "llms.txt": build_llms(config, roots, pages, noindex_pages),
+        "llms-full.txt": build_llms_full(config, roots, pages, noindex_pages, problems),
     }
     if urlsplit(config["site"]).path == "/":
         files["robots.txt"] = (
@@ -495,7 +609,7 @@ def main():
         warn("site-url is not at the host root, so robots.txt is not written")
     writes.update({args.out / name: text for name, text in files.items()})
 
-    problems += check(writes, chapter_files)
+    problems += check(writes, canonical_files, noindex_files)
     if not problems:
         error = write_all(writes)
         if error:
@@ -504,7 +618,7 @@ def main():
         for problem in problems:
             warn(problem)
         print("docs-seo: output failed checks; the site is left unchanged")
-        sys.exit(1 if args.strict else 0)
+        sys.exit(1)
 
     print(
         f"docs-seo: {len(pages)} pages, wrote {', '.join(sorted(files))}, "
