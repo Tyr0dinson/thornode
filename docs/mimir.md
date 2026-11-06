@@ -261,7 +261,7 @@ Operational notes:
 - `HaltRebond`#: Halt rebonding
 - `HaltOperatorRotate`#: Halt node operator rotation
 - `OperationalVotesMin`\*: Minimum matching node votes for an operational Mimir to take effect
-- `EnableNodeChainConsensus`#: Enable/disable chain-aware consensus where validators only need to support specific chains rather than all chains. When enabled (>0), consensus, slashing, and rewards are calculated based on validators' declared chain support via MsgAddNodeChainSupport/MsgRemoveNodeChainSupport
+- `EnableNodeChainConsensus`#: Enable/disable chain-aware consensus where validators only need to support specific chains rather than all chains. When enabled (>0), observation consensus and observation slashing for a chain use the members of the active vaults serving that chain. Declared chain support (MsgAddNodeChainSupport/MsgRemoveNodeChainSupport) groups nodes into per-chain vaults at the next churn and weights bond rewards, so a change in declared support affects consensus only once a keygen puts the node in a vault for that chain
 
 ### Slashing Management
 
