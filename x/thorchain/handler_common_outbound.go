@@ -122,15 +122,9 @@ func (h CommonOutboundTxHandler) handle(ctx cosmos.Context, tx ObservedTx, inTxI
 	}
 
 	// A TxOutItem might be rescheduled (by LackSigning) rounded up to nearest multiple of RescheduleCoalesceBlocks,
-	// so check backwards from that future nearest multiple.
-	latestHeight := ctx.BlockHeight()
-	rescheduleCoalesceBlocks := h.mgr.Keeper().GetConfigInt64(ctx, constants.RescheduleCoalesceBlocks)
-	if rescheduleCoalesceBlocks > 1 {
-		overBlocks := latestHeight % rescheduleCoalesceBlocks
-		if overBlocks != 0 {
-			latestHeight += rescheduleCoalesceBlocks - overBlocks
-		}
-	}
+	// so check backwards from the furthest such height, including retries a
+	// block time change has moved.
+	latestHeight := rescheduleReach(ctx, h.mgr.Keeper())
 
 	// Pool cache to reduce repeated store reads during the nested loop.
 	// The loop may check multiple TxOutItems with the same asset, so caching

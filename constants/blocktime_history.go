@@ -123,3 +123,47 @@ func (h BlockTimeHistory) HeightAfter(from, durMs, refMs int64) int64 {
 	}
 	return cur
 }
+
+// ConvertHeight moves a deadline stored as a future height when the block time
+// changes from prevMs to newMs at height, so it keeps the wall-clock time it had
+// left: the first height at which (deadline - (height-1)) blocks of prevMs have
+// passed since height-1. Deadlines at or before height are left alone.
+func ConvertHeight(height, deadline, prevMs, newMs int64) int64 {
+	if deadline <= height {
+		return deadline
+	}
+	return height - 1 + ScaleDuration(deadline-(height-1), prevMs, newMs)
+}
+
+// CoalesceReach returns the furthest height a retry can sit at that was
+// rescheduled at any block up to now to the next multiple of a coalesce
+// interval of refBlocks reference blocks (as LackSigning does), after every
+// block time change since moved it with ConvertHeight. A retry scheduled under
+// an earlier block time can sit past the next multiple of the current
+// interval: blocks before a change rounded up to the interval at the previous
+// block time, and a speed-up stretches what was left of it over more blocks.
+// Without history it is now rounded up to a multiple of refBlocks.
+func (h BlockTimeHistory) CoalesceReach(now, refBlocks, refMs int64) int64 {
+	roundUp := func(height, ms int64) int64 {
+		if c := ScaleDuration(refBlocks, refMs, ms); c > 1 {
+			if over := height % c; over != 0 {
+				height += c - over
+			}
+		}
+		return height
+	}
+	reach := int64(math.MinInt64)
+	for i, seg := range h {
+		if seg.Height > now {
+			break
+		}
+		prevMs := refMs
+		if i > 0 {
+			prevMs = h[i-1].Ms
+		}
+		// the last retry scheduled before the change, or an earlier one already
+		// moved past it, as the change moves it
+		reach = ConvertHeight(seg.Height, max(reach, roundUp(seg.Height-1, prevMs)), prevMs, seg.Ms)
+	}
+	return max(reach, roundUp(now, h.MsAt(now, refMs)))
+}

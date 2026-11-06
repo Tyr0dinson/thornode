@@ -310,6 +310,19 @@ func outboundAttempts(ctx cosmos.Context, k keeper.Keeper, finalisedHeight, refS
 	return k.RefBlocksSince(ctx, finalisedHeight) / refSigningTransPeriod
 }
 
+// rescheduleReach returns the furthest height LackSigning can have rescheduled
+// an outbound to by now: the current height rounded up to a multiple of
+// RescheduleCoalesceBlocks, or further while a retry rounded up under an
+// earlier block time, and moved by its change, still lies ahead. Scans that
+// look for rescheduled outbounds must reach it.
+func rescheduleReach(ctx cosmos.Context, k keeper.Keeper) int64 {
+	return k.GetBlockTimeHistory(ctx).CoalesceReach(
+		ctx.BlockHeight(),
+		k.GetConfigInt64Ref(ctx, constants.RescheduleCoalesceBlocks),
+		constants.ThorchainBlockTime.Milliseconds(),
+	)
+}
+
 // LackSigning slash account that fail to sign tx
 func (s *SlasherImpl) LackSigning(ctx cosmos.Context, mgr Manager) error {
 	var resultErr error
@@ -1766,12 +1779,7 @@ func (s *SlasherImpl) solOutHashMatchedToSibling(ctx cosmos.Context, mgr Manager
 // solMatchedOutHashes scans the TxOut window once and returns the OutHash of every
 // done item of inHash.
 func (s *SlasherImpl) solMatchedOutHashes(ctx cosmos.Context, mgr Manager, inHash common.TxID, inboundHeight int64) map[string]bool {
-	end := ctx.BlockHeight()
-	if coalesce := mgr.Keeper().GetConfigInt64(ctx, constants.RescheduleCoalesceBlocks); coalesce > 1 {
-		if over := end % coalesce; over != 0 {
-			end += coalesce - over
-		}
-	}
+	end := rescheduleReach(ctx, mgr.Keeper())
 	start := inboundHeight
 	refMs := constants.ThorchainBlockTime.Milliseconds()
 	if floor := mgr.Keeper().GetBlockTimeHistory(ctx).HeightAgo(ctx.BlockHeight(), solSiblingScanMaxBlocks*refMs, refMs); start < floor {

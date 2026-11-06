@@ -1,6 +1,9 @@
 package constants
 
-import "testing"
+import (
+	"math"
+	"testing"
+)
 
 var testHistories = []BlockTimeHistory{
 	nil,
@@ -121,5 +124,38 @@ func TestElapsedMsAndHeightAfterMatchBlockByBlock(t *testing.T) {
 	}
 	if got := none.ElapsedMs(100, 400, refMs); got != 300*refMs {
 		t.Errorf("ElapsedMs without history = %d, want %d", got, 300*refMs)
+	}
+}
+
+// CoalesceReach is the furthest height of any retry rounded up to the coalesce
+// interval at its own block's time and then moved by every later change, block
+// by block.
+func TestCoalesceReachMatchesBlockByBlockMax(t *testing.T) {
+	const refMs = 6000
+	for _, h := range testHistories {
+		for _, refBlocks := range []int64{0, 1, 3, 7, 10} {
+			furthest := int64(math.MinInt64)
+			for now := int64(1); now <= 120; now++ {
+				// a change latched at the start of now moves every queued retry
+				for i, seg := range h {
+					if seg.Height == now {
+						prevMs := int64(refMs)
+						if i > 0 {
+							prevMs = h[i-1].Ms
+						}
+						furthest = ConvertHeight(now, furthest, prevMs, seg.Ms)
+					}
+				}
+				// then LackSigning at now rounds up at now's block time
+				retry := now
+				if c := ScaleDuration(refBlocks, refMs, h.MsAt(now, refMs)); c > 1 && retry%c != 0 {
+					retry += c - retry%c
+				}
+				furthest = max(furthest, retry)
+				if got := h.CoalesceReach(now, refBlocks, refMs); got != furthest {
+					t.Fatalf("%v: CoalesceReach(%d, %d) = %d, block by block %d", h, now, refBlocks, got, furthest)
+				}
+			}
+		}
 	}
 }

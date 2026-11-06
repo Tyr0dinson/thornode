@@ -46,10 +46,7 @@ func (k KVStore) RefHeightAfter(ctx cosmos.Context, from, refBlocks int64) int64
 func (k KVStore) convertStoredHeights(ctx cosmos.Context, prevMs, newMs int64) {
 	height := ctx.BlockHeight()
 	convert := func(deadline int64) int64 {
-		if deadline <= height {
-			return deadline
-		}
-		return height - 1 + constants.ScaleDuration(deadline-(height-1), prevMs, newMs)
+		return constants.ConvertHeight(height, deadline, prevMs, newMs)
 	}
 
 	k.convertJailReleaseHeights(ctx, convert)

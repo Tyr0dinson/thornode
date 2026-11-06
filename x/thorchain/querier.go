@@ -3848,7 +3848,6 @@ func (qs queryServer) queryPendingOutbound(ctx cosmos.Context, _ *types.QueryPen
 	// LackSigning does across a block time change
 	signingTransactionPeriod := qs.mgr.Keeper().GetConfigInt64Ref(ctx, constants.SigningTransactionPeriod)
 	windowStart := signingWindowStarts(ctx, qs.mgr.Keeper())
-	rescheduleCoalesceBlocks := qs.mgr.Keeper().GetConfigInt64(ctx, constants.RescheduleCoalesceBlocks)
 	// XMR and EVM token/aggregator outbounds stay live for an extended signing
 	// period (see LackSigning); scan that window and apply each item's own period
 	// below so they remain visible until they are actually rescheduled.
@@ -3857,14 +3856,9 @@ func (qs queryServer) queryPendingOutbound(ctx cosmos.Context, _ *types.QueryPen
 		startHeight = 1
 	}
 
-	// outbounds can be rescheduled to a future height which is the rounded-up nearest multiple of reschedule coalesce blocks
-	lastOutboundHeight := ctx.BlockHeight()
-	if rescheduleCoalesceBlocks > 1 {
-		overBlocks := lastOutboundHeight % rescheduleCoalesceBlocks
-		if overBlocks != 0 {
-			lastOutboundHeight += rescheduleCoalesceBlocks - overBlocks
-		}
-	}
+	// outbounds can be rescheduled to a future height which is the rounded-up nearest multiple of reschedule coalesce blocks,
+	// or further once a block time change has moved such a retry
+	lastOutboundHeight := rescheduleReach(ctx, qs.mgr.Keeper())
 
 	result := make([]*types.QueryTxOutItem, 0)
 	for height := startHeight; height <= lastOutboundHeight; height++ {

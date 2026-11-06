@@ -1937,15 +1937,9 @@ func findOriginalMemoForOutbound(ctx cosmos.Context, mgr Manager, tx common.Obse
 	}
 
 	// A TxOutItem might be rescheduled (by LackSigning) rounded up to nearest multiple of RescheduleCoalesceBlocks,
-	// so check backwards from that future nearest multiple.
-	latestHeight := ctx.BlockHeight()
-	rescheduleCoalesceBlocks := k.GetConfigInt64(ctx, constants.RescheduleCoalesceBlocks)
-	if rescheduleCoalesceBlocks > 1 {
-		overBlocks := latestHeight % rescheduleCoalesceBlocks
-		if overBlocks != 0 {
-			latestHeight += rescheduleCoalesceBlocks - overBlocks
-		}
-	}
+	// so search up to the furthest such height, including retries a block time
+	// change has moved.
+	latestHeight := rescheduleReach(ctx, k)
 
 	// Collect all matching TxOutItems
 	var matches []matchedOutbound
