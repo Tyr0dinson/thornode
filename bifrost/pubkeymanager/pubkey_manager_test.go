@@ -521,3 +521,68 @@ func (s *PubKeyMgrSuite) TestFetchPubKeysError(c *C) {
 	pubkeyMgr.fetchPubKeys(false)
 	c.Check(pubkeyMgr.HasPubKey(pk1), Equals, true)
 }
+
+// A GetVault failure for one member vault must not shrink the supported chain
+// set: the observer would stop scanning that vault's chains until a later
+// refresh succeeded.
+func (s *PubKeyMgrSuite) TestFetchPubKeysKeepsChainsOnPartialVaultFailure(c *C) {
+	nodePk := types.GetRandomPubKey()
+	btcVaultPk := types.GetRandomPubKey()
+	ethVaultPk := types.GetRandomPubKey()
+
+	newServer := func(failETH bool) *httptest.Server {
+		return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			var body any
+			switch r.URL.Path {
+			case "/thorchain/vaults/pubkeys":
+				var result openapi.VaultPubkeysResponse
+				for _, pk := range []common.PubKey{btcVaultPk, ethVaultPk} {
+					result.Asgard = append(result.Asgard, openapi.VaultInfo{
+						PubKey:     pk.String(),
+						Membership: []string{nodePk.String()},
+					})
+				}
+				body = result
+			case "/thorchain/vault/" + btcVaultPk.String():
+				body = types.NewVault(1, types.VaultStatus_ActiveVault, types.VaultType_AsgardVault, btcVaultPk, []string{common.BTCChain.String()}, nil)
+			case "/thorchain/vault/" + ethVaultPk.String():
+				if failETH {
+					w.WriteHeader(http.StatusInternalServerError)
+					return
+				}
+				body = types.NewVault(1, types.VaultStatus_ActiveVault, types.VaultType_AsgardVault, ethVaultPk, []string{common.ETHChain.String()}, nil)
+			default:
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
+			buf, err := json.Marshal(body)
+			c.Assert(err, IsNil)
+			_, _ = w.Write(buf)
+		}))
+	}
+	newBridge := func(server *httptest.Server) thorclient.ThorchainBridge {
+		bridge, err := thorclient.NewThorchainBridge(config.BifrostClientConfiguration{
+			ChainID:   "thorchain",
+			ChainHost: server.URL[7:],
+		}, nil, nil)
+		c.Assert(err, IsNil)
+		return bridge
+	}
+
+	okServer := newServer(false)
+	defer okServer.Close()
+	pubkeyMgr, err := NewPubKeyManager(newBridge(okServer), nil)
+	c.Assert(err, IsNil)
+	pubkeyMgr.AddNodePubKey(nodePk, common.SigningAlgoSecp256k1)
+
+	pubkeyMgr.fetchPubKeys(false)
+	want := map[common.Chain]bool{common.BTCChain: true, common.ETHChain: true}
+	c.Assert(pubkeyMgr.GetSupportedChains(), DeepEquals, want)
+
+	// A fresh bridge skips the one-block response cache.
+	failServer := newServer(true)
+	defer failServer.Close()
+	pubkeyMgr.bridge = newBridge(failServer)
+	pubkeyMgr.fetchPubKeys(false)
+	c.Check(pubkeyMgr.GetSupportedChains(), DeepEquals, want)
+}

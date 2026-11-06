@@ -293,6 +293,10 @@ func (pkm *PubKeyManager) fetchPubKeys(prune bool) {
 	nodePubKey := pkm.GetNodePubKey(common.SigningAlgoSecp256k1)
 	var pubkeys common.PubKeys
 	chainsSet := make(map[common.Chain]bool)
+	// chainsComplete is false when any member vault's details could not be
+	// fetched. A partial set would stop observation on that vault's chains, so
+	// the previous set is kept until a refresh sees every vault.
+	chainsComplete := true
 
 	for _, pk := range addressPairs {
 		signer := false
@@ -308,6 +312,7 @@ func (pkm *PubKeyManager) fetchPubKeys(prune bool) {
 			vault, err := pkm.bridge.GetVault(pk.PubKey.String())
 			if err != nil {
 				pkm.logger.Warn().Err(err).Str("vault_pubkey", pk.PubKey.String()).Msg("fail to get vault details")
+				chainsComplete = false
 			} else if vault.IsActive() || vault.IsRetiring() {
 				// Only include chains from Active or Retiring vaults
 				for _, chainStr := range vault.Chains {
@@ -325,10 +330,15 @@ func (pkm *PubKeyManager) fetchPubKeys(prune bool) {
 		pubkeys = append(pubkeys, pk.PubKey)
 	}
 
-	// Update supported chains
-	pkm.chainsMutex.Lock()
-	pkm.supportedChains = chainsSet
-	pkm.chainsMutex.Unlock()
+	// Update supported chains, unless a vault lookup failed (keep the last
+	// complete set rather than dropping that vault's chains).
+	if chainsComplete {
+		pkm.chainsMutex.Lock()
+		pkm.supportedChains = chainsSet
+		pkm.chainsMutex.Unlock()
+	} else {
+		pkm.logger.Warn().Msg("vault chain set incomplete, keeping previous supported chains")
+	}
 
 	pkm.updateContractAddresses(addressPairs)
 
