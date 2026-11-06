@@ -2858,7 +2858,10 @@ func (c *signCountChainClient) SignTx(tai types.TxOutItem, height int64) ([]byte
 // H-1; a HALTSIGNING that activates at H must still stop it.
 func (s *SignCoverageSuite) TestSignAndBroadcast_HaltSigningAtItemHeight(c *C) {
 	vaultPubKey, _ := common.NewPubKey(pubkeymanager.MockPubkey)
-	for halt, wantSigns := range map[int64]int{100: 0, 101: 1} {
+	for halt, want := range map[int64]struct {
+		signs int
+		err   error
+	}{100: {0, errRetryLater}, 101: {1, nil}} {
 		bridge := &mockSignBridge{
 			blockHeight: 99,
 			constants: map[string]int64{
@@ -2888,8 +2891,8 @@ func (s *SignCoverageSuite) TestSignAndBroadcast_HaltSigningAtItemHeight(c *C) {
 			Height: 100,
 		}
 		_, _, err = sign.signAndBroadcast(item)
-		c.Assert(err, IsNil)
-		c.Assert(client.signs, Equals, wantSigns, Commentf("halt %d", halt))
+		c.Assert(err, Equals, want.err, Commentf("halt %d", halt))
+		c.Assert(client.signs, Equals, want.signs, Commentf("halt %d", halt))
 		c.Assert(storage.Close(), IsNil)
 	}
 }
