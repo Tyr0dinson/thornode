@@ -291,26 +291,6 @@
         "LPIncomeSplit": "9406",
         "NodeIncomeSplit": "594",
         "bond_reward_rune": "3330664278",
-        "chain_bond_units": [
-          {
-            "chain": "BTC",
-            "units": "51"
-          }
-        ],
-        "chain_rewards": [
-          {
-            "amount": "124651093",
-            "chain": "BTC"
-          },
-          {
-            "amount": "29537764",
-            "chain": "ETH"
-          },
-          {
-            "amount": "3176475421",
-            "chain": "GAIA"
-          }
-        ],
         "total_bond_units": "51"
       },
       "network_fees": [

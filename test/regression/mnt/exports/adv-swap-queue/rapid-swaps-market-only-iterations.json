@@ -261,22 +261,6 @@
         "LPIncomeSplit": "9600",
         "NodeIncomeSplit": "400",
         "bond_reward_rune": "4701523",
-        "chain_bond_units": [
-          {
-            "chain": "BTC",
-            "units": "16"
-          }
-        ],
-        "chain_rewards": [
-          {
-            "amount": "2703005",
-            "chain": "BTC"
-          },
-          {
-            "amount": "1998518",
-            "chain": "ETH"
-          }
-        ],
         "total_bond_units": "16"
       },
       "network_fees": [

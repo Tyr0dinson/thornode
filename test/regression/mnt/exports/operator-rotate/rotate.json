@@ -266,8 +266,6 @@
       ],
       "network": {
         "bond_reward_rune": "0",
-        "chain_bond_units": null,
-        "chain_rewards": null,
         "total_bond_units": "0"
       },
       "network_fees": [],

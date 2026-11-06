@@ -260,22 +260,6 @@
         "LPIncomeSplit": "9265",
         "NodeIncomeSplit": "735",
         "bond_reward_rune": "184043900",
-        "chain_bond_units": [
-          {
-            "chain": "BTC",
-            "units": "5"
-          }
-        ],
-        "chain_rewards": [
-          {
-            "amount": "272688",
-            "chain": "BTC"
-          },
-          {
-            "amount": "183771212",
-            "chain": "AVAX"
-          }
-        ],
         "total_bond_units": "5"
       },
       "network_fees": [
