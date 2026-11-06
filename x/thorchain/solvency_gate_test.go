@@ -772,3 +772,67 @@ func (s *SolvencyGateSuite) TestOtherFlaggedVaultKeepsChainHalted(c *C) {
 	held, _ = run(false, true)
 	c.Assert(held, Equals, int64(0))
 }
+
+// cleanupAsgardIndex drops inactive vaults from the Asgard index whatever they hold,
+// but one with inbounds parked stays listed for Bifrost, which keeps reporting its
+// solvency. Its insolvent consensus must hold the halt against another vault's
+// solvent report in the next block, as an indexed vault's does.
+func (s *SolvencyGateSuite) TestUnindexedFlaggedVaultKeepsChainHalted(c *C) {
+	const haltKey = "SolvencyHaltGAIAChain"
+	f := newSolvencyGateFixture(c, true)
+	k := f.mgr.Keeper()
+	ledger := common.NewCoins(common.NewCoin(common.ATOMAsset, cosmos.NewUint(100*common.One)))
+	f.vault.Coins = ledger
+	c.Assert(k.SetVault(f.ctx, f.vault), IsNil)
+	inactive := NewVault(1, InactiveVault, AsgardVault, GetRandomPubKey(), []string{common.GAIAChain.String()}, nil)
+	inactive.Coins = ledger
+	c.Assert(k.SetVault(f.ctx, inactive), IsNil)
+	f.parkWithVoter(c, inactive.PubKey, 10)
+
+	networkMgr := newNetworkMgr(k, f.mgr.TxOutStore(), f.mgr.EventMgr())
+	c.Assert(networkMgr.cleanupAsgardIndex(f.ctx), IsNil)
+	indexed := func() bool {
+		asgards, err := k.GetAsgardVaults(f.ctx)
+		c.Assert(err, IsNil)
+		for _, v := range asgards {
+			if v.PubKey.Equals(inactive.PubKey) {
+				return true
+			}
+		}
+		return false
+	}
+	c.Assert(indexed(), Equals, false)
+	reported, err := getReportedAsgardVaults(f.ctx, k)
+	c.Assert(err, IsNil)
+	var listed bool
+	for _, v := range reported {
+		if v.PubKey.Equals(inactive.PubKey) {
+			listed = true
+		}
+	}
+	c.Assert(listed, Equals, true)
+
+	// The unindexed vault's wallet is drained: its consensus halts the chain.
+	f.reportVaultSolvency(c, inactive.PubKey, 0, 50)
+	halt, err := k.GetMimir(f.ctx, haltKey)
+	c.Assert(err, IsNil)
+	c.Assert(halt, Equals, f.ctx.BlockHeight())
+	flagged, err := k.GetMimir(f.ctx, solvencyHaltVaultKey(inactive.PubKey, common.GAIAChain))
+	c.Assert(err, IsNil)
+	c.Assert(flagged > 0, Equals, true)
+	c.Assert(indexed(), Equals, false)
+
+	// The active vault's solvent report in the next block leaves the halt in place.
+	f.nextBlock()
+	f.reportVaultSolvency(c, f.vault.PubKey, 100*common.One, 50)
+	halt, err = k.GetMimir(f.ctx, haltKey)
+	c.Assert(err, IsNil)
+	c.Assert(halt, Equals, int64(100))
+
+	// The unindexed vault recovers and lifts the halt itself.
+	f.nextBlock()
+	f.reportVaultSolvency(c, inactive.PubKey, 100*common.One, 51)
+	halt, err = k.GetMimir(f.ctx, haltKey)
+	c.Assert(err, IsNil)
+	c.Assert(halt, Equals, int64(0))
+}

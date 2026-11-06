@@ -2460,3 +2460,56 @@ func applyMemolessOutboundLogic(version semver.Version, toi *TxOutItem, enableMe
 		toi.Memo = toi.OriginalMemo
 	}
 }
+
+// getReportedAsgardVaults returns the Asgard vaults the asgard vaults query lists
+// for Bifrost, and so the vaults whose solvency Bifrost reports: the indexed
+// vaults, plus the inactive ones that cleanupAsgardIndex dropped from the index
+// but that still carry an unsettled deficit or solvency-gated inbounds parked.
+// Inactive vaults with neither are left out. Indexed vaults keep their index order
+// and are followed by the unindexed ones in vault store order.
+func getReportedAsgardVaults(ctx cosmos.Context, k keeper.Keeper) (Vaults, error) {
+	vaults, err := k.GetAsgardVaults(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("fail to get asgard vaults: %w", err)
+	}
+
+	// Inactive Asgard vaults are removed from the Asgard index, but every vault
+	// carrying an unsettled deficit must remain observable until the deficit is
+	// resolved, and every vault with solvency-gated inbounds parked must remain
+	// observable so Bifrost reports its solvency and they can be released.
+	indexed := make(map[string]struct{}, len(vaults))
+	for _, vault := range vaults {
+		indexed[vault.PubKey.String()] = struct{}{}
+	}
+	iter := k.GetVaultIterator(ctx)
+	defer iter.Close()
+	for ; iter.Valid(); iter.Next() {
+		var vault Vault
+		if err := k.Cdc().Unmarshal(iter.Value(), &vault); err != nil {
+			return nil, fmt.Errorf("fail to unmarshal vault: %w", err)
+		}
+		if !vault.IsAsgard() || !(vault.HasDeficit() || hasSolvencyGatedInbounds(ctx, k, vault)) {
+			continue
+		}
+		if _, ok := indexed[vault.PubKey.String()]; ok {
+			continue
+		}
+		vaults = append(vaults, vault)
+		indexed[vault.PubKey.String()] = struct{}{}
+	}
+
+	reported := make(Vaults, 0, len(vaults))
+	for _, vault := range vaults {
+		if !vault.IsAsgard() {
+			continue
+		}
+		if vault.Status == InactiveVault && !vault.HasDeficit() && !hasSolvencyGatedInbounds(ctx, k, vault) {
+			continue
+		}
+		// Being in a RetiringVault blocks a node from unbonding, so list them even if having no funds.
+		if vault.HasFunds() || vault.HasDeficit() || vault.Status == ActiveVault || vault.Status == RetiringVault {
+			reported = append(reported, vault)
+		}
+	}
+	return reported, nil
+}

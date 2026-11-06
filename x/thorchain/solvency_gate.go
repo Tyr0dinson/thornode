@@ -134,13 +134,15 @@ func confirmSolvencyGate(ctx cosmos.Context, mgr Manager, vault Vault, walletCoi
 // (SolvencyHaltVault-<pubkey>-<chain>). On a solvency-gated chain Bifrost reports
 // solvent vaults alongside insolvent ones, and their consensuses can land in
 // different blocks, so a solvent report must not lift a halt another vault still
-// holds. Vaults without funds on the chain are skipped: Bifrost does not report
-// them, so they could never clear their flag. A read error returns true, which
-// keeps the chain halted.
+// holds. The vaults checked are the ones Bifrost reports (getReportedAsgardVaults),
+// which include inactive vaults dropped from the Asgard index that still have
+// inbounds parked or a deficit. Vaults without funds on the chain are skipped:
+// Bifrost does not report them, so they could never clear their flag. A read
+// error returns true, which keeps the chain halted.
 func otherVaultFlaggedInsolvent(ctx cosmos.Context, k keeper.Keeper, pubKey common.PubKey, chain common.Chain) (bool, error) {
-	vaults, err := k.GetAsgardVaults(ctx)
+	vaults, err := getReportedAsgardVaults(ctx, k)
 	if err != nil {
-		return true, fmt.Errorf("fail to get asgard vaults: %w", err)
+		return true, err
 	}
 	for _, vault := range vaults {
 		if vault.PubKey.Equals(pubKey) || !vault.HasFundsForChain(chain) {
