@@ -522,10 +522,15 @@ func (m Migrator) Migrate20to21(ctx cosmos.Context) error {
 	return m.migrate20to21Mainnet(ctx)
 }
 
-// Migrate21to22 clears the in-flight dynamic-fee accumulators (ADR-026).
+// Migrate21to22 moves monitor enrollments to their new whitelist value and
+// clears the in-flight dynamic-fee accumulators (ADR-026).
 //
-// The controller's signal is now fee revenue as a share of the pool's total
-// volume over the same span. An accumulator that straddles the upgrade height
+// DYNAMICFEE-WHITELIST-<thorname> = 2 used to mean monitor-only; it now means
+// global (charging) mode, and per-pair monitor is 3. Without the move, every
+// monitored thorname would start paying a dynamic floor at the upgrade.
+//
+// The controller's signal is now fee revenue as a share of other swappers'
+// volume through the same pools over the same span. An accumulator that straddles the upgrade height
 // carries a full epoch of fees but only post-upgrade pool volume, so its sealed
 // entry would hold an inflated signal — and being the first entry, it is the
 // whole comparison baseline when the first real gradient is evaluated, costing
@@ -539,6 +544,10 @@ func (m Migrator) Migrate21to22(ctx cosmos.Context) error {
 		return err
 	}
 	k := m.mgr.Keeper()
+
+	if err := m.migrateDynamicFeeMonitorEnrollments(ctx); err != nil {
+		return err
+	}
 
 	// Collect before deleting; mutating the store under its own iterator is
 	// not safe.
@@ -586,5 +595,81 @@ func (m Migrator) Migrate21to22(ctx cosmos.Context) error {
 	}
 
 	ctx.Logger().Info("ADR-026: cleared in-flight dynamic fee accumulators", "count", len(keys))
+	return nil
+}
+
+// legacyDynamicFeeStateMonitor is the pre-ADR-026-rework whitelist value for
+// monitor-only enrollment; the value now selects global (charging) mode.
+const legacyDynamicFeeStateMonitor int64 = 2
+
+// migrateDynamicFeeMonitorEnrollments rewrites every DYNAMICFEE-WHITELIST-*
+// mimir, and every node vote for one, that holds the legacy monitor value (2)
+// to DynamicFeeStatePerPairMonitor (3), which means the same thing. Records
+// are left alone: a monitor record is keyed per pair either way, and the
+// mimir handler's whitelist-change reset does not run here.
+//
+// Votes are moved too, so that a later vote reaching consensus on the old
+// value does not switch the thorname to charging mode, and an outstanding
+// vote count is not split between 2 and 3.
+func (m Migrator) migrateDynamicFeeMonitorEnrollments(ctx cosmos.Context) error {
+	k := m.mgr.Keeper()
+	const prefix = "DYNAMICFEE-WHITELIST-"
+
+	// Collect first; writing under an open iterator is not safe.
+	var keys []string
+	iter := k.GetMimirIterator(ctx)
+	for ; iter.Valid(); iter.Next() {
+		key := trimKeyPrefix(iter.Key())
+		if !strings.HasPrefix(strings.ToUpper(key), prefix) {
+			continue
+		}
+		var value types.ProtoInt64
+		if err := k.Cdc().Unmarshal(iter.Value(), &value); err != nil {
+			iter.Close()
+			return fmt.Errorf("read mimir %s: %w", key, err)
+		}
+		if value.GetValue() == legacyDynamicFeeStateMonitor {
+			keys = append(keys, key)
+		}
+	}
+	iter.Close()
+
+	type vote struct {
+		key    string
+		signer cosmos.AccAddress
+	}
+	var votes []vote
+	nodeIter := k.GetNodeMimirIterator(ctx)
+	for ; nodeIter.Valid(); nodeIter.Next() {
+		if !strings.HasPrefix(strings.ToUpper(trimKeyPrefix(nodeIter.Key())), prefix) {
+			continue
+		}
+		var record types.NodeMimirs
+		if err := k.Cdc().Unmarshal(nodeIter.Value(), &record); err != nil {
+			nodeIter.Close()
+			return fmt.Errorf("read node mimirs %s: %w", trimKeyPrefix(nodeIter.Key()), err)
+		}
+		for _, nm := range record.Mimirs {
+			if nm.Value == legacyDynamicFeeStateMonitor {
+				votes = append(votes, vote{nm.Key, nm.Signer})
+			}
+		}
+	}
+	nodeIter.Close()
+
+	for _, key := range keys {
+		k.SetMimir(ctx, key, types.DynamicFeeStatePerPairMonitor)
+		mimirEvent := NewEventSetMimir(strings.ToUpper(key), fmt.Sprintf("%d", types.DynamicFeeStatePerPairMonitor))
+		if err := m.mgr.EventMgr().EmitEvent(ctx, mimirEvent); err != nil {
+			ctx.Logger().Error("fail to emit set_mimir event", "error", err)
+		}
+	}
+	for _, v := range votes {
+		if err := k.SetNodeMimir(ctx, v.key, types.DynamicFeeStatePerPairMonitor, v.signer); err != nil {
+			return fmt.Errorf("move node mimir vote %s: %w", v.key, err)
+		}
+	}
+
+	ctx.Logger().Info("ADR-026: moved dynamic fee monitor enrollments to the new value", "mimirs", len(keys), "votes", len(votes))
 	return nil
 }

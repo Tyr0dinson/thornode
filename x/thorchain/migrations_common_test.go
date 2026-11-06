@@ -897,3 +897,67 @@ func (s *MigrationCommonSuite) TestMigrate21to22ClearsDynamicFeeAccumulators(c *
 	// Idempotent: a second run on an empty accumulator store is a no-op.
 	c.Assert(NewMigrator(mgr).Migrate21to22(ctx), IsNil)
 }
+
+// TestMigrate21to22MovesMonitorEnrollments: whitelist value 2 meant
+// monitor-only before the upgrade and selects global charging mode after it.
+// The migration moves the effective value and every node vote for 2 to
+// per-pair monitor (3), and leaves every other value and key alone, so a
+// monitored thorname is still not charged after the upgrade.
+func (s *MigrationCommonSuite) TestMigrate21to22MovesMonitorEnrollments(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	k := mgr.Keeper()
+
+	k.SetMimir(ctx, "DYNAMICFEE-WHITELIST-MON", 2)
+	k.SetMimir(ctx, "DYNAMICFEE-WHITELIST-ACT", 1)
+	k.SetMimir(ctx, "DYNAMICFEE-WHITELIST-OFF", 0)
+	k.SetMimir(ctx, "HALTSIGNINGBTC", 2)
+	nodeA := GetRandomValidatorNode(NodeActive).NodeAddress
+	nodeB := GetRandomValidatorNode(NodeActive).NodeAddress
+	c.Assert(k.SetNodeMimir(ctx, "DYNAMICFEE-WHITELIST-MON", 2, nodeA), IsNil)
+	c.Assert(k.SetNodeMimir(ctx, "DYNAMICFEE-WHITELIST-MON", 2, nodeB), IsNil)
+	c.Assert(k.SetNodeMimir(ctx, "DYNAMICFEE-WHITELIST-ACT", 1, nodeA), IsNil)
+	c.Assert(k.SetNodeMimir(ctx, "DYNAMICFEE-WHITELIST-ACT", 2, nodeB), IsNil)
+	c.Assert(k.SetNodeMimir(ctx, "HALTSIGNINGBTC", 2, nodeA), IsNil)
+	c.Assert(k.SetDynamicFeeRecord(ctx, types.DynamicFeeRecord{
+		Thorname: "mon", PairAssetA: "BTC.BTC", PairAssetB: "THOR.RUNE", DynamicBps: 6,
+	}), IsNil)
+
+	c.Assert(NewMigrator(mgr).Migrate21to22(ctx), IsNil)
+
+	mimir := func(key string) int64 {
+		v, err := k.GetMimir(ctx, key)
+		c.Assert(err, IsNil)
+		return v
+	}
+	c.Check(mimir("DYNAMICFEE-WHITELIST-MON"), Equals, types.DynamicFeeStatePerPairMonitor)
+	c.Check(mimir("DYNAMICFEE-WHITELIST-ACT"), Equals, types.DynamicFeeStatePerPair)
+	c.Check(mimir("DYNAMICFEE-WHITELIST-OFF"), Equals, int64(0))
+	c.Check(mimir("HALTSIGNINGBTC"), Equals, int64(2), Commentf("other keys are untouched"))
+
+	vote := func(key string, node cosmos.AccAddress) int64 {
+		votes, err := k.GetNodeMimirs(ctx, key)
+		c.Assert(err, IsNil)
+		v, ok := votes.Get(key, node)
+		c.Assert(ok, Equals, true, Commentf("%s vote kept", key))
+		return v
+	}
+	c.Check(vote("DYNAMICFEE-WHITELIST-MON", nodeA), Equals, types.DynamicFeeStatePerPairMonitor)
+	c.Check(vote("DYNAMICFEE-WHITELIST-MON", nodeB), Equals, types.DynamicFeeStatePerPairMonitor)
+	c.Check(vote("DYNAMICFEE-WHITELIST-ACT", nodeA), Equals, types.DynamicFeeStatePerPair)
+	c.Check(vote("DYNAMICFEE-WHITELIST-ACT", nodeB), Equals, types.DynamicFeeStatePerPairMonitor, Commentf("a monitor vote is a monitor vote"))
+	c.Check(vote("HALTSIGNINGBTC", nodeA), Equals, int64(2))
+
+	rec, err := k.GetDynamicFeeRecord(ctx, "mon", "BTC.BTC", "THOR.RUNE")
+	c.Assert(err, IsNil)
+	c.Check(rec.DynamicBps, Equals, uint64(6), Commentf("the monitor record is kept: same mode, same key"))
+
+	// The monitored thorname is still not charged.
+	k.SetMimir(ctx, "L1DynamicFeeEnabled", 1)
+	registerThorname(ctx, k, "mon", 0) // keeps the migrated whitelist value
+	charged := mgr.DynamicFeeMgr().GetDynamicBps(ctx, []string{"mon"}, []cosmos.Uint{cosmos.NewUint(100)}, common.BTCAsset, common.RuneAsset())
+	c.Check(charged, Equals, uint64(0))
+
+	// Idempotent: nothing holds 2 any more.
+	c.Assert(NewMigrator(mgr).Migrate21to22(ctx), IsNil)
+	c.Check(mimir("DYNAMICFEE-WHITELIST-MON"), Equals, types.DynamicFeeStatePerPairMonitor)
+}
