@@ -2535,3 +2535,62 @@ func (s *HandlerObservedTxInSuite) TestResolveReferenceMemoPreservesRawMemoOnFai
 		c.Check(stored.Tx.Tx.Memo, Equals, "", Commentf(tc.name))
 	}
 }
+
+// With chain-aware consensus, an inbound to a vault that does not serve the
+// tx's chain must not be credited, or AddFunds would widen vault.Chains and pull
+// the vault's members into that chain's electorate.
+func (s *HandlerObservedTxInSuite) TestChainAwareInboundToUnservedChainIsNoOp(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	ctx = ctx.WithBlockHeight(18)
+	k := mgr.Keeper()
+	k.SetMimir(ctx, constants.EnableNodeChainConsensus.String(), 1)
+
+	na := GetRandomValidatorNode(NodeActive)
+	c.Assert(k.SetNodeAccount(ctx, na), IsNil)
+	btcVault := NewVault(ctx.BlockHeight(), ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BTCChain}.Strings(), []ChainContract{})
+	btcVault.Membership = []string{na.PubKeySet.Secp256k1.String()}
+	c.Assert(k.SetVault(ctx, btcVault), IsNil)
+	ethVault := NewVault(ctx.BlockHeight(), ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.ETHChain}.Strings(), []ChainContract{})
+	ethVault.Membership = []string{GetRandomPubKey().String()}
+	c.Assert(k.SetVault(ctx, ethVault), IsNil)
+
+	ethVaultBTCAddr, err := ethVault.PubKey.GetAddress(common.BTCChain)
+	c.Assert(err, IsNil)
+	tx := common.NewTx(
+		GetRandomTxHash(),
+		GetRandomBTCAddress(),
+		ethVaultBTCAddr,
+		common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(1000))),
+		common.Gas{common.NewCoin(common.BTCAsset, cosmos.NewUint(100))},
+		"",
+	)
+	obsTx := NewObservedTx(tx, 12, ethVault.PubKey, 12)
+	msg := NewMsgObservedTxIn(ObservedTxs{obsTx}, na.NodeAddress)
+	_, err = NewObservedTxInHandler(mgr).handle(ctx, *msg)
+	c.Assert(err, IsNil)
+
+	updated, err := k.GetVault(ctx, ethVault.PubKey)
+	c.Assert(err, IsNil)
+	c.Check(updated.Chains, DeepEquals, common.Chains{common.ETHChain}.Strings())
+	c.Check(updated.GetCoin(common.BTCAsset).Amount.IsZero(), Equals, true)
+	c.Check(updated.InboundTxCount, Equals, int64(0))
+
+	voter, err := k.GetObservedTxInVoter(ctx, tx.ID)
+	c.Assert(err, IsNil)
+	c.Check(voter.FinalisedHeight, Equals, ctx.BlockHeight())
+	c.Check(voter.Tx.Status, Equals, common.Status_done)
+	c.Check(voter.UpdatedVault, Equals, false)
+
+	found := false
+	for _, e := range ctx.EventManager().Events() {
+		if e.Type != types.SecurityEventType {
+			continue
+		}
+		for _, attr := range e.Attributes {
+			if strings.Contains(attr.Value, "does not serve BTC") {
+				found = true
+			}
+		}
+	}
+	c.Check(found, Equals, true)
+}

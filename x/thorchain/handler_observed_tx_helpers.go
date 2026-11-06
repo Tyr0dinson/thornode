@@ -274,6 +274,22 @@ func isVaultCompromised(ctx cosmos.Context, k keeper.Keeper, vaultPubKey common.
 	return flagged > 0, nil
 }
 
+// emitUnservedChainNoOpSecurityEvent emits the operator-facing alert for an
+// inbound that reached quorum on a vault that does not serve the tx's chain.
+func emitUnservedChainNoOpSecurityEvent(ctx cosmos.Context, mgr Manager, tx common.ObservedTx, vault Vault) {
+	telemetry.IncrCounterWithLabels(
+		[]string{"thornode", "inbound", "unserved_chain_noop"},
+		1,
+		[]metrics.Label{telemetry.NewLabel("chain", telemChain(tx.Tx.Chain))},
+	)
+	msg := fmt.Sprintf("inbound to a vault that does not serve %s ignored: vault=%s chains=%s",
+		tx.Tx.Chain, vault.PubKey, strings.Join(vault.Chains, ","))
+	ctx.Logger().Info(msg, "tx", tx.Tx.ID.String())
+	if err := mgr.EventMgr().EmitEvent(ctx, NewEventSecurity(tx.Tx, msg)); err != nil {
+		ctx.Logger().Error("fail to emit unserved chain no-op security event", "pub_key", vault.PubKey.String(), "tx", tx.Tx.ID.String(), "error", err)
+	}
+}
+
 // emitCompromisedVaultNoOpSecurityEvent emits the operator-facing alert for an
 // inbound that reached quorum but was intentionally skipped because its vault is
 // flagged by CompromisedVault-<pubkey>.
@@ -370,6 +386,26 @@ func handleObservedTxInQuorum(
 			ctx.Logger().Info("observed tx in to compromised vault no-oped", "pub_key", vault.PubKey.String(), "tx", tx.Tx.ID.String())
 		} else {
 			ctx.Logger().Info("observed tx in to compromised vault pending confirmation counting", "pub_key", vault.PubKey.String(), "tx", tx.Tx.ID.String())
+		}
+		k.SetObservedTxInVoter(ctx, voter)
+		return nil
+	}
+
+	// With chain-aware consensus, vault.Chains decides which nodes observe and
+	// sign for a chain, and AddFunds would append an unlisted chain to it. An
+	// inbound to a vault that does not serve the tx's chain (only reachable by
+	// sending to an address the network never advertised for that chain) is
+	// recorded but not credited, so it cannot widen the vault's chain set,
+	// the chain's electorate or the chain liquidity cap. The funds stay on L1
+	// outside vault accounting, as for a compromised vault.
+	if vault.IsAsgard() && !vault.HasChain(tx.Tx.Chain) && k.GetConfigInt64(ctx, constants.EnableNodeChainConsensus) > 0 {
+		if err = k.SetLastChainHeight(ctx, tx.Tx.Chain, tx.BlockHeight); err != nil {
+			ctx.Logger().Error("fail to set last chain height", "error", err)
+		}
+		mgr.ObMgr().AppendObserver(tx.Tx.Chain, voter.Tx.GetSigners())
+		if hasFinalised {
+			emitUnservedChainNoOpSecurityEvent(ctx, mgr, tx, vault)
+			voter.SetDone()
 		}
 		k.SetObservedTxInVoter(ctx, voter)
 		return nil
