@@ -2137,3 +2137,36 @@ func (s *HandlerAddLiquiditySuite) TestChainLiquidityWithNoValidators(c *C) {
 	_, err := addHandler.Run(ctx, msg)
 	c.Assert(err, IsNil, Commentf("Should succeed when no validators support the chain (bootstrapping)"))
 }
+
+// The observed inbound is credited to its vault before the deposit handler
+// runs, so the cap must not count the deposit's asset a second time.
+func (s *HandlerAddLiquiditySuite) TestChainLiquidityCapCountsCreditedInboundOnce(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	mgr.Keeper().SetMimir(ctx, constants.EnableNodeChainConsensus.String(), 1)
+	// 1 of 4 validators supports BTC: limit 100 RUNE.
+	mgr.Keeper().SetMimir(ctx, constants.ChainLiquidityRunePerValidator.String(), 100*common.One)
+	validators := make(NodeAccounts, 4)
+	for i := range validators {
+		validators[i] = GetRandomValidatorNode(NodeActive)
+		c.Assert(mgr.Keeper().SetNodeAccount(ctx, validators[i]), IsNil)
+	}
+	pool := NewPool()
+	pool.Asset = common.BTCAsset
+	pool.Status = PoolAvailable
+	pool.BalanceRune = cosmos.NewUint(1000 * common.One)
+	pool.BalanceAsset = cosmos.NewUint(1000 * common.One)
+	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+
+	// 80 RUNE of existing custody plus a 15 RUNE deposit already credited.
+	vault := GetRandomVault()
+	vault.Chains = []string{common.BTCChain.String()}
+	vault.Status = ActiveVault
+	vault.Membership = []string{validators[0].PubKeySet.Secp256k1.String()}
+	vault.Coins = common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(95*common.One)))
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+
+	c.Assert(validateChainLiquidityCap(ctx, mgr, common.BTCChain, cosmos.ZeroUint()), IsNil)
+	// RUNE paired into the pool is not held by any vault and still counts.
+	c.Assert(validateChainLiquidityCap(ctx, mgr, common.BTCChain, cosmos.NewUint(5*common.One)), IsNil)
+	c.Assert(validateChainLiquidityCap(ctx, mgr, common.BTCChain, cosmos.NewUint(6*common.One)), NotNil)
+}

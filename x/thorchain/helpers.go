@@ -2974,7 +2974,12 @@ func countActiveValidatorsForChain(ctx cosmos.Context, mgr Manager, chain common
 // validateChainLiquidityCap validates that adding liquidity to a chain does not exceed
 // the chain's RUNE limit when the chain lacks super majority validator support.
 // This applies to all asset types: regular pools, secured assets, and trade assets.
-func validateChainLiquidityCap(ctx cosmos.Context, mgr Manager, chain common.Chain, additionalRune, assetAmount cosmos.Uint, pool Pool) error {
+// validateChainLiquidityCap rejects a deposit that would take a chain without
+// supermajority support past ChainLiquidityRunePerValidator per supporting
+// validator. The deposit's L1 asset is already in the vault scan: the observed
+// inbound is credited to its vault before the deposit handler runs. Only
+// additionalRune, which no vault holds, is added on top.
+func validateChainLiquidityCap(ctx cosmos.Context, mgr Manager, chain common.Chain, additionalRune cosmos.Uint) error {
 	// Skip for empty chains or THORChain
 	if chain.IsEmpty() || chain.IsTHORChain() {
 		return nil
@@ -3053,7 +3058,6 @@ func validateChainLiquidityCap(ctx cosmos.Context, mgr Manager, chain common.Cha
 
 	// Add the RUNE being added in this transaction
 	totalChainRuneAfter := totalChainRune.Add(additionalRune)
-	totalChainRuneAfter = totalChainRuneAfter.Add(pool.AssetValueInRune(assetAmount))
 
 	if totalChainRuneAfter.GT(maxChainRune) {
 		ctx.Logger().Info("chain RUNE limit exceeded for chain without super majority",

@@ -198,7 +198,7 @@ func (h AddLiquidityHandler) validate(ctx cosmos.Context, msg MsgAddLiquidity) e
 	// Skip this check for synthetic assets
 	if !msg.Asset.IsSyntheticAsset() {
 		poolChain := msg.Asset.GetLayer1Asset().GetChain()
-		if err = validateChainLiquidityCap(ctx, h.mgr, poolChain, msg.RuneAmount, msg.AssetAmount, pool); err != nil {
+		if err = validateChainLiquidityCap(ctx, h.mgr, poolChain, msg.RuneAmount); err != nil {
 			return err
 		}
 	}

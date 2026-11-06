@@ -78,7 +78,7 @@ func validateSecuredAssetDeposit(ctx cosmos.Context, mgr Manager, asset common.A
 
 	// Check chain liquidity cap for secured assets
 	chain := asset.GetLayer1Asset().GetChain()
-	if err = validateChainLiquidityCap(ctx, mgr, chain, cosmos.ZeroUint(), amount, pool); err != nil {
+	if err = validateChainLiquidityCap(ctx, mgr, chain, cosmos.ZeroUint()); err != nil {
 		return err
 	}
 
