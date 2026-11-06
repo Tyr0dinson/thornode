@@ -413,28 +413,64 @@ func (s *HandlerNodeChainSupportSuite) TestHandleRemoveChainSupportKeeperErrors(
 
 func (s *HandlerNodeChainSupportSuite) TestNodeChainSupportAnteHandler(c *C) {
 	ctx, k := setupKeeperForTest(c)
+	k.SetMimir(ctx, constants.EnableNodeChainConsensus.String(), 1)
+	FundModule(c, ctx, k, BondName, 100*common.One)
+
+	fee := k.GetNativeTxFee(ctx)
+	c.Assert(fee.IsZero(), Equals, false)
 
 	activeNode := GetRandomValidatorNode(NodeActive)
 	c.Assert(k.SetNodeAccount(ctx, activeNode), IsNil)
-
 	standbyNode := GetRandomValidatorNode(NodeStandby)
 	c.Assert(k.SetNodeAccount(ctx, standbyNode), IsNil)
 
-	// Test with MsgAddNodeChainSupport from active node
-	msgAdd := NewMsgAddNodeChainSupport(common.ETHChain.String(), activeNode.NodeAddress)
-	newCtx, err := NodeChainSupportAnteHandler(ctx, k, msgAdd)
-	c.Assert(err, IsNil)
-	c.Assert(newCtx, NotNil)
+	bondOf := func(addr cosmos.AccAddress) cosmos.Uint {
+		na, err := k.GetNodeAccount(ctx, addr)
+		c.Assert(err, IsNil)
+		return na.Bond
+	}
 
-	// Test with MsgRemoveNodeChainSupport from active node
-	msgRemove := NewMsgRemoveNodeChainSupport(common.ETHChain.String(), activeNode.NodeAddress)
-	newCtx, err = NodeChainSupportAnteHandler(ctx, k, msgRemove)
+	// Add and remove from any node status are admitted, each charged the
+	// native tx fee from bond, with no elevated mempool priority.
+	for _, na := range []NodeAccount{activeNode, standbyNode} {
+		before := bondOf(na.NodeAddress)
+		reserveBefore := k.GetRuneBalanceOfModule(ctx, ReserveName)
+
+		newCtx, err := NodeChainSupportAnteHandler(ctx, k, NewMsgAddNodeChainSupport(common.ETHChain.String(), na.NodeAddress))
+		c.Assert(err, IsNil)
+		c.Check(newCtx.Priority(), Equals, int64(0))
+		newCtx, err = NodeChainSupportAnteHandler(ctx, k, NewMsgRemoveNodeChainSupport(common.ETHChain.String(), na.NodeAddress))
+		c.Assert(err, IsNil)
+		c.Check(newCtx.Priority(), Equals, int64(0))
+
+		c.Check(bondOf(na.NodeAddress).String(), Equals, common.SafeSub(before, fee.MulUint64(2)).String())
+		c.Check(k.GetRuneBalanceOfModule(ctx, ReserveName).String(), Equals, reserveBefore.Add(fee.MulUint64(2)).String())
+	}
+
+	// A signer that is not a node account is rejected.
+	_, err := NodeChainSupportAnteHandler(ctx, k, NewMsgAddNodeChainSupport(common.ETHChain.String(), GetRandomBech32Addr()))
+	c.Assert(err, NotNil)
+
+	// A node without bond to cover the fee is rejected.
+	broke := GetRandomValidatorNode(NodeStandby)
+	broke.Bond = cosmos.ZeroUint()
+	c.Assert(k.SetNodeAccount(ctx, broke), IsNil)
+	_, err = NodeChainSupportAnteHandler(ctx, k, NewMsgRemoveNodeChainSupport(common.ETHChain.String(), broke.NodeAddress))
+	c.Assert(err, NotNil)
+
+	// With the mimir off, add is rejected before any fee is charged; remove
+	// stays available so a node can still shed a chain.
+	k.SetMimir(ctx, constants.EnableNodeChainConsensus.String(), 0)
+	before := bondOf(activeNode.NodeAddress)
+	_, err = NodeChainSupportAnteHandler(ctx, k, NewMsgAddNodeChainSupport(common.ETHChain.String(), activeNode.NodeAddress))
+	c.Assert(err, NotNil)
+	c.Check(bondOf(activeNode.NodeAddress).String(), Equals, before.String())
+	_, err = NodeChainSupportAnteHandler(ctx, k, NewMsgRemoveNodeChainSupport(common.ETHChain.String(), activeNode.NodeAddress))
 	c.Assert(err, IsNil)
-	c.Assert(newCtx, NotNil)
 
 	// Test with invalid message type
 	msgInvalid := NewMsgNetworkFee(1024, common.BTCChain, 1, 10000, GetRandomBech32Addr())
-	newCtx, err = NodeChainSupportAnteHandler(ctx, k, msgInvalid)
+	newCtx, err := NodeChainSupportAnteHandler(ctx, k, msgInvalid)
 	c.Assert(err, NotNil)
 	c.Assert(newCtx, NotNil)
 }

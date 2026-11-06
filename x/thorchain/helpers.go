@@ -683,15 +683,6 @@ func activeNodeAccountsSignerPriority(ctx cosmos.Context, k keeper.Keeper, signe
 	return ctx, cosmos.ErrUnauthorized(fmt.Sprintf("%+v are not authorized", signers))
 }
 
-// nodeAccountSignerPriority validates that signers are node accounts (any status)
-// This is used for operations that any node account should be able to perform
-func nodeAccountSignerPriority(ctx cosmos.Context, k keeper.Keeper, signers []cosmos.AccAddress) (cosmos.Context, error) {
-	if isSignedByNodeAccounts(ctx, k, signers) {
-		return ctx.WithPriority(ActiveNodePriority), nil
-	}
-	return ctx, cosmos.ErrUnauthorized(fmt.Sprintf("%+v are not authorized", signers))
-}
-
 // isSignedByNodeAccounts checks if all signers are node accounts (any status)
 func isSignedByNodeAccounts(ctx cosmos.Context, k keeper.Keeper, signers []cosmos.AccAddress) bool {
 	if len(signers) == 0 {

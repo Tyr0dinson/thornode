@@ -200,15 +200,27 @@ func (h NodeChainSupportHandler) processRemoveChainSupport(ctx cosmos.Context, m
 	return nil
 }
 
-// NodeChainSupportAnteHandler called by the ante handler to gate mempool entry
-// Allows any node account (regardless of status) to update their supported chains
+// NodeChainSupportAnteHandler called by the ante handler to gate mempool entry.
+// Any validator node account (regardless of status) may update its supported
+// chains, but like the other node config messages (set IP address, set node
+// keys, set version) each message is charged the native tx fee from bond. Add
+// messages are rejected here while chain-aware consensus is off, so they do not
+// reach the mempool only to fail in the handler.
 func NodeChainSupportAnteHandler(ctx cosmos.Context, k keeper.Keeper, msg cosmos.Msg) (cosmos.Context, error) {
-	switch msg := msg.(type) {
+	var signer cosmos.AccAddress
+	switch m := msg.(type) {
 	case *MsgAddNodeChainSupport:
-		return nodeAccountSignerPriority(ctx, k, msg.GetSigners())
+		if k.GetConfigInt64(ctx, constants.EnableNodeChainConsensus) <= 0 {
+			return ctx, cosmos.ErrUnauthorized("chain-aware consensus feature is not enabled")
+		}
+		signer = m.Signer
 	case *MsgRemoveNodeChainSupport:
-		return nodeAccountSignerPriority(ctx, k, msg.GetSigners())
+		signer = m.Signer
 	default:
 		return ctx, fmt.Errorf("invalid message type for node chain support ante handler")
 	}
+	if !isSignedByNodeAccounts(ctx, k, []cosmos.AccAddress{signer}) {
+		return ctx, cosmos.ErrUnauthorized(fmt.Sprintf("%s is not authorized", signer))
+	}
+	return ctx, k.DeductNativeTxFeeFromBond(ctx, signer)
 }
