@@ -77,6 +77,12 @@ func (s ChainSuite) TestChain(c *C) {
 	// Test ApproximateBlockMilliseconds
 	c.Assert(NOBLEChain.ApproximateBlockMilliseconds(), Equals, int64(1500))
 	c.Assert(GAIAChain.ApproximateBlockMilliseconds(), Equals, int64(6000))
+	// Base's Denim upgrade (2026-11-05) cut the block time from 2s to ~0.2s. This
+	// constant is consensus-visible (QuoteSwap derives InboundConfirmationSeconds
+	// from it), so it must track the live rate and activate coordinated at 3.22.0.
+	// Bifrost's own scanner reads block time through a node-local override, not this
+	// constant.
+	c.Assert(BASEChain.ApproximateBlockMilliseconds(), Equals, int64(200))
 
 	// Test InboundNotes
 	c.Assert(NOBLEChain.InboundNotes(), Equals, "Transfer the inbound_address the asset with the memo. Do not use multi-in, multi-out transactions.")

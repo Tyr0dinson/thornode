@@ -637,7 +637,21 @@ func (c Chain) ApproximateBlockMilliseconds() int64 {
 	case THORChain:
 		return 6_000
 	case BASEChain:
-		return 2_000
+		// Base's Denim upgrade (2026-11-05 18:00 UTC) cut the canonical block time from
+		// 2s to ~0.2s. The old 2_000 over-stated the per-block duration by 10x, so
+		// bifrost's scanner health gate (blockscanner.go: lagDuration =
+		// (chainHeight-currentBlock)*ms) read a caught-up scanner as 10x further behind
+		// than it was and tripped it unhealthy, so no node would sign BASE.
+		//
+		// CONSENSUS: this is NOT bifrost-only. QuoteSwap is wasm-whitelisted
+		// (app/wasm.go), and querier_quotes.go derives the contract-visible
+		// InboundConfirmationSeconds from this value, so a CosmWasm contract can read it
+		// during tx execution — a 24s BASE quote becomes 2s. Changing it is therefore a
+		// consensus-visible change and must activate coordinated (all nodes switch at one
+		// height, e.g. the 3.22.0 upgrade), NOT via an uncoordinated rolling patch, or
+		// old and new binaries can diverge on an AppHash. (bifrost's own consumers —
+		// health gate, resume-lag, confirmation waits — are off-chain and want 200 now.)
+		return 200
 	case TRONChain:
 		return 3_000
 	case XRPChain:
