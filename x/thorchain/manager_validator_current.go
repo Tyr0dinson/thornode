@@ -134,6 +134,26 @@ func (vm *ValidatorMgr) BeginBlock(ctx cosmos.Context, mgr Manager, existingVali
 		}
 	}
 
+	// Skip the churn while a chain it would migrate cannot sign. The churn turns
+	// these Active vaults into Retiring ones whose funds must move by signed
+	// MIGRATE outbounds; under HALTSIGNING or HaltSigning<Chain> those never sign,
+	// so the churn would strand funds in Retiring vaults until the halt lifts.
+	// HaltOutbound is deliberately not checked: it still lets migrations sign.
+	if vm.k.GetConfigInt64(ctx, constants.PauseChurnOnSigningHalt) > 0 {
+		if chain, global, halted := churnSigningHaltedChain(ctx, vm.k, vaults); halted {
+			ctx.Logger().Info("Skipping node account rotation for chain with signing halted", "chain", chain, "global", global)
+			telemetry.IncrCounterWithLabels(
+				[]string{"thornode", "churn", "skipped"},
+				float32(1),
+				[]metrics.Label{
+					telemetry.NewLabel("reason", "signing_halted"),
+					telemetry.NewLabel("chain", chain.String()),
+				},
+			)
+			return nil
+		}
+	}
+
 	// Do not churn while a RetiringVault still has real funds to migrate.
 	// Deficit-only retiring vaults are accounting records, not migration work,
 	// so they must not block validator rotation.
@@ -193,6 +213,54 @@ func (vm *ValidatorMgr) BeginBlock(ctx cosmos.Context, mgr Manager, existingVali
 		[]metrics.Label{telemetry.NewLabel("status", "ok")},
 	)
 	return nil
+}
+
+// churnMigrationChains returns the chains a churn of these Active vaults would
+// have to migrate: those on which some vault holds a non-RUNE coin that is more
+// than dust. Gas-asset dust is burned rather than signed out on the final
+// migration round (see NetworkMgr's migrate), so it needs no signing. The order is
+// the order chains first appear in vaults and their coins, which is deterministic.
+func churnMigrationChains(vaults Vaults) common.Chains {
+	var chains common.Chains
+	for i := range vaults {
+		for _, coin := range vaults[i].Coins {
+			if coin.IsRune() || coin.Amount.IsZero() {
+				continue
+			}
+			chain := coin.Asset.GetChain()
+			if coin.Asset.IsGasAsset() && coin.Amount.LTE(chain.DustThreshold()) {
+				continue
+			}
+			if !chains.Has(chain) {
+				chains = append(chains, chain)
+			}
+		}
+	}
+	return chains
+}
+
+// churnSigningHaltedChain reports the first chain the churn would migrate (see
+// churnMigrationChains) on which signing is halted, by HALTSIGNING (global) or
+// HaltSigning<Chain>, with the same height semantics bifrost's CheckSigningHalt
+// applies (set, and at or below the current height). A chain no Active vault
+// holds funds on is not checked: a churn creates no migration for it, so a
+// signing halt there cannot strand anything.
+func churnSigningHaltedChain(ctx cosmos.Context, k keeper.Keeper, vaults Vaults) (chain common.Chain, global, halted bool) {
+	chains := churnMigrationChains(vaults)
+	if len(chains) == 0 {
+		return common.EmptyChain, false, false
+	}
+	height := ctx.BlockHeight()
+	if v, err := k.GetMimir(ctx, "HALTSIGNING"); err == nil && v > 0 && v <= height {
+		return chains[0], true, true
+	}
+	for _, c := range chains {
+		v, err := k.GetMimir(ctx, fmt.Sprintf(constants.MimirTemplateHaltSigning, c))
+		if err == nil && v > 0 && v <= height {
+			return c, false, true
+		}
+	}
+	return common.EmptyChain, false, false
 }
 
 func (vm *ValidatorMgr) hasPendingKeygen(ctx cosmos.Context, keygenType thortypes.KeygenType) (bool, error) {

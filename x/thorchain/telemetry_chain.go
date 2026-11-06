@@ -44,6 +44,7 @@ var (
 	chainTelemKeyTradeAccountsEnabled = []string{"thornode", "trade_accounts", "enabled"}
 	chainTelemKeyHaltSource           = []string{"thornode", "chain", "halt_source"}
 	chainTelemKeySigningHalted        = []string{"thornode", "chain", "signing_halted"}
+	chainTelemKeyOutboundHalted       = []string{"thornode", "chain", "outbound_halted"}
 	chainTelemKeySecuredHalted        = []string{"thornode", "chain", "secured_halted"}
 	chainTelemKeyTradeHalted          = []string{"thornode", "chain", "trade_halted"}
 	chainTelemKeyRouterInfo           = []string{"thornode", "chain", "router_info"}
@@ -82,9 +83,10 @@ type chainTelemRail struct {
 	// templates the callers used, so the resulting key bytes are identical to
 	// what fmt.Sprintf("Halt%sChain", chain) and
 	// GetMimirWithRef(template, chain.String()) produced.
-	haltKey        string
-	solvencyKey    string
-	signingHaltKey string
+	haltKey         string
+	solvencyKey     string
+	signingHaltKey  string
+	outboundHaltKey string
 
 	chainLabels      []metrics.Label    // {chain}
 	haltSourceLabels [4][]metrics.Label // {reason, chain}, indexed by chainTelemHaltSourceReasons
@@ -100,11 +102,12 @@ func buildChainTelemRails() []chainTelemRail {
 		chainLabel := telemetry.NewLabel("chain", chainStr)
 
 		rail := chainTelemRail{
-			chain:          chain,
-			haltKey:        fmt.Sprintf("Halt%sChain", chainStr),
-			solvencyKey:    fmt.Sprintf("SolvencyHalt%sChain", chainStr),
-			signingHaltKey: fmt.Sprintf(constants.MimirTemplateHaltSigning, chainStr),
-			chainLabels:    []metrics.Label{chainLabel},
+			chain:           chain,
+			haltKey:         fmt.Sprintf("Halt%sChain", chainStr),
+			solvencyKey:     fmt.Sprintf("SolvencyHalt%sChain", chainStr),
+			signingHaltKey:  fmt.Sprintf(constants.MimirTemplateHaltSigning, chainStr),
+			outboundHaltKey: fmt.Sprintf(constants.MimirTemplateHaltOutbound, chainStr),
+			chainLabels:     []metrics.Label{chainLabel},
 		}
 		for i, reason := range chainTelemHaltSourceReasons {
 			rail.haltSourceLabels[i] = []metrics.Label{telemetry.NewLabel("reason", reason), chainLabel}
@@ -196,6 +199,13 @@ func emitChainDetailTelemetry(ctx cosmos.Context, mgr Manager) {
 	if v, err := k.GetMimir(ctx, "HALTSIGNING"); err == nil && v > 0 && v <= height {
 		signingHaltedGlobally = true
 	}
+	// Global outbound halt, read once the same way. Bifrost reads it (with
+	// HaltOutbound<Chain>) to stop external outbounds while still signing
+	// migrations and consolidations.
+	outboundHaltedGlobally := false
+	if v, err := k.GetMimir(ctx, constants.MimirKeyHaltOutbound); err == nil && v > 0 && v <= height {
+		outboundHaltedGlobally = true
+	}
 
 	// The first two keys IsChainHalted consults are global, so read them once here
 	// rather than once per chain inside the loop. NodePauseChainGlobal is a
@@ -256,6 +266,18 @@ func emitChainDetailTelemetry(ctx cosmos.Context, mgr Manager) {
 			}
 		}
 		telemetry.SetGaugeWithLabels(chainTelemKeySigningHalted, boolTelem(signingHalted), rail.chainLabels)
+
+		// External-outbound halt, also bifrost-only. Swaps, refunds and withdrawals
+		// stop while migrations keep signing, so the outbound queue grows with no
+		// other gauge moving. Same predicate as bifrost's CheckOutboundHalt.
+		outboundHalted := outboundHaltedGlobally
+		if !outboundHalted {
+			v, oerr := k.GetMimir(ctx, rail.outboundHaltKey)
+			if oerr == nil && v > 0 && v <= height {
+				outboundHalted = true
+			}
+		}
+		telemetry.SetGaugeWithLabels(chainTelemKeyOutboundHalted, boolTelem(outboundHalted), rail.chainLabels)
 
 		// Secured- and trade-asset halts are separate height-activated mimir families
 		// from the chain halts above. Emit the evaluated predicate rather than the raw

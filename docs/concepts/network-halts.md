@@ -28,11 +28,12 @@ Each chain has granular control allowing each chain to be halted or resumed on a
 
 The three primary chain-level halts node operators use:
 
-| Halt Type        | Mimir Key            | Example          | Effect                                                                             |
-| ---------------- | -------------------- | ---------------- | ---------------------------------------------------------------------------------- |
-| **Trading Halt** | `HALT<CHAIN>TRADING` | `HALTETHTRADING` | Stops swaps; inbound observations continue; outbounds processed; Bifrost online    |
-| **Signing Halt** | `HALTSIGNING<CHAIN>` | `HALTSIGNINGETH` | Stops outbound signing; outbounds queued; swaps/quotes still active                |
-| **Chain Halt**   | `HALT<CHAIN>CHAIN`   | `HALTETHCHAIN`   | Full halt; chain not observed; Bifrost offline; requires majority resync to resume |
+| Halt Type         | Mimir Key             | Example           | Effect                                                                             |
+| ----------------- | --------------------- | ----------------- | ---------------------------------------------------------------------------------- |
+| **Trading Halt**  | `HALT<CHAIN>TRADING`  | `HALTETHTRADING`  | Stops swaps; inbound observations continue; outbounds processed; Bifrost online    |
+| **Signing Halt**  | `HALTSIGNING<CHAIN>`  | `HALTSIGNINGETH`  | Stops outbound signing; outbounds queued; swaps/quotes still active                |
+| **Outbound Halt** | `HALTOUTBOUND<CHAIN>` | `HALTOUTBOUNDETH` | Stops external outbounds; churn migrations and consolidations still sign           |
+| **Chain Halt**    | `HALT<CHAIN>CHAIN`    | `HALTETHCHAIN`    | Full halt; chain not observed; Bifrost offline; requires majority resync to resume |
 
 ```admonish info
 When issues arise, halt **both trading and signing**. Halting only signing keeps quoting active, potentially allowing integrations to send funds that won't process.
@@ -58,15 +59,18 @@ Operators should monitor the XMR `healthy` field from Bifrost's `/status/scanner
 
 1. **Signing Halt** - Allows inbound transactions but stops the signing of outbound transactions. Outbound transactions are [queued](https://gateway.liquify.com/chain/thorchain_api/thorchain/queue). This is the least impactful halt.
    - Mimir setting: `HALTSIGNING<CHAIN>`, e.g., `HALTSIGNINGETH`
-2. **Liquidity Provider Pause** - Addition and withdrawal of liquidity are suspended but swaps and other transactions are processed.
+   - While an active Asgard vault holds funds above dust on the chain, a signing halt (or `HALTSIGNING`) also pauses the churn, because the churn's migrations could not sign. Set `PauseChurnOnSigningHalt` to `0` to churn anyway.
+2. **Outbound Halt** - Stops value leaving the network while keeping the churn running. Bifrost refuses every outbound to an external address (swaps, refunds, withdrawals, ragnarok) but still signs internal vault-to-vault transfers: a `MIGRATE` or `CONSOLIDATE` memo whose destination is an active or retiring Asgard vault on that chain. Anything else, including an EVM cancel of a stuck external outbound and Solana durable-nonce provisioning, is blocked. Blocked outbounds stay in the queue and are rescheduled as under a signing halt. It does not pause the churn.
+   - Mimir setting: `HALTOUTBOUND<CHAIN>`, e.g., `HALTOUTBOUNDETH`, or `HALTOUTBOUND` for every chain
+3. **Liquidity Provider Pause** - Addition and withdrawal of liquidity are suspended but swaps and other transactions are processed.
    - Mimir setting: `PAUSELP<CHAIN>`, e.g., `PAUSELPBCH` for BCH
-3. **Trading Halt** - Transactions on external chains are observed but not processed, only [refunds](memos.md#refunds) are given. THORNode's Bifrost is running, nodes are synced to the tip therefore trading resumption can happen very quickly.
+4. **Trading Halt** - Transactions on external chains are observed but not processed, only [refunds](memos.md#refunds) are given. THORNode's Bifrost is running, nodes are synced to the tip therefore trading resumption can happen very quickly.
    - Mimir setting: `HALT<CHAIN>TRADING`, e.g., `HALTBCHTRADING` for BCH
-4. **Chain Halt** - Serious halt where transactions on that chain are no longer observed and THORNodes will not be synced to the chain tip, usually with their Bifrost offline. Resumption will require a majority of nodes syncing to the tip before trading can commence.
+5. **Chain Halt** - Serious halt where transactions on that chain are no longer observed and THORNodes will not be synced to the chain tip, usually with their Bifrost offline. Resumption will require a majority of nodes syncing to the tip before trading can commence.
    - Mimir setting: `HALT<CHAIN>CHAIN`, e.g., `HALTBCHCHAIN` for BCH
-5. **Pool Deposit Pause** - Suspends deposits into a specific Liquidity Pool.
+6. **Pool Deposit Pause** - Suspends deposits into a specific Liquidity Pool.
    - Mimir setting: `PAUSELPDEPOSIT-<ASSET>`, e.g., `PAUSELPDEPOSIT-BTC-BTC` for BTC pool
-6. **Streaming Swap Pause** - Pauses streaming swaps, affecting user slip protection.
+7. **Streaming Swap Pause** - Pauses streaming swaps, affecting user slip protection.
    - Mimir setting: `StreamingSwapPause`
 
 ```admonish warning
@@ -160,6 +164,7 @@ curl https://thornode.thorchain.org/thorchain/mimir
 | Key                      | Example                  | Effect                                            |
 | ------------------------ | ------------------------ | ------------------------------------------------- |
 | `HALTSIGNING<CHAIN>`     | `HALTSIGNINGETH`         | Outbound txs queued, no broadcast                 |
+| `HALTOUTBOUND<CHAIN>`    | `HALTOUTBOUNDETH`        | External outbounds queued; migrations still sign  |
 | `PAUSELP<CHAIN>`         | `PAUSELPBCH`             | LPs cannot add/remove liquidity                   |
 | `HALT<CHAIN>TRADING`     | `HALTBCHTRADING`         | Refunds only, no swaps (includes TA/SA swaps)     |
 | `HALT<CHAIN>CHAIN`       | `HALTBCHCHAIN`           | Full halt, Bifrost offline (includes TA/SA swaps) |
@@ -173,6 +178,8 @@ curl https://thornode.thorchain.org/thorchain/mimir
 | `PAUSELP`         | All pools pause LP adds/removals |
 | `HALTTRADING`     | No swaps across any chain        |
 | `HaltChainGlobal` | All external chains halted       |
+| `HALTSIGNING`     | No outbound signing on any chain |
+| `HALTOUTBOUND`    | No external outbounds; churn on  |
 
 ### Secured Assets
 

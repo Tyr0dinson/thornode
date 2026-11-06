@@ -42,10 +42,18 @@ mimir_strings.go):
 | -------------------------------------------------------------------------------------------------- | --------------------------- |
 | `MimirTemplateHaltTrading` `Halt%sTrading`                                                         | `HaltETHTrading`            |
 | `MimirTemplateHaltSigning` `HaltSigning%s`                                                         | `HaltSigningBTC`            |
+| `MimirTemplateHaltOutbound` `HaltOutbound%s` (global `MimirKeyHaltOutbound` `HALTOUTBOUND`)        | `HaltOutboundBTC`           |
 | `MimirTemplateMaxGas` `MaxGas-%s`                                                                  | `MaxGas-ETH`                |
 | `MimirTemplateRevShareThorName` `REVSHARE-%s`                                                      | `REVSHARE-foobar`           |
 | `MimirTemplatePauseLPDeposit` `PauseLPDeposit-%s`                                                  | `PauseLPDeposit-BTC-BTC`    |
 | `MimirTemplateSwapSlipBasisPointsMin` with `MimirRefL1` / `MimirRefSynth` / `MimirRefTradeAccount` | `SwapSlipBasisPointsMin-L1` |
+
+The signing-halt families (`HALTSIGNING` / `HaltSigning<Chain>`, `HALTOUTBOUND` /
+`HaltOutbound<Chain>`) are read by bifrost through
+`bifrost/pkg/chainclients/shared/signing`. HaltOutbound lets internal transfers
+through (`MIGRATE` or `CONSOLIDATE` to an Active or Retiring Asgard vault address);
+HaltSigning stops everything and also pauses the churn in
+`ValidatorMgr.BeginBlock`, gated by the `PauseChurnOnSigningHalt` constant.
 
 Template keys must still satisfy `MimirKeyRegex` (`^[a-zA-Z0-9-]+$`) and
 `MaxMimirLength` (128, constants/constants.go:94). Assets contain `.`, so asset

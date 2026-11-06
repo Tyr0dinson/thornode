@@ -162,6 +162,14 @@ func (c *SOLClient) nonceProvisionCheck(anchorHeight int64) {
 	if signing.IsSigningHalted(c.bridge, c.cfg.ChainID, c.logger) {
 		return
 	}
+	// Creating a nonce account moves rent from the vault to an account that is
+	// not an Asgard vault address, so it is not an internal transfer and
+	// HaltOutbound blocks it. Outbounds (migrations included) fall back to the
+	// recent-blockhash path while the nonce account is missing, so this never
+	// stalls the churn.
+	if signing.IsOutboundHalted(c.bridge, c.cfg.ChainID, c.logger) {
+		return
+	}
 	// An unhealthy scanner signals a degraded node that should not initiate keysigns.
 	if !c.IsBlockScannerHealthy() {
 		return

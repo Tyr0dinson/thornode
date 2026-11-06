@@ -1,0 +1,152 @@
+########################################################################################
+## The churn pauses while signing is halted on a chain it would migrate, and proceeds
+## under HaltOutbound (which bifrost still lets migrations sign through).
+## - the active vault holds BTC, so a churn would have to migrate BTC
+## - HaltSigningBTC: the regular churn and its retry schedule no keygen
+## - HaltSigningBTC lifted, HaltOutboundBTC set: the next retry schedules the keygen
+########################################################################################
+type: env
+key: CHURN_INTERVAL
+value: "10"
+---
+type: env
+key: CHURN_RETRY_INTERVAL
+value: "10"
+---
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-pool-state.yaml" }}
+---
+type: state
+genesis:
+  initial_height: "0"
+  app_state:
+    bank:
+      balances:
+        - address: {{ addr_module_bond }}
+          coins:
+            - amount: "10000000000000"
+              denom: rune
+    thorchain:
+      mimirs:
+        - key: HaltSigningBTC
+          value: "1"
+      node_accounts:
+        - active_block_height: "0"
+          bond: "5000000000000"
+          ip_address: 1.1.1.1
+          node_address: {{ addr_thor_dog }}
+          bond_address: {{ addr_thor_dog }}
+          pub_key_set:
+            secp256k1: {{ pubkey_dog }}
+            ed25519: "tthorpub1zcjduepqfan43w2emjhfv45gspf98squqlnl2rcchc3e4dx7z2nxr27edflsy2e8ql"
+          signer_membership: []
+          status: Active
+          # matches the priv_validator_key.json mounted in the test container
+          validator_cons_pub_key: tthorcpub1zcjduepqq75h7uy6qhesh9d3a9tuk0mzrnc46u8rye44ze6peua3zmpfh23q8z37sz
+          version: {{ version }}
+        - bond: "2500000000000"
+          ip_address: 1.1.1.1
+          node_address: {{ addr_thor_cat }}
+          bond_address: {{ addr_thor_cat }}
+          pub_key_set:
+            secp256k1: {{ pubkey_cat }}
+            ed25519: "tthorpub1zcjduepqfan43w2emjhfv45gspf98squqlnl2rcchc3e4dx7z2nxr27edflsy2e8ql"
+          status: Active
+          validator_cons_pub_key: {{ cons_pubkey_cat }}
+          version: {{ version }}
+        - bond: "2500000000000"
+          ip_address: 1.1.1.1
+          node_address: {{ addr_thor_fox }}
+          bond_address: {{ addr_thor_fox }}
+          pub_key_set:
+            secp256k1: {{ pubkey_fox }}
+            ed25519: "tthorpub1zcjduepqfan43w2emjhfv45gspf98squqlnl2rcchc3e4dx7z2nxr27edflsy2e8ql"
+          status: Active
+          validator_cons_pub_key: {{ cons_pubkey_fox }}
+          version: {{ version }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/mimir
+asserts:
+  - .HALTSIGNINGBTC == 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/vaults/asgard
+asserts:
+  - .|length == 1
+  - .[0].status == "ActiveVault"
+  - .[0].coins[]|select(.asset == "BTC.BTC")|.amount == "100000000"
+---
+########################################################################################
+# HaltSigningBTC: the regular churn at 10 and the retry at 20 are both skipped
+########################################################################################
+type: create-blocks
+count: 20
+---
+type: check
+endpoint: http://localhost:1317/thorchain/lastblock
+asserts:
+  - .[0].thorchain == 21
+---
+type: check
+endpoint: http://localhost:1317/thorchain/keygen/10/{{ pubkey_dog }}
+asserts:
+  - (.keygen_block.keygens // [])|length == 0
+---
+type: check
+endpoint: http://localhost:1317/thorchain/keygen/20/{{ pubkey_dog }}
+asserts:
+  - (.keygen_block.keygens // [])|length == 0
+---
+type: check
+endpoint: http://localhost:1317/thorchain/vaults/asgard
+asserts:
+  - .|length == 1
+  - .[0].status == "ActiveVault"
+---
+########################################################################################
+# lift HaltSigningBTC and halt BTC outbounds instead
+########################################################################################
+type: tx-mimir
+signer: {{ addr_thor_dog }}
+key: HaltSigningBTC
+value: 0
+---
+type: create-blocks
+count: 1
+---
+type: tx-mimir
+signer: {{ addr_thor_dog }}
+key: HaltOutboundBTC
+value: 1
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/mimir
+asserts:
+  - .HALTSIGNINGBTC == 0
+  - .HALTOUTBOUNDBTC == 1
+---
+########################################################################################
+# HaltOutboundBTC does not pause the churn: the retry at 30 schedules the keygen
+########################################################################################
+type: create-blocks
+count: 7
+---
+type: check
+endpoint: http://localhost:1317/thorchain/lastblock
+asserts:
+  - .[0].thorchain == 30
+---
+type: check
+endpoint: http://localhost:1317/thorchain/keygen/30/{{ pubkey_dog }}
+asserts:
+  - .keygen_block.height == 30
+  - '[.keygen_block.keygens[]|select(.type == "AsgardKeygen")]|length == 1'
+  - '[.keygen_block.keygens[]|select(.type == "AsgardKeygen")][0].members|length == 3'

@@ -176,6 +176,7 @@ func NewConstantValue() *ConstantVals {
 			L1DynamicFeeWindowEpochs:            3,                  // epochs averaged on each side of the last bps change when measuring the fees_rune gradient (clamped into [1, MaxDynamicFeeHistory])
 			VaultDeficitGasHaltMaxGasMultiplier: 30,                 // multiple of current max gas at which gas-related vault deficits halt signing and trading
 			MaxAbsentKeygenReporters:            1,                  // number of keygen members allowed to skip MsgTssPool reporting before a successful keygen finalizes (mainnet default)
+			PauseChurnOnSigningHalt:             1,                  // >0 skips the churn while HALTSIGNING or HaltSigning<Chain> covers a chain an active vault holds funds on; 0 disables the pause
 			BondYieldEnabled:                    0,                  // enable/disable automatic bond-yield payouts
 			MaxMissingObservationChurnOut:       0,                  // max number of nodes to be churned out per churn for missing observations on a chain (0 = off)
 			MissingObservationChurnOutBps:       5000,               // a node is marked when its decayed missed/total observation ratio on any chain is above this (basis points)

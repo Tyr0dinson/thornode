@@ -303,19 +303,7 @@ func (c *SOLClient) keepAliveVault(vault ttypes.Vault, currentSlot uint64, refre
 		return nil
 	}
 
-	toi := stypes.TxOutItem{
-		Height:           anchorHeight,
-		Chain:            common.SOLChain,
-		ToAddress:        addr,
-		VaultPubKey:      vault.PubKey,
-		VaultPubKeyEddsa: vault.PubKeyEddsa,
-		Coins: common.Coins{
-			common.NewCoin(common.SOLAsset, amount),
-		},
-		Memo:    mem.NewConsolidateMemo().String(),
-		MaxGas:  common.Gas{common.SOLChain.NativeGasToThorCoin(cosmos.NewUint(baseFeePerSigLamports))},
-		GasRate: baseFeePerSigLamports,
-	}
+	toi := keepAliveTxOutItem(vault, addr, amount, anchorHeight)
 
 	c.logger.Info().
 		Str("vault", vaultAddr).
@@ -324,6 +312,13 @@ func (c *SOLClient) keepAliveVault(vault ttypes.Vault, currentSlot uint64, refre
 		Int64("anchor_height", anchorHeight).
 		Str("amount", amount.String()).
 		Msg("vault signature is stale, sending keep-alive self-sign")
+
+	// The keep-alive is a CONSOLIDATE self-send, so HaltOutbound lets it through
+	// (it keeps the scanner able to observe migrations). Classify the built item
+	// anyway so a destination that is not this Asgard vault fails closed.
+	if signing.IsTxOutBlockedByOutboundHalt(c.bridge, toi, c.logger) {
+		return nil
+	}
 
 	// anchorHeight is the shared, valid keysign height: every member derives the
 	// same THORChain-block boundary (≤ tip), so they batch into one keysign session
@@ -393,4 +388,22 @@ func keepAliveAmount(anchorSlot uint64) cosmos.Uint {
 	dust := common.SOLChain.DustThreshold()
 	jitter := anchorSlot % dust.Uint64()
 	return dust.MulUint64(2).AddUint64(jitter)
+}
+
+// keepAliveTxOutItem is the keep-alive self-send: a CONSOLIDATE transfer from the
+// vault to its own SOL address, anchored at anchorHeight.
+func keepAliveTxOutItem(vault ttypes.Vault, addr common.Address, amount cosmos.Uint, anchorHeight int64) stypes.TxOutItem {
+	return stypes.TxOutItem{
+		Height:           anchorHeight,
+		Chain:            common.SOLChain,
+		ToAddress:        addr,
+		VaultPubKey:      vault.PubKey,
+		VaultPubKeyEddsa: vault.PubKeyEddsa,
+		Coins: common.Coins{
+			common.NewCoin(common.SOLAsset, amount),
+		},
+		Memo:    mem.NewConsolidateMemo().String(),
+		MaxGas:  common.Gas{common.SOLChain.NativeGasToThorCoin(cosmos.NewUint(baseFeePerSigLamports))},
+		GasRate: baseFeePerSigLamports,
+	}
 }

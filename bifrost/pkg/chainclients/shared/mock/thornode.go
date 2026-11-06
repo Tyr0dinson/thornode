@@ -33,7 +33,9 @@ func handleThornodeApi(w http.ResponseWriter, r *http.Request) {
 		file = "lastblock/zec"
 	case "/thorchain/mimir/key/MaxUTXOsToSpend",
 		"/thorchain/mimir/key/MaxConfirmations-ZEC",
-		"/thorchain/mimir/key/ConfMultiplierBasisPoints-ZEC":
+		"/thorchain/mimir/key/ConfMultiplierBasisPoints-ZEC",
+		"/thorchain/mimir/key/HALTOUTBOUND",
+		"/thorchain/mimir/key/HaltOutboundZEC":
 		writeText("-1", w)
 		return
 	case "/thorchain/vaults/tthorpub1addwnpepqwznsrgk2t5vn2cszr6ku6zned6tqxknugzw3vhdcjza284d7djp5rql6vn/sign":

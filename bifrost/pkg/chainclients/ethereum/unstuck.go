@@ -101,6 +101,12 @@ func (c *Client) unstuckAction() {
 			}
 		}
 
+		// HaltOutbound: a cancel is classified by the outbound it replaces, so only
+		// a stuck migration is cancelled while external outbounds are halted.
+		if signing.IsCancelBlockedByOutboundHalt(c.bridge, common.ETHChain, item.TxOutItem, clog) {
+			continue
+		}
+
 		clog.Warn().Msg("attempting unstuck")
 
 		err = c.unstuckTx(clog, item)

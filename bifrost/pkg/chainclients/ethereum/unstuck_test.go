@@ -36,11 +36,14 @@ type UnstuckTestSuite struct {
 	bridge   thorclient.ThorchainBridge
 	m        *metrics.Metrics
 	server   *httptest.Server
+	// haltOutbound, when set, is served for the HaltOutboundETH mimir.
+	haltOutbound string
 }
 
 var _ = Suite(&UnstuckTestSuite{})
 
 func (s *UnstuckTestSuite) SetUpTest(c *C) {
+	s.haltOutbound = ""
 	s.m = GetMetricForTest(c)
 	c.Assert(s.m, NotNil)
 	setupMocknetThorConfig()
@@ -89,8 +92,16 @@ func (s *UnstuckTestSuite) SetUpTest(c *C) {
 		case "/thorchain/mimir/key/EVMDisableContractWhitelist":
 			_, err = rw.Write([]byte(`1`))
 			c.Assert(err, IsNil)
+		case "/thorchain/mimir/key/HaltOutboundETH":
+			value := "0"
+			if s.haltOutbound != "" {
+				value = s.haltOutbound
+			}
+			_, err = rw.Write([]byte(value))
+			c.Assert(err, IsNil)
 		case "/thorchain/mimir/key/HALTSIGNING",
-			"/thorchain/mimir/key/HaltSigningETH":
+			"/thorchain/mimir/key/HaltSigningETH",
+			"/thorchain/mimir/key/HALTOUTBOUND":
 			_, err = rw.Write([]byte(`0`))
 			c.Assert(err, IsNil)
 		case thorclient.PubKeysEndpoint:
@@ -377,4 +388,75 @@ func (s *UnstuckTestSuite) TestUnstuckProcess(c *C) {
 
 	// after one block the goroutine should remove from signer cache
 	c.Assert(e.signerCacheManager.HasSigned(toi.CacheHash()), Equals, false)
+}
+
+// Under HaltOutboundETH a cancel is classified by the outbound it replaces: a
+// stuck migration to an Asgard vault is still cancelled so the churn keeps
+// moving, while a stuck external outbound, or an item without its TxOutItem, is
+// left for after the halt. Without the halt the item without a TxOutItem is
+// processed and dropped (TestUnstuckProcess).
+func (s *UnstuckTestSuite) TestUnstuckUnderHaltOutbound(c *C) {
+	s.haltOutbound = "1"
+	config.Init()
+	pubkeyMgr, err := pubkeymanager.NewPubKeyManager(s.bridge, s.m)
+	c.Assert(err, IsNil)
+	poolMgr := thorclient.NewPoolMgr(s.bridge)
+	e, err := NewClient(s.thorKeys, config.BifrostChainConfiguration{
+		ChainID: common.ETHChain,
+		RPCHost: "http://" + s.server.Listener.Addr().String(),
+		BlockScanner: config.BifrostBlockScannerConfiguration{
+			ChainID:            common.ETHChain,
+			StartBlockHeight:   1, // avoids querying thorchain for block height
+			HTTPRequestTimeout: time.Second * 10,
+			GasCacheBlocks:     40,
+			Concurrency:        1,
+			GasPriceResolution: 10_000_000_000,
+			FixedGasRate:       10_000_000_000,
+		},
+	}, nil, s.bridge, s.m, pubkeyMgr, poolMgr)
+	c.Assert(err, IsNil)
+	e.ethScanner.globalNetworkFeeQueue = make(chan common.NetworkFee, 1)
+	c.Assert(pubkeyMgr.Start(), IsNil)
+	defer func() { c.Assert(pubkeyMgr.Stop(), IsNil) }()
+	pubkey := e.kw.GetPubKey().String()
+
+	asgards, err := s.bridge.GetAsgards()
+	c.Assert(err, IsNil)
+	c.Assert(len(asgards) > 0, Equals, true)
+	migrateTo, err := asgards[0].GetAddress(common.ETHChain)
+	c.Assert(err, IsNil)
+
+	gas := common.Gas(common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(100000000))))
+	coins := common.Coins{common.NewCoin(common.ETHAsset, cosmos.NewUint(100000000))}
+	inHash := types2.GetRandomTxHash()
+	external := ttypes.TxOutItem{
+		Chain: common.ETHChain, ToAddress: types2.GetRandomETHAddress(), VaultPubKey: e.kw.GetPubKey(), Coins: coins,
+		Memo: "OUT:" + inHash.String(), MaxGas: gas, GasRate: 5, InHash: inHash, Height: 800,
+	}
+	migrate := ttypes.TxOutItem{
+		Chain: common.ETHChain, ToAddress: migrateTo, VaultPubKey: e.kw.GetPubKey(), Coins: coins,
+		Memo: "MIGRATE:1", MaxGas: gas, GasRate: 5, Height: 800,
+	}
+
+	externalID := types2.GetRandomTxHash().String()
+	noItemID := "0x96395fbdb39e33293999dc1a0a3b87c8a9e51185e177760d1482c2155bb35b87"
+	migrateID := "0x88df016429689c079f3b2f6ad39fa052532c56795b733da78a91ebe6a713944b"
+	for _, item := range []types.SignedTxItem{
+		{Hash: externalID, Height: 800, VaultPubKey: pubkey, TxOutItem: &external},
+		{Hash: noItemID, Height: 800, VaultPubKey: pubkey},
+		{Hash: migrateID, Height: 800, VaultPubKey: pubkey, TxOutItem: &migrate},
+	} {
+		c.Assert(e.ethScanner.blockMetaAccessor.AddSignedTxItem(item), IsNil)
+	}
+
+	e.unstuckAction()
+
+	items, err := e.ethScanner.blockMetaAccessor.GetSignedTxItems()
+	c.Assert(err, IsNil)
+	remaining := map[string]bool{}
+	for _, item := range items {
+		remaining[item.Hash] = true
+	}
+	c.Check(remaining, DeepEquals, map[string]bool{externalID: true, noItemID: true},
+		Commentf("only the stuck migration may be cancelled under HaltOutbound"))
 }

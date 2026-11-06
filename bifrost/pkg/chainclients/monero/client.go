@@ -1328,6 +1328,17 @@ func (c *Client) consolidateVault(
 		return
 	}
 
+	// A consolidation is an internal self-transfer (CONSOLIDATE to this vault),
+	// so HaltOutbound lets it through. Classify it before touching any state so
+	// a destination that is not an Asgard vault fails closed.
+	if signing.IsTxOutBlockedByOutboundHalt(c.thorchainBridge, stypes.TxOutItem{
+		Chain:     c.chain,
+		ToAddress: vaultAddress,
+		Memo:      memo.NewConsolidateMemo().String(),
+	}, c.logger) {
+		return
+	}
+
 	lock := c.GetVaultLock(stateKey)
 	lock.Lock()
 	defer lock.Unlock()

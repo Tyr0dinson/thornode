@@ -80,6 +80,7 @@ None
 - [025 - Migrate Dev Fund Address](./adr-025-migrate-dev-fund-address.md)
 - [027 - Affiliate Revenue Share (REVSHARE)](./adr-027-affiliate-revshare.md)
 - [029 - Bond Yield Reward-Time Payouts](./adr-029-bond-yield-payouts.md)
+- [031 - HaltOutbound and Pausing the Churn on a Signing Halt](./adr-031-halt-outbound.md)
 
 ### On Pause
 

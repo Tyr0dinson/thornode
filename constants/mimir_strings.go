@@ -121,6 +121,8 @@ const (
 	MimirTemplatePauseLPDeposit            = "PauseLPDeposit-%s"            // Use with Asset MimirString
 	MimirTemplateOverSolvencyToTreasuryBps = "OverSolvencyToTreasuryBps-%s" // Use with Asset MimirString
 	MimirTemplateHaltSigning               = "HaltSigning%s"                // Use with Chain (mixed case, e.g., HaltSigningETH)
+	MimirTemplateHaltOutbound              = "HaltOutbound%s"               // Use with Chain (mixed case, e.g., HaltOutboundETH). Bifrost only: halts external outbounds, still signs MIGRATE/CONSOLIDATE to an Asgard vault.
+	MimirKeyHaltOutbound                   = "HALTOUTBOUND"                 // Global form of MimirTemplateHaltOutbound. Bifrost only; does not pause the churn.
 	MimirTemplateHaltTrading               = "Halt%sTrading"                // Use with Chain (mixed case, e.g., HaltETHTrading)
 	MimirTemplateSkipSignerCache           = "SkipSignerCache%s"            // Use with Chain (e.g., SkipSignerCacheBTC). Operational flag to allow signer cache bypass on expiry.
 	MimirKeyHaltTradingGlobal              = "HaltTrading"                  // Global trading halt

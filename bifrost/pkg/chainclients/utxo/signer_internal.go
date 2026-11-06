@@ -957,6 +957,13 @@ func (c *Client) consolidateVaultUTXOs(vault types.Vault, utxosToSpend, scannedH
 		height = anchorConsolidateHeight(height)
 	}
 
+	// A consolidation is an internal self-transfer, so HaltOutbound lets it
+	// through. Classify the built item anyway so a destination that is not this
+	// Asgard vault fails closed.
+	if signing.IsTxOutBlockedByOutboundHalt(c.bridge, txOutItem, c.log) {
+		return nil
+	}
+
 	rawTx, _, _, err := c.SignTx(txOutItem, height)
 	if err != nil {
 		return fmt.Errorf("sign consolidate txout item: %w", err)

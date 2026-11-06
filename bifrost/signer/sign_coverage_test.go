@@ -58,6 +58,14 @@ type mockSignBridge struct {
 	broadcastTxID  common.TxID
 	broadcastErr   error
 	broadcastCalls int
+	asgards        ttypes.Vaults
+	asgardsErr     error
+	asgardsCalls   int
+}
+
+func (b *mockSignBridge) GetAsgards() (ttypes.Vaults, error) {
+	b.asgardsCalls++
+	return b.asgards, b.asgardsErr
 }
 
 func (b *mockSignBridge) GetBlockHeight() (int64, error) {

@@ -116,6 +116,7 @@
     - [ADR 027: Affiliate Revenue Share (REVSHARE)](architecture/adr-027-affiliate-revshare.md)
     - [ADR 028: Exploit Conciliation](architecture/adr-028-exploit-conciliation.md)
     - [ADR 029: Bond Yield Reward-Time Payouts](architecture/adr-029-bond-yield-payouts.md)
+    - [ADR 031: HaltOutbound and Pausing the Churn on a Signing Halt](architecture/adr-031-halt-outbound.md)
 
 - [Archived](archived/archived.md)
 

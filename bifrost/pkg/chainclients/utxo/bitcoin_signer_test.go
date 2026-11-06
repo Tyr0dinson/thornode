@@ -108,6 +108,10 @@ func (s *BitcoinSignerSuite) SetUpTest(c *C) {
 		case req.RequestURI == thorclient.ChainVersionEndpoint:
 			_, err := rw.Write([]byte(`{"current":"` + types2.GetCurrentVersion().String() + `"}`))
 			c.Assert(err, IsNil)
+		case req.RequestURI == "/thorchain/mimir/key/HALTOUTBOUND",
+			req.RequestURI == "/thorchain/mimir/key/HaltOutboundBTC":
+			_, err := rw.Write([]byte(`-1`))
+			c.Assert(err, IsNil)
 		default:
 			r := struct {
 				Method string `json:"method"`

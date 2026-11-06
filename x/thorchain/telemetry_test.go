@@ -497,6 +497,7 @@ func TestChainTelemRails(t *testing.T) {
 			{rail.haltKey, fmt.Sprintf("Halt%sChain", chain)},
 			{rail.solvencyKey, fmt.Sprintf("SolvencyHalt%sChain", chain)},
 			{rail.signingHaltKey, fmt.Sprintf(constants.MimirTemplateHaltSigning, chain)},
+			{rail.outboundHaltKey, fmt.Sprintf(constants.MimirTemplateHaltOutbound, chain)},
 			{rail.assetHalts[0].mimirKey, fmt.Sprintf(constants.MimirTemplateSecuredAssetHaltDeposit, chain)},
 			{rail.assetHalts[1].mimirKey, fmt.Sprintf(constants.MimirTemplateSecuredAssetHaltWithdraw, chain)},
 			{rail.assetHalts[2].mimirKey, fmt.Sprintf(constants.MimirTemplateTradeAssetHaltDeposit, chain)},

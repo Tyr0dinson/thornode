@@ -9,6 +9,7 @@ import (
 	"math"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -28,6 +29,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/tss"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/constants"
 )
 
 type zecExpiryBridge struct {
@@ -45,7 +47,14 @@ func (b *zecExpiryBridge) GetLastObservedInHeightAtHeight(chain common.Chain, he
 	return b.observedHeight, b.err
 }
 
-func (b *zecExpiryBridge) GetMimir(string) (int64, error) { return 1, nil }
+// GetMimir answers 1 for every tunable, but leaves the HaltOutbound switches
+// unset so consolidation is not gated by them.
+func (b *zecExpiryBridge) GetMimir(key string) (int64, error) {
+	if strings.HasPrefix(strings.ToUpper(key), constants.MimirKeyHaltOutbound) {
+		return -1, nil
+	}
+	return 1, nil
+}
 
 // Record the actual digest handed to TSS, then simulate a failed signing round.
 // It can also return a valid signature to check the serialized ZEC transaction.

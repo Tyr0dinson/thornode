@@ -1275,6 +1275,25 @@ func (s *Signer) signAndBroadcast(item TxOutStoreItem) ([]byte, *types.TxInItem,
 		}
 		return nil, nil, nil
 	}
+	// HALTOUTBOUND / HaltOutbound<Chain> stops every outbound except internal
+	// vault-to-vault transfers (MIGRATE or CONSOLIDATE to an Active or Retiring
+	// Asgard vault), so the churn keeps migrating while no value leaves. It
+	// fails closed: a mimir or vault read error retries the item instead of
+	// signing it. Saved signed bytes are covered too, since this runs before the
+	// rebroadcast below.
+	outboundBlocked, outboundGlobal, err := signing.OutboundHaltBlocks(s.thorchainBridge, tx, blockHeight)
+	if err != nil {
+		s.logger.Err(err).Msg("fail to check outbound halt")
+		return nil, nil, err
+	}
+	if outboundBlocked {
+		if outboundGlobal {
+			s.logger.Info().Str("memo", tx.Memo).Msg("external outbound skipped: HALTOUTBOUND is active")
+		} else {
+			s.logger.Info().Str("memo", tx.Memo).Msgf("external outbound skipped: outbound for %s is halted", tx.Chain)
+		}
+		return nil, nil, nil
+	}
 	if !s.shouldSign(tx) {
 		s.logger.Info().Str("signer_address", chain.GetAddress(tx.VaultPubKey)).Msg("different pool address, ignore")
 		return nil, nil, nil
