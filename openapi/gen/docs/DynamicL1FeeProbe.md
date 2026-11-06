@@ -5,7 +5,7 @@
 Name | Type | Description | Notes
 ------------ | ------------- | ------------- | -------------
 **Bps** | **int32** | the tested dynamic_bps value | 
-**Signal** | **string** | mean normalized fee signal (fees_tor / pool_volume_tor, scaled by 1e12) over the sealed epochs measured at this bps  | 
+**Signal** | **string** | mean normalized fee signal (fees_tor / (pool_volume_tor - own_pool_volume_tor), scaled by 1e12) over the sealed epochs measured at this bps  | 
 **Epochs** | **int32** | sealed epochs measured at this bps | 
 **Capped** | Pointer to **bool** | at least one reading at this bps was a capped span; a capped probe never displaces a lower-fee best  | [optional] 
 

@@ -18,7 +18,7 @@ import (
 type DynamicL1FeeProbe struct {
 	// the tested dynamic_bps value
 	Bps int32 `json:"bps"`
-	// mean normalized fee signal (fees_tor / pool_volume_tor, scaled by 1e12) over the sealed epochs measured at this bps 
+	// mean normalized fee signal (fees_tor / (pool_volume_tor - own_pool_volume_tor), scaled by 1e12) over the sealed epochs measured at this bps 
 	Signal string `json:"signal"`
 	// sealed epochs measured at this bps
 	Epochs int32 `json:"epochs"`

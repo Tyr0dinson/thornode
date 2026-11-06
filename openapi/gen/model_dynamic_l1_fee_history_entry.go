@@ -23,15 +23,15 @@ type DynamicL1FeeHistoryEntry struct {
 	FeesTor string `json:"fees_tor"`
 	// dynamic_bps value at the close of the epoch
 	BpsAtClose int32 `json:"bps_at_close"`
-	// user swaps counted in this epoch; a streaming swap counts once, not once per sub-swap. Epochs below L1DynamicFeeMinSwaps swaps or L1DynamicFeeMinVolumeUSD of volume do not seal and roll into the next one, so this may span several epochs 
+	// user swaps counted in this epoch; a streaming swap counts once, not once per sub-swap. Epochs below L1DynamicFeeMinSwaps swaps or L1DynamicFeeMinVolumeUSD of volume do not seal and roll into the next one, so this may span several epochs; past L1DynamicFeeMaxEpochBlocks the span seals regardless (capped) 
 	SwapCount int32 `json:"swap_count"`
-	// TOR-denominated (1e8-precision USD value) total volume through the pair (for a global \"*|*\" record, through the pairs the thorname traded) over the same span, regardless of affiliate 
+	// TOR-denominated (1e8-precision USD value) total volume through the pair (for a global \"*|*\" record, through every pair the thorname traded during the span, each over the whole span) over the same span, regardless of affiliate 
 	PoolVolumeTor string `json:"pool_volume_tor"`
 	// the thorname's own share of pool_volume_tor, counting every swap leg. The signal is fees_tor / (pool_volume_tor - own_pool_volume_tor): fee revenue against other swappers' volume. An epoch whose other flow is under L1DynamicFeeMinOtherFlowBPS of the pool is recorded but not used as a measurement 
 	OwnPoolVolumeTor *string `json:"own_pool_volume_tor,omitempty"`
 	// length of the span this entry covers, in blocks. A span below the liquidity gate rolls into the next epoch, up to L1DynamicFeeMaxEpochBlocks, after which it is sealed regardless 
 	Blocks *int64 `json:"blocks,omitempty"`
-	// the span was sealed by L1DynamicFeeMaxEpochBlocks below the liquidity gate (or with no swaps). Such a reading may lower the fee but never raise it 
+	// the span was sealed by L1DynamicFeeMaxEpochBlocks below the liquidity gate (or with no swaps). Such a reading never becomes the search's best bps and never raises the fee once the search has converged; the search may still go on to probe an untested higher bps 
 	Capped *bool `json:"capped,omitempty"`
 }
 

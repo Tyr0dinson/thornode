@@ -25,7 +25,7 @@ type DynamicL1FeeCurrentEntry struct {
 	FeesTor string `json:"fees_tor"`
 	// current epoch index this accumulator belongs to
 	Epoch int32 `json:"epoch"`
-	// running count of user swaps for this accumulator, summed across any epochs it has rolled over. The epoch seals only if swap_count >= L1DynamicFeeMinSwaps and volume_tor >= L1DynamicFeeMinVolumeUSD * 1e8; if either falls short, the accumulator rolls into the next epoch 
+	// running count of user swaps for this accumulator, summed across any epochs it has rolled over. The epoch seals only if swap_count >= L1DynamicFeeMinSwaps and volume_tor >= L1DynamicFeeMinVolumeUSD * 1e8; if either falls short, the accumulator rolls into the next epoch, until span_blocks reaches L1DynamicFeeMaxEpochBlocks and it seals regardless 
 	SwapCount int32 `json:"swap_count"`
 	// running TOR-denominated total volume through the pair (for a global \"*|*\" accumulator, through the pairs the thorname traded), including the in-progress slice that is only folded in at the seal 
 	PoolVolumeTor string `json:"pool_volume_tor"`

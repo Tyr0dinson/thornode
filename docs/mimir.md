@@ -66,8 +66,8 @@ Mimirs have a maximum length of 128 bytes (see MaxMimirLength in THORNode code).
 - `L1DynamicFeeEpochBlocks`: Number of blocks per dynamic fee epoch
 - `L1DynamicFeeFloorBPS`: Lower bound of the dynamic minimum, and the value a new record starts at
 - `L1DynamicFeeCeilingBPS`: Upper bound of the dynamic minimum
-- `L1DynamicFeeStepBPS`: Basis points the dynamic minimum moves per epoch
-- `L1DynamicFeeDeadbandBPS`: Percentage change in fees (in basis points) below which the floor is left unchanged
+- `L1DynamicFeeStepBPS`: Basis points the dynamic minimum moves per epoch once the bracket search has converged (the search itself jumps further)
+- `L1DynamicFeeDeadbandBPS`: Percentage change in fees (in basis points) below which the floor is left unchanged; in the bracket search, also the margin a higher bps must beat the best one by, so raising it biases the search toward lower fees
 - `L1DynamicFeeWindowEpochs`: Epochs averaged either side of the last change when measuring the fee response
 - `L1DynamicFeeMinSwaps`: Swaps an epoch must contain before it may seal a decision; below this it rolls into the next epoch (0 disables)
 - `L1DynamicFeeMinVolumeUSD`: Whole USD of affiliate volume an epoch must contain before it may seal a decision (0 disables)

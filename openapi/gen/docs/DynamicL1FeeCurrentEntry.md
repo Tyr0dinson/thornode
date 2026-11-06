@@ -9,7 +9,7 @@ Name | Type | Description | Notes
 **VolumeTor** | **string** | running TOR-denominated (1e8-precision USD value) volume for this (thorname, pair) accumulator in the current epoch  | 
 **FeesTor** | **string** | running TOR-denominated (1e8-precision USD value) fees for this (thorname, pair) accumulator in the current epoch  | 
 **Epoch** | **int32** | current epoch index this accumulator belongs to | 
-**SwapCount** | **int32** | running count of user swaps for this accumulator, summed across any epochs it has rolled over. The epoch seals only if swap_count &gt;&#x3D; L1DynamicFeeMinSwaps and volume_tor &gt;&#x3D; L1DynamicFeeMinVolumeUSD * 1e8; if either falls short, the accumulator rolls into the next epoch  | 
+**SwapCount** | **int32** | running count of user swaps for this accumulator, summed across any epochs it has rolled over. The epoch seals only if swap_count &gt;&#x3D; L1DynamicFeeMinSwaps and volume_tor &gt;&#x3D; L1DynamicFeeMinVolumeUSD * 1e8; if either falls short, the accumulator rolls into the next epoch, until span_blocks reaches L1DynamicFeeMaxEpochBlocks and it seals regardless  | 
 **PoolVolumeTor** | **string** | running TOR-denominated total volume through the pair (for a global \&quot;*|*\&quot; accumulator, through the pairs the thorname traded), including the in-progress slice that is only folded in at the seal  | 
 **OwnPoolVolumeTor** | Pointer to **string** | the thorname&#39;s own share of pool_volume_tor so far, counting every swap leg  | [optional] 
 **SpanBlocks** | Pointer to **int64** | blocks since this measurement span began. Once it reaches L1DynamicFeeMaxEpochBlocks the next epoch boundary seals the span, even below the liquidity gate  | [optional] 

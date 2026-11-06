@@ -8,11 +8,11 @@ Name | Type | Description | Notes
 **VolumeTor** | **string** | TOR-denominated (1e8-precision USD value) swap volume in this epoch  | 
 **FeesTor** | **string** | TOR-denominated (1e8-precision USD value) fees accrued in this epoch  | 
 **BpsAtClose** | **int32** | dynamic_bps value at the close of the epoch | 
-**SwapCount** | **int32** | user swaps counted in this epoch; a streaming swap counts once, not once per sub-swap. Epochs below L1DynamicFeeMinSwaps swaps or L1DynamicFeeMinVolumeUSD of volume do not seal and roll into the next one, so this may span several epochs  | 
-**PoolVolumeTor** | **string** | TOR-denominated (1e8-precision USD value) total volume through the pair (for a global \&quot;*|*\&quot; record, through the pairs the thorname traded) over the same span, regardless of affiliate  | 
+**SwapCount** | **int32** | user swaps counted in this epoch; a streaming swap counts once, not once per sub-swap. Epochs below L1DynamicFeeMinSwaps swaps or L1DynamicFeeMinVolumeUSD of volume do not seal and roll into the next one, so this may span several epochs; past L1DynamicFeeMaxEpochBlocks the span seals regardless (capped)  | 
+**PoolVolumeTor** | **string** | TOR-denominated (1e8-precision USD value) total volume through the pair (for a global \&quot;*|*\&quot; record, through every pair the thorname traded during the span, each over the whole span) over the same span, regardless of affiliate  | 
 **OwnPoolVolumeTor** | Pointer to **string** | the thorname&#39;s own share of pool_volume_tor, counting every swap leg. The signal is fees_tor / (pool_volume_tor - own_pool_volume_tor): fee revenue against other swappers&#39; volume. An epoch whose other flow is under L1DynamicFeeMinOtherFlowBPS of the pool is recorded but not used as a measurement  | [optional] 
 **Blocks** | Pointer to **int64** | length of the span this entry covers, in blocks. A span below the liquidity gate rolls into the next epoch, up to L1DynamicFeeMaxEpochBlocks, after which it is sealed regardless  | [optional] 
-**Capped** | Pointer to **bool** | the span was sealed by L1DynamicFeeMaxEpochBlocks below the liquidity gate (or with no swaps). Such a reading may lower the fee but never raise it  | [optional] 
+**Capped** | Pointer to **bool** | the span was sealed by L1DynamicFeeMaxEpochBlocks below the liquidity gate (or with no swaps). Such a reading never becomes the search&#39;s best bps and never raises the fee once the search has converged; the search may still go on to probe an untested higher bps  | [optional] 
 
 ## Methods
 

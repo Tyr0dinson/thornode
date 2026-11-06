@@ -8918,14 +8918,16 @@ components:
           description: "user swaps counted in this epoch; a streaming swap counts\
             \ once, not\nonce per sub-swap. Epochs below L1DynamicFeeMinSwaps swaps\
             \ or\nL1DynamicFeeMinVolumeUSD of volume do not seal and roll into the\n\
-            next one, so this may span several epochs\n"
+            next one, so this may span several epochs; past\nL1DynamicFeeMaxEpochBlocks\
+            \ the span seals regardless (capped)\n"
           example: 42
           format: uint64
           type: integer
         pool_volume_tor:
           description: "TOR-denominated (1e8-precision USD value) total volume through\
-            \ the\npair (for a global \"*|*\" record, through the pairs the thorname\n\
-            traded) over the same span, regardless of affiliate\n"
+            \ the\npair (for a global \"*|*\" record, through every pair the thorname\n\
+            traded during the span, each over the whole span) over the same\nspan,\
+            \ regardless of affiliate\n"
           example: "900000000000"
           type: string
         own_pool_volume_tor:
@@ -8946,8 +8948,10 @@ components:
         capped:
           description: |
             the span was sealed by L1DynamicFeeMaxEpochBlocks below the
-            liquidity gate (or with no swaps). Such a reading may lower the
-            fee but never raise it
+            liquidity gate (or with no swaps). Such a reading never becomes the
+            search's best bps and never raises the fee once the search has
+            converged; the search may still go on to probe an untested higher
+            bps
           example: false
           type: boolean
       required:
@@ -9043,8 +9047,9 @@ components:
           format: uint64
           type: integer
         signal:
-          description: "mean normalized fee signal (fees_tor / pool_volume_tor, scaled\
-            \ by\n1e12) over the sealed epochs measured at this bps\n"
+          description: "mean normalized fee signal (fees_tor / (pool_volume_tor -\n\
+            own_pool_volume_tor), scaled by 1e12) over the sealed epochs\nmeasured\
+            \ at this bps\n"
           example: "1234567"
           type: string
         epochs:
@@ -9188,7 +9193,8 @@ components:
           description: "running count of user swaps for this accumulator, summed across\
             \ any\nepochs it has rolled over. The epoch seals only if swap_count >=\n\
             L1DynamicFeeMinSwaps and volume_tor >= L1DynamicFeeMinVolumeUSD * 1e8;\n\
-            if either falls short, the accumulator rolls into the next epoch\n"
+            if either falls short, the accumulator rolls into the next epoch,\nuntil\
+            \ span_blocks reaches L1DynamicFeeMaxEpochBlocks and it seals\nregardless\n"
           example: 4
           format: uint64
           type: integer

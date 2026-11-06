@@ -68,7 +68,9 @@
      tuned on all its L1 pairs together and applied on every L1 pair.
      Global mode pools a thorname's thin pairs into one signal, so it
      clears the liquidity gate far sooner. Monitor mode moves from `2`
-     to `3` (per-pair) and `4` (global). No mainnet thorname used `2`.
+     to `3` (per-pair) and `4` (global). The upgrade migration rewrites
+     every stored `2`, and every node vote for `2`, to `3`, so a thorname
+     enrolled for monitoring is not charged a floor by the upgrade.
   3. **Reset on change.** Any change to a thorname's effective
      `DYNAMICFEE-WHITELIST-{thorname}` value — enabling it, switching
      mode, entering or leaving monitor, or removing it — immediately
@@ -408,8 +410,8 @@ or reverses when fees responded negatively.
     is not read by the controller. It _is_ read by the liquidity
     gate before the entry is written.
   - `pool_volume_tor` is the pool's total volume over the same span,
-    regardless of affiliate (for `*|*`, over the pairs the thorname
-    traded). `own_pool_volume_tor` is the thorname's own part of it,
+    regardless of affiliate (for `*|*`, over every pair the thorname
+    traded during the span, each over the whole span). `own_pool_volume_tor` is the thorname's own part of it,
     counting every swap leg. The controller divides fees by the
     difference: other swappers' volume.
   - `swap_count` counts user swaps, not sub-swaps: a streaming swap
@@ -426,7 +428,11 @@ or reverses when fees responded negatively.
 - Per `(thorname, pair)`: running `volume_tor`, `fees_tor`,
   `swap_count`, `pool_volume_tor`, `own_pool_volume_tor` for the current
   epoch, and for a global (`*|*`) accumulator the list of `pairs` it was
-  credited on. Sealed and
+  credited on plus `pair_pool_volumes`, the span's pool volume on every
+  pair that traded. A global accumulator's `pool_volume_tor` is re-summed
+  from those over its `pairs` (or, for an idle span, the record's
+  last-seal pairs) at each boundary, so a pair first traded late in the
+  span still counts its earlier epochs. Sealed and
   cleared at each epoch boundary — unless the liquidity gate rejects
   the epoch and the span is under `L1DynamicFeeMaxEpochBlocks`, in
   which case the accumulator survives and keeps accumulating into the
