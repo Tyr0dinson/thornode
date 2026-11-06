@@ -13,13 +13,12 @@ import (
 	"time"
 	"unicode/utf8"
 
-	sdklog "cosmossdk.io/log"
-	"cosmossdk.io/store"
-	storemetrics "cosmossdk.io/store/metrics"
-	storetypes "cosmossdk.io/store/types"
+	sdklog "cosmossdk.io/log/v2"
 	wasmtypes "github.com/CosmWasm/wasmd/x/wasm/types"
 	tmproto "github.com/cometbft/cometbft/proto/tendermint/types"
 	dbm "github.com/cosmos/cosmos-db"
+	"github.com/cosmos/cosmos-sdk/store/v2"
+	storetypes "github.com/cosmos/cosmos-sdk/store/v2/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 	"github.com/prometheus/client_golang/prometheus"
@@ -144,7 +143,7 @@ func TestTracerReachesHandlerEntryPoints(t *testing.T) {
 	storeKey := storetypes.NewKVStoreKey("execution_handler_test")
 	db := dbm.NewMemDB()
 	t.Cleanup(func() { require.NoError(t, db.Close()) })
-	multiStore := store.NewCommitMultiStore(db, sdklog.NewNopLogger(), storemetrics.NewNoOpMetrics())
+	multiStore := store.NewCommitMultiStore(db, sdklog.NewNopLogger())
 	multiStore.MountStoreWithDB(storeKey, storetypes.StoreTypeIAVL, db)
 	require.NoError(t, multiStore.LoadLatestVersion())
 	ctx := cosmos.NewContext(multiStore, tmproto.Header{}, false, sdklog.NewNopLogger())
@@ -648,7 +647,7 @@ func TestContractRecorderDoesNotChangeGasStoreOrEvents(t *testing.T) {
 			storeKey := storetypes.NewKVStoreKey("execution_telemetry_test")
 			db := dbm.NewMemDB()
 			t.Cleanup(func() { require.NoError(t, db.Close()) })
-			multiStore := store.NewCommitMultiStore(db, sdklog.NewNopLogger(), storemetrics.NewNoOpMetrics())
+			multiStore := store.NewCommitMultiStore(db, sdklog.NewNopLogger())
 			multiStore.MountStoreWithDB(storeKey, storetypes.StoreTypeIAVL, db)
 			require.NoError(t, multiStore.LoadLatestVersion())
 

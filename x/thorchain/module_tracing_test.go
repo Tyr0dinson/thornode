@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"cosmossdk.io/core/comet"
-	sdklog "cosmossdk.io/log"
+	sdklog "cosmossdk.io/log/v2"
 	"github.com/blang/semver"
 	abci "github.com/cometbft/cometbft/abci/types"
 	"github.com/prometheus/client_golang/prometheus"

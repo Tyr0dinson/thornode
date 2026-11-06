@@ -7,11 +7,11 @@ import (
 	"testing"
 
 	errorsmod "cosmossdk.io/errors"
-	storetypes "cosmossdk.io/store/types"
 	wasmkeeper "github.com/CosmWasm/wasmd/x/wasm/keeper"
-	wasmvmtypes "github.com/CosmWasm/wasmvm/v2/types"
+	wasmvmtypes "github.com/CosmWasm/wasmvm/v3/types"
 	cmtproto "github.com/cometbft/cometbft/proto/tendermint/types"
 	dbm "github.com/cosmos/cosmos-db"
+	storetypes "github.com/cosmos/cosmos-sdk/store/v2/types"
 	"github.com/cosmos/cosmos-sdk/testutil"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/stretchr/testify/require"
@@ -202,7 +202,7 @@ func TestCosmosKVWasmQueryGasLimit(t *testing.T) {
 
 func TestCosmosKVNativePoolParity(t *testing.T) {
 	app := replayApp(t, dbm.NewMemDB())
-	ctx := app.NewUncachedContext(false, cmtproto.Header{Height: 1})
+	ctx := app.NewNextBlockContext(cmtproto.Header{Height: 1})
 	pool := thortypes.NewPool()
 	pool.Asset = common.BTCAsset
 	require.NoError(t, app.ThorchainKeeper.SetPool(ctx, pool))
