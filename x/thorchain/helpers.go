@@ -1747,6 +1747,39 @@ func getVaultMembersForChain(ctx cosmos.Context, k keeper.Keeper, chain string) 
 	return members, nil
 }
 
+// observationElectorate returns the node accounts whose observations decide
+// consensus for a tx on the given chain. With EnableNodeChainConsensus on that
+// is the membership of the chain's active vaults (empty when no active vault
+// serves the chain); otherwise it is the caller's active validators. Every
+// quorum decision and every consensus-tx lookup for one observation must use
+// the same electorate, or a quorum reached among vault members resolves an
+// empty consensus tx against the full active set.
+func observationElectorate(ctx cosmos.Context, k keeper.Keeper, chain common.Chain, active NodeAccounts) NodeAccounts {
+	if k.GetConfigInt64(ctx, constants.EnableNodeChainConsensus) <= 0 {
+		activeNodeAccounts, err := legacyActiveValidators(ctx, k, active)
+		if err != nil {
+			ctx.Logger().Error("failed to get active validators for electorate", "error", err)
+			return active
+		}
+		return activeNodeAccounts
+	}
+	vaultMembers, err := getVaultMembersForChain(ctx, k, chain.String())
+	if err != nil {
+		ctx.Logger().Error("failed to get vault members for chain electorate", "chain", chain, "error", err)
+		return NodeAccounts{}
+	}
+	electorate := make(NodeAccounts, 0, len(vaultMembers))
+	for _, member := range vaultMembers {
+		nodeAccount, err := k.GetNodeAccount(ctx, member)
+		if err != nil {
+			ctx.Logger().Error("failed to get node account for vault member", "address", member, "error", err)
+			continue
+		}
+		electorate = append(electorate, nodeAccount)
+	}
+	return electorate
+}
+
 // legacyActiveValidators returns the active validators used when chain-aware
 // consensus is disabled: the caller's set when provided, else the keeper's.
 func legacyActiveValidators(ctx cosmos.Context, k keeper.Keeper, active NodeAccounts) (NodeAccounts, error) {

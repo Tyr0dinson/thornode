@@ -3079,6 +3079,10 @@ func (qs queryServer) queryTx(ctx cosmos.Context, req *types.QueryTxRequest) (*t
 		ctx.Logger().Error("fail to get keysign metrics", "error", err)
 	}
 
+	// Resolve the consensus tx with the electorate that decides it on-chain.
+	if chain := voterChain(voter); !chain.IsEmpty() {
+		nodeAccounts = observationElectorate(ctx, qs.mgr.Keeper(), chain, nodeAccounts)
+	}
 	result := types.QueryTxResponse{
 		ObservedTx:      castObservedTx(*voter.GetTx(nodeAccounts)),
 		ConsensusHeight: voter.Height,
@@ -3088,6 +3092,19 @@ func (qs queryServer) queryTx(ctx cosmos.Context, req *types.QueryTxRequest) (*t
 	}
 
 	return &result, nil
+}
+
+// voterChain returns the chain of the voter's observations.
+func voterChain(voter ObservedTxVoter) common.Chain {
+	if !voter.Tx.Tx.Chain.IsEmpty() {
+		return voter.Tx.Tx.Chain
+	}
+	for _, tx := range voter.Txs {
+		if !tx.Tx.Chain.IsEmpty() {
+			return tx.Tx.Chain
+		}
+	}
+	return common.EmptyChain
 }
 
 func extractBlockHeight(ctx cosmos.Context, heightStr string) (int64, error) {

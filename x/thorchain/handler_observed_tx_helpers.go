@@ -53,6 +53,10 @@ func applyTxInAttestation(
 	shouldSlashForDuplicate bool,
 ) (ObservedTxVoter, bool, bool) {
 	k := mgr.Keeper()
+	// Decide quorum, resolve the consensus tx and count gas-correction
+	// signers against one electorate: the chain's vault members when
+	// chain-aware consensus is on, else the active validators.
+	nas = observationElectorate(ctx, k, tx.Tx.Chain, nas)
 	slasher := mgr.Slasher()
 
 	observeSlashPoints := mgr.GetConstants().GetInt64Value(constants.ObserveSlashPoints)
@@ -749,6 +753,10 @@ func applyTxOutAttestation(
 	shouldSlashForDuplicate bool,
 ) (ObservedTxVoter, bool, bool) {
 	k := mgr.Keeper()
+	// Decide quorum, resolve the consensus tx and count gas-correction
+	// signers against one electorate: the chain's vault members when
+	// chain-aware consensus is on, else the active validators.
+	nas = observationElectorate(ctx, k, tx.Tx.Chain, nas)
 	slasher := mgr.Slasher()
 
 	observeSlashPoints := mgr.GetConstants().GetInt64Value(constants.ObserveSlashPoints)
@@ -1188,6 +1196,9 @@ func handleObservedTxOutQuorum(
 	observers []cosmos.AccAddress,
 	isQuorum bool,
 ) error {
+	// The consensus tx must be resolved with the electorate that decided the
+	// quorum (see observationElectorate).
+	activeNodeAccounts = observationElectorate(ctx, mgr.Keeper(), tx.Tx.Chain, activeNodeAccounts)
 	// check whether the tx has consensus
 	if !isQuorum {
 		if voter.Height == ctx.BlockHeight() || voter.FinalisedHeight == ctx.BlockHeight() {
