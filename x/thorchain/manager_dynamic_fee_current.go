@@ -638,6 +638,7 @@ func (m *DynamicFeeMgr) sealEpochForRecord(ctx cosmos.Context, rec types.Dynamic
 //   - Previous direction == -1 and fees went up → continue_down (lower).
 //   - Previous direction == -1 and fees went down → reverse_up (raise).
 //   - |Δ%| below deadband → hold.
+//   - No measurable epoch before or since the change → hold.
 //
 // When the newest entry is capped (sealed by the time cap below the liquidity
 // gate) it may only lower the fee: a cold start probes down instead of up, and
@@ -674,7 +675,10 @@ func gradientNextBps(rec types.DynamicFeeRecord, oldBps, floorBps, ceilingBps, s
 	after := windowSignals(rec.History, max(changeIdx, len(rec.History)-windowEpochs), len(rec.History), minOtherBps)
 	feesBefore, feesAfter = meanSignal(before), meanSignal(after)
 
-	if feesBefore.IsZero() {
+	// No baseline, or no epoch since the move that could be normalized: there is
+	// nothing to compare. An empty window is not zero revenue; an epoch that
+	// earned nothing while other swappers traded still carries a signal of 0.
+	if feesBefore.IsZero() || len(after) == 0 {
 		return "hold", oldBps, feesBefore, feesAfter, cosmos.ZeroUint()
 	}
 

@@ -1665,6 +1665,50 @@ func (s *DynamicFeeMgrSuite) TestDecideNextBpsNormalizesPoolVolume(c *C) {
 	c.Check(reason, Equals, "hold")
 }
 
+// TestDecideNextBpsHoldsWithoutAfterMeasurement: epochs that cannot be
+// normalized say nothing about the new fee, so they must not read as a 100%
+// fall and reverse the last move. Real zero revenue, with other swappers still
+// trading, is a measurement and does reverse it.
+func (s *DynamicFeeMgrSuite) TestDecideNextBpsHoldsWithoutAfterMeasurement(c *C) {
+	tenK := cosmos.NewUint(10000)
+	deadband := cosmos.NewUint(500) // 5%
+	pool := types.SignalScale
+	fees := cosmos.NewUint(100)
+	const minOtherBps = 1000
+
+	for _, tc := range []struct {
+		name      string
+		bpsBefore uint64
+		afterPool cosmos.Uint
+		afterOwn  cosmos.Uint
+	}{
+		{"moved up, all flow is the thorname's own", 3, pool, pool},
+		{"moved down, all flow is the thorname's own", 5, pool, pool},
+		{"moved up, other flow under the minimum", 3, pool, pool.MulUint64(95).QuoUint64(100)},
+		{"moved up, no pool volume", 3, cosmos.ZeroUint(), cosmos.ZeroUint()},
+	} {
+		rec := types.DynamicFeeRecord{History: []types.DynamicFeeEpochRecord{
+			{FeesTor: fees, BpsAtClose: tc.bpsBefore, PoolVolumeTor: pool},
+			{FeesTor: fees, BpsAtClose: 4, PoolVolumeTor: tc.afterPool, OwnPoolVolumeTor: tc.afterOwn},
+			{FeesTor: fees, BpsAtClose: 4, PoolVolumeTor: tc.afterPool, OwnPoolVolumeTor: tc.afterOwn},
+		}}
+		reason, newBps, feesBefore, _, _ := decideNextBps(rec, 4, 1, 20, 1, 3, deadband, tenK, minOtherBps)
+		c.Check(feesBefore.IsZero(), Equals, false, Commentf("%s", tc.name))
+		c.Check(reason, Equals, "hold", Commentf("%s", tc.name))
+		c.Check(newBps, Equals, uint64(4), Commentf("%s", tc.name))
+	}
+
+	// Control: the same move with other swappers trading and no fees earned.
+	rec := types.DynamicFeeRecord{History: []types.DynamicFeeEpochRecord{
+		{FeesTor: fees, BpsAtClose: 3, PoolVolumeTor: pool},
+		{FeesTor: cosmos.ZeroUint(), BpsAtClose: 4, PoolVolumeTor: pool},
+		{FeesTor: cosmos.ZeroUint(), BpsAtClose: 4, PoolVolumeTor: pool},
+	}}
+	reason, newBps, _, _, _ := decideNextBps(rec, 4, 1, 20, 1, 3, deadband, tenK, minOtherBps)
+	c.Check(reason, Equals, "reverse_down")
+	c.Check(newBps, Equals, uint64(3))
+}
+
 // TestEndBlockDropsPreUpgradeHistory pins the migration: history written
 // before pool volume was tracked carries raw fee levels in incompatible
 // units, so it is discarded and the record re-enters cold start from its

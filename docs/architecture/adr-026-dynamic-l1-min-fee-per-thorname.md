@@ -643,8 +643,9 @@ before = signals(history[changeIdx-K : changeIdx])   # up to K epochs before cha
 after  = signals(history[changeIdx-or-later : ])    # last K epochs since change, incl. this one
 feesBefore, feesAfter = mean(before), mean(after)
 
-if feesBefore == 0:
-    # No baseline to compare against; hold.
+if feesBefore == 0 or after is empty:
+    # No baseline, or nothing measured since the move; hold. An epoch that
+    # earned nothing while other swappers traded is not skipped: it reads as 0.
     return "hold", old_bps
 
 deltaPctBps = abs(feesAfter - feesBefore) * 10000 / feesBefore  # via GetSafeShare
