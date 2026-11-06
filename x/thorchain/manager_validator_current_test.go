@@ -3087,8 +3087,8 @@ func (vts *ValidatorMgrTestSuite) TestChainRewardPayoutUsesChainBondAndSnapshot(
 
 	// BTC: 4 RUNE over 4 equal nodes; ETH: 2 RUNE over the 2 ETH nodes.
 	for i, na := range nas {
-		updated, err := k.GetNodeAccount(ctx, na.NodeAddress)
-		c.Assert(err, IsNil)
+		updated, getErr := k.GetNodeAccount(ctx, na.NodeAddress)
+		c.Assert(getErr, IsNil)
 		want := cosmos.NewUint(common.One)
 		if i < 2 {
 			want = cosmos.NewUint(2 * common.One)
