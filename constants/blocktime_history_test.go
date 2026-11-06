@@ -159,3 +159,43 @@ func TestCoalesceReachMatchesBlockByBlockMax(t *testing.T) {
 		}
 	}
 }
+
+// RescheduleHeight is where LackSigning, block by block, queues the retry of an
+// outbound left unsigned for durMs: in the first block it is durMs old, rounded
+// up to the coalesce interval at that block's time, then moved by each change
+// latched in a later block.
+func TestRescheduleHeightMatchesBlockByBlock(t *testing.T) {
+	const refMs = 6000
+	for _, h := range testHistories {
+		for _, refBlocks := range []int64{0, 1, 3, 7, 10} {
+			for _, durMs := range []int64{6000, 60_000, 90_500, 180_000} {
+				for from := int64(1); from <= 80; from++ {
+					due, retry := int64(0), int64(0)
+					for now := from + 1; now <= 400; now++ {
+						for i, seg := range h {
+							if seg.Height == now && due > 0 {
+								prevMs := int64(refMs)
+								if i > 0 {
+									prevMs = h[i-1].Ms
+								}
+								retry = ConvertHeight(now, retry, prevMs, seg.Ms)
+							}
+						}
+						if due == 0 && naiveElapsedMs(h, from, now, refMs) >= durMs {
+							due = now
+							retry = now
+							if c := ScaleDuration(refBlocks, refMs, h.MsAt(now, refMs)); c > 1 && retry%c != 0 {
+								retry += c - retry%c
+							}
+						}
+					}
+					gotDue, gotRetry := h.RescheduleHeight(from, durMs, refBlocks, refMs)
+					if gotDue != due || gotRetry != retry {
+						t.Fatalf("%v: RescheduleHeight(%d, %d, %d) = (%d, %d), block by block (%d, %d)",
+							h, from, durMs, refBlocks, gotDue, gotRetry, due, retry)
+					}
+				}
+			}
+		}
+	}
+}

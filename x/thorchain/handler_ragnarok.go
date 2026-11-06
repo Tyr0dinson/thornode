@@ -65,9 +65,11 @@ func (h RagnarokHandler) handle(ctx cosmos.Context, msg MsgRagnarok) (*cosmos.Re
 		return &cosmos.Result{}, nil
 	}
 	shouldSlash := true
-	// follow the heights LackSigning reschedules the ragnarok outbound to: one
-	// signing period of wall-clock time apart (signingTransPeriod blocks
-	// without a block time change)
+	// follow the heights LackSigning reschedules the ragnarok outbound to: each
+	// retry is due one signing period of wall-clock time after the previous one
+	// (signingTransPeriod blocks without a block time change), and is queued at
+	// that block rounded up to RescheduleCoalesceBlocks, then moved by any later
+	// block time change
 	refMs := constants.ThorchainBlockTime.Milliseconds()
 	// analyze-ignore(unscaled-config): a wall-clock period, in reference blocks
 	periodMs := h.mgr.GetConstants().GetInt64Value(constants.SigningTransactionPeriod) * refMs
@@ -77,11 +79,24 @@ func (h RagnarokHandler) handle(ctx cosmos.Context, msg MsgRagnarok) (*cosmos.Re
 		// one extended period later, rounded up to a whole block once. Stepping
 		// by the standard period rounds each step, which can overshoot that
 		// height. Without a block time change the extended period is a whole
-		// number of standard steps, so they already land on it.
+		// number of standard steps, so they already land on it (rounded up to
+		// a coalesce interval that divides the period, as on mainnet).
 		periodMs *= observedSigningPeriodMultiplier(msg.Tx)
 	}
+	// read once the walk passes the first height, as LackSigning reads it
+	var coalesce int64
+	coalesceRead := false
+	nextRetry := func(height int64) (due, retry int64) {
+		if !coalesceRead {
+			coalesce = h.mgr.Keeper().GetConfigInt64Ref(ctx, constants.RescheduleCoalesceBlocks)
+			coalesceRead = true
+		}
+		return history.RescheduleHeight(height, periodMs, coalesce, refMs)
+	}
 	decrementedPendingRagnarok := false
-	for height := msg.BlockHeight; height <= ctx.BlockHeight(); height = history.HeightAfter(height, periodMs, refMs) {
+	// a retry is searched once it is due, though it can be queued ahead of the
+	// current block: an observation of the outbound it replaces can still land
+	for height, due := msg.BlockHeight, msg.BlockHeight; due <= ctx.BlockHeight(); due, height = nextRetry(height) {
 		// update txOut record with our TxID that sent funds out of the pool
 		txOut, err := h.mgr.Keeper().GetTxOut(ctx, height)
 		if err != nil {

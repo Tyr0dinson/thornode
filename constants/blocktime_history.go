@@ -145,12 +145,7 @@ func ConvertHeight(height, deadline, prevMs, newMs int64) int64 {
 // Without history it is now rounded up to a multiple of refBlocks.
 func (h BlockTimeHistory) CoalesceReach(now, refBlocks, refMs int64) int64 {
 	roundUp := func(height, ms int64) int64 {
-		if c := ScaleDuration(refBlocks, refMs, ms); c > 1 {
-			if over := height % c; over != 0 {
-				height += c - over
-			}
-		}
-		return height
+		return coalesceRoundUp(height, refBlocks, refMs, ms)
 	}
 	reach := int64(math.MinInt64)
 	for i, seg := range h {
@@ -166,4 +161,40 @@ func (h BlockTimeHistory) CoalesceReach(now, refBlocks, refMs int64) int64 {
 		reach = ConvertHeight(seg.Height, max(reach, roundUp(seg.Height-1, prevMs)), prevMs, seg.Ms)
 	}
 	return max(reach, roundUp(now, h.MsAt(now, refMs)))
+}
+
+// RescheduleHeight follows an outbound queued at from that is still unsigned
+// when durMs of wall-clock time has passed, as LackSigning reschedules it: due
+// is the block that happens in (HeightAfter), and retry the height of the retry
+// it schedules then: due rounded up to the coalesce interval of refBlocks
+// reference blocks at due's block time, then moved by every change latched
+// after due (ConvertHeight). retry can lie ahead of due, and of the current
+// block. Without history and with an interval of at most one block, retry is
+// due.
+func (h BlockTimeHistory) RescheduleHeight(from, durMs, refBlocks, refMs int64) (due, retry int64) {
+	due = h.HeightAfter(from, durMs, refMs)
+	retry = coalesceRoundUp(due, refBlocks, refMs, h.MsAt(due, refMs))
+	for i, seg := range h {
+		if seg.Height <= due {
+			continue
+		}
+		prevMs := refMs
+		if i > 0 {
+			prevMs = h[i-1].Ms
+		}
+		retry = ConvertHeight(seg.Height, retry, prevMs, seg.Ms)
+	}
+	return due, retry
+}
+
+// coalesceRoundUp rounds height up to a multiple of a coalesce interval of
+// refBlocks reference blocks at a block time of ms, as LackSigning does with
+// RescheduleCoalesceBlocks. An interval of at most one block leaves it alone.
+func coalesceRoundUp(height, refBlocks, refMs, ms int64) int64 {
+	if c := ScaleDuration(refBlocks, refMs, ms); c > 1 {
+		if over := height % c; over != 0 {
+			height += c - over
+		}
+	}
+	return height
 }
