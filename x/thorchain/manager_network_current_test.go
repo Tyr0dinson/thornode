@@ -7020,3 +7020,147 @@ func (s *NetworkManagerTestSuite) TestAttributeChainBondRewards(c *C) {
 	c.Assert(networkMgr.attributeChainBondRewards(ctx, cosmos.ZeroUint(), cosmos.ZeroUint(), totalLiquidityFees, 6, 5256000, Pools{ethPool, btcPool}, uint64(ctx.BlockHeight()), &network), IsNil)
 	c.Assert(network.ChainRewards, HasLen, 0)
 }
+
+func chainAwareTestVault(status VaultStatus, chains common.Chains, members []string) Vault {
+	v := GetRandomVault()
+	v.Status = status
+	v.Type = AsgardVault
+	v.Chains = chains.Strings()
+	v.Membership = append([]string(nil), members...)
+	return v
+}
+
+func (s *NetworkManagerTestSuite) TestRotateChainAwareVaultsKeepsOverlappingSiblings(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	networkMgr := newNetworkMgr(mgr.Keeper(), mgr.TxOutStore(), mgr.EventMgr())
+
+	naA := GetRandomValidatorNode(NodeActive)
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, naA), IsNil)
+	a, b, cc := naA.PubKeySet.Secp256k1.String(), GetRandomPubKey().String(), GetRandomPubKey().String()
+	old := chainAwareTestVault(ActiveVault, common.Chains{common.THORChain, common.BTCChain, common.ETHChain}, []string{a, b, cc})
+	activeXMR := chainAwareTestVault(ActiveVault, xmrMonovaultChains(), []string{a, b, cc})
+	v1 := chainAwareTestVault(InitVault, common.Chains{common.BTCChain}, []string{a, b, cc})
+	v2 := chainAwareTestVault(InitVault, common.Chains{common.ETHChain}, []string{a, b})
+	for _, v := range []Vault{old, activeXMR, v1, v2} {
+		c.Assert(mgr.Keeper().SetVault(ctx, v), IsNil)
+	}
+
+	c.Assert(networkMgr.RotateChainAwareVaults(ctx, Vaults{v1, v2}), IsNil)
+
+	status := func(v Vault) VaultStatus {
+		got, err := mgr.Keeper().GetVault(ctx, v.PubKey)
+		c.Assert(err, IsNil)
+		return got.Status
+	}
+	c.Check(status(old), Equals, RetiringVault)
+	c.Check(status(v1), Equals, ActiveVault)
+	c.Check(status(v2), Equals, ActiveVault)
+	c.Check(status(activeXMR), Equals, ActiveVault)
+
+	for _, chain := range []common.Chain{common.BTCChain, common.ETHChain} {
+		vaults := mgr.Keeper().GetActiveAsgardVaultsByChain(ctx, chain.String())
+		c.Check(len(vaults), Equals, 1, Commentf("chain %s", chain))
+	}
+
+	// Members are recorded as signers of every vault they joined.
+	na, err := mgr.Keeper().GetNodeAccount(ctx, naA.NodeAddress)
+	c.Assert(err, IsNil)
+	c.Check(na.SignerMembership, DeepEquals, []string{v1.PubKey.String(), v2.PubKey.String()})
+}
+
+func (s *NetworkManagerTestSuite) TestRotateChainAwareVaultsKeepsSkippedGroupVault(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	networkMgr := newNetworkMgr(mgr.Keeper(), mgr.TxOutStore(), mgr.EventMgr())
+
+	// BTC on ABCD and ETH on ABC; E joins supporting only ETH. The BTC group is
+	// unchanged (its keygen is skipped) and only a new ETH vault ABCE rotates in.
+	a, b, cc, d, e := GetRandomPubKey().String(), GetRandomPubKey().String(), GetRandomPubKey().String(), GetRandomPubKey().String(), GetRandomPubKey().String()
+	vBTC := chainAwareTestVault(ActiveVault, common.Chains{common.BTCChain}, []string{a, b, cc, d})
+	vETH := chainAwareTestVault(ActiveVault, common.Chains{common.ETHChain}, []string{a, b, cc})
+	newETH := chainAwareTestVault(InitVault, common.Chains{common.ETHChain}, []string{a, b, cc, e})
+	for _, v := range []Vault{vBTC, vETH, newETH} {
+		c.Assert(mgr.Keeper().SetVault(ctx, v), IsNil)
+	}
+
+	c.Assert(networkMgr.RotateChainAwareVaults(ctx, Vaults{newETH}), IsNil)
+
+	got, err := mgr.Keeper().GetVault(ctx, vBTC.PubKey)
+	c.Assert(err, IsNil)
+	c.Check(got.Status, Equals, ActiveVault)
+	got, err = mgr.Keeper().GetVault(ctx, vETH.PubKey)
+	c.Assert(err, IsNil)
+	c.Check(got.Status, Equals, RetiringVault)
+	got, err = mgr.Keeper().GetVault(ctx, newETH.PubKey)
+	c.Assert(err, IsNil)
+	c.Check(got.Status, Equals, ActiveVault)
+}
+
+func (s *NetworkManagerTestSuite) TestRotateChainAwareVaultsRetiresOnlyWhenEveryChainIsReplaced(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	networkMgr := newNetworkMgr(mgr.Keeper(), mgr.TxOutStore(), mgr.EventMgr())
+
+	a, b, cc := GetRandomPubKey().String(), GetRandomPubKey().String(), GetRandomPubKey().String()
+	// DOGE is served only by the old vault and has no replacement: it must stay.
+	oldUncovered := chainAwareTestVault(ActiveVault, common.Chains{common.BTCChain, common.DOGEChain}, []string{a, b, cc})
+	// LTC is served by a vault outside this rotation: the old vault may retire.
+	oldCovered := chainAwareTestVault(ActiveVault, common.Chains{common.ETHChain, common.LTCChain}, []string{a, b})
+	keptLTC := chainAwareTestVault(ActiveVault, common.Chains{common.LTCChain}, []string{b, cc})
+	newBTC := chainAwareTestVault(InitVault, common.Chains{common.BTCChain}, []string{a, b, cc})
+	newETH := chainAwareTestVault(InitVault, common.Chains{common.ETHChain}, []string{a, cc})
+	for _, v := range []Vault{oldUncovered, oldCovered, keptLTC, newBTC, newETH} {
+		c.Assert(mgr.Keeper().SetVault(ctx, v), IsNil)
+	}
+
+	c.Assert(networkMgr.RotateChainAwareVaults(ctx, Vaults{newBTC, newETH}), IsNil)
+
+	for _, tc := range []struct {
+		v    Vault
+		want VaultStatus
+	}{
+		{oldUncovered, ActiveVault},
+		{oldCovered, RetiringVault},
+		{keptLTC, ActiveVault},
+		{newBTC, ActiveVault},
+		{newETH, ActiveVault},
+	} {
+		got, err := mgr.Keeper().GetVault(ctx, tc.v.PubKey)
+		c.Assert(err, IsNil)
+		c.Check(got.Status, Equals, tc.want, Commentf("vault chains %v", tc.v.Chains))
+	}
+}
+
+func (s *NetworkManagerTestSuite) TestTriggerKeygenChainAwareSkipRequiresSameChains(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	networkMgr := newNetworkMgr(mgr.Keeper(), mgr.TxOutStore(), mgr.EventMgr())
+	mgr.Keeper().SetMimir(ctx, constants.EnableNodeChainConsensus.String(), 1)
+
+	na1 := GetRandomValidatorNode(NodeActive)
+	na1.SupportedChains = []string{common.BTCChain.String(), common.ETHChain.String()}
+	na2 := GetRandomValidatorNode(NodeActive)
+	na2.SupportedChains = []string{common.BTCChain.String(), common.ETHChain.String()}
+	for _, na := range []NodeAccount{na1, na2} {
+		c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
+	}
+	nas := NodeAccounts{na1, na2}
+	members := []string{na1.PubKeySet.Secp256k1.String(), na2.PubKeySet.Secp256k1.String()}
+
+	// Same members, but the vault serves only BTC: the {BTC,ETH} group must
+	// get a new vault rather than leave ETH without one.
+	existing := chainAwareTestVault(ActiveVault, common.Chains{common.BTCChain}, members)
+	c.Assert(mgr.Keeper().SetVault(ctx, existing), IsNil)
+	c.Assert(networkMgr.TriggerKeygen(ctx, nas), IsNil)
+	keygenBlock, err := mgr.Keeper().GetKeygenBlock(ctx, ctx.BlockHeight())
+	c.Assert(err, IsNil)
+	c.Assert(len(keygenBlock.Keygens), Equals, 1)
+	c.Check(keygenBlock.Keygens[0].TargetChains, DeepEquals, []string{common.BTCChain.String(), common.ETHChain.String()})
+
+	// Same members and the same chains (THORChain ignored): skipped.
+	keygenBlock.Keygens = nil
+	mgr.Keeper().SetKeygenBlock(ctx, keygenBlock)
+	existing.Chains = common.Chains{common.THORChain, common.ETHChain, common.BTCChain}.Strings()
+	c.Assert(mgr.Keeper().SetVault(ctx, existing), IsNil)
+	c.Assert(networkMgr.TriggerKeygen(ctx, nas), IsNil)
+	keygenBlock, err = mgr.Keeper().GetKeygenBlock(ctx, ctx.BlockHeight())
+	c.Assert(err, IsNil)
+	c.Check(len(keygenBlock.Keygens), Equals, 0)
+}

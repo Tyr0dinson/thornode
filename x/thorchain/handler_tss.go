@@ -914,6 +914,14 @@ func (h TssHandler) tryRotateInitVaults(ctx cosmos.Context, initVaults Vaults) e
 		}
 		return nil
 	}
+	if chainAware {
+		// Sibling chain-group vaults share members by design; rotate the
+		// generation together so they do not retire one another.
+		if err := h.mgr.NetworkMgr().RotateChainAwareVaults(ctx, initVaults); err != nil {
+			return fmt.Errorf("fail to rotate vaults: %w", err)
+		}
+		return nil
+	}
 	for _, v := range initVaults {
 		if err := h.mgr.NetworkMgr().RotateVault(ctx, v); err != nil {
 			return fmt.Errorf("fail to rotate vault: %w", err)

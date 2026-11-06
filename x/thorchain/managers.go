@@ -141,6 +141,7 @@ type NetworkManager interface {
 	TriggerKeygen(ctx cosmos.Context, nas NodeAccounts) error
 	TriggerXMRKeygen(ctx cosmos.Context, nas NodeAccounts) error
 	RotateVault(ctx cosmos.Context, vault Vault) error
+	RotateChainAwareVaults(ctx cosmos.Context, vaults Vaults) error
 	BeginBlock(ctx cosmos.Context, mgr Manager) error
 	EndBlock(ctx cosmos.Context, mgr Manager) error
 	UpdateNetwork(ctx cosmos.Context, mgr Manager) error

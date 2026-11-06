@@ -46,6 +46,14 @@ func (vm *NetworkMgrDummy) RotateVault(ctx cosmos.Context, vault Vault) error {
 	return nil
 }
 
+func (vm *NetworkMgrDummy) RotateChainAwareVaults(ctx cosmos.Context, vaults Vaults) error {
+	for _, vault := range vaults {
+		vm.vault = vault
+		vm.rotated = append(vm.rotated, vault)
+	}
+	return nil
+}
+
 func (vm *NetworkMgrDummy) UpdateNetwork(ctx cosmos.Context, mgr Manager) error {
 	return nil
 }

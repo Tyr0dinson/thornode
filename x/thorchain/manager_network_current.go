@@ -1745,13 +1745,17 @@ func (vm *NetworkMgr) scheduleKeygenChainAware(ctx cosmos.Context, nas NodeAccou
 		}
 		keygen.TargetChains = chainGroup.Chains
 
-		// Check if we already have an active regular Asgard with the same membership
+		// Skip only when an active regular Asgard with the same membership
+		// already serves exactly this group's chains. A vault with the same
+		// members but a different chain set must be replaced, or a chain that
+		// joined the group would get no vault (and one that left it would keep
+		// its old one).
 		skipKeygen := false
 		for _, vault := range active {
 			if vault.HasChain(common.XMRChain) {
 				continue
 			}
-			if vault.MembershipEquals(keygen.GetMembers()) {
+			if vault.MembershipEquals(keygen.GetMembers()) && vaultServesExactly(vault, chainGroup.Chains) {
 				ctx.Logger().Info("skip keygen due to vault already existing",
 					"chains", chainGroup.Chains,
 					"members", len(members))
@@ -1794,6 +1798,30 @@ func (vm *NetworkMgr) scheduleKeygenChainAware(ctx cosmos.Context, nas NodeAccou
 		}
 	}
 	return nil
+}
+
+// vaultServesExactly reports whether the vault's external chains (THORChain
+// ignored) are exactly the given chain group.
+func vaultServesExactly(vault Vault, groupChains []string) bool {
+	var vaultChains []string
+	for _, chain := range vault.GetChains() {
+		if !chain.Equals(common.THORChain) {
+			vaultChains = append(vaultChains, chain.String())
+		}
+	}
+	var want []string
+	for _, chainStr := range groupChains {
+		chain, err := common.NewChain(chainStr)
+		if err != nil || chain.Equals(common.THORChain) {
+			continue
+		}
+		if !slices.Contains(want, chain.String()) {
+			want = append(want, chain.String())
+		}
+	}
+	sort.Strings(vaultChains)
+	sort.Strings(want)
+	return slices.Equal(vaultChains, want)
 }
 
 // ChainGroup represents a group of chains supported by the same set of nodes
@@ -1889,18 +1917,123 @@ func (vm *NetworkMgr) RotateVault(ctx cosmos.Context, vault Vault) error {
 		if !conflicts {
 			continue
 		}
-		asgard.UpdateStatus(RetiringVault, ctx.BlockHeight())
-		if err := vm.k.SetVault(ctx, asgard); err != nil {
+		if err := vm.retireAsgard(ctx, asgard); err != nil {
 			return err
 		}
-
-		ctx.EventManager().EmitEvent(
-			cosmos.NewEvent(EventTypeInactiveVault,
-				cosmos.NewAttribute("set asgard vault to inactive", asgard.PubKey.String())),
-		)
 	}
 
-	// Update Node account membership
+	if err := vm.activateAsgard(ctx, vault); err != nil {
+		return err
+	}
+	if err := vm.cleanupAsgardIndex(ctx); err != nil {
+		ctx.Logger().Error("fail to clean up asgard index", "error", err)
+	}
+	return nil
+}
+
+// RotateChainAwareVaults activates one generation of chain-aware regular
+// Asgards (the init vaults of a single keygen block) together.
+//
+// Chain-aware vaults overlap in membership by design (a node in two chain
+// groups sits in two vaults), so RotateVault's shared-member conflict rule
+// would make siblings retire each other. Here a sibling is never a conflict,
+// and an old regular vault retires only when every chain it serves has a
+// replacement: either a vault of the new generation, or an active vault that
+// takes no part in this rotation (a group whose keygen was skipped because an
+// identical vault already serves it). XMR monovaults are never touched.
+func (vm *NetworkMgr) RotateChainAwareVaults(ctx cosmos.Context, vaults Vaults) error {
+	active, err := vm.k.GetAsgardVaultsByStatus(ctx, ActiveVault)
+	if err != nil {
+		return err
+	}
+
+	var newChains common.Chains
+	for _, v := range vaults {
+		for _, chain := range v.GetChains() {
+			if !chain.Equals(common.THORChain) && !newChains.Has(chain) {
+				newChains = append(newChains, chain)
+			}
+		}
+	}
+	isNew := func(v Vault) bool {
+		for _, nv := range vaults {
+			if nv.PubKey.Equals(v.PubKey) {
+				return true
+			}
+		}
+		return false
+	}
+
+	// Active regular vaults that serve none of the new generation's chains stay
+	// active through this rotation, so they can be relied on as a replacement.
+	var candidates, staying Vaults
+	for _, asgard := range active {
+		if asgard.HasChain(common.XMRChain) || isNew(asgard) {
+			continue
+		}
+		overlaps := false
+		for _, chain := range asgard.GetChains() {
+			if newChains.Has(chain) {
+				overlaps = true
+				break
+			}
+		}
+		if overlaps {
+			candidates = append(candidates, asgard)
+		} else {
+			staying = append(staying, asgard)
+		}
+	}
+
+	for _, asgard := range candidates {
+		var uncovered common.Chains
+		for _, chain := range asgard.GetChains() {
+			if chain.Equals(common.THORChain) || newChains.Has(chain) {
+				continue
+			}
+			if len(filterVaultsByChain(staying, chain)) == 0 {
+				uncovered = append(uncovered, chain)
+			}
+		}
+		if len(uncovered) > 0 {
+			// Retiring would leave these chains with no active vault and no
+			// migration target, so keep the vault serving them.
+			ctx.Logger().Info("vault kept active: chains have no replacement vault",
+				"pubkey", asgard.PubKey.String(), "chains", strings.Join(uncovered.Strings(), ","))
+			continue
+		}
+		if err := vm.retireAsgard(ctx, asgard); err != nil {
+			return err
+		}
+	}
+
+	for _, vault := range vaults {
+		if err := vm.activateAsgard(ctx, vault); err != nil {
+			return err
+		}
+	}
+	if err := vm.cleanupAsgardIndex(ctx); err != nil {
+		ctx.Logger().Error("fail to clean up asgard index", "error", err)
+	}
+	return nil
+}
+
+// retireAsgard moves an active Asgard to Retiring.
+func (vm *NetworkMgr) retireAsgard(ctx cosmos.Context, asgard Vault) error {
+	asgard.UpdateStatus(RetiringVault, ctx.BlockHeight())
+	if err := vm.k.SetVault(ctx, asgard); err != nil {
+		return err
+	}
+	ctx.EventManager().EmitEvent(
+		cosmos.NewEvent(EventTypeInactiveVault,
+			cosmos.NewAttribute("set asgard vault to inactive", asgard.PubKey.String())),
+	)
+	return nil
+}
+
+// activateAsgard records the vault on its members' signer lists and makes it
+// Active.
+func (vm *NetworkMgr) activateAsgard(ctx cosmos.Context, vault Vault) error {
 	for _, member := range vault.GetMembership() {
 		na, err := vm.k.GetNodeAccountByPubKey(ctx, member)
 		if err != nil {
@@ -1924,9 +2057,6 @@ func (vm *NetworkMgr) RotateVault(ctx cosmos.Context, vault Vault) error {
 		cosmos.NewEvent(EventTypeActiveVault,
 			cosmos.NewAttribute("add new asgard vault", vault.PubKey.String())),
 	)
-	if err := vm.cleanupAsgardIndex(ctx); err != nil {
-		ctx.Logger().Error("fail to clean up asgard index", "error", err)
-	}
 	return nil
 }
 
