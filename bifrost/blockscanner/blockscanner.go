@@ -305,6 +305,42 @@ func (b *BlockScanner) skipAheadIfStalled(currentBlock int64) bool {
 	return true
 }
 
+// catchUpAfterObservationPause runs when scanning resumes after the chain was
+// not observed. It clears the stall clock, which belongs to the height before
+// the pause, and moves a cursor that fell further behind than
+// MaxResumeBlockLag forward to that bound, the same window GetStartHeight
+// applies on restart. Like skipAheadIfStalled the target comes from the
+// chain's consensus last observed height, so every block passed over was
+// already observed by the network. It reports whether the cursor moved.
+func (b *BlockScanner) catchUpAfterObservationPause() bool {
+	b.stallHeight, b.stallSince = 0, time.Time{}
+
+	maxLag := b.maxResumeLagBlocks()
+	if maxLag <= 0 || b.thorchainBridge == nil || b.cfg.ChainID.Equals(common.THORChain) {
+		return false
+	}
+	observed, err := b.thorchainBridge.GetLastObservedInHeight(b.cfg.ChainID)
+	if err != nil || observed <= 0 {
+		b.logger.Warn().Err(err).Msg("no consensus observed height, resuming observation without the max resume lag bound")
+		return false
+	}
+	target := observed - maxLag
+	if target <= b.PreviousHeight() {
+		return false
+	}
+	if err := b.scannerStorage.SetScanPos(target); err != nil {
+		b.logger.Error().Err(err).Int64("target", target).Msg("fail to persist observation resume position")
+		return false
+	}
+	previous := atomic.SwapInt64(&b.previousBlock, target)
+	b.logger.Info().
+		Int64("from", previous).
+		Int64("to", target).
+		Int64("last_observed_in", observed).
+		Msg("chain observation resumed beyond max resume lag, skipping ahead to consensus observed height")
+	return true
+}
+
 func rewindRequiredNextHeight(err error) (int64, bool) {
 	// RewindRequiredError intentionally has a value receiver, so tolerate both
 	// value and pointer construction by chain scanners, including wrapped errors.
@@ -510,6 +546,9 @@ func (b *BlockScanner) scanBlocks() {
 
 	lastMimirCheck := time.Now().Add(-constants.ThorchainBlockTime)
 	isChainPaused := false
+	// observationPaused is set while shouldObserve reports the chain is not
+	// observed (chain-aware consensus, node not in a vault for this chain).
+	observationPaused := false
 
 	type fetchTxsResult struct {
 		txIn types.TxIn
@@ -609,9 +648,20 @@ func (b *BlockScanner) scanBlocks() {
 
 			// Chain is not being observed, skip scanning
 			if !shouldObserve {
+				observationPaused = true
 				b.healthy.Store(false)
 				time.Sleep(constants.ThorchainBlockTime)
 				continue
+			}
+			if observationPaused {
+				// The cursor froze while the chain was not observed. Resume
+				// within the same lag bound a restart applies, rather than
+				// replaying every block since the pause while unhealthy.
+				observationPaused = false
+				if b.catchUpAfterObservationPause() {
+					clearPrefetch()
+					continue
+				}
 			}
 
 			chainHeight, err := b.chainScanner.GetHeight()

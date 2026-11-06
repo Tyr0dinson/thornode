@@ -477,3 +477,74 @@ func (s *BlockScannerExtraSuite) TestSolvencyHookOrderedAfterHealthRecovery(c *C
 		}()
 	}
 }
+
+// Resuming after a chain-aware observation pause applies the same bound as a
+// restart: a cursor that fell outside the catch-up window jumps to it (in
+// memory and in storage), one inside it keeps every block, and the stall clock
+// left over from before the pause is cleared either way.
+func (s *BlockScannerExtraSuite) TestCatchUpAfterObservationPause(c *C) {
+	server := lastObservedServer(`[{"chain":"ETH","last_observed_in":160000,"last_signed_out":0,"thorchain":100}]`)
+	defer server.Close()
+
+	for _, tc := range []struct {
+		previous, want int64
+		moved          bool
+	}{
+		{previous: 2800, want: 159700, moved: true},
+		{previous: 159700, want: 159700, moved: false},
+		{previous: 159900, want: 159900, moved: false},
+	} {
+		storage := NewMockScannerStorage()
+		c.Assert(storage.SetScanPos(tc.previous), IsNil)
+		scanner := s.newStallScanner(c, server, storage, time.Hour)
+		atomic.StoreInt64(&scanner.previousBlock, tc.previous)
+		armStall(scanner, tc.previous+1)
+
+		c.Check(scanner.catchUpAfterObservationPause(), Equals, tc.moved, Commentf("previous=%d", tc.previous))
+		c.Check(scanner.PreviousHeight(), Equals, tc.want)
+		position, err := storage.GetScanPos()
+		c.Assert(err, IsNil)
+		c.Check(position, Equals, tc.want)
+		// A failure right after resuming must not inherit the pre-pause stall
+		// clock and skip ahead on the first error.
+		c.Check(scanner.stallHeight, Equals, int64(0))
+		c.Check(scanner.skipAheadIfStalled(tc.want+1), Equals, false)
+	}
+}
+
+// The scan loop applies the bound on the transition from unobserved to
+// observed.
+func (s *BlockScannerExtraSuite) TestScanBlocksResumesObservationWithinLag(c *C) {
+	server := lastObservedServer(`[{"chain":"ETH","last_observed_in":160000,"last_signed_out":0,"thorchain":100}]`)
+	defer server.Close()
+
+	storage := NewMockScannerStorage()
+	c.Assert(storage.SetScanPos(2800), IsNil)
+	scanner := s.newStallScanner(c, server, storage, time.Hour)
+	atomic.StoreInt64(&scanner.previousBlock, 2800)
+
+	var observe atomic.Bool
+	var calls atomic.Int64
+	scanner.SetShouldObserveCallback(func() bool {
+		calls.Add(1)
+		return observe.Load()
+	})
+	scanner.wg.Add(1)
+	go scanner.scanBlocks()
+	defer scanner.Stop()
+
+	// Paused: the cursor stays frozen.
+	deadline := time.Now().Add(10 * time.Second)
+	for calls.Load() == 0 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	c.Assert(calls.Load() > 0, Equals, true)
+	c.Check(scanner.PreviousHeight(), Equals, int64(2800))
+
+	observe.Store(true)
+	deadline = time.Now().Add(10 * time.Second)
+	for scanner.PreviousHeight() < 159700 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	c.Check(scanner.PreviousHeight(), Equals, int64(159700))
+}
