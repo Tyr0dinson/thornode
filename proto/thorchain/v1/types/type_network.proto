@@ -34,6 +34,12 @@ message Network {
   int64 NodeIncomeSplit = 6;
   uint64 outbound_gas_spent_rune = 7;
   uint64 outbound_gas_withheld_rune = 8;
-  repeated ChainReward chain_rewards = 9 [ (gogoproto.nullable) = false ];
-  repeated ChainBondUnit chain_bond_units = 10 [ (gogoproto.nullable) = false ];
+  repeated ChainReward chain_rewards = 9 [
+    (gogoproto.nullable) = false,
+    (gogoproto.jsontag) = "chain_rewards,omitempty"
+  ];
+  repeated ChainBondUnit chain_bond_units = 10 [
+    (gogoproto.nullable) = false,
+    (gogoproto.jsontag) = "chain_bond_units,omitempty"
+  ];
 }
