@@ -952,8 +952,89 @@ func (vm *ValidatorMgr) applyNodeAccountBondReward(ctx cosmos.Context, na NodeAc
 	return nil
 }
 
+// chainRewardSnapshot is the per-chain bond reward state a chain-aware payout
+// works from. It is taken once, before any node is paid, so a node's share does
+// not depend on how many nodes were paid before it. The maps are only used for
+// lookups.
+type chainRewardSnapshot struct {
+	rewards       map[string]cosmos.Uint
+	effectiveBond map[string]cosmos.Uint
+}
+
+func (s chainRewardSnapshot) reward(chain string) cosmos.Uint {
+	if r, ok := s.rewards[chain]; ok {
+		return r
+	}
+	return cosmos.ZeroUint()
+}
+
+func (s chainRewardSnapshot) bond(chain string) cosmos.Uint {
+	if b, ok := s.effectiveBond[chain]; ok {
+		return b
+	}
+	return cosmos.ZeroUint()
+}
+
+// reconcileChainRewards makes the per-chain buckets an exact attribution of
+// BondRewardRune: buckets that add up to more than the ledger are scaled down
+// to it, and any part of the ledger they do not cover (rewards accrued while
+// chain-aware consensus was off, or rolled over from a legacy payout) is
+// spread across chains by node participation.
+func reconcileChainRewards(ctx cosmos.Context, k keeper.Keeper, network *Network) error {
+	total := cosmos.ZeroUint()
+	for _, cr := range network.ChainRewards {
+		total = total.Add(cr.Amount)
+	}
+	ledger := network.BondRewardRune
+	switch {
+	case total.GT(ledger):
+		for i := range network.ChainRewards {
+			network.ChainRewards[i].Amount = common.GetSafeShare(network.ChainRewards[i].Amount, total, ledger)
+		}
+	case total.LT(ledger):
+		return addChainRewardsByNodeCount(ctx, k, common.SafeSub(ledger, total), network)
+	}
+	return nil
+}
+
+// prepareChainRewardSnapshot reconciles and persists the reward buckets, then
+// snapshots them along with each chain's total effective bond: the bond of the
+// rewardable active nodes supporting that chain, each capped at bondHardCap.
+func (vm *ValidatorMgr) prepareChainRewardSnapshot(ctx cosmos.Context, active NodeAccounts, bondHardCap cosmos.Uint) (chainRewardSnapshot, error) {
+	snap := chainRewardSnapshot{
+		rewards:       make(map[string]cosmos.Uint),
+		effectiveBond: make(map[string]cosmos.Uint),
+	}
+	network, err := vm.k.GetNetwork(ctx)
+	if err != nil {
+		return snap, fmt.Errorf("fail to get network: %w", err)
+	}
+	if err = reconcileChainRewards(ctx, vm.k, &network); err != nil {
+		return snap, fmt.Errorf("fail to reconcile chain rewards: %w", err)
+	}
+	if err = vm.k.SetNetwork(ctx, network); err != nil {
+		return snap, fmt.Errorf("fail to save network: %w", err)
+	}
+	for _, cr := range network.ChainRewards {
+		snap.rewards[cr.Chain] = cr.Amount
+	}
+	for _, na := range active {
+		if na.ActiveBlockHeight == 0 || na.Bond.IsZero() {
+			continue
+		}
+		naEffectiveBond := na.Bond
+		if naEffectiveBond.GT(bondHardCap) {
+			naEffectiveBond = bondHardCap
+		}
+		for _, chainStr := range getNodeSupportedChains(ctx, vm.k, na) {
+			snap.effectiveBond[chainStr] = snap.bond(chainStr).Add(naEffectiveBond)
+		}
+	}
+	return snap, nil
+}
+
 // payNodeAccountChainRewards calculates and pays rewards to a node based on per-chain participation
-func (vm *ValidatorMgr) payNodeAccountChainRewards(ctx cosmos.Context, lastChurnHeight int64, na NodeAccount, totalEffectiveBond, bondHardCap cosmos.Uint, mgr Manager) error {
+func (vm *ValidatorMgr) payNodeAccountChainRewards(ctx cosmos.Context, lastChurnHeight int64, na NodeAccount, snap chainRewardSnapshot, bondHardCap cosmos.Uint, mgr Manager) error {
 	if na.ActiveBlockHeight == 0 || na.Bond.IsZero() {
 		return nil
 	}
@@ -982,22 +1063,24 @@ func (vm *ValidatorMgr) payNodeAccountChainRewards(ctx cosmos.Context, lastChurn
 		naEffectiveBond = bondHardCap
 	}
 
+	type chainPayout struct {
+		chain  string
+		amount cosmos.Uint
+	}
+	var payouts []chainPayout
 	totalReward := cosmos.ZeroUint()
 
 	// Calculate rewards for each chain this node supports (with backwards
 	// compatibility for nodes with empty SupportedChains)
 	for _, chainStr := range getNodeSupportedChains(ctx, vm.k, na) {
-		chainRewards := network.GetChainRewardAmount(chainStr)
-		if chainRewards.IsZero() {
-			continue
-		}
-		chainBondUnits := network.GetChainBondUnitsAmount(chainStr)
-		if chainBondUnits.IsZero() {
+		chainRewards := snap.reward(chainStr)
+		chainBond := snap.bond(chainStr)
+		if chainRewards.IsZero() || chainBond.IsZero() {
 			continue
 		}
 
-		// reward = chainRewards * (naEffectiveBond / totalEffectiveBond) * (unslashed blocks / total blocks)
-		nodeShare := common.GetUncappedShare(naEffectiveBond, totalEffectiveBond, chainRewards)
+		// reward = chainRewards * (naEffectiveBond / chain's effective bond) * (unslashed blocks / total blocks)
+		nodeShare := common.GetUncappedShare(naEffectiveBond, chainBond, chainRewards)
 		nodeReward := common.GetUncappedShare(cosmos.NewUint(uint64(earnedBlocks)), cosmos.NewUint(uint64(totalActiveBlocks)), nodeShare)
 		if nodeReward.GT(chainRewards) {
 			nodeReward = chainRewards
@@ -1005,18 +1088,26 @@ func (vm *ValidatorMgr) payNodeAccountChainRewards(ctx cosmos.Context, lastChurn
 		if nodeReward.IsZero() {
 			continue
 		}
-
+		payouts = append(payouts, chainPayout{chain: chainStr, amount: nodeReward})
 		totalReward = totalReward.Add(nodeReward)
-
-		// Deduct from chain rewards and bond units
-		network.SetChainRewardAmount(chainStr, common.SafeSub(chainRewards, nodeReward))
-		network.SetChainBondUnitsAmount(chainStr, common.SafeSub(chainBondUnits, cosmos.NewUint(uint64(totalActiveBlocks))))
 	}
 
 	// Per-chain buckets are an attribution of BondRewardRune; never pay out more
 	// than the remaining ledger.
 	if totalReward.GT(network.BondRewardRune) {
 		totalReward = network.BondRewardRune
+	}
+
+	// Debit the buckets by what is actually paid.
+	unpaid := totalReward
+	for _, p := range payouts {
+		debit := p.amount
+		if debit.GT(unpaid) {
+			debit = unpaid
+		}
+		unpaid = common.SafeSub(unpaid, debit)
+		network.SetChainRewardAmount(p.chain, common.SafeSub(network.GetChainRewardAmount(p.chain), debit))
+		network.SetChainBondUnitsAmount(p.chain, common.SafeSub(network.GetChainBondUnitsAmount(p.chain), cosmos.NewUint(uint64(totalActiveBlocks))))
 	}
 
 	return vm.applyNodeAccountBondReward(ctx, na, network, totalReward, slashPts, totalActiveBlocks, mgr)
@@ -1166,12 +1257,19 @@ func (vm *ValidatorMgr) distributeBondReward(ctx cosmos.Context, mgr Manager) er
 	// With chain-aware consensus, nodes are paid from the per-chain reward
 	// buckets of the chains they support rather than the global bond reward.
 	chainAware := vm.k.GetConfigInt64(ctx, constants.EnableNodeChainConsensus) > 0
+	var snap chainRewardSnapshot
+	if chainAware {
+		snap, err = vm.prepareChainRewardSnapshot(ctx, active, bondHardCap)
+		if err != nil {
+			return err
+		}
+	}
 
 	for _, item := range active {
 		cacheCtx, commit := ctx.CacheContext()
 		var payErr error
 		if chainAware {
-			payErr = vm.payNodeAccountChainRewards(cacheCtx, lastChurnHeight, item, totalEffectiveBond, bondHardCap, mgr)
+			payErr = vm.payNodeAccountChainRewards(cacheCtx, lastChurnHeight, item, snap, bondHardCap, mgr)
 		} else {
 			payErr = vm.payNodeAccountBondAward(cacheCtx, lastChurnHeight, item, network.BondRewardRune, totalEffectiveBond, bondHardCap, mgr)
 		}
@@ -1183,6 +1281,23 @@ func (vm *ValidatorMgr) distributeBondReward(ctx cosmos.Context, mgr Manager) er
 			telemetry.IncrCounter(float32(1), "thornode", "churn", "bond_reward_failed")
 		} else {
 			commit()
+		}
+	}
+
+	// The legacy payout draws on BondRewardRune directly and never debits the
+	// per-chain buckets; drop any left from a chain-aware period so they cannot
+	// be paid a second time if the mimir is switched back on.
+	if !chainAware {
+		network, err = vm.k.GetNetwork(ctx)
+		if err != nil {
+			return errors.Join(resultErr, fmt.Errorf("fail to get network: %w", err))
+		}
+		if len(network.ChainRewards) > 0 || len(network.ChainBondUnits) > 0 {
+			network.ChainRewards = nil
+			network.ChainBondUnits = nil
+			if err = vm.k.SetNetwork(ctx, network); err != nil {
+				return errors.Join(resultErr, fmt.Errorf("fail to save network: %w", err))
+			}
 		}
 	}
 

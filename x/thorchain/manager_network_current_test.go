@@ -7164,3 +7164,46 @@ func (s *NetworkManagerTestSuite) TestTriggerKeygenChainAwareSkipRequiresSameCha
 	c.Assert(err, IsNil)
 	c.Check(len(keygenBlock.Keygens), Equals, 0)
 }
+
+// The per-chain buckets only accrue while chain-aware consensus is on; the
+// legacy payout never debits them.
+func (s *NetworkManagerTestSuite) TestUpdateNetworkChainRewardsFollowMimir(c *C) {
+	for _, chainAware := range []bool{false, true} {
+		ctx, mgr := setupManagerForTest(c)
+		networkMgr := newNetworkMgr(mgr.Keeper(), mgr.TxOutStore(), mgr.EventMgr())
+		if chainAware {
+			mgr.Keeper().SetMimir(ctx, constants.EnableNodeChainConsensus.String(), 1)
+		}
+		FundModule(c, ctx, mgr.Keeper(), ReserveName, 100000*common.One)
+
+		p := NewPool()
+		p.Asset = common.ETHAsset
+		p.BalanceRune = cosmos.NewUint(common.One * 100)
+		p.BalanceAsset = cosmos.NewUint(common.One * 100)
+		p.Status = PoolAvailable
+		c.Assert(mgr.Keeper().SetPool(ctx, p), IsNil)
+		vault := NewVault(0, ActiveVault, AsgardVault, GetRandomPubKey(), []string{common.ETHChain.String()}, []ChainContract{})
+		vault.Coins = common.NewCoins(common.NewCoin(p.Asset, p.BalanceAsset))
+		for i := 0; i < 2; i++ {
+			na := GetRandomValidatorNode(NodeActive)
+			na.SupportedChains = []string{common.ETHChain.String()}
+			c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
+			vault.Membership = append(vault.Membership, na.PubKeySet.Secp256k1.String())
+		}
+		c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+		c.Assert(mgr.Keeper().AddToLiquidityFees(ctx, common.ETHAsset, cosmos.NewUint(50*common.One)), IsNil)
+
+		c.Assert(networkMgr.UpdateNetwork(ctx, mgr), IsNil)
+
+		network, err := mgr.Keeper().GetNetwork(ctx)
+		c.Assert(err, IsNil)
+		c.Assert(network.BondRewardRune.IsZero(), Equals, false)
+		if chainAware {
+			c.Check(network.GetChainRewardAmount(common.ETHChain.String()).IsZero(), Equals, false)
+			c.Check(network.GetChainBondUnitsAmount(common.ETHChain.String()).IsZero(), Equals, false)
+		} else {
+			c.Check(network.ChainRewards, HasLen, 0)
+			c.Check(network.ChainBondUnits, HasLen, 0)
+		}
+	}
+}

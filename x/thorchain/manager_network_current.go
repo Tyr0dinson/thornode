@@ -2697,9 +2697,14 @@ func (vm *NetworkMgr) UpdateNetwork(ctx cosmos.Context, mgr Manager) error {
 
 	// Attribute the bond reward to per-chain buckets for chain-aware node payouts.
 	// The totals (and every Reserve transfer above) are unchanged; only the
-	// per-chain attribution of bondReward is recorded here.
-	if err = vm.attributeChainBondRewards(cacheCtx, bondReward, totalReserve, totalLiquidityFees, emissionCurve, blocksPerYear, availablePools, currentHeight, &network); err != nil {
-		return fmt.Errorf("fail to attribute chain bond rewards: %w", err)
+	// per-chain attribution of bondReward is recorded here. The buckets only
+	// accrue while chain-aware consensus is on: the legacy payout never debits
+	// them, and a chain-aware payout reconciles them with BondRewardRune.
+	chainAwareRewards := vm.k.GetConfigInt64(cacheCtx, constants.EnableNodeChainConsensus) > 0
+	if chainAwareRewards {
+		if err = vm.attributeChainBondRewards(cacheCtx, bondReward, totalReserve, totalLiquidityFees, emissionCurve, blocksPerYear, availablePools, currentHeight, &network); err != nil {
+			return fmt.Errorf("fail to attribute chain bond rewards: %w", err)
+		}
 	}
 
 	rewardEvt := NewEventRewards(bondReward, evtPools, devFundDeduct, systemIncomeBurnDeduct, tcyStakeDeduct, marketingFundDeduct, polReserveDeduct)
@@ -2712,8 +2717,10 @@ func (vm *NetworkMgr) UpdateNetwork(ctx cosmos.Context, mgr Manager) error {
 		return fmt.Errorf("fail to get total active node account: %w", err)
 	}
 	network.TotalBondUnits = network.TotalBondUnits.Add(cosmos.NewUint(uint64(i))) // Add 1 unit for each active Node
-	if err = vm.updateChainBondUnits(cacheCtx, i, &network); err != nil {
-		return fmt.Errorf("fail to update chain bond units: %w", err)
+	if chainAwareRewards {
+		if err = vm.updateChainBondUnits(cacheCtx, i, &network); err != nil {
+			return fmt.Errorf("fail to update chain bond units: %w", err)
+		}
 	}
 
 	if err = vm.k.SetNetwork(cacheCtx, network); err != nil {
@@ -4067,12 +4074,18 @@ func (vm *NetworkMgr) distributePoolFeesByChain(ctx cosmos.Context, chain string
 
 // distributeChainRewards distributes bond rewards across chains based on active node chain support
 func (vm *NetworkMgr) distributeChainRewards(ctx cosmos.Context, totalBondReward cosmos.Uint, network *Network) error {
-	if totalBondReward.IsZero() {
+	return addChainRewardsByNodeCount(ctx, vm.k, totalBondReward, network)
+}
+
+// addChainRewardsByNodeCount adds amount to the per-chain reward buckets,
+// split by how many active nodes support each chain.
+func addChainRewardsByNodeCount(ctx cosmos.Context, k keeper.Keeper, amount cosmos.Uint, network *Network) error {
+	if amount.IsZero() {
 		return nil
 	}
 
 	// Collect chains and node counts
-	chainStrs, chainNodeCounts, err := vm.collectChainNodeCounts(ctx)
+	chainStrs, chainNodeCounts, err := collectChainNodeCounts(ctx, k)
 	if err != nil {
 		return err
 	}
@@ -4091,7 +4104,7 @@ func (vm *NetworkMgr) distributeChainRewards(ctx cosmos.Context, totalBondReward
 	for _, chainStr := range chainStrs {
 		nodeCount := chainNodeCounts[chainStr]
 		if nodeCount > 0 {
-			chainReward := common.GetSafeShare(cosmos.NewUint(uint64(nodeCount)), totalWeightUint, totalBondReward)
+			chainReward := common.GetSafeShare(cosmos.NewUint(uint64(nodeCount)), totalWeightUint, amount)
 			existing := network.GetChainRewardAmount(chainStr)
 			network.SetChainRewardAmount(chainStr, existing.Add(chainReward))
 		}
@@ -4102,7 +4115,12 @@ func (vm *NetworkMgr) distributeChainRewards(ctx cosmos.Context, totalBondReward
 
 // collectChainNodeCounts collects unique chains and counts node participation for each chain
 func (vm *NetworkMgr) collectChainNodeCounts(ctx cosmos.Context) (chainStrs []string, chainNodeCounts map[string]int64, err error) {
-	active, err := vm.k.ListActiveValidators(ctx)
+	return collectChainNodeCounts(ctx, vm.k)
+}
+
+// collectChainNodeCounts collects unique chains and counts node participation for each chain
+func collectChainNodeCounts(ctx cosmos.Context, k keeper.Keeper) (chainStrs []string, chainNodeCounts map[string]int64, err error) {
+	active, err := k.ListActiveValidators(ctx)
 	if err != nil {
 		return nil, nil, fmt.Errorf("fail to get active validators: %w", err)
 	}
@@ -4110,7 +4128,7 @@ func (vm *NetworkMgr) collectChainNodeCounts(ctx cosmos.Context) (chainStrs []st
 	chainNodeCounts = make(map[string]int64)
 	for _, node := range active {
 		// Get the chains this node supports (with backwards compatibility for empty SupportedChains)
-		for _, chainStr := range getNodeSupportedChains(ctx, vm.k, node) {
+		for _, chainStr := range getNodeSupportedChains(ctx, k, node) {
 			if _, ok := chainNodeCounts[chainStr]; !ok {
 				chainStrs = append(chainStrs, chainStr)
 			}

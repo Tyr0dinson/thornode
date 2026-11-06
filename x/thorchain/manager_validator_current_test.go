@@ -1453,13 +1453,12 @@ func (vts *ValidatorMgrTestSuite) TestWeightedBondReward(c *C) {
 	nodeOperator2Balance := mgr.Keeper().GetBalance(ctx, na2.NodeAddress)
 	nodeOperator3Balance := mgr.Keeper().GetBalance(ctx, na3.NodeAddress)
 
-	// With chain-aware consensus, reward distribution has changed
-	// na1 gets no reward as it may be processed differently in the new system
-	c.Check(nodeOperator1Balance.AmountOf(common.RuneNative.Native()).String(), Equals, strconv.FormatInt(0, 10))
-	// na2 gets a reduced reward in the new distribution
-	c.Check(nodeOperator2Balance.AmountOf(common.RuneNative.Native()).String(), Equals, strconv.FormatInt(1406250, 10))
-
-	// na3 gets its expected reward
+	// Every node supports ETH, so the ETH bucket (the whole 1 RUNE) is split by
+	// effective bond, as in the legacy payout: the hard cap is 3 RUNE, so the
+	// shares are 3/8, 3/8 and 2/8, and each operator receives 5% of its share.
+	// The split does not depend on the order nodes are paid in.
+	c.Check(nodeOperator1Balance.AmountOf(common.RuneNative.Native()).String(), Equals, strconv.FormatInt(1875000, 10))
+	c.Check(nodeOperator2Balance.AmountOf(common.RuneNative.Native()).String(), Equals, strconv.FormatInt(1875000, 10))
 	c.Check(nodeOperator3Balance.AmountOf(common.RuneNative.Native()).String(), Equals, strconv.FormatInt(1250000, 10))
 
 	bondYieldEvents := 0
@@ -3053,4 +3052,104 @@ func (vts *ValidatorMgrTestSuite) TestChainRewardNetworkStateUpdates(c *C) {
 		Commentf("ETH should have distributed rewards"))
 	c.Assert(btcRewardsDelta.GT(cosmos.ZeroUint()), Equals, true,
 		Commentf("BTC should have distributed rewards"))
+}
+
+// Chain-aware payouts split each chain's bucket among the nodes supporting
+// that chain, by effective bond, from a snapshot taken before anyone is paid.
+func (vts *ValidatorMgrTestSuite) TestChainRewardPayoutUsesChainBondAndSnapshot(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	ctx = ctx.WithBlockHeight(20)
+	mgr := NewDummyMgrWithKeeper(k)
+	validatorMgr := newValidatorMgr(k, mgr.NetworkMgr(), mgr.TxOutStore(), mgr.EventMgr())
+	k.SetMimir(ctx, constants.EnableNodeChainConsensus.String(), 1)
+
+	var nas NodeAccounts
+	for i := 0; i < 4; i++ {
+		na := GetRandomValidatorNode(NodeActive)
+		na.Bond = cosmos.NewUint(10 * common.One)
+		na.SupportedChains = []string{common.BTCChain.String()}
+		if i < 2 {
+			na.SupportedChains = append(na.SupportedChains, common.ETHChain.String())
+		}
+		c.Assert(k.SetNodeAccount(ctx, na), IsNil)
+		nas = append(nas, na)
+	}
+
+	network, err := k.GetNetwork(ctx)
+	c.Assert(err, IsNil)
+	network.BondRewardRune = cosmos.NewUint(6 * common.One)
+	network.SetChainRewardAmount(common.BTCChain.String(), cosmos.NewUint(4*common.One))
+	network.SetChainRewardAmount(common.ETHChain.String(), cosmos.NewUint(2*common.One))
+	c.Assert(k.SetNetwork(ctx, network), IsNil)
+	FundModule(c, ctx, k, BondName, 100*common.One)
+
+	c.Assert(validatorMgr.distributeBondReward(ctx, mgr), IsNil)
+
+	// BTC: 4 RUNE over 4 equal nodes; ETH: 2 RUNE over the 2 ETH nodes.
+	for i, na := range nas {
+		updated, err := k.GetNodeAccount(ctx, na.NodeAddress)
+		c.Assert(err, IsNil)
+		want := cosmos.NewUint(common.One)
+		if i < 2 {
+			want = cosmos.NewUint(2 * common.One)
+		}
+		reward := common.SafeSub(updated.Bond, na.Bond)
+		operatorFee := k.GetBalance(ctx, na.NodeAddress).AmountOf(common.RuneNative.Native())
+		c.Check(reward.Add(cosmos.NewUintFromBigInt(operatorFee.BigInt())).String(), Equals, want.String(), Commentf("node %d", i))
+	}
+	network, err = k.GetNetwork(ctx)
+	c.Assert(err, IsNil)
+	c.Check(network.BondRewardRune.IsZero(), Equals, true)
+	c.Check(network.GetChainRewardAmount(common.BTCChain.String()).IsZero(), Equals, true)
+	c.Check(network.GetChainRewardAmount(common.ETHChain.String()).IsZero(), Equals, true)
+}
+
+func (vts *ValidatorMgrTestSuite) TestReconcileChainRewards(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	na := GetRandomValidatorNode(NodeActive)
+	na.SupportedChains = []string{common.BTCChain.String()}
+	c.Assert(k.SetNodeAccount(ctx, na), IsNil)
+
+	// Buckets above the ledger (accrued but never debited) are scaled down.
+	network := NewNetwork()
+	network.BondRewardRune = cosmos.NewUint(100)
+	network.SetChainRewardAmount(common.BTCChain.String(), cosmos.NewUint(300))
+	network.SetChainRewardAmount(common.ETHChain.String(), cosmos.NewUint(100))
+	c.Assert(reconcileChainRewards(ctx, k, &network), IsNil)
+	c.Check(network.GetChainRewardAmount(common.BTCChain.String()).String(), Equals, "75")
+	c.Check(network.GetChainRewardAmount(common.ETHChain.String()).String(), Equals, "25")
+
+	// A ledger the buckets do not cover (accrued with the mimir off) is
+	// attributed by node participation.
+	network = NewNetwork()
+	network.BondRewardRune = cosmos.NewUint(100)
+	network.SetChainRewardAmount(common.BTCChain.String(), cosmos.NewUint(40))
+	c.Assert(reconcileChainRewards(ctx, k, &network), IsNil)
+	c.Check(network.GetChainRewardAmount(common.BTCChain.String()).String(), Equals, "100")
+}
+
+// The legacy payout never debits the per-chain buckets, so it drops them.
+func (vts *ValidatorMgrTestSuite) TestLegacyBondPayoutClearsChainRewards(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	ctx = ctx.WithBlockHeight(20)
+	mgr := NewDummyMgrWithKeeper(k)
+	validatorMgr := newValidatorMgr(k, mgr.NetworkMgr(), mgr.TxOutStore(), mgr.EventMgr())
+
+	na := GetRandomValidatorNode(NodeActive)
+	na.Bond = cosmos.NewUint(10 * common.One)
+	c.Assert(k.SetNodeAccount(ctx, na), IsNil)
+	network, err := k.GetNetwork(ctx)
+	c.Assert(err, IsNil)
+	network.BondRewardRune = cosmos.NewUint(common.One)
+	network.SetChainRewardAmount(common.BTCChain.String(), cosmos.NewUint(5*common.One))
+	network.SetChainBondUnitsAmount(common.BTCChain.String(), cosmos.NewUint(20))
+	c.Assert(k.SetNetwork(ctx, network), IsNil)
+	FundModule(c, ctx, k, BondName, 10*common.One)
+
+	c.Assert(validatorMgr.distributeBondReward(ctx, mgr), IsNil)
+
+	network, err = k.GetNetwork(ctx)
+	c.Assert(err, IsNil)
+	c.Check(network.ChainRewards, HasLen, 0)
+	c.Check(network.ChainBondUnits, HasLen, 0)
 }
