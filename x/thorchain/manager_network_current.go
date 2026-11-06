@@ -1727,9 +1727,30 @@ func (vm *NetworkMgr) scheduleKeygenChainAware(ctx cosmos.Context, nas NodeAccou
 		return fmt.Errorf("fail to get active vaults: %w", err)
 	}
 
+	// A chain group smaller than MinimumNodesForBFT would get a vault that a
+	// handful of colluding validators control outright (by declaring support
+	// for a chain no one else does), and migrations would hand it the retiring
+	// vaults' funds for those chains. Such a group gets no keygen; the chains
+	// stay on their current vault, which RotateChainAwareVaults keeps active
+	// while any of its chains lacks a replacement. Networks that are themselves
+	// below the minimum (mocknet, bootstrap) are exempt, as for inbounds.
+	minimumBFT := vm.k.GetConfigInt64(ctx, constants.MinimumNodesForBFT)
+	enforceGroupMinimum := int64(len(nas)) >= minimumBFT
+
 	// Create keygens for each unique node set using pre-sorted keys
 	for _, nodeSetKey := range nodeSetKeys {
 		chainGroup := chainNodeSets[nodeSetKey]
+		if enforceGroupMinimum && int64(len(chainGroup.Members)) < minimumBFT {
+			ctx.Logger().Info("skip keygen for chain group below the BFT minimum",
+				"chains", chainGroup.Chains,
+				"members", len(chainGroup.Members),
+				"minimum", minimumBFT)
+			telemetry.IncrCounterWithLabels(
+				[]string{"thornode", "churn", "chain_group_below_bft"}, 1,
+				[]metrics.Label{telemetry.NewLabel("chains", strings.Join(chainGroup.Chains, ","))},
+			)
+			continue
+		}
 
 		// Create member pubkey list
 		var members []string

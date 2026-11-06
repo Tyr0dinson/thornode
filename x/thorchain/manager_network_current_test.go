@@ -7207,3 +7207,31 @@ func (s *NetworkManagerTestSuite) TestUpdateNetworkChainRewardsFollowMimir(c *C)
 		}
 	}
 }
+
+// A chain group below MinimumNodesForBFT gets no vault of its own once the
+// network itself is at least that large.
+func (s *NetworkManagerTestSuite) TestTriggerKeygenChainAwareSkipsGroupsBelowBFT(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	networkMgr := newNetworkMgr(mgr.Keeper(), mgr.TxOutStore(), mgr.EventMgr())
+	mgr.Keeper().SetMimir(ctx, constants.EnableNodeChainConsensus.String(), 1)
+	minimumBFT := mgr.Keeper().GetConfigInt64(ctx, constants.MinimumNodesForBFT)
+
+	var nas NodeAccounts
+	for i := int64(0); i < minimumBFT+1; i++ {
+		na := GetRandomValidatorNode(NodeActive)
+		na.SupportedChains = []string{common.BTCChain.String()}
+		if i < 2 {
+			// Two validators alone declare ETH.
+			na.SupportedChains = append(na.SupportedChains, common.ETHChain.String())
+		}
+		c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
+		nas = append(nas, na)
+	}
+
+	c.Assert(networkMgr.TriggerKeygen(ctx, nas), IsNil)
+	keygenBlock, err := mgr.Keeper().GetKeygenBlock(ctx, ctx.BlockHeight())
+	c.Assert(err, IsNil)
+	c.Assert(keygenBlock.Keygens, HasLen, 1)
+	c.Check(keygenBlock.Keygens[0].TargetChains, DeepEquals, []string{common.BTCChain.String()})
+	c.Check(keygenBlock.Keygens[0].Members, HasLen, int(minimumBFT)+1)
+}
