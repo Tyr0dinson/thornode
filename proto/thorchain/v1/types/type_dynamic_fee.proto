@@ -99,6 +99,23 @@ message DynamicFeeAccumulator {
   // pairs lists the L1 pairs ("ASSETA|ASSETB") a global-mode accumulator has
   // been credited on. Its pool volume is summed over these pairs only.
   repeated string pairs = 9;
+  // pair_pool_volumes is a global-mode accumulator's span pool volume per L1
+  // pair, for every pair that traded during the span, sorted by pair. Its
+  // pool_volume_tor is re-summed from these over pairs at each epoch boundary,
+  // so a pair first traded late in the span still counts its earlier epochs.
+  repeated DynamicFeePairVolume pair_pool_volumes = 10 [
+    (gogoproto.nullable) = false,
+    (gogoproto.jsontag) = "pair_pool_volumes,omitempty"
+  ];
+}
+
+// DynamicFeePairVolume is one L1 pair's ("ASSETA|ASSETB") pool volume.
+message DynamicFeePairVolume {
+  string pair = 1;
+  string volume_tor = 2 [
+    (gogoproto.customtype) = "cosmossdk.io/math.Uint",
+    (gogoproto.nullable) = false
+  ];
 }
 
 // DynamicFeePoolAccumulator tracks total swap volume across a pair (pool) for

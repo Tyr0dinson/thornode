@@ -122,6 +122,10 @@ func (qs queryServer) queryDynamicL1FeesCurrent(ctx cosmos.Context, req *types.Q
 		resp.Epoch = uint64(ctx.BlockHeight() / epochBlocks)
 	}
 
+	// The in-progress epoch's pool volume per pair; it is only folded into
+	// the accumulators at the seal.
+	pools := loadDynamicFeePoolAccumulators(ctx, qs.mgr.Keeper())
+
 	iter := qs.mgr.Keeper().GetDynamicFeeAccumulatorIterator(ctx)
 	defer iter.Close()
 
@@ -130,20 +134,26 @@ func (qs queryServer) queryDynamicL1FeesCurrent(ctx cosmos.Context, req *types.Q
 		if err := qs.mgr.Keeper().Cdc().Unmarshal(iter.Value(), &acc); err != nil {
 			continue
 		}
+		rec, recErr := qs.mgr.Keeper().GetDynamicFeeRecord(ctx, acc.Thorname, acc.PairAssetA, acc.PairAssetB)
 		// Pool volume the accumulator carries from rolled epochs, plus the
-		// pair's in-progress slice, which is only folded in at the seal.
+		// in-progress slice, computed the way the seal will compute it.
 		// Together with swap_count this is the answer to "why hasn't the
 		// controller moved" for a gated integration.
 		poolVolumeTor := uintOrZero(acc.PoolVolumeTor)
 		if acc.PairAssetA == types.DynamicFeeGlobalPair {
-			poolVolumeTor = poolVolumeTor.Add(dynamicFeePairsPoolVolume(ctx, qs.mgr.Keeper(), acc.Pairs))
+			var lastPairs []string
+			if recErr == nil {
+				lastPairs = rec.Pairs
+			}
+			foldGlobalPoolVolume(&acc, pools, lastPairs)
+			poolVolumeTor = acc.PoolVolumeTor
 		} else if poolAcc, err := qs.mgr.Keeper().GetDynamicFeePoolAccumulator(ctx, acc.PairAssetA, acc.PairAssetB); err == nil {
 			poolVolumeTor = poolVolumeTor.Add(poolAcc.VolumeTor)
 		}
 		// How long this span has run: the cap seals it at
 		// L1DynamicFeeMaxEpochBlocks even below the liquidity gate.
 		var spanBlocks int64
-		if rec, err := qs.mgr.Keeper().GetDynamicFeeRecord(ctx, acc.Thorname, acc.PairAssetA, acc.PairAssetB); err == nil && rec.SpanStartHeight > 0 {
+		if recErr == nil && rec.SpanStartHeight > 0 {
 			spanBlocks = ctx.BlockHeight() - rec.SpanStartHeight
 		}
 		resp.Entries = append(resp.Entries, types.DynamicL1FeeCurrentEntry{

@@ -151,3 +151,18 @@ func (s *DynamicFeeTypesSuite) TestProbeMean(c *C) {
 	c.Check((&DynamicFeeProbe{SignalSum: math.NewUint(9)}).Mean().IsZero(), Equals, true, Commentf("no epochs"))
 	c.Check((&DynamicFeeProbe{SignalSum: math.NewUint(9), Epochs: 2}).Mean().Equal(math.NewUint(4)), Equals, true)
 }
+
+// TestNormalizedSignalDoesNotSaturate: when a dominant thorname pays more in
+// fees than other swappers trade, the signal must still tell revenues apart.
+// A share capped at SignalScale would read both of these as equal.
+func (s *DynamicFeeTypesSuite) TestNormalizedSignalDoesNotSaturate(c *C) {
+	low := DynamicFeeEpochRecord{FeesTor: math.NewUint(120), PoolVolumeTor: math.NewUint(1000), OwnPoolVolumeTor: math.NewUint(900)}
+	high := low
+	high.FeesTor = math.NewUint(180)
+	lowSignal, ok := low.NormalizedSignal(1000)
+	c.Assert(ok, Equals, true)
+	highSignal, ok := high.NormalizedSignal(1000)
+	c.Assert(ok, Equals, true)
+	c.Check(lowSignal.Equal(SignalScale.MulUint64(12).QuoUint64(10)), Equals, true, Commentf("120/100 of scale, got %s", lowSignal))
+	c.Check(highSignal.GT(lowSignal), Equals, true)
+}

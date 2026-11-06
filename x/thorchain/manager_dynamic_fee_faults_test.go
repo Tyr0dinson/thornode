@@ -26,9 +26,18 @@ type faultyDynFeeKeeper struct {
 	failDeleteAcc, failGetPool, failSetPool  bool
 	failDeletePool, failDeleteAll            bool
 	// nilOwnVolume returns accumulators as written before own pool volume
-	// existed (a nil Uint).
-	nilOwnVolume bool
-	failGetAcc   bool
+	// existed (a nil Uint); nilPoolVolume does the same for pool volume.
+	nilOwnVolume     bool
+	nilPoolVolume    bool
+	failGetAcc       bool
+	failSetNodeMimir bool
+}
+
+func (k *faultyDynFeeKeeper) SetNodeMimir(ctx cosmos.Context, key string, value int64, acc cosmos.AccAddress) error {
+	if k.failSetNodeMimir {
+		return errInjected
+	}
+	return k.Keeper.SetNodeMimir(ctx, key, value, acc)
 }
 
 func (k *faultyDynFeeKeeper) GetDynamicFeeAccumulator(ctx cosmos.Context, thorname, a, b string) (types.DynamicFeeAccumulator, error) {
@@ -38,6 +47,9 @@ func (k *faultyDynFeeKeeper) GetDynamicFeeAccumulator(ctx cosmos.Context, thorna
 	acc, err := k.Keeper.GetDynamicFeeAccumulator(ctx, thorname, a, b)
 	if k.nilOwnVolume {
 		acc.OwnPoolVolumeTor = cosmos.Uint{}
+	}
+	if k.nilPoolVolume {
+		acc.PoolVolumeTor = cosmos.Uint{}
 	}
 	return acc, err
 }
@@ -154,7 +166,8 @@ func (s *DynamicFeeMgrSuite) TestCreditPoolVolumeSkipsAndFaults(c *C) {
 	newDynamicFeeMgr(k).CreditPoolVolume(ctx, synthBTC, common.RuneAsset(), cosmos.NewUint(100))
 	synthA, synthB, ok := dynamicFeePairKey(synthBTC, common.RuneAsset())
 	c.Check(ok, Equals, false, Commentf("non-L1 legs have no pair"))
-	c.Check(dynamicFeePairsPoolVolume(ctx, k, []string{synthA + "|" + synthB, btcA + "|" + btcB}).IsZero(), Equals, true, Commentf("non-L1 legs carry no pool volume"))
+	_ = synthA + synthB
+	c.Check(loadDynamicFeePoolAccumulators(ctx, k), HasLen, 0, Commentf("non-L1 legs carry no pool volume"))
 
 	for _, fk := range []*faultyDynFeeKeeper{{Keeper: k, failGetPool: true}, {Keeper: k, failSetPool: true}} {
 		newDynamicFeeMgr(fk).CreditPoolVolume(ctx, common.BTCAsset, common.RuneAsset(), cosmos.NewUint(100))
@@ -165,8 +178,10 @@ func (s *DynamicFeeMgrSuite) TestCreditPoolVolumeSkipsAndFaults(c *C) {
 }
 
 // TestEndBlockSurvivesStoreFaults pins that a store failure on one record
-// leaves its accumulator in place for the next epoch rather than aborting
-// EndBlock or losing the epoch's data.
+// neither aborts EndBlock nor loses or double counts the epoch's data: a span
+// that could not be sealed is kept whole (fees and this epoch's pool volume)
+// for the next boundary, and a sealed span whose accumulator could not be
+// deleted is emptied so it is not sealed twice.
 func (s *DynamicFeeMgrSuite) TestEndBlockSurvivesStoreFaults(c *C) {
 	pairA, pairB, _ := dynamicFeePairKey(common.BTCAsset, common.RuneAsset())
 	for _, tc := range []struct {
@@ -174,13 +189,16 @@ func (s *DynamicFeeMgrSuite) TestEndBlockSurvivesStoreFaults(c *C) {
 		gate     bool
 		fault    func(*faultyDynFeeKeeper)
 		keepsAcc bool
+		// keepsPool: the kept span also carries this epoch's pool volume.
+		keepsPool bool
+		sealed    bool
 	}{
 		{name: "accumulator read fails", fault: func(f *faultyDynFeeKeeper) { f.failGetAcc = true }, keepsAcc: true},
-		{name: "record write fails on seal", fault: func(f *faultyDynFeeKeeper) { f.failSetRecord = true }, keepsAcc: true},
-		{name: "record write fails on roll", gate: true, fault: func(f *faultyDynFeeKeeper) { f.failSetRecord = true }, keepsAcc: true},
+		{name: "record write fails on seal", fault: func(f *faultyDynFeeKeeper) { f.failSetRecord = true }, keepsAcc: true, keepsPool: true},
+		{name: "record write fails on roll", gate: true, fault: func(f *faultyDynFeeKeeper) { f.failSetRecord = true }, keepsAcc: true, keepsPool: true},
 		{name: "accumulator write fails on roll", gate: true, fault: func(f *faultyDynFeeKeeper) { f.failSetAcc = true }, keepsAcc: true},
-		{name: "accumulator delete fails", fault: func(f *faultyDynFeeKeeper) { f.failDeleteAcc = true }, keepsAcc: true},
-		{name: "pool delete fails", fault: func(f *faultyDynFeeKeeper) { f.failDeletePool = true }},
+		{name: "accumulator delete fails", fault: func(f *faultyDynFeeKeeper) { f.failDeleteAcc = true }, sealed: true},
+		{name: "pool delete fails", fault: func(f *faultyDynFeeKeeper) { f.failDeletePool = true }, sealed: true},
 	} {
 		ctx, mgr := setupManagerForTest(c)
 		k := mgr.Keeper()
@@ -199,6 +217,11 @@ func (s *DynamicFeeMgrSuite) TestEndBlockSurvivesStoreFaults(c *C) {
 		acc, err := k.GetDynamicFeeAccumulator(ctx, "tn", pairA, pairB)
 		c.Assert(err, IsNil)
 		c.Check(acc.VolumeTor.IsZero(), Equals, !tc.keepsAcc, Commentf(tc.name))
+		c.Check(acc.FeesTor.IsZero(), Equals, !tc.keepsAcc, Commentf(tc.name))
+		c.Check(acc.PoolVolumeTor.Equal(cosmos.NewUint(5_000)), Equals, tc.keepsPool, Commentf(tc.name))
+		rec, err := k.GetDynamicFeeRecord(ctx, "tn", pairA, pairB)
+		c.Assert(err, IsNil)
+		c.Check(len(rec.History), Equals, map[bool]int{true: 1, false: 0}[tc.sealed], Commentf(tc.name))
 	}
 }
 
@@ -224,8 +247,8 @@ func (s *DynamicFeeMgrSuite) TestEndBlockPoolReadFaultHoldsTheSearch(c *C) {
 }
 
 // TestEndBlockCodecFaults covers unreadable pool accumulators (skipped by the
-// global total and by the end-of-epoch clear) and accumulators written before
-// pool volume existed (nil Uint, read as zero).
+// end-of-epoch clear) and accumulators written before pool volume existed
+// (nil Uint, read as zero rather than panicking on the fold).
 func (s *DynamicFeeMgrSuite) TestEndBlockCodecFaults(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	k := mgr.Keeper()
@@ -233,16 +256,15 @@ func (s *DynamicFeeMgrSuite) TestEndBlockCodecFaults(c *C) {
 	registerThorname(ctx, k, "tn", types.DynamicFeeStatePerPair)
 	seedSealable(ctx, newDynamicFeeMgr(k))
 
-	fk := &faultyDynFeeKeeper{Keeper: k, cdc: faultyCodec{
-		BinaryCodec: k.Cdc(),
-		fail:        isPoolAcc,
-		mutate: func(m proto.Message) {
-			if acc, ok := m.(*types.DynamicFeeAccumulator); ok {
-				acc.PoolVolumeTor = cosmos.Uint{}
-				acc.OwnPoolVolumeTor = cosmos.Uint{}
-			}
-		},
-	}}
+	// EndBlock reads accumulators through GetDynamicFeeAccumulator, which
+	// decodes with the keeper's own codec, so the old rows come from the
+	// keeper wrapper rather than from the codec.
+	fk := &faultyDynFeeKeeper{
+		Keeper:        k,
+		cdc:           faultyCodec{BinaryCodec: k.Cdc(), fail: isPoolAcc},
+		nilOwnVolume:  true,
+		nilPoolVolume: true,
+	}
 
 	ctx = ctx.WithBlockHeight(20)
 	c.Assert(newDynamicFeeMgr(fk).EndBlock(ctx), IsNil)
@@ -252,6 +274,7 @@ func (s *DynamicFeeMgrSuite) TestEndBlockCodecFaults(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(rec.History, HasLen, 1, Commentf("a nil pool volume reads as zero and still seals"))
 	c.Check(rec.History[0].PoolVolumeTor.Equal(cosmos.NewUint(5_000)), Equals, true)
+	c.Check(rec.History[0].OwnPoolVolumeTor.IsZero(), Equals, true, Commentf("a nil own pool volume reads as zero"))
 	pool, err := k.GetDynamicFeePoolAccumulator(ctx, pairA, pairB)
 	c.Assert(err, IsNil)
 	c.Check(pool.VolumeTor.IsZero(), Equals, false, Commentf("an unreadable pool accumulator is skipped, not cleared"))
@@ -299,19 +322,25 @@ func (s *DynamicFeeMgrSuite) TestWindowMeanSignalSkipsUnnormalizedEntries(c *C) 
 	c.Check(meanSignal(windowSignals(history, 0, 1, 0)).IsZero(), Equals, true, Commentf("no normalizable entry"))
 }
 
-func (s *DynamicFeeMgrSuite) TestMimirResetFaultIsLogged(c *C) {
+// TestMimirResetFaultRejectsChange: when the reset a whitelist change triggers
+// fails, the vote fails. Its tx is then reverted, new value and vote with it,
+// so no mode change commits over stale state.
+func (s *DynamicFeeMgrSuite) TestMimirResetFaultRejectsChange(c *C) {
 	ctx, k := setupKeeperForTest(c)
 	FundModule(c, ctx, k, BondName, 100*common.One)
 	na := GetRandomValidatorNode(NodeActive)
 	c.Assert(k.SetNodeAccount(ctx, na), IsNil)
 	k.SetMimir(ctx, "OperationalVotesMin", 1)
+	k.SetMimir(ctx, "DYNAMICFEE-WHITELIST-FOO", types.DynamicFeeStatePerPair)
 
+	// Run in a cache context, as the tx does, and drop it on failure.
+	txCtx, _ := ctx.CacheContext()
 	handler := NewMimirHandler(NewDummyMgrWithKeeper(&faultyDynFeeKeeper{Keeper: k, failDeleteAll: true}))
-	_, err := handler.Run(ctx, NewMsgMimir("DYNAMICFEE-WHITELIST-FOO", types.DynamicFeeStateGlobal, na.NodeAddress))
-	c.Assert(err, IsNil, Commentf("a failed reset does not fail the vote"))
+	_, err := handler.Run(txCtx, NewMsgMimir("DYNAMICFEE-WHITELIST-FOO", types.DynamicFeeStateGlobal, na.NodeAddress))
+	c.Assert(err, NotNil, Commentf("a failed reset fails the vote"))
 	val, err := k.GetMimir(ctx, "DYNAMICFEE-WHITELIST-FOO")
 	c.Assert(err, IsNil)
-	c.Check(val, Equals, types.DynamicFeeStateGlobal)
+	c.Check(val, Equals, types.DynamicFeeStatePerPair, Commentf("the change does not commit without its reset"))
 }
 
 func (s *DynamicFeeMgrSuite) TestMigrate21to22Faults(c *C) {
@@ -320,6 +349,7 @@ func (s *DynamicFeeMgrSuite) TestMigrate21to22Faults(c *C) {
 	for _, tc := range []struct {
 		name  string
 		fault func(*faultyDynFeeKeeper, keeper.Keeper)
+		want  string
 	}{
 		{name: "accumulator unreadable", fault: func(f *faultyDynFeeKeeper, k keeper.Keeper) {
 			f.cdc = faultyCodec{BinaryCodec: k.Cdc(), fail: isThornameAcc}
@@ -329,15 +359,28 @@ func (s *DynamicFeeMgrSuite) TestMigrate21to22Faults(c *C) {
 			f.cdc = faultyCodec{BinaryCodec: k.Cdc(), fail: func(m proto.Message) bool { _, ok := m.(*types.DynamicFeeRecord); return ok }}
 		}},
 		{name: "record write fails", fault: func(f *faultyDynFeeKeeper, _ keeper.Keeper) { f.failSetRecord = true }},
+		{name: "whitelist mimir unreadable", fault: func(f *faultyDynFeeKeeper, k keeper.Keeper) {
+			f.cdc = faultyCodec{BinaryCodec: k.Cdc(), fail: func(m proto.Message) bool { _, ok := m.(*types.ProtoInt64); return ok }}
+		}, want: "read mimir .*"},
+		{name: "whitelist vote unreadable", fault: func(f *faultyDynFeeKeeper, k keeper.Keeper) {
+			f.cdc = faultyCodec{BinaryCodec: k.Cdc(), fail: func(m proto.Message) bool { _, ok := m.(*types.NodeMimirs); return ok }}
+		}, want: "read node mimirs .*"},
+		{name: "whitelist vote write fails", fault: func(f *faultyDynFeeKeeper, _ keeper.Keeper) { f.failSetNodeMimir = true }, want: "move node mimir vote .*"},
 	} {
 		ctx, mgr := setupManagerForTest(c)
 		k := mgr.Keeper()
+		k.SetMimir(ctx, "DYNAMICFEE-WHITELIST-TN", 2)
+		c.Assert(k.SetNodeMimir(ctx, "DYNAMICFEE-WHITELIST-TN", 2, GetRandomValidatorNode(NodeActive).NodeAddress), IsNil)
 		c.Assert(k.SetDynamicFeeAccumulator(ctx, types.NewDynamicFeeAccumulator("tn", "BTC.BTC", "THOR.RUNE")), IsNil)
 		c.Assert(k.SetDynamicFeeRecord(ctx, types.DynamicFeeRecord{Thorname: "tn", PairAssetA: "BTC.BTC", PairAssetB: "THOR.RUNE", DynamicBps: 3}), IsNil)
 		fk := &faultyDynFeeKeeper{Keeper: k}
 		tc.fault(fk, k)
 		mgr.K = fk
-		c.Check(NewMigrator(mgr).Migrate21to22(ctx), NotNil, Commentf(tc.name))
+		err := NewMigrator(mgr).Migrate21to22(ctx)
+		c.Check(err, NotNil, Commentf(tc.name))
+		if tc.want != "" {
+			c.Check(err, ErrorMatches, tc.want, Commentf(tc.name))
+		}
 	}
 }
 
@@ -415,17 +458,39 @@ func (s *DynamicFeeMgrSuite) TestCreditSwapOldAccumulator(c *C) {
 	c.Check(acc.OwnPoolVolumeTor.Equal(cosmos.NewUint(1_000)), Equals, true)
 }
 
-// TestPairsPoolVolumeSkipsBadPairs: a malformed pair key or an unreadable
-// pool accumulator contributes nothing instead of failing the seal.
-func (s *DynamicFeeMgrSuite) TestPairsPoolVolumeSkipsBadPairs(c *C) {
+// TestPairVolumeHelpers: the per-pair span volume stays sorted and unique,
+// skips zero and nil credits, and sums only the requested pairs.
+func (s *DynamicFeeMgrSuite) TestPairVolumeHelpers(c *C) {
+	acc := types.NewDynamicFeeAccumulator("tn", types.DynamicFeeGlobalPair, types.DynamicFeeGlobalPair)
+	acc.AddPairPoolVolume("ETH.ETH|THOR.RUNE", cosmos.NewUint(30))
+	acc.AddPairPoolVolume("BTC.BTC|THOR.RUNE", cosmos.NewUint(10))
+	acc.AddPairPoolVolume("BTC.BTC|THOR.RUNE", cosmos.NewUint(5))
+	acc.AddPairPoolVolume("DOGE.DOGE|THOR.RUNE", cosmos.ZeroUint())
+	acc.AddPairPoolVolume("DOGE.DOGE|THOR.RUNE", cosmos.Uint{})
+	c.Assert(acc.PairPoolVolumes, HasLen, 2)
+	c.Check(acc.PairPoolVolumes[0].Pair, Equals, "BTC.BTC|THOR.RUNE")
+	c.Check(acc.PairPoolVolumes[0].VolumeTor.Equal(cosmos.NewUint(15)), Equals, true)
+	c.Check(acc.PairPoolVolumes[1].Pair, Equals, "ETH.ETH|THOR.RUNE")
+
+	// An entry decoded without a volume (nil Uint) is credited, not panicked on.
+	acc.PairPoolVolumes[1].VolumeTor = cosmos.Uint{}
+	acc.AddPairPoolVolume("ETH.ETH|THOR.RUNE", cosmos.NewUint(7))
+	c.Check(acc.PairsPoolVolume([]string{"ETH.ETH|THOR.RUNE"}).Equal(cosmos.NewUint(7)), Equals, true)
+
+	c.Check(acc.PairsPoolVolume([]string{"BTC.BTC|THOR.RUNE", "ETH.ETH|THOR.RUNE", "AVAX.AVAX|THOR.RUNE"}).Equal(cosmos.NewUint(22)), Equals, true)
+	c.Check(acc.PairsPoolVolume(nil).IsZero(), Equals, true)
+}
+
+// TestLoadPoolAccumulatorsSkipsBadRows: an unreadable pool accumulator is
+// skipped rather than failing the epoch.
+func (s *DynamicFeeMgrSuite) TestLoadPoolAccumulatorsSkipsBadRows(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	k := mgr.Keeper()
 	setDynamicFeeTestMimirs(ctx, k)
 	newDynamicFeeMgr(k).CreditPoolVolume(ctx, common.BTCAsset, common.RuneAsset(), cosmos.NewUint(700))
-	btcA, btcB, _ := dynamicFeePairKey(common.BTCAsset, common.RuneAsset())
-	pair := btcA + "|" + btcB
-	c.Check(dynamicFeePairsPoolVolume(ctx, k, []string{"no-separator", pair}).Equal(cosmos.NewUint(700)), Equals, true)
-	c.Check(dynamicFeePairsPoolVolume(ctx, &faultyDynFeeKeeper{Keeper: k, failGetPool: true}, []string{pair}).IsZero(), Equals, true)
+	c.Check(loadDynamicFeePoolAccumulators(ctx, k), HasLen, 1)
+	fk := &faultyDynFeeKeeper{Keeper: k, cdc: faultyCodec{BinaryCodec: k.Cdc(), fail: isPoolAcc}}
+	c.Check(loadDynamicFeePoolAccumulators(ctx, fk), HasLen, 0)
 }
 
 // TestEndEpochSkipsAndOldRows: a record whose thorname is no longer enrolled

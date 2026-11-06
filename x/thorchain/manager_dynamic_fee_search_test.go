@@ -478,9 +478,9 @@ func (s *DynamicFeeMgrSuite) TestSpanCapSealsBelowGate(c *C) {
 	c.Check(rec.History[0].Blocks, Equals, int64(30))
 	c.Check(rec.History[0].SwapCount, Equals, uint64(1))
 	c.Check(rec.History[0].Capped, Equals, true, Commentf("sealed by the cap below the gate"))
+	c.Assert(rec.Probes, HasLen, 1)
 	c.Check(rec.Probes[0].Capped, Equals, true)
 	c.Check(rec.SpanStartHeight, Equals, int64(40), Commentf("the next span starts at the seal"))
-	c.Check(rec.Probes, HasLen, 1)
 	acc, err := k.GetDynamicFeeAccumulator(ctx, "tn", pairA, pairB)
 	c.Assert(err, IsNil)
 	c.Check(acc.SwapCount, Equals, uint64(0), Commentf("the sealed accumulator is consumed"))
@@ -710,4 +710,88 @@ func (s *DynamicFeeMgrSuite) TestCappedReadingsOnlyLower(c *C) {
 	reason, bps, _, _, _ = decideNextBps(hist(true, []uint64{6}, []uint64{100}), 6, 1, 20, 1, 3, zero, tenK, 0)
 	c.Check(reason, Equals, "cold_start_probe")
 	c.Check(bps, Equals, uint64(5))
+}
+
+// TestGlobalSpanCountsLatePairsWholeSpan: a global span measures every pair
+// its thorname traded over the whole span, including epochs before it first
+// traded that pair. Summing only the pairs known at each epoch would drop
+// ETH's first-epoch volume here and read the span's signal too high.
+func (s *DynamicFeeMgrSuite) TestGlobalSpanCountsLatePairsWholeSpan(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	k := mgr.Keeper()
+	setDynamicFeeTestMimirs(ctx, k)
+	k.SetMimir(ctx, "L1DynamicFeeMinSwaps", 2)
+	dfm := newDynamicFeeMgr(k)
+	registerThorname(ctx, k, "glob", types.DynamicFeeStateGlobal)
+	g := types.DynamicFeeGlobalPair
+	bps := []cosmos.Uint{cosmos.NewUint(100)}
+
+	// Epoch ending at 20: one BTC swap (below the gate, rolls). ETH trades
+	// without the thorname.
+	dfm.CreditSwap(ctx, []string{"glob"}, bps, common.BTCAsset, common.RuneAsset(), cosmos.NewUint(100), cosmos.NewUint(1), true)
+	dfm.CreditPoolVolume(ctx, common.BTCAsset, common.RuneAsset(), cosmos.NewUint(1_000))
+	dfm.CreditPoolVolume(ctx, common.ETHAsset, common.RuneAsset(), cosmos.NewUint(2_000))
+	ctx = ctx.WithBlockHeight(20)
+	c.Assert(dfm.EndBlock(ctx), IsNil)
+	acc, err := k.GetDynamicFeeAccumulator(ctx, "glob", g, g)
+	c.Assert(err, IsNil)
+	c.Check(acc.PoolVolumeTor.Equal(cosmos.NewUint(1_000)), Equals, true, Commentf("only BTC traded so far: %s", acc.PoolVolumeTor))
+	c.Check(acc.PairsPoolVolume([]string{"ETH.ETH|THOR.RUNE"}).Equal(cosmos.NewUint(2_000)), Equals, true, Commentf("ETH's volume is kept for later"))
+
+	// Epoch ending at 30: the thorname trades ETH for the first time.
+	dfm.CreditSwap(ctx, []string{"glob"}, bps, common.ETHAsset, common.RuneAsset(), cosmos.NewUint(300), cosmos.NewUint(3), true)
+	dfm.CreditPoolVolume(ctx, common.BTCAsset, common.RuneAsset(), cosmos.NewUint(500))
+	dfm.CreditPoolVolume(ctx, common.ETHAsset, common.RuneAsset(), cosmos.NewUint(3_000))
+
+	// The live query reports what the seal will record.
+	resp, err := queryServer{mgr: mgr}.queryDynamicL1FeesCurrent(ctx, &types.QueryDynamicL1FeesCurrentRequest{})
+	c.Assert(err, IsNil)
+	c.Assert(resp.Entries, HasLen, 1)
+	c.Check(resp.Entries[0].PoolVolumeTor, Equals, "6500")
+
+	ctx = ctx.WithBlockHeight(30)
+	c.Assert(dfm.EndBlock(ctx), IsNil)
+	rec, err := k.GetDynamicFeeRecord(ctx, "glob", g, g)
+	c.Assert(err, IsNil)
+	c.Assert(rec.History, HasLen, 1)
+	h := rec.History[0]
+	c.Check(h.PoolVolumeTor.Equal(cosmos.NewUint(6_500)), Equals, true,
+		Commentf("BTC 1000+500 and ETH 2000+3000 over both epochs, got %s", h.PoolVolumeTor))
+	c.Check(h.OwnPoolVolumeTor.Equal(cosmos.NewUint(400)), Equals, true)
+	c.Check(rec.Pairs, DeepEquals, []string{"BTC.BTC|THOR.RUNE", "ETH.ETH|THOR.RUNE"})
+}
+
+// TestCurrentQueryIdleGlobalUsesLastPairs: an idle global accumulator has no
+// pairs of its own; the live query falls back to the record's last-seal pairs
+// for the in-progress slice, as the seal does.
+func (s *DynamicFeeMgrSuite) TestCurrentQueryIdleGlobalUsesLastPairs(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	k := mgr.Keeper()
+	setDynamicFeeTestMimirs(ctx, k)
+	dfm := newDynamicFeeMgr(k)
+	registerThorname(ctx, k, "glob", types.DynamicFeeStateGlobal)
+	g := types.DynamicFeeGlobalPair
+	btcA, btcB, _ := dynamicFeePairKey(common.BTCAsset, common.RuneAsset())
+	c.Assert(k.SetDynamicFeeRecord(ctx, types.DynamicFeeRecord{
+		Thorname: "glob", PairAssetA: g, PairAssetB: g, DynamicBps: 9, SpanStartHeight: 10,
+		Pairs:   []string{btcA + "|" + btcB},
+		History: []types.DynamicFeeEpochRecord{{Epoch: 1, FeesTor: cosmos.NewUint(1), PoolVolumeTor: cosmos.NewUint(1)}},
+	}), IsNil)
+
+	// An idle epoch leaves a volume-only accumulator.
+	dfm.CreditPoolVolume(ctx, common.BTCAsset, common.RuneAsset(), cosmos.NewUint(4_000))
+	dfm.CreditPoolVolume(ctx, common.ETHAsset, common.RuneAsset(), cosmos.NewUint(9_000))
+	ctx = ctx.WithBlockHeight(20)
+	c.Assert(dfm.EndBlock(ctx), IsNil)
+	acc, err := k.GetDynamicFeeAccumulator(ctx, "glob", g, g)
+	c.Assert(err, IsNil)
+	c.Check(acc.Pairs, HasLen, 0)
+	c.Check(acc.PoolVolumeTor.Equal(cosmos.NewUint(4_000)), Equals, true)
+
+	dfm.CreditPoolVolume(ctx, common.BTCAsset, common.RuneAsset(), cosmos.NewUint(1_000))
+	dfm.CreditPoolVolume(ctx, common.ETHAsset, common.RuneAsset(), cosmos.NewUint(5_000))
+	resp, err := queryServer{mgr: mgr}.queryDynamicL1FeesCurrent(ctx, &types.QueryDynamicL1FeesCurrentRequest{})
+	c.Assert(err, IsNil)
+	c.Assert(resp.Entries, HasLen, 1)
+	c.Check(resp.Entries[0].PoolVolumeTor, Equals, "5000", Commentf("BTC's rolled 4000 plus its live 1000; ETH is not a traded pair"))
 }

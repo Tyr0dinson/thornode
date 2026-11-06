@@ -194,10 +194,12 @@ func (h MimirHandler) handle(ctx cosmos.Context, msg MsgMimir) error {
 	// switching between per-pair and global, moving in or out of monitor, or
 	// removing it) restarts its dynamic fee from scratch: the next swap
 	// recreates its record at the floor and the bps search starts over. This
-	// is also the way to unstick a record: vote it to 0, then back.
+	// is also the way to unstick a record: vote it to 0, then back. A failed
+	// reset fails the vote's tx, which the SDK reverts with the new value,
+	// rather than committing a mode change over stale state.
 	if thorname, ok := strings.CutPrefix(strings.ToUpper(msg.Key), "DYNAMICFEE-WHITELIST-"); ok && thorname != "" {
 		if err = h.mgr.Keeper().DeleteAllDynamicFeeStateForThorname(ctx, thorname); err != nil {
-			ctx.Logger().Error("fail to reset dynamic fee state", "thorname", thorname, "error", err)
+			return fmt.Errorf("fail to reset dynamic fee state for %s: %w", thorname, err)
 		}
 	}
 	// A deliberate governance change, as opposed to an automatic halt set by the

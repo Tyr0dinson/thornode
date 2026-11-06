@@ -374,8 +374,11 @@ func (m *DynamicFeeMgr) EndBlock(ctx cosmos.Context) error {
 	}
 	recIter.Close()
 
+	// This epoch's pool volume per pair, read once for every global record.
+	pools := loadDynamicFeePoolAccumulators(ctx, m.keeper)
+
 	for _, rec := range records {
-		if err := m.endEpochForRecord(ctx, rec, currentEpoch, params); err != nil {
+		if err := m.endEpochForRecord(ctx, rec, currentEpoch, pools, params); err != nil {
 			ctx.Logger().Error("fail to seal dynamic fee epoch", "error", err, "thorname", rec.Thorname)
 		}
 	}
@@ -446,7 +449,7 @@ type dynamicFeeParams struct {
 // sealed with whatever it has, and a span with no swaps at all is sealed empty
 // (zero revenue). Merged spans are comparable with single epochs because the
 // signal divides fees by other swappers' volume over the same span.
-func (m *DynamicFeeMgr) endEpochForRecord(ctx cosmos.Context, rec types.DynamicFeeRecord, currentEpoch uint64, p dynamicFeeParams) error {
+func (m *DynamicFeeMgr) endEpochForRecord(ctx cosmos.Context, rec types.DynamicFeeRecord, currentEpoch uint64, pools []types.DynamicFeePoolAccumulator, p dynamicFeeParams) error {
 	state := dynamicFeeWhitelistState(ctx, m.keeper, rec.Thorname)
 	if !types.IsValidDynamicFeeState(state) {
 		return nil
@@ -482,15 +485,7 @@ func (m *DynamicFeeMgr) endEpochForRecord(ctx cosmos.Context, rec types.DynamicF
 	// before the thorname's first swap; dropping those would shrink the
 	// denominator and read a fee that delays flow as a higher signal.
 	if rec.PairAssetA == types.DynamicFeeGlobalPair {
-		// A global accumulator is measured against the pairs its thorname
-		// traded, not every L1 pair: volume on pairs it never touches would
-		// otherwise move its signal as much as its own business. An empty
-		// span uses the pairs from the record's last seal.
-		pairs := acc.Pairs
-		if len(pairs) == 0 {
-			pairs = rec.Pairs
-		}
-		acc.PoolVolumeTor = acc.PoolVolumeTor.Add(dynamicFeePairsPoolVolume(ctx, m.keeper, pairs))
+		foldGlobalPoolVolume(&acc, pools, rec.Pairs)
 	} else {
 		poolAcc, err := m.keeper.GetDynamicFeePoolAccumulator(ctx, rec.PairAssetA, rec.PairAssetB)
 		if err != nil {
@@ -502,7 +497,7 @@ func (m *DynamicFeeMgr) endEpochForRecord(ctx cosmos.Context, rec types.DynamicF
 
 	if !hasSwaps && (!capped || monitor) {
 		// Idle so far: carry the other swappers' volume into the next epoch.
-		if acc.PoolVolumeTor.IsZero() {
+		if acc.PoolVolumeTor.IsZero() && len(acc.PairPoolVolumes) == 0 {
 			return nil
 		}
 		return m.keeper.SetDynamicFeeAccumulator(ctx, acc)
@@ -523,9 +518,23 @@ func (m *DynamicFeeMgr) endEpochForRecord(ctx cosmos.Context, rec types.DynamicF
 	}
 
 	if err := m.sealEpochForRecord(ctx, rec, acc, currentEpoch, spanBlocks, thin, hasSwaps, monitor, p); err != nil {
+		// Nothing was sealed: keep the span, with this epoch's pool volume
+		// folded in, so the next boundary seals it whole. The pool rows are
+		// cleared after this loop, so the fold must not stay in memory only.
+		if setErr := m.keeper.SetDynamicFeeAccumulator(ctx, acc); setErr != nil {
+			ctx.Logger().Error("fail to keep unsealed dynamic fee accumulator", "error", setErr)
+		}
 		return err
 	}
-	return m.keeper.DeleteDynamicFeeAccumulator(ctx, rec.Thorname, rec.PairAssetA, rec.PairAssetB)
+	if err := m.keeper.DeleteDynamicFeeAccumulator(ctx, rec.Thorname, rec.PairAssetA, rec.PairAssetB); err != nil {
+		// The span is sealed; leaving it in place would seal it again next
+		// epoch. Overwrite it with an empty span instead.
+		if setErr := m.keeper.SetDynamicFeeAccumulator(ctx, types.NewDynamicFeeAccumulator(rec.Thorname, rec.PairAssetA, rec.PairAssetB)); setErr != nil {
+			ctx.Logger().Error("fail to empty sealed dynamic fee accumulator", "error", setErr)
+		}
+		return err
+	}
+	return nil
 }
 
 // sealEpochForRecord appends the span's entry, decides the next dynamic_bps
@@ -832,25 +841,42 @@ func nextSearchBps(probes []types.DynamicFeeProbe, floorBps, ceilingBps uint64, 
 	}
 }
 
-// dynamicFeePairsPoolVolume sums this epoch's pool accumulators over the
-// given pairs ("ASSETA|ASSETB"): the denominator of a global-mode record.
-func dynamicFeePairsPoolVolume(ctx cosmos.Context, k keeper.Keeper, pairs []string) cosmos.Uint {
-	total := cosmos.ZeroUint()
-	for _, pair := range pairs {
-		a, b, ok := strings.Cut(pair, "|")
-		if !ok {
+// loadDynamicFeePoolAccumulators returns this epoch's pool accumulators in
+// store order. Rows that fail to decode are skipped.
+func loadDynamicFeePoolAccumulators(ctx cosmos.Context, k keeper.Keeper) []types.DynamicFeePoolAccumulator {
+	iter := k.GetDynamicFeePoolAccumulatorIterator(ctx)
+	defer iter.Close()
+	var pools []types.DynamicFeePoolAccumulator
+	for ; iter.Valid(); iter.Next() {
+		var pool types.DynamicFeePoolAccumulator
+		if err := k.Cdc().Unmarshal(iter.Value(), &pool); err != nil {
+			ctx.Logger().Error("fail to read dynamic fee pool accumulator", "error", err)
 			continue
 		}
-		acc, err := k.GetDynamicFeePoolAccumulator(ctx, a, b)
-		if err != nil {
-			ctx.Logger().Error("fail to get dynamic fee pool accumulator", "error", err, "pair", pair)
-			continue
-		}
-		if !acc.VolumeTor.IsNil() {
-			total = total.Add(acc.VolumeTor)
-		}
+		pools = append(pools, pool)
 	}
-	return total
+	return pools
+}
+
+// foldGlobalPoolVolume folds this epoch's pool volume into a global-mode
+// accumulator and re-sums its PoolVolumeTor.
+//
+// A global accumulator is measured against the pairs its thorname traded, not
+// every L1 pair: volume on pairs it never touches would otherwise move its
+// signal as much as its own business. Which pairs those are is only known at
+// the seal, so the span keeps every pair's volume (PairPoolVolumes) and the
+// denominator is re-summed over the span's traded pairs each epoch. A pair
+// first traded late in the span therefore counts its earlier epochs too. An
+// idle span uses the pairs from the record's last seal (lastPairs).
+func foldGlobalPoolVolume(acc *types.DynamicFeeAccumulator, pools []types.DynamicFeePoolAccumulator, lastPairs []string) {
+	for _, pool := range pools {
+		acc.AddPairPoolVolume(pool.Key(), pool.VolumeTor)
+	}
+	pairs := acc.Pairs
+	if len(pairs) == 0 {
+		pairs = lastPairs
+	}
+	acc.PoolVolumeTor = acc.PairsPoolVolume(pairs)
 }
 
 // lastBpsChangeBefore walks history backward before upToExclusive and returns

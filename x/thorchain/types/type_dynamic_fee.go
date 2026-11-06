@@ -46,7 +46,7 @@ func IsGlobalDynamicFeeState(state int64) bool {
 }
 
 // SignalScale is the fixed-point scale of the normalized fee signal
-// (fees_tor / pool_volume_tor). The ratio is on the order of 1e-5, so 1e8
+// (fees_tor / (pool_volume_tor - own_pool_volume_tor)). The ratio is on the order of 1e-5, so 1e8
 // would truncate it to a few hundred units and quantize the gradient; 1e12
 // keeps the precision, and it is free with Uint arithmetic.
 var SignalScale = math.NewUint(1_000_000_000_000)
@@ -105,6 +105,39 @@ func (m *DynamicFeeAccumulator) AddPair(pairAssetA, pairAssetB string) {
 	m.Pairs[i] = key
 }
 
+// AddPairPoolVolume adds volumeTor to a global-mode accumulator's span pool
+// volume for pair, keeping PairPoolVolumes sorted by pair so it is
+// deterministic.
+func (m *DynamicFeeAccumulator) AddPairPoolVolume(pair string, volumeTor math.Uint) {
+	if volumeTor.IsNil() || volumeTor.IsZero() {
+		return
+	}
+	i := sort.Search(len(m.PairPoolVolumes), func(i int) bool { return m.PairPoolVolumes[i].Pair >= pair })
+	if i < len(m.PairPoolVolumes) && m.PairPoolVolumes[i].Pair == pair {
+		if m.PairPoolVolumes[i].VolumeTor.IsNil() {
+			m.PairPoolVolumes[i].VolumeTor = math.ZeroUint()
+		}
+		m.PairPoolVolumes[i].VolumeTor = m.PairPoolVolumes[i].VolumeTor.Add(volumeTor)
+		return
+	}
+	m.PairPoolVolumes = append(m.PairPoolVolumes, DynamicFeePairVolume{})
+	copy(m.PairPoolVolumes[i+1:], m.PairPoolVolumes[i:])
+	m.PairPoolVolumes[i] = DynamicFeePairVolume{Pair: pair, VolumeTor: volumeTor}
+}
+
+// PairsPoolVolume sums a global-mode accumulator's span pool volume over the
+// given pairs.
+func (m *DynamicFeeAccumulator) PairsPoolVolume(pairs []string) math.Uint {
+	total := math.ZeroUint()
+	for _, pair := range pairs {
+		i := sort.Search(len(m.PairPoolVolumes), func(i int) bool { return m.PairPoolVolumes[i].Pair >= pair })
+		if i < len(m.PairPoolVolumes) && m.PairPoolVolumes[i].Pair == pair && !m.PairPoolVolumes[i].VolumeTor.IsNil() {
+			total = total.Add(m.PairPoolVolumes[i].VolumeTor)
+		}
+	}
+	return total
+}
+
 func (m *DynamicFeePoolAccumulator) Key() string {
 	return fmt.Sprintf("%s|%s", m.PairAssetA, m.PairAssetB)
 }
@@ -146,7 +179,10 @@ func (m *DynamicFeeEpochRecord) NormalizedSignal(minOtherBps uint64) (math.Uint,
 	if other.MulUint64(10_000).LT(m.PoolVolumeTor.MulUint64(minOtherBps)) {
 		return math.ZeroUint(), false
 	}
-	return common.GetSafeShare(m.FeesTor, other, SignalScale), true
+	// Uncapped: fees can exceed other swappers' volume when the thorname is
+	// most of the flow and its swaps pay high slip. Capping at SignalScale
+	// would read materially different revenues as equal.
+	return common.GetUncappedShare(m.FeesTor, other, SignalScale), true
 }
 
 // Add records one more measured epoch at the probe's bps.
