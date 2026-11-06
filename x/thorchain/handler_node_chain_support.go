@@ -134,22 +134,30 @@ func (h NodeChainSupportHandler) processAddChainSupport(ctx cosmos.Context, msg 
 		return fmt.Errorf("fail to get node account: %w", err)
 	}
 
-	// Check if chain is already supported to maintain uniqueness
+	// Store the canonical chain name (common.NewChain uppercases), so "btc"
+	// and "BTC" are one entry everywhere SupportedChains is consumed.
+	chain, err := common.NewChain(msg.Chain)
+	if err != nil {
+		return fmt.Errorf("invalid chain: %s", msg.Chain)
+	}
+
+	// Check if chain is already supported to maintain uniqueness. Compare
+	// canonical forms so an entry stored before normalization also matches.
 	for _, supportedChain := range nodeAccount.SupportedChains {
-		if supportedChain == msg.Chain {
+		if existing, parseErr := common.NewChain(supportedChain); parseErr == nil && existing.Equals(chain) {
 			return nil // Already supported, nothing to do
 		}
 	}
 
 	// Add chain to supported chains
-	nodeAccount.SupportedChains = append(nodeAccount.SupportedChains, msg.Chain)
+	nodeAccount.SupportedChains = append(nodeAccount.SupportedChains, chain.String())
 
 	// Save updated node account
 	if err := h.mgr.Keeper().SetNodeAccount(ctx, nodeAccount); err != nil {
 		return fmt.Errorf("fail to save node account: %w", err)
 	}
 
-	ctx.Logger().Info("node added chain support", "node", msg.Signer, "chain", msg.Chain)
+	ctx.Logger().Info("node added chain support", "node", msg.Signer, "chain", chain.String())
 	return nil
 }
 
@@ -159,12 +167,19 @@ func (h NodeChainSupportHandler) processRemoveChainSupport(ctx cosmos.Context, m
 		return fmt.Errorf("fail to get node account: %w", err)
 	}
 
-	// Remove chain from supported chains while maintaining uniqueness
+	chain, err := common.NewChain(msg.Chain)
+	if err != nil {
+		return fmt.Errorf("invalid chain: %s", msg.Chain)
+	}
+
+	// Remove every entry whose canonical form is the chain, including case
+	// variants stored before add normalized its input.
 	newSupportedChains := make([]string, 0, len(nodeAccount.SupportedChains))
 	for _, supportedChain := range nodeAccount.SupportedChains {
-		if supportedChain != msg.Chain {
-			newSupportedChains = append(newSupportedChains, supportedChain)
+		if existing, parseErr := common.NewChain(supportedChain); parseErr == nil && existing.Equals(chain) {
+			continue
 		}
+		newSupportedChains = append(newSupportedChains, supportedChain)
 	}
 
 	// Check minimum chain support requirement
@@ -181,7 +196,7 @@ func (h NodeChainSupportHandler) processRemoveChainSupport(ctx cosmos.Context, m
 		return fmt.Errorf("fail to save node account: %w", err)
 	}
 
-	ctx.Logger().Info("node removed chain support", "node", msg.Signer, "chain", msg.Chain)
+	ctx.Logger().Info("node removed chain support", "node", msg.Signer, "chain", chain.String())
 	return nil
 }
 

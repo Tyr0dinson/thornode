@@ -167,6 +167,71 @@ func (s *HandlerNodeChainSupportSuite) TestHandleRemoveChainSupport(c *C) {
 	c.Assert(updatedNode.SupportedChains, HasLen, 2)
 }
 
+func (s *HandlerNodeChainSupportSuite) TestChainSupportStoresCanonicalChain(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	k.SetMimir(ctx, constants.EnableNodeChainConsensus.String(), 1)
+	handler := NewNodeChainSupportHandler(NewDummyMgrWithKeeper(k))
+
+	node := GetRandomValidatorNode(NodeActive)
+	node.SupportedChains = []string{common.ETHChain.String()}
+	c.Assert(k.SetNodeAccount(ctx, node), IsNil)
+
+	// A lower-case add is stored as the canonical upper-case chain.
+	_, err := handler.Run(ctx, NewMsgAddNodeChainSupport("btc", node.NodeAddress))
+	c.Assert(err, IsNil)
+	na, err := k.GetNodeAccount(ctx, node.NodeAddress)
+	c.Assert(err, IsNil)
+	c.Assert(na.SupportedChains, DeepEquals, []string{"ETH", "BTC"})
+
+	// Any case variant of a chain already present is a no-op.
+	for _, variant := range []string{"BTC", "Btc", "bTC"} {
+		_, err = handler.Run(ctx, NewMsgAddNodeChainSupport(variant, node.NodeAddress))
+		c.Assert(err, IsNil)
+	}
+	na, err = k.GetNodeAccount(ctx, node.NodeAddress)
+	c.Assert(err, IsNil)
+	c.Assert(na.SupportedChains, DeepEquals, []string{"ETH", "BTC"})
+
+	// State written before normalization: remove drops every case variant.
+	na.SupportedChains = []string{"ETH", "btc", "BTC", "Btc"}
+	c.Assert(k.SetNodeAccount(ctx, na), IsNil)
+	_, err = handler.Run(ctx, NewMsgRemoveNodeChainSupport("bTc", node.NodeAddress))
+	c.Assert(err, IsNil)
+	na, err = k.GetNodeAccount(ctx, node.NodeAddress)
+	c.Assert(err, IsNil)
+	c.Assert(na.SupportedChains, DeepEquals, []string{"ETH"})
+
+	// Add on top of a legacy lower-case entry does not create a duplicate.
+	na.SupportedChains = []string{"ETH", "btc"}
+	c.Assert(k.SetNodeAccount(ctx, na), IsNil)
+	_, err = handler.Run(ctx, NewMsgAddNodeChainSupport("BTC", node.NodeAddress))
+	c.Assert(err, IsNil)
+	na, err = k.GetNodeAccount(ctx, node.NodeAddress)
+	c.Assert(err, IsNil)
+	c.Assert(na.SupportedChains, DeepEquals, []string{"ETH", "btc"})
+}
+
+func (s *HandlerNodeChainSupportSuite) TestGetNodeSupportedChainsNormalizes(c *C) {
+	ctx, k := setupKeeperForTest(c)
+
+	node := GetRandomValidatorNode(NodeActive)
+	// Legacy state: case variants, a duplicate and an unparseable entry.
+	node.SupportedChains = []string{"btc", "ETH", "BTC", "Btc", "eth", "not a chain!"}
+	c.Assert(getNodeSupportedChains(ctx, k, node), DeepEquals, []string{"BTC", "ETH"})
+
+	// The read path feeds chain grouping: one node declaring "btc" next to a
+	// node declaring "BTC" lands in the same group, not a group of its own.
+	a := GetRandomValidatorNode(NodeActive)
+	a.SupportedChains = []string{"btc"}
+	b := GetRandomValidatorNode(NodeActive)
+	b.SupportedChains = []string{"BTC"}
+	vm := newNetworkMgr(k, NewTxStoreDummy(), NewDummyEventMgr())
+	groups, keys := vm.groupChainsByNodeSets(ctx, NodeAccounts{a, b})
+	c.Assert(keys, HasLen, 1)
+	c.Assert(groups[keys[0]].Chains, DeepEquals, []string{"BTC"})
+	c.Assert(groups[keys[0]].Members, HasLen, 2)
+}
+
 func (s *HandlerNodeChainSupportSuite) TestRemoveChainSupportMinimumConstraint(c *C) {
 	ctx, k := setupKeeperForTest(c)
 

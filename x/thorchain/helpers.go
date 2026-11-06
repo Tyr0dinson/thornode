@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 
@@ -1846,9 +1847,12 @@ func getChainAwareNonSigners(ctx cosmos.Context, k keeper.Keeper, chain string, 
 // If the node has explicitly set SupportedChains, returns them.
 // If SupportedChains is empty (backwards compatibility), returns all chains from active vaults.
 func getNodeSupportedChains(ctx cosmos.Context, k keeper.Keeper, node NodeAccount) []string {
-	// If node explicitly supports chains, use them
+	// If node explicitly supports chains, use them in canonical form. Entries
+	// are normalized on read as well as on write so a case variant stored
+	// earlier ("btc" next to "BTC") can neither form its own chain group nor
+	// draw a second reward share from the same chain bucket.
 	if len(node.SupportedChains) > 0 {
-		return node.SupportedChains
+		return normalizeSupportedChains(node.SupportedChains)
 	}
 
 	// Backwards compatibility: If node has no supported chains, inherit all chains from active vaults
@@ -1878,6 +1882,22 @@ func getNodeSupportedChains(ctx cosmos.Context, k keeper.Keeper, node NodeAccoun
 		"node", node.NodeAddress.String(),
 		"inherited_chains", chains)
 
+	return chains
+}
+
+// normalizeSupportedChains returns the canonical chain names in stored order,
+// dropping unparseable entries and case-variant duplicates.
+func normalizeSupportedChains(stored []string) []string {
+	chains := make([]string, 0, len(stored))
+	for _, raw := range stored {
+		chain, err := common.NewChain(raw)
+		if err != nil || chain.IsEmpty() {
+			continue
+		}
+		if !slices.Contains(chains, chain.String()) {
+			chains = append(chains, chain.String())
+		}
+	}
 	return chains
 }
 
