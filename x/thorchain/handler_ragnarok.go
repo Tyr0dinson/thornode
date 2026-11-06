@@ -2,6 +2,7 @@ package thorchain
 
 import (
 	"context"
+	"strings"
 
 	"github.com/cosmos/cosmos-sdk/telemetry"
 	"github.com/hashicorp/go-metrics"
@@ -67,22 +68,14 @@ func (h RagnarokHandler) handle(ctx cosmos.Context, msg MsgRagnarok) (*cosmos.Re
 	shouldSlash := true
 	// follow the heights LackSigning reschedules the ragnarok outbound to: each
 	// retry is due one signing period of wall-clock time after the previous one
-	// (signingTransPeriod blocks without a block time change), and is queued at
-	// that block rounded up to RescheduleCoalesceBlocks, then moved by any later
-	// block time change
+	// (the extended period for XMR, EVM aggregator and EVM token outbounds), and
+	// is queued at that block rounded up to RescheduleCoalesceBlocks, then moved
+	// by any later block time change
 	refMs := constants.ThorchainBlockTime.Milliseconds()
 	// analyze-ignore(unscaled-config): a wall-clock period, in reference blocks
 	periodMs := h.mgr.GetConstants().GetInt64Value(constants.SigningTransactionPeriod) * refMs
+	periodMs *= observedSigningPeriodMultiplier(msg.Tx)
 	history := h.mgr.Keeper().GetBlockTimeHistory(ctx)
-	if len(history) > 0 {
-		// LackSigning reschedules XMR, EVM aggregator and EVM token outbounds
-		// one extended period later, rounded up to a whole block once. Stepping
-		// by the standard period rounds each step, which can overshoot that
-		// height. Without a block time change the extended period is a whole
-		// number of standard steps, so they already land on it (rounded up to
-		// a coalesce interval that divides the period, as on mainnet).
-		periodMs *= observedSigningPeriodMultiplier(msg.Tx)
-	}
 	// read once the walk passes the first height, as LackSigning reads it
 	var coalesce int64
 	coalesceRead := false
@@ -93,15 +86,37 @@ func (h RagnarokHandler) handle(ctx cosmos.Context, msg MsgRagnarok) (*cosmos.Re
 		}
 		return history.RescheduleHeight(height, periodMs, coalesce, refMs)
 	}
+	// The computed retry height assumes the current RescheduleCoalesceBlocks and
+	// LackSigning's schedule. A retry queued under an earlier coalesce interval,
+	// or moved by a SOL durable nonce reissue, sits elsewhere. Every copy is
+	// queued above the one it replaces, so when the computed height holds no copy
+	// of this outbound, scan up from the last copy to the next one. After a scan
+	// finds none, fall back to the computed heights alone.
+	ragnarokMemo := NewRagnarokMemo(msg.BlockHeight).String()
+	isCopy := func(txOut *TxOut) bool {
+		for _, tx := range txOut.TxArray {
+			if isRagnarokCopy(tx, msg.Tx.Tx, ragnarokMemo) {
+				return true
+			}
+		}
+		return false
+	}
+	scan := true
 	decrementedPendingRagnarok := false
 	// a retry is searched once it is due, though it can be queued ahead of the
 	// current block: an observation of the outbound it replaces can still land
-	for height, due := msg.BlockHeight, msg.BlockHeight; due <= ctx.BlockHeight(); due, height = nextRetry(height) {
-		// update txOut record with our TxID that sent funds out of the pool
-		txOut, err := h.mgr.Keeper().GetTxOut(ctx, height)
-		if err != nil {
-			return nil, ErrInternal(err, "unable to get txOut record")
+	height, due := msg.BlockHeight, msg.BlockHeight
+	var next *TxOut
+	for due <= ctx.BlockHeight() {
+		txOut := next
+		next = nil
+		var err error
+		if txOut == nil {
+			if txOut, err = h.mgr.Keeper().GetTxOut(ctx, height); err != nil {
+				return nil, ErrInternal(err, "unable to get txOut record")
+			}
 		}
+		// update txOut record with our TxID that sent funds out of the pool
 		for i, tx := range txOut.TxArray {
 			// ragnarok is the memo used by thorchain to identify fund returns to
 			// bonders, LPs, and reserve contributors.
@@ -177,6 +192,68 @@ func (h RagnarokHandler) handle(ctx cosmos.Context, msg MsgRagnarok) (*cosmos.Re
 		if !shouldSlash {
 			break
 		}
+
+		nextDue, retry := nextRetry(height)
+		searchable := nextDue <= ctx.BlockHeight()
+		if !scan {
+			if !searchable {
+				break
+			}
+			height, due = retry, nextDue
+			continue
+		}
+		if !searchable && !msg.Tx.Tx.Chain.Equals(common.SOLChain) {
+			// LackSigning queues a copy only once the outbound falls due; only a
+			// SOL durable nonce reissue queues one earlier (reissueSolDurableAt)
+			break
+		}
+		var retryOut *TxOut
+		if searchable {
+			out, getErr := h.mgr.Keeper().GetTxOut(ctx, retry)
+			if getErr != nil {
+				return nil, ErrInternal(getErr, "unable to get txOut record")
+			}
+			retryOut = out
+			if isCopy(retryOut) {
+				height, due, next = retry, nextDue, retryOut
+				continue
+			}
+		}
+		// Scan up to the furthest height a copy can be queued at by now, and,
+		// once the outbound is due again, to one signing period past that: the
+		// copy LackSigning queued then lies at most one coalesce interval later,
+		// assumed to be no longer than a signing period.
+		limit := rescheduleReach(ctx, h.mgr.Keeper())
+		if searchable {
+			limit = max(limit, retry, history.HeightAfter(nextDue, periodMs, refMs)-1)
+		}
+		var found *TxOut
+		foundAt := int64(0)
+		for hgt := height + 1; hgt <= limit; hgt++ {
+			if searchable && hgt == retry {
+				continue
+			}
+			candidate, err := h.mgr.Keeper().GetTxOut(ctx, hgt)
+			if err != nil {
+				return nil, ErrInternal(err, "unable to get txOut record")
+			}
+			if isCopy(candidate) {
+				found, foundAt = candidate, hgt
+				break
+			}
+		}
+		switch {
+		case found != nil:
+			// a persisted copy is searched whatever its due block
+			height, due, next = foundAt, min(nextDue, ctx.BlockHeight()), found
+		case searchable:
+			// no copy where one can be: keep to the computed heights
+			scan = false
+			height, due, next = retry, nextDue, retryOut
+		default:
+			// not due again, and no copy queued since
+			due = nextDue
+		}
 	}
 
 	if shouldSlash {
@@ -190,4 +267,16 @@ func (h RagnarokHandler) handle(ctx cosmos.Context, msg MsgRagnarok) (*cosmos.Re
 	}
 
 	return &cosmos.Result{}, nil
+}
+
+// isRagnarokCopy reports whether item is a copy, live or replaced, of the
+// ragnarok outbound tx pays: LackSigning and SOL durable nonce reissue keep the
+// chain, destination, coin asset and RAGNAROK memo of the item they replace,
+// though they can change its vault.
+func isRagnarokCopy(item TxOutItem, tx common.Tx, ragnarokMemo string) bool {
+	return item.InHash.Equals(common.BlankTxID) &&
+		item.Chain.Equals(tx.Chain) &&
+		strings.EqualFold(item.GetMemo(), ragnarokMemo) &&
+		common.EquivalentAddresses(item.Chain, item.ToAddress, tx.ToAddress) &&
+		!tx.Coins.GetCoin(item.Coin.Asset).IsEmpty()
 }
