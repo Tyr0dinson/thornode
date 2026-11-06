@@ -131,7 +131,11 @@ type Observer struct {
 	lastNodeStatusMu sync.RWMutex
 
 	observedChains map[common.Chain]bool
-	chainsMutex    sync.RWMutex
+	// chainAwareObservation is the last read of EnableNodeChainConsensus.
+	// Membership scoping only applies while it is on, matching on-chain
+	// consensus, which counts the whole active set when it is off.
+	chainAwareObservation bool
+	chainsMutex           sync.RWMutex
 
 	deckDumpFile string
 
@@ -434,29 +438,67 @@ func (o *Observer) IsChainObserved(chain common.Chain) bool {
 	return o.observedChains[chain]
 }
 
-// updateObservedChains updates which chains should be observed based on vault membership
+// chainAwareObservationEnabled reads EnableNodeChainConsensus the way
+// GetConfigInt64 does on-chain: the mimir when set, else the network constant.
+// ok is false when neither could be read.
+func (o *Observer) chainAwareObservationEnabled() (enabled, ok bool) {
+	if o.thorchainBridge == nil {
+		return false, false
+	}
+	key := constants.EnableNodeChainConsensus.String()
+	value, err := o.thorchainBridge.GetMimir(key)
+	if err != nil {
+		o.logger.Debug().Err(err).Str("mimir_key", key).Msg("fail to get mimir")
+		return false, false
+	}
+	if value < 0 {
+		consts, err := o.thorchainBridge.GetConstants()
+		if err != nil {
+			o.logger.Debug().Err(err).Msg("fail to get constants")
+			return false, false
+		}
+		value = consts[key]
+	}
+	return value > 0, true
+}
+
+// updateObservedChains updates which chains should be observed based on vault
+// membership. Membership only narrows observation while chain-aware consensus
+// is on; with it off, quorum and slashing cover the whole active set, so every
+// configured chain is observed.
 func (o *Observer) updateObservedChains() {
 	if o.pubkeyMgr == nil {
 		return
 	}
+	// On a failed read keep the last known setting (initially off, which
+	// observes everything).
+	enabled, ok := o.chainAwareObservationEnabled()
 	supportedChains := o.pubkeyMgr.GetSupportedChains()
 
 	o.chainsMutex.Lock()
 	defer o.chainsMutex.Unlock()
 
+	if ok && enabled != o.chainAwareObservation {
+		o.chainAwareObservation = enabled
+		o.logger.Info().Bool("enabled", enabled).Msg("chain-aware observation setting changed")
+	}
+
 	// Track what changed for logging
 	added := make([]common.Chain, 0)
 	removed := make([]common.Chain, 0)
 
-	// If supported chains is empty, node is not in any active/retiring vaults
-	// Set observedChains to empty (signals observe all)
-	if len(supportedChains) == 0 {
+	// If supported chains is empty (node is not in any active/retiring vaults)
+	// or chain-aware consensus is off, set observedChains to empty (signals
+	// observe all)
+	if !o.chainAwareObservation || len(supportedChains) == 0 {
 		if len(o.observedChains) > 0 {
 			for chain := range o.observedChains {
 				removed = append(removed, chain)
 			}
 			o.observedChains = make(map[common.Chain]bool)
-			o.logger.Info().Msg("node not in any active/retiring vaults, observing all chains")
+			o.logger.Info().
+				Bool("chain_aware", o.chainAwareObservation).
+				Msg("observing all chains")
 		}
 		return
 	}
