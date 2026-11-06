@@ -1877,7 +1877,7 @@ func getNodeSupportedChains(ctx cosmos.Context, k keeper.Keeper, node NodeAccoun
 }
 
 // normalizeSupportedChains returns the canonical chain names in stored order,
-// dropping unparseable entries and case-variant duplicates.
+// dropping unparsable entries and case-variant duplicates.
 func normalizeSupportedChains(stored []string) []string {
 	chains := make([]string, 0, len(stored))
 	for _, raw := range stored {

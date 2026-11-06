@@ -215,7 +215,7 @@ func (s *HandlerNodeChainSupportSuite) TestGetNodeSupportedChainsNormalizes(c *C
 	ctx, k := setupKeeperForTest(c)
 
 	node := GetRandomValidatorNode(NodeActive)
-	// Legacy state: case variants, a duplicate and an unparseable entry.
+	// Legacy state: case variants, a duplicate and an unparsable entry.
 	node.SupportedChains = []string{"btc", "ETH", "BTC", "Btc", "eth", "not a chain!"}
 	c.Assert(getNodeSupportedChains(ctx, k, node), DeepEquals, []string{"BTC", "ETH"})
 
