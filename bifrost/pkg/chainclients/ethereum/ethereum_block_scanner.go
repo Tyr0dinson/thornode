@@ -501,14 +501,10 @@ var canceledContext = func() context.Context {
 // can skip fetching them. Gas prices don't depend on this: processBlock reads them
 // from the tx fields.
 //
-// Only logs emitted by a router are parsed, and logsBloom has no false negatives, so
-// a block whose bloom lacks every router has no router log. That has to come from
-// the bloom: with the contract whitelist off, a deposit can arrive through any
-// contract, so tx.To cannot find it. It also settles txs sent to a router or a
-// whitelisted aggregator, which are often in a block: without a router log, parsing
-// them finds nothing. Everything else fromTxToTxInWithReceipts observes is visible in
-// the tx: sends to and from a vault (including failed ones, which have no logs) and
-// direct ERC20 transfers to a vault.
+// A router deposit can come through another contract, so check the bloom for log
+// emitters regardless of tx.To. A direct ERC20 inbound names the vault in its
+// transfer calldata. A failed outbound can have no logs and its signing vault
+// may have left the vault list, so also check the local signer cache.
 //
 // Senders are taken as the RPC reported them where possible, see txSender. A provider
 // that lied about a sender could hide that tx from this check, but it could equally
@@ -543,11 +539,10 @@ func (e *ETHScanner) receiptsMayProduceObservation(block *etypes.Block) bool {
 			return true
 		}
 	}
-	return false
+	return evm.BlockMayHaveSignedTx(block, e.signerCacheManager)
 }
 
-// txMayBeObserved reports whether tx's own fields could make
-// fromTxToTxInWithReceipts observe it, leaving aside logs emitted by a router.
+// txMayBeObserved reports whether the transaction fields alone warrant fetching receipts.
 func (e *ETHScanner) txMayBeObserved(tx *etypes.Transaction, blockHash ecommon.Hash, index uint) bool {
 	if e.isPoolAddress(*tx.To()) {
 		return true

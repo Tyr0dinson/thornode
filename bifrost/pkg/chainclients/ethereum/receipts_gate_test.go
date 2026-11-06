@@ -464,6 +464,31 @@ func TestExtractTxsFetchesReceiptsForFailedVaultTx(t *testing.T) {
 	}
 }
 
+func TestExtractTxsFetchesCachedOutboundAfterVaultRemoval(t *testing.T) {
+	for name, status := range map[string]uint64{"failed": etypes.ReceiptStatusFailed, "successful": etypes.ReceiptStatusSuccessful} {
+		t.Run(name, func(t *testing.T) {
+			f := newGateFixture(t, routerAddr(gateRouter))
+			tx := f.vaultTx(t, &gateRouter, []byte{1, 2, 3, 4})
+			_, vault := f.scanner.pubkeyMgr.IsValidPoolAddress(f.vault.Hex(), thorcommon.ETHChain)
+			out := stypes.TxOutItem{Chain: thorcommon.ETHChain, VaultPubKey: vault.PubKey, Memo: "OUT:123"}
+			cache := f.scanner.signerCacheManager
+			if err := cache.SetSignedWithExpiry(out.CacheHash(), out.CacheVault(out.Chain), tx.Hash().Hex(), 1); err != nil {
+				t.Fatal(err)
+			}
+			// Replay the block after the signing vault has left the node's vault list.
+			f.scanner.pubkeyMgr.RemovePubKey(vault.PubKey)
+			other := f.userTx(t, &gateElsewhere, nil)
+			otherReceipt := gateReceipt(other, 1, f.depositLog(t, gateElsewhere))
+			block := gateBlock(etypes.CreateBloom(otherReceipt), tx, other)
+			f.scan(t, block, gateReceipt(tx, status), otherReceipt)
+			f.assertFetched(t)
+			if got := cache.HasSigned(out.CacheHash()); got != (status == etypes.ReceiptStatusSuccessful) {
+				t.Fatalf("signer cache contains %s outbound: %v", name, got)
+			}
+		})
+	}
+}
+
 // A vault's token approval goes to the token and its log comes from the token, so
 // only the sender reveals it.
 func TestExtractTxsFetchesReceiptsForTxFromVault(t *testing.T) {
@@ -543,11 +568,60 @@ func TestExtractTxsFetchesReceiptsForERC20TransferToVault(t *testing.T) {
 	f.assertFetched(t)
 }
 
-// Token transfers between other accounts fill ETH blocks and must not defeat the filter.
-func TestExtractTxsSkipsReceiptsForERC20TransferElsewhere(t *testing.T) {
-	f := newGateFixture(t, routerAddr(gateRouter))
-	token := gateToken(t)
-	f.assertSkipped(t, f.scan(t, gateBlock(unrelatedBloom, f.userTx(t, &token, erc20TransferData(gateElsewhere)))))
+func TestExtractTxsDirectERC20TransferRecipient(t *testing.T) {
+	for _, tc := range []struct {
+		addressedToVault bool
+		upperByte        byte
+	}{
+		{addressedToVault: false},
+		{addressedToVault: true},
+		{addressedToVault: false, upperByte: 0xff},
+		{addressedToVault: true, upperByte: 0xff},
+	} {
+		f := newGateFixture(t, routerAddr(gateRouter))
+		token := gateToken(t)
+		if err := f.scanner.tokens.SaveTokenMeta("TKN", token.Hex(), 18); err != nil {
+			t.Fatal(err)
+		}
+		recipient := gateElsewhere
+		if tc.addressedToVault {
+			recipient = f.vault
+		}
+		data := erc20TransferData(recipient)
+		data[4] = tc.upperByte
+		tx := f.signedTx(t, secp256k1.GenPrivKey(), &token, new(big.Int), data)
+		sender, err := f.signer.Sender(tx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		transfer := func(to ecommon.Address, amount int64) *etypes.Log {
+			return &etypes.Log{
+				Address: token,
+				TxHash:  tx.Hash(),
+				Topics:  []ecommon.Hash{ecommon.HexToHash(testERC20TransferEvent), paddedAddressHash(sender), paddedAddressHash(to)},
+				Data:    ecommon.BigToHash(big.NewInt(amount)).Bytes(),
+			}
+		}
+		// Both receipts pay the vault 0.1 tokens, regardless of the 1 token requested in calldata.
+		receipt := gateReceipt(tx, etypes.ReceiptStatusSuccessful, transfer(gateElsewhere, 9e17), transfer(f.vault, 1e17))
+		txIn := f.scan(t, gateBlock(etypes.CreateBloom(receipt), tx), receipt)
+		if !tc.addressedToVault {
+			f.assertSkipped(t, txIn)
+			full, err := f.scanner.fromTxToTxInWithReceipts(tx, map[ecommon.Hash]*etypes.Receipt{tx.Hash(): receipt})
+			if err != nil || full != nil {
+				t.Fatalf("receipt path credited an incidental transfer: observation=%v err=%v", full, err)
+			}
+			continue
+		}
+		f.assertFetched(t)
+		if len(txIn.TxArray) != 1 {
+			t.Fatalf("got %d vault transfers, want 1", len(txIn.TxArray))
+		}
+		item := txIn.TxArray[0]
+		if !strings.EqualFold(item.To, f.vault.Hex()) || len(item.Coins) != 1 || item.Coins[0].Amount.Uint64() != 10_000_000 {
+			t.Fatalf("unexpected vault payment: %+v", item)
+		}
+	}
 }
 
 // extractTxs passes over blob txs and contract creations, whoever sent them, so they
