@@ -1329,262 +1329,79 @@ func (h HandlerTssKeysignSuite) TestTssKeysignFailHandler_emits_failure_event_on
 }
 
 func (h HandlerTssKeysignSuite) TestTssKeysignFailHandler_ChainAwareConsensus(c *C) {
-	// Test 1: Chain-aware consensus disabled - should use all vault members for consensus
-	c.Log("Test 1: Chain-aware consensus disabled")
-	helper := newTssKeysignHandlerTestHelper(c)
-	handler := NewTssKeysignHandler(NewDummyMgrWithKeeper(helper.keeper))
+	// With chain-aware consensus on, the keysign-fail electorate must stay the
+	// vault's full membership. A member that declares support for a chain no
+	// other member claims must not be able to shrink the electorate to itself
+	// by naming that chain in msg.Coins.
+	for _, enabled := range []int64{0, 1} {
+		helper := newTssKeysignHandlerTestHelper(c)
+		handler := NewTssKeysignHandler(NewDummyMgrWithKeeper(helper.keeper))
+		helper.keeper.SetMimir(helper.ctx, constants.EnableNodeChainConsensus.String(), enabled)
 
-	// Create a vault with members
-	vault := NewVault(1024, ActiveVault, AsgardVault, GetRandomPubKey(), []string{
-		common.ETHChain.String(),
-		common.BTCChain.String(),
-	}, []ChainContract{})
+		vault := NewVault(1024, ActiveVault, AsgardVault, GetRandomPubKey(), []string{
+			common.ETHChain.String(),
+			common.BTCChain.String(),
+		}, []ChainContract{})
 
-	accounts := NodeAccounts{}
-	for i := 0; i < 8; i++ {
-		na := GetRandomValidatorNode(NodeActive)
-		// Half of the nodes only support ETH
-		if i < 4 {
-			na.SupportedChains = []string{common.ETHChain.String()}
-		} else {
-			na.SupportedChains = []string{common.ETHChain.String(), common.BTCChain.String()}
+		accounts := NodeAccounts{}
+		for i := 0; i < 8; i++ {
+			na := GetRandomValidatorNode(NodeActive)
+			if i == 0 {
+				// the reporter alone claims LTC, which no other member supports
+				na.SupportedChains = []string{common.BTCChain.String(), common.LTCChain.String()}
+			} else {
+				na.SupportedChains = []string{common.ETHChain.String(), common.BTCChain.String()}
+			}
+			c.Assert(helper.keeper.SetNodeAccount(helper.ctx, na), IsNil)
+			vault.Membership = append(vault.Membership, na.PubKeySet.Secp256k1.String())
+			accounts = append(accounts, na)
 		}
-		c.Assert(helper.keeper.SetNodeAccount(helper.ctx, na), IsNil)
-		vault.Membership = append(vault.Membership, na.PubKeySet.Secp256k1.String())
-		accounts = append(accounts, na)
-	}
-	c.Assert(helper.keeper.SetVault(helper.ctx, vault), IsNil)
+		c.Assert(helper.keeper.SetVault(helper.ctx, vault), IsNil)
 
-	// Disable chain-aware consensus
-	helper.keeper.SetMimir(helper.ctx, constants.EnableNodeChainConsensus.String(), 0)
-
-	// Create a message with BTC (only half the nodes support it)
-	msg, err := NewMsgTssKeysignFail(helper.ctx.BlockHeight(), helper.blame, "hello",
-		common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(100))},
-		accounts[0].NodeAddress, vault.PubKey)
-	c.Assert(err, IsNil)
-
-	// With mimir disabled, it should use all vault members (8 nodes)
-	// We need 5 signatures to reach consensus (simple majority of 8)
-	for i := 0; i < 5; i++ {
-		msg, err = NewMsgTssKeysignFail(helper.ctx.BlockHeight(), helper.blame, "hello",
-			common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(100))},
-			accounts[i].NodeAddress, vault.PubKey)
-		c.Assert(err, IsNil)
-		var result *cosmos.Result
-		result, err = handler.Run(helper.ctx, msg)
-		c.Assert(err, IsNil)
-		c.Assert(result, NotNil)
-	}
-
-	// Test 2: Chain-aware consensus enabled - only nodes supporting the chain count
-	c.Log("Test 2: Chain-aware consensus enabled with partial chain support")
-	helper2 := newTssKeysignHandlerTestHelper(c)
-	handler2 := NewTssKeysignHandler(NewDummyMgrWithKeeper(helper2.keeper))
-
-	vault2 := NewVault(1024, ActiveVault, AsgardVault, GetRandomPubKey(), []string{
-		common.ETHChain.String(),
-		common.BTCChain.String(),
-	}, []ChainContract{})
-
-	accounts2 := NodeAccounts{}
-	for i := 0; i < 8; i++ {
-		na := GetRandomValidatorNode(NodeActive)
-		// Only 4 nodes support BTC
-		if i < 4 {
-			na.SupportedChains = []string{common.ETHChain.String()}
-		} else {
-			na.SupportedChains = []string{common.ETHChain.String(), common.BTCChain.String()}
+		blame := Blame{
+			FailReason: "fail to keysign",
+			Round:      tssMessages.KEYSIGN9,
+			BlameNodes: []Node{{Pubkey: accounts[7].PubKeySet.Secp256k1.String()}},
 		}
-		c.Assert(helper2.keeper.SetNodeAccount(helper2.ctx, na), IsNil)
-		vault2.Membership = append(vault2.Membership, na.PubKeySet.Secp256k1.String())
-		accounts2 = append(accounts2, na)
-	}
-	c.Assert(helper2.keeper.SetVault(helper2.ctx, vault2), IsNil)
-
-	// Enable chain-aware consensus
-	helper2.keeper.SetMimir(helper2.ctx, constants.EnableNodeChainConsensus.String(), 1)
-
-	// With chain-aware consensus, only 4 nodes count (those supporting BTC)
-	// We need 3 signatures to reach consensus (simple majority of 4)
-	// Sign with nodes that support BTC (indexes 4-7)
-	for i := 4; i < 7; i++ {
-		var msg2 *MsgTssKeysignFail
-		msg2, err = NewMsgTssKeysignFail(helper2.ctx.BlockHeight(), helper.blame, "hello",
-			common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(100))},
-			accounts2[i].NodeAddress, vault2.PubKey)
-		c.Assert(err, IsNil)
-		var result *cosmos.Result
-		result, err = handler2.Run(helper2.ctx, msg2)
-		c.Assert(err, IsNil)
-		c.Assert(result, NotNil)
-	}
-
-	// Verify consensus was reached and blamed nodes were processed
-	voter2, err := helper2.keeper.GetTssKeysignFailVoter(helper2.ctx, msg.ID)
-	c.Assert(err, IsNil)
-	// After consensus, signers should be cleared
-	c.Assert(len(voter2.Signers), Equals, 0)
-
-	// Test 3: Chain-aware consensus with all members supporting the chain
-	c.Log("Test 3: Chain-aware consensus with all members supporting chain")
-	helper3 := newTssKeysignHandlerTestHelper(c)
-	handler3 := NewTssKeysignHandler(NewDummyMgrWithKeeper(helper3.keeper))
-
-	vault3 := NewVault(1024, ActiveVault, AsgardVault, GetRandomPubKey(), []string{
-		common.ETHChain.String(),
-	}, []ChainContract{})
-
-	accounts3 := NodeAccounts{}
-	for i := 0; i < 8; i++ {
-		na := GetRandomValidatorNode(NodeActive)
-		na.SupportedChains = []string{common.ETHChain.String()}
-		c.Assert(helper3.keeper.SetNodeAccount(helper3.ctx, na), IsNil)
-		vault3.Membership = append(vault3.Membership, na.PubKeySet.Secp256k1.String())
-		accounts3 = append(accounts3, na)
-	}
-	c.Assert(helper3.keeper.SetVault(helper3.ctx, vault3), IsNil)
-
-	// Enable chain-aware consensus
-	helper3.keeper.SetMimir(helper3.ctx, constants.EnableNodeChainConsensus.String(), 1)
-
-	// All 8 nodes support ETH, so we need 5 signatures for consensus
-	for i := 0; i < 5; i++ {
-		var msg3 *MsgTssKeysignFail
-		msg3, err = NewMsgTssKeysignFail(helper3.ctx.BlockHeight(), helper.blame, "hello",
-			common.Coins{common.NewCoin(common.ETHAsset, cosmos.NewUint(100))},
-			accounts3[i].NodeAddress, vault3.PubKey)
-		c.Assert(err, IsNil)
-		var result *cosmos.Result
-		result, err = handler3.Run(helper3.ctx, msg3)
-		c.Assert(err, IsNil)
-		c.Assert(result, NotNil)
-	}
-
-	// Test 4: Chain-aware consensus with multiple chains
-	c.Log("Test 4: Chain-aware consensus with multiple chains")
-	helper4 := newTssKeysignHandlerTestHelper(c)
-	handler4 := NewTssKeysignHandler(NewDummyMgrWithKeeper(helper4.keeper))
-
-	vault4 := NewVault(1024, ActiveVault, AsgardVault, GetRandomPubKey(), []string{
-		common.ETHChain.String(),
-		common.BTCChain.String(),
-		common.LTCChain.String(),
-	}, []ChainContract{})
-
-	accounts4 := NodeAccounts{}
-	for i := 0; i < 8; i++ {
-		na := GetRandomValidatorNode(NodeActive)
-		// Only 2 nodes support all three chains
-		switch {
-		case i < 2:
-			na.SupportedChains = []string{common.ETHChain.String(), common.BTCChain.String(), common.LTCChain.String()}
-		case i < 5:
-			na.SupportedChains = []string{common.ETHChain.String(), common.BTCChain.String()}
-		default:
-			na.SupportedChains = []string{common.ETHChain.String()}
+		coins := common.Coins{
+			common.NewCoin(common.BTCAsset, cosmos.NewUint(100)),
+			common.NewCoin(common.LTCAsset, cosmos.NewUint(50)),
 		}
-		c.Assert(helper4.keeper.SetNodeAccount(helper4.ctx, na), IsNil)
-		vault4.Membership = append(vault4.Membership, na.PubKeySet.Secp256k1.String())
-		accounts4 = append(accounts4, na)
-	}
-	c.Assert(helper4.keeper.SetVault(helper4.ctx, vault4), IsNil)
-
-	// Enable chain-aware consensus
-	helper4.keeper.SetMimir(helper4.ctx, constants.EnableNodeChainConsensus.String(), 1)
-
-	// Message with BTC and LTC - only 2 nodes support both
-	// We need 2 signatures for consensus (simple majority of 2)
-	for i := 0; i < 2; i++ {
-		var msg4 *MsgTssKeysignFail
-		msg4, err = NewMsgTssKeysignFail(helper4.ctx.BlockHeight(), helper.blame, "hello",
-			common.Coins{
-				common.NewCoin(common.BTCAsset, cosmos.NewUint(100)),
-				common.NewCoin(common.LTCAsset, cosmos.NewUint(50)),
-			},
-			accounts4[i].NodeAddress, vault4.PubKey)
-		c.Assert(err, IsNil)
-		var result *cosmos.Result
-		result, err = handler4.Run(helper4.ctx, msg4)
-		c.Assert(err, IsNil)
-		c.Assert(result, NotNil)
-	}
-
-	// Test 5: Chain-aware consensus with no nodes supporting the chain (edge case)
-	c.Log("Test 5: Chain-aware consensus with no nodes supporting chain")
-	helper5 := newTssKeysignHandlerTestHelper(c)
-	handler5 := NewTssKeysignHandler(NewDummyMgrWithKeeper(helper5.keeper))
-
-	vault5 := NewVault(1024, ActiveVault, AsgardVault, GetRandomPubKey(), []string{
-		common.ETHChain.String(),
-	}, []ChainContract{})
-
-	accounts5 := NodeAccounts{}
-	for i := 0; i < 8; i++ {
-		na := GetRandomValidatorNode(NodeActive)
-		// All nodes only support ETH, none support BTC
-		na.SupportedChains = []string{common.ETHChain.String()}
-		c.Assert(helper5.keeper.SetNodeAccount(helper5.ctx, na), IsNil)
-		vault5.Membership = append(vault5.Membership, na.PubKeySet.Secp256k1.String())
-		accounts5 = append(accounts5, na)
-	}
-	c.Assert(helper5.keeper.SetVault(helper5.ctx, vault5), IsNil)
-
-	// Enable chain-aware consensus
-	helper5.keeper.SetMimir(helper5.ctx, constants.EnableNodeChainConsensus.String(), 1)
-
-	// Message with BTC - no nodes support it, so consensus cannot be reached
-	msg5, err := NewMsgTssKeysignFail(helper5.ctx.BlockHeight(), helper.blame, "hello",
-		common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(100))},
-		accounts5[0].NodeAddress, vault5.PubKey)
-	c.Assert(err, IsNil)
-	result5, err := handler5.Run(helper5.ctx, msg5)
-	c.Assert(err, IsNil)
-	c.Assert(result5, NotNil)
-
-	// Verify that consensus was NOT reached (because no nodes were filtered in)
-	voter5, err := helper5.keeper.GetTssKeysignFailVoter(helper5.ctx, msg5.ID)
-	c.Assert(err, IsNil)
-	// Signers should still have 1 entry (the one who signed)
-	c.Assert(len(voter5.Signers), Equals, 1)
-
-	// Test 6: Backwards compatibility - nodes with empty SupportedChains
-	c.Log("Test 6: Backwards compatibility with empty SupportedChains")
-	helper6 := newTssKeysignHandlerTestHelper(c)
-	handler6 := NewTssKeysignHandler(NewDummyMgrWithKeeper(helper6.keeper))
-
-	vault6 := NewVault(1024, ActiveVault, AsgardVault, GetRandomPubKey(), []string{
-		common.ETHChain.String(),
-		common.BTCChain.String(),
-	}, []ChainContract{})
-
-	accounts6 := NodeAccounts{}
-	for i := 0; i < 8; i++ {
-		na := GetRandomValidatorNode(NodeActive)
-		// Some nodes have empty SupportedChains (backwards compatibility)
-		if i < 4 {
-			na.SupportedChains = []string{} // Empty - should inherit from vault
-		} else {
-			na.SupportedChains = []string{common.ETHChain.String(), common.BTCChain.String()}
+		send := func(i int) *MsgTssKeysignFail {
+			msg, err := NewMsgTssKeysignFail(helper.ctx.BlockHeight(), blame, "hello", coins, accounts[i].NodeAddress, vault.PubKey)
+			c.Assert(err, IsNil)
+			result, err := handler.Run(helper.ctx, msg)
+			c.Assert(err, IsNil)
+			c.Assert(result, NotNil)
+			return msg
 		}
-		c.Assert(helper6.keeper.SetNodeAccount(helper6.ctx, na), IsNil)
-		vault6.Membership = append(vault6.Membership, na.PubKeySet.Secp256k1.String())
-		accounts6 = append(accounts6, na)
-	}
-	c.Assert(helper6.keeper.SetVault(helper6.ctx, vault6), IsNil)
 
-	// Enable chain-aware consensus
-	helper6.keeper.SetMimir(helper6.ctx, constants.EnableNodeChainConsensus.String(), 1)
+		// One report from the lone LTC claimant must not reach consensus,
+		// freeze the vault or slash the blamed node.
+		msg := send(0)
+		voter, err := helper.keeper.GetTssKeysignFailVoter(helper.ctx, msg.ID)
+		c.Assert(err, IsNil)
+		c.Check(voter.Signers, HasLen, 1, Commentf("mimir=%d", enabled))
+		v, err := helper.keeper.GetVault(helper.ctx, vault.PubKey)
+		c.Assert(err, IsNil)
+		c.Check(v.Frozen, HasLen, 0, Commentf("mimir=%d", enabled))
+		slash, err := helper.keeper.GetNodeAccountSlashPoints(helper.ctx, accounts[7].NodeAddress)
+		c.Assert(err, IsNil)
+		c.Check(slash, Equals, int64(0), Commentf("mimir=%d", enabled))
 
-	// With backwards compatibility, nodes with empty SupportedChains inherit all vault chains
-	// So all 8 nodes should support BTC, requiring 5 signatures
-	for i := 0; i < 5; i++ {
-		msg6, err := NewMsgTssKeysignFail(helper6.ctx.BlockHeight(), helper.blame, "hello",
-			common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(100))},
-			accounts6[i].NodeAddress, vault6.PubKey)
+		// A simple majority of the full 8-member vault (4) is still required.
+		for i := 1; i < 3; i++ {
+			send(i)
+		}
+		voter, err = helper.keeper.GetTssKeysignFailVoter(helper.ctx, msg.ID)
 		c.Assert(err, IsNil)
-		result, err := handler6.Run(helper6.ctx, msg6)
+		c.Check(voter.Signers, HasLen, 3, Commentf("mimir=%d", enabled))
+		send(3)
+		voter, err = helper.keeper.GetTssKeysignFailVoter(helper.ctx, msg.ID)
 		c.Assert(err, IsNil)
-		c.Assert(result, NotNil)
+		c.Check(voter.Signers, HasLen, 0, Commentf("mimir=%d: consensus clears signers", enabled))
+		slash, err = helper.keeper.GetNodeAccountSlashPoints(helper.ctx, accounts[7].NodeAddress)
+		c.Assert(err, IsNil)
+		c.Check(slash > 0, Equals, true, Commentf("mimir=%d", enabled))
 	}
 }

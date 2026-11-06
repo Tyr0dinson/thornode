@@ -202,39 +202,12 @@ func (h TssKeysignHandler) handle(ctx cosmos.Context, msg MsgTssKeysignFail) (*c
 		}
 	}
 
-	// Check if chain-aware consensus is enabled
-	enableChainConsensus := h.mgr.Keeper().GetConfigInt64(ctx, constants.EnableNodeChainConsensus)
-	if enableChainConsensus > 0 && len(msg.Coins) > 0 {
-		// Filter vault members to only those supporting all chains involved in the keysign
-		chainSupportedMembers := make(NodeAccounts, 0)
-		for _, member := range vaultMemberNodes {
-			supportsAllChains := true
-			// Get the chains this member supports (with backwards compatibility for empty SupportedChains)
-			memberChains := getNodeSupportedChains(ctx, h.mgr.Keeper(), member)
-			for _, coin := range msg.Coins {
-				chainStr := coin.Asset.GetChain().String()
-				chainSupported := false
-				for _, supportedChain := range memberChains {
-					if supportedChain == chainStr {
-						chainSupported = true
-						break
-					}
-				}
-				if !chainSupported {
-					supportsAllChains = false
-					break
-				}
-			}
-			if supportsAllChains {
-				chainSupportedMembers = append(chainSupportedMembers, member)
-			}
-		}
-		vaultMemberNodes = chainSupportedMembers
-		ctx.Logger().Debug("using chain-aware consensus for keysign fail",
-			"total_members", len(vault.GetMembership()),
-			"chain_supported_members", len(vaultMemberNodes))
-	}
-
+	// The electorate is always the vault's full signing membership, even with
+	// chain-aware consensus on. Each chain-group vault is generated for exactly
+	// its group's members, so every member is a signer for every chain the
+	// vault serves. Narrowing by self-declared SupportedChains against the
+	// reporter-chosen msg.Coins would let one member who claims an unused
+	// chain become the whole electorate and jail peers or freeze the vault.
 	// doesn't have consensus yet
 	if !voter.HasConsensus(vaultMemberNodes) {
 		err = h.mgr.Keeper().SetTssKeysignFailVoter(ctx, voter)
