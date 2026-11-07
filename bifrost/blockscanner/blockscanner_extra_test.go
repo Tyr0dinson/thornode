@@ -1115,14 +1115,16 @@ func (s *BlockScannerExtraSuite) TestBaseScannerHealthyAfterDenim(c *C) {
 }
 
 // TestBaseScannerUnhealthyWithoutBlockTimeOverride is the companion to
-// TestBaseScannerHealthyAfterDenim: at the same gap but with no override, the
-// scanner falls back to common.BASEChain's stale 2000ms constant and reads
-// UNHEALTHY — the mainnet condition where no node would sign BASE. Together they
-// show the bifrost-side override, not the (consensus-visible) common constant, is
-// what fixes the health gate.
+// TestBaseScannerHealthyAfterDenim. Before the BASE block-time constant was fixed,
+// a scanner with no bifrost override fell back to common.BASEChain's stale 2000ms
+// constant and read UNHEALTHY, and the bifrost override was the stopgap. Now that
+// the consensus-visible constant is 200, the same no-override scanner falls back to
+// 200 and reads HEALTHY: fixing the constant removes the need for the override on
+// the health gate (the override still governs the other windows — see
+// TestMaxResumeLagBlocksUsesBlockTimeOverride).
 func (s *BlockScannerExtraSuite) TestBaseScannerUnhealthyWithoutBlockTimeOverride(c *C) {
-	c.Assert(common.BASEChain.ApproximateBlockMilliseconds(), Equals, int64(2_000))
-	c.Check(s.scanBaseAtDenimGap(c, 0), Equals, false)
+	c.Assert(common.BASEChain.ApproximateBlockMilliseconds(), Equals, int64(200))
+	c.Check(s.scanBaseAtDenimGap(c, 0), Equals, true)
 }
 
 // TestMaxResumeLagBlocksUsesBlockTimeOverride checks the resume-lag window is

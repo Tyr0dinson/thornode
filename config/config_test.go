@@ -230,7 +230,7 @@ func (Test) TestApproximateBlockMilliseconds(c *C) {
 	// unset: falls back to the chain constant
 	sc := BifrostBlockScannerConfiguration{ChainID: common.BASEChain}
 	c.Check(sc.ApproximateBlockMilliseconds(), Equals, common.BASEChain.ApproximateBlockMilliseconds())
-	c.Check(sc.ApproximateBlockMilliseconds(), Equals, int64(2_000))
+	c.Check(sc.ApproximateBlockMilliseconds(), Equals, int64(200))
 
 	// set: the override wins over the chain constant
 	sc.ApproximateBlockTime = 200 * time.Millisecond
@@ -240,7 +240,7 @@ func (Test) TestApproximateBlockMilliseconds(c *C) {
 	// callers that divide by the result never see 0
 	for _, d := range []time.Duration{0, -time.Second, 500 * time.Microsecond} {
 		sc.ApproximateBlockTime = d
-		c.Check(sc.ApproximateBlockMilliseconds(), Equals, int64(2_000), Commentf("override %s", d))
+		c.Check(sc.ApproximateBlockMilliseconds(), Equals, int64(200), Commentf("override %s", d))
 	}
 
 	// chain-client helper: reads the block scanner override, falls back to its own
@@ -306,7 +306,7 @@ func (Test) TestApproximateBlockTimeEnvOverride(c *C) {
 	Init()
 	bf := GetBifrost()
 	c.Check(bf.Chains.BASE.BlockScanner.ApproximateBlockTime, Equals, time.Duration(0))
-	c.Check(bf.Chains.BASE.BlockScanner.ApproximateBlockMilliseconds(), Equals, int64(2_000))
+	c.Check(bf.Chains.BASE.BlockScanner.ApproximateBlockMilliseconds(), Equals, int64(200))
 	c.Check(bf.Chains.ETH.BlockScanner.ApproximateBlockTime, Equals, 12*time.Second)
 }
 
