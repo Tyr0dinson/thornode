@@ -717,6 +717,18 @@ func processTxOutAttestation(
 	return voter, ok
 }
 
+// setObservedConsensusLinkFromMemo records an outbound that just reached
+// observation consensus against the inbound its memo names. The per-observation
+// links can be flooded by a single node, so readers bound how many of them they
+// scan; this list only grows by consensus, so they can always read all of it.
+func setObservedConsensusLinkFromMemo(ctx cosmos.Context, k keeper.Keeper, tx ObservedTx) {
+	if memo, err := ParseMemoWithTHORNames(ctx, k, tx.Tx.Memo); err == nil {
+		if inhash := memo.GetTxID(); !inhash.IsEmpty() {
+			k.SetObservedConsensusLink(ctx, inhash, tx.Tx.ID)
+		}
+	}
+}
+
 // applyTxOutAttestation records a single attestation on the voter without saving
 // it, so a quorum message can save the voter once after all its attestations.
 // It returns the voter, whether this attestation brought it to consensus, and
@@ -954,6 +966,13 @@ func applyTxOutAttestation(
 		[]string{"thornode", "observe", "attestation"}, 1,
 		[]metrics.Label{obsChain, obsDir, telemetry.NewLabel("result", attResult)},
 	)
+
+	// On reaching observation consensus, record the outbound against the inbound
+	// its memo names in the consensus links (idempotent). Done here, shared by the
+	// per-attestation and single-write quorum paths, so both leave identical state.
+	if ok {
+		setObservedConsensusLinkFromMemo(ctx, k, voter.Tx)
+	}
 
 	return voter, ok, true
 }

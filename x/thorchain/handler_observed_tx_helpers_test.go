@@ -2400,3 +2400,41 @@ func (s *HandlerObservedTxHelpersSuite) TestXMRSpentOutputRefsStoreAccumulation(
 	c.Assert(err, IsNil)
 	c.Assert(len(refs), Equals, 3, Commentf("duplicate ref should be deduped"))
 }
+
+// Every observation links an outbound to the inbound its memo names, but only
+// one that reaches consensus joins the consensus links readers always scan.
+func (s *HandlerObservedTxHelpersSuite) TestTxOutConsensusRecordsConsensusLink(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	ctx = ctx.WithBlockHeight(100)
+	nas := NodeAccounts{
+		GetRandomValidatorNode(NodeActive),
+		GetRandomValidatorNode(NodeActive),
+		GetRandomValidatorNode(NodeActive),
+		GetRandomValidatorNode(NodeActive),
+	}
+	vault := GetRandomVault()
+	vault.AddFunds(common.Coins{common.NewCoin(common.ETHAsset, cosmos.NewUint(100*common.One))})
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+
+	inHash := GetRandomTxHash()
+	outTx := common.Tx{
+		ID:          GetRandomTxHash(),
+		Chain:       common.ETHChain,
+		FromAddress: GetRandomETHAddress(),
+		ToAddress:   GetRandomETHAddress(),
+		Coins:       common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(305570))),
+		Gas:         common.Gas{common.NewCoin(common.ETHAsset, cosmos.NewUint(22131))},
+		Memo:        "OUT:" + inHash.String(),
+	}
+	obsTx := common.NewObservedTx(outTx, 100, vault.PubKey, 100)
+	voter := NewObservedTxVoter(outTx.ID, []common.ObservedTx{})
+
+	voter, _ = processTxOutAttestation(ctx, mgr, voter, nas, obsTx, nas[0].NodeAddress, false)
+	c.Check(mgr.Keeper().GetObservedLink(ctx, inHash), DeepEquals, []common.TxID{outTx.ID})
+	c.Check(mgr.Keeper().GetObservedConsensusLink(ctx, inHash), HasLen, 0)
+
+	for _, na := range nas[1:] {
+		voter, _ = processTxOutAttestation(ctx, mgr, voter, nas, obsTx, na.NodeAddress, false)
+	}
+	c.Check(mgr.Keeper().GetObservedConsensusLink(ctx, inHash), DeepEquals, []common.TxID{outTx.ID})
+}
