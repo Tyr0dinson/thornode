@@ -272,6 +272,9 @@ func (s *Signer) Start() error {
 	s.wg.Add(1)
 	go s.signTransactions()
 
+	s.wg.Add(1)
+	go s.retryRefundFunding()
+
 	s.blockScanner.Start(nil, nil)
 	return nil
 }
@@ -1349,6 +1352,14 @@ func (s *Signer) signAndBroadcast(item TxOutStoreItem) ([]byte, *types.TxInItem,
 		break
 	}
 
+	// The first proof does not reserve inputs or mutate scanner state. Run it
+	// before the chain vault lock so slow source RPCs do not block consolidation.
+	if !hasSignedRetry {
+		if err = s.validateRefundFunding(tx); err != nil {
+			return nil, nil, &refundFundingPreSignHold{err: err}
+		}
+	}
+
 	// If the chain client exposes a vault lock, hold it for sign+broadcast so
 	// chain-specific consolidation routines cannot race normal outbounds.
 	lockKey := chainVaultLockKey(chain, tx)
@@ -1400,6 +1411,9 @@ func (s *Signer) signAndBroadcast(item TxOutStoreItem) ([]byte, *types.TxInItem,
 		return nil, nil, nil
 	}
 
+	if err = s.validateRefundFunding(tx); err != nil {
+		return nil, nil, err
+	}
 	// broadcast the transaction
 	hash, err := chain.BroadcastTx(tx, signedTx)
 	if err != nil {
@@ -1498,6 +1512,7 @@ func (s *Signer) isStopped() bool {
 
 func (s *Signer) storageList() []TxOutStoreItem {
 	items := s.storage.List()
+	items = s.readyRefundFunding(items)
 	if s.observer != nil && s.observer.IsChainClientStarted(common.XMRChain) {
 		return items
 	}
@@ -1520,6 +1535,16 @@ func (s *Signer) processTransaction(item TxOutStoreItem) {
 	checkpoint, obs, err := runWithContext(ctx, func() ([]byte, *types.TxInItem, error) {
 		return s.signAndBroadcast(item)
 	})
+
+	var fundingHold *refundFundingPreSignHold
+	if errors.As(err, &fundingHold) {
+		if deferErr := s.deferRefundFunding(item); deferErr != nil {
+			s.logger.Error().Err(deferErr).Msg("fail to defer held refund")
+		}
+		s.logger.Warn().Err(err).Msg("holding refund before signing")
+		cancel()
+		return
+	}
 
 	if errors.Is(err, chainclienttypes.ErrTxExpired) {
 		// Expiry is terminal for this attempt, including saved payloads and
