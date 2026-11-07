@@ -38,12 +38,18 @@ type UnstuckTestSuite struct {
 	server   *httptest.Server
 	// haltOutbound, when set, is served for the HaltOutbound<Chain> mimir.
 	haltOutbound string
+	// rawSent counts eth_sendRawTransaction calls (cancel broadcasts).
+	rawSent int
 }
 
 var _ = Suite(&UnstuckTestSuite{})
 
+// unstuckNotFoundTxID is served as not found by the mock RPC.
+const unstuckNotFoundTxID = "0x5a1e5c0f3e6b1d2c4a7f8e9d0b1c2a3f4e5d6c7b8a9f0e1d2c3b4a5f6e7d8c9b"
+
 func (s *UnstuckTestSuite) SetUpTest(c *C) {
 	s.haltOutbound = ""
+	s.rawSent = 0
 	s.m = GetMetricForTest(c)
 	c.Assert(s.m, NotNil)
 	setupMocknetThorConfig()
@@ -179,6 +185,10 @@ func (s *UnstuckTestSuite) SetUpTest(c *C) {
 				var hashes []string
 				c.Assert(json.Unmarshal(rpcRequest.Params, &hashes), IsNil)
 				switch hashes[0] {
+				case unstuckNotFoundTxID:
+					// Dropped from the mempool: the client forgets it without signing.
+					_, err = rw.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":null}`))
+					c.Assert(err, IsNil)
 				case "0x88df016429689c079f3b2f6ad39fa052532c56795b733da78a91ebe6a713944b":
 					_, err = rw.Write([]byte(`{
     "jsonrpc": "2.0",
@@ -226,6 +236,7 @@ func (s *UnstuckTestSuite) SetUpTest(c *C) {
 				c.Assert(err, IsNil)
 				return
 			case "eth_sendRawTransaction":
+				s.rawSent++
 				// read tx data from the request
 				var params []string
 				err = json.Unmarshal(rpcRequest.Params, &params)
@@ -391,10 +402,11 @@ func (s *UnstuckTestSuite) TestUnstuckProcess(c *C) {
 	c.Assert(e.signerCacheManager.HasSigned(toi.CacheHash()), Equals, false)
 }
 
-// Under HaltOutbound<Chain> a cancel is classified by the outbound it replaces:
-// a stuck migration to an Asgard vault is still cancelled so the churn keeps
-// moving, while a stuck external outbound, or an item without its TxOutItem, is
-// left for after the halt.
+// Under HaltOutbound<Chain> a cancel is still signed for every stuck outbound
+// that has its TxOutItem: it is a zero-value self-send, so it moves no value.
+// Cancelling a stuck external payment removes a live copy of it and frees the
+// nonce for later migrations; cancelling a stuck migration keeps the churn
+// moving. Only an entry without its TxOutItem is held back (fail closed).
 func (s *UnstuckTestSuite) TestUnstuckUnderHaltOutbound(c *C) {
 	s.haltOutbound = "1"
 	config.Init()
@@ -439,9 +451,11 @@ func (s *UnstuckTestSuite) TestUnstuckUnderHaltOutbound(c *C) {
 		Memo: "MIGRATE:1", MaxGas: gas, GasRate: 5, Height: 800,
 	}
 
-	externalID := types2.GetRandomTxHash().String()
+	// The external payment is the pending tx the mock RPC serves, so its cancel
+	// is signed and broadcast; the migration's tx is gone from the mempool.
+	externalID := "0x88df016429689c079f3b2f6ad39fa052532c56795b733da78a91ebe6a713944b"
 	noItemID := "0x96395fbdb39e33293999dc1a0a3b87c8a9e51185e177760d1482c2155bb35b87"
-	migrateID := "0x88df016429689c079f3b2f6ad39fa052532c56795b733da78a91ebe6a713944b"
+	migrateID := unstuckNotFoundTxID
 	for _, item := range []types.SignedTxItem{
 		{Hash: externalID, Height: 800, VaultPubKey: pubkey, TxOutItem: &external},
 		{Hash: noItemID, Height: 800, VaultPubKey: pubkey},
@@ -458,8 +472,9 @@ func (s *UnstuckTestSuite) TestUnstuckUnderHaltOutbound(c *C) {
 	for _, item := range items {
 		remaining[item.Hash] = true
 	}
-	c.Check(remaining, DeepEquals, map[string]bool{externalID: true, noItemID: true},
-		Commentf("only the stuck migration may be cancelled under HaltOutbound"))
+	c.Check(remaining, DeepEquals, map[string]bool{noItemID: true},
+		Commentf("under HaltOutbound only the entry without its TxOutItem is held back"))
+	c.Check(s.rawSent, Equals, 1, Commentf("the stuck external payment must be cancelled"))
 
 	// Without the halt, the same item without a TxOutItem is processed and
 	// dropped (TestUnstuckProcess), so the halt is what held it back here.

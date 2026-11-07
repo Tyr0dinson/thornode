@@ -26,7 +26,7 @@ Each chain has granular control allowing each chain to be halted or resumed on a
 
 ### Chain Halt Types
 
-The three primary chain-level halts node operators use:
+The four primary chain-level halts node operators use:
 
 | Halt Type         | Mimir Key             | Example           | Effect                                                                             |
 | ----------------- | --------------------- | ----------------- | ---------------------------------------------------------------------------------- |
@@ -59,8 +59,8 @@ Operators should monitor the XMR `healthy` field from Bifrost's `/status/scanner
 
 1. **Signing Halt** - Allows inbound transactions but stops the signing of outbound transactions. Outbound transactions are [queued](https://gateway.liquify.com/chain/thorchain_api/thorchain/queue). This is the least impactful halt.
    - Mimir setting: `HALTSIGNING<CHAIN>`, e.g., `HALTSIGNINGETH`
-   - While an active Asgard vault holds funds above dust on the chain, a signing halt (or `HALTSIGNING`) also pauses the churn, because the churn's migrations could not sign. Set `PauseChurnOnSigningHalt` to `0` to churn anyway.
-2. **Outbound Halt** - Stops value leaving the network while keeping the churn running. Bifrost refuses every outbound to an external address (swaps, refunds, withdrawals, ragnarok) but still signs internal vault-to-vault transfers: a `MIGRATE` or `CONSOLIDATE` memo whose destination is an active or retiring Asgard vault on that chain. Anything else, including an EVM cancel of a stuck external outbound and Solana durable-nonce provisioning, is blocked. Blocked outbounds stay in the queue and are rescheduled as under a signing halt. It does not pause the churn.
+   - While an active Asgard vault holds a coin on the chain that a migration would have to sign out (any amount of a non-gas token, or more than dust of the gas asset), a signing halt (or `HALTSIGNING`) also pauses the churn, because the churn's migrations could not sign. It only stops a new churn from starting: a churn whose keygen is already scheduled completes as before. Set `PauseChurnOnSigningHalt` to `0` to churn anyway.
+2. **Outbound Halt** - Stops value leaving the network while keeping the churn running. Bifrost refuses every outbound to an external address (swaps, refunds, withdrawals, ragnarok) but still signs internal vault-to-vault transfers: a `MIGRATE` or `CONSOLIDATE` memo whose destination is an active or retiring Asgard vault on that chain. Anything else, including Solana durable-nonce provisioning, is blocked. An EVM cancel of a stuck outbound is still signed, because it is a zero-value self-send that moves no value. Blocked outbounds stay in the queue and are rescheduled as under a signing halt, but they still count toward `MaxOutboundAttempts`: when that is above `0` and reached, a swap, refund or ragnarok outbound goes to reverse-swap or treasury recovery instead of waiting for the halt to lift. Raise or clear `MaxOutboundAttempts` before a long halt. It does not pause the churn.
    - Mimir setting: `HALTOUTBOUND<CHAIN>`, e.g., `HALTOUTBOUNDETH`, or `HALTOUTBOUND` for every chain
 3. **Liquidity Provider Pause** - Addition and withdrawal of liquidity are suspended but swaps and other transactions are processed.
    - Mimir setting: `PAUSELP<CHAIN>`, e.g., `PAUSELPBCH` for BCH

@@ -102,8 +102,10 @@ func (c *EVMClient) unstuckAction() {
 			}
 		}
 
-		// HaltOutbound: a cancel is classified by the outbound it replaces, so only
-		// a stuck migration is cancelled while external outbounds are halted.
+		// HaltOutbound: a cancel is a zero-value self-send, so stuck outbounds are
+		// still cancelled (external ones too: that removes a live copy of the
+		// payment and frees the nonce for later migrations). Only an entry without
+		// its TxOutItem is held back while the halt is on (fail closed).
 		if signing.IsCancelBlockedByOutboundHalt(c.bridge, c.cfg.ChainID, item.TxOutItem, clog) {
 			continue
 		}

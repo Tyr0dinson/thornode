@@ -154,7 +154,7 @@ var chainTelemPreflightStatuses, chainTelemPreflightLabels = func() ([4]NodeStat
 // Concretely: thornode_chain_halted collapses four very different causes (planned
 // admin halt vs. an automated solvency halt, which means real fund divergence) into
 // one boolean; HaltSigning is set automatically by the slasher's stolen-funds path
-// and read only by bifrost, so all outbounds on a chain can stop with no metric
+// and enforced only by bifrost, so all outbounds on a chain can stop with no metric
 // moving; the secured-asset, trade-asset and WASM halts are separate mimir families
 // with no coverage at all; a chain can lose every eligible inbound vault while
 // /thorchain/inbound_addresses just returns a shorter list; and the network-consensus
@@ -254,10 +254,11 @@ func emitChainDetailTelemetry(ctx cosmos.Context, mgr Manager) {
 		}
 
 		// Outbound signing halt, invisible to every other metric: IsChainHalted never
-		// reads HaltSigning and the only reader in the tree is bifrost. It is set
-		// automatically by the slasher's stolen-funds path and by the vault-deficit
-		// path, so the network can stop every outbound on a chain while all of the
-		// halt gauges above stay 0 and the outbound queue piles up.
+		// reads HaltSigning; besides this gauge, only bifrost and the churn pause
+		// (churnSigningHaltedChain) read it. It is set automatically by the slasher's
+		// stolen-funds path and by the vault-deficit path, so the network can stop
+		// every outbound on a chain while all of the halt gauges above stay 0 and the
+		// outbound queue piles up.
 		signingHalted := signingHaltedGlobally
 		if !signingHalted {
 			v, serr := k.GetMimir(ctx, rail.signingHaltKey)
@@ -267,7 +268,7 @@ func emitChainDetailTelemetry(ctx cosmos.Context, mgr Manager) {
 		}
 		telemetry.SetGaugeWithLabels(chainTelemKeySigningHalted, boolTelem(signingHalted), rail.chainLabels)
 
-		// External-outbound halt, also bifrost-only. Swaps, refunds and withdrawals
+		// External-outbound halt, enforced only by bifrost. Swaps, refunds and withdrawals
 		// stop while migrations keep signing, so the outbound queue grows with no
 		// other gauge moving. Same predicate as bifrost's CheckOutboundHalt.
 		outboundHalted := outboundHaltedGlobally

@@ -318,31 +318,40 @@ func TestIsCancelBlockedByOutboundHalt(t *testing.T) {
 	logger := zerolog.Nop()
 	active := newVault(t, ttypes.VaultStatus_ActiveVault, ttypes.VaultType_AsgardVault)
 	retiring := newVault(t, ttypes.VaultStatus_RetiringVault, ttypes.VaultType_AsgardVault)
-	vaults := ttypes.Vaults{active, retiring}
 	stuckMigrate := &stypes.TxOutItem{Chain: common.ETHChain, ToAddress: vaultAddr(t, active, common.ETHChain), Memo: migrateMemo()}
 	stuckOut := &stypes.TxOutItem{Chain: common.ETHChain, ToAddress: ttypes.GetRandomETHAddress(), Memo: "OUT:A6F5B26F2F1B1A8BB39EF6DE0E1A6E1C5A3E1AEB8A84F9E8D24C0D9C3B6C3A1E"}
-	// The cancel itself: a memo-less self-send. Never internal on its own.
-	cancelShape := &stypes.TxOutItem{Chain: common.ETHChain, ToAddress: vaultAddr(t, retiring, common.ETHChain)}
-	halted := func() *fakeOutboundBridge {
-		return &fakeOutboundBridge{fakeBridge: fakeBridge{height: 100, mimirs: map[string]int64{"HaltOutboundETH": 1}}, vaults: vaults}
+	stuckSelfSend := &stypes.TxOutItem{Chain: common.ETHChain, ToAddress: vaultAddr(t, retiring, common.ETHChain)}
+	notHalted := func() *fakeBridge { return &fakeBridge{height: 100, mimirs: map[string]int64{}} }
+	halted := func() *fakeBridge { return &fakeBridge{height: 100, mimirs: map[string]int64{"HaltOutboundETH": 1}} }
+	haltedGlobal := func() *fakeBridge {
+		return &fakeBridge{height: 100, mimirs: map[string]int64{constants.MimirKeyHaltOutbound: 1}}
 	}
+	mimirErr := func() *fakeBridge { return &fakeBridge{height: 100, mimirErr: errors.New("boom")} }
+	heightErr := func() *fakeBridge { return &fakeBridge{heightErr: errors.New("boom")} }
 
 	for _, tc := range []struct {
 		name  string
-		b     *fakeOutboundBridge
+		b     *fakeBridge
 		chain common.Chain
 		stuck *stypes.TxOutItem
 		want  bool
 	}{
-		{"not halted, external", &fakeOutboundBridge{fakeBridge: fakeBridge{height: 100, mimirs: map[string]int64{}}}, common.ETHChain, stuckOut, false},
-		{"not halted, nil stuck item", &fakeOutboundBridge{fakeBridge: fakeBridge{height: 100, mimirs: map[string]int64{}}}, common.ETHChain, nil, false},
+		{"not halted, external", notHalted(), common.ETHChain, stuckOut, false},
+		{"not halted, nil stuck item", notHalted(), common.ETHChain, nil, false},
+		// A cancel is a zero-value self-send: with a real stuck item it is
+		// allowed under the halt whatever that item pays.
 		{"halted, stuck migration", halted(), common.ETHChain, stuckMigrate, false},
-		{"halted, stuck external outbound", halted(), common.ETHChain, stuckOut, true},
-		{"halted, self-send without memo", halted(), common.ETHChain, cancelShape, true},
+		{"halted, stuck external outbound", halted(), common.ETHChain, stuckOut, false},
+		{"global halt, stuck external outbound", haltedGlobal(), common.ETHChain, stuckOut, false},
+		{"halted, stuck self-send without memo", halted(), common.ETHChain, stuckSelfSend, false},
+		{"read error, stuck external outbound", mimirErr(), common.ETHChain, stuckOut, false},
+		// Without the item there is nothing to sign with: fail closed.
 		{"halted, nil stuck item fails closed", halted(), common.ETHChain, nil, true},
-		// The client's chain decides the halt key: a BTC-tagged item on the ETH
-		// client is still judged under HaltOutboundETH and ETH addresses.
-		{"client chain overrides item chain", halted(), common.ETHChain, &stypes.TxOutItem{Chain: common.BTCChain, ToAddress: stuckMigrate.ToAddress, Memo: migrateMemo()}, false},
+		{"global halt, nil stuck item fails closed", haltedGlobal(), common.ETHChain, nil, true},
+		{"mimir error, nil stuck item fails closed", mimirErr(), common.ETHChain, nil, true},
+		{"height error, nil stuck item fails closed", heightErr(), common.ETHChain, nil, true},
+		// The client's chain selects the halt key.
+		{"other chain halted, nil stuck item", halted(), common.AVAXChain, nil, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := signing.IsCancelBlockedByOutboundHalt(tc.b, tc.chain, tc.stuck, logger); got != tc.want {
@@ -350,8 +359,67 @@ func TestIsCancelBlockedByOutboundHalt(t *testing.T) {
 			}
 		})
 	}
-	// The stuck item must not be mutated by the chain override.
-	if stuckMigrate.Chain != common.ETHChain {
-		t.Fatal("stuck item mutated")
+}
+
+// fakeHeightBridge serves mimirs by consensus height and records the heights read.
+type fakeHeightBridge struct {
+	byHeight map[int64]map[string]int64
+	err      error
+	readAt   []int64
+}
+
+func (b *fakeHeightBridge) GetMimirAtHeight(key string, height int64) (int64, error) {
+	b.readAt = append(b.readAt, height)
+	if b.err != nil {
+		return 0, b.err
+	}
+	if v, ok := b.byHeight[height][key]; ok {
+		return v, nil
+	}
+	return -1, nil
+}
+
+func TestCheckOutboundHaltAtHeight(t *testing.T) {
+	b := &fakeHeightBridge{byHeight: map[int64]map[string]int64{
+		100: {"HaltOutboundSOL": 90},
+		200: {constants.MimirKeyHaltOutbound: 150},
+		300: {},
+	}}
+	for _, tc := range []struct {
+		name           string
+		chain          common.Chain
+		height         int64
+		halted, global bool
+	}{
+		{"chain halt at height", common.SOLChain, 100, true, false},
+		{"other chain at same height", common.ETHChain, 100, false, false},
+		{"global halt at height", common.SOLChain, 200, true, true},
+		{"lifted at a later height", common.SOLChain, 300, false, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			b.readAt = nil
+			halted, global, err := signing.CheckOutboundHaltAtHeight(b, tc.chain, tc.height)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if halted != tc.halted || global != tc.global {
+				t.Fatalf("got halted=%v global=%v, want %v %v", halted, global, tc.halted, tc.global)
+			}
+			for _, h := range b.readAt {
+				if h != tc.height {
+					t.Fatalf("read at height %d, want %d", h, tc.height)
+				}
+			}
+		})
+	}
+
+	// A value set for a later height than the one asked about is not active.
+	future := &fakeHeightBridge{byHeight: map[int64]map[string]int64{100: {"HaltOutboundSOL": 101}}}
+	if halted, _, err := signing.CheckOutboundHaltAtHeight(future, common.SOLChain, 100); err != nil || halted {
+		t.Fatalf("future halt: halted=%v err=%v", halted, err)
+	}
+
+	if _, _, err := signing.CheckOutboundHaltAtHeight(&fakeHeightBridge{err: errors.New("boom")}, common.SOLChain, 100); err == nil {
+		t.Fatal("expected read error")
 	}
 }

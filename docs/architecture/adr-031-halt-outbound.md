@@ -19,7 +19,7 @@ Proposed
 
 - **Ask operators to set `HaltChurning` with every signing halt.** This is a manual step that is easy to forget. `HaltSigning<Chain>` is also set automatically by the slasher and the vault-deficit path, with nobody around to add the second mimir.
 - **Pause the churn when any chain an Active vault supports has a signing halt.** This is simpler and matches how `Halt<Chain>Chain` is checked. But a halt on a chain the vaults hold nothing on (a deprecated or drained chain, for example) would block validator rotation without protecting any funds.
-- **Classify internal transfers by destination alone.** EVM unstuck/cancel transactions and the Solana keep-alive send to the vault itself, so "to an Asgard address" would let a cancel through as if it were a migration. Requiring the memo as well closes that gap.
+- **Classify internal transfers by destination alone.** EVM unstuck/cancel transactions and the Solana keep-alive send to the vault itself, so "to an Asgard address" would treat any self-send as a migration. Requiring the memo as well keeps the rule strict. EVM cancels are allowed by a narrow rule of their own (they move no value), not by looking like a migration.
 - **Teach THORChain about HaltOutbound** (skip scheduling external outbounds). That would be a consensus change for no gain: Bifrost already gates every signature, and the queue keeps the outbounds for when the halt lifts.
 
 ## Decision
@@ -37,14 +37,19 @@ Bifrost (`bifrost/pkg/chainclients/shared/signing/outbound_halt.go`):
 - `IsInternalTxOut` / `OutboundHaltBlocks` classify a TxOutItem against `GetAsgards()` (Active and Retiring vaults), deriving each vault address with `Vault.GetAddress(chain)`. This is the same derivation THORChain's migrate uses, so it covers secp256k1, EdDSA (SOL) and FROST (XMR) vaults. Monero addresses compare case-sensitively.
 - Signing entry points:
 
-| Path                              | Class                                      | Under HaltOutbound                                                              |
-| --------------------------------- | ------------------------------------------ | ------------------------------------------------------------------------------- |
-| Outbound queue (`signer/sign.go`) | per item                                   | only internal items sign, signed-bytes rebroadcasts included                    |
-| UTXO consolidation                | internal (CONSOLIDATE to self)             | signs; the built item is still classified, so a wrong destination fails closed  |
-| Monero consolidation              | internal (CONSOLIDATE to self)             | signs; classified the same way                                                  |
-| Solana keep-alive                 | internal (CONSOLIDATE to self)             | signs, which keeps the scanner able to observe migrations                       |
-| Solana durable-nonce provisioning | external (funds a non-vault nonce account) | blocked; outbounds fall back to the recent-blockhash path, so the churn is fine |
-| EVM / ETH unstuck (cancel)        | the stuck outbound it replaces             | only a stuck migration is cancelled; a stuck external outbound is left alone    |
+| Path                               | Class                                      | Under HaltOutbound                                                              |
+| ---------------------------------- | ------------------------------------------ | ------------------------------------------------------------------------------- |
+| Outbound queue (`signer/sign.go`)  | per item                                   | only internal items sign, signed-bytes rebroadcasts included                    |
+| UTXO consolidation                 | internal (CONSOLIDATE to self)             | signs; the built item is still classified, so a wrong destination fails closed  |
+| Monero consolidation               | internal (CONSOLIDATE to self)             | signs; classified the same way                                                  |
+| Solana keep-alive                  | internal (CONSOLIDATE to self)             | signs, which keeps the scanner able to observe migrations                       |
+| Solana durable-nonce provisioning  | external (funds a non-vault nonce account) | blocked; outbounds fall back to the recent-blockhash path, so the churn is fine |
+| EVM / ETH unstuck (cancel)         | zero-value self-send, moves no value       | signs when the stuck TxOutItem is known; without it, left alone (fail closed)   |
+| Solana durable-nonce serialization | gate, not a signature                      | an earlier external sibling the halt refuses does not hold a later `MIGRATE`    |
+
+Cancelling a stuck external EVM outbound serves the halt: it removes a live copy of the payment, which `LackSigning` may meanwhile move to another vault, and it frees the nonce that later migrations from the vault sit behind.
+
+The Solana durable-nonce path signs only the lowest-height unobserved outbound per vault. An external sibling the halt refuses never consumes the nonce, so the gate skips it, or a `MIGRATE` above it would wait until the halt lifts. The halt mimirs and the Asgard set are read at the keysign height (`?height=`), so every member of the keysign party decides from the same snapshot. Skipping cannot pay twice: a copy of the skipped sibling signed later uses the same nonce value, so at most one of them lands.
 
 A blocked queue item is dropped from the signer the way it is under `HALTSIGNING`, and THORChain reschedules it after `SigningTransactionPeriod`. `LackSigning` reschedules without slash points, so nodes are not penalised for honouring the halt.
 
@@ -65,7 +70,7 @@ Tests: unit tests for the classification and each signing path, and `test/regres
 ### Negative
 
 - A churn now waits while a signing halt is active on a funded chain. If the halt is left on by mistake, rotation stalls until someone lifts it or sets `PauseChurnOnSigningHalt` to `0`.
-- Under `HaltOutbound` a stuck external EVM outbound is not cancelled. It may still confirm, as it would under `HALTSIGNING`.
+- Blocked outbounds still count toward `MaxOutboundAttempts`. When it is above `0`, a long halt sends user-facing outbounds to reverse-swap or treasury recovery, as `HALTSIGNING` does, instead of keeping them queued.
 
 ### Neutral
 

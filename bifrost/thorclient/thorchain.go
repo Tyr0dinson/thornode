@@ -1019,6 +1019,20 @@ func (b *thorchainBridge) GetAsgards() (stypes.Vaults, error) {
 	return vaults, nil
 }
 
+// GetAsgardsAtHeight reads the Asgard vaults as of a consensus height via the
+// ?height= state query (bypassing the live one-block cache), so every member of a
+// keysign party evaluating the same height sees the same vault set.
+func (b *thorchainBridge) GetAsgardsAtHeight(height int64) (stypes.Vaults, error) {
+	if height <= 0 {
+		return nil, fmt.Errorf("asgards-at-height requires a positive height: %d", height)
+	}
+	var vaults stypes.Vaults
+	if err := b.getKeysignStateAtHeight(AsgardVault, height, &vaults); err != nil {
+		return nil, fmt.Errorf("fail to get asgard vaults at height %d: %w", height, err)
+	}
+	return vaults, nil
+}
+
 // GetVault retrieves a specific vault from thorchain.
 func (b *thorchainBridge) GetVault(pubkey string) (stypes.Vault, error) {
 	return b.getVault(pubkey, b.getWithPath)

@@ -11,8 +11,9 @@ package signing
 // "Internal" is defined strictly and fails closed (see IsInternalTxOut): the memo
 // must parse as MIGRATE or CONSOLIDATE AND the destination must be the address of
 // an Active or Retiring Asgard vault on that chain. A self-send without one of
-// those memos (an EVM unstuck/cancel transaction, say) is not internal on its
-// own; callers that sign such transactions classify the outbound they belong to.
+// those memos is not internal on its own. The exception is an EVM unstuck/cancel
+// transaction: a zero-value self-send that moves no value, which is allowed
+// whenever its stuck TxOutItem is known (see IsCancelBlockedByOutboundHalt).
 //
 // Unlike HALTSIGNING, HaltOutbound does not pause the churn on THORChain: keeping
 // migrations flowing is the point of it.
@@ -42,7 +43,26 @@ type OutboundHaltChecker interface {
 // is active at the given THORChain height. Like CheckSigningHalt it does no
 // logging and leaves the error policy to the caller.
 func CheckOutboundHalt(bridge HaltChecker, chain common.Chain, height int64) (halted, global bool, err error) {
-	haltGlobal, err := bridge.GetMimir(constants.MimirKeyHaltOutbound)
+	return checkOutboundHalt(bridge.GetMimir, chain, height)
+}
+
+// MimirAtHeightReader reads a mimir as of a consensus height (the bridge's
+// ?height= state query), so every member of a keysign party sees the same value.
+type MimirAtHeightReader interface {
+	GetMimirAtHeight(key string, height int64) (int64, error)
+}
+
+// CheckOutboundHaltAtHeight is CheckOutboundHalt with both mimirs read as of
+// height instead of live. Use it where all members of a keysign party must take
+// the same decision from one snapshot.
+func CheckOutboundHaltAtHeight(bridge MimirAtHeightReader, chain common.Chain, height int64) (halted, global bool, err error) {
+	return checkOutboundHalt(func(key string) (int64, error) {
+		return bridge.GetMimirAtHeight(key, height)
+	}, chain, height)
+}
+
+func checkOutboundHalt(getMimir func(string) (int64, error), chain common.Chain, height int64) (halted, global bool, err error) {
+	haltGlobal, err := getMimir(constants.MimirKeyHaltOutbound)
 	if err != nil {
 		return false, false, fmt.Errorf("fail to get %s mimir: %w", constants.MimirKeyHaltOutbound, err)
 	}
@@ -50,7 +70,7 @@ func CheckOutboundHalt(bridge HaltChecker, chain common.Chain, height int64) (ha
 		return true, true, nil
 	}
 	chainKey := fmt.Sprintf(constants.MimirTemplateHaltOutbound, chain)
-	haltChain, err := bridge.GetMimir(chainKey)
+	haltChain, err := getMimir(chainKey)
 	if err != nil {
 		return false, false, fmt.Errorf("fail to get %s mimir: %w", chainKey, err)
 	}
@@ -160,9 +180,8 @@ func IsOutboundHalted(bridge HaltChecker, chain common.Chain, logger zerolog.Log
 }
 
 // IsTxOutBlockedByOutboundHalt is the retry-loop wrapper over OutboundHaltBlocks
-// for bifrost-autonomous signing of a TxOutItem (consolidation, keep-alive, EVM
-// unstuck). It reads the current height, logs, and treats any read error as
-// blocked.
+// for bifrost-autonomous signing of a TxOutItem (consolidation, keep-alive). It
+// reads the current height, logs, and treats any read error as blocked.
 func IsTxOutBlockedByOutboundHalt(bridge OutboundHaltChecker, tx stypes.TxOutItem, logger zerolog.Logger) bool {
 	height, err := bridge.GetBlockHeight()
 	if err != nil {
@@ -188,18 +207,31 @@ func logOutboundHalt(logger zerolog.Logger, chain common.Chain, halted, global b
 }
 
 // IsCancelBlockedByOutboundHalt decides whether HaltOutbound forbids signing an
-// EVM unstuck/cancel transaction. A cancel is a zero-value self-send with no
-// memo, so it is never internal on its own; it is classified by the stuck
-// outbound it replaces. Only a stuck internal transfer (a migration) may be
-// cancelled under HaltOutbound, which keeps the churn moving; a stuck external
-// outbound is left alone, as it is under HALTSIGNING. A missing stuck item is
-// external (fail closed). chain overrides the stuck item's chain so the halt key
-// and vault addresses are always the signing client's.
-func IsCancelBlockedByOutboundHalt(bridge OutboundHaltChecker, chain common.Chain, stuck *stypes.TxOutItem, logger zerolog.Logger) bool {
-	var tx stypes.TxOutItem
+// EVM unstuck/cancel transaction for a stuck outbound. A cancel is a zero-value
+// self-send at the stuck transaction's nonce: it moves no value, so it is
+// allowed under HaltOutbound whatever the stuck outbound was. Cancelling a stuck
+// external payment also serves the halt, because it removes a live copy of the
+// payment, and it frees the nonce so later migrations from the vault can land.
+// The one case refused is a stuck entry without its TxOutItem: unstuckTx needs
+// the item to sign, so under an active halt (or when the halt cannot be read)
+// that entry is left alone (fail closed). chain is the signing client's chain
+// and selects the halt key.
+func IsCancelBlockedByOutboundHalt(bridge HaltChecker, chain common.Chain, stuck *stypes.TxOutItem, logger zerolog.Logger) bool {
 	if stuck != nil {
-		tx = *stuck
+		return false
 	}
-	tx.Chain = chain
-	return IsTxOutBlockedByOutboundHalt(bridge, tx, logger)
+	height, err := bridge.GetBlockHeight()
+	if err != nil {
+		logger.Err(err).Stringer("chain", chain).Msg("fail to get thorchain block height, not cancelling stuck tx without its outbound item")
+		return true
+	}
+	halted, _, err := CheckOutboundHalt(bridge, chain, height)
+	if err != nil {
+		logger.Err(err).Stringer("chain", chain).Msg("fail to check outbound halt, not cancelling stuck tx without its outbound item")
+		return true
+	}
+	if halted {
+		logger.Info().Stringer("chain", chain).Msg("outbound is halted: not cancelling stuck tx without its outbound item")
+	}
+	return halted
 }

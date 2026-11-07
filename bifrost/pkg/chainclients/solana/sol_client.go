@@ -1618,6 +1618,13 @@ type pendingOutboundReader interface {
 // height where the earlier sibling's nonce commits (reissueSupersededSolDurable), and at
 // that new height the earlier sibling is no longer pending. A query error returns false
 // (retain and retry), never a guess. A test bridge without the reader fails open.
+//
+// Under HaltOutbound (HALTOUTBOUND or HaltOutboundSOL, read at the keysign height) an
+// earlier external sibling is skipped: the signer refuses it, so it never consumes the
+// nonce, and waiting on it would hold a MIGRATE on this vault until the halt lifts (and
+// with it the next churn). Skipping cannot pay twice: any copy of the skipped sibling
+// signed later uses the same nonce value as this outbound, so at most one of them
+// lands, and the loser is dropped and re-issued by the consumed-nonce recovery.
 func (c *SOLClient) durableSerializeAllows(tx stypes.TxOutItem, height int64) bool {
 	r, ok := c.bridge.(pendingOutboundReader)
 	if !ok {
@@ -1638,6 +1645,8 @@ func (c *SOLClient) durableSerializeAllows(tx stypes.TxOutItem, height int64) bo
 	// recent-blockhash path (durableDestinationExcluded) and never consume the nonce,
 	// so they must not hold a durable outbound behind them.
 	recentOnly := c.recentBlockhashDestinations(tx)
+	// Siblings HaltOutbound will not sign; the reads happen only if needed.
+	haltSkips := c.outboundHaltSkipsAtHeight(height)
 
 	// Same-height siblings must be ordered exactly as the signer orders them, or the
 	// vault can deadlock: pipeline.SpawnSignings sorts by (Height, Index) and, holding
@@ -1682,6 +1691,11 @@ func (c *SOLClient) durableSerializeAllows(tx stypes.TxOutItem, height int64) bo
 		// A strictly-earlier sibling (lower height, or same height and earlier in the
 		// signer's order) is still in flight -> this one waits.
 		if p.Height < height || (p.Height == height && self >= 0 && i < self) {
+			if haltSkips(p) {
+				// HaltOutbound blocks this sibling at the keysign height, so it
+				// will not consume the nonce; it must not hold this one up.
+				continue
+			}
 			return false
 		}
 	}

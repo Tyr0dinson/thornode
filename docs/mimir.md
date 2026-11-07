@@ -290,7 +290,7 @@ Operational notes:
 - `BondLockupPeriod`: Lockout period that a node must wait before being allowed to unbond
 - `ChurnInterval`\*: Number of blocks between each churn
 - `HaltChurning`: Pause churning
-- `PauseChurnOnSigningHalt`\*: When above zero (the default), skip a churn while `HALTSIGNING` or `HALTSIGNING<chain>` is active for a chain an active Asgard vault holds funds above dust on, since that chain's migrations could not sign. Set to `0` to churn regardless. `HALTOUTBOUND` never pauses the churn
+- `PauseChurnOnSigningHalt`\*: When above zero (the default), skip a churn while `HALTSIGNING` or `HALTSIGNING<chain>` is active for a chain on which an active Asgard vault holds a coin a migration would have to sign out (any amount of a non-gas token, or more than dust of the gas asset), since that chain's migrations could not sign. Only the start of a churn is skipped; a churn whose keygen is already scheduled completes. Set to `0` to churn regardless. `HALTOUTBOUND` never pauses the churn
 - `DesiredValidatorSet`\*: Maximum number of validators
 - `FundMigrationInterval`\*: Number of blocks between attempts to migrate funds between asgard vaults during a migration
 - `NumberOfNewNodesPerChurn`#: Number of targeted additional nodes added to the validator set each churn
@@ -351,7 +351,7 @@ Operational notes:
 - `NativeTransactionFee`: The RUNE fee for a native transaction (gas cost in 1e8 notation)
 - `HALTSIGNING<chain>`#: Halt signing in a specific chain. Also pauses the churn while an active vault holds funds on that chain (see `PauseChurnOnSigningHalt`)
 - `HALTSIGNING`#: Halt signing globally. Also pauses the churn (see `PauseChurnOnSigningHalt`)
-- `HALTOUTBOUND<chain>`#: Halt external outbounds in a specific chain (swaps, refunds, withdrawals, ragnarok). Bifrost still signs internal transfers, meaning a `MIGRATE` or `CONSOLIDATE` memo to an active or retiring Asgard vault address, so the churn keeps migrating. Read by Bifrost only
+- `HALTOUTBOUND<chain>`#: Halt external outbounds in a specific chain (swaps, refunds, withdrawals, ragnarok). Bifrost still signs internal transfers, meaning a `MIGRATE` or `CONSOLIDATE` memo to an active or retiring Asgard vault address, so the churn keeps migrating. Enforced by Bifrost only. Blocked outbounds still count toward `MaxOutboundAttempts`
 - `HALTOUTBOUND`#: Halt external outbounds globally, as `HALTOUTBOUND<chain>` does for one chain
 - `Ragnarok-<Asset>`#: Ragnaroks a specific pool
 - `BankSendEnabled`: Enable/Disable cosmos bank send messages

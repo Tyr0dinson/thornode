@@ -41,6 +41,7 @@ type ThorchainSuite struct {
 	bridge             *thorchainBridge
 	authAccountFixture string
 	nodeAccountFixture string
+	asgardHeight       string // ?height= of the last Asgard vault request
 }
 
 var _ = Suite(&ThorchainSuite{})
@@ -69,6 +70,7 @@ func (s *ThorchainSuite) SetUpTest(c *C) {
 		case strings.HasPrefix(req.RequestURI, KeysignEndpoint):
 			httpTestHandler(c, rw, "../../test/fixtures/endpoints/keysign/template.json")
 		case strings.HasPrefix(req.RequestURI, AsgardVault):
+			s.asgardHeight = req.URL.Query().Get("height")
 			httpTestHandler(c, rw, "../../test/fixtures/endpoints/vaults/asgard.json")
 		case strings.HasPrefix(req.RequestURI, PubKeysEndpoint):
 			httpTestHandler(c, rw, "../../test/fixtures/endpoints/vaults/pubKeys.json")
@@ -800,6 +802,30 @@ func (s *ThorchainSuite) TestGetAsgards(c *C) {
 	vaults, err := s.bridge.GetAsgards()
 	c.Assert(err, IsNil)
 	c.Assert(vaults, NotNil)
+}
+
+// The SOL durable serialize gate type-asserts the bridge to these reads to
+// apply HaltOutbound at the keysign height; without them it would skip nothing.
+var _ interface {
+	GetMimirAtHeight(key string, height int64) (int64, error)
+	GetAsgardsAtHeight(height int64) (stypes.Vaults, error)
+} = (*thorchainBridge)(nil)
+
+// TestGetAsgardsAtHeight checks that the vault set is read as of the given
+// consensus height (a real ?height= query) and that a non-positive height is
+// refused rather than silently read live.
+func (s *ThorchainSuite) TestGetAsgardsAtHeight(c *C) {
+	live, err := s.bridge.GetAsgards()
+	c.Assert(err, IsNil)
+	c.Assert(s.asgardHeight, Equals, "")
+
+	vaults, err := s.bridge.GetAsgardsAtHeight(2_500_000)
+	c.Assert(err, IsNil)
+	c.Assert(s.asgardHeight, Equals, "2500000")
+	c.Assert(vaults, HasLen, len(live))
+
+	_, err = s.bridge.GetAsgardsAtHeight(0)
+	c.Assert(err, NotNil)
 }
 
 func (s *ThorchainSuite) TestGetPubKeys(c *C) {
