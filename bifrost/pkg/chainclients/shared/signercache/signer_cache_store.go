@@ -4,6 +4,8 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/rs/zerolog"
@@ -12,10 +14,11 @@ import (
 )
 
 const (
-	signedCachePrefix = "signed-v6-"
-	txMapPrefix       = "tx-map-v6-"
-	txOutMapPrefix    = "txout-map-v1-"
-	vaultCachePrefix  = "vault-v6-"
+	signedCachePrefix      = "signed-v6-"
+	txMapPrefix            = "tx-map-v6-"
+	txOutMapPrefix         = "txout-map-v1-"
+	vaultCachePrefix       = "vault-v6-"
+	observedOutboundPrefix = "observed-outbound-v1-"
 )
 
 // signedExpiryBytes is the length of the expiry-timestamp prefix written by
@@ -38,8 +41,9 @@ const signedExpiryBytes = 8
 
 // CacheStore manage the key value store used to store what tx out items have been signed before
 type CacheStore struct {
-	logger zerolog.Logger
-	db     *leveldb.DB
+	logger             zerolog.Logger
+	db                 *leveldb.DB
+	observedOutboundMu sync.Mutex
 }
 
 // NewCacheStore create a new instance of CacheStore
@@ -217,4 +221,50 @@ func (s *CacheStore) GetLatestRecordedTx(vaultKey string) (string, error) {
 // Close underlying db
 func (s *CacheStore) Close() error {
 	return s.db.Close()
+}
+
+// maxObservedOutboundsPerInbound bounds one inbound's entry. Only transactions
+// this node's own observer attributed to a vault are recorded, so honest usage
+// stays far below it.
+const maxObservedOutboundsPerInbound = 32
+
+func (s *CacheStore) getObservedOutboundKey(inHash string) string {
+	return fmt.Sprintf("%s%s", observedOutboundPrefix, strings.ToUpper(inHash))
+}
+
+// AddObservedOutbound records that transactionHash was observed paying an
+// outbound for inHash.
+func (s *CacheStore) AddObservedOutbound(inHash, transactionHash string) error {
+	s.observedOutboundMu.Lock()
+	defer s.observedOutboundMu.Unlock()
+	hashes, err := s.GetObservedOutbounds(inHash)
+	if err != nil {
+		return err
+	}
+	for _, h := range hashes {
+		if strings.EqualFold(h, transactionHash) {
+			return nil
+		}
+	}
+	if len(hashes) >= maxObservedOutboundsPerInbound {
+		hashes = hashes[1:]
+	}
+	hashes = append(hashes, transactionHash)
+	return s.db.Put([]byte(s.getObservedOutboundKey(inHash)), []byte(strings.Join(hashes, "\n")), nil)
+}
+
+// GetObservedOutbounds returns the transactions recorded for inHash, oldest
+// first.
+func (s *CacheStore) GetObservedOutbounds(inHash string) ([]string, error) {
+	value, err := s.db.Get([]byte(s.getObservedOutboundKey(inHash)), nil)
+	if errors.Is(err, leveldb.ErrNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("fail to get observed outbounds: %w", err)
+	}
+	if len(value) == 0 {
+		return nil, nil
+	}
+	return strings.Split(string(value), "\n"), nil
 }

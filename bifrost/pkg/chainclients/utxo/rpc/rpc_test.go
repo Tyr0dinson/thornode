@@ -10,7 +10,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -36,7 +35,7 @@ var realRetrySleep = retrySleep
 // Retries record their backoffs instead of sleeping through them.
 func (s *RPCSuite) SetUpTest(c *C) {
 	s.backoffs = nil
-	retrySleep = func(d time.Duration) { s.backoffs = append(s.backoffs, d) }
+	retrySleep = func(_ context.Context, d time.Duration) { s.backoffs = append(s.backoffs, d) }
 }
 
 func (s *RPCSuite) TearDownTest(c *C) {
@@ -975,7 +974,16 @@ func (s *RPCSuite) TestRetryBackoff(c *C) {
 	c.Assert(s.backoffs, DeepEquals, []time.Duration{
 		time.Second, 2 * time.Second, 4 * time.Second, 8 * time.Second, 10 * time.Second, 10 * time.Second,
 	})
-	c.Assert(reflect.ValueOf(realRetrySleep).Pointer(), Equals, reflect.ValueOf(time.Sleep).Pointer())
+	// Outside the tests the backoff is waited out, and the call's context ends
+	// it early.
+	start := time.Now()
+	realRetrySleep(context.Background(), 20*time.Millisecond)
+	c.Assert(time.Since(start) >= 20*time.Millisecond, Equals, true)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	start = time.Now()
+	realRetrySleep(ctx, time.Hour)
+	c.Assert(time.Since(start) < time.Second, Equals, true)
 }
 
 func (s *RPCSuite) TestRetryConnectionRefused(c *C) {

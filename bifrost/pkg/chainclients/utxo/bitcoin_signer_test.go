@@ -63,6 +63,11 @@ type BitcoinSignerSuite struct {
 	keys   *thorclient.Keys
 
 	vinsUnspentFixtureAddress string
+	// txDetailsBody, when set, answers THORChain tx details queries.
+	txDetailsBody string
+	// rawTxBody, when set, answers getrawtransaction; rawTxCalls counts them.
+	rawTxBody  string
+	rawTxCalls int
 }
 
 var _ = Suite(&BitcoinSignerSuite{})
@@ -108,6 +113,9 @@ func (s *BitcoinSignerSuite) SetUpTest(c *C) {
 		case req.RequestURI == thorclient.ChainVersionEndpoint:
 			_, err := rw.Write([]byte(`{"current":"` + types2.GetCurrentVersion().String() + `"}`))
 			c.Assert(err, IsNil)
+		case strings.HasPrefix(req.RequestURI, "/thorchain/tx/details/") && s.txDetailsBody != "":
+			_, err := rw.Write([]byte(s.txDetailsBody))
+			c.Assert(err, IsNil)
 		default:
 			r := struct {
 				Method string `json:"method"`
@@ -131,6 +139,12 @@ func (s *BitcoinSignerSuite) SetUpTest(c *C) {
 			case "getblock":
 				httpTestHandler(c, rw, "../../../../test/fixtures/btc/block.json")
 			case "getrawtransaction":
+				s.rawTxCalls++
+				if s.rawTxBody != "" {
+					_, err = rw.Write([]byte(s.rawTxBody))
+					c.Assert(err, IsNil)
+					return
+				}
 				httpTestHandler(c, rw, "../../../../test/fixtures/btc/tx.json")
 			case "getinfo":
 				httpTestHandler(c, rw, "../../../../test/fixtures/btc/getinfo.json")

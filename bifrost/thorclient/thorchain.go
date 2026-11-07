@@ -152,6 +152,7 @@ type ThorchainBridge interface {
 	GetReferenceMemo(chain common.Chain, ref string) (string, error)
 	GetReferenceMemoByTxHash(hash string) (string, error)
 	GetObservedTxVoter(txID string) (*stypes.QueryObservedTxVoter, error)
+	GetObservedTxVoterUncached(txID string) (*stypes.QueryObservedTxVoter, bool, error)
 	GetObservedTxOutVoter(txID string) (*stypes.QueryObservedTxVoter, error)
 	GetObservedTxOutVoterUncached(ctx context.Context, txID string) (*stypes.QueryObservedTxVoter, bool, error)
 }

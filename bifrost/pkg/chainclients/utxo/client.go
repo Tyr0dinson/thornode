@@ -61,6 +61,9 @@ type Client struct {
 	nodePrivKey        *btcec.PrivateKey
 	tssKeySigner       tss.ThorchainKeyManager
 	signerCacheManager *signercache.CacheManager
+	// outboundLookup overrides how existingOutboundPayment reads a candidate
+	// transaction; nil reads it from the daemon.
+	outboundLookup func(hash string, inHash common.TxID) (types.TxInItem, signercache.LookupResult)
 
 	// ---------- sync ----------
 	wg                    *sync.WaitGroup
@@ -426,6 +429,11 @@ func (c *Client) OnObservedTxIn(txIn types.TxInItem, blockHeight int64) {
 	}
 	if err = c.signerCacheManager.SetSigned(txIn.CacheHash(c.GetChain(), m.GetTxID().String()), txIn.CacheVault(c.GetChain()), txIn.Tx); err != nil {
 		c.log.Err(err).Msg("fail to update signer cache")
+	}
+	if c.isAsgardAddress(txIn.Sender) {
+		if err = c.signerCacheManager.RecordObservedOutbound(m.GetTxID().String(), txIn.Tx); err != nil {
+			c.log.Err(err).Msg("fail to record observed outbound")
+		}
 	}
 }
 

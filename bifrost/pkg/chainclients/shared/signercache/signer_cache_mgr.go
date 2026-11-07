@@ -126,3 +126,32 @@ func (cm *CacheManager) RemoveSigned(transactionHash string) {
 		cm.logger.Err(err).Msgf("fail to remove signed transaction hash: %s", transactionHash)
 	}
 }
+
+// observedOutboundIndex is implemented by stores that can record the vault-sent
+// outbound transactions observed for an inbound hash.
+type observedOutboundIndex interface {
+	AddObservedOutbound(inHash, transactionHash string) error
+	GetObservedOutbounds(inHash string) ([]string, error)
+}
+
+// RecordObservedOutbound records that this node observed transactionHash, sent
+// by a vault, paying an outbound for inHash. Unlike the signed cache it is keyed
+// only by the inbound, so a later signing attempt for the same inbound can find
+// it whatever vault, amount or memo spelling it is scheduled with.
+func (cm *CacheManager) RecordObservedOutbound(inHash, transactionHash string) error {
+	index, ok := cm.storageAccessor.(observedOutboundIndex)
+	if !ok {
+		return nil
+	}
+	return index.AddObservedOutbound(inHash, transactionHash)
+}
+
+// ObservedOutbounds returns the vault-sent outbound transactions this node has
+// recorded for inHash, oldest first.
+func (cm *CacheManager) ObservedOutbounds(inHash string) ([]string, error) {
+	index, ok := cm.storageAccessor.(observedOutboundIndex)
+	if !ok {
+		return nil, nil
+	}
+	return index.GetObservedOutbounds(inHash)
+}

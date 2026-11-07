@@ -204,6 +204,14 @@ func (c *Client) GetRawTransactionVerbose(txid string) (*btcjson.TxRawResult, er
 	return &tx, extractBTCError(err)
 }
 
+// GetRawTransactionVerboseContext is GetRawTransactionVerbose bounded by ctx,
+// including its retries and their backoff.
+func (c *Client) GetRawTransactionVerboseContext(ctx context.Context, txid string) (*btcjson.TxRawResult, error) {
+	var tx btcjson.TxRawResult
+	err := c.CallContext(ctx, &tx, "getrawtransaction", txid, true)
+	return &tx, err
+}
+
 // GetRawTransaction returns a raw transaction string for the transaction id.
 func (c *Client) GetRawTransaction(txid string) (string, error) {
 	var tx string
@@ -486,17 +494,33 @@ func extractBTCError(err error) error {
 	return btcjson.NewRPCError(response.Error.Code, response.Error.Message)
 }
 
-// retrySleep waits out a retry backoff. Tests replace it to record the
+// retrySleep waits out a retry backoff, or until ctx ends. Tests replace it to record the
 // backoffs instead of sleeping through them.
-var retrySleep = time.Sleep
+var retrySleep = func(ctx context.Context, d time.Duration) {
+	select {
+	case <-time.After(d):
+	case <-ctx.Done():
+	}
+}
 
 // retry will wrap the function call with a retry loop on specific errors - namely 500
 // response when the daemon is overloaded the the work queue is exceeded. We use a
 // simple static backoff of 1 second for now.
 func (c *Client) retry(fn func() error) error {
+	return c.retryContext(context.Background(), fn)
+}
+
+// retryContext is retry, stopping when ctx ends.
+func (c *Client) retryContext(ctx context.Context, fn func() error) error {
 	var err error
 	backoff := time.Second
 	for i := 0; i <= c.maxRetries; i++ {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			if err == nil {
+				err = ctxErr
+			}
+			break
+		}
 		err = fn()
 		if err == nil {
 			break
@@ -528,7 +552,10 @@ func (c *Client) retry(fn func() error) error {
 		c.log.Err(err).
 			Str("backoff", backoff.String()).
 			Msgf("retrying %d/%d after backoff", i+1, c.maxRetries)
-		retrySleep(backoff)
+		retrySleep(ctx, backoff)
+		if ctx.Err() != nil {
+			return err
+		}
 
 		// exponential backoff, max 10 seconds
 		backoff *= 2
@@ -537,4 +564,68 @@ func (c *Client) retry(fn func() error) error {
 		}
 	}
 	return err
+}
+
+// CallContext is Call bounded by ctx: each attempt, and the backoff between
+// retries, ends when ctx does.
+func (c *Client) CallContext(ctx context.Context, result any, method string, args ...interface{}) error {
+	fn := func() error {
+		callCtx := ctx
+		if c.timeout > 0 {
+			var cancel context.CancelFunc
+			callCtx, cancel = context.WithTimeout(ctx, c.timeout)
+			defer cancel()
+		}
+		return c.client.CallContext(callCtx, result, method, args...)
+	}
+
+	err := c.retryContext(ctx, fn)
+	return extractBTCError(err)
+}
+
+// BatchCallContext is BatchCall bounded by ctx: each attempt, and the backoff
+// between retries, ends when ctx does.
+func (c *Client) BatchCallContext(ctx context.Context, batch []rpc.BatchElem) error {
+	fn := func() error {
+		callCtx := ctx
+		if c.timeout > 0 {
+			var cancel context.CancelFunc
+			callCtx, cancel = context.WithTimeout(ctx, c.timeout)
+			defer cancel()
+		}
+		return c.client.BatchCallContext(callCtx, batch)
+	}
+
+	err := c.retryContext(ctx, fn)
+	return extractBTCError(err)
+}
+
+// TransactionLocation uses a signed confirmation count. btcjson.TxRawResult uses
+// uint64, which cannot decode a daemon's negative orphan confirmation count.
+// Missing fields are kept distinct from a valid zero-confirmation response.
+type TransactionLocation struct {
+	TxID          string        `json:"txid"`
+	BlockHash     string        `json:"blockhash"`
+	Confirmations *int64        `json:"confirmations"`
+	Inputs        []btcjson.Vin `json:"vin"`
+}
+
+// GetTransactionLocationContext retains signed confirmations and field presence.
+// Callers still need canonical hash and membership checks; this RPC is not a proof.
+func (c *Client) GetTransactionLocationContext(ctx context.Context, txid string) (*TransactionLocation, error) {
+	var result *TransactionLocation
+	err := c.CallContextOnce(ctx, &result, "getrawtransaction", txid, true)
+	return result, extractBTCError(err)
+}
+
+// CallContextOnce is a single bounded canonical-evidence request. Validation holds
+// on errors rather than retrying while Observer/gossip state locks are held.
+func (c *Client) CallContextOnce(ctx context.Context, result any, method string, args ...any) error {
+	timeout := c.timeout
+	if timeout <= 0 || timeout > 10*time.Second {
+		timeout = 10 * time.Second
+	}
+	bounded, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	return extractBTCError(c.client.CallContext(bounded, result, method, args...))
 }

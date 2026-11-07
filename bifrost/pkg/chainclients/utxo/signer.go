@@ -115,6 +115,17 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []b
 		return nil, nil, nil, nil
 	}
 
+	// skip outbounds that a vault has already paid, whatever vault this attempt
+	// is scheduled on
+	if existing, found := c.existingOutboundPayment(tx); found != signercache.LookupNotFound {
+		c.log.Warn().
+			Str("existing_tx", existing).
+			Bool("confirmed_live", found == signercache.LookupFound).
+			Interface("tx", tx).
+			Msg("outbound already paid by a live transaction or could not be ruled out, not signing")
+		return nil, nil, nil, nil
+	}
+
 	sourceScript, err := c.getSourceScript(tx)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("fail to get source pay to address script: %w", err)
