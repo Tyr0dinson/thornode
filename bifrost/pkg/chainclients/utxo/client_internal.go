@@ -42,6 +42,10 @@ func (c *Client) isAsgardAddress(addressToCheck string) bool {
 			return false
 		}
 	}
+	return isAsgardAddress(addressToCheck, asgards)
+}
+
+func isAsgardAddress(addressToCheck string, asgards []common.Address) bool {
 	for _, addr := range asgards {
 		if strings.EqualFold(addr.String(), addressToCheck) {
 			return true
@@ -517,6 +521,22 @@ func (c *Client) isRBFEnabled(tx *btcjson.TxRawResult) bool {
 }
 
 func (c *Client) getTxIn(tx *btcjson.TxRawResult, height int64, isMemPool bool, vinZeroTxs map[string]*btcjson.TxRawResult) (types.TxInItem, error) {
+	return c.getTxInWithVaultSender(tx, height, isMemPool, vinZeroTxs, false)
+}
+
+// vaultSender was established when this node originally observed the outbound.
+// The current Asgard list can no longer contain its sender after vault churn.
+func (c *Client) getTxInWithVaultSender(tx *btcjson.TxRawResult, height int64, isMemPool bool, vinZeroTxs map[string]*btcjson.TxRawResult, vaultSender bool) (types.TxInItem, error) {
+	asgards, err := c.getAsgardAddress()
+	if err != nil {
+		c.log.Err(err).Msg("fail to get asgard addresses")
+	}
+	return c.getTxInWithGas(tx, height, isMemPool, vinZeroTxs, true, vaultSender, asgards)
+}
+
+// getTxInWithGas shares extraction rules with confirmation-policy reconstruction.
+// Policy-only callers omit gas lookups but use the same vault snapshot and output selection.
+func (c *Client) getTxInWithGas(tx *btcjson.TxRawResult, height int64, isMemPool bool, vinZeroTxs map[string]*btcjson.TxRawResult, includeGas, vaultSender bool, asgards []common.Address) (types.TxInItem, error) {
 	if c.ignoreTx(tx, height) {
 		c.log.Debug().Int64("height", height).Str("txid", tx.Hash).Msg("ignore tx not matching format")
 		return types.TxInItem{}, nil
@@ -540,7 +560,7 @@ func (c *Client) getTxIn(tx *btcjson.TxRawResult, height int64, isMemPool bool, 
 	if err != nil {
 		c.log.Debug().Err(err).Str("memo", memo).Msg("fail to parse memo")
 	}
-	output, err := c.getOutput(sender, tx, m.IsType(mem.TxConsolidate))
+	output, err := c.getOutputWithAsgards(sender, tx, m.IsType(mem.TxConsolidate), vaultSender, asgards)
 	if err != nil {
 		if errors.Is(err, btypes.ErrFailOutputMatchCriteria) {
 			c.log.Debug().Int64("height", height).Str("txid", tx.Hash).Msg("ignore tx not matching format")
@@ -557,7 +577,7 @@ func (c *Client) getTxIn(tx *btcjson.TxRawResult, height int64, isMemPool bool, 
 		toAddr = c.stripBCHAddress(toAddr)
 	}
 
-	isInbound := c.isAsgardAddress(toAddr)
+	isInbound := isAsgardAddress(toAddr, asgards)
 	if isInbound {
 		// only inbound UTXO need to be validated against multi-sig
 		if !c.isValidUTXO(output.ScriptPubKey.Hex) {
@@ -570,9 +590,12 @@ func (c *Client) getTxIn(tx *btcjson.TxRawResult, height int64, isMemPool bool, 
 	}
 	amt := uint64(amount.ToUnit(btcutil.AmountSatoshi))
 
-	gas, err := c.getGas(tx, isInbound)
-	if err != nil {
-		return types.TxInItem{}, fmt.Errorf("fail to get gas from tx: %w", err)
+	var gas common.Gas
+	if includeGas {
+		gas, err = c.getGas(tx, isInbound, vinZeroTxs)
+		if err != nil {
+			return types.TxInItem{}, fmt.Errorf("fail to get gas from tx: %w", err)
+		}
 	}
 	return types.TxInItem{
 		BlockHeight: height,
@@ -780,7 +803,21 @@ func (c *Client) ignoreTx(tx *btcjson.TxRawResult, height int64) bool {
 // else prefer the first Vout with value that's to a vault
 // an exception need to be made for consolidate tx , because consolidate tx will be send from asgard back asgard itself
 func (c *Client) getOutput(sender string, tx *btcjson.TxRawResult, consolidate bool) (btcjson.Vout, error) {
-	isSenderAsgard := c.isAsgardAddress(sender)
+	return c.getOutputWithVaultSender(sender, tx, consolidate, false)
+}
+
+func (c *Client) getOutputWithVaultSender(sender string, tx *btcjson.TxRawResult, consolidate, vaultSender bool) (btcjson.Vout, error) {
+	asgards, err := c.getAsgardAddress()
+	if err != nil {
+		c.log.Err(err).Msg("fail to get asgard addresses")
+	}
+	return c.getOutputWithAsgards(sender, tx, consolidate, vaultSender, asgards)
+}
+
+// getOutputWithAsgards uses the caller's vault snapshot for both sender and receiver
+// classification, keeping extraction and its confirmation valuation consistent.
+func (c *Client) getOutputWithAsgards(sender string, tx *btcjson.TxRawResult, consolidate, vaultSender bool, asgards []common.Address) (btcjson.Vout, error) {
+	isSenderAsgard := vaultSender || isAsgardAddress(sender, asgards)
 	for _, vout := range tx.Vout {
 		if strings.EqualFold(vout.ScriptPubKey.Type, "nulldata") {
 			continue
@@ -803,7 +840,7 @@ func (c *Client) getOutput(sender string, tx *btcjson.TxRawResult, consolidate b
 		// if the sender is a vault then assume the first Vout is the output (and a later Vout could be change).
 		// If the sender isn't a vault, then do do not for instance
 		// return a change address Vout as the output if before the vault-inbound Vout.
-		if !isSenderAsgard && !c.isAsgardAddress(receiver) {
+		if !isSenderAsgard && !isAsgardAddress(receiver, asgards) {
 			continue
 		}
 
@@ -1079,14 +1116,21 @@ func (c *Client) decodeHexString(hexString string) (string, error) {
 }
 
 // getGas returns gas for a tx (sum vin - sum vout)
-func (c *Client) getGas(tx *btcjson.TxRawResult, isInbound bool) (common.Gas, error) {
+func (c *Client) getGas(tx *btcjson.TxRawResult, isInbound bool, knownTxs map[string]*btcjson.TxRawResult) (common.Gas, error) {
 	var sumVin uint64 = 0
 	for _, vin := range tx.Vin {
-		vinTx, err := c.rpc.GetRawTransactionVerbose(vin.Txid)
-		if err != nil {
-			return common.Gas{}, fmt.Errorf("fail to query raw tx from node")
+		vinTx, ok := knownTxs[vin.Txid]
+		if !ok || vinTx == nil {
+			var err error
+			vinTx, err = c.rpc.GetRawTransactionVerbose(vin.Txid)
+			if err != nil {
+				return common.Gas{}, fmt.Errorf("fail to query raw tx from node: %w", err)
+			}
 		}
 
+		if vinTx == nil || uint64(vin.Vout) >= uint64(len(vinTx.Vout)) {
+			return nil, fmt.Errorf("gas input output unavailable")
+		}
 		amount, err := btcutil.NewAmount(vinTx.Vout[vin.Vout].Value)
 		if err != nil {
 			return nil, err

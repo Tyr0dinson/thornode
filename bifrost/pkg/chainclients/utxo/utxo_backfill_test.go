@@ -1507,7 +1507,7 @@ func (s *CoverageBackfillSuite) TestGetGas(c *C) {
 			{Value: 0.1},
 		},
 	}
-	gas, err := s.client.getGas(tx, true)
+	gas, err := s.client.getGas(tx, true, nil)
 	c.Assert(err, IsNil)
 	c.Assert(len(gas) > 0, Equals, true)
 
@@ -1527,7 +1527,7 @@ func (s *CoverageBackfillSuite) TestGetGas(c *C) {
 			{Value: 0.05}, // should not be counted for outbound
 		},
 	}
-	gas2, err := s.client.getGas(tx2, false)
+	gas2, err := s.client.getGas(tx2, false, nil)
 	c.Assert(err, IsNil)
 	c.Assert(len(gas2) > 0, Equals, true)
 	// For outbound, we stop at nulldata, so vout sum is only 0.1

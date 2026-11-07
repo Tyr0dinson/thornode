@@ -759,7 +759,7 @@ func (s *DogecoinSuite) TestGetGas(c *C) {
 			},
 		},
 	}
-	gas, err := s.client.getGas(&tx, true)
+	gas, err := s.client.getGas(&tx, true, nil)
 	c.Assert(err, IsNil)
 	c.Assert(gas.Equals(common.Gas{common.NewCoin(common.DOGEAsset, cosmos.NewUint(1946665122))}), Equals, true)
 
@@ -790,7 +790,7 @@ func (s *DogecoinSuite) TestGetGas(c *C) {
 			},
 		},
 	}
-	gas, err = s.client.getGas(&tx, true)
+	gas, err = s.client.getGas(&tx, true, nil)
 	c.Assert(err, IsNil)
 	c.Assert(gas.Equals(common.Gas{common.NewCoin(common.DOGEAsset, cosmos.NewUint(149013))}), Equals, true)
 }
