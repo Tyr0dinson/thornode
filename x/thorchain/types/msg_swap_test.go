@@ -1,6 +1,7 @@
 package types
 
 import (
+	"bytes"
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -765,4 +766,27 @@ func (MsgSwapSuite) TestIsLegacyStreaming(c *C) {
 		StreamInterval: 10,
 	}
 	c.Assert(uninitialized.IsLegacyStreaming(), Equals, true)
+}
+
+func (MsgSwapSuite) TestSwapState_IntermediateRuneMissing(c *C) {
+	state := SwapState{
+		Quantity:         2,
+		Deposit:          cosmos.NewUint(100),
+		Withdrawn:        cosmos.ZeroUint(),
+		In:               cosmos.NewUint(50),
+		Out:              cosmos.NewUint(40),
+		IntermediateRune: cosmos.ZeroUint(),
+	}
+	bz, err := state.Marshal()
+	c.Assert(err, IsNil)
+	// field 12 (intermediate_rune) is encoded last: tag 0x62, length 1, "0"
+	suffix := []byte{0x62, 0x01, '0'}
+	c.Assert(bytes.HasSuffix(bz, suffix), Equals, true)
+
+	var old SwapState
+	c.Assert(old.Unmarshal(bz[:len(bz)-len(suffix)]), IsNil)
+	c.Assert(old.Out.String(), Equals, "40")
+	c.Assert(old.IntermediateRune.IsNil(), Equals, true)
+	c.Assert(old.GetIntermediateRuneOrZero().IsZero(), Equals, true)
+	c.Assert(old.GetIntermediateRuneOrZero().Add(cosmos.NewUint(7)).String(), Equals, "7")
 }

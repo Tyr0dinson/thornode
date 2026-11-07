@@ -31,25 +31,25 @@ func (h SwapHandler) Run(ctx cosmos.Context, m cosmos.Msg) (*cosmos.Result, erro
 
 // RunWithEmit executes the swap and returns the emit amount along with the result.
 func (h SwapHandler) RunWithEmit(ctx cosmos.Context, m cosmos.Msg) (*cosmos.Result, cosmos.Uint, error) {
-	result, emit, _, err := h.runWithEmitAndInput(ctx, m)
+	result, emit, _, _, err := h.runWithEmitAndInput(ctx, m)
 	return result, emit, err
 }
 
-func (h SwapHandler) runWithEmitAndInput(ctx cosmos.Context, m cosmos.Msg) (*cosmos.Result, cosmos.Uint, cosmos.Uint, error) {
+func (h SwapHandler) runWithEmitAndInput(ctx cosmos.Context, m cosmos.Msg) (*cosmos.Result, cosmos.Uint, cosmos.Uint, cosmos.Uint, error) {
 	msg, ok := m.(*MsgSwap)
 	if !ok {
-		return nil, cosmos.ZeroUint(), cosmos.ZeroUint(), errInvalidMessage
+		return nil, cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), errInvalidMessage
 	}
 	if err := h.validate(ctx, *msg); err != nil {
 		ctx.Logger().Error("MsgSwap failed validation", "error", err)
-		return nil, cosmos.ZeroUint(), cosmos.ZeroUint(), err
+		return nil, cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), err
 	}
-	result, emit, input, err := h.handleWithSwapResult(ctx, *msg)
+	result, emit, input, intermediateRune, err := h.handleWithSwapResult(ctx, *msg)
 	if err != nil {
 		ctx.Logger().Error("fail to handle MsgSwap", "error", err)
-		return nil, cosmos.ZeroUint(), cosmos.ZeroUint(), err
+		return nil, cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), err
 	}
-	return result, emit, input, err
+	return result, emit, input, intermediateRune, err
 }
 
 func (h SwapHandler) validate(ctx cosmos.Context, msg MsgSwap) error {
@@ -296,11 +296,11 @@ func (h SwapHandler) validate(ctx cosmos.Context, msg MsgSwap) error {
 }
 
 func (h SwapHandler) handleWithEmit(ctx cosmos.Context, msg MsgSwap) (*cosmos.Result, cosmos.Uint, error) {
-	result, emit, _, err := h.handleWithSwapResult(ctx, msg)
+	result, emit, _, _, err := h.handleWithSwapResult(ctx, msg)
 	return result, emit, err
 }
 
-func (h SwapHandler) handleWithSwapResult(ctx cosmos.Context, msg MsgSwap) (*cosmos.Result, cosmos.Uint, cosmos.Uint, error) {
+func (h SwapHandler) handleWithSwapResult(ctx cosmos.Context, msg MsgSwap) (*cosmos.Result, cosmos.Uint, cosmos.Uint, cosmos.Uint, error) {
 	logFields := []interface{}{
 		"request tx hash", msg.Tx.ID,
 		"index", msg.Index,
@@ -330,7 +330,7 @@ func (h SwapHandler) handleWithSwapResult(ctx cosmos.Context, msg MsgSwap) (*cos
 	ctx.Logger().Info("receive MsgSwap", logFields...)
 	// Validate the destination network before executing the swap.
 	if !msg.Destination.IsCurrentNetwork(msg.Destination.GetChain()) {
-		return nil, cosmos.ZeroUint(), cosmos.ZeroUint(), fmt.Errorf("address(%s) is not same network", msg.Destination)
+		return nil, cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), fmt.Errorf("address(%s) is not same network", msg.Destination)
 	}
 
 	synthVirtualDepthMult, err := h.mgr.Keeper().GetMimir(ctx, constants.VirtualMultSynthsBasisPoints.String())
@@ -343,14 +343,14 @@ func (h SwapHandler) handleWithSwapResult(ctx cosmos.Context, msg MsgSwap) (*cos
 	if len(msg.Aggregator) > 0 {
 		dexAgg, err = FetchDexAggregator(msg.TargetAsset.Chain, msg.Aggregator)
 		if err != nil {
-			return nil, cosmos.ZeroUint(), cosmos.ZeroUint(), err
+			return nil, cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), err
 		}
 	}
 	dexAggTargetAsset = msg.AggregatorTargetAddress
 
 	swapper, err := GetSwapper(h.mgr.Keeper().GetVersion())
 	if err != nil {
-		return nil, cosmos.ZeroUint(), cosmos.ZeroUint(), err
+		return nil, cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), err
 	}
 
 	swp := msg.GetStreamingSwap()
@@ -379,9 +379,9 @@ func (h SwapHandler) handleWithSwapResult(ctx cosmos.Context, msg MsgSwap) (*cos
 	}
 
 	if filled, emit, swapErr := h.mgr.StableReserveManager().TrySwap(ctx, h.mgr, msg); swapErr != nil {
-		return nil, cosmos.ZeroUint(), cosmos.ZeroUint(), swapErr
+		return nil, cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), swapErr
 	} else if filled {
-		return &cosmos.Result{}, emit, msg.Tx.Coins[0].Amount, nil
+		return &cosmos.Result{}, emit, msg.Tx.Coins[0].Amount, cosmos.ZeroUint(), nil
 	}
 
 	// Only create streaming swap records for actual streaming swaps (not limit swaps)
@@ -390,7 +390,7 @@ func (h SwapHandler) handleWithSwapResult(ctx cosmos.Context, msg MsgSwap) (*cos
 			swp, err = h.mgr.Keeper().GetStreamingSwap(ctx, msg.Tx.ID)
 			if err != nil {
 				ctx.Logger().Error("fail to fetch streaming swap", "error", err)
-				return nil, cosmos.ZeroUint(), cosmos.ZeroUint(), err
+				return nil, cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), err
 			}
 		}
 
@@ -407,7 +407,7 @@ func (h SwapHandler) handleWithSwapResult(ctx cosmos.Context, msg MsgSwap) (*cos
 			var maxSwapQuantity uint64
 			maxSwapQuantity, err = getMaxSwapQuantity(ctx, h.mgr, sourceAsset, targetAsset, swp, swapAffiliates, swapAffiliateBps)
 			if err != nil {
-				return nil, cosmos.ZeroUint(), cosmos.ZeroUint(), err
+				return nil, cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), err
 			}
 			if swp.Quantity == 0 || swp.Quantity > maxSwapQuantity {
 				swp.Quantity = maxSwapQuantity
@@ -437,11 +437,19 @@ func (h SwapHandler) handleWithSwapResult(ctx cosmos.Context, msg MsgSwap) (*cos
 		swapAffiliates, swapAffiliateBps,
 	)
 	if swapErr != nil {
-		return nil, cosmos.ZeroUint(), cosmos.ZeroUint(), swapErr
+		return nil, cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), swapErr
 	}
 
 	// Track the final emit value to return
 	finalEmit := emit
+
+	// The second leg of a double swap takes the RUNE emitted by the first leg
+	// from the source pool into the target pool. Record it so an errata reversal
+	// of a reorged double swap can move that intermediate RUNE back.
+	intermediateRune := cosmos.ZeroUint()
+	if len(swapEvents) == 2 {
+		intermediateRune = swapEvents[1].InTx.Coins.GetCoin(common.RuneAsset()).Amount
+	}
 
 	affColAddress, err := h.mgr.Keeper().GetModuleAddress(AffiliateCollectorName)
 	if err != nil {
@@ -454,7 +462,7 @@ func (h SwapHandler) handleWithSwapResult(ctx cosmos.Context, msg MsgSwap) (*cos
 	collectorPayout := isPreferredAssetCollectorSwap(h.mgr.Keeper(), msg)
 	if (collectorConversion || collectorPayout) && msg.IsV1() {
 		if err = deliverAffiliateCollectorOutput(ctx, h.mgr, msg, emit); err != nil {
-			return nil, cosmos.ZeroUint(), cosmos.ZeroUint(), err
+			return nil, cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), err
 		}
 	}
 
@@ -465,7 +473,7 @@ func (h SwapHandler) handleWithSwapResult(ctx cosmos.Context, msg MsgSwap) (*cos
 
 	stableReserveInternalSettled := false
 	if settled, settleErr := settleStableReserveInternalSwap(ctx, h.mgr, msg, emit); settleErr != nil {
-		return nil, cosmos.ZeroUint(), cosmos.ZeroUint(), settleErr
+		return nil, cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), settleErr
 	} else {
 		stableReserveInternalSettled = settled
 	}
@@ -477,7 +485,7 @@ func (h SwapHandler) handleWithSwapResult(ctx cosmos.Context, msg MsgSwap) (*cos
 	if msg.TargetAsset.IsSyntheticAsset() && !msg.IsLegacyStreaming() {
 		err = isSynthMintPaused(ctx, h.mgr, msg.TargetAsset, emit)
 		if err != nil {
-			return nil, cosmos.ZeroUint(), cosmos.ZeroUint(), err
+			return nil, cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), err
 		}
 	}
 
@@ -491,7 +499,7 @@ func (h SwapHandler) handleWithSwapResult(ctx cosmos.Context, msg MsgSwap) (*cos
 			// exit early so we don't execute follow-on handlers mid streaming swap. if this
 			// is the last swap execute the follow-on handlers as swap count is incremented in
 			// the swap queue manager
-			return &cosmos.Result{}, finalEmit, effectiveInput, nil
+			return &cosmos.Result{}, finalEmit, effectiveInput, intermediateRune, nil
 		}
 		emit = swp.Out
 		finalEmit = swp.Out
@@ -500,7 +508,7 @@ func (h SwapHandler) handleWithSwapResult(ctx cosmos.Context, msg MsgSwap) (*cos
 	// Internal reserve swaps and collector conversions use dedicated settlement
 	// paths, so skip the downstream handlers selected by the memo.
 	if stableReserveInternalSettled || collectorConversion {
-		return &cosmos.Result{}, finalEmit, effectiveInput, nil
+		return &cosmos.Result{}, finalEmit, effectiveInput, intermediateRune, nil
 	}
 
 	// this is a preferred asset swap, so return early since there is no need to call any
@@ -508,24 +516,24 @@ func (h SwapHandler) handleWithSwapResult(ctx cosmos.Context, msg MsgSwap) (*cos
 	memo := msg.Tx.Memo
 	fromAdd := msg.Tx.FromAddress
 	if strings.HasPrefix(memo, PreferredAssetSwapMemoPrefix) && fromAdd.Equals(affColAddress) {
-		return &cosmos.Result{}, finalEmit, effectiveInput, nil
+		return &cosmos.Result{}, finalEmit, effectiveInput, intermediateRune, nil
 	}
 
 	if parseMemoErr != nil {
 		ctx.Logger().Error("swap handler failed to parse memo", "memo", msg.Tx.Memo, "error", parseMemoErr)
-		return nil, cosmos.ZeroUint(), cosmos.ZeroUint(), parseMemoErr
+		return nil, cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), parseMemoErr
 	}
 	if mem.GetType() == TxAdd {
 		m, ok := mem.(AddLiquidityMemo)
 		if !ok {
-			return nil, cosmos.ZeroUint(), cosmos.ZeroUint(), fmt.Errorf("fail to cast add liquidity memo")
+			return nil, cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), fmt.Errorf("fail to cast add liquidity memo")
 		}
 		m.Asset = fuzzyAssetMatch(ctx, h.mgr.Keeper(), m.Asset)
 		msg.Tx.Coins = common.NewCoins(common.NewCoin(m.Asset, emit))
 		obTx := ObservedTx{Tx: msg.Tx}
 		msg, err := getMsgAddLiquidityFromMemo(ctx, m, obTx, msg.Signer)
 		if err != nil {
-			return nil, cosmos.ZeroUint(), cosmos.ZeroUint(), err
+			return nil, cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), err
 		}
 		handler := NewAddLiquidityHandler(h.mgr)
 		_, err = runTracedHandler(
@@ -538,10 +546,10 @@ func (h SwapHandler) handleWithSwapResult(ctx cosmos.Context, msg MsgSwap) (*cos
 		)
 		if err != nil {
 			ctx.Logger().Error("swap handler failed to add liquidity", "error", err)
-			return nil, cosmos.ZeroUint(), cosmos.ZeroUint(), err
+			return nil, cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), err
 		}
 	}
-	return &cosmos.Result{}, finalEmit, effectiveInput, nil
+	return &cosmos.Result{}, finalEmit, effectiveInput, intermediateRune, nil
 }
 
 // getTotalLiquidityRUNE we have in all pools

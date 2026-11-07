@@ -8555,3 +8555,62 @@ func (s AdvSwapQueueSuite) TestCapFailedSwapReasons(c *C) {
 	capFailedSwapReasons(nil)
 	capFailedSwapReasons(&MsgSwap{})
 }
+
+func (s AdvSwapQueueSuite) TestDoubleSwapAccumulatesIntermediateRune(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	seedActiveAdvSwapVault(c, ctx, mgr)
+	mgr.txOutStore = NewTxStoreDummy()
+	book := newSwapQueueAdv(mgr.Keeper())
+
+	for _, asset := range []common.Asset{common.BTCAsset, common.ETHAsset} {
+		pool := NewPool()
+		pool.Asset = asset
+		pool.BalanceAsset = cosmos.NewUint(1000 * common.One)
+		pool.BalanceRune = cosmos.NewUint(1000 * common.One)
+		pool.LPUnits = cosmos.NewUint(1000 * common.One)
+		pool.Status = PoolAvailable
+		c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+	}
+
+	tx := GetRandomTx()
+	ethAddr := GetRandomETHAddress()
+	tx.Coins = common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(3*common.One)))
+	tx.Memo = fmt.Sprintf("=:%s:%s", common.ETHAsset, ethAddr)
+	msg := NewMsgSwap(
+		tx, common.ETHAsset, ethAddr, cosmos.ZeroUint(),
+		"", cosmos.ZeroUint(),
+		"", "", nil,
+		types.SwapType_market,
+		3, 1, types.SwapVersion_v2, GetRandomBech32Addr(),
+	)
+	msg.State.LastHeight = ctx.BlockHeight() - 1
+	c.Assert(mgr.Keeper().SetAdvSwapQueueItem(ctx, *msg), IsNil)
+
+	expected := cosmos.ZeroUint()
+	for i := int64(0); i < 2; i++ {
+		ctx = ctx.WithBlockHeight(ctx.BlockHeight() + 1).WithEventManager(cosmos.NewEventManager())
+		c.Assert(book.EndBlock(ctx, mgr, false), IsNil)
+		for _, e := range ctx.EventManager().Events() {
+			if e.Type != "swap" {
+				continue
+			}
+			attrs := map[string]string{}
+			for _, a := range e.Attributes {
+				attrs[a.Key] = a.Value
+			}
+			if attrs["pool"] != common.BTCAsset.String() {
+				continue
+			}
+			emit, err := common.ParseCoin(attrs["emit_asset"])
+			c.Assert(err, IsNil)
+			c.Assert(emit.Asset.IsRune(), Equals, true)
+			expected = expected.Add(emit.Amount)
+		}
+	}
+
+	item, err := mgr.Keeper().GetAdvSwapQueueItem(ctx, tx.ID, 0)
+	c.Assert(err, IsNil)
+	c.Assert(item.State.Count, Equals, uint64(2))
+	c.Assert(expected.IsZero(), Equals, false)
+	c.Assert(item.State.IntermediateRune.String(), Equals, expected.String())
+}

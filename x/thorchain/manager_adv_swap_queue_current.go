@@ -956,6 +956,7 @@ func (vm *SwapQueueAdv) EndBlock(ctx cosmos.Context, mgr Manager, telemetryEnabl
 			// make the primary swap using the cached context
 			var settleMsg string
 			effectiveInput := cosmos.ZeroUint()
+			intermediateRune := cosmos.ZeroUint()
 			emit, handleErr := runTracedHandler(
 				cacheCtx,
 				mgr.Tracer(),
@@ -964,7 +965,7 @@ func (vm *SwapQueueAdv) EndBlock(ctx cosmos.Context, mgr Manager, telemetryEnabl
 					result := cosmos.ZeroUint()
 					err := runLuviGuarded(ctx, cacheCtx, mgr, msg, func(runCtx cosmos.Context) error {
 						var runErr error
-						_, result, effectiveInput, runErr = swapHandler.runWithEmitAndInput(runCtx, msg)
+						_, result, effectiveInput, intermediateRune, runErr = swapHandler.runWithEmitAndInput(runCtx, msg)
 						return runErr
 					})
 					return result, err
@@ -1005,6 +1006,7 @@ func (vm *SwapQueueAdv) EndBlock(ctx cosmos.Context, mgr Manager, telemetryEnabl
 				// Update state for successful swap execution (in memory only)
 				msg.State.In = msg.State.In.Add(effectiveInput)
 				msg.State.Out = msg.State.Out.Add(emit)
+				msg.State.IntermediateRune = msg.State.GetIntermediateRuneOrZero().Add(intermediateRune)
 
 				// Update count/height and save swap state in the cache context so
 				// it commits atomically with pool changes. This prevents state

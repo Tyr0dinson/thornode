@@ -114,6 +114,27 @@ func observedVaultHasEffectiveRefundFunds(ctx cosmos.Context, tx ObservedTx, mgr
 }
 
 func refundTx(ctx cosmos.Context, tx ObservedTx, mgr Manager, refundCode uint32, refundReason, sourceModuleName string) error {
+	// The coins of an inbound reverted by an errata never arrived, so there is
+	// nothing to refund. Coins are matched by asset: a coin whose asset is not
+	// among the reverted inbound's coins (e.g. a saver withdrawal's synth
+	// redemption) came from an existing claim and is still refunded, while a
+	// same-asset coin is always treated as the reverted inbound's.
+	if voter, err := mgr.Keeper().GetObservedTxInVoter(ctx, tx.Tx.ID); err == nil && voter.Reverted {
+		kept := make(common.Coins, 0, len(tx.Tx.Coins))
+		for _, coin := range tx.Tx.Coins {
+			if voter.Tx.Tx.Coins.GetCoin(coin.Asset).IsEmpty() {
+				kept = append(kept, coin)
+			}
+		}
+		if len(kept) < len(tx.Tx.Coins) {
+			ctx.Logger().Info("skip refund of reverted inbound coins", "tx_id", tx.Tx.ID)
+		}
+		if len(kept) == 0 {
+			return nil
+		}
+		tx.Tx.Coins = kept
+	}
+
 	// If THORNode recognize one of the coins, and therefore able to refund
 	// withholding fees, refund all coins.
 
@@ -1918,11 +1939,21 @@ func settleSwap(ctx cosmos.Context, mgr Manager, msg MsgSwap, settleReason strin
 }
 
 func settleSwapCached(ctx cosmos.Context, mgr Manager, msg MsgSwap, settleReason string) error {
+	// The coins of a reverted swap inbound never arrived: remove the swap (or
+	// its affiliate sub-swap) without paying its output or refunding its
+	// remainder.
+	inboundVoter, inboundVoterErr := mgr.Keeper().GetObservedTxInVoter(ctx, msg.Tx.ID)
+	inboundReverted := inboundVoterErr == nil && inboundVoter.Reverted && isSwapInboundMemo(inboundVoter.Tx.Tx.Memo)
+	if inboundReverted {
+		ctx.Logger().Info("settling swap of reverted inbound without payout", "tx_id", msg.Tx.ID)
+		settleReason = revertedInboundCloseReason
+	}
+
 	// Deliver accumulated collector output and credit any converted RUNE in the
 	// same cached context as queue removal, so failed settlement can be retried.
 	collectorConversion := affiliateCollectorConversionName(mgr.Keeper(), msg) != ""
 	collectorPayout := isPreferredAssetCollectorSwap(mgr.Keeper(), msg)
-	if !msg.State.Out.IsZero() && (collectorConversion || collectorPayout) {
+	if !msg.State.Out.IsZero() && (collectorConversion || collectorPayout) && !inboundReverted {
 		if err := deliverAffiliateCollectorOutput(ctx, mgr, msg, msg.State.Out); err != nil {
 			if !collectorPayout || !errors.Is(err, ErrNotEnoughToPayFee) {
 				return err
@@ -1956,7 +1987,7 @@ func settleSwapCached(ctx cosmos.Context, mgr Manager, msg MsgSwap, settleReason
 	// place materializing the final outbound. The advanced swap queue skips
 	// outbound creation during execution and relies on settlement to create the
 	// completed swap outbound, even after multiple sub-swaps have already run.
-	if !msg.State.Out.IsZero() && !stableReserveInternal && !collectorConversion && !collectorPayout {
+	if !msg.State.Out.IsZero() && !stableReserveInternal && !collectorConversion && !collectorPayout && !inboundReverted {
 		// Parse memo to check if this is a savers add
 		memo, err := ParseMemoWithTHORNamesCached(ctx, mgr.Keeper(), msg.Tx.Memo)
 		if err != nil {
@@ -2040,16 +2071,15 @@ func settleSwapCached(ctx cosmos.Context, mgr Manager, msg MsgSwap, settleReason
 		}
 	}
 	// Other swaps refund their remaining deposit through the normal refund path.
-	if msg.State.Deposit.GT(msg.State.In) && !collectorPayout {
+	if msg.State.Deposit.GT(msg.State.In) && !collectorPayout && !inboundReverted {
 		remainder := common.SafeSub(msg.State.Deposit, msg.State.In)
 		refundCoin := common.NewCoin(msg.Tx.Coins[0].Asset, remainder)
 		refundCoinTx := msg.Tx
 		refundCoinTx.Coins = common.NewCoins(refundCoin)
 
-		// Try to get the observed tx for vault selection
-		voter, voterErr := mgr.Keeper().GetObservedTxInVoter(ctx, msg.Tx.ID)
-		if voterErr == nil && !voter.Tx.IsEmpty() {
-			if refundErr := refundTx(ctx, ObservedTx{Tx: refundCoinTx, ObservedPubKey: voter.Tx.ObservedPubKey}, mgr, CodeSwapFail, settleReason, ""); refundErr != nil {
+		// Use the observed tx for vault selection.
+		if inboundVoterErr == nil && !inboundVoter.Tx.IsEmpty() {
+			if refundErr := refundTx(ctx, ObservedTx{Tx: refundCoinTx, ObservedPubKey: inboundVoter.Tx.ObservedPubKey}, mgr, CodeSwapFail, settleReason, ""); refundErr != nil {
 				return fmt.Errorf("fail to refund swap remainder: %w", refundErr)
 			}
 		} else {
