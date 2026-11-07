@@ -14,6 +14,7 @@ Name | Type | Description | Notes
 **UpdatedVault** | Pointer to **bool** |  | [optional] 
 **Reverted** | Pointer to **bool** |  | [optional] 
 **OutboundHeight** | Pointer to **int64** | the thorchain height for which the outbound was scheduled | [optional] 
+**ObservedOutboundTxIds** | Pointer to **[]string** | up to 256 outbound transactions reported as paying this inbound, including reports that have not reached consensus; ordered by consensus and then distinct signer count; unverified | [optional] 
 
 ## Methods
 
@@ -263,6 +264,31 @@ SetOutboundHeight sets OutboundHeight field to given value.
 `func (o *TxSignersResponse) HasOutboundHeight() bool`
 
 HasOutboundHeight returns a boolean if a field has been set.
+
+### GetObservedOutboundTxIds
+
+`func (o *TxSignersResponse) GetObservedOutboundTxIds() []string`
+
+GetObservedOutboundTxIds returns the ObservedOutboundTxIds field if non-nil, zero value otherwise.
+
+### GetObservedOutboundTxIdsOk
+
+`func (o *TxSignersResponse) GetObservedOutboundTxIdsOk() (*[]string, bool)`
+
+GetObservedOutboundTxIdsOk returns a tuple with the ObservedOutboundTxIds field if it's non-nil, zero value otherwise
+and a boolean to check if the value has been set.
+
+### SetObservedOutboundTxIds
+
+`func (o *TxSignersResponse) SetObservedOutboundTxIds(v []string)`
+
+SetObservedOutboundTxIds sets ObservedOutboundTxIds field to given value.
+
+### HasObservedOutboundTxIds
+
+`func (o *TxSignersResponse) HasObservedOutboundTxIds() bool`
+
+HasObservedOutboundTxIds returns a boolean if a field has been set.
 
 
 [[Back to Model list]](../README.md#documentation-for-models) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to README]](../README.md)

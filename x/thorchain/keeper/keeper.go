@@ -249,6 +249,8 @@ type KeeperObservedTx interface {
 	GetObservedTxOutVoter(ctx cosmos.Context, hash common.TxID) (ObservedTxVoter, error)
 	SetObservedLink(ctx cosmos.Context, _, _ common.TxID)
 	GetObservedLink(ctx cosmos.Context, inhash common.TxID) []common.TxID
+	SetObservedConsensusLink(ctx cosmos.Context, _, _ common.TxID)
+	GetObservedConsensusLink(ctx cosmos.Context, inhash common.TxID) []common.TxID
 	SetRefundCleanup(ctx cosmos.Context, key string)
 	HasRefundCleanup(ctx cosmos.Context, key string) bool
 	PruneRefundCleanups(ctx cosmos.Context)

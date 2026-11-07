@@ -6046,6 +6046,9 @@ components:
           xmr_mined_height: 7581328
           status: done
         finalised_height: 7581334
+        observed_outbound_tx_ids:
+        - CF524818D42B63D25BBA0CCC4909F127CAA645C0F9CD07324F2824CC151A64C7
+        - CF524818D42B63D25BBA0CCC4909F127CAA645C0F9CD07324F2824CC151A64C7
         reverted: false
       properties:
         tx_id:
@@ -6086,6 +6089,14 @@ components:
           example: 1234
           format: int64
           type: integer
+        observed_outbound_tx_ids:
+          description: "up to 256 outbound transactions reported as paying this inbound,\
+            \ including reports that have not reached consensus; ordered by consensus\
+            \ and then distinct signer count; unverified"
+          items:
+            example: CF524818D42B63D25BBA0CCC4909F127CAA645C0F9CD07324F2824CC151A64C7
+            type: string
+          type: array
       required:
       - actions
       - out_txs
@@ -6331,6 +6342,9 @@ components:
           xmr_mined_height: 7581328
           status: done
         finalised_height: 7581334
+        observed_outbound_tx_ids:
+        - CF524818D42B63D25BBA0CCC4909F127CAA645C0F9CD07324F2824CC151A64C7
+        - CF524818D42B63D25BBA0CCC4909F127CAA645C0F9CD07324F2824CC151A64C7
         reverted: false
       properties:
         tx_id:
@@ -6371,6 +6385,14 @@ components:
           example: 1234
           format: int64
           type: integer
+        observed_outbound_tx_ids:
+          description: "up to 256 outbound transactions reported as paying this inbound,\
+            \ including reports that have not reached consensus; ordered by consensus\
+            \ and then distinct signer count; unverified"
+          items:
+            example: CF524818D42B63D25BBA0CCC4909F127CAA645C0F9CD07324F2824CC151A64C7
+            type: string
+          type: array
       required:
       - actions
       - out_txs

@@ -73,7 +73,23 @@ func (k KVStore) SetObservedLink(ctx cosmos.Context, inhash, outhash common.TxID
 }
 
 func (k KVStore) setObservedLink(ctx cosmos.Context, inhash, outhash common.TxID) {
-	key := k.GetKey(prefixObservedLink, inhash.String())
+	k.appendLink(ctx, k.GetKey(prefixObservedLink, inhash.String()), inhash, outhash)
+}
+
+// SetObservedConsensusLink records that outhash, an outbound naming inhash,
+// reached observation consensus. Unlike the per-observation links, a single
+// node cannot add to this list, so readers can always afford all of it.
+func (k KVStore) SetObservedConsensusLink(ctx cosmos.Context, inhash, outhash common.TxID) {
+	k.appendLink(ctx, k.GetKey(prefixObservedConsensusLink, inhash.String()), inhash, outhash)
+}
+
+// GetObservedConsensusLink returns the outbounds naming inhash that reached
+// observation consensus.
+func (k KVStore) GetObservedConsensusLink(ctx cosmos.Context, inhash common.TxID) []common.TxID {
+	return k.getLinks(ctx, k.GetKey(prefixObservedConsensusLink, inhash.String()), inhash)
+}
+
+func (k KVStore) appendLink(ctx cosmos.Context, key []byte, inhash, outhash common.TxID) {
 	record := make([]string, 0)
 	if _, err := k.getStrings(ctx, key, &record); err != nil {
 		ctx.Logger().Error("fail to get observed link", "inhash", inhash, "error", err)
@@ -89,10 +105,13 @@ func (k KVStore) setObservedLink(ctx cosmos.Context, inhash, outhash common.TxID
 }
 
 func (k KVStore) GetObservedLink(ctx cosmos.Context, inhash common.TxID) []common.TxID {
+	return k.getLinks(ctx, k.GetKey(prefixObservedLink, inhash.String()), inhash)
+}
+
+func (k KVStore) getLinks(ctx cosmos.Context, key []byte, inhash common.TxID) []common.TxID {
 	hashes := make([]common.TxID, 0)
 	strs := make([]string, 0)
 
-	key := k.GetKey(prefixObservedLink, inhash.String())
 	if _, err := k.getStrings(ctx, key, &strs); err != nil {
 		ctx.Logger().Error("fail to get observed link", "inhash", inhash, "error", err)
 	}

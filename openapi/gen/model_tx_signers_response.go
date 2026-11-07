@@ -29,6 +29,8 @@ type TxSignersResponse struct {
 	Reverted *bool `json:"reverted,omitempty"`
 	// the thorchain height for which the outbound was scheduled
 	OutboundHeight *int64 `json:"outbound_height,omitempty"`
+	// up to 256 outbound transactions reported as paying this inbound, including reports that have not reached consensus; ordered by consensus and then distinct signer count; unverified
+	ObservedOutboundTxIds []string `json:"observed_outbound_tx_ids,omitempty"`
 }
 
 // NewTxSignersResponse instantiates a new TxSignersResponse object
@@ -340,6 +342,38 @@ func (o *TxSignersResponse) SetOutboundHeight(v int64) {
 	o.OutboundHeight = &v
 }
 
+// GetObservedOutboundTxIds returns the ObservedOutboundTxIds field value if set, zero value otherwise.
+func (o *TxSignersResponse) GetObservedOutboundTxIds() []string {
+	if o == nil || o.ObservedOutboundTxIds == nil {
+		var ret []string
+		return ret
+	}
+	return o.ObservedOutboundTxIds
+}
+
+// GetObservedOutboundTxIdsOk returns a tuple with the ObservedOutboundTxIds field value if set, nil otherwise
+// and a boolean to check if the value has been set.
+func (o *TxSignersResponse) GetObservedOutboundTxIdsOk() ([]string, bool) {
+	if o == nil || o.ObservedOutboundTxIds == nil {
+		return nil, false
+	}
+	return o.ObservedOutboundTxIds, true
+}
+
+// HasObservedOutboundTxIds returns a boolean if a field has been set.
+func (o *TxSignersResponse) HasObservedOutboundTxIds() bool {
+	if o != nil && o.ObservedOutboundTxIds != nil {
+		return true
+	}
+
+	return false
+}
+
+// SetObservedOutboundTxIds gets a reference to the given []string and assigns it to the ObservedOutboundTxIds field.
+func (o *TxSignersResponse) SetObservedOutboundTxIds(v []string) {
+	o.ObservedOutboundTxIds = v
+}
+
 func (o TxSignersResponse) MarshalJSON_deprecated() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if o.TxId != nil {
@@ -371,6 +405,9 @@ func (o TxSignersResponse) MarshalJSON_deprecated() ([]byte, error) {
 	}
 	if o.OutboundHeight != nil {
 		toSerialize["outbound_height"] = o.OutboundHeight
+	}
+	if o.ObservedOutboundTxIds != nil {
+		toSerialize["observed_outbound_tx_ids"] = o.ObservedOutboundTxIds
 	}
 	return json.Marshal(toSerialize)
 }

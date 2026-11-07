@@ -112,6 +112,10 @@ message QueryObservedTxVoter {
   bool updated_vault = 8;
   bool reverted = 9;
   int64 outbound_height = 10;
+  // Outbound transactions reported as paying this inbound, including reports
+  // that have not reached consensus. Unverified: check them on chain.
+  repeated string observed_outbound_tx_ids = 11
+      [ (gogoproto.jsontag) = "observed_outbound_tx_ids,omitempty" ];
 }
 
 message QueryTxVotersRequest {

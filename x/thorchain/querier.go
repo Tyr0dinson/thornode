@@ -2750,20 +2750,112 @@ func extractVoter(ctx cosmos.Context, tx_id string, mgr *Mgrs, outbound bool) (c
 	return hash, voter, nil
 }
 
+// Keep the public response bounded to the same number of candidates the UTXO
+// signer can examine in one attempt. The keeper retains all observed links.
+const maxObservedOutboundQueryCandidates = 256
+
+// Any single observation adds a link, and the keeper retains every one, so the
+// query reads at most this many linked voters. Outbounds that reached
+// observation consensus, and those the inbound's voter recorded, are always
+// read: no single node can add to either.
+const maxObservedOutboundQueryScan = 4 * maxObservedOutboundQueryCandidates
+
 func (qs queryServer) queryTxVoters(ctx cosmos.Context, req *types.QueryTxVotersRequest) (*types.QueryObservedTxVoter, error) {
 	hash, voter, err := extractVoter(ctx, req.TxId, qs.mgr, req.Outbound)
 	if err != nil {
 		return nil, err
 	}
+	// An inbound THORChain created itself, such as a treasury recovery swap, has
+	// actions but no observations.
+	internalInbound := len(voter.Txs) == 0 && len(voter.Actions) > 0
+	var observedOutbounds []string
+	if !req.Outbound && (len(voter.Txs) > 0 || internalInbound) {
+		type outboundCandidateRank struct {
+			hash      common.TxID
+			consensus bool
+			signers   int
+		}
+		links := qs.mgr.Keeper().GetObservedLink(ctx, hash)
+		if len(links) > maxObservedOutboundQueryScan {
+			// A payment reported after the flood must stay reachable once it
+			// has consensus, even if no queued item matched it into OutTxs.
+			always := make(map[string]bool, len(voter.OutTxs))
+			for _, outTx := range voter.OutTxs {
+				always[outTx.ID.String()] = true
+			}
+			for _, link := range qs.mgr.Keeper().GetObservedConsensusLink(ctx, hash) {
+				always[link.String()] = true
+			}
+			scan := append([]common.TxID{}, links[:maxObservedOutboundQueryScan]...)
+			for _, link := range links[maxObservedOutboundQueryScan:] {
+				if always[link.String()] {
+					scan = append(scan, link)
+				}
+			}
+			links = scan
+		}
+		namesInboundByMemo := make(map[string]bool)
+		// A link is recorded from a single observation, and the voter can
+		// hold votes naming another inbound. Count only support for a payment
+		// of this one.
+		namesInbound := func(observed common.ObservedTx) bool {
+			names, ok := namesInboundByMemo[observed.Tx.Memo]
+			if !ok {
+				memo, memoErr := ParseMemoWithTHORNames(ctx, qs.mgr.Keeper(), observed.Tx.Memo)
+				names = memoErr == nil && memo.GetTxID().Equals(hash)
+				namesInboundByMemo[observed.Tx.Memo] = names
+			}
+			return names
+		}
+		var ranked []outboundCandidateRank
+		for _, outHash := range links {
+			rank := outboundCandidateRank{hash: outHash}
+			outVoter, voterErr := qs.mgr.Keeper().GetObservedTxOutVoter(ctx, outHash)
+			if voterErr == nil {
+				rank.consensus = (outboundConsensusHeight(outVoter) > 0 || outVoter.FinalisedHeight > 0) &&
+					namesInbound(outVoter.Tx)
+				signers := make(map[string]bool)
+				for _, observed := range outVoter.Txs {
+					if !namesInbound(observed) {
+						continue
+					}
+					for _, signer := range observed.Signers {
+						signers[signer] = true
+					}
+				}
+				rank.signers = len(signers)
+			}
+			ranked = append(ranked, rank)
+		}
+		// The UTXO signer checks at most 256 reported hashes. Put stronger
+		// observations first so a flood of lone reports cannot fill that set
+		// ahead of a payment reported by more nodes.
+		sort.Slice(ranked, func(i, j int) bool {
+			a, b := ranked[i], ranked[j]
+			if a.consensus != b.consensus {
+				return a.consensus
+			}
+			if a.signers != b.signers {
+				return a.signers > b.signers
+			}
+			return a.hash.String() < b.hash.String()
+		})
+		if len(ranked) > maxObservedOutboundQueryCandidates {
+			ranked = ranked[:maxObservedOutboundQueryCandidates]
+		}
+		for _, candidate := range ranked {
+			observedOutbounds = append(observedOutbounds, candidate.hash.String())
+		}
+	}
 	// Migrations can have both voters under one tx ID. Explicit outbound
 	// queries must never fall back to destination-side observation metadata.
-	if !req.Outbound && len(voter.Txs) == 0 {
+	if !req.Outbound && len(voter.Txs) == 0 && !internalInbound {
 		voter, err = qs.mgr.Keeper().GetObservedTxOutVoter(ctx, hash)
 		if err != nil {
 			return nil, fmt.Errorf("fail to get observed tx out voter: %w", err)
 		}
 	}
-	if len(voter.Txs) == 0 {
+	if len(voter.Txs) == 0 && !internalInbound {
 		return nil, fmt.Errorf("tx: %s doesn't exist", hash)
 	}
 
@@ -2787,6 +2879,8 @@ func (qs queryServer) queryTxVoters(ctx cosmos.Context, req *types.QueryTxVoters
 		UpdatedVault:    voter.UpdatedVault,
 		Reverted:        voter.Reverted,
 		OutboundHeight:  voter.OutboundHeight,
+
+		ObservedOutboundTxIds: observedOutbounds,
 	}, nil
 }
 

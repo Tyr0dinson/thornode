@@ -624,6 +624,156 @@ func (s *QuerierSuite) TestQueryTxInVoter(c *C) {
 	c.Assert(voter.Txs[0].Tx.ToAddress == nil, Equals, false)
 	c.Assert(voter.Txs[0].Tx.Chain == nil, Equals, false)
 	c.Assert(len(voter.Txs[0].Tx.Coins) == 0, Equals, false)
+	c.Assert(voter.ObservedOutboundTxIds, HasLen, 0)
+
+	// Outbounds reported as paying the inbound are listed, consensus or not.
+	outHash := GetRandomTxHash()
+	s.k.SetObservedLink(s.ctx, tx.ID, outHash)
+	queryTxVoterResp, err = s.queryServer.TxVoters(s.ctx, &types.QueryTxVotersRequest{
+		TxId: tx.ID.String(),
+	})
+	c.Assert(err, IsNil)
+	result, err = queryTxVoterResp.MarshalJSONPB(nil)
+	c.Assert(err, IsNil)
+	voter = openapi.TxDetailsResponse{}
+	c.Assert(json.Unmarshal(result, &voter), IsNil)
+	c.Assert(voter.ObservedOutboundTxIds, DeepEquals, []string{outHash.String()})
+
+	// The query must put stronger reports ahead of earlier lone reports: the
+	// signer only checks the first 256 candidates it receives.
+	// Only observations whose memo names this inbound count: an outbound
+	// voter can also hold votes naming another inbound, and those must not
+	// lift a weakly linked candidate.
+	strongHash := GetRandomTxHash()
+	consensusHash := GetRandomTxHash()
+	borrowedHash := GetRandomTxHash()
+	thisMemo := "OUT:" + tx.ID.String()
+	otherMemo := "OUT:" + GetRandomTxHash().String()
+	type vote struct {
+		memo    string
+		signers []string
+	}
+	for _, candidate := range []struct {
+		hash      common.TxID
+		votes     []vote
+		consensus string
+	}{
+		{outHash, []vote{{thisMemo, []string{"first"}}}, ""},
+		{strongHash, []vote{{thisMemo, []string{"first", "second"}}}, ""},
+		{consensusHash, []vote{{thisMemo, []string{"first"}}}, thisMemo},
+		{borrowedHash, []vote{
+			{thisMemo, nil},
+			{otherMemo, []string{"first", "second", "third"}},
+		}, otherMemo},
+	} {
+		var votes []common.ObservedTx
+		for _, v := range candidate.votes {
+			outTx := tx
+			outTx.ID = candidate.hash
+			outTx.Memo = v.memo
+			observed := NewObservedTx(outTx, s.ctx.BlockHeight(), GetRandomPubKey(), s.ctx.BlockHeight())
+			observed.Signers = v.signers
+			votes = append(votes, observed)
+		}
+		outVoter := NewObservedTxVoter(candidate.hash, votes)
+		if candidate.consensus != "" {
+			outVoter.Tx = votes[0]
+			for _, v := range votes {
+				if v.Tx.Memo == candidate.consensus {
+					outVoter.Tx = v
+				}
+			}
+			outVoter.UnfinalizedHeight = 1
+		}
+		s.k.SetObservedTxOutVoter(s.ctx, outVoter)
+		s.k.SetObservedLink(s.ctx, tx.ID, candidate.hash)
+	}
+	queryTxVoterResp, err = s.queryServer.TxVoters(s.ctx, &types.QueryTxVotersRequest{TxId: tx.ID.String()})
+	c.Assert(err, IsNil)
+	c.Assert(queryTxVoterResp.ObservedOutboundTxIds, HasLen, 4)
+	c.Assert(queryTxVoterResp.ObservedOutboundTxIds[:3], DeepEquals,
+		[]string{consensusHash.String(), strongHash.String(), outHash.String()})
+	c.Check(queryTxVoterResp.ObservedOutboundTxIds[3], Equals, borrowedHash.String())
+	for i := 0; i < maxObservedOutboundQueryCandidates; i++ {
+		s.k.SetObservedLink(s.ctx, tx.ID, GetRandomTxHash())
+	}
+	queryTxVoterResp, err = s.queryServer.TxVoters(s.ctx, &types.QueryTxVotersRequest{TxId: tx.ID.String()})
+	c.Assert(err, IsNil)
+	c.Assert(queryTxVoterResp.ObservedOutboundTxIds, HasLen, maxObservedOutboundQueryCandidates)
+	c.Check(queryTxVoterResp.ObservedOutboundTxIds[0], Equals, consensusHash.String())
+	c.Check(queryTxVoterResp.ObservedOutboundTxIds[1], Equals, strongHash.String())
+}
+
+// A treasury recovery swap's inbound has actions but no observations. The
+// signer's outbound guard needs those actions and the reported outbounds to
+// tell a paid split leg from an unpaid one.
+func (s *QuerierSuite) TestQueryTxVotersInternalInbound(c *C) {
+	inHash := GetRandomTxHash()
+	paid := TxOutItem{
+		Chain:     common.BTCChain,
+		InHash:    inHash,
+		ToAddress: GetRandomBTCAddress(),
+		Coin:      common.NewCoin(common.BTCAsset, cosmos.NewUint(common.One)),
+		Memo:      "OUT:" + inHash.String(),
+	}
+	unpaid := paid
+	unpaid.Coin.Amount = cosmos.NewUint(2 * common.One)
+	voter := NewObservedTxVoter(inHash, nil)
+	voter.Actions = []TxOutItem{paid, unpaid}
+	s.k.SetObservedTxInVoter(s.ctx, voter)
+	paidHash := GetRandomTxHash()
+	s.k.SetObservedLink(s.ctx, inHash, paidHash)
+
+	resp, err := s.queryServer.TxVoters(s.ctx, &types.QueryTxVotersRequest{TxId: inHash.String()})
+	c.Assert(err, IsNil)
+	c.Check(resp.Actions, HasLen, 2)
+	c.Check(resp.ObservedOutboundTxIds, DeepEquals, []string{paidHash.String()})
+}
+
+// The query reads a bounded number of linked voters, but always the outbounds
+// that reached observation consensus and those the inbound's voter recorded.
+func (s *QuerierSuite) TestQueryTxVotersBoundsLinkScan(c *C) {
+	tx := GetRandomTx()
+	voter := NewObservedTxVoter(tx.ID, []common.ObservedTx{NewObservedTx(tx, s.ctx.BlockHeight(), GetRandomPubKey(), s.ctx.BlockHeight())})
+	for i := 0; i < maxObservedOutboundQueryScan; i++ {
+		s.k.SetObservedLink(s.ctx, tx.ID, GetRandomTxHash())
+	}
+	// Past the scan bound: a well-supported report, and an outbound the
+	// inbound's voter recorded.
+	addOutVoter := func(signers []string) common.TxID {
+		outTx := tx
+		outTx.ID = GetRandomTxHash()
+		outTx.Memo = "OUT:" + tx.ID.String()
+		observed := NewObservedTx(outTx, s.ctx.BlockHeight(), GetRandomPubKey(), s.ctx.BlockHeight())
+		observed.Signers = signers
+		s.k.SetObservedTxOutVoter(s.ctx, NewObservedTxVoter(outTx.ID, []common.ObservedTx{observed}))
+		s.k.SetObservedLink(s.ctx, tx.ID, outTx.ID)
+		return outTx.ID
+	}
+	unscanned := addOutVoter([]string{"first", "second"})
+	recorded := addOutVoter([]string{"first"})
+	// A payment that reached consensus but matched no queued item, so it is
+	// not in OutTxs.
+	committed := addOutVoter([]string{"first"})
+	committedVoter, err := s.k.GetObservedTxOutVoter(s.ctx, committed)
+	c.Assert(err, IsNil)
+	committedVoter.Height = s.ctx.BlockHeight()
+	committedVoter.Tx = committedVoter.Txs[0]
+	s.k.SetObservedTxOutVoter(s.ctx, committedVoter)
+	s.k.SetObservedConsensusLink(s.ctx, tx.ID, committed)
+	recordedTx := tx
+	recordedTx.ID = recorded
+	voter.OutTxs = common.Txs{recordedTx}
+	s.k.SetObservedTxInVoter(s.ctx, voter)
+
+	resp, err := s.queryServer.TxVoters(s.ctx, &types.QueryTxVotersRequest{TxId: tx.ID.String()})
+	c.Assert(err, IsNil)
+	c.Assert(resp.ObservedOutboundTxIds, HasLen, maxObservedOutboundQueryCandidates)
+	c.Check(resp.ObservedOutboundTxIds[0], Equals, committed.String())
+	c.Check(resp.ObservedOutboundTxIds[1], Equals, recorded.String())
+	for _, id := range resp.ObservedOutboundTxIds {
+		c.Check(id == unscanned.String(), Equals, false)
+	}
 }
 
 func (s *QuerierSuite) TestQueryTxStages(c *C) {

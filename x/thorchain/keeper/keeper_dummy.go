@@ -458,6 +458,10 @@ func (k KVStoreDummy) SetObservedLink(ctx cosmos.Context, _, _ common.TxID) {}
 func (k KVStoreDummy) GetObservedLink(ctx cosmos.Context, inhash common.TxID) []common.TxID {
 	return nil
 }
+func (k KVStoreDummy) SetObservedConsensusLink(ctx cosmos.Context, _, _ common.TxID) {}
+func (k KVStoreDummy) GetObservedConsensusLink(ctx cosmos.Context, inhash common.TxID) []common.TxID {
+	return nil
+}
 func (k KVStoreDummy) SetRefundCleanup(_ cosmos.Context, _ string)          {}
 func (k KVStoreDummy) HasRefundCleanup(_ cosmos.Context, _ string) bool     { return false }
 func (k KVStoreDummy) PruneRefundCleanups(_ cosmos.Context)                 {}

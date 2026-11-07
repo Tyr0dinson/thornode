@@ -4136,6 +4136,12 @@ components:
           format: int64
           example: 1234
           description: the thorchain height for which the outbound was scheduled
+        observed_outbound_tx_ids:
+          type: array
+          description: up to 256 outbound transactions reported as paying this inbound, including reports that have not reached consensus; ordered by consensus and then distinct signer count; unverified
+          items:
+            type: string
+            example: "CF524818D42B63D25BBA0CCC4909F127CAA645C0F9CD07324F2824CC151A64C7"
 
     TxSignersResponse: *tx-details-response
 

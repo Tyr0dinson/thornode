@@ -34,6 +34,7 @@ const (
 	prefixObservedTxIn              types.DbPrefix = "observed_tx_in/"
 	prefixObservedTxOut             types.DbPrefix = "observed_tx_out/"
 	prefixObservedLink              types.DbPrefix = "ob_link/"
+	prefixObservedConsensusLink     types.DbPrefix = "ob_link_consensus/"
 	prefixRefundCleanup             types.DbPrefix = "refund_cleanup/"
 	prefixRefundCleanupExpiry       types.DbPrefix = "refund_cleanup_expiry/"
 	prefixPool                      types.DbPrefix = "pool/"

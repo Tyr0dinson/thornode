@@ -1761,3 +1761,10 @@ func vaultSignerCount(vault Vault, signers map[string]bool) int {
 	}
 	return count
 }
+
+func outboundConsensusHeight(voter ObservedTxVoter) int64 {
+	if voter.UnfinalizedHeight > 0 {
+		return voter.UnfinalizedHeight
+	}
+	return voter.Height
+}
