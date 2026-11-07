@@ -542,7 +542,10 @@ func (s *LuviInvariantSuite) TestBlockLevelObservationWithLPFlowNeedsPerBlockRea
 // validator attest an errata for it.
 func (e *luviEnv) errata(tx common.Tx) {
 	obs := common.ObservedTx{Tx: tx}
-	e.mgr.Keeper().SetObservedTxInVoter(e.ctx, ObservedTxVoter{TxID: tx.ID, Tx: obs, Txs: ObservedTxs{obs}, Height: 1})
+	// A real errata'd inbound was observed and credited its vault before the
+	// reversal; set UpdatedVault so errata-of-add debits the pool (the guard
+	// added with the pending-receipt errata rewrite skips uncredited no-ops).
+	e.mgr.Keeper().SetObservedTxInVoter(e.ctx, ObservedTxVoter{TxID: tx.ID, Tx: obs, Txs: ObservedTxs{obs}, Height: 1, UpdatedVault: true})
 	nas, err := e.mgr.Keeper().ListActiveValidators(e.ctx)
 	e.c.Assert(err, IsNil)
 	e.c.Assert(nas, HasLen, 1)

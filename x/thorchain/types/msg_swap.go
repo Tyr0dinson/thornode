@@ -206,3 +206,12 @@ func (m *MsgSwap) GetTotalAffiliateFee() cosmos.Uint {
 		m.Tx.Coins[0].Amount,
 	)
 }
+
+// GetIntermediateRuneOrZero returns the RUNE moved between pools by a double
+// swap's executed sub-swaps, or zero when unset.
+func (m *SwapState) GetIntermediateRuneOrZero() cosmos.Uint {
+	if m == nil || m.IntermediateRune.IsNil() {
+		return cosmos.ZeroUint()
+	}
+	return m.IntermediateRune
+}

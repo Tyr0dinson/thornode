@@ -1,0 +1,31 @@
+syntax = "proto3";
+package types;
+
+option go_package = "gitlab.com/thorchain/thornode/v3/x/thorchain/types";
+
+import "common/common.proto";
+import "gogoproto/gogo.proto";
+
+// Immutable pending evidence. A matching LP batch means this contribution has
+// not been completed or withdrawn. No list, committed units or batch root
+// record is needed; the batch label survives reversal of the deposit that named
+// it.
+message LiquidityPendingReceipt {
+  common.Asset asset = 1 [
+    (gogoproto.nullable) = false,
+    (gogoproto.customtype) = "gitlab.com/thorchain/thornode/v3/common.Asset"
+  ];
+  string address = 2 [ (gogoproto.casttype) =
+                           "gitlab.com/thorchain/thornode/v3/common.Address" ];
+  // External-chain errata only removes pending asset contributions.
+  reserved 3;
+  reserved "rune_amount";
+  string asset_amount = 4 [
+    (gogoproto.customtype) = "cosmossdk.io/math.Uint",
+    (gogoproto.nullable) = false
+  ];
+  string batch_id = 5 [
+    (gogoproto.casttype) = "gitlab.com/thorchain/thornode/v3/common.TxID",
+    (gogoproto.customname) = "BatchID"
+  ];
+}

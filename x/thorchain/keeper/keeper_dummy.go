@@ -1230,3 +1230,7 @@ func (iter *DummyIterator) Error() error {
 func (iter *DummyIterator) Domain() (start, end []byte) {
 	return nil, nil
 }
+
+func (k KVStoreDummy) GetAdvSwapQueueItemIndices(ctx cosmos.Context, txID common.TxID) ([]int, error) {
+	return nil, nil
+}

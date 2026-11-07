@@ -783,6 +783,7 @@ func (h AddLiquidityHandler) addLiquidity(ctx cosmos.Context,
 
 	// if we have a rune address and no rune asset, put the asset in pending
 	if stage && pendingRuneAmt.IsZero() {
+		recordPendingLiquidity(ctx, h.mgr, &su, requestTxHash, addAssetAmount)
 		pool.PendingInboundAsset = pool.PendingInboundAsset.Add(addAssetAmount)
 		su.PendingAsset = pendingAssetAmt
 		su.PendingTxID = requestTxHash
@@ -810,6 +811,9 @@ func (h AddLiquidityHandler) addLiquidity(ctx cosmos.Context,
 	su.PendingAsset = cosmos.ZeroUint()
 	su.PendingRune = cosmos.ZeroUint()
 	su.PendingTxID = ""
+	// Completion consumes every pending amount, including untracked old/native
+	// deposits. Old receipts stop matching without visiting their voters.
+	su.PendingBatch = ""
 
 	ctx.Logger().Info("pre add liquidity", "pool", pool.Asset, "rune", pool.BalanceRune, "asset", pool.BalanceAsset, "LP units", pool.LPUnits, "synth units", pool.SynthUnits)
 	ctx.Logger().Info("adding liquidity", "rune", addRuneAmount, "asset", addAssetAmount)

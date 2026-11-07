@@ -8,6 +8,7 @@ option (gogoproto.goproto_getters_all) = false;
 
 import "common/common.proto";
 import "types/type_tx_out.proto";
+import "types/type_liquidity_pending_receipt.proto";
 import "gogoproto/gogo.proto";
 
 message ObservedTxVoter {
@@ -32,6 +33,9 @@ message ObservedTxVoter {
   bool reverted = 9;
   int64 outbound_height = 10;
   int64 unfinalized_height = 11;
+  // Optional evidence for a direct external ADD's pending primary share.
+  // Excluded from observation voting; the inbound Reverted flag guards replay.
+  LiquidityPendingReceipt pending_receipt = 13;
   // Nodes spared LackOfObservationPenalty at non-final consensus, or refunded
   // it within its flex window, because they observed the tx in the final tier.
   // Cleared at final consensus.

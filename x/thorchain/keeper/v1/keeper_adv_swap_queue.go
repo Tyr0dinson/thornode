@@ -3,6 +3,7 @@ package keeperv1
 import (
 	"errors"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -428,4 +429,30 @@ func (k KVStore) AddToLimitSwapTTL(ctx cosmos.Context, blockHeight int64, txHash
 	// Add the new hash and save
 	existingHashes = append(existingHashes, txHash)
 	return k.SetLimitSwapTTL(ctx, blockHeight, existingHashes)
+}
+
+// GetAdvSwapQueueItemIndices lists the stored indices of every adv swap queue
+// item sharing txID, sorted ascending. Affiliate sub-swaps share the inbound
+// tx id at non-contiguous indices, so the full set must be enumerated.
+func (k KVStore) GetAdvSwapQueueItemIndices(ctx cosmos.Context, txID common.TxID) ([]int, error) {
+	prefix := k.GetKey(prefixAdvSwapQueueItem, txID.String()+"-")
+	store := k.kvStore(ctx)
+	iter := cosmos.KVStorePrefixIterator(store, []byte(prefix))
+	defer iter.Close()
+	var indices []int
+	for ; iter.Valid(); iter.Next() {
+		// An indexed tx id ("<hash>-<n>") shares this prefix with its base
+		// hash, so a suffix that is not a bare index belongs to another tx.
+		suffix := string(iter.Key()[len(prefix):])
+		if strings.Contains(suffix, "-") {
+			continue
+		}
+		index, err := strconv.Atoi(suffix)
+		if err != nil {
+			continue
+		}
+		indices = append(indices, index)
+	}
+	sort.Ints(indices)
+	return indices, nil
 }

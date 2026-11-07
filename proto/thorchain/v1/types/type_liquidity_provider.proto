@@ -43,4 +43,8 @@ message LiquidityProvider {
     (gogoproto.customtype) = "cosmossdk.io/math.Uint",
     (gogoproto.nullable) = false
   ];
+  // Label of the current pending lifecycle, not proof of ownership of its
+  // total. Empty on pre-upgrade positions; no migration is required.
+  string pending_batch = 12
+      [ (gogoproto.casttype) = "gitlab.com/thorchain/thornode/v3/common.TxID" ];
 }

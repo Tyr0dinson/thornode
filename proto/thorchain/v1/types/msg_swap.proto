@@ -40,6 +40,12 @@ message SwapState {
   ];
   repeated uint64 failed_swaps = 10;
   repeated string failed_swap_reasons = 11;
+  // RUNE moved from the source pool to the target pool by the executed
+  // sub-swaps of a double swap.
+  string intermediate_rune = 12 [
+    (gogoproto.customtype) = "cosmossdk.io/math.Uint",
+    (gogoproto.nullable) = false
+  ];
 }
 
 message MsgSwap {

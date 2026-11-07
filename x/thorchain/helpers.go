@@ -2460,3 +2460,25 @@ func applyMemolessOutboundLogic(version semver.Version, toi *TxOutItem, enableMe
 		toi.Memo = toi.OriginalMemo
 	}
 }
+
+func emitStreamingSwapEvent(ctx cosmos.Context, mgr Manager, msg MsgSwap) {
+	// Create a StreamingSwap struct from the MsgSwap state for the event
+	swp := StreamingSwap{
+		TxID:              msg.Tx.ID,
+		Interval:          msg.State.Interval,
+		Quantity:          msg.State.Quantity,
+		Count:             msg.State.Count,
+		LastHeight:        msg.State.LastHeight,
+		TradeTarget:       msg.TradeTarget,
+		Deposit:           msg.State.Deposit,
+		In:                msg.State.In,
+		Out:               msg.State.Out,
+		FailedSwaps:       msg.State.FailedSwaps,
+		FailedSwapReasons: msg.State.FailedSwapReasons,
+	}
+
+	evt := NewEventStreamingSwap(msg.Tx.Coins[0].Asset, msg.TargetAsset, swp)
+	if err := mgr.EventMgr().EmitEvent(ctx, evt); err != nil {
+		ctx.Logger().Error("fail to emit streaming swap event", "error", err)
+	}
+}
