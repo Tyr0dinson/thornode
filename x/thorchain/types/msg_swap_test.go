@@ -2,6 +2,7 @@ package types
 
 import (
 	"bytes"
+
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/v3/common"

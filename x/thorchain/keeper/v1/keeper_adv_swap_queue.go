@@ -437,7 +437,7 @@ func (k KVStore) AddToLimitSwapTTL(ctx cosmos.Context, blockHeight int64, txHash
 func (k KVStore) GetAdvSwapQueueItemIndices(ctx cosmos.Context, txID common.TxID) ([]int, error) {
 	prefix := k.GetKey(prefixAdvSwapQueueItem, txID.String()+"-")
 	store := k.kvStore(ctx)
-	iter := cosmos.KVStorePrefixIterator(store, []byte(prefix))
+	iter := cosmos.KVStorePrefixIterator(store, prefix)
 	defer iter.Close()
 	var indices []int
 	for ; iter.Valid(); iter.Next() {
