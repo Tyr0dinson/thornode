@@ -99,15 +99,24 @@ func (h RagnarokHandler) handle(ctx cosmos.Context, msg MsgRagnarok) (*cosmos.Re
 	// queued above the one it replaces, so when the computed height holds no copy
 	// of this outbound, scan up from the last copy to the next one. After a scan
 	// finds none, fall back to the computed heights alone.
+	//
+	// DiscoverOutbounds can split a payout across vaults into parts with the
+	// same chain, destination, asset and memo, so isRagnarokCopy cannot tell
+	// them apart, and each part is retried on its own. The copy at the computed
+	// height may then be another part's, with this part's next copy below it.
+	// Once a record shows more than one copy, visit every copy in height order.
 	ragnarokMemo := NewRagnarokMemo(msg.BlockHeight).String()
-	isCopy := func(txOut *TxOut) bool {
+	copies := func(txOut *TxOut) int {
+		n := 0
 		for _, tx := range txOut.TxArray {
 			if isRagnarokCopy(tx, msg.Tx.Tx, ragnarokMemo) {
-				return true
+				n++
 			}
 		}
-		return false
+		return n
 	}
+	isCopy := func(txOut *TxOut) bool { return copies(txOut) > 0 }
+	split := false
 	scan := true
 	decrementedPendingRagnarok := false
 	// a retry is searched once it is due, though it can be queued ahead of the
@@ -199,6 +208,7 @@ func (h RagnarokHandler) handle(ctx cosmos.Context, msg MsgRagnarok) (*cosmos.Re
 		if !shouldSlash {
 			break
 		}
+		split = split || copies(txOut) > 1
 
 		nextDue, retry := nextRetry(height)
 		searchable := nextDue <= ctx.BlockHeight()
@@ -221,7 +231,7 @@ func (h RagnarokHandler) handle(ctx cosmos.Context, msg MsgRagnarok) (*cosmos.Re
 				return nil, ErrInternal(getErr, "unable to get txOut record")
 			}
 			retryOut = out
-			if isCopy(retryOut) {
+			if !split && isCopy(retryOut) {
 				height, due, next = retry, nextDue, retryOut
 				continue
 			}
@@ -237,12 +247,12 @@ func (h RagnarokHandler) handle(ctx cosmos.Context, msg MsgRagnarok) (*cosmos.Re
 		var found *TxOut
 		foundAt := int64(0)
 		for hgt := height + 1; hgt <= limit; hgt++ {
-			if searchable && hgt == retry {
-				continue
-			}
-			candidate, err := h.mgr.Keeper().GetTxOut(ctx, hgt)
-			if err != nil {
-				return nil, ErrInternal(err, "unable to get txOut record")
+			candidate := retryOut
+			if !searchable || hgt != retry {
+				var err error
+				if candidate, err = h.mgr.Keeper().GetTxOut(ctx, hgt); err != nil {
+					return nil, ErrInternal(err, "unable to get txOut record")
+				}
 			}
 			if isCopy(candidate) {
 				found, foundAt = candidate, hgt

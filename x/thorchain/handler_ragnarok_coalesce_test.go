@@ -369,3 +369,109 @@ func (HandlerRagnarokSuite) TestRagnarokFindsSolCopyMovedOffSchedule(c *C) {
 		}
 	}
 }
+
+// DiscoverOutbounds splits a SOL ragnarok payout across vaults A and B, both
+// parts queued at 10000 with the same destination, asset and memo. Durable
+// nonce reissues move each part on its own: A to 10200, 10500 and lastly 10600,
+// where it is live, and B to 10100, 10400 and lastly 10700. The computed
+// retries from B's copies (10400, 10700) hold B again, so following them skips
+// A's live copy at 10600. The walk must reach each part's live copy, and still
+// slash a payment that matches neither.
+func (HandlerRagnarokSuite) TestRagnarokFindsSplitPayoutPartMovedIndependently(c *C) {
+	const scheduled, observed = int64(10000), int64(10701)
+	for _, tc := range []struct {
+		name     string
+		partB    bool  // the payment is part B's, not part A's
+		live     int64 // the paid part's live copy
+		stranger bool  // paid to another destination
+	}{
+		{name: "part A, below part B's copies", live: 10600},
+		{name: "part B, on the computed heights", partB: true, live: 10700},
+		{name: "payment to another destination", live: 10600, stranger: true},
+	} {
+		comment := Commentf(tc.name)
+		ctx, k := setupKeeperForTest(c)
+		mgr := NewDummyMgrWithKeeper(k)
+		recorder := &xmrMemoCompatibilitySlasher{DummySlasher: NewDummySlasher()}
+		mgr.slasher = recorder
+		ctx = ctx.WithBlockHeight(observed)
+		k.SetMimir(ctx, constants.RescheduleCoalesceBlocks.String(), 10)
+
+		vaultA, vaultB := GetRandomVault(), GetRandomVault()
+		to, err := GetRandomEd25519PubKey().GetAddress(common.SOLChain)
+		c.Assert(err, IsNil)
+		part := func(v Vault, amount uint64) TxOutItem {
+			return TxOutItem{
+				Chain:            common.SOLChain,
+				InHash:           common.BlankTxID,
+				ToAddress:        to,
+				VaultPubKey:      v.PubKey,
+				VaultPubKeyEddsa: v.PubKeyEddsa,
+				Coin:             common.NewCoin(common.SOLAsset, cosmos.NewUint(amount)),
+				MaxGas:           common.Gas{common.NewCoin(common.SOLAsset, cosmos.NewUint(5_000))},
+				Memo:             NewRagnarokMemo(scheduled).String(),
+			}
+		}
+		// each reissue marks the copy it replaces done
+		replaced := func(item TxOutItem) TxOutItem {
+			item.OutHash = common.BlankTxID
+			return item
+		}
+		queue := func(height int64, items ...TxOutItem) {
+			out := NewTxOut(height)
+			out.TxArray = items
+			c.Assert(k.SetTxOut(ctx, out), IsNil)
+		}
+		partA, partB := part(vaultA, common.One), part(vaultB, 2*common.One)
+		queue(scheduled, replaced(partA), replaced(partB))
+		queue(10100, replaced(partB))
+		queue(10200, replaced(partA))
+		queue(10400, replaced(partB))
+		queue(10500, replaced(partA))
+		queue(10600, partA)
+		queue(10700, partB)
+		k.SetRagnarokPending(ctx, 2)
+
+		paid, vault := partA, vaultA
+		if tc.partB {
+			paid, vault = partB, vaultB
+		}
+		from, err := vault.PubKeyEddsa.GetAddress(common.SOLChain)
+		c.Assert(err, IsNil)
+		payTo := to
+		if tc.stranger {
+			payTo, err = GetRandomEd25519PubKey().GetAddress(common.SOLChain)
+			c.Assert(err, IsNil)
+		}
+		tx := NewObservedTx(
+			common.NewTx(GetRandomTxHash(), from, payTo, common.NewCoins(paid.Coin), paid.MaxGas, paid.Memo),
+			observed, vault.PubKeyEddsa, observed,
+		)
+		_, err = NewRagnarokHandler(mgr).handle(ctx, *NewMsgRagnarok(tx, scheduled, GetRandomBech32Addr()))
+		c.Assert(err, IsNil, comment)
+
+		got, err := k.GetTxOut(ctx, tc.live)
+		c.Assert(err, IsNil)
+		c.Assert(got.TxArray, HasLen, 1, comment)
+		pending, err := k.GetRagnarokPending(ctx)
+		c.Assert(err, IsNil)
+		if tc.stranger {
+			c.Check(got.TxArray[0].OutHash.IsEmpty(), Equals, true, comment)
+			c.Check(recorder.calls, Equals, 1, comment)
+			c.Check(pending, Equals, int64(2), comment)
+			continue
+		}
+		c.Check(got.TxArray[0].OutHash.Equals(tx.Tx.ID), Equals, true, comment)
+		c.Check(recorder.calls, Equals, 0, comment)
+		c.Check(pending, Equals, int64(1), comment)
+		// the other part's live copy is left for its own payment
+		other := int64(10700)
+		if tc.partB {
+			other = 10600
+		}
+		left, err := k.GetTxOut(ctx, other)
+		c.Assert(err, IsNil)
+		c.Assert(left.TxArray, HasLen, 1, comment)
+		c.Check(left.TxArray[0].OutHash.IsEmpty(), Equals, true, comment)
+	}
+}
