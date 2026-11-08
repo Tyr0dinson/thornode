@@ -9,14 +9,16 @@ This refund-only check does not make the unfixed scanners safe.
 
 ## Coverage and rollout
 
-The protected sources are ETH, AVAX, BSC, BASE, POL, BTC, BCH, LTC, DOGE and ZEC.
+The protected sources are BTC, BCH, LTC, DOGE and ZEC. EVM sources (ETH, AVAX,
+BSC, BASE, POL) land in a follow-up that depends on the EVM observation rework;
+until then EVM-funded refunds keep their current, unguarded behaviour.
 The source chain comes from the inbound voter, not from the refund's payout asset.
 TRON is outside this patch. Unprotected vulnerable chains must remain halted
 until their own protection is deployed. Ordinary swap OUT, migration, Ragnarok
 and consolidation transactions are outside this guard.
 
-The ETH, shared EVM and UTXO clients have compile-time checks for the funding
-validator interface. A declared protected source with no loaded client/checker,
+The UTXO clients have compile-time checks for the funding validator interface
+(the EVM clients gain theirs in the follow-up). A declared protected source with no loaded client/checker,
 unavailable data or failed proof holds the refund. It never falls back to allow.
 Deploy a consistent reviewed build and verify source RPC readiness before enabling
 signing. Nodes with missing/pruned or different source data may hold refunds other
