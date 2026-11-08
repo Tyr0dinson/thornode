@@ -471,11 +471,7 @@ func (s *SOLScanner) scanVault(
 		if err != nil {
 			s.logger.Error().Err(err).Msgf("failed to get signatures for address %s", vaultAddr)
 			if pinned {
-				if failures := s.notePinFailure(vaultAddr); queryLastSig == "" && failures%solPinRetries == 0 {
-					// a catch-up listing is not moved (see below): say which endpoint holds it back
-					s.logger.Warn().Str("vault", vaultAddr).Str("endpoint", pinName).Int("failures", failures).
-						Msg("vault catch-up listing keeps failing on its endpoint; it is not moved to another endpoint, which may hold less history: fix or remove this endpoint")
-				}
+				s.notePinnedListingFailure(vaultAddr, pinName, queryLastSig == "")
 			}
 			setUnhealthy()
 			return
@@ -516,10 +512,14 @@ func (s *SOLScanner) scanVault(
 		var eg errgroup.Group
 		// limit the number of concurrent tx queries to the RPC node
 		eg.SetLimit(maxConcurrentTxQueries)
+		// a pinned listing's transactions are read from the endpoint that listed them:
+		// another one may not have finalized their slots yet and answer null
+		var txReadFailed atomic.Bool
 		for _, sig := range res {
 			eg.Go(func() error {
-				tx, err := s.solRpc.GetTransaction(sig.Signature)
+				tx, err := listing.GetTransaction(sig.Signature)
 				if err != nil {
+					txReadFailed.Store(true)
 					setUnhealthy()
 					return fmt.Errorf("failed to get transaction %s: %w", sig.Signature, err)
 				}
@@ -528,6 +528,7 @@ func (s *SOLScanner) scanVault(
 					// so the answering node has not finalized that slot yet (a lagging
 					// endpoint after a failover). Fail the scan and keep the cursor,
 					// otherwise the transaction is skipped for good.
+					txReadFailed.Store(true)
 					setUnhealthy()
 					return fmt.Errorf("transaction %s is not available on this node yet", sig.Signature)
 				}
@@ -549,6 +550,10 @@ func (s *SOLScanner) scanVault(
 		if err := eg.Wait(); err != nil {
 			setUnhealthy()
 			s.logger.Error().Err(err).Msgf("failed to process transactions")
+			if pinned && txReadFailed.Load() {
+				// the pinned endpoint could not serve its own listing's transactions
+				s.notePinnedListingFailure(vaultAddr, pinName, queryLastSig == "")
+			}
 			return
 		}
 
@@ -571,6 +576,17 @@ func (s *SOLScanner) pinFailureCount(vaultAddr string) int {
 	s.pinFailuresMu.Lock()
 	defer s.pinFailuresMu.Unlock()
 	return s.pinFailures[vaultAddr]
+}
+
+// notePinnedListingFailure counts a failed pinned listing of the vault (a page, or
+// one of its transactions, the pinned endpoint could not serve). A catch-up listing
+// is never moved to another endpoint, so every solPinRetries failures a warning names
+// the endpoint holding it back.
+func (s *SOLScanner) notePinnedListingFailure(vaultAddr, pinName string, catchUp bool) {
+	if failures := s.notePinFailure(vaultAddr); catchUp && failures%solPinRetries == 0 {
+		s.logger.Warn().Str("vault", vaultAddr).Str("endpoint", pinName).Int("failures", failures).
+			Msg("vault catch-up listing keeps failing on its endpoint; it is not moved to another endpoint, which may hold less history: fix or remove this endpoint")
+	}
 }
 
 // notePinFailure counts one more failed pinned listing of the vault and returns the

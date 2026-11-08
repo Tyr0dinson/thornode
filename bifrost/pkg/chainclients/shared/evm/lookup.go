@@ -167,6 +167,46 @@ func WitnessStillHolds(ctx context.Context, mgr *endpoints.Manager, client *ethc
 	return nil
 }
 
+// FailedReceiptOnScannedFork checks that a failed receipt the witness reported for a
+// stored transaction is from a block on the scanned fork before it becomes an
+// errata: at the scanned height (always, for a transaction the scanned block lists)
+// it must be the scanned block, one below it the scanned block's parent, and at any
+// other height the witness's own block there (one pinned header read: the witness
+// holds the scanned block, so its blocks below are the scanned block's ancestors and
+// those above extend it; WitnessStillHolds re-checks it still holds it). A receipt
+// naming another block is from another fork as far as the plan can tell, and the
+// step is retried. "" (a single endpoint) is not checked, as in ReorgWitness.
+func FailedReceiptOnScannedFork(ctx context.Context, mgr *endpoints.Manager, client *ethclient.Client, witness string, scanned *etypes.Header, listed bool, receipt ReceiptBlock) error {
+	if witness == "" {
+		return nil
+	}
+	height, at := scanned.Number.Int64(), int64(-1)
+	if receipt.Number != nil {
+		at = receipt.Number.Int64()
+	}
+	switch {
+	case listed || at == height:
+		if at != height || receipt.Hash != scanned.Hash() {
+			return fmt.Errorf("endpoint %s: the failed receipt is in block %d %s, not the scanned block %d %s", witness, at, receipt.Hash.Hex(), height, scanned.Hash().Hex())
+		}
+	case at == height-1:
+		if receipt.Hash != scanned.ParentHash {
+			return fmt.Errorf("endpoint %s: the failed receipt is in block %d %s, not the scanned block's parent %s", witness, at, receipt.Hash.Hex(), scanned.ParentHash.Hex())
+		}
+	case at >= 0:
+		h, err := witnessHeader(ctx, mgr, client, witness, at)
+		if err != nil {
+			return err
+		}
+		if h.Hash() != receipt.Hash {
+			return fmt.Errorf("endpoint %s: the failed receipt is in block %d %s, not the witness's block at that height %s", witness, at, receipt.Hash.Hex(), h.Hash().Hex())
+		}
+	case at < 0:
+		return fmt.Errorf("endpoint %s: the failed receipt names no block", witness)
+	}
+	return nil
+}
+
 // witnessHeader reads the witness's header at height, pinned to it. An error other
 // than "not found" sidelines it (Manager.Sideline): it cannot serve the witness's reads.
 func witnessHeader(ctx context.Context, mgr *endpoints.Manager, client *ethclient.Client, name string, height int64) (*etypes.Header, error) {

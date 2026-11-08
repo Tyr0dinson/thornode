@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/rs/zerolog"
 	. "gopkg.in/check.v1"
 
 	btypes "gitlab.com/thorchain/thornode/v3/bifrost/blockscanner/types"
@@ -474,6 +475,71 @@ func (s *BlockScannerExtraSuite) TestSolvencyHookOrderedAfterHealthRecovery(c *C
 			// The final cursor store follows the hook; no further block can be fetched.
 			c.Check(fetcher.wrongState, Equals, false)
 			c.Check(fetcher.reported, DeepEquals, []int64{101, 102, 103, 104}, Commentf("prefetch=%d", prefetch))
+		}()
+	}
+}
+
+// syncLog is a log sink safe for the scan loop's goroutines.
+type syncLog struct {
+	mu  sync.Mutex
+	buf strings.Builder
+}
+
+func (l *syncLog) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.buf.Write(p)
+}
+
+func (l *syncLog) String() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.buf.String()
+}
+
+// A height that keeps failing because the reorg it revealed cannot be resolved is
+// skipped once stalled, as any other failure, but the skip is logged (this node then
+// sends no errata for that reorg) and counted. An ordinary failure's skip is not.
+func (s *BlockScannerExtraSuite) TestSkipPastAnUnresolvedReorgIsLogged(c *C) {
+	for _, tc := range []struct {
+		err    error
+		logged bool
+	}{
+		{fmt.Errorf("fail to process re-org: %w: the primary is out of rotation", btypes.ErrReorgUnresolved), true},
+		{errors.New("rpc down"), false},
+	} {
+		func() {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch {
+				case strings.HasPrefix(r.RequestURI, thorclient.MimirEndpoint):
+					_, _ = w.Write([]byte(`-1`))
+				case strings.HasPrefix(r.RequestURI, "/status"):
+					_, _ = w.Write([]byte(`{"result":{"sync_info":{"catching_up":false}}}`))
+				case strings.HasPrefix(r.RequestURI, "/thorchain/lastblock/ETH"):
+					_, _ = w.Write([]byte(`[{"chain":"ETH","last_observed_in":160000,"last_signed_out":0,"thorchain":100}]`))
+				default:
+					_, _ = w.Write([]byte(`[{"chain":"","last_observed_in":0,"last_signed_out":0,"thorchain":100}]`))
+				}
+			}))
+			defer server.Close()
+			storage := NewMockScannerStorage()
+			c.Assert(storage.SetScanPos(2800), IsNil)
+			scanner, err := NewBlockScanner(config.BifrostBlockScannerConfiguration{
+				StartBlockHeight: 1, ChainID: common.ETHChain, MaxResumeBlockLag: time.Hour, BlockHeightDiscoverBackoff: time.Millisecond,
+			}, storage, m, s.makeBridge(c, server), &configFetcher{fetchErr: tc.err, chainHeight: 160000})
+			c.Assert(err, IsNil)
+			logs := &syncLog{}
+			scanner.logger = zerolog.New(logs)
+			atomic.StoreInt64(&scanner.previousBlock, 2800)
+			done := RunStalledScannerForTest(scanner)
+			deadline := time.Now().Add(5 * time.Second)
+			for scanner.PreviousHeight() < 159700 && time.Now().Before(deadline) {
+				time.Sleep(time.Millisecond)
+			}
+			close(scanner.stopChan)
+			<-done
+			c.Assert(scanner.PreviousHeight(), Equals, int64(159700), Commentf("%v", tc.err))
+			c.Assert(strings.Contains(logs.String(), "skipped past a reorg that could not be resolved"), Equals, tc.logged, Commentf("%v", tc.err))
 		}()
 	}
 }

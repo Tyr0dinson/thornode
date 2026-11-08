@@ -660,6 +660,12 @@ func (b *BlockScanner) scanBlocks() {
 					// exact height while they keep per-height state, and their
 					// terminal cases already use ScannerRecoveryRequiredError.
 					if b.skipAheadIfStalled(currentBlock) {
+						if errors.Is(err, btypes.ErrReorgUnresolved) {
+							// the reorg this height revealed is left behind: no errata from this node
+							b.logger.Error().Err(err).Int64("height", currentBlock).
+								Msg("skipped past a reorg that could not be resolved: this node sends no errata for it")
+							b.recordError("unresolved_reorg_skipped")
+						}
 						clearPrefetch()
 						continue
 					}

@@ -1971,6 +1971,36 @@ func (s *RPCSuite) TestDisabledPrimaryRejectsPrimaryOnlyOperations(c *C) {
 	c.Assert(err, ErrorMatches, ".*disabled.*")
 }
 
+// A primary whose network is not verified yet (its identity probe failed at
+// bootstrap, with identity required) must not get primary-only operations either: an
+// endpoint that reports no identity is never used, so no broadcast, wallet call or
+// verification read reaches it until its probe verifies it.
+func (s *RPCSuite) TestUnverifiedPrimaryRejectsPrimaryOnlyOperations(c *C) {
+	primary := newMockRPCServer(func(method string, _ []interface{}) (interface{}, *btcjson.RPCError) {
+		return "txid", nil
+	})
+	defer primary.Close()
+	cfgEps := []config.ChainEndpointConfig{{Name: "primary", RPCHost: primary.URL, Priority: 1}, {Name: "fb", RPCHost: "http://fb", Priority: 2}}
+	m, err := endpoints.NewManager(common.BTCChain, cfgEps, config.ChainFailoverConfig{
+		ErrorThreshold: 5, ErrorWindow: time.Minute, MinRecoveryChecks: 1, RateLimitBackoff: time.Minute,
+	}, zerolog.Nop())
+	c.Assert(err, IsNil)
+	m.Entry("fb").SetIdentity("genesis") // only the fallback is verified
+	cl, err := NewClientWithFallbacks(primary.URL, "u", "p", "", 0, time.Second, common.BTCChain, zerolog.Nop(), []UTXOReader{&mockUTXOReader{}}, 0)
+	c.Assert(err, IsNil)
+	cl.WithEndpointManager(m, cfgEps)
+	_, err = cl.SendRawTransaction(&mockTx{data: []byte{1}}, nil)
+	c.Assert(err, ErrorMatches, ".*primary BTC endpoint primary is not usable: its network is not verified.*")
+	c.Assert(cl.ImportAddress("addr"), ErrorMatches, ".*not verified.*")
+	_, err = cl.GetRawTransactionVerbosePrimary("abc")
+	c.Assert(err, ErrorMatches, ".*not verified.*")
+
+	// once its probe verifies it, it serves them
+	m.Entry("primary").SetIdentity("genesis")
+	_, err = cl.SendRawTransaction(&mockTx{data: []byte{1}}, nil)
+	c.Assert(err, IsNil)
+}
+
 func (s *RPCSuite) TestBatchElementErrorsAreClassified(c *C) {
 	// HTTP 200 with a per-element rate limit: the aggregate error is nil, so this
 	// used to look like a served batch

@@ -143,9 +143,8 @@ func (s *ProbeSuite) TestSolanaProbeHasNoHash(c *C) {
 func (s *ProbeSuite) TestXRPProbe(c *C) {
 	var seen []string
 	srv := jsonrpcServer(c, map[string]string{
-		"ledger_current": `{"ledger_current_index":99}`,
-		"server_info":    `{"info":{"network_id":0}}`,
-		"ledger":         `{"ledger":{"ledger_hash":"ABC"}}`,
+		"server_info": `{"info":{"network_id":0}}`,
+		"ledger":      `{"ledger_index":99,"ledger":{"ledger_hash":"ABC"}}`,
 	}, &seen)
 	defer srv.Close()
 	p := endpoints.NewXRPProbe(config.ChainEndpointConfig{Name: "a", RPCHost: srv.URL}, time.Second)
@@ -160,7 +159,24 @@ func (s *ProbeSuite) TestXRPProbe(c *C) {
 	c.Assert(hash, Equals, "ABC")
 	// rippled and clio answer HTTP 200 to an empty params array (checked against
 	// public mainnet servers); only a non-empty array that is not one object is refused
-	c.Assert(seen, DeepEquals, []string{`ledger_current [] auth=`, `server_info [] auth=`, `ledger [{"ledger_index":98}] auth=`})
+	c.Assert(seen, DeepEquals, []string{`ledger [{"ledger_index":"validated"}] auth=`, `server_info [] auth=`, `ledger [{"ledger_index":98}] auth=`})
+}
+
+// The XRP probe reports the validated ledger, the height the scanner reads: a Clio
+// endpoint forwards ledger_current to its rippled, so the open ledger keeps advancing
+// while the validated data Clio serves itself has stalled.
+func (s *ProbeSuite) TestXRPProbeReportsTheValidatedLedger(c *C) {
+	var seen []string
+	srv := jsonrpcServer(c, map[string]string{
+		"ledger_current": `{"ledger_current_index":200}`,
+		"ledger":         `{"ledger_index":100,"validated":true,"ledger":{"ledger_hash":"ABC"}}`,
+	}, &seen)
+	defer srv.Close()
+	p := endpoints.NewXRPProbe(config.ChainEndpointConfig{Name: "a", RPCHost: srv.URL}, time.Second)
+	h, err := p.Height(ctxBg())
+	c.Assert(err, IsNil)
+	c.Assert(h, Equals, int64(100))
+	c.Assert(seen, DeepEquals, []string{`ledger [{"ledger_index":"validated"}] auth=`})
 }
 
 func (s *ProbeSuite) TestCompoundProbeFailsWhenExtraFails(c *C) {

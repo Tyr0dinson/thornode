@@ -3,6 +3,7 @@ package evm
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
 	"math/big"
 	"net/http"
@@ -12,10 +13,12 @@ import (
 	"time"
 
 	ecommon "github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	etypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	. "gopkg.in/check.v1"
 
+	btypes "gitlab.com/thorchain/thornode/v3/bifrost/blockscanner/types"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/endpoints"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/evm/types"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pubkeymanager"
@@ -376,19 +379,26 @@ func (s *UnstuckTestSuite) TestReorgRescanReadsReceiptsFromTheWitnessOnly(c *C) 
 	c.Assert(meta.BlockHash, Equals, "0x00000000000000000000000000000000000000000000000000000000000000dd")
 }
 
-// failedReceiptWitness is a witness at the reorg tip that knows tx as mined in block
-// 100 with a failed receipt, and forwards everything else to target.
+// failedReceiptWitness is a witness at the reorg tip that knows tx as mined in the
+// scanned block 100 with a failed receipt, and forwards everything else to target.
 func failedReceiptWitness(c *C, target string, tx *etypes.Transaction, from ecommon.Address) *httptest.Server {
+	_, tip := reorgTipFor(reorgBlockJSON)
+	return failedReceiptWitnessAt(c, target, tx, from, 100, tip.Hash())
+}
+
+// failedReceiptWitnessAt is failedReceiptWitness with the failed receipt in block
+// (number, hash).
+func failedReceiptWitnessAt(c *C, target string, tx *etypes.Transaction, from ecommon.Address, number int64, hash ecommon.Hash) *httptest.Server {
 	raw, err := tx.MarshalJSON()
 	c.Assert(err, IsNil)
 	var fields map[string]any
 	c.Assert(json.Unmarshal(raw, &fields), IsNil)
-	fields["blockNumber"], fields["blockHash"], fields["transactionIndex"], fields["from"] = "0x64", ecommon.Hash{0x64}.Hex(), "0x0", from.Hex()
+	fields["blockNumber"], fields["blockHash"], fields["transactionIndex"], fields["from"] = hexutil.EncodeBig(big.NewInt(number)), hash.Hex(), "0x0", from.Hex()
 	txJSON, err := json.Marshal(fields)
 	c.Assert(err, IsNil)
 	receiptJSON, err := json.Marshal(&etypes.Receipt{
 		Status: etypes.ReceiptStatusFailed, CumulativeGasUsed: 21000, Logs: []*etypes.Log{}, TxHash: tx.Hash(),
-		GasUsed: 21000, EffectiveGasPrice: big.NewInt(1), BlockHash: ecommon.Hash{0x64}, BlockNumber: big.NewInt(100),
+		GasUsed: 21000, EffectiveGasPrice: big.NewInt(1), BlockHash: hash, BlockNumber: big.NewInt(number),
 	})
 	c.Assert(err, IsNil)
 	tipJSON, _ := reorgTipFor(reorgBlockJSON)
@@ -659,6 +669,7 @@ func (s *UnstuckTestSuite) TestReorgWitnessMustStillHoldTheScannedBlockAfterItsA
 	movedScanner := scanner(moved)
 	_, err = movedScanner.planReorg(block100)
 	c.Assert(err, ErrorMatches, ".*moved off the scanned block 100.*")
+	c.Assert(errors.Is(err, btypes.ErrReorgUnresolved), Equals, true)   // a detected reorg left undecided
 	c.Assert(movedScanner.endpointMgr.Active().Name, Equals, "primary") // undecided is not a failure
 
 	plan, err := scanner(failed).planReorg(block100)
@@ -666,4 +677,77 @@ func (s *UnstuckTestSuite) TestReorgWitnessMustStillHoldTheScannedBlockAfterItsA
 	c.Assert(plan.errata, HasLen, 1)
 	c.Assert(plan.errata[0].Txs, HasLen, 1)
 	c.Assert(string(plan.errata[0].Txs[0].TxID), Equals, stored)
+}
+
+// A failed receipt is an errata only when its block is on the scanned fork: the
+// scanned block itself (always, for a transaction the scanned block lists), the
+// scanned block's parent, or, at any other height, the witness's own block there. One
+// that names another block is from another fork as far as the plan can tell, so the
+// step is retried instead of sending an errata.
+func (s *UnstuckTestSuite) TestFailedReceiptMustBeOnTheScannedFork(c *C) {
+	config.Init()
+	key, err := crypto.GenerateKey()
+	c.Assert(err, IsNil)
+	tx, err := etypes.SignTx(etypes.NewTx(&etypes.LegacyTx{Nonce: 7, Gas: 21000, GasPrice: big.NewInt(1)}), etypes.HomesteadSigner{}, key)
+	c.Assert(err, IsNil)
+	from := crypto.PubkeyToAddress(key.PublicKey)
+	stored := tx.Hash().Hex()[2:]
+	scanner := func(primary *httptest.Server) *EVMScanner {
+		pubkeyMgr, perr := pubkeymanager.NewPubKeyManager(s.bridge, s.m)
+		c.Assert(perr, IsNil)
+		e, nerr := NewEVMClient(s.thorKeys, config.BifrostChainConfiguration{
+			ChainID:        common.AVAXChain,
+			RPCHost:        primary.URL,
+			SolvencyBlocks: 10,
+			Endpoints: []config.ChainEndpointConfig{
+				{Name: "primary", RPCHost: primary.URL, Priority: 1},
+				{Name: "other", RPCHost: s.server.URL, Priority: 2},
+			},
+			BlockScanner: config.BifrostBlockScannerConfiguration{
+				ChainID:            common.AVAXChain,
+				StartBlockHeight:   1,
+				HTTPRequestTimeout: time.Second * 10,
+				GasCacheBlocks:     40,
+				Concurrency:        1,
+			},
+		}, nil, s.bridge, s.m, pubkeyMgr, thorclient.NewPoolMgr(s.bridge))
+		c.Assert(nerr, IsNil)
+		c.Assert(e.evmScanner.blockMetaAccessor.SaveBlockMeta(99, &types.BlockMeta{
+			Height:       99,
+			BlockHash:    "0x00000000000000000000000000000000000000000000000000000000000000dd",
+			Transactions: []types.TransactionMeta{{Hash: stored, BlockHeight: 99}},
+		}), IsNil)
+		return e.evmScanner
+	}
+	var parentHeader etypes.Header
+	c.Assert(json.Unmarshal([]byte(reorgBlockJSON), &parentHeader), IsNil)
+	_, block100 := reorgTipFor(reorgBlockJSON)
+	plan := func(w *httptest.Server, list etypes.Transactions) error {
+		defer w.Close()
+		p, perr := scanner(w).planReorgWith(block100, list, 0)
+		if perr == nil {
+			c.Assert(p.errata, HasLen, 1)
+		}
+		return perr
+	}
+
+	// in a block other than the scanned one at the scanned height: retried
+	err = plan(failedReceiptWitnessAt(c, s.server.URL, tx, from, 100, ecommon.Hash{0x64}), nil)
+	c.Assert(err, ErrorMatches, ".*failed receipt is in block 100 .*, not the scanned block.*")
+	// a transaction the scanned block lists, with a failed receipt in another block: retried
+	err = plan(failedReceiptWitnessAt(c, s.server.URL, tx, from, 101, ecommon.Hash{0x65}), etypes.Transactions{tx})
+	c.Assert(err, ErrorMatches, ".*failed receipt is in block 101 .*, not the scanned block.*")
+	// in the scanned block's parent, by its hash: an errata; by another hash: retried
+	c.Assert(plan(failedReceiptWitnessAt(c, s.server.URL, tx, from, 99, parentHeader.Hash()), nil), IsNil)
+	err = plan(failedReceiptWitnessAt(c, s.server.URL, tx, from, 99, ecommon.Hash{0x63}), nil)
+	c.Assert(err, ErrorMatches, ".*failed receipt is in block 99 .*, not the scanned block's parent.*")
+	// lower: it must be the witness's own block at that height (the fixture serves the
+	// same block at every lower height)
+	c.Assert(plan(failedReceiptWitnessAt(c, s.server.URL, tx, from, 50, parentHeader.Hash()), nil), IsNil)
+	err = plan(failedReceiptWitnessAt(c, s.server.URL, tx, from, 50, ecommon.Hash{0x32}), nil)
+	c.Assert(err, ErrorMatches, ".*failed receipt is in block 50 .*, not the witness's block at that height.*")
+	// higher (mined again above the scanned block): the witness's own block there too
+	c.Assert(plan(failedReceiptWitnessAt(c, s.server.URL, tx, from, 150, parentHeader.Hash()), nil), IsNil)
+	err = plan(failedReceiptWitnessAt(c, s.server.URL, tx, from, 150, ecommon.Hash{0x96}), nil)
+	c.Assert(err, ErrorMatches, ".*failed receipt is in block 150 .*, not the witness's block at that height.*")
 }

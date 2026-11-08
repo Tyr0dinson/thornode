@@ -7,6 +7,12 @@ var (
 	ErrFailOutputMatchCriteria = fmt.Errorf("fail to get output matching criteria")
 )
 
+// ErrReorgUnresolved marks a scan step that failed because the reorg it revealed
+// could not be resolved yet (its witness could not answer). It is retried like any
+// other failure; when the stall skip-ahead moves past it, this node sends no errata
+// for that reorg, so the block scanner logs and counts the skip.
+var ErrReorgUnresolved = fmt.Errorf("reorg cannot be resolved yet")
+
 // ErrRollbackValidationUnavailable keeps a rollback pending when a temporary
 // failure prevents the chain client from validating it. It does not authorize
 // a cursor change or reject the requested replay.

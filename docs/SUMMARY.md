@@ -40,6 +40,7 @@
   - [TRON Solvency Admission](bifrost/tron-solvency-admission.md)
   - [Oracles](bifrost/oracle.md)
   - [TSS](bifrost/tss.md)
+  - [Chain Endpoint Failover](chain-endpoint-failover.md)
 
 - [Chain Clients](chain-clients/README.md)
 

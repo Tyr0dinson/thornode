@@ -101,7 +101,15 @@ func (c *Client) planReorg(block *btcjson.GetBlockVerboseTxResult) (*utxoReorgPl
 // planReorgWith is planReorg for a scan step driven by chainHeight (0 when there is no
 // scan step, as in tests): the primary must then also hold the scanned block and have
 // reached chainHeight before its "not found" is proof (requirePrimaryOnChainAt).
-func (c *Client) planReorgWith(block *btcjson.GetBlockVerboseTxResult, chainHeight int64) (*utxoReorgPlan, error) {
+func (c *Client) planReorgWith(block *btcjson.GetBlockVerboseTxResult, chainHeight int64) (_ *utxoReorgPlan, err error) {
+	// a failure once a reorg was detected leaves it unresolved (the block scanner
+	// logs a stall skip-ahead past it); one before that is an ordinary failure
+	detected := false
+	defer func() {
+		if err != nil && detected {
+			err = fmt.Errorf("%w: %w", btypes.ErrReorgUnresolved, err)
+		}
+	}()
 	previousHeight := block.Height - 1
 	prevBlockMeta, err := c.temporalStorage.GetBlockMeta(previousHeight)
 	if err != nil {
@@ -122,6 +130,7 @@ func (c *Client) planReorgWith(block *btcjson.GetBlockVerboseTxResult, chainHeig
 		Int64("blockMetaHeight", prevBlockMeta.Height).
 		Str("blockMetaHash", prevBlockMeta.BlockHash).
 		Msg("re-org detected")
+	detected = true
 
 	fixes, err := c.planReConfirmWith(block, chainHeight)
 	if err != nil {

@@ -475,10 +475,11 @@ func (m *Manager) Cycle(ctx context.Context) {
 	// once two or more healthy endpoints have voted, an endpoint may set the lag tip
 	// only if it showed the majority hash: one with a minority hash is on another
 	// fork, and one whose hash could not be read, or that was not compared, has not
-	// shown it is not. A vote with no majority shows no fork agreement at all, so the
-	// tip strikes no healthy endpoint this cycle (THORChain's height still does); it
-	// still holds back the recovery of an endpoint behind it.
-	split := vote == voteSplit
+	// shown it is not. A vote with no majority (a split, or too few answers) shows no
+	// fork agreement at all, so the tip strikes no healthy endpoint this cycle
+	// (THORChain's height still does); it still holds back the recovery of an endpoint
+	// behind it.
+	split := vote == voteInconclusive
 	if vote == voteMajority {
 		for name := range tipHeights {
 			if !matchedHash[name] {
@@ -617,13 +618,14 @@ func consensusTip(heights map[string]int64, lag int64) (tip int64, quorum bool) 
 type hashVote int
 
 const (
-	// voteNone: fewer than two healthy endpoints answered, so nothing was voted on
+	// voteNone: fewer than two healthy endpoints were asked, so nothing was voted on
 	voteNone hashVote = iota
 	// voteMajority: one hash holds a strict majority of two or more healthy answers
 	voteMajority
-	// voteSplit: two or more healthy endpoints answered and no hash holds a strict
-	// majority (a tie, or a plurality)
-	voteSplit
+	// voteInconclusive: two or more healthy endpoints were asked and no hash holds a
+	// strict majority of two or more answers (a tie, a plurality, or fewer than two
+	// answers because hash reads failed): no fork agreement was shown
+	voteInconclusive
 )
 
 // integrityCheck fetches the block hash at height from every healthy endpoint that
@@ -647,6 +649,8 @@ func (m *Manager) integrityCheck(ctx context.Context, height int64, heights map[
 		mu          sync.Mutex
 		results     []res
 		rateLimited []string
+		// healthyAsked counts the healthy endpoints asked for their hash
+		healthyAsked int
 	)
 	for i, e := range m.entries {
 		hp, ok := m.probes[i].(HashProbe)
@@ -661,6 +665,9 @@ func (m *Manager) integrityCheck(ctx context.Context, height int64, heights map[
 		}
 		if h, seen := heights[e.Name]; !seen || h < height {
 			continue // endpoint has not reached that height yet; not evidence of anything
+		}
+		if healthy {
+			healthyAsked++
 		}
 		wg.Add(1)
 		go func(e *Entry, hp HashProbe, healthy bool) {
@@ -698,12 +705,19 @@ func (m *Manager) integrityCheck(ctx context.Context, height int64, heights map[
 		}
 	}
 	bad, matched = map[string]bool{}, map[string]bool{}
+	// fewer than two healthy answers make no majority (a single one is still the
+	// reference for re-checks); when two or more were asked, the missing answers leave
+	// fork agreement unshown
+	unanswered := voteNone
+	if healthyAsked >= 2 {
+		unanswered = voteInconclusive
+	}
 	if healthyN == 0 {
 		// nothing to compare against: integrity-evicted endpoints stay evicted
 		for _, r := range results {
 			bad[r.name] = true
 		}
-		return bad, matched, voteNone
+		return bad, matched, unanswered
 	}
 	if healthyN < 2 {
 		// a single healthy endpoint is the reference for re-checks but cannot be
@@ -721,7 +735,7 @@ func (m *Manager) integrityCheck(ctx context.Context, height int64, heights map[
 				bad[r.name] = true
 			}
 		}
-		return bad, matched, voteNone
+		return bad, matched, unanswered
 	}
 	best, bestN := "", 0
 	for h, n := range counts {
@@ -736,7 +750,7 @@ func (m *Manager) integrityCheck(ctx context.Context, height int64, heights map[
 		// of a disagreement, so make it visible.
 		m.log.Warn().Int64("height", height).Int("healthy", healthyN).Int("agreeing", bestN).
 			Msg("healthy endpoints disagree on the block hash with no majority; integrity check skipped")
-		return map[string]bool{}, map[string]bool{}, voteSplit
+		return map[string]bool{}, map[string]bool{}, voteInconclusive
 	}
 	for _, r := range results {
 		if r.hash != best {

@@ -60,8 +60,9 @@ outage therefore retains block meta and spends only confirmed UTXOs. While the h
 checks hold the primary out of rotation and a fallback serves the scan, the per-block
 reads only the primary can answer do not wait for it: the relay fee keeps its last
 value, the solvency report (read from the primary's wallet) is skipped, and a reorg
-with customer transactions fails at once and is retried; without a fallback the
-primary is asked as before.
+with customer transactions fails at once and is retried, so that chain's scan waits for
+the primary until it returns or the stall skip-ahead moves past the reorg (see below);
+without a fallback the primary is asked as before.
 
 A UTXO reorg is walked back by block hash from the scanned block: each earlier block is
 fetched by the hash its child names, so an endpoint that is behind or still on the old
@@ -105,9 +106,15 @@ chain height the scan was driven by, which proves it is caught up and on the sam
 otherwise the scan fails and is retried. Once the plan has read every answer, the
 witness must still hold the scanned block, so its failed receipts and "not found"
 answers all describe the scanned fork; one that moved to another fork meanwhile leaves
-the scan to be retried. An active endpoint that cannot answer these
-reads at all (it answers its probes, so nothing else would move it) is put in the
-rate-limit cooldown and the next endpoint, held to the same checks, takes over. No other endpoint is asked, so one still
+the scan to be retried. A failed receipt becomes an errata only when its block is on
+the scanned fork: the scanned block (always, for a transaction the scanned block lists),
+its parent, or, at any other height, the witness's own block there; a receipt that
+names another block leaves the scan to be retried. An active endpoint that cannot answer the
+witness checks themselves (its block reads and its tip; it answers its probes, so
+nothing else would move it) is put in the rate-limit cooldown and the next endpoint,
+held to the same checks, takes over. Any other read of the plan that fails fails the
+scan, which is retried on the same witness (a rate limit still cools it down through
+the router). No other endpoint is asked, so one still
 on the old fork cannot suppress an errata. A witness that answers "not found" for a
 stored transaction the scanned block lists is inconsistent with the block it holds, so
 the scan is retried instead of reporting an errata for it. A witness whose lookups fail rather than
@@ -117,18 +124,23 @@ while THORChain's last observed height for the chain moves more than that window
 of it, the block scanner's existing skip-ahead moves past the stalled height (never for
 an unavailable-block error), and this node may not report that reorg or observe the
 rescanned blocks (a later reorg re-checks the stored block records still in the
-window); the errata then depends on the other nodes' votes.
+window); the errata then depends on the other nodes' votes. A skip past a reorg that
+could not be resolved is logged as an error and counted in the block scanner's error
+metric as `unresolved_reorg_skipped`.
 
 A background health check runs every `health_check_interval` against every endpoint:
 
 - **Liveness.** A probe that errors or exceeds `health_check_timeout` is a strike.
-- **Lag.** When at least two usable endpoints (not disabled, with their network
-  verified when that is required, and not quarantined for a minority block hash) agree
-  on a tip (within `max_block_lag`), an endpoint further behind than `max_block_lag`
-  gets a strike each cycle. Once two or more healthy endpoints have voted in this
-  cycle's integrity check, only those that showed the majority hash form that tip (one
-  whose hash could not be read has not shown it is on the majority's fork), and during a
-  vote with no majority the tip strikes no healthy endpoint (it still holds back an
+- **Lag.** A probed height follows what the chain's scanner reads (on XRP the validated
+  ledger, so a Clio endpoint whose own data has stalled is behind even while the open
+  ledger it forwards to its rippled advances). When at least two usable endpoints (not
+  disabled, with their network verified when that is required, and not quarantined for
+  a minority block hash) agree on a tip (within `max_block_lag`), an endpoint further
+  behind than `max_block_lag` gets a strike each cycle. Once two or more healthy
+  endpoints have voted in this cycle's integrity check, only those that showed the
+  majority hash form that tip (one whose hash could not be read has not shown it is on
+  the majority's fork), and during a vote with no majority (or too few answers) the tip
+  strikes no healthy endpoint (it still holds back an
   endpoint recovering behind it), so endpoints on another fork that report heights
   ahead cannot evict the others. With two or
   more endpoints, THORChain's last observed height for the chain is a second reference:
@@ -160,7 +172,10 @@ A background health check runs every `health_check_interval` against every endpo
   Identity is required whenever there is more than one endpoint **or** `expected_identity`
   is set: an endpoint that reports no identity is then never used, even when every other
   endpoint is down, because observing an unknown network is worse than observing
-  nothing. XRP servers report `network_id` only when configured with one, so make sure
+  nothing. That includes the UTXO primary's own calls: broadcasts, wallet RPC and
+  verification reads wait until its network is verified, so a UTXO chain whose primary
+  is not verified when bifrost starts cannot set up its wallet and does not start (it
+  is retried every minute). XRP servers report `network_id` only when configured with one, so make sure
   yours does before pinning XRP or adding a second XRP endpoint. BTC and BCH share the
   same genesis block hash, so identity cannot tell them apart; only the integrity check
   (with enough endpoints) protects against mixing them. An endpoint with two hosts
@@ -180,9 +195,17 @@ A background health check runs every `health_check_interval` against every endpo
   when a lag or probe strike completed the eviction) is quarantined, shown as
   `integrity_evicted` in `/status/provider`, and must serve the majority hash again
   before it may serve traffic, even as an all-down fallback. Without a strict majority
-  (a tie, or a plurality such as H, H, X, Y) nothing is evicted or cleared, the
-  disagreement is logged, and no healthy endpoint is struck for lag against the other
-  endpoints' tip that cycle (THORChain's height still strikes). With fewer than two
+  (a tie, or a plurality such as H, H, X, Y) nothing is evicted or cleared and the
+  disagreement is logged. When two or more healthy endpoints were asked and fewer than
+  two could give their hash, nothing is evicted either (a single healthy answer can
+  still clear a quarantined endpoint, see below). In both cases no healthy endpoint is
+  struck for lag against the other endpoints' tip that cycle (THORChain's height still
+  strikes). Only
+  healthy endpoints vote: with two endpoints on another fork, an honest one that drops
+  out on request errors can leave them a strict majority, which strikes the honest one
+  still voting, so do not configure endpoints you cannot vouch for; they still have to
+  pass the identity check, and THORChain's height keeps striking whichever side is
+  behind it. With fewer than two
   agreeing endpoints there is no tip and the
   check does not run. A quarantined endpoint is cleared once it serves the same hash as
   a healthy endpoint at a common height (its own probed height counts toward that tip),
@@ -304,7 +327,9 @@ does not necessarily reuse the original's nonce or sequence: Cosmos signs with i
 locally cached sequence (which the broadcast advanced), and a Solana durable-nonce
 outbound does not expire with its blockhash. A dead endpoint left in an EVM, Cosmos or
 Solana list therefore blocks the automatic re-sign of a stuck outbound until it answers
-again or is removed from the list. An endpoint whose identity has not been verified since
+again or is removed from the list. One exception on Solana: a landed transaction whose
+execution failed, reported by any endpoint, is proof on its own (a signature lands at
+most once), so the outbound may be signed again while another endpoint is unreachable. An endpoint whose identity has not been verified since
 bifrost started (one unreachable at startup, which may hold a broadcast from before a
 restart) counts the same way: it cannot be asked, so absence is not proven while it is
 configured. A disabled endpoint (proven to be on another network) does not count. TRON is

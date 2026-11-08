@@ -690,7 +690,15 @@ func (e *ETHScanner) planReorg(header *etypes.Header) (*reorgPlan, error) {
 // and the chain height the scan was driven by, which the witness must have reached
 // (evm.ReorgWitness): the witness's "not found" for a stored transaction the scanned
 // block lists is not believed (evm.ScannedTxHashes).
-func (e *ETHScanner) planReorgWith(header *etypes.Header, scanned etypes.Transactions, chainHeight int64) (*reorgPlan, error) {
+func (e *ETHScanner) planReorgWith(header *etypes.Header, scanned etypes.Transactions, chainHeight int64) (_ *reorgPlan, err error) {
+	// a failure once a reorg was detected leaves it unresolved (the block scanner
+	// logs a stall skip-ahead past it); one before that is an ordinary failure
+	detected := false
+	defer func() {
+		if err != nil && detected {
+			err = fmt.Errorf("%w: %w", btypes.ErrReorgUnresolved, err)
+		}
+	}()
 	previousHeight := header.Number.Int64() - 1
 	prevBlockMeta, err := e.blockMetaAccessor.GetBlockMeta(previousHeight)
 	if err != nil {
@@ -705,6 +713,7 @@ func (e *ETHScanner) planReorgWith(header *etypes.Header, scanned etypes.Transac
 		return nil, nil
 	}
 	e.logger.Info().Msgf("re-org detected, current block height:%d ,previous block hash is : %s , however block meta at height: %d, block hash is %s", header.Number.Int64(), header.ParentHash.Hex(), prevBlockMeta.Height, prevBlockMeta.BlockHash)
+	detected = true
 
 	blockMetas, err := e.blockMetaAccessor.GetBlockMetas()
 	if err != nil {
@@ -737,9 +746,17 @@ func (e *ETHScanner) planReorgWith(header *etypes.Header, scanned etypes.Transac
 		metaTxs := make([]types.TransactionMeta, 0)
 		var errataTxs []stypes.ErrataTx
 		for _, tx := range blockMeta.Transactions {
-			presence, cerr := e.checkTransaction(witness, tx.Hash)
+			presence, rblock, cerr := e.checkTransaction(witness, tx.Hash)
 			if cerr != nil {
 				return nil, fmt.Errorf("block %d: cannot re-confirm tx %s: %w", blockMeta.Height, tx.Hash, cerr)
+			}
+			if presence == evm.TxFailed {
+				fctx, fcancel := e.getContext()
+				ferr := evm.FailedReceiptOnScannedFork(fctx, e.endpointMgr, e.client, witness, header, listed[evm.TxMetaKey(tx.Hash)], rblock)
+				fcancel()
+				if ferr != nil {
+					return nil, fmt.Errorf("block %d: tx %s: %w", blockMeta.Height, tx.Hash, ferr)
+				}
 			}
 			if presence == evm.TxOnChain {
 				e.logger.Debug().Msgf("block height: %d, tx: %s still exist", blockMeta.Height, tx.Hash)
@@ -854,22 +871,23 @@ func (e *ETHScanner) blockFrom(pin string, height int64) (*etypes.Block, error) 
 // checkTransaction reports what the endpoint named by pin ("" for unpinned) knows
 // about an observed transaction after a reorg. Only its "not found" answer, or a
 // failed receipt, says it is not on chain; a lookup that fails is returned as an
-// error, never turned into an errata.
-func (e *ETHScanner) checkTransaction(pin, hash string) (evm.TxPresence, error) {
+// error, never turned into an errata. A failed receipt comes with its block, which
+// the plan checks is on the scanned fork (evm.FailedReceiptOnScannedFork).
+func (e *ETHScanner) checkTransaction(pin, hash string) (evm.TxPresence, evm.ReceiptBlock, error) {
 	ctx, cancel := e.getContext()
 	defer cancel()
 	tx, pending, err := e.client.TransactionByHash(endpoints.PinContext(ctx, pin), ecommon.HexToHash(hash))
 	if errors.Is(err, ethereum.NotFound) || (err == nil && tx == nil) {
-		return evm.TxNotFound, nil
+		return evm.TxNotFound, evm.ReceiptBlock{}, nil
 	}
 	if err != nil {
-		return evm.TxOnChain, err
+		return evm.TxOnChain, evm.ReceiptBlock{}, err
 	}
 
 	// pending transactions may fail, but we should only errata when there is certainty
 	if pending {
 		e.logger.Warn().Msgf("tx: %s is in pending status", hash)
-		return evm.TxOnChain, nil // unknown, prefer false positive
+		return evm.TxOnChain, evm.ReceiptBlock{}, nil // unknown, prefer false positive
 	}
 
 	// ensure the tx was successful
@@ -878,12 +896,12 @@ func (e *ETHScanner) checkTransaction(pin, hash string) (evm.TxPresence, error) 
 	receipt, err := e.client.TransactionReceipt(endpoints.PinContext(rctx, pin), ecommon.HexToHash(hash))
 	if err != nil {
 		e.logger.Warn().Err(err).Msgf("fail to get receipt for tx: %s", hash)
-		return evm.TxOnChain, nil // unknown, prefer false positive
+		return evm.TxOnChain, evm.ReceiptBlock{}, nil // unknown, prefer false positive
 	}
 	if receipt.Status != etypes.ReceiptStatusSuccessful {
-		return evm.TxFailed, nil
+		return evm.TxFailed, evm.ReceiptBlock{Number: receipt.BlockNumber, Hash: receipt.BlockHash}, nil
 	}
-	return evm.TxOnChain, nil
+	return evm.TxOnChain, evm.ReceiptBlock{}, nil
 }
 
 // getReceipt reads a receipt from the endpoint named by pin ("" for unpinned).

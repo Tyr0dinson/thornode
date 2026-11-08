@@ -24,12 +24,14 @@ import (
 // pagingNode answers getSignaturesForAddress like a Solana node: it has total
 // signatures newest first, listed transactionQueryLimit per page; a "before" it does
 // not know gives an empty page (Agave's behaviour). failBefore makes its next paged
-// request fail once with HTTP 502, failPaged every paged request. Every transaction
-// failed on chain, so the scan skips them without observing anything.
+// request fail once with HTTP 502, failPaged every paged request, and nullTx answers
+// every getTransaction with null (a node that has not finalized those slots). Every
+// transaction failed on chain, so the scan skips them without observing anything.
 type pagingNode struct {
 	sigs       []string
 	failBefore atomic.Bool
 	failPaged  atomic.Bool
+	nullTx     atomic.Bool
 	listings   atomic.Int32
 }
 
@@ -71,6 +73,10 @@ func (n *pagingNode) handler(rw http.ResponseWriter, req *http.Request) {
 		}
 		_, _ = rw.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":[` + strings.Join(page, ",") + `]}`))
 	case "getTransaction":
+		if n.nullTx.Load() {
+			_, _ = rw.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":null}`))
+			return
+		}
 		_, _ = rw.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{"slot":1,"transaction":{"signatures":["x"],"message":{"accountKeys":[],"instructions":[]}},"meta":{"err":{"InstructionError":[0,"Custom"]}}}}`))
 	default:
 		_, _ = rw.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":null}`))
@@ -364,6 +370,57 @@ func (s *SolTestSuite) TestCatchUpListingIsNotMovedToAnotherEndpoint(c *C) {
 	c.Assert(ok, Equals, true)
 	c.Assert(cursor, Equals, "sig0000")
 	c.Assert(b.listings.Load(), Equals, int32(0))
+}
+
+// The transactions of a pinned listing are read from the endpoint that listed them:
+// here the active endpoint a lists every page but answers null for the transactions
+// (it has not finalized their slots), so its listing fails each round; those
+// failures count as pinned failures, and after solPinRetries the listing moves to b,
+// which lists and reads them. Read through the routed client instead, every
+// transaction would still go to a and the vault would never complete.
+func (s *SolTestSuite) TestPinnedListingReadsItsTransactionsFromTheSameEndpoint(c *C) {
+	sigs := make([]string, transactionQueryLimit+5)
+	for i := range sigs {
+		sigs[i] = fmt.Sprintf("sig%04d", i)
+	}
+	a, b := &pagingNode{sigs: sigs}, &pagingNode{sigs: sigs}
+	a.nullTx.Store(true)
+	sa, sb := httptest.NewServer(http.HandlerFunc(a.handler)), httptest.NewServer(http.HandlerFunc(b.handler))
+	defer sa.Close()
+	defer sb.Close()
+	eps := []config.ChainEndpointConfig{{Name: "a", RPCHost: sa.URL, Priority: 1}, {Name: "b", RPCHost: sb.URL, Priority: 2}}
+	cfg := config.BifrostChainConfiguration{ChainID: common.SOLChain}
+	mgr, err := endpoints.NewManager(common.SOLChain, eps, cfg.GetFailoverConfig(), zerolog.Nop())
+	c.Assert(err, IsNil)
+	for _, e := range mgr.Entries() {
+		e.SetIdentity("genesis")
+	}
+	targets, err := endpoints.TargetsFrom(eps, endpoints.RPCHost)
+	c.Assert(err, IsNil)
+	router, err := endpoints.NewHTTPRouter(mgr, endpoints.HTTPRouterConfig{Base: endpoints.SyntheticBase(common.SOLChain), Targets: targets}, zerolog.Nop())
+	c.Assert(err, IsNil)
+	scanner := &SOLScanner{
+		logger:      zerolog.Nop(),
+		solRpc:      rpc.NewSolRPCWithClient(endpoints.SyntheticBase(common.SOLChain).String(), 2*time.Second, &http.Client{Transport: router, Timeout: 2 * time.Second}),
+		pinEndpoint: func(failures int) string { return pinCandidate(mgr, failures) },
+	}
+	scan := func() (ok bool, count int, cursor string) {
+		txCounts, oks, cursors := make([]int, 1), make([]bool, 1), make([]string, 1)
+		var wg sync.WaitGroup
+		wg.Add(1)
+		scanner.scanVault("vault", 0, "sigcursor", 0, 0, func() {}, txCounts, oks, cursors, make([]uint64, 1), &wg)
+		wg.Wait()
+		return oks[0], txCounts[0], cursors[0]
+	}
+
+	for round := 0; round < solPinRetries; round++ {
+		ok, _, _ := scan()
+		c.Assert(ok, Equals, false, Commentf("round %d", round))
+	}
+	ok, count, cursor := scan()
+	c.Assert(ok, Equals, true)
+	c.Assert(count, Equals, transactionQueryLimit+5)
+	c.Assert(cursor, Equals, "sig0000")
 }
 
 // lockedBuffer is a log sink safe for the scan's concurrent writers.

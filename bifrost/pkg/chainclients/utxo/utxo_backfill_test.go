@@ -3,6 +3,7 @@ package utxo
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -28,6 +29,7 @@ import (
 	"github.com/syndtr/goleveldb/leveldb/storage"
 	. "gopkg.in/check.v1"
 
+	btypes "gitlab.com/thorchain/thornode/v3/bifrost/blockscanner/types"
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
 	sutxo "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/utxo"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/zcash"
@@ -2097,6 +2099,7 @@ func (s *CoverageBackfillSuite) TestReorgPrimaryMustHoldTheScannedBlockAndReachT
 	btcChainRPCs[scannedKey] = map[string]interface{}{"result": nil, "error": map[string]interface{}{"code": -8, "message": "Block height out of range"}, "id": 1}
 	_, err := s.client.planReorgWith(block, 8000)
 	c.Assert(err, ErrorMatches, ".*cannot read block 7998 from the primary.*")
+	c.Assert(errors.Is(err, btypes.ErrReorgUnresolved), Equals, true) // a detected reorg left undecided
 
 	// it holds a competing block at the scanned height
 	btcChainRPCs[scannedKey] = map[string]interface{}{"result": "competing_7998", "error": nil, "id": 1}

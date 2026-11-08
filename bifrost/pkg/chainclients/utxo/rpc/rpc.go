@@ -282,17 +282,24 @@ func (c *Client) recordFailure(i int, err error) {
 	}
 }
 
-// primaryDisabled reports whether the manager disabled the primary (identity
-// mismatch). Primary-only operations (writes, wallet RPC, verification reads) must
-// then fail instead of reaching a wrong-network daemon.
+// primaryDisabled reports whether the primary may not be used: the manager disabled
+// it (identity mismatch), or its network must be verified and is not yet (its
+// identity probe has not succeeded). Primary-only operations (writes, wallet RPC,
+// verification reads) must then fail instead of reaching a daemon on an unknown or
+// wrong network. A verified primary that is merely unhealthy is still asked.
 func (c *Client) primaryDisabled() error {
 	if c.manager == nil {
 		return nil
 	}
-	if e := c.manager.Entry(c.names[0]); e != nil && e.State() == endpoints.StateDisabled {
+	e := c.manager.Entry(c.names[0])
+	switch {
+	case e == nil || e.Usable():
+		return nil
+	case e.State() == endpoints.StateDisabled:
 		return fmt.Errorf("primary %s endpoint %s is disabled: %s", c.chain, e.Name, e.Snapshot().DisabledReason)
+	default:
+		return fmt.Errorf("primary %s endpoint %s is not usable: its network is not verified yet", c.chain, e.Name)
 	}
-	return nil
 }
 
 func (c *Client) recordSuccess(i int) {

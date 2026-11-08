@@ -442,11 +442,15 @@ func NewSolanaProbe(e config.ChainEndpointConfig, timeout time.Duration) Probe {
 	return p.asProbe()
 }
 
-// NewXRPProbe reports ledger_current_index; identity is server_info network_id
+// NewXRPProbe reports the validated ledger index; identity is server_info network_id
 // (absent on some servers, in which case the endpoint stays unverified).
 func NewXRPProbe(e config.ChainEndpointConfig, timeout time.Duration) Probe {
 	p := newJSONRPCProbe(e, e.RPCHost, timeout)
-	p.heightMethod, p.parseHeight = "ledger_current", fieldInt64("ledger_current_index")
+	// the validated ledger, the height XrpBlockScanner.GetHeight reads: Clio forwards
+	// ledger_current to its rippled, so the open ledger keeps advancing while the
+	// validated data Clio serves itself has stalled
+	p.heightMethod, p.parseHeight = "ledger", fieldInt64("ledger_index")
+	p.heightParams = []any{map[string]any{"ledger_index": "validated"}}
 	p.identityMethod, p.parseIdentity = "server_info", fieldString("info", "network_id")
 	p.hashMethod = "ledger"
 	p.hashParams = func(h int64) any { return []any{map[string]any{"ledger_index": h}} }

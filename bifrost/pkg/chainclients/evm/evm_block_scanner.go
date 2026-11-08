@@ -25,6 +25,7 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/blockscanner"
+	btypes "gitlab.com/thorchain/thornode/v3/bifrost/blockscanner/types"
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/endpoints"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/evm"
@@ -902,7 +903,15 @@ func (e *EVMScanner) planReorg(header *etypes.Header) (*reorgPlan, error) {
 // and the chain height the scan was driven by, which the witness must have reached
 // (evm.ReorgWitness): the witness's "not found" for a stored transaction the scanned
 // block lists is not believed (evm.ScannedTxHashes).
-func (e *EVMScanner) planReorgWith(header *etypes.Header, scanned etypes.Transactions, chainHeight int64) (*reorgPlan, error) {
+func (e *EVMScanner) planReorgWith(header *etypes.Header, scanned etypes.Transactions, chainHeight int64) (_ *reorgPlan, err error) {
+	// a failure once a reorg was detected leaves it unresolved (the block scanner
+	// logs a stall skip-ahead past it); one before that is an ordinary failure
+	detected := false
+	defer func() {
+		if err != nil && detected {
+			err = fmt.Errorf("%w: %w", btypes.ErrReorgUnresolved, err)
+		}
+	}()
 	previousHeight := header.Number.Int64() - 1
 	prevBlockMeta, err := e.blockMetaAccessor.GetBlockMeta(previousHeight)
 	if err != nil {
@@ -923,6 +932,7 @@ func (e *EVMScanner) planReorgWith(header *etypes.Header, scanned etypes.Transac
 		Str("stored_hash", prevBlockMeta.BlockHash).
 		Str("current_parent_hash", header.ParentHash.Hex()).
 		Msg("reorg detected")
+	detected = true
 
 	blockMetas, err := e.blockMetaAccessor.GetBlockMetas()
 	if err != nil {
@@ -947,9 +957,17 @@ func (e *EVMScanner) planReorgWith(header *etypes.Header, scanned etypes.Transac
 		metaTxs := make([]types.TransactionMeta, 0)
 		var errataTxs []stypes.ErrataTx
 		for _, tx := range blockMeta.Transactions {
-			presence, cerr := e.ethRpc.CheckTransaction(witness, tx.Hash)
+			presence, rblock, cerr := e.ethRpc.CheckTransactionWithBlock(witness, tx.Hash)
 			if cerr != nil {
 				return nil, fmt.Errorf("height %d: cannot re-confirm tx %s: %w", blockMeta.Height, tx.Hash, cerr)
+			}
+			if presence == evm.TxFailed {
+				fctx, fcancel := context.WithTimeout(context.Background(), e.cfg.HTTPRequestTimeout)
+				ferr := evm.FailedReceiptOnScannedFork(fctx, e.endpointMgr, e.ethClient, witness, header, listed[evm.TxMetaKey(tx.Hash)], rblock)
+				fcancel()
+				if ferr != nil {
+					return nil, fmt.Errorf("height %d: tx %s: %w", blockMeta.Height, tx.Hash, ferr)
+				}
 			}
 			if presence == evm.TxOnChain {
 				e.logger.Debug().Msgf("height: %d, tx: %s still exists", blockMeta.Height, tx.Hash)

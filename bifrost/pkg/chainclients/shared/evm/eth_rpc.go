@@ -138,27 +138,41 @@ const (
 	TxFailed
 )
 
+// ReceiptBlock names the block a receipt was read from (zero for no receipt).
+type ReceiptBlock struct {
+	Number *big.Int
+	Hash   ecommon.Hash
+}
+
 // CheckTransaction reports what the node knows about a transaction, for reorg
 // re-confirmation. Only the node's "not found" answer, or a failed receipt, says it
 // is not on chain; a lookup that fails is returned as an error, never as absence, so
 // a transient failure can never produce an errata. Both reads go to the endpoint
 // named by pin (see ReorgWitness; "" leaves them unpinned).
 func (e *EthRPC) CheckTransaction(pin, hash string) (TxPresence, error) {
+	presence, _, err := e.CheckTransactionWithBlock(pin, hash)
+	return presence, err
+}
+
+// CheckTransactionWithBlock is CheckTransaction that also names the block of a
+// failed receipt (TxFailed), so a reorg plan can check that block is on the scanned
+// fork (FailedReceiptOnScannedFork).
+func (e *EthRPC) CheckTransactionWithBlock(pin, hash string) (TxPresence, ReceiptBlock, error) {
 	ctx, cancel := e.getContext()
 	defer cancel()
 	tx, pending, err := e.client.TransactionByHash(endpoints.PinContext(ctx, pin), ecommon.HexToHash(hash))
 	if errors.Is(err, ethereum.NotFound) || (err == nil && tx == nil) {
 		e.logger.Info().Str("txid", hash).Msg("tx not found")
-		return TxNotFound, nil
+		return TxNotFound, ReceiptBlock{}, nil
 	}
 	if err != nil {
-		return TxOnChain, fmt.Errorf("fail to look up tx %s: %w", hash, err)
+		return TxOnChain, ReceiptBlock{}, fmt.Errorf("fail to look up tx %s: %w", hash, err)
 	}
 
 	// pending transactions may fail, but we should only errata when there is certainty
 	if pending {
 		e.logger.Warn().Str("txid", hash).Msg("observed transaction is pending")
-		return TxOnChain, nil // unknown, prefer false positive
+		return TxOnChain, ReceiptBlock{}, nil // unknown, prefer false positive
 	}
 
 	// ensure the tx was successful
@@ -167,10 +181,10 @@ func (e *EthRPC) CheckTransaction(pin, hash string) (TxPresence, error) {
 	receipt, err := e.client.TransactionReceipt(endpoints.PinContext(rctx, pin), ecommon.HexToHash(hash))
 	if err != nil {
 		e.logger.Warn().Str("txid", hash).Err(err).Msg("tx receipt not found")
-		return TxOnChain, nil // unknown, prefer false positive
+		return TxOnChain, ReceiptBlock{}, nil // unknown, prefer false positive
 	}
 	if receipt.Status != etypes.ReceiptStatusSuccessful {
-		return TxFailed, nil
+		return TxFailed, ReceiptBlock{Number: receipt.BlockNumber, Hash: receipt.BlockHash}, nil
 	}
-	return TxOnChain, nil
+	return TxOnChain, ReceiptBlock{}, nil
 }

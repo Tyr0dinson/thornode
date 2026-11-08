@@ -1201,3 +1201,26 @@ func (s *HealthSuite) TestSplitHashVoteDoesNotLetALaggingEndpointRecover(c *C) {
 		c.Assert(m.Entry(name).State(), Equals, endpoints.StateHealthy, Commentf(name))
 	}
 }
+
+// A vote that two or more healthy endpoints were asked for but fewer than two
+// answered shows no fork agreement either: a pair ahead that never shows a hash must
+// not strike the honest endpoints whose hash reads failed this cycle.
+func (s *HealthSuite) TestUnansweredHashVoteLetsNoPairEvictTheOthers(c *C) {
+	cfg := healthCfg()
+	cfg.IntegrityCheckDepth = 20
+	cfg.ErrorThreshold = 1
+	answering := &fakeProbe{name: "a", height: 100, identity: "g", hashes: map[int64]string{80: "H"}}
+	failing := func(name string) *fakeProbe { // its hash read fails this cycle
+		return &fakeProbe{name: name, height: 100, identity: "g", hashes: map[int64]string{}}
+	}
+	silent := func(name string) *fakeProbe {
+		return &fakeProbe{name: name, height: 200, identity: "g", hashes: map[int64]string{}}
+	}
+	m, ps := newHealthMgr(c, cfg, nil, answering, failing("b"), failing("d"), silent("x"), silent("y"))
+	c.Assert(m.Bootstrap(ctxBg(), ps), IsNil)
+	m.Cycle(ctxBg())
+	for _, name := range []string{"a", "b", "d"} {
+		c.Assert(m.Entry(name).State(), Equals, endpoints.StateHealthy, Commentf(name))
+		c.Assert(m.Entry(name).Snapshot().ProbeStrikes, Equals, 0, Commentf(name))
+	}
+}
