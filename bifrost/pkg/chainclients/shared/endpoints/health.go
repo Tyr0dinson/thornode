@@ -458,25 +458,42 @@ func (m *Manager) Cycle(ctx context.Context) {
 	// 4. integrity: majority hash at that height among healthy hash-capable endpoints;
 	// endpoints evicted for a minority hash must positively match it before they may
 	// recover (matchedHash), a check that merely ran or returned nothing is not enough
-	badHash, matchedHash := map[string]bool{}, map[string]bool{}
+	badHash, matchedHash, vote := map[string]bool{}, map[string]bool{}, voteNone
 	if checkQuorum && m.cfg.IntegrityCheckDepth > 0 && checkHeight > 0 {
-		badHash, matchedHash = m.integrityCheck(ctx, checkHeight, heights)
+		badHash, matchedHash, vote = m.integrityCheck(ctx, checkHeight, heights)
 	}
-	// an endpoint with a minority hash this cycle is on another fork as well: the lag
-	// tip and THORChain's "reached" check are formed without it
-	if len(badHash) > 0 {
-		for name := range badHash {
-			delete(tipHeights, name)
+	// THORChain's height counts as reached by any endpoint not shown to be on another
+	// fork (not quarantined, no minority hash this cycle), including one whose hash
+	// could not be read: the height is the network's own, so an endpoint that reaches
+	// it cannot make the others look behind it.
+	reachedBy := make(map[string]int64, len(tipHeights))
+	for name, h := range tipHeights {
+		if !badHash[name] {
+			reachedBy[name] = h
+		}
+	}
+	// once two or more healthy endpoints have voted, an endpoint may set the lag tip
+	// only if it showed the majority hash: one with a minority hash is on another
+	// fork, and one whose hash could not be read, or that was not compared, has not
+	// shown it is not. A vote with no majority shows no fork agreement at all, so the
+	// tip strikes no healthy endpoint this cycle (THORChain's height still does); it
+	// still holds back the recovery of an endpoint behind it.
+	split := vote == voteSplit
+	if vote == voteMajority {
+		for name := range tipHeights {
+			if !matchedHash[name] {
+				delete(tipHeights, name)
+			}
 		}
 		tip, quorum = consensusTip(tipHeights, m.cfg.MaxBlockLag)
 	}
 
-	// trust THORChain's height only once a usable endpoint has reached it (within
+	// trust THORChain's height only once such an endpoint has reached it (within
 	// max_block_lag): a height no endpoint shows (forced on THORChain, or every
 	// endpoint behind) must not strike all of them and take the chain down
 	if observed > 0 {
 		reached := false
-		for _, h := range tipHeights {
+		for _, h := range reachedBy {
 			if h+m.cfg.MaxBlockLag >= observed {
 				reached = true
 			}
@@ -485,8 +502,10 @@ func (m *Manager) Cycle(ctx context.Context) {
 			observed = 0
 		}
 	}
-	lagging := func(h int64) (bool, string) {
-		if quorum && tip-h > m.cfg.MaxBlockLag {
+	// lagging judges a height; healthy says whether it is a healthy endpoint's strike
+	// (suspended against the tip during a split vote) or a recovery check
+	lagging := func(h int64, healthy bool) (bool, string) {
+		if quorum && !(split && healthy) && tip-h > m.cfg.MaxBlockLag {
 			return true, fmt.Sprintf("behind consensus tip %d by %d blocks", tip, tip-h)
 		}
 		if observed > 0 && observed-h > m.cfg.MaxBlockLag {
@@ -522,7 +541,7 @@ func (m *Manager) Cycle(ctx context.Context) {
 				m.recordProbeStrike(e, ErrorKindIntegrity, "minority block hash")
 				continue
 			}
-			if lag, why := lagging(r.height); lag {
+			if lag, why := lagging(r.height, true); lag {
 				m.log.Warn().Str("endpoint", e.Name).Int64("height", r.height).Msg("endpoint lagging: " + why)
 				m.recordProbeStrike(e, ErrorKindLag, why)
 				continue
@@ -540,7 +559,7 @@ func (m *Manager) Cycle(ctx context.Context) {
 				ok = false
 			}
 			if ok {
-				if lag, _ := lagging(r.height); lag {
+				if lag, _ := lagging(r.height, false); lag {
 					ok = false
 				}
 			}
@@ -594,17 +613,30 @@ func consensusTip(heights map[string]int64, lag int64) (tip int64, quorum bool) 
 	return 0, false
 }
 
+// hashVote is the outcome of one integrity check among the healthy endpoints.
+type hashVote int
+
+const (
+	// voteNone: fewer than two healthy endpoints answered, so nothing was voted on
+	voteNone hashVote = iota
+	// voteMajority: one hash holds a strict majority of two or more healthy answers
+	voteMajority
+	// voteSplit: two or more healthy endpoints answered and no hash holds a strict
+	// majority (a tie, or a plurality)
+	voteSplit
+)
+
 // integrityCheck fetches the block hash at height from every healthy endpoint that
 // supports it (and from non-healthy endpoints that were evicted for a minority
 // hash, so they can be re-checked). It returns the set of endpoints whose hash
-// differs from the reference (bad) and the set whose hash positively matched it
-// (matched); an endpoint whose hash could not be fetched is in neither. The
-// reference is the hash held by a strict majority of the healthy endpoints that
-// answered, or the single healthy endpoint's hash. Without a strict majority (a tie,
-// or a plurality such as H, H, X, Y) nothing is evicted or cleared, and the
-// disagreement is logged; an integrity-evicted endpoint with no healthy endpoint to
-// compare against is reported as bad, since it cannot be cleared.
-func (m *Manager) integrityCheck(ctx context.Context, height int64, heights map[string]int64) (bad, matched map[string]bool) {
+// differs from the reference (bad), the set whose hash positively matched it
+// (matched), and the vote's outcome; an endpoint whose hash could not be fetched is
+// in neither set. The reference is the hash held by a strict majority of the healthy
+// endpoints that answered, or the single healthy endpoint's hash. Without a strict
+// majority (a tie, or a plurality such as H, H, X, Y) nothing is evicted or cleared,
+// and the disagreement is logged; an integrity-evicted endpoint with no healthy
+// endpoint to compare against is reported as bad, since it cannot be cleared.
+func (m *Manager) integrityCheck(ctx context.Context, height int64, heights map[string]int64) (bad, matched map[string]bool, vote hashVote) {
 	type res struct {
 		name    string
 		hash    string
@@ -671,7 +703,7 @@ func (m *Manager) integrityCheck(ctx context.Context, height int64, heights map[
 		for _, r := range results {
 			bad[r.name] = true
 		}
-		return bad, matched
+		return bad, matched, voteNone
 	}
 	if healthyN < 2 {
 		// a single healthy endpoint is the reference for re-checks but cannot be
@@ -689,7 +721,7 @@ func (m *Manager) integrityCheck(ctx context.Context, height int64, heights map[
 				bad[r.name] = true
 			}
 		}
-		return bad, matched
+		return bad, matched, voteNone
 	}
 	best, bestN := "", 0
 	for h, n := range counts {
@@ -704,7 +736,7 @@ func (m *Manager) integrityCheck(ctx context.Context, height int64, heights map[
 		// of a disagreement, so make it visible.
 		m.log.Warn().Int64("height", height).Int("healthy", healthyN).Int("agreeing", bestN).
 			Msg("healthy endpoints disagree on the block hash with no majority; integrity check skipped")
-		return map[string]bool{}, map[string]bool{}
+		return map[string]bool{}, map[string]bool{}, voteSplit
 	}
 	for _, r := range results {
 		if r.hash != best {
@@ -715,5 +747,5 @@ func (m *Manager) integrityCheck(ctx context.Context, height int64, heights map[
 		}
 		matched[r.name] = true
 	}
-	return bad, matched
+	return bad, matched, voteMajority
 }

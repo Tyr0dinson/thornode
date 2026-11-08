@@ -2066,6 +2066,58 @@ func (s *CoverageBackfillSuite) TestReorgWaitsForALaggingPrimary(c *C) {
 	c.Assert(errataQueue, HasLen, 1)
 }
 
+// In a scan step the primary's "not found" is proof only once the primary holds the
+// scanned block itself and has reached the chain height the scan was driven by: a
+// fallback can serve the scan while the primary is behind, and an inbound reorged out
+// and mined again above the scanned block (outside the blocks the plan walks) is
+// unknown to a primary that never saw it in its mempool. Until then the step is
+// retried with no errata.
+func (s *CoverageBackfillSuite) TestReorgPrimaryMustHoldTheScannedBlockAndReachTheScan(c *C) {
+	const txid = "27de3e1865c098cd4fded71bae1e8236fd27ce5dce6e524a9ac5cd1a17b5c241" // -5 from the primary
+	bm := sutxo.NewBlockMeta("prevhash", 7997, "stored_hash_7997")
+	bm.AddCustomerTransaction(txid)
+	c.Assert(s.client.temporalStorage.SaveBlockMeta(7997, bm), IsNil)
+	s.client.cfg.BlockScanner.MaxReorgRescanBlocks = 1
+	block := &btcjson.GetBlockVerboseTxResult{Height: 7998, Hash: "scanned_7998", PreviousHash: "new7997"}
+	defer reorgParent(btcChainRPCs, 7997, block.PreviousHash, "prevhash")()
+	scannedKey := rpcFixtureKey("getblockhash", []interface{}{float64(7998)})
+	txKey := rpcFixtureKey("getrawtransaction", []interface{}{txid})
+	savedScanned, savedCount, savedTx := btcChainRPCs[scannedKey], btcChainRPCs["getblockcount"], btcChainRPCs[txKey]
+	defer func() {
+		for key, v := range map[string]map[string]interface{}{scannedKey: savedScanned, "getblockcount": savedCount, txKey: savedTx} {
+			if v == nil {
+				delete(btcChainRPCs, key)
+				continue
+			}
+			btcChainRPCs[key] = v
+		}
+	}()
+
+	// the primary has not imported the scanned block yet
+	btcChainRPCs[scannedKey] = map[string]interface{}{"result": nil, "error": map[string]interface{}{"code": -8, "message": "Block height out of range"}, "id": 1}
+	_, err := s.client.planReorgWith(block, 8000)
+	c.Assert(err, ErrorMatches, ".*cannot read block 7998 from the primary.*")
+
+	// it holds a competing block at the scanned height
+	btcChainRPCs[scannedKey] = map[string]interface{}{"result": "competing_7998", "error": nil, "id": 1}
+	_, err = s.client.planReorgWith(block, 8000)
+	c.Assert(err, ErrorMatches, ".*the primary has block 7998 as competing_7998, not the scanned block scanned_7998.*")
+
+	// it holds the scanned block but has not reached the scan's chain height (the
+	// fixture's block count is 10): the inbound mined again at 8000 is unknown to it
+	btcChainRPCs[scannedKey] = map[string]interface{}{"result": "scanned_7998", "error": nil, "id": 1}
+	_, err = s.client.planReorgWith(block, 8000)
+	c.Assert(err, ErrorMatches, ".*the primary is at block 10, behind the chain height 8000.*")
+
+	// it reached the chain height and finds the inbound mined again at 8000: still on chain
+	btcChainRPCs["getblockcount"] = map[string]interface{}{"result": 8000, "error": nil, "id": 1}
+	btcChainRPCs[txKey] = map[string]interface{}{"result": map[string]interface{}{"txid": txid, "blockhash": "block_8000", "confirmations": 1}, "error": nil, "id": 1}
+	plan, err := s.client.planReorgWith(block, 8000)
+	c.Assert(err, IsNil)
+	c.Assert(plan.fixes, HasLen, 1)
+	c.Assert(plan.fixes[0].errata, HasLen, 0)
+}
+
 // The reorg walk follows parent hashes from the scanned block and fetches every block
 // by hash, so a height-indexed answer from a node on the old fork (a load-balanced
 // provider, a lagging fallback) cannot change it, and a reorg without customer

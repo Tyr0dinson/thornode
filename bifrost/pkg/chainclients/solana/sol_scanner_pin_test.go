@@ -255,7 +255,9 @@ func (s *SolTestSuite) TestVaultCursorSlotIsKept(c *C) {
 // An endpoint that keeps failing a later page of a vault's listing gives way to the
 // next candidate after solPinRetries failed listings. Its other requests succeed and
 // its probes pass, so it is never evicted, and pinning it again every round would
-// leave the vault's older signatures unread for as long as it fails.
+// leave the vault's older signatures unread for as long as it fails. The listing
+// resumes from a cursor (pagingNode lists everything regardless of it): a catch-up
+// listing is never moved (TestCatchUpListingIsNotMovedToAnotherEndpoint).
 func (s *SolTestSuite) TestVaultListingThatKeepsFailingMovesToTheNextEndpoint(c *C) {
 	sigs := make([]string, transactionQueryLimit+5)
 	for i := range sigs {
@@ -286,7 +288,7 @@ func (s *SolTestSuite) TestVaultListingThatKeepsFailingMovesToTheNextEndpoint(c 
 		txCounts, oks, cursors := make([]int, 1), make([]bool, 1), make([]string, 1)
 		var wg sync.WaitGroup
 		wg.Add(1)
-		scanner.scanVault("vault", 0, "", 0, 0, func() {}, txCounts, oks, cursors, make([]uint64, 1), &wg)
+		scanner.scanVault("vault", 0, "sigcursor", 0, 0, func() {}, txCounts, oks, cursors, make([]uint64, 1), &wg)
 		wg.Wait()
 		return oks[0], txCounts[0], cursors[0]
 	}
@@ -302,4 +304,82 @@ func (s *SolTestSuite) TestVaultListingThatKeepsFailingMovesToTheNextEndpoint(c 
 	c.Assert(cursor, Equals, "sig0000")
 	c.Assert(b.listings.Load() > 0, Equals, true)
 	c.Assert(mgr.Entry("a").State(), Equals, endpoints.StateHealthy) // never evicted: it answers everything else
+}
+
+// A catch-up listing (no cursor) lists the whole history the node holds, and
+// endpoints keep different amounts of it, so it is never moved to another endpoint:
+// here b holds only the newest 1,000 signatures, and listing the vault there would end
+// early and store a cursor past the 5 older signatures for good. It keeps failing on a
+// (no cursor is stored) until a can list it.
+func (s *SolTestSuite) TestCatchUpListingIsNotMovedToAnotherEndpoint(c *C) {
+	sigs := make([]string, transactionQueryLimit+5)
+	for i := range sigs {
+		sigs[i] = fmt.Sprintf("sig%04d", i)
+	}
+	a := &pagingNode{sigs: sigs}
+	b := &pagingNode{sigs: sigs[:transactionQueryLimit]} // never saw the older 5
+	a.failPaged.Store(true)
+	sa, sb := httptest.NewServer(http.HandlerFunc(a.handler)), httptest.NewServer(http.HandlerFunc(b.handler))
+	defer sa.Close()
+	defer sb.Close()
+	eps := []config.ChainEndpointConfig{{Name: "a", RPCHost: sa.URL, Priority: 1}, {Name: "b", RPCHost: sb.URL, Priority: 2}}
+	cfg := config.BifrostChainConfiguration{ChainID: common.SOLChain}
+	mgr, err := endpoints.NewManager(common.SOLChain, eps, cfg.GetFailoverConfig(), zerolog.Nop())
+	c.Assert(err, IsNil)
+	for _, e := range mgr.Entries() {
+		e.SetIdentity("genesis")
+	}
+	targets, err := endpoints.TargetsFrom(eps, endpoints.RPCHost)
+	c.Assert(err, IsNil)
+	router, err := endpoints.NewHTTPRouter(mgr, endpoints.HTTPRouterConfig{Base: endpoints.SyntheticBase(common.SOLChain), Targets: targets}, zerolog.Nop())
+	c.Assert(err, IsNil)
+	logs := &lockedBuffer{}
+	scanner := &SOLScanner{
+		logger:      zerolog.New(logs),
+		solRpc:      rpc.NewSolRPCWithClient(endpoints.SyntheticBase(common.SOLChain).String(), 2*time.Second, &http.Client{Transport: router, Timeout: 2 * time.Second}),
+		pinEndpoint: func(failures int) string { return pinCandidate(mgr, failures) },
+	}
+	scan := func() (ok bool, cursor string) {
+		txCounts, oks, cursors := make([]int, 1), make([]bool, 1), make([]string, 1)
+		var wg sync.WaitGroup
+		wg.Add(1)
+		scanner.scanVault("vault", 0, "", 0, 0, func() {}, txCounts, oks, cursors, make([]uint64, 1), &wg)
+		wg.Wait()
+		return oks[0], cursors[0]
+	}
+
+	for round := 0; round <= 2*solPinRetries; round++ {
+		ok, cursor := scan()
+		c.Assert(ok, Equals, false, Commentf("round %d", round))
+		c.Assert(cursor, Equals, "", Commentf("round %d", round))
+	}
+	c.Assert(b.listings.Load(), Equals, int32(0))
+	// the operator is told which endpoint holds the catch-up back
+	c.Assert(strings.Contains(logs.String(), `"endpoint":"a"`), Equals, true)
+	c.Assert(strings.Contains(logs.String(), "vault catch-up listing keeps failing on its endpoint"), Equals, true)
+
+	// once a lists its pages again, the vault completes from a
+	a.failPaged.Store(false)
+	ok, cursor := scan()
+	c.Assert(ok, Equals, true)
+	c.Assert(cursor, Equals, "sig0000")
+	c.Assert(b.listings.Load(), Equals, int32(0))
+}
+
+// lockedBuffer is a log sink safe for the scan's concurrent writers.
+type lockedBuffer struct {
+	mu  sync.Mutex
+	buf strings.Builder
+}
+
+func (b *lockedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *lockedBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
 }

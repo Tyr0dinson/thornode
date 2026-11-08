@@ -484,12 +484,11 @@ func failedReceiptWitness(c *C, target string, tx *etypes.Transaction, from ecom
 	}))
 }
 
-// The witness only has to have the scanned block's parent. When another endpoint
-// served the scanned block, a transaction re-mined there can be unknown to the
-// witness: its "not found" for a stored transaction the scanned block lists means it
-// has not imported that block yet, so the reorg step is retried instead of sending an
-// errata. A listed transaction the witness knows is judged on its receipt like any
-// other: one that failed is still an errata.
+// A witness holds the scanned block (ReorgWitness), so its "not found" for a stored
+// transaction the scanned block lists means it is inconsistent (here it has block 100
+// and does not know the listed transaction): the reorg step is retried instead of
+// sending an errata, a backstop. A listed transaction the witness knows is judged on
+// its receipt like any other: one that failed is still an errata.
 func (s *UnstuckTestSuite) TestReorgWaitsForAWitnessThatHasTheScannedBlock(c *C) {
 	config.Init()
 	key, err := crypto.GenerateKey()
@@ -540,7 +539,7 @@ func (s *UnstuckTestSuite) TestReorgWaitsForAWitnessThatHasTheScannedBlock(c *C)
 	defer atTip.Close()
 	behind := scanner(atTip, listed, gone)
 	_, err = behind.planReorgWith(block100, etypes.Transactions{tx}, 0)
-	c.Assert(err, ErrorMatches, ".*has not imported the scanned block yet.*")
+	c.Assert(err, ErrorMatches, ".*which the scanned block lists: its answer does not match the scanned block it holds.*")
 	// without the scanned block's list the same answers are two errata, as before
 	plan, err := behind.planReorg(block100)
 	c.Assert(err, IsNil)
@@ -626,4 +625,102 @@ func (s *UnstuckTestSuite) TestReorgWitnessMustHoldTheScannedBlockAndReachTheSca
 	c.Assert(err, IsNil)
 	c.Assert(plan, NotNil)
 	c.Assert(scanner.endpointMgr.Active().Name, Equals, "primary") // undecided is not a failure
+}
+
+// switchingWitness forwards to target, except that every request for block 100 after
+// the first answers a competing block 100 (same parent, other extra data): a witness
+// that held the scanned block when the plan checked it and moved to another fork while
+// the plan read its answers.
+func switchingWitness(target string) *httptest.Server {
+	tipJSON, _ := reorgTipFor(reorgBlockJSON)
+	var fields map[string]any
+	if err := json.Unmarshal([]byte(tipJSON), &fields); err != nil {
+		panic(err)
+	}
+	fields["extraData"] = "0x01"
+	competing, err := json.Marshal(fields)
+	if err != nil {
+		panic(err)
+	}
+	var tipReads atomic.Int32
+	return httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		body, _ := io.ReadAll(req.Body)
+		var rpcReq struct {
+			Method string            `json:"method"`
+			ID     json.RawMessage   `json:"id"`
+			Params []json.RawMessage `json:"params"`
+		}
+		_ = json.Unmarshal(body, &rpcReq)
+		if rpcReq.Method == "eth_getBlockByNumber" && isTipRequest(rpcReq.Params) && tipReads.Add(1) > 1 {
+			rw.Header().Set("Content-Type", "application/json")
+			_, _ = rw.Write([]byte(`{"jsonrpc":"2.0","id":` + string(rpcReq.ID) + `,"result":` + string(competing) + `}`))
+			return
+		}
+		resp, err := http.Post(target+req.URL.Path, "application/json", bytes.NewReader(body))
+		if err != nil {
+			http.Error(rw, err.Error(), http.StatusBadGateway)
+			return
+		}
+		defer func() { _ = resp.Body.Close() }()
+		rw.Header().Set("Content-Type", "application/json")
+		rw.WriteHeader(resp.StatusCode)
+		_, _ = io.Copy(rw, resp.Body)
+	}))
+}
+
+// Every answer of a reorg plan must describe the scanned fork: a witness that held the
+// scanned block when the plan checked it and no longer holds it once the plan has read
+// its answers may have reported a failed receipt from another fork, so the step is
+// undecided and retried. A witness that still holds the scanned block gives the errata.
+func (s *UnstuckTestSuite) TestReorgWitnessMustStillHoldTheScannedBlockAfterItsAnswers(c *C) {
+	config.Init()
+	key, err := crypto.GenerateKey()
+	c.Assert(err, IsNil)
+	tx, err := etypes.SignTx(etypes.NewTx(&etypes.LegacyTx{Nonce: 7, Gas: 21000, GasPrice: big.NewInt(1)}), etypes.HomesteadSigner{}, key)
+	c.Assert(err, IsNil)
+	stored := tx.Hash().Hex()[2:]
+	scanner := func(primary *httptest.Server) *ETHScanner {
+		pubkeyMgr, perr := pubkeymanager.NewPubKeyManager(s.bridge, s.m)
+		c.Assert(perr, IsNil)
+		e, nerr := NewClient(s.thorKeys, config.BifrostChainConfiguration{
+			ChainID: common.ETHChain,
+			RPCHost: primary.URL,
+			Endpoints: []config.ChainEndpointConfig{
+				{Name: "primary", RPCHost: primary.URL, Priority: 1},
+				{Name: "other", RPCHost: s.server.URL, Priority: 2},
+			},
+			BlockScanner: config.BifrostBlockScannerConfiguration{
+				ChainID:            common.ETHChain,
+				StartBlockHeight:   1,
+				HTTPRequestTimeout: time.Second * 10,
+				GasCacheBlocks:     40,
+				Concurrency:        1,
+				GasPriceResolution: 10_000_000_000,
+				FixedGasRate:       10_000_000_000,
+			},
+		}, nil, s.bridge, s.m, pubkeyMgr, thorclient.NewPoolMgr(s.bridge))
+		c.Assert(nerr, IsNil)
+		c.Assert(e.ethScanner.blockMetaAccessor.SaveBlockMeta(99, &types.BlockMeta{
+			Height:       99,
+			BlockHash:    "0x00000000000000000000000000000000000000000000000000000000000000dd",
+			Transactions: []types.TransactionMeta{{Hash: stored, BlockHeight: 99}},
+		}), IsNil)
+		return e.ethScanner
+	}
+	_, block100 := reorgTipFor(reorgBlockJSON)
+	failed := failedReceiptWitness(c, s.server.URL, tx, crypto.PubkeyToAddress(key.PublicKey))
+	defer failed.Close()
+
+	moved := switchingWitness(failed.URL)
+	defer moved.Close()
+	movedScanner := scanner(moved)
+	_, err = movedScanner.planReorg(block100)
+	c.Assert(err, ErrorMatches, ".*moved off the scanned block 100.*")
+	c.Assert(movedScanner.endpointMgr.Active().Name, Equals, "primary") // undecided is not a failure
+
+	plan, err := scanner(failed).planReorg(block100)
+	c.Assert(err, IsNil)
+	c.Assert(plan.errata, HasLen, 1)
+	c.Assert(plan.errata[0].Txs, HasLen, 1)
+	c.Assert(string(plan.errata[0].Txs[0].TxID), Equals, stored)
 }

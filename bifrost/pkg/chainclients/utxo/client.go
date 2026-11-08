@@ -602,7 +602,7 @@ func (c *Client) FetchTxs(height, chainHeight int64) (types.TxIn, error) {
 	// fallible step of this scan step has succeeded. If one fails nothing was
 	// committed and the rescans' observed marks are undone, so the retry of this
 	// height detects the reorg again and redoes all of it.
-	plan, err := c.planReorg(block)
+	plan, err := c.planReorgWith(block, chainHeight)
 	if err != nil {
 		return txIn, fmt.Errorf("fail to process re-org: %w", err)
 	}

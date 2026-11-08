@@ -95,6 +95,13 @@ func (c *Client) processReorg(block *btcjson.GetBlockVerboseTxResult) ([]types.T
 // the scan step fails and is retried with the stored metas untouched: the next
 // attempt detects the same reorg and redoes all of it.
 func (c *Client) planReorg(block *btcjson.GetBlockVerboseTxResult) (*utxoReorgPlan, error) {
+	return c.planReorgWith(block, 0)
+}
+
+// planReorgWith is planReorg for a scan step driven by chainHeight (0 when there is no
+// scan step, as in tests): the primary must then also hold the scanned block and have
+// reached chainHeight before its "not found" is proof (requirePrimaryOnChainAt).
+func (c *Client) planReorgWith(block *btcjson.GetBlockVerboseTxResult, chainHeight int64) (*utxoReorgPlan, error) {
 	previousHeight := block.Height - 1
 	prevBlockMeta, err := c.temporalStorage.GetBlockMeta(previousHeight)
 	if err != nil {
@@ -116,7 +123,7 @@ func (c *Client) planReorg(block *btcjson.GetBlockVerboseTxResult) (*utxoReorgPl
 		Str("blockMetaHash", prevBlockMeta.BlockHash).
 		Msg("re-org detected")
 
-	fixes, err := c.planReConfirm(block)
+	fixes, err := c.planReConfirmWith(block, chainHeight)
 	if err != nil {
 		return nil, fmt.Errorf("re-org at height %d cannot be resolved yet: %w", block.Height, err)
 	}
@@ -163,6 +170,12 @@ func (c *Client) untrackObserved(txIns []types.TxIn) {
 // still on chain. It reports and persists nothing; any read that cannot be answered
 // aborts the whole plan.
 func (c *Client) planReConfirm(block *btcjson.GetBlockVerboseTxResult) ([]utxoReorgFix, error) {
+	return c.planReConfirmWith(block, 0)
+}
+
+// planReConfirmWith is planReConfirm for a scan step driven by chainHeight (see
+// planReorgWith).
+func (c *Client) planReConfirmWith(block *btcjson.GetBlockVerboseTxResult, chainHeight int64) ([]utxoReorgFix, error) {
 	// calculate the earliest look back height
 	earliestHeight := block.Height - c.cfg.BlockScanner.MaxReorgRescanBlocks
 	if earliestHeight < 1 {
@@ -235,7 +248,7 @@ func (c *Client) planReConfirm(block *btcjson.GetBlockVerboseTxResult) ([]utxoRe
 				continue
 			}
 			if !primaryProven {
-				if err = c.requirePrimaryOnChainOf(block); err != nil {
+				if err = c.requirePrimaryOnChainAt(block, chainHeight); err != nil {
 					return nil, err
 				}
 				primaryProven = true
@@ -287,6 +300,16 @@ func (c *Client) storedMetaBelow(height, earliest int64) (bool, error) {
 // A primary that is behind, or still on the old fork, would call a transaction of the
 // new chain absent; the reorg step is then retried.
 func (c *Client) requirePrimaryOnChainOf(block *btcjson.GetBlockVerboseTxResult) error {
+	return c.requirePrimaryOnChainAt(block, 0)
+}
+
+// requirePrimaryOnChainAt is requirePrimaryOnChainOf for a scan step driven by
+// chainHeight (0 checks the parent only). The primary must also hold the scanned block
+// itself and have reached chainHeight: a fallback can serve the scan while the primary
+// is behind, and a transaction reorged out and mined again above the scanned block
+// (outside the blocks the plan walks) is unknown to a primary that never saw it in its
+// mempool, so its "not found" would be a false errata.
+func (c *Client) requirePrimaryOnChainAt(block *btcjson.GetBlockVerboseTxResult, chainHeight int64) error {
 	if c.rpc.PrimaryOutWithFallback() {
 		return fmt.Errorf("the primary is out of rotation, so it cannot re-confirm transactions yet")
 	}
@@ -297,6 +320,24 @@ func (c *Client) requirePrimaryOnChainOf(block *btcjson.GetBlockVerboseTxResult)
 	if !strings.EqualFold(hash, block.PreviousHash) {
 		return fmt.Errorf("the primary has block %d as %s, not the scanned block's parent %s: it is behind or on another fork, so its \"not found\" is no proof yet",
 			block.Height-1, hash, block.PreviousHash)
+	}
+	if chainHeight <= 0 {
+		return nil
+	}
+	scanned, err := c.rpc.GetBlockHashPrimary(block.Height)
+	if err != nil {
+		return fmt.Errorf("cannot read block %d from the primary: %w", block.Height, err)
+	}
+	if !strings.EqualFold(scanned, block.Hash) {
+		return fmt.Errorf("the primary has block %d as %s, not the scanned block %s: it holds a competing block, so its \"not found\" is no proof yet",
+			block.Height, scanned, block.Hash)
+	}
+	tip, err := c.rpc.GetBlockCountPrimary()
+	if err != nil {
+		return fmt.Errorf("cannot read the primary's block count: %w", err)
+	}
+	if tip < chainHeight {
+		return fmt.Errorf("the primary is at block %d, behind the chain height %d the scan was driven by, so its \"not found\" is no proof yet", tip, chainHeight)
 	}
 	return nil
 }

@@ -1084,3 +1084,120 @@ func (s *HealthSuite) TestRecoveringEndpointsDoNotLowerTheComparedHeight(c *C) {
 	c.Assert(m.Entry("a").State(), Equals, endpoints.StateHealthy)
 	c.Assert(m.Entry("b").State(), Equals, endpoints.StateHealthy)
 }
+
+// A hash vote with no majority shows no fork agreement: two endpoints on another fork
+// that report heights ahead must not strike the other two for lag (nor the reverse).
+// THORChain's height still can.
+func (s *HealthSuite) TestSplitHashVoteLetsNoPairEvictTheOther(c *C) {
+	cfg := healthCfg()
+	cfg.IntegrityCheckDepth = 20
+	cfg.ErrorThreshold = 1
+	honest := func(name string) *fakeProbe {
+		return &fakeProbe{name: name, height: 100, identity: "g", hashes: map[int64]string{80: "H"}}
+	}
+	forked := func(name string) *fakeProbe {
+		return &fakeProbe{name: name, height: 200, identity: "g", hashes: map[int64]string{80: "X", 180: "X"}}
+	}
+	m, ps := newHealthMgr(c, cfg, nil, honest("a"), honest("b"), forked("x"), forked("y"))
+	c.Assert(m.Bootstrap(ctxBg(), ps), IsNil)
+	m.Cycle(ctxBg())
+	for _, name := range []string{"a", "b", "x", "y"} {
+		c.Assert(m.Entry(name).State(), Equals, endpoints.StateHealthy, Commentf(name))
+		c.Assert(m.Entry(name).Snapshot().ProbeStrikes, Equals, 0, Commentf(name))
+	}
+
+	// THORChain's height (here the forked pair's) still strikes the pair behind it
+	m.SetReferenceHeight(func() (int64, error) { return 200, nil })
+	m.Cycle(ctxBg())
+	c.Assert(m.Entry("a").State(), Equals, endpoints.StateUnhealthy)
+	c.Assert(m.Entry("b").State(), Equals, endpoints.StateUnhealthy)
+}
+
+// Only endpoints that showed the majority hash form the lag tip: two endpoints ahead
+// whose hash at the compared height cannot be read have not shown they are on the
+// majority's fork, so they strike nobody.
+func (s *HealthSuite) TestEndpointsThatShowNoHashDoNotSetTheLagTip(c *C) {
+	cfg := healthCfg()
+	cfg.IntegrityCheckDepth = 20
+	cfg.ErrorThreshold = 1
+	honest := func(name string) *fakeProbe {
+		return &fakeProbe{name: name, height: 100, identity: "g", hashes: map[int64]string{80: "H"}}
+	}
+	silent := func(name string) *fakeProbe { // answers heights, no hashes
+		return &fakeProbe{name: name, height: 200, identity: "g", hashes: map[int64]string{}}
+	}
+	m, ps := newHealthMgr(c, cfg, nil, honest("a"), honest("b"), honest("d"), silent("x"), silent("y"))
+	c.Assert(m.Bootstrap(ctxBg(), ps), IsNil)
+	m.Cycle(ctxBg())
+	for _, name := range []string{"a", "b", "d"} {
+		c.Assert(m.Entry(name).State(), Equals, endpoints.StateHealthy, Commentf(name))
+		c.Assert(m.Entry(name).Snapshot().ProbeStrikes, Equals, 0, Commentf(name))
+	}
+}
+
+// A majority that has stalled is still struck by endpoints ahead that showed the
+// same hash at the compared height: they are on its fork, only further along.
+func (s *HealthSuite) TestStalledMajorityIsStruckByEndpointsAheadOnItsFork(c *C) {
+	cfg := healthCfg()
+	cfg.IntegrityCheckDepth = 20
+	cfg.ErrorThreshold = 1
+	stalled := func(name string) *fakeProbe {
+		return &fakeProbe{name: name, height: 100, identity: "g", hashes: map[int64]string{80: "H"}}
+	}
+	ahead := func(name string) *fakeProbe {
+		return &fakeProbe{name: name, height: 200, identity: "g", hashes: map[int64]string{80: "H", 180: "H"}}
+	}
+	m, ps := newHealthMgr(c, cfg, nil, stalled("a"), stalled("b"), stalled("d"), ahead("x"), ahead("y"))
+	c.Assert(m.Bootstrap(ctxBg(), ps), IsNil)
+	m.Cycle(ctxBg())
+	for _, name := range []string{"a", "b", "d"} {
+		c.Assert(m.Entry(name).State(), Equals, endpoints.StateUnhealthy, Commentf(name))
+	}
+	for _, name := range []string{"x", "y"} {
+		c.Assert(m.Entry(name).State(), Equals, endpoints.StateHealthy, Commentf(name))
+	}
+}
+
+// THORChain's height counts as reached when any endpoint not shown to be on another
+// fork has reached it, including one whose hash could not be read this cycle (it
+// does not form the lag tip): endpoints stalled behind the height the network has
+// observed are still struck.
+func (s *HealthSuite) TestThorchainHeightReachedByAnEndpointWithoutAHashStillStrikes(c *C) {
+	cfg := healthCfg()
+	cfg.IntegrityCheckDepth = 20
+	cfg.ErrorThreshold = 1
+	stalled := func(name string) *fakeProbe {
+		return &fakeProbe{name: name, height: 100, identity: "g", hashes: map[int64]string{80: "H"}}
+	}
+	ahead := &fakeProbe{name: "x", height: 130, identity: "g", hashes: map[int64]string{}} // no hash this cycle
+	m, ps := newHealthMgr(c, cfg, nil, stalled("a"), stalled("b"), ahead)
+	c.Assert(m.Bootstrap(ctxBg(), ps), IsNil)
+	m.SetReferenceHeight(func() (int64, error) { return 130, nil })
+	m.Cycle(ctxBg())
+	c.Assert(m.Entry("a").State(), Equals, endpoints.StateUnhealthy)
+	c.Assert(m.Entry("b").State(), Equals, endpoints.StateUnhealthy)
+	c.Assert(m.Entry("x").State(), Equals, endpoints.StateHealthy)
+}
+
+// A split hash vote suspends only the lag strikes of healthy endpoints: an endpoint
+// evicted for lag that is still far behind the others must not pass its recovery
+// checks while the vote is split (here THORChain's height is unavailable).
+func (s *HealthSuite) TestSplitHashVoteDoesNotLetALaggingEndpointRecover(c *C) {
+	cfg := healthCfg()
+	cfg.IntegrityCheckDepth = 20
+	cfg.ErrorThreshold = 1
+	at := func(name, hash string) *fakeProbe {
+		return &fakeProbe{name: name, height: 100, identity: "g", hashes: map[int64]string{80: hash}}
+	}
+	behind := &fakeProbe{name: "r", height: 50, identity: "g", hashes: map[int64]string{}}
+	m, ps := newHealthMgr(c, cfg, nil, at("a", "H"), at("b", "H"), at("x", "X"), at("y", "X"), behind)
+	c.Assert(m.Bootstrap(ctxBg(), ps), IsNil)
+	m.Entry("r").MarkUnhealthy(endpoints.ErrorKindLag)
+	for i := 0; i < 2*cfg.MinRecoveryChecks; i++ {
+		m.Cycle(ctxBg())
+	}
+	c.Assert(m.Entry("r").State(), Equals, endpoints.StateUnhealthy)
+	for _, name := range []string{"a", "b", "x", "y"} {
+		c.Assert(m.Entry(name).State(), Equals, endpoints.StateHealthy, Commentf(name))
+	}
+}

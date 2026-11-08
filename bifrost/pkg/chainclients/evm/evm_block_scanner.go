@@ -957,7 +957,7 @@ func (e *EVMScanner) planReorgWith(header *etypes.Header, scanned etypes.Transac
 				continue
 			}
 			if presence == evm.TxNotFound && listed[evm.TxMetaKey(tx.Hash)] {
-				return nil, fmt.Errorf("height %d: endpoint %q does not know tx %s, which the scanned block lists: it has not imported the scanned block yet", blockMeta.Height, witness, tx.Hash)
+				return nil, fmt.Errorf("height %d: endpoint %q does not know tx %s, which the scanned block lists: its answer does not match the scanned block it holds", blockMeta.Height, witness, tx.Hash)
 			}
 
 			// the node says the transaction is not on chain (any more): errata it
@@ -998,6 +998,14 @@ func (e *EVMScanner) planReorgWith(header *etypes.Header, scanned etypes.Transac
 		if len(txIn.TxArray) > 0 {
 			plan.txIns = append(plan.txIns, txIn)
 		}
+	}
+	// every answer above came from the witness: it must still hold the scanned block,
+	// or they may describe another fork (a failed receipt from there is no errata)
+	cctx, ccancel := context.WithTimeout(context.Background(), e.cfg.HTTPRequestTimeout)
+	err = evm.WitnessStillHolds(cctx, e.endpointMgr, e.ethClient, witness, header)
+	ccancel()
+	if err != nil {
+		return nil, fmt.Errorf("reorg at height %d: %w", header.Number.Int64(), err)
 	}
 	return plan, nil
 }

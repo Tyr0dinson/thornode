@@ -39,9 +39,10 @@ that endpoint is charged; when the caller cancels, it is not.
 
 UTXO chains differ in two ways. The primary daemon is retried with the client's own
 backoff (`max_rpc_retries`, up to about a minute with the default 9) before a fallback
-is tried, as it was before failover existed. And "method not found" (-32601) and
-"internal error" (-32603) both count as endpoint errors there: a UTXO fallback must serve
-every RPC bifrost calls (`txindex=1` included). An endpoint that answered a read with an
+is tried, as it was before failover existed. And "method not found" (-32601),
+"internal error" (-32603) and "loading block index" (-28, a daemon still warming up) all
+count as endpoint errors there: a UTXO fallback must serve every RPC bifrost calls
+(`txindex=1` included). An endpoint that answered a read with an
 application error ("no such transaction") is authoritative over one that failed.
 
 Several UTXO decisions ask only the primary daemon and fail closed when it cannot
@@ -74,7 +75,10 @@ transactions of disconnected blocks; the daemon looks in its mempool first, so a
 hash with no confirmations means the transaction is in no active block and not in the
 mempool), and only once
 the primary's block at the scanned block's height minus one is the scanned block's
-parent (the primary is caught up and on the new chain); one contained in the scanned
+parent, its block at the scanned height is the scanned block itself, and its block count
+is at least the chain height the scan was driven by (the primary is caught up and on the
+new chain: a fallback may have served the scan, and an inbound mined again above the
+scanned block is unknown to a primary that has not reached it); one contained in the scanned
 block, or in a new-chain block the walk has fetched, counts as on chain without asking.
 While the primary cannot give that answer, the scan of the block that revealed the reorg
 fails and is retried, so that chain's scanner waits.
@@ -98,12 +102,15 @@ their receipts from one witness, the active endpoint, and only once its block at
 is the parent of the block being scanned, its block at the scanned height is the scanned
 block itself (not a competing block on the same parent), and its tip is at least the
 chain height the scan was driven by, which proves it is caught up and on the same fork;
-otherwise the scan fails and is retried. An active endpoint that cannot answer these
+otherwise the scan fails and is retried. Once the plan has read every answer, the
+witness must still hold the scanned block, so its failed receipts and "not found"
+answers all describe the scanned fork; one that moved to another fork meanwhile leaves
+the scan to be retried. An active endpoint that cannot answer these
 reads at all (it answers its probes, so nothing else would move it) is put in the
 rate-limit cooldown and the next endpoint, held to the same checks, takes over. No other endpoint is asked, so one still
 on the old fork cannot suppress an errata. A witness that answers "not found" for a
-stored transaction the scanned block lists has not imported that block yet (another
-endpoint served it), so the scan is retried instead of reporting an errata for it. A witness whose lookups fail rather than
+stored transaction the scanned block lists is inconsistent with the block it holds, so
+the scan is retried instead of reporting an errata for it. A witness whose lookups fail rather than
 answer "not found" (for example a node still building its transaction index) holds the
 scan until it answers. If a scan stays stuck for longer than `max_resume_block_lag`
 while THORChain's last observed height for the chain moves more than that window ahead
@@ -116,10 +123,14 @@ A background health check runs every `health_check_interval` against every endpo
 
 - **Liveness.** A probe that errors or exceeds `health_check_timeout` is a strike.
 - **Lag.** When at least two usable endpoints (not disabled, with their network
-  verified when that is required, not quarantined for a minority block hash, and not
-  found with one in this cycle's integrity check) agree on a tip (within
-  `max_block_lag`), an endpoint further behind than `max_block_lag` gets a strike each
-  cycle. With two or
+  verified when that is required, and not quarantined for a minority block hash) agree
+  on a tip (within `max_block_lag`), an endpoint further behind than `max_block_lag`
+  gets a strike each cycle. Once two or more healthy endpoints have voted in this
+  cycle's integrity check, only those that showed the majority hash form that tip (one
+  whose hash could not be read has not shown it is on the majority's fork), and during a
+  vote with no majority the tip strikes no healthy endpoint (it still holds back an
+  endpoint recovering behind it), so endpoints on another fork that report heights
+  ahead cannot evict the others. With two or
   more endpoints, THORChain's last observed height for the chain is a second reference:
   an endpoint more than `max_block_lag` below it gets a strike. That height is set only
   once 2/3 of nodes agree and never goes back, so no endpoint or single node can move
@@ -127,7 +138,8 @@ A background health check runs every `health_check_interval` against every endpo
   never one at the tip. This is what lets two endpoints, which form no tip when they
   disagree, evict a stalled endpoint that still answers. When THORChain's height is
   unavailable, does not answer within `health_check_timeout`, or no usable endpoint
-  outside quarantine has reached it (within `max_block_lag`), it strikes nothing; a height that stops moving (a
+  outside quarantine and without a minority hash this cycle has reached it (within
+  `max_block_lag`), it strikes nothing; a height that stops moving (a
   halted or quiet chain) is still used, but cannot strike an endpoint at or above it.
   With a single endpoint, the block scanner's own height is the baseline instead.
 - **Identity.** Every endpoint must report the same chain identity (EVM `eth_chainId`,
@@ -168,8 +180,10 @@ A background health check runs every `health_check_interval` against every endpo
   when a lag or probe strike completed the eviction) is quarantined, shown as
   `integrity_evicted` in `/status/provider`, and must serve the majority hash again
   before it may serve traffic, even as an all-down fallback. Without a strict majority
-  (a tie, or a plurality such as H, H, X, Y) nothing is evicted or cleared and the
-  disagreement is logged. With fewer than two agreeing endpoints there is no tip and the
+  (a tie, or a plurality such as H, H, X, Y) nothing is evicted or cleared, the
+  disagreement is logged, and no healthy endpoint is struck for lag against the other
+  endpoints' tip that cycle (THORChain's height still strikes). With fewer than two
+  agreeing endpoints there is no tip and the
   check does not run. A quarantined endpoint is cleared once it serves the same hash as
   a healthy endpoint at a common height (its own probed height counts toward that tip),
   so one healthy endpoint is enough; with none it stays out until one comes back or
@@ -226,9 +240,13 @@ If every endpoint is unhealthy, bifrost logs an error, sets
 On Solana, a vault with more than one page (1,000) of new signatures has all its pages
 listed by one endpoint: a node that does not have a page's last signature answers the
 next page with an empty list, which would end the scan early and skip the older
-signatures for good. A failed listing is retried from its first page on the same
-endpoint; after three failed listings of a vault in a row the next endpoint lists it, so
-one that keeps failing a page does not hold the vault back. A vault's listing resumes from its cursor signature with that
+signatures for good. A failed listing is retried from its first page on the first
+endpoint a read would use (which can change as endpoints are evicted or cool down);
+when a listing that resumes from a cursor fails three times in a row, the next endpoint
+lists it, so one that keeps failing a page does not hold the vault back. A catch-up
+listing (a vault with no cursor yet, listed over the whole history the node holds) is
+never moved that way: endpoints keep different amounts of history, and one that holds
+less would end it early. Each endpoint should keep the history such a catch-up needs. A vault's listing resumes from its cursor signature with that
 signature's own slot as `minContextSlot`: Agave ignores a cursor it does not know and
 lists the whole history it holds, so a node that has not yet finalized the cursor's slot
 (an endpoint behind the previous one) must refuse with -32016 instead, which on Solana is

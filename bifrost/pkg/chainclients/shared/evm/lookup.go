@@ -115,14 +115,7 @@ func ReorgWitness(ctx context.Context, mgr *endpoints.Manager, client *ethclient
 	}
 	pinned := endpoints.PinContext(ctx, active.Name)
 	header := func(height int64) (*etypes.Header, error) {
-		h, err := client.HeaderByNumber(pinned, big.NewInt(height))
-		if err != nil {
-			if !errors.Is(err, ethereum.NotFound) {
-				mgr.Sideline(active.Name, fmt.Sprintf("cannot serve the reorg witness's block %d", height))
-			}
-			return nil, fmt.Errorf("endpoint %s: cannot read block %d: %w", active.Name, height, err)
-		}
-		return h, nil
+		return witnessHeader(ctx, mgr, client, active.Name, height)
 	}
 	parentHeight := scanned.Number.Int64() - 1
 	parent, err := header(parentHeight)
@@ -152,13 +145,47 @@ func ReorgWitness(ctx context.Context, mgr *endpoints.Manager, client *ethclient
 	return active.Name, nil
 }
 
+// WitnessStillHolds is the last read of a reorg plan: once the plan has read every
+// answer it uses from the witness, the witness must still hold the scanned block (its
+// block at the scanned height hashes to the scanned header's hash, as in ReorgWitness).
+// A node's chain is a single chain, so the failed receipts, "not found" answers,
+// headers and rescanned blocks it reported between the two checks describe the
+// scanned fork. A witness that moved to another fork meanwhile leaves the step
+// undecided, and it is retried. "" (a single endpoint) is not checked, as
+// ReorgWitness does not check it; a read error sidelines the witness, as there.
+func WitnessStillHolds(ctx context.Context, mgr *endpoints.Manager, client *ethclient.Client, witness string, scanned *etypes.Header) error {
+	if witness == "" {
+		return nil
+	}
+	h, err := witnessHeader(ctx, mgr, client, witness, scanned.Number.Int64())
+	if err != nil {
+		return err
+	}
+	if h.Hash() != scanned.Hash() {
+		return fmt.Errorf("endpoint %s moved off the scanned block %d during the reorg plan (it has %s, not %s): its answers may describe another fork", witness, scanned.Number.Int64(), h.Hash().Hex(), scanned.Hash().Hex())
+	}
+	return nil
+}
+
+// witnessHeader reads the witness's header at height, pinned to it. An error other
+// than "not found" sidelines it (Manager.Sideline): it cannot serve the witness's reads.
+func witnessHeader(ctx context.Context, mgr *endpoints.Manager, client *ethclient.Client, name string, height int64) (*etypes.Header, error) {
+	h, err := client.HeaderByNumber(endpoints.PinContext(ctx, name), big.NewInt(height))
+	if err != nil {
+		if !errors.Is(err, ethereum.NotFound) {
+			mgr.Sideline(name, fmt.Sprintf("cannot serve the reorg witness's block %d", height))
+		}
+		return nil, fmt.Errorf("endpoint %s: cannot read block %d: %w", name, height, err)
+	}
+	return h, nil
+}
+
 // ScannedTxHashes returns the hashes of the scanned block's transactions in the form
-// block metas store them (TxMetaKey), for planning a reorg. The witness only has to
-// have the scanned block's parent, so when another endpoint served the scanned block,
-// a transaction re-mined there can still be unknown to it: its "not found" for a
-// transaction the scanned block lists means it has not imported that block yet, and
-// the reorg step is retried instead of sending an errata. Its answer for any other
-// transaction, and a failed receipt for a listed one, are used as before.
+// block metas store them (TxMetaKey), for planning a reorg. A witness holds the scanned
+// block (ReorgWitness), so it cannot call a transaction that block lists unknown; if it
+// does, it is inconsistent, and the reorg step is retried instead of sending an errata
+// (a backstop). Its answer for any other transaction, and a failed receipt for a
+// listed one, are used as they are.
 func ScannedTxHashes(txs etypes.Transactions) map[string]bool {
 	listed := make(map[string]bool, len(txs))
 	for _, tx := range txs {

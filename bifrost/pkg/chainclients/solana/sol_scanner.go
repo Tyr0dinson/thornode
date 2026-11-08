@@ -445,7 +445,7 @@ func (s *SOLScanner) scanVault(
 	var newestSig string
 	var newestSlot uint64
 	before := ""
-	listing, pinned := s.solRpc, false
+	listing, pinned, pinName := s.solRpc, false, ""
 	for {
 		params := rpc.GetSignaturesForAddressUntilParams{
 			Commitment: "finalized",
@@ -471,7 +471,11 @@ func (s *SOLScanner) scanVault(
 		if err != nil {
 			s.logger.Error().Err(err).Msgf("failed to get signatures for address %s", vaultAddr)
 			if pinned {
-				s.notePinFailure(vaultAddr)
+				if failures := s.notePinFailure(vaultAddr); queryLastSig == "" && failures%solPinRetries == 0 {
+					// a catch-up listing is not moved (see below): say which endpoint holds it back
+					s.logger.Warn().Str("vault", vaultAddr).Str("endpoint", pinName).Int("failures", failures).
+						Msg("vault catch-up listing keeps failing on its endpoint; it is not moved to another endpoint, which may hold less history: fix or remove this endpoint")
+				}
 			}
 			setUnhealthy()
 			return
@@ -481,10 +485,18 @@ func (s *SOLScanner) scanVault(
 		// "before" names a signature of the previous page, and a node that does not
 		// have it answers an empty list, which would end the scan early and skip every
 		// older signature for good. Restart this vault's listing on one endpoint
-		// (nothing of the routed page has been used yet).
+		// (nothing of the routed page has been used yet). A listing that resumes from a
+		// cursor is bounded by it, so after solPinRetries failed listings it moves to
+		// the next endpoint. A catch-up listing (no cursor) lists the whole history the
+		// node holds, and endpoints keep different amounts of it: it stays on the
+		// first candidate, since one that holds less would end it early just the same.
 		if !pinned && before == "" && len(res) == transactionQueryLimit && s.pinEndpoint != nil {
-			if pin := s.pinEndpoint(s.pinFailureCount(vaultAddr)); pin != "" {
-				listing, pinned = s.solRpc.Pinned(pin), true
+			failures := 0
+			if queryLastSig != "" {
+				failures = s.pinFailureCount(vaultAddr)
+			}
+			if pin := s.pinEndpoint(failures); pin != "" {
+				listing, pinned, pinName = s.solRpc.Pinned(pin), true, pin
 				continue
 			}
 		}
@@ -561,14 +573,16 @@ func (s *SOLScanner) pinFailureCount(vaultAddr string) int {
 	return s.pinFailures[vaultAddr]
 }
 
-// notePinFailure counts one more failed pinned listing of the vault.
-func (s *SOLScanner) notePinFailure(vaultAddr string) {
+// notePinFailure counts one more failed pinned listing of the vault and returns the
+// count.
+func (s *SOLScanner) notePinFailure(vaultAddr string) int {
 	s.pinFailuresMu.Lock()
 	defer s.pinFailuresMu.Unlock()
 	if s.pinFailures == nil {
 		s.pinFailures = make(map[string]int)
 	}
 	s.pinFailures[vaultAddr]++
+	return s.pinFailures[vaultAddr]
 }
 
 // clearPinFailures resets the count once the vault's listing completed.
