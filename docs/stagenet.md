@@ -47,7 +47,7 @@ The flow below is the same whether it is the first RC of a line or a re-cut.
    RC. No version bump.
 2. **Build.** Produce the image and record it **by digest**. Pin the digest; do
    not deploy by a moving tag.
-3. **Choose `H`.** Pick the switch height from the *measured* block rate (sample
+3. **Choose `H`.** Pick the switch height from the _measured_ block rate (sample
    two real headers; do not assume a nominal block time), leaving margin to
    build the image and stage every node. Treat the height as authoritative and
    any wall-clock time as approximate. Recompute `H` just before rollout so it
