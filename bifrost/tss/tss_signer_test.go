@@ -165,6 +165,10 @@ func (m *mockBridgeForKeysign) GetObservedTxVoter(string) (*stypes.QueryObserved
 	return nil, nil
 }
 
+func (m *mockBridgeForKeysign) GetObservedTxVoterUncached(string) (*stypes.QueryObservedTxVoter, bool, error) {
+	return nil, false, nil
+}
+
 func (m *mockBridgeForKeysign) GetObservedTxOutVoter(txID string) (*stypes.QueryObservedTxVoter, error) {
 	return m.GetObservedTxVoter(txID)
 }

@@ -217,6 +217,10 @@ func (m *MockThorchainBridge) GetObservedTxVoter(txID string) (*types.QueryObser
 	return nil, nil
 }
 
+func (m *MockThorchainBridge) GetObservedTxVoterUncached(txID string) (*types.QueryObservedTxVoter, bool, error) {
+	return nil, false, nil
+}
+
 func (m *MockThorchainBridge) GetObservedTxOutVoter(txID string) (*types.QueryObservedTxVoter, error) {
 	return m.GetObservedTxVoter(txID)
 }
