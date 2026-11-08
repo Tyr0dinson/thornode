@@ -142,7 +142,8 @@ func (p *pipeline) SpawnSignings(s pipelineSigner, bridge thorclient.ThorchainBr
 		}
 	}
 
-	// sort deterministically so all nodes attempt the same outbound first
+	// All nodes use the original height/index order. Failed unsigned funding
+	// checks are retried outside this queue, without changing an item's priority.
 	sort.Slice(itemsToSign, func(i, j int) bool {
 		if itemsToSign[i].Height != itemsToSign[j].Height {
 			return itemsToSign[i].Height < itemsToSign[j].Height

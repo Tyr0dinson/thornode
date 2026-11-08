@@ -12,6 +12,35 @@ type XMRAddressSuite struct{}
 
 var _ = Suite(&XMRAddressSuite{})
 
+func (s *XMRAddressSuite) TestS21RefundAddressPolicy(c *C) {
+	spend := makeTestXMRKey("s21-policy-spend")
+	view := makeTestXMRKey("s21-policy-view")
+	var paymentID [8]byte
+	for _, tc := range []struct {
+		name, address string
+		valid         bool
+	}{
+		{"primary", makeTestXMRAddr(xmrPrimaryNetworkByte, spend, view), true},
+		{"subaddress", makeTestXMRAddr(xmrSubaddressNetworkByte, spend, view), true},
+		{"integrated", makeTestXMRIntegratedAddr(spend, view, paymentID), false},
+		{"featured", makeTestXMRFeaturedAddr(xmrFeaturedMainnetNetworkByte, spend, view, 0, nil), false},
+		{"foreign featured network", makeTestXMRFeaturedAddr(xmrFeaturedStagenetNetworkByte, spend, view, 0, nil), false},
+		{"unsupported ordinary network byte", makeTestXMRAddr(0x35, spend, view), false},
+		{"unknown sender", XMRUnknownSenderAddress("s21", "vault"), false},
+		{"other chain", "0x90f2b1ae50e6018230e90a33f98c7844a0ab635a", false},
+		{"truncated", XMRSeededDummyAddress('8', []byte("s21-truncated"))[:94], false},
+		{"malformed", "not-an-address", false},
+		{"empty", "", false},
+	} {
+		err := XMRChain.ValidateRefundAddress(Address(tc.address))
+		if tc.valid {
+			c.Check(err, IsNil, Commentf("%s", tc.name))
+		} else {
+			c.Check(err, NotNil, Commentf("%s", tc.name))
+		}
+	}
+}
+
 const (
 	featuredNonGuaranteedSubaddressVector = "CjWdTpuDaZ69nTGxzm9YarR82YDYFECi1WaaREZTMy5yDsjaRX5bC3cbC3JpcrBPd7YYpjoWKuBMidgGaKBK5Jye2v3wfMHCy"
 	featuredGuaranteedSubaddressVector    = "CjWdTpuDaZ69nTGxzm9YarR82YDYFECi1WaaREZTMy5yDsjaRX5bC3cbC3JpcrBPd7YYpjoWKuBMidgGaKBK5Jye2v4Pyz8bD"
@@ -515,4 +544,60 @@ func (s *XMRAddressSuite) TestXMRIntegratedAddressNetwork(c *C) {
 	c.Check(intAddr[0], Equals, byte('4'))
 	addr := Address(intAddr)
 	c.Check(addr.GetNetwork(XMRChain), Equals, expectedStandardXMRNetwork())
+}
+
+func (s *XMRAddressSuite) TestXMRAddressPublicKeys(c *C) {
+	spend := makeTestXMRKey("pubkeys-spend")
+	view := makeTestXMRKey("pubkeys-view")
+	paymentID := [8]byte{1, 2, 3, 4, 5, 6, 7, 8}
+
+	// A wallet-compatible vault address with an independently known spend key
+	// and THORChain's shared view key.
+	fixtureSpendBytes, err := hex.DecodeString(xmrFixtureSpendHex)
+	c.Assert(err, IsNil)
+	var fixtureSpend [32]byte
+	copy(fixtureSpend[:], fixtureSpendBytes)
+	fixtureView, err := deriveXMRViewPubKey()
+	c.Assert(err, IsNil)
+
+	valid := []struct {
+		name       string
+		address    string
+		spend      [32]byte
+		view       [32]byte
+		subaddress bool
+	}{
+		{name: "standard", address: makeTestXMRAddr(xmrPrimaryNetworkByte, spend, view), spend: spend, view: view},
+		{name: "integrated", address: makeTestXMRIntegratedAddr(spend, view, paymentID), spend: spend, view: view},
+		{name: "subaddress", address: makeTestXMRAddr(xmrSubaddressNetworkByte, spend, view), spend: spend, view: view, subaddress: true},
+		{name: "fixture vault address", address: xmrFixturePublicAddress, spend: fixtureSpend, view: fixtureView},
+	}
+	for _, tc := range valid {
+		gotSpend, gotView, gotSub, err := XMRAddressPublicKeys(tc.address)
+		c.Assert(err, IsNil, Commentf(tc.name))
+		c.Check(gotSpend, Equals, tc.spend, Commentf(tc.name))
+		c.Check(gotView, Equals, tc.view, Commentf(tc.name))
+		c.Check(gotSub, Equals, tc.subaddress, Commentf(tc.name))
+	}
+
+	standard := makeTestXMRAddr(xmrPrimaryNetworkByte, spend, view)
+	badChecksum := []byte(standard)
+	badChecksum[len(badChecksum)-1] ^= 1
+	invalid := []struct {
+		name    string
+		address string
+	}{
+		{name: "featured", address: makeTestXMRFeaturedAddr(xmrFeaturedMainnetNetworkByte, spend, view, 0, nil)},
+		{name: "featured subaddress", address: makeTestXMRFeaturedAddr(xmrFeaturedMainnetNetworkByte, spend, view, xmrFeaturedSubaddressBit|xmrFeaturedGuaranteedBit, nil)},
+		{name: "featured integrated", address: makeTestXMRFeaturedAddr(xmrFeaturedMainnetNetworkByte, spend, view, xmrFeaturedIntegratedBit, &paymentID)},
+		{name: "bad checksum", address: string(badChecksum)},
+		{name: "truncated", address: standard[:len(standard)-11]},
+		{name: "unknown network byte", address: makeTestXMRAddr(0x99, spend, view)},
+		{name: "not base58", address: "0OIl" + standard[4:]},
+		{name: "empty", address: ""},
+	}
+	for _, tc := range invalid {
+		_, _, _, err := XMRAddressPublicKeys(tc.address)
+		c.Check(err, NotNil, Commentf(tc.name))
+	}
 }

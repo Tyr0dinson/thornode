@@ -19,11 +19,14 @@ type xmrKeygenRequest struct {
 // The high-water mark rejects old retries, but is not a completion cache: the
 // same ceremony may run sequentially to resubmit a result not accepted on chain.
 type xmrKeygenSlot struct {
-	mu           sync.Mutex
-	active       *xmrKeygenRequest
-	pending      *xmrKeygenRequest
-	latestHeight int64
-	latestID     common.TxID
+	absenceHeight int64
+	absenceID     common.TxID
+	absent        []string
+	mu            sync.Mutex
+	active        *xmrKeygenRequest
+	pending       *xmrKeygenRequest
+	latestHeight  int64
+	latestID      common.TxID
 }
 
 // admit returns work only to the execution owner. Duplicate/stale contenders

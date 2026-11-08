@@ -1,6 +1,7 @@
 package tss
 
 import (
+	"context"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -208,7 +209,70 @@ type FrostSignCoordinator struct {
 	timeout                   time.Duration
 	privateKey                tcrypto.PrivKey
 	strictTranscript          bool
+	// preparedInputs are the inputs this node's own prepare selected. A result
+	// spending exactly them was built from this node's session.
+	preparedInputs []FrostSpentOutputRef
+	// preparedRequest is the keysign request this node's prepare planned for,
+	// or, until it prepares, the scheduled txout.
+	preparedRequest FrostKeySignRequest
+	// scheduledTxOut marks a source-vault member that may adopt a result
+	// matching the scheduled txout while it holds no prepared inputs: one
+	// outside the signing party, or one whose own prepare never ran.
+	scheduledTxOut bool
+	// verifyAdopted checks a peer-reported transaction against preparedRequest
+	// and preparedInputs before it is adopted. Nil uses verifyAdoptedFrostTx.
+	verifyAdopted func(FrostKeySignRequest, []FrostSpentOutputRef, FrostKeySignResponse) error
+	// verifyScheduled checks a peer-reported transaction against the scheduled
+	// txout and the vault outputs the local sidecar tracks. Nil uses
+	// verifyScheduledFrostTx.
+	verifyScheduled func(FrostKeySignRequest, FrostKeySignResponse, []FrostVaultOutput) error
+	// recheckInterval overrides frostAdoptionRecheckInterval.
+	recheckInterval time.Duration
 }
+
+// frostPreparedResultQuorum is how many matching success results, from distinct
+// active party members, a party member needs to adopt one whose spent refs
+// equal the inputs it prepared itself, without the full threshold+1. Requiring
+// threshold+1 instead would leave a minimal party with no adopter as soon as
+// one member fails after its partial, and the source-vault certificate short of
+// attestations.
+//
+// A source-vault member without prepared inputs (outside the party, or whose
+// prepare never ran) adopts a result matching the txout THORChain scheduled
+// from a third of the party (frostScheduledResultQuorum), so the source-vault
+// certificate still forms when party members drop before they combine.
+//
+// Before adopting below threshold+1, the node decodes the transaction and
+// checks it against its own plan or the scheduled txout (verifyAdoptedFrostTx):
+// the recomputed tx id, the destination, amount (plus a migration's gas sweep)
+// and memo, the fee within MaxGas, and every other output paying the source
+// vault's change, so colluding senders cannot redirect funds. That check does
+// not verify signatures or range proofs, and a member without prepared inputs
+// learns key images only from the reported refs: senders below the signing
+// threshold could otherwise hand it a fabricated transaction with arbitrary key
+// images that marks whichever tracked vault outputs they choose spent, and its
+// attestation, with theirs, completes the observation of an outbound that never
+// mines. So the node also waits until its own daemon holds the transaction
+// (daemonHoldsTx): the tx id commits to the signatures and proofs, and the
+// daemon accepts only a valid transaction whose key images are unspent.
+//
+// A member without prepared inputs further binds every reported ref to an
+// output its own sidecar tracks for the vault (verifyScheduledFrostTx): known,
+// bound locally to the reported key image, and together funding exactly the
+// transaction's outputs plus fee. Amounts cannot pair a key image with its
+// output, so a ref whose output has no key image locally is rejected. A sidecar
+// that cannot list the vault's outputs, has not scanned or bound a funding
+// output yet, or cannot query its daemon leaves the member adopting only at
+// threshold+1.
+const frostPreparedResultQuorum = 2
+
+// frostAdoptionRecheckInterval is how often WaitForResult checks again a result
+// that enough senders reported but this node could not verify yet.
+const frostAdoptionRecheckInterval = 2 * time.Second
+
+// errFrostAdoptionPending marks a result this node cannot verify yet because
+// its sidecar has not caught up; WaitForResult checks it again.
+var errFrostAdoptionPending = errors.New("not verifiable yet")
 
 func NewFrostSignCoordinator(
 	comm *p2p.Communication,
@@ -1060,16 +1124,7 @@ func (t *TssServer) FrostKeySign(req FrostKeySignRequest, sidecar FrostSidecarCl
 		close(sigChan)
 	}()
 
-	coordinator := NewFrostSignCoordinator(
-		t.p2pCommunication,
-		sidecar,
-		t.localNodePubKey,
-		msgID,
-		planHash,
-		inbox,
-		t.conf.KeySignTimeout,
-		t.privateKey,
-	)
+	coordinator := t.newFrostKeySignCoordinator(req, sidecar, msgID, planHash, inbox)
 	// Batching preserves the logical echo count. Charge each decoded entry;
 	// the subscription's same count remains a looser ceiling on whole frames.
 	coordinator.verificationEntryLimit = verificationMessageLimit
@@ -1381,6 +1436,8 @@ func (c *FrostSignCoordinator) Execute(
 			Blame:  blame.NewBlame(fmt.Sprintf("frost prepare failed: %v", err), nil),
 		}
 	}
+	c.preparedInputs = prepareResp.SelectedInputs
+	c.preparedRequest = req
 
 	preprocesses, failResp := c.exchangePreprocess(
 		activeSet,
@@ -1566,8 +1623,7 @@ func (c *FrostSignCoordinator) exchangePreprocess(
 			if strings.TrimSpace(wrapped.MsgID) != c.msgID {
 				continue
 			}
-			switch wrapped.MessageType {
-			case messages.TSSFrostPreprocessMsg:
+			if wrapped.MessageType == messages.TSSFrostPreprocessMsg {
 				var incoming FrostPreprocessPayload
 				if err := json.Unmarshal(wrapped.Payload, &incoming); err != nil {
 					c.logger.Warn().Err(err).Str("peer", msg.PeerID.String()).Msg("ignoring malformed preprocess payload")
@@ -1754,8 +1810,7 @@ func (c *FrostSignCoordinator) exchangeShares(
 			if strings.TrimSpace(wrapped.MsgID) != c.msgID {
 				continue
 			}
-			switch wrapped.MessageType {
-			case messages.TSSFrostShareMsg:
+			if wrapped.MessageType == messages.TSSFrostShareMsg {
 				var incoming FrostSharePayload
 				if err := json.Unmarshal(wrapped.Payload, &incoming); err != nil {
 					continue
@@ -1877,123 +1932,163 @@ func (c *FrostSignCoordinator) WaitForResult(activeParticipants []string, quorum
 	equivocated := make(map[string]struct{}, len(activeByNormalized))
 	timer := time.NewTimer(timeout)
 	defer timer.Stop()
+	// Sidecar calls made while verifying a result end with the wait, so a hung
+	// sidecar cannot hold the loop past it.
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	var recheck <-chan time.Time
+	if len(c.preparedInputs) != 0 || c.scheduledTxOut {
+		interval := c.recheckInterval
+		if interval <= 0 {
+			interval = frostAdoptionRecheckInterval
+		}
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		recheck = ticker.C
+	}
+	// handle counts one result message; it reports true with the response to
+	// return once one is adopted.
+	handle := func(msg *p2p.Message) (FrostKeySignResponse, bool) {
+		if msg == nil {
+			return FrostKeySignResponse{}, false
+		}
+		if _, active := activePeers[msg.PeerID]; !active {
+			return FrostKeySignResponse{}, false
+		}
+		wrapped, ok := parseWrappedMessage(msg.Payload)
+		if !ok || wrapped.MessageType != messages.TSSFrostResultMsg {
+			return FrostKeySignResponse{}, false
+		}
+		if strings.TrimSpace(wrapped.MsgID) != c.msgID {
+			return FrostKeySignResponse{}, false
+		}
+		var payload FrostResultPayload
+		if err := json.Unmarshal(wrapped.Payload, &payload); err != nil {
+			c.logger.Warn().Err(err).Str("peer", msg.PeerID.String()).Msg("skipping malformed frost result payload")
+			return FrostKeySignResponse{}, false
+		}
+		senderNorm := normalizePubKey(payload.SenderPubKey)
+		if senderNorm == "" {
+			c.logger.Warn().Str("peer", msg.PeerID.String()).Msg("skipping frost result with empty sender pubkey")
+			return FrostKeySignResponse{}, false
+		}
+		if _, ok := activeByNormalized[senderNorm]; !ok {
+			c.logger.Warn().Str("sender", payload.SenderPubKey).Msg("skipping frost result from non-active signer")
+			return FrostKeySignResponse{}, false
+		}
+		if err := c.validateSenderPeerBinding(msg.PeerID, payload.SenderPubKey); err != nil {
+			c.logger.Warn().Err(err).Str("sender", payload.SenderPubKey).Msg("skipping frost result with peer binding mismatch")
+			return FrostKeySignResponse{}, false
+		}
+
+		normalized, matchKey, err := normalizeResultPayload(payload.Response, c.msgID, c.expectedPlanHash)
+		if err != nil {
+			if _, disqualified := equivocated[senderNorm]; disqualified {
+				return FrostKeySignResponse{}, false
+			}
+			if _, alreadyVoted := senderVotes[senderNorm]; alreadyVoted {
+				// Retain at most one malformed variant per authenticated
+				// sender. A later valid vote may replace it below.
+				return FrostKeySignResponse{}, false
+			}
+			reason := truncateFrostResultReason(err.Error())
+			c.logger.Warn().Err(err).Str("sender", payload.SenderPubKey).Msg("skipping malformed frost result")
+			bucket := malformedBuckets[reason]
+			if bucket == nil {
+				if len(malformedBuckets) >= len(activeByNormalized) {
+					return FrostKeySignResponse{}, false
+				}
+				bucket = &malformedResultVoteBucket{
+					voters: make(map[string]struct{}),
+				}
+				malformedBuckets[reason] = bucket
+			}
+			bucket.voters[senderNorm] = struct{}{}
+			senderVotes[senderNorm] = senderResultVote{key: reason, malformed: true}
+			if len(bucket.voters) >= quorum {
+				// Authentication identifies the reporter, not the cause of the
+				// underlying signing failure. Terminate with a non-actionable
+				// diagnostic rather than manufacturing blame against reporters.
+				resp := c.failForPubKeys(reason, messages.FROSTKEYSIGNRESULT, nil)
+				return resp, true
+			}
+			return FrostKeySignResponse{}, false
+		}
+		if _, disqualified := equivocated[senderNorm]; disqualified {
+			return FrostKeySignResponse{}, false
+		}
+		if existing, alreadyVoted := senderVotes[senderNorm]; alreadyVoted {
+			if existing.malformed {
+				if malformedBucket := malformedBuckets[existing.key]; malformedBucket != nil {
+					delete(malformedBucket.voters, senderNorm)
+					if len(malformedBucket.voters) == 0 {
+						delete(malformedBuckets, existing.key)
+					}
+				}
+				delete(senderVotes, senderNorm)
+			} else if existing.key == matchKey {
+				return FrostKeySignResponse{}, false
+			} else {
+				// Two different well-formed results from one authenticated
+				// sender are equivocation. Remove its first vote and retain
+				// only the bounded disqualification marker.
+				if previousBucket := buckets[existing.key]; previousBucket != nil {
+					delete(previousBucket.voters, senderNorm)
+					if len(previousBucket.voters) == 0 {
+						delete(buckets, existing.key)
+					}
+				}
+				delete(senderVotes, senderNorm)
+				equivocated[senderNorm] = struct{}{}
+				c.logger.Warn().Str("sender", payload.SenderPubKey).Msg("disqualifying frost result sender after conflicting valid votes")
+				return FrostKeySignResponse{}, false
+			}
+		}
+
+		// Success and failure results both need a matching active-signer
+		// quorum. The eventuality proves plan/hash consistency, but it is not
+		// a full local Monero transaction verifier, so one active success is
+		// not enough to seed a durable retry guard on non-active nodes.
+		bucket := buckets[matchKey]
+		if bucket == nil {
+			if len(buckets) >= len(activeByNormalized) {
+				return FrostKeySignResponse{}, false
+			}
+			bucket = &resultVoteBucket{
+				response: normalized,
+				voters:   make(map[string]struct{}),
+			}
+			buckets[matchKey] = bucket
+		}
+		bucket.voters[senderNorm] = struct{}{}
+		senderVotes[senderNorm] = senderResultVote{key: matchKey}
+		if len(bucket.voters) >= quorum {
+			return bucket.response, true
+		}
+		if c.adoptBelowQuorum(ctx, bucket, quorum) {
+			return bucket.response, true
+		}
+		return FrostKeySignResponse{}, false
+	}
 	for {
 		select {
 		case msg := <-c.inbox.result:
-			if msg == nil {
-				continue
+			if resp, done := handle(msg); done {
+				return resp, nil
 			}
-			// Narrowing leaves queued frames from removed peers; discard them before parsing.
-			if _, active := activePeers[msg.PeerID]; !active {
-				continue
+		case <-recheck:
+			// No further vote may arrive once threshold members have sent
+			// theirs, so a result that could not be verified yet is checked
+			// again until the timer runs out.
+			keys := make([]string, 0, len(buckets))
+			for key := range buckets {
+				keys = append(keys, key)
 			}
-			wrapped, ok := parseWrappedMessage(msg.Payload)
-			if !ok || wrapped.MessageType != messages.TSSFrostResultMsg {
-				continue
-			}
-			if strings.TrimSpace(wrapped.MsgID) != c.msgID {
-				continue
-			}
-			var payload FrostResultPayload
-			if err := json.Unmarshal(wrapped.Payload, &payload); err != nil {
-				c.logger.Warn().Err(err).Str("peer", msg.PeerID.String()).Msg("skipping malformed frost result payload")
-				continue
-			}
-			senderNorm := normalizePubKey(payload.SenderPubKey)
-			if senderNorm == "" {
-				c.logger.Warn().Str("peer", msg.PeerID.String()).Msg("skipping frost result with empty sender pubkey")
-				continue
-			}
-			if _, ok := activeByNormalized[senderNorm]; !ok {
-				c.logger.Warn().Str("sender", payload.SenderPubKey).Msg("skipping frost result from non-active signer")
-				continue
-			}
-			if err := c.validateSenderPeerBinding(msg.PeerID, payload.SenderPubKey); err != nil {
-				c.logger.Warn().Err(err).Str("sender", payload.SenderPubKey).Msg("skipping frost result with peer binding mismatch")
-				continue
-			}
-
-			normalized, matchKey, err := normalizeResultPayload(payload.Response, c.msgID, c.expectedPlanHash)
-			if err != nil {
-				if _, disqualified := equivocated[senderNorm]; disqualified {
-					continue
+			sort.Strings(keys)
+			for _, key := range keys {
+				if c.adoptBelowQuorum(ctx, buckets[key], quorum) {
+					return buckets[key].response, nil
 				}
-				if _, alreadyVoted := senderVotes[senderNorm]; alreadyVoted {
-					// Retain at most one malformed variant per authenticated
-					// sender. A later valid vote may replace it below.
-					continue
-				}
-				reason := truncateFrostResultReason(err.Error())
-				c.logger.Warn().Err(err).Str("sender", payload.SenderPubKey).Msg("skipping malformed frost result")
-				bucket := malformedBuckets[reason]
-				if bucket == nil {
-					if len(malformedBuckets) >= len(activeByNormalized) {
-						continue
-					}
-					bucket = &malformedResultVoteBucket{
-						reason: reason,
-						voters: make(map[string]string),
-					}
-					malformedBuckets[reason] = bucket
-				}
-				bucket.voters[senderNorm] = activeByNormalized[senderNorm]
-				senderVotes[senderNorm] = senderResultVote{key: reason, malformed: true}
-				if len(bucket.voters) >= quorum {
-					resp := c.failForPubKeys(reason, messages.FROSTKEYSIGNRESULT, bucket.pubKeys())
-					return resp, nil
-				}
-				continue
-			}
-			if _, disqualified := equivocated[senderNorm]; disqualified {
-				continue
-			}
-			if existing, alreadyVoted := senderVotes[senderNorm]; alreadyVoted {
-				if existing.malformed {
-					if malformedBucket := malformedBuckets[existing.key]; malformedBucket != nil {
-						delete(malformedBucket.voters, senderNorm)
-						if len(malformedBucket.voters) == 0 {
-							delete(malformedBuckets, existing.key)
-						}
-					}
-					delete(senderVotes, senderNorm)
-				} else if existing.key == matchKey {
-					continue
-				} else {
-					// Two different well-formed results from one authenticated
-					// sender are equivocation. Remove its first vote and retain
-					// only the bounded disqualification marker.
-					if previousBucket := buckets[existing.key]; previousBucket != nil {
-						delete(previousBucket.voters, senderNorm)
-						if len(previousBucket.voters) == 0 {
-							delete(buckets, existing.key)
-						}
-					}
-					delete(senderVotes, senderNorm)
-					equivocated[senderNorm] = struct{}{}
-					c.logger.Warn().Str("sender", payload.SenderPubKey).Msg("disqualifying frost result sender after conflicting valid votes")
-					continue
-				}
-			}
-
-			// Success and failure results both need a matching active-signer
-			// quorum. The eventuality proves plan/hash consistency, but it is not
-			// a full local Monero transaction verifier, so one active success is
-			// not enough to seed a durable retry guard on non-active nodes.
-			bucket := buckets[matchKey]
-			if bucket == nil {
-				if len(buckets) >= len(activeByNormalized) {
-					continue
-				}
-				bucket = &resultVoteBucket{
-					response: normalized,
-					voters:   make(map[string]struct{}),
-				}
-				buckets[matchKey] = bucket
-			}
-			bucket.voters[senderNorm] = struct{}{}
-			senderVotes[senderNorm] = senderResultVote{key: matchKey}
-			if len(bucket.voters) >= quorum {
-				return bucket.response, nil
 			}
 		// The caller never resumes keysign phases after entering this waiter: an
 		// active signer has a terminal local outcome, while an observer never ran
@@ -2006,6 +2101,180 @@ func (c *FrostSignCoordinator) WaitForResult(activeParticipants []string, quorum
 			return FrostKeySignResponse{}, errFrostResultTimeout
 		}
 	}
+}
+
+// frostScheduledResultQuorum is how many matching success results a source-vault
+// member without prepared inputs needs to adopt one that matches the scheduled
+// txout: a third of the party (quorum is threshold+1, the party size), rounded
+// up, and never fewer than frostPreparedResultQuorum. A party of 67 needs 23.
+// The daemon-holds-tx gate stops a fabricated transaction; this quorum bounds
+// how few senders can choose which tracked vault outputs a member without
+// prepared inputs records as spent.
+func frostScheduledResultQuorum(quorum int) int {
+	return max(frostPreparedResultQuorum, (quorum+2)/3)
+}
+
+// adoptBelowQuorum reports whether bucket's result may be adopted from fewer
+// than quorum senders: from frostPreparedResultQuorum when it spends this
+// node's prepared inputs, or from frostScheduledResultQuorum when this node
+// holds only the scheduled txout. A result that cannot be verified yet, because
+// the local sidecar has not caught up, is left for a later check; any other
+// failure rejects the bucket for the session. Once the result has passed the
+// structural and ref-binding checks, later checks only ask whether the daemon
+// holds it.
+func (c *FrostSignCoordinator) adoptBelowQuorum(ctx context.Context, bucket *resultVoteBucket, quorum int) bool {
+	if bucket == nil || bucket.rejected || bucket.response.Status != tcommon.Success {
+		return false
+	}
+	var check func(context.Context, FrostKeySignResponse) error
+	var path string
+	switch {
+	case len(c.preparedInputs) != 0:
+		if len(bucket.voters) < frostPreparedResultQuorum {
+			return false
+		}
+		check, path = c.spendsPreparedInputs, "spends this node's prepared inputs"
+	case c.scheduledTxOut:
+		if len(bucket.voters) < frostScheduledResultQuorum(quorum) {
+			return false
+		}
+		check, path = c.matchesScheduledTxOut, "matches the scheduled txout"
+	default:
+		return false
+	}
+	// These sidecar calls run inside the result loop. Bound each by the recheck
+	// interval, not the whole wait, so a stalled call cannot keep the loop from
+	// reading results that would reach the full quorum; a call that times out
+	// is checked again on the next tick.
+	callTimeout := c.recheckInterval
+	if callTimeout <= 0 {
+		callTimeout = frostAdoptionRecheckInterval
+	}
+	callCtx, cancel := context.WithTimeout(ctx, callTimeout)
+	defer cancel()
+	var err error
+	if !bucket.verified {
+		if err = check(callCtx, bucket.response); err == nil {
+			bucket.verified = true
+		}
+	}
+	if err == nil {
+		err = c.daemonHoldsTx(callCtx, bucket.response.TxHash)
+	}
+	if err != nil {
+		if errors.Is(err, errFrostAdoptionPending) {
+			c.logger.Debug().Err(err).Str("tx_hash", bucket.response.TxHash).
+				Msg("frost result not verifiable yet, checking again")
+			return false
+		}
+		bucket.rejected = true
+		c.logger.Warn().Err(err).Str("tx_hash", bucket.response.TxHash).
+			Msg("not adopting frost result below threshold+1")
+		return false
+	}
+	c.logger.Info().Str("tx_hash", bucket.response.TxHash).Int("results", len(bucket.voters)).
+		Msg("adopting frost result that " + path)
+	return true
+}
+
+// daemonHoldsTx checks that the local Monero daemon holds txHash, in its pool or
+// on chain. The caller has already recomputed txHash from the reported bytes,
+// signatures and proofs included, so the daemon holds exactly that transaction
+// and has verified what this node does not. Until the signers' broadcast
+// reaches it, the result is errFrostAdoptionPending.
+func (c *FrostSignCoordinator) daemonHoldsTx(ctx context.Context, txHash string) error {
+	pool, ok := c.sidecar.(FrostTxExistsClient)
+	if !ok {
+		return errors.New("sidecar cannot tell whether the daemon holds the transaction")
+	}
+	exists, err := pool.FrostTxExists(ctx, txHash)
+	if err != nil {
+		return fmt.Errorf("fail to ask the daemon for the transaction: %w: %w", err, errFrostAdoptionPending)
+	}
+	if !exists {
+		return fmt.Errorf("daemon does not hold the transaction: %w", errFrostAdoptionPending)
+	}
+	return nil
+}
+
+// spendsPreparedInputs checks that resp spends exactly the inputs this node
+// prepared for the session. Peers can report any refs, so the transaction
+// itself is decoded and checked against the prepared plan.
+func (c *FrostSignCoordinator) spendsPreparedInputs(_ context.Context, resp FrostKeySignResponse) error {
+	if err := validateFrostPreparedInputs(c.preparedInputs, resp.SpentOutputRefs, resp.TxHash); err != nil {
+		return err
+	}
+	verify := c.verifyAdopted
+	if verify == nil {
+		verify = verifyAdoptedFrostTx
+	}
+	if err := verify(c.preparedRequest, c.preparedInputs, resp); err != nil {
+		return fmt.Errorf("transaction does not match this node's prepared plan: %w", err)
+	}
+	return nil
+}
+
+// newFrostKeySignCoordinator builds the coordinator for req with scheduled txout
+// adoption armed. A source-vault member must attest the outbound even when it
+// sits outside the party, whether the keysign policy left it out (a jailed
+// member) or party formation did, so it may adopt a result from fewer than
+// threshold+1 senders once it has verified the transaction against the txout.
+// A member whose own prepare succeeded never takes that path.
+func (t *TssServer) newFrostKeySignCoordinator(
+	req FrostKeySignRequest,
+	sidecar FrostSidecarClient,
+	msgID, planHash string,
+	inbox *frostSignInbox,
+) *FrostSignCoordinator {
+	coordinator := NewFrostSignCoordinator(
+		t.p2pCommunication,
+		sidecar,
+		t.localNodePubKey,
+		msgID,
+		planHash,
+		inbox,
+		t.conf.KeySignTimeout,
+		t.privateKey,
+	)
+	coordinator.adoptScheduledTxOut(req)
+	return coordinator
+}
+
+// adoptScheduledTxOut lets a source-vault member without prepared inputs adopt a
+// frostScheduledResultQuorum result that matches req, the keysign request
+// derived from the scheduled txout. It reports false, leaving only threshold+1
+// adoption, when the local node is not a member of the source vault.
+func (c *FrostSignCoordinator) adoptScheduledTxOut(req FrostKeySignRequest) bool {
+	if !containsNormalizedPubKey(req.SignerPubKeys, c.localPubKey) {
+		return false
+	}
+	c.preparedRequest = req
+	c.scheduledTxOut = true
+	return true
+}
+
+// matchesScheduledTxOut checks that resp's transaction matches the scheduled
+// txout, for a source-vault member without prepared inputs. The transaction
+// must spend exactly the key images of the reported spent refs, and the refs
+// must name vault outputs the local sidecar tracks. A failure to list them, or
+// a ref the sidecar has not scanned yet, is errFrostAdoptionPending.
+func (c *FrostSignCoordinator) matchesScheduledTxOut(ctx context.Context, resp FrostKeySignResponse) error {
+	lister, ok := c.sidecar.(FrostVaultOutputsClient)
+	if !ok {
+		return errors.New("sidecar cannot list vault outputs to bind the spent refs")
+	}
+	outputs, err := lister.FrostVaultOutputs(ctx, c.preparedRequest.VaultPubKey)
+	if err != nil {
+		return fmt.Errorf("fail to list vault outputs: %w: %w", err, errFrostAdoptionPending)
+	}
+	verify := c.verifyScheduled
+	if verify == nil {
+		verify = verifyScheduledFrostTx
+	}
+	if err = verify(c.preparedRequest, resp, outputs); err != nil {
+		return fmt.Errorf("transaction does not match the scheduled txout: %w", err)
+	}
+	return nil
 }
 
 func (c *FrostSignCoordinator) BroadcastResult(resp FrostKeySignResponse, peers []peer.ID) error {
@@ -2119,17 +2388,6 @@ func (c *FrostSignCoordinator) validateSenderPeerBinding(msgPeer peer.ID, sender
 	return nil
 }
 
-func (c *FrostSignCoordinator) failForMalformed(msgPeer peer.ID, reason, round string) FrostKeySignResponse {
-	pubKey, err := conversion.GetPubKeyFromPeerID(msgPeer.String())
-	if err != nil {
-		return FrostKeySignResponse{
-			Status: tcommon.Fail,
-			Blame:  buildBlame(reason, round, nil),
-		}
-	}
-	return c.failForPubKeys(reason, round, []string{pubKey})
-}
-
 func (c *FrostSignCoordinator) failForPubKeys(reason, round string, pubKeys []string) FrostKeySignResponse {
 	return FrostKeySignResponse{
 		Status: tcommon.Fail,
@@ -2169,6 +2427,12 @@ func parseWrappedMessage(raw []byte) (messages.WrappedMessage, bool) {
 type resultVoteBucket struct {
 	response FrostKeySignResponse
 	voters   map[string]struct{}
+	// rejected marks a result that failed verification for adoption below
+	// threshold+1; only the full quorum can still adopt it.
+	rejected bool
+	// verified marks a result that passed the checks against this node's plan
+	// or the scheduled txout; only the daemon check is left.
+	verified bool
 }
 
 type senderResultVote struct {
@@ -2177,17 +2441,7 @@ type senderResultVote struct {
 }
 
 type malformedResultVoteBucket struct {
-	reason string
-	voters map[string]string
-}
-
-func (b *malformedResultVoteBucket) pubKeys() []string {
-	pubKeys := make([]string, 0, len(b.voters))
-	for _, pubKey := range b.voters {
-		pubKeys = append(pubKeys, pubKey)
-	}
-	sort.Strings(pubKeys)
-	return pubKeys
+	voters map[string]struct{}
 }
 
 func truncateFrostResultReason(reason string) string {
@@ -2353,10 +2607,9 @@ func normalizeBlameForResult(in blame.Blame) (blame.Blame, error) {
 	if len(in.BlameNodes) > frostMaxResultBlameNodes {
 		return blame.Blame{}, fmt.Errorf("frost fail result blame nodes exceeds limit")
 	}
-	if len(in.BlameNodes) == 0 {
-		return blame.Blame{}, fmt.Errorf("frost fail result missing blame nodes")
-	}
-
+	// Local policy, durability and equivocation-detection failures can be
+	// terminal without identifying a slashable peer. Preserve their bounded
+	// reason and actual round as explicitly non-actionable quorum results.
 	nodes := make([]blame.Node, 0, len(in.BlameNodes))
 	seen := make(map[string]struct{}, len(in.BlameNodes))
 	for _, node := range in.BlameNodes {
@@ -2384,9 +2637,6 @@ func normalizeBlameForResult(in blame.Blame) (blame.Blame, error) {
 			BlameData:      node.BlameData,
 			BlameSignature: node.BlameSignature,
 		})
-	}
-	if len(nodes) == 0 {
-		return blame.Blame{}, fmt.Errorf("frost fail result missing blame nodes")
 	}
 	sort.Slice(nodes, func(i, j int) bool {
 		iKey := strings.ToLower(nodes[i].Pubkey) + "|" + hex.EncodeToString(nodes[i].BlameData) + "|" + hex.EncodeToString(nodes[i].BlameSignature)

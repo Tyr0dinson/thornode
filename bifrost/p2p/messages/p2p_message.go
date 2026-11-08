@@ -39,6 +39,8 @@ const (
 	TSSFrostDKGRound3Msg
 	// TSSFrostDKGResultMsg is final DKG result propagation for non-active signers
 	TSSFrostDKGResultMsg
+	// TSSFrostDKGPresenceMsg announces participation before any peer-dependent work.
+	TSSFrostDKGPresenceMsg
 	// Unknown is the message indicates the undefined message type
 	Unknown
 )
@@ -62,6 +64,8 @@ func (msgType THORChainTSSMessageType) String() string {
 		return "TSSFrostVerifyMsg"
 	case TSSFrostResultMsg:
 		return "TSSFrostResultMsg"
+	case TSSFrostDKGPresenceMsg:
+		return "TSSFrostDKGPresenceMsg"
 	case TSSFrostDKGRound1Msg:
 		return "TSSFrostDKGRound1Msg"
 	case TSSFrostDKGRound2Msg:

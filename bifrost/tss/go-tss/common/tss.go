@@ -52,8 +52,15 @@ type TssCommon struct {
 	culpritsLock                *sync.RWMutex
 	cachedWireBroadcastMsgLists *sync.Map
 	cachedWireUnicastMsgLists   *sync.Map
-	poisonedParties             *sync.Map
-	msgNum                      int
+	// poisonedParties records local parties (by msgIdentifier) whose
+	// UpdateFromBytes panicked. tss-lib's BaseUpdate cannot defer its mutex
+	// unlock (the call is recursive), so a recovered panic leaves the party
+	// mutex held forever; any later UpdateFromBytes on that party would
+	// block its worker goroutine for the process lifetime. Jobs for
+	// poisoned parties are dropped instead — the ceremony is already doomed
+	// and blame was recorded by the panic that poisoned it.
+	poisonedParties *sync.Map
+	msgNum          int
 }
 
 func NewTssCommon(peerID string, broadcastChannel chan *messages.BroadcastMsgChan, conf TssConfig, msgID string, privKey tcrypto.PrivKey, msgNum int) *TssCommon {

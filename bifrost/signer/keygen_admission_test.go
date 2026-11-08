@@ -181,8 +181,15 @@ func TestKeygenRetryRevalidatesAtFire(t *testing.T) {
 		interval int64
 		wantRuns int
 	}{
-		{"last valid before tick", 3699, 1000, 100, 1},
+		{"late shared round", 3402, 1000, 100, 1},
+		{"final exact-fit round", 3500, 1000, 100, 1},
+		{"final round two blocks late", 3502, 1000, 100, 1},
+		{"final join window missed", 3503, 1000, 100, 0},
+		{"retry tick lacks headroom", 3600, 1000, 100, 0},
+		{"no completion headroom", 3500, 900, 100, 0},
+		{"last valid height lacks headroom", 3699, 1000, 100, 0},
 		{"expired at retry tick", 3700, 1000, 100, 0},
+		{"expired", 3701, 1000, 100, 0},
 		{"churn disabled", 2800, 0, 100, 0},
 		{"keygen retry disabled", 2800, 1000, 0, 0},
 		{"window shrunk", 3100, 1, 100, 0},
@@ -198,7 +205,7 @@ func TestKeygenRetryRevalidatesAtFire(t *testing.T) {
 			block := newSingleFlightXMRKeygen(t, 2700)
 			bridge.setHeight(2700)
 			bridge.setMimir(constants.KeygenRetryInterval.String(), 100)
-			if !signer.scheduleKeygenRetry(block, block.Keygens[0]) {
+			if !signer.scheduleKeygenRetry(block, block.Keygens[0], nil, nil) {
 				t.Fatal("initial open policy did not schedule retry")
 			}
 			value, _ := signer.keygenRetries.Load(retryID(block, block.Keygens[0]))
@@ -378,9 +385,9 @@ func TestKeygenRetrySurvivesMimirLookupFailure(t *testing.T) {
 						}
 					}
 					bridge.mimirErrs = nil
-					// The last valid height (churn-1) allows execution but leaves
-					// no headroom to spawn another retry after the empty Asgard key.
-					bridge.setHeight(3699)
+					// The last admissible round leaves completion headroom, but
+					// cannot schedule another round after the empty Asgard key.
+					bridge.setHeight(3500)
 					switch outcome {
 					case "disabled":
 						bridge.setMimir(mimir.String(), 0)

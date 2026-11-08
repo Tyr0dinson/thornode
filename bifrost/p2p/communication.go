@@ -77,6 +77,10 @@ const (
 	// this ceiling; round 2 uses FrostMaxSessionPayload because it carries one
 	// encrypted share per remote participant.
 	FrostKeygenControlPayload = 64 * 1024
+	// FrostKeygenPresenceMessagesPerPeer allows the unconditional announcement
+	// and one reply to the receiver's first presence. Per-peer limits prevent
+	// one participant from consuming another's admission allowance.
+	FrostKeygenPresenceMessagesPerPeer = uint32(2)
 	// FrostMaxMessagesPerPeer is the baseline retained/processed traffic bound
 	// per peer for one message type and session. Shared FROST verification topics
 	// use FrostVerificationMessagesPerPeer because one peer legitimately echoes
@@ -404,7 +408,8 @@ func (c *Communication) Broadcast(peers []peer.ID, msg []byte, msgID string, msg
 // FROST message cannot accidentally get only half of its stream lifecycle.
 func streamPolicyFor(msgType messages.THORChainTSSMessageType) tssStreamPolicy {
 	switch msgType {
-	case messages.TSSFrostDKGRound1Msg,
+	case messages.TSSFrostDKGPresenceMsg,
+		messages.TSSFrostDKGRound1Msg,
 		messages.TSSFrostDKGRound2Msg,
 		messages.TSSFrostDKGRound3Msg,
 		messages.TSSFrostDKGResultMsg:

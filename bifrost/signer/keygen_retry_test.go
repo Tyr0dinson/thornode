@@ -2,6 +2,7 @@ package signer
 
 import (
 	"errors"
+	"fmt"
 	"math"
 	"sync"
 	"testing"
@@ -43,6 +44,15 @@ func (b *retryTestBridge) GetBlockHeight() (int64, error) {
 
 func (b *retryTestBridge) GetAsgards() (ttypes.Vaults, error) { return nil, nil }
 
+// A terminal retry now constructs a failure report through the real message contract.
+func (b *retryTestBridge) GetKeygenStdTx(poolPubKey common.PubKey, signature, backup []byte, blame []ttypes.Blame, members common.PubKeys, keygenType ttypes.KeygenType, chains common.Chains, height, keygenTime int64, eddsa common.PubKey, eddsaBackup []byte, _ ...any) (sdktypes.Msg, error) {
+	signer, err := members[0].GetThorAddress()
+	if err != nil {
+		return nil, err
+	}
+	return ttypes.NewMsgTssPoolV3(members.Strings(), poolPubKey, signature, backup, keygenType, height, blame, chains.Strings(), signer, keygenTime, eddsa, eddsaBackup, nil, common.EmptyPubKey, 0)
+}
+
 func (b *retryTestBridge) Broadcast(...sdktypes.Msg) (common.TxID, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -69,7 +79,7 @@ func (b *retryTestBridge) fail(key string, err error) {
 }
 
 // recordingKeygen counts actual ordinary-TSS calls, not indirect policy reads.
-// Failure leaves result construction out of these retry/admission tests.
+// Terminal failures also exercise the bridge message constructor above.
 type recordingKeygen struct {
 	mu      sync.Mutex
 	heights []int64
@@ -138,7 +148,7 @@ func TestCommonRetryRetainsLookupFailures(t *testing.T) {
 					}
 				}
 				bridge.fail(lookup, nil)
-				bridge.setHeight(3699) // Last valid height (churn-1): no successor retry fits.
+				bridge.setHeight(3500) // Rejoin a later shared retry boundary.
 				want := 0
 				switch outcome {
 				case "resume":
@@ -161,6 +171,40 @@ func TestCommonRetryRetainsLookupFailures(t *testing.T) {
 	}
 }
 
+func TestCommonRetryReportingHaltDoesNotDisableRetries(t *testing.T) {
+	signer, bridge, generator, block := newRetryTestSigner(t)
+	bridge.setMimir(constants.MimirKeyHaltKeygenFailureReporting, 1)
+	bridge.fail(constants.MimirKeyHaltKeygenFailureReporting, errors.New("halt lookup unavailable"))
+	retry := registerRetryTestWork(signer, block, 2800)
+	if !signer.tryKeygenRetry(retry) || generator.calls() != 1 {
+		t.Fatal("reporting policy blocked the scheduled keygen")
+	}
+	bridge.mu.Lock()
+	haltReads := bridge.reads[constants.MimirKeyHaltKeygenFailureReporting]
+	bridge.mu.Unlock()
+	if haltReads != 0 {
+		t.Fatal("retry consulted reporting policy before it was terminal")
+	}
+	current, ok := signer.keygenRetries.Load(retryID(block, retry.keygen))
+	if !ok || current == retry {
+		t.Fatal("failed attempt did not schedule its successor")
+	}
+	bridge.fail(constants.MimirKeyHaltKeygenFailureReporting, nil)
+	bridge.setHeight(3603) // The final shared round's join window has closed.
+	successor, ok := current.(*keygenRetry)
+	if !ok {
+		t.Fatalf("unexpected retry token: %T", current)
+	}
+	if !signer.tryKeygenRetry(successor) {
+		t.Fatal("terminal successor did not retire")
+	}
+	bridge.mu.Lock()
+	defer bridge.mu.Unlock()
+	if bridge.broadcasts != 0 {
+		t.Fatal("halted terminal failure was reported")
+	}
+}
+
 func TestCommonRetryInitialFailureDeduplicatesAndRendezvous(t *testing.T) {
 	for _, lookup := range []string{constants.ChurnRetryInterval.String(), constants.KeygenRetryInterval.String(), "height"} {
 		t.Run(lookup, func(t *testing.T) {
@@ -171,7 +215,7 @@ func TestCommonRetryInitialFailureDeduplicatesAndRendezvous(t *testing.T) {
 				callers.Add(1)
 				go func() {
 					defer callers.Done()
-					if !signer.scheduleKeygenRetry(block, block.Keygens[0]) {
+					if !signer.scheduleKeygenRetry(block, block.Keygens[0], nil, nil) {
 						t.Error("lost retry intent")
 					}
 				}()
@@ -242,9 +286,7 @@ func TestCommonRetryDispatchesOnlyFailedAsgard(t *testing.T) {
 	}
 	block.Keygens = append(block.Keygens, companion)
 	retry := registerRetryTestWork(signer, block, 2800)
-	// 3699 is the last in-window block (validity = churn-1 = 999); 3700 is the
-	// retry tick itself, now out of window.
-	bridge.setHeight(3699)
+	bridge.setHeight(3500)
 	if !signer.tryKeygenRetry(retry) || generator.calls() != 1 {
 		t.Fatal("retry replayed successful companion")
 	}
@@ -316,9 +358,9 @@ func TestCommonRetryWindowAndScheduleBoundaries(t *testing.T) {
 		done   bool
 		target int64
 		// Scheduling keeps one interval of completion headroom inside the window.
-		// With validity now churn-1 (999) and interval 100, the last height that can
+		// With validity churn-1 (999) and interval 100, the last height that can
 		// still schedule is 3499 (target 3500); 3500 itself no longer fits.
-	}{{2700, false, 2800}, {2817, false, 2900}, {3499, false, 3500}, {3500, true, 0}, {3701, true, 0}, {math.MaxInt64, true, 0}} {
+	}{{2700, false, 2800}, {2817, false, 2900}, {3400, false, 3500}, {3499, false, 3500}, {3500, true, 0}, {3600, true, 0}, {3701, true, 0}, {math.MaxInt64, true, 0}} {
 		signer, bridge, _, block := newRetryTestSigner(t)
 		bridge.setHeight(test.height)
 		retry := &keygenRetry{block: block, keygen: block.Keygens[0]}
@@ -328,5 +370,136 @@ func TestCommonRetryWindowAndScheduleBoundaries(t *testing.T) {
 	}
 	if !keygenHeightInWindow(2700, 2700, 0) || keygenHeightInWindow(2701, 2700, 0) {
 		t.Fatal("zero validity must preserve only the initial block")
+	}
+}
+
+func TestCommonRetryDelayedFiring(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		height   int64
+		interval int64
+		target   int64
+		calls    int
+	}{
+		{"on time", 2800, 100, 0, 1},
+		{"cached poll skips target", 2801, 100, 0, 1},
+		{"last tolerated block", 2802, 100, 0, 1},
+		{"too late to join", 2803, 100, 2900, 0},
+		{"missed boundary", 2817, 100, 2900, 0},
+		{"next round after outage", 2901, 100, 0, 1},
+		{"last possible boundary ahead", 3499, 100, 3500, 0},
+		{"final boundary ahead", 3599, 100, 3600, 0},
+		{"final round on time", 3600, 100, 0, 1},
+		{"final round one block late", 3601, 100, 0, 1},
+		{"final round two blocks late", 3602, 100, 0, 1},
+		{"final join window missed", 3603, 100, 0, 0},
+		{"acceptance boundary", 3700, 100, 0, 0},
+		{"interval changed", 2800, 150, 2850, 0},
+		{"late on changed grid", 2851, 150, 0, 1},
+		{"larger interval needs more headroom", 3500, 300, 0, 0},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			signer, bridge, generator, block := newRetryTestSigner(t)
+			retry := registerRetryTestWork(signer, block, 2800)
+			// Keep a 1000-block result window (ChurnRetryInterval-1).
+			bridge.setMimir(constants.ChurnRetryInterval.String(), 1001)
+			bridge.setHeight(test.height)
+			bridge.setMimir(constants.KeygenRetryInterval.String(), test.interval)
+			finished := signer.tryKeygenRetry(retry)
+			if generator.calls() != test.calls || finished != (test.target == 0) {
+				t.Fatalf("late retry: calls=%d want=%d finished=%t", generator.calls(), test.calls, finished)
+			}
+			wantCalls := test.calls
+			if test.target != 0 {
+				if retry.targetHeight != test.target {
+					t.Fatalf("target=%d want=%d", retry.targetHeight, test.target)
+				}
+				bridge.setHeight(test.target)
+				wantCalls++
+				if !signer.tryKeygenRetry(retry) || generator.calls() != wantCalls {
+					t.Fatal("realigned retry did not execute at the next shared round")
+				}
+			}
+			if !signer.tryKeygenRetry(retry) || generator.calls() != wantCalls {
+				t.Fatal("old worker executed more than once")
+			}
+			if current, ok := signer.keygenRetries.Load(retryID(block, retry.keygen)); ok && current == retry {
+				t.Fatal("retired retry left its token behind")
+			}
+		})
+	}
+}
+
+// Exercise actual ceremonies and terminal reports, rather than only the grid
+// helper. Preserve develop's retry counts, including the final exact-fit round
+// for members that first observe it up to two blocks late.
+func TestCommonRetryConfigurationRounds(t *testing.T) {
+	for _, test := range []struct {
+		interval int64
+		rounds   []int64
+	}{
+		{360, []int64{360}},
+		{240, []int64{240, 480}},
+		{120, []int64{120, 240, 360, 480, 600}},
+		{100, []int64{100, 200, 300, 400, 500, 600}},
+	} {
+		for _, lateness := range []int64{0, 2} {
+			t.Run(fmt.Sprintf("720/%d/late=%d", test.interval, lateness), func(t *testing.T) {
+				signer, bridge, block := newFailureReportSigner(t)
+				// Keep a 720-block result window (ChurnRetryInterval-1).
+				bridge.mimirs[constants.ChurnRetryInterval.String()] = 721
+				bridge.mimirs[constants.KeygenRetryInterval.String()] = test.interval
+				bridge.height.Store(block.Height + 50)
+				calls := 0
+				signer.tssKeygen = failureKeygenFunc(func(int64, common.PubKeys) (common.PubKeySet, []ttypes.Blame, error) {
+					calls++
+					return common.EmptyPubKeySet, []ttypes.Blame{{FailReason: fmt.Sprintf("attempt %d failed", calls)}}, errors.New("DKG failed")
+				})
+				// The original ceremony fails after 50 blocks. Drive the worker's
+				// polls explicitly so the test does not wait hundreds of blocks.
+				signer.processKeygenBlock(block)
+				id := retryID(block, block.Keygens[0])
+				for _, boundary := range test.rounds {
+					current, ok := signer.keygenRetries.Load(id)
+					if !ok {
+						t.Fatalf("round %d was not scheduled", boundary)
+					}
+					retry, ok := current.(*keygenRetry)
+					if !ok || retry.targetHeight != block.Height+boundary {
+						t.Fatalf("round %d has unexpected token: %+v", boundary, current)
+					}
+					bridge.height.Store(block.Height + boundary + lateness)
+					if !signer.tryKeygenRetry(retry) {
+						t.Fatalf("round %d did not execute", boundary)
+					}
+					// A consumed worker cannot execute or retire its successor.
+					before := calls
+					if !signer.tryKeygenRetry(retry) || calls != before {
+						t.Fatal("consumed worker executed twice")
+					}
+				}
+				if calls != 1+len(test.rounds) {
+					t.Fatalf("ceremonies=%d want=%d", calls, 1+len(test.rounds))
+				}
+				if _, ok := signer.keygenRetries.Load(id); ok {
+					t.Fatal("scheduled a round without enough completion time")
+				}
+				if len(bridge.attempts) != 1 || bridge.attempts[0].Blame[0].FailReason != fmt.Sprintf("attempt %d failed", calls) {
+					t.Fatal("did not report the final completed attempt exactly once")
+				}
+
+				// A delayed worker that already owned the next boundary must
+				// reach the same decision as the scheduler and skip that round.
+				nextBoundary := int64(len(test.rounds)+1) * test.interval
+				bridge.height.Store(block.Height + nextBoundary + lateness)
+				retry := registerRetryTestWork(signer, block, block.Height+nextBoundary)
+				if !signer.tryKeygenRetry(retry) || calls != 1+len(test.rounds) {
+					t.Fatal("fire-time gate admitted the excluded round")
+				}
+				if _, ok := signer.keygenRetries.Load(id); ok {
+					t.Fatal("excluded round retained its token")
+				}
+			})
+		}
 	}
 }

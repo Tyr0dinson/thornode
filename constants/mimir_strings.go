@@ -11,6 +11,12 @@ const (
 	MimirKeyWasmMinGasPrice           = "WasmMinGasPrice"
 	MimirKeyScheduledMigration        = "ScheduledMigration"
 	MimirKeyDisableTSSSignerFiltering = "DisableTSSSignerFiltering"
+	// Any positive value halts new ordinary keygen failure reports from Bifrost,
+	// read by the signer's finishKeygenRetry. Unset/0 permits reporting. Retries,
+	// success handling and observation penalties are unchanged. The matching
+	// THORNode-side penalty skip is a separate consensus change not included here,
+	// so with this key alone THORNode still applies failure-blame penalties.
+	MimirKeyHaltKeygenFailureReporting = "HaltKeygenFailureReporting"
 	// MimirKeySignatureRefreshBlocks tunes the bifrost vault keep-alive self-sign
 	// staleness threshold in THORChain blocks (read by bifrost only, never by
 	// consensus code). Unset defaults to ~1 day of blocks; 0 disables the keep-alive.

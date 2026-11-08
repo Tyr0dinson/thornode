@@ -200,11 +200,12 @@ func enqueueWrappedPayload(
 func TestFrostKeygenInboxSubscriptionsCoverEveryTopic(t *testing.T) {
 	inbox := newFrostKeygenInbox()
 	want := map[messages.THORChainTSSMessageType]chan *p2p.Message{
-		messages.TSSFrostDKGRound1Msg: inbox.round1,
-		messages.TSSFrostDKGRound2Msg: inbox.round2,
-		messages.TSSFrostDKGRound3Msg: inbox.round3,
-		messages.TSSFrostVerifyMsg:    inbox.verify,
-		messages.TSSFrostDKGResultMsg: inbox.result,
+		messages.TSSFrostDKGPresenceMsg: inbox.presence,
+		messages.TSSFrostDKGRound1Msg:   inbox.round1,
+		messages.TSSFrostDKGRound2Msg:   inbox.round2,
+		messages.TSSFrostDKGRound3Msg:   inbox.round3,
+		messages.TSSFrostVerifyMsg:      inbox.verify,
+		messages.TSSFrostDKGResultMsg:   inbox.result,
 	}
 	seenChannels := make(map[chan *p2p.Message]struct{}, len(want))
 	for _, subscription := range inbox.subscriptions() {
@@ -219,6 +220,9 @@ func TestFrostKeygenInboxSubscriptionsCoverEveryTopic(t *testing.T) {
 			t.Fatalf("FROST keygen topic %q is bound to the wrong inbox", subscription.msgType)
 		}
 		wantPayloadLimit := p2p.FrostKeygenControlPayload
+		if subscription.msgType == messages.TSSFrostDKGPresenceMsg {
+			wantPayloadLimit = 512
+		}
 		if subscription.msgType == messages.TSSFrostDKGRound2Msg {
 			wantPayloadLimit = p2p.FrostMaxSessionPayload
 		}
@@ -398,6 +402,9 @@ func TestFrostKeygenExecuteRejectsPartialActiveSet(t *testing.T) {
 	if len(sidecar.round1Reqs) != 0 {
 		t.Fatalf("sidecar should not be called for partial active set")
 	}
+	if len(resp.Blame.BlameNodes) != 0 {
+		t.Fatalf("partial participation must not assign fault: %+v", resp.Blame)
+	}
 }
 
 func TestFrostKeygenJoinThresholdRequiresFullParticipation(t *testing.T) {
@@ -412,7 +419,7 @@ func TestFrostKeygenJoinThresholdRequiresFullParticipation(t *testing.T) {
 	}
 }
 
-func TestFrostKeygenRound1TimeoutReturnsBlame(t *testing.T) {
+func TestFrostKeygenRound1TimeoutDoesNotBlameAbsentee(t *testing.T) {
 	ensureBech32Prefix()
 
 	members := []string{testPubKeys[0], testPubKeys[1]}
@@ -445,8 +452,8 @@ func TestFrostKeygenRound1TimeoutReturnsBlame(t *testing.T) {
 	if failResp.Blame.Round != frostDKGRound1 {
 		t.Fatalf("expected blame round %s, got %s", frostDKGRound1, failResp.Blame.Round)
 	}
-	if len(failResp.Blame.BlameNodes) != 1 || failResp.Blame.BlameNodes[0].Pubkey != testPubKeys[1] {
-		t.Fatalf("expected missing signer blame for %s, got %+v", testPubKeys[1], failResp.Blame.BlameNodes)
+	if len(failResp.Blame.BlameNodes) != 0 {
+		t.Fatalf("missing participation must remain diagnostic, got %+v", failResp.Blame.BlameNodes)
 	}
 }
 
@@ -548,6 +555,7 @@ func TestFrostKeygenRoundsBlameTransportPeerForInvalidSender(t *testing.T) {
 		reason string
 	}{
 		{name: "member claim", claim: testPubKeys[1], reason: "sender peer binding mismatch"},
+		{name: "uppercase member claim", claim: strings.ToUpper(testPubKeys[1]), reason: "sender peer binding mismatch"},
 		{name: "non-member claim", claim: testPubKeys[3], reason: "sender peer binding mismatch"},
 		{name: "invalid claim", claim: "invalid-pubkey", reason: "failed to parse sender pubkey"},
 		{name: "empty claim", claim: "", reason: "empty sender pubkey"},
@@ -608,15 +616,29 @@ func TestFrostKeygenSenderBindingFailureWithoutResolvablePeerHasNoBlame(t *testi
 
 	activeSet, participantIndexMap, _ := testFrostKeygenParticipants(t, []string{testPubKeys[0], testPubKeys[1]})
 	coord := newTestFrostKeygenCoordinator(testPubKeys[0], "msg-id", newFrostKeygenInbox(), time.Second)
-	_, failure := coord.validateRoundPayloadSender(
-		peer.ID("invalid-peer"), frostDKGRound1, testPubKeys[1],
-		participantIndexMap[normalizePubKey(testPubKeys[1])], activeSet, participantIndexMap,
-	)
-	if failure == nil || failure.Status != tcommon.Fail {
-		t.Fatalf("expected sender-binding failure, got %+v", failure)
+	cases := []struct {
+		name, claim, reason string
+	}{
+		{"member", testPubKeys[1], "sender peer binding mismatch"},
+		{"uppercase member", strings.ToUpper(testPubKeys[1]), "sender peer binding mismatch"},
+		{"invalid", "invalid-pubkey", "failed to parse sender pubkey"},
+		{"empty", "", "empty sender pubkey"},
 	}
-	if failure.Blame.FailReason != "sender peer binding mismatch" || len(failure.Blame.BlameNodes) != 0 {
-		t.Fatalf("unresolvable peer must not blame the claimed key: %+v", failure.Blame)
+	for _, round := range []string{frostDKGRound1, frostDKGRound2, frostDKGRound3} {
+		for _, tc := range cases {
+			t.Run(round+"/"+tc.name, func(t *testing.T) {
+				_, failure := coord.validateRoundPayloadSender(
+					peer.ID("invalid-peer"), round, tc.claim,
+					participantIndexMap[normalizePubKey(testPubKeys[1])], activeSet, participantIndexMap,
+				)
+				if failure == nil || failure.Status != tcommon.Fail {
+					t.Fatalf("expected sender-binding failure, got %+v", failure)
+				}
+				if !strings.Contains(failure.Blame.FailReason, tc.reason) || len(failure.Blame.BlameNodes) != 0 {
+					t.Fatalf("unresolvable peer must not blame the claimed key: %+v", failure.Blame)
+				}
+			})
+		}
 	}
 }
 
@@ -955,14 +977,6 @@ func TestFrostKeygenRound1RejectsVerifierEquivocation(t *testing.T) {
 
 	coord := newTestFrostKeygenCoordinator(testPubKeys[0], "msg-id", msgChan, 30*time.Millisecond)
 	initTestFrostKeygenRoundState(t, coord, activeSet, participantIndexMap)
-	// Equivocation is only reported when the round times out. Route both votes
-	// before the round timer exists: left queued, a loaded runner can fire the
-	// timer before select drains them and the timeout carries no equivocation.
-	for range 2 {
-		if response := coord.routeVerificationMessage(<-msgChan.verify, frostDKGRound1); response != nil {
-			t.Fatalf("equivocating vote failed before the round timeout: %+v", response)
-		}
-	}
 	_, failResp := coord.exchangeRound1(activeSet, participantIndexMap, peerIDs, localPayload)
 	if failResp == nil {
 		t.Fatalf("expected verifier equivocation failure")
@@ -1105,8 +1119,8 @@ func TestFrostKeygenRound1TimeoutMissingVerifications(t *testing.T) {
 	if failResp.Status != tcommon.Fail {
 		t.Fatalf("expected fail status, got %d", failResp.Status)
 	}
-	if len(failResp.Blame.BlameNodes) != 1 || failResp.Blame.BlameNodes[0].Pubkey != testPubKeys[1] {
-		t.Fatalf("expected missing verifier blame for %s, got %+v", testPubKeys[1], failResp.Blame.BlameNodes)
+	if len(failResp.Blame.BlameNodes) != 0 {
+		t.Fatalf("missing participation must remain diagnostic, got %+v", failResp.Blame.BlameNodes)
 	}
 }
 
@@ -1701,25 +1715,10 @@ func TestFrostKeygenFutureVerificationConflictDisqualifiesAttester(t *testing.T)
 	}
 }
 
-// TestFrostKeygenExecuteBlamesAlmostCompleteFinisherOnLastRoundTimeout pins
-// the bifrost half of the chainnet mass-jailing mechanism and its fix. The
-// remote peer participates fully through rounds 1 and 2 — payloads and
-// transcript verifications — and goes silent only in round 3, after the
-// local sidecar has already derived the group key. The DKG was one peer
-// message away from completing, and Execute still fails with a round-3
-// timeout blame (unchanged: the coordinator cannot know the peers finished).
-//
-// The healing now happens one level up: when the peers' result broadcasts
-// reach the on-chain supermajority threshold, AdoptQuorumSuccess proves the
-// local keyshare against the adopted group key via the sidecar finalize and
-// converts the failure into the same success the finishers report — same tss
-// ID, so the node votes with the quorum instead of filing a permanently
-// unreleasable failure (see
-// TestXMRMonovaultKeygenFailureSubmitterStaysJailedAfterSuccessConsensus in
-// x/thorchain for the on-chain half, which still needs the
-// MajorityConsensusBlockHeight fix for reports landing after consensus).
-// The tail of this test covers exactly that adoption.
-func TestFrostKeygenExecuteBlamesAlmostCompleteFinisherOnLastRoundTimeout(t *testing.T) {
+// A final-round timeout still fails local execution. If a matching result
+// quorum becomes available, adoption can recover using the local sidecar share;
+// neither timeout alone nor public results establish a usable local share.
+func TestFrostKeygenExecuteAdoptsAfterLastRoundTimeout(t *testing.T) {
 	ensureBech32Prefix()
 
 	members := []string{testPubKeys[0], testPubKeys[1]}
@@ -1824,15 +1823,15 @@ func TestFrostKeygenExecuteBlamesAlmostCompleteFinisherOnLastRoundTimeout(t *tes
 		ExpectedAddr:  groupAddress,
 	}, activeSet, activePeerIDs)
 
-	// Current behavior: timeout failure blaming the almost-complete peer.
+	// Missing final-round participation fails without assigning fault.
 	if resp.Status != tcommon.Fail {
 		t.Fatalf("expected fail status, got %d (resp %+v)", resp.Status, resp)
 	}
 	if resp.Blame.Round != frostDKGRound3 {
 		t.Fatalf("expected blame round %s, got %s", frostDKGRound3, resp.Blame.Round)
 	}
-	if len(resp.Blame.BlameNodes) != 1 || resp.Blame.BlameNodes[0].Pubkey != testPubKeys[1] {
-		t.Fatalf("expected round3 timeout blame for %s, got %+v", testPubKeys[1], resp.Blame.BlameNodes)
+	if len(resp.Blame.BlameNodes) != 0 {
+		t.Fatalf("round3 timeout must not attribute fault to the absent peer: %+v", resp.Blame.BlameNodes)
 	}
 
 	// The local sidecar had already derived the group key: the DKG state was

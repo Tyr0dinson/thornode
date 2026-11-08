@@ -23,7 +23,7 @@ func TestKeygenRetryRetainsInitialLookupFailure(t *testing.T) {
 		constants.ChurnRetryInterval.String(): errors.New("temporary policy outage"),
 	}
 	block := newSingleFlightXMRKeygen(t, 2700)
-	if !signer.scheduleKeygenRetry(block, block.Keygens[0]) {
+	if !signer.scheduleKeygenRetry(block, block.Keygens[0], nil, nil) {
 		t.Fatal("temporary lookup failure discarded the retry before a worker existed")
 	}
 }
@@ -203,7 +203,7 @@ func TestKeygenRetryInitialFailureDeduplicatesAndRendezvous(t *testing.T) {
 					wg.Add(1)
 					go func() {
 						defer wg.Done()
-						if !signer.scheduleKeygenRetry(block, block.Keygens[0]) {
+						if !signer.scheduleKeygenRetry(block, block.Keygens[0], nil, nil) {
 							t.Error("retry intent lost")
 						}
 					}()

@@ -37,11 +37,12 @@ const (
 // transcript votes are routed into the verifier for their tagged round. Each
 // topic has its own FrostSessionQueueSize buffer and transport limits.
 type frostKeygenInbox struct {
-	round1 chan *p2p.Message
-	round2 chan *p2p.Message
-	round3 chan *p2p.Message
-	verify chan *p2p.Message
-	result chan *p2p.Message
+	presence chan *p2p.Message
+	round1   chan *p2p.Message
+	round2   chan *p2p.Message
+	round3   chan *p2p.Message
+	verify   chan *p2p.Message
+	result   chan *p2p.Message
 }
 
 // frostKeygenSubscription binds one wire topic to its phase-specific inbox.
@@ -55,11 +56,12 @@ type frostKeygenSubscription struct {
 
 func newFrostKeygenInbox() *frostKeygenInbox {
 	return &frostKeygenInbox{
-		round1: make(chan *p2p.Message, p2p.FrostSessionQueueSize),
-		round2: make(chan *p2p.Message, p2p.FrostSessionQueueSize),
-		round3: make(chan *p2p.Message, p2p.FrostSessionQueueSize),
-		verify: make(chan *p2p.Message, p2p.FrostSessionQueueSize),
-		result: make(chan *p2p.Message, p2p.FrostSessionQueueSize),
+		presence: make(chan *p2p.Message, p2p.FrostSessionQueueSize),
+		round1:   make(chan *p2p.Message, p2p.FrostSessionQueueSize),
+		round2:   make(chan *p2p.Message, p2p.FrostSessionQueueSize),
+		round3:   make(chan *p2p.Message, p2p.FrostSessionQueueSize),
+		verify:   make(chan *p2p.Message, p2p.FrostSessionQueueSize),
+		result:   make(chan *p2p.Message, p2p.FrostSessionQueueSize),
 	}
 }
 
@@ -68,6 +70,7 @@ func newFrostKeygenInbox() *frostKeygenInbox {
 // subscription lifecycle rather than reconstructing message-type lists.
 func (i *frostKeygenInbox) subscriptions() []frostKeygenSubscription {
 	return []frostKeygenSubscription{
+		{msgType: messages.TSSFrostDKGPresenceMsg, messageChan: i.presence, maxPayloadBytes: 512},
 		{msgType: messages.TSSFrostDKGRound1Msg, messageChan: i.round1, maxPayloadBytes: p2p.FrostKeygenControlPayload},
 		{msgType: messages.TSSFrostDKGRound2Msg, messageChan: i.round2, maxPayloadBytes: p2p.FrostMaxSessionPayload},
 		{msgType: messages.TSSFrostDKGRound3Msg, messageChan: i.round3, maxPayloadBytes: p2p.FrostKeygenControlPayload},
@@ -207,7 +210,7 @@ func (c *FrostKeygenCoordinator) routeVerificationMessage(
 	incomingRound := vote.Round
 	verifier, err := c.roundState.verifier(incomingRound)
 	if err != nil {
-		response := c.failForPubKeys(err.Error(), currentRound, nil)
+		response := c.failForPubKeys(nil, err.Error(), currentRound, nil)
 		return &response
 	}
 
@@ -240,16 +243,17 @@ func (c *FrostKeygenCoordinator) validateRoundPayloadSender(
 	roundLabel := strings.TrimPrefix(round, "frost_dkg_")
 	senderNorm := normalizePubKey(senderPubKey)
 	if senderNorm == "" {
-		response := c.failForMalformed(msgPeer, fmt.Sprintf("empty sender pubkey in %s payload", roundLabel), round)
+		response := c.failForMalformed(activeSet, msgPeer, fmt.Sprintf("empty sender pubkey in %s payload", roundLabel), round)
 		return "", &response
 	}
 	// Authenticate the claimed key before using it for membership checks or blame.
 	if err := c.validateSenderPeerBinding(msgPeer, senderPubKey); err != nil {
-		response := c.failForMalformed(msgPeer, err.Error(), round)
+		response := c.failForMalformed(activeSet, msgPeer, err.Error(), round)
 		return "", &response
 	}
 	if _, ok := activeSet.originalByNormalized[senderNorm]; !ok {
 		response := c.failForPubKeys(
+			activeSet,
 			fmt.Sprintf("%s sender is not in active participant set", roundLabel),
 			round,
 			[]string{senderPubKey},
@@ -258,6 +262,7 @@ func (c *FrostKeygenCoordinator) validateRoundPayloadSender(
 	}
 	if expectedIndex, ok := participantIndexMap[senderNorm]; !ok || participantIndex != expectedIndex {
 		response := c.failForPubKeys(
+			activeSet,
 			fmt.Sprintf("participant index mismatch in %s payload", roundLabel),
 			round,
 			[]string{senderPubKey},
@@ -281,7 +286,7 @@ func (c *FrostKeygenCoordinator) recordAndConfirmTranscriptPayload(
 ) (bool, bool, *FrostKeygenResponse) {
 	isNewPayload, failure := verifier.recordPayload(senderPubKey, participantIndex, payloadHash)
 	if failure != nil {
-		response := c.failForPubKeys(failure.reason, verifier.round, failure.blamePubKey)
+		response := c.failForPubKeys(verifier.activeSet, failure.reason, verifier.round, failure.blamePubKey)
 		return false, false, &response
 	}
 	if !isNewPayload {
@@ -290,6 +295,7 @@ func (c *FrostKeygenCoordinator) recordAndConfirmTranscriptPayload(
 	transcriptHash, ready, err := verifier.prepareTranscriptHash(c.msgID)
 	if err != nil {
 		response := c.failForPubKeys(
+			verifier.activeSet,
 			fmt.Sprintf("failed to prepare transcript confirmation: %v", err),
 			verifier.round,
 			nil,
@@ -300,7 +306,7 @@ func (c *FrostKeygenCoordinator) recordAndConfirmTranscriptPayload(
 		return true, false, nil
 	}
 	if _, failure := verifier.recordTranscriptVote(c.localPubKey, transcriptHash); failure != nil {
-		response := c.failForPubKeys(failure.reason, verifier.round, failure.blamePubKey)
+		response := c.failForPubKeys(verifier.activeSet, failure.reason, verifier.round, failure.blamePubKey)
 		return false, false, &response
 	}
 	votePayload, err := json.Marshal(frostKeygenTranscriptVote{
@@ -308,12 +314,12 @@ func (c *FrostKeygenCoordinator) recordAndConfirmTranscriptPayload(
 		TranscriptHash: transcriptHash,
 	})
 	if err != nil {
-		response := c.failForPubKeys(fmt.Sprintf("failed to marshal transcript confirmation: %v", err), verifier.round, nil)
+		response := c.failForPubKeys(verifier.activeSet, fmt.Sprintf("failed to marshal transcript confirmation: %v", err), verifier.round, nil)
 		return false, false, &response
 	}
 	verifier.localVoteSent = true
 	if err := c.broadcast(messages.TSSFrostVerifyMsg, votePayload, peers); err != nil {
-		response := c.failForPubKeys(fmt.Sprintf("failed to broadcast transcript confirmation: %v", err), verifier.round, nil)
+		response := c.failForPubKeys(verifier.activeSet, fmt.Sprintf("failed to broadcast transcript confirmation: %v", err), verifier.round, nil)
 		return false, false, &response
 	}
 	return true, true, nil
@@ -389,6 +395,9 @@ func (t *TssServer) FrostKeygen(req FrostKeygenRequest, sidecar FrostSidecarKeyg
 	for _, subscription := range subscriptions {
 		msgType := subscription.msgType
 		messageLimit := p2p.FrostMaxMessagesPerPeer
+		if msgType == messages.TSSFrostDKGPresenceMsg {
+			messageLimit = p2p.FrostKeygenPresenceMessagesPerPeer
+		}
 		if msgType == messages.TSSFrostVerifyMsg {
 			messageLimit = verificationMessageLimit
 		}
@@ -405,6 +414,15 @@ func (t *TssServer) FrostKeygen(req FrostKeygenRequest, sidecar FrostSidecarKeyg
 		t.partyCoordinator.ReleaseStream(msgID)
 		close(sigChan)
 	}()
+
+	// Presence is unconditional and precedes the leader join, sidecar calls and
+	// all peer-controlled aborts. A later missing DKG message is never absence.
+	coordinator := NewFrostKeygenCoordinator(
+		t.p2pCommunication, sidecar, t.localNodePubKey, msgID, inbox, t.conf.FrostKeygenTimeout,
+	)
+	if failure := coordinator.exchangePresence(req.SignerPubKeys, allowedPeerIDs); failure != nil {
+		return *failure, nil
+	}
 
 	// FROST has no legacy leadless ceremony. Enter the leader protocol directly
 	// so a missing THORChain version cannot prevent an otherwise valid join.
@@ -444,9 +462,11 @@ func (t *TssServer) FrostKeygen(req FrostKeygenRequest, sidecar FrostSidecarKeyg
 		}, nil
 	}
 	if missing := missingSignersForFullParticipation(activeSet, signerByNormalized); len(missing) > 0 {
+		t.logger.Warn().Str("msg_id", msgID).Strs("missing_participant_pubkeys", missing).
+			Msg("FROST keygen requires every declared participant; missing peers are diagnostic only")
 		return FrostKeygenResponse{
 			Status: tcommon.Fail,
-			Blame:  buildBlame("frost keygen requires all signers online", frostDKGRound1, missing),
+			Blame:  buildBlame("frost keygen requires all signers online", frostDKGRound1, nil),
 		}, nil
 	}
 
@@ -455,15 +475,6 @@ func (t *TssServer) FrostKeygen(req FrostKeygenRequest, sidecar FrostSidecarKeyg
 		t.logger.Warn().Err(peerErr).Msg("fail to resolve all peer IDs for frost keygen result broadcast, fallback to active peers")
 		allPeerIDs = onlinePeers
 	}
-
-	coordinator := NewFrostKeygenCoordinator(
-		t.p2pCommunication,
-		sidecar,
-		t.localNodePubKey,
-		msgID,
-		inbox,
-		t.conf.FrostKeygenTimeout,
-	)
 
 	isActive := false
 	ourPeerID := t.p2pCommunication.GetLocalPeerID()
@@ -474,21 +485,15 @@ func (t *TssServer) FrostKeygen(req FrostKeygenRequest, sidecar FrostSidecarKeyg
 		}
 	}
 
-	// Wait for peer results at the on-chain supermajority threshold
-	// (frostKeygenAdoptionQuorum mirrors HasSuperMajority), not the full set.
-	// THORChain finalizes the vault once ceil(2n/3) members report the same
-	// success, and after any local failure at most n-1 peers can have
-	// succeeded, so a full-set wait can never be met - it times out and this
-	// node votes a failure whose (blame-hashed) tss ID differs from the
-	// success, which judgeLateSigner never releases: a completed DKG turned into
-	// a permanent keygen jail. Both the non-active observer path and the
-	// failed-local-execution path below use this same threshold; a non-active
-	// waiter left at full-set quorum would re-introduce exactly that spurious
-	// failure/jailing for its node class.
+	// A local failure does not preclude a usable local share. Wait for the same
+	// result quorum THORChain requires, then prove the share before adopting.
+	// Full-set result agreement cannot be reached if any member failed locally.
+	// Full participation was checked above. Use the request's member strings
+	// for result blame as well as local failures, not the peer-decoded encodings.
 	adoptionQuorum := frostKeygenAdoptionQuorum(len(activeSet.originalByNormalized))
 	if !isActive {
 		t.logger.Info().Str("msg_id", msgID).Msg("not active FROST keygen member, waiting for result")
-		waitResp, waitErr := coordinator.WaitForResult(activeParticipants, adoptionQuorum, coordinator.timeout+5*time.Second)
+		waitResp, waitErr := coordinator.WaitForResult(req.SignerPubKeys, adoptionQuorum, coordinator.timeout+5*time.Second)
 		if waitErr != nil {
 			return FrostKeygenResponse{
 				Status: tcommon.Fail,
@@ -512,7 +517,7 @@ func (t *TssServer) FrostKeygen(req FrostKeygenRequest, sidecar FrostSidecarKeyg
 
 	// The local execution failed; wait for and adopt the quorum success at the
 	// same supermajority threshold (see the comment above).
-	waitResp, waitErr := coordinator.WaitForResult(activeParticipants, adoptionQuorum, coordinator.timeout+5*time.Second)
+	waitResp, waitErr := coordinator.WaitForResult(req.SignerPubKeys, adoptionQuorum, coordinator.timeout+5*time.Second)
 	if waitErr == nil && waitResp.Status == tcommon.Success {
 		if adopted, ok := coordinator.AdoptQuorumSuccess(req, waitResp); ok {
 			t.persistPeerAddressBook()
@@ -628,9 +633,11 @@ func (c *FrostKeygenCoordinator) Execute(
 		}
 	}
 	if missing := missingSignersForFullParticipation(activeSet, originalByNormalized); len(missing) > 0 {
+		c.logger.Warn().Strs("missing_participant_pubkeys", missing).
+			Msg("FROST keygen requires every declared participant; missing peers are diagnostic only")
 		return FrostKeygenResponse{
 			Status: tcommon.Fail,
-			Blame:  buildBlame("frost keygen requires all signers online", frostDKGRound1, missing),
+			Blame:  buildBlame("frost keygen requires all signers online", frostDKGRound1, nil),
 		}
 	}
 	c.roundState, err = newFrostKeygenRoundState(activeSet, participantIndexMap)
@@ -739,7 +746,7 @@ func (c *FrostKeygenCoordinator) Execute(
 					break
 				}
 			}
-			return c.failForPubKeys("missing encrypted share for local participant", frostDKGRound2, []string{pubKey})
+			return c.failForPubKeys(activeSet, "missing encrypted share for local participant", frostDKGRound2, []string{pubKey})
 		}
 		allShares[senderIndex] = share
 	}
@@ -770,7 +777,7 @@ func (c *FrostKeygenCoordinator) Execute(
 	// block and the vault scans from a height that no longer exists.
 	birthdayHeight := localMoneroHeight - frostDKGReorgMargin
 	if address == "" || groupKey == "" {
-		return c.failForPubKeys("empty frost keygen result", frostDKGRound3, []string{c.localPubKey})
+		return c.failForPubKeys(activeSet, "empty frost keygen result", frostDKGRound3, []string{c.localPubKey})
 	}
 	if !singleParticipant {
 		var failResp *FrostKeygenResponse
@@ -842,21 +849,21 @@ func (c *FrostKeygenCoordinator) exchangeRound1(
 ) (values map[string]string, failure *FrostKeygenResponse) {
 	verifier, verifierErr := c.roundState.verifier(frostDKGRound1)
 	if verifierErr != nil {
-		resp := c.failForPubKeys(verifierErr.Error(), frostDKGRound1, nil)
+		resp := c.failForPubKeys(activeSet, verifierErr.Error(), frostDKGRound1, nil)
 		return nil, &resp
 	}
 	payload, err := json.Marshal(local)
 	if err != nil {
-		resp := c.failForPubKeys(fmt.Sprintf("failed to marshal round1 payload: %v", err), frostDKGRound1, nil)
+		resp := c.failForPubKeys(activeSet, fmt.Sprintf("failed to marshal round1 payload: %v", err), frostDKGRound1, nil)
 		return nil, &resp
 	}
 	if err := c.broadcast(messages.TSSFrostDKGRound1Msg, payload, activePeerIDs); err != nil {
-		resp := c.failForPubKeys(fmt.Sprintf("failed to broadcast round1 payload: %v", err), frostDKGRound1, nil)
+		resp := c.failForPubKeys(activeSet, fmt.Sprintf("failed to broadcast round1 payload: %v", err), frostDKGRound1, nil)
 		return nil, &resp
 	}
 	localHash, err := FrostTranscriptDKGRound1Hash(c.msgID, local)
 	if err != nil {
-		resp := c.failForPubKeys(fmt.Sprintf("failed to hash local round1 payload: %v", err), frostDKGRound1, []string{local.SenderPubKey})
+		resp := c.failForPubKeys(activeSet, fmt.Sprintf("failed to hash local round1 payload: %v", err), frostDKGRound1, []string{local.SenderPubKey})
 		return nil, &resp
 	}
 	if _, _, response := c.recordAndConfirmTranscriptPayload(
@@ -892,7 +899,7 @@ func (c *FrostKeygenCoordinator) exchangeRound1(
 			case messages.TSSFrostDKGRound1Msg:
 				var incoming FrostDKGRound1Payload
 				if err := json.Unmarshal(wrapped.Payload, &incoming); err != nil {
-					resp := c.failForMalformed(msg.PeerID, "invalid round1 payload", frostDKGRound1)
+					resp := c.failForMalformed(activeSet, msg.PeerID, "invalid round1 payload", frostDKGRound1)
 					return nil, &resp
 				}
 				if _, response := c.validateRoundPayloadSender(
@@ -906,12 +913,12 @@ func (c *FrostKeygenCoordinator) exchangeRound1(
 					return nil, response
 				}
 				if strings.TrimSpace(incoming.Commitments) == "" {
-					resp := c.failForPubKeys("empty commitments in round1 payload", frostDKGRound1, []string{incoming.SenderPubKey})
+					resp := c.failForPubKeys(activeSet, "empty commitments in round1 payload", frostDKGRound1, []string{incoming.SenderPubKey})
 					return nil, &resp
 				}
 				payloadHash, err := FrostTranscriptDKGRound1Hash(c.msgID, incoming)
 				if err != nil {
-					resp := c.failForPubKeys(fmt.Sprintf("failed to hash round1 payload: %v", err), frostDKGRound1, []string{incoming.SenderPubKey})
+					resp := c.failForPubKeys(activeSet, fmt.Sprintf("failed to hash round1 payload: %v", err), frostDKGRound1, []string{incoming.SenderPubKey})
 					return nil, &resp
 				}
 				isNewPayload, startedConfirmation, response := c.recordAndConfirmTranscriptPayload(
@@ -937,18 +944,7 @@ func (c *FrostKeygenCoordinator) exchangeRound1(
 				return nil, response
 			}
 		case <-timer.C:
-			missingPayloads := verifier.missingPayloadPubKeys()
-			verificationGaps := verifier.verificationGaps()
-			blamePubKeys := mergePubKeyLists(
-				missingPayloads,
-				verificationGaps.missingPubKeys,
-				verificationGaps.equivocatingPubKeys,
-			)
-			resp := c.failForPubKeys(
-				frostKeygenTranscriptTimeoutReason("round1 commitments", missingPayloads, verificationGaps),
-				frostDKGRound1,
-				blamePubKeys,
-			)
+			resp := c.failForRoundTimeout(verifier, "round1 commitments")
 			return nil, &resp
 		}
 	}
@@ -963,21 +959,21 @@ func (c *FrostKeygenCoordinator) exchangeRound2(
 ) (values map[string]map[string]string, failure *FrostKeygenResponse) {
 	verifier, verifierErr := c.roundState.verifier(frostDKGRound2)
 	if verifierErr != nil {
-		resp := c.failForPubKeys(verifierErr.Error(), frostDKGRound2, nil)
+		resp := c.failForPubKeys(activeSet, verifierErr.Error(), frostDKGRound2, nil)
 		return nil, &resp
 	}
 	payload, err := json.Marshal(local)
 	if err != nil {
-		resp := c.failForPubKeys(fmt.Sprintf("failed to marshal round2 payload: %v", err), frostDKGRound2, nil)
+		resp := c.failForPubKeys(activeSet, fmt.Sprintf("failed to marshal round2 payload: %v", err), frostDKGRound2, nil)
 		return nil, &resp
 	}
 	if err := c.broadcast(messages.TSSFrostDKGRound2Msg, payload, activePeerIDs); err != nil {
-		resp := c.failForPubKeys(fmt.Sprintf("failed to broadcast round2 payload: %v", err), frostDKGRound2, nil)
+		resp := c.failForPubKeys(activeSet, fmt.Sprintf("failed to broadcast round2 payload: %v", err), frostDKGRound2, nil)
 		return nil, &resp
 	}
 	localHash, err := FrostTranscriptDKGRound2Hash(c.msgID, local)
 	if err != nil {
-		resp := c.failForPubKeys(fmt.Sprintf("failed to hash local round2 payload: %v", err), frostDKGRound2, []string{local.SenderPubKey})
+		resp := c.failForPubKeys(activeSet, fmt.Sprintf("failed to hash local round2 payload: %v", err), frostDKGRound2, []string{local.SenderPubKey})
 		return nil, &resp
 	}
 	if _, _, response := c.recordAndConfirmTranscriptPayload(
@@ -1012,7 +1008,7 @@ func (c *FrostKeygenCoordinator) exchangeRound2(
 			case messages.TSSFrostDKGRound2Msg:
 				var incoming FrostDKGRound2Payload
 				if err := json.Unmarshal(wrapped.Payload, &incoming); err != nil {
-					resp := c.failForMalformed(msg.PeerID, "invalid round2 payload", frostDKGRound2)
+					resp := c.failForMalformed(activeSet, msg.PeerID, "invalid round2 payload", frostDKGRound2)
 					return nil, &resp
 				}
 				if _, response := c.validateRoundPayloadSender(
@@ -1026,7 +1022,7 @@ func (c *FrostKeygenCoordinator) exchangeRound2(
 					return nil, response
 				}
 				if len(incoming.EncryptedShares) == 0 && len(activeSet.originalByNormalized) > 1 {
-					resp := c.failForPubKeys("empty encrypted shares in round2 payload", frostDKGRound2, []string{incoming.SenderPubKey})
+					resp := c.failForPubKeys(activeSet, "empty encrypted shares in round2 payload", frostDKGRound2, []string{incoming.SenderPubKey})
 					return nil, &resp
 				}
 				for norm, idx := range participantIndexMap {
@@ -1038,13 +1034,13 @@ func (c *FrostKeygenCoordinator) exchangeRound2(
 					}
 					idxKey := strconv.FormatUint(uint64(idx), 10)
 					if strings.TrimSpace(incoming.EncryptedShares[idxKey]) == "" {
-						resp := c.failForPubKeys("missing encrypted share target in round2 payload", frostDKGRound2, []string{incoming.SenderPubKey})
+						resp := c.failForPubKeys(activeSet, "missing encrypted share target in round2 payload", frostDKGRound2, []string{incoming.SenderPubKey})
 						return nil, &resp
 					}
 				}
 				payloadHash, err := FrostTranscriptDKGRound2Hash(c.msgID, incoming)
 				if err != nil {
-					resp := c.failForPubKeys(fmt.Sprintf("failed to hash round2 payload: %v", err), frostDKGRound2, []string{incoming.SenderPubKey})
+					resp := c.failForPubKeys(activeSet, fmt.Sprintf("failed to hash round2 payload: %v", err), frostDKGRound2, []string{incoming.SenderPubKey})
 					return nil, &resp
 				}
 				isNewPayload, startedConfirmation, response := c.recordAndConfirmTranscriptPayload(
@@ -1071,18 +1067,7 @@ func (c *FrostKeygenCoordinator) exchangeRound2(
 				return nil, response
 			}
 		case <-timer.C:
-			missingPayloads := verifier.missingPayloadPubKeys()
-			verificationGaps := verifier.verificationGaps()
-			blamePubKeys := mergePubKeyLists(
-				missingPayloads,
-				verificationGaps.missingPubKeys,
-				verificationGaps.equivocatingPubKeys,
-			)
-			resp := c.failForPubKeys(
-				frostKeygenTranscriptTimeoutReason("round2 encrypted shares", missingPayloads, verificationGaps),
-				frostDKGRound2,
-				blamePubKeys,
-			)
+			resp := c.failForRoundTimeout(verifier, "round2 encrypted shares")
 			return nil, &resp
 		}
 	}
@@ -1097,16 +1082,16 @@ func (c *FrostKeygenCoordinator) exchangeRound3(
 ) (resultAddress, resultGroupKey string, birthday int64, failure *FrostKeygenResponse) {
 	verifier, verifierErr := c.roundState.verifier(frostDKGRound3)
 	if verifierErr != nil {
-		resp := c.failForPubKeys(verifierErr.Error(), frostDKGRound3, nil)
+		resp := c.failForPubKeys(activeSet, verifierErr.Error(), frostDKGRound3, nil)
 		return "", "", 0, &resp
 	}
 	payload, err := json.Marshal(local)
 	if err != nil {
-		resp := c.failForPubKeys(fmt.Sprintf("failed to marshal round3 payload: %v", err), frostDKGRound3, nil)
+		resp := c.failForPubKeys(activeSet, fmt.Sprintf("failed to marshal round3 payload: %v", err), frostDKGRound3, nil)
 		return "", "", 0, &resp
 	}
 	if err := c.broadcast(messages.TSSFrostDKGRound3Msg, payload, activePeerIDs); err != nil {
-		resp := c.failForPubKeys(fmt.Sprintf("failed to broadcast round3 payload: %v", err), frostDKGRound3, nil)
+		resp := c.failForPubKeys(activeSet, fmt.Sprintf("failed to broadcast round3 payload: %v", err), frostDKGRound3, nil)
 		return "", "", 0, &resp
 	}
 
@@ -1116,16 +1101,16 @@ func (c *FrostKeygenCoordinator) exchangeRound3(
 		normalizePubKey(local.SenderPubKey): local.ObservedMoneroHeight,
 	}
 	if groupAddress == "" || groupKey == "" {
-		resp := c.failForPubKeys("empty address/group key in local round3 payload", frostDKGRound3, []string{local.SenderPubKey})
+		resp := c.failForPubKeys(activeSet, "empty address/group key in local round3 payload", frostDKGRound3, []string{local.SenderPubKey})
 		return "", "", 0, &resp
 	}
 	if strings.TrimSpace(groupAddress) == "" {
-		resp := c.failForPubKeys("empty DKG address", frostDKGRound3, []string{local.SenderPubKey})
+		resp := c.failForPubKeys(activeSet, "empty DKG address", frostDKGRound3, []string{local.SenderPubKey})
 		return "", "", 0, &resp
 	}
 	localHash, err := FrostTranscriptDKGRound3Hash(c.msgID, local)
 	if err != nil {
-		resp := c.failForPubKeys(fmt.Sprintf("failed to hash local round3 payload: %v", err), frostDKGRound3, []string{local.SenderPubKey})
+		resp := c.failForPubKeys(activeSet, fmt.Sprintf("failed to hash local round3 payload: %v", err), frostDKGRound3, []string{local.SenderPubKey})
 		return "", "", 0, &resp
 	}
 	if _, _, response := c.recordAndConfirmTranscriptPayload(
@@ -1168,7 +1153,7 @@ func (c *FrostKeygenCoordinator) exchangeRound3(
 			case messages.TSSFrostDKGRound3Msg:
 				var incoming FrostDKGRound3Payload
 				if err := json.Unmarshal(wrapped.Payload, &incoming); err != nil {
-					resp := c.failForMalformed(msg.PeerID, "invalid round3 payload", frostDKGRound3)
+					resp := c.failForMalformed(activeSet, msg.PeerID, "invalid round3 payload", frostDKGRound3)
 					return "", "", 0, &resp
 				}
 				senderNorm, response := c.validateRoundPayloadSender(
@@ -1186,20 +1171,20 @@ func (c *FrostKeygenCoordinator) exchangeRound3(
 				inAddress := strings.TrimSpace(incoming.Address)
 				inGroupKey := strings.TrimSpace(incoming.GroupKey)
 				if inAddress == "" || inGroupKey == "" {
-					resp := c.failForPubKeys("empty address/group key in round3 payload", frostDKGRound3, []string{incoming.SenderPubKey})
+					resp := c.failForPubKeys(activeSet, "empty address/group key in round3 payload", frostDKGRound3, []string{incoming.SenderPubKey})
 					return "", "", 0, &resp
 				}
 				if groupAddress != inAddress {
-					resp := c.failForPubKeys("DKG address mismatch across participants", frostDKGRound3, []string{incoming.SenderPubKey})
+					resp := c.failForPubKeys(activeSet, "DKG address mismatch across participants", frostDKGRound3, []string{incoming.SenderPubKey})
 					return "", "", 0, &resp
 				}
 				if !strings.EqualFold(groupKey, inGroupKey) {
-					resp := c.failForPubKeys("DKG group key mismatch across participants", frostDKGRound3, []string{incoming.SenderPubKey})
+					resp := c.failForPubKeys(activeSet, "DKG group key mismatch across participants", frostDKGRound3, []string{incoming.SenderPubKey})
 					return "", "", 0, &resp
 				}
 				payloadHash, err := FrostTranscriptDKGRound3Hash(c.msgID, incoming)
 				if err != nil {
-					resp := c.failForPubKeys(fmt.Sprintf("failed to hash round3 payload: %v", err), frostDKGRound3, []string{incoming.SenderPubKey})
+					resp := c.failForPubKeys(activeSet, fmt.Sprintf("failed to hash round3 payload: %v", err), frostDKGRound3, []string{incoming.SenderPubKey})
 					return "", "", 0, &resp
 				}
 				isNewPayload, startedConfirmation, response := c.recordAndConfirmTranscriptPayload(
@@ -1231,24 +1216,13 @@ func (c *FrostKeygenCoordinator) exchangeRound3(
 				c.logger.Warn().Str("round", frostDKGRound3).
 					Msg("TEST injected XMR FROST round-3 timeout")
 			}
-			missingPayloads := verifier.missingPayloadPubKeys()
-			verificationGaps := verifier.verificationGaps()
-			blamePubKeys := mergePubKeyLists(
-				missingPayloads,
-				verificationGaps.missingPubKeys,
-				verificationGaps.equivocatingPubKeys,
-			)
-			resp := c.failForPubKeys(
-				frostKeygenTranscriptTimeoutReason("round3 results", missingPayloads, verificationGaps),
-				frostDKGRound3,
-				blamePubKeys,
-			)
+			resp := c.failForRoundTimeout(verifier, "round3 results")
 			return "", "", 0, &resp
 		}
 	}
 	birthday, err = frostDKGBirthdayHeight(heightsBySender, len(activeSet.originalByNormalized))
 	if err != nil {
-		resp := c.failForPubKeys(err.Error(), frostDKGRound3, nil)
+		resp := c.failForPubKeys(activeSet, err.Error(), frostDKGRound3, nil)
 		return "", "", 0, &resp
 	}
 	return groupAddress, groupKey, birthday, nil
@@ -1283,16 +1257,10 @@ func frostDKGBirthdayHeight(heightsBySender map[string]int64, expected int) (int
 	return lowerMedian - frostDKGReorgMargin, nil
 }
 
-// AdoptQuorumSuccess turns a quorum keygen success into this node's own
-// result after a failed local execution, if and only if the node can prove it
-// holds a keyshare for exactly that vault: the sidecar finalize validates the
-// stored DKG session key material against the adopted group key and address
-// and returns the keyshare backup. This heals the timing-skew split where a
-// round timer expires moments before the last peer message and a completed
-// DKG would otherwise be reported as a keygen failure - whose tss ID differs
-// from the success, jailing this node with no path to release. A node whose
-// DKG session did not complete fails the finalize and keeps its failure
-// result: a member without a keyshare must never report success.
+// AdoptQuorumSuccess recovers a failed local execution only when sidecar
+// finalization proves that this session holds a share for the quorum's group
+// key and address. Missing shares cannot be recovered from a public result,
+// and failure to obtain a result quorum prevents this path from running.
 func (c *FrostKeygenCoordinator) AdoptQuorumSuccess(req FrostKeygenRequest, quorumResp FrostKeygenResponse) (FrostKeygenResponse, bool) {
 	address := strings.TrimSpace(quorumResp.Address)
 	groupKey := strings.TrimSpace(quorumResp.GroupKey)
@@ -1408,7 +1376,7 @@ func (c *FrostKeygenCoordinator) WaitForResult(activeParticipants []string, quor
 				continue
 			}
 
-			normalized, matchKey, err := normalizeDKGResultPayload(payload.Response)
+			normalized, matchKey, err := normalizeDKGResultPayload(payload.Response, activeByNormalized)
 			if err != nil {
 				c.logger.Warn().Err(err).Str("sender", payload.SenderPubKey).Msg("skipping malformed frost dkg result")
 				continue
@@ -1454,6 +1422,11 @@ func (c *FrostKeygenCoordinator) WaitForResult(activeParticipants []string, quor
 }
 
 func (c *FrostKeygenCoordinator) BroadcastResult(resp FrostKeygenResponse, peers []peer.ID) error {
+	// Result waiters reject failures without attributed nodes. Keep these
+	// local diagnostics off the wire instead of broadcasting unusable votes.
+	if resp.Status == tcommon.Fail && len(resp.Blame.BlameNodes) == 0 {
+		return nil
+	}
 	result := FrostDKGResultPayload{
 		SenderPubKey: c.localPubKey,
 		Response: FrostDKGResult{
@@ -1494,7 +1467,7 @@ func (c *FrostKeygenCoordinator) validateSenderPeerBinding(msgPeer peer.ID, send
 	return nil
 }
 
-func (c *FrostKeygenCoordinator) failForMalformed(msgPeer peer.ID, reason, round string) FrostKeygenResponse {
+func (c *FrostKeygenCoordinator) failForMalformed(activeSet *activeSignerSet, msgPeer peer.ID, reason, round string) FrostKeygenResponse {
 	pubKey, err := conversion.GetPubKeyFromPeerID(msgPeer.String())
 	if err != nil {
 		return FrostKeygenResponse{
@@ -1502,14 +1475,32 @@ func (c *FrostKeygenCoordinator) failForMalformed(msgPeer peer.ID, reason, round
 			Blame:  buildBlame(reason, round, nil),
 		}
 	}
-	return c.failForPubKeys(reason, round, []string{pubKey})
+	return c.failForPubKeys(activeSet, reason, round, []string{pubKey})
 }
 
-func (c *FrostKeygenCoordinator) failForPubKeys(reason, round string, pubKeys []string) FrostKeygenResponse {
+// failForPubKeys resolves authenticated or locally selected identities before
+// buildBlame deduplicates them. Payload callers must validate peer binding first.
+func (c *FrostKeygenCoordinator) failForPubKeys(activeSet *activeSignerSet, reason, round string, pubKeys []string) FrostKeygenResponse {
+	resolved := make([]string, 0, len(pubKeys))
+	for _, pubKey := range pubKeys {
+		if activeSet != nil {
+			pubKey = resolveFrostKeygenBlamePubKey(pubKey, activeSet.originalByNormalized)
+		}
+		resolved = append(resolved, pubKey)
+	}
 	return FrostKeygenResponse{
 		Status: tcommon.Fail,
-		Blame:  buildBlame(reason, round, pubKeys),
+		Blame:  buildBlame(reason, round, resolved),
 	}
+}
+
+// Resolve to the request's exact member representation, not merely lowercase.
+// An unknown identity stays unknown; resolution must not invent membership.
+func resolveFrostKeygenBlamePubKey(pubKey string, members map[string]string) string {
+	if original, ok := members[normalizePubKey(pubKey)]; ok {
+		return original
+	}
+	return pubKey
 }
 
 type dkgResultVoteBucket struct {
@@ -1517,7 +1508,7 @@ type dkgResultVoteBucket struct {
 	voters   map[string]struct{}
 }
 
-func normalizeDKGResultPayload(result FrostDKGResult) (FrostKeygenResponse, string, error) {
+func normalizeDKGResultPayload(result FrostDKGResult, members map[string]string) (FrostKeygenResponse, string, error) {
 	status := tcommon.Status(result.Status)
 	if status != tcommon.Success && status != tcommon.Fail {
 		return FrostKeygenResponse{}, "", fmt.Errorf("invalid frost dkg result status")
@@ -1543,9 +1534,25 @@ func normalizeDKGResultPayload(result FrostDKGResult) (FrostKeygenResponse, stri
 		normalized.GroupKey = strings.ToLower(groupKey)
 		normalized.ObservedMoneroHeight = result.ObservedMoneroHeight
 	case tcommon.Fail:
+		// Bound the copy before resolving member encodings. The shared normalizer
+		// then validates, deduplicates and sorts before the comparison key is built.
+		if len(result.Blame.BlameNodes) > frostMaxResultBlameNodes {
+			return FrostKeygenResponse{}, "", fmt.Errorf("frost fail result blame nodes exceeds limit")
+		}
+		nodes := make([]blame.Node, len(result.Blame.BlameNodes))
+		for i, node := range result.Blame.BlameNodes {
+			node.Pubkey = resolveFrostKeygenBlamePubKey(node.Pubkey, members)
+			nodes[i] = node
+		}
+		result.Blame.BlameNodes = nodes
 		normalizedBlame, err := normalizeBlameForResult(result.Blame)
 		if err != nil {
 			return FrostKeygenResponse{}, "", err
+		}
+		// DKG failure gossip remains actionable-only even though keysign
+		// result waiters also accept local diagnostics without blamed nodes.
+		if len(normalizedBlame.BlameNodes) == 0 {
+			return FrostKeygenResponse{}, "", fmt.Errorf("frost fail result missing blame nodes")
 		}
 		normalized.Blame = normalizedBlame
 	}

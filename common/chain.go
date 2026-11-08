@@ -2,6 +2,7 @@ package common
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/btcsuite/btcd/chaincfg"
@@ -384,6 +385,23 @@ func (c Chain) UsesHeightScopedErrata() bool {
 // to require an explicit asset-chain address before funds arrive.
 func (c Chain) RequiresExplicitRefundAddress() bool {
 	return c.Equals(XMRChain)
+}
+
+// ValidateRefundAddress applies the chain's quote and recovery address policy to
+// an already-decoded address. Chains requiring an explicit refund address
+// (currently XMR) also enforce their network and supported-recipient rules.
+func (c Chain) ValidateRefundAddress(addr Address) error {
+	if !addr.IsChain(c) {
+		return fmt.Errorf("refund address %s is not valid for source chain %s", addr, c)
+	}
+	if !addr.IsCurrentNetwork(c) ||
+		(c.RequiresExplicitRefundAddress() && !c.IsValidAddress(addr)) {
+		return fmt.Errorf("refund address %s is not valid for %s on the current network", addr, c)
+	}
+	if c.Equals(XMRChain) && !IsSupportedXMRAddress(addr.String()) {
+		return fmt.Errorf("refund address %s uses an unsupported %s address form", addr, c)
+	}
+	return nil
 }
 
 // IsValidAddress make sure the address is correct for the chain

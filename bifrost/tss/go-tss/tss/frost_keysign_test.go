@@ -1521,53 +1521,54 @@ func TestFrostWaitForResultDisqualifiesConflictingSender(t *testing.T) {
 	}
 }
 
-func TestFrostWaitForResultSkipsPeerBindingMismatch(t *testing.T) {
+// A rejected frame cannot supply the second vote. The final authentic vote
+// must be consumed before the waiter returns, even for malformed-result buckets.
+func assertFrostResultQuorumExcludesInvalidReporter(t *testing.T, peerPubKey, senderPubKey string) {
+	t.Helper()
 	ensureBech32Prefix()
+	for _, tc := range []struct {
+		name   string
+		result FrostResult
+	}{
+		{"success", mustSuccessResult(t, "msg-id", testExpectedPlanHash, testHashOf('e'), "deadbeef", 10)},
+		{"diagnostic failure", FrostResult{
+			MsgID: "msg-id", Status: uint8(tcommon.Fail), Blame: buildBlame("local failure", frostRoundShare, nil),
+		}},
+		{"malformed failure", FrostResult{MsgID: "msg-id", Status: 255}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			msgChan := newFrostSignInbox()
+			coord := newTestFrostSignCoordinator(testPubKeys[0], "msg-id", msgChan, time.Second)
+			coord.logger = zerolog.Nop()
+			enqueueResultMessage(t, msgChan, coord.msgID, peerPubKey, senderPubKey, FrostResultPayload{Response: tc.result})
+			for _, sender := range []string{testPubKeys[2], testPubKeys[1]} {
+				enqueueResultMessage(t, msgChan, coord.msgID, sender, sender, FrostResultPayload{Response: tc.result})
+			}
 
-	msgChan := newFrostSignInbox()
-	coord := &FrostSignCoordinator{
-		localPubKey:      testPubKeys[0],
-		msgID:            "msg-id",
-		expectedPlanHash: testExpectedPlanHash,
-		inbox:            msgChan,
-		timeout:          100 * time.Millisecond,
-		logger:           zerolog.Nop(),
-	}
-
-	senderPubKey := testPubKeys[1]
-	enqueueResultMessage(t, msgChan, "msg-id", testPubKeys[2], senderPubKey, FrostResultPayload{
-		SenderPubKey: senderPubKey,
-		Response:     mustSuccessResult(t, "msg-id", testExpectedPlanHash, testHashOf('e'), "deadbeef", 10),
-	})
-
-	_, err := coord.WaitForResult([]string{testPubKeys[0], senderPubKey, testPubKeys[2]}, 2, 100*time.Millisecond)
-	if err == nil || !strings.Contains(err.Error(), "timeout") {
-		t.Fatalf("expected timeout after skipping invalid message, got: %v", err)
+			resp, err := coord.WaitForResult(testPubKeys[:3], 2, time.Second)
+			if err != nil {
+				t.Fatalf("authentic result quorum did not finish: %v", err)
+			}
+			if len(msgChan.result) != 0 {
+				t.Fatalf("invalid reporter completed quorum before %d authentic votes were read", len(msgChan.result))
+			}
+			wantStatus := tcommon.Fail
+			if tc.result.Status == uint8(tcommon.Success) {
+				wantStatus = tcommon.Success
+			}
+			if resp.Status != wantStatus || len(resp.Blame.BlameNodes) != 0 {
+				t.Fatalf("unexpected authenticated quorum response: %+v", resp)
+			}
+		})
 	}
 }
 
+func TestFrostWaitForResultSkipsPeerBindingMismatch(t *testing.T) {
+	assertFrostResultQuorumExcludesInvalidReporter(t, testPubKeys[2], testPubKeys[1])
+}
+
 func TestFrostWaitForResultSkipsSenderOutsideActiveSet(t *testing.T) {
-	ensureBech32Prefix()
-
-	msgChan := newFrostSignInbox()
-	coord := &FrostSignCoordinator{
-		localPubKey:      testPubKeys[0],
-		msgID:            "msg-id",
-		expectedPlanHash: testExpectedPlanHash,
-		inbox:            msgChan,
-		timeout:          100 * time.Millisecond,
-		logger:           zerolog.Nop(),
-	}
-
-	enqueueResultMessage(t, msgChan, "msg-id", testPubKeys[3], testPubKeys[3], FrostResultPayload{
-		SenderPubKey: testPubKeys[3],
-		Response:     mustSuccessResult(t, "msg-id", testExpectedPlanHash, testHashOf('f'), "deadbeef", 10),
-	})
-
-	_, err := coord.WaitForResult([]string{testPubKeys[0], testPubKeys[1], testPubKeys[2]}, 2, 100*time.Millisecond)
-	if err == nil || !strings.Contains(err.Error(), "timeout") {
-		t.Fatalf("expected timeout after skipping invalid message, got: %v", err)
-	}
+	assertFrostResultQuorumExcludesInvalidReporter(t, testPubKeys[3], testPubKeys[3])
 }
 
 func TestFrostWaitForResultIgnoresMismatchedMsgID(t *testing.T) {

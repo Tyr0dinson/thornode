@@ -39,7 +39,7 @@ type frostKeygenRoundVerifier struct {
 // frostKeygenVerificationGaps partitions incomplete transcript confirmation
 // into disjoint causes. A single conflicting vote is not attributable because
 // this node may hold the divergent transcript; two authenticated votes from
-// one attester are attributable equivocation and remain blameable.
+// one attester identify locally observed equivocation.
 type frostKeygenVerificationGaps struct {
 	missingPubKeys      []string
 	conflictingPubKeys  []string
@@ -247,4 +247,29 @@ func frostKeygenTranscriptTimeoutReason(
 		reason += "; peer verification vote equivocation detected"
 	}
 	return reason
+}
+
+// failForRoundTimeout keeps receipt gaps separate from locally observed
+// equivocation. Neither missing participation nor a conflicting local view
+// identifies the peer that caused the ceremony to fail. Even authenticated
+// equivocation here is a local diagnostic, not transferable on-chain evidence.
+func (c *FrostKeygenCoordinator) failForRoundTimeout(
+	verifier *frostKeygenRoundVerifier,
+	payloadLabel string,
+) FrostKeygenResponse {
+	missingPayloads := verifier.missingPayloadPubKeys()
+	gaps := verifier.verificationGaps()
+	c.logger.Warn().
+		Str("round", verifier.round).
+		Strs("missing_payload_pubkeys", missingPayloads).
+		Strs("missing_verification_pubkeys", gaps.missingPubKeys).
+		Strs("conflicting_verification_pubkeys", gaps.conflictingPubKeys).
+		Strs("equivocating_verification_pubkeys", gaps.equivocatingPubKeys).
+		Msg("FROST keygen round timed out; peer lists are local diagnostics")
+	return c.failForPubKeys(
+		verifier.activeSet,
+		frostKeygenTranscriptTimeoutReason(payloadLabel, missingPayloads, gaps),
+		verifier.round,
+		gaps.equivocatingPubKeys,
+	)
 }

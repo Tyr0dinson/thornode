@@ -125,6 +125,10 @@ type CustomKeygenRequest struct {
 // hook, including the finalized EdDSA pool pubkey when the chain derives it
 // from its own keygen transcript rather than reusing the generic THORChain one.
 type CustomKeygenResult struct {
+	// AbsentMembers carries locally observed XMR admission absence separately
+	// from diagnostic blame. It must never be derived from peer accusations.
+	AbsentMembers []string
+
 	Address              common.Address
 	PoolPubKeyEddsa      common.PubKey
 	PoolPubKeyFrost      common.PubKey

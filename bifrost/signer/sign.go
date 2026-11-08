@@ -455,11 +455,14 @@ func (s *Signer) processKeygen(ch <-chan ttypes.KeygenBlock) {
 
 // scheduleKeygenRetry retains unknown policy for all keygen types, including
 // Asgard. This is shared retry behavior, not an XMR-only execution gate.
-func (s *Signer) scheduleKeygenRetry(keygenBlock ttypes.KeygenBlock, keygenReq ttypes.Keygen) bool {
+func (s *Signer) scheduleKeygenRetry(keygenBlock ttypes.KeygenBlock, keygenReq ttypes.Keygen, failure *keygenFailure, xmrFailure error) bool {
 	if s.isStopped() {
 		return false
 	}
-	retry := &keygenRetry{block: keygenBlock, keygen: keygenReq}
+	retry := &keygenRetry{block: keygenBlock, keygen: keygenReq, failure: failure}
+	if keygenReq.Type == ttypes.KeygenType_XMRMonovaultKeygen {
+		retry.xmrFailure = xmrFailure
+	}
 	id := retryID(keygenBlock, keygenReq)
 	if _, loaded := s.keygenRetries.LoadOrStore(id, retry); loaded {
 		return true // One waiting worker already owns this retry intent.
@@ -474,7 +477,13 @@ func (s *Signer) scheduleKeygenRetry(keygenBlock ttypes.KeygenBlock, keygenReq t
 	}
 	targetRetryHeight := retry.targetHeight
 	if !s.startKeygenWorker(func() {
-		defer s.keygenRetries.CompareAndDelete(id, retry)
+		defer func() {
+			// A fired retry transfers ownership before executing; only a
+			// retired waiting token may report its retained terminal failure.
+			if s.keygenRetries.CompareAndDelete(id, retry) || retry.retired {
+				s.reportRetiredXMRKeygenFailure(retry)
+			}
+		}()
 		ticker := time.NewTicker(constants.ThorchainBlockTime)
 		defer ticker.Stop()
 		for {
@@ -604,13 +613,15 @@ func (s *Signer) runKeygenRequest(keygenBlock ttypes.KeygenBlock, keygenReq ttyp
 			common.EmptyPubKey,
 			common.EmptyPubKey,
 		)
+		err = s.xmrKeygen.recordAbsence(keygenBlock.Height, keygenReq, err)
 		if err != nil {
 			s.errCounter.WithLabelValues("fail_custom_keygen_hook", "").Inc()
 			s.logger.Error().Err(err).Interface("keygenBlock", keygenBlock).Msg("xmr monovault keygen hooks failed")
-			if s.scheduleKeygenRetry(keygenBlock, keygenReq) {
+			if s.scheduleKeygenRetry(keygenBlock, keygenReq, nil, err) {
 				return
 			}
 			s.logger.Error().Interface("keygen", keygenReq).Msg("done with keygen retries after xmr monovault keygen failure")
+			s.reportXMRKeygenFailure(keygenBlock, keygenReq, err)
 			return
 		}
 		if pubKey.Ed25519.IsEmpty() {
@@ -638,7 +649,14 @@ func (s *Signer) runKeygenRequest(keygenBlock ttypes.KeygenBlock, keygenReq ttyp
 
 		// re-enqueue the keygen block to retry if we failed to generate a key
 		if pubKey.Secp256k1.IsEmpty() || pubKey.Ed25519.IsEmpty() {
-			if s.scheduleKeygenRetry(keygenBlock, keygenReq) {
+			var failure *keygenFailure
+			if err != nil || len(blame) > 0 {
+				failure = &keygenFailure{
+					blame:      keygenFailureBlame(blame, err),
+					keygenTime: keygenNowFn().Sub(keygenStart).Milliseconds(),
+				}
+			}
+			if s.scheduleKeygenRetry(keygenBlock, keygenReq, failure, nil) {
 				return
 			}
 			s.logger.Error().Interface("keygen", keygenReq).Msg("done with keygen retries")
@@ -657,7 +675,9 @@ func (s *Signer) runKeygenRequest(keygenBlock ttypes.KeygenBlock, keygenReq ttyp
 		if err != nil {
 			s.errCounter.WithLabelValues("fail_custom_keygen_hook", "").Inc()
 			s.logger.Error().Err(err).Interface("keygenBlock", keygenBlock).Msg("custom keygen hooks failed")
-			if s.scheduleKeygenRetry(keygenBlock, keygenReq) {
+			// Ordinary TSS succeeded; do not revive blame from an earlier attempt.
+			// Asgard currently excludes XMR, the only production custom keygen.
+			if s.scheduleKeygenRetry(keygenBlock, keygenReq, nil, nil) {
 				return
 			}
 			s.logger.Error().Interface("keygen", keygenReq).Msg("done with keygen retries after custom keygen hook failure")
@@ -670,7 +690,8 @@ func (s *Signer) runKeygenRequest(keygenBlock ttypes.KeygenBlock, keygenReq ttyp
 	keygenTime := keygenNowFn().Sub(keygenStart).Milliseconds()
 
 	if pubKey.Secp256k1.IsEmpty() || pubKey.Ed25519.IsEmpty() {
-		if s.scheduleKeygenRetry(keygenBlock, keygenReq) {
+		// Custom/empty results provide no ordinary TSS blame to report.
+		if s.scheduleKeygenRetry(keygenBlock, keygenReq, nil, nil) {
 			return
 		}
 		s.logger.Error().Interface("keygen", keygenReq).Msg("done with keygen retries after empty keygen result")
@@ -753,6 +774,31 @@ func (s *Signer) xmrMonovaultKeygenAllowed(keygenHeight int64) (bool, error) {
 		Int64("current_height", currentHeight).
 		Msg("HaltMonovaultKeygen is scheduled for a future height; allowing XMR monovault keygen")
 	return true, nil
+}
+
+// MsgTssPool rejects duplicate blamed pubkeys, including within one blame entry.
+// Keep the first entry for each node, without changing the original TSS result.
+func keygenFailureBlame(blame []ttypes.Blame, keygenErr error) []ttypes.Blame {
+	if len(blame) == 0 && keygenErr != nil {
+		// A failure without an identified culprit must still be a failure message.
+		return []ttypes.Blame{{FailReason: keygenErr.Error()}}
+	}
+	result := make([]ttypes.Blame, len(blame))
+	seen := make(map[string]struct{})
+	for i, entry := range blame {
+		result[i] = entry
+		result[i].BlameNodes = nil
+		for _, node := range entry.BlameNodes {
+			if _, exists := seen[node.Pubkey]; exists {
+				continue
+			}
+			seen[node.Pubkey] = struct{}{}
+			node.BlameData = append([]byte(nil), node.BlameData...)
+			node.BlameSignature = append([]byte(nil), node.BlameSignature...)
+			result[i].BlameNodes = append(result[i].BlameNodes, node)
+		}
+	}
+	return result
 }
 
 func (s *Signer) flushPendingKeygenBroadcasts(pending []pendingKeygenBroadcast) {
@@ -888,7 +934,11 @@ func (s *Signer) runCustomKeygenHooks(
 					Interface("nodes", b.BlameNodes).
 					Msg("custom keygen blame")
 			}
-			customHookErr = errors.Join(customHookErr, fmt.Errorf("custom keygen failed for %s: %w", chainID.String(), err))
+			hookErr := fmt.Errorf("custom keygen failed for %s: %w", chainID.String(), err)
+			if chainID == common.XMRChain {
+				hookErr = &xmrKeygenFailure{cause: hookErr, absent: result.AbsentMembers}
+			}
+			customHookErr = errors.Join(customHookErr, hookErr)
 			continue
 		}
 		if result.FrostKeyshareHex != "" {
@@ -1061,6 +1111,10 @@ func (s *Signer) buildKeygenBackups(secpKeysharePath, eddsaKeysharePath, frostKe
 	if !s.cfg.Signer.BackupKeyshares {
 		return keygenBackups{}
 	}
+	// Failure reports have no shares to back up and do not need the signer seed.
+	if secpKeysharePath == "" && eddsaKeysharePath == "" && frostKeyshareHex == "" {
+		return keygenBackups{}
+	}
 
 	type backupResult struct {
 		kind string
@@ -1159,6 +1213,11 @@ func (s *Signer) broadcastKeygenMsgs(height int64, msgs ...sdktypes.Msg) (common
 	bf := backoff.NewExponentialBackOff()
 	bf.MaxElapsedTime = time.Minute
 	err := backoff.Retry(func() error {
+		for _, msg := range msgs {
+			if result, ok := msg.(*ttypes.MsgTssPool); ok && result.KeygenType == ttypes.KeygenType_XMRMonovaultKeygen && !result.IsSuccess() && s.isStopped() {
+				return backoff.Permanent(errors.New("XMR keygen failure broadcast stopped"))
+			}
+		}
 		var err error
 		txID, err = s.thorchainBridge.Broadcast(msgs...)
 		if err != nil {

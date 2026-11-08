@@ -28,7 +28,7 @@ func TestFrostKeygenDiscardsMalformedVerification(t *testing.T) {
 		incompletePayload    bool
 		wantSuccess          bool
 		wantMissing          []int
-		wantBlame            []int
+		wantPayloadMissing   []int
 	}{
 		{name: "future hash with sufficient quorum", future: true, validVoters: []int{1, 2}, wantSuccess: true},
 		{name: "current hash with sufficient quorum", validVoters: []int{1, 2}, wantSuccess: true},
@@ -39,9 +39,9 @@ func TestFrostKeygenDiscardsMalformedVerification(t *testing.T) {
 		{name: "current malformed then valid sender counts", validVoters: []int{1, 3}, wantSuccess: true},
 		{name: "future valid then malformed sender counts", future: true, validBeforeMalformed: true, validVoters: []int{3, 1}, wantSuccess: true},
 		{name: "current valid then malformed sender counts", validBeforeMalformed: true, validVoters: []int{3, 1}, wantSuccess: true},
-		{name: "insufficient quorum blames missing voters", validVoters: []int{1}, wantMissing: []int{2, 3}, wantBlame: []int{2, 3}},
-		{name: "later valid sender is not missing at timeout", validVoters: []int{3}, wantMissing: []int{1, 2}, wantBlame: []int{1, 2}},
-		{name: "incomplete transcript cannot blame missing votes", validVoters: []int{1}, incompletePayload: true, wantBlame: []int{2}},
+		{name: "insufficient quorum diagnoses missing voters", validVoters: []int{1}, wantMissing: []int{2, 3}},
+		{name: "later valid sender is not missing at timeout", validVoters: []int{3}, wantMissing: []int{1, 2}},
+		{name: "incomplete transcript cannot blame missing votes", validVoters: []int{1}, incompletePayload: true, wantPayloadMissing: []int{2}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			members := testPubKeys[:4]
@@ -100,18 +100,8 @@ func TestFrostKeygenDiscardsMalformedVerification(t *testing.T) {
 				if failure == nil || !strings.Contains(failure.Blame.FailReason, "timeout") || failure.Blame.Round != frostDKGRound3 {
 					t.Fatalf("expected round 3 timeout, got %+v", failure)
 				}
-				wantBlame := make([]string, 0, len(tc.wantBlame))
-				for _, i := range tc.wantBlame {
-					wantBlame = append(wantBlame, members[i])
-				}
-				gotBlame := make([]string, 0, len(failure.Blame.BlameNodes))
-				for _, node := range failure.Blame.BlameNodes {
-					gotBlame = append(gotBlame, node.Pubkey)
-				}
-				slices.Sort(wantBlame)
-				slices.Sort(gotBlame)
-				if !slices.Equal(gotBlame, wantBlame) {
-					t.Fatalf("timeout blame = %v, want %v", gotBlame, wantBlame)
+				if len(failure.Blame.BlameNodes) != 0 {
+					t.Fatalf("missing participation must not populate blame: %+v", failure.Blame)
 				}
 			}
 			verifier, err := coord.roundState.verifier(frostDKGRound3)
@@ -128,6 +118,14 @@ func TestFrostKeygenDiscardsMalformedVerification(t *testing.T) {
 				t.Fatalf("malformed sender's retained vote = %q, valid vote sent = %t", got, want)
 			}
 			if !tc.wantSuccess {
+				wantPayloadMissing := make([]string, 0, len(tc.wantPayloadMissing))
+				for _, i := range tc.wantPayloadMissing {
+					wantPayloadMissing = append(wantPayloadMissing, members[i])
+				}
+				slices.Sort(wantPayloadMissing)
+				if got := verifier.missingPayloadPubKeys(); !slices.Equal(got, wantPayloadMissing) {
+					t.Fatalf("missing payloads = %v, want %v", got, wantPayloadMissing)
+				}
 				wantMissing := make([]string, 0, len(tc.wantMissing))
 				for _, i := range tc.wantMissing {
 					wantMissing = append(wantMissing, members[i])

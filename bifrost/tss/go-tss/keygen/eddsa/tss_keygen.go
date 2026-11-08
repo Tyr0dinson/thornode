@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"runtime/debug"
 	"sync"
 	"time"
 
@@ -67,7 +68,16 @@ func (tKeyGen *EDDSAKeyGen) GetTssCommonStruct() *common.TssCommon {
 	return tKeyGen.tssCommonStruct
 }
 
-func (tKeyGen *EDDSAKeyGen) GenerateNewKey(keygenReq keygen.Request) (*bcrypto.ECPoint, error) {
+func (tKeyGen *EDDSAKeyGen) GenerateNewKey(keygenReq keygen.Request) (resp *bcrypto.ECPoint, err error) {
+	// a panic during ceremony setup must fail this keygen, not kill the whole
+	// daemon; peer-message panics are recovered separately in doTssJob
+	defer func() {
+		if r := recover(); r != nil {
+			tKeyGen.logger.Error().Interface("panic", r).Bytes("stack", debug.Stack()).Msg("panic during keygen")
+			resp = nil
+			err = fmt.Errorf("panic during keygen: %v", r)
+		}
+	}()
 	keyGenPartyMap := new(sync.Map)
 	partiesID, localPartyID, err := conversion.GetParties(keygenReq.Keys, tKeyGen.localNodePubKey)
 	if err != nil {
@@ -122,6 +132,13 @@ func (tKeyGen *EDDSAKeyGen) GenerateNewKey(keygenReq keygen.Request) (*bcrypto.E
 	// start keygen
 	go func() {
 		defer keyGenWg.Done()
+		// a panic in tss-lib must fail this keygen, not kill the daemon
+		defer func() {
+			if r := recover(); r != nil {
+				tKeyGen.logger.Error().Interface("panic", r).Bytes("stack", debug.Stack()).Msg("panic while starting keygen party")
+				close(errChan)
+			}
+		}()
 		defer tKeyGen.logger.Debug().Msg("keyGenParty started")
 		if err := keyGenParty.Start(); nil != err {
 			tKeyGen.logger.Error().Err(err).Msg("fail to start keygen party")

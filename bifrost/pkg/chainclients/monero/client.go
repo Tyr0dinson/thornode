@@ -3788,7 +3788,7 @@ func (c *Client) Keygen(req types.CustomKeygenRequest) (types.CustomKeygenResult
 		if len(frostResp.Blame.BlameNodes) > 0 || strings.TrimSpace(frostResp.Blame.FailReason) != "" {
 			blame = append(blame, frostBlameToThorchainBlame(frostResp.Blame))
 		}
-		return types.CustomKeygenResult{Blame: blame}, fmt.Errorf("FROST keygen failed: %s", strings.TrimSpace(frostResp.Blame.FailReason))
+		return types.CustomKeygenResult{Blame: blame, AbsentMembers: frostResp.AbsentMembers}, fmt.Errorf("FROST keygen failed: %s", strings.TrimSpace(frostResp.Blame.FailReason))
 	}
 
 	frostAddress := strings.TrimSpace(frostResp.Address)

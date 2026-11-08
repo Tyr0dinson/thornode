@@ -532,3 +532,23 @@ func IsSupportedXMRAddress(address string) bool {
 func isSupportedFeaturedNetworkByte(networkByte byte) bool {
 	return networkByte == xmrFeaturedMainnetNetworkByte
 }
+
+// XMRAddressPublicKeys returns the spend and view public keys of a standard,
+// integrated or subaddress Monero address, and whether it is a subaddress.
+// Featured addresses are rejected.
+func XMRAddressPublicKeys(address string) (spend, view [32]byte, subaddress bool, err error) {
+	info, ok := xmrDecodeAddressInfo(address)
+	if !ok {
+		return spend, view, false, fmt.Errorf("invalid xmr address")
+	}
+	if info.isFeatured {
+		return spend, view, false, fmt.Errorf("featured xmr addresses are not supported")
+	}
+	raw, err := xmrBase58Decode(address)
+	if err != nil {
+		return spend, view, false, err
+	}
+	copy(spend[:], raw[1:33])
+	copy(view[:], raw[33:65])
+	return spend, view, info.networkByte == xmrSubaddressNetworkByte, nil
+}

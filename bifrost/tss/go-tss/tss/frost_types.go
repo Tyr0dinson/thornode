@@ -1,6 +1,7 @@
 package tss
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"strconv"
@@ -83,6 +84,36 @@ type FrostSidecarClient interface {
 	FrostSignCombine(req FrostSidecarCombineReq) (FrostSidecarCombineResp, error)
 }
 
+// FrostVaultOutputsClient lists the outputs the local sidecar tracks for a
+// vault, spent ones included. A source-vault member without prepared inputs
+// binds peer-reported spent refs to them before it adopts a result; a sidecar
+// that cannot list them leaves it adopting only at threshold+1. The call must
+// return once ctx is done.
+type FrostVaultOutputsClient interface {
+	FrostVaultOutputs(ctx context.Context, vaultPubKey string) ([]FrostVaultOutput, error)
+}
+
+// FrostTxExistsClient reports whether the local Monero daemon holds a
+// transaction, in its pool or on chain. A node adopts a result from fewer than
+// threshold+1 senders only once the daemon has accepted its transaction, which
+// verifies the signatures, range proofs and key images that the node does not;
+// a sidecar that cannot tell leaves it adopting only at threshold+1. The call
+// must return once ctx is done.
+type FrostTxExistsClient interface {
+	FrostTxExists(ctx context.Context, txHash string) (bool, error)
+}
+
+// FrostVaultOutput is a vault output tracked by the local sidecar's scanner.
+type FrostVaultOutput struct {
+	TxHash      string
+	OutputIndex uint32
+	Amount      uint64
+	// KeyImage is set once the sidecar has bound the output's key image.
+	KeyImage string
+	// State is "unspent", "reserved" or "spent".
+	State string
+}
+
 // FrostKeygenRequest is the canonical request context for a FROST DKG ceremony.
 type FrostKeygenRequest struct {
 	VaultPubKey   string
@@ -93,6 +124,10 @@ type FrostKeygenRequest struct {
 
 // FrostKeygenResponse is the result of a FROST DKG ceremony.
 type FrostKeygenResponse struct {
+	// AbsentMembers is local admission evidence, never populated from peer
+	// results or round blame. Only exchangePresence may nominate absentees.
+	AbsentMembers []string
+
 	Address              string
 	GroupKey             string
 	KeyBytesHex          string

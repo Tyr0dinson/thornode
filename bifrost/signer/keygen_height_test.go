@@ -126,7 +126,7 @@ func TestKeygenRetryRetainsLaggingHeight(t *testing.T) {
 			block := singleKeygenBlock(2700, ttypes.Keygen{Type: kind})
 			bridge.setMimir(constants.KeygenRetryInterval.String(), 100)
 			bridge.setHeight(2699)
-			if !signer.scheduleKeygenRetry(block, block.Keygens[0]) {
+			if !signer.scheduleKeygenRetry(block, block.Keygens[0], nil, nil) {
 				t.Fatal("lagging height discarded retry intent")
 			}
 			// Drive an independent copy of the worker step without sharing its
@@ -171,10 +171,9 @@ func TestKeygenRetryLaggingHeightRecoversOnce(t *testing.T) {
 			if signer.tryKeygenRetry(retry) {
 				t.Fatal("retry fired before target height")
 			}
-			// Execute at the last valid height (churn-1): an empty Asgard key
-			// cannot create another retry here, so reads identify exactly one
-			// execution.
-			bridge.setHeight(3699)
+			// Execute at the last admissible round: an empty Asgard key cannot
+			// create another retry, so reads identify exactly one execution.
+			bridge.setHeight(3500)
 			before := bridge.mimirReadCount(constants.ChurnRetryInterval.String())
 			if !signer.tryKeygenRetry(retry) {
 				t.Fatal("recovered retry did not finish")

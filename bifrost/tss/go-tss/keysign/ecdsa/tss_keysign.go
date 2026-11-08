@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math/big"
 	"reflect"
+	"runtime/debug"
 	"sort"
 	"strconv"
 	"sync"
@@ -80,6 +81,13 @@ func (tKeySign *TssKeySign) startBatchSigning(keySignPartyMap *sync.Map, msgNum 
 		eachParty := value.(tss.Party)
 		go func(eachParty tss.Party) {
 			defer keySignWg.Done()
+			// a panic in tss-lib must fail this keysign, not kill the daemon
+			defer func() {
+				if r := recover(); r != nil {
+					tKeySign.logger.Error().Interface("panic", r).Bytes("stack", debug.Stack()).Msg("panic while starting key sign party")
+					ret.Store(false)
+				}
+			}()
 			if err := eachParty.Start(); err != nil {
 				tKeySign.logger.Error().Err(err).Msg("fail to start key sign party")
 				ret.Store(false)
@@ -94,7 +102,8 @@ func (tKeySign *TssKeySign) startBatchSigning(keySignPartyMap *sync.Map, msgNum 
 
 // Keep LocalPartySaveData's field names in garbled release builds (see GARBLE
 // in the Makefile). Keyshares are JSON without tags, and garble cannot follow
-// them into the curvelock.WithCurve closure in LoadLocalData.
+// them into the curvelock.WithCurve closure in LoadLocalData or through the
+// keygen result channel.
 var _ = reflect.TypeOf(keygen.LocalPartySaveData{})
 
 // LoadLocalData decodes a keyshare's local data and checks that it carries
