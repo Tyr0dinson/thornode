@@ -10,16 +10,18 @@ fails back when you ask it to.
 
 Every chain keeps one **active** endpoint (the highest-priority healthy one at startup).
 All requests go to the active endpoint. Reads that fail with a transport error, an HTTP
-3xx / 5xx, a 401 / 403, a JSON-RPC "internal error", or a body that is not valid JSON are
-retried on the next healthy endpoint immediately and charged to the endpoint that
-failed. When no endpoint is left to try, the error returned to the caller carries the
+3xx / 5xx, a 401 / 403, an HTML error page, a JSON-RPC "internal error", or an empty or
+invalid JSON body are retried on the next healthy endpoint immediately and charged to the
+endpoint that failed. On the HTTP-routed chains a 2xx body is checked only when it is JSON
+(or untyped) and under 64 KiB; larger bodies and other content types reach the caller
+unchecked. When no endpoint is left to try, the error returned to the caller carries the
 last node's JSON-RPC code and message. A rate-limited read is retried on the next endpoint too, but the rate-limited
 endpoint is only put in cooldown (see below), never charged. On the HTTP-routed chains
 (EVM, SOL, XRP, TRON, and the Cosmos CometBFT RPC) a JSON-RPC "method not found" is the
 caller's business and is never charged: bifrost calls optional methods
 (`eth_getBlockReceipts`) and falls back itself when a node lacks them. On XRP, a
-provider answering `lgrNotFound` is asked last: the other endpoints are tried first and
-nothing is charged. Writes (broadcasts) are sent once, to the active endpoint, with the
+provider answering `lgrNotFound` or `txnNotFound` is asked last: the other endpoints are
+tried first and nothing is charged. Writes (broadcasts) are sent once, to the active endpoint, with the
 caller's whole timeout, and never duplicated elsewhere: a write moves to the next
 endpoint only when connecting to the active one failed before anything was sent (gRPC
 writes never move). The XRP transport retry wrapper never replays `submit` either.
@@ -93,7 +95,9 @@ EVM chains take a reorg's headers, transaction re-confirmations, rescanned block
 their receipts from one witness, the active endpoint, and only once its block at the reorg tip
 is the parent of the block being scanned, which proves it is caught up and on the same
 fork; otherwise the scan fails and is retried. No other endpoint is asked, so one still
-on the old fork cannot suppress an errata. A witness whose lookups fail rather than
+on the old fork cannot suppress an errata. A witness that answers "not found" for a
+stored transaction the scanned block lists has not imported that block yet (another
+endpoint served it), so the scan is retried instead of reporting an errata for it. A witness whose lookups fail rather than
 answer "not found" (for example a node still building its transaction index) holds the
 scan until it answers. If a scan stays stuck for longer than `max_resume_block_lag`
 while THORChain's last observed height for the chain moves more than that window ahead
@@ -105,17 +109,18 @@ window); the errata then depends on the other nodes' votes.
 A background health check runs every `health_check_interval` against every endpoint:
 
 - **Liveness.** A probe that errors or exceeds `health_check_timeout` is a strike.
-- **Lag.** When at least two usable endpoints (not disabled, and with their network
-  verified when that is required) agree on a tip (within `max_block_lag`), an
-  endpoint further behind than `max_block_lag` gets a strike each cycle. With two or
+- **Lag.** When at least two usable endpoints (not disabled, with their network
+  verified when that is required, and not quarantined for a minority block hash) agree
+  on a tip (within `max_block_lag`), an endpoint further behind than `max_block_lag`
+  gets a strike each cycle. With two or
   more endpoints, THORChain's last observed height for the chain is a second reference:
   an endpoint more than `max_block_lag` below it gets a strike. That height is set only
   once 2/3 of nodes agree and never goes back, so no endpoint or single node can move
   it, and it can only strike an endpoint behind what the network has already observed,
   never one at the tip. This is what lets two endpoints, which form no tip when they
   disagree, evict a stalled endpoint that still answers. When THORChain's height is
-  unavailable, does not answer within `health_check_timeout`, or no usable endpoint has
-  reached it (within `max_block_lag`), it strikes nothing; a height that stops moving (a
+  unavailable, does not answer within `health_check_timeout`, or no usable endpoint
+  outside quarantine has reached it (within `max_block_lag`), it strikes nothing; a height that stops moving (a
   halted or quiet chain) is still used, but cannot strike an endpoint at or above it.
   With a single endpoint, the block scanner's own height is the baseline instead.
 - **Identity.** Every endpoint must report the same chain identity (EVM `eth_chainId`,
@@ -165,7 +170,10 @@ A background health check runs every `health_check_interval` against every endpo
 request errors no more than `error_window` apart, mark an endpoint **unhealthy**. If it
 was active, traffic moves to the next healthy endpoint by priority. Unhealthy endpoints
 are re-probed every `recovery_check_interval` and return to healthy after
-`min_recovery_checks` consecutive passing probes. Traffic moves back to a recovered
+`min_recovery_checks` consecutive passing probes. While every endpoint is down, a
+successful request to an unhealthy endpoint (not one quarantined for a minority block
+hash) counts as one of those checks too, so traffic can bring it back before the probes
+do. Traffic moves back to a recovered
 higher-priority endpoint only when `prefer_higher_priority` is true.
 
 A rate limit (HTTP 429, gRPC `ResourceExhausted` or a gateway's HTTP 429, JSON-RPC -32005 / -32029; on Solana
@@ -203,7 +211,7 @@ If every endpoint is unhealthy, bifrost logs an error, sets
 | Cosmos (GAIA, NOBLE)            | gRPC and CometBFT RPC routed to the same active endpoint; each endpoint needs `cosmos_grpc_host` and `rpc_host` | `BroadcastTx` sent once; mempool verification asks every endpoint                                                             |
 | Solana                          | routed; `max_block_lag` is in slots (default 50); integrity check disabled (slots can be skipped)               | `sendTransaction` sent once                                                                                                   |
 | XRP                             | routed                                                                                                          | `submit` sent once                                                                                                            |
-| TRON                            | `api_host` and `rpc_host` routed together; each endpoint needs both; both are probed                            | `/wallet/broadcasttransaction` sent once                                                                                      |
+| TRON                            | `api_host` and `rpc_host` routed together; each endpoint needs both; its height is the lower of the two tips    | `/wallet/broadcasttransaction` sent once                                                                                      |
 | XMR                             | not supported; the Monero client talks to its signer sidecar only                                               |                                                                                                                               |
 
 On Solana, a vault with more than one page (1,000) of new signatures has all its pages

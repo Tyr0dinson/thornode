@@ -376,7 +376,7 @@ func (e *ETHScanner) processBlock(block *etypes.Block) (stypes.TxIn, error) {
 	// it. (Extraction's own cleanup, the signed-tx items and signer-cache entries of
 	// outbounds seen in a block and stored token metadata, may already have run; it
 	// is idempotent and the retry redoes it.)
-	plan, err := e.planReorg(block.Header())
+	plan, err := e.planReorgWith(block.Header(), block.Transactions())
 	if err != nil {
 		e.logger.Error().Err(err).Msgf("fail to process reorg for block %d", block.NumberU64())
 		return txIn, err
@@ -683,6 +683,13 @@ type reorgPlan struct {
 // current block is done too; the rescans' extraction cleanup is idempotent), and
 // any read that cannot be answered aborts it, so the scan step is retried as a whole.
 func (e *ETHScanner) planReorg(header *etypes.Header) (*reorgPlan, error) {
+	return e.planReorgWith(header, nil)
+}
+
+// planReorgWith is planReorg for the scanned block, whose transactions are scanned:
+// the witness's "not found" for a stored transaction the scanned block lists is not
+// believed (evm.ScannedTxHashes).
+func (e *ETHScanner) planReorgWith(header *etypes.Header, scanned etypes.Transactions) (*reorgPlan, error) {
 	previousHeight := header.Number.Int64() - 1
 	prevBlockMeta, err := e.blockMetaAccessor.GetBlockMeta(previousHeight)
 	if err != nil {
@@ -717,6 +724,7 @@ func (e *ETHScanner) planReorg(header *etypes.Header) (*reorgPlan, error) {
 		return nil, fmt.Errorf("reorg at height %d: %w", header.Number.Int64(), err)
 	}
 	plan := &reorgPlan{planned: planned}
+	listed := evm.ScannedTxHashes(scanned)
 	var rescanHeights []int64
 	for _, blockMeta := range blockMetas {
 		// the witness's header first: it proves the witness has this height before
@@ -736,6 +744,9 @@ func (e *ETHScanner) planReorg(header *etypes.Header) (*reorgPlan, error) {
 				e.logger.Debug().Msgf("block height: %d, tx: %s still exist", blockMeta.Height, tx.Hash)
 				metaTxs = append(metaTxs, tx)
 				continue
+			}
+			if presence == evm.TxNotFound && listed[evm.TxMetaKey(tx.Hash)] {
+				return nil, fmt.Errorf("block %d: endpoint %q does not know tx %s, which the scanned block lists: it has not imported the scanned block yet", blockMeta.Height, witness, tx.Hash)
 			}
 			// the node says the tx is not on chain (any more): errata it
 			errataTxs = append(errataTxs, stypes.ErrataTx{

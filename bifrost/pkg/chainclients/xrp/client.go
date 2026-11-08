@@ -151,9 +151,9 @@ func NewClient(
 		WriteMethods:   xrpWriteMethods,
 		DialTimeout:    failoverCfg.HealthCheckTimeout,
 		AttemptTimeout: evm.AttemptTimeout(requestTimeout),
-		// a provider with a shorter ledger history answers lgrNotFound inside a 200;
-		// another endpoint may still have the ledger, so it is asked first
-		RetryElsewhere: isLedgerNotFoundBody,
+		// a provider with a shorter ledger history answers lgrNotFound or txnNotFound
+		// inside a 200; another endpoint may still have the data, so it is asked first
+		RetryElsewhere: isNotOnThisNodeBody,
 	}, logger)
 	if err != nil {
 		return nil, fmt.Errorf("fail to create endpoint router: %w", err)

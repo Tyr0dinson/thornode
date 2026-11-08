@@ -224,6 +224,44 @@ func tronIdentity(chainID, rpcHash, apiBlockID, expected string) (string, error)
 	return "", fmt.Errorf("%w: api_host and rpc_host disagree on a recent block (api %q, rpc %q)", endpoints.ErrIdentityMismatch, norm(apiBlockID), norm(rpcHash))
 }
 
+// tronProbe probes a TRON endpoint: the rpc_host height and identity, with the
+// api_host's tip and network joined in. The scanner reads every block from api_host, so
+// the endpoint is only as far as the lower of the two tips.
+func tronProbe(e tcconfig.ChainEndpointConfig, timeout time.Duration, expectedIdentity string, logger zerolog.Logger) endpoints.Probe {
+	rpcProbe := endpoints.NewEVMProbe(e, timeout)
+	apiPost := endpoints.HTTPPostJSON(e, e.APIHost, timeout)
+	return endpoints.CompoundProbe{
+		Probe:         rpcProbe,
+		ExtraHeight:   tronAPIHeight(apiPost),
+		ExtraIdentity: tronAPIIdentity(e.Name, apiPost, rpcProbe, expectedIdentity, logger),
+	}
+}
+
+// tronAPIHeight reads an api_host's tip. getblock without detail returns the latest
+// block header only, so a probe never downloads a full block (up to 2 MB) every
+// cycle. A 200 without a blockID (a proxy or a captive portal answering anything) is
+// not a chain API.
+func tronAPIHeight(apiPost func(ctx context.Context, path, body string) (map[string]json.RawMessage, error)) func(ctx context.Context) (int64, error) {
+	return func(ctx context.Context) (int64, error) {
+		now, err := apiPost(ctx, "/wallet/getblock", `{"detail":false}`)
+		if err != nil {
+			return 0, err
+		}
+		if _, ok := now["blockID"]; !ok {
+			return 0, fmt.Errorf("/wallet/getblock: response has no \"blockID\" field; is this endpoint the right chain API?")
+		}
+		var hdr struct {
+			RawData struct {
+				Number int64 `json:"number"`
+			} `json:"raw_data"`
+		}
+		if err = json.Unmarshal(now["block_header"], &hdr); err != nil || hdr.RawData.Number <= 0 {
+			return 0, fmt.Errorf("/wallet/getblock: response has no block number")
+		}
+		return hdr.RawData.Number, nil
+	}
+}
+
 // tronAPIIdentity is the CompoundProbe identity hook for one TRON endpoint: given
 // the verified rpc_host chain id it reads both tips, takes the block
 // tronIdentityDepth below the lower one (so both hosts have it, whichever network
@@ -237,25 +275,15 @@ func tronAPIIdentity(name string, apiPost func(ctx context.Context, path, body s
 		if !ok {
 			return "", fmt.Errorf("endpoint %s: rpc probe cannot fetch block hashes", name)
 		}
-		now, err := apiPost(ctx, "/wallet/getblock", `{"detail":false}`)
+		apiTip, err := tronAPIHeight(apiPost)(ctx)
 		if err != nil {
 			return "", fmt.Errorf("api identity: %w", err)
-		}
-		var hdr struct {
-			BlockHeader struct {
-				RawData struct {
-					Number int64 `json:"number"`
-				} `json:"raw_data"`
-			} `json:"block_header"`
-		}
-		if err = json.Unmarshal(now["block_header"], &hdr.BlockHeader); err != nil || hdr.BlockHeader.RawData.Number <= 0 {
-			return "", fmt.Errorf("api identity: getblock has no block number")
 		}
 		rpcTip, err := rpcProbe.Height(ctx)
 		if err != nil {
 			return "", fmt.Errorf("api identity: rpc tip: %w", err)
 		}
-		h := min(hdr.BlockHeader.RawData.Number, rpcTip) - tronIdentityDepth
+		h := min(apiTip, rpcTip) - tronIdentityDepth
 		if h < 1 {
 			h = 1
 		}
@@ -331,15 +359,7 @@ func NewTronClient(
 	ordered := endpoints.OrderedEndpoints(endpointMgr, endpointCfgs)
 	probes := make([]endpoints.Probe, len(ordered))
 	for i, e := range ordered {
-		rpcProbe := endpoints.NewEVMProbe(e, failoverCfg.HealthCheckTimeout)
-		apiPost := endpoints.HTTPPostJSON(e, e.APIHost, failoverCfg.HealthCheckTimeout)
-		probes[i] = endpoints.CompoundProbe{
-			Probe: rpcProbe,
-			// getblock without detail returns the latest block header only, so a
-			// probe never downloads a full block (up to 2 MB) every cycle
-			Extra:         endpoints.HTTPPostCheck(e, e.APIHost, "/wallet/getblock", failoverCfg.HealthCheckTimeout, "blockID"),
-			ExtraIdentity: tronAPIIdentity(e.Name, apiPost, rpcProbe, expectedIdentity, logger),
-		}
+		probes[i] = tronProbe(e, failoverCfg.HealthCheckTimeout, expectedIdentity, logger)
 	}
 	if err = endpointMgr.Bootstrap(context.Background(), probes); err != nil {
 		return nil, fmt.Errorf("fail to bootstrap endpoints: %w", err)

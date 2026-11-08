@@ -238,11 +238,19 @@ func classifyRPCError(err error) rpcVerdict {
 	if isRateLimitError(err) {
 		return verdictRateLimit
 	}
+	if isAuthRefusal(err) {
+		return verdictFailure
+	}
 	var code int
 	var rpcErr *btcjson.RPCError
 	var zecErr *zec.Error
 	switch {
 	case errors.As(extractBTCError(err), &rpcErr):
+		// a body without a JSON-RPC error object (a gateway's own error) decodes to
+		// code 0 and no message: not a daemon's answer
+		if rpcErr.Code == 0 && rpcErr.Message == "" {
+			return verdictFailure
+		}
 		code = int(rpcErr.Code)
 	case errors.As(err, &zecErr): // Zebra answers through the zec client with its own error type
 		code = zecErr.Code
@@ -921,6 +929,14 @@ func (c *Client) batchCall(batch []rpc.BatchElem) error {
 // Helpers
 ////////////////////////////////////////////////////////////////////////////////////////
 
+// isAuthRefusal reports whether err is an HTTP 401 or 403: the server refused the
+// request (a gateway's API key or auth check), so it has not served it, whatever JSON
+// its body carries. A daemon answers wrong credentials with an empty body.
+func isAuthRefusal(err error) bool {
+	var httpErr rpc.HTTPError
+	return errors.As(err, &httpErr) && (httpErr.StatusCode == http.StatusUnauthorized || httpErr.StatusCode == http.StatusForbidden)
+}
+
 // isRateLimitError reports whether err represents an HTTP 429 response.
 func isRateLimitError(err error) bool {
 	if err == nil {
@@ -945,6 +961,11 @@ func extractBTCError(err error) error {
 	// function, and classifyRPCError needs to see the rate limit, not the generic
 	// JSON-RPC error object some providers put in the body
 	if isRateLimitError(err) {
+		return err
+	}
+	// a refusal keeps its status for the same reason: classifyRPCError must not read a
+	// gateway's JSON body as the daemon's answer
+	if isAuthRefusal(err) {
 		return err
 	}
 

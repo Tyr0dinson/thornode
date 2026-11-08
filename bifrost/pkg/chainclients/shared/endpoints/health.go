@@ -211,17 +211,21 @@ func (m *Manager) SetReferenceHeight(fn func() (int64, error)) {
 	m.referenceHeight = fn
 }
 
-// reference returns THORChain's observed height for this cycle, or 0 when there is
-// none to use: a single endpoint, no reference set, an error, or no answer within
-// health_check_timeout (a slow thornode must not hold up the health loop). A read
-// that has not answered yet is not started again, so a hanging thornode leaves one
-// waiting goroutine, not one per cycle.
-func (m *Manager) reference(ctx context.Context) int64 {
+// startReference starts reading THORChain's observed height for this cycle and
+// returns a function that waits for it. The read runs while the endpoints are probed,
+// so a slow thornode and slow probes cost a cycle the longer of the two, not their
+// sum, and the integrity check after them keeps its share of the cycle. The answer is
+// 0 when there is none to use: a single endpoint, no reference set, an error, or no
+// answer by the time both the probes are done and health_check_timeout has passed
+// since the start (a slow thornode must not hold up the health loop). A read that has not answered yet is not started again, so a
+// hanging thornode leaves one waiting goroutine, not one per cycle.
+func (m *Manager) startReference(ctx context.Context) func() int64 {
+	none := func() int64 { return 0 }
 	if m.referenceHeight == nil || len(m.entries) < 2 {
-		return 0
+		return none
 	}
 	if !m.referenceBusy.CompareAndSwap(false, true) {
-		return 0
+		return none
 	}
 	answer := make(chan int64, 1)
 	go func() {
@@ -233,14 +237,23 @@ func (m *Manager) reference(ctx context.Context) int64 {
 		answer <- h
 	}()
 	timer := time.NewTimer(m.cfg.HealthCheckTimeout)
-	defer timer.Stop()
-	select {
-	case h := <-answer:
-		return h
-	case <-timer.C:
-		return 0
-	case <-ctx.Done():
-		return 0
+	return func() int64 {
+		defer timer.Stop()
+		// an answer that came while the endpoints were probed wins over the timer, which
+		// a probe that ran to its own timeout has let fire meanwhile
+		select {
+		case h := <-answer:
+			return h
+		default:
+		}
+		select {
+		case h := <-answer:
+			return h
+		case <-timer.C:
+			return 0
+		case <-ctx.Done():
+			return 0
+		}
 	}
 }
 
@@ -340,6 +353,7 @@ func (m *Manager) Cycle(ctx context.Context) {
 			return e.RecoveryDue(m.cfg.RecoveryCheckInterval)
 		}
 	}
+	waitReference := m.startReference(ctx)
 	results := m.probeAll(ctx, selected, true)
 
 	// 1. identity verification for endpoints that were unverified. Without a
@@ -404,18 +418,32 @@ func (m *Manager) Cycle(ctx context.Context) {
 	// 3. consensus tip (quorum of two within max_block_lag); the scanner baseline is
 	// only meaningful with a single endpoint (with several, the scanner reads from
 	// the active endpoint and would let it evict every other endpoint)
-	tip, quorum := consensusTip(heights, m.cfg.MaxBlockLag)
+	// An endpoint quarantined for a minority block hash is on another fork: its height
+	// neither sets the tip the others are judged against nor counts as reaching
+	// THORChain's height. It still pairs with a healthy endpoint for the integrity
+	// check when the others form no tip, which is how one healthy endpoint clears it.
+	tipHeights := make(map[string]int64, len(heights))
+	for name, h := range heights {
+		if !m.byName[name].IntegrityEvicted() {
+			tipHeights[name] = h
+		}
+	}
+	tip, quorum := consensusTip(tipHeights, m.cfg.MaxBlockLag)
+	checkTip, checkQuorum := tip, quorum
+	if !quorum {
+		checkTip, checkQuorum = consensusTip(heights, m.cfg.MaxBlockLag)
+	}
 	var scanner int64
 	if m.scannerHeight != nil && len(m.entries) == 1 {
 		scanner = m.scannerHeight()
 	}
-	observed := m.reference(ctx)
+	observed := waitReference()
 	// trust THORChain's height only once a usable endpoint has reached it (within
 	// max_block_lag): a height no endpoint shows (forced on THORChain, or every
 	// endpoint behind) must not strike all of them and take the chain down
 	if observed > 0 {
 		reached := false
-		for _, h := range heights {
+		for _, h := range tipHeights {
 			if h+m.cfg.MaxBlockLag >= observed {
 				reached = true
 			}
@@ -441,8 +469,8 @@ func (m *Manager) Cycle(ctx context.Context) {
 	// endpoints evicted for a minority hash must positively match it before they may
 	// recover (matchedHash), a check that merely ran or returned nothing is not enough
 	badHash, matchedHash := map[string]bool{}, map[string]bool{}
-	if quorum && m.cfg.IntegrityCheckDepth > 0 && tip-m.cfg.IntegrityCheckDepth > 0 {
-		badHash, matchedHash = m.integrityCheck(ctx, tip-m.cfg.IntegrityCheckDepth, heights)
+	if checkQuorum && m.cfg.IntegrityCheckDepth > 0 && checkTip-m.cfg.IntegrityCheckDepth > 0 {
+		badHash, matchedHash = m.integrityCheck(ctx, checkTip-m.cfg.IntegrityCheckDepth, heights)
 	}
 
 	// 5. apply results per entry

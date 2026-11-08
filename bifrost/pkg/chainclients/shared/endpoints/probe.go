@@ -43,6 +43,10 @@ type CompoundProbe struct {
 	Probe
 	// Extra is an additional liveness check run after a successful Height.
 	Extra func(ctx context.Context) error
+	// ExtraHeight, when set, is the tip of a second host of the same endpoint that
+	// serves the chain too. The endpoint is then only as far as the lower of the two,
+	// so a second host that stopped advancing makes the endpoint lag.
+	ExtraHeight func(ctx context.Context) (int64, error)
 	// ExtraIdentity, when set, is given the base probe's verified identity and
 	// returns the identity to report for the endpoint. It lets a second host of the
 	// same endpoint (a gRPC server, a REST API) take part in identity verification:
@@ -52,7 +56,7 @@ type CompoundProbe struct {
 	ExtraIdentity func(ctx context.Context, base string) (string, error)
 }
 
-// Height runs the base probe and then the extra check.
+// Height runs the base probe and then the extra checks.
 func (p CompoundProbe) Height(ctx context.Context) (int64, error) {
 	h, err := p.Probe.Height(ctx)
 	if err != nil {
@@ -62,6 +66,13 @@ func (p CompoundProbe) Height(ctx context.Context) (int64, error) {
 		if err := p.Extra(ctx); err != nil {
 			return 0, fmt.Errorf("endpoint %s: %w", p.Name(), err)
 		}
+	}
+	if p.ExtraHeight != nil {
+		extra, err := p.ExtraHeight(ctx)
+		if err != nil {
+			return 0, fmt.Errorf("endpoint %s: %w", p.Name(), err)
+		}
+		h = min(h, extra)
 	}
 	return h, nil
 }
@@ -496,7 +507,7 @@ func HTTPPostJSON(e config.ChainEndpointConfig, base string, timeout time.Durati
 // empty JSON object to base+path with the endpoint's credentials and requires a 200
 // whose JSON body contains every field in wantFields. The field requirement is what
 // separates a real chain API from a proxy or a captive portal that answers 200 to
-// anything. TRON uses it against api_host/wallet/getblock with "blockID".
+// anything.
 func HTTPPostCheck(e config.ChainEndpointConfig, base, path string, timeout time.Duration, wantFields ...string) func(ctx context.Context) error {
 	post := HTTPPostJSON(e, base, timeout)
 	return func(ctx context.Context) error {

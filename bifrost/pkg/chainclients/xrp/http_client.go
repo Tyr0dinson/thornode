@@ -137,6 +137,26 @@ func isLedgerNotFoundBody(body []byte) bool {
 	return json.Unmarshal(body, &env) == nil && strings.Contains(env.Result.Error, "lgrNotFound")
 }
 
+// isTxnNotFoundBody reports whether a complete XRPL JSON-RPC body carries rippled's
+// txnNotFound error: the server does not have the requested transaction.
+func isTxnNotFoundBody(body []byte) bool {
+	var env struct {
+		Result struct {
+			Error string `json:"error"`
+		} `json:"result"`
+	}
+	return json.Unmarshal(body, &env) == nil && env.Result.Error == "txnNotFound"
+}
+
+// isNotOnThisNodeBody is the router's RetryElsewhere for XRP reads: a provider with a
+// shorter history answers lgrNotFound for a pruned ledger and txnNotFound for a
+// transaction in it (the scanner's per-transaction lookups), and another endpoint may
+// still have both. Nothing is charged, and when no endpoint has it the caller gets the
+// same answer after one pass.
+func isNotOnThisNodeBody(body []byte) bool {
+	return isLedgerNotFoundBody(body) || isTxnNotFoundBody(body)
+}
+
 // isTransientNetError reports whether err is a transport-level failure that is
 // safe and useful to retry for an idempotent JSON-RPC request. Typed checks
 // first; the string fallback stays narrow (mirroring the UTXO rpc client's

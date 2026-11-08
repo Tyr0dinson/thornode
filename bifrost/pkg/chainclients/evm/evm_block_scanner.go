@@ -342,7 +342,7 @@ func (e *EVMScanner) processBlock(block *etypes.Block) (stypes.TxIn, error) {
 	var plan *reorgPlan
 	if e.cfg.MaxReorgRescanBlocks > 0 {
 		var err error
-		plan, err = e.planReorg(block.Header())
+		plan, err = e.planReorgWith(block.Header(), block.Transactions())
 		if err != nil {
 			e.logger.Error().Err(err).Msgf("fail to process reorg for block %d", block.NumberU64())
 			return txIn, err
@@ -895,6 +895,13 @@ type reorgPlan struct {
 // cleanup is idempotent), and any read that cannot be answered aborts it, so the scan
 // step is retried as a whole.
 func (e *EVMScanner) planReorg(header *etypes.Header) (*reorgPlan, error) {
+	return e.planReorgWith(header, nil)
+}
+
+// planReorgWith is planReorg for the scanned block, whose transactions are scanned:
+// the witness's "not found" for a stored transaction the scanned block lists is not
+// believed (evm.ScannedTxHashes).
+func (e *EVMScanner) planReorgWith(header *etypes.Header, scanned etypes.Transactions) (*reorgPlan, error) {
 	previousHeight := header.Number.Int64() - 1
 	prevBlockMeta, err := e.blockMetaAccessor.GetBlockMeta(previousHeight)
 	if err != nil {
@@ -927,6 +934,7 @@ func (e *EVMScanner) planReorg(header *etypes.Header) (*reorgPlan, error) {
 		return nil, fmt.Errorf("reorg at height %d: %w", header.Number.Int64(), err)
 	}
 	plan := &reorgPlan{}
+	listed := evm.ScannedTxHashes(scanned)
 	var rescanHeights []int64
 	for _, blockMeta := range blockMetas {
 		// the witness's header first: it proves the witness has this height before
@@ -946,6 +954,9 @@ func (e *EVMScanner) planReorg(header *etypes.Header) (*reorgPlan, error) {
 				e.logger.Debug().Msgf("height: %d, tx: %s still exists", blockMeta.Height, tx.Hash)
 				metaTxs = append(metaTxs, tx)
 				continue
+			}
+			if presence == evm.TxNotFound && listed[evm.TxMetaKey(tx.Hash)] {
+				return nil, fmt.Errorf("height %d: endpoint %q does not know tx %s, which the scanned block lists: it has not imported the scanned block yet", blockMeta.Height, witness, tx.Hash)
 			}
 
 			// the node says the transaction is not on chain (any more): errata it

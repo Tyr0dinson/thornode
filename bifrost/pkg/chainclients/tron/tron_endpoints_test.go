@@ -378,3 +378,35 @@ func (s *TronTestSuite) TestVerificationContextCoversEveryRead(c *C) {
 	_, ok = ctx2.Deadline()
 	c.Assert(ok, Equals, false)
 }
+
+// The scanner reads everything from api_host, so an endpoint is only as far as the
+// lower of its two hosts: an api_host that stopped advancing while rpc_host follows
+// the chain makes the endpoint lag and be evicted, and an api_host that does not
+// answer a block fails the probe.
+func (s *TronTestSuite) TestProbeHeightIsTheLowerOfTheTwoHosts(c *C) {
+	const id = "00000000000003d4aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	height := func(apiTip int) (int64, error) {
+		api, rpc := tronHostPairAt(apiTip, id, id)
+		defer api.Close()
+		defer rpc.Close()
+		e := config.ChainEndpointConfig{Name: "a", RPCHost: rpc.URL, APIHost: api.URL, Priority: 1}
+		return tronProbe(e, time.Second, "", zerolog.Nop()).Height(context.Background())
+	}
+	h, err := height(900) // api_host frozen 100 blocks behind its rpc_host
+	c.Assert(err, IsNil)
+	c.Assert(h, Equals, int64(900))
+	h, err = height(1200) // the rpc_host is the lower one
+	c.Assert(err, IsNil)
+	c.Assert(h, Equals, int64(1000))
+
+	noBlock := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{}`)) // a proxy answering 200 without a block
+	}))
+	defer noBlock.Close()
+	_, rpc := tronHostPair(id, id)
+	defer rpc.Close()
+	e := config.ChainEndpointConfig{Name: "a", RPCHost: rpc.URL, APIHost: noBlock.URL, Priority: 1}
+	_, err = tronProbe(e, time.Second, "", zerolog.Nop()).Height(context.Background())
+	c.Assert(err, ErrorMatches, ".*blockID.*")
+}

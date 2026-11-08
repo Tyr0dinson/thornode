@@ -13,6 +13,7 @@ import (
 
 	ecommon "github.com/ethereum/go-ethereum/common"
 	etypes "github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto"
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/endpoints"
@@ -386,4 +387,125 @@ func (s *UnstuckTestSuite) TestReorgRescanReadsReceiptsFromTheWitnessOnly(c *C) 
 	meta, err := scanner.blockMetaAccessor.GetBlockMeta(99)
 	c.Assert(err, IsNil)
 	c.Assert(meta.BlockHash, Equals, "0x00000000000000000000000000000000000000000000000000000000000000dd")
+}
+
+// failedReceiptWitness is a witness at the reorg tip that knows tx as mined in block
+// 100 with a failed receipt, and forwards everything else to target.
+func failedReceiptWitness(c *C, target string, tx *etypes.Transaction, from ecommon.Address) *httptest.Server {
+	raw, err := tx.MarshalJSON()
+	c.Assert(err, IsNil)
+	var fields map[string]any
+	c.Assert(json.Unmarshal(raw, &fields), IsNil)
+	fields["blockNumber"], fields["blockHash"], fields["transactionIndex"], fields["from"] = "0x64", ecommon.Hash{0x64}.Hex(), "0x0", from.Hex()
+	txJSON, err := json.Marshal(fields)
+	c.Assert(err, IsNil)
+	receiptJSON, err := json.Marshal(&etypes.Receipt{
+		Status: etypes.ReceiptStatusFailed, CumulativeGasUsed: 21000, Logs: []*etypes.Log{}, TxHash: tx.Hash(),
+		GasUsed: 21000, EffectiveGasPrice: big.NewInt(1), BlockHash: ecommon.Hash{0x64}, BlockNumber: big.NewInt(100),
+	})
+	c.Assert(err, IsNil)
+	return httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		body, _ := io.ReadAll(req.Body)
+		var rpcReq struct {
+			Method string          `json:"method"`
+			ID     json.RawMessage `json:"id"`
+		}
+		_ = json.Unmarshal(body, &rpcReq)
+		rw.Header().Set("Content-Type", "application/json")
+		answer := func(result []byte) {
+			_, _ = rw.Write([]byte(`{"jsonrpc":"2.0","id":` + string(rpcReq.ID) + `,"result":` + string(result) + `}`))
+		}
+		switch rpcReq.Method {
+		case "eth_getBlockByNumber":
+			answer([]byte(reorgBlockJSON))
+			return
+		case "eth_getTransactionByHash":
+			answer(txJSON)
+			return
+		case "eth_getTransactionReceipt":
+			answer(receiptJSON)
+			return
+		}
+		resp, err := http.Post(target+req.URL.Path, "application/json", bytes.NewReader(body))
+		if err != nil {
+			http.Error(rw, err.Error(), http.StatusBadGateway)
+			return
+		}
+		defer func() { _ = resp.Body.Close() }()
+		rw.WriteHeader(resp.StatusCode)
+		_, _ = io.Copy(rw, resp.Body)
+	}))
+}
+
+// The witness only has to have the scanned block's parent. When another endpoint
+// served the scanned block, a transaction re-mined there can be unknown to the
+// witness: its "not found" for a stored transaction the scanned block lists means it
+// has not imported that block yet, so the reorg step is retried instead of sending an
+// errata. A listed transaction the witness knows is judged on its receipt like any
+// other: one that failed is still an errata.
+func (s *UnstuckTestSuite) TestReorgWaitsForAWitnessThatHasTheScannedBlock(c *C) {
+	config.Init()
+	key, err := crypto.GenerateKey()
+	c.Assert(err, IsNil)
+	tx, err := etypes.SignTx(etypes.NewTx(&etypes.LegacyTx{Nonce: 7, Gas: 21000, GasPrice: big.NewInt(1)}), etypes.HomesteadSigner{}, key)
+	c.Assert(err, IsNil)
+	// metas store hashes as observations carry them: lowercase hex without 0x
+	listed := tx.Hash().Hex()[2:]
+	gone := "00000000000000000000000000000000000000000000000000000000000000ee"
+	scanner := func(primary *httptest.Server, stored ...string) *ETHScanner {
+		pubkeyMgr, perr := pubkeymanager.NewPubKeyManager(s.bridge, s.m)
+		c.Assert(perr, IsNil)
+		e, nerr := NewClient(s.thorKeys, config.BifrostChainConfiguration{
+			ChainID: common.ETHChain,
+			RPCHost: primary.URL,
+			Endpoints: []config.ChainEndpointConfig{
+				{Name: "primary", RPCHost: primary.URL, Priority: 1},
+				{Name: "other", RPCHost: s.server.URL, Priority: 2},
+			},
+			BlockScanner: config.BifrostBlockScannerConfiguration{
+				ChainID:            common.ETHChain,
+				StartBlockHeight:   1,
+				HTTPRequestTimeout: time.Second * 10,
+				GasCacheBlocks:     40,
+				Concurrency:        1,
+				GasPriceResolution: 10_000_000_000,
+				FixedGasRate:       10_000_000_000,
+			},
+		}, nil, s.bridge, s.m, pubkeyMgr, thorclient.NewPoolMgr(s.bridge))
+		c.Assert(nerr, IsNil)
+		metaTxs := make([]types.TransactionMeta, 0, len(stored))
+		for _, h := range stored {
+			metaTxs = append(metaTxs, types.TransactionMeta{Hash: h, BlockHeight: 99})
+		}
+		c.Assert(e.ethScanner.blockMetaAccessor.SaveBlockMeta(99, &types.BlockMeta{
+			Height:       99,
+			BlockHash:    "0x00000000000000000000000000000000000000000000000000000000000000dd",
+			Transactions: metaTxs,
+		}), IsNil)
+		return e.ethScanner
+	}
+	var parentHeader etypes.Header
+	c.Assert(json.Unmarshal([]byte(reorgBlockJSON), &parentHeader), IsNil)
+	block100 := &etypes.Header{Number: big.NewInt(100), ParentHash: parentHeader.Hash()}
+
+	// the witness knows neither transaction: the listed one makes the step undecided
+	atTip := witnessProxy(s.server.URL, false)
+	defer atTip.Close()
+	behind := scanner(atTip, listed, gone)
+	_, err = behind.planReorgWith(block100, etypes.Transactions{tx})
+	c.Assert(err, ErrorMatches, ".*has not imported the scanned block yet.*")
+	// without the scanned block's list the same answers are two errata, as before
+	plan, err := behind.planReorg(block100)
+	c.Assert(err, IsNil)
+	c.Assert(plan.errata, HasLen, 1)
+	c.Assert(plan.errata[0].Txs, HasLen, 2)
+
+	// the witness has the listed transaction, failed: an errata
+	failed := failedReceiptWitness(c, s.server.URL, tx, crypto.PubkeyToAddress(key.PublicKey))
+	defer failed.Close()
+	plan, err = scanner(failed, listed).planReorgWith(block100, etypes.Transactions{tx})
+	c.Assert(err, IsNil)
+	c.Assert(plan.errata, HasLen, 1)
+	c.Assert(plan.errata[0].Txs, HasLen, 1)
+	c.Assert(string(plan.errata[0].Txs[0].TxID), Equals, listed)
 }

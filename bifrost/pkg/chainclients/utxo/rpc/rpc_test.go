@@ -2081,6 +2081,37 @@ func TestClassifyRPCErrorRecognisesZecErrors(t *testing.T) {
 	}
 }
 
+// A gateway that refuses the request (wrong API key, auth failure) has not served the
+// read, whatever JSON it puts in the body: it is charged like any failed endpoint, not
+// recorded as a daemon answer. A daemon's own errors keep their codes.
+func TestClassifyRPCErrorChargesAGatewayRefusal(t *testing.T) {
+	refusal := ethrpc.HTTPError{StatusCode: 403, Status: "403 Forbidden", Body: []byte(`{"message":"Invalid API key"}`)}
+	withErrorObject := ethrpc.HTTPError{StatusCode: 401, Status: "401 Unauthorized", Body: []byte(`{"error":{"code":-32000,"message":"unauthorized"}}`)}
+	for _, err := range []error{
+		refusal,
+		extractBTCError(refusal), // as a fallback client returns it
+		withErrorObject,
+		extractBTCError(withErrorObject),
+		ethrpc.HTTPError{StatusCode: 500, Status: "500 Internal Server Error", Body: []byte(`{"message":"upstream error"}`)},
+	} {
+		if got := classifyRPCError(err); got != verdictFailure {
+			t.Fatalf("%v: got verdict %d, want a failure", err, got)
+		}
+	}
+	for _, body := range []string{
+		`{"result":null,"error":{"code":-5,"message":"No such mempool or blockchain transaction"},"id":1}`,
+		`{"result":null,"error":{"code":-8,"message":"Block height out of range"},"id":1}`,
+	} {
+		daemon := ethrpc.HTTPError{StatusCode: 500, Status: "500 Internal Server Error", Body: []byte(body)}
+		if got := classifyRPCError(daemon); got != verdictApplication {
+			t.Fatalf("%s: got verdict %d, want the daemon's answer", body, got)
+		}
+		if got := classifyRPCError(extractBTCError(daemon)); got != verdictApplication {
+			t.Fatalf("extracted %s: got verdict %d, want the daemon's answer", body, got)
+		}
+	}
+}
+
 // An HTTP 429 answered with a generic JSON-RPC error body keeps its rate-limit
 // classification through extractBTCError, which the fallback clients return through.
 func TestExtractBTCErrorKeepsRateLimit(t *testing.T) {

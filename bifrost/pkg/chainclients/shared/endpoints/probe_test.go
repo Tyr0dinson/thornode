@@ -186,6 +186,28 @@ func (s *ProbeSuite) TestCompoundProbeFailsWhenExtraFails(c *C) {
 	c.Assert(err, ErrorMatches, ".*endpoint a.*503.*")
 }
 
+// With ExtraHeight the endpoint is as far as the lower of its two hosts: a second host
+// that stopped advancing makes the endpoint lag, and one that fails fails the probe.
+func (s *ProbeSuite) TestCompoundProbeReportsTheLowerExtraHeight(c *C) {
+	srv := jsonrpcServer(c, map[string]string{"eth_blockNumber": `"0x5"`, "eth_chainId": `"0x1"`}, nil)
+	defer srv.Close()
+	e := config.ChainEndpointConfig{Name: "a", RPCHost: srv.URL}
+	probe := func(extra int64, err error) endpoints.CompoundProbe {
+		return endpoints.CompoundProbe{
+			Probe:       endpoints.NewEVMProbe(e, time.Second),
+			ExtraHeight: func(context.Context) (int64, error) { return extra, err },
+		}
+	}
+	h, err := probe(3, nil).Height(ctxBg())
+	c.Assert(err, IsNil)
+	c.Assert(h, Equals, int64(3))
+	h, err = probe(9, nil).Height(ctxBg())
+	c.Assert(err, IsNil)
+	c.Assert(h, Equals, int64(5))
+	_, err = probe(0, errors.New("api down")).Height(ctxBg())
+	c.Assert(err, ErrorMatches, ".*endpoint a.*api down.*")
+}
+
 func (s *ProbeSuite) TestProbeErrorsAreRedacted(c *C) {
 	p := endpoints.NewEVMProbe(config.ChainEndpointConfig{Name: "leaky", RPCHost: "http://127.0.0.1:1/v1/SECRETKEY?apikey=SECRET2", AuthorizationBearer: "SECRET3"}, 200*time.Millisecond)
 	_, err := p.Height(ctxBg())

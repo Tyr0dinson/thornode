@@ -3,8 +3,10 @@ package evm_test
 import (
 	"context"
 	"encoding/json"
+	"math/big"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"time"
 
 	ecommon "github.com/ethereum/go-ethereum/common"
@@ -234,4 +236,17 @@ func (s *LookupSuite) TestReorgWitness(c *C) {
 	// a's block 99 is not the reorg parent: no witness, the step is retried
 	_, err = evm.ReorgWitness(ctx, fc.Manager, fc.Client, 99, ecommon.HexToHash("0x01"))
 	c.Assert(err, ErrorMatches, ".*behind or on another fork.*")
+}
+
+// A reorg plan matches stored transaction hashes against the scanned block's in one
+// form, whatever case or prefix the stored one has.
+func (s *LookupSuite) TestScannedTxHashes(c *C) {
+	tx := etypes.NewTx(&etypes.LegacyTx{Nonce: 1, Gas: 21000, GasPrice: big.NewInt(1)})
+	listed := evm.ScannedTxHashes(etypes.Transactions{nil, tx})
+	c.Assert(listed, HasLen, 1)
+	for _, stored := range []string{tx.Hash().Hex(), tx.Hash().Hex()[2:], strings.ToUpper(tx.Hash().Hex()[2:]), "0X" + tx.Hash().Hex()[2:]} {
+		c.Assert(listed[evm.TxMetaKey(stored)], Equals, true, Commentf("%s", stored))
+	}
+	c.Assert(listed[evm.TxMetaKey(lookupHash)], Equals, false)
+	c.Assert(evm.ScannedTxHashes(nil), HasLen, 0)
 }

@@ -324,6 +324,27 @@ func TestIsLedgerNotFoundBody(t *testing.T) {
 	}
 }
 
+// The router asks another endpoint, charging nothing, for a ledger or a transaction
+// the answering server does not have: a provider with a shorter history answers
+// lgrNotFound for a pruned ledger and txnNotFound for a transaction in it, and an
+// archival backup may have both.
+func TestIsNotOnThisNodeBody(t *testing.T) {
+	cases := map[string]bool{
+		lgrNotFoundResponse: true,
+		`{"result":{"error":"txnNotFound","error_code":29,"error_message":"Transaction not found.","status":"error"}}`: true,
+		`{"result":{"ledger":{},"status":"success"}}`:                                                                  false,
+		`{"result":{"Account":"r","hash":"AB","validated":true,"status":"success"}}`:                                   false,
+		`{"result":{"error":"actNotFound","status":"error"}}`:                                                          false,
+		`{"result":{"error":"txnNotFoundSomething","status":"error"}}`:                                                 false,
+		`not json`: false,
+	}
+	for body, want := range cases {
+		if got := isNotOnThisNodeBody([]byte(body)); got != want {
+			t.Fatalf("isNotOnThisNodeBody(%s) = %v, want %v", body, got, want)
+		}
+	}
+}
+
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }

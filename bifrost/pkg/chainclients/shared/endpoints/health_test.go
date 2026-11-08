@@ -880,3 +880,119 @@ func (s *HealthSuite) TestHangingReferenceReadIsNotRestartedEachCycle(c *C) {
 	c.Assert(calls.Load(), Equals, int32(1))
 	close(release)
 }
+
+// slowHashProbe is a fakeProbe whose height and hash reads both take a while, as a
+// remote endpoint's do.
+type slowHashProbe struct {
+	*fakeProbe
+	heightDelay, hashDelay time.Duration
+}
+
+func (p slowHashProbe) Height(ctx context.Context) (int64, error) {
+	select {
+	case <-time.After(p.heightDelay):
+	case <-ctx.Done():
+		return 0, ctx.Err()
+	}
+	return p.fakeProbe.Height(ctx)
+}
+
+func (p slowHashProbe) HashAt(ctx context.Context, h int64) (string, error) {
+	select {
+	case <-time.After(p.hashDelay):
+	case <-ctx.Done():
+		return "", ctx.Err()
+	}
+	return p.fakeProbe.HashAt(ctx, h)
+}
+
+// A cycle runs under one health_check_interval deadline. THORChain's height is read
+// while the endpoints are probed, so a slow thornode and slow probes together still
+// leave the integrity check its time, and a minority hash is still struck.
+func (s *HealthSuite) TestSlowReferenceAndProbesLeaveTheIntegrityCheckItsTime(c *C) {
+	cfg := healthCfg()
+	cfg.HealthCheckInterval = 700 * time.Millisecond
+	cfg.HealthCheckTimeout = 400 * time.Millisecond
+	cfg.IntegrityCheckDepth = 5
+	cfg.ErrorThreshold = 1
+	a := &fakeProbe{name: "a", height: 100, identity: "g", hashes: map[int64]string{95: "H"}}
+	b := &fakeProbe{name: "b", height: 100, identity: "g", hashes: map[int64]string{95: "H"}}
+	d := &fakeProbe{name: "d", height: 100, identity: "g", hashes: map[int64]string{95: "X"}}
+	m, _ := newHealthMgr(c, cfg, nil, a, b, d)
+	var slow []endpoints.Probe
+	for _, p := range []*fakeProbe{a, b, d} {
+		slow = append(slow, slowHashProbe{fakeProbe: p, heightDelay: 300 * time.Millisecond, hashDelay: 50 * time.Millisecond})
+	}
+	c.Assert(m.Bootstrap(ctxBg(), slow), IsNil)
+	release := make(chan struct{})
+	defer close(release)
+	m.SetReferenceHeight(func() (int64, error) { // a thornode that answers only after the timeout
+		<-release
+		return 0, nil
+	})
+	ctx, cancel := context.WithTimeout(ctxBg(), cfg.HealthCheckInterval)
+	defer cancel()
+	m.Cycle(ctx)
+	c.Assert(m.Entry("d").State(), Equals, endpoints.StateUnhealthy)
+	c.Assert(m.Entry("d").IntegrityEvicted(), Equals, true)
+	c.Assert(m.Entry("a").State(), Equals, endpoints.StateHealthy)
+}
+
+// An endpoint quarantined for a minority hash is on another fork. Its height must not
+// set the tip the others are judged against: two quarantined endpoints that agree
+// with each other ahead of the healthy ones strike nobody. Nor does it count as having
+// reached THORChain's height, which would strike every healthy endpoint below it.
+func (s *HealthSuite) TestQuarantinedEndpointsDoNotSetTheLagTip(c *C) {
+	cfg := healthCfg()
+	cfg.IntegrityCheckDepth = 5
+	cfg.ErrorThreshold = 1
+	hashes := func(h string) map[int64]string { return map[int64]string{95: h, 195: h} }
+	a := &fakeProbe{name: "a", height: 100, identity: "g", hashes: hashes("H")}
+	b := &fakeProbe{name: "b", height: 100, identity: "g", hashes: hashes("H")}
+	d := &fakeProbe{name: "d", height: 100, identity: "g", hashes: hashes("H")}
+	x := &fakeProbe{name: "x", height: 200, identity: "g", hashes: hashes("X")}
+	y := &fakeProbe{name: "y", height: 200, identity: "g", hashes: hashes("X")}
+	m, ps := newHealthMgr(c, cfg, nil, a, b, d, x, y)
+	c.Assert(m.Bootstrap(ctxBg(), ps), IsNil)
+	m.Entry("x").MarkUnhealthy(endpoints.ErrorKindIntegrity)
+	m.Entry("y").MarkUnhealthy(endpoints.ErrorKindIntegrity)
+	m.Cycle(ctxBg())
+	for _, name := range []string{"a", "b", "d"} {
+		c.Assert(m.Entry(name).State(), Equals, endpoints.StateHealthy, Commentf("%s", name))
+		c.Assert(m.Entry(name).Snapshot().ProbeStrikes, Equals, 0, Commentf("%s", name))
+	}
+	// the integrity check ran at the healthy endpoints' tip: x and y stay quarantined
+	c.Assert(m.Entry("x").IntegrityEvicted(), Equals, true)
+	c.Assert(m.Entry("y").IntegrityEvicted(), Equals, true)
+
+	// THORChain's height 150 is reached only by a quarantined endpoint: not trusted
+	two, ps2 := newHealthMgr(c, cfg, nil, &fakeProbe{name: "a", height: 100, identity: "g"}, &fakeProbe{name: "b", height: 100, identity: "g"}, &fakeProbe{name: "x", height: 200, identity: "g"})
+	c.Assert(two.Bootstrap(ctxBg(), ps2), IsNil)
+	two.Entry("x").MarkUnhealthy(endpoints.ErrorKindIntegrity)
+	two.SetReferenceHeight(func() (int64, error) { return 150, nil })
+	two.Cycle(ctxBg())
+	c.Assert(two.Entry("a").State(), Equals, endpoints.StateHealthy)
+	c.Assert(two.Entry("b").State(), Equals, endpoints.StateHealthy)
+}
+
+// THORChain's height is read while the endpoints are probed. One that answered in time
+// is used even when a probe ran to its own timeout and the reference's timer fired
+// meanwhile: here it is the only lag signal (the two answering endpoints form no tip),
+// and it strikes the endpoint below it every time.
+func (s *HealthSuite) TestReferenceAnsweredDuringASlowProbeIsUsed(c *C) {
+	cfg := healthCfg()
+	cfg.HealthCheckTimeout = 50 * time.Millisecond
+	cfg.ErrorThreshold = 1
+	for i := 0; i < 12; i++ {
+		a := &fakeProbe{name: "a", height: 200, identity: "g"}
+		b := &fakeProbe{name: "b", height: 100, identity: "g"}
+		hung := &slowProbe{fakeProbe: fakeProbe{name: "c", height: 200, identity: "g"}, delay: time.Hour}
+		m, err := endpoints.NewManager(common.BTCChain, eps("a", "b", "c"), cfg, zerolog.Nop())
+		c.Assert(err, IsNil)
+		c.Assert(m.Bootstrap(ctxBg(), []endpoints.Probe{a, b, hung}), IsNil)
+		m.SetReferenceHeight(func() (int64, error) { return 150, nil })
+		m.Cycle(ctxBg())
+		c.Assert(m.Entry("b").State(), Equals, endpoints.StateUnhealthy, Commentf("run %d", i))
+		c.Assert(m.Entry("a").State(), Equals, endpoints.StateHealthy, Commentf("run %d", i))
+	}
+}
