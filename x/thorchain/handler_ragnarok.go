@@ -72,9 +72,16 @@ func (h RagnarokHandler) handle(ctx cosmos.Context, msg MsgRagnarok) (*cosmos.Re
 	// is queued at that block rounded up to RescheduleCoalesceBlocks, then moved
 	// by any later block time change
 	refMs := constants.ThorchainBlockTime.Milliseconds()
-	// analyze-ignore(unscaled-config): a wall-clock period, in reference blocks
-	periodMs := h.mgr.GetConstants().GetInt64Value(constants.SigningTransactionPeriod) * refMs
-	periodMs *= observedSigningPeriodMultiplier(msg.Tx)
+	// the period LackSigning reads, mimir included, in reference blocks so it
+	// measures wall-clock time
+	refPeriod := h.mgr.Keeper().GetConfigInt64Ref(ctx, constants.SigningTransactionPeriod)
+	if refPeriod <= 0 {
+		// LackSigning reschedules nothing then; a positive step keeps the walk
+		// moving up to the current block
+		// analyze-ignore(unscaled-config): a wall-clock period, in reference blocks
+		refPeriod = h.mgr.GetConstants().GetInt64Value(constants.SigningTransactionPeriod)
+	}
+	periodMs := refPeriod * refMs * observedSigningPeriodMultiplier(msg.Tx)
 	history := h.mgr.Keeper().GetBlockTimeHistory(ctx)
 	// read once the walk passes the first height, as LackSigning reads it
 	var coalesce int64

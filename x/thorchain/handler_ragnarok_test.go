@@ -473,3 +473,126 @@ func (HandlerRagnarokSuite) TestRagnarokFindsExtendedRetryAfterBlockTimeChange(c
 	c.Assert(err, IsNil)
 	c.Check(pending, Equals, int64(0))
 }
+
+// ragnarokXMRGasManager quotes max gas in XMR, the outbound's own gas asset.
+type ragnarokXMRGasManager struct {
+	*DummyGasManager
+}
+
+func (m *ragnarokXMRGasManager) GetMaxGas(cosmos.Context, common.Chain) (common.Coin, error) {
+	return common.NewCoin(common.XMRAsset, cosmos.NewUint(1_000)), nil
+}
+
+func (m *ragnarokXMRGasManager) GetGasRate(cosmos.Context, common.Chain) cosmos.Uint {
+	return cosmos.NewUint(1)
+}
+
+// LackSigning reads SigningTransactionPeriod with its mimir. With the mimir at
+// 100 (the constant is 300), no block time change and coalescing off, the real
+// LackSigning retries an XMR ragnarok outbound queued at 10000 one extended
+// period later, at 10300 (100 * 3). The handler must step by the same period
+// to find that retry, not by the constant's 900, whether the payment lands
+// right after the retry or a period later. A mimir of zero must not stall the
+// walk: it steps by the constant's period, and still slashes a payment that
+// matches no copy.
+func (HandlerRagnarokSuite) TestRagnarokFindsXMRRetryWithOverriddenSigningPeriod(c *C) {
+	const scheduled, retryHeight = int64(10000), int64(10300)
+	for _, tc := range []struct {
+		name      string
+		mimir     int64 // SigningTransactionPeriod when observed
+		observeAt int64
+		stranger  bool // paid to another destination
+	}{
+		{name: "period overridden by mimir", mimir: 100, observeAt: 10301},
+		{name: "period overridden, observed a period later", mimir: 100, observeAt: 10650},
+		{name: "mimir at zero, payment to another destination", mimir: 0, observeAt: 10301, stranger: true},
+	} {
+		comment := Commentf(tc.name)
+		ctx, k := setupKeeperForTest(c)
+		mgr := NewDummyMgrWithKeeper(k)
+		gas := &ragnarokXMRGasManager{DummyGasManager: NewDummyGasManager()}
+		mgr.gasMgr = gas
+		mgr.txOutStore = newTxOutStorage(k, mgr.GetConstants(), mgr.EventMgr(), gas)
+		recorder := &xmrMemoCompatibilitySlasher{DummySlasher: NewDummySlasher()}
+		mgr.slasher = recorder
+		c.Assert(mgr.GetConstants().GetInt64Value(constants.SigningTransactionPeriod), Equals, int64(300))
+
+		ctx = ctx.WithBlockHeight(scheduled)
+		k.SetMimir(ctx, constants.SigningTransactionPeriod.String(), 100)
+		k.SetMimir(ctx, constants.RescheduleCoalesceBlocks.String(), 0)
+		k.SetMimir(ctx, constants.EnableMemolessOutbound.String(), 0)
+		k.SetMimir(ctx, constants.MaxOutboundAttempts.String(), 0)
+		pool := NewPool()
+		pool.Asset = common.XMRAsset
+		pool.BalanceRune = cosmos.NewUint(100 * common.One)
+		pool.BalanceAsset = cosmos.NewUint(100 * common.One)
+		c.Assert(k.SetPool(ctx, pool), IsNil)
+		// the only XMR vault, so the retry keeps it
+		vault := GetRandomVault()
+		vault.Chains = common.Chains{common.THORChain, common.XMRChain}.Strings()
+		vault.PubKeyFrost = GetRandomEd25519PubKey()
+		vault.AddFunds(common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(100*common.One))))
+		c.Assert(k.SetVault(ctx, vault), IsNil)
+		from, err := vault.PubKeyFrost.GetAddress(common.XMRChain)
+		c.Assert(err, IsNil)
+		to, err := common.NewAddress(common.XMRChecksummedDummyAddress('4'))
+		c.Assert(err, IsNil)
+
+		item := TxOutItem{
+			Chain:            common.XMRChain,
+			InHash:           common.BlankTxID,
+			ToAddress:        to,
+			VaultPubKey:      vault.PubKey,
+			VaultPubKeyFrost: vault.PubKeyFrost,
+			Coin:             common.NewCoin(common.XMRAsset, cosmos.NewUint(common.One)),
+			MaxGas:           common.Gas{common.NewCoin(common.XMRAsset, cosmos.NewUint(1_000))},
+			GasRate:          1,
+			Memo:             NewRagnarokMemo(scheduled).String(),
+		}
+		queued := NewTxOut(scheduled)
+		queued.TxArray = []TxOutItem{item}
+		c.Assert(k.SetTxOut(ctx, queued), IsNil)
+		k.SetRagnarokPending(ctx, 1)
+
+		// the real LackSigning retries it one configured extended period later
+		ctx = ctx.WithBlockHeight(retryHeight)
+		c.Assert(newSlasher(k, mgr.EventMgr()).LackSigning(ctx, mgr), IsNil, comment)
+		original, err := k.GetTxOut(ctx, scheduled)
+		c.Assert(err, IsNil)
+		c.Assert(original.TxArray, HasLen, 1, comment)
+		c.Assert(original.TxArray[0].OutHash, Equals, common.BlankTxID, comment)
+		retry, err := k.GetTxOut(ctx, retryHeight)
+		c.Assert(err, IsNil)
+		c.Assert(retry.TxArray, HasLen, 1, comment)
+		c.Assert(retry.TxArray[0].OutHash.IsEmpty(), Equals, true, comment)
+
+		k.SetMimir(ctx, constants.SigningTransactionPeriod.String(), tc.mimir)
+		payTo := item.ToAddress
+		if tc.stranger {
+			payTo, err = common.NewAddress(common.XMRChecksummedDummyAddress('8'))
+			c.Assert(err, IsNil)
+		}
+		ctx = ctx.WithBlockHeight(tc.observeAt)
+		tx := NewObservedTx(
+			common.NewTx(GetRandomTxHash(), from, payTo, common.NewCoins(item.Coin), item.MaxGas, item.Memo),
+			tc.observeAt, vault.PubKeyFrost, tc.observeAt,
+		)
+		_, err = NewRagnarokHandler(mgr).handle(ctx, *NewMsgRagnarok(tx, scheduled, GetRandomBech32Addr()))
+		c.Assert(err, IsNil, comment)
+
+		retry, err = k.GetTxOut(ctx, retryHeight)
+		c.Assert(err, IsNil)
+		c.Assert(retry.TxArray, HasLen, 1, comment)
+		pending, err := k.GetRagnarokPending(ctx)
+		c.Assert(err, IsNil)
+		if tc.stranger {
+			c.Check(retry.TxArray[0].OutHash.IsEmpty(), Equals, true, comment)
+			c.Check(recorder.calls, Equals, 1, comment)
+			c.Check(pending, Equals, int64(1), comment)
+			continue
+		}
+		c.Check(retry.TxArray[0].OutHash.Equals(tx.Tx.ID), Equals, true, comment)
+		c.Check(recorder.calls, Equals, 0, comment)
+		c.Check(pending, Equals, int64(0), comment)
+	}
+}
