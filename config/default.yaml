@@ -194,6 +194,9 @@ bifrost:
         gas_price_resolution: 1 # 1 sats/vbyte
         max_resume_block_lag: 1h
         max_healthy_lag: 30m
+        # node-local block time for bifrost's block-count <-> duration conversions
+        # (health gate, resume lag, flex window); 0 = the chain's common constant
+        approximate_block_time: 0s
         transaction_batch_size: 500
         reference_address: ""
         solana:
@@ -262,6 +265,13 @@ bifrost:
         prefer_higher_priority: false
         rate_limit_backoff: 0s
         integrity_check_depth: 20
+      # Deliberately NOT scaled 10x for Denim. Solvency is checked at heights where
+      # height % solvency_blocks == 0 (evm/client.go). The scanner visits every height
+      # (~20s cadence at 100), but while BASE is halted only SolvencyCheckRunner can send
+      # the all-clear, and it samples the safe head, which jumps ~100-280 blocks every
+      # ~40-60s. It only reports when a jump lands exactly on a multiple, so 1000 would
+      # stretch a halt's recovery ~10x (to hours). Keep 100 until that runner detects a
+      # crossed multiple instead.
       solvency_blocks: 100
       max_pending_nonces: 3
       evm:
@@ -273,11 +283,48 @@ bifrost:
         reconstruct_liabilities_concurrency: 8
       block_scanner:
         <<: *default-block-scanner
-        gas_cache_blocks: 40
-        concurrency: 4
-        prefetch_blocks: 4
+        # Denim (2026-11-05) cut Base blocks from 2s to ~0.2s. The health gate scores lag
+        # as (tip - current) * block time, so with the common BASE constant (still 2s: it
+        # is consensus-visible via QuoteSwap and moves only at a coordinated release) a
+        # scanner 900 blocks behind (max_healthy_lag 30m / 2s) tripped unhealthy, though
+        # that is only ~3 min of real lag, an ordinary catch-up backlog post-Denim. The
+        # signer then refused BASE. This node-local override fixes bifrost now; remove it
+        # once the common constant is 200. It also sizes the stale-fee fallback
+        # (blockscanner.go: every ~1h of blocks), which ran every ~6 min on the stale 2s.
+        approximate_block_time: 200ms
+        # gas_cache_blocks and max_reorg_rescan_blocks are bumped ~10x to hold their
+        # original wall-clock span (observation_flexibility_blocks is sized separately, to
+        # the safe-head batch; see its comment). gas_cache_blocks 40 -> 400 keeps the
+        # network-fee median-of-medians over ~80s of blocks (40 was ~8s post-Denim,
+        # making the reported fee 10x noisier).
+        gas_cache_blocks: 400
+        # BASE had no max_reorg_rescan_blocks override, so it inherited the anchor's 72
+        # (~144s at 2s blocks, ~14.4s post-Denim). An inbound
+        # observed then reorged away only gets an ErrataTx if its block meta is still in
+        # this window; one L1 slot is now ~60 L2 blocks, so a reorg beyond 72 blocks
+        # would leave a credit with no funds behind it. 720 restores the ~144s window.
+        max_reorg_rescan_blocks: 720
+        # Production is ~5 blk/s post-Denim. Block-level parallelism — the catch-up lever —
+        # is prefetch_blocks: it starts prefetch_blocks-1 concurrent block fetches ahead of
+        # the cursor (blockscanner.go), each ~1 RPC (GetBlock), plus one
+        # eth_getBlockReceipts when the bloom may match a router, so at most ~14 in-flight
+        # at 8. Scaling the measured 5.4 blk/s (at the old prefetch 4)
+        # across 4 -> 8 lookahead gives ~9-11 blk/s, comfortably over production.
+        # concurrency does NOT fetch blocks: it only sizes the semaphore for goroutines
+        # that parse already-fetched receipts (evm_block_scanner.go); 8 gives a little CPU
+        # headroom on tx-heavy blocks and is otherwise cheap.
+        concurrency: 8
+        prefetch_blocks: 8
         chain_id: BASE
-        observation_flexibility_blocks: 20
+        # evm_block_scanner.go skips reportNetworkFee + solvency reporting while the
+        # scanner is more than this many blocks behind tip. 20 -> 200 restores the
+        # pre-Denim ~40s span (20 blocks at 2s). BASE's tip is the safe head, which jumps
+        # ~100-280 blocks every ~40-60s, so the first ~0-80 blocks of a large batch still
+        # skip reporting (a later multiple reports instead). Don't widen it to cover whole
+        # batches: solvency compares the balance AT the scanned height with Asgard NOW,
+        # so a node far behind tip can vote a healthy vault insolvent (slash points), and
+        # more prefetch-goroutine fee reports widen the fee-vote height spread.
+        observation_flexibility_blocks: 200
         max_gas_limit: 100000
         max_contract_tx_logs: 200
         gas_price_resolution: 100 # mwei

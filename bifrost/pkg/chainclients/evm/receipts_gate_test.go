@@ -551,6 +551,38 @@ func TestGetTxInFetchesReceiptsForFailedVaultTx(t *testing.T) {
 	}
 }
 
+func TestGetTxInFetchesCachedOutboundAfterVaultRemoval(t *testing.T) {
+	forEachFilteredChain(t, func(t *testing.T, chain thorcommon.Chain) {
+		for name, status := range map[string]uint64{"failed": etypes.ReceiptStatusFailed, "successful": etypes.ReceiptStatusSuccessful} {
+			t.Run(name, func(t *testing.T) {
+				f := newGateFixture(t, chain, routerAddr())
+				tx := f.vaultTx(t, &gateRouter, []byte{1, 2, 3, 4})
+				_, vault := f.scanner.pubkeyMgr.IsValidPoolAddress(f.vault.Hex(), chain)
+				out := stypes.TxOutItem{Chain: chain, VaultPubKey: vault.PubKey, Memo: "OUT:123"}
+				cache := f.scanner.signerCacheManager
+				if err := cache.SetSignedWithExpiry(out.CacheHash(), out.CacheVault(out.Chain), tx.Hash().Hex(), 1); err != nil {
+					t.Fatal(err)
+				}
+				// Replay the block after the signing vault has left the node's vault list.
+				f.scanner.pubkeyMgr.RemovePubKey(vault.PubKey)
+				other := f.userTx(t, &gateElsewhere, nil, 1e9)
+				otherReceipt := gateReceipt(other, 1, other.GasPrice(), f.depositLog(t, gateElsewhere, other))
+				f.receipts = []*etypes.Receipt{gateReceipt(tx, status, tx.GasPrice()), otherReceipt}
+				block := gateBlock(big.NewInt(0), etypes.CreateBloom(otherReceipt), tx, other)
+				if _, _, err := f.scanner.getTxIn(f.scanning(block), ""); err != nil {
+					t.Fatal(err)
+				}
+				if got := f.receiptCalls.Load(); got != 1 {
+					t.Fatalf("got %d block receipt calls, want 1", got)
+				}
+				if got := cache.HasSigned(out.CacheHash()); got != (status == etypes.ReceiptStatusSuccessful) {
+					t.Fatalf("signer cache contains %s outbound: %v", name, got)
+				}
+			})
+		}
+	})
+}
+
 // A vault's token approval goes to the token, not a router or vault, and its log
 // comes from the token, so only the sender reveals it.
 func TestGetTxInFetchesReceiptsForTxFromVault(t *testing.T) {
@@ -765,7 +797,7 @@ func TestGetTxInFetchesReceiptsForVaultTxToKnownContract(t *testing.T) {
 					tx := f.vaultTx(t, &to, []byte{1, 2, 3, 4})
 					f.receipts = []*etypes.Receipt{gateReceipt(tx, status, big.NewInt(3e9))}
 
-					txIn, _, err := f.scanner.getTxIn(f.scanning(gateBlock(big.NewInt(0), etypes.Bloom{}, tx)), "")
+					txIn, _, err := f.scanner.getTxIn(f.scanning(gateBlock(big.NewInt(0), gateNoRouterBloom, tx)), "")
 					if err != nil {
 						t.Fatal(err)
 					}
@@ -933,18 +965,74 @@ func TestGetTxInFetchesReceiptsForERC20TransferToVault(t *testing.T) {
 	}
 }
 
-// Token transfers between other accounts are most of a BSC block and must not
-// defeat the gate.
-func TestGetTxInSkipsReceiptsForERC20TransferElsewhere(t *testing.T) {
-	f := newGateFixture(t, thorcommon.BSCChain, routerAddr())
-	tx := f.userTx(t, &gateToken, erc20TransferData(gateElsewhere), 1e9)
-
-	if _, _, err := f.scanner.getTxIn(f.scanning(gateBlock(big.NewInt(0), gateNoRouterBloom, tx)), ""); err != nil {
-		t.Fatal(err)
-	}
-	if got := f.receiptCalls.Load(); got != 0 {
-		t.Fatalf("got %d receipt calls, want 0", got)
-	}
+func TestGetTxInDirectERC20TransferRecipient(t *testing.T) {
+	forEachFilteredChain(t, func(t *testing.T, chain thorcommon.Chain) {
+		for _, tc := range []struct {
+			addressedToVault bool
+			upperByte        byte
+		}{
+			{addressedToVault: false},
+			{addressedToVault: true},
+			{addressedToVault: false, upperByte: 0xff},
+			{addressedToVault: true, upperByte: 0xff},
+		} {
+			f := newGateFixture(t, chain, routerAddr())
+			token := gateToken
+			if err := f.scanner.tokenManager.SaveTokenMeta("TKN", token.Hex(), 18); err != nil {
+				t.Fatal(err)
+			}
+			key, err := crypto.GenerateKey()
+			if err != nil {
+				t.Fatal(err)
+			}
+			recipient := gateElsewhere
+			if tc.addressedToVault {
+				recipient = f.vault
+			}
+			data := erc20TransferData(recipient)
+			data[4] = tc.upperByte
+			tx, err := etypes.SignNewTx(key, f.signer, &etypes.LegacyTx{
+				To: &token, Gas: 90000, GasPrice: big.NewInt(1e9), Data: data,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			sender := crypto.PubkeyToAddress(key.PublicKey)
+			transfer := func(to common.Address, amount int64) *etypes.Log {
+				return &etypes.Log{
+					Address: token,
+					TxHash:  tx.Hash(),
+					Topics:  []common.Hash{common.HexToHash(testERC20TransferEvent), paddedAddressHash(sender), paddedAddressHash(to)},
+					Data:    common.BigToHash(big.NewInt(amount)).Bytes(),
+				}
+			}
+			// Both receipts pay the vault 0.1 tokens, regardless of the 1 token requested in calldata.
+			receipt := gateReceipt(tx, etypes.ReceiptStatusSuccessful, tx.GasPrice(), transfer(gateElsewhere, 9e17), transfer(f.vault, 1e17))
+			f.receipts = []*etypes.Receipt{receipt}
+			block := gateBlock(big.NewInt(0), etypes.CreateBloom(receipt), tx)
+			txIn, _, err := f.scanner.getTxIn(f.scanning(block), "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !tc.addressedToVault {
+				if got := f.receiptCalls.Load(); got != 0 || len(txIn.TxArray) != 0 {
+					t.Fatalf("incidental transfer: %d receipt calls, %d observations", got, len(txIn.TxArray))
+				}
+				full, _, err := f.scanner.getTxInOptimized("eth_getBlockReceipts", f.scanning(block), "")
+				if err != nil || len(full.TxArray) != 0 {
+					t.Fatalf("receipt path credited an incidental transfer: observations=%v err=%v", full.TxArray, err)
+				}
+				continue
+			}
+			if f.receiptCalls.Load() != 1 || len(txIn.TxArray) != 1 {
+				t.Fatalf("direct vault transfer: %d receipt calls, %d observations", f.receiptCalls.Load(), len(txIn.TxArray))
+			}
+			item := txIn.TxArray[0]
+			if !strings.EqualFold(item.To, f.vault.Hex()) || len(item.Coins) != 1 || item.Coins[0].Amount.Uint64() != 10_000_000 {
+				t.Fatalf("unexpected vault payment: %+v", item)
+			}
+		}
+	})
 }
 
 // Anything the gate cannot judge goes to the receipts: no routers known yet means

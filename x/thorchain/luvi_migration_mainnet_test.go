@@ -145,9 +145,29 @@ func (s *LuviMigrateMainnetGateSuite) TestMigrate19to20LowSynthBurn(c *C) {
 	luviGateStep(c, ctx, mgr, luviMigrationScopeName(19), luviRunStep(runLowSynthBurn19to20, mgr), asset)
 }
 
-// TestMigrate20to21GaiaWritedown runs the whole registered Migrate20to21 on
-// the GAIA write-down fixture (mainnet depths at h28,297,751).
-func (s *LuviMigrateMainnetGateSuite) TestMigrate20to21GaiaWritedown(c *C) {
-	f := setupGaiaWritedown20to21(c, gwVaultBooks, gwPoolRune, gwReserve)
-	luviGateStep(c, f.ctx, f.mgr, luviMigrationScopeName(20), NewMigrator(f.mgr).Migrate20to21, common.ATOMAsset)
+// TestMigrate20to21GaiaReimburse runs the whole registered Migrate20to21 (the
+// Reserve->tcso reimbursement that replaced the GAIA write-down) through the LUVI
+// gate. The reimbursement is pool-neutral, so the gate must find no undeclared LP
+// movement; the in-step balance check confirms the Reserve->tcso transfer ran, so
+// the gate is not passing on a skipped step.
+func (s *LuviMigrateMainnetGateSuite) TestMigrate20to21GaiaReimburse(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	k := mgr.Keeper()
+	setReserveRune(c, ctx, k, (gaiaReimburseRune+tronRefundRune+ltcRefundRune)*2)
+	recipient, err := cosmos.AccAddressFromBech32(gaiaReimburseRecipient)
+	c.Assert(err, IsNil)
+
+	// No moved pools: the reimbursement moves module balances, not pools, so the
+	// gate only needs to confirm it declares no LP movement. Assert the actual
+	// Reserve->tcso move inside the gated step, where the migration runs.
+	luviGateStep(c, ctx, mgr, luviMigrationScopeName(20), func(stepCtx sdk.Context) error {
+		reserveBefore := k.GetRuneBalanceOfModule(stepCtx, ReserveName)
+		if err := NewMigrator(mgr).Migrate20to21(stepCtx); err != nil {
+			return err
+		}
+		total := gaiaReimburseRune + tronRefundRune + ltcRefundRune
+		c.Check(reserveBefore.Sub(k.GetRuneBalanceOfModule(stepCtx, ReserveName)).Uint64(), Equals, total)
+		c.Check(acctRune(stepCtx, k, recipient), Equals, total)
+		return nil
+	})
 }

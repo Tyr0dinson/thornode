@@ -502,7 +502,7 @@ func (c *EVMClient) Start(
 func (c *EVMClient) solvencyRunnerBackoff() time.Duration {
 	// Use the chain block time for fast chains so the periodic runner does not skip
 	// modulo-based solvency report heights. Fall back to THORChain block time.
-	dur := time.Duration(c.cfg.ChainID.ApproximateBlockMilliseconds()) * time.Millisecond
+	dur := time.Duration(c.cfg.ApproximateBlockMilliseconds()) * time.Millisecond
 	if dur <= 0 || dur > constants.ThorchainBlockTime {
 		return constants.ThorchainBlockTime
 	}

@@ -226,6 +226,90 @@ func (Test) TestGetBifrost(c *C) {
 	c.Assert(len(chains) > 0, Equals, true)
 }
 
+func (Test) TestApproximateBlockMilliseconds(c *C) {
+	// unset: falls back to the chain constant
+	sc := BifrostBlockScannerConfiguration{ChainID: common.BASEChain}
+	c.Check(sc.ApproximateBlockMilliseconds(), Equals, common.BASEChain.ApproximateBlockMilliseconds())
+	c.Check(sc.ApproximateBlockMilliseconds(), Equals, int64(2_000))
+
+	// set: the override wins over the chain constant
+	sc.ApproximateBlockTime = 200 * time.Millisecond
+	c.Check(sc.ApproximateBlockMilliseconds(), Equals, int64(200))
+
+	// explicit zero, negative and sub-millisecond values are treated as unset, so
+	// callers that divide by the result never see 0
+	for _, d := range []time.Duration{0, -time.Second, 500 * time.Microsecond} {
+		sc.ApproximateBlockTime = d
+		c.Check(sc.ApproximateBlockMilliseconds(), Equals, int64(2_000), Commentf("override %s", d))
+	}
+
+	// chain-client helper: reads the block scanner override, falls back to its own
+	// ChainID (which is set even when BlockScanner.ChainID is not)
+	cc := BifrostChainConfiguration{ChainID: common.AVAXChain}
+	c.Check(cc.ApproximateBlockMilliseconds(), Equals, common.AVAXChain.ApproximateBlockMilliseconds())
+	cc.BlockScanner.ApproximateBlockTime = 200 * time.Millisecond
+	c.Check(cc.ApproximateBlockMilliseconds(), Equals, int64(200))
+	cc.BlockScanner.ApproximateBlockTime = 0
+	c.Check(cc.ApproximateBlockMilliseconds(), Equals, common.AVAXChain.ApproximateBlockMilliseconds())
+}
+
+func (Test) TestDefaultBaseApproximateBlockTime(c *C) {
+	Init()
+	bf := GetBifrost()
+
+	// Base Denim (2026-11-05): BASE blocks are ~200ms; the bifrost override carries
+	// it while the consensus-visible common constant stays at 2000.
+	base := bf.Chains.BASE
+	c.Check(base.BlockScanner.ApproximateBlockTime, Equals, 200*time.Millisecond)
+	c.Check(base.BlockScanner.ApproximateBlockMilliseconds(), Equals, int64(200))
+	c.Check(base.ApproximateBlockMilliseconds(), Equals, int64(200))
+	c.Check(base.SolvencyBlocks, Equals, int64(100)) // not scaled, see default.yaml
+	c.Check(base.BlockScanner.GasCacheBlocks, Equals, 400)
+	c.Check(base.BlockScanner.MaxReorgRescanBlocks, Equals, int64(720))
+	c.Check(base.BlockScanner.Concurrency, Equals, int64(8))
+	c.Check(base.BlockScanner.PrefetchBlocks, Equals, int64(8))
+	c.Check(base.BlockScanner.ObservationFlexibilityBlocks, Equals, int64(200))
+
+	// every other chain inherits 0s from the anchor and keeps its chain constant
+	for chain, cc := range bf.GetChains() {
+		if chain.Equals(common.BASEChain) {
+			continue
+		}
+		c.Check(cc.BlockScanner.ApproximateBlockTime, Equals, time.Duration(0), Commentf("chain %s", chain))
+	}
+}
+
+func (Test) TestApproximateBlockTimeEnvOverride(c *C) {
+	// The key is defined in default.yaml (on the anchor and for BASE), so operators
+	// can set or clear it per chain from the environment.
+	//
+	// Registered first so it runs last (LIFO): reload the defaults only after the
+	// env-restore defers below, so the package config is clean for later tests.
+	defer Init()
+
+	envs := map[string]string{
+		"BIFROST_CHAINS_BASE_BLOCK_SCANNER_APPROXIMATE_BLOCK_TIME": "0s",
+		"BIFROST_CHAINS_ETH_BLOCK_SCANNER_APPROXIMATE_BLOCK_TIME":  "12s",
+	}
+	for k, v := range envs {
+		original, set := os.LookupEnv(k)
+		c.Assert(os.Setenv(k, v), IsNil)
+		defer func(k, original string, set bool) {
+			if set {
+				_ = os.Setenv(k, original)
+			} else {
+				_ = os.Unsetenv(k)
+			}
+		}(k, original, set)
+	}
+
+	Init()
+	bf := GetBifrost()
+	c.Check(bf.Chains.BASE.BlockScanner.ApproximateBlockTime, Equals, time.Duration(0))
+	c.Check(bf.Chains.BASE.BlockScanner.ApproximateBlockMilliseconds(), Equals, int64(2_000))
+	c.Check(bf.Chains.ETH.BlockScanner.ApproximateBlockTime, Equals, 12*time.Second)
+}
+
 func (Test) TestInitSetsListenAddresses(c *C) {
 	// Reset config to clear any previously set listen addresses
 	config = Config{}

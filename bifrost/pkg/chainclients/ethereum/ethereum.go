@@ -937,7 +937,7 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 		// The transferFrom will revert if the approval isn't on-chain yet. This only
 		// happens once per vault per token, so the one-time delay is acceptable.
 		// If the approval is still not mined in time, the outbound will be rescheduled.
-		wait := time.Duration(c.cfg.ChainID.ApproximateBlockMilliseconds()*3) * time.Millisecond
+		wait := time.Duration(c.cfg.ApproximateBlockMilliseconds()*3) * time.Millisecond
 		c.logger.Info().Dur("wait", wait).Msg("waiting for approval transaction to be mined")
 		waitForApprovalMined(wait)
 	}

@@ -1106,6 +1106,92 @@ func (s *BlockScannerExtraSuite) TestScanBlocksUnhealthy(c *C) {
 	c.Check(scanner.IsHealthy(), Equals, false)
 }
 
+// scanBaseAtDenimGap runs a BASE scanner pinned ~1e6 blocks behind tip with
+// MaxHealthyLag 500_000s and the given ApproximateBlockTime override, and
+// returns whether the health gate (blockscanner.go) read it as healthy. The gate
+// marks a scanner unhealthy when
+//
+//	(chainHeight-currentBlock) * cfg.ApproximateBlockMilliseconds() >= MaxHealthyLag
+//
+// so the ~1e6 gap sits between the two flip points:
+//
+//	override 200ms           -> 1e6 * 200ms  =   200_000s behind (flip at 2.5e6 blocks)
+//	no override, BASE 2000ms -> 1e6 * 2000ms = 2_000_000s behind (flip at 2.5e5 blocks)
+//
+// and far above the 3-block shortcut, so the duration branch decides from the
+// first block; waiting for a few scanned blocks just ensures health was evaluated.
+func (s *BlockScannerExtraSuite) scanBaseAtDenimGap(c *C, blockTime time.Duration) bool {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasPrefix(r.RequestURI, thorclient.MimirEndpoint):
+			_, _ = w.Write([]byte(`-1`))
+		case strings.HasPrefix(r.RequestURI, "/thorchain/lastblock"):
+			_, _ = w.Write([]byte(`[{"chain":"NOOP","lastobservedin":0,"lastsignedout":0,"thorchain":0}]`))
+		case strings.HasPrefix(r.RequestURI, "/thorchain/inbound_addresses"):
+			_, _ = w.Write([]byte(`[{"chain":"BASE","outbound_tx_size":"250","observed_fee_rate":"30"}]`))
+		}
+	}))
+	defer server.Close()
+	bridge := s.makeBridge(c, server)
+
+	mss := NewMockScannerStorage()
+	fetcher := &configFetcher{chainHeight: 1_000_000, networkFeeSize: 250, networkFeeRate: 30}
+	scanner, err := NewBlockScanner(config.BifrostBlockScannerConfiguration{
+		StartBlockHeight:           1,
+		BlockScanProcessors:        1,
+		HTTPRequestTimeout:         time.Second,
+		BlockHeightDiscoverBackoff: 100 * time.Millisecond,
+		BlockRetryInterval:         100 * time.Millisecond,
+		ChainID:                    common.BASEChain,
+		MaxHealthyLag:              500_000 * time.Second,
+		ApproximateBlockTime:       blockTime,
+	}, mss, m, bridge, fetcher)
+	c.Assert(err, IsNil)
+	// An unhealthy scanner logs every block; keep the job log readable.
+	scanner.logger = zerolog.Nop()
+
+	globalChan := make(chan types.TxIn, 100)
+	nfChan := make(chan common.NetworkFee, 5)
+	scanner.Start(globalChan, nfChan)
+	waitForScanner(c, func() bool { return scanner.PreviousHeight() > 3 }, "more than 3 scanned blocks")
+	scanner.Stop()
+
+	c.Check(scanner.PreviousHeight() > 3, Equals, true)
+	return scanner.IsHealthy()
+}
+
+// TestBaseScannerHealthyAfterDenim is the regression guard for the Base Denim
+// block-time fix: with default.yaml's BASE approximate_block_time of 200ms, a
+// scanner at the ~1e6-block gap reads HEALTHY, so the signer keeps signing BASE.
+func (s *BlockScannerExtraSuite) TestBaseScannerHealthyAfterDenim(c *C) {
+	c.Check(s.scanBaseAtDenimGap(c, 200*time.Millisecond), Equals, true)
+}
+
+// TestBaseScannerUnhealthyWithoutBlockTimeOverride is the companion to
+// TestBaseScannerHealthyAfterDenim: at the same gap but with no override, the
+// scanner falls back to common.BASEChain's stale 2000ms constant and reads
+// UNHEALTHY — the mainnet condition where no node would sign BASE. Together they
+// show the bifrost-side override, not the (consensus-visible) common constant, is
+// what fixes the health gate.
+func (s *BlockScannerExtraSuite) TestBaseScannerUnhealthyWithoutBlockTimeOverride(c *C) {
+	c.Assert(common.BASEChain.ApproximateBlockMilliseconds(), Equals, int64(2_000))
+	c.Check(s.scanBaseAtDenimGap(c, 0), Equals, false)
+}
+
+// TestMaxResumeLagBlocksUsesBlockTimeOverride checks the resume-lag window is
+// sized from the ApproximateBlockTime override when set, and from the chain
+// constant otherwise.
+func (s *BlockScannerExtraSuite) TestMaxResumeLagBlocksUsesBlockTimeOverride(c *C) {
+	b := &BlockScanner{cfg: config.BifrostBlockScannerConfiguration{
+		ChainID:           common.BASEChain,
+		MaxResumeBlockLag: time.Hour,
+	}}
+	c.Check(b.maxResumeLagBlocks(), Equals, int64(time.Hour/time.Millisecond)/common.BASEChain.ApproximateBlockMilliseconds())
+
+	b.cfg.ApproximateBlockTime = 200 * time.Millisecond
+	c.Check(b.maxResumeLagBlocks(), Equals, int64(18_000)) // 1h / 200ms
+}
+
 // TestStartWithPersistedPos tests that Start reads the persisted scan position.
 func (s *BlockScannerExtraSuite) TestStartWithPersistedPos(c *C) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

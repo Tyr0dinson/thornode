@@ -1651,6 +1651,15 @@ type BifrostBlockScannerConfiguration struct {
 	// is considered unhealthy.
 	MaxHealthyLag time.Duration `mapstructure:"max_healthy_lag"`
 
+	// ApproximateBlockTime overrides the chain's block time for bifrost's own
+	// block-count <-> duration conversions (scanner health gate, resume lag, observer
+	// flex window, EVM solvency runner interval). 0 uses the
+	// common.Chain.ApproximateBlockMilliseconds() constant. It is node-local and never
+	// reaches consensus, so it can track an L1 block-time change (e.g. Base Denim,
+	// 2s -> 200ms) without waiting for a coordinated release to move the constant,
+	// which QuoteSwap exposes to CosmWasm contracts.
+	ApproximateBlockTime time.Duration `mapstructure:"approximate_block_time"`
+
 	// TransactionBatchSize is the number of transactions to batch in a single request.
 	// This is used as the limit for one iteration of mempool checks and fanout in
 	// fetching block transactions.
@@ -1681,6 +1690,29 @@ type BifrostBlockScannerConfiguration struct {
 		// FeeSampleSlots is the number of slots to sample for network fee calculation.
 		FeeSampleSlots uint64 `mapstructure:"fee_sample_slots"`
 	} `mapstructure:"solana"`
+}
+
+// ApproximateBlockMilliseconds returns the block time bifrost should assume for this
+// scanner's chain: ApproximateBlockTime when it is at least 1ms, otherwise the
+// ChainID.ApproximateBlockMilliseconds() constant. Bifrost reads block time through
+// this rather than the common constant so the two can differ (see
+// ApproximateBlockTime).
+func (c BifrostBlockScannerConfiguration) ApproximateBlockMilliseconds() int64 {
+	if ms := c.ApproximateBlockTime.Milliseconds(); ms > 0 {
+		return ms
+	}
+	return c.ChainID.ApproximateBlockMilliseconds()
+}
+
+// ApproximateBlockMilliseconds is the chain-client counterpart of
+// BifrostBlockScannerConfiguration.ApproximateBlockMilliseconds: the block
+// scanner's ApproximateBlockTime override when set, otherwise this chain's
+// ChainID constant.
+func (c BifrostChainConfiguration) ApproximateBlockMilliseconds() int64 {
+	if ms := c.BlockScanner.ApproximateBlockTime.Milliseconds(); ms > 0 {
+		return ms
+	}
+	return c.ChainID.ApproximateBlockMilliseconds()
 }
 
 type BifrostClientConfiguration struct {

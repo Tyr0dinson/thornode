@@ -6,6 +6,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/constants"
+	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
 )
 
 // TorAnchorMimirKey is the mimir key whose positive value marks the pool of
@@ -17,23 +18,39 @@ func TorAnchorMimirKey(asset common.Asset) string {
 func (k KVStore) GetAnchors(ctx cosmos.Context, asset common.Asset) []common.Asset {
 	isTor := asset.Equals(common.TOR)
 	if isTor {
+		cache := keeper.AnchorsCacheFromContext(ctx)
+		if assets, ok := cache.Get(); ok {
+			return assets
+		}
 		assets := make([]common.Asset, 0)
 		pools, err := k.GetPools(ctx)
 		if err != nil {
 			ctx.Logger().Error("unable to fetch pools for anchor", "error", err)
 			return assets
 		}
+		var poolKeys map[string]struct{}
+		if cache != nil {
+			poolKeys = make(map[string]struct{}, len(pools))
+		}
+		cacheable := true
 		for _, pool := range pools {
+			if poolKeys != nil {
+				poolKeys[string(k.GetKey(prefixPool, pool.Asset.String()))] = struct{}{}
+			}
 			mimirKey := TorAnchorMimirKey(pool.Asset)
 			var val int64
 			val, err = k.GetMimir(ctx, mimirKey)
 			if err != nil {
 				ctx.Logger().Error("unable to fetch pool for anchor", "mimir", mimirKey, "error", err)
+				cacheable = false
 				continue
 			}
 			if val > 0 {
 				assets = append(assets, pool.Asset)
 			}
+		}
+		if cacheable {
+			cache.Set(assets, poolKeys)
 		}
 		return assets
 	}
