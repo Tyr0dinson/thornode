@@ -429,15 +429,48 @@ func (m *Manager) Cycle(ctx context.Context) {
 		}
 	}
 	tip, quorum := consensusTip(tipHeights, m.cfg.MaxBlockLag)
-	checkTip, checkQuorum := tip, quorum
+	// the hashes are compared at the level of the endpoints the tip was formed from
+	// (their lower median), not below the tip: endpoints on another fork that report
+	// heights ahead must not leave the others out of the vote
+	checkFrom, checkQuorum := tipHeights, quorum
 	if !quorum {
-		checkTip, checkQuorum = consensusTip(heights, m.cfg.MaxBlockLag)
+		_, checkQuorum = consensusTip(heights, m.cfg.MaxBlockLag)
+		checkFrom = heights
 	}
+	// the median is of the healthy ones among them: endpoints far behind that are
+	// probed while they recover must not pull the compared height down to theirs
+	medianFrom := make(map[string]int64, len(checkFrom))
+	for name, h := range checkFrom {
+		if m.byName[name].State() == StateHealthy {
+			medianFrom[name] = h
+		}
+	}
+	if len(medianFrom) == 0 {
+		medianFrom = checkFrom
+	}
+	checkHeight := lowerMedian(medianFrom) - m.cfg.IntegrityCheckDepth
 	var scanner int64
 	if m.scannerHeight != nil && len(m.entries) == 1 {
 		scanner = m.scannerHeight()
 	}
 	observed := waitReference()
+
+	// 4. integrity: majority hash at that height among healthy hash-capable endpoints;
+	// endpoints evicted for a minority hash must positively match it before they may
+	// recover (matchedHash), a check that merely ran or returned nothing is not enough
+	badHash, matchedHash := map[string]bool{}, map[string]bool{}
+	if checkQuorum && m.cfg.IntegrityCheckDepth > 0 && checkHeight > 0 {
+		badHash, matchedHash = m.integrityCheck(ctx, checkHeight, heights)
+	}
+	// an endpoint with a minority hash this cycle is on another fork as well: the lag
+	// tip and THORChain's "reached" check are formed without it
+	if len(badHash) > 0 {
+		for name := range badHash {
+			delete(tipHeights, name)
+		}
+		tip, quorum = consensusTip(tipHeights, m.cfg.MaxBlockLag)
+	}
+
 	// trust THORChain's height only once a usable endpoint has reached it (within
 	// max_block_lag): a height no endpoint shows (forced on THORChain, or every
 	// endpoint behind) must not strike all of them and take the chain down
@@ -463,14 +496,6 @@ func (m *Manager) Cycle(ctx context.Context) {
 			return true, fmt.Sprintf("behind scanner height %d by %d blocks", scanner, scanner-h)
 		}
 		return false, ""
-	}
-
-	// 4. integrity: majority hash at tip - depth among healthy hash-capable endpoints;
-	// endpoints evicted for a minority hash must positively match it before they may
-	// recover (matchedHash), a check that merely ran or returned nothing is not enough
-	badHash, matchedHash := map[string]bool{}, map[string]bool{}
-	if checkQuorum && m.cfg.IntegrityCheckDepth > 0 && checkTip-m.cfg.IntegrityCheckDepth > 0 {
-		badHash, matchedHash = m.integrityCheck(ctx, checkTip-m.cfg.IntegrityCheckDepth, heights)
 	}
 
 	// 5. apply results per entry
@@ -505,6 +530,15 @@ func (m *Manager) Cycle(ctx context.Context) {
 			e.RecordProbePass()
 		case StateUnhealthy, StateRecovering:
 			ok := r.err == nil
+			if badHash[e.Name] {
+				// a minority hash found this cycle quarantines the endpoint however it
+				// left the healthy state meanwhile (inline errors while the vote ran)
+				if !e.IntegrityEvicted() {
+					m.log.Warn().Str("endpoint", e.Name).Msg("minority block hash: endpoint quarantined")
+					e.MarkUnhealthy(ErrorKindIntegrity)
+				}
+				ok = false
+			}
 			if ok {
 				if lag, _ := lagging(r.height); lag {
 					ok = false
@@ -526,6 +560,19 @@ func (m *Manager) Cycle(ctx context.Context) {
 		m.MaybeFailback()
 	}
 	m.publishMetrics()
+}
+
+// lowerMedian returns the lower median of heights, 0 for none.
+func lowerMedian(heights map[string]int64) int64 {
+	if len(heights) == 0 {
+		return 0
+	}
+	hs := make([]int64, 0, len(heights))
+	for _, h := range heights {
+		hs = append(hs, h)
+	}
+	sort.Slice(hs, func(i, j int) bool { return hs[i] < hs[j] })
+	return hs[(len(hs)-1)/2]
 }
 
 // consensusTip returns the greatest height that at least one other endpoint is

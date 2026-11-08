@@ -20,7 +20,9 @@ endpoint is only put in cooldown (see below), never charged. On the HTTP-routed 
 (EVM, SOL, XRP, TRON, and the Cosmos CometBFT RPC) a JSON-RPC "method not found" is the
 caller's business and is never charged: bifrost calls optional methods
 (`eth_getBlockReceipts`) and falls back itself when a node lacks them. On XRP, a
-provider answering `lgrNotFound` or `txnNotFound` is asked last: the other endpoints are
+provider answering `lgrNotFound` or `txnNotFound`, or a server answering that it cannot
+serve right now (`tooBusy`, `noNetwork`, `notSynced`, `noCurrent`, `noClosed`,
+`amendmentBlocked`, `unlBlocked`, `notReady`), is asked last: the other endpoints are
 tried first and nothing is charged. Writes (broadcasts) are sent once, to the active endpoint, with the
 caller's whole timeout, and never duplicated elsewhere: a write moves to the next
 endpoint only when connecting to the active one failed before anything was sent (gRPC
@@ -93,8 +95,12 @@ rescanned blocks, which is what the retry does anyway; UTXO undoes the
 observed-transaction marks the failed attempt set. With several endpoints, ETH and the
 EVM chains take a reorg's headers, transaction re-confirmations, rescanned blocks and
 their receipts from one witness, the active endpoint, and only once its block at the reorg tip
-is the parent of the block being scanned, which proves it is caught up and on the same
-fork; otherwise the scan fails and is retried. No other endpoint is asked, so one still
+is the parent of the block being scanned, its block at the scanned height is the scanned
+block itself (not a competing block on the same parent), and its tip is at least the
+chain height the scan was driven by, which proves it is caught up and on the same fork;
+otherwise the scan fails and is retried. An active endpoint that cannot answer these
+reads at all (it answers its probes, so nothing else would move it) is put in the
+rate-limit cooldown and the next endpoint, held to the same checks, takes over. No other endpoint is asked, so one still
 on the old fork cannot suppress an errata. A witness that answers "not found" for a
 stored transaction the scanned block lists has not imported that block yet (another
 endpoint served it), so the scan is retried instead of reporting an errata for it. A witness whose lookups fail rather than
@@ -110,9 +116,10 @@ A background health check runs every `health_check_interval` against every endpo
 
 - **Liveness.** A probe that errors or exceeds `health_check_timeout` is a strike.
 - **Lag.** When at least two usable endpoints (not disabled, with their network
-  verified when that is required, and not quarantined for a minority block hash) agree
-  on a tip (within `max_block_lag`), an endpoint further behind than `max_block_lag`
-  gets a strike each cycle. With two or
+  verified when that is required, not quarantined for a minority block hash, and not
+  found with one in this cycle's integrity check) agree on a tip (within
+  `max_block_lag`), an endpoint further behind than `max_block_lag` gets a strike each
+  cycle. With two or
   more endpoints, THORChain's last observed height for the chain is a second reference:
   an endpoint more than `max_block_lag` below it gets a strike. That height is set only
   once 2/3 of nodes agree and never goes back, so no endpoint or single node can move
@@ -153,8 +160,10 @@ A background health check runs every `health_check_interval` against every endpo
   serving while that check cannot run (a host unreachable), as before endpoint lists
   existed.
 - **Integrity.** When `integrity_check_depth` is greater than 0 **and at least two
-  endpoints agree on a tip**, the block hash at `tip - depth` is compared across the
-  healthy endpoints that answered. When one hash holds a strict majority of them, every
+  endpoints agree on a tip**, the block hash `depth` below the healthy endpoints' level
+  (the lower median of their heights, so endpoints that report heights ahead, or are far
+  behind while they recover, do not pick it) is compared across the healthy endpoints
+  that answered. When one hash holds a strict majority of them, every
   other hash is a strike; an endpoint whose eviction run contained such a strike (even
   when a lag or probe strike completed the eviction) is quarantined, shown as
   `integrity_evicted` in `/status/provider`, and must serve the majority hash again
@@ -204,20 +213,22 @@ If every endpoint is unhealthy, bifrost logs an error, sets
 
 ### Per-chain notes
 
-| Chain                           | Reads and writes                                                                                                | Broadcast / verification                                                                                                      |
-| ------------------------------- | --------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| UTXO (BTC, LTC, BCH, DOGE, ZEC) | reads fail over across endpoints                                                                                | wallet RPC and `sendrawtransaction` always use the priority-1 daemon (it holds the wallet); signer verification reads it only |
-| EVM (ETH, AVAX, BSC, BASE, POL) | all JSON-RPC routed to the active endpoint; the signing chain id comes from the verified identity               | `eth_sendRawTransaction` sent once; signer verification asks every endpoint                                                   |
-| Cosmos (GAIA, NOBLE)            | gRPC and CometBFT RPC routed to the same active endpoint; each endpoint needs `cosmos_grpc_host` and `rpc_host` | `BroadcastTx` sent once; mempool verification asks every endpoint                                                             |
-| Solana                          | routed; `max_block_lag` is in slots (default 50); integrity check disabled (slots can be skipped)               | `sendTransaction` sent once                                                                                                   |
-| XRP                             | routed                                                                                                          | `submit` sent once                                                                                                            |
-| TRON                            | `api_host` and `rpc_host` routed together; each endpoint needs both; its height is the lower of the two tips    | `/wallet/broadcasttransaction` sent once                                                                                      |
-| XMR                             | not supported; the Monero client talks to its signer sidecar only                                               |                                                                                                                               |
+| Chain                           | Reads and writes                                                                                                                                             | Broadcast / verification                                                                                                      |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- |
+| UTXO (BTC, LTC, BCH, DOGE, ZEC) | reads fail over across endpoints                                                                                                                             | wallet RPC and `sendrawtransaction` always use the priority-1 daemon (it holds the wallet); signer verification reads it only |
+| EVM (ETH, AVAX, BSC, BASE, POL) | all JSON-RPC routed to the active endpoint; the signing chain id comes from the verified identity                                                            | `eth_sendRawTransaction` sent once; signer verification asks every endpoint                                                   |
+| Cosmos (GAIA, NOBLE)            | gRPC and CometBFT RPC routed to the same active endpoint; each endpoint needs `cosmos_grpc_host` and `rpc_host`                                              | `BroadcastTx` sent once; mempool verification asks every endpoint                                                             |
+| Solana                          | routed; `max_block_lag` is in slots (default 50); integrity check disabled (slots can be skipped)                                                            | `sendTransaction` sent once                                                                                                   |
+| XRP                             | routed                                                                                                                                                       | `submit` sent once                                                                                                            |
+| TRON                            | `api_host` and `rpc_host` routed together; each endpoint needs both; its height is the lower of the two tips                                                 | `/wallet/broadcasttransaction` sent once                                                                                      |
+| XMR                             | not supported (no endpoint list); the Monero client talks to its signer sidecar and, when `rpc_host` is set, reads heights and blocks from that daemon first |                                                                                                                               |
 
 On Solana, a vault with more than one page (1,000) of new signatures has all its pages
 listed by one endpoint: a node that does not have a page's last signature answers the
 next page with an empty list, which would end the scan early and skip the older
-signatures for good. A vault's listing resumes from its cursor signature with that
+signatures for good. A failed listing is retried from its first page on the same
+endpoint; after three failed listings of a vault in a row the next endpoint lists it, so
+one that keeps failing a page does not hold the vault back. A vault's listing resumes from its cursor signature with that
 signature's own slot as `minContextSlot`: Agave ignores a cursor it does not know and
 lists the whole history it holds, so a node that has not yet finalized the cursor's slot
 (an endpoint behind the previous one) must refuse with -32016 instead, which on Solana is
@@ -339,7 +350,7 @@ chains:
       prefer_higher_priority: false # set true to actively fail back to lower-priority-number endpoints
       rate_limit_backoff: 30s # cooldown after a rate limit (429; -32005 except on Solana): the endpoint is skipped this long while another endpoint can serve, and traffic moves on at once. UTXO chains also sleep it once when the primary was rate limited and nothing else served the read
       health_check_timeout: 5s # a probe slower than this is a strike; clamped to half of health_check_interval when larger
-      integrity_check_depth: 20 # compare block hashes at tip - depth across endpoints; 0 disables
+      integrity_check_depth: 20 # compare block hashes depth below the healthy endpoints' level; 0 disables
     expected_identity: "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f" # optional network pin
   ETH:
     endpoints:

@@ -295,6 +295,24 @@ func (m *Manager) RecordRateLimited(name string) {
 	}
 }
 
+// Sideline puts an endpoint into the rate_limit_backoff cooldown, as a rate limit
+// does, and moves the active role off it. It is for an endpoint that answers its
+// probes but cannot serve a read only the active endpoint may answer (a reorg
+// witness's blocks): its other requests succeed, so inline errors never evict it, and
+// without this every retry would ask it again. The failed read itself was already
+// charged by the router, so it is neither counted again nor relabelled here.
+func (m *Manager) Sideline(name, reason string) {
+	e := m.byName[name]
+	if e == nil {
+		return
+	}
+	e.coolDown(m.cfg.RateLimitBackoff, "")
+	m.log.Warn().Str("endpoint", name).Dur("cooldown", m.cfg.RateLimitBackoff).Str("reason", reason).Msg("endpoint sidelined")
+	if e == m.Active() {
+		m.handOff(fmt.Sprintf("active endpoint %s sidelined: %s", name, reason))
+	}
+}
+
 // Disable permanently removes an endpoint and moves active off it if needed.
 func (m *Manager) Disable(name, reason string) {
 	e := m.byName[name]

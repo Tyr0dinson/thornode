@@ -27,16 +27,48 @@ import (
 // reorgBlockJSON is the empty block a witnessProxy returns at any height.
 const reorgBlockJSON = `{"parentHash":"0x0000000000000000000000000000000000000000000000000000000000000000","sha3Uncles":"0x1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347","miner":"0x0000000000000000000000000000000000000000","stateRoot":"0x0000000000000000000000000000000000000000000000000000000000000000","transactionsRoot":"0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421","receiptsRoot":"0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421","logsBloom":"0x00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000","difficulty":"0x1","number":"0x63","gasLimit":"0x1","gasUsed":"0x0","timestamp":"0x1","extraData":"0x","mixHash":"0x0000000000000000000000000000000000000000000000000000000000000000","nonce":"0x0000000000000000","transactions":[],"uncles":[]}`
 
+// reorgTipFor returns block 100 as the child of the block in parentJSON, as served JSON
+// and as a header: the block a scanner holds when it detects the reorg, which a witness
+// at the reorg tip has too.
+func reorgTipFor(parentJSON string) (string, *etypes.Header) {
+	var parent etypes.Header
+	if err := json.Unmarshal([]byte(parentJSON), &parent); err != nil {
+		panic(err)
+	}
+	var fields map[string]any
+	if err := json.Unmarshal([]byte(parentJSON), &fields); err != nil {
+		panic(err)
+	}
+	fields["number"], fields["parentHash"] = "0x64", parent.Hash().Hex()
+	fields["transactions"], fields["transactionsRoot"] = []any{}, etypes.EmptyRootHash.Hex()
+	raw, err := json.Marshal(fields)
+	if err != nil {
+		panic(err)
+	}
+	var tip etypes.Header
+	if err = json.Unmarshal(raw, &tip); err != nil {
+		panic(err)
+	}
+	return string(raw), &tip
+}
+
+// isTipRequest reports whether a JSON-RPC request asks for block 100 (reorgTipFor).
+func isTipRequest(params []json.RawMessage) bool {
+	return len(params) > 0 && string(params[0]) == `"0x64"`
+}
+
 // witnessProxy forwards every JSON-RPC call to target, except that it answers
 // eth_getTransactionByHash with null (it does not know the transaction) and
-// eth_getBlockByNumber with reorgBlockJSON, or with null when behind is set (it has
-// not reached the block yet).
+// eth_getBlockByNumber with reorgBlockJSON (block 100: its reorgTipFor child), or with
+// null when behind is set (it has not reached the block yet).
 func witnessProxy(target string, behind bool) *httptest.Server {
+	tipJSON, _ := reorgTipFor(reorgBlockJSON)
 	return httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 		body, _ := io.ReadAll(req.Body)
 		var rpcReq struct {
-			Method string          `json:"method"`
-			ID     json.RawMessage `json:"id"`
+			Method string            `json:"method"`
+			ID     json.RawMessage   `json:"id"`
+			Params []json.RawMessage `json:"params"`
 		}
 		_ = json.Unmarshal(body, &rpcReq)
 		rw.Header().Set("Content-Type", "application/json")
@@ -46,6 +78,9 @@ func witnessProxy(target string, behind bool) *httptest.Server {
 		switch {
 		case rpcReq.Method == "eth_getTransactionByHash", rpcReq.Method == "eth_getBlockByNumber" && behind:
 			answer("null")
+			return
+		case rpcReq.Method == "eth_getBlockByNumber" && isTipRequest(rpcReq.Params):
+			answer(tipJSON)
 			return
 		case rpcReq.Method == "eth_getBlockByNumber":
 			answer(reorgBlockJSON)
@@ -109,7 +144,7 @@ func (s *UnstuckTestSuite) TestReorgIsReadFromOneCaughtUpWitness(c *C) {
 	}
 	var parentHeader etypes.Header
 	c.Assert(json.Unmarshal([]byte(reorgBlockJSON), &parentHeader), IsNil)
-	block100 := &etypes.Header{Number: big.NewInt(100), ParentHash: parentHeader.Hash()}
+	_, block100 := reorgTipFor(reorgBlockJSON)
 
 	// the active endpoint has the new block 99 and does not know held; the other
 	// endpoint still has it: errata, and block 99's record takes the witness's hash
@@ -145,11 +180,13 @@ func (s *UnstuckTestSuite) TestReorgIsReadFromOneCaughtUpWitness(c *C) {
 // receipt (bulk and per transaction) with one that carries *receiptBlock as its block
 // hash, and forwards everything else to target.
 func rescanProxy(target, blockAnswer string, tx *etypes.Transaction, receiptBlock *string) *httptest.Server {
+	tipJSON, _ := reorgTipFor(blockAnswer)
 	return httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 		body, _ := io.ReadAll(req.Body)
 		var rpcReq struct {
-			Method string          `json:"method"`
-			ID     json.RawMessage `json:"id"`
+			Method string            `json:"method"`
+			ID     json.RawMessage   `json:"id"`
+			Params []json.RawMessage `json:"params"`
 		}
 		_ = json.Unmarshal(body, &rpcReq)
 		rw.Header().Set("Content-Type", "application/json")
@@ -163,6 +200,10 @@ func rescanProxy(target, blockAnswer string, tx *etypes.Transaction, receiptBloc
 		case "eth_getTransactionByHash":
 			answer("null")
 		case "eth_getBlockByNumber":
+			if isTipRequest(rpcReq.Params) {
+				answer(tipJSON)
+				return
+			}
 			answer(blockAnswer)
 		case "eth_getBlockReceipts":
 			answer("[" + receipt + "]")
@@ -224,7 +265,7 @@ func (s *UnstuckTestSuite) TestReorgRescanRejectsReceiptsOfAnotherBlock(c *C) {
 		Height:    99,
 		BlockHash: "0x00000000000000000000000000000000000000000000000000000000000000dd",
 	}), IsNil)
-	block100 := &etypes.Header{Number: big.NewInt(100), ParentHash: replacement}
+	_, block100 := reorgTipFor(blockAnswer)
 
 	// receipts of another block: the plan fails and the stored record is untouched
 	_, err = scanner.planReorg(block100)
@@ -324,7 +365,7 @@ func (s *UnstuckTestSuite) TestReorgRescanReadsReceiptsFromTheWitnessOnly(c *C) 
 		Height:    99,
 		BlockHash: "0x00000000000000000000000000000000000000000000000000000000000000dd",
 	}), IsNil)
-	block100 := &etypes.Header{Number: big.NewInt(100), ParentHash: replacement}
+	_, block100 := reorgTipFor(blockAnswer)
 
 	_, err = scanner.planReorg(block100)
 	c.Assert(err, NotNil)
@@ -350,11 +391,13 @@ func failedReceiptWitness(c *C, target string, tx *etypes.Transaction, from ecom
 		GasUsed: 21000, EffectiveGasPrice: big.NewInt(1), BlockHash: ecommon.Hash{0x64}, BlockNumber: big.NewInt(100),
 	})
 	c.Assert(err, IsNil)
+	tipJSON, _ := reorgTipFor(reorgBlockJSON)
 	return httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 		body, _ := io.ReadAll(req.Body)
 		var rpcReq struct {
-			Method string          `json:"method"`
-			ID     json.RawMessage `json:"id"`
+			Method string            `json:"method"`
+			ID     json.RawMessage   `json:"id"`
+			Params []json.RawMessage `json:"params"`
 		}
 		_ = json.Unmarshal(body, &rpcReq)
 		rw.Header().Set("Content-Type", "application/json")
@@ -363,6 +406,10 @@ func failedReceiptWitness(c *C, target string, tx *etypes.Transaction, from ecom
 		}
 		switch rpcReq.Method {
 		case "eth_getBlockByNumber":
+			if isTipRequest(rpcReq.Params) {
+				answer([]byte(tipJSON))
+				return
+			}
 			answer([]byte(reorgBlockJSON))
 			return
 		case "eth_getTransactionByHash":
@@ -431,13 +478,13 @@ func (s *UnstuckTestSuite) TestReorgWaitsForAWitnessThatHasTheScannedBlock(c *C)
 	}
 	var parentHeader etypes.Header
 	c.Assert(json.Unmarshal([]byte(reorgBlockJSON), &parentHeader), IsNil)
-	block100 := &etypes.Header{Number: big.NewInt(100), ParentHash: parentHeader.Hash()}
+	_, block100 := reorgTipFor(reorgBlockJSON)
 
 	// the witness knows neither transaction: the listed one makes the step undecided
 	atTip := witnessProxy(s.server.URL, false)
 	defer atTip.Close()
 	behind := scanner(atTip, listed, gone)
-	_, err = behind.planReorgWith(block100, etypes.Transactions{tx})
+	_, err = behind.planReorgWith(block100, etypes.Transactions{tx}, 0)
 	c.Assert(err, ErrorMatches, ".*has not imported the scanned block yet.*")
 	// without the scanned block's list the same answers are two errata, as before
 	plan, err := behind.planReorg(block100)
@@ -448,9 +495,79 @@ func (s *UnstuckTestSuite) TestReorgWaitsForAWitnessThatHasTheScannedBlock(c *C)
 	// the witness has the listed transaction, failed: an errata
 	failed := failedReceiptWitness(c, s.server.URL, tx, crypto.PubkeyToAddress(key.PublicKey))
 	defer failed.Close()
-	plan, err = scanner(failed, listed).planReorgWith(block100, etypes.Transactions{tx})
+	plan, err = scanner(failed, listed).planReorgWith(block100, etypes.Transactions{tx}, 0)
 	c.Assert(err, IsNil)
 	c.Assert(plan.errata, HasLen, 1)
 	c.Assert(plan.errata[0].Txs, HasLen, 1)
 	c.Assert(string(plan.errata[0].Txs[0].TxID), Equals, listed)
+}
+
+// The chain height the scan was driven by reaches the witness check: a witness that is
+// behind it (another endpoint served the scan, and may hold a block re-mining a stored
+// transaction that the witness does not have yet) leaves the step undecided, and so
+// does one that holds a competing block at the scanned height.
+func (s *UnstuckTestSuite) TestReorgWitnessMustHoldTheScannedBlockAndReachTheScan(c *C) {
+	config.Init()
+	witness := witnessProxy(s.server.URL, false)
+	defer witness.Close()
+	// a witness at the reorg tip: its own tip is block 100
+	atTip := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		body, _ := io.ReadAll(req.Body)
+		var rpcReq struct {
+			Method string          `json:"method"`
+			ID     json.RawMessage `json:"id"`
+		}
+		_ = json.Unmarshal(body, &rpcReq)
+		if rpcReq.Method == "eth_blockNumber" {
+			rw.Header().Set("Content-Type", "application/json")
+			_, _ = rw.Write([]byte(`{"jsonrpc":"2.0","id":` + string(rpcReq.ID) + `,"result":"0x64"}`))
+			return
+		}
+		resp, err := http.Post(witness.URL+req.URL.Path, "application/json", bytes.NewReader(body))
+		if err != nil {
+			http.Error(rw, err.Error(), http.StatusBadGateway)
+			return
+		}
+		defer func() { _ = resp.Body.Close() }()
+		rw.Header().Set("Content-Type", "application/json")
+		rw.WriteHeader(resp.StatusCode)
+		_, _ = io.Copy(rw, resp.Body)
+	}))
+	defer atTip.Close()
+	pubkeyMgr, err := pubkeymanager.NewPubKeyManager(s.bridge, s.m)
+	c.Assert(err, IsNil)
+	e, err := NewEVMClient(s.thorKeys, config.BifrostChainConfiguration{
+		ChainID:        common.AVAXChain,
+		RPCHost:        atTip.URL,
+		SolvencyBlocks: 10,
+		Endpoints: []config.ChainEndpointConfig{
+			{Name: "primary", RPCHost: atTip.URL, Priority: 1},
+			{Name: "other", RPCHost: s.server.URL, Priority: 2},
+		},
+		BlockScanner: config.BifrostBlockScannerConfiguration{
+			ChainID:            common.AVAXChain,
+			StartBlockHeight:   1,
+			HTTPRequestTimeout: time.Second * 10,
+			GasCacheBlocks:     40,
+			Concurrency:        1,
+		},
+	}, nil, s.bridge, s.m, pubkeyMgr, thorclient.NewPoolMgr(s.bridge))
+	c.Assert(err, IsNil)
+	scanner := e.evmScanner
+	c.Assert(scanner.blockMetaAccessor.SaveBlockMeta(99, &types.BlockMeta{
+		Height:    99,
+		BlockHash: "0x00000000000000000000000000000000000000000000000000000000000000dd",
+	}), IsNil)
+	_, block100 := reorgTipFor(reorgBlockJSON)
+
+	_, err = scanner.planReorgWith(block100, nil, 101)
+	c.Assert(err, ErrorMatches, ".*behind the chain height 101.*")
+	competing := *block100
+	competing.Extra = []byte{1}
+	_, err = scanner.planReorgWith(&competing, nil, 0)
+	c.Assert(err, ErrorMatches, ".*not the scanned block.*")
+	plan, err := scanner.planReorgWith(block100, nil, 100)
+	c.Assert(err, IsNil)
+	c.Assert(plan, NotNil)
+	c.Assert(scanner.endpointMgr.Active().Name, Equals, "primary") // undecided is not a failure
 }

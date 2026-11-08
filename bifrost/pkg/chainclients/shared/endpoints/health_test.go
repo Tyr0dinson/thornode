@@ -996,3 +996,91 @@ func (s *HealthSuite) TestReferenceAnsweredDuringASlowProbeIsUsed(c *C) {
 		c.Assert(m.Entry("a").State(), Equals, endpoints.StateHealthy, Commentf("run %d", i))
 	}
 }
+
+// Two endpoints on another fork that report heights ahead of the healthy majority
+// must not pick the height the hashes are compared at (which would leave the
+// majority out of the vote) nor set the lag tip the majority is judged against: the
+// hashes are compared at the majority's level, the pair is quarantined, and nobody in
+// the majority is struck. This holds whether the pair is far ahead or within the
+// integrity depth.
+func (s *HealthSuite) TestMinorityPairAheadIsComparedAtTheMajorityHeight(c *C) {
+	for _, ahead := range []int64{200, 104} {
+		cfg := healthCfg()
+		cfg.IntegrityCheckDepth = 20
+		cfg.ErrorThreshold = 1
+		honest := func(name string) *fakeProbe {
+			return &fakeProbe{name: name, height: 100, identity: "g", hashes: map[int64]string{80: "H", ahead - 20: "H"}}
+		}
+		forked := func(name string) *fakeProbe {
+			return &fakeProbe{name: name, height: ahead, identity: "g", hashes: map[int64]string{80: "X", ahead - 20: "X"}}
+		}
+		m, ps := newHealthMgr(c, cfg, nil, honest("a"), honest("b"), honest("d"), forked("x"), forked("y"))
+		c.Assert(m.Bootstrap(ctxBg(), ps), IsNil)
+		m.Cycle(ctxBg())
+		for _, name := range []string{"a", "b", "d"} {
+			c.Assert(m.Entry(name).State(), Equals, endpoints.StateHealthy, Commentf("ahead %d: %s", ahead, name))
+			c.Assert(m.Entry(name).Snapshot().ProbeStrikes, Equals, 0, Commentf("ahead %d: %s", ahead, name))
+		}
+		for _, name := range []string{"x", "y"} {
+			c.Assert(m.Entry(name).IntegrityEvicted(), Equals, true, Commentf("ahead %d: %s", ahead, name))
+		}
+	}
+}
+
+// voteEvictedProbe is a fakeProbe that runs onHash while its hash is read, as
+// concurrent request failures can while the integrity vote is under way.
+type voteEvictedProbe struct {
+	*fakeProbe
+	onHash func()
+}
+
+func (p voteEvictedProbe) HashAt(ctx context.Context, h int64) (string, error) {
+	if p.onHash != nil {
+		p.onHash()
+	}
+	return p.fakeProbe.HashAt(ctx, h)
+}
+
+// An endpoint found with a minority hash is quarantined even when inline request
+// errors evicted it while the vote ran: recovering on probe passes alone would
+// discard the hash disagreement and let it serve traffic again.
+func (s *HealthSuite) TestMinorityHashFoundDuringAnInlineEvictionStillQuarantines(c *C) {
+	cfg := healthCfg()
+	cfg.IntegrityCheckDepth = 5
+	cfg.ErrorThreshold = 1
+	a := &fakeProbe{name: "a", height: 100, identity: "g", hashes: map[int64]string{95: "H"}}
+	b := &fakeProbe{name: "b", height: 100, identity: "g", hashes: map[int64]string{95: "H"}}
+	d := &fakeProbe{name: "d", height: 100, identity: "g", hashes: map[int64]string{95: "X"}}
+	var m *endpoints.Manager
+	evicting := voteEvictedProbe{fakeProbe: d, onHash: func() { m.RecordError("d", endpoints.ErrorKindHTTP) }}
+	m, _ = newHealthMgr(c, cfg, nil, a, b, d)
+	c.Assert(m.Bootstrap(ctxBg(), []endpoints.Probe{a, b, evicting}), IsNil)
+	c.Assert(m.Entry("d").State(), Equals, endpoints.StateHealthy)
+	m.Cycle(ctxBg())
+	c.Assert(m.Entry("d").State(), Not(Equals), endpoints.StateHealthy)
+	c.Assert(m.Entry("d").IntegrityEvicted(), Equals, true)
+}
+
+// Endpoints far behind that are probed while they recover must not pull the height
+// the hashes are compared at down to theirs: a recent fork on a healthy endpoint is
+// then still found.
+func (s *HealthSuite) TestRecoveringEndpointsDoNotLowerTheComparedHeight(c *C) {
+	cfg := healthCfg()
+	cfg.IntegrityCheckDepth = 20
+	cfg.ErrorThreshold = 1
+	a := &fakeProbe{name: "a", height: 1000, identity: "g", hashes: map[int64]string{480: "H", 980: "H"}}
+	b := &fakeProbe{name: "b", height: 1000, identity: "g", hashes: map[int64]string{480: "H", 980: "H"}}
+	x := &fakeProbe{name: "x", height: 1000, identity: "g", hashes: map[int64]string{480: "H", 980: "X"}} // forked after 480
+	behind := func(name string) *fakeProbe {
+		return &fakeProbe{name: name, height: 500, identity: "g", hashes: map[int64]string{480: "H"}}
+	}
+	m, ps := newHealthMgr(c, cfg, nil, a, b, x, behind("r1"), behind("r2"), behind("r3"))
+	c.Assert(m.Bootstrap(ctxBg(), ps), IsNil)
+	for _, name := range []string{"r1", "r2", "r3"} {
+		m.Entry(name).MarkUnhealthy(endpoints.ErrorKindLag)
+	}
+	m.Cycle(ctxBg())
+	c.Assert(m.Entry("x").IntegrityEvicted(), Equals, true)
+	c.Assert(m.Entry("a").State(), Equals, endpoints.StateHealthy)
+	c.Assert(m.Entry("b").State(), Equals, endpoints.StateHealthy)
+}

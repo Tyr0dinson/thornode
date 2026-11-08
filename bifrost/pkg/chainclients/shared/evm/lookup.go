@@ -90,13 +90,22 @@ func FindTxEverywhere(ctx context.Context, mgr *endpoints.Manager, client *ethcl
 // transaction re-confirmations and rescanned blocks, to be pinned with
 // endpoints.PinContext ("" means unpinned). A single endpoint served the block that
 // revealed the reorg, so its answers are used as before failover existed. With
-// several, the active endpoint is the witness only when its block at parentHeight is
-// parentHash, the parent of the block being scanned: that proves it has reached the
-// reorg tip on the same fork, so its "not found" is proof and the hashes it reports
-// repair the block records consistently. Otherwise the reorg step fails and is
-// retried. No other endpoint is asked, so one still on the old fork cannot veto an
-// errata.
-func ReorgWitness(ctx context.Context, mgr *endpoints.Manager, client *ethclient.Client, parentHeight int64, parentHash ecommon.Hash) (string, error) {
+// several, the active endpoint is the witness only when
+//   - its block at the scanned block's height minus one is the scanned block's parent,
+//   - its block at the scanned height is the scanned block itself (two hashes computed
+//     the same way from the same height, equal only for the same block): it is on the
+//     scanned fork, so a receipt it reports describes the scanned chain, and
+//   - its tip is at least chainHeight, the height the scan was driven by (0 skips
+//     this): it is as far as the endpoint that served the scan, so its "not found"
+//     cannot miss a transaction re-mined in a block that endpoint already has.
+//
+// Its "not found" is then proof and the hashes it reports repair the block records
+// consistently. Otherwise the reorg step fails and is retried. No other endpoint is
+// asked, so one still on the old fork cannot veto an errata. An active endpoint that
+// cannot answer these reads at all is sidelined (Manager.Sideline): it answers its
+// probes, so nothing else would move the active role off it, and the next attempt's
+// witness is the next endpoint, which has to pass the same checks.
+func ReorgWitness(ctx context.Context, mgr *endpoints.Manager, client *ethclient.Client, scanned *etypes.Header, chainHeight int64) (string, error) {
 	if mgr == nil || mgr.Len() < 2 {
 		return "", nil
 	}
@@ -104,12 +113,41 @@ func ReorgWitness(ctx context.Context, mgr *endpoints.Manager, client *ethclient
 	if !active.Usable() {
 		return "", fmt.Errorf("active endpoint %s is not usable", active.Name)
 	}
-	h, err := client.HeaderByNumber(endpoints.PinContext(ctx, active.Name), big.NewInt(parentHeight))
-	if err != nil {
-		return "", fmt.Errorf("endpoint %s: cannot read block %d: %w", active.Name, parentHeight, err)
+	pinned := endpoints.PinContext(ctx, active.Name)
+	header := func(height int64) (*etypes.Header, error) {
+		h, err := client.HeaderByNumber(pinned, big.NewInt(height))
+		if err != nil {
+			if !errors.Is(err, ethereum.NotFound) {
+				mgr.Sideline(active.Name, fmt.Sprintf("cannot serve the reorg witness's block %d", height))
+			}
+			return nil, fmt.Errorf("endpoint %s: cannot read block %d: %w", active.Name, height, err)
+		}
+		return h, nil
 	}
-	if h.Hash() != parentHash {
-		return "", fmt.Errorf("endpoint %s has block %d as %s, not the reorg parent %s: it is behind or on another fork", active.Name, parentHeight, h.Hash().Hex(), parentHash.Hex())
+	parentHeight := scanned.Number.Int64() - 1
+	parent, err := header(parentHeight)
+	if err != nil {
+		return "", err
+	}
+	if parent.Hash() != scanned.ParentHash {
+		return "", fmt.Errorf("endpoint %s has block %d as %s, not the reorg parent %s: it is behind or on another fork", active.Name, parentHeight, parent.Hash().Hex(), scanned.ParentHash.Hex())
+	}
+	same, err := header(scanned.Number.Int64())
+	if err != nil {
+		return "", err
+	}
+	if same.Hash() != scanned.Hash() {
+		return "", fmt.Errorf("endpoint %s has block %d as %s, not the scanned block %s: it holds a competing block", active.Name, scanned.Number.Int64(), same.Hash().Hex(), scanned.Hash().Hex())
+	}
+	if chainHeight > 0 {
+		tip, err := client.BlockNumber(pinned)
+		if err != nil {
+			mgr.Sideline(active.Name, "cannot serve the reorg witness's tip")
+			return "", fmt.Errorf("endpoint %s: cannot read its tip: %w", active.Name, err)
+		}
+		if int64(tip) < chainHeight {
+			return "", fmt.Errorf("endpoint %s is at block %d, behind the chain height %d the scan was driven by", active.Name, tip, chainHeight)
+		}
 	}
 	return active.Name, nil
 }

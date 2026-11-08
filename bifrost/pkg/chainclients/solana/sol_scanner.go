@@ -54,7 +54,11 @@ type SOLScanner struct {
 	solRpc     *rpc.SolRPC
 	// pinEndpoint names the endpoint a vault's paged signature listing is pinned to
 	// ("" when there is nothing to pin); set by the client when it has several
-	pinEndpoint        func() string
+	pinEndpoint func(failures int) string
+	// pinFailures counts, per vault, the pinned listings in a row that failed; it is
+	// passed to pinEndpoint, so one that keeps failing gives way to the next endpoint
+	pinFailuresMu      sync.Mutex
+	pinFailures        map[string]int
 	pubKeyMgr          pubkeymanager.PubKeyValidator
 	bridge             thorclient.ThorchainBridge
 	solvencyReporter   shtypes.SolvencyReporter
@@ -466,6 +470,9 @@ func (s *SOLScanner) scanVault(
 		res, err := listing.GetSignaturesForAddressUntil(vaultAddr, params)
 		if err != nil {
 			s.logger.Error().Err(err).Msgf("failed to get signatures for address %s", vaultAddr)
+			if pinned {
+				s.notePinFailure(vaultAddr)
+			}
 			setUnhealthy()
 			return
 		}
@@ -476,7 +483,7 @@ func (s *SOLScanner) scanVault(
 		// older signature for good. Restart this vault's listing on one endpoint
 		// (nothing of the routed page has been used yet).
 		if !pinned && before == "" && len(res) == transactionQueryLimit && s.pinEndpoint != nil {
-			if pin := s.pinEndpoint(); pin != "" {
+			if pin := s.pinEndpoint(s.pinFailureCount(vaultAddr)); pin != "" {
 				listing, pinned = s.solRpc.Pinned(pin), true
 				continue
 			}
@@ -539,11 +546,36 @@ func (s *SOLScanner) scanVault(
 		before = res[len(res)-1].Signature
 	}
 
+	s.clearPinFailures(vaultAddr)
 	successfulQueries[i] = true
 	txCounts[i] = totalTxs
 	if totalTxs > 0 {
 		newLastSigs[i], newLastSlots[i] = newestSig, newestSlot
 	}
+}
+
+// pinFailureCount returns how many pinned listings of the vault in a row failed.
+func (s *SOLScanner) pinFailureCount(vaultAddr string) int {
+	s.pinFailuresMu.Lock()
+	defer s.pinFailuresMu.Unlock()
+	return s.pinFailures[vaultAddr]
+}
+
+// notePinFailure counts one more failed pinned listing of the vault.
+func (s *SOLScanner) notePinFailure(vaultAddr string) {
+	s.pinFailuresMu.Lock()
+	defer s.pinFailuresMu.Unlock()
+	if s.pinFailures == nil {
+		s.pinFailures = make(map[string]int)
+	}
+	s.pinFailures[vaultAddr]++
+}
+
+// clearPinFailures resets the count once the vault's listing completed.
+func (s *SOLScanner) clearPinFailures(vaultAddr string) {
+	s.pinFailuresMu.Lock()
+	defer s.pinFailuresMu.Unlock()
+	delete(s.pinFailures, vaultAddr)
 }
 
 // loadVaultScanStatus returns a vault's scan status from memory, or from storage the

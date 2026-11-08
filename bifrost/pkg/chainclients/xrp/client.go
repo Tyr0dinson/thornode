@@ -151,8 +151,9 @@ func NewClient(
 		WriteMethods:   xrpWriteMethods,
 		DialTimeout:    failoverCfg.HealthCheckTimeout,
 		AttemptTimeout: evm.AttemptTimeout(requestTimeout),
-		// a provider with a shorter ledger history answers lgrNotFound or txnNotFound
-		// inside a 200; another endpoint may still have the data, so it is asked first
+		// a provider with a shorter ledger history (lgrNotFound, txnNotFound), or a
+		// server that cannot answer right now (tooBusy, notSynced, ...), says so inside
+		// a 200; another endpoint may still serve the read, so it is asked first
 		RetryElsewhere: isNotOnThisNodeBody,
 	}, logger)
 	if err != nil {

@@ -251,9 +251,17 @@ func (e *Entry) RecordProbePass() {
 
 // RecordRateLimited puts the endpoint in cooldown without changing its state.
 func (e *Entry) RecordRateLimited(backoff time.Duration) {
+	e.coolDown(backoff, ErrorKindRateLimit)
+}
+
+// coolDown takes the entry out of rotation for backoff without changing its state,
+// recording kind as its last error unless kind is empty.
+func (e *Entry) coolDown(backoff time.Duration, kind ErrorKind) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	e.lastErrorKind = ErrorKindRateLimit
+	if kind != "" {
+		e.lastErrorKind = kind
+	}
 	if backoff > 0 {
 		e.cooldownUntil = e.now().Add(backoff)
 	}

@@ -137,24 +137,42 @@ func isLedgerNotFoundBody(body []byte) bool {
 	return json.Unmarshal(body, &env) == nil && strings.Contains(env.Result.Error, "lgrNotFound")
 }
 
-// isTxnNotFoundBody reports whether a complete XRPL JSON-RPC body carries rippled's
-// txnNotFound error: the server does not have the requested transaction.
-func isTxnNotFoundBody(body []byte) bool {
+// xrpElsewhereErrors are the result.error tokens of an answer this server cannot give
+// but another may: the transaction is not in its history (txnNotFound), or it cannot
+// answer right now (busy, not synced or without a network, amendment or UNL blocked,
+// not ready). rippled and Clio put them in a 200.
+var xrpElsewhereErrors = map[string]bool{
+	"txnNotFound":      true,
+	"tooBusy":          true,
+	"noNetwork":        true,
+	"notSynced":        true,
+	"noCurrent":        true,
+	"noClosed":         true,
+	"amendmentBlocked": true,
+	"unlBlocked":       true,
+	"notReady":         true,
+}
+
+// isElsewhereErrorBody reports whether a complete XRPL JSON-RPC body carries one of
+// xrpElsewhereErrors.
+func isElsewhereErrorBody(body []byte) bool {
 	var env struct {
 		Result struct {
 			Error string `json:"error"`
 		} `json:"result"`
 	}
-	return json.Unmarshal(body, &env) == nil && env.Result.Error == "txnNotFound"
+	return json.Unmarshal(body, &env) == nil && xrpElsewhereErrors[env.Result.Error]
 }
 
 // isNotOnThisNodeBody is the router's RetryElsewhere for XRP reads: a provider with a
 // shorter history answers lgrNotFound for a pruned ledger and txnNotFound for a
-// transaction in it (the scanner's per-transaction lookups), and another endpoint may
-// still have both. Nothing is charged, and when no endpoint has it the caller gets the
-// same answer after one pass.
+// transaction in it (the scanner's per-transaction lookups), and a server that cannot
+// answer right now says so the same way; another endpoint may still serve the read.
+// Nothing is charged (a condition the whole network shares evicts nobody), and when no
+// endpoint does better the caller gets the same answer after one pass. Writes are never
+// asked elsewhere.
 func isNotOnThisNodeBody(body []byte) bool {
-	return isLedgerNotFoundBody(body) || isTxnNotFoundBody(body)
+	return isLedgerNotFoundBody(body) || isElsewhereErrorBody(body)
 }
 
 // isTransientNetError reports whether err is a transport-level failure that is

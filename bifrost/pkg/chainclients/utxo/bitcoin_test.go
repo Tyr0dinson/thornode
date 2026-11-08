@@ -241,6 +241,35 @@ func (s *BitcoinSuite) TestFetchTxs(c *C) {
 	c.Assert(len(txs.TxArray), Equals, 1)
 }
 
+// A scan step whose reorg plan cannot be completed is retried, so its block must not
+// count as a confirmation of earlier observations: the scanner height moves only once
+// the step has committed.
+func (s *BitcoinSuite) TestFetchTxsRaisesTheHeightOnlyWhenTheStepCommits(c *C) {
+	block, err := s.client.getBlock(0)
+	c.Assert(err, IsNil)
+	defer reorgParent(btcChainRPCs, block.Height-1, block.PreviousHash, ttypes.GetRandomTxHash().String())()
+	// the block before was stored from the old fork, with an inbound the primary cannot
+	// re-confirm yet
+	unknown := ttypes.GetRandomTxHash().String()
+	meta := utxo.NewBlockMeta(ttypes.GetRandomTxHash().String(), block.Height-1, ttypes.GetRandomTxHash().String())
+	meta.AddCustomerTransaction(unknown)
+	c.Assert(s.client.temporalStorage.SaveBlockMeta(block.Height-1, meta), IsNil)
+	key := rpcFixtureKey("getrawtransaction", []interface{}{unknown})
+	btcChainRPCs[key] = map[string]interface{}{"result": nil, "error": map[string]interface{}{"code": -1, "message": "busy"}, "id": 1}
+	defer delete(btcChainRPCs, key)
+
+	s.client.currentBlockHeight.Store(10)
+	_, err = s.client.FetchTxs(20, 20)
+	c.Assert(err, ErrorMatches, ".*re-org.*")
+	c.Assert(s.client.getCurrentBlockHeight(), Equals, int64(10))
+
+	// once the stored block agrees with the scanned one the step commits
+	c.Assert(s.client.temporalStorage.SaveBlockMeta(block.Height-1, utxo.NewBlockMeta(ttypes.GetRandomTxHash().String(), block.Height-1, block.PreviousHash)), IsNil)
+	_, err = s.client.FetchTxs(20, 20)
+	c.Assert(err, IsNil)
+	c.Assert(s.client.getCurrentBlockHeight(), Equals, int64(20))
+}
+
 func (s *BitcoinSuite) TestExtractTxsDoesNotToggleObservedTxCache(c *C) {
 	block, err := s.client.getBlock(0)
 	c.Assert(err, IsNil)

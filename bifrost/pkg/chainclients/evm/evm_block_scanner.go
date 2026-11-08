@@ -261,7 +261,7 @@ func (e *EVMScanner) FetchTxs(height, chainHeight int64) (stypes.TxIn, error) {
 	if err != nil {
 		return stypes.TxIn{}, err
 	}
-	txIn, err := e.processBlock(block)
+	txIn, err := e.processBlock(block, chainHeight)
 	if err != nil {
 		e.logger.Error().Err(err).Int64("height", height).Msg("failed to search tx in block")
 		return stypes.TxIn{}, fmt.Errorf("failed to process block: %d, err:%w", height, err)
@@ -319,7 +319,7 @@ func (e *EVMScanner) updateCurrentBlockHeight(height int64) {
 
 // --------------------------------- extraction ---------------------------------
 
-func (e *EVMScanner) processBlock(block *etypes.Block) (stypes.TxIn, error) {
+func (e *EVMScanner) processBlock(block *etypes.Block, chainHeight int64) (stypes.TxIn, error) {
 	txIn := stypes.TxIn{
 		Chain:    e.cfg.ChainID,
 		TxArray:  nil,
@@ -342,7 +342,7 @@ func (e *EVMScanner) processBlock(block *etypes.Block) (stypes.TxIn, error) {
 	var plan *reorgPlan
 	if e.cfg.MaxReorgRescanBlocks > 0 {
 		var err error
-		plan, err = e.planReorgWith(block.Header(), block.Transactions())
+		plan, err = e.planReorgWith(block.Header(), block.Transactions(), chainHeight)
 		if err != nil {
 			e.logger.Error().Err(err).Msgf("fail to process reorg for block %d", block.NumberU64())
 			return txIn, err
@@ -895,13 +895,14 @@ type reorgPlan struct {
 // cleanup is idempotent), and any read that cannot be answered aborts it, so the scan
 // step is retried as a whole.
 func (e *EVMScanner) planReorg(header *etypes.Header) (*reorgPlan, error) {
-	return e.planReorgWith(header, nil)
+	return e.planReorgWith(header, nil, 0)
 }
 
-// planReorgWith is planReorg for the scanned block, whose transactions are scanned:
-// the witness's "not found" for a stored transaction the scanned block lists is not
-// believed (evm.ScannedTxHashes).
-func (e *EVMScanner) planReorgWith(header *etypes.Header, scanned etypes.Transactions) (*reorgPlan, error) {
+// planReorgWith is planReorg for the scanned block, whose transactions are scanned,
+// and the chain height the scan was driven by, which the witness must have reached
+// (evm.ReorgWitness): the witness's "not found" for a stored transaction the scanned
+// block lists is not believed (evm.ScannedTxHashes).
+func (e *EVMScanner) planReorgWith(header *etypes.Header, scanned etypes.Transactions, chainHeight int64) (*reorgPlan, error) {
 	previousHeight := header.Number.Int64() - 1
 	prevBlockMeta, err := e.blockMetaAccessor.GetBlockMeta(previousHeight)
 	if err != nil {
@@ -928,7 +929,7 @@ func (e *EVMScanner) planReorgWith(header *etypes.Header, scanned etypes.Transac
 		return nil, fmt.Errorf("fail to get block metas from local storage: %w", err)
 	}
 	wctx, wcancel := context.WithTimeout(context.Background(), e.cfg.HTTPRequestTimeout)
-	witness, err := evm.ReorgWitness(wctx, e.endpointMgr, e.ethClient, previousHeight, header.ParentHash)
+	witness, err := evm.ReorgWitness(wctx, e.endpointMgr, e.ethClient, header, chainHeight)
 	wcancel()
 	if err != nil {
 		return nil, fmt.Errorf("reorg at height %d: %w", header.Number.Int64(), err)

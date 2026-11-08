@@ -24,11 +24,12 @@ import (
 // pagingNode answers getSignaturesForAddress like a Solana node: it has total
 // signatures newest first, listed transactionQueryLimit per page; a "before" it does
 // not know gives an empty page (Agave's behaviour). failBefore makes its next paged
-// request fail once with HTTP 502. Every transaction failed on chain, so the scan
-// skips them without observing anything.
+// request fail once with HTTP 502, failPaged every paged request. Every transaction
+// failed on chain, so the scan skips them without observing anything.
 type pagingNode struct {
 	sigs       []string
 	failBefore atomic.Bool
+	failPaged  atomic.Bool
 	listings   atomic.Int32
 }
 
@@ -48,7 +49,7 @@ func (n *pagingNode) handler(rw http.ResponseWriter, req *http.Request) {
 		if len(call.Params) > 1 {
 			_ = json.Unmarshal(call.Params[1], &opts)
 		}
-		if opts.Before != "" && n.failBefore.CompareAndSwap(true, false) {
+		if opts.Before != "" && (n.failBefore.CompareAndSwap(true, false) || n.failPaged.Load()) {
 			rw.WriteHeader(http.StatusBadGateway)
 			return
 		}
@@ -104,7 +105,7 @@ func (s *SolTestSuite) TestVaultCatchUpListsEveryPageFromOneEndpoint(c *C) {
 	scanner := &SOLScanner{
 		logger: zerolog.Nop(),
 		solRpc: rpc.NewSolRPCWithClient(endpoints.SyntheticBase(common.SOLChain).String(), 2*time.Second, &http.Client{Transport: router, Timeout: 2 * time.Second}),
-		pinEndpoint: func() string {
+		pinEndpoint: func(int) string {
 			return mgr.ReadCandidates()[0].Name
 		},
 	}
@@ -249,4 +250,56 @@ func (s *SolTestSuite) TestVaultCursorSlotIsKept(c *C) {
 	vss, err = restarted.loadVaultScanStatus("legacy")
 	c.Assert(err, IsNil)
 	c.Assert(vss, DeepEquals, vaultScanStatus{lastSig: "oldsig", lastSlot: 900})
+}
+
+// An endpoint that keeps failing a later page of a vault's listing gives way to the
+// next candidate after solPinRetries failed listings. Its other requests succeed and
+// its probes pass, so it is never evicted, and pinning it again every round would
+// leave the vault's older signatures unread for as long as it fails.
+func (s *SolTestSuite) TestVaultListingThatKeepsFailingMovesToTheNextEndpoint(c *C) {
+	sigs := make([]string, transactionQueryLimit+5)
+	for i := range sigs {
+		sigs[i] = fmt.Sprintf("sig%04d", i)
+	}
+	a, b := &pagingNode{sigs: sigs}, &pagingNode{sigs: sigs}
+	a.failPaged.Store(true)
+	sa, sb := httptest.NewServer(http.HandlerFunc(a.handler)), httptest.NewServer(http.HandlerFunc(b.handler))
+	defer sa.Close()
+	defer sb.Close()
+	eps := []config.ChainEndpointConfig{{Name: "a", RPCHost: sa.URL, Priority: 1}, {Name: "b", RPCHost: sb.URL, Priority: 2}}
+	cfg := config.BifrostChainConfiguration{ChainID: common.SOLChain}
+	mgr, err := endpoints.NewManager(common.SOLChain, eps, cfg.GetFailoverConfig(), zerolog.Nop())
+	c.Assert(err, IsNil)
+	for _, e := range mgr.Entries() {
+		e.SetIdentity("genesis")
+	}
+	targets, err := endpoints.TargetsFrom(eps, endpoints.RPCHost)
+	c.Assert(err, IsNil)
+	router, err := endpoints.NewHTTPRouter(mgr, endpoints.HTTPRouterConfig{Base: endpoints.SyntheticBase(common.SOLChain), Targets: targets}, zerolog.Nop())
+	c.Assert(err, IsNil)
+	scanner := &SOLScanner{
+		logger:      zerolog.Nop(),
+		solRpc:      rpc.NewSolRPCWithClient(endpoints.SyntheticBase(common.SOLChain).String(), 2*time.Second, &http.Client{Transport: router, Timeout: 2 * time.Second}),
+		pinEndpoint: func(failures int) string { return pinCandidate(mgr, failures) },
+	}
+	scan := func() (ok bool, count int, cursor string) {
+		txCounts, oks, cursors := make([]int, 1), make([]bool, 1), make([]string, 1)
+		var wg sync.WaitGroup
+		wg.Add(1)
+		scanner.scanVault("vault", 0, "", 0, 0, func() {}, txCounts, oks, cursors, make([]uint64, 1), &wg)
+		wg.Wait()
+		return oks[0], txCounts[0], cursors[0]
+	}
+
+	for round := 0; round < solPinRetries; round++ {
+		ok, _, _ := scan()
+		c.Assert(ok, Equals, false, Commentf("round %d", round))
+	}
+	c.Assert(b.listings.Load(), Equals, int32(0))
+	ok, count, cursor := scan()
+	c.Assert(ok, Equals, true)
+	c.Assert(count, Equals, transactionQueryLimit+5)
+	c.Assert(cursor, Equals, "sig0000")
+	c.Assert(b.listings.Load() > 0, Equals, true)
+	c.Assert(mgr.Entry("a").State(), Equals, endpoints.StateHealthy) // never evicted: it answers everything else
 }

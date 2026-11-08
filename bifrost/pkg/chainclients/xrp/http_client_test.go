@@ -345,6 +345,31 @@ func TestIsNotOnThisNodeBody(t *testing.T) {
 	}
 }
 
+// A server that cannot answer right now (busy, not synced, no network, amendment or
+// UNL blocked, not ready) answers inside a 200 too. Another endpoint may be fine, so
+// the read is asked there first and nothing is charged: a condition the whole network
+// shares then costs one pass and evicts nobody.
+func TestServerStateErrorsAreAskedElsewhere(t *testing.T) {
+	for _, token := range []string{"tooBusy", "noNetwork", "notSynced", "noCurrent", "noClosed", "amendmentBlocked", "unlBlocked", "notReady"} {
+		body := `{"result":{"error":"` + token + `","status":"error"}}`
+		if !isNotOnThisNodeBody([]byte(body)) {
+			t.Fatalf("%s is not asked elsewhere", token)
+		}
+		if isNotOnThisNodeBody([]byte(`{"result":{"error":"` + token + `X","status":"error"}}`)) {
+			t.Fatalf("a near miss of %s is asked elsewhere", token)
+		}
+	}
+	for _, body := range []string{
+		`{"result":{"error":"invalidParams","status":"error"}}`,
+		`{"result":{"error":"actMalformed","status":"error"}}`,
+		`{"result":{"engine_result":"tefPAST_SEQ","status":"success"}}`,
+	} {
+		if isNotOnThisNodeBody([]byte(body)) {
+			t.Fatalf("%s is asked elsewhere", body)
+		}
+	}
+}
+
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }

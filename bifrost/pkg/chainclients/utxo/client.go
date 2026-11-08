@@ -597,8 +597,6 @@ func (c *Client) FetchTxs(height, chainHeight int64) (types.TxIn, error) {
 		return txIn, fmt.Errorf("fail to get block: %w", err)
 	}
 
-	c.updateCurrentBlockHeight(height)
-
 	// Reorg handling is planned first and committed last: errata, repaired block
 	// metas and the rescanned observations are reported and persisted only once every
 	// fallible step of this scan step has succeeded. If one fails nothing was
@@ -627,6 +625,10 @@ func (c *Client) FetchTxs(height, chainHeight int64) (types.TxIn, error) {
 		return types.TxIn{}, fmt.Errorf("fail to extract txIn from block: %w", err)
 	}
 	c.commitReorg(plan)
+	// the block counts as a confirmation of earlier observations (ConfirmationCountReady)
+	// only now that its step has committed: a step that failed above is retried, and
+	// while its reorg is undecided it must not release what that reorg may remove
+	c.updateCurrentBlockHeight(height)
 	if plan != nil {
 		for _, item := range plan.txIns {
 			if len(item.TxArray) == 0 {

@@ -2112,6 +2112,18 @@ func TestClassifyRPCErrorChargesAGatewayRefusal(t *testing.T) {
 	}
 }
 
+// A daemon still warming up (RPC_IN_WARMUP, -28) refuses before running the request:
+// it has not served the read, so it is charged and the read moves on, like a method it
+// cannot serve.
+func TestClassifyRPCErrorWarmupIsAnEndpointError(t *testing.T) {
+	warmup := ethrpc.HTTPError{StatusCode: 500, Status: "500 Internal Server Error", Body: []byte(`{"result":null,"error":{"code":-28,"message":"Loading block index..."},"id":1}`)}
+	for _, err := range []error{warmup, extractBTCError(warmup), btcjson.NewRPCError(btcjson.ErrRPCInWarmup, "Loading wallet...")} {
+		if got := classifyRPCError(err); got != verdictEndpointError {
+			t.Fatalf("%v: got verdict %d, want an endpoint error", err, got)
+		}
+	}
+}
+
 // An HTTP 429 answered with a generic JSON-RPC error body keeps its rate-limit
 // classification through extractBTCError, which the fallback clients return through.
 func TestExtractBTCErrorKeepsRateLimit(t *testing.T) {

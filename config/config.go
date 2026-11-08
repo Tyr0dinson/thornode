@@ -913,9 +913,9 @@ type ChainFailoverConfig struct {
 	// answer in time counts as a failed check (issue #2828 "provider is slow").
 	// Clamped to HealthCheckInterval/2 when larger. Default: 5s.
 	HealthCheckTimeout time.Duration `mapstructure:"health_check_timeout"`
-	// IntegrityCheckDepth, when > 0, makes the health monitor compare the block hash at
-	// (consensus tip - depth) across healthy endpoints each cycle and count a minority
-	// hash as a probe strike. 0 disables the check. Chains with skipped slots (SOL)
+	// IntegrityCheckDepth, when > 0, makes the health monitor compare the block hash
+	// depth below the healthy endpoints' level (the lower median of their heights)
+	// across healthy endpoints each cycle and count a minority hash as a probe strike. 0 disables the check. Chains with skipped slots (SOL)
 	// must keep 0.
 	IntegrityCheckDepth int64 `mapstructure:"integrity_check_depth"`
 }

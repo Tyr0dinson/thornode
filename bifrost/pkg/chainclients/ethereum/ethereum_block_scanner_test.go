@@ -1159,7 +1159,7 @@ func (s *BlockScannerTestSuite) TestProcessReOrg(c *C) {
 	to := common.HexToAddress("0xf02c1c8e6114b1dbe8937a39260b5b0a374432bb")
 	tx := etypes.NewTx(&etypes.LegacyTx{Nonce: 1, To: &to, Value: big.NewInt(1), Gas: 21000, GasPrice: big.NewInt(1)})
 	current := etypes.NewBlockWithHeader(blockNew).WithBody(etypes.Body{Transactions: []*etypes.Transaction{tx}})
-	_, err = bs.processBlock(current)
+	_, err = bs.processBlock(current, 0)
 	c.Assert(err, NotNil)
 	c.Assert(bs.globalErrataQueue, HasLen, 0)
 	blockMeta, err = bs.blockMetaAccessor.GetBlockMeta(0)

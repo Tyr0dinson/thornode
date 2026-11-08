@@ -260,7 +260,9 @@ func classifyRPCError(err error) rpcVerdict {
 	switch code {
 	case -32005, -32029:
 		return verdictRateLimit
-	case -32601, -32603:
+	case -32601, -32603, int(btcjson.ErrRPCInWarmup):
+		// a method it cannot serve, an internal error, or still warming up (-28,
+		// refused before the request runs): the endpoint has not served the read
 		return verdictEndpointError
 	}
 	return verdictApplication

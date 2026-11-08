@@ -295,18 +295,29 @@ func NewSOLClient(
 	if err != nil {
 		return c, fmt.Errorf("fail to create solana scanner: %w", err)
 	}
-	c.solScanner.pinEndpoint = func() string {
-		if c.endpointMgr == nil || c.endpointMgr.Len() < 2 {
-			return ""
-		}
-		// the first endpoint a routed read would use; none when nothing is usable
-		if candidates := c.endpointMgr.ReadCandidates(); len(candidates) > 0 {
-			return candidates[0].Name
-		}
-		return ""
-	}
+	c.solScanner.pinEndpoint = func(failures int) string { return pinCandidate(c.endpointMgr, failures) }
 
 	return c, nil
+}
+
+// solPinRetries is how many pinned listings of one vault in a row may fail on an
+// endpoint before the next candidate is pinned: a single transient failure retries the
+// same endpoint, one that keeps failing a page gives way to another.
+const solPinRetries = 3
+
+// pinCandidate names the endpoint a vault's paged signature listing is pinned to, after
+// failures pinned listings of that vault in a row failed: the first endpoint a routed
+// read would use, then the next one every solPinRetries failures. "" with fewer than
+// two endpoints or none usable.
+func pinCandidate(mgr *endpoints.Manager, failures int) string {
+	if mgr == nil || mgr.Len() < 2 {
+		return ""
+	}
+	candidates := mgr.ReadCandidates()
+	if len(candidates) == 0 {
+		return ""
+	}
+	return candidates[(failures/solPinRetries)%len(candidates)].Name
 }
 
 // Start starts the chain client with the given queues.

@@ -1162,7 +1162,7 @@ func (s *BlockScannerTestSuite) TestProcessReOrg(c *C) {
 	current := etypes.NewBlockWithHeader(blockNew).WithBody(etypes.Body{Transactions: []*etypes.Transaction{
 		etypes.NewTx(&etypes.LegacyTx{Nonce: 1, To: &to, Value: big.NewInt(1), Gas: 21000, GasPrice: big.NewInt(1)}),
 	}})
-	_, err = bs.processBlock(current)
+	_, err = bs.processBlock(current, 0)
 	c.Assert(err, NotNil)
 	c.Assert(bs.globalErrataQueue, HasLen, 0)
 	blockMeta, err = bs.blockMetaAccessor.GetBlockMeta(0)

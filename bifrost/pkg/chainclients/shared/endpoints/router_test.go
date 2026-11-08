@@ -864,6 +864,38 @@ func (s *RouterSuite) TestRetryElsewhereAsksTheNextCandidateWithoutCharging(c *C
 	c.Assert(m2.Entry("short").State(), Equals, endpoints.StateHealthy)
 }
 
+// A write is never asked elsewhere, whatever its answer says: a "busy" answer to a
+// broadcast goes to the caller, sent once.
+func (s *RouterSuite) TestRetryElsewhereNeverResendsAWrite(c *C) {
+	var st int32 = http.StatusOK
+	var h1, h2 []hit
+	busy := rpcServer(&st, &h1, `{"result":{"error":"tooBusy","error_code":9,"status":"error"}}`)
+	defer busy.Close()
+	other := rpcServer(&st, &h2, `{"result":{"engine_result":"tesSUCCESS","status":"success"}}`)
+	defer other.Close()
+	m, targets := twoEndpointMgr(c, common.XRPChain, []config.ChainEndpointConfig{{Name: "busy", RPCHost: busy.URL, Priority: 1}, {Name: "other", RPCHost: other.URL, Priority: 2}}, 1)
+	notHere := func(body []byte) bool { return bytes.Contains(body, []byte(`"tooBusy"`)) }
+	r, err := endpoints.NewHTTPRouter(m, endpoints.HTTPRouterConfig{Base: endpoints.SyntheticBase(m.Chain()), Targets: targets, WriteMethods: []string{"submit"}, RetryElsewhere: notHere}, zerolog.Nop())
+	c.Assert(err, IsNil)
+	hc := &http.Client{Transport: r, Timeout: 2 * time.Second}
+
+	resp, err := post(c, hc, base(m), "submit")
+	c.Assert(err, IsNil)
+	body, _ := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	c.Assert(string(body), Matches, `.*tooBusy.*`)
+	c.Assert(h1, HasLen, 1)
+	c.Assert(h2, HasLen, 0)
+
+	// the same answer to a read is asked elsewhere
+	resp, err = post(c, hc, base(m), "ledger")
+	c.Assert(err, IsNil)
+	body, _ = io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	c.Assert(string(body), Matches, `.*tesSUCCESS.*`)
+	c.Assert(h2, HasLen, 1)
+}
+
 // When no candidate is left after an endpoint-level JSON-RPC error (here a single
 // endpoint's -32603), the error the caller gets carries the node's code and message,
 // not a bare status; the endpoint is charged for it.
