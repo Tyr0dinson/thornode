@@ -31,6 +31,21 @@ func (b *fakeOutboundBridge) GetAsgards() (ttypes.Vaults, error) {
 	return b.vaults, nil
 }
 
+// fakeOutboundHeightBridge also serves the Asgard set as of a height, like the
+// production bridge.
+type fakeOutboundHeightBridge struct {
+	fakeOutboundBridge
+	atHeight    map[int64]ttypes.Vaults
+	atHeightErr error
+}
+
+func (b *fakeOutboundHeightBridge) GetAsgardsAtHeight(height int64) (ttypes.Vaults, error) {
+	if b.atHeightErr != nil {
+		return nil, b.atHeightErr
+	}
+	return b.atHeight[height], nil
+}
+
 func newVault(t *testing.T, status ttypes.VaultStatus, vaultType ttypes.VaultType) ttypes.Vault {
 	t.Helper()
 	v := ttypes.NewVaultV2(1, status, vaultType, ttypes.GetRandomPubKey(),
@@ -245,6 +260,21 @@ func TestOutboundHaltBlocks(t *testing.T) {
 		blocked, _, err := signing.OutboundHaltBlocks(b, external, 100)
 		if err != nil || blocked {
 			t.Fatalf("HaltOutboundETH must not block BTC: blocked=%v err=%v", blocked, err)
+		}
+	})
+	t.Run("vaults read at height, not from the live cache", func(t *testing.T) {
+		// The live (cached) set predates the rotation and lacks the new vault.
+		b := &fakeOutboundHeightBridge{
+			fakeOutboundBridge: fakeOutboundBridge{fakeBridge: fakeBridge{mimirs: map[string]int64{"HaltOutboundBTC": 1}}},
+			atHeight:           map[int64]ttypes.Vaults{100: {active}},
+		}
+		blocked, _, err := signing.OutboundHaltBlocks(b, internal, 100)
+		if err != nil || blocked || b.asgardCalls != 0 {
+			t.Fatalf("round-1 MIGRATE must pass: blocked=%v err=%v asgardCalls=%d", blocked, err, b.asgardCalls)
+		}
+		b.atHeightErr = errors.New("boom")
+		if _, _, err := signing.OutboundHaltBlocks(b, internal, 100); err == nil {
+			t.Fatal("want error so the caller does not sign")
 		}
 	})
 	t.Run("vault read error fails closed", func(t *testing.T) {

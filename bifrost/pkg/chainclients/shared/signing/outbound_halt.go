@@ -143,17 +143,31 @@ func IsAsgardAddress(chain common.Chain, addr common.Address, vaults ttypes.Vaul
 	return false
 }
 
+// asgardsAtHeightReader is implemented by the production thorchain bridge.
+type asgardsAtHeightReader interface {
+	GetAsgardsAtHeight(height int64) (ttypes.Vaults, error)
+}
+
 // OutboundHaltBlocks reports whether HaltOutbound forbids signing tx at height.
 // It returns false when no outbound halt is active, without touching the vault
 // set. Under an active halt it fetches the Asgard vaults and blocks unless
 // IsInternalTxOut accepts tx. Any read error is returned and the caller must
 // not sign (fail closed). The halt that applies is tx.Chain's.
+//
+// The vaults are read as of height when the bridge supports it, not from the
+// live one-block cache: in the rotation block a cached pre-rotation list lacks
+// the new Active vault, and a round-1 MIGRATE to it would be refused.
 func OutboundHaltBlocks(bridge OutboundHaltChecker, tx stypes.TxOutItem, height int64) (blocked, global bool, err error) {
 	halted, global, err := CheckOutboundHalt(bridge, tx.Chain, height)
 	if err != nil || !halted {
 		return false, false, err
 	}
-	vaults, err := bridge.GetAsgards()
+	var vaults ttypes.Vaults
+	if r, ok := bridge.(asgardsAtHeightReader); ok {
+		vaults, err = r.GetAsgardsAtHeight(height)
+	} else {
+		vaults, err = bridge.GetAsgards()
+	}
 	if err != nil {
 		return false, global, fmt.Errorf("fail to get asgard vaults for outbound halt: %w", err)
 	}
