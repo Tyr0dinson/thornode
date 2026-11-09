@@ -894,7 +894,7 @@ func (s *BlockScannerExtraSuite) TestScanBlocksProcessesTxs(c *C) {
 		StartBlockHeight:           1,
 		BlockScanProcessors:        1,
 		HTTPRequestTimeout:         time.Second,
-		BlockHeightDiscoverBackoff: 100 * time.Millisecond,
+		BlockHeightDiscoverBackoff: 10 * time.Millisecond, // Stop waits out the at-tip / failed-fetch backoff
 		BlockRetryInterval:         100 * time.Millisecond,
 		ChainID:                    common.ETHChain,
 		MaxHealthyLag:              time.Hour,
@@ -948,7 +948,7 @@ func (s *BlockScannerExtraSuite) TestScanBlocksWithPrefetch(c *C) {
 		StartBlockHeight:           1,
 		BlockScanProcessors:        1,
 		HTTPRequestTimeout:         time.Second,
-		BlockHeightDiscoverBackoff: 100 * time.Millisecond,
+		BlockHeightDiscoverBackoff: 10 * time.Millisecond, // Stop waits out the at-tip / failed-fetch backoff
 		BlockRetryInterval:         100 * time.Millisecond,
 		ChainID:                    common.ETHChain,
 		PrefetchBlocks:             3,
@@ -1195,7 +1195,7 @@ func (s *BlockScannerExtraSuite) TestScanBlocksFetchError(c *C) {
 		StartBlockHeight:           1,
 		BlockScanProcessors:        1,
 		HTTPRequestTimeout:         time.Second,
-		BlockHeightDiscoverBackoff: 100 * time.Millisecond,
+		BlockHeightDiscoverBackoff: 10 * time.Millisecond, // Stop waits out the at-tip / failed-fetch backoff
 		BlockRetryInterval:         100 * time.Millisecond,
 		ChainID:                    common.ETHChain,
 	}, mss, m, bridge, fetcher)
