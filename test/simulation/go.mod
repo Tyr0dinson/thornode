@@ -4,6 +4,7 @@ go 1.26.10
 
 require (
 	cosmossdk.io/math v1.5.3
+	github.com/CosmWasm/wasmd v0.54.10
 	github.com/Peersyst/xrpl-go v0.1.3
 	github.com/blocto/solana-go-sdk v1.30.0
 	github.com/btcsuite/btcd v0.24.2
@@ -92,7 +93,6 @@ require (
 	filippo.io/bigmod v0.1.0 // indirect
 	github.com/99designs/go-keychain v0.0.0-20191008050251-8e49817e8af4 // indirect
 	github.com/BurntSushi/toml v1.4.0 // indirect
-	github.com/CosmWasm/wasmd v0.54.10 // indirect
 	github.com/CosmWasm/wasmvm/v2 v2.2.9 // indirect
 	github.com/DataDog/datadog-go v4.8.3+incompatible // indirect
 	github.com/DataDog/zstd v1.5.7 // indirect

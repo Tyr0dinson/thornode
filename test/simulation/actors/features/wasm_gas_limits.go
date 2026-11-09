@@ -305,7 +305,7 @@ func (a *wasmGasLimitsActor) broadcastMimirs(config *OpConfig, values map[string
 	sort.Strings(keys)
 	for _, key := range keys {
 		value := values[key]
-		actor := newMultiNodeMimirActor(key, value, a.rng)
+		actor := NewMultiNodeMimirActor(key, value, a.rng)
 		actor.InitRoot()
 		if err := actor.Execute(config); err != nil {
 			return OpResult{Error: err}
