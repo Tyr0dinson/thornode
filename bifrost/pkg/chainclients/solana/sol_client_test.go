@@ -413,13 +413,23 @@ func (m *mockSOLThorchainKeyManager) RemoteSign(_ []byte, _ common.SigningAlgo, 
 	return nil, nil, m.err
 }
 
-// newTestSignerCacheManager creates a CacheManager backed by a temp LevelDB for tests.
+// newTestSignerCacheManager creates a CacheManager backed by a fresh in-memory LevelDB
+// for tests (an on-disk one costs ~40ms of fsyncs per client).
 func newTestSignerCacheManager(c *C) *signercache.CacheManager {
-	storage, err := blockscanner.NewBlockScannerStorageSolana(c.MkDir(), config.LevelDBOptions{})
+	storage, err := blockscanner.NewBlockScannerStorageSolana("", config.LevelDBOptions{})
 	c.Assert(err, IsNil)
 	mgr, err := signercache.NewSignerCacheManager(storage.GetInternalDb())
 	c.Assert(err, IsNil)
 	return mgr
+}
+
+// Each test signer cache starts empty and is not shared with any other.
+func (s *SolTestSuite) TestNewTestSignerCacheManagerIsolated(c *C) {
+	a, b := newTestSignerCacheManager(c), newTestSignerCacheManager(c)
+	c.Assert(a.SetSigned("item", "vault", "txhash"), IsNil)
+	c.Check(a.HasSigned("item"), Equals, true)
+	c.Check(b.HasSigned("item"), Equals, false)
+	c.Check(newTestSignerCacheManager(c).HasSigned("item"), Equals, false)
 }
 
 // TestSignSOLTx_PostKeysignFailureOnEdDSAFinalRound verifies that blamed EdDSA
