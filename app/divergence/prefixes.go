@@ -71,6 +71,7 @@ var thorchainPrefixes = map[string]string{
 	"jail/":                          "prefixNodeJail",
 	"node_blame/":                    "prefixNodeBlameRecord",
 	"swapitem/":                      "prefixSwapQueueItem",
+	"malformed_swap_purge/":          "prefixMalformedSwapPurge",
 	"aq/":                            "prefixAdvSwapQueueItem",
 	"aqlim/":                         "prefixAdvSwapQueueLimitIndex",
 	"aqmark/":                        "prefixAdvSwapQueueMarketIndex",
