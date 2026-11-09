@@ -50,6 +50,8 @@ var thorchainPrefixes = map[string]string{
 	"pol/":                           "prefixPOL",
 	"pol_reserve/":                   "prefixPOLReserve",
 	"stable_reserve_credit/":         "prefixStableReserveCredit",
+	"stable_reserve_deposit/":        "prefixStableReserveDeposit",
+	"stable_reserve_basis/":          "prefixStableReserveBasis",
 	"tr_acct/":                       "prefixTradeAccount",
 	"sa/":                            "prefixSecuredAsset",
 	"rune_provider/":                 "prefixRUNEProvider",
