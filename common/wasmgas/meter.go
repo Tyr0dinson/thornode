@@ -85,7 +85,7 @@ func (m *Meter) activate(maxGasPerTx, maxGasPerBlock int64, blockGasConsumed sto
 // allowance by DefaultGasMultiplier. Without this bound an oversized runtime
 // configuration deterministically panics every attempted Wasm execution.
 func safeWasmGas(configured int64) storetypes.Gas {
-	return min(storetypes.Gas(configured), storetypes.Gas(maxWasmSDKGas)) // #nosec G115 -- callers guard configured > 0
+	return min(storetypes.Gas(configured), maxWasmSDKGas) // #nosec G115 -- callers guard configured > 0
 }
 
 func saturatingAdd(a, b storetypes.Gas) storetypes.Gas {

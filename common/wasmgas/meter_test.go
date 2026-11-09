@@ -87,7 +87,7 @@ func TestActivateCountsGasConsumedBeforeWasm(t *testing.T) {
 }
 
 func TestActivateClampsLimitsToWasmVMConversionRange(t *testing.T) {
-	require.Less(t, uint64(maxWasmSDKGas), uint64(math.MaxInt64))
+	require.Less(t, maxWasmSDKGas, uint64(math.MaxInt64))
 
 	for _, limits := range [][2]int64{
 		{math.MaxInt64, 0},
@@ -95,7 +95,7 @@ func TestActivateClampsLimitsToWasmVMConversionRange(t *testing.T) {
 		{int64(maxWasmSDKGas + 1), int64(maxWasmSDKGas + 1)},
 	} {
 		ctx := Activate(testContext(), limits[0], limits[1])
-		require.Equal(t, uint64(maxWasmSDKGas), ctx.GasMeter().Limit())
+		require.Equal(t, maxWasmSDKGas, ctx.GasMeter().Limit())
 		require.NotPanics(t, func() {
 			wasmtypes.NewDefaultWasmGasRegister().ToWasmVMGas(ctx.GasMeter().GasRemaining())
 		})
