@@ -326,7 +326,15 @@ func (s *LuviOverhangGuardSuite) TestPOLReserveCycleSkipsOverhangPool(c *C) {
 	c.Assert(k.AddToLiquidityFees(e.ctx, common.BTCAsset, cosmos.NewUint(1)), IsNil)
 	FundModule(c, e.ctx, k, POLReserveName, 50*common.One)
 	k.SetMimir(e.ctx, constants.POLReserveMaxDeployment.String(), int64(100*common.One))
+	k.SetMimir(e.ctx, constants.POLCycle.String(), 1)
 	nm := newNetworkMgr(k, e.mgr.TxOutStore(), e.mgr.EventMgr())
+
+	// the snapshot passes over the overhang pool and targets BTC
+	c.Assert(nm.POLReserveSnapshot(e.ctx, e.mgr), IsNil)
+	target, found, err := k.GetPOLReserveTarget(e.ctx)
+	c.Assert(err, IsNil)
+	c.Assert(found, Equals, true)
+	c.Check(target.Equals(common.BTCAsset), Equals, true)
 
 	c.Assert(nm.POLReserveCycle(e.ctx, e.mgr), IsNil)
 	dEth, err := k.GetPOLReserveDeposit(e.ctx, e.asset)
