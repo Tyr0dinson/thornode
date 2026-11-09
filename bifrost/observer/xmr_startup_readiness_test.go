@@ -20,6 +20,11 @@ import (
 	"gitlab.com/thorchain/thornode/v3/constants"
 )
 
+// testXMRErrataMaintenanceInterval paces maintenance in tests that wait for
+// its retry passes; TestXMRPeriodicRetryStartsClientAfterFailure keeps the
+// production default.
+const testXMRErrataMaintenanceInterval = 50 * time.Millisecond
+
 func TestXMRStartupMissingClientKeepsOtherChainsAvailable(t *testing.T) {
 	o, storage := newErrataOrderingObserver(t)
 	er := common.ErrataTx{Chain: common.XMRChain, Id: "historical-reversal"}
@@ -80,6 +85,8 @@ func TestXMRStartupRestoresCompletedQuarantineAfterRestart(t *testing.T) {
 		logger: zerolog.Nop(), storage: storage, lock: &sync.Mutex{},
 		onDeck: make(map[txInKey]*types.TxIn), stopChan: make(chan struct{}),
 		chains: map[common.Chain]chainclients.ChainClient{common.XMRChain: xmr, common.BTCChain: btc},
+
+		xmrErrataMaintenanceInterval: testXMRErrataMaintenanceInterval,
 	}
 	runtimeErrata := common.ErrataTx{Chain: common.XMRChain, Id: "reverted-after-startup"}
 	calls := make(map[common.TxID]int)
@@ -131,6 +138,7 @@ func TestXMRStartupSharedStorageCorruptionRemainsFatal(t *testing.T) {
 func TestXMRStartupRetriesReplayAndChecksNewReceipts(t *testing.T) {
 	o, storage := newErrataOrderingObserver(t)
 	o.stopChan = make(chan struct{})
+	o.xmrErrataMaintenanceInterval = testXMRErrataMaintenanceInterval
 	completed := common.ErrataTx{Chain: common.XMRChain, Id: "completed"}
 	first := common.ErrataTx{Chain: common.XMRChain, Id: "first-pending"}
 	late := common.ErrataTx{Chain: common.XMRChain, Id: "late-pending"}

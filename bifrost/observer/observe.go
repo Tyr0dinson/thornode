@@ -141,6 +141,9 @@ type Observer struct {
 	errataAttestMu                  sync.Mutex
 	errataOutcomeMu                 sync.Mutex
 	sendObservedTxsFn               func(common.ObservedTxs, bool)
+	// xmrErrataMaintenanceInterval paces maintainXMRErrata. Production leaves
+	// it zero: one THORChain block time. Tests shorten it per observer.
+	xmrErrataMaintenanceInterval time.Duration
 }
 
 // NewObserver create a new instance of Observer for chain
@@ -346,7 +349,11 @@ func (o *Observer) stopStartedChainClients() {
 // maintainXMRErrata restores startup quarantine once, then owns ongoing cleanup.
 // Durable unresolved receipts survive missed ticks, failures and restart.
 func (o *Observer) maintainXMRErrata(ctx context.Context, restoreQuarantines bool) {
-	ticker := time.NewTicker(constants.ThorchainBlockTime)
+	interval := o.xmrErrataMaintenanceInterval
+	if interval <= 0 {
+		interval = constants.ThorchainBlockTime
+	}
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
 		select {

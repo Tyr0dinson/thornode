@@ -55,6 +55,7 @@ func (c *historicalXMRConfirmationChain) ConfirmationCountReady(tctypes.TxIn) bo
 // attestations are collected and marked across both values of the unsigned
 // AllowFutureObservation routing flag.
 func TestObservedXMRPayloadLookupMatchesAllLiveKeys(t *testing.T) {
+	t.Parallel()
 	ag, _, _, _, _, _ := setupTestGossip(t)
 	obsTx, _ := observerTestXMRPlan(t)
 	first := secp256k1.GenPrivKey()
@@ -90,6 +91,7 @@ func TestObservedXMRPayloadLookupMatchesAllLiveKeys(t *testing.T) {
 // lossy txKey match cannot contribute signatures or mark a state unless the
 // complete signed payload also matches the certificate.
 func TestObservedXMRPayloadLookupRejectsSameKeyDifferentPayload(t *testing.T) {
+	t.Parallel()
 	ag, _, _, _, _, _ := setupTestGossip(t)
 	obsTx, _ := observerTestXMRPlan(t)
 	ag.handleObservedTxAttestation(context.Background(), observerTestSignedHistoricalXMRCertificate(t, obsTx, secp256k1.GenPrivKey()))
@@ -119,6 +121,7 @@ func TestObservedXMRPayloadLookupRejectsSameKeyDifferentPayload(t *testing.T) {
 // touches only the certificate's two candidate buckets, rather than blocking
 // on an unrelated observation as the previous global scan did.
 func TestObservedXMRPayloadLookupDoesNotScanUnrelatedStates(t *testing.T) {
+	t.Parallel()
 	ag, _, _, _, _, _ := setupTestGossip(t)
 	obsTx, _ := observerTestXMRPlan(t)
 	ag.handleObservedTxAttestation(context.Background(), observerTestSignedHistoricalXMRCertificate(t, obsTx, secp256k1.GenPrivKey()))
@@ -167,6 +170,7 @@ func observedXMRPayloadApplied(t *testing.T, ag *AttestationGossip, k txKey) boo
 }
 
 func TestHistoricalXMRSpentRefCertificateInactiveQuorumIsCertificateOnly(t *testing.T) {
+	t.Parallel()
 	for _, status := range []thortypes.VaultStatus{thortypes.VaultStatus_ActiveVault, thortypes.VaultStatus_RetiringVault, thortypes.VaultStatus_InactiveVault} {
 		t.Run(status.String(), func(t *testing.T) {
 			ag, _, keys, _, bridge, _ := setupTestGossip(t)
@@ -244,6 +248,7 @@ func TestHistoricalXMRSpentRefCertificateInactiveQuorumIsCertificateOnly(t *test
 // Both recovery entry points must follow the actual retry schedule before
 // importing a Ragnarok spend whose original queue entry was superseded.
 func TestRescheduledRagnarokSpentRefsRequireSourceQuorum(t *testing.T) {
+	t.Parallel()
 	for _, historical := range []bool{false, true} {
 		name := map[bool]string{false: "ordinary gossip", true: "inactive historical certificates"}[historical]
 		t.Run(name, func(t *testing.T) {
@@ -355,6 +360,7 @@ func TestRescheduledRagnarokSpentRefsRequireSourceQuorum(t *testing.T) {
 }
 
 func TestHistoricalXMRCertificateTransfersScannerReceiptToDurableOutbox(t *testing.T) {
+	t.Parallel()
 	ag, _, keys, _, bridge, _ := setupTestGossip(t)
 	obsTx, planned := observerTestXMRPlan(t)
 	// The scanner enters this path through common.NewTxID, which canonicalizes
@@ -444,6 +450,7 @@ func TestHistoricalXMRCertificateTransfersScannerReceiptToDurableOutbox(t *testi
 }
 
 func TestHistoricalXMRCertificateMixedBatchHandlesEachItemIndependently(t *testing.T) {
+	t.Parallel()
 	ag, _, keys, _, bridge, _ := setupTestGossip(t)
 	memberObs, memberPlan := observerTestXMRPlan(t)
 	canonicalID, err := common.NewTxID(memberObs.Tx.ID.String())
@@ -549,6 +556,7 @@ func TestHistoricalXMRCertificateMixedBatchHandlesEachItemIndependently(t *testi
 }
 
 func TestHistoricalXMRSpentRefCertificateRejectsUnauthorizedVariants(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name      string
 		configure func(*AttestationGossip, *MockThorchainBridge, common.ObservedTx, plannedXMROutbound, *secp256k1.PrivKey) (common.AttestTx, peer.ID)
@@ -651,6 +659,7 @@ func TestHistoricalXMRSpentRefCertificateRejectsUnauthorizedVariants(t *testing.
 }
 
 func TestHistoricalXMRCertificatePerSignerLimitAppliesToExistingBucket(t *testing.T) {
+	t.Parallel()
 	ag, _, _, _, bridge, _ := setupTestGossip(t)
 	obsTx, planned := observerTestXMRPlan(t)
 	signer := secp256k1.GenPrivKey()
@@ -686,6 +695,7 @@ func TestHistoricalXMRCertificatePerSignerLimitAppliesToExistingBucket(t *testin
 // TestHistoricalXMRCertificatePerSignerLimitDoesNotAllocateNewBuckets verifies
 // rejected over-quota payloads cannot consume global certificate bucket capacity.
 func TestHistoricalXMRCertificatePerSignerLimitDoesNotAllocateNewBuckets(t *testing.T) {
+	t.Parallel()
 	ag, _, _, _, bridge, _ := setupTestGossip(t)
 	obsTx, planned := observerTestXMRPlan(t)
 	signer := secp256k1.GenPrivKey()
@@ -731,6 +741,7 @@ func TestHistoricalXMRCertificatePerSignerLimitDoesNotAllocateNewBuckets(t *test
 // TestHistoricalXMRCertificateDuplicateAtSignerLimitRemainsAdmissible verifies
 // retained certificates remain retryable after their signer reaches its quota.
 func TestHistoricalXMRCertificateDuplicateAtSignerLimitRemainsAdmissible(t *testing.T) {
+	t.Parallel()
 	ag, _, _, _, bridge, _ := setupTestGossip(t)
 	obsTx, planned := observerTestXMRPlan(t)
 	signer := secp256k1.GenPrivKey()
@@ -764,6 +775,7 @@ func TestHistoricalXMRCertificateDuplicateAtSignerLimitRemainsAdmissible(t *test
 // reuse the short-lived vault and planned-outbound results instead of issuing
 // another pair of bridge queries.
 func TestHistoricalXMRCertificateCachesValidationRPCs(t *testing.T) {
+	t.Parallel()
 	ag, _, _, _, bridge, _ := setupTestGossip(t)
 	obsTx, planned := observerTestXMRPlan(t)
 	signer := secp256k1.GenPrivKey()
@@ -792,6 +804,7 @@ func TestHistoricalXMRCertificateCachesValidationRPCs(t *testing.T) {
 // TestHistoricalXMRCertificatePeerRateLimitPrecedesRPC verifies an exhausted
 // peer admission budget rejects the next frame before either bridge query.
 func TestHistoricalXMRCertificatePeerRateLimitPrecedesRPC(t *testing.T) {
+	t.Parallel()
 	ag, _, _, _, bridge, _ := setupTestGossip(t)
 	obsTx, planned := observerTestXMRPlan(t)
 	signer := secp256k1.GenPrivKey()
@@ -829,6 +842,7 @@ func TestHistoricalXMRCertificatePeerRateLimitPrecedesRPC(t *testing.T) {
 // saturated process-wide RPC boundary rejects rather than blocking another
 // stream handler or starting additional Thornode work.
 func TestHistoricalXMRCertificateRPCConcurrencyRejectsBeforeBridge(t *testing.T) {
+	t.Parallel()
 	ag, _, _, _, bridge, _ := setupTestGossip(t)
 	obsTx, planned := observerTestXMRPlan(t)
 	signer := secp256k1.GenPrivKey()
@@ -868,6 +882,7 @@ func TestHistoricalXMRCertificateRPCConcurrencyRejectsBeforeBridge(t *testing.T)
 }
 
 func TestHistoricalXMRCertificateFrameRejectsOversizeBeforeAllocation(t *testing.T) {
+	t.Parallel()
 	var frame bytes.Buffer
 	require.NoError(t, binary.Write(&frame, binary.LittleEndian, uint32(maxHistoricalXMRCertificateBytes+1)))
 	stream := NewMockStream(bytes.NewReader(frame.Bytes()), io.Discard, "")
@@ -878,6 +893,7 @@ func TestHistoricalXMRCertificateFrameRejectsOversizeBeforeAllocation(t *testing
 }
 
 func TestXMRSpentRefImportRetriesAfterBoundedSaturation(t *testing.T) {
+	t.Parallel()
 	ag, _, _, _, _, _ := setupTestGossip(t)
 	ag.applySpentRefsSem = make(chan struct{}, 1)
 
@@ -919,6 +935,7 @@ func TestXMRSpentRefImportRetriesAfterBoundedSaturation(t *testing.T) {
 }
 
 func TestObservedXMRSpentRefsReconcileAfterCapacityRejection(t *testing.T) {
+	t.Parallel()
 	ag, _, _, _, bridge, _ := setupTestGossip(t)
 	obsTx, planned := observerTestXMRPlan(t)
 	first := secp256k1.GenPrivKey()
@@ -964,6 +981,7 @@ func TestObservedXMRSpentRefsReconcileAfterCapacityRejection(t *testing.T) {
 // live ref set remains unlatched but is filtered by the confirmed conflict
 // entry before reconciliation can issue Thornode RPCs.
 func TestCommittedXMRSpentRefsLatchExactPayload(t *testing.T) {
+	t.Parallel()
 	ag, _, _, _, bridge, _ := setupTestGossip(t)
 	exact, _ := observerTestXMRPlan(t)
 	differing := exact
@@ -1032,6 +1050,7 @@ func TestCommittedXMRSpentRefsLatchExactPayload(t *testing.T) {
 // is retried exponentially by the sweep while a genuinely new attestation can
 // still trigger an immediate authorization attempt.
 func TestObservedXMRSpentRefsReconcileBacksOff(t *testing.T) {
+	t.Parallel()
 	ag, _, _, _, bridge, _ := setupTestGossip(t)
 	obsTx, planned := observerTestXMRPlan(t)
 	first := secp256k1.GenPrivKey()
@@ -1101,6 +1120,7 @@ func TestObservedXMRSpentRefsReconcileBacksOff(t *testing.T) {
 // not-yet-due states do not consume the per-pass budget, and that the oldest
 // eligible states are claimed first.
 func TestObservedXMRSpentRefsReconcileCapsPostFilterWork(t *testing.T) {
+	t.Parallel()
 	ag, _, _, _, bridge, _ := setupTestGossip(t)
 	ag.SetObserverApplySpentOutputRefs(func(spentOutputRefsImport, func(bool)) {})
 	base, _ := observerTestXMRPlan(t)
@@ -1169,6 +1189,7 @@ func TestObservedXMRSpentRefsReconcileCapsPostFilterWork(t *testing.T) {
 // TestObservedXMRSpentRefsReconcileSingleFlight verifies a slow bridge call
 // cannot accumulate another reconciliation goroutine on the next trigger.
 func TestObservedXMRSpentRefsReconcileSingleFlight(t *testing.T) {
+	t.Parallel()
 	ag, _, _, _, bridge, _ := setupTestGossip(t)
 	ag.SetObserverApplySpentOutputRefs(func(spentOutputRefsImport, func(bool)) {})
 	base, _ := observerTestXMRPlan(t)
@@ -1218,6 +1239,7 @@ func TestObservedXMRSpentRefsReconcileSingleFlight(t *testing.T) {
 // TestHistoricalXMRCertificateBroadcastAttemptsAllActivePeers verifies that a
 // full send semaphore delays later peers instead of truncating the broadcast.
 func TestHistoricalXMRCertificateBroadcastAttemptsAllActivePeers(t *testing.T) {
+	t.Parallel()
 	ag, host, _, _, _, _ := setupTestGossip(t)
 	remotePeers := configureHistoricalXMRCertificateBroadcastTestPeers(
 		t,
@@ -1285,6 +1307,7 @@ func TestHistoricalXMRCertificateBroadcastAttemptsAllActivePeers(t *testing.T) {
 // TestHistoricalXMRCertificateBroadcastBoundsConcurrentSends verifies that
 // waiting for full-peer coverage never exceeds the process-wide send limit.
 func TestHistoricalXMRCertificateBroadcastBoundsConcurrentSends(t *testing.T) {
+	t.Parallel()
 	ag, host, _, _, _, _ := setupTestGossip(t)
 	remotePeers := configureHistoricalXMRCertificateBroadcastTestPeers(
 		t,
@@ -1342,6 +1365,7 @@ func TestHistoricalXMRCertificateBroadcastBoundsConcurrentSends(t *testing.T) {
 // TestHistoricalXMRCertificateBroadcastCancellation verifies that a broadcast
 // waiting for send capacity exits promptly when its controlling context ends.
 func TestHistoricalXMRCertificateBroadcastCancellation(t *testing.T) {
+	t.Parallel()
 	ag, host, _, _, _, _ := setupTestGossip(t)
 	configureHistoricalXMRCertificateBroadcastTestPeers(
 		t,
@@ -1387,6 +1411,7 @@ func TestHistoricalXMRCertificateBroadcastCancellation(t *testing.T) {
 // TestHistoricalXMRCertificateReconcileSingleFlight verifies that a full-peer
 // fanout cannot accumulate overlapping reconciliation passes on later ticks.
 func TestHistoricalXMRCertificateReconcileSingleFlight(t *testing.T) {
+	t.Parallel()
 	ag, host, keys, _, bridge, _ := setupTestGossip(t)
 	remotePeers := configureHistoricalXMRCertificateBroadcastTestPeers(
 		t,
@@ -1468,6 +1493,7 @@ func TestHistoricalXMRCertificateReconcileSingleFlight(t *testing.T) {
 // sub-quorum bucket does not reload its source vault on every reconciliation
 // tick, and that a due retry advances the exponential schedule before RPC.
 func TestHistoricalXMRCertificateReconcileBacksOffRPCs(t *testing.T) {
+	t.Parallel()
 	ag, _, _, _, bridge, _ := setupTestGossip(t)
 	obsTx, planned := observerTestXMRPlan(t)
 	signer := secp256k1.GenPrivKey()
@@ -1526,6 +1552,7 @@ func TestHistoricalXMRCertificateReconcileBacksOffRPCs(t *testing.T) {
 }
 
 func TestHistoricalXMRCertificateActiveReceiverReconcilesAfterCapacityRejection(t *testing.T) {
+	t.Parallel()
 	ag, _, _, _, bridge, _ := setupTestGossip(t)
 	obsTx, planned := observerTestXMRPlan(t)
 	first := secp256k1.GenPrivKey()
@@ -1680,6 +1707,7 @@ func observerTestRetiringVaultFunc(vaultPubKey common.PubKey, members ...common.
 // member. Its certificate must bind exactly the same observation bytes as the
 // current members, including the finalization heights and instant-signing path.
 func TestHistoricalXMRCertificateMatchesActiveObservationPhase(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name                     string
 		filtered, mempool, ready bool
@@ -1757,6 +1785,7 @@ func TestHistoricalXMRCertificateMatchesActiveObservationPhase(t *testing.T) {
 }
 
 func TestHistoricalXMRCertificateIgnoresUnfilteredMempool(t *testing.T) {
+	t.Parallel()
 	ag, _, _, _, _, _ := setupTestGossip(t)
 	ag.setActiveValidators(nil)
 	observer := &Observer{attestationGossip: ag}
@@ -1770,6 +1799,7 @@ func TestHistoricalXMRCertificateIgnoresUnfilteredMempool(t *testing.T) {
 }
 
 func TestHistoricalXMRCertificateVaultStatusDoesNotGrantAuthority(t *testing.T) {
+	t.Parallel()
 	obs, _ := observerTestXMRPlan(t)
 	for _, status := range []thortypes.VaultStatus{thortypes.VaultStatus_ActiveVault, thortypes.VaultStatus_RetiringVault, thortypes.VaultStatus_InactiveVault} {
 		vault := thortypes.Vault{PubKey: obs.ObservedPubKey, Status: status}
@@ -1782,6 +1812,7 @@ func TestHistoricalXMRCertificateVaultStatusDoesNotGrantAuthority(t *testing.T) 
 func (c *historicalXMRConfirmationChain) GetHeight() (int64, error) { return c.height, nil }
 
 func TestHistoricalXMRCertificateUsesFullBatchAndSurvivesProducerRestart(t *testing.T) {
+	t.Parallel()
 	for _, prefix := range []string{"MIGRATE:", "OUT:", "REFUND:"} {
 		for _, finalized := range []bool{false, true} {
 			t.Run(prefix+fmt.Sprint(finalized), func(t *testing.T) {
@@ -1875,6 +1906,7 @@ func TestHistoricalXMRCertificateUsesFullBatchAndSurvivesProducerRestart(t *test
 }
 
 func TestPendingXMRCertificateCompletionRequiresCanonicalFinality(t *testing.T) {
+	t.Parallel()
 	obs, _ := observerTestXMRPlan(t)
 	voter := &thortypes.QueryObservedTxVoter{TxID: obs.Tx.ID, Height: 123}
 	require.False(t, pendingXMRCertificateComplete(obs, nil))
@@ -1895,6 +1927,7 @@ func TestPendingXMRCertificateCompletionRequiresCanonicalFinality(t *testing.T) 
 }
 
 func TestHistoricalXMRCertificateCapacityReclaimsOnlyAppliedReceipts(t *testing.T) {
+	t.Parallel()
 	ag, _, _, _, _, _ := setupTestGossip(t)
 	signer := "historical-member"
 	ag.historicalXMRSpentRefCertificates = make(map[[sha256.Size]byte]*historicalXMRSpentRefCertificateBucket)
@@ -1913,6 +1946,7 @@ func TestHistoricalXMRCertificateCapacityReclaimsOnlyAppliedReceipts(t *testing.
 }
 
 func TestHistoricalXMRCertificateRequiresDurableOwner(t *testing.T) {
+	t.Parallel()
 	ag, _, keys, _, bridge, _ := setupTestGossip(t)
 	obs, plan := observerTestXMRPlan(t)
 	ag.setActiveValidators(nil)
@@ -1931,6 +1965,7 @@ func TestHistoricalXMRCertificateRequiresDurableOwner(t *testing.T) {
 }
 
 func TestHistoricalXMRCertificateReceiverNeverOwnsProducerDelivery(t *testing.T) {
+	t.Parallel()
 	ag, host, keys, _, bridge, _ := setupTestGossip(t)
 	obs, plan := observerTestXMRPlan(t)
 	configureHistoricalXMRCertificateBroadcastTestPeers(t, ag, host, 1)
