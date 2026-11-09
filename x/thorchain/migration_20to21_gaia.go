@@ -109,6 +109,11 @@ func (m Migrator) migrate20to21Mainnet(ctx cosmos.Context) error {
 	ctx.Logger().Info("reimbursed tcso for the GAIA top-up and the TRON and LTC manual refunds",
 		"recipient", gaiaReimburseRecipient,
 		"total_rune", cosmos.NewUint(gaiaReimburseRune+tronRefundRune+ltcRefundRune).String())
+
+	// 3.22.0 bond-slash refunds. Separate from the tcso batch above: each event
+	// runs in its own cache context and soft-skips independently, so a drift or a
+	// toggle on one never blocks the others or the tcso reimbursement.
+	m.runSlashRefunds322(ctx)
 	return nil
 }
 

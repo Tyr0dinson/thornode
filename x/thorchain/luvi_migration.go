@@ -82,6 +82,14 @@ var luviDeclaredWriteDowns = map[string]map[string]luviDeclaredWriteDown{
 		// 6.79 RUNE out, the 14.03 TRX gas stays debited: -0.16 bp
 		"TRON.TRX": {MaxDrop: cosmos.NewDecWithPrec(3, 5), Reason: "h28172517 TRON slash reversal reclaims the gas reimbursement; the gas was real"},
 	},
+	// 3.22.0 bond-slash reversals (migration_20to21_slash_refund.go): returning the
+	// asset a slash debited and removing the RUNE it credited is near LP-neutral at
+	// today's depths. Measured on the mainnet gate fixture: TRON.TRX +1.68e-4 and
+	// ETH.ETH +2.75e-4 (gains, no entry); only BTC.BTC is a small net drop.
+	"migration/20to21": {
+		// -3.22e-6 normalized at current BTC depth; headroom for depth drift by the cut.
+		"BTC.BTC": {MaxDrop: cosmos.NewDecWithPrec(1, 5), Reason: "h28574121 BTC slash reversal removes marginally more RUNE value than the BTC it returns"},
+	},
 }
 
 // luviDeclaredDrop returns the drop declared for a migration scope and pool.
