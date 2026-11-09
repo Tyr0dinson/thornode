@@ -42,20 +42,45 @@ func rsub(a, b *big.Float) *big.Float { return new(big.Float).SetPrec(refPrec).S
 
 // refQ is sqrt(A*R) * (2A - S) / (2A) with no on-chain rounding.
 func refQ(s LuviState) *big.Float {
-	twoA := rmul(rf(s.BalanceAsset), big.NewFloat(2))
-	return rquo(rmul(rsqrt(rmul(rf(s.BalanceAsset), rf(s.BalanceRune))), rsub(twoA, rf(s.SynthSupply))), twoA)
+	a := rf(s.BalanceAsset)
+	return refQOf(a, rf(s.SynthSupply), rsqrt(rmul(a, rf(s.BalanceRune))))
 }
 
-func refSqrtP(s LuviState) *big.Float { return rsqrt(rquo(rf(s.BalanceRune), rf(s.BalanceAsset))) }
+// refQOf is refQ from a state's A, S and sqrt(A*R).
+func refQOf(a, s, sqrtAR *big.Float) *big.Float {
+	twoA := rmul(a, big.NewFloat(2))
+	return rquo(rmul(sqrtAR, rsub(twoA, s)), twoA)
+}
 
 func refSqrtAR(s LuviState) *big.Float { return rsqrt(rmul(rf(s.BalanceAsset), rf(s.BalanceRune))) }
 
+// refState is a state's reference operands, converted and rooted once so that
+// a step, or a run of steps sharing a state, does not redo them per term.
+type refState struct {
+	s, l, p   *big.Float
+	sqrtAR, q *big.Float
+	sqrtP     *big.Float
+}
+
+func newRefState(st LuviState) refState {
+	a, r := rf(st.BalanceAsset), rf(st.BalanceRune)
+	x := refState{s: rf(st.SynthSupply), l: rf(st.LPUnits), p: rf(st.PoolUnits), sqrtAR: rsqrt(rmul(a, r))}
+	x.q = refQOf(a, x.s, x.sqrtAR)
+	x.sqrtP = rsqrt(rquo(r, a))
+	return x
+}
+
 // refDeltaG is the reference step of G.
 func refDeltaG(prev, next LuviState) *big.Float {
-	dQ := rsub(refQ(next), refQ(prev))
-	rep := rquo(rmul(radd(rf(prev.SynthSupply), rf(next.SynthSupply)), rsub(refSqrtP(next), refSqrtP(prev))), big.NewFloat(4))
-	dL := rsub(rf(next.LPUnits), rf(prev.LPUnits))
-	chain := rquo(refSqrtAR(prev), rf(prev.PoolUnits))
+	return refDeltaGOf(newRefState(prev), newRefState(next))
+}
+
+// refDeltaGOf is refDeltaG from the two states' reference operands.
+func refDeltaGOf(prev, next refState) *big.Float {
+	dQ := rsub(next.q, prev.q)
+	rep := rquo(rmul(radd(prev.s, next.s), rsub(next.sqrtP, prev.sqrtP)), big.NewFloat(4))
+	dL := rsub(next.l, prev.l)
+	chain := rquo(prev.sqrtAR, prev.p)
 	return rsub(radd(dQ, rep), rmul(dL, chain))
 }
 
@@ -409,6 +434,7 @@ func (LuviSuite) TestLossesLowerG(c *C) {
 	for _, r := range luviRegimes {
 		for i := 0; i < 300; i++ {
 			s0 := randState(rng, r)
+			ref0 := newRefState(s0)
 			cm := Commentf("%s #%d %+v", r.name, i, s0)
 			frac := int64(1_000 + rng.Intn(1_000_000)) // lose 1/frac
 			partOf := func(x cosmos.Uint, f int64) cosmos.Uint {
@@ -438,7 +464,8 @@ func (LuviSuite) TestLossesLowerG(c *C) {
 				t := mustTracker(c, s0)
 				step := mustObserve(c, t, s1)
 				cmc := Commentf("%s: %s", name, cm.CheckCommentString())
-				closeTo(c, step.DeltaG, refDeltaG(s0, s1), radd(absF(rmul(refDeltaG(s0, s1), big.NewFloat(1e-12))), big.NewFloat(1e-15)), cmc)
+				want := refDeltaGOf(ref0, newRefState(s1))
+				closeTo(c, step.DeltaG, want, radd(absF(rmul(want, big.NewFloat(1e-12))), big.NewFloat(1e-15)), cmc)
 				if name == "over-minting" && s0.IsOverhang() {
 					// blind spot: over-minted units are worth at most dL/P of the pool
 					bound := radd(rquo(rsub(rf(s1.LPUnits), rf(s0.LPUnits)), rf(s0.PoolUnits)), big.NewFloat(1e-15))
@@ -510,11 +537,14 @@ func (LuviSuite) TestDeltaGMatchesReference(c *C) {
 		for i := 0; i < 40; i++ {
 			seq := randomWalk(rng, randState(rng, r), 25, r.hi > 0)
 			t := mustTracker(c, seq[0])
+			prev := newRefState(seq[0])
 			for j := 1; j < len(seq); j++ {
 				step := mustObserve(c, t, seq[j])
-				want := refDeltaG(seq[j-1], seq[j])
+				next := newRefState(seq[j])
+				want := refDeltaGOf(prev, next)
 				tol := radd(absF(rmul(want, big.NewFloat(1e-12))), big.NewFloat(1e-15))
 				closeTo(c, step.DeltaG, want, tol, Commentf("%s walk %d step %d", r.name, i, j))
+				prev = next
 			}
 		}
 	}
@@ -549,15 +579,16 @@ func (LuviSuite) TestNoSynthsGEqualsLTimesDeltaClassicLuvi(c *C) {
 	for i := 0; i < 60; i++ {
 		seq := randomWalk(rng, randState(rng, luviRegimes[0]), 25, false)
 		t := mustTracker(c, seq[0])
+		classicPrev := rquo(refSqrtAR(seq[0]), rf(seq[0].LPUnits))
 		for j := 1; j < len(seq); j++ {
 			step := mustObserve(c, t, seq[j])
-			classicPrev := rquo(refSqrtAR(seq[j-1]), rf(seq[j-1].LPUnits))
 			classic := rquo(refSqrtAR(seq[j]), rf(seq[j].LPUnits))
 			want := rmul(rf(seq[j].LPUnits), rsub(classic, classicPrev))
 			closeTo(c, step.DeltaG, want, radd(absF(rmul(want, big.NewFloat(1e-12))), big.NewFloat(1e-14)), Commentf("walk %d step %d", i, j))
 			c.Check(step.DeltaC.IsZero(), Equals, true)
 			// LUVI* is classic LUVI when there have never been synths
 			closeTo(c, step.LuviStar, classic, big.NewFloat(1e-17), Commentf("walk %d step %d", i, j))
+			classicPrev = classic
 		}
 	}
 }
