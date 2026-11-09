@@ -197,6 +197,11 @@ type THORChainApp struct {
 	queryCache *queryCache
 }
 
+// mergedProtoRegistry builds the gogo/protov2 merged registry once per
+// process. Proto files register only in package init, so every call would
+// rebuild the same registry; app tests construct many apps.
+var mergedProtoRegistry = sync.OnceValues(proto.MergedRegistry)
+
 // NewChainApp returns a reference to an initialized ChainApp.
 func NewChainApp(
 	logger log.Logger,
@@ -696,7 +701,7 @@ func NewChainApp(
 
 	// At startup, after all modules have been registered, check that all proto
 	// annotations are correct.
-	protoFiles, err := proto.MergedRegistry()
+	protoFiles, err := mergedProtoRegistry()
 	if err != nil {
 		panic(err)
 	}

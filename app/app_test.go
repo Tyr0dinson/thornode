@@ -110,6 +110,19 @@ func TestMergedRegistry(t *testing.T) {
 	require.Greater(t, r.NumFiles(), 0)
 }
 
+// TestMergedProtoRegistryOnce checks that NewChainApp's registry is built
+// once and holds the same files as a fresh merge.
+func TestMergedProtoRegistryOnce(t *testing.T) {
+	a, err := mergedProtoRegistry()
+	require.NoError(t, err)
+	b, err := mergedProtoRegistry()
+	require.NoError(t, err)
+	require.Same(t, a, b)
+	fresh, err := proto.MergedRegistry()
+	require.NoError(t, err)
+	require.Equal(t, fresh.NumFiles(), a.NumFiles())
+}
+
 func TestProtoAnnotations(t *testing.T) {
 	r, err := proto.MergedRegistry()
 	require.NoError(t, err)
