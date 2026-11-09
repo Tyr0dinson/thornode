@@ -150,7 +150,7 @@ func (s *CircuitBreakerSuite) TestVaultDeficitCircuitBreakerBrokenInvariant(c *C
 func (s *CircuitBreakerSuite) TestVaultDeficitCircuitBreakerCorruptVault(c *C) {
 	ctx, k := setupKeeperForTest(c)
 
-	c.Assert(k.storeService.OpenKVStore(ctx).Set(k.GetKey(prefixVault, "corrupt"), []byte("garbage")), IsNil)
+	k.kvStore(ctx).Set(k.GetKey(prefixVault, "corrupt"), []byte("garbage"))
 
 	// unreadable records are indeterminate, not proven violations
 	check := VaultDeficitCircuitBreaker(k)(ctx)
@@ -1044,7 +1044,7 @@ func (s *CircuitBreakerSuite) TestAsgardSolvencyCircuitBreakerCorruptSwapRecord(
 	coins := common.NewCoins(common.NewCoin(common.RuneAsset(), runeBal))
 	c.Assert(k.SendFromModuleToModule(ctx, AsgardName, ReserveName, coins), IsNil)
 
-	c.Assert(k.storeService.OpenKVStore(ctx).Set(k.GetKey(prefixSwapQueueItem, "corrupt"), []byte("garbage")), IsNil)
+	k.kvStore(ctx).Set(k.GetKey(prefixSwapQueueItem, "corrupt"), []byte("garbage"))
 
 	// unreadable records are indeterminate, not proven violations
 	check := AsgardSolvencyCircuitBreaker(k)(ctx)
@@ -1057,7 +1057,7 @@ func (s *CircuitBreakerSuite) TestAsgardSolvencyCircuitBreakerCorruptSwapRecord(
 func (s *CircuitBreakerSuite) TestBondSolvencyCircuitBreakerCorruptNodeAccount(c *C) {
 	ctx, k := setupKeeperForTest(c)
 
-	c.Assert(k.storeService.OpenKVStore(ctx).Set(k.GetKey(prefixNodeAccount, "corrupt"), []byte("garbage")), IsNil)
+	k.kvStore(ctx).Set(k.GetKey(prefixNodeAccount, "corrupt"), []byte("garbage"))
 
 	// unreadable records are indeterminate, not proven violations
 	check := BondSolvencyCircuitBreaker(k)(ctx)
@@ -1070,7 +1070,7 @@ func (s *CircuitBreakerSuite) TestBondSolvencyCircuitBreakerCorruptNodeAccount(c
 func (s *CircuitBreakerSuite) TestAsgardSolvencyCircuitBreakerCorruptPool(c *C) {
 	ctx, k := setupKeeperForTest(c)
 
-	c.Assert(k.storeService.OpenKVStore(ctx).Set(k.GetKey(prefixPool, "corrupt"), []byte("garbage")), IsNil)
+	k.kvStore(ctx).Set(k.GetKey(prefixPool, "corrupt"), []byte("garbage"))
 
 	// an unreadable pool aborts the whole route as indeterminate — no
 	// invariant is proven violated
@@ -1099,7 +1099,7 @@ func (s *CircuitBreakerSuite) TestAsgardSolvencyCircuitBreakerCorruptStreamingRe
 		Version:        types.SwapVersion_v1,
 	}
 	c.Assert(k.SetSwapQueueItem(ctx, swap, 0), IsNil)
-	c.Assert(k.storeService.OpenKVStore(ctx).Set(k.GetKey(prefixStreamingSwap, tx.ID.String()), []byte("garbage")), IsNil)
+	k.kvStore(ctx).Set(k.GetKey(prefixStreamingSwap, tx.ID.String()), []byte("garbage"))
 
 	check := AsgardSolvencyCircuitBreaker(k)(ctx)
 	c.Assert(check.Broken, Equals, false)
@@ -1111,7 +1111,7 @@ func (s *CircuitBreakerSuite) TestAsgardSolvencyCircuitBreakerCorruptStreamingRe
 func (s *CircuitBreakerSuite) TestBondSolvencyCircuitBreakerCorruptNetwork(c *C) {
 	ctx, k := setupKeeperForTest(c)
 
-	c.Assert(k.storeService.OpenKVStore(ctx).Set(k.GetKey(prefixNetwork, ""), []byte("garbage")), IsNil)
+	k.kvStore(ctx).Set(k.GetKey(prefixNetwork, ""), []byte("garbage"))
 
 	// an unreadable network singleton aborts the route as indeterminate
 	check := BondSolvencyCircuitBreaker(k)(ctx)
@@ -1209,7 +1209,7 @@ func (s *CircuitBreakerSuite) TestMalformedSwapPurgeSignalCorruptCounter(c *C) {
 	ctx, k := setupKeeperForTest(c)
 
 	// an unreadable counter must be reported, not silently cleared
-	c.Assert(k.storeService.OpenKVStore(ctx).Set(k.GetKey(prefixMalformedSwapPurge, "count"), []byte("garbage")), IsNil)
+	k.kvStore(ctx).Set(k.GetKey(prefixMalformedSwapPurge, "count"), []byte("garbage"))
 
 	_, _, err := k.ConsumeMalformedSwapPurge(ctx)
 	c.Assert(err, NotNil)
@@ -1234,7 +1234,7 @@ func (s *CircuitBreakerSuite) TestMalformedSwapPurgeSignalCorruptHeight(c *C) {
 	ctx, k := setupKeeperForTest(c)
 
 	k.AddMalformedSwapPurge(ctx.WithBlockHeight(70), 4)
-	c.Assert(k.storeService.OpenKVStore(ctx).Set(k.GetKey(prefixMalformedSwapPurge, "height"), []byte("garbage")), IsNil)
+	k.kvStore(ctx).Set(k.GetKey(prefixMalformedSwapPurge, "height"), []byte("garbage"))
 
 	// the height read fails after the count read succeeded — nothing is
 	// cleared
@@ -1252,7 +1252,7 @@ func (s *CircuitBreakerSuite) TestMalformedSwapPurgeSignalCorruptHeight(c *C) {
 func (s *CircuitBreakerSuite) TestMalformedSwapPurgeSignalSelfHeals(c *C) {
 	ctx, k := setupKeeperForTest(c)
 
-	c.Assert(k.storeService.OpenKVStore(ctx).Set(k.GetKey(prefixMalformedSwapPurge, "count"), []byte("garbage")), IsNil)
+	k.kvStore(ctx).Set(k.GetKey(prefixMalformedSwapPurge, "count"), []byte("garbage"))
 	_, _, err := k.ConsumeMalformedSwapPurge(ctx)
 	c.Assert(err, NotNil)
 
