@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -175,7 +176,9 @@ func TestConsensusFailureLogger_BlocksyncHashMismatch(t *testing.T) {
 
 	inner := newRecordingLogger()
 	logger := NewConsensusFailureLogger(inner).With("module", "blocksync")
-	logger.Error(blocksyncValidationMsg, "err", errors.New("wrong Block.Header.LastResultsHash.  Expected AA, got BB"))
+	// keyvals in CometBFT's order: height and hash come before err
+	logger.Error(blocksyncValidationMsg, "height", int64(8), "hash", "CC",
+		"err", errors.New("wrong Block.Header.LastResultsHash.  Expected AA, got BB"))
 	logger.Error(blocksyncValidationMsg, "err", errors.New("unrelated"))
 
 	deadline := time.Now().Add(10 * time.Second)
@@ -209,7 +212,9 @@ func TestBlocksyncValidationMsg_MatchesCometBFT(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(src), `"`+blocksyncValidationMsg+`", "err", err`) {
+	// any keyvals may precede "err"; the hook only needs both in one call
+	call := regexp.MustCompile(regexp.QuoteMeta(`"`+blocksyncValidationMsg+`",`) + `[^\n]*"err", err\)`)
+	if !call.Match(src) {
 		t.Fatalf("CometBFT blocksync/reactor.go no longer logs %q with an err keyval", blocksyncValidationMsg)
 	}
 }

@@ -29,7 +29,7 @@ func TestNewAppEnablesDivergence(t *testing.T) {
 			divergence.FlagEnabled: enabled,
 			"pruning":              "nothing",
 		}
-		a := newApp(log.NewNopLogger(), dbm.NewMemDB(), nil, opts)
+		a := newApp(log.NewNopLogger(), dbm.NewMemDB(), opts)
 		_, err := os.Stat(filepath.Join(divergence.DataDir(home), "digests.log"))
 		if enabled {
 			if divergence.Active() == nil || err != nil {

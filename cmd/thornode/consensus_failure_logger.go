@@ -15,8 +15,8 @@ const (
 	consensusFailureMsg = "CONSENSUS FAILURE!!!"
 
 	// blocksyncValidationMsg is the exact log message CometBFT's blocksync
-	// reactor (poolRoutine) emits, with keyval "err", when a fetched block fails
-	// validation; it then drops the peers and retries.
+	// reactor (handleValidationFailure) emits, with keyval "err", when a
+	// fetched block fails validation; it then drops the peers and retries.
 	blocksyncValidationMsg = "Error in validation"
 )
 

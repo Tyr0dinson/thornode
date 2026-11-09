@@ -14,7 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// cometErrors builds the two validation errors exactly as CometBFT v0.38
+// cometErrors builds the two validation errors exactly as CometBFT v0.39
 // state/validation.go does (HexBytes, %X for state, %v for the block).
 func cometErrors() (appHash, resultsHash error) {
 	local := cmtbytes.HexBytes{0xde, 0xad, 0xbe, 0xef}
@@ -99,7 +99,8 @@ func TestCometMessagesUnchanged(t *testing.T) {
 	}
 	src, err = os.ReadFile(filepath.Join(dir, "blocksync", "reactor.go"))
 	require.NoError(t, err)
-	require.Contains(t, string(src), `bcR.Logger.Error("Error in validation", "err", err)`)
+	// any keyvals may precede "err"; the hook only needs both in one call
+	require.Regexp(t, `Logger\.Error\("Error in validation",[^\n]*"err", err\)`, string(src))
 	src, err = os.ReadFile(filepath.Join(dir, "consensus", "state.go"))
 	require.NoError(t, err)
 	require.Contains(t, string(src), `"+2/3 committed an invalid block: %w"`)
