@@ -707,3 +707,37 @@ func (LuviSuite) TestDeterministic(c *C) {
 		c.Check(s1, Equals, s2)
 	}
 }
+
+// TestObserveMatchesPerStateFormulas pins Observe, which computes each state's
+// sqrt(A*R) once, to the per-state methods that recompute it: every field of
+// the step must be bit-identical.
+func (LuviSuite) TestObserveMatchesPerStateFormulas(c *C) {
+	rng := rand.New(rand.NewSource(13)) // #nosec G404 deterministic test data
+	for _, r := range luviRegimes {
+		seq := randomWalk(rng, randState(rng, r), 30, r.hi > 0)
+		t := mustTracker(c, seq[0])
+		acc := new(big.Int)
+		for j := 1; j < len(seq); j++ {
+			prev, next := seq[j-1], seq[j]
+			step := mustObserve(c, t, next)
+			cm := Commentf("%s step %d", r.name, j)
+
+			reprice := new(big.Int).Add(prev.SynthSupply.BigInt(), next.SynthSupply.BigInt())
+			reprice.Mul(reprice, new(big.Int).Sub(next.sqrtPrice(), prev.sqrtPrice()))
+			dC := new(big.Int).Quo(reprice, new(big.Int).Lsh(next.LPUnits.BigInt(), 2))
+			dG := new(big.Int).Sub(next.lpEquity(), prev.lpEquity())
+			dG.Add(dG, new(big.Int).Quo(reprice, big.NewInt(4)))
+			dLv := new(big.Int).Sub(next.LPUnits.BigInt(), prev.LPUnits.BigInt())
+			dLv.Mul(dLv, prev.sqrtAR())
+			dG.Sub(dG, dLv.Quo(dLv, prev.PoolUnits.BigInt()))
+			norm := new(big.Int).Mul(dG, luviScale)
+			norm.Quo(norm, prev.sqrtAR())
+			acc.Add(acc, dC)
+
+			c.Check(step.DeltaG.Equal(luviToDec(dG)), Equals, true, cm)
+			c.Check(step.DeltaC.Equal(luviToDec(dC)), Equals, true, cm)
+			c.Check(step.NormalizedDeltaG.Equal(luviToDec(norm)), Equals, true, cm)
+			c.Check(step.LuviStar.Equal(luviToDec(new(big.Int).Add(next.lpEquityPerUnit(), acc))), Equals, true, cm)
+		}
+	}
+}

@@ -104,7 +104,15 @@ func (s LuviState) sqrtPrice() *big.Int {
 	if s.BalanceAsset.IsZero() {
 		return new(big.Int)
 	}
-	return new(big.Int).Quo(s.sqrtAR(), s.BalanceAsset.BigInt())
+	return s.sqrtPriceFrom(s.sqrtAR())
+}
+
+// sqrtPriceFrom is sqrtPrice given this state's sqrtAR, which it does not modify.
+func (s LuviState) sqrtPriceFrom(sqrtAR *big.Int) *big.Int {
+	if s.BalanceAsset.IsZero() {
+		return new(big.Int)
+	}
+	return new(big.Int).Quo(sqrtAR, s.BalanceAsset.BigInt())
 }
 
 // lpEquity returns the signed LP equity Q = sqrt(A*R)*(2A - S)/(2A), scaled.
@@ -112,9 +120,17 @@ func (s LuviState) lpEquity() *big.Int {
 	if s.BalanceAsset.IsZero() {
 		return new(big.Int)
 	}
+	return s.lpEquityFrom(s.sqrtAR())
+}
+
+// lpEquityFrom is lpEquity given this state's sqrtAR, which it does not modify.
+func (s LuviState) lpEquityFrom(sqrtAR *big.Int) *big.Int {
+	if s.BalanceAsset.IsZero() {
+		return new(big.Int)
+	}
 	twoA := new(big.Int).Lsh(s.BalanceAsset.BigInt(), 1)
 	num := new(big.Int).Sub(twoA, s.SynthSupply.BigInt())
-	num.Mul(num, s.sqrtAR())
+	num.Mul(num, sqrtAR)
 	return num.Quo(num, twoA)
 }
 
@@ -132,6 +148,15 @@ func (s LuviState) lpEquityPerUnit() *big.Int {
 		return new(big.Int)
 	}
 	return new(big.Int).Quo(s.lpEquity(), s.LPUnits.BigInt())
+}
+
+// lpEquityPerUnitFrom is lpEquityPerUnit given this state's sqrtAR, which it
+// does not modify.
+func (s LuviState) lpEquityPerUnitFrom(sqrtAR *big.Int) *big.Int {
+	if s.LPUnits.IsZero() {
+		return new(big.Int)
+	}
+	return new(big.Int).Quo(s.lpEquityFrom(sqrtAR), s.LPUnits.BigInt())
 }
 
 // SqrtAR returns sqrt(A*R) as a Dec.
@@ -190,20 +215,22 @@ func (t *LuviTracker) Observe(next LuviState) (LuviStep, error) {
 		return LuviStep{}, fmt.Errorf("luvi: invalid state")
 	}
 	prev := t.prev
+	// each state's sqrt(A*R) once: the helpers below only read it
+	prevRoot, nextRoot := prev.sqrtAR(), next.sqrtAR()
 	sumS := new(big.Int).Add(prev.SynthSupply.BigInt(), next.SynthSupply.BigInt())
-	dSqrtP := new(big.Int).Sub(next.sqrtPrice(), prev.sqrtPrice())
+	dSqrtP := new(big.Int).Sub(next.sqrtPriceFrom(nextRoot), prev.sqrtPriceFrom(prevRoot))
 	reprice := new(big.Int).Mul(sumS, dSqrtP) // (S_prev + S_new) * dsqrt(p), scaled
 
 	// dC = reprice / (4 * L_new)
 	dC := new(big.Int).Quo(reprice, new(big.Int).Lsh(next.LPUnits.BigInt(), 2))
 
 	// dG = dQ + reprice/4 - dL * LUVI_chain(prev)
-	dG := new(big.Int).Sub(next.lpEquity(), prev.lpEquity())
+	dG := new(big.Int).Sub(next.lpEquityFrom(nextRoot), prev.lpEquityFrom(prevRoot))
 	dG.Add(dG, new(big.Int).Quo(reprice, big.NewInt(4)))
 	// dL * sqrt(AR)_prev / P_prev, multiplied before dividing: in overhang the
 	// pool units can reach ~1e38, which would truncate LUVI_chain to few digits.
 	dLv := new(big.Int).Sub(next.LPUnits.BigInt(), prev.LPUnits.BigInt())
-	dLv.Mul(dLv, prev.sqrtAR())
+	dLv.Mul(dLv, prevRoot)
 	dG.Sub(dG, dLv.Quo(dLv, prev.PoolUnits.BigInt()))
 
 	t.c.Add(t.c, dC)
@@ -211,9 +238,9 @@ func (t *LuviTracker) Observe(next LuviState) (LuviStep, error) {
 	t.prev = next
 
 	norm := new(big.Int).Mul(dG, luviScale)
-	norm.Quo(norm, prev.sqrtAR())
+	norm.Quo(norm, prevRoot)
 
-	star := new(big.Int).Add(next.lpEquityPerUnit(), t.c)
+	star := new(big.Int).Add(next.lpEquityPerUnitFrom(nextRoot), t.c)
 	return LuviStep{
 		DeltaG:           luviToDec(dG),
 		DeltaC:           luviToDec(dC),
