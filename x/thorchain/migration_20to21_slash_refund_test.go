@@ -10,9 +10,9 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 )
 
-type SlashRefund322Suite struct{}
+type Migrate20to21SlashRefundSuite struct{}
 
-var _ = Suite(&SlashRefund322Suite{})
+var _ = Suite(&Migrate20to21SlashRefundSuite{})
 
 // current mainnet depths (2026-11-09) for the three reversed pools.
 var slash322Depths = map[string]struct {
@@ -54,7 +54,7 @@ func slash322Setup(c *C) (cosmos.Context, *Mgrs) {
 
 // The happy path: every event reverses its pool (asset credited back, RUNE
 // removed) and pays its bond providers their pinned shares from the Reserve.
-func (s *SlashRefund322Suite) TestSlashRefund322AppliesAll(c *C) {
+func (s *Migrate20to21SlashRefundSuite) TestSlashRefund322AppliesAll(c *C) {
 	ctx, mgr := slash322Setup(c)
 	k := mgr.Keeper()
 
@@ -82,7 +82,7 @@ func (s *SlashRefund322Suite) TestSlashRefund322AppliesAll(c *C) {
 
 // The three reversals move LP value only within each pool's declared bound: the
 // LUVI migration gate finds no undeclared drop. Logs each pool's normalized dG.
-func (s *SlashRefund322Suite) TestSlashRefund322LuviGate(c *C) {
+func (s *Migrate20to21SlashRefundSuite) TestSlashRefund322LuviGate(c *C) {
 	ctx, mgr := slash322Setup(c)
 	moved := make([]common.Asset, 0, len(slashRefunds322))
 	for _, sr := range slashRefunds322 {
@@ -96,7 +96,7 @@ func (s *SlashRefund322Suite) TestSlashRefund322LuviGate(c *C) {
 
 // A Reserve shortfall soft-skips non-silently: no pool or balance moves, and a
 // slash_refund_skip_322 event carries the event height and the RUNE shortfall.
-func (s *SlashRefund322Suite) TestSlashRefund322SoftSkipReserveShort(c *C) {
+func (s *Migrate20to21SlashRefundSuite) TestSlashRefund322SoftSkipReserveShort(c *C) {
 	ctx, mgr := slash322Setup(c)
 	k := mgr.Keeper()
 	// Drain the Reserve so even the first reversal (which only tops up by its own
@@ -138,7 +138,7 @@ func (s *SlashRefund322Suite) TestSlashRefund322SoftSkipReserveShort(c *C) {
 
 // Toggling the TRON event off skips its whole refund (an event is emitted) while
 // the other events still run.
-func (s *SlashRefund322Suite) TestSlashRefund322TronToggleOff(c *C) {
+func (s *Migrate20to21SlashRefundSuite) TestSlashRefund322TronToggleOff(c *C) {
 	defer func() { tronSlashRefundEnabled322 = true }()
 	tronSlashRefundEnabled322 = false
 
