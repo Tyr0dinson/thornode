@@ -120,6 +120,7 @@ func TestIsChainPausedUsesXMRScannerHalt(t *testing.T) {
 				"SolvencyHaltXMRChain",
 				"HaltChainGlobal",
 				"NodePauseChainGlobal",
+				"CircuitBreakerPauseGlobal",
 			},
 		},
 		{
@@ -133,11 +134,11 @@ func TestIsChainPausedUsesXMRScannerHalt(t *testing.T) {
 			},
 		},
 	}
-	sharedHalts := []string{"HaltXMRChain", "SolvencyHaltXMRChain", "HaltChainGlobal", "NodePauseChainGlobal"}
+	sharedHalts := []string{"HaltXMRChain", "SolvencyHaltXMRChain", "HaltChainGlobal", "NodePauseChainGlobal", "CircuitBreakerPauseGlobal"}
 	for i, key := range sharedHalts {
 		for _, value := range []int64{99, 100, 101} {
 			paused := value <= 100
-			if key == "NodePauseChainGlobal" {
+			if key == "NodePauseChainGlobal" || key == "CircuitBreakerPauseGlobal" {
 				paused = value >= 100
 			}
 			calls := append([]string{mimirHaltScannerXMR}, sharedHalts...)
@@ -206,6 +207,7 @@ func TestIsChainPausedSkipsScannerHaltForNonXMR(t *testing.T) {
 		"SolvencyHaltETHChain",
 		"HaltChainGlobal",
 		"NodePauseChainGlobal",
+		"CircuitBreakerPauseGlobal",
 	}
 	if got := bridge.calls(); !slices.Equal(got, wantMimirCalls) {
 		t.Fatalf("Mimir lookups = %v, want %v", got, wantMimirCalls)
