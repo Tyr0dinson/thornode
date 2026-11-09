@@ -83,14 +83,20 @@ func (s *BlockScannerTestSuite) SetUpSuite(c *C) {
 func (s *BlockScannerTestSuite) TearDownSuite(c *C) {
 }
 
-// SetUpTest shortens the THORChain block time for each test. It paces the scan
-// loop's paused-chain sleep, its mimir re-checks and the bridge's response
-// cache; the mimir fixture halts the chain, so at the mocknet 1s every Stop,
-// rollback and cache expiry here would wait out whole seconds. Each test stops
-// its scanner before TearDownTest restores the value.
+// testBlockTime is the THORChain block time the scanner tests run on. It paces
+// the scan loop's paused-chain sleep, its mimir re-checks and the bridge's
+// response cache; the mimir fixture halts the chain, so every Stop, rollback
+// hand-off and cache expiry here waits out one block time. The tests assert
+// loop progress and cache expiry, not the pace, and only hit the bridge's
+// cached GETs (the uncached path's request deadline is one block time).
+const testBlockTime = 10 * time.Millisecond
+
+// SetUpTest shortens the THORChain block time for each test (see
+// testBlockTime). Each test stops its scanner before TearDownTest restores the
+// value.
 func (s *BlockScannerTestSuite) SetUpTest(c *C) {
 	s.blockTime = constants.ThorchainBlockTime
-	constants.ThorchainBlockTime = 50 * time.Millisecond
+	constants.ThorchainBlockTime = testBlockTime
 }
 
 func (s *BlockScannerTestSuite) TearDownTest(c *C) {

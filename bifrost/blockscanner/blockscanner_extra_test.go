@@ -56,13 +56,12 @@ func waitForScanner(c *C, cond func() bool, what string) {
 	}
 }
 
-// withShortBlockTime runs the rest of a test with a 50ms THORChain block time,
-// which paces the scan loop's paused-chain sleep (see
-// BlockScannerTestSuite.SetUpTest). Stop the scanner before the returned
-// restore runs.
+// withShortBlockTime runs the rest of a test with the short testBlockTime,
+// which paces the scan loop's paused-chain sleep. Stop the scanner before the
+// returned restore runs.
 func withShortBlockTime() (restore func()) {
 	previous := constants.ThorchainBlockTime
-	constants.ThorchainBlockTime = 50 * time.Millisecond
+	constants.ThorchainBlockTime = testBlockTime
 	return func() { constants.ThorchainBlockTime = previous }
 }
 
