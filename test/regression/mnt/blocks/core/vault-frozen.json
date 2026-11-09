@@ -783,6 +783,13 @@
               "reason": "fail keysign",
               "slash_points": "2",
               "type": "slash_points"
+            },
+            {
+              "msg_index": "0",
+              "node_address": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
+              "reason": "failed to perform keysign",
+              "release_height": "14",
+              "type": "node_jail"
             }
           ]
         }
