@@ -89,6 +89,8 @@ var thorchainPrefixes = map[string]string{
 	"chain_contract/":                "prefixChainContract",
 	"solvency_voter/":                "prefixSolvencyVoter",
 	"solvency_voter_quota/":          "prefixSolvencyVoterQuota",
+	"solvency_gated_inbound/":        "prefixSolvencyGatedInbound",
+	"solvency_confirmation/":         "prefixSolvencyConfirmation",
 	"thorname/":                      "prefixTHORName",
 	"affcol_name/":                   "prefixAffiliateCollector",
 	"affiliate_liquidity_fee/":       "prefixAffiliateLiquidityFee",
