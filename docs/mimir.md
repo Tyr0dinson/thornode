@@ -114,8 +114,8 @@ Operational notes:
 
 - `WasmPermissionless`#: Toggles permissionless deployment of CosmWasm smart contracts (default: 0, restricted).
 - `WasmMinGasPrice`#: Sets the minimum gas price for CosmWasm transactions in the App Layer in RUNE.
-- `WasmMaxGasPerTx`\*: VM gas allowance shared by direct and nested CosmWasm calls in a normal SDK transaction. Each isolated L1 `EXEC` observation and scheduled callback receives a fresh allowance, so this setting must be paired with `WasmMaxGasPerBlock` to bound batches. Values at or below `0` disable the limit; oversized values are clamped to wasmd's conversion-safe maximum.
-- `WasmMaxGasPerBlock`\*: Aggregate allowance based on gas already consumed by the SDK block meter. Once exhausted it prevents additional CosmWasm VM work, but ordinary handler and store operations before each attempted `EXEC` can exceed the configured value by bounded overhead. Values at or below `0` disable the limit; oversized values are clamped to wasmd's conversion-safe maximum.
+- `WasmMaxGasPerTx`\*: VM gas allowance shared by direct and nested CosmWasm calls in a transaction. Each scheduled callback receives a fresh allowance, so this setting must be paired with `WasmMaxGasPerBlock` to bound a block's callbacks. Values at or below `0` disable the limit; oversized values are clamped to wasmd's conversion-safe maximum.
+- `WasmMaxGasPerBlock`\*: Aggregate allowance measured against the SDK block meter: each CosmWasm execution's allowance is reduced by all gas already used in the block, by Wasm and non-Wasm transactions alike, and by its own transaction. Once exhausted it prevents additional CosmWasm VM work; non-Wasm gas can still take the block past the configured value. Values at or below `0` disable the limit; oversized values are clamped to wasmd's conversion-safe maximum.
 - `HaltWasmGlobal`#: Pauses all CosmWasm smart contract executions in the App Layer.
 - `HaltWasmCs-<checksum>`#: Halts a specific CosmWasm contract by its base32-encoded checksum.
 - `HaltWasmDeployer-<address>`#: Halts all contracts deployed by a specific address using the full bech32 address.

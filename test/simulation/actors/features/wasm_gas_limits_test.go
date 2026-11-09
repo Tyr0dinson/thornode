@@ -10,7 +10,7 @@ func TestWasmGasLimitsActorShape(t *testing.T) {
 	if actor.Name != "Feature-WasmGasLimits" {
 		t.Fatalf("unexpected actor name: %s", actor.Name)
 	}
-	if len(actor.Ops) != 17 {
+	if len(actor.Ops) != 15 {
 		t.Fatalf("expected complete configure-test-restore lifecycle, got %d ops", len(actor.Ops))
 	}
 }

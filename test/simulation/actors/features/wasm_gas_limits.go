@@ -1,7 +1,6 @@
 package features
 
 import (
-	"encoding/base64"
 	"fmt"
 	rand "math/rand/v2"
 	"os"
@@ -14,9 +13,7 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
 	"gitlab.com/thorchain/thornode/v3/common"
-	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/constants"
-	acommon "gitlab.com/thorchain/thornode/v3/test/simulation/actors/common"
 	"gitlab.com/thorchain/thornode/v3/test/simulation/pkg/thornode"
 	. "gitlab.com/thorchain/thornode/v3/test/simulation/pkg/types"
 )
@@ -27,15 +24,9 @@ const (
 	wasmGasPerBlock    = int64(50_000)
 )
 
-// WasmGasLimits exercises the gas caps against a real VM and the public L1
-// observation path. The actor is optional because it temporarily changes
-// economic Mimirs and intentionally submits failing contract executions.
-//
-// Bifrost decides proposal batches asynchronously, so this actor cannot prove
-// that two particular L1 transactions share one MsgObservedTxIn. The focused
-// handler test provides that deterministic assertion; this actor supplies the
-// complementary end-to-end evidence that an out-of-gas EXEC does not stop
-// later inbound observations from reaching consensus.
+// WasmGasLimits exercises the gas caps against a real VM. The actor is
+// optional because it temporarily changes economic Mimirs and intentionally
+// submits a failing contract execution.
 func WasmGasLimits(rng *rand.Rand) *Actor {
 	a := &wasmGasLimitsActor{
 		Actor: *NewActor("Feature-WasmGasLimits", rng),
@@ -55,8 +46,6 @@ func WasmGasLimits(rng *rand.Rand) *Actor {
 		a.waitGasLimits,
 		a.executeCapped,
 		a.waitCappedExecution,
-		a.submitInbounds,
-		a.waitForInbounds,
 		a.restoreMimirs,
 		a.waitRestoredMimirs,
 		a.releaseUser,
@@ -67,16 +56,14 @@ func WasmGasLimits(rng *rand.Rand) *Actor {
 type wasmGasLimitsActor struct {
 	Actor
 
-	rng         *rand.Rand
-	user        *User
-	original    map[string]int64
-	codeID      uint64
-	contract    string
-	storeTx     common.TxID
-	instTx      common.TxID
-	executeTx   common.TxID
-	execL1Tx    string
-	controlL1Tx string
+	rng       *rand.Rand
+	user      *User
+	original  map[string]int64
+	codeID    uint64
+	contract  string
+	storeTx   common.TxID
+	instTx    common.TxID
+	executeTx common.TxID
 }
 
 type cosmosTxResponse struct {
@@ -102,7 +89,7 @@ func (a *wasmGasLimitsActor) acquireUser(config *OpConfig) OpResult {
 		if user.Acquire() {
 			a.user = user
 			a.SetLogger(a.Log().With().Str("user", user.Name()).Logger())
-			a.Log().Info().Msg("starting WASM gas-limit checks with a real contract and L1 observations")
+			a.Log().Info().Msg("starting WASM gas-limit checks with a real contract")
 			return OpResult{Continue: true}
 		}
 	}
@@ -232,47 +219,6 @@ func (a *wasmGasLimitsActor) waitCappedExecution(_ *OpConfig) OpResult {
 	}
 	a.Log().Info().Uint32("code", tx.TxResponse.Code).Stringer("txid", a.executeTx).
 		Msg("direct WASM execution was capped with the expected out-of-gas error")
-	return OpResult{Continue: true}
-}
-
-func (a *wasmGasLimitsActor) submitInbounds(_ *OpConfig) OpResult {
-	asset := common.ATOMAsset
-	client := a.user.ChainClients[asset.Chain]
-	amount := cosmos.NewUint(1_000_000)
-	execMemo := fmt.Sprintf("x:%s:%s", a.contract, base64.StdEncoding.EncodeToString([]byte(`{"increment":{}}`)))
-
-	var err error
-	if a.execL1Tx == "" {
-		a.execL1Tx, err = acommon.DepositL1(a.Log(), client, asset, execMemo, amount)
-		if err != nil {
-			return OpResult{Error: err}
-		}
-	}
-	if a.controlL1Tx == "" {
-		a.controlL1Tx, err = acommon.DepositL1(a.Log(), client, asset, "DONATE:GAIA.ATOM", amount)
-	}
-	if err == nil {
-		a.Log().Info().
-			Str("exec_txid", a.execL1Tx).
-			Str("control_txid", a.controlL1Tx).
-			Msg("submitted capped EXEC and later control inbound; waiting for both to finalize")
-	}
-	return OpResult{Continue: err == nil, Error: err}
-}
-
-func (a *wasmGasLimitsActor) waitForInbounds(_ *OpConfig) OpResult {
-	execStages, err := thornode.GetTxStages(a.execL1Tx)
-	if err != nil || execStages.InboundFinalised == nil {
-		return OpResult{Error: err}
-	}
-	controlStages, err := thornode.GetTxStages(a.controlL1Tx)
-	if err != nil || controlStages.InboundFinalised == nil {
-		return OpResult{Error: err}
-	}
-	a.Log().Info().
-		Str("exec_txid", a.execL1Tx).
-		Str("control_txid", a.controlL1Tx).
-		Msg("both inbounds finalized; the capped EXEC did not prevent later observation consensus")
 	return OpResult{Continue: true}
 }
 

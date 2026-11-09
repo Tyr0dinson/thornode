@@ -117,8 +117,8 @@ func (ad WasmExecuteAnteDecorator) AnteHandle(
 }
 
 // isWasmTxMsg reports messages that require the Wasm fee check. Gas limits are
-// activated later at the actual Wasm manager execution boundary so internal
-// MsgWasmExec calls and eBifrost-injected observations cannot bypass them.
+// activated later at the Wasm manager execution boundary, so nested contract
+// messages cannot bypass them.
 //
 // Only add message types here whose own ante handling is a gas fee and
 // nothing else. A message that executes other messages (authz MsgExec

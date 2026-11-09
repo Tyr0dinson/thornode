@@ -49,9 +49,8 @@ func newWasmMgr(
 }
 
 // capWasmExecutionGas activates the transaction's shared Wasm gas meter at the
-// execution boundary. MsgWasmExec calls created from deposits, nested contract
-// messages, and eBifrost-injected observations therefore use the same budget as
-// direct x/wasm messages.
+// execution boundary, so nested contract messages dispatched back through the
+// thorchain handlers use the same budget as the top-level x/wasm message.
 func (m WasmMgr) capWasmExecutionGas(ctx cosmos.Context) cosmos.Context {
 	return wasmgas.Activate(
 		ctx,

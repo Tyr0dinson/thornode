@@ -1,7 +1,5 @@
 {{ template "default-state.yaml" }}
 ---
-{{ template "btc-eth-pool-state.yaml" }}
----
 type: create-blocks
 count: 1
 ---
@@ -32,7 +30,7 @@ type: create-blocks
 count: 1
 ---
 # Keep the aggregate block allowance high in this test so the assertions below
-# isolate the per-execution cap and observed-inbound panic containment.
+# isolate the per-transaction cap.
 type: tx-mimir
 key: WasmMaxGasPerBlock
 value: 1000000000
@@ -69,82 +67,3 @@ type: check
 endpoint: http://localhost:1317/cosmwasm/wasm/v1/contract/tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f/smart/eyJjb3VudCI6e319
 asserts:
   - .data == "0"
----
-# Put a capped EXEC first and an unrelated DONATE second in the same injected
-# observation transaction. The EXEC must be refunded as an ordinary error;
-# its exhausted child meter must not abort the batch or poison the second item.
-type: tx-observed-in
-signer: {{ addr_thor_dog }}
-gas: 100000
-txs:
-  - tx:
-      id: "{{ observe_txid 1 }}"
-      chain: ETH
-      from_address: {{ addr_eth_fox }}
-      to_address: {{ addr_eth_dog }}
-      coins:
-        - amount: "10000000"
-          asset: "ETH.ETH"
-          decimals: 8
-      gas:
-        - amount: "10000"
-          asset: "ETH.ETH"
-      memo: "x:tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f:eyJpbmNyZW1lbnQiOnt9fQ=="
-    block_height: 1
-    finalise_height: 1
-    observed_pub_key: {{ pubkey_dog }}
-  - tx:
-      id: "{{ observe_txid 2 }}"
-      chain: ETH
-      from_address: {{ addr_eth_fox }}
-      to_address: {{ addr_eth_dog }}
-      coins:
-        - amount: "10000000"
-          asset: "ETH.ETH"
-          decimals: 8
-      gas:
-        - amount: "10000"
-          asset: "ETH.ETH"
-      memo: "DONATE:ETH.ETH"
-    block_height: 2
-    finalise_height: 2
-    observed_pub_key: {{ pubkey_dog }}
----
-type: create-blocks
-count: 1
----
-type: check
-endpoint: http://localhost:1317/thorchain/block
-asserts:
-  - .txs[0].result.code == 0
----
-# The sibling observation reached its handler and changed pool state.
-type: check
-endpoint: http://localhost:1317/thorchain/pool/ETH.ETH
-asserts:
-  # The DONATE adds 10,000,000 asset and the failed EXEC refund may retain an
-  # additional deterministic fee. The liveness invariant is that the sibling
-  # reached its handler and moved the pool above its initial 1,000,000,000.
-  - .balance_asset | tonumber > 1000000000
----
-# The failed EXEC cache was not committed.
-type: check
-endpoint: http://localhost:1317/cosmwasm/wasm/v1/contract/tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f/smart/eyJjb3VudCI6e319
-asserts:
-  - .data == "0"
----
-# Both voters survived the external MsgObservedTxIn cache boundary.
-type: check
-endpoint: http://localhost:1317/thorchain/tx/details/{{ observe_txid 1 }}
-asserts:
-  - .tx.tx.id == "{{ observe_txid 1 }}"
-  - .consensus_height > 0
-  - .actions | length == 1
-  - .actions[0].in_hash == "{{ observe_txid 1 }}"
-  - .actions[0].original_memo == "REFUND:{{ observe_txid 1 }}"
----
-type: check
-endpoint: http://localhost:1317/thorchain/tx/details/{{ observe_txid 2 }}
-asserts:
-  - .tx.tx.id == "{{ observe_txid 2 }}"
-  - .consensus_height > 0

@@ -32,7 +32,7 @@ gas: 100000
 type: create-blocks
 count: 1
 ---
-# At block 5, after=3 targets block 9 (the scheduler adds one block).
+# At block 5, after=4 targets block 9, after the mimir txs in blocks 7 and 8.
 type: tx-execute-contract
 contract: "tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f"
 msg:
@@ -40,7 +40,7 @@ msg:
     "any":
       {
         "type_url": "/thorchain.scheduler.v1.MsgScheduleExecuteContract",
-        "value": "CkB0dGhvcjE0aGoydGF2cThmcGVzZHd4eGN1NDRydHkzaGg5MHZodWpydmNtc3RsNHpyM3R4bWZ2dzlzdzU4dTlmEAMaEnsiZG8iOiJzb21ldGhpbmcifQ==",
+        "value": "CkB0dGhvcjE0aGoydGF2cThmcGVzZHd4eGN1NDRydHkzaGg5MHZodWpydmNtc3RsNHpyM3R4bWZ2dzlzdzU4dTlmEAQaEnsiZG8iOiJzb21ldGhpbmcifQ==",
       },
   }
 sender: {{ addr_thor_dog }}
@@ -54,7 +54,7 @@ endpoint: http://localhost:1317/thorchain/block
 asserts:
   - .txs[0].result.events[] | select(.type == "schedule_add") | .height == "9"
 ---
-# At block 6, after=2 targets the same block 9.
+# At block 6, after=3 targets the same block 9.
 type: tx-execute-contract
 contract: "tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f"
 msg:
@@ -62,7 +62,7 @@ msg:
     "any":
       {
         "type_url": "/thorchain.scheduler.v1.MsgScheduleExecuteContract",
-        "value": "CkB0dGhvcjE0aGoydGF2cThmcGVzZHd4eGN1NDRydHkzaGg5MHZodWpydmNtc3RsNHpyM3R4bWZ2dzlzdzU4dTlmEAIaEnsiZG8iOiJzb21ldGhpbmcifQ==",
+        "value": "CkB0dGhvcjE0aGoydGF2cThmcGVzZHd4eGN1NDRydHkzaGg5MHZodWpydmNtc3RsNHpyM3R4bWZ2dzlzdzU4dTlmEAMaEnsiZG8iOiJzb21ldGhpbmcifQ==",
       },
   }
 sender: {{ addr_thor_dog }}

@@ -12,7 +12,7 @@
             "@type": "/cosmos.crypto.secp256k1.PubKey",
             "key": "AmF4AUTWZEUSBtgqiR5n2Lgic/Yrr1mWupMo5TAubNRO"
           },
-          "sequence": "7"
+          "sequence": "6"
         },
         {
           "@type": "/cosmos.auth.v1beta1.ModuleAccount",
@@ -139,19 +139,10 @@
           ]
         },
         {
-          "address": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
-          "coins": [
-            {
-              "amount": "199944562157",
-              "denom": "rune"
-            }
-          ]
-        },
-        {
           "address": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
           "coins": [
             {
-              "amount": "35000061082701",
+              "amount": "35000006000000",
               "denom": "rune"
             }
           ]
@@ -178,7 +169,7 @@
           "address": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
           "coins": [
             {
-              "amount": "4999994355142",
+              "amount": "4999994000000",
               "denom": "rune"
             }
           ]
@@ -192,7 +183,7 @@
       "send_enabled": [],
       "supply": [
         {
-          "amount": "50200000000000",
+          "amount": "50000000000000",
           "denom": "rune"
         }
       ]
@@ -224,36 +215,8 @@
       "chain_contracts": [],
       "dynamic_fee_accumulators": [],
       "dynamic_fee_records": [],
-      "last_chain_heights": [
-        {
-          "chain": "ETH",
-          "height": "2"
-        }
-      ],
-      "liquidity_providers": [
-        {
-          "asset": "BTC.BTC",
-          "asset_address": "bcrt1quuds8pd92qnnq0udw0rpg0szpgcslc9pm6tzal",
-          "asset_deposit_value": "100000000",
-          "last_add_height": "1",
-          "pending_asset": "0",
-          "pending_rune": "0",
-          "rune_address": "tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej",
-          "rune_deposit_value": "100000000000",
-          "units": "100000000000"
-        },
-        {
-          "asset": "ETH.ETH",
-          "asset_address": "0x1b03d088612a00df0049634e9cc8684d622cada2",
-          "asset_deposit_value": "1000000000",
-          "last_add_height": "1",
-          "pending_asset": "0",
-          "pending_rune": "0",
-          "rune_address": "tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej",
-          "rune_deposit_value": "100000000000",
-          "units": "100000000000"
-        }
-      ],
+      "last_chain_heights": [],
+      "liquidity_providers": null,
       "mimirs": [
         {
           "key": "WASMMAXGASPERBLOCK",
@@ -269,23 +232,10 @@
         }
       ],
       "network": {
-        "LPIncomeSplit": "9600",
-        "NodeIncomeSplit": "400",
-        "bond_reward_rune": "355142",
-        "total_bond_units": "8"
+        "bond_reward_rune": "0",
+        "total_bond_units": "0"
       },
-      "network_fees": [
-        {
-          "chain": "BTC",
-          "transaction_fee_rate": "7",
-          "transaction_size": "1000"
-        },
-        {
-          "chain": "ETH",
-          "transaction_fee_rate": "80",
-          "transaction_size": "80000"
-        }
-      ],
+      "network_fees": [],
       "nodeMimirs": [
         {
           "key": "WASMMAXGASPERBLOCK",
@@ -318,130 +268,11 @@
           "validator_cons_pub_key": "tthorcpub1zcjduepqq75h7uy6qhesh9d3a9tuk0mzrnc46u8rye44ze6peua3zmpfh23q8z37sz"
         }
       ],
-      "observed_tx_in_voters": [
-        {
-          "actions": [
-            {
-              "aggregator_target_limit": "0",
-              "chain": "ETH",
-              "coin": {
-                "amount": "9360000",
-                "asset": "ETH.ETH",
-                "decimals": "8"
-              },
-              "gas_rate": "120",
-              "in_hash": "0000000000000000000000000000000000000000000000000000000000000001",
-              "max_gas": [
-                {
-                  "amount": "960000",
-                  "asset": "ETH.ETH",
-                  "decimals": "8"
-                }
-              ],
-              "original_memo": "REFUND:0000000000000000000000000000000000000000000000000000000000000001",
-              "to_address": "0xe3c64974c78f5693bd2bc68b3221d58df5c6e877",
-              "vault_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4"
-            }
-          ],
-          "finalised_height": "8",
-          "height": "8",
-          "out_txs": null,
-          "outbound_height": "8",
-          "tx": {
-            "block_height": "1",
-            "finalise_height": "1",
-            "observed_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
-            "signers": [
-              "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m"
-            ],
-            "tx": {
-              "chain": "ETH",
-              "coins": [
-                {
-                  "amount": "10000000",
-                  "asset": "ETH.ETH",
-                  "decimals": "8"
-                }
-              ],
-              "from_address": "0xe3c64974c78f5693bd2bc68b3221d58df5c6e877",
-              "gas": [
-                {
-                  "amount": "10000",
-                  "asset": "ETH.ETH"
-                }
-              ],
-              "id": "0000000000000000000000000000000000000000000000000000000000000001",
-              "memo": "x:tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f:eyJpbmNyZW1lbnQiOnt9fQ==",
-              "to_address": "0xd58610f89265a2fb637ac40edf59141ff873b266"
-            }
-          },
-          "tx_id": "0000000000000000000000000000000000000000000000000000000000000001",
-          "txs": [
-            {
-              "block_height": "1",
-              "finalise_height": "1",
-              "observed_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
-              "signers": [
-                "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m"
-              ],
-              "tx": {
-                "chain": "ETH",
-                "coins": [
-                  {
-                    "amount": "10000000",
-                    "asset": "ETH.ETH",
-                    "decimals": "8"
-                  }
-                ],
-                "from_address": "0xe3c64974c78f5693bd2bc68b3221d58df5c6e877",
-                "gas": [
-                  {
-                    "amount": "10000",
-                    "asset": "ETH.ETH"
-                  }
-                ],
-                "id": "0000000000000000000000000000000000000000000000000000000000000001",
-                "memo": "x:tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f:eyJpbmNyZW1lbnQiOnt9fQ==",
-                "to_address": "0xd58610f89265a2fb637ac40edf59141ff873b266"
-              }
-            }
-          ],
-          "unfinalized_height": "8",
-          "updated_vault": true
-        }
-      ],
+      "observed_tx_in_voters": null,
       "observed_tx_out_voters": null,
       "outbound_fee_spent_rune": [],
-      "outbound_fee_withheld_rune": [
-        {
-          "amount": "689719133865",
-          "asset": "ETH.ETH"
-        }
-      ],
-      "pools": [
-        {
-          "LP_units": "100000000000",
-          "asset": "BTC.BTC",
-          "balance_asset": "100000000",
-          "balance_rune": "100004261974",
-          "decimals": "8",
-          "pending_inbound_asset": "0",
-          "pending_inbound_rune": "0",
-          "status": "Available",
-          "synth_units": "0"
-        },
-        {
-          "LP_units": "100000000000",
-          "asset": "ETH.ETH",
-          "balance_asset": "1010640000",
-          "balance_rune": "99940300183",
-          "decimals": "8",
-          "pending_inbound_asset": "0",
-          "pending_inbound_rune": "0",
-          "status": "Available",
-          "synth_units": "0"
-        }
-      ],
+      "outbound_fee_withheld_rune": [],
+      "pools": null,
       "reference_memos": [],
       "reserve_contributors": null,
       "rune_pool": {
@@ -452,6 +283,7 @@
       },
       "rune_providers": [],
       "secured_assets": [],
+      "sol_vault_nonces": [],
       "streaming_swaps": [],
       "swap_queue_items": [],
       "swapper_clout": [],
@@ -459,35 +291,7 @@
       "tcy_stakers": [],
       "trade_accounts": [],
       "trade_units": [],
-      "tx_outs": [
-        {
-          "height": "8",
-          "tx_array": [
-            {
-              "aggregator_target_limit": "0",
-              "chain": "ETH",
-              "clout_spent": "0",
-              "coin": {
-                "amount": "9360000",
-                "asset": "ETH.ETH",
-                "decimals": "8"
-              },
-              "gas_rate": "120",
-              "in_hash": "0000000000000000000000000000000000000000000000000000000000000001",
-              "max_gas": [
-                {
-                  "amount": "960000",
-                  "asset": "ETH.ETH",
-                  "decimals": "8"
-                }
-              ],
-              "original_memo": "REFUND:0000000000000000000000000000000000000000000000000000000000000001",
-              "to_address": "0xe3c64974c78f5693bd2bc68b3221d58df5c6e877",
-              "vault_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4"
-            }
-          ]
-        }
-      ],
+      "tx_outs": null,
       "vaults": [
         {
           "block_height": "2",
@@ -499,25 +303,22 @@
             "ETH",
             "DOGE",
             "AVAX",
-            "GAIA"
+            "GAIA",
+            "NOBLE",
+            "BSC",
+            "BASE",
+            "TRON",
+            "XRP",
+            "SOL",
+            "POL",
+            "ZEC"
           ],
-          "coins": [
-            {
-              "amount": "100000000",
-              "asset": "BTC.BTC",
-              "decimals": "8"
-            },
-            {
-              "amount": "1020000000",
-              "asset": "ETH.ETH",
-              "decimals": "8"
-            }
-          ],
-          "inbound_tx_count": "4",
+          "coins": null,
           "membership": [
             "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4"
           ],
           "pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
+          "pub_key_eddsa": "tthorpub1zcjduepqzupdpx7334mjeuuggnvxv3ctkghu0qcz2eml30tgu9ukw58z6uusmmxmys",
           "routers": null,
           "status": "ActiveVault",
           "type": "AsgardVault"
@@ -619,5 +420,5 @@
       }
     }
   },
-  "initial_height": 9
+  "initial_height": 8
 }

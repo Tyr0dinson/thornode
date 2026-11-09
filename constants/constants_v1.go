@@ -185,8 +185,8 @@ func NewConstantValue() *ConstantVals {
 			MissingObservationGuardMaxBlocks:    43200,              // the shared-event guard's grace per chain, in blocks: used up while its voters are skipped, refilled at the same rate while they pass (0 = never expires)
 			LUVIOverhangGuard:                   1,                  // reject liquidity adds (user and POL) into pools whose synth supply is at least twice the asset depth (<= 0 = off)
 			LUVIGuard:                           1,                  // 1 = reject user swaps/LP flows that lower a pool's LP value (G) beyond the allowance, and emit LUVI loss events; 0 = off (the per-pool G accumulator always runs)
-			WasmMaxGasPerTx:                     0,                  // VM gas ceiling shared by direct/nested wasm calls in a normal SDK tx; each isolated EXEC inbound or scheduled callback receives a fresh allowance. Pair with WasmMaxGasPerBlock for batches. Oversized values clamp to wasmd's conversion-safe maximum. 0 = disabled.
-			WasmMaxGasPerBlock:                  0,                  // aggregate allowance that stops further wasm work once prior block/current tx gas spends it; handler gas before each attempted EXEC can exceed it by bounded overhead. Oversized values clamp to wasmd's conversion-safe maximum. 0 = disabled.
+			WasmMaxGasPerTx:                     0,                  // VM gas ceiling shared by direct/nested wasm calls in a tx; each scheduled callback receives a fresh allowance. Pair with WasmMaxGasPerBlock to bound a block's callbacks. Oversized values clamp to wasmd's conversion-safe maximum. 0 = disabled.
+			WasmMaxGasPerBlock:                  0,                  // aggregate allowance that stops further wasm work once all gas used in the block (wasm or not) plus the current tx spends it; non-wasm gas can still exceed it. Oversized values clamp to wasmd's conversion-safe maximum. 0 = disabled.
 		},
 		boolValues: map[ConstantName]bool{
 			StrictBondLiquidityRatio: true,
