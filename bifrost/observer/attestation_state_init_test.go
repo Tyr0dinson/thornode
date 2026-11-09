@@ -539,28 +539,7 @@ func TestReceiveBatchedAttestationState(t *testing.T) {
 	}
 
 	// Create a simulated peer to send these transactions
-	// Create stream pair for testing
-	clientReader := bytes.NewBuffer(nil)
-	clientWriter := &bytes.Buffer{}
-
-	serverReader := clientWriter
-	serverWriter := clientReader
-
-	var sharedMu sync.Mutex
-
-	peerStream := &MockStream{
-		reader: serverReader,
-		writer: serverWriter,
-		peer:   "test-peer",
-		mu:     &sharedMu,
-	}
-
-	ourStream := &MockStream{
-		reader: clientReader,
-		writer: clientWriter,
-		peer:   ag.host.ID(),
-		mu:     &sharedMu,
-	}
+	peerStream, ourStream := connStreamPair(t, "test-peer", ag.host.ID())
 
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -811,28 +790,7 @@ func TestSendReceiveBatchedAttestationState(t *testing.T) {
 	}
 
 	// Create a simulated peer to send these transactions
-	// Create stream pair for testing
-	senderReader := bytes.NewBuffer(nil)
-	senderWriter := &bytes.Buffer{}
-
-	receiverReader := senderWriter
-	receiverWriter := senderReader
-
-	var sharedMu sync.Mutex
-
-	receiverStream := &MockStream{
-		reader: receiverReader,
-		writer: receiverWriter,
-		peer:   agSender.host.ID(),
-		mu:     &sharedMu,
-	}
-
-	senderStream := &MockStream{
-		reader: senderReader,
-		writer: senderWriter,
-		peer:   agReceiver.host.ID(),
-		mu:     &sharedMu,
-	}
+	receiverStream, senderStream := connStreamPair(t, agSender.host.ID(), agReceiver.host.ID())
 
 	// Call the method with a timeout
 	var wg sync.WaitGroup
@@ -1183,25 +1141,8 @@ func TestAskStreamForStateEmptyState(t *testing.T) {
 	agSender.stateInitPeers = map[peer.ID]bool{agReceiver.host.ID(): true}
 	agSender.stateInitMu.Unlock()
 
-	// Buffered stream pair: what one writes the other reads.
-	senderReader := bytes.NewBuffer(nil)
-	senderWriter := &bytes.Buffer{}
-	receiverReader := senderWriter
-	receiverWriter := senderReader
-
-	var sharedMu sync.Mutex
-	receiverStream := &MockStream{
-		reader: receiverReader,
-		writer: receiverWriter,
-		peer:   agSender.host.ID(),
-		mu:     &sharedMu,
-	}
-	senderStream := &MockStream{
-		reader: senderReader,
-		writer: senderWriter,
-		peer:   agReceiver.host.ID(),
-		mu:     &sharedMu,
-	}
+	// Connected stream pair: what one writes the other reads.
+	receiverStream, senderStream := connStreamPair(t, agSender.host.ID(), agReceiver.host.ID())
 
 	done := make(chan struct{})
 	go func() {
@@ -1312,18 +1253,45 @@ func (s *stateSyncDeadlineStream) Close() error {
 	return s.transport.Close()
 }
 
-func stateSyncDeadlinePair(t *testing.T) (*stateSyncDeadlineStream, *stateSyncDeadlineStream) {
+// loopbackConnPair returns the two ends of a local TCP connection.
+func loopbackConnPair(t *testing.T) (server, client net.Conn) {
 	t.Helper()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = listener.Close() })
-	client, err := net.DialTimeout("tcp", listener.Addr().String(), time.Second)
+	client, err = net.DialTimeout("tcp", listener.Addr().String(), time.Second)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = client.Close() })
-	server, err := listener.Accept()
+	server, err = listener.Accept()
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = server.Close() })
 	require.NoError(t, listener.Close())
+	return server, client
+}
+
+// connStream is a MockStream over a real connection: a read returns as soon
+// as the peer writes, where the buffer-backed MockStream polls every 100ms.
+// Deadlines, Close and Reset stay no-ops, as on MockStream.
+type connStream struct {
+	MockStream
+	conn net.Conn
+}
+
+func (s *connStream) Read(p []byte) (int, error) { return s.conn.Read(p) }
+
+func (s *connStream) Write(p []byte) (int, error) { return s.conn.Write(p) }
+
+// connStreamPair connects two streams; each reports the other's peer ID.
+func connStreamPair(t *testing.T, aRemote, bRemote peer.ID) (*connStream, *connStream) {
+	t.Helper()
+	a, b := loopbackConnPair(t)
+	return &connStream{MockStream: MockStream{peer: aRemote}, conn: a},
+		&connStream{MockStream: MockStream{peer: bRemote}, conn: b}
+}
+
+func stateSyncDeadlinePair(t *testing.T) (*stateSyncDeadlineStream, *stateSyncDeadlineStream) {
+	t.Helper()
+	server, client := loopbackConnPair(t)
 	wrap := func(conn net.Conn, remote peer.ID, shortReads bool) *stateSyncDeadlineStream {
 		return &stateSyncDeadlineStream{
 			MockStream: MockStream{peer: remote},
