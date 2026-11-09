@@ -10,6 +10,9 @@ import (
 // Retry
 ////////////////////////////////////////////////////////////////////////////////////////
 
+// sleep waits out a retry backoff; tests swap it to record backoffs instead of waiting.
+var sleep = time.Sleep
+
 func Retry(retries int, fn func() error) error {
 	var err error
 	backoff := time.Second
@@ -28,7 +31,7 @@ func Retry(retries int, fn func() error) error {
 		log.Err(err).
 			Str("backoff", backoff.String()).
 			Msgf("retrying %d/%d after backoff", i+1, retries)
-		time.Sleep(backoff)
+		sleep(backoff)
 
 		// exponential backoff, max 10 seconds
 		backoff *= 2

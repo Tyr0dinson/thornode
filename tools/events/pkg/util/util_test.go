@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	. "gopkg.in/check.v1"
 
@@ -123,6 +124,14 @@ func (t *Test) TestOrderedMap(c *C) {
 // Retry
 // -------------------------------------------------------------------------------------
 
+// recordBackoffs makes Retry record its backoffs instead of sleeping them until the
+// returned restore func runs.
+func recordBackoffs() (*[]time.Duration, func()) {
+	backoffs := []time.Duration{}
+	sleep = func(d time.Duration) { backoffs = append(backoffs, d) }
+	return &backoffs, func() { sleep = time.Sleep }
+}
+
 func (t *Test) TestRetrySuccess(c *C) {
 	calls := 0
 	err := Retry(3, func() error {
@@ -134,6 +143,8 @@ func (t *Test) TestRetrySuccess(c *C) {
 }
 
 func (t *Test) TestRetryFailsThenSucceeds(c *C) {
+	backoffs, restore := recordBackoffs()
+	defer restore()
 	calls := 0
 	err := Retry(3, func() error {
 		calls++
@@ -144,6 +155,7 @@ func (t *Test) TestRetryFailsThenSucceeds(c *C) {
 	})
 	c.Assert(err, IsNil)
 	c.Assert(calls, Equals, 3)
+	c.Assert(*backoffs, DeepEquals, []time.Duration{time.Second, 2 * time.Second})
 }
 
 func (t *Test) TestRetryExhausted(c *C) {
@@ -157,18 +169,22 @@ func (t *Test) TestRetryExhausted(c *C) {
 }
 
 func (t *Test) TestRetryBackoffCap(c *C) {
-	// With 1 retry, the backoff doubles once (1s -> 2s), but we just need it
-	// to exercise the retry path including the backoff logic.
+	// The backoff doubles from 1s and caps at 10s.
+	backoffs, restore := recordBackoffs()
+	defer restore()
 	calls := 0
-	err := Retry(1, func() error {
+	err := Retry(6, func() error {
 		calls++
-		if calls < 2 {
+		if calls < 7 {
 			return errors.New("fail")
 		}
 		return nil
 	})
 	c.Assert(err, IsNil)
-	c.Assert(calls, Equals, 2)
+	c.Assert(calls, Equals, 7)
+	c.Assert(*backoffs, DeepEquals, []time.Duration{
+		time.Second, 2 * time.Second, 4 * time.Second, 8 * time.Second, 10 * time.Second, 10 * time.Second,
+	})
 }
 
 // -------------------------------------------------------------------------------------
