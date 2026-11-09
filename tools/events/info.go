@@ -292,11 +292,12 @@ func NodeJail(block *thorscan.BlockResponse) {
 		return
 	}
 
-	// map node address to operator for readability
+	// map node address to operator for readability, falling back to the bare
+	// node address from the event if the lookup fails
 	nodes := []openapi.Node{}
 	err := util.ThornodeCachedRetryGet("thorchain/nodes", block.Header.Height, &nodes)
 	if err != nil {
-		log.Panic().Err(err).Msg("failed to get nodes")
+		log.Error().Err(err).Msg("failed to get nodes, using node addresses only")
 	}
 	addrToOperator := make(map[string]string)
 	for _, node := range nodes {
