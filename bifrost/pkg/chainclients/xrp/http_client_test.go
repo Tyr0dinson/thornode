@@ -62,13 +62,17 @@ func TestRetryHTTPClientCompletesSlowResponse(t *testing.T) {
 // Timeouts are NOT retried: the attempt consumed its full budget, and the block
 // scanner's own loop handles re-fetching. Exactly one request must be issued.
 func TestRetryHTTPClientDoesNotRetryTimeout(t *testing.T) {
-	if testing.Short() {
-		t.Skip("srv.Close waits out the handler's 2s sleep; skipped in -short mode")
-	}
 	var hits int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		atomic.AddInt32(&hits, 1)
-		time.Sleep(2 * time.Second)
+		// Stay silent past the client timeout, but return once the client hangs
+		// up so srv.Close does not wait out the full 2s. The server only notices
+		// the hang-up after the body has been read.
+		_, _ = io.Copy(io.Discard, r.Body)
+		select {
+		case <-r.Context().Done():
+		case <-time.After(2 * time.Second):
+		}
 		_, _ = w.Write([]byte(`{}`))
 	}))
 	defer srv.Close()
