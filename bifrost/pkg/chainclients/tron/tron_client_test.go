@@ -22,6 +22,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/syndtr/goleveldb/leveldb"
+	ldbstorage "github.com/syndtr/goleveldb/leveldb/storage"
 	chainclienttypes "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/types"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/tron/rpc"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pubkeymanager"
@@ -748,7 +749,7 @@ type failedRetryFixture struct {
 	bridge *failedRetryBridge
 	rpc    *failedRetryRPC
 	db     *leveldb.DB
-	path   string
+	store  ldbstorage.Storage
 	server *httptest.Server
 }
 
@@ -761,8 +762,10 @@ func (s *TronTestSuite) newFailedRetryFixture(c *C) *failedRetryFixture {
 	rpc.evidence(strings.Repeat("a", 64), "FAILED", "OUT_OF_ENERGY", 100)
 	server := httptest.NewServer(rpc)
 	tronAPI := api.NewTronApi(server.URL, 2*time.Second)
-	path := filepath.Join(c.MkDir(), "cache")
-	db, err := leveldb.OpenFile(path, nil)
+	// In-memory storage outlives db.Close, so reopen still replays the journal
+	// like a restart, without fsyncing a file database per fixture.
+	store := ldbstorage.NewMemStorage()
+	db, err := leveldb.Open(store, nil)
 	c.Assert(err, IsNil)
 	manager, err := signercache.NewSignerCacheManager(db)
 	c.Assert(err, IsNil)
@@ -783,7 +786,7 @@ func (s *TronTestSuite) newFailedRetryFixture(c *C) *failedRetryFixture {
 		},
 	}
 	client.config.SignerCacheExpiry = time.Hour
-	fixture := &failedRetryFixture{client: client, bridge: bridge, rpc: rpc, db: db, path: path, server: server}
+	fixture := &failedRetryFixture{client: client, bridge: bridge, rpc: rpc, db: db, store: store, server: server}
 	return fixture
 }
 
@@ -801,7 +804,7 @@ func (f *failedRetryFixture) close(c *C) {
 func (f *failedRetryFixture) reopen(c *C) {
 	c.Assert(f.db.Close(), IsNil)
 	var err error
-	f.db, err = leveldb.OpenFile(f.path, nil)
+	f.db, err = leveldb.Open(f.store, nil)
 	c.Assert(err, IsNil)
 	f.client.signerCacheManager, err = signercache.NewSignerCacheManager(f.db)
 	c.Assert(err, IsNil)
