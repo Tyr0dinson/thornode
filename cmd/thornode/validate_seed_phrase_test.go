@@ -72,6 +72,9 @@ func TestValidateSeedPhraseIgnoresUnrelatedConfig(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			// Each subprocess has its own stdin, env and HOME, and the command
+			// has no side effects, so the runs overlap.
+			t.Parallel()
 			validate := exec.Command(binary, "validate-seed-phrase")
 			validate.Stdin = strings.NewReader(test.mnemonic)
 			validate.Env = append(
