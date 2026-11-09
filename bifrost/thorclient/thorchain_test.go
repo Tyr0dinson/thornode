@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	cometed25519 "github.com/cometbft/cometbft/crypto/ed25519"
 	"github.com/cosmos/cosmos-sdk/codec"
@@ -110,6 +111,9 @@ func (s *ThorchainSuite) SetUpTest(c *C) {
 	s.bridge, ok = bridge.(*thorchainBridge)
 	c.Assert(ok, Equals, true)
 	s.bridge.httpClient.RetryMax = 1 // fail fast
+	// keep the retry, skip retryablehttp's real backoff (1s..30s)
+	s.bridge.httpClient.RetryWaitMin = time.Millisecond
+	s.bridge.httpClient.RetryWaitMax = 10 * time.Millisecond
 	c.Assert(err, IsNil)
 	c.Assert(s.bridge, NotNil)
 }
