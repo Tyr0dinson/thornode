@@ -2,13 +2,15 @@
 
 package thorchain
 
-// Code generated from Area/Thor/slash-refunds-3.22.0.tsv + on-chain bond_providers
-// at each slash height H-1. DO NOT EDIT BY HAND; re-pin at the cut. Each slice is
-// the bond PROVIDERS of that event's slashed members, each paid its share of its
-// node's bond_cost as liquid RUNE: share = floor(node_bond_cost * provider_bond /
-// node_total_bond) at H-1, per-node remainder to that node's largest-bond provider
-// so every per-node subtotal equals its bond_cost exactly; providers backing more
-// than one node within the event are summed. Sum == <event>SlashBondRefundTotal.
+// Code generated from Area/Thor/slash-refunds-3.22.0.tsv and on-chain bond_providers; DO NOT EDIT.
+//
+// Each slice is the bond PROVIDERS of that event's slashed members at the slash
+// height H-1, each paid its share of its node's bond_cost as liquid RUNE: share =
+// floor(node_bond_cost * provider_bond / node_total_bond) at H-1, per-node remainder
+// to that node's largest-bond provider so every per-node subtotal equals its
+// bond_cost exactly; providers backing more than one node within the event are
+// summed. Each slice sums to the matching slashRefunds322[i].refundTotal. Re-pin at
+// the cut.
 
 // tronSlashBondRefunds322 — 182 bond providers of the 182 rows (h28476980 TRON slash,
 // quorum tx DC951C7A…E519). Sum == 223655147430 (= 2 x pool RUNE credit 111827573715).

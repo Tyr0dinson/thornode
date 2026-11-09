@@ -37,14 +37,14 @@ import (
 // overlaps the board 1088 re-pay and needs the devs' sign-off, so the vault is
 // left strictly untouched.
 
-// tronSlashRefundEnabled322 toggles the whole TRON event (h28476980). OPEN for Itz:
-// the inbound 37A43908 was the ETH-reorg arb bot's swap. Default true (include all
-// three, per the standing CoS default).
+// tronSlashRefundEnabled322 toggles the whole TRON event (h28476980). The inbound
+// 37A43908 was the ETH-reorg arb bot's swap; Itz decided ON (2026-11-09 16:14Z) —
+// the refund stands.
 var tronSlashRefundEnabled322 = true
 
-// btcSlashRefundEnabled322 toggles the whole BTC event (h28574121). OPEN for Itz:
-// board 1088's re-pay plan may restore the BTC pool separately, and reversing it
-// here too would double-restore. Default true.
+// btcSlashRefundEnabled322 toggles the whole BTC event (h28574121). Board 1088's
+// re-pay plan may restore the BTC pool separately, and reversing it here too would
+// double-restore; Itz decided ON (2026-11-09 16:14Z) — the BTC event stays in.
 //
 // The toggle gates the ENTIRE BTC event (pool reversal AND bond refund), not the
 // pool leg alone, because the two are financially inseparable: each bond_cost is
@@ -57,16 +57,28 @@ var tronSlashRefundEnabled322 = true
 // a separate funding decision.
 var btcSlashRefundEnabled322 = true
 
+// ethSlashRefundEnabled322 toggles the whole ETH event (h28518406). ETH is the
+// largest event (refundTotal ~106,676 RUNE, 180 providers), so it gets the same
+// decision-time kill-switch as TRON and BTC — if a last-minute pool-drift or
+// double-restore concern surfaces at the cut, this flips it off in one line rather
+// than forcing an edit-and-rebuild. Default ON.
+var ethSlashRefundEnabled322 = true
+
 // slashRefund322 is one erroneous bond-slash reversal.
 type slashRefund322 struct {
 	key         string // short event id, used in logs/events
 	eventHeight int64  // the slash height H (bonds dropped by exactly bond_cost at H)
 	quorumTx    string // the MsgObservedTxQuorum tx that carried the slash, for audit
 	pool        string // the pool the slash mis-debited
-	// poolAssetCredit is the asset the slash wrongly debited from the pool; the
-	// reversal credits it back. poolRuneDebit is the RUNE the slash wrongly added to
-	// the pool; the reversal removes it and moves it Asgard->Reserve. refundTotal is
-	// the bond refund paid from the Reserve and equals 2 x poolRuneDebit.
+	// poolAssetCredit is the PRINCIPAL the slash wrongly debited from the pool, which
+	// the reversal credits back. The slash debited Coins+Gas (CommonOutboundTxHandler
+	// .slash), but the Gas was really spent on the outbound, so — like the 19to20 ZEC
+	// and TRON reversals — only the principal (the outbound's own coin amount) is
+	// restored; the gas stays debited. Pinned = the slash's pool debit minus the
+	// outbound gas: TRON 239051149400-133900000, ETH 1600007205-8205, BTC 10296474-1000.
+	// poolRuneDebit is the RUNE the slash wrongly added to the pool; the reversal
+	// removes it and moves it Asgard->Reserve. refundTotal is the bond refund paid from
+	// the Reserve and equals 2 x poolRuneDebit (unaffected by the gas split).
 	poolAssetCredit uint64
 	poolRuneDebit   uint64
 	refundTotal     uint64
@@ -81,17 +93,17 @@ type slashRefund322 struct {
 var slashRefunds322 = []slashRefund322{
 	{
 		key: "tron", eventHeight: 28476980, quorumTx: "DC951C7A...E519",
-		pool: "TRON.TRX", poolAssetCredit: 239051149400, poolRuneDebit: 111827573715,
+		pool: "TRON.TRX", poolAssetCredit: 238917249400, poolRuneDebit: 111827573715,
 		refundTotal: 223655147430, refunds: tronSlashBondRefunds322,
 	},
 	{
 		key: "eth", eventHeight: 28518406, quorumTx: "140C2F77...EEE6",
-		pool: "ETH.ETH", poolAssetCredit: 1600007205, poolRuneDebit: 5333813893723,
+		pool: "ETH.ETH", poolAssetCredit: 1599999000, poolRuneDebit: 5333813893723,
 		refundTotal: 10667627787446, refunds: ethSlashBondRefunds322,
 	},
 	{
 		key: "btc", eventHeight: 28574121, quorumTx: "16EFB26A...F8D8",
-		pool: "BTC.BTC", poolAssetCredit: 10296474, poolRuneDebit: 1312800440071,
+		pool: "BTC.BTC", poolAssetCredit: 10295474, poolRuneDebit: 1312800440071,
 		refundTotal: 2625600880142, refunds: btcSlashBondRefunds322,
 	},
 }
@@ -103,6 +115,8 @@ func slashRefundEnabled322(key string) bool {
 	switch key {
 	case "tron":
 		return tronSlashRefundEnabled322
+	case "eth":
+		return ethSlashRefundEnabled322
 	case "btc":
 		return btcSlashRefundEnabled322
 	}
@@ -111,7 +125,7 @@ func slashRefundEnabled322(key string) bool {
 
 // runSlashRefunds322 applies the three bond-slash reversals, each in its own cache
 // context so one soft-skip or toggle never blocks the others. It never returns an
-// error and never halts the upgrade.
+// error, so it cannot fail the upgrade.
 func (m Migrator) runSlashRefunds322(ctx cosmos.Context) {
 	for _, sr := range slashRefunds322 {
 		if !slashRefundEnabled322(sr.key) {
@@ -171,6 +185,15 @@ func applySlashRefund322(ctx cosmos.Context, mgr *Mgrs, sr slashRefund322) (cosm
 	if !total.Equal(cosmos.NewUint(sr.refundTotal)) {
 		return cosmos.ZeroUint(), fmt.Errorf("%s-slash refund sum %s != pinned %d", sr.key, total, sr.refundTotal)
 	}
+	// "half pool, half Reserve": bond_cost == 2 x the RUNE the slash added to the
+	// pool, so refundTotal must equal 2 x poolRuneDebit. The pool reversal frees
+	// poolRuneDebit (Asgard->Reserve) to fund exactly half the refund; the other half
+	// is the slash's penalty already in the Reserve. A pinned-data error that broke
+	// this identity would silently draw the mismatch from the general Reserve, so
+	// enforce it before any write (soft-skip, like the other guards).
+	if !cosmos.NewUint(sr.refundTotal).Equal(cosmos.NewUint(sr.poolRuneDebit).MulUint64(2)) {
+		return cosmos.ZeroUint(), fmt.Errorf("%s-slash refundTotal %d != 2 x poolRuneDebit %d", sr.key, sr.refundTotal, sr.poolRuneDebit)
+	}
 
 	// Reverse the pool leg first so the freed RUNE funds half the bond refund.
 	asset, err := common.NewAsset(sr.pool)
@@ -188,6 +211,25 @@ func applySlashRefund322(ctx cosmos.Context, mgr *Mgrs, sr slashRefund322) (cosm
 	if pool.BalanceRune.LT(runeDebit) {
 		shortfall := runeDebit.Sub(pool.BalanceRune)
 		return shortfall, fmt.Errorf("%s pool BalanceRune %s below slash credit %d; pool drifted", sr.pool, pool.BalanceRune, sr.poolRuneDebit)
+	}
+	// Soft vault-backing check (log-only). Crediting the principal back asserts the
+	// vaults hold ~poolAssetCredit more of the asset than the pool depth (the slash
+	// double-debited the pool while the vault kept the coin once). If the unaccounted
+	// vault asset is short, the premise may be off (pool drift, or an OverSolvency
+	// sweep consumed the surplus between the slash and the cut) and the reversal would
+	// over-claim the pool. It also backstops a SECOND (double) payment of the slashed
+	// outbound — which would have consumed the vault's unaccounted coin — so a short
+	// reading flags that too. We log loudly rather than gate: the pinned figures are
+	// the source of truth and a hard gate here would skip a correct refund on a
+	// transient read; re-verify at the cut if this fires. (The slashed outbounds are
+	// ~100k blocks old and confirmed once on chain, far beyond any signing/reschedule
+	// window, so no live re-signable copy remains to cancel.)
+	if freeAsset, favErr := unaccountedVaultAsset19to20(ctx, mgr, asset); favErr != nil {
+		ctx.Logger().Error("3.22.0 slash refund: could not read unaccounted vault asset for the backing check",
+			"event", sr.key, "pool", sr.pool, "error", favErr)
+	} else if freeAsset.LT(cosmos.NewUint(sr.poolAssetCredit)) {
+		ctx.Logger().Error("3.22.0 slash refund: unaccounted vault asset below the pool credit — vaults may not back the reversal; verify at the cut",
+			"event", sr.key, "pool", sr.pool, "unaccounted_vault_asset", freeAsset.String(), "pool_credit", sr.poolAssetCredit)
 	}
 	// Credit the debited asset back, remove the RUNE the slash added.
 	pool.BalanceAsset = pool.BalanceAsset.Add(cosmos.NewUint(sr.poolAssetCredit))

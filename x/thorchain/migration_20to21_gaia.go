@@ -75,10 +75,23 @@ const (
 	ltcRefundEthTx = "0xf47e997968660a3ef9255b7c516f50a8105414aae74563e620174f79b8289b17"
 )
 
-// migrate20to21Mainnet pays tcso the three reimbursements atomically: it stages
-// them in a cached context and commits only if all three succeed, so any failure
-// writes nothing. Mainnet only; it logs loudly and never halts the upgrade.
+// migrate20to21Mainnet runs two INDEPENDENT reimbursement groups, so a failure in
+// one can never skip the other: the tcso reimbursement batch, then the 3.22.0
+// bond-slash refunds. Each manages its own cache context and returns no error, so
+// neither group can fail the upgrade (a panic in migration code would still halt
+// it, as for any store migration). Mainnet only.
 func (m Migrator) migrate20to21Mainnet(ctx cosmos.Context) error {
+	m.reimburseTcsoBatch(ctx)
+	// Bond-slash refunds run unconditionally — NOT gated on the tcso batch above.
+	// Each event uses its own cache context and soft-skips independently.
+	m.runSlashRefunds322(ctx)
+	return nil
+}
+
+// reimburseTcsoBatch pays tcso the three reimbursements atomically: it stages them
+// in a cached context and commits only if all three succeed, so any failure writes
+// nothing and simply logs. It never returns an error, so it cannot fail the upgrade.
+func (m Migrator) reimburseTcsoBatch(ctx cosmos.Context) {
 	k := m.mgr.Keeper()
 	cacheCtx, commit := ctx.CacheContext()
 	payments := []struct {
@@ -95,7 +108,7 @@ func (m Migrator) migrate20to21Mainnet(ctx cosmos.Context) error {
 			// All or none: abandon the cached context so no payment is written.
 			ctx.Logger().Error("Migrate20to21 tcso reimbursement failed; no payment applied",
 				"error", err, "failed_item", p.what)
-			return nil
+			return
 		}
 	}
 	commit()
@@ -109,12 +122,6 @@ func (m Migrator) migrate20to21Mainnet(ctx cosmos.Context) error {
 	ctx.Logger().Info("reimbursed tcso for the GAIA top-up and the TRON and LTC manual refunds",
 		"recipient", gaiaReimburseRecipient,
 		"total_rune", cosmos.NewUint(gaiaReimburseRune+tronRefundRune+ltcRefundRune).String())
-
-	// 3.22.0 bond-slash refunds. Separate from the tcso batch above: each event
-	// runs in its own cache context and soft-skips independently, so a drift or a
-	// toggle on one never blocks the others or the tcso reimbursement.
-	m.runSlashRefunds322(ctx)
-	return nil
 }
 
 // reimburseTcso sends runeAmt (in 1e8 RUNE) from the Reserve to recipientStr as
