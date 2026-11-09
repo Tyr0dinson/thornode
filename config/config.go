@@ -605,6 +605,16 @@ type Thornode struct {
 			SnapshotKeepRecent int64 `mapstructure:"snapshot_keep_recent"`
 		} `mapstructure:"state_sync"`
 
+		// Divergence configures the node-local app-hash divergence diagnostics
+		// (app/divergence): per-block store digests, a ring of recent write
+		// sets, and a crash bundle on a consensus failure or blocksync app hash
+		// mismatch.
+		Divergence struct {
+			Enabled      bool   `mapstructure:"enabled"`
+			RetainBlocks int64  `mapstructure:"retain_blocks"`
+			ReferenceAPI string `mapstructure:"reference_api"`
+		} `mapstructure:"divergence"`
+
 		Wasm struct {
 			QueryGasLimit   int64 `mapstructure:"query_gas_limit"`
 			MemoryCacheSize int64 `mapstructure:"memory_cache_size"`
