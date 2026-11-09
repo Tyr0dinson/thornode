@@ -1517,7 +1517,9 @@ func TestStateSyncSenderProcessingACKExpiry(t *testing.T) {
 				count = 2
 			}
 			sender := stateSyncDeadlineFixture(t, count)
-			sender.config.StateSyncTimeout = 3 * stateSyncTestFrameTimeout
+			// The budget only has to outlast the loopback ACK exchanges before
+			// the stall; it is not compared with the frame timeout.
+			sender.config.StateSyncTimeout = time.Second
 			var logs stateSyncLogBuffer
 			sender.logger = zerolog.New(&logs)
 			server, client := stateSyncDeadlinePair(t)
