@@ -11,6 +11,7 @@ import (
 
 // TestBasicLockUnlock tests simple locking and unlocking
 func TestBasicLockUnlock(t *testing.T) {
+	t.Parallel()
 	lock := NewPriorityRWLock()
 
 	// Should be able to acquire a write lock
@@ -25,6 +26,7 @@ func TestBasicLockUnlock(t *testing.T) {
 
 // TestMultipleWriters tests that writers have exclusive access
 func TestMultipleWriters(t *testing.T) {
+	t.Parallel()
 	lock := NewPriorityRWLock()
 	counter := 0
 	writerActive := int32(0)
@@ -67,6 +69,7 @@ func TestMultipleWriters(t *testing.T) {
 
 // TestMultipleReaders tests that readers can access concurrently
 func TestMultipleReaders(t *testing.T) {
+	t.Parallel()
 	lock := NewPriorityRWLock()
 	readersActive := int32(0)
 	maxConcurrentReaders := int32(0)
@@ -111,6 +114,7 @@ func TestMultipleReaders(t *testing.T) {
 
 // TestReadersBlockWriter tests that active readers block writers
 func TestReadersBlockWriter(t *testing.T) {
+	t.Parallel()
 	lock := NewPriorityRWLock()
 	readerDone := make(chan struct{})
 	writerStarted := make(chan struct{})
@@ -125,8 +129,10 @@ func TestReadersBlockWriter(t *testing.T) {
 		// Hold the lock for a while
 		time.Sleep(100 * time.Millisecond)
 
-		lock.RUnlock()
+		// Signal before releasing: closing after RUnlock let the writer take
+		// the lock and wake the select below first.
 		close(readerDone)
+		lock.RUnlock()
 	}()
 
 	// Wait for reader to get lock
@@ -165,6 +171,7 @@ func TestReadersBlockWriter(t *testing.T) {
 
 // TestPriorityReaderCutsLine tests that priority readers get access before waiting writers
 func TestPriorityReaderCutsLine(t *testing.T) {
+	t.Parallel()
 	lock := NewPriorityRWLock()
 	writerHoldingLock := make(chan struct{})
 	writerReleasedLock := make(chan struct{})
@@ -269,6 +276,7 @@ func TestPriorityReaderCutsLine(t *testing.T) {
 
 // TestConcurrentAccess simulates concurrent readers, writers and priority readers
 func TestConcurrentAccess(t *testing.T) {
+	t.Parallel()
 	lock := NewPriorityRWLock()
 	data := int32(0)
 
@@ -395,6 +403,7 @@ func TestConcurrentAccess(t *testing.T) {
 
 // TestWritersBlockEachOther tests that writers have exclusive access
 func TestWritersBlockEachOther(t *testing.T) {
+	t.Parallel()
 	lock := NewPriorityRWLock()
 	firstWriterHasLock := make(chan struct{})
 	firstWriterDone := make(chan struct{})
@@ -446,6 +455,7 @@ func TestWritersBlockEachOther(t *testing.T) {
 
 // TestPriorityReaderStarvation ensures that priority readers don't starve writers indefinitely
 func TestPriorityReaderStarvation(t *testing.T) {
+	t.Parallel()
 	lock := NewPriorityRWLock()
 	const numPriorityReaders = 10
 	writerGotLock := make(chan struct{})
@@ -483,8 +493,11 @@ func TestPriorityReaderStarvation(t *testing.T) {
 	}
 }
 
-// TestHighContention creates an extremely contentious scenario to stress test the lock
+// TestHighContention creates an extremely contentious scenario to stress test the lock.
+// Every test in this file builds its own lock and runs in parallel, so this
+// fixed-length stress window overlaps the other tests' fixed sleeps.
 func TestHighContention(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping high contention test in short mode")
 	}
