@@ -22,6 +22,7 @@ import (
 	txtypes "github.com/Peersyst/xrpl-go/xrpl/transaction/types"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/blockscanner"
+	btypes "gitlab.com/thorchain/thornode/v3/bifrost/blockscanner/types"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/signercache"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
@@ -2433,6 +2434,45 @@ func TestFetchTxsWithMockServer(t *testing.T) {
 	txIn, err := scanner.FetchTxs(100, 100)
 	require.NoError(t, err)
 	assert.Equal(t, common.XRPChain, txIn.Chain)
+}
+
+// TestFetchTxsRequiresBothReadsOfTheSameLedger: the hash-only and expanded reads
+// may be answered by different endpoints; equal tx counts from two forks (or the
+// wrong index) must not be scanned, the height is retried instead.
+func TestFetchTxsRequiresBothReadsOfTheSameLedger(t *testing.T) {
+	const hashes = `{"result":{"ledger":{"transactions":["HASH1"]},"ledger_hash":"AAA","ledger_index":100,"validated":true}}`
+	cases := map[string]string{
+		"other hash":  `{"result":{"ledger":{"transactions":[{"tx_json":{"TransactionType":"Payment","Fee":"12","Account":"rSender","Destination":"rDest"},"meta":{"delivered_amount":"1000000","TransactionResult":"tesSUCCESS"},"hash":"HASH2","validated":true}]},"ledger_hash":"BBB","ledger_index":100,"validated":true}}`,
+		"other index": `{"result":{"ledger":{"transactions":[{"tx_json":{"TransactionType":"Payment","Fee":"12","Account":"rSender","Destination":"rDest"},"meta":{"delivered_amount":"1000000","TransactionResult":"tesSUCCESS"},"hash":"HASH1","validated":true}]},"ledger_hash":"AAA","ledger_index":101,"validated":true}}`,
+	}
+	for name, expanded := range cases {
+		t.Run(name, func(t *testing.T) {
+			callCount := 0
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				callCount++
+				w.Header().Set("Content-Type", "application/json")
+				if callCount == 1 {
+					fmt.Fprintln(w, hashes)
+					return
+				}
+				fmt.Fprintln(w, expanded)
+			}))
+			defer server.Close()
+
+			rpcCfg, err := rpc.NewClientConfig(server.URL + "/")
+			require.NoError(t, err)
+			scanner := testXrpScannerWithLastFee(&XrpBlockScanner{
+				rpcClient:             rpc.NewClient(rpcCfg),
+				cfg:                   config.BifrostBlockScannerConfiguration{ChainID: common.XRPChain},
+				solvencyReporter:      func(height int64) error { return nil },
+				globalNetworkFeeQueue: make(chan common.NetworkFee, 10),
+			}, sdkmath.NewUint(12))
+
+			_, err = scanner.FetchTxs(100, 100)
+			require.ErrorIs(t, err, btypes.ErrUnavailableBlock)
+			require.Equal(t, 2, callCount)
+		})
+	}
 }
 
 // -------------------------------------------------------------------------------------

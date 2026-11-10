@@ -492,6 +492,17 @@ func (c *XrpBlockScanner) FetchTxs(height, chainHeight int64) (types.TxIn, error
 	if !ledger.Validated {
 		return types.TxIn{}, btypes.ErrUnavailableBlock
 	}
+	// The two reads are routed and may come from different endpoints: only scan when
+	// both describe the same ledger, else a hash list from one fork could be paired
+	// with the expanded txs of another and miss inbounds. Retry the height instead.
+	if ledgerTxHashes.LedgerHash == "" || ledger.LedgerHash != ledgerTxHashes.LedgerHash ||
+		int64(ledgerTxHashes.LedgerIndex) != height || int64(ledger.LedgerIndex) != height {
+		c.logger.Warn().Int64("height", height).
+			Str("hashes_ledger", ledgerTxHashes.LedgerHash).Uint32("hashes_index", uint32(ledgerTxHashes.LedgerIndex)).
+			Str("expanded_ledger", ledger.LedgerHash).Uint32("expanded_index", uint32(ledger.LedgerIndex)).
+			Msg("xrp ledger reads disagree, retrying height")
+		return types.TxIn{}, btypes.ErrUnavailableBlock
+	}
 	c.resetLedgerNotFound(height)
 
 	// Verify that we could fetch all transactions, if not, fetch remaining individually.
