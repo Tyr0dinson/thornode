@@ -34,7 +34,7 @@ import (
 // non-silently (an event + an error log carrying the event height and the
 // shortfall) and discard the event's cache context, leaving it to be re-pinned at
 // the cut. The BTC vault books also deducted the dead 045DE30B outbound, which
-// overlaps the board 1088 re-pay and needs the devs' sign-off, so the vault is
+// overlaps a separate BTC re-pay plan and needs the devs' sign-off, so the vault is
 // left strictly untouched.
 
 // tronSlashRefundEnabled322 toggles the whole TRON event (h28476980). The inbound
@@ -42,7 +42,7 @@ import (
 // the refund stands.
 var tronSlashRefundEnabled322 = true
 
-// btcSlashRefundEnabled322 toggles the whole BTC event (h28574121). Board 1088's
+// btcSlashRefundEnabled322 toggles the whole BTC event (h28574121). A separate
 // re-pay plan may restore the BTC pool separately, and reversing it here too would
 // double-restore; Itz decided ON (2026-11-09 16:14Z) — the BTC event stays in.
 //
@@ -52,8 +52,8 @@ var tronSlashRefundEnabled322 = true
 // refund is funded by the RUNE freed from reversing the pool (moved Asgard->Reserve).
 // Skipping only the pool reversal while still paying the full refund would pay that
 // half out of the general Reserve while the pool keeps its erroneous RUNE credit —
-// a double-spend. So deferring the BTC pool to board 1088 means deferring the BTC
-// bond refund with it; refunding BTC bonders while the pool waits on 1088 would need
+// a double-spend. So deferring the BTC pool to that separate plan means deferring the BTC
+// bond refund with it; refunding BTC bonders while the pool waits on that plan would need
 // a separate funding decision.
 var btcSlashRefundEnabled322 = true
 
