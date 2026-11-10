@@ -1063,26 +1063,68 @@ func (s *HealthSuite) TestMinorityHashFoundDuringAnInlineEvictionStillQuarantine
 
 // Endpoints far behind that are probed while they recover must not pull the height
 // the hashes are compared at down to theirs: a recent fork on a healthy endpoint is
-// then still found.
+// then still found, also when they outnumber the healthy ones.
 func (s *HealthSuite) TestRecoveringEndpointsDoNotLowerTheComparedHeight(c *C) {
-	cfg := healthCfg()
-	cfg.IntegrityCheckDepth = 20
-	cfg.ErrorThreshold = 1
-	a := &fakeProbe{name: "a", height: 1000, identity: "g", hashes: map[int64]string{480: "H", 980: "H"}}
-	b := &fakeProbe{name: "b", height: 1000, identity: "g", hashes: map[int64]string{480: "H", 980: "H"}}
-	x := &fakeProbe{name: "x", height: 1000, identity: "g", hashes: map[int64]string{480: "H", 980: "X"}} // forked after 480
-	behind := func(name string) *fakeProbe {
-		return &fakeProbe{name: name, height: 500, identity: "g", hashes: map[int64]string{480: "H"}}
+	for _, behindN := range []int{3, 4} {
+		cfg := healthCfg()
+		cfg.IntegrityCheckDepth = 20
+		cfg.ErrorThreshold = 1
+		a := &fakeProbe{name: "a", height: 1000, identity: "g", hashes: map[int64]string{480: "H", 980: "H"}}
+		b := &fakeProbe{name: "b", height: 1000, identity: "g", hashes: map[int64]string{480: "H", 980: "H"}}
+		x := &fakeProbe{name: "x", height: 1000, identity: "g", hashes: map[int64]string{480: "H", 980: "X"}} // forked after 480
+		probes := []*fakeProbe{a, b, x}
+		var behind []string
+		for i := 1; i <= behindN; i++ {
+			name := fmt.Sprintf("r%d", i)
+			behind = append(behind, name)
+			probes = append(probes, &fakeProbe{name: name, height: 500, identity: "g", hashes: map[int64]string{480: "H"}})
+		}
+		m, ps := newHealthMgr(c, cfg, nil, probes...)
+		c.Assert(m.Bootstrap(ctxBg(), ps), IsNil)
+		for _, name := range behind {
+			m.Entry(name).MarkUnhealthy(endpoints.ErrorKindLag)
+		}
+		m.Cycle(ctxBg())
+		c.Assert(m.Entry("x").IntegrityEvicted(), Equals, true, Commentf("%d behind", behindN))
+		c.Assert(m.Entry("a").State(), Equals, endpoints.StateHealthy)
+		c.Assert(m.Entry("b").State(), Equals, endpoints.StateHealthy)
 	}
-	m, ps := newHealthMgr(c, cfg, nil, a, b, x, behind("r1"), behind("r2"), behind("r3"))
-	c.Assert(m.Bootstrap(ctxBg(), ps), IsNil)
-	for _, name := range []string{"r1", "r2", "r3"} {
-		m.Entry(name).MarkUnhealthy(endpoints.ErrorKindLag)
+}
+
+// A split vote that no healthy endpoint contradicted (their hashes could not be
+// read), or in which an endpoint's hash is shared by no tip, does not let endpoints
+// far behind recover against their own tip.
+func (s *HealthSuite) TestUncontradictedSplitStillHoldsBackRecovery(c *C) {
+	for _, alone := range []bool{false, true} {
+		cfg := healthCfg()
+		cfg.IntegrityCheckDepth = 20
+		cfg.ErrorThreshold = 1
+		// not alone: the healthy pair cannot read 80 and the returning ones agree;
+		// alone: the pair answers X and each returning endpoint has a hash of its own
+		pairAt80, returningAt80 := "", []string{"H", "H", "H"}
+		if alone {
+			pairAt80, returningAt80 = "X", []string{"Z", "Y", "H"}
+		}
+		probes := []*fakeProbe{
+			{name: "a", height: 1000, identity: "g", hashes: map[int64]string{80: pairAt80, 980: "H"}},
+			{name: "b", height: 1000, identity: "g", hashes: map[int64]string{80: pairAt80, 980: "H"}},
+		}
+		returning := []string{"r1", "r2", "r3"}
+		for i, name := range returning {
+			probes = append(probes, &fakeProbe{name: name, height: 100, identity: "g", hashes: map[int64]string{80: returningAt80[i]}})
+		}
+		m, ps := newHealthMgr(c, cfg, nil, probes...)
+		c.Assert(m.Bootstrap(ctxBg(), ps), IsNil)
+		for _, name := range returning {
+			m.Entry(name).MarkUnhealthy(endpoints.ErrorKindHTTP)
+		}
+		for i := 0; i < cfg.MinRecoveryChecks+1; i++ {
+			m.Cycle(ctxBg())
+		}
+		for _, name := range returning {
+			c.Assert(m.Entry(name).State(), Not(Equals), endpoints.StateHealthy, Commentf("alone=%v %s", alone, name))
+		}
 	}
-	m.Cycle(ctxBg())
-	c.Assert(m.Entry("x").IntegrityEvicted(), Equals, true)
-	c.Assert(m.Entry("a").State(), Equals, endpoints.StateHealthy)
-	c.Assert(m.Entry("b").State(), Equals, endpoints.StateHealthy)
 }
 
 // Correct endpoints back from an outage that outnumber a healthy pair on another fork

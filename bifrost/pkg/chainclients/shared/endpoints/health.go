@@ -449,18 +449,19 @@ func (m *Manager) Cycle(ctx context.Context) {
 		medianFrom = checkFrom
 	}
 	checkHeight := lowerMedian(medianFrom)
-	// ...unless most of them have not reached it: endpoints out of service that
-	// outnumber the healthy ones (correct endpoints back from an outage, behind a pair
-	// on another fork that runs ahead) must be able to vote, so the hashes are compared
-	// at the level of all of them
+	// ...and, when most of them have not reached it, also at the level of all of them:
+	// endpoints out of service that outnumber the healthy ones (correct endpoints back
+	// from an outage, behind a pair on another fork that runs ahead) must be able to
+	// vote, while a healthy endpoint forked above that level is still compared
 	reachedMedian := 0
 	for _, h := range checkFrom {
 		if h >= checkHeight {
 			reachedMedian++
 		}
 	}
+	var lowHeight int64
 	if reachedMedian*2 < len(checkFrom) {
-		checkHeight = lowerMedian(checkFrom)
+		lowHeight = lowerMedian(checkFrom) - m.cfg.IntegrityCheckDepth
 	}
 	checkHeight -= m.cfg.IntegrityCheckDepth
 	var scanner int64
@@ -476,6 +477,29 @@ func (m *Manager) Cycle(ctx context.Context) {
 	badHash, matchedHash, vote, hashes := map[string]bool{}, map[string]bool{}, voteNone, map[string]string{}
 	if checkQuorum && m.cfg.IntegrityCheckDepth > 0 && checkHeight > 0 {
 		badHash, matchedHash, vote, hashes = m.integrityCheck(ctx, checkHeight, heights)
+		if lowHeight > 0 && lowHeight < checkHeight {
+			// both votes must show a majority: a split at the lower level is the split
+			// (its hashes judge the recoveries); otherwise a minority hash at either
+			// level is on another fork
+			lowBad, lowMatched, lowVote, lowHashes := m.integrityCheck(ctx, lowHeight, heights)
+			switch {
+			case lowVote == voteInconclusive:
+				badHash, matchedHash, vote, hashes = lowBad, lowMatched, lowVote, lowHashes
+			case vote != voteInconclusive:
+				for name := range lowBad {
+					badHash[name] = true
+				}
+				for name := range lowMatched {
+					matchedHash[name] = true
+				}
+				for name := range badHash {
+					delete(matchedHash, name)
+				}
+				if lowVote == voteMajority {
+					vote = voteMajority
+				}
+			}
+		}
 	}
 	// THORChain's height counts as reached by any endpoint not shown to be on another
 	// fork (not quarantined, no minority hash this cycle), including one whose hash
@@ -495,6 +519,13 @@ func (m *Manager) Cycle(ctx context.Context) {
 	// (THORChain's height still does); it still holds back the recovery of an endpoint
 	// behind it.
 	split := vote == voteInconclusive
+	// the hashes shown by endpoints healthy at the vote (before this cycle's results)
+	healthyHash := make(map[string]string, len(hashes))
+	for name, h := range hashes {
+		if m.byName[name].State() == StateHealthy {
+			healthyHash[name] = h
+		}
+	}
 	if vote == voteMajority {
 		for name := range tipHeights {
 			if !matchedHash[name] {
@@ -581,18 +612,24 @@ func (m *Manager) Cycle(ctx context.Context) {
 				ok = false
 			}
 			if ok {
-				// during a split vote, an endpoint that showed a hash is judged only
-				// against the endpoints that showed the same one: a pair on another
-				// fork running ahead must not hold back the endpoints that outvoted it
+				// during a split vote, an endpoint that showed a hash a healthy endpoint
+				// contradicted is judged only against the endpoints that showed the same
+				// one, when they form a tip: a pair on another fork running ahead must
+				// not hold back the endpoints that outvoted it
 				recTip, recQuorum := tip, quorum
 				if own := hashes[e.Name]; split && own != "" {
 					same := make(map[string]int64, len(tipHeights))
+					contradicted := false
 					for name, h := range tipHeights {
 						if hashes[name] == own {
 							same[name] = h
+						} else if healthyHash[name] != "" {
+							contradicted = true
 						}
 					}
-					recTip, recQuorum = consensusTip(same, m.cfg.MaxBlockLag)
+					if t, q := consensusTip(same, m.cfg.MaxBlockLag); contradicted && q {
+						recTip, recQuorum = t, q
+					}
 				}
 				if lag, _ := lagging(r.height, recTip, recQuorum, false); lag {
 					ok = false

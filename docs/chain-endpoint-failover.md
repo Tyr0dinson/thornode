@@ -203,8 +203,9 @@ A background health check runs every `health_check_interval` against every endpo
   endpoints agree on a tip**, the block hash `depth` below the healthy endpoints' level
   (the lower median of their heights, so endpoints that report heights ahead, or are far
   behind while they recover, do not pick it; when fewer than half of all the probed
-  endpoints have reached that level, the lower median of all of them is used instead, so
-  endpoints out of service that outnumber the healthy ones can vote) is compared across
+  endpoints have reached that level, the hashes are also compared at the lower median of
+  all of them, so endpoints out of service that outnumber the healthy ones can vote; a
+  split at either level is a split, and a minority hash at either level is evicted) is compared across
   the healthy endpoints that answered. Endpoints out of service but not quarantined (evicted for request
   errors or lag) that have reached that height are asked too (between their recovery
   checks, once one has passed, from the height they last reported), and so are healthy
@@ -223,8 +224,9 @@ A background health check runs every `health_check_interval` against every endpo
   two could give their hash, nothing is evicted either (a single healthy answer can
   still clear a quarantined endpoint, see below). In both cases no healthy endpoint is
   struck for lag against the other endpoints' tip that cycle (THORChain's height still
-  strikes), and an endpoint out of service that gave its hash is judged for recovery
-  only against the tip of the endpoints that gave the same hash. An endpoint whose hash read fails casts no vote, so while honest endpoints
+  strikes), and an endpoint out of service whose hash a healthy endpoint contradicted
+  is judged for recovery only against the tip of the endpoints that gave the same hash,
+  when they form one. An endpoint whose hash read fails casts no vote, so while honest endpoints
   cannot answer, two endpoints on another fork can still outvote the one that does:
   configure only endpoints you can vouch for (they still have to pass the identity
   check). With fewer than two
