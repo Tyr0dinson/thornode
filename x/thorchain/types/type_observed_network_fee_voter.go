@@ -22,11 +22,12 @@ func (m *ObservedNetworkFeeVoter) ID() string {
 func (m *ObservedNetworkFeeVoter) GetSigners() []cosmos.AccAddress {
 	addrs := make([]cosmos.AccAddress, 0)
 	for _, a := range m.Signers {
-		addr, err := cosmos.AccAddressFromBech32(a)
-		if err != nil {
+		// memoized cosmos.AccAddressFromBech32; skips the same strings
+		addr, ok := common.SignerAddressString(a)
+		if !ok {
 			continue
 		}
-		addrs = append(addrs, addr)
+		addrs = append(addrs, cosmos.AccAddress(addr))
 	}
 	return addrs
 }

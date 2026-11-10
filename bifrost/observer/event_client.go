@@ -11,6 +11,10 @@ import (
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/ebifrost"
 )
 
+// subscribeRetryBackoff is the first resubscribe backoff after an error, and the
+// value the backoff resets to after a clean exit; a var so tests can shorten it.
+var subscribeRetryBackoff = time.Second
+
 // EventClient manages a single subscription to events
 type EventClient struct {
 	logger     zerolog.Logger
@@ -182,7 +186,7 @@ func (ec *EventClient) CleanShutdown() {
 func (ec *EventClient) subscribeWithRetry(ctx context.Context) {
 	defer ec.wg.Done() // Signal when this goroutine exits
 
-	backoff := time.Second
+	backoff := subscribeRetryBackoff
 	maxBackoff := 2 * time.Minute
 
 	for {
@@ -228,7 +232,7 @@ func (ec *EventClient) subscribeWithRetry(ctx context.Context) {
 				}
 			} else {
 				// This is an unexpected clean exit, retry with minimal backoff
-				backoff = time.Second
+				backoff = subscribeRetryBackoff
 			}
 		}
 	}

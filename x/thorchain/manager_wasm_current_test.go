@@ -141,3 +141,26 @@ func (s WasmManagerSuite) loadWasm(c *C, file string) []byte {
 	c.Assert(err, IsNil)
 	return wasm
 }
+
+func (s WasmManagerSuite) TestSharedVMKeepsCodePerTest(c *C) {
+	// Two setups run on the same VM, but each keeper's store holds only the
+	// code stored through it, and the VM outlives each setup's temp dirs.
+	ctx, mgr := setupManagerForTest(c)
+	ctx = ctx.WithBlockTime(time.Unix(1, 0))
+	mgr.K.SetMimir(ctx, constants.MimirKeyWasmPermissionless, 1)
+	_, _, err := mgr.WasmManager().StoreCode(ctx, GetRandomBech32Addr(), s.loadWasm(c, "counter.wasm"))
+	c.Assert(err, IsNil)
+	vm := sharedWasmVM.vm
+	c.Assert(vm, NotNil)
+
+	ctx, mgr = setupManagerForTest(c)
+	ctx = ctx.WithBlockTime(time.Unix(1, 0))
+	mgr.K.SetMimir(ctx, constants.MimirKeyWasmPermissionless, 1)
+	c.Assert(sharedWasmVM.vm, Equals, vm)
+	_, _, err = mgr.WasmManager().InstantiateContract(ctx, 1, GetRandomBech32Addr(), nil, []byte(`{}`), "label", []types.Coin{})
+	c.Assert(err, NotNil)
+	_, _, err = mgr.WasmManager().StoreCode(ctx, GetRandomBech32Addr(), s.loadWasm(c, "counter.wasm"))
+	c.Assert(err, IsNil)
+	_, _, err = mgr.WasmManager().InstantiateContract(ctx, 1, GetRandomBech32Addr(), nil, []byte(`{}`), "label", []types.Coin{})
+	c.Assert(err, IsNil)
+}

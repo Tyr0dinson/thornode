@@ -480,16 +480,18 @@ var canceledContext = func() context.Context {
 // produce an observation, so the caller can skip fetching them. ok is false if the
 // receipts might produce one, or if the block alone cannot rule that out.
 //
-// Only logs emitted by a router are parsed, and logsBloom has no false negatives,
-// so a block whose bloom lacks every router has no router log. That has to come from
-// the bloom: with the contract whitelist off, a deposit can arrive through any
-// contract, so tx.To cannot find it. Everything else receiptToTxInItem observes is
-// visible in the tx: sends to and from a vault (including failed ones, which have no
-// logs) and direct ERC20 transfers to a vault.
+// A router deposit can come through another contract, so check the bloom for log
+// emitters regardless of tx.To. A direct ERC20 inbound names the vault in its
+// transfer calldata. A failed outbound can have no logs and its signing vault
+// may have left the vault list, so also check the local signer cache.
 //
 // Senders are taken as the RPC reported them where possible, see txSender. A provider
 // that lied about a sender could hide that tx from this check, but it could equally
 // leave the tx out of the block or misreport its receipt.
+//
+// A chain needs a bloom that covers the block's own logs. AVAX's does not: under ACP-194
+// it covers the blocks being settled, so a router log there can be absent from its
+// block's bloom, and AVAX must not use this.
 func (e *EVMScanner) gasPricesWithoutReceipts(block *etypes.Block) (gasPrices []*big.Int, ok bool) {
 	baseFee := block.BaseFee()
 	if baseFee == nil {
@@ -500,6 +502,10 @@ func (e *EVMScanner) gasPricesWithoutReceipts(block *etypes.Block) (gasPrices []
 		return nil, false
 	}
 	bloom := block.Bloom()
+	// no logs at all, or nothing filled the bloom in: only the receipts can tell
+	if bloom == (etypes.Bloom{}) && block.Transactions().Len() > 0 {
+		return nil, false
+	}
 	for _, router := range routers {
 		if etypes.BloomLookup(bloom, ecommon.HexToAddress(router.String())) {
 			return nil, false
@@ -512,15 +518,24 @@ func (e *EVMScanner) gasPricesWithoutReceipts(block *etypes.Block) (gasPrices []
 		if tx == nil || tx.Type() == etypes.BlobTxType {
 			continue
 		}
-		tip, err := tx.EffectiveGasTip(baseFee)
-		if err != nil {
-			return nil, false
+		if tx.IsDepositTx() {
+			// reported as 0 in the receipt, where base fee + tip would give the base fee
+			gasPrices = append(gasPrices, new(big.Int))
+		} else {
+			tip, err := tx.EffectiveGasTip(baseFee)
+			if err != nil {
+				return nil, false
+			}
+			gasPrices = append(gasPrices, new(big.Int).Add(tip, baseFee))
 		}
-		gasPrices = append(gasPrices, new(big.Int).Add(tip, baseFee))
 		if e.txMayBeObserved(tx, block.Hash(), uint(i)) {
 			return nil, false
 		}
 		txs = append(txs, tx)
+	}
+
+	if evm.BlockMayHaveSignedTx(block, e.signerCacheManager) {
+		return nil, false
 	}
 
 	for _, tx := range txs {
@@ -532,14 +547,13 @@ func (e *EVMScanner) gasPricesWithoutReceipts(block *etypes.Block) (gasPrices []
 	return gasPrices, true
 }
 
-// txMayBeObserved reports whether tx's own fields could make receiptToTxInItem
-// observe it, leaving aside logs emitted by a router.
+// txMayBeObserved reports whether the transaction fields alone warrant fetching receipts.
 func (e *EVMScanner) txMayBeObserved(tx *etypes.Transaction, blockHash ecommon.Hash, index uint) bool {
 	to := tx.To()
 	if to == nil {
 		return false
 	}
-	if e.isToValidContractAddress(to, true) || e.isPoolAddress(*to) {
+	if e.isPoolAddress(*to) {
 		return true
 	}
 	if evm.HasERC20TransferSelector(tx) {
@@ -575,12 +589,12 @@ func (e *EVMScanner) getTxIn(block *etypes.Block) (stypes.TxIn, []*big.Int, erro
 	// CHANGEME: if an EVM chain supports some way of fetching all transaction receipts
 	// within a block, register it here.
 	switch e.cfg.ChainID {
-	case common.BSCChain:
+	case common.BASEChain, common.BSCChain:
 		if gasPrices, ok := e.gasPricesWithoutReceipts(block); ok {
 			return stypes.TxIn{}, gasPrices, nil
 		}
 		return e.getTxInOptimized("eth_getBlockReceipts", block)
-	case common.BASEChain, common.POLChain:
+	case common.POLChain:
 		return e.getTxInOptimized("eth_getBlockReceipts", block)
 	}
 

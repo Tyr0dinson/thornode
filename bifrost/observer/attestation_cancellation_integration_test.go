@@ -17,11 +17,23 @@ import (
 	thortypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
+// The XMR delivery deadline starts before the handler takes s.mu, and the
+// attestation is dropped if that deadline has already passed once the lock is
+// held. A 50ms budget was shorter than scheduler/GC stalls on a loaded CI
+// runner, so the import was sometimes never attempted. Keep the budget well
+// above such stalls, and make the slow authorization outlast it so the
+// deadline has really expired by the time authorization returns.
+const (
+	slowAuthDeliveryTimeout = 500 * time.Millisecond
+	slowAuthDelay           = slowAuthDeliveryTimeout + 250*time.Millisecond
+	slowAuthImportWait      = 5 * time.Second
+)
+
 func TestStateCancellationPreservesOrdinaryXMRSlowAuthorization(t *testing.T) {
-	for _, delay := range []time.Duration{0, 150 * time.Millisecond} {
+	for _, delay := range []time.Duration{0, slowAuthDelay} {
 		t.Run(delay.String(), func(t *testing.T) {
 			s, _, _, _, legacy, _ := setupTestGossip(t)
-			s.config.PeerTimeout = 50 * time.Millisecond
+			s.config.PeerTimeout = slowAuthDeliveryTimeout
 			tx, plan := observerTestXMRPlan(t)
 			key := secp256k1.GenPrivKey()
 			vault := observerTestVaultFunc(tx.ObservedPubKey, observerTestPubKey(t, key))
@@ -41,7 +53,7 @@ func TestStateCancellationPreservesOrdinaryXMRSlowAuthorization(t *testing.T) {
 			s.handleObservedTxAttestation(context.Background(), common.AttestTx{ObsTx: tx, Attestation: batch.QuoTxs[0].Attestations[0]})
 			select {
 			case <-imported:
-			case <-time.After(time.Second):
+			case <-time.After(slowAuthImportWait):
 				t.Fatal("ordinary delivery discarded a successful authorization after its delivery deadline")
 			}
 			state, exists := observerTestConflictState(s, tx)
@@ -52,10 +64,10 @@ func TestStateCancellationPreservesOrdinaryXMRSlowAuthorization(t *testing.T) {
 }
 
 func TestStateCancellationXMRSlowAuthorizationUsesTransferDeadline(t *testing.T) {
-	for _, delay := range []time.Duration{0, 150 * time.Millisecond} {
+	for _, delay := range []time.Duration{0, slowAuthDelay} {
 		t.Run(delay.String(), func(t *testing.T) {
 			s, _, _, _, legacy, _ := setupTestGossip(t)
-			s.config.PeerTimeout = 50 * time.Millisecond
+			s.config.PeerTimeout = slowAuthDeliveryTimeout
 			tx, plan := observerTestXMRPlan(t)
 			key := secp256k1.GenPrivKey()
 			vault := observerTestVaultFunc(tx.ObservedPubKey, observerTestPubKey(t, key))
@@ -84,7 +96,7 @@ func TestStateCancellationXMRSlowAuthorizationUsesTransferDeadline(t *testing.T)
 			require.NoError(t, queryErr, "authorization must use the live transfer's budget")
 			select {
 			case <-imported:
-			case <-time.After(time.Second):
+			case <-time.After(slowAuthImportWait):
 				t.Fatal("live state transfer discarded a successful authorization after the delivery deadline")
 			}
 			state, exists := observerTestConflictState(s, tx)

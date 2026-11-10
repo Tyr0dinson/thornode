@@ -4,11 +4,23 @@ import (
 	"os"
 
 	"cosmossdk.io/log"
+
+	"gitlab.com/thorchain/thornode/v3/app/divergence"
 )
 
-// consensusFailureMsg is the exact log message emitted by CometBFT's
-// receiveRoutine when it recovers from a consensus panic.
-const consensusFailureMsg = "CONSENSUS FAILURE!!!"
+const (
+	// consensusFailureMsg is the exact log message emitted by CometBFT's
+	// receiveRoutine when it recovers from a consensus panic.
+	consensusFailureMsg = "CONSENSUS FAILURE!!!"
+
+	// blocksyncValidationMsg is the exact log message CometBFT's blocksync
+	// reactor (poolRoutine) emits, with keyval "err", when a fetched block fails
+	// validation; it then drops the peers and retries.
+	blocksyncValidationMsg = "Error in validation"
+)
+
+// exitProcess is os.Exit, replaceable in tests.
+var exitProcess = os.Exit
 
 // ConsensusFailureLogger wraps a cosmossdk.io/log.Logger and monitors for
 // CometBFT consensus failure log messages. When CometBFT's consensus
@@ -30,11 +42,20 @@ func (l ConsensusFailureLogger) Error(msg string, keyvals ...interface{}) {
 	// Always log the message first so operators see the full error.
 	l.Logger.Error(msg, keyvals...)
 
-	if msg == consensusFailureMsg {
+	switch msg {
+	case consensusFailureMsg:
+		// In-memory state is lost at exit, so write the divergence bundle
+		// first (bounded; a no-op when diagnostics are disabled).
+		divergence.HandleConsensusFailure(divergence.ErrFromKeyvals(keyvals), divergence.DefaultDumpTimeout)
+
 		// The consensus goroutine is dead. Other goroutines (gRPC, API, P2P)
 		// keep the process alive but the node can no longer produce or validate
-		// blocks. Exit immediately so the container restarts.
-		os.Exit(1)
+		// blocks. Exit so the container restarts.
+		exitProcess(1)
+	case blocksyncValidationMsg:
+		// Bundle once per height in the background when the error is a
+		// header hash mismatch; blocksync keeps retrying as before.
+		divergence.HandleBlocksyncError(divergence.ErrFromKeyvals(keyvals))
 	}
 }
 

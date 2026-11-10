@@ -71,10 +71,14 @@ func (t *DirectERC20TransferTestSuite) TestGetTxInFromDirectERC20TransferRequire
 	c.Assert(err, IsNil)
 	c.Assert(txInItem, IsNil)
 
-	tx = etypes.NewTransaction(1, token, big.NewInt(0), 100000, big.NewInt(1), []byte{0xa9, 0x05, 0x9c})
-	txInItem, err = GetTxInFromDirectERC20Transfer(tx, receipt, DirectERC20TransferTxInOptions{})
-	c.Assert(err, IsNil)
-	c.Assert(txInItem, IsNil)
+	truncated := make([]byte, 4+ecommon.HashLength)
+	copy(truncated, erc20TransferSelector)
+	for _, data := range [][]byte{erc20TransferSelector[:3], erc20TransferSelector, truncated} {
+		tx = etypes.NewTransaction(1, token, big.NewInt(0), 100000, big.NewInt(1), data)
+		txInItem, err = GetTxInFromDirectERC20Transfer(tx, receipt, DirectERC20TransferTxInOptions{})
+		c.Assert(err, IsNil)
+		c.Assert(txInItem, IsNil)
+	}
 }
 
 func (t *DirectERC20TransferTestSuite) TestParseDirectERC20TransferLogs(c *C) {
@@ -101,7 +105,7 @@ func (t *DirectERC20TransferTestSuite) TestParseDirectERC20TransferLogs(c *C) {
 	}
 	observed, err := ParseDirectERC20TransferLogs([]*etypes.Log{
 		getERC20TransferEvent(token.String(), sender.String(), vault.String(), big.NewInt(2048000)),
-	}, txInItem, token, sender, opts)
+	}, txInItem, token, sender, vault, opts)
 	c.Assert(err, IsNil)
 	c.Assert(observed, Equals, true)
 	c.Assert(txInItem.To, Equals, vault.String())
@@ -110,11 +114,38 @@ func (t *DirectERC20TransferTestSuite) TestParseDirectERC20TransferLogs(c *C) {
 		common.NewCoin(tknAsset, cosmos.NewUint(2048000)),
 	)), Equals, true)
 
+	// The low 20 bytes match the vault, but the indexed topic is not its address.
+	malformed := getERC20TransferEvent(token.String(), sender.String(), vault.String(), big.NewInt(2048000))
+	malformed.Topics[2][0] = 1
+	txInItem = &stypes.TxInItem{}
+	observed, err = ParseDirectERC20TransferLogs([]*etypes.Log{malformed}, txInItem, token, sender, vault, opts)
+	c.Assert(err, IsNil)
+	c.Assert(observed, Equals, false)
+	c.Assert(txInItem.Coins.IsEmpty(), Equals, true)
+
+	// A valid Transfer to a vault is incidental if the call names someone else.
+	txInItem = &stypes.TxInItem{}
+	observed, err = ParseDirectERC20TransferLogs([]*etypes.Log{
+		getERC20TransferEvent(token.String(), sender.String(), vault.String(), big.NewInt(2048000)),
+	}, txInItem, token, sender, otherSender, opts)
+	c.Assert(err, IsNil)
+	c.Assert(observed, Equals, false)
+	c.Assert(txInItem.Coins.IsEmpty(), Equals, true)
+
+	// Matching calldata and log recipients still need to name an active vault.
+	txInItem = &stypes.TxInItem{}
+	observed, err = ParseDirectERC20TransferLogs([]*etypes.Log{
+		getERC20TransferEvent(token.String(), sender.String(), otherSender.String(), big.NewInt(2048000)),
+	}, txInItem, token, sender, otherSender, opts)
+	c.Assert(err, IsNil)
+	c.Assert(observed, Equals, false)
+	c.Assert(txInItem.Coins.IsEmpty(), Equals, true)
+
 	txInItem = &stypes.TxInItem{Tx: "duplicate-transfer", Sender: strings.ToLower(sender.String())}
 	observed, err = ParseDirectERC20TransferLogs([]*etypes.Log{
 		getERC20TransferEvent(token.String(), sender.String(), vault.String(), big.NewInt(2048000)),
 		getERC20TransferEvent(token.String(), sender.String(), vault.String(), big.NewInt(4096000)),
-	}, txInItem, token, sender, opts)
+	}, txInItem, token, sender, vault, opts)
 	c.Assert(err, IsNil)
 	c.Assert(observed, Equals, true)
 	c.Assert(txInItem.To, Equals, vault.String())
@@ -126,7 +157,7 @@ func (t *DirectERC20TransferTestSuite) TestParseDirectERC20TransferLogs(c *C) {
 	txInItem = &stypes.TxInItem{Tx: "zero-transfer", Sender: strings.ToLower(sender.String())}
 	observed, err = ParseDirectERC20TransferLogs([]*etypes.Log{
 		getERC20TransferEvent(token.String(), sender.String(), vault.String(), big.NewInt(0)),
-	}, txInItem, token, sender, opts)
+	}, txInItem, token, sender, vault, opts)
 	c.Assert(err, IsNil)
 	c.Assert(observed, Equals, false)
 	c.Assert(txInItem.To, Equals, "")
@@ -137,7 +168,7 @@ func (t *DirectERC20TransferTestSuite) TestParseDirectERC20TransferLogs(c *C) {
 	txInItem = &stypes.TxInItem{Tx: "transfer-from", Sender: strings.ToLower(sender.String())}
 	observed, err = ParseDirectERC20TransferLogs([]*etypes.Log{
 		getERC20TransferEvent(token.String(), otherSender.String(), vault.String(), big.NewInt(2048000)),
-	}, txInItem, token, sender, opts)
+	}, txInItem, token, sender, vault, opts)
 	c.Assert(err, IsNil)
 	c.Assert(observed, Equals, false)
 	c.Assert(txInItem.Coins.IsEmpty(), Equals, true)
@@ -147,7 +178,7 @@ func (t *DirectERC20TransferTestSuite) TestParseDirectERC20TransferLogs(c *C) {
 	txInItem = &stypes.TxInItem{Tx: "router-transfer", Sender: strings.ToLower(sender.String())}
 	observed, err = ParseDirectERC20TransferLogs([]*etypes.Log{
 		getERC20TransferEvent(token.String(), sender.String(), vault.String(), big.NewInt(2048000)),
-	}, txInItem, ecommon.HexToAddress("0xE65e9d372F8cAcc7b6dfcd4af6507851Ed31bb44"), sender, opts)
+	}, txInItem, ecommon.HexToAddress("0xE65e9d372F8cAcc7b6dfcd4af6507851Ed31bb44"), sender, vault, opts)
 	c.Assert(err, IsNil)
 	c.Assert(observed, Equals, false)
 	c.Assert(txInItem.Coins.IsEmpty(), Equals, true)
@@ -155,7 +186,7 @@ func (t *DirectERC20TransferTestSuite) TestParseDirectERC20TransferLogs(c *C) {
 	txInItem = &stypes.TxInItem{Tx: "unsupported-token", Sender: strings.ToLower(sender.String())}
 	observed, err = ParseDirectERC20TransferLogs([]*etypes.Log{
 		getERC20TransferEvent(errAssetToken, sender.String(), vault.String(), big.NewInt(2048000)),
-	}, txInItem, ecommon.HexToAddress(errAssetToken), sender, opts)
+	}, txInItem, ecommon.HexToAddress(errAssetToken), sender, vault, opts)
 	c.Assert(err, IsNil)
 	c.Assert(observed, Equals, false)
 	c.Assert(txInItem.Coins.IsEmpty(), Equals, true)
