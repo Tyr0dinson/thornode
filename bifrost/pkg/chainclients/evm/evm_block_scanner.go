@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"math"
 	"math/big"
 	"sort"
 	"strings"
@@ -25,9 +26,9 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/blockscanner"
+	btypes "gitlab.com/thorchain/thornode/v3/bifrost/blockscanner/types"
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/evm"
-	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/evm/types"
 	evmtypes "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/evm/types"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/signercache"
 	. "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/types"
@@ -70,6 +71,14 @@ type EVMScanner struct {
 	pubkeyMgr             pubkeymanager.PubKeyValidator
 	eipSigner             etypes.Signer
 	currentBlockHeight    stdatomic.Int64
+	downloadFailures      evm.DownloadFailures
+	watchOffset           int
+	confirmationPolicy    func(stypes.TxIn) (int64, error)
+	scanMu                sync.Mutex
+	occurrenceJournalMu   sync.Mutex
+	journal               *evm.OccurrenceJournal
+	canonicalViewMu       sync.Mutex
+	canonicalView         *evm.CanonicalValidator
 	gasCache              []*big.Int
 	solvencyReporter      SolvencyReporter
 	whitelistTokens       []tokenlist.ERC20Token
@@ -80,6 +89,8 @@ type EVMScanner struct {
 	vaultABI *abi.ABI
 	erc20ABI *abi.ABI
 }
+
+var _ blockscanner.BlockScannerRecoveryService = (*EVMScanner)(nil)
 
 // NewEVMScanner create a new instance of EVMScanner.
 func NewEVMScanner(cfg config.BifrostBlockScannerConfiguration,
@@ -244,6 +255,24 @@ func (e *EVMScanner) GetTokens() ([]*evmtypes.TokenMeta, error) {
 	return e.tokenManager.GetTokens()
 }
 
+// downloadScannerBlock fetches a block and its receipts outside scanMu and
+// opens its canonical proof.
+func (e *EVMScanner) downloadScannerBlock(height int64) (*etypes.Block, []*etypes.Receipt, evm.ScannerEvidence, error) {
+	block, evidence, err := e.canonicalObservationView().FetchScannerBlock(height, e.ethRpc.GetBlock)
+	if err != nil {
+		return nil, nil, evidence, err
+	}
+	receipts, err := e.fetchScannerReceipts(block)
+	if err != nil {
+		return nil, nil, evidence, fmt.Errorf("fetch block receipts: %w", err)
+	}
+	evidence, err = e.canonicalObservationView().PrepareScannerBlock(evidence)
+	if err != nil {
+		return nil, nil, evidence, fmt.Errorf("prepare block proof: %w", err)
+	}
+	return block, receipts, evidence, nil
+}
+
 // FetchTxs extracts all relevant transactions from the block at the provided height.
 func (e *EVMScanner) FetchTxs(height, chainHeight int64) (stypes.TxIn, error) {
 	// log height every 100 blocks
@@ -252,31 +281,159 @@ func (e *EVMScanner) FetchTxs(height, chainHeight int64) (stypes.TxIn, error) {
 	}
 
 	// process all transactions in the block
-	e.updateCurrentBlockHeight(height)
-	block, err := e.ethRpc.GetBlock(height)
-	if err != nil {
-		return stypes.TxIn{}, err
+	// A durable earlier replay must not wait for this block's RPCs. The
+	// journal serializes this read; keep the later cleanup/generation/replay
+	// checks too, since recovery work can arrive while downloads are in flight.
+	journal, journalErr := e.occurrenceJournal()
+	if journalErr != nil {
+		return stypes.TxIn{}, fmt.Errorf("%w: %w", btypes.ErrUnavailableBlock, journalErr)
 	}
-	txIn, err := e.processBlock(block)
-	if err != nil {
-		e.logger.Error().Err(err).Int64("height", height).Msg("failed to search tx in block")
-		return stypes.TxIn{}, fmt.Errorf("failed to process block: %d, err:%w", height, err)
+	// A reorg or recovery request that overtakes the download (a generation
+	// change) is not an RPC failure: download the height once more at once
+	// instead of paying the scanner's unavailable-block backoff. A replaced
+	// download (an orphan) is not retried: the RPC may still serve it, and each
+	// detection invalidates the generation again.
+	var block *etypes.Block
+	var receipts []*etypes.Receipt
+	var evidence evm.ScannerEvidence
+	for attempt := 0; ; attempt++ {
+		if next, ok, nextErr := journal.NextRescanWithin(height, e.cfg.FloorBlockHeight); nextErr != nil {
+			return stypes.TxIn{}, fmt.Errorf("%w: %w", btypes.ErrUnavailableBlock, nextErr)
+		} else if ok && next < height {
+			return stypes.TxIn{}, btypes.RewindRequiredError{NextHeight: next}
+		}
+		var err error
+		block, receipts, evidence, err = e.downloadScannerBlock(height)
+		if err == nil {
+			e.scanMu.Lock()
+			if e.canonicalObservationView().Current(evidence.Generation) {
+				break
+			}
+			e.scanMu.Unlock()
+			err = evm.ErrStaleScannerGeneration
+		}
+		if attempt > 0 || !errors.Is(err, evm.ErrStaleScannerGeneration) {
+			// A second stale generation is a reorg race, not an RPC failure.
+			if !errors.Is(err, evm.ErrStaleScannerGeneration) && e.downloadFailures.First(height) {
+				e.logger.Warn().Err(err).Int64("height", height).Msg("failed to download block and receipts")
+			}
+			return stypes.TxIn{}, fmt.Errorf("%w: %w", btypes.ErrUnavailableBlock, err)
+		}
+	}
+	defer e.scanMu.Unlock()
+	if cleanupErr := evm.DrainOccurrenceCleanup(journal, e.canonicalObservationView(), e.globalErrataQueue, e.cfg.HTTPRequestTimeout); cleanupErr != nil {
+		return stypes.TxIn{}, fmt.Errorf("%w: %w", btypes.ErrUnavailableBlock, cleanupErr)
 	}
 
+	if next, ok, nextErr := journal.NextRescanWithin(height, e.cfg.FloorBlockHeight); nextErr != nil {
+		return stypes.TxIn{}, fmt.Errorf("%w: %w", btypes.ErrUnavailableBlock, nextErr)
+	} else if ok && next < height {
+		return stypes.TxIn{}, btypes.RewindRequiredError{NextHeight: next}
+	}
+
+	txIn, err := e.processBlock(block, receipts)
+	if err != nil {
+		e.logger.Error().Err(err).Int64("height", height).Msg("failed to search tx in block")
+		return stypes.TxIn{}, fmt.Errorf("%w: fail to process block %d: %w", btypes.ErrUnavailableBlock, height, err)
+	}
+
+	var validationErr error
+	if e.canonicalObservationView().Current(evidence.Generation) {
+		evidence, validationErr = e.canonicalObservationView().RevalidateScannerBlock(evidence)
+	} else {
+		// Reorg processing under scanMu invalidated the opening view. Prove the
+		// replacement in full before publishing its metadata or delivery.
+		evidence, validationErr = e.canonicalObservationView().ValidateScannerBlock(height, block.Hash().Hex())
+	}
+	if validationErr != nil {
+		return stypes.TxIn{}, fmt.Errorf("%w: %v", btypes.ErrUnavailableBlock, validationErr)
+	}
+
+	// Keep the acknowledgement even if local relevance filtering removes
+	// every item: Observer's first-status gate still owns startup progress.
+	hadExtractedItems := len(txIn.TxArray) > 0
 	// if reorgs are possible on this chain store block meta for handling
 	if e.cfg.MaxReorgRescanBlocks > 0 {
+		if txIn, err = journal.FilterUnattributed(txIn); err != nil {
+			return stypes.TxIn{}, fmt.Errorf("%w: filter observation attribution: %w", btypes.ErrUnavailableBlock, err)
+		}
 		blockMeta := evmtypes.NewBlockMeta(block.Header(), txIn)
-		if err = e.blockMetaAccessor.SaveBlockMeta(height, blockMeta); err != nil {
-			e.logger.Err(err).Int64("height", height).Msg("fail to save block meta")
+		if err = evm.RetainTransactionIdentity(blockMeta, block, e.eipSigner); err != nil {
+			return stypes.TxIn{}, fmt.Errorf("%w: %w", btypes.ErrUnavailableBlock, err)
+		}
+
+		if e.pubkeyMgr != nil {
+			evm.RetainInboundDirection(blockMeta, txIn, func(address string) bool {
+				ok, _ := e.pubkeyMgr.IsValidPoolAddress(address, e.cfg.ChainID)
+				return ok
+			})
+		}
+		if err = journal.SaveMeta(blockMeta); err != nil {
+			return stypes.TxIn{}, fmt.Errorf("%w: persist block metadata: %w", btypes.ErrUnavailableBlock, err)
 		}
 		pruneHeight := height - e.cfg.MaxReorgRescanBlocks
 		if pruneHeight > 0 {
 			defer func() {
-				if err = e.blockMetaAccessor.PruneBlockMeta(pruneHeight); err != nil {
+				if err = journal.PruneBlockMeta(pruneHeight); err != nil {
 					e.logger.Err(err).Int64("height", height).Msg("fail to prune block meta")
 				}
 			}()
 		}
+	}
+
+	extractedCount := len(txIn.TxArray)
+	txIn, err = journal.HoldFailedReplays(txIn)
+	if err != nil {
+		return stypes.TxIn{}, fmt.Errorf("%w: retain failed replay: %w", btypes.ErrUnavailableBlock, err)
+	}
+	if txIn, err = journal.PrepareRecoveryHandoff(txIn); err != nil {
+		return stypes.TxIn{}, fmt.Errorf("%w: %v", btypes.ErrUnavailableBlock, err)
+	}
+	// The finalizer retains withheld attribution waits while Observer only sees
+	// deliverable items. Mixed batches therefore advance without false handoffs.
+	txIn.TrackObservationHolds()
+	finalizationTxIn := txIn
+	txIn.TxArray = make([]*stypes.TxInItem, 0, len(finalizationTxIn.TxArray))
+	for _, item := range finalizationTxIn.TxArray {
+		if !item.EVMAttributionPending {
+			txIn.TxArray = append(txIn.TxArray, item)
+		}
+	}
+
+	if waiting := len(finalizationTxIn.TxArray) - len(txIn.TxArray); waiting > 0 {
+		e.logger.Debug().Int64("height", height).Int("waiting_observations", waiting).Msg("recovery delivery waits for authenticated vault attribution")
+	}
+	if heldCount := extractedCount - len(finalizationTxIn.TxArray); heldCount > 0 {
+		e.logger.Warn().Int64("height", height).Int("held_observations", heldCount).Msg("retained conflicting EVM recovery observation; accounting review required")
+	}
+
+	e.updateCurrentBlockHeight(height)
+
+	rescanHeight, rescanPending, rescanErr := journal.NextRescanWithin(height, e.cfg.FloorBlockHeight)
+	if rescanErr != nil {
+		return stypes.TxIn{}, fmt.Errorf("%w: %w", btypes.ErrUnavailableBlock, rescanErr)
+	}
+	if hadExtractedItems || (rescanPending && rescanHeight == height) {
+		txIn.Persisted = make(chan error, 1)
+	}
+	validateFinalizer := func() error {
+		_, finalizeErr := e.canonicalObservationView().RevalidateScannerBlock(evidence)
+		return finalizeErr
+	}
+
+	// Stored and skipped completion remain distinct transitions, but both must
+	// reject a stale generation or a changed canonical block on every page.
+	txIn.FinalizePersistence = func() error {
+		if finalizeErr := validateFinalizer(); finalizeErr != nil {
+			return finalizeErr
+		}
+		return journal.CompleteRescan(height, block.Hash().Hex(), finalizationTxIn, e.canonicalObservationView(), evidence.Generation)
+	}
+	txIn.FinalizeSkipped = func() error {
+		if finalizeErr := validateFinalizer(); finalizeErr != nil {
+			return finalizeErr
+		}
+		return journal.SkipRescan(height, block.Hash().Hex(), finalizationTxIn, e.canonicalObservationView(), evidence.Generation)
 	}
 
 	// skip reporting network fee and solvency if block more than flexibility blocks from tip
@@ -315,7 +472,7 @@ func (e *EVMScanner) updateCurrentBlockHeight(height int64) {
 
 // --------------------------------- extraction ---------------------------------
 
-func (e *EVMScanner) processBlock(block *etypes.Block) (stypes.TxIn, error) {
+func (e *EVMScanner) processBlock(block *etypes.Block, prefetched ...[]*etypes.Receipt) (stypes.TxIn, error) {
 	txIn := stypes.TxIn{
 		Chain:    e.cfg.ChainID,
 		TxArray:  nil,
@@ -323,30 +480,23 @@ func (e *EVMScanner) processBlock(block *etypes.Block) (stypes.TxIn, error) {
 		MemPool:  false,
 	}
 
+	// Validate ancestry before skipping empty blocks so transaction count
+	// cannot suppress reorg cleanup or replacement-block recovery.
+	if e.cfg.MaxReorgRescanBlocks > 0 {
+		err := e.processReorg(block.Header())
+		if err != nil {
+			e.logger.Error().Err(err).Msgf("fail to process reorg for block %d", block.NumberU64())
+			return txIn, err
+		}
+	}
+
 	// skip empty blocks
 	if block.Transactions().Len() == 0 {
 		return txIn, nil
 	}
 
-	// process reorg if possible on this chain
-	if e.cfg.MaxReorgRescanBlocks > 0 {
-		reorgedTxIns, err := e.processReorg(block.Header())
-		if err != nil {
-			e.logger.Error().Err(err).Msgf("fail to process reorg for block %d", block.NumberU64())
-			return txIn, err
-		}
-		if len(reorgedTxIns) > 0 {
-			for _, item := range reorgedTxIns {
-				if len(item.TxArray) == 0 {
-					continue
-				}
-				txIn.TxArray = append(txIn.TxArray, item.TxArray...)
-			}
-		}
-	}
-
 	// collect all relevant transactions from the block and their gas prices
-	txInBlock, gasPrices, err := e.getTxIn(block)
+	txInBlock, gasPrices, err := e.getTxIn(block, prefetched...)
 	if err != nil {
 		return txIn, err
 	}
@@ -360,7 +510,7 @@ func (e *EVMScanner) processBlock(block *etypes.Block) (stypes.TxIn, error) {
 	return txIn, nil
 }
 
-func (e *EVMScanner) getTxInOptimized(method string, block *etypes.Block) (stypes.TxIn, []*big.Int, error) {
+func (e *EVMScanner) getTxInOptimized(method string, block *etypes.Block, prefetched ...[]*etypes.Receipt) (stypes.TxIn, []*big.Int, error) {
 	// Use custom method name as it varies between implementation
 	// It should be akin to: "fetch all transaction receipts within a block", e.g. getBlockReceipts
 	// This has shown to be more efficient than getTransactionReceipt in a batch call
@@ -391,15 +541,14 @@ func (e *EVMScanner) getTxInOptimized(method string, block *etypes.Block) (stype
 	}
 
 	var receipts []*etypes.Receipt
-	blockNumStr := hexutil.EncodeBig(block.Number())
-	err := e.ethClient.Client().Call(
-		&receipts,
-		method,
-		blockNumStr,
-	)
-	if err != nil {
-		e.logger.Error().Err(err).Msg("failed to fetch block receipts")
-		return stypes.TxIn{}, nil, err
+	var err error
+	if len(prefetched) > 0 {
+		receipts = prefetched[0]
+	} else {
+		receipts, err = e.fetchOptimizedReceipts(method, block)
+		if err != nil {
+			return stypes.TxIn{}, nil, err
+		}
 	}
 
 	// at least one worker: an unbuffered semaphore would block the first
@@ -407,6 +556,8 @@ func (e *EVMScanner) getTxInOptimized(method string, block *etypes.Block) (stype
 	sem := make(chan struct{}, max(e.cfg.Concurrency, 1))
 	wg := sync.WaitGroup{}
 	mu := sync.Mutex{}
+	var conversionFailure error
+
 	var gasPrices []*big.Int
 
 	for _, receipt := range receipts {
@@ -415,6 +566,10 @@ func (e *EVMScanner) getTxInOptimized(method string, block *etypes.Block) (stype
 		go func(receipt *etypes.Receipt) {
 			defer wg.Done()
 			defer func() { <-sem }()
+			if receipt == nil {
+				e.logger.Warn().Uint64("blockNumber", block.NumberU64()).Msg("receipt tx not in block.Transactions or nil, ignoring...")
+				return
+			}
 			txForReceipt, ok := txByHash[receipt.TxHash.String()]
 			if !ok {
 				e.logger.Warn().
@@ -434,11 +589,23 @@ func (e *EVMScanner) getTxInOptimized(method string, block *etypes.Block) (stype
 				return
 			}
 
-			// extract the txInItem; err must be goroutine-local, a shared one
-			// lets this goroutine drop its item on another goroutine's error
-			txInItem, err := e.receiptToTxInItem(txForReceipt, receipt)
-			if err != nil {
-				e.logger.Error().Err(err).Msg("failed to convert receipt to txInItem")
+			// extract the txInItem; the error must be goroutine-local, a shared
+			// one lets this goroutine drop its item on another goroutine's error
+			txInItem, conversionErr := e.receiptToTxInItem(txForReceipt, receipt)
+			if conversionErr != nil {
+				// A transport/RPC failure means the block cannot be proven fully
+				// scanned, so record it and fail the pass for a rescan. Option 3:
+				// gate only on IsRPCError; the recovery-attribution arm is dropped
+				// because son-of-odin removed the redundant recovery step, so that
+				// error no longer arises on this path.
+				if evm.IsRPCError(conversionErr) {
+					mu.Lock()
+					if conversionFailure == nil {
+						conversionFailure = conversionErr
+					}
+					mu.Unlock()
+				}
+				e.logger.Error().Err(conversionErr).Msg("failed to convert receipt to txInItem")
 				return
 			}
 
@@ -455,6 +622,7 @@ func (e *EVMScanner) getTxInOptimized(method string, block *etypes.Block) (stype
 
 			// add the txInItem to the txInbound
 			txInItem.BlockHeight = block.Number().Int64()
+			txInItem.BlockHash = block.Hash().Hex()
 			mu.Lock()
 			txInbound.TxArray = append(txInbound.TxArray, txInItem)
 			mu.Unlock()
@@ -462,11 +630,38 @@ func (e *EVMScanner) getTxInOptimized(method string, block *etypes.Block) (stype
 	}
 	wg.Wait()
 
+	if conversionFailure != nil {
+		return stypes.TxIn{}, nil, conversionFailure
+	}
+
 	if len(txInbound.TxArray) == 0 {
 		e.logger.Debug().Uint64("block", block.NumberU64()).Msg("no tx need to be processed in this block")
 		return stypes.TxIn{}, gasPrices, nil
 	}
 	return txInbound, gasPrices, nil
+}
+
+// usesBlockReceipts reports a chain whose receipts are fetched for a whole block
+// at once with eth_getBlockReceipts, both on the scan download path
+// (fetchScannerReceipts) and in extraction (getTxIn).
+// CHANGEME: if an EVM chain supports some way of fetching all transaction receipts
+// within a block, register it here.
+func usesBlockReceipts(chain common.Chain) bool {
+	switch chain {
+	case common.BASEChain, common.BSCChain, common.POLChain:
+		return true
+	}
+	return false
+}
+
+// usesReceiptsGate reports a block-receipts chain whose receipts
+// gasPricesWithoutReceipts may rule out, see there for what its bloom must cover.
+func usesReceiptsGate(chain common.Chain) bool {
+	switch chain {
+	case common.BASEChain, common.BSCChain:
+		return true
+	}
+	return false
 }
 
 // canceledContext is for ethclient calls that must not reach the server.
@@ -480,10 +675,13 @@ var canceledContext = func() context.Context {
 // produce an observation, so the caller can skip fetching them. ok is false if the
 // receipts might produce one, or if the block alone cannot rule that out.
 //
-// A router deposit can come through another contract, so check the bloom for log
-// emitters regardless of tx.To. A direct ERC20 inbound names the vault in its
-// transfer calldata. A failed outbound can have no logs and its signing vault
-// may have left the vault list, so also check the local signer cache.
+// Only logs emitted by a router are parsed, and logsBloom has no false negatives,
+// so a block whose bloom lacks every router has no router log. That has to come from
+// the bloom: with the contract whitelist off, a deposit can arrive through any
+// contract, so tx.To cannot find it. It also covers a tx to a router or whitelisted
+// contract, which has nothing to parse without a router log. Everything else
+// receiptToTxInItem observes is visible in the tx: sends to and from a vault (including
+// failed ones, which have no logs) and direct ERC20 transfers to a vault.
 //
 // Senders are taken as the RPC reported them where possible, see txSender. A provider
 // that lied about a sender could hide that tx from this check, but it could equally
@@ -512,6 +710,20 @@ func (e *EVMScanner) gasPricesWithoutReceipts(block *etypes.Block) (gasPrices []
 		}
 	}
 
+	// A transaction the occurrence journal owns is a recovery replay: only the
+	// receipt path restores the vaults and routers it was observed with, or keeps
+	// the replay open while they are unknown. The registry alone could miss it.
+	// The condition is the receipt path's, see receiptToTxInItem.
+	if e.blockMetaAccessor != nil && e.cfg.MaxReorgRescanBlocks > 0 {
+		journal, err := e.occurrenceJournal()
+		if err != nil {
+			return nil, false
+		}
+		if owned, ownErr := journal.OwnsAnyBlockTransaction(block); ownErr != nil || owned {
+			return nil, false
+		}
+	}
+
 	txs := make([]*etypes.Transaction, 0, block.Transactions().Len())
 	for i, tx := range block.Transactions() {
 		// same txs as getTxInOptimized: blob txs have no place in the gas price
@@ -534,6 +746,9 @@ func (e *EVMScanner) gasPricesWithoutReceipts(block *etypes.Block) (gasPrices []
 		txs = append(txs, tx)
 	}
 
+	// son-of-odin: a block that may hold one of our signed (outbound) txs
+	// cannot be ruled out by the bloom gate, since a failed outbound has no
+	// logs and its signing vault may have left the vault list.
 	if evm.BlockMayHaveSignedTx(block, e.signerCacheManager) {
 		return nil, false
 	}
@@ -547,7 +762,8 @@ func (e *EVMScanner) gasPricesWithoutReceipts(block *etypes.Block) (gasPrices []
 	return gasPrices, true
 }
 
-// txMayBeObserved reports whether the transaction fields alone warrant fetching receipts.
+// txMayBeObserved reports whether tx's own fields could make receiptToTxInItem
+// observe it, leaving aside logs emitted by a router.
 func (e *EVMScanner) txMayBeObserved(tx *etypes.Transaction, blockHash ecommon.Hash, index uint) bool {
 	to := tx.To()
 	if to == nil {
@@ -585,17 +801,16 @@ func (e *EVMScanner) isPoolAddress(addr ecommon.Address) bool {
 	return ok
 }
 
-func (e *EVMScanner) getTxIn(block *etypes.Block) (stypes.TxIn, []*big.Int, error) {
-	// CHANGEME: if an EVM chain supports some way of fetching all transaction receipts
-	// within a block, register it here.
-	switch e.cfg.ChainID {
-	case common.BASEChain, common.BSCChain:
-		if gasPrices, ok := e.gasPricesWithoutReceipts(block); ok {
-			return stypes.TxIn{}, gasPrices, nil
+func (e *EVMScanner) getTxIn(block *etypes.Block, prefetched ...[]*etypes.Receipt) (stypes.TxIn, []*big.Int, error) {
+	if usesBlockReceipts(e.cfg.ChainID) {
+		// Receipts prefetched outside scanMu are already paid for; without them the
+		// logsBloom gate may still spare the fetch.
+		if len(prefetched) == 0 && usesReceiptsGate(e.cfg.ChainID) {
+			if gasPrices, ok := e.gasPricesWithoutReceipts(block); ok {
+				return stypes.TxIn{}, gasPrices, nil
+			}
 		}
-		return e.getTxInOptimized("eth_getBlockReceipts", block)
-	case common.POLChain:
-		return e.getTxInOptimized("eth_getBlockReceipts", block)
+		return e.getTxInOptimized("eth_getBlockReceipts", block, prefetched...)
 	}
 
 	txInbound := stypes.TxIn{
@@ -605,6 +820,114 @@ func (e *EVMScanner) getTxIn(block *etypes.Block) (stypes.TxIn, []*big.Int, erro
 	}
 	var gasPrices []*big.Int
 
+	var receipts []*etypes.Receipt
+	var err error
+	if len(prefetched) > 0 {
+		receipts = prefetched[0]
+	} else {
+		receipts, err = e.fetchBatchedReceipts(block)
+		if err != nil {
+			return stypes.TxIn{}, nil, err
+		}
+	}
+	txByHash := make(map[ecommon.Hash]*etypes.Transaction, len(block.Transactions()))
+	for _, tx := range block.Transactions() {
+		if tx != nil {
+			txByHash[tx.Hash()] = tx
+		}
+	}
+	for _, receipt := range receipts {
+		// The batched fetch matches every receipt to a block transaction. A
+		// receipt from any other source that matches none is ignored, as on the
+		// optimized path, rather than panic.
+		var tx *etypes.Transaction
+		if receipt != nil {
+			tx = txByHash[receipt.TxHash]
+		}
+		if tx == nil {
+			e.logger.Warn().Uint64("blockNumber", block.NumberU64()).Msg("receipt tx not in block.Transactions or nil, ignoring...")
+			continue
+		}
+		// Signed-tx bookkeeping and conversion belong to the serialized scan.
+		// Removal waits for the block's receipts: a failed fetch, or a
+		// missing receipt (which fails the block), leaves the items until a
+		// retry fetches them.
+		if removeErr := e.blockMetaAccessor.RemoveSignedTxItem(tx.Hash().String()); removeErr != nil {
+			e.logger.Err(removeErr).Str("tx hash", tx.Hash().String()).Msg("failed to remove signed tx item")
+		}
+
+		// collect effective gas price from receipt for gas price tracking
+		gasPrices = append(gasPrices, receipt.EffectiveGasPrice)
+
+		// extract the txInItem
+		txInItem, err := e.receiptToTxInItem(tx, receipt)
+		if err != nil {
+			e.logger.Error().Err(err).Msg("failed to convert receipt to txInItem")
+			if evm.IsRPCError(err) || errors.Is(err, evm.ErrRecoveryAttribution) {
+				return stypes.TxIn{}, nil, err
+			}
+			continue
+		}
+
+		// skip invalid items
+		if txInItem == nil {
+			continue
+		}
+		if len(txInItem.To) == 0 {
+			continue
+		}
+		if len([]byte(txInItem.Memo)) > constants.MaxMemoSize {
+			continue
+		}
+
+		// add the txInItem to the txInbound
+		txInItem.BlockHeight = block.Number().Int64()
+		txInItem.BlockHash = block.Hash().Hex()
+		txInbound.TxArray = append(txInbound.TxArray, txInItem)
+	}
+
+	if len(txInbound.TxArray) == 0 {
+		e.logger.Debug().Uint64("block", block.NumberU64()).Msg("no tx need to be processed in this block")
+		return stypes.TxIn{}, gasPrices, nil
+	}
+	return txInbound, gasPrices, nil
+}
+
+// fetchScannerReceipts performs only RPC retrieval and block/receipt association.
+// It may overlap other downloads; conversion and journal writes stay under scanMu.
+func (e *EVMScanner) fetchScannerReceipts(block *etypes.Block) ([]*etypes.Receipt, error) {
+	if block.Transactions().Len() == 0 {
+		return nil, nil
+	}
+	if usesBlockReceipts(e.cfg.ChainID) {
+		return e.fetchOptimizedReceipts("eth_getBlockReceipts", block)
+	}
+	return e.fetchBatchedReceipts(block)
+}
+
+// receiptRPCContext bounds a receipt RPC with the configured request timeout so
+// a stalled node cannot wedge the scanner on context.Background() forever. A
+// non-positive timeout (an unset config, or a unit-test fixture) means no
+// deadline, matching the pre-deadline behaviour.
+func (e *EVMScanner) receiptRPCContext() (context.Context, context.CancelFunc) {
+	if e.cfg.HTTPRequestTimeout > 0 {
+		return context.WithTimeout(context.Background(), e.cfg.HTTPRequestTimeout)
+	}
+	return context.Background(), func() {}
+}
+
+func (e *EVMScanner) fetchOptimizedReceipts(method string, block *etypes.Block) ([]*etypes.Receipt, error) {
+	var receipts []*etypes.Receipt
+	ctx, cancel := e.receiptRPCContext()
+	defer cancel()
+	if err := e.ethClient.Client().CallContext(ctx, &receipts, method, hexutil.EncodeBig(block.Number())); err != nil {
+		return nil, err
+	}
+	return validateBlockReceipts(e.cfg.ChainID, block, receipts)
+}
+
+func (e *EVMScanner) fetchBatchedReceipts(block *etypes.Block) ([]*etypes.Receipt, error) {
+	var receipts []*etypes.Receipt
 	// collect all relevant transactions from the block into batches
 	batches := [][]*etypes.Transaction{}
 	batch := []*etypes.Transaction{}
@@ -618,11 +941,6 @@ func (e *EVMScanner) getTxIn(block *etypes.Block) (stypes.TxIn, []*big.Int, erro
 			continue
 		}
 
-		// best effort remove the tx from the signed txs (ok if it does not exist)
-		if err := e.blockMetaAccessor.RemoveSignedTxItem(tx.Hash().String()); err != nil {
-			e.logger.Err(err).Str("tx hash", tx.Hash().String()).Msg("failed to remove signed tx item")
-		}
-
 		batch = append(batch, tx)
 		if len(batch) >= e.cfg.TransactionBatchSize {
 			batches = append(batches, batch)
@@ -632,6 +950,10 @@ func (e *EVMScanner) getTxIn(block *etypes.Block) (stypes.TxIn, []*big.Int, erro
 	if len(batch) > 0 {
 		batches = append(batches, batch)
 	}
+
+	// A receipt's blockHash is the chain's own. Go recomputes AVAX's header
+	// hash without its extra fields, so a differing hash is resolved once.
+	blockHash, reportedHash := block.Hash(), block.Hash()
 
 	// process all batches
 	for _, batch := range batches {
@@ -645,62 +967,45 @@ func (e *EVMScanner) getTxIn(block *etypes.Block) (stypes.TxIn, []*big.Int, erro
 			})
 		}
 
-		// send the batch rpc request
-		err := e.ethClient.Client().BatchCall(rpcBatch)
+		// send the batch rpc request under a deadline, so a stalled RPC cannot
+		// wedge the scanner on context.Background() forever.
+		ctx, cancel := e.receiptRPCContext()
+		err := e.ethClient.Client().BatchCallContext(ctx, rpcBatch)
+		cancel()
 		if err != nil {
 			e.logger.Error().Int("size", len(batch)).Err(err).Msg("failed to batch fetch transaction receipts")
-			return stypes.TxIn{}, nil, err
+			return nil, err
 		}
 
 		// process the batch rpc response
 		for i, elem := range rpcBatch {
-			if elem.Error != nil {
-				if !errors.Is(elem.Error, ethereum.NotFound) {
-					e.logger.Error().Err(elem.Error).Msg("failed to fetch transaction receipt")
-				}
-				continue
-			}
-
-			// get the receipt
+			// A missing or misplaced receipt fails the block (the elem.Error flows
+			// into the checks below), as in the eth_getBlockReceipts path; dropping
+			// it with an early continue would complete an owned journal replay empty.
 			receipt, ok := elem.Result.(*etypes.Receipt)
-			if !ok {
-				e.logger.Error().Msg("failed to cast to transaction receipt")
-				continue
+			if elem.Error == nil && (!ok || receipt == nil || receipt.TxHash != batch[i].Hash() || receipt.BlockNumber == nil || receipt.BlockNumber.Cmp(block.Number()) != 0) {
+				elem.Error = errors.New("receipt does not belong to extracted block height")
+			}
+			if elem.Error == nil && receipt.BlockHash != reportedHash {
+				same, sameErr := evm.SameBlock(e.ethRpc, receipt.BlockHash, blockHash.Hex(), block.Number().Int64())
+				switch {
+				case sameErr != nil:
+					elem.Error = sameErr
+				case !same:
+					elem.Error = errors.New("receipt does not belong to extracted block")
+				default:
+					reportedHash = receipt.BlockHash
+				}
+			}
+			if elem.Error != nil {
+				e.logger.Error().Err(elem.Error).Str("hash", batch[i].Hash().Hex()).Msg("failed to fetch transaction receipt")
+				return nil, elem.Error
 			}
 
-			// collect effective gas price from receipt for gas price tracking
-			gasPrices = append(gasPrices, receipt.EffectiveGasPrice)
-
-			// extract the txInItem
-			var txInItem *stypes.TxInItem
-			txInItem, err = e.receiptToTxInItem(batch[i], receipt)
-			if err != nil {
-				e.logger.Error().Err(err).Msg("failed to convert receipt to txInItem")
-				continue
-			}
-
-			// skip invalid items
-			if txInItem == nil {
-				continue
-			}
-			if len(txInItem.To) == 0 {
-				continue
-			}
-			if len([]byte(txInItem.Memo)) > constants.MaxMemoSize {
-				continue
-			}
-
-			// add the txInItem to the txInbound
-			txInItem.BlockHeight = block.Number().Int64()
-			txInbound.TxArray = append(txInbound.TxArray, txInItem)
+			receipts = append(receipts, receipt)
 		}
 	}
-
-	if len(txInbound.TxArray) == 0 {
-		e.logger.Debug().Uint64("block", block.NumberU64()).Msg("no tx need to be processed in this block")
-		return stypes.TxIn{}, gasPrices, nil
-	}
-	return txInbound, gasPrices, nil
+	return receipts, nil
 }
 
 // TODO: This is only used by unit tests now, but covers receiptToTxInItem internally -
@@ -721,7 +1026,34 @@ func (e *EVMScanner) getTxInItem(tx *etypes.Transaction) (*stypes.TxInItem, erro
 	return e.receiptToTxInItem(tx, receipt)
 }
 
-func (e *EVMScanner) receiptToTxInItem(tx *etypes.Transaction, receipt *etypes.Receipt) (*stypes.TxInItem, error) {
+func (e *EVMScanner) receiptToTxInItem(tx *etypes.Transaction, receipt *etypes.Receipt) (result *stypes.TxInItem, resultErr error) {
+	var journal *evm.OccurrenceJournal
+	if e.blockMetaAccessor != nil && e.cfg.MaxReorgRescanBlocks > 0 {
+		var err error
+		journal, err = e.occurrenceJournal()
+		if err != nil {
+			return nil, fmt.Errorf("%w: %w", evm.ErrRecoveryAttribution, err)
+		}
+	}
+	provider := evm.NewRecoveryPubKeyValidator(e.pubkeyMgr, journal, tx.Hash().Hex(), e.cfg.ChainID)
+	// The adapter never converts a storage error into an acknowledged empty block.
+	defer func() {
+		if result != nil {
+			// Router parsing may stop after recognizing the source vault. Capture
+			// both actual endpoints so a later replay can still emit both legs.
+			provider.IsValidPoolAddress(result.Sender, e.cfg.ChainID)
+			provider.IsValidPoolAddress(result.To, e.cfg.ChainID)
+		} else if resultErr == nil {
+			result = provider.UnattributedItem(tx, e.eipSigner)
+		}
+		if provider.Err != nil {
+			result = nil
+			resultErr = errors.Join(resultErr, fmt.Errorf("%w: %w", evm.ErrRecoveryAttribution, provider.Err))
+		} else if result != nil {
+			result.VaultAttribution = provider.Attribution()
+		}
+	}()
+
 	if receipt.Status != 1 {
 		e.logger.Debug().Stringer("txid", tx.Hash()).Uint64("status", receipt.Status).Msg("tx failed")
 
@@ -730,7 +1062,7 @@ func (e *EVMScanner) receiptToTxInItem(tx *etypes.Transaction, receipt *etypes.R
 			e.signerCacheManager.RemoveSigned(tx.Hash().String())
 		}
 
-		return e.getTxInFromFailedTransaction(tx, receipt), nil
+		return e.getTxInFromFailedTransaction(tx, receipt, provider), nil
 	}
 
 	disableWhitelist, err := e.bridge.GetMimir(constants.EVMDisableContractWhitelist.String())
@@ -742,25 +1074,25 @@ func (e *EVMScanner) receiptToTxInItem(tx *etypes.Transaction, receipt *etypes.R
 	if disableWhitelist == 1 {
 		// parse tx without whitelist
 		destination := tx.To()
-		isToVault, _ := e.pubkeyMgr.IsValidPoolAddress(destination.String(), e.cfg.ChainID)
+		isToVault, _ := provider.IsValidPoolAddress(destination.String(), e.cfg.ChainID)
 
 		// resolve sender upfront to check vault outbounds (approvals, cancels, etc.)
 		sender, senderErr := etypes.Sender(e.eipSigner, tx)
 		var isFromVault bool
 		if senderErr == nil {
-			isFromVault, _ = e.pubkeyMgr.IsValidPoolAddress(sender.String(), e.cfg.ChainID)
+			isFromVault, _ = provider.IsValidPoolAddress(sender.String(), e.cfg.ChainID)
 		}
 
 		switch {
 		case isToVault:
 			// Tx to a vault
-			return e.getTxInFromTransaction(tx, receipt)
-		case e.isToValidContractAddress(destination, true):
+			return e.getTxInFromTransaction(tx, receipt, provider)
+		case e.isToValidContractAddress(destination, true, provider):
 			// Deposit directly to router
-			return e.getTxInFromSmartContract(tx, receipt, 0)
+			return e.getTxInFromSmartContract(tx, receipt, 0, provider)
 		case isFromVault:
 			// Tx from a vault (outbound, approval, cancel, etc.)
-			return e.getTxInFromTransaction(tx, receipt)
+			return e.getTxInFromTransaction(tx, receipt, provider)
 		case evm.HasERC20TransferSelector(tx):
 			// Reject unknown tokens before the cached Mimir gate.
 			if !e.isRelevantERC20Token(destination) {
@@ -780,28 +1112,28 @@ func (e *EVMScanner) receiptToTxInItem(tx *etypes.Transaction, receipt *etypes.R
 				return nil, nil
 			}
 			// Reuse the sender recovered above to avoid a second ecrecover.
-			return e.getTxInFromDirectERC20Transfer(tx, receipt, &sender)
+			return e.getTxInFromDirectERC20Transfer(tx, receipt, &sender, provider)
 		case evm.IsSmartContractCall(tx, receipt):
 			// Tx to a different contract, attempt to parse with max allowable logs
-			return e.getTxInFromSmartContract(tx, receipt, int64(e.cfg.MaxContractTxLogs))
+			return e.getTxInFromSmartContract(tx, receipt, int64(e.cfg.MaxContractTxLogs), provider)
 		default:
 			// ignore tx not involving any vault
 			return nil, nil
 		}
 	} else {
 		// parse tx with whitelist
-		if e.isToValidContractAddress(tx.To(), true) {
-			return e.getTxInFromSmartContract(tx, receipt, 0)
+		if e.isToValidContractAddress(tx.To(), true, provider) {
+			return e.getTxInFromSmartContract(tx, receipt, 0, provider)
 		}
 		// check if tx is to or from a vault
 		sender, err := etypes.Sender(e.eipSigner, tx)
 		if err != nil {
 			return nil, nil // ignore tx if we cannot determine sender
 		}
-		isFromVault, _ := e.pubkeyMgr.IsValidPoolAddress(sender.String(), e.cfg.ChainID)
-		isToVault, _ := e.pubkeyMgr.IsValidPoolAddress(tx.To().String(), e.cfg.ChainID)
+		isFromVault, _ := provider.IsValidPoolAddress(sender.String(), e.cfg.ChainID)
+		isToVault, _ := provider.IsValidPoolAddress(tx.To().String(), e.cfg.ChainID)
 		if isFromVault || isToVault {
-			return e.getTxInFromTransaction(tx, receipt)
+			return e.getTxInFromTransaction(tx, receipt, provider)
 		}
 		if evm.HasERC20TransferSelector(tx) {
 			// Reject unknown tokens before the cached Mimir gate.
@@ -817,7 +1149,7 @@ func (e *EVMScanner) receiptToTxInItem(tx *etypes.Transaction, receipt *etypes.R
 				return nil, nil
 			}
 			// Reuse the sender recovered above to avoid a second ecrecover.
-			return e.getTxInFromDirectERC20Transfer(tx, receipt, &sender)
+			return e.getTxInFromDirectERC20Transfer(tx, receipt, &sender, provider)
 		}
 		return nil, nil
 	}
@@ -827,128 +1159,90 @@ func (e *EVMScanner) receiptToTxInItem(tx *etypes.Transaction, receipt *etypes.R
 
 // processReorg compares the block's parent hash with the stored block hash. When a
 // reorg is detected, it triggers a rescan of all cached blocks in the reorg window.
-// The function returns observations from the rescanned blocks.
-func (e *EVMScanner) processReorg(header *etypes.Header) ([]stypes.TxIn, error) {
+// Recovery is delivered by the durable journal and ordered rewind.
+func (e *EVMScanner) processReorg(header *etypes.Header) error {
+	currentMeta, readErr := e.blockMetaAccessor.GetBlockMeta(header.Number.Int64())
+	if readErr != nil {
+		return readErr
+	}
+	replacedHere := currentMeta != nil && !strings.EqualFold(currentMeta.BlockHash, header.Hash().Hex())
+
 	previousHeight := header.Number.Int64() - 1
 	prevBlockMeta, err := e.blockMetaAccessor.GetBlockMeta(previousHeight)
 	if err != nil {
-		return nil, fmt.Errorf("fail to get block meta of height(%d) : %w", previousHeight, err)
+		return fmt.Errorf("fail to get block meta of height(%d) : %w", previousHeight, err)
 	}
 
 	// skip re-org processing if we did not store the previous block meta
-	if prevBlockMeta == nil {
-		return nil, nil
+	if prevBlockMeta == nil && !replacedHere {
+		return nil
+	}
+
+	// The parent hash is the chain's own; stored hashes are recomputed locally.
+	linked := false
+	if prevBlockMeta != nil {
+		if linked, err = evm.SameBlock(e.ethRpc, header.ParentHash, prevBlockMeta.BlockHash, previousHeight); err != nil {
+			return fmt.Errorf("%w: %w", btypes.ErrUnavailableBlock, err)
+		}
 	}
 
 	// no re-org if stored block hash at previous height is equal to current block parent
-	if strings.EqualFold(prevBlockMeta.BlockHash, header.ParentHash.Hex()) {
-		return nil, nil
+	if !replacedHere && linked {
+		return nil
 	}
-	e.logger.Info().
-		Int64("height", previousHeight).
-		Str("stored_hash", prevBlockMeta.BlockHash).
-		Str("current_parent_hash", header.ParentHash.Hex()).
-		Msg("reorg detected")
+	// The previous replayed block links to this replacement, and the durable
+	// sweep already cleaned every occurrence here. Re-extract this block directly
+	// instead of sweeping the entire retained window again at each rewind height.
+	if replacedHere && linked {
+		journal, journalErr := e.occurrenceJournal()
+		if journalErr != nil {
+			return journalErr
+		}
+		prepared, prepareErr := journal.ReplayPrepared(currentMeta)
+		if prepareErr != nil {
+			return prepareErr
+		}
+		if prepared {
+			return nil
+		}
+	}
+
+	e.canonicalObservationView().Invalidate()
+	e.logger.Info().Int64("height", header.Number.Int64()).Msg("reorg detected")
 
 	// send erratas and determine the block heights to rescan
-	heights, err := e.reprocessTxs()
+	_, err = e.reprocessTxs()
 	if err != nil {
-		e.logger.Err(err).Msg("fail to reprocess all txs")
+		return fmt.Errorf("%w: %v", btypes.ErrUnavailableBlock, err)
 	}
 
-	// rescan heights
-	var txIns []stypes.TxIn
-	for _, rescanHeight := range heights {
-		e.logger.Info().Msgf("rescan block height: %d", rescanHeight)
-		var block *etypes.Block
-		block, err = e.ethRpc.GetBlock(rescanHeight)
-		if err != nil {
-			e.logger.Err(err).Int64("height", rescanHeight).Msg("fail to get block")
-			continue
-		}
-		if block.Transactions().Len() == 0 {
-			continue
-		}
-		var txIn stypes.TxIn
-		txIn, _, err = e.getTxIn(block) // discard gas prices during reorg rescan
-		if err != nil {
-			e.logger.Err(err).Int64("height", rescanHeight).Msg("fail to extract txs from block")
-			continue
-		}
-		if len(txIn.TxArray) > 0 {
-			txIns = append(txIns, txIn)
-		}
+	// Classification may encounter an older held request before the current
+	// fork. Apply the same rewind bounds as entry-point scheduling and select
+	// the earliest eligible request, rather than clamping or dropping evidence.
+	journal, journalErr := e.occurrenceJournal()
+	if journalErr != nil {
+		return journalErr
 	}
-	return txIns, nil
+	next, pending, nextErr := journal.NextRescanWithin(header.Number.Int64(), e.cfg.FloorBlockHeight)
+	if nextErr != nil {
+		return nextErr
+	}
+	if pending && next < header.Number.Int64() {
+		return btypes.RewindRequiredError{NextHeight: next}
+	}
+	return nil
 }
 
-// reprocessTx is initiated when the chain client detects a reorg. It reads block
-// metadata from local storage and processes all transactions, sending an RPC request to
-// check each transaction's existence. If a transaction no longer exists, the chain
-// client reports this to Thorchain.
-//
-// The []int64 return value represents the block heights to be rescanned.
+// reprocessTxs classifies canonical locations without overwriting an original
+// anchor. Unresolved local cleanup or transaction evidence remains retryable.
 func (e *EVMScanner) reprocessTxs() ([]int64, error) {
-	blockMetas, err := e.blockMetaAccessor.GetBlockMetas()
+	journal, err := e.occurrenceJournal()
 	if err != nil {
-		return nil, fmt.Errorf("fail to get block metas from local storage: %w", err)
+		return nil, err
 	}
-	var rescanBlockHeights []int64
-	for _, blockMeta := range blockMetas {
-		metaTxs := make([]types.TransactionMeta, 0)
-		var errataTxs []stypes.ErrataTx
-		for _, tx := range blockMeta.Transactions {
-			if e.ethRpc.CheckTransaction(tx.Hash) {
-				e.logger.Debug().Msgf("height: %d, tx: %s still exists", blockMeta.Height, tx.Hash)
-				metaTxs = append(metaTxs, tx)
-				continue
-			}
-
-			// send an errata if the transactino no longer exists on chain
-			errataTxs = append(errataTxs, stypes.ErrataTx{
-				TxID:  common.TxID(tx.Hash),
-				Chain: e.cfg.ChainID,
-			})
-		}
-		if len(errataTxs) > 0 {
-			e.globalErrataQueue <- stypes.ErrataBlock{
-				Height: blockMeta.Height,
-				Txs:    errataTxs,
-			}
-		}
-
-		// fetch the header header to determine if the hash has changed and requires rescan
-		var header *etypes.Header
-		header, err = e.ethRpc.GetHeader(blockMeta.Height)
-		if err != nil {
-			e.logger.Err(err).
-				Int64("height", blockMeta.Height).
-				Msg("fail to get block header to check for reorg")
-
-			// err on the side of caution and rescan the block
-			rescanBlockHeights = append(rescanBlockHeights, blockMeta.Height)
-			continue
-		}
-
-		// if the block hash is different than previously recorded, rescan the block
-		if !strings.EqualFold(blockMeta.BlockHash, header.Hash().Hex()) {
-			rescanBlockHeights = append(rescanBlockHeights, blockMeta.Height)
-		}
-
-		// save the updated block meta
-		blockMeta.PreviousHash = header.ParentHash.Hex()
-		blockMeta.BlockHash = header.Hash().Hex()
-		blockMeta.Transactions = metaTxs
-		if err = e.blockMetaAccessor.SaveBlockMeta(blockMeta.Height, blockMeta); err != nil {
-			e.logger.Err(err).Int64("height", blockMeta.Height).Msg("fail to save block meta")
-		}
-	}
-	return rescanBlockHeights, nil
+	return evm.ReconcileBlockOccurrences(journal, e.ethRpc, e.canonicalObservationView(), e.globalErrataQueue, e.cfg.HTTPRequestTimeout)
 }
 
-// --------------------------------- gas ---------------------------------
-
-// updateGasPrice calculates and stores the current gas price to reported to thornode
 func (e *EVMScanner) updateGasPrice(prices []*big.Int) {
 	// skip empty blocks
 	if len(prices) == 0 {
@@ -1091,7 +1385,11 @@ func (e *EVMScanner) prepareNetworkFeeReport(height int64, gasRate uint64, hasNe
 
 // --------------------------------- parse transaction ---------------------------------
 
-func (e *EVMScanner) getTxInFromTransaction(tx *etypes.Transaction, receipt *etypes.Receipt) (*stypes.TxInItem, error) {
+func (e *EVMScanner) getTxInFromTransaction(tx *etypes.Transaction, receipt *etypes.Receipt, providers ...pubkeymanager.PubKeyValidator) (*stypes.TxInItem, error) {
+	provider := e.pubkeyMgr
+	if len(providers) > 0 {
+		provider = providers[0]
+	}
 	txInItem := &stypes.TxInItem{
 		Tx: tx.Hash().Hex()[2:], // drop the "0x" prefix
 	}
@@ -1125,7 +1423,7 @@ func (e *EVMScanner) getTxInFromTransaction(tx *etypes.Transaction, receipt *ety
 	txInItem.Gas[0].Asset = e.cfg.ChainID.GetGasAsset()
 
 	// drop non-outbound transactions below dust threshold
-	isOutbound, _ := e.pubkeyMgr.IsValidPoolAddress(sender.String(), e.cfg.ChainID)
+	isOutbound, _ := provider.IsValidPoolAddress(sender.String(), e.cfg.ChainID)
 	if !isOutbound &&
 		len(txInItem.Coins) == 1 &&
 		txInItem.Coins[0].Asset.Equals(e.cfg.ChainID.GetGasAsset()) &&
@@ -1161,12 +1459,22 @@ func (e *EVMScanner) getTxInFromTransaction(tx *etypes.Transaction, receipt *ety
 
 // isToValidContractAddress this method make sure the transaction to address is to
 // THORChain router or a whitelist address
-func (e *EVMScanner) isToValidContractAddress(addr *ecommon.Address, includeWhiteList bool) bool {
+func (e *EVMScanner) isToValidContractAddress(addr *ecommon.Address, includeWhiteList bool, providers ...pubkeymanager.PubKeyValidator) (valid bool) {
+	provider := e.pubkeyMgr
+	if len(providers) > 0 {
+		provider = providers[0]
+	}
+	if retained, ok := provider.(*evm.RecoveryPubKeyValidator); ok && addr != nil {
+		defer func() { retained.RecordContractLookup(addr.String(), valid) }()
+		if retained.IsValidContract(addr.String()) {
+			return true
+		}
+	}
 	if addr == nil {
 		return false
 	}
 	// get the smart contract used by thornode
-	contractAddresses := e.pubkeyMgr.GetContracts(e.cfg.ChainID, false)
+	contractAddresses := provider.GetContracts(e.cfg.ChainID, false)
 
 	// EqualFold-equal to the checksummed addr.String(), without its keccak256
 	addrString := evm.LowerHexAddress(*addr)
@@ -1211,7 +1519,11 @@ func (e *EVMScanner) directERC20InboundEnabled() bool {
 // getTxInFromDirectERC20Transfer observes direct ERC20 token transfers sent to
 // active vault addresses. These txs bypass the router, so they are emitted as
 // memo-less inbounds and left to THORNode's normal memoless/refund handling.
-func (e *EVMScanner) getTxInFromDirectERC20Transfer(tx *etypes.Transaction, receipt *etypes.Receipt, sender *ecommon.Address) (*stypes.TxInItem, error) {
+func (e *EVMScanner) getTxInFromDirectERC20Transfer(tx *etypes.Transaction, receipt *etypes.Receipt, sender *ecommon.Address, providers ...pubkeymanager.PubKeyValidator) (*stypes.TxInItem, error) {
+	provider := e.pubkeyMgr
+	if len(providers) > 0 {
+		provider = providers[0]
+	}
 	var l1Fee *big.Int
 	if receipt != nil {
 		l1Fee = receipt.L1Fee
@@ -1222,7 +1534,7 @@ func (e *EVMScanner) getTxInFromDirectERC20Transfer(tx *etypes.Transaction, rece
 		Sender:                sender,
 		MaxContractTxLogs:     int64(e.cfg.MaxContractTxLogs),
 		L1Fee:                 l1Fee,
-		PoolAddressProvider:   e.pubkeyMgr,
+		PoolAddressProvider:   provider,
 		TokenResolver:         e.tokenManager,
 		Logger:                e.logger,
 		SenderErrorMessage:    "failed to get sender",
@@ -1231,7 +1543,11 @@ func (e *EVMScanner) getTxInFromDirectERC20Transfer(tx *etypes.Transaction, rece
 }
 
 // getTxInFromSmartContract returns txInItem
-func (e *EVMScanner) getTxInFromSmartContract(tx *etypes.Transaction, receipt *etypes.Receipt, maxLogs int64) (*stypes.TxInItem, error) {
+func (e *EVMScanner) getTxInFromSmartContract(tx *etypes.Transaction, receipt *etypes.Receipt, maxLogs int64, providers ...pubkeymanager.PubKeyValidator) (*stypes.TxInItem, error) {
+	provider := e.pubkeyMgr
+	if len(providers) > 0 {
+		provider = providers[0]
+	}
 	txInItem := &stypes.TxInItem{
 		Tx: tx.Hash().Hex()[2:], // drop the "0x" prefix
 	}
@@ -1246,7 +1562,9 @@ func (e *EVMScanner) getTxInFromSmartContract(tx *etypes.Transaction, receipt *e
 		return nil, nil
 	}
 	p := evm.NewSmartContractLogParser(
-		e.isToValidContractAddress,
+		func(address *ecommon.Address, includeWhitelist bool) bool {
+			return e.isToValidContractAddress(address, includeWhitelist, provider)
+		},
 		e.tokenManager.GetAssetFromTokenAddress,
 		e.tokenManager.GetTokenDecimalsForTHORChain,
 		e.tokenManager.ConvertAmount,
@@ -1262,8 +1580,11 @@ func (e *EVMScanner) getTxInFromSmartContract(tx *etypes.Transaction, receipt *e
 		return nil, fmt.Errorf("failed to parse logs, err: %w", err)
 	}
 	if isVaultTransfer {
-		contractAddresses := e.pubkeyMgr.GetContracts(e.cfg.ChainID, false)
+		contractAddresses := provider.GetContracts(e.cfg.ChainID, false)
 		isDirectlyToRouter := false
+		if retained, ok := provider.(*evm.RecoveryPubKeyValidator); ok {
+			isDirectlyToRouter = retained.IsValidContract(tx.To().String())
+		}
 		for _, item := range contractAddresses {
 			if strings.EqualFold(item.String(), tx.To().String()) {
 				isDirectlyToRouter = true
@@ -1294,11 +1615,11 @@ func (e *EVMScanner) getTxInFromSmartContract(tx *etypes.Transaction, receipt *e
 	// produced the Deposit event), NOT tx.To(), because aggregator contracts
 	// forward deposits to the router internally — tx.To() is the aggregator.
 	if txInItem.To != "" {
-		senderIsVault, _ := e.pubkeyMgr.IsValidPoolAddress(txInItem.Sender, e.cfg.ChainID)
+		senderIsVault, _ := provider.IsValidPoolAddress(txInItem.Sender, e.cfg.ChainID)
 		if !senderIsVault {
-			ok, cpi := e.pubkeyMgr.IsValidPoolAddress(txInItem.To, e.cfg.ChainID)
+			ok, cpi := provider.IsValidPoolAddress(txInItem.To, e.cfg.ChainID)
 			if ok {
-				expectedRouter := e.pubkeyMgr.GetContract(e.cfg.ChainID, cpi.PubKey)
+				expectedRouter := provider.GetContract(e.cfg.ChainID, cpi.PubKey)
 				if expectedRouter != common.NoAddress {
 					depositRouter := evm.DepositEventRouter(receipt.Logs)
 					if depositRouter != nil && !strings.EqualFold(expectedRouter.String(), depositRouter.String()) {
@@ -1332,7 +1653,11 @@ func (e *EVMScanner) getTxInFromSmartContract(tx *etypes.Transaction, receipt *e
 // will check whether the transaction is an outbound. It fakes a txInItem if the failed
 // transaction is an outbound, and reports it back to THORNode so the gas fee can be
 // deducted from the vault balance to keep accounting in sync.
-func (e *EVMScanner) getTxInFromFailedTransaction(tx *etypes.Transaction, receipt *etypes.Receipt) *stypes.TxInItem {
+func (e *EVMScanner) getTxInFromFailedTransaction(tx *etypes.Transaction, receipt *etypes.Receipt, providers ...pubkeymanager.PubKeyValidator) *stypes.TxInItem {
+	provider := e.pubkeyMgr
+	if len(providers) > 0 {
+		provider = providers[0]
+	}
 	if receipt.Status == 1 {
 		e.logger.Info().Str("hash", tx.Hash().String()).Msg("success transaction should not get into getTxInFromFailedTransaction")
 		return nil
@@ -1342,7 +1667,7 @@ func (e *EVMScanner) getTxInFromFailedTransaction(tx *etypes.Transaction, receip
 		e.logger.Err(err).Msg("failed to get from address")
 		return nil
 	}
-	ok, cif := e.pubkeyMgr.IsValidPoolAddress(fromAddr.String(), e.cfg.ChainID)
+	ok, cif := provider.IsValidPoolAddress(fromAddr.String(), e.cfg.ChainID)
 	if !ok || cif.IsEmpty() {
 		return nil
 	}
@@ -1352,11 +1677,93 @@ func (e *EVMScanner) getTxInFromFailedTransaction(tx *etypes.Transaction, receip
 	}
 	txHash := tx.Hash().Hex()[2:]
 	return &stypes.TxInItem{
-		Tx:     txHash,
-		Memo:   memo.NewOutboundMemo(common.TxID(strings.ToUpper(txHash))).String(),
-		Sender: strings.ToLower(fromAddr.String()),
-		To:     strings.ToLower(tx.To().String()),
-		Coins:  common.NewCoins(common.NewCoin(e.cfg.ChainID.GetGasAsset(), cosmos.NewUint(1))),
-		Gas:    common.MakeEVMGas(e.cfg.ChainID, txGasPrice, receipt.GasUsed, receipt.L1Fee),
+		EVMFailedSynthetic: true,
+		Tx:                 txHash,
+		Memo:               memo.NewOutboundMemo(common.TxID(strings.ToUpper(txHash))).String(),
+		Sender:             strings.ToLower(fromAddr.String()),
+		To:                 strings.ToLower(tx.To().String()),
+		Coins:              common.NewCoins(common.NewCoin(e.cfg.ChainID.GetGasAsset(), cosmos.NewUint(1))),
+		Gas:                common.MakeEVMGas(e.cfg.ChainID, txGasPrice, receipt.GasUsed, receipt.L1Fee),
 	}
+}
+
+// canonicalObservationView shares one generation and evidence cache across scanner
+// and Observer checks. Lazy initialization is serialized with concurrent callers.
+func (e *EVMScanner) canonicalObservationView() *evm.CanonicalValidator {
+	e.canonicalViewMu.Lock()
+	defer e.canonicalViewMu.Unlock()
+	if e.canonicalView == nil {
+		e.canonicalView = evm.NewCanonicalValidator(e.ethRpc, e.cfg.BlockHeightDiscoverBackoff)
+	}
+	return e.canonicalView
+}
+
+// occurrenceJournal returns the single owner of recovery records and metadata writes.
+// Construction errors leave it unset so a later call can retry initialization.
+func (e *EVMScanner) occurrenceJournal() (*evm.OccurrenceJournal, error) {
+	e.occurrenceJournalMu.Lock()
+	defer e.occurrenceJournalMu.Unlock()
+	if e.journal == nil {
+		var err error
+		e.journal, err = evm.NewOccurrenceJournal(e.blockMetaAccessor, e.cfg.ChainID)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return e.journal, nil
+}
+
+// ServiceRecovery runs one bounded recovery pass independently of extraction.
+// The scan-loop supplies its completed delivery height so prefetch cannot claim
+// spare recovery time. Maintenance still runs while paused or caught up.
+func (e *EVMScanner) ServiceRecovery(scannedHeight int64, paused bool) error {
+	e.scanMu.Lock()
+	defer e.scanMu.Unlock()
+	journal, err := e.occurrenceJournal()
+	if err != nil {
+		return err
+	}
+	if err = journal.ReportStorage(); err != nil {
+		return err
+	}
+	if scannedHeight >= 0 && scannedHeight < math.MaxInt64 {
+		if err = journal.ReportReplayWindow(scannedHeight+1, e.cfg.FloorBlockHeight); err != nil {
+			return err
+		}
+	}
+	return e.serviceRecovery(journal, scannedHeight, paused)
+}
+
+// serviceRecovery runs matching and maturity checks before cleanup delivery. A failed
+// cleanup must not starve unrelated watches. The caller holds scanMu; this pass
+// never advances the ordinary observation cursor.
+func (e *EVMScanner) serviceRecovery(journal *evm.OccurrenceJournal, scannedHeight int64, paused bool) error {
+	maintenanceErr := journal.RefreshAttribution(e.pubkeyMgr, e.canonicalObservationView())
+	if err := evm.ServiceOccurrenceMatcher(journal, e.ethRpc, e.canonicalObservationView(), e.eipSigner, scannedHeight, paused); err != nil {
+		maintenanceErr = errors.Join(maintenanceErr, err)
+	}
+	if e.confirmationPolicy != nil {
+		// BSC/POL policy is fixed for every block; decoding vault outputs would add
+		// receipt RPCs without changing this requirement.
+		policy := func(*etypes.Block) (int64, error) { return e.confirmationPolicy(stypes.TxIn{Chain: e.cfg.ChainID}) }
+
+		if err := evm.ProbeOccurrenceCandidates(journal, e.ethRpc, e.canonicalObservationView(), e.eipSigner, policy, e.globalErrataQueue, e.cfg.HTTPRequestTimeout); err != nil {
+			maintenanceErr = errors.Join(maintenanceErr, err)
+		}
+		if probeErr := evm.ProbeOccurrenceWatches(journal, e.ethRpc, e.canonicalObservationView(), e.eipSigner, policy, e.globalErrataQueue, e.cfg.HTTPRequestTimeout, &e.watchOffset); probeErr != nil {
+			maintenanceErr = errors.Join(maintenanceErr, probeErr)
+		}
+	}
+
+	return errors.Join(maintenanceErr, evm.DrainOccurrenceCleanup(journal, e.canonicalObservationView(), e.globalErrataQueue, e.cfg.HTTPRequestTimeout))
+}
+
+// RecoveryObservationVaults reads retained local network attribution. It does not
+// certify canonicality or maturity; those gates still run on the extracted item.
+func (e *EVMScanner) RecoveryObservationVaults(item stypes.TxInItem) (common.PubKeys, error) {
+	journal, err := e.occurrenceJournal()
+	if err != nil {
+		return nil, err
+	}
+	return journal.RecoveryObservationVaults(item)
 }

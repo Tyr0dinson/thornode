@@ -101,6 +101,9 @@ func (w *KeySignWrapper) signTSS(tx *etypes.Transaction, poolPubKey string, thor
 	if err != nil {
 		return nil, fmt.Errorf("fail to TSS sign: %w", err)
 	}
+	if len(recovery) != 1 {
+		return nil, fmt.Errorf("invalid TSS recovery id length: %d", len(recovery))
+	}
 	secpPubKey, err := codec.ToCmtPubKeyInterface(pk)
 	if err != nil {
 		return nil, err

@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/syndtr/goleveldb/leveldb"
+	"github.com/syndtr/goleveldb/leveldb/opt"
 	"github.com/syndtr/goleveldb/leveldb/util"
 
 	evmtypes "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/evm/types"
@@ -15,7 +16,8 @@ type LevelDBBlockMetaAccessor struct {
 	PrefixBlockMeta    string
 	PrefixSignedTxItem string
 
-	db *leveldb.DB
+	db      *leveldb.DB
+	journal *OccurrenceJournal
 }
 
 // NewLevelDBBlockMetaAccessor creates a new level db backed BlockMeta accessor
@@ -54,12 +56,15 @@ func (t *LevelDBBlockMetaAccessor) GetBlockMeta(height int64) (*evmtypes.BlockMe
 
 // SaveBlockMeta persistent the given BlockMeta into storage
 func (t *LevelDBBlockMetaAccessor) SaveBlockMeta(height int64, blockMeta *evmtypes.BlockMeta) error {
+	if t.journal != nil {
+		return t.journal.SaveMeta(blockMeta)
+	}
 	key := t.getBlockMetaKey(height)
 	buf, err := json.Marshal(blockMeta)
 	if err != nil {
 		return fmt.Errorf("fail to marshal block meta to json: %w", err)
 	}
-	return t.db.Put([]byte(key), buf, nil)
+	return t.db.Put([]byte(key), buf, &opt.WriteOptions{Sync: true})
 }
 
 // GetBlockMetas returns all the block metas in storage
@@ -80,11 +85,17 @@ func (t *LevelDBBlockMetaAccessor) GetBlockMetas() ([]*evmtypes.BlockMeta, error
 		}
 		blockMetas = append(blockMetas, &blockMeta)
 	}
+	if err := iterator.Error(); err != nil {
+		return nil, fmt.Errorf("iterate block metadata: %w", err)
+	}
 	return blockMetas, nil
 }
 
 // PruneBlockMeta removes all block meta that is older than the given block height.
 func (t *LevelDBBlockMetaAccessor) PruneBlockMeta(height int64) error {
+	if t.journal != nil {
+		return t.journal.PruneBlockMeta(height)
+	}
 	iterator := t.db.NewIterator(util.BytesPrefix([]byte(t.PrefixBlockMeta)), nil)
 	defer iterator.Release()
 	targetToDelete := make([]string, 0)

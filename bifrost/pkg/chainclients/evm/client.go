@@ -52,6 +52,8 @@ import (
 
 // EVMClient is a generic client for interacting with EVM chains.
 type EVMClient struct {
+	recoveryStartMu     sync.Mutex
+	recoveryStarted     bool
 	logger              zerolog.Logger
 	cfg                 config.BifrostChainConfiguration
 	localPubKey         common.PubKey
@@ -236,7 +238,7 @@ func NewEVMClient(
 	if len(c.cfg.BlockScanner.DBPath) > 0 {
 		path = fmt.Sprintf("%s/%s", c.cfg.BlockScanner.DBPath, c.cfg.BlockScanner.ChainID)
 	}
-	storage, err := blockscanner.NewBlockScannerStorage(path, c.cfg.ScannerLevelDB)
+	storage, err := blockscanner.NewBlockScannerStorageWithScanPosSync(path, c.cfg.ScannerLevelDB)
 	if err != nil {
 		return c, fmt.Errorf("fail to create blockscanner storage: %w", err)
 	}
@@ -264,6 +266,8 @@ func NewEVMClient(
 	}
 
 	// initialize block scanner
+	c.evmScanner.confirmationPolicy = c.GetConfirmationCountWithError
+
 	c.blockScanner, err = blockscanner.NewBlockScanner(
 		c.cfg.BlockScanner, storage, m, c.bridge, c.evmScanner,
 	)
@@ -506,6 +510,10 @@ func (c *EVMClient) Start(
 	globalSolvencyQueue chan stypes.Solvency,
 	globalNetworkFeeQueue chan common.NetworkFee,
 ) {
+	c.recoveryStartMu.Lock()
+	c.recoveryStarted = true
+	c.recoveryStartMu.Unlock()
+
 	c.evmScanner.globalErrataQueue = globalErrataQueue
 	c.evmScanner.globalNetworkFeeQueue = globalNetworkFeeQueue
 	c.globalSolvencyQueue = globalSolvencyQueue
@@ -1250,9 +1258,15 @@ func (c *EVMClient) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *
 		),
 		gas,
 		tx.VaultPubKey,
-		"",
-		"",
-		nil,
+		// Carry the scheduled aggregator metadata. The router call above packs
+		// exactly these values, so the scanner reads them back off the
+		// transferOutAndCall log and the two observations agree; leaving them
+		// empty here makes this observation a separate consensus candidate from
+		// every scanner observation, costing the broadcasting node its
+		// gas-agnostic observe credit on aggregator outbounds.
+		tx.Aggregator,
+		tx.AggregatorTargetAsset,
+		tx.AggregatorTargetLimit,
 	)
 
 	return rawTx, nonceBytes, txIn, nil
@@ -1428,7 +1442,7 @@ func (c *EVMClient) sign(tx *etypes.Transaction, poolPubKey common.PubKey, heigh
 			return nil, fmt.Errorf("fail to sign tx: %w", err)
 		}
 		// key sign error forward the keysign blame to thorchain
-		txID, errPostKeysignFail := c.bridge.PostKeysignFailure(keysignError.Blame, height, txOutItem.Memo, txOutItem.Coins, txOutItem.VaultPubKey)
+		txID, errPostKeysignFail := c.bridge.PostKeysignFailure(keysignError.Blame, height, txOutItem.GetMemo(), txOutItem.Coins, txOutItem.VaultPubKey)
 		if errPostKeysignFail != nil {
 			return nil, multierror.Append(err, errPostKeysignFail)
 		}
@@ -1500,41 +1514,95 @@ func (c *EVMClient) OnObservedTxIn(txIn stypes.TxInItem, blockHeight int64) {
 
 // GetConfirmationCount returns the confirmation count for the given tx.
 func (c *EVMClient) GetConfirmationCount(txIn stypes.TxIn) int64 {
-	switch c.cfg.ChainID {
-	case common.AVAXChain: // instant finality
-		return 0
-	case common.BASEChain:
-		return 12 // ~2 Ethereum blocks for parity with the 2 block minimum in eth client
-	case common.BSCChain:
-		return 3 // round up from 2.5 blocks required for finality
-	case common.POLChain:
-		return polConfirmations
-	default:
-		c.logger.Fatal().Msgf("unsupported chain: %s", c.cfg.ChainID)
-		return 0
+	count, err := c.GetConfirmationCountWithError(txIn)
+	if err != nil {
+		c.logger.Error().Err(err).Msg("unsupported confirmation policy")
+		return 1
 	}
+	return count
+}
+
+// GetConfirmationCountWithError exposes the chain's configured policy to admission
+// and recovery. Persisting the admitted per-item floor is a separate storage step.
+func (c *EVMClient) GetConfirmationCountWithError(txIn stypes.TxIn) (int64, error) {
+	required := int64(0)
+	switch c.cfg.ChainID {
+	case common.AVAXChain:
+		return 0, nil
+	case common.BASEChain:
+		return 12, nil
+	case common.BSCChain:
+		required = 3
+	case common.POLChain:
+		required = int64(polConfirmations)
+	default:
+		return 0, fmt.Errorf("unsupported chain: %s", c.cfg.ChainID)
+	}
+	return required, nil
+}
+
+// RecordObservationRequirements persists the admitted batch's per-item floors before
+// Observer acknowledges storage. Estimation alone must not mutate recovery evidence.
+func (c *EVMClient) RecordObservationRequirements(txIn stypes.TxIn) error {
+	if txIn.MemPool || txIn.AllowFutureObservation || c.cfg.ChainID.Equals(common.AVAXChain) {
+		return nil
+	}
+	if c.evmScanner == nil {
+		return errors.New("observation metadata is unavailable")
+	}
+	if c.evmScanner.cfg.MaxReorgRescanBlocks <= 0 {
+		return nil
+	}
+	journal, err := c.evmScanner.occurrenceJournal()
+	if err != nil {
+		return err
+	}
+	return journal.RecordRequirement(txIn, txIn.ConfirmationRequired)
 }
 
 // ConfirmationCountReady returns true if the confirmation count is ready.
 func (c *EVMClient) ConfirmationCountReady(txIn stypes.TxIn) bool {
-	switch c.cfg.ChainID {
-	case common.AVAXChain: // instant finality
+	if c.cfg.ChainID.Equals(common.BASEChain) || c.cfg.ChainID.Equals(common.AVAXChain) {
 		return true
-	case common.BSCChain, common.POLChain:
-		if len(txIn.TxArray) == 0 {
-			return true
-		}
-		blockHeight := txIn.TxArray[0].BlockHeight
-		confirm := txIn.ConfirmationRequired
-		c.logger.Info().Msgf("confirmation required: %d", confirm)
-		return (c.evmScanner.getCurrentBlockHeight() - blockHeight) >= confirm
-	case common.BASEChain:
-		// block is already finalized(settled to l1)
+	}
+	if len(txIn.TxArray) == 0 {
 		return true
-	default:
-		c.logger.Fatal().Msgf("unsupported chain: %s", c.cfg.ChainID)
+	}
+	if c.blockScanner == nil {
 		return false
 	}
+	finaliseHeight, finaliseErr := evm.ObservationFinaliseHeight(txIn)
+	if finaliseErr != nil || c.blockScanner.PreviousHeight() < finaliseHeight {
+		return false
+	}
+	for _, item := range txIn.TxArray {
+		if item == nil || item.BlockHash == "" || item.BlockHeight < 0 || item.BlockHeight > finaliseHeight {
+			return false
+		}
+	}
+	budget := c.ObservationReadinessTimeout()
+	ctx, cancel := context.WithTimeout(context.Background(), budget)
+	defer cancel()
+
+	seen := make(map[string]bool)
+	for _, item := range txIn.TxArray {
+		if item == nil {
+			return false
+		}
+		key := fmt.Sprintf("%d/%s", item.BlockHeight, item.BlockHash)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		_, err := c.ValidateObservation(ctx, stypes.ObservationOccurrence{Chain: c.cfg.ChainID, TxID: common.TxID(item.Tx), Height: item.BlockHeight, BlockHash: item.BlockHash, ConfirmationRequired: finaliseHeight - item.BlockHeight})
+		if err != nil {
+			if errors.Is(err, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
+				c.logger.Warn().Err(err).Str("chain", c.cfg.ChainID.String()).Int64("height", item.BlockHeight).Dur("budget", budget).Msg("canonical readiness deadline exceeded")
+			}
+			return false
+		}
+	}
+	return true
 }
 
 // --------------------------------- solvency ---------------------------------
@@ -1659,4 +1727,104 @@ func (c *EVMClient) ShouldReportSolvency(height int64) bool {
 
 func (c *EVMClient) getTimeoutContext() (context.Context, context.CancelFunc) {
 	return context.WithTimeout(context.Background(), c.cfg.BlockScanner.HTTPRequestTimeout)
+}
+
+// ObservationGeneration exposes only local chain-view state; it performs no RPC
+// or Observer handoff and is safe for the shared gate's generation recheck.
+func (c *EVMClient) ObservationGeneration() uint64 {
+	return c.evmScanner.canonicalObservationView().Generation()
+}
+
+// InvalidateObservationView fences outstanding proofs before publishing new recovery
+// work, so a delayed finalizer cannot complete a newer obligation.
+func (c *EVMClient) InvalidateObservationView() {
+	c.evmScanner.canonicalObservationView().Invalidate()
+}
+
+// ObservationReadinessTimeout supplies this client's budget to the shared gate.
+// The budget bounds RPC work and never extends canonical evidence freshness.
+func (c *EVMClient) ObservationReadinessTimeout() time.Duration {
+	if c != nil && c.evmScanner != nil && c.evmScanner.cfg.ObservationReadinessTimeout > 0 {
+		return c.evmScanner.cfg.ObservationReadinessTimeout
+	}
+	return 2 * time.Second
+}
+
+// PrepareObservationReadinessDetailed detects original-anchor changes before
+// maturity. Final signatures and submissions still require ValidateObservation.
+func (c *EVMClient) PrepareObservationReadinessDetailed(ctx context.Context, occurrences []stypes.ObservationOccurrence) (stypes.ObservationReadiness, error) {
+	if len(occurrences) == 0 {
+		return stypes.ObservationReadiness{}, nil
+	}
+	if c.evmScanner == nil {
+		return stypes.ObservationReadiness{}, errors.New("canonical readiness scanner unavailable")
+	}
+	return c.evmScanner.canonicalObservationView().PrepareObservationReadinessDetailed(ctx, occurrences, c.cfg.ChainID)
+}
+
+// ValidateObservation requires both fresh daemon evidence and the ordered scanner
+// position. Prefetch completion cannot supply the committed confirmation height.
+func (c *EVMClient) ValidateObservation(ctx context.Context, occurrence stypes.ObservationOccurrence) (stypes.ObservationValidation, error) {
+	committed := int64(-1)
+	if c.blockScanner != nil {
+		committed = c.blockScanner.PreviousHeight()
+	}
+	minimum := int64(0)
+	immediate := c.cfg.ChainID.Equals(common.BASEChain) || c.cfg.ChainID.Equals(common.AVAXChain)
+	if c.cfg.ChainID.Equals(common.BSCChain) {
+		minimum = 3
+	}
+	if c.cfg.ChainID.Equals(common.POLChain) {
+		minimum = int64(polConfirmations)
+	}
+	validation, err := evm.ValidateObservation(ctx, c.evmScanner.canonicalObservationView(), occurrence, c.cfg.ChainID, committed, minimum, immediate)
+	if err != nil {
+		return stypes.ObservationValidation{}, err
+	}
+	if !immediate && (c.blockScanner == nil || c.blockScanner.PreviousHeight()-occurrence.Height < occurrence.ConfirmationRequired) {
+		return stypes.ObservationValidation{}, fmt.Errorf("committed observation position changed during validation")
+	}
+	if validation.Generation != c.ObservationGeneration() {
+		return stypes.ObservationValidation{}, fmt.Errorf("observation generation changed during validation")
+	}
+	return validation, nil
+}
+
+// RequestObservationRecovery records original occurrences for cleanup without RPC
+// or replay. Observer may call it under its deck lock; the scanner performs the
+// eventual handoff.
+func (c *EVMClient) RequestObservationRecovery(occurrences []stypes.ObservationOccurrence) error {
+	journal, err := c.evmScanner.occurrenceJournal()
+	if err != nil {
+		return err
+	}
+	c.InvalidateObservationView()
+	return journal.RequestRecovery(occurrences)
+}
+
+// ScheduleStartupObservationRecovery is restricted to the pre-Start cleanup barrier.
+// An import must not downgrade an ordinary pending invalidation.
+func (c *EVMClient) ScheduleStartupObservationRecovery(occurrences []stypes.ObservationOccurrence) error {
+	c.recoveryStartMu.Lock()
+	defer c.recoveryStartMu.Unlock()
+	if c.recoveryStarted {
+		return fmt.Errorf("startup recovery requested after Start")
+	}
+	journal, err := c.evmScanner.occurrenceJournal()
+	if err != nil {
+		return err
+	}
+	c.InvalidateObservationView()
+	return journal.RequestStartupCleaned(occurrences)
+}
+
+var _ stypes.ObservationValidator = (*EVMClient)(nil)
+
+// RecoveryObservationVaults restores only the local identity saved with a recovery
+// obligation, after the live pubkey manager no longer lists that vault.
+func (c *EVMClient) RecoveryObservationVaults(item stypes.TxInItem) (common.PubKeys, error) {
+	if c.evmScanner == nil {
+		return nil, errors.New("observation metadata is unavailable")
+	}
+	return c.evmScanner.RecoveryObservationVaults(item)
 }

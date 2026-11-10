@@ -26,6 +26,16 @@ const (
 	symbolMethod  = "symbol"
 )
 
+// TokenNotWhitelistedError means a token is neither cached nor configured. It is
+// a definite scanner exclusion, unlike unavailable database or RPC evidence.
+type TokenNotWhitelistedError struct {
+	Token string
+}
+
+func (e TokenNotWhitelistedError) Error() string {
+	return fmt.Sprintf("token: %s is not whitelisted", e.Token)
+}
+
 // TokenManager manages a LevelDB of ERC20 token meta data and interfaces with token smart contracts
 type TokenManager struct {
 	tokenDb         *LevelDBTokenMeta
@@ -101,7 +111,7 @@ func (h *TokenManager) GetTokenMeta(token string) (types.TokenMeta, error) {
 		}
 		if !isWhiteListToken {
 			h.logger.Info().Str("token", token).Msg("TM: token not whitelisted")
-			return types.TokenMeta{}, fmt.Errorf("token: %s is not whitelisted", token)
+			return types.TokenMeta{}, TokenNotWhitelistedError{Token: token}
 		}
 		var symbol string
 		symbol, err = h.getSymbol(token)

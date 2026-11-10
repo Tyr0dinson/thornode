@@ -39,6 +39,13 @@ type BlockScannerSolvencyReporter interface {
 	ReportSolvency(fetchHeight, chainHeight int64) error
 }
 
+// BlockScannerRecoveryService is optional maintenance on the ordered scan loop.
+// scannedHeight is the last completed delivery, even with prefetch enabled.
+// Paused chains still service durable recovery independently of forward scanning.
+type BlockScannerRecoveryService interface {
+	ServiceRecovery(scannedHeight int64, paused bool) error
+}
+
 type Block struct {
 	Height int64
 	Txs    []string
@@ -65,6 +72,9 @@ type BlockScanner struct {
 	// stall tracking, only touched from the scanBlocks goroutine
 	stallHeight int64
 	stallSince  time.Time
+	// next report of a height that keeps returning ErrUnavailableBlock
+	unavailableHeight int64
+	unavailableReport time.Time
 }
 
 // NewBlockScanner create a new instance of BlockScanner
@@ -293,6 +303,22 @@ func (b *BlockScanner) skipAheadIfStalled(currentBlock int64) bool {
 		Msg("block scanner stalled beyond max resume lag, skipping ahead to consensus observed height")
 	b.recordError("stalled_scanner_skip_ahead")
 	return true
+}
+
+// reportUnavailable surfaces a height that a chain client keeps asking to retry,
+// such as a persistent local write failure or slow canonical validation.
+func (b *BlockScanner) reportUnavailable(currentBlock int64, err error) {
+	now := time.Now()
+	if b.unavailableHeight != currentBlock {
+		b.unavailableHeight, b.unavailableReport = currentBlock, now.Add(time.Minute)
+		return
+	}
+	if now.Before(b.unavailableReport) {
+		return
+	}
+	b.unavailableReport = now.Add(time.Minute)
+	b.logger.Warn().Err(err).Int64("block height", currentBlock).Msg("block scanner is still retrying an unavailable block")
+	b.recordError("unavailable_block_stalled")
 }
 
 func rewindRequiredNextHeight(err error) (int64, bool) {
@@ -572,6 +598,16 @@ func (b *BlockScanner) scanBlocks() {
 				lastMimirCheck = time.Now()
 			}
 
+			// Recovery does not depend on extracting another forward block. In
+			// particular, a failed cleanup or a paused scanner cannot starve watches.
+			// Supply ordered progress, not a prefetched height, so maintenance can
+			// yield to forward catch-up without losing its turn while paused.
+			if recovery, ok := b.chainScanner.(BlockScannerRecoveryService); ok {
+				if recoveryErr := recovery.ServiceRecovery(preBlockHeight, isChainPaused); recoveryErr != nil {
+					b.logger.Error().Err(recoveryErr).Msg("recovery maintenance failed; obligations retained")
+				}
+			}
+
 			// Chain is paused, mark as unhealthy
 			if isChainPaused {
 				b.healthy.Store(false)
@@ -602,6 +638,16 @@ func (b *BlockScanner) scanBlocks() {
 				}
 				delete(prefetch, currentBlock)
 				txIn, err = result.txIn, result.err
+				if _, rewind := rewindRequiredNextHeight(err); rewind {
+					// Prefetch may have seen the preceding block's in-flight handoff.
+					// Its acknowledgement is now complete: only a fresh ordered fetch
+					// may rewind the durable cursor. Discard the speculative lineage.
+					if txIn.AbortPersistence != nil {
+						txIn.AbortPersistence()
+					}
+					clearPrefetch()
+					txIn, err = b.chainScanner.FetchTxs(currentBlock, chainHeight)
+				}
 			} else {
 				txIn, err = b.chainScanner.FetchTxs(currentBlock, chainHeight)
 			}
@@ -649,8 +695,11 @@ func (b *BlockScanner) scanBlocks() {
 				// This height is at or below the reported tip, but has not been fully
 				// scanned. Retrying it must not preserve stale signing health.
 				b.healthy.Store(false)
-				// Expected availability retries remain quiet and never skip a height.
-				if !errors.Is(err, btypes.ErrUnavailableBlock) {
+				// Expected availability retries remain quiet and never skip a height,
+				// but one that persists for a minute is reported once a minute.
+				if errors.Is(err, btypes.ErrUnavailableBlock) {
+					b.reportUnavailable(currentBlock, err)
+				} else {
 					b.logger.Error().Err(err).Int64("block height", currentBlock).Msg("fail to get RPCBlock")
 
 					// An error that never clears would otherwise retry this same height
@@ -671,6 +720,7 @@ func (b *BlockScanner) scanBlocks() {
 			// a height that fetched is not stalled, so a later rewind back to it
 			// starts its stall clock fresh rather than inheriting an old one
 			b.stallHeight = 0
+			b.unavailableHeight = 0
 
 			// start prefetching next blocks if configured
 			if b.cfg.PrefetchBlocks > 1 {
@@ -754,7 +804,8 @@ func (b *BlockScanner) scanBlocks() {
 				case b.globalTxsQueue <- txIn:
 				}
 			}
-			if err = waitTxInPersistence(txIn, b.stopChan); err != nil {
+			outcome := waitTxInPersistence(txIn, b.stopChan)
+			if err = outcome; err != nil && !errors.Is(err, types.ErrObservedTxSkippedInactive) {
 				if txIn.AbortPersistence != nil {
 					txIn.AbortPersistence()
 				}
@@ -763,13 +814,11 @@ func (b *BlockScanner) scanBlocks() {
 				}
 				continue
 			}
-			if txIn.FinalizePersistence != nil {
-				if err = txIn.FinalizePersistence(); err != nil {
-					if !b.backoffAfterPersistenceFailure(err, "persistence_finalize_failed", "chain scanner failed to finalize persisted transactions") {
-						return
-					}
-					continue
+			if err = b.finalizeObservation(txIn, outcome); err != nil {
+				if !b.backoffAfterPersistenceFailure(err, "persistence_finalize_failed", "chain scanner failed to finalize observation outcome") {
+					return
 				}
+				continue
 			}
 			if err = b.scannerStorage.SetScanPos(currentBlock); err != nil {
 				if !b.backoffAfterPersistenceFailure(err, "scan_position_persistence_failed", "fail to save block scan pos") {
@@ -778,6 +827,36 @@ func (b *BlockScanner) scanBlocks() {
 				continue
 			}
 			atomic.StoreInt64(&b.previousBlock, currentBlock)
+		}
+	}
+}
+
+// finalizeObservation continues durable pages without fetching or delivering the
+// block again. Only a real failure enters the unhealthy/backoff path. Every page
+// keeps the client's canonical/generation checks, and Stop interrupts the wait.
+func (b *BlockScanner) finalizeObservation(txIn types.TxIn, outcome error) error {
+	for pages := uint64(0); ; pages++ {
+		select {
+		case <-b.stopChan:
+			return errors.New("scanner stopped during observation finalization")
+		default:
+		}
+		err := txIn.FinalizeObservation(outcome)
+		if !errors.Is(err, types.ErrObservationFinalizationPending) {
+			return err
+		}
+		// A large history is progressing, not a fresh delivery failure. Rate-limit
+		// diagnostic progress without limiting the number of durable pages.
+		if pages == 0 || pages%64 == 0 {
+			b.logger.Debug().Str("chain", txIn.Chain.String()).Uint64("pending_pages", pages+1).
+				Msg("continuing durable observation finalization")
+		}
+		timer := time.NewTimer(5 * time.Millisecond)
+		select {
+		case <-b.stopChan:
+			timer.Stop()
+			return errors.New("scanner stopped during observation finalization")
+		case <-timer.C:
 		}
 	}
 }

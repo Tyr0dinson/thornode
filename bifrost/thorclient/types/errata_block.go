@@ -3,6 +3,19 @@ package types
 import "gitlab.com/thorchain/thornode/v3/common"
 
 type ErrataBlock struct {
+	// RetainRequirements is a local-only, synchronous durability callback. Observer
+	// supplies the maximum requirements of the exact removed occurrences and their
+	// saved payload history before deleting the deck. It runs under the deck lock:
+	// implementations may retain policy/intent, without RPC, replay, or callbacks.
+	RetainRequirements func([]ObservationOccurrence) error `json:"-"`
+
+	// FinaliseHeights is Observer-owned local identity history. It is populated
+	// from removed deck keys, not inferred from the shared recovery floor.
+	FinaliseHeights map[string][]int64 `json:"-"`
+	// LocalOnly invalidates one orphaned occurrence without voting network errata.
+	LocalOnly bool `json:"local_only,omitempty"`
+	// BlockHash is the original block, never the replacement canonical hash.
+	BlockHash  string `json:"block_hash,omitempty"`
 	Height     int64
 	Txs        []ErrataTx
 	DeliveryID string

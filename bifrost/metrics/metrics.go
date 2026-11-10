@@ -11,7 +11,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
-
 	"gitlab.com/thorchain/thornode/v3/config"
 )
 
@@ -61,6 +60,9 @@ const (
 	// group and required quorum size for completed TRON rounds.
 	SolvencyRoundAttestations MetricName = `solvency_round_attestations`
 
+	ActiveValidatorRefreshFailures MetricName = `active_validator_refresh_failures`
+	LastActiveValidatorRefresh     MetricName = `last_active_validator_refresh`
+
 	// SolKeysignAbstain counts SOL keysign abstentions by reason. A fleet-wide spike
 	// (every node failing IsBlockhashValid, or finalization lag exceeding the margin)
 	// is otherwise invisible — the signer logs an abstain like routine non-selection.
@@ -85,6 +87,12 @@ type Metrics struct {
 
 var (
 	counters = map[MetricName]prometheus.Counter{
+		ActiveValidatorRefreshFailures: prometheus.NewCounter(prometheus.CounterOpts{
+			Namespace: "observer",
+			Subsystem: "attestation_gossip",
+			Name:      "active_validator_refresh_failures_total",
+			Help:      "Number of active-validator refreshes rejected by fetch or key conversion errors",
+		}),
 		TotalBlockScanned: prometheus.NewCounter(prometheus.CounterOpts{
 			Namespace: "block_scanner",
 			Subsystem: "common_block_scanner",
@@ -272,6 +280,12 @@ var (
 	}
 
 	gauges = map[MetricName]prometheus.Gauge{
+		LastActiveValidatorRefresh: prometheus.NewGauge(prometheus.GaugeOpts{
+			Namespace: "observer",
+			Subsystem: "attestation_gossip",
+			Name:      "active_validator_refresh_timestamp_seconds",
+			Help:      "Unix timestamp of the last completely validated active-validator refresh, including unchanged and empty sets",
+		}),
 		XMRPendingCertificates: prometheus.NewGauge(prometheus.GaugeOpts{
 			Namespace: "observer", Subsystem: "xmr_certificate_outbox", Name: "pending",
 			Help: "Pending certificates at the last successful bounded reconciliation scan, including retries in backoff.",
@@ -290,6 +304,7 @@ func NewMetrics(cfg config.BifrostMetricsConfiguration) (*Metrics, error) {
 		AddChainMetrics(chain, counters, counterVecs, gauges, histograms)
 	}
 	// Register metrics
+	prometheus.MustRegister(recoveryReplayWindowBlocked, recoveryObserverHolds, recoveryRecords, recoveryBytes, recoveryOldest, startupRecoveryBlocked)
 	for _, item := range counterVecs {
 		prometheus.MustRegister(item)
 	}
@@ -387,4 +402,57 @@ func (m *Metrics) Stop() error {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*30)
 	defer cancel()
 	return m.s.Shutdown(ctx)
+}
+
+var (
+	startupRecoveryBlocked = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "bifrost_startup_recovery_blocked",
+		Help: "Whether a startup recovery import has blocked a chain until restart (1 blocked, 0 otherwise).",
+	}, []string{"chain"})
+	recoveryReplayWindowBlocked = prometheus.NewGaugeVec(prometheus.GaugeOpts{Name: "bifrost_recovery_replay_window_blocked", Help: "Whether retained EVM replay work is below the ordered scanner rewind window or configured floor."}, []string{"chain"})
+	recoveryObserverHolds       = prometheus.NewGaugeVec(prometheus.GaugeOpts{Name: "bifrost_recovery_observer_holds", Help: "Durable occurrence records held by Observer signature history or as a failed replay; these require a different canonical occurrence or reviewed operator recovery."}, []string{"chain", "store"})
+	recoveryRecords             = prometheus.NewGaugeVec(prometheus.GaugeOpts{Name: "bifrost_recovery_records", Help: "Durable unresolved recovery records; XMR stores retain their documented hard limits."}, []string{"chain", "store"})
+	recoveryBytes               = prometheus.NewGaugeVec(prometheus.GaugeOpts{Name: "bifrost_recovery_logical_bytes", Help: "Serialized primary recovery keys and values (UTXO includes containing metadata; XMR rescan queue counted once), excluding indexes and database overhead."}, []string{"chain", "store"})
+	recoveryOldest              = prometheus.NewGaugeVec(prometheus.GaugeOpts{Name: "bifrost_recovery_oldest_timestamp", Help: "Unix time of the oldest locally retained EVM recovery record; zero when empty. Imported legacy records start at index initialization."}, []string{"chain", "store"})
+)
+
+// SetRecoveryStorage reports unresolved work without using the gauges as admission limits.
+// Bytes are logical primary-record bytes, not a measurement of disk consumption.
+func SetRecoveryStorage(chain, store string, records, bytes int64) {
+	recoveryRecords.WithLabelValues(chain, store).Set(float64(records))
+	recoveryBytes.WithLabelValues(chain, store).Set(float64(bytes))
+}
+
+// SetEVMRecoveryOldest reports the persisted local retention timestamp for EVM.
+// XMR recovery formats have no retention timestamp and do not emit this gauge.
+func SetEVMRecoveryOldest(chain string, oldest int64) {
+	recoveryOldest.WithLabelValues(chain, "evm").Set(float64(oldest))
+}
+
+// ResetStartupRecoveryBlocked begins a fresh Observer startup snapshot.
+func ResetStartupRecoveryBlocked() {
+	startupRecoveryBlocked.Reset()
+}
+
+// SetStartupRecoveryBlocked reports the startup barrier without changing it.
+func SetStartupRecoveryBlocked(chain string, blocked bool) {
+	value := 0.0
+	if blocked {
+		value = 1
+	}
+	startupRecoveryBlocked.WithLabelValues(chain).Set(value)
+}
+
+// SetRecoveryObserverHolds reports retained ownership, never observation authority.
+func SetRecoveryObserverHolds(chain, store string, records int64) {
+	recoveryObserverHolds.WithLabelValues(chain, store).Set(float64(records))
+}
+
+// SetRecoveryReplayWindowBlocked reports a retained operator obligation.
+func SetRecoveryReplayWindowBlocked(chain string, blocked bool) {
+	value := float64(0)
+	if blocked {
+		value = 1
+	}
+	recoveryReplayWindowBlocked.WithLabelValues(chain).Set(value)
 }

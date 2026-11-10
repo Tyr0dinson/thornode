@@ -1,10 +1,13 @@
 package types
 
 import (
+	"context"
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"maps"
 	"strings"
+	"time"
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
@@ -12,6 +15,10 @@ import (
 )
 
 var (
+	// ErrObservedTxSkippedInactive completes only this delivery attempt. It is
+	// not proof of storage, observation, or accounting completion.
+	ErrObservedTxSkippedInactive = errors.New("observation skipped while inactive")
+
 	// ErrObservedTxOrphaned identifies the exact observation location removed by
 	// an errata handoff. Durable scanners may acknowledge that location, but must
 	// allow the same transaction ID to be observed at a new canonical location.
@@ -49,13 +56,51 @@ type TxIn struct {
 	// after Observer persistence succeeds but before BlockScanner advances its
 	// scan position. A crash in between only causes a safe duplicate rescan.
 	FinalizePersistence func() error `json:"-"`
+	// ObservationHeld reports per-transaction orphan rejections for the finalizer.
+	// It is process-local and never authorizes observation or signature reuse.
+	ObservationHeld func(string) bool `json:"-"`
+	// FinalizeSkipped performs the chain client's inactive-skip completion.
+	// Unfinished mandatory work must retain a durable owner for retry.
+	FinalizeSkipped func() error `json:"-"`
 	// AbortPersistence releases an in-process replay delivery reservation after
 	// Observer persistence fails; the synced replay journal remains for retry.
 	AbortPersistence func() `json:"-"`
 }
 
+// ObservationVaultAttribution is a local scanner snapshot of authenticated vault
+// membership and router association. It never enters signed observation data.
+type ObservationVaultAttribution struct {
+	PubKey common.PubKey  `json:"pub_key"`
+	Router common.Address `json:"router,omitempty"`
+}
+
 type TxInItem struct {
-	BlockHeight           int64               `json:"block_height"`
+	// VaultAttribution bridges extraction to the atomic metadata write. It is
+	// consumed before Observer handoff and is not an admission flag or wire field.
+	VaultAttribution []ObservationVaultAttribution `json:"-"`
+	// EVMAttributionPending is a local finalizer disposition. Such an item is
+	// withheld from Observer delivery while its existing recovery remains durable.
+	EVMAttributionPending bool `json:"-"`
+	// EVMAttributionAddresses retains failed local lookups when extraction emitted
+	// no payload. These hints only schedule a fresh parse after membership returns.
+	EVMAttributionAddresses []string `json:"-"`
+	// EVMAttributionActiveOnly preserves the rule of each failed address lookup.
+	EVMAttributionActiveOnly map[string]bool `json:"-"`
+	EVMAttributionContracts  []string        `json:"-"`
+
+	// RecoveryOwned identifies client recovery work. An inactive skip finishes only
+	// its delivery attempt; accounting and correction evidence remain client-owned.
+	// This local flag is persisted on deck and is not part of a signed observation.
+	RecoveryOwned bool `json:"recovery_owned,omitempty"`
+	// RequiredMigration has a durable scanner retry owner and cannot be skipped.
+	RequiredMigration bool  `json:"required_migration,omitempty"`
+	BlockHeight       int64 `json:"block_height"`
+	// EVMFailedSynthetic marks the local gas-only view of a failed vault call.
+	// It is persisted locally and never enters the signed observation payload.
+	EVMFailedSynthetic bool `json:"evm_failed_synthetic,omitempty"`
+	// BlockHash anchors this local observation to its original mined block.
+	// It is persisted with the deck item and never enters the signed wire payload.
+	BlockHash             string              `json:"block_hash,omitempty"`
 	Tx                    string              `json:"tx"`
 	Memo                  string              `json:"memo"`
 	Sender                string              `json:"sender"`
@@ -75,6 +120,14 @@ type TxInItem struct {
 	// different observer's value, and the deck item must still clear).
 	SolNonce             *common.SolNonceUpdate `json:"sol_nonce,omitempty"`
 	CommittedUnFinalised bool                   `json:"committed_pre_final"`
+	// CommittedFinalLeg is set on the copy left when one leg of a consolidation
+	// has committed final (ConsolidationLegInbound or ConsolidationLegOutbound):
+	// the copy now belongs to the other leg. Stateful, internal to the observer.
+	CommittedFinalLeg string `json:"committed_final_leg,omitempty"`
+	// PreliminaryLeg is the leg (same values) whose preliminary commit marked
+	// this copy CommittedUnFinalised, so a repeated preliminary event of that
+	// leg marks nothing further. Stateful, internal to the observer.
+	PreliminaryLeg string `json:"preliminary_leg,omitempty"`
 
 	// OnObservedTxStored and OnObservedTxRejected are local-only handoff
 	// callbacks used by scanners which retain a durable replay record until the
@@ -84,6 +137,12 @@ type TxInItem struct {
 	OnObservedTxRejected func(error) `json:"-"`
 }
 type TxInStatus byte
+
+// The legs of a consolidation, as recorded in TxInItem.CommittedFinalLeg.
+const (
+	ConsolidationLegInbound  = "inbound"
+	ConsolidationLegOutbound = "outbound"
+)
 
 func NewTxInItem(
 	blockHeight int64,
@@ -120,7 +179,7 @@ const (
 )
 
 func (t *TxInItem) Equals(other *TxInItem) bool {
-	if t.BlockHeight != other.BlockHeight {
+	if t.BlockHeight != other.BlockHeight || !strings.EqualFold(t.BlockHash, other.BlockHash) {
 		return false
 	}
 	if t.Tx != other.Tx {
@@ -195,23 +254,34 @@ func (t *TxInItem) Copy() *TxInItem {
 		}
 	}
 	return &TxInItem{
-		BlockHeight:           t.BlockHeight,
-		Tx:                    t.Tx,
-		Memo:                  t.Memo,
-		Sender:                t.Sender,
-		To:                    t.To,
-		Coins:                 t.Coins.Copy(),
-		Gas:                   common.Gas(common.Coins(t.Gas).Copy()),
-		ObservedVaultPubKey:   t.ObservedVaultPubKey,
-		Aggregator:            t.Aggregator,
-		AggregatorTarget:      t.AggregatorTarget,
-		AggregatorTargetLimit: t.AggregatorTargetLimit,
-		SpentOutputRefs:       refs,
-		TxKey:                 t.TxKey,
-		SolNonce:              copySolNonce(t.SolNonce),
-		CommittedUnFinalised:  t.CommittedUnFinalised,
-		OnObservedTxStored:    t.OnObservedTxStored,
-		OnObservedTxRejected:  t.OnObservedTxRejected,
+		VaultAttribution:         append([]ObservationVaultAttribution(nil), t.VaultAttribution...),
+		EVMAttributionPending:    t.EVMAttributionPending,
+		EVMAttributionAddresses:  append([]string(nil), t.EVMAttributionAddresses...),
+		EVMAttributionActiveOnly: maps.Clone(t.EVMAttributionActiveOnly),
+		EVMAttributionContracts:  append([]string(nil), t.EVMAttributionContracts...),
+		RecoveryOwned:            t.RecoveryOwned,
+		RequiredMigration:        t.RequiredMigration,
+		BlockHeight:              t.BlockHeight,
+		BlockHash:                t.BlockHash,
+		EVMFailedSynthetic:       t.EVMFailedSynthetic,
+		Tx:                       t.Tx,
+		Memo:                     t.Memo,
+		Sender:                   t.Sender,
+		To:                       t.To,
+		Coins:                    t.Coins.Copy(),
+		Gas:                      common.Gas(common.Coins(t.Gas).Copy()),
+		ObservedVaultPubKey:      t.ObservedVaultPubKey,
+		Aggregator:               t.Aggregator,
+		AggregatorTarget:         t.AggregatorTarget,
+		AggregatorTargetLimit:    t.AggregatorTargetLimit,
+		SpentOutputRefs:          refs,
+		TxKey:                    t.TxKey,
+		SolNonce:                 copySolNonce(t.SolNonce),
+		CommittedUnFinalised:     t.CommittedUnFinalised,
+		CommittedFinalLeg:        t.CommittedFinalLeg,
+		PreliminaryLeg:           t.PreliminaryLeg,
+		OnObservedTxStored:       t.OnObservedTxStored,
+		OnObservedTxRejected:     t.OnObservedTxRejected,
 	}
 }
 
@@ -295,3 +365,89 @@ func copySolNonce(u *common.SolNonceUpdate) *common.SolNonceUpdate {
 	cp := *u
 	return &cp
 }
+
+// ObservationOccurrence is local scanner provenance, not signed consensus data.
+type ObservationOccurrence struct {
+	Chain                common.Chain
+	TxID                 common.TxID
+	Height               int64
+	BlockHash            string
+	ConfirmationRequired int64
+}
+
+// ObservationVaultAttributor restores authenticated local vault attribution for
+// recovery-owned transactions after the current vault registry has pruned a key.
+// Implementations must retain the evidence with the durable recovery obligation;
+// returning no keys is uncertainty and never permission to discard the item.
+type ObservationVaultAttributor interface {
+	RecoveryObservationVaults(TxInItem) (common.PubKeys, error)
+}
+
+// ObservationValidation binds canonical evidence to a chain-view generation.
+type ObservationValidation struct {
+	EvidenceID   [32]byte
+	CheckedAt    time.Time
+	TipCheckedAt time.Time
+	ExpiresAt    time.Time
+	TipHeight    int64
+	Occurrence   ObservationOccurrence
+	TipHash      string
+	Generation   uint64
+}
+
+// ObservationValidator is implemented by clients covered by orphan fencing.
+// Validation must use fresh daemon evidence and must not synchronously deliver
+// invalidation callbacks: gossip may hold its state lock while calling it.
+type ObservationValidator interface {
+	ValidateObservation(context.Context, ObservationOccurrence) (ObservationValidation, error)
+	ObservationGeneration() uint64
+	InvalidateObservationView()
+	// RequestObservationRecovery durably records an intent before Observer cleanup.
+	// Observer may call it under its deck lock: use local storage only, without
+	// RPC, replay, or invalidation callbacks. The scanner
+	// acknowledges durable local cleanup before making the intent replayable.
+	RequestObservationRecovery([]ObservationOccurrence) error
+	// ScheduleStartupObservationRecovery records already-cleaned work before
+	// Start. restoreDeck must finish cleanup before starting any scanner. Also
+	// imports legacy Observer obligations whose cleanup was already persisted.
+	// Ordinary pending invalidations must never be downgraded by this call.
+	ScheduleStartupObservationRecovery([]ObservationOccurrence) error
+}
+
+// ObservationReadiness describes one stable canonical batch view. Per-block
+// uncertainty holds only its items; none of these results authorizes signing.
+type ObservationReadiness struct {
+	Orphaned  []ObservationOccurrence
+	Uncertain []ObservationOccurrence
+}
+
+// ObservationRequirementRecorder retains the actual admitted payload's policy
+// before a scanner can acknowledge durable handoff, including filtered replay.
+type ObservationRequirementRecorder interface {
+	RecordObservationRequirements(TxIn) error
+}
+
+// FinalizeObservation separates a stored handoff from an inactive skip. A client
+// with a delivery finalizer must explicitly define what a skipped attempt means.
+func (t TxIn) FinalizeObservation(outcome error) error {
+	if errors.Is(outcome, ErrObservedTxSkippedInactive) {
+		if t.FinalizeSkipped != nil {
+			return t.FinalizeSkipped()
+		}
+		if t.FinalizePersistence != nil {
+			return errors.New("scanner has no inactive completion path")
+		}
+		return nil
+	}
+	if outcome != nil {
+		return outcome
+	}
+	if t.FinalizePersistence != nil {
+		return t.FinalizePersistence()
+	}
+	return nil
+}
+
+// ErrObservationFinalizationPending means a bounded durable page completed but
+// more pages remain. Retry the same finalizer without re-delivering the batch.
+var ErrObservationFinalizationPending = errors.New("observation finalization has more durable work")

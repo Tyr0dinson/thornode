@@ -1227,6 +1227,9 @@ type BifrostBlockScannerConfiguration struct {
 		// FeeSampleSlots is the number of slots to sample for network fee calculation.
 		FeeSampleSlots uint64 `mapstructure:"fee_sample_slots"`
 	} `mapstructure:"solana"`
+
+	// ObservationReadinessTimeout bounds canonical evidence work; it does not extend evidence freshness.
+	ObservationReadinessTimeout time.Duration `mapstructure:"observation_readiness_timeout"`
 }
 
 // ApproximateBlockMilliseconds returns the block time bifrost should assume for this

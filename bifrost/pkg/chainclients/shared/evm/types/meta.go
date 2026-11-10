@@ -26,10 +26,24 @@ type BlockMeta struct {
 	Transactions []TransactionMeta `json:"transactions"`
 }
 
+// VaultAttribution is local network membership evidence captured during original
+// extraction. The router travels with the key so replays cannot bypass the
+// original vault/router association when the live pubkey manager prunes it.
+type VaultAttribution = stypes.ObservationVaultAttribution
+
 // TransactionMeta transaction meta data
 type TransactionMeta struct {
 	Hash        string `json:"hash"`
 	BlockHeight int64  `json:"block_height"`
+	// BlockHash is the original extracted occurrence, never a replacement label.
+	BlockHash            string  `json:"block_hash,omitempty"`
+	Sender               string  `json:"sender,omitempty"`
+	Nonce                *uint64 `json:"nonce,omitempty"`
+	ConfirmationRequired *int64  `json:"confirmation_required,omitempty"`
+	// Inbound is positively classified at original extraction. False includes
+	// legacy/ambiguous and vault transactions; a replacement cannot promote it.
+	Inbound bool               `json:"inbound,omitempty"`
+	Vaults  []VaultAttribution `json:"vaults,omitempty"`
 }
 
 // TokenMeta is a struct to store token meta data
@@ -43,9 +57,15 @@ type TokenMeta struct {
 func NewBlockMeta(block *types.Header, txIn stypes.TxIn) *BlockMeta {
 	txsMeta := make([]TransactionMeta, 0, len(txIn.TxArray))
 	for _, tx := range txIn.TxArray {
+		// A readiness marker is not an extracted observation or new source evidence.
+		if len(tx.EVMAttributionAddresses) != 0 || len(tx.EVMAttributionContracts) != 0 || tx.BlockHeight != block.Number.Int64() {
+			continue
+		}
 		txsMeta = append(txsMeta, TransactionMeta{
 			Hash:        tx.Tx,
-			BlockHeight: block.Number.Int64(),
+			BlockHeight: tx.BlockHeight,
+			BlockHash:   block.Hash().Hex(),
+			Vaults:      append([]VaultAttribution(nil), tx.VaultAttribution...),
 		})
 	}
 	return &BlockMeta{
