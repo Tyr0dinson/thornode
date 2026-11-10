@@ -464,21 +464,29 @@ func (s *HandlerTssSuite) TestTssHandler(c *C) {
 			expectedResult: nil,
 		},
 		{
-			name: "HaltKeygenFailureReporting skips the blamed active node's keygen-failure slash",
+			name: "HaltKeygenFailureReporting skips both the active-node slash and the standby-node jail",
 			messageCreator: func(helper tssHandlerTestHelper) cosmos.Msg {
-				// Halt keygen-failure penalties: the blamed node still reaches failure
-				// consensus but must take no FailKeygenSlashPoints. No observe points are
-				// pre-seeded here, so a clean 0 proves the skip.
+				// Halt keygen-failure penalties. Blame one Active node (exercises the
+				// slash-points branch) and one Standby node (exercises the jail +
+				// bond-slash branch): with the halt both must be skipped. No observe
+				// points are pre-seeded, so a clean 0 slash / no-jail proves the skip.
 				helper.keeper.SetMimir(helper.ctx, constants.MimirKeyHaltKeygenFailureReporting, 1)
-				thorAddr, _ := helper.members[3].GetThorAddress()
-				na, _ := helper.keeper.GetNodeAccount(helper.ctx, thorAddr)
-				na.UpdateStatus(NodeActive, helper.ctx.BlockHeight())
-				_ = helper.keeper.SetNodeAccount(helper.ctx, na)
+				activeAddr, _ := helper.members[3].GetThorAddress()
+				naActive, _ := helper.keeper.GetNodeAccount(helper.ctx, activeAddr)
+				naActive.UpdateStatus(NodeActive, helper.ctx.BlockHeight())
+				_ = helper.keeper.SetNodeAccount(helper.ctx, naActive)
+				standbyAddr, _ := helper.members[2].GetThorAddress()
+				naStandby, _ := helper.keeper.GetNodeAccount(helper.ctx, standbyAddr)
+				naStandby.UpdateStatus(NodeStandby, helper.ctx.BlockHeight())
+				_ = helper.keeper.SetNodeAccount(helper.ctx, naStandby)
 				b := Blame{
 					FailReason: "who knows",
 					BlameNodes: []Node{
 						{
 							Pubkey: helper.members[3].String(),
+						},
+						{
+							Pubkey: helper.members[2].String(),
 						},
 					},
 				}
@@ -511,15 +519,22 @@ func (s *HandlerTssSuite) TestTssHandler(c *C) {
 				return handler.Run(helper.ctx, msg)
 			},
 			validator: func(helper tssHandlerTestHelper, msg cosmos.Msg, result *cosmos.Result, c *C) {
-				pubKey := helper.members[3]
-				na, err := helper.keeper.GetNodeAccountByPubKey(helper.ctx, pubKey)
+				// Active blamed node: no failure-blame slash points added.
+				activeNA, err := helper.keeper.GetNodeAccountByPubKey(helper.ctx, helper.members[3])
 				c.Assert(err, IsNil)
-				slashPts, err := helper.keeper.GetNodeAccountSlashPoints(helper.ctx, na.NodeAddress)
+				activePts, err := helper.keeper.GetNodeAccountSlashPoints(helper.ctx, activeNA.NodeAddress)
 				c.Assert(err, IsNil)
-				c.Assert(slashPts, Equals, int64(0), Commentf("halted keygen failure must add no slash points, got %d", slashPts))
-				jail, err := helper.keeper.GetNodeAccountJail(helper.ctx, na.NodeAddress)
+				c.Assert(activePts, Equals, int64(0), Commentf("halted keygen failure must add no slash points to the active node, got %d", activePts))
+				// Standby blamed node: the jail+bond-slash branch is skipped, so no
+				// jail record is created (ReleaseHeight stays 0) and no slash points.
+				standbyNA, err := helper.keeper.GetNodeAccountByPubKey(helper.ctx, helper.members[2])
 				c.Assert(err, IsNil)
-				c.Assert(jail.ReleaseHeight <= helper.ctx.BlockHeight(), Equals, true, Commentf("halted keygen failure must not jail the node"))
+				standbyJail, err := helper.keeper.GetNodeAccountJail(helper.ctx, standbyNA.NodeAddress)
+				c.Assert(err, IsNil)
+				c.Assert(standbyJail.ReleaseHeight, Equals, int64(0), Commentf("halted keygen failure must not jail the standby node, got release height %d", standbyJail.ReleaseHeight))
+				standbyPts, err := helper.keeper.GetNodeAccountSlashPoints(helper.ctx, standbyNA.NodeAddress)
+				c.Assert(err, IsNil)
+				c.Assert(standbyPts, Equals, int64(0), Commentf("halted keygen failure must add no slash points to the standby node, got %d", standbyPts))
 			},
 			expectedResult: nil,
 		},
