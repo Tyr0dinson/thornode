@@ -202,8 +202,10 @@ A background health check runs every `health_check_interval` against every endpo
 - **Integrity.** When `integrity_check_depth` is greater than 0 **and at least two
   endpoints agree on a tip**, the block hash `depth` below the healthy endpoints' level
   (the lower median of their heights, so endpoints that report heights ahead, or are far
-  behind while they recover, do not pick it) is compared across the healthy endpoints
-  that answered. Endpoints out of service but not quarantined (evicted for request
+  behind while they recover, do not pick it; when fewer than half of all the probed
+  endpoints have reached that level, the lower median of all of them is used instead, so
+  endpoints out of service that outnumber the healthy ones can vote) is compared across
+  the healthy endpoints that answered. Endpoints out of service but not quarantined (evicted for request
   errors or lag) that have reached that height are asked too (between their recovery
   checks, once one has passed, from the height they last reported), and so are healthy
   endpoints skipped this cycle for a rate-limit cooldown: they cannot form a
@@ -221,7 +223,8 @@ A background health check runs every `health_check_interval` against every endpo
   two could give their hash, nothing is evicted either (a single healthy answer can
   still clear a quarantined endpoint, see below). In both cases no healthy endpoint is
   struck for lag against the other endpoints' tip that cycle (THORChain's height still
-  strikes). An endpoint whose hash read fails casts no vote, so while honest endpoints
+  strikes), and an endpoint out of service that gave its hash is judged for recovery
+  only against the tip of the endpoints that gave the same hash. An endpoint whose hash read fails casts no vote, so while honest endpoints
   cannot answer, two endpoints on another fork can still outvote the one that does:
   configure only endpoints you can vouch for (they still have to pass the identity
   check). With fewer than two
@@ -241,7 +244,8 @@ hash) counts as one of those checks too, so traffic can bring it back before the
 do. Traffic moves back to a recovered
 higher-priority endpoint only when `prefer_higher_priority` is true.
 
-A rate limit (HTTP 429, gRPC `ResourceExhausted` or a gateway's HTTP 429, JSON-RPC -32005 / -32029; on Solana
+A rate limit (HTTP 429, gRPC `ResourceExhausted` or a gateway's HTTP 429, JSON-RPC -32005 / -32029,
+java-tron's HTTP 200 `Error` naming "lack of computing resources"; on Solana
 -32005 means the node is behind and is charged as an endpoint error instead, as is -32016) never marks
 an endpoint unhealthy and never counts as a strike, including when a health probe is
 rate limited: the endpoint enters a cooldown of `rate_limit_backoff`, a healthy endpoint

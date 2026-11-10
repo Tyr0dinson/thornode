@@ -448,7 +448,21 @@ func (m *Manager) Cycle(ctx context.Context) {
 	if len(medianFrom) == 0 {
 		medianFrom = checkFrom
 	}
-	checkHeight := lowerMedian(medianFrom) - m.cfg.IntegrityCheckDepth
+	checkHeight := lowerMedian(medianFrom)
+	// ...unless most of them have not reached it: endpoints out of service that
+	// outnumber the healthy ones (correct endpoints back from an outage, behind a pair
+	// on another fork that runs ahead) must be able to vote, so the hashes are compared
+	// at the level of all of them
+	reachedMedian := 0
+	for _, h := range checkFrom {
+		if h >= checkHeight {
+			reachedMedian++
+		}
+	}
+	if reachedMedian*2 < len(checkFrom) {
+		checkHeight = lowerMedian(checkFrom)
+	}
+	checkHeight -= m.cfg.IntegrityCheckDepth
 	var scanner int64
 	if m.scannerHeight != nil && len(m.entries) == 1 {
 		scanner = m.scannerHeight()
@@ -459,9 +473,9 @@ func (m *Manager) Cycle(ctx context.Context) {
 	// (which endpoints out of service but not quarantined can block);
 	// endpoints evicted for a minority hash must positively match it before they may
 	// recover (matchedHash), a check that merely ran or returned nothing is not enough
-	badHash, matchedHash, vote := map[string]bool{}, map[string]bool{}, voteNone
+	badHash, matchedHash, vote, hashes := map[string]bool{}, map[string]bool{}, voteNone, map[string]string{}
 	if checkQuorum && m.cfg.IntegrityCheckDepth > 0 && checkHeight > 0 {
-		badHash, matchedHash, vote = m.integrityCheck(ctx, checkHeight, heights)
+		badHash, matchedHash, vote, hashes = m.integrityCheck(ctx, checkHeight, heights)
 	}
 	// THORChain's height counts as reached by any endpoint not shown to be on another
 	// fork (not quarantined, no minority hash this cycle), including one whose hash
@@ -506,7 +520,7 @@ func (m *Manager) Cycle(ctx context.Context) {
 	}
 	// lagging judges a height; healthy says whether it is a healthy endpoint's strike
 	// (suspended against the tip during a split vote) or a recovery check
-	lagging := func(h int64, healthy bool) (bool, string) {
+	lagging := func(h, tip int64, quorum, healthy bool) (bool, string) {
 		if quorum && !(split && healthy) && tip-h > m.cfg.MaxBlockLag {
 			return true, fmt.Sprintf("behind consensus tip %d by %d blocks", tip, tip-h)
 		}
@@ -549,7 +563,7 @@ func (m *Manager) Cycle(ctx context.Context) {
 				m.recordProbeStrike(e, ErrorKindIntegrity, "minority block hash")
 				continue
 			}
-			if lag, why := lagging(r.height, true); lag {
+			if lag, why := lagging(r.height, tip, quorum, true); lag {
 				m.log.Warn().Str("endpoint", e.Name).Int64("height", r.height).Msg("endpoint lagging: " + why)
 				m.recordProbeStrike(e, ErrorKindLag, why)
 				continue
@@ -567,7 +581,20 @@ func (m *Manager) Cycle(ctx context.Context) {
 				ok = false
 			}
 			if ok {
-				if lag, _ := lagging(r.height, false); lag {
+				// during a split vote, an endpoint that showed a hash is judged only
+				// against the endpoints that showed the same one: a pair on another
+				// fork running ahead must not hold back the endpoints that outvoted it
+				recTip, recQuorum := tip, quorum
+				if own := hashes[e.Name]; split && own != "" {
+					same := make(map[string]int64, len(tipHeights))
+					for name, h := range tipHeights {
+						if hashes[name] == own {
+							same[name] = h
+						}
+					}
+					recTip, recQuorum = consensusTip(same, m.cfg.MaxBlockLag)
+				}
+				if lag, _ := lagging(r.height, recTip, recQuorum, false); lag {
 					ok = false
 				}
 			}
@@ -647,8 +674,8 @@ const (
 // Without such a majority (a tie, or a plurality such as H, H, X, Y) nothing is
 // evicted or cleared, and the disagreement is logged; an integrity-evicted endpoint
 // with no healthy endpoint to compare against is reported as bad, since it cannot be
-// cleared.
-func (m *Manager) integrityCheck(ctx context.Context, height int64, heights map[string]int64) (bad, matched map[string]bool, vote hashVote) {
+// cleared. hashes holds every answer, by endpoint.
+func (m *Manager) integrityCheck(ctx context.Context, height int64, heights map[string]int64) (bad, matched map[string]bool, vote hashVote, hashes map[string]string) {
 	type res struct {
 		name    string
 		hash    string
@@ -726,7 +753,9 @@ func (m *Manager) integrityCheck(ctx context.Context, height int64, heights map[
 	}
 	counts := map[string]int{}
 	healthyN := 0
+	hashes = make(map[string]string, len(results))
 	for _, r := range results {
+		hashes[r.name] = r.hash
 		if r.healthy {
 			counts[r.hash]++
 			healthyN++
@@ -748,7 +777,7 @@ func (m *Manager) integrityCheck(ctx context.Context, height int64, heights map[
 				bad[r.name] = true
 			}
 		}
-		return bad, matched, unanswered
+		return bad, matched, unanswered, hashes
 	}
 	if healthyN < 2 {
 		// a single healthy endpoint is the reference for re-checks but cannot be
@@ -766,7 +795,7 @@ func (m *Manager) integrityCheck(ctx context.Context, height int64, heights map[
 				bad[r.name] = true
 			}
 		}
-		return bad, matched, unanswered
+		return bad, matched, unanswered, hashes
 	}
 	best, bestN := "", 0
 	for h, n := range counts {
@@ -795,7 +824,7 @@ func (m *Manager) integrityCheck(ctx context.Context, height int64, heights map[
 		m.log.Warn().Int64("height", height).Int("healthy", healthyN).Int("agreeing", bestN).
 			Int("voters", voters).Int("voters_agreeing", votersAgreeing).
 			Msg("endpoints disagree on the block hash with no majority; integrity check skipped")
-		return map[string]bool{}, map[string]bool{}, voteInconclusive
+		return map[string]bool{}, map[string]bool{}, voteInconclusive, hashes
 	}
 	for _, r := range results {
 		if r.hash != best {
@@ -806,5 +835,5 @@ func (m *Manager) integrityCheck(ctx context.Context, height int64, heights map[
 		}
 		matched[r.name] = true
 	}
-	return bad, matched, voteMajority
+	return bad, matched, voteMajority, hashes
 }

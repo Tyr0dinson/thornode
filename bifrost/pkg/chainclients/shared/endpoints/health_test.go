@@ -1085,6 +1085,47 @@ func (s *HealthSuite) TestRecoveringEndpointsDoNotLowerTheComparedHeight(c *C) {
 	c.Assert(m.Entry("b").State(), Equals, endpoints.StateHealthy)
 }
 
+// Correct endpoints back from an outage that outnumber a healthy pair on another fork
+// running ahead get a hash vote at a height they have, and the pair's tip, which
+// they voted against, does not hold back their recovery: once back they outvote the
+// pair, which is quarantined. Endpoints that are merely behind (the same hash as the
+// healthy pair there) stay out of service.
+func (s *HealthSuite) TestReturningMajorityIsNotHeldBackByAForkedPairAhead(c *C) {
+	for _, forkedPair := range []bool{true, false} {
+		cfg := healthCfg()
+		cfg.IntegrityCheckDepth = 20
+		cfg.ErrorThreshold = 1
+		pairHash := "H"
+		if forkedPair {
+			pairHash = "X"
+		}
+		pair := func(name string) *fakeProbe {
+			return &fakeProbe{name: name, height: 300, identity: "g", hashes: map[int64]string{80: pairHash, 280: pairHash}}
+		}
+		returning := func(name string) *fakeProbe {
+			return &fakeProbe{name: name, height: 100, identity: "g", hashes: map[int64]string{80: "H"}}
+		}
+		m, ps := newHealthMgr(c, cfg, nil, pair("x"), pair("y"), returning("a"), returning("b"), returning("d"))
+		c.Assert(m.Bootstrap(ctxBg(), ps), IsNil)
+		for _, name := range []string{"a", "b", "d"} {
+			m.Entry(name).MarkUnhealthy(endpoints.ErrorKindHTTP)
+		}
+		for i := 0; i < cfg.MinRecoveryChecks+1; i++ {
+			m.Cycle(ctxBg())
+		}
+		for _, name := range []string{"a", "b", "d"} {
+			if forkedPair {
+				c.Assert(m.Entry(name).State(), Equals, endpoints.StateHealthy, Commentf("%s", name))
+			} else {
+				c.Assert(m.Entry(name).State(), Not(Equals), endpoints.StateHealthy, Commentf("%s", name))
+			}
+		}
+		for _, name := range []string{"x", "y"} {
+			c.Assert(m.Entry(name).IntegrityEvicted(), Equals, forkedPair, Commentf("%s", name))
+		}
+	}
+}
+
 // A hash vote with no majority shows no fork agreement: two endpoints on another fork
 // that report heights ahead must not strike the other two for lag (nor the reverse).
 // THORChain's height still can.

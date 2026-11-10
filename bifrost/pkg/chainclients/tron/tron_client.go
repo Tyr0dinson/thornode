@@ -247,6 +247,9 @@ func tronAPIHeight(apiPost func(ctx context.Context, path, body string) (map[str
 		if err != nil {
 			return 0, err
 		}
+		if tronRateLimitError(now["Error"]) {
+			return 0, fmt.Errorf("/wallet/getblock: %w", endpoints.ErrRateLimited)
+		}
 		if _, ok := now["blockID"]; !ok {
 			return 0, fmt.Errorf("/wallet/getblock: response has no \"blockID\" field; is this endpoint the right chain API?")
 		}
@@ -1373,19 +1376,44 @@ func (c *TronClient) getTokenBalance(
 // to a block or transaction lookup is asked of the next endpoint first, charging
 // nothing, and handed back only when no endpoint has it, so one node's gap cannot hold
 // the scanner at that height. Other reads ({} for an account that is not activated,
-// the same on every node) are not.
+// the same on every node) are not. Its rate limit, also an HTTP 200, is a cooldown.
 func newTronAPIRouter(mgr *endpoints.Manager, targets []endpoints.Target, dialTimeout, attempt time.Duration, logger zerolog.Logger) (*endpoints.HTTPRouter, error) {
 	return endpoints.NewHTTPRouter(mgr, endpoints.HTTPRouterConfig{
-		Base:           endpoints.SyntheticBase(common.TRONChain),
-		Targets:        targets,
-		WritePaths:     []string{"/wallet/broadcasttransaction"},
-		DialTimeout:    dialTimeout,
-		AttemptTimeout: attempt,
-		RetryElsewhere: isEmptyJSONObject,
+		Base:            endpoints.SyntheticBase(common.TRONChain),
+		Targets:         targets,
+		WritePaths:      []string{"/wallet/broadcasttransaction"},
+		DialTimeout:     dialTimeout,
+		AttemptTimeout:  attempt,
+		RetryElsewhere:  isEmptyJSONObject,
+		RateLimitedBody: isTronRateLimited,
 		RetryElsewherePaths: []string{
 			"/wallet/getblockbynum", "/wallet/getblockbyid", "/wallet/gettransactionbyid", "/wallet/gettransactioninfobyid",
 		},
 	}, logger)
+}
+
+// isTronRateLimited reports java-tron's rate-limit answer (RateLimiterServlet), sent
+// with HTTP 200: {"Error":"class java.lang.IllegalAccessException : lack of computing resources"}.
+func isTronRateLimited(body []byte) bool {
+	if !bytes.Contains(body, []byte(tronRateLimitText)) {
+		return false // the hot path: every sniffed api answer comes through here
+	}
+	var env struct {
+		Error json.RawMessage `json:"Error"`
+	}
+	if json.Unmarshal(body, &env) != nil {
+		return false
+	}
+	return tronRateLimitError(env.Error)
+}
+
+// tronRateLimitText is the part of java-tron's rate-limit message that is matched.
+const tronRateLimitText = "lack of computing resources"
+
+// tronRateLimitError reports an "Error" field that is java-tron's rate limit.
+func tronRateLimitError(raw json.RawMessage) bool {
+	var msg string
+	return json.Unmarshal(raw, &msg) == nil && strings.Contains(msg, tronRateLimitText)
 }
 
 // isEmptyJSONObject reports a body that is exactly {} (java-tron's "not on this node").

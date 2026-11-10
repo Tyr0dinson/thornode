@@ -105,6 +105,10 @@ type HTTPRouterConfig struct {
 	// RetryElsewherePaths, when set, limits RetryElsewhere to requests whose path
 	// ends with one of these (an answer that means "not on this node" only there).
 	RetryElsewherePaths []string
+	// RateLimitedBody, when set, inspects a complete, well-formed 200 body that is not
+	// an endpoint error and reports a chain-native rate limit (java-tron answers its
+	// own with HTTP 200): it is treated as an HTTP 429, a cooldown, and a read moves on.
+	RateLimitedBody func(body []byte) bool
 	// EndpointErrorCodes are JSON-RPC error codes that mean this endpoint cannot
 	// serve the request (charged like -32603, and a read moves on), checked before
 	// the generic rate-limit codes. Solana sets -32005, its "node is unhealthy"
@@ -542,6 +546,9 @@ func (r *HTTPRouter) classify(resp *http.Response, isWrite bool) (verdict, Error
 		return verdictEndpointError, ErrorKindTransport, false
 	}
 	v, k := classifyJSONRPC(trimmed, r.cfg.EndpointErrorCodes)
+	if (v == verdictOK || v == verdictAppError) && r.cfg.RateLimitedBody != nil && r.cfg.RateLimitedBody(trimmed) {
+		return verdictRateLimited, ErrorKindRateLimit, true
+	}
 	if (v == verdictOK || v == verdictAppError) && !isWrite && r.cfg.RetryElsewhere != nil && r.retryElsewhereFor(resp.Request) && r.cfg.RetryElsewhere(trimmed) {
 		return verdictRetryElsewhere, "", true
 	}

@@ -500,3 +500,53 @@ func (s *TronTestSuite) TestEmptyAccountIsNotAskedElsewhere(c *C) {
 	c.Assert(aHits.Load(), Equals, int32(1))
 	c.Assert(bHits.Load(), Equals, int32(0))
 }
+
+// java-tron answers its rate limit with HTTP 200 and an "Error" naming "lack of
+// computing resources". The api router treats it as a rate limit: the endpoint cools
+// down (no strike, its state untouched), the read is answered by the next endpoint,
+// and later reads skip it; the health probe reports it as a rate limit too.
+func (s *TronTestSuite) TestComputingResourcesErrorIsARateLimit(c *C) {
+	const limited = `{"Error":"class java.lang.IllegalAccessException : lack of computing resources"}`
+	var aHits atomic.Int32
+	a := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		aHits.Add(1)
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		_, _ = w.Write([]byte(limited))
+	}))
+	defer a.Close()
+	b := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		_, _ = w.Write([]byte(`{"blockID":"000000000000002a","block_header":{"raw_data":{"number":42}}}`))
+	}))
+	defer b.Close()
+	cfgEps := []config.ChainEndpointConfig{
+		{Name: "a", RPCHost: s.rpc.URL, APIHost: a.URL, Priority: 1},
+		{Name: "b", RPCHost: s.rpc.URL, APIHost: b.URL, Priority: 2},
+	}
+	fc := config.BifrostChainConfiguration{ChainID: common.TRONChain}.GetFailoverConfig()
+	fc.ErrorThreshold = 1
+	mgr, err := endpoints.NewManager(common.TRONChain, cfgEps, fc, zerolog.Nop())
+	c.Assert(err, IsNil)
+	for _, e := range mgr.Entries() {
+		e.SetIdentity("0x2b6653dc")
+	}
+	targets, err := endpoints.TargetsFrom(cfgEps, endpoints.APIHost)
+	c.Assert(err, IsNil)
+	router, err := newTronAPIRouter(mgr, targets, time.Second, time.Second, zerolog.Nop())
+	c.Assert(err, IsNil)
+	apiClient := api.NewTronAPIWithClient(endpoints.SyntheticBase(common.TRONChain).String(), 2*time.Second,
+		&http.Client{Transport: router, Timeout: 2 * time.Second})
+
+	for i := 0; i < 2; i++ {
+		block, err := apiClient.GetBlock(42)
+		c.Assert(err, IsNil)
+		c.Assert(block.Header.RawData.Number, Equals, int64(42))
+	}
+	c.Assert(aHits.Load(), Equals, int32(1)) // cooling down: the second read went straight to b
+	c.Assert(mgr.Entry("a").InCooldown(), Equals, true)
+	c.Assert(mgr.Entry("a").State(), Equals, endpoints.StateHealthy)
+	c.Assert(mgr.Entry("a").Snapshot().InlineErrors, Equals, 0)
+
+	_, err = tronAPIHeight(endpoints.HTTPPostJSON(cfgEps[0], a.URL, time.Second))(context.Background())
+	c.Assert(errors.Is(err, endpoints.ErrRateLimited), Equals, true)
+}
