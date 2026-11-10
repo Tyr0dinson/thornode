@@ -12,6 +12,11 @@ import (
 )
 
 var (
+	// ErrObservedTxSkippedInactive completes only this delivery attempt. It is
+	// not proof of storage, observation, or accounting completion; mandatory work
+	// (recovery-owned or migration) retains a durable owner for retry.
+	ErrObservedTxSkippedInactive = errors.New("observation skipped while inactive")
+
 	// ErrObservedTxOrphaned identifies the exact observation location removed by
 	// an errata handoff. Durable scanners may acknowledge that location, but must
 	// allow the same transaction ID to be observed at a new canonical location.
@@ -52,9 +57,22 @@ type TxIn struct {
 	// AbortPersistence releases an in-process replay delivery reservation after
 	// Observer persistence fails; the synced replay journal remains for retry.
 	AbortPersistence func() `json:"-"`
+	// ObservationHeld reports per-transaction orphan rejections for the finalizer.
+	// It is process-local and never authorizes observation or signature reuse.
+	ObservationHeld func(string) bool `json:"-"`
+	// FinalizeSkipped performs the chain client's inactive-skip completion.
+	// Unfinished mandatory work must retain a durable owner for retry.
+	FinalizeSkipped func() error `json:"-"`
 }
 
 type TxInItem struct {
+	// RecoveryOwned identifies client recovery work. An inactive skip finishes
+	// only its delivery attempt; accounting and correction evidence remain
+	// client-owned. Local flag, persisted on deck, not part of a signed observation.
+	RecoveryOwned bool `json:"recovery_owned,omitempty"`
+	// RequiredMigration marks a vault-migration observation: it has a durable
+	// scanner retry owner and cannot be skipped while inactive.
+	RequiredMigration     bool                `json:"required_migration,omitempty"`
 	BlockHeight           int64               `json:"block_height"`
 	Tx                    string              `json:"tx"`
 	Memo                  string              `json:"memo"`
@@ -195,6 +213,8 @@ func (t *TxInItem) Copy() *TxInItem {
 		}
 	}
 	return &TxInItem{
+		RecoveryOwned:         t.RecoveryOwned,
+		RequiredMigration:     t.RequiredMigration,
 		BlockHeight:           t.BlockHeight,
 		Tx:                    t.Tx,
 		Memo:                  t.Memo,
