@@ -1224,3 +1224,134 @@ func (s *HealthSuite) TestUnansweredHashVoteLetsNoPairEvictTheOthers(c *C) {
 		c.Assert(m.Entry(name).Snapshot().ProbeStrikes, Equals, 0, Commentf(name))
 	}
 }
+
+// Endpoints out of service but not quarantined (evicted for request errors or lag)
+// that have reached the compared height answer the hash vote too: a healthy majority
+// must also hold a strict majority of all those answers. With two endpoints on another
+// fork, an honest one that dropped out on request errors still counts, so the pair is
+// not a majority and the honest one still voting is not struck.
+func (s *HealthSuite) TestOutOfServiceEndpointsCanBlockAHealthyMajority(c *C) {
+	cfg := healthCfg()
+	cfg.IntegrityCheckDepth = 5
+	cfg.ErrorThreshold = 1
+	at := func(name, hash string) *fakeProbe {
+		return &fakeProbe{name: name, height: 100, identity: "g", hashes: map[int64]string{95: hash}}
+	}
+	m, ps := newHealthMgr(c, cfg, nil, at("a", "H"), at("d", "H"), at("x", "X"), at("y", "X"))
+	c.Assert(m.Bootstrap(ctxBg(), ps), IsNil)
+	m.Entry("d").MarkUnhealthy(endpoints.ErrorKindHTTP) // dropped out on request errors
+	m.Cycle(ctxBg())
+	for _, name := range []string{"a", "x", "y"} {
+		c.Assert(m.Entry(name).State(), Equals, endpoints.StateHealthy, Commentf(name))
+		c.Assert(m.Entry(name).IntegrityEvicted(), Equals, false, Commentf(name))
+	}
+}
+
+// An endpoint out of service but not quarantined that answers another hash than a
+// majority that stands is on another fork too: it is quarantined, so it cannot come
+// back on probe passes alone.
+func (s *HealthSuite) TestOutOfServiceEndpointWithAMinorityHashIsQuarantined(c *C) {
+	cfg := healthCfg()
+	cfg.IntegrityCheckDepth = 5
+	cfg.ErrorThreshold = 1
+	at := func(name, hash string) *fakeProbe {
+		return &fakeProbe{name: name, height: 100, identity: "g", hashes: map[int64]string{95: hash}}
+	}
+	m, ps := newHealthMgr(c, cfg, nil, at("a", "H"), at("b", "H"), at("x", "X"))
+	c.Assert(m.Bootstrap(ctxBg(), ps), IsNil)
+	m.Entry("x").MarkUnhealthy(endpoints.ErrorKindLag)
+	m.Cycle(ctxBg())
+	c.Assert(m.Entry("x").IntegrityEvicted(), Equals, true)
+	c.Assert(m.Entry("a").State(), Equals, endpoints.StateHealthy)
+	c.Assert(m.Entry("b").State(), Equals, endpoints.StateHealthy)
+}
+
+// An endpoint out of service is probed only when its recovery check is due, but it
+// votes in every hash vote, from the height it last reported: otherwise, between its
+// recovery checks, two endpoints on another fork would be a majority again and strike
+// the honest one still voting until it is quarantined.
+func (s *HealthSuite) TestOutOfServiceEndpointVotesBetweenItsRecoveryChecks(c *C) {
+	cfg := healthCfg()
+	cfg.IntegrityCheckDepth = 5
+	cfg.ErrorThreshold = 2
+	cfg.RecoveryCheckInterval = time.Hour // probed again only an hour later
+	at := func(name, hash string) *fakeProbe {
+		return &fakeProbe{name: name, height: 100, identity: "g", hashes: map[int64]string{95: hash}}
+	}
+	m, ps := newHealthMgr(c, cfg, nil, at("a", "H"), at("d", "H"), at("x", "X"), at("y", "X"))
+	c.Assert(m.Bootstrap(ctxBg(), ps), IsNil)
+	m.Entry("d").MarkUnhealthy(endpoints.ErrorKindHTTP)
+	for i := 0; i < 4; i++ {
+		m.Cycle(ctxBg())
+	}
+	c.Assert(m.Entry("a").State(), Equals, endpoints.StateHealthy)
+	c.Assert(m.Entry("a").IntegrityEvicted(), Equals, false)
+	c.Assert(m.Entry("a").Snapshot().ProbeStrikes, Equals, 0)
+}
+
+// An endpoint out of service that shows a minority hash in a cycle where its recovery
+// check is not due (it voted from its last height) is quarantined in that cycle too.
+func (s *HealthSuite) TestOutOfServiceMinorityHashBetweenRecoveryChecksIsQuarantined(c *C) {
+	cfg := healthCfg()
+	cfg.IntegrityCheckDepth = 5
+	cfg.ErrorThreshold = 1
+	cfg.RecoveryCheckInterval = time.Hour
+	at := func(name, hash string) *fakeProbe {
+		return &fakeProbe{name: name, height: 100, identity: "g", hashes: map[int64]string{95: hash}}
+	}
+	x := at("x", "H")
+	m, ps := newHealthMgr(c, cfg, nil, at("a", "H"), at("b", "H"), x)
+	c.Assert(m.Bootstrap(ctxBg(), ps), IsNil)
+	m.Entry("x").MarkUnhealthy(endpoints.ErrorKindLag)
+	m.Cycle(ctxBg()) // x's recovery check: it agrees
+	c.Assert(m.Entry("x").IntegrityEvicted(), Equals, false)
+	x.mu.Lock()
+	x.hashes[95] = "X"
+	x.mu.Unlock()
+	m.Cycle(ctxBg()) // not due: it votes from its last height, with another hash
+	c.Assert(m.Entry("x").IntegrityEvicted(), Equals, true)
+}
+
+// A healthy endpoint skipped this cycle for a rate-limit cooldown votes too, from the
+// height it last reported: two endpoints on another fork are not a majority because an
+// honest one is cooling down.
+func (s *HealthSuite) TestCoolingDownEndpointCanBlockAHealthyMajority(c *C) {
+	cfg := healthCfg()
+	cfg.IntegrityCheckDepth = 5
+	cfg.ErrorThreshold = 1
+	at := func(name, hash string) *fakeProbe {
+		return &fakeProbe{name: name, height: 100, identity: "g", hashes: map[int64]string{95: hash}}
+	}
+	m, ps := newHealthMgr(c, cfg, nil, at("a", "H"), at("d", "H"), at("x", "X"), at("y", "X"))
+	c.Assert(m.Bootstrap(ctxBg(), ps), IsNil)
+	m.RecordRateLimited("d")
+	c.Assert(m.Entry("d").InCooldown(), Equals, true)
+	m.Cycle(ctxBg())
+	c.Assert(m.Entry("a").State(), Equals, endpoints.StateHealthy)
+	c.Assert(m.Entry("a").IntegrityEvicted(), Equals, false)
+}
+
+// Between its recovery checks only an endpoint whose last check passed (recovering)
+// votes from its last height: one whose checks fail may not answer at all, and asking
+// it every cycle would hold the cycle for up to the probe timeout.
+func (s *HealthSuite) TestUnreachableOutOfServiceEndpointIsNotAskedBetweenChecks(c *C) {
+	cfg := healthCfg()
+	cfg.IntegrityCheckDepth = 5
+	cfg.RecoveryCheckInterval = time.Hour
+	at := func(name, hash string) *fakeProbe {
+		return &fakeProbe{name: name, height: 100, identity: "g", hashes: map[int64]string{95: hash}}
+	}
+	x := at("x", "H")
+	var asked atomic.Int32
+	counting := voteEvictedProbe{fakeProbe: x, onHash: func() { asked.Add(1) }}
+	a, b := at("a", "H"), at("b", "H")
+	m, _ := newHealthMgr(c, cfg, nil, a, b, x)
+	c.Assert(m.Bootstrap(ctxBg(), []endpoints.Probe{a, b, counting}), IsNil)
+	m.Entry("x").MarkUnhealthy(endpoints.ErrorKindTransport)
+	x.set(100, down)
+	m.Cycle(ctxBg()) // its recovery check fails: still unhealthy
+	c.Assert(m.Entry("x").State(), Equals, endpoints.StateUnhealthy)
+	asked.Store(0)
+	m.Cycle(ctxBg()) // not due
+	c.Assert(asked.Load(), Equals, int32(0))
+}

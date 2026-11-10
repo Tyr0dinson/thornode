@@ -353,6 +353,10 @@ func (e *EVMScanner) processBlock(block *etypes.Block, chainHeight int64) (stype
 	// collect all relevant transactions from the block and their gas prices
 	txInBlock, gasPrices, err := e.getTxIn(block, "")
 	if err != nil {
+		if plan != nil {
+			// the planned reorg is dropped with this step: still unresolved
+			err = fmt.Errorf("%w: %w", btypes.ErrReorgUnresolved, err)
+		}
 		return txIn, err
 	}
 
@@ -952,6 +956,7 @@ func (e *EVMScanner) planReorgWith(header *etypes.Header, scanned etypes.Transac
 		// its "not found" for the block's transactions is believed
 		h, herr := e.headerFrom(witness, blockMeta.Height)
 		if herr != nil {
+			evm.SidelineWitness(e.endpointMgr, witness, fmt.Sprintf("cannot serve the reorg plan's header %d", blockMeta.Height))
 			return nil, fmt.Errorf("height %d: fail to get block header to check for reorg: %w", blockMeta.Height, herr)
 		}
 		metaTxs := make([]types.TransactionMeta, 0)
@@ -959,6 +964,7 @@ func (e *EVMScanner) planReorgWith(header *etypes.Header, scanned etypes.Transac
 		for _, tx := range blockMeta.Transactions {
 			presence, rblock, cerr := e.ethRpc.CheckTransactionWithBlock(witness, tx.Hash)
 			if cerr != nil {
+				evm.SidelineWitness(e.endpointMgr, witness, "cannot re-confirm a transaction for the reorg plan")
 				return nil, fmt.Errorf("height %d: cannot re-confirm tx %s: %w", blockMeta.Height, tx.Hash, cerr)
 			}
 			if presence == evm.TxFailed {
@@ -1004,6 +1010,7 @@ func (e *EVMScanner) planReorgWith(header *etypes.Header, scanned etypes.Transac
 		e.logger.Info().Msgf("rescan block height: %d", rescanHeight)
 		block, berr := e.blockFrom(witness, rescanHeight)
 		if berr != nil {
+			evm.SidelineWitness(e.endpointMgr, witness, fmt.Sprintf("cannot serve the reorg plan's block %d", rescanHeight))
 			return nil, fmt.Errorf("rescan height %d: %w", rescanHeight, berr)
 		}
 		if block.Transactions().Len() == 0 {
@@ -1011,6 +1018,7 @@ func (e *EVMScanner) planReorgWith(header *etypes.Header, scanned etypes.Transac
 		}
 		txIn, _, xerr := e.getTxIn(block, witness) // discard gas prices during reorg rescan
 		if xerr != nil {
+			evm.SidelineWitness(e.endpointMgr, witness, fmt.Sprintf("cannot serve the reorg plan's receipts of block %d", rescanHeight))
 			return nil, fmt.Errorf("rescan height %d: %w", rescanHeight, xerr)
 		}
 		if len(txIn.TxArray) > 0 {

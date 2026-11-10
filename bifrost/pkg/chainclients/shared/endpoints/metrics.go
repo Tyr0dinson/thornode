@@ -18,6 +18,7 @@ import (
 //	bifrost_endpoint_failovers_total{chain,from,to,event}  event = failover | failback
 //	bifrost_endpoint_recoveries_total{chain,endpoint}      unhealthy/recovering -> healthy
 //	bifrost_endpoint_all_down{chain}                       1 when no endpoint is healthy (alert on this)
+//	bifrost_endpoint_verification_blocked_total{chain,endpoint} verifications this endpoint left ambiguous (re-sign blocked)
 type Metrics struct {
 	state        *prometheus.GaugeVec
 	active       *prometheus.GaugeVec

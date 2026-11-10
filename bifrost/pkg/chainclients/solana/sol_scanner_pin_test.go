@@ -24,15 +24,20 @@ import (
 // pagingNode answers getSignaturesForAddress like a Solana node: it has total
 // signatures newest first, listed transactionQueryLimit per page; a "before" it does
 // not know gives an empty page (Agave's behaviour). failBefore makes its next paged
-// request fail once with HTTP 502, failPaged every paged request, and nullTx answers
-// every getTransaction with null (a node that has not finalized those slots). Every
-// transaction failed on chain, so the scan skips them without observing anything.
+// request fail once with HTTP 502, limitBefore once with HTTP 429, failPaged every
+// paged request, failListing every listing (a node that is down), limitPaged rate
+// limits every paged request (a provider out of credits), and nullTx answers
+// every getTransaction with null (a node that has not finalized those slots). Every transaction failed on chain, so the scan skips
+// them without observing anything.
 type pagingNode struct {
-	sigs       []string
-	failBefore atomic.Bool
-	failPaged  atomic.Bool
-	nullTx     atomic.Bool
-	listings   atomic.Int32
+	sigs        []string
+	failBefore  atomic.Bool
+	limitBefore atomic.Bool
+	failPaged   atomic.Bool
+	failListing atomic.Bool
+	limitPaged  atomic.Bool
+	nullTx      atomic.Bool
+	listings    atomic.Int32
 }
 
 func (n *pagingNode) handler(rw http.ResponseWriter, req *http.Request) {
@@ -51,8 +56,12 @@ func (n *pagingNode) handler(rw http.ResponseWriter, req *http.Request) {
 		if len(call.Params) > 1 {
 			_ = json.Unmarshal(call.Params[1], &opts)
 		}
-		if opts.Before != "" && (n.failBefore.CompareAndSwap(true, false) || n.failPaged.Load()) {
+		if n.failListing.Load() || (opts.Before != "" && (n.failBefore.CompareAndSwap(true, false) || n.failPaged.Load())) {
 			rw.WriteHeader(http.StatusBadGateway)
+			return
+		}
+		if opts.Before != "" && (n.limitBefore.CompareAndSwap(true, false) || n.limitPaged.Load()) {
+			rw.WriteHeader(http.StatusTooManyRequests)
 			return
 		}
 		n.listings.Add(1)
@@ -418,6 +427,177 @@ func (s *SolTestSuite) TestPinnedListingReadsItsTransactionsFromTheSameEndpoint(
 		c.Assert(ok, Equals, false, Commentf("round %d", round))
 	}
 	ok, count, cursor := scan()
+	c.Assert(ok, Equals, true)
+	c.Assert(count, Equals, transactionQueryLimit+5)
+	c.Assert(cursor, Equals, "sig0000")
+}
+
+// A catch-up listing stays on the endpoint it started on across failed attempts, even
+// when the active role moves: here a rate limit on a's second page hands the active
+// role to b, which keeps only the newest 1,000 signatures. Listing the vault there
+// would end early and store a cursor past the 5 older ones; the next attempt lists it
+// from a again and reads all 1,005.
+func (s *SolTestSuite) TestCatchUpListingKeepsItsEndpointAcrossAttempts(c *C) {
+	sigs := make([]string, transactionQueryLimit+5)
+	for i := range sigs {
+		sigs[i] = fmt.Sprintf("sig%04d", i)
+	}
+	a := &pagingNode{sigs: sigs}
+	b := &pagingNode{sigs: sigs[:transactionQueryLimit]} // never saw the older 5
+	a.limitBefore.Store(true)
+	sa, sb := httptest.NewServer(http.HandlerFunc(a.handler)), httptest.NewServer(http.HandlerFunc(b.handler))
+	defer sa.Close()
+	defer sb.Close()
+	eps := []config.ChainEndpointConfig{{Name: "a", RPCHost: sa.URL, Priority: 1}, {Name: "b", RPCHost: sb.URL, Priority: 2}}
+	cfg := config.BifrostChainConfiguration{ChainID: common.SOLChain}
+	mgr, err := endpoints.NewManager(common.SOLChain, eps, cfg.GetFailoverConfig(), zerolog.Nop())
+	c.Assert(err, IsNil)
+	for _, e := range mgr.Entries() {
+		e.SetIdentity("genesis")
+	}
+	targets, err := endpoints.TargetsFrom(eps, endpoints.RPCHost)
+	c.Assert(err, IsNil)
+	router, err := endpoints.NewHTTPRouter(mgr, endpoints.HTTPRouterConfig{Base: endpoints.SyntheticBase(common.SOLChain), Targets: targets}, zerolog.Nop())
+	c.Assert(err, IsNil)
+	scanner := &SOLScanner{
+		logger:      zerolog.Nop(),
+		solRpc:      rpc.NewSolRPCWithClient(endpoints.SyntheticBase(common.SOLChain).String(), 2*time.Second, &http.Client{Transport: router, Timeout: 2 * time.Second}),
+		pinEndpoint: func(failures int) string { return pinCandidate(mgr, failures) },
+		pinUsable:   pinUsableIn(mgr), // a rate-limit cooldown keeps it in service
+	}
+	scan := func() (ok bool, count int, cursor string) {
+		txCounts, oks, cursors := make([]int, 1), make([]bool, 1), make([]string, 1)
+		var wg sync.WaitGroup
+		wg.Add(1)
+		scanner.scanVault("vault", 0, "", 0, 0, func() {}, txCounts, oks, cursors, make([]uint64, 1), &wg)
+		wg.Wait()
+		return oks[0], txCounts[0], cursors[0]
+	}
+
+	ok, _, _ := scan()
+	c.Assert(ok, Equals, false)
+	c.Assert(mgr.Active().Name, Equals, "b") // the rate limit moved the active role
+	ok, count, cursor := scan()
+	c.Assert(ok, Equals, true)
+	c.Assert(count, Equals, transactionQueryLimit+5)
+	c.Assert(cursor, Equals, "sig0000")
+}
+
+// solPair builds a scanner over two paging nodes behind a real manager and router,
+// with the client's own pin hooks.
+func solPair(c *C, a, b *pagingNode) (*SOLScanner, *endpoints.Manager, func()) {
+	sa, sb := httptest.NewServer(http.HandlerFunc(a.handler)), httptest.NewServer(http.HandlerFunc(b.handler))
+	eps := []config.ChainEndpointConfig{{Name: "a", RPCHost: sa.URL, Priority: 1}, {Name: "b", RPCHost: sb.URL, Priority: 2}}
+	cfg := config.BifrostChainConfiguration{ChainID: common.SOLChain}
+	mgr, err := endpoints.NewManager(common.SOLChain, eps, cfg.GetFailoverConfig(), zerolog.Nop())
+	c.Assert(err, IsNil)
+	for _, e := range mgr.Entries() {
+		e.SetIdentity("genesis")
+	}
+	targets, err := endpoints.TargetsFrom(eps, endpoints.RPCHost)
+	c.Assert(err, IsNil)
+	router, err := endpoints.NewHTTPRouter(mgr, endpoints.HTTPRouterConfig{Base: endpoints.SyntheticBase(common.SOLChain), Targets: targets}, zerolog.Nop())
+	c.Assert(err, IsNil)
+	scanner := &SOLScanner{
+		logger:      zerolog.Nop(),
+		solRpc:      rpc.NewSolRPCWithClient(endpoints.SyntheticBase(common.SOLChain).String(), 2*time.Second, &http.Client{Transport: router, Timeout: 2 * time.Second}),
+		pinEndpoint: func(failures int) string { return pinCandidate(mgr, failures) },
+		pinUsable:   pinUsableIn(mgr),
+	}
+	return scanner, mgr, func() { sa.Close(); sb.Close() }
+}
+
+// scanCatchUp lists vault "vault" from no cursor (a catch-up listing) once.
+func scanCatchUp(scanner *SOLScanner) (ok bool, count int, cursor string) {
+	txCounts, oks, cursors := make([]int, 1), make([]bool, 1), make([]string, 1)
+	var wg sync.WaitGroup
+	wg.Add(1)
+	scanner.scanVault("vault", 0, "", 0, 0, func() {}, txCounts, oks, cursors, make([]uint64, 1), &wg)
+	wg.Wait()
+	return oks[0], txCounts[0], cursors[0]
+}
+
+// An address with no cursor yet that lists a short page, such as the node's own
+// address, which never transacts and is listed this way every scan, is read with
+// failover like any other read: with the active endpoint down, the backup lists it.
+func (s *SolTestSuite) TestShortCatchUpListingFailsOver(c *C) {
+	a := &pagingNode{sigs: []string{"sig0000"}}
+	a.failListing.Store(true) // down
+	b := &pagingNode{sigs: []string{"sig0000"}}
+	scanner, _, stop := solPair(c, a, b)
+	defer stop()
+	ok, count, _ := scanCatchUp(scanner)
+	c.Assert(ok, Equals, true)
+	c.Assert(count, Equals, 1)
+}
+
+// A kept catch-up endpoint holds the listing only while it is in service: once the
+// health checks take it out (an outage, not a rate limit), the next attempt lists from
+// the endpoint now in use, and the kept endpoint is forgotten when the listing
+// completes.
+func (s *SolTestSuite) TestKeptCatchUpEndpointIsReplacedOnceOutOfService(c *C) {
+	sigs := make([]string, transactionQueryLimit+5)
+	for i := range sigs {
+		sigs[i] = fmt.Sprintf("sig%04d", i)
+	}
+	a, b := &pagingNode{sigs: sigs}, &pagingNode{sigs: sigs}
+	a.failPaged.Store(true)
+	scanner, mgr, stop := solPair(c, a, b)
+	defer stop()
+	ok, _, _ := scanCatchUp(scanner)
+	c.Assert(ok, Equals, false)
+	c.Assert(b.listings.Load(), Equals, int32(0)) // pinned to a
+	mgr.Entry("a").MarkUnhealthy(endpoints.ErrorKindHTTP)
+	ok, count, cursor := scanCatchUp(scanner)
+	c.Assert(ok, Equals, true)
+	c.Assert(count, Equals, transactionQueryLimit+5)
+	c.Assert(cursor, Equals, "sig0000")
+	c.Assert(scanner.catchUpPins, HasLen, 0)
+}
+
+// A kept catch-up endpoint holds the listing from the first page of the next attempt,
+// even when the endpoint now in use would answer that page short: here a rate limit on
+// a's second page hands the active role to b, which keeps only the newest 999
+// signatures (one short page). Listing there would end at once and store a cursor past
+// the 6 older ones.
+func (s *SolTestSuite) TestKeptCatchUpEndpointListsEvenWhenTheOtherPageIsShort(c *C) {
+	sigs := make([]string, transactionQueryLimit+5)
+	for i := range sigs {
+		sigs[i] = fmt.Sprintf("sig%04d", i)
+	}
+	a := &pagingNode{sigs: sigs}
+	b := &pagingNode{sigs: sigs[:transactionQueryLimit-1]}
+	a.limitBefore.Store(true)
+	scanner, mgr, stop := solPair(c, a, b)
+	defer stop()
+	ok, _, _ := scanCatchUp(scanner)
+	c.Assert(ok, Equals, false)
+	c.Assert(mgr.Active().Name, Equals, "b")
+	ok, count, cursor := scanCatchUp(scanner)
+	c.Assert(ok, Equals, true)
+	c.Assert(count, Equals, transactionQueryLimit+5)
+	c.Assert(cursor, Equals, "sig0000")
+}
+
+// A kept catch-up endpoint that keeps failing without leaving service (here it rate
+// limits every page after the first, as a provider out of credits does) is given up
+// after catchUpPinAttempts failed attempts in a row, so the vault's catch-up and the
+// scanner's health are not held for good: the listing then moves to the endpoint in
+// use.
+func (s *SolTestSuite) TestKeptCatchUpEndpointIsGivenUpAfterRepeatedFailures(c *C) {
+	sigs := make([]string, transactionQueryLimit+5)
+	for i := range sigs {
+		sigs[i] = fmt.Sprintf("sig%04d", i)
+	}
+	a, b := &pagingNode{sigs: sigs}, &pagingNode{sigs: sigs}
+	a.limitPaged.Store(true)
+	scanner, _, stop := solPair(c, a, b)
+	defer stop()
+	for round := 0; round < catchUpPinAttempts; round++ {
+		ok, _, _ := scanCatchUp(scanner)
+		c.Assert(ok, Equals, false, Commentf("round %d", round))
+	}
+	ok, count, cursor := scanCatchUp(scanner)
 	c.Assert(ok, Equals, true)
 	c.Assert(count, Equals, transactionQueryLimit+5)
 	c.Assert(cursor, Equals, "sig0000")

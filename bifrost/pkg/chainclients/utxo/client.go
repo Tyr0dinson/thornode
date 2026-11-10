@@ -606,23 +606,25 @@ func (c *Client) FetchTxs(height, chainHeight int64) (types.TxIn, error) {
 	if err != nil {
 		return txIn, fmt.Errorf("fail to process re-org: %w", err)
 	}
-	abandon := func() {
-		if plan != nil {
-			c.untrackObserved(plan.txIns)
+	// abandon drops this step: the rescans' observed marks are undone, and a planned
+	// reorg is still unresolved
+	abandon := func(err error) error {
+		if plan == nil {
+			return err
 		}
+		c.untrackObserved(plan.txIns)
+		return fmt.Errorf("%w: %w", btypes.ErrReorgUnresolved, err)
 	}
 
 	if err = c.saveScannedBlockMeta(block); err != nil {
-		abandon()
-		return txIn, err
+		return txIn, abandon(err)
 	}
 
 	// extractTxs marks what it returns as observed and cannot fail after that, so it
 	// is the last fallible step before the commit
 	txInBlock, err := c.extractTxs(block)
 	if err != nil {
-		abandon()
-		return types.TxIn{}, fmt.Errorf("fail to extract txIn from block: %w", err)
+		return types.TxIn{}, abandon(fmt.Errorf("fail to extract txIn from block: %w", err))
 	}
 	c.commitReorg(plan)
 	// the block counts as a confirmation of earlier observations (ConfirmationCountReady)

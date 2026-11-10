@@ -296,6 +296,7 @@ func NewSOLClient(
 		return c, fmt.Errorf("fail to create solana scanner: %w", err)
 	}
 	c.solScanner.pinEndpoint = func(failures int) string { return pinCandidate(c.endpointMgr, failures) }
+	c.solScanner.pinUsable = pinUsableIn(c.endpointMgr)
 
 	return c, nil
 }
@@ -2174,4 +2175,19 @@ func (c *SOLClient) verifyBroadcast(sig string, tx stypes.TxOutItem) signercache
 		return signercache.LookupAmbiguous
 	}
 	return signercache.LookupNotFound
+}
+
+// pinUsableIn reports whether a kept catch-up endpoint may still list: it is in
+// service (healthy, a rate-limit cooldown included) and neither disabled, unverified
+// nor quarantined. One taken out of service (by the health checks or by request errors:
+// an outage) is replaced, so an outage does not hold the vault's listing, and the
+// scanner's health, with it.
+func pinUsableIn(mgr *endpoints.Manager) func(string) bool {
+	return func(name string) bool {
+		if mgr == nil {
+			return false
+		}
+		e := mgr.Entry(name)
+		return e != nil && e.State() == endpoints.StateHealthy && e.Usable() && !e.IntegrityEvicted()
+	}
 }

@@ -455,7 +455,8 @@ func (m *Manager) Cycle(ctx context.Context) {
 	}
 	observed := waitReference()
 
-	// 4. integrity: majority hash at that height among healthy hash-capable endpoints;
+	// 4. integrity: majority hash at that height among healthy hash-capable endpoints
+	// (which endpoints out of service but not quarantined can block);
 	// endpoints evicted for a minority hash must positively match it before they may
 	// recover (matchedHash), a check that merely ran or returned nothing is not enough
 	badHash, matchedHash, vote := map[string]bool{}, map[string]bool{}, voteNone
@@ -522,6 +523,12 @@ func (m *Manager) Cycle(ctx context.Context) {
 	for i, e := range m.entries {
 		r := results[i]
 		if errors.Is(r.err, errSkipped) || e.State() == StateDisabled {
+			// an endpoint out of service whose recovery check is not due voted from its
+			// last height: a minority hash quarantines it all the same
+			if badHash[e.Name] && (e.State() == StateUnhealthy || e.State() == StateRecovering) && !e.IntegrityEvicted() {
+				m.log.Warn().Str("endpoint", e.Name).Msg("minority block hash: endpoint quarantined")
+				e.MarkUnhealthy(ErrorKindIntegrity)
+			}
 			continue
 		}
 		if r.err != nil && errors.Is(r.err, ErrRateLimited) {
@@ -629,20 +636,26 @@ const (
 )
 
 // integrityCheck fetches the block hash at height from every healthy endpoint that
-// supports it (and from non-healthy endpoints that were evicted for a minority
-// hash, so they can be re-checked). It returns the set of endpoints whose hash
-// differs from the reference (bad), the set whose hash positively matched it
-// (matched), and the vote's outcome; an endpoint whose hash could not be fetched is
-// in neither set. The reference is the hash held by a strict majority of the healthy
-// endpoints that answered, or the single healthy endpoint's hash. Without a strict
-// majority (a tie, or a plurality such as H, H, X, Y) nothing is evicted or cleared,
-// and the disagreement is logged; an integrity-evicted endpoint with no healthy
-// endpoint to compare against is reported as bad, since it cannot be cleared.
+// supports it, from endpoints out of service but not quarantined (they can block a
+// majority), and from non-healthy endpoints that were evicted for a minority hash,
+// so they can be re-checked. It returns the set of endpoints whose hash differs from
+// the reference (bad), the set whose hash positively matched it (matched), and the
+// vote's outcome; an endpoint whose hash could not be fetched is in neither set. The
+// reference is the hash held by a strict majority of the healthy endpoints that
+// answered and also of every healthy or out-of-service one that answered, or the
+// single healthy endpoint's hash (which re-checks quarantined endpoints only).
+// Without such a majority (a tie, or a plurality such as H, H, X, Y) nothing is
+// evicted or cleared, and the disagreement is logged; an integrity-evicted endpoint
+// with no healthy endpoint to compare against is reported as bad, since it cannot be
+// cleared.
 func (m *Manager) integrityCheck(ctx context.Context, height int64, heights map[string]int64) (bad, matched map[string]bool, vote hashVote) {
 	type res struct {
 		name    string
 		hash    string
 		healthy bool
+		// voter: healthy, or out of service but not quarantined (its answer can
+		// block a healthy majority); a quarantined endpoint is only re-checked
+		voter bool
 	}
 	var (
 		wg          sync.WaitGroup
@@ -659,18 +672,33 @@ func (m *Manager) integrityCheck(ctx context.Context, height int64, heights map[
 		}
 		st := e.State()
 		healthy := st == StateHealthy
+		outOfService := (st == StateUnhealthy || st == StateRecovering) && !e.IntegrityEvicted()
 		recheck := (st == StateUnhealthy || st == StateRecovering) && e.IntegrityEvicted()
-		if !healthy && !recheck {
+		if !healthy && !outOfService && !recheck {
 			continue
 		}
-		if h, seen := heights[e.Name]; !seen || h < height {
+		h, seen := heights[e.Name]
+		if !seen {
+			// not probed this cycle, or its probe failed: a recovering endpoint (its
+			// last recovery check passed) between its checks, or a healthy one cooling
+			// down after a rate limit, still votes, from the height it last reported, so
+			// two endpoints on another fork are not a majority meanwhile; it can block a
+			// majority but not form one. An unhealthy one may not answer at all and is
+			// not asked.
+			if !e.Usable() || e.IntegrityEvicted() || !(st == StateRecovering || healthy && e.InCooldown()) {
+				continue
+			}
+			h, seen = e.LastHeight(), e.LastHeight() > 0
+			healthy, outOfService = false, true
+		}
+		if !seen || h < height {
 			continue // endpoint has not reached that height yet; not evidence of anything
 		}
 		if healthy {
 			healthyAsked++
 		}
 		wg.Add(1)
-		go func(e *Entry, hp HashProbe, healthy bool) {
+		go func(e *Entry, hp HashProbe, healthy, voter bool) {
 			defer wg.Done()
 			pctx, cancel := context.WithTimeout(ctx, m.cfg.HealthCheckTimeout)
 			defer cancel()
@@ -685,9 +713,9 @@ func (m *Manager) integrityCheck(ctx context.Context, height int64, heights map[
 				return // a failed hash fetch is not an integrity signal
 			}
 			mu.Lock()
-			results = append(results, res{e.Name, strings.ToLower(h), healthy})
+			results = append(results, res{e.Name, strings.ToLower(h), healthy, healthy || voter})
 			mu.Unlock()
-		}(e, hp, healthy)
+		}(e, hp, healthy, outOfService)
 	}
 	wg.Wait()
 	// a rate-limited hash probe is a cooldown, as a rate-limited height probe is
@@ -713,9 +741,12 @@ func (m *Manager) integrityCheck(ctx context.Context, height int64, heights map[
 		unanswered = voteInconclusive
 	}
 	if healthyN == 0 {
-		// nothing to compare against: integrity-evicted endpoints stay evicted
+		// nothing to compare against: integrity-evicted endpoints stay evicted (an
+		// endpoint out of service is not judged without healthy answers)
 		for _, r := range results {
-			bad[r.name] = true
+			if !r.voter {
+				bad[r.name] = true
+			}
 		}
 		return bad, matched, unanswered
 	}
@@ -728,7 +759,7 @@ func (m *Manager) integrityCheck(ctx context.Context, height int64, heights map[
 		}
 		for _, r := range results {
 			switch {
-			case r.healthy:
+			case r.voter: // the reference itself, or out of service: not judged by one answer
 			case r.hash == ref:
 				matched[r.name] = true
 			default:
@@ -743,13 +774,27 @@ func (m *Manager) integrityCheck(ctx context.Context, height int64, heights map[
 			best, bestN = h, n
 		}
 	}
-	if bestN*2 <= healthyN {
-		// no strict healthy majority (a tie, or a plurality): an inconclusive
-		// disagreement must not pick the fork used for observations, so nothing is
-		// evicted or cleared this cycle. With two endpoints this is the only outcome
-		// of a disagreement, so make it visible.
+	// the healthy majority must also be a strict majority of every voter that
+	// answered: endpoints out of service but not quarantined (evicted for request
+	// errors or lag) still count, so two endpoints on another fork cannot become a
+	// majority because an honest one dropped out. They never form one on their own.
+	voters, votersAgreeing := 0, 0
+	for _, r := range results {
+		if r.voter {
+			voters++
+			if r.hash == best {
+				votersAgreeing++
+			}
+		}
+	}
+	if bestN*2 <= healthyN || votersAgreeing*2 <= voters {
+		// no strict majority (a tie, or a plurality): an inconclusive disagreement must
+		// not pick the fork used for observations, so nothing is evicted or cleared
+		// this cycle. With two endpoints this is the only outcome of a disagreement,
+		// so make it visible.
 		m.log.Warn().Int64("height", height).Int("healthy", healthyN).Int("agreeing", bestN).
-			Msg("healthy endpoints disagree on the block hash with no majority; integrity check skipped")
+			Int("voters", voters).Int("voters_agreeing", votersAgreeing).
+			Msg("endpoints disagree on the block hash with no majority; integrity check skipped")
 		return map[string]bool{}, map[string]bool{}, voteInconclusive
 	}
 	for _, r := range results {

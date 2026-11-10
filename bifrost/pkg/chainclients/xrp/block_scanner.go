@@ -2,9 +2,11 @@ package xrp
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"sync"
 
 	sdkmath "cosmossdk.io/math"
@@ -503,7 +505,7 @@ func (c *XrpBlockScanner) FetchTxs(height, chainHeight int64) (types.TxIn, error
 		// but this code should still remain to address any other potential server side limitation,
 		// i.e.: max response size setting, new tx amount limitation for binary==true, remote/centralized server.
 		// Retrieve remaining txs individually, enough load could get us behind, but better behind than missing txs.
-		flatTransactions, err = c.fetchTxsByHash(ledgerTxHashes.Ledger.Transactions, flatTransactions)
+		flatTransactions, err = c.fetchTxsByHashAt(height, ledgerTxHashes.Ledger.Transactions, flatTransactions)
 		if err != nil {
 			return types.TxIn{}, err
 		}
@@ -547,6 +549,17 @@ const (
 )
 
 func (c *XrpBlockScanner) fetchTxsByHash(txHashes []string, txs []transaction.FlatTransaction) ([]transaction.FlatTransaction, error) {
+	return c.fetchTxsByHashAt(0, txHashes, txs)
+}
+
+// fetchTxsByHashAt fetches the transactions of ledger height that the expanded ledger
+// left out, one tx request each. Those reads are routed, so with several endpoints one
+// may come from another endpoint than the validated ledger did: an answer is kept only
+// when it is validated and, for height > 0, in that ledger. A node that has not
+// validated the ledger yet answers validated:false with no final metadata, which
+// would be skipped as undecodable (a missed inbound) or carry a provisional result;
+// it fails the ledger instead, which is retried.
+func (c *XrpBlockScanner) fetchTxsByHashAt(height int64, txHashes []string, txs []transaction.FlatTransaction) ([]transaction.FlatTransaction, error) {
 	// Create txMap for easy lookup of known txs
 	txMap := make(map[string]transaction.FlatTransaction)
 
@@ -609,6 +622,9 @@ func (c *XrpBlockScanner) fetchTxsByHash(txHashes []string, txs []transaction.Fl
 
 			var txResponse transaction.FlatTransaction
 			err = res.GetResult(&txResponse)
+			if err == nil {
+				err = validatedIn(txResponse, height)
+			}
 			if err != nil {
 				c.logger.Err(err).Str("hash", txHash).Msg("error parsing tx results")
 				select {
@@ -637,4 +653,43 @@ func (c *XrpBlockScanner) fetchTxsByHash(txHashes []string, txs []transaction.Fl
 	}
 
 	return transactions, nil
+}
+
+// validatedIn reports an error unless a tx answer is validated and, for height > 0,
+// in ledger height (ledger_index at the top of the result, or in tx_json).
+func validatedIn(tx transaction.FlatTransaction, height int64) error {
+	if v, _ := tx["validated"].(bool); !v {
+		return fmt.Errorf("the answering node has not validated it yet")
+	}
+	if height <= 0 {
+		return nil
+	}
+	index, ok := ledgerIndexOf(tx["ledger_index"])
+	if !ok {
+		if inner, isMap := tx["tx_json"].(map[string]interface{}); isMap {
+			index, ok = ledgerIndexOf(inner["ledger_index"])
+		}
+	}
+	if !ok {
+		return fmt.Errorf("the answer names no ledger")
+	}
+	if index != height {
+		return fmt.Errorf("the answer is in ledger %d, not the scanned ledger %d", index, height)
+	}
+	return nil
+}
+
+// ledgerIndexOf reads a ledger index decoded from JSON (a number or a numeric string).
+func ledgerIndexOf(v interface{}) (int64, bool) {
+	switch x := v.(type) {
+	case float64:
+		return int64(x), true
+	case json.Number:
+		n, err := x.Int64()
+		return n, err == nil
+	case string:
+		n, err := strconv.ParseInt(x, 10, 64)
+		return n, err == nil
+	}
+	return 0, false
 }

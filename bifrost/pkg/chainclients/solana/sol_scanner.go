@@ -55,10 +55,16 @@ type SOLScanner struct {
 	// pinEndpoint names the endpoint a vault's paged signature listing is pinned to
 	// ("" when there is nothing to pin); set by the client when it has several
 	pinEndpoint func(failures int) string
+	// pinUsable reports whether a kept catch-up endpoint may still list (in service:
+	// healthy, neither disabled, unverified nor quarantined); nil treats every
+	// endpoint as usable
+	pinUsable func(name string) bool
 	// pinFailures counts, per vault, the pinned listings in a row that failed; it is
-	// passed to pinEndpoint, so one that keeps failing gives way to the next endpoint
+	// passed to pinEndpoint, so one that keeps failing gives way to the next endpoint.
+	// catchUpPins keeps, per vault, the endpoint its catch-up listing started on.
 	pinFailuresMu      sync.Mutex
 	pinFailures        map[string]int
+	catchUpPins        map[string]string
 	pubKeyMgr          pubkeymanager.PubKeyValidator
 	bridge             thorclient.ThorchainBridge
 	solvencyReporter   shtypes.SolvencyReporter
@@ -446,6 +452,13 @@ func (s *SOLScanner) scanVault(
 	var newestSlot uint64
 	before := ""
 	listing, pinned, pinName := s.solRpc, false, ""
+	// a catch-up listing that an earlier attempt pinned stays on that endpoint from its
+	// first page, even when the endpoint now in use would answer that page short
+	if queryLastSig == "" && s.pinEndpoint != nil {
+		if kept := s.keptCatchUpPin(vaultAddr); kept != "" {
+			listing, pinned, pinName = s.solRpc.Pinned(kept), true, kept
+		}
+	}
 	for {
 		params := rpc.GetSignaturesForAddressUntilParams{
 			Commitment: "finalized",
@@ -485,13 +498,17 @@ func (s *SOLScanner) scanVault(
 		// cursor is bounded by it, so after solPinRetries failed listings it moves to
 		// the next endpoint. A catch-up listing (no cursor) lists the whole history the
 		// node holds, and endpoints keep different amounts of it: it stays on the
-		// first candidate, since one that holds less would end it early just the same.
+		// endpoint it started on across failed attempts while that endpoint is in
+		// service (catchUpPin), so a rate limit that moves the active role does not move
+		// it to one that holds less. A short listing (one page) is read with failover.
 		if !pinned && before == "" && len(res) == transactionQueryLimit && s.pinEndpoint != nil {
-			failures := 0
-			if queryLastSig != "" {
-				failures = s.pinFailureCount(vaultAddr)
+			pin := ""
+			if queryLastSig == "" {
+				pin = s.catchUpPin(vaultAddr)
+			} else {
+				pin = s.pinEndpoint(s.pinFailureCount(vaultAddr))
 			}
-			if pin := s.pinEndpoint(failures); pin != "" {
+			if pin != "" {
 				listing, pinned, pinName = s.solRpc.Pinned(pin), true, pin
 				continue
 			}
@@ -580,12 +597,12 @@ func (s *SOLScanner) pinFailureCount(vaultAddr string) int {
 
 // notePinnedListingFailure counts a failed pinned listing of the vault (a page, or
 // one of its transactions, the pinned endpoint could not serve). A catch-up listing
-// is never moved to another endpoint, so every solPinRetries failures a warning names
-// the endpoint holding it back.
+// is not moved to another endpoint while its endpoint is in service, so every
+// solPinRetries failures a warning names the endpoint holding it back.
 func (s *SOLScanner) notePinnedListingFailure(vaultAddr, pinName string, catchUp bool) {
 	if failures := s.notePinFailure(vaultAddr); catchUp && failures%solPinRetries == 0 {
 		s.logger.Warn().Str("vault", vaultAddr).Str("endpoint", pinName).Int("failures", failures).
-			Msg("vault catch-up listing keeps failing on its endpoint; it is not moved to another endpoint, which may hold less history: fix or remove this endpoint")
+			Msg("vault catch-up listing keeps failing on its endpoint; it is not moved to another endpoint, which may hold less history, while this one is in service: fix or remove this endpoint")
 	}
 }
 
@@ -606,6 +623,55 @@ func (s *SOLScanner) clearPinFailures(vaultAddr string) {
 	s.pinFailuresMu.Lock()
 	defer s.pinFailuresMu.Unlock()
 	delete(s.pinFailures, vaultAddr)
+	delete(s.catchUpPins, vaultAddr)
+}
+
+// catchUpPinAttempts is how many attempts in a row a kept catch-up endpoint may fail.
+const catchUpPinAttempts = 3 * solPinRetries
+
+// keptCatchUpPin names the endpoint an earlier attempt pinned the vault's catch-up
+// listing to, while it is still in service ("" otherwise). One that failed
+// catchUpPinAttempts attempts in a row without leaving service (a provider that keeps
+// rate limiting, or answers that are not charged) is given up, so the vault's catch-up
+// and the scanner's health are not held for good.
+func (s *SOLScanner) keptCatchUpPin(vaultAddr string) string {
+	s.pinFailuresMu.Lock()
+	kept, failures := s.catchUpPins[vaultAddr], s.pinFailures[vaultAddr]
+	if kept != "" && failures >= catchUpPinAttempts {
+		delete(s.catchUpPins, vaultAddr)
+		delete(s.pinFailures, vaultAddr)
+		s.pinFailuresMu.Unlock()
+		s.logger.Warn().Str("vault", vaultAddr).Str("endpoint", kept).Int("failures", failures).
+			Msg("vault catch-up listing gives up its endpoint after repeated failures; the next endpoint may hold less history")
+		return ""
+	}
+	s.pinFailuresMu.Unlock()
+	if kept != "" && (s.pinUsable == nil || s.pinUsable(kept)) {
+		return kept
+	}
+	return ""
+}
+
+// catchUpPin names the endpoint a vault's paged catch-up listing is pinned to: the one
+// an earlier attempt started on while it is still in service (pinUsable), else the
+// first endpoint a read would use now ("" with fewer than two endpoints), which is
+// kept for the next attempt.
+func (s *SOLScanner) catchUpPin(vaultAddr string) string {
+	if kept := s.keptCatchUpPin(vaultAddr); kept != "" {
+		return kept
+	}
+	pin := s.pinEndpoint(0)
+	s.pinFailuresMu.Lock()
+	defer s.pinFailuresMu.Unlock()
+	if pin == "" {
+		delete(s.catchUpPins, vaultAddr)
+		return ""
+	}
+	if s.catchUpPins == nil {
+		s.catchUpPins = make(map[string]string)
+	}
+	s.catchUpPins[vaultAddr] = pin
+	return pin
 }
 
 // loadVaultScanStatus returns a vault's scan status from memory, or from storage the

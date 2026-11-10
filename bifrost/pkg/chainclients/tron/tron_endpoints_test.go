@@ -410,3 +410,93 @@ func (s *TronTestSuite) TestProbeHeightIsTheLowerOfTheTwoHosts(c *C) {
 	_, err = tronProbe(e, time.Second, "", zerolog.Nop()).Height(context.Background())
 	c.Assert(err, ErrorMatches, ".*blockID.*")
 }
+
+// java-tron answers {} (HTTP 200) for a block it does not have, such as a lite fullnode
+// asked for a block older than the history it keeps. The api router asks the next
+// endpoint for it instead of handing the empty answer back as the active endpoint's
+// final word, which would retry the same height on the same node for good; nothing is
+// charged, and {} is returned only when no endpoint has the block.
+func (s *TronTestSuite) TestBlockOneEndpointLacksIsAskedOfTheNext(c *C) {
+	var hasBlock atomic.Bool
+	// java-tron labels every answer JSON (RateLimiterServlet.service)
+	lacking := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer lacking.Close()
+	keeping := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		if !hasBlock.Load() {
+			_, _ = w.Write([]byte(`{}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"blockID":"000000000000002a","block_header":{"raw_data":{"number":42}}}`))
+	}))
+	defer keeping.Close()
+	cfgEps := []config.ChainEndpointConfig{
+		{Name: "a", RPCHost: s.rpc.URL, APIHost: lacking.URL, Priority: 1},
+		{Name: "b", RPCHost: s.rpc.URL, APIHost: keeping.URL, Priority: 2},
+	}
+	fc := config.BifrostChainConfiguration{ChainID: common.TRONChain}.GetFailoverConfig()
+	fc.ErrorThreshold = 1
+	mgr, err := endpoints.NewManager(common.TRONChain, cfgEps, fc, zerolog.Nop())
+	c.Assert(err, IsNil)
+	for _, e := range mgr.Entries() {
+		e.SetIdentity("0x2b6653dc")
+	}
+	targets, err := endpoints.TargetsFrom(cfgEps, endpoints.APIHost)
+	c.Assert(err, IsNil)
+	router, err := newTronAPIRouter(mgr, targets, time.Second, time.Second, zerolog.Nop())
+	c.Assert(err, IsNil)
+	apiClient := api.NewTronAPIWithClient(endpoints.SyntheticBase(common.TRONChain).String(), 2*time.Second,
+		&http.Client{Transport: router, Timeout: 2 * time.Second})
+
+	// no endpoint has it: the empty answer comes back, as before
+	block, err := apiClient.GetBlock(42)
+	c.Assert(err, IsNil)
+	c.Assert(block.Header.RawData.Number, Equals, int64(0))
+
+	// b has it: b's block, and a is not charged for not having it
+	hasBlock.Store(true)
+	block, err = apiClient.GetBlock(42)
+	c.Assert(err, IsNil)
+	c.Assert(block.Header.RawData.Number, Equals, int64(42))
+	c.Assert(mgr.Entry("a").State(), Equals, endpoints.StateHealthy)
+	c.Assert(mgr.Active().Name, Equals, "a")
+}
+
+// Only block and transaction lookups are asked of the next endpoint on an empty answer:
+// java-tron also answers {} for an account that is not activated, which is the same
+// on every endpoint, so asking each in turn would only add latency and load.
+func (s *TronTestSuite) TestEmptyAccountIsNotAskedElsewhere(c *C) {
+	var aHits, bHits atomic.Int32
+	server := func(hits *atomic.Int32) *httptest.Server {
+		return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			hits.Add(1)
+			w.Header().Set("Content-Type", "application/json; charset=utf-8")
+			_, _ = w.Write([]byte(`{}`))
+		}))
+	}
+	a, b := server(&aHits), server(&bHits)
+	defer a.Close()
+	defer b.Close()
+	cfgEps := []config.ChainEndpointConfig{
+		{Name: "a", RPCHost: s.rpc.URL, APIHost: a.URL, Priority: 1},
+		{Name: "b", RPCHost: s.rpc.URL, APIHost: b.URL, Priority: 2},
+	}
+	fc := config.BifrostChainConfiguration{ChainID: common.TRONChain}.GetFailoverConfig()
+	mgr, err := endpoints.NewManager(common.TRONChain, cfgEps, fc, zerolog.Nop())
+	c.Assert(err, IsNil)
+	for _, e := range mgr.Entries() {
+		e.SetIdentity("0x2b6653dc")
+	}
+	targets, err := endpoints.TargetsFrom(cfgEps, endpoints.APIHost)
+	c.Assert(err, IsNil)
+	router, err := newTronAPIRouter(mgr, targets, time.Second, time.Second, zerolog.Nop())
+	c.Assert(err, IsNil)
+	apiClient := api.NewTronAPIWithClient(endpoints.SyntheticBase(common.TRONChain).String(), 2*time.Second,
+		&http.Client{Transport: router, Timeout: 2 * time.Second})
+	_, _ = apiClient.GetAccount("TJRabPrwbZy45sbavfcjinPJC18kjpRTv8")
+	c.Assert(aHits.Load(), Equals, int32(1))
+	c.Assert(bHits.Load(), Equals, int32(0))
+}

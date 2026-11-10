@@ -374,13 +374,7 @@ func NewTronClient(
 	}
 	timeout := config.BlockScanner.HTTPRequestTimeout
 	attempt := evm.AttemptTimeout(timeout)
-	apiRouter, err := endpoints.NewHTTPRouter(endpointMgr, endpoints.HTTPRouterConfig{
-		Base:           endpoints.SyntheticBase(config.ChainID),
-		Targets:        apiTargets,
-		WritePaths:     []string{"/wallet/broadcasttransaction"},
-		DialTimeout:    failoverCfg.HealthCheckTimeout,
-		AttemptTimeout: attempt,
-	}, logger)
+	apiRouter, err := newTronAPIRouter(endpointMgr, apiTargets, failoverCfg.HealthCheckTimeout, attempt, logger)
 	if err != nil {
 		return nil, fmt.Errorf("fail to create api router: %w", err)
 	}
@@ -1371,4 +1365,30 @@ func (c *TronClient) getTokenBalance(
 	}
 
 	return balance, nil
+}
+
+// newTronAPIRouter routes api_host requests (/wallet/...); broadcasts are writes.
+// java-tron answers {} (HTTP 200) for a block or transaction it does not have, such as
+// a lite fullnode asked for a block older than the history it keeps: such an answer
+// to a block or transaction lookup is asked of the next endpoint first, charging
+// nothing, and handed back only when no endpoint has it, so one node's gap cannot hold
+// the scanner at that height. Other reads ({} for an account that is not activated,
+// the same on every node) are not.
+func newTronAPIRouter(mgr *endpoints.Manager, targets []endpoints.Target, dialTimeout, attempt time.Duration, logger zerolog.Logger) (*endpoints.HTTPRouter, error) {
+	return endpoints.NewHTTPRouter(mgr, endpoints.HTTPRouterConfig{
+		Base:           endpoints.SyntheticBase(common.TRONChain),
+		Targets:        targets,
+		WritePaths:     []string{"/wallet/broadcasttransaction"},
+		DialTimeout:    dialTimeout,
+		AttemptTimeout: attempt,
+		RetryElsewhere: isEmptyJSONObject,
+		RetryElsewherePaths: []string{
+			"/wallet/getblockbynum", "/wallet/getblockbyid", "/wallet/gettransactionbyid", "/wallet/gettransactioninfobyid",
+		},
+	}, logger)
+}
+
+// isEmptyJSONObject reports a body that is exactly {} (java-tron's "not on this node").
+func isEmptyJSONObject(body []byte) bool {
+	return string(bytes.TrimSpace(body)) == "{}"
 }

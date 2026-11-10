@@ -3041,3 +3041,34 @@ func TestGetNetworkFeeWithCache(t *testing.T) {
 	size, rate := scanner.GetNetworkFee()
 	assert.True(t, size > 0 || rate > 0 || (size == 0 && rate == 0))
 }
+
+// A transaction fetched by hash, when the expanded ledger was cut short, may come from
+// another endpoint than the validated ledger did: it is kept only when that answer is
+// validated and in the scanned ledger, otherwise the ledger fails and is retried (a
+// node that has not validated it answers validated:false, without final metadata).
+func TestFetchTxsByHashRequiresTheValidatedScannedLedger(t *testing.T) {
+	for _, tc := range []struct {
+		name, answer string
+		ok           bool
+	}{
+		{"validated in the scanned ledger", `{"result":{"tx_json":{"TransactionType":"Payment"},"meta":{"TransactionResult":"tesSUCCESS"},"hash":"HASH2","ledger_index":22,"validated":true}}`, true},
+		{"not validated", `{"result":{"tx_json":{"TransactionType":"Payment"},"hash":"HASH2","validated":false}}`, false},
+		{"validated in another ledger", `{"result":{"tx_json":{"TransactionType":"Payment"},"meta":{"TransactionResult":"tesSUCCESS"},"hash":"HASH2","ledger_index":23,"validated":true}}`, false},
+	} {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprintln(w, tc.answer)
+		}))
+		rpcCfg, err := rpc.NewClientConfig(server.URL + "/")
+		require.NoError(t, err)
+		scanner := &XrpBlockScanner{rpcClient: rpc.NewClient(rpcCfg), logger: log.Logger}
+		result, err := scanner.fetchTxsByHashAt(22, []string{"HASH1", "HASH2"}, []transaction.FlatTransaction{{"hash": "HASH1"}})
+		if tc.ok {
+			require.NoError(t, err, tc.name)
+			assert.Len(t, result, 2, tc.name)
+		} else {
+			require.Error(t, err, tc.name)
+		}
+		server.Close()
+	}
+}

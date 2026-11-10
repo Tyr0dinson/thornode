@@ -15,7 +15,8 @@ invalid JSON body are retried on the next healthy endpoint immediately and charg
 endpoint that failed. On the HTTP-routed chains a 2xx body is checked only when it is JSON
 (or untyped) and under 64 KiB; larger bodies and other content types reach the caller
 unchecked. When no endpoint is left to try, the error returned to the caller carries the
-last node's JSON-RPC code and message. A rate-limited read is retried on the next endpoint too, but the rate-limited
+last node's JSON-RPC code and message (a rate-limited answer is reported as "rate
+limited" instead). A rate-limited read is retried on the next endpoint too, but the rate-limited
 endpoint is only put in cooldown (see below), never charged. On the HTTP-routed chains
 (EVM, SOL, XRP, TRON, and the Cosmos CometBFT RPC) a JSON-RPC "method not found" is the
 caller's business and is never charged: bifrost calls optional methods
@@ -23,7 +24,13 @@ caller's business and is never charged: bifrost calls optional methods
 provider answering `lgrNotFound` or `txnNotFound`, or a server answering that it cannot
 serve right now (`tooBusy`, `noNetwork`, `notSynced`, `noCurrent`, `noClosed`,
 `amendmentBlocked`, `unlBlocked`, `notReady`), is asked last: the other endpoints are
-tried first and nothing is charged. Writes (broadcasts) are sent once, to the active endpoint, with the
+tried first and nothing is charged. A transaction the XRP scanner reads by hash (when
+the expanded ledger is cut short) must come back validated and in the scanned ledger,
+or the ledger is retried: that read may be served by another endpoint than the ledger.
+On TRON, java-tron's empty answer (`{}`) to a block or transaction lookup for one a
+node does not have, such as a lite fullnode asked for older history, is asked of the
+next endpoint first and charged to nobody (other reads, such as an account that is not
+activated, are not). Writes (broadcasts) are sent once, to the active endpoint, with the
 caller's whole timeout, and never duplicated elsewhere: a write moves to the next
 endpoint only when connecting to the active one failed before anything was sent (gRPC
 writes never move). The XRP transport retry wrapper never replays `submit` either.
@@ -94,7 +101,12 @@ cannot be read keeps the observation, as before). A receipt read for a scanned o
 rescanned block must carry that block's hash, or the scan fails and is retried; this is
 checked on ETH and on BSC, BASE and POL, whose block hash bifrost computes exactly as
 their nodes do, but not on AVAX, whose C-Chain header bifrost cannot hash and which has
-instant finality. A failed attempt may already have
+instant finality (on AVAX a receipt that cannot be read fails the block instead of
+being skipped, so one that keeps failing holds the scanner until the stall skip-ahead).
+All or nothing holds per scan step: a prefetched step that committed its reorg and is
+then discarded by the block scanner (a rewind, rollback, stall skip-ahead or shutdown)
+has already sent its errata and repaired the block records, so its rescanned
+observations are not reported again, as before failover existed. A failed attempt may already have
 removed the signed-transaction and signer-cache entries of outbounds seen in the
 rescanned blocks, which is what the retry does anyway; UTXO undoes the
 observed-transaction marks the failed attempt set. With several endpoints, ETH and the
@@ -112,21 +124,22 @@ its parent, or, at any other height, the witness's own block there; a receipt th
 names another block leaves the scan to be retried. An active endpoint that cannot answer the
 witness checks themselves (its block reads and its tip; it answers its probes, so
 nothing else would move it) is put in the rate-limit cooldown and the next endpoint,
-held to the same checks, takes over. Any other read of the plan that fails fails the
-scan, which is retried on the same witness (a rate limit still cools it down through
-the router). No other endpoint is asked, so one still
+held to the same checks, takes over. The same happens when the witness fails any other
+read of the plan (a header, a re-confirmation, a rescanned block or its receipts): the
+scan fails, and its retry is read from the next endpoint. No other endpoint is asked, so one still
 on the old fork cannot suppress an errata. A witness that answers "not found" for a
 stored transaction the scanned block lists is inconsistent with the block it holds, so
 the scan is retried instead of reporting an errata for it. A witness whose lookups fail rather than
-answer "not found" (for example a node still building its transaction index) holds the
-scan until it answers. If a scan stays stuck for longer than `max_resume_block_lag`
+answer "not found" (for example a node still building its transaction index) is
+sidelined as above, so with several endpoints the retry asks the next one; a single
+endpoint holds the scan until it answers. If a scan stays stuck for longer than `max_resume_block_lag`
 while THORChain's last observed height for the chain moves more than that window ahead
 of it, the block scanner's existing skip-ahead moves past the stalled height (never for
 an unavailable-block error), and this node may not report that reorg or observe the
 rescanned blocks (a later reorg re-checks the stored block records still in the
 window); the errata then depends on the other nodes' votes. A skip past a reorg that
-could not be resolved is logged as an error and counted in the block scanner's error
-metric as `unresolved_reorg_skipped`.
+could not be resolved (its plan, or the scan step after it, kept failing) is logged as
+an error and counted in the block scanner's error metric as `unresolved_reorg_skipped`.
 
 A background health check runs every `health_check_interval` against every endpoint:
 
@@ -190,8 +203,16 @@ A background health check runs every `health_check_interval` against every endpo
   endpoints agree on a tip**, the block hash `depth` below the healthy endpoints' level
   (the lower median of their heights, so endpoints that report heights ahead, or are far
   behind while they recover, do not pick it) is compared across the healthy endpoints
-  that answered. When one hash holds a strict majority of them, every
-  other hash is a strike; an endpoint whose eviction run contained such a strike (even
+  that answered. Endpoints out of service but not quarantined (evicted for request
+  errors or lag) that have reached that height are asked too (between their recovery
+  checks, once one has passed, from the height they last reported), and so are healthy
+  endpoints skipped this cycle for a rate-limit cooldown: they cannot form a
+  majority, but a healthy majority stands only if it also holds a strict majority of
+  their answers and the healthy ones together, so two endpoints on another fork do not
+  become a majority because an honest one dropped out. When one hash holds such a
+  majority, every other hash is a strike (an endpoint out of service with another hash
+  is quarantined at once; a healthy one skipped for a cooldown is judged when it is
+  next probed); an endpoint whose eviction run contained such a strike (even
   when a lag or probe strike completed the eviction) is quarantined, shown as
   `integrity_evicted` in `/status/provider`, and must serve the majority hash again
   before it may serve traffic, even as an all-down fallback. Without a strict majority
@@ -200,12 +221,10 @@ A background health check runs every `health_check_interval` against every endpo
   two could give their hash, nothing is evicted either (a single healthy answer can
   still clear a quarantined endpoint, see below). In both cases no healthy endpoint is
   struck for lag against the other endpoints' tip that cycle (THORChain's height still
-  strikes). Only
-  healthy endpoints vote: with two endpoints on another fork, an honest one that drops
-  out on request errors can leave them a strict majority, which strikes the honest one
-  still voting, so do not configure endpoints you cannot vouch for; they still have to
-  pass the identity check, and THORChain's height keeps striking whichever side is
-  behind it. With fewer than two
+  strikes). An endpoint whose hash read fails casts no vote, so while honest endpoints
+  cannot answer, two endpoints on another fork can still outvote the one that does:
+  configure only endpoints you can vouch for (they still have to pass the identity
+  check). With fewer than two
   agreeing endpoints there is no tip and the
   check does not run. A quarantined endpoint is cleared once it serves the same hash as
   a healthy endpoint at a common height (its own probed height counts toward that tip),
@@ -268,8 +287,13 @@ endpoint a read would use (which can change as endpoints are evicted or cool dow
 when a listing that resumes from a cursor fails three times in a row, the next endpoint
 lists it, so one that keeps failing a page does not hold the vault back. A catch-up
 listing (a vault with no cursor yet, listed over the whole history the node holds) is
-never moved that way: endpoints keep different amounts of history, and one that holds
-less would end it early. Each endpoint should keep the history such a catch-up needs. A vault's listing resumes from its cursor signature with that
+never moved that way: once it pages, it is listed by one endpoint, kept across
+failed attempts while that endpoint is in service (a rate limit that moves the active
+role does not move it), and moves only when that endpoint is taken out of service (by
+the health checks or by request errors) or has failed nine attempts in a row (a
+provider that keeps rate limiting), since endpoints keep different amounts of history
+and one that holds less would end it early. A catch-up that fits in one page is read with failover like any
+other read. Each endpoint should keep the history such a catch-up needs. A vault's listing resumes from its cursor signature with that
 signature's own slot as `minContextSlot`: Agave ignores a cursor it does not know and
 lists the whole history it holds, so a node that has not yet finalized the cursor's slot
 (an endpoint behind the previous one) must refuse with -32016 instead, which on Solana is
@@ -387,11 +411,11 @@ chains:
       error_threshold: 5 # errors within error_window before marking unhealthy
       error_window: 60s
       health_check_interval: 10s # how often every endpoint is probed
-      max_block_lag: 3 # blocks behind consensus tip before eviction
+      max_block_lag: 3 # blocks behind consensus tip before eviction; 0 or unset means the default
       min_recovery_checks: 3 # passing checks required to restore an endpoint
       recovery_check_interval: 30s
       prefer_higher_priority: false # set true to actively fail back to lower-priority-number endpoints
-      rate_limit_backoff: 30s # cooldown after a rate limit (429; -32005 except on Solana): the endpoint is skipped this long while another endpoint can serve, and traffic moves on at once. UTXO chains also sleep it once when the primary was rate limited and nothing else served the read
+      rate_limit_backoff: 30s # cooldown after a rate limit (429; -32005 except on Solana): the endpoint is skipped this long while another endpoint can serve, and traffic moves on at once. UTXO chains also sleep it once when the primary was rate limited and nothing else served the read; 0 or unset means the default
       health_check_timeout: 5s # a probe slower than this is a strike; clamped to half of health_check_interval when larger
       integrity_check_depth: 20 # compare block hashes depth below the healthy endpoints' level; 0 disables
     expected_identity: "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f" # optional network pin
@@ -463,7 +487,8 @@ BIFROST_CHAINS_BTC_ENDPOINTS_2_URL=https://rpc.ankr.com/btc/YOUR_ANKR_KEY
 `GET /status/provider` (and `GET /status/provider/{CHAIN}`) on the bifrost health port
 lists every endpoint per chain with its classified host, `state` (healthy, unhealthy,
 recovering, disabled), `active`, last probed `height`, `probe_latency_ms`, `in_cooldown`,
-`identity_verified`, `inline_errors`, `probe_strikes` and `last_error_kind`.
+`identity_verified`, `inline_errors`, `probe_strikes` and `last_error_kind` (a false
+boolean or a zero count is left out of the JSON).
 
 Prometheus metrics (labels `chain`, `endpoint`):
 

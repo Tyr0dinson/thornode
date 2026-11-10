@@ -2,6 +2,7 @@ package evm
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"math/big"
 	"net/http"
@@ -15,7 +16,9 @@ import (
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/blockscanner"
+	btypes "gitlab.com/thorchain/thornode/v3/bifrost/blockscanner/types"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/evm"
+	evmtypes "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/evm/types"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pubkeymanager"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	thorcommon "gitlab.com/thorchain/thornode/v3/common"
@@ -119,4 +122,22 @@ func (s *BlockScannerTestSuite) TestNullReceiptsFailTheBlock(c *C) {
 	defer stopBSC()
 	_, err = bsc.FetchTxs(1, 1)
 	c.Assert(err, ErrorMatches, "(?s).*eth_getBlockReceipts returned 0 receipts for 1 transactions.*")
+}
+
+// A reorg whose plan succeeded is still left behind when the scanned block then fails
+// to extract: the step is retried with nothing committed, and its error says the
+// reorg is unresolved, so a stall skip-ahead past it is logged as one.
+func (s *BlockScannerTestSuite) TestExtractionFailureAfterAReorgPlanLeavesItUnresolved(c *C) {
+	bsc, stop := s.newNullReceiptScanner(c, thorcommon.BSCChain)
+	defer stop()
+	bsc.cfg.MaxReorgRescanBlocks = 10
+	block, err := bsc.ethRpc.GetBlock(1)
+	c.Assert(err, IsNil)
+	// the record below the scanned block holds another block than its parent: a reorg,
+	// which the plan resolves (the node serves that block, with nothing to re-confirm)
+	parent := block.Number().Int64() - 1
+	c.Assert(bsc.blockMetaAccessor.SaveBlockMeta(parent, &evmtypes.BlockMeta{Height: parent, BlockHash: block.Hash().Hex()}), IsNil)
+	_, err = bsc.FetchTxs(1, 1)
+	c.Assert(err, ErrorMatches, "(?s).*eth_getBlockReceipts returned 0 receipts for 1 transactions.*")
+	c.Assert(errors.Is(err, btypes.ErrReorgUnresolved), Equals, true)
 }

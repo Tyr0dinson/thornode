@@ -366,7 +366,8 @@ func receiptGate(target string, fail bool, hits *atomic.Int32) *httptest.Server 
 // A reorg rescan reads its receipts from the witness only, the endpoint whose block
 // it extracts: when the witness cannot serve them the step fails and is retried, and
 // another endpoint, even one holding the right receipts, is never asked, so a plan
-// never mixes two nodes' views of the chain.
+// never mixes two nodes' views of the chain. The witness is sidelined, so the retry
+// is read from the next endpoint.
 func (s *UnstuckTestSuite) TestReorgRescanReadsReceiptsFromTheWitnessOnly(c *C) {
 	config.Init()
 	to := ecommon.HexToAddress("0x9f4aab49a9cd8fc54dcb3701846f608a6f2c44da")
@@ -431,6 +432,14 @@ func (s *UnstuckTestSuite) TestReorgRescanReadsReceiptsFromTheWitnessOnly(c *C) 
 	meta, err := scanner.blockMetaAccessor.GetBlockMeta(99)
 	c.Assert(err, IsNil)
 	c.Assert(meta.BlockHash, Equals, "0x00000000000000000000000000000000000000000000000000000000000000dd")
+
+	// the witness that could not serve the plan is sidelined, so the retry's witness
+	// is the other endpoint, held to the same checks, which serves the whole plan
+	c.Assert(scanner.endpointMgr.Active().Name, Equals, "other")
+	plan, err := scanner.planReorg(block100)
+	c.Assert(err, IsNil)
+	c.Assert(plan.metas, HasLen, 1)
+	c.Assert(otherHits.Load() > 0, Equals, true)
 }
 
 // failedReceiptWitness is a witness at the reorg tip that knows tx as mined in the

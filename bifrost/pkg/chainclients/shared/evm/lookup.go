@@ -207,6 +207,18 @@ func FailedReceiptOnScannedFork(ctx context.Context, mgr *endpoints.Manager, cli
 	return nil
 }
 
+// SidelineWitness puts a witness that failed one of its reorg plan's reads (a header,
+// a re-confirmation, a rescanned block or its receipts) in the rate-limit cooldown
+// and moves the active role off it (Manager.Sideline), so the retried step's witness
+// is the next endpoint, held to the same checks: a witness whose other reads succeed
+// would otherwise be picked again on every retry. "" (a single endpoint) is left as is.
+func SidelineWitness(mgr *endpoints.Manager, witness, reason string) {
+	if mgr == nil || witness == "" {
+		return
+	}
+	mgr.Sideline(witness, reason)
+}
+
 // witnessHeader reads the witness's header at height, pinned to it. An error other
 // than "not found" sidelines it (Manager.Sideline): it cannot serve the witness's reads.
 func witnessHeader(ctx context.Context, mgr *endpoints.Manager, client *ethclient.Client, name string, height int64) (*etypes.Header, error) {

@@ -102,6 +102,9 @@ type HTTPRouterConfig struct {
 	// answer is not charged to the endpoint; it is returned only when no other
 	// candidate does better. Writes are never retried.
 	RetryElsewhere func(body []byte) bool
+	// RetryElsewherePaths, when set, limits RetryElsewhere to requests whose path
+	// ends with one of these (an answer that means "not on this node" only there).
+	RetryElsewherePaths []string
 	// EndpointErrorCodes are JSON-RPC error codes that mean this endpoint cannot
 	// serve the request (charged like -32603, and a read moves on), checked before
 	// the generic rate-limit codes. Solana sets -32005, its "node is unhealthy"
@@ -539,7 +542,7 @@ func (r *HTTPRouter) classify(resp *http.Response, isWrite bool) (verdict, Error
 		return verdictEndpointError, ErrorKindTransport, false
 	}
 	v, k := classifyJSONRPC(trimmed, r.cfg.EndpointErrorCodes)
-	if (v == verdictOK || v == verdictAppError) && !isWrite && r.cfg.RetryElsewhere != nil && r.cfg.RetryElsewhere(trimmed) {
+	if (v == verdictOK || v == verdictAppError) && !isWrite && r.cfg.RetryElsewhere != nil && r.retryElsewhereFor(resp.Request) && r.cfg.RetryElsewhere(trimmed) {
 		return verdictRetryElsewhere, "", true
 	}
 	return v, k, true
@@ -777,4 +780,20 @@ func drain(resp *http.Response, cancel context.CancelFunc) {
 	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
 	t.Stop()
 	_ = resp.Body.Close()
+}
+
+// retryElsewhereFor reports whether RetryElsewhere applies to req's path.
+func (r *HTTPRouter) retryElsewhereFor(req *http.Request) bool {
+	if len(r.cfg.RetryElsewherePaths) == 0 {
+		return true
+	}
+	if req == nil || req.URL == nil {
+		return false
+	}
+	for _, p := range r.cfg.RetryElsewherePaths {
+		if strings.HasSuffix(req.URL.Path, p) {
+			return true
+		}
+	}
+	return false
 }
