@@ -464,6 +464,66 @@ func (s *HandlerTssSuite) TestTssHandler(c *C) {
 			expectedResult: nil,
 		},
 		{
+			name: "HaltKeygenFailureReporting skips the blamed active node's keygen-failure slash",
+			messageCreator: func(helper tssHandlerTestHelper) cosmos.Msg {
+				// Halt keygen-failure penalties: the blamed node still reaches failure
+				// consensus but must take no FailKeygenSlashPoints. No observe points are
+				// pre-seeded here, so a clean 0 proves the skip.
+				helper.keeper.SetMimir(helper.ctx, constants.MimirKeyHaltKeygenFailureReporting, 1)
+				thorAddr, _ := helper.members[3].GetThorAddress()
+				na, _ := helper.keeper.GetNodeAccount(helper.ctx, thorAddr)
+				na.UpdateStatus(NodeActive, helper.ctx.BlockHeight())
+				_ = helper.keeper.SetNodeAccount(helper.ctx, na)
+				b := Blame{
+					FailReason: "who knows",
+					BlameNodes: []Node{
+						{
+							Pubkey: helper.members[3].String(),
+						},
+					},
+				}
+				tssMsg, err := NewMsgTssPoolV2(helper.members.Strings(), GetRandomPubKey(), fakeSig, nil, AsgardKeygen, helper.ctx.BlockHeight(), []Blame{b}, common.Chains{common.RuneAsset().Chain}.Strings(), helper.signer, keygenTime, GetRandomPubKey(), nil, nil, common.EmptyPubKey)
+				c.Assert(err, IsNil)
+				voter, err := helper.keeper.GetTssVoter(helper.ctx, tssMsg.ID)
+				c.Assert(err, IsNil)
+				for _, pk := range helper.members {
+					addr, err := pk.GetThorAddress()
+					c.Assert(err, IsNil)
+					if addr.Equals(helper.signer) {
+						continue
+					}
+					voter.Signers = append(voter.Signers, addr.String())
+				}
+				helper.keeper.SetTssVoter(helper.ctx, voter)
+				return tssMsg
+			},
+			runner: func(handler TssHandler, msg cosmos.Msg, helper tssHandlerTestHelper) (*cosmos.Result, error) {
+				m, _ := msg.(*MsgTssPool)
+				voter, _ := helper.keeper.GetTssVoter(helper.ctx, m.ID)
+				if voter.PoolPubKey.IsEmpty() {
+					voter.PoolPubKey = m.PoolPubKey
+					voter.PoolPubKeyEddsa = m.PoolPubKeyEddsa
+					voter.PubKeys = m.PubKeys
+				}
+				addr, _ := helper.members[3].GetThorAddress()
+				voter.Sign(addr, common.Chains{common.ETHChain}.Strings(), string(fakeSig))
+				helper.keeper.SetTssVoter(helper.ctx, voter)
+				return handler.Run(helper.ctx, msg)
+			},
+			validator: func(helper tssHandlerTestHelper, msg cosmos.Msg, result *cosmos.Result, c *C) {
+				pubKey := helper.members[3]
+				na, err := helper.keeper.GetNodeAccountByPubKey(helper.ctx, pubKey)
+				c.Assert(err, IsNil)
+				slashPts, err := helper.keeper.GetNodeAccountSlashPoints(helper.ctx, na.NodeAddress)
+				c.Assert(err, IsNil)
+				c.Assert(slashPts, Equals, int64(0), Commentf("halted keygen failure must add no slash points, got %d", slashPts))
+				jail, err := helper.keeper.GetNodeAccountJail(helper.ctx, na.NodeAddress)
+				c.Assert(err, IsNil)
+				c.Assert(jail.ReleaseHeight <= helper.ctx.BlockHeight(), Equals, true, Commentf("halted keygen failure must not jail the node"))
+			},
+			expectedResult: nil,
+		},
+		{
 			name: "fail to keygen but can't get network data should return an error",
 			messageCreator: func(helper tssHandlerTestHelper) cosmos.Msg {
 				b := Blame{

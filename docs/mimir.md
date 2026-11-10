@@ -247,6 +247,18 @@ Operational notes:
 - `OverSolvencyAddress`: Over-solvency sweep destination address
 - `VaultDeficitGasHaltMaxGasMultiplier`\*: Multiple of the chain's current max gas at which a gas-related vault deficit halts signing and trading on the chain (0 = disabled)
 
+## Keygen Failure Reporting
+
+`HaltKeygenFailureReporting` is an operational emergency switch (`#`, Mimir with no Constant). Any positive value halts immediately; it is not an activation height. Unset or `0` permits penalties.
+
+When set, THORNode still accepts incoming Asgard keygen-failure votes, reaches failure consensus, resets Ready nodes to Standby and emits failure events, but skips the failure-blame slash points, the escalating jail and bond deductions, and the blame-history increment for each blamed node. Retries, successful keygen results, observation penalties and XMR handling are unchanged. Penalties already applied are not reversed.
+
+Operator procedure:
+
+1. Deploy the release through the coordinated THORNode upgrade. Keep this Mimir unset or `0` until **every validator runs this release** — older handlers ignore the key and would apply penalties that upgraded handlers skip.
+2. Vote to set `HaltKeygenFailureReporting = 1` to stop Asgard failure-blame penalties. The key uses `OperationalVotesMin` active-node votes, currently defaulting to three.
+3. To resume, vote the value back to `0`. Operational votes are cleared at churn while the effective value persists, so fresh votes may be needed. Resuming does not apply skipped penalties retroactively.
+
 ## Node Management
 
 - `MinimumBondInRune`\*: Sets a lower bound on bond for a node to be considered to be churned in

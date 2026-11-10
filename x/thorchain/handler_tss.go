@@ -464,6 +464,21 @@ func (h TssHandler) handle(ctx cosmos.Context, msg *MsgTssPool) error {
 
 		// Do the below only for a non-success message upon 2/3rds consensus.
 		if !msg.IsSuccess() {
+			// Operators can halt keygen-failure blame penalties (slash points, jail
+			// and bond slash) with the HaltKeygenFailureReporting mimir, while failure
+			// votes, the Ready->Standby reset and the failure events below still
+			// proceed. Read it once here, before the per-node blame loop. Default 0
+			// leaves behaviour byte-for-byte unchanged; because the skip is decided
+			// from consensus mimir state it must only be voted on once the whole fleet
+			// runs this binary (pin-then-switch) — an older binary would still slash.
+			haltFailurePenalties := false
+			if msg.KeygenType == AsgardKeygen {
+				halt, mimirErr := h.mgr.Keeper().GetMimir(ctx, constants.MimirKeyHaltKeygenFailureReporting)
+				if mimirErr != nil {
+					return fmt.Errorf("fail to get keygen failure reporting halt: %w", mimirErr)
+				}
+				haltFailurePenalties = halt > 0
+			}
 			// One increment per failed keygen reaching 2/3rds consensus. The
 			// existing failed_keygen labels live on thornode_point_slash and
 			// thornode_bond_slash, which fire per BLAMED node (and bond_slash only
@@ -530,6 +545,15 @@ func (h TssHandler) handle(ctx cosmos.Context, msg *MsgTssPool) error {
 							telemetry.NewLabel("keygen_type", msg.KeygenType.String()),
 						},
 					)
+
+					// HaltKeygenFailureReporting: skip all blame penalties for this
+					// node — the slash points, the escalating jail/bond slash, AND the
+					// blame-history increment that drives future escalation — so a halt
+					// neither penalises nor accrues escalation against the blamed node.
+					// The failure telemetry above and the failure events below still fire.
+					if haltFailurePenalties {
+						continue
+					}
 
 					// Track the keygen blame for every blamed node; only the
 					// escalated penalties below are limited to non-active nodes.

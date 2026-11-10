@@ -93,6 +93,16 @@ const (
 	// height stops keygen.
 	MimirKeyHaltMonovaultKeygen = "HaltMonovaultKeygen"
 
+	// MimirKeyHaltKeygenFailureReporting is an operational emergency switch (the
+	// "Halt" prefix). Any positive value halts Asgard keygen-failure blame
+	// penalties — the failure-blame slash points, the escalating jail/bond slash
+	// and the blame-history increment — while failure votes, the Ready->Standby
+	// reset and the failure events still proceed. Unset or 0 permits penalties and
+	// changes nothing. The skip is decided from this consensus Mimir, so it must
+	// only be voted on once every validator runs the release that reads it
+	// (pin-then-switch); an older handler would still apply the penalties.
+	MimirKeyHaltKeygenFailureReporting = "HaltKeygenFailureReporting"
+
 	// MimirKeyPreflightChainSetDisabled turns off the preflight check that keeps a
 	// node out of the Ready set after it reported an asgard keygen chain set that
 	// omitted a chain the active vaults serve. Set above 0 to disable the check.
