@@ -305,8 +305,9 @@ func (vm *ValidatorMgr) churnInner(ctx cosmos.Context) error {
 		return err
 	}
 
-	// The low bond and age marks only make room for Ready nodes. With the churn-in
-	// age filter on, they come after every other mark (see markRotationActorsWithinRoom).
+	// The low bond and age marks make room for Ready nodes, and also trim a set larger
+	// than desiredValidatorSet. With the churn-in age filter on, they come after every
+	// other mark (see markRotationActorsWithinRoom).
 	oldEnough, limited, err := vm.churnInOldEnoughReady(ctx)
 	if err != nil {
 		return err
@@ -1771,10 +1772,11 @@ func (vm *ValidatorMgr) markActor(ctx cosmos.Context, na NodeAccount, reason str
 }
 
 // markRotationActorsWithinRoom makes the low bond and age marks while the churn-in age
-// filter is on. They only make room for Ready nodes, so they come after every other mark
-// and take no more nodes than the oldEnough Ready nodes left over once the nodes already
-// marked are replaced. Then the filter does not shrink the active set by itself; the
-// other marks still apply.
+// filter is on. They come after every other mark and take no more nodes than the
+// oldEnough Ready nodes left over once the nodes already marked are replaced. Then the
+// filter does not shrink the active set by itself; the other marks still apply. The
+// same limit holds for a set larger than desiredValidatorSet: with no oldEnough Ready
+// node left over, these marks do not trim it, so it stays above the target.
 func (vm *ValidatorMgr) markRotationActorsWithinRoom(ctx cosmos.Context, desiredValidatorSet int64, oldEnough int) error {
 	active, err := vm.k.ListActiveValidators(ctx)
 	if err != nil {
