@@ -592,13 +592,25 @@ func (s *XrpTestSuite) TestBroadcastTxTefPastSeqNotFoundRetries(c *C) {
 	c.Check(errors.Is(err, stypes.ErrResignRequired), Equals, false, Commentf("tefPAST_SEQ+notfound must NOT re-sign (double-pay risk), got %v", err))
 }
 
-// TestBroadcastTxValidatedFailedResigns: a tx already validated with a tec* result (the
-// sequence burned, nothing delivered) must NOT be cached as sent — BroadcastTx returns
-// ErrResignRequired so the signer re-signs at a fresh sequence.
-func (s *XrpTestSuite) TestBroadcastTxValidatedFailedResigns(c *C) {
-	client := s.xrpClientWithTxResponse(c, `{"result":{"validated":true,"meta":{"TransactionResult":"tecUNFUNDED_PAYMENT"},"hash":"ABC"}}`)
-	_, err := client.BroadcastTx(stypes.TxOutItem{Chain: common.XRPChain}, s.signedBlobBytes(c))
-	c.Check(errors.Is(err, stypes.ErrResignRequired), Equals, true, Commentf("tec* outbound must trigger re-sign, got %v", err))
+// TestBroadcastTxValidatedFailedRetires: a tx already validated with a tec* result (the
+// sequence burned, nothing delivered) is a dead attempt. Signing it again would fail the
+// same way (e.g. tecDST_TAG_NEEDED at a destination that requires a tag) and spend a keysign
+// and a fee each time, and reporting it as sent would observe a payment that never
+// happened. BroadcastTx returns ErrTxExpired before any submit, so the signer retires the
+// attempt uncached and unobserved, and THORChain reschedules the outbound.
+func (s *XrpTestSuite) TestBroadcastTxValidatedFailedRetires(c *C) {
+	// A submit would be accepted, so a regression that submits before checking the tx
+	// result surfaces as a cached send instead of ErrTxExpired.
+	submitOK := `{"result":{"engine_result":"tesSUCCESS","status":"success"}}`
+	for _, code := range []string{"tecDST_TAG_NEEDED", "tecNO_PERMISSION", "tecNO_DST_INSUF_XRP", "tecUNFUNDED_PAYMENT"} {
+		client := s.xrpClientWithRPCByMethod(c, submitOK, `{"result":{"validated":true,"meta":{"TransactionResult":"`+code+`"},"hash":"ABC"}}`)
+		tx := stypes.TxOutItem{Chain: common.XRPChain}
+		hash, err := client.BroadcastTx(tx, s.signedBlobBytes(c))
+		c.Check(errors.Is(err, chainclienttypes.ErrTxExpired), Equals, true, Commentf("%s: a validated tec* must retire the attempt, got %v", code, err))
+		c.Check(errors.Is(err, stypes.ErrResignRequired), Equals, false, Commentf("%s: a validated tec* must not ask for a re-sign", code))
+		c.Check(hash, Equals, "", Commentf("%s: a retired attempt reports no hash", code))
+		c.Check(client.signerCacheManager.HasSigned(tx.CacheHash()), Equals, false, Commentf("%s: must not be cached as sent", code))
+	}
 }
 
 // TestBroadcastTxValidatedSuccessCaches: a tx already validated with tesSUCCESS is truly
@@ -757,13 +769,13 @@ func (s *XrpTestSuite) xrpClientWithSubmitThenConfirm(c *C, submitResp, preTx, p
 
 // TestBroadcastTxPostSubmitConfirm pins the post-submit fund-safety branches: after an
 // ambiguous accept (tefPAST_SEQ / tefALREADY), BroadcastTx caches as sent ONLY on a
-// validated tesSUCCESS, re-signs (ErrResignRequired) ONLY on a validated tec* failure, and
-// otherwise (txnNotFound / not-yet-validated) returns a plain retry — never a re-sign, never
-// a cache. The pre-submit lookup is forced to txnNotFound so these post-submit paths run.
+// validated tesSUCCESS, retires the attempt (ErrTxExpired) on a validated tec* failure, and
+// otherwise (txnNotFound / not-yet-validated) returns a plain retry. It never asks for a
+// re-sign, and caches nothing but a success. The pre-submit lookup is forced to txnNotFound so these post-submit paths run.
 func (s *XrpTestSuite) TestBroadcastTxPostSubmitConfirm(c *C) {
 	const (
 		valSuccess = `{"result":{"validated":true,"meta":{"TransactionResult":"tesSUCCESS"},"hash":"ABC"}}`
-		valTec     = `{"result":{"validated":true,"meta":{"TransactionResult":"tecUNFUNDED_PAYMENT"},"hash":"ABC"}}`
+		valTec     = `{"result":{"validated":true,"meta":{"TransactionResult":"tecDST_TAG_NEEDED"},"hash":"ABC"}}`
 		notFound   = `{"result":{"error":"txnNotFound","status":"error"}}`
 		notYet     = `{"result":{"validated":false,"hash":"ABC"}}`
 	)
@@ -771,14 +783,14 @@ func (s *XrpTestSuite) TestBroadcastTxPostSubmitConfirm(c *C) {
 		name       string
 		engineRes  string
 		confirm    string
-		wantResign bool // expect ErrResignRequired
+		wantRetire bool // expect ErrTxExpired
 		wantErr    bool // expect a (non-resign) retry error rather than a cached send
 	}{
 		{"tefPAST_SEQ+success caches", "tefPAST_SEQ", valSuccess, false, false},
-		{"tefPAST_SEQ+tec resigns", "tefPAST_SEQ", valTec, true, true},
+		{"tefPAST_SEQ+tec retires", "tefPAST_SEQ", valTec, true, true},
 		{"tefPAST_SEQ+notyet retries", "tefPAST_SEQ", notYet, false, true},
 		{"tefALREADY+success caches", "tefALREADY", valSuccess, false, false},
-		{"tefALREADY+tec resigns", "tefALREADY", valTec, true, true},
+		{"tefALREADY+tec retires", "tefALREADY", valTec, true, true},
 		{"tefALREADY+notfound retries", "tefALREADY", notFound, false, true},
 		{"tefALREADY+notyet retries", "tefALREADY", notYet, false, true},
 	}
@@ -787,8 +799,10 @@ func (s *XrpTestSuite) TestBroadcastTxPostSubmitConfirm(c *C) {
 		client := s.xrpClientWithSubmitThenConfirm(c, submit, notFound, tc.confirm)
 		tx := stypes.TxOutItem{Chain: common.XRPChain}
 		h, err := client.BroadcastTx(tx, s.signedBlobBytes(c))
-		c.Check(errors.Is(err, stypes.ErrResignRequired), Equals, tc.wantResign,
-			Commentf("%s: want resign=%v, got err=%v", tc.name, tc.wantResign, err))
+		c.Check(errors.Is(err, chainclienttypes.ErrTxExpired), Equals, tc.wantRetire,
+			Commentf("%s: want retire=%v, got err=%v", tc.name, tc.wantRetire, err))
+		c.Check(errors.Is(err, stypes.ErrResignRequired), Equals, false,
+			Commentf("%s: XRP never asks for a re-sign, got err=%v", tc.name, err))
 		// Assert the actual signer-cache side effect, not just the return value: an item is
 		// cached as sent IFF the broadcast resolved to a success — a retry or a re-sign must
 		// leave NO cache entry (caching a non-delivered tx would silently drop the outbound).

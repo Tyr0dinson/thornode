@@ -375,11 +375,20 @@ func (c *Client) verifyBroadcast(sig string) signercache.LookupResult {
 	}
 	var parsed struct {
 		Validated bool `json:"validated"`
+		Meta      any  `json:"meta"`
 	}
 	if parseErr := res.GetResult(&parsed); parseErr != nil {
 		return signercache.LookupAmbiguous
 	}
 	if parsed.Validated {
+		// A validated tec* result burned the sequence and delivered nothing: the
+		// recorded broadcast definitively failed, so the outbound may be recovered with
+		// a new tx (see retireTecResult).
+		if meta, ok := parsed.Meta.(map[string]any); ok {
+			if result, ok := meta["TransactionResult"].(string); ok && strings.HasPrefix(result, "tec") {
+				return signercache.LookupFailed
+			}
+		}
 		// rippled reports the tx in a validated (closed) ledger — the recorded
 		// broadcast is definitively on chain, so respect the cache and record it as
 		// present (PhaseVerifiedFound) rather than merely ambiguous.
@@ -759,8 +768,8 @@ func (c *Client) broadcastTx(txBlob string) (engineResult string, err error) {
 }
 
 // xrpTxStatus is the resolved on-chain state of a signed XRP tx, used to decide whether
-// a broadcast is truly sent, provably dead (so the signer must re-sign at a fresh
-// sequence), or still unknown.
+// a broadcast is settled on chain (delivered, or failed with a tec* result) or still
+// unknown.
 type xrpTxStatus int
 
 const (
@@ -772,51 +781,58 @@ const (
 	// xrpTxValidatedSuccess: validated in a closed ledger with a tesSUCCESS result.
 	xrpTxValidatedSuccess
 	// xrpTxValidatedFailed: validated with a tec* result — the sequence is burned and the
-	// fee spent, but it delivered nothing, so the outbound obligation is NOT met.
+	// fee spent, but it delivered nothing, so the outbound obligation is NOT met. The
+	// signed tx is dead: see retireTecResult.
 	xrpTxValidatedFailed
 )
 
 // xrpTxStatusOf resolves a tx hash to one of the xrpTxStatus states. It distinguishes a
 // definitive txnNotFound (the node answered: not on chain) from a transport/parse error
-// (unknown), so callers can retire a provably-dead tx without acting on a flaky lookup.
+// (unknown), so callers never act on a flaky lookup.
 func (c *Client) xrpTxStatusOf(txHash string) xrpTxStatus {
+	status, _ := c.xrpTxResultOf(txHash)
+	return status
+}
+
+// xrpTxResultOf is xrpTxStatusOf plus the validated TransactionResult code, if any.
+func (c *Client) xrpTxResultOf(txHash string) (xrpTxStatus, string) {
 	res, err := c.rpcClient.Request(&requests.TxRequest{Transaction: txHash})
 	if err != nil {
 		var ce *rpc.ClientError
 		if errors.As(err, &ce) && ce.ErrorString == "txnNotFound" {
-			return xrpTxNotFound
+			return xrpTxNotFound, ""
 		}
 		// transport, timeout, or any other error result — we do not know.
-		return xrpTxUnknown
+		return xrpTxUnknown, ""
 	}
 	var txResponse *requests.TxResponse
 	if gErr := res.GetResult(&txResponse); gErr != nil || txResponse == nil {
-		return xrpTxUnknown
+		return xrpTxUnknown, ""
 	}
 	if !txResponse.Validated {
 		// seen (e.g. still in the open ledger / mempool) but not yet validated.
-		return xrpTxUnknown
+		return xrpTxUnknown, ""
 	}
 	meta, ok := txResponse.Meta.(map[string]any)
 	if !ok {
-		return xrpTxUnknown
+		return xrpTxUnknown, ""
 	}
 	result, ok := meta["TransactionResult"].(string)
 	if !ok {
 		// present but missing / non-string TransactionResult (API/shape differences):
 		// do NOT assume failure — an unrecognized shape must fail SAFE as unknown, never
 		// drive a re-sign that could double-pay a tx that actually succeeded.
-		return xrpTxUnknown
+		return xrpTxUnknown, ""
 	}
 	switch {
 	case strings.HasPrefix(result, "tes"): // tesSUCCESS
-		return xrpTxValidatedSuccess
+		return xrpTxValidatedSuccess, result
 	case strings.HasPrefix(result, "tec"): // claimed-cost failure: sequence burned, delivered nothing
-		return xrpTxValidatedFailed
+		return xrpTxValidatedFailed, result
 	default:
 		// a validated tx never carries a tef/ter/tem/tel result, so an unrecognized code
 		// is an unexpected response — fail safe as unknown rather than as a failure.
-		return xrpTxUnknown
+		return xrpTxUnknown, ""
 	}
 }
 
@@ -838,10 +854,9 @@ func (c *Client) cacheSent(tx stypes.TxOutItem, txHash string) {
 // delivered). A fresh submit-time tesSUCCESS is still accepted optimistically, as the prior
 // code did (THORChain reschedules it if it never validates).
 //
-// It returns ErrResignRequired ONLY when the tx is proven dead by a POSITIVE on-chain
-// result — our exact hash validated as a tec* failure — so re-signing at the next free
-// sequence can never double-pay (the tec burned the sequence and delivered nothing). It
-// never re-signs on a mere absence, which would risk paying a delivered tx twice.
+// A tx validated with a tec* result is retired for THORChain to reschedule (see
+// retireTecResult), never re-signed here. Nor is a tx re-signed on a mere absence, which
+// would risk paying a delivered tx twice.
 func (c *Client) BroadcastTx(tx stypes.TxOutItem, txBytes []byte) (string, error) {
 	txBlob := hex.EncodeToString(txBytes)
 	txHash, err := hash.SignTxBlob(txBlob)
@@ -852,14 +867,12 @@ func (c *Client) BroadcastTx(tx stypes.TxOutItem, txBytes []byte) (string, error
 
 	// Has this tx already resolved on chain (a prior submit / another node)? Decide from
 	// its result before re-submitting.
-	switch c.xrpTxStatusOf(txHash) {
+	switch status, result := c.xrpTxResultOf(txHash); status {
 	case xrpTxValidatedSuccess:
 		c.cacheSent(tx, txHash)
 		return txHash, nil
 	case xrpTxValidatedFailed:
-		c.logger.Warn().Str("txHash", txHash).
-			Msg("xrp outbound validated with a non-tesSUCCESS result; re-signing at a fresh sequence")
-		return "", stypes.ErrResignRequired
+		return "", c.retireTecResult(txHash, result, "")
 	}
 	// xrpTxNotFound (never submitted) or xrpTxUnknown (lookup flaked) — (re-)submit.
 
@@ -872,15 +885,12 @@ func (c *Client) BroadcastTx(tx stypes.TxOutItem, txBytes []byte) (string, error
 	// are NOT proof of delivery. Confirm on chain before caching as sent.
 	switch engineResult {
 	case "tefPAST_SEQ":
-		switch c.xrpTxStatusOf(txHash) {
+		switch status, result := c.xrpTxResultOf(txHash); status {
 		case xrpTxValidatedSuccess:
 			// our tx is the one that consumed the sequence and it succeeded.
 		case xrpTxValidatedFailed:
-			// our exact tx is on chain as a tec* failure: the sequence is burned and it
-			// delivered nothing, so re-signing at a fresh sequence cannot double-pay.
-			c.logger.Warn().Str("txHash", txHash).
-				Msg("xrp tefPAST_SEQ and this tx validated as a tec* failure; re-signing at a fresh sequence")
-			return "", stypes.ErrResignRequired
+			// our exact tx consumed the sequence with a tec* failure.
+			return "", c.retireTecResult(txHash, result, engineResult)
 		default: // xrpTxNotFound or xrpTxUnknown
 			// A txnNotFound here is NOT proof that a DIFFERENT tx consumed the sequence: a
 			// pruned/lagging rippled node reports txnNotFound for a tx it no longer holds —
@@ -894,11 +904,11 @@ func (c *Client) BroadcastTx(tx stypes.TxOutItem, txBytes []byte) (string, error
 		// The same-hash tx is already seen; it may still validate at its sequence, so NEVER
 		// retire on absence (re-signing at a new sequence while the original is pending
 		// would double-pay). Only a confirmed result is actionable.
-		switch c.xrpTxStatusOf(txHash) {
+		switch status, result := c.xrpTxResultOf(txHash); status {
 		case xrpTxValidatedSuccess:
 			// delivered — cache as sent.
 		case xrpTxValidatedFailed:
-			return "", stypes.ErrResignRequired
+			return "", c.retireTecResult(txHash, result, engineResult)
 		default: // xrpTxNotFound / xrpTxUnknown — wait and re-check, do not cache.
 			return "", fmt.Errorf("xrp tefALREADY: cannot confirm tx %s on chain yet; retrying", txHash)
 		}
@@ -907,6 +917,20 @@ func (c *Client) BroadcastTx(tx stypes.TxOutItem, txBytes []byte) (string, error
 	// validated success above.
 	c.cacheSent(tx, txHash)
 	return txHash, nil
+}
+
+// retireTecResult reports txHash, validated with the tec* result code, as a dead
+// signing attempt. A tec* result burns the sequence and the fee but delivers nothing, and
+// signing the outbound again from this vault fails the same way: destination-side codes
+// (tecDST_TAG_NEEDED, tecNO_PERMISSION, tecNO_DST_INSUF_XRP) are permanent, and a
+// sender-side code such as tecUNFUNDED_PAYMENT needs another vault. ErrTxExpired makes the
+// signer retire the attempt without re-signing it, without observing it as sent and without
+// a signer-cache entry. THORChain never observes the tx (the scanner skips non-tesSUCCESS
+// results), so it reschedules the outbound once its signing period passes.
+func (c *Client) retireTecResult(txHash, result, engineResult string) error {
+	c.logger.Warn().Str("txHash", txHash).Str("result", result).Str("engine_result", engineResult).
+		Msg("xrp outbound validated with a tec* result; retiring the attempt for THORChain to reschedule")
+	return fmt.Errorf("xrp tx %s validated with %s: %w", txHash, result, chainclienttypes.ErrTxExpired)
 }
 
 // GetVaultLock returns the per-vault mutex the signer holds across SignTx+BroadcastTx,
