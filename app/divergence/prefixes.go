@@ -81,6 +81,7 @@ var thorchainPrefixes = map[string]string{
 	"minjoinlast/":                   "prefixMinJoinLast",
 	"nodemimir/":                     "prefixNodeMimir",
 	"node_pause_chain/":              "prefixNodePauseChain",
+	"node_age_start/":                "prefixNodeAgeStart",
 	"network_fee/":                   "prefixNetworkFee",
 	"network_fee_voter/":             "prefixNetworkFeeVoter",
 	"tss_keygen_metric/":             "prefixTssKeygenMetric",
