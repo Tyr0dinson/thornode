@@ -587,7 +587,7 @@ func (s *XrpTestSuite) TestBroadcastTxTefPastSeqNotFoundRetries(c *C) {
 	submit := `{"result":{"engine_result":"tefPAST_SEQ","status":"success"}}`
 	notFound := `{"result":{"error":"txnNotFound","status":"error"}}`
 	client := s.xrpClientWithRPCByMethod(c, submit, notFound)
-	_, err := client.BroadcastTx(stypes.TxOutItem{Chain: common.XRPChain}, s.signedBlobBytes(c))
+	_, err := client.BroadcastTx([]stypes.TxOutItem{{Chain: common.XRPChain}}, s.signedBlobBytes(c))
 	c.Check(err, NotNil)
 	c.Check(errors.Is(err, stypes.ErrResignRequired), Equals, false, Commentf("tefPAST_SEQ+notfound must NOT re-sign (double-pay risk), got %v", err))
 }
@@ -605,7 +605,7 @@ func (s *XrpTestSuite) TestBroadcastTxValidatedFailedRetires(c *C) {
 	for _, code := range []string{"tecDST_TAG_NEEDED", "tecNO_PERMISSION", "tecNO_DST_INSUF_XRP", "tecUNFUNDED_PAYMENT"} {
 		client := s.xrpClientWithRPCByMethod(c, submitOK, `{"result":{"validated":true,"meta":{"TransactionResult":"`+code+`"},"hash":"ABC"}}`)
 		tx := stypes.TxOutItem{Chain: common.XRPChain}
-		hash, err := client.BroadcastTx(tx, s.signedBlobBytes(c))
+		hash, err := client.BroadcastTx([]stypes.TxOutItem{tx}, s.signedBlobBytes(c))
 		c.Check(errors.Is(err, chainclienttypes.ErrTxExpired), Equals, true, Commentf("%s: a validated tec* must retire the attempt, got %v", code, err))
 		c.Check(errors.Is(err, stypes.ErrResignRequired), Equals, false, Commentf("%s: a validated tec* must not ask for a re-sign", code))
 		c.Check(hash, Equals, "", Commentf("%s: a retired attempt reports no hash", code))
@@ -617,7 +617,7 @@ func (s *XrpTestSuite) TestBroadcastTxValidatedFailedRetires(c *C) {
 // sent — BroadcastTx returns its hash with no error and does not re-submit.
 func (s *XrpTestSuite) TestBroadcastTxValidatedSuccessCaches(c *C) {
 	client := s.xrpClientWithTxResponse(c, `{"result":{"validated":true,"meta":{"TransactionResult":"tesSUCCESS"},"hash":"ABC"}}`)
-	hash, err := client.BroadcastTx(stypes.TxOutItem{Chain: common.XRPChain}, s.signedBlobBytes(c))
+	hash, err := client.BroadcastTx([]stypes.TxOutItem{{Chain: common.XRPChain}}, s.signedBlobBytes(c))
 	c.Check(err, IsNil)
 	c.Check(hash != "", Equals, true)
 }
@@ -798,7 +798,7 @@ func (s *XrpTestSuite) TestBroadcastTxPostSubmitConfirm(c *C) {
 		submit := `{"result":{"engine_result":"` + tc.engineRes + `","status":"success"}}`
 		client := s.xrpClientWithSubmitThenConfirm(c, submit, notFound, tc.confirm)
 		tx := stypes.TxOutItem{Chain: common.XRPChain}
-		h, err := client.BroadcastTx(tx, s.signedBlobBytes(c))
+		h, err := client.BroadcastTx([]stypes.TxOutItem{tx}, s.signedBlobBytes(c))
 		c.Check(errors.Is(err, chainclienttypes.ErrTxExpired), Equals, tc.wantRetire,
 			Commentf("%s: want retire=%v, got err=%v", tc.name, tc.wantRetire, err))
 		c.Check(errors.Is(err, stypes.ErrResignRequired), Equals, false,
