@@ -2859,9 +2859,9 @@ type signCountChainClient struct {
 	signs int
 }
 
-func (c *signCountChainClient) SignTx(tai types.TxOutItem, height int64) ([]byte, []byte, *types.TxInItem, error) {
+func (c *signCountChainClient) SignTx(tais []types.TxOutItem, height int64) ([]byte, []byte, []*types.TxInItem, error) {
 	c.signs++
-	return c.MockChainClient.SignTx(tai, height)
+	return c.MockChainClient.SignTx(tais, height)
 }
 
 // The scanner can deliver an item at height H while the cached height is still
