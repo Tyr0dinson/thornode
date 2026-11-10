@@ -27,9 +27,10 @@ type SwapHandlerWithEmit interface {
 func NewInternalHandler(mgr Manager) cosmos.Handler {
 	return func(ctx cosmos.Context, msg cosmos.Msg) (*cosmos.Result, error) {
 		handlerMap := getInternalHandlerMapping(mgr)
-		h, ok := handlerMap[sdk.MsgTypeURL(msg)]
+		msgType := sdk.MsgTypeURL(msg)
+		h, ok := handlerMap[msgType]
 		if !ok {
-			errMsg := fmt.Sprintf("Unrecognized thorchain Msg type: %v", sdk.MsgTypeURL(msg))
+			errMsg := fmt.Sprintf("Unrecognized thorchain Msg type: %v", msgType)
 			return nil, cosmos.ErrUnknownRequest(errMsg)
 		}
 
@@ -40,12 +41,24 @@ func NewInternalHandler(mgr Manager) cosmos.Handler {
 		// The LUVI guard (luvi_guard.go) checks the pools the handler wrote and
 		// fails a user value flow that lowers their LP value beyond rounding.
 		cacheCtx, commit := ctx.CacheContext()
-		var res *cosmos.Result
-		err := runLuviGuarded(ctx, cacheCtx, mgr, msg, func(runCtx cosmos.Context) error {
-			var runErr error
-			res, runErr = h.Run(runCtx, msg)
-			return runErr
-		})
+		res, err := runTracedHandler(
+			cacheCtx,
+			mgr.Tracer(),
+			handlerTrace{
+				path:    pathInternal,
+				msg:     msg,
+				msgType: msgType,
+			},
+			func() (*cosmos.Result, error) {
+				var result *cosmos.Result
+				err := runLuviGuarded(ctx, cacheCtx, mgr, msg, func(runCtx cosmos.Context) error {
+					var runErr error
+					result, runErr = h.Run(runCtx, msg)
+					return runErr
+				})
+				return result, err
+			},
+		)
 		if err == nil {
 			// Success, commit the cached changes and events
 			commit()

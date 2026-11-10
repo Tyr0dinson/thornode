@@ -1,11 +1,14 @@
 package thorchain
 
 import (
+	"errors"
+
 	"cosmossdk.io/math"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/constants"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
+	kvTypes "gitlab.com/thorchain/thornode/v3/x/thorchain/keeper/types"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
@@ -22,6 +25,13 @@ func newVolumeMgr(
 	}
 }
 
+// isBaseLayerPool identifies the pool types exposed by /thorchain/pools.
+// Pools with no LP units are still tracked so their rolling volume remains
+// current if they become visible again.
+func isBaseLayerPool(asset common.Asset) bool {
+	return !asset.IsEmpty() && (asset.IsExternalL1Asset() || asset.IsTCY() || asset.IsWhitelisted())
+}
+
 func (vm *VolumeMgr) EndBlock(ctx cosmos.Context) error {
 	pools, err := vm.keeper.GetPools(ctx)
 	if err != nil {
@@ -33,8 +43,19 @@ func (vm *VolumeMgr) EndBlock(ctx cosmos.Context) error {
 	currentIndex := (timestamp / constants.VolumeBucketSeconds) % numBuckets
 
 	for _, pool := range pools {
+		// Volume is reported for base layer pools. Synthetic and derived pool
+		// records should not update the same rolling volume state.
+		if !isBaseLayerPool(pool.Asset) {
+			continue
+		}
+
 		volume, err := vm.keeper.GetVolume(ctx, pool.Asset)
 		if err != nil {
+			// A pool has no volume record until its first swap. This is expected,
+			// so only report errors that indicate an actual storage problem.
+			if errors.Is(err, kvTypes.ErrVolumeNotFound) {
+				continue
+			}
 			ctx.Logger().Error("fail to get volume", "asset", pool.Asset, "error", err)
 			continue
 		}

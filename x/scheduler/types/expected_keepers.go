@@ -2,6 +2,7 @@ package types
 
 import (
 	"context"
+	"time"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 )
@@ -12,4 +13,16 @@ type AccountKeeper interface {
 
 type WasmKeeper interface {
 	Execute(ctx sdk.Context, contractAddress, caller sdk.AccAddress, msg []byte, coins sdk.Coins) ([]byte, error)
+}
+
+type ContractTracer interface {
+	ContractTracingEnabled() bool
+	RecordContract(
+		ctx sdk.Context,
+		operation, contractAddress string,
+		codeID uint64,
+		payload []byte,
+		outcome string,
+		duration time.Duration,
+	)
 }

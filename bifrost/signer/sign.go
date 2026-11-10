@@ -1194,6 +1194,10 @@ func (s *Signer) signAndBroadcast(item TxOutStoreItem) ([]byte, *types.TxInItem,
 		s.logger.Error().Err(err).Msgf("fail to get block height")
 		return nil, nil, err
 	}
+	// The scanner reads the height uncached, so it can deliver this item while
+	// the cached height is still a block behind it. THORChain is at least at the
+	// item's height, and a signing halt that activates there must apply.
+	blockHeight = max(blockHeight, height)
 	signingTransactionPeriod, err := s.constantsProvider.GetInt64Value(blockHeight, constants.SigningTransactionPeriod)
 	s.logger.Debug().Msgf("signing transaction period:%d", signingTransactionPeriod)
 	if err != nil {
@@ -1366,7 +1370,9 @@ func (s *Signer) signAndBroadcast(item TxOutStoreItem) ([]byte, *types.TxInItem,
 		startKeySign := time.Now()
 		signedTx, checkpoint, observation, err = chain.SignTx(tx, height)
 		if err != nil {
-			if !errors.Is(err, chainclienttypes.ErrUnsupportedXMRDestination) {
+			if errors.Is(err, chainclienttypes.ErrTxPending) || errors.Is(err, tss.ErrNotSelectedForKeysign) {
+				s.logger.Debug().Err(err).Msg("signing transaction pending")
+			} else if !errors.Is(err, chainclienttypes.ErrUnsupportedXMRDestination) {
 				s.logger.Error().Err(err).Msg("fail to sign tx")
 			}
 			return checkpoint, nil, err
@@ -1598,7 +1604,11 @@ func (s *Signer) processTransaction(item TxOutStoreItem) {
 			}
 		}
 
-		s.logger.Error().Interface("tx", item.TxOutItem).Err(err).Msg("fail to sign and broadcast tx out store item")
+		if errors.Is(err, chainclienttypes.ErrTxPending) || errors.Is(err, tss.ErrNotSelectedForKeysign) {
+			s.logger.Debug().Interface("tx", item.TxOutItem).Err(err).Msg("retaining pending signing transaction")
+		} else {
+			s.logger.Error().Interface("tx", item.TxOutItem).Err(err).Msg("fail to sign and broadcast tx out store item")
+		}
 		cancel()
 		return
 		// The 'item' for loop should not be items[0],

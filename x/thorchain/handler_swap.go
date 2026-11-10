@@ -528,7 +528,14 @@ func (h SwapHandler) handleWithSwapResult(ctx cosmos.Context, msg MsgSwap) (*cos
 			return nil, cosmos.ZeroUint(), cosmos.ZeroUint(), err
 		}
 		handler := NewAddLiquidityHandler(h.mgr)
-		_, err = handler.Run(ctx, msg)
+		_, err = runTracedHandler(
+			ctx,
+			h.mgr.Tracer(),
+			handlerTrace{path: pathPostSwap, msg: msg},
+			func() (*cosmos.Result, error) {
+				return handler.Run(ctx, msg)
+			},
+		)
 		if err != nil {
 			ctx.Logger().Error("swap handler failed to add liquidity", "error", err)
 			return nil, cosmos.ZeroUint(), cosmos.ZeroUint(), err

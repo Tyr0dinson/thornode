@@ -7,208 +7,134 @@ import (
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
 )
 
 type Migrate20to21GaiaSuite struct{}
 
 var _ = Suite(&Migrate20to21GaiaSuite{})
 
-// Mainnet state at h28,297,751: vault ...jy4h books, GAIA.ATOM pool depths and the
-// vault's Hub balance (2,697.582015 ATOM, in 1e8).
-const (
-	gwVaultBooks = uint64(321_334_823_200)
-	gwPoolAsset  = uint64(7_899_731_887_692)
-	gwPoolRune   = uint64(21_220_555_008_924)
-	gwVaultHub   = uint64(269_758_201_500)
-	gwWritedown  = uint64(51_576_622_200)
-	// R·ΔA/(A−ΔA), rounded half-up.
-	gwRunePaired = uint64(139_457_555_508)
-	gwReserve    = uint64(25_000_000_00000000)
-)
-
-type gaiaWritedownFixture struct {
-	ctx    cosmos.Context
-	mgr    *Mgrs
-	pubKey common.PubKey
+// setReserveRune sets the Reserve module's RUNE balance to exactly amt.
+func setReserveRune(c *C, ctx cosmos.Context, k keeper.Keeper, amt uint64) {
+	target := cosmos.NewUint(amt)
+	bal := k.GetRuneBalanceOfModule(ctx, ReserveName)
+	switch {
+	case bal.GT(target):
+		excess := common.NewCoins(common.NewCoin(common.RuneAsset(), bal.Sub(target)))
+		c.Assert(k.SendFromModuleToAccount(ctx, ReserveName, GetRandomBech32Addr(), excess), IsNil)
+	case bal.LT(target):
+		FundModule(c, ctx, k, ReserveName, target.Sub(bal).Uint64())
+	}
+	c.Assert(k.GetRuneBalanceOfModule(ctx, ReserveName).Equal(target), Equals, true)
 }
 
-// setupGaiaWritedown20to21 seeds the state the write-down reads: the five observed
-// inbounds into vault ...jy4h, the vault's books, the GAIA.ATOM pool and module RUNE.
-func setupGaiaWritedown20to21(c *C, vaultBooks, poolRune, reserve uint64) gaiaWritedownFixture {
+func acctRune(ctx cosmos.Context, k keeper.Keeper, addr cosmos.AccAddress) uint64 {
+	return k.GetBalance(ctx, addr).AmountOf(common.RuneAsset().Native()).Uint64()
+}
+
+// The reimbursement debits the Reserve and credits tcso by exactly the hardcoded
+// amount, run only through its registered migration slot, and leaves the vault,
+// the GAIA.ATOM pool and Asgard untouched — the write-down is gone because the
+// top-up already restored the vault's backing.
+func (s *Migrate20to21GaiaSuite) TestReimburseCreditsTcso(c *C) {
+	const (
+		vaultAtom = uint64(819_582_000_000)
+		poolAsset = uint64(7_899_731_887_692)
+		poolRune  = uint64(21_220_555_008_924)
+	)
+
 	ctx, mgr := setupManagerForTest(c)
 	k := mgr.Keeper()
-	pubKey, err := common.NewPubKey(gaiaWritedownVault)
-	c.Assert(err, IsNil)
+	setReserveRune(c, ctx, k, (gaiaReimburseRune+tronRefundRune+ltcRefundRune)*2)
 
-	for _, in := range gaiaPhantomInbounds {
-		setGaiaWritedownInbound(c, ctx, mgr, in.txID, pubKey, in.amount)
-	}
-
-	vault := NewVault(1, ActiveVault, AsgardVault, pubKey, []string{common.GAIAChain.String()}, nil)
-	vault.AddFunds(common.NewCoins(common.NewCoin(common.ATOMAsset, cosmos.NewUint(vaultBooks))))
+	vaultKey := GetRandomPubKey()
+	vault := NewVault(1, ActiveVault, AsgardVault, vaultKey, []string{common.GAIAChain.String()}, nil)
+	vault.AddFunds(common.NewCoins(common.NewCoin(common.ATOMAsset, cosmos.NewUint(vaultAtom))))
 	c.Assert(k.SetVault(ctx, vault), IsNil)
 
 	pool := NewPool()
 	pool.Asset = common.ATOMAsset
 	pool.Status = PoolAvailable
-	pool.BalanceAsset = cosmos.NewUint(gwPoolAsset)
+	pool.BalanceAsset = cosmos.NewUint(poolAsset)
 	pool.BalanceRune = cosmos.NewUint(poolRune)
 	pool.LPUnits = cosmos.NewUint(12_407_276_441_639)
 	c.Assert(k.SetPool(ctx, pool), IsNil)
 
-	FundModule(c, ctx, k, AsgardName, poolRune)
-	// Set the Reserve to exactly the requested balance (the test manager pre-funds it).
-	target := cosmos.NewUint(reserve)
-	if bal := k.GetRuneBalanceOfModule(ctx, ReserveName); bal.GT(target) {
-		excess := common.NewCoins(common.NewCoin(common.RuneAsset(), bal.Sub(target)))
-		c.Assert(k.SendFromModuleToAccount(ctx, ReserveName, GetRandomBech32Addr(), excess), IsNil)
-	} else if bal.LT(target) {
-		FundModule(c, ctx, k, ReserveName, target.Sub(bal).Uint64())
-	}
-	c.Assert(k.GetRuneBalanceOfModule(ctx, ReserveName).Equal(target), Equals, true)
-	return gaiaWritedownFixture{ctx: ctx, mgr: mgr, pubKey: pubKey}
-}
-
-func setGaiaWritedownInbound(c *C, ctx cosmos.Context, mgr *Mgrs, txID string, pubKey common.PubKey, amount uint64) {
-	tx := common.NewTx(
-		common.TxID(txID),
-		"cosmos17axpg4pujs2g0ydf767gurdc5dq43qy99tya06",
-		"cosmos1h2aq97wafs7px4jnajnpleu0njaqmque3hgh4v",
-		common.NewCoins(common.NewCoin(common.ATOMAsset, cosmos.NewUint(amount))),
-		common.Gas{common.NewCoin(common.ATOMAsset, cosmos.NewUint(1))},
-		"",
-	)
-	voter := NewObservedTxVoter(tx.ID, nil)
-	voter.Tx = common.NewObservedTx(tx, 33_467_716, pubKey, 33_467_716)
-	mgr.Keeper().SetObservedTxInVoter(ctx, voter)
-}
-
-// gaiaWritedownState captures everything the write-down may move.
-type gaiaWritedownState struct {
-	vaultAtom, poolAsset, poolRune, reserve, asgard cosmos.Uint
-}
-
-func (f gaiaWritedownFixture) state(c *C) gaiaWritedownState {
-	k := f.mgr.Keeper()
-	vault, err := k.GetVault(f.ctx, f.pubKey)
+	asgardBefore := k.GetRuneBalanceOfModule(ctx, AsgardName)
+	recipient, err := cosmos.AccAddressFromBech32(gaiaReimburseRecipient)
 	c.Assert(err, IsNil)
-	pool, err := k.GetPool(f.ctx, common.ATOMAsset)
+	c.Assert(acctRune(ctx, k, recipient), Equals, uint64(0))
+
+	run, count := gaiaReimburseSlotRun(mgr)
+	c.Assert(count, Equals, 1)
+	c.Assert(run, NotNil)
+
+	reserveBefore := k.GetRuneBalanceOfModule(ctx, ReserveName)
+	c.Assert(run(ctx), IsNil)
+
+	// Reserve debited and tcso credited by exactly the three hardcoded amounts.
+	total := gaiaReimburseRune + tronRefundRune + ltcRefundRune
+	c.Check(reserveBefore.Sub(k.GetRuneBalanceOfModule(ctx, ReserveName)).Uint64(), Equals, total)
+	c.Check(acctRune(ctx, k, recipient), Equals, total)
+
+	// Vault ATOM, the GAIA.ATOM pool and Asgard are untouched (no write-down).
+	vaultAfter, err := k.GetVault(ctx, vaultKey)
 	c.Assert(err, IsNil)
-	return gaiaWritedownState{
-		vaultAtom: vault.GetCoin(common.ATOMAsset).Amount,
-		poolAsset: pool.BalanceAsset,
-		poolRune:  pool.BalanceRune,
-		reserve:   k.GetRuneBalanceOfModule(f.ctx, ReserveName),
-		asgard:    k.GetRuneBalanceOfModule(f.ctx, AsgardName),
+	c.Check(vaultAfter.GetCoin(common.ATOMAsset).Amount.Uint64(), Equals, vaultAtom, Commentf("vault moved"))
+	poolAfter, err := k.GetPool(ctx, common.ATOMAsset)
+	c.Assert(err, IsNil)
+	c.Check(poolAfter.BalanceAsset.Uint64(), Equals, poolAsset, Commentf("pool asset moved"))
+	c.Check(poolAfter.BalanceRune.Uint64(), Equals, poolRune, Commentf("pool rune moved"))
+	c.Check(k.GetRuneBalanceOfModule(ctx, AsgardName).Equal(asgardBefore), Equals, true, Commentf("asgard moved"))
+	for _, e := range ctx.EventManager().Events() {
+		c.Check(e.Type, Not(Equals), "pool_balance_change", Commentf("reimbursement emitted a pool event"))
 	}
 }
 
-func (f gaiaWritedownFixture) assertUnchanged(c *C, before gaiaWritedownState) {
-	after := f.state(c)
-	c.Check(after.vaultAtom.Equal(before.vaultAtom), Equals, true, Commentf("vault moved: %s -> %s", before.vaultAtom, after.vaultAtom))
-	c.Check(after.poolAsset.Equal(before.poolAsset), Equals, true, Commentf("pool asset moved"))
-	c.Check(after.poolRune.Equal(before.poolRune), Equals, true, Commentf("pool rune moved"))
-	c.Check(after.reserve.Equal(before.reserve), Equals, true, Commentf("reserve moved"))
-	c.Check(after.asgard.Equal(before.asgard), Equals, true, Commentf("asgard moved"))
-	for _, e := range f.ctx.EventManager().Events() {
-		c.Check(e.Type, Not(Equals), "pool_balance_change", Commentf("skipped write-down leaked an event"))
-	}
+// Soft-skip when the Reserve cannot cover the amount: returns nil, moves nothing.
+func (s *Migrate20to21GaiaSuite) TestReimburseSoftSkipsReserveShort(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	k := mgr.Keeper()
+	setReserveRune(c, ctx, k, gaiaReimburseRune-1)
+
+	recipient, err := cosmos.AccAddressFromBech32(gaiaReimburseRecipient)
+	c.Assert(err, IsNil)
+
+	run, _ := gaiaReimburseSlotRun(mgr)
+	reserveBefore := k.GetRuneBalanceOfModule(ctx, ReserveName)
+	c.Assert(run(ctx), IsNil)
+
+	c.Check(k.GetRuneBalanceOfModule(ctx, ReserveName).Equal(reserveBefore), Equals, true)
+	c.Check(acctRune(ctx, k, recipient), Equals, uint64(0))
 }
 
-func (s *Migrate20to21GaiaSuite) TestMigrate20to21WritesDownGaiaAtom(c *C) {
-	f := setupGaiaWritedown20to21(c, gwVaultBooks, gwPoolRune, gwReserve)
-	before := f.state(c)
+// reimburseTcso returns an error and moves nothing on an unparsable recipient,
+// so the migration abandons the whole batch.
+func (s *Migrate20to21GaiaSuite) TestReimburseTcsoErrorsOnBadRecipient(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	k := mgr.Keeper()
+	setReserveRune(c, ctx, k, gaiaReimburseRune*2)
 
-	c.Assert(NewMigrator(f.mgr).Migrate20to21(f.ctx), IsNil)
-
-	after := f.state(c)
-	// The vault's books drop by the five credited inbounds and land 5 uatom under its
-	// real Hub balance, so the solvency check passes.
-	c.Check(after.vaultAtom.Uint64(), Equals, gwVaultBooks-gwWritedown)
-	c.Check(after.vaultAtom.LTE(cosmos.NewUint(gwVaultHub)), Equals, true)
-	c.Check(after.poolAsset.Uint64(), Equals, gwPoolAsset-gwWritedown)
-	c.Check(after.poolRune.Uint64(), Equals, gwPoolRune+gwRunePaired)
-	c.Check(before.reserve.Sub(after.reserve).Uint64(), Equals, gwRunePaired)
-	c.Check(after.asgard.Sub(before.asgard).Uint64(), Equals, gwRunePaired)
-
-	// The constant product is preserved to within one unit of the remaining depth.
-	k0 := cosmos.NewUint(gwPoolAsset).Mul(cosmos.NewUint(gwPoolRune))
-	k1 := after.poolAsset.Mul(after.poolRune)
-	drift := k1.Sub(k0)
-	if k1.LT(k0) {
-		drift = k0.Sub(k1)
-	}
-	c.Check(drift.LT(after.poolAsset), Equals, true, Commentf("k drift %s", drift))
-
-	found := false
-	for _, e := range f.ctx.EventManager().Events() {
-		if e.Type != "pool_balance_change" {
-			continue
-		}
-		for _, a := range e.Attributes {
-			if a.Key == "reason" && a.Value == "gaia_atom_writedown_20to21" {
-				found = true
-			}
-		}
-	}
-	c.Check(found, Equals, true, Commentf("no pool_balance_change event for the write-down"))
+	reserveBefore := k.GetRuneBalanceOfModule(ctx, ReserveName)
+	c.Assert(reimburseTcso(ctx, k, "thor1notavalidaddress", gaiaReimburseRune, gaiaReimburseTopUpTx, "GAIA vault solvency top-up"), NotNil)
+	c.Check(k.GetRuneBalanceOfModule(ctx, ReserveName).Equal(reserveBefore), Equals, true)
 }
 
-func (s *Migrate20to21GaiaSuite) TestMigrate20to21SkipsOnInboundDrift(c *C) {
-	other := GetRandomPubKey()
-	for name, mutate := range map[string]func(c *C, f gaiaWritedownFixture){
-		"amount": func(c *C, f gaiaWritedownFixture) {
-			setGaiaWritedownInbound(c, f.ctx, f.mgr, gaiaPhantomInbounds[2].txID, f.pubKey, gaiaPhantomInbounds[2].amount+1)
-		},
-		"vault": func(c *C, f gaiaWritedownFixture) {
-			setGaiaWritedownInbound(c, f.ctx, f.mgr, gaiaPhantomInbounds[4].txID, other, gaiaPhantomInbounds[4].amount)
-		},
-		"missing": func(c *C, f gaiaWritedownFixture) {
-			f.mgr.Keeper().SetObservedTxInVoter(f.ctx, NewObservedTxVoter(common.TxID(gaiaPhantomInbounds[0].txID), nil))
-		},
-	} {
-		f := setupGaiaWritedown20to21(c, gwVaultBooks, gwPoolRune, gwReserve)
-		mutate(c, f)
-		before := f.state(c)
-		c.Assert(NewMigrator(f.mgr).Migrate20to21(f.ctx), IsNil, Commentf(name))
-		f.assertUnchanged(c, before)
-	}
-}
+// All-or-none: if the Reserve covers the first two payments but not the third,
+// the cached context is abandoned and tcso receives nothing.
+func (s *Migrate20to21GaiaSuite) TestReimburseAtomicAllOrNone(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	k := mgr.Keeper()
+	// one short of the full total: enough for GAIA + TRON, not the LTC payment
+	setReserveRune(c, ctx, k, gaiaReimburseRune+tronRefundRune+ltcRefundRune-1)
 
-func (s *Migrate20to21GaiaSuite) TestMigrate20to21SkipsWhenVaultHoldsLess(c *C) {
-	f := setupGaiaWritedown20to21(c, gwWritedown-1, gwPoolRune, gwReserve)
-	before := f.state(c)
-	c.Assert(NewMigrator(f.mgr).Migrate20to21(f.ctx), IsNil)
-	f.assertUnchanged(c, before)
-}
+	recipient, err := cosmos.AccAddressFromBech32(gaiaReimburseRecipient)
+	c.Assert(err, IsNil)
+	reserveBefore := k.GetRuneBalanceOfModule(ctx, ReserveName)
 
-func (s *Migrate20to21GaiaSuite) TestMigrate20to21SkipsWhenReserveShort(c *C) {
-	f := setupGaiaWritedown20to21(c, gwVaultBooks, gwPoolRune, gwRunePaired-1)
-	before := f.state(c)
-	c.Assert(NewMigrator(f.mgr).Migrate20to21(f.ctx), IsNil)
-	f.assertUnchanged(c, before)
-}
+	run, _ := gaiaReimburseSlotRun(mgr)
+	c.Assert(run(ctx), IsNil)
 
-func (s *Migrate20to21GaiaSuite) TestMigrate20to21ClampsRunePairing(c *C) {
-	// A pool pushed toward RUNE (3x the RUNE depth) needs more than the cap.
-	poolRune := gwPoolRune * 3
-	f := setupGaiaWritedown20to21(c, gwVaultBooks, poolRune, gwReserve)
-	before := f.state(c)
-
-	c.Assert(NewMigrator(f.mgr).Migrate20to21(f.ctx), IsNil)
-
-	after := f.state(c)
-	c.Check(after.vaultAtom.Uint64(), Equals, gwVaultBooks-gwWritedown)
-	c.Check(after.poolAsset.Uint64(), Equals, gwPoolAsset-gwWritedown)
-	c.Check(after.poolRune.Uint64(), Equals, poolRune+gaiaWritedownMaxRune)
-	c.Check(before.reserve.Sub(after.reserve).Uint64(), Equals, gaiaWritedownMaxRune)
-}
-
-// The pinned inbounds must add up to the documented write-down.
-func (s *Migrate20to21GaiaSuite) TestMigrate20to21PinnedWritedownTotal(c *C) {
-	total := uint64(0)
-	for _, in := range gaiaPhantomInbounds {
-		total += in.amount
-	}
-	c.Check(total, Equals, gwWritedown)
+	c.Check(k.GetRuneBalanceOfModule(ctx, ReserveName).Equal(reserveBefore), Equals, true, Commentf("Reserve debited despite the batch aborting"))
+	c.Check(acctRune(ctx, k, recipient), Equals, uint64(0), Commentf("tcso credited despite the batch aborting"))
 }

@@ -117,6 +117,32 @@ func (s *ThorchainBlockScanSuite) TestGetHeight(c *C) {
 	c.Assert(height, Equals, int64(42))
 }
 
+// mockUncachedBlockScanBridge also serves the uncached height, as the real
+// bridge does.
+type mockUncachedBlockScanBridge struct {
+	mockBlockScanBridge
+	uncachedHeight int64
+}
+
+func (b *mockUncachedBlockScanBridge) GetBlockHeightUncached() (int64, error) {
+	return b.uncachedHeight, nil
+}
+
+func (s *ThorchainBlockScanSuite) TestGetHeight_PrefersUncached(c *C) {
+	m := GetMetricForTest(c)
+	storage, err := NewSignerStore("", config.LevelDBOptions{}, "")
+	c.Assert(err, IsNil)
+	defer storage.Close()
+
+	bridge := &mockUncachedBlockScanBridge{mockBlockScanBridge: mockBlockScanBridge{blockHeight: 42}, uncachedHeight: 43}
+	bs, err := NewThorchainBlockScan(config.BifrostBlockScannerConfiguration{}, storage, bridge, m, pubkeymanager.NewMockPoolAddressValidator())
+	c.Assert(err, IsNil)
+
+	height, err := bs.GetHeight()
+	c.Assert(err, IsNil)
+	c.Assert(height, Equals, int64(43))
+}
+
 func (s *ThorchainBlockScanSuite) TestGetHeight_Error(c *C) {
 	m := GetMetricForTest(c)
 	storage, err := NewSignerStore("", config.LevelDBOptions{}, "")

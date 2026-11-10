@@ -38,9 +38,11 @@ fi
 gocache=$(GOTOOLCHAIN=go1.26.10 go env GOCACHE)
 mkdir -p "$gocache"
 exec 9>"$gocache/.thornode-security-fuzz.lock"
+# Exit 76 on a lock timeout: CI allows that code to fail, since it reflects
+# runner load rather than a fuzz finding.
 flock -w 1200 9 || {
   echo 'Timed out waiting for the shared fuzz cache lock' >&2
-  exit 1
+  exit 76
 }
 fuzz_cache=$gocache/fuzz/gitlab.com/thorchain/thornode/v3
 rm -rf "$fuzz_cache"

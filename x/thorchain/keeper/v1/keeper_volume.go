@@ -87,7 +87,7 @@ func (k KVStore) GetVolume(ctx cosmos.Context, pool common.Asset) (Volume, error
 	pool = pool.GetLayer1Asset()
 	found, err := k.getVolume(ctx, k.GetKey(prefixVolume, pool.String()), &record)
 	if !found {
-		return Volume{}, fmt.Errorf("Total volume not found: pool=%s", pool.String())
+		return Volume{}, fmt.Errorf("%w: pool=%s", types.ErrVolumeNotFound, pool.String())
 	}
 	return record, err
 }

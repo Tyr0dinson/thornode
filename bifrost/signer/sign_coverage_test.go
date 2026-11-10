@@ -2842,3 +2842,54 @@ func (s *SignCoverageSuite) TestStorageRemove_ClosedDB(c *C) {
 	err = storage.Remove(item)
 	c.Assert(err, NotNil)
 }
+
+// signCountChainClient counts SignTx calls.
+type signCountChainClient struct {
+	*MockChainClient
+	signs int
+}
+
+func (c *signCountChainClient) SignTx(tai types.TxOutItem, height int64) ([]byte, []byte, *types.TxInItem, error) {
+	c.signs++
+	return c.MockChainClient.SignTx(tai, height)
+}
+
+// The scanner can deliver an item at height H while the cached height is still
+// H-1; a HALTSIGNING that activates at H must still stop it.
+func (s *SignCoverageSuite) TestSignAndBroadcast_HaltSigningAtItemHeight(c *C) {
+	vaultPubKey, _ := common.NewPubKey(pubkeymanager.MockPubkey)
+	for halt, wantSigns := range map[int64]int{100: 0, 101: 1} {
+		bridge := &mockSignBridge{
+			blockHeight: 99,
+			constants: map[string]int64{
+				constants.SigningTransactionPeriod.String(): 300,
+				constants.ChurnInterval.String():            43200,
+			},
+			mimirs: map[string]int64{"HALTSIGNING": halt},
+		}
+		client := &signCountChainClient{MockChainClient: &MockChainClient{}}
+		storage, err := NewSignerStore("", config.LevelDBOptions{}, "")
+		c.Assert(err, IsNil)
+		sign := &Signer{
+			storage:           storage,
+			logger:            log.With().Str("module", "test").Logger(),
+			cfg:               config.Bifrost{Signer: config.BifrostSignerConfiguration{RescheduleBufferBlocks: 100}},
+			thorchainBridge:   bridge,
+			constantsProvider: NewConstantsProvider(bridge),
+			chains:            map[common.Chain]chainclients.ChainClient{common.ETHChain: client},
+			pubkeyMgr:         pubkeymanager.NewMockPoolAddressValidator(),
+		}
+		item := TxOutStoreItem{
+			TxOutItem: types.TxOutItem{
+				Chain:       common.ETHChain,
+				VaultPubKey: vaultPubKey,
+				ToAddress:   "0x90f2b1ae50e6018230e90a33f98c7844a0ab635a",
+			},
+			Height: 100,
+		}
+		_, _, err = sign.signAndBroadcast(item)
+		c.Assert(err, IsNil)
+		c.Assert(client.signs, Equals, wantSigns, Commentf("halt %d", halt))
+		c.Assert(storage.Close(), IsNil)
+	}
+}

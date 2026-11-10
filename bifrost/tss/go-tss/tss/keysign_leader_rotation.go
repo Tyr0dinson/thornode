@@ -25,7 +25,7 @@ const (
 	// consensus-synchronized switch is mandatory. The gate must therefore be the first
 	// release that ships this code: a lower gate would switch nodes on one by one as they
 	// upgrade from a release that already meets it. Mirrors frostJoinRotationVersion.
-	keysignLeaderRotationVersion = "3.21.2"
+	keysignLeaderRotationVersion = "3.22.0"
 	// keysignJoinAttemptDomain separates GG20 join-attempt digests from the FROST ones so
 	// the two protocols can never collide on a shared msgID.
 	keysignJoinAttemptDomain = "thorchain-keysign-join-attempt-v1"
