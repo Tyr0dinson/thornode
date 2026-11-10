@@ -442,7 +442,7 @@ func (s *XrpTestSuite) TestSignTxSignsValidatedSequence(c *C) {
 			InHash:      "hash",
 		}
 
-		signedTx, _, txIn, signErr := client.SignTx(txOut, 100)
+		signedTx, _, txIn, signErr := client.SignTx([]stypes.TxOutItem{txOut}, 100)
 		c.Assert(signErr, IsNil)
 		c.Check(signedTx, NotNil)
 		c.Check(txIn, NotNil)
@@ -684,7 +684,7 @@ func (s *XrpTestSuite) TestSigningMetadataInFlightGate(c *C) {
 	c.Check(errors.Is(err, chainclienttypes.ErrTxPending), Equals, true, Commentf("in-flight outbound must defer, got %v", err))
 	// The SignTx half of the gate contract: it surfaces ErrTxPending with NO signature and
 	// NO checkpoint (the gate returns before any keysign), so the signer retains the item.
-	signedTx, checkpoint, txIn, sErr := client.SignTx(mkTx(vault), 100)
+	signedTx, checkpoint, txIn, sErr := client.SignTx([]stypes.TxOutItem{mkTx(vault)}, 100)
 	c.Check(errors.Is(sErr, chainclienttypes.ErrTxPending), Equals, true, Commentf("SignTx must surface ErrTxPending, got %v", sErr))
 	c.Check(signedTx, IsNil, Commentf("no signature on a deferred sign"))
 	c.Check(checkpoint, IsNil, Commentf("no checkpoint on a deferred sign"))
