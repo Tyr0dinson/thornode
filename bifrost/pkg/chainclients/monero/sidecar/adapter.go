@@ -235,3 +235,62 @@ func spentRefsToTSS(refs []SpentRef) []tssp.FrostSpentOutputRef {
 	}
 	return out
 }
+
+// Compile-time proof the production adapter satisfies the go-tss verification
+// interfaces, so below-quorum FROST result adoption works in prod and not only
+// against test doubles.
+var (
+	_ tssp.FrostTxExistsClient     = (*FrostAdapter)(nil)
+	_ tssp.FrostVaultOutputsClient = (*FrostAdapter)(nil)
+)
+
+// FrostTxExists reports whether the local Monero daemon holds the transaction
+// (pool or chain), via the sidecar's authenticated chain tx-exists endpoint.
+// It honours the caller's context so a drained signing attempt returns promptly.
+func (a *FrostAdapter) FrostTxExists(ctx context.Context, txHash string) (bool, error) {
+	if a == nil || a.client == nil {
+		return false, fmt.Errorf("frost adapter is not initialized")
+	}
+	if ctx == nil {
+		ctx = a.ctx
+	}
+	return a.client.TxExistsContext(ctx, txHash)
+}
+
+// FrostVaultOutputs lists the outputs the local sidecar tracks for the vault,
+// spent ones included, mapped to the go-tss view. State falls back to the
+// boolean spent flag when the sidecar does not set an explicit state string.
+func (a *FrostAdapter) FrostVaultOutputs(ctx context.Context, vaultPubKey string) ([]tssp.FrostVaultOutput, error) {
+	if a == nil || a.client == nil {
+		return nil, fmt.Errorf("frost adapter is not initialized")
+	}
+	if ctx == nil {
+		ctx = a.ctx
+	}
+	outputs, err := a.client.OutputsContext(ctx, vaultPubKey)
+	if err != nil {
+		return nil, err
+	}
+	if len(outputs) == 0 {
+		return nil, nil
+	}
+	result := make([]tssp.FrostVaultOutput, 0, len(outputs))
+	for _, o := range outputs {
+		state := o.State
+		if state == "" {
+			if o.Spent {
+				state = "spent"
+			} else {
+				state = "unspent"
+			}
+		}
+		result = append(result, tssp.FrostVaultOutput{
+			TxHash:      o.TxHash,
+			OutputIndex: o.OutputIndex,
+			Amount:      o.Amount,
+			KeyImage:    o.KeyImage,
+			State:       state,
+		})
+	}
+	return result, nil
+}

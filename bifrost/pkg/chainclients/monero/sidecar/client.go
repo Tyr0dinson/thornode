@@ -1359,9 +1359,15 @@ func (c *Client) Addresses(vaultPubKey string) ([]string, error) {
 }
 
 func (c *Client) Outputs(vaultPubKey string) ([]Output, error) {
+	return c.OutputsContext(context.Background(), vaultPubKey)
+}
+
+// OutputsContext is Outputs with caller-supplied cancellation, for callers (the
+// FROST adapter) bound to a context deadline.
+func (c *Client) OutputsContext(ctx context.Context, vaultPubKey string) ([]Output, error) {
 	var out Outputs
 	path := c.outputsPath + "/" + url.PathEscape(vaultPubKey)
-	if err := c.callGet(path, &out); err != nil {
+	if err := c.callGetContext(ctx, path, &out); err != nil {
 		return nil, fmt.Errorf("fail to call outputs endpoint: %w", err)
 	}
 	return out.Outputs, nil
@@ -1461,6 +1467,12 @@ func validateChainBlockHeight(requestedHeight int64, block ChainBlock) (ChainBlo
 }
 
 func (c *Client) TxExists(txHash string) (bool, error) {
+	return c.TxExistsContext(context.Background(), txHash)
+}
+
+// TxExistsContext is TxExists with caller-supplied cancellation, for callers
+// (the FROST adapter) bound to a context deadline.
+func (c *Client) TxExistsContext(ctx context.Context, txHash string) (bool, error) {
 	normalized := strings.TrimSpace(txHash)
 	if normalized == "" {
 		return false, fmt.Errorf("tx hash is empty")
@@ -1468,7 +1480,7 @@ func (c *Client) TxExists(txHash string) (bool, error) {
 
 	var out TxExistsResp
 	path := fmt.Sprintf("%s/%s/exists", c.chainTxPath, url.PathEscape(normalized))
-	if err := c.callGet(path, &out); err != nil {
+	if err := c.callGetContext(ctx, path, &out); err != nil {
 		return false, fmt.Errorf("fail to call chain tx-exists endpoint: %w", err)
 	}
 	return out.Exists, nil
