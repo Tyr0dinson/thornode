@@ -184,6 +184,9 @@ func (GenesisTestSuite) TestGenesisNodeAccountSlashPointsRoundTrip(c *C) {
 	srcMgr.Keeper().SetNodeAccountSlashPoints(srcCtx, retainedNode.NodeAddress, 33)
 	srcMgr.Keeper().SetNodeAccountSlashPoints(srcCtx, orphanAddress, 44)
 	srcMgr.Keeper().SetNodeAccountSlashPoints(srcCtx, zeroAddress, 0)
+	// A zero balance under an unparseable key is residue and must be skipped
+	// before key parsing rather than vetoing the export.
+	srcCtx.KVStore(keyThorchain).Set([]byte("slash//not-an-address"), []byte{})
 
 	exported := ExportGenesis(srcCtx, srcMgr.Keeper())
 	c.Assert(len(exported.NodeAccountSlashPoints), Equals, 2)

@@ -578,20 +578,22 @@ func exportNodeAccountSlashPoints(ctx cosmos.Context, k keeper.Keeper) []NodeAcc
 	iterator := k.GetNodeAccountSlashPointsIterator(ctx)
 	defer iterator.Close()
 	for ; iterator.Valid(); iterator.Next() {
+		value := types.ProtoInt64{}
+		if err := k.Cdc().Unmarshal(iterator.Value(), &value); err != nil {
+			panic(fmt.Errorf("failed to unmarshal node account slash points %q: %w", iterator.Key(), err))
+		}
+		points := value.GetValue()
+		// Zero balances are nonfunctional residue. Drop them before key parsing so
+		// a harmless legacy zero record cannot veto an otherwise valid export.
+		if points == 0 {
+			continue
+		}
 		address, err := nodeAccountAddressFromStoreKey(iterator.Key())
 		if err != nil {
 			panic(err)
 		}
-		value := types.ProtoInt64{}
-		if err := k.Cdc().Unmarshal(iterator.Value(), &value); err != nil {
-			panic(fmt.Errorf("failed to unmarshal node account slash points for %s: %w", address, err))
-		}
-		points := value.GetValue()
 		if points < 0 {
 			panic(fmt.Errorf("node account slash-point balance for %s is negative: %d", address, points))
-		}
-		if points == 0 {
-			continue
 		}
 		key := string(address)
 		if _, ok := seen[key]; ok {
@@ -609,6 +611,11 @@ func exportNodeAccountSlashPoints(ctx cosmos.Context, k keeper.Keeper) []NodeAcc
 	return records
 }
 
+// exportNodeAccountJails exports active jail sentences with their absolute
+// release heights unchanged. This assumes a height-preserving export, where the
+// chain resumes at the next block. A zero-height export (forZeroHeight) does not
+// rebase these heights, so each imported sentence would last until its original
+// absolute release height on the restarted chain.
 func exportNodeAccountJails(ctx cosmos.Context, k keeper.Keeper) []types.Jail {
 	records := make([]types.Jail, 0)
 	seen := make(map[string]struct{})
