@@ -861,15 +861,14 @@ func (e *ETHScanner) headerFrom(pin string, height int64) (*etypes.Header, error
 	return e.client.HeaderByNumber(endpoints.PinContext(ctx, pin), big.NewInt(height))
 }
 
-// blockFrom reads a block from the endpoint named by pin ("" for unpinned), with
-// getRPCBlock's error mapping.
+// blockFrom reads a block a reorg plan rescans (below the scanned height) from the
+// endpoint named by pin ("" for unpinned). A block the witness does not serve is an
+// ordinary error, never ErrUnavailableBlock as in getRPCBlock: that one asks the scan
+// loop to retry the scanned height quietly and never skip it.
 func (e *ETHScanner) blockFrom(pin string, height int64) (*etypes.Block, error) {
 	ctx, cancel := e.getContext()
 	defer cancel()
 	block, err := e.client.BlockByNumber(endpoints.PinContext(ctx, pin), big.NewInt(height))
-	if err == ethereum.NotFound {
-		return nil, btypes.ErrUnavailableBlock
-	}
 	if err != nil {
 		return nil, fmt.Errorf("fail to fetch block: %w", err)
 	}

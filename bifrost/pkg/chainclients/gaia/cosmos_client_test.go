@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -901,4 +902,53 @@ func (s *CosmosTestSuite) TestMempoolLookupCountsAnUnverifiedEndpoint(c *C) {
 	// once proven to be on another network it no longer counts
 	client.EndpointManager().Disable("ghost", "identity")
 	c.Assert(client.mempoolLookup(context.Background(), txHash), Equals, signercache.LookupNotFound)
+}
+
+// committingTxClient answers GetTx "not found" for the first calls on each endpoint and
+// found afterwards: a transaction committed while verification ran.
+type committingTxClient struct {
+	mockTxServiceClient
+	mu        *sync.Mutex
+	calls     map[string]int
+	foundFrom int // the call (1-based) on each endpoint from which the tx is committed
+}
+
+func (p committingTxClient) GetTx(ctx context.Context, _ *txtypes.GetTxRequest, _ ...grpc.CallOption) (*txtypes.GetTxResponse, error) {
+	name, _ := endpoints.PinnedEndpoint(ctx)
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.calls[name]++
+	if p.calls[name] >= p.foundFrom {
+		return &txtypes.GetTxResponse{}, nil
+	}
+	return nil, status.Error(codes.NotFound, "tx not found")
+}
+
+// A transaction in the mempool while every endpoint is asked for it on chain, and
+// committed before the mempools are read, is in neither answer. Verification asks the
+// chain once more before it reports the transaction absent (which would let it be
+// signed again), so a commit in between reads as found.
+func TestGaiaVerifyBroadcastRechecksTheChainAfterAnEmptyMempool(t *testing.T) {
+	m, err := endpoints.NewManager(common.GAIAChain, []config.ChainEndpointConfig{
+		{Name: "a", RPCHost: "http://a", CosmosGRPCHost: "a:9090", Priority: 1},
+		{Name: "b", RPCHost: "http://b", CosmosGRPCHost: "b:9090", Priority: 2},
+	}, config.BifrostChainConfiguration{}.GetFailoverConfig(), zerolog.Nop())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range m.Entries() {
+		e.SetIdentity("cosmoshub-4")
+	}
+	emptyMempool := fakeCometRPC{res: &cmtcoretypes.ResultUnconfirmedTxs{Txs: []cmttypes.Tx{}, Total: 0}}
+	txc := committingTxClient{mu: &sync.Mutex{}, calls: map[string]int{}, foundFrom: 2}
+	cc := CosmosClient{txClient: txc, cometRPC: emptyMempool, endpointMgr: m}
+	if got := cc.verifyBroadcast("ABCD"); got != signercache.LookupFound {
+		t.Fatalf("got %v, want %v", got, signercache.LookupFound)
+	}
+	// never committed: still absent after the second look
+	txc = committingTxClient{mu: &sync.Mutex{}, calls: map[string]int{}, foundFrom: 99}
+	cc = CosmosClient{txClient: txc, cometRPC: emptyMempool, endpointMgr: m}
+	if got := cc.verifyBroadcast("ABCD"); got != signercache.LookupNotFound {
+		t.Fatalf("got %v, want %v", got, signercache.LookupNotFound)
+	}
 }

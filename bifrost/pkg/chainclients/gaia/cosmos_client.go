@@ -658,9 +658,24 @@ func (c *CosmosClient) verifyBroadcast(sig string) signercache.LookupResult {
 		c.endpointMgr.NoteAmbiguousVerification(0)
 		return signercache.LookupAmbiguous // absence needs at least one witness
 	}
-	// the fixed budget has to cover up to two pinned round trips per endpoint
-	// (GetTx here, then UnconfirmedTxs in mempoolLookup), so bound each one
-	perEndpoint := evm.VerificationBudget(ctx, 2*len(candidates))
+	// the fixed budget has to cover up to three pinned round trips per endpoint
+	// (GetTx, UnconfirmedTxs in mempoolLookup, GetTx again), so bound each one
+	perEndpoint := evm.VerificationBudget(ctx, 3*len(candidates))
+	if res := c.getTxOnCandidates(ctx, sig, candidates, perEndpoint); res != signercache.LookupNotFound {
+		return res
+	}
+	if res := c.mempoolLookupOnCandidates(ctx, sig, candidates, unverified, perEndpoint); res != signercache.LookupNotFound {
+		return res
+	}
+	// every endpoint is read in turn, so a transaction in a mempool during the first
+	// pass can be committed (and leave the mempools) before the second: ask the chain
+	// once more before reporting it absent, which would let it be signed again
+	return c.getTxOnCandidates(ctx, sig, candidates, perEndpoint)
+}
+
+// getTxOnCandidates asks every candidate for the committed transaction: Found when one
+// has it, Ambiguous when one could not answer, NotFound when every one said so.
+func (c *CosmosClient) getTxOnCandidates(ctx context.Context, sig string, candidates []*endpoints.Entry, perEndpoint time.Duration) signercache.LookupResult {
 	var failed []string
 	for _, e := range candidates {
 		ectx, cancel := context.WithTimeout(endpoints.PinContext(ctx, e.Name), perEndpoint)
@@ -677,7 +692,7 @@ func (c *CosmosClient) verifyBroadcast(sig string) signercache.LookupResult {
 		c.endpointMgr.NoteAmbiguousVerification(0, failed...)
 		return signercache.LookupAmbiguous
 	}
-	return c.mempoolLookupOnCandidates(ctx, sig, candidates, unverified, perEndpoint)
+	return signercache.LookupNotFound
 }
 
 // SignTx sign the the given TxArrayItem

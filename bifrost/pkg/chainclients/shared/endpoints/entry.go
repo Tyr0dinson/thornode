@@ -47,6 +47,9 @@ type Entry struct {
 	nextRecoveryAt   time.Time
 	nonHealthySince  time.Time
 	integrityEvicted bool
+	// checkAnswered: the last recovery check of this out-of-service entry got an answer
+	// (it passed, or failed on lag), so it is reachable and votes between its checks
+	checkAnswered bool
 }
 
 // Snapshot is a read-only copy of an Entry's state for status output.
@@ -142,6 +145,22 @@ func (e *Entry) markUnhealthyLocked() {
 	e.probeStrikes = 0
 	e.integrityInRun = false
 	e.recoveryChecks = 0
+	e.checkAnswered = false
+}
+
+// SetCheckAnswered records whether the entry's last recovery check got an answer.
+func (e *Entry) SetCheckAnswered(answered bool) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.checkAnswered = answered
+}
+
+// CheckAnswered reports whether the entry's last recovery check got an answer since it
+// left service.
+func (e *Entry) CheckAnswered() bool {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.checkAnswered
 }
 
 // MarkUnhealthy moves a Healthy or Recovering entry to Unhealthy directly (used at

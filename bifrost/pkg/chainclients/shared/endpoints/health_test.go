@@ -1,9 +1,11 @@
 package endpoints_test
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -1437,4 +1439,583 @@ func (s *HealthSuite) TestUnreachableOutOfServiceEndpointIsNotAskedBetweenChecks
 	asked.Store(0)
 	m.Cycle(ctxBg()) // not due
 	c.Assert(asked.Load(), Equals, int32(0))
+}
+
+// When the healthy endpoints are spread over more than the integrity depth (here two on
+// another fork report heights far ahead of an honest healthy one), the hashes are
+// compared at the lower median of every voter, out-of-service ones included: the pair
+// cannot leave the honest endpoints out of the vote and strike the healthy one for lag.
+// Nothing here depends on THORChain's height.
+func (s *HealthSuite) TestEndpointsBelowAPairAheadStillVote(c *C) {
+	cfg := healthCfg()
+	cfg.IntegrityCheckDepth = 20
+	cfg.ErrorThreshold = 1
+	honest := func(name string) *fakeProbe {
+		return &fakeProbe{name: name, height: 100, identity: "g", hashes: map[int64]string{80: "H"}}
+	}
+	forked := func(name string) *fakeProbe {
+		return &fakeProbe{name: name, height: 200, identity: "g", hashes: map[int64]string{80: "X", 180: "X"}}
+	}
+	m, ps := newHealthMgr(c, cfg, nil, honest("h1"), honest("h2"), honest("h3"), forked("x"), forked("y"))
+	c.Assert(m.Bootstrap(ctxBg(), ps), IsNil)
+	m.Entry("h2").MarkUnhealthy(endpoints.ErrorKindHTTP)
+	m.Entry("h3").MarkUnhealthy(endpoints.ErrorKindHTTP)
+	m.Cycle(ctxBg())
+	c.Assert(m.Entry("h1").State(), Equals, endpoints.StateHealthy)
+	c.Assert(m.Entry("h1").Snapshot().ProbeStrikes, Equals, 0)
+	for _, name := range []string{"h1", "x", "y"} {
+		c.Assert(m.Entry(name).IntegrityEvicted(), Equals, false, Commentf(name))
+	}
+}
+
+// Out-of-service endpoints far behind do not lower the compared height while every
+// healthy endpoint has reached it, whatever THORChain's height (which can trail the tip
+// by many blocks on a quiet chain): a fork among the healthy endpoints is still found.
+func (s *HealthSuite) TestLaggersDoNotBlockAMajorityWhateverThorchainsHeight(c *C) {
+	cfg := healthCfg()
+	cfg.IntegrityCheckDepth = 20
+	cfg.ErrorThreshold = 1
+	a := &fakeProbe{name: "a", height: 1000, identity: "g", hashes: map[int64]string{480: "H", 980: "H"}}
+	b := &fakeProbe{name: "b", height: 1000, identity: "g", hashes: map[int64]string{480: "H", 980: "H"}}
+	x := &fakeProbe{name: "x", height: 1000, identity: "g", hashes: map[int64]string{480: "H", 980: "X"}}
+	behind := func(name string) *fakeProbe {
+		return &fakeProbe{name: name, height: 500, identity: "g", hashes: map[int64]string{480: "H"}}
+	}
+	m, ps := newHealthMgr(c, cfg, nil, a, b, x, behind("r1"), behind("r2"), behind("r3"))
+	c.Assert(m.Bootstrap(ctxBg(), ps), IsNil)
+	for _, name := range []string{"r1", "r2", "r3"} {
+		m.Entry(name).MarkUnhealthy(endpoints.ErrorKindLag)
+	}
+	m.SetReferenceHeight(func() (int64, error) { return 500, nil }) // trailing the tip
+	m.Cycle(ctxBg())
+	c.Assert(m.Entry("x").IntegrityEvicted(), Equals, true)
+	c.Assert(m.Entry("a").State(), Equals, endpoints.StateHealthy)
+	c.Assert(m.Entry("b").State(), Equals, endpoints.StateHealthy)
+}
+
+// A healthy endpoint lagging behind the majority by more than the depth spreads the
+// healthy heights, so the hashes are compared at every voter's lower median; when they
+// agree there, the lagging endpoint is still struck for lag against the majority's tip.
+func (s *HealthSuite) TestLaggingHealthyEndpointIsStillStruckWhenTheHeightsSpread(c *C) {
+	cfg := healthCfg()
+	cfg.IntegrityCheckDepth = 20
+	cfg.ErrorThreshold = 1
+	at := func(name string, height int64) *fakeProbe {
+		return &fakeProbe{name: name, height: height, identity: "g", hashes: map[int64]string{950: "H", 980: "H"}}
+	}
+	m, ps := newHealthMgr(c, cfg, nil, at("a", 1000), at("b", 1000), at("d", 970), at("r1", 970), at("r2", 970))
+	c.Assert(m.Bootstrap(ctxBg(), ps), IsNil)
+	m.Entry("r1").MarkUnhealthy(endpoints.ErrorKindLag)
+	m.Entry("r2").MarkUnhealthy(endpoints.ErrorKindLag)
+	m.Cycle(ctxBg())
+	c.Assert(m.Entry("d").State(), Equals, endpoints.StateUnhealthy)
+	c.Assert(m.Entry("a").State(), Equals, endpoints.StateHealthy)
+	c.Assert(m.Entry("b").State(), Equals, endpoints.StateHealthy)
+	c.Assert(m.Entry("r1").State(), Equals, endpoints.StateUnhealthy)
+}
+
+// An endpoint already cooling down still votes, but a rate-limited answer to its hash
+// read does not extend its cooldown: it is asked every cycle only for the vote.
+func (s *HealthSuite) TestRateLimitedHashReadDoesNotExtendACooldown(c *C) {
+	cfg := healthCfg()
+	cfg.IntegrityCheckDepth = 5
+	a := &fakeProbe{name: "a", height: 100, identity: "g", hashes: map[int64]string{95: "H"}}
+	b := &fakeProbe{name: "b", height: 100, identity: "g", hashes: map[int64]string{95: "H"}}
+	d := &rateLimitedHashProbe{fakeProbe{name: "d", height: 100, identity: "g"}}
+	m, err := endpoints.NewManager(common.BTCChain, eps("a", "b", "d"), cfg, zerolog.Nop())
+	c.Assert(err, IsNil)
+	c.Assert(m.Bootstrap(ctxBg(), []endpoints.Probe{a, b, d}), IsNil)
+	var mu sync.Mutex
+	now := time.Now()
+	m.Entry("d").SetClock(func() time.Time { mu.Lock(); defer mu.Unlock(); return now })
+	advance := func(by time.Duration) { mu.Lock(); now = now.Add(by); mu.Unlock() }
+	m.RecordRateLimited("d") // cooling down for RateLimitBackoff (30s)
+	advance(20 * time.Second)
+	m.Cycle(ctxBg()) // d votes from its last height; its hash read is rate limited again
+	c.Assert(m.Entry("d").InCooldown(), Equals, true)
+	advance(15 * time.Second) // past the end of the original cooldown
+	c.Assert(m.Entry("d").InCooldown(), Equals, false)
+}
+
+// A recovering endpoint whose height probe is rate limited in the cycle its hash vote
+// shows a minority hash is quarantined in that cycle, not one later.
+func (s *HealthSuite) TestRateLimitedRecoveringEndpointWithAMinorityHashIsQuarantined(c *C) {
+	cfg := healthCfg()
+	cfg.IntegrityCheckDepth = 5
+	cfg.ErrorThreshold = 1
+	at := func(name, hash string) *fakeProbe {
+		return &fakeProbe{name: name, height: 100, identity: "g", hashes: map[int64]string{95: hash}}
+	}
+	x := at("x", "H")
+	m, ps := newHealthMgr(c, cfg, nil, at("a", "H"), at("b", "H"), x)
+	c.Assert(m.Bootstrap(ctxBg(), ps), IsNil)
+	m.Entry("x").MarkUnhealthy(endpoints.ErrorKindLag)
+	m.Cycle(ctxBg()) // x's first recovery check passes: recovering
+	c.Assert(m.Entry("x").State(), Equals, endpoints.StateRecovering)
+	x.mu.Lock()
+	x.hashes[95] = "X"
+	x.err = fmt.Errorf("http 429: %w", endpoints.ErrRateLimited)
+	x.mu.Unlock()
+	m.Cycle(ctxBg())
+	c.Assert(m.Entry("x").IntegrityEvicted(), Equals, true)
+}
+
+// Huginn's case with real recovery intervals: the honest endpoints out of service fail
+// their recovery checks (behind the pair's tip) but answer them, so between checks
+// they still vote from the height they last reported: the pair never becomes a
+// majority and never strikes the honest healthy endpoint.
+func (s *HealthSuite) TestPairAheadIsBlockedBetweenRecoveryChecks(c *C) {
+	cfg := healthCfg()
+	cfg.IntegrityCheckDepth = 20
+	cfg.ErrorThreshold = 2
+	cfg.RecoveryCheckInterval = time.Hour
+	honest := func(name string) *fakeProbe {
+		return &fakeProbe{name: name, height: 100, identity: "g", hashes: map[int64]string{80: "H"}}
+	}
+	forked := func(name string) *fakeProbe {
+		return &fakeProbe{name: name, height: 200, identity: "g", hashes: map[int64]string{80: "X", 180: "X"}}
+	}
+	m, ps := newHealthMgr(c, cfg, nil, honest("h1"), honest("h2"), honest("h3"), forked("x"), forked("y"))
+	c.Assert(m.Bootstrap(ctxBg(), ps), IsNil)
+	m.Entry("h2").MarkUnhealthy(endpoints.ErrorKindHTTP)
+	m.Entry("h3").MarkUnhealthy(endpoints.ErrorKindHTTP)
+	for i := 0; i < 5; i++ {
+		m.Cycle(ctxBg())
+	}
+	c.Assert(m.Entry("h1").State(), Equals, endpoints.StateHealthy)
+	c.Assert(m.Entry("h1").Snapshot().ProbeStrikes, Equals, 0)
+	c.Assert(m.Entry("h1").IntegrityEvicted(), Equals, false)
+}
+
+// When the healthy heights spread, the compared height never goes below the lowest
+// healthy endpoint's level: laggers far behind (out of service) cannot pull it down to a
+// height where a fork among the healthy endpoints still agrees, so the fork is found in
+// the same cycle.
+func (s *HealthSuite) TestSpreadHeightsAreComparedNoLowerThanTheLowestHealthy(c *C) {
+	cfg := healthCfg()
+	cfg.IntegrityCheckDepth = 20
+	cfg.ErrorThreshold = 1
+	honest := func(name string, height int64) *fakeProbe {
+		return &fakeProbe{name: name, height: height, identity: "g", hashes: map[int64]string{480: "H", 950: "H", 980: "H"}}
+	}
+	x := &fakeProbe{name: "x", height: 1000, identity: "g", hashes: map[int64]string{480: "H", 950: "X", 980: "X"}} // forked after 480
+	behind := func(name string) *fakeProbe {
+		return &fakeProbe{name: name, height: 500, identity: "g", hashes: map[int64]string{480: "H"}}
+	}
+	m, ps := newHealthMgr(c, cfg, nil, honest("a", 1000), honest("b", 1000), x, honest("e", 970),
+		behind("r1"), behind("r2"), behind("r3"), behind("r4"))
+	c.Assert(m.Bootstrap(ctxBg(), ps), IsNil)
+	for _, name := range []string{"r1", "r2", "r3", "r4"} {
+		m.Entry(name).MarkUnhealthy(endpoints.ErrorKindLag)
+	}
+	m.Cycle(ctxBg())
+	c.Assert(m.Entry("x").IntegrityEvicted(), Equals, true)
+}
+
+// When the healthy heights spread, the compared height never rises above the healthy
+// endpoints' own level: out-of-service endpoints far ahead (here on another fork)
+// cannot move the check to a height only they have reached and then strike every
+// healthy endpoint for lag.
+func (s *HealthSuite) TestSpreadHeightsAreNeverComparedAboveTheHealthyEndpoints(c *C) {
+	cfg := healthCfg()
+	cfg.IntegrityCheckDepth = 20
+	cfg.ErrorThreshold = 1
+	honest := func(name string, height int64) *fakeProbe {
+		return &fakeProbe{name: name, height: height, identity: "g", hashes: map[int64]string{880: "H", 980: "H"}}
+	}
+	ahead := func(name string) *fakeProbe {
+		return &fakeProbe{name: name, height: 1100, identity: "g", hashes: map[int64]string{880: "X", 980: "X", 1080: "X"}}
+	}
+	m, ps := newHealthMgr(c, cfg, nil, honest("a", 1000), honest("b", 1000), honest("e", 900),
+		ahead("r1"), ahead("r2"), ahead("r3"), ahead("r4"))
+	c.Assert(m.Bootstrap(ctxBg(), ps), IsNil)
+	for _, name := range []string{"r1", "r2", "r3", "r4"} {
+		m.Entry(name).MarkUnhealthy(endpoints.ErrorKindHTTP)
+	}
+	m.Cycle(ctxBg())
+	for _, name := range []string{"a", "b", "e"} {
+		c.Assert(m.Entry(name).State(), Equals, endpoints.StateHealthy, Commentf(name))
+		c.Assert(m.Entry(name).Snapshot().ProbeStrikes, Equals, 0, Commentf(name))
+	}
+}
+
+// The lower vote (healthy heights spread) only withholds a decision: where the vote at
+// the healthy median's height is a tie, agreement lower down (here below a recent fork
+// at 975) does not make a majority, so the pair ahead strikes nobody.
+func (s *HealthSuite) TestALowerVoteNeverMakesAMajority(c *C) {
+	cfg := healthCfg()
+	cfg.IntegrityCheckDepth = 20
+	cfg.MaxBlockLag = 10
+	cfg.ErrorThreshold = 1
+	honest := func(name string, height int64) *fakeProbe {
+		return &fakeProbe{name: name, height: height, identity: "g", hashes: map[int64]string{940: "H", 950: "H", 980: "H"}}
+	}
+	forked := func(name string) *fakeProbe { // forked at 975
+		return &fakeProbe{name: name, height: 1030, identity: "g", hashes: map[int64]string{940: "H", 950: "H", 980: "X", 1010: "X"}}
+	}
+	m, ps := newHealthMgr(c, cfg, nil, honest("a", 1000), honest("b", 1000), forked("x"), forked("y"), honest("e", 970),
+		honest("o1", 960), honest("o2", 960), honest("o3", 960))
+	c.Assert(m.Bootstrap(ctxBg(), ps), IsNil)
+	for _, name := range []string{"o1", "o2", "o3"} {
+		m.Entry(name).MarkUnhealthy(endpoints.ErrorKindLag)
+	}
+	m.Cycle(ctxBg())
+	for _, name := range []string{"a", "b", "e"} {
+		c.Assert(m.Entry(name).State(), Equals, endpoints.StateHealthy, Commentf(name))
+		c.Assert(m.Entry(name).Snapshot().ProbeStrikes, Equals, 0, Commentf(name))
+	}
+}
+
+// The lower vote never clears a quarantine: q, forked after 950, matches there but not
+// at the healthy median's height, so it stays quarantined.
+func (s *HealthSuite) TestALowerVoteNeverClearsAQuarantine(c *C) {
+	cfg := healthCfg()
+	cfg.IntegrityCheckDepth = 20
+	cfg.MaxBlockLag = 10
+	cfg.ErrorThreshold = 5
+	honest := func(name string, height int64) *fakeProbe {
+		return &fakeProbe{name: name, height: height, identity: "g", hashes: map[int64]string{950: "H", 980: "H"}}
+	}
+	q := &fakeProbe{name: "q", height: 1000, identity: "g", hashes: map[int64]string{950: "H", 980: "X"}}
+	m, ps := newHealthMgr(c, cfg, nil, honest("a", 1000), honest("b", 1000), honest("e", 970), q, honest("o1", 960))
+	c.Assert(m.Bootstrap(ctxBg(), ps), IsNil)
+	m.Entry("o1").MarkUnhealthy(endpoints.ErrorKindLag)
+	m.Entry("q").MarkUnhealthy(endpoints.ErrorKindIntegrity)
+	for i := 0; i < 3; i++ {
+		m.Cycle(ctxBg())
+	}
+	c.Assert(m.Entry("q").IntegrityEvicted(), Equals, true)
+	c.Assert(m.Entry("q").State(), Equals, endpoints.StateUnhealthy)
+}
+
+// The lower vote does not delay finding a fork among the healthy endpoints: x, forked
+// after 950, is quarantined in the first cycle, as at the healthy median's height alone.
+func (s *HealthSuite) TestALowerVoteDoesNotDelayFindingAFork(c *C) {
+	cfg := healthCfg()
+	cfg.IntegrityCheckDepth = 20
+	cfg.MaxBlockLag = 10
+	cfg.ErrorThreshold = 1
+	honest := func(name string, height int64) *fakeProbe {
+		return &fakeProbe{name: name, height: height, identity: "g", hashes: map[int64]string{950: "H", 980: "H"}}
+	}
+	x := &fakeProbe{name: "x", height: 1000, identity: "g", hashes: map[int64]string{950: "H", 980: "X"}}
+	m, ps := newHealthMgr(c, cfg, nil, honest("a", 1000), honest("b", 1000), x, honest("e", 970), honest("o1", 960), honest("o2", 960))
+	c.Assert(m.Bootstrap(ctxBg(), ps), IsNil)
+	m.Entry("o1").MarkUnhealthy(endpoints.ErrorKindLag)
+	m.Entry("o2").MarkUnhealthy(endpoints.ErrorKindLag)
+	m.Cycle(ctxBg())
+	c.Assert(m.Entry("x").IntegrityEvicted(), Equals, true)
+}
+
+// A lower vote that gets too few answers (providers without that older block) withholds
+// nothing: the majority at the healthy median's height stands and the fork is found.
+func (s *HealthSuite) TestALowerVoteWithoutAnswersWithholdsNothing(c *C) {
+	cfg := healthCfg()
+	cfg.IntegrityCheckDepth = 20
+	cfg.MaxBlockLag = 10
+	cfg.ErrorThreshold = 1
+	recent := func(name, hash string) *fakeProbe { // keeps only recent blocks
+		return &fakeProbe{name: name, height: 1000, identity: "g", hashes: map[int64]string{980: hash}}
+	}
+	lagger := func(name string) *fakeProbe {
+		return &fakeProbe{name: name, height: 960, identity: "g", hashes: map[int64]string{}}
+	}
+	m, ps := newHealthMgr(c, cfg, nil, recent("a", "H"), recent("b", "H"), recent("x", "X"),
+		&fakeProbe{name: "e", height: 970, identity: "g", hashes: map[int64]string{}},
+		lagger("o1"), lagger("o2"), lagger("o3"))
+	c.Assert(m.Bootstrap(ctxBg(), ps), IsNil)
+	for _, name := range []string{"o1", "o2", "o3"} {
+		m.Entry(name).MarkUnhealthy(endpoints.ErrorKindLag)
+	}
+	m.Cycle(ctxBg())
+	c.Assert(m.Entry("x").IntegrityEvicted(), Equals, true)
+}
+
+// A lower vote without two healthy answers withholds nothing even when a quarantined
+// endpoint is re-checked there: q, which matched the majority above, is not "another
+// hash" because no healthy endpoint could give the older block to compare it with.
+func (s *HealthSuite) TestALowerVoteWithOnlyARecheckWithholdsNothing(c *C) {
+	cfg := healthCfg()
+	cfg.IntegrityCheckDepth = 20
+	cfg.MaxBlockLag = 10
+	cfg.ErrorThreshold = 1
+	recent := func(name, hash string) *fakeProbe { // keeps only recent blocks
+		return &fakeProbe{name: name, height: 1000, identity: "g", hashes: map[int64]string{980: hash}}
+	}
+	lagger := func(name string) *fakeProbe {
+		return &fakeProbe{name: name, height: 960, identity: "g", hashes: map[int64]string{}}
+	}
+	q := &fakeProbe{name: "q", height: 1000, identity: "g", hashes: map[int64]string{950: "H", 980: "H"}}
+	m, ps := newHealthMgr(c, cfg, nil, recent("a", "H"), recent("b", "H"), recent("x", "X"),
+		&fakeProbe{name: "e", height: 970, identity: "g", hashes: map[int64]string{}},
+		lagger("o1"), lagger("o2"), lagger("o3"), q)
+	c.Assert(m.Bootstrap(ctxBg(), ps), IsNil)
+	for _, name := range []string{"o1", "o2", "o3"} {
+		m.Entry(name).MarkUnhealthy(endpoints.ErrorKindLag)
+	}
+	m.Entry("q").MarkUnhealthy(endpoints.ErrorKindIntegrity)
+	m.Cycle(ctxBg())
+	c.Assert(m.Entry("x").IntegrityEvicted(), Equals, true)
+	c.Assert(m.Entry("q").State(), Equals, endpoints.StateRecovering)
+}
+
+type countingRateLimitedHashProbe struct {
+	fakeProbe
+	calls atomic.Int32
+}
+
+func (p *countingRateLimitedHashProbe) HashAt(context.Context, int64) (string, error) {
+	p.calls.Add(1)
+	return "", fmt.Errorf("http 429: %w", endpoints.ErrRateLimited)
+}
+
+// An endpoint whose hash read was rate limited is not asked again by the lower vote in
+// the same cycle.
+func (s *HealthSuite) TestALowerVoteDoesNotAskARateLimitedEndpointAgain(c *C) {
+	cfg := healthCfg()
+	cfg.IntegrityCheckDepth = 20
+	cfg.MaxBlockLag = 10
+	cfg.ErrorThreshold = 5
+	honest := func(name string, height int64) *fakeProbe {
+		return &fakeProbe{name: name, height: height, identity: "g", hashes: map[int64]string{950: "H", 980: "H"}}
+	}
+	limited := &countingRateLimitedHashProbe{fakeProbe: fakeProbe{name: "l", height: 1000, identity: "g"}}
+	m, err := endpoints.NewManager(common.BTCChain, eps("l", "a", "b", "e", "o1", "o2"), cfg, zerolog.Nop())
+	c.Assert(err, IsNil)
+	c.Assert(m.Bootstrap(ctxBg(), []endpoints.Probe{
+		limited, honest("a", 1000), honest("b", 1000), honest("e", 970), honest("o1", 960), honest("o2", 960),
+	}), IsNil)
+	m.Entry("o1").MarkUnhealthy(endpoints.ErrorKindLag)
+	m.Entry("o2").MarkUnhealthy(endpoints.ErrorKindLag)
+	m.Cycle(ctxBg())
+	c.Assert(limited.calls.Load(), Equals, int32(1))
+}
+
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
+// The lower vote names no endpoint as holding another hash: it decides nothing about
+// them (o1, out of service, differs only below), so nothing is logged at error level.
+func (s *HealthSuite) TestALowerVoteLogsNoEndpointAsDisagreeing(c *C) {
+	cfg := healthCfg()
+	cfg.IntegrityCheckDepth = 20
+	cfg.MaxBlockLag = 10
+	cfg.ErrorThreshold = 5
+	honest := func(name string, height int64) *fakeProbe {
+		return &fakeProbe{name: name, height: height, identity: "g", hashes: map[int64]string{950: "H", 980: "H"}}
+	}
+	o1 := &fakeProbe{name: "o1", height: 960, identity: "g", hashes: map[int64]string{950: "X"}}
+	logs := &syncBuffer{}
+	m, err := endpoints.NewManager(common.BTCChain, eps("a", "b", "e", "o1", "o2"), cfg, zerolog.New(logs))
+	c.Assert(err, IsNil)
+	c.Assert(m.Bootstrap(ctxBg(), []endpoints.Probe{honest("a", 1000), honest("b", 1000), honest("e", 970), o1, honest("o2", 960)}), IsNil)
+	m.Entry("o1").MarkUnhealthy(endpoints.ErrorKindLag)
+	m.Entry("o2").MarkUnhealthy(endpoints.ErrorKindLag)
+	m.Cycle(ctxBg())
+	c.Assert(strings.Contains(logs.String(), "disagrees with majority"), Equals, false, Commentf(logs.String()))
+	c.Assert(m.Entry("o1").IntegrityEvicted(), Equals, false)
+}
+
+func hashRange(lo, hi int64, hash string) map[int64]string {
+	out := make(map[int64]string, hi-lo+1)
+	for h := lo; h <= hi; h++ {
+		out[h] = hash
+	}
+	return out
+}
+
+// On a chain that moves more than the depth between recovery checks, the height an
+// out-of-service endpoint last reported falls below the lower vote's: it is asked
+// anyway (it has moved on with the chain), so the pair ahead is still blocked.
+func (s *HealthSuite) TestOutOfServiceEndpointsBlockAPairAheadAfterTheChainMovesOn(c *C) {
+	cfg := healthCfg()
+	cfg.IntegrityCheckDepth = 20
+	cfg.ErrorThreshold = 2
+	cfg.RecoveryCheckInterval = time.Hour
+	honest := func(name string) *fakeProbe {
+		return &fakeProbe{name: name, height: 100, identity: "g", hashes: hashRange(1, 400, "H")}
+	}
+	forked := func(name string) *fakeProbe {
+		return &fakeProbe{name: name, height: 200, identity: "g", hashes: hashRange(1, 500, "X")}
+	}
+	h1, h2, h3, x, y := honest("h1"), honest("h2"), honest("h3"), forked("x"), forked("y")
+	m, ps := newHealthMgr(c, cfg, nil, h1, h2, h3, x, y)
+	c.Assert(m.Bootstrap(ctxBg(), ps), IsNil)
+	m.Entry("h2").MarkUnhealthy(endpoints.ErrorKindHTTP)
+	m.Entry("h3").MarkUnhealthy(endpoints.ErrorKindHTTP)
+	m.Cycle(ctxBg()) // h2 and h3 answer their check at 100
+	for i := int64(1); i <= 4; i++ {
+		for _, p := range []*fakeProbe{h1, h2, h3} {
+			p.set(100+50*i, nil)
+		}
+		x.set(200+50*i, nil)
+		y.set(200+50*i, nil)
+		m.Cycle(ctxBg())
+		c.Assert(m.Entry("h1").State(), Equals, endpoints.StateHealthy, Commentf("cycle %d", i))
+		c.Assert(m.Entry("h1").Snapshot().ProbeStrikes, Equals, 0, Commentf("cycle %d", i))
+	}
+}
+
+type countingHashProbe struct {
+	fakeProbe
+	calls atomic.Int32
+}
+
+func (p *countingHashProbe) HashAt(ctx context.Context, h int64) (string, error) {
+	p.calls.Add(1)
+	return p.fakeProbe.HashAt(ctx, h)
+}
+
+// The lower vote does not ask an endpoint whose check failed or was rate limited
+// earlier in the same cycle: r1's check is rate limited (it still votes between checks
+// from its last answer) and r2's fails while it recovers (the vote at the healthy
+// median's height still asks it from its last height, as before).
+func (s *HealthSuite) TestALowerVoteDoesNotAskAnEndpointWhoseCheckFailedThisCycle(c *C) {
+	cfg := healthCfg()
+	cfg.IntegrityCheckDepth = 20
+	cfg.MaxBlockLag = 10
+	cfg.ErrorThreshold = 5
+	honest := func(name string, height int64) *fakeProbe {
+		return &fakeProbe{name: name, height: height, identity: "g", hashes: map[int64]string{950: "H", 980: "H"}}
+	}
+	r1 := &countingHashProbe{fakeProbe: *honest("r1", 900)}
+	r2 := &countingHashProbe{fakeProbe: *honest("r2", 1000)}
+	m, err := endpoints.NewManager(common.BTCChain, eps("a", "b", "e", "o1", "o2", "r1", "r2"), cfg, zerolog.Nop())
+	c.Assert(err, IsNil)
+	c.Assert(m.Bootstrap(ctxBg(), []endpoints.Probe{
+		honest("a", 1000), honest("b", 1000), honest("e", 970), honest("o1", 960), honest("o2", 960), r1, r2,
+	}), IsNil)
+	for _, name := range []string{"o1", "o2", "r1", "r2"} {
+		m.Entry(name).MarkUnhealthy(endpoints.ErrorKindLag)
+	}
+	m.Cycle(ctxBg())
+	c.Assert(m.Entry("r1").State(), Equals, endpoints.StateUnhealthy)
+	c.Assert(m.Entry("r1").CheckAnswered(), Equals, true)
+	c.Assert(m.Entry("r2").State(), Equals, endpoints.StateRecovering)
+	r1.set(0, fmt.Errorf("http 429: %w", endpoints.ErrRateLimited))
+	r2.set(0, down)
+	r1.calls.Store(0)
+	r2.calls.Store(0)
+	m.Cycle(ctxBg())
+	c.Assert(r1.calls.Load(), Equals, int32(0))
+	c.Assert(r2.calls.Load(), Equals, int32(1))
+}
+
+type deadlineAtProbe struct {
+	*fakeProbe
+	at int64
+}
+
+func (p deadlineAtProbe) HashAt(ctx context.Context, h int64) (string, error) {
+	if h == p.at {
+		return "", context.DeadlineExceeded
+	}
+	return p.fakeProbe.HashAt(ctx, h)
+}
+
+// A lower vote that runs out of the cycle's time (every read there fails) withholds
+// nothing: the minority hash the vote above found still quarantines x.
+func (s *HealthSuite) TestALowerVoteThatRunsOutOfTimeWithholdsNothing(c *C) {
+	cfg := healthCfg()
+	cfg.IntegrityCheckDepth = 20
+	cfg.ErrorThreshold = 1
+	names := []string{"a", "b", "x", "r1", "r2", "r3", "r4"}
+	probes := []endpoints.Probe{
+		deadlineAtProbe{&fakeProbe{name: "a", height: 1000, identity: "g", hashes: map[int64]string{480: "H", 980: "H"}}, 480},
+		deadlineAtProbe{&fakeProbe{name: "b", height: 1000, identity: "g", hashes: map[int64]string{480: "H", 980: "H"}}, 480},
+		deadlineAtProbe{&fakeProbe{name: "x", height: 1000, identity: "g", hashes: map[int64]string{480: "H", 980: "X"}}, 480},
+	}
+	for _, name := range names[3:] {
+		probes = append(probes, deadlineAtProbe{&fakeProbe{name: name, height: 500, identity: "g", hashes: map[int64]string{480: "H"}}, 480})
+	}
+	m, err := endpoints.NewManager(common.BTCChain, eps(names...), cfg, zerolog.Nop())
+	c.Assert(err, IsNil)
+	c.Assert(m.Bootstrap(ctxBg(), probes), IsNil)
+	for _, name := range names[3:] {
+		m.Entry(name).MarkUnhealthy(endpoints.ErrorKindLag)
+	}
+	m.Cycle(ctxBg())
+	c.Assert(m.Entry("x").IntegrityEvicted(), Equals, true)
+	c.Assert(m.Entry("a").State(), Equals, endpoints.StateHealthy)
+	c.Assert(m.Entry("b").State(), Equals, endpoints.StateHealthy)
+}
+
+// Endpoints that come back behind with a hash a healthy endpoint contradicts recover
+// against their own tip only when they outvote the others: an even split (a forked
+// pair returning against an honest pair) leaves them held back by the healthy tip.
+func (s *HealthSuite) TestReturningEndpointsThatDoNotOutvoteTheOthersAreHeldBack(c *C) {
+	cfg := healthCfg()
+	cfg.IntegrityCheckDepth = 20
+	cfg.ErrorThreshold = 1
+	honest := func(name string) *fakeProbe {
+		return &fakeProbe{name: name, height: 300, identity: "g", hashes: map[int64]string{80: "H", 280: "H"}}
+	}
+	forked := func(name string) *fakeProbe {
+		return &fakeProbe{name: name, height: 100, identity: "g", hashes: map[int64]string{80: "X"}}
+	}
+	m, ps := newHealthMgr(c, cfg, nil, honest("a"), honest("b"), forked("x"), forked("y"))
+	c.Assert(m.Bootstrap(ctxBg(), ps), IsNil)
+	m.Entry("x").MarkUnhealthy(endpoints.ErrorKindHTTP)
+	m.Entry("y").MarkUnhealthy(endpoints.ErrorKindHTTP)
+	for i := 0; i < cfg.MinRecoveryChecks+1; i++ {
+		m.Cycle(ctxBg())
+	}
+	for _, name := range []string{"x", "y"} {
+		c.Assert(m.Entry(name).State(), Not(Equals), endpoints.StateHealthy, Commentf(name))
+	}
+	for _, name := range []string{"a", "b"} {
+		c.Assert(m.Entry(name).State(), Equals, endpoints.StateHealthy, Commentf(name))
+	}
+}
+
+// Returning endpoints outvote the others only by a strict majority of every voter, not
+// only of those that answered: three forked endpoints coming back against three honest
+// ones, one of which cannot give its hash, are held back.
+func (s *HealthSuite) TestReturningHalfDoesNotOutvoteAnHonestEndpointThatCannotAnswer(c *C) {
+	cfg := healthCfg()
+	cfg.IntegrityCheckDepth = 20
+	cfg.MaxBlockLag = 10
+	cfg.ErrorThreshold = 2
+	cfg.MinRecoveryChecks = 3
+	honest := func(name string) *fakeProbe {
+		return &fakeProbe{name: name, height: 1000, identity: "g", hashes: map[int64]string{940: "H", 980: "H"}}
+	}
+	forked := func(name string) *fakeProbe {
+		return &fakeProbe{name: name, height: 960, identity: "g", hashes: map[int64]string{940: "K"}}
+	}
+	names := []string{"h1", "h2", "h3", "k1", "k2", "k3"}
+	probes := []endpoints.Probe{
+		honest("h1"), honest("h2"), &errHashProbe{fakeProbe{name: "h3", height: 1000, identity: "g"}},
+		forked("k1"), forked("k2"), forked("k3"),
+	}
+	m, err := endpoints.NewManager(common.BTCChain, eps(names...), cfg, zerolog.Nop())
+	c.Assert(err, IsNil)
+	c.Assert(m.Bootstrap(ctxBg(), probes), IsNil)
+	for _, name := range names[3:] {
+		m.Entry(name).MarkUnhealthy(endpoints.ErrorKindHTTP)
+	}
+	for i := 0; i < 8; i++ {
+		m.Cycle(ctxBg())
+	}
+	for _, name := range names[3:] {
+		c.Assert(m.Entry(name).State(), Not(Equals), endpoints.StateHealthy, Commentf(name))
+	}
+	for _, name := range names[:2] {
+		c.Assert(m.Entry(name).IntegrityEvicted(), Equals, false, Commentf(name))
+		c.Assert(m.Entry(name).State(), Equals, endpoints.StateHealthy, Commentf(name))
+	}
 }

@@ -818,3 +818,74 @@ func (s *UnstuckTestSuite) TestFailedReceiptMustBeOnTheScannedFork(c *C) {
 	err = plan(failedReceiptWitnessAt(c, s.server.URL, tx, from, 150, ecommon.Hash{0x96}), nil)
 	c.Assert(err, ErrorMatches, ".*failed receipt is in block 150 .*, not the witness's block at that height.*")
 }
+
+// A block the reorg plan must rescan that the witness serves the header of but not the
+// block itself fails the plan with an ordinary error marked ErrReorgUnresolved, not
+// ErrUnavailableBlock: that one asks the scan loop to retry the scanned height quietly
+// and never skip it, so a single endpoint in that state would hold the scanner with no
+// log and no stall skip-ahead.
+func (s *UnstuckTestSuite) TestRescanBlockMissingOnTheWitnessIsAnUnresolvedReorg(c *C) {
+	config.Init()
+	tipJSON, _ := reorgTipFor(reorgBlockJSON)
+	// headers are served, the full block at the rescanned height is not
+	node := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		body, _ := io.ReadAll(req.Body)
+		var rpcReq struct {
+			Method string            `json:"method"`
+			ID     json.RawMessage   `json:"id"`
+			Params []json.RawMessage `json:"params"`
+		}
+		_ = json.Unmarshal(body, &rpcReq)
+		rw.Header().Set("Content-Type", "application/json")
+		answer := func(result string) {
+			_, _ = rw.Write([]byte(`{"jsonrpc":"2.0","id":` + string(rpcReq.ID) + `,"result":` + result + `}`))
+		}
+		switch {
+		case rpcReq.Method == "eth_getTransactionByHash":
+			answer("null")
+		case rpcReq.Method == "eth_getBlockByNumber" && isTipRequest(rpcReq.Params):
+			answer(tipJSON)
+		case rpcReq.Method == "eth_getBlockByNumber" && len(rpcReq.Params) > 1 && string(rpcReq.Params[1]) == "true":
+			answer("null")
+		case rpcReq.Method == "eth_getBlockByNumber":
+			answer(reorgBlockJSON)
+		default:
+			resp, err := http.Post(s.server.URL+req.URL.Path, "application/json", bytes.NewReader(body))
+			if err != nil {
+				http.Error(rw, err.Error(), http.StatusBadGateway)
+				return
+			}
+			defer func() { _ = resp.Body.Close() }()
+			rw.WriteHeader(resp.StatusCode)
+			_, _ = io.Copy(rw, resp.Body)
+		}
+	}))
+	defer node.Close()
+	pubkeyMgr, err := pubkeymanager.NewPubKeyManager(s.bridge, s.m)
+	c.Assert(err, IsNil)
+	e, err := NewClient(s.thorKeys, config.BifrostChainConfiguration{
+		ChainID: common.ETHChain,
+		RPCHost: node.URL,
+		BlockScanner: config.BifrostBlockScannerConfiguration{
+			ChainID:            common.ETHChain,
+			StartBlockHeight:   1,
+			HTTPRequestTimeout: time.Second * 10,
+			GasCacheBlocks:     40,
+			Concurrency:        1,
+			GasPriceResolution: 10_000_000_000,
+			FixedGasRate:       10_000_000_000,
+		},
+	}, nil, s.bridge, s.m, pubkeyMgr, thorclient.NewPoolMgr(s.bridge))
+	c.Assert(err, IsNil)
+	scanner := e.ethScanner
+	c.Assert(scanner.blockMetaAccessor.SaveBlockMeta(99, &types.BlockMeta{
+		Height:    99,
+		BlockHash: "0x00000000000000000000000000000000000000000000000000000000000000dd",
+	}), IsNil)
+	_, block100 := reorgTipFor(reorgBlockJSON)
+	_, err = scanner.planReorg(block100)
+	c.Assert(err, NotNil)
+	c.Assert(err, ErrorMatches, "(?s).*rescan block 99.*")
+	c.Assert(errors.Is(err, btypes.ErrUnavailableBlock), Equals, false)
+	c.Assert(errors.Is(err, btypes.ErrReorgUnresolved), Equals, true)
+}

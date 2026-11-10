@@ -348,7 +348,9 @@ func (m *Manager) Cycle(ctx context.Context) {
 		case StateDisabled:
 			return false
 		case StateHealthy:
-			return !e.InCooldown() // a rate-limited endpoint is left alone until its cooldown ends
+			// a rate-limited endpoint's height is not probed until its cooldown ends; it
+			// still votes in the hash check, from the height it last reported
+			return !e.InCooldown()
 		default:
 			return e.RecoveryDue(m.cfg.RecoveryCheckInterval)
 		}
@@ -398,9 +400,22 @@ func (m *Manager) Cycle(ctx context.Context) {
 
 	// 2. record probe data
 	heights := make(map[string]int64, len(m.entries))
+	// checkFailed are the endpoints whose probe this cycle failed or was rate limited:
+	// the lower vote (step 4) does not ask them again
+	checkFailed := map[string]bool{}
 	for i, e := range m.entries {
 		r := results[i]
+		if st := e.State(); (st == StateUnhealthy || st == StateRecovering) &&
+			!errors.Is(r.err, errSkipped) && !errors.Is(r.err, ErrRateLimited) {
+			// a recovery check that got an answer (even one that then fails on lag) shows
+			// the endpoint is reachable, so it votes between its checks; recorded before
+			// this cycle's vote
+			e.SetCheckAnswered(r.err == nil)
+		}
 		if r.err != nil {
+			if !errors.Is(r.err, errSkipped) {
+				checkFailed[e.Name] = true
+			}
 			continue
 		}
 		e.RecordProbe(r.height, r.latency)
@@ -448,22 +463,7 @@ func (m *Manager) Cycle(ctx context.Context) {
 	if len(medianFrom) == 0 {
 		medianFrom = checkFrom
 	}
-	checkHeight := lowerMedian(medianFrom)
-	// ...and, when most of them have not reached it, also at the level of all of them:
-	// endpoints out of service that outnumber the healthy ones (correct endpoints back
-	// from an outage, behind a pair on another fork that runs ahead) must be able to
-	// vote, while a healthy endpoint forked above that level is still compared
-	reachedMedian := 0
-	for _, h := range checkFrom {
-		if h >= checkHeight {
-			reachedMedian++
-		}
-	}
-	var lowHeight int64
-	if reachedMedian*2 < len(checkFrom) {
-		lowHeight = lowerMedian(checkFrom) - m.cfg.IntegrityCheckDepth
-	}
-	checkHeight -= m.cfg.IntegrityCheckDepth
+	checkHeight := lowerMedian(medianFrom) - m.cfg.IntegrityCheckDepth
 	var scanner int64
 	if m.scannerHeight != nil && len(m.entries) == 1 {
 		scanner = m.scannerHeight()
@@ -474,29 +474,37 @@ func (m *Manager) Cycle(ctx context.Context) {
 	// (which endpoints out of service but not quarantined can block);
 	// endpoints evicted for a minority hash must positively match it before they may
 	// recover (matchedHash), a check that merely ran or returned nothing is not enough
+	// hashes are the voters' answers of the vote that decided (see same-hash recovery
+	// in step 5)
 	badHash, matchedHash, vote, hashes := map[string]bool{}, map[string]bool{}, voteNone, map[string]string{}
+	// every endpoint that votes, at the height it is asked from (whether it answers or not)
+	voters := m.voterHeights(checkFrom)
 	if checkQuorum && m.cfg.IntegrityCheckDepth > 0 && checkHeight > 0 {
-		badHash, matchedHash, vote, hashes = m.integrityCheck(ctx, checkHeight, heights)
-		if lowHeight > 0 && lowHeight < checkHeight {
-			// both votes must show a majority: a split at the lower level is the split
-			// (its hashes judge the recoveries); otherwise a minority hash at either
-			// level is on another fork
-			lowBad, lowMatched, lowVote, lowHashes := m.integrityCheck(ctx, lowHeight, heights)
-			switch {
-			case lowVote == voteInconclusive:
-				badHash, matchedHash, vote, hashes = lowBad, lowMatched, lowVote, lowHashes
-			case vote != voteInconclusive:
-				for name := range lowBad {
-					badHash[name] = true
+		var rateLimited map[string]bool
+		badHash, matchedHash, vote, hashes, rateLimited = m.integrityCheck(ctx, checkHeight, heights, nil)
+		// most voters below the compared height (out-of-service endpoints back from an
+		// outage, or healthy ones spread out, behind endpoints ahead on another fork
+		// that left them out of the vote): a majority there is checked again lower,
+		// depth below the lower median of every voter's height; if the voters there
+		// disagree with no majority, or their majority holds another hash for an
+		// endpoint of the majority above, nothing is decided this cycle. The lower vote
+		// only withholds a decision, never makes one: a recent fork can still agree that
+		// far down, and a vote that gets too few answers (old blocks pruned, or the
+		// cycle's time spent) withholds nothing.
+		if vote == voteMajority {
+			lower := lowerMedian(voters) - m.cfg.IntegrityCheckDepth
+			if lower > 0 && lower < checkHeight {
+				skip := make(map[string]bool, len(rateLimited)+len(checkFailed))
+				for name := range rateLimited {
+					skip[name] = true
 				}
-				for name := range lowMatched {
-					matchedHash[name] = true
+				for name := range checkFailed {
+					skip[name] = true
 				}
-				for name := range badHash {
-					delete(matchedHash, name)
-				}
-				if lowVote == voteMajority {
-					vote = voteMajority
+				if withhold, contradicting, lowHashes := m.lowerVoteWithholds(ctx, lower, heights, matchedHash, skip); withhold {
+					m.log.Warn().Int64("height", checkHeight).Int64("lower", lower).Strs("contradicting", contradicting).
+						Msg("the majority block hash is not upheld by the endpoints below it; integrity check undecided")
+					badHash, matchedHash, vote, hashes = map[string]bool{}, map[string]bool{}, voteInconclusive, lowHashes
 				}
 			}
 		}
@@ -517,8 +525,8 @@ func (m *Manager) Cycle(ctx context.Context) {
 	// shown it is not. A vote with no majority (a split, or too few answers) shows no
 	// fork agreement at all, so the tip strikes no healthy endpoint this cycle
 	// (THORChain's height still does); it still holds back the recovery of an endpoint
-	// behind it.
-	split := vote == voteInconclusive
+	// behind it, unless that endpoint's hash outvotes the others (sameHashTip).
+	split := vote == voteInconclusive || vote == voteUnanswered
 	// the hashes shown by endpoints healthy at the vote (before this cycle's results)
 	healthyHash := make(map[string]string, len(hashes))
 	for name, h := range hashes {
@@ -577,7 +585,13 @@ func (m *Manager) Cycle(ctx context.Context) {
 			continue
 		}
 		if r.err != nil && errors.Is(r.err, ErrRateLimited) {
-			// a rate limit is a cooldown, never a strike or a failed recovery check
+			// a rate limit is a cooldown, never a strike or a failed recovery check; an
+			// endpoint out of service that voted from its last height with a minority
+			// hash is quarantined all the same
+			if badHash[e.Name] && (e.State() == StateUnhealthy || e.State() == StateRecovering) && !e.IntegrityEvicted() {
+				m.log.Warn().Str("endpoint", e.Name).Msg("minority block hash: endpoint quarantined")
+				e.MarkUnhealthy(ErrorKindIntegrity)
+			}
 			m.RecordRateLimited(e.Name)
 			continue
 		}
@@ -612,24 +626,9 @@ func (m *Manager) Cycle(ctx context.Context) {
 				ok = false
 			}
 			if ok {
-				// during a split vote, an endpoint that showed a hash a healthy endpoint
-				// contradicted is judged only against the endpoints that showed the same
-				// one, when they form a tip: a pair on another fork running ahead must
-				// not hold back the endpoints that outvoted it
-				recTip, recQuorum := tip, quorum
-				if own := hashes[e.Name]; split && own != "" {
-					same := make(map[string]int64, len(tipHeights))
-					contradicted := false
-					for name, h := range tipHeights {
-						if hashes[name] == own {
-							same[name] = h
-						} else if healthyHash[name] != "" {
-							contradicted = true
-						}
-					}
-					if t, q := consensusTip(same, m.cfg.MaxBlockLag); contradicted && q {
-						recTip, recQuorum = t, q
-					}
+				recTip, recQuorum := m.sameHashTip(e.Name, split, hashes, healthyHash, tipHeights, len(voters))
+				if !recQuorum {
+					recTip, recQuorum = tip, quorum
 				}
 				if lag, _ := lagging(r.height, recTip, recQuorum, false); lag {
 					ok = false
@@ -651,6 +650,111 @@ func (m *Manager) Cycle(ctx context.Context) {
 		m.MaybeFailback()
 	}
 	m.publishMetrics()
+}
+
+// lowerVoteWithholds runs the integrity vote again at a lower height and reports whether
+// it withholds the decision of the vote above, whose majority endpoints are upheld: the
+// voters there disagree with no majority, or their majority holds another hash for one
+// of those endpoints (named in contradicting). Too few healthy answers (fewer than two)
+// withhold nothing. Endpoints in skip (a probe that failed or was rate limited, or a
+// hash read that was rate limited, earlier this cycle) are not asked again.
+func (m *Manager) lowerVoteWithholds(ctx context.Context, height int64, heights map[string]int64, upheld, skip map[string]bool) (withhold bool, contradicting []string, hashes map[string]string) {
+	bad, _, vote, hashes, _ := m.integrityCheck(ctx, height, heights, &lowerVote{skip: skip})
+	switch vote {
+	case voteInconclusive:
+		return true, nil, hashes
+	case voteMajority:
+		for name := range upheld {
+			if bad[name] {
+				contradicting = append(contradicting, name)
+			}
+		}
+		sort.Strings(contradicting)
+		return len(contradicting) > 0, contradicting, hashes
+	default: // too few healthy answers
+		return false, nil, hashes
+	}
+}
+
+// sameHashTip returns, during a split vote, the tip an out-of-service endpoint's
+// recovery is judged against when a healthy endpoint contradicted its hash: the tip of
+// the endpoints that showed the same hash, when they form one and that hash is held by
+// a strict majority of all voters (voterCount, those that gave no hash included; ok
+// false otherwise, and the usual tip holds). A pair on another fork running ahead must
+// not hold back the endpoints that outvote it; a group that does not outvote the others
+// is held back as before.
+func (m *Manager) sameHashTip(name string, split bool, hashes, healthyHash map[string]string, tipHeights map[string]int64, voterCount int) (tip int64, ok bool) {
+	own := hashes[name]
+	if !split || own == "" {
+		return 0, false
+	}
+	holding := 0
+	for _, h := range hashes {
+		if h == own {
+			holding++
+		}
+	}
+	if holding*2 <= max(len(hashes), voterCount) {
+		return 0, false
+	}
+	same := make(map[string]int64, len(tipHeights))
+	contradicted := false
+	for n, h := range tipHeights {
+		if hashes[n] == own {
+			same[n] = h
+		} else if healthyHash[n] != "" {
+			contradicted = true
+		}
+	}
+	tip, ok = consensusTip(same, m.cfg.MaxBlockLag)
+	return tip, ok && contradicted
+}
+
+// lowerVote is how the integrity vote is run below (lowerVoteWithholds). It quarantines,
+// clears or strikes no endpoint, so it names none in the logs; it does not ask again an
+// endpoint whose probe failed or was rate limited, or whose hash read was rate limited,
+// earlier this cycle (skip); and it asks a between-checks voter whatever height that endpoint last
+// reported, which on a chain that moves more than the depth between checks is already
+// below the lower vote's (an endpoint that has not reached the block gives no answer).
+type lowerVote struct {
+	skip map[string]bool
+}
+
+// betweenChecksVoter reports whether an entry without a height this cycle (not probed,
+// or its probe failed) votes in the integrity check from the height it last reported
+// (the lower vote asks it whatever that height, unless its probe failed this cycle): a
+// recovering one, an unhealthy one whose last check got an answer (it failed on lag; a
+// rate-limited check keeps the one before), or a healthy one cooling down after a rate
+// limit. An unhealthy one whose
+// checks get no answer may not answer at all and is not asked.
+func betweenChecksVoter(e *Entry) bool {
+	st := e.State()
+	return e.Usable() && !e.IntegrityEvicted() && e.LastHeight() > 0 &&
+		(st == StateRecovering || st == StateUnhealthy && e.CheckAnswered() || st == StateHealthy && e.InCooldown())
+}
+
+// voterHeights returns the heights of the endpoints that vote in the integrity check:
+// those in probed (this cycle's heights) that are healthy, or out of service but not
+// quarantined, and the between-checks voters at the height they last reported (as
+// integrityCheck asks them).
+func (m *Manager) voterHeights(probed map[string]int64) map[string]int64 {
+	out := make(map[string]int64, len(m.entries))
+	for _, e := range m.entries {
+		if e.IntegrityEvicted() {
+			continue
+		}
+		st := e.State()
+		if h, ok := probed[e.Name]; ok {
+			if st == StateHealthy || st == StateUnhealthy || st == StateRecovering {
+				out[e.Name] = h
+			}
+			continue
+		}
+		if betweenChecksVoter(e) {
+			out[e.Name] = e.LastHeight()
+		}
+	}
+	return out
 }
 
 // lowerMedian returns the lower median of heights, 0 for none.
@@ -693,9 +797,12 @@ const (
 	voteNone hashVote = iota
 	// voteMajority: one hash holds a strict majority of two or more healthy answers
 	voteMajority
-	// voteInconclusive: two or more healthy endpoints were asked and no hash holds a
-	// strict majority of two or more answers (a tie, a plurality, or fewer than two
-	// answers because hash reads failed): no fork agreement was shown
+	// voteUnanswered: two or more healthy endpoints were asked and fewer than two
+	// answered: no fork agreement was shown
+	voteUnanswered
+	// voteInconclusive: two or more healthy endpoints answered and no hash holds a
+	// strict majority (a tie or a plurality, among the healthy answers or all the
+	// voters'), or a lower vote withheld the decision: no fork agreement was shown
 	voteInconclusive
 )
 
@@ -711,8 +818,10 @@ const (
 // Without such a majority (a tie, or a plurality such as H, H, X, Y) nothing is
 // evicted or cleared, and the disagreement is logged; an integrity-evicted endpoint
 // with no healthy endpoint to compare against is reported as bad, since it cannot be
-// cleared. hashes holds every answer, by endpoint.
-func (m *Manager) integrityCheck(ctx context.Context, height int64, heights map[string]int64) (bad, matched map[string]bool, vote hashVote, hashes map[string]string) {
+// cleared. hashes holds the voters' answers (healthy, or out of service but not
+// quarantined), by endpoint. Endpoints whose hash read was rate limited are returned in
+// rateLimited. A non-nil lower runs it as the lower vote (lowerVote).
+func (m *Manager) integrityCheck(ctx context.Context, height int64, heights map[string]int64, lower *lowerVote) (bad, matched map[string]bool, vote hashVote, hashes map[string]string, rateLimited map[string]bool) {
 	type res struct {
 		name    string
 		hash    string
@@ -722,12 +831,15 @@ func (m *Manager) integrityCheck(ctx context.Context, height int64, heights map[
 		voter bool
 	}
 	var (
-		wg          sync.WaitGroup
-		mu          sync.Mutex
-		results     []res
-		rateLimited []string
+		wg      sync.WaitGroup
+		mu      sync.Mutex
+		results []res
+		limited []string
 		// healthyAsked counts the healthy endpoints asked for their hash
 		healthyAsked int
+		// cooling are healthy endpoints already in a rate-limit cooldown: a rate-limited
+		// hash read does not extend it
+		cooling = map[string]bool{}
 	)
 	for i, e := range m.entries {
 		hp, ok := m.probes[i].(HashProbe)
@@ -741,21 +853,25 @@ func (m *Manager) integrityCheck(ctx context.Context, height int64, heights map[
 		if !healthy && !outOfService && !recheck {
 			continue
 		}
+		if lower != nil && lower.skip[e.Name] {
+			continue
+		}
+		betweenChecks := false
 		h, seen := heights[e.Name]
 		if !seen {
-			// not probed this cycle, or its probe failed: a recovering endpoint (its
-			// last recovery check passed) between its checks, or a healthy one cooling
-			// down after a rate limit, still votes, from the height it last reported, so
-			// two endpoints on another fork are not a majority meanwhile; it can block a
-			// majority but not form one. An unhealthy one may not answer at all and is
-			// not asked.
-			if !e.Usable() || e.IntegrityEvicted() || !(st == StateRecovering || healthy && e.InCooldown()) {
+			// not probed this cycle, or its probe failed: a between-checks voter
+			// (betweenChecksVoter) still votes, from the height it last reported (the
+			// lower vote asks it whatever that height), so two endpoints on another fork
+			// are not a majority meanwhile; it can block a majority but not form one
+			if !betweenChecksVoter(e) {
 				continue
 			}
+			cooling[e.Name] = healthy
 			h, seen = e.LastHeight(), e.LastHeight() > 0
 			healthy, outOfService = false, true
+			betweenChecks = true
 		}
-		if !seen || h < height {
+		if !seen || h < height && (lower == nil || !betweenChecks) {
 			continue // endpoint has not reached that height yet; not evidence of anything
 		}
 		if healthy {
@@ -769,7 +885,7 @@ func (m *Manager) integrityCheck(ctx context.Context, height int64, heights map[
 			h, err := hp.HashAt(pctx, height)
 			if errors.Is(err, ErrRateLimited) {
 				mu.Lock()
-				rateLimited = append(rateLimited, e.Name)
+				limited = append(limited, e.Name)
 				mu.Unlock()
 				return
 			}
@@ -784,15 +900,21 @@ func (m *Manager) integrityCheck(ctx context.Context, height int64, heights map[
 	wg.Wait()
 	// a rate-limited hash probe is a cooldown, as a rate-limited height probe is
 	// (these probes bypass the routers, which would otherwise record it)
-	sort.Strings(rateLimited)
-	for _, name := range rateLimited {
-		m.RecordRateLimited(name)
+	sort.Strings(limited)
+	rateLimited = make(map[string]bool, len(limited))
+	for _, name := range limited {
+		rateLimited[name] = true
+		if !cooling[name] {
+			m.RecordRateLimited(name)
+		}
 	}
 	counts := map[string]int{}
 	healthyN := 0
 	hashes = make(map[string]string, len(results))
 	for _, r := range results {
-		hashes[r.name] = r.hash
+		if r.voter {
+			hashes[r.name] = r.hash
+		}
 		if r.healthy {
 			counts[r.hash]++
 			healthyN++
@@ -804,7 +926,7 @@ func (m *Manager) integrityCheck(ctx context.Context, height int64, heights map[
 	// fork agreement unshown
 	unanswered := voteNone
 	if healthyAsked >= 2 {
-		unanswered = voteInconclusive
+		unanswered = voteUnanswered
 	}
 	if healthyN == 0 {
 		// nothing to compare against: integrity-evicted endpoints stay evicted (an
@@ -814,7 +936,7 @@ func (m *Manager) integrityCheck(ctx context.Context, height int64, heights map[
 				bad[r.name] = true
 			}
 		}
-		return bad, matched, unanswered, hashes
+		return bad, matched, unanswered, hashes, rateLimited
 	}
 	if healthyN < 2 {
 		// a single healthy endpoint is the reference for re-checks but cannot be
@@ -832,7 +954,7 @@ func (m *Manager) integrityCheck(ctx context.Context, height int64, heights map[
 				bad[r.name] = true
 			}
 		}
-		return bad, matched, unanswered, hashes
+		return bad, matched, unanswered, hashes, rateLimited
 	}
 	best, bestN := "", 0
 	for h, n := range counts {
@@ -857,20 +979,24 @@ func (m *Manager) integrityCheck(ctx context.Context, height int64, heights map[
 		// no strict majority (a tie, or a plurality): an inconclusive disagreement must
 		// not pick the fork used for observations, so nothing is evicted or cleared
 		// this cycle. With two endpoints this is the only outcome of a disagreement,
-		// so make it visible.
-		m.log.Warn().Int64("height", height).Int("healthy", healthyN).Int("agreeing", bestN).
-			Int("voters", voters).Int("voters_agreeing", votersAgreeing).
-			Msg("endpoints disagree on the block hash with no majority; integrity check skipped")
-		return map[string]bool{}, map[string]bool{}, voteInconclusive, hashes
+		// so make it visible (the lower vote's caller logs its own outcome).
+		if lower == nil {
+			m.log.Warn().Int64("height", height).Int("healthy", healthyN).Int("agreeing", bestN).
+				Int("voters", voters).Int("voters_agreeing", votersAgreeing).
+				Msg("endpoints disagree on the block hash with no majority; integrity check skipped")
+		}
+		return map[string]bool{}, map[string]bool{}, voteInconclusive, hashes, rateLimited
 	}
 	for _, r := range results {
 		if r.hash != best {
 			bad[r.name] = true
-			m.log.Error().Str("endpoint", r.name).Int64("height", height).Str("hash", r.hash).Str("majority", best).
-				Msg("endpoint block hash disagrees with majority")
+			if lower == nil {
+				m.log.Error().Str("endpoint", r.name).Int64("height", height).Str("hash", r.hash).Str("majority", best).
+					Msg("endpoint block hash disagrees with majority")
+			}
 			continue
 		}
 		matched[r.name] = true
 	}
-	return bad, matched, voteMajority, hashes
+	return bad, matched, voteMajority, hashes, rateLimited
 }

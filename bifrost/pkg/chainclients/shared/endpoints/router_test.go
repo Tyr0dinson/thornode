@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -972,4 +973,64 @@ func (s *RouterSuite) TestEscapedEndpointPathIsKept(c *C) {
 	c.Assert(err, IsNil)
 	_ = resp.Body.Close()
 	c.Assert(got.Load(), Equals, "/rpc/KEY%2Fx")
+}
+
+// A chain-native rate-limit answer in a 200 body (java-tron's "lack of computing
+// resources") is a rate limit: the endpoint cools down, uncharged, and a read is served
+// by the next candidate; a write gets the answer back, sent once.
+func (s *RouterSuite) TestRateLimitedBodyIsARateLimit(c *C) {
+	var st int32 = http.StatusOK
+	limitedBody := func(body []byte) bool { return bytes.Contains(body, []byte("lack of computing resources")) }
+	setup := func() (*endpoints.Manager, *http.Client, *[]hit, *[]hit, func()) {
+		h1, h2 := &[]hit{}, &[]hit{}
+		limited := rpcServer(&st, h1, `{"Error":"class java.lang.IllegalAccessException : lack of computing resources"}`)
+		good := rpcServer(&st, h2, `{"result":"ok"}`)
+		m, targets := twoEndpointMgr(c, common.ETHChain, []config.ChainEndpointConfig{{Name: "lim", RPCHost: limited.URL, Priority: 1}, {Name: "good", RPCHost: good.URL, Priority: 2}}, 1)
+		r, err := endpoints.NewHTTPRouter(m, endpoints.HTTPRouterConfig{
+			Base: endpoints.SyntheticBase(m.Chain()), Targets: targets, WriteMethods: []string{"submit"}, RateLimitedBody: limitedBody,
+		}, zerolog.Nop())
+		c.Assert(err, IsNil)
+		return m, &http.Client{Transport: r, Timeout: 2 * time.Second}, h1, h2, func() { limited.Close(); good.Close() }
+	}
+
+	m, hc, h1, h2, stop := setup()
+	resp, err := post(c, hc, base(m), "ledger")
+	c.Assert(err, IsNil)
+	body, _ := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	c.Assert(string(body), Matches, `.*"ok".*`)
+	c.Assert(*h1, HasLen, 1)
+	c.Assert(*h2, HasLen, 1)
+	c.Assert(m.Entry("lim").InCooldown(), Equals, true)
+	c.Assert(m.Entry("lim").State(), Equals, endpoints.StateHealthy)
+	stop()
+
+	m, hc, h1, h2, stop = setup()
+	defer stop()
+	resp, err = post(c, hc, base(m), "submit")
+	c.Assert(err, IsNil)
+	body, _ = io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	c.Assert(string(body), Matches, `.*lack of computing resources.*`)
+	c.Assert(*h1, HasLen, 1)
+	c.Assert(*h2, HasLen, 0)
+	c.Assert(m.Entry("lim").InCooldown(), Equals, true)
+}
+
+// CometBFT reports every handler error as -32603 "Internal error" and puts the reason
+// in the error's data: the error the caller gets keeps it, as the CometBFT client's own
+// error did before failover, cut to 200 bytes.
+func (s *RouterSuite) TestEndpointErrorKeepsTheNodesErrorData(c *C) {
+	var st int32 = http.StatusOK
+	long := strings.Repeat("x", 300)
+	only := rpcServer(&st, nil, `{"jsonrpc":"2.0","id":1,"error":{"code":-32603,"message":"Internal error","data":"height 100 must be less than or equal to the current blockchain height 99 `+long+`"}}`)
+	defer only.Close()
+	eps := []config.ChainEndpointConfig{{Name: "only", RPCHost: only.URL, Priority: 1}}
+	m, err := endpoints.NewManager(common.GAIAChain, eps, fc(1, 1), zerolog.Nop())
+	c.Assert(err, IsNil)
+	targets, err := endpoints.TargetsFrom(eps, endpoints.RPCHost)
+	c.Assert(err, IsNil)
+	_, err = post(c, routerFor(c, m, targets, nil), base(m), "block")
+	c.Assert(err, ErrorMatches, `.*endpoint only: json-rpc error -32603: Internal error: height 100 must be less than or equal to the current blockchain height 99 x+.*`)
+	c.Assert(strings.Contains(err.Error(), long), Equals, false)
 }

@@ -496,7 +496,7 @@ func solPair(c *C, a, b *pagingNode) (*SOLScanner, *endpoints.Manager, func()) {
 	}
 	targets, err := endpoints.TargetsFrom(eps, endpoints.RPCHost)
 	c.Assert(err, IsNil)
-	router, err := endpoints.NewHTTPRouter(mgr, endpoints.HTTPRouterConfig{Base: endpoints.SyntheticBase(common.SOLChain), Targets: targets}, zerolog.Nop())
+	router, err := endpoints.NewHTTPRouter(mgr, solRouterConfig(common.SOLChain, targets, 0, 0), zerolog.Nop())
 	c.Assert(err, IsNil)
 	scanner := &SOLScanner{
 		logger:      zerolog.Nop(),
@@ -579,28 +579,74 @@ func (s *SolTestSuite) TestKeptCatchUpEndpointListsEvenWhenTheOtherPageIsShort(c
 	c.Assert(cursor, Equals, "sig0000")
 }
 
-// A kept catch-up endpoint that keeps failing without leaving service (here it rate
-// limits every page after the first, as a provider out of credits does) is given up
-// after catchUpPinAttempts failed attempts in a row, so the vault's catch-up and the
-// scanner's health are not held for good: the listing then moves to the endpoint in
-// use.
-func (s *SolTestSuite) TestKeptCatchUpEndpointIsGivenUpAfterRepeatedFailures(c *C) {
+// A kept catch-up endpoint that keeps failing while it stays in service (here it rate
+// limits every page after the first, as a provider out of credits does) is kept: b
+// holds only the newest 1,000 signatures, and completing the listing there would store
+// a cursor past the 5 older ones for good. No attempt completes or stores a cursor
+// until a lists its pages again, and then all 1,005 are read from a.
+func (s *SolTestSuite) TestKeptCatchUpEndpointIsKeptWhileInService(c *C) {
 	sigs := make([]string, transactionQueryLimit+5)
 	for i := range sigs {
 		sigs[i] = fmt.Sprintf("sig%04d", i)
 	}
-	a, b := &pagingNode{sigs: sigs}, &pagingNode{sigs: sigs}
+	a := &pagingNode{sigs: sigs}
+	b := &pagingNode{sigs: sigs[:transactionQueryLimit]} // never saw the older 5
 	a.limitPaged.Store(true)
 	scanner, _, stop := solPair(c, a, b)
 	defer stop()
-	for round := 0; round < catchUpPinAttempts; round++ {
-		ok, _, _ := scanCatchUp(scanner)
+	for round := 0; round < 4*solPinRetries+1; round++ {
+		ok, _, cursor := scanCatchUp(scanner)
 		c.Assert(ok, Equals, false, Commentf("round %d", round))
+		c.Assert(cursor, Equals, "", Commentf("round %d", round))
 	}
+	c.Assert(b.listings.Load(), Equals, int32(0))
+	a.limitPaged.Store(false)
 	ok, count, cursor := scanCatchUp(scanner)
 	c.Assert(ok, Equals, true)
 	c.Assert(count, Equals, transactionQueryLimit+5)
 	c.Assert(cursor, Equals, "sig0000")
+	c.Assert(b.listings.Load(), Equals, int32(0))
+}
+
+// A transaction of a short (one-page, unpinned) listing that the endpoint in use
+// answers null for is read from another endpoint: the listing proved it exists, and
+// failing the scan on the same endpoint every time would hold the vault (and SOL
+// signing) while a backup has it.
+func (s *SolTestSuite) TestShortListingReadsAnUnavailableTransactionElsewhere(c *C) {
+	sigs := []string{"sig0000", "sig0001", "sig0002"}
+	a, b := &pagingNode{sigs: sigs}, &pagingNode{sigs: sigs}
+	a.nullTx.Store(true)
+	scanner, _, stop := solPair(c, a, b)
+	defer stop()
+	txCounts, oks, cursors := make([]int, 1), make([]bool, 1), make([]string, 1)
+	var wg sync.WaitGroup
+	wg.Add(1)
+	scanner.scanVault("vault", 0, "sigcursor", 0, 0, func() {}, txCounts, oks, cursors, make([]uint64, 1), &wg)
+	wg.Wait()
+	c.Assert(oks[0], Equals, true)
+	c.Assert(txCounts[0], Equals, len(sigs))
+	c.Assert(cursors[0], Equals, "sig0000")
+	c.Assert(b.listings.Load(), Equals, int32(0)) // listed on a, only the reads moved
+}
+
+// A kept catch-up endpoint's listing stays on it, but a transaction it cannot serve
+// (null) is read from another endpoint: a transaction's content does not depend on the
+// endpoint, only the listing's history does.
+func (s *SolTestSuite) TestKeptCatchUpEndpointReadsUnavailableTransactionsElsewhere(c *C) {
+	sigs := make([]string, transactionQueryLimit+5)
+	for i := range sigs {
+		sigs[i] = fmt.Sprintf("sig%04d", i)
+	}
+	a := &pagingNode{sigs: sigs}
+	b := &pagingNode{sigs: sigs[:transactionQueryLimit]} // never saw the older 5
+	a.nullTx.Store(true)
+	scanner, _, stop := solPair(c, a, b)
+	defer stop()
+	ok, count, cursor := scanCatchUp(scanner)
+	c.Assert(ok, Equals, true)
+	c.Assert(count, Equals, transactionQueryLimit+5)
+	c.Assert(cursor, Equals, "sig0000")
+	c.Assert(b.listings.Load(), Equals, int32(0))
 }
 
 // lockedBuffer is a log sink safe for the scan's concurrent writers.

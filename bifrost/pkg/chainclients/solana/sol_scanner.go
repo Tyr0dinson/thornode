@@ -530,17 +530,25 @@ func (s *SOLScanner) scanVault(
 		// limit the number of concurrent tx queries to the RPC node
 		eg.SetLimit(maxConcurrentTxQueries)
 		// a pinned listing's transactions are read from the endpoint that listed them:
-		// another one may not have finalized their slots yet and answer null
+		// another one may not have finalized their slots yet and answer null (a routed
+		// read asks the next endpoint after a null answer)
 		var txReadFailed atomic.Bool
+		catchUp := pinned && queryLastSig == ""
 		for _, sig := range res {
 			eg.Go(func() error {
 				tx, err := listing.GetTransaction(sig.Signature)
+				if catchUp && (err != nil || unavailableTx(tx)) {
+					// a catch-up listing stays on its endpoint for that endpoint's history, but
+					// a transaction's content does not depend on the endpoint: one it cannot
+					// serve is read through the router, from any endpoint that has it
+					tx, err = s.solRpc.GetTransaction(sig.Signature)
+				}
 				if err != nil {
 					txReadFailed.Store(true)
 					setUnhealthy()
 					return fmt.Errorf("failed to get transaction %s: %w", sig.Signature, err)
 				}
-				if tx.Slot == 0 && len(tx.Transaction.Signatures) == 0 {
+				if unavailableTx(tx) {
 					// a null result: the signature list proved the transaction exists,
 					// so the answering node has not finalized that slot yet (a lagging
 					// endpoint after a failover). Fail the scan and keep the cursor,
@@ -626,25 +634,14 @@ func (s *SOLScanner) clearPinFailures(vaultAddr string) {
 	delete(s.catchUpPins, vaultAddr)
 }
 
-// catchUpPinAttempts is how many attempts in a row a kept catch-up endpoint may fail.
-const catchUpPinAttempts = 3 * solPinRetries
-
 // keptCatchUpPin names the endpoint an earlier attempt pinned the vault's catch-up
-// listing to, while it is still in service ("" otherwise). One that failed
-// catchUpPinAttempts attempts in a row without leaving service (a provider that keeps
-// rate limiting, or answers that are not charged) is given up, so the vault's catch-up
-// and the scanner's health are not held for good.
+// listing to, while it is still in service ("" otherwise). It is not given up while in
+// service, however often it fails: another endpoint may hold less history, and
+// completing the listing there would store a cursor past signatures never read. A
+// warning names it every solPinRetries failures (notePinnedListingFailure).
 func (s *SOLScanner) keptCatchUpPin(vaultAddr string) string {
 	s.pinFailuresMu.Lock()
-	kept, failures := s.catchUpPins[vaultAddr], s.pinFailures[vaultAddr]
-	if kept != "" && failures >= catchUpPinAttempts {
-		delete(s.catchUpPins, vaultAddr)
-		delete(s.pinFailures, vaultAddr)
-		s.pinFailuresMu.Unlock()
-		s.logger.Warn().Str("vault", vaultAddr).Str("endpoint", kept).Int("failures", failures).
-			Msg("vault catch-up listing gives up its endpoint after repeated failures; the next endpoint may hold less history")
-		return ""
-	}
+	kept := s.catchUpPins[vaultAddr]
 	s.pinFailuresMu.Unlock()
 	if kept != "" && (s.pinUsable == nil || s.pinUsable(kept)) {
 		return kept
@@ -1328,4 +1325,10 @@ func scanCoalesceWait(lag, interval time.Duration) time.Duration {
 		return 0
 	}
 	return interval - lag
+}
+
+// unavailableTx reports a null getTransaction result (decoded as an empty transaction):
+// the answering node does not have the transaction.
+func unavailableTx(tx *rpc.TransactionResult) bool {
+	return tx == nil || (tx.Slot == 0 && len(tx.Transaction.Signatures) == 0)
 }

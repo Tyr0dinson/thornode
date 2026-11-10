@@ -106,8 +106,9 @@ type HTTPRouterConfig struct {
 	// ends with one of these (an answer that means "not on this node" only there).
 	RetryElsewherePaths []string
 	// RateLimitedBody, when set, inspects a complete, well-formed 200 body that is not
-	// an endpoint error and reports a chain-native rate limit (java-tron answers its
-	// own with HTTP 200): it is treated as an HTTP 429, a cooldown, and a read moves on.
+	// an endpoint error and reports a chain-native rate limit (java-tron answers one
+	// with HTTP 200). It is treated as an HTTP 429: the endpoint cools down, a read
+	// moves on, and a write gets the answer back, never retried.
 	RateLimitedBody func(body []byte) bool
 	// EndpointErrorCodes are JSON-RPC error codes that mean this endpoint cannot
 	// serve the request (charged like -32603, and a read moves on), checked before
@@ -763,18 +764,33 @@ func jsonRPCErrorText(body io.Reader) string {
 	}
 	var env struct {
 		Error *struct {
-			Code    int    `json:"code"`
-			Message string `json:"message"`
+			Code    int             `json:"code"`
+			Message string          `json:"message"`
+			Data    json.RawMessage `json:"data"`
 		} `json:"error"`
 	}
 	if json.Unmarshal(bytes.TrimSpace(raw), &env) != nil || env.Error == nil {
 		return ""
 	}
-	msg := env.Error.Message
-	if len(msg) > 200 {
-		msg = msg[:200]
+	text := fmt.Sprintf("json-rpc error %d: %s", env.Error.Code, cut(env.Error.Message, 200))
+	// CometBFT answers every handler error with -32603 "Internal error" and the reason
+	// in data, so keep it
+	var data string
+	if json.Unmarshal(env.Error.Data, &data) != nil {
+		data = string(bytes.TrimSpace(env.Error.Data))
 	}
-	return fmt.Sprintf("json-rpc error %d: %s", env.Error.Code, msg)
+	if data != "" && data != "null" {
+		text += ": " + cut(data, 200)
+	}
+	return text
+}
+
+// cut shortens s to at most n bytes.
+func cut(s string, n int) string {
+	if len(s) > n {
+		return s[:n]
+	}
+	return s
 }
 
 // drain discards a rejected response so its connection can be reused, but only for

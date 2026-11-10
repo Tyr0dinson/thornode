@@ -2170,3 +2170,23 @@ func TestExtractBTCErrorKeepsRateLimit(t *testing.T) {
 		t.Fatal("500 body no longer decodes to the JSON-RPC error")
 	}
 }
+
+// A rate-limited primary costs the caller a rate_limit_backoff sleep only when nothing
+// served the read: an application answer from a fallback ("no such transaction") is
+// the read served, returned at once.
+func (s *RPCSuite) TestRateLimitedPrimaryDoesNotSleepWhenAFallbackAnswered(c *C) {
+	primary := newErrorServer(429)
+	defer primary.Close()
+	fb := &mockUTXOReader{getBlockCountFn: func() (int64, error) {
+		return 0, btcjson.NewRPCError(btcjson.ErrRPCInvalidAddressOrKey, "No such mempool or blockchain transaction")
+	}}
+	m, cfgEps := mgrFor(c, 5, map[string]string{"primary": primary.URL}, "primary", "fb")
+	cl, err := NewClientWithFallbacks(primary.URL, "u", "p", "", 0, time.Second, common.BTCChain, zerolog.Nop(), []UTXOReader{fb}, 2*time.Second)
+	c.Assert(err, IsNil)
+	cl.WithEndpointManager(m, cfgEps)
+	start := time.Now()
+	_, err = cl.GetBlockCount()
+	c.Assert(err, ErrorMatches, "(?s).*No such mempool or blockchain transaction.*")
+	c.Assert(time.Since(start) < time.Second, Equals, true)
+	c.Assert(m.Entry("primary").InCooldown(), Equals, true)
+}

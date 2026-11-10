@@ -911,7 +911,7 @@ type ChainFailoverConfig struct {
 	RateLimitBackoff time.Duration `mapstructure:"rate_limit_backoff"`
 	// HealthCheckTimeout bounds each background health probe. A probe that does not
 	// answer in time counts as a failed check (issue #2828 "provider is slow").
-	// Clamped to HealthCheckInterval/2 when larger. Default: 5s.
+	// Set to HealthCheckInterval/2 when it is not below the interval. Default: 5s.
 	HealthCheckTimeout time.Duration `mapstructure:"health_check_timeout"`
 	// IntegrityCheckDepth, when > 0, makes the health monitor compare the block hash
 	// depth below the healthy endpoints' level (the lower median of their heights)

@@ -386,6 +386,8 @@ func NewTronClient(
 		Targets:        rpcTargets,
 		DialTimeout:    failoverCfg.HealthCheckTimeout,
 		AttemptTimeout: attempt,
+		// java-tron's JSON-RPC servlet sits behind the same rate limiter
+		RateLimitedBody: isTronRateLimited,
 	}, logger)
 	if err != nil {
 		return nil, fmt.Errorf("fail to create rpc router: %w", err)

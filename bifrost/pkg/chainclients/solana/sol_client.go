@@ -1,10 +1,12 @@
 package solana
 
 import (
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"encoding/base64"
 	"encoding/binary"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math/big"
@@ -70,6 +72,34 @@ func (c *SOLClient) getSignerCacheExpiry() time.Duration {
 // querying the chain to see if the transaction landed anyway. Exposed as a
 // variable so tests can override it.
 var broadcastLookupDelay = 3 * time.Second
+
+// solRouterConfig is the endpoint router configuration of a Solana RPC endpoint list.
+func solRouterConfig(chain common.Chain, targets []endpoints.Target, dialTimeout, attemptTimeout time.Duration) endpoints.HTTPRouterConfig {
+	return endpoints.HTTPRouterConfig{
+		Base:           endpoints.SyntheticBase(chain),
+		Targets:        targets,
+		WriteMethods:   []string{"sendTransaction"},
+		DialTimeout:    dialTimeout,
+		AttemptTimeout: attemptTimeout,
+		// Solana's -32005 and -32016 mean the node is behind, not a rate limit
+		EndpointErrorCodes: solEndpointErrorCodes,
+		// a null result is a node without what was asked for (getTransaction for a
+		// transaction, getBlockTime for a slot): ask the next endpoint first
+		RetryElsewhere: isNullResult,
+	}
+}
+
+// isNullResult reports a JSON-RPC response whose result is null.
+func isNullResult(body []byte) bool {
+	var env struct {
+		Result json.RawMessage `json:"result"`
+		Error  json.RawMessage `json:"error"`
+	}
+	if json.Unmarshal(body, &env) != nil || (len(env.Error) > 0 && string(env.Error) != "null") {
+		return false
+	}
+	return string(bytes.TrimSpace(env.Result)) == "null"
+}
 
 // solEndpointErrorCodes are the JSON-RPC codes that mean a Solana node cannot serve
 // the request because it is behind, so the read moves to the next endpoint and this
@@ -234,15 +264,9 @@ func NewSOLClient(
 	if err != nil {
 		return nil, fmt.Errorf("fail to build endpoint targets: %w", err)
 	}
-	router, err := endpoints.NewHTTPRouter(endpointMgr, endpoints.HTTPRouterConfig{
-		Base:           endpoints.SyntheticBase(cfg.ChainID),
-		Targets:        targets,
-		WriteMethods:   []string{"sendTransaction"},
-		DialTimeout:    failoverCfg.HealthCheckTimeout,
-		AttemptTimeout: evm.AttemptTimeout(cfg.BlockScanner.HTTPRequestTimeout),
-		// Solana's -32005 and -32016 mean the node is behind, not a rate limit
-		EndpointErrorCodes: solEndpointErrorCodes,
-	}, log.Logger)
+	router, err := endpoints.NewHTTPRouter(endpointMgr,
+		solRouterConfig(cfg.ChainID, targets, failoverCfg.HealthCheckTimeout, evm.AttemptTimeout(cfg.BlockScanner.HTTPRequestTimeout)),
+		log.Logger)
 	if err != nil {
 		return nil, fmt.Errorf("fail to create endpoint router: %w", err)
 	}

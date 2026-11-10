@@ -316,8 +316,9 @@ func (c *Client) recordSuccess(i int) {
 // Without a manager (single-endpoint legacy path), an HTTP 429 on the primary never
 // fails over: the caller sleeps rateLimitBackoff and returns the error, so a
 // rate-limited daemon is not hammered. With a manager, a 429 puts that endpoint in
-// cooldown and the read is served by the next candidate; if nothing served the read
-// and the primary was rate limited, the caller still sleeps.
+// cooldown and the read is served by the next candidate (an application answer, such
+// as "no such transaction", counts as served); if nothing served the read and the
+// primary was rate limited, the caller still sleeps.
 func (c *Client) readWithFallback(primary func() error, fn func(UTXOReader) error) error {
 	var (
 		firstErr    error
@@ -351,7 +352,7 @@ func (c *Client) readWithFallback(primary func() error, fn func(UTXOReader) erro
 			}
 		}
 	}
-	if rateLimited {
+	if rateLimited && appErr == nil {
 		c.sleepRateLimit()
 	}
 	if appErr != nil {
