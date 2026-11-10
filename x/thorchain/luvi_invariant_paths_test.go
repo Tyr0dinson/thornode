@@ -541,7 +541,10 @@ func (s *LuviInvariantSuite) TestBlockLevelObservationWithLPFlowNeedsPerBlockRea
 // errata records tx as a finalised observed inbound and has the only active
 // validator attest an errata for it.
 func (e *luviEnv) errata(tx common.Tx) {
-	obs := common.ObservedTx{Tx: tx}
+	// An executed ADD's consensus tx is Status_done, so the reversal takes the
+	// unit-burn path in penalizeAssetOnlyLiquidity (it gates on
+	// voter.Tx.Status == common.Status_done) rather than the no-op path.
+	obs := common.ObservedTx{Tx: tx, Status: common.Status_done}
 	// A real errata'd inbound was observed and credited its vault before the
 	// reversal; set UpdatedVault so errata-of-add debits the pool (the guard
 	// added with the pending-receipt errata rewrite skips uncredited no-ops).
