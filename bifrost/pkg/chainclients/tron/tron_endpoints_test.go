@@ -538,8 +538,8 @@ func (s *TronTestSuite) TestComputingResourcesErrorIsARateLimit(c *C) {
 		&http.Client{Transport: router, Timeout: 2 * time.Second})
 
 	for i := 0; i < 2; i++ {
-		block, err := apiClient.GetBlock(42)
-		c.Assert(err, IsNil)
+		block, getErr := apiClient.GetBlock(42)
+		c.Assert(getErr, IsNil)
 		c.Assert(block.Header.RawData.Number, Equals, int64(42))
 	}
 	c.Assert(aHits.Load(), Equals, int32(1)) // cooling down: the second read went straight to b
