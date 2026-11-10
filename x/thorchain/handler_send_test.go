@@ -4,6 +4,7 @@ import (
 	"errors"
 	"strings"
 
+	storetypes "cosmossdk.io/store/types"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 	"gitlab.com/thorchain/thornode/v3/common"
 	cosmos "gitlab.com/thorchain/thornode/v3/common/cosmos"
@@ -43,6 +44,58 @@ func (s *HandlerSendSuiteV87) TestZeroNativeTxFeeSkipsCollection(c *C) {
 
 	err := deductNativeTxFeeFromAccount(ctx, keeper.KVStoreDummy{}, signer, msg)
 	c.Assert(err, IsNil)
+}
+
+// TestNativeTxFeeAnteGasMatchesRunePath verifies the ante fee deduction consumes
+// exactly the gas of the plain RUNE fee path (GetNativeTxFee then a bank send)
+// whenever it does not fall back to an alternative-native fee, since ante gas is
+// part of the consensus-visible gas_used.
+func (s *HandlerSendSuiteV87) TestNativeTxFeeAnteGasMatchesRunePath(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	fee := k.GetNativeTxFee(ctx)
+	c.Assert(fee.IsZero(), Equals, false)
+
+	measure := func(fn func(cosmos.Context) error) (uint64, error) {
+		cacheCtx, _ := ctx.CacheContext()
+		cacheCtx = cacheCtx.WithGasMeter(storetypes.NewInfiniteGasMeter())
+		err := fn(cacheCtx)
+		return cacheCtx.GasMeter().GasConsumed(), err
+	}
+	check := func(signer cosmos.AccAddress, expectErr bool) {
+		msg := &MsgSend{
+			FromAddress: signer,
+			ToAddress:   GetRandomBech32Addr(),
+			Amount:      cosmos.NewCoins(cosmos.NewCoin(common.NAMI.Native(), cosmos.NewInt(1))),
+		}
+		got, gotErr := measure(func(ctx cosmos.Context) error {
+			return deductNativeTxFeeFromAccount(ctx, k, signer, msg)
+		})
+		want, wantErr := measure(func(ctx cosmos.Context) error {
+			runeFee := common.NewCoins(common.NewCoin(common.RuneNative, k.GetNativeTxFee(ctx)))
+			return k.SendFromAccountToModule(ctx, signer, ReserveName, runeFee)
+		})
+		c.Check(got, Equals, want)
+		c.Check(gotErr != nil, Equals, expectErr)
+		c.Check(wantErr != nil, Equals, expectErr)
+	}
+
+	// Several denoms make a full balance scan measurably more expensive.
+	funded := GetRandomBech32Addr()
+	FundAccount(c, ctx, k, funded, fee.Uint64()*10)
+	fundAccountWith(c, ctx, k, funded, common.NAMI, cosmos.NewUint(common.One))
+	fundAccountWith(c, ctx, k, funded, common.RUJI, cosmos.NewUint(common.One))
+	unfunded := GetRandomBech32Addr()
+	fundAccountWith(c, ctx, k, unfunded, common.NAMI, cosmos.NewUint(common.One))
+
+	// Mimir off (mocknet defaults it on): identical gas whether the RUNE fee
+	// succeeds or fails.
+	k.SetMimir(ctx, constants.AltNativeTxFeeEnabled.String(), 0)
+	check(funded, false)
+	check(unfunded, true)
+
+	// Mimir on: a signer able to pay in RUNE still costs the same.
+	k.SetMimir(ctx, constants.AltNativeTxFeeEnabled.String(), 1)
+	check(funded, false)
 }
 
 func (s *HandlerSendSuiteV87) TestValidate(c *C) {

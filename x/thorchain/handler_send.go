@@ -2,10 +2,12 @@ package thorchain
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
 	math "cosmossdk.io/math"
+	storetypes "cosmossdk.io/store/types"
 	"github.com/blang/semver"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	se "github.com/cosmos/cosmos-sdk/types/errors"
@@ -182,19 +184,17 @@ func deductNativeTxFeeFromAccount(ctx cosmos.Context, k keeper.Keeper, signer co
 	if nativeTxFee.IsZero() {
 		return nil
 	}
-	nativeTxFeeCoin := common.NewCoin(common.RuneNative, nativeTxFee)
-	nativeTxFeeCommonCoins := common.NewCoins(nativeTxFeeCoin)
-	nativeTxFeeCoins, err := nativeTxFeeCommonCoins.Native()
-	if err != nil {
-		return fmt.Errorf("fail to convert native tx fee to sdk coins: %w", err)
+	// Try the standard RUNE fee first, with the same metered reads as the
+	// pre-alt-fee path. Ante gas is part of a tx's consensus-visible gas_used,
+	// so a RUNE-paying signer, and any signer while the mimir is off, must not
+	// be charged for extra reads: no balance scan, and the mimir lookup runs on
+	// a throwaway gas meter.
+	err := k.SendFromAccountToModule(ctx, signer, ReserveName, common.NewCoins(common.NewCoin(common.RuneNative, nativeTxFee)))
+	if !errors.Is(err, se.ErrInsufficientFunds) {
+		return err
 	}
-	// Prefer the standard RUNE fee path when the signer can pay it directly.
-	if k.HasCoins(ctx, signer, nativeTxFeeCoins) {
-		return k.SendFromAccountToModule(ctx, signer, ReserveName, nativeTxFeeCommonCoins)
-	}
-
-	if k.GetConfigInt64(ctx, constants.AltNativeTxFeeEnabled) <= 0 {
-		return se.ErrInsufficientFunds
+	if k.GetConfigInt64(ctx.WithGasMeter(storetypes.NewInfiniteGasMeter()), constants.AltNativeTxFeeEnabled) <= 0 {
+		return err
 	}
 
 	var coins common.Coins
