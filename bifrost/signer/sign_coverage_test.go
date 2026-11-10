@@ -2471,7 +2471,7 @@ func (s *SignCoverageSuite) TestSignAndBroadcast_Round7RetryActiveVault(c *C) {
 // ----- sendKeygenToThorchain tests -----
 
 func (s *SignCoverageSuite) TestSendKeygenToThorchain_Success(c *C) {
-	m := GetMetricForTest(c)
+	metric := GetMetricForTest(c)
 	bridge := &mockSignBridge{
 		keygenStdTxMsg: &ttypes.MsgTssPool{},
 		broadcastTxID:  "TXID123",
@@ -2481,8 +2481,8 @@ func (s *SignCoverageSuite) TestSendKeygenToThorchain_Success(c *C) {
 		logger:          log.With().Str("module", "test").Logger(),
 		cfg:             config.Bifrost{},
 		thorchainBridge: bridge,
-		m:               m,
-		errCounter:      m.GetCounterVec(metrics.SignerError),
+		m:               metric,
+		errCounter:      metric.GetCounterVec(metrics.SignerError),
 	}
 
 	err := sign.sendKeygenToThorchain(
@@ -2503,7 +2503,7 @@ func (s *SignCoverageSuite) TestSendKeygenToThorchain_Success(c *C) {
 }
 
 func (s *SignCoverageSuite) TestSendKeygenToThorchain_GetKeygenStdTxError(c *C) {
-	m := GetMetricForTest(c)
+	metric := GetMetricForTest(c)
 	bridge := &mockSignBridge{
 		keygenStdTxErr: fmt.Errorf("keygen tx error"),
 	}
@@ -2512,8 +2512,8 @@ func (s *SignCoverageSuite) TestSendKeygenToThorchain_GetKeygenStdTxError(c *C) 
 		logger:          log.With().Str("module", "test").Logger(),
 		cfg:             config.Bifrost{},
 		thorchainBridge: bridge,
-		m:               m,
-		errCounter:      m.GetCounterVec(metrics.SignerError),
+		m:               metric,
+		errCounter:      metric.GetCounterVec(metrics.SignerError),
 	}
 
 	err := sign.sendKeygenToThorchain(
@@ -2534,7 +2534,7 @@ func (s *SignCoverageSuite) TestSendKeygenToThorchain_GetKeygenStdTxError(c *C) 
 }
 
 func (s *SignCoverageSuite) TestSendKeygenToThorchain_BroadcastFailThenSucceed(c *C) {
-	m := GetMetricForTest(c)
+	metric := GetMetricForTest(c)
 	callCount := 0
 	bridge := &mockBroadcastRetryBridge{
 		keygenStdTxMsg: &ttypes.MsgTssPool{},
@@ -2551,8 +2551,8 @@ func (s *SignCoverageSuite) TestSendKeygenToThorchain_BroadcastFailThenSucceed(c
 		logger:          log.With().Str("module", "test").Logger(),
 		cfg:             config.Bifrost{},
 		thorchainBridge: bridge,
-		m:               m,
-		errCounter:      m.GetCounterVec(metrics.SignerError),
+		m:               metric,
+		errCounter:      metric.GetCounterVec(metrics.SignerError),
 	}
 
 	err := sign.sendKeygenToThorchain(
@@ -2573,7 +2573,7 @@ func (s *SignCoverageSuite) TestSendKeygenToThorchain_BroadcastFailThenSucceed(c
 }
 
 func (s *SignCoverageSuite) TestSendKeygenToThorchain_WithChains(c *C) {
-	m := GetMetricForTest(c)
+	metric := GetMetricForTest(c)
 	bridge := &mockSignBridge{
 		keygenStdTxMsg: &ttypes.MsgTssPool{},
 		broadcastTxID:  "TXID456",
@@ -2588,8 +2588,8 @@ func (s *SignCoverageSuite) TestSendKeygenToThorchain_WithChains(c *C) {
 		logger:          log.With().Str("module", "test").Logger(),
 		cfg:             cfg,
 		thorchainBridge: bridge,
-		m:               m,
-		errCounter:      m.GetCounterVec(metrics.SignerError),
+		m:               metric,
+		errCounter:      metric.GetCounterVec(metrics.SignerError),
 	}
 
 	err := sign.sendKeygenToThorchain(
@@ -2609,7 +2609,7 @@ func (s *SignCoverageSuite) TestSendKeygenToThorchain_WithChains(c *C) {
 }
 
 func (s *SignCoverageSuite) TestSendKeygenToThorchain_WithBackupKeyshares(c *C) {
-	m := GetMetricForTest(c)
+	metric := GetMetricForTest(c)
 	bridge := &mockSignBridge{
 		keygenStdTxMsg: &ttypes.MsgTssPool{},
 		broadcastTxID:  "TXID_BACKUP",
@@ -2622,8 +2622,8 @@ func (s *SignCoverageSuite) TestSendKeygenToThorchain_WithBackupKeyshares(c *C) 
 			Signer: config.BifrostSignerConfiguration{BackupKeyshares: true},
 		},
 		thorchainBridge: bridge,
-		m:               m,
-		errCounter:      m.GetCounterVec(metrics.SignerError),
+		m:               metric,
+		errCounter:      metric.GetCounterVec(metrics.SignerError),
 	}
 
 	// Call with non-empty pubkeys, BackupKeyshares enabled
