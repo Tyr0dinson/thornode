@@ -144,6 +144,10 @@ func Swaps(rng *rand.Rand) *Actor {
 		}
 	}
 
+	// an ATOM inbound that shares its Hub transaction with an x/liquid message,
+	// as liquid-staking providers batch them on mainnet
+	a.Children[core.NewGaiaLiquidBundleSwapActor(common.ETHAsset, rng)] = true
+
 	// swap from each pool to one random one
 	for i, pool := range swapPools {
 		// always swap SOL <> BTC

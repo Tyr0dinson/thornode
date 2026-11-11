@@ -23,3 +23,12 @@ func TestSwapsAlwaysScheduleBothZECAddressFormats(t *testing.T) {
 		}
 	}
 }
+
+func TestSwapsAlwaysScheduleGaiaLiquidBundle(t *testing.T) {
+	for seed := uint64(0); seed < 10; seed++ {
+		names := actorNames(Swaps(rand.New(rand.NewPCG(seed, 42))))
+		if !names["Swap GAIA.ATOM => ETH.ETH (inbound bundled with x/liquid)"] {
+			t.Fatalf("seed %d has no ATOM swap bundled with an x/liquid message", seed)
+		}
+	}
+}

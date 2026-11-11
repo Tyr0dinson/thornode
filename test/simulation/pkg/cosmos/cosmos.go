@@ -26,6 +26,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
 
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/gaia/liquidtypes"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
@@ -98,6 +99,7 @@ func NewClient(chain common.Chain, host string, keys *thorclient.Keys) (LiteChai
 	// setup tx config
 	interfaceRegistry := codectypes.NewInterfaceRegistry()
 	interfaceRegistry.RegisterImplementations((*sdk.Msg)(nil), &btypes.MsgSend{})
+	liquidtypes.RegisterInterfaces(interfaceRegistry) // for WithLiquidBundle
 	marshaler := codec.NewProtoCodec(interfaceRegistry)
 	signTypes := []signingtypes.SignMode{signingtypes.SignMode_SIGN_MODE_DIRECT}
 	txConfig := tx.NewTxConfig(marshaler, signTypes)
@@ -202,6 +204,39 @@ func isCosmosAccountNotFoundError(err error) bool {
 }
 
 func (c *Client) SignTx(tx SimTx) ([]byte, error) {
+	return c.signTx(tx)
+}
+
+// liquidBundleClient signs every transfer as a bundle: an x/liquid message
+// first, then the MsgSend.
+type liquidBundleClient struct {
+	*Client
+}
+
+// WithLiquidBundle wraps a Cosmos Hub client so that each transfer it signs
+// shares its transaction with an x/liquid message, the shape liquid-staking
+// providers send on mainnet. Bifrost must decode the whole transaction to
+// observe the MsgSend. The message is
+// MsgWithdrawAllTokenizeShareRecordReward: it succeeds for an account that owns
+// no tokenize share records and changes no state, so it can be sent any number
+// of times from any simulation account.
+func WithLiquidBundle(client LiteChainClient) (LiteChainClient, error) {
+	c, ok := client.(*Client)
+	if !ok || !c.chain.Equals(common.GAIAChain) {
+		return nil, fmt.Errorf("liquid bundle requires a GAIA client, got %T", client)
+	}
+	return &liquidBundleClient{Client: c}, nil
+}
+
+func (c *liquidBundleClient) SignTx(tx SimTx) ([]byte, error) {
+	return c.signTx(tx, &liquidtypes.MsgWithdrawAllTokenizeShareRecordReward{
+		OwnerAddress: c.address.String(),
+	})
+}
+
+// signTx signs a transfer. Any leading messages are placed before the MsgSend
+// in the same transaction.
+func (c *Client) signTx(tx SimTx, leading ...sdk.Msg) ([]byte, error) {
 	// get account
 	account, err := c.GetAccount(nil)
 	if err != nil {
@@ -219,13 +254,15 @@ func (c *Client) SignTx(tx SimTx) ([]byte, error) {
 
 	// build transaction
 	txBuilder := c.txConfig.NewTxBuilder()
-	err = txBuilder.SetMsgs(msg)
+	err = txBuilder.SetMsgs(append(leading, msg)...)
 	if err != nil {
 		return nil, fmt.Errorf("fail to set messages: %w", err)
 	}
 	txBuilder.SetMemo(tx.Memo)
-	txBuilder.SetFeeAmount(sdk.NewCoins(sdk.NewCoin(c.denom, sdkmath.NewInt(2000))))
-	txBuilder.SetGasLimit(150_000)
+	// same gas and fee per message as a lone MsgSend
+	msgCount := int64(len(leading)) + 1
+	txBuilder.SetFeeAmount(sdk.NewCoins(sdk.NewCoin(c.denom, sdkmath.NewInt(2000*msgCount))))
+	txBuilder.SetGasLimit(uint64(150_000 * msgCount))
 
 	// configure signing
 	sigData := &signingtypes.SingleSignatureData{

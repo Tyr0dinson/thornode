@@ -2,10 +2,13 @@ package gaia
 
 import (
 	"bytes"
+	"context"
 	"encoding/hex"
 	"fmt"
 
+	abci "github.com/cometbft/cometbft/abci/types"
 	"github.com/cometbft/cometbft/crypto/tmhash"
+	rpctypes "github.com/cometbft/cometbft/rpc/core/types"
 
 	sdkmath "cosmossdk.io/math"
 	"github.com/cosmos/cosmos-sdk/codec"
@@ -510,5 +513,22 @@ func (s *BlockScannerTestSuite) TestProcessTxsObservesMsgSendBundledWithLiquid(c
 		c.Assert(txInItems[0].Memo, Equals, "ADD:GAIA.ATOM")
 		c.Assert(txInItems[0].Coins[0].Asset.String(), Equals, "GAIA.ATOM")
 		c.Assert(txInItems[0].Coins[0].Amount.String(), Equals, "500000000") // 5 ATOM in 1e8
+
+		// The same bundle, failed on chain: a Cosmos transaction is atomic, so the
+		// MsgSend moved nothing and no deposit may be observed.
+		blockScanner.rpc = &failedTxResultsRPC{}
+		txInItems, err = blockScanner.processTxs(1, []tmtypes.Tx{rawTx})
+		c.Assert(err, IsNil)
+		c.Assert(len(txInItems), Equals, 0, Commentf("failed %T", lm))
+		blockScanner.rpc = &mockTendermintRPC{}
 	}
+}
+
+// failedTxResultsRPC reports the first transaction of every block as failed.
+type failedTxResultsRPC struct {
+	mockTendermintRPC
+}
+
+func (*failedTxResultsRPC) BlockResults(context.Context, *int64) (*rpctypes.ResultBlockResults, error) {
+	return &rpctypes.ResultBlockResults{TxsResults: []*abci.ExecTxResult{{Code: 5}}}, nil
 }

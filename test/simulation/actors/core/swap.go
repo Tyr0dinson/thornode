@@ -16,6 +16,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	openapi "gitlab.com/thorchain/thornode/v3/openapi/gen"
+	simcosmos "gitlab.com/thorchain/thornode/v3/test/simulation/pkg/cosmos"
 	"gitlab.com/thorchain/thornode/v3/test/simulation/pkg/evm"
 	"gitlab.com/thorchain/thornode/v3/test/simulation/pkg/thornode"
 	. "gitlab.com/thorchain/thornode/v3/test/simulation/pkg/types"
@@ -53,6 +54,9 @@ type SwapActor struct {
 	// Required verification actors must fail rather than skip an unfunded swap.
 	requireOutbound bool
 	useTexAddress   bool
+	// wrapClient, when set, replaces the user's source chain client for the
+	// inbound, so a specialized actor can change the shape of the transaction.
+	wrapClient func(LiteChainClient) (LiteChainClient, error)
 
 	xmrSwapSlotAcquired bool
 
@@ -86,6 +90,19 @@ func NewZECSwapActor(from common.Asset, useTexAddress bool, rng *rand.Rand) *Act
 	} else {
 		a.Name += " (transparent)"
 	}
+	return &a.Actor
+}
+
+// NewGaiaLiquidBundleSwapActor requires a completed swap whose ATOM inbound
+// shares its Cosmos Hub transaction with an x/liquid message. Bifrost decodes a
+// transaction all-or-nothing, so the swap completes only if the Hub scanner's
+// decode registry knows gaia.liquid.v1beta1; without it the inbound is never
+// observed and the actor times out.
+func NewGaiaLiquidBundleSwapActor(to common.Asset, rng *rand.Rand) *Actor {
+	a := newSwapActor(common.ATOMAsset, to, rng)
+	a.requireOutbound = true
+	a.wrapClient = simcosmos.WithLiquidBundle
+	a.Name += " (inbound bundled with x/liquid)"
 	return &a.Actor
 }
 
@@ -737,6 +754,15 @@ func (a *SwapActor) sendSwap(config *OpConfig) OpResult {
 	}
 
 	client := a.user.ChainClients[a.from.Chain]
+	if a.wrapClient != nil {
+		client, err = a.wrapClient(client)
+		if err != nil {
+			a.Log().Error().Err(err).Msg("failed to wrap chain client")
+			return OpResult{
+				Continue: false,
+			}
+		}
+	}
 
 	txid, err := SignAndBroadcastTx(client, tx)
 	if err != nil {
