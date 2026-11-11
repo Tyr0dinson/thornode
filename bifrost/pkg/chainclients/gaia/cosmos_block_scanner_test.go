@@ -34,6 +34,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/blockscanner"
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/gaia/liquidtypes"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pubkeymanager"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -501,6 +502,7 @@ func (s *BlockScannerTestSuite) TestProcessTxsObservesMsgSendBundledWithLiquid(c
 		builder := txConfig.NewTxBuilder()
 		c.Assert(builder.SetMsgs(lm, send), IsNil)
 		builder.SetMemo("ADD:GAIA.ATOM")
+		builder.SetFeeAmount(ctypes.NewCoins(ctypes.NewCoin("uatom", sdkmath.NewInt(2000))))
 
 		rawTx, err := txConfig.TxEncoder()(builder.GetTx())
 		c.Assert(err, IsNil)
@@ -520,6 +522,29 @@ func (s *BlockScannerTestSuite) TestProcessTxsObservesMsgSendBundledWithLiquid(c
 		txInItems, err = blockScanner.processTxs(1, []tmtypes.Tx{rawTx})
 		c.Assert(err, IsNil)
 		c.Assert(len(txInItems), Equals, 0, Commentf("failed %T", lm))
+
+		// The same failed bundle, sent by a vault. The failed-transaction path
+		// decodes the transaction to find the sender and observes the fee the
+		// vault paid, so it too needs the liquid type registered: without it the
+		// decode fails and the gas goes unobserved.
+		blockScanner.pubkeyMgr = &failedTxPoolAddressValidator{
+			MockPoolAddressValidator: pubkeymanager.NewMockPoolAddressValidator(),
+			validAddr:                from.String(),
+			info: common.ChainPoolInfo{
+				Chain:       common.GAIAChain,
+				PubKey:      common.PubKey("mock-pubkey"),
+				PoolAddress: common.Address(from.String()),
+			},
+		}
+		txInItems, err = blockScanner.processTxs(1, []tmtypes.Tx{rawTx})
+		c.Assert(err, IsNil)
+		c.Assert(len(txInItems), Equals, 1, Commentf("failed vault %T", lm))
+		c.Assert(txInItems[0].Sender, Equals, from.String())
+		c.Assert(txInItems[0].To, Equals, to.String())
+		gas := txInItems[0].Gas.ToCoins().GetCoin(common.GAIAChain.GetGasAsset())
+		c.Assert(gas.Amount.String(), Equals, "200000") // 2000 uatom in 1e8
+
+		blockScanner.pubkeyMgr = nil
 		blockScanner.rpc = &mockTendermintRPC{}
 	}
 }

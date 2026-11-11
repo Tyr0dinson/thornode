@@ -96,13 +96,7 @@ func NewClient(chain common.Chain, host string, keys *thorclient.Keys) (LiteChai
 		return nil, fmt.Errorf("fail to dial rpc: %w", err)
 	}
 
-	// setup tx config
-	interfaceRegistry := codectypes.NewInterfaceRegistry()
-	interfaceRegistry.RegisterImplementations((*sdk.Msg)(nil), &btypes.MsgSend{})
-	liquidtypes.RegisterInterfaces(interfaceRegistry) // for WithLiquidBundle
-	marshaler := codec.NewProtoCodec(interfaceRegistry)
-	signTypes := []signingtypes.SignMode{signingtypes.SignMode_SIGN_MODE_DIRECT}
-	txConfig := tx.NewTxConfig(marshaler, signTypes)
+	txConfig := newTxConfig()
 
 	var denom, chainId string
 
@@ -128,6 +122,16 @@ func NewClient(chain common.Chain, host string, keys *thorclient.Keys) (LiteChai
 		denom:    denom,
 		chainId:  chainId,
 	}, nil
+}
+
+// newTxConfig returns the tx config the client builds, signs and encodes with.
+func newTxConfig() client.TxConfig {
+	interfaceRegistry := codectypes.NewInterfaceRegistry()
+	interfaceRegistry.RegisterImplementations((*sdk.Msg)(nil), &btypes.MsgSend{})
+	liquidtypes.RegisterInterfaces(interfaceRegistry) // for WithLiquidBundle
+	marshaler := codec.NewProtoCodec(interfaceRegistry)
+	signTypes := []signingtypes.SignMode{signingtypes.SignMode_SIGN_MODE_DIRECT}
+	return tx.NewTxConfig(marshaler, signTypes)
 }
 
 func (c *Client) GetAccount(pk *common.PubKey) (*common.Account, error) {
@@ -229,20 +233,30 @@ func WithLiquidBundle(client LiteChainClient) (LiteChainClient, error) {
 }
 
 func (c *liquidBundleClient) SignTx(tx SimTx) ([]byte, error) {
-	return c.signTx(tx, &liquidtypes.MsgWithdrawAllTokenizeShareRecordReward{
-		OwnerAddress: c.address.String(),
-	})
+	return c.signTx(tx, c.leading()...)
 }
 
-// signTx signs a transfer. Any leading messages are placed before the MsgSend
-// in the same transaction.
+// leading returns the messages placed ahead of the MsgSend.
+func (c *liquidBundleClient) leading() []sdk.Msg {
+	return []sdk.Msg{&liquidtypes.MsgWithdrawAllTokenizeShareRecordReward{
+		OwnerAddress: c.address.String(),
+	}}
+}
+
+// signTx signs a transfer with the account's current sequence. Any leading
+// messages are placed before the MsgSend in the same transaction.
 func (c *Client) signTx(tx SimTx, leading ...sdk.Msg) ([]byte, error) {
 	// get account
 	account, err := c.GetAccount(nil)
 	if err != nil {
 		return nil, fmt.Errorf("fail to get account: %w", err)
 	}
+	return c.buildSignedTx(tx, account, leading...)
+}
 
+// buildSignedTx builds, signs and encodes the transfer for the given account
+// state. It makes no network calls.
+func (c *Client) buildSignedTx(tx SimTx, account *common.Account, leading ...sdk.Msg) ([]byte, error) {
 	// create message
 	amount := tx.Coin.Amount.Quo(sdkmath.NewUint(100)) // 1e8 -> 1e6
 	coins := []sdk.Coin{sdk.NewCoin(c.denom, sdkmath.NewIntFromBigInt(amount.BigInt()))}
@@ -254,7 +268,7 @@ func (c *Client) signTx(tx SimTx, leading ...sdk.Msg) ([]byte, error) {
 
 	// build transaction
 	txBuilder := c.txConfig.NewTxBuilder()
-	err = txBuilder.SetMsgs(append(leading, msg)...)
+	err := txBuilder.SetMsgs(append(leading, msg)...)
 	if err != nil {
 		return nil, fmt.Errorf("fail to set messages: %w", err)
 	}
