@@ -386,6 +386,14 @@ func (c Chain) RequiresExplicitRefundAddress() bool {
 	return c.Equals(XMRChain)
 }
 
+// QueuesOutboundCopyBeforeDue reports whether an outbound's replacement can
+// be queued before the outbound falls due for rescheduling. A SOL durable
+// nonce reissue moves a vault's pending outbounds to the current height;
+// elsewhere a copy is only queued once the signing period runs out.
+func (c Chain) QueuesOutboundCopyBeforeDue() bool {
+	return c.Equals(SOLChain)
+}
+
 // IsValidAddress make sure the address is correct for the chain
 // And this also make sure mocknet doesn't use mainnet address vice versa
 func (c Chain) IsValidAddress(addr Address) bool {

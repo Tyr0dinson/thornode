@@ -475,3 +475,35 @@ func (HandlerRagnarokSuite) TestRagnarokFindsSplitPayoutPartMovedIndependently(c
 		c.Check(left.TxArray[0].OutHash.IsEmpty(), Equals, true, comment)
 	}
 }
+
+// LackSigning places a retry with the SigningTransactionPeriod of the block it
+// runs in. When the mimir raises the period afterwards, the walk computes the
+// next due block from the longer period (10600 from 10000 at 600), so it is
+// not due yet when the payment of the 10300 retry is observed. The replaced
+// copy at 10000 shows the retry exists, so the walk must search for it rather
+// than slash the vault. Lowering the period, or observing once the longer
+// period is due, finds it as before.
+func (HandlerRagnarokSuite) TestRagnarokFindsRetryAfterSigningPeriodChange(c *C) {
+	const scheduled = int64(10000)
+	for _, tc := range []struct {
+		name      string
+		coalesce  int64
+		retry     int64
+		period    int64 // SigningTransactionPeriod when observed
+		observeAt int64
+	}{
+		{name: "period raised, observed right after the retry", period: 600, retry: 10300, observeAt: 10302},
+		{name: "period raised, observed just before it is due again", period: 600, retry: 10300, observeAt: 10599},
+		{name: "period raised, observed once due again", period: 600, retry: 10300, observeAt: 10650},
+		{name: "period raised, coalesced retry", coalesce: 7, period: 600, retry: 10304, observeAt: 10306},
+		{name: "period lowered", period: 100, retry: 10300, observeAt: 10302},
+		{name: "period lowered, coalesced retry", coalesce: 7, period: 100, retry: 10304, observeAt: 10306},
+	} {
+		comment := Commentf(tc.name)
+		f := newRagnarokRetryFixture(c, scheduled, tc.coalesce)
+		f.k.SetMimir(f.ctx, constants.SigningTransactionPeriod.String(), 300)
+		f.lackSigning(c, 10300, scheduled, tc.retry, comment)
+		f.k.SetMimir(f.ctx, constants.SigningTransactionPeriod.String(), tc.period)
+		f.observe(c, tc.observeAt, scheduled, tc.retry, comment)
+	}
+}

@@ -116,6 +116,14 @@ func (h RagnarokHandler) handle(ctx cosmos.Context, msg MsgRagnarok) (*cosmos.Re
 		return n
 	}
 	isCopy := func(txOut *TxOut) bool { return copies(txOut) > 0 }
+	replaced := func(txOut *TxOut) bool {
+		for _, tx := range txOut.TxArray {
+			if tx.OutHash.Equals(common.BlankTxID) && isRagnarokCopy(tx, msg.Tx.Tx, ragnarokMemo) {
+				return true
+			}
+		}
+		return false
+	}
 	split := false
 	scan := true
 	decrementedPendingRagnarok := false
@@ -219,9 +227,13 @@ func (h RagnarokHandler) handle(ctx cosmos.Context, msg MsgRagnarok) (*cosmos.Re
 			height, due = retry, nextDue
 			continue
 		}
-		if !searchable && !msg.Tx.Tx.Chain.Equals(common.SOLChain) {
-			// LackSigning queues a copy only once the outbound falls due; only a
-			// SOL durable nonce reissue queues one earlier (reissueSolDurableAt)
+		// LackSigning queues a copy only once the outbound falls due, and only
+		// a SOL durable nonce reissue queues one earlier (reissueSolDurableAt),
+		// so before the next due block there is nothing to find, unless this
+		// record holds a copy that was already replaced (OutHash BlankTxID):
+		// its replacement exists, queued under an earlier, shorter
+		// SigningTransactionPeriod or before a block time change
+		if !searchable && !msg.Tx.Tx.Chain.QueuesOutboundCopyBeforeDue() && !replaced(txOut) {
 			break
 		}
 		var retryOut *TxOut
