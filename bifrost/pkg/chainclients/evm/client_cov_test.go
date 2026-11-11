@@ -998,7 +998,7 @@ func TestCovReconstructVaultLiability(t *testing.T) {
 	ours2 := covSignTx(t, vaultKey, 3, &routerAddr, big.NewInt(1), nil)
 	stale := covSignTx(t, vaultKey, 1, &routerAddr, big.NewInt(1000), nil)
 	foreign := covSignTx(t, covExternalKey(t), 2, &routerAddr, big.NewInt(1000), nil)
-	pendingBlock := covBlockJSON(t, covHeader(102, ecommon.Hash{}, true), []*etypes.Transaction{ours, ours2, stale, foreign})
+	pendingBlock := covPendingBlockJSON(t, covHeader(102, ecommon.Hash{}, true), []*etypes.Transaction{ours, ours2, stale, foreign})
 	latestBlock := covBlockJSON(t, covHeader(101, ecommon.Hash{}, true), []*etypes.Transaction{stale, foreign})
 	var requestedTag string
 	env.rpc.set("eth_getBlockByNumber", func(params []json.RawMessage) (any, error) {

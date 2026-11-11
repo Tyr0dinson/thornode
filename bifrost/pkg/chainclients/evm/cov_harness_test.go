@@ -531,6 +531,20 @@ func covBlockJSON(t *testing.T, header *etypes.Header, txs []*etypes.Transaction
 	return out
 }
 
+// covPendingBlockJSON renders a block as geth returns the "pending" block: the
+// hash, nonce and miner fields are null.
+func covPendingBlockJSON(t *testing.T, header *etypes.Header, txs []*etypes.Transaction) json.RawMessage {
+	t.Helper()
+	obj := map[string]any{}
+	require.NoError(t, json.Unmarshal(covBlockJSON(t, header, txs), &obj))
+	for _, field := range []string{"hash", "nonce", "miner"} {
+		obj[field] = nil
+	}
+	out, err := json.Marshal(obj)
+	require.NoError(t, err)
+	return out
+}
+
 // covTxJSON returns a JSON-RPC transaction object (pending when blockNumber is nil).
 func covTxJSON(t *testing.T, tx *etypes.Transaction, blockNumber *big.Int) json.RawMessage {
 	t.Helper()

@@ -183,6 +183,24 @@ func covBlockJSON(t *testing.T, header *etypes.Header, txs []*etypes.Transaction
 	return out
 }
 
+// covPendingBlockJSON renders a block as geth returns the "pending" block: the
+// hash, nonce and miner fields are null.
+func covPendingBlockJSON(t *testing.T, header *etypes.Header, txs []*etypes.Transaction) json.RawMessage {
+	t.Helper()
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(covBlockJSON(t, header, txs), &m); err != nil {
+		t.Fatalf("unmarshal block: %v", err)
+	}
+	for _, field := range []string{"hash", "nonce", "miner"} {
+		m[field] = json.RawMessage(`null`)
+	}
+	out, err := json.Marshal(m)
+	if err != nil {
+		t.Fatalf("marshal block: %v", err)
+	}
+	return out
+}
+
 // covReceiptJSON renders a receipt for the given tx hash.
 func covReceiptJSON(txHash ecommon.Hash, status uint64, logs []*etypes.Log) json.RawMessage {
 	if logs == nil {

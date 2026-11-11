@@ -388,13 +388,18 @@ func (c *Client) reconstructVaultLiability(vaultAddr string) (bool, error) {
 	// Fetch pending block to find our transactions
 	ctx3, cancel3 := c.getContext()
 	defer cancel3()
-	pendingBlock, err := c.client.BlockByNumber(ctx3, big.NewInt(int64(rpc.PendingBlockNumber)))
+	// Decode only the transactions: geth returns null hash/nonce/miner for the
+	// pending block, which ethclient.BlockByNumber fails to decode.
+	var pendingBlock struct {
+		Transactions []*etypes.Transaction `json:"transactions"`
+	}
+	err = c.client.Client().CallContext(ctx3, &pendingBlock, "eth_getBlockByNumber", rpc.PendingBlockNumber, true)
 	if err != nil {
 		return false, fmt.Errorf("failed to get pending block: %w", err)
 	}
 
 	foundCount := uint64(0)
-	for _, tx := range pendingBlock.Transactions() {
+	for _, tx := range pendingBlock.Transactions {
 		// Get sender address
 		signer := etypes.LatestSignerForChainID(c.chainID)
 		sender, err := etypes.Sender(signer, tx)

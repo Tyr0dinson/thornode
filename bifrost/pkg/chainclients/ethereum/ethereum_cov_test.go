@@ -520,7 +520,7 @@ func TestCovReconstructVaultLiability(t *testing.T) {
 	}
 	// The node answers by block tag: the vault's pending tx is only in the
 	// "pending" block; the latest mined block holds other txs.
-	pendingBlock := covBlockJSON(t, covHeader(21, ecommon.Hash{}, true), []*etypes.Transaction{other, stale, mine})
+	pendingBlock := covPendingBlockJSON(t, covHeader(21, ecommon.Hash{}, true), []*etypes.Transaction{other, stale, mine})
 	latestBlock := covBlockJSON(t, covHeader(20, ecommon.Hash{}, true), []*etypes.Transaction{other, stale})
 	var requestedTag string
 	env.rpc.set("eth_getBlockByNumber", func(p []json.RawMessage) (any, error) {
