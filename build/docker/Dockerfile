@@ -28,6 +28,7 @@ RUN --mount=type=secret,id=go_private_auth,required=false \
 COPY api api
 COPY app app
 COPY bifrost bifrost
+COPY build/garble build/garble
 COPY cmd cmd
 COPY common common
 COPY config config
@@ -40,11 +41,19 @@ COPY Makefile Makefile
 COPY version version
 COPY tools/thorscan tools/thorscan
 COPY tools/recover-keyshare-backup tools/recover-keyshare-backup
+COPY tools/check-garble tools/check-garble
 
 ARG TAG=mainnet
 ARG COMMIT=unknown
+# Obfuscate thornode and tss-lib-private function names (see GARBLE in the
+# Makefile); install fails if a binary still exposes them.
+ARG GARBLE=1
 
-RUN make install
+RUN make install GARBLE=$GARBLE
+
+# Fail the build if the node binary is not a position-independent executable.
+# hadolint ignore=DL4006
+RUN readelf -h /go/bin/thornode | grep -q "Type:.*DYN" && readelf -l /go/bin/thornode | grep -q INTERP
 
 ########################################################################################
 # Runtime

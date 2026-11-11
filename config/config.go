@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"sync"
@@ -37,6 +38,11 @@ const MaxRetries = 3
 // RetryBackoff is the wait between seed/genesis fetch attempts. A variable so
 // tests of the failure paths need not sleep for real.
 var RetryBackoff = time.Second * 5
+
+// Keep Config's field names in garbled release builds (see GARBLE in the
+// Makefile). viper and the config templates look fields up by name, and garble
+// cannot follow the config into the renderConfigFile closure.
+var _ = reflect.TypeOf(Config{})
 
 var (
 	//go:embed default.yaml

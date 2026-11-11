@@ -865,6 +865,36 @@ go-tss:
     paths:
       - test-quality-reports/root-mocknet-go-tss/
 
+# Loads the keysign fixtures, written by an ungarbled keygen like every keyshare
+# on a node today, through a garbled bifrost's keyshare loader. The simulation
+# cannot catch a LocalPartySaveData that garble renamed, because garbled keygen
+# writes the keyshares that garbled keysign reads back there.
+check-garble-keyshares:
+  tags: !reference [.small-runner, tags]
+  rules: *rules
+  stage: test
+  needs: []
+  variables:
+    GARBLE: "1"
+  before_script:
+    - !reference [.go-private-auth, before_script]
+  script:
+    - make check-garble-keyshares
+
+# Boots the garbled thornode that release images ship (build/docker/Dockerfile
+# defaults to GARBLE=1) through the regression suites, so a packaging regression
+# that stops a garbled node from starting — e.g. an ldflag the release build
+# does not set, which leaves the wasmvm version check failing "wasmvm module not
+# exist" — fails CI instead of shipping. The non-garbled test-regression owns
+# golden validation; this job overrides the script to build and boot only.
+test-regression-garble:
+  extends: test-regression
+  variables:
+    GARBLE: "1"
+  script:
+    - make _build-test-regression
+    - make _test-regression UID=0 GID=0
+
 pages:
   rules:
     - if: $CI_MERGE_REQUEST_SOURCE_PROJECT_PATH && $CI_MERGE_REQUEST_SOURCE_PROJECT_PATH != $CI_MERGE_REQUEST_PROJECT_PATH
