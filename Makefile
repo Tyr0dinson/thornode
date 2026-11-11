@@ -11,7 +11,7 @@ endif
 # Config
 ########################################################################################
 
-.PHONY: build test test-xmr-frost-e2e tools export healthcheck run-mocknet build-mocknet stop-mocknet halt-mocknet ps-mocknet reset-mocknet logs-mocknet openapi test-performance test-performance-quick test-performance-all test-performance-analyze test-performance-profile-cpu test-performance-profile-mem test-performance-trace test-performance-clean test-xmr-e2e
+.PHONY: build test test-xmr-frost-e2e frost-lib frost-lib-check-mainnet tools export healthcheck run-mocknet build-mocknet stop-mocknet halt-mocknet ps-mocknet reset-mocknet logs-mocknet openapi test-performance test-performance-quick test-performance-all test-performance-analyze test-performance-profile-cpu test-performance-profile-mem test-performance-trace test-performance-clean test-xmr-e2e
 
 # mocknet docker compose files and overrides for macOS
 DOCKER_COMPOSE_FILES ?= -f build/docker/docker-compose.yml
@@ -97,6 +97,29 @@ endif
 XMR_E2E_RUN := TestSeraiDistributedSignAndSubmitFlow|TestSeraiDistributedSignFailsClosedWhenThresholdCannotBeMet|TestKeygenFailsClosedWhenPeerCoordinationFails|TestXMRScannerInboundDeferredReferenceMemoAttribution|TestXMRScannerInboundMemolessDeferredAttribution|TestXMRReportSolvencyMultiVaultAccounting
 BINARIES?=./cmd/thornode ./cmd/bifrost ./tools/recover-keyshare-backup
 GOVERSION=$(shell awk '($$1 == "go") { print $$2 }' go.mod)
+
+# go-frost static library (LTC FROST vaults on stagenet). Stagenet and mocknet
+# bifrost builds link it through cgo; bifrost/tss/frostlib is its only importer.
+# scripts/frost-lib.sh builds it from the module version in go.mod with the
+# Rust toolchain the module pins (cargo --locked); no prebuilt archive is ever
+# used. Mainnet and chainnet builds never reference it (frost-lib-check-mainnet).
+FROST_BUILD_DIR ?= $(CURDIR)/.build/go-frost
+GOFROST_STATIC_LIB ?= $(FROST_BUILD_DIR)/libgofrost.a
+# Recipe prefix for go build/test: hands cgo the archive when it exists and
+# nothing otherwise, so packages that do not link go-frost build without it.
+# Targets that link it depend on frost-lib, which fails when it cannot build.
+FROST_CGO_ENV = CGO_LDFLAGS="$${CGO_LDFLAGS:-} $$(test -f '$(GOFROST_STATIC_LIB)' && echo '$(GOFROST_STATIC_LIB)')"
+ifneq ($(filter $(TAG),mocknet stagenet),)
+FROST_LIB_DEP := frost-lib
+FROST_BUILD_CGO_ENV = $(FROST_CGO_ENV)
+endif
+# Test targets always build with -tags=mocknet; only packages under bifrost/
+# and cmd/bifrost link the archive.
+ifeq ($(TEST_DIR),$(TEST_PATHS))
+TEST_FROST_LIB_DEP := frost-lib
+else ifneq ($(filter ./bifrost% ./cmd/bifrost%,$(TEST_DIR)),)
+TEST_FROST_LIB_DEP := frost-lib
+endif
 
 # docker tty args are disabled in CI and non-interactive shells
 ifndef CI
@@ -211,19 +234,35 @@ docs-dev: docs-init
 
 # ------------------------------ Build ------------------------------
 
-build:
-	go build ${BUILD_FLAGS} ${BINARIES}
+build: $(FROST_LIB_DEP)
+	$(FROST_BUILD_CGO_ENV) go build ${BUILD_FLAGS} ${BINARIES}
 
 test-xmr-frost-e2e:
 	go test -count=1 -tags=mocknet ./bifrost/pkg/chainclients/monero/... -run '$${XMR_FROST_E2E_RUN}'
 
-install:
-	go install ${BUILD_FLAGS} ${BINARIES}
+install: $(FROST_LIB_DEP)
+	$(FROST_BUILD_CGO_ENV) go install ${BUILD_FLAGS} ${BINARIES}
 
 tools:
 	go install -tags ${TAG} ./tools/pubkey2address
 	go install -tags ${TAG} ./tools/p2p-check
 	go install -tags ${TAG} ./tools/recover-keyshare-backup
+
+# ------------------------------ go-frost ------------------------------
+
+frost-lib: $(GOFROST_STATIC_LIB)
+
+$(GOFROST_STATIC_LIB): go.mod go.sum scripts/frost-lib.sh
+	@./scripts/frost-lib.sh "$@" "$(FROST_BUILD_DIR)/cargo-target"
+
+# A mainnet or chainnet bifrost must not depend on go-frost at all.
+frost-lib-check-mainnet:
+	@for tag in mainnet chainnet; do \
+		deps=$$(go list -deps -tags $$tag ./cmd/bifrost) || exit 1; \
+		case "$$deps" in *gitlab.com/thorchain/tss/thor-go-frost*) \
+			echo "bifrost built with -tags $$tag depends on go-frost"; exit 1;; \
+		esac; \
+	done
 
 # ------------------------------ Gitlab CI ------------------------------
 
@@ -255,8 +294,8 @@ lint-ci-trunk:
 
 # ------------------------------ Unit Tests ------------------------------
 
-test-coverage: test-network-specific
-	@go test ${TEST_BUILD_FLAGS} -v -coverprofile=coverage.txt -covermode count ${TEST_DIR}
+test-coverage: test-network-specific $(TEST_FROST_LIB_DEP)
+	@$(FROST_CGO_ENV) go test ${TEST_BUILD_FLAGS} -v -coverprofile=coverage.txt -covermode count ${TEST_DIR}
 	sed -i.bak '/\.pb\.go:/d' coverage.txt
 	@rm -f coverage.txt.bak
 
@@ -269,9 +308,9 @@ coverage-report: test-coverage
 # `go test` runs took 95-130s in a 6-CPU CI slot, mostly waiting on tests, and
 # no longer hold up the main suite. Its output is printed when both finish, so
 # the main suite's output still streams.
-test-coverage-sum:
+test-coverage-sum: $(TEST_FROST_LIB_DEP)
 	@$(MAKE) --no-print-directory test-network-specific > network-specific.log 2>&1 & ns=$$!; \
-	go run gotest.tools/gotestsum@v1.13.0 --junitfile report.xml --format testname -- ${TEST_BUILD_FLAGS} -v -coverprofile=coverage.txt -covermode count ${TEST_DIR}; main=$$?; \
+	$(FROST_CGO_ENV) go run gotest.tools/gotestsum@v1.13.0 --junitfile report.xml --format testname -- ${TEST_BUILD_FLAGS} -v -coverprofile=coverage.txt -covermode count ${TEST_DIR}; main=$$?; \
 	wait $$ns; ns=$$?; \
 	echo "--- test-network-specific (exit $$ns)"; cat network-specific.log; \
 	[ $$main -eq 0 ] && [ $$ns -eq 0 ]
@@ -281,15 +320,16 @@ test-coverage-sum:
 	@go tool cover -func=coverage.txt | tail -n 1
 	@go tool cover -html=coverage.txt -o coverage.html
 
-test:
+test: $(TEST_FROST_LIB_DEP)
 ifeq ($(TEST_DIR),$(TEST_PATHS))
 	@$(MAKE) test-network-specific
 endif
-	@go test ${TEST_BUILD_FLAGS} ${RUN_FLAG} ${TEST_DIR}
+	@$(FROST_CGO_ENV) go test ${TEST_BUILD_FLAGS} ${RUN_FLAG} ${TEST_DIR}
 	@TAG=stagenet $(MAKE) build
+	@$(MAKE) --no-print-directory frost-lib-check-mainnet
 
-test-all: test-network-specific
-	@go test ${TEST_BUILD_FLAGS} ${RUN_FLAG} "./..."
+test-all: test-network-specific frost-lib
+	@$(FROST_CGO_ENV) go test ${TEST_BUILD_FLAGS} ${RUN_FLAG} "./..."
 
 test-go-tss:
 	@go test ${TEST_BUILD_FLAGS} ${RUN_FLAG} --race "./bifrost/tss/go-tss/..."
@@ -304,12 +344,12 @@ test-network-specific:
 	@go test -tags mainnet ./x/thorchain -run TestPackage -check.f Migrate # mainnet store-migration tests are mainnet-tagged; otherwise they never run in CI (unit-tests job is mocknet-only)
 	@go test -tags mocknet ${RUN_FLAG} ./common ./bifrost/pkg/chainclients/utxo/...
 
-test-race:
-	@go test -race ${TEST_BUILD_FLAGS} ${RUN_FLAG} ${TEST_DIR}
+test-race: $(TEST_FROST_LIB_DEP)
+	@$(FROST_CGO_ENV) go test -race ${TEST_BUILD_FLAGS} ${RUN_FLAG} ${TEST_DIR}
 
 # bifrost is the concurrent half of the system; go-tss is covered by test-go-tss.
-test-race-bifrost:
-	@go test -race -timeout 20m ${TEST_BUILD_FLAGS} ${RUN_FLAG} $$(go list ./bifrost/... | grep -v bifrost/tss/go-tss) ./x/thorchain/ebifrost
+test-race-bifrost: frost-lib
+	@$(FROST_CGO_ENV) go test -race -timeout 20m ${TEST_BUILD_FLAGS} ${RUN_FLAG} $$(go list ./bifrost/... | grep -v bifrost/tss/go-tss) ./x/thorchain/ebifrost
 
 # ------------------------------ Performance Tests ------------------------------
 
@@ -643,8 +683,8 @@ NATIVE_SIM_DIR ?= $(CURDIR)/tmp/native-sim
 # and takes COMMIT from its `ARG COMMIT=unknown`, so match it.
 _build-native-thornode: COMMIT=unknown
 _build-native-thornode: TAG=mocknet
-_build-native-thornode:
-	@go build -ldflags '$(ldflags)' -tags mocknet -trimpath -buildmode=pie \
+_build-native-thornode: frost-lib
+	@$(FROST_CGO_ENV) go build -ldflags '$(ldflags)' -tags mocknet -trimpath -buildmode=pie \
 		-o $(NATIVE_SIM_DIR)/ $(BINARIES)
 	@# Same as tools/events/Dockerfile: `go install -tags $$TAG ./tools/events`.
 	@go build -tags mocknet -o $(NATIVE_SIM_DIR)/events ./tools/events

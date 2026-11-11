@@ -56,6 +56,13 @@ variables:
   DOCKER_CERT_PATH: $DOCKER_TLS_CERTDIR/client
   GOMODCACHE: /go-mod-cache
   GOCACHE: /go-build-cache
+  # Rust for the go-frost static library that stagenet and mocknet bifrost
+  # builds link (make frost-lib). Runner cache paths like the two above: the
+  # toolchain and the cargo build persist where the runner mounts them, and
+  # cost a few minutes per job where it does not.
+  CARGO_HOME: /cargo-home
+  RUSTUP_HOME: /rustup-home
+  FROST_BUILD_DIR: /cargo-home/thornode-go-frost
   # tss-lib-private is a private GitLab subgroup repo; skip proxy.golang.org / sumdb
   # and resolve directly so the per-job git auth below takes effect.
   GOPRIVATE: gitlab.com/thorchain/tss/tss-lib-private.git
@@ -194,6 +201,16 @@ variables:
 .stable-mtimes:
   before_script:
     - ./scripts/ci-stable-mtimes.sh
+
+# rustup, pinned by checksum in scripts/install-rust.sh, with the toolchain the
+# go-frost module pins. Include with `!reference [.rust-toolchain, before_script]`
+# in jobs that build or test bifrost natively with mocknet tags; they link the
+# go-frost static library (make frost-lib). Image builds get it from
+# build/docker/Dockerfile instead.
+.rust-toolchain:
+  before_script:
+    - ./scripts/install-rust.sh
+    - export PATH="$CARGO_HOME/bin:$PATH"
 
 # Every job except the sim and the image builds runs on a runner tagged
 # `small`, with small slots (today one: hedwig-small). The project had 7 slots
@@ -419,6 +436,7 @@ unit-tests:
   coverage: /total:\s+\(statements\)\s+(\d+.\d+\%)/
   before_script:
     - !reference [.go-private-auth, before_script]
+    - !reference [.rust-toolchain, before_script]
     - !reference [.stable-mtimes, before_script]
     - go install github.com/boumenot/gocover-cobertura@v1.4.0
     - go install gotest.tools/gotestsum@v1.13.0
@@ -808,6 +826,7 @@ test-simulation:
     - !reference [.docker-cli-apt, before_script]
     - !reference [.wait-for-dind, before_script]
     - !reference [.go-private-auth, before_script]
+    - !reference [.rust-toolchain, before_script]
     - !reference [.dind-registries, before_script]
   script:
     # This target builds Go binaries in the job container, so it does not
@@ -869,6 +888,7 @@ unit-tests-race-bifrost:
   timeout: 1h
   before_script:
     - !reference [.go-private-auth, before_script]
+    - !reference [.rust-toolchain, before_script]
     - !reference [.stable-mtimes, before_script]
   script:
     - make test-race-bifrost

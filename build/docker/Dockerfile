@@ -25,6 +25,24 @@ RUN --mount=type=secret,id=go_private_auth,required=false \
     go mod download && \
     rm -f /root/.gitconfig
 
+ARG TAG=mainnet
+# Stagenet and mocknet images link the go-frost static library (LTC FROST
+# vaults; bifrost/tss/frostlib). scripts/frost-lib.sh builds it from the module
+# version in go.mod with the Rust toolchain the module pins, in its own layer so
+# source changes do not rebuild it. Mainnet and chainnet images skip this and
+# never contain the library.
+ENV CARGO_HOME=/usr/local/cargo \
+    RUSTUP_HOME=/usr/local/rustup \
+    GOFROST_STATIC_LIB=/go/frost/libgofrost.a
+ENV PATH=/usr/local/cargo/bin:$PATH
+COPY scripts/install-rust.sh scripts/frost-lib.sh scripts/
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/go/frost/cargo-target \
+    if [ "$TAG" = stagenet ] || [ "$TAG" = mocknet ]; then \
+      ./scripts/install-rust.sh && \
+      ./scripts/frost-lib.sh "$GOFROST_STATIC_LIB" /go/frost/cargo-target; \
+    fi
+
 COPY api api
 COPY app app
 COPY bifrost bifrost
@@ -41,7 +59,6 @@ COPY version version
 COPY tools/thorscan tools/thorscan
 COPY tools/recover-keyshare-backup tools/recover-keyshare-backup
 
-ARG TAG=mainnet
 ARG COMMIT=unknown
 
 RUN make install

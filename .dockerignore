@@ -14,6 +14,9 @@
 .git
 .gitlab-ci.yml
 
+# Build outputs (the go-frost archive is built inside the image)
+.build
+
 # AI / Tools
 .cache
 .codex-tmp
@@ -41,6 +44,8 @@ app-layer
 proto
 scripts
 !scripts/check-env.sh
+!scripts/install-rust.sh
+!scripts/frost-lib.sh
 
 # Test
 *.prof
