@@ -4338,12 +4338,28 @@ func simulate(ctx cosmos.Context, mgr Manager, msg sdk.Msg) (sdk.Events, error) 
 	advSwapQueueEnabled := mgr.Keeper().AdvSwapQueueEnabled(ctx)
 
 	// reset the advanced swap queue if enabled
+	advIndexesCleared := false
 	if advSwapQueueEnabled {
 		advIter := mgr.Keeper().GetAdvSwapQueueItemIterator(ctx)
 		for ; advIter.Valid(); advIter.Next() {
 			mgr.Keeper().DeleteKey(ctx, advIter.Key())
 		}
 		advIter.Close()
+		// The market and limit indexes still list the deleted items. Left in
+		// place, every entry is an orphan to the end-block loop below, which
+		// removes orphans one at a time, decoding and rewriting the whole
+		// market index for each: quadratic in the mainnet queue size, on every
+		// quote.
+		//
+		// Queries only. A contract can call QuoteSwap while a block executes
+		// (app/wasm.go), and there those removals are gas-metered store reads
+		// and writes, and gas_used is consensus-visible. Transaction simulation
+		// keeps them too, so its gas estimate still matches execution. Messages,
+		// and so contracts, only run in these two modes.
+		if mode := ctx.ExecMode(); mode != sdk.ExecModeFinalize && mode != sdk.ExecModeSimulate {
+			mgr.Keeper().ClearAdvSwapQueueIndexes(ctx)
+			advIndexesCleared = true
+		}
 	}
 
 	// save pool state - the end-block loop restores these between iterations so
@@ -4414,7 +4430,15 @@ func simulate(ctx cosmos.Context, mgr Manager, msg sdk.Msg) (sdk.Events, error) 
 		iter.Close()
 
 		advQueueEmpty := true
-		if advSwapQueueEnabled {
+		switch {
+		case advIndexesCleared:
+			// Every item deleted above is a tombstone in this cache store, and a
+			// new item iterator reads and skips all of them before it can report
+			// the queue empty: one full pass over the mainnet queue per
+			// iteration. The indexes were cleared with the items and track every
+			// item queued since, so they answer the same question cheaply.
+			advQueueEmpty = mgr.Keeper().AdvSwapQueueIndexesEmpty(ctx)
+		case advSwapQueueEnabled:
 			advIter := mgr.Keeper().GetAdvSwapQueueItemIterator(ctx)
 			advQueueEmpty = !advIter.Valid()
 			advIter.Close()

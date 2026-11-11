@@ -720,6 +720,10 @@ func (k KVStoreDummy) GetAdvSwapQueueLimitIndexIterator(ctx cosmos.Context) cosm
 	return nil
 }
 
+func (k KVStoreDummy) ClearAdvSwapQueueIndexes(_ cosmos.Context) {}
+
+func (k KVStoreDummy) AdvSwapQueueIndexesEmpty(_ cosmos.Context) bool { return true }
+
 func (k KVStoreDummy) SetAdvSwapQueueIndex(_ cosmos.Context, _ MsgSwap) error {
 	return kaboom
 }
