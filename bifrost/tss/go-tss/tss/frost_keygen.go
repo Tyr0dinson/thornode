@@ -1137,10 +1137,10 @@ func (c *FrostKeygenCoordinator) exchangeRound3(
 	); response != nil {
 		return "", "", 0, response
 	}
-	// Test-only fault injection for the keygen-jail simulation: shrink ONLY the
-	// round-3 wait so this node abandons the DKG after it has sent everything
-	// peers need to finish without it, reproducing the timing-skew split behind
-	// the chainnet keygen mass-jailing. Unset in production; empty is a no-op.
+	// Test-only fault injection for the keygen recovery simulation: shrink only
+	// the round-3 wait after sending the payload peers need to finish. The
+	// simulation requires this timeout and locally finalized quorum adoption.
+	// Non-mocknet builds use the constant-zero stub.
 	round3Timeout := c.timeout
 	if ms := frostKeygenTestRound3TimeoutMS(); ms > 0 {
 		round3Timeout = time.Duration(ms) * time.Millisecond
@@ -1225,6 +1225,12 @@ func (c *FrostKeygenCoordinator) exchangeRound3(
 				return "", "", 0, response
 			}
 		case <-timer.C:
+			// Emit fault evidence only when the mocknet test override is enabled.
+			// Other builds use the constant-zero stub and emit no test event.
+			if frostKeygenTestRound3TimeoutMS() > 0 {
+				c.logger.Warn().Str("round", frostDKGRound3).
+					Msg("TEST injected XMR FROST round-3 timeout")
+			}
 			missingPayloads := verifier.missingPayloadPubKeys()
 			verificationGaps := verifier.verificationGaps()
 			blamePubKeys := mergePubKeyLists(

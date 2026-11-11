@@ -4,9 +4,11 @@ type TransactionInfo struct {
 	ID          string `json:"id"`
 	Fee         uint64 `json:"fee"`
 	BlockNumber int64  `json:"blockNumber"`
+	Result      string `json:"result"`
 	Receipt     struct {
-		EnergyPenaltyTotal int64 `json:"energy_penalty_total"`
-		EnergyUsageTotal   int64 `json:"energy_usage_total"`
+		Result             string `json:"result"`
+		EnergyPenaltyTotal int64  `json:"energy_penalty_total"`
+		EnergyUsageTotal   int64  `json:"energy_usage_total"`
 	} `json:"receipt"`
 }
 

@@ -68,7 +68,7 @@ $$
 fee = slip * swapAmount
 $$
 
-See more information in the [Liquidity Section](https://docs.thorchain.org/thorchain-finance/continuous-liquidity-pools)
+See more information in the [Liquidity Section](https://docs.thorchain.org/technical-documentation/thorchain-finance/continuous-liquidity-pools)
 
 ```admonish warning
 A minimum swap fee in basis points applies for different asset types, governed by the [mimir network settings](../mimir.md#swapping).

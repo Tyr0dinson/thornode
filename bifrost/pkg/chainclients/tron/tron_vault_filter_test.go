@@ -111,10 +111,12 @@ func receiptFilterTransaction(t *testing.T, asset, id, sender, destination strin
 
 func receiptFilterScanner(t *testing.T, url string, manager pubkeymanager.PubKeyValidator) *TronBlockScanner {
 	t.Helper()
+	// A one second client timeout expired against the local httptest server
+	// under race-detector load in CI. Nothing here waits on the timeout.
 	scanner := &TronBlockScanner{
 		config:    config.BifrostBlockScannerConfiguration{ChainID: common.TRONChain},
 		logger:    zerolog.Nop(),
-		api:       api.NewTronApi(url, time.Second),
+		api:       api.NewTronApi(url, 10*time.Second),
 		pubkeyMgr: manager,
 		whitelist: map[string]tokenlist.ERC20Token{
 			receiptFilterContractAddress: {Name: "USDT", Symbol: "USDT", Address: receiptFilterContractAddress, Decimals: 6},

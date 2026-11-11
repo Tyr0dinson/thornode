@@ -177,3 +177,59 @@ func actorDependsOn(after, before *Actor) bool {
 	}
 	return false
 }
+
+func TestStandaloneChurnStagesRestoreChurnInterval(t *testing.T) {
+	rng := rand.New(rand.NewPCG(5, 6))
+	root := NewActor("Root", rng)
+	appendSimulationStages(root, map[string]bool{"churn": true, "churn-balance": true}, rng)
+	root.InitRoot()
+	actors := map[string][]*Actor{}
+	root.WalkDepthFirst(func(a *Actor) bool {
+		actors[a.Name] = append(actors[a.Name], a)
+		return true
+	})
+	if len(actors["Churn"]) != 1 || len(actors["ChurnBalance"]) != 1 || len(actors["BondYield-Cleanup"]) != 0 {
+		t.Fatalf("unexpected churn suite counts: %d/%d/%d",
+			len(actors["Churn"]), len(actors["ChurnBalance"]), len(actors["BondYield-Cleanup"]))
+	}
+	cleanups := actors["ChurnInterval-Restore"]
+	if len(cleanups) != 2 {
+		t.Fatalf("expected a CHURNINTERVAL cleanup after each churn stage, got %d", len(cleanups))
+	}
+	churn, balance := actors["Churn"][0], actors["ChurnBalance"][0]
+	var churnCleanup, balanceCleanup *Actor
+	for _, cleanup := range cleanups {
+		switch {
+		case cleanup.Parents()[churn]:
+			churnCleanup = cleanup
+		case cleanup.Parents()[balance]:
+			balanceCleanup = cleanup
+		}
+	}
+	if churnCleanup == nil || balanceCleanup == nil {
+		t.Fatal("each cleanup must run after its churn stage's verification")
+	}
+
+	// The churn-balance rotation must start only after the first cleanup's
+	// vote, or the restore could overwrite the interval it schedules.
+	for vote := range churnCleanup.Children {
+		if !actorDependsOn(balance, vote) {
+			t.Fatal("churn-balance must wait for the churn stage's CHURNINTERVAL vote")
+		}
+	}
+}
+
+func TestClusterChurnKeepsBondYieldCleanup(t *testing.T) {
+	rng := rand.New(rand.NewPCG(5, 6))
+	root := NewActor("Root", rng)
+	appendSimulationStages(root, map[string]bool{"cluster-churn": true, "churn": true}, rng)
+	root.InitRoot()
+	counts := map[string]int{}
+	root.WalkDepthFirst(func(a *Actor) bool {
+		counts[a.Name]++
+		return true
+	})
+	if counts["BondYield-Cleanup"] != 1 || counts["ChurnInterval-Restore"] != 0 {
+		t.Fatalf("cluster-churn must keep its own cleanup: %v", counts)
+	}
+}

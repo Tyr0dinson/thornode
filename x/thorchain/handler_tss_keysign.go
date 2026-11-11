@@ -67,15 +67,15 @@ func (h TssKeysignHandler) validate(ctx cosmos.Context, msg MsgTssKeysignFail) e
 		return err
 	}
 
-	active, err := h.mgr.Keeper().ListActiveValidators(ctx)
+	active, err := h.mgr.Keeper().CountActiveValidators(ctx)
 	if err != nil {
 		return wrapError(ctx, err, "fail to get list of active node accounts")
 	}
 
 	allowWideBlame := h.mgr.Keeper().GetConfigInt64(ctx, constants.AllowWideBlame)
-	if allowWideBlame == 0 && !HasSimpleMajority(len(active)-len(msg.Blame.BlameNodes), len(active)) {
+	if allowWideBlame == 0 && !HasSimpleMajority(active-len(msg.Blame.BlameNodes), active) {
 		ctx.Logger().Error("blame cast too wide", "blame", len(msg.Blame.BlameNodes))
-		return fmt.Errorf("blame cast too wide: %d/%d", len(msg.Blame.BlameNodes), len(active))
+		return fmt.Errorf("blame cast too wide: %d/%d", len(msg.Blame.BlameNodes), active)
 	}
 
 	return nil
@@ -282,6 +282,11 @@ func (h TssKeysignHandler) handle(ctx cosmos.Context, msg MsgTssKeysignFail) (*c
 		if nodeErr != nil {
 			return nil, ErrInternal(nodeErr, fmt.Sprintf("fail to get node account,pub key: %s", nodePubKey.String()))
 		}
+		// Track the keysign blame per node (tracking only, no penalty escalation)
+		if errBlame := h.mgr.Keeper().IncrementKeysignBlame(ctx, na.NodeAddress); errBlame != nil {
+			ctx.Logger().Error("fail to increment keysign blame", "error", errBlame)
+		}
+
 		err = h.mgr.Keeper().IncNodeAccountSlashPoints(slashCtx, na.NodeAddress, slashPoints)
 		if err != nil {
 			return nil, wrapError(ctx, err, "fail to inc slash points")

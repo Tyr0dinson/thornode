@@ -1,6 +1,7 @@
 package providers
 
 import (
+	"context"
 	"time"
 
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -17,7 +18,12 @@ func (s *ProviderTestSuite) TestGeminiProvider(c *C) {
 		"RUJI/RUNE",
 	}
 
-	provider, err := NewGeminiProvider(s.ctx, s.logger, config, s.metrics)
+	// poll every 10ms, not the suite's 1s, and stop when the test ends
+	config.PollingInterval = 10 * time.Millisecond
+	ctx, cancel := context.WithCancel(s.ctx)
+	defer cancel()
+
+	provider, err := NewGeminiProvider(ctx, s.logger, config, s.metrics)
 	c.Assert(err, IsNil)
 	c.Assert(provider, NotNil)
 	c.Assert(provider.pairs, HasLen, 2)
@@ -31,7 +37,10 @@ func (s *ProviderTestSuite) TestGeminiProvider(c *C) {
 
 	provider.Start()
 
-	time.Sleep(2 * time.Second)
+	waitForPrices(provider, 2, map[string]string{
+		"BTC/USD": "109455.11",
+		"ETH/USD": "2714.85",
+	})
 
 	tickers, err := provider.GetTickers()
 	c.Assert(err, IsNil)

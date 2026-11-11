@@ -115,6 +115,7 @@ docs/MsgSwap.md
 docs/NetworkApi.md
 docs/NetworkResponse.md
 docs/Node.md
+docs/NodeBlameResponse.md
 docs/NodeBondProvider.md
 docs/NodeBondProviders.md
 docs/NodeJail.md
@@ -279,6 +280,7 @@ model_mimir_vote.go
 model_msg_swap.go
 model_network_response.go
 model_node.go
+model_node_blame_response.go
 model_node_bond_provider.go
 model_node_bond_providers.go
 model_node_jail.go

@@ -6,6 +6,7 @@ import (
 	"errors"
 	fmt "fmt"
 	"net"
+	"reflect"
 	"sync"
 	"time"
 
@@ -16,6 +17,7 @@ import (
 	"github.com/cosmos/cosmos-sdk/types/bech32"
 
 	cmttypes "github.com/cometbft/cometbft/types"
+	"github.com/cosmos/gogoproto/proto"
 	"github.com/hashicorp/go-metrics"
 	common "gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
@@ -45,6 +47,25 @@ var notifyEvents = []string{
 }
 
 var _, ebifrostSignerAcc, _ = bech32.DecodeAndConvert(ebifrostSigner)
+
+// copyQuorum transfers ownership of a protobuf message to the cache. A wire
+// round trip is used because gogoproto.Clone cannot merge the custom Cosmos
+// integer fields carried by some quorum messages (notably solvency).
+func copyQuorum[T proto.Message](item T) (T, error) {
+	var zero T
+	bz, err := proto.Marshal(item)
+	if err != nil {
+		return zero, err
+	}
+	copy, ok := reflect.New(reflect.TypeOf(item).Elem()).Interface().(T)
+	if !ok {
+		return zero, fmt.Errorf("quorum copy has unexpected type %T", item)
+	}
+	if err := proto.Unmarshal(bz, copy); err != nil {
+		return zero, err
+	}
+	return copy, nil
+}
 
 // EnshrinedBifrost is a thornode service that is used to communicate with bifrost
 // for the purpose of observing transactions and processing quorum attestations.
@@ -254,6 +275,15 @@ func (b *EnshrinedBifrost) startPruneTimer() {
 }
 
 func (b *EnshrinedBifrost) SendQuorumTx(ctx context.Context, tx *common.QuorumTx) (*SendQuorumTxResult, error) {
+	// The gRPC caller retains its message. The cache owns an independent copy.
+	var err error
+	tx, err = copyQuorum(tx)
+	if err != nil {
+		return nil, err
+	}
+	if payload, err := tx.ObsTx.GetSignablePayloadWithInbound(tx.Inbound); err == nil {
+		warmAttestationSigs(sigWarmJob{payload, append([]*common.Attestation(nil), tx.Attestations...)})
+	}
 	if err := b.quorumTxCache.AddItem(
 		tx,
 		(*common.QuorumTx).GetAttestations,
@@ -267,6 +297,16 @@ func (b *EnshrinedBifrost) SendQuorumTx(ctx context.Context, tx *common.QuorumTx
 }
 
 func (b *EnshrinedBifrost) SendQuorumNetworkFee(ctx context.Context, nf *common.QuorumNetworkFee) (*SendQuorumNetworkFeeResult, error) {
+	var err error
+	nf, err = copyQuorum(nf)
+	if err != nil {
+		return nil, err
+	}
+	if nf.NetworkFee != nil {
+		if payload, err := nf.NetworkFee.GetSignablePayload(); err == nil {
+			warmAttestationSigs(sigWarmJob{payload, append([]*common.Attestation(nil), nf.Attestations...)})
+		}
+	}
 	if err := b.networkFeeCache.AddItem(
 		nf,
 		(*common.QuorumNetworkFee).GetAttestations,
@@ -280,6 +320,19 @@ func (b *EnshrinedBifrost) SendQuorumNetworkFee(ctx context.Context, nf *common.
 }
 
 func (b *EnshrinedBifrost) SendQuorumSolvency(ctx context.Context, s *common.QuorumSolvency) (*SendQuorumSolvencyResult, error) {
+	var err error
+	s, err = copyQuorum(s)
+	if err != nil {
+		return nil, err
+	}
+	if s.Solvency != nil {
+		// GetSignablePayload fills in an empty Id; warm from a copy so the
+		// cached item stays exactly as received.
+		solvency := *s.Solvency
+		if payload, err := solvency.GetSignablePayload(); err == nil {
+			warmAttestationSigs(sigWarmJob{payload, append([]*common.Attestation(nil), s.Attestations...)})
+		}
+	}
 	if err := b.solvencyCache.AddItem(
 		s,
 		(*common.QuorumSolvency).GetAttestations,
@@ -293,6 +346,16 @@ func (b *EnshrinedBifrost) SendQuorumSolvency(ctx context.Context, s *common.Quo
 }
 
 func (b *EnshrinedBifrost) SendQuorumErrataTx(ctx context.Context, e *common.QuorumErrataTx) (*SendQuorumErrataTxResult, error) {
+	var err error
+	e, err = copyQuorum(e)
+	if err != nil {
+		return nil, err
+	}
+	if e.ErrataTx != nil {
+		if payload, err := e.ErrataTx.GetSignablePayload(); err == nil {
+			warmAttestationSigs(sigWarmJob{payload, append([]*common.Attestation(nil), e.Attestations...)})
+		}
+	}
 	b.quorumTxCache.Lock()
 	for i, item := range b.quorumTxCache.items {
 		tx := item.Item
@@ -317,6 +380,21 @@ func (b *EnshrinedBifrost) SendQuorumErrataTx(ctx context.Context, e *common.Quo
 }
 
 func (b *EnshrinedBifrost) SendQuorumPriceFeedBatch(ctx context.Context, qpfb *common.QuorumPriceFeedBatch) (*SendQuorumPriceFeedBatchResult, error) {
+	var err error
+	qpfb, err = copyQuorum(qpfb)
+	if err != nil {
+		return nil, err
+	}
+	jobs := make([]sigWarmJob, 0, len(qpfb.QuorumPriceFeeds))
+	for _, qpf := range qpfb.QuorumPriceFeeds {
+		if qpf == nil || qpf.PriceFeed == nil {
+			continue
+		}
+		if payload, err := qpf.PriceFeed.GetSignablePayload(); err == nil {
+			jobs = append(jobs, sigWarmJob{payload, append([]*common.Attestation(nil), qpf.Attestations...)})
+		}
+	}
+	warmAttestationSigs(jobs...)
 	// no need to check for existing attestations or merging, update the
 	// cache immediately
 	b.priceFeedCache.Lock()
@@ -449,15 +527,12 @@ func (b *EnshrinedBifrost) broadcastEvent(eventType string, payload []byte) {
 }
 
 func (b *EnshrinedBifrost) broadcastQuorumTxEvent(tx *common.QuorumTx) {
-	b.quorumTxCache.BroadcastEvent(
-		tx,
-		func(item *common.QuorumTx) ([]byte, error) {
-			return item.Marshal()
-		},
-		b.broadcastEvent,
-		EventQuorumTxCommitted,
-		b.logger,
-	)
+	payload, err := tx.Marshal()
+	if err != nil {
+		b.logger.Error("Failed to marshal quorum tx event", "error", err)
+		return
+	}
+	go b.broadcastEvent(EventQuorumTxCommitted, payload)
 }
 
 // MarkQuorumTxAttestationsConfirmed is intended to be called by the bifrost post handler after a tx has been processed.
@@ -467,7 +542,16 @@ func (b *EnshrinedBifrost) MarkQuorumTxAttestationsConfirmed(ctx context.Context
 		return
 	}
 
-	go b.broadcastQuorumTxEvent(qtx)
+	// The recent-block cache retains this message after confirmation. Keep it
+	// independent of the caller and of any pending cache item.
+	var err error
+	qtx, err = copyQuorum(qtx)
+	if err != nil {
+		b.logger.Error("Failed to copy quorum tx confirmation", "error", err)
+		return
+	}
+	// Encode before cache confirmation can remove attestations from an aliased item.
+	b.broadcastQuorumTxEvent(qtx)
 
 	sdkCtx := sdk.UnwrapSDKContext(ctx)
 	height := sdkCtx.BlockHeight()
@@ -502,15 +586,12 @@ func (b *EnshrinedBifrost) MarkQuorumTxAttestationsConfirmed(ctx context.Context
 }
 
 func (b *EnshrinedBifrost) broadcastQuorumNetworkFeeEvent(nf *common.QuorumNetworkFee) {
-	b.networkFeeCache.BroadcastEvent(
-		nf,
-		func(item *common.QuorumNetworkFee) ([]byte, error) {
-			return item.Marshal()
-		},
-		b.broadcastEvent,
-		EventQuorumNetworkFeeCommitted,
-		b.logger,
-	)
+	payload, err := nf.Marshal()
+	if err != nil {
+		b.logger.Error("Failed to marshal quorum network fee event", "error", err)
+		return
+	}
+	go b.broadcastEvent(EventQuorumNetworkFeeCommitted, payload)
 }
 
 // MarkQuorumNetworkFeeAttestationsConfirmed is intended to be called by the bifrost post handler after a tx has been processed.
@@ -520,7 +601,13 @@ func (b *EnshrinedBifrost) MarkQuorumNetworkFeeAttestationsConfirmed(ctx context
 		return
 	}
 
-	go b.broadcastQuorumNetworkFeeEvent(qnf)
+	var err error
+	qnf, err = copyQuorum(qnf)
+	if err != nil {
+		b.logger.Error("Failed to copy quorum network fee confirmation", "error", err)
+		return
+	}
+	b.broadcastQuorumNetworkFeeEvent(qnf)
 
 	sdkCtx := sdk.UnwrapSDKContext(ctx)
 	height := sdkCtx.BlockHeight()
@@ -558,15 +645,12 @@ func (b *EnshrinedBifrost) MarkQuorumNetworkFeeAttestationsConfirmed(ctx context
 }
 
 func (b *EnshrinedBifrost) broadcastQuorumSolvencyEvent(s *common.QuorumSolvency) {
-	b.solvencyCache.BroadcastEvent(
-		s,
-		func(item *common.QuorumSolvency) ([]byte, error) {
-			return item.Marshal()
-		},
-		b.broadcastEvent,
-		EventQuorumSolvencyCommitted,
-		b.logger,
-	)
+	payload, err := s.Marshal()
+	if err != nil {
+		b.logger.Error("Failed to marshal quorum solvency event", "error", err)
+		return
+	}
+	go b.broadcastEvent(EventQuorumSolvencyCommitted, payload)
 }
 
 // MarkQuorumSolvencyAttestationsConfirmed is intended to be called by the bifrost post handler after a tx has been processed.
@@ -576,7 +660,13 @@ func (b *EnshrinedBifrost) MarkQuorumSolvencyAttestationsConfirmed(ctx context.C
 		return
 	}
 
-	go b.broadcastQuorumSolvencyEvent(qs)
+	var err error
+	qs, err = copyQuorum(qs)
+	if err != nil {
+		b.logger.Error("Failed to copy quorum solvency confirmation", "error", err)
+		return
+	}
+	b.broadcastQuorumSolvencyEvent(qs)
 
 	sdkCtx := sdk.UnwrapSDKContext(ctx)
 	height := sdkCtx.BlockHeight()
@@ -614,15 +704,12 @@ func (b *EnshrinedBifrost) MarkQuorumSolvencyAttestationsConfirmed(ctx context.C
 }
 
 func (b *EnshrinedBifrost) broadcastQuorumErrataTxEvent(qe *common.QuorumErrataTx) {
-	b.errataCache.BroadcastEvent(
-		qe,
-		func(item *common.QuorumErrataTx) ([]byte, error) {
-			return item.Marshal()
-		},
-		b.broadcastEvent,
-		EventQuorumErrataTxCommitted,
-		b.logger,
-	)
+	payload, err := qe.Marshal()
+	if err != nil {
+		b.logger.Error("Failed to marshal quorum errata event", "error", err)
+		return
+	}
+	go b.broadcastEvent(EventQuorumErrataTxCommitted, payload)
 }
 
 // MarkQuorumErrataTxAttestationsConfirmed is intended to be called by the bifrost post handler after a tx has been processed.
@@ -632,7 +719,34 @@ func (b *EnshrinedBifrost) MarkQuorumErrataTxAttestationsConfirmed(ctx context.C
 		return
 	}
 
-	go b.broadcastQuorumErrataTxEvent(qe)
+	var err error
+	qe, err = copyQuorum(qe)
+	if err != nil {
+		b.logger.Error("Failed to copy quorum errata confirmation", "error", err)
+		return
+	}
+	// Freeze the committed receipt before cache cleanup or caller reuse.
+	// Subscriber delivery remains asynchronous and owns only the encoded bytes.
+	b.broadcastQuorumErrataTxEvent(qe)
+
+	if qe.ErrataTx.Chain.RequiresTerminalErrataOutcome() &&
+		qe.Outcome != common.ErrataTxOutcome_ERRATA_TX_OUTCOME_REVERTED &&
+		qe.Outcome != common.ErrataTxOutcome_ERRATA_TX_OUTCOME_NO_APPLICABLE_OBSERVATION {
+		// A delivered pending batch is no longer in flight, but its signatures
+		// must be admissible on the next durable Bifrost retry. Recording it in
+		// recentBlockItems would delay retries until cache expiry, which
+		// expireXMRErrataReceipts checks on each local proposal.
+		b.errataCache.mu.Lock()
+		b.errataCache.markAttestationsConfirmedLocked(
+			qe, b.logger,
+			(*common.QuorumErrataTx).Equals,
+			(*common.QuorumErrataTx).GetAttestations,
+			(*common.QuorumErrataTx).RemoveAttestations,
+			func(*common.QuorumErrataTx, log.Logger) {},
+		)
+		b.errataCache.mu.Unlock()
+		return
+	}
 
 	sdkCtx := sdk.UnwrapSDKContext(ctx)
 	height := sdkCtx.BlockHeight()
@@ -666,15 +780,12 @@ func (b *EnshrinedBifrost) MarkQuorumErrataTxAttestationsConfirmed(ctx context.C
 }
 
 func (b *EnshrinedBifrost) broadcastQuorumPriceFeedBatchEvent(qpfb *common.QuorumPriceFeedBatch) {
-	b.priceFeedCache.BroadcastEvent(
-		qpfb,
-		func(item *common.QuorumPriceFeedBatch) ([]byte, error) {
-			return item.Marshal()
-		},
-		b.broadcastEvent,
-		EventQuorumPriceFeedBatchCommitted,
-		b.logger,
-	)
+	payload, err := qpfb.Marshal()
+	if err != nil {
+		b.logger.Error("Failed to marshal quorum price feed event", "error", err)
+		return
+	}
+	go b.broadcastEvent(EventQuorumPriceFeedBatchCommitted, payload)
 }
 
 // MarkQuorumPriceFeedBatchAttestationsConfirmed is intended to be called by the bifrost post handler after a tx has been processed.
@@ -686,12 +797,41 @@ func (b *EnshrinedBifrost) MarkQuorumPriceFeedBatchAttestationsConfirmed(ctx con
 
 	// Remove all cached price feeds, so we don't keep feeds from churned nodes
 	b.priceFeedCache.PruneExpiredItems(0)
-	go b.broadcastQuorumPriceFeedBatchEvent(qpf)
+	b.broadcastQuorumPriceFeedBatchEvent(qpf)
 }
 
 func (b *EnshrinedBifrost) MarshalTx(msg sdk.Msg) ([]byte, error) {
 	itx := NewInjectTx(b.cdc, []sdk.Msg{msg})
 	return itx.Tx.Marshal()
+}
+
+// expireXMRErrataReceipts lets a durable Bifrost retry recover a lost terminal
+// event after the existing cache window. Quiet errata history must age with
+// proposal height, not depend on a different errata being confirmed first.
+// Keep other chains' delivery semantics unchanged.
+func (b *EnshrinedBifrost) expireXMRErrataReceipts(currentHeight int64) {
+	b.errataCache.mu.Lock()
+	defer b.errataCache.mu.Unlock()
+	// This is proposer-local retry history, not consensus state.
+	// analyze-ignore(map-iteration)
+	for height, items := range b.errataCache.recentBlockItems {
+		if height >= currentHeight-cachedBlocks {
+			continue
+		}
+		retained := items[:0]
+		for _, item := range items {
+			if item != nil && item.ErrataTx != nil && item.ErrataTx.Chain.RequiresTerminalErrataOutcome() {
+				continue
+			}
+			retained = append(retained, item)
+		}
+		clear(items[len(retained):])
+		if len(retained) == 0 {
+			delete(b.errataCache.recentBlockItems, height)
+		} else {
+			b.errataCache.recentBlockItems[height] = retained
+		}
+	}
 }
 
 // ProposalInjectTxs is intended to be called by the current proposing validator during PrepareProposal
@@ -700,6 +840,8 @@ func (b *EnshrinedBifrost) ProposalInjectTxs(ctx sdk.Context, maxTxBytes int64) 
 	if b == nil {
 		return nil, 0
 	}
+
+	b.expireXMRErrataReceipts(ctx.BlockHeight())
 
 	var injectTxs [][]byte
 	var txBzLen int64

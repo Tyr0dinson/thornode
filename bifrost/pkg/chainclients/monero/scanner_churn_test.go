@@ -181,7 +181,7 @@ func TestClientChurnRollbackBeyondSignerLimitPreservesForwardScan(t *testing.T) 
 	signer := &churnSigner{next: 1775, vault: vault, address: address}
 	server := httptest.NewServer(http.HandlerFunc(signer.serveHTTP))
 	defer server.Close()
-	storage, err := blockscanner.NewBlockScannerStorageWithScanPosSync(t.TempDir(), config.LevelDBOptions{})
+	storage, err := blockscanner.NewBlockScannerStorage(t.TempDir(), config.LevelDBOptions{})
 	require.NoError(t, err)
 	defer storage.Close()
 	require.NoError(t, storage.SetScanPos(1774))
@@ -365,7 +365,7 @@ func TestClientChurnRollbackRetriesValidation(t *testing.T) {
 				signer.serveHTTP(w, r)
 			}))
 			defer server.Close()
-			storage, err := blockscanner.NewBlockScannerStorageWithScanPosSync(t.TempDir(), config.LevelDBOptions{})
+			storage, err := blockscanner.NewBlockScannerStorage(t.TempDir(), config.LevelDBOptions{})
 			require.NoError(t, err)
 			defer storage.Close()
 			require.NoError(t, storage.SetScanPos(previous))
@@ -441,8 +441,10 @@ func TestClientChurnRollbackRetriesValidation(t *testing.T) {
 				require.Zero(t, rewinds)
 				failuresLeft.Store(0)
 			}
+			// The exact-limit case rescans about 800 blocks, which takes over 30s on
+			// a small CI runner.
 			require.Eventually(t, func() bool { return loop.PreviousHeight() == previous+1 },
-				30*time.Second, time.Millisecond, "scanning must resume after validation finishes")
+				2*time.Minute, time.Millisecond, "scanning must resume after validation finishes")
 			require.Positive(t, failedReads.Load())
 			position, err := storage.GetScanPos()
 			require.NoError(t, err)
@@ -509,7 +511,7 @@ func TestClientChurnRollbackCoalescesWhileValidationWaits(t *testing.T) {
 				signer.serveHTTP(w, r)
 			}))
 			defer server.Close()
-			storage, err := blockscanner.NewBlockScannerStorageWithScanPosSync(t.TempDir(), config.LevelDBOptions{})
+			storage, err := blockscanner.NewBlockScannerStorage(t.TempDir(), config.LevelDBOptions{})
 			require.NoError(t, err)
 			defer storage.Close()
 			require.NoError(t, storage.SetScanPos(1002))
@@ -612,7 +614,7 @@ func TestClientChurnRollbackResumesScanner(t *testing.T) {
 			}
 			server := httptest.NewServer(http.HandlerFunc(signer.serveHTTP))
 			defer server.Close()
-			storage, err := blockscanner.NewBlockScannerStorageWithScanPosSync(t.TempDir(), config.LevelDBOptions{})
+			storage, err := blockscanner.NewBlockScannerStorage(t.TempDir(), config.LevelDBOptions{})
 			require.NoError(t, err)
 			defer storage.Close()
 			require.NoError(t, storage.SetScanPos(989))
@@ -735,7 +737,7 @@ func TestChurnRecoveryRetriesAcrossDurableRestart(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(signer.serveHTTP))
 			defer server.Close()
 			dir := t.TempDir()
-			storage, err := blockscanner.NewBlockScannerStorageWithScanPosSync(dir, config.LevelDBOptions{})
+			storage, err := blockscanner.NewBlockScannerStorage(dir, config.LevelDBOptions{})
 			require.NoError(t, err)
 			defer func() { _ = storage.Close() }()
 			require.NoError(t, storage.SetScanPos(1000))
@@ -772,7 +774,7 @@ func TestChurnRecoveryRetriesAcrossDurableRestart(t *testing.T) {
 			// Reopen the actual disk journal and create a fresh Go sidecar client.
 			// The remote signer retains whichever mutation committed before failure.
 			require.NoError(t, storage.Close())
-			storage, err = blockscanner.NewBlockScannerStorageWithScanPosSync(dir, config.LevelDBOptions{})
+			storage, err = blockscanner.NewBlockScannerStorage(dir, config.LevelDBOptions{})
 			require.NoError(t, err)
 			store = NewReorgStore(storage.GetInternalDb())
 			scanner, _ = newChurnScanner(t, server.URL, store, vault)
@@ -947,7 +949,7 @@ func TestChurnRejectedRollbackPreservesRecoveryState(t *testing.T) {
 				server := httptest.NewServer(http.HandlerFunc(signer.serveHTTP))
 				defer server.Close()
 				dir := t.TempDir()
-				storage, err := blockscanner.NewBlockScannerStorageWithScanPosSync(dir, config.LevelDBOptions{})
+				storage, err := blockscanner.NewBlockScannerStorage(dir, config.LevelDBOptions{})
 				require.NoError(t, err)
 				defer func() { _ = storage.Close() }()
 				store := NewReorgStore(storage.GetInternalDb())
@@ -968,7 +970,7 @@ func TestChurnRejectedRollbackPreservesRecoveryState(t *testing.T) {
 				_, err = scanner.FetchTxs(1001, nextHeight)
 				require.ErrorContains(t, err, "rewind limit")
 				require.NoError(t, storage.Close())
-				storage, err = blockscanner.NewBlockScannerStorageWithScanPosSync(dir, config.LevelDBOptions{})
+				storage, err = blockscanner.NewBlockScannerStorage(dir, config.LevelDBOptions{})
 				require.NoError(t, err)
 				store = NewReorgStore(storage.GetInternalDb())
 				after, err := store.GetCatchupMarker()
@@ -1000,7 +1002,7 @@ func TestChurnRecoveryExtendsAfterForwardRestart(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(signer.serveHTTP))
 			defer server.Close()
 			dir := t.TempDir()
-			storage, err := blockscanner.NewBlockScannerStorageWithScanPosSync(dir, config.LevelDBOptions{})
+			storage, err := blockscanner.NewBlockScannerStorage(dir, config.LevelDBOptions{})
 			require.NoError(t, err)
 			defer func() { _ = storage.Close() }()
 			store := NewReorgStore(storage.GetInternalDb())
@@ -1018,7 +1020,7 @@ func TestChurnRecoveryExtendsAfterForwardRestart(t *testing.T) {
 			signer.mu.Unlock()
 			for restart := 0; restart < 2; restart++ {
 				require.NoError(t, storage.Close())
-				storage, err = blockscanner.NewBlockScannerStorageWithScanPosSync(dir, config.LevelDBOptions{})
+				storage, err = blockscanner.NewBlockScannerStorage(dir, config.LevelDBOptions{})
 				require.NoError(t, err)
 				store = NewReorgStore(storage.GetInternalDb())
 				scanner, _ = newChurnScanner(t, server.URL, store, vault)
@@ -1109,7 +1111,7 @@ func TestChurnRecoveryResumesBlockScannerAfterStartupClamp(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(signer.serveHTTP))
 	defer server.Close()
 	dir := t.TempDir()
-	storage, err := blockscanner.NewBlockScannerStorageWithScanPosSync(dir, config.LevelDBOptions{})
+	storage, err := blockscanner.NewBlockScannerStorage(dir, config.LevelDBOptions{})
 	require.NoError(t, err)
 	defer func() { _ = storage.Close() }()
 	require.NoError(t, storage.SetScanPos(1000))
@@ -1118,7 +1120,7 @@ func TestChurnRecoveryResumesBlockScannerAfterStartupClamp(t *testing.T) {
 	_, err = scanner.FetchTxs(1001, 1110)
 	require.Error(t, err)
 	require.NoError(t, storage.Close())
-	storage, err = blockscanner.NewBlockScannerStorageWithScanPosSync(dir, config.LevelDBOptions{})
+	storage, err = blockscanner.NewBlockScannerStorage(dir, config.LevelDBOptions{})
 	require.NoError(t, err)
 	store = NewReorgStore(storage.GetInternalDb())
 	signer.mu.Lock()
@@ -1165,9 +1167,11 @@ func TestChurnRecoveryResumesBlockScannerAfterStartupClamp(t *testing.T) {
 		close(stopConsumer)
 		<-consumerDone
 	}()
+	// Scanning 110 heights is CPU-bound under -race (~2s idle, >5s on a loaded
+	// runner), so the deadline only bounds a hang rather than timing the scan.
 	require.Eventually(t, func() bool {
 		return observations.Load() >= 1 && loop.PreviousHeight() == 1110
-	}, 5*time.Second, time.Millisecond, "startup clamping must retain block1001 and eventually reach the tip")
+	}, 30*time.Second, 10*time.Millisecond, "startup clamping must retain block1001 and eventually reach the tip")
 	signer.mu.Lock()
 	defer signer.mu.Unlock()
 	require.Equal(t, []uint64{1001}, signer.rewinds)

@@ -3,13 +3,12 @@ package keeperv1
 import (
 	"fmt"
 
-	"github.com/cosmos/cosmos-sdk/runtime"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 )
 
 func (k KVStore) setChainContract(ctx cosmos.Context, key []byte, record ChainContract) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	buf := k.cdc.MustMarshal(&record)
 	if buf == nil {
 		store.Delete(key)
@@ -19,7 +18,7 @@ func (k KVStore) setChainContract(ctx cosmos.Context, key []byte, record ChainCo
 }
 
 func (k KVStore) getChainContract(ctx cosmos.Context, key []byte, record *ChainContract) (bool, error) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	if !store.Has(key) {
 		return false, nil
 	}

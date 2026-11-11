@@ -28,6 +28,7 @@ import (
 	tcmetrics "gitlab.com/thorchain/thornode/v3/bifrost/metrics"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/runners"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/signercache"
+	chainclienttypes "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/types"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/tron/api"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/tron/rpc"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pubkeymanager"
@@ -479,31 +480,14 @@ func (c *TronClient) SignTx(
 	txOutItem types.TxOutItem,
 	thorchainHeight int64,
 ) ([]byte, []byte, *types.TxInItem, error) {
-	// Signer-cache check, standardized across chains: respect the cache while fresh;
-	// after the expiry window, only bypass when the operational SkipSignerCache<Chain>
-	// mimir is set AND the recorded broadcast is verified absent on chain.
+	// Recovery remains expiry- and mimir-gated. An existing transaction may
+	// only be replaced once its execution is definitively failed and solidified.
 	mimirKey := fmt.Sprintf(constants.MimirTemplateSkipSignerCache, c.config.ChainID)
 	gateFn := func() bool {
 		skipCache, err := c.bridge.GetMimir(mimirKey)
 		return err == nil && skipCache > 0
 	}
-	// gettransactionbyid reports presence regardless of confirmation, so the
-	// verification path can positively decide whether the recorded broadcast is on
-	// chain before clearing the cache: a populated TxId means present (respect the
-	// cache), an empty result with no error means absent (safe to clear and
-	// re-sign). Transport errors stay ambiguous (fail-closed, cache respected).
-	verifyFn := func(sig string) signercache.LookupResult {
-		tx, txErr := c.api.GetTransaction(sig)
-		switch {
-		case txErr == nil && tx.TxId != "":
-			return signercache.LookupFound
-		case txErr == nil, isTronNotFoundErr(txErr):
-			return signercache.LookupNotFound
-		default:
-			return signercache.LookupAmbiguous
-		}
-	}
-	check := c.signerCacheManager.SignTxCacheCheck(txOutItem.CacheHash(), gateFn, verifyFn)
+	check := c.signerCacheManager.SignTxCacheCheck(txOutItem.CacheHash(), gateFn, c.verifyCachedTransaction)
 	if check.Phase != signercache.PhaseNoEntry {
 		ev := c.logger.Info()
 		if check.Noteworthy() {
@@ -540,6 +524,9 @@ func (c *TronClient) SignTx(
 		tronTx, err = decodeTronSignCheckpoint(txOutItem.Checkpoint, txOutItem)
 		if err != nil {
 			c.logger.Err(err).Msg("failed to restore unsigned TRON transaction")
+			return nil, nil, nil, err
+		}
+		if err = validateTronRecoveryAttempt(tronTx, check); err != nil {
 			return nil, nil, nil, err
 		}
 		c.logger.Info().Str("txid", tronTx.TxId).Msg("using checkpointed unsigned TRON transaction")
@@ -653,6 +640,12 @@ func (c *TronClient) SignTx(
 		return nil, nil, nil, err
 	}
 
+	if err = validateTronRecoveryAttempt(tronTx, check); err != nil {
+		return nil, nil, nil, err
+	}
+	if check.Phase == signercache.PhaseVerifiedFailed && tronTx.RawData.Expiration <= time.Now().UnixMilli() {
+		return nil, nil, nil, fmt.Errorf("TRON replacement transaction is already expired")
+	}
 	checkpoint, err := encodeTronSignCheckpoint(tronTx, txOutItem)
 	if err != nil {
 		c.logger.Err(err).Msg("failed to checkpoint unsigned TRON transaction")
@@ -759,8 +752,64 @@ func (c *TronClient) BroadcastTx(
 	return response.TxId, nil
 }
 
-func isTronNotFoundErr(err error) bool {
-	return err != nil && strings.Contains(err.Error(), "response status: 404")
+// verifyCachedTransaction is only called after the cache expires and the
+// operational gate opens. A full-node transaction lookup alone proves neither
+// successful payment nor finality.
+func (c *TronClient) verifyCachedTransaction(sig string) signercache.LookupResult {
+	tx, err := c.api.GetTransaction(sig)
+	if err != nil {
+		return signercache.LookupAmbiguous
+	}
+	if tx.TxId == "" {
+		return signercache.LookupNotFound
+	}
+	hash, err := hex.DecodeString(sig)
+	if err != nil || len(hash) != sha256.Size || !strings.EqualFold(tx.TxId, sig) {
+		return signercache.LookupAmbiguous
+	}
+
+	// Capture finality BEFORE reading the receipt. Reading a failed receipt
+	// first could retain a pre-reorg result while the subsequent finality
+	// query refers to a different chain. Any receipt read afterward at or
+	// below this floor is solidified under TRON's finality guarantee.
+	solidHeight, err := c.api.GetSolidBlockHeight()
+	if err != nil {
+		return signercache.LookupAmbiguous
+	}
+	info, err := c.api.GetTransactionInfo(sig)
+	if err != nil || !strings.EqualFold(info.ID, sig) || info.BlockNumber <= 0 || info.BlockNumber > solidHeight {
+		return signercache.LookupAmbiguous
+	}
+	if info.Receipt.Result == "SUCCESS" {
+		return signercache.LookupFound
+	}
+	if info.Result != "FAILED" {
+		return signercache.LookupAmbiguous
+	}
+	// Explicit failures only: absent receipts, DEFAULT, UNKNOWN and future
+	// execution results are not proof that no payment was made.
+	switch info.Receipt.Result {
+	case "REVERT", "BAD_JUMP_DESTINATION", "OUT_OF_MEMORY", "PRECOMPILED_CONTRACT",
+		"STACK_TOO_SMALL", "STACK_TOO_LARGE", "ILLEGAL_OPERATION", "STACK_OVERFLOW",
+		"OUT_OF_ENERGY", "OUT_OF_TIME", "JVM_STACK_OVER_FLOW", "TRANSFER_FAILED", "INVALID_CODE":
+		return signercache.LookupFailed
+	default:
+		return signercache.LookupAmbiguous
+	}
+}
+
+func validateTronRecoveryAttempt(tx api.Transaction, check signercache.CacheCheck) error {
+	if check.Phase != signercache.PhaseVerifiedFailed {
+		return nil
+	}
+	// Retain the failed cache record until BroadcastTx replaces it. If a
+	// restart restores the old checkpoint, retire that local attempt without
+	// observing success; THORChain owns rescheduling at a fresh height. A
+	// different checkpoint must remain pinned after partial signature exposure.
+	if strings.EqualFold(tx.TxId, check.Sig) {
+		return fmt.Errorf("TRON failed attempt requires a fresh outbound schedule: %w", chainclienttypes.ErrTxExpired)
+	}
+	return nil
 }
 
 // GetGasEstimateForSolvency returns the current gas fee estimate used by solvency checks.
@@ -838,14 +887,28 @@ func (c *TronClient) ReportSolvency(height int64) error {
 	msgs := insolventMsgs
 	solvent := false
 
-	// Only if the block scanner is unhealthy (e.g. solvency-halted) and all chain-specific vaults are solvent,
-	// report that all the chain-specific vaults are solvent.
+	// Only if THORChain itself has this chain halted or solvency-halted, this node's block scanner
+	// is paused for it (unhealthy), and all chain-specific vaults are solvent, report that all the
+	// chain-specific vaults are solvent. That "all clear" exists to lift a network SolvencyHalt
+	// (see SolvencyCheckRunner), so the network's halt state is the gate, not this node's own
+	// block-scanner health: a scanner that is unhealthy for a local reason (RPC trouble, a stalled
+	// fetch) must stay silent here, because an all-clear only one node sends can never reach
+	// consensus and each one costs that node an unrefunded observation slash point. The paused
+	// scanner is still required alongside the halt: the scanner re-reads the pause mimirs only once
+	// per THORChain block, and reads a mimir error as not paused, so just after a halt takes effect
+	// a healthy scanner can still reach here from the scan path. Its all-clear would carry the
+	// scanned height rather than the runner's, a different voter, and so would be a lone vote too.
+	// On a bridge error stay silent; the runner retries.
 	// If there are any insolvent vaults, report only them.
 	// Not reporting both solvent and insolvent vaults is to avoid noise (spam):
 	// Reporting both could halt-and-unhalt SolvencyHalt in the same THOR block
 	// (resetting its height), plus making it harder to know at a glance from solvency reports which vaults were insolvent.
 	allVaultsProcessed := len(chainVaults) > 0 && processedVaults == len(chainVaults)
-	if !c.IsBlockScannerHealthy() && allVaultsProcessed && len(solventMsgs) == processedVaults {
+	halted, haltErr := runners.IsHaltedOnChain(c.bridge, c.config.ChainID)
+	if haltErr != nil {
+		c.logger.Err(haltErr).Msg("fail to read chain halt state, skipping solvency all-clear")
+	}
+	if halted && !c.IsBlockScannerHealthy() && allVaultsProcessed && len(solventMsgs) == processedVaults {
 		msgs = solventMsgs
 		solvent = true
 	}

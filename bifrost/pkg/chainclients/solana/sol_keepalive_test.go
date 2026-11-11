@@ -17,26 +17,28 @@ import (
 )
 
 func TestKeepAliveDue(t *testing.T) {
-	// 14400 thorchain blocks * 20 slots = 288_000 slots (~1 day at ~300ms)
+	// slotsPerThorBlock is now supplied by the caller (derived from the slot-time mimir
+	// at the keysign height, see solSlotsPerThorchainBlock); 28 ≈ 6000ms / 214ms.
+	slotsPerThorBlock := uint64(28)
+	// 14400 thorchain blocks * 28 slots = 403_200 slots (~1 day at ~214ms)
 	refreshBlocks := int64(14400)
-	require.Equal(t, uint64(20), solSlotsPerThorchainBlock())
-	thresholdSlots := uint64(refreshBlocks) * solSlotsPerThorchainBlock()
+	thresholdSlots := uint64(refreshBlocks) * slotsPerThorBlock
 
 	// fresh signature: not due
-	require.False(t, keepAliveDue(1_000_000, 1_000_000-10, refreshBlocks))
+	require.False(t, keepAliveDue(1_000_000, 1_000_000-10, refreshBlocks, slotsPerThorBlock))
 
 	// exactly at threshold: not due (strictly greater required)
-	require.False(t, keepAliveDue(1_000_000+thresholdSlots, 1_000_000, refreshBlocks))
+	require.False(t, keepAliveDue(1_000_000+thresholdSlots, 1_000_000, refreshBlocks, slotsPerThorBlock))
 
 	// past threshold: due
-	require.True(t, keepAliveDue(1_000_000+thresholdSlots+1, 1_000_000, refreshBlocks))
+	require.True(t, keepAliveDue(1_000_000+thresholdSlots+1, 1_000_000, refreshBlocks, slotsPerThorBlock))
 
 	// disabled or invalid threshold: never due
-	require.False(t, keepAliveDue(10_000_000, 0, 0))
-	require.False(t, keepAliveDue(10_000_000, 0, -1))
+	require.False(t, keepAliveDue(10_000_000, 0, 0, slotsPerThorBlock))
+	require.False(t, keepAliveDue(10_000_000, 0, -1, slotsPerThorBlock))
 
 	// current slot behind newest signature (RPC lag): not due
-	require.False(t, keepAliveDue(999_999, 1_000_000, refreshBlocks))
+	require.False(t, keepAliveDue(999_999, 1_000_000, refreshBlocks, slotsPerThorBlock))
 }
 
 // TestKeepAliveThorBoundary covers the convergence mechanism: every member derives

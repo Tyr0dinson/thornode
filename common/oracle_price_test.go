@@ -1,7 +1,9 @@
 package common
 
 import (
+	"math"
 	"math/big"
+	"math/rand"
 
 	. "gopkg.in/check.v1"
 )
@@ -135,5 +137,46 @@ func (s *OraclePriceSuite) TestNewOraclePrice(c *C) {
 			c.Assert(price.Decimals, Equals, tc.ExpectedDecimals, Commentf(tc.Number))
 			c.Assert(price.Amount, Equals, tc.ExpectedAmount, Commentf(tc.Number))
 		}
+	}
+}
+
+func (s *OraclePriceSuite) TestBigFloat(c *C) {
+	// the big.Int formula BigFloat's precomputed powers of ten stand in for
+	reference := func(p *OraclePrice) *big.Float {
+		divisor := new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(p.Decimals)), nil)
+		amount := new(big.Float).SetUint64(p.Amount)
+		return new(big.Float).Quo(amount, new(big.Float).SetInt(divisor))
+	}
+
+	amounts := []uint64{
+		0, 1, 2, 3, 7, 10, 999, 1000, 4881564, 82646002303,
+		684682837625151837, math.MaxInt64, math.MaxInt64 + 1, math.MaxUint64,
+	}
+	r := rand.New(rand.NewSource(1)) // nolint:gosec // deterministic, reproducible test input
+	for i := 0; i < 64; i++ {
+		amounts = append(amounts, r.Uint64()>>i)
+	}
+
+	// past 19 decimals 10^d no longer fits in 64 bits
+	var held [][2]*big.Float
+	for d := uint32(0); d <= 24; d++ {
+		for _, a := range amounts {
+			p := &OraclePrice{Amount: a, Decimals: d}
+			got, want := p.BigFloat(), reference(p)
+			comment := Commentf("%d / 10^%d", a, d)
+			c.Assert(got.Text('p', 0), Equals, want.Text('p', 0), comment)
+			c.Assert(got.Prec(), Equals, want.Prec(), comment)
+			c.Assert(got.Mode(), Equals, want.Mode(), comment)
+			c.Assert(got.Acc(), Equals, want.Acc(), comment)
+
+			scratch := p.BigFloat()
+			scratch.Add(scratch, big.NewFloat(1))
+			held = append(held, [2]*big.Float{got, want})
+		}
+	}
+
+	// callers keep and change the Floats: every call hands out its own
+	for _, h := range held {
+		c.Assert(h[0].Text('p', 0), Equals, h[1].Text('p', 0))
 	}
 }

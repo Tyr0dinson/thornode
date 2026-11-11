@@ -16,6 +16,7 @@ import (
 	"github.com/spf13/viper"
 	"github.com/syndtr/goleveldb/leveldb/util"
 	"gitlab.com/thorchain/thornode/v3/app"
+	"gitlab.com/thorchain/thornode/v3/app/divergence"
 	"gitlab.com/thorchain/thornode/v3/common"
 
 	"cosmossdk.io/log"
@@ -79,8 +80,9 @@ func initAppConfig() (string, interface{}) {
 
 	type CustomAppConfig struct {
 		serverconfig.Config
-		Wasm     wasmtypes.NodeConfig    `mapstructure:"wasm"`
-		EBifrost ebifrost.EBifrostConfig `mapstructure:"ebifrost"`
+		Wasm       wasmtypes.NodeConfig    `mapstructure:"wasm"`
+		EBifrost   ebifrost.EBifrostConfig `mapstructure:"ebifrost"`
+		Divergence divergence.Config       `mapstructure:"divergence"`
 	}
 
 	// Optionally allow the chain developer to overwrite the SDK's default
@@ -102,13 +104,15 @@ func initAppConfig() (string, interface{}) {
 	// srvCfg.BaseConfig.IAVLDisableFastNode = true // disable fastnode by default
 
 	customAppConfig := CustomAppConfig{
-		Config: *srvCfg,
-		Wasm:   wasmtypes.DefaultNodeConfig(),
+		Config:     *srvCfg,
+		Wasm:       wasmtypes.DefaultNodeConfig(),
+		Divergence: divergence.DefaultConfig(),
 	}
 
 	customAppTemplate := serverconfig.DefaultConfigTemplate
 	customAppTemplate += wasmtypes.DefaultConfigTemplate()
 	customAppTemplate += ebifrost.DefaultConfigTemplate()
+	customAppTemplate += divergence.DefaultConfigTemplate()
 
 	return customAppTemplate, customAppConfig
 }
@@ -126,7 +130,7 @@ func initRootCmd(
 	rootCmd.AddCommand(
 		genutilcli.InitCmd(basicManager, app.DefaultNodeHome),
 		//		NewTestnetCmd(basicManager, banktypes.GenesisBalancesIterator{}),
-		debug.Cmd(),
+		debugCommand(),
 		confixcmd.ConfigCommand(),
 		pruning.Cmd(newApp, app.DefaultNodeHome),
 		snapshot.Cmd(newApp),
@@ -136,7 +140,12 @@ func initRootCmd(
 		cmd.GetValidateSeedPhraseCmd(),
 	)
 
-	server.AddCommands(rootCmd, app.DefaultNodeHome, newApp, appExport, addModuleInitFlags)
+	// AddCommandsWithStartCmdOptions, unlike AddCommands, does not register
+	// module-hash-by-height, so add it here to keep it in every build.
+	startOpts := startCmdOptions(addModuleInitFlags)
+	startOpts.DBOpener = openAppDB
+	server.AddCommandsWithStartCmdOptions(rootCmd, app.DefaultNodeHome, newApp, appExport, startOpts)
+	rootCmd.AddCommand(server.ModuleHashByHeightQuery(newApp))
 	wasmcli.ExtendUnsafeResetAllCmd(rootCmd)
 
 	// add keybase, auxiliary RPC, query, genesis, and tx child commands
@@ -151,6 +160,13 @@ func initRootCmd(
 	)
 }
 
+// debugCommand is the SDK debug command plus divergence-diff.
+func debugCommand() *cobra.Command {
+	cmd := debug.Cmd()
+	cmd.AddCommand(divergence.DiffCmd())
+	return cmd
+}
+
 func addModuleInitFlags(startCmd *cobra.Command) {
 	startCmd.PreRunE = func(cmd *cobra.Command, _ []string) error {
 		serverCtx := server.GetServerContextFromCmd(cmd)
@@ -160,9 +176,13 @@ func addModuleInitFlags(startCmd *cobra.Command) {
 		if err := serverCtx.Viper.BindPFlags(cmd.Flags()); err != nil {
 			return fmt.Errorf("fail to bind flags,err: %w", err)
 		}
+		if err := setAppDBBlockCache(serverCtx.Viper); err != nil {
+			return err
+		}
 
 		// replace sdk logger with thorlog
 		if zl, ok := serverCtx.Logger.Impl().(*zerolog.Logger); ok {
+			zl = consoleLogOutput(zl, serverCtx.Viper, cmd.OutOrStdout())
 			logger := zl.With().CallerWithSkipFrameCount(3).Logger()
 			serverCtx.Logger = thorlog.SdkLogWrapper{
 				Logger: &logger,
@@ -309,12 +329,21 @@ func newApp(
 		wasmOpts = append(wasmOpts, wasmkeeper.WithVMCacheMetrics(prometheus.DefaultRegisterer))
 	}
 
-	return app.NewChainApp(
+	chainApp := app.NewChainApp(
 		logger, db, traceStore, true,
 		appOpts,
 		wasmOpts,
 		baseappOptions...,
 	)
+
+	// node-local app-hash divergence diagnostics (on unless disabled in
+	// app.toml [divergence]); like the block logs above, kept out of
+	// NewChainApp so export and tests never record. Failure only loses
+	// diagnostics, so it is logged rather than fatal.
+	if err := chainApp.EnableDivergenceDiagnostics(homePath, appOpts); err != nil {
+		logger.Error("divergence diagnostics disabled", "err", err)
+	}
+	return chainApp
 }
 
 // appExport creates a new wasm app (optionally at a given height) and exports state.

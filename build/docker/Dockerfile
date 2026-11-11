@@ -3,7 +3,7 @@
 ########################################################################################
 
 ARG DOCKER_MIRROR=
-FROM ${DOCKER_MIRROR}golang:1.26.4-bookworm AS build
+FROM ${DOCKER_MIRROR}golang:1.26.10-bookworm AS build
 
 ENV GOBIN=/go/bin
 ENV GOPATH=/go
@@ -47,14 +47,16 @@ ARG COMMIT=unknown
 RUN make install
 
 ########################################################################################
-# Deploy
+# Runtime
 ########################################################################################
 
-FROM ${DOCKER_MIRROR}debian:bookworm-20260610-slim@sha256:96e378d7e6531ac9a15ad505478fcc2e69f371b10f5cdf87857c4b8188404716
+# Separate stage so CI's test-simulation can build it alone (--target runtime) and
+# COPY natively built binaries onto it (build/docker/Dockerfile.native).
+FROM ${DOCKER_MIRROR}debian:bookworm-20260610-slim@sha256:96e378d7e6531ac9a15ad505478fcc2e69f371b10f5cdf87857c4b8188404716 AS runtime
 
 RUN apt-get update && \
   apt-get install -y --no-install-recommends \
-  ca-certificates=20230311+deb12u1 \
+  ca-certificates=20250419~deb12u2 \
   curl=7.88.1-10+deb12u* \
   jq=1.6-2.1+deb12u* \
   libffi-dev=3.4.4-1 \
@@ -65,6 +67,12 @@ RUN apt-get update && \
   python3-pip=23.0.1+dfsg-1 && \
   rm -rf /var/lib/apt/lists/* && \
   pip3 install --no-cache-dir --break-system-packages requests==2.32.3 web3==7.5.0 retry==0.9.2
+
+########################################################################################
+# Deploy
+########################################################################################
+
+FROM runtime
 
 # Copy the compiled binaries over.
 COPY --from=build /go/bin/thornode /go/bin/bifrost /go/bin/recover-keyshare-backup /usr/bin/

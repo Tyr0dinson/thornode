@@ -142,17 +142,30 @@ is also narrower than the full cluster run.
 
 Fresh mocknet validators atomically write `registering` to
 `/root/.thornode/mocknet-registration.state` before initialization or registration.
-A restart in that state refuses to initialize or submit transactions again, even
-if a temporary genesis file exists. Marker write failures stop startup too.
+Marker write failures stop startup.
 
-After all four registration transactions are confirmed, the marker becomes
-`registered`. A restart then skips registration and resumes configuration
-rendering and normal startup, including after a failed `render-config`.
-Existing initialized volumes without a marker retain their normal startup.
+A restart in the `registering` state resumes registration from committed chain
+state. Before each of the four registration transactions (bond, node keys, IP
+address, version), startup reads the signer account and the node records from
+the peer API at one height. It skips a step that is already recorded for this
+node and sends only the missing ones. A changed IP address is updated and a
+newer registered version is kept.
 
-This prevents automatic replay; it does not reconcile partial registration.
-A crash after the last transaction commits but before `registered` is saved
-still requires manual inspection. Stop the failing container and reconcile its
-committed transactions before changing the marker. Restarting alone cannot
-recover an uncertain attempt. Fresh dedicated projects remain the supported
-simulation setup.
+Each transaction is signed with the account sequence from that same read. A
+sequence can be used only once, so a transaction that is still pending, or that
+committed before the client learned the result, cannot execute alongside a
+retry. When the outcome is unknown or the sequence was already used, startup
+reads committed state again before deciding whether to send. After a confirmed
+transaction, it waits for the API to reach that height. If the node record at
+that height still lacks the step, startup stops. Queries and retries are
+bounded to 10 attempts each.
+
+State that belongs to another setup stops startup with a
+`conflicts with committed state` error: a node operated by another address,
+different keys already set on this node, or these keys registered to another
+node.
+
+After all four steps are recorded, the marker becomes `registered`. A restart
+then skips registration and resumes configuration rendering and normal startup,
+including after a failed `render-config`. Existing initialized volumes without
+a marker retain their normal startup.

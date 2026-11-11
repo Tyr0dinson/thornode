@@ -39,7 +39,11 @@ class SimulationConfigTest(unittest.TestCase):
                 "-o",
                 "build-mocknet-cluster",
                 "-o",
+                "build-mocknet-cluster-native",
+                "-o",
                 "reset-mocknet-cluster",
+                "-o",
+                "prepare-mocknet-cluster-native",
                 *args,
             ],
             cwd=ROOT,
@@ -75,10 +79,12 @@ class SimulationConfigTest(unittest.TestCase):
     def test_ci_cannot_inherit_an_optional_xmr_setting(self):
         ci = (ROOT / ".gitlab-ci.yml").read_text()
         job = re.search(r"(?ms)^test-simulation:\n(.*?)(?=^\S|\Z)", ci).group(1)
-        command = re.search(r"(?m)^    - (make test-simulation-cluster[^\n]*)$", job)
-        self.assertIsNotNone(command)
+        commands = re.findall(
+            r"(?m)^[ \t]+(?:-\s+)?(make test-simulation-cluster[^\n]*)$", job
+        )
+        self.assertEqual(len(commands), 1)
         rendered = self.render(
-            *shlex.split(command.group(1))[1:],
+            *shlex.split(commands[0])[1:],
             env={"TEST_SIMULATION_REQUIRE_XMR": "0"},
         )
         self.assertRegex(rendered, r"-e XMR_POST_CHURN_REQUIRED=1\s")

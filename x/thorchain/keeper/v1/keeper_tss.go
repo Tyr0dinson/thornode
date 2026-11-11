@@ -3,13 +3,12 @@ package keeperv1
 import (
 	"fmt"
 
-	"github.com/cosmos/cosmos-sdk/runtime"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 )
 
 func (k KVStore) setTssVoter(ctx cosmos.Context, key []byte, record TssVoter) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	buf := k.cdc.MustMarshal(&record)
 	if buf == nil {
 		store.Delete(key)
@@ -19,7 +18,7 @@ func (k KVStore) setTssVoter(ctx cosmos.Context, key []byte, record TssVoter) {
 }
 
 func (k KVStore) getTssVoter(ctx cosmos.Context, key []byte, record *TssVoter) (bool, error) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	if !store.Has(key) {
 		return false, nil
 	}
@@ -32,7 +31,7 @@ func (k KVStore) getTssVoter(ctx cosmos.Context, key []byte, record *TssVoter) (
 }
 
 func (k KVStore) setTssKeygenMetric(ctx cosmos.Context, key []byte, record TssKeygenMetric) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	buf := k.cdc.MustMarshal(&record)
 	if buf == nil {
 		store.Delete(key)
@@ -42,7 +41,7 @@ func (k KVStore) setTssKeygenMetric(ctx cosmos.Context, key []byte, record TssKe
 }
 
 func (k KVStore) getTssKeygenMetric(ctx cosmos.Context, key []byte, record *TssKeygenMetric) (bool, error) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	if !store.Has(key) {
 		return false, nil
 	}
@@ -55,7 +54,7 @@ func (k KVStore) getTssKeygenMetric(ctx cosmos.Context, key []byte, record *TssK
 }
 
 func (k KVStore) setTssKeysignMetric(ctx cosmos.Context, key []byte, record TssKeysignMetric) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	buf := k.cdc.MustMarshal(&record)
 	if buf == nil {
 		store.Delete(key)
@@ -65,7 +64,7 @@ func (k KVStore) setTssKeysignMetric(ctx cosmos.Context, key []byte, record TssK
 }
 
 func (k KVStore) getTssKeysignMetric(ctx cosmos.Context, key []byte, record *TssKeysignMetric) (bool, error) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	if !store.Has(key) {
 		return false, nil
 	}

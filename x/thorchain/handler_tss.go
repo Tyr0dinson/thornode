@@ -161,6 +161,10 @@ func (h TssHandler) validate(ctx cosmos.Context, msg *MsgTssPool) error {
 		return fmt.Errorf("fail to get keygen block from data store: %w", err)
 	}
 	keygenValidityBlocks := keygenResultValidityBlocksForBlock(ctx, h.mgr.Keeper(), msg.KeygenType, keygenBlock)
+	// The window ends one block before the retry tick, so a result is rejected
+	// exactly at the block the churn retry schedules a replacement keygen. Matches
+	// ValidatorMgr.hasPendingKeygen; accepting a stale result there would let it
+	// finalize a vault the retry is replacing (a double-trigger).
 	if msg.Height < ctx.BlockHeight()-keygenValidityBlocks {
 		return cosmos.ErrUnknownRequest("invalid keygen block")
 	}
@@ -215,7 +219,14 @@ func keygenResultValidityBlocks(ctx cosmos.Context, k keeper.Keeper, keygenType 
 	if keygenType == XMRMonovaultKeygen {
 		blocks = max(blocks, durationToBlocks(6*time.Minute))
 	}
-	return blocks
+	// The window ends one block before the retry tick. A keygen scheduled at H is
+	// valid for ages 0..blocks-1 and expires at age `blocks`, the same age the
+	// churn retry fires (ticks run every ChurnRetryInterval). Returning the full
+	// interval instead kept the keygen valid AT the first tick, so hasPendingKeygen
+	// suppressed that retry and the effective interval doubled (the off-by-one).
+	// Subtracting one lets the first retry fire on schedule while a stale result is
+	// already rejected on that block, so the retry cannot double-trigger a live keygen.
+	return blocks - 1
 }
 
 func keygenResultValidityBlocksForBlock(ctx cosmos.Context, k keeper.Keeper, keygenType types.KeygenType, keygenBlock KeygenBlock) int64 {
@@ -520,32 +531,64 @@ func (h TssHandler) handle(ctx cosmos.Context, msg *MsgTssPool) error {
 						},
 					)
 
+					// Track the keygen blame for every blamed node; only the
+					// escalated penalties below are limited to non-active nodes.
+					if errInc := h.mgr.Keeper().IncrementKeygenBlame(ctx, na.NodeAddress); errInc != nil {
+						ctx.Logger().Error("fail to increment keygen blame", "error", errInc)
+					}
+
 					if na.Status == NodeActive {
 						failedKeygenSlashCtx := ctx.WithContext(context.WithValue(ctx.Context(), constants.CtxMetricLabels, []metrics.Label{
 							telemetry.NewLabel("reason", "failed_keygen"),
 						}))
-						if err := h.mgr.Keeper().IncNodeAccountSlashPoints(failedKeygenSlashCtx, na.NodeAddress, slashPoints); err != nil {
-							ctx.Logger().Error("fail to inc slash points", "error", err)
+						if errInc := h.mgr.Keeper().IncNodeAccountSlashPoints(failedKeygenSlashCtx, na.NodeAddress, slashPoints); errInc != nil {
+							ctx.Logger().Error("fail to inc slash points", "error", errInc)
 						}
 
-						if err := h.mgr.EventMgr().EmitEvent(ctx, NewEventSlashPoint(na.NodeAddress, slashPoints, "fail keygen")); err != nil {
+						if errEmit := h.mgr.EventMgr().EmitEvent(ctx, NewEventSlashPoint(na.NodeAddress, slashPoints, "fail keygen")); errEmit != nil {
 							ctx.Logger().Error("fail to emit slash point event")
 						}
 					} else {
-						// go to jail
-						jailTime := h.mgr.GetConstants().GetInt64Value(constants.JailTimeKeygen)
-						releaseHeight := ctx.BlockHeight() + jailTime
+						// Calculate escalated penalties based on blame history
+						mult, errMult := h.mgr.Keeper().CalculateKeygenPenaltyMultiplier(ctx, na.NodeAddress)
+						if errMult != nil {
+							ctx.Logger().Error("fail to calculate keygen penalty multiplier", "error", errMult)
+							mult = 1 // Fallback to base penalty
+						}
+
+						// Apply escalated penalties.
+						// JailTimeKeygenBase is a per-blame base (multiplied by the
+						// blame-since-churn count). It is intentionally distinct from
+						// JailTimeKeygen, which is the flat jail period used by the
+						// active-node and late-signer paths.
+						baseSlashPoints := h.mgr.GetConstants().GetInt64Value(constants.FailKeygenSlashPoints)
+						baseJailTime := h.mgr.GetConstants().GetInt64Value(constants.JailTimeKeygenBase)
+
+						escalatedSlashPoints := baseSlashPoints * mult
+						escalatedJailTime := baseJailTime * mult
+						releaseHeight := ctx.BlockHeight() + escalatedJailTime
+
+						if mult > 1 {
+							ctx.Logger().Info("keygen blame penalty escalation",
+								"node", na.NodeAddress.String(),
+								"multiplier", mult,
+								"slash_points", escalatedSlashPoints,
+								"jail_blocks", escalatedJailTime,
+							)
+						}
+
+						// Go to jail
 						reason := "failed to perform keygen"
-						if err := h.mgr.Keeper().SetNodeAccountJail(ctx, na.NodeAddress, releaseHeight, reason); err != nil {
-							ctx.Logger().Error("fail to set node account jail", "node address", na.NodeAddress, "reason", reason, "error", err)
+						if errJail := h.mgr.Keeper().SetNodeAccountJail(ctx, na.NodeAddress, releaseHeight, reason); errJail != nil {
+							ctx.Logger().Error("fail to set node account jail", "node address", na.NodeAddress, "reason", reason, "error", errJail)
 						}
 
-						network, err := h.mgr.Keeper().GetNetwork(ctx)
-						if err != nil {
-							return fmt.Errorf("fail to get network: %w", err)
+						network, errNet := h.mgr.Keeper().GetNetwork(ctx)
+						if errNet != nil {
+							return fmt.Errorf("fail to get network: %w", errNet)
 						}
 
-						slashBond := network.CalcNodeRewards(cosmos.NewUint(uint64(slashPoints)))
+						slashBond := network.CalcNodeRewards(cosmos.NewUint(uint64(escalatedSlashPoints)))
 						if slashBond.GT(na.Bond) {
 							slashBond = na.Bond
 						}
@@ -703,6 +746,33 @@ func (h TssHandler) handle(ctx cosmos.Context, msg *MsgTssPool) error {
 				evt := NewEventTssKeygenMetric(metric.PubKey, metric.GetMedianTime())
 				if err = h.mgr.EventMgr().EmitEvent(ctx, evt); err != nil {
 					ctx.Logger().Error("fail to emit tss metric event", "error", err)
+				}
+			}
+
+			// Reset since_churn counters only for the members of the
+			// just-succeeded keygen. A global reset would be unsafe during
+			// parallel multi-Asgard churn — a success in one Asgard would
+			// otherwise wipe pending blame counters for nodes in another
+			// Asgard that is still failing. XMR monovault successes reset
+			// nothing: a node in both committees must keep its regular-churn
+			// blame until the regular churn completes.
+			if msg.KeygenType == AsgardKeygen {
+				memberAddrs := make([]cosmos.AccAddress, 0, len(vault.Membership))
+				for _, member := range vault.Membership {
+					pkey, errPK := common.NewPubKey(member)
+					if errPK != nil {
+						ctx.Logger().Error("fail to parse vault member pubkey", "error", errPK, "pubkey", member)
+						continue
+					}
+					addr, errAddr := pkey.GetThorAddress()
+					if errAddr != nil {
+						ctx.Logger().Error("fail to derive thor address from member pubkey", "error", errAddr, "pubkey", member)
+						continue
+					}
+					memberAddrs = append(memberAddrs, addr)
+				}
+				if errReset := h.mgr.Keeper().ResetSinceChurnCountersForMembers(ctx, memberAddrs); errReset != nil {
+					ctx.Logger().Error("fail to reset blame since_churn counters", "error", errReset)
 				}
 			}
 
@@ -899,6 +969,18 @@ func (h TssHandler) rotateReadyKeygenVaultFamilies(ctx cosmos.Context, keygenBlo
 				activeVaults, err = h.mgr.Keeper().GetAsgardVaultsByStatus(ctx, ActiveVault)
 				if err != nil {
 					return fmt.Errorf("fail to refresh active vaults: %w", err)
+				}
+				// A regular churn is complete once every Asgard keygen in the
+				// block is an active vault. Only then clear since_churn blame
+				// for all nodes, so offenders left out of the new vaults do not
+				// carry escalation into later churns. XMR monovault keygens are
+				// deliberately ignored: Bifrost may skip them, and an XMR-only
+				// completion must not wipe blame for a regular churn still in
+				// flight.
+				if keygenTypeReady(keygenBlock, activeVaults, AsgardKeygen) {
+					if errReset := h.mgr.Keeper().ResetAllSinceChurnCounters(ctx); errReset != nil {
+						ctx.Logger().Error("fail to reset blame since_churn counters", "error", errReset)
+					}
 				}
 				initVaults, err = h.mgr.Keeper().GetAsgardVaultsByStatus(ctx, InitVault)
 				if err != nil {

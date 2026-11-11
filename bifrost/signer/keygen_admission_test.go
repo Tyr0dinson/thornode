@@ -181,8 +181,8 @@ func TestKeygenRetryRevalidatesAtFire(t *testing.T) {
 		interval int64
 		wantRuns int
 	}{
-		{"inclusive expiry", 3700, 1000, 100, 1},
-		{"expired", 3701, 1000, 100, 0},
+		{"last valid before tick", 3699, 1000, 100, 1},
+		{"expired at retry tick", 3700, 1000, 100, 0},
 		{"churn disabled", 2800, 0, 100, 0},
 		{"keygen retry disabled", 2800, 1000, 0, 0},
 		{"window shrunk", 3100, 1, 100, 0},
@@ -378,14 +378,14 @@ func TestKeygenRetrySurvivesMimirLookupFailure(t *testing.T) {
 						}
 					}
 					bridge.mimirErrs = nil
-					// The inclusive last valid height allows execution, but leaves
+					// The last valid height (churn-1) allows execution but leaves
 					// no headroom to spawn another retry after the empty Asgard key.
-					bridge.setHeight(3700)
+					bridge.setHeight(3699)
 					switch outcome {
 					case "disabled":
 						bridge.setMimir(mimir.String(), 0)
 					case "expired":
-						bridge.setHeight(3701)
+						bridge.setHeight(3700)
 					case "shutdown":
 						bridge.mimirErrs = map[string]error{mimir.String(): errors.New("still unavailable")}
 						close(signer.stopChan)

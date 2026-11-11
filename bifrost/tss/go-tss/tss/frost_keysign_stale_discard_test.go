@@ -10,12 +10,11 @@ import (
 
 	tcommon "gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/common"
 
-	"gitlab.com/thorchain/thornode/v3/bifrost/p2p"
 	"gitlab.com/thorchain/thornode/v3/bifrost/p2p/conversion"
 	"gitlab.com/thorchain/thornode/v3/bifrost/p2p/messages"
 )
 
-// A node that did not join the signing party waits for the result on the same
+// A node that did not join the signing party waits for the result on the result
 // queue that holds removed peers' stale frames. Frames from peers outside the
 // active set must be dropped before parsing: the post-parse path would log
 // "non-active signer" for this frame, so the log must stay silent about it.
@@ -23,12 +22,12 @@ func TestFrostWaitForResultDropsNonActivePeerBeforeParsing(t *testing.T) {
 	ensureBech32Prefix()
 
 	var logs bytes.Buffer
-	msgChan := make(chan *p2p.Message, 3)
+	msgChan := newFrostSignInbox()
 	coord := &FrostSignCoordinator{
 		localPubKey:      testPubKeys[0],
 		msgID:            "msg-id",
 		expectedPlanHash: testExpectedPlanHash,
-		msgChan:          msgChan,
+		inbox:            msgChan,
 		timeout:          time.Second,
 		logger:           zerolog.New(&logs),
 	}
@@ -96,7 +95,7 @@ func TestFrostExchangePreprocessDropsRemovedPeerBeforeParsing(t *testing.T) {
 	localPayload := payloadFor(testPubKeys[0], "aa")
 	remotePayload := payloadFor(testPubKeys[1], "bb")
 
-	msgChan := make(chan *p2p.Message, 8)
+	msgChan := newFrostSignInbox()
 	// Wrapped correctly, but the inner payload is not a preprocess object.
 	enqueueKeySignMessage(t, msgChan, messages.TSSFrostPreprocessMsg, "msg-id", testPubKeys[2], "not-a-preprocess-payload")
 	enqueueKeySignMessage(t, msgChan, messages.TSSFrostPreprocessMsg, "msg-id", testPubKeys[1], remotePayload)
@@ -117,6 +116,7 @@ func TestFrostExchangePreprocessDropsRemovedPeerBeforeParsing(t *testing.T) {
 
 	var logs bytes.Buffer
 	coord := newTestFrostSignCoordinator(testPubKeys[0], "msg-id", msgChan, time.Second)
+	initTestFrostSignRoundState(t, coord, activeSet, participantIndexMap)
 	coord.logger = zerolog.New(&logs)
 	if _, failResp := coord.exchangePreprocess(activeSet, participantIndexMap, peerIDs, localPayload); failResp != nil {
 		t.Fatalf("round failed: %+v", failResp)

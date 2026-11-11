@@ -771,15 +771,9 @@ func ExportGenesis(ctx cosmos.Context, k keeper.Keeper) GenesisState {
 	iterClouts := k.GetSwapperCloutIterator(ctx)
 	defer iterClouts.Close()
 	for ; iterClouts.Valid(); iterClouts.Next() {
-		var addr common.Address
-		parts := strings.Split(string(iterClouts.Key()), "/")
-		addr, err = common.NewAddress(parts[len(parts)-1])
-		if err != nil {
-			continue
-		}
-		var clout SwapperClout
-		clout, err = k.GetSwapperClout(ctx, addr)
-		if err != nil {
+		// Read the stored record: keys are uppercased, which breaks base58 addresses.
+		clout := NewSwapperClout(common.NoAddress)
+		if err = k.Cdc().Unmarshal(iterClouts.Value(), &clout); err != nil {
 			continue
 		}
 		clouts = append(clouts, clout)

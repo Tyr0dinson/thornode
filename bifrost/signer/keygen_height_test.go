@@ -171,9 +171,10 @@ func TestKeygenRetryLaggingHeightRecoversOnce(t *testing.T) {
 			if signer.tryKeygenRetry(retry) {
 				t.Fatal("retry fired before target height")
 			}
-			// Execute at inclusive expiry: an empty Asgard key cannot create
-			// another retry here, so reads identify exactly one execution.
-			bridge.setHeight(3700)
+			// Execute at the last valid height (churn-1): an empty Asgard key
+			// cannot create another retry here, so reads identify exactly one
+			// execution.
+			bridge.setHeight(3699)
 			before := bridge.mimirReadCount(constants.ChurnRetryInterval.String())
 			if !signer.tryKeygenRetry(retry) {
 				t.Fatal("recovered retry did not finish")
@@ -195,5 +196,34 @@ func TestKeygenRetryLaggingHeightRecoversOnce(t *testing.T) {
 				t.Fatal("ordinary retry checked XMR policy")
 			}
 		})
+	}
+}
+
+// cachedBehindKeygenBridge serves a cached height one block behind the
+// uncached one, as the real bridge can just after the scanner sees a block.
+type cachedBehindKeygenBridge struct {
+	*singleFlightKeygenBridge
+	uncachedHeight int64
+}
+
+func (b *cachedBehindKeygenBridge) GetBlockHeightUncached() (int64, error) {
+	return b.uncachedHeight, nil
+}
+
+// The scanner delivers keygens at the uncached height, so admission must read
+// the same height or a fresh keygen is retained for a block it need not wait.
+func TestXMRKeygenAdmissionReadsUncachedHeight(t *testing.T) {
+	signer, bridge, client := replacementTestSigner(t, nil)
+	client.releaseFirst()
+	bridge.setHeight(2699)
+	bridge.setMimir(constants.MimirKeyHaltMonovaultKeygen, 2701)
+	signer.thorchainBridge = &cachedBehindKeygenBridge{singleFlightKeygenBridge: bridge, uncachedHeight: 2700}
+	block := newSingleFlightXMRKeygen(t, 2700)
+	current, _ := signer.xmrKeygen.admit(block.Height, block.Keygens[0], false)
+	if signer.runAdmittedXMRKeygen(current) != nil {
+		t.Fatal("cached height behind the delivered keygen retained it")
+	}
+	if client.callCount() != 1 || bridge.broadcastCount() != 1 {
+		t.Fatalf("DKG/broadcast counts %d/%d, want 1", client.callCount(), bridge.broadcastCount())
 	}
 }

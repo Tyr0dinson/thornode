@@ -798,3 +798,50 @@ func (s *MigrationCommonSuite) TestNamedCollectorMigrationPendingConversions(c *
 		}
 	}
 }
+
+func (s *MigrationCommonSuite) TestMigrate19to20MergesZECTexClout(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	ctx = ctx.WithBlockHeight(1000)
+	k := mgr.Keeper()
+	transparent, tex, _, _ := zecTxOutAddresses()
+	other := GetRandomBTCAddress()
+
+	existing := NewSwapperClout(transparent)
+	existing.Score = cosmos.NewUint(100)
+	existing.Spent = cosmos.NewUint(40)
+	existing.Reclaimed = cosmos.NewUint(10)
+	existing.LastSpentHeight = 7 // stale, so its outstanding spend is restored
+	existing.LastReclaimHeight = 9
+	c.Assert(k.SetSwapperClout(ctx, existing), IsNil)
+	otherClout := NewSwapperClout(other)
+	otherClout.Score = cosmos.NewUint(5)
+	c.Assert(k.SetSwapperClout(ctx, otherClout), IsNil)
+
+	// Seed a legacy record directly, since the keeper now normalizes TEX.
+	legacy := NewSwapperClout(tex)
+	legacy.Score = cosmos.NewUint(1000)
+	legacy.Spent = cosmos.NewUint(300)
+	legacy.Reclaimed = cosmos.NewUint(100)
+	legacy.LastSpentHeight = 900
+	legacy.LastReclaimHeight = 3
+	texKey := k.GetKey("sclout/", tex.String())
+	c.Assert(mgr.storeService.OpenKVStore(ctx).Set(texKey, k.Cdc().MustMarshal(&legacy)), IsNil)
+
+	c.Assert(NewMigrator(mgr).Migrate19to20(ctx), IsNil)
+
+	has, err := mgr.storeService.OpenKVStore(ctx).Has(texKey)
+	c.Assert(err, IsNil)
+	c.Check(has, Equals, false)
+	merged, err := k.GetSwapperClout(ctx, transparent)
+	c.Assert(err, IsNil)
+	c.Check(merged.Address, Equals, transparent)
+	c.Check(merged.Score.String(), Equals, "1100")
+	c.Check(merged.Spent.String(), Equals, "340")
+	c.Check(merged.Reclaimed.String(), Equals, "140")
+	c.Check(merged.LastSpentHeight, Equals, int64(900))
+	c.Check(merged.LastReclaimHeight, Equals, int64(9))
+	c.Check(merged.Available().String(), Equals, "900")
+	otherAfter, err := k.GetSwapperClout(ctx, other)
+	c.Assert(err, IsNil)
+	c.Check(otherAfter, DeepEquals, otherClout)
+}

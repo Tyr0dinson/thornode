@@ -2,11 +2,15 @@ package signer
 
 import (
 	"errors"
+	"fmt"
 	"slices"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/rs/zerolog"
+
+	"gitlab.com/thorchain/thornode/v3/bifrost/blockscanner"
 	"gitlab.com/thorchain/thornode/v3/bifrost/tss"
 	"gitlab.com/thorchain/thornode/v3/constants"
 	ttypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
@@ -86,6 +90,10 @@ func TestXMRKeygenPolicyContinuation(t *testing.T) {
 }
 
 func TestXMRKeygenPolicyWorkerHandoff(t *testing.T) {
+	// Registered before the signer's cleanup, so it runs after the workers stop.
+	recheck := xmrKeygenRecheckInterval
+	xmrKeygenRecheckInterval = 10 * time.Millisecond
+	t.Cleanup(func() { xmrKeygenRecheckInterval = recheck })
 	signer, bridge, client := replacementTestSigner(t, nil)
 	signer.tssKeygen = &tss.KeyGen{}
 	block := newSingleFlightXMRKeygen(t, 2700)
@@ -108,10 +116,11 @@ func TestXMRKeygenPolicyWorkerHandoff(t *testing.T) {
 	pending := newSingleFlightXMRKeygen(t, 2701)
 	signer.processKeygenBlock(pending)
 	bridge.setLookupFailure(constants.MimirKeyEnableMonovaultKeygen, nil)
+	// The worker resumes on its recheck interval, well inside one block time.
 	select {
 	case <-client.firstStarted:
-	case <-time.After(3 * constants.ThorchainBlockTime):
-		t.Fatal("retained worker never resumed its admitted request")
+	case <-time.After(constants.ThorchainBlockTime / 2):
+		t.Fatal("retained worker did not resume its admitted request on its recheck interval")
 	}
 	client.releaseFirst()
 	finished := make(chan struct{})
@@ -224,5 +233,45 @@ func TestKeygenRetryInitialFailureDeduplicatesAndRendezvous(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+type scannerPolicyKeygenBridge struct{ *singleFlightKeygenBridge }
+
+func (b *scannerPolicyKeygenBridge) GetMimirWithRef(template, ref string) (int64, error) {
+	return b.GetMimir(fmt.Sprintf(template, ref))
+}
+
+func TestXMRScannerPolicyDoesNotControlKeygen(t *testing.T) {
+	for _, scenario := range []string{"scanner halted", "scanner policy unreadable", "keygen disabled"} {
+		t.Run(scenario, func(t *testing.T) {
+			signer, bridge, client := replacementTestSigner(t, nil)
+			signer.thorchainBridge = &scannerPolicyKeygenBridge{bridge}
+			client.releaseFirst()
+			bridge.setMimir(constants.MimirKeyEnableMonovaultKeygen, 1)
+			bridge.setMimir(constants.MimirKeyHaltMonovaultKeygen, 0)
+			bridge.setMimir("HaltScannerXMR", 1)
+			wantKeygens := 1
+			wantPaused := true
+			if scenario == "scanner policy unreadable" {
+				bridge.setLookupFailure("HaltScannerXMR", errors.New("scanner policy unavailable"))
+			}
+			if scenario == "keygen disabled" {
+				bridge.setMimir("HaltScannerXMR", 0)
+				bridge.setMimir(constants.MimirKeyEnableMonovaultKeygen, 0)
+				wantKeygens, wantPaused = 0, false
+			}
+			if paused := blockscanner.IsXMRScannerPaused(zerolog.Nop(), bridge); paused != wantPaused {
+				t.Fatalf("scanner paused=%t, want %t", paused, wantPaused)
+			}
+			reads := bridge.mimirReadCount("HaltScannerXMR")
+			signer.processKeygenBlock(newSingleFlightXMRKeygen(t, 2700))
+			if client.callCount() != wantKeygens || bridge.broadcastCount() != wantKeygens {
+				t.Fatalf("keygen execution/broadcast=%d/%d, want %d", client.callCount(), bridge.broadcastCount(), wantKeygens)
+			}
+			if bridge.mimirReadCount("HaltScannerXMR") != reads {
+				t.Fatal("keygen consulted economic scanner policy")
+			}
+		})
 	}
 }

@@ -3,11 +3,16 @@ package tss
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	tcrypto "github.com/cometbft/cometbft/crypto"
+	cometsecp "github.com/cometbft/cometbft/crypto/secp256k1"
+	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/rs/zerolog"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/p2p"
@@ -15,6 +20,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/p2p/messages"
 	"gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/blame"
 	tcommon "gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/common"
+	"gitlab.com/thorchain/thornode/v3/common"
 )
 
 var setupBech32PrefixOnce sync.Once
@@ -129,7 +135,7 @@ func TestFrostSignCoordinatorReleasesClaimOnlyBeforeShareRPC(t *testing.T) {
 			sidecar:          sidecar,
 			localPubKey:      members[0],
 			msgID:            strings.Repeat("a", 64),
-			msgChan:          make(chan *p2p.Message, 1),
+			inbox:            newFrostSignInbox(),
 			timeout:          time.Second,
 			logger:           zerolog.Nop(),
 		}
@@ -220,6 +226,12 @@ func (m *mockFrostSidecarSign) FrostSignCombine(req FrostSidecarCombineReq) (Fro
 	return m.combineResp, m.combineErr
 }
 
+func TestFrostKeySignBatchWireUsesDistinctSessionDomain(t *testing.T) {
+	if frostMsgIDDomain != "thorchain-frost-keysign-msgid-v7" {
+		t.Fatalf("batch-only keysign session domain=%q, want v7", frostMsgIDDomain)
+	}
+}
+
 func TestFrostKeySignMsgIDDeterministic(t *testing.T) {
 	base := FrostKeySignRequest{
 		VaultPubKey:   "thorpub-vault-1",
@@ -234,6 +246,12 @@ func TestFrostKeySignMsgIDDeterministic(t *testing.T) {
 	id1, err := FrostKeySignMsgID(base)
 	if err != nil {
 		t.Fatalf("msg id 1: %v", err)
+	}
+	// This independent v7 fixture pins the domain in the actual session hash,
+	// not just the constant: signer ordering and local eligibility stay irrelevant.
+	const wantMsgID = "25fee4751f2a9e6cccb3bc0b363140459033fd4e9f3f3f8882e8fe5a5de37bfc"
+	if id1 != wantMsgID {
+		t.Fatalf("v7 msg id=%q, want %q", id1, wantMsgID)
 	}
 	id2, err := FrostKeySignMsgID(base)
 	if err != nil {
@@ -647,7 +665,7 @@ func TestFrostSignCoordinatorRejectsMaxGasExceeded(t *testing.T) {
 		t.Fatalf("peer ids: %v", err)
 	}
 
-	msgChan := make(chan *p2p.Message, 8)
+	msgChan := newFrostSignInbox()
 	enqueueFrostExecuteTranscriptMessages(t, msgChan, msgID, members, "aa", "bb", "cc", "dd")
 	coord := &FrostSignCoordinator{
 		p2pCommunication: &p2p.Communication{BroadcastMsgChan: make(chan *messages.BroadcastMsgChan, 64)},
@@ -666,7 +684,7 @@ func TestFrostSignCoordinatorRejectsMaxGasExceeded(t *testing.T) {
 		localPubKey:      members[0],
 		msgID:            msgID,
 		expectedPlanHash: planHash,
-		msgChan:          msgChan,
+		inbox:            msgChan,
 		timeout:          time.Second,
 		logger:           zerolog.Nop(),
 	}
@@ -781,7 +799,7 @@ func TestFrostExchangePreprocessAcceptsTranscriptVerification(t *testing.T) {
 		t.Fatalf("remote hash: %v", err)
 	}
 
-	msgChan := make(chan *p2p.Message, 8)
+	msgChan := newFrostSignInbox()
 	enqueueKeySignMessage(t, msgChan, messages.TSSFrostPreprocessMsg, "msg-id", testPubKeys[1], remotePayload)
 	enqueueKeySignMessage(t, msgChan, messages.TSSFrostVerifyMsg, "msg-id", testPubKeys[1], FrostVerifyPayload{
 		SenderPubKey:           testPubKeys[1],
@@ -799,6 +817,7 @@ func TestFrostExchangePreprocessAcceptsTranscriptVerification(t *testing.T) {
 	})
 
 	coord := newTestFrostSignCoordinator(testPubKeys[0], "msg-id", msgChan, time.Second)
+	initTestFrostSignRoundState(t, coord, activeSet, participantIndexMap)
 	values, failResp := coord.exchangePreprocess(activeSet, participantIndexMap, peerIDs, localPayload)
 	if failResp != nil {
 		t.Fatalf("expected success, got fail response: %+v", failResp)
@@ -825,7 +844,7 @@ func TestFrostExchangePreprocessTimeoutMissingVerifications(t *testing.T) {
 		t.Fatalf("peer ids: %v", err)
 	}
 
-	msgChan := make(chan *p2p.Message, 4)
+	msgChan := newFrostSignInbox()
 	enqueueKeySignMessage(t, msgChan, messages.TSSFrostPreprocessMsg, "msg-id", testPubKeys[1], FrostPreprocessPayload{
 		SenderPubKey:     testPubKeys[1],
 		ParticipantIndex: participantIndexMap[normalizePubKey(testPubKeys[1])],
@@ -833,6 +852,7 @@ func TestFrostExchangePreprocessTimeoutMissingVerifications(t *testing.T) {
 	})
 
 	coord := newTestFrostSignCoordinator(testPubKeys[0], "msg-id", msgChan, 30*time.Millisecond)
+	initTestFrostSignRoundState(t, coord, activeSet, participantIndexMap)
 	_, failResp := coord.exchangePreprocess(activeSet, participantIndexMap, peerIDs, FrostPreprocessPayload{
 		SenderPubKey:     testPubKeys[0],
 		ParticipantIndex: participantIndexMap[normalizePubKey(testPubKeys[0])],
@@ -849,15 +869,317 @@ func TestFrostExchangePreprocessTimeoutMissingVerifications(t *testing.T) {
 	}
 }
 
+// TestFrostKeySignRetainsFullPhaseSkew forces a remote signer one full phase
+// ahead. Share payloads remain queued and share verification entries remain
+// semantically inert until the share phase owns their validation.
+func TestFrostKeySignRetainsFullPhaseSkew(t *testing.T) {
+	ensureBech32Prefix()
+
+	members := []string{testPubKeys[0], testPubKeys[1]}
+	activeSet, participantIndexMap, peerIDs := testFrostSignParticipants(t, members)
+	localIndex := participantIndexMap[normalizePubKey(testPubKeys[0])]
+	remoteIndex := participantIndexMap[normalizePubKey(testPubKeys[1])]
+
+	localPreprocess := FrostPreprocessPayload{
+		SenderPubKey:     testPubKeys[0],
+		ParticipantIndex: localIndex,
+		PreprocessHex:    "aa",
+	}
+	remotePreprocess := FrostPreprocessPayload{
+		SenderPubKey:     testPubKeys[1],
+		ParticipantIndex: remoteIndex,
+		PreprocessHex:    "bb",
+	}
+	localPreprocessHash, err := FrostTranscriptPreprocessHash("msg-id", localPreprocess)
+	if err != nil {
+		t.Fatalf("local preprocess hash: %v", err)
+	}
+	remotePreprocessHash, err := FrostTranscriptPreprocessHash("msg-id", remotePreprocess)
+	if err != nil {
+		t.Fatalf("remote preprocess hash: %v", err)
+	}
+
+	localShare := FrostSharePayload{
+		SenderPubKey:     testPubKeys[0],
+		ParticipantIndex: localIndex,
+		ShareHex:         "cc",
+	}
+	remoteShare := FrostSharePayload{
+		SenderPubKey:     testPubKeys[1],
+		ParticipantIndex: remoteIndex,
+		ShareHex:         "dd",
+	}
+	localShareHash, err := FrostTranscriptShareHash("msg-id", localShare)
+	if err != nil {
+		t.Fatalf("local share hash: %v", err)
+	}
+	remoteShareHash, err := FrostTranscriptShareHash("msg-id", remoteShare)
+	if err != nil {
+		t.Fatalf("remote share hash: %v", err)
+	}
+
+	inbox := newFrostSignInbox()
+	// The verification topic is FIFO, so preprocess cannot finish without
+	// first routing both future share entries.
+	enqueueKeySignMessage(t, inbox, messages.TSSFrostShareMsg, "msg-id", testPubKeys[1], remoteShare)
+	for _, verification := range []FrostVerifyPayload{
+		{
+			SenderPubKey:           testPubKeys[1],
+			Round:                  frostRoundShare,
+			TargetSenderPubKey:     testPubKeys[1],
+			TargetParticipantIndex: remoteIndex,
+			PayloadHash:            remoteShareHash,
+		},
+		{
+			SenderPubKey:           testPubKeys[1],
+			Round:                  frostRoundShare,
+			TargetSenderPubKey:     testPubKeys[0],
+			TargetParticipantIndex: localIndex,
+			PayloadHash:            localShareHash,
+		},
+	} {
+		enqueueKeySignMessage(t, inbox, messages.TSSFrostVerifyMsg, "msg-id", testPubKeys[1], verification)
+	}
+	enqueueKeySignMessage(t, inbox, messages.TSSFrostPreprocessMsg, "msg-id", testPubKeys[1], remotePreprocess)
+	for _, verification := range []FrostVerifyPayload{
+		{
+			SenderPubKey:           testPubKeys[1],
+			Round:                  frostRoundPreprocess,
+			TargetSenderPubKey:     testPubKeys[1],
+			TargetParticipantIndex: remoteIndex,
+			PayloadHash:            remotePreprocessHash,
+		},
+		{
+			SenderPubKey:           testPubKeys[1],
+			Round:                  frostRoundPreprocess,
+			TargetSenderPubKey:     testPubKeys[0],
+			TargetParticipantIndex: localIndex,
+			PayloadHash:            localPreprocessHash,
+		},
+	} {
+		enqueueKeySignMessage(t, inbox, messages.TSSFrostVerifyMsg, "msg-id", testPubKeys[1], verification)
+	}
+
+	coord := newTestFrostSignCoordinator(testPubKeys[0], "msg-id", inbox, time.Second)
+	initTestFrostSignRoundState(t, coord, activeSet, participantIndexMap)
+	preprocesses, failure := coord.exchangePreprocess(activeSet, participantIndexMap, peerIDs, localPreprocess)
+	if failure != nil {
+		t.Fatalf("preprocess failed under phase skew: %+v", failure)
+	}
+	if len(preprocesses) != 2 {
+		t.Fatalf("preprocess lost remote payload: %+v", preprocesses)
+	}
+	shareVerifier, err := coord.roundState.verifier(frostRoundShare)
+	if err != nil {
+		t.Fatalf("share verifier: %v", err)
+	}
+	if got := len(shareVerifier.payloadHashByTarget); got != 0 {
+		t.Fatalf("future share payloads must remain unvalidated, got %d", got)
+	}
+	if got := len(shareVerifier.votesByTarget); got != 0 {
+		t.Fatalf("future share verifications were applied during preprocess, targets=%d", got)
+	}
+	if got := len(coord.roundState.deferredVerifications[frostRoundShare]); got != 2 {
+		t.Fatalf("future share verifications retained=%d, want 2", got)
+	}
+	if got := len(inbox.share); got != 1 {
+		t.Fatalf("future share payload was consumed during preprocess, queued=%d", got)
+	}
+
+	shares, failure := coord.exchangeShares(activeSet, participantIndexMap, peerIDs, localShare)
+	if failure != nil {
+		t.Fatalf("share phase failed after retained traffic: %+v", failure)
+	}
+	if len(shares) != 2 || shares[strconv.FormatUint(uint64(remoteIndex), 10)] != remoteShare.ShareHex {
+		t.Fatalf("share phase lost remote payload: %+v", shares)
+	}
+}
+
+func TestFrostKeySignRetainsEarlyResultQuorum(t *testing.T) {
+	ensureBech32Prefix()
+
+	members := []string{testPubKeys[0], testPubKeys[1], testPubKeys[2]}
+	activeSet, participantIndexMap, peerIDs := testFrostSignParticipants(t, members)
+	inbox := newFrostSignInbox()
+	result := mustSuccessResult(t, "msg-id", testExpectedPlanHash, testHashOf('7'), "deadbeef", 10)
+	for _, sender := range members[1:] {
+		enqueueResultMessage(t, inbox, "msg-id", sender, sender, FrostResultPayload{
+			SenderPubKey: sender,
+			Response:     result,
+		})
+	}
+
+	coord := newTestFrostSignCoordinator(testPubKeys[0], "msg-id", inbox, 30*time.Millisecond)
+	initTestFrostSignRoundState(t, coord, activeSet, participantIndexMap)
+	_, failure := coord.exchangeShares(activeSet, participantIndexMap, peerIDs, FrostSharePayload{
+		SenderPubKey:     testPubKeys[0],
+		ParticipantIndex: participantIndexMap[normalizePubKey(testPubKeys[0])],
+		ShareHex:         "cc",
+	})
+	if failure == nil || failure.Blame.Round != frostRoundShare {
+		t.Fatalf("expected local share timeout, got %+v", failure)
+	}
+
+	response, err := coord.WaitForResult(members, 2, 100*time.Millisecond)
+	if err != nil {
+		t.Fatalf("early result quorum was lost: %v", err)
+	}
+	if response.Status != tcommon.Success || response.TxHash != result.TxHash {
+		t.Fatalf("unexpected retained result: %+v", response)
+	}
+}
+
+func TestFrostKeySignFutureVerificationPreservesBindingAndIdempotency(t *testing.T) {
+	ensureBech32Prefix()
+
+	members := []string{testPubKeys[0], testPubKeys[1]}
+	activeSet, participantIndexMap, _ := testFrostSignParticipants(t, members)
+	inbox := newFrostSignInbox()
+	coord := newTestFrostSignCoordinator(testPubKeys[0], "msg-id", inbox, time.Second)
+	initTestFrostSignRoundState(t, coord, activeSet, participantIndexMap)
+	localNorm := normalizePubKey(testPubKeys[0])
+	remoteNorm := normalizePubKey(testPubKeys[1])
+	verification := FrostVerifyPayload{
+		SenderPubKey:           testPubKeys[1],
+		Round:                  frostRoundShare,
+		TargetSenderPubKey:     testPubKeys[0],
+		TargetParticipantIndex: participantIndexMap[localNorm],
+		PayloadHash:            testHashOf('a'),
+	}
+
+	// All four entries are retained without semantic effects during preprocess.
+	// Share activation must then reject the impersonated origin, coalesce exact
+	// duplicates, and disqualify the conflicting unsigned attester.
+	enqueueKeySignMessage(t, inbox, messages.TSSFrostVerifyMsg, "msg-id", testPubKeys[0], verification)
+	if response := coord.routeVerificationMessage(<-inbox.verify, frostRoundPreprocess); response != nil {
+		t.Fatalf("impersonated future verification failed the current phase: %+v", response)
+	}
+	shareVerifier, err := coord.roundState.verifier(frostRoundShare)
+	if err != nil {
+		t.Fatalf("share verifier: %v", err)
+	}
+	for range 2 {
+		enqueueKeySignMessage(t, inbox, messages.TSSFrostVerifyMsg, "msg-id", testPubKeys[1], verification)
+		if response := coord.routeVerificationMessage(<-inbox.verify, frostRoundPreprocess); response != nil {
+			t.Fatalf("duplicate verification failed the current phase: %+v", response)
+		}
+	}
+	verification.PayloadHash = testHashOf('b')
+	enqueueKeySignMessage(t, inbox, messages.TSSFrostVerifyMsg, "msg-id", testPubKeys[1], verification)
+	if response := coord.routeVerificationMessage(<-inbox.verify, frostRoundPreprocess); response != nil {
+		t.Fatalf("non-portable echo conflict became terminal: %+v", response)
+	}
+	if got := len(shareVerifier.votesByTarget); got != 0 {
+		t.Fatalf("future verification changed share state during preprocess, targets=%d", got)
+	}
+	if got := len(coord.roundState.deferredVerifications[frostRoundShare]); got != 4 {
+		t.Fatalf("future verifications retained=%d, want 4", got)
+	}
+	if response := coord.activateDeferredVerifications(frostRoundShare); response != nil {
+		t.Fatalf("non-portable verification conflict became terminal: %+v", response)
+	}
+	if got := len(shareVerifier.votesByTarget[localNorm]); got != 0 {
+		t.Fatalf("equivocating attester retained votes=%d", got)
+	}
+	if _, ok := shareVerifier.equivocatingVoters[remoteNorm]; !ok {
+		t.Fatal("equivocating attester was not disqualified")
+	}
+	if got := len(coord.roundState.deferredVerifications[frostRoundShare]); got != 0 {
+		t.Fatalf("activated verifications remain retained=%d", got)
+	}
+}
+
+func TestFrostKeySignDefersFutureShareEquivocationBeforeLocalShare(t *testing.T) {
+	ensureBech32Prefix()
+
+	localPrivateKey, localPubKey := newTestFrostSigner(t)
+	remotePrivateKey, remotePubKey := newTestFrostSigner(t)
+	members := []string{localPubKey, remotePubKey}
+	activeSet, participantIndexMap, peerIDs := testFrostSignParticipants(t, members)
+	remoteIndex := participantIndexMap[normalizePubKey(remotePubKey)]
+	msgID := testHashOf('f')
+	inbox := newFrostSignInbox()
+	coord := newTestFrostSignCoordinator(localPubKey, msgID, inbox, time.Second)
+	coord.privateKey = localPrivateKey
+	coord.strictTranscript = true
+	initTestFrostSignRoundState(t, coord, activeSet, participantIndexMap)
+
+	// Preprocess has already observed the first statement and its duplicate;
+	// leave the conflicting statement in the transport queue. Share activation
+	// must check both ownership locations before broadcasting the local share.
+	for i, hash := range []string{testHashOf('a'), testHashOf('a'), testHashOf('b')} {
+		target, err := newFrostSignedEnvelope(
+			remotePrivateKey,
+			msgID,
+			coord.vaultPubKey,
+			coord.network,
+			frostRoundShare,
+			remotePubKey,
+			remoteIndex,
+			hash,
+		)
+		if err != nil {
+			t.Fatalf("sign share envelope: %v", err)
+		}
+		echo, err := newFrostSignedEcho(remotePrivateKey, remotePubKey, target)
+		if err != nil {
+			t.Fatalf("sign share echo: %v", err)
+		}
+		enqueueKeySignMessage(t, inbox, messages.TSSFrostVerifyMsg, msgID, remotePubKey, FrostVerifyPayload{
+			ProtocolVersion:        echo.ProtocolVersion,
+			SenderPubKey:           echo.AttesterPubKey,
+			Round:                  echo.Target.Round,
+			TargetSenderPubKey:     echo.Target.SenderPubKey,
+			TargetParticipantIndex: echo.Target.ParticipantIndex,
+			PayloadHash:            echo.Target.PayloadHash,
+			TargetSignature:        echo.Target.Signature,
+			AttesterSignature:      echo.Signature,
+		})
+		if i < 2 {
+			if response := coord.routeVerificationMessage(<-inbox.verify, frostRoundPreprocess); response != nil {
+				t.Fatalf("future share evidence failed preprocess: %+v", response)
+			}
+		}
+	}
+	shareVerifier, err := coord.roundState.verifier(frostRoundShare)
+	if err != nil {
+		t.Fatalf("share verifier: %v", err)
+	}
+	if got := len(shareVerifier.signedByTarget); got != 0 {
+		t.Fatalf("future signed evidence was applied during preprocess, targets=%d", got)
+	}
+	if got := len(coord.roundState.deferredVerifications[frostRoundShare]); got != 2 {
+		t.Fatalf("future signed evidence retained=%d, want 2", got)
+	}
+	if got := len(inbox.verify); got != 1 {
+		t.Fatalf("queued share evidence=%d, want 1", got)
+	}
+
+	_, response := coord.exchangeShares(activeSet, participantIndexMap, peerIDs, FrostSharePayload{
+		SenderPubKey:     localPubKey,
+		ParticipantIndex: participantIndexMap[normalizePubKey(localPubKey)],
+		ShareHex:         "cc",
+	})
+	if response == nil || response.Blame.FailReason != frostEquivocationFailReason {
+		t.Fatalf("share phase did not return retained equivocation: %+v", response)
+	}
+	if response.releaseSigningClaim {
+		t.Fatal("deferred terminal evidence released the sticky signing claim")
+	}
+	if got := len(coord.p2pCommunication.BroadcastMsgChan); got != 0 {
+		t.Fatalf("share phase broadcast %d messages before checking retained terminal evidence", got)
+	}
+}
+
 func TestFrostWaitForResultRequiresQuorumMatch(t *testing.T) {
 	ensureBech32Prefix()
 
-	msgChan := make(chan *p2p.Message, 2)
+	msgChan := newFrostSignInbox()
 	coord := &FrostSignCoordinator{
 		localPubKey:      testPubKeys[0],
 		msgID:            "msg-id",
 		expectedPlanHash: testExpectedPlanHash,
-		msgChan:          msgChan,
+		inbox:            msgChan,
 		timeout:          100 * time.Millisecond,
 	}
 
@@ -871,6 +1193,80 @@ func TestFrostWaitForResultRequiresQuorumMatch(t *testing.T) {
 	}
 }
 
+// TestFrostWaitForResultDrainsNonResultTraffic pins the failed-active path:
+// once local execution ends, peers can still fill phase queues while this
+// signer waits to adopt their result. Draining obsolete frames keeps bounded
+// delivery from parking stream handlers until the keysign timeout.
+func TestFrostWaitForResultDrainsNonResultTraffic(t *testing.T) {
+	ensureBech32Prefix()
+
+	members := []string{testPubKeys[0], testPubKeys[1], testPubKeys[2]}
+	inbox := newFrostSignInbox()
+	nonResultQueues := []chan *p2p.Message{
+		inbox.preprocess,
+		inbox.share,
+		inbox.verify,
+	}
+
+	// Fill every queue before the waiter starts, then send once past capacity.
+	// Without discard drains, all three additional deliveries stay blocked.
+	delivered := make(chan struct{}, len(nonResultQueues))
+	for _, queue := range nonResultQueues {
+		for range cap(queue) {
+			queue <- &p2p.Message{}
+		}
+		go func(queue chan *p2p.Message) {
+			queue <- &p2p.Message{}
+			delivered <- struct{}{}
+		}(queue)
+	}
+
+	type waitResult struct {
+		response FrostKeySignResponse
+		err      error
+	}
+	waitDone := make(chan waitResult, 1)
+	coord := &FrostSignCoordinator{
+		localPubKey:      testPubKeys[0],
+		msgID:            "msg-id",
+		expectedPlanHash: testExpectedPlanHash,
+		inbox:            inbox,
+		timeout:          time.Second,
+	}
+	go func() {
+		response, err := coord.WaitForResult(members, 2, 2*time.Second)
+		waitDone <- waitResult{response: response, err: err}
+	}()
+
+	for range nonResultQueues {
+		select {
+		case <-delivered:
+		case <-time.After(time.Second):
+			t.Fatal("non-result queue delivery remained blocked during result wait")
+		}
+	}
+
+	success := mustSuccessResult(t, "msg-id", testExpectedPlanHash, testHashOf('e'), "deadbeef", 10)
+	for _, sender := range members[1:] {
+		enqueueResultMessage(t, inbox, "msg-id", sender, sender, FrostResultPayload{
+			SenderPubKey: sender,
+			Response:     success,
+		})
+	}
+
+	select {
+	case result := <-waitDone:
+		if result.err != nil {
+			t.Fatalf("wait for result: %v", result.err)
+		}
+		if result.response.Status != tcommon.Success || result.response.TxHash != success.TxHash {
+			t.Fatalf("unexpected quorum result: %+v", result.response)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("result quorum was not returned after draining non-result traffic")
+	}
+}
+
 func TestFrostWaitForResultTimeoutUsesSentinel(t *testing.T) {
 	ensureBech32Prefix()
 
@@ -878,7 +1274,7 @@ func TestFrostWaitForResultTimeoutUsesSentinel(t *testing.T) {
 		localPubKey:      testPubKeys[0],
 		msgID:            "msg-id",
 		expectedPlanHash: testExpectedPlanHash,
-		msgChan:          make(chan *p2p.Message, 1),
+		inbox:            newFrostSignInbox(),
 		timeout:          100 * time.Millisecond,
 	}
 
@@ -895,7 +1291,7 @@ func TestFrostWaitForResultSetupErrorIsNotTimeout(t *testing.T) {
 		localPubKey:      testPubKeys[0],
 		msgID:            "msg-id",
 		expectedPlanHash: testExpectedPlanHash,
-		msgChan:          make(chan *p2p.Message, 1),
+		inbox:            newFrostSignInbox(),
 		timeout:          100 * time.Millisecond,
 	}
 
@@ -911,12 +1307,12 @@ func TestFrostWaitForResultSetupErrorIsNotTimeout(t *testing.T) {
 func TestFrostWaitForResultAcceptsThresholdIdenticalSuccess(t *testing.T) {
 	ensureBech32Prefix()
 
-	msgChan := make(chan *p2p.Message, 2)
+	msgChan := newFrostSignInbox()
 	coord := &FrostSignCoordinator{
 		localPubKey:      testPubKeys[0],
 		msgID:            "msg-id",
 		expectedPlanHash: testExpectedPlanHash,
-		msgChan:          msgChan,
+		inbox:            msgChan,
 		timeout:          time.Second,
 	}
 
@@ -951,12 +1347,12 @@ func TestFrostWaitForResultAcceptsThresholdIdenticalSuccess(t *testing.T) {
 func TestFrostWaitForResultRejectsSingleVerifiedSuccess(t *testing.T) {
 	ensureBech32Prefix()
 
-	msgChan := make(chan *p2p.Message, 1)
+	msgChan := newFrostSignInbox()
 	coord := &FrostSignCoordinator{
 		localPubKey:      testPubKeys[0],
 		msgID:            "msg-id",
 		expectedPlanHash: testExpectedPlanHash,
-		msgChan:          msgChan,
+		inbox:            msgChan,
 		timeout:          time.Second,
 	}
 
@@ -976,12 +1372,12 @@ func TestFrostWaitForResultRejectsSingleVerifiedSuccess(t *testing.T) {
 func TestFrostWaitForResultRequiresFailureQuorum(t *testing.T) {
 	ensureBech32Prefix()
 
-	msgChan := make(chan *p2p.Message, 1)
+	msgChan := newFrostSignInbox()
 	coord := &FrostSignCoordinator{
 		localPubKey:      testPubKeys[0],
 		msgID:            "msg-id",
 		expectedPlanHash: testExpectedPlanHash,
-		msgChan:          msgChan,
+		inbox:            msgChan,
 		timeout:          100 * time.Millisecond,
 	}
 
@@ -1004,12 +1400,12 @@ func TestFrostWaitForResultRequiresFailureQuorum(t *testing.T) {
 func TestFrostWaitForResultContinuesAfterSingleMalformedResult(t *testing.T) {
 	ensureBech32Prefix()
 
-	msgChan := make(chan *p2p.Message, 3)
+	msgChan := newFrostSignInbox()
 	coord := &FrostSignCoordinator{
 		localPubKey:      testPubKeys[0],
 		msgID:            "msg-id",
 		expectedPlanHash: testExpectedPlanHash,
-		msgChan:          msgChan,
+		inbox:            msgChan,
 		timeout:          time.Second,
 		logger:           zerolog.Nop(),
 	}
@@ -1047,12 +1443,12 @@ func TestFrostWaitForResultContinuesAfterSingleMalformedResult(t *testing.T) {
 func TestFrostWaitForResultRejectsDivergentSuccessPayloads(t *testing.T) {
 	ensureBech32Prefix()
 
-	msgChan := make(chan *p2p.Message, 2)
+	msgChan := newFrostSignInbox()
 	coord := &FrostSignCoordinator{
 		localPubKey:      testPubKeys[0],
 		msgID:            "msg-id",
 		expectedPlanHash: testExpectedPlanHash,
-		msgChan:          msgChan,
+		inbox:            msgChan,
 		timeout:          100 * time.Millisecond,
 	}
 
@@ -1074,12 +1470,12 @@ func TestFrostWaitForResultRejectsDivergentSuccessPayloads(t *testing.T) {
 
 func TestFrostWaitForResultQuorumBindsTransactionKey(t *testing.T) {
 	ensureBech32Prefix()
-	msgChan := make(chan *p2p.Message, 3)
+	msgChan := newFrostSignInbox()
 	coord := &FrostSignCoordinator{
 		localPubKey:      testPubKeys[0],
 		msgID:            "msg-id",
 		expectedPlanHash: testExpectedPlanHash,
-		msgChan:          msgChan,
+		inbox:            msgChan,
 		timeout:          time.Second,
 	}
 	first := mustSuccessResult(t, "msg-id", testExpectedPlanHash, testHashOf('a'), "deadbeef", 10)
@@ -1105,12 +1501,12 @@ func TestFrostWaitForResultQuorumBindsTransactionKey(t *testing.T) {
 
 func TestFrostWaitForResultDisqualifiesConflictingSender(t *testing.T) {
 	ensureBech32Prefix()
-	msgChan := make(chan *p2p.Message, 3)
+	msgChan := newFrostSignInbox()
 	coord := &FrostSignCoordinator{
 		localPubKey:      testPubKeys[0],
 		msgID:            "msg-id",
 		expectedPlanHash: testExpectedPlanHash,
-		msgChan:          msgChan,
+		inbox:            msgChan,
 		timeout:          50 * time.Millisecond,
 		logger:           zerolog.Nop(),
 	}
@@ -1128,12 +1524,12 @@ func TestFrostWaitForResultDisqualifiesConflictingSender(t *testing.T) {
 func TestFrostWaitForResultSkipsPeerBindingMismatch(t *testing.T) {
 	ensureBech32Prefix()
 
-	msgChan := make(chan *p2p.Message, 1)
+	msgChan := newFrostSignInbox()
 	coord := &FrostSignCoordinator{
 		localPubKey:      testPubKeys[0],
 		msgID:            "msg-id",
 		expectedPlanHash: testExpectedPlanHash,
-		msgChan:          msgChan,
+		inbox:            msgChan,
 		timeout:          100 * time.Millisecond,
 		logger:           zerolog.Nop(),
 	}
@@ -1153,12 +1549,12 @@ func TestFrostWaitForResultSkipsPeerBindingMismatch(t *testing.T) {
 func TestFrostWaitForResultSkipsSenderOutsideActiveSet(t *testing.T) {
 	ensureBech32Prefix()
 
-	msgChan := make(chan *p2p.Message, 1)
+	msgChan := newFrostSignInbox()
 	coord := &FrostSignCoordinator{
 		localPubKey:      testPubKeys[0],
 		msgID:            "msg-id",
 		expectedPlanHash: testExpectedPlanHash,
-		msgChan:          msgChan,
+		inbox:            msgChan,
 		timeout:          100 * time.Millisecond,
 		logger:           zerolog.Nop(),
 	}
@@ -1177,12 +1573,12 @@ func TestFrostWaitForResultSkipsSenderOutsideActiveSet(t *testing.T) {
 func TestFrostWaitForResultIgnoresMismatchedMsgID(t *testing.T) {
 	ensureBech32Prefix()
 
-	msgChan := make(chan *p2p.Message, 1)
+	msgChan := newFrostSignInbox()
 	coord := &FrostSignCoordinator{
 		localPubKey:      testPubKeys[0],
 		msgID:            "msg-id",
 		expectedPlanHash: testExpectedPlanHash,
-		msgChan:          msgChan,
+		inbox:            msgChan,
 		timeout:          100 * time.Millisecond,
 	}
 
@@ -1199,12 +1595,12 @@ func TestFrostWaitForResultIgnoresMismatchedMsgID(t *testing.T) {
 func TestFrostWaitForResultRejectsPlanHashMismatch(t *testing.T) {
 	ensureBech32Prefix()
 
-	msgChan := make(chan *p2p.Message, 1)
+	msgChan := newFrostSignInbox()
 	coord := &FrostSignCoordinator{
 		localPubKey:      testPubKeys[0],
 		msgID:            "msg-id",
 		expectedPlanHash: testExpectedPlanHash,
-		msgChan:          msgChan,
+		inbox:            msgChan,
 		timeout:          time.Second,
 	}
 
@@ -1226,12 +1622,12 @@ func TestFrostWaitForResultRejectsPlanHashMismatch(t *testing.T) {
 func TestFrostWaitForResultRejectsEventualityIDMismatch(t *testing.T) {
 	ensureBech32Prefix()
 
-	msgChan := make(chan *p2p.Message, 1)
+	msgChan := newFrostSignInbox()
 	coord := &FrostSignCoordinator{
 		localPubKey:      testPubKeys[0],
 		msgID:            "msg-id",
 		expectedPlanHash: testExpectedPlanHash,
-		msgChan:          msgChan,
+		inbox:            msgChan,
 		timeout:          time.Second,
 	}
 
@@ -1254,12 +1650,12 @@ func TestFrostWaitForResultRejectsEventualityIDMismatch(t *testing.T) {
 func TestFrostWaitForResultRejectsUnstructuredFailure(t *testing.T) {
 	ensureBech32Prefix()
 
-	msgChan := make(chan *p2p.Message, 1)
+	msgChan := newFrostSignInbox()
 	coord := &FrostSignCoordinator{
 		localPubKey:      testPubKeys[0],
 		msgID:            "msg-id",
 		expectedPlanHash: testExpectedPlanHash,
-		msgChan:          msgChan,
+		inbox:            msgChan,
 		timeout:          time.Second,
 	}
 
@@ -1282,7 +1678,7 @@ func TestFrostWaitForResultRejectsUnstructuredFailure(t *testing.T) {
 
 func enqueueResultMessage(
 	t *testing.T,
-	msgChan chan<- *p2p.Message,
+	msgChan *frostSignInbox,
 	msgID string,
 	peerPubKey string,
 	senderPubKey string,
@@ -1308,7 +1704,7 @@ func enqueueResultMessage(
 	if err != nil {
 		t.Fatalf("marshal wrapped payload: %v", err)
 	}
-	msgChan <- &p2p.Message{
+	msgChan.result <- &p2p.Message{
 		PeerID:  peerID,
 		Payload: wrappedBytes,
 	}
@@ -1316,7 +1712,7 @@ func enqueueResultMessage(
 
 func enqueueFrostExecuteTranscriptMessages(
 	t *testing.T,
-	msgChan chan<- *p2p.Message,
+	msgChan *frostSignInbox,
 	msgID string,
 	members []string,
 	localPreprocess string,
@@ -1404,22 +1800,99 @@ func enqueueFrostExecuteTranscriptMessages(
 	})
 }
 
-func newTestFrostSignCoordinator(localPubKey, msgID string, msgChan chan *p2p.Message, timeout time.Duration) *FrostSignCoordinator {
+func newTestFrostSignCoordinator(localPubKey, msgID string, msgChan *frostSignInbox, timeout time.Duration) *FrostSignCoordinator {
 	return &FrostSignCoordinator{
-		p2pCommunication: &p2p.Communication{BroadcastMsgChan: make(chan *messages.BroadcastMsgChan, 64)},
-		localPubKey:      localPubKey,
-		msgID:            msgID,
-		vaultPubKey:      "thorpub1test-vault",
-		network:          "mainnet",
-		expectedPlanHash: testExpectedPlanHash,
-		msgChan:          msgChan,
-		timeout:          timeout,
+		p2pCommunication:          &p2p.Communication{BroadcastMsgChan: make(chan *messages.BroadcastMsgChan, 64)},
+		localPubKey:               localPubKey,
+		msgID:                     msgID,
+		vaultPubKey:               "thorpub1test-vault",
+		network:                   "mainnet",
+		expectedPlanHash:          testExpectedPlanHash,
+		inbox:                     msgChan,
+		verificationEntriesByPeer: make(map[peer.ID]uint32),
+		timeout:                   timeout,
 	}
+}
+
+func initTestFrostSignRoundState(
+	t *testing.T,
+	coord *FrostSignCoordinator,
+	activeSet *activeSignerSet,
+	participantIndexMap map[string]uint32,
+) {
+	t.Helper()
+	state, err := newFrostSignRoundState(
+		activeSet,
+		participantIndexMap,
+		coord.vaultPubKey,
+		coord.network,
+	)
+	if err != nil {
+		t.Fatalf("initialize FROST keysign round state: %v", err)
+	}
+	coord.roundState = state
+}
+
+func testFrostSignParticipants(
+	t *testing.T,
+	members []string,
+) (*activeSignerSet, map[string]uint32, []peer.ID) {
+	t.Helper()
+	_, participantIndexMap, signerByNormalized, err := buildParticipantIndex(members)
+	if err != nil {
+		t.Fatalf("build participant index: %v", err)
+	}
+	activeSet, err := buildActiveSet(members, signerByNormalized)
+	if err != nil {
+		t.Fatalf("build active set: %v", err)
+	}
+	peerIDs, err := conversion.GetPeerIDsFromPubKeys(members)
+	if err != nil {
+		t.Fatalf("peer IDs: %v", err)
+	}
+	return activeSet, participantIndexMap, peerIDs
+}
+
+func TestFrostSignerSharedEncoderPreservesIdentity(t *testing.T) {
+	ensureBech32Prefix()
+	privateKey := make(cometsecp.PrivKey, cometsecp.PrivKeySize)
+	privateKey[len(privateKey)-1] = 1
+
+	// Scalar-one identities captured with the former direct SDK encoder.
+	// Using the shared encoder must preserve the public key and peer binding.
+	const (
+		wantPubKey = "thorpub1addwnpepqfumuen7l8wthtz45p3ftn58pvrs9xlumvkuu2xet8egzkcklqtesc6p3ea"
+		wantPeerID = "16Uiu2HAm3cuhhRL2msUuLF62KRSfneFDx94RsuouyW25Ho42cFMq"
+	)
+	pubKey, encodeErr := common.NewPubKeyFromCrypto(privateKey.PubKey())
+	if encodeErr != nil {
+		t.Fatal(encodeErr)
+	}
+	if pubKey.String() != wantPubKey {
+		t.Fatalf("signer public key changed: got %s, want %s", pubKey, wantPubKey)
+	}
+	peerID, peerErr := conversion.GetPeerIDFromPubKey(pubKey.String())
+	if peerErr != nil {
+		t.Fatal(peerErr)
+	}
+	if peerID.String() != wantPeerID {
+		t.Fatalf("signer peer ID changed: got %s, want %s", peerID, wantPeerID)
+	}
+}
+
+func newTestFrostSigner(t *testing.T) (cometsecp.PrivKey, string) {
+	t.Helper()
+	privateKey := cometsecp.GenPrivKey()
+	pubKey, err := common.NewPubKeyFromCrypto(privateKey.PubKey())
+	if err != nil {
+		t.Fatalf("marshal signer pubkey: %v", err)
+	}
+	return privateKey, pubKey.String()
 }
 
 func enqueueKeySignMessage(
 	t *testing.T,
-	msgChan chan<- *p2p.Message,
+	msgChan *frostSignInbox,
 	msgType messages.THORChainTSSMessageType,
 	msgID string,
 	peerPubKey string,
@@ -1429,6 +1902,11 @@ func enqueueKeySignMessage(
 	peerID, err := conversion.GetPeerIDFromPubKey(peerPubKey)
 	if err != nil {
 		t.Fatalf("peer id from pubkey: %v", err)
+	}
+	if msgType == messages.TSSFrostVerifyMsg {
+		if verification, ok := payload.(FrostVerifyPayload); ok {
+			payload = FrostVerifyBatchPayload{Verifications: []FrostVerifyPayload{verification}}
+		}
 	}
 	payloadBytes, err := json.Marshal(payload)
 	if err != nil {
@@ -1442,8 +1920,200 @@ func enqueueKeySignMessage(
 	if err != nil {
 		t.Fatalf("marshal wrapped payload: %v", err)
 	}
-	msgChan <- &p2p.Message{
+	messageChan, ok := msgChan.messageChannel(msgType)
+	if !ok {
+		t.Fatalf("unsupported FROST keysign message type %q", msgType)
+	}
+	messageChan <- &p2p.Message{
 		PeerID:  peerID,
 		Payload: wrappedBytes,
+	}
+}
+
+// A withheld participant payload, not a sleep, keeps each round open while a
+// faster signer sends future shares, duplicate signed echoes and a result quorum.
+func TestFrostKeysignAllTopicsRetainedAcrossDelayedRounds(t *testing.T) {
+	ensureBech32Prefix()
+	var keys []tcrypto.PrivKey
+	var members []string
+	for range 3 {
+		key, pubKey := newTestFrostSigner(t)
+		keys = append(keys, key)
+		members = append(members, pubKey)
+	}
+	activeSet, indexes, peers := testFrostSignParticipants(t, members)
+
+	for _, session := range []string{testHashOf('1'), testHashOf('2')} {
+		t.Run(session[:1], func(t *testing.T) {
+			coord := newTestFrostSignCoordinator(members[0], session, newFrostSignInbox(), 5*time.Second)
+			coord.privateKey, coord.strictTranscript = keys[0], true
+			initTestFrostSignRoundState(t, coord, activeSet, indexes)
+			preprocess := make([]FrostPreprocessPayload, len(members))
+			shares := make([]FrostSharePayload, len(members))
+			var preprocessEchoes, shareEchoes []FrostVerifyPayload
+			for i, member := range members {
+				index := indexes[normalizePubKey(member)]
+				preprocess[i] = FrostPreprocessPayload{SenderPubKey: member, ParticipantIndex: index, PreprocessHex: fmt.Sprintf("%02x", i+1)}
+				preHash, hashErr := FrostTranscriptPreprocessHash(session, preprocess[i])
+				if hashErr != nil {
+					t.Fatal(hashErr)
+				}
+				preStatement, preSignErr := newFrostSignedEnvelope(keys[i], session, coord.vaultPubKey, coord.network,
+					frostRoundPreprocess, member, index, preHash)
+				if preSignErr != nil {
+					t.Fatal(preSignErr)
+				}
+				preprocess[i].ProtocolVersion, preprocess[i].Signature = preStatement.ProtocolVersion, preStatement.Signature
+				preprocessEchoes = append(preprocessEchoes, testFrostKeysignVerification(t, keys[1], members[1], preStatement))
+
+				shares[i] = FrostSharePayload{SenderPubKey: member, ParticipantIndex: index, ShareHex: fmt.Sprintf("%02x", i+17)}
+				shareHash, shareHashErr := FrostTranscriptShareHash(session, shares[i])
+				if shareHashErr != nil {
+					t.Fatal(shareHashErr)
+				}
+				shareStatement, shareSignErr := newFrostSignedEnvelope(keys[i], session, coord.vaultPubKey, coord.network,
+					frostRoundShare, member, index, shareHash)
+				if shareSignErr != nil {
+					t.Fatal(shareSignErr)
+				}
+				shares[i].ProtocolVersion, shares[i].Signature = shareStatement.ProtocolVersion, shareStatement.Signature
+				shareEchoes = append(shareEchoes, testFrostKeysignVerification(t, keys[1], members[1], shareStatement))
+			}
+			result := mustSuccessResult(t, session, testExpectedPlanHash, testHashOf('7'), "deadbeef", 10)
+			for range 2 {
+				enqueueKeySignMessage(t, coord.inbox, messages.TSSFrostShareMsg, session, members[1], shares[1])
+				enqueueKeySignMessage(t, coord.inbox, messages.TSSFrostVerifyMsg, session, members[1], FrostVerifyBatchPayload{Verifications: shareEchoes})
+				enqueueResultMessage(t, coord.inbox, session, members[1], members[1], FrostResultPayload{SenderPubKey: members[1], Response: result})
+			}
+			enqueueResultMessage(t, coord.inbox, session, members[2], members[2], FrostResultPayload{SenderPubKey: members[2], Response: result})
+
+			type roundOutcome struct {
+				values  map[string]string
+				failure *FrostKeySignResponse
+			}
+			preDone := make(chan roundOutcome, 1)
+			go func() {
+				values, failure := coord.exchangePreprocess(activeSet, indexes, peers, preprocess[0])
+				preDone <- roundOutcome{values, failure}
+			}()
+			if first := receiveFrostKeysignBroadcast(t, coord.p2pCommunication.BroadcastMsgChan); first.WrappedMessage.MessageType != messages.TSSFrostPreprocessMsg {
+				t.Fatal("preprocess did not start with its local payload")
+			}
+			for range 2 {
+				enqueueKeySignMessage(t, coord.inbox, messages.TSSFrostPreprocessMsg, session, members[1], preprocess[1])
+			}
+			// Verification FIFO forces the future batches to be retained before
+			// the current-round echoes can complete any target's confirmation.
+			enqueueKeySignMessage(t, coord.inbox, messages.TSSFrostVerifyMsg, session, members[1], FrostVerifyBatchPayload{Verifications: preprocessEchoes})
+			select {
+			case early := <-preDone:
+				t.Fatalf("preprocess completed without the withheld payload: %+v", early)
+			default:
+			}
+			enqueueKeySignMessage(t, coord.inbox, messages.TSSFrostPreprocessMsg, session, members[2], preprocess[2])
+			var pre roundOutcome
+			select {
+			case pre = <-preDone:
+			case <-time.After(10 * time.Second):
+				t.Fatal("preprocess did not complete after releasing its payload barrier")
+			}
+			if pre.failure != nil || len(pre.values) != len(members) {
+				t.Fatalf("preprocess failed under full topic skew: %+v", pre)
+			}
+			shareVerifier, verifierErr := coord.roundState.verifier(frostRoundShare)
+			if verifierErr != nil {
+				t.Fatal(verifierErr)
+			}
+			if len(shareVerifier.signedByTarget) != 0 || len(shareVerifier.votesByTarget) != 0 || len(coord.roundState.deferredVerifications[frostRoundShare]) != 6 {
+				t.Fatal("future signed echoes were lost or applied before their phase")
+			}
+			if len(coord.inbox.share) != 2 || len(coord.inbox.result) != 3 {
+				t.Fatal("preprocess consumed future shares or early terminal votes")
+			}
+			for len(coord.p2pCommunication.BroadcastMsgChan) > 0 {
+				<-coord.p2pCommunication.BroadcastMsgChan
+			}
+			// A late echo from the prior phase must not poison the share verifier.
+			enqueueKeySignMessage(t, coord.inbox, messages.TSSFrostVerifyMsg, session, members[1], FrostVerifyBatchPayload{Verifications: preprocessEchoes})
+			shareDone := make(chan roundOutcome, 1)
+			go func() {
+				values, failure := coord.exchangeShares(activeSet, indexes, peers, shares[0])
+				shareDone <- roundOutcome{values, failure}
+			}()
+			if first := receiveFrostKeysignBroadcast(t, coord.p2pCommunication.BroadcastMsgChan); first.WrappedMessage.MessageType != messages.TSSFrostShareMsg {
+				t.Fatal("share did not start with its local payload")
+			}
+			select {
+			case early := <-shareDone:
+				t.Fatalf("share completed without the withheld payload: %+v", early)
+			default:
+			}
+			enqueueKeySignMessage(t, coord.inbox, messages.TSSFrostShareMsg, session, members[2], shares[2])
+			var share roundOutcome
+			select {
+			case share = <-shareDone:
+			case <-time.After(10 * time.Second):
+				t.Fatal("share did not complete after releasing its payload barrier")
+			}
+			if share.failure != nil || len(share.values) != len(members) {
+				t.Fatalf("share failed after retained and delayed traffic: %+v", share)
+			}
+			for i, member := range members {
+				if share.values[strconv.FormatUint(uint64(indexes[normalizePubKey(member)]), 10)] != shares[i].ShareHex {
+					t.Fatal("duplicate or delayed shares changed the participant values")
+				}
+				if len(shareVerifier.votesByTarget[normalizePubKey(member)]) != 2 {
+					t.Fatal("duplicate echoes changed distinct-attester accounting")
+				}
+			}
+			if len(coord.inbox.result) != 3 {
+				t.Fatal("share consumed the early result quorum")
+			}
+			response, resultErr := coord.WaitForResult(members, 2, time.Second)
+			if resultErr != nil || response.Status != tcommon.Success || response.TxHash != result.TxHash {
+				t.Fatalf("retained distinct-peer result quorum did not resolve: %+v, %v", response, resultErr)
+			}
+		})
+	}
+}
+
+func TestFrostKeysignSignedFutureEchoBindsAuthenticatedTransportPeer(t *testing.T) {
+	ensureBech32Prefix()
+	localKey, localPubKey := newTestFrostSigner(t)
+	attesterKey, attesterPubKey := newTestFrostSigner(t)
+	_, otherPubKey := newTestFrostSigner(t)
+	activeSet, indexes, _ := testFrostSignParticipants(t, []string{localPubKey, attesterPubKey, otherPubKey})
+	coord := newTestFrostSignCoordinator(localPubKey, testHashOf('f'), newFrostSignInbox(), time.Second)
+	coord.privateKey, coord.strictTranscript = localKey, true
+	initTestFrostSignRoundState(t, coord, activeSet, indexes)
+	target, signErr := newFrostSignedEnvelope(attesterKey, coord.msgID, coord.vaultPubKey, coord.network,
+		frostRoundShare, attesterPubKey, indexes[normalizePubKey(attesterPubKey)], testHashOf('a'))
+	if signErr != nil {
+		t.Fatal(signErr)
+	}
+	echo := testFrostKeysignVerification(t, attesterKey, attesterPubKey, target)
+	enqueueKeySignMessage(t, coord.inbox, messages.TSSFrostVerifyMsg, coord.msgID, otherPubKey, echo)
+	if response := coord.routeVerificationMessage(<-coord.inbox.verify, frostRoundPreprocess); response != nil {
+		t.Fatalf("future binding mismatch changed preprocess semantics: %+v", response)
+	}
+	if len(coord.roundState.deferredVerifications[frostRoundShare]) != 1 {
+		t.Fatal("authenticated origin was not retained with the future echo")
+	}
+	if response := coord.activateDeferredVerifications(frostRoundShare); response != nil {
+		t.Fatalf("wrong-origin echo became terminal: %+v", response)
+	}
+	verifier, verifierErr := coord.roundState.verifier(frostRoundShare)
+	if verifierErr != nil {
+		t.Fatal(verifierErr)
+	}
+	if len(verifier.votesByTarget) != 0 || len(verifier.signedByTarget) != 0 {
+		t.Fatal("valid signatures bypassed the deferred transport-peer binding")
+	}
+	enqueueKeySignMessage(t, coord.inbox, messages.TSSFrostVerifyMsg, coord.msgID, attesterPubKey, echo)
+	if response := coord.routeVerificationMessage(<-coord.inbox.verify, frostRoundShare); response != nil {
+		t.Fatalf("subsequent correctly bound echo failed: %+v", response)
+	}
+	if len(verifier.votesByTarget[normalizePubKey(attesterPubKey)]) != 1 {
+		t.Fatal("correctly bound signed traffic did not progress after the rejected origin")
 	}
 }

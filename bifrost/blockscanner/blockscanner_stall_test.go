@@ -27,6 +27,20 @@ func armStall(scanner *BlockScanner, height int64) {
 	scanner.stallSince = time.Now().Add(-24 * time.Hour)
 }
 
+// RunStalledScannerForTest lets external-package integration tests use the real
+// scan loop with an expired stall clock and observe its natural return.
+func RunStalledScannerForTest(scanner *BlockScanner) <-chan struct{} {
+	armStall(scanner, scanner.PreviousHeight()+1)
+	scanner.healthy.Store(true)
+	scanner.wg.Add(1)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		scanner.scanBlocks()
+	}()
+	return done
+}
+
 // lastObservedServer serves just enough of the THORNode API for GetStartHeight
 // and skipAheadIfStalled: /status for WaitToCatchUp and a per-chain lastblock.
 func lastObservedServer(body string) *httptest.Server {
@@ -209,6 +223,7 @@ func (s *BlockScannerExtraSuite) startStalledScanner(c *C, err error) int64 {
 
 	storage := NewMockScannerStorage()
 	c.Assert(storage.SetScanPos(2800), IsNil)
+	fetcher := &configFetcher{chainHeight: 1000000, fetchErr: err}
 	scanner, scanErr := NewBlockScanner(config.BifrostBlockScannerConfiguration{
 		BlockScanProcessors:        1,
 		HTTPRequestTimeout:         time.Second,
@@ -216,15 +231,18 @@ func (s *BlockScannerExtraSuite) startStalledScanner(c *C, err error) int64 {
 		BlockRetryInterval:         time.Millisecond,
 		ChainID:                    common.ETHChain,
 		MaxResumeBlockLag:          time.Hour,
-	}, storage, m, &stallBridge{ThorchainBridge: s.makeBridge(c, server)}, &configFetcher{chainHeight: 1000000, fetchErr: err})
+	}, storage, m, &stallBridge{ThorchainBridge: s.makeBridge(c, server)}, fetcher)
 	c.Assert(scanErr, IsNil)
 	armStall(scanner, 2801)
 	scanner.healthy.Store(true)
 
 	scanner.Start(make(chan types.TxIn, 1), make(chan common.NetworkFee, 1))
 	defer scanner.Stop()
+	// The stall clock is already expired, so a failure that may skip does so on
+	// its first fetch of 2801; 50 failed fetches with the cursor unmoved mean it
+	// never will.
 	for i := 0; i < 200; i++ {
-		if scanner.PreviousHeight() != 2800 {
+		if scanner.PreviousHeight() != 2800 || fetcher.fetches.Load() >= 50 {
 			break
 		}
 		time.Sleep(10 * time.Millisecond)
@@ -350,6 +368,8 @@ func (s *BlockScannerExtraSuite) TestNetworkFeeAfterAvailabilityRetries(c *C) {
 			reportHeight := ((60 * 60 * 1000) + ms - 1) / ms
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 				switch {
+				case strings.HasPrefix(req.RequestURI, thorclient.MimirEndpoint+"/key/HaltScannerXMR"):
+					_, _ = w.Write([]byte(`0`))
 				case strings.HasPrefix(req.RequestURI, thorclient.MimirEndpoint):
 					_, _ = w.Write([]byte(`-1`))
 				case strings.HasPrefix(req.RequestURI, "/thorchain/inbound_addresses"):

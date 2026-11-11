@@ -2,21 +2,41 @@ package types
 
 import (
 	"errors"
+	"os"
 	"testing"
 	"time"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/v3/common"
+	"gitlab.com/thorchain/thornode/v3/config"
 	. "gopkg.in/check.v1"
 )
 
 func AccountTest(t *testing.T) { TestingT(t) }
 
-type AccountSuite struct{}
+type AccountSuite struct {
+	chainID    string
+	hadChainID bool
+}
 
 var _ = Suite(&AccountSuite{})
 
-func (s *ActorSuite) TestNewUser(c *C) {
+func (s *AccountSuite) SetUpTest(c *C) {
+	s.chainID, s.hadChainID = os.LookupEnv("CHAIN_ID")
+	c.Assert(os.Setenv("CHAIN_ID", "thorchain-mocknet-v1"), IsNil)
+	config.Init()
+}
+
+func (s *AccountSuite) TearDownTest(c *C) {
+	if s.hadChainID {
+		c.Assert(os.Setenv("CHAIN_ID", s.chainID), IsNil)
+	} else {
+		c.Assert(os.Unsetenv("CHAIN_ID"), IsNil)
+	}
+	config.Init()
+}
+
+func (s *AccountSuite) TestNewUser(c *C) {
 	testMnemonic := "dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog fossil"
 	constructors := make(map[common.Chain]LiteChainClientConstructor)
 	user := NewUser(testMnemonic, constructors)

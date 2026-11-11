@@ -69,12 +69,20 @@ func (s *HandlerSuite) SetUpSuite(*C) {
 	SetupConfigForTest()
 }
 
-func FundModule(c *C, ctx cosmos.Context, k keeper.Keeper, name string, amt uint64) {
+// testFatal is what the setup helpers need from a test: both *check.C and
+// testing.TB satisfy it, so fuzz targets can share the gocheck fixtures.
+type testFatal interface {
+	Fatalf(format string, args ...interface{})
+}
+
+func FundModule(c testFatal, ctx cosmos.Context, k keeper.Keeper, name string, amt uint64) {
 	coin := common.NewCoin(common.RuneNative, cosmos.NewUint(amt))
-	err := k.MintToModule(ctx, ModuleName, coin)
-	c.Assert(err, IsNil)
-	err = k.SendFromModuleToModule(ctx, ModuleName, name, common.NewCoins(coin))
-	c.Assert(err, IsNil)
+	if err := k.MintToModule(ctx, ModuleName, coin); err != nil {
+		c.Fatalf("fund module %s: %s", name, err)
+	}
+	if err := k.SendFromModuleToModule(ctx, ModuleName, name, common.NewCoins(coin)); err != nil {
+		c.Fatalf("fund module %s: %s", name, err)
+	}
 }
 
 func FundAccount(c *C, ctx cosmos.Context, k keeper.Keeper, addr cosmos.AccAddress, amt uint64) {
@@ -85,12 +93,47 @@ func FundAccount(c *C, ctx cosmos.Context, k keeper.Keeper, addr cosmos.AccAddre
 	c.Assert(err, IsNil)
 }
 
-var (
-	keyThorchain     = storetypes.NewKVStoreKey(StoreKey)
-	serviceThorchain = runtime.NewKVStoreService(keyThorchain)
-)
+var keyThorchain = storetypes.NewKVStoreKey(StoreKey)
+
+// sharedWasmVM is the wasmvm every setupManagerForTest keeper runs on: a new VM
+// costs milliseconds of cgo cache setup per test. Its code cache is keyed by
+// checksum and each keeper finds code through its own store, so tests sharing
+// it still see only the code they stored. TestMain removes its directory.
+var sharedWasmVM struct {
+	dir string
+	vm  wasmtypes.WasmEngine
+}
+
+// sharedWasmVMOption returns the wasm home dir and keeper option for
+// setupManagerForTest: the first call lets NewKeeper build the VM with its
+// default config and keeps it, later calls hand that VM to the keeper.
+func sharedWasmVMOption(c testFatal) (string, wasmkeeper.Option) {
+	if sharedWasmVM.vm != nil {
+		return sharedWasmVM.dir, wasmkeeper.WithWasmEngine(sharedWasmVM.vm)
+	}
+	dir, err := os.MkdirTemp("", "thorchain-wasm-")
+	if err != nil {
+		c.Fatalf("wasm home dir: %s", err)
+	}
+	sharedWasmVM.dir = dir
+	return dir, wasmkeeper.WithWasmEngineDecorator(func(vm wasmtypes.WasmEngine) wasmtypes.WasmEngine {
+		sharedWasmVM.vm = vm
+		return vm
+	})
+}
 
 func setupManagerForTest(c *C) (cosmos.Context, *Mgrs) {
+	return setupManagerWith(c, c.MkDir, logger())
+}
+
+// setupManagerWith is setupManagerForTest for any test type. mkdir returns a
+// directory that outlives the managers (the upgrade keeper keeps it).
+func setupManagerWith(c testFatal, mkdir func() string, lg thorlog.SdkLogWrapper) (cosmos.Context, *Mgrs) {
+	must := func(err error) {
+		if err != nil {
+			c.Fatalf("setup managers: %s", err)
+		}
+	}
 	SetupConfigForTest()
 	keyAcc := cosmos.NewKVStoreKey(authtypes.StoreKey)
 	keyBank := cosmos.NewKVStoreKey(banktypes.StoreKey)
@@ -105,9 +148,9 @@ func setupManagerForTest(c *C) (cosmos.Context, *Mgrs) {
 	ms.MountStoreWithDB(keyWasm, cosmos.StoreTypeIAVL, db)
 
 	err := ms.LoadLatestVersion()
-	c.Assert(err, IsNil)
+	must(err)
 
-	ctx := cosmos.NewContext(ms, tmproto.Header{ChainID: "thorchain"}, false, logger())
+	ctx := cosmos.NewContext(ms, tmproto.Header{ChainID: "thorchain"}, false, lg)
 	ctx = ctx.WithBlockHeight(18)
 	ctx = ctx.WithBlockTime(time.Now())
 	encodingConfig := testutil.MakeTestEncodingConfig(
@@ -146,7 +189,7 @@ func setupManagerForTest(c *C) (cosmos.Context, *Mgrs) {
 		authtypes.NewModuleAddress(ModuleName).String(),
 		sdklog.NewNopLogger(),
 	)
-	wasmDir := c.MkDir()
+	wasmDir, wasmOpt := sharedWasmVMOption(c)
 	wk := wasmkeeper.NewKeeper(
 		encodingConfig.Codec,
 		runtime.NewKVStoreService(keyWasm),
@@ -154,64 +197,68 @@ func setupManagerForTest(c *C) (cosmos.Context, *Mgrs) {
 		nil, nil, nil, nil, nil, nil, nil, nil, nil, wasmDir,
 		wasmtypes.DefaultNodeConfig(), wasmtypes.VMConfig{}, wasmkeeper.BuiltInCapabilities(),
 		authtypes.NewModuleAddress(ModuleName).String(),
+		wasmOpt,
 	)
 
 	err = wk.SetParams(ctx, wasmtypes.Params{
 		CodeUploadAccess:             wasmtypes.AllowNobody,
 		InstantiateDefaultPermission: wasmtypes.AccessTypeNobody,
 	})
-	c.Assert(err, IsNil)
+	must(err)
 
-	c.Assert(bk.MintCoins(ctx, ModuleName, cosmos.Coins{
+	must(bk.MintCoins(ctx, ModuleName, cosmos.Coins{
 		cosmos.NewCoin(common.RuneAsset().Native(), cosmos.NewInt(200_000_000_00000000)),
-	}), IsNil)
+	}))
 	uk := upgradekeeper.NewKeeper(
 		nil,
 		runtime.NewKVStoreService(keyUpgrade),
 		encodingConfig.Codec,
-		c.MkDir(),
+		mkdir(),
 		nil,
 		authtypes.NewModuleAddress(ModuleName).String(),
 	)
-	k := kv1.NewKeeper(encodingConfig.Codec, serviceThorchain, bk, ak, uk)
+	k := kv1.NewKeeper(encodingConfig.Codec, keyThorchain, bk, ak, uk)
 	FundModule(c, ctx, k, ModuleName, 10_000*common.One)
 	FundModule(c, ctx, k, AsgardName, 100_000_000*common.One)
 	FundModule(c, ctx, k, ReserveName, 100_000_000*common.One)
-	c.Assert(k.SaveNetworkFee(ctx, common.ETHChain, NetworkFee{
+	must(k.SaveNetworkFee(ctx, common.ETHChain, NetworkFee{
 		Chain:              common.ETHChain,
 		TransactionSize:    1,
 		TransactionFeeRate: 375_000, // 375,000 gwei
-	}), IsNil)
+	}))
 
-	c.Assert(k.SaveNetworkFee(ctx, common.BTCChain, NetworkFee{
+	must(k.SaveNetworkFee(ctx, common.BTCChain, NetworkFee{
 		Chain:              common.BTCChain,
 		TransactionSize:    1,
 		TransactionFeeRate: 6423600,
-	}), IsNil)
+	}))
 
-	c.Assert(k.SaveNetworkFee(ctx, common.DOGEChain, NetworkFee{
+	must(k.SaveNetworkFee(ctx, common.DOGEChain, NetworkFee{
 		Chain:              common.DOGEChain,
 		TransactionSize:    1,
 		TransactionFeeRate: 37500,
-	}), IsNil)
+	}))
 
 	os.Setenv("NET", "mocknet")
-	mgr := NewManagers(k, encodingConfig.Codec, serviceThorchain, bk, ak, uk, wk)
+	mgr := NewManagers(k, encodingConfig.Codec, keyThorchain, bk, ak, uk, wk, nil)
 	constants.SWVersion = GetCurrentVersion()
 
 	_, hasVerStored := k.GetVersionWithCtx(ctx)
-	c.Assert(hasVerStored, Equals, false,
-		Commentf("version should not be stored until BeginBlock"))
+	if hasVerStored {
+		c.Fatalf("version should not be stored until BeginBlock")
+	}
 
-	c.Assert(mgr.LoadManagerIfNecessary(ctx), IsNil)
+	must(mgr.LoadManagerIfNecessary(ctx))
 	mgr.gasMgr.BeginBlock()
 
 	verStored, hasVerStored := k.GetVersionWithCtx(ctx)
-	c.Assert(hasVerStored, Equals, true,
-		Commentf("version should be stored"))
+	if !hasVerStored {
+		c.Fatalf("version should be stored")
+	}
 	verComputed := k.GetLowestActiveVersion(ctx)
-	c.Assert(verStored.String(), Equals, verComputed.String(),
-		Commentf("stored version should match computed version"))
+	if verStored.String() != verComputed.String() {
+		c.Fatalf("stored version %s should match computed version %s", verStored, verComputed)
+	}
 
 	return ctx, mgr
 }
@@ -284,7 +331,7 @@ func setupKeeperForTest(c *C) (cosmos.Context, keeper.Keeper) {
 		nil,
 		authtypes.NewModuleAddress(ModuleName).String(),
 	)
-	k := kv1.NewKVStore(encodingConfig.Codec, serviceThorchain, bk, ak, uk, GetCurrentVersion())
+	k := kv1.NewKVStore(encodingConfig.Codec, keyThorchain, bk, ak, uk, GetCurrentVersion())
 	FundModule(c, ctx, k, ModuleName, 1000000*common.One)
 	FundModule(c, ctx, k, AsgardName, common.One)
 	FundModule(c, ctx, k, ReserveName, 10000*common.One)

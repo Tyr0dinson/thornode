@@ -74,6 +74,9 @@ type ChainClient interface {
 // before returning success. Observer currently requires this hook for XMR,
 // whose transactions do not expire, and leaves other chains unchanged.
 type PermanentErrataQuarantiner interface {
+	// BlockPermanentErrataBroadcast persists the exact hash fence without the
+	// broader logical-owner/alias/scanner cleanup performed by quarantine.
+	BlockPermanentErrataBroadcast(errata common.ErrataTx) error
 	QuarantinePermanentErrata(errata common.ErrataTx, orphanHeight int64) error
 }
 
@@ -98,6 +101,16 @@ type SpentOutputRefsImport struct {
 // Callers must retain the outbound until the callback reports success.
 type SpentOutputRefsApplier interface {
 	ApplySpentOutputRefsWithOutcome(request SpentOutputRefsImport, onOutcome func(applied bool))
+}
+
+// SpentOutputRefsGuard orders an import and its durable effects against
+// height-scoped errata cleanup. Rejected admission must prevent all mutation.
+type SpentOutputRefsGuard func(common.ObservedTx) (release func(), ok bool)
+
+// SpentOutputRefsGuardSetter wires durable Observer admission before the
+// client starts, covering live imports, retries and periodic recovery.
+type SpentOutputRefsGuardSetter interface {
+	SetSpentOutputRefsGuard(SpentOutputRefsGuard)
 }
 
 // CustomKeygenRequest carries common keygen context for chain-specific hooks.

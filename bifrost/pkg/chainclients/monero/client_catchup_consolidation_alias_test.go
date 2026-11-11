@@ -71,9 +71,11 @@ func TestCatchupConsolidationImportKeepsNextConsolidationReservable(t *testing.T
 			spentRefsByVaultKey: map[string][]*common.OutputRef{vault.String(): refs},
 			observedByTx:        map[string]*ttypes.QueryObservedTxVoter{spendTxHash: voter},
 			pubKeys:             []thorclient.PubKeyContractAddressPair{{PubKey: vault, Algo: common.SigningAlgoEd25519}},
+			mimirValues:         map[string]int64{"HaltScannerXMR": 0},
 		},
 	}
 
+	allowSpentOutputRefsImports(c)
 	c.catchupSpentOutputRefs()
 	require.EqualValues(t, 1, marked.Load(), "catch-up must import the consolidation")
 

@@ -162,7 +162,7 @@ func (a *XMRPostChurnActor) startChurn(config *OpConfig) OpResult {
 		a.Log().Error().Err(err).Msg("failed to get active vaults")
 		return OpResult{Continue: false}
 	}
-	lastChurnHeight, ok := xmrPostChurnLastActiveVaultHeight(vaults)
+	lastChurnHeight, ok := lastActiveVaultHeight(vaults)
 	if !ok {
 		a.Log().Error().Msg("failed to find active vault status height")
 		return OpResult{Continue: false}
@@ -345,29 +345,7 @@ func xmrVaultRotationReady(vaults []openapi.Vault, inboundBefore, inboundAfter c
 }
 
 func xmrPostChurnScheduledInterval(currentHeight, lastChurnHeight int64) int64 {
-	interval := currentHeight - lastChurnHeight + xmrPostChurnLeadBlocks
-	if interval < xmrPostChurnLeadBlocks {
-		return xmrPostChurnLeadBlocks
-	}
-	return interval
-}
-
-func xmrPostChurnLastActiveVaultHeight(vaults []openapi.Vault) (int64, bool) {
-	var lastChurnHeight int64
-	found := false
-	for _, vault := range vaults {
-		if vault.Status != thorchain.ActiveVault.String() {
-			continue
-		}
-		// The genesis vault has status_since=0, which the API omits from JSON.
-		// It is still an active vault and must allow scheduling the first churn.
-		statusSince := vault.GetStatusSince()
-		if !found || statusSince > lastChurnHeight {
-			lastChurnHeight = statusSince
-			found = true
-		}
-	}
-	return lastChurnHeight, found
+	return scheduledChurnInterval(currentHeight, lastChurnHeight, xmrPostChurnLeadBlocks)
 }
 
 func vaultHasAddress(vault openapi.Vault, chain common.Chain, address common.Address) bool {

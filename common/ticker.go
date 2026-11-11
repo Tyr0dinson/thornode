@@ -32,7 +32,7 @@ func NewTicker(ticker string) (Ticker, error) {
 
 // Equals compare whether two ticker is the same
 func (t Ticker) Equals(t2 Ticker) bool {
-	return strings.EqualFold(t.String(), t2.String())
+	return equalFoldUpper(string(t), string(t2))
 }
 
 // IsEmpty return true when the ticker is an empty string

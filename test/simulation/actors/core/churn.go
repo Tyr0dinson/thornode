@@ -108,6 +108,13 @@ func (a *ChurnActor) startChurn(config *OpConfig) OpResult {
 		}
 	}
 
+	if _, err = ScheduleChurn(a.Log(), config); err != nil {
+		a.Log().Error().Err(err).Msg("failed to schedule churn")
+		return OpResult{
+			Continue: false,
+		}
+	}
+
 	for _, item := range []struct {
 		key   string
 		value int64

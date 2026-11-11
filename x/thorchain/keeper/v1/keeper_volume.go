@@ -3,14 +3,13 @@ package keeperv1
 import (
 	"fmt"
 
-	"github.com/cosmos/cosmos-sdk/runtime"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper/types"
 )
 
 func (k KVStore) setVolumeBucket(ctx cosmos.Context, key []byte, record VolumeBucket) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	buf := k.cdc.MustMarshal(&record)
 	if buf == nil {
 		store.Delete(key)
@@ -20,7 +19,7 @@ func (k KVStore) setVolumeBucket(ctx cosmos.Context, key []byte, record VolumeBu
 }
 
 func (k KVStore) getVolumeBucket(ctx cosmos.Context, key []byte, record *VolumeBucket) (bool, error) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	if !store.Has(key) {
 		return false, nil
 	}
@@ -60,7 +59,7 @@ func (k KVStore) GetVolumeBucketIterator(ctx cosmos.Context, pool common.Asset) 
 }
 
 func (k KVStore) setVolume(ctx cosmos.Context, key []byte, record Volume) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	buf := k.cdc.MustMarshal(&record)
 	if buf == nil {
 		store.Delete(key)
@@ -70,7 +69,7 @@ func (k KVStore) setVolume(ctx cosmos.Context, key []byte, record Volume) {
 }
 
 func (k KVStore) getVolume(ctx cosmos.Context, key []byte, record *Volume) (bool, error) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	if !store.Has(key) {
 		return false, nil
 	}
@@ -88,7 +87,7 @@ func (k KVStore) GetVolume(ctx cosmos.Context, pool common.Asset) (Volume, error
 	pool = pool.GetLayer1Asset()
 	found, err := k.getVolume(ctx, k.GetKey(prefixVolume, pool.String()), &record)
 	if !found {
-		return Volume{}, fmt.Errorf("Total volume not found: pool=%s", pool.String())
+		return Volume{}, fmt.Errorf("%w: pool=%s", types.ErrVolumeNotFound, pool.String())
 	}
 	return record, err
 }

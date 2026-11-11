@@ -5,21 +5,24 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"unsafe"
 
 	"github.com/blang/semver"
-	"github.com/cosmos/cosmos-sdk/runtime"
 	"github.com/cosmos/cosmos-sdk/telemetry"
 	"github.com/hashicorp/go-metrics"
+	"google.golang.org/protobuf/encoding/protowire"
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/config"
 	"gitlab.com/thorchain/thornode/v3/constants"
+	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper/types"
 )
 
 func (k KVStore) setNodeAccount(ctx cosmos.Context, key []byte, record NodeAccount) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	keeper.ActiveValidatorsCacheFromContext(ctx).Disable()
+	store := k.kvStore(ctx)
 	buf := k.cdc.MustMarshal(&record)
 	if buf == nil {
 		store.Delete(key)
@@ -29,14 +32,24 @@ func (k KVStore) setNodeAccount(ctx cosmos.Context, key []byte, record NodeAccou
 }
 
 func (k KVStore) getNodeAccount(ctx cosmos.Context, key []byte, record *NodeAccount) (bool, error) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	if !store.Has(key) {
 		return false, nil
 	}
 
 	bz := store.Get(key)
-	if err := k.cdc.Unmarshal(bz, record); err != nil {
-		return true, dbError(ctx, fmt.Sprintf("Unmarshal kvstore: (%T) %s", record, key), err)
+	if k.memoDecodeNodeAccount(key, bz, record) {
+		return true, nil
+	}
+	// Only bytes the memo cannot decode get here. They are decoded into a
+	// value of their own and copied over (the codec resets its target first,
+	// so the result is the same): handed to the codec interface or to fmt,
+	// record itself would move to the heap on every read.
+	decoded := new(NodeAccount)
+	err := k.cdc.Unmarshal(bz, decoded)
+	*record = *decoded
+	if err != nil {
+		return true, dbError(ctx, fmt.Sprintf("Unmarshal kvstore: (%T) %s", decoded, key), err)
 	}
 	return true, nil
 }
@@ -55,8 +68,10 @@ func (k KVStore) ListValidatorsWithBond(ctx cosmos.Context) (NodeAccounts, error
 	defer naIterator.Close()
 	for ; naIterator.Valid(); naIterator.Next() {
 		var na NodeAccount
-		if err := k.cdc.Unmarshal(naIterator.Value(), &na); err != nil {
-			return nodeAccounts, dbError(ctx, "Unmarshal: node account", err)
+		if !k.memoDecodeNodeAccount(naIterator.Key(), naIterator.Value(), &na) {
+			if err := k.cdc.Unmarshal(naIterator.Value(), &na); err != nil {
+				return nodeAccounts, dbError(ctx, "Unmarshal: node account", err)
+			}
 		}
 		if na.Type == NodeTypeValidator && !na.Bond.IsZero() {
 			nodeAccounts = append(nodeAccounts, na)
@@ -67,24 +82,181 @@ func (k KVStore) ListValidatorsWithBond(ctx cosmos.Context) (NodeAccounts, error
 
 // ListValidatorsByStatus - get a list of validator node accounts with the given status
 func (k KVStore) ListValidatorsByStatus(ctx cosmos.Context, status NodeStatus) (NodeAccounts, error) {
-	nodeAccounts := make(NodeAccounts, 0)
+	var cache *keeper.ActiveValidatorsCache
+	if status == NodeActive {
+		cache = keeper.ActiveValidatorsCacheFromContext(ctx)
+		if nodeAccounts, ok := cache.Get(); ok {
+			return nodeAccounts, nil
+		}
+	}
+	nodeAccounts, err := k.listValidatorsByStatus(ctx, status, -1)
+	if err == nil {
+		cache.Set(nodeAccounts)
+	}
+	return nodeAccounts, err
+}
+
+// listValidatorsByStatus lists validators with the given status in store
+// order, keeping at most limit of them (limit < 0: all). The whole node
+// account store is iterated whatever the limit, so store access, and so gas,
+// is the same as for an unlimited listing; past the limit, matching records
+// are just not copied out.
+func (k KVStore) listValidatorsByStatus(ctx cosmos.Context, status NodeStatus, limit int) (NodeAccounts, error) {
+	// The matches are gathered first and copied out together, into one
+	// exactly sized list (keeper.DetachNodeAccounts); ~100 pointers fit on
+	// the stack.
+	var buf [128]*NodeAccount
+	matches := buf[:0]
 	naIterator := k.GetNodeAccountIterator(ctx)
 	defer naIterator.Close()
 	for ; naIterator.Valid(); naIterator.Next() {
-		var na NodeAccount
-		if err := k.cdc.Unmarshal(naIterator.Value(), &na); err != nil {
-			return nodeAccounts, dbError(ctx, "Unmarshal: node account", err)
+		full := limit >= 0 && len(matches) >= limit
+		// Node accounts rarely change, so the decoding of nearly every record,
+		// matching or not (e.g. ~100 of ~190 are active), is memoized under its
+		// exact bytes: filter on it and copy out only the matches. The
+		// iteration, and so the store access, is unchanged.
+		if na := nodeAccountDecodeMemo.shared(k, naIterator.Key(), naIterator.Value()); na != nil {
+			if !full && na.Type == NodeTypeValidator && na.Status == status {
+				matches = append(matches, na)
+			}
+			continue
 		}
-		if na.Type == NodeTypeValidator && na.Status == status {
-			nodeAccounts = append(nodeAccounts, na)
+		// Bytes that do not decode: as before, any such record, matching or
+		// not, fails the listing with its unmarshal error.
+		var na NodeAccount
+		if err := k.unmarshalNodeAccount(naIterator.Value(), &na); err != nil {
+			return copyNodeAccounts(matches), dbError(ctx, "Unmarshal: node account", err)
+		}
+		if !full && na.Type == NodeTypeValidator && na.Status == status {
+			matches = append(matches, &na)
 		}
 	}
-	return nodeAccounts, nil
+	return copyNodeAccounts(matches), nil
+}
+
+// copyNodeAccounts returns copies of *nas, in order, sharing nothing mutable
+// with them: matches of a listing may be memoized values.
+func copyNodeAccounts(nas []*NodeAccount) NodeAccounts {
+	out := make(NodeAccounts, len(nas))
+	for i, na := range nas {
+		out[i] = *na
+	}
+	keeper.DetachNodeAccounts(out)
+	return out
+}
+
+// CountActiveValidators is len(ListActiveValidators(ctx)) without copying the
+// node accounts out: served from the same cache when one is set, else from
+// the same iteration as the listing, so store access and gas are identical.
+func (k KVStore) CountActiveValidators(ctx cosmos.Context) (int, error) {
+	if nodeAccounts, ok := keeper.ActiveValidatorsCacheFromContext(ctx).Get(); ok {
+		return len(nodeAccounts), nil
+	}
+	return k.countValidatorsByStatus(ctx, NodeActive)
+}
+
+// countValidatorsByStatus counts what listValidatorsByStatus(ctx, status, -1)
+// would list, reading the store in the same calls and order: matching records
+// are counted on their memoized decoding instead of being cloned.
+func (k KVStore) countValidatorsByStatus(ctx cosmos.Context, status NodeStatus) (int, error) {
+	count := 0
+	naIterator := k.GetNodeAccountIterator(ctx)
+	defer naIterator.Close()
+	for ; naIterator.Valid(); naIterator.Next() {
+		na := nodeAccountDecodeMemo.shared(k, naIterator.Key(), naIterator.Value())
+		if na == nil {
+			// as the listing: any record that does not decode fails it
+			var decoded NodeAccount
+			if err := k.unmarshalNodeAccount(naIterator.Value(), &decoded); err != nil {
+				return count, dbError(ctx, "Unmarshal: node account", err)
+			}
+			na = &decoded
+		}
+		if na.Type == NodeTypeValidator && na.Status == status {
+			count++
+		}
+	}
+	return count, nil
+}
+
+const nodeAccountSignerMembershipField protowire.Number = 9
+
+// unmarshalNodeAccount is k.cdc.Unmarshal(bz, na) with signer_membership
+// decoded here. Nodes keep every vault they were ever a member of (on mainnet
+// ~100 each), so Unmarshal made ~100 string allocations per node; here the
+// entries share one buffer, in wire order as Unmarshal appends them. The buffer
+// is never written after the strings are made. The other fields go through
+// Unmarshal unchanged; bytes it cannot split are left to Unmarshal whole.
+func (k KVStore) unmarshalNodeAccount(bz []byte, na *NodeAccount) error {
+	return k.decodeNodeAccount(bz, na, false)
+}
+
+// decodeNodeAccount is unmarshalNodeAccount; if immutable, the caller
+// guarantees bz is never written, and the signer_membership strings point
+// into bz instead of a copy.
+func (k KVStore) decodeNodeAccount(bz []byte, na *NodeAccount, immutable bool) error {
+	count, size := 0, 0
+	for rest := bz; len(rest) > 0; {
+		num, wtype, n := protowire.ConsumeTag(rest)
+		if n < 0 {
+			return k.cdc.Unmarshal(bz, na)
+		}
+		m := protowire.ConsumeFieldValue(num, wtype, rest[n:])
+		if m < 0 {
+			return k.cdc.Unmarshal(bz, na)
+		}
+		if num == nodeAccountSignerMembershipField {
+			if wtype != protowire.BytesType {
+				return k.cdc.Unmarshal(bz, na)
+			}
+			count++
+			size += m
+		}
+		rest = rest[n+m:]
+	}
+	if count == 0 {
+		return k.cdc.Unmarshal(bz, na)
+	}
+
+	other := make([]byte, 0, len(bz)-size)
+	var buf []byte
+	if !immutable {
+		buf = make([]byte, 0, size)
+	}
+	members := make([]string, 0, count)
+	for rest := bz; len(rest) > 0; {
+		num, wtype, n := protowire.ConsumeTag(rest)
+		m := protowire.ConsumeFieldValue(num, wtype, rest[n:])
+		if num == nodeAccountSignerMembershipField {
+			v, _ := protowire.ConsumeBytes(rest[n:])
+			if !immutable {
+				start := len(buf)
+				buf = append(buf, v...)
+				v = buf[start:]
+			}
+			members = append(members, unsafe.String(unsafe.SliceData(v), len(v)))
+		} else {
+			other = append(other, rest[:n+m]...)
+		}
+		rest = rest[n+m:]
+	}
+	if err := k.cdc.Unmarshal(other, na); err != nil {
+		return err
+	}
+	na.SignerMembership = members
+	return nil
 }
 
 // ListActiveValidators - get a list of active validator node accounts
 func (k KVStore) ListActiveValidators(ctx cosmos.Context) (NodeAccounts, error) {
 	return k.ListValidatorsByStatus(ctx, NodeActive)
+}
+
+// ListActiveValidatorsUpTo returns the first n active validators of
+// ListActiveValidators, with the same store access (the whole node account
+// store is iterated), without unmarshalling the rest.
+func (k KVStore) ListActiveValidatorsUpTo(ctx cosmos.Context, n int) (NodeAccounts, error) {
+	return k.listValidatorsByStatus(ctx, NodeActive, n)
 }
 
 func (k KVStore) RemoveLowBondValidatorAccounts(ctx cosmos.Context) error {
@@ -94,8 +266,10 @@ func (k KVStore) RemoveLowBondValidatorAccounts(ctx cosmos.Context) error {
 	defer naIterator.Close()
 	for ; naIterator.Valid(); naIterator.Next() {
 		var na NodeAccount
-		if err := k.cdc.Unmarshal(naIterator.Value(), &na); err != nil {
-			return dbError(ctx, "Unmarshal: node account", err)
+		if !k.memoDecodeNodeAccount(naIterator.Key(), naIterator.Value(), &na) {
+			if err := k.cdc.Unmarshal(naIterator.Value(), &na); err != nil {
+				return dbError(ctx, "Unmarshal: node account", err)
+			}
 		}
 		if na.Type == NodeTypeVault || na.Status == NodeActive {
 			continue
@@ -257,12 +431,17 @@ func (k KVStore) GetLowestActiveVersion(ctx cosmos.Context) semver.Version {
 
 // GetNodeAccount try to get node account with the given address from db
 func (k KVStore) GetNodeAccount(ctx cosmos.Context, addr cosmos.AccAddress) (NodeAccount, error) {
-	emptyPubKeySet := common.PubKeySet{
-		Secp256k1: common.EmptyPubKey,
-		Ed25519:   common.EmptyPubKey,
+	// A stored record replaces the whole default (the memo copies over it, the
+	// codec resets it first), so the default is built only when there is none.
+	var record NodeAccount
+	found, err := k.getNodeAccount(ctx, k.GetKey(prefixNodeAccount, addr.String()), &record)
+	if !found {
+		emptyPubKeySet := common.PubKeySet{
+			Secp256k1: common.EmptyPubKey,
+			Ed25519:   common.EmptyPubKey,
+		}
+		return NewNodeAccount(addr, NodeUnknown, emptyPubKeySet, "", cosmos.ZeroUint(), "", ctx.BlockHeight()), err
 	}
-	record := NewNodeAccount(addr, NodeUnknown, emptyPubKeySet, "", cosmos.ZeroUint(), "", ctx.BlockHeight())
-	_, err := k.getNodeAccount(ctx, k.GetKey(prefixNodeAccount, addr.String()), &record)
 	return record, err
 }
 
@@ -308,8 +487,10 @@ func (k KVStore) EnsureNodeKeysUnique(ctx cosmos.Context, consensusPubKey string
 	defer iter.Close()
 	for ; iter.Valid(); iter.Next() {
 		var na NodeAccount
-		if err := k.cdc.Unmarshal(iter.Value(), &na); err != nil {
-			return dbError(ctx, "Unmarshal: node account", err)
+		if !k.memoDecodeNodeAccount(iter.Key(), iter.Value(), &na) {
+			if err := k.cdc.Unmarshal(iter.Value(), &na); err != nil {
+				return dbError(ctx, "Unmarshal: node account", err)
+			}
 		}
 		if na.ValidatorConsPubKey == consensusPubKey {
 			return dbError(ctx, "", fmt.Errorf("%s already exist", na.ValidatorConsPubKey))
@@ -426,7 +607,7 @@ func (k KVStore) DecNodeAccountSlashPoints(ctx cosmos.Context, addr cosmos.AccAd
 }
 
 func (k KVStore) setJail(ctx cosmos.Context, key []byte, record Jail) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	buf := k.cdc.MustMarshal(&record)
 	if buf == nil {
 		store.Delete(key)
@@ -436,7 +617,7 @@ func (k KVStore) setJail(ctx cosmos.Context, key []byte, record Jail) {
 }
 
 func (k KVStore) getJail(ctx cosmos.Context, key []byte, record *Jail) (bool, error) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	if !store.Has(key) {
 		return false, nil
 	}
@@ -485,7 +666,7 @@ func (k KVStore) ReleaseNodeAccountFromJail(ctx cosmos.Context, addr cosmos.AccA
 }
 
 func (k KVStore) setBondProviders(ctx cosmos.Context, key []byte, record BondProviders) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	buf := k.cdc.MustMarshal(&record)
 	if buf == nil {
 		store.Delete(key)
@@ -495,7 +676,7 @@ func (k KVStore) setBondProviders(ctx cosmos.Context, key []byte, record BondPro
 }
 
 func (k KVStore) getBondProviders(ctx cosmos.Context, key []byte, record *BondProviders) (bool, error) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	if !store.Has(key) {
 		return false, nil
 	}

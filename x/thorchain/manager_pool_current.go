@@ -595,11 +595,6 @@ func (pm *PoolMgr) removeLiquidityProviders(ctx cosmos.Context, asset common.Ass
 }
 
 func (pm *PoolMgr) cleanupPendingLiquidity(ctx cosmos.Context, mgr Manager) {
-	if atTVLCap(ctx, nil, mgr) {
-		ctx.Logger().Info("cleaning pending liquidity skipped due to TVL cap")
-		return
-	}
-
 	pendingLiquidityAgeLimit := mgr.Keeper().GetConfigInt64(ctx, constants.PendingLiquidityAgeLimit)
 	if pendingLiquidityAgeLimit <= 0 {
 		return
@@ -646,10 +641,24 @@ func (pm *PoolMgr) cleanupPendingLiquidity(ctx cosmos.Context, mgr Manager) {
 		separator = 1
 	}
 	cleanupTarget := ctx.BlockHeight() % pendingLiquidityAgeLimit
+	var due Pools
 	for i, pool := range pools {
-		if cleanupTarget != (separator*int64(i))%pendingLiquidityAgeLimit {
-			continue
+		if cleanupTarget == (separator*int64(i))%pendingLiquidityAgeLimit {
+			due = append(due, pool)
 		}
+	}
+	if len(due) == 0 {
+		return
+	}
+
+	// The TVL cap check reads every asgard vault, a pool per vault coin and
+	// every active validator. Most blocks clean no pool, so it runs only once
+	// one is due, still before anything is committed.
+	if atTVLCap(ctx, nil, mgr) {
+		ctx.Logger().Info("cleaning pending liquidity skipped due to TVL cap")
+		return
+	}
+	for _, pool := range due {
 		if err := pm.commitPendingLiquidity(ctx, pool, mgr); err != nil {
 			ctx.Logger().Error("fail to clean pending liquidity", "pool", pool.Asset, "error", err)
 		}
@@ -677,7 +686,7 @@ func (pm *PoolMgr) checkSaversUtilization(ctx cosmos.Context, mgr Manager) error
 	var (
 		synthPool           Pool
 		maxUtilizationRatio = sdkmath.ZeroUint()
-		handler             = NewInternalHandler(mgr)
+		handler             = newLuviProtocolHandler(mgr)
 		signer              = nodeAccounts[0].NodeAddress
 		synthCap            = mgr.Keeper().GetConfigInt64(ctx, constants.MaxSynthPerPoolDepth)
 	)
@@ -809,6 +818,13 @@ func (pm *PoolMgr) commitPendingLiquidity(ctx cosmos.Context, pool Pool, mgr Man
 		return nil
 	}
 
+	// the add liquidity handler rejects adds into a pool in synth overhang:
+	// leave the liquidity pending (and withdrawable) until the pool leaves it
+	if isLUVIOverhangGuarded(ctx, mgr.Keeper(), pool, mgr.Keeper().GetTotalSupply(ctx, pool.Asset.GetSyntheticAsset())) {
+		ctx.Logger().Info("skip committing pending liquidity, pool is in synth overhang", "pool", pool.Asset)
+		return nil
+	}
+
 	// get a signer of the txn
 	nodeAccounts, err := mgr.Keeper().ListActiveValidators(ctx)
 	if err != nil {
@@ -819,7 +835,7 @@ func (pm *PoolMgr) commitPendingLiquidity(ctx cosmos.Context, pool Pool, mgr Man
 	}
 	signer := nodeAccounts[0].NodeAddress
 
-	handler := NewInternalHandler(mgr)
+	handler := newLuviProtocolHandler(mgr)
 	pendingLiquidityAgeLimit := mgr.Keeper().GetConfigInt64(ctx, constants.PendingLiquidityAgeLimit)
 
 	iterator := mgr.Keeper().GetLiquidityProviderIterator(ctx, pool.Asset)

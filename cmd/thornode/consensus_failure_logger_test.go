@@ -2,13 +2,17 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"cosmossdk.io/log"
+
+	"gitlab.com/thorchain/thornode/v3/app/divergence"
 )
 
 // recordingLogger captures log calls for testing.
@@ -107,4 +111,114 @@ func TestConsensusFailureMsg_MatchesCometBFT(t *testing.T) {
 			needle,
 		)
 	}
+}
+
+// TestConsensusFailureLogger_BundlesBeforeExit checks the divergence bundle is
+// written before the process exits, and that the exit still happens.
+func TestConsensusFailureLogger_BundlesBeforeExit(t *testing.T) {
+	exitCode := -1
+	exitProcess = func(code int) { exitCode = code }
+	defer func() { exitProcess = os.Exit }()
+
+	home := t.TempDir()
+	d, err := divergence.New(divergence.Options{
+		Config:     divergence.DefaultConfig(),
+		HomeDir:    home,
+		LastHeight: func() int64 { return 41 },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+	divergence.SetActive(d)
+	defer divergence.SetActive(nil)
+
+	inner := newRecordingLogger()
+	logger := NewConsensusFailureLogger(inner)
+	panicErr := errors.New("+2/3 committed an invalid block: wrong Block.Header.AppHash.  Expected AA, got BB")
+	logger.Error(consensusFailureMsg, "err", panicErr, "stack", "...")
+
+	if exitCode != 1 {
+		t.Fatalf("expected exit(1), got %d", exitCode)
+	}
+	matches, _ := filepath.Glob(filepath.Join(divergence.BundleDir(home), "bundle-41-*", divergence.SummaryFileName))
+	if len(matches) != 1 {
+		t.Fatalf("expected one bundle summary before exit, got %v", matches)
+	}
+	s, err := divergence.ReadSummary(filepath.Dir(matches[0]))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Mismatch == nil || s.Mismatch.Local != "AA" || s.Mismatch.Network != "BB" || s.FailingHeight != 42 {
+		t.Fatalf("unexpected summary: %+v", s)
+	}
+}
+
+// TestConsensusFailureLogger_BlocksyncHashMismatch checks that a blocksync
+// hash mismatch writes one bundle in the background and does not exit.
+func TestConsensusFailureLogger_BlocksyncHashMismatch(t *testing.T) {
+	exitProcess = func(code int) { t.Fatalf("unexpected exit(%d)", code) }
+	defer func() { exitProcess = os.Exit }()
+
+	home := t.TempDir()
+	d, err := divergence.New(divergence.Options{
+		Config:     divergence.DefaultConfig(),
+		HomeDir:    home,
+		LastHeight: func() int64 { return 7 },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+	divergence.SetActive(d)
+	defer divergence.SetActive(nil)
+
+	inner := newRecordingLogger()
+	logger := NewConsensusFailureLogger(inner).With("module", "blocksync")
+	logger.Error(blocksyncValidationMsg, "err", errors.New("wrong Block.Header.LastResultsHash.  Expected AA, got BB"))
+	logger.Error(blocksyncValidationMsg, "err", errors.New("unrelated"))
+
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		matches, _ := filepath.Glob(filepath.Join(divergence.BundleDir(home), "bundle-7-*", divergence.SummaryFileName))
+		if len(matches) == 1 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("no blocksync bundle written")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if len(inner.errorCalls) != 2 {
+		t.Fatalf("expected both errors logged, got %v", inner.errorCalls)
+	}
+}
+
+// TestBlocksyncValidationMsg_MatchesCometBFT pins blocksyncValidationMsg to
+// the literal in CometBFT's blocksync reactor.
+func TestBlocksyncValidationMsg_MatchesCometBFT(t *testing.T) {
+	out, err := exec.Command("go", "list", "-m", "-json", "github.com/cometbft/cometbft").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var mod struct{ Dir string }
+	if err = json.Unmarshal(out, &mod); err != nil {
+		t.Fatal(err)
+	}
+	src, err := os.ReadFile(filepath.Join(mod.Dir, "blocksync", "reactor.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(src), `"`+blocksyncValidationMsg+`", "err", err`) {
+		t.Fatalf("CometBFT blocksync/reactor.go no longer logs %q with an err keyval", blocksyncValidationMsg)
+	}
+}
+
+func TestDebugCommandHasDivergenceDiff(t *testing.T) {
+	for _, c := range debugCommand().Commands() {
+		if c.Name() == "divergence-diff" {
+			return
+		}
+	}
+	t.Fatal("debug divergence-diff not registered")
 }

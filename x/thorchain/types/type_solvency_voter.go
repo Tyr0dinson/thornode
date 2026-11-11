@@ -30,12 +30,7 @@ func (m *SolvencyVoter) GetSigners() []cosmos.AccAddress {
 
 // HasSigned - check if given address has signed
 func (m *SolvencyVoter) HasSigned(signer cosmos.AccAddress) bool {
-	for _, sign := range m.GetSigners() {
-		if sign.Equals(signer) {
-			return true
-		}
-	}
-	return false
+	return signersInclude(m.Signers, signer)
 }
 
 // Sign this voter with given signer address
@@ -49,12 +44,7 @@ func (m *SolvencyVoter) Sign(signer cosmos.AccAddress) bool {
 
 // HasConsensus determine if this errata has enough signers
 func (m *SolvencyVoter) HasConsensus(nas NodeAccounts) bool {
-	var count int
-	for _, signer := range m.GetSigners() {
-		if nas.IsNodeKeys(signer) {
-			count++
-		}
-	}
+	count := countActiveSigners(m.Signers, nas)
 	return HasMinority(count, len(nas))
 }
 

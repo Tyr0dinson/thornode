@@ -638,6 +638,9 @@ func extractOpenAPIObservedTx(otx openapi.ObservedTx) (*common.ObservedTx, error
 
 	tx.BlockHeight = *otx.ExternalObservedHeight
 	tx.FinaliseHeight = *otx.ExternalConfirmationDelayHeight
+	if otx.XmrMinedHeight != nil {
+		tx.XmrMinedHeight = *otx.XmrMinedHeight
+	}
 
 	tx.ObservedPubKey, err = common.NewPubKey(*otx.ObservedPubKey)
 	if err != nil {

@@ -2,7 +2,6 @@ package providers
 
 import (
 	"encoding/json"
-	"time"
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	. "gopkg.in/check.v1"
@@ -32,8 +31,10 @@ func (s *ProviderTestSuite) TestLbankProvider(c *C) {
 
 	provider.Poll()
 
-	// does one request per asset, so wait for them to complete
-	time.Sleep(500 * time.Millisecond)
+	waitForPrices(provider, 2, map[string]string{
+		"BTC/USDT": "109063.51",
+		"ETH/USDT": "2656.33",
+	})
 
 	tickers, err := provider.GetTickers()
 	c.Assert(err, IsNil)
@@ -60,9 +61,18 @@ func (s *ProviderTestSuite) TestLbankProvider(c *C) {
 
 	// test websocket
 
+	// Start polls in background goroutines before connecting
+	settleStartPoll(provider.websocketProvider, 2, map[string]string{
+		"BTC/USDT": "109063.51",
+		"ETH/USDT": "2656.33",
+	})
+
 	provider.Start()
 
-	time.Sleep(500 * time.Millisecond)
+	waitForPrices(provider, 2, map[string]string{
+		"BTC/USDT": "109323.89",
+		"ETH/USDT": "2663.29",
+	})
 
 	tickers, err = provider.GetTickers()
 	c.Assert(err, IsNil)

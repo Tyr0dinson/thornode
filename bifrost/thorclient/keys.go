@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"sync/atomic"
 
 	"github.com/cosmos/cosmos-sdk/codec"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
@@ -15,6 +16,7 @@ import (
 	ckeys "github.com/cosmos/cosmos-sdk/crypto/keyring"
 	cryptokeysed25519 "github.com/cosmos/cosmos-sdk/crypto/keys/ed25519"
 	cryptokeyssecp256k1 "github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
+	cryptotypes "github.com/cosmos/cosmos-sdk/crypto/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"gitlab.com/thorchain/thornode/v3/common/crypto/ed25519"
 )
@@ -33,6 +35,10 @@ type Keys struct {
 	signerName string
 	password   string // TODO this is a bad way , need to fix it
 	kb         Keyring
+
+	// signerInfo caches the signer's keyring record after the first
+	// successful read; reading it from the file keyring decrypts the entry.
+	signerInfo atomic.Pointer[ckeys.Record]
 }
 
 // NewKeysWithKeybase create a new instance of Keys
@@ -91,25 +97,48 @@ func getKeybase(thorchainHome string, reader io.Reader) (ckeys.Keyring, error) {
 	return ckeys.New(sdk.KeyringServiceName(), ckeys.BackendFile, cliDir, reader, cdc)
 }
 
-// GetSignerInfo return signer info
+// GetSignerInfo return signer info. The record is read from the keyring once
+// and then cached: every caller only reads its address or public key, and a
+// file keyring decrypts (PBKDF2) the entry on every read.
 func (k *Keys) GetSignerInfo() *ckeys.Record {
+	if record := k.signerInfo.Load(); record != nil {
+		return record
+	}
 	record, err := k.kb.Key(k.signerName)
 	if err != nil {
 		panic(err)
 	}
+	k.signerInfo.Store(record)
 	return record
 }
 
-// GetPrivateKey return the ecdsa private key
-func (k *Keys) GetPrivateKey() (*cryptokeyssecp256k1.PrivKey, error) {
-	// return k.kb.ExportPrivateKeyObject(k.signerName)
-	privKeyArmor, err := k.kb.ExportPrivKeyArmor(k.signerName, k.password)
+// privKeyExporter is implemented by the SDK keyring. Its ExportPrivKeyArmor is
+// ExportPrivateKeyObject plus an argon2 encryption that unarmoring only undoes.
+type privKeyExporter interface {
+	ExportPrivateKeyObject(uid string) (cryptotypes.PrivKey, error)
+}
+
+// exportPrivKey return the private key of the given key name
+func (k *Keys) exportPrivKey(name string) (cryptotypes.PrivKey, error) {
+	if exporter, ok := k.kb.(privKeyExporter); ok {
+		return exporter.ExportPrivateKeyObject(name)
+	}
+	privKeyArmor, err := k.kb.ExportPrivKeyArmor(name, k.password)
 	if err != nil {
 		return nil, err
 	}
 	priKey, _, err := crypto.UnarmorDecryptPrivKey(privKeyArmor, k.password)
 	if err != nil {
 		return nil, fmt.Errorf("fail to unarmor private key: %w", err)
+	}
+	return priKey, nil
+}
+
+// GetPrivateKey return the ecdsa private key
+func (k *Keys) GetPrivateKey() (*cryptokeyssecp256k1.PrivKey, error) {
+	priKey, err := k.exportPrivKey(k.signerName)
+	if err != nil {
+		return nil, err
 	}
 	secpKey, ok := priKey.(*cryptokeyssecp256k1.PrivKey)
 	if !ok {
@@ -121,14 +150,9 @@ func (k *Keys) GetPrivateKey() (*cryptokeyssecp256k1.PrivKey, error) {
 // GetPrivateKeyEDDSA return the eddsa private key
 func (k *Keys) GetPrivateKeyEDDSA() (*cryptokeysed25519.PrivKey, error) {
 	signerNameEDDSA := ed25519.SignerNameEDDSA(k.signerName)
-	// return k.kb.ExportPrivateKeyObject(k.signerName)
-	privKeyArmor, err := k.kb.ExportPrivKeyArmor(signerNameEDDSA, k.password)
+	priKey, err := k.exportPrivKey(signerNameEDDSA)
 	if err != nil {
 		return nil, err
-	}
-	priKey, _, err := crypto.UnarmorDecryptPrivKey(privKeyArmor, k.password)
-	if err != nil {
-		return nil, fmt.Errorf("fail to unarmor private key: %w", err)
 	}
 	eddsaKey, ok := priKey.(*cryptokeysed25519.PrivKey)
 	if !ok {

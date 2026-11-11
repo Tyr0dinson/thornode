@@ -9,6 +9,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -17,10 +19,37 @@ var ThorchainBlockTime = time.Second
 // CamelToSnakeUpper converts a camelCase string to SNAKE_CASE.
 // Examples: "PoolCycle" -> "POOL_CYCLE", "L1SlipMinBps" -> "L1_SLIP_MIN_BPS"
 func CamelToSnakeUpper(s string) string {
-	re := regexp.MustCompile(`([a-z0-9])([A-Z])|([A-Z]+)([A-Z][a-z])`)
-	snake := re.ReplaceAllString(s, `${1}${3}_${2}${4}`)
-	return strings.ToUpper(snake)
+	// GetMimir calls this for every lookup in mocknet builds (unit tests,
+	// regtest, simulation); the conversion is pure, so memoize it. Keys can
+	// come from queries (any mimir name), so stop adding past a fixed size.
+	if v, ok := camelToSnakeCache.Load(s); ok {
+		return v.(string)
+	}
+	snake := strings.ToUpper(camelToSnakeRe.ReplaceAllString(s, `${1}${3}_${2}${4}`))
+	// reserve a slot before storing, so concurrent callers never overshoot
+	for {
+		n := camelToSnakeCacheLen.Load()
+		if n >= camelToSnakeCacheMax {
+			break
+		}
+		if camelToSnakeCacheLen.CompareAndSwap(n, n+1) {
+			if _, loaded := camelToSnakeCache.LoadOrStore(s, snake); loaded {
+				camelToSnakeCacheLen.Add(-1)
+			}
+			break
+		}
+	}
+	return snake
 }
+
+// camelToSnakeCacheMax is well above the number of constant and mimir names.
+const camelToSnakeCacheMax = 4096
+
+var (
+	camelToSnakeRe       = regexp.MustCompile(`([a-z0-9])([A-Z])|([A-Z]+)([A-Z][a-z])`)
+	camelToSnakeCache    sync.Map
+	camelToSnakeCacheLen atomic.Int64
+)
 
 func init() {
 	int64Overrides = map[ConstantName]int64{
@@ -37,6 +66,7 @@ func init() {
 		LiquidityLockUpBlocks:               0,
 		MaxRuneSupply:                       500_000_000_00000000,
 		JailTimeKeygen:                      30,
+		JailTimeKeygenBase:                  30,
 		JailTimeKeysign:                     10,
 		AsgardSize:                          6,
 		StreamingSwapMinBPFee:               100, // TODO: remove on hard fork

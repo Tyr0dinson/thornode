@@ -3,13 +3,12 @@ package keeperv1
 import (
 	"fmt"
 
-	"github.com/cosmos/cosmos-sdk/runtime"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
 func (k KVStore) setTssKeysignFailVoter(ctx cosmos.Context, key []byte, record TssKeysignFailVoter) error {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	buf, err := k.cdc.Marshal(&record)
 	if err != nil {
 		return fmt.Errorf("failed to marshal TSS keysign fail voter: %w", err)
@@ -22,7 +21,7 @@ func (k KVStore) setTssKeysignFailVoter(ctx cosmos.Context, key []byte, record T
 // terminal record, not a new pending voter; consensus paths must always use the
 // validated public getter so unsupported states cannot be processed.
 func (k KVStore) getTssKeysignFailVoter(ctx cosmos.Context, key []byte, record *TssKeysignFailVoter) (bool, error) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	if !store.Has(key) {
 		return false, nil
 	}

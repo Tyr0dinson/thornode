@@ -21,6 +21,22 @@ from web3.types import TxParams, Wei
 ########################################################################################
 
 
+def create_address(sender, nonce):
+    """The CREATE address of the contract sender deploys at nonce."""
+
+    def rlp_int(n):
+        if n == 0:
+            return b"\x80"
+        raw = n.to_bytes((n.bit_length() + 7) // 8, "big")
+        if len(raw) == 1 and raw[0] < 0x80:
+            return raw
+        return bytes([0x80 + len(raw)]) + raw
+
+    payload = bytes([0x80 + 20]) + bytes.fromhex(sender[2:]) + rlp_int(nonce)
+    digest = Web3.keccak(bytes([0xC0 + len(payload)]) + payload)
+    return Web3.to_checksum_address("0x" + digest[12:].hex())
+
+
 class EVMSetupTool:
     """
     EVMSetupTool is a tool to setup a local EVM network for testing purposes. It deploys
@@ -37,9 +53,12 @@ class EVMSetupTool:
     simulation_master = "0xEE4eaA642b992412F628fF4Cec1C96cf2Fd0eA4D"
     erc20rune = "0x3155BA85D5F96b2d030a4966AF206230e46849cb"  # mainnet, does not matter
 
-    def __init__(self, chain, url):
+    def __init__(self, chain, url, defer_receipts=False):
         # setup web3 client
         self.chain = chain
+        # transactions sent without waiting for their receipt (deploy only)
+        self.defer_receipts = defer_receipts
+        self.pending = []
         self.rpc_url = url
         self.web3 = Web3(HTTPProvider(self.rpc_url))
         self.web3.middleware_onion.inject(ExtraDataToPOAMiddleware, layer=0)
@@ -63,7 +82,9 @@ class EVMSetupTool:
         if self.chain == "POL":
             amount = 100_000_000e18
         # fund simulation account with 1m ETH
-        self.fund_account(self.addr, self.simulation_master, int(amount))
+        self.fund_account(
+            self.addr, self.simulation_master, int(amount), wait=not defer_receipts
+        )
 
         # done if this is hardhat
         if self.web3.net.version == "31337":
@@ -86,7 +107,7 @@ class EVMSetupTool:
         else:
             logging.fatal(f"unknown chain: {self.chain}")
 
-    def fund_account(self, from_address, to_address, amount):
+    def fund_account(self, from_address, to_address, amount, wait=True):
         print(f"funding account: {from_address} -> {to_address} {amount}")
         tx: TxParams = {
             "from": Web3.to_checksum_address(from_address),
@@ -95,8 +116,12 @@ class EVMSetupTool:
             "gas": self.calculate_gas(""),
         }
 
-        # wait for the transaction to be mined
         tx_hash = self.web3.eth.send_transaction(tx)
+        if not wait:
+            self.pending.append(("fund account tx receipt", tx_hash, None))
+            return
+
+        # wait for the transaction to be mined
         receipt = self.web3.eth.wait_for_transaction_receipt(tx_hash)
         print(f"fund account tx receipt: {receipt}")
 
@@ -104,9 +129,84 @@ class EVMSetupTool:
         return Wei(self.default_gas + self.gas_per_byte * len(msg))
 
     def deploy_init_contracts(self):
-        self.deploy_token()
-        self.deploy_router()
-        self.deploy_mocknet_aggregator()
+        if not self.defer_receipts:
+            self.deploy_token()
+            self.deploy_router()
+            self.deploy_mocknet_aggregator()
+            return
+
+        # Send every setup transaction back to back and confirm them together,
+        # instead of waiting a block for each. Each send takes the next pending
+        # nonce in the same order as the sequential path, so the contract
+        # addresses are unchanged: token at admin nonce 1, router at 3,
+        # aggregator at 4. The token transfers are sent before the token is
+        # mined, so they cannot be gas-estimated and carry a fixed limit; the
+        # addresses they need come from the deployer nonce and are checked
+        # against the receipts below.
+        nonce = self.web3.eth.get_transaction_count(self.addr, "pending")
+        token_addr = create_address(self.addr, nonce)
+        agg_addr = create_address(self.addr, nonce + 3)
+        transfer_gas = 100_000
+
+        print("deploying token contract...")
+        self.pending.append(
+            (
+                "Token Contract",
+                self.token_contract().constructor().transact(),
+                token_addr,
+            )
+        )
+        token = self.token_contract(address=token_addr)
+        self.pending.append(
+            (
+                "Transfer to Simulation Master Receipt",
+                token.functions.transfer(
+                    Web3.to_checksum_address(self.simulation_master), int(500_000e18)
+                ).transact({"gas": transfer_gas}),
+                None,
+            )
+        )
+        print("deploying router contract...")
+        router, args = self.router_contract()
+        self.pending.append(
+            (
+                "Router Contract",
+                router.constructor(*args).transact(),
+                create_address(self.addr, nonce + 2),
+            )
+        )
+        print("deploying mocknet aggregator contract...")
+        self.pending.append(
+            (
+                "Mocknet Aggregator Contract",
+                self.mocknet_aggregator_contract().constructor().transact(),
+                agg_addr,
+            )
+        )
+        # Pre-fund the aggregator with TKN so swapOut can deliver finalToken to
+        # the recipient without needing a real DEX pool.
+        self.pending.append(
+            (
+                "Aggregator Token Funding Receipt",
+                token.functions.transfer(agg_addr, int(100_000e18)).transact(
+                    {"gas": transfer_gas}
+                ),
+                None,
+            )
+        )
+
+        for label, tx_hash, want_addr in self.pending:
+            receipt = self.web3.eth.wait_for_transaction_receipt(tx_hash)
+            if receipt.get("status") != 1:
+                raise Exception(f"{label} failed: {receipt}")
+            if want_addr is None:
+                print(f"{label}: {receipt}")
+                continue
+            got = receipt.get("contractAddress")
+            if Web3.to_checksum_address(got) != want_addr:
+                raise Exception(f"{label} deployed at {got}, expected {want_addr}")
+            print(f"{label} Address: {got}")
+        self.pending = []
 
     @retry.retry(Exception, delay=1, backoff=2, tries=3)
     def deploy_token(self):
@@ -542,7 +642,9 @@ def main():
         sys.exit(1)
 
     # run the action
-    setup_tool = EVMSetupTool(args.chain, args.rpc)
+    setup_tool = EVMSetupTool(
+        args.chain, args.rpc, defer_receipts=args.action == "deploy"
+    )
     mux = {
         "deploy": setup_tool.deploy_init_contracts,
         "deposit": lambda: setup_tool.deposit(args),

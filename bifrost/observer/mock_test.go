@@ -229,6 +229,7 @@ type MockThorchainBridge struct {
 	getKeysignPolicyFunc        func(common.PubKey, int64) (thorclient.KeysignPolicy, error)
 	getVaultFunc                func(string) (stypes.Vault, error)
 	getKeysignFunc              func(int64, string) (tctypes.TxOut, error)
+	getPendingOutboundsFunc     func(int64) ([]thorclient.PendingOutbound, error)
 	getBlockHeightFunc          func() (int64, error)
 	getBlockHeightFreshFunc     func() (int64, error)
 	getObservedTxVoterFunc      func(string) (*stypes.QueryObservedTxVoter, error)
@@ -294,6 +295,13 @@ func (m *MockThorchainBridge) GetKeysign(blockHeight int64, pk string) (tctypes.
 	return tctypes.TxOut{}, nil
 }
 
+func (m *MockThorchainBridge) GetPendingOutbounds(height int64) ([]thorclient.PendingOutbound, error) {
+	if m.getPendingOutboundsFunc != nil {
+		return m.getPendingOutboundsFunc(height)
+	}
+	return nil, nil
+}
+
 func (m *MockThorchainBridge) GetObservedTxVoter(txID string) (*stypes.QueryObservedTxVoter, error) {
 	if m.getObservedTxVoterFunc != nil {
 		return m.getObservedTxVoterFunc(txID)
@@ -327,6 +335,9 @@ type MockStream struct {
 	peer   peer.ID
 
 	mu *sync.Mutex
+	// remoteClosed marks a reader that already holds everything the remote
+	// will send, so its EOF is final rather than "not written yet".
+	remoteClosed bool
 }
 
 func NewMockStream(reader io.Reader, writer io.Writer, peer peer.ID) *MockStream {
@@ -351,7 +362,7 @@ func (m *MockStream) Read(p []byte) (n int, err error) {
 		if err == nil {
 			break
 		}
-		if err != io.EOF {
+		if err != io.EOF || m.remoteClosed {
 			return n, err
 		}
 		m.mu.Unlock()

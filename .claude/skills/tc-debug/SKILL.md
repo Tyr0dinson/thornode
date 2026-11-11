@@ -19,6 +19,7 @@ Shared conventions (endpoints and fallbacks, scripts, node/vault naming, units, 
 ## Conventions specific to this skill
 
 - **Network fallback**: default to mainnet. If a tx or address is not found, try stagenet (see shared conventions) or ask the user.
+- **No specific target**: if the input is a vague symptom with no tx, address, or vault, run the `tc-metrics` skill first to get a suspect series and a time window, then come back here.
 
 ## Procedure
 
@@ -128,6 +129,20 @@ The refund reason often directly identifies the root cause:
 - `"emit asset 0 less than price limit"` → limit price not met, check pool price vs limit
 - `"fail swap, not enough fee"` → dust amount, too small to cover fees
 - `"trading is halted"` / `"pool is suspended"` → check mimir halts
+
+#### 1c'. LP value loss (luvi_loss events)
+
+THORNode checks every handler run and EndBlock step for a drop in a pool's hedged LP equity G (`x/thorchain/luvi_guard.go`). A `luvi_loss` event (always beyond the allowance) names the pool, the `scope` (the handler's message type URL, `endblock/<step>` or `migration/...`), the inbound `tx_id`, the normalized drop `normalized_delta_g` = dG/sqrt(A\*R), and the `allowed` drop for gas, slashes, LP-flow rounding and synth mints:
+
+- `excess=true rejected=true`: the guard reverted a user flow (swap, add/withdraw liquidity, donate, ...). The user was refunded; the refund reason contains `luvi guard: pool LP value dropped`.
+- `excess=true rejected=false`: a protocol step lowered LP value beyond the allowance and nothing stopped it. **Treat as a possible exploit or accounting bug**: read the handler or manager named in `scope` at `ISSUE_VERSION`.
+
+```bash
+# events in a block range (max 500 blocks), optionally for one pool or inbound tx
+python3 .claude/skills/tc-debug/luvi_forensics.py https://gateway.liquify.com/chain/thorchain_rpc <from> [to] [--pool BTC.BTC] [--tx <TXID>]
+```
+
+Use it when a refund reason mentions the luvi guard, when LPs report value missing from a pool, or when a pool's `luvi_last_normalized_delta_g` on `/thorchain/pool/<asset>` is negative (the per-block accumulator: `luvi_g`, `luvi_c`, `luvi_star`, `luvi_height`). `luvi_height` dates the last step; a single strongly negative step points at that block. G cannot see L1 vault drains or phantom inbound credits, so pair a clean result with the vault solvency check (2b).
 
 #### 1d. Diagnose by phase
 
@@ -389,9 +404,12 @@ Using the `ISSUE_VERSION` tag (from step 0c), read relevant handler/manager code
 - Signing issues: `bifrost/signer/sign.go`
 - Outbound issues: `x/thorchain/manager_txout*.go`
 - Gas issues: `x/thorchain/manager_gas*.go`
+- LP value missing from a pool: `x/thorchain/luvi_guard.go`, then step 1c' (`luvi_forensics.py`)
 - Vault issues: `x/thorchain/manager_vault*.go`
 
 Identify what log messages would be emitted for the described scenario.
+
+Read `references/tx-pipeline.md` when you need the function-level path between stages (observer deck, attestation quorum, `MsgObservedTxQuorum`, swap queue, txout scheduling, signer, reschedule) and the condition that gates each one.
 
 #### 4c. Search logs based on code analysis
 

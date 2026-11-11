@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"math/big"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -23,6 +24,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/runners"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/signercache"
+	chainclienttypes "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/types"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/xrp/keymanager"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/xrp/keymanager/secp256k1"
 
@@ -51,7 +53,6 @@ import (
 type Client struct {
 	logger              zerolog.Logger
 	cfg                 config.BifrostChainConfiguration
-	accts               *XrpMetaDataStore
 	tssKeyManager       *tss.KeySign
 	localKeyManager     *keymanager.KeyManager
 	thorchainBridge     thorclient.ThorchainBridge
@@ -66,6 +67,19 @@ type Client struct {
 	stopchan     chan struct{}
 	rpcClient    *rpc.Client
 	networkID    uint32
+
+	// vaultLocks serializes one node's SignTx+BroadcastTx per vault (the signer holds the
+	// lock GetVaultLock returns across the whole sign+broadcast lifecycle — see
+	// chainVaultLock in bifrost/signer/sign.go), so a vault's outbounds are processed one
+	// at a time within this node rather than concurrently. It does NOT by itself keep two
+	// outbounds off the same account sequence — the lock releases when an item finishes
+	// and across nodes there is no shared lock. Closing the VISIBLE in-flight reuse window
+	// is the serial-drain gate's job (signingMetadata defers while the open ledger is ahead
+	// of the validated one); a tx still mid-keysign is in no ledger yet, so neither the lock
+	// nor the gate closes that window (the accepted stale-pin case). The lock just avoids
+	// intra-node races on the sequence read.
+	vaultLocksMu sync.Mutex
+	vaultLocks   map[string]*sync.Mutex
 }
 
 // NewClient creates a new instance of an XRP-based chain client
@@ -105,7 +119,11 @@ func NewClient(
 		}
 	}
 
-	rpcConfig, err := rpc.NewClientConfig(cfg.RPCHost)
+	// Override the library's default HTTP client (a hard 1s timeout, no
+	// transport retries) with the chain's configured block-scanner timeout and
+	// transient-error retry policy — see retryHTTPClient.
+	rpcConfig, err := rpc.NewClientConfig(cfg.RPCHost,
+		rpc.WithHTTPClient(newRetryHTTPClient(cfg.BlockScanner.HTTPRequestTimeout, cfg.BlockScanner.MaxHTTPRequestRetry, logger)))
 	if err != nil {
 		return nil, fmt.Errorf("unable to create rpc config for client, %w", err)
 	}
@@ -114,7 +132,6 @@ func NewClient(
 	c := &Client{
 		logger:          logger,
 		cfg:             cfg,
-		accts:           NewXrpMetaDataStore(),
 		tssKeyManager:   tssKm,
 		localKeyManager: localKm,
 		thorchainBridge: thorchainBridge,
@@ -122,6 +139,7 @@ func NewClient(
 		stopchan:        make(chan struct{}),
 		rpcClient:       rpcClient,
 		networkID:       uint32(networkID),
+		vaultLocks:      make(map[string]*sync.Mutex),
 	}
 
 	var path string // if not set later, will in memory storage
@@ -239,22 +257,47 @@ func (c *Client) GetAccountByAddress(address string, height *big.Int) (common.Ac
 	if height != nil && height.Sign() > 0 {
 		aiReq.LedgerIndex = qcommon.LedgerIndex(height.Int64())
 	}
+	return c.accountInfo(aiReq)
+}
+
+// accountInfo runs an account_info request and converts the response to a
+// common.Account. Shared by the current-ledger (GetAccountByAddress) and
+// validated-ledger (getValidatedAccount) readers so the balance/coins/sequence
+// conversion lives in one place.
+func (c *Client) accountInfo(aiReq account.InfoRequest) (common.Account, error) {
 	aiResp, err := c.rpcClient.GetAccountInfo(&aiReq)
 	if err != nil {
 		return common.Account{}, err
 	}
-
 	balance := sdkmath.NewUint(aiResp.AccountData.Balance.Uint64())
 	coins, err := fromXrpToThorchain(txtypes.XRPCurrencyAmount(balance.Uint64()))
 	if err != nil {
 		return common.Account{}, err
 	}
-
 	return common.Account{
 		Sequence:      int64(aiResp.AccountData.Sequence),
 		AccountNumber: 0,
 		Coins:         common.NewCoins(coins),
 	}, nil
+}
+
+// getValidatedAccount reads the account from the VALIDATED ledger. Signing must use
+// this, never the current/open ledger (GetAccountByAddress's default): the open
+// ledger includes tentatively-applied, not-yet-validated txs and advances before
+// consensus, so it differs between nodes. Reading the validated ledger removes that
+// per-node source of divergence. NOTE: "validated" is each node's LATEST validated
+// ledger, so nodes straddling a validation boundary can still briefly differ — full
+// cross-node determinism needs a consensus-agreed validated snapshot, tracked as a
+// develop follow-up; this is the safe patch-level step.
+func (c *Client) getValidatedAccount(pkey common.PubKey) (common.Account, error) {
+	addr, err := pkey.GetAddress(c.GetChain())
+	if err != nil {
+		return common.Account{}, fmt.Errorf("failed to convert address (%s) from bech32: %w", pkey, err)
+	}
+	return c.accountInfo(account.InfoRequest{
+		Account:     txtypes.Address(addr.String()),
+		LedgerIndex: qcommon.Validated,
+	})
 }
 
 func (c *Client) processOutboundTx(tx stypes.TxOutItem) (*transactions.Payment, error) {
@@ -332,11 +375,20 @@ func (c *Client) verifyBroadcast(sig string) signercache.LookupResult {
 	}
 	var parsed struct {
 		Validated bool `json:"validated"`
+		Meta      any  `json:"meta"`
 	}
 	if parseErr := res.GetResult(&parsed); parseErr != nil {
 		return signercache.LookupAmbiguous
 	}
 	if parsed.Validated {
+		// A validated tec* result burned the sequence and delivered nothing: the
+		// recorded broadcast definitively failed, so the outbound may be recovered with
+		// a new tx (see retireTecResult).
+		if meta, ok := parsed.Meta.(map[string]any); ok {
+			if result, ok := meta["TransactionResult"].(string); ok && strings.HasPrefix(result, "tec") {
+				return signercache.LookupFailed
+			}
+		}
 		// rippled reports the tx in a validated (closed) ledger — the recorded
 		// broadcast is definitively on chain, so respect the cache and record it as
 		// present (PhaseVerifiedFound) rather than merely ambiguous.
@@ -346,10 +398,95 @@ func (c *Client) verifyBroadcast(sig string) signercache.LookupResult {
 	return signercache.LookupAmbiguous
 }
 
-// SignTx sign the the given TxArrayItem
+// signingMetadata resolves the XRP account sequence (and block height) to sign an
+// outbound with.
+//
+// A checkpoint from a prior attempt pins the sequence, and the pin is NEVER moved:
+// re-signing the exact same transaction can never double-spend. Lowering a pinned
+// sequence is unsafe — an above-validated pin can carry a signature a peer sub-party
+// already combined (this node's keysign failing does not prove the party's did), and
+// XRP outbounds currently carry no LastLedgerSequence, so that floating signature
+// could re-validate when the account later reaches its sequence (a second delivery).
+// The backlog of divergent checkpoints is cleared out-of-band, not by moving
+// pins here. A pin that unmarshals to a non-positive sequence is treated as absent (a
+// zero sequence is never a real signed XRP sequence, so it can carry no signature and
+// nothing can double-spend) and falls through to a fresh read — so a malformed
+// checkpoint self-heals instead of wedging the outbound at sequence 0 forever.
+//
+// Without a usable checkpoint the sequence is read from the VALIDATED ledger, never
+// the open/current ledger whose tentatively-applied txs differ between nodes. This
+// removes the per-node divergence behind the telCAN_NOT_QUEUE backlog.
+//
+// A serial-drain gate then reads the CURRENT (open) ledger from the same rippled: if its
+// sequence is ahead of the validated one, this vault already has an applied-but-unvalidated
+// outbound, so signing now would reuse that sequence — the gate returns ErrTxPending (no
+// signature, no checkpoint) and the item re-reads next round. The signed sequence still
+// comes only from the validated ledger. The gate holds no node-local state and cannot
+// wedge: if the in-flight tx is dropped, the open ledger falls back to the validated
+// sequence and the wait ends.
+//
+// This is still not a full determinism guarantee: "validated" is each node's latest
+// validated ledger (nodes straddling a validation boundary can briefly differ), and
+// XRP outbounds carry no LastLedgerSequence. Full cross-node determinism + pipelining
+// need a consensus-agreed validated snapshot + a LastLedgerSequence + a bounded re-sync,
+// tracked for develop as a follow-up.
+func (c *Client) signingMetadata(tx stypes.TxOutItem, currentHeight int64) (XrpMetadata, error) {
+	if tx.Checkpoint != nil {
+		meta := XrpMetadata{}
+		if err := json.Unmarshal(tx.Checkpoint, &meta); err != nil {
+			c.logger.Err(err).Msg("fail to unmarshal checkpoint")
+			return XrpMetadata{}, err
+		}
+		if meta.SeqNumber > 0 {
+			return meta, nil
+		}
+		// Malformed/empty checkpoint (non-positive sequence): it can carry no valid
+		// signature, so ignore it and read the validated ledger rather than pin 0.
+		c.logger.Error().RawJSON("checkpoint", tx.Checkpoint).
+			Msg("ignoring xrp checkpoint with non-positive sequence; reading validated ledger")
+	}
+
+	acc, err := c.getValidatedAccount(tx.VaultPubKey)
+	if err != nil {
+		return XrpMetadata{}, fmt.Errorf("fail to get validated account info: %w", err)
+	}
+	// Serial-drain gate: read the current (open) ledger from the same rippled. If either
+	// read fails we return the error (never sign on a half-read). A current sequence ahead
+	// of the validated one means a prior outbound from this vault is applied but not yet
+	// validated; defer with ErrTxPending (no signature, no checkpoint) so the item re-reads
+	// next round once that tx validates — or, if it is dropped, once the open ledger falls
+	// back. A loser that slips through the validation-boundary race (a node whose open
+	// ledger had not yet seen the prior tx) blocks only its own vault's queue until the item
+	// goes stale (SigningTransactionPeriod less the reschedule buffer) and THORChain
+	// reschedules it; its broadcast fails tefPAST_SEQ meanwhile and is never cached as sent.
+	cur, err := c.GetAccount(tx.VaultPubKey, nil)
+	if err != nil {
+		return XrpMetadata{}, fmt.Errorf("fail to get current account info: %w", err)
+	}
+	if cur.Sequence > acc.Sequence {
+		c.logger.Info().
+			Str("vault", tx.VaultPubKey.String()).
+			Int64("validated_seq", acc.Sequence).
+			Int64("current_seq", cur.Sequence).
+			Msg("xrp serial drain: prior outbound applied but not yet validated; deferring new sign")
+		return XrpMetadata{}, chainclienttypes.ErrTxPending
+	}
+	return XrpMetadata{
+		SeqNumber:   acc.Sequence,
+		BlockHeight: currentHeight,
+	}, nil
+}
+
+// SignTx signs the given TxArrayItem.
 func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) (signedTx, checkpoint []byte, _ *stypes.TxInItem, err error) {
 	defer func() {
 		if err != nil {
+			// The serial-drain gate defers a new outbound with ErrTxPending before any
+			// keysign: it is normal back-pressure, not a signing failure, so don't log it
+			// as "failed to sign tx" or post a keysign-failure to THORChain.
+			if errors.Is(err, chainclienttypes.ErrTxPending) {
+				return
+			}
 			var keysignError tss.KeysignError
 			if errors.As(err, &keysignError) {
 				if len(keysignError.Blame.BlameNodes) == 0 {
@@ -403,33 +540,9 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) (signedTx, c
 		return nil, nil, nil, err
 	}
 
-	// the metadata is stored as the transaction checkpoint, if it is set deserialize it
-	// so we only retry with the same account number and sequence to avoid double spend
-	meta := XrpMetadata{}
-	if tx.Checkpoint != nil {
-		if err = json.Unmarshal(tx.Checkpoint, &meta); err != nil {
-			c.logger.Err(err).Msg("fail to unmarshal checkpoint")
-			return nil, nil, nil, err
-		}
-	} else {
-		// Check if we have XrpMetadata for the current block height before fetching it
-		meta = c.accts.Get(tx.VaultPubKey)
-		if currentHeight > meta.BlockHeight {
-			var acc common.Account
-			acc, err = c.GetAccount(tx.VaultPubKey, big.NewInt(0))
-			if err != nil {
-				return nil, nil, nil, fmt.Errorf("fail to get account info: %w", err)
-			}
-			// Only update local sequence # if it is less than what is on chain
-			// When local sequence # is larger than on chain , that could be there are transactions in mempool not commit yet
-			if meta.SeqNumber <= acc.Sequence {
-				meta = XrpMetadata{
-					SeqNumber:   acc.Sequence,
-					BlockHeight: currentHeight,
-				}
-				c.accts.Set(tx.VaultPubKey, meta)
-			}
-		}
+	meta, err := c.signingMetadata(tx, currentHeight)
+	if err != nil {
+		return nil, nil, nil, err
 	}
 
 	// serialize the checkpoint for later
@@ -476,6 +589,25 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) (signedTx, c
 	if err != nil {
 		if errors.Is(err, tss.ErrNotSelectedForKeysign) {
 			return nil, nil, nil, nil
+		}
+		// A keysign failing on a PINNED checkpoint is worth surfacing: the pin is never
+		// moved (a peer sub-party may already hold a combined signature at that sequence),
+		// so a split keysign re-signs the same pinned sequence every retry and the item
+		// stalls its vault's queue until it goes stale / THORChain reschedules it. The
+		// pinned sequence/height are not visible otherwise (TxOutItem.Checkpoint is
+		// json:"-"), so log them to make a stalled vault visible. Only log for a GENUINE
+		// pin: a malformed checkpoint self-heals to a fresh validated read (meta is not the
+		// pin then), so re-read the checkpoint and log its own sequence, not meta's.
+		if tx.Checkpoint != nil {
+			var pin XrpMetadata
+			if json.Unmarshal(tx.Checkpoint, &pin) == nil && pin.SeqNumber > 0 {
+				c.logger.Warn().
+					Str("vault", tx.VaultPubKey.String()).
+					Int64("pinned_seq", pin.SeqNumber).
+					Int64("pinned_block_height", pin.BlockHeight).
+					Err(err).
+					Msg("keysign failed on pinned xrp checkpoint")
+			}
 		}
 		return nil, checkpointBytes, nil, fmt.Errorf("failed to sign message: %w", err)
 	}
@@ -614,45 +746,117 @@ func verifySignature(signBytes, signature, compressedPubKey []byte) bool {
 	)
 }
 
-func (c *Client) txNeedsBroadcast(txHash string) bool {
-	var txResponse *requests.TxResponse
-
-	// Request the transaction from the server
-	res, err := c.rpcClient.Request(&requests.TxRequest{
-		Transaction: txHash,
-	})
-	if err != nil {
-		return true
-	}
-
-	err = res.GetResult(&txResponse)
-	if err != nil {
-		// unexpected error, log it
-		c.logger.Info().AnErr("error", err).Msg("error get results of tx request")
-		return true
-	}
-
-	return txResponse == nil || !txResponse.Validated
-}
-
-func (c *Client) broadcastTx(txBlob string) error {
+// broadcastTx submits the blob and returns the engine result (so the caller can
+// distinguish the ambiguous tefPAST_SEQ from a definite success). It errors only on a
+// result that is neither a success nor a retryable "already seen this sequence/tx".
+func (c *Client) broadcastTx(txBlob string) (engineResult string, err error) {
 	response, err := c.rpcClient.Submit(txBlob, true)
 	if err != nil {
-		return fmt.Errorf("broadcast msg failed, %w", err)
+		return "", fmt.Errorf("broadcast msg failed, %w", err)
 	}
 
-	// Only add the transaction to signer cache when it is sure the transaction has been broadcast successfully.
 	// So for other scenario , like transaction already in mempool , invalid account sequence # , the transaction can be rescheduled , and retried
 	// If we get tefPAST_SEQ, tx is already in current ledger, most likely by another validator.
-	if response.EngineResult != "tesSUCCESS" && response.EngineResult != "tefPAST_SEQ" {
+	// tefALREADY means this exact tx was already applied, e.g. a retried submit.
+	if response.EngineResult != "tesSUCCESS" && response.EngineResult != "tefPAST_SEQ" &&
+		response.EngineResult != "tefALREADY" {
 		c.logger.Info().Interface("broadcastRes", response).Msg("XRP BroadcastTx failed")
-		return fmt.Errorf("transaction failed to submit with engine result: %s", response.EngineResult)
+		return response.EngineResult, fmt.Errorf("transaction failed to submit with engine result: %s", response.EngineResult)
 	}
 	c.logger.Info().Interface("broadcastRes", response).Msg("XRP BroadcastTx success")
-	return nil
+	return response.EngineResult, nil
 }
 
-// BroadcastTx is to broadcast the tx to cosmos chain
+// xrpTxStatus is the resolved on-chain state of a signed XRP tx, used to decide whether
+// a broadcast is settled on chain (delivered, or failed with a tec* result) or still
+// unknown.
+type xrpTxStatus int
+
+const (
+	// xrpTxUnknown: the RPC/parse failed, or the tx is seen but not yet validated — no
+	// definite answer, so retry/wait rather than acting.
+	xrpTxUnknown xrpTxStatus = iota
+	// xrpTxNotFound: the RPC answered and the tx is on no ledger (txnNotFound).
+	xrpTxNotFound
+	// xrpTxValidatedSuccess: validated in a closed ledger with a tesSUCCESS result.
+	xrpTxValidatedSuccess
+	// xrpTxValidatedFailed: validated with a tec* result — the sequence is burned and the
+	// fee spent, but it delivered nothing, so the outbound obligation is NOT met. The
+	// signed tx is dead: see retireTecResult.
+	xrpTxValidatedFailed
+)
+
+// xrpTxStatusOf resolves a tx hash to one of the xrpTxStatus states. It distinguishes a
+// definitive txnNotFound (the node answered: not on chain) from a transport/parse error
+// (unknown), so callers never act on a flaky lookup.
+func (c *Client) xrpTxStatusOf(txHash string) xrpTxStatus {
+	status, _ := c.xrpTxResultOf(txHash)
+	return status
+}
+
+// xrpTxResultOf is xrpTxStatusOf plus the validated TransactionResult code, if any.
+func (c *Client) xrpTxResultOf(txHash string) (xrpTxStatus, string) {
+	res, err := c.rpcClient.Request(&requests.TxRequest{Transaction: txHash})
+	if err != nil {
+		var ce *rpc.ClientError
+		if errors.As(err, &ce) && ce.ErrorString == "txnNotFound" {
+			return xrpTxNotFound, ""
+		}
+		// transport, timeout, or any other error result — we do not know.
+		return xrpTxUnknown, ""
+	}
+	var txResponse *requests.TxResponse
+	if gErr := res.GetResult(&txResponse); gErr != nil || txResponse == nil {
+		return xrpTxUnknown, ""
+	}
+	if !txResponse.Validated {
+		// seen (e.g. still in the open ledger / mempool) but not yet validated.
+		return xrpTxUnknown, ""
+	}
+	meta, ok := txResponse.Meta.(map[string]any)
+	if !ok {
+		return xrpTxUnknown, ""
+	}
+	result, ok := meta["TransactionResult"].(string)
+	if !ok {
+		// present but missing / non-string TransactionResult (API/shape differences):
+		// do NOT assume failure — an unrecognized shape must fail SAFE as unknown, never
+		// drive a re-sign that could double-pay a tx that actually succeeded.
+		return xrpTxUnknown, ""
+	}
+	switch {
+	case strings.HasPrefix(result, "tes"): // tesSUCCESS
+		return xrpTxValidatedSuccess, result
+	case strings.HasPrefix(result, "tec"): // claimed-cost failure: sequence burned, delivered nothing
+		return xrpTxValidatedFailed, result
+	default:
+		// a validated tx never carries a tef/ter/tem/tel result, so an unrecognized code
+		// is an unexpected response — fail safe as unknown rather than as a failure.
+		return xrpTxUnknown, ""
+	}
+}
+
+// cacheSent records an outbound in the signer cache so it is not re-signed. Reached on a
+// validated tesSUCCESS (confirmed delivered) or on a fresh submit-time tesSUCCESS (accepted
+// optimistically, as the prior code did — THORChain reschedules it if it never validates).
+func (c *Client) cacheSent(tx stypes.TxOutItem, txHash string) {
+	expiry := time.Now().Add(c.getSignerCacheExpiry()).UnixMilli()
+	if err := c.signerCacheManager.SetSignedWithExpiry(tx.CacheHash(), tx.CacheVault(c.GetChain()), txHash, expiry); err != nil {
+		c.logger.Err(err).Msg("fail to set signer cache")
+	}
+}
+
+// BroadcastTx submits the signed XRP tx (or confirms a prior submit) and reports it to
+// the signer. An AMBIGUOUS accept — tefPAST_SEQ ("the sequence is already past") or
+// tefALREADY ("this exact tx already seen") — is treated as sent ONLY if this exact tx
+// hash is confirmed validated with tesSUCCESS; a tec* failure burns the sequence but pays
+// nothing, and a bare txnNotFound is not proof of anything (a pruned node drops a tx it
+// delivered). A fresh submit-time tesSUCCESS is still accepted optimistically, as the prior
+// code did (THORChain reschedules it if it never validates).
+//
+// A tx validated with a tec* result is retired for THORChain to reschedule (see
+// retireTecResult), never re-signed here. Nor is a tx re-signed on a mere absence, which
+// would risk paying a delivered tx twice.
 func (c *Client) BroadcastTx(tx stypes.TxOutItem, txBytes []byte) (string, error) {
 	txBlob := hex.EncodeToString(txBytes)
 	txHash, err := hash.SignTxBlob(txBlob)
@@ -661,20 +865,90 @@ func (c *Client) BroadcastTx(tx stypes.TxOutItem, txBytes []byte) (string, error
 		return "", err
 	}
 
-	// if tx has already been broadcasted, don't try again, it will error with engine result: tefPAST_SEQ
-	if c.txNeedsBroadcast(txHash) {
-		if err = c.broadcastTx(txBlob); err != nil {
-			return "", err
+	// Has this tx already resolved on chain (a prior submit / another node)? Decide from
+	// its result before re-submitting.
+	switch status, result := c.xrpTxResultOf(txHash); status {
+	case xrpTxValidatedSuccess:
+		c.cacheSent(tx, txHash)
+		return txHash, nil
+	case xrpTxValidatedFailed:
+		return "", c.retireTecResult(txHash, result, "")
+	}
+	// xrpTxNotFound (never submitted) or xrpTxUnknown (lookup flaked) — (re-)submit.
+
+	engineResult, bErr := c.broadcastTx(txBlob)
+	if bErr != nil {
+		return "", bErr
+	}
+
+	// tefPAST_SEQ ("sequence already past") and tefALREADY ("this exact tx already seen")
+	// are NOT proof of delivery. Confirm on chain before caching as sent.
+	switch engineResult {
+	case "tefPAST_SEQ":
+		switch status, result := c.xrpTxResultOf(txHash); status {
+		case xrpTxValidatedSuccess:
+			// our tx is the one that consumed the sequence and it succeeded.
+		case xrpTxValidatedFailed:
+			// our exact tx consumed the sequence with a tec* failure.
+			return "", c.retireTecResult(txHash, result, engineResult)
+		default: // xrpTxNotFound or xrpTxUnknown
+			// A txnNotFound here is NOT proof that a DIFFERENT tx consumed the sequence: a
+			// pruned/lagging rippled node reports txnNotFound for a tx it no longer holds —
+			// even one we DELIVERED — so re-signing on this absence could double-pay. Fail
+			// closed exactly as verifyBroadcast and the tefALREADY branch do: retain + re-
+			// check next cycle. A sequence genuinely consumed by another tx is recovered by
+			// THORChain's reschedule, never by auto-re-signing on an unconfirmable absence.
+			return "", fmt.Errorf("xrp tefPAST_SEQ: cannot confirm tx %s is a validated success; retrying", txHash)
+		}
+	case "tefALREADY":
+		// The same-hash tx is already seen; it may still validate at its sequence, so NEVER
+		// retire on absence (re-signing at a new sequence while the original is pending
+		// would double-pay). Only a confirmed result is actionable.
+		switch status, result := c.xrpTxResultOf(txHash); status {
+		case xrpTxValidatedSuccess:
+			// delivered — cache as sent.
+		case xrpTxValidatedFailed:
+			return "", c.retireTecResult(txHash, result, engineResult)
+		default: // xrpTxNotFound / xrpTxUnknown — wait and re-check, do not cache.
+			return "", fmt.Errorf("xrp tefALREADY: cannot confirm tx %s on chain yet; retrying", txHash)
 		}
 	}
-
-	c.accts.SeqInc(tx.VaultPubKey)
-	expiry := time.Now().Add(c.getSignerCacheExpiry()).UnixMilli()
-	if err = c.signerCacheManager.SetSignedWithExpiry(tx.CacheHash(), tx.CacheVault(c.GetChain()), txHash, expiry); err != nil {
-		c.logger.Err(err).Msg("fail to set signer cache")
-	}
-
+	// tesSUCCESS (fresh optimistic accept), or a tefPAST_SEQ/tefALREADY confirmed as a
+	// validated success above.
+	c.cacheSent(tx, txHash)
 	return txHash, nil
+}
+
+// retireTecResult reports txHash, validated with the tec* result code, as a dead
+// signing attempt. A tec* result burns the sequence and the fee but delivers nothing, and
+// signing the outbound again from this vault fails the same way: destination-side codes
+// (tecDST_TAG_NEEDED, tecNO_PERMISSION, tecNO_DST_INSUF_XRP) are permanent, and a
+// sender-side code such as tecUNFUNDED_PAYMENT needs another vault. ErrTxExpired makes the
+// signer retire the attempt without re-signing it, without observing it as sent and without
+// a signer-cache entry. THORChain never observes the tx (the scanner skips non-tesSUCCESS
+// results), so it reschedules the outbound once its signing period passes.
+func (c *Client) retireTecResult(txHash, result, engineResult string) error {
+	c.logger.Warn().Str("txHash", txHash).Str("result", result).Str("engine_result", engineResult).
+		Msg("xrp outbound validated with a tec* result; retiring the attempt for THORChain to reschedule")
+	return fmt.Errorf("xrp tx %s validated with %s: %w", txHash, result, chainclienttypes.ErrTxExpired)
+}
+
+// GetVaultLock returns the per-vault mutex the signer holds across SignTx+BroadcastTx,
+// implementing the vaultLocker interface in bifrost/signer/sign.go. It serializes a
+// single node's same-vault outbounds so they are processed one at a time (no intra-node
+// race on the sequence read); it does NOT by itself keep two outbounds off the same
+// account sequence — that is the serial-drain gate's job (see signingMetadata). The map
+// holds one small mutex per vault pubkey and is not pruned; vault cardinality is bounded
+// by churn (~daily), so the growth is negligible over process lifetime.
+func (c *Client) GetVaultLock(vaultPubKey string) *sync.Mutex {
+	c.vaultLocksMu.Lock()
+	defer c.vaultLocksMu.Unlock()
+	lock, ok := c.vaultLocks[vaultPubKey]
+	if !ok {
+		lock = &sync.Mutex{}
+		c.vaultLocks[vaultPubKey] = lock
+	}
+	return lock
 }
 
 // ConfirmationCountReady xrp chain has almost instant finality, so doesn't need to wait for confirmation
@@ -758,15 +1032,29 @@ func (c *Client) ReportSolvency(blockHeight int64) error {
 		msgs = append(msgs, msg) // Insolvent-vault message
 	}
 
-	// Only if the block scanner is unhealthy (e.g. solvency-halted) and all chain-specific vaults are solvent,
-	// report that all the chain-specific vaults are solvent.
+	// Only if THORChain itself has this chain halted or solvency-halted, this node's block scanner
+	// is paused for it (unhealthy), and all chain-specific vaults are solvent, report that all the
+	// chain-specific vaults are solvent. That "all clear" exists to lift a network SolvencyHalt
+	// (see SolvencyCheckRunner), so the network's halt state is the gate, not this node's own
+	// block-scanner health: a scanner that is unhealthy for a local reason (RPC trouble, a stalled
+	// fetch) must stay silent here, because an all-clear only one node sends can never reach
+	// consensus and each one costs that node an unrefunded observation slash point. The paused
+	// scanner is still required alongside the halt: the scanner re-reads the pause mimirs only once
+	// per THORChain block, and reads a mimir error as not paused, so just after a halt takes effect
+	// a healthy scanner can still reach here from the scan path. Its all-clear would carry the
+	// scanned height rather than the runner's, a different voter, and so would be a lone vote too.
+	// On a bridge error stay silent; the runner retries.
 	// If there are any insolvent vaults, report only them.
 	// Not reporting both solvent and insolvent vaults is to avoid noise (spam):
 	// Reporting both could halt-and-unhalt SolvencyHalt in the same THOR block
 	// (resetting its height), plus making it harder to know at a glance from solvency reports which vaults were insolvent.
 	solvent := false
 	allVaultsProcessed := len(chainVaults) > 0 && processedVaults == len(chainVaults)
-	if !c.IsBlockScannerHealthy() && allVaultsProcessed && len(solventMsgs) == processedVaults {
+	halted, haltErr := runners.IsHaltedOnChain(c.thorchainBridge, c.cfg.ChainID)
+	if haltErr != nil {
+		c.logger.Err(haltErr).Msg("fail to read chain halt state, skipping solvency all-clear")
+	}
+	if halted && !c.IsBlockScannerHealthy() && allVaultsProcessed && len(solventMsgs) == processedVaults {
 		msgs = solventMsgs
 		solvent = true
 	}

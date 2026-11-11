@@ -1,4 +1,4 @@
-image: golang:1.26.4
+image: golang:1.26.10
 
 # Retry jobs that failed for infrastructure reasons, never on script_failure.
 # Server-side execution timeouts are left out: those jobs really ran too long.
@@ -44,8 +44,13 @@ workflow:
     - if: $CI_PIPELINE_SOURCE == "api"
     - if: $CI_PIPELINE_SOURCE == "web"
     - if: $CI_PIPELINE_SOURCE == "webide"
+    - if: $CI_PIPELINE_SOURCE == "schedule"
 
 variables:
+  # Runner tag for the short jobs (see .small-runner). A project CI/CD variable
+  # overrides this, so SMALL_RUNNER_TAG=thorchain sends them back to any runner
+  # without an MR if the small runners are down.
+  SMALL_RUNNER_TAG: small
   DOCKER_HOST: tcp://docker:2376
   DOCKER_TLS_CERTDIR: /certs
   DOCKER_TLS_VERIFY: 1
@@ -55,10 +60,14 @@ variables:
   # tss-lib-private is a private GitLab subgroup repo; skip proxy.golang.org / sumdb
   # and resolve directly so the per-job git auth below takes effect.
   GOPRIVATE: gitlab.com/thorchain/tss/tss-lib-private.git
-  # Alpine's go package defaults GOTOOLCHAIN=local; override so jobs that bootstrap
-  # Go via `apk add go` download the toolchain pinned in go.mod (toolchain go1.26.4).
+  # Download the toolchain pinned in go.mod (toolchain go1.26.10) when an image
+  # ships an older Go (the CI tools image's Go is a floor, not a pin).
   GOTOOLCHAIN: auto
   SAST_EXCLUDED_ANALYZERS: eslint,bandit,semgrep
+  # Published by build-ci-tools-image; see ci/Dockerfile.ci-tools before bumping.
+  # Pinned to the digest that job printed ("Pin jobs to: ..."): any Developer's
+  # CI_JOB_TOKEN can push to this registry, so the tag alone is not trusted.
+  CI_TOOLS_IMAGE: $CI_REGISTRY_IMAGE/ci/tools:2@sha256:29b5fe763a4b6fd27e5f7a19c8744e1f9dc39870dcb6ac571661d44cbb5d0e7c
   # Let the runner retry the stages it owns. A failed source fetch ("fetch-pack:
   # unexpected disconnect", "GitLab is currently unable to handle this request
   # due to load") is reported as script_failure, so `retry:` cannot catch it.
@@ -66,10 +75,17 @@ variables:
   ARTIFACT_DOWNLOAD_ATTEMPTS: 3
   RESTORE_CACHE_ATTEMPTS: 3
   EXECUTOR_JOB_SECTION_ATTEMPTS: 3
+  # Shallow clone. The project default is a full clone (941MB of history), which
+  # averaged 78s per job, about 14% of all runner time on 2026-09-22..29. Only
+  # fork needs history (a merge base with the target branch) and sets
+  # GIT_DEPTH 0 itself; secret_detection sets its own 50 in the template.
+  GIT_DEPTH: "20"
   SAST_EXCLUDED_PATHS: spec, test, tests, tmp, .cache
 
+# The dind jobs run in the prebuilt tools image (ci/Dockerfile.ci-tools)
+# instead of installing packages with `apk add` on every job.
 .use_dind: &use_dind
-  image: docker:28.5.2
+  image: $CI_TOOLS_IMAGE
   services:
     - docker:28.5.2-dind
 
@@ -117,8 +133,10 @@ variables:
         if ! echo "$CI_DEPENDENCY_PROXY_PASSWORD" | docker login "$CI_DEPENDENCY_PROXY_SERVER" -u "$CI_DEPENDENCY_PROXY_USER" --password-stdin; then
           echo "Dependency proxy login failed; falling back to Docker Hub"
           unset DOCKER_MIRROR
-        elif ! docker manifest inspect "${DOCKER_MIRROR}golang:1.26.4" >/dev/null 2>&1; then
-          echo "Dependency proxy missing golang:1.26.4; falling back to Docker Hub"
+        # imagetools resolves the manifest in ~1s; `docker manifest inspect`
+        # took 16-32s against the dependency proxy in every dind job.
+        elif ! docker buildx imagetools inspect "${DOCKER_MIRROR}golang:1.26.10" >/dev/null 2>&1; then
+          echo "Dependency proxy missing golang:1.26.10; falling back to Docker Hub"
           unset DOCKER_MIRROR
         fi
       fi
@@ -175,6 +193,61 @@ variables:
   before_script:
     - . ./scripts/ci-go-private-auth.sh
 
+# Content-derived mtimes for the checkout (scripts/ci-stable-mtimes.sh), so
+# go test reuses cached results for packages whose code and test inputs did
+# not change; a fresh clone otherwise invalidates every package that reads a
+# file. Include with `!reference [.stable-mtimes, before_script]` in jobs that
+# run go test.
+.stable-mtimes:
+  before_script:
+    - ./scripts/ci-stable-mtimes.sh
+
+# Every job except the sim and the image builds runs on a runner tagged
+# `small`, with small slots (today one: hedwig-small). The project had 7 slots
+# on 2026-09-30 (Finland capped at 4, hedwig 3), and sims held 2-4 of them for
+# 30-45 min each, so 1-5 min gate jobs queued 8-29 min each, one after another. A small slot is 6 CPU / 24 GiB (lint
+# and the race tests need the memory) with a 4 CPU / 8 GiB dind service for
+# generate and the proto jobs. test-simulation, the build jobs and the image
+# mirror stay untagged and keep the sim-sized slots on Finland and hedwig.
+.small-runner:
+  tags:
+    - $SMALL_RUNNER_TAG
+
+# What test-simulation and test-regression wait for. On 2026-09-15..29 these
+# jobs caught 116 of the 122 pipelines that failed a check before the sim
+# (lint 40, generate 39, proto 37, unit-tests 14); in 33 of them lint was the
+# only failing check. With no trunk lock, lint starts with the pipeline and
+# takes about as long as unit-tests, so gating on it costs little and keeps a
+# lint-only failure from spending a sim. `optional` covers pipelines where
+# rules leave a job out (lint on deployment branches, unit-tests on some merge
+# trains). No artifacts are needed from them.
+.long-test-gate:
+  needs:
+    - job: lint
+      optional: true
+      artifacts: false
+    - job: generate
+      optional: true
+      artifacts: false
+    - job: proto-check-formatting
+      optional: true
+      artifacts: false
+    - job: proto-lint
+      optional: true
+      artifacts: false
+    - job: proto-check-breaking
+      optional: true
+      artifacts: false
+    - job: unit-tests
+      optional: true
+      artifacts: false
+    - job: test-mainnet-monero
+      optional: true
+      artifacts: false
+    - job: test-simulation-unit
+      optional: true
+      artifacts: false
+
 # Install $PKGS from the distro mirror. A DNS blip on the runner ("Temporary
 # failure resolving 'deb.debian.org'") only warns in `apt-get update` and then
 # fails the install as a script error, so retry and exit 75 if the mirror stays
@@ -195,6 +268,39 @@ variables:
         sleep 15
       done
 
+# Docker CLI, compose and buildx for a dind job on a Debian image, pinned to the
+# versions docker:28.5.2 ships, from Docker's apt repository (not Docker Hub).
+# Include before .wait-for-dind; exits 75 if the repository stays unreachable.
+.docker-cli-apt:
+  before_script:
+    - |
+      . /etc/os-release
+      install -m 0755 -d /etc/apt/keyrings
+      echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian $VERSION_CODENAME stable" \
+        > /etc/apt/sources.list.d/docker.list
+      for i in 1 2 3; do
+        curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc &&
+          apt-get update &&
+          apt-get install -y --no-install-recommends $PKGS \
+            docker-ce-cli="5:28.5.2-1~debian.12~$VERSION_CODENAME" \
+            docker-compose-plugin="2.40.3-1~debian.12~$VERSION_CODENAME" \
+            docker-buildx-plugin="0.29.1-1~debian.12~$VERSION_CODENAME" && break
+        if [ "$i" = 3 ]; then
+          echo "Docker apt repository unreachable, treating as an infrastructure failure"
+          exit 75
+        fi
+        sleep 15
+      done
+
+# Jobs start from `needs:`, not from stage order. With stage order the
+# simulation started a median 27 min after the pipeline (p90 117 min), held back
+# by whichever protobuf or test job finished last. Checks that need nothing
+# start at once. test-simulation and test-regression wait only for the checks
+# that catch most bad branches (.long-test-gate), so a branch that fails those
+# does not also spend runner time on a sim. The build jobs keep their existing
+# stage order and publication rules: `build` comes before `long-test`, and the
+# build rules use `when: always`, so images do not wait for the sim, regression
+# or a failed check.
 stages:
   - .pre
   - fork
@@ -212,12 +318,14 @@ stages:
 # and fork jobs, fixing a timing issue where GitLab CI rule evaluation happened
 # before dotenv artifacts were available.
 fork:
+  tags: !reference [.small-runner, tags]
   stage: fork
   rules:
     - if: $CI_MERGE_REQUEST_SOURCE_PROJECT_PATH && $CI_MERGE_REQUEST_SOURCE_PROJECT_PATH != $CI_MERGE_REQUEST_PROJECT_PATH
       when: always
   variables:
     PKGS: git jq
+    GIT_DEPTH: "0"
   before_script:
     - !reference [.pkg-install, before_script]
   script:
@@ -235,7 +343,7 @@ fork:
 
       # Check if all changed files are text files (md, json, yaml, yml)
       # Exclude specific files that are not considered text-only changes
-      EXCLUDED_FILES=".gitlab-ci.yml .trunk/trunk.yaml .trunk/configs/analyzers.yml .trunk/configs/.golangci.yaml .trunk/configs/.markdownlint.yaml .trunk/configs/.yamllint.yaml build/docker/docker-compose.yml config/default.yaml openapi/openapi.yaml"
+      EXCLUDED_FILES=".gitlab-ci.yml .trunk/trunk.yaml .trunk/configs/analyzers.yml .trunk/configs/.golangci.yaml .trunk/configs/.markdownlint.yaml .trunk/configs/.yamllint.yaml build/docker/docker-compose.yml build/docker/docker-compose.xmr-chainnet.yml build/docker/docker-compose.xmr-stagenet.yml config/default.yaml openapi/openapi.yaml"
       TEXT_ONLY=true
       if [ -n "$CHANGED_FILES" ]; then
         for file in $CHANGED_FILES; do
@@ -275,6 +383,7 @@ fork:
       fi
 
 generate:
+  tags: !reference [.small-runner, tags]
   rules: &rules
     - if: $CI_MERGE_REQUEST_SOURCE_PROJECT_PATH && $CI_MERGE_REQUEST_SOURCE_PROJECT_PATH != $CI_MERGE_REQUEST_PROJECT_PATH
       when: never
@@ -297,10 +406,10 @@ generate:
       - data_integrity_failure
       - script_failure
   stage: protobuf
+  needs: []
   <<: *use_dind
   before_script:
     - !reference [.wait-for-dind, before_script]
-    - apk -U add bash curl findutils git go jq make protoc sed wget python3
     - !reference [.go-private-auth, before_script]
     - !reference [.dind-registries, before_script]
     - !reference [.proto-builder-image, before_script]
@@ -312,54 +421,280 @@ generate:
       ./scripts/lint-generated.bash
 
 unit-tests:
+  tags: !reference [.small-runner, tags]
+  variables:
+    PKGS: python3
   rules:
     - if: '$CI_MERGE_REQUEST_EVENT_TYPE == "merge_train" && $CI_MERGE_REQUEST_TARGET_BRANCH_SHA == $CI_MERGE_REQUEST_DIFF_BASE_SHA'
       when: never
     - *rules
   stage: test
+  needs: []
   coverage: /total:\s+\(statements\)\s+(\d+.\d+\%)/
   before_script:
+    - !reference [.pkg-install, before_script]
     - !reference [.go-private-auth, before_script]
+    - !reference [.stable-mtimes, before_script]
     - go install github.com/boumenot/gocover-cobertura@v1.4.0
     - go install gotest.tools/gotestsum@v1.13.0
   script:
+    # Fails if a *_test.go file is compiled by no CI test configuration.
+    - python3 scripts/test-quality-inventory.py --check-selection --output test-quality-reports/root-mocknet/source-inventory.json
     - make test-coverage-sum
+    - |
+      if [ -n "${CI_MERGE_REQUEST_DIFF_BASE_SHA:-}" ] && ! git cat-file -e "${CI_MERGE_REQUEST_DIFF_BASE_SHA}^{commit}" 2>/dev/null; then
+        timeout 30 git fetch --no-tags --depth=1 origin "$CI_MERGE_REQUEST_DIFF_BASE_SHA" || true
+      fi
+      if [ -n "${CI_MERGE_REQUEST_DIFF_BASE_SHA:-}" ] && git cat-file -e "${CI_MERGE_REQUEST_DIFF_BASE_SHA}^{commit}" 2>/dev/null; then
+        python3 scripts/test-quality-fetch-baseline.py test-quality-reports/root-mocknet/baseline-coverage.txt
+        baseline_arg=
+        if [ -f test-quality-reports/root-mocknet/baseline-coverage.txt ]; then
+          baseline_arg='--baseline-profile test-quality-reports/root-mocknet/baseline-coverage.txt'
+        fi
+        python3 scripts/test-quality-coverage.py --profile coverage.txt --base-ref "$CI_MERGE_REQUEST_DIFF_BASE_SHA" $baseline_arg --output test-quality-reports/root-mocknet/changed-coverage.json
+      else
+        mkdir -p test-quality-reports/root-mocknet
+        echo '{"baseline_available":false,"reason":"MR base commit unavailable; changed coverage comparison not run"}' > test-quality-reports/root-mocknet/changed-coverage.json
+      fi
   artifacts:
     when: always
     reports:
-      junit: report.xml
+      junit:
+        - report.xml
+        - test-quality-reports/network-*/junit.xml
       coverage_report:
         coverage_format: cobertura
         path: coverage.xml
     paths:
       - coverage*
+      - report.xml
+      - network-specific.log
+      - test-quality-reports/root-mocknet/
+      - test-quality-reports/network-*/
 
-test-mocknet-scripts:
+# The fail-closed Monero daemon check skips in the normal mocknet suite.
+test-mainnet-monero:
+  tags: !reference [.small-runner, tags]
+  variables:
+    PKGS: python3
+  rules: *rules
+  stage: test
+  needs: []
+  before_script:
+    - !reference [.pkg-install, before_script]
+    - !reference [.go-private-auth, before_script]
+    - !reference [.stable-mtimes, before_script]
+  script:
+    - make test-quality-mainnet
+  artifacts:
+    when: always
+    reports:
+      junit: test-quality-reports/root-mainnet-monero/junit.xml
+    paths:
+      - test-quality-reports/root-mainnet-monero/
+
+# The tests in `make test-utxo-daemons` skip in unit-tests and
+# test-simulation-unit because they need a real daemon. Here each daemon is
+# fresh and owned by this job, so the tests cannot spend funds a simulation
+# needs. zebrad is copied out of the mocknet Zebra image, so the ZEC signing
+# tests validate against the same official binary mocknet runs. The default
+# trixie Go image is required: zebrad 6.4.2 links against trixie's glibc, which
+# rules out the Alpine tools image and the bookworm docker-ce packages.
+test-utxo-daemons:
+  tags: !reference [.small-runner, tags]
   rules:
     - if: '$CI_MERGE_REQUEST_EVENT_TYPE == "merge_train" && $CI_MERGE_REQUEST_TARGET_BRANCH_SHA == $CI_MERGE_REQUEST_DIFF_BASE_SHA'
       when: never
     - *rules
   stage: test
+  needs: []
+  timeout: 30m
+  variables:
+    PKGS: python3 docker-cli
+    # Not ZEBRA_*: zebrad reads ZEBRA_<FIELD> env vars as config overrides, and
+    # the signing tests' zebrad inherits the job environment, so ZEBRA_IMAGE
+    # makes it reject the unknown config field `image`.
+    ZEC_IMAGE: zfnd/zebra:6.4.2
+    DOGE_IMAGE: registry.gitlab.com/thorchain/devops/node-launcher:dogecoin-daemon-1.14.9
+  services:
+    - docker:28.5.2-dind
+  before_script:
+    - !reference [.pkg-install, before_script]
+    - !reference [.wait-for-dind, before_script]
+    - !reference [.go-private-auth, before_script]
+    - !reference [.stable-mtimes, before_script]
+    - !reference [.dind-registries, before_script]
+  script:
+    # .dind-registries probes the mirror with buildx, which docker-cli lacks,
+    # so try the dependency proxy with a plain pull before Docker Hub.
+    - |
+      if [ -n "${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX:-}" ] &&
+         docker pull -q "$CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX/$ZEC_IMAGE"; then
+        ZEC_IMAGE="$CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX/$ZEC_IMAGE"
+      else
+        docker pull -q "$ZEC_IMAGE" || exit 75
+      fi
+      docker pull -q "$DOGE_IMAGE" || exit 75
+    - |
+      zebra=$(docker create "$ZEC_IMAGE")
+      docker cp "$zebra:/usr/local/bin/zebrad" /usr/local/bin/zebrad
+      docker rm "$zebra"
+      zebrad --version
+    # The same images, entrypoints and settings as the mocknet compose services.
+    - |
+      mocknet="$CI_PROJECT_DIR/build/docker/mocknet"
+      docker run -d --name dogecoin --user root -p 18332:18332 -v "$mocknet:/mocknet" \
+        -e BLOCK_TIME=1 -e DOGE_MASTER_ADDR=mnaioCtEGdw6bd6rWJ13Mbre1kN5rPa2Mo \
+        --entrypoint /mocknet/dogecoin-entrypoint.sh "$DOGE_IMAGE"
+      docker run -d --name zcash -p 18232:18232 -e BLOCK_TIME=1 \
+        -v "$mocknet/zcash/zebrad.toml:/etc/zebrad.toml" -v "$mocknet/zcash/entrypoint.sh:/etc/entrypoint.sh" \
+        --entrypoint /etc/entrypoint.sh "$ZEC_IMAGE"
+    # Wait for the initial blocks each entrypoint mines to the master address.
+    - |
+      height() {
+        curl -s --max-time 5 "$@" -H 'Content-Type: application/json' \
+          -d '{"jsonrpc":"1.0","id":1,"method":"getblockcount","params":[]}' |
+          python3 -c 'import json, sys; print(json.load(sys.stdin)["result"])' 2>/dev/null || echo 0
+      }
+      for i in $(seq 1 150); do
+        doge=$(height --user thorchain:password http://docker:18332/)
+        zec=$(height http://docker:18232/)
+        [ "$doge" -ge 1000 ] && [ "$zec" -gt 400 ] && break
+        if [ "$i" = 150 ]; then
+          echo "daemons not ready after 5 minutes: dogecoin=$doge zcash=$zec"
+          exit 1
+        fi
+        sleep 2
+      done
+      echo "dogecoin height $doge, zcash height $zec"
+    - |
+      export ZEC_DAEMON=/usr/local/bin/zebrad
+      export DOGE_SIM_INTEGRATION_RPC_URL=http://thorchain:password@docker:18332
+      export ZEC_SIM_INTEGRATION_RPC_URL=http://docker:18232
+      make test-utxo-daemons
+  after_script:
+    - |
+      if [ "$CI_JOB_STATUS" != "success" ]; then
+        mkdir -p logs
+        docker logs dogecoin > logs/dogecoin.log 2>&1 || true
+        docker logs zcash > logs/zcash.log 2>&1 || true
+      fi
+  artifacts:
+    when: always
+    reports:
+      junit:
+        - test-quality-reports/utxo-daemons-zebra/junit.xml
+        - test-quality-reports/utxo-daemons-simulation/junit.xml
+    paths:
+      - test-quality-reports/utxo-daemons-*/
+      - logs/
+
+# The simulation directory has its own go.mod and is not reached by root ./....
+test-simulation-unit:
+  tags: !reference [.small-runner, tags]
+  rules: *rules
+  stage: test
+  needs: []
+  variables:
+    PKGS: python3 util-linux
+  before_script:
+    - !reference [.pkg-install, before_script]
+    - !reference [.go-private-auth, before_script]
+    - !reference [.stable-mtimes, before_script]
+  script:
+    - scripts/test-simulation-unit.sh test-quality-reports/simulation-unit.jsonl
+  artifacts:
+    when: always
+    paths:
+      - test-quality-reports/simulation-unit.jsonl
+
+test-mocknet-scripts:
+  tags: !reference [.small-runner, tags]
+  rules:
+    - if: '$CI_MERGE_REQUEST_EVENT_TYPE == "merge_train" && $CI_MERGE_REQUEST_TARGET_BRANCH_SHA == $CI_MERGE_REQUEST_DIFF_BASE_SHA'
+      when: never
+    - *rules
+  stage: test
+  needs: []
+  image: $CI_TOOLS_IMAGE
+  script:
+    - python3 -m unittest discover -s build/scripts/tests -v
+    - python3 -m unittest discover -s scripts/tests -p 'test_*_test.py' -v
+
+# Fails an MR that deletes a test file or regression suite, leaves a test file
+# with fewer tests, or changes a regression golden (other than adding one with
+# a new suite), until a human adds the goldens-reviewed label (rules in
+# scripts/test-integrity-guard.py). Branches have gone green by agreeing with a
+# bug: !4459 deleted a unit test case, then a bot commit deleted the regression
+# exports and blocks that caught the same funds-level bug, test-regression
+# wrote new ones and passed, and auto-merge was switched on; !4602 rewrote 134
+# goldens, a consensus-visible change with no version gate, and nobody flagged
+# it. Of the 279 MRs merged 2026-04-19..10-17 it would have stopped 44 (16%):
+# 37 for goldens, 9 for test files left with fewer tests, 5 for deleted test
+# files, 1 for a deleted suite. It reads the MR's own diff, never the merged
+# result, so develop's own golden updates do not trip it.
+# It runs in .post with no `needs`, so it starts after every other job: any
+# failed job cancels the pipeline (workflow auto_cancel), and running last
+# lets a tripped MR still get its lint, unit, regression and simulation
+# results. That adds about a minute to the end of the pipeline. GitLab reads
+# labels when it creates a pipeline, merge train ones included, so the label
+# takes effect in the next pipeline. Unlike the jobs on *rules it also runs on
+# fork MRs: it needs no credentials, and the branch pipeline
+# `make gitlab-trigger-ci` starts for a fork is not an MR pipeline.
+test-integrity:
+  tags: !reference [.small-runner, tags]
+  rules:
+    - if: $CI_MERGE_REQUEST_IID
+  stage: .post
   image: alpine:3.21
   variables:
-    PKGS: bash python3 jq make
+    PKGS: git python3
   before_script:
     - !reference [.pkg-install, before_script]
   script:
-    - python3 -m unittest discover -s build/scripts/tests -v
+    - python3 scripts/test-integrity-guard.py
 
 xmr-e2e-gates:
+  tags: !reference [.small-runner, tags]
   rules:
     - if: '$CI_MERGE_REQUEST_EVENT_TYPE == "merge_train" && $CI_MERGE_REQUEST_TARGET_BRANCH_SHA == $CI_MERGE_REQUEST_DIFF_BASE_SHA'
       when: never
     - *rules
   stage: test
+  needs: []
   before_script:
     - !reference [.go-private-auth, before_script]
+    - !reference [.stable-mtimes, before_script]
   script:
     - make test-xmr-e2e
 
+xmr-compose-contract:
+  tags: !reference [.small-runner, tags]
+  rules:
+    - if: '$CI_MERGE_REQUEST_EVENT_TYPE == "merge_train" && $CI_MERGE_REQUEST_TARGET_BRANCH_SHA == $CI_MERGE_REQUEST_DIFF_BASE_SHA'
+      when: never
+    - *rules
+  stage: test
+  needs: []
+  image: docker:28.5.2
+  variables:
+    DOCKER_HOST: ""
+    DOCKER_TLS_CERTDIR: ""
+    DOCKER_TLS_VERIFY: ""
+    DOCKER_CERT_PATH: ""
+  before_script:
+    - apk -U add bash make python3 wget
+    - |
+      PLUGIN="$HOME/.docker/cli-plugins/docker-compose"
+      mkdir -p "$(dirname "$PLUGIN")"
+      wget -q https://github.com/docker/compose/releases/download/v2.28.1/docker-compose-linux-x86_64 -O "$PLUGIN"
+      echo "5b480d4f9e3517b375f0fbb781b39c63cec934f44b13c43b8f1d0f22bf6de8c3  $PLUGIN" | sha256sum -c -
+      chmod +x "$PLUGIN"
+  script:
+    - make test-xmr-readiness-config
+
 lint:
+  tags: !reference [.small-runner, tags]
   rules:
     - if: $CI_MERGE_REQUEST_SOURCE_PROJECT_PATH && $CI_MERGE_REQUEST_SOURCE_PROJECT_PATH != $CI_MERGE_REQUEST_PROJECT_PATH
       when: never
@@ -372,8 +707,15 @@ lint:
     - if: $CI == "true"
       when: on_success
   stage: test
-  # limit to 1 concurrent execution as shared trunk cache can cause internal error
-  resource_group: trunk-lint
+  needs: []
+  # No resource_group: concurrent runs share /trunk-cache safely once it is warm
+  # (4 at once on one cache, 4/4 clean), and scripts/trunk-ci.sh retries the
+  # tool install race a cold cache can hit. The old global lock made lint wait
+  # 25 min at p75 and 64 at p90 (2026-09-22..29), and did not prevent the trunk
+  # internal errors it was added for: all 20 that week ran with no other lint.
+  # make lint-ci checks the whole tree rather than a diff against the merge
+  # base, so the job keeps the shallow clone (the full one cost 44s at p50 and
+  # 148s at p90); lint-tokens.bash fetches develop's tip for its comparison.
   variables:
     XDG_CACHE_HOME: /trunk-cache
     PKGS: jq
@@ -384,31 +726,34 @@ lint:
     - make lint-ci
 
 proto-check-formatting:
+  tags: !reference [.small-runner, tags]
   rules: *rules
   stage: protobuf
+  needs: []
   <<: *use_dind
   before_script:
     - !reference [.wait-for-dind, before_script]
-    - apk -U add findutils make
     - !reference [.proto-builder-image, before_script]
   script:
     - make proto-format-check
 
 proto-lint:
+  tags: !reference [.small-runner, tags]
   rules: *rules
   retry: *buf_retry
   stage: protobuf
+  needs: []
   <<: *use_dind
   before_script:
     - !reference [.wait-for-dind, before_script]
-    - apk -U add make
     - !reference [.proto-builder-image, before_script]
     - !reference [.buf-egress, before_script]
   script:
     - make proto-lint
 
 proto-check-breaking:
-  # Compares this branch's protos against upstream `develop` via `buf breaking`.
+  tags: !reference [.small-runner, tags]
+  # Compare MR protos with their target branch; other runs compare with develop.
   # The long-lived deployment branches (mainnet/stagenet/chainnet) intentionally
   # lag develop's schema and will report upstream-only additions as "deletions".
   # On those branches the result is informational, not gating; on MRs and
@@ -423,10 +768,10 @@ proto-check-breaking:
       when: on_success
   retry: *buf_retry
   stage: protobuf
+  needs: []
   <<: *use_dind
   before_script:
     - !reference [.wait-for-dind, before_script]
-    - apk -U add git make
     - !reference [.proto-builder-image, before_script]
     - !reference [.buf-egress, before_script]
   script:
@@ -450,7 +795,6 @@ build-thornode:
     GO_PRIVATE_AUTH_REQUIRED: "1"
   before_script:
     - !reference [.wait-for-dind, before_script]
-    - apk -U add make git jq curl protoc
     - !reference [.go-private-auth, before_script]
     - !reference [.dind-registries, before_script]
     - make docker-gitlab-login
@@ -465,11 +809,13 @@ build-thornode:
       fi
 
 chain-evm:
+  tags: !reference [.small-runner, tags]
   rules:
     - changes:
         paths:
           - chain/evm/**/*
   stage: test
+  needs: []
   image: node:18
   script:
     - cd chain/evm/
@@ -477,6 +823,9 @@ chain-evm:
     - yarn hardhat test
 
 go-tss:
+  tags: !reference [.small-runner, tags]
+  variables:
+    PKGS: python3
   rules:
     # Keeps honest fork MRs from running with tss-lib-private credentials. It is
     # not a security boundary: a fork MR pipeline a maintainer runs in this
@@ -487,15 +836,34 @@ go-tss:
     - changes:
         paths:
           - bifrost/tss/go-tss/**/*
+          - bifrost/tss/*.go
+          - bifrost/tss/curvelock/**/*
+          - bifrost/p2p/**/*
+          - bifrost/metrics/**/*
+          - common/**/*
+          - constants/**/*
+          - crypto/**/*
+          - x/thorchain/ebifrost/**/*
+          - x/thorchain/types/**/*
           # go-tss is excluded from unit-tests (TEST_PATHS), so a tss-lib bump in
           # go.mod would otherwise run no TSS tests at all.
           - go.mod
           - go.sum
   stage: test
+  timeout: 1h
+  needs: []
   before_script:
+    - !reference [.pkg-install, before_script]
     - !reference [.go-private-auth, before_script]
+    - !reference [.stable-mtimes, before_script]
   script:
     - make test-go-tss
+  artifacts:
+    when: always
+    reports:
+      junit: test-quality-reports/root-mocknet-go-tss/junit.xml
+    paths:
+      - test-quality-reports/root-mocknet-go-tss/
 
 pages:
   rules:
@@ -510,6 +878,30 @@ pages:
       - public
   script:
     - make docs-generate
+
+# The MR widget's "View app" button. huginn's visual-review service builds a
+# review page for every open non-draft MR and publishes it to Cloudflare Pages
+# at this URL (it also keeps the link at the top of the MR description). This
+# job only records the deployment GitLab needs to show the button: no secrets,
+# no checkout. The page appears a few minutes to an hour after a new head.
+visual-review:
+  tags: !reference [.small-runner, tags]
+  stage: test
+  needs: []
+  rules:
+    - if: $CI_MERGE_REQUEST_SOURCE_PROJECT_PATH && $CI_MERGE_REQUEST_SOURCE_PROJECT_PATH != $CI_MERGE_REQUEST_PROJECT_PATH
+      when: never
+    - if: $CI_MERGE_REQUEST_IID
+  allow_failure: true
+  variables:
+    GIT_STRATEGY: none
+  environment:
+    name: review/mr-$CI_MERGE_REQUEST_IID
+    url: https://mr-$CI_MERGE_REQUEST_IID.thorchain-mr-reviews.pages.dev
+    deployment_tier: development
+    auto_stop_in: 2 weeks
+  script:
+    - echo "Visual review page at $CI_ENVIRONMENT_URL"
 
 # Copy third-party images the dind jobs pull into this project's registry,
 # registry to registry with `docker buildx imagetools`, so no dind daemon is
@@ -570,6 +962,8 @@ build-ci-tools-image:
   stage: build
   needs: []
   <<: *use_dind
+  # the plain docker image, so a broken or missing tools image can be rebuilt
+  image: docker:28.5.2
   before_script:
     - !reference [.wait-for-dind, before_script]
     - !reference [.dind-registries, before_script]
@@ -595,7 +989,6 @@ build-thorscan:
   before_script:
     - !reference [.wait-for-dind, before_script]
   script:
-    - apk -U add make
     - make thorscan-build
     - make thorscan-gitlab-push
 
@@ -607,7 +1000,6 @@ build-events:
     GO_PRIVATE_AUTH_REQUIRED: "1"
   before_script:
     - !reference [.wait-for-dind, before_script]
-    - apk -U add git make
     - !reference [.go-private-auth, before_script]
   script:
     - make events-build
@@ -616,17 +1008,24 @@ build-events:
 test-simulation:
   # Run the cluster sim in parallel by default. Override per-pipeline with a
   # PARALLELISM CI variable; capped at 12 by the sim's user-mnemonic count.
+  # The swap, refund and ragnarok stages keep every slot busy at 4 (95% in
+  # the swap stage), so 8 shortens them by about a third.
   variables:
     DOCKER_BUILDKIT: "1"
-    PARALLELISM: "4"
-    GO_PRIVATE_AUTH_REQUIRED: "1"
+    PARALLELISM: "8"
+    PKGS: python3
   rules:
     - if: '$CI_MERGE_REQUEST_EVENT_TYPE == "merge_train" && $CI_MERGE_REQUEST_TARGET_BRANCH_SHA == $CI_MERGE_REQUEST_DIFF_BASE_SHA'
       when: never
     - *rules
   timeout: 2h
+  needs: !reference [.long-test-gate, needs]
+  # One retry only. Measured over 2026-09-21..27: a second attempt rescued 24
+  # runs, a third only 5, while 46 chains failed all three attempts (~45m each)
+  # because the failure was real. The retry reuses the recorded seed, so a
+  # failure that passes on retry is still reproducible from seed.txt.
   retry:
-    max: 2
+    max: 1
     when:
       - runner_system_failure
       - runner_external_dependency_failure
@@ -638,26 +1037,68 @@ test-simulation:
       - unknown_failure
       - data_integrity_failure
       - script_failure
+    exit_codes:
+      - 75
   stage: long-test
-  <<: *use_dind
+  # The Go binaries are built here, not in the dind daemon (see
+  # test-simulation-cluster-native in the Makefile), with the runner's warm Go
+  # caches. bookworm is the build stage of build/docker/Dockerfile, so the
+  # binaries link against the glibc of the bookworm runtime they run on; the
+  # default golang:1.26.10 is trixie. The module cache is warm, so like
+  # unit-tests this only warns when no credential can read tss-lib-private.
+  image: golang:1.26.10-bookworm
+  services:
+    - docker:28.5.2-dind
   artifacts:
-    when: on_failure
+    when: always
     name: $CI_JOB_NAME-$CI_COMMIT_REF_NAME
     paths:
       - ./logs/
+      - ./test-quality-reports/simulation-run/
   environment:
     name: integration
-  # docker compose is the plugin shipped in the docker image, not a download.
   before_script:
+    - !reference [.docker-cli-apt, before_script]
     - !reference [.wait-for-dind, before_script]
-    - apk -U add git make protoc bash go jq python3
     - !reference [.go-private-auth, before_script]
     - !reference [.dind-registries, before_script]
   script:
+    # This target builds Go binaries in the job container, so it does not
+    # pull the Go builder image checked by .dind-registries. Keep using the
+    # dependency proxy for its Docker base and L1 images when that check fails.
+    - |
+      if [ -z "${DOCKER_MIRROR:-}" ] && [ -n "$CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX" ] &&
+         docker buildx imagetools inspect "${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/ubuntu:24.04" >/dev/null 2>&1; then
+        export DOCKER_MIRROR="${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/"
+      fi
     # Do not allow an inherited optional-XMR setting to bypass live coverage.
-    - make test-simulation-cluster TEST_SIMULATION_REQUIRE_XMR=1
+    - |
+      mkdir -p test-quality-reports/simulation-run
+      # Stable across job retries, distinct across pipelines. The first attempt
+      # can always be reconstructed even if GitLab replaces retry artifacts.
+      export RANDOM_SEED_HEX="${RANDOM_SEED_HEX:-$(printf '%s' "$CI_PIPELINE_ID:$CI_COMMIT_SHA:$CI_JOB_NAME" | sha256sum | cut -d' ' -f1)}"
+      printf '%s\n' "$RANDOM_SEED_HEX" > test-quality-reports/simulation-run/seed.txt
+      make test-simulation-cluster-native TEST_SIMULATION_REQUIRE_XMR=1
+  # Expensive diagnostics are collected only after a failure. The seed artifact
+  # is retained on success too, so a later flake can be reproduced.
   after_script:
-    - make test-simulation-events || true
+    - |
+      if [ "$CI_JOB_STATUS" = "success" ]; then
+        echo "test-simulation passed; skipping failure diagnostics"
+        exit 0
+      fi
+    # The events dump reads the chain from docker-thornode-1. When the job failed
+    # before the cluster started (image pull, build, startup), thorscan only adds
+    # "failed to get current height" and the job reads as a thornode outage. Print
+    # the container state instead, which shows a real crash (exit code, OOM).
+    - |
+      running=$(docker inspect -f '{{.State.Running}}' docker-thornode-1 2>/dev/null || true)
+      if [ "$running" = "true" ]; then
+        make test-simulation-events || true
+      else
+        state=$(docker inspect -f 'status={{.State.Status}} exit_code={{.State.ExitCode}} oom_killed={{.State.OOMKilled}}' docker-thornode-1 2>/dev/null) || state="never created"
+        echo "skipping the events dump: docker-thornode-1 is not running ($state); see the script output above for the failure"
+      fi
     - mkdir -p logs/xmr-debug
     - docker ps -a >./logs/ps.log 2>&1
     - |
@@ -680,6 +1121,9 @@ test-simulation:
         > logs/xmr-debug/sim-balance.txt 2>&1 || true
 
 unit-tests-race-bifrost:
+  tags: !reference [.small-runner, tags]
+  variables:
+    PKGS: python3
   rules:
     - if: '$CI_MERGE_REQUEST_EVENT_TYPE == "merge_train" && $CI_MERGE_REQUEST_TARGET_BRANCH_SHA == $CI_MERGE_REQUEST_DIFF_BASE_SHA'
       when: never
@@ -687,15 +1131,167 @@ unit-tests-race-bifrost:
   # long-test, not test: the race detector makes this a ~35m job, and running it
   # alongside unit-tests and lint on the shared runner starved both of CPU --
   # unit-tests failed on localhost "context deadline exceeded" and lint hit its
-  # 1h timeout at 3x its usual runtime.
+  # 1h timeout at 3x its usual runtime. It still waits for unit-tests, which now
+  # starts with the pipeline instead of after the protobuf stage.
   stage: long-test
+  needs:
+    - job: unit-tests
+      optional: true
+      artifacts: false
   timeout: 1h
   before_script:
+    - !reference [.pkg-install, before_script]
     - !reference [.go-private-auth, before_script]
+    - !reference [.stable-mtimes, before_script]
   script:
     - make test-race-bifrost
+  artifacts:
+    when: always
+    reports:
+      junit: test-quality-reports/root-mocknet-race-bifrost/junit.xml
+    paths:
+      - test-quality-reports/root-mocknet-race-bifrost/
+
+# Curated mutations fail when an assertion survives, an anchor changes, or a
+# baseline cannot run. The runner owns the shared build lock and time budget.
+security-mutations-fast:
+  tags: !reference [.small-runner, tags]
+  rules:
+    - if: '$CI_MERGE_REQUEST_EVENT_TYPE == "merge_train" && $CI_MERGE_REQUEST_TARGET_BRANCH_SHA == $CI_MERGE_REQUEST_DIFF_BASE_SHA'
+      when: never
+    # The observer baseline imports tss-lib-private, which fork MRs cannot fetch.
+    - if: $CI_MERGE_REQUEST_SOURCE_PROJECT_PATH && $CI_MERGE_REQUEST_SOURCE_PROJECT_PATH != $CI_MERGE_REQUEST_PROJECT_PATH
+      when: never
+    - if: '$CI_MERGE_REQUEST_IID && $CI_PIPELINE_SOURCE != "schedule"'
+      changes:
+        paths:
+          - bifrost/observer/**/*
+          - bifrost/pkg/chainclients/shared/signing/**/*
+          - common/**/*
+          - x/thorchain/types/**/*
+          - scripts/test-security-mutations*
+          - build/scripts/tests/test_security_mutations.py
+          - go.mod
+          - go.sum
+  stage: long-test
+  needs:
+    - job: unit-tests
+      optional: true
+      artifacts: false
+  timeout: 40m
+  variables:
+    PKGS: python3 util-linux
+  before_script:
+    - !reference [.pkg-install, before_script]
+    - !reference [.go-private-auth, before_script]
+  script:
+    - python3 scripts/test-security-mutations.py --mode fast --budget-seconds 1800 --summary test-quality-reports/mutations-fast.json
+  artifacts:
+    when: always
+    paths:
+      - test-quality-reports/mutations-fast.json
+
+consensus-determinism:
+  tags: !reference [.small-runner, tags]
+  rules: *rules
+  stage: long-test
+  needs:
+    - job: unit-tests
+      optional: true
+      artifacts: false
+  timeout: 25m
+  variables:
+    PKGS: util-linux
+  before_script:
+    - !reference [.pkg-install, before_script]
+    - !reference [.go-private-auth, before_script]
+    - !reference [.stable-mtimes, before_script]
+  script:
+    - mkdir -p test-quality-reports
+    - sh -c 'scripts/test-consensus-determinism.sh > test-quality-reports/consensus-determinism.log 2>&1; rc=$?; cat test-quality-reports/consensus-determinism.log; exit "$rc"'
+  artifacts:
+    when: always
+    paths:
+      - test-quality-reports/consensus-determinism.log
+
+.security-fuzz-base:
+  tags: !reference [.small-runner, tags]
+  stage: long-test
+  needs:
+    - job: unit-tests
+      optional: true
+      artifacts: false
+  variables:
+    PKGS: util-linux
+    FUZZ_CORPUS_DIR: "$CI_PROJECT_DIR/.security-fuzz-corpus"
+  # Each branch keeps its own corpus, seeded from the default branch's, so a
+  # crasher saved by one branch is never replayed on another. The fuzzer reads
+  # and writes it in the job's own checkout, not the runner host's shared build
+  # cache, so fast and deep fuzz jobs never wait on each other and every
+  # failure fails the job.
+  cache:
+    key: security-fuzz-corpus-v2-$CI_COMMIT_REF_SLUG
+    fallback_keys:
+      - security-fuzz-corpus-v2-$CI_DEFAULT_BRANCH
+    paths:
+      - .security-fuzz-corpus/
+  before_script:
+    - !reference [.pkg-install, before_script]
+    - !reference [.go-private-auth, before_script]
+    - !reference [.stable-mtimes, before_script]
+  script:
+    - mkdir -p test-quality-reports
+    - sh -c 'scripts/test-security-fuzz.sh > test-quality-reports/security-fuzz.log 2>&1; rc=$?; cat test-quality-reports/security-fuzz.log; exit "$rc"'
+  artifacts:
+    when: always
+    paths:
+      - test-quality-reports/security-fuzz.log
+      # go test -fuzz writes failing inputs under the package's testdata/fuzz;
+      # keep them so the logged rerun command has its reproducer.
+      - x/thorchain/memo/testdata/fuzz/
+      - common/testdata/fuzz/
+      - bifrost/pkg/chainclients/solana/rpc/testdata/fuzz/
+      - bifrost/p2p/messages/testdata/fuzz/
+
+security-fuzz-fast:
+  extends: .security-fuzz-base
+  rules: *rules
+  timeout: 25m
+  variables:
+    FUZZ_TIME: 1000x
+
+security-fuzz-deep:
+  extends: .security-fuzz-base
+  rules: *rules
+  timeout: 1h
+  variables:
+    FUZZ_TIME: 20s
+
+accounting-properties-deep:
+  tags: !reference [.small-runner, tags]
+  rules: *rules
+  stage: long-test
+  needs:
+    - job: unit-tests
+      optional: true
+      artifacts: false
+  timeout: 30m
+  variables:
+    PKGS: util-linux
+  before_script:
+    - !reference [.pkg-install, before_script]
+    - !reference [.go-private-auth, before_script]
+    - !reference [.stable-mtimes, before_script]
+  script:
+    - mkdir -p test-quality-reports
+    - sh -c 'scripts/test-accounting-property.sh campaign > test-quality-reports/accounting-properties-deep.log 2>&1; rc=$?; cat test-quality-reports/accounting-properties-deep.log; exit "$rc"'
+  artifacts:
+    when: always
+    paths:
+      - test-quality-reports/accounting-properties-deep.log
 
 test-regression:
+  tags: !reference [.small-runner, tags]
   rules:
     - if: '$CI_MERGE_REQUEST_EVENT_TYPE == "merge_train" && $CI_MERGE_REQUEST_TARGET_BRANCH_SHA == $CI_MERGE_REQUEST_DIFF_BASE_SHA'
       when: never
@@ -713,23 +1309,34 @@ test-regression:
       - unknown_failure
       - data_integrity_failure
       - script_failure
+    exit_codes:
+      - 75
   stage: long-test
-  <<: *use_dind
+  timeout: 2h
+  needs: !reference [.long-test-gate, needs]
+  # Runs in the job container instead of building ci/Dockerfile.regtest in an
+  # empty dind daemon, so the runner's warm /go-build-cache and /go-mod-cache
+  # replace a cold `go mod download` and a cold compile of three binaries.
+  # Each suite file gets its own home and ports (offset by file index), so
+  # PARALLELISM cannot collide. The module cache is warm, so like unit-tests
+  # this only warns when no credential can read tss-lib-private.
+  # `make test-regression` still runs the same targets in docker for local use.
   environment:
     name: integration
   variables:
-    DOCKER_BUILDKIT: "1"
     TIME_FACTOR: "2"
-    PARALLELISM: "6"
+    PARALLELISM: "10"
     FAIL_FAST: "true"
-    GO_PRIVATE_AUTH_REQUIRED: "1"
+    PKGS: jq
+    REGTEST_BIN_DIR: /tmp/regtest-bin
+    REGTEST_HOME_BASE: /tmp/regtest-home
+    REGTEST_MNT_DIR: $CI_PROJECT_DIR/test/regression/mnt
   before_script:
-    - !reference [.wait-for-dind, before_script]
-    - apk -U add make git bash
+    - !reference [.pkg-install, before_script]
     - !reference [.go-private-auth, before_script]
-    - !reference [.dind-registries, before_script]
   script:
-    - make test-regression
+    - make _build-test-regression
+    - make _test-regression UID=0 GID=0
     - |
       CHANGES=$(git status --porcelain test/regression/mnt/exports/ test/regression/mnt/blocks/)
       if [ -n "$CHANGES" ]; then
@@ -748,11 +1355,15 @@ include:
 # workflow rule set.
 
 secret_detection:
+  tags: !reference [.small-runner, tags]
   stage: test
+  needs: []
   rules: *rules
 
 semgrep:
+  tags: !reference [.small-runner, tags]
   stage: test
+  needs: []
   rules: *rules
   image: semgrep/semgrep:1.140.0
   # --error makes findings fail the job; the previous `|| true` meant this check
@@ -767,14 +1378,15 @@ semgrep:
       sast: gl-sast-report.json
 
 govulncheck:
+  tags: !reference [.small-runner, tags]
   stage: test
+  needs: []
   rules: *rules
-  # Informational until the baseline is cleared: on 2026-09-14 it reported 32
-  # reachable vulnerabilities across 18 modules. Remove allow_failure once the
-  # job is green so new reachable vulns block the pipeline.
-  allow_failure: true
+  variables:
+    PKGS: jq
   before_script:
+    - !reference [.pkg-install, before_script]
     - !reference [.go-private-auth, before_script]
   script:
-    # only reports vulnerable symbols actually reachable from this module's call graph
-    - go run golang.org/x/vuln/cmd/govulncheck@v1.1.4 -tags mocknet ./...
+    # fails on reachable vulnerable symbols not accepted in .govulncheck-ignore
+    - ./scripts/govulncheck.sh

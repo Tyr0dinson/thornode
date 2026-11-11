@@ -218,24 +218,37 @@ func (vm *ValidatorMgr) hasPendingKeygen(ctx cosmos.Context, keygenType thortype
 	}
 	readyVaults := append(append(Vaults(nil), activeVaults...), initVaults...)
 
+	// Scanning newest first, a resolved keygen of this type supersedes every
+	// older one. An older keygen's vault may have retired since, so membership
+	// can no longer resolve it, yet no result for it can matter any more.
+	// Keygens in the same block (split Asgard groups) are each still checked.
 	for height := ctx.BlockHeight(); height >= startHeight; height-- {
 		keygenBlock, err := vm.k.GetKeygenBlock(ctx, height)
 		if err != nil {
 			return false, fmt.Errorf("fail to get keygen block: %w", err)
 		}
+		superseded := false
 		for _, keygen := range keygenBlock.Keygens {
 			if keygen.Type != keygenType {
 				continue
 			}
-			// Reports remain valid through the exact retry boundary. Keep the
-			// keygen pending through that block so BeginBlock cannot schedule a
-			// replacement which overlaps a still-valid DeliverTx result.
+			if keygenResolvedByVaults(keygen, readyVaults) {
+				superseded = true
+				continue
+			}
+			// keygenResultValidityBlocks returns a window that ends one block before
+			// the next retry tick, so a keygen stops being pending exactly as its
+			// retry fires (not one tick later). handler_tss accepts results over the
+			// same window, so a result can no longer finalize a vault in the block
+			// the retry is scheduled, which stops the retry double-triggering a live
+			// keygen.
 			if ctx.BlockHeight()-height > keygenResultValidityBlocksForBlock(ctx, vm.k, keygen.Type, keygenBlock) {
 				continue
 			}
-			if !keygenResolvedByVaults(keygen, readyVaults) {
-				return true, nil
-			}
+			return true, nil
+		}
+		if superseded {
+			return false, nil
 		}
 	}
 	return false, nil
@@ -310,6 +323,16 @@ func (vm *ValidatorMgr) churnInner(ctx cosmos.Context) error {
 
 	// mark someone(s) for not signing blocks
 	if err = vm.markMissingActors(ctx); err != nil {
+		return err
+	}
+
+	// mark someone(s) for reporting a keygen chain set that would stall the rotation
+	if err = vm.markChainSetActors(ctx); err != nil {
+		return err
+	}
+
+	// mark someone(s) for missing observations on a chain
+	if err = vm.markMissingObservationActors(ctx); err != nil {
 		return err
 	}
 
@@ -581,6 +604,10 @@ func (vm *ValidatorMgr) EndBlock(ctx cosmos.Context, mgr Manager) []abci.Validat
 		na.MissingBlocks = 0 // zero missing blocks that weren't signed (if any)
 
 		vm.k.ResetNodeAccountSlashPoints(ctx, na.NodeAddress)
+		// restart the observation tally, as MissingBlocks restarts above
+		if err = vm.k.ResetObservationTally(ctx, na.NodeAddress); err != nil {
+			ctx.Logger().Error("fail to reset observation tally", "node address", na.NodeAddress, "error", err)
+		}
 		if err = vm.k.SetNodeAccount(ctx, na); err != nil {
 			ctx.Logger().Error("fail to save node account", "error", err)
 		}
@@ -624,6 +651,7 @@ func (vm *ValidatorMgr) EndBlock(ctx cosmos.Context, mgr Manager) []abci.Validat
 			},
 		)
 		nodeRemove.UpdateStatus(status, height)
+		vm.k.ClearObservationTally(ctx, nodeRemove.NodeAddress)
 		if err = vm.k.SetNodeAccount(ctx, nodeRemove); err != nil {
 			ctx.Logger().Error("fail to save node account", "error", err)
 		}
@@ -1267,7 +1295,7 @@ func (vm *ValidatorMgr) ragnarokPools(ctx cosmos.Context, nth int64, mgr Manager
 					na.NodeAddress,
 				)
 
-				handler := NewInternalHandler(mgr)
+				handler := newLuviProtocolHandler(mgr)
 				_, err = handler(ctx, withdrawMsg)
 				if err != nil {
 					ctx.Logger().Error("fail to withdraw", "liquidity provider", lp.RuneAddress, "error", err)
@@ -1444,6 +1472,107 @@ func (vm *ValidatorMgr) findBadActors(ctx cosmos.Context, minSlashPointsForBadVa
 	return badActors, nil
 }
 
+// markChainSetActors marks Active nodes for churn-out when their most recent asgard
+// keygen report omitted a chain that a pending vault of this churn cycle was then
+// created without.
+//
+// NodeAccountPreflightCheck can only hold back a churn-IN candidate. An Active member
+// never passes through it, and a vault's chain set is fixed at creation, so Active
+// members reporting without a chain can drop it from the vault they help generate (a
+// chain is kept only if two thirds of the members list it) and stall every rotation
+// attempt for as long as they stay members. Membership of the next vault IS the next
+// active set - nextVaultNodeAccounts returns one list for both - so leaving a node out
+// of the ceremony and churning it out are the same operation. There is no lighter lever.
+//
+// A node is judged only on a chain that actually stalled: one the active vaults serve
+// that a pending InitVault was created without (recordChainSetStalls). Omitting a chain
+// that still reached its supermajority stalls nothing, so a node lagging on a new chain
+// is not marked on a retry caused by something else.
+//
+// Every faulty node is marked, not a subset. Marks are cleared on every churn attempt,
+// and a node left out of a keygen cannot file a newer report, so a node marked on one
+// attempt is faulty again on the next; choosing a subset would keep choosing the same
+// nodes and never reach the rest. ChainSetChurnOutMax is instead a sanity limit: when
+// more nodes are faulty than that, none are marked, because a stall that many nodes
+// cause is a network-level event for governance, not a misconfigured node.
+//
+// The same evidence also outlasts a fix. A node that enables the chain after being left
+// out cannot show it until it is in a keygen again, so it stays out until the churn
+// completes, when the new vaults are newer than its report. That costs it the rest of
+// the cycle on standby and no slash; letting it back in to re-report would let a node
+// that is still misconfigured stall every other attempt.
+//
+// Every mark runs before nextVaultNodeAccounts in the same churnInner, which sorts these
+// nodes ahead of the other leave candidates (see chainSetLeaveFirst). Removal is still
+// subject to findCountToRemove, so no more than findMaxAbleToLeave can go at once.
+//
+// Disabled unless mimir ChainSetChurnOutMax is above 0. This ejects a validator over a
+// configuration fault, so it is armed deliberately - ideally once the preflight half has
+// shown that the recorded reports match reality.
+func (vm *ValidatorMgr) markChainSetActors(ctx cosmos.Context) error {
+	maxFaulty, err := vm.k.GetMimir(ctx, constants.MimirKeyChainSetChurnOutMax)
+	if err != nil || maxFaulty <= 0 {
+		return nil // unset or 0: skip this mark
+	}
+
+	if err = vm.recordChainSetStalls(ctx); err != nil {
+		return err
+	}
+
+	nas, err := vm.k.ListActiveValidators(ctx)
+	if err != nil {
+		return err
+	}
+	faulty, err := vm.chainSetFaultyNodes(ctx, nas)
+	if err != nil {
+		return err
+	}
+	for _, n := range faulty {
+		// Only mark an actor not already marked for churn-out.
+		if n.LeaveScore > 0 {
+			continue
+		}
+		ctx.Logger().Info("active node reported an incomplete keygen chain set",
+			"node address", n.NodeAddress.String(),
+		)
+		if err := vm.markActor(ctx, n, "for reporting an incomplete keygen chain set"); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// recordChainSetStalls records, for the current churn cycle, every chain the active
+// asgard vaults serve that a pending asgard InitVault was created without. Such a vault
+// cannot rotate in. The failed round's InitVaults are still present here: they are only
+// retired when the next keygen is scheduled, after the marks.
+func (vm *ValidatorMgr) recordChainSetStalls(ctx cosmos.Context) error {
+	required, vaultHeight, err := vm.activeVaultChains(ctx)
+	if err != nil {
+		return err
+	}
+	if len(required) == 0 {
+		return nil
+	}
+	initVaults, err := vm.k.GetAsgardVaultsByStatus(ctx, InitVault)
+	if err != nil {
+		return err
+	}
+	for _, vault := range initVaults {
+		// The XMR monovault has its own fixed chain set; see activeVaultChains.
+		if vault.HasChain(common.XMRChain) {
+			continue
+		}
+		for _, chain := range required {
+			if !vault.HasChain(chain) {
+				vm.k.SetChainSetStall(ctx, chain, vaultHeight)
+			}
+		}
+	}
+	return nil
+}
+
 // Iterate over active node accounts, finding the one that hasn't been signing blocks
 func (vm *ValidatorMgr) markMissingActors(ctx cosmos.Context) error {
 	maxMissingBlocks := vm.k.GetConfigInt64(ctx, constants.MissingBlockChurnOut)
@@ -1477,6 +1606,75 @@ func (vm *ValidatorMgr) markMissingActors(ctx cosmos.Context) error {
 			if counter >= maxChurnOut {
 				break
 			}
+		}
+	}
+
+	return nil
+}
+
+// Iterate over active node accounts, finding those that miss most of the voters on
+// a chain, worst first
+func (vm *ValidatorMgr) markMissingObservationActors(ctx cosmos.Context) error {
+	maxChurnOut := vm.k.GetConfigInt64(ctx, constants.MaxMissingObservationChurnOut)
+	if maxChurnOut <= 0 {
+		return nil // skip this mark
+	}
+	thresholdBps := vm.k.GetConfigInt64(ctx, constants.MissingObservationChurnOutBps)
+	minSamples := vm.k.GetConfigInt64(ctx, constants.MissingObservationMinSamples) * observationTallyUnit
+
+	nas, err := vm.k.ListActiveValidators(ctx)
+	if err != nil {
+		return err
+	}
+
+	type candidate struct {
+		na       NodeAccount
+		chain    common.Chain
+		ratioBps int64
+	}
+	var candidates []candidate
+	for _, na := range nas {
+		// Only mark an actor not already marked for churn-out.
+		if na.LeaveScore > 0 {
+			continue
+		}
+		tallies, err := vm.k.GetObservationTallies(ctx, na.NodeAddress)
+		if err != nil {
+			// An unreadable tally is not evidence against the node, and must not
+			// fail the churn.
+			ctx.Logger().Error("fail to get observation tallies", "node address", na.NodeAddress, "error", err)
+			continue
+		}
+		worst := candidate{na: na, ratioBps: -1}
+		for _, t := range tallies {
+			if !observationTallyFailing(t.Missed, t.Total, thresholdBps, minSamples) {
+				continue
+			}
+			ratioBps := min(t.Missed, t.Total) * 10_000 / t.Total
+			if ratioBps > worst.ratioBps {
+				worst.chain, worst.ratioBps = t.Chain, ratioBps
+			}
+		}
+		if worst.ratioBps >= 0 {
+			candidates = append(candidates, worst)
+		}
+	}
+
+	// worst ratio first; the address breaks ties so every node marks the same nodes
+	sort.SliceStable(candidates, func(i, j int) bool {
+		if candidates[i].ratioBps != candidates[j].ratioBps {
+			return candidates[i].ratioBps > candidates[j].ratioBps
+		}
+		return candidates[i].na.NodeAddress.String() < candidates[j].na.NodeAddress.String()
+	})
+
+	for i, c := range candidates {
+		if int64(i) >= maxChurnOut {
+			break
+		}
+		ctx.Logger().Info("node missing observations", "node address", c.na.NodeAddress, "chain", c.chain, "missed bps", c.ratioBps)
+		if err := vm.markActor(ctx, c.na, "for missing observations"); err != nil {
+			return err
 		}
 	}
 
@@ -1532,8 +1730,8 @@ func (vm *ValidatorMgr) findLowBondActor(ctx cosmos.Context) (NodeAccount, error
 func (vm *ValidatorMgr) markActor(ctx cosmos.Context, na NodeAccount, reason string) error {
 	if !na.IsEmpty() && na.LeaveScore == 0 {
 		ctx.Logger().Info("marked Validator to be churned out", "node address", na.NodeAddress, "reason", reason)
-		// reason is always one of five compile-time string literals at the five
-		// markActor call sites in this file, so label cardinality is fixed at 5.
+		// reason is always one of seven compile-time string literals at the seven
+		// markActor call sites in this file, so label cardinality is fixed at 7.
 		telemetry.IncrCounterWithLabels(
 			[]string{"thornode", "churn", "node_marked"},
 			float32(1),
@@ -1782,26 +1980,34 @@ func (vm *ValidatorMgr) keygenChainSetCheck(ctx cosmos.Context, na NodeAccount) 
 		return nil
 	}
 
-	reportHeight, declared, err := vm.k.GetLastKeygenChains(ctx, na.NodeAddress)
+	required, vaultHeight, err := vm.activeVaultChains(ctx)
 	if err != nil {
-		// An unreadable record is not evidence of a missing chain. Leave the node's
+		// An unreadable input is not evidence of a missing chain. Leave the node's
 		// readiness to the other checks rather than holding back the whole Ready set on
 		// a store error.
-		ctx.Logger().Error("fail to get last keygen chains", "error", err, "node address", na.NodeAddress.String())
-		return nil
-	}
-	if reportHeight == 0 {
-		return nil
-	}
-
-	vaults, err := vm.k.GetAsgardVaultsByStatus(ctx, ActiveVault)
-	if err != nil {
 		ctx.Logger().Error("fail to get active asgard vaults", "error", err)
 		return nil
 	}
 
+	missing, reportHeight := vm.missingKeygenChain(ctx, na, required, vaultHeight)
+	if missing.IsEmpty() {
+		return nil
+	}
+
+	return fmt.Errorf("node account keygen report at height %d omitted chain %s served by the active vaults", reportHeight, missing)
+}
+
+// activeVaultChains returns the chains the active asgard vaults serve, and the creation
+// height of the newest of them. XMR vaults are excluded from both, and chains being
+// retired from the chain set (see chainRetiring).
+func (vm *ValidatorMgr) activeVaultChains(ctx cosmos.Context) (common.Chains, int64, error) {
+	vaults, err := vm.k.GetAsgardVaultsByStatus(ctx, ActiveVault)
+	if err != nil {
+		return nil, 0, err
+	}
+
 	var vaultHeight int64
-	required := make(common.Chains, 0)
+	chains := make(common.Chains, 0)
 	for _, vault := range vaults {
 		// The XMR monovault keygen reports its own fixed chain set
 		// (Signer.keygenChainsForType), so an asgard report never carries XMR and its
@@ -1817,23 +2023,40 @@ func (vm *ValidatorMgr) keygenChainSetCheck(ctx cosmos.Context, na NodeAccount) 
 			vaultHeight = vault.BlockHeight
 		}
 		for _, chain := range vault.GetChains() {
-			if required.Has(chain) || vm.chainRetiring(ctx, chain) {
+			if chains.Has(chain) || vm.chainRetiring(ctx, chain) {
 				continue
 			}
-			required = append(required, chain)
+			chains = append(chains, chain)
 		}
 	}
-	if reportHeight < vaultHeight {
-		return nil
+
+	return chains, vaultHeight, nil
+}
+
+// missingKeygenChain returns the first of the required chains that a node's most recent
+// asgard keygen report omitted, with that report's keygen height.
+//
+// It returns EmptyChain whenever there is nothing to judge: an unreadable record, no
+// report on record at all, a report older than the active vaults, or a complete report.
+// See keygenChainSetCheck for why the report-age bound is what stops any of this from
+// locking a node out.
+func (vm *ValidatorMgr) missingKeygenChain(ctx cosmos.Context, na NodeAccount, required common.Chains, vaultHeight int64) (common.Chain, int64) {
+	reportHeight, declared, err := vm.k.GetLastKeygenChains(ctx, na.NodeAddress)
+	if err != nil {
+		ctx.Logger().Error("fail to get last keygen chains", "error", err, "node address", na.NodeAddress.String())
+		return common.EmptyChain, 0
+	}
+	if reportHeight == 0 || reportHeight < vaultHeight {
+		return common.EmptyChain, reportHeight
 	}
 
 	for _, chain := range required {
 		if !declared.Has(chain) {
-			return fmt.Errorf("node account keygen report at height %d omitted chain %s served by the active vaults", reportHeight, chain)
+			return chain, reportHeight
 		}
 	}
 
-	return nil
+	return common.EmptyChain, reportHeight
 }
 
 // chainRetiring reports whether a chain is being retired, signalled on chain by the
@@ -1885,12 +2108,18 @@ func (vm *ValidatorMgr) nextVaultNodeAccounts(ctx cosmos.Context, targetCount in
 		}
 	}
 
+	chainSetFirst := vm.chainSetLeaveFirst(ctx, active)
+
 	// sort by LeaveScore ascending
-	// giving preferential treatment to people who are forced to leave
-	//  and then requested to leave
+	// giving preferential treatment to people who are forced to leave,
+	//  then those who would stall the keygen on their chain set, then requested to leave
 	sort.SliceStable(active, func(i, j int) bool {
 		if active[i].ForcedToLeave != active[j].ForcedToLeave {
 			return active[i].ForcedToLeave
+		}
+		fi, fj := chainSetFirst[active[i].NodeAddress.String()], chainSetFirst[active[j].NodeAddress.String()]
+		if fi != fj {
+			return fi
 		}
 		if active[i].RequestedToLeave != active[j].RequestedToLeave {
 			return active[i].RequestedToLeave
@@ -1941,6 +2170,111 @@ func (vm *ValidatorMgr) nextVaultNodeAccounts(ctx cosmos.Context, targetCount in
 	}
 
 	return active, rotation, nil
+}
+
+// chainSetFaultyNodes returns, in node-address order, the given Active nodes whose most
+// recent asgard keygen report in this churn cycle omitted a chain that stalled a
+// rotation in this cycle (recordChainSetStalls). It returns none when the mark is off,
+// and none when more nodes are faulty than ChainSetChurnOutMax (see markChainSetActors).
+func (vm *ValidatorMgr) chainSetFaultyNodes(ctx cosmos.Context, active NodeAccounts) (NodeAccounts, error) {
+	maxFaulty, err := vm.k.GetMimir(ctx, constants.MimirKeyChainSetChurnOutMax)
+	if err != nil || maxFaulty <= 0 {
+		return nil, nil
+	}
+	required, vaultHeight, err := vm.activeVaultChains(ctx)
+	if err != nil {
+		return nil, err
+	}
+	stalls, err := vm.k.GetChainSetStalls(ctx, vaultHeight)
+	if err != nil {
+		return nil, err
+	}
+	// A stalled chain that is no longer required (now under RAGNAROK) no longer counts.
+	stalled := make(common.Chains, 0, len(stalls))
+	for _, chain := range stalls {
+		if required.Has(chain) {
+			stalled = append(stalled, chain)
+		}
+	}
+	if len(stalled) == 0 {
+		return nil, nil
+	}
+
+	sorted := make(NodeAccounts, len(active))
+	copy(sorted, active)
+	sort.SliceStable(sorted, func(i, j int) bool {
+		return sorted[i].NodeAddress.String() < sorted[j].NodeAddress.String()
+	})
+	var faulty NodeAccounts
+	for _, na := range sorted {
+		if missing, _ := vm.missingKeygenChain(ctx, na, stalled, vaultHeight); !missing.IsEmpty() {
+			faulty = append(faulty, na)
+		}
+	}
+	if int64(len(faulty)) > maxFaulty {
+		ctx.Logger().Info("more nodes reported an incomplete keygen chain set than ChainSetChurnOutMax, marking none",
+			"faulty", len(faulty),
+			"limit", maxFaulty,
+		)
+		return nil, nil
+	}
+	return faulty, nil
+}
+
+// chainSetLeaveFirst returns, keyed by node address, the chain-set-faulty nodes that
+// nextVaultNodeAccounts sorts right after ForcedToLeave and ahead of RequestedToLeave and
+// the LeaveScore order. LeaveScore alone would not remove them: it is recomputed from
+// slash points, and a node whose only fault is its chain config is typically clean, so
+// it would leave last among the marked nodes and keep stalling the keygen. They also go
+// ahead of a voluntary leaver, who would otherwise take the slot and then never leave,
+// because no vault completes while they stay.
+//
+// When they would take every removal slot that ForcedToLeave leaves free while another
+// node is also waiting to leave, the last slot is left to the ordinary order, so an
+// offline or bad-actor node, which would fail the keygen too, can still go. With a
+// single free slot they keep it. With none (four or fewer Active nodes, where
+// findCountToRemove only lets a forced or requested leaver go) the ordinary order is
+// left untouched, so a faulty node cannot block a voluntary leaver there. Faulty nodes
+// past the limit stay marked and compete on LeaveScore. Callers only look entries up,
+// never range over the map.
+func (vm *ValidatorMgr) chainSetLeaveFirst(ctx cosmos.Context, active NodeAccounts) map[string]bool {
+	first := make(map[string]bool)
+	faulty, err := vm.chainSetFaultyNodes(ctx, active)
+	if err != nil {
+		// An unreadable record is not evidence: leave the ordinary churn order alone.
+		ctx.Logger().Error("fail to get chain-set-faulty nodes", "error", err)
+		return first
+	}
+	if len(faulty) == 0 {
+		return first
+	}
+	isFaulty := make(map[string]bool, len(faulty))
+	for _, na := range faulty {
+		isFaulty[na.NodeAddress.String()] = true
+	}
+	forced, othersWaiting := 0, false
+	for _, na := range active {
+		switch {
+		case na.ForcedToLeave:
+			forced++
+		case isFaulty[na.NodeAddress.String()]:
+		case na.RequestedToLeave || na.LeaveScore > 0:
+			othersWaiting = true
+		}
+	}
+
+	free := findMaxAbleToLeave(len(active)) - forced
+	if free <= 0 {
+		return first
+	}
+	limit := len(faulty)
+	if free > 1 && limit >= free && othersWaiting {
+		limit = free - 1
+	}
+	for _, na := range faulty[:limit] {
+		first[na.NodeAddress.String()] = true
+	}
+	return first
 }
 
 func (vm *ValidatorMgr) regularVaultMembershipNeedsKeygen(ctx cosmos.Context, active NodeAccounts) (bool, error) {

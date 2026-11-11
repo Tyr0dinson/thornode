@@ -301,6 +301,12 @@ func (k KVStoreDummy) GetPoolLUVI(ctx cosmos.Context, asset common.Asset) (cosmo
 	return cosmos.ZeroUint(), kaboom
 }
 
+func (k KVStoreDummy) GetPoolLuviAccumulator(ctx cosmos.Context, asset common.Asset) (types.PoolLuvi, bool, error) {
+	return types.PoolLuvi{}, false, kaboom
+}
+func (k KVStoreDummy) SetPoolLuviAccumulator(ctx cosmos.Context, record types.PoolLuvi) {}
+func (k KVStoreDummy) RemovePoolLuviAccumulator(ctx cosmos.Context, asset common.Asset) {}
+
 func (k KVStoreDummy) GetStreamingSwapIterator(ctx cosmos.Context) cosmos.Iterator { return nil }
 func (k KVStoreDummy) SetStreamingSwap(ctx cosmos.Context, _ StreamingSwap)        {}
 func (k KVStoreDummy) GetStreamingSwap(ctx cosmos.Context, _ common.TxID) (StreamingSwap, error) {
@@ -332,6 +338,14 @@ func (k KVStoreDummy) ListValidatorsByStatus(_ cosmos.Context, _ NodeStatus) (No
 }
 
 func (k KVStoreDummy) ListActiveValidators(_ cosmos.Context) (NodeAccounts, error) {
+	return nil, kaboom
+}
+
+func (k KVStoreDummy) CountActiveValidators(_ cosmos.Context) (int, error) {
+	return 0, kaboom
+}
+
+func (k KVStoreDummy) ListActiveValidatorsUpTo(_ cosmos.Context, _ int) (NodeAccounts, error) {
 	return nil, kaboom
 }
 
@@ -390,6 +404,38 @@ func (k KVStoreDummy) DeductNativeTxFeeFromBond(ctx cosmos.Context, nodeAddr cos
 	return kaboom
 }
 
+func (k KVStoreDummy) GetNodeBlameRecord(ctx cosmos.Context, addr cosmos.AccAddress) (types.NodeBlameRecord, error) {
+	return types.NodeBlameRecord{}, kaboom
+}
+
+func (k KVStoreDummy) SetNodeBlameRecord(ctx cosmos.Context, record types.NodeBlameRecord) error {
+	return kaboom
+}
+
+func (k KVStoreDummy) IncrementKeygenBlame(ctx cosmos.Context, addr cosmos.AccAddress) error {
+	return kaboom
+}
+
+func (k KVStoreDummy) IncrementKeysignBlame(ctx cosmos.Context, addr cosmos.AccAddress) error {
+	return kaboom
+}
+
+func (k KVStoreDummy) CalculateKeygenPenaltyMultiplier(ctx cosmos.Context, addr cosmos.AccAddress) (int64, error) {
+	return 1, kaboom
+}
+
+func (k KVStoreDummy) GetNodeBlameIterator(ctx cosmos.Context) cosmos.Iterator {
+	return nil
+}
+
+func (k KVStoreDummy) ResetSinceChurnCountersForMembers(ctx cosmos.Context, members []cosmos.AccAddress) error {
+	return kaboom
+}
+
+func (k KVStoreDummy) ResetAllSinceChurnCounters(ctx cosmos.Context) error {
+	return kaboom
+}
+
 func (k KVStoreDummy) GetObservingAddresses(_ cosmos.Context) ([]cosmos.AccAddress, error) {
 	return nil, kaboom
 }
@@ -426,6 +472,12 @@ func (k KVStoreDummy) SetLastKeygenChains(_ cosmos.Context, _ cosmos.AccAddress,
 
 func (k KVStoreDummy) GetLastKeygenChains(_ cosmos.Context, _ cosmos.AccAddress) (int64, common.Chains, error) {
 	return 0, nil, kaboom
+}
+
+func (k KVStoreDummy) SetChainSetStall(_ cosmos.Context, _ common.Chain, _ int64) {}
+
+func (k KVStoreDummy) GetChainSetStalls(_ cosmos.Context, _ int64) (common.Chains, error) {
+	return nil, kaboom
 }
 
 func (k KVStoreDummy) GetKeygenBlock(_ cosmos.Context, _ int64) (KeygenBlock, error) {
@@ -640,9 +692,15 @@ func (k KVStoreDummy) AdvSwapQueueEnabled(ctx cosmos.Context) bool {
 	return false
 }
 
-func (k KVStoreDummy) SetAdvSwapQueueItem(ctx cosmos.Context, msg MsgSwap) error      { return kaboom }
+func (k KVStoreDummy) SetAdvSwapQueueItem(ctx cosmos.Context, msg MsgSwap) error { return kaboom }
+
+func (k KVStoreDummy) SetAdvSwapQueueItemState(ctx cosmos.Context, msg MsgSwap) error { return kaboom }
 func (k KVStoreDummy) GetAdvSwapQueueItemIterator(ctx cosmos.Context) cosmos.Iterator { return nil }
 func (k KVStoreDummy) RemoveAdvSwapQueueItem(ctx cosmos.Context, _ common.TxID, _ int) error {
+	return kaboom
+}
+
+func (k KVStoreDummy) RemoveAdvSwapQueueItemMsg(ctx cosmos.Context, _ MsgSwap) error {
 	return kaboom
 }
 
@@ -655,6 +713,10 @@ func (k KVStoreDummy) HasAdvSwapQueueItem(ctx cosmos.Context, txID common.TxID, 
 }
 
 func (k KVStoreDummy) GetAdvSwapQueueIndexIterator(_ cosmos.Context, _ types.SwapType, _, _ common.Asset) cosmos.Iterator {
+	return nil
+}
+
+func (k KVStoreDummy) GetAdvSwapQueueLimitIndexIterator(ctx cosmos.Context) cosmos.Iterator {
 	return nil
 }
 
@@ -814,6 +876,47 @@ func (k KVStoreDummy) GetLastObserveHeight(ctx cosmos.Context, address cosmos.Ac
 	return nil, kaboom
 }
 
+func (k KVStoreDummy) QueueObservationTally(_ cosmos.Context, _ kvTypes.ObservationTallyEntry) {}
+
+func (k KVStoreDummy) PopObservationTallies(_ cosmos.Context, _ int64) ([]kvTypes.ObservationTallyEntry, error) {
+	return nil, kaboom
+}
+
+func (k KVStoreDummy) AddObservationTally(_ cosmos.Context, _ common.Chain, _ int64, _, _ []cosmos.AccAddress) {
+}
+
+func (k KVStoreDummy) GetObservationTally(_ cosmos.Context, _ cosmos.AccAddress, _ common.Chain) (int64, int64, error) {
+	return 0, 0, kaboom
+}
+
+func (k KVStoreDummy) GetObservationTallies(_ cosmos.Context, _ cosmos.AccAddress) ([]kvTypes.ObservationTally, error) {
+	return nil, kaboom
+}
+
+func (k KVStoreDummy) ResetObservationTally(_ cosmos.Context, _ cosmos.AccAddress) error {
+	return kaboom
+}
+
+func (k KVStoreDummy) ClearObservationTally(_ cosmos.Context, _ cosmos.AccAddress) {}
+
+func (k KVStoreDummy) HalveObservationTallies(_ cosmos.Context) error { return kaboom }
+
+func (k KVStoreDummy) GetObservationGuardSince(_ cosmos.Context, _ common.Chain) (int64, error) {
+	return 0, kaboom
+}
+
+func (k KVStoreDummy) SetObservationGuardSince(_ cosmos.Context, _ common.Chain, _ int64) {}
+
+func (k KVStoreDummy) GetObservationGuardChains(_ cosmos.Context) (common.Chains, error) {
+	return nil, kaboom
+}
+
+func (k KVStoreDummy) GetObservationGuardFullAt(_ cosmos.Context, _ common.Chain) (int64, error) {
+	return 0, kaboom
+}
+
+func (k KVStoreDummy) SetObservationGuardFullAt(_ cosmos.Context, _ common.Chain, _ int64) {}
+
 func (k KVStoreDummy) SetTssKeygenMetric(_ cosmos.Context, metric *TssKeygenMetric) {
 }
 
@@ -846,6 +949,13 @@ func (k KVStoreDummy) GetChainContracts(ctx cosmos.Context, chains common.Chains
 func (k KVStoreDummy) SetSolvencyVoter(_ cosmos.Context, _ SolvencyVoter) {}
 func (k KVStoreDummy) GetSolvencyVoter(_ cosmos.Context, _ common.TxID, _ common.Chain) (SolvencyVoter, error) {
 	return SolvencyVoter{}, kaboom
+}
+
+func (k KVStoreDummy) GetSolvencyVoterQuota(_ cosmos.Context, _ common.Chain, _ cosmos.AccAddress) (uint64, uint64, error) {
+	return 0, 0, kaboom
+}
+
+func (k KVStoreDummy) SetSolvencyVoterQuota(_ cosmos.Context, _ common.Chain, _ cosmos.AccAddress, _, _ uint64) {
 }
 
 func (k KVStoreDummy) THORNameExists(ctx cosmos.Context, _ string) bool { return false }

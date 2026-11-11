@@ -261,17 +261,20 @@ var (
 	NewMsgTCYClaim                 = types.NewMsgTCYClaim
 	NewMsgTCYStake                 = types.NewMsgTCYStake
 	NewMsgTCYUnstake               = types.NewMsgTCYUnstake
+	NewNodeBlameRecord             = types.NewNodeBlameRecord
 
 	// Memo
-	ParseMemo              = mem.ParseMemo
-	ParseMemoWithTHORNames = mem.ParseMemoWithTHORNames
-	StringToTxType         = mem.StringToTxType
-	FetchAddress           = mem.FetchAddress
-	NewRefundMemo          = mem.NewRefundMemo
-	NewOutboundMemo        = mem.NewOutboundMemo
-	NewRagnarokMemo        = mem.NewRagnarokMemo
-	NewMigrateMemo         = mem.NewMigrateMemo
-	NewReferenceReadMemo   = mem.NewReferenceReadMemo
+	ParseMemo                    = mem.ParseMemo
+	ParseMemoWithTHORNames       = mem.ParseMemoWithTHORNames
+	ParseMemoWithTHORNamesCached = mem.ParseMemoWithTHORNamesCached
+	WithMemoCache                = mem.WithMemoCache
+	StringToTxType               = mem.StringToTxType
+	FetchAddress                 = mem.FetchAddress
+	NewRefundMemo                = mem.NewRefundMemo
+	NewOutboundMemo              = mem.NewOutboundMemo
+	NewRagnarokMemo              = mem.NewRagnarokMemo
+	NewMigrateMemo               = mem.NewMigrateMemo
+	NewReferenceReadMemo         = mem.NewReferenceReadMemo
 
 	FetchDexAggregator         = aggregators.FetchDexAggregator
 	FetchDexAggregatorGasLimit = aggregators.FetchDexAggregatorGasLimit
@@ -410,6 +413,7 @@ type (
 	TCYStaker                = types.TCYStaker
 	VolumeBucket             = types.VolumeBucket
 	ContractInfo             = types.ContractInfo
+	NodeBlameRecord          = types.NodeBlameRecord
 
 	// Memo
 	SwapMemo                   = mem.SwapMemo

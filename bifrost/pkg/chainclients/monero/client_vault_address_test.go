@@ -31,6 +31,7 @@ type mockMoneroBridge struct {
 	spentRefsFreshFunc  func(context.Context, common.PubKey) ([]*common.OutputRef, error)
 	pubKeys             []thorclient.PubKeyContractAddressPair
 	pubKeysErr          error
+	mimirValues         map[string]int64
 	keysignPolicy       thorclient.KeysignPolicy
 	keysignPolicyErr    error
 }
@@ -109,6 +110,13 @@ func (m *mockMoneroBridge) GetXMRSpentOutputRefsUncached(ctx context.Context, va
 		return nil, err
 	}
 	return m.GetXMRSpentOutputRefs(vaultPubKey)
+}
+
+func (m *mockMoneroBridge) GetMimir(key string) (int64, error) {
+	if value, ok := m.mimirValues[key]; ok {
+		return value, nil
+	}
+	return -1, nil
 }
 
 // GetKeysignPolicy returns the injected policy so vault membership tests can

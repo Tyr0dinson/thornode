@@ -48,6 +48,22 @@ const (
 	ErrataTombstoneKeyPrefix  = "errata-tombstone-v1:"
 )
 
+// admitXMRObservation reads durable admission without acquiring observer,
+// gossip, state or batch locks. Callers serialize their own local mutation
+// against cleanup, which persists the tombstone before purging volatile state.
+func (s *ObserverStorage) admitXMRObservation(tx common.ObservedTx) (bool, error) {
+	if s == nil || s.db == nil {
+		return false, errors.New("errata storage is not ready")
+	}
+	tombstone, err := s.getErrataTombstone(tx.Tx.Chain, tx.Tx.ID.String())
+	if err != nil {
+		return false, err
+	}
+	// Gossip admission and validated batch enqueue must use the original mined
+	// location, not the observation height rewritten during finalization.
+	return tombstone == nil || !tombstone.blocksObservedTx(tx), nil
+}
+
 type persistedErrata struct {
 	Height                    int64          `json:"height"`
 	DeliveryID                string         `json:"delivery_id,omitempty"`
@@ -73,34 +89,69 @@ type errataCleanupMutation struct {
 }
 
 type errataTombstone struct {
-	Chain             common.Chain `json:"chain"`
-	TxID              common.TxID  `json:"tx_id"`
-	OrphanHeight      int64        `json:"orphan_height"`
-	OrphanHeights     []int64      `json:"orphan_heights,omitempty"`
-	Generation        uint64       `json:"generation"`
-	Committed         bool         `json:"committed"`
-	VoterReverted     *bool        `json:"voter_reverted,omitempty"`
-	VerifyAfterHeight int64        `json:"verify_after_height,omitempty"`
+	Chain             common.Chain           `json:"chain"`
+	TxID              common.TxID            `json:"tx_id"`
+	OrphanHeight      int64                  `json:"orphan_height"`
+	OrphanHeights     []int64                `json:"orphan_heights,omitempty"`
+	Generation        uint64                 `json:"generation"`
+	Committed         bool                   `json:"committed"`
+	Outcome           common.ErrataTxOutcome `json:"outcome,omitempty"`
+	VoterReverted     *bool                  `json:"voter_reverted,omitempty"`
+	VerifyAfterHeight int64                  `json:"verify_after_height,omitempty"`
 }
 
-// isPermanentlyReverted reports the only state which may quarantine a TxID at
-// every height. Older tombstone JSON has no voter_reverted field and therefore
-// decodes to nil rather than being mistaken for an explicit THORChain result.
+// isPermanentlyReverted records completed local quarantine. Older receipts have
+// no voter_reverted field; nil still requires reconciliation.
 func (t errataTombstone) isPermanentlyReverted() bool {
 	return t.Chain.Equals(common.XMRChain) && t.VoterReverted != nil && *t.VoterReverted
 }
 
-// blocksHeight keeps ordinary errata barriers scoped to the exact orphaned
-// location. Only an explicit XMR ObservedTxVoter.Reverted result is a permanent
-// TxID-wide terminal.
-func (t errataTombstone) blocksHeight(height int64) bool {
-	if t.isPermanentlyReverted() {
+// hasCommittedRevertedOutcome blocks admission while local quarantine retries.
+func (t errataTombstone) hasCommittedRevertedOutcome() bool {
+	return t.Chain.Equals(common.XMRChain) && t.Committed &&
+		t.Outcome == common.ErrataTxOutcome_ERRATA_TX_OUTCOME_REVERTED
+}
+
+// blocksMinedHeight keeps ordinary errata barriers scoped to the exact orphaned
+// location, except a known XMR reversal, even before local completion.
+func (t errataTombstone) blocksMinedHeight(height int64) bool {
+	if t.isPermanentlyReverted() || t.hasCommittedRevertedOutcome() {
 		return true
 	}
 	if t.OrphanHeight > 0 && height == t.OrphanHeight {
 		return true
 	}
 	return slices.Contains(t.OrphanHeights, height)
+}
+
+// blocksObservedTx fails closed when an observation cannot establish its
+// mining location. Permanent reversal is TxID-wide and needs no location.
+func (t errataTombstone) blocksObservedTx(tx common.ObservedTx) bool {
+	if t.isPermanentlyReverted() {
+		return true
+	}
+	height, err := tx.CanonicalMinedHeight()
+	return err != nil || t.blocksMinedHeight(height)
+}
+
+// canonicalTxInMinedHeight reads the scanner-owned location before finalization
+// rewrites the observation height. Mempool/future XMR items are not mined yet.
+func canonicalTxInMinedHeight(txIn *types.TxIn, item *types.TxInItem) (int64, bool) {
+	if txIn == nil || item == nil || item.BlockHeight <= 0 {
+		return 0, false
+	}
+	if txIn.Chain.UsesHeightScopedErrata() && (txIn.MemPool || txIn.AllowFutureObservation) {
+		return 0, false
+	}
+	return item.BlockHeight, true
+}
+
+func (t errataTombstone) blocksTxInItem(txIn *types.TxIn, item *types.TxInItem) bool {
+	if !txIn.Chain.UsesHeightScopedErrata() {
+		return t.blocksMinedHeight(item.BlockHeight)
+	}
+	height, ok := canonicalTxInMinedHeight(txIn, item)
+	return !ok || t.blocksMinedHeight(height)
 }
 
 func appendUniqueErrataHeight(heights []int64, height int64) []int64 {
@@ -115,9 +166,13 @@ type errataDeckMutation struct {
 	txIn *types.TxIn // nil deletes the exact original deck key
 }
 
+// openObserverLevelDB opens the observer database. Tests replace it with an
+// opener that skips fsync, which no in-process test can observe.
+var openObserverLevelDB = db.NewLevelDB
+
 // NewObserverStorage create a new instance of LevelDBScannerStorage
 func NewObserverStorage(path string, opts config.LevelDBOptions) (*ObserverStorage, error) {
-	ldb, err := db.NewLevelDB(path, opts)
+	ldb, err := openObserverLevelDB(path, opts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create observer storage: %w", err)
 	}
@@ -181,6 +236,21 @@ func validateErrataTombstone(tombstone errataTombstone) error {
 	if !tombstone.Committed && (tombstone.VoterReverted != nil || tombstone.VerifyAfterHeight != 0) {
 		return errors.New("uncommitted observer errata tombstone has a voter result")
 	}
+	switch tombstone.Outcome {
+	case common.ErrataTxOutcome_ERRATA_TX_OUTCOME_UNSPECIFIED:
+	case common.ErrataTxOutcome_ERRATA_TX_OUTCOME_REVERTED:
+		if !tombstone.Committed || !tombstone.Chain.RequiresTerminalErrataOutcome() ||
+			tombstone.VerifyAfterHeight != 0 || (tombstone.VoterReverted != nil && !*tombstone.VoterReverted) {
+			return errors.New("observer errata reverted outcome is invalid")
+		}
+	case common.ErrataTxOutcome_ERRATA_TX_OUTCOME_NO_APPLICABLE_OBSERVATION:
+		if !tombstone.Committed || !tombstone.Chain.RequiresTerminalErrataOutcome() ||
+			tombstone.VoterReverted == nil || *tombstone.VoterReverted {
+			return errors.New("observer errata no-applicable-observation outcome is invalid")
+		}
+	default:
+		return errors.New("observer errata tombstone has an unknown outcome")
+	}
 	if tombstone.VerifyAfterHeight != 0 && !tombstone.Chain.Equals(common.XMRChain) {
 		return errors.New("non-XMR observer errata has a verification height")
 	}
@@ -197,6 +267,7 @@ type errataTombstoneUpdate struct {
 	completeOutbox    bool
 	verifyAfterHeight int64
 	voterReverted     *bool
+	outcome           common.ErrataTxOutcome
 	recordDelivery    bool
 }
 
@@ -219,6 +290,8 @@ func (s *ObserverStorage) applyLegacyErrata(
 	block types.ErrataBlock,
 	mutations []errataDeckMutation,
 ) error {
+	s.errataMu.Lock()
+	defer s.errataMu.Unlock()
 	return s.applyErrataBatch(block, errataTombstoneUpdate{}, mutations)
 }
 
@@ -232,11 +305,15 @@ func (s *ObserverStorage) applyCommittedErrata(
 	if errata.Chain.IsEmpty() || errata.Id.IsEmpty() {
 		return errors.New("committed observer errata is invalid")
 	}
+	s.errataMu.Lock()
+	defer s.errataMu.Unlock()
 	return s.applyErrataBatch(types.ErrataBlock{
 		Txs: []types.ErrataTx{{Chain: errata.Chain, TxID: errata.Id}},
 	}, errataTombstoneUpdate{forceCommitted: true}, mutations)
 }
 
+// applyErrataBatch requires errataMu for the entire read-modify-write batch,
+// including legacy receipt updates that can overlap terminal outcome writes.
 func (s *ObserverStorage) applyErrataBatch(
 	block types.ErrataBlock,
 	update errataTombstoneUpdate,
@@ -275,7 +352,7 @@ func (s *ObserverStorage) applyErrataBatch(
 		} else if existing != nil {
 			hadLocalDelivery = existing.OrphanHeight > 0 || len(existing.OrphanHeights) > 0
 			tombstone = *existing
-			if block.Height <= 0 || tombstone.blocksHeight(block.Height) {
+			if block.Height <= 0 || tombstone.blocksMinedHeight(block.Height) {
 				// The scanner can crash after this batch is fsynced but before it
 				// consumes OnStored. Its restart replay is the same handoff, not a
 				// new generation: preserve a committed receipt so an already-final
@@ -295,8 +372,23 @@ func (s *ObserverStorage) applyErrataBatch(
 		}
 		if update.forceCommitted {
 			tombstone.Committed = true
-			if tombstone.VoterReverted == nil && tombstone.VerifyAfterHeight == 0 {
+			if tombstone.Outcome == common.ErrataTxOutcome_ERRATA_TX_OUTCOME_UNSPECIFIED && tombstone.VoterReverted == nil && tombstone.VerifyAfterHeight == 0 {
 				tombstone.VerifyAfterHeight = update.verifyAfterHeight
+			}
+		}
+		if update.outcome != common.ErrataTxOutcome_ERRATA_TX_OUTCOME_UNSPECIFIED {
+			if tombstone.Outcome != common.ErrataTxOutcome_ERRATA_TX_OUTCOME_UNSPECIFIED && tombstone.Outcome != update.outcome {
+				return fmt.Errorf("observer errata outcome conflicts for %s", tx.TxID)
+			}
+			if tombstone.VoterReverted != nil && *tombstone.VoterReverted != (update.outcome == common.ErrataTxOutcome_ERRATA_TX_OUTCOME_REVERTED) {
+				return fmt.Errorf("observer errata voter result conflicts for %s", tx.TxID)
+			}
+			tombstone.Committed = true
+			tombstone.Outcome = update.outcome
+			tombstone.VerifyAfterHeight = 0
+			if update.outcome == common.ErrataTxOutcome_ERRATA_TX_OUTCOME_NO_APPLICABLE_OBSERVATION {
+				result := false
+				tombstone.VoterReverted = &result
 			}
 		}
 		if update.voterReverted != nil {
@@ -304,6 +396,14 @@ func (s *ObserverStorage) applyErrataBatch(
 				return fmt.Errorf("observer errata voter result conflicts for %s", tx.TxID)
 			}
 			result := *update.voterReverted
+			outcome := common.ErrataTxOutcome_ERRATA_TX_OUTCOME_NO_APPLICABLE_OBSERVATION
+			if result {
+				outcome = common.ErrataTxOutcome_ERRATA_TX_OUTCOME_REVERTED
+			}
+			if tombstone.Outcome != common.ErrataTxOutcome_ERRATA_TX_OUTCOME_UNSPECIFIED && tombstone.Outcome != outcome {
+				return fmt.Errorf("observer errata outcome conflicts for %s", tx.TxID)
+			}
+			tombstone.Outcome = outcome
 			tombstone.Committed = true
 			tombstone.VoterReverted = &result
 			tombstone.VerifyAfterHeight = 0
@@ -502,7 +602,7 @@ func (s *ObserverStorage) filterTombstonedOnDeck(txIns []*types.TxIn) ([]*types.
 			if err != nil {
 				return nil, err
 			}
-			if tombstone != nil && tombstone.blocksHeight(item.BlockHeight) {
+			if tombstone != nil && tombstone.blocksTxInItem(txIn, item) {
 				continue
 			}
 			kept = append(kept, item)
@@ -576,6 +676,8 @@ func (s *ObserverStorage) recordErrataCommitted(errata common.ErrataTx, verifyAf
 	if errata.Chain.IsEmpty() || errata.Id.IsEmpty() {
 		return errors.New("committed observer errata is invalid")
 	}
+	s.errataMu.Lock()
+	defer s.errataMu.Unlock()
 	return s.applyErrataBatch(types.ErrataBlock{
 		Txs: []types.ErrataTx{{Chain: errata.Chain, TxID: errata.Id}},
 	}, errataTombstoneUpdate{
@@ -587,7 +689,20 @@ func (s *ObserverStorage) recordErrataCommitted(errata common.ErrataTx, verifyAf
 // recordLocalErrataCommitted atomically records the committed tombstone and
 // completes this node's durable retry. Callers must first prove that the
 // committed quorum event includes this node's attestation.
-func (s *ObserverStorage) recordLocalErrataCommitted(errata common.ErrataTx) error {
+func (s *ObserverStorage) recordLocalErrataCommitted(errata common.ErrataTx, outcome common.ErrataTxOutcome) error {
+	if errata.Chain.RequiresTerminalErrataOutcome() {
+		switch outcome {
+		case common.ErrataTxOutcome_ERRATA_TX_OUTCOME_UNSPECIFIED:
+			// Delivery without a terminal result does not retire durable retries.
+			return nil
+		case common.ErrataTxOutcome_ERRATA_TX_OUTCOME_REVERTED,
+			common.ErrataTxOutcome_ERRATA_TX_OUTCOME_NO_APPLICABLE_OBSERVATION:
+		default:
+			return fmt.Errorf("unknown committed errata outcome %d", outcome)
+		}
+	} else {
+		outcome = common.ErrataTxOutcome_ERRATA_TX_OUTCOME_UNSPECIFIED
+	}
 	if errata.Chain.IsEmpty() || errata.Id.IsEmpty() {
 		return errors.New("committed observer errata is invalid")
 	}
@@ -598,6 +713,7 @@ func (s *ObserverStorage) recordLocalErrataCommitted(errata common.ErrataTx) err
 	}, errataTombstoneUpdate{
 		forceCommitted: true,
 		completeOutbox: true,
+		outcome:        outcome,
 	}, nil)
 }
 
@@ -623,6 +739,8 @@ func (s *ObserverStorage) recordErrataVoterResult(
 	if !errata.Chain.Equals(common.XMRChain) || errata.Id.IsEmpty() {
 		return errors.New("observer errata voter result is invalid")
 	}
+	s.errataMu.Lock()
+	defer s.errataMu.Unlock()
 	tombstone, err := s.getErrataTombstone(errata.Chain, errata.Id.String())
 	if err != nil {
 		return err

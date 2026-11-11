@@ -398,6 +398,12 @@
           "reclaimed": "0",
           "score": "21565332",
           "spent": "0"
+        },
+        {
+          "address": "noop",
+          "reclaimed": "0",
+          "score": "7314080",
+          "spent": "0"
         }
       ],
       "tcy_claimers": [],

@@ -123,7 +123,7 @@ func (KeeperTssKeysignFailureSuite) TestCurrentVoterStatesPersistAcrossKeeperRei
 
 	// Recreate the keeper over the same store service to prove the encoded state
 	// remains readable; this is not a process or database restart test.
-	reinstantiated := NewKVStore(k.cdc, k.storeService, k.coinKeeper, k.accountKeeper, k.upgradeKeeper, k.version)
+	reinstantiated := NewKVStore(k.cdc, k.storeKey, k.coinKeeper, k.accountKeeper, k.upgradeKeeper, k.version)
 	for _, reader := range []KVStore{k, reinstantiated} {
 		gotLive, err := reader.GetTssKeysignFailVoter(ctx, liveID)
 		c.Assert(err, IsNil)

@@ -144,15 +144,15 @@ func spentOutputRefsIdentity(refs []OutputRef) string {
 	return buf.String()
 }
 
-func observedTxXMRMetadataUniqueHash(base string, chain Chain, txKey string, refs []OutputRef) string {
+func observedTxXMRMetadataUniqueHash(base string, chain Chain, txKey string, refs []OutputRef, minedHeight int64) string {
 	if !chain.Equals(XMRChain) {
 		return base
 	}
 	txKey = normalizeString(txKey)
-	if txKey == "" && len(refs) == 0 {
+	if txKey == "" && len(refs) == 0 && minedHeight == 0 {
 		return base
 	}
-	return fmt.Sprintf("%X", sha256.Sum256([]byte(base+"|"+txKey+"|"+spentOutputRefsIdentity(refs))))
+	return fmt.Sprintf("%X", sha256.Sum256([]byte(fmt.Sprintf("%s|%s|%s|%d", base, txKey, spentOutputRefsIdentity(refs), minedHeight))))
 }
 
 // Equals compares two Attestation and returns true iff they are equal

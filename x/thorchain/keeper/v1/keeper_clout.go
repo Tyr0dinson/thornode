@@ -3,13 +3,12 @@ package keeperv1
 import (
 	"fmt"
 
-	"github.com/cosmos/cosmos-sdk/runtime"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 )
 
 func (k KVStore) setSwapperClout(ctx cosmos.Context, key []byte, record SwapperClout) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	buf := k.cdc.MustMarshal(&record)
 	if buf == nil {
 		store.Delete(key)
@@ -19,7 +18,7 @@ func (k KVStore) setSwapperClout(ctx cosmos.Context, key []byte, record SwapperC
 }
 
 func (k KVStore) getSwapperClout(ctx cosmos.Context, key []byte, record *SwapperClout) (bool, error) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	if !store.Has(key) {
 		return false, nil
 	}
@@ -32,11 +31,13 @@ func (k KVStore) getSwapperClout(ctx cosmos.Context, key []byte, record *Swapper
 }
 
 func (k KVStore) SetSwapperClout(ctx cosmos.Context, record SwapperClout) error {
+	record.Address = record.Address.Canonical()
 	k.setSwapperClout(ctx, k.GetKey(prefixSwapperClout, record.Address.String()), record)
 	return nil
 }
 
 func (k KVStore) GetSwapperClout(ctx cosmos.Context, addr common.Address) (SwapperClout, error) {
+	addr = addr.Canonical()
 	record := NewSwapperClout(addr)
 	if addr.IsEmpty() {
 		return record, nil

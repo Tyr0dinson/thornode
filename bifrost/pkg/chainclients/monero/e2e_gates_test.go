@@ -74,11 +74,25 @@ func (b *scannerMemoBridge) GetReferenceMemoByTxHash(hash string) (string, error
 
 type solvencyBridge struct {
 	thorclient.ThorchainBridge
-	asgards ttypes.Vaults
+	// solvencyHalted makes the mock report XMR as solvency-halted on-chain, the
+	// only state in which ReportSolvency sends an all-solvent report.
+	solvencyHalted bool
+	asgards        ttypes.Vaults
 }
 
 func (b *solvencyBridge) GetAsgards() (ttypes.Vaults, error) {
 	return b.asgards, nil
+}
+
+func (b *solvencyBridge) GetMimir(key string) (int64, error) {
+	if b.solvencyHalted && key == "SolvencyHaltXMRChain" {
+		return 1, nil
+	}
+	return 0, nil
+}
+
+func (b *solvencyBridge) GetBlockHeight() (int64, error) {
+	return 100, nil
 }
 
 // newFrostTransfersServer creates a mock frost signer server that returns

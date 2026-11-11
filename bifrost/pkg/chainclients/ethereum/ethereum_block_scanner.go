@@ -409,7 +409,21 @@ func (e *ETHScanner) extractTxs(block *etypes.Block) (stypes.TxIn, error) {
 		MemPool:  false,
 	}
 
-	sem := semaphore.NewWeighted(e.cfg.Concurrency)
+	if !e.receiptsMayProduceObservation(block) {
+		e.removeSignedTxItems(block)
+		return stypes.TxIn{}, nil
+	}
+
+	// Fetch the whole block's receipts with one eth_getBlockReceipts call
+	// where the node supports it; transactions missing from the result (or
+	// all of them, when the call fails) fall back to individual
+	// eth_getTransactionReceipt lookups below.
+	receiptsCtx, receiptsCancel := e.getContext()
+	receipts := fetchBlockReceipts(receiptsCtx, e.client.Client(), e.logger, block)
+	receiptsCancel()
+
+	// at least one worker: a semaphore smaller than one Acquire never grants it
+	sem := semaphore.NewWeighted(max(e.cfg.Concurrency, 1))
 	mu := sync.Mutex{}
 	wg := sync.WaitGroup{}
 
@@ -432,7 +446,7 @@ func (e *ETHScanner) extractTxs(block *etypes.Block) (stypes.TxIn, error) {
 			e.logger.Err(err).Msgf("fail to remove signed tx item, hash:%s", tx.Hash().String())
 		}
 
-		txInItem, err := e.fromTxToTxIn(tx)
+		txInItem, err := e.fromTxToTxInWithReceipts(tx, receipts)
 		if err != nil {
 			e.logger.Error().Err(err).Str("hash", tx.Hash().Hex()).Msg("fail to get one tx from server")
 			return
@@ -473,6 +487,106 @@ func (e *ETHScanner) extractTxs(block *etypes.Block) (stypes.TxIn, error) {
 	}
 	e.logger.Debug().Int64("block", int64(block.NumberU64())).Msgf("there are %d tx in this block need to process", count)
 	return txInbound, nil
+}
+
+// canceledContext is for ethclient calls that must not reach the server.
+var canceledContext = func() context.Context {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	return ctx
+}()
+
+// receiptsMayProduceObservation reports whether the block's receipts could lead to
+// an observation. It is false only if the block alone rules that out, so the caller
+// can skip fetching them. Gas prices don't depend on this: processBlock reads them
+// from the tx fields.
+//
+// A router deposit can come through another contract, so check the bloom for log
+// emitters regardless of tx.To. A direct ERC20 inbound names the vault in its
+// transfer calldata. A failed outbound can have no logs and its signing vault
+// may have left the vault list, so also check the local signer cache.
+//
+// Senders are taken as the RPC reported them where possible, see txSender. A provider
+// that lied about a sender could hide that tx from this check, but it could equally
+// leave the tx out of the block or misreport its receipt.
+func (e *ETHScanner) receiptsMayProduceObservation(block *etypes.Block) bool {
+	bloom := block.Bloom()
+	// A block with txs and no bits set says more about whoever filled in the bloom
+	// than about the block, and fetching is correct either way.
+	if bloom == (etypes.Bloom{}) {
+		return true
+	}
+	routers := e.pubkeyMgr.GetContracts(common.ETHChain, false)
+	if len(routers) == 0 {
+		return true
+	}
+	emitters := routers
+	if useWhitelistSmartContract { // the log parser accepts these too, see isToValidContractAddress
+		emitters = append(append([]common.Address{}, routers...), whitelistSmartContractAddress...)
+	}
+	for _, emitter := range emitters {
+		if etypes.BloomLookup(bloom, ecommon.HexToAddress(emitter.String())) {
+			return true
+		}
+	}
+
+	for i, tx := range block.Transactions() {
+		// extractTxs never parses these
+		if tx.Type() == etypes.BlobTxType || tx.To() == nil {
+			continue
+		}
+		if e.txMayBeObserved(tx, block.Hash(), uint(i)) {
+			return true
+		}
+	}
+	return evm.BlockMayHaveSignedTx(block, e.signerCacheManager)
+}
+
+// txMayBeObserved reports whether the transaction fields alone warrant fetching receipts.
+func (e *ETHScanner) txMayBeObserved(tx *etypes.Transaction, blockHash ecommon.Hash, index uint) bool {
+	if e.isPoolAddress(*tx.To()) {
+		return true
+	}
+	if evm.HasERC20TransferSelector(tx) {
+		// transfer(address,uint256): the recipient is the first argument
+		const recipientEnd = 4 + ecommon.HashLength
+		data := tx.Data()
+		if len(data) < recipientEnd || e.isPoolAddress(ecommon.BytesToAddress(data[4:recipientEnd])) {
+			return true
+		}
+	}
+	sender, err := e.txSender(tx, blockHash, index)
+	return err != nil || e.isPoolAddress(sender)
+}
+
+// txSender returns the sender the RPC reported when the block was decoded, which
+// ethclient keeps with the tx, and otherwise recovers it from the signature. Recovery
+// costs most of a block's time in receiptsMayProduceObservation.
+func (e *ETHScanner) txSender(tx *etypes.Transaction, blockHash ecommon.Hash, index uint) (ecommon.Address, error) {
+	// On a miss TransactionSender asks the server. The cancelled context turns that
+	// into an error, so a block without reported senders cannot cost one call per tx.
+	if sender, err := e.client.TransactionSender(canceledContext, tx, blockHash, index); err == nil {
+		return sender, nil
+	}
+	return e.eipSigner.Sender(tx)
+}
+
+func (e *ETHScanner) isPoolAddress(addr ecommon.Address) bool {
+	ok, _ := e.pubkeyMgr.IsValidPoolAddress(evm.LowerHexAddress(addr), e.cfg.ChainID)
+	return ok
+}
+
+// removeSignedTxItems clears a skipped block's txs from the signed items, the same
+// ones extractTxs would clear when it parses them.
+func (e *ETHScanner) removeSignedTxItems(block *etypes.Block) {
+	for _, tx := range block.Transactions() {
+		if tx.Type() == etypes.BlobTxType || tx.To() == nil {
+			continue
+		}
+		if err := e.blockMetaAccessor.RemoveSignedTxItem(tx.Hash().String()); err != nil {
+			e.logger.Err(err).Msgf("fail to remove signed tx item, hash:%s", tx.Hash().String())
+		}
+	}
 }
 
 func (e *ETHScanner) onObservedTxIn(txIn stypes.TxInItem, blockHeight int64) {
@@ -735,13 +849,29 @@ func (e *ETHScanner) getSymbol(token string) (string, error) {
 func (e *ETHScanner) isToValidContractAddress(addr *ecommon.Address, includeWhiteList bool) bool {
 	// get the smart contract used by thornode
 	contractAddresses := e.pubkeyMgr.GetContracts(common.ETHChain, false)
-	if includeWhiteList || useWhitelistSmartContract {
-		contractAddresses = append(contractAddresses, whitelistSmartContractAddress...)
+	includeWhiteList = includeWhiteList || useWhitelistSmartContract
+
+	// addrString is EqualFold-equal to the checksummed addr.String(), without
+	// a keccak256 per comparison. Like addr.String() before, it is derived
+	// only once there is something to compare against.
+	var addrString string
+	for _, item := range contractAddresses {
+		if addrString == "" {
+			addrString = evm.LowerHexAddress(*addr)
+		}
+		if strings.EqualFold(item.String(), addrString) {
+			return true
+		}
 	}
 	// combine the whitelist smart contract address
-	for _, item := range contractAddresses {
-		if strings.EqualFold(item.String(), addr.String()) {
-			return true
+	if includeWhiteList {
+		for _, item := range whitelistSmartContractAddress {
+			if addrString == "" {
+				addrString = evm.LowerHexAddress(*addr)
+			}
+			if strings.EqualFold(item.String(), addrString) {
+				return true
+			}
 		}
 	}
 	return false
@@ -884,7 +1014,7 @@ func (e *ETHScanner) getTxInFromSmartContract(tx *etypes.Transaction, receipt *e
 	txInItem := &stypes.TxInItem{
 		Tx: tx.Hash().Hex()[2:],
 	}
-	sender, err := e.eipSigner.Sender(tx)
+	sender, err := etypes.Sender(e.eipSigner, tx)
 	if err != nil {
 		return nil, fmt.Errorf("fail to get sender: %w", err)
 	}
@@ -957,7 +1087,7 @@ func (e *ETHScanner) getTxInFromTransaction(tx *etypes.Transaction, receipt *ety
 		Tx: tx.Hash().Hex()[2:],
 	}
 	asset := common.ETHAsset
-	sender, err := e.eipSigner.Sender(tx)
+	sender, err := etypes.Sender(e.eipSigner, tx)
 	if err != nil {
 		return nil, fmt.Errorf("fail to get sender: %w", err)
 	}
@@ -1017,15 +1147,26 @@ func (e *ETHScanner) getTxInFromTransaction(tx *etypes.Transaction, receipt *ety
 }
 
 func (e *ETHScanner) fromTxToTxIn(tx *etypes.Transaction) (*stypes.TxInItem, error) {
+	return e.fromTxToTxInWithReceipts(tx, nil)
+}
+
+// fromTxToTxInWithReceipts converts the transaction to a TxInItem, taking its
+// receipt from the supplied block-receipts map when present and falling back
+// to an individual eth_getTransactionReceipt lookup otherwise.
+func (e *ETHScanner) fromTxToTxInWithReceipts(tx *etypes.Transaction, receipts map[ecommon.Hash]*etypes.Receipt) (*stypes.TxInItem, error) {
 	if tx == nil || tx.To() == nil {
 		return nil, nil
 	}
-	receipt, err := e.getReceipt(tx.Hash().Hex())
-	if err != nil {
-		if errors.Is(err, ethereum.NotFound) {
-			return nil, nil
+	receipt := receipts[tx.Hash()]
+	if receipt == nil {
+		var err error
+		receipt, err = e.getReceipt(tx.Hash().Hex())
+		if err != nil {
+			if errors.Is(err, ethereum.NotFound) {
+				return nil, nil
+			}
+			return nil, fmt.Errorf("fail to get transaction receipt: %w", err)
 		}
-		return nil, fmt.Errorf("fail to get transaction receipt: %w", err)
 	}
 	if receipt.Status != 1 {
 		// a transaction that is failed
@@ -1049,7 +1190,7 @@ func (e *ETHScanner) fromTxToTxIn(tx *etypes.Transaction) (*stypes.TxInItem, err
 		isToVault, _ := e.pubkeyMgr.IsValidPoolAddress(destination.String(), e.cfg.ChainID)
 
 		// resolve sender upfront to check vault outbounds (approvals, cancels, etc.)
-		sender, senderErr := e.eipSigner.Sender(tx)
+		sender, senderErr := etypes.Sender(e.eipSigner, tx)
 		var isFromVault bool
 		if senderErr == nil {
 			isFromVault, _ = e.pubkeyMgr.IsValidPoolAddress(sender.String(), e.cfg.ChainID)
@@ -1098,7 +1239,7 @@ func (e *ETHScanner) fromTxToTxIn(tx *etypes.Transaction) (*stypes.TxInItem, err
 			return e.getTxInFromSmartContract(tx, receipt, 0)
 		}
 		// check if tx is to or from a vault
-		sender, err := e.eipSigner.Sender(tx)
+		sender, err := etypes.Sender(e.eipSigner, tx)
 		if err != nil {
 			return nil, nil // ignore tx if we cannot determine sender
 		}
@@ -1136,7 +1277,7 @@ func (e *ETHScanner) getTxInFromFailedTransaction(tx *etypes.Transaction, receip
 		e.logger.Info().Str("hash", tx.Hash().String()).Msg("success transaction should not get into getTxInFromFailedTransaction")
 		return nil
 	}
-	fromAddr, err := e.eipSigner.Sender(tx)
+	fromAddr, err := etypes.Sender(e.eipSigner, tx)
 	if err != nil {
 		e.logger.Err(err).Msg("fail to get from address")
 		return nil

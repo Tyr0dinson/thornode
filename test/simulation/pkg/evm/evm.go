@@ -165,6 +165,11 @@ type Client struct {
 	signer  etypes.EIP155Signer
 	pubKey  common.PubKey
 	address common.Address
+
+	// deferred holds transactions BroadcastTx sent without waiting for their
+	// receipt while DeferReceipts is on; FlushReceipts waits for them.
+	deferring bool
+	deferred  []ecommon.Hash
 }
 
 var _ LiteChainClient = &Client{}
@@ -385,25 +390,57 @@ func (c *Client) BroadcastTx(signed []byte) (string, error) {
 		return txid, err
 	}
 
-	// wait for the transaction receipt
+	if c.deferring {
+		c.deferred = append(c.deferred, tx.Hash())
+		return txid, nil
+	}
+	return txid, c.waitReceipt(tx.Hash(), 10)
+}
+
+// DeferReceipts makes BroadcastTx return once the node accepts a transaction,
+// without waiting for its receipt, until FlushReceipts. Signing uses the
+// pending nonce, so back-to-back transactions from this client still get
+// consecutive nonces. The client must not be shared while deferring.
+func (c *Client) DeferReceipts() {
+	c.deferring = true
+}
+
+// FlushReceipts waits for every transaction sent since DeferReceipts, checks
+// that each succeeded, and turns deferring off.
+func (c *Client) FlushReceipts() error {
+	defer func() {
+		c.deferring = false
+		c.deferred = nil
+	}()
+	for _, hash := range c.deferred {
+		if err := c.waitReceipt(hash, 60); err != nil {
+			return fmt.Errorf("%s: %w", strings.TrimPrefix(hash.String(), "0x"), err)
+		}
+	}
+	return nil
+}
+
+// waitReceipt polls for the receipt of hash once a second, up to attempts times,
+// and fails if the transaction reverted.
+func (c *Client) waitReceipt(hash ecommon.Hash, attempts int) error {
 	var receipt *etypes.Receipt
-	for i := 0; i < 10; i++ {
-		receipt, err = c.rpc.TransactionReceipt(ctx(), tx.Hash())
+	var err error
+	for i := 0; i < attempts; i++ {
+		receipt, err = c.rpc.TransactionReceipt(ctx(), hash)
 		if err == nil {
 			break
 		}
 		time.Sleep(1 * time.Second)
 	}
 	if err != nil {
-		return txid, fmt.Errorf("fail to get transaction receipt: %w", err)
+		return fmt.Errorf("fail to get transaction receipt: %w", err)
 	}
 
 	// check the status and return logs in error
 	if receipt.Status != 1 {
-		return txid, fmt.Errorf("transaction failed with status %d: %v", receipt.Status, receipt.Logs)
+		return fmt.Errorf("transaction failed with status %d: %v", receipt.Status, receipt.Logs)
 	}
-
-	return txid, nil
+	return nil
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////

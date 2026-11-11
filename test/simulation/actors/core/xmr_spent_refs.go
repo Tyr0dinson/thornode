@@ -148,7 +148,14 @@ func (a *XMRSpentRefVerifyActor) verifyOutboundSpentRefs(observed thornode.Obser
 		return OpResult{Finish: true, Error: fmt.Errorf("spent-ref verification requires a pre-swap vault snapshot and an outbound ID")}
 	}
 	tx := observed.ObservedTx
-	if tx.Status != "done" || tx.Tx.GetId() == "" {
+	// waitForSwapOutbound already required the matched outbound to be signed.
+	// Its voter records when consensus actions ran; late final votes can replace
+	// the stored Tx and reset its status to incomplete without undoing them.
+	// The query endpoint omits the status field for incomplete observations.
+	// Require that consensus and no reversion, then verify the same vault's
+	// persisted spent refs below regardless of the observation's finality.
+	if observed.ConsensusHeight <= 0 || observed.Reverted ||
+		(tx.Status != "done" && tx.Status != "") || tx.Tx.GetId() == "" {
 		return OpResult{}
 	}
 	if !strings.EqualFold(tx.Tx.GetId(), a.outboundTxID) || tx.Tx.GetChain() != common.XMRChain.String() || tx.ObservedPubKey != a.vaultPubKey {

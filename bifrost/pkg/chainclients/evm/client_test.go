@@ -64,6 +64,23 @@ type EVMSuite struct {
 
 var _ = Suite(&EVMSuite{})
 
+// mimirOverrideBridge answers GetMimir from the suite's mimir overrides before
+// the bridge's one-block HTTP response cache, so a test can switch a mimir
+// mid-test without sleeping out the cache TTL.
+type mimirOverrideBridge struct {
+	thorclient.ThorchainBridge
+	s *EVMSuite
+}
+
+func (b mimirOverrideBridge) GetMimir(key string) (int64, error) {
+	if value, exists := b.s.mimirOverrides[key]; exists {
+		var v int64
+		err := json.Unmarshal([]byte(value), &v)
+		return v, err
+	}
+	return b.ThorchainBridge.GetMimir(key)
+}
+
 var m *metrics.Metrics
 
 func GetMetricForTest(c *C) *metrics.Metrics {
@@ -74,7 +91,7 @@ func GetMetricForTest(c *C) *metrics.Metrics {
 			ListenPort:   9000,
 			ReadTimeout:  time.Second,
 			WriteTimeout: time.Second,
-			Chains:       common.Chains{common.AVAXChain},
+			Chains:       common.Chains{common.AVAXChain, common.BSCChain, common.BASEChain, common.POLChain},
 		})
 		c.Assert(m, NotNil)
 		c.Assert(err, IsNil)
@@ -89,13 +106,32 @@ func (s *EVMSuite) SetUpTest(c *C) {
 	setupMocknetThorConfig()
 	c.Assert(os.Setenv("NET", "mocknet"), IsNil)
 
+	cfg := config.BifrostClientConfiguration{
+		ChainID:         "thorchain",
+		SignerName:      "bob",
+		SignerPasswd:    "password",
+		ChainHomeFolder: s.thordir,
+	}
+
+	registry := codectypes.NewInterfaceRegistry()
+	cryptocodec.RegisterInterfaces(registry)
+	cdc := codec.NewProtoCodec(registry)
+	kb := cKeys.NewInMemory(cdc)
+	// Use static test mnemonic for deterministic test addresses
+	// This mnemonic derives to ETH/AVAX address: 0xd58610F89265a2fB637Ac40EDf59141Ff873b266
+	testMnemonic := "dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog fossil"
+	_, setupErr := kb.NewAccount(cfg.SignerName, testMnemonic, "", cmd.THORChainHDPath, hd.Secp256k1)
+	c.Assert(setupErr, IsNil)
+	s.thorKeys = thorclient.NewKeysWithKeybase(kb, cfg.SignerName, cfg.SignerPasswd)
+	fixtureKeys := s.thorKeys
+
 	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 		switch req.RequestURI {
 		case thorclient.ChainVersionEndpoint:
 			_, err := rw.Write([]byte(`{"current":"` + types2.GetCurrentVersion().String() + `"}`))
 			c.Assert(err, IsNil)
 		case thorclient.PubKeysEndpoint:
-			priKey, _ := s.thorKeys.GetPrivateKey()
+			priKey, _ := fixtureKeys.GetPrivateKey()
 			tm, _ := cryptocodec.ToCmtPubKeyInterface(priKey.PubKey())
 			pk, err := common.NewPubKeyFromCrypto(tm)
 			c.Assert(err, IsNil)
@@ -173,6 +209,10 @@ func (s *EVMSuite) SetUpTest(c *C) {
 			c.Assert(err, IsNil)
 			if rpcRequest.Method == "eth_getBalance" {
 				_, err = rw.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":"0x8ac7230489e80000"}`))
+				c.Assert(err, IsNil)
+			}
+			if rpcRequest.Method == "eth_getTransactionByHash" {
+				_, err = rw.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":null}`))
 				c.Assert(err, IsNil)
 			}
 			if rpcRequest.Method == "eth_getTransactionCount" {
@@ -261,26 +301,9 @@ func (s *EVMSuite) SetUpTest(c *C) {
 		}
 	}))
 	s.server = server
-	cfg := config.BifrostClientConfiguration{
-		ChainID:         "thorchain",
-		ChainHost:       server.Listener.Addr().String(),
-		SignerName:      "bob",
-		SignerPasswd:    "password",
-		ChainHomeFolder: s.thordir,
-	}
-
-	registry := codectypes.NewInterfaceRegistry()
-	cryptocodec.RegisterInterfaces(registry)
-	cdc := codec.NewProtoCodec(registry)
-	kb := cKeys.NewInMemory(cdc)
-	// Use static test mnemonic for deterministic test addresses
-	// This mnemonic derives to ETH/AVAX address: 0xd58610F89265a2fB637Ac40EDf59141Ff873b266
-	testMnemonic := "dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog fossil"
-	_, err := kb.NewAccount(cfg.SignerName, testMnemonic, "", cmd.THORChainHDPath, hd.Secp256k1)
-	c.Assert(err, IsNil)
-	s.thorKeys = thorclient.NewKeysWithKeybase(kb, cfg.SignerName, cfg.SignerPasswd)
-	s.bridge, err = thorclient.NewThorchainBridge(cfg, s.m, s.thorKeys)
-	c.Assert(err, IsNil)
+	cfg.ChainHost = server.Listener.Addr().String()
+	s.bridge, setupErr = thorclient.NewThorchainBridge(cfg, s.m, s.thorKeys)
+	c.Assert(setupErr, IsNil)
 }
 
 func (s *EVMSuite) TearDownTest(c *C) {
@@ -912,6 +935,7 @@ func (s *EVMSuite) TestSignTxChecksMemLiability(c *C) {
 
 	// Second transaction should fail due to accumulated liability
 	txOutItem2 := stypes.TxOutItem{
+		Checkpoint:  []byte("1"),
 		Chain:       common.AVAXChain,
 		ToAddress:   addr,
 		VaultPubKey: e.localPubKey,
@@ -945,7 +969,7 @@ func (s *EVMSuite) TestCheckAndApproveAllowance(c *C) {
 		},
 	}
 
-	e, err := NewEVMClient(s.thorKeys, chainConfig, nil, s.bridge, s.m, pubkeyMgr, poolMgr)
+	e, err := NewEVMClient(s.thorKeys, chainConfig, nil, mimirOverrideBridge{ThorchainBridge: s.bridge, s: s}, s.m, pubkeyMgr, poolMgr)
 	c.Assert(err, IsNil)
 	c.Assert(e, NotNil)
 
@@ -964,7 +988,7 @@ func (s *EVMSuite) TestCheckAndApproveAllowance(c *C) {
 	}
 
 	// Test 1: Mimir disabled (default -1) → Skip approval
-	approvalTx, err := e.checkAndApproveAllowance(txOutItem, 100)
+	approvalTx, _, err := e.checkAndApproveAllowance(txOutItem, 100)
 	c.Assert(err, IsNil)
 	c.Assert(approvalTx, IsNil)
 
@@ -972,16 +996,12 @@ func (s *EVMSuite) TestCheckAndApproveAllowance(c *C) {
 	s.mimirOverrides = map[string]string{
 		"EVMAllowanceCheck-AVAX": "1",
 	}
-	// Sleep for the bridge HTTP cache TTL (ThorchainBlockTime) so the new
-	// mimir value is picked up on the next query.
-	time.Sleep(constants.ThorchainBlockTime)
-
 	// Test 2: Native asset → Skip approval (even with mimir enabled)
 	txOutItemNative := txOutItem
 	txOutItemNative.Coins = common.Coins{
 		common.NewCoin(common.AVAXAsset, cosmos.NewUint(1000000)),
 	}
-	approvalTx, err = e.checkAndApproveAllowance(txOutItemNative, 100)
+	approvalTx, _, err = e.checkAndApproveAllowance(txOutItemNative, 100)
 	c.Assert(err, IsNil)
 	c.Assert(approvalTx, IsNil)
 
@@ -991,14 +1011,14 @@ func (s *EVMSuite) TestCheckAndApproveAllowance(c *C) {
 		common.NewCoin(tokenAsset, cosmos.NewUint(1000000)),
 		common.NewCoin(common.AVAXAsset, cosmos.NewUint(1000000)),
 	}
-	approvalTx, err = e.checkAndApproveAllowance(txOutItemMultiple, 100)
+	approvalTx, _, err = e.checkAndApproveAllowance(txOutItemMultiple, 100)
 	c.Assert(err, NotNil)
 	c.Assert(approvalTx, IsNil)
 
 	// Test 4: Empty coins array → Skip approval
 	txOutItemEmpty := txOutItem
 	txOutItemEmpty.Coins = common.Coins{}
-	approvalTx, err = e.checkAndApproveAllowance(txOutItemEmpty, 100)
+	approvalTx, _, err = e.checkAndApproveAllowance(txOutItemEmpty, 100)
 	c.Assert(err, IsNil)
 	c.Assert(approvalTx, IsNil)
 
@@ -1007,7 +1027,7 @@ func (s *EVMSuite) TestCheckAndApproveAllowance(c *C) {
 	txOutItem.Coins = common.Coins{
 		common.NewCoin(tokenAsset, cosmos.NewUint(1000000000)), // 10 USDC
 	}
-	approvalTx, err = e.checkAndApproveAllowance(txOutItem, 100)
+	approvalTx, _, err = e.checkAndApproveAllowance(txOutItem, 100)
 	c.Assert(err, IsNil)
 	c.Assert(approvalTx, NotNil) // Approval tx created since allowance is insufficient
 }
@@ -1031,7 +1051,7 @@ func (s *EVMSuite) TestSignTxWithAllowanceFlow(c *C) {
 	}
 	chainConfig.EVM.TokenMaxGasMultiplier = 3
 
-	e, err := NewEVMClient(s.thorKeys, chainConfig, nil, s.bridge, s.m, pubkeyMgr, poolMgr)
+	e, err := NewEVMClient(s.thorKeys, chainConfig, nil, mimirOverrideBridge{ThorchainBridge: s.bridge, s: s}, s.m, pubkeyMgr, poolMgr)
 	c.Assert(err, IsNil)
 	c.Assert(e, NotNil)
 	e.signingReady.Store(true)
@@ -1092,17 +1112,13 @@ func (s *EVMSuite) TestSignTxWithAllowanceFlow(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(nonce, Equals, uint64(0)) // First transaction from address
 
-	// Sleep for bridge cache TTL so the disabled mimir response expires
-	time.Sleep(constants.ThorchainBlockTime)
-
 	// Enable the allowance check via mimir
 	s.mimirOverrides = map[string]string{
 		"EVMAllowanceCheck-AVAX": "1",
 	}
 
-	// Test SignTx with token asset and enabled mimir (triggers approval + sign flow).
-	// After broadcasting the approval, SignTx waits for it to be mined then proceeds
-	// to build and sign the outbound.
+	// Approval preparation must return its checkpoint before exposing a signature.
+	// Subsequent approval/transfer retries are covered in approval_retry_test.go.
 	result, checkpoint, obs, err = e.SignTx(stypes.TxOutItem{
 		Chain:       common.AVAXChain,
 		ToAddress:   addr,
@@ -1116,15 +1132,12 @@ func (s *EVMSuite) TestSignTxWithAllowanceFlow(c *C) {
 		GasRate: 1,
 		Memo:    "OUT:4D91ADAFA69765E7805B5FF2F3A0BA1DBE69E37A1CFCD20C48B99C528AA3EE87",
 	}, 1)
-	c.Assert(err, IsNil)
-	c.Assert(result, NotNil)
-	c.Assert(checkpoint, NotNil)
-	c.Assert(obs, NotNil)
-
-	// Verify nonce in checkpoint (incremented after approval tx)
-	err = json.Unmarshal(checkpoint, &nonce)
-	c.Assert(err, IsNil)
-	c.Assert(nonce, Equals, uint64(1))
+	c.Assert(err, Equals, errApprovalPending)
+	c.Assert(result, IsNil)
+	c.Assert(obs, IsNil)
+	var approval signingCheckpoint
+	c.Assert(json.Unmarshal(checkpoint, &approval), IsNil)
+	c.Assert(approval.Transaction.Nonce(), Equals, uint64(0))
 }
 
 func (s *EVMSuite) TestAllowanceCheckWithDecimalConversions(c *C) {
@@ -1175,7 +1188,7 @@ func (s *EVMSuite) TestAllowanceCheckWithDecimalConversions(c *C) {
 		GasRate: 50,
 	}
 
-	approvalTx, err := e.checkAndApproveAllowance(txOutItemUSDC, 100)
+	approvalTx, _, err := e.checkAndApproveAllowance(txOutItemUSDC, 100)
 	c.Assert(err, IsNil)
 	c.Assert(approvalTx, NotNil) // Approval tx created since allowance (1000) < required (1500000)
 
@@ -1203,7 +1216,7 @@ func (s *EVMSuite) TestAllowanceCheckWithDecimalConversions(c *C) {
 		GasRate: 50,
 	}
 
-	approvalTx, err = e.checkAndApproveAllowance(txOutItemDAI, 100)
+	approvalTx, _, err = e.checkAndApproveAllowance(txOutItemDAI, 100)
 	c.Assert(err, IsNil)
 	c.Assert(approvalTx, NotNil) // Approval tx created since allowance (1000) < required (1e16)
 }

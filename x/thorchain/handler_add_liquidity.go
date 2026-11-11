@@ -3,8 +3,10 @@ package thorchain
 import (
 	"errors"
 	"fmt"
+	"math/big"
 	"strings"
 
+	sdkmath "cosmossdk.io/math"
 	"github.com/cosmos/cosmos-sdk/telemetry"
 	"github.com/hashicorp/go-metrics"
 
@@ -63,7 +65,7 @@ func (h AddLiquidityHandler) validate(ctx cosmos.Context, msg MsgAddLiquidity) e
 
 	// TODO on hard fork move network check to ValidateBasic
 	if !msg.AssetAddress.IsEmpty() {
-		if !common.CurrentChainNetwork.SoftEquals(msg.AssetAddress.GetNetwork(msg.AssetAddress.GetChain())) {
+		if !msg.AssetAddress.IsCurrentNetwork(msg.AssetAddress.GetChain()) {
 			return fmt.Errorf("address(%s) is not same network", msg.AssetAddress)
 		}
 	}
@@ -444,12 +446,27 @@ func calculatePoolUnits(oldPoolUnits, poolRune, poolAsset, addRune, addAsset cos
 		if addRune.IsZero() {
 			if !poolAsset.IsZero() {
 				// Where possible, keep a RUNE scale for new units.
+				if !fitsUint256(new(big.Int).Mul(addAsset.BigInt(), poolRune.BigInt())) {
+					return cosmos.ZeroUint(), cosmos.ZeroUint(), errPoolUnitsOverflow
+				}
 				sUnits = addAsset.Mul(poolRune).Quo(poolAsset)
 			} else {
 				sUnits = addAsset
 			}
 		}
+		if !fitsUint256(new(big.Int).Add(oldPoolUnits.BigInt(), sUnits.BigInt())) {
+			return cosmos.ZeroUint(), cosmos.ZeroUint(), errPoolUnitsOverflow
+		}
 		return oldPoolUnits.Add(sUnits), sUnits, nil
+	}
+
+	// The LegacyDec operations below panic once any intermediate value leaves
+	// their range, which in an EndBlock caller (POL) halts the chain. Check
+	// every intermediate with exact integer arithmetic first and return an
+	// error instead; for inputs that pass, the LegacyDec math below runs
+	// unchanged, so results are identical.
+	if err := checkPoolUnitsRange(oldPoolUnits, poolRune, poolAsset, addRune, addAsset); err != nil {
+		return cosmos.ZeroUint(), cosmos.ZeroUint(), err
 	}
 
 	P := cosmos.NewDecFromBigInt(oldPoolUnits.BigInt())
@@ -470,12 +487,91 @@ func calculatePoolUnits(oldPoolUnits, poolRune, poolAsset, addRune, addAsset cos
 	}
 
 	liquidityUnits := numerator.Quo(denominator)
+	// numerator <= 2^256-1 and denominator >= 1, so the quotient is in range,
+	// but P + liquidityUnits can still overflow; check it on the exact
+	// fixed-point values before the Add.
+	if !fitsLegacyDec(new(big.Int).Add(P.BigInt(), liquidityUnits.BigInt())) {
+		return cosmos.ZeroUint(), cosmos.ZeroUint(), errPoolUnitsOverflow
+	}
 	newPoolUnit := P.Add(liquidityUnits)
 
 	pUnits := cosmos.NewUintFromBigInt(newPoolUnit.TruncateInt().BigInt())
 	sUnits := cosmos.NewUintFromBigInt(liquidityUnits.TruncateInt().BigInt())
 
 	return pUnits, sUnits, nil
+}
+
+// errAddLiquidityPoolOverhang is returned for a liquidity add into a pool in
+// synth overhang while the LUVIOverhangGuard mimir is on.
+var errAddLiquidityPoolOverhang = errors.New("cannot add liquidity: pool is in synth overhang (synth supply is at least twice the asset depth)")
+
+// isLUVIOverhangGuarded reports whether the LUVIOverhangGuard blocks liquidity
+// adds into pool: its synth supply is non-zero and at least twice its asset
+// depth (types.LuviState.IsOverhang), and the mimir is above zero. The mimir
+// is only read for an overhang pool, so other adds do no extra store reads.
+func isLUVIOverhangGuarded(ctx cosmos.Context, k keeper.Keeper, pool Pool, synthSupply cosmos.Uint) bool {
+	if synthSupply.IsZero() || !types.NewLuviState(pool, synthSupply).IsOverhang() {
+		return false
+	}
+	return k.GetConfigInt64(ctx, constants.LUVIOverhangGuard) > 0
+}
+
+// errPoolUnitsOverflow is returned when a pool unit calculation would leave
+// the range of cosmos.Uint or cosmos.LegacyDec (2^256), which would otherwise
+// panic.
+var errPoolUnitsOverflow = errors.New("pool units calculation overflows")
+
+var (
+	// legacyDecPrecision is the LegacyDec fixed-point scale (10^18).
+	legacyDecPrecision = new(big.Int).Exp(big.NewInt(10), big.NewInt(sdkmath.LegacyPrecision), nil)
+	// legacyDecMaxRaw is the largest raw (scaled) value LegacyDec accepts:
+	// 2^256 * 10^18 - 1 (see LegacyDec.IsInValidRange).
+	legacyDecMaxRaw = new(big.Int).Sub(
+		new(big.Int).Mul(new(big.Int).Lsh(big.NewInt(1), 256), legacyDecPrecision),
+		big.NewInt(1),
+	)
+)
+
+// fitsUint256 reports whether a non-negative integer fits in cosmos.Uint, and
+// equally whether it is a whole number LegacyDec can hold: n*10^18 <=
+// 2^256*10^18-1 exactly when n < 2^256.
+func fitsUint256(n *big.Int) bool {
+	return n.Sign() >= 0 && n.BitLen() <= 256
+}
+
+// fitsLegacyDec reports whether a raw (already scaled by 10^18) value is
+// inside the LegacyDec range.
+func fitsLegacyDec(raw *big.Int) bool {
+	return raw.CmpAbs(legacyDecMaxRaw) <= 0
+}
+
+// checkPoolUnitsRange mirrors every whole-number intermediate of the
+// LegacyDec computation in calculatePoolUnits, in the same order, and returns
+// errPoolUnitsOverflow if any of them is out of range. Products of whole
+// LegacyDecs are exact, so these integers are exactly the values LegacyDec
+// range-checks.
+func checkPoolUnitsRange(oldPoolUnits, poolRune, poolAsset, addRune, addAsset cosmos.Uint) error {
+	P, R, A := oldPoolUnits.BigInt(), poolRune.BigInt(), poolAsset.BigInt()
+	r, a := addRune.BigInt(), addAsset.BigInt()
+	two := big.NewInt(2)
+
+	rA := new(big.Int).Mul(r, A)
+	aR := new(big.Int).Mul(a, R)
+	cross := new(big.Int).Add(rA, aR)
+	twoR := new(big.Int).Mul(two, r)
+	twoRA := new(big.Int).Mul(twoR, a)
+	crossRA := new(big.Int).Add(cross, twoRA)
+	numerator := new(big.Int).Mul(P, crossRA)
+	twoA := new(big.Int).Mul(two, A)
+	twoAR := new(big.Int).Mul(twoA, R)
+	denominator := new(big.Int).Add(cross, twoAR)
+
+	for _, v := range []*big.Int{P, R, A, r, a, rA, aR, cross, twoR, twoRA, crossRA, numerator, twoA, twoAR, denominator} {
+		if !fitsUint256(v) {
+			return errPoolUnitsOverflow
+		}
+	}
+	return nil
 }
 
 func calculateVaultUnits(oldPoolUnits, poolAmt, addAmt cosmos.Uint) (cosmos.Uint, cosmos.Uint) {
@@ -557,6 +653,11 @@ func (h AddLiquidityHandler) addLiquidity(ctx cosmos.Context,
 	}
 	synthSupply := h.mgr.Keeper().GetTotalSupply(ctx, pool.Asset.GetSyntheticAsset())
 	originalUnits := pool.CalcUnits(synthSupply)
+	// Covers every add that reaches the pool, staged (pending) halves and
+	// POL adds included. Savers vaults have no synth overhang.
+	if !asset.IsSyntheticAsset() && isLUVIOverhangGuarded(ctx, h.mgr.Keeper(), pool, synthSupply) {
+		return fmt.Errorf("%w: %s", errAddLiquidityPoolOverhang, asset)
+	}
 
 	fetchAddr := runeAddr
 	if fetchAddr.IsEmpty() {
@@ -750,6 +851,11 @@ func (h AddLiquidityHandler) addLiquidity(ctx cosmos.Context,
 		return ErrInternal(nil, "pool cannot have zero rune or asset balance")
 	}
 
+	// CalcUnits multiplies LP units by the synth supply as cosmos.Uint, which
+	// panics past 2^256; refuse an add that would leave the pool there.
+	if !asset.IsSyntheticAsset() && !fitsUint256(new(big.Int).Mul(pool.LPUnits.BigInt(), synthSupply.BigInt())) {
+		return ErrInternal(errPoolUnitsOverflow, "fail to calculate synth units")
+	}
 	// CalcUnits to set the correct SynthUnits before the DepositValue calculations
 	pool.CalcUnits(synthSupply)
 

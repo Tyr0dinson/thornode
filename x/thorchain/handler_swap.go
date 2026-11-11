@@ -77,9 +77,26 @@ func (h SwapHandler) validate(ctx cosmos.Context, msg MsgSwap) error {
 
 	// For external-origin (here valid) memos, do not allow a network module as the final destination.
 	// If unable to parse the memo, here assume it to be internal.
-	memo, _ := ParseMemoWithTHORNames(ctx, h.mgr.Keeper(), msg.Tx.Memo)
+	memo, _ := ParseMemoWithTHORNamesCached(ctx, h.mgr.Keeper(), msg.Tx.Memo)
 	mem, isSwapMemo := memo.(SwapMemo)
 	target := msg.TargetAsset
+
+	// Reject a swap whose final destination is the target EVM asset's own token
+	// contract. On EVM chains the output address would be the ERC-20 contract
+	// itself, not a recipient wallet; paying out there burns/locks the funds with
+	// no recovery, so refund at validation instead. Only EVM token assets carry a
+	// "-<contract>" suffix in their symbol (native gas assets and RUNE do not).
+	// Checked outside the isSwapMemo block, on msg.Destination (the address the
+	// outbound actually pays), so it also covers MsgSwaps built from non-swap memos
+	// (e.g. preferred-asset swaps, where Destination is a user-controlled THORName alias).
+	if target.Chain.IsEVM() && !msg.Destination.IsEmpty() {
+		parts := strings.Split(target.Symbol.String(), "-")
+		if len(parts) >= 2 && len(parts[1]) > 0 &&
+			strings.EqualFold(msg.Destination.String(), parts[1]) {
+			return fmt.Errorf("swap destination cannot be the target asset's token contract")
+		}
+	}
+
 	if isSwapMemo {
 		// Prevent swaps to module addresses to protect system invariants,
 		// except for swaps to RUNE destined for the reserve (for over-solvency clearing).
@@ -311,10 +328,8 @@ func (h SwapHandler) handleWithSwapResult(ctx cosmos.Context, msg MsgSwap) (*cos
 	}
 
 	ctx.Logger().Info("receive MsgSwap", logFields...)
-	// test that the network we are running matches the destination network
-	// Don't change msg.Destination here; this line was introduced to avoid people from swapping mainnet asset,
-	// but using mocknet address.
-	if !common.CurrentChainNetwork.SoftEquals(msg.Destination.GetNetwork(msg.Destination.GetChain())) {
+	// Validate the destination network before executing the swap.
+	if !msg.Destination.IsCurrentNetwork(msg.Destination.GetChain()) {
 		return nil, cosmos.ZeroUint(), cosmos.ZeroUint(), fmt.Errorf("address(%s) is not same network", msg.Destination)
 	}
 
@@ -355,7 +370,7 @@ func (h SwapHandler) handleWithSwapResult(ctx cosmos.Context, msg MsgSwap) (*cos
 
 	// Parsed up here so sub-swap sizing in getMaxSwapQuantity can honor the
 	// affiliate's dynamic floor; also used below for swap accounting.
-	mem, parseMemoErr := ParseMemoWithTHORNames(ctx, h.mgr.Keeper(), msg.Tx.Memo)
+	mem, parseMemoErr := ParseMemoWithTHORNamesCached(ctx, h.mgr.Keeper(), msg.Tx.Memo)
 	var swapAffiliates []string
 	var swapAffiliateBps []cosmos.Uint
 	if parseMemoErr == nil {
@@ -513,7 +528,14 @@ func (h SwapHandler) handleWithSwapResult(ctx cosmos.Context, msg MsgSwap) (*cos
 			return nil, cosmos.ZeroUint(), cosmos.ZeroUint(), err
 		}
 		handler := NewAddLiquidityHandler(h.mgr)
-		_, err = handler.Run(ctx, msg)
+		_, err = runTracedHandler(
+			ctx,
+			h.mgr.Tracer(),
+			handlerTrace{path: pathPostSwap, msg: msg},
+			func() (*cosmos.Result, error) {
+				return handler.Run(ctx, msg)
+			},
+		)
 		if err != nil {
 			ctx.Logger().Error("swap handler failed to add liquidity", "error", err)
 			return nil, cosmos.ZeroUint(), cosmos.ZeroUint(), err

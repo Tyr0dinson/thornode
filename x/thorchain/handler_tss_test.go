@@ -672,7 +672,11 @@ func (s *HandlerTssSuite) TestTssHandler(c *C) {
 	}
 }
 
-func (s *HandlerTssSuite) TestTssHandlerAcceptsKeygenAtRetryBoundary(c *C) {
+// A keygen result expires exactly at the retry boundary (age == ChurnRetryInterval),
+// the same block the churn retry schedules a replacement keygen. Accepting it there
+// would let a stale result finalize a vault the retry is replacing; it must be
+// accepted only up to the block before the boundary.
+func (s *HandlerTssSuite) TestTssHandlerRejectsKeygenAtRetryBoundary(c *C) {
 	helper := newTssHandlerTestHelper(c)
 	handler := NewTssHandler(NewDummyMgrWithKeeper(helper.keeper))
 
@@ -697,8 +701,13 @@ func (s *HandlerTssSuite) TestTssHandlerAcceptsKeygenAtRetryBoundary(c *C) {
 	)
 	c.Assert(err, IsNil)
 
+	// One block before the boundary: still accepted.
+	lastValidCtx := helper.ctx.WithBlockHeight(helper.ctx.BlockHeight() + retryBlocks - 1)
+	c.Assert(handler.validate(lastValidCtx, msg), IsNil)
+
+	// At the retry boundary: rejected (was accepted before the off-by-one fix).
 	boundaryCtx := helper.ctx.WithBlockHeight(helper.ctx.BlockHeight() + retryBlocks)
-	c.Assert(handler.validate(boundaryCtx, msg), IsNil)
+	c.Assert(handler.validate(boundaryCtx, msg), ErrorMatches, "invalid keygen block: unknown request")
 
 	expiredCtx := helper.ctx.WithBlockHeight(helper.ctx.BlockHeight() + retryBlocks + 1)
 	c.Assert(handler.validate(expiredCtx, msg), ErrorMatches, "invalid keygen block: unknown request")
@@ -1582,6 +1591,11 @@ func (s *HandlerTssSuite) TestSharedKeygenBlockRotatesRegularAsgardWithoutWaitin
 	voter.Secp256K1Signatures = []string{"sig-a", "sig-a", "sig-a"}
 	helper.keeper.SetTssVoter(helper.ctx, voter)
 
+	// A non-member offender blamed during this churn. Bifrost may never
+	// complete the XMR keygen, so the regular rotation alone must reset blame.
+	offender := GetRandomBech32Addr()
+	c.Assert(helper.keeper.IncrementKeygenBlame(helper.ctx, offender), IsNil)
+
 	_, err = handler.Run(helper.ctx, msg)
 	c.Assert(err, IsNil)
 
@@ -1589,6 +1603,229 @@ func (s *HandlerTssSuite) TestSharedKeygenBlockRotatesRegularAsgardWithoutWaitin
 	c.Assert(err, IsNil)
 	c.Assert(regularVault.Status, Equals, ActiveVault)
 	c.Assert(regularVault.IsXMRMonovault(), Equals, false)
+
+	record, err := helper.keeper.GetNodeBlameRecord(helper.ctx, offender)
+	c.Assert(err, IsNil)
+	c.Check(record.KeygenBlameCountSinceChurn, Equals, int64(0),
+		Commentf("completed regular churn must reset since_churn blame while XMR is pending"))
+}
+
+// TestCompletedChurnResetsNonMemberBlame verifies that once every keygen in the
+// keygen block has rotated to an active vault, since_churn blame is cleared for
+// all nodes, including offenders left out of the new vault. Otherwise a jailed
+// standby node would carry an escalated multiplier into a later churn.
+func (s *HandlerTssSuite) TestCompletedChurnResetsNonMemberBlame(c *C) {
+	helper := newTssHandlerTestHelper(c)
+	mgr := NewDummyMgrWithKeeper(helper.keeper)
+	mgr.networkMgr = newNetworkMgr(helper.keeper, mgr.TxOutStore(), mgr.EventMgr())
+	handler := NewTssHandler(mgr)
+	c.Assert(helper.keeper.Keeper.DeleteVault(helper.ctx, helper.poolPk), IsNil)
+	members := helper.members[:4]
+
+	keygenBlock := NewKeygenBlock(helper.ctx.BlockHeight())
+	keygenBlock.Keygens = []Keygen{{Type: AsgardKeygen, Members: members.Strings()}}
+	helper.keeper.SetKeygenBlock(helper.ctx, keygenBlock)
+
+	poolPubKey := GetRandomPubKey()
+	poolEddsaPubKey := GetRandomPubKey()
+	msg, err := NewMsgTssPoolV2(
+		members.Strings(), poolPubKey, nil, nil, AsgardKeygen,
+		helper.ctx.BlockHeight(), nil,
+		common.Chains{common.RuneAsset().Chain}.Strings(), helper.signer,
+		int64(1024), poolEddsaPubKey, nil, nil, common.EmptyPubKey,
+	)
+	c.Assert(err, IsNil)
+
+	setKeygenMemberNodeAccount(c, helper, members[0], NodeActive)
+	setKeygenMemberNodeAccount(c, helper, members[1], NodeReady)
+	setKeygenMemberNodeAccount(c, helper, members[2], NodeReady)
+	setKeygenMemberNodeAccount(c, helper, members[3], NodeReady)
+
+	voter := NewTssVoter(msg.ID, members.Strings(), poolPubKey, poolEddsaPubKey)
+	for _, member := range members[1:3] {
+		addr, addrErr := member.GetThorAddress()
+		c.Assert(addrErr, IsNil)
+		voter.Signers = append(voter.Signers, addr.String())
+	}
+	voter.Secp256K1Signatures = []string{"sig-a", "sig-a", "sig-a"}
+	helper.keeper.SetTssVoter(helper.ctx, voter)
+
+	offender := GetRandomBech32Addr()
+	c.Assert(helper.keeper.IncrementKeygenBlame(helper.ctx, offender), IsNil)
+
+	_, err = handler.Run(helper.ctx, msg)
+	c.Assert(err, IsNil)
+
+	vault, err := helper.keeper.GetVault(helper.ctx, poolPubKey)
+	c.Assert(err, IsNil)
+	c.Assert(vault.Status, Equals, ActiveVault)
+
+	record, err := helper.keeper.GetNodeBlameRecord(helper.ctx, offender)
+	c.Assert(err, IsNil)
+	c.Check(record.KeygenBlameCountTotal, Equals, int64(1))
+	c.Check(record.KeygenBlameCountSinceChurn, Equals, int64(0),
+		Commentf("completed churn must reset non-member since_churn blame"))
+}
+
+// TestXMROnlyCompletionDoesNotResetBlame verifies that an XMR monovault keygen
+// completing in its own keygen block does not clear since_churn blame, since a
+// separate regular churn may still be unfinished.
+func (s *HandlerTssSuite) TestXMROnlyCompletionDoesNotResetBlame(c *C) {
+	helper := newTssHandlerTestHelper(c)
+	mgr := NewDummyMgrWithKeeper(helper.keeper)
+	mgr.networkMgr = newNetworkMgr(helper.keeper, mgr.TxOutStore(), mgr.EventMgr())
+	handler := NewTssHandler(mgr)
+	c.Assert(helper.keeper.Keeper.DeleteVault(helper.ctx, helper.poolPk), IsNil)
+	members := helper.members[:4]
+
+	keygenBlock := NewKeygenBlock(helper.ctx.BlockHeight())
+	keygenBlock.Keygens = []Keygen{{Type: XMRMonovaultKeygen, Members: members.Strings()}}
+	helper.keeper.SetKeygenBlock(helper.ctx, keygenBlock)
+
+	setKeygenMemberNodeAccount(c, helper, members[0], NodeActive)
+	setKeygenMemberNodeAccount(c, helper, members[1], NodeReady)
+	setKeygenMemberNodeAccount(c, helper, members[2], NodeReady)
+	setKeygenMemberNodeAccount(c, helper, members[3], NodeReady)
+
+	xmrPoolPubKey := GetRandomPubKey()
+	xmrFrostPubKey := GetRandomEd25519PubKey()
+	observedMoneroHeight := int64(777)
+	xmrMsg, err := NewMsgTssPoolV3(
+		members.Strings(), xmrPoolPubKey, nil, nil, XMRMonovaultKeygen,
+		helper.ctx.BlockHeight(), nil, xmrMonovaultChains().Strings(), helper.signer,
+		int64(1024), common.EmptyPubKey, nil, validTssKeyshareBackup(),
+		xmrFrostPubKey, observedMoneroHeight,
+	)
+	c.Assert(err, IsNil)
+	xmrVoter := NewTssVoter(xmrMsg.ID, members.Strings(), xmrPoolPubKey, common.EmptyPubKey)
+	xmrVoter.PoolPubKeyFrost = xmrFrostPubKey
+	xmrVoter.ObservedMoneroHeight = observedMoneroHeight
+	for _, member := range members[1:3] {
+		addr, addrErr := member.GetThorAddress()
+		c.Assert(addrErr, IsNil)
+		xmrVoter.Signers = append(xmrVoter.Signers, addr.String())
+	}
+	helper.keeper.SetTssVoter(helper.ctx, xmrVoter)
+
+	offender := GetRandomBech32Addr()
+	c.Assert(helper.keeper.IncrementKeygenBlame(helper.ctx, offender), IsNil)
+
+	_, err = handler.Run(helper.ctx, xmrMsg)
+	c.Assert(err, IsNil)
+
+	xmrVault, err := helper.keeper.GetVault(helper.ctx, xmrPoolPubKey)
+	c.Assert(err, IsNil)
+	c.Assert(xmrVault.Status, Equals, ActiveVault)
+	c.Assert(xmrVault.IsXMRMonovault(), Equals, true)
+
+	record, err := helper.keeper.GetNodeBlameRecord(helper.ctx, offender)
+	c.Assert(err, IsNil)
+	c.Check(record.KeygenBlameCountSinceChurn, Equals, int64(1),
+		Commentf("XMR-only completion must not reset since_churn blame"))
+}
+
+// TestXMRSuccessPreservesDualMemberBlame verifies that an XMR monovault keygen
+// success does not reset the since_churn counters of its own members. A node
+// in both the regular and XMR committees must keep its regular-churn blame, so
+// its next regular keygen failure is still escalated.
+func (s *HandlerTssSuite) TestXMRSuccessPreservesDualMemberBlame(c *C) {
+	helper := newTssHandlerTestHelper(c)
+	mgr := NewDummyMgrWithKeeper(helper.keeper)
+	mgr.networkMgr = newNetworkMgr(helper.keeper, mgr.TxOutStore(), mgr.EventMgr())
+	handler := NewTssHandler(mgr)
+	verifySecp256K1Signature = func(_ common.PubKey, _ []byte) error { return nil }
+	c.Assert(helper.keeper.Keeper.DeleteVault(helper.ctx, helper.poolPk), IsNil)
+	xmrMembers := helper.members[:4]
+
+	keygenBlock := NewKeygenBlock(helper.ctx.BlockHeight())
+	keygenBlock.Keygens = []Keygen{
+		{Type: AsgardKeygen, Members: helper.members.Strings()},
+		{Type: XMRMonovaultKeygen, Members: xmrMembers.Strings()},
+	}
+	helper.keeper.SetKeygenBlock(helper.ctx, keygenBlock)
+
+	setKeygenMemberNodeAccount(c, helper, xmrMembers[0], NodeActive)
+	setKeygenMemberNodeAccount(c, helper, xmrMembers[1], NodeReady)
+	setKeygenMemberNodeAccount(c, helper, xmrMembers[2], NodeReady)
+	setKeygenMemberNodeAccount(c, helper, xmrMembers[3], NodeReady)
+
+	// The blamed node sits in both committees.
+	blamedPK := xmrMembers[3]
+	blamedAddr, err := blamedPK.GetThorAddress()
+	c.Assert(err, IsNil)
+	c.Assert(helper.keeper.IncrementKeygenBlame(helper.ctx, blamedAddr), IsNil)
+	c.Assert(helper.keeper.IncrementKeysignBlame(helper.ctx, blamedAddr), IsNil)
+
+	xmrPoolPubKey := GetRandomPubKey()
+	xmrFrostPubKey := GetRandomEd25519PubKey()
+	observedMoneroHeight := int64(777)
+	xmrMsg, err := NewMsgTssPoolV3(
+		xmrMembers.Strings(), xmrPoolPubKey, nil, nil, XMRMonovaultKeygen,
+		helper.ctx.BlockHeight(), nil, xmrMonovaultChains().Strings(), helper.signer,
+		int64(1024), common.EmptyPubKey, nil, validTssKeyshareBackup(),
+		xmrFrostPubKey, observedMoneroHeight,
+	)
+	c.Assert(err, IsNil)
+	xmrVoter := NewTssVoter(xmrMsg.ID, xmrMembers.Strings(), xmrPoolPubKey, common.EmptyPubKey)
+	xmrVoter.PoolPubKeyFrost = xmrFrostPubKey
+	xmrVoter.ObservedMoneroHeight = observedMoneroHeight
+	for _, member := range xmrMembers[1:3] {
+		addr, addrErr := member.GetThorAddress()
+		c.Assert(addrErr, IsNil)
+		xmrVoter.Signers = append(xmrVoter.Signers, addr.String())
+	}
+	helper.keeper.SetTssVoter(helper.ctx, xmrVoter)
+
+	_, err = handler.Run(helper.ctx, xmrMsg)
+	c.Assert(err, IsNil)
+
+	xmrVault, err := helper.keeper.GetVault(helper.ctx, xmrPoolPubKey)
+	c.Assert(err, IsNil)
+	c.Assert(xmrVault.IsXMRMonovault(), Equals, true)
+	c.Assert(xmrVault.GetMembership().Contains(blamedPK), Equals, true)
+
+	record, err := helper.keeper.GetNodeBlameRecord(helper.ctx, blamedAddr)
+	c.Assert(err, IsNil)
+	c.Check(record.KeygenBlameCountSinceChurn, Equals, int64(1),
+		Commentf("XMR success must not reset a member's keygen since_churn blame"))
+	c.Check(record.KeysignBlameCountSinceChurn, Equals, int64(1),
+		Commentf("XMR success must not reset a member's keysign since_churn blame"))
+
+	// The regular keygen then fails, blaming the same node again.
+	failMsg, err := NewMsgTssPoolV2(
+		helper.members.Strings(), GetRandomPubKey(), []byte("fakeSignature"), nil,
+		AsgardKeygen, helper.ctx.BlockHeight(),
+		[]Blame{{FailReason: "test escalation", BlameNodes: []Node{{Pubkey: blamedPK.String()}}}},
+		common.Chains{common.RuneAsset().Chain}.Strings(), helper.signer,
+		int64(1024), GetRandomPubKey(), nil, nil, common.EmptyPubKey,
+	)
+	c.Assert(err, IsNil)
+	failVoter, err := helper.keeper.GetTssVoter(helper.ctx, failMsg.ID)
+	c.Assert(err, IsNil)
+	for _, pk := range helper.members {
+		addr, errPK := pk.GetThorAddress()
+		c.Assert(errPK, IsNil)
+		if addr.Equals(helper.signer) {
+			continue
+		}
+		failVoter.Signers = append(failVoter.Signers, addr.String())
+	}
+	helper.keeper.SetTssVoter(helper.ctx, failVoter)
+
+	_, err = handler.Run(helper.ctx, failMsg)
+	c.Assert(err, IsNil)
+
+	record, err = helper.keeper.GetNodeBlameRecord(helper.ctx, blamedAddr)
+	c.Assert(err, IsNil)
+	c.Check(record.KeygenBlameCountSinceChurn, Equals, int64(2))
+
+	// Escalated: JailTimeKeygenBase * 2, not the base penalty.
+	jailTimeKeygenBase := helper.constAccessor.GetInt64Value(constants.JailTimeKeygenBase)
+	expectedRelease := helper.ctx.BlockHeight() + jailTimeKeygenBase*2
+	jail, err := helper.keeper.GetNodeAccountJail(helper.ctx, blamedAddr)
+	c.Assert(err, IsNil)
+	c.Check(jail.ReleaseHeight, Equals, expectedRelease,
+		Commentf("expected escalated release %d, got %d", expectedRelease, jail.ReleaseHeight))
 }
 
 func (s *HandlerTssSuite) TestXMRMonovaultRotatesWithoutRegularVaultRotation(c *C) {
@@ -2430,4 +2667,238 @@ func securityEventMsg(ctx cosmos.Context) string {
 		}
 	}
 	return ""
+}
+
+// TestKeygenSuccessResetsOnlyMembershipBlame drives a complete keygen success
+// (full consensus + matching check signatures) and verifies the handler resets
+// since_churn counters for the just-succeeded vault's members but leaves a
+// non-member node's counters intact. This locks in the membership-scoped
+// reset, which prevents a parallel multi-Asgard success in one vault from
+// wiping pending blame counters of nodes participating in another,
+// still-failing Asgard keygen. It also exercises the membership
+// pubkey-to-thor-address derivation that feeds
+// ResetSinceChurnCountersForMembers on the AsgardKeygen success path of
+// TssHandler.handle.
+func (s *HandlerTssSuite) TestKeygenSuccessResetsOnlyMembershipBlame(c *C) {
+	helper := newTssHandlerTestHelper(c)
+	handler := NewTssHandler(NewDummyMgrWithKeeper(helper.keeper))
+
+	// addrOther represents a node that is NOT a member of the vault about
+	// to succeed (e.g., a member of another, still-failing Asgard during
+	// a parallel multi-Asgard churn). Its since_churn blame must NOT be
+	// wiped by this success.
+	addrOther := GetRandomBech32Addr()
+	c.Assert(helper.keeper.IncrementKeygenBlame(helper.ctx, addrOther), IsNil)
+
+	// addrMember represents one of the about-to-succeed vault's members.
+	// Its since_churn counters should be reset by the address the handler
+	// derives from the membership pubkey string.
+	addrMember, err := helper.members[3].GetThorAddress()
+	c.Assert(err, IsNil)
+	c.Assert(helper.keeper.IncrementKeygenBlame(helper.ctx, addrMember), IsNil)
+	c.Assert(helper.keeper.IncrementKeygenBlame(helper.ctx, addrMember), IsNil)
+
+	// Drive a full keygen success: each member signs the same msg with the
+	// same non-empty Secp256K1Signature so the voter reaches both 8/8
+	// consensus and the identical-check-signature consensus
+	// (ConsensusCheckSignature) that TssHandler.handle requires for
+	// AsgardKeygen. Use handler.handle to bypass the secp256k1
+	// signature verification done in handler.validate.
+	keygenTime := int64(1024)
+	poolPubKey := GetRandomPubKey()
+	poolEddsaPubKey := GetRandomPubKey()
+	fakeSig := []byte("fakeSig")
+	for _, item := range helper.members {
+		thorAddr, errAddr := item.GetThorAddress()
+		c.Assert(errAddr, IsNil)
+		tssMsg, errMsg := NewMsgTssPoolV2(
+			helper.members.Strings(), poolPubKey, fakeSig, nil,
+			AsgardKeygen, helper.ctx.BlockHeight(), nil,
+			common.Chains{common.RuneAsset().Chain}.Strings(), thorAddr,
+			keygenTime, poolEddsaPubKey, nil, nil, common.EmptyPubKey,
+		)
+		c.Assert(errMsg, IsNil)
+		c.Assert(handler.handle(helper.ctx, tssMsg), IsNil)
+	}
+
+	// Member's since_churn must be reset; total preserved.
+	recordMember, err := helper.keeper.GetNodeBlameRecord(helper.ctx, addrMember)
+	c.Assert(err, IsNil)
+	c.Check(recordMember.KeygenBlameCountTotal, Equals, int64(2))
+	c.Check(recordMember.KeygenBlameCountSinceChurn, Equals, int64(0),
+		Commentf("vault member's since_churn must be reset"))
+
+	// Non-member's blame counters must be untouched.
+	recordOther, err := helper.keeper.GetNodeBlameRecord(helper.ctx, addrOther)
+	c.Assert(err, IsNil)
+	c.Check(recordOther.KeygenBlameCountTotal, Equals, int64(1))
+	c.Check(recordOther.KeygenBlameCountSinceChurn, Equals, int64(1),
+		Commentf("non-member's since_churn must NOT be wiped by this success"))
+}
+
+// TestKeygenFailEscalationMath drives a keygen failure where the blamed node
+// is non-active and already has prior since-churn keygen blames, and locks in
+// the per-blame multiplier math: jail release height and bond slash both
+// scale with the post-increment blame count, not the base values.
+//
+// A regression that uses baseJailTime in place of escalatedJailTime for
+// releaseHeight, or baseSlashPoints in place of escalatedSlashPoints for
+// CalcNodeRewards, would produce a different jail height / bond delta and
+// fail this test. See the non-active-node escalated-penalty branch of the
+// keygen-failure blame loop in TssHandler.handle.
+func (s *HandlerTssSuite) TestKeygenFailEscalationMath(c *C) {
+	// 2 prior blames; the handler increments to 3, so the multiplier is 3.
+	assertKeygenFailEscalation(c, 2, 3)
+}
+
+// TestKeygenFailEscalationCapped checks that the default
+// MaxKeygenBlameMultiplier caps the jail and bond slash multiplier while the
+// blame count keeps growing.
+func (s *HandlerTssSuite) TestKeygenFailEscalationCapped(c *C) {
+	// 5 prior blames; the handler increments to 6, capped at 3.
+	c.Assert(constants.NewConstantValue().GetInt64Value(constants.MaxKeygenBlameMultiplier), Equals, int64(3))
+	assertKeygenFailEscalation(c, 5, 3)
+}
+
+func assertKeygenFailEscalation(c *C, priorBlames, expectedMult int64) {
+	helper := newTssHandlerTestHelper(c)
+	handler := NewTssHandler(NewDummyMgrWithKeeper(helper.keeper))
+
+	// The signature-verification override is package-level and set in
+	// TestTssHandler; set it again here so the test is order-independent.
+	verifySecp256K1Signature = func(_ common.PubKey, _ []byte) error { return nil }
+
+	// Set up a Standby NodeAccount for members[3] with a substantial bond
+	// so the slashBond calculation is not capped by na.Bond.
+	blamedPK := helper.members[3]
+	blamedAddr, err := blamedPK.GetThorAddress()
+	c.Assert(err, IsNil)
+	blamedNode := GetRandomValidatorNode(NodeStandby)
+	blamedNode.NodeAddress = blamedAddr
+	blamedNode.Bond = cosmos.NewUint(10000 * common.One)
+	c.Assert(helper.keeper.SetNodeAccount(helper.ctx, blamedNode), IsNil)
+
+	for i := int64(0); i < priorBlames; i++ {
+		c.Assert(helper.keeper.IncrementKeygenBlame(helper.ctx, blamedAddr), IsNil)
+	}
+
+	// Pick Network values that give a clean, multiplier-sensitive slashBond:
+	//   escalated nodeUnits = 720 * expectedMult -> slashBond = expectedMult * common.One
+	//   regression nodeUnits = 720               -> slashBond = 1 * common.One
+	network := Network{
+		BondRewardRune: cosmos.NewUint(common.One),
+		TotalBondUnits: cosmos.NewUint(720),
+	}
+	c.Assert(helper.keeper.SetNetwork(helper.ctx, network), IsNil)
+
+	keygenTime := int64(1024)
+	fakeSig := []byte("fakeSignature")
+	b := Blame{
+		FailReason: "test escalation",
+		BlameNodes: []Node{{Pubkey: blamedPK.String()}},
+	}
+	tssMsg, err := NewMsgTssPoolV2(
+		helper.members.Strings(), GetRandomPubKey(), fakeSig, nil,
+		AsgardKeygen, helper.ctx.BlockHeight(), []Blame{b},
+		common.Chains{common.RuneAsset().Chain}.Strings(), helper.signer,
+		keygenTime, GetRandomPubKey(), nil, nil, common.EmptyPubKey,
+	)
+	c.Assert(err, IsNil)
+
+	// Pre-fill the voter with all non-signer members; msg.Signer brings
+	// the voter to full consensus when handler.Run signs.
+	voter, err := helper.keeper.GetTssVoter(helper.ctx, tssMsg.ID)
+	c.Assert(err, IsNil)
+	for _, pk := range helper.members {
+		addr, errPK := pk.GetThorAddress()
+		c.Assert(errPK, IsNil)
+		if addr.Equals(helper.signer) {
+			continue
+		}
+		voter.Signers = append(voter.Signers, addr.String())
+	}
+	helper.keeper.SetTssVoter(helper.ctx, voter)
+
+	_, err = handler.Run(helper.ctx, tssMsg)
+	c.Assert(err, IsNil)
+
+	// Blame count was incremented by the handler.
+	record, err := helper.keeper.GetNodeBlameRecord(helper.ctx, blamedAddr)
+	c.Assert(err, IsNil)
+	c.Check(record.KeygenBlameCountSinceChurn, Equals, priorBlames+1)
+
+	// Jail release height = blockHeight + JailTimeKeygenBase * multiplier.
+	jailTimeKeygenBase := helper.constAccessor.GetInt64Value(constants.JailTimeKeygenBase)
+	expectedRelease := helper.ctx.BlockHeight() + jailTimeKeygenBase*expectedMult
+	jail, err := helper.keeper.GetNodeAccountJail(helper.ctx, blamedAddr)
+	c.Assert(err, IsNil)
+	c.Check(jail.ReleaseHeight, Equals, expectedRelease,
+		Commentf("expected %d, got %d", expectedRelease, jail.ReleaseHeight))
+
+	// Bond slash = CalcNodeRewards(FailKeygenSlashPoints * multiplier).
+	failKeygenSlashPoints := helper.constAccessor.GetInt64Value(constants.FailKeygenSlashPoints)
+	expectedSlash := network.CalcNodeRewards(cosmos.NewUint(uint64(failKeygenSlashPoints * expectedMult)))
+	expectedBond := cosmos.NewUint(10000 * common.One).Sub(expectedSlash)
+	naAfter, err := helper.keeper.GetNodeAccount(helper.ctx, blamedAddr)
+	c.Assert(err, IsNil)
+	c.Check(naAfter.Bond.Equal(expectedBond), Equals, true,
+		Commentf("expected %s, got %s", expectedBond.String(), naAfter.Bond.String()))
+}
+
+func (s *HandlerTssSuite) TestKeygenFailRecordsBlameForActiveNode(c *C) {
+	helper := newTssHandlerTestHelper(c)
+	handler := NewTssHandler(NewDummyMgrWithKeeper(helper.keeper))
+	verifySecp256K1Signature = func(_ common.PubKey, _ []byte) error { return nil }
+
+	blamedPK := helper.members[3]
+	blamedAddr, err := blamedPK.GetThorAddress()
+	c.Assert(err, IsNil)
+	blamedNode := GetRandomValidatorNode(NodeActive)
+	blamedNode.NodeAddress = blamedAddr
+	blamedNode.Bond = cosmos.NewUint(10000 * common.One)
+	c.Assert(helper.keeper.SetNodeAccount(helper.ctx, blamedNode), IsNil)
+
+	b := Blame{
+		FailReason: "test active blame",
+		BlameNodes: []Node{{Pubkey: blamedPK.String()}},
+	}
+	tssMsg, err := NewMsgTssPoolV2(
+		helper.members.Strings(), GetRandomPubKey(), []byte("fakeSignature"), nil,
+		AsgardKeygen, helper.ctx.BlockHeight(), []Blame{b},
+		common.Chains{common.RuneAsset().Chain}.Strings(), helper.signer,
+		1024, GetRandomPubKey(), nil, nil, common.EmptyPubKey,
+	)
+	c.Assert(err, IsNil)
+
+	voter, err := helper.keeper.GetTssVoter(helper.ctx, tssMsg.ID)
+	c.Assert(err, IsNil)
+	for _, pk := range helper.members {
+		addr, errPK := pk.GetThorAddress()
+		c.Assert(errPK, IsNil)
+		if addr.Equals(helper.signer) {
+			continue
+		}
+		voter.Signers = append(voter.Signers, addr.String())
+	}
+	helper.keeper.SetTssVoter(helper.ctx, voter)
+
+	_, err = handler.Run(helper.ctx, tssMsg)
+	c.Assert(err, IsNil)
+
+	// Blame is recorded for the active node.
+	record, err := helper.keeper.GetNodeBlameRecord(helper.ctx, blamedAddr)
+	c.Assert(err, IsNil)
+	c.Check(record.KeygenBlameCountSinceChurn, Equals, int64(1))
+	c.Check(record.KeygenBlameCountTotal, Equals, int64(1))
+
+	// Active nodes get slash points only: no escalated jail or bond slash.
+	slashPoints, err := helper.keeper.GetNodeAccountSlashPoints(helper.ctx, blamedAddr)
+	c.Assert(err, IsNil)
+	c.Check(slashPoints >= helper.constAccessor.GetInt64Value(constants.FailKeygenSlashPoints), Equals, true)
+	jail, err := helper.keeper.GetNodeAccountJail(helper.ctx, blamedAddr)
+	c.Assert(err, IsNil)
+	c.Check(jail.ReleaseHeight, Equals, int64(0))
+	naAfter, err := helper.keeper.GetNodeAccount(helper.ctx, blamedAddr)
+	c.Assert(err, IsNil)
+	c.Check(naAfter.Bond.Equal(cosmos.NewUint(10000*common.One)), Equals, true)
 }
