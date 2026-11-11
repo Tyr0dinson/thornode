@@ -42,6 +42,18 @@ When issues arise, halt **both trading and signing**. Halting only signing keeps
 A chain halt (`HALT<CHAIN>CHAIN`) blocks ALL swap activity involving that chain - including L1, Trade Account, and Secured Asset swaps. Halting the chain also stops all scanning, so should only be used in emergencies (lest the chain scanner fall behind and require significant time to catch up).
 ```
 
+### XMR Scanner Activation
+
+`HaltScannerXMR` is a Bifrost-only activation switch for the XMR block scanner and spent-reference catch-up. Set it to `0` to explicitly enable scanning. Any positive value pauses scanning. A missing or negative value, or a Mimir lookup error, fails closed and keeps the scanner paused.
+
+This switch does not control keygen admission, enter THORNode's XMR chain-halt path, set the inbound-address `halted` field, or directly pause churn. A paused scanner also blocks normal XMR signing through the scanner-health check. Funded XMR vault migrations can therefore stall, and a retiring vault with funds above dust subsequently blocks churn. An unseeded pool or trading halt does not guarantee that the vault is unfunded; trading halts still permit observations.
+
+Only Bifrost builds containing this scanner gate honor the key. Keep `HaltXMRChain` in effect during deployment until every intended participant runs the same reviewed Bifrost and signer build. Keep `HaltScannerXMR` positive until economic activation is approved, then explicitly vote it to `0`; deleting the key does not enable scanning. Production activation runbooks and node-launcher notes must include this step. Before funding the pool or enabling deposits, confirm that the effective value is `0`, the existing pause checks permit scanning, and the scanner is healthy and progressing.
+
+`HaltScannerXMR` is an operational Mimir. `OperationalVotesMin` defaults to three active-node votes, but the chosen value must also have strictly more votes than every competing value. Three votes are not necessarily sufficient to replace an existing halt; a tie leaves the effective value unchanged.
+
+Operators should monitor the XMR `healthy` field from Bifrost's `/status/scanner` endpoint. A paused scanner reports `healthy: false`, but that health value does not distinguish this switch from other scanner failures. An unset switch is logged only at Debug level. Lookup errors are logged at Error level.
+
 ### Chain-Specific Halts (Detailed)
 
 1. **Signing Halt** - Allows inbound transactions but stops the signing of outbound transactions. Outbound transactions are [queued](https://gateway.liquify.com/chain/thorchain_api/thorchain/queue). This is the least impactful halt.

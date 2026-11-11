@@ -23,7 +23,7 @@ import (
 	ltcchaincfg "github.com/ltcsuite/ltcd/chaincfg"
 	"github.com/ltcsuite/ltcutil"
 	"github.com/mr-tron/base58"
-	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/zecutil"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/zcash"
 	"golang.org/x/crypto/blake2b"
 
 	adacommon "github.com/blinklabs-io/gouroboros/ledger/common"
@@ -47,7 +47,17 @@ var (
 	EmptyPubKeySet         PubKeySet
 	pubkeyToAddressCache   = make(map[string]Address)
 	pubkeyToAddressCacheMu = &sync.RWMutex{}
+
+	// validPubKeyCache holds strings NewPubKey has accepted (failures are never
+	// cached). It is bounded by two generations: when cur fills it becomes prev
+	// and a fresh cur starts, and prev hits are promoted, so keys still in use
+	// survive while junk from query input ages out
+	validPubKeyCache   = make(map[string]struct{})
+	validPubKeyPrev    = make(map[string]struct{})
+	validPubKeyCacheMu sync.RWMutex
 )
+
+const validPubKeyCacheMax = 8192
 
 ////////////////////////////////////////////////////////////////////////////////////////
 // PubKey
@@ -59,11 +69,34 @@ func NewPubKey(key string) (PubKey, error) {
 	if len(key) == 0 {
 		return EmptyPubKey, nil
 	}
-	_, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, key)
-	if err != nil {
-		return EmptyPubKey, fmt.Errorf("%s is not bech32 encoded pub key,err : %w", key, err)
+	// validation is a pure function of the string and the account pubkey prefix;
+	// vault memberships re-validate the same keys constantly
+	cacheKey := cosmos.GetConfig().GetBech32AccountPubPrefix() + "|" + key
+	validPubKeyCacheMu.RLock()
+	_, ok := validPubKeyCache[cacheKey]
+	_, inPrev := validPubKeyPrev[cacheKey]
+	validPubKeyCacheMu.RUnlock()
+	if ok {
+		return PubKey(key), nil
 	}
+	if !inPrev {
+		_, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, key)
+		if err != nil {
+			return EmptyPubKey, fmt.Errorf("%s is not bech32 encoded pub key,err : %w", key, err)
+		}
+	}
+	rememberValidPubKey(cacheKey)
 	return PubKey(key), nil
+}
+
+func rememberValidPubKey(cacheKey string) {
+	validPubKeyCacheMu.Lock()
+	defer validPubKeyCacheMu.Unlock()
+	if len(validPubKeyCache) >= validPubKeyCacheMax {
+		validPubKeyPrev = validPubKeyCache
+		validPubKeyCache = make(map[string]struct{}, validPubKeyCacheMax)
+	}
+	validPubKeyCache[cacheKey] = struct{}{}
 }
 
 // NewPubKeyFromCrypto
@@ -119,7 +152,7 @@ func (p PubKey) GetAddress(chain Chain) (Address, error) {
 	}
 
 	// cache pubkey to address, since this is expensive with many vaults in pubkey manager
-	key := fmt.Sprintf("%s-%s", chain.String(), p.String())
+	key := chain.String() + "-" + p.String()
 	pubkeyToAddressCacheMu.RLock()
 	if v, ok := pubkeyToAddressCache[key]; ok {
 		pubkeyToAddressCacheMu.RUnlock()
@@ -278,7 +311,11 @@ func (p PubKey) GetAddress(chain Chain) (Address, error) {
 		var bz [20]byte
 		copy(bz[:], pk.Address().Bytes())
 
-		addressString = zecutil.NewAddressPubKeyHash(bz, ZECNetworkName()).String()
+		address, err := zcash.NewAddressPubKeyHash(bz, ZECNetworkName())
+		if err != nil {
+			return NoAddress, err
+		}
+		addressString = address.String()
 	case SUIChain:
 		pk, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, p.String())
 		if err != nil {
@@ -337,12 +374,49 @@ func (p PubKey) GetAddress(chain Chain) (Address, error) {
 	return address, nil
 }
 
+// thorAddressCacheKey identifies a GetThorAddress result: the decode checks
+// the address against the account address prefix of the SDK config.
+type thorAddressCacheKey struct {
+	prefix string
+	pubKey PubKey
+}
+
+// thorAddressCache memoizes successful GetThorAddress results. GetAddress
+// pins a pubkey's THORChain address for the life of the process
+// (pubkeyToAddressCache is never cleared) and decoding it is a pure function
+// of that string and the account prefix, so the cache cannot change results.
+// Bounded: once full, results are computed without being stored.
+var (
+	thorAddressCache   = make(map[thorAddressCacheKey]cosmos.AccAddress)
+	thorAddressCacheMu sync.RWMutex
+)
+
+const thorAddressCacheMax = 8192
+
+// GetThorAddress returns the THORChain account address of the pubkey. The
+// returned address is a fresh copy the caller may modify.
 func (p PubKey) GetThorAddress() (cosmos.AccAddress, error) {
+	key := thorAddressCacheKey{prefix: cosmos.GetConfig().GetBech32AccountAddrPrefix(), pubKey: p}
+	thorAddressCacheMu.RLock()
+	cached, ok := thorAddressCache[key]
+	thorAddressCacheMu.RUnlock()
+	if ok {
+		return append(cosmos.AccAddress(nil), cached...), nil
+	}
 	addr, err := p.GetAddress(THORChain)
 	if err != nil {
 		return nil, err
 	}
-	return cosmos.AccAddressFromBech32(addr.String())
+	accAddr, err := cosmos.AccAddressFromBech32(addr.String())
+	if err != nil {
+		return accAddr, err
+	}
+	thorAddressCacheMu.Lock()
+	if len(thorAddressCache) < thorAddressCacheMax {
+		thorAddressCache[key] = append(cosmos.AccAddress(nil), accAddr...)
+	}
+	thorAddressCacheMu.Unlock()
+	return accAddr, nil
 }
 
 // MarshalJSON to Marshals to JSON using Bech32

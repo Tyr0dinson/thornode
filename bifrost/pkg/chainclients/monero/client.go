@@ -213,6 +213,8 @@ type Client struct {
 
 	spentRefsRetryInterval    time.Duration
 	spentRefsRetryMaxAttempts int
+	spentRefsGuardMu          sync.RWMutex
+	spentRefsGuard            types.SpentOutputRefsGuard
 
 	recoveryRetryInterval    time.Duration
 	recoveryRetryMaxAttempts int
@@ -779,6 +781,9 @@ func (c *Client) spentOutputRefsSyncRunner() {
 
 func (c *Client) catchupSpentOutputRefs() {
 	if c.thorchainBridge == nil || c.sidecar == nil {
+		return
+	}
+	if blockscanner.IsXMRScannerPaused(c.logger, c.thorchainBridge) {
 		return
 	}
 	vaultKeys, err := c.getSpentOutputCatchupVaultKeys()
@@ -2858,6 +2863,53 @@ func (c *Client) ApplySpentOutputRefsWithOutcome(request types.SpentOutputRefsIm
 	c.applySpentOutputRefs(request, onOutcome)
 }
 
+// SetSpentOutputRefsGuard connects Observer's durable admission before startup.
+// All import paths share it, including local signing when Observer is wired.
+func (c *Client) SetSpentOutputRefsGuard(guard types.SpentOutputRefsGuard) {
+	c.spentRefsGuardMu.Lock()
+	defer c.spentRefsGuardMu.Unlock()
+	c.spentRefsGuard = guard
+}
+
+func (c *Client) spentOutputRefsAdmission(ctx context.Context, request types.SpentOutputRefsImport) func() (func(), bool) {
+	c.spentRefsGuardMu.RLock()
+	guard := c.spentRefsGuard
+	c.spentRefsGuardMu.RUnlock()
+	return func() (func(), bool) {
+		if ctx.Err() != nil {
+			return nil, false
+		}
+		select {
+		case <-c.stopchan:
+			return nil, false
+		default:
+		}
+		if guard == nil {
+			// Only standalone local signing can run without Observer. Imported
+			// consensus or peer evidence must never bypass durable admission.
+			if request.ChainCommitted || request.ReplaySource {
+				return nil, false
+			}
+			return func() {}, true
+		}
+		release, ok := guard(request.Tx)
+		if !ok || release == nil {
+			return nil, false
+		}
+		if ctx.Err() != nil {
+			release()
+			return nil, false
+		}
+		select {
+		case <-c.stopchan:
+			release()
+			return nil, false
+		default:
+		}
+		return release, true
+	}
+}
+
 // applySpentOutputRefs centralizes the first attempt and final-outcome callback
 // so observer conflict bookkeeping can wait for retry exhaustion or success.
 func (c *Client) applySpentOutputRefs(
@@ -2989,6 +3041,19 @@ func (c *Client) applySpentOutputRefsOnceContext(ctx context.Context, request ty
 	if ctx.Err() != nil {
 		return false, false
 	}
+	guard := c.spentOutputRefsAdmission(ctx, request)
+	release, admitted := guard()
+	if !admitted {
+		return false, false
+	}
+	guarded := true
+	defer func() {
+		if guarded {
+			release()
+		}
+	}()
+	// MarkSpent changes accounting. Keep admission through durable signer
+	// bookkeeping so errata cleanup cannot be followed by a stale import.
 	result, err := c.sidecar.MarkSpent(vaultPubKey, txHash, refs, false, outbound)
 	if err != nil {
 		// Peer pre-quorum imports cannot rely on Thornode catchup until the refs
@@ -3034,6 +3099,11 @@ func (c *Client) applySpentOutputRefsOnceContext(ctx context.Context, request ty
 			Msg("refuse to enroll xmr spent-ref import without authenticated durable signer state")
 		return false, false
 	}
+	// Reorg scanning holds scanMu while waiting for Observer cleanup. Release
+	// the admission reader before replay takes scanMu; replay reacquires it
+	// under that lock before any sidecar or durable mutation.
+	release()
+	guarded = false
 	if request.ReplaySource && !request.ChainCommitted && c.scanner == nil {
 		return false, true
 	}
@@ -3047,20 +3117,29 @@ func (c *Client) applySpentOutputRefsOnceContext(ctx context.Context, request ty
 			// Migrations already bind their journal and mark the source mined
 			// through the destination-replay path below. Ordinary committed
 			// payouts need the same accounting reconciliation, but no replay.
-			if reconcileErr := c.scanner.ReconcileCommittedOutbound(tx); reconcileErr != nil {
+			if reconcileErr := c.scanner.reconcileCommittedOutboundGuarded(tx, guard); reconcileErr != nil {
+				if errors.Is(reconcileErr, errXMRSpentRefsAdmissionRejected) {
+					return false, false
+				}
 				c.logger.Warn().Err(reconcileErr).Str("tx_hash", txHash).
 					Msg("committed xmr payout mined reconciliation will retry")
 				return false, true
 			}
 		}
 		if request.ReplaySource && !request.ChainCommitted {
-			if _, replayErr := c.scanner.EnqueueAuthenticatedOutboundReplay(tx); replayErr != nil {
+			if _, replayErr := c.scanner.enqueueAuthenticatedOutboundReplayGuarded(tx, guard); replayErr != nil {
+				if errors.Is(replayErr, errXMRSpentRefsAdmissionRejected) {
+					return false, false
+				}
 				c.logger.Error().Err(replayErr).Str("tx_hash", txHash).Msg("failed to queue authenticated xmr payout replay")
 				return false, true
 			}
 		}
-		queued, replayErr := c.scanner.EnqueueAuthenticatedInternalInboundReplay(tx)
+		queued, replayErr := c.scanner.enqueueAuthenticatedInternalInboundReplayGuarded(tx, guard)
 		if replayErr != nil {
+			if errors.Is(replayErr, errXMRSpentRefsAdmissionRejected) {
+				return false, false
+			}
 			c.logger.Error().Err(replayErr).Str("tx_hash", txHash).
 				Msg("failed to queue authenticated xmr migration replay")
 			// MarkSpent is idempotent. Retry the complete import so a transient
@@ -4220,7 +4299,16 @@ func (c *Client) ReportSolvency(height int64) error {
 		return nil
 	}
 
-	if !c.IsBlockScannerHealthy() && !deferredForReconciliation && checkedVaults > 0 && len(solventMsgs) == checkedVaults {
+	// Report all vaults solvent only while THORChain itself has XMR halted or solvency-halted and
+	// this node's scanner is paused for it: the same gate as the other chain clients. A scanner
+	// that is unhealthy for a local reason (daemon or sidecar lag) must stay silent, because an
+	// all-clear only one node sends can never reach consensus and each one costs that node an
+	// unrefunded observation slash point. On a bridge error stay silent; the runner retries.
+	halted, haltErr := runners.IsHaltedOnChain(c.thorchainBridge, c.chain)
+	if haltErr != nil {
+		c.logger.Err(haltErr).Msg("fail to read chain halt state, skipping solvency all-clear")
+	}
+	if halted && !c.IsBlockScannerHealthy() && !deferredForReconciliation && checkedVaults > 0 && len(solventMsgs) == checkedVaults {
 		msgs = solventMsgs
 	}
 

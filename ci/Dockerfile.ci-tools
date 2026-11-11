@@ -12,11 +12,11 @@
 # toolchain bump downloads the newer Go instead of breaking the jobs.
 
 ARG DOCKER_MIRROR=
-FROM ${DOCKER_MIRROR}golang:1.26.9-alpine AS go
+FROM ${DOCKER_MIRROR}golang:1.26.10-alpine AS go
 
 FROM ${DOCKER_MIRROR}docker:28.5.2
 
-ENV CI_TOOLS_VERSION=2
+ENV CI_TOOLS_VERSION=3
 
 # docker:28.5.2 already ships the buildx and compose CLI plugins.
 # hadolint ignore=DL3018

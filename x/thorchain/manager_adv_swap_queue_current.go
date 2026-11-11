@@ -817,7 +817,15 @@ func (vm *SwapQueueAdv) EndBlock(ctx cosmos.Context, mgr Manager, telemetryEnabl
 	rapidSwapMax := mgr.Keeper().GetConfigInt64(ctx, constants.AdvSwapQueueRapidSwapMax)
 
 	// During simulations, keep todo empty to avoid limit swap discovery blocking on iterators
-	isSimulation := ctx.Value(constants.CtxSimulationMode) == true
+	isSimulation := isSimulationMode(ctx)
+
+	// Stable-to-stable checks and DollarsPerRune read the TOR anchors for every
+	// swap. Not in simulations: a WASM QuoteSwap runs them inside a tx, where
+	// the skipped store reads would change gas_used. A cache the caller
+	// attached (tests) is used as is.
+	if !isSimulation && keeper.AnchorsCacheFromContext(ctx) == nil {
+		ctx = keeper.WithAnchorsCache(ctx)
+	}
 
 	todo := make(tradePairs, 0)
 	todoSeen := make(tradePairSet)
@@ -875,6 +883,14 @@ func (vm *SwapQueueAdv) EndBlock(ctx cosmos.Context, mgr Manager, telemetryEnabl
 		// Exit early if no swaps found
 		if len(swaps) == 0 {
 			break
+		}
+
+		// Fill the anchors cache before any swap runs. A pool write before the
+		// first fill disables it, and only double swaps read the anchors
+		// before their pools are written (scoring and the swap's own
+		// stable-to-stable check); every swap reads them after, for its fees.
+		if iteration == 0 && !isSimulation {
+			vm.k.GetAnchors(ctx, common.TOR)
 		}
 
 		swaps, err = vm.scoreMsgs(ctx, swaps, synthVirtualDepthMult)
@@ -939,7 +955,21 @@ func (vm *SwapQueueAdv) EndBlock(ctx cosmos.Context, mgr Manager, telemetryEnabl
 
 			// make the primary swap using the cached context
 			var settleMsg string
-			_, emit, effectiveInput, handleErr := swapHandler.runWithEmitAndInput(cacheCtx, msg)
+			effectiveInput := cosmos.ZeroUint()
+			emit, handleErr := runTracedHandler(
+				cacheCtx,
+				mgr.Tracer(),
+				handlerTrace{path: pathAdvancedSwapQueue, msg: msg},
+				func() (cosmos.Uint, error) {
+					result := cosmos.ZeroUint()
+					err := runLuviGuarded(ctx, cacheCtx, mgr, msg, func(runCtx cosmos.Context) error {
+						var runErr error
+						_, result, effectiveInput, runErr = swapHandler.runWithEmitAndInput(runCtx, msg)
+						return runErr
+					})
+					return result, err
+				},
+			)
 			// Every handler invocation consumes execution budget. State progression
 			// may still be skipped for failed market swaps on rapid iterations, but
 			// failures must not make MaxSwapsPerBlock ineffective as a CPU bound.

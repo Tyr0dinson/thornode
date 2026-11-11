@@ -123,10 +123,14 @@ func (s *Signer) runAdmittedXMRKeygen(current *xmrKeygenRequest) *xmrKeygenReque
 	return nil
 }
 
+// xmrKeygenRecheckInterval is how often a retained XMR keygen rechecks its
+// policy. A variable so tests can skip the real waiting.
+var xmrKeygenRecheckInterval = constants.ThorchainBlockTime
+
 // retainXMRKeygen uses one worker for repeated errors and promoted requests.
 // Initial work does not require retries to be enabled; scheduled retries do.
 func (s *Signer) retainXMRKeygen(current *xmrKeygenRequest) {
-	ticker := time.NewTicker(constants.ThorchainBlockTime)
+	ticker := time.NewTicker(xmrKeygenRecheckInterval)
 	defer ticker.Stop()
 	for current != nil {
 		select {

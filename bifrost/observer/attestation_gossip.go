@@ -54,6 +54,12 @@ const (
 
 	defaultPeerTimeout = 20 * time.Second
 
+	// attestationAckTimeout bounds only the wait for a peer's ACK after the batch
+	// is already written. Kept well under defaultPeerTimeout so a peer that
+	// accepts the stream but never replies frees its send token quickly instead
+	// of tying it up for the full peer timeout.
+	attestationAckTimeout = 5 * time.Second
+
 	defaultPeerConcurrentSends    = 4
 	defaultPeerConcurrentReceives = 5
 	defaultMaxBatchSize           = 100
@@ -193,13 +199,19 @@ type AttestationGossip struct {
 	solvencies  map[common.TxID]*AttestationState[*common.Solvency]
 	errataTxs   map[common.ErrataTx]*AttestationState[*common.ErrataTx]
 	priceFeeds  map[string]*AttestationState[*common.PriceFeed]
+
+	solvencyMetrics *solvencyAttestationMetrics
 	// authorizedXMRSpentRefs remembers the source-vault-certified, pre-chain
 	// ref set admitted for an XMR outbound so later certified disagreements do
 	// not race a conflicting sidecar import. Entries track the import outcome:
 	// a set whose import failed terminally may be replaced by a differing
 	// certified set, and entries expire so a failed certificate cannot pin a
 	// txid for the life of the process.
-	authorizedXMRSpentRefs map[xmrSpentRefsConflictKey]*xmrSpentRefsConflictEntry
+	// This mutex protects only reservation bookkeeping. Never hold it while
+	// acquiring another lock, logging or making RPCs: cancellation cleanup must
+	// not wait for the global observer mutex or external work.
+	authorizedXMRSpentRefsMu sync.Mutex
+	authorizedXMRSpentRefs   map[xmrSpentRefsConflictKey]*xmrSpentRefsConflictEntry
 	// historicalXMRSpentRefCertificates is deliberately separate from
 	// observedTxs. Retiring-vault members that have churned out may contribute a
 	// source-vault certificate share, but that share must never count toward the
@@ -247,8 +259,20 @@ type AttestationGossip struct {
 	// peerManager is used to limit the number of concurrent receives from a peer
 	peerMgr *peerManager
 
-	stateInitPeers map[peer.ID]bool // peers that we have asked for their attestation state
-	stateInitMu    sync.Mutex
+	// Export admission is separate from ordinary gossip concurrency. Own one
+	// copied snapshot per peer, with a fixed total before any snapshot work.
+	stateExportMu sync.Mutex
+	stateExports  map[peer.ID]struct{}
+
+	startupStateMu      sync.Mutex
+	startupState        *attestationStateCollection
+	startupStatePending time.Time
+	startupStateStopped bool
+
+	stateInitPeers   map[peer.ID]bool // peers that we have asked for their attestation state
+	stateInitContext context.Context
+	stateInitWorkers *sync.WaitGroup
+	stateInitMu      sync.Mutex
 }
 
 // NewAttestationGossip create a new instance of AttestationGossip
@@ -303,6 +327,7 @@ func NewAttestationGossip(
 		solvencies:                        make(map[common.TxID]*AttestationState[*common.Solvency]),
 		errataTxs:                         make(map[common.ErrataTx]*AttestationState[*common.ErrataTx]),
 		priceFeeds:                        make(map[string]*AttestationState[*common.PriceFeed]),
+		solvencyMetrics:                   newSolvencyAttestationMetrics(m),
 		authorizedXMRSpentRefs:            make(map[xmrSpentRefsConflictKey]*xmrSpentRefsConflictEntry),
 		historicalXMRSpentRefCertificates: make(map[[32]byte]*historicalXMRSpentRefCertificateBucket),
 		historicalXMRCertificateSignerUse: make(map[string]int),
@@ -455,6 +480,45 @@ func (s *AttestationGossip) SetObserverApplySpentOutputRefs(fn func(request spen
 	s.observerApplySpentOutputRefs = fn
 }
 
+// acquireXMRSpentRefsAttempt orders one mutation against durable errata
+// admission. Retry waits and metadata queries run outside this barrier.
+func (s *AttestationGossip) acquireXMRSpentRefsAttempt(tx common.ObservedTx) (func(), bool) {
+	if !tx.Tx.Chain.Equals(common.XMRChain) {
+		return func() {}, true
+	}
+	s.xmrErrataBarrier.RLock()
+	s.mu.Lock()
+	admitted, err := s.admitXMRObservationLocked(tx)
+	s.mu.Unlock()
+	if err != nil || !admitted {
+		s.xmrErrataBarrier.RUnlock()
+		return nil, false
+	}
+	return s.xmrErrataBarrier.RUnlock, true
+}
+
+// spentRefsOutcome rechecks admission because cleanup may finish between the
+// client's last durable write and Observer's successful outcome bookkeeping.
+// Successful XMR outcomes call onOutcome while holding the errata barrier's
+// read lock. Callbacks must not reacquire the barrier as a reader or writer,
+// enter errata cleanup, or invert the barrier-before-bookkeeping lock order.
+func (s *AttestationGossip) spentRefsOutcome(tx common.ObservedTx, onOutcome func(bool)) func(bool) {
+	return func(applied bool) {
+		if onOutcome == nil {
+			return
+		}
+		if applied {
+			release, admitted := s.acquireXMRSpentRefsAttempt(tx)
+			if !admitted {
+				onOutcome(false)
+				return
+			}
+			defer release()
+		}
+		onOutcome(applied)
+	}
+}
+
 // SetObserverApplyCommittedSpentRefs wires the consensus-backed import used by
 // live quorum notifications. The notification supplies only a vault and tx ID;
 // the client must return the canonical transaction it reconstructed and applied.
@@ -487,7 +551,7 @@ func (s *AttestationGossip) applySpentRefsAsyncWithLimit(
 		return
 	}
 	s.runSpentRefsAsyncWithLimit(request.Tx.Tx.ID, sem, origin, onOutcome, func() {
-		s.observerApplySpentOutputRefs(request, onOutcome)
+		s.observerApplySpentOutputRefs(request, s.spentRefsOutcome(request.Tx, onOutcome))
 	})
 }
 
@@ -512,7 +576,7 @@ func (s *AttestationGossip) applyCommittedSpentRefsAsync(
 	s.runSpentRefsAsyncWithLimit(txID, s.applyCommittedSpentRefsSem, "committed", onRejected, func() {
 		imported, applied := s.observerApplyCommittedSpentRefs(s.lifecycleContext(), vaultPubKey, txID)
 		if onOutcome != nil {
-			onOutcome(imported, applied)
+			s.spentRefsOutcome(imported, func(ok bool) { onOutcome(imported, ok) })(applied)
 		}
 	})
 }
@@ -846,6 +910,9 @@ func (s *AttestationGossip) Start(ctx context.Context) {
 			for k, state := range s.solvencies {
 				state.mu.Lock()
 				if state.ExpiredAfterQuorum(s.config.LateObserveTimeout, s.config.NonQuorumTimeout) {
+					if state.AttestationCount() > 0 && shouldTrackSolvencyMetrics(state.Item) {
+						s.solvencyMetrics.prunePayload(state.Item, requiredSolvencyAttestations(s.activeValidatorCount()))
+					}
 					delete(s.solvencies, k)
 					s.solvenciesPool.PutAttestationState(state)
 				} else if state.ShouldSendLate(s.config.MinTimeBetweenAttestations) {
@@ -872,7 +939,7 @@ func (s *AttestationGossip) Start(ctx context.Context) {
 			s.priceFeeds = make(map[string]*AttestationState[*common.PriceFeed])
 
 			// Prune XMR spent-ref conflict memory
-			s.pruneAuthorizedXMRSpentRefsLocked(now)
+			s.pruneAuthorizedXMRSpentRefs(now)
 			s.pruneHistoricalXMRSpentRefCertificatesLocked(now)
 
 			s.mu.Unlock()

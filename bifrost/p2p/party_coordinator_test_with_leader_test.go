@@ -61,7 +61,8 @@ func leaderAppearsLastTest(t *testing.T, msgID string, peers []string, pcs []*Pa
 		}(el)
 	}
 
-	time.Sleep(time.Second * 2)
+	// members are already waiting (first request sent) when the leader joins
+	time.Sleep(time.Millisecond * 300)
 	// we start the leader firstly
 	wg.Add(1)
 	go func(coordinator *PartyCoordinator) {
@@ -87,7 +88,7 @@ func leaderAppersFirstTest(t *testing.T, msgID string, peers []string, pcs []*Pa
 		assert.Nil(t, err)
 		assert.Len(t, onlinePeers, 4)
 	}(pcs[0])
-	time.Sleep(time.Second)
+	time.Sleep(time.Millisecond * 200)
 	for _, el := range pcs[1:] {
 		wg.Add(1)
 		go func(coordinator *PartyCoordinator) {
@@ -143,7 +144,7 @@ func TestNewPartyCoordinator(t *testing.T) {
 }
 
 func TestNewPartyCoordinatorTimeOut(t *testing.T) {
-	timeout := time.Second * 3
+	timeout := time.Second * 2
 	hosts := setupHosts(t, 4)
 	var pcs []*PartyCoordinator
 	var peers []string

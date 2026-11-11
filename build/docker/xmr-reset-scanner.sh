@@ -17,8 +17,9 @@ set -euo pipefail
 #   2. Recreates the local bifrost with a temporary compose override so XMR
 #      restarts from the requested height
 #
-# Auth: derive the sidecar bearer token from the signer seed phrase, read from
-# SIGNER_SEED_PHRASE_FILE (falling back to the SIGNER_SEED_PHRASE env var).
+# Auth: use the signer's explicit XMR_FROST_AUTH_BEARER. If it is not already
+# set in the host environment, read it from the running signer and export it
+# for the Compose recreation without printing it.
 #
 # If the host has more than one local signer or bifrost container, pass
 # --signer-container / --bifrost-container explicitly.
@@ -84,10 +85,6 @@ discover_single_container() {
   printf '%s\n' "${matches[0]}"
 }
 
-trim() {
-  sed 's/^[[:space:]]*//;s/[[:space:]]*$//'
-}
-
 require_cmd() {
   command -v "$1" >/dev/null 2>&1 || fail "required command not found: $1"
 }
@@ -109,18 +106,6 @@ reset_vault_on_local_signer() {
   local signer="$1"
   local vault_pubkey="$2"
   local height="$3"
-  local seed token
-  # Prefer the file mount (SIGNER_SEED_PHRASE_FILE) so we don't depend on the
-  # seed living in the signer container's environment; fall back to the env var
-  # for compose-based dev nets that still inject it directly.
-  seed="$(docker exec "$signer" sh -c '
-    if [ -n "$SIGNER_SEED_PHRASE_FILE" ] && [ -r "$SIGNER_SEED_PHRASE_FILE" ]; then
-      cat "$SIGNER_SEED_PHRASE_FILE"
-    else
-      printf "%s" "$SIGNER_SEED_PHRASE"
-    fi' | trim)"
-  [ -n "$seed" ] || fail "seed phrase missing in $signer (neither SIGNER_SEED_PHRASE_FILE nor SIGNER_SEED_PHRASE available)"
-  token="$(printf '%s' "${seed}xmr-frost-auth" | sha256sum | cut -d' ' -f1)"
 
   local payload
   payload=$(printf '{"vault_pub_key":"%s","birthday_height":%s}\n' "$vault_pubkey" "$height")
@@ -131,9 +116,10 @@ reset_vault_on_local_signer() {
     return
   fi
 
-  docker exec -i -e AUTH="$token" "$signer" sh -lc \
-    'cat >/tmp/xmr-reset-scanner-payload.json && curl -s -X POST \
-      -H "Authorization: Bearer $AUTH" \
+  docker exec -i "$signer" sh -lc \
+    ': "${XMR_FROST_AUTH_BEARER:?XMR_FROST_AUTH_BEARER is not configured}"; \
+      cat >/tmp/xmr-reset-scanner-payload.json && curl -s -X POST \
+      -H "Authorization: Bearer $XMR_FROST_AUTH_BEARER" \
       -H "Content-Type: application/json" \
       --data @/tmp/xmr-reset-scanner-payload.json \
       http://localhost:8283/v1/monero/scanner/reset' <<<"$payload"
@@ -160,7 +146,7 @@ restart_local_bifrost() {
   fi
 
   local override_file
-  override_file="$(mktemp "${TMPDIR:-/tmp}/xmr-reset-scanner.override.XXXXXX.yml")"
+  override_file="$(mktemp "${TMPDIR:-/tmp}/xmr-reset-scanner.override.XXXXXX")"
   trap 'rm -f "$override_file"' EXIT
 
   cat >"$override_file" <<EOF
@@ -245,6 +231,15 @@ fi
 if [ -z "$SIGNER_CONTAINER" ]; then
   SIGNER_CONTAINER="$(discover_single_container '^docker-xmr-frost-signer')"
 fi
+
+signer_auth_bearer="$(docker exec "$SIGNER_CONTAINER" sh -c 'printf "%s" "${XMR_FROST_AUTH_BEARER:-}"')"
+[ -n "$signer_auth_bearer" ] || fail "XMR_FROST_AUTH_BEARER is not configured in $SIGNER_CONTAINER"
+if [ -n "${XMR_FROST_AUTH_BEARER-}" ] && [ "$XMR_FROST_AUTH_BEARER" != "$signer_auth_bearer" ]; then
+  fail "host XMR_FROST_AUTH_BEARER does not match $SIGNER_CONTAINER"
+fi
+XMR_FROST_AUTH_BEARER="$signer_auth_bearer"
+export XMR_FROST_AUTH_BEARER
+unset signer_auth_bearer
 
 if [ -z "$BIFROST_CONTAINER" ]; then
   BIFROST_CONTAINER="$(discover_single_container '^docker-bifrost')"

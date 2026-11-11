@@ -1,7 +1,10 @@
 package keeperv1
 
 import (
+	"errors"
+
 	"gitlab.com/thorchain/thornode/v3/common"
+	kvTypes "gitlab.com/thorchain/thornode/v3/x/thorchain/keeper/types"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 	. "gopkg.in/check.v1"
 )
@@ -26,6 +29,8 @@ func (s KeeperVolumeSuite) TestVolume(c *C) {
 
 	_, err = k.GetVolume(ctx, common.ETHAsset)
 	c.Assert(err, NotNil)
+	c.Assert(errors.Is(err, kvTypes.ErrVolumeNotFound), Equals, true)
+	c.Assert(err.Error(), Equals, "total volume not found: pool=ETH.ETH")
 }
 
 func (s KeeperVolumeSuite) TestVolumeBucket(c *C) {

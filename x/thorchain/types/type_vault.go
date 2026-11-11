@@ -102,7 +102,18 @@ func (m Vault) IsEmpty() bool {
 
 // Contains check whether the given pubkey is party of the originally node who create this vault
 func (m Vault) Contains(pubkey common.PubKey) bool {
-	return m.GetMembership().Contains(pubkey)
+	// Equivalent to m.GetMembership().Contains(pubkey): PubKey equality is
+	// string equality, so only a member string equal to pubkey can match, and
+	// only that member needs the (amino) validity check GetMembership applies.
+	for _, member := range m.Membership {
+		if member != pubkey.String() {
+			continue
+		}
+		if _, err := common.NewPubKey(member); err == nil {
+			return true
+		}
+	}
+	return false
 }
 
 // MembershipEquals check whether the vault has the same membership as the given pubkeys

@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
+	"io"
+	"net"
 	"strconv"
 	"testing"
 	"time"
@@ -13,6 +15,7 @@ import (
 	"github.com/magiconair/properties/assert"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
+	"github.com/stretchr/testify/require"
 )
 
 var testProtocolID protocol.ID = "/p2p/test-stream"
@@ -315,4 +318,100 @@ func TestStreamManager(t *testing.T) {
 	assert.Equal(t, len(streamMgr.unusedStreams), 0)
 	streamMgr.ReleaseStream("3")
 	assert.Equal(t, len(streamMgr.unusedStreams), 0)
+}
+
+type limitTestStream struct {
+	network.Stream
+	reader *bytes.Reader
+}
+
+func (s *limitTestStream) Read(p []byte) (int, error)    { return s.reader.Read(p) }
+func (*limitTestStream) SetReadDeadline(time.Time) error { return nil }
+
+func limitTestFrame(n uint32) []byte {
+	b := make([]byte, 4)
+	binary.LittleEndian.PutUint32(b, n)
+	return b
+}
+
+func TestReadStreamWithBufferLimit(t *testing.T) {
+	for _, limit := range []uint32{1, 5, 9, 10, MaxPayload} {
+		payload := make([]byte, limit)
+		input := append(limitTestFrame(limit), payload...)
+		input = append(input, limitTestFrame(0)...)
+		s := &limitTestStream{reader: bytes.NewReader(input)}
+		result, err := ReadStreamWithBufferLimit(s, limit)
+		require.NoError(t, err)
+		require.Len(t, result, int(limit))
+		result, err = ReadStreamWithBufferLimit(s, limit)
+		require.NoError(t, err)
+		require.Empty(t, result, "coalesced next frame must not be lost")
+		s.reader = bytes.NewReader(append(limitTestFrame(limit+1), 1, 2, 3))
+		_, err = ReadStreamWithBufferLimit(s, limit)
+		require.ErrorContains(t, err, "exceeds protocol maximum")
+		require.Equal(t, 3, s.reader.Len(), "oversized body must remain completely unread")
+	}
+	for _, input := range [][]byte{{1, 2}, append(limitTestFrame(3), 1)} {
+		_, err := ReadStreamWithBufferLimit(&limitTestStream{reader: bytes.NewReader(input)}, 5)
+		require.ErrorIs(t, err, io.ErrUnexpectedEOF)
+	}
+	_, err := ReadStreamWithBufferLimit(nil, 1)
+	require.Error(t, err)
+	for _, limit := range []uint32{0, MaxPayload + 1} {
+		_, err = ReadStreamWithBufferLimit(&limitTestStream{}, limit)
+		require.Error(t, err)
+	}
+}
+
+// A rejected declared 20MB control frame does not allocate its advertised body.
+func BenchmarkReadStreamWithBufferLimitReject(b *testing.B) {
+	header := limitTestFrame(MaxPayload)
+	s := &limitTestStream{reader: bytes.NewReader(header)}
+	b.ReportAllocs()
+	for b.Loop() {
+		s.reader.Reset(header)
+		if _, err := ReadStreamWithBufferLimit(s, 1); err == nil {
+			b.Fatal("accepted oversize")
+		}
+	}
+}
+
+type deadlineLimitTestStream struct {
+	network.Stream
+	transport net.Conn
+}
+
+func (s *deadlineLimitTestStream) Read(p []byte) (int, error) {
+	return s.transport.Read(p)
+}
+
+func (s *deadlineLimitTestStream) SetReadDeadline(deadline time.Time) error {
+	return s.transport.SetReadDeadline(deadline)
+}
+
+func TestReadStreamWithBufferLimitAndDeadline(t *testing.T) {
+	previous := ApplyDeadline.Load()
+	ApplyDeadline.Store(true)
+	t.Cleanup(func() { ApplyDeadline.Store(previous) })
+	reader, writer := net.Pipe()
+	t.Cleanup(func() { _ = reader.Close(); _ = writer.Close() })
+	stream := &deadlineLimitTestStream{transport: reader}
+	_, err := ReadStreamWithBufferLimitAndDeadline(stream, 1, time.Time{})
+	require.Error(t, err)
+
+	// An already expired absolute deadline must not become a fresh 40s wait.
+	_, err = ReadStreamWithBufferLimitAndDeadline(stream, 1, time.Now().Add(-time.Second))
+	var timeout net.Error
+	require.ErrorAs(t, err, &timeout)
+	require.True(t, timeout.Timeout())
+
+	// The explicit-deadline path must retain the pre-allocation payload bound.
+	done := make(chan error, 1)
+	go func() {
+		_, writeErr := writer.Write(limitTestFrame(2))
+		done <- writeErr
+	}()
+	_, err = ReadStreamWithBufferLimitAndDeadline(stream, 1, time.Now().Add(time.Second))
+	require.ErrorContains(t, err, "exceeds protocol maximum")
+	require.NoError(t, <-done)
 }

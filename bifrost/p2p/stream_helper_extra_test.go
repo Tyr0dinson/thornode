@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -133,6 +134,27 @@ func TestWriteStreamWithBuffer(t *testing.T) {
 	})
 }
 
+// blockingReadStream blocks Read until Reset, like a peer that never sends.
+type blockingReadStream struct {
+	*MockNetworkStream
+	reset     chan struct{}
+	resetOnce sync.Once
+}
+
+func newBlockingReadStream() *blockingReadStream {
+	return &blockingReadStream{MockNetworkStream: NewMockNetworkStream(), reset: make(chan struct{})}
+}
+
+func (m *blockingReadStream) Read([]byte) (int, error) {
+	<-m.reset
+	return 0, errors.New("stream reset")
+}
+
+func (m *blockingReadStream) Reset() error {
+	m.resetOnce.Do(func() { close(m.reset) })
+	return nil
+}
+
 func TestReadStreamWithBufferWithContext(t *testing.T) {
 	ApplyDeadline.Store(false)
 
@@ -149,12 +171,9 @@ func TestReadStreamWithBufferWithContext(t *testing.T) {
 	})
 
 	t.Run("context cancelled", func(t *testing.T) {
-		// Use a stream that blocks on read (empty stream)
-		s := NewMockNetworkStream()
-		// Write header indicating we need 100 bytes but provide none
-		buf := make([]byte, LengthHeader)
-		binary.LittleEndian.PutUint32(buf, 100)
-		s.Buffer.Write(buf)
+		// The read must block: an empty buffer returns EOF at once, and if the
+		// reader goroutine finishes first select may pick its short-read error.
+		s := newBlockingReadStream()
 
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel() // cancel immediately

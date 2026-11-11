@@ -28,6 +28,8 @@ type (
 	CustomKeygenChainClient    = types.CustomKeygenChainClient
 	PermanentErrataQuarantiner = types.PermanentErrataQuarantiner
 	SpentOutputRefsApplier     = types.SpentOutputRefsApplier
+	SpentOutputRefsGuard       = types.SpentOutputRefsGuard
+	SpentOutputRefsGuardSetter = types.SpentOutputRefsGuardSetter
 )
 
 // LoadChains returns chain clients from chain configuration

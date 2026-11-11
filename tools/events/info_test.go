@@ -64,6 +64,7 @@ func TestTssKeysignFailure(t *testing.T) {
 	cfg.Thresholds.TssKeysignFailure.WindowBlocks = 10
 	cfg.Thresholds.TssKeysignFailure.Sigma = 2.0
 	cfg.Thresholds.TssKeysignFailure.MinSnapshots = 3
+	cfg.Thresholds.TssKeysignFailure.MinFailures = 0
 	cfg.Console = true
 	config.Set(cfg)
 
@@ -146,6 +147,7 @@ func TestTssKeysignFailureNoImmediateTerminalAlert(t *testing.T) {
 	cfg.Thresholds.TssKeysignFailure.WindowBlocks = 10
 	cfg.Thresholds.TssKeysignFailure.Sigma = 2.0
 	cfg.Thresholds.TssKeysignFailure.MinSnapshots = 3
+	cfg.Thresholds.TssKeysignFailure.MinFailures = 0
 	cfg.Console = true
 	config.Set(cfg)
 
@@ -184,6 +186,7 @@ func TestTssKeysignFailureReplayIsIdempotent(t *testing.T) {
 	cfg.Thresholds.TssKeysignFailure.WindowBlocks = 10
 	cfg.Thresholds.TssKeysignFailure.Sigma = 2.0
 	cfg.Thresholds.TssKeysignFailure.MinSnapshots = 3
+	cfg.Thresholds.TssKeysignFailure.MinFailures = 0
 	cfg.Console = true
 	config.Set(cfg)
 
@@ -209,4 +212,138 @@ func TestTssKeysignFailureReplayIsIdempotent(t *testing.T) {
 	require.NoError(t, util.Load("tss_keysign_failure", &history))
 	require.Len(t, history.VaultFailures[vault], 1, "replayed failure must be recorded once")
 	require.Equal(t, 1, strings.Count(logBuf.String(), "sending notifications"), "replayed failure must alert once")
+}
+
+// TestTssKeysignFailureMinFailures covers the absolute floor: a near-zero
+// baseline must not alert on a couple of failures, only once the window holds
+// at least MinFailures, and then only once.
+func TestTssKeysignFailureMinFailures(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "tss_test_min_failures")
+	require.NoError(t, err)
+	defer os.RemoveAll(tmpDir)
+
+	cfg := config.Get()
+	cfg.StoragePath = tmpDir
+	cfg.Thresholds.TssKeysignFailure.WindowBlocks = 100
+	cfg.Thresholds.TssKeysignFailure.Sigma = 2.0
+	cfg.Thresholds.TssKeysignFailure.MinSnapshots = 3
+	cfg.Thresholds.TssKeysignFailure.MinFailures = 3
+	cfg.Console = true
+	config.Set(cfg)
+
+	var logBuf bytes.Buffer
+	log.Logger = zerolog.New(&logBuf).With().Timestamp().Logger()
+
+	vault := "tthorpub1vaultvaultvaultvaultvaultvaultvaultAAAA"
+	blamed := "tthorpub1blameblameblameblameblameblameblameBBBB"
+
+	// zero baseline: the statistical threshold alone would alert on the first
+	// failure; network history is left below MinSnapshots
+	history := TssKeysignFailureHistory{
+		VaultPastCounts: map[string][]int{vault: {0, 0, 0}},
+	}
+	require.NoError(t, util.Store("tss_keysign_failure", history))
+
+	TssKeysignFailure(newKeysignFailureBlock(500, keysignFailureEvent(vault, tssMessages.KEYSIGN5, blamed)))
+	TssKeysignFailure(newKeysignFailureBlock(501, keysignFailureEvent(vault, tssMessages.KEYSIGN5, blamed)))
+	require.NotContains(t, logBuf.String(), "sending notifications", "failures below the floor must not alert")
+
+	TssKeysignFailure(newKeysignFailureBlock(502, keysignFailureEvent(vault, tssMessages.KEYSIGN5, blamed)))
+	require.Equal(t, 1, strings.Count(logBuf.String(), "sending notifications"), "reaching the floor must alert")
+
+	TssKeysignFailure(newKeysignFailureBlock(503, keysignFailureEvent(vault, tssMessages.KEYSIGN5, blamed)))
+	require.Equal(t, 1, strings.Count(logBuf.String(), "sending notifications"), "alert is edge triggered")
+}
+
+func TestChurnOutLabels(t *testing.T) {
+	node := func(suffix string, bond string, slashPoints, statusSince, missingBlocks int64) openapi.Node {
+		return openapi.Node{
+			NodeAddress:   "thor1" + suffix,
+			Status:        "Active",
+			TotalBond:     bond,
+			SlashPoints:   slashPoints,
+			StatusSince:   statusSince,
+			MissingBlocks: missingBlocks,
+		}
+	}
+	params := churnOutParams{
+		MinSlashPointsForBadValidator: 100,
+		BadValidatorRedline:           20,
+		DesiredValidatorSet:           6,
+		MissingBlockChurnOut:          10,
+		MaxMissingBlockChurnOut:       3,
+	}
+
+	// mirrors the mainnet churn at height 28203871
+	worst := node("seqc", "700", 11472, 300, 0)
+	oldest := node("plcw", "1151", 2954, 100, 0)
+	missing := node("fwle", "1156", 6087, 400, 341)
+	lowest := node("l3k7", "300", 5604, 400, 0)
+	other := node("wqml", "956", 3609, 200, 0)
+	active := []openapi.Node{lowest, missing, other, oldest, worst}
+
+	t.Run("low bond is not marked below the desired validator set", func(t *testing.T) {
+		labels, unknown := churnOutLabels(active, []openapi.Node{oldest, worst, missing}, params)
+		require.Equal(t, []string{"`fwle` (missing)", "`plcw` (oldest)", "`seqc` (worst)"}, labels)
+		require.Empty(t, unknown)
+	})
+
+	t.Run("low bond is marked at the desired validator set", func(t *testing.T) {
+		full := append([]openapi.Node{node("full", "2000", 0, 500, 0)}, active...)
+		labels, unknown := churnOutLabels(full, []openapi.Node{lowest, oldest, worst}, params)
+		require.Equal(t, []string{"`l3k7` (lowest bond)", "`plcw` (oldest)", "`seqc` (worst)"}, labels)
+		require.Empty(t, unknown)
+	})
+
+	t.Run("removed node is not labeled when another node holds the mark", func(t *testing.T) {
+		labels, unknown := churnOutLabels(active, []openapi.Node{other}, params)
+		require.Empty(t, labels)
+		require.Equal(t, []openapi.Node{other}, unknown)
+	})
+
+	t.Run("removed node is preferred on ties", func(t *testing.T) {
+		tied := node("aaaa", "1151", 2954, 100, 0)
+		labels, _ := churnOutLabels(append([]openapi.Node{tied}, active...), []openapi.Node{oldest}, params)
+		require.Equal(t, []string{"`plcw` (oldest)"}, labels)
+	})
+
+	t.Run("all nodes over the redline are marked", func(t *testing.T) {
+		redlined := node("badd", "900", 2000000, 350, 0)
+		labels, _ := churnOutLabels(append([]openapi.Node{redlined}, active...), []openapi.Node{redlined}, params)
+		require.Equal(t, []string{"`badd` (worst)"}, labels)
+	})
+
+	t.Run("low version is marked before age", func(t *testing.T) {
+		lowVersion := node("lowv", "1000", 2000, 50, 0)
+		lowVersion.Version = "3.19.0"
+		nodes := append([]openapi.Node{lowVersion}, active...)
+		for i := range nodes {
+			if nodes[i].Version == "" {
+				nodes[i].Version = "3.20.3"
+			}
+		}
+		versionParams := params
+		versionParams.MinJoinVersion = "3.20.3"
+		versionParams.MaxNodeToChurnOutForLowVersion = 3
+		labels, unknown := churnOutLabels(nodes, []openapi.Node{lowVersion, oldest}, versionParams)
+		require.Equal(t, []string{"`lowv` (version)", "`plcw` (oldest)"}, labels)
+		require.Empty(t, unknown)
+
+		// only the first low version nodes in address order are marked, so the
+		// remaining low version node is the one marked for age
+		other := node("aaaa", "1000", 2000, 60, 0)
+		other.Version = "3.19.0"
+		versionParams.MaxNodeToChurnOutForLowVersion = 1
+		labels, unknown = churnOutLabels(append([]openapi.Node{other}, nodes...), []openapi.Node{other, lowVersion, oldest}, versionParams)
+		require.Equal(t, []string{"`aaaa` (version)", "`lowv` (oldest)"}, labels)
+		require.Len(t, unknown, 1)
+		require.Equal(t, oldest.NodeAddress, unknown[0].NodeAddress)
+	})
+
+	t.Run("requested to leave", func(t *testing.T) {
+		leaving := node("leav", "100", 0, 50, 0)
+		leaving.RequestedToLeave = true
+		labels, _ := churnOutLabels(append([]openapi.Node{leaving}, active...), []openapi.Node{leaving, oldest}, params)
+		require.Equal(t, []string{"`leav` (leave)", "`plcw` (oldest)"}, labels)
+	})
 }

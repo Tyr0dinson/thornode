@@ -30,7 +30,7 @@ import (
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
 	sutxo "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/utxo"
-	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/zecutil"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/zcash"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	btctxscript "gitlab.com/thorchain/thornode/v3/bifrost/txscript/txscript"
@@ -538,9 +538,28 @@ func (s *CoverageBackfillSuite) TestGetAsgardAddress(c *C) {
 }
 
 func (s *CoverageBackfillSuite) TestUpdateNetworkInfo(c *C) {
+	// BTC pins the min-relay-fee floor to a fixed, daemon-independent value because it
+	// is signing-consensus-relevant (Core <=29.0 reports 1000 sat, 29.1+/30.x report
+	// 100 — a daemon-derived floor splits the signing party with nothing in the
+	// minority node's log).
+
+	// 1) NewClient seeds the BTC floor at construction, so it is the fixed value before
+	//    any updateNetworkInfo tick (never 0, even if the daemon RPC is unavailable).
+	c.Assert(s.client.minRelayFeeSats.Load(), Equals, btcFixedMinRelayFeeSats)
+
+	// 2) updateNetworkInfo re-pins BTC to the fixed value independent of the daemon.
+	//    Point the mock at relayfee 1e-6 — the 100-sat floor a Core 29.1+/30.x node
+	//    reports (the fixture default is 1e-5 == 1000, which would pass even without
+	//    the pin). A pass here with a sentinel seed therefore proves the pin, not the
+	//    daemon value, sets the floor — and this assertion fails if the pin is removed.
+	ni, ok := btcChainRPCs["getnetworkinfo"]["result"].(map[string]interface{})
+	c.Assert(ok, Equals, true)
+	origRelay := ni["relayfee"]
+	ni["relayfee"] = 1.0e-6
+	defer func() { ni["relayfee"] = origRelay }()
+	s.client.minRelayFeeSats.Store(424242)
 	s.client.updateNetworkInfo()
-	// minRelayFeeSats should be set
-	c.Assert(s.client.minRelayFeeSats.Load() > 0, Equals, true)
+	c.Assert(s.client.minRelayFeeSats.Load(), Equals, btcFixedMinRelayFeeSats)
 }
 
 func (s *CoverageBackfillSuite) TestSendNetworkFee(c *C) {
@@ -869,7 +888,8 @@ func (s *CoverageBackfillSuite) TestMemoToScripts(c *C) {
 }
 
 func (s *CoverageBackfillSuite) TestZECMemoContinuationUsesTransparentP2PKH(c *C) {
-	scripts, err := MemoToScripts(strings.Repeat("Z", 100), btctxscript.MaxDataCarrierSize, btctxscript.NullDataScript, zecutil.PayToPubKeyHashScript)
+	memo := strings.Repeat("Z", 100)
+	scripts, err := MemoToScripts(memo, btctxscript.MaxDataCarrierSize, btctxscript.NullDataScript, zcash.PayToPubKeyHashScript)
 	c.Assert(err, IsNil)
 	c.Assert(len(scripts), Equals, 3)
 
@@ -1145,6 +1165,79 @@ func (s *CoverageBackfillSuite) TestReportSolvency(c *C) {
 	} else {
 		c.Assert(err, NotNil)
 	}
+}
+
+// solvencyGateBridge serves a fixed asgard list and the chain's on-chain halt
+// state, delegating everything else to the suite's bridge.
+type solvencyGateBridge struct {
+	thorclient.ThorchainBridge
+	asgards        ttypes.Vaults
+	solvencyHalted bool
+	mimirErr       error
+}
+
+func (b *solvencyGateBridge) GetAsgards() (ttypes.Vaults, error) {
+	return b.asgards, nil
+}
+
+func (b *solvencyGateBridge) GetMimir(key string) (int64, error) {
+	if b.mimirErr != nil {
+		return 0, b.mimirErr
+	}
+	if b.solvencyHalted && key == "SolvencyHaltBTCChain" {
+		return 1, nil
+	}
+	return 0, nil
+}
+
+func (b *solvencyGateBridge) GetBlockHeight() (int64, error) {
+	return 100, nil
+}
+
+// reportSolventVault runs ReportSolvency against one BTC vault the listunspent
+// fixture (25.02 BTC) covers, with the client's block scanner unhealthy as it
+// is when not yet started, and returns what was queued.
+func (s *CoverageBackfillSuite) reportSolventVault(c *C, bridge *solvencyGateBridge) (ttypes.Vault, []stypes.Solvency) {
+	vault := ttypes.Vault{
+		PubKey: ttypes.GetRandomPubKey(),
+		Coins:  common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(100_000_000))),
+	}
+	bridge.ThorchainBridge = s.bridge
+	bridge.asgards = ttypes.Vaults{vault}
+	s.client.bridge = bridge
+	queue := make(chan stypes.Solvency, 10)
+	s.client.globalSolvencyQueue = queue
+	s.client.lastSolvencyCheckHeight.Store(0)
+	c.Assert(s.client.IsBlockScannerHealthy(), Equals, false)
+
+	c.Assert(s.client.ReportSolvency(100), IsNil)
+	close(queue)
+	var queued []stypes.Solvency
+	for msg := range queue {
+		queued = append(queued, msg)
+	}
+	return vault, queued
+}
+
+// The halted, paused case sends the all-clear; the cases below differ from it
+// only in the halt state, so their silence is the gate's doing.
+func (s *CoverageBackfillSuite) TestReportSolvencyAllClearWhenHaltedOnChain(c *C) {
+	vault, queued := s.reportSolventVault(c, &solvencyGateBridge{solvencyHalted: true})
+	c.Assert(queued, HasLen, 1)
+	c.Assert(queued[0].PubKey.Equals(vault.PubKey), Equals, true)
+}
+
+// An unhealthy scanner on a chain THORChain has not halted is a local fault:
+// no other node would send the all-clear, so this one must not.
+func (s *CoverageBackfillSuite) TestReportSolvencyNoAllClearWhenNotHaltedOnChain(c *C) {
+	_, queued := s.reportSolventVault(c, &solvencyGateBridge{})
+	c.Assert(queued, HasLen, 0)
+}
+
+// When the halt state cannot be read, stay silent rather than guess.
+func (s *CoverageBackfillSuite) TestReportSolvencyNoAllClearWhenHaltStateUnreadable(c *C) {
+	_, queued := s.reportSolventVault(c, &solvencyGateBridge{solvencyHalted: true, mimirErr: fmt.Errorf("bridge unavailable")})
+	c.Assert(queued, HasLen, 0)
 }
 
 func (s *CoverageBackfillSuite) TestRegisterPublicKey(c *C) {

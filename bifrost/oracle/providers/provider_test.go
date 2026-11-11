@@ -98,3 +98,40 @@ func newPair(symbol string) types.CurrencyPair {
 	}
 	return pair
 }
+
+type tickerSource interface {
+	GetTickers() (map[string]types.Ticker, error)
+}
+
+// waitForPrices polls the provider's tickers until every symbol in want is
+// priced at its value (printed with prec decimals) or five seconds pass; the
+// test's own asserts then report anything still missing.
+func waitForPrices(provider tickerSource, prec int, want map[string]string) {
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		tickers, err := provider.GetTickers()
+		matched := err == nil
+		for symbol, price := range want {
+			ticker, found := tickers[symbol]
+			matched = matched && found && ticker.Price.Text('f', prec) == price
+		}
+		if matched {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+// settleStartPoll makes the poll that Start runs before connecting wait until
+// it has set want, so prices from that poll's background requests cannot land
+// over the websocket's.
+func settleStartPoll(p *websocketProvider, prec int, want map[string]string) {
+	poll := p.poll
+	p.poll = func() {
+		p.mtx.Lock()
+		p.tickers = map[string]types.Ticker{}
+		p.mtx.Unlock()
+		poll()
+		waitForPrices(p, prec, want)
+	}
+}

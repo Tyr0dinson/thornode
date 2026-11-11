@@ -10,7 +10,6 @@ import (
 
 	"gitlab.com/thorchain/thornode/v3/config"
 
-	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
 	"github.com/cosmos/cosmos-sdk/telemetry"
 	"github.com/hashicorp/go-metrics"
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -87,28 +86,51 @@ func (h PriceFeedQuorumBatchHandler) handle(ctx cosmos.Context, msg types.MsgPri
 
 	pricesByBondAddress := map[string]map[string]*big.Float{}
 
-	for _, node := range activeNodes {
+	// each active node's addresses, encoded once for every symbol below
+	nodeAddresses := make([]string, len(activeNodes))
+	nodeBondAddresses := make([]string, len(activeNodes))
+	for i, node := range activeNodes {
 		nodeAddress := node.NodeAddress.String()
 		bondAddress := node.BondAddress.String()
+		nodeAddresses[i] = nodeAddress
+		nodeBondAddresses[i] = bondAddress
 
 		bondAddresses[nodeAddress] = bondAddress
 
 		_, found := pricesByBondAddress[bondAddress]
 		if !found {
-			pricesByBondAddress[bondAddress] = map[string]*big.Float{}
+			pricesByBondAddress[bondAddress] = make(map[string]*big.Float, len(h.requiredSymbols))
 		}
 	}
 
 	// [BTC][thor1...]*big.Float{}
 	pricesByAsset := map[string]map[string]*big.Float{}
 	for _, symbol := range h.requiredSymbols {
-		pricesByAsset[symbol] = map[string]*big.Float{}
+		pricesByAsset[symbol] = make(map[string]*big.Float, len(activeNodes))
 	}
 
 	trackPricePerNode := config.GetThornode().Telemetry.PricePerNode
 
+	// each feed carries one attestation over its own payload; verify them
+	// all concurrently up front, skipping feeds handleQuorumPriceFeed rejects
+	// before it reaches signature verification
+	checks := make([]attestationCheck, 0, len(msg.QuoPriceFeeds))
 	for _, qpf := range msg.QuoPriceFeeds {
-		pf, err := h.handleQuorumPriceFeed(ctx, qpf, activeNodes)
+		if qpf == nil || qpf.PriceFeed == nil || len(qpf.Attestations) != 1 ||
+			!bytes.Equal(qpf.PriceFeed.Version, h.requiredVersion) ||
+			len(qpf.PriceFeed.Rates) != len(h.requiredSymbols) {
+			continue
+		}
+		signBz, err := qpf.PriceFeed.GetSignablePayload()
+		if err != nil {
+			continue
+		}
+		checks = append(checks, attestationCheck{att: qpf.Attestations[0], signBz: signBz})
+	}
+	sigs := preverifyAttestations(activeNodes, checks)
+
+	for _, qpf := range msg.QuoPriceFeeds {
+		pf, err := h.handleQuorumPriceFeed(ctx, qpf, activeNodes, sigs)
 		if err != nil {
 			ctx.Logger().Error("fail to handle QuorumPriceFeed", "error", err)
 			continue
@@ -127,9 +149,11 @@ func (h PriceFeedQuorumBatchHandler) handle(ctx cosmos.Context, msg types.MsgPri
 			if rate.Decimals > 18 {
 				continue
 			}
-			pricesByAsset[symbol][nodeAddress] = rate.BigFloat()
+			// the maps share price: nothing below modifies a reported price
+			price := rate.BigFloat()
+			pricesByAsset[symbol][nodeAddress] = price
 			if found {
-				pricesByBondAddress[bondAddress][symbol] = rate.BigFloat()
+				pricesByBondAddress[bondAddress][symbol] = price
 			}
 		}
 	}
@@ -139,19 +163,17 @@ func (h PriceFeedQuorumBatchHandler) handle(ctx cosmos.Context, msg types.MsgPri
 	for _, symbol := range h.requiredSymbols {
 		priceByNode := pricesByAsset[symbol]
 
-		allPricesForSymbol := []*big.Float{}
+		allPricesForSymbol := make([]*big.Float, 0, len(activeNodes))
 
-		for _, node := range activeNodes {
-			nodeAddress := node.NodeAddress.String()
+		for i, nodeAddress := range nodeAddresses {
 			price, found := priceByNode[nodeAddress]
 			if !found {
 				// add last price from different node with the same bond address
-				bondAddress := node.BondAddress.String()
-				price, found = pricesByBondAddress[bondAddress][symbol]
+				price, found = pricesByBondAddress[nodeBondAddresses[i]][symbol]
 				if !found {
 					continue
 				}
-				priceByNode[nodeAddress] = new(big.Float).Copy(price)
+				priceByNode[nodeAddress] = price
 			}
 
 			allPricesForSymbol = append(allPricesForSymbol, price)
@@ -238,6 +260,7 @@ func (h PriceFeedQuorumBatchHandler) handleQuorumPriceFeed(
 	ctx cosmos.Context,
 	qpf *common.QuorumPriceFeed,
 	active NodeAccounts,
+	sigs attestationSigs,
 ) (*PriceFeed, error) {
 	if qpf.PriceFeed == nil {
 		telemetry.IncrCounterWithLabels(
@@ -299,7 +322,7 @@ func (h PriceFeedQuorumBatchHandler) handleQuorumPriceFeed(
 
 	att := atts[0]
 
-	_, err = verifyQuorumAttestation(active, signBz, att)
+	address, err := verifyQuorumAttestation(active, signBz, att, sigs)
 	if err != nil {
 		telemetry.IncrCounterWithLabels(
 			[]string{"thornode", "price_feed", "rejected"},
@@ -308,9 +331,6 @@ func (h PriceFeedQuorumBatchHandler) handleQuorumPriceFeed(
 		)
 		return nil, fmt.Errorf("fail to verify quorum price feed attestation: %v", err)
 	}
-
-	pk := secp256k1.PubKey{Key: att.PubKey}
-	address := cosmos.AccAddress(pk.Address())
 
 	timestamp := time.UnixMilli(pf.Time)
 

@@ -67,8 +67,9 @@ func (h ObservedTxQuorumHandler) handle(ctx cosmos.Context, msg types.MsgObserve
 
 	var accAddrs []cosmos.AccAddress
 	attestations := deduplicateAttestations(msg.QuoTx.Attestations, len(activeNodeAccounts))
+	sigs := preverifyAttestations(activeNodeAccounts, attestationChecks(attestations, signBz))
 	for _, att := range attestations {
-		accAddr, verifyErr := verifyQuorumAttestation(activeNodeAccounts, signBz, att)
+		accAddr, verifyErr := verifyQuorumAttestation(activeNodeAccounts, signBz, att, sigs)
 		if verifyErr != nil {
 			telemetry.IncrCounterWithLabels(
 				[]string{"thornode", "quorum", "attestation_invalid"}, 1,
@@ -120,17 +121,28 @@ func (h ObservedTxQuorumHandler) handle(ctx cosmos.Context, msg types.MsgObserve
 		return &cosmos.Result{}, nil
 	}
 
-	var crossedQuorum bool
+	// Apply every attestation to the voter in memory and save it once: nothing
+	// applied here reads the voter back from the store, and saving it per
+	// attestation rewrote the whole (growing) voter once per signer.
+	var crossedQuorum, voterChanged bool
 	for _, accAddr := range accAddrs {
-		var isQuorum bool
+		var isQuorum, added bool
 		if inbound {
-			voter, isQuorum = processTxInAttestation(ctx, h.mgr, voter, activeNodeAccounts, obsTx, accAddr, false)
+			voter, isQuorum, added = applyTxInAttestation(ctx, h.mgr, voter, activeNodeAccounts, obsTx, accAddr, false)
 		} else {
-			voter, isQuorum = processTxOutAttestation(ctx, h.mgr, voter, activeNodeAccounts, obsTx, accAddr, false)
+			voter, isQuorum, added = applyTxOutAttestation(ctx, h.mgr, voter, activeNodeAccounts, obsTx, accAddr, false)
 		}
 		if isQuorum {
 			// we crossed over quorum with this attestation.
 			crossedQuorum = true
+		}
+		voterChanged = voterChanged || added
+	}
+	if voterChanged {
+		if inbound {
+			k.SetObservedTxInVoter(ctx, voter)
+		} else {
+			k.SetObservedTxOutVoter(ctx, voter)
 		}
 	}
 

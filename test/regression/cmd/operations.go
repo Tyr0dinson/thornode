@@ -31,6 +31,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/constants"
 	openapi "gitlab.com/thorchain/thornode/v3/openapi/gen"
+	"gitlab.com/thorchain/thornode/v3/test/luvicheck"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/ebifrost"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 	"google.golang.org/grpc"
@@ -535,9 +536,10 @@ func (op *OpCheck) Execute(out io.Writer, path string, line, routine int, _ *os.
 
 type OpCreateBlocks struct {
 	OpBase         `yaml:",inline"`
-	Count          int  `json:"count"`
-	SkipInvariants bool `json:"skip_invariants"`
-	Exit           *int `json:"exit"`
+	Count          int      `json:"count"`
+	SkipInvariants bool     `json:"skip_invariants"`
+	Exit           *int     `json:"exit"`
+	LuviDrop       []string `json:"luvi_drop"`
 }
 
 func (op *OpCreateBlocks) Execute(out io.Writer, path string, _, routine int, p *os.Process, logs chan string) error {
@@ -546,9 +548,25 @@ func (op *OpCreateBlocks) Execute(out io.Writer, path string, _, routine int, p 
 	// clear existing log output
 	drainLogs(logs)
 
+	// the loop below trims path in place for blockPath; record block times
+	// under the untrimmed suite path on every iteration
+	suite := path
+
+	// record the state the blocks start from, so the first block is checked
+	// too; before the first block the state is not queryable, and that block
+	// becomes the baseline instead
+	var luviViolations []luvicheck.Violation
+	if op.Exit == nil {
+		if v, err := observeLuvi(routine, 0, &openapi.BlockResponse{}); err == nil {
+			luviViolations = append(luviViolations, v...)
+		}
+	}
+
 	for i := 0; i < op.Count; i++ {
 		// http request to localhost to unblock block creation
+		blockStart := time.Now()
 		newBlockRes, err := httpClient.Get(fmt.Sprintf("http://localhost:%d/newBlock", regtestCreateBlockPort(routine)))
+		blockElapsed := time.Since(blockStart)
 		if err != nil {
 			// if exit code is not set this was unexpected
 			if op.Exit == nil {
@@ -590,6 +608,7 @@ func (op *OpCreateBlocks) Execute(out io.Writer, path string, _, routine int, p 
 			localLog.Err(err).Msg("failed to parse new block response")
 			return err
 		}
+		recordBlockTime(suite, height, blockElapsed)
 
 		// determine path for block output
 		path = strings.TrimPrefix(path, "suites/")
@@ -674,12 +693,23 @@ func (op *OpCreateBlocks) Execute(out io.Writer, path string, _, routine int, p 
 		// close the file and response
 		_ = f.Close()
 		_ = res.Body.Close()
+
+		v, err := observeLuvi(routine, int64(height), blockResponse)
+		if err != nil {
+			localLog.Err(err).Msg("failed to observe luvi")
+			return err
+		}
+		luviViolations = append(luviViolations, v...)
 	}
 
 	// if exit code is set, this was unexpected
 	if op.Exit != nil {
 		localLog.Error().Int("expect", *op.Exit).Msg("expected exit code")
 		return errors.New("expected exit code")
+	}
+
+	if err := checkLuvi(luviViolations, op.LuviDrop); err != nil {
+		return err
 	}
 
 	if op.SkipInvariants {
@@ -899,7 +929,7 @@ func (op *OpTxPriceFeed) Execute(out io.Writer, _ string, _, routine int, _ *os.
 	}
 
 	// Deliver to the node's ebifrost gRPC (same container, port offset by routine).
-	addr := fmt.Sprintf("127.0.0.1:%d", 50051+routine)
+	addr := fmt.Sprintf("127.0.0.1:%d", regtestEbifrostPort(routine))
 	conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		return fmt.Errorf("failed to dial ebifrost at %s: %w", addr, err)
@@ -1060,10 +1090,11 @@ type OpTxTssPool struct {
 	KeysharesBackupEddsa []byte           `json:"keyshares_backup_eddsa"`
 	KeysharesBackupFrost []byte           `json:"keyshares_backup_frost"`
 	PoolPubKeyFrost      common.PubKey    `json:"pool_pub_key_frost"`
+	ObservedMoneroHeight int64            `json:"observed_monero_height"`
 }
 
 func (op *OpTxTssPool) Execute(out io.Writer, _ string, _, routine int, _ *os.Process, logs chan string) error {
-	msg, err := types.NewMsgTssPoolV2(op.PubKeys, op.PoolPubKey, op.Secp256K1Signature, op.KeysharesBackup, op.KeygenType, op.Height, op.Blame, op.Chains, op.Signer, op.KeygenTime, op.PoolPubKeyEddsa, op.KeysharesBackupEddsa, op.KeysharesBackupFrost, op.PoolPubKeyFrost)
+	msg, err := types.NewMsgTssPoolV3(op.PubKeys, op.PoolPubKey, op.Secp256K1Signature, op.KeysharesBackup, op.KeygenType, op.Height, op.Blame, op.Chains, op.Signer, op.KeygenTime, op.PoolPubKeyEddsa, op.KeysharesBackupEddsa, op.KeysharesBackupFrost, op.PoolPubKeyFrost, op.ObservedMoneroHeight)
 	if err != nil {
 		return err
 	}
@@ -1395,4 +1426,19 @@ func sendMsg(out io.Writer, routine int, msg sdk.Msg, signer sdk.AccAddress, txM
 	}
 
 	return nil
+}
+
+// recordBlockTime appends "suite,height,microseconds" to REGTEST_BLOCK_TIMES when
+// set, for perf analysis of per-block processing time (see scripts/perf).
+func recordBlockTime(suite string, height int, elapsed time.Duration) {
+	path := os.Getenv("REGTEST_BLOCK_TIMES")
+	if path == "" {
+		return
+	}
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	_, _ = fmt.Fprintf(f, "%s,%d,%d\n", suite, height, elapsed.Microseconds())
 }

@@ -23,6 +23,7 @@ import (
 	btypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/config"
 	"gitlab.com/thorchain/thornode/v3/constants"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/ebifrost"
 	stypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
@@ -78,9 +79,9 @@ func TestCleanupRejectsLocalPeerAndRestartState(t *testing.T) {
 	// even though no volatile cleanup history survived process restart.
 	restarted, _, _, _, _, _ := setupTestGossip(t)
 	restarted.SetObserverStorage(o.storage)
-	restarted.processAttestationStateBatch(zerolog.Nop(), common.QuorumState{
+	require.NoError(t, restarted.processAttestationStateBatch(zerolog.Nop(), common.QuorumState{
 		QuoTxs: []*common.QuorumTx{{ObsTx: old, Inbound: true, Attestations: []*common.Attestation{msg.Attestation}}},
-	})
+	}))
 	require.Empty(t, restarted.observedTxs)
 
 	remine := errataTestObservation("orphan", common.XMRChain, 250)
@@ -93,6 +94,9 @@ func TestCleanupRejectsLocalPeerAndRestartState(t *testing.T) {
 	require.Equal(t, int64(250), g.batcher.observedTxBatch[0].ObsTx.BlockHeight)
 
 	require.NoError(t, o.handleErrataTxCommitted(common.ErrataTx{Chain: common.XMRChain, Id: old.Tx.ID}, common.ErrataTxOutcome_ERRATA_TX_OUTCOME_REVERTED))
+	unresolved, err := o.reconcileCommittedXMRErrata()
+	require.NoError(t, err)
+	require.Zero(t, unresolved)
 	require.Empty(t, g.observedTxs)
 	require.Empty(t, g.batcher.observedTxBatch)
 	require.NoError(t, g.AttestObservedTx(context.Background(), &remine, true, false))
@@ -432,6 +436,10 @@ func TestCancelledFanoutReleasesPeerReservations(t *testing.T) {
 	b.peerMgr.release(held)
 	require.Zero(t, held.refCount)
 
+	// The default 50ms busy timeout can expire before this test observes the
+	// waiter or cancels it on a loaded runner; keep the waiter parked so only
+	// cancellation can end it.
+	b.peerMgr.acquireTimeout = time.Minute
 	held, err = b.peerMgr.acquire("waiting")
 	require.NoError(t, err)
 	waitCtx, cancelWait := context.WithCancel(context.Background())
@@ -769,4 +777,225 @@ func TestNonXMRDeckSubmissionRemainsSerializedWithCleanup(t *testing.T) {
 	require.True(t, submittedAtCleanup.Load(), "legacy cleanup must follow the prepared observation submission")
 	require.Len(t, o.onDeck[key].TxArray, 1, "invalid and orphan items must both be removed")
 	require.Same(t, keep, o.onDeck[key].TxArray[0])
+}
+
+type spentRefsGuardChain struct {
+	chainclients.ChainClient
+	guard chainclients.SpentOutputRefsGuard
+}
+
+func (c *spentRefsGuardChain) SetSpentOutputRefsGuard(g chainclients.SpentOutputRefsGuard) {
+	c.guard = g
+}
+
+func TestObserverRequiresAndWiresSpentRefsRecoveryGuard(t *testing.T) {
+	g, _, _, _, bridge, _ := setupTestGossip(t)
+	chain := &spentRefsGuardChain{}
+	o, err := NewObserver(nil, map[common.Chain]chainclients.ChainClient{common.XMRChain: chain},
+		bridge, nil, t.TempDir(), metrics.NewTssKeysignMetricMgr(), g, "")
+	require.NoError(t, err)
+	defer o.storage.Close()
+	require.NotNil(t, chain.guard)
+	old := errataTestObservation("spent-refs-guard-constructor", common.XMRChain, 110)
+	old.XmrMinedHeight = 100
+	require.NoError(t, o.filterErrataTx(btypes.ErrataBlock{Height: 100, Txs: []btypes.ErrataTx{{Chain: common.XMRChain, TxID: old.Tx.ID}}}))
+	release, ok := chain.guard(old)
+	require.False(t, ok)
+	require.Nil(t, release)
+	old.XmrMinedHeight = 101
+	release, ok = chain.guard(old)
+	require.True(t, ok)
+	release()
+	_, err = NewObserver(nil, map[common.Chain]chainclients.ChainClient{common.XMRChain: chain},
+		bridge, nil, t.TempDir(), metrics.NewTssKeysignMetricMgr(), nil, "")
+	require.Error(t, err)
+	_, err = NewObserver(nil, map[common.Chain]chainclients.ChainClient{common.XMRChain: &struct{ chainclients.ChainClient }{}},
+		bridge, nil, t.TempDir(), metrics.NewTssKeysignMetricMgr(), g, "")
+	require.ErrorContains(t, err, "does not support")
+}
+
+func TestDelayedSpentRefsImportAndOutcomeCannotCrossCleanup(t *testing.T) {
+	for _, afterImport := range []bool{false, true} {
+		t.Run(map[bool]string{false: "before import", true: "after import before callback"}[afterImport], func(t *testing.T) {
+			o, g, _ := setupErrataTestGossip(t)
+			tx := errataTestObservation("spent-refs-delayed-import", common.XMRChain, 110)
+			tx.XmrMinedHeight = 100
+			tx.SpentOutputRefs = []common.OutputRef{{TxHash: "input", SpendTxHash: tx.Tx.ID.String()}}
+			paused := make(chan struct{})
+			resume := make(chan struct{})
+			var resumeOnce sync.Once
+			defer resumeOnce.Do(func() { close(resume) })
+			done := make(chan bool, 1)
+			g.SetObserverApplyCommittedSpentRefs(func(context.Context, common.PubKey, common.TxID) (common.ObservedTx, bool) {
+				if !afterImport {
+					close(paused)
+					<-resume
+				}
+				release, ok := g.acquireXMRSpentRefsAttempt(tx)
+				if !ok {
+					return common.ObservedTx{}, false
+				}
+				release()
+				if afterImport {
+					close(paused)
+					<-resume
+				}
+				return tx, true
+			})
+			g.applyCommittedSpentRefsAsync(tx.ObservedPubKey, tx.Tx.ID, func(imported common.ObservedTx, applied bool) {
+				if applied {
+					g.recordCommittedXMRSpentRefs(xmrSpentRefsConflictKeyFor(imported), xmrSpentRefsIdentity(imported.SpentOutputRefs))
+				}
+				done <- applied
+			})
+			waitForObserverTest(t, paused)
+			require.NoError(t, o.filterErrataTx(btypes.ErrataBlock{Height: 100, Txs: []btypes.ErrataTx{{Chain: common.XMRChain, TxID: tx.Tx.ID}}}))
+			resumeOnce.Do(func() { close(resume) })
+			select {
+			case applied := <-done:
+				require.False(t, applied)
+			case <-time.After(3 * time.Second):
+				t.Fatal("callback did not finish")
+			}
+			g.mu.Lock()
+			require.Empty(t, g.authorizedXMRSpentRefs)
+			g.mu.Unlock()
+		})
+	}
+}
+
+func TestSpentRefsRecoveryGuardCanonicalRestartAndStorageFailure(t *testing.T) {
+	dir := t.TempDir()
+	storage, err := NewObserverStorage(dir, config.LevelDBOptions{})
+	require.NoError(t, err)
+	tx := errataTestObservation("spent-refs-restart", common.XMRChain, 110)
+	tx.XmrMinedHeight = 100
+	require.NoError(t, storage.applyErrata(btypes.ErrataBlock{Height: 100, Txs: []btypes.ErrataTx{{Chain: common.XMRChain, TxID: tx.Tx.ID}}}, nil))
+	require.NoError(t, storage.Close())
+	storage, err = NewObserverStorage(dir, config.LevelDBOptions{})
+	require.NoError(t, err)
+	g, _, _, _, _, _ := setupTestGossip(t)
+	g.SetObserverStorage(storage)
+	for _, height := range []int64{0, -1, 100, 101, 111} {
+		tx.XmrMinedHeight = height
+		release, ok := g.acquireXMRSpentRefsAttempt(tx)
+		require.Equal(t, height == 101, ok)
+		if ok {
+			release()
+		} else {
+			require.Nil(t, release)
+		}
+	}
+	require.NoError(t, storage.Close())
+	_, ok := g.acquireXMRSpentRefsAttempt(tx)
+	require.False(t, ok, "read failures fail closed")
+	// Non-XMR recovery does not wait behind this XMR-specific writer.
+	g.xmrErrataBarrier.Lock()
+	done := make(chan struct{})
+	go func() {
+		release, ok := g.acquireXMRSpentRefsAttempt(errataTestObservation("btc", common.BTCChain, 100))
+		if ok {
+			release()
+		}
+		close(done)
+	}()
+	waitForObserverTest(t, done)
+	g.xmrErrataBarrier.Unlock()
+}
+
+func TestPeerSpentRefsOutcomeRechecksErrataAdmission(t *testing.T) {
+	for _, scenario := range []string{"unchanged", "orphaned", "remined", "permanently reverted", "storage failure"} {
+		t.Run(scenario, func(t *testing.T) {
+			o, g, _ := setupErrataTestGossip(t)
+			tx := errataTestObservation("peer-spent-refs-delayed-outcome", common.XMRChain, 110)
+			tx.XmrMinedHeight = 100
+			if scenario == "remined" || scenario == "permanently reverted" {
+				tx.XmrMinedHeight = 101
+			}
+			tx.SpentOutputRefs = []common.OutputRef{{TxHash: "input", SpendTxHash: tx.Tx.ID.String()}}
+			require.True(t, g.rememberAuthorizedXMRSpentRefs(tx))
+			conflictKey := xmrSpentRefsConflictKeyFor(tx)
+			identity := xmrSpentRefsIdentity(tx.SpentOutputRefs)
+
+			imported, resume, importerDone := make(chan struct{}), make(chan struct{}), make(chan struct{})
+			var resumeOnce sync.Once
+			t.Cleanup(func() {
+				resumeOnce.Do(func() { close(resume) })
+				select {
+				case <-importerDone:
+				case <-time.After(3 * time.Second):
+					t.Error("spent-reference importer did not finish")
+				}
+			})
+			outcomes := make(chan bool, 2)
+			g.SetObserverApplySpentOutputRefs(func(_ spentOutputRefsImport, onOutcome func(bool)) {
+				defer close(importerDone)
+				// The client has completed its import, but Observer has not
+				// accepted the successful outcome yet.
+				close(imported)
+				<-resume
+				onOutcome(true)
+			})
+			g.applySpentRefsAsync(spentOutputRefsImport{Tx: tx}, func(applied bool) {
+				g.resolveAuthorizedXMRSpentRefs(conflictKey, identity, applied)
+				outcomes <- applied
+			})
+			waitForObserverTest(t, imported)
+
+			block := btypes.ErrataBlock{
+				Height: 100,
+				Txs:    []btypes.ErrataTx{{Chain: common.XMRChain, TxID: tx.Tx.ID}},
+			}
+			switch scenario {
+			case "orphaned", "remined":
+				require.NoError(t, o.filterErrataTx(block))
+			case "permanently reverted":
+				require.NoError(t, o.filterErrataTx(block))
+				require.NoError(t, o.handleErrataTxCommitted(common.ErrataTx{Chain: common.XMRChain, Id: tx.Tx.ID}, common.ErrataTxOutcome_ERRATA_TX_OUTCOME_REVERTED))
+			case "storage failure":
+				require.NoError(t, o.storage.db.Put([]byte(errataTombstoneKey(common.XMRChain, tx.Tx.ID.String())), []byte("corrupt"), nil))
+			}
+			resumeOnce.Do(func() { close(resume) })
+			wantApplied := scenario == "unchanged" || scenario == "remined"
+			select {
+			case applied := <-outcomes:
+				require.Equal(t, wantApplied, applied)
+			case <-time.After(3 * time.Second):
+				t.Fatal("spent-reference outcome did not finish")
+			}
+			waitForObserverTest(t, importerDone)
+			require.Eventually(t, func() bool { return len(g.applySpentRefsSem) == 0 }, time.Second, time.Millisecond)
+			require.Empty(t, outcomes, "an import must report its final outcome once")
+			state, found := observerTestConflictState(g, tx)
+			require.True(t, found)
+			if wantApplied {
+				require.Equal(t, xmrSpentRefsImportConfirmed, state)
+			} else {
+				require.Equal(t, xmrSpentRefsImportFailed, state, "a rejected outcome must release the pending import reservation")
+			}
+		})
+	}
+}
+
+func TestSpentRefsOutcomeAllowsOtherChainsDuringErrataCleanup(t *testing.T) {
+	_, g, _ := setupErrataTestGossip(t)
+	g.SetObserverApplySpentOutputRefs(func(_ spentOutputRefsImport, onOutcome func(bool)) {
+		onOutcome(true)
+	})
+	g.xmrErrataBarrier.Lock()
+	t.Cleanup(func() {
+		g.xmrErrataBarrier.Unlock()
+		require.Eventually(t, func() bool { return len(g.applySpentRefsSem) == 0 }, time.Second, time.Millisecond)
+	})
+	outcomes := make(chan bool, 1)
+	g.applySpentRefsAsync(spentOutputRefsImport{
+		Tx: errataTestObservation("btc-spent-refs-outcome", common.BTCChain, 100),
+	}, func(applied bool) { outcomes <- applied })
+	select {
+	case applied := <-outcomes:
+		require.True(t, applied)
+	case <-time.After(3 * time.Second):
+		t.Fatal("unrelated-chain outcome waited behind XMR cleanup")
+	}
+	require.Eventually(t, func() bool { return len(g.applySpentRefsSem) == 0 }, time.Second, time.Millisecond)
 }

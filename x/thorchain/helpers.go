@@ -18,6 +18,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/constants"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
+	keeperv1 "gitlab.com/thorchain/thornode/v3/x/thorchain/keeper/v1"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
@@ -537,6 +538,10 @@ func getMaxSwapQuantity(ctx cosmos.Context, mgr Manager, sourceAsset, targetAsse
 }
 
 // isStableToStable returns true if both source and target L1 assets are TOR anchors (stablecoins).
+//
+// It runs inside txs (e.g. a deposit's swap queue entry), where store reads are
+// gas and gas_used is consensus-visible, so it keeps the GetAnchors scan: point
+// lookups of the two candidates give the same answer with different gas.
 func isStableToStable(ctx cosmos.Context, k keeper.Keeper, source, target common.Asset) bool {
 	anchors := k.GetAnchors(ctx, common.TOR)
 	if len(anchors) == 0 {
@@ -554,6 +559,15 @@ func isStableToStable(ctx cosmos.Context, k keeper.Keeper, source, target common
 		}
 	}
 	return sourceIsAnchor && targetIsAnchor
+}
+
+// isTORAnchorAsset reports whether GetAnchors(TOR) would include the layer-1 asset.
+func isTORAnchorAsset(ctx cosmos.Context, k keeper.Keeper, l1 common.Asset) bool {
+	if !k.PoolExist(ctx, l1) {
+		return false
+	}
+	val, err := k.GetMimir(ctx, keeperv1.TorAnchorMimirKey(l1))
+	return err == nil && val > 0
 }
 
 // getMinSlipBps returns artificial slip floor, expressed in basis points (10000).
@@ -2214,6 +2228,36 @@ func runePoolValue(ctx cosmos.Context, mgr Manager) (cosmos.Uint, error) {
 	pending := mgr.Keeper().GetRuneBalanceOfModule(ctx, RUNEPoolName)
 
 	return polValue.Add(pending), nil
+}
+
+// polValueMemo caches polPoolValue across a run of POL operations. Callers
+// reset it after anything that can change pools, synth supply or the POL
+// liquidity provider. A nil memo computes every time.
+type polValueMemo struct {
+	value cosmos.Uint
+	ok    bool
+}
+
+func (m *polValueMemo) reset() {
+	if m != nil {
+		m.ok = false
+	}
+}
+
+// runePoolValue is runePoolValue with the POL part taken from the memo.
+func (m *polValueMemo) runePoolValue(ctx cosmos.Context, mgr Manager) (cosmos.Uint, error) {
+	if m == nil {
+		return runePoolValue(ctx, mgr)
+	}
+	if !m.ok {
+		value, err := polPoolValue(ctx, mgr)
+		if err != nil {
+			return cosmos.ZeroUint(), err
+		}
+		m.value, m.ok = value, true
+	}
+	pending := mgr.Keeper().GetRuneBalanceOfModule(ctx, RUNEPoolName)
+	return m.value.Add(pending), nil
 }
 
 // polPoolValue - calculates how much the POL is worth in rune

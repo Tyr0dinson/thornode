@@ -85,6 +85,7 @@ func processErrataTxAttestation(
 		nonSigners := getNonSigners(active, signers)
 		slasher.DecSlashPoints(slashCtx, observeSlashPoints, signers...)
 		slasher.IncSlashPoints(slashCtx, lackOfObservationPenalty, nonSigners...)
+		queueObservationTally(ctx, k, observationTallyKindErrata, voter.Chain, voter.TxID.String())
 	}
 
 	outcome, err := processErrataTx(ctx, mgr, er)

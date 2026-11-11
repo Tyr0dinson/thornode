@@ -122,6 +122,9 @@ func TestConflictingBucketEnqueueRechecksCleanup(t *testing.T) {
 			go func() {
 				if permanent {
 					cleanupErr = o.handleErrataTxCommitted(common.ErrataTx{Chain: common.XMRChain, Id: local.Tx.ID}, common.ErrataTxOutcome_ERRATA_TX_OUTCOME_REVERTED)
+					if cleanupErr == nil {
+						_, cleanupErr = o.reconcileCommittedXMRErrata()
+					}
 				} else {
 					cleanupErr = o.filterErrataTx(btypes.ErrataBlock{
 						Height: local.BlockHeight,

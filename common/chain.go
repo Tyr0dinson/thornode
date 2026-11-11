@@ -107,7 +107,7 @@ func NewChain(chainID string) (Chain, error) {
 
 // Equals compare two chain to see whether they represent the same chain
 func (c Chain) Equals(c2 Chain) bool {
-	return strings.EqualFold(c.String(), c2.String())
+	return equalFoldUpper(string(c), string(c2))
 }
 
 func (c Chain) OneOf(chains ...Chain) bool {
@@ -126,6 +126,26 @@ func (c Chain) IsTHORChain() bool {
 
 func (c Chain) IsBSCChain() bool {
 	return c.Equals(BSCChain)
+}
+
+// SupportsSolvencyObservationSlashing reports whether ordinary solvency
+// observation slash accounting is safe for the chain. TRON account and TRC-20
+// balance reads cannot be pinned to the report height, so honest payloads can
+// fragment (#3098).
+func (c Chain) SupportsSolvencyObservationSlashing() bool {
+	return !c.Equals(TRONChain)
+}
+
+// SolvencyVoterQuota returns the THORChain block window and maximum new voters
+// per validator. Zero values mean no quota. TRON uses this bound because ordinary
+// solvency observation slashing is disabled, with headroom for reporting bursts
+// across active and retiring vaults. This limits creation rate, not lifetime
+// storage or bytes.
+func (c Chain) SolvencyVoterQuota() (windowBlocks int64, limit uint64) {
+	if c.Equals(TRONChain) {
+		return 10, 32
+	}
+	return 0, 0
 }
 
 // GetEVMChains returns all "EVM" chains connected to THORChain
@@ -653,7 +673,13 @@ func (c Chain) ApproximateBlockMilliseconds() int64 {
 	case NOBLEChain:
 		return 1_500
 	case SOLChain:
-		return 300 // ~265-300ms measured since SIMD-0525 (was 400)
+		// Measured mainnet p50 214ms (range 209-220) over 30 getRecentPerformanceSamples
+		// on 2026-10-27; was 400, then 300 (SIMD-0525). Solana slot time keeps falling,
+		// so this hardcoded default WILL go stale again — bifrost reads the live value
+		// from the MimirKeySOLSlotMilliseconds vote at the keysign height and only falls
+		// back here when it is unset. Non-consensus: outside bifrost this feeds only the
+		// read-only quote/confirmation ETA queriers, never a state transition.
+		return 214
 	case TAOChain:
 		return 12_000
 	case DOTChain:

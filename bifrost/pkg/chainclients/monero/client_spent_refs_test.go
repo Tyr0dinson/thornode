@@ -1,17 +1,22 @@
 package monero
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/syndtr/goleveldb/leveldb"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/monero/sidecar"
 	chainclienttypes "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/types"
@@ -19,6 +24,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/config"
+	ttypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
 func testLogger() zerolog.Logger {
@@ -186,9 +192,11 @@ func TestApplySpentOutputRefsSidecarCall(t *testing.T) {
 	obsTx.SpentOutputRefs = refs
 	obsTx.XmrTxKey = strings.Repeat("3", 64)
 
+	allowSpentOutputRefsImports(c)
 	applied, retry := c.applySpentOutputRefsOnce(chainclienttypes.SpentOutputRefsImport{Tx: obsTx, WireMemo: obsTx.Tx.Memo})
 	assert.True(t, applied, "idempotent Marked=0 response must count as verified")
 	assert.False(t, retry)
+	allowSpentOutputRefsImports(c)
 	applied, retry = c.applySpentOutputRefsOnce(chainclienttypes.SpentOutputRefsImport{Tx: obsTx, WireMemo: obsTx.Tx.Memo, ReplaySource: true})
 	assert.False(t, applied, "certificate import cannot succeed without a scanner to own replay")
 	assert.True(t, retry)
@@ -338,6 +346,7 @@ func TestApplySpentOutputRefsAuthenticatesExactOriginBeforeMutation(t *testing.T
 			payload := testStoredSignedTxPayload(t, txHash, "deadbeef")
 			require.NoError(t, store.Set(plan, txHash, payload))
 
+			allowSpentOutputRefsImports(client)
 			applied, retry := client.applySpentOutputRefsOnce(chainclienttypes.SpentOutputRefsImport{Tx: obsTx, WireMemo: obsTx.Tx.Memo})
 			assert.False(t, applied)
 			assert.False(t, retry)
@@ -452,6 +461,7 @@ func TestApplySpentOutputRefsMarksImportedOutboundSignedOnlyAfterFullImport(t *t
 	require.NoError(t, payloadStore.Reserve(claimPlan))
 	require.NoError(t, payloadStore.Set(claimPlan, spendTxHash, payloadBytes))
 
+	allowSpentOutputRefsImports(c)
 	applied, retry := c.applySpentOutputRefsOnce(chainclienttypes.SpentOutputRefsImport{Tx: obsTx, WireMemo: obsTx.Tx.Memo})
 	require.False(t, applied)
 	require.True(t, retry)
@@ -460,6 +470,7 @@ func TestApplySpentOutputRefsMarksImportedOutboundSignedOnlyAfterFullImport(t *t
 	require.NoError(t, err)
 	assert.True(t, ok, "partial import must retain the recoverable payload")
 
+	allowSpentOutputRefsImports(c)
 	applied, retry = c.applySpentOutputRefsOnce(chainclienttypes.SpentOutputRefsImport{Tx: obsTx, WireMemo: obsTx.Tx.Memo})
 	require.True(t, applied)
 	require.False(t, retry)
@@ -928,7 +939,7 @@ func TestApplySpentOutputRefsDoesNotQueueRetryAfterStop(t *testing.T) {
 
 	mu.Lock()
 	defer mu.Unlock()
-	assert.Equal(t, 1, calls, "closed stop channel should suppress async retries")
+	assert.Zero(t, calls, "closed stop channel must prevent every sidecar attempt")
 }
 
 // TestApplySpentOutputRefsFromTxInItemUsesObservationHeight verifies the
@@ -1135,6 +1146,7 @@ func TestApplySpentOutputRefsChainCommittedCarriesMetadataWithoutCertificate(t *
 	obsTx.XmrTxKey = strings.Repeat("d", 64)
 
 	outcome := make(chan bool, 1)
+	allowSpentOutputRefsImports(c)
 	c.ApplySpentOutputRefsWithOutcome(chainclienttypes.SpentOutputRefsImport{
 		Tx:             obsTx,
 		ChainCommitted: true,
@@ -1181,6 +1193,7 @@ func TestApplySpentOutputRefsChainCommittedInternalCarriesPairingProof(t *testin
 			obsTx := testXMRSpentRefsObservedTx(t, "test-vault-chain-committed-"+tc.name, "chain-committed-"+tc.name)
 			obsTx.Tx.Memo = tc.memo
 
+			allowSpentOutputRefsImports(c)
 			applied, retry := c.applySpentOutputRefsOnce(chainclienttypes.SpentOutputRefsImport{
 				Tx:             obsTx,
 				ChainCommitted: true,
@@ -1235,6 +1248,7 @@ func TestApplySpentOutputRefsOnceRetriesPartialNotFound(t *testing.T) {
 	obsTx := testXMRSpentRefsObservedTx(t, "test-vault-partial-not-found", "partial-not-found")
 	obsTx.SpentOutputRefs = append(obsTx.SpentOutputRefs,
 		*testXMROutputRef("partial-not-found-second", 1, obsTx.Tx.ID.String()))
+	allowSpentOutputRefsImports(c)
 	applied, retry := c.applySpentOutputRefsOnce(chainclienttypes.SpentOutputRefsImport{Tx: obsTx, WireMemo: obsTx.Tx.Memo})
 	assert.False(t, applied)
 	assert.True(t, retry)
@@ -1332,4 +1346,479 @@ func TestApplySpentOutputRefsWithOutcomeReportsExhaustion(t *testing.T) {
 	mu.Lock()
 	defer mu.Unlock()
 	assert.Equal(t, 3, calls, "expected the first attempt plus both retries")
+}
+
+func TestGuardedSpentOutputRefsRetryStopsBeforeSidecarMutation(t *testing.T) {
+	t.Parallel()
+
+	var mu sync.Mutex
+	sidecarCalls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		mu.Lock()
+		sidecarCalls++
+		mu.Unlock()
+		http.Error(w, "tx not mined yet", http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	signer, err := sidecar.NewClientWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
+	require.NoError(t, err)
+	c := &Client{
+		chain:                     common.XMRChain,
+		sidecar:                   signer,
+		logger:                    testLogger(),
+		wg:                        &sync.WaitGroup{},
+		stopchan:                  make(chan struct{}),
+		spentRefsRetryInterval:    10 * time.Millisecond,
+		spentRefsRetryMaxAttempts: 3,
+	}
+	defer func() {
+		close(c.stopchan)
+		c.wg.Wait()
+	}()
+
+	guardCalls := 0
+	guard := func(common.ObservedTx) (func(), bool) {
+		guardCalls++
+		if guardCalls > 1 {
+			return nil, false
+		}
+		return func() {}, true
+	}
+	outcome := make(chan bool, 1)
+	c.SetSpentOutputRefsGuard(guard)
+	tx := testXMRSpentRefsObservedTx(t, "test-vault-guarded-retry", "guarded-retry")
+	c.ApplySpentOutputRefsWithOutcome(chainclienttypes.SpentOutputRefsImport{
+		Tx: tx, WireMemo: tx.Tx.Memo, ReplaySource: true,
+	}, func(applied bool) { outcome <- applied })
+
+	select {
+	case applied := <-outcome:
+		require.False(t, applied)
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for guarded retry outcome")
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	require.Equal(t, 2, guardCalls)
+	require.Equal(t, 1, sidecarCalls, "rejected retry reached the sidecar")
+}
+
+func allowSpentOutputRefsImports(c *Client) {
+	c.SetSpentOutputRefsGuard(func(common.ObservedTx) (func(), bool) {
+		return func() {}, true
+	})
+}
+
+func TestSpentRefsImportRequiresAdmissionAndRechecksCancellation(t *testing.T) {
+	for _, scenario := range []string{"committed without guard", "peer without guard", "canceled during admission"} {
+		t.Run(scenario, func(t *testing.T) {
+			vault := testVaultPubKey(t, "admission-vault")
+			txHash := testXMRHash("admission-spend")
+			refs := []*common.OutputRef{testXMROutputRef("admission-ref", 0, txHash)}
+			voter := spentOutputRefsCatchupVoter(t, vault, txHash, 100)
+			obs, _, found := queryConsensusObservedXMRTx(voter, common.TxID(txHash))
+			require.True(t, found)
+			obs.SpentOutputRefs = xmrOutputRefsFromPointers(refs)
+			var sidecarCalls atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				sidecarCalls.Add(1)
+				_ = json.NewEncoder(w).Encode(sidecar.MarkSpentResp{Marked: 1})
+			}))
+			defer server.Close()
+			client := spentOutputRefsCatchupClient(t, server.URL, vault, refs, nil)
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			var releases atomic.Int32
+			if scenario == "canceled during admission" {
+				client.SetSpentOutputRefsGuard(func(common.ObservedTx) (func(), bool) {
+					cancel()
+					return func() { releases.Add(1) }, true
+				})
+			}
+			peer := scenario == "peer without guard"
+			applied, retry := client.applySpentOutputRefsOnceContext(ctx, chainclienttypes.SpentOutputRefsImport{
+				Tx: obs, ChainCommitted: !peer, ReplaySource: peer,
+			})
+			require.False(t, applied)
+			require.False(t, retry)
+			require.Zero(t, sidecarCalls.Load(), "rejected work must not reach the sidecar")
+			if scenario == "canceled during admission" {
+				require.EqualValues(t, 1, releases.Load(), "cancellation must release the acquired reader")
+			}
+		})
+	}
+}
+
+type spentRefsReplayFixture struct {
+	client                  *Client
+	tx                      common.ObservedTx
+	db                      *leveldb.DB
+	dbPath                  string
+	source                  common.PubKey
+	destination             common.PubKey
+	markSpentCalls          atomic.Int32
+	markObservedCalls       atomic.Int32
+	beforeMarkSpent         func()
+	beforeMarkObserved      func()
+	beforeVaultRegistration func()
+}
+
+// The HTTP stub models authenticated sidecar responses, not FROST verification.
+// Import, signed-claim storage, replay enrollment and acknowledgement use the
+// production Go paths and a database that can actually be closed and reopened.
+func newSpentRefsReplayFixture(t *testing.T, payout bool) *spentRefsReplayFixture {
+	t.Helper()
+	source, destination, txID, voter, refs := testXMRCatchupMigration(t, t.Name())
+	if payout {
+		voter.Tx.Tx.Memo = "OUT:" + testXMRHash(t.Name()+"-inbound")
+	}
+	tx := common.NewObservedTx(voter.Tx.Tx, 110, source, 110)
+	tx.XmrMinedHeight, tx.XmrTxKey, tx.SpentOutputRefs = 100, voter.Tx.XmrTxKey, []common.OutputRef{*refs[0]}
+	f := &spentRefsReplayFixture{
+		tx: tx, source: source, destination: destination,
+		dbPath: filepath.Join(t.TempDir(), "recovery"),
+	}
+	blockHash, parentHash := testXMRHash(t.Name()+"-block"), testXMRHash(t.Name()+"-parent")
+	var imported atomic.Pointer[sidecar.MarkSpentReq]
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/monero/outputs/mark-spent":
+			var request sidecar.MarkSpentReq
+			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			if request.TxHash != txID || request.Memo != tx.Tx.Memo || len(request.SpentRefs) != 1 {
+				http.Error(w, "import changed the exact transaction", http.StatusBadRequest)
+				return
+			}
+			f.markSpentCalls.Add(1)
+			imported.Store(&request)
+			if f.beforeMarkSpent != nil {
+				f.beforeMarkSpent()
+			}
+			_ = json.NewEncoder(w).Encode(sidecar.MarkSpentResp{Marked: len(request.SpentRefs)})
+		case "/v1/monero/chain/tx/" + txID + "/location":
+			_ = json.NewEncoder(w).Encode(sidecar.CanonicalTxLocationResp{
+				TxHash: txID, Height: 100, BlockHash: blockHash, PreviousHash: parentHash,
+			})
+		case "/v1/monero/vaults/register":
+			if f.beforeVaultRegistration != nil {
+				f.beforeVaultRegistration()
+			}
+			_ = json.NewEncoder(w).Encode(testRegisterVaultResponse(201))
+		case "/v1/monero/outputs/mark-observed":
+			request := imported.Load()
+			if request == nil {
+				http.Error(w, "no imported spend", http.StatusNotFound)
+				return
+			}
+			f.markObservedCalls.Add(1)
+			if f.beforeMarkObserved != nil {
+				f.beforeMarkObserved()
+			}
+			_ = json.NewEncoder(w).Encode(sidecar.Transfer{
+				TxID: request.TxHash, TxKey: request.TxKey, VaultPubKey: request.VaultPubKey,
+				FromAddress: request.FromAddress, Address: request.ToAddress,
+				Amount: request.Amount, Fee: request.Fee, Height: 100, Note: request.Memo,
+				Origin: string(request.Origin), ObservationEligible: request.Origin == sidecar.OutgoingOriginVaultCertified,
+				SpentOutputRefs: request.SpentRefs,
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+	signer, err := sidecar.NewClientWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
+	require.NoError(t, err)
+	f.client = &Client{chain: common.XMRChain, sidecar: signer, logger: testLogger()}
+	f.open(t)
+	t.Cleanup(func() { require.NoError(t, f.db.Close()) })
+	return f
+}
+
+func (f *spentRefsReplayFixture) open(t *testing.T) {
+	t.Helper()
+	db, err := leveldb.OpenFile(f.dbPath, nil)
+	require.NoError(t, err)
+	f.db = db
+	scanner := NewScanner(testLogger(), f.client.sidecar, &scannerMemoBridge{asgards: ttypes.Vaults{
+		{PubKey: f.source, PubKeyEddsa: f.source, PubKeyFrost: f.source},
+		{PubKey: f.destination, PubKeyEddsa: f.destination, PubKeyFrost: f.destination},
+	}}, common.XMRChain, common.EmptyPubKey, 72)
+	scanner.SetReorgStore(NewReorgStore(db))
+	scanner.SetAuthenticatedInternalInboundReplayStore(newAuthenticatedInternalInboundReplayStore(db))
+	require.NoError(t, scanner.internalReplayStore.ResetClaims())
+	scanner.setCurrentHeight(200)
+	f.client.scanner = scanner
+	f.client.signedTxPayloadStore = newSignedTxPayloadStore(db)
+}
+
+func TestSpentRefsImportCleanupBeforeMutationAndReplay(t *testing.T) {
+	for _, payout := range []bool{false, true} {
+		for _, committed := range []bool{false, true} {
+			for _, beforeImport := range []bool{false, true} {
+				name := map[bool]string{false: "migration", true: "payout"}[payout] + "/" +
+					map[bool]string{false: "certified", true: "committed"}[committed] + "/" +
+					map[bool]string{false: "during import", true: "before import"}[beforeImport]
+				t.Run(name, func(t *testing.T) {
+					f := newSpentRefsReplayFixture(t, payout)
+					entered, resume := make(chan struct{}), make(chan struct{})
+					var resumeOnce sync.Once
+					unblock := func() { resumeOnce.Do(func() { close(resume) }) }
+					var barrier sync.RWMutex
+					var firstAdmission sync.Once
+					f.client.SetSpentOutputRefsGuard(func(tx common.ObservedTx) (func(), bool) {
+						if beforeImport {
+							firstAdmission.Do(func() { close(entered); <-resume })
+						}
+						barrier.RLock()
+						reverted, err := f.client.scanner.reorgStore.IsRevertedTx(tx.Tx.ID.String())
+						if err != nil || reverted {
+							barrier.RUnlock()
+							return nil, false
+						}
+						return barrier.RUnlock, true
+					})
+					if !beforeImport {
+						f.beforeMarkSpent = func() { close(entered); <-resume }
+					}
+					outcomes := make(chan bool, 2)
+					done := make(chan struct{})
+					go func() {
+						defer close(done)
+						f.client.ApplySpentOutputRefsWithOutcome(chainclienttypes.SpentOutputRefsImport{
+							Tx: f.tx, WireMemo: f.tx.Tx.Memo, ChainCommitted: committed, ReplaySource: !committed,
+						}, func(applied bool) { outcomes <- applied })
+					}()
+					t.Cleanup(func() {
+						unblock()
+						select {
+						case <-done:
+						case <-time.After(3 * time.Second):
+							t.Error("import did not stop")
+						}
+					})
+					select {
+					case <-entered:
+					case <-time.After(3 * time.Second):
+						t.Fatal("import did not reach pause")
+					}
+					cleanupDone := make(chan error, 1)
+					go func() {
+						barrier.Lock()
+						defer barrier.Unlock()
+						cleanupDone <- f.client.QuarantinePermanentErrata(common.ErrataTx{
+							Chain: common.XMRChain, Id: f.tx.Tx.ID,
+						}, 100)
+					}()
+					if beforeImport {
+						select {
+						case cleanupErr := <-cleanupDone:
+							require.NoError(t, cleanupErr)
+						case <-time.After(3 * time.Second):
+							t.Fatal("cleanup waited for an import that had not started")
+						}
+					} else {
+						// A queued writer prevents the replay's next reader from
+						// overtaking cleanup after MarkSpent releases its reader.
+						require.Eventually(t, func() bool {
+							if barrier.TryRLock() {
+								barrier.RUnlock()
+								return false
+							}
+							return true
+						}, 3*time.Second, time.Millisecond)
+						select {
+						case <-cleanupDone:
+							t.Fatal("cleanup crossed the in-flight MarkSpent mutation")
+						default:
+						}
+					}
+					unblock()
+					if !beforeImport {
+						select {
+						case cleanupErr := <-cleanupDone:
+							require.NoError(t, cleanupErr)
+						case <-time.After(3 * time.Second):
+							t.Fatal("cleanup did not finish after import")
+						}
+					}
+					select {
+					case <-done:
+					case <-time.After(3 * time.Second):
+						t.Fatal("import did not reach a terminal outcome")
+					}
+					require.Len(t, outcomes, 1, "one terminal callback, with no retry after quarantine")
+					require.False(t, <-outcomes)
+					require.EqualValues(t, map[bool]int{false: 1, true: 0}[beforeImport], f.markSpentCalls.Load())
+					require.Zero(t, f.markObservedCalls.Load(), "replay must recheck admission after import")
+
+					require.NoError(t, f.db.Close())
+					f.open(t)
+					reverted, err := f.client.scanner.reorgStore.IsRevertedTx(f.tx.Tx.ID.String())
+					require.NoError(t, err)
+					require.True(t, reverted)
+					quarantined, err := f.client.signedTxPayloadStore.txQuarantinedLocked(f.tx.Tx.ID.String())
+					require.NoError(t, err)
+					require.True(t, quarantined, "cleanup must preserve the signing fence across reopen")
+					count, err := f.client.scanner.internalReplayStore.Count()
+					require.NoError(t, err)
+					require.Zero(t, count)
+					receipts, err := f.client.scanner.reorgStore.ListObservationReceipts()
+					require.NoError(t, err)
+					require.Empty(t, receipts, "rejected recovery must not create source observations")
+				})
+			}
+		}
+	}
+}
+
+func TestSpentRefsMigrationRefreshDoesNotBlockErrataCleanup(t *testing.T) {
+	for _, committed := range []bool{false, true} {
+		t.Run(map[bool]string{false: "certified", true: "committed"}[committed], func(t *testing.T) {
+			f := newSpentRefsReplayFixture(t, false)
+			entered, resume := make(chan struct{}), make(chan struct{})
+			var resumeOnce, registrationOnce sync.Once
+			unblock := func() { resumeOnce.Do(func() { close(resume) }) }
+			f.beforeVaultRegistration = func() {
+				registrationOnce.Do(func() { close(entered); <-resume })
+			}
+			var barrier sync.RWMutex
+			f.client.SetSpentOutputRefsGuard(func(tx common.ObservedTx) (func(), bool) {
+				barrier.RLock()
+				reverted, err := f.client.scanner.reorgStore.IsRevertedTx(tx.Tx.ID.String())
+				if err != nil || reverted {
+					barrier.RUnlock()
+					return nil, false
+				}
+				return barrier.RUnlock, true
+			})
+			outcomes, done := make(chan bool, 2), make(chan struct{})
+			go func() {
+				defer close(done)
+				f.client.ApplySpentOutputRefsWithOutcome(chainclienttypes.SpentOutputRefsImport{
+					Tx: f.tx, WireMemo: f.tx.Tx.Memo, ChainCommitted: committed, ReplaySource: !committed,
+				}, func(applied bool) { outcomes <- applied })
+			}()
+			t.Cleanup(func() {
+				unblock()
+				select {
+				case <-done:
+				case <-time.After(3 * time.Second):
+					t.Error("import did not stop")
+				}
+			})
+			select {
+			case <-entered:
+			case <-time.After(3 * time.Second):
+				t.Fatal("vault registration did not start")
+			}
+			require.EqualValues(t, 1, f.markSpentCalls.Load())
+			// Registration can rewind the scanner, so it must retain scanMu.
+			if f.client.scanner.scanMu.TryLock() {
+				f.client.scanner.scanMu.Unlock()
+				t.Fatal("vault registration released the scanner lock")
+			}
+			if !barrier.TryLock() {
+				t.Fatal("vault refresh holds errata admission while waiting for HTTP")
+			}
+			cleanupErr := f.client.QuarantinePermanentErrata(common.ErrataTx{
+				Chain: common.XMRChain, Id: f.tx.Tx.ID,
+			}, 100)
+			barrier.Unlock()
+			require.NoError(t, cleanupErr)
+			unblock()
+			select {
+			case <-done:
+			case <-time.After(3 * time.Second):
+				t.Fatal("import did not finish after vault refresh")
+			}
+			require.Len(t, outcomes, 1)
+			require.False(t, <-outcomes, "replay must recheck admission after refresh")
+			require.Zero(t, f.markObservedCalls.Load())
+			count, err := f.client.scanner.internalReplayStore.Count()
+			require.NoError(t, err)
+			require.Zero(t, count, "cleanup must prevent replay enrollment")
+		})
+	}
+}
+
+func TestSpentRefsMigrationReplayRetainsObligationAcrossReopen(t *testing.T) {
+	f := newSpentRefsReplayFixture(t, false)
+	allowSpentOutputRefsImports(f.client)
+	entered, resume := make(chan struct{}), make(chan struct{})
+	var resumeOnce sync.Once
+	unblock := func() { resumeOnce.Do(func() { close(resume) }) }
+	var firstObserved sync.Once
+	f.beforeMarkObserved = func() { firstObserved.Do(func() { close(entered); <-resume }) }
+	outcome, done := make(chan bool, 1), make(chan struct{})
+	go func() {
+		defer close(done)
+		f.client.ApplySpentOutputRefsWithOutcome(chainclienttypes.SpentOutputRefsImport{
+			Tx: f.tx, WireMemo: f.tx.Tx.Memo, ReplaySource: true,
+		}, func(applied bool) { outcome <- applied })
+	}()
+	t.Cleanup(func() {
+		unblock()
+		select {
+		case <-done:
+		case <-time.After(3 * time.Second):
+			t.Error("import did not stop")
+		}
+	})
+	select {
+	case <-entered:
+	case <-time.After(3 * time.Second):
+		t.Fatal("import did not reach replay reconciliation")
+	}
+	count, err := f.client.scanner.internalReplayStore.Count()
+	require.NoError(t, err)
+	require.Equal(t, 1, count, "replay must be durable before sidecar reconciliation completes")
+	select {
+	case <-outcome:
+		t.Fatal("success was reported before replay reconciliation")
+	default:
+	}
+	unblock()
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("import did not finish replay reconciliation")
+	}
+	require.True(t, <-outcome)
+	require.EqualValues(t, 1, f.markSpentCalls.Load())
+
+	items, _, err := f.client.scanner.replayAuthenticatedInternalInbounds(201, 201)
+	require.NoError(t, err)
+	require.Len(t, items, 2)
+	items[0].OnObservedTxStored()
+	items[1].OnObservedTxRejected(errors.New("observer storage unavailable"))
+	count, err = f.client.scanner.internalReplayStore.Count()
+	require.NoError(t, err)
+	require.Equal(t, 1, count, "partial acceptance cannot retire the durable obligation")
+
+	require.NoError(t, f.db.Close())
+	f.open(t)
+	items, _, err = f.client.scanner.replayAuthenticatedInternalInbounds(202, 202)
+	require.NoError(t, err)
+	require.Len(t, items, 2, "reopen must recover both sides of the migration")
+	require.True(t, items[0].ObservedVaultPubKey.Equals(f.destination))
+	require.True(t, items[1].ObservedVaultPubKey.Equals(f.source))
+	for _, item := range items {
+		require.Equal(t, f.tx.Tx.ID.String(), item.Tx)
+		require.Equal(t, int64(100), item.BlockHeight)
+		require.Equal(t, f.tx.Tx.Memo, item.Memo)
+	}
+	require.Equal(t, f.tx.XmrTxKey, items[1].TxKey)
+	require.Equal(t, f.tx.SpentOutputRefs[0].KeyImage, items[1].SpentOutputRefs[0].KeyImage)
+	items[1].OnObservedTxStored()
+	count, err = f.client.scanner.internalReplayStore.Count()
+	require.NoError(t, err)
+	require.Equal(t, 1, count)
+	items[0].OnObservedTxStored()
+	count, err = f.client.scanner.internalReplayStore.Count()
+	require.NoError(t, err)
+	require.Zero(t, count, "only both durable acceptances retire the replay")
 }

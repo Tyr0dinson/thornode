@@ -243,6 +243,7 @@ func (w *catchupJournalWriter) Sync() error {
 }
 
 func TestCheckpointCatchupRestartPruningAndWriteFailure(t *testing.T) {
+	withProductionFsync(t) // counts the checkpoint's syncs
 	for _, failWrite := range []bool{false, true} {
 		t.Run(fmt.Sprintf("write_failure_%t", failWrite), func(t *testing.T) {
 			disk := &catchupJournalStorage{Storage: storage.NewMemStorage()}

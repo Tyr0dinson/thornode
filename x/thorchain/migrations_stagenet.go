@@ -200,3 +200,19 @@ func (m Migrator) Migrate16to17(_ sdk.Context) error {
 func (m Migrator) Migrate17to18(_ sdk.Context) error {
 	return nil
 }
+
+// Migrate19to20 (on mainnet) reverses the rzxslmgc bond slash + refunds bond
+// providers, donates the Secured-Ops LP positions + repays NDT, restores ETH.THOR
+// depth, retires the low-synth-% pools' residual synths, and refunds the
+// erroneous h28181638 ZEC slash. No-op off mainnet:
+// the spec is mainnet state.
+func (m Migrator) migrate19to20Mainnet(_ sdk.Context) error {
+	return nil
+}
+
+// migrate20to21Mainnet (on mainnet) reimburses tcso from the Reserve for the
+// GAIA vault top-up and the TRON and LTC manual refunds. No-op off mainnet: the
+// reimbursement is mainnet state.
+func (m Migrator) migrate20to21Mainnet(_ sdk.Context) error {
+	return nil
+}

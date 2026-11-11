@@ -51,7 +51,9 @@ func NewConstantValue() *ConstantVals {
 			MissBlockSignSlashPoints:            1,                  // slash points for not signing a block
 			ObservationDelayFlexibility:         10,                 // number of blocks of flexibility for a validator to get their slash points taken off for making an observation
 			JailTimeKeygen:                      720 * 6,            // blocks a node account is jailed for failing to keygen. DO NOT drop below tss timeout
+			JailTimeKeygenBase:                  720 * 6,            // base jail blocks per keygen blame for non-active nodes; multiplied by blame count for escalation. DO NOT drop below JailTimeKeygen or tss timeout
 			JailTimeKeysign:                     60,                 // blocks a node account is jailed for failing to keysign. DO NOT drop below tss timeout
+			MaxKeygenBlameMultiplier:            3,                  // maximum penalty multiplier for repeated keygen failures, 0 = no cap
 			NodePauseChainBlocks:                720,                // number of blocks that a node can pause/resume a global chain halt
 			NodeOperatorFee:                     500,                // Node operator fee
 			EnableDerivedAssets:                 0,                  // enable/disable swapping of derived assets
@@ -175,6 +177,14 @@ func NewConstantValue() *ConstantVals {
 			VaultDeficitGasHaltMaxGasMultiplier: 30,                 // multiple of current max gas at which gas-related vault deficits halt signing and trading
 			MaxAbsentKeygenReporters:            1,                  // number of keygen members allowed to skip MsgTssPool reporting before a successful keygen finalizes (mainnet default)
 			BondYieldEnabled:                    0,                  // enable/disable automatic bond-yield payouts
+			MaxMissingObservationChurnOut:       0,                  // max number of nodes to be churned out per churn for missing observations on a chain (0 = off)
+			MissingObservationChurnOutBps:       5000,               // a node is marked when its decayed missed/total observation ratio on any chain is above this (basis points)
+			MissingObservationGuardBps:          1000,               // skip a voter as a shared event when more than this share of the nodes missed it, not counting nodes already failing its chain that missed it (basis points)
+			MissingObservationHalfLife:          43200,              // blocks between halvings of the missed-observation tallies
+			MissingObservationMinSamples:        24,                 // minimum decayed voters on a chain before a node's ratio on it counts
+			MissingObservationGuardMaxBlocks:    43200,              // the shared-event guard's grace per chain, in blocks: used up while its voters are skipped, refilled at the same rate while they pass (0 = never expires)
+			LUVIOverhangGuard:                   1,                  // reject liquidity adds (user and POL) into pools whose synth supply is at least twice the asset depth (<= 0 = off)
+			LUVIGuard:                           1,                  // 1 = reject user swaps/LP flows that lower a pool's LP value (G) beyond the allowance, and emit LUVI loss events; 0 = off (the per-pool G accumulator always runs)
 		},
 		boolValues: map[ConstantName]bool{
 			StrictBondLiquidityRatio: true,

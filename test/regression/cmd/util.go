@@ -35,6 +35,14 @@ func regtestCreateBlockPort(routine int) int {
 	return base + routine
 }
 
+// regtestEbifrostPort keeps the per-routine ebifrost listener below Linux's
+// default ephemeral range (32768-60999). Inside it, an outbound localhost
+// connection from a parallel routine can already own the port as its source
+// port, and thornode then panics with "bind: address already in use".
+func regtestEbifrostPort(routine int) int {
+	return 30000 + routine
+}
+
 func regtestHome(routine int) string {
 	base := os.Getenv("REGTEST_HOME_BASE")
 	if base == "" {

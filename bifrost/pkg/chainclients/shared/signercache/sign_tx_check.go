@@ -23,11 +23,16 @@ const (
 	// gRPC codes.NotFound, btcjson code -5, XRP txnNotFound). Cache is
 	// cleared and the caller proceeds with re-signing.
 	LookupNotFound
+	// LookupFailed indicates the recorded broadcast is finalized and execution
+	// definitively failed without making the payment. The caller may recover,
+	// but must not reuse the failed transaction. Keep its cache entry until a
+	// new broadcast replaces it so retries and restarts retain that evidence.
+	LookupFailed
 )
 
 // VerifyOnChainFunc verifies whether a recorded broadcast tx is on chain.
 // Each chain provides its own implementation that distinguishes between the
-// three LookupResult outcomes. The function should not log; logging is the
+// LookupResult outcomes. The function should not log; logging is the
 // caller's responsibility based on the CacheCheck.Phase returned.
 type VerifyOnChainFunc func(sig string) LookupResult
 
@@ -71,6 +76,10 @@ const (
 	// broadcast is absent from chain. The cache entry has been removed and
 	// SignTx should proceed with re-signing.
 	PhaseVerifiedAbsentCleared
+	// PhaseVerifiedFailed means verification confirmed finalized execution
+	// failure. SignTx may recover, but must replace the failed transaction.
+	// The cache is retained until the replacement broadcast is recorded.
+	PhaseVerifiedFailed
 )
 
 // String returns a human-readable label for the phase, suitable for log
@@ -91,6 +100,8 @@ func (p CacheCheckPhase) String() string {
 		return "could not confirm absence on chain, respecting signer cache"
 	case PhaseVerifiedAbsentCleared:
 		return "expired cached broadcast not found on chain, clearing signer cache for re-sign"
+	case PhaseVerifiedFailed:
+		return "cached broadcast finalized with failed execution, retaining signer cache for recovery"
 	}
 	return "unknown phase"
 }
@@ -98,7 +109,8 @@ func (p CacheCheckPhase) String() string {
 // CacheCheck describes the outcome of SignTxCacheCheck.
 type CacheCheck struct {
 	// SkipSign is true when SignTx should return nil immediately (cache says
-	// don't sign). It is false only on PhaseNoEntry and PhaseVerifiedAbsentCleared.
+	// don't sign). It is false on PhaseNoEntry, PhaseVerifiedAbsentCleared,
+	// and PhaseVerifiedFailed.
 	SkipSign bool
 	// Phase identifies which branch was taken; useful for logging.
 	Phase CacheCheckPhase
@@ -109,10 +121,10 @@ type CacheCheck struct {
 
 // Noteworthy reports whether the outcome is operationally significant enough to
 // log above Info: verification could not confirm absence (PhaseVerifiedAmbiguous)
-// or the cache was cleared for an imminent re-sign (PhaseVerifiedAbsentCleared).
+// or recovery is allowed (PhaseVerifiedAbsentCleared / PhaseVerifiedFailed).
 // Routine cache hits (fresh / found / gate-off) stay at Info.
 func (c CacheCheck) Noteworthy() bool {
-	return c.Phase == PhaseVerifiedAmbiguous || c.Phase == PhaseVerifiedAbsentCleared
+	return c.Phase == PhaseVerifiedAmbiguous || c.Phase == PhaseVerifiedAbsentCleared || c.Phase == PhaseVerifiedFailed
 }
 
 // SignTxCacheCheck implements the standard signer-cache check performed at the
@@ -128,6 +140,7 @@ func (c CacheCheck) Noteworthy() bool {
 //     c. Otherwise call verifyFn on the recorded sig:
 //     - LookupFound or LookupAmbiguous -> skip signing.
 //     - LookupNotFound -> clear the cache and proceed with re-signing.
+//     - LookupFailed -> retain the cache and recover with a new transaction.
 //
 // The gateFn parameter is the operational guard for the verification path. It
 // is invoked lazily — only when the cache is expired AND the gate decision is
@@ -161,6 +174,8 @@ func (cm *CacheManager) SignTxCacheCheck(
 	case LookupNotFound:
 		cm.RemoveSigned(sig)
 		return CacheCheck{SkipSign: false, Phase: PhaseVerifiedAbsentCleared, Sig: sig}
+	case LookupFailed:
+		return CacheCheck{SkipSign: false, Phase: PhaseVerifiedFailed, Sig: sig}
 	default: // LookupAmbiguous
 		return CacheCheck{SkipSign: true, Phase: PhaseVerifiedAmbiguous, Sig: sig}
 	}

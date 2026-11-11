@@ -134,6 +134,13 @@ func (k *tssKeysignKeeperHelper) ListActiveValidators(ctx cosmos.Context) (NodeA
 	return k.Keeper.ListActiveValidators(ctx)
 }
 
+func (k *tssKeysignKeeperHelper) CountActiveValidators(ctx cosmos.Context) (int, error) {
+	if k.errListActiveAccounts {
+		return 0, errKaboom
+	}
+	return k.Keeper.CountActiveValidators(ctx)
+}
+
 func signVoter(ctx cosmos.Context, keeper keeper.Keeper, except cosmos.AccAddress) (result []cosmos.AccAddress) {
 	active, _ := keeper.ListActiveValidators(ctx)
 	for _, na := range active {

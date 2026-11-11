@@ -271,6 +271,7 @@ type RegisterVaultReq struct {
 
 type RegisterVaultResp struct {
 	Registered         bool    `json:"registered"`
+	EffectiveBirthday  uint64  `json:"effective_birthday"`
 	ResetEpoch         uint64  `json:"reset_epoch"`
 	ExpectedNextHeight *uint64 `json:"expected_next_height,omitempty"`
 }
@@ -282,6 +283,7 @@ type RegisterVaultResp struct {
 func (r *RegisterVaultResp) UnmarshalJSON(data []byte) error {
 	type wireResponse struct {
 		Registered         *bool   `json:"registered"`
+		EffectiveBirthday  *uint64 `json:"effective_birthday"`
 		ResetEpoch         *uint64 `json:"reset_epoch"`
 		ExpectedNextHeight *uint64 `json:"expected_next_height"`
 	}
@@ -293,12 +295,16 @@ func (r *RegisterVaultResp) UnmarshalJSON(data []byte) error {
 	if wire.Registered == nil {
 		return fmt.Errorf("register vault response omitted registered")
 	}
+	if wire.EffectiveBirthday == nil {
+		return fmt.Errorf("register vault response omitted effective_birthday")
+	}
 	if wire.ResetEpoch == nil {
 		return fmt.Errorf("register vault response omitted reset_epoch")
 	}
 
 	*r = RegisterVaultResp{
 		Registered:         *wire.Registered,
+		EffectiveBirthday:  *wire.EffectiveBirthday,
 		ResetEpoch:         *wire.ResetEpoch,
 		ExpectedNextHeight: wire.ExpectedNextHeight,
 	}
@@ -549,6 +555,24 @@ type ChainBlock struct {
 	Hash         string
 	PreviousHash string
 	TxHashes     []string
+}
+
+// ChainBlockHeightMismatchError rejects a chain response that is not bound to
+// the height requested by Bifrost, regardless of which transport supplied it.
+type ChainBlockHeightMismatchError struct {
+	RequestedHeight int64
+	ReturnedHeight  int64
+}
+
+func (e *ChainBlockHeightMismatchError) Error() string {
+	if e == nil {
+		return "monero chain block height mismatch"
+	}
+	return fmt.Sprintf(
+		"monero chain block requested height %d but returned height %d",
+		e.RequestedHeight,
+		e.ReturnedHeight,
+	)
 }
 
 // VaultKey describes the sidecar's knowledge of a single vault's threshold

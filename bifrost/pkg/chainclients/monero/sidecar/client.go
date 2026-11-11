@@ -34,10 +34,19 @@ const (
 	idempotentSignCombineMaxAttempts = 3
 	defaultSignCombineInitialBackoff = 200 * time.Millisecond
 	defaultSignCombineMaxBackoff     = time.Second
+	// A 429 from sign/partial is an admission rejection: the signer produced no
+	// share for it. Peers keep waiting for this node's share for the keysign
+	// timeout, so a short bounded replay of the same request keeps the round
+	// alive instead of failing it after the other shares were already sent.
+	defaultSignPartialMaxAttempts    = 5
+	defaultSignPartialInitialBackoff = 250 * time.Millisecond
+	defaultSignPartialMaxBackoff     = 2 * time.Second
 	scannerStatePath                 = "/v1/monero/scanner/state"
 	scannerRewindPath                = "/v1/monero/scanner/rewind"
 	maxScannerReorgRewind            = uint64(730)
 )
+
+var errSignerRedirect = errors.New("sidecar redirects are not allowed")
 
 type scannerContinuityCache struct {
 	resetEpoch       uint64
@@ -109,6 +118,9 @@ type Client struct {
 	signCombineMaxAttempts    int
 	signCombineInitialBackoff time.Duration
 	signCombineMaxBackoff     time.Duration
+	signPartialMaxAttempts    int
+	signPartialInitialBackoff time.Duration
+	signPartialMaxBackoff     time.Duration
 }
 
 // NewClient wires a sidecar Client from a Bifrost chain configuration.
@@ -180,6 +192,12 @@ func NewClientWithEndpoint(cfg config.BifrostChainConfiguration, endpoint string
 		}
 	}
 
+	// Signer routes are fixed. Redirects must not bypass endpoint policy or
+	// be accepted as successful responses by the JSON helpers.
+	rejectRedirect := func(_ *http.Request, _ []*http.Request) error {
+		return errSignerRedirect
+	}
+
 	return &Client{
 		endpoint:       endpoint,
 		daemonEndpoint: daemonEndpoint,
@@ -207,9 +225,9 @@ func NewClientWithEndpoint(cfg config.BifrostChainConfiguration, endpoint string
 		chainBlockPath:    "/v1/monero/chain/block",
 		chainTxPath:       "/v1/monero/chain/tx",
 
-		client:                    &http.Client{Timeout: timeout},
+		client:                    &http.Client{Timeout: timeout, CheckRedirect: rejectRedirect},
 		daemonClient:              &http.Client{Timeout: timeout},
-		signClient:                &http.Client{Timeout: signTimeout},
+		signClient:                &http.Client{Timeout: signTimeout, CheckRedirect: rejectRedirect},
 		signerUsername:            signerUsername,
 		signerPassword:            signerPassword,
 		signerBearer:              signerBearer,
@@ -221,6 +239,9 @@ func NewClientWithEndpoint(cfg config.BifrostChainConfiguration, endpoint string
 		signCombineMaxAttempts:    defaultSignCombineMaxAttempts,
 		signCombineInitialBackoff: defaultSignCombineInitialBackoff,
 		signCombineMaxBackoff:     defaultSignCombineMaxBackoff,
+		signPartialMaxAttempts:    defaultSignPartialMaxAttempts,
+		signPartialInitialBackoff: defaultSignPartialInitialBackoff,
+		signPartialMaxBackoff:     defaultSignPartialMaxBackoff,
 	}, nil
 }
 
@@ -366,9 +387,40 @@ func (c *Client) SignPrepare(req SignPrepareReq) (SignPrepareResp, error) {
 }
 
 func (c *Client) SignPartial(req SignPartialReq) (SignPartialResp, error) {
+	return c.SignPartialContext(context.Background(), req)
+}
+
+// SignPartialContext retries only HTTP 429, which the signer returns before it
+// processes the request. Every attempt reuses the exact serialized msg_id,
+// session_id and all_preprocesses, so a retry stays inside the same FROST
+// session and can never start a second signing ceremony.
+func (c *Client) SignPartialContext(ctx context.Context, req SignPartialReq) (SignPartialResp, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	body, err := json.Marshal(req)
+	if err != nil {
+		return SignPartialResp{}, fmt.Errorf("fail to marshal sign partial request: %w", err)
+	}
+
+	maxAttempts, backoff, maxBackoff := c.signPartialRetryPolicy()
 	var out SignPartialResp
-	if err := c.call(http.MethodPost, c.signPartialPath, req, &out); err != nil {
-		return SignPartialResp{}, fmt.Errorf("fail to call sign partial endpoint: %w", err)
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		out = SignPartialResp{}
+		err = c.callJSONContext(ctx, http.MethodPost, c.signPartialPath, body, &out)
+		if err == nil {
+			break
+		}
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return SignPartialResp{}, fmt.Errorf("sign partial canceled: %w", ctxErr)
+		}
+		if attempt == maxAttempts || !isRateLimitedError(err) {
+			return SignPartialResp{}, fmt.Errorf("fail to call sign partial endpoint: %w", err)
+		}
+		if waitErr := waitForSignCombineRetry(ctx, backoff); waitErr != nil {
+			return SignPartialResp{}, fmt.Errorf("sign partial retry canceled: %w", waitErr)
+		}
+		backoff = nextSignCombineBackoff(backoff, maxBackoff)
 	}
 	if strings.TrimSpace(out.SignatureShare) == "" {
 		return SignPartialResp{}, fmt.Errorf("sign partial endpoint returned empty signature_share")
@@ -452,6 +504,32 @@ func (c *Client) signCombineRetryPolicy() (int, time.Duration, time.Duration) {
 		maxBackoff = backoff
 	}
 	return maxAttempts, backoff, maxBackoff
+}
+
+func (c *Client) signPartialRetryPolicy() (int, time.Duration, time.Duration) {
+	maxAttempts := c.signPartialMaxAttempts
+	if maxAttempts <= 0 {
+		maxAttempts = defaultSignPartialMaxAttempts
+	}
+	backoff := c.signPartialInitialBackoff
+	if backoff < 0 {
+		backoff = 0
+	} else if backoff == 0 {
+		backoff = defaultSignPartialInitialBackoff
+	}
+	maxBackoff := c.signPartialMaxBackoff
+	if maxBackoff <= 0 {
+		maxBackoff = defaultSignPartialMaxBackoff
+	}
+	if maxBackoff < backoff {
+		maxBackoff = backoff
+	}
+	return maxAttempts, backoff, maxBackoff
+}
+
+func isRateLimitedError(err error) bool {
+	var httpErr *HTTPError
+	return errors.As(err, &httpErr) && httpErr.Status == http.StatusTooManyRequests
 }
 
 func isRetryableSignCombineError(ctx context.Context, err error) bool {
@@ -562,6 +640,29 @@ func (c *Client) RegisterVaultContext(ctx context.Context, req RegisterVaultReq)
 	var out RegisterVaultResp
 	if err := c.callContext(ctx, http.MethodPost, c.registerPath, req, &out); err != nil {
 		return RegisterVaultResp{}, fmt.Errorf("fail to call register vault endpoint: %w", err)
+	}
+	if out.EffectiveBirthday > math.MaxInt64 {
+		return RegisterVaultResp{}, fmt.Errorf("register vault endpoint returned effective birthday outside the int64 scanner range")
+	}
+	// A positive candidate is the newest safe enrollment height. The sidecar
+	// may retain an earlier birthday on retry, but moving it later could skip
+	// vault history that Bifrost has not scanned.
+	if req.VaultCreationHeight > 0 {
+		if out.EffectiveBirthday == 0 {
+			return RegisterVaultResp{}, fmt.Errorf("register vault endpoint returned zero effective birthday for requested birthday %d", req.VaultCreationHeight)
+		}
+		if out.EffectiveBirthday > uint64(req.VaultCreationHeight) {
+			return RegisterVaultResp{}, fmt.Errorf(
+				"register vault endpoint returned effective birthday %d after requested birthday %d",
+				out.EffectiveBirthday,
+				req.VaultCreationHeight,
+			)
+		}
+	}
+	// A key-recovery registration with no birthday does not enroll the scanner.
+	// Once a birthday or reset exists, durable cursor continuity is mandatory.
+	if out.ExpectedNextHeight == nil && out.EffectiveBirthday == 0 && out.ResetEpoch == 0 {
+		return out, nil
 	}
 	// New sidecars return their cursor on every registration, including the
 	// idempotent already-registered case. A newly discovered older vault may
@@ -1327,7 +1428,7 @@ func (c *Client) ChainBlock(height int64) (ChainBlock, error) {
 	if c.hasDaemonRPC() {
 		block, err := c.daemonBlock(height)
 		if err == nil {
-			return block, nil
+			return validateChainBlockHeight(height, block)
 		}
 		if isUnavailableBlock(err) {
 			return ChainBlock{}, err
@@ -1346,7 +1447,17 @@ func (c *Client) ChainBlock(height int64) (ChainBlock, error) {
 		}
 		return ChainBlock{}, fmt.Errorf("fail to call sidecar chain-block endpoint: %w", err)
 	}
-	return ChainBlock(out), nil
+	return validateChainBlockHeight(height, ChainBlock(out))
+}
+
+func validateChainBlockHeight(requestedHeight int64, block ChainBlock) (ChainBlock, error) {
+	if block.Height != requestedHeight {
+		return ChainBlock{}, &ChainBlockHeightMismatchError{
+			RequestedHeight: requestedHeight,
+			ReturnedHeight:  block.Height,
+		}
+	}
+	return block, nil
 }
 
 func (c *Client) TxExists(txHash string) (bool, error) {
@@ -1607,6 +1718,15 @@ func (c *Client) RestoreKeysContext(ctx context.Context, vaultPubKey string, key
 
 // --- HTTP helpers ---
 
+func sidecarCallError(path string, err error) error {
+	if errors.Is(err, errSignerRedirect) {
+		// net/http wraps redirect rejection with the untrusted Location value,
+		// which may contain credentials. Keep only the local rejection reason.
+		err = errSignerRedirect
+	}
+	return fmt.Errorf("fail to call sidecar endpoint %s: %w", path, err)
+}
+
 func (c *Client) callGet(path string, out any) error {
 	return c.callGetContext(context.Background(), path, out)
 }
@@ -1620,7 +1740,7 @@ func (c *Client) callGetContext(ctx context.Context, path string, out any) error
 
 	resp, err := c.client.Do(req)
 	if err != nil {
-		return fmt.Errorf("fail to call sidecar endpoint %s: %w", path, err)
+		return sidecarCallError(path, err)
 	}
 	defer func() {
 		if resp != nil && resp.Body != nil {
@@ -1628,7 +1748,8 @@ func (c *Client) callGetContext(ctx context.Context, path string, out any) error
 		}
 	}()
 
-	if resp.StatusCode >= http.StatusBadRequest {
+	// net/http skips CheckRedirect when a redirect has no Location header.
+	if resp.StatusCode >= http.StatusMultipleChoices {
 		respBody, truncated, readErr := readBoundedErrorBody(resp.Body)
 		if readErr != nil {
 			return fmt.Errorf("fail to read sidecar error response: %w", readErr)
@@ -1689,7 +1810,7 @@ func (c *Client) callJSONContext(ctx context.Context, method, path string, body 
 	}
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("fail to call sidecar endpoint %s: %w", path, err)
+		return sidecarCallError(path, err)
 	}
 	defer func() {
 		if resp != nil && resp.Body != nil {
@@ -1697,7 +1818,8 @@ func (c *Client) callJSONContext(ctx context.Context, method, path string, body 
 		}
 	}()
 
-	if resp.StatusCode >= http.StatusBadRequest {
+	// net/http skips CheckRedirect when a redirect has no Location header.
+	if resp.StatusCode >= http.StatusMultipleChoices {
 		respBody, truncated, readErr := readBoundedErrorBody(resp.Body)
 		if readErr != nil {
 			return fmt.Errorf("fail to read sidecar error response: %w", readErr)

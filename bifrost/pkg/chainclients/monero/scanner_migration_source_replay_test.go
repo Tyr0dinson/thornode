@@ -128,7 +128,7 @@ func TestLateMigrationReplayIncludesOnlyEligibleSourceProof(t *testing.T) {
 }
 
 func TestCommittedPayoutReconciliationRequiresCanonicalProofAndJournal(t *testing.T) {
-	for _, scenario := range []string{"pruned", "journal-conflict", "journal-write-failure", "not-mined", "wrong-payment", "moved-during-import", "local-proof", "certified-proof"} {
+	for _, scenario := range []string{"pruned", "admission-rejected", "journal-conflict", "journal-write-failure", "not-mined", "wrong-payment", "moved-during-import", "local-proof", "certified-proof"} {
 		t.Run(scenario, func(t *testing.T) {
 			source, destination, txID, voter, refs := testXMRCatchupMigration(t, scenario)
 			voter.Tx.Tx.Memo = "OUT:" + testXMRHash("committed-inbound")
@@ -185,8 +185,16 @@ func TestCommittedPayoutReconciliationRequiresCanonicalProofAndJournal(t *testin
 			case "journal-write-failure":
 				require.NoError(t, store.db.Put([]byte(scannerRelocationWatchPrefix+normalizeTxID(txID)), []byte("malformed"), syncScannerWrite))
 			}
-			err = scanner.ReconcileCommittedOutbound(observed)
+			err = scanner.reconcileCommittedOutboundGuarded(observed, func() (func(), bool) {
+				if scanner.scanMu.TryLock() {
+					scanner.scanMu.Unlock()
+					t.Error("admission must run under the scanner lock")
+				}
+				return func() {}, scenario != "admission-rejected"
+			})
 			switch scenario {
+			case "admission-rejected":
+				require.ErrorIs(t, err, errXMRSpentRefsAdmissionRejected)
 			case "pruned", "local-proof", "certified-proof":
 				require.NoError(t, err)
 			case "journal-conflict":
@@ -206,7 +214,7 @@ func TestCommittedPayoutReconciliationRequiresCanonicalProofAndJournal(t *testin
 			meta, metaErr := store.Get(100)
 			require.NoError(t, metaErr)
 			switch scenario {
-			case "not-mined", "journal-write-failure":
+			case "admission-rejected", "not-mined", "journal-write-failure":
 				require.Zero(t, calls)
 				require.Nil(t, meta, "a failed atomic binding must not clear pending accounting")
 			case "journal-conflict":
@@ -256,6 +264,21 @@ func TestLatePayoutReplayRecreatesPrunedJournalAndPersistsSource(t *testing.T) {
 			// has already expired under the 72-block retention window.
 			_, err = scanner.reorgStore.PruneBefore(128)
 			require.NoError(t, err)
+			guardCalled := false
+			queued, guardErr := scanner.enqueueAuthenticatedOutboundReplayGuarded(observed, func() (func(), bool) {
+				guardCalled = true
+				require.False(t, scanner.scanMu.TryLock(), "scanner lock must precede admission")
+				return nil, false
+			})
+			require.True(t, guardCalled)
+			require.ErrorIs(t, guardErr, errXMRSpentRefsAdmissionRejected)
+			require.False(t, queued)
+			absentBefore, readErr := scanner.reorgStore.Get(100)
+			require.NoError(t, readErr)
+			require.Nil(t, absentBefore)
+			claimsBefore, readErr := scanner.canonicalObservationReceipts()
+			require.NoError(t, readErr)
+			require.Empty(t, claimsBefore)
 			// A failure while preparing any part of the atomic write must leave
 			// neither a receipt nor a partial journal behind.
 			watchKey := []byte(scannerRelocationWatchPrefix + normalizeTxID(txID))
@@ -274,7 +297,7 @@ func TestLatePayoutReplayRecreatesPrunedJournalAndPersistsSource(t *testing.T) {
 			require.NoError(t, scanner.reorgStore.WatchRelocation(scannerRelocationWatch{
 				TxID: txID, OriginalHeight: 99, LocationHeight: 100, BlockHash: blockHash, PreviousHash: parentHash,
 			}))
-			queued, err := scanner.EnqueueAuthenticatedOutboundReplay(observed)
+			queued, err = scanner.EnqueueAuthenticatedOutboundReplay(observed)
 			require.NoError(t, err)
 			require.True(t, queued)
 			_, _, err = scanner.replayAuthenticatedInternalInbounds(201, 201)

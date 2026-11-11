@@ -3,7 +3,7 @@
 ########################################################################################
 
 ARG DOCKER_MIRROR=
-FROM ${DOCKER_MIRROR}golang:1.26.9-bookworm AS build
+FROM ${DOCKER_MIRROR}golang:1.26.10-bookworm AS build
 
 ENV GOBIN=/go/bin
 ENV GOPATH=/go
@@ -56,7 +56,7 @@ FROM ${DOCKER_MIRROR}debian:bookworm-20260610-slim@sha256:96e378d7e6531ac9a15ad5
 
 RUN apt-get update && \
   apt-get install -y --no-install-recommends \
-  ca-certificates=20230311+deb12u1 \
+  ca-certificates=20250419~deb12u2 \
   curl=7.88.1-10+deb12u* \
   jq=1.6-2.1+deb12u* \
   libffi-dev=3.4.4-1 \

@@ -3,14 +3,13 @@ package keeperv1
 import (
 	"fmt"
 
-	"github.com/cosmos/cosmos-sdk/runtime"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper/types"
 )
 
 func (k KVStore) setLiquidityProvider(ctx cosmos.Context, key []byte, record LiquidityProvider) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	buf := k.cdc.MustMarshal(&record)
 	if buf == nil {
 		store.Delete(key)
@@ -20,7 +19,7 @@ func (k KVStore) setLiquidityProvider(ctx cosmos.Context, key []byte, record Liq
 }
 
 func (k KVStore) getLiquidityProvider(ctx cosmos.Context, key []byte, record *LiquidityProvider) (bool, error) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	if !store.Has(key) {
 		return false, nil
 	}
@@ -39,11 +38,14 @@ func (k KVStore) GetLiquidityProviderIterator(ctx cosmos.Context, asset common.A
 }
 
 func (k KVStore) GetTotalSupply(ctx cosmos.Context, asset common.Asset) cosmos.Uint {
-	// when pool ragnarok started , synth unit become zero
-	lay1Asset := asset.GetLayer1Asset()
-	ragStart, _ := k.GetPoolRagnarokStart(ctx, lay1Asset)
-	if ragStart > 0 {
-		return cosmos.ZeroUint()
+	// A pool Ragnarok redeems the pool's synth backing to the Reserve without
+	// burning the synths, so their supply reads zero from then on. Only synths
+	// are affected: secured shares and native coins keep their real supply.
+	if asset.IsSyntheticAsset() {
+		ragStart, _ := k.GetPoolRagnarokStart(ctx, asset.GetLayer1Asset())
+		if ragStart > 0 {
+			return cosmos.ZeroUint()
+		}
 	}
 
 	coin := k.coinKeeper.GetSupply(ctx, asset.Native())

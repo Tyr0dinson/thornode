@@ -278,6 +278,20 @@ func TestMocknetExplicitlyEnablesXMRMonovaultKeygen(t *testing.T) {
 	}
 }
 
+func TestStandaloneXMRDeploymentsExplicitlyEnableScanner(t *testing.T) {
+	stagenetCompose := readRepoFile(t, "build/docker/docker-compose.xmr-stagenet.yml")
+	if !strings.Contains(stagenetCompose, `HALT_SCANNER_XMR: "${HALT_SCANNER_XMR:-0}"`) {
+		t.Fatal("standalone XMR stagenet compose must explicitly enable the fail-closed XMR scanner")
+	}
+
+	chainnetRunbook := readRepoFile(t, "build/docker/xmr-chainnet-post-deploy.sh")
+	enableScannerAt := strings.Index(chainnetRunbook, "mimir HaltScannerXMR 0")
+	waitForObservationsAt := strings.Index(chainnetRunbook, "Waiting for dog bifrost to report XMR fee + chain tip")
+	if enableScannerAt < 0 || waitForObservationsAt < 0 || enableScannerAt > waitForObservationsAt {
+		t.Fatal("standalone XMR chainnet post-deploy must enable the scanner before waiting for XMR observations")
+	}
+}
+
 func TestMocknetBifrostDoesNotWaitForSolanaRPC(t *testing.T) {
 	entrypoint := readRepoFile(t, "build/scripts/bifrost.sh")
 	// The SOL scanner owns initial-slot retries; its tests cover recovery and stop.
@@ -328,10 +342,10 @@ func TestMocknetClusterPublishesBifrostAndXMRFrostReadinessPorts(t *testing.T) {
 		"- 6042:6040",
 		"- 6043:6040",
 		"- 6044:6040",
-		"- 8285:8283",
-		"- 8286:8283",
-		"- 8287:8283",
-		"- 8288:8283",
+		`- "127.0.0.1:8285:8283"`,
+		`- "127.0.0.1:8286:8283"`,
+		`- "127.0.0.1:8287:8283"`,
+		`- "127.0.0.1:8288:8283"`,
 	} {
 		if !strings.Contains(compose, snippet) {
 			t.Fatalf("mocknet cluster compose must publish %q so simulation can gate churn on all Bifrost and XMR FROST readiness endpoints", snippet)
@@ -815,7 +829,7 @@ func TestSimulationTargetsUseExplicitStageDefaults(t *testing.T) {
 		t.Fatalf("missing expected single-node simulation stages: %s", wantSingle)
 	}
 
-	wantCluster := "TEST_SIMULATION_CLUSTER_STAGES ?= seed,bootstrap,xmr-coverage,xmr-spent-refs,swaps,memoless-swaps,inactive-vault-refunds,memoless-refunds,cluster-churn,solvency,xmr-post-churn,ragnarok"
+	wantCluster := "TEST_SIMULATION_CLUSTER_STAGES ?= seed,bootstrap,xmr-coverage,xmr-spent-refs,swaps,memoless-swaps,inactive-vault-refunds,memoless-refunds,cluster-churn,tron-solvency-fragmentation,solvency,xmr-post-churn,ragnarok"
 	if !strings.Contains(makefile, wantCluster) {
 		t.Fatalf("missing expected cluster simulation stages: %s", wantCluster)
 	}
@@ -861,6 +875,10 @@ func TestSimulationStageRegistryOrder(t *testing.T) {
 	assertStageOrder(t, stageNames, "xmr-coverage", "arb")
 	assertStageOrder(t, stageNames, "memoless-refunds", "cluster-churn")
 	assertStageOrder(t, stageNames, "xmr-spent-refs", "jailed-keysign-fallback")
+	assertStageOrder(t, stageNames, "churn", "tron-solvency-fragmentation")
+	assertStageOrder(t, stageNames, "tron-solvency-fragmentation", "xmr-post-churn")
+	assertStageOrder(t, stageNames, "tron-solvency-fragmentation", "ragnarok")
+	assertStageOrder(t, stageNames, "xmr-post-churn", "ragnarok")
 }
 
 func TestSimulationStageNamesUnique(t *testing.T) {
@@ -949,6 +967,24 @@ func TestHistoricalXMRRefundStageRequiresExplicitSelection(t *testing.T) {
 		}
 		if found != explicit {
 			t.Fatalf("dedicated historical-refund stage: explicit=%v found=%v", explicit, found)
+		}
+	}
+}
+
+func TestXMRKeygenRecoveryStageRequiresExplicitSelection(t *testing.T) {
+	for _, explicit := range []bool{false, true} {
+		stages := selectedSimulationStages(map[string]bool{"all": true, "xmr-keygen-recovery": explicit})
+		found := false
+		for _, stage := range stages {
+			if stage.name == "xmr-keygen-recovery" {
+				found = true
+				if stage.defaultOn || stage.constructor == nil {
+					t.Fatal("recovery requires an explicit, executable stage")
+				}
+			}
+		}
+		if found != explicit {
+			t.Fatalf("recovery selection: explicit=%v found=%v", explicit, found)
 		}
 	}
 }

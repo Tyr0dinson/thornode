@@ -134,8 +134,8 @@ func (s *KeeperTHORNameSuite) TestAffiliateCollectorNamespaceIsolation(c *C) {
 	oldValue = protowire.AppendTag(oldValue, 2, protowire.BytesType)
 	oldValue = protowire.AppendString(oldValue, "987654")
 	oldKey := k.GetKey("affcol/", owner.String())
-	store := k.storeService.OpenKVStore(ctx)
-	c.Assert(store.Set(oldKey, oldValue), IsNil)
+	store := k.kvStore(ctx)
+	store.Set(oldKey, oldValue)
 
 	for _, name := range []string{"few", owner.String()} {
 		collector, err := k.GetAffiliateCollector(ctx, name)
@@ -176,7 +176,6 @@ func (s *KeeperTHORNameSuite) TestAffiliateCollectorNamespaceIsolation(c *C) {
 	c.Check(collectors[0].RuneAmount.Equal(cosmos.NewUint(125)), Equals, true)
 	c.Check(collectors[1].Name, Equals, "tan")
 	c.Check(collectors[1].RuneAmount.Equal(cosmos.NewUint(200)), Equals, true)
-	oldAfter, err := store.Get(oldKey)
-	c.Assert(err, IsNil)
+	oldAfter := store.Get(oldKey)
 	c.Check(oldAfter, DeepEquals, oldValue)
 }

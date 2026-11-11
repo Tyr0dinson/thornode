@@ -20,7 +20,7 @@ import (
 	ltcchaincfg "github.com/ltcsuite/ltcd/chaincfg"
 	"github.com/ltcsuite/ltcutil"
 	"github.com/mr-tron/base58"
-	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/zecutil"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/zcash"
 	"gitlab.com/thorchain/thornode/v3/common/crypto/ss58"
 
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
@@ -197,7 +197,7 @@ func IsValidZECAddress(address string) bool {
 				network = "testnet3"
 			}
 
-			_, err := zecutil.DecodeAddress(address, network)
+			_, err := zcash.DecodeAddress(address, network)
 			return err == nil
 		}
 	}
@@ -410,7 +410,7 @@ func (addr Address) GetChain() Chain {
 // ZEC requires an exact network match; other chains use SoftEquals.
 func (addr Address) IsCurrentNetwork(chain Chain) bool {
 	if chain.Equals(ZECChain) {
-		_, err := zecutil.DecodeAddress(addr.String(), ZECNetworkName())
+		_, err := zcash.DecodeAddress(addr.String(), ZECNetworkName())
 		return err == nil
 	}
 	return CurrentChainNetwork.SoftEquals(addr.GetNetwork(chain))
@@ -674,11 +674,11 @@ func ConvertToZECTransparentAddress(addr Address) (Address, error) {
 		return NoAddress, fmt.Errorf("address(%s) is not a TEX address", addr)
 	}
 
-	zecAddr, err := zecutil.DecodeAddress(addrStr, ZECNetworkName())
+	zecAddr, err := zcash.DecodeAddress(addrStr, ZECNetworkName())
 	if err != nil {
 		return NoAddress, fmt.Errorf("fail to decode ZEC address(%s): %w", addr, err)
 	}
-	return Address(zecAddr.EncodeAddress()), nil
+	return Address(zecAddr.String()), nil
 }
 
 // ZECNetworkName returns the Zcash address network for the current build:
@@ -708,7 +708,7 @@ func (addr Address) ToTexAddress() (Address, error) {
 		prefix = "textest"
 	}
 
-	zecAddr, err := zecutil.DecodeAddress(addrStr, network)
+	zecAddr, err := zcash.DecodeAddress(addrStr, network)
 	if err != nil {
 		return NoAddress, err
 	}

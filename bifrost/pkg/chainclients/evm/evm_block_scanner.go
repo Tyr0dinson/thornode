@@ -1,6 +1,7 @@
 package evm
 
 import (
+	"context"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -401,7 +402,9 @@ func (e *EVMScanner) getTxInOptimized(method string, block *etypes.Block) (stype
 		return stypes.TxIn{}, nil, err
 	}
 
-	sem := make(chan struct{}, e.cfg.Concurrency)
+	// at least one worker: an unbuffered semaphore would block the first
+	// receipt forever, and a negative capacity panics
+	sem := make(chan struct{}, max(e.cfg.Concurrency, 1))
 	wg := sync.WaitGroup{}
 	mu := sync.Mutex{}
 	var gasPrices []*big.Int
@@ -431,9 +434,9 @@ func (e *EVMScanner) getTxInOptimized(method string, block *etypes.Block) (stype
 				return
 			}
 
-			// extract the txInItem
-			var txInItem *stypes.TxInItem
-			txInItem, err = e.receiptToTxInItem(txForReceipt, receipt)
+			// extract the txInItem; err must be goroutine-local, a shared one
+			// lets this goroutine drop its item on another goroutine's error
+			txInItem, err := e.receiptToTxInItem(txForReceipt, receipt)
 			if err != nil {
 				e.logger.Error().Err(err).Msg("failed to convert receipt to txInItem")
 				return
@@ -466,11 +469,132 @@ func (e *EVMScanner) getTxInOptimized(method string, block *etypes.Block) (stype
 	return txInbound, gasPrices, nil
 }
 
+// canceledContext is for ethclient calls that must not reach the server.
+var canceledContext = func() context.Context {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	return ctx
+}()
+
+// gasPricesWithoutReceipts returns the gas prices of a block whose receipts cannot
+// produce an observation, so the caller can skip fetching them. ok is false if the
+// receipts might produce one, or if the block alone cannot rule that out.
+//
+// A router deposit can come through another contract, so check the bloom for log
+// emitters regardless of tx.To. A direct ERC20 inbound names the vault in its
+// transfer calldata. A failed outbound can have no logs and its signing vault
+// may have left the vault list, so also check the local signer cache.
+//
+// Senders are taken as the RPC reported them where possible, see txSender. A provider
+// that lied about a sender could hide that tx from this check, but it could equally
+// leave the tx out of the block or misreport its receipt.
+//
+// A chain needs a bloom that covers the block's own logs. AVAX's does not: under ACP-194
+// it covers the blocks being settled, so a router log there can be absent from its
+// block's bloom, and AVAX must not use this.
+func (e *EVMScanner) gasPricesWithoutReceipts(block *etypes.Block) (gasPrices []*big.Int, ok bool) {
+	baseFee := block.BaseFee()
+	if baseFee == nil {
+		return nil, false
+	}
+	routers := e.pubkeyMgr.GetContracts(e.cfg.ChainID, false)
+	if len(routers) == 0 {
+		return nil, false
+	}
+	bloom := block.Bloom()
+	// no logs at all, or nothing filled the bloom in: only the receipts can tell
+	if bloom == (etypes.Bloom{}) && block.Transactions().Len() > 0 {
+		return nil, false
+	}
+	for _, router := range routers {
+		if etypes.BloomLookup(bloom, ecommon.HexToAddress(router.String())) {
+			return nil, false
+		}
+	}
+
+	txs := make([]*etypes.Transaction, 0, block.Transactions().Len())
+	for i, tx := range block.Transactions() {
+		// same txs as getTxInOptimized: blob txs have no place in the gas price
+		if tx == nil || tx.Type() == etypes.BlobTxType {
+			continue
+		}
+		if tx.IsDepositTx() {
+			// reported as 0 in the receipt, where base fee + tip would give the base fee
+			gasPrices = append(gasPrices, new(big.Int))
+		} else {
+			tip, err := tx.EffectiveGasTip(baseFee)
+			if err != nil {
+				return nil, false
+			}
+			gasPrices = append(gasPrices, new(big.Int).Add(tip, baseFee))
+		}
+		if e.txMayBeObserved(tx, block.Hash(), uint(i)) {
+			return nil, false
+		}
+		txs = append(txs, tx)
+	}
+
+	if evm.BlockMayHaveSignedTx(block, e.signerCacheManager) {
+		return nil, false
+	}
+
+	for _, tx := range txs {
+		// best effort remove the tx from the signed txs (ok if it does not exist)
+		if err := e.blockMetaAccessor.RemoveSignedTxItem(tx.Hash().String()); err != nil {
+			e.logger.Err(err).Str("tx hash", tx.Hash().String()).Msg("failed to remove signed tx item")
+		}
+	}
+	return gasPrices, true
+}
+
+// txMayBeObserved reports whether the transaction fields alone warrant fetching receipts.
+func (e *EVMScanner) txMayBeObserved(tx *etypes.Transaction, blockHash ecommon.Hash, index uint) bool {
+	to := tx.To()
+	if to == nil {
+		return false
+	}
+	if e.isPoolAddress(*to) {
+		return true
+	}
+	if evm.HasERC20TransferSelector(tx) {
+		// transfer(address,uint256): the recipient is the first argument
+		const recipientEnd = 4 + ecommon.HashLength
+		data := tx.Data()
+		if len(data) < recipientEnd || e.isPoolAddress(ecommon.BytesToAddress(data[4:recipientEnd])) {
+			return true
+		}
+	}
+	sender, err := e.txSender(tx, blockHash, index)
+	return err != nil || e.isPoolAddress(sender)
+}
+
+// txSender returns the sender the RPC reported when the block was decoded, which
+// ethclient keeps with the tx, and otherwise recovers it from the signature. Recovery
+// costs about 70us, or most of a block's time in gasPricesWithoutReceipts.
+func (e *EVMScanner) txSender(tx *etypes.Transaction, blockHash ecommon.Hash, index uint) (ecommon.Address, error) {
+	// On a miss TransactionSender asks the server. The cancelled context turns that
+	// into an error, so a block without reported senders cannot cost one call per tx.
+	if sender, err := e.ethClient.TransactionSender(canceledContext, tx, blockHash, index); err == nil {
+		return sender, nil
+	}
+	return e.eipSigner.Sender(tx)
+}
+
+func (e *EVMScanner) isPoolAddress(addr ecommon.Address) bool {
+	ok, _ := e.pubkeyMgr.IsValidPoolAddress(evm.LowerHexAddress(addr), e.cfg.ChainID)
+	return ok
+}
+
 func (e *EVMScanner) getTxIn(block *etypes.Block) (stypes.TxIn, []*big.Int, error) {
 	// CHANGEME: if an EVM chain supports some way of fetching all transaction receipts
 	// within a block, register it here.
 	switch e.cfg.ChainID {
-	case common.BASEChain, common.BSCChain, common.POLChain:
+	case common.BASEChain, common.BSCChain:
+		if gasPrices, ok := e.gasPricesWithoutReceipts(block); ok {
+			return stypes.TxIn{}, gasPrices, nil
+		}
+		return e.getTxInOptimized("eth_getBlockReceipts", block)
+	case common.POLChain:
 		return e.getTxInOptimized("eth_getBlockReceipts", block)
 	}
 
@@ -531,7 +655,7 @@ func (e *EVMScanner) getTxIn(block *etypes.Block) (stypes.TxIn, []*big.Int, erro
 		// process the batch rpc response
 		for i, elem := range rpcBatch {
 			if elem.Error != nil {
-				if !errors.Is(err, ethereum.NotFound) {
+				if !errors.Is(elem.Error, ethereum.NotFound) {
 					e.logger.Error().Err(elem.Error).Msg("failed to fetch transaction receipt")
 				}
 				continue
@@ -621,7 +745,7 @@ func (e *EVMScanner) receiptToTxInItem(tx *etypes.Transaction, receipt *etypes.R
 		isToVault, _ := e.pubkeyMgr.IsValidPoolAddress(destination.String(), e.cfg.ChainID)
 
 		// resolve sender upfront to check vault outbounds (approvals, cancels, etc.)
-		sender, senderErr := e.eipSigner.Sender(tx)
+		sender, senderErr := etypes.Sender(e.eipSigner, tx)
 		var isFromVault bool
 		if senderErr == nil {
 			isFromVault, _ = e.pubkeyMgr.IsValidPoolAddress(sender.String(), e.cfg.ChainID)
@@ -670,7 +794,7 @@ func (e *EVMScanner) receiptToTxInItem(tx *etypes.Transaction, receipt *etypes.R
 			return e.getTxInFromSmartContract(tx, receipt, 0)
 		}
 		// check if tx is to or from a vault
-		sender, err := e.eipSigner.Sender(tx)
+		sender, err := etypes.Sender(e.eipSigner, tx)
 		if err != nil {
 			return nil, nil // ignore tx if we cannot determine sender
 		}
@@ -972,7 +1096,7 @@ func (e *EVMScanner) getTxInFromTransaction(tx *etypes.Transaction, receipt *ety
 		Tx: tx.Hash().Hex()[2:], // drop the "0x" prefix
 	}
 
-	sender, err := e.eipSigner.Sender(tx)
+	sender, err := etypes.Sender(e.eipSigner, tx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get sender: %w", err)
 	}
@@ -1043,15 +1167,20 @@ func (e *EVMScanner) isToValidContractAddress(addr *ecommon.Address, includeWhit
 	}
 	// get the smart contract used by thornode
 	contractAddresses := e.pubkeyMgr.GetContracts(e.cfg.ChainID, false)
-	if includeWhiteList {
-		contractAddresses = append(contractAddresses, e.whitelistContracts...)
-	}
 
-	// combine the whitelist smart contract address
-	addrString := addr.String() // this hashes internally so do it once
+	// EqualFold-equal to the checksummed addr.String(), without its keccak256
+	addrString := evm.LowerHexAddress(*addr)
 	for _, item := range contractAddresses {
 		if strings.EqualFold(item.String(), addrString) {
 			return true
+		}
+	}
+	// combine the whitelist smart contract address
+	if includeWhiteList {
+		for _, item := range e.whitelistContracts {
+			if strings.EqualFold(item.String(), addrString) {
+				return true
+			}
 		}
 	}
 	return false
@@ -1106,7 +1235,7 @@ func (e *EVMScanner) getTxInFromSmartContract(tx *etypes.Transaction, receipt *e
 	txInItem := &stypes.TxInItem{
 		Tx: tx.Hash().Hex()[2:], // drop the "0x" prefix
 	}
-	sender, err := e.eipSigner.Sender(tx)
+	sender, err := etypes.Sender(e.eipSigner, tx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get sender: %w", err)
 	}
@@ -1208,7 +1337,7 @@ func (e *EVMScanner) getTxInFromFailedTransaction(tx *etypes.Transaction, receip
 		e.logger.Info().Str("hash", tx.Hash().String()).Msg("success transaction should not get into getTxInFromFailedTransaction")
 		return nil
 	}
-	fromAddr, err := e.eipSigner.Sender(tx)
+	fromAddr, err := etypes.Sender(e.eipSigner, tx)
 	if err != nil {
 		e.logger.Err(err).Msg("failed to get from address")
 		return nil

@@ -168,11 +168,11 @@ func (s *AttestationState[T]) AddAttestation(attestation *common.Attestation) er
 	}
 
 	for _, item := range s.attestations {
-		if bytes.Equal(item.attestation.Signature, attestation.Signature) {
-			// already have the signature, ignore
-			return nil
-		}
 		if bytes.Equal(item.attestation.PubKey, attestation.PubKey) {
+			if bytes.Equal(item.attestation.Signature, attestation.Signature) {
+				// The same signer and signature already verified this item's payload.
+				return nil
+			}
 			// Unexpected: we should never have a different signature from the same pubkey for the same item
 			return fmt.Errorf("signature already present for %s", attestation.PubKey)
 		}

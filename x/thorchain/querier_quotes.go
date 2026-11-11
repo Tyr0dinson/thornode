@@ -18,7 +18,7 @@ import (
 	"github.com/gcash/bchutil"
 	ltcchaincfg "github.com/ltcsuite/ltcd/chaincfg"
 	"github.com/ltcsuite/ltcutil"
-	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/zecutil"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/zcash"
 
 	"cosmossdk.io/log"
 	sdkmath "cosmossdk.io/math"
@@ -30,6 +30,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/config"
 	"gitlab.com/thorchain/thornode/v3/constants"
+	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
 	mem "gitlab.com/thorchain/thornode/v3/x/thorchain/memo"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
@@ -846,6 +847,13 @@ func (qs queryServer) queryQuoteSwap(ctx cosmos.Context, req *types.QueryQuoteSw
 	if !isWasm && req.Height == "" && ctx.BlockTime().Before(time.Now().Add(-config.GetThornode().API.Quote.MaxLag)) {
 		return nil, fmt.Errorf("refusing quote on node with stale state")
 	}
+	// The vault security sorts and pending outbound scans of one quote walk
+	// the same window of txout heights several times; share the store reads.
+	// Not for contracts: their quotes run inside a tx, where store reads are
+	// gas and gas is consensus-visible.
+	if !isWasm {
+		ctx = keeper.WithTxOutCache(ctx)
+	}
 
 	// parse assets
 	fromAsset, err := common.NewAssetWithShortCodes(qs.mgr.GetVersion(), req.FromAsset)
@@ -1364,7 +1372,10 @@ func (qs queryServer) queryQuoteSwap(ctx cosmos.Context, req *types.QueryQuoteSw
 
 			var bz [20]byte
 			copy(bz[:], data[:20])
-			hash := zecutil.NewAddressPubKeyHash(bz, params)
+			hash, err := zcash.NewAddressPubKeyHash(bz, params)
+			if err != nil {
+				return nil, err
+			}
 			address = hash.String()
 		default:
 			return nil, fmt.Errorf("chain not supported")

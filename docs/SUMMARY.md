@@ -36,6 +36,8 @@
 - [Bifrost](bifrost/how-bifrost-works.md)
 
   - [Vault Behaviors](bifrost/vault-behaviors.md)
+  - [Startup State Recovery](bifrost/state-sync-recovery.md)
+  - [TRON Solvency Admission](bifrost/tron-solvency-admission.md)
   - [Oracles](bifrost/oracle.md)
   - [TSS](bifrost/tss.md)
 
@@ -66,6 +68,7 @@
 - [Internals & Math](concepts/code-libraries.md)
 
   - [Math](concepts/math.md)
+  - [LUVI Invariant](concepts/luvi-invariant.md)
 
 - [Aggregators](aggregators/aggregator-overview.md)
 
@@ -81,6 +84,8 @@
 
   - [EVM Whitelist Procedure](evm_whitelist_procedure.md)
   - [Upgrade Router](upgrade_router.md)
+  - [Execution Telemetry](architecture/execution-telemetry.md)
+  - [Consensus Determinism Replay](test-consensus-determinism.md)
   - [Architecture Decision Records (ADR)](architecture/README.md)
     - [ADR Creation Process](architecture/PROCESS.md)
     - [ADR {ADR-NUMBER}: {TITLE}](architecture/TEMPLATE.md)

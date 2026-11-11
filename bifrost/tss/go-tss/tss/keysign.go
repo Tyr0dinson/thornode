@@ -25,9 +25,8 @@ import (
 	tcommon "gitlab.com/thorchain/thornode/v3/common"
 )
 
-func (t *TssServer) waitForSignatures(msgID, poolPubKey string, msgsToSign [][]byte, algo tcommon.SigningAlgo, sigChan chan string) (keysign.Response, error) {
-	// TSS keysign include both form party and keysign itself, thus we wait twice of the timeout
-	data, err := t.signatureNotifier.WaitForSignature(msgID, msgsToSign, poolPubKey, t.conf.KeySignTimeout, sigChan)
+func (t *TssServer) waitForSignatures(msgID, poolPubKey string, msgsToSign [][]byte, algo tcommon.SigningAlgo, timeout time.Duration, sigChan chan string) (keysign.Response, error) {
+	data, err := t.signatureNotifier.WaitForSignature(msgID, msgsToSign, poolPubKey, timeout, sigChan)
 	if err != nil {
 		return keysign.Response{}, err
 	}
@@ -61,7 +60,7 @@ func (t *TssServer) generateSignature(
 	}
 
 	joinPartyStartTime := time.Now()
-	onlinePeers, leader, errJoinParty := t.joinParty(msgID, req.Version, req.BlockHeight, allParticipants, threshold, sigChan)
+	onlinePeers, leader, errJoinParty := t.joinKeySignParty(msgID, req.Version, req.BlockHeight, allParticipants, threshold, sigChan)
 	joinPartyTime := time.Since(joinPartyStartTime)
 	if errJoinParty != nil {
 		// we received the signature from waiting for signature
@@ -90,6 +89,20 @@ func (t *TssServer) generateSignature(
 			return keysign.Response{
 				Status: common.Fail,
 				Blame:  blameNodes,
+			}, nil
+		}
+
+		// Leader-rotation builds (version-gated) already tried every deterministic coordinator
+		// without forming a party and rotated the leader between attempts. A join timeout is
+		// not signed evidence against any node, and the leader is no longer fixed, so blaming
+		// it would serially jail an innocent node. Emit NO blame — mirrors frostJoinPartyBlame.
+		// The error stays a join-party failure, so the UTXO rebuild-retry path is preserved.
+		if rotationOn, verErr := keysignLeaderRotationEnabled(req.Version); verErr == nil && rotationOn {
+			t.broadcastKeysignFailure(msgID, allPeersID)
+			t.logger.Error().Err(errJoinParty).Msgf("messagesID(%s) fail to form keysign party (leader rotated, no blame) online:%v", msgID, onlinePeers)
+			return keysign.Response{
+				Status: common.Fail,
+				Blame:  blame.NewBlame(blame.TssSyncFail, nil),
 			}, nil
 		}
 
@@ -305,7 +318,7 @@ func (t *TssServer) KeySign(req keysign.Request) (keysign.Response, error) {
 	// we wait for signatures
 	go func() {
 		defer wg.Done()
-		receivedSig, errWait = t.waitForSignatures(msgID, req.PoolPubKey, msgsCopy, algo, sigChan)
+		receivedSig, errWait = t.waitForSignatures(msgID, req.PoolPubKey, msgsCopy, algo, t.keysignSignatureWaitTimeout(req.Version), sigChan)
 		// we received an valid signature indeed
 		if errWait == nil {
 			sigChan <- "signature received"

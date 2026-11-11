@@ -5,6 +5,7 @@ import (
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
 
 	. "gopkg.in/check.v1"
 )
@@ -27,13 +28,24 @@ var _ = Suite(&KeeperActiveValidatorCoherenceSuite{})
 // cached implementation and passes once the per-instance cache is removed.
 func (s *KeeperActiveValidatorCoherenceSuite) TestTwoKeepersListActiveValidatorsCoherent(c *C) {
 	ctx, kA := setupKeeperForTest(c)
+	s.checkTwoKeepersCoherent(c, ctx, kA)
+}
+
+// The BeginBlock/EndBlock active-validator cache is scoped to the context, not
+// to a keeper instance, so a write through either keeper disables it for both.
+func (s *KeeperActiveValidatorCoherenceSuite) TestTwoKeepersCoherentWithBlockCache(c *C) {
+	ctx, kA := setupKeeperForTest(c)
+	s.checkTwoKeepersCoherent(c, keeper.WithActiveValidatorsCache(ctx), kA)
+}
+
+func (s *KeeperActiveValidatorCoherenceSuite) checkTwoKeepersCoherent(c *C, ctx cosmos.Context, kA KVStore) {
 	// The removed cache only served in ExecModeFinalize; exercise that mode so
 	// the test covers the path that was cached.
 	ctx = ctx.WithExecMode(sdk.ExecModeFinalize)
 
 	// A second keeper instance over the SAME store, as the managers get a
 	// distinct keeper from the app/fee handler.
-	kB := NewKVStore(kA.cdc, kA.storeService, kA.coinKeeper, kA.accountKeeper, kA.upgradeKeeper, kA.version)
+	kB := NewKVStore(kA.cdc, kA.storeKey, kA.coinKeeper, kA.accountKeeper, kA.upgradeKeeper, kA.version)
 
 	// One active node bonded 1000 RUNE, bond module funded to match, no pending
 	// bond rewards — so the bond invariant is satisfied to start.

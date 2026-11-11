@@ -41,6 +41,29 @@ const (
 	// for keysign + broadcast; below the fleet's finalization lag every node abstains.
 	MimirKeySOLAnchorMarginSeconds = "SOLAnchorMarginSeconds"
 
+	// MimirKeySOLSlotMilliseconds is bifrost's live estimate of the Solana slot time
+	// in milliseconds. Read by bifrost only, at the keysign height (like
+	// MimirKeySOLAnchorMarginSeconds) so every member derives the same value — the
+	// name deliberately carries no operational substring, so it stays an economic
+	// (2/3-vote / admin) key and never touches consensus (keeper_mimir). Unset/<=0
+	// falls back to the common.SOLChain.ApproximateBlockMilliseconds() code constant;
+	// set values are clamped to a sane slot-time range.
+	//
+	// Scope: it currently feeds ONLY the keep-alive staleness threshold
+	// (solSlotsPerThorchainBlock), the one node-local use where a uniform, vote-tunable
+	// value matters for keysign-party convergence. It NEVER feeds the signed bytes or
+	// msgID: the consensus blockhash anchor is derived by counting finalized blocks
+	// (slot-rate-agnostic) with the seconds-denominated SOLAnchorMarginSeconds, not this
+	// value. The other slot-time readers still read the code constant directly (routing
+	// them through the mimir is a possible follow-up): the SOL scanner pacing
+	// (sol_scanner.go), the generic blockscanner windows for SOL (observer flex-rollback,
+	// MaxResumeBlockLag, health-lag tolerance in bifrost/blockscanner), the read-only
+	// quote/confirmation-ETA queriers (x/thorchain querier*.go), and tools/events. All are
+	// node-local or read-only display — none is a state transition. Solana slot time has fallen over
+	// time (400 -> 300 -> measured ~214ms on 2026-10-27), so this mimir lets the fleet
+	// track the drift for the keep-alive threshold with a vote instead of a release.
+	MimirKeySOLSlotMilliseconds = "SOLSlotMilliseconds"
+
 	// MimirTemplateSOLNonceClear is the per-vault durable-nonce BREAK-GLASS
 	// (SOLNonceClear-<vault pubkey>, value = a THORChain height H). A committed
 	// SolVaultNonce with updated_height <= H is ignored everywhere (signers,
@@ -88,6 +111,11 @@ const (
 	// node out of the Ready set after it reported an asgard keygen chain set that
 	// omitted a chain the active vaults serve. Set above 0 to disable the check.
 	MimirKeyPreflightChainSetDisabled = "PreflightChainSetDisabled"
+	// MimirKeyChainSetChurnOutMax arms the churn-out mark for Active nodes whose asgard
+	// keygen report omitted a chain that a pending vault of this churn cycle was then
+	// created without, and bounds it: when more nodes are faulty than this, none are
+	// marked (a stall that many nodes cause is for governance). Unset or 0 disables it.
+	MimirKeyChainSetChurnOutMax = "ChainSetChurnOutMax"
 
 	MimirTemplateEVMAllowanceCheck         = "EVMAllowanceCheck-%s"         // Use with Chain
 	MimirTemplateEVMDirectERC20Inbound     = "EVMDirectERC20Inbound-%s"     // Use with Chain

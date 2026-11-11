@@ -139,7 +139,7 @@ func (b *BlockScanner) RollbackToLastObserved() error {
 	}
 
 	thorBlockTimeMs := c[constants.ThorchainBlockTime.String()] / int64(time.Millisecond)
-	observerFlexWindowBlocksChain := observerFlexWindowBlocksThor * thorBlockTimeMs / b.cfg.ChainID.ApproximateBlockMilliseconds()
+	observerFlexWindowBlocksChain := observerFlexWindowBlocksThor * thorBlockTimeMs / b.cfg.ApproximateBlockMilliseconds()
 	if observerFlexWindowBlocksChain < 1 {
 		observerFlexWindowBlocksChain = 1
 	}
@@ -230,7 +230,7 @@ func (b *BlockScanner) maxResumeLagBlocks() int64 {
 	if b.cfg.MaxResumeBlockLag <= 0 {
 		return 0
 	}
-	ms := b.cfg.ChainID.ApproximateBlockMilliseconds()
+	ms := b.cfg.ApproximateBlockMilliseconds()
 	if ms <= 0 {
 		return 0
 	}
@@ -413,9 +413,32 @@ func (b *BlockScanner) scanMempool() {
 	}
 }
 
+const mimirHaltScannerXMR = "HaltScannerXMR"
+
+// IsXMRScannerPaused checks the Bifrost-only XMR scanner switch. A missing or
+// unreadable setting fails closed so deploying the monovault cannot implicitly
+// enable economic activity. Zero explicitly enables scanning; any positive
+// value pauses it.
+func IsXMRScannerPaused(logger zerolog.Logger, bridge thorclient.ThorchainBridge) bool {
+	halted, err := bridge.GetMimir(mimirHaltScannerXMR)
+	if err != nil {
+		logger.Error().Err(err).Str("mimir", mimirHaltScannerXMR).Msg("fail to get XMR scanner halt")
+		return true
+	}
+	if halted < 0 {
+		logger.Debug().Str("mimir", mimirHaltScannerXMR).Msg("XMR scanner halt is unset; keeping scanner paused")
+		return true
+	}
+	return halted > 0
+}
+
 // Checks current mimir settings to determine if the current chain is paused
 // either globally or specifically
 func IsChainPaused(cfg config.BifrostBlockScannerConfiguration, logger zerolog.Logger, bridge thorclient.ThorchainBridge) bool {
+	if cfg.ChainID.Equals(common.XMRChain) && IsXMRScannerPaused(logger, bridge) {
+		return true
+	}
+
 	thorHeight, err := bridge.GetBlockHeight()
 	if err != nil {
 		logger.Error().Err(err).Msg("fail to get THORChain block height")
@@ -677,7 +700,7 @@ func (b *BlockScanner) scanBlocks() {
 				}
 			}
 
-			ms := b.cfg.ChainID.ApproximateBlockMilliseconds()
+			ms := b.cfg.ApproximateBlockMilliseconds()
 
 			// consider 3 blocks or the configured lag time behind tip as healthy
 			lagDuration := time.Duration((chainHeight-currentBlock)*ms) * time.Millisecond

@@ -560,6 +560,59 @@ paths:
               schema:
                 $ref: "#/components/schemas/NodesResponse"
 
+  /thorchain/blame/node/{address}:
+    parameters:
+      - $ref: "#/components/parameters/queryHeight"
+      - $ref: "#/components/parameters/address"
+    get:
+      description: Returns TSS keygen and keysign blame counters for the given node address.
+      operationId: nodeBlame
+      tags:
+        - Nodes
+      responses:
+        200:
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NodeBlameResponse"
+
+  /thorchain/blame/nodes:
+    parameters:
+      - $ref: "#/components/parameters/queryHeight"
+      - in: query
+        name: sort_by
+        description: Field to sort by.
+        schema:
+          type: string
+          enum:
+            - keygen_since_churn
+            - keysign_since_churn
+            - keygen_total
+            - keysign_total
+          default: keygen_since_churn
+      - in: query
+        name: sort_order
+        description: Sort order.
+        schema:
+          type: string
+          enum:
+            - desc
+            - asc
+          default: desc
+    get:
+      description: Returns TSS keygen and keysign blame counters for all currently active nodes, sortable by blame counter fields.
+      operationId: nodeBlames
+      tags:
+        - Nodes
+      responses:
+        200:
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NodeBlamesResponse"
+
   # ------------------------------ vaults ------------------------------
 
   /thorchain/vaults/asgard:
@@ -2171,6 +2224,11 @@ components:
         - synth_mint_paused
         - synth_supply_remaining
         - derived_depth_bps
+        - luvi
+        - lp_equity
+        - lp_equity_per_unit
+        - synth_per_pool_depth_bps
+        - synth_overhang
       properties:
         asset:
           type: string
@@ -2265,6 +2323,71 @@ components:
           type: string
           example: "12345678"
           description: rolling liquidity fees accumulated (in RUNE) since the last pool cycle reset; used as the numerator of the POL Reserve deployment score
+        luvi:
+          type: string
+          example: "1.500000000000375000"
+          description: Liquidity Unit Value Index as the chain values a pool unit, sqrt(balance_asset * balance_rune) / pool_units (synth-unit clamp included)
+        lp_equity:
+          type: string
+          example: "1500000000000.000000000000000000"
+          description: LP equity net of the synth liability in sqrt(asset * rune) units, sqrt(balance_asset * balance_rune) * (2 * balance_asset - synth_supply) / (2 * balance_asset); zero or negative when synth_overhang is true
+        lp_equity_per_unit:
+          type: string
+          example: "1.500000000000000000"
+          description: lp_equity / LP_units; equals luvi (up to rounding) unless synth_overhang is true
+        synth_per_pool_depth_bps:
+          type: string
+          example: "2500"
+          description: synth supply relative to twice the asset depth, in basis points
+        synth_overhang:
+          type: boolean
+          example: false
+          description: whether synth supply is at or above twice the asset depth; synth units are clamped and LP units can redeem almost nothing while this is true
+        luvi_g:
+          type: string
+          example: "1234.500000000000000000"
+          description: LUVI accumulator, the accumulated change in hedged LP equity G in sqrt(asset * rune) units since tracking began; absent until the pool has been observed at the end of a block
+        luvi_c:
+          type: string
+          example: "0.000001000000000000"
+          description: accumulated synth repricing term C of LUVI*
+        luvi_star:
+          type: string
+          example: "1.500001000000000000"
+          description: synth-aware index LUVI* = lp_equity_per_unit + luvi_c as of luvi_height; only meaningful when synth_overhang is false
+        luvi_last_normalized_delta_g:
+          type: string
+          example: "0.000000010000000000"
+          description: the last accumulator step's change in G divided by the previous sqrt(asset * rune)
+        luvi_height:
+          type: integer
+          format: int64
+          example: 21000000
+          description: height of the last LUVI accumulator step
+        lp_unit_fair_value_rune:
+          type: string
+          example: "6.000000000000000000"
+          description: fair LP-side value per LP unit in RUNE at the oracle price P of the asset in RUNE, (2 * sqrt(balance_asset * balance_rune * P) - synth_supply * P) / LP_units, clamped at zero; a layer-1 swap cannot lower it (fees raise it), while synth mints and burns move it unless P equals the pool price. Only present when the oracle has a current price for the asset and RUNE
+        lp_unit_fair_value_asset:
+          type: string
+          example: "1.500000000000000000"
+          description: lp_unit_fair_value_rune / P, in the asset. Only present with an oracle price
+        lp_unit_spot_value_rune:
+          type: string
+          example: "6.000000000000000000"
+          description: spot LP-side value per LP unit in RUNE, (2 * balance_rune - synth_supply * balance_rune / balance_asset) / LP_units, clamped at zero. Only present with an oracle price
+        lp_fair_spot_deviation_bps:
+          type: string
+          example: "0"
+          description: (lp_unit_spot_value_rune - lp_unit_fair_value_rune) / lp_unit_fair_value_rune in basis points, a pool price manipulation signal. Absent without an oracle price or when lp_fair_value_overhang is true
+        fair_value_oracle_price_rune:
+          type: string
+          example: "4.000000000000000000"
+          description: the oracle price P of one unit of the asset in RUNE (oracle USD price of the asset / oracle USD price of RUNE) used for the fair values. Only present with an oracle price
+        lp_fair_value_overhang:
+          type: boolean
+          example: false
+          description: whether the synth liability is at or above the pool's fair value, so the LP side is worth nothing at the oracle price. Only present (true) with an oracle price
     DerivedPool:
       type: object
       required:
@@ -4215,6 +4338,44 @@ components:
       type: array
       items:
         $ref: "#/components/schemas/Node"
+
+    NodeBlameResponse:
+      type: object
+      required:
+        - node_address
+        - node_operator_address
+        - keygen_blame_count_total
+        - keysign_blame_count_total
+        - keygen_blame_count_since_churn
+        - keysign_blame_count_since_churn
+      properties:
+        node_address:
+          type: string
+          description: Node address (bech32-encoded thor1... validator address).
+        node_operator_address:
+          type: string
+          description: Operator (bond) address associated with the node.
+        keygen_blame_count_total:
+          type: integer
+          format: int64
+          description: Lifetime count of keygen blame attributions for this node.
+        keysign_blame_count_total:
+          type: integer
+          format: int64
+          description: Lifetime count of keysign blame attributions for this node.
+        keygen_blame_count_since_churn:
+          type: integer
+          format: int64
+          description: Keygen blame attributions since this node's counters were last reset. Both since-churn counters reset for a node when a regular Asgard keygen it is a member of succeeds, and for all nodes when a regular churn completes; XMR monovault keygens reset neither. During a multi-Asgard churn, members of an already-succeeded vault can therefore read 0 before the churn completes.
+        keysign_blame_count_since_churn:
+          type: integer
+          format: int64
+          description: Keysign blame attributions since this node's counters were last reset. Both since-churn counters reset for a node when a regular Asgard keygen it is a member of succeeds, and for all nodes when a regular churn completes; XMR monovault keygens reset neither. During a multi-Asgard churn, members of an already-succeeded vault can therefore read 0 before the churn completes.
+
+    NodeBlamesResponse:
+      type: array
+      items:
+        $ref: "#/components/schemas/NodeBlameResponse"
 
     StreamingSwapsResponse:
       type: array

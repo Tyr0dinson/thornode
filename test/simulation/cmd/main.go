@@ -100,7 +100,8 @@ func simulationStages() []simulationStage {
 		{name: "memoless-refunds", defaultOn: false, constructor: features.MemolessRefunds},
 		{name: "cluster-churn", defaultOn: false, constructor: suites.ClusterChurn},
 		{name: "churn", defaultOn: false, constructor: suites.Churn},
-		{name: "xmr-keygen-jail", defaultOn: false, constructor: suites.XMRKeygenJail},
+		{name: "tron-solvency-fragmentation", defaultOn: false, constructor: core.NewTRONSolvencyFragmentationActor},
+		{name: "xmr-keygen-recovery", defaultOn: false, constructor: suites.XMRKeygenRecovery},
 		{name: "xmr-spent-refs", defaultOn: false, constructor: suites.XMRSpentRefTracking},
 		{name: "forced-to-leave-keygen", defaultOn: false, constructor: core.NewForcedToLeaveKeygenActor},
 		{name: "forced-to-leave-keysign", defaultOn: false, constructor: core.NewForcedToLeaveKeysignActor},
@@ -142,20 +143,31 @@ func selectedSimulationStages(enabledStages map[string]bool) []simulationStage {
 			continue
 		}
 		switch stage.name {
-		case "xmr-historical-refund":
-			// Requires the dedicated long-jail mocknet setup; keep generic "all"
-			// runs unchanged unless this scenario is explicitly requested as well.
+		case "xmr-historical-refund", "xmr-keygen-recovery":
+			// These need dedicated fault-injection environments; generic "all"
+			// runs must explicitly request the scenario as well.
 			if !enabledStages[stage.name] {
 				continue
 			}
-		case "churn":
-			// ClusterChurn already activates the cluster and requests a leave.
+		case "churn", "tron-solvency-fragmentation":
+			// ClusterChurn already activates the cluster and runs selected TRON
+			// assertions before requesting a validator leave.
 			if enabled("cluster-churn") {
 				continue
 			}
 		case "cluster-churn":
 			if enabled("xmr-post-churn") {
 				stage.constructor = suites.ClusterChurnWithXMRPostChurn
+			}
+			if enabled("tron-solvency-fragmentation") {
+				verifyXMR := enabled("xmr-post-churn")
+				stage.constructor = func(rng *rand.Rand) *Actor {
+					tron := core.NewTRONSolvencyFragmentationActor(rng)
+					if verifyXMR {
+						return suites.ClusterChurnWithXMRPostChurnActors(rng, tron)
+					}
+					return suites.ClusterChurnWithPostChurnActors(rng, tron)
+				}
 			}
 		case "xmr-post-churn":
 			if enabled("cluster-churn") {
@@ -343,24 +355,35 @@ func main() {
 	root := NewActor("Root", rng)
 	appendSimulationStages(root, enabledStages, rng)
 
-	// start watchers
-	enabledWatchers := []*Watcher{
-		watchers.NewInvariants(),
-		watchers.NewSolvencyHalt(),
-		watchers.NewSecurityEvents(),
+	// Check before actors start and again after they finish. Periodic checks
+	// alone can be skipped entirely by a short simulation.
+	invariants := watchers.NewInvariants()
+	if err := runWithInvariantChecks(cfg, invariants, func() {
+		for _, w := range []*Watcher{invariants, watchers.NewSolvencyHalt(), watchers.NewSecurityEvents(), watchers.NewLuvi()} {
+			log.Info().Str("watcher", w.Name).Msg("starting watcher")
+			go func(w *Watcher) {
+				if err := w.Execute(cfg, log.Output(os.Stderr)); err != nil {
+					log.Fatal().Err(err).Str("watcher", w.Name).Msg("watcher failed")
+				}
+			}(w)
+		}
+		dag.Execute(cfg, root, parallelismInt, rng)
+	}); err != nil {
+		log.Fatal().Err(err).Msg("invariant verification failed")
 	}
-	for _, w := range enabledWatchers {
-		log.Info().Str("watcher", w.Name).Msg("starting watcher")
-		go func(w *Watcher) {
-			err = w.Execute(cfg, log.Output(os.Stderr))
-			if err != nil {
-				log.Fatal().Err(err).Msg("watcher failed")
-			}
-		}(w)
-	}
+}
 
-	// run the simulation
-	dag.Execute(cfg, root, parallelismInt, rng)
+// runWithInvariantChecks makes both boundary checks mandatory even if the
+// simulation finishes before the first watcher interval.
+func runWithInvariantChecks(cfg *OpConfig, invariant *Watcher, run func()) error {
+	if err := invariant.Fn(cfg); err != nil {
+		return fmt.Errorf("initial invariant verification: %w", err)
+	}
+	run()
+	if err := invariant.Fn(cfg); err != nil {
+		return fmt.Errorf("final invariant verification: %w", err)
+	}
+	return nil
 }
 
 func waitForBifrostReadiness() {

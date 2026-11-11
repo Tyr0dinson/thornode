@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/blang/semver"
 	"github.com/rs/zerolog/log"
 	"gopkg.in/yaml.v2"
 
@@ -405,78 +406,33 @@ func notifyChurnStarted(height, keygenHeight int64, keyshareBackups map[string]m
 	}
 
 	// standby nodes
-	standbyNodes := []string{}
-
-	// find worst removed
-	if len(removed) > 0 {
-		worstIdx := 0
-		for i, node := range removed {
-			if node.SlashPoints > removed[worstIdx].SlashPoints {
-				worstIdx = i
-			}
-		}
-		worst := removed[worstIdx]
-		removed = append(removed[:worstIdx], removed[worstIdx+1:]...)
-		standbyNodes = append(standbyNodes, fmt.Sprintf("`%s` (worst)", worst.NodeAddress[len(worst.NodeAddress)-4:]))
+	oldActiveNodes := make([]openapi.Node, 0, len(oldActive))
+	for _, node := range oldActive {
+		oldActiveNodes = append(oldActiveNodes, node)
+	}
+	params := churnOutParams{
+		MinSlashPointsForBadValidator:  util.GetConfigInt64(keygenHeight, constants.MinSlashPointsForBadValidator),
+		BadValidatorRedline:            util.GetConfigInt64(keygenHeight, constants.BadValidatorRedline),
+		DesiredValidatorSet:            util.GetConfigInt64(keygenHeight, constants.DesiredValidatorSet),
+		MaxNodeToChurnOutForLowVersion: util.GetConfigInt64(keygenHeight, constants.MaxNodeToChurnOutForLowVersion),
+		MissingBlockChurnOut:           util.GetConfigInt64(keygenHeight, constants.MissingBlockChurnOut),
+		MaxMissingBlockChurnOut:        util.GetConfigInt64(keygenHeight, constants.MaxMissingBlockChurnOut),
 	}
 
-	// find lowest bond
-	if len(removed) > 0 {
-		lowestIdx := 0
-		for i, node := range removed {
-			if cosmos.NewUintFromString(node.TotalBond).LT(cosmos.NewUintFromString(removed[lowestIdx].TotalBond)) {
-				lowestIdx = i
-			}
-		}
-		lowest := removed[lowestIdx]
-		removed = append(removed[:lowestIdx], removed[lowestIdx+1:]...)
-		standbyNodes = append(standbyNodes, fmt.Sprintf("`%s` (lowest bond)", lowest.NodeAddress[len(lowest.NodeAddress)-4:]))
+	// low version nodes are only marked once the minimum join version is settled
+	version := openapi.VersionResponse{}
+	err = util.ThornodeCachedRetryGet("thorchain/version", keygenHeight, &version)
+	if err != nil {
+		log.Panic().Err(err).Msg("failed to get version")
 	}
-
-	// find oldest removed
-	if len(removed) > 0 {
-		oldestIdx := 0
-		for i, node := range removed {
-			if node.ActiveBlockHeight < removed[oldestIdx].ActiveBlockHeight {
-				oldestIdx = i
-			}
-		}
-		oldest := removed[oldestIdx]
-		removed = append(removed[:oldestIdx], removed[oldestIdx+1:]...)
-		standbyNodes = append(standbyNodes, fmt.Sprintf("`%s` (oldest)", oldest.NodeAddress[len(oldest.NodeAddress)-4:]))
+	minJoinSince := int64(0)
+	if version.NextSinceHeight != nil {
+		minJoinSince = *version.NextSinceHeight
 	}
-
-	// find leaving nodes
-	if len(removed) > 0 {
-		newRemoved := []openapi.Node{}
-		for i, node := range removed {
-			if node.RequestedToLeave {
-				standbyNodes = append(standbyNodes, fmt.Sprintf("`%s` (leave)", node.NodeAddress[len(node.NodeAddress)-4:]))
-			} else {
-				newRemoved = append(newRemoved, removed[i])
-			}
-		}
-		removed = newRemoved
+	if keygenHeight >= minJoinSince+util.GetConfigInt64(keygenHeight, constants.ChurnOutForLowVersionBlocks) {
+		params.MinJoinVersion = version.Next
 	}
-
-	// find missing nodes
-	if len(removed) > 0 {
-		mimir := map[string]int64{}
-		err = util.ThornodeCachedRetryGet("thorchain/mimir", keygenHeight, &mimir)
-		if err != nil {
-			log.Panic().Err(err).Msg("failed to get mimirs")
-		}
-		maxMissing := mimir["MISSINGBLOCKCHURNOUT"]
-		newRemoved := []openapi.Node{}
-		for i, node := range removed {
-			if node.MissingBlocks > maxMissing {
-				standbyNodes = append(standbyNodes, fmt.Sprintf("`%s` (missing)", node.NodeAddress[len(node.NodeAddress)-4:]))
-			} else {
-				newRemoved = append(newRemoved, removed[i])
-			}
-		}
-		removed = newRemoved
-	}
+	standbyNodes, removed := churnOutLabels(oldActiveNodes, removed, params)
 
 	title := "Churn Started"
 
@@ -541,6 +497,173 @@ func notifyChurnStarted(height, keygenHeight int64, keyshareBackups map[string]m
 ////////////////////////////////////////////////////////////////////////////////////////
 // Helpers
 ////////////////////////////////////////////////////////////////////////////////////////
+
+// churnOutParams are the network config values used to mark nodes for churn out.
+type churnOutParams struct {
+	MinSlashPointsForBadValidator  int64
+	BadValidatorRedline            int64
+	DesiredValidatorSet            int64
+	MaxNodeToChurnOutForLowVersion int64
+	MissingBlockChurnOut           int64
+	MaxMissingBlockChurnOut        int64
+
+	// MinJoinVersion is empty when low version nodes are not marked.
+	MinJoinVersion string
+}
+
+// churnOutScore mirrors the validator manager score for the slash points, using a
+// fixed number of blocks since the last churn as it is the same for all nodes.
+func churnOutScore(slashPoints int64) cosmos.Uint {
+	return cosmos.NewUint(43200 * common.One).QuoUint64(uint64(slashPoints))
+}
+
+// churnOutLabels returns the standby labels for the removed nodes with the reason
+// they were churned out, and the removed nodes for which no reason was determined.
+// The reasons mirror the order in which the validator manager marks active nodes
+// (bad behavior, low bond, low version, age, missing blocks), where each mark skips the nodes
+// that are already marked. They must be evaluated against the whole active set
+// rather than only the removed nodes, since not every mark applies on every churn
+// (the low bond mark requires a full active set) and a marked node may stay active.
+func churnOutLabels(active, removed []openapi.Node, params churnOutParams) ([]string, []openapi.Node) {
+	isRemoved := make(map[string]bool, len(removed))
+	for _, node := range removed {
+		isRemoved[node.NodeAddress] = true
+	}
+
+	// sort for determinism and prefer removed nodes on ties, since the removed node
+	// is the one that was marked
+	active = append([]openapi.Node{}, active...)
+	sort.SliceStable(active, func(i, j int) bool {
+		if isRemoved[active[i].NodeAddress] != isRemoved[active[j].NodeAddress] {
+			return isRemoved[active[i].NodeAddress]
+		}
+		return active[i].NodeAddress < active[j].NodeAddress
+	})
+
+	// nodes that requested or were forced to leave keep their leave score
+	reasons := make(map[string]string)
+	for _, node := range active {
+		switch {
+		case node.RequestedToLeave:
+			reasons[node.NodeAddress] = "leave"
+		case node.ForcedToLeave:
+			reasons[node.NodeAddress] = ""
+		}
+	}
+
+	// bad behavior: all nodes over the redline, otherwise the worst offender
+	if params.BadValidatorRedline > 0 {
+		var worst *openapi.Node
+		offenders := []openapi.Node{}
+		totalScore := cosmos.ZeroUint()
+		for i, node := range active {
+			if node.SlashPoints <= params.MinSlashPointsForBadValidator {
+				continue
+			}
+			offenders = append(offenders, node)
+			totalScore = totalScore.Add(churnOutScore(node.SlashPoints))
+			if worst == nil || node.SlashPoints > worst.SlashPoints {
+				worst = &active[i]
+			}
+		}
+		// lower score is worse
+		redline := totalScore.QuoUint64(uint64(len(active))).QuoUint64(uint64(params.BadValidatorRedline))
+		redlined := false
+		for _, node := range offenders {
+			if churnOutScore(node.SlashPoints).GT(redline) {
+				continue
+			}
+			redlined = true
+			if _, ok := reasons[node.NodeAddress]; !ok {
+				reasons[node.NodeAddress] = "worst"
+			}
+		}
+		if worst != nil && !redlined {
+			if _, ok := reasons[worst.NodeAddress]; !ok {
+				reasons[worst.NodeAddress] = "worst"
+			}
+		}
+	}
+
+	// mark sets the reason on the first unmarked node for which no other is less
+	mark := func(reason string, less func(a, b openapi.Node) bool) {
+		var found *openapi.Node
+		for i, node := range active {
+			if _, ok := reasons[node.NodeAddress]; ok {
+				continue
+			}
+			if found == nil || less(node, *found) {
+				found = &active[i]
+			}
+		}
+		if found != nil {
+			reasons[found.NodeAddress] = reason
+		}
+	}
+
+	// low bond: only once the active set is at capacity
+	if params.DesiredValidatorSet <= 0 || int64(len(active)) >= params.DesiredValidatorSet {
+		mark("lowest bond", func(a, b openapi.Node) bool {
+			return cosmos.NewUintFromString(a.TotalBond).LT(cosmos.NewUintFromString(b.TotalBond))
+		})
+	}
+
+	// low version: up to the max in store (address) order
+	if params.MinJoinVersion != "" && params.MaxNodeToChurnOutForLowVersion > 0 {
+		minJoinVersion, err := semver.Make(params.MinJoinVersion)
+		if err == nil {
+			byAddress := append([]openapi.Node{}, active...)
+			sort.SliceStable(byAddress, func(i, j int) bool {
+				return byAddress[i].NodeAddress < byAddress[j].NodeAddress
+			})
+			count := int64(0)
+			for _, node := range byAddress {
+				if count >= params.MaxNodeToChurnOutForLowVersion {
+					break
+				}
+				if _, ok := reasons[node.NodeAddress]; ok {
+					continue
+				}
+				version, _ := semver.Make(node.Version)
+				if version.LT(minJoinVersion) {
+					reasons[node.NodeAddress] = "version"
+					count++
+				}
+			}
+		}
+	}
+
+	// age
+	mark("oldest", func(a, b openapi.Node) bool {
+		return a.StatusSince < b.StatusSince
+	})
+
+	// missing blocks
+	if params.MissingBlockChurnOut > 0 && params.MaxMissingBlockChurnOut > 0 {
+		for _, node := range active {
+			if _, ok := reasons[node.NodeAddress]; ok {
+				continue
+			}
+			if node.MissingBlocks > params.MissingBlockChurnOut {
+				reasons[node.NodeAddress] = "missing"
+			}
+		}
+	}
+
+	labels := []string{}
+	unknown := []openapi.Node{}
+	for _, node := range active {
+		if !isRemoved[node.NodeAddress] {
+			continue
+		}
+		if reasons[node.NodeAddress] == "" {
+			unknown = append(unknown, node)
+			continue
+		}
+		labels = append(labels, fmt.Sprintf("`%s` (%s)", node.NodeAddress[len(node.NodeAddress)-4:], reasons[node.NodeAddress]))
+	}
+	return labels, unknown
+}
 
 func formatNodePauseMessage(height int64, tx thorscan.BlockTx, event map[string]string) (string, notify.Level) {
 	legacyMsg, ok := tx.Tx.GetMsgs()[0].(sdk.LegacyMsg)
@@ -913,6 +1036,7 @@ func TssKeysignFailure(block *thorscan.BlockResponse) {
 	sigma := config.Get().Thresholds.TssKeysignFailure.Sigma
 	minSnapshots := config.Get().Thresholds.TssKeysignFailure.MinSnapshots
 	maxSnapshots := config.Get().Thresholds.TssKeysignFailure.MaxSnapshots
+	minFailures := config.Get().Thresholds.TssKeysignFailure.MinFailures
 
 	// capture previous counts for edge trigger
 	prevVaultCounts := make(map[string]int)
@@ -1015,6 +1139,12 @@ func TssKeysignFailure(block *thorscan.BlockResponse) {
 		return mean + (sigma * stdDev), true
 	}
 
+	// helper to apply the absolute floor, so crossing the alert threshold
+	// requires at least minFailures in the window
+	alertThreshold := func(statsThreshold float64) float64 {
+		return math.Max(statsThreshold, float64(minFailures-1))
+	}
+
 	// prune vault failures and gather the current network window
 	networkFailures := []TssKeysignFailureRecord{}
 	for pubKey, failures := range history.VaultFailures {
@@ -1026,8 +1156,9 @@ func TssKeysignFailure(block *thorscan.BlockResponse) {
 	// check network alert
 	netStatsThreshold, netStatsOk := getStatsThreshold(history.NetworkPastCounts)
 	if netStatsOk {
+		netThreshold := alertThreshold(netStatsThreshold)
 		// analyze-ignore(float-comparison)
-		if float64(currNetworkCount) > netStatsThreshold && float64(prevNetworkCount) <= netStatsThreshold {
+		if float64(currNetworkCount) > netThreshold && float64(prevNetworkCount) <= netThreshold {
 			notifyTSSKeysignFailure(block.Header.Height, "Network High TSS Keysign Failure Rate", "", currNetworkCount, int(netStatsThreshold), networkFailures)
 		}
 	}
@@ -1045,8 +1176,9 @@ func TssKeysignFailure(block *thorscan.BlockResponse) {
 
 		// only alert if we have a valid threshold (from vault or network)
 		if ok {
+			vaultThreshold := alertThreshold(threshold)
 			// analyze-ignore(float-comparison)
-			if float64(currVaultCount) > threshold && float64(prevVaultCount) <= threshold {
+			if float64(currVaultCount) > vaultThreshold && float64(prevVaultCount) <= vaultThreshold {
 				notifyTSSKeysignFailure(block.Header.Height, "Vault High TSS Keysign Failure Rate", pubKey, currVaultCount, int(threshold), failures)
 			}
 		}
@@ -1169,5 +1301,7 @@ func notifyTSSKeysignFailure(height int64, title, pubKey string, count, threshol
 		fields.Set("Blame", blame)
 	}
 
-	notify.Notify(config.Get().Notifications.Info, title, height, nil, notify.Danger, fields)
+	// rate alerts are informational and do not tag @here; terminal-round
+	// failures are escalated separately by LastRoundFailures in security.go
+	notify.Notify(config.Get().Notifications.Info, title, height, nil, notify.Warning, fields)
 }

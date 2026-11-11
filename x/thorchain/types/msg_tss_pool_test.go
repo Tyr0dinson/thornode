@@ -104,6 +104,34 @@ func (s *MsgTssPoolSuite) TestMsgTssPool(c *C) {
 	c.Assert(xmrMsg.ValidateBasic(), NotNil)
 }
 
+func (s *MsgTssPoolSuite) TestXMRMonovaultKeygenValidateBasicErrors(c *C) {
+	member := []string{GetRandomPubKey().String()}
+	signer, err := common.PubKey(member[0]).GetThorAddress()
+	c.Assert(err, IsNil)
+	chains := common.Chains{common.RuneAsset().Chain, common.XMRChain}.Strings()
+	newMsg := func(frostPk common.PubKey, moneroHeight int64, blame []Blame) *MsgTssPool {
+		msg, msgErr := NewMsgTssPoolV3(member, GetRandomPubKey(), nil, nil, KeygenType_XMRMonovaultKeygen, 1, blame, chains, signer, 1024, common.EmptyPubKey, nil, nil, frostPk, moneroHeight)
+		c.Assert(msgErr, IsNil)
+		return msg
+	}
+
+	c.Assert(newMsg(GetRandomEd25519PubKey(), 1, nil).ValidateBasic(), IsNil)
+
+	err = newMsg(common.EmptyPubKey, 1, nil).ValidateBasic()
+	c.Assert(err, ErrorMatches, ".*xmr frost pool pubkey cannot be empty.*")
+	c.Check(errors.Is(err, se.ErrUnknownRequest), Equals, true)
+
+	// a secp256k1 key cannot derive a Monero address
+	c.Assert(newMsg(GetRandomPubKey(), 1, nil).ValidateBasic(), ErrorMatches, ".*invalid xmr frost pool pubkey.*")
+
+	c.Assert(newMsg(GetRandomEd25519PubKey(), 0, nil).ValidateBasic(), ErrorMatches, ".*xmr observed monero height must be greater than zero.*")
+	c.Assert(newMsg(GetRandomEd25519PubKey(), -1, nil).ValidateBasic(), ErrorMatches, ".*xmr observed monero height must be greater than zero.*")
+
+	// failed keygen reports carry blame instead of a FROST key and height
+	blame := []Blame{{FailReason: "keygen timeout", BlameNodes: []Node{{Pubkey: member[0]}}}}
+	c.Assert(newMsg(common.EmptyPubKey, 0, blame).ValidateBasic(), IsNil)
+}
+
 func (s *MsgTssPoolSuite) TestXMRMsgTssPoolIDIncludesFrostKeyAndMoneroHeight(c *C) {
 	poolPk := GetRandomPubKey()
 	frostPk := GetRandomEd25519PubKey()

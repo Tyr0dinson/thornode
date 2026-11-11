@@ -74,7 +74,6 @@ func NewSOLClient(
 type Client struct {
     logger              zerolog.Logger
     cfg                 config.BifrostChainConfiguration
-    accts               *XrpMetaDataStore
     tssKeyManager       *tss.KeySign
     localKeyManager     *keymanager.KeyManager
     thorchainBridge     thorclient.ThorchainBridge
@@ -87,13 +86,16 @@ type Client struct {
     stopchan            chan struct{}
     rpcClient           *rpc.Client
     networkID           uint32
+    vaultLocksMu        sync.Mutex             // guards vaultLocks
+    vaultLocks          map[string]*sync.Mutex // per-vault sign+broadcast serialization
 }
 ```
 
 ### XRP Key Differences
 
 - **Secp256k1** keys but with XRP-specific key manager (`keymanager/secp256k1/`)
-- **Account sequence tracking** via `XrpMetaDataStore` (similar to Cosmos)
+- **Account sequence** read from the VALIDATED ledger on every sign (keysign determinism); a prior attempt's checkpoint pins the sequence and is never moved. No node-local sequence cache.
+- **Serial-drain gate**: after the validated read, `signingMetadata` also reads the CURRENT (open) ledger; if it is ahead of validated, a prior outbound is applied but unvalidated, so it returns `ErrTxPending` (defer) rather than sign a reused sequence. Stateless; the signed sequence still comes only from the validated ledger.
 - **Binary codec** for transaction serialization (`github.com/Peersyst/xrpl-go/binary-codec`)
 - **Network ID** configuration for mainnet/testnet
 - **Instant finality** — `GetConfirmationCount` returns 0

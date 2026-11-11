@@ -45,9 +45,9 @@ func TestS10CanonicalHeightAdmissionAndCleanup(t *testing.T) {
 			g.handleObservedTxAttestation(context.Background(), msg)
 			restarted, _, _, _, _, _ := setupTestGossip(t)
 			restarted.SetObserverStorage(o.storage)
-			restarted.processAttestationStateBatch(zerolog.Nop(), common.QuorumState{
+			require.NoError(t, restarted.processAttestationStateBatch(zerolog.Nop(), common.QuorumState{
 				QuoTxs: []*common.QuorumTx{{ObsTx: old, Inbound: true, Attestations: []*common.Attestation{msg.Attestation}}},
-			})
+			}))
 			require.Empty(t, restarted.observedTxs)
 			require.Len(t, g.observedTxs, 1)
 			require.Len(t, g.batcher.observedTxBatch, 1)

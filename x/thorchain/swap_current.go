@@ -167,6 +167,10 @@ func (s *SwapperImpl) Swap(ctx cosmos.Context,
 			[]metrics.Label{telemetry.NewLabel("pool", evt.Pool.String())},
 		)
 
+		if !isBaseLayerPool(evt.Pool) {
+			continue
+		}
+
 		volume, err := keeper.GetVolume(ctx, evt.Pool)
 		if err != nil {
 			volume = types.NewVolume(evt.Pool)

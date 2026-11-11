@@ -57,7 +57,7 @@ var (
 	queryExport = func(_ sdk.Context, _ *Mgrs) ([]byte, error) {
 		return nil, fmt.Errorf("export query not supported")
 	}
-	tendermintClient    *tmhttp.HTTP
+	tendermintClient    *tmhttp.HTTP // fallback when no in-process client is set
 	tendermintClientErr error
 	initTendermintOnce  = sync.Once{}
 )
@@ -1378,6 +1378,116 @@ func (qs queryServer) queryNodes(ctx cosmos.Context, _ *types.QueryNodesRequest)
 	return &types.QueryNodesResponse{Nodes: result}, nil
 }
 
+// queryNodeBlame returns blame record for a specific node
+func (qs queryServer) queryNodeBlame(ctx cosmos.Context, req *types.QueryNodeBlameRequest) (*types.QueryNodeBlameResponse, error) {
+	if len(req.Address) == 0 {
+		return nil, errors.New("node address not provided")
+	}
+
+	addr, err := cosmos.AccAddressFromBech32(req.Address)
+	if err != nil {
+		return nil, fmt.Errorf("invalid address: %w", err)
+	}
+
+	record, err := qs.mgr.Keeper().GetNodeBlameRecord(ctx, addr)
+	if err != nil {
+		return nil, err
+	}
+
+	nodeAcc, err := qs.mgr.Keeper().GetNodeAccount(ctx, addr)
+	if err != nil {
+		return nil, fmt.Errorf("fail to get node account: %w", err)
+	}
+
+	return &types.QueryNodeBlameResponse{
+		NodeAddress:                 record.NodeAddress,
+		NodeOperatorAddress:         nodeAcc.BondAddress.String(),
+		KeygenBlameCountTotal:       record.KeygenBlameCountTotal,
+		KeysignBlameCountTotal:      record.KeysignBlameCountTotal,
+		KeygenBlameCountSinceChurn:  record.KeygenBlameCountSinceChurn,
+		KeysignBlameCountSinceChurn: record.KeysignBlameCountSinceChurn,
+	}, nil
+}
+
+// queryNodeBlames returns blame counters for every active node. Active nodes
+// with no stored blame record are reported with zero counters.
+//
+// Supported query args:
+//   - sort_by: keygen_since_churn (default), keysign_since_churn, keygen_total, keysign_total
+//   - sort_order: desc (default), asc
+func (qs queryServer) queryNodeBlames(ctx cosmos.Context, req *types.QueryNodeBlamesRequest) (*types.QueryNodeBlamesResponse, error) {
+	keyFn, err := nodeBlameSortKey(req.SortBy)
+	if err != nil {
+		return nil, err
+	}
+	descending, err := nodeBlameSortDescending(req.SortOrder)
+	if err != nil {
+		return nil, err
+	}
+
+	activeNodes, err := qs.mgr.Keeper().ListActiveValidators(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("fail to list active validators: %w", err)
+	}
+
+	result := make([]*types.QueryNodeBlameResponse, 0, len(activeNodes))
+	for _, na := range activeNodes {
+		record, err := qs.mgr.Keeper().GetNodeBlameRecord(ctx, na.NodeAddress)
+		if err != nil {
+			return nil, fmt.Errorf("fail to get node blame record: %w", err)
+		}
+		result = append(result, &types.QueryNodeBlameResponse{
+			NodeAddress:                 na.NodeAddress,
+			NodeOperatorAddress:         na.BondAddress.String(),
+			KeygenBlameCountTotal:       record.KeygenBlameCountTotal,
+			KeysignBlameCountTotal:      record.KeysignBlameCountTotal,
+			KeygenBlameCountSinceChurn:  record.KeygenBlameCountSinceChurn,
+			KeysignBlameCountSinceChurn: record.KeysignBlameCountSinceChurn,
+		})
+	}
+
+	// Records with equal sort keys are ordered by node address.
+	sort.Slice(result, func(i, j int) bool {
+		ki, kj := keyFn(result[i]), keyFn(result[j])
+		if ki != kj {
+			if descending {
+				return ki > kj
+			}
+			return ki < kj
+		}
+		return result[i].NodeAddress.String() < result[j].NodeAddress.String()
+	})
+
+	return &types.QueryNodeBlamesResponse{Blames: result}, nil
+}
+
+// nodeBlameSortKey returns the field accessor for the given sort_by value.
+func nodeBlameSortKey(sortBy string) (func(*types.QueryNodeBlameResponse) int64, error) {
+	switch sortBy {
+	case "", "keygen_since_churn":
+		return func(r *types.QueryNodeBlameResponse) int64 { return r.KeygenBlameCountSinceChurn }, nil
+	case "keysign_since_churn":
+		return func(r *types.QueryNodeBlameResponse) int64 { return r.KeysignBlameCountSinceChurn }, nil
+	case "keygen_total":
+		return func(r *types.QueryNodeBlameResponse) int64 { return r.KeygenBlameCountTotal }, nil
+	case "keysign_total":
+		return func(r *types.QueryNodeBlameResponse) int64 { return r.KeysignBlameCountTotal }, nil
+	default:
+		return nil, fmt.Errorf("invalid sort_by: %q (expected one of: keygen_since_churn, keysign_since_churn, keygen_total, keysign_total)", sortBy)
+	}
+}
+
+func nodeBlameSortDescending(sortOrder string) (bool, error) {
+	switch sortOrder {
+	case "", "desc":
+		return true, nil
+	case "asc":
+		return false, nil
+	default:
+		return false, fmt.Errorf("invalid sort_order: %q (expected: asc or desc)", sortOrder)
+	}
+}
+
 func newSaver(lp LiquidityProvider, pool Pool) *types.QuerySaverResponse {
 	assetRedeemableValue := lp.GetSaversAssetRedeemValue(pool)
 
@@ -1910,6 +2020,13 @@ func (qs queryServer) queryPool(ctx cosmos.Context, req *types.QueryPoolRequest)
 	p.SynthMintPaused = (synthMintPausedErr != nil)
 	p.SynthSupplyRemaining = synthSupplyRemaining.String()
 	p.DerivedDepthBps = dbps.String()
+	setPoolLuviFields(&p, pool, synthSupply)
+	setPoolLuviAccumulatorFields(ctx, qs.mgr.Keeper(), &p, pool)
+	if !pool.Asset.IsSyntheticAsset() {
+		setPoolFairValueFields(&p, pool, synthSupply,
+			oraclePriceUSD(ctx, qs.mgr.Keeper(), pool.Asset.Ticker.String()),
+			oraclePriceUSD(ctx, qs.mgr.Keeper(), common.RuneAsset().Ticker.String()))
+	}
 
 	polReserveDeposit, err := qs.mgr.Keeper().GetPOLReserveDeposit(ctx, pool.Asset)
 	if err == nil {
@@ -1929,8 +2046,60 @@ func (qs queryServer) queryPool(ctx cosmos.Context, req *types.QueryPoolRequest)
 	return &p, nil
 }
 
+// setPoolLuviFields fills the stateless LUVI fields of a pool response: the
+// classic index as the chain values a pool unit, the LP equity net of the
+// synth liability, and the synth overhang indicators. See types/type_luvi.go.
+func setPoolLuviFields(p *types.QueryPoolResponse, pool Pool, synthSupply cosmos.Uint) {
+	st := types.NewLuviState(pool, synthSupply)
+	p.Luvi = st.ChainLuvi().String()
+	p.LpEquity = st.LPEquity().String()
+	p.LpEquityPerUnit = st.LPEquityPerUnit().String()
+	p.SynthPerPoolDepthBps = st.SynthPerPoolDepthBps().String()
+	// an empty pool (no asset depth, no synths) is not in overhang, but a
+	// depleted one (no asset depth, synths outstanding) is
+	p.SynthOverhang = !st.SynthSupply.IsZero() && st.IsOverhang()
+}
+
+// oraclePriceUSD returns the oracle USD price of symbol, or "" when the
+// oracle has none. The price store is wiped every BeginBlock and refilled only
+// with the symbols that reached quorum in that block, so a price that exists
+// is the current block's.
+func oraclePriceUSD(ctx cosmos.Context, k keeper.Keeper, symbol string) string {
+	price, err := k.GetPrice(ctx, symbol)
+	if err != nil {
+		return ""
+	}
+	return price.Price
+}
+
+// setPoolFairValueFields fills the oracle-priced (fair) LP unit value fields of
+// a pool response. They are left unset unless both USD prices are present and
+// valid, and the pool has depth and LP units. See types/type_luvi_fair.go.
+func setPoolFairValueFields(p *types.QueryPoolResponse, pool Pool, synthSupply cosmos.Uint, assetUSD, runeUSD string) {
+	if assetUSD == "" || runeUSD == "" {
+		return
+	}
+	price, err := types.NewLuviPriceFromUSD(assetUSD, runeUSD)
+	if err != nil {
+		return
+	}
+	fv, err := types.NewLuviState(pool, synthSupply).FairValue(price)
+	if err != nil {
+		return
+	}
+	p.LpUnitFairValueRune = fv.UnitFairValueRune.String()
+	p.LpUnitFairValueAsset = fv.UnitFairValueAsset.String()
+	p.LpUnitSpotValueRune = fv.UnitSpotValueRune.String()
+	p.FairValueOraclePriceRune = fv.OraclePriceRune.String()
+	p.LpFairValueOverhang = fv.Overhang
+	if fv.HasDeviation {
+		p.LpFairSpotDeviationBps = fv.DeviationBps.String()
+	}
+}
+
 func (qs queryServer) queryPools(ctx cosmos.Context, _ *types.QueryPoolsRequest) (*types.QueryPoolsResponse, error) {
 	dollarsPerRune := dollarsPerRuneIgnoreHalt(ctx, qs.mgr.Keeper())
+	runeUSD := oraclePriceUSD(ctx, qs.mgr.Keeper(), common.RuneAsset().Ticker.String())
 
 	isGlobalTradingHalted := qs.mgr.Keeper().IsGlobalTradingHalted(ctx)
 	isChainOrChainTradingHalted := map[common.Chain]bool{}
@@ -2043,6 +2212,9 @@ func (qs queryServer) queryPools(ctx cosmos.Context, _ *types.QueryPoolsRequest)
 		p.SynthMintPaused = (synthMintPausedErr != nil)
 		p.SynthSupplyRemaining = synthSupplyRemaining.String()
 		p.DerivedDepthBps = dbps.String()
+		setPoolLuviFields(&p, pool, synthSupply)
+		setPoolLuviAccumulatorFields(ctx, qs.mgr.Keeper(), &p, pool)
+		setPoolFairValueFields(&p, pool, synthSupply, oraclePriceUSD(ctx, qs.mgr.Keeper(), pool.Asset.Ticker.String()), runeUSD)
 
 		polReserveDeposit, polErr := qs.mgr.Keeper().GetPOLReserveDeposit(ctx, pool.Asset)
 		if polErr == nil {
@@ -3054,8 +3226,10 @@ func (qs queryServer) queryKeysign(ctx cosmos.Context, heightStr, pubKey string)
 // queryOutQueue - iterates over txout, counting how many transactions are waiting to be sent
 func (qs queryServer) queryQueue(ctx cosmos.Context, _ *types.QueryQueueRequest) (*types.QueryQueueResponse, error) {
 	constAccessor := qs.mgr.GetConstants()
-	signingTransactionPeriod := constAccessor.GetInt64Value(constants.SigningTransactionPeriod)
-	startHeight := ctx.BlockHeight() - signingTransactionPeriod
+	signingTransactionPeriod := qs.mgr.Keeper().GetConfigInt64(ctx, constants.SigningTransactionPeriod)
+	// XMR and EVM token/aggregator outbounds stay live for an extended signing
+	// period; scan that window and apply each item's own period below.
+	startHeight := ctx.BlockHeight() - types.MaxTxOutSigningTransactionPeriod(signingTransactionPeriod)
 	var query types.QueryQueueResponse
 	scheduledOutboundValue := cosmos.ZeroUint()
 	scheduledOutboundClout := cosmos.ZeroUint()
@@ -3088,8 +3262,8 @@ func (qs queryServer) queryQueue(ctx cosmos.Context, _ *types.QueryQueueRequest)
 			return nil, fmt.Errorf("fail to get tx out array from key value store: %w", err)
 		}
 		for _, tx := range txs.TxArray {
-			if tx.OutHash.IsEmpty() {
-				memo, _ := ParseMemoWithTHORNames(ctx, qs.mgr.Keeper(), tx.Memo)
+			if tx.OutHash.IsEmpty() && height >= ctx.BlockHeight()-tx.SigningTransactionPeriod(signingTransactionPeriod) {
+				memo, _ := ParseMemoWithTHORNames(ctx, qs.mgr.Keeper(), tx.GetMemo())
 				if memo.IsInternal() {
 					query.Internal++
 				} else if memo.IsOutbound() {
@@ -3665,10 +3839,12 @@ func (qs queryServer) queryScheduledOutbound(ctx cosmos.Context, _ *types.QueryS
 }
 
 func (qs queryServer) queryPendingOutbound(ctx cosmos.Context, _ *types.QueryPendingOutboundRequest) (*types.QueryOutboundResponse, error) {
-	constAccessor := qs.mgr.GetConstants()
-	signingTransactionPeriod := constAccessor.GetInt64Value(constants.SigningTransactionPeriod)
+	signingTransactionPeriod := qs.mgr.Keeper().GetConfigInt64(ctx, constants.SigningTransactionPeriod)
 	rescheduleCoalesceBlocks := qs.mgr.Keeper().GetConfigInt64(ctx, constants.RescheduleCoalesceBlocks)
-	startHeight := ctx.BlockHeight() - signingTransactionPeriod
+	// XMR and EVM token/aggregator outbounds stay live for an extended signing
+	// period (see LackSigning); scan that window and apply each item's own period
+	// below so they remain visible until they are actually rescheduled.
+	startHeight := ctx.BlockHeight() - types.MaxTxOutSigningTransactionPeriod(signingTransactionPeriod)
 	if startHeight < 1 {
 		startHeight = 1
 	}
@@ -3690,7 +3866,7 @@ func (qs queryServer) queryPendingOutbound(ctx cosmos.Context, _ *types.QueryPen
 			return nil, fmt.Errorf("fail to get tx out array from key value store: %w", err)
 		}
 		for _, tx := range txs.TxArray {
-			if tx.OutHash.IsEmpty() {
+			if tx.OutHash.IsEmpty() && height >= ctx.BlockHeight()-tx.SigningTransactionPeriod(signingTransactionPeriod) {
 				result = append(result, castTxOutItem(tx, height))
 			}
 		}
@@ -3889,21 +4065,21 @@ func (qs queryServer) queryInvariant(ctx cosmos.Context, req *types.QueryInvaria
 }
 
 func (qs queryServer) queryBlock(ctx cosmos.Context, req *types.QueryBlockRequest) (*types.QueryBlockResponse, error) {
-	initTendermintOnce.Do(initTendermint)
-	if tendermintClientErr != nil {
-		return nil, tendermintClientErr
+	tmClient, err := getTendermintClient()
+	if err != nil {
+		return nil, err
 	}
 	height := ctx.BlockHeight()
-	if parsed, err := strconv.ParseInt(req.Height, 10, 64); err == nil {
+	if parsed, parseErr := strconv.ParseInt(req.Height, 10, 64); parseErr == nil {
 		height = parsed
 	}
 
 	// get the block and results from tendermint rpc
-	block, err := tendermintClient.Block(ctx.Context(), &height)
+	block, err := tmClient.Block(ctx.Context(), &height)
 	if err != nil {
 		return nil, fmt.Errorf("fail to get block from tendermint rpc: %w", err)
 	}
-	results, err := tendermintClient.BlockResults(ctx.Context(), &height)
+	results, err := tmClient.BlockResults(ctx.Context(), &height)
 	if err != nil {
 		return nil, fmt.Errorf("fail to get block results from tendermint rpc: %w", err)
 	}
@@ -4112,8 +4288,9 @@ func eventMap(e sdk.Event) map[string]string {
 }
 
 func simulate(ctx cosmos.Context, mgr Manager, msg sdk.Msg) (sdk.Events, error) {
-	// use the first active node account as the signer
-	nodeAccounts, err := mgr.Keeper().ListActiveValidators(ctx)
+	// use the first active node account as the signer (same store access as
+	// ListActiveValidators, without unmarshalling the other active nodes)
+	nodeAccounts, err := mgr.Keeper().ListActiveValidatorsUpTo(ctx, 1)
 	if err != nil {
 		return nil, fmt.Errorf("no active node accounts: %w", err)
 	}
@@ -4142,6 +4319,9 @@ func simulate(ctx cosmos.Context, mgr Manager, msg sdk.Msg) (sdk.Events, error) 
 	cms := ctx.MultiStore().CacheMultiStore() // never call cms.Write()
 	em := cosmos.NewEventManager()
 	ctx = ctx.WithMultiStore(cms).WithEventManager(em)
+	// cms is discarded, so its txout writes need not disable the caller's
+	// txout cache (if any) for the caller's later simulations
+	ctx = keeper.ForkTxOutCache(ctx)
 
 	// disable logging
 	ctx = ctx.WithLogger(nullLogger)

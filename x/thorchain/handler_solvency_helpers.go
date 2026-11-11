@@ -1,8 +1,11 @@
 package thorchain
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -15,6 +18,62 @@ import (
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
 	thortypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
+
+var errSolvencyVoterQuotaExceeded = errors.New("solvency voter creation limit reached; retry in a later THORChain window")
+
+type solvencyVoterQuota struct {
+	chain  common.Chain
+	signer cosmos.AccAddress
+	window uint64
+	used   uint64
+}
+
+// checkSolvencyVoterQuota is called only for a new voter, with authenticated
+// active signers. It selects one available allowance without writing state.
+// The caller commits the charge only after processing succeeds, in the same
+// transaction cache as the voter. An exhausted signer cannot block other
+// verified signers from funding creation of a shared quorum payload.
+//
+// TODO: Add bounded retention for solvency voters, including replay protection
+// and expiry rules for pending voters. This quota only limits creation rate;
+// honest fragmentation and sustained spam still accumulate records.
+func checkSolvencyVoterQuota(ctx cosmos.Context, k keeper.Keeper, chain common.Chain, signers []cosmos.AccAddress) (*solvencyVoterQuota, error) {
+	windowBlocks, limit := chain.SolvencyVoterQuota()
+	if windowBlocks <= 0 || limit == 0 {
+		return nil, nil
+	}
+	height := ctx.BlockHeight()
+	if height <= 0 {
+		return nil, fmt.Errorf("invalid THORChain height for solvency admission: %d", height)
+	}
+	window := uint64(height / windowBlocks)
+
+	// Never depend on local arrival order or map iteration for consensus state.
+	ordered := append([]cosmos.AccAddress(nil), signers...)
+	sort.Slice(ordered, func(i, j int) bool { return bytes.Compare(ordered[i], ordered[j]) < 0 })
+	for _, signer := range ordered {
+		previousWindow, used, err := k.GetSolvencyVoterQuota(ctx, chain, signer)
+		if err != nil {
+			return nil, fmt.Errorf("read solvency voter quota: %w", err)
+		}
+		if previousWindow > window {
+			return nil, fmt.Errorf("solvency voter quota is ahead of current window")
+		}
+		if previousWindow != window {
+			used = 0
+		}
+		if used < limit {
+			return &solvencyVoterQuota{chain: chain, signer: signer, window: window, used: used + 1}, nil
+		}
+	}
+	return nil, errSolvencyVoterQuotaExceeded
+}
+
+func (q *solvencyVoterQuota) commit(ctx cosmos.Context, k keeper.Keeper) {
+	if q != nil {
+		k.SetSolvencyVoterQuota(ctx, q.chain, q.signer, q.window, q.used)
+	}
+}
 
 func processSolvencyAttestation(
 	ctx cosmos.Context,
@@ -38,6 +97,11 @@ func processSolvencyAttestation(
 
 	slasher := mgr.Slasher()
 
+	// The exact-duplicate penalty below remains enabled even when ordinary
+	// solvency observation slash accounting is disabled: replaying an identical
+	// observation is independent of balance fragmentation.
+	slashObservations := voter.Chain.SupportsSolvencyObservationSlashing()
+
 	if !voter.Sign(attester) {
 		// Slash for the network having to handle the extra message/s.
 		if shouldSlashForDuplicate {
@@ -49,14 +113,16 @@ func processSolvencyAttestation(
 
 	if !voter.HasConsensus(active) {
 		// Before consensus, slash until consensus.
-		slasher.IncSlashPoints(slashCtx, observeSlashPoints, attester)
+		if slashObservations {
+			slasher.IncSlashPoints(slashCtx, observeSlashPoints, attester)
+		}
 		return nil
 	}
 
 	// from this point , solvency reach consensus
 	if voter.ConsensusBlockHeight > 0 {
 		// After consensus, only decrement slash points if within the ObservationDelayFlexibility period.
-		if (voter.ConsensusBlockHeight + observeFlex) >= ctx.BlockHeight() {
+		if slashObservations && (voter.ConsensusBlockHeight+observeFlex) >= ctx.BlockHeight() {
 			slasher.DecSlashPoints(slashCtx, lackOfObservationPenalty, attester)
 		}
 		// solvency tx already processed
@@ -83,11 +149,15 @@ func processSolvencyAttestation(
 
 	// This signer brings the voter to consensus; increment the signer's slash points like the before-consensus signers,
 	// then decrement all the signers' slash points and increment the non-signers' slash points.
-	slasher.IncSlashPoints(slashCtx, observeSlashPoints, attester)
-	signers := voter.GetSigners()
-	nonSigners := getNonSigners(active, signers)
-	slasher.DecSlashPoints(slashCtx, observeSlashPoints, signers...)
-	slasher.IncSlashPoints(slashCtx, lackOfObservationPenalty, nonSigners...)
+	if slashObservations {
+		slasher.IncSlashPoints(slashCtx, observeSlashPoints, attester)
+		signers := voter.GetSigners()
+		nonSigners := getNonSigners(active, signers)
+		slasher.DecSlashPoints(slashCtx, observeSlashPoints, signers...)
+		slasher.IncSlashPoints(slashCtx, lackOfObservationPenalty, nonSigners...)
+		// Fragmented balances must not count as missed observations for churn-out either.
+		queueObservationTally(ctx, k, observationTallyKindSolvency, voter.Chain, voter.Id.String())
+	}
 
 	// Do checks for whether to act on this consensus or not.
 	const StopSolvencyCheckKey = `StopSolvencyCheck`
@@ -119,6 +189,34 @@ func processSolvencyAttestation(
 		ctx.Logger().Error("fail to get last chain height", "chain", voter.Chain, "error", err)
 	}
 	// According to the validate msg.Id check, the Height is consistent for all the voter's messages.
+	if !slashObservations {
+		// Balance reads on chains without ordinary observation slashing may
+		// not be pinned to the canonical report height.
+		// These #3098 metrics mitigate the operational risk by exposing stale
+		// consensus discards; they do not change the existing discard decision.
+		heightResult := "not_stale"
+		if err != nil {
+			heightResult = "unavailable"
+		} else {
+			heightDelta := lastChainHeight - s.Height
+			telemetry.SetGaugeWithLabels(
+				[]string{"thornode", "solvency", "last_chain_height_delta"},
+				float32(heightDelta),
+				[]metrics.Label{telemetry.NewLabel("chain", telemChain(voter.Chain))},
+			)
+		}
+		if s.Height < lastChainHeight {
+			heightResult = "stale"
+		}
+		telemetry.IncrCounterWithLabels(
+			[]string{"thornode", "solvency", "height_check_total"},
+			float32(1),
+			[]metrics.Label{
+				telemetry.NewLabel("chain", telemChain(voter.Chain)),
+				telemetry.NewLabel("result", heightResult),
+			},
+		)
+	}
 	if s.Height < lastChainHeight {
 		// A chain whose solvency scanner persistently lags observation hits this
 		// branch every cycle, which means its insolvency detection is entirely

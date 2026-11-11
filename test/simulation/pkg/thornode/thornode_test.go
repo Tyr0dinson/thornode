@@ -2,6 +2,7 @@ package thornode
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -307,29 +308,65 @@ func TestGetInboundAddressDistinguishesAbsenceFromFailedLookup(t *testing.T) {
 	}
 }
 
-func TestGetTxSpentRefsUsesConsensusObservationEndpoint(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/thorchain/tx/outbound" {
-			t.Errorf("wrong observation endpoint: %s", r.URL.Path)
-			http.NotFound(w, r)
-			return
-		}
-		_, _ = w.Write([]byte(`{"observed_tx":{"tx":{"id":"outbound","chain":"XMR"},"observed_pub_key":"frost-vault","status":"done","spent_output_refs":[{"tx_hash":"source","output_index":0,"key_image":"image","spend_tx_hash":"outbound"}]}}`))
-	}))
-	defer server.Close()
-	originalURL, originalClient := thornodeURL, httpClient
-	defer func() { thornodeURL, httpClient = originalURL, originalClient }()
-	thornodeURL, httpClient = server.URL, server.Client()
-	got, err := GetTxSpentRefs("outbound")
-	if err != nil {
-		t.Fatal(err)
-	}
-	tx := got.ObservedTx
-	if tx.Tx.GetId() != "outbound" || tx.Tx.GetChain() != "XMR" || tx.ObservedPubKey != "frost-vault" || tx.Status != "done" || len(tx.SpentOutputRefs) != 1 {
-		t.Fatalf("incomplete observation: %+v", tx)
-	}
-	ref := tx.SpentOutputRefs[0]
-	if ref.TxHash != "source" || ref.OutputIndex != 0 || ref.KeyImage != "image" || ref.SpendTxHash != "outbound" {
-		t.Fatalf("lost reference identity: %+v", ref)
+func TestGetTxSpentRefsUsesStoredOutboundVoter(t *testing.T) {
+	for _, tc := range []struct {
+		name, status, individualStatus string
+		consensusHeight                int64
+		reverted, missingStored        bool
+	}{
+		{name: "processed before final observation", status: "done", consensusHeight: 718},
+		{name: "late final observation", consensusHeight: 718},
+		{name: "unprocessed stored voter", individualStatus: "done"},
+		{name: "reverted stored voter", status: "reverted", individualStatus: "done", consensusHeight: 718, reverted: true},
+		{name: "missing stored voter", missingStored: true, individualStatus: "done"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != "/thorchain/tx/details/outbound" || r.URL.Query().Get("outbound") != "true" {
+					t.Errorf("wrong outbound voter endpoint: %s", r.URL.RequestURI())
+					http.NotFound(w, r)
+					return
+				}
+				// The endpoint omits status for incomplete observations.
+				storedStatus, individualStatus := "", ""
+				if tc.status != "" {
+					storedStatus = fmt.Sprintf(`,"status":%q`, tc.status)
+				}
+				if tc.individualStatus != "" {
+					individualStatus = fmt.Sprintf(`,"status":%q`, tc.individualStatus)
+				}
+				stored := fmt.Sprintf(`{"tx":{"id":"outbound","chain":"XMR"},"observed_pub_key":"frost-vault"%s,"spent_output_refs":[{"tx_hash":"source","output_index":0,"key_image":"image","spend_tx_hash":"outbound"}]}`, storedStatus)
+				if tc.missingStored {
+					stored = "null"
+				}
+				// Individual votes are not the stored processing outcome.
+				_, _ = fmt.Fprintf(w, `{"tx":%s,"consensus_height":%d,"reverted":%t,"txs":[{"tx":{"id":"outbound","chain":"XMR"}%s}]}`, stored, tc.consensusHeight, tc.reverted, individualStatus)
+			}))
+			defer server.Close()
+			originalURL, originalClient := thornodeURL, httpClient
+			defer func() { thornodeURL, httpClient = originalURL, originalClient }()
+			thornodeURL, httpClient = server.URL, server.Client()
+			got, err := GetTxSpentRefs("outbound")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got.ConsensusHeight != tc.consensusHeight || got.Reverted != tc.reverted {
+				t.Fatalf("lost stored consensus/reversion metadata: %+v", got)
+			}
+			tx := got.ObservedTx
+			if tc.missingStored {
+				if tx.Tx.GetId() != "" || tx.Status != "" || len(tx.SpentOutputRefs) != 0 {
+					t.Fatalf("individual vote supplied missing stored evidence: %+v", tx)
+				}
+				return
+			}
+			if tx.Tx.GetId() != "outbound" || tx.Tx.GetChain() != "XMR" || tx.ObservedPubKey != "frost-vault" || tx.Status != tc.status || len(tx.SpentOutputRefs) != 1 {
+				t.Fatalf("incomplete stored observation: %+v", tx)
+			}
+			ref := tx.SpentOutputRefs[0]
+			if ref.TxHash != "source" || ref.OutputIndex != 0 || ref.KeyImage != "image" || ref.SpendTxHash != "outbound" {
+				t.Fatalf("lost reference identity: %+v", ref)
+			}
+		})
 	}
 }

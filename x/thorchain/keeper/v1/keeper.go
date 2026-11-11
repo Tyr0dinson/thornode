@@ -1,14 +1,16 @@
 package keeperv1
 
 import (
+	"bytes"
 	"fmt"
+	"strconv"
 	"strings"
+	"unicode/utf8"
 
-	storetypes "cosmossdk.io/core/store"
+	storetypes "cosmossdk.io/store/types"
 	upgradekeeper "cosmossdk.io/x/upgrade/keeper"
 	"github.com/blang/semver"
 	"github.com/cosmos/cosmos-sdk/codec"
-	"github.com/cosmos/cosmos-sdk/runtime"
 	"github.com/cosmos/cosmos-sdk/telemetry"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	authkeeper "github.com/cosmos/cosmos-sdk/x/auth/keeper"
@@ -36,6 +38,7 @@ const (
 	prefixRefundCleanupExpiry       types.DbPrefix = "refund_cleanup_expiry/"
 	prefixPool                      types.DbPrefix = "pool/"
 	prefixPoolLUVI                  types.DbPrefix = "luvi/"
+	prefixPoolLuviAccumulator       types.DbPrefix = "pool_luvi/"
 	prefixTxOut                     types.DbPrefix = "txout/"
 	prefixTotalLiquidityFee         types.DbPrefix = "total_liquidity_fee/"
 	prefixPoolLiquidityFee          types.DbPrefix = "pool_liquidity_fee/"
@@ -48,6 +51,13 @@ const (
 	prefixLastObserveHeight         types.DbPrefix = "last_observe_height/"
 	prefixLastKeygenChain           types.DbPrefix = "last_keygen_chain/"
 	prefixLastKeygenReport          types.DbPrefix = "last_keygen_report/"
+	prefixChainSetStall             types.DbPrefix = "chain_set_stall/"
+	prefixObservationTallyDue       types.DbPrefix = "observation_tally_due/"
+	prefixObservationTotal          types.DbPrefix = "observation_tally_total/"
+	prefixObservationMissed         types.DbPrefix = "observation_tally_missed/"
+	prefixObservationBase           types.DbPrefix = "observation_tally_base/"
+	prefixObservationGuard          types.DbPrefix = "observation_tally_guard/"
+	prefixObservationGuardFull      types.DbPrefix = "observation_tally_guard_full/"
 	prefixNodeAccount               types.DbPrefix = "node_account/"
 	prefixBondProviders             types.DbPrefix = "bond_providers/"
 	prefixVault                     types.DbPrefix = "vault/"
@@ -81,6 +91,7 @@ const (
 	prefixBanVoter                  types.DbPrefix = "ban/"
 	prefixNodeSlashPoints           types.DbPrefix = "slash/"
 	prefixNodeJail                  types.DbPrefix = "jail/"
+	prefixNodeBlameRecord           types.DbPrefix = "node_blame/"
 	prefixSwapQueueItem             types.DbPrefix = "swapitem/"
 	prefixAdvSwapQueueItem          types.DbPrefix = "aq/"
 	prefixAdvSwapQueueLimitIndex    types.DbPrefix = "aqlim/"
@@ -99,6 +110,7 @@ const (
 	prefixTssKeysignMetricLatest    types.DbPrefix = "latest_tss_keysign_metric/"
 	prefixChainContract             types.DbPrefix = "chain_contract/"
 	prefixSolvencyVoter             types.DbPrefix = "solvency_voter/"
+	prefixSolvencyVoterQuota        types.DbPrefix = "solvency_voter_quota/"
 	prefixTHORName                  types.DbPrefix = "thorname/"
 	prefixAffiliateCollector        types.DbPrefix = "affcol_name/"
 	prefixAffiliateLiquidityFee     types.DbPrefix = "affiliate_liquidity_fee/"
@@ -133,18 +145,18 @@ type KVStore struct {
 	coinKeeper    bankkeeper.Keeper
 	accountKeeper authkeeper.AccountKeeper
 	upgradeKeeper *upgradekeeper.Keeper
-	storeService  storetypes.KVStoreService
+	storeKey      *storetypes.KVStoreKey
 	version       semver.Version
 	constAccessor constants.ConstantValues
 }
 
 // NewKVStore creates new instances of the thorchain Keeper
-func NewKVStore(cdc codec.BinaryCodec, storeService storetypes.KVStoreService, coinKeeper bankkeeper.Keeper, accountKeeper authkeeper.AccountKeeper, upgradeKeeper *upgradekeeper.Keeper, version semver.Version) KVStore {
+func NewKVStore(cdc codec.BinaryCodec, storeKey *storetypes.KVStoreKey, coinKeeper bankkeeper.Keeper, accountKeeper authkeeper.AccountKeeper, upgradeKeeper *upgradekeeper.Keeper, version semver.Version) KVStore {
 	return KVStore{
 		coinKeeper:    coinKeeper,
 		accountKeeper: accountKeeper,
 		upgradeKeeper: upgradeKeeper,
-		storeService:  storeService,
+		storeKey:      storeKey,
 		cdc:           cdc,
 		version:       version,
 		constAccessor: constants.GetConstantValues(version),
@@ -152,9 +164,17 @@ func NewKVStore(cdc codec.BinaryCodec, storeService storetypes.KVStoreService, c
 }
 
 // NewKeeper creates new instances of the thorchain Keeper
-func NewKeeper(cdc codec.BinaryCodec, storeService storetypes.KVStoreService, coinKeeper bankkeeper.Keeper, accountKeeper authkeeper.AccountKeeper, upgradeKeeper *upgradekeeper.Keeper) keeper.Keeper {
+func NewKeeper(cdc codec.BinaryCodec, storeKey *storetypes.KVStoreKey, coinKeeper bankkeeper.Keeper, accountKeeper authkeeper.AccountKeeper, upgradeKeeper *upgradekeeper.Keeper) keeper.Keeper {
 	version := semver.MustParse("0.0.0")
-	return NewKVStore(cdc, storeService, coinKeeper, accountKeeper, upgradeKeeper, version)
+	return NewKVStore(cdc, storeKey, coinKeeper, accountKeeper, upgradeKeeper, version)
+}
+
+// kvStore returns the thorchain module store for ctx. It is the same gas-metered
+// store that runtime.KVStoreAdapter(storeService.OpenKVStore(ctx)) returns, opened
+// directly from the sdk.Context so the context is not boxed into a
+// context.Context (a heap copy of the whole struct) on every store access.
+func (k KVStore) kvStore(ctx cosmos.Context) storetypes.KVStore {
+	return ctx.KVStore(k.storeKey)
 }
 
 // Cdc return the amino codec
@@ -173,20 +193,59 @@ func (k *KVStore) SetVersion(ver semver.Version) {
 
 // GetKey return a key that can be used to store into key value store
 func (k KVStore) GetKey(prefix types.DbPrefix, key string, other ...string) []byte {
-	newKey := fmt.Sprintf("%s/%s", prefix, strings.ToUpper(key))
+	// prefix + "/" + upper(key) + upper(other...), built in one buffer: this runs
+	// for every keeper read and write
+	size := len(prefix) + 1 + len(key)
+	for _, item := range other {
+		size += len(item)
+	}
+	newKey := make([]byte, 0, size)
+	newKey = append(newKey, prefix...)
+	newKey = append(newKey, '/')
+	newKey = appendUpper(newKey, key)
 
 	// TODO: should this handle the slashes automatically?
 	// ref: x/thorchain/keeper/v1/keeper_last_height.go#GetLastObserveHeight
 	for _, item := range other {
-		newKey += strings.ToUpper(item)
+		newKey = appendUpper(newKey, item)
 	}
 
-	return []byte(newKey)
+	return newKey
+}
+
+// appendUpper appends strings.ToUpper(s) to dst. An ASCII s, as store keys
+// are, is upper-cased byte by byte straight into dst instead of through an
+// intermediate string; anything else goes through strings.ToUpper.
+func appendUpper(dst []byte, s string) []byte {
+	for i := 0; i < len(s); i++ {
+		if s[i] >= utf8.RuneSelf {
+			return append(dst, strings.ToUpper(s)...)
+		}
+	}
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if 'a' <= c && c <= 'z' {
+			c -= 'a' - 'A'
+		}
+		dst = append(dst, c)
+	}
+	return dst
+}
+
+// getKeyInt64 returns GetKey(prefix, strconv.FormatInt(n, 10)) without the
+// intermediate digit string: digits and '-' have no upper case.
+func (k KVStore) getKeyInt64(prefix types.DbPrefix, n int64) []byte {
+	var digits [20]byte // len("-9223372036854775808")
+	d := strconv.AppendInt(digits[:0], n, 10)
+	newKey := make([]byte, 0, len(prefix)+1+len(d))
+	newKey = append(newKey, prefix...)
+	newKey = append(newKey, '/')
+	return append(newKey, d...)
 }
 
 // getIterator - get an iterator for given prefix
 func (k KVStore) getIterator(ctx cosmos.Context, prefix types.DbPrefix) cosmos.Iterator {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	return cosmos.KVStorePrefixIterator(store, []byte(prefix))
 }
 
@@ -196,7 +255,14 @@ func (k KVStore) DeleteKey(ctx cosmos.Context, key []byte) {
 
 // del - delete data from the kvstore
 func (k KVStore) del(ctx cosmos.Context, key []byte) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	if bytes.HasPrefix(key, []byte(prefixNodeAccount)) {
+		keeper.ActiveValidatorsCacheFromContext(ctx).Disable()
+	}
+	if bytes.HasPrefix(key, []byte(prefixTxOut)) {
+		keeper.TxOutCacheFromContext(ctx).Disable()
+		noteTxOutWindowWrite(ctx, key)
+	}
+	store := k.kvStore(ctx)
 	if store.Has(key) {
 		store.Delete(key)
 	}
@@ -204,12 +270,12 @@ func (k KVStore) del(ctx cosmos.Context, key []byte) {
 
 // has - kvstore has key
 func (k KVStore) has(ctx cosmos.Context, key []byte) bool {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	return store.Has(key)
 }
 
 func (k KVStore) setInt64(ctx cosmos.Context, key []byte, record int64) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	value := ProtoInt64{Value: record}
 	buf := k.cdc.MustMarshal(&value)
 	if buf == nil {
@@ -220,22 +286,26 @@ func (k KVStore) setInt64(ctx cosmos.Context, key []byte, record int64) {
 }
 
 func (k KVStore) getInt64(ctx cosmos.Context, key []byte, record *int64) (bool, error) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	if !store.Has(key) {
 		return false, nil
 	}
 
+	// The getters decode a zero wrapper with its own Unmarshal, which is what
+	// k.cdc.Unmarshal does after resetting it (the wrappers hold no Any), and
+	// name record's type as %T would: through the codec interface the wrapper,
+	// and through fmt every caller's record, would move to the heap.
 	value := ProtoInt64{}
 	bz := store.Get(key)
-	if err := k.cdc.Unmarshal(bz, &value); err != nil {
-		return true, dbError(ctx, fmt.Sprintf("Unmarshal kvstore: (%T) %s", record, key), err)
+	if err := value.Unmarshal(bz); err != nil {
+		return true, dbError(ctx, fmt.Sprintf("Unmarshal kvstore: (*int64) %s", key), err)
 	}
 	*record = value.GetValue()
 	return true, nil
 }
 
 func (k KVStore) setUint64(ctx cosmos.Context, key []byte, record uint64) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	value := ProtoUint64{Value: record}
 	buf := k.cdc.MustMarshal(&value)
 	if buf == nil {
@@ -246,22 +316,22 @@ func (k KVStore) setUint64(ctx cosmos.Context, key []byte, record uint64) {
 }
 
 func (k KVStore) getUint64(ctx cosmos.Context, key []byte, record *uint64) (bool, error) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	if !store.Has(key) {
 		return false, nil
 	}
 
-	value := ProtoUint64{Value: *record}
+	var value ProtoUint64
 	bz := store.Get(key)
-	if err := k.cdc.Unmarshal(bz, &value); err != nil {
-		return true, dbError(ctx, fmt.Sprintf("Unmarshal kvstore: (%T) %s", record, key), err)
+	if err := value.Unmarshal(bz); err != nil {
+		return true, dbError(ctx, fmt.Sprintf("Unmarshal kvstore: (*uint64) %s", key), err)
 	}
 	*record = value.GetValue()
 	return true, nil
 }
 
 func (k KVStore) setAccAddresses(ctx cosmos.Context, key []byte, record []cosmos.AccAddress) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	value := ProtoAccAddresses{Value: record}
 	buf := k.cdc.MustMarshal(&value)
 	if buf == nil {
@@ -272,22 +342,22 @@ func (k KVStore) setAccAddresses(ctx cosmos.Context, key []byte, record []cosmos
 }
 
 func (k KVStore) getAccAddresses(ctx cosmos.Context, key []byte, record *[]cosmos.AccAddress) (bool, error) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	if !store.Has(key) {
 		return false, nil
 	}
 
 	var value ProtoAccAddresses
 	bz := store.Get(key)
-	if err := k.cdc.Unmarshal(bz, &value); err != nil {
-		return true, dbError(ctx, fmt.Sprintf("Unmarshal kvstore: (%T) %s", record, key), err)
+	if err := value.Unmarshal(bz); err != nil {
+		return true, dbError(ctx, fmt.Sprintf("Unmarshal kvstore: (*[]types.AccAddress) %s", key), err)
 	}
 	*record = value.Value
 	return true, nil
 }
 
 func (k KVStore) setString(ctx cosmos.Context, key, record string) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	value := ProtoString{Value: record}
 	buf := k.cdc.MustMarshal(&value)
 	if buf == nil {
@@ -298,22 +368,22 @@ func (k KVStore) setString(ctx cosmos.Context, key, record string) {
 }
 
 func (k KVStore) getString(ctx cosmos.Context, key string, record *string) (bool, error) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	if !store.Has([]byte(key)) {
 		return false, nil
 	}
 
 	var value ProtoString
 	bz := store.Get([]byte(key))
-	if err := k.cdc.Unmarshal(bz, &value); err != nil {
-		return true, dbError(ctx, fmt.Sprintf("Unmarshal kvstore: (%T) %s", record, key), err)
+	if err := value.Unmarshal(bz); err != nil {
+		return true, dbError(ctx, fmt.Sprintf("Unmarshal kvstore: (*string) %s", key), err)
 	}
 	*record = value.Value
 	return true, nil
 }
 
 func (k KVStore) setStrings(ctx cosmos.Context, key []byte, record []string) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	if len(record) == 0 {
 		store.Delete(key)
 		return
@@ -324,22 +394,22 @@ func (k KVStore) setStrings(ctx cosmos.Context, key []byte, record []string) {
 }
 
 func (k KVStore) getStrings(ctx cosmos.Context, key []byte, record *[]string) (bool, error) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	if !store.Has(key) {
 		return false, nil
 	}
 
 	var value ProtoStrings
 	bz := store.Get(key)
-	if err := k.cdc.Unmarshal(bz, &value); err != nil {
-		return true, dbError(ctx, fmt.Sprintf("Unmarshal kvstore: (%T) %s", record, key), err)
+	if err := value.Unmarshal(bz); err != nil {
+		return true, dbError(ctx, fmt.Sprintf("Unmarshal kvstore: (*[]string) %s", key), err)
 	}
 	*record = value.Value
 	return true, nil
 }
 
 func (k KVStore) setUint(ctx cosmos.Context, key []byte, record cosmos.Uint) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	value := ProtoUint{Value: record}
 	buf := k.cdc.MustMarshal(&value)
 	if buf == nil {
@@ -350,15 +420,15 @@ func (k KVStore) setUint(ctx cosmos.Context, key []byte, record cosmos.Uint) {
 }
 
 func (k KVStore) getUint(ctx cosmos.Context, key []byte, record *cosmos.Uint) (bool, error) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	if !store.Has(key) {
 		return false, nil
 	}
 
 	var value ProtoUint
 	bz := store.Get(key)
-	if err := k.cdc.Unmarshal(bz, &value); err != nil {
-		return false, dbError(ctx, fmt.Sprintf("Unmarshal kvstore: (%T) %s", record, key), err)
+	if err := value.Unmarshal(bz); err != nil {
+		return false, dbError(ctx, fmt.Sprintf("Unmarshal kvstore: (*math.Uint) %s", key), err)
 	}
 	*record = value.Value
 	return true, nil
@@ -407,6 +477,9 @@ func (k KVStore) SendFromModuleToAccount(ctx cosmos.Context, from string, to cos
 }
 
 func (k KVStore) BurnFromModule(ctx cosmos.Context, module string, coin common.Coin) error {
+	if coin.Asset.IsSyntheticAsset() {
+		keeper.RecordLuviTouch(ctx, coin.Asset, k.luviCapture(ctx))
+	}
 	coinToBurn, err := coin.Native()
 	if err != nil {
 		return fmt.Errorf("fail to parse coins: %w", err)
@@ -425,6 +498,7 @@ func (k KVStore) BurnFromModule(ctx cosmos.Context, module string, coin common.C
 // write off settled ThorFi-era synth residuals. For each holder it sends the
 // balance to the thorchain module and burns it.
 func (k KVStore) BurnEntireSynthSupply(ctx cosmos.Context, synthAsset common.Asset) (cosmos.Uint, error) {
+	keeper.RecordLuviTouch(ctx, synthAsset, k.luviCapture(ctx))
 	denom := synthAsset.Native()
 	type holderBalance struct {
 		addr cosmos.AccAddress
@@ -452,6 +526,9 @@ func (k KVStore) BurnEntireSynthSupply(ctx cosmos.Context, synthAsset common.Ass
 }
 
 func (k KVStore) MintToModule(ctx cosmos.Context, module string, coin common.Coin) error {
+	if coin.Asset.IsSyntheticAsset() {
+		keeper.RecordLuviTouch(ctx, coin.Asset, k.luviCapture(ctx))
+	}
 	// circuit breaker
 	// mint new rune coins until we hit the cap. Once we do, borrow
 	// from the reserve instead of minting new tokens

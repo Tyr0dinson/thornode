@@ -244,6 +244,31 @@ func isRetryableScannerStateError(err error) bool {
 }
 
 func (s *Scanner) FetchTxs(fetchHeight, chainHeight int64) (stypes.TxIn, error) {
+	txIn, err := s.fetchTxs(fetchHeight, chainHeight)
+	if errors.Is(err, sidecar.ErrUnavailableBlock) {
+		return txIn, btypes.ErrUnavailableBlock
+	}
+	if errors.Is(err, btypes.ErrUnavailableBlock) {
+		return txIn, err
+	}
+	// All block reads, including prefetch, reorg and catch-up reads, leave through
+	// this boundary. A structural height mismatch must never become a generic
+	// stall error that BlockScanner can use to skip the durable cursor forward.
+	if _, ok := errors.AsType[*sidecar.ChainBlockHeightMismatchError](err); !ok {
+		return txIn, err
+	}
+	nextHeight := fetchHeight
+	if state, known := s.sidecar.CachedScannerState(); known && state.NextHeight != nil {
+		nextHeight = int64(*state.NextHeight)
+	}
+	return txIn, &btypes.ScannerRecoveryRequiredError{
+		CurrentHeight: fetchHeight,
+		NextHeight:    nextHeight,
+		Reason:        err.Error(),
+	}
+}
+
+func (s *Scanner) fetchTxs(fetchHeight, chainHeight int64) (stypes.TxIn, error) {
 	txIn := stypes.TxIn{Chain: common.XMRChain}
 	if s.sidecar == nil {
 		return txIn, fmt.Errorf("monero scanner requires sidecar for chain queries")
@@ -402,6 +427,10 @@ func (s *Scanner) ReportSolvency(height, _ int64) error {
 // pending; a scanner which passed its block will not mark it mined again.
 // This path repairs accounting only, preserving the signer's evidence origin.
 func (s *Scanner) ReconcileCommittedOutbound(tx common.ObservedTx) error {
+	return s.reconcileCommittedOutboundGuarded(tx, nil)
+}
+
+func (s *Scanner) reconcileCommittedOutboundGuarded(tx common.ObservedTx, guard func() (func(), bool)) error {
 	if s.sidecar == nil || s.reorgStore == nil {
 		return errors.New("committed xmr payout reconciliation is unavailable")
 	}
@@ -410,6 +439,13 @@ func (s *Scanner) ReconcileCommittedOutbound(tx common.ObservedTx) error {
 	}
 	s.scanMu.Lock()
 	defer s.scanMu.Unlock()
+	if guard != nil {
+		release, admitted := guard()
+		if !admitted || release == nil {
+			return errXMRSpentRefsAdmissionRejected
+		}
+		defer release()
+	}
 	location, err := s.sidecar.CanonicalTxLocation(tx.Tx.ID.String())
 	if err != nil {
 		return err
@@ -450,6 +486,13 @@ func (s *Scanner) ReconcileCommittedOutbound(tx common.ObservedTx) error {
 // owns retries after enrollment, including after restart without a certificate
 // retransmission. Committed-accounting imports never enter this path.
 func (s *Scanner) EnqueueAuthenticatedOutboundReplay(tx common.ObservedTx) (bool, error) {
+	return s.enqueueAuthenticatedOutboundReplayGuarded(tx, nil)
+}
+
+var errXMRSpentRefsAdmissionRejected = errors.New("xmr spent-ref replay admission rejected")
+
+// Replay takes scanMu before admission to match the reorg cleanup lock order.
+func (s *Scanner) enqueueAuthenticatedOutboundReplayGuarded(tx common.ObservedTx, guard func() (func(), bool)) (bool, error) {
 	parsed, err := memo.ParseMemo(common.LatestVersion, tx.Tx.Memo)
 	if err != nil || !parsed.IsOutbound() {
 		return false, nil
@@ -462,6 +505,13 @@ func (s *Scanner) EnqueueAuthenticatedOutboundReplay(tx common.ObservedTx) (bool
 	}
 	s.scanMu.Lock()
 	defer s.scanMu.Unlock()
+	if guard != nil {
+		release, ok := guard()
+		if !ok || release == nil {
+			return false, errXMRSpentRefsAdmissionRejected
+		}
+		defer release()
+	}
 	location, err := s.sidecar.CanonicalTxLocation(tx.Tx.ID.String())
 	if err != nil {
 		return false, err
@@ -527,6 +577,10 @@ func (s *Scanner) persistAuthenticatedPayoutReceipt(proof sidecar.Transfer, reco
 // deliberately not enrolled; their normal future scan sees the MarkSpent
 // metadata directly.
 func (s *Scanner) EnqueueAuthenticatedInternalInboundReplay(tx common.ObservedTx) (bool, error) {
+	return s.enqueueAuthenticatedInternalInboundReplayGuarded(tx, nil)
+}
+
+func (s *Scanner) enqueueAuthenticatedInternalInboundReplayGuarded(tx common.ObservedTx, guard func() (func(), bool)) (bool, error) {
 	if s.internalReplayStore == nil || s.reorgStore == nil || s.sidecar == nil || !isXMRTxMigrateMemo(tx.Tx.Memo) {
 		return false, nil
 	}
@@ -564,6 +618,19 @@ func (s *Scanner) EnqueueAuthenticatedInternalInboundReplay(tx common.ObservedTx
 	if s.CurrentHeight() < location.Height {
 		return false, fmt.Errorf("authenticated xmr migration replay %s scanner height moved behind %d", tx.Tx.ID, location.Height)
 	}
+	// Refresh may query THORChain and register vaults, which can rewind the
+	// sidecar scanner. Keep scanMu held, but acquire admission afterwards so
+	// errata cleanup can finish during this I/O and still reject the replay.
+	if refreshErr := s.refreshAsgardLookup(location.Height); refreshErr != nil {
+		return false, fmt.Errorf("refresh xmr vault lookup for authenticated replay: %w", refreshErr)
+	}
+	if guard != nil {
+		release, ok := guard()
+		if !ok || release == nil {
+			return false, errXMRSpentRefsAdmissionRejected
+		}
+		defer release()
+	}
 	reverted, err := s.reorgStore.IsRevertedTx(tx.Tx.ID.String())
 	if err != nil {
 		return false, fmt.Errorf("check reverted xmr migration replay %s: %w", tx.Tx.ID, err)
@@ -573,10 +640,6 @@ func (s *Scanner) EnqueueAuthenticatedInternalInboundReplay(tx common.ObservedTx
 			Msg("refusing to enqueue permanently reverted xmr migration replay")
 		return false, nil
 	}
-	if refreshErr := s.refreshAsgardLookup(location.Height); refreshErr != nil {
-		return false, fmt.Errorf("refresh xmr vault lookup for authenticated replay: %w", refreshErr)
-	}
-
 	sourceAddress, err := tx.ObservedPubKey.GetAddress(common.XMRChain)
 	if err != nil || sourceAddress.IsEmpty() || !common.AddressEquals(common.XMRChain, sourceAddress, tx.Tx.FromAddress) {
 		return false, fmt.Errorf("authenticated xmr migration replay %s has unauthenticated source vault", tx.Tx.ID)
@@ -1701,10 +1764,16 @@ func (s *Scanner) transfersToTxInItems(resp sidecar.Transfers, fetchHeight int64
 		}
 
 		memoText := strings.TrimSpace(transfer.Note)
+		// WARNING: This filter protects vault accounting and reorg safety.
 		// OUT, REFUND and RAGNAROK are reserved memos, not deposit instructions.
-		// This memo-only policy also rejects external transfers; it does not prove
-		// vault origin. Apply it before spend proof arrives so unrecognized change
-		// cannot be credited as a new deposit.
+		// This intentionally rejects external transfers using them. Missing outgoing
+		// and local signing metadata after restart/churn can make our own change look
+		// like an external inbound. Admitting it can double-count vault funds and
+		// journal the spend without vault-origin provenance. A later reorg can then
+		// bypass the vault-origin safety hold and emit errata while signed bytes may
+		// still be rebroadcast. Relaxing this filter requires coordinated provenance,
+		// accounting and reorg handling; neither a timeout nor a missing outgoing
+		// record proves that the transfer is external.
 		if parsed, err := memo.ParseMemo(common.LatestVersion, memoText); err == nil && parsed.IsOutbound() {
 			s.logger.Info().Str("txid", transfer.TxID).Str("memo", memoText).
 				Str("vault_pub_key", vaultPubKey.String()).Uint64("amount_piconero", transfer.Amount).
@@ -2218,6 +2287,11 @@ func (s *Scanner) discoverReorgReplacement(
 		}
 		canonical, err := s.sidecar.ChainBlock(height)
 		if err != nil {
+			if recoveryErr := reorgHeightMismatchRecoveryError(
+				err, previousHeight+1, height, "reorg check",
+			); recoveryErr != nil {
+				return sidecar.ChainBlock{}, nil, nil, recoveryErr
+			}
 			return sidecar.ChainBlock{}, nil, nil, fmt.Errorf(
 				"fail to fetch monero block %d during reorg check: %w", height, err,
 			)
@@ -2244,6 +2318,11 @@ func (s *Scanner) discoverReorgReplacement(
 	for height := anchor.Height + 1; height <= previousHeight; height++ {
 		canonical, err := s.sidecar.ChainBlock(height)
 		if err != nil {
+			if recoveryErr := reorgHeightMismatchRecoveryError(
+				err, previousHeight+1, anchor.Height+1, "reorg replay",
+			); recoveryErr != nil {
+				return sidecar.ChainBlock{}, nil, nil, recoveryErr
+			}
 			return sidecar.ChainBlock{}, nil, nil, fmt.Errorf(
 				"fail to fetch monero replacement block %d: %w", height, err,
 			)
@@ -2256,6 +2335,30 @@ func (s *Scanner) discoverReorgReplacement(
 		oldMetas[height] = meta
 	}
 	return anchor, replacements, oldMetas, nil
+}
+
+// reorgHeightMismatchRecoveryError maps the shared typed height mismatch to
+// terminal reorg recovery before any rewind or journal mutation.
+func reorgHeightMismatchRecoveryError(
+	err error,
+	currentHeight,
+	nextHeight int64,
+	phase string,
+) error {
+	var mismatch *sidecar.ChainBlockHeightMismatchError
+	if !errors.As(err, &mismatch) {
+		return nil
+	}
+	return &btypes.ScannerRecoveryRequiredError{
+		CurrentHeight: currentHeight,
+		NextHeight:    nextHeight,
+		Reason: fmt.Sprintf(
+			"monero %s requested height %d but the chain query returned height %d",
+			phase,
+			mismatch.RequestedHeight,
+			mismatch.ReturnedHeight,
+		),
+	}
 }
 
 func (s *Scanner) emitReorgErrata(
@@ -2612,8 +2715,7 @@ func (s *Scanner) refreshAsgardLookup(nextScanHeight int64) error {
 			vault.PubKeyFrost,
 			xmrVaultRegistrationBirthday(vault.VaultCreationHeightXmr, nextScanHeight),
 		); addErr != nil {
-			s.logger.Debug().Err(addErr).Str("vault_pubkey", vault.PubKey.String()).Msg("skip xmr vault during asgard lookup refresh")
-			continue
+			return fmt.Errorf("fail to refresh active xmr vault %s: %w", vault.PubKey.String(), addErr)
 		}
 	}
 
@@ -2630,14 +2732,13 @@ func (s *Scanner) refreshAsgardLookup(nextScanHeight int64) error {
 			s.logger.Debug().Err(vaultErr).Str("vault_pubkey", pair.PubKey.String()).Msg("skip xmr pubkey during asgard lookup refresh")
 			continue
 		}
-		if err := s.addFrostVaultToLookup(
+		if addErr := s.addFrostVaultToLookup(
 			lookup,
 			seenVaults,
 			vault.PubKeyFrost,
 			xmrVaultRegistrationBirthday(vault.VaultCreationHeightXmr, nextScanHeight),
-		); err != nil {
-			s.logger.Debug().Err(err).Str("vault_pubkey", vault.PubKey.String()).Msg("skip xmr vault during pubkey lookup refresh")
-			continue
+		); addErr != nil {
+			return fmt.Errorf("fail to refresh xmr vault %s from pubkey lookup: %w", vault.PubKey.String(), addErr)
 		}
 	}
 

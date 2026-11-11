@@ -166,10 +166,50 @@ func (Test) TestInit(c *C) {
 	// After Init, the global config should be populated from defaults
 	tn := GetThornode()
 	c.Assert(tn.Tendermint.Consensus.TimeoutCommit > 0, Equals, true)
+	c.Assert(tn.Telemetry.TraceManagers, Equals, false)
+	c.Assert(tn.Telemetry.TraceHandlers, Equals, false)
+	c.Assert(tn.Telemetry.TraceContracts, Equals, false)
+	c.Assert(tn.Telemetry.TracePayloads, Equals, false)
 
 	bf := GetBifrost()
 	c.Assert(bf.Metrics.Enabled, Equals, true)
 	c.Assert(bf.TSS.Rendezvous, Equals, "asgard")
+}
+
+func (Test) TestTelemetryEnvOverrides(c *C) {
+	envKeys := []string{
+		"THOR_TELEMETRY_TRACE_MANAGERS",
+		"THOR_TELEMETRY_TRACE_HANDLERS",
+		"THOR_TELEMETRY_TRACE_CONTRACTS",
+		"THOR_TELEMETRY_TRACE_PAYLOADS",
+	}
+	type envValue struct {
+		value string
+		set   bool
+	}
+	originals := make(map[string]envValue, len(envKeys))
+	for _, key := range envKeys {
+		value, set := os.LookupEnv(key)
+		originals[key] = envValue{value: value, set: set}
+		c.Assert(os.Setenv(key, "true"), IsNil)
+	}
+	defer func() {
+		for key, original := range originals {
+			if original.set {
+				_ = os.Setenv(key, original.value)
+			} else {
+				_ = os.Unsetenv(key)
+			}
+		}
+		Init()
+	}()
+
+	Init()
+	tn := GetThornode()
+	c.Assert(tn.Telemetry.TraceManagers, Equals, true)
+	c.Assert(tn.Telemetry.TraceHandlers, Equals, true)
+	c.Assert(tn.Telemetry.TraceContracts, Equals, true)
+	c.Assert(tn.Telemetry.TracePayloads, Equals, true)
 }
 
 func (Test) TestGetThornode(c *C) {
@@ -184,6 +224,90 @@ func (Test) TestGetBifrost(c *C) {
 	bf := GetBifrost()
 	chains := bf.GetChains()
 	c.Assert(len(chains) > 0, Equals, true)
+}
+
+func (Test) TestApproximateBlockMilliseconds(c *C) {
+	// unset: falls back to the chain constant
+	sc := BifrostBlockScannerConfiguration{ChainID: common.BASEChain}
+	c.Check(sc.ApproximateBlockMilliseconds(), Equals, common.BASEChain.ApproximateBlockMilliseconds())
+	c.Check(sc.ApproximateBlockMilliseconds(), Equals, int64(2_000))
+
+	// set: the override wins over the chain constant
+	sc.ApproximateBlockTime = 200 * time.Millisecond
+	c.Check(sc.ApproximateBlockMilliseconds(), Equals, int64(200))
+
+	// explicit zero, negative and sub-millisecond values are treated as unset, so
+	// callers that divide by the result never see 0
+	for _, d := range []time.Duration{0, -time.Second, 500 * time.Microsecond} {
+		sc.ApproximateBlockTime = d
+		c.Check(sc.ApproximateBlockMilliseconds(), Equals, int64(2_000), Commentf("override %s", d))
+	}
+
+	// chain-client helper: reads the block scanner override, falls back to its own
+	// ChainID (which is set even when BlockScanner.ChainID is not)
+	cc := BifrostChainConfiguration{ChainID: common.AVAXChain}
+	c.Check(cc.ApproximateBlockMilliseconds(), Equals, common.AVAXChain.ApproximateBlockMilliseconds())
+	cc.BlockScanner.ApproximateBlockTime = 200 * time.Millisecond
+	c.Check(cc.ApproximateBlockMilliseconds(), Equals, int64(200))
+	cc.BlockScanner.ApproximateBlockTime = 0
+	c.Check(cc.ApproximateBlockMilliseconds(), Equals, common.AVAXChain.ApproximateBlockMilliseconds())
+}
+
+func (Test) TestDefaultBaseApproximateBlockTime(c *C) {
+	Init()
+	bf := GetBifrost()
+
+	// Base Denim (2026-11-05): BASE blocks are ~200ms; the bifrost override carries
+	// it while the consensus-visible common constant stays at 2000.
+	base := bf.Chains.BASE
+	c.Check(base.BlockScanner.ApproximateBlockTime, Equals, 200*time.Millisecond)
+	c.Check(base.BlockScanner.ApproximateBlockMilliseconds(), Equals, int64(200))
+	c.Check(base.ApproximateBlockMilliseconds(), Equals, int64(200))
+	c.Check(base.SolvencyBlocks, Equals, int64(100)) // not scaled, see default.yaml
+	c.Check(base.BlockScanner.GasCacheBlocks, Equals, 400)
+	c.Check(base.BlockScanner.MaxReorgRescanBlocks, Equals, int64(720))
+	c.Check(base.BlockScanner.Concurrency, Equals, int64(8))
+	c.Check(base.BlockScanner.PrefetchBlocks, Equals, int64(8))
+	c.Check(base.BlockScanner.ObservationFlexibilityBlocks, Equals, int64(200))
+
+	// every other chain inherits 0s from the anchor and keeps its chain constant
+	for chain, cc := range bf.GetChains() {
+		if chain.Equals(common.BASEChain) {
+			continue
+		}
+		c.Check(cc.BlockScanner.ApproximateBlockTime, Equals, time.Duration(0), Commentf("chain %s", chain))
+	}
+}
+
+func (Test) TestApproximateBlockTimeEnvOverride(c *C) {
+	// The key is defined in default.yaml (on the anchor and for BASE), so operators
+	// can set or clear it per chain from the environment.
+	//
+	// Registered first so it runs last (LIFO): reload the defaults only after the
+	// env-restore defers below, so the package config is clean for later tests.
+	defer Init()
+
+	envs := map[string]string{
+		"BIFROST_CHAINS_BASE_BLOCK_SCANNER_APPROXIMATE_BLOCK_TIME": "0s",
+		"BIFROST_CHAINS_ETH_BLOCK_SCANNER_APPROXIMATE_BLOCK_TIME":  "12s",
+	}
+	for k, v := range envs {
+		original, set := os.LookupEnv(k)
+		c.Assert(os.Setenv(k, v), IsNil)
+		defer func(k, original string, set bool) {
+			if set {
+				_ = os.Setenv(k, original)
+			} else {
+				_ = os.Unsetenv(k)
+			}
+		}(k, original, set)
+	}
+
+	Init()
+	bf := GetBifrost()
+	c.Check(bf.Chains.BASE.BlockScanner.ApproximateBlockTime, Equals, time.Duration(0))
+	c.Check(bf.Chains.BASE.BlockScanner.ApproximateBlockMilliseconds(), Equals, int64(2_000))
+	c.Check(bf.Chains.ETH.BlockScanner.ApproximateBlockTime, Equals, 12*time.Second)
 }
 
 func (Test) TestInitSetsListenAddresses(c *C) {
@@ -1151,4 +1275,14 @@ func (Test) TestBifrostOracleConfigFields(c *C) {
 	}
 	c.Assert(oracle.Enabled, Equals, true)
 	c.Assert(oracle.LogLevel, Equals, "info")
+}
+
+func (Test) TestAttestationStateSyncTimeoutDefault(c *C) {
+	confMap := map[interface{}]interface{}{}
+	c.Assert(yaml.Unmarshal(defaultConfig, &confMap), IsNil)
+	bifrostMap, ok := confMap["bifrost"].(map[interface{}]interface{})
+	c.Assert(ok, Equals, true)
+	gossipMap, ok := bifrostMap["attestation_gossip"].(map[interface{}]interface{})
+	c.Assert(ok, Equals, true)
+	c.Assert(gossipMap["state_sync_timeout"], Equals, "30m")
 }

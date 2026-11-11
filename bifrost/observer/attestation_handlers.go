@@ -81,16 +81,17 @@ func closeStream(logger zerolog.Logger, stream network.Stream) {
 	if err := stream.Close(); err != nil {
 		logger.Error().Err(err).Msg("fail to close stream")
 	}
-	go func() {
-		// Give some time for the remote side to process
-		// NOTE: remove this after upgrading to libp2p v0.12.0+, because
-		// then Close() will close both write and read sides of the stream.
-		// In v0.11.0, it only closes the write side.
-		time.Sleep(10 * time.Second)
+	// Give some time for the remote side to process
+	// NOTE: remove this after upgrading to libp2p v0.12.0+, because
+	// then Close() will close both write and read sides of the stream.
+	// In v0.11.0, it only closes the write side.
+	// A timer rather than a sleeping goroutine: thousands of these resets are
+	// pending at any time, and parked goroutines cost stack memory and GC work.
+	time.AfterFunc(10*time.Second, func() {
 		if err := stream.Reset(); err != nil {
 			logger.Error().Err(err).Msg("fail to reset stream after delay")
 		}
-	}()
+	})
 }
 
 // AttestNetworkFee creates and broadcasts an attestation for a network fee
@@ -312,7 +313,7 @@ func (s *AttestationGossip) handleStreamAttestationState(stream network.Stream) 
 	case data[0] == prefixBatchBegin[0]:
 
 		s.stateInitMu.Lock()
-		if s.stateInitPeers == nil {
+		if s.stateInitPeers == nil || s.stateInitContext == nil {
 			// we are not asking for attestation state
 			s.stateInitMu.Unlock()
 			s.logger.Warn().Msg("skipping attestation state stream, not asking for it")
@@ -323,6 +324,10 @@ func (s *AttestationGossip) handleStreamAttestationState(stream network.Stream) 
 			return
 		}
 		_, ok := s.stateInitPeers[remotePeer]
+		ctx, workers := s.stateInitContext, s.stateInitWorkers
+		if ok {
+			workers.Add(1)
+		}
 		s.stateInitMu.Unlock()
 		if !ok {
 			// unauthorized peer
@@ -334,9 +339,12 @@ func (s *AttestationGossip) handleStreamAttestationState(stream network.Stream) 
 			return
 		}
 
+		// Registration and closing admission share stateInitMu, so the group
+		// can cancel and join these imports without racing WaitGroup.Add.
+		defer workers.Done()
 		// Batched state transmission
 		logger.Debug().Msg("handling batched attestation state")
-		err := s.receiveBatchedAttestationState(stream, data[1:])
+		err := s.receiveBatchedAttestationStateWithContext(ctx, stream, data[1:])
 		if err != nil {
 			logger.Error().Err(err).Msg("failed to receive batched attestation state")
 		}

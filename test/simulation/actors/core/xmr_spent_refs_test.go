@@ -12,13 +12,16 @@ import (
 	openapi "gitlab.com/thorchain/thornode/v3/openapi/gen"
 	"gitlab.com/thorchain/thornode/v3/test/simulation/pkg/thornode"
 	. "gitlab.com/thorchain/thornode/v3/test/simulation/pkg/types"
+	thortypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
 func TestXMRSpentRefsRequireTheNewOutboundsStoredEvidence(t *testing.T) {
 	for _, scenario := range []string{
 		"matching new refs", "historical refs only", "unrelated new refs", "no stored refs",
 		"missing observed refs", "different observed refs", "observation pending", "missing observed tx",
-		"wrong observed tx", "wrong chain", "wrong vault",
+		"late final observation", "late final without refs", "late final reused input",
+		"missing consensus height", "negative consensus height", "reverted voter",
+		"observation reverted", "unknown status", "wrong observed tx", "wrong chain", "wrong vault",
 		"missing key image", "missing source tx", "reused input", "missing snapshot", "duplicate reference",
 	} {
 		t.Run(scenario, func(t *testing.T) {
@@ -28,7 +31,7 @@ func TestXMRSpentRefsRequireTheNewOutboundsStoredEvidence(t *testing.T) {
 			second := common.OutputRef{TxHash: strings.Repeat("f", 64), OutputIndex: 0, KeyImage: strings.Repeat("1", 64), SpendTxHash: outbound}
 			a := &XMRSpentRefVerifyActor{Actor: *NewActor("spent refs", rand.New(rand.NewPCG(1, 2))), outboundTxID: outbound}
 			a.captureSpentRefs("frost-vault", []common.OutputRef{old})
-			var observed thornode.ObservedTxSpentRefs
+			observed := thornode.ObservedTxSpentRefs{ConsensusHeight: 718}
 			observed.ObservedTx.Tx = openapi.Tx{Id: &outbound, Chain: openapi.PtrString("XMR")}
 			observed.ObservedTx.Status = "done"
 			observed.ObservedTx.ObservedPubKey = "frost-vault"
@@ -61,8 +64,55 @@ func TestXMRSpentRefsRequireTheNewOutboundsStoredEvidence(t *testing.T) {
 				// Only the stored set has passed the separate spent-ref quorum.
 				observed.ObservedTx.SpentOutputRefs = []common.OutputRef{first}
 				observed.ObservedTx.SpentOutputRefs[0].KeyImage = old.KeyImage
-			case "observation pending":
+			case "late final observation":
+				// castObservedTx maps incomplete to an empty status. Exercise the
+				// generated response type's omission and the simulation's decoder.
+				response := thortypes.QueryObservedTxVoter{
+					Height: observed.ConsensusHeight,
+					Tx: thortypes.QueryObservedTx{
+						Tx:             common.Tx{ID: common.TxID(outbound), Chain: common.XMRChain},
+						ObservedPubKey: common.PubKey(a.vaultPubKey),
+					},
+				}
+				payload, err := json.Marshal(response)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if strings.Contains(string(payload), `"status"`) {
+					t.Fatalf("incomplete observation must omit status: %s", payload)
+				}
+				observed = thornode.ObservedTxSpentRefs{}
+				if err := json.Unmarshal(payload, &observed); err != nil {
+					t.Fatal(err)
+				}
+			case "late final without refs":
 				observed.ObservedTx.Status = ""
+				stored = nil
+				wantPending = true
+			case "late final reused input":
+				observed.ObservedTx.Status = ""
+				stored[1].OutputIndex = old.OutputIndex
+				wantError = true
+			case "missing consensus height":
+				observed.ConsensusHeight = 0
+				wantPending = true
+			case "negative consensus height":
+				observed.ConsensusHeight = -1
+				observed.ObservedTx.Status = ""
+				wantPending = true
+			case "reverted voter":
+				observed.Reverted = true
+				observed.ObservedTx.Status = ""
+				wantPending = true
+			case "observation pending":
+				observed.ConsensusHeight = 0
+				observed.ObservedTx.Status = ""
+				wantPending = true
+			case "observation reverted":
+				observed.ObservedTx.Status = "reverted"
+				wantPending = true
+			case "unknown status":
+				observed.ObservedTx.Status = "unknown"
 				wantPending = true
 			case "missing observed tx":
 				observed.ObservedTx.Tx.Id = nil

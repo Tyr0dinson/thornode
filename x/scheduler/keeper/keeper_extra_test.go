@@ -16,10 +16,11 @@ import (
 )
 
 func setupKeeperWithWasm(s *KeeperTestSuite, wk types.WasmKeeper) keeper.Keeper {
+	tracingWasmKeeper := keeper.NewTracingWasmKeeper(wk, nil)
 	return keeper.NewKeeper(
 		s.encCfg.Codec,
 		runtime.NewKVStoreService(s.storeKeys[types.StoreKey]),
-		wk,
+		tracingWasmKeeper,
 		authAcc.String(),
 	)
 }
@@ -27,6 +28,12 @@ func setupKeeperWithWasm(s *KeeperTestSuite, wk types.WasmKeeper) keeper.Keeper 
 // ErrorWasmKeeper is a mock that returns an error on Execute.
 type ErrorWasmKeeper struct {
 	err error
+}
+
+type PanicWasmKeeper struct{}
+
+func (PanicWasmKeeper) Execute(sdk.Context, sdk.AccAddress, sdk.AccAddress, []byte, sdk.Coins) ([]byte, error) {
+	panic("contract execution panic")
 }
 
 func (m *ErrorWasmKeeper) Execute(ctx sdk.Context, contractAddress, caller sdk.AccAddress, msg []byte, coins sdk.Coins) ([]byte, error) {
@@ -172,6 +179,27 @@ func (s *KeeperTestSuite) TestExecuteSchedule_WasmErrorDiscardsEventsAndState(c 
 	res, err := errKeeper.GetSchedule(sdkCtx, height)
 	c.Assert(err, IsNil)
 	c.Assert(res.Msgs, HasLen, 0)
+}
+
+func (s *KeeperTestSuite) TestExecuteSchedule_WasmPanicRemovesSchedule(c *C) {
+	sdkCtx := sdk.UnwrapSDKContext(s.ctx)
+	panicKeeper := setupKeeperWithWasm(s, PanicWasmKeeper{})
+	height := uint64(sdkCtx.BlockHeight()) + 1
+	err := panicKeeper.SetSchedule(sdkCtx, types.Schedule{
+		Height: height,
+		Msgs: []types.MsgScheduleExecuteContract{{
+			Sender: accAddrs[0].String(),
+			Msg:    []byte(`{"do":"panic"}`),
+		}},
+	})
+	c.Assert(err, IsNil)
+
+	err = panicKeeper.ExecuteSchedule(sdkCtx.WithBlockHeight(int64(height)))
+	c.Assert(err, IsNil)
+
+	schedule, err := panicKeeper.GetSchedule(sdkCtx, height)
+	c.Assert(err, IsNil)
+	c.Assert(schedule.Msgs, HasLen, 0)
 }
 
 func (s *KeeperTestSuite) TestExecuteSchedule_PerExecGasCap(c *C) {

@@ -89,6 +89,7 @@ type thorchainBridge struct {
 	seqNumber     uint64
 	httpClient    *retryablehttp.Client
 	broadcastLock *sync.RWMutex
+	activeNodes   activeNodesMemo
 }
 
 // KeysignPolicy is thornode's signer eligibility view for one vault at one
@@ -155,17 +156,77 @@ type ThorchainBridge interface {
 	GetObservedTxOutVoterUncached(ctx context.Context, txID string) (*stypes.QueryObservedTxVoter, bool, error)
 }
 
+// ContextQueryBridge contains the cancellation-aware Thornode reads required
+// by attestation state import. It is separate from the broad
+// bridge contract so unrelated clients and test doubles do not need methods
+// used only by this security-sensitive path.
+type ContextQueryBridge interface {
+	GetVaultWithContext(ctx context.Context, pubkey string) (stypes.Vault, error)
+	GetKeysignWithContext(ctx context.Context, blockHeight int64, pk string) (types.TxOut, error)
+	GetPendingOutboundsWithContext(ctx context.Context, height int64) ([]PendingOutbound, error)
+	GetObservedTxVoterWithContext(ctx context.Context, txID string) (*stypes.QueryObservedTxVoter, error)
+}
+
+var _ ContextQueryBridge = (*thorchainBridge)(nil)
+
 // httpResponseCache used for caching HTTP responses for less frequent querying
 type httpResponseCache struct {
 	httpResponse        []byte
 	httpResponseChecked time.Time
-	httpResponseMu      *sync.Mutex
+	httpResponseLock    chan struct{}
+
+	// users counts the getCached calls holding this entry, from lookup until
+	// they are done with it. Guarded by httpResponseCachesMu.
+	users int
 }
 
 var (
 	httpResponseCaches   = make(map[string]*httpResponseCache) // String-to-pointer map for quicker lookup
 	httpResponseCachesMu = &sync.Mutex{}
+
+	// httpResponseCachesSwept is when idle entries were last dropped from
+	// httpResponseCaches. Guarded by httpResponseCachesMu.
+	httpResponseCachesSwept time.Time
 )
+
+// httpResponseCacheIdle is how long an entry may go unrefreshed before it is
+// dropped. It is well past the one block time a response is served for.
+var httpResponseCacheIdle = 10 * constants.ThorchainBlockTime
+
+// acquireHTTPResponseCache returns the cache entry for url, creating it if
+// needed, and marks it in use until releaseHTTPResponseCache.
+//
+// Height-specific URLs (keysign and keygen, polled once per block for every
+// signing pubkey) would otherwise stay in the map forever with their last body.
+// At most once per httpResponseCacheIdle it drops the entries nobody is using
+// that were not refreshed for that long. Their responses are too old to be
+// served, so a dropped entry behaves exactly like a cache miss.
+func acquireHTTPResponseCache(url string) *httpResponseCache {
+	httpResponseCachesMu.Lock()
+	defer httpResponseCachesMu.Unlock()
+	now := time.Now()
+	if now.Sub(httpResponseCachesSwept) >= httpResponseCacheIdle {
+		httpResponseCachesSwept = now
+		for key, entry := range httpResponseCaches {
+			if entry.users == 0 && now.Sub(entry.httpResponseChecked) >= httpResponseCacheIdle {
+				delete(httpResponseCaches, key)
+			}
+		}
+	}
+	entry := httpResponseCaches[url]
+	if entry == nil {
+		entry = &httpResponseCache{httpResponseLock: make(chan struct{}, 1)}
+		httpResponseCaches[url] = entry
+	}
+	entry.users++
+	return entry
+}
+
+func releaseHTTPResponseCache(entry *httpResponseCache) {
+	httpResponseCachesMu.Lock()
+	entry.users--
+	httpResponseCachesMu.Unlock()
+}
 
 // NewThorchainBridge create a new instance of ThorchainBridge
 func NewThorchainBridge(cfg config.BifrostClientConfiguration, m *metrics.Metrics, k *Keys) (ThorchainBridge, error) {
@@ -248,30 +309,56 @@ func (b *thorchainBridge) getWithPathUncached(path string) ([]byte, int, error) 
 	return b.getUncached(b.getThorChainURL(path))
 }
 
+// getWithPathWithContext performs a cached retryable request whose cache wait,
+// request, and retries are all bounded by ctx.
+func (b *thorchainBridge) getWithPathWithContext(ctx context.Context, path string) ([]byte, int, error) {
+	return b.getWithContext(ctx, b.getThorChainURL(path))
+}
+
 // get handle all the low level http GET calls using retryablehttp.ThorchainBridge
 func (b *thorchainBridge) get(url string) ([]byte, int, error) {
+	return b.getCached(context.Background(), url, func() ([]byte, int, error) {
+		return b.getRetryable(url)
+	})
+}
+
+func (b *thorchainBridge) getWithContext(ctx context.Context, url string) ([]byte, int, error) {
+	return b.getCached(ctx, url, func() ([]byte, int, error) {
+		return b.getRetryableWithContext(ctx, url)
+	})
+}
+
+func (b *thorchainBridge) getCached(
+	ctx context.Context,
+	url string,
+	get func() ([]byte, int, error),
+) ([]byte, int, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, 0, err
+	}
 	// To reduce querying time and chance of "429 Too Many Requests",
 	// do not query the same endpoint more than once per block time.
-	httpResponseCachesMu.Lock()
-	respCachePointer := httpResponseCaches[url]
-	if respCachePointer == nil {
-		// Since this is the first time using this endpoint, prepare a Mutex for it.
-		respCachePointer = &httpResponseCache{httpResponseMu: &sync.Mutex{}}
-		httpResponseCaches[url] = respCachePointer
-	}
-	httpResponseCachesMu.Unlock()
+	respCachePointer := acquireHTTPResponseCache(url)
+	defer releaseHTTPResponseCache(respCachePointer)
 
-	// So lengthy queries don't hold up short queries, use query-specific mutexes.
-	respCachePointer.httpResponseMu.Lock()
-	defer respCachePointer.httpResponseMu.Unlock()
+	// So lengthy queries don't hold up unrelated queries, serialize only callers
+	// for this URL. Context-aware callers can stop waiting with their transfer.
+	if err := respCachePointer.lock(ctx); err != nil {
+		return nil, 0, err
+	}
+	defer respCachePointer.unlock()
 
 	// When the same endpoint has been checked within the span of a single block, return the cached response.
 	if time.Since(respCachePointer.httpResponseChecked) < constants.ThorchainBlockTime && respCachePointer.httpResponse != nil {
 		return respCachePointer.httpResponse, http.StatusOK, nil
 	}
 
-	buf, status, err := b.getRetryable(url)
+	buf, status, err := get()
 	if err != nil {
+		return buf, status, err
+	}
+	if err := ctx.Err(); err != nil {
+		// A request which races its deadline must not populate the shared cache.
 		return buf, status, err
 	}
 
@@ -282,9 +369,40 @@ func (b *thorchainBridge) get(url string) ([]byte, int, error) {
 	return buf, status, nil
 }
 
+func (c *httpResponseCache) lock(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	select {
+	case c.httpResponseLock <- struct{}{}:
+		// If cancellation raced acquisition, prefer cancellation and release the
+		// lock before returning.
+		if err := ctx.Err(); err != nil {
+			<-c.httpResponseLock
+			return err
+		}
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (c *httpResponseCache) unlock() {
+	<-c.httpResponseLock
+}
+
 func (b *thorchainBridge) getRetryable(url string) ([]byte, int, error) {
 	resp, err := b.httpClient.Get(url)
-	return b.readThorchainResponse(resp, err)
+	return b.readThorchainResponse(context.Background(), resp, err)
+}
+
+func (b *thorchainBridge) getRetryableWithContext(ctx context.Context, url string) ([]byte, int, error) {
+	req, err := retryablehttp.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, 0, fmt.Errorf("create thornode request: %w", err)
+	}
+	resp, err := b.httpClient.Do(req)
+	return b.readThorchainResponse(ctx, resp, err)
 }
 
 // getUncached handles one low-level HTTP GET without consulting or updating
@@ -296,19 +414,29 @@ func (b *thorchainBridge) getUncached(url string) ([]byte, int, error) {
 }
 
 func (b *thorchainBridge) getUncachedContext(ctx context.Context, url string) ([]byte, int, error) {
-	ctx, cancel := context.WithTimeout(ctx, constants.ThorchainBlockTime)
+	requestCtx, cancel := context.WithTimeout(ctx, constants.ThorchainBlockTime)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	req, err := http.NewRequestWithContext(requestCtx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, 0, fmt.Errorf("create uncached thornode request: %w", err)
 	}
 	resp, err := b.httpClient.HTTPClient.Do(req)
-	return b.readThorchainResponse(resp, err)
+	return b.readThorchainResponse(ctx, resp, err)
 }
 
-func (b *thorchainBridge) readThorchainResponse(resp *http.Response, err error) ([]byte, int, error) {
+// A caller abandoning its request is not a THORNode failure. Match the error as
+// well as the caller context so an unrelated failure is still counted. The HTTP
+// client's timeout and the uncached query's own deadline also remain failures.
+func isThorchainCallerCancellation(ctx context.Context, err error) bool {
+	callerErr := ctx.Err()
+	return callerErr != nil && errors.Is(err, callerErr)
+}
+
+func (b *thorchainBridge) readThorchainResponse(ctx context.Context, resp *http.Response, err error) ([]byte, int, error) {
 	if err != nil {
-		b.errCounter.WithLabelValues("fail_get_from_thorchain", "").Inc()
+		if !isThorchainCallerCancellation(ctx, err) {
+			b.errCounter.WithLabelValues("fail_get_from_thorchain", "").Inc()
+		}
 		return nil, 0, fmt.Errorf("%w: failed to GET from thorchain: %w", errThorchainTransport, err)
 	}
 	if resp == nil {
@@ -326,7 +454,9 @@ func (b *thorchainBridge) readThorchainResponse(resp *http.Response, err error) 
 		return buf, resp.StatusCode, errors.New("Status code: " + resp.Status + " returned")
 	}
 	if err != nil {
-		b.errCounter.WithLabelValues("fail_read_thorchain_resp", "").Inc()
+		if !isThorchainCallerCancellation(ctx, err) {
+			b.errCounter.WithLabelValues("fail_read_thorchain_resp", "").Inc()
+		}
 		return nil, resp.StatusCode, fmt.Errorf("failed to read response body: %w", err)
 	}
 
@@ -576,7 +706,15 @@ func (b *thorchainBridge) EnsureNodeWhitelisted() error {
 }
 
 func (b *thorchainBridge) FetchActiveNodes() ([]common.PubKey, error) {
-	na, err := b.GetNodeAccounts()
+	body, err := b.getNodeAccountsBody()
+	if err != nil {
+		return nil, fmt.Errorf("fail to get node accounts: %w", err)
+	}
+	// sendDeck calls this every second, but the body only changes once per block
+	if active, ok := b.activeNodes.get(body); ok {
+		return active, nil
+	}
+	na, err := decodeNodeAccounts(body)
 	if err != nil {
 		return nil, fmt.Errorf("fail to get node accounts: %w", err)
 	}
@@ -587,6 +725,7 @@ func (b *thorchainBridge) FetchActiveNodes() ([]common.PubKey, error) {
 			active = append(active, item.PubKeySet.Secp256k1)
 		}
 	}
+	b.activeNodes.set(body, active)
 	return active, nil
 }
 
@@ -688,13 +827,17 @@ func (b *thorchainBridge) GetKeysignPolicy(vaultPubKey common.PubKey, blockHeigh
 // must observe the fresh visibility barrier, and height-specific URLs must not
 // accumulate forever in that cache. The gateway maps height to the SDK store.
 func (b *thorchainBridge) getKeysignStateAtHeight(path string, height int64, result any) error {
+	return b.getKeysignStateAtHeightWithContext(context.Background(), path, height, result)
+}
+
+func (b *thorchainBridge) getKeysignStateAtHeightWithContext(ctx context.Context, path string, height int64, result any) error {
 	u, err := url.Parse(path)
 	if err != nil {
 		return err
 	}
 	query := u.Query()
 	query.Set("height", strconv.FormatInt(height, 10))
-	buf, status, err := b.getUncached(b.getThorChainURL(u.Path) + "?" + query.Encode())
+	buf, status, err := b.getUncachedContext(ctx, b.getThorChainURL(u.Path)+"?"+query.Encode())
 	if err != nil {
 		body := responseBodySnippet(buf)
 		if IsCompromisedVaultError(err) || IsCompromisedVaultError(errors.New(body)) {
@@ -879,7 +1022,22 @@ func (b *thorchainBridge) GetAsgards() (stypes.Vaults, error) {
 
 // GetVault retrieves a specific vault from thorchain.
 func (b *thorchainBridge) GetVault(pubkey string) (stypes.Vault, error) {
-	buf, s, err := b.getWithPath(fmt.Sprintf(VaultEndpoint, pubkey))
+	return b.getVault(pubkey, b.getWithPath)
+}
+
+// GetVaultWithContext retrieves a vault without allowing the request or its
+// retries to outlive ctx.
+func (b *thorchainBridge) GetVaultWithContext(ctx context.Context, pubkey string) (stypes.Vault, error) {
+	return b.getVault(pubkey, func(path string) ([]byte, int, error) {
+		return b.getWithPathWithContext(ctx, path)
+	})
+}
+
+func (b *thorchainBridge) getVault(
+	pubkey string,
+	get func(string) ([]byte, int, error),
+) (stypes.Vault, error) {
+	buf, s, err := get(fmt.Sprintf(VaultEndpoint, pubkey))
 	if err != nil {
 		return stypes.Vault{}, fmt.Errorf("fail to get vault: %w", err)
 	}
@@ -922,7 +1080,7 @@ func parseXMRSpentOutputRefsResponse(buf []byte, status int, err error) ([]*comm
 }
 
 func (b *thorchainBridge) GetObservedTxVoter(txID string) (*stypes.QueryObservedTxVoter, error) {
-	return b.getObservedTxVoter(txID, b.getThorChainURL(fmt.Sprintf(TxDetailEndpoint, txID)))
+	return b.getObservedTxVoter(txID, b.getThorChainURL(fmt.Sprintf(TxDetailEndpoint, txID)), b.get)
 }
 
 // GetObservedTxOutVoter selects source-side consensus even when a migration's
@@ -930,11 +1088,22 @@ func (b *thorchainBridge) GetObservedTxVoter(txID string) (*stypes.QueryObserved
 func (b *thorchainBridge) GetObservedTxOutVoter(txID string) (*stypes.QueryObservedTxVoter, error) {
 	// Append the query after URL construction: a host without a scheme uses
 	// url.URL.Path, which would otherwise escape '?' as part of the path.
-	return b.getObservedTxVoter(txID, b.getThorChainURL(fmt.Sprintf(TxDetailEndpoint, txID))+"?outbound=true")
+	return b.getObservedTxVoter(txID, b.getThorChainURL(fmt.Sprintf(TxDetailEndpoint, txID))+"?outbound=true", b.get)
 }
 
-func (b *thorchainBridge) getObservedTxVoter(txID, endpoint string) (*stypes.QueryObservedTxVoter, error) {
-	buf, s, err := b.get(endpoint)
+// GetObservedTxVoterWithContext retrieves a voter without allowing the request
+// or its retries to outlive ctx.
+func (b *thorchainBridge) GetObservedTxVoterWithContext(ctx context.Context, txID string) (*stypes.QueryObservedTxVoter, error) {
+	return b.getObservedTxVoter(txID, b.getThorChainURL(fmt.Sprintf(TxDetailEndpoint, txID)), func(url string) ([]byte, int, error) {
+		return b.getWithContext(ctx, url)
+	})
+}
+
+func (b *thorchainBridge) getObservedTxVoter(
+	txID, endpoint string,
+	get func(string) ([]byte, int, error),
+) (*stypes.QueryObservedTxVoter, error) {
+	buf, s, err := get(endpoint)
 	if err != nil {
 		return nil, fmt.Errorf("fail to get observed tx voter: %w", err)
 	}
@@ -1217,9 +1386,8 @@ func (b *thorchainBridge) GetMimir(key string) (int64, error) {
 	return value, nil
 }
 
-// PendingOutbound is the minimal view of a not-yet-observed scheduled outbound
-// the SOL durable-nonce signer needs to serialize one durable tx per vault (durable-nonce,
-// N2): its chain, vault pubkeys, and scheduled height.
+// PendingOutbound identifies a not-yet-observed scheduled outbound. Recovery
+// callers use its height to fetch the full signed keysign plan before import.
 type PendingOutbound struct {
 	Chain            string              `json:"chain"`
 	ToAddress        string              `json:"to_address"`
@@ -1227,6 +1395,7 @@ type PendingOutbound struct {
 	VaultPubKeyEddsa string              `json:"vault_pub_key_eddsa"`
 	Coin             PendingOutboundCoin `json:"coin"`
 	Memo             string              `json:"memo"`
+	OriginalMemo     string              `json:"original_memo"`
 	InHash           string              `json:"in_hash"`
 	Height           int64               `json:"height"`
 }
@@ -1249,17 +1418,22 @@ type PendingOutboundCoin struct {
 // .MarshalJSONPB emits its TxOutItems slice directly), so the body decodes into a
 // slice, not a wrapping object.
 func (b *thorchainBridge) GetPendingOutbounds(height int64) ([]PendingOutbound, error) {
+	return b.GetPendingOutboundsWithContext(context.Background(), height)
+}
+
+// GetPendingOutboundsWithContext bounds queue reads and retries by ctx.
+func (b *thorchainBridge) GetPendingOutboundsWithContext(ctx context.Context, height int64) ([]PendingOutbound, error) {
 	var items []PendingOutbound
 	if height > 0 {
 		// The ?height= query must be appended AFTER the path (getKeysignStateAtHeight
 		// builds it that way, uncached); embedding it in the path string makes
 		// getThorChainURL escape the '?' to %3F when ChainHost has no scheme.
-		if err := b.getKeysignStateAtHeight(PendingOutboundEndpoint, height, &items); err != nil {
+		if err := b.getKeysignStateAtHeightWithContext(ctx, PendingOutboundEndpoint, height, &items); err != nil {
 			return nil, fmt.Errorf("fail to get pending outbounds at height %d: %w", height, err)
 		}
 		return items, nil
 	}
-	buf, s, err := b.getWithPath(PendingOutboundEndpoint)
+	buf, s, err := b.getWithPathWithContext(ctx, PendingOutboundEndpoint)
 	if err != nil {
 		return nil, fmt.Errorf("fail to get pending outbounds: %w", err)
 	}

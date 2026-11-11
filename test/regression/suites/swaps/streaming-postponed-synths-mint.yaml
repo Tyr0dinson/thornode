@@ -148,6 +148,8 @@ sequence: 1
 # Go to right before the end of the streaming swap.
 type: create-blocks
 count: 9
+# synth swaps are priced at mocknet's 2x virtual depth, paying out more than the pool curve
+luvi_drop: [BTC.BTC]
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/liquidity_provider/{{ addr_thor_wolf }}

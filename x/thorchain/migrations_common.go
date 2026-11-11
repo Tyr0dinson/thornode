@@ -501,5 +501,29 @@ func (m Migrator) Migrate19to20(ctx cosmos.Context) error {
 		k.DeleteKey(ctx, item.key)
 		ctx.Logger().Info("merged TEX swapper clout", "tex", item.clout.Address, "address", transparent)
 	}
+	// Mainnet-only follow-on steps (no-op off mainnet): reverse the erroneous rzxslmgc /
+	// h28181638 ZEC / h28172517 TRON slashes + refund bond providers, donate the Secured-Ops
+	// LP positions + repay NDT, restore ETH.THOR depth, and retire the low-synth pools. Run
+	// AFTER the TEX clout merge so develop's step semantics are unchanged; each sub-step
+	// soft-skips on drift and the whole set is gated behind mainnetDonationSpecComplete.
+	if err := m.migrate19to20Mainnet(ctx); err != nil {
+		return err
+	}
 	return nil
+}
+
+// Migrate20to21 reimburses tcso (the Secured Ops wallet) from the Reserve for
+// three outlays made on users' behalf, replacing the earlier phantom-ATOM
+// write-down: the GAIA vault solvency top-up (the backing was restored
+// directly, so no phantom ATOM is written off vault ...jy4h or its pool) and
+// the TRON.TRX manual refund tcso funded from its own holdings, plus the LTC
+// manual refund paid in ETH by Maya Secured Ops (mso), for which tcso is
+// reimbursed by Itz's decision of 2026-11-05. The three RUNE payments are
+// applied atomically (all or none) and move no vault, pool or Asgard balance.
+// Mainnet only; it never halts the upgrade.
+func (m Migrator) Migrate20to21(ctx cosmos.Context) error {
+	if err := m.mgr.LoadManagerIfNecessary(ctx); err != nil {
+		return err
+	}
+	return m.migrate20to21Mainnet(ctx)
 }

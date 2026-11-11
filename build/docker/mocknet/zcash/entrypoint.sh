@@ -2,7 +2,10 @@
 
 set -e
 
-BLOCK_TIME=${BLOCK_TIME:-1}
+# Leave time for observed-height lag, threshold signing and inclusion inside
+# Bifrost's fixed 40-block expiry window. One-second blocks can expire a normal
+# migration while its signatures are still being produced.
+BLOCK_TIME=${BLOCK_TIME:-5}
 INIT_BLOCKS=400 # Keep aligned with waitForZecRPCReadinessWithClock.
 BOOTSTRAP_TIMEOUT=${BOOTSTRAP_TIMEOUT:-480}
 # Let a sent request finish even when the host stalls for tens of seconds.

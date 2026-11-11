@@ -1,11 +1,14 @@
 package signer
 
 import (
+	"fmt"
 	"sync/atomic"
 
+	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	. "gopkg.in/check.v1"
 
+	"gitlab.com/thorchain/thornode/v3/bifrost/blockscanner"
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
 	"gitlab.com/thorchain/thornode/v3/bifrost/observer"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients"
@@ -121,4 +124,74 @@ func (s *SignCoverageSuite) TestXMRReadinessPipelineRetainsDurableRetries(c *C) 
 	c.Assert(xmrClient.signatures.Load(), Equals, int64(1))
 	c.Assert(xmrClient.broadcasts.Load(), Equals, int64(2))
 	c.Assert(storage.List(), HasLen, 0)
+}
+
+type scannerPolicySignBridge struct {
+	mockSignBridge
+	scannerReads int
+}
+
+func (b *scannerPolicySignBridge) GetMimir(key string) (int64, error) {
+	if key == "HaltScannerXMR" {
+		b.scannerReads++
+	}
+	return b.mockSignBridge.GetMimir(key)
+}
+
+func (b *scannerPolicySignBridge) GetMimirWithRef(template, ref string) (int64, error) {
+	return b.GetMimir(fmt.Sprintf(template, ref))
+}
+
+type scannerHealthSigningClient struct {
+	countingSigningTestClient
+	healthy bool
+}
+
+func (c *scannerHealthSigningClient) IsBlockScannerHealthy() bool { return c.healthy }
+
+func (*scannerHealthSigningClient) GetChain() common.Chain { return common.XMRChain }
+
+func (s *SignCoverageSuite) TestXMRScannerAndSigningHaltPoliciesRemainDistinct(c *C) {
+	for _, scenario := range []struct {
+		name         string
+		scannerHalt  int64
+		signingHalt  int64
+		wantPaused   bool
+		wantSignings int64
+	}{
+		{name: "paused scanner blocks signing through health", scannerHalt: 1, wantPaused: true},
+		{name: "open scanner permits ordinary signing", wantSignings: 1},
+		{name: "signing halt leaves scanner open", signingHalt: 1},
+	} {
+		vaultKey, err := common.NewPubKey(pubkeymanager.MockPubkey)
+		c.Assert(err, IsNil)
+		bridge := &scannerPolicySignBridge{mockSignBridge: mockSignBridge{
+			blockHeight: 100,
+			constants:   map[string]int64{constants.SigningTransactionPeriod.String(): 300},
+			mimirs:      map[string]int64{"HaltScannerXMR": scenario.scannerHalt, "HaltSigningXMR": scenario.signingHalt},
+		}}
+		paused := blockscanner.IsChainPaused(config.BifrostBlockScannerConfiguration{ChainID: common.XMRChain}, zerolog.Nop(), bridge)
+		c.Assert(paused, Equals, scenario.wantPaused, Commentf("%s", scenario.name))
+		client := &scannerHealthSigningClient{healthy: !paused}
+		storage, err := NewSignerStore(c.MkDir(), config.LevelDBOptions{}, "")
+		c.Assert(err, IsNil)
+		defer func() { c.Assert(storage.Close(), IsNil) }()
+		signer := &Signer{
+			logger: zerolog.Nop(), storage: storage, thorchainBridge: bridge, constantsProvider: NewConstantsProvider(bridge),
+			chains:    map[common.Chain]chainclients.ChainClient{common.XMRChain: client},
+			pubkeyMgr: pubkeymanager.NewMockPoolAddressValidator(), localPubKeyECDSA: vaultKey, m: GetMetricForTest(c),
+		}
+		// Keep a normal memo-bearing outbound; this does not enable memoless XMR.
+		item := NewTxOutStoreItem(90, types.TxOutItem{Chain: common.XMRChain, VaultPubKey: vaultKey, ToAddress: "destination", Memo: "MIGRATE:90"}, 0)
+		reads := bridge.scannerReads
+		_, _, signErr := signer.signAndBroadcast(item)
+		if paused {
+			c.Assert(signErr, ErrorMatches, ".*block scanner.*unhealthy.*")
+		} else {
+			c.Assert(signErr, IsNil)
+		}
+		c.Assert(client.signatures.Load(), Equals, scenario.wantSignings, Commentf("%s", scenario.name))
+		c.Assert(client.broadcasts.Load(), Equals, scenario.wantSignings, Commentf("%s", scenario.name))
+		c.Assert(bridge.scannerReads, Equals, reads, Commentf("outbound signing must use its own halt policy"))
+	}
 }
