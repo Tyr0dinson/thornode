@@ -1,0 +1,134 @@
+{{ template "default-state.yaml" }}
+---
+# Standby node (cat) still in a retiring vault. The operator's stored provider
+# bond is zero, but the node bond (1100 RUNE) is above the providers' total
+# (1000 RUNE), so BondProviders.Adjust credits the operator 20 RUNE: the 20%
+# operator fee on the 100 RUNE of accrued rewards.
+type: state
+genesis:
+  app_state:
+    bank:
+      balances:
+        - address: {{ addr_module_bond }}
+          coins:
+            - amount: "5110000000000"
+              denom: rune
+    thorchain:
+      node_accounts:
+        - active_block_height: "0"
+          bond: "110000000000"
+          ip_address: 1.1.1.1
+          node_address: {{ addr_thor_cat }}
+          bond_address: {{ addr_thor_cat }}
+          pub_key_set:
+            secp256k1: {{ pubkey_cat }}
+          status: Standby
+          validator_cons_pub_key: {{ cons_pubkey_cat }}
+          version: {{ version }}
+      bond_providers:
+        - node_address: {{ addr_thor_cat }}
+          node_operator_fee: "2000"
+          providers:
+            - bond: "0"
+              bond_address: {{ addr_thor_cat }}
+            - bond: "100000000000"
+              bond_address: {{ addr_thor_frog }}
+            - bond: "0"
+              bond_address: {{ addr_thor_fish }}
+      vaults:
+        - block_height: "0"
+          chains:
+            - THOR
+          membership:
+            - {{ pubkey_cat }}
+          pub_key: tthorpub1addwnpepqfll6vmxepk9usvefmnqau83t9yfrelmg4gn57ee2zu2wc3gsjsz6huxnv7
+          status: RetiringVault
+          type: AsgardVault
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/vault/tthorpub1addwnpepqfll6vmxepk9usvefmnqau83t9yfrelmg4gn57ee2zu2wc3gsjsz6huxnv7
+asserts:
+  - .status == "RetiringVault"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_cat }}
+asserts:
+  - .status == "Standby"
+  - .total_bond == "110000000000"
+  - .bond_providers.providers | length == 3
+---
+###############################################################################
+# Test 1: Operator unbonding their own zero stored bond is rejected while the
+#         node is in a retiring vault, because Adjust gives them a non-zero
+#         bond (the operator fee), and no bond is returned
+###############################################################################
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - amount: "0"
+    asset: "rune"
+memo: "UNBOND:{{ addr_thor_cat }}:0:{{ addr_thor_cat }}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .txs|length == 1
+  - .txs[0]|.result.code != 0
+  - .txs[0]|.result.log|contains("still part of the retiring vault")
+---
+type: check
+endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_cat }}
+asserts:
+  # the node query reports Adjust'ed bonds: the operator's 20 RUNE fee stays bonded
+  - .total_bond == "110000000000"
+  - .bond_providers.providers | length == 3
+  - .bond_providers.providers[] |
+    select(.bond == "2000000000" and .bond_address == "{{ addr_thor_cat }}")
+  - .bond_providers.providers[] |
+    select(.bond == "108000000000" and .bond_address == "{{ addr_thor_frog }}")
+---
+type: check
+endpoint: http://localhost:1317/thorchain/balance/module/bond
+asserts:
+  - .coins[]|select(.denom == "rune")|.amount == "5110000000000"
+---
+###############################################################################
+# Test 2: Operator can still remove a non-operator provider with zero bond
+###############################################################################
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - amount: "0"
+    asset: "rune"
+memo: "UNBOND:{{ addr_thor_cat }}:0:{{ addr_thor_fish }}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .txs|length == 1
+  - .txs[0]|.result.code == 0
+---
+type: check
+endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_cat }}
+asserts:
+  - .total_bond == "110000000000"
+  - .bond_providers.providers | length == 2
+  - (.bond_providers.providers | map(select(.bond_address == "{{ addr_thor_fish }}")) | length) == 0
+  - .bond_providers.providers[] |
+    select(.bond == "2000000000" and .bond_address == "{{ addr_thor_cat }}")
+  - .bond_providers.providers[] |
+    select(.bond == "108000000000" and .bond_address == "{{ addr_thor_frog }}")
+---
+type: check
+endpoint: http://localhost:1317/thorchain/balance/module/bond
+asserts:
+  - .coins[]|select(.denom == "rune")|.amount == "5110000000000"
