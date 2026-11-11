@@ -883,31 +883,21 @@ func (qs queryServer) queryQuoteSwap(ctx cosmos.Context, req *types.QueryQuoteSw
 
 	// chain liquidity cap pre-check: mirror handler_swap.go so the quote
 	// fails early when the swap would be rejected by validateChainLiquidityCap
-	// at submission. The source-side check is defensive; the handler only
-	// enforces target-side.
-	inboundRuneValue := amount
-	if !fromAsset.IsRune() {
-		pool, pErr := qs.mgr.Keeper().GetPool(ctx, fromAsset.GetLayer1Asset())
-		if pErr != nil {
-			return nil, fmt.Errorf("fail to get pool for chain liquidity cap: %w", pErr)
-		}
-		inboundRuneValue = pool.AssetValueInRune(amount)
-	}
-	if !fromAsset.IsSyntheticAsset() && !fromAsset.IsTradeAsset() &&
-		!fromAsset.IsSecuredAsset() && !fromAsset.IsDerivedAsset() &&
-		!fromAsset.Chain.Equals(common.THORChain) {
-		if capErr := validateChainLiquidityCap(ctx, qs.mgr, fromAsset.Chain, inboundRuneValue); capErr != nil {
-			return nil, fmt.Errorf("source chain cap: %w", capErr)
-		}
-	}
-	if !toAsset.IsSyntheticAsset() && !toAsset.IsTradeAsset() && !toAsset.IsSecuredAsset() {
-		capChain := toAsset.GetLayer1Asset().GetChain()
+	// at submission. The cap scales with the number of nodes securing the
+	// chain and gates inflow, so only the source (credited) chain is checked;
+	// the target vault is being drained and is not capped.
+	if !fromAsset.IsSyntheticAsset() && !fromAsset.IsTradeAsset() && !fromAsset.IsSecuredAsset() {
+		capChain := fromAsset.GetLayer1Asset().GetChain()
 		if !capChain.Equals(common.THORChain) {
 			if capErr := validateActiveAsgardExists(ctx, qs.mgr, capChain); capErr != nil {
 				return nil, capErr
 			}
-			if capErr := validateChainLiquidityCap(ctx, qs.mgr, capChain, inboundRuneValue); capErr != nil {
-				return nil, fmt.Errorf("target chain cap: %w", capErr)
+			pool, pErr := qs.mgr.Keeper().GetPool(ctx, fromAsset.GetLayer1Asset())
+			if pErr != nil {
+				return nil, fmt.Errorf("fail to get pool for chain liquidity cap: %w", pErr)
+			}
+			if capErr := validateChainLiquidityCap(ctx, qs.mgr, capChain, pool.AssetValueInRune(amount)); capErr != nil {
+				return nil, fmt.Errorf("source chain cap: %w", capErr)
 			}
 		}
 	}

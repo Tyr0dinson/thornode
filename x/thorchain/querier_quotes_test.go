@@ -246,10 +246,10 @@ func (s *QuotesSuite) TestQuoteSwapChainLiquidityCap(c *C) {
 
 	qs := queryServer{mgr: mgr}
 
-	// Case A: small RUNE -> DOGE swap fits under remaining headroom.
+	// Case A: small DOGE -> RUNE swap fits under remaining headroom.
 	_, err := qs.queryQuoteSwap(ctx, &types.QueryQuoteSwapRequest{
-		FromAsset: "THOR.RUNE",
-		ToAsset:   "DOGE.DOGE",
+		FromAsset: "DOGE.DOGE",
+		ToAsset:   "THOR.RUNE",
 		Amount:    cosmos.NewUint(1 * common.One).String(),
 	})
 	if err != nil {
@@ -257,20 +257,19 @@ func (s *QuotesSuite) TestQuoteSwapChainLiquidityCap(c *C) {
 			Commentf("small swap should not trigger chain liquidity cap, got: %s", err.Error()))
 	}
 
-	// Case B: large RUNE -> DOGE swap exceeds target chain cap.
+	// Case B: large RUNE -> DOGE swap drains the DOGE vault, so the cap
+	// (which gates inflow, matching handler_swap.go) does not apply.
 	_, err = qs.queryQuoteSwap(ctx, &types.QueryQuoteSwapRequest{
 		FromAsset: "THOR.RUNE",
 		ToAsset:   "DOGE.DOGE",
 		Amount:    cosmos.NewUint(200 * common.One).String(),
 	})
-	c.Assert(err, NotNil, Commentf("large RUNE->DOGE should breach target chain cap"))
-	c.Assert(strings.Contains(err.Error(), "target chain cap"), Equals, true,
-		Commentf("expected 'target chain cap' in error, got: %s", err.Error()))
-	c.Assert(strings.Contains(err.Error(), "liquidity cap exceeded"), Equals, true,
-		Commentf("expected 'liquidity cap exceeded' in error, got: %s", err.Error()))
+	if err != nil {
+		c.Assert(strings.Contains(err.Error(), "liquidity cap exceeded"), Equals, false,
+			Commentf("RUNE->DOGE should not be capped on the target chain, got: %s", err.Error()))
+	}
 
-	// Case C: large DOGE -> RUNE swap exceeds source chain cap.
-	// Target is THOR.RUNE so target-side check is skipped; source-side catches it.
+	// Case C: large DOGE -> RUNE swap credits the DOGE vault past its cap.
 	_, err = qs.queryQuoteSwap(ctx, &types.QueryQuoteSwapRequest{
 		FromAsset: "DOGE.DOGE",
 		ToAsset:   "THOR.RUNE",
