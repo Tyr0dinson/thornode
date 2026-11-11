@@ -100,6 +100,33 @@ func verifyFrostTxForVault(req FrostKeySignRequest, prepared []FrostSpentOutputR
 	return err
 }
 
+// verifyAdoptedFrostTxAndBind is verifyAdoptedFrostTx that additionally binds
+// each reported spent ref to a vault output the local sidecar tracks. It is the
+// prepared-input adoption check for the frostPreparedResultQuorum fast path:
+// verifyAdoptedFrostTx alone decodes the transaction against the prepared plan
+// but, for a prepared input whose key image this node did not resolve at
+// prepare time, trusts the peer-reported output->key-image binding
+// (validateFrostPreparedInputs skips the per-ref check and verifyXMRKeyImages
+// compares only the unordered set). bindXMRSpentRefsToVaultOutputs rejects a ref
+// bound to a different key image locally, and returns errFrostAdoptionPending
+// for a ref the sidecar has not bound yet so the result defers to the full
+// threshold+1 quorum instead of being adopted on trust.
+func verifyAdoptedFrostTxAndBind(req FrostKeySignRequest, prepared []FrostSpentOutputRef, resp FrostKeySignResponse, outputs []FrostVaultOutput) error {
+	pk, err := common.NewPubKey(strings.TrimSpace(req.VaultPubKey))
+	if err != nil {
+		return fmt.Errorf("vault pubkey: %w", err)
+	}
+	vaultAddress, err := pk.GetAddress(common.XMRChain)
+	if err != nil {
+		return fmt.Errorf("vault address: %w", err)
+	}
+	total, err := verifyFrostTxSpend(req, prepared, resp, vaultAddress.String())
+	if err != nil {
+		return err
+	}
+	return bindXMRSpentRefsToVaultOutputs(resp.SpentOutputRefs, outputs, total)
+}
+
 // verifyFrostTxSpend is verifyFrostTxForVault that also returns what the
 // transaction's inputs must total: every decoded output plus the fee.
 func verifyFrostTxSpend(req FrostKeySignRequest, prepared []FrostSpentOutputRef, resp FrostKeySignResponse, vaultAddress string) (uint64, error) {

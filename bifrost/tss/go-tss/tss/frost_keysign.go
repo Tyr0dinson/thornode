@@ -220,8 +220,10 @@ type FrostSignCoordinator struct {
 	// outside the signing party, or one whose own prepare never ran.
 	scheduledTxOut bool
 	// verifyAdopted checks a peer-reported transaction against preparedRequest
-	// and preparedInputs before it is adopted. Nil uses verifyAdoptedFrostTx.
-	verifyAdopted func(FrostKeySignRequest, []FrostSpentOutputRef, FrostKeySignResponse) error
+	// and preparedInputs, and binds its reported spent refs to the vault outputs
+	// the local sidecar tracks, before it is adopted. Nil uses
+	// verifyAdoptedFrostTxAndBind.
+	verifyAdopted func(FrostKeySignRequest, []FrostSpentOutputRef, FrostKeySignResponse, []FrostVaultOutput) error
 	// verifyScheduled checks a peer-reported transaction against the scheduled
 	// txout and the vault outputs the local sidecar tracks. Nil uses
 	// verifyScheduledFrostTx.
@@ -2199,16 +2201,35 @@ func (c *FrostSignCoordinator) daemonHoldsTx(ctx context.Context, txHash string)
 
 // spendsPreparedInputs checks that resp spends exactly the inputs this node
 // prepared for the session. Peers can report any refs, so the transaction
-// itself is decoded and checked against the prepared plan.
-func (c *FrostSignCoordinator) spendsPreparedInputs(_ context.Context, resp FrostKeySignResponse) error {
+// itself is decoded and checked against the prepared plan, and each reported
+// spent ref is bound to a vault output the local sidecar tracks.
+//
+// The binding is what keeps the frostPreparedResultQuorum (2) fast path honest.
+// validateFrostPreparedInputs skips its per-ref key-image check for a prepared
+// input whose key image this node did not resolve at prepare time (empty), and
+// verifyXMRKeyImages compares only the unordered key-image set, so two peers
+// could otherwise swap the key images across the reported refs and have an
+// unverifiable output->key-image binding adopted and persisted. Binding each
+// ref to the sidecar's own output rejects a mismatched binding; a ref the
+// sidecar has not bound yet returns errFrostAdoptionPending, deferring the
+// result to the full threshold+1 quorum rather than adopting on trust.
+func (c *FrostSignCoordinator) spendsPreparedInputs(ctx context.Context, resp FrostKeySignResponse) error {
 	if err := validateFrostPreparedInputs(c.preparedInputs, resp.SpentOutputRefs, resp.TxHash); err != nil {
 		return err
 	}
+	lister, ok := c.sidecar.(FrostVaultOutputsClient)
+	if !ok {
+		return errors.New("sidecar cannot list vault outputs to bind the prepared spent refs")
+	}
+	outputs, err := lister.FrostVaultOutputs(ctx, c.preparedRequest.VaultPubKey)
+	if err != nil {
+		return fmt.Errorf("fail to list vault outputs: %w: %w", err, errFrostAdoptionPending)
+	}
 	verify := c.verifyAdopted
 	if verify == nil {
-		verify = verifyAdoptedFrostTx
+		verify = verifyAdoptedFrostTxAndBind
 	}
-	if err := verify(c.preparedRequest, c.preparedInputs, resp); err != nil {
+	if err := verify(c.preparedRequest, c.preparedInputs, resp, outputs); err != nil {
 		return fmt.Errorf("transaction does not match this node's prepared plan: %w", err)
 	}
 	return nil

@@ -62,7 +62,7 @@ func TestFrostWaitForResultAdoptsResultsReceivedDuringTranscriptRounds(t *testin
 				c.sidecar = &knownTxSidecar{}
 				c.preparedInputs = prepared
 				c.preparedRequest = req
-				c.verifyAdopted = func(req FrostKeySignRequest, prepared []FrostSpentOutputRef, resp FrostKeySignResponse) error {
+				c.verifyAdopted = func(req FrostKeySignRequest, prepared []FrostSpentOutputRef, resp FrostKeySignResponse, _ []FrostVaultOutput) error {
 					return verifyFrostTxForVault(req, prepared, resp, golden832cVaultAddress)
 				}
 				return c

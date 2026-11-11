@@ -226,7 +226,7 @@ func TestFrostResultDiagnosticsVotesRemainExclusive(t *testing.T) {
 			// !50's below-quorum paths apply only to verified successes.
 			coord.preparedInputs = []FrostSpentOutputRef{{TxHash: testHashOf('a')}}
 			coord.scheduledTxOut = true
-			coord.verifyAdopted = func(FrostKeySignRequest, []FrostSpentOutputRef, FrostKeySignResponse) error {
+			coord.verifyAdopted = func(FrostKeySignRequest, []FrostSpentOutputRef, FrostKeySignResponse, []FrostVaultOutput) error {
 				t.Fatal("failure invoked success verification")
 				return nil
 			}

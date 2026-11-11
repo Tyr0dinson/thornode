@@ -49,7 +49,7 @@ func TestFrostWaitForResultAdoptsResultSpendingPreparedInputs(t *testing.T) {
 				timeout:          time.Second,
 				sidecar:          &knownTxSidecar{},
 				preparedInputs:   tc.prepared,
-				verifyAdopted: func(FrostKeySignRequest, []FrostSpentOutputRef, FrostKeySignResponse) error {
+				verifyAdopted: func(FrostKeySignRequest, []FrostSpentOutputRef, FrostKeySignResponse, []FrostVaultOutput) error {
 					return nil
 				},
 			}
@@ -146,7 +146,11 @@ func TestFrostWaitForResultRejectsTamperedTxFromTwoPeers(t *testing.T) {
 				sidecar:          &knownTxSidecar{},
 				preparedInputs:   tc.prepared,
 				preparedRequest:  req,
-				verifyAdopted: func(req FrostKeySignRequest, prepared []FrostSpentOutputRef, resp FrostKeySignResponse) error {
+				// This stub isolates the plan-match layer; the spent-ref binding
+				// the prepared path now also enforces (and the first-spend
+				// deferral) is covered by
+				// TestFrostWaitForResultPreparedPathBindsSpentRefs.
+				verifyAdopted: func(req FrostKeySignRequest, prepared []FrostSpentOutputRef, resp FrostKeySignResponse, _ []FrostVaultOutput) error {
 					return verifyFrostTxForVault(req, prepared, resp, golden832cVaultAddress)
 				},
 			}
@@ -161,6 +165,86 @@ func TestFrostWaitForResultRejectsTamperedTxFromTwoPeers(t *testing.T) {
 			if !tc.adopt {
 				if err == nil {
 					t.Fatalf("adopted tampered result %s", resp.TxHash)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("wait for result: %v", err)
+			}
+			if resp.TxHash != genuine.TxHash {
+				t.Fatalf("adopted %s", resp.TxHash)
+			}
+		})
+	}
+}
+
+// A node that prepared the inputs adopts a peer-reported result from only
+// frostPreparedResultQuorum (2) senders, so it binds the reported spent refs to
+// the vault outputs its own sidecar tracks. Without the bind, two peers could
+// swap the key images across the refs for a prepared input whose key image this
+// node did not resolve at prepare time — validateFrostPreparedInputs skips the
+// per-ref check when the prepared key image is empty, and verifyXMRKeyImages
+// compares only the unordered set — and have an unverifiable output->key-image
+// binding adopted and persisted. A ref the sidecar has not bound yet defers the
+// result to the full threshold+1 quorum rather than adopting it on trust.
+func TestFrostWaitForResultPreparedPathBindsSpentRefs(t *testing.T) {
+	ensureBech32Prefix()
+	party := []string{testPubKeys[0], testPubKeys[1], testPubKeys[2], testPubKeys[3]}
+	req, genuine := golden7969(t)
+	prepared := genuine.SpentOutputRefs
+	tracked := golden7969Outputs(t)
+	ref := prepared[0]
+
+	// The reported refs always carry a key image; the hole is a prepared input
+	// whose key image this node did not resolve at prepare time (empty).
+	firstSpend := []FrostSpentOutputRef{{TxHash: ref.TxHash, OutputIndex: ref.OutputIndex, KeyImage: ""}}
+	bound := []FrostVaultOutput{{TxHash: ref.TxHash, OutputIndex: ref.OutputIndex, Amount: tracked[0].Amount, State: "unspent", KeyImage: ref.KeyImage}}
+	unbound := []FrostVaultOutput{{TxHash: ref.TxHash, OutputIndex: ref.OutputIndex, Amount: tracked[0].Amount, State: "unspent", KeyImage: ""}}
+	mismatched := []FrostVaultOutput{{TxHash: ref.TxHash, OutputIndex: ref.OutputIndex, Amount: tracked[0].Amount, State: "unspent", KeyImage: strings.Repeat("ee", 32)}}
+
+	verifyBound := func(req FrostKeySignRequest, prepared []FrostSpentOutputRef, resp FrostKeySignResponse, outputs []FrostVaultOutput) error {
+		total, err := verifyFrostTxSpend(req, prepared, resp, golden7969VaultAddress)
+		if err != nil {
+			return err
+		}
+		return bindXMRSpentRefsToVaultOutputs(resp.SpentOutputRefs, outputs, total)
+	}
+
+	for _, tc := range []struct {
+		name     string
+		prepared []FrostSpentOutputRef
+		outputs  []FrostVaultOutput
+		adopt    bool
+	}{
+		{name: "genuine, sidecar bound", prepared: prepared, outputs: bound, adopt: true},
+		{name: "first-spend prepared, sidecar bound", prepared: firstSpend, outputs: bound, adopt: true},
+		{name: "first-spend prepared, sidecar unbound defers", prepared: firstSpend, outputs: unbound, adopt: false},
+		{name: "reported key image not bound locally rejects", prepared: prepared, outputs: mismatched, adopt: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			msgChan := newFrostSignInbox()
+			coord := &FrostSignCoordinator{
+				localPubKey:      testPubKeys[0],
+				msgID:            "msg-id",
+				expectedPlanHash: testExpectedPlanHash,
+				inbox:            msgChan,
+				timeout:          time.Second,
+				sidecar:          &vaultOutputsSidecar{outputs: tc.outputs},
+				preparedInputs:   tc.prepared,
+				preparedRequest:  req,
+				verifyAdopted:    verifyBound,
+			}
+			result := goldenResult(t, prepared, genuine)
+			for _, sender := range party[1:3] {
+				enqueueResultMessage(t, msgChan, "msg-id", sender, sender, FrostResultPayload{
+					SenderPubKey: sender,
+					Response:     result,
+				})
+			}
+			resp, err := coord.WaitForResult(party, 4, 150*time.Millisecond)
+			if !tc.adopt {
+				if err == nil {
+					t.Fatalf("adopted %s", resp.TxHash)
 				}
 				return
 			}
@@ -447,6 +531,14 @@ func (s *knownTxSidecar) FrostTxExists(context.Context, string) (bool, error) {
 	return s.asked > s.unknownFor, nil
 }
 
+// FrostVaultOutputs lets the bare sidecar satisfy FrostVaultOutputsClient so the
+// prepared-input adoption path can list outputs to bind the reported spent
+// refs. Tests that stub verifyAdopted ignore the returned outputs; those that
+// exercise the real bind embed knownTxSidecar in a sidecar that overrides this.
+func (s *knownTxSidecar) FrostVaultOutputs(context.Context, string) ([]FrostVaultOutput, error) {
+	return nil, nil
+}
+
 // Below threshold+1 the node does not verify signatures or range proofs, and a
 // member without prepared inputs takes key images from the reported refs. So
 // colluders below the signing threshold could hand it a transaction they never
@@ -667,7 +759,7 @@ func TestFrostWaitForResultPreparedAdoptionNeedsTheDaemon(t *testing.T) {
 				recheckInterval:  10 * time.Millisecond,
 				preparedInputs:   prepared,
 				preparedRequest:  req,
-				verifyAdopted: func(req FrostKeySignRequest, prepared []FrostSpentOutputRef, resp FrostKeySignResponse) error {
+				verifyAdopted: func(req FrostKeySignRequest, prepared []FrostSpentOutputRef, resp FrostKeySignResponse, _ []FrostVaultOutput) error {
 					return verifyFrostTxForVault(req, prepared, resp, golden832cVaultAddress)
 				},
 			}

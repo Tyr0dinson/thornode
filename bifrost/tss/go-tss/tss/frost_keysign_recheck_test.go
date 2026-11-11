@@ -72,7 +72,7 @@ func TestFrostWaitForResultRechecksOnlyTheDaemonOnceVerified(t *testing.T) {
 			recheckInterval:  10 * time.Millisecond,
 			preparedInputs:   prepared,
 			preparedRequest:  req,
-			verifyAdopted: func(req FrostKeySignRequest, prepared []FrostSpentOutputRef, resp FrostKeySignResponse) error {
+			verifyAdopted: func(req FrostKeySignRequest, prepared []FrostSpentOutputRef, resp FrostKeySignResponse, _ []FrostVaultOutput) error {
 				verified++
 				return verifyFrostTxForVault(req, prepared, resp, golden832cVaultAddress)
 			},
@@ -166,7 +166,7 @@ func TestFrostWaitForResultBoundsSidecarCallsByItsTimeout(t *testing.T) {
 				coord.localPubKey = party[0]
 				coord.preparedInputs = prepared
 				coord.preparedRequest = req
-				coord.verifyAdopted = func(req FrostKeySignRequest, prepared []FrostSpentOutputRef, resp FrostKeySignResponse) error {
+				coord.verifyAdopted = func(req FrostKeySignRequest, prepared []FrostSpentOutputRef, resp FrostKeySignResponse, _ []FrostVaultOutput) error {
 					return verifyFrostTxForVault(req, prepared, resp, golden832cVaultAddress)
 				}
 				result = goldenResult(t, prepared, genuine)
@@ -214,7 +214,7 @@ func TestFrostWaitForResultReadsFullQuorumPastStalledSidecar(t *testing.T) {
 	coord.localPubKey = party[0]
 	coord.preparedInputs = prepared
 	coord.preparedRequest = req
-	coord.verifyAdopted = func(req FrostKeySignRequest, prepared []FrostSpentOutputRef, resp FrostKeySignResponse) error {
+	coord.verifyAdopted = func(req FrostKeySignRequest, prepared []FrostSpentOutputRef, resp FrostKeySignResponse, _ []FrostVaultOutput) error {
 		return verifyFrostTxForVault(req, prepared, resp, golden832cVaultAddress)
 	}
 	result := goldenResult(t, prepared, genuine)
