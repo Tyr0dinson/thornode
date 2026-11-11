@@ -6,9 +6,12 @@ import (
 	"strings"
 
 	se "github.com/cosmos/cosmos-sdk/types/errors"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/common/telemetry"
 	"gitlab.com/thorchain/thornode/v3/constants"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 
@@ -454,6 +457,71 @@ func (s *HandlerSwapSuite) TestHandle(c *C) {
 	c.Assert(err, NotNil)
 	c.Assert(result, IsNil)
 	keeper.haltChain = 0
+}
+
+func (s *HandlerSwapSuite) TestPostSwapHandlerTracing(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	k := &TestSwapHandleKeeper{
+		pools:             make(map[common.Asset]Pool),
+		activeNodeAccount: GetRandomValidatorNode(NodeActive),
+		synthSupply:       cosmos.ZeroUint(),
+	}
+	mgr.K = k
+	mgr.txOutStore = NewTxStoreDummy()
+	tracer, err := NewTracer(
+		TraceConfig{TraceHandlers: true},
+		true,
+		prometheus.NewRegistry(),
+	)
+	c.Assert(err, IsNil)
+	mgr.tracer = tracer
+
+	pool := NewPool()
+	pool.Asset = common.DOGEAsset
+	pool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	pool.BalanceRune = cosmos.NewUint(100 * common.One)
+	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+
+	from := GetRandomDOGEAddress()
+	tx := common.NewTx(
+		GetRandomTxHash(),
+		from,
+		from,
+		common.NewCoins(common.NewCoin(common.RuneAsset(), cosmos.NewUint(2*common.One))),
+		common.Gas{common.NewCoin(common.DOGEAsset, cosmos.NewUint(10_000))},
+		fmt.Sprintf("add:DOGE.DOGE:%s", GetRandomTHORAddress()),
+	)
+	msg := NewMsgSwap(
+		tx,
+		common.DOGEAsset,
+		from,
+		cosmos.ZeroUint(),
+		common.NoAddress,
+		cosmos.ZeroUint(),
+		"",
+		"",
+		nil,
+		types.SwapType_market,
+		0,
+		0,
+		types.SwapVersion_v1,
+		k.activeNodeAccount.NodeAddress,
+	)
+
+	_, _, _ = NewSwapHandler(mgr).handleWithEmit(ctx, *msg)
+	msgType := msgTypeURL(&MsgAddLiquidity{})
+	traced := testutil.ToFloat64(tracer.handlerRuns.WithLabelValues(
+		msgType,
+		pathPostSwap,
+		telemetry.ModeExecution,
+		telemetry.OutcomeSuccess,
+	)) + testutil.ToFloat64(tracer.handlerRuns.WithLabelValues(
+		msgType,
+		pathPostSwap,
+		telemetry.ModeExecution,
+		telemetry.OutcomeError,
+	))
+	c.Assert(traced, Equals, float64(1))
 }
 
 func (s *HandlerSwapSuite) TestHandleRejectsWrongNetworkZECDestination(c *C) {

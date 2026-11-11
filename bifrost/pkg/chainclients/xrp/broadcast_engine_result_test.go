@@ -46,8 +46,9 @@ func TestBroadcastTxEngineResults(t *testing.T) {
 				rpcClient: rpc.NewClient(cfg),
 			}
 
-			err = c.broadcastTx(blob)
+			engineResult, err := c.broadcastTx(blob)
 			require.NotNil(t, mc.Spy, "submit must reach the server")
+			require.Equal(t, tc.engineResult, engineResult, "broadcastTx must return the engine result")
 			if tc.wantErr {
 				require.ErrorContains(t, err, tc.engineResult)
 			} else {

@@ -27,6 +27,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/config"
+	"gitlab.com/thorchain/thornode/v3/constants"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
@@ -135,6 +136,7 @@ func (s *SolvencyTestSuite) TestSolvencyCheck(c *C) {
 			"SolvencyHaltETHChain": tc.solvencyHaltHeight,
 		}
 
+		var lastBlockHits atomic.Int32
 		h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			c.Logf("================>:%s", r.RequestURI)
 			if strings.HasPrefix(r.RequestURI, thorclient.MimirEndpoint) {
@@ -149,6 +151,7 @@ func (s *SolvencyTestSuite) TestSolvencyCheck(c *C) {
 				}
 			}
 			if strings.HasPrefix(r.RequestURI, thorclient.LastBlockEndpoint) {
+				lastBlockHits.Add(1)
 				if _, err := w.Write([]byte(`[{"thorchain": 100}]`)); err != nil {
 					c.Error(err)
 				}
@@ -172,13 +175,30 @@ func (s *SolvencyTestSuite) TestSolvencyCheck(c *C) {
 		wg := &sync.WaitGroup{}
 		wg.Add(1)
 		go SolvencyCheckRunner(common.ETHChain, sp, bridge, stopchan, wg, 10*time.Millisecond)
-		time.Sleep(50 * time.Millisecond)
+		// A tick reads the THORChain height before deciding; stopping after that
+		// still lets the tick finish, since the stopper is checked between ticks.
+		if tc.expectReport {
+			waitFor(c, sp.ReportSolvencyRun)
+		} else {
+			waitFor(c, func() bool { return lastBlockHits.Load() > 0 })
+		}
 		close(stopchan)
 		wg.Wait()
 		server.Close()
 
 		c.Assert(sp.ShouldReportSolvencyRan(), Equals, tc.expectCheck)
 		c.Assert(sp.ReportSolvencyRun(), Equals, tc.expectReport)
+	}
+}
+
+// waitFor polls cond until it holds, failing the test after 5s.
+func waitFor(c *C, cond func() bool) {
+	deadline := time.Now().Add(5 * time.Second)
+	for !cond() {
+		if time.Now().After(deadline) {
+			c.Fatal("condition not met within 5s")
+		}
+		time.Sleep(time.Millisecond)
 	}
 }
 
@@ -247,9 +267,8 @@ func (s *SolvencyTestSuite) TestSolvencyCheckRunnerNilProvider(c *C) {
 
 func (s *SolvencyTestSuite) TestSolvencyCheckRunnerZeroBackoff(c *C) {
 	// backOffDuration == 0 should default to ThorchainBlockTime (1s in mocknet).
-	// We verify this by counting calls over a known window: with a 1s interval,
-	// 3.5s of sleep should yield ~3 calls. A wrong shorter fallback (e.g. 100ms)
-	// would produce ~35 calls and fail the upper-bound assertion.
+	// The first tick fires one interval after start, so time it: a wrong shorter
+	// fallback (e.g. 100ms) reaches GetHeight too early, a longer one too late.
 	mimirMap := map[string]int{
 		"HaltETHChain":         10,
 		"SolvencyHaltETHChain": 0,
@@ -287,18 +306,21 @@ func (s *SolvencyTestSuite) TestSolvencyCheckRunnerZeroBackoff(c *C) {
 	stopchan := make(chan struct{})
 	wg := &sync.WaitGroup{}
 	wg.Add(1)
+	start := time.Now()
 	// Pass 0 as backOffDuration - should default to ThorchainBlockTime
 	go SolvencyCheckRunner(common.ETHChain, s.sp, bridge, stopchan, wg, 0)
-	time.Sleep(time.Millisecond * 3500)
+	limit := 3 * constants.ThorchainBlockTime
+	for s.sp.callCount.Load() == 0 && time.Since(start) < limit {
+		time.Sleep(5 * time.Millisecond)
+	}
+	elapsed := time.Since(start)
 	close(stopchan)
 	wg.Wait()
 
-	calls := int(s.sp.callCount.Load())
+	c.Assert(s.sp.callCount.Load() > 0, Equals, true, Commentf("no tick within %s", limit))
 	c.Assert(s.sp.ShouldReportSolvencyRan(), Equals, true)
-	// With ThorchainBlockTime=1s (mocknet), expect 2-4 calls in 3.5s.
-	// A wrong sub-second default would produce far more calls.
-	c.Assert(calls >= 2, Equals, true, Commentf("expected at least 2 calls, got %d", calls))
-	c.Assert(calls <= 5, Equals, true, Commentf("expected at most 5 calls, got %d — interval likely shorter than ThorchainBlockTime", calls))
+	c.Assert(elapsed >= constants.ThorchainBlockTime, Equals, true, Commentf("first tick after %s — interval shorter than ThorchainBlockTime", elapsed))
+	c.Assert(elapsed < 2*constants.ThorchainBlockTime, Equals, true, Commentf("first tick after %s — interval longer than ThorchainBlockTime", elapsed))
 }
 
 func (s *SolvencyTestSuite) TestSolvencyCheckRunnerStopChannel(c *C) {
@@ -312,7 +334,9 @@ func (s *SolvencyTestSuite) TestSolvencyCheckRunnerStopChannel(c *C) {
 
 func (s *SolvencyTestSuite) TestSolvencyCheckRunnerGetMimirError(c *C) {
 	// Server that returns errors for mimir requests
+	var hits atomic.Int32
 	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
 		http.Error(w, "bad request", http.StatusInternalServerError)
 	})
 	server := httptest.NewServer(h)
@@ -330,8 +354,8 @@ func (s *SolvencyTestSuite) TestSolvencyCheckRunnerGetMimirError(c *C) {
 	stopchan := make(chan struct{})
 	wg := &sync.WaitGroup{}
 	wg.Add(1)
-	go SolvencyCheckRunner(common.ETHChain, s.sp, bridge, stopchan, wg, time.Millisecond*200)
-	time.Sleep(time.Millisecond * 500)
+	go SolvencyCheckRunner(common.ETHChain, s.sp, bridge, stopchan, wg, 10*time.Millisecond)
+	waitFor(c, func() bool { return hits.Load() > 0 })
 	close(stopchan)
 	wg.Wait()
 	// GetMimir errors should prevent solvency check from running
@@ -377,8 +401,8 @@ func (s *SolvencyTestSuite) TestSolvencyCheckRunnerGetHeightError(c *C) {
 	stopchan := make(chan struct{})
 	wg := &sync.WaitGroup{}
 	wg.Add(1)
-	go SolvencyCheckRunner(common.ETHChain, s.sp, bridge, stopchan, wg, time.Millisecond*200)
-	time.Sleep(time.Millisecond * 500)
+	go SolvencyCheckRunner(common.ETHChain, s.sp, bridge, stopchan, wg, 10*time.Millisecond)
+	waitFor(c, func() bool { return s.sp.callCount.Load() > 0 })
 	close(stopchan)
 	wg.Wait()
 	// GetHeight error should prevent ShouldReportSolvency from running
@@ -424,8 +448,8 @@ func (s *SolvencyTestSuite) TestSolvencyCheckRunnerShouldNotReport(c *C) {
 	stopchan := make(chan struct{})
 	wg := &sync.WaitGroup{}
 	wg.Add(1)
-	go SolvencyCheckRunner(common.ETHChain, s.sp, bridge, stopchan, wg, time.Millisecond*200)
-	time.Sleep(time.Millisecond * 500)
+	go SolvencyCheckRunner(common.ETHChain, s.sp, bridge, stopchan, wg, 10*time.Millisecond)
+	waitFor(c, s.sp.ShouldReportSolvencyRan)
 	close(stopchan)
 	wg.Wait()
 	c.Assert(s.sp.ShouldReportSolvencyRan(), Equals, true)
@@ -471,8 +495,8 @@ func (s *SolvencyTestSuite) TestSolvencyCheckRunnerReportError(c *C) {
 	stopchan := make(chan struct{})
 	wg := &sync.WaitGroup{}
 	wg.Add(1)
-	go SolvencyCheckRunner(common.ETHChain, s.sp, bridge, stopchan, wg, time.Millisecond*200)
-	time.Sleep(time.Millisecond * 500)
+	go SolvencyCheckRunner(common.ETHChain, s.sp, bridge, stopchan, wg, 10*time.Millisecond)
+	waitFor(c, s.sp.ReportSolvencyRun)
 	close(stopchan)
 	wg.Wait()
 	c.Assert(s.sp.ShouldReportSolvencyRan(), Equals, true)
@@ -481,11 +505,13 @@ func (s *SolvencyTestSuite) TestSolvencyCheckRunnerReportError(c *C) {
 
 func (s *SolvencyTestSuite) TestSolvencyCheckRunnerSolvencyHaltError(c *C) {
 	// First mimir call succeeds (HaltChain), second fails (SolvencyHalt)
+	var solvencyHaltHits atomic.Int32
 	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(r.RequestURI, thorclient.MimirEndpoint) {
 			parts := strings.Split(r.RequestURI, "/key/")
 			mimirKey := parts[1]
 			if strings.HasPrefix(mimirKey, "SolvencyHalt") {
+				solvencyHaltHits.Add(1)
 				http.Error(w, "internal error", http.StatusInternalServerError)
 				return
 			}
@@ -510,8 +536,8 @@ func (s *SolvencyTestSuite) TestSolvencyCheckRunnerSolvencyHaltError(c *C) {
 	stopchan := make(chan struct{})
 	wg := &sync.WaitGroup{}
 	wg.Add(1)
-	go SolvencyCheckRunner(common.ETHChain, s.sp, bridge, stopchan, wg, time.Millisecond*200)
-	time.Sleep(time.Millisecond * 500)
+	go SolvencyCheckRunner(common.ETHChain, s.sp, bridge, stopchan, wg, 10*time.Millisecond)
+	waitFor(c, func() bool { return solvencyHaltHits.Load() > 0 })
 	close(stopchan)
 	wg.Wait()
 	// Solvency halt error should prevent solvency check

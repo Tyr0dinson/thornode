@@ -1,4 +1,4 @@
-image: golang:1.26.10
+image: golang:1.26.11
 
 # Retry jobs that failed for infrastructure reasons, never on script_failure.
 # Server-side execution timeouts are left out: those jobs really ran too long.
@@ -60,7 +60,7 @@ variables:
   # tss-lib-private is a private GitLab subgroup repo; skip proxy.golang.org / sumdb
   # and resolve directly so the per-job git auth below takes effect.
   GOPRIVATE: gitlab.com/thorchain/tss/tss-lib-private.git
-  # Download the toolchain pinned in go.mod (toolchain go1.26.10) when an image
+  # Download the toolchain pinned in go.mod (toolchain go1.26.11) when an image
   # ships an older Go (the CI tools image's Go is a floor, not a pin).
   GOTOOLCHAIN: auto
   SAST_EXCLUDED_ANALYZERS: eslint,bandit,semgrep
@@ -135,8 +135,8 @@ variables:
           unset DOCKER_MIRROR
         # imagetools resolves the manifest in ~1s; `docker manifest inspect`
         # took 16-32s against the dependency proxy in every dind job.
-        elif ! docker buildx imagetools inspect "${DOCKER_MIRROR}golang:1.26.10" >/dev/null 2>&1; then
-          echo "Dependency proxy missing golang:1.26.10; falling back to Docker Hub"
+        elif ! docker buildx imagetools inspect "${DOCKER_MIRROR}golang:1.26.11" >/dev/null 2>&1; then
+          echo "Dependency proxy missing golang:1.26.11; falling back to Docker Hub"
           unset DOCKER_MIRROR
         fi
       fi
@@ -1044,9 +1044,9 @@ test-simulation:
   # test-simulation-cluster-native in the Makefile), with the runner's warm Go
   # caches. bookworm is the build stage of build/docker/Dockerfile, so the
   # binaries link against the glibc of the bookworm runtime they run on; the
-  # default golang:1.26.10 is trixie. The module cache is warm, so like
+  # default golang:1.26.11 is trixie. The module cache is warm, so like
   # unit-tests this only warns when no credential can read tss-lib-private.
-  image: golang:1.26.10-bookworm
+  image: golang:1.26.11-bookworm
   services:
     - docker:28.5.2-dind
   artifacts:
@@ -1225,7 +1225,10 @@ consensus-determinism:
     PKGS: util-linux
     FUZZ_CORPUS_DIR: "$CI_PROJECT_DIR/.security-fuzz-corpus"
   # Each branch keeps its own corpus, seeded from the default branch's, so a
-  # crasher saved by one branch is never replayed on another.
+  # crasher saved by one branch is never replayed on another. The fuzzer reads
+  # and writes it in the job's own checkout, not the runner host's shared build
+  # cache, so fast and deep fuzz jobs never wait on each other and every
+  # failure fails the job.
   cache:
     key: security-fuzz-corpus-v2-$CI_COMMIT_REF_SLUG
     fallback_keys:
@@ -1256,21 +1259,17 @@ security-fuzz-fast:
   timeout: 25m
   variables:
     FUZZ_TIME: 1000x
-    FUZZ_CORPUS_DIR: "$CI_PROJECT_DIR/.security-fuzz-corpus"
 
 security-fuzz-deep:
   extends: .security-fuzz-base
-  rules:
-    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+  rules: *rules
   timeout: 1h
   variables:
     FUZZ_TIME: 20s
-    FUZZ_CORPUS_DIR: "$CI_PROJECT_DIR/.security-fuzz-corpus"
 
 accounting-properties-deep:
   tags: !reference [.small-runner, tags]
-  rules:
-    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+  rules: *rules
   stage: long-test
   needs:
     - job: unit-tests

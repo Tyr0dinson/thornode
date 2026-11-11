@@ -75,7 +75,9 @@ func (k KVStore) SetPool(ctx cosmos.Context, pool Pool) error {
 		return errors.New("cannot save a pool with an empty asset")
 	}
 	keeper.RecordLuviTouch(ctx, pool.Asset, k.luviCapture(ctx))
-	k.setPool(ctx, k.GetKey(prefixPool, pool.Asset.String()), pool)
+	key := k.GetKey(prefixPool, pool.Asset.String())
+	keeper.AnchorsCacheFromContext(ctx).NotePoolWrite(key)
+	k.setPool(ctx, key, pool)
 	return nil
 }
 
@@ -86,6 +88,7 @@ func (k KVStore) PoolExist(ctx cosmos.Context, asset common.Asset) bool {
 
 func (k KVStore) RemovePool(ctx cosmos.Context, asset common.Asset) {
 	keeper.RecordLuviTouch(ctx, asset, k.luviCapture(ctx))
+	keeper.AnchorsCacheFromContext(ctx).Disable()
 	k.del(ctx, k.GetKey(prefixPool, asset.String()))
 	// a re-created pool starts a fresh accumulator rather than observing a
 	// step from the removed pool's last state

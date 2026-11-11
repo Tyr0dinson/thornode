@@ -20,6 +20,11 @@ type zecEntrypointFixture struct {
 
 func newZecEntrypointFixture(t *testing.T, mode string, height int) *zecEntrypointFixture {
 	t.Helper()
+	return newZecEntrypointWithBlockTime(t, mode, height, "7")
+}
+
+func newZecEntrypointWithBlockTime(t *testing.T, mode string, height int, blockTime string) *zecEntrypointFixture {
+	t.Helper()
 	f := &zecEntrypointFixture{t: t, dir: t.TempDir(), done: make(chan struct{})}
 	// The daemon, rather than curl, owns a submitted mining job. Losing the
 	// client does not complete that job, and getblockcount remains responsive.
@@ -103,7 +108,8 @@ exit "$rc"
 `)
 	f.write("sleep", `#!/bin/sh
 case "$1" in
-  7)
+  5|7)
+    echo "interval-$1" >"$FIXTURE/interval"
     echo paced >>"$FIXTURE/events"
     touch "$FIXTURE/stop"
     while [ ! -e "$FIXTURE/daemon-stopped" ]; do /bin/sleep 0.01; done
@@ -118,7 +124,7 @@ esac
 `)
 	f.cmd = exec.Command("sh", filepath.Join(repoRoot(t), "build/docker/mocknet/zcash/entrypoint.sh"))
 	f.cmd.Env = append(os.Environ(), "PATH="+f.dir+":"+os.Getenv("PATH"), "FIXTURE="+f.dir,
-		"MODE="+mode, "START_HEIGHT="+strconv.Itoa(height), "BLOCK_TIME=7", "BOOTSTRAP_TIMEOUT=5")
+		"MODE="+mode, "START_HEIGHT="+strconv.Itoa(height), "BLOCK_TIME="+blockTime, "BOOTSTRAP_TIMEOUT=5")
 	output, err := os.Create(filepath.Join(f.dir, "output"))
 	if err != nil {
 		t.Fatal(err)
@@ -268,4 +274,21 @@ func TestZecEntrypointPreservesDaemonAfterAmbiguousMining(t *testing.T) {
 			f.waitForExit(false)
 		})
 	}
+}
+
+// The one-second default exhausted the 40-block expiry during a 24-second
+// migration keysign after observation lag. Five-second blocks leave 115 seconds
+// at the observed 17-block lag, including the configured 45-second TSS timeout.
+func TestZecEntrypointDefaultSigningBudget(t *testing.T) {
+	f := newZecEntrypointWithBlockTime(t, "success", 1015, "")
+	f.waitFor(func() bool { return f.read("count") != "" })
+	// Bound this assertion before waiting for exit so a one-second default
+	// fails on its actual pacing choice rather than an unrelated test timeout.
+	f.waitFor(func() bool {
+		return strings.Contains(f.read("events"), "paced\n") || strings.Contains(f.read("events"), "retry\n")
+	})
+	if got := f.read("interval"); got != "interval-5\n" {
+		t.Fatalf("Zcash default pacing does not leave the migration signing budget: interval=%q events=%s", got, f.read("events"))
+	}
+	f.waitForExit(true)
 }

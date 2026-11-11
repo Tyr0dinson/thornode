@@ -164,6 +164,11 @@ func (s *CacheStore) RemoveSigned(transactionHash string) error {
 	return nil
 }
 
+// HasTransactionHash checks the reverse index used by RemoveSigned.
+func (s *CacheStore) HasTransactionHash(transactionHash string) (bool, error) {
+	return s.db.Has([]byte(s.getMapKey(transactionHash)), nil)
+}
+
 // SetTransactionHashMap map a transaction hash to a tx out item hash
 func (s *CacheStore) SetTransactionHashMap(txOutItemHash, transactionHash string) error {
 	key := s.getMapKey(transactionHash)

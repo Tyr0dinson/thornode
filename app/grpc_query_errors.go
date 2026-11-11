@@ -23,7 +23,8 @@ import (
 // this shim, routing REST via gRPC (api.query-via-grpc) turns ordinary client
 // errors into 500s.
 func (app *THORChainApp) RegisterGRPCServerWithSkipCheckHeader(server gogogrpc.Server, skipCheckHeader bool) {
-	app.BaseApp.RegisterGRPCServerWithSkipCheckHeader(abciParityServer{server}, skipCheckHeader)
+	// The divergence tracker counts queries; a nil tracker returns server as is.
+	app.BaseApp.RegisterGRPCServerWithSkipCheckHeader(abciParityServer{app.divergence.Tracker().WrapGRPCServer(server)}, skipCheckHeader)
 }
 
 type abciParityServer struct {

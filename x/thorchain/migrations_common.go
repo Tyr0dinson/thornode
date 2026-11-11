@@ -512,9 +512,15 @@ func (m Migrator) Migrate19to20(ctx cosmos.Context) error {
 	return nil
 }
 
-// Migrate20to21 writes down the GAIA.ATOM that vault ...jy4h was credited for
-// five inbounds it never received on the Cosmos Hub, and replenishes the
-// GAIA.ATOM pool with Reserve RUNE. Mainnet only; the step soft-skips on drift.
+// Migrate20to21 reimburses tcso (the Secured Ops wallet) from the Reserve for
+// three outlays made on users' behalf, replacing the earlier phantom-ATOM
+// write-down: the GAIA vault solvency top-up (the backing was restored
+// directly, so no phantom ATOM is written off vault ...jy4h or its pool) and
+// the TRON.TRX manual refund tcso funded from its own holdings, plus the LTC
+// manual refund paid in ETH by Maya Secured Ops (mso), for which tcso is
+// reimbursed by Itz's decision of 2026-11-05. The three RUNE payments are
+// applied atomically (all or none) and move no vault, pool or Asgard balance.
+// Mainnet only; it never halts the upgrade.
 func (m Migrator) Migrate20to21(ctx cosmos.Context) error {
 	if err := m.mgr.LoadManagerIfNecessary(ctx); err != nil {
 		return err

@@ -49,13 +49,14 @@ func (s *KeeperTestSuite) SetUpTest(c *C) {
 		storetypes.NewMemoryStoreKeys(),
 	)
 	wasmkeeper := &MockWasmKeeper{}
+	tracingWasmKeeper := keeper.NewTracingWasmKeeper(wasmkeeper, nil)
 	encCfg := moduletestutil.MakeTestEncodingConfig()
 	s.ctx = testCtx
 	s.storeKeys = keys
 	s.keeper = keeper.NewKeeper(
 		encCfg.Codec,
 		runtime.NewKVStoreService(keys[types.StoreKey]),
-		wasmkeeper,
+		tracingWasmKeeper,
 		authAcc.String(),
 	)
 

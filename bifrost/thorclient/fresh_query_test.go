@@ -385,3 +385,14 @@ func (s *FreshQuerySuite) TestFreshBlockHeightBypassesButDoesNotReplaceCache(c *
 	c.Assert(stillCached, Equals, int64(41))
 	c.Assert(requests, Equals, 2)
 }
+
+// The signer's THORChain scanner reads the height through this optional method;
+// if NewThorchainBridge stopped providing it, outbounds would silently fall back
+// to the cached height.
+func (s *FreshQuerySuite) TestNewThorchainBridgeServesUncachedHeight(c *C) {
+	cfg, _, kb := SetupThorchainForTest(c)
+	bridge, err := NewThorchainBridge(cfg, GetMetricForTest(c), NewKeysWithKeybase(kb, cfg.SignerName, cfg.SignerPasswd))
+	c.Assert(err, IsNil)
+	_, ok := bridge.(interface{ GetBlockHeightUncached() (int64, error) })
+	c.Assert(ok, Equals, true)
+}

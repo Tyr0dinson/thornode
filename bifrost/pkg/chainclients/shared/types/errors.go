@@ -12,3 +12,7 @@ var ErrTxExpired = errors.New("transaction expired")
 // the signer must also exclude its own checkpoints and terminal-round retries.
 // It does not discharge THORChain's pending outbound obligation.
 var ErrUnsupportedXMRDestination = errors.New("unsupported unsigned XMR destination")
+
+// ErrTxPending retains a signing item and its checkpoint during normal progress,
+// such as waiting for an approval to mine. It is not a signing failure.
+var ErrTxPending = errors.New("transaction pending")

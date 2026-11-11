@@ -16,7 +16,12 @@ import (
 
 func TestMain(m *testing.M) {
 	config.Init()
-	os.Exit(m.Run())
+	code := m.Run()
+	if sharedWasmVM.vm != nil {
+		sharedWasmVM.vm.Cleanup()
+	}
+	_ = os.RemoveAll(sharedWasmVM.dir)
+	os.Exit(code)
 }
 
 func TestPackage(t *testing.T) { TestingT(t) }

@@ -23,8 +23,16 @@ import (
 
 // TestAttestationBatcher tests the attestation batcher functionality
 func TestAttestationBatcher(t *testing.T) {
-	// Setup logger for tests
-	logger := zerolog.New(zerolog.NewTestWriter(t)).Level(zerolog.DebugLevel)
+	// Peer sends run on goroutines the batcher never joins, so they can log
+	// after this test returns; writing those logs to t is a data race. Buffer
+	// them and print the buffer only when the test fails.
+	var logs stateSyncLogBuffer
+	logger := zerolog.New(&logs).Level(zerolog.DebugLevel)
+	t.Cleanup(func() {
+		if t.Failed() {
+			t.Log(logs.String())
+		}
+	})
 
 	t.Run("creates batcher with custom values", func(t *testing.T) {
 		host := NewMockHost([]peer.ID{})
@@ -102,15 +110,14 @@ func TestAttestationBatcher(t *testing.T) {
 			})
 		}
 
-		// Wait for batch interval plus a little buffer
-		time.Sleep(150 * time.Millisecond)
-
-		// Verify streams were created to peers
-		mockHost.mu.Lock()
-		streamCount := len(mockHost.createdStreams)
-		mockHost.mu.Unlock()
-
-		assert.GreaterOrEqual(t, streamCount, 2, "Should create streams to both peers")
+		// The ticker send dials each peer from its own goroutine; poll rather
+		// than sleep a fixed 150ms, which a loaded runner can exceed. peer1 is
+		// the mock host itself, so peer2 and peer3 are the recipients.
+		require.Eventually(t, func() bool {
+			mockHost.mu.Lock()
+			defer mockHost.mu.Unlock()
+			return len(mockHost.createdStreams) >= 2
+		}, 10*time.Second, 10*time.Millisecond, "Should create streams to both peers")
 
 		// Verify the batch protocol was used
 		mockHost.mu.Lock()
@@ -226,15 +233,18 @@ func TestAttestationBatcher(t *testing.T) {
 			})
 		}
 
-		// Wait a bit for force send to happen
-		time.Sleep(500 * time.Millisecond)
-
-		// Verify streams were created to the peer
-		mockHost.mu.Lock()
-		streamCount := len(mockHost.createdStreams)
-		mockHost.mu.Unlock()
-
-		assert.GreaterOrEqual(t, streamCount, 1, "Should force send and create stream to peer")
+		// The force send dials each peer from its own goroutine; poll rather
+		// than sleep a fixed 500ms, which a loaded runner can exceed.
+		streamCount := func() int {
+			mockHost.mu.Lock()
+			defer mockHost.mu.Unlock()
+			return len(mockHost.createdStreams)
+		}
+		// The batch interval is 10s, so a stream before then is the force send.
+		// peer1 is the mock host itself, so peer2 is the only recipient and no
+		// first-batch dial is still pending once its stream exists.
+		require.Eventually(t, func() bool { return streamCount() >= 1 }, 5*time.Second, 10*time.Millisecond,
+			"Should force send and create stream to peer")
 
 		// Clear mock host for next test
 		mockHost.clearStreams()
@@ -253,15 +263,8 @@ func TestAttestationBatcher(t *testing.T) {
 			})
 		}
 
-		// Wait a bit for force send
-		time.Sleep(500 * time.Millisecond)
-
-		// Verify another stream was created
-		mockHost.mu.Lock()
-		newStreamCount := len(mockHost.createdStreams)
-		mockHost.mu.Unlock()
-
-		assert.GreaterOrEqual(t, newStreamCount, 1, "Should force send network fees batch")
+		require.Eventually(t, func() bool { return streamCount() >= 1 }, 5*time.Second, 10*time.Millisecond,
+			"Should force send network fees batch")
 	})
 
 	t.Run("handles batch clearing properly", func(t *testing.T) {
