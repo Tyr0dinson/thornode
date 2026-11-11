@@ -4146,10 +4146,16 @@ func collectChainNodeCounts(ctx cosmos.Context, k keeper.Keeper) (chainStrs []st
 		return nil, nil, fmt.Errorf("fail to get active validators: %w", err)
 	}
 
+	// Count each active node towards the chains of the active vaults it is a
+	// member of, not its self-declared SupportedChains: a declaration does not
+	// make a node serve a chain until a keygen puts it in that chain's vault.
+	served, err := getActiveVaultMemberChains(ctx, k)
+	if err != nil {
+		return nil, nil, err
+	}
 	chainNodeCounts = make(map[string]int64)
 	for _, node := range active {
-		// Get the chains this node supports (with backwards compatibility for empty SupportedChains)
-		for _, chainStr := range getNodeSupportedChains(ctx, k, node) {
+		for _, chainStr := range served[node.PubKeySet.Secp256k1.String()] {
 			if _, ok := chainNodeCounts[chainStr]; !ok {
 				chainStrs = append(chainStrs, chainStr)
 			}

@@ -1433,6 +1433,7 @@ func (vts *ValidatorMgrTestSuite) TestWeightedBondReward(c *C) {
 
 	// Enable chain-aware consensus feature
 	mgr.Keeper().SetMimir(ctx, constants.EnableNodeChainConsensus.String(), 1)
+	setRewardVault(c, ctx, mgr.Keeper(), common.Chains{common.ETHChain}, na1, na2, na3)
 
 	network, _ := networkMgr.k.GetNetwork(ctx)
 	network.BondRewardRune = cosmos.NewUint(1 * common.One)
@@ -2670,11 +2671,9 @@ func (vts *ValidatorMgrTestSuite) TestChainRewardsEdgeCases(c *C) {
 	na1.SupportedChains = []string{} // Empty - should inherit from active vaults
 	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na1), IsNil)
 
-	// Create an active vault so the backwards compatibility path can inherit chains
-	vault := GetRandomVault()
-	vault.Status = ActiveVault
-	vault.Chains = []string{common.ETHChain.String()}
-	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+	// An empty SupportedChains does not matter: rewards follow the vaults the
+	// node is a member of.
+	setRewardVault(c, ctx, mgr.Keeper(), common.Chains{common.ETHChain}, na1)
 
 	network, _ := networkMgr.k.GetNetwork(ctx)
 	network.BondRewardRune = cosmos.NewUint(1 * common.One)
@@ -2742,12 +2741,6 @@ func (vts *ValidatorMgrTestSuite) TestMultipleChainRewards(c *C) {
 	// Enable chain-aware consensus
 	mgr.Keeper().SetMimir(ctx, constants.EnableNodeChainConsensus.String(), 1)
 
-	// Create an active vault for backward compatibility
-	vault := GetRandomVault()
-	vault.Status = ActiveVault
-	vault.Chains = []string{common.ETHChain.String(), common.BTCChain.String()}
-	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
-
 	// Create nodes supporting different chain combinations
 	// Node 1: Supports only ETH
 	na1 := GetRandomValidatorNode(NodeActive)
@@ -2769,6 +2762,8 @@ func (vts *ValidatorMgrTestSuite) TestMultipleChainRewards(c *C) {
 	na3.ActiveBlockHeight = 1 // Active from block 1 (ActiveBlockHeight=0 would skip rewards)
 	na3.SupportedChains = []string{common.ETHChain.String(), common.BTCChain.String()}
 	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na3), IsNil)
+	setRewardVault(c, ctx, mgr.Keeper(), common.Chains{common.ETHChain}, na1, na3)
+	setRewardVault(c, ctx, mgr.Keeper(), common.Chains{common.BTCChain}, na2, na3)
 
 	// Set up network with different rewards for each chain
 	network, _ := networkMgr.k.GetNetwork(ctx)
@@ -2901,6 +2896,7 @@ func (vts *ValidatorMgrTestSuite) TestChainAwareVsLegacyComparison(c *C) {
 	// Use default ActiveBlockHeight = 10 from GetRandomValidatorNode
 	na2ChainAware.SupportedChains = []string{common.ETHChain.String(), common.BTCChain.String()}
 	c.Assert(mgr2.Keeper().SetNodeAccount(ctx2, na2ChainAware), IsNil)
+	setRewardVault(c, ctx2, mgr2.Keeper(), common.Chains{common.ETHChain, common.BTCChain}, na1ChainAware, na2ChainAware)
 
 	// Setup chain-aware network state with same total rewards
 	network2, _ := networkMgr2.k.GetNetwork(ctx2)
@@ -2947,12 +2943,6 @@ func (vts *ValidatorMgrTestSuite) TestChainRewardNetworkStateUpdates(c *C) {
 	// Enable chain-aware consensus
 	mgr.Keeper().SetMimir(ctx, constants.EnableNodeChainConsensus.String(), 1)
 
-	// Create an active vault for backward compatibility
-	vault := GetRandomVault()
-	vault.Status = ActiveVault
-	vault.Chains = []string{common.ETHChain.String(), common.BTCChain.String()}
-	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
-
 	// Create nodes supporting different chains
 	na1 := GetRandomValidatorNode(NodeActive)
 	na1.Bond = cosmos.NewUint(3 * common.One)
@@ -2971,6 +2961,8 @@ func (vts *ValidatorMgrTestSuite) TestChainRewardNetworkStateUpdates(c *C) {
 	na3.ActiveBlockHeight = 1 // Active from block 1 (ActiveBlockHeight=0 would skip rewards)
 	na3.SupportedChains = []string{common.ETHChain.String(), common.BTCChain.String()}
 	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na3), IsNil)
+	setRewardVault(c, ctx, mgr.Keeper(), common.Chains{common.ETHChain}, na1, na3)
+	setRewardVault(c, ctx, mgr.Keeper(), common.Chains{common.BTCChain}, na2, na3)
 
 	// Set up initial network state with precise values
 	network, _ := networkMgr.k.GetNetwork(ctx)
@@ -3074,6 +3066,8 @@ func (vts *ValidatorMgrTestSuite) TestChainRewardPayoutUsesChainBondAndSnapshot(
 		c.Assert(k.SetNodeAccount(ctx, na), IsNil)
 		nas = append(nas, na)
 	}
+	setRewardVault(c, ctx, k, common.Chains{common.BTCChain}, nas...)
+	setRewardVault(c, ctx, k, common.Chains{common.ETHChain}, nas[:2]...)
 
 	network, err := k.GetNetwork(ctx)
 	c.Assert(err, IsNil)
@@ -3109,6 +3103,7 @@ func (vts *ValidatorMgrTestSuite) TestReconcileChainRewards(c *C) {
 	na := GetRandomValidatorNode(NodeActive)
 	na.SupportedChains = []string{common.BTCChain.String()}
 	c.Assert(k.SetNodeAccount(ctx, na), IsNil)
+	setRewardVault(c, ctx, k, common.Chains{common.BTCChain}, na)
 
 	// Buckets above the ledger (accrued but never debited) are scaled down.
 	network := NewNetwork()
@@ -3152,4 +3147,125 @@ func (vts *ValidatorMgrTestSuite) TestLegacyBondPayoutClearsChainRewards(c *C) {
 	c.Assert(err, IsNil)
 	c.Check(network.ChainRewards, HasLen, 0)
 	c.Check(network.ChainBondUnits, HasLen, 0)
+}
+
+// setRewardVault stores an active Asgard vault serving chains with the given
+// members. Chain-aware rewards follow vault membership, not SupportedChains.
+func setRewardVault(c *C, ctx cosmos.Context, k keeper.Keeper, chains common.Chains, members ...NodeAccount) Vault {
+	vault := GetRandomVault()
+	vault.Status = ActiveVault
+	vault.StatusSince = 1
+	vault.Chains = chains.Strings()
+	vault.Membership = nil
+	for _, na := range members {
+		vault.Membership = append(vault.Membership, na.PubKeySet.Secp256k1.String())
+	}
+	c.Assert(k.SetVault(ctx, vault), IsNil)
+	return vault
+}
+
+// A validator outside a chain's vault that declares the chain just before the
+// churn payout gets no share of that chain's accrued bucket: payout eligibility
+// and the bond denominator follow the vaults a node served during the period.
+func (vts *ValidatorMgrTestSuite) TestLateChainSupportCannotDivertChainRewards(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	ctx = ctx.WithBlockHeight(20)
+	mgr := NewDummyMgrWithKeeper(k)
+	validatorMgr := newValidatorMgr(k, mgr.NetworkMgr(), mgr.TxOutStore(), mgr.EventMgr())
+	k.SetMimir(ctx, constants.EnableNodeChainConsensus.String(), 1)
+
+	// honest serves BTC and ETH; attacker served only BTC during the period.
+	honest := GetRandomValidatorNode(NodeActive)
+	honest.Bond = cosmos.NewUint(10 * common.One)
+	honest.ActiveBlockHeight = 1
+	honest.SupportedChains = []string{common.BTCChain.String(), common.ETHChain.String()}
+	c.Assert(k.SetNodeAccount(ctx, honest), IsNil)
+	attacker := GetRandomValidatorNode(NodeActive)
+	attacker.Bond = cosmos.NewUint(10 * common.One)
+	attacker.ActiveBlockHeight = 1
+	attacker.SupportedChains = []string{common.BTCChain.String()}
+	c.Assert(k.SetNodeAccount(ctx, attacker), IsNil)
+
+	setRewardVault(c, ctx, k, common.Chains{common.BTCChain}, honest, attacker)
+	setRewardVault(c, ctx, k, common.Chains{common.ETHChain}, honest)
+
+	network, err := k.GetNetwork(ctx)
+	c.Assert(err, IsNil)
+	network.BondRewardRune = cosmos.NewUint(6 * common.One)
+	network.SetChainRewardAmount(common.BTCChain.String(), cosmos.NewUint(4*common.One))
+	network.SetChainRewardAmount(common.ETHChain.String(), cosmos.NewUint(2*common.One))
+	c.Assert(k.SetNetwork(ctx, network), IsNil)
+	FundModule(c, ctx, k, BondName, 100*common.One)
+
+	// Right before payout the attacker declares ETH support.
+	_, err = NewNodeChainSupportHandler(mgr).Run(ctx, NewMsgAddNodeChainSupport(common.ETHChain.String(), attacker.NodeAddress))
+	c.Assert(err, IsNil)
+	declared, err := k.GetNodeAccount(ctx, attacker.NodeAddress)
+	c.Assert(err, IsNil)
+	c.Assert(declared.SupportedChains, DeepEquals, []string{common.BTCChain.String(), common.ETHChain.String()})
+
+	c.Assert(validatorMgr.distributeBondReward(ctx, mgr), IsNil)
+
+	paid := func(na NodeAccount) string {
+		updated, getErr := k.GetNodeAccount(ctx, na.NodeAddress)
+		c.Assert(getErr, IsNil)
+		reward := common.SafeSub(updated.Bond, na.Bond)
+		operatorFee := k.GetBalance(ctx, na.NodeAddress).AmountOf(common.RuneNative.Native())
+		return reward.Add(cosmos.NewUintFromBigInt(operatorFee.BigInt())).String()
+	}
+	// attacker: half of BTC (2 RUNE) and nothing from ETH, which it never
+	// served. honest: half of BTC plus all of ETH (4 RUNE).
+	c.Check(paid(attacker), Equals, cosmos.NewUint(2*common.One).String())
+	c.Check(paid(honest), Equals, cosmos.NewUint(4*common.One).String())
+}
+
+// A churn pays the generation that earned the period: vaults retired at this
+// block count, vaults activated at this block do not.
+func (vts *ValidatorMgrTestSuite) TestChainRewardsFollowEarningVaults(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	ctx = ctx.WithBlockHeight(20)
+	mgr := NewDummyMgrWithKeeper(k)
+	validatorMgr := newValidatorMgr(k, mgr.NetworkMgr(), mgr.TxOutStore(), mgr.EventMgr())
+	k.SetMimir(ctx, constants.EnableNodeChainConsensus.String(), 1)
+
+	var nas NodeAccounts
+	for i := 0; i < 2; i++ {
+		na := GetRandomValidatorNode(NodeActive)
+		na.Bond = cosmos.NewUint(10 * common.One)
+		na.ActiveBlockHeight = 1
+		c.Assert(k.SetNodeAccount(ctx, na), IsNil)
+		nas = append(nas, na)
+	}
+	// BTC: both served; the vault retired at this block in the churn.
+	retired := setRewardVault(c, ctx, k, common.Chains{common.BTCChain}, nas...)
+	retired.UpdateStatus(RetiringVault, ctx.BlockHeight())
+	c.Assert(k.SetVault(ctx, retired), IsNil)
+	// ETH: only nas[0] served; the new ETH vault with both members was
+	// activated at this block and earned nothing yet.
+	setRewardVault(c, ctx, k, common.Chains{common.ETHChain}, nas[0])
+	fresh := setRewardVault(c, ctx, k, common.Chains{common.ETHChain}, nas...)
+	fresh.UpdateStatus(ActiveVault, ctx.BlockHeight())
+	c.Assert(k.SetVault(ctx, fresh), IsNil)
+	// An older retiring vault (retired at an earlier churn) earned nothing.
+	stale := setRewardVault(c, ctx, k, common.Chains{common.LTCChain}, nas[1])
+	stale.UpdateStatus(RetiringVault, 5)
+	c.Assert(k.SetVault(ctx, stale), IsNil)
+
+	network, err := k.GetNetwork(ctx)
+	c.Assert(err, IsNil)
+	network.BondRewardRune = cosmos.NewUint(6 * common.One)
+	network.SetChainRewardAmount(common.BTCChain.String(), cosmos.NewUint(4*common.One))
+	network.SetChainRewardAmount(common.ETHChain.String(), cosmos.NewUint(2*common.One))
+	c.Assert(k.SetNetwork(ctx, network), IsNil)
+	FundModule(c, ctx, k, BondName, 100*common.One)
+
+	c.Assert(validatorMgr.distributeBondReward(ctx, mgr), IsNil)
+
+	for i, want := range []uint64{4 * common.One, 2 * common.One} {
+		updated, getErr := k.GetNodeAccount(ctx, nas[i].NodeAddress)
+		c.Assert(getErr, IsNil)
+		reward := common.SafeSub(updated.Bond, nas[i].Bond)
+		operatorFee := k.GetBalance(ctx, nas[i].NodeAddress).AmountOf(common.RuneNative.Native())
+		c.Check(reward.Add(cosmos.NewUintFromBigInt(operatorFee.BigInt())).String(), Equals, cosmos.NewUint(want).String(), Commentf("node %d", i))
+	}
 }

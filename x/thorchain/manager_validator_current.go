@@ -959,6 +959,9 @@ func (vm *ValidatorMgr) applyNodeAccountBondReward(ctx cosmos.Context, na NodeAc
 type chainRewardSnapshot struct {
 	rewards       map[string]cosmos.Uint
 	effectiveBond map[string]cosmos.Uint
+	// served maps a node's secp256k1 pubkey to the chains of the vaults it
+	// served during the reward period.
+	served map[string][]string
 }
 
 func (s chainRewardSnapshot) reward(chain string) cosmos.Uint {
@@ -966,6 +969,12 @@ func (s chainRewardSnapshot) reward(chain string) cosmos.Uint {
 		return r
 	}
 	return cosmos.ZeroUint()
+}
+
+// chains returns the chains a node served during the reward period: those of
+// the vaults it was a member of, never its current SupportedChains.
+func (s chainRewardSnapshot) chains(na NodeAccount) []string {
+	return s.served[na.PubKeySet.Secp256k1.String()]
 }
 
 func (s chainRewardSnapshot) bond(chain string) cosmos.Uint {
@@ -999,7 +1008,8 @@ func reconcileChainRewards(ctx cosmos.Context, k keeper.Keeper, network *Network
 
 // prepareChainRewardSnapshot reconciles and persists the reward buckets, then
 // snapshots them along with each chain's total effective bond: the bond of the
-// rewardable active nodes supporting that chain, each capped at bondHardCap.
+// rewardable active nodes that served that chain in a vault during the reward
+// period, each capped at bondHardCap.
 func (vm *ValidatorMgr) prepareChainRewardSnapshot(ctx cosmos.Context, active NodeAccounts, bondHardCap cosmos.Uint) (chainRewardSnapshot, error) {
 	snap := chainRewardSnapshot{
 		rewards:       make(map[string]cosmos.Uint),
@@ -1018,6 +1028,10 @@ func (vm *ValidatorMgr) prepareChainRewardSnapshot(ctx cosmos.Context, active No
 	for _, cr := range network.ChainRewards {
 		snap.rewards[cr.Chain] = cr.Amount
 	}
+	snap.served, err = getEarningVaultMemberChains(ctx, vm.k)
+	if err != nil {
+		return snap, err
+	}
 	for _, na := range active {
 		if na.ActiveBlockHeight == 0 || na.Bond.IsZero() {
 			continue
@@ -1026,7 +1040,7 @@ func (vm *ValidatorMgr) prepareChainRewardSnapshot(ctx cosmos.Context, active No
 		if naEffectiveBond.GT(bondHardCap) {
 			naEffectiveBond = bondHardCap
 		}
-		for _, chainStr := range getNodeSupportedChains(ctx, vm.k, na) {
+		for _, chainStr := range snap.chains(na) {
 			snap.effectiveBond[chainStr] = snap.bond(chainStr).Add(naEffectiveBond)
 		}
 	}
@@ -1070,9 +1084,8 @@ func (vm *ValidatorMgr) payNodeAccountChainRewards(ctx cosmos.Context, lastChurn
 	var payouts []chainPayout
 	totalReward := cosmos.ZeroUint()
 
-	// Calculate rewards for each chain this node supports (with backwards
-	// compatibility for nodes with empty SupportedChains)
-	for _, chainStr := range getNodeSupportedChains(ctx, vm.k, na) {
+	// Calculate rewards for each chain this node served during the period
+	for _, chainStr := range snap.chains(na) {
 		chainRewards := snap.reward(chainStr)
 		chainBond := snap.bond(chainStr)
 		if chainRewards.IsZero() || chainBond.IsZero() {

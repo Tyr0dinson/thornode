@@ -1886,6 +1886,72 @@ func isXMRChainString(chain string) bool {
 	return chain == common.XMRChain.String()
 }
 
+// vaultMemberChains maps each member's secp256k1 pubkey to the canonical,
+// sorted union of the chains of the given vaults it is a member of.
+func vaultMemberChains(vaults Vaults) map[string][]string {
+	served := make(map[string][]string)
+	for _, vault := range vaults {
+		chains := vault.GetChains()
+		for _, member := range vault.GetMembership() {
+			key := member.String()
+			for _, chain := range chains {
+				if !slices.Contains(served[key], chain.String()) {
+					served[key] = append(served[key], chain.String())
+				}
+			}
+		}
+	}
+	// analyze-ignore(map-iteration)
+	for key := range served {
+		sort.Strings(served[key])
+	}
+	return served
+}
+
+// getActiveVaultMemberChains maps each node (by secp256k1 pubkey) to the
+// chains of the active Asgard vaults it is a member of: the chains it serves
+// right now. Chain reward accrual follows this rather than self-declared
+// SupportedChains, which any node can change at any time.
+func getActiveVaultMemberChains(ctx cosmos.Context, k keeper.Keeper) (map[string][]string, error) {
+	active, err := k.GetAsgardVaultsByStatus(ctx, ActiveVault)
+	if err != nil {
+		return nil, fmt.Errorf("fail to get active vaults: %w", err)
+	}
+	return vaultMemberChains(active), nil
+}
+
+// getEarningVaultMemberChains maps each node (by secp256k1 pubkey) to the
+// chains it served during the reward period that ends at this block: the
+// Asgard vaults that were active before this block, whether still active or
+// retired at this block. A churn activates the new generation and retires the
+// old one in the same block it pays rewards, so a vault activated at this
+// block earned nothing yet, and one retired at this block earned the period.
+// Chain reward payouts follow this rather than self-declared SupportedChains,
+// so a declaration made just before payout cannot claim a chain's bucket.
+func getEarningVaultMemberChains(ctx cosmos.Context, k keeper.Keeper) (map[string][]string, error) {
+	active, err := k.GetAsgardVaultsByStatus(ctx, ActiveVault)
+	if err != nil {
+		return nil, fmt.Errorf("fail to get active vaults: %w", err)
+	}
+	retiring, err := k.GetAsgardVaultsByStatus(ctx, RetiringVault)
+	if err != nil {
+		return nil, fmt.Errorf("fail to get retiring vaults: %w", err)
+	}
+	height := ctx.BlockHeight()
+	earning := make(Vaults, 0, len(active)+len(retiring))
+	for _, vault := range active {
+		if vault.StatusSince != height {
+			earning = append(earning, vault)
+		}
+	}
+	for _, vault := range retiring {
+		if vault.StatusSince == height {
+			earning = append(earning, vault)
+		}
+	}
+	return vaultMemberChains(earning), nil
+}
+
 // normalizeSupportedChains returns the canonical chain names in stored order,
 // dropping unparsable entries and case-variant duplicates.
 func normalizeSupportedChains(stored []string) []string {
