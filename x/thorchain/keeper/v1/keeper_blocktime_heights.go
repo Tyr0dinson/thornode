@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
@@ -205,13 +206,61 @@ func (k KVStore) convertLimitSwapTTLs(ctx cosmos.Context, convert func(int64) in
 	for _, e := range entries {
 		k.RemoveLimitSwapTTL(ctx, e.height)
 	}
+	// Group the moved hashes by destination, in the order the walk met them,
+	// and read and write each destination once. Adding them one at a time
+	// rewrote the growing list per hash, quadratic in a bucket's size. The
+	// result is the same: the destination's own hashes first, then each
+	// source's in key order, without hashes already there (TxID.Equals).
+	var dests []int64
+	moved := map[int64][]common.TxID{}
 	for _, e := range entries {
-		for _, hash := range e.hashes {
-			if err := k.AddToLimitSwapTTL(ctx, convert(e.height), hash); err != nil {
-				ctx.Logger().Error("fail to move limit swap ttl", "from", e.height, "error", err)
+		d := convert(e.height)
+		if _, ok := moved[d]; !ok {
+			dests = append(dests, d)
+		}
+		moved[d] = append(moved[d], e.hashes...)
+	}
+	for _, d := range dests {
+		if len(moved[d]) == 0 {
+			continue
+		}
+		hashes, err := k.GetLimitSwapTTL(ctx, d)
+		if err != nil {
+			ctx.Logger().Error("fail to move limit swap ttl", "to", d, "error", err)
+			continue
+		}
+		seen := make(map[string]bool, len(hashes)+len(moved[d]))
+		for _, hash := range hashes {
+			seen[txIDFoldKey(hash)] = true
+		}
+		added := false
+		for _, hash := range moved[d] {
+			if key := txIDFoldKey(hash); !seen[key] {
+				seen[key] = true
+				hashes = append(hashes, hash)
+				added = true
 			}
 		}
+		if !added {
+			continue
+		}
+		if err := k.SetLimitSwapTTL(ctx, d, hashes); err != nil {
+			ctx.Logger().Error("fail to move limit swap ttl", "to", d, "error", err)
+		}
 	}
+}
+
+// txIDFoldKey maps a TxID to the smallest rune of each rune's simple case
+// folding orbit, so two TxIDs share a key exactly when TxID.Equals
+// (strings.EqualFold) holds; invalid UTF-8 becomes RuneError on both sides.
+func txIDFoldKey(hash common.TxID) string {
+	return strings.Map(func(r rune) rune {
+		lowest := r
+		for f := unicode.SimpleFold(r); f != r; f = unicode.SimpleFold(f) {
+			lowest = min(lowest, f)
+		}
+		return lowest
+	}, hash.String())
 }
 
 // convertObservationTallies re-keys the queued observation tallies, which are
