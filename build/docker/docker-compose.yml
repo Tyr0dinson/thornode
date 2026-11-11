@@ -264,6 +264,9 @@ services:
       # mocknet op-geth mines BASE every BLOCK_TIME (3s), not mainnet's ~200ms post-Denim:
       # undo default.yaml's 200ms override so the health gate uses the chain constant.
       BIFROST_CHAINS_BASE_BLOCK_SCANNER_APPROXIMATE_BLOCK_TIME: 0s
+      # mocknet zebra mines ZEC every BLOCK_TIME, not mainnet's 25s post-NU7: undo
+      # default.yaml's 25s override so mocknet keeps using the chain constant.
+      BIFROST_CHAINS_ZEC_BLOCK_SCANNER_APPROXIMATE_BLOCK_TIME: 0s
       BIFROST_CHAINS_XRP_BLOCK_SCANNER_OBSERVATION_FLEXIBILITY_BLOCKS: "5"
 
       # maintain historical gas behavior for hard-coded smoke test values

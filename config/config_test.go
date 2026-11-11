@@ -272,11 +272,34 @@ func (Test) TestDefaultBaseApproximateBlockTime(c *C) {
 
 	// every other chain inherits 0s from the anchor and keeps its chain constant
 	for chain, cc := range bf.GetChains() {
-		if chain.Equals(common.BASEChain) {
+		if chain.Equals(common.BASEChain) || chain.Equals(common.ZECChain) {
 			continue
 		}
 		c.Check(cc.BlockScanner.ApproximateBlockTime, Equals, time.Duration(0), Commentf("chain %s", chain))
 	}
+}
+
+func (Test) TestDefaultZecApproximateBlockTime(c *C) {
+	Init()
+	bf := GetBifrost()
+
+	// Zcash NU7 (ZIP 218, height 3,543,405, 2026-11-06): the block target spacing
+	// is 25s; the bifrost override carries it while the consensus-visible common
+	// constant stays at 75000.
+	zec := bf.Chains.ZEC
+	c.Assert(common.ZECChain.ApproximateBlockMilliseconds(), Equals, int64(75_000))
+	c.Check(zec.BlockScanner.ApproximateBlockTime, Equals, 25*time.Second)
+	c.Check(zec.BlockScanner.ApproximateBlockMilliseconds(), Equals, int64(25_000))
+	c.Check(zec.ApproximateBlockMilliseconds(), Equals, int64(25_000))
+
+	// the wall-clock windows, in ZEC blocks
+	c.Check(zec.BlockScanner.MaxHealthyLag.Milliseconds()/zec.BlockScanner.ApproximateBlockMilliseconds(), Equals, int64(72))      // 30m
+	c.Check(zec.BlockScanner.MaxResumeBlockLag.Milliseconds()/zec.BlockScanner.ApproximateBlockMilliseconds(), Equals, int64(144)) // 1h
+
+	// block-count settings tripled to hold 12h and 24h
+	c.Check(zec.BlockScanner.MaxReorgRescanBlocks, Equals, int64(1728))
+	c.Check(zec.UTXO.BlockCacheCount, Equals, uint64(3456))
+	c.Check(zec.BlockScanner.ObservationFlexibilityBlocks, Equals, int64(3)) // not scaled
 }
 
 func (Test) TestApproximateBlockTimeEnvOverride(c *C) {

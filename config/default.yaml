@@ -640,14 +640,25 @@ bifrost:
       chain_id: ZEC
       block_scanner:
         <<: *default-block-scanner
-        max_reorg_rescan_blocks: 576 # 12h
+        # NU7 (ZIP 218) cut the Zcash block target spacing from 75s to 25s at height
+        # 3,543,405 (2026-11-06 02:34 UTC). The common ZEC constant is still 75s: it is
+        # consensus-visible via QuoteSwap and moves only at a coordinated release. With
+        # it bifrost sizes every wall-clock window at a third of its intent in ZEC
+        # blocks: the health gate trips at 10 min of real lag (max_healthy_lag is 30m),
+        # the resume window is 20 min (max_resume_block_lag is 1h), and the observer
+        # flex rollback covers a third of the THORChain window. This node-local override
+        # fixes bifrost now; remove it once the common constant is 25_000.
+        approximate_block_time: 25s
+        # max_reorg_rescan_blocks and block_cache_count are tripled to hold their
+        # wall-clock span (12h and 24h): 576 and 1152 blocks are 4h and 8h post-NU7.
+        max_reorg_rescan_blocks: 1728 # 12h
         chain_id: ZEC
         observation_flexibility_blocks: 3
       mempool_tx_id_cache_size: 1_000_000
       scanner_leveldb: *default-leveldb
       utxo:
         <<: *utxo
-        block_cache_count: 1152
+        block_cache_count: 3456
         max_sats_per_vbyte: 9765 # backwards compatible with 1e8/10/1024
         min_sats_per_vbyte: 2
         estimated_average_tx_size: 1
