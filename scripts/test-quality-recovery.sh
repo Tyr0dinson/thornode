@@ -3,7 +3,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 export GOMAXPROCS=4
-export GOTOOLCHAIN=go1.26.11
+export GOTOOLCHAIN=go1.26.10
 
 # A missing pinned toolchain or inaccessible dependencies must fail the run.
 flock -w 1800 /tmp/thornode-test-quality-build.lock bash -c '

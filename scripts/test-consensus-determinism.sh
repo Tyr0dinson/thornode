@@ -5,7 +5,7 @@ repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$repo_root"
 
 # The repository pins this version in go.mod. Ignore a host-level override.
-export GOTOOLCHAIN=go1.26.11
+export GOTOOLCHAIN=go1.26.10
 export GOMAXPROCS=4
 # Respect a caller-supplied build cache (CI sets GOCACHE to the runner's
 # persistent /go-build-cache). Only fall back to a dedicated cache locally.

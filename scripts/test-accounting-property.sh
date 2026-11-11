@@ -11,7 +11,7 @@ campaign) seeds=32 ;;
 esac
 
 cd "$(dirname "$0")/.."
-export GOTOOLCHAIN=go1.26.11
+export GOTOOLCHAIN=go1.26.10
 export GOCACHE="${GOCACHE:-${TMPDIR:-/tmp}/thornode-accounting-gocache}"
 export GOMAXPROCS=4
 export THORNODE_ACCOUNTING_SEEDS="${THORNODE_ACCOUNTING_SEEDS:-$seeds}"

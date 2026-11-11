@@ -82,7 +82,7 @@ plugins:
       uri: https://github.com/trunk-io/plugins
 runtimes:
   enabled:
-    - go@1.26.11
+    - go@1.26.10
     - node@18.20.5
     - python@3.10.8
   definitions:
@@ -90,7 +90,7 @@ runtimes:
       download: go
       linter_environment:
         - name: GOTOOLCHAIN
-          value: go1.26.11
+          value: go1.26.10
         - name: PATH
           list:
             - "${linter}/bin"
