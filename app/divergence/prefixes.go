@@ -103,6 +103,7 @@ var thorchainPrefixes = map[string]string{
 	"upgr_votes/":                    "prefixUpgradeVotes",
 	"tcy_claimer/":                   "prefixTCYClaimer",
 	"tcy_staker/":                    "prefixTCYStaker",
+	"addr_pk/":                       "prefixAddrPubKey",
 	"oracle_price/":                  "prefixOraclePrice",
 	"volume_bucket/":                 "prefixVolumeBucket",
 	"volume/":                        "prefixVolume",
