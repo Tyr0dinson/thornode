@@ -85,6 +85,9 @@ func (m Migrator) migrate20to21Mainnet(ctx cosmos.Context) error {
 	// Bond-slash refunds run unconditionally — NOT gated on the tcso batch above.
 	// Each event uses its own cache context and soft-skips independently.
 	m.runSlashRefunds322(ctx)
+	// BTC dust re-pay: its own toggleable step in its own cache context, so it can
+	// soft-skip or be turned off without affecting the refunds above.
+	m.runBtcDustRepay322(ctx)
 	return nil
 }
 
