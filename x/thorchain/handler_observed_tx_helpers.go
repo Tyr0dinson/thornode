@@ -377,9 +377,12 @@ func handleObservedTxInQuorum(
 		return nil
 	}
 
-	// Blank memo vault-to-vault transfers (memoless migrate/consolidate) are
-	// internal; they must neither be assigned a reference memo nor dispatched
-	// to a handler.
+	// Blank memo vault-to-vault transfers are internal; they must neither be
+	// assigned a reference memo nor dispatched to a handler. Migrate and
+	// consolidate outbounds always keep their memo (applyMemolessOutboundLogic
+	// never clears IsInternal() memos), because stale-migrate pruning, the
+	// per-chain migrate pause, outbound memo recovery, EVM transferAllowance
+	// parsing and errata all classify migrations by memo.
 	blankMemoInternal := strings.TrimSpace(tx.Tx.Memo) == "" && isInternalTransaction(ctx, k, tx.Tx)
 
 	// add memo for memoless transactions (after consensus is reached)
