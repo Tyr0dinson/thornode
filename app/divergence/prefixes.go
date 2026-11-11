@@ -109,6 +109,7 @@ var thorchainPrefixes = map[string]string{
 	"dynfee/":                        "prefixDynamicFee",
 	"dynfeeacc/":                     "prefixDynamicFeeAcc",
 	"dynfeeebo/":                     "prefixDynamicFeeEpochBlocks",
+	"dynfeepoolacc/":                 "prefixDynamicFeePoolAcc",
 }
 
 // KeyInfo is a best-effort decoding of a store key.
