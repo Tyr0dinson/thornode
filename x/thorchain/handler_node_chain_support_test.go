@@ -131,6 +131,20 @@ func (s *HandlerNodeChainSupportSuite) TestAddChainSupportValidation(c *C) {
 	result, err = handler.Run(ctx, msg)
 	c.Assert(err, NotNil)
 	c.Assert(result, IsNil)
+
+	// XMR is in common.AllChains but is served by the XMR monovault, which
+	// has its own keygen path, so it cannot be declared (in any case).
+	node.SupportedChains = []string{common.BTCChain.String()}
+	c.Assert(k.SetNodeAccount(ctx, node), IsNil)
+	for _, xmr := range []string{common.XMRChain.String(), "xmr"} {
+		msg = NewMsgAddNodeChainSupport(xmr, node.NodeAddress)
+		result, err = handler.Run(ctx, msg)
+		c.Assert(err, NotNil, Commentf("%s", xmr))
+		c.Assert(result, IsNil)
+	}
+	stored, err := k.GetNodeAccount(ctx, node.NodeAddress)
+	c.Assert(err, IsNil)
+	c.Check(stored.SupportedChains, DeepEquals, []string{common.BTCChain.String()})
 }
 
 func (s *HandlerNodeChainSupportSuite) TestHandleRemoveChainSupport(c *C) {
@@ -218,6 +232,10 @@ func (s *HandlerNodeChainSupportSuite) TestGetNodeSupportedChainsNormalizes(c *C
 	// Legacy state: case variants, a duplicate and an unparsable entry.
 	node.SupportedChains = []string{"btc", "ETH", "BTC", "Btc", "eth", "not a chain!"}
 	c.Assert(getNodeSupportedChains(ctx, k, node), DeepEquals, []string{"BTC", "ETH"})
+
+	// XMR stored before it was rejected on add is dropped on read.
+	node.SupportedChains = []string{"BTC", "xmr", "XMR"}
+	c.Assert(getNodeSupportedChains(ctx, k, node), DeepEquals, []string{"BTC"})
 
 	// The read path feeds chain grouping: one node declaring "btc" next to a
 	// node declaring "BTC" lands in the same group, not a group of its own.

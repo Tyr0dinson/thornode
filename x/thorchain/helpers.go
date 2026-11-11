@@ -1837,13 +1837,16 @@ func getChainAwareNonSigners(ctx cosmos.Context, k keeper.Keeper, chain string, 
 // getNodeSupportedChains returns the chains supported by a node.
 // If the node has explicitly set SupportedChains, returns them.
 // If SupportedChains is empty (backwards compatibility), returns all chains from active vaults.
+// XMR is never returned: the XMR monovault family has its own keygen path, and
+// a regular Asgard that listed XMR would be mistaken for the monovault by every
+// HasChain(XMR) guard (never skipped by keygen, never retired).
 func getNodeSupportedChains(ctx cosmos.Context, k keeper.Keeper, node NodeAccount) []string {
 	// If node explicitly supports chains, use them in canonical form. Entries
 	// are normalized on read as well as on write so a case variant stored
 	// earlier ("btc" next to "BTC") can neither form its own chain group nor
 	// draw a second reward share from the same chain bucket.
 	if len(node.SupportedChains) > 0 {
-		return normalizeSupportedChains(node.SupportedChains)
+		return slices.DeleteFunc(normalizeSupportedChains(node.SupportedChains), isXMRChainString)
 	}
 
 	// Backwards compatibility: If node has no supported chains, inherit all chains from active vaults
@@ -1857,6 +1860,9 @@ func getNodeSupportedChains(ctx cosmos.Context, k keeper.Keeper, node NodeAccoun
 	chainSet := make(map[string]bool)
 	for _, vault := range activeVaults {
 		for _, chain := range vault.GetChains() {
+			if chain.Equals(common.XMRChain) {
+				continue
+			}
 			chainSet[chain.String()] = true
 		}
 	}
@@ -1874,6 +1880,10 @@ func getNodeSupportedChains(ctx cosmos.Context, k keeper.Keeper, node NodeAccoun
 		"inherited_chains", chains)
 
 	return chains
+}
+
+func isXMRChainString(chain string) bool {
+	return chain == common.XMRChain.String()
 }
 
 // normalizeSupportedChains returns the canonical chain names in stored order,

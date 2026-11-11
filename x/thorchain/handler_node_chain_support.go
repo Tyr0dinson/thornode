@@ -111,6 +111,12 @@ func (h NodeChainSupportHandler) validateAddChainSupport(ctx cosmos.Context, msg
 		return fmt.Errorf("chain %s is not supported by THORChain", chain.String())
 	}
 
+	// The XMR monovault family has its own keygen path; XMR in a node's
+	// SupportedChains would put it in a regular chain-aware Asgard keygen.
+	if chain.Equals(common.XMRChain) {
+		return fmt.Errorf("chain %s cannot be declared: it is served by the XMR monovault", chain.String())
+	}
+
 	return nil
 }
 

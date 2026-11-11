@@ -2,6 +2,7 @@ package thorchain
 
 import (
 	"fmt"
+	"slices"
 
 	"cosmossdk.io/math"
 	. "gopkg.in/check.v1"
@@ -7234,4 +7235,50 @@ func (s *NetworkManagerTestSuite) TestTriggerKeygenChainAwareSkipsGroupsBelowBFT
 	c.Assert(keygenBlock.Keygens, HasLen, 1)
 	c.Check(keygenBlock.Keygens[0].TargetChains, DeepEquals, []string{common.BTCChain.String()})
 	c.Check(keygenBlock.Keygens[0].Members, HasLen, int(minimumBFT)+1)
+}
+
+// Nodes with empty SupportedChains inherit the chains of every active vault,
+// the XMR monovault's {THOR, XMR} included. Chain-aware keygen must never put
+// XMR in a regular Asgard keygen's TargetChains: the monovault has its own
+// keygen path, and a regular vault with XMR would be mistaken for it by every
+// HasChain(XMR) guard (never skipped by keygen, never retired).
+func (s *NetworkManagerTestSuite) TestChainAwareKeygenExcludesXMR(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	k := mgr.Keeper()
+	networkMgr := newNetworkMgr(k, mgr.TxOutStore(), mgr.EventMgr())
+	k.SetMimir(ctx, constants.EnableNodeChainConsensus.String(), 1)
+
+	regular := chainAwareTestVault(ActiveVault, common.Chains{common.THORChain, common.BTCChain, common.ETHChain}, nil)
+	c.Assert(k.SetVault(ctx, regular), IsNil)
+	xmr := chainAwareTestVault(ActiveVault, xmrMonovaultChains(), nil)
+	xmr.PubKeyFrost = GetRandomEd25519PubKey()
+	c.Assert(k.SetVault(ctx, xmr), IsNil)
+
+	// The state right after EnableNodeChainConsensus is turned on: nobody has
+	// declared chains yet. One node also carries an XMR entry stored before
+	// MsgAddNodeChainSupport rejected it.
+	var nas NodeAccounts
+	for i := 0; i < 4; i++ {
+		na := GetRandomValidatorNode(NodeActive)
+		na.SupportedChains = []string{}
+		if i == 0 {
+			na.SupportedChains = []string{common.THORChain.String(), common.BTCChain.String(), common.ETHChain.String(), common.XMRChain.String()}
+		}
+		c.Assert(k.SetNodeAccount(ctx, na), IsNil)
+		nas = append(nas, na)
+	}
+
+	groups, keys := networkMgr.groupChainsByNodeSets(ctx, nas)
+	for _, key := range keys {
+		c.Check(slices.Contains(groups[key].Chains, common.XMRChain.String()), Equals, false, Commentf("group %v", groups[key].Chains))
+	}
+
+	height := ctx.BlockHeight()
+	c.Assert(networkMgr.scheduleKeygenChainAware(ctx, nas, height), IsNil)
+	keygenBlock, err := k.GetKeygenBlock(ctx, height)
+	c.Assert(err, IsNil)
+	c.Assert(keygenBlock.Keygens, HasLen, 1)
+	c.Check(keygenBlock.Keygens[0].Type, Equals, AsgardKeygen)
+	c.Check(keygenBlock.Keygens[0].TargetChains, DeepEquals, []string{common.BTCChain.String(), common.ETHChain.String(), common.THORChain.String()})
+	c.Check(keygenBlock.Keygens[0].Members, HasLen, len(nas))
 }
