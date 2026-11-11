@@ -152,7 +152,7 @@ func (p PubKey) GetAddress(chain Chain) (Address, error) {
 	}
 
 	// cache pubkey to address, since this is expensive with many vaults in pubkey manager
-	key := fmt.Sprintf("%s-%s", chain.String(), p.String())
+	key := chain.String() + "-" + p.String()
 	pubkeyToAddressCacheMu.RLock()
 	if v, ok := pubkeyToAddressCache[key]; ok {
 		pubkeyToAddressCacheMu.RUnlock()

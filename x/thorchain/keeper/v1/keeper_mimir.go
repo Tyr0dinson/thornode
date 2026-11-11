@@ -20,6 +20,7 @@ func (k KVStore) GetMimirWithRef(ctx cosmos.Context, template string, ref ...any
 // SetMimir save a mimir value to key value store
 func (k KVStore) SetMimir(ctx cosmos.Context, key string, value int64) {
 	keeper.MimirCacheFromContext(ctx).Disable()
+	keeper.AnchorsCacheFromContext(ctx).Disable()
 	k.setInt64(ctx, k.GetKey(prefixMimir, key), value)
 }
 
@@ -91,6 +92,7 @@ func (k KVStore) GetNodeMimirIterator(ctx cosmos.Context) cosmos.Iterator {
 
 func (k KVStore) DeleteMimir(ctx cosmos.Context, key string) error {
 	keeper.MimirCacheFromContext(ctx).Disable()
+	keeper.AnchorsCacheFromContext(ctx).Disable()
 	k.del(ctx, k.GetKey(prefixMimir, key))
 	return nil
 }

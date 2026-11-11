@@ -301,6 +301,12 @@ func (k KVStoreDummy) GetPoolLUVI(ctx cosmos.Context, asset common.Asset) (cosmo
 	return cosmos.ZeroUint(), kaboom
 }
 
+func (k KVStoreDummy) GetPoolLuviAccumulator(ctx cosmos.Context, asset common.Asset) (types.PoolLuvi, bool, error) {
+	return types.PoolLuvi{}, false, kaboom
+}
+func (k KVStoreDummy) SetPoolLuviAccumulator(ctx cosmos.Context, record types.PoolLuvi) {}
+func (k KVStoreDummy) RemovePoolLuviAccumulator(ctx cosmos.Context, asset common.Asset) {}
+
 func (k KVStoreDummy) GetStreamingSwapIterator(ctx cosmos.Context) cosmos.Iterator { return nil }
 func (k KVStoreDummy) SetStreamingSwap(ctx cosmos.Context, _ StreamingSwap)        {}
 func (k KVStoreDummy) GetStreamingSwap(ctx cosmos.Context, _ common.TxID) (StreamingSwap, error) {
@@ -395,6 +401,38 @@ func (k KVStoreDummy) GetBondProviders(ctx cosmos.Context, _ cosmos.AccAddress) 
 }
 
 func (k KVStoreDummy) DeductNativeTxFeeFromBond(ctx cosmos.Context, nodeAddr cosmos.AccAddress) error {
+	return kaboom
+}
+
+func (k KVStoreDummy) GetNodeBlameRecord(ctx cosmos.Context, addr cosmos.AccAddress) (types.NodeBlameRecord, error) {
+	return types.NodeBlameRecord{}, kaboom
+}
+
+func (k KVStoreDummy) SetNodeBlameRecord(ctx cosmos.Context, record types.NodeBlameRecord) error {
+	return kaboom
+}
+
+func (k KVStoreDummy) IncrementKeygenBlame(ctx cosmos.Context, addr cosmos.AccAddress) error {
+	return kaboom
+}
+
+func (k KVStoreDummy) IncrementKeysignBlame(ctx cosmos.Context, addr cosmos.AccAddress) error {
+	return kaboom
+}
+
+func (k KVStoreDummy) CalculateKeygenPenaltyMultiplier(ctx cosmos.Context, addr cosmos.AccAddress) (int64, error) {
+	return 1, kaboom
+}
+
+func (k KVStoreDummy) GetNodeBlameIterator(ctx cosmos.Context) cosmos.Iterator {
+	return nil
+}
+
+func (k KVStoreDummy) ResetSinceChurnCountersForMembers(ctx cosmos.Context, members []cosmos.AccAddress) error {
+	return kaboom
+}
+
+func (k KVStoreDummy) ResetAllSinceChurnCounters(ctx cosmos.Context) error {
 	return kaboom
 }
 

@@ -83,10 +83,12 @@ func TestCommittedMigrationImportsUseOutboundVoter(t *testing.T) {
 					},
 				}
 				if route == "live" {
+					allowSpentOutputRefsImports(c)
 					imported, applied := c.ApplyCommittedSpentOutputRefs(context.Background(), vault, common.TxID(txHash))
 					require.True(t, applied, "destination voter must not hide source consensus")
 					assert.Equal(t, vault, imported.ObservedPubKey)
 				} else {
+					allowSpentOutputRefsImports(c)
 					c.catchupSpentOutputRefs()
 				}
 				assert.EqualValues(t, 1, marked.Load())
@@ -222,6 +224,7 @@ func TestApplyCommittedSpentOutputRefsUsesConsensusMetadata(t *testing.T) {
 		},
 	}
 
+	allowSpentOutputRefsImports(c)
 	imported, applied := c.ApplyCommittedSpentOutputRefs(context.Background(), vault, common.TxID(spendTxHash))
 	require.True(t, applied)
 	captureMu.Lock()
@@ -281,6 +284,7 @@ func TestApplyCommittedSpentOutputRefsRetriesDeliverTxCommitRace(t *testing.T) {
 		},
 	}
 
+	allowSpentOutputRefsImports(c)
 	imported, applied := c.ApplyCommittedSpentOutputRefs(context.Background(), vault, common.TxID(spendTxHash))
 	require.True(t, applied)
 	assert.True(t, imported.Tx.ID.Equals(common.TxID(spendTxHash)))
@@ -329,6 +333,7 @@ func TestApplyCommittedSpentOutputRefsRetriesUntilRefsAreVisible(t *testing.T) {
 		},
 	}
 
+	allowSpentOutputRefsImports(c)
 	imported, applied := c.ApplyCommittedSpentOutputRefs(context.Background(), vault, common.TxID(spendTxHash))
 	require.True(t, applied)
 	assert.True(t, imported.Tx.ID.Equals(common.TxID(spendTxHash)))

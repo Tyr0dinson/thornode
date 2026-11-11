@@ -1,6 +1,7 @@
 package thorchain
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -119,7 +120,7 @@ func (s *SlasherImpl) HandleDoubleSign(ctx cosmos.Context, addr crypto.Address, 
 	// to handle churned-out validators whose evidence arrives after churn.
 	var nodeAddress cosmos.AccAddress
 	for _, pair := range validatorAddresses {
-		if addr.String() == pair.validatorAddress.String() {
+		if bytes.Equal(addr, pair.validatorAddress) {
 			nodeAddress = pair.nodeAddress
 			break
 		}
@@ -163,7 +164,7 @@ func (s *SlasherImpl) HandleDoubleSign(ctx cosmos.Context, addr crypto.Address, 
 // HandleSuccessfulSign - decrement missing blocks from a validator for signing a block
 func (s *SlasherImpl) HandleSuccessfulSign(ctx cosmos.Context, addr crypto.Address, constAccessor constants.ConstantValues, validatorAddresses []nodeAddressValidatorAddressPair) error {
 	for _, pair := range validatorAddresses {
-		if addr.String() != pair.validatorAddress.String() {
+		if !bytes.Equal(addr, pair.validatorAddress) {
 			continue
 		}
 
@@ -191,7 +192,7 @@ func (s *SlasherImpl) HandleMissingSign(ctx cosmos.Context, addr crypto.Address,
 	maxTrack := s.keeper.GetConfigInt64(ctx, constants.MaxTrackMissingBlock)
 
 	for _, pair := range validatorAddresses {
-		if addr.String() != pair.validatorAddress.String() {
+		if !bytes.Equal(addr, pair.validatorAddress) {
 			continue
 		}
 

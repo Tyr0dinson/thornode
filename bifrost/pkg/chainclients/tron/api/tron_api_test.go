@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -222,6 +223,142 @@ func TestGetTransactionInfoRejectsErrorResponses(t *testing.T) {
 			}
 			if info.ID != tc.wantID {
 				t.Fatalf("receipt ID = %q, want %q", info.ID, tc.wantID)
+			}
+		})
+	}
+}
+
+func TestGetSolidBlockHeight(t *testing.T) {
+	blockID := fmt.Sprintf("%016x%048x", 123, 0xabcdef)
+	validBlock := "Num:123,ID:" + blockID
+	for _, tc := range []struct {
+		name   string
+		body   string
+		status int
+		want   int64
+	}{
+		{name: "solidified", body: `{"solidityBlock":"` + validBlock + `"}`, want: 123},
+		{name: "uppercase block ID", body: `{"solidityBlock":"Num:123,ID:` + strings.ToUpper(blockID) + `"}`, want: 123},
+		{name: "head is not finality", body: `{"block":"` + validBlock + `"}`},
+		{name: "empty object", body: `{}`},
+		{name: "null", body: `null`},
+		{name: "malformed JSON", body: `{`},
+		{name: "wrong field type", body: `{"solidityBlock":123}`},
+		{name: "RPC error", body: `{"solidityBlock":"` + validBlock + `"}`, status: http.StatusServiceUnavailable},
+		{name: "application error", body: `{"solidityBlock":"` + validBlock + `","Error":"unavailable"}`},
+		{name: "empty application error", body: `{"solidityBlock":"` + validBlock + `","Error":""}`},
+		{name: "null application error", body: `{"solidityBlock":"` + validBlock + `","Error":null}`},
+		{name: "missing prefix", body: `{"solidityBlock":"123,ID:` + blockID + `"}`},
+		{name: "missing ID", body: `{"solidityBlock":"Num:123"}`},
+		{name: "zero", body: `{"solidityBlock":"Num:0,ID:` + strings.Repeat("0", 64) + `"}`},
+		{name: "negative", body: `{"solidityBlock":"Num:-1,ID:` + blockID + `"}`},
+		{name: "overflow", body: `{"solidityBlock":"Num:9223372036854775808,ID:` + blockID + `"}`},
+		{name: "nondecimal", body: `{"solidityBlock":"Num:0x7b,ID:` + blockID + `"}`},
+		{name: "leading zero", body: `{"solidityBlock":"Num:0123,ID:` + blockID + `"}`},
+		{name: "plus sign", body: `{"solidityBlock":"Num:+123,ID:` + blockID + `"}`},
+		{name: "height ID mismatch", body: `{"solidityBlock":"Num:124,ID:` + blockID + `"}`},
+		{name: "short ID", body: `{"solidityBlock":"Num:123,ID:00"}`},
+		{name: "nonhex ID", body: `{"solidityBlock":"Num:123,ID:` + strings.Repeat("z", 64) + `"}`},
+		{name: "trailing data", body: `{"solidityBlock":"` + validBlock + ` garbage"}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != http.MethodPost || r.URL.Path != "/wallet/getnodeinfo" {
+					t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+				}
+				if tc.status != 0 {
+					w.WriteHeader(tc.status)
+				}
+				_, _ = w.Write([]byte(tc.body))
+			}))
+			defer server.Close()
+			client := NewTronApi(server.URL, time.Second)
+			height, err := client.GetSolidBlockHeight()
+			if (err == nil) != (tc.want != 0) || height != tc.want {
+				t.Fatalf("height = %d, error = %v, want %d", height, err, tc.want)
+			}
+		})
+	}
+}
+
+func TestGetTransactionRejectsAmbiguousResponses(t *testing.T) {
+	const txID = "deadbeef9034d95770d5704c9898e3414780c5fcbe282350080db8c4cef3e729"
+	for _, tc := range []struct {
+		name    string
+		body    string
+		status  int
+		wantID  string
+		wantErr bool
+	}{
+		{name: "absent", body: `{}`},
+		{name: "absent whitespace", body: " { } \n"},
+		{name: "found", body: `{"txID":"` + txID + `"}`, wantID: txID},
+		{name: "null", body: `null`, wantErr: true},
+		{name: "malformed", body: `{`, wantErr: true},
+		{name: "empty body", body: ``, wantErr: true},
+		{name: "array", body: `[]`, wantErr: true},
+		{name: "missing ID", body: `{"raw_data":{}}`, wantErr: true},
+		{name: "empty ID", body: `{"txID":""}`, wantErr: true},
+		{name: "null ID", body: `{"txID":null}`, wantErr: true},
+		{name: "wrong ID type", body: `{"txID":123}`, wantErr: true},
+		{name: "error", body: `{"Error":"unavailable"}`, wantErr: true},
+		{name: "error with ID", body: `{"txID":"` + txID + `","Error":"unavailable"}`, wantErr: true},
+		{name: "empty error with ID", body: `{"txID":"` + txID + `","Error":""}`, wantErr: true},
+		{name: "null error with ID", body: `{"txID":"` + txID + `","Error":null}`, wantErr: true},
+		{name: "lowercase error with ID", body: `{"txID":"` + txID + `","error":"unavailable"}`, wantErr: true},
+		{name: "HTTP not found", body: `{}`, status: http.StatusNotFound, wantErr: true},
+		{name: "HTTP failure", body: `{}`, status: http.StatusServiceUnavailable, wantErr: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != http.MethodPost || r.URL.Path != "/wallet/gettransactionbyid" {
+					t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+				}
+				var request struct {
+					Value string `json:"value"`
+				}
+				if err := json.NewDecoder(r.Body).Decode(&request); err != nil || request.Value != txID {
+					t.Errorf("transaction request = %q, error = %v", request.Value, err)
+				}
+				if tc.status != 0 {
+					w.WriteHeader(tc.status)
+				}
+				_, _ = w.Write([]byte(tc.body))
+			}))
+			defer server.Close()
+			client := NewTronApi(server.URL, time.Second)
+			tx, err := client.GetTransaction(txID)
+			if (err != nil) != tc.wantErr || tx.TxId != tc.wantID {
+				t.Fatalf("transaction ID = %q, error = %v, want %q, error %v", tx.TxId, err, tc.wantID, tc.wantErr)
+			}
+		})
+	}
+}
+
+func TestTransactionInfoExecutionResult(t *testing.T) {
+	for _, tc := range []struct {
+		name, body, wantResult, wantReceipt string
+		wantErr                             bool
+	}{
+		{name: "failed", body: `{"result":"FAILED","receipt":{"result":"OUT_OF_ENERGY"}}`, wantResult: "FAILED", wantReceipt: "OUT_OF_ENERGY"},
+		{name: "success", body: `{"receipt":{"result":"SUCCESS"}}`, wantReceipt: "SUCCESS"},
+		{name: "missing receipt", body: `{"result":"FAILED"}`, wantResult: "FAILED"},
+		{name: "unknown", body: `{"receipt":{"result":"UNKNOWN"}}`, wantReceipt: "UNKNOWN"},
+		{name: "malformed result", body: `{"result":1}`, wantErr: true},
+		{name: "malformed receipt result", body: `{"receipt":{"result":10}}`, wantErr: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != "/wallet/gettransactioninfobyid" {
+					t.Errorf("unexpected path %s", r.URL.Path)
+				}
+				_, _ = w.Write([]byte(tc.body))
+			}))
+			defer server.Close()
+			client := NewTronApi(server.URL, time.Second)
+			info, err := client.GetTransactionInfo("recorded-tx")
+			if (err != nil) != tc.wantErr || info.Result != tc.wantResult || info.Receipt.Result != tc.wantReceipt {
+				t.Fatalf("execution result = %q, receipt result = %q, error = %v", info.Result, info.Receipt.Result, err)
 			}
 		})
 	}

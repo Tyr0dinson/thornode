@@ -1,11 +1,18 @@
 package xrp
 
 import (
+	"bytes"
 	"encoding/hex"
+	"errors"
+	"fmt"
+	"io"
 	"math/big"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -18,6 +25,7 @@ import (
 	cKeys "github.com/cosmos/cosmos-sdk/crypto/keyring"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
+	chainclienttypes "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/types"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 
 	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
@@ -28,6 +36,7 @@ import (
 	. "gopkg.in/check.v1"
 
 	addresscodec "github.com/Peersyst/xrpl-go/address-codec"
+	binarycodec "github.com/Peersyst/xrpl-go/binary-codec"
 	"github.com/Peersyst/xrpl-go/xrpl/rpc"
 	"github.com/Peersyst/xrpl-go/xrpl/rpc/testutil"
 	txtypes "github.com/Peersyst/xrpl-go/xrpl/transaction/types"
@@ -343,10 +352,7 @@ func (s *XrpTestSuite) TestSign(c *C) {
 	msg, err := client.processOutboundTx(txOut)
 	c.Assert(err, IsNil)
 
-	meta := client.accts.Get(vaultPubKey)
-	c.Check(meta.SeqNumber, Equals, int64(0))
-
-	msg.Sequence = uint32(meta.SeqNumber + 1)
+	msg.Sequence = 1
 	msg.Fee = txtypes.XRPCurrencyAmount(txOut.GasRate)
 	if txOut.Memo != "" {
 		msg.BaseTx.Memos = []txtypes.MemoWrapper{
@@ -395,6 +401,106 @@ func (s *XrpTestSuite) TestSetShouldObserveCallback(c *C) {
 	client.SetShouldObserveCallback(nil)
 }
 
+// TestSignTxSignsValidatedSequence is the serialize-resync regression,
+// driven end-to-end through SignTx (not the signingMetadata helper): a fresh
+// (checkpoint-less) outbound must be signed at the VALIDATED account sequence, and
+// two nodes that read the same validated sequence must produce byte-identical signing
+// payloads so the keysign party forms. The sequence comes only from the validated
+// read — there is no node-local cache any more — so this catches a regression that
+// signs from anything else.
+func (s *XrpTestSuite) TestSignTxSignsValidatedSequence(c *C) {
+	const validatedSeq = int64(6)
+	// The validated read returns 6 (the sequence both nodes must sign at); the current
+	// read returns a DIFFERENT, lower value (5) so the test actually proves the signed
+	// sequence is the validated one — a regression that signed from the current/open
+	// ledger would produce 5. Current is not ahead of validated, so the serial-drain gate
+	// does not defer.
+	const currentSeq = int64(5)
+
+	outAsset, err := common.NewAsset("XRP.XRP")
+	c.Assert(err, IsNil)
+	toAddress, err := common.NewAddress("rQwpQ54X5gJyLGg4QGp3HSkjdf3u37NqiZ")
+	c.Assert(err, IsNil)
+
+	// signOutbound stands up a node pointed at the shared validated account and signs a
+	// fixed outbound through the real SignTx, returning the signed blob.
+	signOutbound := func() []byte {
+		client, err := NewClient(
+			s.thorKeys,
+			config.BifrostChainConfiguration{
+				ChainID:      common.XRPChain,
+				ChainNetwork: "1234",
+				RPCHost:      "http://testnode/",
+				BlockScanner: config.BifrostBlockScannerConfiguration{
+					ChainID:          common.XRPChain,
+					StartBlockHeight: 1,
+				},
+			},
+			nil,
+			s.bridge,
+			s.m,
+		)
+		c.Assert(err, IsNil)
+
+		mc := &testutil.JSONRPCMockClient{}
+		mc.DoFunc = func(req *http.Request) (*http.Response, error) {
+			body, _ := io.ReadAll(req.Body)
+			resp := acctInfoResp(int(currentSeq), false)
+			if strings.Contains(string(body), `"validated"`) {
+				resp = acctInfoResp(int(validatedSeq), true)
+			}
+			return &http.Response{StatusCode: 200, Body: io.NopCloser(bytes.NewReader([]byte(resp)))}, nil
+		}
+		rcfg, err := rpc.NewClientConfig("http://testnode/", rpc.WithHTTPClient(mc))
+		c.Assert(err, IsNil)
+		client.rpcClient = rpc.NewClient(rcfg)
+		client.xrpScanner.rpcClient = rpc.NewClient(rcfg)
+
+		priv, err := s.thorKeys.GetPrivateKey()
+		c.Assert(err, IsNil)
+		temp, err := cryptocodec.ToCmtPubKeyInterface(priv.PubKey())
+		c.Assert(err, IsNil)
+		vaultPubKey, err := common.NewPubKeyFromCrypto(temp)
+		c.Assert(err, IsNil)
+
+		txOut := stypes.TxOutItem{
+			Chain:       common.XRPChain,
+			ToAddress:   toAddress,
+			VaultPubKey: vaultPubKey,
+			Coins:       common.Coins{common.NewCoin(outAsset, cosmos.NewUint(2452835200))},
+			Memo:        "memo",
+			MaxGas:      common.Gas{common.NewCoin(outAsset, cosmos.NewUint(23582400))},
+			GasRate:     750000,
+			InHash:      "hash",
+		}
+
+		signedTx, _, txIn, signErr := client.SignTx(txOut, 100)
+		c.Assert(signErr, IsNil)
+		c.Check(signedTx, NotNil)
+		c.Check(txIn, NotNil)
+		return signedTx
+	}
+
+	signingPayload := func(signedTx []byte) string {
+		flatTx, err := binarycodec.Decode(hex.EncodeToString(signedTx))
+		c.Assert(err, IsNil)
+		// SignTx must use the validated sequence.
+		c.Check(fmt.Sprintf("%v", flatTx["Sequence"]), Equals, fmt.Sprintf("%d", validatedSeq),
+			Commentf("signed Sequence = %v, want the validated %d", flatTx["Sequence"], validatedSeq))
+		// The signing payload is the blob minus the signature, re-encoded for signing —
+		// this is what every keysign party must agree on.
+		delete(flatTx, "TxnSignature")
+		payload, err := binarycodec.EncodeForSigning(flatTx)
+		c.Assert(err, IsNil)
+		return payload
+	}
+
+	// Two nodes reading the same validated sequence derive identical signing payloads.
+	payloadA := signingPayload(signOutbound())
+	payloadB := signingPayload(signOutbound())
+	c.Check(payloadA, Equals, payloadB)
+}
+
 // Test signature verification with a signature that needs padding
 func (s *XrpTestSuite) TestSignatureRequiringPadding(c *C) {
 	signBytesHex := "5354580012000021000004d224000000016140000000017645e06840000000000b71b07321030cef2112503d3a56d2d48b3a0f0f6503e4353400f450f9dbf344d182e7c7069c8114d4b66bcf790babd0032c5dbfdc14ff1c643a4f488314fdffd00f2f2d215ecdad483b99be1dad2259b9c3f9ea7d046d656d6fe1f1"
@@ -410,4 +516,388 @@ func (s *XrpTestSuite) TestSignatureRequiringPadding(c *C) {
 
 	verified := verifySignature(signBytes, signature, compressedPubKey)
 	c.Check(verified, Equals, true)
+}
+
+// xrpClientWithTxResponse stands up a client whose RPC returns `resp` (a JSON-RPC
+// result string) for every request — enough to drive xrpTxStatusOf / the BroadcastTx
+// top-level on-chain check, which issue a single tx lookup.
+func (s *XrpTestSuite) xrpClientWithTxResponse(c *C, resp string) *Client {
+	client, err := NewClient(
+		s.thorKeys,
+		config.BifrostChainConfiguration{
+			ChainID:      common.XRPChain,
+			ChainNetwork: "1234",
+			RPCHost:      "http://testnode/",
+			BlockScanner: config.BifrostBlockScannerConfiguration{ChainID: common.XRPChain, StartBlockHeight: 1},
+		},
+		nil, s.bridge, s.m,
+	)
+	c.Assert(err, IsNil)
+	mc := &testutil.JSONRPCMockClient{}
+	mc.DoFunc = testutil.MockResponse(resp, 200, mc)
+	rcfg, err := rpc.NewClientConfig("http://testnode/", rpc.WithHTTPClient(mc))
+	c.Assert(err, IsNil)
+	client.rpcClient = rpc.NewClient(rcfg)
+	return client
+}
+
+// TestXrpTxStatusOf covers the on-chain oracle that decides whether a broadcast is truly
+// sent: only a validated tesSUCCESS counts; a validated tec* is a failure, txnNotFound is
+// a definite absence, and anything else (not-yet-validated / RPC error) is unknown.
+func (s *XrpTestSuite) TestXrpTxStatusOf(c *C) {
+	cases := []struct {
+		name string
+		resp string
+		want xrpTxStatus
+	}{
+		{"validated success", `{"result":{"validated":true,"meta":{"TransactionResult":"tesSUCCESS"},"hash":"ABC"}}`, xrpTxValidatedSuccess},
+		{"validated tec", `{"result":{"validated":true,"meta":{"TransactionResult":"tecPATH_DRY"},"hash":"ABC"}}`, xrpTxValidatedFailed},
+		{"not found", `{"result":{"error":"txnNotFound","status":"error"}}`, xrpTxNotFound},
+		{"seen not validated", `{"result":{"validated":false,"hash":"ABC"}}`, xrpTxUnknown},
+		{"other rpc error", `{"result":{"error":"amendmentBlocked","status":"error"}}`, xrpTxUnknown},
+		// fail-safe: validated but the result is missing / non-string / unrecognized must be
+		// Unknown (never a definite failure that could drive a double-paying re-sign).
+		{"validated meta no result", `{"result":{"validated":true,"meta":{},"hash":"ABC"}}`, xrpTxUnknown},
+		{"validated result non-string", `{"result":{"validated":true,"meta":{"TransactionResult":7},"hash":"ABC"}}`, xrpTxUnknown},
+	}
+	for _, tc := range cases {
+		client := s.xrpClientWithTxResponse(c, tc.resp)
+		c.Check(client.xrpTxStatusOf("ABC"), Equals, tc.want, Commentf("%s", tc.name))
+	}
+}
+
+// signedBlobBytes returns a minimal but hashable signed XRP tx blob (SignTxBlob requires a
+// signature field), for driving BroadcastTx.
+func (s *XrpTestSuite) signedBlobBytes(c *C) []byte {
+	blobHex, err := binarycodec.Encode(map[string]any{
+		"TransactionType": "Payment",
+		"Sequence":        uint32(6),
+		"SigningPubKey":   "02" + "11223344556677889900AABBCCDDEEFF11223344556677889900AABBCCDDEEFF",
+		"TxnSignature":    "3045022100AA",
+	})
+	c.Assert(err, IsNil)
+	b, err := hex.DecodeString(blobHex)
+	c.Assert(err, IsNil)
+	return b
+}
+
+// xrpClientWithRPCByMethod stands up a client whose RPC returns submitResp for a "submit"
+// request and txResp for a "tx" request, so BroadcastTx's submit + on-chain confirm steps
+// can be driven independently.
+func (s *XrpTestSuite) xrpClientWithRPCByMethod(c *C, submitResp, txResp string) *Client {
+	client, err := NewClient(
+		s.thorKeys,
+		config.BifrostChainConfiguration{
+			ChainID:      common.XRPChain,
+			ChainNetwork: "1234",
+			RPCHost:      "http://testnode/",
+			BlockScanner: config.BifrostBlockScannerConfiguration{ChainID: common.XRPChain, StartBlockHeight: 1},
+		},
+		nil, s.bridge, s.m,
+	)
+	c.Assert(err, IsNil)
+	mc := &testutil.JSONRPCMockClient{}
+	mc.DoFunc = func(req *http.Request) (*http.Response, error) {
+		body, _ := io.ReadAll(req.Body)
+		resp := txResp
+		if strings.Contains(string(body), `"submit"`) {
+			resp = submitResp
+		}
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(bytes.NewReader([]byte(resp)))}, nil
+	}
+	rcfg, err := rpc.NewClientConfig("http://testnode/", rpc.WithHTTPClient(mc))
+	c.Assert(err, IsNil)
+	client.rpcClient = rpc.NewClient(rcfg)
+	return client
+}
+
+// TestBroadcastTxTefPastSeqNotFoundRetries is the double-pay guard: a submit that returns
+// tefPAST_SEQ while the tx lookup says txnNotFound (e.g. a pruned/lagging node that dropped
+// a tx it actually delivered) must NOT re-sign (that could pay twice) — it returns a plain
+// retry error, never ErrResignRequired.
+func (s *XrpTestSuite) TestBroadcastTxTefPastSeqNotFoundRetries(c *C) {
+	submit := `{"result":{"engine_result":"tefPAST_SEQ","status":"success"}}`
+	notFound := `{"result":{"error":"txnNotFound","status":"error"}}`
+	client := s.xrpClientWithRPCByMethod(c, submit, notFound)
+	_, err := client.BroadcastTx(stypes.TxOutItem{Chain: common.XRPChain}, s.signedBlobBytes(c))
+	c.Check(err, NotNil)
+	c.Check(errors.Is(err, stypes.ErrResignRequired), Equals, false, Commentf("tefPAST_SEQ+notfound must NOT re-sign (double-pay risk), got %v", err))
+}
+
+// TestBroadcastTxValidatedFailedRetires: a tx already validated with a tec* result (the
+// sequence burned, nothing delivered) is a dead attempt. Signing it again would fail the
+// same way (e.g. tecDST_TAG_NEEDED at a destination that requires a tag) and spend a keysign
+// and a fee each time, and reporting it as sent would observe a payment that never
+// happened. BroadcastTx returns ErrTxExpired before any submit, so the signer retires the
+// attempt uncached and unobserved, and THORChain reschedules the outbound.
+func (s *XrpTestSuite) TestBroadcastTxValidatedFailedRetires(c *C) {
+	// A submit would be accepted, so a regression that submits before checking the tx
+	// result surfaces as a cached send instead of ErrTxExpired.
+	submitOK := `{"result":{"engine_result":"tesSUCCESS","status":"success"}}`
+	for _, code := range []string{"tecDST_TAG_NEEDED", "tecNO_PERMISSION", "tecNO_DST_INSUF_XRP", "tecUNFUNDED_PAYMENT"} {
+		client := s.xrpClientWithRPCByMethod(c, submitOK, `{"result":{"validated":true,"meta":{"TransactionResult":"`+code+`"},"hash":"ABC"}}`)
+		tx := stypes.TxOutItem{Chain: common.XRPChain}
+		hash, err := client.BroadcastTx(tx, s.signedBlobBytes(c))
+		c.Check(errors.Is(err, chainclienttypes.ErrTxExpired), Equals, true, Commentf("%s: a validated tec* must retire the attempt, got %v", code, err))
+		c.Check(errors.Is(err, stypes.ErrResignRequired), Equals, false, Commentf("%s: a validated tec* must not ask for a re-sign", code))
+		c.Check(hash, Equals, "", Commentf("%s: a retired attempt reports no hash", code))
+		c.Check(client.signerCacheManager.HasSigned(tx.CacheHash()), Equals, false, Commentf("%s: must not be cached as sent", code))
+	}
+}
+
+// TestBroadcastTxValidatedSuccessCaches: a tx already validated with tesSUCCESS is truly
+// sent — BroadcastTx returns its hash with no error and does not re-submit.
+func (s *XrpTestSuite) TestBroadcastTxValidatedSuccessCaches(c *C) {
+	client := s.xrpClientWithTxResponse(c, `{"result":{"validated":true,"meta":{"TransactionResult":"tesSUCCESS"},"hash":"ABC"}}`)
+	hash, err := client.BroadcastTx(stypes.TxOutItem{Chain: common.XRPChain}, s.signedBlobBytes(c))
+	c.Check(err, IsNil)
+	c.Check(hash != "", Equals, true)
+}
+
+// acctInfoResp builds an account_info result with the given sequence + validated flag.
+func acctInfoResp(seq int, validated bool) string {
+	v := "false"
+	if validated {
+		v = "true"
+	}
+	return `{"result":{"account_data":{"Account":"rQwpQ54X5gJyLGg4QGp3HSkjdf3u37NqiZ","Balance":"999999999960","Flags":0,"LedgerEntryType":"AccountRoot","OwnerCount":0,"PreviousTxnID":"4294BEBE5B569A18C0A2702387C9B1E7146DC3A5850C1E87204951C6FDAA4C42","PreviousTxnLgrSeq":3,"Sequence":` + strconv.Itoa(seq) + `},"ledger_index":4,"validated":` + v + `}}`
+}
+
+// xrpClientWithAccountByLedger stands up a client whose account_info returns validatedSeq
+// for a validated-ledger read and currentSeq for a current-ledger read — enough to drive
+// the serial-drain gate in signingMetadata.
+func (s *XrpTestSuite) xrpClientWithAccountByLedger(c *C, validatedSeq, currentSeq int) (*Client, common.PubKey) {
+	client, err := NewClient(
+		s.thorKeys,
+		config.BifrostChainConfiguration{
+			ChainID:      common.XRPChain,
+			ChainNetwork: "1234",
+			RPCHost:      "http://testnode/",
+			BlockScanner: config.BifrostBlockScannerConfiguration{ChainID: common.XRPChain, StartBlockHeight: 1},
+		},
+		nil, s.bridge, s.m,
+	)
+	c.Assert(err, IsNil)
+	mc := &testutil.JSONRPCMockClient{}
+	mc.DoFunc = func(req *http.Request) (*http.Response, error) {
+		body, _ := io.ReadAll(req.Body)
+		resp := acctInfoResp(currentSeq, false)
+		if strings.Contains(string(body), `"validated"`) {
+			resp = acctInfoResp(validatedSeq, true)
+		}
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(bytes.NewReader([]byte(resp)))}, nil
+	}
+	rcfg, err := rpc.NewClientConfig("http://testnode/", rpc.WithHTTPClient(mc))
+	c.Assert(err, IsNil)
+	client.rpcClient = rpc.NewClient(rcfg)
+	client.xrpScanner.rpcClient = rpc.NewClient(rcfg)
+
+	priv, err := s.thorKeys.GetPrivateKey()
+	c.Assert(err, IsNil)
+	temp, err := cryptocodec.ToCmtPubKeyInterface(priv.PubKey())
+	c.Assert(err, IsNil)
+	vaultPubKey, err := common.NewPubKeyFromCrypto(temp)
+	c.Assert(err, IsNil)
+	return client, vaultPubKey
+}
+
+// TestSigningMetadataInFlightGate covers the serial-drain gate: a NEW outbound defers
+// (ErrTxPending, no checkpoint) while the open ledger is ahead of the validated ledger
+// (a prior outbound applied but not yet validated), and proceeds once the open ledger
+// falls back level with the validated one (the prior tx validated, or was dropped).
+func (s *XrpTestSuite) TestSigningMetadataInFlightGate(c *C) {
+	toAddress, err := common.NewAddress("rQwpQ54X5gJyLGg4QGp3HSkjdf3u37NqiZ")
+	c.Assert(err, IsNil)
+	outAsset, err := common.NewAsset("XRP.XRP")
+	c.Assert(err, IsNil)
+	mkTx := func(vault common.PubKey) stypes.TxOutItem {
+		return stypes.TxOutItem{
+			Chain:       common.XRPChain,
+			ToAddress:   toAddress,
+			VaultPubKey: vault,
+			Coins:       common.Coins{common.NewCoin(outAsset, cosmos.NewUint(2452835200))},
+			Memo:        "memo",
+			GasRate:     750000,
+			InHash:      "hash",
+		}
+	}
+
+	// In-flight: current (7) ahead of validated (6) -> defer, no checkpoint.
+	client, vault := s.xrpClientWithAccountByLedger(c, 6, 7)
+	_, err = client.signingMetadata(mkTx(vault), 1)
+	c.Check(errors.Is(err, chainclienttypes.ErrTxPending), Equals, true, Commentf("in-flight outbound must defer, got %v", err))
+	// The SignTx half of the gate contract: it surfaces ErrTxPending with NO signature and
+	// NO checkpoint (the gate returns before any keysign), so the signer retains the item.
+	signedTx, checkpoint, txIn, sErr := client.SignTx(mkTx(vault), 100)
+	c.Check(errors.Is(sErr, chainclienttypes.ErrTxPending), Equals, true, Commentf("SignTx must surface ErrTxPending, got %v", sErr))
+	c.Check(signedTx, IsNil, Commentf("no signature on a deferred sign"))
+	c.Check(checkpoint, IsNil, Commentf("no checkpoint on a deferred sign"))
+	c.Check(txIn, IsNil)
+
+	// Cleared: current level with validated (6) -> sign at the validated sequence.
+	client2, vault2 := s.xrpClientWithAccountByLedger(c, 6, 6)
+	meta, err := client2.signingMetadata(mkTx(vault2), 1)
+	c.Assert(err, IsNil)
+	c.Check(meta.SeqNumber, Equals, int64(6))
+}
+
+// TestGetVaultLock covers the per-vault serialization lock: the same vault returns the
+// same mutex (so sign+broadcast serialize), and distinct vaults return distinct mutexes
+// (so different vaults are not serialized against each other).
+func (s *XrpTestSuite) TestGetVaultLock(c *C) {
+	client := &Client{vaultLocks: make(map[string]*sync.Mutex)}
+	a1 := client.GetVaultLock("vaultA")
+	a2 := client.GetVaultLock("vaultA")
+	b1 := client.GetVaultLock("vaultB")
+	c.Check(a1, Equals, a2, Commentf("same vault must return the same lock"))
+	c.Check(a1 == b1, Equals, false, Commentf("different vaults must return different locks"))
+	// Holding vaultA's lock blocks vaultA but not vaultB.
+	a1.Lock()
+	defer a1.Unlock()
+	c.Check(a2.TryLock(), Equals, false, Commentf("vaultA lock must be held while a1 is locked"))
+	c.Check(b1.TryLock(), Equals, true, Commentf("vaultB lock must be independent of vaultA"))
+	b1.Unlock()
+}
+
+// xrpClientWithSubmitThenConfirm stands up a client whose "submit" request returns
+// submitResp, whose FIRST "tx" lookup returns preTx (the pre-submit on-chain check) and
+// whose subsequent "tx" lookups return postTx (the post-submit confirm). This isolates
+// BroadcastTx's post-submit tefPAST_SEQ/tefALREADY confirm branches, which the pre-submit
+// check would otherwise short-circuit when preTx is already a validated result.
+func (s *XrpTestSuite) xrpClientWithSubmitThenConfirm(c *C, submitResp, preTx, postTx string) *Client {
+	client, err := NewClient(
+		s.thorKeys,
+		config.BifrostChainConfiguration{
+			ChainID:      common.XRPChain,
+			ChainNetwork: "1234",
+			RPCHost:      "http://testnode/",
+			BlockScanner: config.BifrostBlockScannerConfiguration{ChainID: common.XRPChain, StartBlockHeight: 1},
+		},
+		nil, s.bridge, s.m,
+	)
+	c.Assert(err, IsNil)
+	txCalls := 0
+	mc := &testutil.JSONRPCMockClient{}
+	mc.DoFunc = func(req *http.Request) (*http.Response, error) {
+		body, _ := io.ReadAll(req.Body)
+		var resp string
+		if strings.Contains(string(body), `"submit"`) {
+			resp = submitResp
+		} else {
+			if txCalls == 0 {
+				resp = preTx
+			} else {
+				resp = postTx
+			}
+			txCalls++
+		}
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(bytes.NewReader([]byte(resp)))}, nil
+	}
+	rcfg, err := rpc.NewClientConfig("http://testnode/", rpc.WithHTTPClient(mc))
+	c.Assert(err, IsNil)
+	client.rpcClient = rpc.NewClient(rcfg)
+	return client
+}
+
+// TestBroadcastTxPostSubmitConfirm pins the post-submit fund-safety branches: after an
+// ambiguous accept (tefPAST_SEQ / tefALREADY), BroadcastTx caches as sent ONLY on a
+// validated tesSUCCESS, retires the attempt (ErrTxExpired) on a validated tec* failure, and
+// otherwise (txnNotFound / not-yet-validated) returns a plain retry. It never asks for a
+// re-sign, and caches nothing but a success. The pre-submit lookup is forced to txnNotFound so these post-submit paths run.
+func (s *XrpTestSuite) TestBroadcastTxPostSubmitConfirm(c *C) {
+	const (
+		valSuccess = `{"result":{"validated":true,"meta":{"TransactionResult":"tesSUCCESS"},"hash":"ABC"}}`
+		valTec     = `{"result":{"validated":true,"meta":{"TransactionResult":"tecDST_TAG_NEEDED"},"hash":"ABC"}}`
+		notFound   = `{"result":{"error":"txnNotFound","status":"error"}}`
+		notYet     = `{"result":{"validated":false,"hash":"ABC"}}`
+	)
+	cases := []struct {
+		name       string
+		engineRes  string
+		confirm    string
+		wantRetire bool // expect ErrTxExpired
+		wantErr    bool // expect a (non-resign) retry error rather than a cached send
+	}{
+		{"tefPAST_SEQ+success caches", "tefPAST_SEQ", valSuccess, false, false},
+		{"tefPAST_SEQ+tec retires", "tefPAST_SEQ", valTec, true, true},
+		{"tefPAST_SEQ+notyet retries", "tefPAST_SEQ", notYet, false, true},
+		{"tefALREADY+success caches", "tefALREADY", valSuccess, false, false},
+		{"tefALREADY+tec retires", "tefALREADY", valTec, true, true},
+		{"tefALREADY+notfound retries", "tefALREADY", notFound, false, true},
+		{"tefALREADY+notyet retries", "tefALREADY", notYet, false, true},
+	}
+	for _, tc := range cases {
+		submit := `{"result":{"engine_result":"` + tc.engineRes + `","status":"success"}}`
+		client := s.xrpClientWithSubmitThenConfirm(c, submit, notFound, tc.confirm)
+		tx := stypes.TxOutItem{Chain: common.XRPChain}
+		h, err := client.BroadcastTx(tx, s.signedBlobBytes(c))
+		c.Check(errors.Is(err, chainclienttypes.ErrTxExpired), Equals, tc.wantRetire,
+			Commentf("%s: want retire=%v, got err=%v", tc.name, tc.wantRetire, err))
+		c.Check(errors.Is(err, stypes.ErrResignRequired), Equals, false,
+			Commentf("%s: XRP never asks for a re-sign, got err=%v", tc.name, err))
+		// Assert the actual signer-cache side effect, not just the return value: an item is
+		// cached as sent IFF the broadcast resolved to a success — a retry or a re-sign must
+		// leave NO cache entry (caching a non-delivered tx would silently drop the outbound).
+		cached := client.signerCacheManager.HasSigned(tx.CacheHash())
+		if tc.wantErr {
+			c.Check(err, NotNil, Commentf("%s: expected a retry error (no cache)", tc.name))
+			c.Check(cached, Equals, false, Commentf("%s: a non-success broadcast must NOT cache", tc.name))
+		} else {
+			c.Check(err, IsNil, Commentf("%s: expected cache+return, got %v", tc.name, err))
+			c.Check(h != "", Equals, true, Commentf("%s: expected a tx hash", tc.name))
+			c.Check(cached, Equals, true, Commentf("%s: a validated success must be cached as sent", tc.name))
+		}
+	}
+}
+
+// TestSigningMetadataHalfReadErrors pins the half-read guard: if the validated read
+// succeeds but the current (open) ledger read fails, signingMetadata returns an error and
+// does NOT sign and does NOT defer — it never proceeds on a half-read (which could pin a
+// stale sequence) and never conflates a read failure with the in-flight ErrTxPending defer.
+func (s *XrpTestSuite) TestSigningMetadataHalfReadErrors(c *C) {
+	client, err := NewClient(
+		s.thorKeys,
+		config.BifrostChainConfiguration{
+			ChainID:      common.XRPChain,
+			ChainNetwork: "1234",
+			RPCHost:      "http://testnode/",
+			BlockScanner: config.BifrostBlockScannerConfiguration{ChainID: common.XRPChain, StartBlockHeight: 1},
+		},
+		nil, s.bridge, s.m,
+	)
+	c.Assert(err, IsNil)
+	mc := &testutil.JSONRPCMockClient{}
+	mc.DoFunc = func(req *http.Request) (*http.Response, error) {
+		body, _ := io.ReadAll(req.Body)
+		// Validated read OK; current (non-validated) read fails.
+		resp := `{"result":{"error":"backendError","status":"error"}}`
+		if strings.Contains(string(body), `"validated"`) {
+			resp = acctInfoResp(6, true)
+		}
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(bytes.NewReader([]byte(resp)))}, nil
+	}
+	rcfg, err := rpc.NewClientConfig("http://testnode/", rpc.WithHTTPClient(mc))
+	c.Assert(err, IsNil)
+	client.rpcClient = rpc.NewClient(rcfg)
+
+	priv, err := s.thorKeys.GetPrivateKey()
+	c.Assert(err, IsNil)
+	temp, err := cryptocodec.ToCmtPubKeyInterface(priv.PubKey())
+	c.Assert(err, IsNil)
+	vault, err := common.NewPubKeyFromCrypto(temp)
+	c.Assert(err, IsNil)
+
+	toAddress, err := common.NewAddress("rQwpQ54X5gJyLGg4QGp3HSkjdf3u37NqiZ")
+	c.Assert(err, IsNil)
+	outAsset, err := common.NewAsset("XRP.XRP")
+	c.Assert(err, IsNil)
+	tx := stypes.TxOutItem{
+		Chain: common.XRPChain, ToAddress: toAddress, VaultPubKey: vault,
+		Coins: common.Coins{common.NewCoin(outAsset, cosmos.NewUint(2452835200))},
+		Memo:  "memo", GasRate: 750000, InHash: "hash",
+	}
+	_, err = client.signingMetadata(tx, 1)
+	c.Check(err, NotNil, Commentf("half-read (current read fails) must error"))
+	c.Check(errors.Is(err, chainclienttypes.ErrTxPending), Equals, false,
+		Commentf("a half-read is a hard error, not the in-flight defer"))
 }

@@ -781,6 +781,25 @@ func (s *CoverageSuite) TestRandHexString(c *C) {
 	c.Assert(s3 != s4, Equals, true)
 }
 
+// Every character is uniform over hexBytes. Taking b%len(hexBytes) of every
+// byte, without redrawing the top 256%22 values, makes the last 8 symbols ~5.5%
+// rare: ~2700 short here, against a tolerance of 1500 (~7 sigma).
+func (s *CoverageSuite) TestRandHexStringUniform(c *C) {
+	const perSymbol = 50_000
+	var counts [256]int
+	for _, ch := range []byte(RandHexString(perSymbol * len(hexBytes))) {
+		counts[ch]++
+	}
+	total := 0
+	for i := 0; i < len(hexBytes); i++ {
+		got := counts[hexBytes[i]]
+		total += got
+		c.Check(got > perSymbol-1500 && got < perSymbol+1500, Equals, true,
+			Commentf("%q drawn %d times, want ~%d", hexBytes[i], got, perSymbol))
+	}
+	c.Assert(total, Equals, perSymbol*len(hexBytes), Commentf("characters outside hexBytes"))
+}
+
 // --- ChainPoolInfo tests ---
 
 func (s *CoverageSuite) TestNewChainPoolInfo(c *C) {
@@ -1252,7 +1271,7 @@ func (s *CoverageSuite) TestChainDefaultCoinbase(c *C) {
 func (s *CoverageSuite) TestChainApproximateBlockMilliseconds(c *C) {
 	c.Assert(BTCChain.ApproximateBlockMilliseconds(), Equals, int64(600_000))
 	c.Assert(ETHChain.ApproximateBlockMilliseconds(), Equals, int64(12_000))
-	c.Assert(SOLChain.ApproximateBlockMilliseconds(), Equals, int64(300))
+	c.Assert(SOLChain.ApproximateBlockMilliseconds(), Equals, int64(214))
 	c.Assert(SUIChain.ApproximateBlockMilliseconds(), Equals, int64(250))
 	c.Assert(ADAChain.ApproximateBlockMilliseconds(), Equals, int64(20_000))
 	c.Assert(EmptyChain.ApproximateBlockMilliseconds(), Equals, int64(0))

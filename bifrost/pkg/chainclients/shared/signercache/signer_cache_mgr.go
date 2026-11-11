@@ -14,6 +14,7 @@ type StorageAccessor interface {
 	SetSignedWithExpiry(hash string, expiryUnixMs int64, transactionHash string) error
 	HasSigned(hash string) bool
 	HasSignedWithExpiry(hash string) (signed, expired bool)
+	HasTransactionHash(transactionHash string) (bool, error)
 	RemoveSigned(transactionHash string) error
 	SetTransactionHashMap(txOutItemHash, transactionHash string) error
 	GetTransactionHash(txOutItemHash string) (string, error)
@@ -104,6 +105,17 @@ func (cm *CacheManager) GetLatestRecordedTx(vaultKey string) (string, error) {
 
 func (cm *CacheManager) GetTransactionHash(txOutItemHash string) (string, error) {
 	return cm.storageAccessor.GetTransactionHash(txOutItemHash)
+}
+
+// MayHaveSignedTx checks the broadcast hash. Scanners need the receipt on a hit
+// or a read error so a failed outbound can release its signing lock.
+func (cm *CacheManager) MayHaveSignedTx(transactionHash string) bool {
+	found, err := cm.storageAccessor.HasTransactionHash(transactionHash)
+	if err != nil {
+		cm.logger.Err(err).Str("transaction_hash", transactionHash).Msg("failed to check signed transaction")
+		return true
+	}
+	return found
 }
 
 // RemoveSigned removes the corresponding TxOutItem from the signer cache. The provided

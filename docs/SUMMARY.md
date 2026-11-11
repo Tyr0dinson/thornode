@@ -68,6 +68,7 @@
 - [Internals & Math](concepts/code-libraries.md)
 
   - [Math](concepts/math.md)
+  - [LUVI Invariant](concepts/luvi-invariant.md)
 
 - [Aggregators](aggregators/aggregator-overview.md)
 
@@ -83,6 +84,7 @@
 
   - [EVM Whitelist Procedure](evm_whitelist_procedure.md)
   - [Upgrade Router](upgrade_router.md)
+  - [Execution Telemetry](architecture/execution-telemetry.md)
   - [Consensus Determinism Replay](test-consensus-determinism.md)
   - [Architecture Decision Records (ADR)](architecture/README.md)
     - [ADR Creation Process](architecture/PROCESS.md)

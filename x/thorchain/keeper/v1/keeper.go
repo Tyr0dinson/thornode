@@ -3,6 +3,7 @@ package keeperv1
 import (
 	"bytes"
 	"fmt"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -37,6 +38,7 @@ const (
 	prefixRefundCleanupExpiry       types.DbPrefix = "refund_cleanup_expiry/"
 	prefixPool                      types.DbPrefix = "pool/"
 	prefixPoolLUVI                  types.DbPrefix = "luvi/"
+	prefixPoolLuviAccumulator       types.DbPrefix = "pool_luvi/"
 	prefixTxOut                     types.DbPrefix = "txout/"
 	prefixTotalLiquidityFee         types.DbPrefix = "total_liquidity_fee/"
 	prefixPoolLiquidityFee          types.DbPrefix = "pool_liquidity_fee/"
@@ -89,6 +91,7 @@ const (
 	prefixBanVoter                  types.DbPrefix = "ban/"
 	prefixNodeSlashPoints           types.DbPrefix = "slash/"
 	prefixNodeJail                  types.DbPrefix = "jail/"
+	prefixNodeBlameRecord           types.DbPrefix = "node_blame/"
 	prefixSwapQueueItem             types.DbPrefix = "swapitem/"
 	prefixAdvSwapQueueItem          types.DbPrefix = "aq/"
 	prefixAdvSwapQueueLimitIndex    types.DbPrefix = "aqlim/"
@@ -229,6 +232,17 @@ func appendUpper(dst []byte, s string) []byte {
 	return dst
 }
 
+// getKeyInt64 returns GetKey(prefix, strconv.FormatInt(n, 10)) without the
+// intermediate digit string: digits and '-' have no upper case.
+func (k KVStore) getKeyInt64(prefix types.DbPrefix, n int64) []byte {
+	var digits [20]byte // len("-9223372036854775808")
+	d := strconv.AppendInt(digits[:0], n, 10)
+	newKey := make([]byte, 0, len(prefix)+1+len(d))
+	newKey = append(newKey, prefix...)
+	newKey = append(newKey, '/')
+	return append(newKey, d...)
+}
+
 // getIterator - get an iterator for given prefix
 func (k KVStore) getIterator(ctx cosmos.Context, prefix types.DbPrefix) cosmos.Iterator {
 	store := k.kvStore(ctx)
@@ -246,6 +260,7 @@ func (k KVStore) del(ctx cosmos.Context, key []byte) {
 	}
 	if bytes.HasPrefix(key, []byte(prefixTxOut)) {
 		keeper.TxOutCacheFromContext(ctx).Disable()
+		noteTxOutWindowWrite(ctx, key)
 	}
 	store := k.kvStore(ctx)
 	if store.Has(key) {
@@ -276,10 +291,14 @@ func (k KVStore) getInt64(ctx cosmos.Context, key []byte, record *int64) (bool, 
 		return false, nil
 	}
 
+	// The getters decode a zero wrapper with its own Unmarshal, which is what
+	// k.cdc.Unmarshal does after resetting it (the wrappers hold no Any), and
+	// name record's type as %T would: through the codec interface the wrapper,
+	// and through fmt every caller's record, would move to the heap.
 	value := ProtoInt64{}
 	bz := store.Get(key)
-	if err := k.cdc.Unmarshal(bz, &value); err != nil {
-		return true, dbError(ctx, fmt.Sprintf("Unmarshal kvstore: (%T) %s", record, key), err)
+	if err := value.Unmarshal(bz); err != nil {
+		return true, dbError(ctx, fmt.Sprintf("Unmarshal kvstore: (*int64) %s", key), err)
 	}
 	*record = value.GetValue()
 	return true, nil
@@ -302,10 +321,10 @@ func (k KVStore) getUint64(ctx cosmos.Context, key []byte, record *uint64) (bool
 		return false, nil
 	}
 
-	value := ProtoUint64{Value: *record}
+	var value ProtoUint64
 	bz := store.Get(key)
-	if err := k.cdc.Unmarshal(bz, &value); err != nil {
-		return true, dbError(ctx, fmt.Sprintf("Unmarshal kvstore: (%T) %s", record, key), err)
+	if err := value.Unmarshal(bz); err != nil {
+		return true, dbError(ctx, fmt.Sprintf("Unmarshal kvstore: (*uint64) %s", key), err)
 	}
 	*record = value.GetValue()
 	return true, nil
@@ -330,8 +349,8 @@ func (k KVStore) getAccAddresses(ctx cosmos.Context, key []byte, record *[]cosmo
 
 	var value ProtoAccAddresses
 	bz := store.Get(key)
-	if err := k.cdc.Unmarshal(bz, &value); err != nil {
-		return true, dbError(ctx, fmt.Sprintf("Unmarshal kvstore: (%T) %s", record, key), err)
+	if err := value.Unmarshal(bz); err != nil {
+		return true, dbError(ctx, fmt.Sprintf("Unmarshal kvstore: (*[]types.AccAddress) %s", key), err)
 	}
 	*record = value.Value
 	return true, nil
@@ -356,8 +375,8 @@ func (k KVStore) getString(ctx cosmos.Context, key string, record *string) (bool
 
 	var value ProtoString
 	bz := store.Get([]byte(key))
-	if err := k.cdc.Unmarshal(bz, &value); err != nil {
-		return true, dbError(ctx, fmt.Sprintf("Unmarshal kvstore: (%T) %s", record, key), err)
+	if err := value.Unmarshal(bz); err != nil {
+		return true, dbError(ctx, fmt.Sprintf("Unmarshal kvstore: (*string) %s", key), err)
 	}
 	*record = value.Value
 	return true, nil
@@ -382,8 +401,8 @@ func (k KVStore) getStrings(ctx cosmos.Context, key []byte, record *[]string) (b
 
 	var value ProtoStrings
 	bz := store.Get(key)
-	if err := k.cdc.Unmarshal(bz, &value); err != nil {
-		return true, dbError(ctx, fmt.Sprintf("Unmarshal kvstore: (%T) %s", record, key), err)
+	if err := value.Unmarshal(bz); err != nil {
+		return true, dbError(ctx, fmt.Sprintf("Unmarshal kvstore: (*[]string) %s", key), err)
 	}
 	*record = value.Value
 	return true, nil
@@ -408,8 +427,8 @@ func (k KVStore) getUint(ctx cosmos.Context, key []byte, record *cosmos.Uint) (b
 
 	var value ProtoUint
 	bz := store.Get(key)
-	if err := k.cdc.Unmarshal(bz, &value); err != nil {
-		return false, dbError(ctx, fmt.Sprintf("Unmarshal kvstore: (%T) %s", record, key), err)
+	if err := value.Unmarshal(bz); err != nil {
+		return false, dbError(ctx, fmt.Sprintf("Unmarshal kvstore: (*math.Uint) %s", key), err)
 	}
 	*record = value.Value
 	return true, nil
@@ -458,6 +477,9 @@ func (k KVStore) SendFromModuleToAccount(ctx cosmos.Context, from string, to cos
 }
 
 func (k KVStore) BurnFromModule(ctx cosmos.Context, module string, coin common.Coin) error {
+	if coin.Asset.IsSyntheticAsset() {
+		keeper.RecordLuviTouch(ctx, coin.Asset, k.luviCapture(ctx))
+	}
 	coinToBurn, err := coin.Native()
 	if err != nil {
 		return fmt.Errorf("fail to parse coins: %w", err)
@@ -476,6 +498,7 @@ func (k KVStore) BurnFromModule(ctx cosmos.Context, module string, coin common.C
 // write off settled ThorFi-era synth residuals. For each holder it sends the
 // balance to the thorchain module and burns it.
 func (k KVStore) BurnEntireSynthSupply(ctx cosmos.Context, synthAsset common.Asset) (cosmos.Uint, error) {
+	keeper.RecordLuviTouch(ctx, synthAsset, k.luviCapture(ctx))
 	denom := synthAsset.Native()
 	type holderBalance struct {
 		addr cosmos.AccAddress
@@ -503,6 +526,9 @@ func (k KVStore) BurnEntireSynthSupply(ctx cosmos.Context, synthAsset common.Ass
 }
 
 func (k KVStore) MintToModule(ctx cosmos.Context, module string, coin common.Coin) error {
+	if coin.Asset.IsSyntheticAsset() {
+		keeper.RecordLuviTouch(ctx, coin.Asset, k.luviCapture(ctx))
+	}
 	// circuit breaker
 	// mint new rune coins until we hit the cap. Once we do, borrow
 	// from the reserve instead of minting new tokens

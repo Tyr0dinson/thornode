@@ -207,9 +207,10 @@ func NewClient(thorKeys *thorclient.Keys,
 	return c, nil
 }
 
-// getPendingLiability returns the sum of all pending (signed but unconfirmed) liabilities
-// for the given vault address, and prunes entries for nonces that have already been confirmed.
-func (c *Client) getPendingLiability(vaultAddr string, confirmedNonce uint64) *big.Int {
+// getPendingLiability sums pending liabilities at other nonces for the vault and
+// prunes confirmed entries. Transactions competing at signingNonce cannot both spend,
+// so its existing reservation must not be charged again when checking a replacement.
+func (c *Client) getPendingLiability(vaultAddr string, confirmedNonce, signingNonce uint64) *big.Int {
 	c.liabilityMu.Lock()
 	defer c.liabilityMu.Unlock()
 
@@ -225,12 +226,15 @@ func (c *Client) getPendingLiability(vaultAddr string, confirmedNonce uint64) *b
 			delete(vaultLiabilities, nonce)
 			continue
 		}
-		total.Add(total, amount)
+		if nonce != signingNonce {
+			total.Add(total, amount)
+		}
 	}
 	return total
 }
 
-// recordLiability records the liability (value + estimated fee) for a signed transaction.
+// recordLiability retains the largest signed cost at each nonce. A replacement
+// does not guarantee that the older transaction cannot still be mined.
 func (c *Client) recordLiability(vaultAddr string, nonce uint64, amount *big.Int) {
 	c.liabilityMu.Lock()
 	defer c.liabilityMu.Unlock()
@@ -238,7 +242,10 @@ func (c *Client) recordLiability(vaultAddr string, nonce uint64, amount *big.Int
 	if c.pendingLiabilities[vaultAddr] == nil {
 		c.pendingLiabilities[vaultAddr] = make(map[uint64]*big.Int)
 	}
-	c.pendingLiabilities[vaultAddr][nonce] = amount
+	previous := c.pendingLiabilities[vaultAddr][nonce]
+	if previous == nil || amount.Cmp(previous) > 0 {
+		c.pendingLiabilities[vaultAddr][nonce] = new(big.Int).Set(amount)
+	}
 }
 
 // IsETH return true if the token address equals to ethToken address
@@ -286,7 +293,9 @@ func (c *Client) reconstructLiabilities() {
 
 	// WaitGroup for local reconstruction routine
 	var reconWg sync.WaitGroup
-	sem := make(chan struct{}, c.cfg.EVM.ReconstructLiabilitiesConcurrency)
+	// at least one worker: with an unbuffered semaphore the first send blocks
+	// forever and signing never becomes ready
+	sem := make(chan struct{}, max(c.cfg.EVM.ReconstructLiabilitiesConcurrency, 1))
 
 	for _, vaultAddr := range vaultAddresses {
 		reconWg.Add(1)
@@ -779,6 +788,20 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 		if err = json.Unmarshal(tx.Checkpoint, &nonce); err != nil {
 			return nil, nil, nil, fmt.Errorf("fail to deserialize checkpoint: %w", err)
 		}
+		// A numeric checkpoint may already represent an exposed transfer
+		// signature. Never advance it from allowance or pending-nonce evidence.
+		// Once its nonce is mined, retire this local attempt instead of signing
+		// a transfer at a spent approval nonce; observation/rescheduling owns
+		// the remaining on-chain obligation.
+		confirmed, nonceErr := c.GetNonceFinalized(fromAddr.String())
+		if nonceErr != nil {
+			return nil, tx.Checkpoint, nil, fmt.Errorf("check checkpoint confirmed nonce: %w", nonceErr)
+		}
+		if confirmed > nonce {
+			c.logger.Info().Uint64("nonce", nonce).Uint64("confirmed_nonce", confirmed).
+				Msg("retiring consumed transaction checkpoint")
+			return nil, nil, nil, nil
+		}
 	} else {
 		nonce, err = c.GetNonce(fromAddr.String())
 		if err != nil {
@@ -807,11 +830,15 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 		return nil, nil, nil, fmt.Errorf("fail to marshal nonce: %w", err)
 	}
 
-	// Check if allowance approval is needed (wrapped with mimir check)
-	approvalTx, err := c.checkAndApproveAllowance(tx, nonce)
-	if err != nil {
-		c.logger.Err(err).Msg("fail to check allowance")
-		return nil, nil, nil, err
+	// Numeric checkpoints may already have exposed a transfer signature.
+	// Never create another approval or advance that fixed nonce on retry.
+	var approvalTx *etypes.Transaction
+	if tx.Checkpoint == nil {
+		approvalTx, err = c.checkAndApproveAllowance(tx, nonce)
+		if err != nil {
+			c.logger.Err(err).Msg("fail to check allowance")
+			return nil, nil, nil, err
+		}
 	}
 
 	// If approval transaction was created, sign and broadcast it before building the outbound.
@@ -840,7 +867,20 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 		ctx, cancel := c.getContext()
 		defer cancel()
 		err = c.client.SendTransaction(ctx, broadcastTx)
-		if err != nil && err.Error() != txpool.ErrAlreadyKnown.Error() && err.Error() != ecore.ErrNonceTooLow.Error() {
+		// A peer can mine this exact approval before our submission reaches the
+		// node. Geth adds nonce details to ErrNonceTooLow; the error alone does
+		// not prove which transaction consumed the nonce. Require this approval's
+		// successful receipt before advancing the outbound checkpoint.
+		if err != nil && strings.HasPrefix(err.Error(), ecore.ErrNonceTooLow.Error()) {
+			receipt, receiptErr := c.client.TransactionReceipt(ctx, broadcastTx.Hash())
+			if receiptErr == nil && receipt.TxHash == broadcastTx.Hash() &&
+				receipt.BlockNumber != nil && receipt.Status == etypes.ReceiptStatusSuccessful {
+				c.logger.Info().Str("approval_txid", broadcastTx.Hash().String()).
+					Msg("approval already mined; advancing outbound nonce")
+				err = nil
+			}
+		}
+		if err != nil && err.Error() != txpool.ErrAlreadyKnown.Error() {
 			c.logger.Err(err).Str("hash", broadcastTx.Hash().String()).Msg("fail to broadcast approval transaction")
 			return nil, nonceBytes, nil, fmt.Errorf("fail to broadcast approval transaction: %w", err)
 		}
@@ -867,7 +907,7 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 		// The transferFrom will revert if the approval isn't on-chain yet. This only
 		// happens once per vault per token, so the one-time delay is acceptable.
 		// If the approval is still not mined in time, the outbound will be rescheduled.
-		wait := time.Duration(c.cfg.ChainID.ApproximateBlockMilliseconds()*3) * time.Millisecond
+		wait := time.Duration(c.cfg.ApproximateBlockMilliseconds()*3) * time.Millisecond
 		c.logger.Info().Dur("wait", wait).Msg("waiting for approval transaction to be mined")
 		waitForApprovalMined(wait)
 	}
@@ -1055,9 +1095,10 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 		return nil, nil, nil, fmt.Errorf("fail to get gas asset balance: %w", err)
 	}
 
-	// Subtract pending liabilities (signed but unconfirmed transactions) from the balance
+	// Reserve other pending nonces; this nonce's competing transactions can only
+	// spend once, and the replacement's required balance is checked below.
 	confirmedNonce, _ := c.GetNonceFinalized(fromAddr.String())
-	pendingLiability := c.getPendingLiability(fromAddr.String(), confirmedNonce)
+	pendingLiability := c.getPendingLiability(fromAddr.String(), confirmedNonce, nonce)
 	effectiveBalance := new(big.Int).Sub(gasBalance, pendingLiability)
 
 	requiredBalance := new(big.Int).Add(ethValue, estimatedFee)

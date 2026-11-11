@@ -1,6 +1,8 @@
 package thorchain
 
 import (
+	"fmt"
+
 	"cosmossdk.io/math"
 	. "gopkg.in/check.v1"
 
@@ -2502,6 +2504,70 @@ func (*NetworkManagerTestSuite) TestPOLLiquidityAdd(c *C) {
 	lp, err = mgr.Keeper().GetLiquidityProvider(ctx, btcPool.Asset, polAddress)
 	c.Assert(err, IsNil)
 	c.Check(lp.Units.Uint64(), Equals, uint64(10), Commentf("%d", lp.Units.Uint64()))
+}
+
+// The rune pool value behind the reserve's new RUNEPool units is read only
+// once a POL add succeeds, and still from the state before the deposit.
+func (*NetworkManagerTestSuite) TestPOLLiquidityAddValueBeforeDeposit(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	k := mgr.Keeper()
+
+	net := newNetworkMgr(k, NewTxStoreDummy(), NewDummyEventMgr())
+	polAddress, err := k.GetModuleAddress(ReserveName)
+	c.Assert(err, IsNil)
+	asgardAddress, err := k.GetModuleAddress(AsgardName)
+	c.Assert(err, IsNil)
+	na := GetRandomValidatorNode(NodeActive)
+	c.Assert(k.SetNodeAccount(ctx, na), IsNil)
+
+	btcPool := NewPool()
+	btcPool.Asset = common.BTCAsset
+	btcPool.BalanceRune = cosmos.NewUint(2000 * common.One)
+	btcPool.BalanceAsset = cosmos.NewUint(20 * common.One)
+	btcPool.LPUnits = cosmos.NewUint(2000 * common.One)
+	c.Assert(k.SetPool(ctx, btcPool), IsNil)
+	k.SetLiquidityProvider(ctx, LiquidityProvider{
+		Asset:       common.BTCAsset,
+		RuneAddress: polAddress,
+		Units:       cosmos.NewUint(500 * common.One),
+	})
+	k.SetRUNEPool(ctx, RUNEPool{
+		PoolUnits:    cosmos.NewUint(100 * common.One),
+		ReserveUnits: cosmos.NewUint(900 * common.One),
+	})
+
+	max := cosmos.NewUint(10000)
+	util := cosmos.NewUint(1500)
+	target := cosmos.NewUint(1000)
+	runeAmt := common.GetSafeShare(max, cosmos.NewUint(1000_000), btcPool.BalanceRune)
+	reserveBefore := k.GetRuneBalanceOfModule(ctx, ReserveName)
+
+	// a failed add leaves everything as it was and never computes the value
+	k.SetMimir(ctx, fmt.Sprintf(constants.MimirTemplatePauseLPDeposit, common.BTCAsset.MimirString()), 1)
+	polValue := &polValueMemo{}
+	c.Assert(net.addPOLLiquidity(ctx, btcPool, polAddress, asgardAddress, na.NodeAddress, max, util, target, mgr, polValue), NotNil)
+	c.Check(polValue.ok, Equals, false)
+	c.Check(k.GetRuneBalanceOfModule(ctx, ReserveName).String(), Equals, reserveBefore.String())
+	runePool, err := k.GetRUNEPool(ctx)
+	c.Assert(err, IsNil)
+	c.Check(runePool.ReserveUnits.String(), Equals, cosmos.NewUint(900*common.One).String())
+
+	// a successful add prices the reserve's units at the value before the deposit
+	k.SetMimir(ctx, fmt.Sprintf(constants.MimirTemplatePauseLPDeposit, common.BTCAsset.MimirString()), 0)
+	valueBefore, err := runePoolValue(ctx, mgr)
+	c.Assert(err, IsNil)
+	c.Assert(valueBefore.IsZero(), Equals, false)
+	c.Assert(net.addPOLLiquidity(ctx, btcPool, polAddress, asgardAddress, na.NodeAddress, max, util, target, mgr, polValue), IsNil)
+	valueAfter, err := runePoolValue(ctx, mgr)
+	c.Assert(err, IsNil)
+	c.Assert(valueAfter.GT(valueBefore), Equals, true, Commentf("the deposit should raise the value"))
+
+	expected := cosmos.NewUint(900 * common.One).Add(common.GetSafeShare(runeAmt, valueBefore, cosmos.NewUint(1000*common.One)))
+	runePool, err = k.GetRUNEPool(ctx)
+	c.Assert(err, IsNil)
+	c.Check(runePool.ReserveUnits.String(), Equals, expected.String())
+	c.Check(k.GetRuneBalanceOfModule(ctx, ReserveName).String(), Equals, reserveBefore.Sub(runeAmt).String())
+	c.Check(polValue.ok, Equals, false, Commentf("a committed add resets the memo"))
 }
 
 func (*NetworkManagerTestSuite) TestPOLLiquidityWithdraw(c *C) {

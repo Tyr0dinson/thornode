@@ -43,8 +43,9 @@ import (
 const (
 	// keepAlivePollInterval is how often the loop checks the THORChain block height
 	// for a cadence-boundary crossing. Kept well under the boundary spacing so every
-	// member detects the same crossing promptly; at ~300ms slots every second of
-	// detection delay spends ~3 of the 150 blocks the anchor blockhash stays valid.
+	// member detects the same crossing promptly; at ~214ms slots (measured 2026-10-27)
+	// every second of detection delay spends ~5 of the 150 blocks the anchor blockhash
+	// stays valid — slot time keeps falling, so the budget keeps shrinking.
 	keepAlivePollInterval = 2 * time.Second
 
 	// keepAliveThorBlockCadence is the spacing, in THORChain blocks, of the
@@ -98,6 +99,8 @@ func (c *SOLClient) keepAliveLoop() {
 					if err != nil || scanSlot <= 0 {
 						advance = false
 					} else {
+						// keepAliveVault warms the consensus-blockhash cache itself, only
+						// for a vault it finds actually due, so idle boundaries derive nothing.
 						c.keepAliveCheck(scanSlot, kaBoundary*keepAliveThorBlockCadence)
 					}
 				}
@@ -110,6 +113,11 @@ func (c *SOLClient) keepAliveLoop() {
 			// keep-alive boundary. Same fresh-node seed (skip the first stale boundary).
 			if provBoundary := c.nextNonceProvisionThorMultiple(thorHeight); provBoundary > c.getNonceProvisionThorMultiple() {
 				if c.getNonceProvisionThorMultiple() != 0 {
+					// nonceProvisionCheck warms the consensus-blockhash cache itself, once the
+					// durable-nonce gate reads enabled, so the derivation overlaps its
+					// GetAsgards + GetPendingOutbounds reads (the nonce-create keysign is the
+					// broadcast most at risk of expiry). A feature-off fleet does not derive;
+					// outstanding workers are bounded by solMaxOutstandingPrewarms.
 					c.nonceProvisionCheck(provBoundary * nonceProvisionThorBlockCadence)
 				}
 				c.setNonceProvisionThorMultiple(provBoundary)
@@ -206,6 +214,16 @@ func (c *SOLClient) keepAliveCheck(currentSlot, anchorHeight int64) {
 		return
 	}
 
+	// Slots-per-THORChain-block read once at the shared keysign height so every member
+	// uses an identical staleness threshold (see solSlotsPerThorchainBlock). A mimir read
+	// error skips this boundary (fail closed) rather than acting on a value peers do not
+	// share — same as the refreshBlocks read above.
+	slotsPerThorBlock, err := c.solSlotsPerThorchainBlock(anchorHeight)
+	if err != nil {
+		c.logger.Err(err).Msgf("fail to get %s mimir", constants.MimirKeySOLSlotMilliseconds)
+		return
+	}
+
 	// currentSlot (Solana scan slot) gates staleness; anchorHeight (the shared
 	// THORChain boundary) is the keysign height + amount seed. Deliberately NOT
 	// c.rpcClient.GetSlot()/a per-node GetBlockHeight read: those desync the party
@@ -218,7 +236,7 @@ func (c *SOLClient) keepAliveCheck(currentSlot, anchorHeight int64) {
 		if vault.PubKeyEddsa.IsEmpty() {
 			continue
 		}
-		if err := c.keepAliveVault(vault, uint64(currentSlot), refreshBlocks, anchorHeight); err != nil {
+		if err := c.keepAliveVault(vault, uint64(currentSlot), refreshBlocks, anchorHeight, slotsPerThorBlock); err != nil {
 			c.logger.Err(err).
 				Str("vault_pubkey", vault.PubKey.String()).
 				Msg("fail to keep alive vault")
@@ -226,7 +244,7 @@ func (c *SOLClient) keepAliveCheck(currentSlot, anchorHeight int64) {
 	}
 }
 
-func (c *SOLClient) keepAliveVault(vault ttypes.Vault, currentSlot uint64, refreshBlocks, anchorHeight int64) error {
+func (c *SOLClient) keepAliveVault(vault ttypes.Vault, currentSlot uint64, refreshBlocks, anchorHeight int64, slotsPerThorBlock uint64) error {
 	addr, err := vault.PubKeyEddsa.GetAddress(common.SOLChain)
 	if err != nil {
 		return fmt.Errorf("fail to get vault address: %w", err)
@@ -247,9 +265,18 @@ func (c *SOLClient) keepAliveVault(vault ttypes.Vault, currentSlot uint64, refre
 		return nil
 	}
 	newest := sigs[0]
-	if !keepAliveDue(currentSlot, newest.Slot, refreshBlocks) {
+	if !keepAliveDue(currentSlot, newest.Slot, refreshBlocks, slotsPerThorBlock) {
 		return nil
 	}
+
+	// This vault is due, so a keysign is very likely to run — warm the consensus blockhash
+	// off the critical path now, overlapping the GetBalance read just below + SignTx's own
+	// setup so it lands as a cache hit by keysign time. Gated behind keepAliveDue (not fired
+	// per boundary), close to the pre-change behaviour where the derivation was reached only
+	// from SignTx on a due vault. The two exits below (GetBalance error, or an underfunded
+	// vault) can still skip the keysign after this fires; that is harmless — a no-op warm,
+	// coalesced by singleflight and bounded by solMaxOutstandingPrewarms.
+	c.prewarmConsensusBlockHash(anchorHeight)
 
 	// Seed the amount from the shared anchorHeight, NOT the per-node newest.Slot:
 	// the amount is serialized into the TSS-signed Solana message, so a per-node
@@ -322,20 +349,37 @@ func (c *SOLClient) keepAliveVault(vault ttypes.Vault, currentSlot uint64, refre
 }
 
 // solSlotsPerThorchainBlock converts the THORChain-block threshold to Solana slots.
-// Both sides come from common.Chain.ApproximateBlockMilliseconds, the single SOL
-// slot-time constant the scanner pacing also uses (6000ms / 300ms = 20).
-func solSlotsPerThorchainBlock() uint64 {
-	return uint64(common.THORChain.ApproximateBlockMilliseconds() / common.SOLChain.ApproximateBlockMilliseconds())
+// The THORChain side is its fixed block time; the SOL side is the live slot-time
+// estimate read from MimirKeySOLSlotMilliseconds at the keysign height (fallback: the
+// common.SOLChain.ApproximateBlockMilliseconds() constant), so every member computes
+// the same threshold and a slot-time drift is a vote, not a release (6000ms / 214ms ≈
+// 28). The mimir divisor is clamped > 0, so this never divides by zero; the result is
+// floored at 1 so a very slow SOL slot can never collapse the threshold to zero.
+func (c *SOLClient) solSlotsPerThorchainBlock(height int64) (uint64, error) {
+	ms, err := c.solSlotMillisecondsAtHeight(height)
+	if err != nil {
+		return 0, err
+	}
+	slots := common.THORChain.ApproximateBlockMilliseconds() / ms
+	if slots < 1 {
+		slots = 1
+	}
+	return uint64(slots), nil
 }
 
 // keepAliveDue returns true when the newest signature for a vault is older than
-// the refresh threshold. Both inputs are chain facts, so every node evaluates the
-// same result.
-func keepAliveDue(currentSlot, newestSigSlot uint64, refreshBlocks int64) bool {
+// the refresh threshold. Only the threshold is shared: slotsPerThorBlock is derived from
+// the shared keysign height (see solSlotsPerThorchainBlock), so every node applies the
+// SAME threshold. The two slot inputs are per-node — currentSlot is this node's scan slot
+// and newestSigSlot its newest observed signature — so the boolean result can still differ
+// between members near the boundary. That is fine: keep-alive is a participation gate, not
+// signed bytes (the signed amount/anchor come from the shared anchorHeight), so a split
+// only means some members skip a round and it retries; it never diverges a keysign message.
+func keepAliveDue(currentSlot, newestSigSlot uint64, refreshBlocks int64, slotsPerThorBlock uint64) bool {
 	if refreshBlocks <= 0 || currentSlot <= newestSigSlot {
 		return false
 	}
-	thresholdSlots := uint64(refreshBlocks) * solSlotsPerThorchainBlock()
+	thresholdSlots := uint64(refreshBlocks) * slotsPerThorBlock
 	return currentSlot-newestSigSlot > thresholdSlots
 }
 

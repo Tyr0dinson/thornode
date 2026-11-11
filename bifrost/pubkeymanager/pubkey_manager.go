@@ -4,6 +4,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/rs/zerolog"
@@ -52,11 +53,19 @@ type poolAddressCacheKey struct {
 	IncludeInactive bool
 }
 
+// poolAddressSet maps lowercased pool addresses to the first matching vault.
+type poolAddressSet struct {
+	byAddress map[string]common.ChainPoolInfo
+	// allASCII reports whether every pool address in the set is ASCII; only
+	// then does a lowercase lookup agree with strings.EqualFold matching.
+	allASCII bool
+}
+
 // PubKeyManager manager an always up to date pubkeys , which implement PubKeyValidator interface
 type PubKeyManager struct {
 	bridge           thorclient.ThorchainBridge
 	pubkeys          []pubKeyInfo
-	poolAddressCache map[poolAddressCacheKey]map[string]common.ChainPoolInfo
+	poolAddressCache map[poolAddressCacheKey]poolAddressSet
 	rwMutex          *sync.RWMutex
 	logger           zerolog.Logger
 	errCounter       *prometheus.CounterVec
@@ -320,8 +329,18 @@ func (pkm *PubKeyManager) invalidatePoolAddressCacheNoLock() {
 	pkm.poolAddressCache = nil
 }
 
-func (pkm *PubKeyManager) buildPoolAddressCacheNoLock(chain common.Chain, includeInactive bool) map[string]common.ChainPoolInfo {
+func isASCII(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] >= utf8.RuneSelf {
+			return false
+		}
+	}
+	return true
+}
+
+func (pkm *PubKeyManager) buildPoolAddressCacheNoLock(chain common.Chain, includeInactive bool) poolAddressSet {
 	result := make(map[string]common.ChainPoolInfo)
+	allASCII := true
 	for _, pk := range pkm.pubkeys {
 		// skip pubkeys with a different algo than the chain
 		if chain.GetSigningAlgo() != pk.Algo {
@@ -335,13 +354,48 @@ func (pkm *PubKeyManager) buildPoolAddressCacheNoLock(chain common.Chain, includ
 		if err != nil {
 			continue
 		}
-		normalizedAddress := normalizePoolAddress(cpi.PoolAddress.String())
+		poolAddress := cpi.PoolAddress.String()
+		if !isASCII(poolAddress) {
+			allASCII = false
+		}
+		normalizedAddress := normalizePoolAddress(poolAddress)
 		if _, ok := result[normalizedAddress]; ok {
 			continue
 		}
 		result[normalizedAddress] = cpi
 	}
-	return result
+	return poolAddressSet{byAddress: result, allASCII: allASCII}
+}
+
+// poolAddresses returns the cached pool address set, building it on first use.
+// A built set is never mutated (invalidation drops it), so callers may read it
+// after the lock is released.
+func (pkm *PubKeyManager) poolAddresses(chain common.Chain, includeInactive bool) poolAddressSet {
+	key := poolAddressCacheKey{
+		Chain:           chain,
+		IncludeInactive: includeInactive,
+	}
+
+	pkm.rwMutex.RLock()
+	cached, ok := pkm.poolAddressCache[key]
+	pkm.rwMutex.RUnlock()
+	if ok {
+		return cached
+	}
+
+	pkm.rwMutex.Lock()
+	defer pkm.rwMutex.Unlock()
+
+	if pkm.poolAddressCache == nil {
+		pkm.poolAddressCache = make(map[poolAddressCacheKey]poolAddressSet)
+	}
+
+	cached, ok = pkm.poolAddressCache[key]
+	if !ok {
+		cached = pkm.buildPoolAddressCacheNoLock(chain, includeInactive)
+		pkm.poolAddressCache[key] = cached
+	}
+	return cached
 }
 
 func (pkm *PubKeyManager) isPoolAddress(addr string, chain common.Chain, includeInactive bool) (bool, common.ChainPoolInfo) {
@@ -350,36 +404,7 @@ func (pkm *PubKeyManager) isPoolAddress(addr string, chain common.Chain, include
 		return false, common.EmptyChainPoolInfo
 	}
 
-	key := poolAddressCacheKey{
-		Chain:           chain,
-		IncludeInactive: includeInactive,
-	}
-
-	pkm.rwMutex.RLock()
-	if cached, ok := pkm.poolAddressCache[key]; ok {
-		cpi, ok := cached[normalizedAddress]
-		pkm.rwMutex.RUnlock()
-		if ok {
-			return true, cpi
-		}
-		return false, common.EmptyChainPoolInfo
-	}
-	pkm.rwMutex.RUnlock()
-
-	pkm.rwMutex.Lock()
-	defer pkm.rwMutex.Unlock()
-
-	if pkm.poolAddressCache == nil {
-		pkm.poolAddressCache = make(map[poolAddressCacheKey]map[string]common.ChainPoolInfo)
-	}
-
-	cached, ok := pkm.poolAddressCache[key]
-	if !ok {
-		cached = pkm.buildPoolAddressCacheNoLock(chain, includeInactive)
-		pkm.poolAddressCache[key] = cached
-	}
-
-	cpi, ok := cached[normalizedAddress]
+	cpi, ok := pkm.poolAddresses(chain, includeInactive).byAddress[normalizedAddress]
 	if ok {
 		return true, cpi
 	}
@@ -399,6 +424,20 @@ func matchAddress(addr string, chain common.Chain, key common.PubKey) (bool, com
 
 // IsValidPoolAddress check whether the given address is a pool addr
 func (pkm *PubKeyManager) IsValidPoolAddress(addr string, chain common.Chain) (bool, common.ChainPoolInfo) {
+	// For ASCII strings strings.EqualFold is exactly lowercase equality, so a
+	// non-empty ASCII addr can be served from the cache (which keeps the first
+	// matching vault in pubkey order, like the loop below). Anything else takes
+	// the loop: an empty addr matches a vault whose address is empty, and
+	// EqualFold folds some non-ASCII runes onto ASCII ones.
+	if addr != "" && isASCII(addr) {
+		if cached := pkm.poolAddresses(chain, true); cached.allASCII {
+			if cpi, ok := cached.byAddress[normalizePoolAddress(addr)]; ok {
+				return true, cpi
+			}
+			return false, common.EmptyChainPoolInfo
+		}
+	}
+
 	pkm.rwMutex.RLock()
 	defer pkm.rwMutex.RUnlock()
 

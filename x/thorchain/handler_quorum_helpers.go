@@ -48,36 +48,39 @@ func deduplicateAttestations(attestations []*common.Attestation, maxCount int) [
 // node are stored, so attestations from arbitrary keys cannot crowd out the
 // validators; bounded: once full, keys are encoded without being stored.
 var (
-	attestationBech32Cache   = make(map[string]string)
+	attestationBech32Cache   = make(map[string]attestationBech32Entry)
 	attestationBech32CacheMu sync.RWMutex
 )
 
 const attestationBech32CacheMax = 4096
 
-func attestationBech32CacheKey(key []byte) string {
-	return cosmos.GetConfig().GetBech32AccountPubPrefix() + "|" + string(key)
+// attestationBech32Entry is a key's encoding and the account pubkey prefix it
+// was made under. The cache is keyed by the raw key bytes, so lookups do not
+// allocate; an entry made under another prefix is never served.
+type attestationBech32Entry struct {
+	prefix, bech32Pub string
 }
 
 // attestationBech32Pub is cosmos.Bech32ifyPubKey(Bech32PubKeyTypeAccPub) of the
 // secp256k1 key, served from attestationBech32Cache when present.
 func attestationBech32Pub(key []byte) (string, error) {
 	attestationBech32CacheMu.RLock()
-	bech32Pub, ok := attestationBech32Cache[attestationBech32CacheKey(key)]
+	e, ok := attestationBech32Cache[string(key)]
 	attestationBech32CacheMu.RUnlock()
-	if ok {
-		return bech32Pub, nil
+	if ok && e.prefix == cosmos.GetConfig().GetBech32AccountPubPrefix() {
+		return e.bech32Pub, nil
 	}
 	pk := secp256k1.PubKey{Key: key}
 	return cosmos.Bech32ifyPubKey(cosmos.Bech32PubKeyTypeAccPub, &pk)
 }
 
 // rememberAttestationBech32Pub stores a successful encoding of an active
-// node's key.
+// node's key, replacing one made under another prefix.
 func rememberAttestationBech32Pub(key []byte, bech32Pub string) {
-	cacheKey := attestationBech32CacheKey(key)
+	prefix := cosmos.GetConfig().GetBech32AccountPubPrefix()
 	attestationBech32CacheMu.Lock()
-	if _, ok := attestationBech32Cache[cacheKey]; !ok && len(attestationBech32Cache) < attestationBech32CacheMax {
-		attestationBech32Cache[cacheKey] = bech32Pub
+	if e, ok := attestationBech32Cache[string(key)]; ok && e.prefix != prefix || !ok && len(attestationBech32Cache) < attestationBech32CacheMax {
+		attestationBech32Cache[string(key)] = attestationBech32Entry{prefix: prefix, bech32Pub: bech32Pub}
 	}
 	attestationBech32CacheMu.Unlock()
 }
@@ -170,8 +173,7 @@ func verifyAttestationSig(c attestationCheck) (verified, ok bool) {
 			verified, ok = false, false
 		}
 	}()
-	pk := secp256k1.PubKey{Key: c.att.PubKey}
-	return pk.VerifySignature(c.signBz, c.att.Signature), true
+	return common.VerifyAttestationSignature(c.att.PubKey, c.att.Signature, c.signBz), true
 }
 
 func verifyQuorumAttestation(activeNodeAccounts NodeAccounts, signBz []byte, att *common.Attestation, sigs attestationSigs) (cosmos.AccAddress, error) {
@@ -234,7 +236,7 @@ func verifyQuorumAttestation(activeNodeAccounts NodeAccounts, signBz []byte, att
 
 	verified, ok := sigs[att]
 	if !ok {
-		verified = pk.VerifySignature(signBz, att.Signature)
+		verified = common.VerifyAttestationSignature(att.PubKey, att.Signature, signBz)
 	}
 	if !verified {
 		// A node signing payloads the rest of the network cannot verify is on a

@@ -542,23 +542,11 @@ func (s *HandlerPriceFeedQuorumBatchSuite) setUp(
 	return privKey, quoPriceFeed, nodeAccount, nil
 }
 
-// TestBondAddressPriceCopy checks that copying a rate's big.Float for the
-// bond-address fallback yields exactly what a second BigFloat() call did, so
-// stored prices and emitted events are unchanged.
-func (s *HandlerPriceFeedQuorumBatchSuite) TestBondAddressPriceCopy(c *C) {
-	for _, amount := range []uint64{1, 7, 99999, 123456789, 11114912345678, 1<<63 + 12345, ^uint64(0)} {
-		for decimals := uint32(0); decimals <= 18; decimals++ {
-			rate := common.OraclePrice{Amount: amount, Decimals: decimals}
-			fresh := rate.BigFloat()
-			copied := new(big.Float).Copy(rate.BigFloat())
-			c.Assert(copied.Text('p', 0), Equals, fresh.Text('p', 0))
-			c.Assert(copied.Text('f', -1), Equals, fresh.Text('f', -1))
-			c.Assert(copied.Prec(), Equals, fresh.Prec())
-			c.Assert(copied.Mode(), Equals, fresh.Mode())
-			c.Assert(copied.Acc(), Equals, fresh.Acc())
-		}
-	}
-
+// TestBondAddressPriceShared checks that the bond-address fallback, which
+// hands one reported big.Float to every node of the bond (so it appears
+// several times in one median), stores and emits exactly what a fresh
+// BigFloat() per use did.
+func (s *HandlerPriceFeedQuorumBatchSuite) TestBondAddressPriceShared(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	handler := NewPriceFeedQuorumBatchHandler(mgr)
 

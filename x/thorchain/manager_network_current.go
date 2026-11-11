@@ -1176,6 +1176,10 @@ func (vm *NetworkMgr) POLCycle(ctx cosmos.Context, mgr Manager) error {
 				ctx.Logger().Info("maximum rune deployed from POL")
 				continue
 			}
+			if isLUVIOverhangGuarded(ctx, mgr.Keeper(), pool, synthSupply) {
+				ctx.Logger().Info("skip POL deposit, pool is in synth overhang", "pool", pool.Asset.String(), "synth supply", synthSupply.String(), "asset depth", pool.BalanceAsset.String())
+				continue
+			}
 			if err := vm.addPOLLiquidity(ctx, pool, polAddress, asgardAddress, signer, maxMovement, synthPerPoolDepth, loopTarget, mgr, polValue); err != nil {
 				ctx.Logger().Error("fail to manage POL in pool", "pool", pool.Asset.String(), "error", err)
 			}
@@ -1248,6 +1252,10 @@ func (vm *NetworkMgr) POLReserveCycle(ctx cosmos.Context, mgr Manager) error {
 		if !mgr.Keeper().IsPOLReserveEligiblePool(ctx, pool.Asset) {
 			continue
 		}
+		// the add liquidity handler would reject the deposit; pick another pool
+		if isLUVIOverhangGuarded(ctx, mgr.Keeper(), pool, mgr.Keeper().GetTotalSupply(ctx, pool.Asset.GetSyntheticAsset())) {
+			continue
+		}
 
 		rollingFees, err := mgr.Keeper().GetEffectivePoolLiquidityFee(ctx, pool.Asset)
 		if err != nil || rollingFees == 0 {
@@ -1291,7 +1299,7 @@ func (vm *NetworkMgr) POLReserveCycle(ctx cosmos.Context, mgr Manager) error {
 		return err
 	}
 
-	handler := NewInternalHandler(mgr)
+	handler := newLuviProtocolHandler(mgr)
 	coins := common.NewCoins(common.NewCoin(common.RuneAsset(), runeAmt))
 
 	// Use CacheContext for atomicity: all state mutations succeed or none persist
@@ -1401,7 +1409,7 @@ func (vm *NetworkMgr) addPOLLiquidity(
 	mgr Manager,
 	polValue *polValueMemo,
 ) error {
-	handler := NewInternalHandler(mgr)
+	handler := newLuviProtocolHandler(mgr)
 
 	// NOTE: move is in hundredths of a basis point
 	move := synthPerPoolDepth.Sub(targetSynthPerPoolDepth).MulUint64(100)
@@ -1424,16 +1432,6 @@ func (vm *NetworkMgr) addPOLLiquidity(
 	// if there are no units, this is the initial deposit
 	depositUnits := runeAmt
 
-	// compute the new provider units
-	if !runePool.TotalUnits().IsZero() {
-		var rpValue cosmos.Uint
-		rpValue, err = polValue.runePoolValue(ctx, mgr)
-		if err != nil {
-			return fmt.Errorf("fail to get rune pool value: %s", err)
-		}
-		depositUnits = common.GetSafeShare(runeAmt, rpValue, runePool.TotalUnits())
-	}
-
 	// check balance
 	bal := mgr.Keeper().GetRuneBalanceOfModule(ctx, ReserveName)
 	if runeAmt.GT(bal) {
@@ -1443,9 +1441,25 @@ func (vm *NetworkMgr) addPOLLiquidity(
 		return err
 	}
 
+	// Most adds fail validation (e.g. paused deposits), so the rune pool value
+	// is read only once the deposit succeeds. The deposit runs in a cache
+	// context, so ctx still holds the pools, synth supply and POL position from
+	// before it; the reserve to asgard send above changes none of them.
+	depositCtx, commitDeposit := ctx.CacheContext()
 	tx := common.NewTx(common.BlankTxID, polAddress, asgardAddress, coins, nil, "THOR-POL-ADD")
 	msg := NewMsgAddLiquidity(tx, pool.Asset, runeAmt, cosmos.ZeroUint(), polAddress, common.NoAddress, common.NoAddress, cosmos.ZeroUint(), signer)
-	_, err = handler(ctx, msg)
+	_, err = handler(depositCtx, msg)
+
+	// compute the new provider units
+	if err == nil && !runePool.TotalUnits().IsZero() {
+		var rpValue cosmos.Uint
+		rpValue, err = polValue.runePoolValue(ctx, mgr)
+		if err != nil {
+			err = fmt.Errorf("fail to get rune pool value: %s", err)
+		} else {
+			depositUnits = common.GetSafeShare(runeAmt, rpValue, runePool.TotalUnits())
+		}
+	}
 	if err != nil {
 		handlerErr := err
 		// revert the rune back to the reserve
@@ -1454,6 +1468,7 @@ func (vm *NetworkMgr) addPOLLiquidity(
 		}
 		return handlerErr
 	}
+	commitDeposit()
 	polValue.reset()
 
 	// deposit was successful, update the rune pool units accordingly
@@ -1476,7 +1491,7 @@ func (vm *NetworkMgr) removePOLLiquidity(
 	maxMovement, synthPerPoolDepth, targetSynthPerPoolDepth cosmos.Uint,
 	mgr Manager,
 ) error {
-	handler := NewInternalHandler(mgr)
+	handler := newLuviProtocolHandler(mgr)
 
 	lp, err := mgr.Keeper().GetLiquidityProvider(ctx, pool.Asset, polAddress)
 	if err != nil {
@@ -1782,7 +1797,7 @@ func (vm *NetworkMgr) cleanupAsgardIndex(ctx cosmos.Context) error {
 }
 
 func (vm *NetworkMgr) withdrawSavers(ctx cosmos.Context, pool Pool, na NodeAccount, mgr Manager) (done bool, err error) {
-	handler := NewInternalHandler(mgr)
+	handler := newLuviProtocolHandler(mgr)
 	lpPerIteration := mgr.Keeper().GetConfigInt64(ctx, constants.RagnarokProcessNumOfLPPerIteration)
 	totalCount := int64(0)
 
@@ -1858,7 +1873,7 @@ func (vm *NetworkMgr) withdrawSavers(ctx cosmos.Context, pool Pool, na NodeAccou
 }
 
 func (vm *NetworkMgr) withdrawLPs(ctx cosmos.Context, pool Pool, na NodeAccount, mgr Manager) (done bool) {
-	handler := NewInternalHandler(mgr)
+	handler := newLuviProtocolHandler(mgr)
 	lpPerIteration := mgr.Keeper().GetConfigInt64(ctx, constants.RagnarokProcessNumOfLPPerIteration)
 	totalCount := int64(0)
 	// retryRemaining tracks whether any LP could not be withdrawn for a
@@ -2353,6 +2368,7 @@ func (vm *NetworkMgr) UpdateNetwork(ctx cosmos.Context, mgr Manager) error {
 	// are to be passed on as bond rewards, so pool reward transfers should be processed before the bond reward transfer.
 
 	var evtPools []PoolAmt
+	var luviReward *luviRewardCheck
 
 	if !totalPoolRewards.IsZero() { // If Pool Rewards to hand out
 		var rewardAmts []cosmos.Uint
@@ -2383,7 +2399,8 @@ func (vm *NetworkMgr) UpdateNetwork(ctx cosmos.Context, mgr Manager) error {
 			rewardPools = append(rewardPools, pool)
 
 		}
-		// Pay out
+		// Pay out, checked by the LUVI reward allocation check (report-only)
+		luviReward = beginLuviRewardCheck(cacheCtx, vm.k, rewardAmts, rewardPools)
 		if err = vm.payPoolRewards(cacheCtx, rewardAmts, rewardPools); err != nil {
 			return err
 		}
@@ -2471,6 +2488,7 @@ func (vm *NetworkMgr) UpdateNetwork(ctx cosmos.Context, mgr Manager) error {
 	if err = eventMgr.EmitEvent(cacheCtx, rewardEvt); err != nil {
 		return fmt.Errorf("fail to emit reward event: %w", err)
 	}
+	luviReward.end(cacheCtx, vm.k, eventMgr, rewardEvt)
 	i, err := getTotalActiveNodeWithBond(cacheCtx, vm.k)
 	if err != nil {
 		return fmt.Errorf("fail to get total active node account: %w", err)

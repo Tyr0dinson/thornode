@@ -68,10 +68,31 @@ func NewOraclePrice(number *big.Float) (*OraclePrice, error) {
 	}, nil
 }
 
+// pow10Floats[d] is exactly 10^d for every power of ten that fits in a uint64.
+// BigFloat only ever reads them as a divisor.
+var pow10Floats = func() (t [20]*big.Float) {
+	pow := uint64(1)
+	for i := range t {
+		t[i] = new(big.Float).SetUint64(pow)
+		pow *= 10
+	}
+	return t
+}()
+
 func (p *OraclePrice) BigFloat() *big.Float {
+	amount := new(big.Float).SetUint64(p.Amount)
+
+	// amount's 64 bits of precision are what a fresh quotient takes while
+	// 10^Decimals fits in 64 bits, so the quotient can go in amount; x/1 is x
+	if p.Decimals == 0 {
+		return amount
+	}
+	if p.Decimals < uint32(len(pow10Floats)) {
+		return amount.Quo(amount, pow10Floats[p.Decimals])
+	}
+
 	decimals := big.NewInt(int64(p.Decimals))
 	divisor := new(big.Int).Exp(big.NewInt(10), decimals, nil)
-	amount := new(big.Float).SetUint64(p.Amount)
 
 	return new(big.Float).Quo(amount, new(big.Float).SetInt(divisor))
 }

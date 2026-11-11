@@ -53,6 +53,9 @@ type Client struct {
 	m   *metrics.Metrics
 	rpc *rpc.Client
 
+	// coinbases remembers the coinbase value of recently fetched blocks
+	coinbases coinbaseCache
+
 	// ---------- signing ----------
 	nodePubKey         common.PubKey
 	nodePrivKey        *btcec.PrivateKey
@@ -163,6 +166,13 @@ func NewClient(
 		stopchan:                  make(chan struct{}),
 		bridge:                    bridge,
 		regexpRemoveTrailingZeros: regexp.MustCompile(`(?:00)+$`),
+	}
+
+	// Seed the BTC min-relay-fee floor to its fixed, daemon-independent value so it is
+	// never 0 before the first updateNetworkInfo tick (the floor is signing-consensus-
+	// relevant — see updateNetworkInfo). updateNetworkInfo re-pins it on every tick.
+	if c.cfg.ChainID.Equals(common.BTCChain) {
+		c.minRelayFeeSats.Store(btcFixedMinRelayFeeSats)
 	}
 
 	// import the node local address in the daemon wallet

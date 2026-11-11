@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -301,6 +302,22 @@ func TestApplySpentOutputRefsFromObsFailsClosedWithoutXMRDurabilityHook(t *testi
 
 type fakeBridge struct {
 	thorclient.ThorchainBridge
+}
+
+// processTestBridge counts the bridge calls of a started signer's loops.
+type processTestBridge struct {
+	thorclient.ThorchainBridge
+	catchingUpCalls, heightCalls atomic.Int32
+}
+
+func (b *processTestBridge) IsCatchingUp() (bool, error) {
+	b.catchingUpCalls.Add(1)
+	return b.ThorchainBridge.IsCatchingUp()
+}
+
+func (b *processTestBridge) GetBlockHeight() (int64, error) {
+	b.heightCalls.Add(1)
+	return b.ThorchainBridge.GetBlockHeight()
 }
 
 type batchingKeygenBridge struct {
@@ -816,10 +833,11 @@ func (s *SignSuite) TestProcess(c *C) {
 		},
 	}
 
-	blockScan, err := NewThorchainBlockScan(cfg.BlockScanner, s.storage, s.bridge, s.metrics, pubkeymanager.NewMockPoolAddressValidator())
+	bridge := &processTestBridge{ThorchainBridge: s.bridge}
+	blockScan, err := NewThorchainBlockScan(cfg.BlockScanner, s.storage, bridge, s.metrics, pubkeymanager.NewMockPoolAddressValidator())
 	c.Assert(err, IsNil)
 
-	blockScanner, err := blockscanner.NewBlockScanner(cfg.BlockScanner, s.storage, m, s.bridge, blockScan)
+	blockScanner, err := blockscanner.NewBlockScanner(cfg.BlockScanner, s.storage, m, bridge, blockScan)
 	c.Assert(err, IsNil)
 
 	sign := &Signer{
@@ -834,12 +852,17 @@ func (s *SignSuite) TestProcess(c *C) {
 		storage:               s.storage,
 		errCounter:            s.metrics.GetCounterVec(metrics.SignerError),
 		pubkeyMgr:             pubkeymanager.NewMockPoolAddressValidator(),
-		thorchainBridge:       s.bridge,
+		thorchainBridge:       bridge,
 	}
 	c.Assert(sign, NotNil)
 	err = sign.Start()
 	c.Assert(err, IsNil)
-	time.Sleep(time.Second * 2)
+	// Let the signing loop and the block scanner each run, back off and run
+	// again, as the fixed two-second sleep did.
+	for deadline := time.Now().Add(10 * time.Second); bridge.catchingUpCalls.Load() < 2 || bridge.heightCalls.Load() < 2; {
+		c.Assert(time.Now().Before(deadline), Equals, true, Commentf("signing loop calls %d, scanner calls %d", bridge.catchingUpCalls.Load(), bridge.heightCalls.Load()))
+		time.Sleep(10 * time.Millisecond)
+	}
 	// nolint
 	go sign.Stop()
 }

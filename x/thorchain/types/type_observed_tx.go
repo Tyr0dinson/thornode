@@ -230,6 +230,36 @@ func (idx *activeNodeIndex) build(accounts NodeAccounts) {
 	idx.voted = make([]bool, idx.n)
 }
 
+// countActiveSigners is the number of signers that decode, as GetSigners
+// decodes them, to the address of an active node in accounts. A repeated
+// signer counts each time, as when IsNodeKeys is called per GetSigners entry,
+// but each signer is a map lookup instead of a decode and a linear scan.
+func countActiveSigners(signers []string, accounts NodeAccounts) int {
+	var idx activeNodeIndex
+	count := 0
+	for _, signer := range signers {
+		if !idx.built {
+			idx.build(accounts)
+		}
+		if idx.signerSlot(signer) >= 0 {
+			count++
+		}
+	}
+	return count
+}
+
+// signersInclude reports whether any of signers decodes, as GetSigners decodes
+// it, to signer. Decoded signers are non-empty, so AccAddress.Equals on them is
+// byte equality.
+func signersInclude(signers []string, signer cosmos.AccAddress) bool {
+	for _, a := range signers {
+		if addr, ok := common.SignerAddressString(a); ok && addr == string(signer) {
+			return true
+		}
+	}
+	return false
+}
+
 func (m *ObservedTxVoter) getConsensusTx(accounts NodeAccounts, final bool, idx *activeNodeIndex) common.ObservedTx {
 	// accounts.IsNodeKeys(signer) for every signer is a linear scan; index the
 	// active node addresses once. Signers decode to non-empty addresses, for
@@ -348,16 +378,88 @@ func (m *ObservedTxVoter) GetOutboundObserveSigners() []cosmos.AccAddress {
 	return m.getObserveSigners(m.Tx.EqualsOutboundObservationCredit)
 }
 
+// GetInboundOtherTierObserveSigners returns the nodes that observed the
+// consensus tx in the OTHER finality tier, with the inbound credit matching.
+// Non-final consensus uses it to spare final-tier observers the lack penalty,
+// and final consensus to credit non-final observations when non-final
+// consensus never formed. Empty for XMR (see CreditsAcrossFinality).
+func (m *ObservedTxVoter) GetInboundOtherTierObserveSigners() []cosmos.AccAddress {
+	return m.getOtherTierObserveSigners(m.Tx.EqualsInboundObservationCredit)
+}
+
+// GetOutboundOtherTierObserveSigners is the outbound sibling of
+// GetInboundOtherTierObserveSigners. The motivating case is the signing
+// committee's pre-broadcast "instant" observation, which bifrost submits with
+// no confirmations required and so lands in the final tier even on chains whose
+// scanner first reports the mined tx as non-final.
+func (m *ObservedTxVoter) GetOutboundOtherTierObserveSigners() []cosmos.AccAddress {
+	return m.getOtherTierObserveSigners(m.Tx.EqualsOutboundObservationCredit)
+}
+
+func (m *ObservedTxVoter) getOtherTierObserveSigners(matches func(common.ObservedTx) bool) []cosmos.AccAddress {
+	if m.Tx.IsEmpty() || !m.CreditsAcrossFinality(m.Tx) {
+		return nil
+	}
+	return m.getTierObserveSigners(matches, !m.Tx.IsFinal())
+}
+
+// CreditsAcrossFinality reports whether an observation's slash credit may be
+// settled by the other finality tier's consensus. XMR keeps strictly per-tier
+// accounting: its legacy and pre-mining credit matching assumes both
+// observations share a finality.
+func (m *ObservedTxVoter) CreditsAcrossFinality(tx common.ObservedTx) bool {
+	return !m.Tx.Tx.Chain.Equals(common.XMRChain) && !tx.Tx.Chain.Equals(common.XMRChain)
+}
+
+// HasObservedInTier reports whether signer already recorded an observation of
+// tx (ignoring gas and heights) in tx's finality tier. Call it before Add, so
+// the submitted observation is not counted as its own prior one.
+func (m *ObservedTxVoter) HasObservedInTier(tx common.ObservedTx, signer cosmos.AccAddress) bool {
+	for _, existing := range m.Txs {
+		if existing.IsFinal() == tx.IsFinal() && existing.HasSigned(signer) &&
+			equalsObservationRefundClass(existing, tx) {
+			return true
+		}
+	}
+	return false
+}
+
+// IsExcusedObserver reports whether signer was spared the lack penalty at
+// non-final consensus, or refunded it within its flex window (see
+// ExcusedObservers).
+func (m *ObservedTxVoter) IsExcusedObserver(signer cosmos.AccAddress) bool {
+	return slices.Contains(m.ExcusedObservers, signer.String())
+}
+
+// ObservedConsensusTx returns the Txs entry that holds consensus in Tx's
+// finality tier, exactly as it was observed. Tx itself can change after
+// consensus: handleObservedTxInQuorum gives a memoless inbound its reference
+// memo, then the resolved memo, and handleObservedTxOutQuorum gives a memoless
+// outbound the memo of its scheduled TxOutItem. Empty when there is no
+// consensus Tx, when no entry in that tier has supermajority among accounts
+// (the current active set, so an active set change since consensus can leave
+// it empty), or for XMR, whose errata and spent-ref handling update Tx on
+// purpose.
+func (m *ObservedTxVoter) ObservedConsensusTx(accounts NodeAccounts) common.ObservedTx {
+	if m.Tx.IsEmpty() || m.Tx.Tx.Chain.Equals(common.XMRChain) {
+		return common.ObservedTx{}
+	}
+	var idx activeNodeIndex
+	return m.getConsensusTx(accounts, m.Tx.IsFinal(), &idx)
+}
+
 func (m *ObservedTxVoter) getObserveSigners(matches func(common.ObservedTx) bool) []cosmos.AccAddress {
 	if m.Tx.IsEmpty() {
 		return nil
 	}
+	return m.getTierObserveSigners(matches, m.Tx.IsFinal())
+}
 
-	final := m.Tx.IsFinal()
+func (m *ObservedTxVoter) getTierObserveSigners(matches func(common.ObservedTx) bool, final bool) []cosmos.AccAddress {
 	signersMap := make(map[string]bool)
 	var signers []cosmos.AccAddress
 	for _, tx := range m.Txs {
-		// Only include signers for Txs matching the Tx's finality.
+		// Only include signers for Txs of the requested finality.
 		if tx.IsFinal() != final {
 			continue
 		}

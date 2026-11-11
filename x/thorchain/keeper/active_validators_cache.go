@@ -1,6 +1,7 @@
 package keeper
 
 import (
+	"math/big"
 	"slices"
 	"sync"
 
@@ -80,9 +81,8 @@ func (c *ActiveValidatorsCache) Disable() {
 // cloneNodeAccounts returns CloneNodeAccount of each element.
 func cloneNodeAccounts(src types.NodeAccounts) types.NodeAccounts {
 	out := make(types.NodeAccounts, len(src))
-	for i := range src {
-		out[i] = CloneNodeAccount(src[i])
-	}
+	copy(out, src)
+	DetachNodeAccounts(out)
 	return out
 }
 
@@ -96,4 +96,49 @@ func CloneNodeAccount(na types.NodeAccount) types.NodeAccount {
 		na.Bond = cosmos.NewUintFromBigInt(na.Bond.BigIntMut())
 	}
 	return na
+}
+
+// DetachNodeAccounts replaces each element of nas with CloneNodeAccount of
+// it, except that the copies' NodeAddress, SignerMembership and Bond words are
+// carved out of one byte, one string and one word allocation for the whole
+// list instead of three per element (a listing copies ~100 nodes of ~100
+// members each). Each carved slice is clipped to its length, so appending to
+// one, or growing a Bond in place, reallocates instead of running into the
+// next; nil stays nil and empty stays empty, and a zero Bond has no words, as
+// NewUintFromBigInt leaves it. Each Bond still gets a big.Int of its own: a
+// Uint can only wrap one it allocated.
+func DetachNodeAccounts(nas types.NodeAccounts) {
+	addrBytes, members, bondWords := 0, 0, 0
+	for i := range nas {
+		addrBytes += len(nas[i].NodeAddress)
+		members += len(nas[i].SignerMembership)
+		if !nas[i].Bond.IsNil() {
+			bondWords += len(nas[i].Bond.BigIntMut().Bits())
+		}
+	}
+	addrs := make([]byte, 0, addrBytes)
+	strs := make([]string, 0, members)
+	words := make([]big.Word, 0, bondWords)
+	for i := range nas {
+		na := &nas[i]
+		if na.NodeAddress != nil {
+			start := len(addrs)
+			addrs = append(addrs, na.NodeAddress...)
+			na.NodeAddress = addrs[start:len(addrs):len(addrs)]
+		}
+		if na.SignerMembership != nil {
+			start := len(strs)
+			strs = append(strs, na.SignerMembership...)
+			na.SignerMembership = strs[start:len(strs):len(strs)]
+		}
+		if !na.Bond.IsNil() {
+			bond := cosmos.ZeroUint()
+			if bits := na.Bond.BigIntMut().Bits(); len(bits) > 0 {
+				start := len(words)
+				words = append(words, bits...)
+				bond.BigIntMut().SetBits(words[start:len(words):len(words)])
+			}
+			na.Bond = bond
+		}
+	}
 }

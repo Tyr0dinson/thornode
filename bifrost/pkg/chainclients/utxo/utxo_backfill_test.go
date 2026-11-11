@@ -538,9 +538,28 @@ func (s *CoverageBackfillSuite) TestGetAsgardAddress(c *C) {
 }
 
 func (s *CoverageBackfillSuite) TestUpdateNetworkInfo(c *C) {
+	// BTC pins the min-relay-fee floor to a fixed, daemon-independent value because it
+	// is signing-consensus-relevant (Core <=29.0 reports 1000 sat, 29.1+/30.x report
+	// 100 — a daemon-derived floor splits the signing party with nothing in the
+	// minority node's log).
+
+	// 1) NewClient seeds the BTC floor at construction, so it is the fixed value before
+	//    any updateNetworkInfo tick (never 0, even if the daemon RPC is unavailable).
+	c.Assert(s.client.minRelayFeeSats.Load(), Equals, btcFixedMinRelayFeeSats)
+
+	// 2) updateNetworkInfo re-pins BTC to the fixed value independent of the daemon.
+	//    Point the mock at relayfee 1e-6 — the 100-sat floor a Core 29.1+/30.x node
+	//    reports (the fixture default is 1e-5 == 1000, which would pass even without
+	//    the pin). A pass here with a sentinel seed therefore proves the pin, not the
+	//    daemon value, sets the floor — and this assertion fails if the pin is removed.
+	ni, ok := btcChainRPCs["getnetworkinfo"]["result"].(map[string]interface{})
+	c.Assert(ok, Equals, true)
+	origRelay := ni["relayfee"]
+	ni["relayfee"] = 1.0e-6
+	defer func() { ni["relayfee"] = origRelay }()
+	s.client.minRelayFeeSats.Store(424242)
 	s.client.updateNetworkInfo()
-	// minRelayFeeSats should be set
-	c.Assert(s.client.minRelayFeeSats.Load() > 0, Equals, true)
+	c.Assert(s.client.minRelayFeeSats.Load(), Equals, btcFixedMinRelayFeeSats)
 }
 
 func (s *CoverageBackfillSuite) TestSendNetworkFee(c *C) {

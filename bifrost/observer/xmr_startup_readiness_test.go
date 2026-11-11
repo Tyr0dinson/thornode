@@ -196,8 +196,10 @@ func (s *ObserverSuite) TestXMRStartupJoinsQuarantineBeforeStorageClose(c *check
 	pkm, err := pubkeymanager.NewPubKeyManager(s.bridge, s.metrics)
 	c.Assert(err, check.IsNil)
 	xmr := &errataStartOrderChain{}
-	o, err := NewObserver(pkm, map[common.Chain]chainclients.ChainClient{common.XMRChain: xmr},
-		s.bridge, s.metrics, c.MkDir(), metrics.NewTssKeysignMetricMgr(), nil, "")
+	guardedXMR := &spentRefsGuardChain{ChainClient: xmr}
+	gossip := &AttestationGossip{logger: zerolog.Nop()}
+	o, err := NewObserver(pkm, map[common.Chain]chainclients.ChainClient{common.XMRChain: guardedXMR},
+		s.bridge, s.metrics, c.MkDir(), metrics.NewTssKeysignMetricMgr(), gossip, "")
 	c.Assert(err, check.IsNil)
 	er := common.ErrataTx{Chain: common.XMRChain, Id: "startup-stop"}
 	c.Assert(o.storage.applyCommittedErrata(er, nil), check.IsNil)

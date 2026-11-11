@@ -60,3 +60,11 @@ func (s *ConstantsSuite) TestCamelToSnakeUpperCacheBoundedConcurrent(c *C) {
 	c.Check(n, Equals, camelToSnakeCacheMax)
 	c.Check(camelToSnakeCacheLen.Load(), Equals, int64(camelToSnakeCacheMax))
 }
+
+// A first escalated keygen jail must never be lighter than the flat keygen
+// jail, and escalation must be capped by default.
+func (s *ConstantsSuite) TestKeygenJailInvariants(c *C) {
+	consts := NewConstantValue()
+	c.Check(consts.GetInt64Value(JailTimeKeygenBase) >= consts.GetInt64Value(JailTimeKeygen), Equals, true)
+	c.Check(consts.GetInt64Value(MaxKeygenBlameMultiplier) > 0, Equals, true)
+}

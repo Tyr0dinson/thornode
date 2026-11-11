@@ -27,9 +27,9 @@
       "mode": "fast",
       "file": "bifrost/observer/generic_attestation.go",
       "package": "./bifrost/observer",
-      "test": "^TestSecurityMutationAttestationAuthenticityAndReplay$",
-      "old": "if err := verifySignature(signBz, attestation.Signature, attestation.PubKey); err != nil {\n\t\treturn fmt.Errorf(\"signature verification failed for %s - %w\", attestation.PubKey, err)",
-      "new": "if err := func([]byte) error { return nil }(signBz); err != nil {\n\t\treturn fmt.Errorf(\"signature verification failed for %s - %w\", attestation.PubKey, err)",
+      "test": "^TestInvalidLocalAttestationNeverEnqueues$",
+      "old": "if err := verifySignature(signBz, attestation.Signature, attestation.PubKey); err != nil {\n\t\treturn fmt.Errorf(\"signature verification failed for %x - %w\", attestation.PubKey, err)",
+      "new": "if err := func([]byte) error { return nil }(signBz); err != nil {\n\t\treturn fmt.Errorf(\"signature verification failed for %x - %w\", attestation.PubKey, err)",
       "intent": "Unauthenticated peer attestation enters the vote set"
     },
     {
@@ -37,9 +37,9 @@
       "mode": "fast",
       "file": "bifrost/observer/generic_attestation.go",
       "package": "./bifrost/observer",
-      "test": "^TestSecurityMutationAttestationAuthenticityAndReplay$",
-      "old": "for _, item := range *attestations {",
-      "new": "for _, item := range (*attestations)[:0] {",
+      "test": "^TestAddAttestation$",
+      "old": "return fmt.Errorf(\"item is not valid\")\n\t}\n\n\tfor _, item := range s.attestations {",
+      "new": "return fmt.Errorf(\"item is not valid\")\n\t}\n\n\tfor _, item := range s.attestations[:0] {",
       "intent": "Repeated signature can inflate attestation count"
     },
     {
@@ -54,7 +54,7 @@
     },
     {
       "id": "halt_chain_boundary_delayed",
-      "mode": "deep",
+      "mode": "fast",
       "file": "bifrost/pkg/chainclients/shared/signing/halt.go",
       "package": "./bifrost/pkg/chainclients/shared/signing",
       "test": "^TestSecurityMutationSigningHaltBoundary$",
@@ -64,7 +64,7 @@
     },
     {
       "id": "quorum_excess_signers_allowed",
-      "mode": "deep",
+      "mode": "fast",
       "file": "x/thorchain/types/types.go",
       "package": "./x/thorchain/types",
       "test": "^TestSecurityMutationQuorumBoundary$",

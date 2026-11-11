@@ -67,6 +67,7 @@ func TestApplyCommittedSpentOutputRefsCancelsBlockedRefsQuery(t *testing.T) {
 	defer cancel()
 	outcome := make(chan bool, 1)
 	go func() {
+		allowSpentOutputRefsImports(c)
 		_, applied := c.ApplyCommittedSpentOutputRefs(ctx, vault, common.TxID(txHash))
 		outcome <- applied
 	}()
@@ -115,6 +116,7 @@ func TestApplyCommittedSpentOutputRefsCancellationDuringVoterLookupSkipsMarkSpen
 		},
 	}
 
+	allowSpentOutputRefsImports(c)
 	_, applied := c.ApplyCommittedSpentOutputRefs(ctx, vault, common.TxID(txHash))
 	assert.False(t, applied)
 	assert.EqualValues(t, 1, voterCalls.Load())
@@ -183,6 +185,7 @@ func TestApplyCommittedSpentOutputRefsCancelsBlockedVoterQuery(t *testing.T) {
 	defer cancel()
 	outcome := make(chan bool, 1)
 	go func() {
+		allowSpentOutputRefsImports(c)
 		_, applied := c.ApplyCommittedSpentOutputRefs(ctx, vault, common.TxID(txHash))
 		outcome <- applied
 	}()
@@ -290,6 +293,7 @@ func TestApplyCommittedSpentOutputRefsLastAttemptCancellationDoesNotWarn(t *test
 		},
 	}
 
+	allowSpentOutputRefsImports(c)
 	_, applied := c.ApplyCommittedSpentOutputRefs(ctx, vault, common.TxID(txHash))
 	assert.False(t, applied)
 	assert.Equal(t, defaultXMRCommittedRefsImportMaxAttempts, refsCalls)
@@ -385,6 +389,7 @@ func TestApplyCommittedSpentOutputRefsCancellationAfterMarkSpentPreservesSignerS
 	defer cancel()
 	outcome := make(chan bool, 1)
 	go func() {
+		allowSpentOutputRefsImports(c)
 		_, applied := c.ApplyCommittedSpentOutputRefs(ctx, vault, common.TxID(txHash))
 		outcome <- applied
 	}()
@@ -423,6 +428,7 @@ func TestApplyCommittedSpentOutputRefsCancellationAfterMarkSpentPreservesSignerS
 	assert.ErrorIs(t, err, errXMRSigningClaimObserved, "the fulfillment barrier must be durable despite cancellation")
 
 	// Catch-up owns the deferred work and can repeat the idempotent import.
+	allowSpentOutputRefsImports(c)
 	c.catchupSpentOutputRefs()
 	assert.EqualValues(t, 2, markSpentCalls.Load())
 	assert.EqualValues(t, 1, locationCalls.Load())

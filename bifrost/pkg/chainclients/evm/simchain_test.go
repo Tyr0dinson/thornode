@@ -2,10 +2,12 @@ package evm
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math"
 	"math/big"
 	"net/http/httptest"
+	"slices"
 	"sync"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
@@ -35,14 +37,16 @@ import (
 // full node (node, eth, catalyst), which needs modules THORNode's go.mod does not
 // list. Everything used here is already in THORNode's build graph.
 type simChain struct {
-	mu       sync.Mutex
-	config   *params.ChainConfig
-	signer   etypes.Signer
-	state    *state.StateDB // state after the last committed block
-	headers  []*etypes.Header
-	pending  []*etypes.Transaction
-	receipts map[ecommon.Hash]*etypes.Receipt
-	server   *httptest.Server
+	mu           sync.Mutex
+	config       *params.ChainConfig
+	signer       etypes.Signer
+	state        *state.StateDB // state after the last committed block
+	headers      []*etypes.Header
+	pending      []*etypes.Transaction
+	receipts     map[ecommon.Hash]*etypes.Receipt
+	transactions map[ecommon.Hash]*etypes.Transaction
+	logs         []*etypes.Log
+	server       *httptest.Server
 }
 
 const simBlockGasLimit = 30_000_000
@@ -65,11 +69,12 @@ func newSimChain(alloc etypes.GenesisAlloc) (*simChain, error) {
 		return nil, err
 	}
 	c := &simChain{
-		config:   genesis.Config,
-		signer:   etypes.LatestSigner(genesis.Config),
-		state:    statedb,
-		headers:  []*etypes.Header{block.Header()},
-		receipts: map[ecommon.Hash]*etypes.Receipt{},
+		config:       genesis.Config,
+		signer:       etypes.LatestSigner(genesis.Config),
+		state:        statedb,
+		headers:      []*etypes.Header{block.Header()},
+		receipts:     map[ecommon.Hash]*etypes.Receipt{},
+		transactions: map[ecommon.Hash]*etypes.Transaction{},
 	}
 	srv := rpc.NewServer()
 	if err = srv.RegisterName("eth", &simEthAPI{c}); err != nil {
@@ -120,6 +125,25 @@ func (c *simChain) commit() error {
 		}
 		c.receipts[tx.Hash()] = receipt
 	}
+	// The final header includes every transaction's gas usage. Publish matching
+	// block metadata for transaction, receipt and log lookups only after mining.
+	blockHash := header.Hash()
+	var logIndex uint
+	for i, tx := range c.pending {
+		receipt := c.receipts[tx.Hash()]
+		receipt.BlockHash = blockHash
+		receipt.BlockNumber = new(big.Int).Set(header.Number)
+		receipt.TransactionIndex = uint(i)
+		for _, event := range receipt.Logs {
+			event.BlockHash = blockHash
+			event.BlockNumber = header.Number.Uint64()
+			event.TxHash = tx.Hash()
+			event.TxIndex = uint(i)
+			event.Index = logIndex
+			logIndex++
+			c.logs = append(c.logs, event)
+		}
+	}
 	c.headers = append(c.headers, header)
 	c.pending = nil
 	return nil
@@ -159,6 +183,7 @@ func (c *simChain) sendTx(tx *etypes.Transaction) error {
 		return fmt.Errorf("nonce gap: address %s, tx: %d next: %d", from, tx.Nonce(), next)
 	}
 	c.pending = append(c.pending, tx)
+	c.transactions[tx.Hash()] = tx
 	return nil
 }
 
@@ -319,4 +344,72 @@ func (api *simEthAPI) SendRawTransaction(input hexutil.Bytes) (ecommon.Hash, err
 		return ecommon.Hash{}, err
 	}
 	return tx.Hash(), nil
+}
+
+// simFilterArgs accepts the numeric block ranges, address arrays and topic
+// alternatives that ethclient.FilterLogs sends for approval recovery.
+type simFilterArgs struct {
+	FromBlock *hexutil.Big      `json:"fromBlock"`
+	ToBlock   *hexutil.Big      `json:"toBlock"`
+	Addresses []ecommon.Address `json:"address"`
+	Topics    [][]ecommon.Hash  `json:"topics"`
+}
+
+func (api *simEthAPI) GetLogs(query simFilterArgs) []*etypes.Log {
+	api.c.mu.Lock()
+	defer api.c.mu.Unlock()
+	from, to := uint64(0), api.c.head().Number.Uint64()
+	if query.FromBlock != nil {
+		from = query.FromBlock.ToInt().Uint64()
+	}
+	if query.ToBlock != nil {
+		to = query.ToBlock.ToInt().Uint64()
+	}
+	logs := make([]*etypes.Log, 0)
+	for _, event := range api.c.logs {
+		if event.BlockNumber < from || event.BlockNumber > to ||
+			(len(query.Addresses) > 0 && !slices.Contains(query.Addresses, event.Address)) ||
+			len(query.Topics) > len(event.Topics) {
+			continue
+		}
+		matches := true
+		for i, alternatives := range query.Topics {
+			if len(alternatives) > 0 && !slices.Contains(alternatives, event.Topics[i]) {
+				matches = false
+				break
+			}
+		}
+		if matches {
+			logs = append(logs, event)
+		}
+	}
+	return logs
+}
+
+func (api *simEthAPI) GetTransactionByHash(hash ecommon.Hash) (map[string]interface{}, error) {
+	api.c.mu.Lock()
+	defer api.c.mu.Unlock()
+	tx := api.c.transactions[hash]
+	if tx == nil {
+		return nil, nil
+	}
+	encoded, err := tx.MarshalJSON()
+	if err != nil {
+		return nil, err
+	}
+	var result map[string]interface{}
+	if err = json.Unmarshal(encoded, &result); err != nil {
+		return nil, err
+	}
+	result["blockHash"], result["blockNumber"], result["transactionIndex"] = nil, nil, nil
+	if receipt := api.c.receipts[hash]; receipt != nil {
+		result["blockHash"] = receipt.BlockHash
+		result["blockNumber"] = (*hexutil.Big)(receipt.BlockNumber)
+		result["transactionIndex"] = hexutil.Uint64(receipt.TransactionIndex)
+	}
+	return result, nil
+}
+
+func (api *simEthAPI) GetTransactionReceipt(hash ecommon.Hash) *etypes.Receipt {
+	return api.c.receipt(hash)
 }

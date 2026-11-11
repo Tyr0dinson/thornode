@@ -3,6 +3,7 @@ package keeperv1
 import (
 	"bytes"
 	"fmt"
+	"math/big"
 
 	storetypes "cosmossdk.io/store/types"
 	"github.com/blang/semver"
@@ -65,6 +66,59 @@ func (s *KeeperNodeAccountSuite) TestNodeAccount(c *C) {
 	nodeAccounts, err := k.ListValidatorsWithBond(ctx)
 	c.Check(err, IsNil)
 	c.Check(nodeAccounts.Len() > 0 && nodeAccounts.Len() < 3, Equals, true)
+}
+
+// getNodeAccountOracle is GetNodeAccount as it was: the default record
+// decoded over through the codec.
+func getNodeAccountOracle(ctx cosmos.Context, k KVStore, addr cosmos.AccAddress) (NodeAccount, error) {
+	emptyPubKeySet := common.PubKeySet{
+		Secp256k1: common.EmptyPubKey,
+		Ed25519:   common.EmptyPubKey,
+	}
+	record := NewNodeAccount(addr, NodeUnknown, emptyPubKeySet, "", cosmos.ZeroUint(), "", ctx.BlockHeight())
+	key := k.GetKey(prefixNodeAccount, addr.String())
+	store := k.kvStore(ctx)
+	if !store.Has(key) {
+		return record, nil
+	}
+	if err := k.cdc.Unmarshal(store.Get(key), &record); err != nil {
+		return record, dbError(ctx, fmt.Sprintf("Unmarshal kvstore: (%T) %s", &record, key), err)
+	}
+	return record, nil
+}
+
+func (s *KeeperNodeAccountSuite) TestGetNodeAccountMatchesOracle(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	store := k.kvStore(ctx)
+	check := func(addr cosmos.AccAddress, comment CommentInterface) {
+		for pass := 0; pass < 2; pass++ { // memo miss, then hit
+			wantCtx := ctx.WithGasMeter(storetypes.NewInfiniteGasMeter())
+			want, wantErr := getNodeAccountOracle(wantCtx, k, addr)
+			gotCtx := ctx.WithGasMeter(storetypes.NewInfiniteGasMeter())
+			got, gotErr := k.GetNodeAccount(gotCtx, addr)
+			c.Assert(got, DeepEquals, want, comment)
+			c.Assert(gotErr == nil, Equals, wantErr == nil, comment)
+			if wantErr != nil {
+				c.Assert(gotErr.Error(), Equals, wantErr.Error(), comment)
+			}
+			c.Assert(gotCtx.GasMeter().GasConsumed(), Equals, wantCtx.GasMeter().GasConsumed(), comment)
+		}
+	}
+
+	// absent: the default record
+	check(GetRandomBech32Addr(), Commentf("absent"))
+	// stored, including unusual and undecodable encodings
+	for i, bz := range nodeAccountTestBlobs(c, k) {
+		if len(bz) == 0 {
+			continue // an empty value cannot be stored
+		}
+		addr := GetRandomBech32Addr()
+		store.Set(k.GetKey(prefixNodeAccount, addr.String()), bz)
+		check(addr, Commentf("blob %d", i))
+	}
+	na := GetRandomValidatorNode(NodeStandby)
+	c.Assert(k.SetNodeAccount(ctx, na), IsNil)
+	check(na.NodeAddress, Commentf("set"))
 }
 
 func (s *KeeperNodeAccountSuite) TestGetMinJoinVersion(c *C) {
@@ -647,6 +701,94 @@ func (s *KeeperNodeAccountSuite) TestListActiveValidatorsUpTo(c *C) {
 		c.Assert(got, DeepEquals, all[:min(n, len(all))], Commentf("n=%d", n))
 		// same store access, so the same gas
 		c.Check(upToCtx.GasMeter().GasConsumed(), Equals, allCtx.GasMeter().GasConsumed(), Commentf("n=%d", n))
+	}
+}
+
+func (s *KeeperNodeAccountSuite) TestDetachNodeAccounts(c *C) {
+	nas := NodeAccounts{
+		GetRandomValidatorNode(NodeActive),
+		GetRandomValidatorNode(NodeActive),
+		GetRandomValidatorNode(NodeStandby),
+		GetRandomValidatorNode(NodeActive),
+	}
+	nas[0].SignerMembership = []string{"a", "b", "c"}
+	nas[1].SignerMembership = []string{"d"}
+	nas[1].Bond = cosmos.NewUintFromString("340282366920938463463374607431768211457") // 2^128+1: three words
+	nas[2].SignerMembership = []string{}
+	nas[2].NodeAddress = cosmos.AccAddress{}
+	nas[2].Bond = cosmos.ZeroUint()
+	nas[3].SignerMembership = nil
+	nas[3].NodeAddress = nil
+	nas[3].Bond = cosmos.Uint{}
+	want := make(NodeAccounts, len(nas))
+	for i := range nas {
+		want[i] = keeperpkg.CloneNodeAccount(nas[i])
+	}
+
+	got := make(NodeAccounts, len(nas))
+	copy(got, nas)
+	keeperpkg.DetachNodeAccounts(got)
+	c.Assert(got, DeepEquals, want)
+	for i := range got {
+		c.Check(got[i].NodeAddress == nil, Equals, nas[i].NodeAddress == nil, Commentf("%d", i))
+		c.Check(got[i].SignerMembership == nil, Equals, nas[i].SignerMembership == nil, Commentf("%d", i))
+	}
+
+	// the copies share nothing with their source
+	for i := range nas {
+		if len(nas[i].NodeAddress) > 0 {
+			nas[i].NodeAddress[0] ^= 0xff
+		}
+		if len(nas[i].SignerMembership) > 0 {
+			nas[i].SignerMembership[0] = "changed"
+		}
+		if !nas[i].Bond.IsNil() {
+			nas[i].Bond.BigIntMut().SetInt64(7)
+		}
+	}
+	c.Assert(got, DeepEquals, want)
+
+	// nor with each other: appending to one does not run into the next
+	got[0].SignerMembership = append(got[0].SignerMembership, "x")
+	got[0].NodeAddress = append(got[0].NodeAddress, 0x01)
+	c.Check(got[1].SignerMembership, DeepEquals, want[1].SignerMembership)
+	c.Check(got[1].NodeAddress, DeepEquals, want[1].NodeAddress)
+	got[0].SignerMembership[1] = "y"
+	c.Check(want[0].SignerMembership[1], Equals, "b")
+	// growing a Bond in place does not run into the next one's words
+	bond := got[0].Bond.BigIntMut()
+	bond.Lsh(bond, 128)
+	c.Check(got[1].Bond.String(), Equals, want[1].Bond.String())
+	bond = got[1].Bond.BigIntMut()
+	bond.Lsh(bond, 64)
+	c.Check(got[3].Bond.IsNil(), Equals, true)
+	c.Check(got[0].Bond.String(), Equals, new(big.Int).Lsh(want[0].Bond.BigInt(), 128).String())
+}
+
+func (s *KeeperNodeAccountSuite) TestListValidatorsByStatusCopiesAreDisjoint(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	for i := 0; i < 3; i++ {
+		na := GetRandomValidatorNode(NodeActive)
+		na.SignerMembership = []string{GetRandomPubKey().String(), GetRandomPubKey().String()}
+		c.Assert(k.SetNodeAccount(ctx, na), IsNil)
+	}
+	want, err := listValidatorsByStatusOracle(ctx, k, NodeActive, -1)
+	c.Assert(err, IsNil)
+	c.Assert(want, HasLen, 3)
+	for pass := 0; pass < 2; pass++ { // memo miss, then hit
+		for _, list := range []func() (NodeAccounts, error){
+			func() (NodeAccounts, error) { return k.ListActiveValidators(ctx) },
+			func() (NodeAccounts, error) { return k.ListActiveValidators(keeperpkg.WithActiveValidatorsCache(ctx)) },
+		} {
+			got, err := list()
+			c.Assert(err, IsNil)
+			c.Assert(got, DeepEquals, want, Commentf("pass=%d", pass))
+			got[0].SignerMembership = append(got[0].SignerMembership, "x")
+			got[0].NodeAddress = append(got[0].NodeAddress, 0x01)
+			got[1].SignerMembership[0] = "changed"
+			c.Check(got[1].NodeAddress, DeepEquals, want[1].NodeAddress, Commentf("pass=%d", pass))
+			c.Check(got[2].SignerMembership, DeepEquals, want[2].SignerMembership, Commentf("pass=%d", pass))
+		}
 	}
 }
 

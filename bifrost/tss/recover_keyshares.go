@@ -9,12 +9,15 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 
+	rpchttp "github.com/cometbft/cometbft/rpc/client/http"
 	ctypes "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/x/auth/tx"
 	"github.com/itchio/lzma"
@@ -181,6 +184,13 @@ type keyshareRecoveryTarget struct {
 	pubKey          common.PubKey
 	blockHeight     int64
 	poolPubKeyEddsa common.PubKey
+	// needsSecp/needsEddsa record which components are still MISSING locally, set
+	// from legacyKeyshareState before the scan. archiveBackupVerified requires only
+	// these (every present component is still verified), so a partial backup that
+	// completes recovery given what is already on disk is accepted rather than
+	// rejected (which would wrongly spend the one-shot archive attempt).
+	needsSecp  bool
+	needsEddsa bool
 }
 
 func findKeyshareRecoveryTarget(vault common.PubKey, vaults types.Vaults) (keyshareRecoveryTarget, bool) {
@@ -259,97 +269,26 @@ func recoverLegacyKeyShares(conf config.Bifrost, thorchain thorclient.ThorchainB
 		return nil
 	}
 
-	// Only skip a genuinely-unrecoverable backup for a NON-signing (inactive)
-	// vault. Skipping is what lets bifrost start TSS instead of wedging the startup
-	// retry loop forever on an inactive vault whose shares are gone (the original
-	// stall). But a signing vault — active OR retiring, which still signs migration
-	// outbounds — MUST recover: its unrecoverable error propagates so main.go can
-	// start bifrost degraded and keep retrying recovery in the background (restore
-	// localstate from backup, point RPC at an archive node, wait for backfill).
-	// Transient/not-found errors always propagate and stay retryable.
-	signing := isSigningVault(target, vaults)
-	skip := func(err error) error {
-		if err == nil {
-			return nil
-		}
-		if shouldSkipUnrecoverable(err, signing) {
-			log.Error().Err(err).Msgf(
-				"legacy key shares for %s are unrecoverable and the vault is no longer in the signing set; continuing so bifrost can start TSS (this node cannot sign for that vault until its shares are restored)",
-				target.pubKey,
-			)
-			return nil
-		}
-		return err
-	}
+	// Tell the archive verifier which components are still missing locally, so it
+	// requires only those (an archive backup that supplies the missing share is
+	// usable even if it lacks one this node already holds on disk).
+	target.needsSecp = !state.ecdsaExists
+	target.needsEddsa = state.hasEddsa && !state.eddsaExists
 
+	// Recovery is attempted for EVERY vault regardless of status — never skipped
+	// on a status test. An Inactive vault still signs automatic refunds of late
+	// inbounds (handler_common_outbound / manager_txout), and an Initializing
+	// vault is about to become Active and sign, so dropping either's shares would
+	// make this node blame/fail those keysigns. The recovery error is classified
+	// by the startup barrier (cmd/bifrost/main.go): a pruned or never-posted
+	// backup starts bifrost DEGRADED + background retry, a not-yet-synced backup
+	// starts degraded + a one-shot height trigger, and only a genuinely transient
+	// failure retries before TSS startup.
 	backups, err := findRecoveryBackups(conf, thorchain, signer, target)
 	if err != nil {
-		return skip(err)
+		return err
 	}
-	return skip(recoverLegacyKeySharesFromBackups(signer, target, vaults, backups))
-}
-
-// isSigningVault reports whether the recovery target's vault is still in the
-// signing set: Active, or Retiring (a retiring vault still signs migration
-// outbounds — see the RetiringVault semaphore in bifrost/signer/pipeline.go).
-// Recovery for a signing vault is never silently skipped: the node must hold its
-// shares or it fails that vault's keysigns, so a genuinely-unrecoverable signing
-// vault surfaces its error for the degraded-start + background-retry path instead
-// of degrading silently.
-func isSigningVault(target keyshareRecoveryTarget, vaults types.Vaults) bool {
-	for _, v := range vaults {
-		if v.PubKey.Equals(target.pubKey) {
-			return v.Status == types.VaultStatus_ActiveVault || v.Status == types.VaultStatus_RetiringVault
-		}
-	}
-	// Unknown vault (not in the fetched set): be conservative and require
-	// recovery rather than defaulting to the permissive skip.
-	return true
-}
-
-// shouldSkipUnrecoverable reports whether a legacy-recovery error is safe to skip
-// (continue startup) rather than surface: only when EVERY joined failure is
-// definitively unrecoverable AND the vault is no longer signing. A retryable
-// not-found error, a transient failure joined alongside an unrecoverable one, or
-// any error on a signing vault, must not be skipped.
-func shouldSkipUnrecoverable(err error, signing bool) bool {
-	return !signing && allUnrecoverable(err)
-}
-
-// allUnrecoverable reports whether err (possibly an errors.Join tree) consists
-// ONLY of definitively-unrecoverable errors. A single retryable member anywhere
-// in the tree keeps the whole result fatal — skipping on an errors.Is any-match
-// would swallow a transient failure (e.g. an eddsa disk-write error joined with
-// an empty ecdsa backup) that one retry would fix. Contrast with
-// IsUnrecoverableKeyshareError, which deliberately any-matches.
-func allUnrecoverable(err error) bool {
-	if err == nil {
-		return false
-	}
-	if joined, ok := err.(interface{ Unwrap() []error }); ok {
-		for _, e := range joined.Unwrap() {
-			if !allUnrecoverable(e) {
-				return false
-			}
-		}
-		return true
-	}
-	return errors.Is(err, errRecoveryBackupUnrecoverable)
-}
-
-// IsUnrecoverableKeyshareError reports whether err (possibly an errors.Join of
-// per-target failures) contains a definitively-unrecoverable keyshare backup
-// error — one that foreground retries can never fix (source blocks pruned below
-// the node's floor, or a TssPool message found with an empty backup). Callers use
-// it to start bifrost degraded and hand recovery to a background supervisor
-// instead of wedging startup on an error that cannot resolve by itself.
-//
-// This deliberately any-matches (unlike allUnrecoverable): at the top level, one
-// unrecoverable target is reason enough to stop blocking startup, and the
-// background supervisor re-runs the FULL recovery, so transient failures joined
-// alongside it are retried there rather than lost.
-func IsUnrecoverableKeyshareError(err error) bool {
-	return errors.Is(err, errRecoveryBackupUnrecoverable)
+	return recoverLegacyKeySharesFromBackups(signer, target, vaults, backups)
 }
 
 type legacyKeyshareState struct {
@@ -390,8 +329,8 @@ func recoverLegacyKeySharesFromBackups(signer ctypes.AccAddress, target keyshare
 			// Message found but the backup is empty (keygen ran with backups off or
 			// the encryption failed): definitively unrecoverable from this node, same
 			// found-but-empty class the FROST path already skips via
-			// isFrostRecoveryBackupMissing. Wrap the sentinel so it is not treated as
-			// a retryable not-found and does not wedge the startup loop.
+			// isFrostRecoveryBackupMissing. Wrap the permanent sentinel so startup
+			// degrades to the background supervisor instead of wedging the retry loop.
 			resultErr = errors.Join(resultErr, fmt.Errorf("%w: ecdsa key shares backup empty for %s", errRecoveryBackupUnrecoverable, target.pubKey))
 		} else if err = writeRecoveredDecompressedKeyshares(state.ecdsaPath, backups.secp256k1, seedPhrase); err != nil {
 			resultErr = errors.Join(resultErr, fmt.Errorf("failed to recover ecdsa key shares: %w", err))
@@ -555,15 +494,180 @@ type recoveryBackups struct {
 	frost     []byte
 }
 
+// errRecoveryBackupNotFound marks a COMPLETE scan (reliable bounds, full window
+// including above the vault height actually covered) that did not find the TssPool
+// message: the backup was never posted in available history. It is permanent for
+// pre-startup purposes — rescanning the same window cannot find what is not there,
+// so the barrier starts degraded and hands off to the background supervisor rather
+// than looping (the 3.20.0 stall class). An INCOMPLETE scan does NOT use this: a
+// bounds-read failure or a window upper-capped by a still-syncing height returns a
+// transient error or a not-yet-synced error instead (see findRecoveryBackups).
 var errRecoveryBackupNotFound = errors.New("key share recovery backup not found")
 
 // errRecoveryBackupUnrecoverable marks a backup that definitively cannot be obtained
 // from THIS node: the source blocks are pruned below the block-store floor, or the
 // TssPool message was found but carries an empty backup (keygen ran with backups
-// disabled or the encryption failed). It is distinct from errRecoveryBackupNotFound
-// (message simply not seen in the scanned window), which may be transient — e.g. a
-// flaky RPC collapsed the scan window — and so must stay retryable/fatal.
+// disabled or the encryption failed).
 var errRecoveryBackupUnrecoverable = errors.New("key share recovery backup unrecoverable from this node")
+
+// ErrRecoveryBackupUnrecoverable is the exported alias of the permanent
+// (pruned / empty-backup) recovery sentinel. It lets cross-package tests — notably
+// cmd/bifrost's startup-barrier test — construct a permanently-unavailable leaf that
+// IsPermanentKeyshareRecoveryFailure recognizes, so the barrier's routing on a
+// [permanent + transient] result can be asserted from package main (which cannot see
+// the unexported sentinels). It is the same value; production classification is
+// unchanged.
+var ErrRecoveryBackupUnrecoverable = errRecoveryBackupUnrecoverable
+
+// recoveryBackupNotYetSyncedError marks a backup whose block height is ABOVE the
+// node's current synced height: the vault was created after the point this node
+// has caught up to, so the TssPool message is not yet in local history. This is
+// neither pruned (errRecoveryBackupUnrecoverable) nor permanently missing
+// (errRecoveryBackupNotFound) — it becomes available once the node syncs past
+// requiredHeight. Startup must NOT block on it (degraded start); the caller
+// registers a one-shot height trigger that re-runs recovery when local height
+// reaches requiredHeight (see cmd/bifrost/main.go).
+type recoveryBackupNotYetSyncedError struct {
+	requiredHeight int64
+	currentHeight  int64
+	target         common.PubKey
+}
+
+// HasRetryableKeyshareComponent reports whether err (possibly an errors.Join)
+// contains a member that is neither a permanent failure (pruned / never-posted)
+// nor a not-yet-synced wait — i.e. a genuinely transient failure (RPC/disk) that a
+// foreground retry can fix. The startup barrier consults it AFTER handling any
+// permanent member (which starts bifrost degraded immediately, handing recovery to
+// the background supervisor): when the remaining result is not-yet-synced, a
+// still-present transient component keeps the FOREGROUND retry going so it clears
+// quickly — not abandoned to the slower background path for the sake of an unrelated
+// not-yet-synced sibling — rather than arming the one-shot height trigger. The
+// one-shot height trigger uses it the same way.
+func HasRetryableKeyshareComponent(err error) bool {
+	return anyKeyshareErrorLeaf(err, isRetryableKeyshareLeaf)
+}
+
+// anyKeyshareErrorLeaf walks the FULL error tree — descending every Unwrap() error
+// (fmt.Errorf %w) and Unwrap() []error (errors.Join) layer to the leaves — and
+// reports whether pred holds for any leaf. recoverKeyShares joins per-target
+// errors, each wrapped with fmt.Errorf around its own errors.Join, and a caller
+// may add further context wraps; classifying on the whole with errors.Is/As lets a
+// terminal or wait leaf on one vault mask a different-class leaf on another. Judging
+// per leaf keeps each vault's result independent regardless of how deeply the tree
+// is nested, so the startup-barrier routing can't be flipped by an extra wrap.
+func anyKeyshareErrorLeaf(err error, pred func(error) bool) bool {
+	if err == nil {
+		return false
+	}
+	if joined, ok := err.(interface{ Unwrap() []error }); ok {
+		for _, e := range joined.Unwrap() {
+			if anyKeyshareErrorLeaf(e, pred) {
+				return true
+			}
+		}
+		return false
+	}
+	if wrapped, ok := err.(interface{ Unwrap() error }); ok {
+		if inner := wrapped.Unwrap(); inner != nil {
+			return anyKeyshareErrorLeaf(inner, pred)
+		}
+	}
+	return pred(err)
+}
+
+// forEachKeyshareErrorLeaf walks the FULL error tree the same way as
+// anyKeyshareErrorLeaf (descending every Unwrap() error and Unwrap() []error layer)
+// and calls visit on each leaf. Used to fold across all leaves — e.g. the lowest
+// not-yet-synced height — rather than short-circuit on the first match.
+func forEachKeyshareErrorLeaf(err error, visit func(error)) {
+	if err == nil {
+		return
+	}
+	if joined, ok := err.(interface{ Unwrap() []error }); ok {
+		for _, e := range joined.Unwrap() {
+			forEachKeyshareErrorLeaf(e, visit)
+		}
+		return
+	}
+	if wrapped, ok := err.(interface{ Unwrap() error }); ok {
+		if inner := wrapped.Unwrap(); inner != nil {
+			forEachKeyshareErrorLeaf(inner, visit)
+			return
+		}
+	}
+	visit(err)
+}
+
+// isRetryableKeyshareLeaf: a single error is foreground-retryable unless it is a
+// terminal (pruned/never-posted) or a not-yet-synced wait.
+func isRetryableKeyshareLeaf(err error) bool {
+	if errors.Is(err, errRecoveryBackupUnrecoverable) || errors.Is(err, errRecoveryBackupNotFound) {
+		return false
+	}
+	if _, syncing := NotYetSyncedKeyshareHeight(err); syncing {
+		return false
+	}
+	return true
+}
+
+// isPermanentKeyshareLeaf: a single error is a permanent (supervisor-handled)
+// failure when it is pruned/never-posted and not a not-yet-synced wait.
+func isPermanentKeyshareLeaf(err error) bool {
+	if _, syncing := NotYetSyncedKeyshareHeight(err); syncing {
+		return false
+	}
+	return errors.Is(err, errRecoveryBackupUnrecoverable) || errors.Is(err, errRecoveryBackupNotFound)
+}
+
+func (e *recoveryBackupNotYetSyncedError) Error() string {
+	return fmt.Sprintf(
+		"key share recovery backup for %s not yet synced: vault/backup height %d is above the node's current height %d",
+		e.target, e.requiredHeight, e.currentHeight,
+	)
+}
+
+// NotYetSyncedKeyshareHeight returns the block height a not-yet-synced recovery
+// is waiting for (ok=false when err is not a not-yet-synced error). The startup
+// barrier uses it to arm a one-shot height trigger instead of blocking or
+// busy-retrying while the node is still catching up to the vault's height.
+//
+// When a joined result carries SEVERAL not-yet-synced vaults at different heights,
+// it returns the LOWEST required height — not whichever leaf errors.As finds first
+// in tree order. The trigger re-runs the FULL recovery once that height is reached,
+// recovering every vault now in range and re-arming for any still above it; waking
+// at the minimum recovers the earliest-available vault as soon as possible instead
+// of needlessly stalling it behind a higher-height sibling.
+func NotYetSyncedKeyshareHeight(err error) (int64, bool) {
+	lowest := int64(-1)
+	forEachKeyshareErrorLeaf(err, func(leaf error) {
+		var e *recoveryBackupNotYetSyncedError
+		if errors.As(leaf, &e) && (lowest < 0 || e.requiredHeight < lowest) {
+			lowest = e.requiredHeight
+		}
+	})
+	if lowest < 0 {
+		return 0, false
+	}
+	return lowest, true
+}
+
+// IsPermanentKeyshareRecoveryFailure reports whether err is a recovery failure
+// that foreground pre-startup retries cannot fix on their own — the source
+// blocks are pruned below this node's floor (unrecoverable) OR the backup was
+// never seen in the fully-available scan window (not-found). Both must start
+// bifrost DEGRADED and hand recovery to the background supervisor rather than
+// wedge the pre-startup loop forever (the 3.20.0 signing-stall class). A
+// not-yet-synced error is deliberately NOT permanent — it has its own one-shot
+// trigger — so it is excluded here.
+// It decomposes a joined/wrapped error and judges each leaf independently (via
+// anyKeyshareErrorLeaf): a not-yet-synced sibling must NOT mask a permanent member,
+// or a mixed [permanent + not-yet-synced] result would classify as non-permanent
+// and the startup barrier would arm only the one-shot height trigger — postponing
+// the permanently-unavailable vault's recovery to an unrelated sync height (or the
+// supervisor's deadline) instead of handing it to the background supervisor.
+func IsPermanentKeyshareRecoveryFailure(err error) bool {
+	return anyKeyshareErrorLeaf(err, isPermanentKeyshareLeaf)
+}
 
 // nodeStatusTimeout bounds the /status RPC used to read the node's block-height
 // range during recovery, so a hung endpoint cannot stall bifrost startup.
@@ -582,21 +686,58 @@ func findRecoveryBackups(conf config.Bifrost, thorchain thorclient.ThorchainBrid
 	//
 	// One /status call yields both bounds from a single snapshot: the current height
 	// (scan upper bound) and the earliest locally-available block (prune floor). On
-	// failure, scan from the vault height with no floor — a subsequent pruned fetch
-	// then surfaces as a retryable not-found rather than a false "unrecoverable".
+	// failure the bounds are unreliable: the scan falls back to the vault height and
+	// cannot look above it, so a miss is reported as the transient "scan incomplete"
+	// error (retried once bounds recover) — NOT the now-permanent not-found, and not
+	// a false "unrecoverable".
 	currentHeight, earliest, err := nodeBlockBounds(thorchain)
+	boundsReliable := err == nil
 	if err != nil {
 		log.Warn().Err(err).Msg("fail to get thorchain block bounds for key share recovery; scanning from vault height without a prune floor")
 		currentHeight = target.blockHeight
 		earliest = 0
 	}
+	// The vault (and its TssPool backup, posted at creation) is above the height
+	// this node has synced to: we are still catching up, the message is not yet in
+	// local history, and scanning now would falsely report it missing. Surface a
+	// not-yet-synced error so the startup barrier starts bifrost degraded and arms
+	// a one-shot trigger to recover once local height reaches the vault height,
+	// rather than busy-retrying or wedging startup while syncing.
+	if err == nil && target.blockHeight > currentHeight {
+		return recoveryBackups{}, &recoveryBackupNotYetSyncedError{
+			requiredHeight: target.blockHeight,
+			currentHeight:  currentHeight,
+			target:         target.pubKey,
+		}
+	}
+
 	scanLowerBound, scanUpperBound := recoverScanBounds(target.blockHeight, currentHeight, conf.TSS.MaxKeyshareRecoverScanBlocks)
+	// Remember the window bottom before the prune floor raises it, so a clamped miss
+	// can hand the pruned sub-window [origLowerBound, earliest-1] to the archive.
+	origLowerBound := scanLowerBound
+	// When the floor advances mid-scan, the scan has already covered (i, scanUpperBound]
+	// locally, so only heights <= i were never checked. Record that i so the archive
+	// fetch targets exactly the never-scanned sub-window instead of re-fetching the
+	// already-covered part (which can exhaust the archive timeout). -1 = not set.
+	midScanUnscannedUpper := int64(-1)
 
 	clamped := false
 	if earliest > 0 {
 		var unrecoverable bool
 		scanLowerBound, clamped, unrecoverable = applyPruneFloor(scanLowerBound, scanUpperBound, earliest)
 		if unrecoverable {
+			// The whole scan window is below this node's block-store floor (pruned).
+			// If the operator configured an archive endpoint with deeper history, make
+			// ONE bounded, verify-only attempt to fetch the backup from it before
+			// giving up to a degraded start. The endpoint is never trusted: the fetched
+			// backup is accepted only if it decrypts with this node's key and the
+			// recovered share's pubkey equals the vault pubkey from THORChain.
+			// Frost targets are excluded — the frost share is sealed with a
+			// network-scoped envelope that is not bound by archiveBackupVerified, so
+			// we refuse to fetch it and stay degraded rather than write it unverified.
+			if backups, ok := tryArchiveFallback(conf, signer, target, scanLowerBound, scanUpperBound); ok {
+				return backups, nil
+			}
 			return recoveryBackups{}, fmt.Errorf(
 				"%w: TssPool message for %s is below the earliest locally-available block %d (vault height %d, older blocks pruned)",
 				errRecoveryBackupUnrecoverable, signer, earliest, target.blockHeight,
@@ -623,33 +764,73 @@ func findRecoveryBackups(conf config.Bifrost, thorchain thorclient.ThorchainBrid
 					"block was pruned during the key share recovery scan; the node's history floor advanced past the remaining window")
 				earliest = freshEarliest
 				clamped = true
+				midScanUnscannedUpper = i // only heights <= i were never scanned locally
 				break
 			}
 			return recoveryBackups{}, fmt.Errorf("fail to get block: %w", err)
 		}
 
 		for _, txb := range b.Block.Txs {
-			var tx ctypes.Tx
-			tx, err = dec(txb)
-			if err != nil {
-				return recoveryBackups{}, fmt.Errorf("fail to decode tx: %w", err)
-			}
-			for _, msg := range tx.GetMsgs() {
-				switch m := msg.(type) {
-				case *types.MsgTssPool:
-					if msgMatchesRecoveryTarget(m, signer, target) {
-						return recoveryBackups{
-							secp256k1: m.KeysharesBackup,
-							eddsa:     m.KeysharesBackupEddsa,
-							frost:     m.KeysharesBackupFrost,
-						}, nil
-					}
-				default:
-				}
+			if backups, ok := backupFromRawTx(txb, dec, signer, target); ok {
+				return backups, nil
 			}
 		}
 	}
 
+	// A miss is only a definitive not-found when the scan was COMPLETE. If the
+	// block-bounds read failed, the scan upper bound fell back to the vault height
+	// and could not look ABOVE it, so a backup posted after vault creation (a late
+	// poster, past 2/3 consensus) would be missed. Report that as transient (not the
+	// not-found sentinel) so the startup barrier retries once bounds recover, rather
+	// than wrongly treating an incomplete scan as permanent and degrading.
+	if !boundsReliable && !clamped {
+		return recoveryBackups{}, fmt.Errorf(
+			"key share recovery scan for %s incomplete: thorchain block bounds unavailable, scan could not cover heights above vault height %d within %d blocks",
+			signer, target.blockHeight, conf.TSS.MaxKeyshareRecoverScanBlocks,
+		)
+	}
+	// The scan window reaches up to the vault height + MaxKeyshareRecoverScanBlocks
+	// so a backup posted AFTER vault creation (a late poster past 2/3 consensus) is
+	// covered. When the node has not yet synced to the top of that window, the upper
+	// bound was capped at the current height, so a miss is NOT definitive — the
+	// backup may sit in [currentHeight+1, wantedUpper], which this node has not seen
+	// yet. Treat it as not-yet-synced (degraded start + one-shot trigger that
+	// recovers once synced) instead of a permanent not-found. A fully-synced node
+	// recovering an old legacy vault has currentHeight far above wantedUpper, so this
+	// never fires for the genuine never-posted case.
+	if boundsReliable && !clamped && conf.TSS.MaxKeyshareRecoverScanBlocks > 0 {
+		if wantedUpper := target.blockHeight + conf.TSS.MaxKeyshareRecoverScanBlocks; currentHeight < wantedUpper {
+			return recoveryBackups{}, &recoveryBackupNotYetSyncedError{
+				requiredHeight: wantedUpper,
+				currentHeight:  currentHeight,
+				target:         target.pubKey,
+			}
+		}
+	}
+	// A clamped miss means part of the window — the never-locally-scanned sub-window
+	// (origLowerBound, earliest-1] below this node's floor (set at start, or advanced
+	// mid-scan) — could hold the backup. The operator may have configured an archive
+	// with that deeper history, so make one bounded, verify-only attempt over just
+	// that sub-window before degrading (same helper, trust model, and one-shot
+	// guarantee as the fully-pruned branch).
+	if clamped {
+		// Target the never-locally-scanned sub-window only. If the floor advanced
+		// mid-scan, that is (origLowerBound, i] — heights above i were already fetched,
+		// and the fresh floor can even exceed scanUpperBound, so re-fetching from
+		// earliest-1 would waste the archive timeout on already-covered blocks. For a
+		// start-of-scan clamp (no mid-scan stop), the never-scanned part is
+		// (origLowerBound, earliest-1], capped at the scan ceiling.
+		archiveUpper := midScanUnscannedUpper
+		if archiveUpper < 0 {
+			archiveUpper = earliest - 1
+			if archiveUpper > scanUpperBound {
+				archiveUpper = scanUpperBound
+			}
+		}
+		if backups, ok := tryArchiveFallback(conf, signer, target, origLowerBound, archiveUpper); ok {
+			return backups, nil
+		}
+	}
 	miss := fmt.Errorf(
 		"%w: "+
 			"TssPool message from %s not found within %d blocks before or after vault height %d",
@@ -664,11 +845,350 @@ func findRecoveryBackups(conf config.Bifrost, thorchain thorclient.ThorchainBrid
 	return recoveryBackups{}, miss
 }
 
+// keyshareArchiveTimeout bounds the single archive fetch attempt per vault at
+// startup so a slow or hostile endpoint cannot stall bifrost.
+const keyshareArchiveTimeout = 60 * time.Second
+
+// tryArchiveFallback makes the single verify-only archive fetch over the
+// never-locally-scanned window (lower, upper] — lower EXCLUSIVE, matching the scan
+// loops and verifiedArchiveBackup — when an archive endpoint is configured and the
+// target is not a frost vault (whose network-scoped envelope archiveBackupVerified
+// does not bind). It is the one place the two miss paths (fully pruned, and
+// clamped) share, so the trust model, the frost exclusion, the one-shot budget, and
+// the exclusive-bound convention cannot drift between them. An empty window
+// (upper <= lower) is skipped so it does not spend the one-shot budget for nothing.
+func tryArchiveFallback(conf config.Bifrost, signer ctypes.AccAddress, target keyshareRecoveryTarget, lower, upper int64) (recoveryBackups, bool) {
+	if conf.TSS.KeyshareArchiveRPC == "" || target.kind == recoveryTargetFrost || upper <= lower {
+		return recoveryBackups{}, false
+	}
+	return verifiedArchiveBackup(conf.TSS.KeyshareArchiveRPC, signer, target, lower, upper)
+}
+
+// verifiedArchiveBackup makes ONE bounded attempt to fetch a legacy keyshare
+// backup from an operator-configured archive RPC (deeper history than this node)
+// when the backup is pruned locally. It scans (lower, upper] — lower EXCLUSIVE,
+// matching the scan loop below and tryArchiveFallback (the never-locally-scanned
+// window below this node's floor) — for the matching MsgTssPool and returns it
+// ONLY if it passes
+// archiveBackupVerified. Any failure — bad client, RPC error, timeout, not found,
+// or failed verification — logs a Warn and returns ok=false so the caller stays
+// degraded. No retry loop: the whole attempt is one pass bounded by a timeout.
+func verifiedArchiveBackup(archiveRPC string, signer ctypes.AccAddress, target keyshareRecoveryTarget, lower, upper int64) (result recoveryBackups, found bool) {
+	// One attempt per vault per process, but only count an attempt that did NOT yield
+	// a usable verified backup. The degraded-start supervisor re-runs full recovery
+	// each cycle; marking a permanently-missing or hostile endpoint (found=false)
+	// stops it being re-scanned forever. A SUCCESSFUL fetch is deliberately not
+	// marked, so if writing the fetched backup to disk then fails transiently the
+	// supervisor can re-fetch and retry the publish rather than losing it for the
+	// life of the process.
+	archiveKey := target.pubKey.String()
+	if _, attempted := archiveFetchAttempted.Load(archiveKey); attempted {
+		return recoveryBackups{}, false
+	}
+	// Verifying a fetched backup needs the recovery seed (archiveBackupVerified).
+	// If it cannot be read, that is TRANSIENT (e.g. the seed file is briefly
+	// unavailable) and no backup can be verified, so make no attempt and stay
+	// degraded WITHOUT spending the one-shot — otherwise a transient seed-read
+	// failure on a matched backup would hit the definitive-reject path below and
+	// disable archive recovery for this vault until the process restarts, the same
+	// mistake the transient transport failures are careful to avoid.
+	if _, err := recoverySeedPhrase(); err != nil {
+		log.Warn().Err(err).Msgf(
+			"keyshare archive: cannot read recovery seed to verify a fetched backup for %s; staying degraded without spending the one-shot attempt", target.pubKey)
+		return recoveryBackups{}, false
+	}
+	// Only a DEFINITIVE non-success spends the one-shot attempt: verification failed,
+	// or the archive was fully scanned with no matching backup. Transient transport
+	// errors (timeout, connection refused, block-fetch error, bad client) leave the
+	// vault unmarked so the background supervisor can retry on a later cycle rather
+	// than disabling the archive for that vault until a restart.
+	definitive := false
+	defer func() {
+		if !found && definitive {
+			archiveFetchAttempted.Store(archiveKey, struct{}{})
+		}
+	}()
+	redactedRPC := redactArchiveRPC(archiveRPC)
+	log.Info().Str("archive_rpc", redactedRPC).Int64("from", upper).Int64("to", lower).Msgf(
+		"legacy keyshare backup for %s is pruned locally; making one verify-only fetch attempt from the configured archive endpoint", target.pubKey)
+	// The endpoint is never trusted, so cap each block response body: a hostile
+	// endpoint could otherwise return a multi-GB body and OOM bifrost at startup
+	// before any verification runs. keyshareArchiveTimeout bounds elapsed time; this
+	// bounds memory. Use a DEDICATED transport clone (not the shared
+	// http.DefaultTransport) so the untrusted host's idle sockets never pool in the
+	// global transport, and CloseIdleConnections — forwarded by bodyLimitedTransport
+	// — actually drops them once the single attempt is done.
+	var baseTransport http.RoundTripper = &http.Transport{}
+	if dt, ok := http.DefaultTransport.(*http.Transport); ok {
+		baseTransport = dt.Clone()
+	}
+	httpClient := &http.Client{Transport: bodyLimitedTransport{rt: baseTransport, max: maxArchiveBlockBytes}}
+	defer httpClient.CloseIdleConnections()
+	client, err := rpchttp.NewWithClient(archiveRPC, "/websocket", httpClient)
+	if err != nil {
+		// Do NOT log err: CometBFT's constructor error embeds the full raw endpoint,
+		// which may carry credentials (user:pass@host). Log only the redacted form.
+		log.Warn().Str("archive_rpc", redactedRPC).Msg("keyshare archive: cannot create RPC client for the configured endpoint (check the URL); staying degraded")
+		return recoveryBackups{}, false
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), keyshareArchiveTimeout)
+	defer cancel()
+	cdc := thorclient.MakeCodec()
+	dec := ebifrost.TxDecoder(cdc, tx.DefaultTxDecoder(cdc))
+	for i := upper; i > lower; i-- {
+		if ctx.Err() != nil {
+			log.Warn().Err(ctx.Err()).Msg("keyshare archive: fetch did not complete within the timeout; staying degraded")
+			return recoveryBackups{}, false
+		}
+		b, blockErr := client.Block(ctx, &i)
+		if blockErr != nil {
+			// Do NOT log blockErr: like the constructor error above, a CometBFT
+			// transport error embeds the full raw endpoint (e.g. `post failed: Post
+			// "http://user:pass@host"`), which may carry credentials. Log only the
+			// redacted endpoint + height.
+			log.Warn().Str("archive_rpc", redactedRPC).Int64("height", i).Msg("keyshare archive: block fetch failed; staying degraded")
+			return recoveryBackups{}, false
+		}
+		if b == nil || b.Block == nil {
+			// An untrusted endpoint can return a successful JSON-RPC response with a
+			// null block (`"result":{"block":null}`); dereferencing b.Block.Txs would
+			// panic and crash bifrost (neither the startup caller nor the supervisor
+			// recovers it). Treat an absent block as a failed attempt and stay degraded.
+			log.Warn().Int64("height", i).Msg("keyshare archive: endpoint returned an empty block; staying degraded")
+			return recoveryBackups{}, false
+		}
+		for _, txb := range b.Block.Txs {
+			backups, ok := backupFromRawTx(txb, dec, signer, target)
+			if !ok {
+				continue
+			}
+			if !archiveBackupVerified(backups, target) {
+				log.Warn().Msgf(
+					"keyshare archive: fetched backup for %s failed verification (did not decrypt with this node's key, or recovered pubkey != vault pubkey); rejecting and staying degraded", target.pubKey)
+				definitive = true // a matched-but-invalid backup is a definitive reject
+				return recoveryBackups{}, false
+			}
+			log.Info().Int64("height", i).Msgf("keyshare archive: fetched and verified backup for %s", target.pubKey)
+			return backups, true
+		}
+	}
+	// The full window was scanned (no timeout/transport error short-circuited the
+	// loop) and no matching backup exists at the endpoint — a definitive miss.
+	definitive = true
+	log.Warn().Msgf("keyshare archive: no matching TssPool backup for %s found at the archive endpoint; staying degraded", target.pubKey)
+	return recoveryBackups{}, false
+}
+
+// archiveBackupVerified gates an archive-fetched backup on cryptographic proof,
+// never on trust in the endpoint. EVERY component the backup carries must decrypt
+// with this node's recovery seed (DecryptRawKeyshares is AEAD-authenticated, so a
+// component not sealed with our key fails here) AND the recovered share's stored
+// pubkey must equal the vault pubkey this node already holds from THORChain for
+// THAT component (secp256k1 -> vault pubkey, eddsa -> eddsa pool pubkey). Binding
+// only secp256k1 would let a hostile endpoint splice a different vault's eddsa
+// share — which rides along in the same fetched backup and is written to disk by
+// recoverLegacyKeySharesFromBackups — past the gate. A component with no known
+// pubkey to check against is rejected (fail-closed), as is any frost component
+// (frost archive recovery is not yet supported; see the caller's kind guard).
+func archiveBackupVerified(backups recoveryBackups, target keyshareRecoveryTarget) bool {
+	// Require the components still MISSING locally (needsSecp/needsEddsa). A backup
+	// lacking one of those cannot complete recovery, so rejecting it (and marking the
+	// one-shot attempt) is correct — otherwise it would be re-fetched every supervisor
+	// cycle. But a backup lacking a component this node ALREADY holds on disk is still
+	// usable, so we do not require it. Every component that IS present is verified
+	// below regardless.
+	if target.needsSecp && len(backups.secp256k1) == 0 {
+		return false
+	}
+	if target.needsEddsa && len(backups.eddsa) == 0 {
+		return false
+	}
+	seedPhrase, err := recoverySeedPhrase()
+	if err != nil {
+		log.Warn().Err(err).Msg("keyshare archive: cannot read recovery seed to verify fetched backup")
+		return false
+	}
+	verified := false
+	if len(backups.secp256k1) > 0 {
+		if target.pubKey.IsEmpty() || !rawKeyshareMatchesPubKey(backups.secp256k1, seedPhrase, target.pubKey) {
+			return false
+		}
+		verified = true
+	}
+	if len(backups.eddsa) > 0 {
+		if target.poolPubKeyEddsa.IsEmpty() || !rawKeyshareMatchesPubKey(backups.eddsa, seedPhrase, target.poolPubKeyEddsa) {
+			return false
+		}
+		verified = true
+	}
+	// Frost shares are sealed with a network-scoped envelope, not a localstate
+	// pub_key bound to a vault pubkey here, so refuse any that rode along rather
+	// than write them unverified.
+	if len(backups.frost) > 0 {
+		return false
+	}
+	return verified
+}
+
+// rawKeyshareMatchesPubKey returns true iff the encrypted raw keyshare decrypts
+// with seedPhrase (AEAD-authenticated) and the recovered localstate's stored
+// pubkey equals want.
+func rawKeyshareMatchesPubKey(encrypted []byte, seedPhrase string, want common.PubKey) bool {
+	raw, err := DecryptRawKeyshares(encrypted, seedPhrase)
+	if err != nil {
+		return false
+	}
+	defer zeroBytes(raw)
+	var ls struct {
+		PubKey string `json:"pub_key"`
+	}
+	if err := json.Unmarshal(raw, &ls); err != nil {
+		return false
+	}
+	return ls.PubKey != "" && ls.PubKey == want.String()
+}
+
+// maxArchiveBlockBytes caps the body of a single block response from the
+// never-trusted archive endpoint so it cannot OOM bifrost at startup.
+const maxArchiveBlockBytes = 32 * 1024 * 1024
+
+// archiveFetchAttempted records vaults whose archive fetch reached a DEFINITIVE
+// outcome (verification failed, or a complete scan found no backup), so the
+// degraded-start supervisor's repeated recovery cycles do not re-scan the endpoint —
+// the "one DEFINITIVE attempt per vault" guarantee. Transient failures (transport
+// error, timeout, empty/garbage response, unreadable seed) are deliberately NOT
+// recorded here, so a transiently-unavailable endpoint is retried on a later cycle.
+var archiveFetchAttempted sync.Map
+
+// bodyLimitedTransport wraps an http.RoundTripper to bound each response body.
+type bodyLimitedTransport struct {
+	rt  http.RoundTripper
+	max int64
+}
+
+func (t bodyLimitedTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	resp, err := t.rt.RoundTrip(req)
+	if err != nil {
+		return resp, err
+	}
+	resp.Body = limitedReadCloser{Reader: io.LimitReader(resp.Body, t.max), closer: resp.Body}
+	return resp, nil
+}
+
+// CloseIdleConnections forwards to the wrapped transport so http.Client's
+// CloseIdleConnections actually reaches it (the client only calls it on a
+// transport that implements this method, which the bare wrapper otherwise hides).
+func (t bodyLimitedTransport) CloseIdleConnections() {
+	if c, ok := t.rt.(interface{ CloseIdleConnections() }); ok {
+		c.CloseIdleConnections()
+	}
+}
+
+type limitedReadCloser struct {
+	io.Reader
+	closer io.Closer
+}
+
+func (l limitedReadCloser) Close() error { return l.closer.Close() }
+
+// redactArchiveRPC strips any embedded credentials (userinfo, query, fragment)
+// from the archive URL before it is logged, so operator secrets in the configured
+// endpoint never land in bifrost logs.
+func redactArchiveRPC(raw string) string {
+	// A scheme-less endpoint such as "user:pass@archive:26657" is mis-split by
+	// url.Parse (Scheme="user", Opaque="pass@archive:26657", User=nil), so clearing
+	// u.User alone would leave the credentials intact in the returned string. Parse it
+	// as a scheme-relative URL ("//host") so userinfo/host land in the right fields and
+	// are actually redacted; keep an explicit scheme untouched.
+	s, addedPrefix := raw, false
+	if !strings.Contains(raw, "://") {
+		s, addedPrefix = "//"+raw, true
+	}
+	u, err := url.Parse(s)
+	if err != nil || u.Host == "" {
+		// Could not parse into a host we can scrub. Never echo the raw endpoint — it
+		// may carry credentials (userinfo, or a secret in a path/opaque segment) we
+		// cannot reliably locate — so log a safe placeholder instead.
+		return "[redacted archive_rpc]"
+	}
+	u.User = nil
+	// Strip the path too: some RPC providers carry the API key in the path
+	// (e.g. https://host/v1/<KEY> or https://host/<KEY>), not in userinfo or the
+	// query. We cannot tell a secret path segment from a harmless route, so drop
+	// the whole path; host:port is the only part worth logging for diagnostics.
+	u.Path = ""
+	u.RawQuery = ""
+	u.Fragment = ""
+	out := u.String()
+	if addedPrefix {
+		out = strings.TrimPrefix(out, "//")
+	}
+	return out
+}
+
 func isFrostRecoveryBackupMissing(backups recoveryBackups, err error) bool {
 	if err != nil {
 		return errors.Is(err, errRecoveryBackupNotFound) || errors.Is(err, errRecoveryBackupUnrecoverable)
 	}
 	return len(backups.frost) == 0
+}
+
+// backupFromRawTx returns the recovery backup carried by a single raw block tx
+// when it is a MsgTssPool matching the target, else ok=false. A tx bifrost's
+// codec cannot decode — e.g. a plain cosmos bank MsgSend in old history whose
+// type URL is not registered here — can never be the MsgTssPool backup, so it is
+// skipped (ok=false) instead of aborting the scan. This keeps a wide scan from
+// wedging startup in the unbounded legacy-recovery retry on one undecodable tx;
+// a genuine block-fetch failure (handled by the caller) stays fatal and retryable.
+func backupFromRawTx(txb []byte, dec func([]byte) (ctypes.Tx, error), signer ctypes.AccAddress, target keyshareRecoveryTarget) (backups recoveryBackups, ok bool) {
+	// Decoding and message extraction run on UNTRUSTED bytes when scanning an
+	// archive endpoint: a crafted tx can decode (e.g. an InjectTx wrapping an empty
+	// Any) yet panic in GetMsgs on a nil cached message. A panic here would crash
+	// bifrost before verification, so recover and treat the tx as a non-match.
+	defer func() {
+		if r := recover(); r != nil {
+			log.Warn().Interface("panic", r).Msg("keyshare recovery: recovered from a panic decoding a tx (malformed or hostile data); skipping it and continuing the scan")
+			backups = recoveryBackups{}
+			ok = false
+		}
+	}()
+	tx, err := dec(txb)
+	if err != nil {
+		// An undecodable tx can never be the MsgTssPool backup, so the scan skips it
+		// (ok=false) instead of aborting — one legacy tx bifrost's codec cannot decode
+		// must not wedge the unbounded startup-recovery loop. An unregistered type URL
+		// is expected in old history (benign → Debug); any other decode error is
+		// unexpected (possible corruption or a codec bug) and is surfaced at Warn so
+		// it is not silently swallowed, while the scan still continues.
+		if isUnregisteredTypeDecodeError(err) {
+			log.Debug().Err(err).Msg("skipping tx with an unregistered type while scanning for keyshare backup")
+		} else {
+			log.Warn().Err(err).Msg("skipping tx that failed to decode unexpectedly while scanning for keyshare backup; continuing scan")
+		}
+		return recoveryBackups{}, false
+	}
+	for _, msg := range tx.GetMsgs() {
+		if m, ok := msg.(*types.MsgTssPool); ok && msgMatchesRecoveryTarget(m, signer, target) {
+			return recoveryBackups{
+				secp256k1: m.KeysharesBackup,
+				eddsa:     m.KeysharesBackupEddsa,
+				frost:     m.KeysharesBackupFrost,
+			}, true
+		}
+	}
+	return recoveryBackups{}, false
+}
+
+// isUnregisteredTypeDecodeError reports whether a tx decode failure is the
+// expected "this type URL is not registered in bifrost's codec" case (a legacy
+// message kind bifrost never needs to decode), as opposed to an unexpected
+// decode error worth surfacing at a higher log level.
+func isUnregisteredTypeDecodeError(err error) bool {
+	msg := err.Error()
+	return strings.Contains(msg, "unable to resolve type URL") ||
+		strings.Contains(msg, "no concrete type registered") ||
+		strings.Contains(msg, "no message type registered") ||
+		strings.Contains(msg, "unknown message")
 }
 
 func msgMatchesRecoveryTarget(m *types.MsgTssPool, signer ctypes.AccAddress, target keyshareRecoveryTarget) bool {
@@ -750,13 +1270,15 @@ func blockPrunedMidScan(height, freshEarliest int64, boundsErr error) bool {
 }
 
 // scanMissSentinel picks the error class for a scan that found no TssPool
-// message. With the full intended window scanned, a miss may be transient (a
-// flaky RPC collapsed the window, or the message sits just outside it) and stays
-// retryable. When the prune floor clamped the window, the message may sit in the
-// pruned part and retrying can only lose more history — definitively
-// unrecoverable from this node, so bifrost starts degraded and the background
-// supervisor keeps retrying (repointing RPC at an archive node widens the window
-// again).
+// message, where the scan bounds were reliable and the full intended window was
+// covered (incomplete scans — a bounds-read failure or a window upper-capped by a
+// still-syncing height — are handled by the caller and never reach here). Both
+// outcomes are permanent for pre-startup purposes, so bifrost starts degraded and
+// the background supervisor keeps retrying rather than wedging the foreground
+// loop: an unclamped miss means the backup was never posted in available history
+// (errRecoveryBackupNotFound), and a clamped miss means the message may sit in the
+// pruned part below the node's floor (errRecoveryBackupUnrecoverable). Repointing
+// RPC at an archive node widens the window again.
 func scanMissSentinel(clamped bool) error {
 	if clamped {
 		return errRecoveryBackupUnrecoverable

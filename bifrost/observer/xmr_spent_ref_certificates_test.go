@@ -23,6 +23,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
 	"gitlab.com/thorchain/thornode/v3/bifrost/p2p/conversion"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients"
+	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	tctypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
@@ -236,6 +237,119 @@ func TestHistoricalXMRSpentRefCertificateInactiveQuorumIsCertificateOnly(t *test
 				assert.Len(t, bucket.attestations, 2)
 			}
 			ag.mu.Unlock()
+		})
+	}
+}
+
+// Both recovery entry points must follow the actual retry schedule before
+// importing a Ragnarok spend whose original queue entry was superseded.
+func TestRescheduledRagnarokSpentRefsRequireSourceQuorum(t *testing.T) {
+	for _, historical := range []bool{false, true} {
+		name := map[bool]string{false: "ordinary gossip", true: "inactive historical certificates"}[historical]
+		t.Run(name, func(t *testing.T) {
+			ag, _, keys, _, bridge, _ := setupTestGossip(t)
+			obsTx, planned := observerTestXMRPlan(t)
+			obsTx.Tx.Memo = "RAGNAROK:123"
+			planned.memo, planned.wireMemo = obsTx.Tx.Memo, obsTx.Tx.Memo
+			original := planned
+			original.outHash = common.BlankTxID
+
+			first, second, third := secp256k1.GenPrivKey(), secp256k1.GenPrivKey(), secp256k1.GenPrivKey()
+			members := common.PubKeys{
+				observerTestPubKey(t, first), observerTestPubKey(t, second), observerTestPubKey(t, third),
+			}
+			localMember := observerTestPubKey(t, keys.privKey)
+			if historical {
+				ag.setActiveValidators(common.PubKeys{localMember})
+			} else {
+				// Two source members authorize recovery, but do not establish
+				// the current four-validator observation quorum.
+				ag.setActiveValidators(append(common.PubKeys{localMember}, members...))
+			}
+			bridge.getVaultFunc = observerTestRetiringVaultFunc(obsTx.ObservedPubKey, members...)
+
+			var originalQueries, retryQueries, queueQueries atomic.Int32
+			bridge.getKeysignFunc = func(height int64, pubKey string) (tctypes.TxOut, error) {
+				if pubKey != "" {
+					return tctypes.TxOut{}, fmt.Errorf("expected public keysign lookup, got %q", pubKey)
+				}
+				switch height {
+				case 123:
+					originalQueries.Add(1)
+					return observerTestKeysignFunc(original)(height, pubKey)
+				case 1040:
+					retryQueries.Add(1)
+					return observerTestKeysignFunc(planned)(height, pubKey)
+				default:
+					return tctypes.TxOut{}, fmt.Errorf("unexpected retry height %d", height)
+				}
+			}
+			bridge.getPendingOutboundsFunc = func(height int64) ([]thorclient.PendingOutbound, error) {
+				if height != 0 {
+					return nil, fmt.Errorf("expected current pending queue, got height %d", height)
+				}
+				queueQueries.Add(1)
+				// Coalescing need not preserve the original height's phase.
+				return []thorclient.PendingOutbound{{Chain: "XMR", Memo: obsTx.Tx.Memo, Height: 1040}}, nil
+			}
+
+			applied := make(chan spentOutputRefsImport, 2)
+			ag.SetObserverApplySpentOutputRefs(func(request spentOutputRefsImport, onOutcome func(bool)) {
+				onOutcome(true)
+				applied <- request
+			})
+			submit := func(signer *secp256k1.PrivKey) {
+				attestation := observerTestSignedHistoricalXMRCertificate(t, obsTx, signer)
+				if historical {
+					require.NoError(t, ag.acceptHistoricalXMRSpentRefCertificate(attestation, observerTestPeerID(t, signer)))
+				} else {
+					ag.handleObservedTxAttestation(context.Background(), attestation)
+				}
+			}
+
+			submit(first)
+			select {
+			case <-applied:
+				t.Fatal("one source member authorized the retry import")
+			case <-time.After(100 * time.Millisecond):
+			}
+			submit(second)
+			select {
+			case got := <-applied:
+				wantPayload, err := obsTx.GetSignablePayloadWithInbound(false)
+				require.NoError(t, err)
+				gotPayload, err := got.Tx.GetSignablePayloadWithInbound(false)
+				require.NoError(t, err)
+				require.Equal(t, wantPayload, gotPayload)
+				require.Equal(t, obsTx.SpentOutputRefs, got.Tx.SpentOutputRefs)
+				require.Equal(t, obsTx.Tx.Memo, got.WireMemo)
+				require.False(t, got.ChainCommitted)
+			case <-time.After(time.Second):
+				t.Fatal("source quorum did not import the rescheduled Ragnarok spend")
+			}
+			require.Positive(t, originalQueries.Load())
+			require.Positive(t, retryQueries.Load())
+			require.Positive(t, queueQueries.Load())
+			require.Eventually(t, func() bool { return len(ag.applySpentRefsSem) == 0 }, time.Second, time.Millisecond)
+			require.Empty(t, applied, "the quorum must authorize exactly one import")
+
+			if historical {
+				ag.mu.Lock()
+				observedCount := len(ag.observedTxs)
+				ag.mu.Unlock()
+				require.Zero(t, observedCount, "historical shares must not fabricate observation votes")
+				require.True(t, ag.historicalXMRSpentRefCertificateApplied(obsTx))
+			} else {
+				payload, err := obsTx.GetSignablePayloadWithInbound(false)
+				require.NoError(t, err)
+				attestations := ag.observedXMRPayloadAttestations(obsTx, sha256.Sum256(payload))
+				require.Len(t, attestations, 2)
+				for _, attestation := range attestations {
+					require.NotEqual(t, keys.privKey.PubKey().Bytes(), attestation.PubKey,
+						"import must not create a local observation")
+				}
+				require.True(t, observedXMRPayloadApplied(t, ag, observedTxKey(obsTx, false, false)))
+			}
 		})
 	}
 }
@@ -1601,6 +1715,9 @@ func TestHistoricalXMRCertificateMatchesActiveObservationPhase(t *testing.T) {
 				SpentOutputRefs: []*common.OutputRef{&obs.SpentOutputRefs[0]},
 			}
 			expected := obs
+			if tc.mempool {
+				expected.XmrMinedHeight = 0
+			}
 			if tc.ready && !tc.mempool {
 				expected.BlockHeight = expected.FinaliseHeight
 			}

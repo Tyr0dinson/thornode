@@ -281,6 +281,9 @@ func (b *EnshrinedBifrost) SendQuorumTx(ctx context.Context, tx *common.QuorumTx
 	if err != nil {
 		return nil, err
 	}
+	if payload, err := tx.ObsTx.GetSignablePayloadWithInbound(tx.Inbound); err == nil {
+		warmAttestationSigs(sigWarmJob{payload, append([]*common.Attestation(nil), tx.Attestations...)})
+	}
 	if err := b.quorumTxCache.AddItem(
 		tx,
 		(*common.QuorumTx).GetAttestations,
@@ -298,6 +301,11 @@ func (b *EnshrinedBifrost) SendQuorumNetworkFee(ctx context.Context, nf *common.
 	nf, err = copyQuorum(nf)
 	if err != nil {
 		return nil, err
+	}
+	if nf.NetworkFee != nil {
+		if payload, err := nf.NetworkFee.GetSignablePayload(); err == nil {
+			warmAttestationSigs(sigWarmJob{payload, append([]*common.Attestation(nil), nf.Attestations...)})
+		}
 	}
 	if err := b.networkFeeCache.AddItem(
 		nf,
@@ -317,6 +325,14 @@ func (b *EnshrinedBifrost) SendQuorumSolvency(ctx context.Context, s *common.Quo
 	if err != nil {
 		return nil, err
 	}
+	if s.Solvency != nil {
+		// GetSignablePayload fills in an empty Id; warm from a copy so the
+		// cached item stays exactly as received.
+		solvency := *s.Solvency
+		if payload, err := solvency.GetSignablePayload(); err == nil {
+			warmAttestationSigs(sigWarmJob{payload, append([]*common.Attestation(nil), s.Attestations...)})
+		}
+	}
 	if err := b.solvencyCache.AddItem(
 		s,
 		(*common.QuorumSolvency).GetAttestations,
@@ -334,6 +350,11 @@ func (b *EnshrinedBifrost) SendQuorumErrataTx(ctx context.Context, e *common.Quo
 	e, err = copyQuorum(e)
 	if err != nil {
 		return nil, err
+	}
+	if e.ErrataTx != nil {
+		if payload, err := e.ErrataTx.GetSignablePayload(); err == nil {
+			warmAttestationSigs(sigWarmJob{payload, append([]*common.Attestation(nil), e.Attestations...)})
+		}
 	}
 	b.quorumTxCache.Lock()
 	for i, item := range b.quorumTxCache.items {
@@ -364,6 +385,16 @@ func (b *EnshrinedBifrost) SendQuorumPriceFeedBatch(ctx context.Context, qpfb *c
 	if err != nil {
 		return nil, err
 	}
+	jobs := make([]sigWarmJob, 0, len(qpfb.QuorumPriceFeeds))
+	for _, qpf := range qpfb.QuorumPriceFeeds {
+		if qpf == nil || qpf.PriceFeed == nil {
+			continue
+		}
+		if payload, err := qpf.PriceFeed.GetSignablePayload(); err == nil {
+			jobs = append(jobs, sigWarmJob{payload, append([]*common.Attestation(nil), qpf.Attestations...)})
+		}
+	}
+	warmAttestationSigs(jobs...)
 	// no need to check for existing attestations or merging, update the
 	// cache immediately
 	b.priceFeedCache.Lock()

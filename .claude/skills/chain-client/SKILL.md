@@ -1,11 +1,20 @@
 ---
 name: chain-client
 description: Build, modify, or verify bifrost chain clients for THORChain. Use this skill whenever the user mentions adding a new blockchain, modifying an existing chain client, reviewing chain client code, writing chain client tests, implementing the ChainClient interface, working in bifrost/pkg/chainclients/, debugging stuck outbounds, fixing double spends, investigating solvency issues, setting up mocknet for a chain, or working with block scanning, transaction signing/broadcasting, solvency reporting, instant observations, or EVM token handling. Also trigger when the user asks about chain integration patterns, bifrost architecture, or historical chain client bugs.
+allowed-tools: Read, Grep, Glob, Bash, Edit, Write
 ---
 
 # Bifrost Chain Client Skill
 
 This skill guides you through building, modifying, or verifying chain clients in the THORChain bifrost. Chain clients are the bridge between external blockchains and THORChain — they observe inbound transactions, sign outbound transactions, and report solvency.
+
+## Related Skills
+
+| Skill             | When to Use                                                                                                                                  |
+| ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tc-debug`        | A live tx, address, or vault is stuck; its `references/tx-pipeline.md` maps observer -> attestation quorum -> thornode -> signer by function |
+| `mocknet-debug`   | For testing chain clients locally                                                                                                            |
+| `simulation-test` | For end-to-end chain client testing                                                                                                          |
 
 ## Decision Tree
 

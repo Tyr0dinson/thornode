@@ -3,10 +3,12 @@ package thorchain
 import (
 	"encoding/base32"
 	"strings"
+	"time"
 
 	wasmkeeper "github.com/CosmWasm/wasmd/x/wasm/keeper"
 	wasmtypes "github.com/CosmWasm/wasmd/x/wasm/types"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/common/telemetry"
 	"gitlab.com/thorchain/thornode/v3/constants"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
 
@@ -25,6 +27,7 @@ type WasmMgr struct {
 	wasmKeeper  wasmkeeper.Keeper
 	eventMgr    EventManager
 	permissions wasmpermissions.WasmPermissions
+	tracer      *Tracer
 }
 
 // newWasmMgr create a new instance of Slasher
@@ -33,12 +36,14 @@ func newWasmMgr(
 	wasmKeeper wasmkeeper.Keeper,
 	permissions wasmpermissions.WasmPermissions,
 	eventMgr EventManager,
+	tracer *Tracer,
 ) (*WasmMgr, error) {
 	return &WasmMgr{
 		keeper:      keeper,
 		wasmKeeper:  wasmKeeper,
 		permissions: permissions,
 		eventMgr:    eventMgr,
+		tracer:      tracer,
 	}, nil
 }
 
@@ -96,14 +101,22 @@ func (m WasmMgr) InstantiateContract(
 		return nil, nil, err
 	}
 
-	return m.permissionedKeeper().Instantiate(
+	return m.traceInstantiation(
 		ctx,
+		telemetry.ContractInstantiate,
 		codeID,
-		creator,
-		admin,
 		initMsg,
-		label,
-		deposit,
+		func() (sdk.AccAddress, []byte, error) {
+			return m.permissionedKeeper().Instantiate(
+				ctx,
+				codeID,
+				creator,
+				admin,
+				initMsg,
+				label,
+				deposit,
+			)
+		},
 	)
 }
 
@@ -132,16 +145,24 @@ func (m WasmMgr) InstantiateContract2(
 		return nil, nil, err
 	}
 
-	return m.permissionedKeeper().Instantiate2(
+	return m.traceInstantiation(
 		ctx,
+		telemetry.ContractInstantiate2,
 		codeID,
-		creator,
-		admin,
 		initMsg,
-		label,
-		deposit,
-		salt,
-		fixMsg,
+		func() (sdk.AccAddress, []byte, error) {
+			return m.permissionedKeeper().Instantiate2(
+				ctx,
+				codeID,
+				creator,
+				admin,
+				initMsg,
+				label,
+				deposit,
+				salt,
+				fixMsg,
+			)
+		},
 	)
 }
 
@@ -167,7 +188,6 @@ func (m WasmMgr) ExecuteContract(
 	if err != nil {
 		return nil, err
 	}
-
 	codeInfo, err := m.getCodeInfo(ctx, contractInfo.CodeID)
 	if err != nil {
 		return nil, err
@@ -181,11 +201,20 @@ func (m WasmMgr) ExecuteContract(
 		return nil, err
 	}
 
-	return m.permissionedKeeper().Execute(
+	return m.traceExecution(
 		ctx,
+		telemetry.ContractExecute,
 		contractAddress,
-		caller,
-		msg, coins,
+		contractInfo.CodeID,
+		msg,
+		func() ([]byte, error) {
+			return m.permissionedKeeper().Execute(
+				ctx,
+				contractAddress,
+				caller,
+				msg, coins,
+			)
+		},
 	)
 }
 
@@ -204,7 +233,7 @@ func (m WasmMgr) MigrateContract(
 		return nil, err
 	}
 
-	err = m.checkIsContractAdmin(contractInfo, caller)
+	err = m.requireAdmin(contractInfo, caller)
 	if err != nil {
 		return nil, err
 	}
@@ -223,12 +252,21 @@ func (m WasmMgr) MigrateContract(
 		return nil, err
 	}
 
-	data, err := m.permissionedKeeper().Migrate(
+	data, err := m.traceExecution(
 		ctx,
+		telemetry.ContractMigrate,
 		contractAddress,
-		caller,
 		newCodeID,
 		msg,
+		func() ([]byte, error) {
+			return m.permissionedKeeper().Migrate(
+				ctx,
+				contractAddress,
+				caller,
+				newCodeID,
+				msg,
+			)
+		},
 	)
 	if err != nil {
 		return nil, err
@@ -256,13 +294,108 @@ func (m WasmMgr) SudoContract(
 	if err != nil {
 		return nil, err
 	}
-
-	err = m.checkIsContractAdmin(contractInfo, caller)
+	err = m.requireAdmin(contractInfo, caller)
 	if err != nil {
 		return nil, err
 	}
 
-	return m.permissionedKeeper().Sudo(ctx, contractAddress, msg)
+	return m.traceExecution(
+		ctx,
+		telemetry.ContractSudo,
+		contractAddress,
+		contractInfo.CodeID,
+		msg,
+		func() ([]byte, error) {
+			return m.permissionedKeeper().Sudo(ctx, contractAddress, msg)
+		},
+	)
+}
+
+func (m WasmMgr) traceInstantiation(
+	ctx cosmos.Context,
+	operation string,
+	codeID uint64,
+	payload []byte,
+	run func() (sdk.AccAddress, []byte, error),
+) (contractAddress sdk.AccAddress, data []byte, err error) {
+	if !m.tracer.ContractTracingEnabled() {
+		return run()
+	}
+
+	start := time.Now()
+	outcome := telemetry.OutcomePanic
+	defer func() {
+		m.recordExecution(
+			ctx,
+			operation,
+			contractAddress,
+			codeID,
+			unassignedContractLabel,
+			payload,
+			outcome,
+			time.Since(start),
+		)
+	}()
+	contractAddress, data, err = run()
+	outcome = telemetry.Outcome(err)
+	return contractAddress, data, err
+}
+
+func (m WasmMgr) traceExecution(
+	ctx cosmos.Context,
+	operation string,
+	contractAddress sdk.AccAddress,
+	codeID uint64,
+	payload []byte,
+	run func() ([]byte, error),
+) (data []byte, err error) {
+	if !m.tracer.ContractTracingEnabled() {
+		return run()
+	}
+
+	start := time.Now()
+	outcome := telemetry.OutcomePanic
+	defer func() {
+		m.recordExecution(
+			ctx,
+			operation,
+			contractAddress,
+			codeID,
+			"", // RecordContract owns the empty-address fallback.
+			payload,
+			outcome,
+			time.Since(start),
+		)
+	}()
+	data, err = run()
+	outcome = telemetry.Outcome(err)
+	return data, err
+}
+
+func (m WasmMgr) recordExecution(
+	ctx cosmos.Context,
+	operation string,
+	contractAddress sdk.AccAddress,
+	codeID uint64,
+	fallbackContract string,
+	payload []byte,
+	outcome string,
+	duration time.Duration,
+) {
+	defer discardTelemetryPanic()
+	contractLabel := contractAddress.String()
+	if contractLabel == "" {
+		contractLabel = fallbackContract
+	}
+	m.tracer.RecordContract(
+		ctx,
+		operation,
+		contractLabel,
+		codeID,
+		payload,
+		outcome,
+		duration,
+	)
 }
 
 func (m WasmMgr) UpdateAdmin(
@@ -278,7 +411,7 @@ func (m WasmMgr) UpdateAdmin(
 		return nil, err
 	}
 
-	err = m.checkIsContractAdmin(contractInfo, sender)
+	err = m.requireAdmin(contractInfo, sender)
 	if err != nil {
 		return nil, err
 	}
@@ -299,7 +432,7 @@ func (m WasmMgr) ClearAdmin(
 		return nil, err
 	}
 
-	err = m.checkIsContractAdmin(contractInfo, sender)
+	err = m.requireAdmin(contractInfo, sender)
 	if err != nil {
 		return nil, err
 	}
@@ -407,7 +540,7 @@ func (m WasmMgr) checkInstantiateAuthorization(ctx cosmos.Context, actor cosmos.
 	return m.checkCanInstantiate(ctx, actor)
 }
 
-func (m WasmMgr) checkIsContractAdmin(contractInfo *wasmtypes.ContractInfo, actor cosmos.AccAddress) error {
+func (m WasmMgr) requireAdmin(contractInfo *wasmtypes.ContractInfo, actor cosmos.AccAddress) error {
 	// Migration authorization is handled here, not by the wasmkeeper's GovAuthorizationPolicy
 	// (which always returns true for CanModifyContract). We use a direct equality check to
 	// ensure only the contract admin can migrate or sudo.

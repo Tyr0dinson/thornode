@@ -64,6 +64,7 @@ func TestTssKeysignFailure(t *testing.T) {
 	cfg.Thresholds.TssKeysignFailure.WindowBlocks = 10
 	cfg.Thresholds.TssKeysignFailure.Sigma = 2.0
 	cfg.Thresholds.TssKeysignFailure.MinSnapshots = 3
+	cfg.Thresholds.TssKeysignFailure.MinFailures = 0
 	cfg.Console = true
 	config.Set(cfg)
 
@@ -146,6 +147,7 @@ func TestTssKeysignFailureNoImmediateTerminalAlert(t *testing.T) {
 	cfg.Thresholds.TssKeysignFailure.WindowBlocks = 10
 	cfg.Thresholds.TssKeysignFailure.Sigma = 2.0
 	cfg.Thresholds.TssKeysignFailure.MinSnapshots = 3
+	cfg.Thresholds.TssKeysignFailure.MinFailures = 0
 	cfg.Console = true
 	config.Set(cfg)
 
@@ -184,6 +186,7 @@ func TestTssKeysignFailureReplayIsIdempotent(t *testing.T) {
 	cfg.Thresholds.TssKeysignFailure.WindowBlocks = 10
 	cfg.Thresholds.TssKeysignFailure.Sigma = 2.0
 	cfg.Thresholds.TssKeysignFailure.MinSnapshots = 3
+	cfg.Thresholds.TssKeysignFailure.MinFailures = 0
 	cfg.Console = true
 	config.Set(cfg)
 
@@ -209,6 +212,47 @@ func TestTssKeysignFailureReplayIsIdempotent(t *testing.T) {
 	require.NoError(t, util.Load("tss_keysign_failure", &history))
 	require.Len(t, history.VaultFailures[vault], 1, "replayed failure must be recorded once")
 	require.Equal(t, 1, strings.Count(logBuf.String(), "sending notifications"), "replayed failure must alert once")
+}
+
+// TestTssKeysignFailureMinFailures covers the absolute floor: a near-zero
+// baseline must not alert on a couple of failures, only once the window holds
+// at least MinFailures, and then only once.
+func TestTssKeysignFailureMinFailures(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "tss_test_min_failures")
+	require.NoError(t, err)
+	defer os.RemoveAll(tmpDir)
+
+	cfg := config.Get()
+	cfg.StoragePath = tmpDir
+	cfg.Thresholds.TssKeysignFailure.WindowBlocks = 100
+	cfg.Thresholds.TssKeysignFailure.Sigma = 2.0
+	cfg.Thresholds.TssKeysignFailure.MinSnapshots = 3
+	cfg.Thresholds.TssKeysignFailure.MinFailures = 3
+	cfg.Console = true
+	config.Set(cfg)
+
+	var logBuf bytes.Buffer
+	log.Logger = zerolog.New(&logBuf).With().Timestamp().Logger()
+
+	vault := "tthorpub1vaultvaultvaultvaultvaultvaultvaultAAAA"
+	blamed := "tthorpub1blameblameblameblameblameblameblameBBBB"
+
+	// zero baseline: the statistical threshold alone would alert on the first
+	// failure; network history is left below MinSnapshots
+	history := TssKeysignFailureHistory{
+		VaultPastCounts: map[string][]int{vault: {0, 0, 0}},
+	}
+	require.NoError(t, util.Store("tss_keysign_failure", history))
+
+	TssKeysignFailure(newKeysignFailureBlock(500, keysignFailureEvent(vault, tssMessages.KEYSIGN5, blamed)))
+	TssKeysignFailure(newKeysignFailureBlock(501, keysignFailureEvent(vault, tssMessages.KEYSIGN5, blamed)))
+	require.NotContains(t, logBuf.String(), "sending notifications", "failures below the floor must not alert")
+
+	TssKeysignFailure(newKeysignFailureBlock(502, keysignFailureEvent(vault, tssMessages.KEYSIGN5, blamed)))
+	require.Equal(t, 1, strings.Count(logBuf.String(), "sending notifications"), "reaching the floor must alert")
+
+	TssKeysignFailure(newKeysignFailureBlock(503, keysignFailureEvent(vault, tssMessages.KEYSIGN5, blamed)))
+	require.Equal(t, 1, strings.Count(logBuf.String(), "sending notifications"), "alert is edge triggered")
 }
 
 func TestChurnOutLabels(t *testing.T) {

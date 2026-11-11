@@ -112,6 +112,8 @@ Class | Method | HTTP request | Description
 *NetworkApi* | [**UpgradeVotes**](docs/NetworkApi.md#upgradevotes) | **Get** /thorchain/upgrade_votes/{name} | 
 *NetworkApi* | [**Version**](docs/NetworkApi.md#version) | **Get** /thorchain/version | 
 *NodesApi* | [**Node**](docs/NodesApi.md#node) | **Get** /thorchain/node/{address} | 
+*NodesApi* | [**NodeBlame**](docs/NodesApi.md#nodeblame) | **Get** /thorchain/blame/node/{address} | 
+*NodesApi* | [**NodeBlames**](docs/NodesApi.md#nodeblames) | **Get** /thorchain/blame/nodes | 
 *NodesApi* | [**Nodes**](docs/NodesApi.md#nodes) | **Get** /thorchain/nodes | 
 *OracleApi* | [**OraclePrice**](docs/OracleApi.md#oracleprice) | **Get** /thorchain/oracle/price/{symbol} | 
 *OracleApi* | [**OraclePrices**](docs/OracleApi.md#oracleprices) | **Get** /thorchain/oracle/prices | 
@@ -237,6 +239,7 @@ Class | Method | HTTP request | Description
  - [MsgSwap](docs/MsgSwap.md)
  - [NetworkResponse](docs/NetworkResponse.md)
  - [Node](docs/Node.md)
+ - [NodeBlameResponse](docs/NodeBlameResponse.md)
  - [NodeBondProvider](docs/NodeBondProvider.md)
  - [NodeBondProviders](docs/NodeBondProviders.md)
  - [NodeJail](docs/NodeJail.md)

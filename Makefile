@@ -11,7 +11,7 @@ endif
 # Config
 ########################################################################################
 
-.PHONY: build test test-xmr-frost-e2e tools export healthcheck run-mocknet build-mocknet stop-mocknet halt-mocknet ps-mocknet reset-mocknet logs-mocknet openapi test-performance test-performance-quick test-performance-all test-performance-analyze test-performance-profile-cpu test-performance-profile-mem test-performance-trace test-performance-clean test-xmr-e2e perf-mix perf-bench perf-ab perf-profile perf-guard perf-times
+.PHONY: build test test-xmr-frost-e2e tools export healthcheck run-mocknet build-mocknet stop-mocknet halt-mocknet ps-mocknet reset-mocknet logs-mocknet openapi test-performance test-performance-quick test-performance-all test-performance-analyze test-performance-profile-cpu test-performance-profile-mem test-performance-trace test-performance-clean test-xmr-e2e perf-mix perf-bench perf-ab perf-profile perf-guard perf-times ci-health test-ci-health
 
 # mocknet docker compose files and overrides for macOS
 DOCKER_COMPOSE_FILES ?= -f build/docker/docker-compose.yml
@@ -202,7 +202,7 @@ proto-check-breaking:
 
 docs-init:
 	@cargo install mdbook --version 0.4.52
-	@cargo install mdbook-admonish --version 1.18.0
+	@cargo install mdbook-admonish --version 1.20.0
 	@cargo install mdbook-katex --version 0.9.4
 	@cargo install mdbook-embed --version 0.2.0
 	@cargo install mdbook-mermaid --version 0.14.0
@@ -246,8 +246,12 @@ lint:
 	@./scripts/lint.sh
 	@./scripts/trunk check --no-fix --show-existing --upstream origin/develop
 
+.PHONY: test-lint-tokens
+test-lint-tokens:
+	@./scripts/tests/test-lint-tokens.bash
+
 # The three checks are independent; run them at once, each one's output kept together.
-lint-ci:
+lint-ci: test-lint-tokens
 	@$(MAKE) --no-print-directory -j3 --output-sync=target lint-ci-scripts lint-ci-golangci lint-ci-trunk
 
 lint-ci-scripts:
@@ -258,6 +262,32 @@ lint-ci-golangci:
 
 lint-ci-trunk:
 	@./scripts/trunk-ci.sh
+
+# Install a pre-push hook that runs CI's lint (and, opt-in, generate) checks;
+# see scripts/git-hooks/pre-push. It goes in the clone's shared hooks directory,
+# so every worktree gets it, and it runs the checked-out copy of the script, so
+# it follows the branch. Refuses to replace a different pre-push hook.
+define PRE_PUSH_HOOK
+#!/bin/sh
+# Installed by `make install-git-hooks`.
+hook="$$(git rev-parse --show-toplevel)/scripts/git-hooks/pre-push"
+if [ -x "$$hook" ]; then exec "$$hook" "$$@"; fi
+endef
+
+install-git-hooks: export PRE_PUSH_HOOK := $(PRE_PUSH_HOOK)
+install-git-hooks:
+	@dest="$$(git rev-parse --path-format=absolute --git-common-dir)/hooks/pre-push"; \
+	if [ -e "$$dest" ] && [ "$$(cat "$$dest")" != "$$PRE_PUSH_HOOK" ]; then \
+		echo "$$dest is a different hook; not replacing it. Remove it or call scripts/git-hooks/pre-push from it."; \
+		exit 1; \
+	fi; \
+	mkdir -p "$$(dirname "$$dest")"; \
+	printf '%s\n' "$$PRE_PUSH_HOOK" >"$$dest"; \
+	chmod +x "$$dest"; \
+	echo "Installed $$dest"; \
+	if hooks_path=$$(git config core.hooksPath); then \
+		echo "Warning: core.hooksPath is $$hooks_path, so git does not run hooks from $$(dirname "$$dest")."; \
+	fi
 
 # ------------------------------ Unit Tests ------------------------------
 
@@ -333,6 +363,21 @@ test-quality-simulation:
 
 test-quality-mainnet:
 	@python3 scripts/test-quality-run.py --tags mainnet --fresh --run '^TestNewClientRejectsNonMainnetDaemonOnMainnet$$' --require-test TestNewClientRejectsNonMainnetDaemonOnMainnet --report-dir test-quality-reports/root-mainnet-monero ./bifrost/pkg/chainclients/monero
+
+# Tests that need a real L1 daemon. Each daemon must be fresh and used by no
+# simulation, because the tests spend from the mocknet master address. Set
+# ZEC_DAEMON to an official zebrad binary, and DOGE_SIM_INTEGRATION_RPC_URL and
+# ZEC_SIM_INTEGRATION_RPC_URL to the mocknet dogecoind and Zebra RPC endpoints.
+# A skipped test fails the run, so an unset variable cannot pass unnoticed.
+.PHONY: test-utxo-daemons
+test-utxo-daemons:
+	@python3 scripts/test-quality-run.py --tags mocknet --fresh --run '^TestV[56]Zebra$$' \
+		--require-test TestV5Zebra --require-test TestV6Zebra --max-skips 0 \
+		--report-dir test-quality-reports/utxo-daemons-zebra ./bifrost/pkg/chainclients/utxo/zcash
+	@python3 scripts/test-quality-run.py --module test/simulation --tags mocknet --fresh \
+		--run '^(TestDogeStalledBroadcastIsNotDuplicated|TestZecIsolatedFunding)$$' \
+		--require-test TestDogeStalledBroadcastIsNotDuplicated --require-test TestZecIsolatedFunding --max-skips 0 \
+		--report-dir test-quality-reports/utxo-daemons-simulation ./pkg/utxo
 
 # ------------------------------ Performance Tests ------------------------------
 
@@ -426,6 +471,16 @@ perf-guard:
 perf-times:
 	@./scripts/perf/test-times.sh $(LABEL)
 
+# ------------------------------ CI Health ------------------------------
+# Why MR pipeline jobs fail; see tools/ci-health/README.md.
+# Pass options with CI_HEALTH_ARGS, e.g. CI_HEALTH_ARGS="--since 2026-01-01".
+
+ci-health:
+	@python3 tools/ci-health/run.py all $(CI_HEALTH_ARGS)
+
+test-ci-health:
+	@python3 -m unittest discover -s tools/ci-health -v
+
 # ------------------------------ Regression Tests ------------------------------
 
 REGTEST_BIN_DIR ?= /regtest
@@ -506,47 +561,49 @@ test-simulation-cluster: test-mocknet-startup test-xmr-readiness-config prepare-
 		--network host -w /app \
 		thornode-simtest sh -c 'make _test-simulation'
 
-# Reproduce the XMR monovault keygen mass-jailing (issue: keygen timing skew
-# jails members that participated). One bifrost (pig) gets a test-only
-# shortened FROST round-3 wait via XMR_KEYGEN_JAIL_ROUND3_TIMEOUT_MS, and
-# netem adds symmetric latency on every bifrost's p2p port so transcript
-# verifications lag round payloads by one hop. The victim then abandons a DKG
-# its peers can finish, and the xmr-keygen-jail actor asserts the resulting
-# split: new XMR vault created AND a member jailed for "failed to vote keygen
-# in time". Tune the two knobs if the split does not reproduce: the round-3
-# timeout must sit between one and two netem delays after round-3 start.
-# The delay must be small enough that the regular Asgard go-tss keygen (n-of-n
-# over the same p2p port, much chattier than FROST) still succeeds, or the new
-# XMR monovault is never activated ("waiting for regular vault rotation before
-# activating xmr monovault") and the repro stalls. 500ms is mainnet-realistic;
-# the round-3 timeout must sit between one and two netem delays.
-XMR_KEYGEN_JAIL_ROUND3_TIMEOUT_MS ?= 750
-XMR_KEYGEN_JAIL_NETEM_DELAY_MS ?= 500
+# Force pig to time out after sending its round-3 payload, then require
+# same-ceremony quorum adoption with a locally finalized share and four votes.
+# Bootstrap must finish before netem so the P2P mesh can form. The 100ms wait
+# is shorter than one 500ms network delay; transcript confirmation now has its
+# own deadline, so the old two-hops-in-one-deadline assumption no longer holds.
+# Keep netem modest enough for the regular Asgard keygen to finish too.
+XMR_KEYGEN_RECOVERY_ROUND3_TIMEOUT_MS ?= 100
+XMR_KEYGEN_RECOVERY_NETEM_DELAY_MS ?= 500
 
-test-simulation-keygen-jail: export XMR_KEYGEN_JAIL_ROUND3_TIMEOUT_MS := $(XMR_KEYGEN_JAIL_ROUND3_TIMEOUT_MS)
-test-simulation-keygen-jail: build-test-simulation build-mocknet-cluster reset-mocknet-cluster
-	@docker stop docker-midgard-1 docker-midgard-db-1 >/dev/null 2>&1 || true
+.PHONY: test-simulation-xmr-keygen-recovery
+test-simulation-xmr-keygen-recovery: export XMR_KEYGEN_RECOVERY_ROUND3_TIMEOUT_MS := $(XMR_KEYGEN_RECOVERY_ROUND3_TIMEOUT_MS)
+test-simulation-xmr-keygen-recovery: test-mocknet-startup test-xmr-readiness-config prepare-mocknet-cluster
+	@docker compose $(DOCKER_COMPOSE_FILES) stop midgard midgard-db >/dev/null 2>&1 || true
 	@echo "running seed+bootstrap BEFORE latency injection so the bifrost p2p mesh can form"
 	@echo "(netem-from-start makes the multi-round-trip libp2p handshake exceed the dial"
 	@echo " timeout, so no p2p connection ever forms and every churn keygen times out)"
 	@STAGES=seed,bootstrap docker run --rm ${DOCKER_TTY_ARGS} \
-		-e PARALLELISM=$(PARALLELISM) -e STAGES \
+		-e PARALLELISM=$(PARALLELISM) -e STAGES -e XMR_POST_CHURN_REQUIRED=1 \
+		-e RANDOM_SEED_HEX -e SIMULATION_PPROF_ADDRESS \
 		-e XMR_SIM_HELPER_ENDPOINT -e XMR_SIM_HELPER_AUTH_BEARER \
 		-e XMR_FROST_ENDPOINT -e XMR_FROST_AUTH_BEARER \
 		--network host -w /app \
 		thornode-simtest sh -c 'make _test-simulation'
-	@echo "applying netem delay $(XMR_KEYGEN_JAIL_NETEM_DELAY_MS)ms to bifrost p2p (port 5040)"
-	@for c in docker-bifrost-1 docker-bifrost-cat-1 docker-bifrost-fox-1 docker-bifrost-pig-1 docker-bifrost-frog-1; do \
-		docker run --rm --net container:$$c --cap-add NET_ADMIN alpine:3.20 sh -c "\
+	@echo "applying netem delay $(XMR_KEYGEN_RECOVERY_NETEM_DELAY_MS)ms to bifrost p2p (port 5040)"
+	@for service in bifrost bifrost-cat bifrost-fox bifrost-pig bifrost-frog; do \
+		c=$$(docker compose $(DOCKER_COMPOSE_FILES) ps -q $$service); \
+		[ -n "$$c" ] || exit 1; \
+		docker run --rm --net container:"$$c" --cap-add NET_ADMIN alpine:3.20 sh -c "\
 			apk add -q iproute2 && \
 			tc qdisc replace dev eth0 root handle 1: prio bands 4 priomap 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 && \
-			tc qdisc add dev eth0 parent 1:4 handle 40: netem delay $(XMR_KEYGEN_JAIL_NETEM_DELAY_MS)ms && \
+			tc qdisc add dev eth0 parent 1:4 handle 40: netem delay $(XMR_KEYGEN_RECOVERY_NETEM_DELAY_MS)ms && \
 			tc filter add dev eth0 parent 1: protocol ip u32 match ip dport 5040 0xffff flowid 1:4 && \
 			tc filter add dev eth0 parent 1: protocol ip u32 match ip sport 5040 0xffff flowid 1:4" \
 			|| exit 1; \
 	done
-	@STAGES=xmr-keygen-jail docker run --rm ${DOCKER_TTY_ARGS} \
-		-e PARALLELISM=$(PARALLELISM) -e STAGES \
+	@log_dir=$$(mktemp -d); \
+	touch "$$log_dir/pig.log"; \
+	docker compose $(DOCKER_COMPOSE_FILES) logs --no-color --no-log-prefix --follow bifrost-pig > "$$log_dir/pig.log" 2>&1 & log_pid=$$!; \
+	trap 'kill "$$log_pid" 2>/dev/null || true; wait "$$log_pid" 2>/dev/null || true; rm -f "$$log_dir/pig.log"; rmdir "$$log_dir"' EXIT; \
+	STAGES=xmr-keygen-recovery docker run --rm ${DOCKER_TTY_ARGS} \
+		-v "$$log_dir:/keygen-recovery:ro" -e XMR_KEYGEN_RECOVERY_LOG=/keygen-recovery/pig.log \
+		-e PARALLELISM=$(PARALLELISM) -e STAGES -e XMR_POST_CHURN_REQUIRED=1 \
+		-e RANDOM_SEED_HEX -e SIMULATION_PPROF_ADDRESS \
 		-e XMR_SIM_HELPER_ENDPOINT -e XMR_SIM_HELPER_AUTH_BEARER \
 		-e XMR_FROST_ENDPOINT -e XMR_FROST_AUTH_BEARER \
 		--network host -w /app \
