@@ -566,3 +566,40 @@ func (HandlerUnBondSuite) TestZeroStoredOperatorBondWithAccruedFeeHitsRetiringVa
 	c.Assert(err, IsNil)
 	c.Check(na.Bond.Equal(standbyNodeAccount.Bond), Equals, true)
 }
+
+type TestUnBondFailBondProvidersKeeper struct {
+	keeper.Keeper
+}
+
+func (k *TestUnBondFailBondProvidersKeeper) GetBondProviders(_ cosmos.Context, _ cosmos.AccAddress) (BondProviders, error) {
+	return BondProviders{}, errKaboom
+}
+
+func (HandlerUnBondSuite) TestZeroBalanceProviderRemovalCheckErrors(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	txIn := GetRandomTx()
+	txIn.Coins = common.NewCoins(common.NewCoin(common.RuneAsset(), cosmos.ZeroUint()))
+
+	// fail to get bond providers
+	na := GetRandomValidatorNode(NodeStandby)
+	c.Assert(k.SetNodeAccount(ctx, na), IsNil)
+	handler := NewUnBondHandler(NewDummyMgrWithKeeper(&TestUnBondFailBondProvidersKeeper{Keeper: k}))
+	msg := NewMsgUnBond(txIn, na.NodeAddress, cosmos.ZeroUint(), na.BondAddress, GetRandomBech32Addr(), na.NodeAddress)
+	err := handler.handle(ctx, *msg)
+	c.Assert(err, NotNil)
+	c.Check(err.Error(), Matches, "(?s).*fail to get bond providers.*")
+
+	// passiveBackfill fails to parse a non-bech32 operator bond address when
+	// no providers are stored yet
+	na = GetRandomValidatorNode(NodeStandby)
+	na.BondAddress = GetRandomETHAddress()
+	c.Assert(k.SetNodeAccount(ctx, na), IsNil)
+	handler = NewUnBondHandler(NewDummyMgrWithKeeper(k))
+	msg = NewMsgUnBond(txIn, na.NodeAddress, cosmos.ZeroUint(), na.BondAddress, GetRandomBech32Addr(), na.NodeAddress)
+	err = handler.handle(ctx, *msg)
+	c.Assert(err, NotNil)
+	c.Check(err.Error(), Matches, "(?s).*fail to parse bond address.*")
+	stored, err := k.GetNodeAccount(ctx, na.NodeAddress)
+	c.Assert(err, IsNil)
+	c.Check(stored.Bond.Equal(na.Bond), Equals, true)
+}
