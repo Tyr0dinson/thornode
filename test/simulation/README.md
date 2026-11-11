@@ -18,7 +18,7 @@ scripts/test-simulation-unit.sh /tmp/simulation-unit.jsonl
 ```
 
 The script runs every package in `test/simulation` with the `mocknet` build tag,
-Go 1.26.10, limited build parallelism, and the shared test-quality build lock.
+Go 1.26.11, limited build parallelism, and the shared test-quality build lock.
 The JSON Lines report contains per-test results for CI or local inspection. It
 rejects unexpected skips and clears integration RPC settings, so it never
 connects to a live chain. `TestDogeStalledBroadcastIsNotDuplicated` and
@@ -28,8 +28,8 @@ fresh mocknet daemons (see `make test-utxo-daemons`). To check test order isolat
 `test/simulation` with the same build lock:
 
 ```bash
-flock -w 1200 /tmp/thornode-test-quality-build.lock env GOMAXPROCS=4 GOTOOLCHAIN=go1.26.10 go test -p 2 -tags mocknet -count=5 -shuffle=on ./pkg/types ./pkg/dag ./pkg/solana
-flock -w 1200 /tmp/thornode-test-quality-build.lock env GOMAXPROCS=4 GOTOOLCHAIN=go1.26.10 go test -p 2 -tags mocknet -count=5 -run '^Test$' -v ./pkg/types -check.f NewUser
+flock -w 1200 /tmp/thornode-test-quality-build.lock env GOMAXPROCS=4 GOTOOLCHAIN=go1.26.11 go test -p 2 -tags mocknet -count=5 -shuffle=on ./pkg/types ./pkg/dag ./pkg/solana
+flock -w 1200 /tmp/thornode-test-quality-build.lock env GOMAXPROCS=4 GOTOOLCHAIN=go1.26.11 go test -p 2 -tags mocknet -count=5 -run '^Test$' -v ./pkg/types -check.f NewUser
 ```
 
 These commands use only local fixtures. The second command exercises the
