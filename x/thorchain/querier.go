@@ -2764,9 +2764,14 @@ func checkPending(ctx cosmos.Context, keeper keeper.Keeper, voter ObservedTxVote
 	}
 
 	pending = keeper.HasSwapQueueItem(ctx, voter.TxID, 0) || keeper.HasAdvSwapQueueItem(ctx, voter.TxID, 0)
+	// An inbound parked by the solvency gate is finalised but not yet executed, so
+	// it is pending too, rather than looking like a swap that finished with no output.
+	parked := !pending && keeper.HasSolvencyGatedInbound(ctx, solvencyGatedInboundKey(ctx, keeper, voter))
+	pending = pending || parked
 
-	// Only look for streaming information when a swap is pending.
-	if pending {
+	// Only look for streaming information when a swap is pending in a queue;
+	// nothing is stored for a parked inbound until it is released.
+	if pending && !parked {
 		var err error
 		streamingSwap, err = keeper.GetStreamingSwap(ctx, voter.TxID)
 		if err != nil {

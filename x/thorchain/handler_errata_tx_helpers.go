@@ -177,16 +177,7 @@ func processErrataTx(ctx cosmos.Context, mgr Manager, er *common.ErrataTx) (comm
 	// vault but never executed: no pool depth or liquidity units were added for it,
 	// so there is nothing to unwind beyond the vault debit above. Unpark it so it
 	// can never execute. It is parked under its vault's primary pubkey.
-	parkedPubKey := observedVoter.Tx.ObservedPubKey
-	if parkedVault, vaultErr := k.GetVault(ctx, parkedPubKey); vaultErr == nil {
-		parkedPubKey = parkedVault.PubKey
-	}
-	parked := keeper.SolvencyGatedInbound{
-		Chain:  observedVoter.Tx.Tx.Chain,
-		PubKey: parkedPubKey,
-		Height: observedVoter.Tx.BlockHeight,
-		TxID:   observedVoter.Tx.Tx.ID,
-	}
+	parked := solvencyGatedInboundKey(ctx, k, observedVoter)
 	if k.HasSolvencyGatedInbound(ctx, parked) {
 		k.DeleteSolvencyGatedInbound(ctx, parked)
 		ctx.Logger().Info("errata reverted a solvency gated inbound before it executed", "tx_id", er.Id)

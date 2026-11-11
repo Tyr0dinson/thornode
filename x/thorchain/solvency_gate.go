@@ -100,6 +100,24 @@ func reserveSolvencyGatedReference(ctx cosmos.Context, mgr Manager, voter Observ
 	trackReferenceMemoUsage(ctx, mgr, asset, voter.Tx.Tx.Memo, voter.Tx.Tx.ID)
 }
 
+// solvencyGatedInboundKey returns the key the voter's consensus inbound is parked
+// under, if it is parked. Inbounds are parked under their vault's primary pubkey,
+// which differs from the observed pubkey on chains observed under an EdDSA or
+// FROST key, so the observed pubkey is resolved to its vault, falling back to the
+// observed pubkey when no vault is found. ParkedAt is not part of the key.
+func solvencyGatedInboundKey(ctx cosmos.Context, k keeper.Keeper, voter ObservedTxVoter) types.SolvencyGatedInbound {
+	pubKey := voter.Tx.ObservedPubKey
+	if vault, err := k.GetVault(ctx, pubKey); err == nil {
+		pubKey = vault.PubKey
+	}
+	return types.SolvencyGatedInbound{
+		Chain:  voter.Tx.Tx.Chain,
+		PubKey: pubKey,
+		Height: voter.Tx.BlockHeight,
+		TxID:   voter.Tx.Tx.ID,
+	}
+}
+
 // hasSolvencyGatedInbounds reports whether the vault has inbounds parked on any of
 // its chains.
 func hasSolvencyGatedInbounds(ctx cosmos.Context, k keeper.Keeper, vault Vault) bool {

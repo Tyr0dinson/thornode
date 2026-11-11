@@ -836,3 +836,48 @@ func (s *SolvencyGateSuite) TestUnindexedFlaggedVaultKeepsChainHalted(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(halt, Equals, int64(0))
 }
+
+// A parked swap is finalised but not executed. Until it is released, tx status and
+// tx stages report it pending, not as a swap that finished with no output.
+func (s *SolvencyGateSuite) TestParkedSwapReportsPending(c *C) {
+	f := newSolvencyGateFixture(c, true)
+	tx := f.observe(c, "=:THOR.RUNE:"+GetRandomTHORAddress().String(), 50)
+	c.Assert(f.parked(c), HasLen, 1)
+
+	query := NewQueryServerImpl(f.mgr, nil, cosmos.KeybaseStore{})
+	stages := func() (pending, swapFinalised bool) {
+		status, err := query.TxStatus(f.ctx, &types.QueryTxStatusRequest{TxId: tx.Tx.ID.String()})
+		c.Assert(err, IsNil)
+		resp, err := query.TxStages(f.ctx, &types.QueryTxStagesRequest{TxId: tx.Tx.ID.String()})
+		c.Assert(err, IsNil)
+		c.Assert(status.Stages.SwapStatus.Pending, Equals, resp.SwapStatus.Pending)
+		c.Assert(status.Stages.SwapFinalised.Completed, Equals, resp.SwapFinalised.Completed)
+		c.Assert(resp.InboundFinalised.Completed, Equals, true)
+		return resp.SwapStatus.Pending, resp.SwapFinalised.Completed
+	}
+	pending, swapFinalised := stages()
+	c.Assert(pending, Equals, true)
+	c.Assert(swapFinalised, Equals, false)
+
+	// Released into the swap queue: still pending, now as a queued swap.
+	f.nextBlock()
+	f.reportSolvency(c, 100*common.One, 50)
+	f.nextBlock()
+	f.endBlock(c)
+	c.Assert(f.parked(c), HasLen, 0)
+	c.Assert(f.mgr.Keeper().HasSwapQueueItem(f.ctx, tx.Tx.ID, 0) || f.mgr.Keeper().HasAdvSwapQueueItem(f.ctx, tx.Tx.ID, 0), Equals, true)
+	pending, swapFinalised = stages()
+	c.Assert(pending, Equals, true)
+	c.Assert(swapFinalised, Equals, false)
+
+	// Reverted by errata while parked: nothing left pending.
+	g := newSolvencyGateFixture(c, true)
+	reverted := g.observe(c, "=:THOR.RUNE:"+GetRandomTHORAddress().String(), 50)
+	k := g.mgr.Keeper()
+	voter, err := k.GetObservedTxInVoter(g.ctx, reverted.Tx.ID)
+	c.Assert(err, IsNil)
+	k.DeleteSolvencyGatedInbound(g.ctx, solvencyGatedInboundKey(g.ctx, k, voter))
+	_, isPending, pendingAfter, _ := checkPending(g.ctx, k, voter)
+	c.Assert(pendingAfter, Equals, false)
+	c.Assert(isPending, Equals, false)
+}
