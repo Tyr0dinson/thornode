@@ -373,7 +373,11 @@ func (k KVStoreDummy) GetNodeAgeStart(_ cosmos.Context, _ cosmos.AccAddress) (in
 	return 0, false, kaboom
 }
 func (k KVStoreDummy) ResetNodeAgeStart(_ cosmos.Context, _ cosmos.AccAddress) {}
-func (k KVStoreDummy) SyncNodeAgeStart(_ cosmos.Context, _ NodeAccount)        {}
+func (k KVStoreDummy) GetNodeAgeStartRecord(_ cosmos.Context, _ cosmos.AccAddress) (int64, bool, error) {
+	return 0, false, kaboom
+}
+func (k KVStoreDummy) SetNodeAgeStartRecord(_ cosmos.Context, _ cosmos.AccAddress, _ int64) {}
+func (k KVStoreDummy) SyncNodeAgeStart(_ cosmos.Context, _ NodeAccount)                     {}
 
 func (k KVStoreDummy) GetNodeAccountSlashPoints(_ cosmos.Context, _ cosmos.AccAddress) (int64, error) {
 	return 0, kaboom

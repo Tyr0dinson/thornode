@@ -65,6 +65,30 @@ func ValidateGenesis(data GenesisState) error {
 		}
 	}
 
+	nodes := make(map[string]bool, len(data.NodeAccounts))
+	for _, na := range data.NodeAccounts {
+		nodes[na.NodeAddress.String()] = true
+	}
+	ageStarts := make(map[string]bool, len(data.NodeAgeStarts))
+	for _, record := range data.NodeAgeStarts {
+		addr, err := cosmos.AccAddressFromBech32(record.NodeAddress)
+		if err != nil {
+			return fmt.Errorf("invalid node age start address %q: %w", record.NodeAddress, err)
+		}
+		// -1 records a bond below the minimum
+		if record.Height < -1 {
+			return fmt.Errorf("invalid node age start height %d for %s", record.Height, addr)
+		}
+		if ageStarts[addr.String()] {
+			return fmt.Errorf("duplicate node age start for %s", addr)
+		}
+		// the export carries only the records of the nodes it exports
+		if !nodes[addr.String()] {
+			return fmt.Errorf("node age start for %s, which has no node account", addr)
+		}
+		ageStarts[addr.String()] = true
+	}
+
 	if data.LastSignedHeight < 0 {
 		return errors.New("last signed height cannot be negative")
 	}
@@ -166,6 +190,7 @@ func DefaultGenesisState() GenesisState {
 		DynamicFeeAccumulators:  make([]types.DynamicFeeAccumulator, 0),
 		StableReserveCredits:    make([]StableReserveCredit, 0),
 		SolVaultNonces:          make([]types.SolVaultNonce, 0),
+		NodeAgeStarts:           make([]NodeAgeStart, 0),
 	}
 }
 
@@ -202,6 +227,19 @@ func initGenesis(ctx cosmos.Context, keeper keeper.Keeper, data GenesisState) []
 			// we should panic
 			panic(err)
 		}
+	}
+
+	// Restore the recorded churn-in age starts. The writes above judge no age, since
+	// no account was stored before them, and judging an imported node afresh counts
+	// its age from its account's status height, which can be older than the height
+	// its bond last reached MinimumBondInRune. Only a node the export carried no
+	// record for, one not judged yet (as before the record existed), is judged so.
+	for _, record := range data.NodeAgeStarts {
+		addr, err := cosmos.AccAddressFromBech32(record.NodeAddress)
+		if err != nil {
+			panic(err)
+		}
+		keeper.SetNodeAgeStartRecord(ctx, addr, record.Height)
 	}
 
 	for _, vault := range data.Vaults {
@@ -529,12 +567,24 @@ func ExportGenesis(ctx cosmos.Context, k keeper.Keeper) GenesisState {
 	}
 
 	bps := make([]BondProviders, 0)
+	// the age starts of the exported nodes, including the below-minimum -1
+	nodeAgeStarts := make([]NodeAgeStart, 0)
 	for _, na := range nodeAccounts {
 		bp, err := k.GetBondProviders(ctx, na.NodeAddress)
 		if err != nil {
 			panic(err)
 		}
 		bps = append(bps, bp)
+
+		start, ok, err := k.GetNodeAgeStartRecord(ctx, na.NodeAddress)
+		if err != nil {
+			// as the churn does, restart it, which can only make the node younger
+			ctx.Logger().Error("fail to get node age start, exporting it restarted", "node_address", na.NodeAddress, "error", err)
+			start, ok = -1, true
+		}
+		if ok {
+			nodeAgeStarts = append(nodeAgeStarts, NodeAgeStart{NodeAddress: na.NodeAddress.String(), Height: start})
+		}
 	}
 
 	tcyClaimers := make([]TCYClaimer, 0)
@@ -971,5 +1021,6 @@ func ExportGenesis(ctx cosmos.Context, k keeper.Keeper) GenesisState {
 		LastObservedDynamicFeeEpochBlocks: lastObservedDynamicFeeEpochBlocks,
 		StableReserveCredits:              stableReserveCredits,
 		SolVaultNonces:                    solVaultNonces,
+		NodeAgeStarts:                     nodeAgeStarts,
 	}
 }

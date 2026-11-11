@@ -192,6 +192,8 @@ type KeeperNodeAccount interface {
 	GetNodeAccountIterator(ctx cosmos.Context) cosmos.Iterator
 	GetNodeAgeStart(ctx cosmos.Context, addr cosmos.AccAddress) (int64, bool, error)
 	ResetNodeAgeStart(ctx cosmos.Context, addr cosmos.AccAddress)
+	GetNodeAgeStartRecord(ctx cosmos.Context, addr cosmos.AccAddress) (int64, bool, error)
+	SetNodeAgeStartRecord(ctx cosmos.Context, addr cosmos.AccAddress, start int64)
 	SyncNodeAgeStart(ctx cosmos.Context, na NodeAccount)
 	GetNodeAccountSlashPoints(_ cosmos.Context, _ cosmos.AccAddress) (int64, error)
 	SetNodeAccountSlashPoints(_ cosmos.Context, _ cosmos.AccAddress, _ int64)

@@ -433,3 +433,126 @@ func (GenesisTestSuite) TestExportSwapperCloutBase58(c *C) {
 	c.Check(gs.SwapperClout[0].Address, Equals, transparent)
 	c.Check(gs.SwapperClout[0].Score.String(), Equals, "1000")
 }
+
+// TestGenesisNodeAgeStartRoundTrip asserts the churn-in age starts survive a genesis
+// export and import. A node whose bond regained the minimum at 990 is held back at
+// 1000 before the export and still after the import, although its imported account
+// dates from 10; a below-minimum record and a height 0 one read back as stored. A
+// genesis without the records, as exported before they existed, falls back to the
+// account's status height.
+func (GenesisTestSuite) TestGenesisNodeAgeStartRoundTrip(c *C) {
+	SetupConfigForTest()
+	setMimirs := func(ctx cosmos.Context, mgr *Mgrs) {
+		k := mgr.Keeper()
+		k.SetMimir(ctx, constants.MinimumBondInRune.String(), 100*common.One)
+		k.SetMimir(ctx, constants.ChurnInterval.String(), 60)
+		k.SetMimir(ctx, constants.NumberOfNewNodesPerChurn.String(), 10)
+		k.SetMimir(ctx, constants.MimirKeyChurnInMinNodeAgeBlocks, 50)
+	}
+	// selected syncs the age starts as the churn does, then reports whether node is in
+	// the next set at the given height.
+	selected := func(ctx cosmos.Context, mgr *Mgrs, height int64, node NodeAccount) bool {
+		ctx = ctx.WithBlockHeight(height)
+		vm := newValidatorMgr(mgr.Keeper(), mgr.NetworkMgr(), mgr.TxOutStore(), mgr.EventMgr())
+		c.Assert(vm.syncNodeAgeStarts(ctx), IsNil)
+		next, _, err := vm.nextVaultNodeAccounts(ctx, 20)
+		c.Assert(err, IsNil)
+		return next.Contains(node)
+	}
+	record := func(ctx cosmos.Context, mgr *Mgrs, node NodeAccount) (int64, bool) {
+		start, ok, err := mgr.Keeper().GetNodeAgeStartRecord(ctx, node.NodeAddress)
+		c.Assert(err, IsNil)
+		return start, ok
+	}
+
+	srcCtx, srcMgr := setupManagerForTest(c)
+	k := srcMgr.Keeper()
+	setMimirs(srcCtx, srcMgr)
+	for i := 0; i < 4; i++ {
+		c.Assert(k.SetNodeAccount(srcCtx.WithBlockHeight(1), GetRandomValidatorNode(NodeActive)), IsNil)
+	}
+	write := func(na *NodeAccount, height int64, bond uint64) {
+		na.Bond = cosmos.NewUint(bond * common.One)
+		c.Assert(k.SetNodeAccount(srcCtx.WithBlockHeight(height), *na), IsNil)
+	}
+	// bonded since 10, below the minimum at 980, back above it at 990; StatusSince
+	// stays 10
+	rebonded := GetRandomValidatorNode(NodeReady)
+	rebonded.StatusSince = 10
+	write(&rebonded, 10, 300)
+	k.SyncNodeAgeStart(srcCtx.WithBlockHeight(10), rebonded)
+	write(&rebonded, 980, 50)
+	write(&rebonded, 990, 300)
+	below := GetRandomValidatorNode(NodeStandby)
+	write(&below, 10, 50)
+	k.SyncNodeAgeStart(srcCtx.WithBlockHeight(10), below)
+	genesisNode := GetRandomValidatorNode(NodeStandby)
+	genesisNode.StatusSince = 0
+	write(&genesisNode, 0, 300)
+	k.SyncNodeAgeStart(srcCtx, genesisNode)
+
+	c.Check(selected(srcCtx, srcMgr, 1000, rebonded), Equals, false)
+	exported := ExportGenesis(srcCtx.WithBlockHeight(1000), k)
+	c.Assert(ValidateGenesis(exported), IsNil)
+	exportedStarts := map[string]int64{}
+	for _, r := range exported.NodeAgeStarts {
+		exportedStarts[r.NodeAddress] = r.Height
+	}
+	// the 4 Active nodes too, synced above from their floor
+	c.Check(exportedStarts, HasLen, 7)
+	c.Check(exportedStarts[rebonded.NodeAddress.String()], Equals, int64(990))
+	c.Check(exportedStarts[below.NodeAddress.String()], Equals, int64(-1))
+	start, ok := exportedStarts[genesisNode.NodeAddress.String()]
+	c.Check(ok, Equals, true)
+	c.Check(start, Equals, int64(0))
+	bz, err := exported.Marshal()
+	c.Assert(err, IsNil)
+	var decoded GenesisState
+	c.Assert(decoded.Unmarshal(bz), IsNil)
+	// a genesis file carries it as JSON
+	js, err := ModuleCdc.MarshalJSON(&exported)
+	c.Assert(err, IsNil)
+	var fromJSON GenesisState
+	c.Assert(ModuleCdc.UnmarshalJSON(js, &fromJSON), IsNil)
+	c.Check(fromJSON.NodeAgeStarts, DeepEquals, exported.NodeAgeStarts)
+
+	dstCtx, dstMgr := setupManagerForTest(c)
+	InitGenesis(dstCtx, dstMgr.Keeper(), decoded)
+	setMimirs(dstCtx, dstMgr)
+	for _, want := range []struct {
+		node  NodeAccount
+		start int64
+	}{{rebonded, 990}, {below, -1}, {genesisNode, 0}} {
+		got, found := record(dstCtx, dstMgr, want.node)
+		c.Check(found, Equals, true)
+		c.Check(got, Equals, want.start)
+	}
+	c.Check(selected(dstCtx, dstMgr, 1010, rebonded), Equals, false, Commentf("held 20 of 50 blocks"))
+	start, _ = record(dstCtx, dstMgr, rebonded)
+	c.Check(start, Equals, int64(990), Commentf("the churn keeps the imported age start"))
+	c.Check(selected(dstCtx, dstMgr, 1040, rebonded), Equals, true)
+
+	// a genesis without the records: the legacy fallback, StatusSince
+	legacy := decoded
+	legacy.NodeAgeStarts = nil
+	c.Assert(ValidateGenesis(legacy), IsNil)
+	legacyCtx, legacyMgr := setupManagerForTest(c)
+	InitGenesis(legacyCtx, legacyMgr.Keeper(), legacy)
+	setMimirs(legacyCtx, legacyMgr)
+	_, ok = record(legacyCtx, legacyMgr, rebonded)
+	c.Check(ok, Equals, false)
+	c.Check(selected(legacyCtx, legacyMgr, 1010, rebonded), Equals, true)
+	start, _ = record(legacyCtx, legacyMgr, rebonded)
+	c.Check(start, Equals, int64(10))
+
+	for _, bad := range [][]NodeAgeStart{
+		{{NodeAddress: "thor1bad", Height: 990}},
+		{{NodeAddress: rebonded.NodeAddress.String(), Height: -2}},
+		{{NodeAddress: rebonded.NodeAddress.String(), Height: 990}, {NodeAddress: rebonded.NodeAddress.String(), Height: 991}},
+		{{NodeAddress: GetRandomBech32Addr().String(), Height: 990}},
+	} {
+		invalid := decoded
+		invalid.NodeAgeStarts = bad
+		c.Check(ValidateGenesis(invalid), NotNil, Commentf("%v", bad))
+	}
+}

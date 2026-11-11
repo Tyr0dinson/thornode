@@ -366,6 +366,28 @@
           "validator_cons_pub_key": "tthorcpub1zcjduepqq75h7uy6qhesh9d3a9tuk0mzrnc46u8rye44ze6peua3zmpfh23q8z37sz"
         }
       ],
+      "node_age_starts": [
+        {
+          "height": "35",
+          "node_address": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr"
+        },
+        {
+          "node_address": "tthor1anq4fk6l89w3sfuxehwyprxqjdj3kuzpfwlrav"
+        },
+        {
+          "node_address": "tthor1qk8c8sfrmfm0tkncs0zxeutc8v5mx3pjj07k4u"
+        },
+        {
+          "node_address": "tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej"
+        },
+        {
+          "height": "35",
+          "node_address": "tthor1xkz88t875m7ms7wa6220estwwdlc86pqsccrvm"
+        },
+        {
+          "node_address": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m"
+        }
+      ],
       "observed_tx_in_voters": null,
       "observed_tx_out_voters": null,
       "outbound_fee_spent_rune": [],

@@ -49,6 +49,13 @@ message StableReserveCredit {
   string amount = 3;
 }
 
+// NodeAgeStart is a node's recorded churn-in age start: the height from which
+// it has held MinimumBondInRune, or -1 while its bond is below the minimum.
+message NodeAgeStart {
+  string node_address = 1;
+  int64 height = 2;
+}
+
 message GenesisState {
   repeated types.Pool pools = 1 [ (gogoproto.nullable) = false ];
   repeated types.LiquidityProvider liquidity_providers = 2 [
@@ -141,4 +148,5 @@ message GenesisState {
       [ (gogoproto.nullable) = false ];
   repeated types.SolVaultNonce sol_vault_nonces = 50
       [ (gogoproto.nullable) = false ];
+  repeated NodeAgeStart node_age_starts = 53 [ (gogoproto.nullable) = false ];
 }

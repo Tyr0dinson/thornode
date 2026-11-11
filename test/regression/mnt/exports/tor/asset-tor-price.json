@@ -369,6 +369,11 @@
           "validator_cons_pub_key": "tthorcpub1zcjduepqq75h7uy6qhesh9d3a9tuk0mzrnc46u8rye44ze6peua3zmpfh23q8z37sz"
         }
       ],
+      "node_age_starts": [
+        {
+          "node_address": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m"
+        }
+      ],
       "observed_tx_in_voters": null,
       "observed_tx_out_voters": null,
       "outbound_fee_spent_rune": [],

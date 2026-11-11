@@ -428,6 +428,33 @@ func (s *KeeperNodeAccountSuite) TestNodeAgeStart(c *C) {
 	c.Check(height, Equals, int64(1800))
 }
 
+// TestNodeAgeStartRecord asserts the raw record reads back as stored, including the
+// below-minimum -1 and a height 0, and that a missing one reads as not recorded.
+func (s *KeeperNodeAccountSuite) TestNodeAgeStartRecord(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	addr := GetRandomBech32Addr()
+	_, ok, err := k.GetNodeAgeStartRecord(ctx, addr)
+	c.Assert(err, IsNil)
+	c.Check(ok, Equals, false)
+
+	for _, start := range []int64{990, 0, -1} {
+		k.SetNodeAgeStartRecord(ctx, addr, start)
+		got, found, getErr := k.GetNodeAgeStartRecord(ctx, addr)
+		c.Assert(getErr, IsNil)
+		c.Check(found, Equals, true)
+		c.Check(got, Equals, start)
+	}
+	// the below-minimum record is no age start
+	_, ok, err = k.GetNodeAgeStart(ctx, addr)
+	c.Assert(err, IsNil)
+	c.Check(ok, Equals, false)
+	k.SetNodeAgeStartRecord(ctx, addr, 0)
+	height, ok, err := k.GetNodeAgeStart(ctx, addr)
+	c.Assert(err, IsNil)
+	c.Check(ok, Equals, true)
+	c.Check(height, Equals, int64(0))
+}
+
 func (s *KeeperNodeAccountSuite) TestJail(c *C) {
 	ctx, k := setupKeeperForTest(c)
 	addr := GetRandomBech32Addr()

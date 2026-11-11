@@ -537,8 +537,7 @@ const nodeAgeStartBelowMinBond int64 = -1
 // MinimumBondInRune without a break, and false when its bond is below the minimum or
 // no height is recorded for it.
 func (k KVStore) GetNodeAgeStart(ctx cosmos.Context, addr cosmos.AccAddress) (int64, bool, error) {
-	start := int64(0)
-	ok, err := k.getInt64(ctx, k.GetKey(prefixNodeAgeStart, addr.String()), &start)
+	start, ok, err := k.GetNodeAgeStartRecord(ctx, addr)
 	if err != nil || !ok || start < 0 {
 		return 0, false, err
 	}
@@ -548,7 +547,25 @@ func (k KVStore) GetNodeAgeStart(ctx cosmos.Context, addr cosmos.AccAddress) (in
 // ResetNodeAgeStart records the given node as below the minimum bond, so that its age
 // starts when its bond next reaches MinimumBondInRune.
 func (k KVStore) ResetNodeAgeStart(ctx cosmos.Context, addr cosmos.AccAddress) {
-	k.setInt64(ctx, k.GetKey(prefixNodeAgeStart, addr.String()), nodeAgeStartBelowMinBond)
+	k.SetNodeAgeStartRecord(ctx, addr, nodeAgeStartBelowMinBond)
+}
+
+// GetNodeAgeStartRecord returns the age start recorded for the given node as stored,
+// -1 while its bond is below the minimum, and false when none is recorded. The
+// genesis export carries it, so that an import does not judge the node again.
+func (k KVStore) GetNodeAgeStartRecord(ctx cosmos.Context, addr cosmos.AccAddress) (int64, bool, error) {
+	start := int64(0)
+	ok, err := k.getInt64(ctx, k.GetKey(prefixNodeAgeStart, addr.String()), &start)
+	if err != nil || !ok {
+		return 0, false, err
+	}
+	return start, true, nil
+}
+
+// SetNodeAgeStartRecord stores an age start for the given node as recorded, as the
+// genesis import restores it.
+func (k KVStore) SetNodeAgeStartRecord(ctx cosmos.Context, addr cosmos.AccAddress, start int64) {
+	k.setInt64(ctx, k.GetKey(prefixNodeAgeStart, addr.String()), start)
 }
 
 // SyncNodeAgeStart brings the age start of the given node in line with its bond: a
@@ -613,14 +630,16 @@ func (k KVStore) storedBelowMinBond(ctx cosmos.Context, addr string, naKey []byt
 	return !holdsMinBond(stored.Bond, minBond)
 }
 
-// firstNodeAgeStart returns the age start of a node that has none recorded: an account
-// stored before the age start existed, or imported at genesis. Its bond history is not
-// stored. If the stored account already held the minimum and still does, the age counts
-// from the earliest height that account holds, StatusSince or an earlier
-// ActiveBlockHeight, which can only make the node look younger than its registration.
-// If its bond reaches the minimum with this write, the age starts now. It returns false
-// for an account not stored yet, as during the genesis import, before the mimirs are:
-// that one is judged at its next write or at the churn.
+// firstNodeAgeStart returns the age start of a legacy node that has none recorded: an
+// account stored before the age start existed, or imported from a genesis that carried
+// no record for it. The genesis import restores every exported record, so a node that
+// had one never comes here. Its bond history is not stored. If the stored account
+// already held the minimum and still does, the age counts from the earliest height that
+// account holds, StatusSince or an earlier ActiveBlockHeight, which can only make the
+// node look younger than its registration. If its bond reaches the minimum with this
+// write, the age starts now. It returns false for an account not stored yet, as during
+// the genesis import, before the mimirs and the records are: that one is judged at its
+// next write or at the churn unless the import restores its record.
 func (k KVStore) firstNodeAgeStart(ctx cosmos.Context, addr string, naKey []byte, held bool, minBond cosmos.Uint) (int64, bool) {
 	var stored NodeAccount
 	found, err := k.getNodeAccount(ctx, naKey, &stored)
