@@ -2542,3 +2542,111 @@ func (s TxOutStoreSuite) TestPrepareTxOutItemReserveFallbackKeepsFragment(c *C) 
 			Commentf("reserve %d: sent %s + fee %s != %s", reserve, outputs[0].Coin.Amount, fee, amount))
 	}
 }
+
+// TestTryAddTxOutItemTokenFragmentNotDropped is the token case: with
+// VaultTokenGasReserve on, gas committed to a queued ETH outbound excludes the
+// one vault that could pay a USDT outbound whole, so the chain-wide pass splits
+// off a USDT fragment smaller than the fee. The fee deduction would drop that
+// fragment after the inbound was debited, so selection must fall back to the
+// Mimir-off choice, and every unit of the request is either sent or taken as
+// the fee.
+func (s TxOutStoreSuite) TestTryAddTxOutItemTokenFragmentNotDropped(c *C) {
+	usdt, err := common.NewAsset("ETH.USDT-0XDAC17F958D2EE523A2206206994597C13D831EC7")
+	c.Assert(err, IsNil)
+
+	for _, reserve := range []int64{0, 1} {
+		w := getHandlerTestWrapper(c, 1, true, true)
+		if reserve > 0 {
+			w.keeper.SetMimir(w.ctx, constants.VaultTokenGasReserve.String(), reserve)
+		}
+		for _, asset := range []common.Asset{common.ETHAsset, usdt} {
+			pool := NewPool()
+			pool.Asset = asset
+			pool.Status = PoolAvailable
+			pool.BalanceAsset = cosmos.NewUint(100000 * common.One)
+			pool.BalanceRune = cosmos.NewUint(100000 * common.One)
+			pool.LPUnits = cosmos.NewUint(100000 * common.One)
+			c.Assert(w.keeper.SetPool(w.ctx, pool), IsNil)
+		}
+		fee, err := w.mgr.GasMgr().GetAssetOutboundFee(w.ctx, usdt, false)
+		c.Assert(err, IsNil)
+		c.Assert(fee.IsZero(), Equals, false)
+		c.Assert(fee.LT(cosmos.NewUint(100*common.One)), Equals, true)
+
+		newVault := func(usdtAmount uint64) Vault {
+			v := GetRandomVault()
+			v.Type = AsgardVault
+			v.Status = ActiveVault
+			v.Coins = common.Coins{
+				common.NewCoin(common.ETHAsset, cosmos.NewUint(10*common.One)),
+				common.NewCoin(usdt, cosmos.NewUint(usdtAmount*common.One)),
+			}
+			c.Assert(w.keeper.SetVault(w.ctx, v), IsNil)
+			return v
+		}
+		// whole can pay the request alone, but all its ETH is committed to a
+		// queued ETH outbound; without it, mid pays most and small the rest.
+		whole, mid, small := newVault(1000), newVault(600), newVault(100)
+		vaults, err := w.keeper.GetAsgardVaultsByStatus(w.ctx, ActiveVault)
+		c.Assert(err, IsNil)
+		for _, v := range vaults {
+			if !v.PubKey.Equals(whole.PubKey) && !v.PubKey.Equals(mid.PubKey) && !v.PubKey.Equals(small.PubKey) {
+				v.Status = InactiveVault
+				c.Assert(w.keeper.SetVault(w.ctx, v), IsNil)
+			}
+		}
+		c.Assert(w.keeper.AppendTxOut(w.ctx, w.ctx.BlockHeight(), TxOutItem{
+			Chain:       common.ETHChain,
+			ToAddress:   GetRandomETHAddress(),
+			VaultPubKey: whole.PubKey,
+			InHash:      GetRandomTxHash(),
+			Coin:        common.NewCoin(common.ETHAsset, cosmos.NewUint(10*common.One)),
+			MaxGas:      common.Gas{common.NewCoin(common.ETHAsset, cosmos.NewUint(common.One))},
+		}), IsNil)
+
+		// Half a fee more than mid holds.
+		amount := cosmos.NewUint(600 * common.One).Add(fee.QuoUint64(2))
+		inTxID := GetRandomTxHash()
+		w.keeper.SetObservedTxInVoter(w.ctx, NewObservedTxVoter(inTxID, common.ObservedTxs{
+			common.ObservedTx{
+				Tx:             GetRandomTx(),
+				Status:         common.Status_incomplete,
+				BlockHeight:    1,
+				Signers:        []string{w.activeNodeAccount.NodeAddress.String()},
+				FinaliseHeight: 1,
+			},
+		}))
+		poolBefore, err := w.keeper.GetPool(w.ctx, usdt)
+		c.Assert(err, IsNil)
+		store := newTxOutStorage(w.keeper, w.mgr.GetConstants(), w.mgr.EventMgr(), w.mgr.GasMgr())
+		ok, err := store.TryAddTxOutItem(w.ctx, w.mgr, TxOutItem{
+			Chain:     common.ETHChain,
+			ToAddress: GetRandomETHAddress(),
+			InHash:    inTxID,
+			Coin:      common.NewCoin(usdt, amount),
+			Memo:      NewOutboundMemo(inTxID).String(),
+		}, cosmos.ZeroUint())
+		c.Assert(err, IsNil)
+		c.Assert(ok, Equals, true)
+
+		txOut, err := w.keeper.GetTxOut(w.ctx, w.ctx.BlockHeight())
+		c.Assert(err, IsNil)
+		sent := cosmos.ZeroUint()
+		var outputs []TxOutItem
+		for _, item := range txOut.TxArray {
+			if item.InHash.Equals(inTxID) {
+				outputs = append(outputs, item)
+				sent = sent.Add(item.Coin.Amount)
+			}
+		}
+		// Fees are credited to the pool's asset balance.
+		poolAfter, err := w.keeper.GetPool(w.ctx, usdt)
+		c.Assert(err, IsNil)
+		credited := common.SafeSub(poolAfter.BalanceAsset, poolBefore.BalanceAsset)
+		// Nothing is left to recover: the request is fully scheduled.
+		c.Check(sent.Add(credited).Equal(amount), Equals, true,
+			Commentf("reserve %d: sent %s + fees %s != requested %s", reserve, sent, credited, amount))
+		c.Assert(outputs, HasLen, 1, Commentf("reserve %d", reserve))
+		c.Check(outputs[0].VaultPubKey.Equals(whole.PubKey), Equals, true, Commentf("reserve %d", reserve))
+	}
+}

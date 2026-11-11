@@ -588,32 +588,34 @@ func sortOutboundVaults(ctx cosmos.Context, toi TxOutItem, maxGasCoin common.Coi
 }
 
 // discoverOutbounds is DiscoverOutbounds with the VaultTokenGasReserve Mimir
-// already read. When tokenGasReserve is above zero, a gas-asset outbound leaves
+// already read. When tokenGasReserve is above zero, vaults are net of every
+// pending outbound on the chain, and a gas-asset outbound also leaves
 // tokenGasReserve x MaxGas in each vault per token it holds on the chain, so
-// the vault can still send those tokens out. vaults are then net of every
-// pending outbound on the chain. If the vaults cannot fill the outbound with
-// that reserve held back, or doing so would split off an output the fee would
-// drop as dust, selection runs exactly as with the Mimir off, on
-// fallbackVaults: the same vaults net only of pending outbounds of the asset.
+// the vault can still send those tokens out. If the vaults cannot fill the
+// outbound that way, or doing so would split off an output the fee deduction
+// would drop, selection runs exactly as with the Mimir off, on fallbackVaults:
+// the same vaults net only of pending outbounds of the asset.
 func (tos *TxOutStorage) discoverOutbounds(ctx cosmos.Context, transactionFeeAmount cosmos.Uint, maxGasCoin common.Coin, toi TxOutItem, vaults, fallbackVaults Vaults, tokenGasReserve int64) ([]TxOutItem, cosmos.Uint) {
 	isRagnarok := false
 	if memo, err := ParseMemo(tos.keeper.GetVersion(), toi.GetMemo()); err == nil {
 		isRagnarok = memo.IsType(TxRagnarok)
 	}
 
-	// Only gas-asset outbounds hold back gas for the vault's tokens. Ragnarok
-	// sweeps everything, so it never does.
-	if tokenGasReserve > 0 && !isRagnarok && toi.Coin.Asset.Equals(maxGasCoin.Asset) {
-		outputs, left := allocateOutbounds(transactionFeeAmount, maxGasCoin, toi, sortOutboundVaults(ctx, toi, maxGasCoin, vaults), false, tokenGasReserve)
-		if left.Coin.Amount.IsZero() && !hasUnpayableFragment(outputs, transactionFeeAmount, toi.Chain.DustThreshold()) {
+	// Ragnarok sweeps everything, so it always selects as with the Mimir off.
+	if tokenGasReserve > 0 && !isRagnarok {
+		// Only gas-asset outbounds hold back gas for the vault's tokens, and
+		// only they are dropped below the dust threshold after the fee.
+		reserve, dustThreshold := int64(0), cosmos.ZeroUint()
+		if toi.Coin.Asset.Equals(maxGasCoin.Asset) {
+			reserve, dustThreshold = tokenGasReserve, toi.Chain.DustThreshold()
+		}
+		outputs, left := allocateOutbounds(transactionFeeAmount, maxGasCoin, toi, sortOutboundVaults(ctx, toi, maxGasCoin, vaults), false, reserve)
+		if left.Coin.Amount.IsZero() && !hasUnpayableFragment(outputs, transactionFeeAmount, dustThreshold) {
 			return outputs, cosmos.ZeroUint()
 		}
-		// The reserve must not block an outbound the vaults can pay without
-		// it, nor split off a fragment the fee deduction would drop as dust.
-		// The fallback also drops the chain-wide pending deduction: on vaults
-		// net of gas committed to queued outbounds of other assets it could
-		// split off a sub-fee fragment that selection with the Mimir off does
-		// not.
+		// Neither the reserve nor gas committed to queued outbounds of other
+		// assets may block an outbound the vaults can pay with the Mimir off,
+		// nor split off a fragment the fee deduction would drop.
 		vaults = fallbackVaults
 	}
 
@@ -795,8 +797,9 @@ func allocateOutbounds(transactionFeeAmount cosmos.Uint, maxGasCoin common.Coin,
 }
 
 // hasUnpayableFragment reports whether any output is too small to survive the
-// outbound fee: prepareTxOutItem drops a gas-asset output whose amount after
-// the fee is below the dust threshold, after the inbound was already debited.
+// outbound fee: prepareTxOutItem drops an output with nothing left after the
+// fee, and a gas-asset output whose amount after the fee is below the dust
+// threshold, after the inbound was already debited.
 func hasUnpayableFragment(outputs []TxOutItem, transactionFeeAmount, dustThreshold cosmos.Uint) bool {
 	for _, output := range outputs {
 		if isUnpayableFragment(output, transactionFeeAmount, dustThreshold) {
