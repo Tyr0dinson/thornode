@@ -761,16 +761,22 @@ func searchStep(rec *types.DynamicFeeRecord, oldBps uint64, p dynamicFeeParams) 
 // nextSearchBps picks the next bps for the bracket search from the completed
 // probes within [floorBps, ceilingBps].
 //
-// The best probe is the one with the highest mean signal, except that a
-// higher bps only displaces a lower one when it beats it by more than the
-// deadband (on a near-tie the lower fee wins) and was not capped. Assuming revenue is unimodal in
-// bps, the optimum lies between the best probe's nearest tested neighbours, so
-// only those two gaps are searched. The larger gap is tested next (ties go to
-// the lower side): an untested floor or ceiling at the edge of a gap is tested
-// first, otherwise the gap's midpoint. From a fresh record at the floor this
-// tests the floor, the ceiling, then the midpoint (1, 20, 10 on defaults),
-// then halves the gap around the best value. When both gaps are empty the
-// search is done and best is the answer.
+// The search brackets the peak: the probe with the highest mean signal (ties
+// go to the lower bps). A capped probe was too thin to justify a higher fee,
+// so it never displaces a lower one, though it still counts as tested. Assuming
+// revenue is unimodal in bps, the optimum lies between the peak's nearest
+// tested neighbours, so only those two gaps are searched. The larger gap is
+// tested next (ties go to the lower side): an untested floor or ceiling at the
+// edge of a gap is tested first, otherwise the gap's midpoint. From a fresh
+// record at the floor this tests the floor, the ceiling, then the midpoint
+// (1, 20, 10 on defaults), then halves the gap around the peak. When both gaps
+// are empty the search is done.
+//
+// The deadband only shapes the answer, never the bracket: best is the lowest
+// bps at or below the peak whose mean is within the deadband of the peak's
+// (on a near-tie the lower fee wins). Applying the deadband to the bracket
+// instead would let a lower fee that is merely "close enough" discard the
+// side holding a clearly better one.
 //
 // With no completed probe in range (the range moved under the search), it
 // starts again from the floor.
@@ -794,45 +800,53 @@ func nextSearchBps(probes []types.DynamicFeeProbe, floorBps, ceilingBps uint64, 
 		return 0
 	})
 
-	bestIdx := 0
-	hurdle := tenK.Add(deadbandBps)
+	peakIdx := 0
 	for i := 1; i < len(inRange); i++ {
-		// A capped probe was too thin to justify a higher fee, so it never
-		// displaces a lower one; it still counts as tested.
 		if inRange[i].Capped {
 			continue
 		}
-		// mean_i > mean_best * (1 + deadband), kept in integers.
-		if inRange[i].Mean().Mul(tenK).GT(inRange[bestIdx].Mean().Mul(hurdle)) {
-			bestIdx = i
+		if inRange[i].Mean().GT(inRange[peakIdx].Mean()) {
+			peakIdx = i
 		}
 	}
-	best = inRange[bestIdx].Bps
+	peak := inRange[peakIdx].Bps
 
-	// Nearest tested values strictly below and above best. Scanning by value
+	// best: the lowest bps up to the peak with mean * (1 + deadband) >= peak
+	// mean, kept in integers. The peak itself always qualifies.
+	hurdle := tenK.Add(deadbandBps)
+	peakScaled := inRange[peakIdx].Mean().Mul(tenK)
+	best = peak
+	for _, pr := range inRange[:peakIdx] {
+		if pr.Mean().Mul(hurdle).GTE(peakScaled) {
+			best = pr.Bps
+			break
+		}
+	}
+
+	// Nearest tested values strictly below and above the peak. Scanning by value
 	// rather than taking the adjacent indices keeps the gap arithmetic from
 	// underflowing should two probes ever share a bps.
 	var lo, hi uint64
 	foundLo, foundHi := false, false
 	for _, pr := range inRange {
-		if pr.Bps < best {
+		if pr.Bps < peak {
 			lo, foundLo = pr.Bps, true
 		}
-		if pr.Bps > best && !foundHi {
+		if pr.Bps > peak && !foundHi {
 			hi, foundHi = pr.Bps, true
 		}
 	}
 
 	var leftCount, leftNext, rightCount, rightNext uint64
 	if foundLo {
-		leftCount, leftNext = best-lo-1, (lo+best)/2
-	} else if best > floorBps {
-		leftCount, leftNext = best-floorBps, floorBps
+		leftCount, leftNext = peak-lo-1, (lo+peak)/2
+	} else if peak > floorBps {
+		leftCount, leftNext = peak-floorBps, floorBps
 	}
 	if foundHi {
-		rightCount, rightNext = hi-best-1, (best+hi)/2
-	} else if best < ceilingBps {
-		rightCount, rightNext = ceilingBps-best, ceilingBps
+		rightCount, rightNext = hi-peak-1, (peak+hi)/2
+	} else if peak < ceilingBps {
+		rightCount, rightNext = ceilingBps-peak, ceilingBps
 	}
 
 	switch {

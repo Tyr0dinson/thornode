@@ -671,14 +671,16 @@ if probes[old_bps].epochs < ProbeEpochs:
     return "search_measure", old_bps
 
 P    = completed probes with floor <= bps <= ceiling, sorted by bps
-best = P[0]; for p in P[1:]:                # a higher bps must win by more
-    if p.capped: continue                    # than the deadband, and a capped
-    if mean(p) > mean(best) * (1 + deadband): best = p   # probe never wins
+peak = P[0]; for p in P[1:]:                # highest mean, ties to the lower
+    if p.capped: continue                    # bps; a capped probe never
+    if mean(p) > mean(peak): peak = p        # displaces a lower one
+best = lowest p in P with p.bps <= peak.bps  # the deadband only picks the
+       and mean(p) * (1 + deadband) >= mean(peak)   # answer, not the bracket
 
-left  = untested ints between best and the nearest tested bps below it,
-        or [floor, best) if none is below (test the floor itself first)
-right = untested ints between best and the nearest tested bps above it,
-        or (best, ceiling] if none is above (test the ceiling itself first)
+left  = untested ints between peak and the nearest tested bps below it,
+        or [floor, peak) if none is below (test the floor itself first)
+right = untested ints between peak and the nearest tested bps above it,
+        or (peak, ceiling] if none is above (test the ceiling itself first)
 
 if left and right are both empty:
     search_done = true; history = []
@@ -688,11 +690,14 @@ next = the larger side (ties → left): its untested floor/ceiling if
 return "search_probe", next
 ```
 
-Assuming revenue is unimodal in bps, the optimum lies between the best
-value's nearest tested neighbours, so only those two gaps are searched
+Assuming revenue is unimodal in bps, the optimum lies between the
+peak's nearest tested neighbours, so only those two gaps are searched
 and each test roughly halves one. The deadband preference means a
 higher fee is only adopted when it is clearly better; on a near-tie the
-lower fee stands. Every test is a single (gated) reading and a losing
+lower fee stands. It applies to the answer only: if it also chose the
+bracket, a lower fee that is merely within the deadband would discard
+the side holding a clearly better one (with revenue 1:100, 10:109,
+14:130 the search would never test 14 and settle on 1). Every test is a single (gated) reading and a losing
 side is discarded for good, which is why the gradient rule takes over
 after convergence — and why a governance reset (vote `0`, then back)
 exists for a search that settled badly. If the floor or ceiling moves

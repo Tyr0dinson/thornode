@@ -42,6 +42,8 @@ func (s *DynamicFeeMgrSuite) TestNextSearchBps(c *C) {
 		{name: "start mid-range, upper side done → floor", probes: probesT(4, 100, 5, 10), floor: 1, cei: 5, deadband: zero, best: 4, next: 1},
 		{name: "near-tie keeps lower bps", probes: probesT(1, 100, 20, 105), floor: 1, cei: 20, deadband: cosmos.NewUint(1000), best: 1, next: 10},
 		{name: "clear win moves up", probes: probesT(1, 100, 20, 111), floor: 1, cei: 20, deadband: cosmos.NewUint(1000), best: 20, next: 10},
+		{name: "near-tie below the peak still brackets the peak", probes: probesT(1, 100, 10, 109, 20, 95), floor: 1, cei: 20, deadband: cosmos.NewUint(1000), best: 1, next: 15},
+		{name: "answer is the lowest bps within the deadband of the peak", probes: probesT(1, 100, 10, 118, 12, 120, 14, 130, 20, 95), floor: 1, cei: 20, deadband: cosmos.NewUint(1000), best: 12, next: 17},
 		{name: "range moved away → restart at floor", probes: probesT(30, 100), floor: 1, cei: 20, deadband: zero, best: 1, next: 1},
 	} {
 		best, next, done := nextSearchBps(tc.probes, tc.floor, tc.cei, tc.deadband, tenK)
@@ -100,6 +102,40 @@ func (s *DynamicFeeMgrSuite) TestEndBlockSearchConvergesOnUnimodalCurve(c *C) {
 		}
 	}
 	c.Check(converged, Equals, true, Commentf("convergence emits an event even though bps may not change"))
+}
+
+// TestSearchDeadbandDoesNotDiscardThePeak runs the search against a curve whose
+// early improvement (1 → 10) sits inside the 10% deadband while the peak (14)
+// is 30% better. The deadband must not decide which side is discarded: the
+// search has to test 14, and the answer is the lowest fee within the deadband
+// of the peak's revenue rather than the floor.
+func (s *DynamicFeeMgrSuite) TestSearchDeadbandDoesNotDiscardThePeak(c *C) {
+	tenK, deadband := cosmos.NewUint(10_000), cosmos.NewUint(1000)
+	// Unimodal revenue, linear between these points.
+	pts := [][2]uint64{{1, 100}, {2, 101}, {3, 102}, {5, 104}, {10, 109}, {14, 130}, {20, 95}}
+	revenue := func(b uint64) uint64 {
+		for i := 1; i < len(pts); i++ {
+			if b <= pts[i][0] {
+				x0, y0, x1, y1 := pts[i-1][0], int64(pts[i-1][1]), pts[i][0], int64(pts[i][1])
+				return uint64(y0 + (y1-y0)*int64(b-x0)/int64(x1-x0))
+			}
+		}
+		return pts[len(pts)-1][1]
+	}
+
+	var probes []types.DynamicFeeProbe
+	var tested []uint64
+	bps := uint64(1)
+	best, done := uint64(0), false
+	for i := 0; i < 20 && !done; i++ {
+		tested = append(tested, bps)
+		probes = append(probes, probesT(bps, revenue(bps))...)
+		best, bps, done = nextSearchBps(probes, 1, 20, deadband, tenK)
+	}
+	c.Assert(done, Equals, true)
+	c.Check(tested, DeepEquals, []uint64{1, 20, 10, 15, 12, 17, 13, 14})
+	// 14 (130) is the peak; 12 (119) is the lowest fee within 10% of it.
+	c.Check(best, Equals, uint64(12))
 }
 
 // TestEndBlockSearchProbeEpochs pins that L1DynamicFeeProbeEpochs holds each
