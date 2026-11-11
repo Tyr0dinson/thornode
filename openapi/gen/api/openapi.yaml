@@ -1212,8 +1212,6 @@ paths:
               schema:
                 $ref: '#/components/schemas/VaultAddressResponse'
           description: OK
-        "404":
-          description: Address not found in vault mappings
       tags:
       - Vaults
   /thorchain/network:
