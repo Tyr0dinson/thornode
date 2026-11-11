@@ -90,13 +90,13 @@ func newRefundFundingSigner(t *testing.T, source, payout common.Chain) (*Signer,
 	store, err := NewSignerStore(t.TempDir(), config.LevelDBOptions{}, "")
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, store.Close()) })
-	if m == nil {
-		m, err = metrics.NewMetrics(config.BifrostMetricsConfiguration{Enabled: false})
+	if metricsSingleton == nil {
+		metricsSingleton, err = metrics.NewMetrics(config.BifrostMetricsConfiguration{Enabled: false})
 		require.NoError(t, err)
 	}
 	s := &Signer{
 		thorchainBridge: bridge, constantsProvider: NewConstantsProvider(bridge), storage: store,
-		logger: zerolog.Nop(), pubkeyMgr: &refundFundingTestPools{MockPoolAddressValidator: pubkeymanager.NewMockPoolAddressValidator(), key: key}, m: m,
+		logger: zerolog.Nop(), pubkeyMgr: &refundFundingTestPools{MockPoolAddressValidator: pubkeymanager.NewMockPoolAddressValidator(), key: key}, m: metricsSingleton,
 		tssKeysignMetricMgr: metrics.NewTssKeysignMetricMgr(),
 		chains:              map[common.Chain]chainclients.ChainClient{source: sourceClient, payout: payoutClient},
 	}

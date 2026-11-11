@@ -722,22 +722,22 @@ func (m *MockCustomKeygenChainClient) Keygen(req chainclienttypes.CustomKeygenRe
 // Tests
 ////////////////////////////////////////////////////////////////////////////////////////
 
-var m *metrics.Metrics
+var metricsSingleton *metrics.Metrics
 
 func GetMetricForTest(c *C) *metrics.Metrics {
-	if m == nil {
+	if metricsSingleton == nil {
 		var err error
-		m, err = metrics.NewMetrics(config.BifrostMetricsConfiguration{
+		metricsSingleton, err = metrics.NewMetrics(config.BifrostMetricsConfiguration{
 			Enabled:      false,
 			ListenPort:   9000,
 			ReadTimeout:  time.Second,
 			WriteTimeout: time.Second,
 			Chains:       common.Chains{common.ETHChain},
 		})
-		c.Assert(m, NotNil)
+		c.Assert(metricsSingleton, NotNil)
 		c.Assert(err, IsNil)
 	}
-	return m
+	return metricsSingleton
 }
 
 type SignSuite struct {
@@ -834,7 +834,7 @@ func (s *SignSuite) TestProcess(c *C) {
 	blockScan, err := NewThorchainBlockScan(cfg.BlockScanner, s.storage, bridge, s.metrics, pubkeymanager.NewMockPoolAddressValidator())
 	c.Assert(err, IsNil)
 
-	blockScanner, err := blockscanner.NewBlockScanner(cfg.BlockScanner, s.storage, m, bridge, blockScan)
+	blockScanner, err := blockscanner.NewBlockScanner(cfg.BlockScanner, s.storage, metricsSingleton, bridge, blockScan)
 	c.Assert(err, IsNil)
 
 	sign := &Signer{
