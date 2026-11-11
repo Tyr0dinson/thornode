@@ -49,6 +49,7 @@ import (
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/blockscanner"
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/gaia/liquidtypes"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pubkeymanager"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
@@ -410,6 +411,12 @@ func newGaiaCodec() *codec.ProtoCodec {
 	slashingtypes.RegisterInterfaces(registry)    // MsgUnjail — routine validator traffic
 	grouptypes.RegisterInterfaces(registry)       // x/group user transactions
 	icacontrollertypes.RegisterInterfaces(registry)
+	// x/liquid (gaia.liquid.v1beta1) replaced the staking module's LSM messages
+	// on the Hub in Gaia v25. Liquid-staking providers batch these with MsgSend
+	// in one transaction, so without this registration nearly every such batch
+	// fails decode and is dropped whole. The types are vendored (see
+	// liquidtypes) because the gaia module cannot be imported here.
+	liquidtypes.RegisterInterfaces(registry)
 	return codec.NewProtoCodec(registry)
 }
 

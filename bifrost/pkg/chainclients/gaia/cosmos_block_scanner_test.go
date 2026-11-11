@@ -30,6 +30,7 @@ import (
 	"github.com/rs/zerolog/log"
 	"gitlab.com/thorchain/thornode/v3/bifrost/blockscanner"
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/gaia/liquidtypes"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -432,4 +433,82 @@ func (s *BlockScannerTestSuite) TestProcessTxsObservesMsgSendBundledWithWasm(c *
 	c.Assert(err, IsNil)
 	c.Assert(len(txInItems), Equals, 1)
 	c.Assert(txInItems[0].Coins[0].Asset.String(), Equals, "GAIA.ATOM")
+}
+
+// A transaction bundling an x/liquid message with a MsgSend deposit must still
+// have the MsgSend observed. On mainnet these batches are routine: liquid-
+// staking providers send MsgTokenizeShares or MsgRedeemTokensForShares together
+// with several MsgSend in one transaction. Before the codec registered
+// gaia.liquid.v1beta1 the whole transaction failed decode ("unable to resolve
+// type URL /gaia.liquid.v1beta1.MsgTokenizeShares"). Built with newGaiaCodec,
+// the production registry, for the reason given on the wasm test above.
+func (s *BlockScannerTestSuite) TestProcessTxsObservesMsgSendBundledWithLiquid(c *C) {
+	cfg := config.BifrostBlockScannerConfiguration{
+		ChainID: common.GAIAChain,
+		WhitelistCosmosAssets: []config.WhitelistCosmosAsset{
+			{Denom: "uatom", Decimals: 6, THORChainSymbol: "ATOM"},
+		},
+	}
+
+	cdc := newGaiaCodec()
+	txConfig := tx.NewTxConfig(cdc, []signingtypes.SignMode{signingtypes.SignMode_SIGN_MODE_DIRECT})
+
+	blockScanner := CosmosBlockScanner{
+		cfg:    cfg,
+		rpc:    &mockTendermintRPC{},
+		cdc:    cdc,
+		logger: log.Logger.With().Str("module", "blockscanner").Str("chain", common.GAIAChain.String()).Logger(),
+	}
+
+	from := ctypes.AccAddress(make([]byte, 20))
+	to := ctypes.AccAddress(bytes.Repeat([]byte{0x1}, 20))
+	val := ctypes.ValAddress(bytes.Repeat([]byte{0x2}, 20))
+	send := &btypes.MsgSend{
+		FromAddress: from.String(),
+		ToAddress:   to.String(),
+		Amount:      ctypes.NewCoins(ctypes.NewCoin("uatom", sdkmath.NewInt(5_000_000))),
+	}
+
+	// every message type the module defines, each bundled with the deposit
+	liquidMsgs := []ctypes.Msg{
+		&liquidtypes.MsgTokenizeShares{
+			DelegatorAddress:    from.String(),
+			ValidatorAddress:    val.String(),
+			Amount:              ctypes.NewCoin("uatom", sdkmath.NewInt(1_000_000)),
+			TokenizedShareOwner: from.String(),
+		},
+		&liquidtypes.MsgRedeemTokensForShares{
+			DelegatorAddress: from.String(),
+			Amount:           ctypes.NewCoin(val.String()+"/1", sdkmath.NewInt(1_000_000)),
+		},
+		&liquidtypes.MsgTransferTokenizeShareRecord{TokenizeShareRecordId: 1, Sender: from.String(), NewOwner: to.String()},
+		&liquidtypes.MsgDisableTokenizeShares{DelegatorAddress: from.String()},
+		&liquidtypes.MsgEnableTokenizeShares{DelegatorAddress: from.String()},
+		&liquidtypes.MsgWithdrawTokenizeShareRecordReward{OwnerAddress: from.String(), RecordId: 1},
+		&liquidtypes.MsgWithdrawAllTokenizeShareRecordReward{OwnerAddress: from.String()},
+		&liquidtypes.MsgUpdateParams{
+			Authority: from.String(),
+			Params: liquidtypes.Params{
+				GlobalLiquidStakingCap:    sdkmath.LegacyNewDecWithPrec(25, 2),
+				ValidatorLiquidStakingCap: sdkmath.LegacyNewDecWithPrec(50, 2),
+			},
+		},
+	}
+	for _, lm := range liquidMsgs {
+		builder := txConfig.NewTxBuilder()
+		c.Assert(builder.SetMsgs(lm, send), IsNil)
+		builder.SetMemo("ADD:GAIA.ATOM")
+
+		rawTx, err := txConfig.TxEncoder()(builder.GetTx())
+		c.Assert(err, IsNil)
+
+		txInItems, err := blockScanner.processTxs(1, []tmtypes.Tx{rawTx})
+		c.Assert(err, IsNil)
+
+		// The liquid message itself is not a deposit vector; the bundled MsgSend is.
+		c.Assert(len(txInItems), Equals, 1, Commentf("%T", lm))
+		c.Assert(txInItems[0].Memo, Equals, "ADD:GAIA.ATOM")
+		c.Assert(txInItems[0].Coins[0].Asset.String(), Equals, "GAIA.ATOM")
+		c.Assert(txInItems[0].Coins[0].Amount.String(), Equals, "500000000") // 5 ATOM in 1e8
+	}
 }
