@@ -2,6 +2,7 @@ package evm
 
 import (
 	"crypto/ecdsa"
+	"errors"
 	"fmt"
 	"math/big"
 	"os"
@@ -127,7 +128,7 @@ func (s *RouterSimSuite) SetUpTest(c *C) {
 		router:                   common.Address(s.router.Hex()),
 	}
 	s.client, err = NewEVMClient(thorKeys, config.BifrostChainConfiguration{
-		ChainID: common.BSCChain, // 450ms blocks keep SignTx's post-approval wait short
+		ChainID: common.BSCChain,
 		RPCHost: s.chain.URL(),
 		BlockScanner: config.BifrostBlockScannerConfiguration{
 			ChainID:            common.BSCChain,
@@ -247,19 +248,40 @@ func (s *RouterSimSuite) TestERC20TransferOutApprovesRouterFirst(c *C) {
 	item := s.outbound(asset, 10*common.One)
 	amount := new(big.Int).Mul(big.NewInt(10), simEther)
 
-	// V6 pulls tokens with transferFrom, which reverts until the vault approves the
-	// router, so SignTx must broadcast the approval before it estimates gas for the
-	// transferOut. Blocks are only mined on commit, so the approval is still pending
-	// when SignTx estimates and this attempt defers the outbound for rescheduling.
-	raw, _, _, err := s.client.SignTx(item, 1)
-	c.Assert(err, IsNil)
-	c.Assert(raw, IsNil)
+	// Retain each returned checkpoint as the signer does between attempts. The
+	// preparation and signed bytes must both be saved before approval submission.
+	checkpointPending := func(height int64) {
+		raw, checkpoint, observation, signErr := s.client.SignTx(item, height)
+		c.Assert(errors.Is(signErr, errApprovalPending), Equals, true)
+		c.Assert(raw, IsNil)
+		c.Assert(observation, IsNil)
+		c.Assert(checkpoint, NotNil)
+		item.Checkpoint = checkpoint
+	}
+	checkpointPending(1) // Prepare the unsigned approval.
+	c.Assert(s.chain.pendingNonce(s.vault), Equals, uint64(0))
+	prepared := append([]byte(nil), item.Checkpoint...)
+	checkpointPending(1) // Save its signed bytes, without broadcasting yet.
+	c.Assert(s.chain.pendingNonce(s.vault), Equals, uint64(0))
+	c.Assert(item.Checkpoint, Not(DeepEquals), prepared)
+	signedApproval := append([]byte(nil), item.Checkpoint...)
+	checkpointPending(1) // Submit only after the signed checkpoint is retained.
+	c.Assert(item.Checkpoint, DeepEquals, signedApproval)
 	c.Assert(s.chain.pendingNonce(s.vault), Equals, uint64(1), Commentf("SignTx did not broadcast the approval"))
 
+	// V6 cannot transferFrom until the approval is mined. A pending retry must
+	// retain the same checkpoint and must not submit a second transaction.
+	checkpointPending(1)
+	c.Assert(item.Checkpoint, DeepEquals, signedApproval)
+	c.Assert(s.chain.pendingNonce(s.vault), Equals, uint64(1))
+	c.Assert(s.erc20(c, "allowance", s.vault, s.router).Sign(), Equals, 0)
 	c.Assert(s.chain.commit(), IsNil)
 	c.Assert(s.erc20(c, "allowance", s.vault, s.router).Cmp(amount) >= 0, Equals, true)
 
-	// The rescheduled attempt signs after the approval's nonce and executes on chain.
+	// Save the mined approval's transfer checkpoint before exposing a transfer
+	// signature, then execute that transfer at the following nonce.
+	checkpointPending(2)
+	assertUnsignedNonce(c, item.Checkpoint, 1)
 	raw, _, obs, err := s.client.SignTx(item, 2)
 	c.Assert(err, IsNil)
 	c.Assert(raw, NotNil, Commentf("SignTx skipped the outbound after the approval was mined"))

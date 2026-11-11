@@ -15,6 +15,7 @@ import (
 	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 	"github.com/cosmos/cosmos-sdk/crypto/hd"
 	ckeys "github.com/cosmos/cosmos-sdk/crypto/keyring"
+	"github.com/rs/zerolog"
 	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/syndtr/goleveldb/leveldb/storage"
 	. "gopkg.in/check.v1"
@@ -25,6 +26,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/cmd"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/config"
+	"gitlab.com/thorchain/thornode/v3/constants"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain"
 )
 
@@ -42,6 +44,28 @@ var errTest = errors.New("test error")
 
 var initMetricsOnce sync.Once
 
+// waitForScanner polls until cond holds, so a test waits for the scan loop
+// state it asserts on instead of sleeping a fixed time.
+func waitForScanner(c *C, cond func() bool, what string) {
+	deadline := time.Now().Add(30 * time.Second)
+	for !cond() {
+		if time.Now().After(deadline) {
+			c.Fatalf("timed out waiting for %s", what)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+// withShortBlockTime runs the rest of a test with a 50ms THORChain block time,
+// which paces the scan loop's paused-chain sleep (see
+// BlockScannerTestSuite.SetUpTest). Stop the scanner before the returned
+// restore runs.
+func withShortBlockTime() (restore func()) {
+	previous := constants.ThorchainBlockTime
+	constants.ThorchainBlockTime = 50 * time.Millisecond
+	return func() { constants.ThorchainBlockTime = previous }
+}
+
 // ---------------------------------------------------------------------------
 // configurable mock fetcher
 // ---------------------------------------------------------------------------
@@ -53,6 +77,8 @@ type configFetcher struct {
 	chainHeightErr error
 	networkFeeSize uint64
 	networkFeeRate uint64
+
+	fetches atomic.Int64 // FetchTxs calls
 }
 
 func (f *configFetcher) FetchMemPool(height int64) (types.TxIn, error) {
@@ -60,6 +86,7 @@ func (f *configFetcher) FetchMemPool(height int64) (types.TxIn, error) {
 }
 
 func (f *configFetcher) FetchTxs(fetchHeight, chainHeight int64) (types.TxIn, error) {
+	f.fetches.Add(1)
 	return f.txIn, f.fetchErr
 }
 
@@ -811,7 +838,9 @@ func (s *BlockScannerExtraSuite) TestStartStopWithMempoolDisabled(c *C) {
 		}
 	}))
 	defer server.Close()
-	bridge := s.makeBridge(c, server)
+	// The mimir fixture halts the chain, so Stop waits out a paused-chain sleep.
+	defer withShortBlockTime()()
+	bridge := &pauseCheckCountingBridge{ThorchainBridge: s.makeBridge(c, server)}
 
 	mss := NewMockScannerStorage()
 	scanner, err := NewBlockScanner(config.BifrostBlockScannerConfiguration{
@@ -828,7 +857,7 @@ func (s *BlockScannerExtraSuite) TestStartStopWithMempoolDisabled(c *C) {
 	globalChan := make(chan types.TxIn)
 	nfChan := make(chan common.NetworkFee)
 	scanner.Start(globalChan, nfChan)
-	time.Sleep(500 * time.Millisecond)
+	waitForPauseChecks(c, bridge, 2)
 	scanner.Stop()
 }
 
@@ -931,7 +960,7 @@ func (s *BlockScannerExtraSuite) TestScanBlocksWithPrefetch(c *C) {
 	globalChan := make(chan types.TxIn, 20)
 	nfChan := make(chan common.NetworkFee, 5)
 	scanner.Start(globalChan, nfChan)
-	time.Sleep(2 * time.Second)
+	waitForScanner(c, func() bool { return scanner.PreviousHeight() >= 10 }, "scan to the chain tip")
 	scanner.Stop()
 
 	c.Check(scanner.PreviousHeight() > 1, Equals, true)
@@ -966,7 +995,7 @@ func (s *BlockScannerExtraSuite) TestScanMempoolEnabled(c *C) {
 		StartBlockHeight:           1,
 		BlockScanProcessors:        1,
 		HTTPRequestTimeout:         time.Second,
-		BlockHeightDiscoverBackoff: time.Second,
+		BlockHeightDiscoverBackoff: 10 * time.Millisecond,
 		BlockRetryInterval:         time.Second,
 		ChainID:                    common.ETHChain,
 		ScanMemPool:                true,
@@ -976,7 +1005,7 @@ func (s *BlockScannerExtraSuite) TestScanMempoolEnabled(c *C) {
 	globalChan := make(chan types.TxIn, 10)
 	nfChan := make(chan common.NetworkFee, 5)
 	scanner.Start(globalChan, nfChan)
-	time.Sleep(2 * time.Second)
+	waitForScanner(c, func() bool { return len(globalChan) > 0 }, "a queued mempool tx")
 	scanner.Stop()
 
 	// Mempool txs should have been queued
@@ -1009,15 +1038,105 @@ func (s *BlockScannerExtraSuite) TestScanBlocksUnhealthy(c *C) {
 		MaxHealthyLag:              time.Second, // very short lag threshold
 	}, mss, m, bridge, fetcher)
 	c.Assert(err, IsNil)
+	// An unhealthy scanner logs every block; a second of that at full speed
+	// overflows the CI job log and hides whichever test actually failed.
+	scanner.logger = zerolog.Nop()
 
 	globalChan := make(chan types.TxIn, 100)
 	nfChan := make(chan common.NetworkFee, 5)
 	scanner.Start(globalChan, nfChan)
-	time.Sleep(1 * time.Second)
+	// health is set on every scanned block
+	waitForScanner(c, func() bool { return scanner.PreviousHeight() > 1 }, "a scanned block")
 	scanner.Stop()
 
 	// Scanner should be unhealthy when significantly behind
 	c.Check(scanner.IsHealthy(), Equals, false)
+}
+
+// scanBaseAtDenimGap runs a BASE scanner pinned ~1e6 blocks behind tip with
+// MaxHealthyLag 500_000s and the given ApproximateBlockTime override, and
+// returns whether the health gate (blockscanner.go) read it as healthy. The gate
+// marks a scanner unhealthy when
+//
+//	(chainHeight-currentBlock) * cfg.ApproximateBlockMilliseconds() >= MaxHealthyLag
+//
+// so the ~1e6 gap sits between the two flip points:
+//
+//	override 200ms           -> 1e6 * 200ms  =   200_000s behind (flip at 2.5e6 blocks)
+//	no override, BASE 2000ms -> 1e6 * 2000ms = 2_000_000s behind (flip at 2.5e5 blocks)
+//
+// and far above the 3-block shortcut, so the duration branch decides from the
+// first block; waiting for a few scanned blocks just ensures health was evaluated.
+func (s *BlockScannerExtraSuite) scanBaseAtDenimGap(c *C, blockTime time.Duration) bool {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasPrefix(r.RequestURI, thorclient.MimirEndpoint):
+			_, _ = w.Write([]byte(`-1`))
+		case strings.HasPrefix(r.RequestURI, "/thorchain/lastblock"):
+			_, _ = w.Write([]byte(`[{"chain":"NOOP","lastobservedin":0,"lastsignedout":0,"thorchain":0}]`))
+		case strings.HasPrefix(r.RequestURI, "/thorchain/inbound_addresses"):
+			_, _ = w.Write([]byte(`[{"chain":"BASE","outbound_tx_size":"250","observed_fee_rate":"30"}]`))
+		}
+	}))
+	defer server.Close()
+	bridge := s.makeBridge(c, server)
+
+	mss := NewMockScannerStorage()
+	fetcher := &configFetcher{chainHeight: 1_000_000, networkFeeSize: 250, networkFeeRate: 30}
+	scanner, err := NewBlockScanner(config.BifrostBlockScannerConfiguration{
+		StartBlockHeight:           1,
+		BlockScanProcessors:        1,
+		HTTPRequestTimeout:         time.Second,
+		BlockHeightDiscoverBackoff: 100 * time.Millisecond,
+		BlockRetryInterval:         100 * time.Millisecond,
+		ChainID:                    common.BASEChain,
+		MaxHealthyLag:              500_000 * time.Second,
+		ApproximateBlockTime:       blockTime,
+	}, mss, m, bridge, fetcher)
+	c.Assert(err, IsNil)
+	// An unhealthy scanner logs every block; keep the job log readable.
+	scanner.logger = zerolog.Nop()
+
+	globalChan := make(chan types.TxIn, 100)
+	nfChan := make(chan common.NetworkFee, 5)
+	scanner.Start(globalChan, nfChan)
+	waitForScanner(c, func() bool { return scanner.PreviousHeight() > 3 }, "more than 3 scanned blocks")
+	scanner.Stop()
+
+	c.Check(scanner.PreviousHeight() > 3, Equals, true)
+	return scanner.IsHealthy()
+}
+
+// TestBaseScannerHealthyAfterDenim is the regression guard for the Base Denim
+// block-time fix: with default.yaml's BASE approximate_block_time of 200ms, a
+// scanner at the ~1e6-block gap reads HEALTHY, so the signer keeps signing BASE.
+func (s *BlockScannerExtraSuite) TestBaseScannerHealthyAfterDenim(c *C) {
+	c.Check(s.scanBaseAtDenimGap(c, 200*time.Millisecond), Equals, true)
+}
+
+// TestBaseScannerUnhealthyWithoutBlockTimeOverride is the companion to
+// TestBaseScannerHealthyAfterDenim: at the same gap but with no override, the
+// scanner falls back to common.BASEChain's stale 2000ms constant and reads
+// UNHEALTHY — the mainnet condition where no node would sign BASE. Together they
+// show the bifrost-side override, not the (consensus-visible) common constant, is
+// what fixes the health gate.
+func (s *BlockScannerExtraSuite) TestBaseScannerUnhealthyWithoutBlockTimeOverride(c *C) {
+	c.Assert(common.BASEChain.ApproximateBlockMilliseconds(), Equals, int64(2_000))
+	c.Check(s.scanBaseAtDenimGap(c, 0), Equals, false)
+}
+
+// TestMaxResumeLagBlocksUsesBlockTimeOverride checks the resume-lag window is
+// sized from the ApproximateBlockTime override when set, and from the chain
+// constant otherwise.
+func (s *BlockScannerExtraSuite) TestMaxResumeLagBlocksUsesBlockTimeOverride(c *C) {
+	b := &BlockScanner{cfg: config.BifrostBlockScannerConfiguration{
+		ChainID:           common.BASEChain,
+		MaxResumeBlockLag: time.Hour,
+	}}
+	c.Check(b.maxResumeLagBlocks(), Equals, int64(time.Hour/time.Millisecond)/common.BASEChain.ApproximateBlockMilliseconds())
+
+	b.cfg.ApproximateBlockTime = 200 * time.Millisecond
+	c.Check(b.maxResumeLagBlocks(), Equals, int64(18_000)) // 1h / 200ms
 }
 
 // TestStartWithPersistedPos tests that Start reads the persisted scan position.
@@ -1086,7 +1205,8 @@ func (s *BlockScannerExtraSuite) TestScanBlocksFetchError(c *C) {
 	globalChan := make(chan types.TxIn, 20)
 	nfChan := make(chan common.NetworkFee, 5)
 	scanner.Start(globalChan, nfChan)
-	time.Sleep(1 * time.Second)
+	// a second fetch means the first failure was handled and backed off
+	waitForScanner(c, func() bool { return fetcher.fetches.Load() >= 2 }, "a retried fetch")
 	scanner.Stop()
 
 	// Scanner should become unhealthy on fetch errors

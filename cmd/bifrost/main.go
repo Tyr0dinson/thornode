@@ -101,17 +101,32 @@ func main() {
 	// Legacy shares back the process-wide TSS stack and remain a startup
 	// prerequisite. XMR FROST shares are isolated by exact-vault readiness, so a
 	// missing historical XMR vault is retried without disabling healthy chains.
-	// A definitively-unrecoverable signing-vault share does not block startup:
+	// A definitively-unrecoverable keyshare (any vault — recovery no longer depends
+	// on signing status) does not block startup:
 	// bifrost starts degraded (that vault's keysigns fail, everything else —
 	// observations included — keeps working) while recovery retries in the
 	// background.
-	startBifrost, degraded := recoverLegacyKeysharesBeforeStartup(cfg, thorchainBridge)
+	startBifrost, degraded, recoverAtHeight := recoverLegacyKeysharesBeforeStartup(cfg, thorchainBridge)
 	if !startBifrost {
 		return
 	}
 	recoveryCtx, cancelRecovery := context.WithCancel(context.Background())
-	if degraded {
+	// Exactly ONE legacy-recovery background path runs — never both — because each
+	// re-runs the FULL recovery (every vault) and writes the same localstate files;
+	// two concurrently would race on those writes.
+	switch {
+	case degraded:
+		// A backup is permanently unavailable from this node (pruned / never posted).
+		// The supervisor re-runs the full recovery on a backoff and, when the error
+		// set also carries a not-yet-synced vault, picks that up too once the node
+		// syncs — so it subsumes the one-shot trigger for the mixed case.
 		go superviseLegacyKeyshareRecovery(recoveryCtx, cfg, thorchainBridge)
+	case recoverAtHeight > 0:
+		// Pure not-yet-synced: the only failure is a backup above our synced height.
+		// Don't block startup or time-backoff; recover exactly once when the node
+		// syncs past the backup height (one compare per THORChain block, bounded by
+		// a max wait, with a supervisor fallback inside on failure/timeout).
+		go awaitHeightAndRecoverLegacyKeyshares(recoveryCtx, cfg, thorchainBridge, recoverAtHeight)
 	}
 	go superviseFrostKeyshareRecovery(recoveryCtx, cfg, thorchainBridge)
 
@@ -131,15 +146,11 @@ func main() {
 	tmPrivateKeyEddsa := tcommon.CosmosPrivateKeyToTMPrivateKey(priKeyEddsa)
 
 	consts := constants.NewConstantValue()
-	jailTimeKeygen := time.Duration(consts.GetInt64Value(constants.JailTimeKeygen)) * constants.ThorchainBlockTime
 	jailTimeKeysign := time.Duration(consts.GetInt64Value(constants.JailTimeKeysign)) * constants.ThorchainBlockTime
-	if cfg.Signer.KeygenTimeout >= jailTimeKeygen {
-		log.Fatal().
-			Stringer("keygenTimeout", cfg.Signer.KeygenTimeout).
-			Stringer("keygenJail", jailTimeKeygen).
-			Msg("keygen timeout must be shorter than jail time")
+	if err = checkKeygenTimeout(cfg.Signer.KeygenTimeout, consts); err != nil {
+		log.Fatal().Err(err).Msg("keygen timeout must be shorter than jail time")
 	}
-	// FrostKeygenTimeout is intentionally NOT bound by jailTimeKeygen.
+	// FrostKeygenTimeout is intentionally NOT bound by the keygen jail times.
 	// FROST DKG is a 3-round p2p protocol whose round-2 message exchange
 	// can legitimately exceed the aggressive jail times used in test
 	// environments. The 60s
@@ -270,33 +281,85 @@ func main() {
 	}
 }
 
-// recoverLegacyKeysharesBeforeStartup returns (start, degraded). start is false
-// only when a shutdown signal interrupts the retry loop. degraded is true when
-// startup should proceed WITHOUT complete keyshares: recovery failed with an
-// error foreground retries can never fix (source blocks pruned below the node's
-// floor, or a TssPool message found with an empty backup) — blocking here would
-// take down observations for every chain, which is strictly worse than degraded
-// signing, so the caller must hand recovery to superviseLegacyKeyshareRecovery.
-// Transient errors (RPC flake, message not yet found) keep the foreground retry
-// loop, which usually resolves within a few blocks.
-func recoverLegacyKeysharesBeforeStartup(cfg config.Bifrost, bridge thorclient.ThorchainBridge) (start, degraded bool) {
+// checkKeygenTimeout ensures the keygen timeout is shorter than every jail
+// period a failed keygen can produce, so a jailed node is never released
+// while the keygen that blamed it may still be running. JailTimeKeygen
+// covers the flat jail and JailTimeKeygenBase the first escalated jail of a
+// non-active node.
+func checkKeygenTimeout(keygenTimeout time.Duration, consts constants.ConstantValues) error {
+	for _, name := range []constants.ConstantName{constants.JailTimeKeygen, constants.JailTimeKeygenBase} {
+		jail := time.Duration(consts.GetInt64Value(name)) * constants.ThorchainBlockTime
+		if keygenTimeout >= jail {
+			return fmt.Errorf("keygen timeout %s is not shorter than %s (%s)", keygenTimeout, name, jail)
+		}
+	}
+	return nil
+}
+
+// recoverLegacyKeysharesFn is the legacy keyshare recovery entrypoint behind a
+// package var so the startup barrier, the one-shot height trigger, and the
+// background supervisor can be unit-tested without a live thornode. Production
+// always uses btss.RecoverLegacyKeyShares (identical behavior); only tests
+// override it.
+var recoverLegacyKeysharesFn = btss.RecoverLegacyKeyShares
+
+// legacyRecoveryTickInterval is the per-THORChain-block cadence shared by the
+// pre-startup retry loop and the one-shot height trigger. It is a var defaulting
+// to the real block time so tests can tick fast; production behavior is unchanged.
+var legacyRecoveryTickInterval = constants.ThorchainBlockTime
+
+// recoverLegacyKeysharesBeforeStartup returns (start, degraded, recoverAtHeight).
+// start is false only when a shutdown signal interrupts the retry loop. degraded
+// is true when a backup is permanently unavailable from this node (pruned below
+// the block-store floor, or never posted in the fully-available scan window) —
+// startup proceeds without those shares and the background supervisor keeps
+// retrying (an operator restore / archive RPC is the resolution). recoverAtHeight
+// is non-zero when a backup's block is above our current synced height: startup
+// proceeds, and a one-shot trigger recovers it once the node syncs past that
+// height (see awaitHeightAndRecoverLegacyKeyshares). The two are mutually
+// exclusive: a permanent member returns (degraded=true, recoverAtHeight=0) because
+// the background supervisor re-runs the FULL recovery and subsumes the one-shot
+// trigger (so any not-yet-synced sibling is covered there too), while a purely
+// not-yet-synced result returns (degraded=false, recoverAtHeight>0). Only a
+// genuinely transient failure (RPC/disk) retries here before TSS startup — a
+// permanent or not-yet-synced result never wedges the loop (the 3.20.0
+// signing-stall class).
+func recoverLegacyKeysharesBeforeStartup(cfg config.Bifrost, bridge thorclient.ThorchainBridge) (start, degraded bool, recoverAtHeight int64) {
 	ctx, stopSignals := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stopSignals()
 
 	for attempt := 1; ; attempt++ {
-		err := btss.RecoverLegacyKeyShares(cfg, bridge)
+		err := recoverLegacyKeysharesFn(cfg, bridge)
 		if err == nil {
-			return true, false
+			return true, false, 0
 		}
-		if btss.IsUnrecoverableKeyshareError(err) {
-			// The joined error may also carry transient failures for other vaults;
-			// the background supervisor re-runs the full recovery, so those are
-			// retried there too.
-			log.Error().Err(err).Msg("legacy keyshares for a signing vault are unrecoverable by retrying; starting bifrost DEGRADED and retrying recovery in the background")
-			return true, true
+		// A permanently-unavailable vault (pruned below the block-store floor, or never
+		// posted in the fully-available scan window) can NEVER be fixed by a foreground
+		// retry, so start DEGRADED immediately and let the background supervisor re-run
+		// the FULL recovery — which also retries any transient or not-yet-synced sibling
+		// carried in the same joined result. Blocking startup while a transient /
+		// unclassified sibling clears would re-introduce the wedge: a persistent
+		// non-sentinel error coexisting with a permanent one would loop the pre-startup
+		// barrier forever and never start TSS (the 3.20.0 signing-stall class). develop
+		// starts degraded on any permanent member for exactly this reason.
+		if btss.IsPermanentKeyshareRecoveryFailure(err) {
+			log.Error().Err(err).Msg("legacy keyshares for a vault are unrecoverable by retrying (pruned or never posted); starting bifrost DEGRADED and retrying recovery in the background")
+			return true, true, 0
 		}
-		log.Error().Err(err).Int("attempt", attempt).Msg("legacy keyshare recovery incomplete; retrying before TSS startup")
-		timer := time.NewTimer(constants.ThorchainBlockTime)
+		// Purely not-yet-synced (no transient member left to clear): don't busy-retry
+		// the full scan while the node is still catching up — start degraded and arm the
+		// one-shot height trigger that recovers once local height reaches the backup
+		// height. A transient sibling (HasRetryableKeyshareComponent) takes the
+		// foreground-retry path below instead, so it clears promptly.
+		if syncHeight, notYetSynced := btss.NotYetSyncedKeyshareHeight(err); notYetSynced && !btss.HasRetryableKeyshareComponent(err) {
+			log.Error().Err(err).Int64("recover_at_height", syncHeight).Msg("legacy keyshare backup is above the node's synced height; starting bifrost DEGRADED and arming a one-shot recovery once the node syncs past it")
+			return true, false, syncHeight
+		}
+		// A genuinely transient member (RPC/disk flake), possibly alongside a
+		// not-yet-synced sibling: retry in the foreground so it clears quickly before
+		// TSS startup rather than being abandoned to the slower background supervisor.
+		log.Error().Err(err).Int("attempt", attempt).Msg("legacy keyshare recovery incomplete (transient); retrying before TSS startup")
+		timer := time.NewTimer(legacyRecoveryTickInterval)
 		select {
 		case <-timer.C:
 		case <-ctx.Done():
@@ -306,20 +369,104 @@ func recoverLegacyKeysharesBeforeStartup(cfg config.Bifrost, bridge thorclient.T
 				default:
 				}
 			}
-			return false, false
+			return false, false, 0
 		}
 	}
 }
 
-const (
-	// legacyRecoveryRetryInitial/Max bound the background recovery backoff. The
-	// doubling cap keeps the worst case (a found-but-empty backup, where each
-	// re-attempt rescans blocks for the TssPool message) to ~48 scans/day while
-	// still noticing an operator fix — restored localstate short-circuits before
-	// any scan — within a minute at first.
-	legacyRecoveryRetryInitial = time.Minute
-	legacyRecoveryRetryMax     = 30 * time.Minute
-)
+// legacyRecoverySyncMaxWait bounds the one-shot not-yet-synced recovery wait so an
+// unreachable height (misconfigured RPC, wrong vault height) cannot leave it armed
+// forever — it then hands off to the background supervisor rather than silently
+// skip. The height is compared once per THORChain block (constants.ThorchainBlockTime,
+// a var not a const), not in a busy loop.
+var legacyRecoverySyncMaxWait = 6 * time.Hour
+
+// awaitHeightAndRecoverLegacyKeyshares runs legacy recovery exactly once, when the
+// node's THORChain height first reaches recoverAtHeight — the block carrying a
+// backup that was above our synced height at startup. It compares once per
+// THORChain block (no tight poll, no time-backoff) and, if the height is never
+// reached within legacyRecoverySyncMaxWait, loudly alerts and hands off to the
+// background supervisor instead of giving up silently. If recovery runs once the
+// height is reached but a vault is permanently unavailable, it also hands off (only
+// an operator restore / archive can resolve that); a transient failure instead
+// keeps retrying on the next block, and a freshly not-yet-synced result re-arms on
+// the new height — so a not-yet-synced vault always has a retry safety net.
+func awaitHeightAndRecoverLegacyKeyshares(ctx context.Context, cfg config.Bifrost, bridge thorclient.ThorchainBridge, recoverAtHeight int64) {
+	deadline := time.NewTimer(legacyRecoverySyncMaxWait)
+	defer deadline.Stop()
+	ticker := time.NewTicker(legacyRecoveryTickInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-deadline.C:
+			log.Error().Int64("recover_at_height", recoverAtHeight).Dur("waited", legacyRecoverySyncMaxWait).Msg(
+				"BIFROST DEGRADED: node never synced to the legacy keyshare backup height within the max wait — that vault's keysigns still fail; check THORNode sync/RPC. Handing off to the background recovery supervisor")
+			superviseLegacyKeyshareRecovery(ctx, cfg, bridge)
+			return
+		case <-ticker.C:
+			height, err := bridge.GetBlockHeight()
+			if err != nil {
+				log.Warn().Err(err).Msg("one-shot keyshare recovery: fail to read THORChain height while waiting to sync to the backup height")
+				continue
+			}
+			if height < recoverAtHeight {
+				continue
+			}
+			if recErr := recoverLegacyKeysharesFn(cfg, bridge); recErr != nil {
+				// A permanently-unavailable vault (pruned / never-posted) can never be
+				// fixed by waiting for a sync height, so hand it straight to the
+				// supervisor rather than re-running the full scan every block until the
+				// deadline. Judge per leaf (same decomposition the startup barrier uses)
+				// so a not-yet-synced sibling — e.g. a fresh membership after a churn
+				// while waiting — cannot mask the permanent member.
+				if btss.IsPermanentKeyshareRecoveryFailure(recErr) {
+					log.Error().Err(recErr).Int64("height", height).Msg(
+						"one-shot keyshare recovery reached the backup height but a vault is permanently unavailable; handing off to the background recovery supervisor")
+					superviseLegacyKeyshareRecovery(ctx, cfg, bridge)
+					return
+				}
+				// A transient member (an RPC/disk flake on another vault) needs a
+				// prompt retry, not a wait — keep re-running every block so it clears
+				// quickly. Do NOT advance the target past it: advancing would suppress
+				// that vault's retry until the unrelated sync height (or the deadline).
+				// Only a result with no transient member advances the wait.
+				if btss.HasRetryableKeyshareComponent(recErr) {
+					continue
+				}
+				// Purely not-yet-synced (GetBlockHeight is cached and may be served by a
+				// peer/LB ahead of the locally-connected node, whereas recovery re-reads
+				// the authoritative /status): keep the responsive per-block wait, but
+				// advance the target to the newly-reported height so we do not re-run the
+				// full recovery on every block until the node reaches it.
+				if next, syncing := btss.NotYetSyncedKeyshareHeight(recErr); syncing {
+					if next > recoverAtHeight {
+						recoverAtHeight = next
+					}
+					continue
+				}
+				log.Error().Err(recErr).Int64("height", height).Int64("recover_at_height", recoverAtHeight).Msg(
+					"one-shot keyshare recovery ran at the synced height but did not complete; handing off to the background recovery supervisor")
+				superviseLegacyKeyshareRecovery(ctx, cfg, bridge)
+				return
+			}
+			log.Info().Int64("height", height).Msg("one-shot keyshare recovery completed after the node synced to the backup height; this node signs for the recovered vault from the next keysign")
+			return
+		}
+	}
+}
+
+// legacyRecoveryRetryInitial/Max bound the background recovery backoff. The
+// doubling cap keeps the worst case (a found-but-empty backup, where each
+// re-attempt rescans blocks for the TssPool message) to ~48 scans/day while
+// still noticing an operator fix — restored localstate short-circuits before
+// any scan — within a minute at first. legacyRecoveryRetryInitial is a var (not a
+// const) only so tests can shrink the supervisor's first-attempt delay; production
+// behavior is unchanged.
+var legacyRecoveryRetryInitial = time.Minute
+
+const legacyRecoveryRetryMax = 30 * time.Minute
 
 // superviseLegacyKeyshareRecovery re-attempts legacy keyshare recovery in the
 // background after bifrost started degraded. The moment an attempt succeeds —
@@ -330,10 +477,20 @@ const (
 // Until then it screams on every cycle so the degraded state cannot be missed.
 func superviseLegacyKeyshareRecovery(ctx context.Context, cfg config.Bifrost, bridge thorclient.ThorchainBridge) {
 	recovered := retryRecoveryUntilDone(ctx, legacyRecoveryRetryInitial, legacyRecoveryRetryMax,
-		func() error { return btss.RecoverLegacyKeyShares(cfg, bridge) },
+		func() error { return recoverLegacyKeysharesFn(cfg, bridge) },
 		func(err error, attempt int, next time.Duration) {
+			// The supervisor handles two causes; give the operator the right remedy.
+			// A purely not-yet-synced result (the sync-timeout handoff from
+			// awaitHeightAndRecoverLegacyKeyshares) means nothing is missing — the node
+			// just hasn't reached the backup height — so the restore/archive advice
+			// would be wrong. Any permanent member means a backup really is gone.
+			if _, syncing := btss.NotYetSyncedKeyshareHeight(err); syncing && !btss.IsPermanentKeyshareRecoveryFailure(err) {
+				log.Error().Err(err).Int("attempt", attempt).Dur("next_retry_in", next).Msg(
+					"BIFROST RUNNING DEGRADED: a vault's keyshare backup is above this node's synced height; its keysigns fail until the node catches up — no restore needed, this clears as the node syncs; recovery keeps retrying in the background")
+				return
+			}
 			log.Error().Err(err).Int("attempt", attempt).Dur("next_retry_in", next).Msg(
-				"BIFROST RUNNING DEGRADED: keyshares for a signing vault are missing, its keysigns fail — restore localstate-<pubkey>.json from backup or point THORNode RPC at an archive node; recovery keeps retrying in the background")
+				"BIFROST RUNNING DEGRADED: keyshares for a vault are missing, its keysigns fail — restore localstate-<pubkey>.json from backup or point THORNode RPC at an archive node; recovery keeps retrying in the background")
 		})
 	if recovered {
 		log.Info().Msg("legacy keyshare recovery completed in the background; this node signs for the recovered vault from the next keysign")

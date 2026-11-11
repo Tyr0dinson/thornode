@@ -38,6 +38,7 @@ const (
 	prefixRefundCleanupExpiry       types.DbPrefix = "refund_cleanup_expiry/"
 	prefixPool                      types.DbPrefix = "pool/"
 	prefixPoolLUVI                  types.DbPrefix = "luvi/"
+	prefixPoolLuviAccumulator       types.DbPrefix = "pool_luvi/"
 	prefixTxOut                     types.DbPrefix = "txout/"
 	prefixTotalLiquidityFee         types.DbPrefix = "total_liquidity_fee/"
 	prefixPoolLiquidityFee          types.DbPrefix = "pool_liquidity_fee/"
@@ -90,6 +91,7 @@ const (
 	prefixBanVoter                  types.DbPrefix = "ban/"
 	prefixNodeSlashPoints           types.DbPrefix = "slash/"
 	prefixNodeJail                  types.DbPrefix = "jail/"
+	prefixNodeBlameRecord           types.DbPrefix = "node_blame/"
 	prefixSwapQueueItem             types.DbPrefix = "swapitem/"
 	prefixAdvSwapQueueItem          types.DbPrefix = "aq/"
 	prefixAdvSwapQueueLimitIndex    types.DbPrefix = "aqlim/"
@@ -258,6 +260,7 @@ func (k KVStore) del(ctx cosmos.Context, key []byte) {
 	}
 	if bytes.HasPrefix(key, []byte(prefixTxOut)) {
 		keeper.TxOutCacheFromContext(ctx).Disable()
+		noteTxOutWindowWrite(ctx, key)
 	}
 	store := k.kvStore(ctx)
 	if store.Has(key) {
@@ -474,6 +477,9 @@ func (k KVStore) SendFromModuleToAccount(ctx cosmos.Context, from string, to cos
 }
 
 func (k KVStore) BurnFromModule(ctx cosmos.Context, module string, coin common.Coin) error {
+	if coin.Asset.IsSyntheticAsset() {
+		keeper.RecordLuviTouch(ctx, coin.Asset, k.luviCapture(ctx))
+	}
 	coinToBurn, err := coin.Native()
 	if err != nil {
 		return fmt.Errorf("fail to parse coins: %w", err)
@@ -492,6 +498,7 @@ func (k KVStore) BurnFromModule(ctx cosmos.Context, module string, coin common.C
 // write off settled ThorFi-era synth residuals. For each holder it sends the
 // balance to the thorchain module and burns it.
 func (k KVStore) BurnEntireSynthSupply(ctx cosmos.Context, synthAsset common.Asset) (cosmos.Uint, error) {
+	keeper.RecordLuviTouch(ctx, synthAsset, k.luviCapture(ctx))
 	denom := synthAsset.Native()
 	type holderBalance struct {
 		addr cosmos.AccAddress
@@ -519,6 +526,9 @@ func (k KVStore) BurnEntireSynthSupply(ctx cosmos.Context, synthAsset common.Ass
 }
 
 func (k KVStore) MintToModule(ctx cosmos.Context, module string, coin common.Coin) error {
+	if coin.Asset.IsSyntheticAsset() {
+		keeper.RecordLuviTouch(ctx, coin.Asset, k.luviCapture(ctx))
+	}
 	// circuit breaker
 	// mint new rune coins until we hit the cap. Once we do, borrow
 	// from the reserve instead of minting new tokens

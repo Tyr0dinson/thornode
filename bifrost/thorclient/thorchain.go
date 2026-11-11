@@ -174,12 +174,59 @@ type httpResponseCache struct {
 	httpResponse        []byte
 	httpResponseChecked time.Time
 	httpResponseLock    chan struct{}
+
+	// users counts the getCached calls holding this entry, from lookup until
+	// they are done with it. Guarded by httpResponseCachesMu.
+	users int
 }
 
 var (
 	httpResponseCaches   = make(map[string]*httpResponseCache) // String-to-pointer map for quicker lookup
 	httpResponseCachesMu = &sync.Mutex{}
+
+	// httpResponseCachesSwept is when idle entries were last dropped from
+	// httpResponseCaches. Guarded by httpResponseCachesMu.
+	httpResponseCachesSwept time.Time
 )
+
+// httpResponseCacheIdle is how long an entry may go unrefreshed before it is
+// dropped. It is well past the one block time a response is served for.
+var httpResponseCacheIdle = 10 * constants.ThorchainBlockTime
+
+// acquireHTTPResponseCache returns the cache entry for url, creating it if
+// needed, and marks it in use until releaseHTTPResponseCache.
+//
+// Height-specific URLs (keysign and keygen, polled once per block for every
+// signing pubkey) would otherwise stay in the map forever with their last body.
+// At most once per httpResponseCacheIdle it drops the entries nobody is using
+// that were not refreshed for that long. Their responses are too old to be
+// served, so a dropped entry behaves exactly like a cache miss.
+func acquireHTTPResponseCache(url string) *httpResponseCache {
+	httpResponseCachesMu.Lock()
+	defer httpResponseCachesMu.Unlock()
+	now := time.Now()
+	if now.Sub(httpResponseCachesSwept) >= httpResponseCacheIdle {
+		httpResponseCachesSwept = now
+		for key, entry := range httpResponseCaches {
+			if entry.users == 0 && now.Sub(entry.httpResponseChecked) >= httpResponseCacheIdle {
+				delete(httpResponseCaches, key)
+			}
+		}
+	}
+	entry := httpResponseCaches[url]
+	if entry == nil {
+		entry = &httpResponseCache{httpResponseLock: make(chan struct{}, 1)}
+		httpResponseCaches[url] = entry
+	}
+	entry.users++
+	return entry
+}
+
+func releaseHTTPResponseCache(entry *httpResponseCache) {
+	httpResponseCachesMu.Lock()
+	entry.users--
+	httpResponseCachesMu.Unlock()
+}
 
 // NewThorchainBridge create a new instance of ThorchainBridge
 func NewThorchainBridge(cfg config.BifrostClientConfiguration, m *metrics.Metrics, k *Keys) (ThorchainBridge, error) {
@@ -291,13 +338,8 @@ func (b *thorchainBridge) getCached(
 	}
 	// To reduce querying time and chance of "429 Too Many Requests",
 	// do not query the same endpoint more than once per block time.
-	httpResponseCachesMu.Lock()
-	respCachePointer := httpResponseCaches[url]
-	if respCachePointer == nil {
-		respCachePointer = &httpResponseCache{httpResponseLock: make(chan struct{}, 1)}
-		httpResponseCaches[url] = respCachePointer
-	}
-	httpResponseCachesMu.Unlock()
+	respCachePointer := acquireHTTPResponseCache(url)
+	defer releaseHTTPResponseCache(respCachePointer)
 
 	// So lengthy queries don't hold up unrelated queries, serialize only callers
 	// for this URL. Context-aware callers can stop waiting with their transfer.

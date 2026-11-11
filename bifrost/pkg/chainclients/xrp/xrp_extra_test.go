@@ -1,17 +1,21 @@
 package xrp
 
 import (
+	"bytes"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"math/big"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/rs/zerolog/log"
 
 	sdkmath "cosmossdk.io/math"
+	binarycodec "github.com/Peersyst/xrpl-go/binary-codec"
 	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -32,55 +36,6 @@ import (
 
 	. "gopkg.in/check.v1"
 )
-
-// -------------------------------------------------------------------------------------
-// XrpMetaDataStore Tests
-// -------------------------------------------------------------------------------------
-
-type MetadataTestSuite struct{}
-
-var _ = Suite(&MetadataTestSuite{})
-
-func (s *MetadataTestSuite) TestNewXrpMetaDataStore(c *C) {
-	store := NewXrpMetaDataStore()
-	c.Assert(store, NotNil)
-	c.Assert(store.accts, NotNil)
-	c.Assert(store.lock, NotNil)
-}
-
-func (s *MetadataTestSuite) TestMetaDataStoreGetSetSeqInc(c *C) {
-	store := NewXrpMetaDataStore()
-	pk := common.PubKey("sthorpub1addwnpepqtrvka83xluqq522k8at4d84gnthj5ryqhrf0fa24yze4yhk7j0fk4876fz")
-
-	// Get on empty store returns zero value
-	meta := store.Get(pk)
-	c.Check(meta.SeqNumber, Equals, int64(0))
-	c.Check(meta.BlockHeight, Equals, int64(0))
-
-	// Set and Get
-	store.Set(pk, XrpMetadata{SeqNumber: 5, BlockHeight: 100})
-	meta = store.Get(pk)
-	c.Check(meta.SeqNumber, Equals, int64(5))
-	c.Check(meta.BlockHeight, Equals, int64(100))
-
-	// SeqInc increments sequence
-	store.SeqInc(pk)
-	meta = store.Get(pk)
-	c.Check(meta.SeqNumber, Equals, int64(6))
-	c.Check(meta.BlockHeight, Equals, int64(100))
-
-	// SeqInc on non-existent key does nothing
-	unknownPk := common.PubKey("sthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8khqdkwe9kfr9e06pz0k37yp06v4s2ygkml")
-	store.SeqInc(unknownPk)
-	meta = store.Get(unknownPk)
-	c.Check(meta.SeqNumber, Equals, int64(0))
-
-	// Overwrite with Set
-	store.Set(pk, XrpMetadata{SeqNumber: 10, BlockHeight: 200})
-	meta = store.Get(pk)
-	c.Check(meta.SeqNumber, Equals, int64(10))
-	c.Check(meta.BlockHeight, Equals, int64(200))
-}
 
 // -------------------------------------------------------------------------------------
 // Asset Mapping Tests
@@ -698,7 +653,6 @@ func (s *XrpTestSuite) TestSignTxAlreadySigned(c *C) {
 
 	client := &Client{
 		cfg:                config.BifrostChainConfiguration{ChainID: common.XRPChain},
-		accts:              NewXrpMetaDataStore(),
 		signerCacheManager: signerCacheManager,
 		rpcClient:          rpc.NewClient(rpcCfg),
 		xrpScanner:         &XrpBlockScanner{rpcClient: rpc.NewClient(rpcCfg)},
@@ -738,7 +692,6 @@ func (s *XrpTestSuite) TestSignTxProcessError(c *C) {
 
 	client := &Client{
 		cfg:                config.BifrostChainConfiguration{ChainID: common.XRPChain},
-		accts:              NewXrpMetaDataStore(),
 		signerCacheManager: signerCacheManager,
 	}
 
@@ -872,14 +825,14 @@ func (s *XrpTestSuite) TestFetchTxsSkipFeeUpdateWhenFarFromTip(c *C) {
 }
 
 // -------------------------------------------------------------------------------------
-// txNeedsBroadcast test with mock
+// xrpTxStatusOf test with mock (the on-chain "is this tx truly sent" oracle)
 // -------------------------------------------------------------------------------------
 
 func (s *XrpTestSuite) TestTxNeedsBroadcast(c *C) {
-	// Validated tx - no need to broadcast
+	// Validated tesSUCCESS - truly sent.
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, `{"result":{"hash":"ABC123","validated":true}}`)
+		fmt.Fprint(w, `{"result":{"hash":"ABC123","validated":true,"meta":{"TransactionResult":"tesSUCCESS"}}}`)
 	}))
 	defer server.Close()
 
@@ -887,9 +840,9 @@ func (s *XrpTestSuite) TestTxNeedsBroadcast(c *C) {
 	c.Assert(err, IsNil)
 	client := &Client{rpcClient: rpc.NewClient(rpcCfg)}
 
-	c.Check(client.txNeedsBroadcast("ABC123"), Equals, false)
+	c.Check(client.xrpTxStatusOf("ABC123"), Equals, xrpTxValidatedSuccess)
 
-	// Not validated - needs broadcast
+	// Not validated yet - unknown.
 	server2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprint(w, `{"result":{"hash":"ABC123","validated":false}}`)
@@ -900,9 +853,9 @@ func (s *XrpTestSuite) TestTxNeedsBroadcast(c *C) {
 	c.Assert(err, IsNil)
 	client.rpcClient = rpc.NewClient(rpcCfg2)
 
-	c.Check(client.txNeedsBroadcast("ABC123"), Equals, true)
+	c.Check(client.xrpTxStatusOf("ABC123"), Equals, xrpTxUnknown)
 
-	// Error on request - needs broadcast
+	// Error on request - unknown (not treated as a definite absence).
 	server3 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
@@ -912,7 +865,7 @@ func (s *XrpTestSuite) TestTxNeedsBroadcast(c *C) {
 	c.Assert(err, IsNil)
 	client.rpcClient = rpc.NewClient(rpcCfg3)
 
-	c.Check(client.txNeedsBroadcast("ABC123"), Equals, true)
+	c.Check(client.xrpTxStatusOf("ABC123"), Equals, xrpTxUnknown)
 }
 
 // -------------------------------------------------------------------------------------
@@ -939,23 +892,21 @@ func (s *XrpTestSuite) TestSignTxFullPath(c *C) {
 	c.Assert(err, IsNil)
 
 	// Set up the RPC mock to return a ledger index for GetHeight
-	heightResp := `{"result":{"ledger_current_index":50}}`
+	heightResp := `{"result":{"ledger_current_index":50,"account_data":{"Flags":0,"LedgerEntryType":"AccountRoot","Account":"rQwpQ54X5gJyLGg4QGp3HSkjdf3u37NqiZ","Balance":"5000000000","OwnerCount":0,"Sequence":5},"validated":false}}`
 	mc := &testutil.JSONRPCMockClient{}
 	mc.DoFunc = testutil.MockResponse(heightResp, 200, mc)
 	rpcCfg, err := rpc.NewClientConfig("http://testnode/", rpc.WithHTTPClient(mc))
 	c.Assert(err, IsNil)
+	client.rpcClient = rpc.NewClient(rpcCfg)
 	client.xrpScanner.rpcClient = rpc.NewClient(rpcCfg)
 
-	// Set up account data so it doesn't need to fetch from chain
+	// Derive the vault pubkey for the outbound.
 	priv, err := s.thorKeys.GetPrivateKey()
 	c.Assert(err, IsNil)
 	temp, err := cryptocodec.ToCmtPubKeyInterface(priv.PubKey())
 	c.Assert(err, IsNil)
 	vaultPubKey, err := common.NewPubKeyFromCrypto(temp)
 	c.Assert(err, IsNil)
-
-	// Set cached metadata so it won't try to call GetAccount
-	client.accts.Set(vaultPubKey, XrpMetadata{SeqNumber: 5, BlockHeight: 100})
 
 	outAsset, _ := common.NewAsset("XRP.XRP")
 	toAddress, _ := common.NewAddress("rQwpQ54X5gJyLGg4QGp3HSkjdf3u37NqiZ")
@@ -1003,11 +954,12 @@ func (s *XrpTestSuite) TestSignTxWithCheckpoint(c *C) {
 	)
 	c.Assert(err, IsNil)
 
-	heightResp := `{"result":{"ledger_current_index":50}}`
+	heightResp := `{"result":{"ledger_current_index":50,"account_data":{"Flags":0,"LedgerEntryType":"AccountRoot","Account":"rQwpQ54X5gJyLGg4QGp3HSkjdf3u37NqiZ","Balance":"5000000000","OwnerCount":0,"Sequence":5},"validated":false}}`
 	mc := &testutil.JSONRPCMockClient{}
 	mc.DoFunc = testutil.MockResponse(heightResp, 200, mc)
 	rpcCfg, err := rpc.NewClientConfig("http://testnode/", rpc.WithHTTPClient(mc))
 	c.Assert(err, IsNil)
+	client.rpcClient = rpc.NewClient(rpcCfg)
 	client.xrpScanner.rpcClient = rpc.NewClient(rpcCfg)
 
 	priv, err := s.thorKeys.GetPrivateKey()
@@ -1020,7 +972,9 @@ func (s *XrpTestSuite) TestSignTxWithCheckpoint(c *C) {
 	outAsset, _ := common.NewAsset("XRP.XRP")
 	toAddress, _ := common.NewAddress("rQwpQ54X5gJyLGg4QGp3HSkjdf3u37NqiZ")
 
-	// Provide checkpoint bytes (marshalled XrpMetadata)
+	// Provide checkpoint bytes (marshalled XrpMetadata). A checkpoint pins the
+	// sequence and is never moved, so the signer re-signs that exact sequence (10),
+	// not the chain's current 5.
 	checkpointBytes := []byte(`{"SeqNumber":10,"BlockHeight":200}`)
 
 	txOut := types.TxOutItem{
@@ -1039,6 +993,15 @@ func (s *XrpTestSuite) TestSignTxWithCheckpoint(c *C) {
 	c.Assert(signErr, IsNil)
 	c.Check(signedTx, NotNil)
 	c.Check(txIn, NotNil)
+
+	// The checkpoint pins the sequence (SeqNumber 10): a re-sign must use it, not
+	// re-read the chain's current Sequence (5, in heightResp above). Asserting only
+	// NotNil would let a regression that ignores the checkpoint pass. Decode the
+	// signed blob and check the Sequence field is the checkpoint's 10.
+	flatTx, err := binarycodec.Decode(hex.EncodeToString(signedTx))
+	c.Assert(err, IsNil)
+	c.Check(fmt.Sprintf("%v", flatTx["Sequence"]), Equals, "10",
+		Commentf("signed tx Sequence = %v, want the checkpoint's 10 (not the chain's 5)", flatTx["Sequence"]))
 }
 
 // Test SignTx with bad checkpoint
@@ -1055,7 +1018,6 @@ func (s *XrpTestSuite) TestSignTxBadCheckpoint(c *C) {
 
 	client := &Client{
 		cfg:                config.BifrostChainConfiguration{ChainID: common.XRPChain},
-		accts:              NewXrpMetaDataStore(),
 		signerCacheManager: signerCacheManager,
 		xrpScanner:         &XrpBlockScanner{rpcClient: rpc.NewClient(rpcCfg)},
 	}
@@ -1078,6 +1040,80 @@ func (s *XrpTestSuite) TestSignTxBadCheckpoint(c *C) {
 	_, _, _, signErr := client.SignTx(txOut, 100)
 	c.Assert(signErr, NotNil)
 	c.Check(signErr.Error(), Matches, ".*invalid character.*")
+}
+
+// signingMetadata pins a checkpoint's sequence WITHOUT moving it or reading the chain
+// (a pin is never lowered — re-signing the same tx can never double-spend; the
+// backlog is cleared out-of-band by an operator purge). Without a checkpoint it reads
+// the VALIDATED ledger for the SIGNED sequence (so two nodes with different open-ledger
+// views derive the SAME sequence, and keysign forms), then the CURRENT ledger for the
+// serial-drain gate (validated before current, same rippled).
+func (s *XrpTestSuite) TestSigningMetadataPinsAndReadsValidated(c *C) {
+	var sawValidated, sawCurrent bool
+	var readOrder []string
+	accountResp := `{"result":{"ledger_current_index":50,"account_data":{"Flags":0,"LedgerEntryType":"AccountRoot","Account":"rQwpQ54X5gJyLGg4QGp3HSkjdf3u37NqiZ","Balance":"5000000000","OwnerCount":0,"Sequence":42},"validated":false}}`
+	mc := &testutil.JSONRPCMockClient{}
+	inner := testutil.MockResponse(accountResp, 200, mc)
+	mc.DoFunc = func(req *http.Request) (*http.Response, error) {
+		b, _ := io.ReadAll(req.Body)
+		req.Body = io.NopCloser(bytes.NewReader(b))
+		if strings.Contains(string(b), `"ledger_index":"validated"`) {
+			sawValidated = true
+			readOrder = append(readOrder, "validated")
+		}
+		if strings.Contains(string(b), `"ledger_index":"current"`) {
+			sawCurrent = true
+			readOrder = append(readOrder, "current")
+		}
+		return inner(req)
+	}
+	rpcCfg, err := rpc.NewClientConfig("http://testnode/", rpc.WithHTTPClient(mc))
+	c.Assert(err, IsNil)
+	client := &Client{
+		cfg:        config.BifrostChainConfiguration{ChainID: common.XRPChain},
+		rpcClient:  rpc.NewClient(rpcCfg),
+		xrpScanner: &XrpBlockScanner{rpcClient: rpc.NewClient(rpcCfg)},
+	}
+	vaultPubKey, _ := common.NewPubKey("sthorpub1addwnpepqtrvka83xluqq522k8at4d84gnthj5ryqhrf0fa24yze4yhk7j0fk4876fz")
+	base := types.TxOutItem{Chain: common.XRPChain, VaultPubKey: vaultPubKey}
+
+	// Fresh sign (no checkpoint): the SIGNED sequence comes from the VALIDATED ledger (42);
+	// the gate then reads the CURRENT ledger (42 here, so not ahead -> no defer). Reads are
+	// validated first, then current.
+	m, err := client.signingMetadata(base, 50)
+	c.Assert(err, IsNil)
+	c.Check(m.SeqNumber, Equals, int64(42))
+	c.Check(sawValidated, Equals, true, Commentf("signing must read the validated ledger for the signed sequence"))
+	c.Check(sawCurrent, Equals, true, Commentf("the serial-drain gate must read the current ledger"))
+	c.Check(readOrder, DeepEquals, []string{"validated", "current"}, Commentf("gate reads validated before current"))
+
+	// A checkpoint pins its sequence and is never moved — even an above-validated,
+	// divergent pin (99 vs validated 42) is returned verbatim, and no account read is
+	// made for it (the read counters stay as the fresh-sign call left them).
+	sawValidated, sawCurrent = false, false
+	txPin := base
+	txPin.Checkpoint = []byte(`{"SeqNumber":99,"BlockHeight":1}`)
+	mp, err := client.signingMetadata(txPin, 50)
+	c.Assert(err, IsNil)
+	c.Check(mp.SeqNumber, Equals, int64(99), Commentf("a pinned checkpoint must never be moved, got %d", mp.SeqNumber))
+	c.Check(sawValidated || sawCurrent, Equals, false, Commentf("a checkpoint pin must not read the chain at all"))
+
+	// A below-validated pin is likewise returned verbatim (never advanced).
+	txLow := base
+	txLow.Checkpoint = []byte(`{"SeqNumber":40,"BlockHeight":1}`)
+	ml, err := client.signingMetadata(txLow, 50)
+	c.Assert(err, IsNil)
+	c.Check(ml.SeqNumber, Equals, int64(40), Commentf("a pinned checkpoint must never be moved, got %d", ml.SeqNumber))
+
+	// A malformed/empty checkpoint (non-positive sequence) self-heals: it is ignored
+	// and the validated ledger (42) is read, rather than pinning sequence 0 forever.
+	sawValidated = false
+	txZero := base
+	txZero.Checkpoint = []byte(`{"BlockHeight":1}`)
+	mz, err := client.signingMetadata(txZero, 50)
+	c.Assert(err, IsNil)
+	c.Check(mz.SeqNumber, Equals, int64(42), Commentf("zero-seq checkpoint must self-heal to the validated sequence, got %d", mz.SeqNumber))
+	c.Check(sawValidated, Equals, true, Commentf("zero-seq checkpoint must trigger a validated read"))
 }
 
 // -------------------------------------------------------------------------------------
@@ -1528,12 +1564,11 @@ func TestBroadcastTxSuccess(t *testing.T) {
 	client := &Client{
 		cfg:                config.BifrostChainConfiguration{ChainID: common.XRPChain},
 		rpcClient:          rpc.NewClient(rpcCfg),
-		accts:              NewXrpMetaDataStore(),
 		signerCacheManager: signerCacheManager,
 	}
 
 	// broadcastTx with empty blob - will get hex decode error from Submit
-	err = client.broadcastTx("120000")
+	_, err = client.broadcastTx("120000")
 	// The submit function validates the blob client-side, so this may fail
 	// Just test that broadcastTx is callable
 	_ = err
@@ -1617,7 +1652,7 @@ func (s *XrpTestSuite) TestGetBlockScannerHeight(c *C) {
 
 func (s *XrpTestSuite) TestProcessOutboundTxNetworkIDGreaterThan1024(c *C) {
 	mc := &testutil.JSONRPCMockClient{}
-	mc.DoFunc = testutil.MockResponse(`{"result":{"ledger_current_index":50}}`, 200, mc)
+	mc.DoFunc = testutil.MockResponse(`{"result":{"ledger_current_index":50,"account_data":{"Flags":0,"LedgerEntryType":"AccountRoot","Account":"rQwpQ54X5gJyLGg4QGp3HSkjdf3u37NqiZ","Balance":"5000000000","OwnerCount":0,"Sequence":5},"validated":false}}`, 200, mc)
 	rpcCfg, err := rpc.NewClientConfig("http://testnode/", rpc.WithHTTPClient(mc))
 	c.Assert(err, IsNil)
 
@@ -2219,11 +2254,12 @@ func (s *XrpTestSuite) TestBroadcastTxWithSignedTx(c *C) {
 	c.Assert(err, IsNil)
 
 	// Set up mock for GetHeight
-	heightResp := `{"result":{"ledger_current_index":50}}`
+	heightResp := `{"result":{"ledger_current_index":50,"account_data":{"Flags":0,"LedgerEntryType":"AccountRoot","Account":"rQwpQ54X5gJyLGg4QGp3HSkjdf3u37NqiZ","Balance":"5000000000","OwnerCount":0,"Sequence":5},"validated":false}}`
 	mc := &testutil.JSONRPCMockClient{}
 	mc.DoFunc = testutil.MockResponse(heightResp, 200, mc)
 	rpcCfg, err := rpc.NewClientConfig("http://testnode/", rpc.WithHTTPClient(mc))
 	c.Assert(err, IsNil)
+	client.rpcClient = rpc.NewClient(rpcCfg)
 	client.xrpScanner.rpcClient = rpc.NewClient(rpcCfg)
 
 	priv, err := s.thorKeys.GetPrivateKey()
@@ -2232,8 +2268,6 @@ func (s *XrpTestSuite) TestBroadcastTxWithSignedTx(c *C) {
 	c.Assert(err, IsNil)
 	vaultPubKey, err := common.NewPubKeyFromCrypto(temp)
 	c.Assert(err, IsNil)
-
-	client.accts.Set(vaultPubKey, XrpMetadata{SeqNumber: 5, BlockHeight: 100})
 
 	outAsset, _ := common.NewAsset("XRP.XRP")
 	toAddress, _ := common.NewAddress("rQwpQ54X5gJyLGg4QGp3HSkjdf3u37NqiZ")
@@ -2436,13 +2470,13 @@ func TestFetchTxsWithMockServer(t *testing.T) {
 }
 
 // -------------------------------------------------------------------------------------
-// txNeedsBroadcast via mock server
+// xrpTxStatusOf via mock server
 // -------------------------------------------------------------------------------------
 
 func TestTxNeedsBroadcastValidated(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintln(w, `{"result":{"validated":true,"hash":"HASH1"}}`)
+		fmt.Fprintln(w, `{"result":{"validated":true,"hash":"HASH1","meta":{"TransactionResult":"tesSUCCESS"}}}`)
 	}))
 	defer server.Close()
 
@@ -2454,8 +2488,7 @@ func TestTxNeedsBroadcastValidated(t *testing.T) {
 		logger:    log.Logger,
 	}
 
-	needsBroadcast := client.txNeedsBroadcast("HASH1")
-	_ = needsBroadcast // Result depends on RPC response parsing
+	assert.Equal(t, xrpTxValidatedSuccess, client.xrpTxStatusOf("HASH1"))
 }
 
 func TestTxNeedsBroadcastNotFound(t *testing.T) {
@@ -2474,8 +2507,8 @@ func TestTxNeedsBroadcastNotFound(t *testing.T) {
 		logger:    log.Logger,
 	}
 
-	needsBroadcast := client.txNeedsBroadcast("HASH1")
-	assert.True(t, needsBroadcast) // not found means needs broadcast
+	// A definite txnNotFound must be distinguished from a transport error.
+	assert.Equal(t, xrpTxNotFound, client.xrpTxStatusOf("HASH1"))
 }
 
 // -------------------------------------------------------------------------------------
@@ -2736,7 +2769,6 @@ func (s *XrpTestSuite) TestSignTxFetchesAccountFromChain(c *C) {
 	vaultPubKey, err := common.NewPubKeyFromCrypto(temp)
 	c.Assert(err, IsNil)
 
-	// Don't set cached metadata - force fetch from chain
 	outAsset, _ := common.NewAsset("XRP.XRP")
 	toAddress, _ := common.NewAddress("rQwpQ54X5gJyLGg4QGp3HSkjdf3u37NqiZ")
 
@@ -2776,7 +2808,7 @@ func TestBroadcastTxSubmitError(t *testing.T) {
 		logger:    log.Logger,
 	}
 
-	err = client.broadcastTx("120000")
+	_, err = client.broadcastTx("120000")
 	assert.Error(t, err)
 }
 
@@ -2795,7 +2827,7 @@ func TestBroadcastTxEngineError(t *testing.T) {
 		logger:    log.Logger,
 	}
 
-	err = client.broadcastTx("120000")
+	_, err = client.broadcastTx("120000")
 	// Submit decodes the blob, may fail client-side
 	_ = err
 }
@@ -2806,7 +2838,7 @@ func TestBroadcastTxEngineError(t *testing.T) {
 
 func (s *XrpTestSuite) TestBroadcastTxFullFlow(c *C) {
 	// First sign a tx to get valid txBytes
-	heightResp := `{"result":{"ledger_current_index":50}}`
+	heightResp := `{"result":{"ledger_current_index":50,"account_data":{"Flags":0,"LedgerEntryType":"AccountRoot","Account":"rQwpQ54X5gJyLGg4QGp3HSkjdf3u37NqiZ","Balance":"5000000000","OwnerCount":0,"Sequence":5},"validated":false}}`
 	mc := &testutil.JSONRPCMockClient{}
 	mc.DoFunc = testutil.MockResponse(heightResp, 200, mc)
 	rpcCfg, err := rpc.NewClientConfig("http://testnode/", rpc.WithHTTPClient(mc))
@@ -2828,6 +2860,10 @@ func (s *XrpTestSuite) TestBroadcastTxFullFlow(c *C) {
 		s.m,
 	)
 	c.Assert(err, IsNil)
+	// SignTx now reads the account sequence from chain (serialize-resync), so the
+	// client's own rpcClient must serve account_info before the broadcast server
+	// is swapped in below.
+	client.rpcClient = rpc.NewClient(rpcCfg)
 	client.xrpScanner.rpcClient = rpc.NewClient(rpcCfg)
 
 	priv, err := s.thorKeys.GetPrivateKey()
@@ -2836,7 +2872,6 @@ func (s *XrpTestSuite) TestBroadcastTxFullFlow(c *C) {
 	c.Assert(err, IsNil)
 	vaultPubKey, err := common.NewPubKeyFromCrypto(temp)
 	c.Assert(err, IsNil)
-	client.accts.Set(vaultPubKey, XrpMetadata{SeqNumber: 5, BlockHeight: 100})
 
 	outAsset, _ := common.NewAsset("XRP.XRP")
 	toAddress, _ := common.NewAddress("rQwpQ54X5gJyLGg4QGp3HSkjdf3u37NqiZ")

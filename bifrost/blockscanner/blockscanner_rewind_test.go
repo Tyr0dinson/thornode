@@ -441,6 +441,19 @@ func waitForAborts(aborts *atomic.Int64, wanted int64) bool {
 	return false
 }
 
+// waitForUnhealthy polls because backoffAfterPersistenceFailure marks the
+// scanner unhealthy only after the fetcher's failure hook has returned.
+func waitForUnhealthy(scanner *BlockScanner) bool {
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		if !scanner.IsHealthy() {
+			return true
+		}
+		time.Sleep(time.Millisecond)
+	}
+	return false
+}
+
 func (s *BlockScannerExtraSuite) TestTypedCursorRewindClearsStalePrefetch(c *C) {
 	server, bridge := s.newRewindTestBridge(c)
 	defer server.Close()
@@ -652,9 +665,11 @@ func (s *BlockScannerExtraSuite) TestPersistenceFailuresBackOffAndReportUnhealth
 		case <-time.After(time.Second):
 			c.Fatalf("mode %s did not reach persistence failure", mode)
 		}
+		// The failure hook runs before the scanner marks itself unhealthy, so
+		// poll rather than read health right after the hook fires.
+		c.Check(waitForUnhealthy(scanner), Equals, true, Commentf("mode %s reported healthy", mode))
 		time.Sleep(30 * time.Millisecond)
 		c.Check(fetcher.calls.Load(), Equals, int64(1), Commentf("mode %s retried without backoff", mode))
-		c.Check(scanner.IsHealthy(), Equals, false, Commentf("mode %s reported healthy", mode))
 		scanner.Stop()
 	}
 }

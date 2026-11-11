@@ -1036,6 +1036,7 @@ func TssKeysignFailure(block *thorscan.BlockResponse) {
 	sigma := config.Get().Thresholds.TssKeysignFailure.Sigma
 	minSnapshots := config.Get().Thresholds.TssKeysignFailure.MinSnapshots
 	maxSnapshots := config.Get().Thresholds.TssKeysignFailure.MaxSnapshots
+	minFailures := config.Get().Thresholds.TssKeysignFailure.MinFailures
 
 	// capture previous counts for edge trigger
 	prevVaultCounts := make(map[string]int)
@@ -1138,6 +1139,12 @@ func TssKeysignFailure(block *thorscan.BlockResponse) {
 		return mean + (sigma * stdDev), true
 	}
 
+	// helper to apply the absolute floor, so crossing the alert threshold
+	// requires at least minFailures in the window
+	alertThreshold := func(statsThreshold float64) float64 {
+		return math.Max(statsThreshold, float64(minFailures-1))
+	}
+
 	// prune vault failures and gather the current network window
 	networkFailures := []TssKeysignFailureRecord{}
 	for pubKey, failures := range history.VaultFailures {
@@ -1149,8 +1156,9 @@ func TssKeysignFailure(block *thorscan.BlockResponse) {
 	// check network alert
 	netStatsThreshold, netStatsOk := getStatsThreshold(history.NetworkPastCounts)
 	if netStatsOk {
+		netThreshold := alertThreshold(netStatsThreshold)
 		// analyze-ignore(float-comparison)
-		if float64(currNetworkCount) > netStatsThreshold && float64(prevNetworkCount) <= netStatsThreshold {
+		if float64(currNetworkCount) > netThreshold && float64(prevNetworkCount) <= netThreshold {
 			notifyTSSKeysignFailure(block.Header.Height, "Network High TSS Keysign Failure Rate", "", currNetworkCount, int(netStatsThreshold), networkFailures)
 		}
 	}
@@ -1168,8 +1176,9 @@ func TssKeysignFailure(block *thorscan.BlockResponse) {
 
 		// only alert if we have a valid threshold (from vault or network)
 		if ok {
+			vaultThreshold := alertThreshold(threshold)
 			// analyze-ignore(float-comparison)
-			if float64(currVaultCount) > threshold && float64(prevVaultCount) <= threshold {
+			if float64(currVaultCount) > vaultThreshold && float64(prevVaultCount) <= vaultThreshold {
 				notifyTSSKeysignFailure(block.Header.Height, "Vault High TSS Keysign Failure Rate", pubKey, currVaultCount, int(threshold), failures)
 			}
 		}
@@ -1292,5 +1301,7 @@ func notifyTSSKeysignFailure(height int64, title, pubKey string, count, threshol
 		fields.Set("Blame", blame)
 	}
 
-	notify.Notify(config.Get().Notifications.Info, title, height, nil, notify.Danger, fields)
+	// rate alerts are informational and do not tag @here; terminal-round
+	// failures are escalated separately by LastRoundFailures in security.go
+	notify.Notify(config.Get().Notifications.Info, title, height, nil, notify.Warning, fields)
 }

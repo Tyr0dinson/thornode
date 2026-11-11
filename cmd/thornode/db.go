@@ -1,25 +1,54 @@
 package main
 
 import (
+	"fmt"
 	"path/filepath"
 	"syscall"
 
 	dbm "github.com/cosmos/cosmos-db"
+	"github.com/spf13/viper"
 	"github.com/syndtr/goleveldb/leveldb/filter"
 	"github.com/syndtr/goleveldb/leveldb/opt"
 )
 
 const (
-	// appDBBlockCacheBytes caches decompressed leveldb blocks. The goleveldb
-	// default (8 MiB) is tiny next to the app db, so most IAVL fast-node reads
-	// that miss the IAVL caches go to disk and snappy-decode a block.
-	appDBBlockCacheBytes = 512 * opt.MiB
+	// defaultAppDBBlockCacheMiB sizes the cache of decompressed leveldb blocks.
+	// The goleveldb default (8 MiB) is tiny next to the app db, so most IAVL
+	// fast-node reads that miss the IAVL caches go to disk and snappy-decode a
+	// block.
+	defaultAppDBBlockCacheMiB = 512
+
+	// flagAppDBBlockCacheMiB is the app.toml key that overrides
+	// defaultAppDBBlockCacheMiB.
+	flagAppDBBlockCacheMiB = "app-db-block-cache-mib"
 
 	// appDBMaxOpenFiles caches open table files. The default (500) covers a
 	// fraction of a mainnet app db (tens of thousands of 2 MiB tables), so
 	// reads keep reopening tables.
 	appDBMaxOpenFiles = 8192
 )
+
+// appDBBlockCacheBytes is the block cache openAppDB gives the application db.
+// The start command sets it from app.toml (setAppDBBlockCache) before the db
+// is opened.
+var appDBBlockCacheBytes = defaultAppDBBlockCacheMiB * opt.MiB
+
+// setAppDBBlockCache sets appDBBlockCacheBytes from app-db-block-cache-mib,
+// keeping the default when the key is absent. The cache lives in the Go heap,
+// so its size trades memory for GC work: a larger cache raises the heap the GC
+// paces against and so makes collections rarer.
+func setAppDBBlockCache(v *viper.Viper) error {
+	appDBBlockCacheBytes = defaultAppDBBlockCacheMiB * opt.MiB
+	if !v.IsSet(flagAppDBBlockCacheMiB) {
+		return nil
+	}
+	mib := v.GetInt(flagAppDBBlockCacheMiB)
+	if mib <= 0 {
+		return fmt.Errorf("%s must be positive, got %d", flagAppDBBlockCacheMiB, mib)
+	}
+	appDBBlockCacheBytes = mib * opt.MiB
+	return nil
+}
 
 // openAppDB opens the application db like the SDK default, but with larger
 // goleveldb read caches and no seek-triggered compaction. These options are

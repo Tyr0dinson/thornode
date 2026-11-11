@@ -1494,7 +1494,9 @@ func TestFrostKeygenRetainsFutureRoundTraffic(t *testing.T) {
 	)
 	enqueueVerifyMessage(t, inbox, "msg-id", testPubKeys[1], frostDKGRound2, round2TranscriptHash)
 
-	coord := newTestFrostKeygenCoordinator(testPubKeys[0], "msg-id", inbox, 100*time.Millisecond)
+	// Every message is already queued, so the timeout only bounds CPU time; a
+	// 100ms bound timed out under -race on a loaded runner.
+	coord := newTestFrostKeygenCoordinator(testPubKeys[0], "msg-id", inbox, time.Second)
 	initTestFrostKeygenRoundState(t, coord, activeSet, participantIndexMap)
 	shares, failure := coord.exchangeRound2(activeSet, participantIndexMap, peerIDs, localRound2)
 	if failure != nil {

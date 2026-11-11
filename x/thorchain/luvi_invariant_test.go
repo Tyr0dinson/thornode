@@ -1,6 +1,7 @@
 package thorchain
 
 import (
+	"errors"
 	"fmt"
 	"math/big"
 
@@ -185,12 +186,22 @@ func (e *luviEnv) burnSynth(amt cosmos.Uint) cosmos.Uint {
 // addLiquidity adds through the real handler and returns the units the
 // add_liquidity event reported.
 func (e *luviEnv) addLiquidity(runeAmt, assetAmt uint64) cosmos.Uint {
+	units, err := e.tryAddLiquidity(runeAmt, assetAmt)
+	e.c.Assert(err, IsNil)
+	return units
+}
+
+// tryAddLiquidity is addLiquidity returning the handler error instead of
+// asserting on it.
+func (e *luviEnv) tryAddLiquidity(runeAmt, assetAmt uint64) (cosmos.Uint, error) {
 	e.ctx = e.ctx.WithEventManager(cosmos.NewEventManager())
 	h := NewAddLiquidityHandler(e.mgr)
 	err := h.addLiquidity(e.ctx, e.asset, cosmos.NewUint(runeAmt), cosmos.NewUint(assetAmt),
 		GetRandomRUNEAddress(), GetRandomETHAddress(), GetRandomTxHash(), false,
 		constants.GetConstantValues(GetCurrentVersion()))
-	e.c.Assert(err, IsNil)
+	if err != nil {
+		return cosmos.ZeroUint(), err
+	}
 	units := cosmos.ZeroUint()
 	for _, ev := range e.ctx.EventManager().Events() {
 		if ev.Type != types2.AddLiquidityEventType {
@@ -202,7 +213,7 @@ func (e *luviEnv) addLiquidity(runeAmt, assetAmt uint64) cosmos.Uint {
 			}
 		}
 	}
-	return units
+	return units, nil
 }
 
 // withdraw withdraws bps of the test LP's units through withdraw() and returns
@@ -418,10 +429,18 @@ func (s *LuviInvariantSuite) TestAddLiquidityNeverLowersGAndMatchesLedger(c *C) 
 	for _, r := range luviTestRegimes {
 		for _, a := range adds {
 			e := newLuviEnv(c, r)
+			name := fmt.Sprintf("%s add %s", r.name, a.name)
+			if e.state().IsOverhang() {
+				// the LUVIOverhangGuard (on by default) rejects the add and
+				// leaves the pool as it was; turn it off to check the math
+				_, err := e.tryAddLiquidity(a.rune, a.ast)
+				c.Check(errors.Is(err, errAddLiquidityPoolOverhang), Equals, true, Commentf("%s: %v", name, err))
+				c.Check(e.state(), DeepEquals, e.baseline, Commentf(name))
+				e.mgr.Keeper().SetMimir(e.ctx, constants.LUVIOverhangGuard.String(), 0)
+			}
 			before := e.pool().LPUnits
 			var units cosmos.Uint
 			step := e.step(func() { units = e.addLiquidity(a.rune, a.ast) })
-			name := fmt.Sprintf("%s add %s", r.name, a.name)
 			e.assertNotDown(step, name)
 			if a.name == "symmetric" {
 				e.assertFlat(step, name)
@@ -595,6 +614,8 @@ func (s *LuviInvariantSuite) TestOverhangDepositMultipliesUnits(c *C) {
 	e := newLuviEnv(c, luviRegime{"overhang", 300})
 	st := e.state()
 	c.Assert(st.IsOverhang(), Equals, true)
+	// this measures the unguarded math, so turn the LUVIOverhangGuard off
+	e.mgr.Keeper().SetMimir(e.ctx, constants.LUVIOverhangGuard.String(), 0)
 	f := uint64(10_000) // deposit 1/10,000 of each side
 	var units cosmos.Uint
 	step := e.step(func() { units = e.addLiquidity(luviPoolRune/f, luviPoolAsset/f) })

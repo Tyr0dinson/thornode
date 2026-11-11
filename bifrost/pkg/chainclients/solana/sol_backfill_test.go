@@ -926,6 +926,10 @@ func (s *ClientBackfillSuite) TestBroadcastTxError(c *C) {
 	defer server.Close()
 	client := s.makeClient(c, server)
 
+	oldDelay := broadcastLookupDelay
+	broadcastLookupDelay = 0
+	defer func() { broadcastLookupDelay = oldDelay }()
+
 	_, err := client.BroadcastTx(stypes.TxOutItem{}, []byte("rawbytes"))
 	c.Assert(err, NotNil)
 }

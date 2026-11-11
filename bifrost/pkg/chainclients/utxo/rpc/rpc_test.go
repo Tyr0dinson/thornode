@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -23,9 +24,24 @@ import (
 
 func TestPackage(t *testing.T) { TestingT(t) }
 
-type RPCSuite struct{}
+type RPCSuite struct {
+	backoffs []time.Duration // the retry backoffs of the running test
+}
 
 var _ = Suite(&RPCSuite{})
+
+// realRetrySleep is retrySleep as the package sets it, before any test.
+var realRetrySleep = retrySleep
+
+// Retries record their backoffs instead of sleeping through them.
+func (s *RPCSuite) SetUpTest(c *C) {
+	s.backoffs = nil
+	retrySleep = func(d time.Duration) { s.backoffs = append(s.backoffs, d) }
+}
+
+func (s *RPCSuite) TearDownTest(c *C) {
+	retrySleep = realRetrySleep
+}
 
 // ---------------------------------------------------------------------------
 // Mock JSON-RPC server
@@ -921,14 +937,18 @@ func (s *RPCSuite) TestRetry(c *C) {
 	c.Assert(called, Equals, 1)
 
 	called = 0
+	c.Assert(s.backoffs, HasLen, 0)
+
 	err = cl.retry(func() error {
 		called++
 		return errors.New("500 Internal Server Error: work queue depth exceeded")
 	})
 	c.Assert(err, NotNil)
 	c.Assert(called, Equals, 4)
+	c.Assert(s.backoffs, DeepEquals, []time.Duration{time.Second, 2 * time.Second, 4 * time.Second})
 
 	called = 0
+	s.backoffs = nil
 	err = cl.retry(func() error {
 		called++
 		if called < 2 {
@@ -938,6 +958,24 @@ func (s *RPCSuite) TestRetry(c *C) {
 	})
 	c.Assert(err, IsNil)
 	c.Assert(called, Equals, 2)
+	c.Assert(s.backoffs, DeepEquals, []time.Duration{time.Second})
+}
+
+// The backoff starts at 1s and doubles per retry, up to 10s, and outside the
+// tests retry sleeps it.
+func (s *RPCSuite) TestRetryBackoff(c *C) {
+	cl := Client{maxRetries: 6, log: zerolog.Nop()}
+	called := 0
+	err := cl.retry(func() error {
+		called++
+		return errors.New("503 Service Unavailable: server overloaded")
+	})
+	c.Assert(err, NotNil)
+	c.Assert(called, Equals, 7)
+	c.Assert(s.backoffs, DeepEquals, []time.Duration{
+		time.Second, 2 * time.Second, 4 * time.Second, 8 * time.Second, 10 * time.Second, 10 * time.Second,
+	})
+	c.Assert(reflect.ValueOf(realRetrySleep).Pointer(), Equals, reflect.ValueOf(time.Sleep).Pointer())
 }
 
 func (s *RPCSuite) TestRetryConnectionRefused(c *C) {
@@ -949,6 +987,7 @@ func (s *RPCSuite) TestRetryConnectionRefused(c *C) {
 	})
 	c.Assert(err, NotNil)
 	c.Assert(called, Equals, 2)
+	c.Assert(s.backoffs, DeepEquals, []time.Duration{time.Second})
 }
 
 func (s *RPCSuite) TestRetryEOF(c *C) {
@@ -960,6 +999,7 @@ func (s *RPCSuite) TestRetryEOF(c *C) {
 	})
 	c.Assert(err, NotNil)
 	c.Assert(called, Equals, 2)
+	c.Assert(s.backoffs, DeepEquals, []time.Duration{time.Second})
 }
 
 func (s *RPCSuite) TestRetryLoadingBlockIndex(c *C) {
@@ -971,6 +1011,7 @@ func (s *RPCSuite) TestRetryLoadingBlockIndex(c *C) {
 	})
 	c.Assert(err, NotNil)
 	c.Assert(called, Equals, 2)
+	c.Assert(s.backoffs, DeepEquals, []time.Duration{time.Second})
 }
 
 func (s *RPCSuite) TestRetryVerifyingWallet(c *C) {
@@ -982,6 +1023,7 @@ func (s *RPCSuite) TestRetryVerifyingWallet(c *C) {
 	})
 	c.Assert(err, NotNil)
 	c.Assert(called, Equals, 2)
+	c.Assert(s.backoffs, DeepEquals, []time.Duration{time.Second})
 }
 
 func (s *RPCSuite) TestRetryRescanning(c *C) {
@@ -993,6 +1035,7 @@ func (s *RPCSuite) TestRetryRescanning(c *C) {
 	})
 	c.Assert(err, NotNil)
 	c.Assert(called, Equals, 2)
+	c.Assert(s.backoffs, DeepEquals, []time.Duration{time.Second})
 }
 
 func (s *RPCSuite) TestRetry503(c *C) {
@@ -1004,6 +1047,7 @@ func (s *RPCSuite) TestRetry503(c *C) {
 	})
 	c.Assert(err, NotNil)
 	c.Assert(called, Equals, 2)
+	c.Assert(s.backoffs, DeepEquals, []time.Duration{time.Second})
 }
 
 func (s *RPCSuite) TestRetryZeroRetries(c *C) {
@@ -1015,6 +1059,7 @@ func (s *RPCSuite) TestRetryZeroRetries(c *C) {
 	})
 	c.Assert(err, NotNil)
 	c.Assert(called, Equals, 1) // no retries, just the initial call
+	c.Assert(s.backoffs, HasLen, 0)
 }
 
 // ---------------------------------------------------------------------------

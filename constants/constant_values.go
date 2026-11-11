@@ -56,7 +56,9 @@ const (
 	MissBlockSignSlashPoints
 	ObservationDelayFlexibility
 	JailTimeKeygen
+	JailTimeKeygenBase
 	JailTimeKeysign
+	MaxKeygenBlameMultiplier
 	NodePauseChainBlocks
 	EnableDerivedAssets
 	MinSwapsPerBlock
@@ -216,6 +218,9 @@ const (
 	MissingObservationHalfLife
 	MissingObservationMinSamples
 	MissingObservationGuardMaxBlocks
+
+	LUVIOverhangGuard
+	LUVIGuard
 )
 
 // ConstantValues define methods used to get constant values

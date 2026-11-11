@@ -1378,6 +1378,116 @@ func (qs queryServer) queryNodes(ctx cosmos.Context, _ *types.QueryNodesRequest)
 	return &types.QueryNodesResponse{Nodes: result}, nil
 }
 
+// queryNodeBlame returns blame record for a specific node
+func (qs queryServer) queryNodeBlame(ctx cosmos.Context, req *types.QueryNodeBlameRequest) (*types.QueryNodeBlameResponse, error) {
+	if len(req.Address) == 0 {
+		return nil, errors.New("node address not provided")
+	}
+
+	addr, err := cosmos.AccAddressFromBech32(req.Address)
+	if err != nil {
+		return nil, fmt.Errorf("invalid address: %w", err)
+	}
+
+	record, err := qs.mgr.Keeper().GetNodeBlameRecord(ctx, addr)
+	if err != nil {
+		return nil, err
+	}
+
+	nodeAcc, err := qs.mgr.Keeper().GetNodeAccount(ctx, addr)
+	if err != nil {
+		return nil, fmt.Errorf("fail to get node account: %w", err)
+	}
+
+	return &types.QueryNodeBlameResponse{
+		NodeAddress:                 record.NodeAddress,
+		NodeOperatorAddress:         nodeAcc.BondAddress.String(),
+		KeygenBlameCountTotal:       record.KeygenBlameCountTotal,
+		KeysignBlameCountTotal:      record.KeysignBlameCountTotal,
+		KeygenBlameCountSinceChurn:  record.KeygenBlameCountSinceChurn,
+		KeysignBlameCountSinceChurn: record.KeysignBlameCountSinceChurn,
+	}, nil
+}
+
+// queryNodeBlames returns blame counters for every active node. Active nodes
+// with no stored blame record are reported with zero counters.
+//
+// Supported query args:
+//   - sort_by: keygen_since_churn (default), keysign_since_churn, keygen_total, keysign_total
+//   - sort_order: desc (default), asc
+func (qs queryServer) queryNodeBlames(ctx cosmos.Context, req *types.QueryNodeBlamesRequest) (*types.QueryNodeBlamesResponse, error) {
+	keyFn, err := nodeBlameSortKey(req.SortBy)
+	if err != nil {
+		return nil, err
+	}
+	descending, err := nodeBlameSortDescending(req.SortOrder)
+	if err != nil {
+		return nil, err
+	}
+
+	activeNodes, err := qs.mgr.Keeper().ListActiveValidators(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("fail to list active validators: %w", err)
+	}
+
+	result := make([]*types.QueryNodeBlameResponse, 0, len(activeNodes))
+	for _, na := range activeNodes {
+		record, err := qs.mgr.Keeper().GetNodeBlameRecord(ctx, na.NodeAddress)
+		if err != nil {
+			return nil, fmt.Errorf("fail to get node blame record: %w", err)
+		}
+		result = append(result, &types.QueryNodeBlameResponse{
+			NodeAddress:                 na.NodeAddress,
+			NodeOperatorAddress:         na.BondAddress.String(),
+			KeygenBlameCountTotal:       record.KeygenBlameCountTotal,
+			KeysignBlameCountTotal:      record.KeysignBlameCountTotal,
+			KeygenBlameCountSinceChurn:  record.KeygenBlameCountSinceChurn,
+			KeysignBlameCountSinceChurn: record.KeysignBlameCountSinceChurn,
+		})
+	}
+
+	// Records with equal sort keys are ordered by node address.
+	sort.Slice(result, func(i, j int) bool {
+		ki, kj := keyFn(result[i]), keyFn(result[j])
+		if ki != kj {
+			if descending {
+				return ki > kj
+			}
+			return ki < kj
+		}
+		return result[i].NodeAddress.String() < result[j].NodeAddress.String()
+	})
+
+	return &types.QueryNodeBlamesResponse{Blames: result}, nil
+}
+
+// nodeBlameSortKey returns the field accessor for the given sort_by value.
+func nodeBlameSortKey(sortBy string) (func(*types.QueryNodeBlameResponse) int64, error) {
+	switch sortBy {
+	case "", "keygen_since_churn":
+		return func(r *types.QueryNodeBlameResponse) int64 { return r.KeygenBlameCountSinceChurn }, nil
+	case "keysign_since_churn":
+		return func(r *types.QueryNodeBlameResponse) int64 { return r.KeysignBlameCountSinceChurn }, nil
+	case "keygen_total":
+		return func(r *types.QueryNodeBlameResponse) int64 { return r.KeygenBlameCountTotal }, nil
+	case "keysign_total":
+		return func(r *types.QueryNodeBlameResponse) int64 { return r.KeysignBlameCountTotal }, nil
+	default:
+		return nil, fmt.Errorf("invalid sort_by: %q (expected one of: keygen_since_churn, keysign_since_churn, keygen_total, keysign_total)", sortBy)
+	}
+}
+
+func nodeBlameSortDescending(sortOrder string) (bool, error) {
+	switch sortOrder {
+	case "", "desc":
+		return true, nil
+	case "asc":
+		return false, nil
+	default:
+		return false, fmt.Errorf("invalid sort_order: %q (expected: asc or desc)", sortOrder)
+	}
+}
+
 func newSaver(lp LiquidityProvider, pool Pool) *types.QuerySaverResponse {
 	assetRedeemableValue := lp.GetSaversAssetRedeemValue(pool)
 
@@ -1911,6 +2021,12 @@ func (qs queryServer) queryPool(ctx cosmos.Context, req *types.QueryPoolRequest)
 	p.SynthSupplyRemaining = synthSupplyRemaining.String()
 	p.DerivedDepthBps = dbps.String()
 	setPoolLuviFields(&p, pool, synthSupply)
+	setPoolLuviAccumulatorFields(ctx, qs.mgr.Keeper(), &p, pool)
+	if !pool.Asset.IsSyntheticAsset() {
+		setPoolFairValueFields(&p, pool, synthSupply,
+			oraclePriceUSD(ctx, qs.mgr.Keeper(), pool.Asset.Ticker.String()),
+			oraclePriceUSD(ctx, qs.mgr.Keeper(), common.RuneAsset().Ticker.String()))
+	}
 
 	polReserveDeposit, err := qs.mgr.Keeper().GetPOLReserveDeposit(ctx, pool.Asset)
 	if err == nil {
@@ -1944,8 +2060,46 @@ func setPoolLuviFields(p *types.QueryPoolResponse, pool Pool, synthSupply cosmos
 	p.SynthOverhang = !st.SynthSupply.IsZero() && st.IsOverhang()
 }
 
+// oraclePriceUSD returns the oracle USD price of symbol, or "" when the
+// oracle has none. The price store is wiped every BeginBlock and refilled only
+// with the symbols that reached quorum in that block, so a price that exists
+// is the current block's.
+func oraclePriceUSD(ctx cosmos.Context, k keeper.Keeper, symbol string) string {
+	price, err := k.GetPrice(ctx, symbol)
+	if err != nil {
+		return ""
+	}
+	return price.Price
+}
+
+// setPoolFairValueFields fills the oracle-priced (fair) LP unit value fields of
+// a pool response. They are left unset unless both USD prices are present and
+// valid, and the pool has depth and LP units. See types/type_luvi_fair.go.
+func setPoolFairValueFields(p *types.QueryPoolResponse, pool Pool, synthSupply cosmos.Uint, assetUSD, runeUSD string) {
+	if assetUSD == "" || runeUSD == "" {
+		return
+	}
+	price, err := types.NewLuviPriceFromUSD(assetUSD, runeUSD)
+	if err != nil {
+		return
+	}
+	fv, err := types.NewLuviState(pool, synthSupply).FairValue(price)
+	if err != nil {
+		return
+	}
+	p.LpUnitFairValueRune = fv.UnitFairValueRune.String()
+	p.LpUnitFairValueAsset = fv.UnitFairValueAsset.String()
+	p.LpUnitSpotValueRune = fv.UnitSpotValueRune.String()
+	p.FairValueOraclePriceRune = fv.OraclePriceRune.String()
+	p.LpFairValueOverhang = fv.Overhang
+	if fv.HasDeviation {
+		p.LpFairSpotDeviationBps = fv.DeviationBps.String()
+	}
+}
+
 func (qs queryServer) queryPools(ctx cosmos.Context, _ *types.QueryPoolsRequest) (*types.QueryPoolsResponse, error) {
 	dollarsPerRune := dollarsPerRuneIgnoreHalt(ctx, qs.mgr.Keeper())
+	runeUSD := oraclePriceUSD(ctx, qs.mgr.Keeper(), common.RuneAsset().Ticker.String())
 
 	isGlobalTradingHalted := qs.mgr.Keeper().IsGlobalTradingHalted(ctx)
 	isChainOrChainTradingHalted := map[common.Chain]bool{}
@@ -2059,6 +2213,8 @@ func (qs queryServer) queryPools(ctx cosmos.Context, _ *types.QueryPoolsRequest)
 		p.SynthSupplyRemaining = synthSupplyRemaining.String()
 		p.DerivedDepthBps = dbps.String()
 		setPoolLuviFields(&p, pool, synthSupply)
+		setPoolLuviAccumulatorFields(ctx, qs.mgr.Keeper(), &p, pool)
+		setPoolFairValueFields(&p, pool, synthSupply, oraclePriceUSD(ctx, qs.mgr.Keeper(), pool.Asset.Ticker.String()), runeUSD)
 
 		polReserveDeposit, polErr := qs.mgr.Keeper().GetPOLReserveDeposit(ctx, pool.Asset)
 		if polErr == nil {

@@ -24,6 +24,10 @@ const (
 // provider need not wait for real.
 var wsSettleDelay = time.Second
 
+// wsSubscribeDelay is how long subscribe pauses after each subscription
+// message but the first. A variable for the same reason as wsSettleDelay.
+var wsSubscribeDelay = 100 * time.Millisecond
+
 type websocketProvider struct {
 	*baseProvider
 	wsEndpoint      string
@@ -95,7 +99,7 @@ func (p *websocketProvider) subscribe() error {
 		}
 
 		if i > 0 {
-			time.Sleep(time.Millisecond * 100)
+			time.Sleep(wsSubscribeDelay)
 		}
 	}
 

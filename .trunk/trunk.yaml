@@ -36,6 +36,8 @@ lint:
         # TODO: fix all lint errors in imported repos and enable lint for these.
         - bifrost/tss/go-tss
         - bifrost/txscript
+        # Vendored minified bundle (mermaid); updated by copying a release, never edited.
+        - docs/mermaid.min.js
     - linters:
         - prettier
         - yamllint
@@ -46,6 +48,10 @@ lint:
         - test/regression/mnt/blocks/**
         - test/regression/suites/**
         - test/regression/templates/**
+    - linters:
+        - markdownlint
+      paths:
+        - .claude/skills/**
     - linters:
         - hadolint
         - terrascan
@@ -76,7 +82,7 @@ plugins:
       uri: https://github.com/trunk-io/plugins
 runtimes:
   enabled:
-    - go@1.26.10
+    - go@1.26.11
     - node@18.20.5
     - python@3.10.8
   definitions:
@@ -84,7 +90,7 @@ runtimes:
       download: go
       linter_environment:
         - name: GOTOOLCHAIN
-          value: go1.26.10
+          value: go1.26.11
         - name: PATH
           list:
             - "${linter}/bin"

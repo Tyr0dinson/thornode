@@ -3,10 +3,12 @@ package types
 import (
 	"fmt"
 	"math/big"
+	"strings"
 
 	sdkmath "cosmossdk.io/math"
 
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/constants"
 )
 
 // LUVI (Liquidity Unit Value Index) measures pool value per liquidity unit with
@@ -61,6 +63,13 @@ func NewLuviState(pool Pool, synthSupply cosmos.Uint) LuviState {
 		SynthSupply:  synthSupply,
 		PoolUnits:    p.GetPoolUnits(),
 	}
+}
+
+// EmptyLuviState is the state of an empty or unreadable pool: every field is
+// zero (not nil), so IsValid and the other methods are safe to call.
+func EmptyLuviState() LuviState {
+	zero := cosmos.ZeroUint()
+	return LuviState{BalanceRune: zero, BalanceAsset: zero, LPUnits: zero, SynthSupply: zero, PoolUnits: zero}
 }
 
 // IsValid reports whether every index is defined for this state: both depths
@@ -243,4 +252,335 @@ func CheckLPUnitLedger(prevUnits, nextUnits cosmos.Uint, added, withdrawn []cosm
 		return fmt.Errorf("luvi: LP units %s do not match events (expected %s)", nextUnits, expected)
 	}
 	return nil
+}
+
+// RestoreLuviTracker resumes tracking from a stored snapshot: the last observed
+// state and the raw accumulators as returned by RawC and RawG.
+func RestoreLuviTracker(prev LuviState, c, g *big.Int) (*LuviTracker, error) {
+	if !prev.IsValid() {
+		return nil, fmt.Errorf("luvi: invalid stored state")
+	}
+	return &LuviTracker{prev: prev, c: new(big.Int).Set(c), g: new(big.Int).Set(g)}, nil
+}
+
+// Prev returns the most recent observed state.
+func (t *LuviTracker) Prev() LuviState { return t.prev }
+
+// RawC returns the accumulated C at full LuviPrecision, for storage.
+func (t *LuviTracker) RawC() *big.Int { return new(big.Int).Set(t.c) }
+
+// RawG returns the accumulated G at full LuviPrecision, for storage.
+func (t *LuviTracker) RawG() *big.Int { return new(big.Int).Set(t.g) }
+
+// LuviDefaultTolerance is the largest normalized drop in G, beyond the computed
+// allowance, that is treated as noise. Integer rounding in swaps and synth
+// units moves G by well under 1e-15.
+var LuviDefaultTolerance = cosmos.NewDecWithPrec(1, 12)
+
+// LuviAllowance returns the normalized drop in G a step can show without any
+// value leaving LPs unexpectedly, beyond the tolerance:
+//
+//   - Gas and vault slashes: the pool pays g asset and is reimbursed in RUNE
+//     at spot price, which costs 1 - sqrt(1 - (g/A)^2) ~ (g/A)^2/2 of
+//     sqrt(A*R). The allowance is (g/A)^2, about twice that, as the spot
+//     price moves within the step. It ignores the RUNE the event reports, so
+//     an under-reimbursement (such as a slash the bond can't cover) is a drop.
+//   - LP flow rounding: each add or withdraw rounds its share of each side to
+//     the nearest base unit (common.GetSafeShare), in either direction, which
+//     is worth up to 1/A + 1/R of sqrt(A*R) per flow. In a small pool one
+//     base unit of the asset can be worth thousands of RUNE base units.
+//   - LP flow timing: G values the step's LP unit change dL at the previous
+//     unit value v_prev, but a flow that runs after the step's other changes
+//     happens at a value between v_prev and v_new. The error is at most
+//     |dL| * |v_new - v_prev|, a fraction dL/L of the step's value change, so
+//     it can only hide a proportional share of a real loss.
+//   - Synth mints and burns: G integrates the synth repricing with the
+//     trapezoid rule over the step's end points, which is exact only when the
+//     synth supply moves linearly in sqrt(p). A mint at the swap formula's
+//     price is not, and reads as a drop of about y^3/30 for y = |dS|/A (cubic,
+//     independent of the existing supply, rising to y^3/4 at y = 0.12). The
+//     allowance is y^3 * (1/16 + 2y), about twice what was measured. Hiding a
+//     1e-4 loss behind it needs a mint of about 6% of the asset depth.
+func LuviAllowance(prev, next LuviState, assetPaid cosmos.Uint, flows int) cosmos.Dec {
+	total := cosmos.ZeroDec()
+	if prev.BalanceAsset.IsZero() || prev.BalanceRune.IsZero() {
+		return total
+	}
+	if !assetPaid.IsZero() {
+		e := luviUintToDec(assetPaid).Quo(luviUintToDec(prev.BalanceAsset))
+		if e.GT(cosmos.NewDec(1)) {
+			e = cosmos.NewDec(1)
+		}
+		// 1 - sqrt(1 - e^2) <= e^2, and ~e^2/2 for small e
+		total = total.Add(e.Mul(e))
+	}
+	perFlow := cosmos.NewDec(1).Quo(luviUintToDec(prev.BalanceAsset)).Add(cosmos.NewDec(1).Quo(luviUintToDec(prev.BalanceRune)))
+	total = total.Add(perFlow.MulInt64(int64(flows)))
+
+	if !prev.SynthSupply.Equal(next.SynthSupply) {
+		minA := prev.BalanceAsset
+		if !next.BalanceAsset.IsZero() && next.BalanceAsset.LT(minA) {
+			minA = next.BalanceAsset
+		}
+		dS := luviUintToDec(prev.SynthSupply).Sub(luviUintToDec(next.SynthSupply)).Abs()
+		y := dS.Quo(luviUintToDec(minA))
+		if y.GT(cosmos.NewDec(1)) {
+			y = cosmos.NewDec(1)
+		}
+		coef := cosmos.NewDecWithPrec(625, 4).Add(y.MulInt64(2))
+		total = total.Add(y.Mul(y).Mul(y).Mul(coef))
+	}
+
+	sqrtAR := prev.SqrtAR()
+	if !sqrtAR.IsPositive() {
+		return total
+	}
+	dL := luviUintToDec(next.LPUnits).Sub(luviUintToDec(prev.LPUnits)).Abs()
+	dV := next.ChainLuvi().Sub(prev.ChainLuvi()).Abs()
+	return total.Add(dL.Mul(dV).Quo(sqrtAR))
+}
+
+func luviUintToDec(u cosmos.Uint) cosmos.Dec {
+	return cosmos.NewDecFromBigInt(u.BigInt())
+}
+
+// LuviStepEvents summarizes, per pool, the events of one step that the LUVI
+// checks need: asset paid out by gas and vault slashes, LP units added and
+// withdrawn, and whether an errata touched the pool.
+type LuviStepEvents struct {
+	AssetPaid map[string]cosmos.Uint
+	Added     map[string][]cosmos.Uint
+	Withdrawn map[string][]cosmos.Uint
+	Errata    map[string]bool
+	Swaps     map[string]int
+	// Reported and ReportedExcess name the pools an inner scope already
+	// reported a luvi_loss for (excess: beyond its allowance).
+	Reported       map[string]bool
+	ReportedExcess map[string]bool
+}
+
+// NewLuviStepEvents parses flattened events (type under "type", attributes by
+// key; the last value wins for repeated keys).
+func NewLuviStepEvents(events []map[string]string) LuviStepEvents {
+	out := LuviStepEvents{
+		AssetPaid: map[string]cosmos.Uint{},
+		Added:     map[string][]cosmos.Uint{},
+		Withdrawn: map[string][]cosmos.Uint{},
+		Errata:    map[string]bool{},
+		Swaps:     map[string]int{},
+
+		Reported:       map[string]bool{},
+		ReportedExcess: map[string]bool{},
+	}
+	for _, e := range events {
+		switch e["type"] {
+		case GasEventType, SlashEventType:
+			var pool, amt string
+			if e["type"] == GasEventType {
+				pool, amt = e["asset"], e["asset_amt"]
+			} else {
+				// a slash event lists each pool's change under its asset,
+				// negative when the pool pays
+				pool = e["pool"]
+				var ok bool
+				if amt, ok = strings.CutPrefix(e[pool], "-"); !ok {
+					continue
+				}
+			}
+			g, err := cosmos.ParseUint(amt)
+			if err != nil {
+				continue
+			}
+			if prev, ok := out.AssetPaid[pool]; ok {
+				g = g.Add(prev)
+			}
+			out.AssetPaid[pool] = g
+		case AddLiquidityEventType, WithdrawEventType:
+			u, err := cosmos.ParseUint(e["liquidity_provider_units"])
+			if err != nil {
+				continue
+			}
+			if e["type"] == AddLiquidityEventType {
+				out.Added[e["pool"]] = append(out.Added[e["pool"]], u)
+			} else {
+				out.Withdrawn[e["pool"]] = append(out.Withdrawn[e["pool"]], u)
+			}
+		case ErrataEventType:
+			out.Errata[e["asset"]] = true
+		case SwapEventType:
+			out.Swaps[e["pool"]]++
+		case LuviLossEventType:
+			out.Reported[e["pool"]] = true
+			if e["excess"] == "true" {
+				out.ReportedExcess[e["pool"]] = true
+			}
+		}
+	}
+	return out
+}
+
+// AssetPaidOf returns the asset paid by gas and slashes for a pool.
+func (e LuviStepEvents) AssetPaidOf(pool string) cosmos.Uint {
+	if g, ok := e.AssetPaid[pool]; ok {
+		return g
+	}
+	return cosmos.ZeroUint()
+}
+
+// Flows returns the number of LP flows (adds and withdraws) for a pool.
+func (e LuviStepEvents) Flows(pool string) int {
+	return len(e.Added[pool]) + len(e.Withdrawn[pool])
+}
+
+// RoundingOps returns the number of operations in the step that round a
+// pool's balances to whole base units: LP flows, swap legs, and one for the
+// step's other writes. Each can move G by up to 1/A + 1/R of sqrt(A*R).
+func (e LuviStepEvents) RoundingOps(pool string) int {
+	return e.Flows(pool) + e.Swaps[pool] + 1
+}
+
+// FlattenLuviEvents converts SDK events to the flattened form
+// NewLuviStepEvents takes.
+func FlattenLuviEvents(events cosmos.Events) []map[string]string {
+	out := make([]map[string]string, 0, len(events))
+	for _, ev := range events {
+		m := make(map[string]string, len(ev.Attributes)+1)
+		m["type"] = ev.Type
+		for _, a := range ev.Attributes {
+			m[a.Key] = a.Value
+		}
+		out = append(out, m)
+	}
+	return out
+}
+
+// LuviRewardMeasurement is the LUVI view of one pool's block reward: r RUNE
+// added to the pool's depth with its asset depth, synth supply and units
+// unchanged.
+type LuviRewardMeasurement struct {
+	// DeltaG is the measured change in G from the pre- to the post-reward state.
+	DeltaG cosmos.Dec
+	// ExpectedDeltaG is the change in G a reward of r RUNE should cause.
+	ExpectedDeltaG cosmos.Dec
+	// LPShareBps is the share of the reward the LPs kept, in basis points: the
+	// change in LP equity Q valued in RUNE, over r. It is signed (negative in
+	// overhang, where LP equity is).
+	LPShareBps int64
+	// ExpectedLPShareBps is 10000 * (2A - S) / (2A), the share the LPs keep.
+	ExpectedLPShareBps int64
+	// OK reports whether DeltaG is positive and matches ExpectedDeltaG within
+	// rounding.
+	OK bool
+}
+
+// MeasureLuviReward measures a reward of r RUNE paid to a pool, given the
+// pool's state just before and just after the payment.
+//
+// Adding r RUNE to a pool with depths A, R and synth supply S (A, S and the
+// LP units L unchanged, so dL = 0):
+//
+//	dQ = (sqrt(A(R+r)) - sqrt(AR)) * (2A - S) / (2A)
+//	reprice term = (2S/4) * (sqrt((R+r)/A) - sqrt(R/A))
+//	             = (sqrt(A(R+r)) - sqrt(AR)) * S / (2A)
+//	expected dG  = dQ + reprice term = sqrt(A(R+r)) - sqrt(AR)
+//
+// G is hedged against the synth repricing, so the expected dG does not
+// depend on S. Valued in RUNE at the trapezoid of the two prices,
+// dG * (sqrt(p_pre) + sqrt(p_post)) = sqrt(A)(sqrt(R+r) - sqrt(R)) *
+// (sqrt(R) + sqrt(R+r)) / sqrt(A) = r exactly: the whole reward lands in the
+// pool. The LPs' own equity rises only by dQ, worth r * (2A - S) / (2A) the
+// same way; the rest, r * S / (2A), accrues to synth holders as the higher
+// price raises the value of the synths the pool owes. That is the LP share:
+//
+//	LP share = dQ * (sqrt(p_pre) + sqrt(p_post)) / r = 1 - S / (2A)
+//
+// so a synth-free pool keeps 10000 bps and one at S = A keeps 5000.
+//
+// A dG that differs from the expected value by more than the integer
+// rounding of the fixed-point arithmetic (at most about S + 8 raw units at
+// LuviPrecision, plus a term for the (2A - S)/(2A) factor in deep overhang)
+// means the reward did not land in the pool's depth as accounted: it went
+// elsewhere, another pool got it, or a later write clobbered it.
+func MeasureLuviReward(pre, post LuviState, reward cosmos.Uint) (LuviRewardMeasurement, error) {
+	if !pre.IsValid() {
+		return LuviRewardMeasurement{}, fmt.Errorf("luvi: invalid pre-reward state")
+	}
+	m := LuviRewardMeasurement{
+		DeltaG:             cosmos.ZeroDec(),
+		ExpectedDeltaG:     cosmos.ZeroDec(),
+		ExpectedLPShareBps: luviExpectedLPShareBps(pre),
+	}
+
+	expState := pre
+	expState.BalanceRune = pre.BalanceRune.Add(reward)
+	expected := new(big.Int).Sub(expState.sqrtAR(), pre.sqrtAR())
+	m.ExpectedDeltaG = luviToDec(expected)
+
+	if !post.IsValid() {
+		// the reward's pool lost a depth or its units: nothing landed
+		return m, nil
+	}
+	tracker, err := NewLuviTracker(pre)
+	if err != nil {
+		return m, err
+	}
+	if _, err = tracker.Observe(post); err != nil {
+		return m, err
+	}
+	dG := tracker.RawG()
+	m.DeltaG = luviToDec(dG)
+
+	if !reward.IsZero() {
+		// share = dQ * (sqrtP_pre + sqrtP_post) / r; both factors carry the scale
+		dQ := new(big.Int).Sub(post.lpEquity(), pre.lpEquity())
+		v := new(big.Int).Add(pre.sqrtPrice(), post.sqrtPrice())
+		v.Mul(v, dQ)
+		v.Mul(v, big.NewInt(int64(constants.MaxBasisPts)))
+		// round to the nearest basis point (Quo truncates toward zero)
+		d := new(big.Int).Mul(reward.BigInt(), luviScaleSq)
+		half := new(big.Int).Rsh(d, 1)
+		if v.Sign() < 0 {
+			half.Neg(half)
+		}
+		v.Add(v, half).Quo(v, d)
+		if v.IsInt64() {
+			m.LPShareBps = v.Int64()
+		}
+	}
+
+	diff := new(big.Int).Sub(dG, expected)
+	diff.Abs(diff)
+	m.OK = dG.Sign() > 0 && diff.Cmp(luviRewardTolerance(pre)) <= 0
+	return m, nil
+}
+
+// luviExpectedLPShareBps returns 10000 * (2A - S) / (2A), signed.
+func luviExpectedLPShareBps(s LuviState) int64 {
+	if s.BalanceAsset.IsZero() {
+		return 0
+	}
+	twoA := new(big.Int).Lsh(s.BalanceAsset.BigInt(), 1)
+	num := new(big.Int).Sub(twoA, s.SynthSupply.BigInt())
+	num.Mul(num, big.NewInt(int64(constants.MaxBasisPts)))
+	num.Quo(num, twoA)
+	if !num.IsInt64() {
+		return 0
+	}
+	return num.Int64()
+}
+
+// luviRewardTolerance bounds the rounding of a reward step's dG, in raw units
+// at LuviPrecision: each Q floors its sqrt and its division (up to |2A-S|/(2A)
+// + 1 raw units each), each sqrt(p) floors twice (2 raw units, times 2S in
+// the repricing term, which is then divided by 4), and the expected value
+// floors two square roots. Doubling that gives 2S + 4|2A-S|/(2A) + 16.
+func luviRewardTolerance(s LuviState) *big.Int {
+	tol := new(big.Int).Lsh(s.SynthSupply.BigInt(), 1)
+	twoA := new(big.Int).Lsh(s.BalanceAsset.BigInt(), 1)
+	f := new(big.Int).Sub(twoA, s.SynthSupply.BigInt())
+	f.Abs(f)
+	f.Lsh(f, 2)
+	f.Quo(f, twoA)
+	tol.Add(tol, f)
+	return tol.Add(tol, big.NewInt(16))
 }

@@ -2,21 +2,21 @@
 
 The root Go module and `test/simulation` are independent modules. Run the fast
 checks with the Go version specified by their `go.mod` files. The root module
-currently pins Go 1.26.10; the nested module requires 1.26.10. Limit concurrent
+currently pins Go 1.26.11; the nested module requires 1.26.11. Limit concurrent
 builds on a shared host with `flock /tmp/thornode-test-quality-build.lock` and
 `GOMAXPROCS=4 GOFLAGS=-p=2`. Use a writable `GOCACHE` if the shared cache is
-read only. Put the Go 1.26.10 toolchain's `bin` directory first on `PATH` and
-set `GOTOOLCHAIN=local`; verify `go version` reports `go1.26.10` before testing.
+read only. Put the Go 1.26.11 toolchain's `bin` directory first on `PATH` and
+set `GOTOOLCHAIN=local`; verify `go version` reports `go1.26.11` before testing.
 
 Fast MR commands, in dependency order (run each `make` command under the shared
 lock on a shared host):
 
 ```sh
 python3 -m unittest discover -s scripts/tests -p 'test_quality_*_test.py' -v
-GOTOOLCHAIN=go1.26.10 GOMAXPROCS=4 GOFLAGS=-p=2 flock -w 600 /tmp/thornode-test-quality-build.lock make test-quality-mainnet
-GOTOOLCHAIN=go1.26.10 GOMAXPROCS=4 GOFLAGS=-p=2 flock -w 600 /tmp/thornode-test-quality-build.lock make test-quality-simulation
-GOTOOLCHAIN=go1.26.10 GOMAXPROCS=4 GOFLAGS=-p=2 flock -w 600 /tmp/thornode-test-quality-build.lock make test-coverage-sum
-GOTOOLCHAIN=go1.26.10 GOMAXPROCS=4 GOFLAGS=-p=2 flock -w 600 /tmp/thornode-test-quality-build.lock make test-race-bifrost
+GOTOOLCHAIN=go1.26.11 GOMAXPROCS=4 GOFLAGS=-p=2 flock -w 600 /tmp/thornode-test-quality-build.lock make test-quality-mainnet
+GOTOOLCHAIN=go1.26.11 GOMAXPROCS=4 GOFLAGS=-p=2 flock -w 600 /tmp/thornode-test-quality-build.lock make test-quality-simulation
+GOTOOLCHAIN=go1.26.11 GOMAXPROCS=4 GOFLAGS=-p=2 flock -w 600 /tmp/thornode-test-quality-build.lock make test-coverage-sum
+GOTOOLCHAIN=go1.26.11 GOMAXPROCS=4 GOFLAGS=-p=2 flock -w 600 /tmp/thornode-test-quality-build.lock make test-race-bifrost
 ```
 
 `test-quality-mainnet` requires the Monero fail-closed test to pass. The runner
@@ -52,8 +52,8 @@ diagnostic; it has no arbitrary coverage threshold.
 Deeper runs on isolated infrastructure:
 
 ```sh
-GOTOOLCHAIN=go1.26.10 GOMAXPROCS=4 GOFLAGS=-p=2 make test-regression
-GOTOOLCHAIN=go1.26.10 GOMAXPROCS=4 GOFLAGS=-p=2 make test-simulation-cluster-native TEST_SIMULATION_REQUIRE_XMR=1
+GOTOOLCHAIN=go1.26.11 GOMAXPROCS=4 GOFLAGS=-p=2 make test-regression
+GOTOOLCHAIN=go1.26.11 GOMAXPROCS=4 GOFLAGS=-p=2 make test-simulation-cluster-native TEST_SIMULATION_REQUIRE_XMR=1
 ```
 
 Simulation records `RANDOM_SEED_HEX` as an artifact before
@@ -66,12 +66,11 @@ full simulation's container and mocknet setup must be isolated from other
 concurrent test work.
 
 The curated mutation runner is committed with this branch. Its fast mode runs
-for relevant MRs with a 30 minute runner budget; its deep mode runs on
-scheduled pipelines with a 55 minute budget. Both preserve JSON summaries and
-fail for unexpected surviving mutations. Run them locally with
-`python3 scripts/test-security-mutations.py --mode fast --summary /tmp/mutations-fast.json`
-or `python3 scripts/test-security-mutations.py --mode deep --budget-seconds 3300 --summary /tmp/mutations-deep.json`; the runner owns the build
-lock. The determinism and fuzz workspaces still own their standalone runners.
+for relevant MRs with a 30 minute runner budget, preserves a JSON summary, and
+fails for unexpected surviving mutations. Every mutant is in the fast set, so
+there is no separate deep job. Run it locally with
+`python3 scripts/test-security-mutations.py --mode fast --summary /tmp/mutations-fast.json`;
+the runner owns the build lock. The determinism and fuzz workspaces still own their standalone runners.
 Wire those jobs only after their runner, corpus or seed persistence, and failure
 semantics are committed and verified.
 

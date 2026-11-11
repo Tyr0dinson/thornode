@@ -822,3 +822,19 @@ func (s *queryServer) DynamicL1FeesCurrent(c context.Context, req *types.QueryDy
 	ctx := s.unwrapSdkContext(c)
 	return s.queryDynamicL1FeesCurrent(ctx, req)
 }
+
+func (s *queryServer) NodeBlame(c context.Context, req *types.QueryNodeBlameRequest) (*types.QueryNodeBlameResponse, error) {
+	if err := checkHeightParam(req.Height); err != nil {
+		return nil, err
+	}
+	ctx := s.unwrapSdkContext(c)
+	return s.queryNodeBlame(ctx, req)
+}
+
+func (s *queryServer) NodeBlames(c context.Context, req *types.QueryNodeBlamesRequest) (*types.QueryNodeBlamesResponse, error) {
+	if err := checkHeightParam(req.Height); err != nil {
+		return nil, err
+	}
+	ctx := s.unwrapSdkContext(c)
+	return s.queryNodeBlames(ctx, req)
+}

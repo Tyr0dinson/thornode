@@ -45,7 +45,10 @@ func TestPartyCoordinator(t *testing.T) {
 	var pcs []PartyCoordinator
 	var peers []string
 
-	timeout := time.Second * 10
+	// JoinPartyWithRetry always waits out its timeout (HandleStream never
+	// signals notify), so it only has to exceed both the join stagger below
+	// and the 1s request retry period.
+	timeout := time.Second * 3
 	for _, el := range hosts {
 		pcs = append(pcs, *NewPartyCoordinator(el, timeout))
 		peers = append(peers, el.ID().String())
@@ -65,8 +68,9 @@ func TestPartyCoordinator(t *testing.T) {
 
 		go func(coordinator PartyCoordinator) {
 			defer wg.Done()
-			// we simulate different nodes join at different time
-			time.Sleep(time.Second * time.Duration(rand.Int()%10)) // nolint:gosec
+			// we simulate different nodes join at different time, up to 1.8s
+			// apart, so requests that reach a peer before it joins are re-sent
+			time.Sleep(200 * time.Millisecond * time.Duration(rand.Int()%10)) // nolint:gosec
 			onlinePeers, err := coordinator.JoinPartyWithRetry(msgID, peers)
 			if err != nil {
 				t.Error(err)

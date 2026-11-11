@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -15,6 +14,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"github.com/syndtr/goleveldb/leveldb"
+	"github.com/syndtr/goleveldb/leveldb/storage"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/monero/sidecar"
 	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
@@ -26,12 +26,14 @@ import (
 // Every request reloads disk state. Repeating the same height is permitted;
 // changing an already observed height requires the signer's reorg rewind first.
 // This fixture never serves a certificate or accepts a second MarkSpent import.
+// Each DB's storage outlives it, so a reopen recovers it as from disk, without
+// the fsyncs a file-backed open makes.
 type payoutReplayFixture struct {
 	mu            sync.Mutex
 	sidecarDB     *leveldb.DB
-	sidecarPath   string
+	sidecarStor   storage.Storage
 	scannerDB     *leveldb.DB
-	scannerPath   string
+	scannerStor   storage.Storage
 	server        *httptest.Server
 	observed      common.ObservedTx
 	location      sidecar.CanonicalTxLocationResp
@@ -49,14 +51,13 @@ func newPayoutReplayFixture(t *testing.T, prefix string) *payoutReplayFixture {
 	observed := common.NewObservedTx(voter.Tx.Tx, 110, source, 110)
 	observed.XmrTxKey, observed.SpentOutputRefs = voter.Tx.XmrTxKey, []common.OutputRef{*refs[0]}
 	f := &payoutReplayFixture{
-		observed: observed, sidecarPath: filepath.Join(t.TempDir(), "sidecar"),
-		scannerPath: filepath.Join(t.TempDir(), "bifrost"),
+		observed: observed, sidecarStor: storage.NewMemStorage(), scannerStor: storage.NewMemStorage(),
 		location: sidecar.CanonicalTxLocationResp{
 			TxHash: txID, Height: 100, BlockHash: payoutReplayBlockHash(100), PreviousHash: payoutReplayBlockHash(99),
 		},
 	}
 	var err error
-	f.sidecarDB, err = leveldb.OpenFile(f.sidecarPath, nil)
+	f.sidecarDB, err = leveldb.Open(f.sidecarStor, nil)
 	require.NoError(t, err)
 	f.writeProof(t, sidecar.Transfer{
 		TxID: txID, TxKey: observed.XmrTxKey, VaultPubKey: source.String(),
@@ -154,7 +155,7 @@ func (f *payoutReplayFixture) openScanner(t *testing.T) *Scanner {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	var err error
-	f.scannerDB, err = leveldb.OpenFile(f.scannerPath, nil)
+	f.scannerDB, err = leveldb.Open(f.scannerStor, nil)
 	require.NoError(t, err)
 	signer, err := sidecar.NewClientWithEndpoint(
 		config.BifrostChainConfiguration{SignerExpectedNetwork: "mocknet"},
@@ -220,7 +221,7 @@ func TestPayoutReplayRestartsAfterMinedBeforeReceiptWithoutRetransmission(t *tes
 			// scanner, receipt cache and claim owner.
 			require.NoError(t, f.sidecarDB.Close())
 			var err error
-			f.sidecarDB, err = leveldb.OpenFile(f.sidecarPath, nil)
+			f.sidecarDB, err = leveldb.Open(f.sidecarStor, nil)
 			require.NoError(t, err)
 			f.mu.Unlock()
 			scanner = f.openScanner(t)
