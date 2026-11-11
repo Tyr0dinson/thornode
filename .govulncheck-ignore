@@ -18,6 +18,3 @@ GO-2026-5932  # x/crypto/openpgp unmaintained; no fix; imported by cosmos-sdk/cr
 GO-2022-1148  # go-libp2p v0.11.0, fixed in v0.18.0; bifrost p2p libp2p fork, migration out of scope
 GO-2023-2024  # go-libp2p v0.11.0, fixed in v0.27.4; bifrost p2p libp2p fork, migration out of scope
 GO-2024-3218  # go-libp2p-kad-dht v0.10.0; no fix; bifrost p2p libp2p fork, migration out of scope
-
-# Go stdlib: fixed by a toolchain bump, which ships in its own MR.
-GO-2026-6859  # net/http MaxBytesReader header race (HTTP/1 server crash), fixed in go1.26.11; temporary, drop once the go1.26.11 toolchain bump lands on develop
