@@ -19,6 +19,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/constants"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
 	keeperv1 "gitlab.com/thorchain/thornode/v3/x/thorchain/keeper/v1"
+	mem "gitlab.com/thorchain/thornode/v3/x/thorchain/memo"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
@@ -139,18 +140,25 @@ func refundTx(ctx cosmos.Context, tx ObservedTx, mgr Manager, refundCode uint32,
 		if coin.IsRune() || !pool.BalanceRune.IsZero() {
 			toAddr := tx.Tx.FromAddress
 			usesSourceSender := true
-			memo, err := ParseMemoWithTHORNames(ctx, mgr.Keeper(), tx.Tx.Memo)
-			hasMemoRefundAddress := false
-			if err == nil {
-				hasMemoRefundAddress = memo.IsType(TxSwap) ||
-					(memo.IsType(TxAdd) && coin.Asset.GetChain().RequiresExplicitRefundAddress())
+			var memoType mem.TxType
+			var memoRefundAddress common.Address
+			if memo, parseErr := ParseMemoWithTHORNames(ctx, mgr.Keeper(), tx.Tx.Memo); parseErr == nil {
+				memoType, memoRefundAddress = memo.GetType(), memo.GetRefundAddress()
+			} else {
+				// A memo that no longer parses, for instance because a THORName in its
+				// destination has expired since the inbound was made (a solvency-gated
+				// inbound waits while parked), still names its literal refund address.
+				// On a chain whose sender is unavailable it is the only way back.
+				memoType, memoRefundAddress = mem.LiteralRefundAddress(tx.Tx.Memo)
 			}
-			if err == nil && hasMemoRefundAddress && !memo.GetRefundAddress().IsEmpty() && !coin.Asset.GetChain().IsTHORChain() {
+			hasMemoRefundAddress := memoType == TxSwap ||
+				(memoType == TxAdd && coin.Asset.GetChain().RequiresExplicitRefundAddress())
+			if hasMemoRefundAddress && !memoRefundAddress.IsEmpty() && !coin.Asset.GetChain().IsTHORChain() {
 				// If the memo specifies a refund address, send the refund to that address. If
-				// refund memo can't be parsed or is invalid for the refund chain, it will
-				// default back to the sender address. Add-liquidity memo addresses are used
-				// only on chains that require an explicit refund address.
-				refundAddress := memo.GetRefundAddress()
+				// it is invalid for the refund chain, it will default back to the sender
+				// address. Add-liquidity memo addresses are used only on chains that require
+				// an explicit refund address.
+				refundAddress := memoRefundAddress
 				validRefundAddress := refundAddress.IsChain(coin.Asset.GetChain())
 				if coin.Asset.GetChain().RequiresExplicitRefundAddress() {
 					validRefundAddress = validRefundAddress && coin.Asset.GetChain().IsValidAddress(refundAddress)

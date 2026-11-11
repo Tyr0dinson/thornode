@@ -2110,6 +2110,12 @@ func resolveReferenceMemoWith(ctx cosmos.Context, mgr Manager, k keeper.Keeper, 
 
 	parsedMemo, err := ParseMemoWithTHORNames(ctx, k, resolvedMemo)
 	if err != nil {
+		// The registered memo no longer parses, for instance because a THORName in
+		// its destination has expired since a parked inbound was parked. As when
+		// memoless transactions are halted, keep it on the in-flight copy only, so
+		// refundTx can recover its literal refund address, and leave the stored
+		// voter empty so it cannot execute.
+		tx.Tx.Memo = resolvedMemo
 		voter.Tx.Tx.Memo = ""
 		k.SetObservedTxInVoter(ctx, *voter)
 		return mem.EmptyMemo, false

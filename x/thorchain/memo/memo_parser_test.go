@@ -1154,3 +1154,25 @@ func (s *MemoParserSuite) TestParseAddLiquidityMemoWithExplicitAssetAddress(c *C
 	_, err = ParseMemo(v, "+:ETH.ETH:"+ethPairAddr.String()+"/"+ethAddr.String())
 	c.Assert(err, NotNil)
 }
+
+func (s *MemoSuite) TestLiteralRefundAddress(c *C) {
+	refund := types.GetRandomBTCAddress()
+	cases := []struct {
+		memo   string
+		txType TxType
+		refund common.Address
+	}{
+		{"=:BTC.BTC:expired.name/" + refund.String() + ":0/1/0", TxSwap, refund},
+		{"swap:BTC.BTC:name/" + refund.String() + "|extra", TxSwap, refund},
+		{"=:BTC.BTC:name", TxSwap, common.NoAddress},
+		{"=:BTC.BTC:name/not-an-address", TxSwap, common.NoAddress},
+		{"+:XMR.XMR:pair/" + refund.String(), TxAdd, refund},
+		{"=:BTC.BTC", TxSwap, common.NoAddress},
+		{"nonsense:BTC.BTC:a/" + refund.String(), TxUnknown, common.NoAddress},
+	}
+	for _, tc := range cases {
+		txType, addr := LiteralRefundAddress(tc.memo)
+		c.Check(txType, Equals, tc.txType, Commentf("%s", tc.memo))
+		c.Check(addr.Equals(tc.refund), Equals, true, Commentf("%s", tc.memo))
+	}
+}

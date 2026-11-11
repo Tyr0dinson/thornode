@@ -997,3 +997,34 @@ func (s *SolvencyGateSuite) TestParkedReferenceMemoSurvivesExpiry(c *C) {
 	release(f)
 	c.Assert(swapped(f, tx), Equals, false)
 }
+
+// A parked inbound's memo is parsed again at release. If a THORName in its
+// destination has expired by then, the memo no longer parses and the inbound is
+// refunded, but still to the literal refund address the memo names, not the
+// sender: on a chain whose sender is unavailable, such as XMR, that address is the
+// only way back, and without it the deposit would be donated to the pool.
+func (s *SolvencyGateSuite) TestParkedMemoWithExpiredTHORNameRefundsToMemoAddress(c *C) {
+	f := newSolvencyGateFixture(c, true)
+	k := f.mgr.Keeper()
+	k.SetMimir(f.ctx, constants.MemolessTxnTTL.String(), 1000)
+	expiry := f.ctx.BlockHeight() + 10
+	k.SetTHORName(f.ctx, types.NewTHORName("alice", expiry, []types.THORNameAlias{{Chain: common.THORChain, Address: GetRandomTHORAddress()}}))
+	refundAddress := GetRandomGAIAAddress()
+	k.SetReferenceMemo(f.ctx, NewReferenceMemo(common.ATOMAsset, "=:THOR.RUNE:alice/"+refundAddress.String(), "40000", 10))
+	tx := f.observe(c, "r:40000", 50)
+	c.Assert(f.parked(c), HasLen, 1)
+	c.Assert(tx.Tx.FromAddress.Equals(refundAddress), Equals, false)
+
+	// The name expires while the inbound is parked.
+	f.ctx = f.ctx.WithBlockHeight(expiry + 50)
+	f.nextBlock()
+	f.reportSolvency(c, 100*common.One, 50)
+	f.nextBlock()
+	f.endBlock(c)
+	c.Assert(f.parked(c), HasLen, 0)
+	c.Assert(k.HasSwapQueueItem(f.ctx, tx.Tx.ID, 0) || k.HasAdvSwapQueueItem(f.ctx, tx.Tx.ID, 0), Equals, false)
+	items := f.outbounds(c)
+	c.Assert(items, HasLen, 1)
+	c.Assert(items[0].InHash.Equals(tx.Tx.ID), Equals, true)
+	c.Assert(items[0].ToAddress.Equals(refundAddress), Equals, true)
+}

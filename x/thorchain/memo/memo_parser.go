@@ -571,3 +571,22 @@ func (p *parser) getTHORName(idx int, required bool, def types.THORName, subInde
 	}
 	return def
 }
+
+// LiteralRefundAddress returns a memo's type and the refund address written
+// after the '/' in its destination field (DEST/REFUND), without parsing the rest
+// of the memo. A refund address is always a literal address, never a THORName, so
+// it stays valid when the memo as a whole no longer parses, for instance because
+// a THORName in its destination has expired since the inbound was made. It
+// returns an empty address when there is none or it is not a valid address.
+func LiteralRefundAddress(memo string) (TxType, common.Address) {
+	parts := strings.Split(strings.Split(memo, "|")[0], ":")
+	txType, err := StringToTxType(parts[0])
+	if err != nil || len(parts) < 3 || !strings.Contains(parts[2], "/") {
+		return txType, common.NoAddress
+	}
+	refundAddress, err := common.NewAddress(strings.SplitN(parts[2], "/", 2)[1])
+	if err != nil {
+		return txType, common.NoAddress
+	}
+	return txType, refundAddress
+}
