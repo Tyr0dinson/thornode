@@ -12,6 +12,7 @@ var thorchainPrefixes = map[string]string{
 	"observed_tx_in/":                "prefixObservedTxIn",
 	"observed_tx_out/":               "prefixObservedTxOut",
 	"ob_link/":                       "prefixObservedLink",
+	"ob_link_consensus/":             "prefixObservedConsensusLink",
 	"refund_cleanup/":                "prefixRefundCleanup",
 	"refund_cleanup_expiry/":         "prefixRefundCleanupExpiry",
 	"pool/":                          "prefixPool",
