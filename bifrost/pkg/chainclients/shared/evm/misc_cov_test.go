@@ -126,10 +126,13 @@ func (emptyAssetResolverCov) GetAssetFromTokenAddress(string) (common.Asset, err
 	return common.EmptyAsset, nil
 }
 
-func transferTxCov(t *testing.T, key *[32]byte, token ecommon.Address) (*etypes.Transaction, etypes.Signer) {
+// transferTxCov builds a transfer(recipient, 0) call to token; the scanner
+// takes the inbound recipient from this calldata.
+func transferTxCov(t *testing.T, key *[32]byte, token, recipient ecommon.Address) (*etypes.Transaction, etypes.Signer) {
 	t.Helper()
 	data := append([]byte{}, erc20TransferSelector...)
-	data = append(data, make([]byte, 64)...)
+	data = append(data, ecommon.LeftPadBytes(recipient.Bytes(), 32)...)
+	data = append(data, make([]byte, 32)...)
 	tx := etypes.NewTransaction(1, token, big.NewInt(0), 100000, big.NewInt(1), data)
 	signer := etypes.NewEIP155Signer(big.NewInt(1))
 	if key == nil {
@@ -156,8 +159,8 @@ func TestGetTxInFromDirectERC20TransferCov(t *testing.T) {
 	require.NoError(t, err)
 	sender := ecrypto.PubkeyToAddress(pk.PublicKey)
 
-	signedTx, signer := transferTxCov(t, &keyBytes, token)
-	unsignedTx, _ := transferTxCov(t, nil, token)
+	signedTx, signer := transferTxCov(t, &keyBytes, token, ecommon.HexToAddress(vault))
+	unsignedTx, _ := transferTxCov(t, nil, token, ecommon.HexToAddress(vault))
 	okReceipt := func() *etypes.Receipt {
 		return &etypes.Receipt{
 			Status:            1,
@@ -271,44 +274,62 @@ func TestParseDirectERC20TransferLogsEdgesCov(t *testing.T) {
 
 	require.False(t, IsActivePoolAddress(common.ETHChain, nil, vault))
 
-	_, err = ParseDirectERC20TransferLogs(nil, nil, token, sender, opts)
+	recipient := ecommon.HexToAddress(vault)
+	_, err = ParseDirectERC20TransferLogs(nil, nil, token, sender, recipient, opts)
 	require.EqualError(t, err, "tx in item is nil")
 
 	noResolver := opts
 	noResolver.TokenResolver = nil
-	_, err = ParseDirectERC20TransferLogs(nil, &stypes.TxInItem{}, token, sender, noResolver)
+	_, err = ParseDirectERC20TransferLogs(nil, &stypes.TxInItem{}, token, sender, recipient, noResolver)
 	require.EqualError(t, err, "direct ERC20 transfer token resolver is nil")
 
-	ok, err := ParseDirectERC20TransferLogs(nil, &stypes.TxInItem{}, token, sender, opts)
+	ok, err := ParseDirectERC20TransferLogs(nil, &stypes.TxInItem{}, token, sender, recipient, opts)
 	require.NoError(t, err)
 	require.False(t, ok)
 
 	// too many logs
-	ok, err = ParseDirectERC20TransferLogs([]*etypes.Log{good(vault), good(vault), good(vault), good(vault)}, &stypes.TxInItem{}, token, sender, opts)
+	ok, err = ParseDirectERC20TransferLogs([]*etypes.Log{good(vault), good(vault), good(vault), good(vault)}, &stypes.TxInItem{}, token, sender, recipient, opts)
 	require.NoError(t, err)
 	require.False(t, ok)
+
+	// a recipient that is not an active vault is ignored
+	item := &stypes.TxInItem{}
+	inactive := ecommon.HexToAddress("0x00000000000000000000000000000000000000aa")
+	ok, err = ParseDirectERC20TransferLogs([]*etypes.Log{good(inactive.String())}, item, token, sender, inactive, opts)
+	require.NoError(t, err)
+	require.False(t, ok)
+	require.Empty(t, item.Coins)
 
 	// malformed logs are skipped
 	badTopics := good(vault)
 	badTopics.Topics = badTopics.Topics[:2]
 	badData := good(vault)
 	badData.Data = []byte{1}
-	item := &stypes.TxInItem{}
-	ok, err = ParseDirectERC20TransferLogs([]*etypes.Log{badTopics, badData, good(vault)}, item, token, sender, opts)
+	item = &stypes.TxInItem{}
+	ok, err = ParseDirectERC20TransferLogs([]*etypes.Log{badTopics, badData, good(vault)}, item, token, sender, recipient, opts)
 	require.NoError(t, err)
 	require.True(t, ok)
 	require.Len(t, item.Coins, 1)
 
-	// transfers to two different vaults are rejected
+	// only the transfer to the requested recipient counts; a transfer to
+	// another vault in the same tx is ignored
 	item = &stypes.TxInItem{}
-	_, err = ParseDirectERC20TransferLogs([]*etypes.Log{good(vault), good(vault2)}, item, token, sender, opts)
-	require.ErrorContains(t, err, "different to addresses")
+	ok, err = ParseDirectERC20TransferLogs([]*etypes.Log{good(vault2), good(vault)}, item, token, sender, recipient, opts)
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Len(t, item.Coins, 1)
+	require.True(t, strings.EqualFold(item.To, vault), item.To)
+	item = &stypes.TxInItem{}
+	ok, err = ParseDirectERC20TransferLogs([]*etypes.Log{good(vault2)}, item, token, sender, recipient, opts)
+	require.NoError(t, err)
+	require.False(t, ok)
+	require.Empty(t, item.Coins)
 
 	// empty asset -> ignored
 	emptyOpts := opts
 	emptyOpts.TokenResolver = emptyAssetResolverCov{}
 	item = &stypes.TxInItem{}
-	ok, err = ParseDirectERC20TransferLogs([]*etypes.Log{good(vault)}, item, token, sender, emptyOpts)
+	ok, err = ParseDirectERC20TransferLogs([]*etypes.Log{good(vault)}, item, token, sender, recipient, emptyOpts)
 	require.NoError(t, err)
 	require.False(t, ok)
 	require.Empty(t, item.Coins)

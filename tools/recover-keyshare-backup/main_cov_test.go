@@ -1,7 +1,8 @@
 package main
 
 import (
-	"bytes"
+	"bufio"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -13,16 +14,12 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 	"unsafe"
 
 	"github.com/stretchr/testify/require"
 
-	"gitlab.com/thorchain/thornode/v3/app"
 	"gitlab.com/thorchain/thornode/v3/bifrost/tss"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
-	"gitlab.com/thorchain/thornode/v3/tools/thorscan"
-	"gitlab.com/thorchain/thornode/v3/x/thorchain"
 )
 
 // rkbCovStdin replaces os.Stdin with a pipe for the duration of the test and
@@ -73,6 +70,7 @@ func TestGetCov(t *testing.T) {
 			_, _ = io.WriteString(w, `{"a":`)
 		default:
 			w.WriteHeader(http.StatusNotFound)
+			_, _ = io.WriteString(w, " no such path \n")
 		}
 	}))
 	defer srv.Close()
@@ -86,7 +84,8 @@ func TestGetCov(t *testing.T) {
 	require.Equal(t, "x", res.B)
 
 	err := get(srv.URL+"/missing", &res)
-	require.EqualError(t, err, srv.URL+"/missing: status code 404")
+	// the error carries the trimmed start of the response body
+	require.EqualError(t, err, srv.URL+"/missing: status code 404: no such path")
 
 	require.Error(t, get(srv.URL+"/bad", &res))
 
@@ -96,7 +95,7 @@ func TestGetCov(t *testing.T) {
 func TestSelectMemberCov(t *testing.T) {
 	members := []string{"thor1aaa", "thor1bbb", "thor1ccc"}
 
-	_, err := selectMember(nil)
+	_, err := selectMember(nil, bufio.NewReader(strings.NewReader("")))
 	require.EqualError(t, err, "no options available")
 
 	cases := []struct {
@@ -112,14 +111,10 @@ func TestSelectMemberCov(t *testing.T) {
 		{input: "", err: "error reading input: EOF"},
 	}
 	for _, tc := range cases {
-		w := rkbCovStdin(t)
-		_, err = io.WriteString(w, tc.input)
-		require.NoError(t, err)
-		require.NoError(t, w.Close())
-
+		in := bufio.NewReader(strings.NewReader(tc.input))
 		var got string
 		var selErr error
-		out := rkbCovCaptureStdout(t, func() { got, selErr = selectMember(members) })
+		out := rkbCovCaptureStdout(t, func() { got, selErr = selectMember(members, in) })
 		require.Contains(t, out, "Select vault member:\n1. thor1aaa\n2. thor1bbb\n3. thor1ccc\n")
 		require.Contains(t, out, "Enter the number of member: ")
 		if tc.err != "" {
@@ -146,117 +141,98 @@ func TestMainCov(t *testing.T) {
 	if notMocknetCov() {
 		t.Skip("mocknet only: fixtures and expected bech32 prefixes are mocknet")
 	}
-	// The thorscan import's init() already sealed the sdk config, so main()
-	// as shipped panics on its very first prefix assignment.
-	require.PanicsWithValue(t, "Config is sealed", main)
-
 	const (
-		vault       = "tthorpub1vaultpubkey"
-		vaultEddsa  = "tthorpub1vaulteddsakey"
-		vaultHeight = int64(1000)
-		tssHeight   = int64(990)
-		mnemonic    = "test passphrase for keyshare recovery"
+		keygenHeight = int64(1000)
+		statusSince  = int64(995)
+		tssHeight    = int64(990)
+		scanWindow   = int64(20)
 	)
-	// each scrypt pass is expensive, so the ecdsa and eddsa backups share one
-	// ciphertext (main decrypts each independently)
-	plain := []byte(`{"keyshare":"local state"}`)
-	ecdsaEnc, err := tss.EncryptRawKeyshares(plain, mnemonic)
+	// encrypt a localstate exactly as bifrost does for the on-chain backup
+	plain := []byte(`{"PubKey":"` + testVault + `","ParticipantKeys":["a","b"]}`)
+	enc, err := tss.EncryptRawKeyshares(plain, testMnemonic)
 	require.NoError(t, err)
-	eddsaEnc := ecdsaEnc
-
-	signer := cosmos.AccAddress(bytes.Repeat([]byte{0x01}, 20))
-	other := cosmos.AccAddress(bytes.Repeat([]byte{0x02}, 20))
-
-	// build the block tx: an unrelated msg, a TssPool from a different signer,
-	// then the selected node's TssPool
-	encCfg := app.MakeEncodingConfig()
-	txb := encCfg.TxConfig.NewTxBuilder()
-	require.NoError(t, txb.SetMsgs(
-		&thorchain.MsgSend{FromAddress: other, ToAddress: signer},
-		&thorchain.MsgTssPool{Signer: other, KeysharesBackup: []byte("wrong")},
-		&thorchain.MsgTssPool{Signer: signer, KeysharesBackup: ecdsaEnc, KeysharesBackupEddsa: eddsaEnc},
-	))
-	txJSON, err := encCfg.TxConfig.TxJSONEncoder()(txb.GetTx())
-	require.NoError(t, err)
-
-	stdin := rkbCovStdin(t)
-	var once sync.Map // write each follow-up input exactly once
-	writeOnce := func(key, line string) {
-		if _, loaded := once.LoadOrStore(key, true); !loaded {
-			_, _ = io.WriteString(stdin, line)
-		}
-	}
 
 	var mu sync.Mutex
 	var heights []int64
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/thorchain/vault/" + vault:
-			// main's first stdin reader has consumed the endpoint and vault
-			// lines; selectMember uses a fresh reader, so feed it now
-			writeOnce("choice", "2\n")
-			_, _ = fmt.Fprintf(w, `{"block_height":%d,"status_since":%d,"pub_key":%q,"pub_key_eddsa":%q,"status":"ActiveVault"}`,
-				vaultHeight, vaultHeight-5, vault, vaultEddsa)
+		case "/thorchain/vault/" + testVault:
+			// no membership: main falls back to the node list at status_since
+			_, _ = fmt.Fprintf(w, `{"pub_key":%q,"block_height":%d,"status_since":%d}`, testVault, keygenHeight, statusSince)
 		case "/thorchain/nodes":
-			if r.URL.Query().Get("height") != strconv.FormatInt(vaultHeight-5, 10) {
+			if r.URL.Query().Get("height") != strconv.FormatInt(statusSince, 10) {
 				w.WriteHeader(http.StatusBadRequest)
 				return
 			}
 			_, _ = fmt.Fprintf(w, `[
-				{"node_address":%q,"signer_membership":["other"]},
+				{"node_address":"tthor1notmember","signer_membership":["other"]},
 				{"node_address":%q,"signer_membership":["x",%q]},
 				{"node_address":%q,"signer_membership":[%q]}
-			]`, "tthor1notmember", other.String(), vault, signer.String(), vault)
+			]`, otherNode, testVault, testNode, testVault)
 		case "/thorchain/block":
-			// selection is done once scanning starts; feed the mnemonic
-			writeOnce("mnemonic", mnemonic+"\n")
 			h, _ := strconv.ParseInt(r.URL.Query().Get("height"), 10, 64)
 			mu.Lock()
 			heights = append(heights, h)
 			mu.Unlock()
-			ts := time.Unix(0, 0).UTC().Format(time.RFC3339)
+			b := &rawBlock{}
 			if h == tssHeight {
-				_, _ = fmt.Fprintf(w, `{"header":{"height":%d,"time":%q},"txs":[{"hash":"ABC","tx":%s,"result":{}}]}`, h, ts, txJSON)
-				return
+				// a TssPool from another member, then the selected node's
+				b = block(
+					tssPoolMsg("/types.MsgTssPool", testVault, otherNode, []byte("wrong")),
+					tssPoolMsg("/types.MsgTssPool", testVault, testNode, enc),
+				)
 			}
-			_, _ = fmt.Fprintf(w, `{"header":{"height":%d,"time":%q},"txs":[]}`, h, ts)
+			_ = json.NewEncoder(w).Encode(b)
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
 	}))
 	defer srv.Close()
 
-	oldEndpoint := thorscan.APIEndpoint
-	defer func() { thorscan.APIEndpoint = oldEndpoint }()
-
-	_, err = io.WriteString(stdin, srv.URL+"\n"+vault+"\n")
-	require.NoError(t, err)
-
 	dir := t.TempDir()
-	t.Chdir(dir)
-	rkbCovUnsealSDKConfig(t)
+	backupPath := filepath.Join(dir, "backup.json")
+	outDir := filepath.Join(dir, "out")
+	oldArgs := os.Args
+	defer func() { os.Args = oldArgs }()
 
-	out := rkbCovCaptureStdout(t, main)
-
-	require.Equal(t, srv.URL, thorscan.APIEndpoint)
-	require.Contains(t, out, "Select vault member:\n1. "+other.String()+"\n2. "+signer.String()+"\n")
-	require.Contains(t, out, "Decrypted keyshare written to localstate-"+vault+".json\n")
-	require.Contains(t, out, "Decrypted eddsa keyshare written to localstate-"+vaultEddsa+".json\n")
-
-	got, err := os.ReadFile(filepath.Join(dir, "localstate-"+vault+".json"))
-	require.NoError(t, err)
-	require.Equal(t, plain, got)
-	got, err = os.ReadFile(filepath.Join(dir, "localstate-"+vaultEddsa+".json"))
-	require.NoError(t, err)
-	require.Equal(t, plain, got)
-
-	// scanning started 20 blocks before the vault height
-	mu.Lock()
-	defer mu.Unlock()
-	require.Contains(t, heights, vaultHeight-20)
-	for _, h := range heights {
-		require.GreaterOrEqual(t, h, vaultHeight-20)
-		require.LessOrEqual(t, h, vaultHeight)
+	// runMain runs main with args and stdin; TestMain already sealed the sdk
+	// config, and main sets it up again.
+	runMain := func(input string, args ...string) string {
+		stdin := rkbCovStdin(t)
+		_, wErr := io.WriteString(stdin, input)
+		require.NoError(t, wErr)
+		require.NoError(t, stdin.Close())
+		os.Args = append([]string{"recover-keyshare-backup"}, args...)
+		rkbCovUnsealSDKConfig(t)
+		return rkbCovCaptureStdout(t, main)
 	}
+
+	// online step: prompts for endpoint and vault, lists the vault's members,
+	// scans around keygen and writes the still-encrypted backup
+	out := runMain(srv.URL+"\n"+testVault+"\n2\n", "--backup-out", backupPath, "--scan-window", strconv.FormatInt(scanWindow, 10))
+	require.Contains(t, out, "Select vault member:\n1. "+otherNode+"\n2. "+testNode+"\n")
+	require.Contains(t, out, "Encrypted backup written to "+backupPath)
+	bk, err := readBackup(backupPath)
+	require.NoError(t, err)
+	require.Equal(t, testVault, bk.Vault)
+	require.Equal(t, testNode, bk.Signer)
+	require.Equal(t, tssHeight, bk.TxHeight)
+	require.Equal(t, enc, bk.KeysharesBackup)
+	mu.Lock()
+	require.Contains(t, heights, keygenHeight)
+	require.Contains(t, heights, tssHeight)
+	for _, h := range heights {
+		require.GreaterOrEqual(t, h, keygenHeight-scanWindow)
+		require.LessOrEqual(t, h, keygenHeight+scanWindow)
+	}
+	mu.Unlock()
+
+	// offline step: decrypts the backup file with the mnemonic
+	out = runMain(testMnemonic+"\n", "--backup-in", backupPath, "--out-dir", outDir)
+	localstate := filepath.Join(outDir, "localstate-"+testVault+".json")
+	require.Contains(t, out, "Decrypted secp256k1 keyshare written to "+localstate+"\n")
+	got, err := os.ReadFile(localstate)
+	require.NoError(t, err)
+	require.Equal(t, plain, got)
 	require.True(t, strings.HasPrefix(cosmos.GetConfig().GetBech32AccountAddrPrefix(), "tthor"))
 }

@@ -20,6 +20,7 @@ import (
 	ethcrypto "github.com/ethereum/go-ethereum/crypto"
 	. "gopkg.in/check.v1"
 
+	chainclienttypes "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/types"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/bifrost/tss"
@@ -280,7 +281,6 @@ func (s *XrpTestSuite) TestBroadcastTxPathsCov(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(signed, NotNil)
 	c.Assert(txIn, NotNil)
-	client.accts.Set(vault, XrpMetadata{SeqNumber: 7, BlockHeight: 10})
 
 	// Garbage bytes can't be hashed into an XRP tx id.
 	_, err = client.BroadcastTx(txOut, []byte{0x01})
@@ -293,7 +293,6 @@ func (s *XrpTestSuite) TestBroadcastTxPathsCov(c *C) {
 	c.Assert(err, NotNil)
 	c.Check(err.Error(), Matches, ".*tecNO_DST_INSUF_XRP.*")
 	c.Check(client.signerCacheManager.HasSigned(txOut.CacheHash()), Equals, false)
-	c.Check(client.accts.Get(vault).SeqNumber, Equals, int64(7))
 
 	// Transport failure on submit.
 	rpcSrv.set("submit", `oops`, http.StatusInternalServerError)
@@ -301,33 +300,43 @@ func (s *XrpTestSuite) TestBroadcastTxPathsCov(c *C) {
 	c.Assert(err, NotNil)
 	c.Check(err.Error(), Matches, "broadcast msg failed.*")
 
-	// Another validator already got it in: tefPAST_SEQ counts as success.
-	rpcSrv.set("submit", `{"result":{"engine_result":"tefPAST_SEQ","engine_result_code":-190,"engine_result_message":"past","tx_blob":"","tx_json":{}}}`, 0)
+	// tefPAST_SEQ / tefALREADY are not proof of delivery: while this tx can't be
+	// confirmed as a validated success, it is retried and not cached as sent.
+	for _, engineResult := range []string{"tefPAST_SEQ", "tefALREADY"} {
+		rpcSrv.set("submit", `{"result":{"engine_result":"`+engineResult+`","engine_result_code":-190,"engine_result_message":"past","tx_blob":"","tx_json":{}}}`, 0)
+		_, err = client.BroadcastTx(txOut, signed)
+		c.Assert(err, NotNil, Commentf(engineResult))
+		c.Check(err.Error(), Matches, ".*"+engineResult+": cannot confirm.*")
+		c.Check(client.signerCacheManager.HasSigned(txOut.CacheHash()), Equals, false)
+	}
+
+	// Fresh submit succeeds and is cached as sent.
+	rpcSrv.set("submit", `{"result":{"engine_result":"tesSUCCESS","engine_result_code":0,"engine_result_message":"ok","tx_blob":"","tx_json":{}}}`, 0)
+	before := rpcSrv.count("submit")
 	hash, err := client.BroadcastTx(txOut, signed)
 	c.Assert(err, IsNil)
 	c.Check(hash, Equals, txIn.Tx)
-	c.Check(client.signerCacheManager.HasSigned(txOut.CacheHash()), Equals, true)
-	c.Check(client.accts.Get(vault).SeqNumber, Equals, int64(8))
-
-	// Fresh submit succeeds.
-	rpcSrv.set("submit", `{"result":{"engine_result":"tesSUCCESS","engine_result_code":0,"engine_result_message":"ok","tx_blob":"","tx_json":{}}}`, 0)
-	before := rpcSrv.count("submit")
-	hash, err = client.BroadcastTx(txOut, signed)
-	c.Assert(err, IsNil)
-	c.Check(hash, Equals, txIn.Tx)
 	c.Check(rpcSrv.count("submit"), Equals, before+1)
+	c.Check(client.signerCacheManager.HasSigned(txOut.CacheHash()), Equals, true)
 
-	// Already validated on chain: no resubmission.
-	rpcSrv.set("tx", `{"result":{"validated":true,"hash":"`+txIn.Tx+`"}}`, 0)
+	// Already validated on chain with tesSUCCESS: no resubmission.
+	rpcSrv.set("tx", `{"result":{"validated":true,"hash":"`+txIn.Tx+`","meta":{"TransactionResult":"tesSUCCESS"}}}`, 0)
 	before = rpcSrv.count("submit")
 	hash, err = client.BroadcastTx(txOut, signed)
 	c.Assert(err, IsNil)
 	c.Check(hash, Equals, txIn.Tx)
 	c.Check(rpcSrv.count("submit"), Equals, before)
 
-	// An unparsable tx lookup is treated as "needs broadcast".
+	// Validated with a tec* result: retired for THORChain to reschedule, never resubmitted.
+	rpcSrv.set("tx", `{"result":{"validated":true,"hash":"`+txIn.Tx+`","meta":{"TransactionResult":"tecUNFUNDED_PAYMENT"}}}`, 0)
+	_, err = client.BroadcastTx(txOut, signed)
+	c.Assert(err, NotNil)
+	c.Check(errors.Is(err, chainclienttypes.ErrTxExpired), Equals, true)
+	c.Check(rpcSrv.count("submit"), Equals, before)
+
+	// An unparsable tx lookup is unknown, never a failure.
 	rpcSrv.set("tx", `{"result":{"validated":"maybe"}}`, 0)
-	c.Check(client.txNeedsBroadcast(txIn.Tx), Equals, true)
+	c.Check(client.xrpTxStatusOf(txIn.Tx), Equals, xrpTxUnknown)
 }
 
 func (s *XrpTestSuite) TestSignTxExpiredCacheGateCov(c *C) {
