@@ -40,7 +40,8 @@ func (k KVStore) RefHeightAfter(ctx cosmos.Context, from, refBlocks int64) int64
 // the block time changes from prevMs to newMs at this block, so each keeps the
 // wall-clock time it had left: a deadline at D becomes the first height at
 // which (D - (H-1)) blocks of prevMs have passed since H-1. Deadlines at or
-// before this block are left alone. It covers jail releases, the outbound
+// before this block are left alone, except observation tallies due in it
+// (convertObservationTallies). It covers jail releases, the outbound
 // delay queue (and its voters' outbound heights), THORName expiries, the
 // limit-swap TTL index, the observation tally queue and guard refill heights,
 // refund cleanup marker expiries, and the node chain-pause height.
@@ -270,7 +271,9 @@ func txIDFoldKey(hash common.TxID) string {
 // are refunded by (withinObservationFlex). Converting the stored height
 // instead rounds up once per change, and after a change from a block time
 // that does not divide the window, can close it blocks after the refund does.
-// An entry whose consensus height cannot be read keeps the converted height.
+// Tallies due in this block are recomputed too: they are scored in this
+// block's EndBlock, after the change. An entry whose consensus height cannot
+// be read keeps the converted height.
 func (k KVStore) convertObservationTallies(ctx cosmos.Context, convert func(int64) int64) {
 	type entry struct {
 		key, newKey, value []byte
@@ -282,7 +285,9 @@ func (k KVStore) convertObservationTallies(ctx cosmos.Context, convert func(int6
 	for ; iter.Valid(); iter.Next() {
 		dueStr, rest, _ := strings.Cut(strings.TrimPrefix(string(iter.Key()), prefix), "/")
 		due, err := strconv.ParseInt(dueStr, 10, 64)
-		if err != nil || due <= ctx.BlockHeight() {
+		// a tally due in this block is scored in its EndBlock, after this
+		// change: a halving on the deadline moves its window on a block too
+		if err != nil || due < ctx.BlockHeight() {
 			continue
 		}
 		newDue := convert(due)

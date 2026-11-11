@@ -112,3 +112,20 @@ func (s *ObservationTallySuite) TestObservationFlexWindowMatchesTallyAcrossBlock
 		}
 	}
 }
+
+// The block time halves exactly on the original deadline, H+flex, in that
+// block's BeginBlock. The window now closes a block later, H+flex+1, and the
+// tally due at H+flex has not been scored yet, so it must move with it: left
+// at H+flex, a signature at H+flex+1 was refunded and still counted missed.
+// A doubling on the deadline leaves both at H+flex.
+func (s *ObservationTallySuite) TestObservationFlexWindowMatchesTallyWhenBlockTimeChangesOnDeadline(c *C) {
+	ref := constants.ThorchainBlockTime.Milliseconds()
+	for _, ms := range []int64{ref / 2, ref * 2} {
+		for _, late := range []bool{false, true} {
+			c.Logf("%d ms on the deadline, late=%v", ms, late)
+			ctx, mgr, nas := setupObservationTallyTest(c)
+			flex := mgr.Keeper().GetConfigInt64Ref(ctx, constants.ObservationDelayFlexibility)
+			observationFlexBoundary(c, ctx, mgr, nas, ctx.BlockHeight()+flex, ms, late)
+		}
+	}
+}
