@@ -233,6 +233,7 @@
           "asset_deposit_value": "0",
           "last_add_height": "5",
           "pending_asset": "100000000",
+          "pending_batch": "0000000000000000000000000000000000000000000000000000000000000003",
           "pending_rune": "0",
           "pending_tx_Id": "0000000000000000000000000000000000000000000000000000000000000003",
           "rune_address": "tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej",

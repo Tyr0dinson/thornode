@@ -228,6 +228,7 @@
             "count": "1",
             "deposit": "6000000000",
             "in": "50420169",
+            "intermediate_rune": "0",
             "interval": "1",
             "last_height": "5",
             "out": "50368800",

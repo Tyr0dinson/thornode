@@ -220,6 +220,7 @@
           "state": {
             "deposit": "1000000",
             "in": "0",
+            "intermediate_rune": "0",
             "out": "0",
             "quantity": "1",
             "withdrawn": "0"
@@ -256,6 +257,7 @@
           "state": {
             "deposit": "10000000000",
             "in": "0",
+            "intermediate_rune": "0",
             "out": "0",
             "quantity": "1",
             "withdrawn": "0"
@@ -287,6 +289,7 @@
           "state": {
             "deposit": "2000000000",
             "in": "0",
+            "intermediate_rune": "0",
             "out": "0",
             "quantity": "1",
             "withdrawn": "0"
@@ -318,6 +321,7 @@
           "state": {
             "deposit": "3000000000",
             "in": "0",
+            "intermediate_rune": "0",
             "out": "0",
             "quantity": "1",
             "withdrawn": "0"
@@ -349,6 +353,7 @@
           "state": {
             "deposit": "2000000000",
             "in": "0",
+            "intermediate_rune": "0",
             "out": "0",
             "quantity": "1",
             "withdrawn": "0"

@@ -220,6 +220,7 @@
           "state": {
             "deposit": "10000000000",
             "in": "0",
+            "intermediate_rune": "0",
             "out": "0",
             "quantity": "1",
             "withdrawn": "0"

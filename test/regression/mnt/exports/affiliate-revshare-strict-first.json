@@ -285,6 +285,7 @@
           "state": {
             "deposit": "35116",
             "in": "0",
+            "intermediate_rune": "0",
             "out": "0",
             "quantity": "1",
             "withdrawn": "0"
@@ -322,6 +323,7 @@
           "state": {
             "deposit": "35116",
             "in": "0",
+            "intermediate_rune": "0",
             "out": "0",
             "quantity": "1",
             "withdrawn": "0"
