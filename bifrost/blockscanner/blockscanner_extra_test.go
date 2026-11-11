@@ -1287,9 +1287,13 @@ func (s *BlockScannerExtraSuite) TestShouldObserveCallbackPausesScanning(c *C) {
 	heightWhilePaused := scanner.PreviousHeight()
 	c.Check(heightWhilePaused, Equals, int64(1), Commentf("Scanner should not advance while paused, got %d", heightWhilePaused))
 
-	// Resume observation
+	// Resume observation; wait for progress rather than a fixed time, which
+	// a loaded -race runner can miss.
 	shouldObserve.Store(true)
-	time.Sleep(1 * time.Second)
+	deadline := time.Now().Add(10 * time.Second)
+	for scanner.PreviousHeight() <= 1 && time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
+	}
 	heightAfterResume := scanner.PreviousHeight()
 	c.Check(heightAfterResume > 1, Equals, true, Commentf("Scanner should advance after resume, got %d", heightAfterResume))
 
