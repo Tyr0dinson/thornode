@@ -25,4 +25,7 @@ message SolvencyGatedInbound {
   ];
   // THORChain height at which the inbound was parked
   int64 parked_at = 5;
+  // memo the inbound's reference memo (r:<ref>) resolved to when it was parked,
+  // executed on release; empty for an inbound without a valid reference memo
+  string memo = 6;
 }

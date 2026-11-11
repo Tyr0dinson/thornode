@@ -23,9 +23,19 @@ func ValidateGenesis(data GenesisState) error {
 		}
 	}
 
+	// Every parked inbound is confirmed, released and refunded against its vault,
+	// so the vault must be in the genesis too.
+	parkedVaults := make(map[string]bool, len(data.Vaults))
+	for _, vault := range data.Vaults {
+		parkedVaults[vault.PubKey.String()] = true
+	}
 	for i := range data.SolvencyGatedInbounds {
-		if err := data.SolvencyGatedInbounds[i].Valid(); err != nil {
+		in := data.SolvencyGatedInbounds[i]
+		if err := in.Valid(); err != nil {
 			return err
+		}
+		if !parkedVaults[in.PubKey.String()] {
+			return fmt.Errorf("solvency gated inbound %s is parked under vault %s, which is not in the genesis", in.TxID, in.PubKey)
 		}
 	}
 
@@ -687,8 +697,12 @@ func ExportGenesis(ctx cosmos.Context, k keeper.Keeper) GenesisState {
 		if !vault.IsAsgard() {
 			continue // filter non-asgard vault types
 		}
-		if (vault.Status == types.VaultStatus_InitVault || vault.Status == types.VaultStatus_InactiveVault) && !vault.HasDeficit() {
-			continue // filter abandoned vaults while preserving unsettled accounting state
+		// Filter abandoned vaults while preserving unsettled accounting state: a
+		// deficit, or solvency-gated inbounds parked under the vault, which are
+		// confirmed, released and refunded against it.
+		if (vault.Status == types.VaultStatus_InitVault || vault.Status == types.VaultStatus_InactiveVault) &&
+			!vault.HasDeficit() && !hasSolvencyGatedInbounds(ctx, k, vault) {
+			continue
 		}
 		vaults = append(vaults, vault)
 	}

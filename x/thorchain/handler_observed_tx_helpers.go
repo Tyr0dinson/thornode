@@ -457,13 +457,17 @@ func handleObservedTxInQuorum(
 		return nil
 	}
 
-	return processFinalisedObservedTxIn(ctx, mgr, signer, handler, tx, voter, vault, memo, ctx.BlockHeight())
+	return processFinalisedObservedTxIn(ctx, mgr, signer, handler, tx, voter, vault, memo, ctx.BlockHeight(), "")
 }
 
 // processFinalisedObservedTxIn executes a finalised inbound's memo: a swap is
 // queued, any other memo runs its handler, and an inbound that cannot be executed
 // is refunded. The vault has already been credited. finalisedAt is the THORChain
 // height at which the inbound finalised; a reference memo is resolved as of then.
+// parkedMemo is the memo a solvency-gated inbound's reference resolved to when it
+// was parked (see parkSolvencyGatedInbound); when set, it is used instead of
+// looking the reference up again, and the use it recorded then is not recorded
+// again.
 func processFinalisedObservedTxIn(
 	ctx cosmos.Context,
 	mgr Manager,
@@ -474,6 +478,7 @@ func processFinalisedObservedTxIn(
 	vault Vault,
 	memo mem.Memo,
 	finalisedAt int64,
+	parkedMemo string,
 ) error {
 	k := mgr.Keeper()
 	var err error
@@ -492,9 +497,12 @@ func processFinalisedObservedTxIn(
 		referenceAsset = tx.Tx.Coins[0].Asset
 	}
 	referenceResolved := false
-	if resolvedMemo, ok := resolveReferenceMemo(ctx, mgr, k, &tx, &voter, finalisedAt); ok {
+	if resolvedMemo, ok := resolveReferenceMemoWith(ctx, mgr, k, &tx, &voter, finalisedAt, parkedMemo); ok {
 		memo = resolvedMemo
-		referenceResolved = true
+		// A parked inbound recorded its use of the reference when it was parked. The
+		// reference number may since have been reissued to another registrant, whose
+		// allowance this inbound must not consume.
+		referenceResolved = parkedMemo == ""
 	}
 
 	ctx.Logger().Debug(
@@ -2058,6 +2066,15 @@ func findOriginalMemoForOutbound(ctx cosmos.Context, mgr Manager, tx common.Obse
 // only into the in-flight copy so it can provide a safe refund address without
 // becoming executable.
 func resolveReferenceMemo(ctx cosmos.Context, mgr Manager, k keeper.Keeper, tx *common.ObservedTx, voter *ObservedTxVoter, finalisedAt int64) (mem.Memo, bool) {
+	return resolveReferenceMemoWith(ctx, mgr, k, tx, voter, finalisedAt, "")
+}
+
+// resolveReferenceMemoWith is resolveReferenceMemo, but when parkedMemo is set it
+// is taken as the reference's memo instead of looking the reference up: a
+// solvency-gated inbound validated its reference when it was parked, and the
+// reference may since have expired, been reissued to another registrant, or been
+// left out of a genesis export. HaltMemoless is still judged now.
+func resolveReferenceMemoWith(ctx cosmos.Context, mgr Manager, k keeper.Keeper, tx *common.ObservedTx, voter *ObservedTxVoter, finalisedAt int64, parkedMemo string) (mem.Memo, bool) {
 	if len(tx.Tx.Coins) == 0 {
 		return mem.EmptyMemo, false
 	}
@@ -2069,7 +2086,13 @@ func resolveReferenceMemo(ctx cosmos.Context, mgr Manager, k keeper.Keeper, tx *
 	}
 
 	asset := tx.Tx.Coins[0].Asset
-	lookup := lookupMemoFromReference(ctx, mgr, asset, voter.Tx.Tx, voter.UnfinalizedHeight, finalisedAt)
+	var lookup referenceMemoLookupResult
+	if parkedMemo != "" {
+		haltMemoless, haltErr := k.GetMimir(ctx, constants.HaltMemoless.String())
+		lookup = referenceMemoLookupResult{memo: parkedMemo, halted: haltErr == nil && haltMemoless > 0}
+	} else {
+		lookup = lookupMemoFromReference(ctx, mgr, asset, voter.Tx.Tx, voter.UnfinalizedHeight, finalisedAt)
+	}
 	resolvedMemo := lookup.memo
 	// The voter memo is the source used by processOneTxIn. Store the lookup
 	// result even when it is empty so a missing, expired, or exhausted

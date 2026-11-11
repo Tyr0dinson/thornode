@@ -65,11 +65,11 @@ func parkSolvencyGatedInbound(ctx cosmos.Context, mgr Manager, voter ObservedTxV
 		Height:   tx.BlockHeight,
 		TxID:     tx.Tx.ID,
 		ParkedAt: ctx.BlockHeight(),
+		Memo:     reserveSolvencyGatedReference(ctx, mgr, voter),
 	}
 	if err := k.SetSolvencyGatedInbound(ctx, in); err != nil {
 		return false, fmt.Errorf("fail to park solvency gated inbound: %w", err)
 	}
-	reserveSolvencyGatedReference(ctx, mgr, voter)
 	telemetry.IncrCounterWithLabels(
 		[]string{"thornode", "solvency_gate", "parked"}, 1,
 		[]metrics.Label{telemetry.NewLabel("chain", telemChain(in.Chain))},
@@ -79,25 +79,33 @@ func parkSolvencyGatedInbound(ctx cosmos.Context, mgr Manager, voter ObservedTxV
 }
 
 // reserveSolvencyGatedReference records a parked inbound's use of a valid
-// reference memo when it is parked, as finalisation would have. While it waits,
-// other inbounds cannot use up the reference's allowance, and the release
-// resolves the reference against its finalisation height (see
-// lookupMemoFromReference), so the payment instruction it finalised with still
-// applies.
-func reserveSolvencyGatedReference(ctx cosmos.Context, mgr Manager, voter ObservedTxVoter) {
+// reference memo when it is parked, as finalisation would have, and returns the
+// memo the reference resolved to, which is stored with the parked inbound and
+// executed on release. While it waits, other inbounds cannot use up the
+// reference's allowance, and the reference expiring, its number being reissued,
+// or a genesis export leaving it out does not change the instruction the inbound
+// finalised with. It returns "" when the inbound has no valid reference memo, or
+// the reference resolves to a type an inbound may not execute; the release then
+// resolves the memo as an unparked inbound would.
+func reserveSolvencyGatedReference(ctx cosmos.Context, mgr Manager, voter ObservedTxVoter) string {
 	if len(voter.Tx.Tx.Coins) == 0 {
-		return
+		return ""
 	}
 	memo, err := ParseMemoWithTHORNames(ctx, mgr.Keeper(), voter.Tx.Tx.Memo)
 	if err != nil || !memo.IsType(TxReferenceReadMemo) {
-		return
+		return ""
 	}
 	asset := voter.Tx.Tx.Coins[0].Asset
 	lookup := lookupMemoFromReference(ctx, mgr, asset, voter.Tx.Tx, voter.UnfinalizedHeight, ctx.BlockHeight())
 	if lookup.memo == "" {
-		return
+		return ""
 	}
 	trackReferenceMemoUsage(ctx, mgr, asset, voter.Tx.Tx.Memo, voter.Tx.Tx.ID)
+	resolved, err := ParseMemoWithTHORNames(ctx, mgr.Keeper(), lookup.memo)
+	if err != nil || resolved.IsOutbound() || resolved.IsInternal() {
+		return ""
+	}
+	return lookup.memo
 }
 
 // solvencyGatedInboundKey returns the key the voter's consensus inbound is parked
@@ -315,8 +323,9 @@ func releaseSolvencyGatedInbound(ctx cosmos.Context, mgr Manager, handler cosmos
 			return fmt.Errorf("fail to get vault %s: %w", in.PubKey, err)
 		}
 		// The consensus tx stands in for the observation that finalised it. Its memo
-		// is the voter's: a generated r:<ref> memo for a memoless inbound, which the
-		// processing below resolves as it would have at finalisation, in.ParkedAt.
+		// is the voter's: for a memoless inbound a generated r:<ref> memo, which the
+		// processing below replaces with in.Memo, the memo the reference resolved to
+		// when the inbound was parked.
 		tx := voter.Tx
 		var memo mem.Memo
 		memo, _ = ParseMemoWithTHORNames(cacheCtx, k, tx.Tx.Memo)
@@ -324,7 +333,7 @@ func releaseSolvencyGatedInbound(ctx cosmos.Context, mgr Manager, handler cosmos
 		if len(signers) == 0 {
 			return fmt.Errorf("inbound has no signers")
 		}
-		return processFinalisedObservedTxIn(cacheCtx, mgr, signers[0], handler, tx, voter, vault, memo, in.ParkedAt)
+		return processFinalisedObservedTxIn(cacheCtx, mgr, signers[0], handler, tx, voter, vault, memo, in.ParkedAt, in.Memo)
 	})
 	if execErr == nil {
 		ctx.Logger().Info("solvency gated inbound released", "chain", in.Chain, "id", in.TxID, "height", in.Height)

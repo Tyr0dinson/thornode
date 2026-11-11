@@ -881,3 +881,119 @@ func (s *SolvencyGateSuite) TestParkedSwapReportsPending(c *C) {
 	c.Assert(pendingAfter, Equals, false)
 	c.Assert(isPending, Equals, false)
 }
+
+// An inactive vault, dropped from the Asgard index, with an inbound parked under it
+// is exported with the inbound, so after import the inbound can still be released
+// against it (here by turning the gate off), and network solvency still reads.
+func (s *SolvencyGateSuite) TestGenesisRoundTripInactiveVault(c *C) {
+	f := newSolvencyGateFixture(c, true)
+	k := f.mgr.Keeper()
+	f.observe(c, "DONATE:GAIA.ATOM", 50)
+	c.Assert(f.parked(c), HasLen, 1)
+	vault, err := k.GetVault(f.ctx, f.vault.PubKey)
+	c.Assert(err, IsNil)
+	vault.UpdateStatus(InactiveVault, f.ctx.BlockHeight())
+	c.Assert(k.SetVault(f.ctx, vault), IsNil)
+	c.Assert(k.RemoveFromAsgardIndex(f.ctx, vault.PubKey), IsNil)
+
+	exported := ExportGenesis(f.ctx, k)
+	var found bool
+	for _, v := range exported.Vaults {
+		if v.PubKey.Equals(vault.PubKey) {
+			found = true
+		}
+	}
+	c.Assert(found, Equals, true)
+	c.Assert(ValidateGenesis(exported), IsNil)
+	missing := exported
+	missing.Vaults = nil
+	c.Assert(ValidateGenesis(missing), NotNil)
+
+	g := newSolvencyGateFixture(c, true)
+	g.ctx = g.ctx.WithBlockHeight(f.ctx.BlockHeight())
+	InitGenesis(g.ctx, g.mgr.Keeper(), exported)
+	g.vault = vault
+	c.Assert(g.parked(c), HasLen, 1)
+	imported, err := g.mgr.Keeper().GetVault(g.ctx, vault.PubKey)
+	c.Assert(err, IsNil)
+	c.Assert(imported.Status, Equals, InactiveVault)
+	g.networkSolvencyATOM(c)
+
+	// Turning the gate off releases it into the inactive-vault refund, rather than
+	// dropping it for want of a vault.
+	g.mgr.Keeper().SetMimir(g.ctx, fmt.Sprintf(constants.MimirTemplateSolvencyGateInbound, common.GAIAChain), 0)
+	g.nextBlock()
+	g.endBlock(c)
+	c.Assert(g.parked(c), HasLen, 0)
+	for _, e := range g.ctx.EventManager().Events() {
+		c.Assert(e.Type, Not(Equals), eventSolvencyGatedInboundDropped)
+	}
+	c.Assert(g.outbounds(c), HasLen, 1)
+}
+
+// A parked inbound keeps the memo its reference resolved to when parked. Once the
+// reference expires, its number may be reissued to another registrant, or a genesis
+// export may leave it out; the release still executes the original instruction, and
+// does not consume the new registrant's allowance. HaltMemoless is judged at release.
+func (s *SolvencyGateSuite) TestParkedReferenceMemoSurvivesExpiry(c *C) {
+	const ttl = 100
+	destination := GetRandomTHORAddress()
+	registered := "=:THOR.RUNE:" + destination.String()
+	setup := func() (*solvencyGateFixture, common.ObservedTx) {
+		f := newSolvencyGateFixture(c, true)
+		k := f.mgr.Keeper()
+		k.SetMimir(f.ctx, constants.MemolessTxnTTL.String(), ttl)
+		k.SetMimir(f.ctx, constants.MemolessTxnMaxUse.String(), 1)
+		k.SetReferenceMemo(f.ctx, NewReferenceMemo(common.ATOMAsset, registered, "40000", 10))
+		tx := f.observe(c, "r:40000", 50)
+		parked := f.parked(c)
+		c.Assert(parked, HasLen, 1)
+		c.Assert(parked[0].Memo, Equals, registered)
+		// Long past the reference's expiry by the time the vault is confirmed.
+		f.ctx = f.ctx.WithBlockHeight(f.ctx.BlockHeight() + 3*ttl)
+		return f, tx
+	}
+	release := func(f *solvencyGateFixture) {
+		f.nextBlock()
+		f.reportSolvency(c, 100*common.One, 50)
+		f.nextBlock()
+		f.endBlock(c)
+		c.Assert(f.parked(c), HasLen, 0)
+	}
+	swapped := func(f *solvencyGateFixture, tx common.ObservedTx) bool {
+		k := f.mgr.Keeper()
+		msg, err := k.GetSwapQueueItem(f.ctx, tx.Tx.ID, 0)
+		if err != nil {
+			msg, err = k.GetAdvSwapQueueItem(f.ctx, tx.Tx.ID, 0)
+		}
+		return err == nil && msg.Destination.Equals(destination)
+	}
+
+	// The reference number is reissued to another registrant.
+	f, tx := setup()
+	k := f.mgr.Keeper()
+	reissued := NewReferenceMemo(common.ATOMAsset, "DONATE:GAIA.ATOM", "40000", f.ctx.BlockHeight())
+	k.SetReferenceMemo(f.ctx, reissued)
+	release(f)
+	c.Assert(swapped(f, tx), Equals, true)
+	ref, err := k.GetReferenceMemo(f.ctx, common.ATOMAsset, "40000")
+	c.Assert(err, IsNil)
+	c.Assert(ref.Memo, Equals, "DONATE:GAIA.ATOM")
+	c.Assert(ref.GetUsageCount(), Equals, int64(0))
+
+	// The reference is gone, as after a genesis export that left it out, which
+	// still carries the parked memo.
+	f, tx = setup()
+	exported := ExportGenesis(f.ctx, f.mgr.Keeper())
+	c.Assert(exported.SolvencyGatedInbounds, HasLen, 1)
+	c.Assert(exported.SolvencyGatedInbounds[0].Memo, Equals, registered)
+	c.Assert(f.mgr.Keeper().DeleteReferenceMemo(f.ctx, common.ATOMAsset, "40000"), IsNil)
+	release(f)
+	c.Assert(swapped(f, tx), Equals, true)
+
+	// HaltMemoless set by the release: the parked memo does not execute.
+	f, tx = setup()
+	f.mgr.Keeper().SetMimir(f.ctx, constants.HaltMemoless.String(), 1)
+	release(f)
+	c.Assert(swapped(f, tx), Equals, false)
+}
