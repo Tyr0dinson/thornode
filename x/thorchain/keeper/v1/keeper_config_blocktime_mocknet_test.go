@@ -349,13 +349,17 @@ func (s *KeeperConfigSuite) TestLockupHelpersWithoutBlockTimeChange(c *C) {
 	c.Check(k.RefHeightAfter(ctx, 120, 300), Equals, int64(420))
 }
 
-// A change also moves the queued observation tallies and the refund cleanup
-// marker expiries, keeping the wall-clock time each had left.
+// A change also moves the queued observation tallies, each to where its
+// ObservationDelayFlexibility window from consensus now closes, and the refund
+// cleanup marker expiries, keeping the wall-clock time each had left.
 func (s *KeeperConfigSuite) TestBlockTimeChangeConvertsTalliesAndRefundCleanups(c *C) {
 	ctx, k := setupKeeperForTest(c)
 	k.SetMimir(ctx, constants.BlockTimeMs.String(), 500)
 	k.UpdateBlockTime(ctx.WithBlockHeight(100))
 	ctx = ctx.WithBlockHeight(150)
+	// 35 reference blocks from 150 at 500 ms: due at 220
+	k.SetMimir(ctx, constants.ObservationDelayFlexibility.String(), 35)
+	c.Assert(k.RefHeightAfter(ctx, 150, 35), Equals, int64(220))
 
 	txID := GetRandomTxHash().String()
 	k.QueueObservationTally(ctx, types.ObservationTallyEntry{DueHeight: 160, ConsensusHeight: 150, Kind: "IN", Chain: common.BTCChain, Ref: []string{txID}})
@@ -377,7 +381,8 @@ func (s *KeeperConfigSuite) TestBlockTimeChangeConvertsTalliesAndRefundCleanups(
 	entries, err = k.PopObservationTallies(ctx, 209)
 	c.Assert(err, IsNil)
 	c.Check(entries, HasLen, 0)
-	// 220 - 199 = 21 half blocks: 11 blocks
+	// 220 - 199 = 21 half blocks: 11 blocks, where the window closes
+	c.Check(k.RefHeightAfter(ctx.WithBlockHeight(200), 150, 35), Equals, int64(210))
 	entries, err = k.PopObservationTallies(ctx, 210)
 	c.Assert(err, IsNil)
 	c.Assert(entries, HasLen, 1)

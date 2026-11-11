@@ -2281,7 +2281,9 @@ func ExtractReferenceFromAmount(ctx cosmos.Context, mgr Manager, asset common.As
 // withinObservationFlex reports whether this block is within refFlex reference
 // blocks (ObservationDelayFlexibility) of wall-clock time after height, the
 // window in which a late observation still counts: height + flex >= now without
-// a block time change.
+// a block time change. The window closes at the height the observation tally
+// scores the voter at (queueObservationTally, convertObservationTallies), so a
+// signer refunded here is never counted as missing.
 func withinObservationFlex(ctx cosmos.Context, k keeper.Keeper, height, refFlex int64) bool {
-	return k.RefBlocksSince(ctx, height) <= refFlex
+	return refFlex >= 0 && ctx.BlockHeight() <= k.RefHeightAfter(ctx, height, refFlex)
 }

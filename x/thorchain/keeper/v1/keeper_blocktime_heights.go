@@ -264,23 +264,40 @@ func txIDFoldKey(hash common.TxID) string {
 }
 
 // convertObservationTallies re-keys the queued observation tallies, which are
-// keyed by due height, to their converted due heights.
+// keyed by due height, to the height their ObservationDelayFlexibility window
+// now closes at: RefHeightAfter from the voter's consensus height, over the
+// history that includes this change. That is the boundary late observations
+// are refunded by (withinObservationFlex). Converting the stored height
+// instead rounds up once per change, and after a change from a block time
+// that does not divide the window, can close it blocks after the refund does.
+// An entry whose consensus height cannot be read keeps the converted height.
 func (k KVStore) convertObservationTallies(ctx cosmos.Context, convert func(int64) int64) {
 	type entry struct {
 		key, newKey, value []byte
 	}
 	var entries []entry
+	flex := max(k.GetConfigInt64Ref(ctx, constants.ObservationDelayFlexibility), 0)
 	prefix := string(k.GetKey(prefixObservationTallyDue, ""))
 	iter := k.getIterator(ctx, types.DbPrefix(prefix))
 	for ; iter.Valid(); iter.Next() {
 		dueStr, rest, _ := strings.Cut(strings.TrimPrefix(string(iter.Key()), prefix), "/")
 		due, err := strconv.ParseInt(dueStr, 10, 64)
-		if err != nil || convert(due) == due {
+		if err != nil || due <= ctx.BlockHeight() {
+			continue
+		}
+		newDue := convert(due)
+		var record ProtoStrings
+		if err := k.cdc.Unmarshal(iter.Value(), &record); err == nil && len(record.Value) >= 3 {
+			if consensus, err := strconv.ParseInt(record.Value[2], 10, 64); err == nil {
+				newDue = max(k.RefHeightAfter(ctx, consensus, flex), ctx.BlockHeight())
+			}
+		}
+		if newDue == due {
 			continue
 		}
 		entries = append(entries, entry{
 			key:    append([]byte(nil), iter.Key()...),
-			newKey: []byte(fmt.Sprintf("%s%020d/%s", prefix, convert(due), rest)),
+			newKey: []byte(fmt.Sprintf("%s%020d/%s", prefix, newDue, rest)),
 			value:  append([]byte(nil), iter.Value()...),
 		})
 	}
