@@ -28,6 +28,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/signer"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	btss "gitlab.com/thorchain/thornode/v3/bifrost/tss"
+	"gitlab.com/thorchain/thornode/v3/bifrost/tss/frostlib"
 	"gitlab.com/thorchain/thornode/v3/cmd"
 	tcommon "gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
@@ -41,6 +42,11 @@ const (
 
 func printVersion() {
 	fmt.Printf("%s v%s, rev %s\n", serverIdentity, constants.Version, constants.GitCommit)
+	if frostlib.Linked {
+		fmt.Printf("go-frost: linked, ABI %d\n", frostlib.ABIVersion())
+	} else {
+		fmt.Println("go-frost: not linked")
+	}
 }
 
 func main() {
@@ -57,6 +63,15 @@ func main() {
 
 	initPrefix()
 	initLog(*logLevel, *pretty)
+	// Stagenet and mocknet builds link the go-frost library (LTC FROST vaults).
+	// The Rust archive and its Go wrapper must agree on the C ABI; refuse to
+	// start with a mismatched archive instead of failing inside a keygen.
+	if err := frostlib.CheckRuntimeCompatibility(); err != nil {
+		log.Fatal().Err(err).Msg("go-frost library is incompatible with this bifrost build")
+	}
+	if frostlib.Linked {
+		log.Info().Uint32("abi", frostlib.ABIVersion()).Msg("go-frost library linked")
+	}
 	config.Init()
 	config.InitBifrost()
 	cfg := config.GetBifrost()
