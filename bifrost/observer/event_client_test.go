@@ -260,6 +260,7 @@ func TestEventHandling(t *testing.T) {
 }
 
 func TestSubscriptionRetry(t *testing.T) {
+	observer.SetSubscribeRetryBackoff(t, 10*time.Millisecond)
 	mockClient := new(MockBifrostClient)
 	client := observer.NewEventClient(mockClient)
 
@@ -275,23 +276,25 @@ func TestSubscriptionRetry(t *testing.T) {
 		events: []*ebifrost.EventNotification{},
 		ctx:    ctx,
 	}
+	resubscribed := make(chan struct{})
 	mockClient.On("SubscribeToEvents",
 		mock.Anything,
 		mock.Anything,
-		mock.Anything).Return(mockStream, nil).Once()
+		mock.Anything).Return(mockStream, nil).Once().Run(func(mock.Arguments) { close(resubscribed) })
 
 	// Start client
 	client.Start()
 
-	// Allow time for retry to happen (greater than 1 second backoff)
-	time.Sleep(1500 * time.Millisecond)
+	// Wait for the retry after the backoff
+	select {
+	case <-resubscribed:
+	case <-time.After(5 * time.Second):
+		t.Fatal("client did not resubscribe within timeout")
+	}
 
 	// Stop client
 	client.Stop()
 	cancel() // Cancel context to unblock stream
-
-	// Allow time for goroutines to stop
-	time.Sleep(50 * time.Millisecond)
 
 	mockClient.AssertNumberOfCalls(t, "SubscribeToEvents", 2)
 }
@@ -376,6 +379,7 @@ func TestMultipleHandlers(t *testing.T) {
 }
 
 func TestStreamError(t *testing.T) {
+	observer.SetSubscribeRetryBackoff(t, 10*time.Millisecond)
 	mockClient := new(MockBifrostClient)
 	client := observer.NewEventClient(mockClient)
 
@@ -400,16 +404,17 @@ func TestStreamError(t *testing.T) {
 	}
 
 	// The second mock needs to have proper context and events initialized
+	received := make(chan struct{})
 	workingStream.On("Recv").Return(
 		&ebifrost.EventNotification{EventType: "test", Payload: []byte("data")},
 		nil,
-	).Once()
+	).Once().Run(func(mock.Arguments) { close(received) })
 
-	// After first recv, return error to end test
+	// After first recv, block until the test ends so no third subscription happens
 	workingStream.On("Recv").Return(
 		nil,
 		errors.New("end test"),
-	).Once()
+	).Once().Run(func(mock.Arguments) { <-ctx.Done() })
 
 	mockClient.On("SubscribeToEvents",
 		mock.Anything,
@@ -419,14 +424,15 @@ func TestStreamError(t *testing.T) {
 	// Start client
 	client.Start()
 
-	// Allow time for retry to happen
-	time.Sleep(1500 * time.Millisecond)
+	// Wait for the retry to receive from the working stream
+	select {
+	case <-received:
+	case <-time.After(5 * time.Second):
+		t.Fatal("client did not resubscribe after the stream error within timeout")
+	}
 
 	// Stop client
 	client.Stop()
-
-	// Allow time for goroutines to stop
-	time.Sleep(50 * time.Millisecond)
 
 	mockClient.AssertNumberOfCalls(t, "SubscribeToEvents", 2)
 	mockStream.AssertExpectations(t)
@@ -453,6 +459,7 @@ func TestConcurrentHandlerRegistration(t *testing.T) {
 }
 
 func TestHandlersNotDuplicatedAfterReconnection(t *testing.T) {
+	observer.SetSubscribeRetryBackoff(t, 10*time.Millisecond)
 	mockClient := new(MockBifrostClient)
 	client := observer.NewEventClient(mockClient)
 
@@ -504,11 +511,8 @@ func TestHandlersNotDuplicatedAfterReconnection(t *testing.T) {
 	// Start client
 	client.Start()
 
-	// Allow time for retry to happen (greater than 1 second backoff)
-	time.Sleep(1500 * time.Millisecond)
-
-	// Wait for handler to be called with timeout
-	timer := time.NewTimer(time.Second)
+	// Wait for handler to be called after the retry, with timeout
+	timer := time.NewTimer(5 * time.Second)
 	select {
 	case <-handlerCalled:
 		// Handler was called at least once

@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -18,6 +19,7 @@ import (
 	"cosmossdk.io/client/v2/autocli"
 	"cosmossdk.io/core/appmodule"
 	"cosmossdk.io/log"
+	"cosmossdk.io/store/rootmulti"
 	storetypes "cosmossdk.io/store/types"
 	"cosmossdk.io/x/upgrade"
 	upgradekeeper "cosmossdk.io/x/upgrade/keeper"
@@ -77,6 +79,7 @@ import (
 	"github.com/CosmWasm/wasmd/x/wasm"
 	wasmkeeper "github.com/CosmWasm/wasmd/x/wasm/keeper"
 	wasmtypes "github.com/CosmWasm/wasmd/x/wasm/types"
+	"gitlab.com/thorchain/thornode/v3/app/divergence"
 	appparams "gitlab.com/thorchain/thornode/v3/app/params"
 	thornodeconfig "gitlab.com/thorchain/thornode/v3/config"
 	"gitlab.com/thorchain/thornode/v3/constants"
@@ -185,6 +188,10 @@ type THORChainApp struct {
 	// restQueryViaGRPC routes REST (grpc-gateway) queries through the in-process
 	// gRPC server instead of the comet ABCI query path (app.toml api.query-via-grpc)
 	restQueryViaGRPC bool
+
+	// divergence is the node-local app-hash divergence recorder, nil unless
+	// EnableDivergenceDiagnostics ran. All its methods are nil-safe.
+	divergence *divergence.Diagnostics
 }
 
 // NewChainApp returns a reference to an initialized ChainApp.
@@ -391,7 +398,8 @@ func NewChainApp(
 		wasmOpts,
 		wasmkeeper.WithQueryPlugins(
 			&wasmkeeper.QueryPlugins{
-				Grpc: wrappedGrpcQuerier,
+				Grpc:   wrappedGrpcQuerier,
+				Custom: app.cosmosKVQuery,
 			},
 		),
 		wasmkeeper.WithGasRegister(WasmGasRegister),
@@ -714,6 +722,9 @@ func NewChainApp(
 }
 
 func (app *THORChainApp) FinalizeBlock(req *abci.RequestFinalizeBlock) (*abci.ResponseFinalizeBlock, error) {
+	// node-local only: marks block execution for the Simulate/query overlap counters
+	app.divergence.Tracker().BeginBlock()
+
 	// when skipping sdk 47 for sdk 50, the upgrade handler is called too late in BaseApp
 	// this is a hack to ensure that the migration is executed when needed and not panics
 	app.once.Do(func() {
@@ -732,6 +743,70 @@ func (app *THORChainApp) FinalizeBlock(req *abci.RequestFinalizeBlock) (*abci.Re
 	})
 
 	return app.BaseApp.FinalizeBlock(req)
+}
+
+// Commit commits the block and then ends the divergence overlap window opened in
+// FinalizeBlock. It changes nothing about the commit itself.
+func (app *THORChainApp) Commit() (*abci.ResponseCommit, error) {
+	defer app.divergence.Tracker().EndBlock()
+	return app.BaseApp.Commit()
+}
+
+// Query counts the ABCI query for the divergence overlap counters, then serves
+// it unchanged.
+func (app *THORChainApp) Query(ctx context.Context, req *abci.RequestQuery) (*abci.ResponseQuery, error) {
+	app.divergence.Tracker().QueryStart()
+	return app.BaseApp.Query(ctx, req)
+}
+
+// EnableDivergenceDiagnostics starts the node-local app-hash divergence
+// recorder (app/divergence) when app.toml [divergence] enabled is true (the
+// default). It registers a streaming listener on every KV store, which sits
+// below the gas meter and runs after Commit, so it changes neither state nor
+// gas_used. The start command's app creator calls it (never the export path),
+// before the node executes any block.
+func (app *THORChainApp) EnableDivergenceDiagnostics(homePath string, appOpts servertypes.AppOptions) error {
+	cfg, err := divergence.ReadConfig(appOpts)
+	if err != nil {
+		return err
+	}
+	if !cfg.Enabled {
+		return nil
+	}
+	d, err := divergence.New(divergence.Options{
+		Config:      cfg,
+		HomeDir:     homePath,
+		Logger:      app.Logger().With("module", "divergence"),
+		Commits:     app.commitInfoSource(),
+		LastHeight:  app.LastBlockHeight,
+		Fingerprint: divergence.Fingerprint(appOpts),
+	})
+	if err != nil {
+		return err
+	}
+
+	keys := make([]storetypes.StoreKey, 0, len(app.keys))
+	for _, k := range app.keys {
+		keys = append(keys, k)
+	}
+	sort.Slice(keys, func(i, j int) bool { return keys[i].Name() < keys[j].Name() })
+	app.CommitMultiStore().AddListeners(keys)
+
+	sm := app.StreamingManager()
+	sm.ABCIListeners = append(sm.ABCIListeners, d.Recorder())
+	app.SetStreamingManager(sm)
+
+	app.divergence = d
+	divergence.SetActive(d)
+	return nil
+}
+
+// commitInfoSource returns the root store when it can read commit info.
+func (app *THORChainApp) commitInfoSource() divergence.CommitInfoSource {
+	if rs, ok := app.CommitMultiStore().(*rootmulti.Store); ok {
+		return rs
+	}
+	return nil
 }
 
 func (app *THORChainApp) setPostHandler() {
@@ -894,6 +969,10 @@ func (app *THORChainApp) RegisterAPIRoutes(apiSvr *api.Server, apiConfig config.
 	// gateway). Plain HTTP by design: see RegisterLogsRoute.
 	thorchain.RegisterLogsRoute(apiSvr.Router)
 
+	// Register the node-local divergence debug routes (commit_info, writeset);
+	// plain JSON, before the catch-all gRPC gateway.
+	divergence.RegisterRoutes(apiSvr.Router, app.commitInfoSource(), app.divergence)
+
 	// register thorchain-specific swagger API from root so that other applications can override easily
 	if err := RegisterSwaggerAPI(apiSvr.Router, apiConfig.Swagger); err != nil {
 		panic(err)
@@ -930,7 +1009,8 @@ func RegisterSwaggerAPI(rtr *mux.Router, swaggerEnabled bool) error {
 
 // RegisterTxService implements the Application.RegisterTxService method.
 func (app *THORChainApp) RegisterTxService(clientCtx client.Context) {
-	authtx.RegisterTxService(app.BaseApp.GRPCQueryRouter(), clientCtx, app.BaseApp.Simulate, app.interfaceRegistry)
+	simulate := app.divergence.Tracker().WrapSimulate(app.BaseApp.Simulate)
+	authtx.RegisterTxService(app.BaseApp.GRPCQueryRouter(), clientCtx, simulate, app.interfaceRegistry)
 }
 
 // RegisterTendermintService implements the Application.RegisterTendermintService method.
@@ -961,6 +1041,7 @@ func (app *THORChainApp) RegisterNodeService(clientCtx client.Context, cfg confi
 
 func (app *THORChainApp) Close() error {
 	app.EnshrinedBifrost.Stop()
+	app.divergence.Close()
 
 	return app.BaseApp.Close()
 }

@@ -1225,20 +1225,16 @@ consensus-determinism:
     PKGS: util-linux
     FUZZ_CORPUS_DIR: "$CI_PROJECT_DIR/.security-fuzz-corpus"
   # Each branch keeps its own corpus, seeded from the default branch's, so a
-  # crasher saved by one branch is never replayed on another.
+  # crasher saved by one branch is never replayed on another. The fuzzer reads
+  # and writes it in the job's own checkout, not the runner host's shared build
+  # cache, so fast and deep fuzz jobs never wait on each other and every
+  # failure fails the job.
   cache:
     key: security-fuzz-corpus-v2-$CI_COMMIT_REF_SLUG
     fallback_keys:
       - security-fuzz-corpus-v2-$CI_DEFAULT_BRANCH
     paths:
       - .security-fuzz-corpus/
-  # Every pipeline's fast and deep fuzz jobs on a runner host queue on one lock
-  # in the shared build cache. Exit 76 means the wait for it timed out: runner
-  # load, not a finding. It is a distinct code from 75 so the default retry does
-  # not requeue the job onto the same contended lock.
-  allow_failure:
-    exit_codes:
-      - 76
   before_script:
     - !reference [.pkg-install, before_script]
     - !reference [.go-private-auth, before_script]
@@ -1263,7 +1259,6 @@ security-fuzz-fast:
   timeout: 25m
   variables:
     FUZZ_TIME: 1000x
-    FUZZ_CORPUS_DIR: "$CI_PROJECT_DIR/.security-fuzz-corpus"
 
 security-fuzz-deep:
   extends: .security-fuzz-base
@@ -1271,7 +1266,6 @@ security-fuzz-deep:
   timeout: 1h
   variables:
     FUZZ_TIME: 20s
-    FUZZ_CORPUS_DIR: "$CI_PROJECT_DIR/.security-fuzz-corpus"
 
 accounting-properties-deep:
   tags: !reference [.small-runner, tags]

@@ -36,6 +36,8 @@ lint:
         # TODO: fix all lint errors in imported repos and enable lint for these.
         - bifrost/tss/go-tss
         - bifrost/txscript
+        # Vendored minified bundle (mermaid); updated by copying a release, never edited.
+        - docs/mermaid.min.js
     - linters:
         - prettier
         - yamllint
