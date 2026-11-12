@@ -98,8 +98,8 @@ endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
   - .|length == 1
   - .[0]|.in_hash == "{{ observe_txid 3 }}"
-  - .[0]|.original_memo == "REFUND:{{ observe_txid 3 }}|hello wo"
-  - .[0]|.original_memo|length == 80 # memo is truncated to chain-specific max
+  - .[0]|.original_memo == "REFUND:{{ observe_txid 3 }}|hello world"
+  - .[0]|.original_memo|length == 83 # BTC passthrough fits the extended outbound memo budget
   - .[0]|.coin.amount == "${OUT_AMOUNT=4993000}"
 ---
 type: tx-observed-out
@@ -117,7 +117,7 @@ txs:
       gas:
         - amount: "10500"
           asset: "BTC.BTC"
-      memo: "REFUND:{{ observe_txid 3 }}|hello wo" # observation with truncated memo
+      memo: "REFUND:{{ observe_txid 3 }}|hello world"
     block_height: 4
     finalise_height: 4
     observed_pub_key: {{ pubkey_dog }}

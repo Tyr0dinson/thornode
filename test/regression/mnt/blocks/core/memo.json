@@ -885,7 +885,7 @@
         "max_gas_amount_0": "10000",
         "max_gas_asset_0": "BTC.BTC",
         "max_gas_decimals_0": "8",
-        "memo": "REFUND:0000000000000000000000000000000000000000000000000000000000000003|hello wo",
+        "memo": "REFUND:0000000000000000000000000000000000000000000000000000000000000003|hello world",
         "mode": "EndBlock",
         "module_name": "",
         "out_hash": "",
@@ -1146,7 +1146,7 @@
         }
       },
       "last_commit_hash": "",
-      "data_hash": "75C0491DAA680D71ADD33E99AB841B2123CF6A05E60B793F73A9AFB08C65B40A",
+      "data_hash": "4F3D1BE4D3A92561157297A18EC5FC3067B28D7634DABCD80754C2962556D983",
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
@@ -1302,7 +1302,7 @@
     ],
     "txs": [
       {
-        "hash": "D5B8F6B76AA9D825B4119E638389BFD0A8B75BCEF410B1824AE6598B9E0E469B",
+        "hash": "873138BFCAB2DBCBA844500B1885929967E13D1DA7AA5E92245DB658409932ED",
         "tx": {
           "auth_info": {
             "fee": {
@@ -1365,7 +1365,7 @@
                         }
                       ],
                       "id": "0000000000000000000000000000000000000000000000000000000000000004",
-                      "memo": "REFUND:0000000000000000000000000000000000000000000000000000000000000003|hello wo",
+                      "memo": "REFUND:0000000000000000000000000000000000000000000000000000000000000003|hello world",
                       "to_address": "bcrt1q3wrmhnh2qe98rjse30pl7u6jxszjjwl44ls6uw"
                     },
                     "xmr_mined_height": "0"
@@ -1379,7 +1379,7 @@
             "unordered": false
           },
           "signatures": [
-            "jKvoHcIPhXic20gdJFkbIGJlYJ53zCZxHgVKRqBfGxhHO1UKVHdNiOqWJjjCfOMJaDq/G7FD5DY4tOU9LmHbcA=="
+            "5L9QaF2OAUB2dcIGAb6UQeu9cdjRKmVo6SQW4zH5LZpxD0sq1cPmtFvBKTExySJUj8/Kgb7oCI/fyttzyY8X/Q=="
           ]
         },
         "result": {
@@ -1392,7 +1392,7 @@
               "type": "tx"
             },
             {
-              "signature": "jKvoHcIPhXic20gdJFkbIGJlYJ53zCZxHgVKRqBfGxhHO1UKVHdNiOqWJjjCfOMJaDq/G7FD5DY4tOU9LmHbcA==",
+              "signature": "5L9QaF2OAUB2dcIGAb6UQeu9cdjRKmVo6SQW4zH5LZpxD0sq1cPmtFvBKTExySJUj8/Kgb7oCI/fyttzyY8X/Q==",
               "type": "tx"
             },
             {
@@ -1408,7 +1408,7 @@
               "from": "bcrt1qzf3gsk7edzwl9syyefvfhle37cjtql35tlzesk",
               "id": "0000000000000000000000000000000000000000000000000000000000000004",
               "in_tx_id": "0000000000000000000000000000000000000000000000000000000000000003",
-              "memo": "REFUND:0000000000000000000000000000000000000000000000000000000000000003|hello wo",
+              "memo": "REFUND:0000000000000000000000000000000000000000000000000000000000000003|hello world",
               "msg_index": "0",
               "to": "bcrt1q3wrmhnh2qe98rjse30pl7u6jxszjjwl44ls6uw",
               "type": "outbound"
