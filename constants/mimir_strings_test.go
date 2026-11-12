@@ -162,8 +162,10 @@ func (s *ConstantsTestSuite) TestIsOperationalMimir_CompleteCoverage(c *C) {
 		P2PGateDisabled.String(),
 		EnableMemolessOutbound.String(),
 		POLReserveSystemIncomeBps.String(),
-		StableReserveOraclePricing.String(),
 		MimirKeyPreflightChainSetDisabled,
+		StableReserveUnderwaterFee.String(),
+		StableReserveRescueToleranceBps.String(),
+		StableReserveDeployMaxPoolBps.String(),
 	}
 
 	for _, mimir := range exactOperationalMimirs {
