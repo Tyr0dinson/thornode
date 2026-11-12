@@ -109,6 +109,18 @@ var thorchainPrefixes = map[string]string{
 	"dynfee/":                        "prefixDynamicFee",
 	"dynfeeacc/":                     "prefixDynamicFeeAcc",
 	"dynfeeebo/":                     "prefixDynamicFeeEpochBlocks",
+	"mempool_swap_usage/":            "prefixMempoolSwapUsage",
+	"mempool_swap/":                  "prefixMempoolSwap",
+	"mempool_swap_pool_owner/":       "prefixMempoolSwapPoolOwner",
+	"mempool_swap_pool_overlay/":     "prefixMempoolSwapPoolOverlay",
+	"mempool_swap_supply_overlay/":   "prefixMempoolSwapSupplyOverlay",
+	"mempool_swap_vault/":            "prefixMempoolSwapVault",
+	"mempool_swap_timeout/":          "prefixMempoolSwapTimeout",
+	"mempool_swap_vault_recovery/":   "prefixMempoolSwapVaultRecovery",
+	"errata_pool_correction/":        "prefixErrataPoolCorrection",
+	"staged_outbound/":               "prefixStagedOutbound",
+	"staged_outbound_coin_total/":    "prefixStagedOutboundCoinTotal",
+	"staged_outbound_clout_total/":   "prefixStagedOutboundCloutTotal",
 }
 
 // KeyInfo is a best-effort decoding of a store key.
