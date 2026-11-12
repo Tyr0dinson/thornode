@@ -1,8 +1,11 @@
 package thorchain
 
 import (
+	"fmt"
+
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/constants"
 	. "gopkg.in/check.v1"
 )
 
@@ -181,4 +184,168 @@ func (s *SecuredAssetMgrSuite) TestRateDecreaseDeposit(c *C) {
 	c.Check(withdrawAmt.String(), Equals, "1000 BTC.BTC")
 	bal = mgr.BalanceOf(ctx, asset, addr3)
 	c.Check(bal.String(), Equals, "0")
+}
+
+func (s *SecuredAssetMgrSuite) TestWithdrawDuringPoolRagnarok(c *C) {
+	s.checkWithdrawDuringPoolRagnarok(c, common.BTCAsset, GetRandomBTCAddress)
+	s.checkWithdrawDuringPoolRagnarok(c, common.ETHAsset, GetRandomETHAddress)
+}
+
+func (s *SecuredAssetMgrSuite) checkWithdrawDuringPoolRagnarok(c *C, asset common.Asset, newAddress func() common.Address) {
+	ctx, mgr := setupManagerForTest(c)
+	k := mgr.Keeper()
+	ctx = ctx.WithBlockHeight(1000 * k.GetConfigInt64(ctx, constants.FundMigrationInterval))
+
+	securedAsset := asset.GetSecuredAsset()
+	synthAsset := asset.GetSyntheticAsset()
+
+	c.Assert(k.SetNodeAccount(ctx, GetRandomValidatorNode(NodeActive)), IsNil)
+	vault := GetRandomVault()
+	vault.Status = ActiveVault
+	vault.StatusSince = ctx.BlockHeight() - 10
+	vault.Coins = common.Coins{common.NewCoin(asset, cosmos.NewUint(500*common.One))}
+	c.Assert(k.SetVault(ctx, vault), IsNil)
+	c.Assert(k.SaveNetworkFee(ctx, asset.GetChain(), NetworkFee{
+		Chain: asset.GetChain(), TransactionSize: 80000, TransactionFeeRate: 30,
+	}), IsNil)
+
+	pool := NewPool()
+	pool.Asset = asset
+	pool.BalanceRune = cosmos.NewUint(1000 * common.One)
+	pool.BalanceAsset = cosmos.NewUint(10 * common.One)
+	pool.LPUnits = cosmos.NewUint(1600)
+	pool.Status = PoolAvailable
+	c.Assert(k.SetPool(ctx, pool), IsNil)
+	FundModule(c, ctx, k, AsgardName, pool.BalanceRune.Uint64())
+	c.Assert(k.MintToModule(ctx, ModuleName, common.NewCoin(synthAsset, cosmos.NewUint(common.One))), IsNil)
+
+	// two providers, one handled per pass: the first pass cannot finalize
+	k.SetMimir(ctx, constants.RagnarokProcessNumOfLPPerIteration.String(), 1)
+	for i := 0; i < 2; i++ {
+		k.SetLiquidityProvider(ctx, LiquidityProvider{
+			Asset:             asset,
+			RuneAddress:       GetRandomRUNEAddress(),
+			AssetAddress:      newAddress(),
+			LastAddHeight:     5,
+			Units:             pool.LPUnits.QuoUint64(2),
+			PendingRune:       cosmos.ZeroUint(),
+			PendingAsset:      cosmos.ZeroUint(),
+			AssetDepositValue: cosmos.ZeroUint(),
+			RuneDepositValue:  cosmos.ZeroUint(),
+		})
+	}
+
+	owner := GetRandomBech32Addr()
+	deposited := cosmos.NewUint(5 * common.One)
+	_, err := mgr.SecuredAssetManager().Deposit(ctx, asset, deposited, owner, common.NoAddress, common.BlankTxID)
+	c.Assert(err, IsNil)
+	c.Assert(mgr.SecuredAssetManager().BalanceOf(ctx, asset, owner).String(), Equals, deposited.String())
+	c.Assert(k.GetTotalSupply(ctx, synthAsset).IsZero(), Equals, false)
+
+	// start the pool Ragnarok: redeeming the synths sets the marker
+	k.SetMimir(ctx, "RAGNAROK-"+asset.MimirString(), 1)
+	networkMgr := newNetworkMgr(k, mgr.TxOutStore(), mgr.EventMgr())
+	c.Assert(networkMgr.checkPoolRagnarok(ctx, mgr), IsNil)
+	ragStart, err := k.GetPoolRagnarokStart(ctx, asset)
+	c.Assert(err, IsNil)
+	c.Assert(ragStart, Equals, ctx.BlockHeight())
+	pool, err = k.GetPool(ctx, asset)
+	c.Assert(err, IsNil)
+	c.Assert(pool.Status, Equals, PoolStaged)
+	c.Assert(k.GetTotalSupply(ctx, synthAsset).IsZero(), Equals, true)
+
+	// the secured shares still count in full
+	c.Check(mgr.SecuredAssetManager().GetShareSupply(ctx, securedAsset).String(), Equals, deposited.String())
+	c.Check(mgr.SecuredAssetManager().BalanceOf(ctx, asset, owner).String(), Equals, deposited.String())
+
+	// the manager, as add liquidity and the stable reserve call it
+	one := cosmos.NewUint(common.One)
+	to := newAddress()
+	coin, err := mgr.SecuredAssetManager().Withdraw(ctx, securedAsset, one, owner, to, common.BlankTxID)
+	c.Check(err, IsNil)
+	c.Check(coin.String(), Equals, common.NewCoin(asset, one).String())
+
+	// the native deposit a holder sends to withdraw to layer 1
+	withdrawn := cosmos.NewUint(3 * common.One)
+	msg := NewMsgDeposit(common.NewCoins(common.NewCoin(securedAsset, withdrawn)), fmt.Sprintf("SECURE-:%s", to), owner)
+	_, err = NewDepositHandler(mgr).Run(ctx, msg)
+	c.Assert(err, IsNil)
+
+	remaining := deposited.Sub(one).Sub(withdrawn)
+	c.Check(mgr.SecuredAssetManager().BalanceOf(ctx, asset, owner).String(), Equals, remaining.String())
+	c.Check(k.GetBalanceOf(ctx, owner, securedAsset).Amount.String(), Equals, remaining.String())
+	state, err := k.GetSecuredAsset(ctx, securedAsset)
+	c.Assert(err, IsNil)
+	c.Check(state.Depth.String(), Equals, remaining.String())
+
+	// one outbound pays the holder, less the outbound fee
+	items, err := mgr.TxOutStore().GetOutboundItems(ctx)
+	c.Assert(err, IsNil)
+	var paid common.Coins
+	for _, item := range items {
+		if item.ToAddress.Equals(to) {
+			paid = append(paid, item.Coin)
+		}
+	}
+	c.Assert(paid, HasLen, 1)
+	c.Check(paid[0].Asset.Equals(asset), Equals, true)
+	c.Check(paid[0].Amount.IsZero(), Equals, false)
+	c.Check(paid[0].Amount.LTE(withdrawn), Equals, true, Commentf("%s", paid[0]))
+
+	// Cancelling Ragnarok does not delete its persisted marker. A fresh
+	// secured manager must still read the remaining claims from the same store.
+	k.SetMimir(ctx, "RAGNAROK-"+asset.MimirString(), 0)
+	c.Assert(networkMgr.checkPoolRagnarok(ctx, mgr), IsNil)
+	ragStart, err = k.GetPoolRagnarokStart(ctx, asset)
+	c.Assert(err, IsNil)
+	c.Check(ragStart, Equals, ctx.BlockHeight())
+	reloaded := newSecuredAssetMgr(k, mgr.EventMgr())
+	c.Check(reloaded.GetShareSupply(ctx, securedAsset).String(), Equals, remaining.String())
+	c.Check(reloaded.BalanceOf(ctx, asset, owner).String(), Equals, remaining.String())
+}
+
+func (s *SecuredAssetMgrSuite) TestPoolRagnarokKeepsSecuredSharePrice(c *C) {
+	for _, asset := range []common.Asset{common.BTCAsset, common.ETHAsset} {
+		ctx, k := setupKeeperForTest(c)
+		ctx = ctx.WithBlockHeight(100)
+		eventMgr, err := GetEventManager(GetCurrentVersion())
+		c.Assert(err, IsNil)
+		mgr := newSecuredAssetMgr(k, eventMgr)
+		secured := asset.GetSecuredAsset()
+		owner := GetRandomBech32Addr()
+		other := GetRandomBech32Addr()
+		incoming := GetRandomBech32Addr()
+		_, err = mgr.Deposit(ctx, asset, cosmos.NewUint(100), owner, common.NoAddress, common.BlankTxID)
+		c.Assert(err, IsNil)
+		_, err = mgr.Deposit(ctx, asset, cosmos.NewUint(200), other, common.NoAddress, common.BlankTxID)
+		c.Assert(err, IsNil)
+		// Fee shares make the price 300 underlying units / 400 shares.
+		c.Assert(k.MintToModule(ctx, ModuleName, common.NewCoin(secured, cosmos.NewUint(100))), IsNil)
+		c.Assert(mgr.BalanceOf(ctx, asset, owner).String(), Equals, "75")
+		c.Assert(mgr.BalanceOf(ctx, asset, other).String(), Equals, "150")
+		k.SetPoolRagnarokStart(ctx, asset)
+
+		// Already-custodied payouts can credit secured assets during Ragnarok.
+		// A 75-unit credit must mint 100 shares at the existing price.
+		minted, err := mgr.Deposit(ctx, asset, cosmos.NewUint(75), incoming, common.NoAddress, common.BlankTxID)
+		c.Assert(err, IsNil)
+		c.Check(minted.Amount.String(), Equals, "100", Commentf("asset: %s", asset))
+		c.Check(mgr.GetShareSupply(ctx, secured).String(), Equals, "500")
+		c.Check(mgr.BalanceOf(ctx, asset, owner).String(), Equals, "75")
+		c.Check(mgr.BalanceOf(ctx, asset, other).String(), Equals, "150")
+		c.Check(mgr.BalanceOf(ctx, asset, incoming).String(), Equals, "75")
+
+		withdrawn, err := mgr.Withdraw(ctx, secured, cosmos.NewUint(30), incoming, common.NoAddress, common.BlankTxID)
+		c.Assert(err, IsNil)
+		c.Check(withdrawn.Asset.Equals(asset), Equals, true)
+		c.Check(withdrawn.Amount.String(), Equals, "30")
+		c.Check(k.GetBalanceOf(ctx, incoming, secured).Amount.String(), Equals, "60")
+		c.Check(mgr.BalanceOf(ctx, asset, incoming).String(), Equals, "45")
+		c.Check(mgr.BalanceOf(ctx, asset, owner).String(), Equals, "75")
+		c.Check(mgr.BalanceOf(ctx, asset, other).String(), Equals, "150")
+		pool, supply, err := mgr.GetSecuredAssetStatus(ctx, secured)
+		c.Assert(err, IsNil)
+		c.Check(pool.Depth.String(), Equals, "345")
+		c.Check(supply.String(), Equals, "460")
+	}
 }

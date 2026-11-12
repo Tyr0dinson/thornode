@@ -34,6 +34,12 @@ func (m *MsgReferenceMemo) ValidateBasic() error {
 	if len(m.Memo) > constants.MaxMemoSize {
 		return fmt.Errorf("memo cannot exceed %d: it is %d", constants.MaxMemoSize, len(m.Memo))
 	}
+	// The registered memo is executed later by the deposits that use it. The
+	// parser does not read every field, so a control character can sit in one
+	// it ignores: check the whole memo before it is stored.
+	if err := common.ValidateMemoCharacters(m.Memo); err != nil {
+		return cosmos.ErrUnknownRequest(err.Error())
+	}
 	if m.Signer.Empty() {
 		return cosmos.ErrInvalidAddress("empty signer address")
 	}

@@ -1,6 +1,7 @@
 package keeperv1
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"strconv"
@@ -158,6 +159,42 @@ func (k KVStore) GetAdvSwapQueueIndexIterator(ctx cosmos.Context, swapType types
 // directional pool pair.
 func (k KVStore) GetAdvSwapQueueLimitIndexIterator(ctx cosmos.Context) cosmos.Iterator {
 	return k.getIterator(ctx, prefixAdvSwapQueueLimitIndex)
+}
+
+// ClearAdvSwapQueueIndexes deletes the market index and every limit index
+// bucket, leaving the queue items alone. It is for quote simulation, which
+// deletes every queued item first: index entries left behind would all be
+// orphans, and the queue's EndBlock removes orphans one at a time, each time
+// decoding and rewriting the whole market index, quadratic in the queue size.
+func (k KVStore) ClearAdvSwapQueueIndexes(ctx cosmos.Context) {
+	k.del(ctx, k.GetKey(prefixAdvSwapQueueMarketIndex, ""))
+
+	var keys [][]byte
+	iter := k.getIterator(ctx, prefixAdvSwapQueueLimitIndex)
+	for ; iter.Valid(); iter.Next() {
+		keys = append(keys, bytes.Clone(iter.Key()))
+	}
+	iter.Close()
+	for _, key := range keys {
+		k.del(ctx, key)
+	}
+}
+
+// AdvSwapQueueIndexesEmpty reports whether the market index and every limit
+// index bucket are empty. Every queued item has an index entry (adding an item
+// writes one, removing an item removes it), so after ClearAdvSwapQueueIndexes
+// this tells quote simulation whether its queue has drained without iterating
+// the items: in the simulation's cache store each item it deleted is a
+// tombstone over the committed store, and an item iterator has to read and skip
+// every one of them before it can report itself empty.
+func (k KVStore) AdvSwapQueueIndexesEmpty(ctx cosmos.Context) bool {
+	record := make([]string, 0)
+	if _, err := k.getStrings(ctx, k.GetKey(prefixAdvSwapQueueMarketIndex, ""), &record); err != nil || len(record) > 0 {
+		return false
+	}
+	iter := k.getIterator(ctx, prefixAdvSwapQueueLimitIndex)
+	defer iter.Close()
+	return !iter.Valid()
 }
 
 // GetAdvSwapQueueIndex - read the given adv swap queue index information from key values tore

@@ -11,6 +11,7 @@ corpus_dir=$(cd "$corpus_dir" && pwd)
 targets=(
   'FuzzParseMemo|./x/thorchain/memo'
   'FuzzNewAddress|./common'
+  'FuzzValidateMemo|./common'
   'FuzzRPCVersion|./bifrost/pkg/chainclients/solana/rpc'
   'FuzzFrostEvidenceDecode|./bifrost/p2p/messages'
   'FuzzFrostSignedPayload|./bifrost/p2p/messages'
@@ -53,7 +54,7 @@ fi
 # exact command is checked with -n first, so a toolchain change that breaks this
 # fails the run instead of fuzzing against the shared cache.
 fuzz_test() {
-  GOTOOLCHAIN=go1.26.10 GOMAXPROCS=4 go test "$@" -p 2 -parallel 4 -run '^$' -fuzz "^${name}$" -fuzztime "$fuzztime" "$package" -args -test.fuzzcachedir="$fuzz_cache" 9>&-
+  GOTOOLCHAIN=go1.26.11 GOMAXPROCS=4 go test "$@" -p 2 -parallel 4 -run '^$' -fuzz "^${name}$" -fuzztime "$fuzztime" "$package" -args -test.fuzzcachedir="$fuzz_cache" 9>&-
 }
 printf 'Fuzzing %d target(s), each for %s; corpus cache: %s\n' "$selected" "$budget" "$corpus_dir"
 for spec in "${targets[@]}"; do

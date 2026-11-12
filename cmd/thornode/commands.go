@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	runtimedebug "runtime/debug"
 
 	cmtcfg "github.com/cometbft/cometbft/config"
 	dbm "github.com/cosmos/cosmos-db"
@@ -50,6 +51,7 @@ import (
 
 	"gitlab.com/thorchain/thornode/v3/cmd/thornode/cmd"
 	"gitlab.com/thorchain/thornode/v3/config"
+	"gitlab.com/thorchain/thornode/v3/constants"
 	thorlog "gitlab.com/thorchain/thornode/v3/log"
 
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/client/cli"
@@ -169,6 +171,9 @@ func debugCommand() *cobra.Command {
 
 func addModuleInitFlags(startCmd *cobra.Command) {
 	startCmd.PreRunE = func(cmd *cobra.Command, _ []string) error {
+		if err := checkASLR(); err != nil {
+			return err
+		}
 		serverCtx := server.GetServerContextFromCmd(cmd)
 
 		// Bind flags to the Context's Viper so the app construction can set
@@ -194,7 +199,26 @@ func addModuleInitFlags(startCmd *cobra.Command) {
 		serverCtx.Logger = NewConsensusFailureLogger(serverCtx.Logger)
 		return server.SetCmdServerContext(startCmd, serverCtx)
 	}
+	preRunE := startCmd.PreRunE
 	wasm.AddModuleInitFlags(startCmd)
+	// wasmd's libwasmvm version check reads the wasmvm version from the module
+	// build info and panics without it. Garbled release builds (GARBLE in the
+	// Makefile) carry none, so replace it with a check against the version the
+	// Makefile embeds.
+	if _, ok := runtimedebug.ReadBuildInfo(); !ok {
+		startCmd.PreRunE = func(cmd *cobra.Command, args []string) error {
+			skip, err := cmd.Flags().GetBool("wasm.skip_wasmvm_version_check")
+			if err != nil {
+				return err
+			}
+			if !skip {
+				if err = wasm.CheckLibwasmVersion(constants.WasmvmVersion); err != nil {
+					return err
+				}
+			}
+			return preRunE(cmd, args)
+		}
+	}
 	ebifrost.AddModuleInitFlags(startCmd)
 }
 

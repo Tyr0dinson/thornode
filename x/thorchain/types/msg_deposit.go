@@ -46,6 +46,11 @@ func (m *MsgDeposit) ValidateBasic() error {
 		err := fmt.Errorf("memo must not exceed %d bytes: %d", constants.MaxMemoSize, len([]byte(m.Memo)))
 		return cosmos.ErrUnknownRequest(err.Error())
 	}
+	// Checked here rather than in the handler so that such a memo is refused
+	// before the ante handler takes the fee, and never reaches a block.
+	if err := common.ValidateMemoCharacters(m.Memo); err != nil {
+		return cosmos.ErrUnknownRequest(err.Error())
+	}
 	if len(m.Salt) > constants.MaxDepositSaltSize {
 		err := fmt.Errorf("salt must not exceed %d bytes: %d", constants.MaxDepositSaltSize, len(m.Salt))
 		return cosmos.ErrUnknownRequest(err.Error())
