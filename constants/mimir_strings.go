@@ -1,9 +1,12 @@
 package constants
 
+import "strings"
+
 // All strings used in Mimir keys should be recorded here and referred to from elsewhere,
 // except for strings referring to arbitrary Assets/Chains.
 // Each string should clearly indicate its usage for the final Mimir key (key, template, reference)
 // and no Mimir key should require the combination of more than two strings.
+
 const (
 	MimirKeySecuredAssetHaltGlobal    = "HaltSecuredGlobal"
 	MimirKeyWasmPermissionless        = "WasmPermissionless"
@@ -134,3 +137,91 @@ const (
 	MimirPeerConcurrentSends    = "AttestationPeerConcurrentSends"
 	MimirPeerConcurrentReceives = "AttestationPeerConcurrentReceives"
 )
+
+// IsOperationalMimir determines if a given mimir key represents an operational mimir
+// (as opposed to an economic mimir). Operational mimirs have different voting requirements.
+func IsOperationalMimir(key string) bool {
+	exactMatches := []string{
+		"MintSynths",
+		"TradeAccountsEnabled",
+		"RUNEPoolEnabled",
+		"EVMDisableContractWhitelist",
+		"MaxOutboundAttempts",
+		"AdvSwapQueueRapidSwapMax",
+		"EnableADVSwapQueue",
+		"StreamingLimitSwapMaxAge",
+		OverSolvencyCheckInterval.String(),
+		OverSolvencyToTreasuryBps.String(),
+		MimirKeyScheduledMigration,
+		MimirKeyDisableTSSSignerFiltering,
+		MaxRetiredVaultRecoveryAttempts.String(),
+		P2PGateDisabled.String(),
+		EnableMemolessOutbound.String(),
+		POLReserveSystemIncomeBps.String(),
+		StableReserveOraclePricing.String(),
+		MimirKeyPreflightChainSetDisabled,
+	}
+	for i := range exactMatches {
+		if strings.EqualFold(key, exactMatches[i]) {
+			return true
+		}
+	}
+
+	exactUnmatches := []string{
+		"NodePauseChainBlocks",
+		"PauseOnSlashThreshold",
+	}
+	for i := range exactUnmatches {
+		if strings.EqualFold(key, exactUnmatches[i]) {
+			return false
+		}
+	}
+
+	// Past this point, compare only upper-case strings due to case sensitivity.
+	key = strings.ToUpper(key)
+	if strings.HasPrefix(key, "COMPROMISEDVAULT-") {
+		return true
+	}
+	// AllowNoVault-<CHAIN> opens the noop:novault debit for a brief, coordinated
+	// insolvency-correction window. That is a time-critical operator action (a
+	// gas top-up to a retiring vault must not be credited before the next
+	// migration round), so it is operational rather than economic.
+	if strings.HasPrefix(key, "ALLOWNOVAULT-") {
+		return true
+	}
+	// XMRConsolidation* tunes bifrost's Monero output consolidation. Each run
+	// locks vault liquidity for Monero's 10-block spend lock, so operators must
+	// be able to tune or disable it quickly rather than wait for a supermajority.
+	if strings.HasPrefix(key, "XMRCONSOLIDATION") {
+		return true
+	}
+	partialMatches := []string{
+		"HALT",
+		"PAUSE",
+		"STOPSOLVENCYCHECK",
+		"MIMIRUPGRADECONTRACT",
+		"EVMALLOWANCECHECK",
+		"POLRESERVEBLACKLIST",
+		"POLRESERVEWHITELIST",
+		"DYNAMICFEE-WHITELIST",
+		"REVSHARE",
+		"EVMDIRECTERC20INBOUND",
+		"SKIPSIGNERCACHE",
+	}
+	for i := range partialMatches {
+		// Contains rather than HasPrefix to include cases like StreamingSwapPause.
+		if strings.Contains(key, partialMatches[i]) {
+			return true
+		}
+	}
+
+	if strings.HasPrefix(key, "L1DYNAMICFEE") {
+		return true
+	}
+	if strings.HasPrefix(key, "OVERSOLVENCYTOTREASURYBPS-") {
+		return true
+	}
+
+	// all min slip mimirs are operational, but not SlipMinBpsMax
+	return strings.HasSuffix(key, "SLIPMINBPS")
+}

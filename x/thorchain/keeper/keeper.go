@@ -505,7 +505,6 @@ type KeeperMimir interface {
 	DeleteMimir(_ cosmos.Context, key string) error
 	GetNodePauseChain(ctx cosmos.Context, acc cosmos.AccAddress) int64
 	SetNodePauseChain(ctx cosmos.Context, acc cosmos.AccAddress)
-	IsOperationalMimir(key string) bool
 }
 
 type KeeperNetworkFee interface {

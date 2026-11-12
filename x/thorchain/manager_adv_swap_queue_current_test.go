@@ -1890,7 +1890,7 @@ func (s AdvSwapQueueSuite) TestRapidSwapMimirIntegration(c *C) {
 	c.Assert(value, Equals, int64(5)) // Should still be 5 (highest vote count)
 
 	// Test 5: Verify mimir is recognized as operational
-	isOperational := mgr.Keeper().IsOperationalMimir("AdvSwapQueueRapidSwapMax")
+	isOperational := constants.IsOperationalMimir("AdvSwapQueueRapidSwapMax")
 	c.Assert(isOperational, Equals, true)
 
 	// Test 6: Test with different OperationalVotesMin
