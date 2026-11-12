@@ -527,3 +527,15 @@ func (m Migrator) Migrate20to21(ctx cosmos.Context) error {
 	}
 	return m.migrate20to21Mainnet(ctx)
 }
+
+// Migrate21to22 drops the permanently undeliverable XRP outbound of inbound
+// EE959E9A...3306 (its destination requires a destination tag it was never
+// given) and restores the owner's secured XRP, the mirror of the withdrawal
+// that scheduled it. The two steps are applied atomically. Mainnet only; it
+// never halts the upgrade.
+func (m Migrator) Migrate21to22(ctx cosmos.Context) error {
+	if err := m.mgr.LoadManagerIfNecessary(ctx); err != nil {
+		return err
+	}
+	return m.migrate21to22Mainnet(ctx)
+}

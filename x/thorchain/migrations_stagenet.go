@@ -216,3 +216,9 @@ func (m Migrator) migrate19to20Mainnet(_ sdk.Context) error {
 func (m Migrator) migrate20to21Mainnet(_ sdk.Context) error {
 	return nil
 }
+
+// migrate21to22Mainnet drops the undeliverable XRP outbound and restores the
+// owner's secured XRP. No-op off mainnet: the fix is mainnet state.
+func (m Migrator) migrate21to22Mainnet(_ sdk.Context) error {
+	return nil
+}
