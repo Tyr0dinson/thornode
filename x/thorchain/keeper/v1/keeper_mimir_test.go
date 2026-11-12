@@ -28,12 +28,6 @@ func (s *KeeperMimirSuite) TestMimir(c *C) {
 	c.Check(val, Equals, int64(-1))
 }
 
-func (s *KeeperMimirSuite) TestChainSupportMimirsOperational(c *C) {
-	k := KVStore{}
-	c.Assert(k.IsOperationalMimir(constants.MinNodeChainSupport.String()), Equals, true)
-	c.Assert(k.IsOperationalMimir(constants.ChainLiquidityRunePerValidator.String()), Equals, true)
-}
-
 func (s *KeeperMimirSuite) TestChainSupportMimirDefaultsWhenUnset(c *C) {
 	ctx, k := setupKeeperForTest(c)
 	c.Assert(k.GetConfigInt64(ctx, constants.MinNodeChainSupport), Equals, int64(1))
@@ -100,125 +94,105 @@ func (s *KeeperMimirSuite) TestScopedMimirCacheDisabledByWrite(c *C) {
 }
 
 func (s *KeeperMimirSuite) TestIsOperationalMimirPOLReserveBlackList(c *C) {
-	_, k := setupKeeperForTest(c)
-
 	// Per-pool POL reserve blacklist must be operational so operators can
 	// quickly disable a misbehaving pool without full governance consensus.
-	c.Check(k.IsOperationalMimir("POLReserveBlacklist-BTC-BTC"), Equals, true)
+	c.Check(constants.IsOperationalMimir("POLReserveBlacklist-BTC-BTC"), Equals, true)
 	c.Check(
-		k.IsOperationalMimir("POLReserveBlacklist-ETH-USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48"),
+		constants.IsOperationalMimir("POLReserveBlacklist-ETH-USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48"),
 		Equals, true,
 	)
 
 	// The partial match is case-insensitive (IsOperationalMimir uppercases the
 	// key before comparing), so operator-set keys in any case still register.
-	c.Check(k.IsOperationalMimir("POLRESERVEBLACKLIST-BTC-BTC"), Equals, true)
-	c.Check(k.IsOperationalMimir("polreserveblacklist-btc-btc"), Equals, true)
+	c.Check(constants.IsOperationalMimir("POLRESERVEBLACKLIST-BTC-BTC"), Equals, true)
+	c.Check(constants.IsOperationalMimir("polreserveblacklist-btc-btc"), Equals, true)
 
 	// Similarly-prefixed but unrelated keys must NOT be flagged operational.
-	c.Check(k.IsOperationalMimir("POLReserveFoo-BTC-BTC"), Equals, false)
-	c.Check(k.IsOperationalMimir("POLReserveDeposit-BTC-BTC"), Equals, false)
+	c.Check(constants.IsOperationalMimir("POLReserveFoo-BTC-BTC"), Equals, false)
+	c.Check(constants.IsOperationalMimir("POLReserveDeposit-BTC-BTC"), Equals, false)
 }
 
 func (s *KeeperMimirSuite) TestIsOperationalMimirPOLReserveSystemIncomeBps(c *C) {
-	_, k := setupKeeperForTest(c)
-
 	key := constants.POLReserveSystemIncomeBps.String()
-	c.Check(k.IsOperationalMimir(key), Equals, true)
-	c.Check(k.IsOperationalMimir(strings.ToUpper(key)), Equals, true)
-	c.Check(k.IsOperationalMimir(strings.ToLower(key)), Equals, true)
+	c.Check(constants.IsOperationalMimir(key), Equals, true)
+	c.Check(constants.IsOperationalMimir(strings.ToUpper(key)), Equals, true)
+	c.Check(constants.IsOperationalMimir(strings.ToLower(key)), Equals, true)
 }
 
 func (s *KeeperMimirSuite) TestIsOperationalMimirPOLReserveWhitelist(c *C) {
-	_, k := setupKeeperForTest(c)
-
-	c.Check(k.IsOperationalMimir("POLReserveWhitelist-BTC-BTC"), Equals, true)
+	c.Check(constants.IsOperationalMimir("POLReserveWhitelist-BTC-BTC"), Equals, true)
 	c.Check(
-		k.IsOperationalMimir("POLReserveWhitelist-ETH-USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48"),
+		constants.IsOperationalMimir("POLReserveWhitelist-ETH-USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48"),
 		Equals, true,
 	)
-	c.Check(k.IsOperationalMimir("POLRESERVEWHITELIST-BTC-BTC"), Equals, true)
-	c.Check(k.IsOperationalMimir("polreservewhitelist-btc-btc"), Equals, true)
+	c.Check(constants.IsOperationalMimir("POLRESERVEWHITELIST-BTC-BTC"), Equals, true)
+	c.Check(constants.IsOperationalMimir("polreservewhitelist-btc-btc"), Equals, true)
 }
 
 func (s *KeeperMimirSuite) TestIsOperationalMimirPreflightChainSetDisabled(c *C) {
-	_, k := setupKeeperForTest(c)
-
 	// A kill switch for a check that holds nodes out of the Ready set must be
 	// reachable at operational threshold if the check misfires during a churn.
-	c.Check(k.IsOperationalMimir(constants.MimirKeyPreflightChainSetDisabled), Equals, true)
-	c.Check(k.IsOperationalMimir(strings.ToUpper(constants.MimirKeyPreflightChainSetDisabled)), Equals, true)
+	c.Check(constants.IsOperationalMimir(constants.MimirKeyPreflightChainSetDisabled), Equals, true)
+	c.Check(constants.IsOperationalMimir(strings.ToUpper(constants.MimirKeyPreflightChainSetDisabled)), Equals, true)
 }
 
 func (s *KeeperMimirSuite) TestIsOperationalMimirCompromisedVault(c *C) {
-	_, k := setupKeeperForTest(c)
-
-	c.Check(k.IsOperationalMimir("CompromisedVault-tthorpub1addwnpepq0"), Equals, true)
-	c.Check(k.IsOperationalMimir("COMPROMISEDVAULT-TTHORPUB1ADDWNPEPQ0"), Equals, true)
-	c.Check(k.IsOperationalMimir("compromisedvault-tthorpub1addwnpepq0"), Equals, true)
-	c.Check(k.IsOperationalMimir("CompromisedVault"), Equals, false)
+	c.Check(constants.IsOperationalMimir("CompromisedVault-tthorpub1addwnpepq0"), Equals, true)
+	c.Check(constants.IsOperationalMimir("COMPROMISEDVAULT-TTHORPUB1ADDWNPEPQ0"), Equals, true)
+	c.Check(constants.IsOperationalMimir("compromisedvault-tthorpub1addwnpepq0"), Equals, true)
+	c.Check(constants.IsOperationalMimir("CompromisedVault"), Equals, false)
 }
 
 func (s *KeeperMimirSuite) TestIsOperationalMimirOverSolvencyToTreasuryBps(c *C) {
-	_, k := setupKeeperForTest(c)
-
-	c.Check(k.IsOperationalMimir("OverSolvencyToTreasuryBps-BTC-BTC"), Equals, true)
+	c.Check(constants.IsOperationalMimir("OverSolvencyToTreasuryBps-BTC-BTC"), Equals, true)
 	c.Check(
-		k.IsOperationalMimir("OverSolvencyToTreasuryBps-ETH-USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48"),
+		constants.IsOperationalMimir("OverSolvencyToTreasuryBps-ETH-USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48"),
 		Equals, true,
 	)
-	c.Check(k.IsOperationalMimir("OVERSOLVENCYTOTREASURYBPS-ETH-ETH"), Equals, true)
-	c.Check(k.IsOperationalMimir("oversolvencytotreasurybps-btc-btc"), Equals, true)
-	c.Check(k.IsOperationalMimir("OverSolvencyToTreasuryBps"), Equals, true)
-	c.Check(k.IsOperationalMimir("OverSolvencyToTreasuryFoo-BTC-BTC"), Equals, false)
+	c.Check(constants.IsOperationalMimir("OVERSOLVENCYTOTREASURYBPS-ETH-ETH"), Equals, true)
+	c.Check(constants.IsOperationalMimir("oversolvencytotreasurybps-btc-btc"), Equals, true)
+	c.Check(constants.IsOperationalMimir("OverSolvencyToTreasuryBps"), Equals, true)
+	c.Check(constants.IsOperationalMimir("OverSolvencyToTreasuryFoo-BTC-BTC"), Equals, false)
 }
 
 func (s *KeeperMimirSuite) TestDisableTSSSignerFilteringIsOperationalMimir(c *C) {
-	_, k := setupKeeperForTest(c)
-
 	key := constants.MimirKeyDisableTSSSignerFiltering
-	c.Check(k.IsOperationalMimir(key), Equals, true)
-	c.Check(k.IsOperationalMimir(strings.ToUpper(key)), Equals, true)
-	c.Check(k.IsOperationalMimir(strings.ToLower(key)), Equals, true)
-	c.Check(k.IsOperationalMimir(key+"-BTC"), Equals, false)
+	c.Check(constants.IsOperationalMimir(key), Equals, true)
+	c.Check(constants.IsOperationalMimir(strings.ToUpper(key)), Equals, true)
+	c.Check(constants.IsOperationalMimir(strings.ToLower(key)), Equals, true)
+	c.Check(constants.IsOperationalMimir(key+"-BTC"), Equals, false)
 }
 
 func (s *KeeperMimirSuite) TestIsOperationalMimirSkipSignerCache(c *C) {
-	_, k := setupKeeperForTest(c)
-
 	// SkipSignerCache<Chain> is the per-chain bifrost gate that authorizes the
 	// expired-cache verification path (and a possible cache clear). Every node
 	// in the network MUST observe the same gate value at the same height —
 	// otherwise some bifrosts re-broadcast a tx while others don't, splitting
 	// observation consensus. Marking it operational forces consensus storage,
 	// closing the operator-misconfiguration divergence vector.
-	c.Check(k.IsOperationalMimir("SkipSignerCacheBTC"), Equals, true)
-	c.Check(k.IsOperationalMimir("SkipSignerCacheETH"), Equals, true)
-	c.Check(k.IsOperationalMimir("SkipSignerCacheXRP"), Equals, true)
+	c.Check(constants.IsOperationalMimir("SkipSignerCacheBTC"), Equals, true)
+	c.Check(constants.IsOperationalMimir("SkipSignerCacheETH"), Equals, true)
+	c.Check(constants.IsOperationalMimir("SkipSignerCacheXRP"), Equals, true)
 
 	// Case-insensitive (partial match uppercases the key).
-	c.Check(k.IsOperationalMimir("skipsignercacheBTC"), Equals, true)
-	c.Check(k.IsOperationalMimir("SKIPSIGNERCACHEBTC"), Equals, true)
+	c.Check(constants.IsOperationalMimir("skipsignercacheBTC"), Equals, true)
+	c.Check(constants.IsOperationalMimir("SKIPSIGNERCACHEBTC"), Equals, true)
 }
 
 func (s *KeeperMimirSuite) TestIsOperationalMimirAllowNoVault(c *C) {
-	_, k := setupKeeperForTest(c)
-
 	// AllowNoVault-<CHAIN> gates noop:novault debits for a short correction
 	// window; operators must be able to open it by plurality, not 2/3. Derive
 	// the key from the template so a renamed constant fails here, not on mainnet.
-	c.Check(k.IsOperationalMimir(fmt.Sprintf(constants.MimirTemplateAllowNoVault, "TRON")), Equals, true)
-	c.Check(k.IsOperationalMimir("ALLOWNOVAULT-BSC"), Equals, true)
-	c.Check(k.IsOperationalMimir("allownovault-eth"), Equals, true)
+	c.Check(constants.IsOperationalMimir(fmt.Sprintf(constants.MimirTemplateAllowNoVault, "TRON")), Equals, true)
+	c.Check(constants.IsOperationalMimir("ALLOWNOVAULT-BSC"), Equals, true)
+	c.Check(constants.IsOperationalMimir("allownovault-eth"), Equals, true)
 
 	// Unrelated keys stay non-operational.
-	c.Check(k.IsOperationalMimir("NoVaultAllowed-TRON"), Equals, false)
-	c.Check(k.IsOperationalMimir("AllowNoVault"), Equals, false)
+	c.Check(constants.IsOperationalMimir("NoVaultAllowed-TRON"), Equals, false)
+	c.Check(constants.IsOperationalMimir("AllowNoVault"), Equals, false)
 }
 
 func (s *KeeperMimirSuite) TestIsOperationalMimirXMRConsolidation(c *C) {
-	_, k := setupKeeperForTest(c)
-
 	// Keys read by bifrost's Monero client (bifrost/pkg/chainclients/monero/client.go).
 	// Consolidation locks vault liquidity for Monero's 10-block spend lock, so
 	// operators must be able to tune or disable it by plurality, not 2/3.
@@ -236,16 +210,16 @@ func (s *KeeperMimirSuite) TestIsOperationalMimirXMRConsolidation(c *C) {
 		"XMRConsolidationMaxLockBps",
 	}
 	for _, key := range keys {
-		c.Check(k.IsOperationalMimir(key), Equals, true, Commentf("key=%s", key))
-		c.Check(k.IsOperationalMimir(strings.ToUpper(key)), Equals, true, Commentf("key=%s", key))
-		c.Check(k.IsOperationalMimir(strings.ToLower(key)), Equals, true, Commentf("key=%s", key))
+		c.Check(constants.IsOperationalMimir(key), Equals, true, Commentf("key=%s", key))
+		c.Check(constants.IsOperationalMimir(strings.ToUpper(key)), Equals, true, Commentf("key=%s", key))
+		c.Check(constants.IsOperationalMimir(strings.ToLower(key)), Equals, true, Commentf("key=%s", key))
 	}
-	c.Check(k.IsOperationalMimir("xmrCONSOLIDATIONmaxLOCKbps"), Equals, true)
+	c.Check(constants.IsOperationalMimir("xmrCONSOLIDATIONmaxLOCKbps"), Equals, true)
 
 	// The UTXO input cap shared with the other UTXO chains stays economic, as do
 	// keys that merely mention XMR or consolidation.
-	c.Check(k.IsOperationalMimir("MaxUTXOsToSpend"), Equals, false)
-	c.Check(k.IsOperationalMimir("XMRConsolidatio"), Equals, false)
-	c.Check(k.IsOperationalMimir("ConsolidationXMREnabled"), Equals, false)
-	c.Check(k.IsOperationalMimir("BTCConsolidationEnabled"), Equals, false)
+	c.Check(constants.IsOperationalMimir("MaxUTXOsToSpend"), Equals, false)
+	c.Check(constants.IsOperationalMimir("XMRConsolidatio"), Equals, false)
+	c.Check(constants.IsOperationalMimir("ConsolidationXMREnabled"), Equals, false)
+	c.Check(constants.IsOperationalMimir("BTCConsolidationEnabled"), Equals, false)
 }

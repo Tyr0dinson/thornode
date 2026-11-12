@@ -3,7 +3,6 @@ package keeper
 import (
 	"errors"
 	"fmt"
-	"strings"
 
 	"cosmossdk.io/log"
 	"cosmossdk.io/math"
@@ -854,13 +853,6 @@ func (k KVStoreDummy) GetNodePauseChain(ctx cosmos.Context, acc cosmos.AccAddres
 	return int64(-1)
 }
 func (k KVStoreDummy) SetNodePauseChain(ctx cosmos.Context, acc cosmos.AccAddress) {}
-func (k KVStoreDummy) IsOperationalMimir(key string) bool {
-	key = strings.ToUpper(key)
-	// Simplified representation.
-	return strings.Contains(key, "HALT") ||
-		strings.Contains(key, "PAUSE") ||
-		strings.Contains(key, "EVMDIRECTERC20INBOUND")
-}
 
 func (k KVStoreDummy) GetNetworkFee(ctx cosmos.Context, chain common.Chain) (NetworkFee, error) {
 	return NetworkFee{}, kaboom
