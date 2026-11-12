@@ -424,9 +424,15 @@ func newGaiaCodec() *codec.ProtoCodec {
 // "unable to resolve type URL <url>" decode error.
 var typeURLPattern = regexp.MustCompile(`unable to resolve type URL ([^\s:]+)`)
 
+// unknownFieldPattern extracts the message type from the SDK's
+// `errUnknownField "<type>": {TagNum: ...}` decode error.
+var unknownFieldPattern = regexp.MustCompile(`errUnknownField "([^"]+)"`)
+
 func (c *CosmosBlockScanner) processTxs(height int64, rawTxs []tmtypes.Tx) ([]*types.TxInItem, error) {
 	// One log per unresolved type URL per scan pass (see the decode-failure branch).
 	unresolvedTypeURLs := map[string]struct{}{}
+	// One log per message type with an unknown field per scan pass.
+	unknownFieldTypes := map[string]struct{}{}
 	// Proto types for Cosmos chains that we are transacting with may not be included in this repo.
 	// Therefore, it is necessary to include them in the "proto" directory and register them in
 	// the cdc (codec) that is passed below. Registry occurs in the NewCosmosBlockScanner function.
@@ -489,6 +495,20 @@ func (c *CosmosBlockScanner) processTxs(height int64, rawTxs []tmtypes.Tx) ([]*t
 						Str("type_url", typeURL).
 						Str("tx_hash", hash).
 						Msg("dropping whole tx: message type missing from decode registry")
+				}
+			} else if m := unknownFieldPattern.FindStringSubmatch(err.Error()); len(m) == 2 {
+				// The message type is registered, but the transaction carries a field
+				// this build's copy of the type does not have, and the SDK decoder
+				// rejects unknown fields. The whole transaction is dropped just as
+				// above. This is how a stale type shows up after the chain adds a
+				// field, most likely in types vendored here (liquidtypes), so it gets
+				// the same tripwire, deduped per message type per scan pass.
+				if _, seen := unknownFieldTypes[m[1]]; !seen {
+					unknownFieldTypes[m[1]] = struct{}{}
+					c.logger.Err(err).
+						Str("message_type", m[1]).
+						Str("tx_hash", hash).
+						Msg("dropping whole tx: message has a field unknown to this build's types")
 				}
 			}
 			continue

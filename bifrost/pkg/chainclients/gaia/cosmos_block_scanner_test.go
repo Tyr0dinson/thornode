@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
+	"strings"
 
 	abci "github.com/cometbft/cometbft/abci/types"
 	"github.com/cometbft/cometbft/crypto/tmhash"
@@ -17,6 +18,7 @@ import (
 	"github.com/cosmos/cosmos-sdk/crypto/hd"
 	cKeys "github.com/cosmos/cosmos-sdk/crypto/keyring"
 	ctypes "github.com/cosmos/cosmos-sdk/types"
+	txtypes "github.com/cosmos/cosmos-sdk/types/tx"
 	signingtypes "github.com/cosmos/cosmos-sdk/types/tx/signing"
 	"github.com/cosmos/cosmos-sdk/x/auth/tx"
 	btypes "github.com/cosmos/cosmos-sdk/x/bank/types"
@@ -30,6 +32,7 @@ import (
 
 	protov2 "google.golang.org/protobuf/proto"
 
+	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"gitlab.com/thorchain/thornode/v3/bifrost/blockscanner"
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
@@ -547,6 +550,64 @@ func (s *BlockScannerTestSuite) TestProcessTxsObservesMsgSendBundledWithLiquid(c
 		blockScanner.pubkeyMgr = nil
 		blockScanner.rpc = &mockTendermintRPC{}
 	}
+}
+
+// A registered message that carries a field this build's types do not have
+// fails decode too (the SDK rejects unknown fields), and the whole transaction is
+// dropped, including a bundled MsgSend. That is what a stale vendored type looks
+// like after a chain upgrade adds a field, so it must not be silent: the scanner
+// logs it once per message type per scan pass.
+func (s *BlockScannerTestSuite) TestProcessTxsLogsUnknownFieldInRegisteredMsg(c *C) {
+	cdc := newGaiaCodec()
+	var logs bytes.Buffer
+	blockScanner := CosmosBlockScanner{
+		cfg: config.BifrostBlockScannerConfiguration{
+			ChainID: common.GAIAChain,
+			WhitelistCosmosAssets: []config.WhitelistCosmosAsset{
+				{Denom: "uatom", Decimals: 6, THORChainSymbol: "ATOM"},
+			},
+		},
+		rpc:    &twoOKTxResultsRPC{},
+		cdc:    cdc,
+		logger: zerolog.New(&logs),
+	}
+
+	from := ctypes.AccAddress(make([]byte, 20))
+	to := ctypes.AccAddress(bytes.Repeat([]byte{0x1}, 20))
+	anyLiquid, err := codectypes.NewAnyWithValue(&liquidtypes.MsgDisableTokenizeShares{DelegatorAddress: from.String()})
+	c.Assert(err, IsNil)
+	// append field 15 (varint 1), which the message does not define
+	unknownField := &codectypes.Any{TypeUrl: anyLiquid.TypeUrl, Value: append(anyLiquid.Value, 0x78, 0x01)}
+	anySend, err := codectypes.NewAnyWithValue(&btypes.MsgSend{
+		FromAddress: from.String(),
+		ToAddress:   to.String(),
+		Amount:      ctypes.NewCoins(ctypes.NewCoin("uatom", sdkmath.NewInt(5_000_000))),
+	})
+	c.Assert(err, IsNil)
+
+	body, err := cdc.Marshal(&txtypes.TxBody{Messages: []*codectypes.Any{unknownField, anySend}, Memo: "ADD:GAIA.ATOM"})
+	c.Assert(err, IsNil)
+	authInfo, err := cdc.Marshal(&txtypes.AuthInfo{Fee: &txtypes.Fee{}})
+	c.Assert(err, IsNil)
+	rawTx, err := cdc.Marshal(&txtypes.TxRaw{BodyBytes: body, AuthInfoBytes: authInfo})
+	c.Assert(err, IsNil)
+
+	// the same transaction twice in one pass: dropped both times, logged once
+	txInItems, err := blockScanner.processTxs(1, []tmtypes.Tx{rawTx, rawTx})
+	c.Assert(err, IsNil)
+	c.Assert(len(txInItems), Equals, 0)
+	c.Assert(strings.Count(logs.String(), "dropping whole tx: message has a field unknown to this build's types"), Equals, 1, Commentf("%s", logs.String()))
+	c.Assert(strings.Contains(logs.String(), `"message_type":"*liquidtypes.MsgDisableTokenizeShares"`), Equals, true, Commentf("%s", logs.String()))
+	c.Assert(strings.Contains(logs.String(), "missing from decode registry"), Equals, false)
+}
+
+// twoOKTxResultsRPC reports two successful transactions in every block.
+type twoOKTxResultsRPC struct {
+	mockTendermintRPC
+}
+
+func (*twoOKTxResultsRPC) BlockResults(context.Context, *int64) (*rpctypes.ResultBlockResults, error) {
+	return &rpctypes.ResultBlockResults{TxsResults: []*abci.ExecTxResult{{Code: 0}, {Code: 0}}}, nil
 }
 
 // failedTxResultsRPC reports the first transaction of every block as failed.
