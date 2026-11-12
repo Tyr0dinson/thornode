@@ -13,6 +13,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/constants"
+	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
 	kvTypes "gitlab.com/thorchain/thornode/v3/x/thorchain/keeper/types"
 	thortypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
@@ -150,6 +151,10 @@ func (k KVStore) getNodeStatusBondByPubKey(ctx cosmos.Context, store storetypes.
 	return record.Status, record.Bond, nil
 }
 
+// unsentWindowKey names, on a TxOutCache, the unsent items of the txout
+// heights [lo, hi] as getSortedVaultSecurity collects them.
+type unsentWindowKey struct{ lo, hi int64 }
+
 // txOutMemo is a TxOut decoded by getSortedVaultSecurity, with the bytes it
 // was decoded from; it is only read.
 type txOutMemo struct {
@@ -230,6 +235,23 @@ func (k KVStore) getSortedVaultSecurity(ctx cosmos.Context, vaults Vaults, signi
 	// every member and pool read below goes through one opening of the store
 	store := k.kvStore(ctx)
 
+	// With a live TxOutCache (API quotes only) every vault after the first
+	// reads the window from the cache, touching no store, so one walk for all
+	// vaults makes the same store access: the first vault's walk collects the
+	// unsent items, in the order it visits them, and later vaults reuse them.
+	// Nothing in this function writes txouts, so the cache stays live
+	// throughout. The collected items are kept on the cache for later sorts
+	// over the same window: they derive from cached reads only, which a
+	// repeat walk would make again without touching the store.
+	var unsent []*TxOutItem
+	cache := keeper.TxOutCacheFromContext(ctx)
+	sharedWindow := cache.Live()
+	windowKey := unsentWindowKey{lo: h, hi: ctx.BlockHeight()}
+	collected := false
+	if memo, ok := cache.Derived(windowKey); sharedWindow && ok {
+		unsent, collected = memo.([]*TxOutItem)
+	}
+
 	for i, vault := range vaults {
 		// get total bond
 		totalBond := cosmos.ZeroUint()
@@ -259,47 +281,63 @@ func (k KVStore) getSortedVaultSecurity(ctx cosmos.Context, vaults Vaults, signi
 			}
 		}
 
-		// add recent unsent txout items to totalValue
-		for height := h; height <= ctx.BlockHeight(); height += 1 {
-			items, err := getTxOutItems(height)
+		addUnsent := func(item *TxOutItem) {
+			toAddress, err := vault.GetAddress(item.Coin.Asset.GetChain())
 			if err != nil {
-				ctx.Logger().Error("unable to get txout", "error", err)
-				continue
+				ctx.Logger().Error("failed to get address of chain", "error", err)
+				return
 			}
-			for _, item := range items {
-				if item.OutHash.IsEmpty() {
-					var toAddress common.Address
-					toAddress, err = vault.GetAddress(item.Coin.Asset.GetChain())
+			if item.VaultPubKey.Equals(vault.PubKey) {
+				if item.Coin.IsRune() {
+					totalValue = common.SafeSub(totalValue, item.Coin.Amount)
+				} else {
+					var pool Pool
+					pool, err = k.getPoolMemo(ctx, store, item.Coin.Asset, pools)
 					if err != nil {
-						ctx.Logger().Error("failed to get address of chain", "error", err)
-						continue
+						ctx.Logger().Error("failed to get pool", "error", err)
+						return
 					}
-					if item.VaultPubKey.Equals(vault.PubKey) {
-						if item.Coin.IsRune() {
-							totalValue = common.SafeSub(totalValue, item.Coin.Amount)
-						} else {
-							var pool Pool
-							pool, err = k.getPoolMemo(ctx, store, item.Coin.Asset, pools)
-							if err != nil {
-								ctx.Logger().Error("failed to get pool", "error", err)
-								continue
-							}
-							totalValue = common.SafeSub(totalValue, pool.AssetValueInRune(item.Coin.Amount))
-						}
-					} else if item.ToAddress.Equals(toAddress) {
-						if item.Coin.IsRune() {
-							totalValue = totalValue.Add(item.Coin.Amount)
-						} else {
-							var pool Pool
-							pool, err = k.getPoolMemo(ctx, store, item.Coin.Asset, pools)
-							if err != nil {
-								ctx.Logger().Error("failed to get pool", "error", err)
-								continue
-							}
-							totalValue = totalValue.Add(pool.AssetValueInRune(item.Coin.Amount))
+					totalValue = common.SafeSub(totalValue, pool.AssetValueInRune(item.Coin.Amount))
+				}
+			} else if item.ToAddress.Equals(toAddress) {
+				if item.Coin.IsRune() {
+					totalValue = totalValue.Add(item.Coin.Amount)
+				} else {
+					var pool Pool
+					pool, err = k.getPoolMemo(ctx, store, item.Coin.Asset, pools)
+					if err != nil {
+						ctx.Logger().Error("failed to get pool", "error", err)
+						return
+					}
+					totalValue = totalValue.Add(pool.AssetValueInRune(item.Coin.Amount))
+				}
+			}
+		}
+
+		// add recent unsent txout items to totalValue
+		if sharedWindow && collected {
+			for _, item := range unsent {
+				addUnsent(item)
+			}
+		} else {
+			for height := h; height <= ctx.BlockHeight(); height += 1 {
+				items, err := getTxOutItems(height)
+				if err != nil {
+					ctx.Logger().Error("unable to get txout", "error", err)
+					continue
+				}
+				for j := range items {
+					if items[j].OutHash.IsEmpty() {
+						addUnsent(&items[j])
+						if sharedWindow {
+							unsent = append(unsent, &items[j])
 						}
 					}
 				}
+			}
+			collected = true
+			if sharedWindow {
+				cache.SetDerived(windowKey, unsent)
 			}
 		}
 

@@ -86,8 +86,16 @@ func (k KVStore) getTxOutBytes(ctx cosmos.Context, height int64) (key, bz []byte
 }
 
 // readTxOutBytes reads the TxOut of height, stored under key, from store (Has,
-// then Get if present) and records the result in cache, if any.
+// then Get if present) and records the result in cache, if any. Callers have
+// missed cache: a live one is first filled with the chunk holding height
+// (fillTxOutChunk).
 func readTxOutBytes(store storetypes.KVStore, cache *keeper.TxOutCache, key []byte, height int64) (bz []byte, present bool) {
+	if fillTxOutChunk(store, cache, height) {
+		var ok bool
+		if bz, present, ok = cache.Get(height); ok {
+			return bz, present
+		}
+	}
 	present = store.Has(key)
 	if present {
 		bz = store.Get(key)
@@ -202,6 +210,50 @@ func (k KVStore) getTxOutWalk(ctx cosmos.Context, w *txOutWalk, height int64) (*
 		return record, dbError(ctx, fmt.Sprintf("Unmarshal kvstore: (%T) %s", record, key), err)
 	}
 	return record, nil
+}
+
+// fillTxOutChunk reads the stored txouts of the aligned chunk of
+// keeper.TxOutCacheChunk heights holding height with one range iteration and
+// records them, and the absence of all other heights of the chunk, in cache.
+// It returns whether it did; only a live cache, which only API quotes attach
+// (never a tx: the iteration is not the point reads' gas), fills. store is the
+// gas-metered store of the read's ctx.
+//
+// Keys are the decimal heights, which order lexicographically as numbers only
+// at equal length: a chunk of heights >= TxOutCacheChunk never spans two key
+// lengths, and keys of other lengths that sort between its bounds are
+// skipped.
+func fillTxOutChunk(store storetypes.KVStore, cache *keeper.TxOutCache, height int64) bool {
+	if height < keeper.TxOutCacheChunk {
+		return false
+	}
+	chunk := height / keeper.TxOutCacheChunk
+	if !cache.ClaimChunk(chunk) {
+		return false
+	}
+	lo := chunk * keeper.TxOutCacheChunk
+	hi := lo + keeper.TxOutCacheChunk - 1
+	// getKeyInt64's keys
+	prefix := append([]byte(prefixTxOut), '/')
+	start := strconv.AppendInt(bytes.Clone(prefix), lo, 10)
+	end := append(strconv.AppendInt(bytes.Clone(prefix), hi, 10), 0) // just past hi's key
+	digits := len(start) - len(prefix)
+	stored := make(map[int64][]byte)
+	iter := store.Iterator(start, end)
+	for ; iter.Valid(); iter.Next() {
+		suffix := iter.Key()[len(prefix):]
+		if len(suffix) != digits {
+			continue
+		}
+		h, err := strconv.ParseInt(string(suffix), 10, 64)
+		if err != nil || h < lo || h > hi {
+			continue
+		}
+		stored[h] = bytes.Clone(iter.Value())
+	}
+	iter.Close()
+	cache.Fill(lo, hi, stored)
+	return true
 }
 
 func (k KVStore) GetTxOutValue(ctx cosmos.Context, height int64) (cosmos.Uint, cosmos.Uint, error) {

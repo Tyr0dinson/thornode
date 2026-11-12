@@ -4364,7 +4364,17 @@ func simulate(ctx cosmos.Context, mgr Manager, msg sdk.Msg) (sdk.Events, error) 
 
 	// save pool state - the end-block loop restores these between iterations so
 	// each simulated sub-swap of a streaming swap sees the original pool depth
-	pools, err := mgr.Keeper().GetPools(ctx)
+	// A contract's simulation runs inside its tx, where store access is gas:
+	// it keeps the point reads below. API simulations keep the snapshot's
+	// stored bytes and diff them against one pool iteration instead.
+	isWasm, _ := ctx.Value(constants.CtxWASMQuery).(bool)
+	var pools Pools
+	var poolKeys, poolBytes [][]byte
+	if isWasm {
+		pools, err = mgr.Keeper().GetPools(ctx)
+	} else {
+		pools, poolKeys, poolBytes, err = snapshotPools(ctx, mgr.Keeper())
+	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to get pools: %w", err)
 	}
@@ -4407,6 +4417,10 @@ func simulate(ctx cosmos.Context, mgr Manager, msg sdk.Msg) (sdk.Events, error) 
 		// restore pool depths to the pre-swap snapshot. On the first iteration
 		// the touched set is unknown, so diff every pool against the snapshot;
 		// thereafter only the pools the swap actually moved need restoring.
+		if !touchedDetected && poolKeys != nil {
+			touchedPools = touchedPoolsByBytes(ctx, mgr.Keeper(), pools, poolKeys, poolBytes)
+			touchedDetected = true
+		}
 		if !touchedDetected {
 			for i := range pools {
 				var current Pool
@@ -4448,6 +4462,49 @@ func simulate(ctx cosmos.Context, mgr Manager, msg sdk.Msg) (sdk.Events, error) 
 	}
 
 	return em.Events(), nil
+}
+
+// snapshotPools is GetPools, also returning each pool's store key and stored
+// bytes. Its iteration is GetPools', so is its result; on bytes that do not
+// decode it returns GetPools' own result for the identical error.
+func snapshotPools(ctx cosmos.Context, k keeper.Keeper) (Pools, [][]byte, [][]byte, error) {
+	var pools Pools
+	var keys, values [][]byte
+	iter := k.GetPoolIterator(ctx)
+	defer iter.Close()
+	for ; iter.Valid(); iter.Next() {
+		var pool Pool
+		if err := k.Cdc().Unmarshal(iter.Value(), &pool); err != nil {
+			pools, err = k.GetPools(ctx)
+			return pools, nil, nil, err
+		}
+		pools = append(pools, pool)
+		keys = append(keys, bytes.Clone(iter.Key()))
+		values = append(values, bytes.Clone(iter.Value()))
+	}
+	return pools, keys, values, nil
+}
+
+// touchedPoolsByBytes returns the snapshot pools whose stored bytes are no
+// longer the snapshot's (or that are gone), in snapshot order, from one
+// iteration of the pool store. Pools are written as their marshalled bytes,
+// so this is the set the marshal comparison in simulate finds; a pool whose
+// bytes changed without its decoding changing would only be restored to the
+// same pool.
+func touchedPoolsByBytes(ctx cosmos.Context, k keeper.Keeper, pools Pools, keys, values [][]byte) []Pool {
+	var touched []Pool
+	iter := k.GetPoolIterator(ctx)
+	defer iter.Close()
+	for i := range pools {
+		// both walks are in key order: skip pools created since the snapshot
+		for iter.Valid() && bytes.Compare(iter.Key(), keys[i]) < 0 {
+			iter.Next()
+		}
+		if !iter.Valid() || !bytes.Equal(iter.Key(), keys[i]) || !bytes.Equal(iter.Value(), values[i]) {
+			touched = append(touched, pools[i])
+		}
+	}
+	return touched
 }
 
 // runePerDollarIgnoreHalt mirrors keeper.RunePerDollar, ignoring halts by using
