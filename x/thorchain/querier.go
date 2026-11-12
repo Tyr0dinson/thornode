@@ -585,6 +585,17 @@ func (qs queryServer) queryAddrPubKey(ctx cosmos.Context, req *types.QueryAddrPu
 		return nil, fmt.Errorf("fail to get pubkey for address: %w", err)
 	}
 
+	if pubKey.IsEmpty() {
+		// The addr_pk/ index only covers vaults that passed through
+		// RotateVault (or genesis) after it was introduced; vaults already
+		// Retiring or Inactive at upgrade time are never indexed. Fall back
+		// to the vault store so every vault, of any status, resolves.
+		pubKey, err = qs.findVaultPubKeyByAddress(ctx, addr)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	found := !pubKey.IsEmpty()
 	pubKeyStr := ""
 	if found {
@@ -595,6 +606,39 @@ func (qs queryServer) queryAddrPubKey(ctx cosmos.Context, req *types.QueryAddrPu
 		Pubkey: pubKeyStr,
 		Found:  found,
 	}, nil
+}
+
+// findVaultPubKeyByAddress scans the vault store for a vault whose address on
+// some chain equals addr, deriving addresses exactly as
+// storeVaultAddressMappings does (the chain's signing-algo pubkey). It returns
+// an empty pubkey when no vault matches.
+func (qs queryServer) findVaultPubKeyByAddress(ctx cosmos.Context, addr common.Address) (common.PubKey, error) {
+	iter := qs.mgr.Keeper().GetVaultIterator(ctx)
+	defer iter.Close()
+	for ; iter.Valid(); iter.Next() {
+		var vault Vault
+		if err := qs.mgr.Keeper().Cdc().Unmarshal(iter.Value(), &vault); err != nil {
+			return common.EmptyPubKey, fmt.Errorf("fail to unmarshal vault: %w", err)
+		}
+		for _, chainStr := range vault.Chains {
+			chain, err := common.NewChain(chainStr)
+			if err != nil || !addr.IsChain(chain) {
+				continue
+			}
+			pubKey, err := vault.AlgoPubKey(chain)
+			if err != nil || pubKey.IsEmpty() {
+				continue
+			}
+			vaultAddr, err := pubKey.GetAddress(chain)
+			if err != nil {
+				continue
+			}
+			if vaultAddr.Equals(addr) {
+				return pubKey, nil
+			}
+		}
+	}
+	return common.EmptyPubKey, nil
 }
 
 func (qs queryServer) queryVaultsPubkeys(ctx cosmos.Context, _ *types.QueryVaultsPubkeysRequest) (*types.QueryVaultsPubkeysResponse, error) {

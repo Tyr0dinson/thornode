@@ -265,7 +265,7 @@ func (r ApiVaultAddressRequest) Execute() (*VaultAddressResponse, *http.Response
 /*
 VaultAddress Method for VaultAddress
 
-Returns the vault pubkey associated with the provided address.
+Returns the vault pubkey associated with the provided address, for a vault of any status (active, retiring or inactive).
 
  @param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
  @param address

@@ -1184,7 +1184,8 @@ paths:
       - Vaults
   /thorchain/vaults/address/{address}:
     get:
-      description: Returns the vault pubkey associated with the provided address.
+      description: "Returns the vault pubkey associated with the provided address,\
+        \ for a vault of any status (active, retiring or inactive)."
       operationId: vaultAddress
       parameters:
       - description: "optional block height, defaults to current tip"
@@ -6847,7 +6848,7 @@ components:
           example: thorpub1addwnpepq068dr0x7ue973drmq4eqmzhcq3650n7nx5fhgn9gl207luxp6vaklu52tc
           type: string
         found:
-          description: Whether the address was found in the vault mappings
+          description: Whether the address belongs to a vault
           example: true
           type: boolean
       required:

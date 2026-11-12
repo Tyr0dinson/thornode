@@ -18,7 +18,7 @@ import (
 type VaultAddressResponse struct {
 	// The vault pubkey associated with the address (empty if not found)
 	Pubkey string `json:"pubkey"`
-	// Whether the address was found in the vault mappings
+	// Whether the address belongs to a vault
 	Found bool `json:"found"`
 }
 

@@ -2625,3 +2625,56 @@ func (s *QuerierSuite) TestQueryPoolLuviFields(c *C) {
 		}
 	}
 }
+
+func (s *QuerierSuite) TestQueryAddrPubKeyFallsBackToVaultStore(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	txConfig, err := params.TxConfig(s.mgr.cdc, nil)
+	c.Assert(err, IsNil)
+	queryServer := NewQueryServerImpl(mgr, txConfig, s.kb)
+
+	// An Inactive vault that never passed through RotateVault has no addr_pk/
+	// entries; the query must still resolve it from the vault store, using the
+	// pubkey of each chain's signing algorithm.
+	pubKey := GetRandomPubKey()
+	pubKeyEddsa := GetRandomEd25519PubKey()
+	chains := common.Chains{common.BTCChain, common.ETHChain, common.SOLChain}.Strings()
+	vault := NewVaultV2(ctx.BlockHeight(), InactiveVault, AsgardVault, pubKey, chains, nil, pubKeyEddsa)
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+
+	for _, tc := range []struct {
+		chain common.Chain
+		pk    common.PubKey
+	}{
+		{common.BTCChain, pubKey},
+		{common.ETHChain, pubKey},
+		{common.SOLChain, pubKeyEddsa},
+	} {
+		addr, addrErr := tc.pk.GetAddress(tc.chain)
+		c.Assert(addrErr, IsNil)
+		has := mgr.Keeper().HasAddrPubKey(ctx, addr)
+		c.Assert(has, Equals, false, Commentf("%s should not be indexed", tc.chain))
+
+		resp, queryErr := queryServer.AddrPubKey(ctx, &types.QueryAddrPubKeyRequest{Address: addr.String()})
+		c.Assert(queryErr, IsNil)
+		c.Check(resp.Found, Equals, true, Commentf("%s", tc.chain))
+		c.Check(resp.Pubkey, Equals, tc.pk.String(), Commentf("%s", tc.chain))
+	}
+
+	// An indexed address is answered from the index.
+	indexedPK := GetRandomPubKey()
+	indexedAddr, err := indexedPK.GetAddress(common.BTCChain)
+	c.Assert(err, IsNil)
+	mgr.Keeper().SetAddrPubKey(ctx, indexedAddr, indexedPK)
+	resp, err := queryServer.AddrPubKey(ctx, &types.QueryAddrPubKeyRequest{Address: indexedAddr.String()})
+	c.Assert(err, IsNil)
+	c.Check(resp.Found, Equals, true)
+	c.Check(resp.Pubkey, Equals, indexedPK.String())
+
+	// An address that belongs to no vault is not found.
+	unknown, err := GetRandomPubKey().GetAddress(common.ETHChain)
+	c.Assert(err, IsNil)
+	resp, err = queryServer.AddrPubKey(ctx, &types.QueryAddrPubKeyRequest{Address: unknown.String()})
+	c.Assert(err, IsNil)
+	c.Check(resp.Found, Equals, false)
+	c.Check(resp.Pubkey, Equals, "")
+}

@@ -5,7 +5,7 @@
 Name | Type | Description | Notes
 ------------ | ------------- | ------------- | -------------
 **Pubkey** | **string** | The vault pubkey associated with the address (empty if not found) | 
-**Found** | **bool** | Whether the address was found in the vault mappings | 
+**Found** | **bool** | Whether the address belongs to a vault | 
 
 ## Methods
 
