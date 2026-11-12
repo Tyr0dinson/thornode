@@ -53,13 +53,18 @@ func (h OperatorRotateHandler) handle(ctx cosmos.Context, msg MsgOperatorRotate)
 		return fmt.Errorf("rotate is halted")
 	}
 
-	// rotate is only allowed in the first half of churn
-	lastChurnHeight := getLastChurnHeight(ctx, h.mgr.Keeper())
-	churnInterval := h.mgr.Keeper().GetConfigInt64(ctx, constants.ChurnInterval)
-	halfChurn := churnInterval / 2
-	rotateCutoffHeight := lastChurnHeight + halfChurn
-	if ctx.BlockHeight() > rotateCutoffHeight {
-		return fmt.Errorf("rotate is only allowed in the first half of churn")
+	// rotating to the current operator is a no-op; reject it explicitly so an
+	// Active operator does not hit the misleading "rotate to operator with
+	// active node" error below.
+	if msg.OperatorAddress.Equals(msg.Signer) {
+		return fmt.Errorf("new operator is the current operator")
+	}
+
+	// Rotation may run while the operator's nodes are Active, but not during the
+	// churn window when vault membership is (re)computed, so it cannot be used to
+	// steer vault placement (the reason the Active guard originally existed).
+	if err := h.churnWindowGuard(ctx); err != nil {
+		return err
 	}
 
 	// find nodes operated by the signer
@@ -77,19 +82,16 @@ func (h OperatorRotateHandler) handle(ctx cosmos.Context, msg MsgOperatorRotate)
 			continue
 		}
 
-		// rotation not allowed if any of the new operator nodes are active
+		// rotation not allowed if any of the new operator nodes are active:
+		// merging into an operator that already has an Active node would collapse
+		// the per-operator price-feed vote grouping.
 		if na.Status == NodeActive && na.BondAddress.Equals(common.Address(msg.OperatorAddress.String())) {
 			return fmt.Errorf("cannot rotate to operator with active node: %s", na.NodeAddress)
 		}
 
-		// filter by bond address
+		// filter by bond address (the signer must be the current operator)
 		if !na.BondAddress.Equals(common.Address(msg.Signer.String())) {
 			continue
-		}
-
-		// rotation not allowed if any of the old operator nodes are active
-		if na.Status == NodeActive {
-			return fmt.Errorf("cannot rotate from operator with active node: %s", na.NodeAddress)
 		}
 
 		rotateNodes = append(rotateNodes, na)
@@ -106,6 +108,64 @@ func (h OperatorRotateHandler) handle(ctx cosmos.Context, msg MsgOperatorRotate)
 		}
 	}
 
+	return nil
+}
+
+// churnWindowGuard refuses operator rotation during the churn window, so a
+// rotation cannot relabel operator identity just before a keygen reads the
+// per-operator grouping to place nodes across vaults. It blocks while a keygen
+// is pending or a vault migration is in progress — even while churning is
+// halted, since a keygen scheduled before the halt can still finalize — and,
+// only when churning is not halted, in the second half of the churn cycle as
+// the next churn approaches.
+func (h OperatorRotateHandler) churnWindowGuard(ctx cosmos.Context) error {
+	k := h.mgr.Keeper()
+
+	// A live pending Asgard keygen blocks rotation EVEN while churning is
+	// halted: HaltChurning stops a new churn being scheduled, but a keygen
+	// scheduled before the halt can still finalize and activate its vault
+	// (handler_tss and validator EndBlock are not halt-gated), so rotating into
+	// a node already selected for that keygen would merge operators after vault
+	// placement. hasPendingKeygen counts only keygens still inside their
+	// result-validity window, so a stale failed-round InitVault does not block
+	// rotation for the whole halt.
+	if vm, ok := h.mgr.ValidatorMgr().(*ValidatorMgr); ok {
+		pending, err := vm.hasPendingKeygen(ctx, AsgardKeygen)
+		if err != nil {
+			return err
+		}
+		if pending {
+			return fmt.Errorf("rotate not allowed while a keygen is pending")
+		}
+	}
+
+	// vault migration in progress: a retiring vault still holding real funds
+	// (also enforced while halted, for the same post-placement-merge reason).
+	retiringVaults, err := k.GetAsgardVaultsByStatus(ctx, RetiringVault)
+	if err != nil {
+		return err
+	}
+	for _, vault := range retiringVaults {
+		if vault.HasFundsAboveDust() {
+			return fmt.Errorf("rotate not allowed while a vault migration is in progress")
+		}
+	}
+
+	// near a scheduled churn: refuse in the second half of the churn cycle as
+	// the next keygen approaches. HaltChurning exempts ONLY this cutoff, since a
+	// halt genuinely stops the next churn being scheduled. No churnInterval > 0
+	// guard: a zero interval still schedules retry keygens, so it must fail
+	// closed; getLastChurnHeight also returns 0 on a read failure, failing
+	// closed (refuse), the safe direction.
+	halt, err := k.GetMimir(ctx, "HaltChurning")
+	if err == nil && halt > 0 && halt <= ctx.BlockHeight() {
+		return nil
+	}
+	lastChurnHeight := getLastChurnHeight(ctx, k)
+	churnInterval := k.GetConfigInt64(ctx, constants.ChurnInterval)
+	if ctx.BlockHeight() > lastChurnHeight+churnInterval/2 {
+		return fmt.Errorf("rotate not allowed in the second half of the churn cycle")
+	}
 	return nil
 }
 

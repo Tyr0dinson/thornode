@@ -15,6 +15,22 @@ func (s *HandlerOperatorRotateSuite) SetUpSuite(c *C) {
 	SetupConfigForTest()
 }
 
+// rotateMsg builds a zero-coin MsgOperatorRotate from signer to operator.
+func rotateMsg(signer, operator cosmos.AccAddress) *MsgOperatorRotate {
+	return NewMsgOperatorRotate(signer, operator, common.NewCoin(common.EmptyAsset, cosmos.ZeroUint()))
+}
+
+// setLivePendingKeygen schedules an unresolved Asgard keygen at the current
+// height so hasPendingKeygen reports a live pending keygen.
+func setLivePendingKeygen(c *C, ctx cosmos.Context, mgr *Mgrs) {
+	members := common.PubKeys{GetRandomPubKey(), GetRandomPubKey(), GetRandomPubKey()}
+	keygen, err := NewKeygen(ctx.BlockHeight(), members.Strings(), AsgardKeygen)
+	c.Assert(err, IsNil)
+	kb := NewKeygenBlock(ctx.BlockHeight())
+	kb.Keygens = []Keygen{keygen}
+	mgr.Keeper().SetKeygenBlock(ctx, kb)
+}
+
 func (s *HandlerOperatorRotateSuite) TestOperatorRotateHandler_InvalidMessage(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	h := NewOperatorRotateHandler(mgr)
@@ -69,12 +85,151 @@ func (s *HandlerOperatorRotateSuite) TestOperatorRotateHandler_PastChurnCutoff(c
 	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
 
 	// Set ChurnInterval to 20 via mimir so halfChurn = 10, cutoff = 1 + 10 = 11.
-	// Block height 18 > 11, so rotate should fail.
+	// Block height 18 > 11 (second half of the cycle) and churning is not halted,
+	// so rotate should be refused by the near-churn guard.
 	mgr.Keeper().SetMimir(ctx, constants.ChurnInterval.String(), 20)
 
 	_, err := h.Run(ctx, msg)
 	c.Assert(err, NotNil)
-	c.Assert(err.Error(), Equals, "rotate is only allowed in the first half of churn")
+	c.Assert(err.Error(), Equals, "rotate not allowed in the second half of the churn cycle")
+}
+
+// While churning is halted, the second-half near-churn guard is skipped: an
+// operator can rotate even past the cycle midpoint, because no churn or keygen
+// can occur. This is the case the feature was requested for.
+func (s *HandlerOperatorRotateSuite) TestOperatorRotateHandler_ChurningHaltedAllowsSecondHalf(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	h := NewOperatorRotateHandler(mgr)
+
+	signer := GetRandomBech32Addr()
+	operator := GetRandomBech32Addr()
+
+	na := GetRandomValidatorNode(NodeActive)
+	na.BondAddress = common.Address(signer.String())
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
+
+	vault := GetRandomVault()
+	vault.Status = ActiveVault
+	vault.StatusSince = 1
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+
+	// Second half of the cycle (cutoff 1 + 10 = 11, height 18 > 11) ...
+	mgr.Keeper().SetMimir(ctx, constants.ChurnInterval.String(), 20)
+	// ... but churning is halted, so rotation is allowed.
+	mgr.Keeper().SetMimir(ctx, "HaltChurning", 1)
+
+	result, err := h.Run(ctx, rotateMsg(signer, operator))
+	c.Assert(err, IsNil)
+	c.Assert(result, NotNil)
+	updated, err := mgr.Keeper().GetNodeAccount(ctx, na.NodeAddress)
+	c.Assert(err, IsNil)
+	c.Assert(updated.BondAddress.Equals(common.Address(operator.String())), Equals, true)
+}
+
+// While churning is halted, a leftover keygen artifact (an InitVault that will
+// not be retired until the next keygen schedules) must NOT block rotation.
+func (s *HandlerOperatorRotateSuite) TestOperatorRotateHandler_ChurningHaltedAllowsStaleInitVault(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	h := NewOperatorRotateHandler(mgr)
+
+	signer := GetRandomBech32Addr()
+	operator := GetRandomBech32Addr()
+
+	na := GetRandomValidatorNode(NodeActive)
+	na.BondAddress = common.Address(signer.String())
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
+
+	// A leftover InitVault that would otherwise block rotation ...
+	initVault := GetRandomVault()
+	initVault.Status = InitVault
+	c.Assert(mgr.Keeper().SetVault(ctx, initVault), IsNil)
+	// ... but churning is halted, so no keygen can fire and rotation is allowed.
+	mgr.Keeper().SetMimir(ctx, "HaltChurning", 1)
+
+	result, err := h.Run(ctx, rotateMsg(signer, operator))
+	c.Assert(err, IsNil)
+	c.Assert(result, NotNil)
+	updated, err := mgr.Keeper().GetNodeAccount(ctx, na.NodeAddress)
+	c.Assert(err, IsNil)
+	c.Assert(updated.BondAddress.Equals(common.Address(operator.String())), Equals, true)
+}
+
+// Rotating to the current operator (OperatorAddress == Signer) is rejected with
+// a clear message, not the misleading new-operator-active error.
+func (s *HandlerOperatorRotateSuite) TestOperatorRotateHandler_SelfRotateRejected(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	h := NewOperatorRotateHandler(mgr)
+
+	signer := GetRandomBech32Addr()
+	na := GetRandomValidatorNode(NodeActive)
+	na.BondAddress = common.Address(signer.String())
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
+
+	_, err := h.Run(ctx, rotateMsg(signer, signer))
+	c.Assert(err, NotNil)
+	c.Assert(err.Error(), Equals, "new operator is the current operator")
+}
+
+// A live pending keygen blocks rotation.
+func (s *HandlerOperatorRotateSuite) TestOperatorRotateHandler_PendingKeygenBlocked(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	h := NewOperatorRotateHandler(mgr)
+
+	signer := GetRandomBech32Addr()
+	operator := GetRandomBech32Addr()
+
+	na := GetRandomValidatorNode(NodeActive)
+	na.BondAddress = common.Address(signer.String())
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
+
+	setLivePendingKeygen(c, ctx, mgr)
+
+	_, err := h.Run(ctx, rotateMsg(signer, operator))
+	c.Assert(err, NotNil)
+	c.Assert(err.Error(), Equals, "rotate not allowed while a keygen is pending")
+}
+
+// A live pending keygen blocks rotation EVEN while churning is halted: a keygen
+// scheduled before the halt can still finalize and place its vault.
+func (s *HandlerOperatorRotateSuite) TestOperatorRotateHandler_HaltedPendingKeygenBlocked(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	h := NewOperatorRotateHandler(mgr)
+
+	signer := GetRandomBech32Addr()
+	operator := GetRandomBech32Addr()
+
+	na := GetRandomValidatorNode(NodeActive)
+	na.BondAddress = common.Address(signer.String())
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
+
+	setLivePendingKeygen(c, ctx, mgr)
+	mgr.Keeper().SetMimir(ctx, "HaltChurning", 1)
+
+	_, err := h.Run(ctx, rotateMsg(signer, operator))
+	c.Assert(err, NotNil)
+	c.Assert(err.Error(), Equals, "rotate not allowed while a keygen is pending")
+}
+
+// A vault migration in progress (a retiring vault with real funds) blocks rotation.
+func (s *HandlerOperatorRotateSuite) TestOperatorRotateHandler_RetiringVaultWithFundsBlocked(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	h := NewOperatorRotateHandler(mgr)
+
+	signer := GetRandomBech32Addr()
+	operator := GetRandomBech32Addr()
+
+	na := GetRandomValidatorNode(NodeActive)
+	na.BondAddress = common.Address(signer.String())
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
+
+	retiring := GetRandomVault()
+	retiring.Status = RetiringVault
+	retiring.AddFunds(common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(100*common.One))))
+	c.Assert(mgr.Keeper().SetVault(ctx, retiring), IsNil)
+
+	_, err := h.Run(ctx, rotateMsg(signer, operator))
+	c.Assert(err, NotNil)
+	c.Assert(err.Error(), Equals, "rotate not allowed while a vault migration is in progress")
 }
 
 func (s *HandlerOperatorRotateSuite) TestOperatorRotateHandler_NoNodesFound(c *C) {
@@ -95,7 +250,7 @@ func (s *HandlerOperatorRotateSuite) TestOperatorRotateHandler_ActiveNodeOldOper
 	ctx, mgr := setupManagerForTest(c)
 	h := NewOperatorRotateHandler(mgr)
 
-	// Create an active node with the signer as bond address
+	// An operator with an Active node may now rotate (outside the churn window).
 	na := GetRandomValidatorNode(NodeActive)
 	signer := GetRandomBech32Addr()
 	na.BondAddress = common.Address(signer.String())
@@ -104,9 +259,15 @@ func (s *HandlerOperatorRotateSuite) TestOperatorRotateHandler_ActiveNodeOldOper
 	operator := GetRandomBech32Addr()
 	msg := NewMsgOperatorRotate(signer, operator, common.NewCoin(common.EmptyAsset, cosmos.ZeroUint()))
 
-	_, err := h.Run(ctx, msg)
-	c.Assert(err, NotNil)
-	c.Assert(err.Error(), Matches, "cannot rotate from operator with active node.*")
+	result, err := h.Run(ctx, msg)
+	c.Assert(err, IsNil)
+	c.Assert(result, NotNil)
+
+	// The Active node's operator address was rotated, status untouched.
+	updated, err := mgr.Keeper().GetNodeAccount(ctx, na.NodeAddress)
+	c.Assert(err, IsNil)
+	c.Assert(updated.BondAddress.Equals(common.Address(operator.String())), Equals, true)
+	c.Assert(updated.Status, Equals, NodeActive)
 }
 
 func (s *HandlerOperatorRotateSuite) TestOperatorRotateHandler_ActiveNodeNewOperator(c *C) {
