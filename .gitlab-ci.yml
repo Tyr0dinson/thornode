@@ -902,7 +902,7 @@ pages:
     - if: $CI_COMMIT_BRANCH == "develop"
       when: always
   stage: build
-  image: rust:1.90.0
+  image: rust:1.99.1
   artifacts:
     paths:
       - public
