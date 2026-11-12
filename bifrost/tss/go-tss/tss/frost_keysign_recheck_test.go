@@ -124,7 +124,9 @@ func (s *hungSidecar) FrostVaultOutputs(ctx context.Context, _ string) ([]FrostV
 	if s.hangOutputs {
 		return nil, s.hang(ctx)
 	}
-	return nil, errors.New("not reached")
+	// Answer so the prepared-inputs binding passes and the result reaches the
+	// daemon check: the daemon-hangs subtest exercises the FrostTxExists call.
+	return []FrostVaultOutput{}, nil
 }
 
 // A sidecar call made while verifying a result is bounded by the time left to
@@ -132,7 +134,11 @@ func (s *hungSidecar) FrostVaultOutputs(ctx context.Context, _ string) ([]FrostV
 func TestFrostWaitForResultBoundsSidecarCallsByItsTimeout(t *testing.T) {
 	ensureBech32Prefix()
 	party := []string{testPubKeys[0], testPubKeys[1], testPubKeys[2], testPubKeys[3]}
-	const timeout = 150 * time.Millisecond
+	// 2s, not 150ms: the wait must give the verification goroutine time to reach
+	// the sidecar on a loaded (-race) CI runner, or the result timeout can fire
+	// first and the sidecar-called assertion flakes. The bounding check is
+	// unaffected: an unbounded sidecar call would hold the wait a full minute.
+	const timeout = 2 * time.Second
 
 	for _, tc := range []struct {
 		name      string
