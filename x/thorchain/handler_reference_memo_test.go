@@ -56,6 +56,63 @@ func (s *HandlerReferenceMemoSuite) TestValidate(c *C) {
 	c.Assert(handler.validate(ctx, *msg), NotNil)
 }
 
+// The parser does not read every field of a memo, so a control character in a
+// field it ignores leaves the memo parseable. Without its own character check the
+// handler would store it, and the deposits that use the reference would carry it
+// into their memo and events.
+func (s *HandlerReferenceMemoSuite) TestValidateRejectsControlCharacters(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	handler := NewReferenceMemoHandler(mgr)
+	signer := GetRandomBech32Addr()
+
+	pool := NewPool()
+	pool.Asset = common.BTCAsset
+	pool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	pool.BalanceRune = cosmos.NewUint(100 * common.One)
+	pool.Decimals = 8
+	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+	mgr.Keeper().SetMimir(ctx, constants.MemolessTxnTTL.String(), 100)
+
+	msg := NewMsgReferenceMemo(common.BTCAsset, "+:BTC.BTC::::x", signer)
+	c.Assert(handler.validate(ctx, *msg), IsNil)
+
+	for _, memo := range []string{"+:BTC.BTC::::\x00", "+:BTC.BTC::::x\nOUT", "+:BTC.BTC::::\xff"} {
+		last := mgr.Keeper().GetLastReferenceNumber(ctx, common.BTCAsset)
+		msg = NewMsgReferenceMemo(common.BTCAsset, memo, signer)
+		c.Check(handler.validate(ctx, *msg), ErrorMatches, "memo (contains control character|is not valid UTF-8) .*", Commentf("memo %q", memo))
+		_, err := handler.Run(ctx, msg)
+		c.Check(err, ErrorMatches, "memo (contains control character|is not valid UTF-8) .*", Commentf("memo %q", memo))
+		c.Check(mgr.Keeper().GetLastReferenceNumber(ctx, common.BTCAsset), Equals, last, Commentf("memo %q", memo))
+	}
+}
+
+// A REFERENCE memo observed on another chain builds the same MsgReferenceMemo,
+// so its ValidateBasic refuses a control character in the memo to register as
+// well. processOneTxIn returns that error, and the observed inbound is refunded
+// with CodeInvalidMemo instead of registering.
+func (s *HandlerReferenceMemoSuite) TestObservedRegistrationRejectsControlCharacters(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	signer := GetRandomBech32Addr()
+	eth := GetRandomETHAddress().String()
+	observed := func(memo string) ObservedTx {
+		tx := common.NewTx(GetRandomTxHash(), GetRandomBTCAddress(), GetRandomBTCAddress(),
+			common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(common.One))},
+			common.Gas{common.NewCoin(common.BTCAsset, cosmos.NewUint(10000))}, memo)
+		return NewObservedTx(tx, 1, GetRandomPubKey(), 1)
+	}
+
+	msg, err := processOneTxIn(ctx, k, observed("REFERENCE:BTC.BTC:=:ETH.ETH:"+eth+":0:::::0:x"), signer)
+	c.Assert(err, IsNil)
+	c.Assert(msg, FitsTypeOf, &MsgReferenceMemo{})
+
+	for _, field := range []string{"\x00", "\t", "\u2028"} {
+		registered := "=:ETH.ETH:" + eth + ":0:::::0:" + field
+		_, err = processOneTxIn(ctx, k, observed("REFERENCE:BTC.BTC:"+registered), signer)
+		want := fmt.Sprintf("memo contains control character U\\+%04X at byte %d: unknown request", []rune(field)[0], len(registered)-len(field))
+		c.Check(err, ErrorMatches, want, Commentf("field %q", field))
+	}
+}
+
 func (s *HandlerReferenceMemoSuite) TestValidateRejectsReservedTypes(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	handler := NewReferenceMemoHandler(mgr)

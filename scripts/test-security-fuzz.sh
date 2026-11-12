@@ -11,6 +11,7 @@ corpus_dir=$(cd "$corpus_dir" && pwd)
 targets=(
   'FuzzParseMemo|./x/thorchain/memo'
   'FuzzNewAddress|./common'
+  'FuzzValidateMemo|./common'
   'FuzzRPCVersion|./bifrost/pkg/chainclients/solana/rpc'
   'FuzzFrostEvidenceDecode|./bifrost/p2p/messages'
   'FuzzFrostSignedPayload|./bifrost/p2p/messages'

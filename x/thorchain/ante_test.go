@@ -2,6 +2,7 @@ package thorchain
 
 import (
 	math "math"
+	"strings"
 
 	"github.com/stretchr/testify/suite"
 
@@ -85,6 +86,16 @@ func (s *AnteTestSuite) TestRejectMutlipleDepositMsgs(c *C) {
 	// one normal bank send and one bank send to module account is ok
 	err = ad.rejectMultipleDepositMsgs([]cosmos.Msg{&banktypes.MsgSend{}, &bankSendDeposit})
 	c.Assert(err, IsNil)
+
+	// the module address in upper case is the same address, and the send
+	// handler treats a bank send to it as a deposit
+	bankSendDepositUpper := banktypes.MsgSend{
+		ToAddress: strings.ToUpper(k.GetModuleAccAddress(ModuleName).String()),
+	}
+	err = ad.rejectMultipleDepositMsgs([]cosmos.Msg{&bankSendDeposit, &bankSendDepositUpper})
+	c.Assert(err, NotNil)
+	err = ad.rejectMultipleDepositMsgs([]cosmos.Msg{&bankSendDepositUpper, &types.MsgDeposit{}})
+	c.Assert(err, NotNil)
 }
 
 func (s *AnteTestSuite) TestRejectDuplicateTHORNameMsgs(c *C) {
@@ -254,5 +265,84 @@ func (s *AnteTestSuite) TestAnteHandleRejectsAuthzMsgs(c *C) {
 		})
 		c.Assert(err, NotNil)
 		c.Assert(reached, Equals, false)
+	}
+}
+
+func (s *AnteTestSuite) TestAnteHandleRejectsInvalidTxMemo(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	ad := AnteDecorator{keeper: k}
+
+	sender := GetRandomBech32Addr()
+	FundAccount(c, ctx, k, sender, 10*common.One)
+	k.SetMimir(ctx, "BankSendEnabled", 1)
+	module := k.GetModuleAccAddress(ModuleName)
+	coins := cosmos.NewCoins(cosmos.NewCoin(common.RuneNative.Native(), cosmos.NewInt(common.One)))
+	btc := GetRandomBTCAddress().String()
+
+	// a send to the module is executed as a deposit with the tx memo, whichever
+	// case the bech32 address is written in
+	toModule := &types.MsgSend{FromAddress: sender, ToAddress: module, Amount: coins}
+	bankToModule := &banktypes.MsgSend{FromAddress: sender.String(), ToAddress: module.String(), Amount: coins}
+	bankToModuleUpper := &banktypes.MsgSend{FromAddress: sender.String(), ToAddress: strings.ToUpper(module.String()), Amount: coins}
+	// the tx memo of a send between accounts, or of a MsgDeposit, is free text
+	toAccount := &types.MsgSend{FromAddress: sender, ToAddress: GetRandomBech32Addr(), Amount: coins}
+	deposit := types.NewMsgDeposit(common.Coins{common.NewCoin(common.RuneNative, cosmos.NewUint(common.One))}, "=:BTC.BTC:"+btc, sender)
+
+	balance := func() cosmos.Int { return k.GetBalanceOf(ctx, sender, common.RuneNative).Amount }
+	run := func(msg cosmos.Msg, memo string) (bool, error) {
+		tx := fakeSigVerifiableTx{msgs: []cosmos.Msg{msg}, signers: [][]byte{sender}, memo: memo}
+		reached := false
+		_, err := ad.AnteHandle(ctx, tx, false, func(innerCtx cosmos.Context, _ sdk.Tx, _ bool) (cosmos.Context, error) {
+			reached = true
+			return innerCtx, nil
+		})
+		return reached, err
+	}
+
+	type testCase struct {
+		msg  cosmos.Msg
+		memo string
+	}
+
+	// refused ahead of anteHandleMessage, so even here, without the cache that
+	// baseapp gives the ante handler, the fee is not taken
+	for _, tc := range []testCase{
+		{toModule, "=:BTC.BTC:" + btc + "\n"},
+		{toModule, "=:BTC.BTC:" + btc + "\nOUT:1"},
+		{toModule, "REFERENCE:BTC.BTC:=:BTC.BTC:" + btc + "\x00"},
+		{toModule, "=:BTC.BTC:" + btc + "|\x00"},
+		{toModule, "\t"},
+		{bankToModule, "=:BTC.BTC:" + btc + "\r\n"},
+		{bankToModuleUpper, "=:BTC.BTC:" + btc + "\nOUT:1"},
+		{toAccount, "note\x00"},
+		{toAccount, "note\xff"},
+		{deposit, "\x00"},
+	} {
+		comment := Commentf("%T memo %q", tc.msg, tc.memo)
+		before := balance()
+		reached, err := run(tc.msg, tc.memo)
+		c.Check(err, ErrorMatches, "memo (contains control character|is not valid UTF-8) .*", comment)
+		c.Check(reached, Equals, false, comment)
+		c.Check(balance().Equal(before), Equals, true, comment)
+	}
+
+	// accepted, and charged the native tx fee as before
+	for _, tc := range []testCase{
+		{toModule, "=:BTC.BTC:" + btc},
+		{toModule, "=:BTC.BTC:" + btc + "|hello world"},
+		{toModule, ""}, // memoless native deposit
+		{toModule, " "},
+		{bankToModule, "=:BTC.BTC:" + btc},
+		{bankToModuleUpper, "=:BTC.BTC:" + btc},
+		{toAccount, "two\nlines"},
+		{toAccount, "\u00E9t\u00E9"},
+		{deposit, "a\tb"},
+	} {
+		comment := Commentf("%T memo %q", tc.msg, tc.memo)
+		before := balance()
+		reached, err := run(tc.msg, tc.memo)
+		c.Check(err, IsNil, comment)
+		c.Check(reached, Equals, true, comment)
+		c.Check(balance().LT(before), Equals, true, comment)
 	}
 }

@@ -13,6 +13,7 @@ import (
 	authsigning "github.com/cosmos/cosmos-sdk/x/auth/signing"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 
+	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/constants"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
@@ -41,6 +42,12 @@ func (ad AnteDecorator) AnteHandle(ctx sdk.Context, tx sdk.Tx, simulate bool, ne
 	}
 
 	if err = ad.rejectDuplicateTHORNameMsgs(tx.GetMsgs()); err != nil {
+		return ctx, err
+	}
+
+	// a tx refused here pays no fee: baseapp discards what the ante handler
+	// wrote, the fee deduction included, when it returns an error
+	if err = ad.rejectInvalidTxMemo(tx); err != nil {
 		return ctx, err
 	}
 
@@ -182,6 +189,28 @@ func (ad AnteDecorator) rejectDuplicateTHORNameMsgs(msgs []cosmos.Msg) error {
 	return nil
 }
 
+// rejectInvalidTxMemo refuses a tx memo that cannot be committed as text. When
+// the tx sends to the THORChain module, the tx memo is executed as the memo of
+// a deposit, so it must also pass the character rule that MsgDeposit applies
+// to its own memo. Any other tx memo, a MsgDeposit's included, is never parsed.
+func (ad AnteDecorator) rejectInvalidTxMemo(tx sdk.Tx) error {
+	mTx, ok := tx.(sdk.TxWithMemo)
+	if !ok {
+		return nil
+	}
+	validate := common.ValidateMemoEncoding
+	for _, msg := range tx.GetMsgs() {
+		if _, isMsgDeposit := msg.(*types.MsgDeposit); !isMsgDeposit && ad.isDeposit(msg) {
+			validate = common.ValidateMemoCharacters
+			break
+		}
+	}
+	if err := validate(mTx.GetMemo()); err != nil {
+		return cosmos.ErrUnknownRequest(err.Error())
+	}
+	return nil
+}
+
 // isDeposit returns true if the msg is a deposit
 func (ad AnteDecorator) isDeposit(msg cosmos.Msg) bool {
 	switch m := msg.(type) {
@@ -190,7 +219,10 @@ func (ad AnteDecorator) isDeposit(msg cosmos.Msg) bool {
 	case *types.MsgSend:
 		return m.ToAddress.Equals(ad.keeper.GetModuleAccAddress(ModuleName))
 	case *banktypes.MsgSend:
-		return m.ToAddress == ad.keeper.GetModuleAccAddress(ModuleName).String()
+		// decoded as the send handler decodes it, which accepts the address in
+		// upper case too, rather than compared as a string
+		to, err := cosmos.AccAddressFromBech32(m.ToAddress)
+		return err == nil && to.Equals(ad.keeper.GetModuleAccAddress(ModuleName))
 	default:
 		return false
 	}
