@@ -101,22 +101,48 @@ type FrostKeygenResponse struct {
 	Blame                blame.Blame
 }
 
-// FrostSidecarKeygenClient is the local sidecar API used by the DKG coordinator.
-type FrostSidecarKeygenClient interface {
+// FrostDKGEngine is the local cryptographic engine the DKG coordinator drives
+// through the three FROST DKG rounds plus finalize. The coordinator owns the
+// p2p transcript (authenticated broadcast, echo confirmation, blame); the
+// engine owns the key material. The Monero sidecar implements it over HTTP; an
+// in-process engine implements it over a FROST library.
+//
+// Engines whose vault records a chain scanner birthday also implement
+// FrostDKGChainHeightProvider. Engines that do not (the vault address is
+// derived from the group key alone and scanning starts from the on-chain
+// keygen height) leave every observed height at zero, and the coordinator
+// treats a non-zero height from any peer as malformed in that mode.
+type FrostDKGEngine interface {
 	FrostDKGRound1(req FrostSidecarDKGRound1Req) (FrostSidecarDKGRound1Resp, error)
 	FrostDKGRound2(req FrostSidecarDKGRound2Req) (FrostSidecarDKGRound2Resp, error)
 	FrostDKGRound3(req FrostSidecarDKGRound3Req) (FrostSidecarDKGRound3Resp, error)
 	FrostDKGFinalize(req FrostSidecarDKGFinalizeReq) (FrostSidecarDKGFinalizeResp, error)
+}
+
+// FrostDKGChainHeightProvider is the optional engine extension for chains whose
+// vault records a scanner birthday (Monero). The coordinator collects one
+// height per participant in round 3 and derives a quorum birthday from them.
+type FrostDKGChainHeightProvider interface {
 	GetChainHeight() (int64, error)
 }
+
+// FrostSidecarKeygenClient is the historical name of the DKG engine boundary,
+// kept for the Monero sidecar adapter and its callers.
+type FrostSidecarKeygenClient = FrostDKGEngine
 
 type FrostSidecarDKGRound1Req struct {
 	VaultPubKey      string `json:"vault_pub_key"`
 	Threshold        uint32 `json:"threshold"`
 	N                uint32 `json:"n"`
 	ParticipantIndex uint32 `json:"participant_index"`
-	Context          string `json:"context,omitempty"`
-	SessionID        string `json:"session_id"`
+	// Participants lists every participant pubkey in canonical order:
+	// Participants[i] holds participant index i+1, so
+	// Participants[ParticipantIndex-1] is the local node. In-process engines
+	// use it to address round-2 shares to their receivers; the Monero sidecar
+	// derives the same ordering itself and ignores it.
+	Participants []string `json:"participants,omitempty"`
+	Context      string   `json:"context,omitempty"`
+	SessionID    string   `json:"session_id"`
 }
 
 type FrostSidecarDKGRound1Resp struct {

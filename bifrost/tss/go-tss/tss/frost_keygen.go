@@ -124,13 +124,19 @@ func (s *frostKeygenRoundState) verifier(round string) (*frostKeygenRoundVerifie
 type FrostKeygenCoordinator struct {
 	logger                    zerolog.Logger
 	p2pCommunication          *p2p.Communication
-	sidecar                   FrostSidecarKeygenClient
+	sidecar                   FrostDKGEngine
 	localPubKey               string
 	msgID                     string
 	inbox                     *frostKeygenInbox
 	roundState                *frostKeygenRoundState
 	timeout                   time.Duration
 	loggedVerificationDiscard bool
+	// noChainBirthday is set when the engine has no chain-height provider: the
+	// observed height stays zero in every payload and result, and a non-zero
+	// height from a peer is malformed. The zero value keeps the birthday path
+	// (the Monero sidecar behaviour) for coordinators built without the
+	// constructor.
+	noChainBirthday bool
 }
 
 // minFrostKeygenTimeout is the minimum per-round wait the FROST DKG
@@ -159,11 +165,33 @@ func NewFrostKeygenCoordinator(
 		logger:           log.With().Str("module", "frost_keygen").Str("msg_id", msgID).Logger(),
 		p2pCommunication: comm,
 		sidecar:          sidecar,
+		noChainBirthday:  sidecar != nil && frostDKGChainHeightProvider(sidecar) == nil,
 		localPubKey:      strings.TrimSpace(localPubKey),
 		msgID:            strings.TrimSpace(msgID),
 		inbox:            inbox,
 		timeout:          timeout,
 	}
+}
+
+// frostDKGChainHeightProvider returns the engine's chain-height extension, or
+// nil for engines whose chain records no scanner birthday.
+func frostDKGChainHeightProvider(engine FrostDKGEngine) FrostDKGChainHeightProvider {
+	provider, ok := engine.(FrostDKGChainHeightProvider)
+	if !ok {
+		return nil
+	}
+	return provider
+}
+
+// frostDKGParticipants lists the participant pubkeys in canonical order, so
+// that participants[i] is the member holding participant index i+1. members is
+// the sorted normalized list from buildParticipantIndex.
+func frostDKGParticipants(members []string, originalByNormalized map[string]string) []string {
+	participants := make([]string, 0, len(members))
+	for _, norm := range members {
+		participants = append(participants, originalByNormalized[norm])
+	}
+	return participants
 }
 
 // verificationDiscardLog warns once per coordinator and keeps subsequent
@@ -605,7 +633,7 @@ func (c *FrostKeygenCoordinator) Execute(
 			Blame:  blame.NewBlame("frost keygen msgID is empty", nil),
 		}
 	}
-	_, participantIndexMap, originalByNormalized, err := buildParticipantIndex(req.SignerPubKeys)
+	members, participantIndexMap, originalByNormalized, err := buildParticipantIndex(req.SignerPubKeys)
 	if err != nil {
 		return FrostKeygenResponse{
 			Status: tcommon.Fail,
@@ -660,6 +688,7 @@ func (c *FrostKeygenCoordinator) Execute(
 		Threshold:        uint32(threshold + 1),
 		N:                uint32(len(activeSet.originalByNormalized)),
 		ParticipantIndex: localIndex,
+		Participants:     frostDKGParticipants(members, originalByNormalized),
 		Context:          contextValue,
 		SessionID:        c.msgID,
 	})
@@ -755,11 +784,17 @@ func (c *FrostKeygenCoordinator) Execute(
 		}
 	}
 
+	// Engines without a chain-height provider record no scanner birthday: the
+	// height stays zero in the round-3 payload and in the result.
 	var localMoneroHeight int64
-	if h, hErr := c.sidecar.GetChainHeight(); hErr != nil {
-		c.logger.Warn().Err(hErr).Msg("failed to query local Monero chain height for DKG birthday")
-	} else {
-		localMoneroHeight = h
+	if !c.noChainBirthday {
+		if heightProvider := frostDKGChainHeightProvider(c.sidecar); heightProvider == nil {
+			c.logger.Warn().Msg("frost dkg engine has no chain height provider for the DKG birthday")
+		} else if h, hErr := heightProvider.GetChainHeight(); hErr != nil {
+			c.logger.Warn().Err(hErr).Msg("failed to query local Monero chain height for DKG birthday")
+		} else {
+			localMoneroHeight = h
+		}
 	}
 
 	address := strings.TrimSpace(round3Resp.Address)
@@ -769,6 +804,9 @@ func (c *FrostKeygenCoordinator) Execute(
 	// in deriveFrostDKGBirthday — otherwise a reorg can orphan the birthday
 	// block and the vault scans from a height that no longer exists.
 	birthdayHeight := localMoneroHeight - frostDKGReorgMargin
+	if c.noChainBirthday {
+		birthdayHeight = 0
+	}
 	if address == "" || groupKey == "" {
 		return c.failForPubKeys("empty frost keygen result", frostDKGRound3, []string{c.localPubKey})
 	}
@@ -790,7 +828,7 @@ func (c *FrostKeygenCoordinator) Execute(
 			return *failResp
 		}
 	}
-	if birthdayHeight <= 0 {
+	if !c.noChainBirthday && birthdayHeight <= 0 {
 		return FrostKeygenResponse{
 			Status: tcommon.Fail,
 			Blame:  buildBlame("frost keygen result has no positive observed monero height", frostDKGRound3, nil),
@@ -1123,6 +1161,10 @@ func (c *FrostKeygenCoordinator) exchangeRound3(
 		resp := c.failForPubKeys("empty DKG address", frostDKGRound3, []string{local.SenderPubKey})
 		return "", "", 0, &resp
 	}
+	if c.noChainBirthday && local.ObservedMoneroHeight != 0 {
+		resp := c.failForPubKeys("local round3 payload carries a chain height for a vault without a chain birthday", frostDKGRound3, []string{local.SenderPubKey})
+		return "", "", 0, &resp
+	}
 	localHash, err := FrostTranscriptDKGRound3Hash(c.msgID, local)
 	if err != nil {
 		resp := c.failForPubKeys(fmt.Sprintf("failed to hash local round3 payload: %v", err), frostDKGRound3, []string{local.SenderPubKey})
@@ -1197,6 +1239,10 @@ func (c *FrostKeygenCoordinator) exchangeRound3(
 					resp := c.failForPubKeys("DKG group key mismatch across participants", frostDKGRound3, []string{incoming.SenderPubKey})
 					return "", "", 0, &resp
 				}
+				if c.noChainBirthday && incoming.ObservedMoneroHeight != 0 {
+					resp := c.failForPubKeys("round3 payload carries a chain height for a vault without a chain birthday", frostDKGRound3, []string{incoming.SenderPubKey})
+					return "", "", 0, &resp
+				}
 				payloadHash, err := FrostTranscriptDKGRound3Hash(c.msgID, incoming)
 				if err != nil {
 					resp := c.failForPubKeys(fmt.Sprintf("failed to hash round3 payload: %v", err), frostDKGRound3, []string{incoming.SenderPubKey})
@@ -1245,6 +1291,11 @@ func (c *FrostKeygenCoordinator) exchangeRound3(
 			)
 			return "", "", 0, &resp
 		}
+	}
+	if c.noChainBirthday {
+		// Every authenticated payload carried height zero (checked above), so
+		// there is no birthday to derive.
+		return groupAddress, groupKey, 0, nil
 	}
 	birthday, err = frostDKGBirthdayHeight(heightsBySender, len(activeSet.originalByNormalized))
 	if err != nil {
@@ -1307,7 +1358,12 @@ func (c *FrostKeygenCoordinator) AdoptQuorumSuccess(req FrostKeygenRequest, quor
 			Msg("skip adopting quorum keygen success: address does not match expected")
 		return FrostKeygenResponse{}, false
 	}
-	if quorumResp.ObservedMoneroHeight <= 0 {
+	if c.noChainBirthday {
+		if quorumResp.ObservedMoneroHeight != 0 {
+			c.logger.Warn().Msg("skip adopting quorum keygen success: chain height set for a vault without a chain birthday")
+			return FrostKeygenResponse{}, false
+		}
+	} else if quorumResp.ObservedMoneroHeight <= 0 {
 		c.logger.Warn().Msg("skip adopting quorum keygen success: missing observed monero height")
 		return FrostKeygenResponse{}, false
 	}
@@ -1408,7 +1464,7 @@ func (c *FrostKeygenCoordinator) WaitForResult(activeParticipants []string, quor
 				continue
 			}
 
-			normalized, matchKey, err := normalizeDKGResultPayload(payload.Response)
+			normalized, matchKey, err := normalizeDKGResultPayload(payload.Response, c.noChainBirthday)
 			if err != nil {
 				c.logger.Warn().Err(err).Str("sender", payload.SenderPubKey).Msg("skipping malformed frost dkg result")
 				continue
@@ -1517,7 +1573,11 @@ type dkgResultVoteBucket struct {
 	voters   map[string]struct{}
 }
 
-func normalizeDKGResultPayload(result FrostDKGResult) (FrostKeygenResponse, string, error) {
+// normalizeDKGResultPayload validates a peer's DKG result and returns it with
+// the comparison key used to bucket identical results. noChainBirthday selects
+// the height rule: a success must carry a positive height when the vault
+// records a chain birthday and exactly zero when it does not.
+func normalizeDKGResultPayload(result FrostDKGResult, noChainBirthday bool) (FrostKeygenResponse, string, error) {
 	status := tcommon.Status(result.Status)
 	if status != tcommon.Success && status != tcommon.Fail {
 		return FrostKeygenResponse{}, "", fmt.Errorf("invalid frost dkg result status")
@@ -1536,7 +1596,11 @@ func normalizeDKGResultPayload(result FrostDKGResult) (FrostKeygenResponse, stri
 		if groupKey == "" {
 			return FrostKeygenResponse{}, "", fmt.Errorf("frost dkg success result has empty group key")
 		}
-		if result.ObservedMoneroHeight <= 0 {
+		if noChainBirthday {
+			if result.ObservedMoneroHeight != 0 {
+				return FrostKeygenResponse{}, "", fmt.Errorf("frost dkg success result carries a chain height for a vault without a chain birthday")
+			}
+		} else if result.ObservedMoneroHeight <= 0 {
 			return FrostKeygenResponse{}, "", fmt.Errorf("frost dkg success result has no positive observed monero height")
 		}
 		normalized.Address = address
