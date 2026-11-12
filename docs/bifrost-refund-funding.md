@@ -40,7 +40,13 @@ credited inbound. Raw source memos and gas are excluded: THORNode can resolve or
 rewrite a memo, and execution gas can change when a transaction is re-mined.
 Receipt/block/transaction/log identity and actual execution effects remain bound.
 
-EVM proofs can locate a deposit without a retained transaction-hash index. The
+The remaining EVM-specific paragraphs in this section, and the EVM paragraphs
+under _Source history and bounded work_, describe the follow-up EVM proof that
+this patch does not ship. Until that follow-up lands, EVM-funded refunds keep
+their current, unguarded behaviour (see _Coverage and rollout_); only the UTXO
+proof and the shared ownership and finality checks above are active here.
+
+EVM proofs will locate a deposit without a retained transaction-hash index. The
 signer supplies at most 16 matching non-final voter heights; the shared EVM client
 also tries one location derived from its current confirmation policy. These are
 untrusted search hints, not proofs. A matching canonical block must contain the
@@ -78,8 +84,9 @@ never persisted; it does not import the later observation metadata for that purp
 The first check stays on the ordinary signing queue, retaining its original
 height/index position while the proof runs. Only after failure can an authoritative
 record with no signed bytes, checkpoint, terminal-round retry or observation yield.
-Its existing retry-height field records the failed check and next background
-eligibility, rather than changing its signing priority. Passing that height alone
+Its retry-height field — a new persisted signer-record field this patch adds —
+records the failed check and next background eligibility, rather than changing
+its signing priority. Passing that height alone
 does not return the item to signing.
 
 One signer-owned worker sweeps failed unsigned records serially, then waits one
@@ -88,8 +95,10 @@ the next THORChain height; a slow check does not spawn overlapping work. Success
 clears only the marker under the same storage write lock as signing and removal,
 provided the original record and marker still match and no signing evidence has
 appeared. Removed items are not recreated and newer state is not overwritten.
-The persisted marker restores retry ownership after restart; no separate queue,
-positive-proof cache or new storage schema is needed.
+The persisted marker restores retry ownership after restart. It adds one
+backward-compatible signer-record field (omitempty, so old records load
+unchanged and no store migration runs); no separate queue or positive-proof
+cache is needed.
 
 A recovered item returns at its original height/index and gets fresh pre-sign and
 pre-broadcast proofs. Expired unsigned attempts reenter the normal signing queue
@@ -141,7 +150,7 @@ parent batch requests normally, for P missing distinct parents and batch size B;
 oversized replies add a bounded sequence of size reductions. Memory is
 proportional to block/candidate data plus the current bounded parent batch.
 
-EVM discovery examines at most 17 hinted locations and, for ETH only when hash
+EVM discovery will examine at most 17 hinted locations and, for ETH only when hash
 lookup is unavailable, the additional 64-location window. ETH whole-block policy
 loads one indexed receipt set rather than fetching each sibling by hash. Each
 consumed receipt remains bound to the block and the final canonical header check.
