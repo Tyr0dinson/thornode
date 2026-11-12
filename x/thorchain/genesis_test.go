@@ -214,6 +214,11 @@ func (GenesisTestSuite) TestGenesisNodeAccountSlashPointsRoundTrip(c *C) {
 	var decoded GenesisState
 	c.Assert(decoded.Unmarshal(bz), IsNil)
 	c.Assert(ValidateGenesis(decoded), IsNil)
+	// A zero ActiveBlockHeight makes SetNodeAccount reset the node's slash
+	// points on import, so this fails if slash points are restored first.
+	c.Assert(len(decoded.NodeAccounts), Equals, 1)
+	c.Assert(decoded.NodeAccounts[0].NodeAddress.Equals(retainedNode.NodeAddress), Equals, true)
+	decoded.NodeAccounts[0].ActiveBlockHeight = 0
 
 	dstCtx, dstMgr := setupManagerForTest(c)
 	InitGenesis(dstCtx, dstMgr.Keeper(), decoded)
