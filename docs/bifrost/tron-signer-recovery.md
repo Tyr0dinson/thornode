@@ -42,3 +42,6 @@ Otherwise Bifrost preserves the cached identity without expiry and reports
 reconciliation of both transaction IDs. A temporary RPC failure during this rare
 conflict can therefore require manual recovery. Automatically expiring this hold
 could permit a third payment while either earlier transaction has already paid.
+A routine recovery does not repeat the lookup: it reuses the failure `SignTx`
+proved under the same payment lock, because a solidified failure is final. Only
+saved signed retries, which skip `SignTx`, query the previous transaction again.

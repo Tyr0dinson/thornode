@@ -895,6 +895,46 @@ func (s *TronTestSuite) TestFailedPaymentRecoveryNewScheduleAndRestart(c *C) {
 	c.Assert(after, DeepEquals, append(calls, "/walletsolidity/gettransactioninfobyid"))
 }
 
+func (s *TronTestSuite) TestFailedPaymentRecoveryReusesSignTimeFailureProof(c *C) {
+	f := s.newFailedRetryFixture(c)
+	defer f.close(c)
+	original := s.failedRetryTxOut(11302)
+	original.Height = 100
+	failed, signed := f.signedTransaction(c, original)
+	_, err := f.client.BroadcastTx(original, signed)
+	c.Assert(err, IsNil)
+	f.cache(c, original, failed.TxId, time.Now().Add(-time.Minute).UnixMilli())
+	f.rpc.evidence(failed.TxId, "FAILED", "OUT_OF_ENERGY", 100)
+
+	retry := original
+	retry.Height++
+	release := f.client.LockTxOut(retry)
+	replacement, replacementBytes := f.signedTransaction(c, retry)
+	before, _ := f.rpc.recoveryCalls()
+	// A solidity outage after SignTx proved the failure must not turn an
+	// accepted replacement into a protected reconciliation hold.
+	f.rpc.mu.Lock()
+	f.rpc.statusPath = "/walletsolidity/gettransactioninfobyid"
+	f.rpc.mu.Unlock()
+	id, err := f.client.BroadcastTx(retry, replacementBytes)
+	c.Assert(err, IsNil)
+	c.Assert(id, Equals, replacement.TxId)
+	after, _ := f.rpc.recoveryCalls()
+	c.Assert(after, DeepEquals, before)
+	f.assertCached(c, retry, replacement.TxId)
+	release()
+
+	// Without a sign-time proof (saved signed retry), the lookup still runs and
+	// an unavailable receipt keeps the conservative protected hold.
+	f.cache(c, retry, failed.TxId, time.Now().Add(-time.Minute).UnixMilli())
+	release = f.client.LockTxOut(retry)
+	defer release()
+	_, err = f.client.BroadcastTx(retry, replacementBytes)
+	c.Assert(err, ErrorMatches, ".*reconciliation required.*")
+	final, _ := f.rpc.recoveryCalls()
+	c.Assert(final, DeepEquals, append(before, "/walletsolidity/gettransactioninfobyid"))
+}
+
 func (s *TronTestSuite) TestFailedPaymentRecoveryUncertainEvidenceRetainsCache(c *C) {
 	id := strings.Repeat("a", 64)
 	cases := []struct {

@@ -480,6 +480,10 @@ func (c *TronClient) OnObservedTxIn(_ types.TxInItem, _ int64) {}
 type tronOutboundLock struct {
 	mu    sync.Mutex
 	users int
+	// verifiedFailed is the cached attempt SignTx proved failed in solidified
+	// state. A solidified failure is final, so BroadcastTx can reuse it rather
+	// than repeat the lookup. It lives only as long as the lock entry.
+	verifiedFailed string
 }
 
 // LockTxOut serializes the full sign-and-broadcast lifecycle by payment identity,
@@ -511,6 +515,24 @@ func (c *TronClient) LockTxOut(tx types.TxOutItem) func() {
 	}
 }
 
+// setVerifiedFailed records the attempt SignTx proved failed for a held
+// payment lock; an empty sig clears it. Callers without a lock record nothing.
+func (c *TronClient) setVerifiedFailed(key, sig string) {
+	c.outboundLocksMu.Lock()
+	defer c.outboundLocksMu.Unlock()
+	if entry := c.outboundLocks[key]; entry != nil {
+		entry.verifiedFailed = sig
+	}
+}
+
+// isVerifiedFailed reports whether sig is the attempt SignTx proved failed.
+func (c *TronClient) isVerifiedFailed(key, sig string) bool {
+	c.outboundLocksMu.Lock()
+	defer c.outboundLocksMu.Unlock()
+	entry := c.outboundLocks[key]
+	return entry != nil && entry.verifiedFailed != "" && strings.EqualFold(entry.verifiedFailed, sig)
+}
+
 // getSignerCacheExpiry returns the configured signer-cache expiry (config signer_cache_expiry).
 func (c *TronClient) getSignerCacheExpiry() time.Duration {
 	return c.config.SignerCacheExpiry
@@ -529,6 +551,11 @@ func (c *TronClient) SignTx(
 		return err == nil && skipCache > 0
 	}
 	check := c.signerCacheManager.SignTxCacheCheck(txOutItem.CacheHash(), gateFn, c.verifyCachedTransaction)
+	verifiedFailed := ""
+	if check.Phase == signercache.PhaseVerifiedFailed {
+		verifiedFailed = check.Sig
+	}
+	c.setVerifiedFailed(txOutItem.CacheHash(), verifiedFailed)
 	if check.Phase != signercache.PhaseNoEntry {
 		ev := c.logger.Info()
 		if check.Noteworthy() {
@@ -804,7 +831,9 @@ func (c *TronClient) recordAcceptedBroadcast(txOutItem types.TxOutItem, txID str
 			// Duplicate acceptance cannot extend a failed attempt's recovery gate.
 			return nil
 		}
-		if c.verifyCachedTransaction(previous) != signercache.LookupFailed {
+		// SignTx may already have proved previous failed in this lock section.
+		// Repeating the lookup adds nothing but a transient RPC error.
+		if !c.isVerifiedFailed(cacheHash, previous) && c.verifyCachedTransaction(previous) != signercache.LookupFailed {
 			// Neither acceptance nor an unavailable receipt orders these two
 			// exposed transactions. Keep the existing identity and make the
 			// cache non-expiring: otherwise its later failure could authorize a
