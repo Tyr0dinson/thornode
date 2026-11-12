@@ -39,6 +39,9 @@ func (m *MsgObservedTxQuorum) ValidateBasic() error {
 	}
 
 	tx := m.QuoTx.ObsTx
+	if tx.InstantSend != nil && !m.QuoTx.Inbound {
+		return cosmos.ErrUnknownRequest("InstantSend metadata is only valid for customer inbounds")
+	}
 
 	if err := tx.Valid(); err != nil {
 		return cosmos.ErrUnknownRequest(err.Error())
@@ -55,7 +58,7 @@ func (m *MsgObservedTxQuorum) ValidateBasic() error {
 				return cosmos.ErrUnknownRequest(err.Error())
 			}
 		}
-		if len(tx.SpentOutputRefs) > 0 {
+		if len(tx.SpentOutputRefs) > 0 && !tx.Tx.Chain.Equals(common.DASHChain) {
 			return cosmos.ErrUnknownRequest("spent output refs are only valid for outbound observed transactions")
 		}
 		if strings.TrimSpace(tx.XmrTxKey) != "" {

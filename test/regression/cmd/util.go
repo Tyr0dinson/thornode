@@ -225,6 +225,8 @@ func parseOps(localLog zerolog.Logger, path string, tmpls *template.Template, en
 	stateComplete := false
 	envComplete := false
 	envAdded := 0
+	sourceLines := opLines
+	opLines = nil
 
 	dec := yaml.NewDecoder(buf)
 	for i := 0; ; i++ {
@@ -237,6 +239,11 @@ func parseOps(localLog zerolog.Logger, path string, tmpls *template.Template, en
 			}
 			log.Fatal().Str("path", path).Err(err).Msg("failed to decode operation")
 		}
+		line := -1
+		if i < len(sourceLines) {
+			line = sourceLines[i]
+		}
+		opLines = append(opLines, line)
 
 		// warn empty operations
 		if len(op) == 0 {
@@ -278,13 +285,25 @@ func parseOps(localLog zerolog.Logger, path string, tmpls *template.Template, en
 		ops = append(ops, operation)
 	}
 
+	// Template expansion can add or remove documents. In that case source
+	// offsets cannot be matched by index; never guess where AUTO_UPDATE writes.
+	if len(opLines) != len(sourceLines) {
+		for i := range opLines {
+			opLines[i] = -1
+		}
+		localLog.Warn().Str("path", path).Msg("template expansion changed operation count; source lines unavailable")
+	}
+
 	// remove env operations from op lines so numbers are correct
 	opLines = opLines[envAdded:]
 
 	// extract fail-export operation from end if provided
-	if _, ok := ops[len(ops)-1].(*OpFailExportInvariants); ok {
-		failExportInvariants = true
-		ops = ops[:len(ops)-1]
+	if len(ops) > 0 {
+		if _, ok := ops[len(ops)-1].(*OpFailExportInvariants); ok {
+			failExportInvariants = true
+			ops = ops[:len(ops)-1]
+			opLines = opLines[:len(opLines)-1]
+		}
 	}
 
 	return ops, opLines, env, failExportInvariants

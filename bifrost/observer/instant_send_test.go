@@ -74,24 +74,29 @@ func TestDashDeliveryRejectsInactiveObserverBeforeAcceptingBlockFallback(t *test
 	}
 }
 
-// Observer acceptance must complete the pending marker without releasing allowance.
+// Observer storage completes the early handoff without releasing allowance
+// or suppressing the independent ChainLock observation.
 func TestDashDeliveryCompletesMarkerAfterObserverPersistence(t *testing.T) {
 	db, err := leveldb.OpenFile(t.TempDir(), nil)
 	require.NoError(t, err)
 	defer db.Close()
 	scanner, err := sharedutxo.NewTemporalStorage(db, 0)
 	require.NoError(t, err)
-	require.NoError(t, scanner.StartInstantSendWarmup(10, nil))
-	require.NoError(t, scanner.CompleteInstantSendWarmup(11))
-	ids, err := scanner.AdmitInstantSendTxs([]sharedutxo.InstantSendClaim{{TxID: "dash-delivery", Amount: 10}}, 0, 100, true, 1)
+	ids, err := scanner.ClaimInstantSendTxs([]string{"dash-delivery"})
 	require.NoError(t, err)
+	require.Equal(t, []string{"dash-delivery"}, ids)
 	path := t.TempDir()
 	storage, err := NewObserverStorage(path, config.LevelDBOptions{})
 	require.NoError(t, err)
 	observer := &Observer{logger: zerolog.Nop(), storage: storage, lock: &sync.Mutex{}, onDeck: make(map[txInKey]*types.TxIn)}
 	item := &types.TxInItem{Tx: "dash-delivery", BlockHeight: 123, Memo: "NOOP"}
-	item.OnObservedTxStored = func() { require.NoError(t, scanner.CompleteInstantSendObservations(ids)) }
+	stored := 0
+	item.OnObservedTxStored = func() {
+		require.NoError(t, scanner.CompleteInstantSendObservations(ids))
+		stored++
+	}
 	require.NoError(t, observer.processObservedTx(types.TxIn{Chain: common.DASHChain, Filtered: true, TxArray: []*types.TxInItem{item}}))
+	require.Equal(t, 1, stored)
 	require.NoError(t, storage.Close())
 	storage, err = NewObserverStorage(path, config.LevelDBOptions{})
 	require.NoError(t, err)
@@ -101,10 +106,10 @@ func TestDashDeliveryCompletesMarkerAfterObserverPersistence(t *testing.T) {
 	require.Len(t, deck, 1)
 	require.Len(t, deck[0].TxArray, 1)
 	require.EqualValues(t, 123, deck[0].TxArray[0].BlockHeight)
-	state, err := scanner.GetInstantSendState()
-	require.NoError(t, err)
-	require.EqualValues(t, 10, state.Reserved)
 	fallback, err := scanner.TrackInstantSendBlockTxs(ids)
+	require.NoError(t, err)
+	require.Equal(t, ids, fallback)
+	fallback, err = scanner.TrackInstantSendBlockTxs(ids)
 	require.NoError(t, err)
 	require.Empty(t, fallback)
 }

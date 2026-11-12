@@ -1,0 +1,172 @@
+{{ template "default-state.yaml" }}
+---
+{{ template "dash-eth-pool-state.yaml" }}
+---
+type: state
+genesis:
+  app_state:
+    thorchain:
+      mimirs:
+        - key: DashInstantSendEnabled
+          value: "1"
+        - key: DashInstantSendMaxAmount
+          value: "100000000000"
+      last_chain_heights:
+        - chain: DASH
+          height: "100"
+---
+type: create-blocks
+count: 1
+# Fill the fixed capacity with signed early observations.
+{{ range $i := 128 }}
+---
+type: tx-observed-in-quorum
+observation:
+  tx:
+    id: "{{ printf "1%063X" $i }}"
+    chain: DASH
+    from_address: {{ addr_dash_fox }}
+    to_address: {{ addr_dash_dog }}
+    coins:
+      - asset: DASH.DASH
+        amount: "100000000"
+        decimals: 8
+    gas:
+      - asset: DASH.DASH
+        amount: "4000"
+    memo: "=:ETH.ETH:{{ addr_eth_fox }}"
+  observed_pub_key: {{ pubkey_dog }}
+  block_height: 96
+  finalise_height: 96
+  spent_output_refs:
+    - tx_hash: "{{ printf "2%063X" $i }}"
+      output_index: 0
+  instant_send: {}
+{{ end }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/instantsend/DASH
+asserts:
+  - .vaults[0].state.pending | length == 128
+  - has("max_pending_count") | not
+---
+type: check
+endpoint: http://localhost:1317/thorchain/vaults/asgard
+asserts:
+  - '[.[].coins[] | select(.asset == "DASH.DASH") | .amount | tonumber] | add == 22800000000'
+# A full vault defers the next deposit without crediting its funds.
+---
+type: tx-observed-in-quorum
+observation:
+  tx:
+    id: "{{ observe_txid 900 }}"
+    chain: DASH
+    from_address: {{ addr_dash_fox }}
+    to_address: {{ addr_dash_dog }}
+    coins:
+      - asset: DASH.DASH
+        amount: "100000000"
+        decimals: 8
+    gas:
+      - asset: DASH.DASH
+        amount: "4000"
+    memo: "=:ETH.ETH:{{ addr_eth_fox }}"
+  observed_pub_key: {{ pubkey_dog }}
+  block_height: 96
+  finalise_height: 96
+  spent_output_refs:
+    - tx_hash: "{{ observe_txid 901 }}"
+      output_index: 0
+  instant_send: {}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/instantsend/DASH
+asserts:
+  - .vaults[0].state.pending | length == 128
+  - has("max_pending_count") | not
+---
+type: check
+endpoint: http://localhost:1317/thorchain/vaults/asgard
+asserts:
+  - '[.[].coins[] | select(.asset == "DASH.DASH") | .amount | tonumber] | add == 22800000000'
+# Settlement frees a slot without crediting the same funds twice.
+---
+type: tx-observed-in-quorum
+observation:
+  tx:
+    id: "{{ printf "1%063X" 0 }}"
+    chain: DASH
+    from_address: {{ addr_dash_fox }}
+    to_address: {{ addr_dash_dog }}
+    coins:
+      - asset: DASH.DASH
+        amount: "100000000"
+        decimals: 8
+    gas:
+      - asset: DASH.DASH
+        amount: "4000"
+    memo: "=:ETH.ETH:{{ addr_eth_fox }}"
+  observed_pub_key: {{ pubkey_dog }}
+  block_height: 101
+  finalise_height: 101
+  spent_output_refs:
+    - tx_hash: "{{ printf "2%063X" 0 }}"
+      output_index: 0
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/instantsend/DASH
+asserts:
+  - .vaults[0].state.pending | length == 127
+  - has("max_pending_count") | not
+---
+type: check
+endpoint: http://localhost:1317/thorchain/vaults/asgard
+asserts:
+  - '[.[].coins[] | select(.asset == "DASH.DASH") | .amount | tonumber] | add == 22800000000'
+# Another early deposit can now use the released slot.
+---
+type: tx-observed-in-quorum
+observation:
+  tx:
+    id: "{{ observe_txid 902 }}"
+    chain: DASH
+    from_address: {{ addr_dash_fox }}
+    to_address: {{ addr_dash_dog }}
+    coins:
+      - asset: DASH.DASH
+        amount: "100000000"
+        decimals: 8
+    gas:
+      - asset: DASH.DASH
+        amount: "4000"
+    memo: "=:ETH.ETH:{{ addr_eth_fox }}"
+  observed_pub_key: {{ pubkey_dog }}
+  block_height: 96
+  finalise_height: 96
+  spent_output_refs:
+    - tx_hash: "{{ observe_txid 903 }}"
+      output_index: 0
+  instant_send: {}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/instantsend/DASH
+asserts:
+  - .vaults[0].state.pending | length == 128
+  - has("max_pending_count") | not
+---
+type: check
+endpoint: http://localhost:1317/thorchain/vaults/asgard
+asserts:
+  - '[.[].coins[] | select(.asset == "DASH.DASH") | .amount | tonumber] | add == 22900000000'

@@ -39,6 +39,9 @@ func (m *MsgObservedTxOut) ValidateBasic() error {
 		return cosmos.ErrUnknownRequest("Txs cannot be empty")
 	}
 	for _, tx := range m.Txs {
+		if tx.InstantSend != nil {
+			return cosmos.ErrUnknownRequest("InstantSend metadata is only valid for customer inbounds")
+		}
 		if err := tx.Valid(); err != nil {
 			return cosmos.ErrUnknownRequest(err.Error())
 		}

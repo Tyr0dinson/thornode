@@ -208,7 +208,18 @@ func (nf *NetworkFee) Equals(other *NetworkFee) bool {
 	return true
 }
 
+// Validate rejects missing solvency reports.
+func (s *Solvency) Validate() error {
+	if s == nil {
+		return errors.New("nil solvency")
+	}
+	return nil
+}
+
 func (s *Solvency) Hash() (TxID, error) {
+	if err := s.Validate(); err != nil {
+		return "", err
+	}
 	input := fmt.Sprintf("%s|%s|%s|%d", s.Chain, s.PubKey, s.Coins, s.Height)
 	id, err := NewTxID(fmt.Sprintf("%X", sha256.Sum256([]byte(input))))
 	if err != nil {
@@ -218,11 +229,14 @@ func (s *Solvency) Hash() (TxID, error) {
 }
 
 func (s *Solvency) IsValid() bool {
-	return s != nil
+	return s != nil && s.Validate() == nil
 }
 
 // GetSignablePayload returns the data that is signed for verification
 func (s *Solvency) GetSignablePayload() ([]byte, error) {
+	if err := s.Validate(); err != nil {
+		return nil, err
+	}
 	if s.Id.IsEmpty() {
 		id, err := s.Hash()
 		if err != nil {
@@ -264,6 +278,9 @@ func (e *ErrataTx) GetSignablePayload() ([]byte, error) {
 }
 
 func (e *ErrataTx) Equals(other *ErrataTx) bool {
+	if e == nil || other == nil {
+		return e == other
+	}
 	if e.Chain != other.Chain {
 		return false
 	}

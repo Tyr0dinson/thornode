@@ -1,13 +1,19 @@
 package utxo
 
 import (
+	"bytes"
+	"encoding/hex"
 	"encoding/json"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/dashpay/dashd-go/chaincfg/chainhash"
+	dashwire "github.com/dashpay/dashd-go/wire"
+
 	"github.com/btcsuite/btcd/btcjson"
+	"github.com/btcsuite/btcutil"
 	"gitlab.com/thorchain/thornode/v3/bifrost/blockscanner"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/signercache"
 	sharedutxo "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/utxo"
@@ -51,27 +57,59 @@ func newDashMempoolFixture(c *C, rpcTimeout ...time.Duration) (*Client, *dashMem
 	for _, id := range []string{f.lockedOutbound, f.unlockedOutbound, f.inbound, f.lowFeeInbound} {
 		prev, destination, memo := prevVault, f.user, "OUT:"+strings.Repeat("1", 64)
 		if id == f.inbound || id == f.lowFeeInbound {
-			prev, destination, memo = prevUser, f.asgard, "NOOP"
+			prev, destination, memo = prevUser, f.asgard, "=:THOR.RUNE"
 		}
 		locked := id != f.unlockedOutbound
 		f.txs[id] = map[string]any{
 			"txid": id, "version": 2, "instantlock": locked,
 			"vin": []any{map[string]any{"txid": prev, "vout": 0, "sequence": uint32(4294967295)}},
 			"vout": []any{output(destination, 0.1), map[string]any{
-				"n": 1, "value": 0,
+				"n": 1, "value": float64(0),
 				"scriptPubKey": map[string]any{"hex": newDashMemoScriptHex(c, memo), "type": "nulldata"},
 			}},
 		}
 		f.entries[id] = dashTestMempoolEntry()
 		f.entries[id]["instantlock"] = strconv.FormatBool(locked)
 	}
-	// Outbound observations do not require the InstantSend age policy.
-	for _, id := range []string{f.lockedOutbound, f.unlockedOutbound, f.lowFeeInbound} {
-		f.entries[id]["fees"] = map[string]any{"base": 0.000002}
+	// Early admission verifies the serialized transaction and its hash.
+	for _, field := range []*string{&f.inbound, &f.lowFeeInbound} {
+		old := *field
+		value := f.txs[old]
+		tx := dashwire.NewMsgTx(2)
+		hash, parseErr := chainhash.NewHashFromStr(prevUser)
+		c.Assert(parseErr, IsNil)
+		tx.AddTxIn(dashwire.NewTxIn(dashwire.NewOutPoint(hash, 0), []byte{old[0]}, nil))
+		data, encodeErr := json.Marshal(value)
+		c.Assert(encodeErr, IsNil)
+		var verbose btcjson.TxRawResult
+		c.Assert(json.Unmarshal(data, &verbose), IsNil)
+		for _, output := range verbose.Vout {
+			script, decodeErr := hex.DecodeString(output.ScriptPubKey.Hex)
+			c.Assert(decodeErr, IsNil)
+			amount, amountErr := btcutil.NewAmount(output.Value)
+			c.Assert(amountErr, IsNil)
+			tx.AddTxOut(dashwire.NewTxOut(int64(amount), script))
+		}
+		var raw bytes.Buffer
+		c.Assert(tx.Serialize(&raw), IsNil)
+		*field = tx.TxHash().String()
+		value["txid"] = *field
+		value["hex"] = hex.EncodeToString(raw.Bytes())
+		f.txs[*field] = value
+		f.entries[*field] = f.entries[old]
+		delete(f.txs, old)
+		delete(f.entries, old)
 	}
+	if f.inbound > f.lowFeeInbound {
+		f.inbound, f.lowFeeInbound = f.lowFeeInbound, f.inbound
+	}
+	// Local receipt time does not determine eligibility.
 	f.entries[f.lockedOutbound]["time"] = time.Now().Add(-time.Hour).Unix()
 	blockHash := strings.Repeat("2", 64)
-	cycleHash := strings.Repeat("3", 64)
+	for _, id := range []string{prevUser, prevVault} {
+		f.txs[id]["chainlock"] = true
+		f.txs[id]["blockhash"] = blockHash
+	}
 	server := newRPCTestServer(c, func(method string, params []json.RawMessage) any {
 		if f.beforeRPC != nil {
 			f.beforeRPC(method, params)
@@ -118,22 +156,22 @@ func newDashMempoolFixture(c *C, rpcTimeout ...time.Duration) (*Client, *dashMem
 			}
 			c.Assert(f.txs[id], NotNil)
 			return f.txs[id]
-		case "getislocks":
-			var ids []string
-			c.Assert(json.Unmarshal(params[0], &ids), IsNil)
-			locks := make([]any, 0, len(ids))
-			for _, id := range ids {
-				locks = append(locks, map[string]any{"txid": id, "cycleHash": cycleHash})
-			}
-			return locks
+		case "getbestchainlock":
+			return map[string]any{"height": 100, "blockhash": blockHash, "known_block": true}
+		case "getblockcount":
+			return 100
 		case "getblockhash":
 			return blockHash
 		case "getblock":
+			var verbosity int
+			if len(params) > 1 {
+				c.Assert(json.Unmarshal(params[1], &verbosity), IsNil)
+			}
+			if verbosity == 1 {
+				return map[string]any{"hash": blockHash, "height": 99, "tx": []string{prevUser, prevVault}}
+			}
 			var hash string
 			c.Assert(json.Unmarshal(params[0], &hash), IsNil)
-			if hash == cycleHash {
-				return map[string]any{"hash": hash, "height": 100, "confirmations": 1}
-			}
 			c.Assert(hash, Equals, blockHash)
 			return map[string]any{
 				"hash": hash, "height": 150, "chainlock": f.chainLocked,
@@ -150,7 +188,8 @@ func newDashMempoolFixture(c *C, rpcTimeout ...time.Duration) (*Client, *dashMem
 	client.asgardCache.Store(&sharedutxo.AsgardCache{
 		Addresses: []common.Address{common.Address(f.asgard)}, FetchedAt: time.Now(),
 	})
-	return client, f, func() { server.Close(); cleanup() }
+	stopScanner := startDashTestScanner(c, client)
+	return client, f, func() { stopScanner(); server.Close(); cleanup() }
 }
 
 // TestDashBlockClearsMempoolMarkers covers Dash responses without a transaction
@@ -211,6 +250,37 @@ func (s *DashSuite) TestDashBlockClearsMempoolMarkers(c *C) {
 			c.Check(observed, Equals, true)
 		}()
 	}
+}
+
+func (s *DashSuite) TestDashBlockWithLargeUnrelatedTransaction(c *C) {
+	client, f, cleanup := newDashMempoolFixture(c)
+	defer cleanup()
+	client.disableVinZeroBatch = true
+	client.consolidateInProgress.Store(true)
+	client.cfg.UTXO.BlockCacheCount = 2000
+	_, err := client.temporalStorage.ClaimInstantSendTxs([]string{f.inbound})
+	c.Assert(err, IsNil)
+	vins := make([]btcjson.Vin, common.InstantSendMaxInputs+1)
+	for i := range vins {
+		vins[i] = btcjson.Vin{Txid: strings.Repeat("9", 64), Vout: uint32(i)}
+	}
+	f.overrideRPC = func(method string, _ []json.RawMessage) (any, bool) {
+		switch method {
+		case "getnetworkinfo":
+			return map[string]any{"relayfee": 0.00001}, true
+		case "getblock":
+			return map[string]any{
+				"hash": strings.Repeat("2", 64), "height": 150, "chainlock": true,
+				"tx": []any{btcjson.TxRawResult{Txid: strings.Repeat("8", 64), Vin: vins}, f.txs[f.lockedOutbound]},
+			}, true
+		default:
+			return nil, false
+		}
+	}
+	batch, err := client.FetchTxs(150, 200)
+	c.Assert(err, IsNil)
+	c.Assert(batch.TxArray, HasLen, 1)
+	c.Assert(batch.TxArray[0].Tx, Equals, f.lockedOutbound)
 }
 
 // TestBlockMempoolCleanupPreservesOtherChains pins the existing cleanup key
@@ -409,7 +479,7 @@ func (s *DashSuite) TestDashFetchMemPoolOutboundsAndFinalObservations(c *C) {
 	c.Assert(final.TxArray, HasLen, 2)
 	c.Assert(final.TxArray[0].Tx, Equals, f.inbound)
 	c.Assert(final.TxArray[1].Tx, Equals, f.lowFeeInbound)
-	c.Assert(final.TxArray[0].BlockHeight, Equals, int64(100))
+	c.Assert(final.TxArray[0].BlockHeight, Equals, int64(96))
 	observed, err := client.temporalStorage.HasObservedTx(f.lowFeeInbound)
 	c.Assert(err, IsNil)
 	c.Assert(observed, Equals, true)
@@ -483,20 +553,13 @@ func (s *DashSuite) TestDashMempoolRestartKeepsLockObservation(c *C) {
 			c.Assert(err, IsNil)
 			client.signerCacheManager, err = signercache.NewSignerCacheManager(storage.GetInternalDb())
 			c.Assert(err, IsNil)
-			client.instantSend.recovery.Reset()
 			batch, err = client.fetchMemPoolTransactions(124, true)
 			c.Assert(err, IsNil)
 			c.Assert(batch.TxArray, HasLen, 0) // persisted mempool markers survive restart
-			wantMined := 2
 			if migration {
-				client.instantSend.maxAmount = 0 // vault senders remain exempt
-				batch, err = client.instantSend.fetchBatch(instantSendAdmission{})
+				batch, err = client.instantSend.fetchBatch()
 				c.Assert(err, IsNil)
-				c.Assert(batch.MemPool, Equals, false)
-				c.Assert(batch.TxArray, HasLen, 1)
-				c.Assert(batch.TxArray[0].Tx, Equals, f.lockedOutbound)
-				batch.TxArray[0].OnObservedTxStored()
-				wantMined = 1 // InstantSend already supplied the migration's final observation
+				c.Assert(batch.TxArray, HasLen, 2) // customer deposits remain independently eligible
 			}
 			f.chainLocked = true
 			block, err := client.getBlock(150)
@@ -504,7 +567,7 @@ func (s *DashSuite) TestDashMempoolRestartKeepsLockObservation(c *C) {
 			client.disableVinZeroBatch = true
 			batch, err = client.extractTxs(block)
 			c.Assert(err, IsNil)
-			c.Assert(batch.TxArray, HasLen, wantMined)
+			c.Assert(batch.TxArray, HasLen, 2)
 			batch, err = client.extractTxs(block)
 			c.Assert(err, IsNil)
 			c.Assert(batch.TxArray, HasLen, 0)
@@ -514,14 +577,16 @@ func (s *DashSuite) TestDashMempoolRestartKeepsLockObservation(c *C) {
 
 type dashMempoolPolicyBridge struct {
 	thorclient.ThorchainBridge
-	enabled int64
+	enabled       int64
+	accounting    *ttypes.QueryInstantSendResponse
+	accountingErr error
 }
 
 func (b *dashMempoolPolicyBridge) GetMimir(key string) (int64, error) {
-	if key == DashInstantSendEnabledMimirKey {
+	if key == "DASHInstantSendEnabled" {
 		return b.enabled, nil
 	}
-	if key == DashInstantSendMaxAmountMimirKey {
+	if key == "DASHInstantSendMaxAmount" {
 		return 100_000 * common.One, nil
 	}
 	return -1, nil
@@ -545,7 +610,7 @@ func (s *DashSuite) TestDashFetchMemPoolWithInstantSendDisabled(c *C) {
 	bridge := &dashMempoolPolicyBridge{enabled: 0}
 	client.bridge = bridge
 	// A disabled policy must discard any previously prepared final batches.
-	client.instantSend.txQueue = instantSendObservationGroups(common.DASHChain,
+	client.instantSend.txQueue = groupInstantSendTxs(
 		map[int64][]*types.TxInItem{100: {{Tx: "stale-policy-batch"}}})
 	for i := 0; i < 2; i++ {
 		batch, err := client.FetchMemPool(123)
@@ -594,5 +659,23 @@ func (s *DashSuite) TestDashFetchMemPoolErrorsDoNotStarveOtherPath(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(batch.MemPool, Equals, true)
 	c.Assert(f.ordinaryCalls, Equals, 3)
-	c.Assert(f.instantSendCalls, Equals, 2)
+	c.Assert(f.instantSendCalls, Equals, 3)
+}
+
+// GetInstantSend supplies a network accounting snapshot unless a test overrides it.
+func (b *dashMempoolPolicyBridge) GetInstantSend(chain common.Chain) (*ttypes.QueryInstantSendResponse, error) {
+	if b.accountingErr != nil {
+		return nil, b.accountingErr
+	}
+	if b.accounting != nil {
+		return b.accounting, nil
+	}
+	key, err := dashTestVaultPubKey()
+	if err != nil {
+		return nil, err
+	}
+	return &ttypes.QueryInstantSendResponse{
+		ObservationHeight: 100, MinAmount: common.DefaultInstantSendMinAmount, MaxAmount: 100_000 * common.One,
+		Vaults: []ttypes.QueryInstantSendVault{{Eligible: true, State: common.InstantSendState{Chain: common.DASHChain, PubKey: key}}},
+	}, nil
 }

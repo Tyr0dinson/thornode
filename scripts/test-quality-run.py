@@ -10,6 +10,20 @@ import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
+from test_output import is_noise
+
+
+def failure_output(output):
+    if os.environ.get("TEST_QUIET") == "1":
+        # Keep every diagnostic: later output must not push failures out of a tail.
+        return "\n".join(
+            line
+            for chunk in output
+            for line in chunk.splitlines()
+            if not is_noise(line)
+        )
+    return "\n".join(output[-100:])
+
 
 def events_to_report(lines, required):
     tests = {}
@@ -76,8 +90,8 @@ def write_junit(path, tests, output, command_failed, selection_errors=()):
         if state == "skip":
             ET.SubElement(case, "skipped")
         elif state == "fail":
-            ET.SubElement(case, "failure", message="go test failed").text = "\n".join(
-                output[-100:]
+            ET.SubElement(case, "failure", message="go test failed").text = (
+                failure_output(output)
             )
     if command_failed and not any(v == "fail" for v in tests.values()):
         case = ET.SubElement(
@@ -85,7 +99,7 @@ def write_junit(path, tests, output, command_failed, selection_errors=()):
         )
         ET.SubElement(
             case, "failure", message="go test failed before a test completed"
-        ).text = "\n".join(output[-100:])
+        ).text = failure_output(output)
     for error in selection_errors:
         case = ET.SubElement(suite, "testcase", classname="test selection", name=error)
         ET.SubElement(case, "failure", message=error)
@@ -277,9 +291,11 @@ def main():
         report / "junit.xml", tests, output, proc.returncode != 0, selection_errors
     )
     if stderr:
+        if os.environ.get("TEST_QUIET") == "1":
+            stderr = failure_output(stderr.splitlines())
         print(stderr, file=sys.stderr)
     if proc.returncode or selection_errors:
-        print("\n".join(output[-100:]), file=sys.stderr)
+        print(failure_output(output), file=sys.stderr)
     summary = {
         "command": command,
         "listed_packages": packages,

@@ -181,6 +181,10 @@ func (s *DashSuite) TestDashBuildTxRelayFee(c *C) {
 			switch method {
 			case "listunspent":
 				return utxos
+			case "getbestchainlock":
+				return map[string]any{"height": 100, "known_block": true, "blockhash": strings.Repeat("a", 64)}
+			case "getblockcount":
+				return 100
 			case "getblockhash":
 				return strings.Repeat("a", 64)
 			case "getblockstats":

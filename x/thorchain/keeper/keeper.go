@@ -514,6 +514,18 @@ type KeeperChainContract interface {
 }
 
 type KeeperSolvencyVoter interface {
+	GetInstantSendStatus(cosmos.Context, common.Chain) (common.InstantSendStatus, error)
+	SetInstantSendStatus(cosmos.Context, common.InstantSendStatus) error
+	ListInstantSendStatus(cosmos.Context) ([]common.InstantSendStatus, error)
+	GetInstantSendCredit(cosmos.Context, common.TxID) (common.InstantSendCredit, error)
+	SetInstantSendCredit(cosmos.Context, common.InstantSendCredit) error
+	ListInstantSendCredit(cosmos.Context) ([]common.InstantSendCredit, error)
+	PruneInstantSendCredits(cosmos.Context, int64, int) error
+	GetInstantSendInput(cosmos.Context, common.OutputRef) (common.InstantSendCredit, error)
+
+	GetInstantSend(cosmos.Context, common.Chain, common.PubKey) (common.InstantSendState, error)
+	ListInstantSend(cosmos.Context, common.Chain) ([]common.InstantSendState, error)
+	SetInstantSend(cosmos.Context, common.InstantSendState) error
 	SetSolvencyVoter(_ cosmos.Context, _ SolvencyVoter)
 	GetSolvencyVoter(_ cosmos.Context, _ common.TxID, _ common.Chain) (SolvencyVoter, error)
 	GetSolvencyVoterQuota(ctx cosmos.Context, chain common.Chain, signer cosmos.AccAddress) (window, used uint64, err error)

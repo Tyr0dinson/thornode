@@ -77,9 +77,9 @@ type TemporalStorage struct {
 	db               *leveldb.DB
 	mempoolTxIDCache *lru.Cache
 	observedTxMu     sync.Mutex
-	instantSendState *InstantSendState // protected by observedTxMu; published only after a successful write
 }
 
+// The database must belong to one chain; the UTXO client opens a directory per ChainID.
 func NewTemporalStorage(db *leveldb.DB, txidCacheSize int) (*TemporalStorage, error) {
 	t := &TemporalStorage{db: db}
 

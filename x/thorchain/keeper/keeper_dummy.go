@@ -1198,3 +1198,45 @@ func (iter *DummyIterator) Error() error {
 func (iter *DummyIterator) Domain() (start, end []byte) {
 	return nil, nil
 }
+
+func (k KVStoreDummy) GetInstantSend(cosmos.Context, common.Chain, common.PubKey) (common.InstantSendState, error) {
+	return common.InstantSendState{}, kaboom
+}
+
+func (k KVStoreDummy) ListInstantSend(cosmos.Context, common.Chain) ([]common.InstantSendState, error) {
+	return nil, kaboom
+}
+
+func (k KVStoreDummy) SetInstantSend(cosmos.Context, common.InstantSendState) error {
+	return kaboom
+}
+
+func (k KVStoreDummy) GetInstantSendStatus(cosmos.Context, common.Chain) (common.InstantSendStatus, error) {
+	return common.InstantSendStatus{}, kaboom
+}
+
+func (k KVStoreDummy) SetInstantSendStatus(cosmos.Context, common.InstantSendStatus) error {
+	return kaboom
+}
+
+func (k KVStoreDummy) ListInstantSendStatus(cosmos.Context) ([]common.InstantSendStatus, error) {
+	return nil, kaboom
+}
+
+func (k KVStoreDummy) GetInstantSendCredit(cosmos.Context, common.TxID) (common.InstantSendCredit, error) {
+	return common.InstantSendCredit{}, kaboom
+}
+
+func (k KVStoreDummy) SetInstantSendCredit(cosmos.Context, common.InstantSendCredit) error {
+	return kaboom
+}
+
+func (k KVStoreDummy) ListInstantSendCredit(cosmos.Context) ([]common.InstantSendCredit, error) {
+	return nil, kaboom
+}
+
+func (k KVStoreDummy) PruneInstantSendCredits(cosmos.Context, int64, int) error { return kaboom }
+
+func (k KVStoreDummy) GetInstantSendInput(cosmos.Context, common.OutputRef) (common.InstantSendCredit, error) {
+	return common.InstantSendCredit{}, kaboom
+}

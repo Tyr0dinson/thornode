@@ -134,6 +134,25 @@ func processSolvencyAttestation(
 		return fmt.Errorf("fail to get vault: %w", err)
 	}
 
+	vault, err = solvencyVault(ctx, k, vault, voter.Chain)
+	if err != nil {
+		return err
+	}
+	if voter.Chain.Equals(common.DASHChain) && !insolvencyCheck(ctx, mgr, vault, voter.Coins, voter.Chain) {
+		count := 0
+		for _, node := range active {
+			if voter.HasSigned(node.NodeAddress) {
+				count++
+			}
+		}
+		if !HasSuperMajority(count, len(active)) {
+			if slashObservations {
+				slasher.IncSlashPoints(slashCtx, observeSlashPoints, attester)
+			}
+			return nil
+		}
+	}
+
 	voter.ConsensusBlockHeight = ctx.BlockHeight()
 
 	// If solvency stops reaching consensus for a chain, insolvencyCheck never runs
@@ -187,6 +206,9 @@ func processSolvencyAttestation(
 	lastChainHeight, err := k.GetLastChainHeight(ctx, voter.Chain)
 	if err != nil {
 		ctx.Logger().Error("fail to get last chain height", "chain", voter.Chain, "error", err)
+		if voter.Chain.Equals(common.DASHChain) {
+			return err
+		}
 	}
 	// According to the validate msg.Id check, the Height is consistent for all the voter's messages.
 	if !slashObservations {
@@ -284,6 +306,15 @@ func processSolvencyAttestation(
 	// A different insolvent vault on the same chain will have refreshed haltChain to the current
 	// block, preventing this unhalt via the guard at line 106 (haltChain >= ctx.BlockHeight()).
 	if !isInsolvent && haltChain > 1 {
+		if voter.Chain.Equals(common.DASHChain) {
+			flagged, flagErr := chainHasInsolventVault(ctx, k, voter.Chain)
+			if flagErr != nil {
+				return flagErr
+			}
+			if flagged {
+				return nil
+			}
+		}
 		// if the chain was halted by previous solvency checker, auto unhalt it
 		ctx.Logger().Info("auto un-halt", "chain", voter.Chain, "previous halt height", haltChain, "current block height", ctx.BlockHeight())
 		k.SetMimir(ctx, haltChainKey, 0)
@@ -296,11 +327,6 @@ func processSolvencyAttestation(
 	return nil
 }
 
-// solvencyHaltVaultKeyPrefix flags a specific vault as insolvent on a specific
-// chain. It is keyed by both vault pubkey and chain because a vault can be
-// insolvent on one chain while remaining solvent on others; the per-chain
-// granularity lets a recovered chain clear its own flag without prematurely
-// re-electing a vault that is still insolvent elsewhere.
 const solvencyHaltVaultKeyPrefix = "SolvencyHaltVault-"
 
 // solvencyHaltVaultKey returns the Mimir key flagging a vault insolvent on a chain.
@@ -605,4 +631,25 @@ func addPendingOutbound(pendingOutbounds map[string]cosmos.Uint, coin common.Coi
 		return
 	}
 	pendingOutbounds[key] = coin.Amount
+}
+
+// Check every flag, including retired vaults no longer in the active Asgard index.
+func chainHasInsolventVault(ctx cosmos.Context, k keeper.Keeper, chain common.Chain) (bool, error) {
+	iter := k.GetMimirIterator(ctx)
+	defer iter.Close()
+	for ; iter.Valid(); iter.Next() {
+		key := strings.ToUpper(string(iter.Key()))
+		if !strings.Contains(key, strings.ToUpper(solvencyHaltVaultKeyPrefix)) || !strings.HasSuffix(key, "-"+chain.String()) {
+			continue
+		}
+		var value thortypes.ProtoInt64
+		err := k.Cdc().Unmarshal(iter.Value(), &value)
+		if err != nil {
+			return true, err
+		}
+		if value.Value > 0 {
+			return true, nil
+		}
+	}
+	return false, nil
 }

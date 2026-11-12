@@ -47,7 +47,7 @@ func (b *instantSendTestBridge) GetMimir(key string) (int64, error) {
 // newInstantSendTestActor provides a ready node with the mocknet allowance default.
 func newInstantSendTestActor() (*DashInstantSendActor, *instantSendTestBridge) {
 	bridge := &instantSendTestBridge{
-		values: map[string]int64{"DashInstantSendMaxAmount": 1000 * common.One},
+		values: map[string]int64{"DASHInstantSendMaxAmount": 1000 * common.One, "DASHInstantSendEnabled": 1},
 		errors: map[string]error{},
 	}
 	actor := &DashInstantSendActor{
@@ -66,15 +66,16 @@ func TestInstantSendReadinessAmountSettings(t *testing.T) {
 		wantError string
 	}{
 		{"mocknet defaults", "", 0, ""},
-		{"enabled", "DashInstantSendEnabled", 1, ""},
-		{"disabled", "DashInstantSendEnabled", 0, "explicitly disables"},
-		{"unset maximum", "DashInstantSendMaxAmount", -1, "must be positive"},
-		{"zero maximum", "DashInstantSendMaxAmount", 0, "must be positive"},
-		{"insufficient maximum", "DashInstantSendMaxAmount", dashInstantSendLargePayment - 1, "cannot cover"},
-		{"exact maximum", "DashInstantSendMaxAmount", dashInstantSendLargePayment, ""},
-		{"minimum too high", "DashInstantSendMinAmount", dashInstantSendSmallPayment + 1, "exceeds payment"},
-		{"exact minimum", "DashInstantSendMinAmount", dashInstantSendSmallPayment, ""},
-		{"minimum disabled", "DashInstantSendMinAmount", 0, ""},
+		{"enabled", "DASHInstantSendEnabled", 1, ""},
+		{"disabled", "DASHInstantSendEnabled", 0, "disables InstantSend"},
+		{"unset switch", "DASHInstantSendEnabled", -1, "disables InstantSend"},
+		{"unset maximum", "DASHInstantSendMaxAmount", -1, "must be positive"},
+		{"zero maximum", "DASHInstantSendMaxAmount", 0, "must be positive"},
+		{"insufficient maximum", "DASHInstantSendMaxAmount", dashInstantSendLargePayment - 1, "cannot cover"},
+		{"exact maximum", "DASHInstantSendMaxAmount", dashInstantSendLargePayment, ""},
+		{"minimum too high", "DASHInstantSendMinAmount", dashInstantSendSmallPayment + 1, "exceeds payment"},
+		{"exact minimum", "DASHInstantSendMinAmount", dashInstantSendSmallPayment, ""},
+		{"minimum disabled", "DASHInstantSendMinAmount", 0, ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			a, bridge := newInstantSendTestActor()
@@ -101,7 +102,7 @@ func TestInstantSendReadinessDefaultMinimum(t *testing.T) {
 	if err == nil || retry {
 		t.Fatalf("unset minimum must reject a deposit below 0.01 DASH: retry=%v, err=%v", retry, err)
 	}
-	bridge.values["DashInstantSendMinAmount"] = 0
+	bridge.values["DASHInstantSendMinAmount"] = 0
 	_, err = a.checkReadiness(1, 1)
 	if err != nil {
 		t.Fatalf("zero minimum must allow small deposits: %v", err)
@@ -109,7 +110,7 @@ func TestInstantSendReadinessDefaultMinimum(t *testing.T) {
 }
 
 func TestInstantSendReadinessRetriesLookupFailures(t *testing.T) {
-	keys := []string{"DashInstantSendEnabled", "DashInstantSendMinAmount", "DashInstantSendMaxAmount"}
+	keys := []string{"DASHInstantSendEnabled", "DASHInstantSendMinAmount", "DASHInstantSendMaxAmount"}
 	for i, key := range keys {
 		t.Run(key, func(t *testing.T) {
 			a, bridge := newInstantSendTestActor()
@@ -135,10 +136,10 @@ func TestInstantSendReadinessRetriesLookupFailures(t *testing.T) {
 func TestInstantSendReadinessWarmupAndAllowance(t *testing.T) {
 	a, bridge := newInstantSendTestActor()
 	config := &OpConfig{NodeUsers: []*User{{Thorchain: bridge}}}
-	state := instantSendMetrics{warmingUp: true, available: 1000 * common.One}
+	state := instantSendMetrics{paused: true, available: 1000 * common.One}
 	var scrapeErr error = errors.New("metrics unavailable")
 	a.readMetrics = func() (instantSendMetrics, error) { return state, scrapeErr }
-	for _, reason := range []string{"metrics unavailable", "warming up", "available allowance"} {
+	for _, reason := range []string{"metrics unavailable", "paused", "available allowance"} {
 		result := a.waitForReadiness(config)
 		if result.Finish || result.Continue || result.Error == nil || !strings.Contains(result.Error.Error(), reason) {
 			t.Fatalf("expected retry for %s: %+v", reason, result)
@@ -146,7 +147,7 @@ func TestInstantSendReadinessWarmupAndAllowance(t *testing.T) {
 		if scrapeErr != nil {
 			scrapeErr = nil
 		} else {
-			state.warmingUp = false
+			state.paused = false
 			state.available = dashInstantSendLargePayment - 1
 		}
 	}
@@ -158,17 +159,17 @@ func TestInstantSendReadinessWarmupAndAllowance(t *testing.T) {
 }
 
 func TestInstantSendReadinessTimeout(t *testing.T) {
-	for _, reason := range []string{"warming up", "metrics unavailable", "node unavailable"} {
+	for _, reason := range []string{"paused", "metrics unavailable", "node unavailable"} {
 		t.Run(reason, func(t *testing.T) {
 			a, bridge := newInstantSendTestActor()
 			a.readMetrics = func() (instantSendMetrics, error) {
 				if reason == "metrics unavailable" {
 					return instantSendMetrics{}, errors.New(reason)
 				}
-				return instantSendMetrics{warmingUp: true}, nil
+				return instantSendMetrics{paused: true}, nil
 			}
 			if reason == "node unavailable" {
-				bridge.errors["DashInstantSendEnabled"] = errors.New(reason)
+				bridge.errors["DASHInstantSendEnabled"] = errors.New(reason)
 			}
 			config := &OpConfig{NodeUsers: []*User{{Thorchain: bridge}}}
 			result := a.waitForReadiness(config)
@@ -237,7 +238,7 @@ func (c *instantSendTestChainClient) BroadcastTx([]byte) (string, error) {
 }
 
 func TestInstantSendBroadcastRechecksReadiness(t *testing.T) {
-	for _, failure := range []string{"disabled", "maximum lowered", "minimum raised", "lookup failure", "warming up", "allowance exhausted", "scrape failure"} {
+	for _, failure := range []string{"disabled", "maximum lowered", "minimum raised", "lookup failure", "paused", "allowance exhausted", "scrape failure"} {
 		t.Run(failure, func(t *testing.T) {
 			a, bridge := newInstantSendTestActor()
 			chain := &instantSendTestChainClient{}
@@ -249,19 +250,19 @@ func TestInstantSendBroadcastRechecksReadiness(t *testing.T) {
 			// Change policy or readiness after startup succeeded.
 			switch failure {
 			case "disabled":
-				bridge.values["DashInstantSendEnabled"] = 0
+				bridge.values["DASHInstantSendEnabled"] = 0
 			case "maximum lowered":
-				bridge.values["DashInstantSendMaxAmount"] = 1
+				bridge.values["DASHInstantSendMaxAmount"] = 1
 			case "minimum raised":
-				bridge.values["DashInstantSendMinAmount"] = dashInstantSendLargePayment + 1
+				bridge.values["DASHInstantSendMinAmount"] = dashInstantSendLargePayment + 1
 			case "lookup failure":
-				bridge.errors["DashInstantSendEnabled"] = errors.New("lookup failed")
+				bridge.errors["DASHInstantSendEnabled"] = errors.New("lookup failed")
 			default:
 				a.readMetrics = func() (instantSendMetrics, error) {
 					if failure == "scrape failure" {
 						return instantSendMetrics{}, errors.New("scrape failed")
 					}
-					return instantSendMetrics{warmingUp: failure == "warming up"}, nil
+					return instantSendMetrics{paused: failure == "paused"}, nil
 				}
 			}
 			_, err = a.broadcastTx("test", dashInstantSendSmallPayment, 0)
@@ -282,6 +283,60 @@ func TestInstantSendBroadcastWhenReady(t *testing.T) {
 	id, err := a.broadcastTx("test", dashInstantSendSmallPayment, 0)
 	if err != nil || id != "txid" || chain.signed != 1 || chain.broadcast != 1 {
 		t.Fatalf("ready actor did not broadcast: id=%s, err=%v", id, err)
+	}
+}
+
+func TestInstantSendLowFeeRestoresPolicy(t *testing.T) {
+	initInstantSendFundingTest(t)
+	for _, previous := range []int64{-1, 0, 2} {
+		for _, failure := range []string{"vote", "refresh", "broadcast", "restore"} {
+			t.Run(fmt.Sprintf("%d/%s", previous, failure), func(t *testing.T) {
+				user := NewUser(strings.Repeat("dog ", 23)+"fossil", nil)
+				synctest.Test(t, func(t *testing.T) {
+					const key = "DASHInstantSendMinFeeRate"
+					a, bridge := newInstantSendTestActor()
+					bridge.values[key] = previous
+					bridge.values["DASHInstantSendEnabled"] = 0 // Force broadcast readiness to fail.
+					if !user.Acquire() {
+						t.Fatal("account is already reserved")
+					}
+					a.account = user
+					var votes []int64
+					voteErr := errors.New("partial vote failure")
+					restoreErr := errors.New("restore vote failure")
+					a.voteFee = func(_ *OpConfig, value int64) error {
+						votes = append(votes, value)
+						bridge.values[key] = value
+						if len(votes) == 1 && failure == "vote" {
+							return voteErr
+						}
+						if len(votes) == 2 && failure == "restore" {
+							return restoreErr
+						}
+						return nil
+					}
+					a.readMetrics = func() (instantSendMetrics, error) {
+						if failure == "refresh" {
+							return instantSendMetrics{minFeeRate: 1}, nil
+						}
+						return instantSendMetrics{minFeeRate: 8}, nil
+					}
+					result := a.lowFee(&OpConfig{})
+					if !result.Finish || result.Error == nil || user.IsLocked() || a.account != nil {
+						t.Fatalf("failed scenario retained its account: %+v", result)
+					}
+					if len(votes) != 2 || votes[0] != 8 || votes[1] != max(previous, 0) {
+						t.Fatalf("fee policy not restored: %v", votes)
+					}
+					if failure == "vote" && !errors.Is(result.Error, voteErr) {
+						t.Fatalf("lost vote failure: %v", result.Error)
+					}
+					if failure == "restore" && !errors.Is(result.Error, restoreErr) {
+						t.Fatalf("lost restore failure: %v", result.Error)
+					}
+				})
+			})
+		}
 	}
 }
 
@@ -458,7 +513,7 @@ func TestScrapeInstantSendMetricsTimeout(t *testing.T) {
 func TestScrapeInstantSendMetrics(t *testing.T) {
 	valid := "# HELP dash_instantsend_available_duffs Available allowance\n" +
 		"dash_instantsend_available_duffs 220000000\n" +
-		"dash_instantsend_warming_up 0\n"
+		"dash_instantsend_paused 0\n"
 	for _, tc := range []struct {
 		name, body string
 		status     int
@@ -469,13 +524,13 @@ func TestScrapeInstantSendMetrics(t *testing.T) {
 		{"wrong allowance name", strings.ReplaceAll(valid, "dash_instantsend_available_duffs", "dash_instantsend_available_duffs_extra"), http.StatusOK, "missing"},
 		{"unrelated counter ignored", valid + "dash_instantsend_observed_total NaN\n", http.StatusOK, ""},
 		{"missing allowance", strings.ReplaceAll(valid, "dash_instantsend_available_duffs 220000000\n", ""), http.StatusOK, "missing"},
-		{"missing warmup", strings.ReplaceAll(valid, "dash_instantsend_warming_up 0\n", ""), http.StatusOK, "missing"},
+		{"missing pause", strings.ReplaceAll(valid, "dash_instantsend_paused 0\n", ""), http.StatusOK, "missing"},
 		{"malformed", strings.ReplaceAll(valid, "duffs 220000000", "duffs"), http.StatusOK, "malformed"},
 		{"invalid number", strings.ReplaceAll(valid, "duffs 220000000", "duffs nope"), http.StatusOK, "parse"},
 		{"negative", strings.ReplaceAll(valid, "duffs 220000000", "duffs -1"), http.StatusOK, "invalid"},
 		{"NaN", strings.ReplaceAll(valid, "duffs 220000000", "duffs NaN"), http.StatusOK, "invalid"},
 		{"infinity", strings.ReplaceAll(valid, "duffs 220000000", "duffs +Inf"), http.StatusOK, "invalid"},
-		{"invalid warmup", strings.ReplaceAll(valid, "up 0", "up 0.5"), http.StatusOK, "invalid"},
+		{"invalid pause", strings.ReplaceAll(valid, "paused 0", "paused 0.5"), http.StatusOK, "invalid"},
 		{"HTTP failure", valid, http.StatusServiceUnavailable, "HTTP 503"},
 		{"truncated scrape", valid + strings.Repeat("x", 70_000), http.StatusOK, "token too long"},
 	} {
@@ -492,7 +547,7 @@ func TestScrapeInstantSendMetrics(t *testing.T) {
 				}
 				return
 			}
-			if err != nil || state.available != 220000000 || state.warmingUp {
+			if err != nil || state.available != 220000000 || state.paused {
 				t.Fatalf("incorrect metric snapshot: %+v, %v", state, err)
 			}
 		})

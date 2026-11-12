@@ -8,6 +8,7 @@ import unittest
 from pathlib import Path
 
 RUNNER = Path(__file__).resolve().parents[1] / "test-quality-run.py"
+sys.path.insert(0, str(RUNNER.parent))
 spec = importlib.util.spec_from_file_location("quality_runner", RUNNER)
 runner = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(runner)
@@ -198,6 +199,61 @@ else:
                 summary["selection_errors"],
                 ["unexpected skipped test: example.com/p:Stray"],
             )
+
+    def test_quiet_mode_preserves_early_failures_and_raw_logs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            fake_go = root / "go"
+            fake_go.write_text(
+                """#!/usr/bin/env python3
+import json, sys
+if sys.argv[1] == 'list':
+    print('example.com/p')
+else:
+    def output(text):
+        print(json.dumps({'Action': 'output', 'Package': 'example.com/p',
+                          'Test': 'TestPackage', 'Output': text + '\\n'}))
+    output('FAIL: test.go:10: Suite.TestSnapshot\\n... expected int = 1')
+    for _ in range(150):
+        output('{"level":"info","message":"noisy log"}')
+        output('--- PASS: LaterTest')
+    output('{"level":"warn","message":"warning"}')
+    output('panic: diagnostic')
+    print('{"level":"debug","message":"stderr noise"}', file=sys.stderr)
+    print('compiler diagnostic', file=sys.stderr)
+    print(json.dumps({'Action': 'fail', 'Package': 'example.com/p', 'Test': 'TestPackage'}))
+    sys.exit(1)
+"""
+            )
+            fake_go.chmod(0o755)
+            env = os.environ.copy()
+            env["PATH"] = f"{root}:{env['PATH']}"
+            env["TEST_QUIET"] = "1"
+            report = root / "reports"
+            proc = subprocess.run(
+                [sys.executable, str(RUNNER), "--report-dir", str(report), "./..."],
+                env=env,
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+            self.assertNotIn("noisy log", proc.stderr)
+            self.assertNotIn("stderr noise", proc.stderr)
+            for diagnostic in (
+                "Suite.TestSnapshot",
+                "expected int = 1",
+                "warning",
+                "panic:",
+            ):
+                self.assertTrue(diagnostic in proc.stderr, proc.stderr)
+                self.assertTrue(
+                    diagnostic in (report / "junit.xml").read_text(), diagnostic
+                )
+            self.assertTrue("compiler diagnostic" in proc.stderr, proc.stderr)
+            self.assertTrue("noisy log" in (report / "events.jsonl").read_text())
+            summary = json.loads((report / "summary.json").read_text())
+            self.assertEqual(summary["go_test_exit"], 1)
+            self.assertEqual(summary["executed_top_level"], 1)
 
 
 if __name__ == "__main__":

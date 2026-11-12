@@ -4,6 +4,7 @@ import (
 	"github.com/cosmos/cosmos-sdk/telemetry"
 	"github.com/hashicorp/go-metrics"
 
+	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
@@ -118,6 +119,34 @@ func (h ObservedTxQuorumHandler) handle(ctx cosmos.Context, msg types.MsgObserve
 		}
 	}
 
+	// A finalized early deposit has a separate settlement certificate. Do not
+	// feed it through the ordinary finality/slash-credit path a second time.
+	if inbound && voter.Tx.InstantSend != nil && obsTx.InstantSend == nil {
+		cacheCtx, commit := ctx.CacheContext()
+		err = settleInstantSend(cacheCtx, k, obsTx, voter, accAddrs, len(activeNodeAccounts))
+		if err != nil {
+			return nil, err
+		}
+		commit()
+		return &cosmos.Result{}, nil
+	}
+	var commitAdmission func()
+	if obsTx.InstantSend != nil && voter.FinalisedHeight == 0 {
+		ctx, commitAdmission = ctx.CacheContext()
+	}
+	var instantSendState *common.InstantSendState
+	if obsTx.InstantSend != nil {
+		var allowed bool
+		instantSendState, allowed, err = prepareInstantSendCredit(ctx, h.mgr, obsTx, voter, len(accAddrs), len(activeNodeAccounts))
+		if err != nil {
+			return nil, err
+		}
+		if !allowed {
+			// ChainLock delivery remains eligible without early voter mutations.
+			return &cosmos.Result{}, nil
+		}
+	}
+
 	// Apply every attestation to the voter in memory and save it once: nothing
 	// applied here reads the voter back from the store, and saving it per
 	// attestation rewrote the whole (growing) voter once per signer.
@@ -153,5 +182,21 @@ func (h ObservedTxQuorumHandler) handle(ctx cosmos.Context, msg types.MsgObserve
 		}
 	}
 
+	if commitAdmission != nil {
+		credited, creditErr := k.GetObservedTxInVoter(ctx, obsTx.Tx.ID)
+		if creditErr != nil {
+			return nil, creditErr
+		}
+		queued := k.HasSwapQueueItem(ctx, obsTx.Tx.ID, 0) || k.HasAdvSwapQueueItem(ctx, obsTx.Tx.ID, 0)
+		// Ordinary and early variants can share a consensus bucket. Never commit
+		// exposure if the selected voter cannot take the InstantSend settlement path.
+		if credited.Tx.InstantSend == nil || !credited.UpdatedVault || credited.Reverted || !queued {
+			return &cosmos.Result{}, nil
+		}
+		commitAdmission()
+		if instantSendState != nil {
+			publishInstantSendAccounting(*instantSendState)
+		}
+	}
 	return &cosmos.Result{}, nil
 }

@@ -42,7 +42,7 @@ func newDashClientForUnitTest() *Client {
 		log:                       zerolog.Nop(),
 		regexpRemoveTrailingZeros: regexp.MustCompile(`(00)+$`),
 	}
-	client.instantSend = instantSendHandler{client: client, enabled: client.cfg.InstantSend.Enabled}
+	client.instantSend = instantSendHandler{client: client, enabled: true}
 	return client
 }
 
@@ -294,6 +294,13 @@ type rpcRequest struct {
 
 // newDashTestAddress uses the same network as the client's script decoder.
 func newDashTestAddress(c *C, seed byte) string {
+	if seed == 0x11 {
+		key, err := dashTestVaultPubKey()
+		c.Assert(err, IsNil)
+		addr, err := key.GetAddress(common.DASHChain)
+		c.Assert(err, IsNil)
+		return addr.String()
+	}
 	hash := bytes.Repeat([]byte{seed}, 20)
 	params := newDashClientForUnitTest().getChainCfgDASH()
 	addr, err := btcutil.NewAddressPubKeyHash(hash, params)
@@ -374,18 +381,13 @@ func newDashClientForRPCServer(c *C, serverURL string, rpcTimeout ...time.Durati
 	temporalStorage, err := sharedutxo.NewTemporalStorage(storage.GetInternalDb(), 1000)
 	c.Assert(err, IsNil)
 	// Existing InstantSend tests start with a fully warmed, durable allowance.
-	c.Assert(temporalStorage.StartInstantSendWarmup(0, nil), IsNil)
-	c.Assert(temporalStorage.CompleteInstantSendWarmup(1), IsNil)
 
 	client := &Client{
 		cfg: config.BifrostChainConfiguration{
 			ChainID:             common.DASHChain,
 			ParallelMempoolScan: 1,
 			BlockScanner:        config.BifrostBlockScannerConfiguration{ChainID: common.DASHChain, DBPath: path},
-			InstantSend: config.InstantSendConfiguration{
-				Enabled:       true,
-				MaxMempoolAge: 2 * time.Minute,
-			},
+			InstantSend:         config.InstantSendConfiguration{},
 		},
 		bridge:                    &dashMempoolPolicyBridge{enabled: 1},
 		log:                       zerolog.Nop(),
@@ -394,11 +396,8 @@ func newDashClientForRPCServer(c *C, serverURL string, rpcTimeout ...time.Durati
 		temporalStorage:           temporalStorage,
 	}
 	client.instantSend = instantSendHandler{
-		client:    client,
-		enabled:   client.cfg.InstantSend.Enabled,
-		minAmount: defaultInstantSendMinAmount,
-		maxAmount: 100_000 * common.One,
-		recovery:  instantSendRecovery{loaded: true},
+		client:  client,
+		enabled: true,
 	}
 	return client, cleanup
 }
@@ -428,55 +427,30 @@ func dashUnlockedRawTx(txID string) map[string]any {
 	}
 }
 
-func dashLockedRawTx(txID string) map[string]any {
-	tx := dashUnlockedRawTx(txID)
-	tx["instantlock"] = true
-	return tx
-}
-
-func (s *DashSuite) TestDashLockedBalance(c *C) {
-	pubKey, err := common.NewPubKeyFromCrypto(secp256k1.GenPrivKey().PubKey())
-	c.Assert(err, IsNil)
-	id := strings.Repeat("a", 64)
-	script := newDashP2PKHScriptHex(c, newDashTestAddress(c, 0x11))
-	amount := 0.1
-	txID := id
-	lockFlag := "instantlock"
-	rawCalls := 0
-	server := newRPCTestServer(c, func(method string, _ []json.RawMessage) any {
-		switch method {
-		case "listunspent":
-			return []btcjson.ListUnspentResult{
-				{TxID: id, Vout: 0, ScriptPubKey: script, Amount: amount},
-				{TxID: id, Vout: 1, ScriptPubKey: script, Amount: amount},
-			}
-		case "getrawtransaction":
-			rawCalls++
-			return map[string]any{"txid": txID, lockFlag: true}
-		}
-		c.Fatalf("unexpected RPC %s", method)
-		return nil
-	})
-	defer server.Close()
-	client, cleanup := newDashClientForRPCServer(c, server.URL)
+func (s *DashSuite) TestDashSettledBalance(c *C) {
+	client, f, cleanup := newDashMempoolFixture(c)
 	defer cleanup()
-	client.instantSend.enabled = false
-	for _, flag := range []string{"instantlock", "instantlock_internal", "chainlock"} {
-		lockFlag = flag
-		rawCalls = 0
-		var account common.Account
-		account, err = client.GetAccount(pubKey, nil)
-		c.Assert(err, IsNil)
-		c.Assert(account.Coins.GetCoin(common.DASHAsset).Amount.Uint64(), Equals, uint64(common.One/5))
-		c.Assert(rawCalls, Equals, 1) // multiple outputs share the lookup
-	}
-	lockFlag = "unlocked"
-	account, err := client.GetAccount(pubKey, nil)
+	key, err := dashTestVaultPubKey()
 	c.Assert(err, IsNil)
-	c.Assert(account.Coins.GetCoin(common.DASHAsset).Amount.IsZero(), Equals, true)
-	txID = "wrong response"
-	_, err = client.GetAccount(pubKey, nil)
-	c.Assert(err, NotNil) // never report an incomplete balance
+	script := newDashP2PKHScriptHex(c, f.asgard)
+	f.utxos = []btcjson.ListUnspentResult{
+		{TxID: f.inbound, Vout: 0, ScriptPubKey: script, Amount: 0.1},
+		{TxID: f.lowFeeInbound, Vout: 0, ScriptPubKey: script, Amount: 0.2, Confirmations: 1},
+		{TxID: f.lockedOutbound, Vout: 0, ScriptPubKey: script, Amount: 0.3},
+	}
+	for _, flag := range []string{"instantlock", "instantlock_internal", "chainlock"} {
+		f.txs[f.inbound][flag] = true
+		account, accountErr := client.GetAccount(key, nil)
+		c.Assert(accountErr, IsNil)
+		c.Assert(account.Coins.GetCoin(common.DASHAsset).Amount.Uint64(), Equals, uint64(common.One/2))
+	}
+	f.utxos[0].Confirmations = 1
+	account, err := client.GetAccount(key, nil)
+	c.Assert(err, IsNil)
+	c.Assert(account.Coins.GetCoin(common.DASHAsset).Amount.Uint64(), Equals, uint64(6*common.One/10))
+	f.utxos = append(f.utxos, f.utxos[0])
+	_, err = client.GetAccount(key, nil)
+	c.Assert(err, ErrorMatches, "duplicate unspent output")
 }
 
 func (s *DashSuite) TestDashMemoRoundTrip(c *C) {
@@ -497,4 +471,9 @@ func (s *DashSuite) TestDashMemoRoundTrip(c *C) {
 		c.Assert(err, IsNil)
 		c.Assert(decoded, Equals, memo)
 	}
+}
+
+// dashTestVaultPubKey makes the accounting query and RPC fixture refer to one vault.
+func dashTestVaultPubKey() (common.PubKey, error) {
+	return common.NewPubKeyFromCrypto(secp256k1.GenPrivKeySecp256k1([]byte("dash accounting fixture")).PubKey())
 }

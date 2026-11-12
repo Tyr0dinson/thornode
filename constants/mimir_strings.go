@@ -80,6 +80,13 @@ const (
 	// marked (a stall that many nodes cause is for governance). Unset or 0 disables it.
 	MimirKeyChainSetChurnOutMax = "ChainSetChurnOutMax"
 
+	// InstantSend settings remain independent per chain. Mimir keys are case-insensitive.
+	MimirTemplateInstantSendEnabled    = "%sInstantSendEnabled"
+	MimirTemplateInstantSendMinAmount  = "%sInstantSendMinAmount"
+	MimirTemplateInstantSendMaxAmount  = "%sInstantSendMaxAmount"
+	MimirTemplateInstantSendTimeout    = "%sInstantSendTimeout"
+	MimirTemplateInstantSendMinFeeRate = "%sInstantSendMinFeeRate"
+
 	MimirTemplateEVMAllowanceCheck         = "EVMAllowanceCheck-%s"         // Use with Chain
 	MimirTemplateEVMDirectERC20Inbound     = "EVMDirectERC20Inbound-%s"     // Use with Chain
 	MimirTemplateConfMultiplierBasisPoints = "ConfMultiplierBasisPoints-%s" // Use with Chain

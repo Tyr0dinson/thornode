@@ -65,6 +65,10 @@ option (gogoproto.marshaler_all) = true;
 
 // Query defines the gRPC querier service.
 service Query {
+  rpc InstantSend(QueryInstantSendRequest) returns (QueryInstantSendResponse) {
+    option (google.api.http).get = "/thorchain/instantsend/{chain}";
+  }
+
   // Account returns account details for a given address.
   // As this path does not start with /thorchain/ , it requires an exception in
   // CustomGRPCGatewayRouter to not drop the height parameter.

@@ -12,6 +12,7 @@ import (
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/constants"
+	ttypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 
 	. "gopkg.in/check.v1"
 )
@@ -384,4 +385,51 @@ func (s *FreshQuerySuite) TestFreshBlockHeightBypassesButDoesNotReplaceCache(c *
 	c.Assert(err, IsNil)
 	c.Assert(stillCached, Equals, int64(41))
 	c.Assert(requests, Equals, 2)
+}
+
+// Every read observes committed changes, including uint64 fields encoded as JSON strings.
+func (s *FreshQuerySuite) TestFreshDashAccounting(c *C) {
+	var pubKey common.PubKey
+	var requests atomic.Uint32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		c.Assert(r.URL.Path, Equals, "/thorchain/instantsend/DASH")
+		_, _ = fmt.Fprintf(w, `{"vaults":[{"state":{"chain":"DASH","pub_key":%q,"pending":[{"id":"%s","amount":"1"}]}}],"observation_height":"%d"}`, pubKey.String(), strings.Repeat("A", 64), requests.Add(1))
+	}))
+	defer server.Close()
+	bridge := newFreshQueryBridge(c, server)
+	pubKey = ttypes.GetRandomPubKey()
+	first, err := bridge.GetInstantSend(common.DASHChain)
+	c.Assert(err, IsNil)
+	second, err := bridge.GetInstantSend(common.DASHChain)
+	c.Assert(err, IsNil)
+	c.Assert(first.Vaults, HasLen, 1)
+	c.Assert(second.Vaults, HasLen, 1)
+	c.Assert(first.Vaults[0].State.PubKey, Equals, pubKey)
+	c.Assert(second.Vaults[0].State.PubKey, Equals, pubKey)
+	c.Assert(first.ObservationHeight, Equals, int64(1))
+	c.Assert(second.ObservationHeight, Equals, int64(2))
+	c.Assert(second.Vaults[0].State.Pending[0].Amount, Equals, uint64(1))
+	c.Assert(second.Vaults[0].State.Chain, Equals, common.DASHChain)
+}
+
+// The same bridge must put the requested chain in each accounting query.
+func (s *FreshQuerySuite) TestInstantSendChainQueries(c *C) {
+	var pubKey common.PubKey
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		chain := strings.TrimPrefix(r.URL.Path, "/thorchain/instantsend/")
+		c.Assert(chain == "DASH" || chain == "BASH", Equals, true)
+		_, _ = fmt.Fprintf(w, `{"vaults":[{"state":{"chain":%q,"pub_key":%q}}]}`, chain, pubKey.String())
+	}))
+	defer server.Close()
+	bridge := newFreshQueryBridge(c, server)
+	pubKey = ttypes.GetRandomPubKey()
+	for _, chain := range []common.Chain{common.DASHChain, "BASH", common.DASHChain} {
+		response, err := bridge.GetInstantSend(chain)
+		c.Assert(err, IsNil)
+		c.Assert(response.Vaults, HasLen, 1)
+		c.Assert(response.Vaults[0].State.Chain, Equals, chain)
+		c.Assert(response.Vaults[0].State.PubKey, Equals, pubKey)
+	}
+	_, err := bridge.GetInstantSend("../DASH")
+	c.Assert(err, NotNil)
 }

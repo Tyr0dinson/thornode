@@ -11,6 +11,10 @@ You are ready to make the transaction and swap via THORChain.
 
 ## UTXO Chains
 
+```admonish warning
+Do not send a Dash Platform withdrawal directly to a THORChain vault. These asset-unlock transactions have no normal transaction inputs, so THORChain cannot identify the sender and ignores them. They will not be credited or automatically refunded. Withdraw to your own Dash wallet first, then send a normal transaction with inputs to the current vault address, following the UTXO instructions below.
+```
+
 ### Memo of 80 bytes or fewer
 
 For UTXO-based chains (e.g., BTC, BCH, LTC, DOGE, DASH), transactions must follow a specific structure to be processed by THORChain. Memo lengths refer to UTF-8 bytes, not characters. Ensure the following steps are completed to avoid transaction failures or loss of funds.

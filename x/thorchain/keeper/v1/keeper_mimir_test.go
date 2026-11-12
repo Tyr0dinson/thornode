@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/constants"
 	keeperpkg "gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
 
@@ -236,4 +237,44 @@ func (s *KeeperMimirSuite) TestIsOperationalMimirXMRConsolidation(c *C) {
 	c.Check(k.IsOperationalMimir("XMRConsolidatio"), Equals, false)
 	c.Check(k.IsOperationalMimir("ConsolidationXMREnabled"), Equals, false)
 	c.Check(k.IsOperationalMimir("BTCConsolidationEnabled"), Equals, false)
+}
+
+func (s *KeeperMimirSuite) TestInstantSendMimirTemplates(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	for _, tc := range []struct {
+		template string
+		setting  string
+	}{
+		{constants.MimirTemplateInstantSendEnabled, "Enabled"},
+		{constants.MimirTemplateInstantSendMinAmount, "MinAmount"},
+		{constants.MimirTemplateInstantSendMaxAmount, "MaxAmount"},
+	} {
+		k.SetMimir(ctx, "DashInstantSend"+tc.setting, 10)
+		k.SetMimir(ctx, "BashInstantSend"+tc.setting, 20)
+		value, err := k.GetMimirWithRef(ctx, tc.template, common.DASHChain)
+		c.Assert(err, IsNil)
+		c.Check(value, Equals, int64(10))
+		value, err = k.GetMimirWithRef(ctx, tc.template, common.Chain("BASH"))
+		c.Assert(err, IsNil)
+		c.Check(value, Equals, int64(20))
+	}
+}
+
+func (s *KeeperMimirSuite) TestIsOperationalMimirDashInstantSend(c *C) {
+	_, k := setupKeeperForTest(c)
+	enabledKey := "DashInstantSendEnabled"
+	c.Check(k.IsOperationalMimir(enabledKey), Equals, false)
+	c.Check(k.IsOperationalMimir(strings.ToUpper(enabledKey)), Equals, false)
+	c.Check(k.IsOperationalMimir(strings.ToLower(enabledKey)), Equals, false)
+
+	for _, key := range []string{
+		"DashInstantSendMinAmount",
+		"DashInstantSendMaxAmount",
+		"ObservationDelayFlexibility",
+		"ObservationDelayFlexibilityDASH",
+		"ObservationDelayFlexibilityBTC",
+		"DashInstantSendEnabledExtra",
+	} {
+		c.Check(k.IsOperationalMimir(key), Equals, false, Commentf("key=%s", key))
+	}
 }

@@ -91,3 +91,15 @@ func (MsgSolvencyTestSuite) TestMsgSolvency(c *C) {
 		}
 	}
 }
+
+func (MsgSolvencyTestSuite) TestEmptyPendingSolvencyJSON(c *C) {
+	msg, err := NewMsgSolvency(common.BTCChain, GetRandomPubKey(), nil, 1000, GetRandomBech32Addr())
+	c.Assert(err, IsNil)
+	bz, err := ModuleCdc.MarshalJSON(msg)
+	c.Assert(err, IsNil)
+	c.Assert(string(bz), Not(Matches), ".*pending.*")
+	voter := NewSolvencyVoter(msg.Id, msg.Chain, msg.PubKey, msg.Coins, msg.Height)
+	bz, err = ModuleCdc.MarshalJSON(voter)
+	c.Assert(err, IsNil)
+	c.Assert(string(bz), Not(Matches), ".*pending.*")
+}

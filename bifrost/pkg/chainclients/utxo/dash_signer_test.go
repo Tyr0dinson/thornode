@@ -79,6 +79,10 @@ func (s *DashSuite) TestDashSignTxCheckpointAndBroadcast(c *C) {
 		case "importaddress":
 		case "getnetworkinfo":
 			result = map[string]any{"relayfee": 0.00001}
+		case "getbestchainlock":
+			result = map[string]any{"height": 123, "known_block": true, "blockhash": strings.Repeat("a", 64)}
+		case "getblockhash":
+			result = strings.Repeat("a", 64)
 		case "getblockcount":
 			result = 123
 		case "listunspent":
@@ -240,7 +244,7 @@ func (s *DashSuite) TestDashInputSelectionIgnoresLocalLocks(c *C) {
 		{name: "customer without confirmations", minimum: 1, amount: 0.1},
 		{name: "confirmed customer", confirmations: 1, minimum: 1, amount: 0.1, eligible: true},
 		{name: "higher confirmation minimum", confirmations: 1, minimum: 2, amount: 0.1},
-		{name: "explicit zero minimum", amount: 0.1, eligible: true},
+		{name: "explicit zero minimum", amount: 0.1},
 		{name: "confirmed dust", confirmations: 10, minimum: 1, amount: 0.00000001},
 		{name: "self change", minimum: 1, amount: 0.1, self: true, eligible: true},
 		{name: "vault transfer", minimum: 1, amount: 0.1, vault: true, eligible: true},
@@ -299,7 +303,7 @@ func (s *DashSuite) TestDashInputSelectionIgnoresLocalLocks(c *C) {
 }
 
 func (s *DashSuite) TestDashInputSelectionKeepsMempoolLimits(c *C) {
-	for _, source := range []string{"self", "vault", "zero minimum"} {
+	for _, source := range []string{"self", "vault"} {
 		client, f, cleanup := newDashMempoolFixture(c)
 		defer cleanup()
 		pubKey := ttypes.GetRandomPubKey()

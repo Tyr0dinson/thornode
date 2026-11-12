@@ -21,7 +21,6 @@ import (
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/blockscanner"
 	btypes "gitlab.com/thorchain/thornode/v3/bifrost/blockscanner/types"
-	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/runners"
 	sharedutxo "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/utxo"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
@@ -39,7 +38,7 @@ type dashCatchUpState struct {
 
 type dashCatchUpBridge struct {
 	dashHealthBridge
-	asgardReads atomic.Int64
+	balanceReads atomic.Int64
 }
 
 func (*dashCatchUpBridge) WaitToCatchUp() error { return nil }
@@ -50,15 +49,20 @@ func (*dashCatchUpBridge) FetchNodeStatus() (ttypes.NodeStatus, error) {
 	return ttypes.NodeStatus_Standby, nil
 }
 
-func (b *dashCatchUpBridge) GetAsgards() (ttypes.Vaults, error) {
-	b.asgardReads.Add(1)
-	return nil, nil
+// GetInstantSend keeps a fixed accounting snapshot available during catch-up.
+func (b *dashCatchUpBridge) GetInstantSend(chain common.Chain) (*ttypes.QueryInstantSendResponse, error) {
+	key, err := dashTestVaultPubKey()
+	if err != nil {
+		return nil, err
+	}
+	return &ttypes.QueryInstantSendResponse{Vaults: []ttypes.QueryInstantSendVault{{State: common.InstantSendState{Chain: common.DASHChain, PubKey: key}}}}, nil
 }
 
 type dashCatchUpFixture struct {
 	state        atomic.Pointer[dashCatchUpState]
 	missing981   atomic.Int64
 	maxRequested atomic.Int64
+	maxFetched   atomic.Int64
 	heightReads  atomic.Int64
 	bridge       dashCatchUpBridge
 }
@@ -76,6 +80,9 @@ func newDashCatchUpClient(c *C, start, prefetch int64) (*Client, *dashCatchUpFix
 			return &btcjson.RPCError{Code: btcjson.ErrRPCInternal.Code, Message: "test RPC failure"}
 		}
 		switch method {
+		case "listunspent":
+			f.bridge.balanceReads.Add(1)
+			return []btcjson.ListUnspentResult{}
 		case "createwallet":
 			return map[string]string{"name": ""}
 		case "importaddress":
@@ -110,6 +117,11 @@ func newDashCatchUpClient(c *C, start, prefetch int64) (*Client, *dashCatchUpFix
 			c.Assert(json.Unmarshal(params[0], &hash), IsNil)
 			height, err := strconv.ParseInt(hash, 16, 64)
 			c.Assert(err, IsNil)
+			for previous := f.maxFetched.Load(); height > previous; previous = f.maxFetched.Load() {
+				if f.maxFetched.CompareAndSwap(previous, height) {
+					break
+				}
+			}
 			block := map[string]any{"hash": hash, "height": height, "previousblockhash": dashCatchUpHash(height - 1), "chainlock": height <= state.locked, "tx": []any{}}
 			switch state.badBlock {
 			case "unlocked":
@@ -170,7 +182,7 @@ func (s *DashSuite) TestDashScannerCatchesUpThroughAvailableBlocks(c *C) {
 			waitForDashCatchUp(c, func() bool { return f.missing981.Load() >= 3 })
 			c.Assert(client.blockScanner.PreviousHeight(), Equals, int64(980))
 			c.Assert(client.IsBlockScannerHealthy(), Equals, false)
-			c.Assert(f.bridge.asgardReads.Load(), Equals, int64(0))
+			c.Assert(f.bridge.balanceReads.Load(), Equals, int64(0))
 			target, err := client.GetHeight()
 			c.Assert(err, IsNil)
 			c.Assert(target, Equals, int64(1000))
@@ -179,7 +191,7 @@ func (s *DashSuite) TestDashScannerCatchesUpThroughAvailableBlocks(c *C) {
 			f.state.Store(&dashCatchUpState{local: 999, locked: 1000})
 			waitForDashCatchUp(c, func() bool { return client.blockScanner.PreviousHeight() == 999 })
 			c.Assert(client.IsBlockScannerHealthy(), Equals, false)
-			c.Assert(f.bridge.asgardReads.Load(), Equals, int64(0))
+			c.Assert(f.bridge.balanceReads.Load(), Equals, int64(0))
 			for height := int64(971); height <= 999; height++ {
 				var meta *sharedutxo.BlockMeta
 				meta, err = client.temporalStorage.GetBlockMeta(height)
@@ -192,7 +204,7 @@ func (s *DashSuite) TestDashScannerCatchesUpThroughAvailableBlocks(c *C) {
 			// one-block signing tolerance and must never be fetched by the scanner.
 			f.state.Store(&dashCatchUpState{local: 1001, locked: 1000})
 			waitForDashCatchUp(c, func() bool { return client.blockScanner.PreviousHeight() == 1000 && client.IsBlockScannerHealthy() })
-			c.Assert(f.maxRequested.Load(), Equals, int64(1000))
+			c.Assert(f.maxFetched.Load(), Equals, int64(1000)) // Solvency may read the tip hash, but scanning cannot fetch its block.
 			height, err := client.GetHeight()
 			c.Assert(err, IsNil)
 			c.Assert(height, Equals, int64(1000))
@@ -208,10 +220,10 @@ func (s *DashSuite) TestDashScannerHeightValidation(c *C) {
 		height, err := client.GetHeight()
 		c.Assert(err, IsNil)
 		c.Assert(height, Equals, int64(1000))
-		c.Assert(client.chainLockHeightHealth.Load().isHealthy(time.Now(), 980), Equals, false)
+		c.Assert(client.chainLockHeightHealth.Load().isHealthy(common.DASHChain, time.Now(), 980), Equals, false)
 		c.Assert(f.maxRequested.Load(), Equals, int64(0)) // No lookup of the unavailable target.
 		c.Assert(client.ReportSolvency(height), NotNil)
-		c.Assert(f.bridge.asgardReads.Load(), Equals, int64(0))
+		c.Assert(f.bridge.balanceReads.Load(), Equals, int64(0))
 	}
 	for _, state := range []dashCatchUpState{
 		{local: 1000, locked: 1000, unknown: true},
@@ -250,32 +262,17 @@ func (s *DashSuite) TestDashScannerStartsWithoutSavedPositionDuringCatchUp(c *C)
 	c.Assert(client.ReportSolvency(height), NotNil)
 }
 
-type dashHaltedBridge struct{ dashHealthBridge }
-
-func (dashHaltedBridge) GetMimir(key string) (int64, error) {
-	if key == "SolvencyHaltDASHChain" {
-		return 1, nil
-	}
-	return 0, nil
-}
-
-func (s *DashSuite) TestDashCatchUpBlocksSolvencyRunner(c *C) {
+// Solvency continues independently of scanner health and InstantSend policy.
+func (s *DashSuite) TestDashSolvencyAfterDaemonCatchUp(c *C) {
 	client, f, cleanup := newDashCatchUpClient(c, 970, 0)
 	defer cleanup()
-	stop := make(chan struct{})
-	var wg sync.WaitGroup
-	wg.Add(1)
-	go runners.SolvencyCheckRunner(common.DASHChain, client, dashHaltedBridge{}, stop, &wg, time.Millisecond)
-	defer func() { close(stop); wg.Wait() }()
-	waitForDashCatchUp(c, func() bool { return f.heightReads.Load() >= 3 })
-	c.Assert(f.bridge.asgardReads.Load(), Equals, int64(0))
-	c.Assert(client.lastSolvencyCheckHeight.Load(), Equals, int64(0))
-
-	// Solvency can resume after daemon catch-up even though scanning remains
-	// stopped by the halt. Scanner health must not be a prerequisite here.
+	client.instantSend.enabled = false
+	c.Assert(client.ReportSolvency(1000), NotNil)
+	c.Assert(f.bridge.balanceReads.Load(), Equals, int64(0))
 	f.state.Store(&dashCatchUpState{local: 1001, locked: 1000})
-	waitForDashCatchUp(c, func() bool { return client.lastSolvencyCheckHeight.Load() == 1000 })
-	c.Assert(f.bridge.asgardReads.Load(), Equals, int64(1))
+	c.Assert(client.ReportSolvency(1000), IsNil)
+	c.Assert(f.bridge.balanceReads.Load(), Equals, int64(1))
+	c.Assert(client.globalSolvencyQueue, HasLen, 0) // solvent and not halted
 	c.Assert(client.IsBlockScannerHealthy(), Equals, false)
 }
 
@@ -295,14 +292,13 @@ func (s *DashSuite) TestDashReportSolvencyValidatesLocalChainLock(c *C) {
 		{local: 1000, locked: 1000, wrongHash: true},
 		{local: -1, locked: 1000},
 		{local: 1000, locked: -1},
-		{local: 1000, locked: 995}, // The requested report height is no longer finalized.
 		{local: 1000, locked: 1000, failMethod: "getbestchainlock"},
 		{local: 1000, locked: 1000, failMethod: "getblockcount"},
 		{local: 1000, locked: 1000, failMethod: "getblockhash"},
 	} {
 		f.state.Store(&state)
 		c.Assert(client.ReportSolvency(height), NotNil, Commentf("state: %+v", state))
-		c.Assert(f.bridge.asgardReads.Load(), Equals, int64(0))
+		c.Assert(f.bridge.balanceReads.Load(), Equals, int64(0))
 		c.Assert(client.lastSolvencyCheckHeight.Load(), Equals, int64(0))
 		c.Assert(client.globalSolvencyQueue, HasLen, 0)
 	}
@@ -310,7 +306,7 @@ func (s *DashSuite) TestDashReportSolvencyValidatesLocalChainLock(c *C) {
 	// A failed attempt must not suppress a retry at the same height.
 	f.state.Store(&dashCatchUpState{local: 1000, locked: 1000})
 	c.Assert(client.ReportSolvency(height), IsNil)
-	c.Assert(f.bridge.asgardReads.Load(), Equals, int64(1))
+	c.Assert(f.bridge.balanceReads.Load(), Equals, int64(1))
 	c.Assert(client.lastSolvencyCheckHeight.Load(), Equals, height)
 }
 
@@ -354,7 +350,7 @@ func TestDashHeightHealthBoundaries(t *testing.T) {
 		want    bool
 	}{
 		{"no successful read", nil, 100, false},
-		{"missing timestamp", &chainLockHeightHealth{blockHeight: 100, chainLockHeight: 100}, 100, false},
+		{"missing timestamp", &chainLockHeightHealth{tipHeight: 100, chainLockHeight: 100}, 100, false},
 		{"caught up", &chainLockHeightHealth{100, 100, now}, 100, true},
 		{"one block finality gap", &chainLockHeightHealth{101, 100, now}, 100, true},
 		{"two block finality gap", &chainLockHeightHealth{102, 100, now}, 100, false},
@@ -369,7 +365,7 @@ func TestDashHeightHealthBoundaries(t *testing.T) {
 		{"daemon one block behind ChainLock", &chainLockHeightHealth{999, 1000, now}, 999, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := tc.health.isHealthy(now, tc.scanned); got != tc.want {
+			if got := tc.health.isHealthy(common.DASHChain, now, tc.scanned); got != tc.want {
 				t.Fatalf("health = %v, want %v", got, tc.want)
 			}
 		})
@@ -594,4 +590,27 @@ func (s *DashSuite) TestDashObservationBatchPreservesOrderAndFirstItem(c *C) {
 	accepted, err = client.trackObservedTxs([]*types.TxInItem{duplicate, second})
 	c.Assert(err, IsNil)
 	c.Assert(accepted, HasLen, 0)
+}
+
+// Start a real scanner so admission tests exercise the same health gate as production.
+func startDashTestScanner(c *C, client *Client) func() {
+	storage, err := blockscanner.NewBlockScannerStorage("", config.LevelDBOptions{})
+	c.Assert(err, IsNil)
+	fetcher := &dashHealthFetcher{}
+	fetcher.height.Store(100)
+	scanner, err := blockscanner.NewBlockScanner(config.BifrostBlockScannerConfiguration{
+		ChainID: common.DASHChain, StartBlockHeight: 99,
+		BlockHeightDiscoverBackoff: time.Millisecond, MaxHealthyLag: 30 * time.Minute,
+	}, storage, GetMetricForTest(c, common.DASHChain), dashHealthBridge{}, fetcher)
+	c.Assert(err, IsNil)
+	client.blockScanner = scanner
+	scanner.Start(make(chan types.TxIn, 1), make(chan common.NetworkFee, 1))
+	deadline := time.Now().Add(5 * time.Second)
+	for (scanner.PreviousHeight() < 100 || !scanner.IsHealthy()) && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	c.Assert(scanner.IsHealthy(), Equals, true)
+	client.chainLockHeightHealth.Store(&chainLockHeightHealth{tipHeight: 100, chainLockHeight: 100, checkedAt: time.Now()})
+	var once sync.Once
+	return func() { once.Do(func() { scanner.Stop(); _ = storage.Close() }) }
 }

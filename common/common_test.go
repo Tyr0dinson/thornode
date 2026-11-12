@@ -97,7 +97,8 @@ func (s CommonSuite) TestObservedTxSignablePayloadFieldCoverage(c *C) {
 		"XmrMinedHeight":        func(o *ObservedTx) { o.XmrMinedHeight = 99 },
 		// The attested durable-nonce update is committed on-chain, so it must be
 		// signed: a proposer must not be able to swap the value observers attested.
-		"SolNonce": func(o *ObservedTx) { o.SolNonce = &SolNonceUpdate{NonceAccount: "acct", Nonce: "nonce", Slot: 1} },
+		"InstantSend": func(o *ObservedTx) { o.InstantSend = &InstantSend{} },
+		"SolNonce":    func(o *ObservedTx) { o.SolNonce = &SolNonceUpdate{NonceAccount: "acct", Nonce: "nonce", Slot: 1} },
 	}
 	for name, mutate := range covered {
 		mutated := base

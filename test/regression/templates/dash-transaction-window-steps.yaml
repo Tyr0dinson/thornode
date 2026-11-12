@@ -19,6 +19,9 @@ txs:
     block_height: 100
     finalise_height: 100
     observed_pub_key: {{ pubkey_dog }}
+    spent_output_refs:
+      - tx_hash: "{{ observe_txid 900 }}"
+        output_index: 0
 {{ end }}
 {{ define "dash-credit-out" }}
 type: tx-observed-out

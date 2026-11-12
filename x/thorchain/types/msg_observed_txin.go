@@ -39,6 +39,9 @@ func (m *MsgObservedTxIn) ValidateBasic() error {
 		return cosmos.ErrUnknownRequest("Txs cannot be empty")
 	}
 	for _, tx := range m.Txs {
+		if tx.InstantSend != nil {
+			return cosmos.ErrUnknownRequest("InstantSend requires a quorum certificate")
+		}
 		if err := tx.Valid(); err != nil {
 			return cosmos.ErrUnknownRequest(err.Error())
 		}
@@ -49,7 +52,7 @@ func (m *MsgObservedTxIn) ValidateBasic() error {
 				return cosmos.ErrUnknownRequest(err.Error())
 			}
 		}
-		if len(tx.SpentOutputRefs) > 0 {
+		if len(tx.SpentOutputRefs) > 0 && !tx.Tx.Chain.Equals(common.DASHChain) {
 			return cosmos.ErrUnknownRequest("spent output refs are only valid for outbound observed transactions")
 		}
 		if strings.TrimSpace(tx.XmrTxKey) != "" {

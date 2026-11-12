@@ -1,0 +1,126 @@
+{{ template "default-state.yaml" }}
+---
+{{ template "dash-eth-pool-state.yaml" }}
+---
+type: state
+genesis:
+  app_state:
+    thorchain:
+      mimirs:
+        - key: DashInstantSendEnabled
+          value: "1"
+        - key: DashInstantSendMaxAmount
+          value: "1000000000"
+        - key: DashInstantSendTimeout
+          value: "4"
+      last_chain_heights:
+        - chain: DASH
+          height: "100"
+---
+type: create-blocks
+count: 1
+---
+type: tx-observed-in-quorum
+observation:
+  tx:
+    id: "{{ observe_txid 1 }}"
+    chain: DASH
+    from_address: {{ addr_dash_fox }}
+    to_address: {{ addr_dash_dog }}
+    coins:
+      - asset: DASH.DASH
+        amount: "100000000"
+        decimals: 8
+    gas:
+      - asset: DASH.DASH
+        amount: "4000"
+    memo: "=:ETH.ETH:{{ addr_eth_fox }}"
+  observed_pub_key: {{ pubkey_dog }}
+  block_height: 96
+  finalise_height: 96
+  spent_output_refs:
+    - tx_hash: "{{ observe_txid 900 }}"
+      output_index: 0
+  instant_send: {}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/instantsend/DASH
+asserts:
+  - .vaults | length == 1
+  - .vaults[0].state.pending | length == 1
+  - .vaults[0].state.pending[0].height | tonumber == 2
+  - .vaults[0].eligible == true
+---
+type: create-blocks
+count: 3
+---
+type: check
+endpoint: http://localhost:1317/thorchain/mimir
+asserts:
+  - (.HALTDASHTRADING // 0) == 0
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/mimir
+asserts:
+  - .HALTDASHTRADING == 6
+  - .HALTSIGNINGDASH == 6
+---
+# Errata finishes without reversing a credited InstantSend swap.
+type: tx-errata-tx
+signer: {{ addr_thor_dog }}
+tx_id: "{{ observe_txid 1 }}"
+chain: DASH
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/instantsend/DASH
+asserts:
+  - .vaults | length == 1
+  - .vaults[0].state.pending | length == 1
+  - .vaults[0].state.pending[0].height | tonumber == 2
+  - .vaults[0].eligible == true
+---
+type: tx-observed-in-quorum
+observation:
+  tx:
+    id: "{{ observe_txid 1 }}"
+    chain: DASH
+    from_address: {{ addr_dash_fox }}
+    to_address: {{ addr_dash_dog }}
+    coins:
+      - asset: DASH.DASH
+        amount: "100000000"
+        decimals: 8
+    gas:
+      - asset: DASH.DASH
+        amount: "4000"
+    memo: "=:ETH.ETH:{{ addr_eth_fox }}"
+  observed_pub_key: {{ pubkey_dog }}
+  block_height: 101
+  finalise_height: 101
+  spent_output_refs:
+    - tx_hash: "{{ observe_txid 900 }}"
+      output_index: 0
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/instantsend/DASH
+asserts:
+  - (.vaults[0].state.pending // []) | length == 0
+  - (.status.overdue // []) | length == 0
+---
+type: check
+endpoint: http://localhost:1317/thorchain/mimir
+asserts:
+  - .HALTDASHTRADING == 6
+  - .HALTSIGNINGDASH == 6

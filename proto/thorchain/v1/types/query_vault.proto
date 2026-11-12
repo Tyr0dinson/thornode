@@ -134,3 +134,27 @@ message VaultSolvencyAsset {
 message QueryVaultSolvencyResponse {
   repeated VaultSolvencyAsset assets = 1 [ (gogoproto.jsontag) = "assets" ];
 }
+
+message QueryInstantSendRequest {
+  string height = 1;
+  string chain = 2;
+}
+message QueryInstantSendResponse {
+  repeated QueryInstantSendVault vaults = 2 [ (gogoproto.nullable) = false ];
+  int64 observation_height = 3;
+  uint64 min_amount = 4;
+  uint64 max_amount = 5;
+  common.InstantSendStatus status = 7 [ (gogoproto.nullable) = false ];
+}
+
+// A single keeper snapshot of pending exposure and recorded vault funds.
+message QueryInstantSendVault {
+  common.InstantSendState state = 1 [ (gogoproto.nullable) = false ];
+  repeated common.Coin coins = 2 [
+    (gogoproto.castrepeated) = "gitlab.com/thorchain/thornode/v3/common.Coins",
+    (gogoproto.nullable) = false
+  ];
+  // Active Asgard vault supporting the chain, without a compromised-vault flag.
+  // Transaction-specific admission checks still apply.
+  bool eligible = 3;
+}

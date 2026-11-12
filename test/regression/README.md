@@ -210,6 +210,8 @@ PARALLELISM=4 make test-regression
 
 Setting `AUTO_UPDATE=1` will attempt to update values automatically to account for logic changes. This does not handle all cases, but should avoid some manual legwork.
 
+When templates add or remove operations, the runner reports source lines as `-1` because it cannot reliably map them back to the suite file. Assertions still run, but automatic edits are refused for those operations. Update their source templates manually.
+
 ```bash
 AUTO_UPDATE=1 make test-regression
 ```
@@ -247,3 +249,11 @@ In order to avoid raciness more conveniently while running on resource constrain
 ```bash
 TIME_FACTOR=2 make test-regression
 ```
+
+### Signed inbound quorum observations
+
+`tx-observed-in-quorum` sends an `observation` (the same fields as one entry in
+`tx-observed-in.txs`) through local ebifrost proposal injection. Optional `nodes`
+lists regression account names to sign the observation; it defaults to `[dog]`.
+The InstantSend suites use this operation for early admission and independent
+ChainLock settlement. Partial quorum messages are supported for adversarial cases.

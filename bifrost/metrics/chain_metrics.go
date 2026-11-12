@@ -55,6 +55,9 @@ func GasPriceSuggested(chain common.Chain) MetricName {
 }
 
 func AddChainMetrics(chain common.Chain, counters map[MetricName]prometheus.Counter, counterVecs map[MetricName]*prometheus.CounterVec, gauges map[MetricName]prometheus.Gauge, histograms map[MetricName]prometheus.Histogram) {
+	if chain.Equals(common.DASHChain) {
+		addInstantSendMetrics(chain, counters, counterVecs, gauges)
+	}
 	counters[BlockWithoutTx(chain)] = prometheus.NewCounter(prometheus.CounterOpts{
 		Namespace: "block_scanner",
 		Subsystem: chain.String() + "_block_scanner",

@@ -32,6 +32,15 @@ func NewObservedTx(tx Tx, height int64, pk PubKey, finalisedHeight int64) Observ
 
 // Valid check whether the observed tx represent valid information
 func (m *ObservedTx) Valid() error {
+	if m.InstantSend != nil {
+		err := ValidateDashInputs(m.SpentOutputRefs)
+		if err != nil {
+			return err
+		}
+	}
+	if m.InstantSend != nil && (!m.Tx.Chain.Equals(DASHChain) || !m.IsFinal()) {
+		return errors.New("InstantSend metadata requires a final observation on a supported chain")
+	}
 	if err := m.Tx.Valid(); err != nil {
 		return err
 	}
@@ -114,6 +123,9 @@ func ValidateXMRTxKey(chain Chain, txKey string) error {
 }
 
 func ValidateSpentOutputRefs(chain Chain, spendTxHash TxID, refs []OutputRef) error {
+	if chain.Equals(DASHChain) && len(refs) > 0 {
+		return ValidateDashInputs(refs)
+	}
 	if len(refs) == 0 {
 		return nil
 	}
@@ -170,6 +182,9 @@ func (m *ObservedTx) IsEmpty() bool {
 
 // Equals compare two ObservedTx
 func (m ObservedTx) Equals(tx2 ObservedTx) bool {
+	if !m.InstantSend.Equals(tx2.InstantSend) {
+		return false
+	}
 	if !m.Tx.EqualsEx(tx2.Tx) {
 		return false
 	}
@@ -217,6 +232,9 @@ func (m ObservedTx) Equals(tx2 ObservedTx) bool {
 }
 
 func (m ObservedTx) HasEquivalentSpentOutputRefs(tx2 ObservedTx) bool {
+	if m.Tx.Chain.Equals(DASHChain) || tx2.Tx.Chain.Equals(DASHChain) {
+		return spentOutputRefsEqual(m.SpentOutputRefs, tx2.SpentOutputRefs)
+	}
 	if !m.Tx.Chain.Equals(XMRChain) && !tx2.Tx.Chain.Equals(XMRChain) {
 		return true
 	}
@@ -311,7 +329,12 @@ func (m ObservedTx) EqualsOutboundObservationCredit(tx2 ObservedTx) bool {
 
 func (m ObservedTx) AttestationUniqueHash() string {
 	base := observedTxXMRMetadataUniqueHash(m.Tx.Hash(m.BlockHeight), m.Tx.Chain, m.XmrTxKey, m.SpentOutputRefs, m.XmrMinedHeight)
-	return solNonceUniqueHash(base, m.Tx.Chain, m.SolNonce)
+	base = solNonceUniqueHash(base, m.Tx.Chain, m.SolNonce)
+	base = DashInputsHash(base, m.Tx.Chain, m.SpentOutputRefs)
+	if m.InstantSend != nil {
+		return base + "|instant-send-v1"
+	}
+	return base
 }
 
 // IsFinal indicates whether ObserveTx is final.

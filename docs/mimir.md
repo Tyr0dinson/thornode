@@ -155,11 +155,23 @@ Operational notes:
 
 ### Dash InstantSend
 
-- `DashInstantSendEnabled`#: `0` disables InstantSend observation; a positive value enables it. Unset or negative values restore Bifrost's startup `instant_send.enabled` config (`true` for DASH by default) on the next settings refresh. A failed read disables all InstantSend observations for that scan, including vault senders. Ordinary vault-outbound observations and ChainLock settlement continue, and existing allowance reservations remain charged.
-- `DashInstantSendMaxAmount`#: Per-node customer InstantSend allowance in duffs (`100000000000` means 1,000 DASH); unset or non-positive values stop new customer InstantSend observations. See [Dash InstantSend allowance](chain-clients/utxo.md#dash-instantsend-allowance).
+- `DashInstantSendEnabled`#: `0` disables InstantSend observation; a positive value enables it. Unset or negative values disable early admission. A failed read disables early admission for that scan. Ordinary vault observations and ChainLock settlement continue, and pending exposure remains charged.
+- `DashInstantSendMaxAmount`#: Network-wide outstanding customer InstantSend exposure in duffs (`100000000000` means 1,000 DASH); unset or non-positive values stop new customer InstantSend observations. See [Dash InstantSend allowance](chain-clients/utxo.md#dash-instantsend-allowance).
 - `DashInstantSendMinAmount`#: Minimum customer InstantSend deposit in duffs; unset or negative values default to `1000000` (0.01 DASH). Zero removes this extra minimum while keeping the chain dust check.
 
-Eligible vault-to-vault transfers, including migrations and consolidation, bypass both amount limits. The enabled switch still applies to their InstantSend observations: setting only `DashInstantSendMaxAmount=0` does not disable those observations. With mempool scanning enabled, ordinary vault outbounds can finalise on THORChain once their early mempool observations reach quorum, without an InstantSend lock or ChainLock. A later ChainLock scan can report the mined transaction again. Customer deposits still require an eligible InstantSend lock or inclusion in a ChainLocked block.
+- `DashInstantSendTimeout`#: THORChain blocks since the immutable pending credit height before halting DASH trading and signing; default/unset/nonpositive is 300. Operators must clear both halts manually, even after all overdue entries settle by ChainLock. Clearing a halt while an overdue entry remains causes the next check to halt again; raising the timeout does not erase recorded overdue entries. Overdue deposits also stop receiving the temporary solvency allowance. Timeout never writes off a deposit or proves loss. Financial recovery requires manual state repair.
+- `DashInstantSendMinFeeRate`#: Positive Bifrost override in duffs/vB; otherwise use `instant_send.min_fee_rate` (default 8). Applies to the base fee, not locally modified fees. It does not change core consensus.
+
+THORChain early-credit execution requires `DashInstantSendEnabled > 0`; a missing Mimir does not enable it through local config. Keep it at zero pending the Dash security review. A confirmed-loss state repair must set the permanent store flag, which blocks admission regardless of Mimir; only a software-upgrade migration can clear it.
+
+Each vault can have at most 128 pending InstantSend deposits. This fixed limit bounds storage and processing work independently of the network amount allowance. ChainLock settlement frees a slot; changing the count limit requires a software upgrade.
+
+`DashInstantSendEnabled` uses economic voting: both enabling and disabling require a supermajority. For a fast emergency stop, use the existing operational `HaltDASHTrading`, which also blocks early admission. `DashInstantSendMinAmount`, `DashInstantSendMaxAmount`, `DashInstantSendTimeout` and `ObservationDelayFlexibility<CHAIN>` remain economic Mimirs and require a supermajority.
+
+Vault-to-vault transfers, migrations and consolidation use ordinary observations
+and do not consume customer InstantSend exposure. Only valid customer swaps
+qualify for early credit; the credited DASH remains unavailable for spending until
+its independent ChainLock certificate arrives.
 
 ### Fee Management
 

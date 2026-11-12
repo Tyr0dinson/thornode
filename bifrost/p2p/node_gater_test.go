@@ -114,6 +114,11 @@ func (m *MockThorchainBridge) GetKeysignParty(common.PubKey, int64) (common.PubK
 func (m *MockThorchainBridge) GetAsgards() (types.Vaults, error)           { return nil, nil }
 func (m *MockThorchainBridge) GetVault(pubkey string) (types.Vault, error) { return types.Vault{}, nil }
 
+// GetInstantSend satisfies the bridge interface for node-gater tests.
+func (m *MockThorchainBridge) GetInstantSend(common.Chain) (*types.QueryInstantSendResponse, error) {
+	return nil, nil
+}
+
 func (m *MockThorchainBridge) GetConfig() config.BifrostClientConfiguration {
 	return config.BifrostClientConfiguration{}
 }

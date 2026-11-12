@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -55,6 +56,7 @@ type TxIn struct {
 }
 
 type TxInItem struct {
+	InstantSend           *common.InstantSend `json:"instant_send,omitempty"`
 	BlockHeight           int64               `json:"block_height"`
 	Tx                    string              `json:"tx"`
 	Memo                  string              `json:"memo"`
@@ -120,6 +122,14 @@ const (
 )
 
 func (t *TxInItem) Equals(other *TxInItem) bool {
+	if t.InstantSend != nil || other.InstantSend != nil {
+		if !slices.Equal(common.OutputRefsFromPointers(t.SpentOutputRefs), common.OutputRefsFromPointers(other.SpentOutputRefs)) {
+			return false
+		}
+	}
+	if !t.InstantSend.Equals(other.InstantSend) {
+		return false
+	}
 	if t.BlockHeight != other.BlockHeight {
 		return false
 	}
@@ -151,6 +161,12 @@ func (t *TxInItem) Equals(other *TxInItem) bool {
 }
 
 func (t *TxInItem) EqualsObservedTx(other common.ObservedTx) bool {
+	if other.Tx.Chain.Equals(common.DASHChain) && !slices.Equal(common.OutputRefsFromPointers(t.SpentOutputRefs), other.SpentOutputRefs) {
+		return false
+	}
+	if !t.InstantSend.Equals(other.InstantSend) {
+		return false
+	}
 	// Do not compare block height, as we only keep one deck item for a tx pre/post finalization.
 	// The final block height will be ConfirmationCount higher than the unfinalized tx.
 
@@ -196,6 +212,7 @@ func (t *TxInItem) Copy() *TxInItem {
 	}
 	return &TxInItem{
 		BlockHeight:           t.BlockHeight,
+		InstantSend:           t.InstantSend.Copy(),
 		Tx:                    t.Tx,
 		Memo:                  t.Memo,
 		Sender:                t.Sender,

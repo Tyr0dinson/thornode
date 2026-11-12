@@ -103,6 +103,8 @@ func NewOperation(opMap map[string]any) (Operation, error) {
 		op = &OpTxMimir{}
 	case "tx-observed-in":
 		op = &OpTxObservedIn{}
+	case "tx-observed-in-quorum":
+		op = &OpTxObservedInQuorum{}
 	case "tx-observed-out":
 		op = &OpTxObservedOut{}
 	case "tx-network-fee":
@@ -175,6 +177,7 @@ func NewOperation(opMap map[string]any) (Operation, error) {
 	case *OpTxBan,
 		*OpTxErrataTx,
 		*OpTxObservedIn,
+		*OpTxObservedInQuorum,
 		*OpTxObservedOut,
 		*OpTxDeposit,
 		*OpTxMimir,
@@ -475,6 +478,9 @@ func (op *OpCheck) Execute(out io.Writer, path string, line, routine int, _ *os.
 
 	// update the test with new values
 	if len(updates) > 0 {
+		if line < 0 {
+			return fmt.Errorf("cannot auto-update checks without a source line")
+		}
 		// load the test file
 		var data []byte
 		data, err = os.ReadFile(path)
@@ -1037,6 +1043,7 @@ func (op *OpTxSolvency) Execute(out io.Writer, _ string, _, routine int, _ *os.P
 	if err != nil {
 		return err
 	}
+
 	return sendMsg(out, routine, msg, op.Signer, "", op.Sequence, op.Gas, op, "", logs)
 }
 

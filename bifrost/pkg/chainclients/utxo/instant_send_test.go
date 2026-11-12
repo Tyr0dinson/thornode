@@ -20,20 +20,6 @@ import (
 	"gitlab.com/thorchain/thornode/v3/config"
 )
 
-func (s *DashSuite) TestDashAllowInstantSendAgeBoundaries(c *C) {
-	client := Client{cfg: config.BifrostChainConfiguration{
-		InstantSend: config.InstantSendConfiguration{MaxMempoolAge: 2 * time.Minute},
-	}}
-	client.instantSend = instantSendHandler{client: &client, enabled: client.cfg.InstantSend.Enabled}
-	for _, age := range []time.Duration{0, time.Minute, 2 * time.Minute} {
-		allow, reason := client.instantSend.allowAge(age)
-		c.Assert(allow, Equals, true, Commentf(reason))
-	}
-	allow, reason := client.instantSend.allowAge(2*time.Minute + time.Nanosecond)
-	c.Assert(allow, Equals, false)
-	c.Assert(reason, Matches, "mempool age too high:.*")
-}
-
 // countInstantSendRPCs counts requests safely across parallel RPC workers.
 func countInstantSendRPCs(c *C, f *dashMempoolFixture) func(string) int {
 	var mu sync.Mutex
@@ -59,76 +45,6 @@ func countInstantSendRPCs(c *C, f *dashMempoolFixture) func(string) int {
 		mu.Lock()
 		defer mu.Unlock()
 		return calls[key]
-	}
-}
-
-// TestInstantSendFiltersUnrelatedTransactions verifies both the early RPC filter
-// and its cache, without hiding ordinary outbound or later block observations.
-func (s *DashSuite) TestInstantSendFiltersUnrelatedTransactions(c *C) {
-	client, f, cleanup := newDashMempoolFixture(c)
-	defer cleanup()
-	client.cfg.MempoolTxIDCacheSize = 10
-	f.entries = map[string]map[string]any{f.lockedOutbound: dashTestMempoolEntry()}
-	// Exercise address decoding from script hex rather than supplied addresses.
-	f.txs[f.lockedOutbound]["vout"] = []any{map[string]any{
-		"n": 0, "value": 0.1, "scriptPubKey": map[string]any{"hex": newDashP2PKHScriptHex(c, f.user)},
-	}, map[string]any{"n": 1, "value": 0, "scriptPubKey": map[string]any{"hex": newDashMemoScriptHex(c, "NOOP")}}}
-	calls := countInstantSendRPCs(c, f)
-	for range 3 {
-		groups, err := client.instantSend.scan()
-		c.Assert(err, IsNil)
-		c.Assert(groups, HasLen, 0)
-	}
-	c.Assert(calls("getrawtransaction"), Equals, 1)
-	c.Assert(calls("getislocks"), Equals, 0)
-	c.Assert(calls("getblock"), Equals, 0)
-	c.Assert(client.instantSend.ignored, HasLen, 1)
-	observed, err := client.temporalStorage.HasObservedTx(f.lockedOutbound)
-	c.Assert(err, IsNil)
-	c.Assert(observed, Equals, false)
-	state, err := client.temporalStorage.GetInstantSendState()
-	c.Assert(err, IsNil)
-	c.Assert(state.Reserved, Equals, uint64(0))
-	batch, err := client.fetchMemPoolTransactions(123, true)
-	c.Assert(err, IsNil)
-	c.Assert(batch.TxArray, HasLen, 1)
-	c.Assert(batch.TxArray[0].Tx, Equals, f.lockedOutbound)
-}
-
-// TestInstantSendFilterKeepsVaultPayments covers deposits and exempt vault transfers.
-func (s *DashSuite) TestInstantSendFilterKeepsVaultPayments(c *C) {
-	for _, vaultSender := range []bool{false, true} {
-		client, f, cleanup := newDashMempoolFixture(c)
-		func() {
-			defer cleanup()
-			client.cfg.MempoolTxIDCacheSize = 10
-			client.cfg.ParallelMempoolScan = 3
-			f.entries = map[string]map[string]any{f.inbound: dashTestMempoolEntry()}
-			memo := "NOOP"
-			if vaultSender {
-				f.txs[f.inbound]["vin"] = f.txs[f.lockedOutbound]["vin"]
-				client.instantSend.maxAmount = 0 // vault senders still bypass allowance
-				memo = "CONSOLIDATE"
-			}
-			// Omit addresses to exercise script decoding, but keep the RPC script
-			// types so the consolidation memo is recognised as OP_RETURN data.
-			f.txs[f.inbound]["vout"] = []any{map[string]any{
-				"n": 0, "value": 0.1, "scriptPubKey": map[string]any{"hex": newDashP2PKHScriptHex(c, f.asgard), "type": "pubkeyhash"},
-			}, map[string]any{"n": 1, "value": 0, "scriptPubKey": map[string]any{"hex": newDashMemoScriptHex(c, memo), "type": "nulldata"}}}
-			batch, err := client.instantSend.fetchBatch(instantSendAdmission{allowed: !vaultSender})
-			c.Assert(err, IsNil)
-			c.Assert(batch.TxArray, HasLen, 1)
-			c.Assert(batch.TxArray[0].Tx, Equals, f.inbound)
-			c.Assert(batch.TxArray[0].Memo, Equals, memo)
-			c.Assert(client.instantSend.ignored, HasLen, 0)
-			state, err := client.temporalStorage.GetInstantSendState()
-			c.Assert(err, IsNil)
-			want := uint64(common.One / 10)
-			if vaultSender {
-				want = 0
-			}
-			c.Assert(state.Reserved, Equals, want)
-		}()
 	}
 }
 
@@ -165,9 +81,7 @@ func (s *DashSuite) TestInstantSendFilterInvalidation(c *C) {
 	setVaults(f.asgard, f.user)
 	groups, err := client.instantSend.scan()
 	c.Assert(err, IsNil)
-	c.Assert(groups, HasLen, 1)
-	c.Assert(groups[0].TxArray, HasLen, 1)
-	c.Assert(groups[0].TxArray[0].Tx, Equals, f.lockedOutbound)
+	c.Assert(groups, HasLen, 0) // refreshed output filter still excludes vault senders
 	c.Assert(calls("getrawtransaction/"+f.lockedOutbound), Equals, 3)
 	c.Assert(client.instantSend.ignored, HasLen, 0)
 }
@@ -274,7 +188,12 @@ func (s *DashSuite) TestInstantSendCandidatesSkipIgnoredWithoutStarving(c *C) {
 	ids := []string{strings.Repeat("a", 64), strings.Repeat("b", 64), strings.Repeat("c", 64), strings.Repeat("d", 64), strings.Repeat("e", 64)}
 	mempool := make(map[string]rpc.GetRawMempoolVerboseResult)
 	for _, id := range ids {
-		mempool[id] = rpc.GetRawMempoolVerboseResult{InstantLock: "true"}
+		var entry rpc.GetRawMempoolVerboseResult
+		data, encodeErr := json.Marshal(dashTestMempoolEntry())
+		c.Assert(encodeErr, IsNil)
+		c.Assert(json.Unmarshal(data, &entry), IsNil)
+		entry.InstantLock = "true"
+		mempool[id] = entry
 	}
 	client.instantSend.ignored = map[string]struct{}{ids[0]: {}, ids[2]: {}}
 	for _, want := range [][]string{{ids[1], ids[3]}, {ids[4], ids[1]}, {ids[3], ids[4]}} {
@@ -298,120 +217,11 @@ func deliveryBlock(c *C, client *Client, f *dashMempoolFixture, ids ...string) *
 	return block
 }
 
-// Restart must preserve the block fallback for dropped/rejected handoffs, even with InstantSend disabled.
-func (s *DashSuite) TestInstantSendDeliveryRestartUsesChainLockFallback(c *C) {
-	for _, outcome := range []string{"missing", "rejected", "stored"} {
-		func() {
-			client, f, cleanup := newDashMempoolFixture(c)
-			defer cleanup()
-			f.entries = map[string]map[string]any{f.inbound: dashTestMempoolEntry()}
-			path := c.MkDir()
-			storage, err := blockscanner.NewBlockScannerStorage(path, config.LevelDBOptions{})
-			c.Assert(err, IsNil)
-			client.cfg.BlockScanner.DBPath = path
-			client.temporalStorage, err = sharedutxo.NewTemporalStorage(storage.GetInternalDb(), 0)
-			c.Assert(err, IsNil)
-			c.Assert(client.temporalStorage.StartInstantSendWarmup(0, nil), IsNil)
-			c.Assert(client.temporalStorage.CompleteInstantSendWarmup(1), IsNil)
-			batch, err := client.instantSend.fetchBatch(instantSendAdmission{allowed: true})
-			c.Assert(err, IsNil)
-			c.Assert(batch.TxArray, HasLen, 1)
-			c.Assert(batch.TxArray[0].BlockHeight, Equals, int64(100))
-			switch outcome {
-			case "rejected":
-				batch.TxArray[0].OnObservedTxRejected(errors.New("Observer status unknown"))
-			case "stored":
-				batch.TxArray[0].OnObservedTxStored()
-			}
-			state, err := client.temporalStorage.GetInstantSendState()
-			c.Assert(err, IsNil)
-			c.Assert(state.Reserved, Equals, uint64(common.One/10))
-			c.Assert(storage.Close(), IsNil)
-			storage, err = blockscanner.NewBlockScannerStorage(path, config.LevelDBOptions{})
-			c.Assert(err, IsNil)
-			defer storage.Close()
-			client.temporalStorage, err = sharedutxo.NewTemporalStorage(storage.GetInternalDb(), 0)
-			c.Assert(err, IsNil)
-			client.instantSend.txQueue = nil
-			client.instantSend.enabled = false
-			client.cfg.InstantSend.Enabled = false
-			client.cfg.BlockScanner.ScanMemPool = false
-			block := deliveryBlock(c, client, f, f.inbound)
-			batch, err = client.extractTxs(block)
-			c.Assert(err, IsNil)
-			want := 1
-			if outcome == "stored" {
-				want = 0
-			}
-			c.Assert(batch.TxArray, HasLen, want, Commentf("handoff %s", outcome))
-			if want > 0 {
-				c.Assert(batch.TxArray[0].Tx, Equals, f.inbound)
-				c.Assert(batch.TxArray[0].BlockHeight, Equals, int64(150))
-			}
-			state, err = client.temporalStorage.GetInstantSendState()
-			c.Assert(err, IsNil)
-			c.Assert(state.Reserved, Equals, uint64(0))
-			batch, err = client.extractTxs(block)
-			c.Assert(err, IsNil)
-			c.Assert(batch.TxArray, HasLen, 0)
-		}()
-	}
-}
-
-// One pending handoff must not stop admission of another transaction or reserve twice.
-func (s *DashSuite) TestInstantSendDeliveryDoesNotRetryOrBlockNewClaims(c *C) {
-	client, f, cleanup := newDashMempoolFixture(c)
-	defer cleanup()
-	client.cfg.UTXO.TransactionBatchSize = 1
-	client.instantSend.txQueue = instantSendObservationGroups(common.DASHChain,
-		map[int64][]*types.TxInItem{100: {instantSendTestItem(f, f.inbound), instantSendTestItem(f, f.lowFeeInbound)}})
-	first, err := client.instantSend.fetchBatch(instantSendAdmission{allowed: true})
-	c.Assert(err, IsNil)
-	c.Assert(first.TxArray, HasLen, 1)
-	first.TxArray[0].OnObservedTxRejected(errors.New("storage unavailable"))
-	second, err := client.instantSend.fetchBatch(instantSendAdmission{allowed: true})
-	c.Assert(err, IsNil)
-	c.Assert(second.TxArray, HasLen, 1)
-	c.Assert(second.TxArray[0].Tx, Equals, f.lowFeeInbound)
-	second.TxArray[0].OnObservedTxStored()
-	retry, err := client.instantSend.fetchBatch(instantSendAdmission{allowed: true})
-	c.Assert(err, IsNil)
-	c.Assert(retry.TxArray, HasLen, 0)
-	state, err := client.temporalStorage.GetInstantSendState()
-	c.Assert(err, IsNil)
-	c.Assert(state.Reserved, Equals, uint64(common.One/5))
-	batch, err := client.extractTxs(deliveryBlock(c, client, f, f.inbound, f.lowFeeInbound))
-	c.Assert(err, IsNil)
-	c.Assert(batch.TxArray, HasLen, 1)
-	c.Assert(batch.TxArray[0].Tx, Equals, f.inbound)
-}
-
-// The batch collector completes only stored items, regardless of callback order or repetition.
-func (s *DashSuite) TestInstantSendDeliveryPartialAcceptance(c *C) {
-	client, f, cleanup := newDashMempoolFixture(c)
-	defer cleanup()
-	batch, err := client.instantSend.fetchBatch(instantSendAdmission{allowed: true})
-	c.Assert(err, IsNil)
-	c.Assert(batch.TxArray, HasLen, 2)
-	first, second := batch.TxArray[0], batch.TxArray[1]
-	var wg sync.WaitGroup
-	wg.Go(func() { first.OnObservedTxStored(); first.OnObservedTxRejected(errors.New("duplicate")) })
-	wg.Go(func() { second.OnObservedTxRejected(errors.New("rejected")); second.OnObservedTxStored() })
-	wg.Wait()
-	state, err := client.temporalStorage.GetInstantSendState()
-	c.Assert(err, IsNil)
-	c.Assert(state.Reserved, Equals, uint64(common.One/5))
-	mined, err := client.extractTxs(deliveryBlock(c, client, f, first.Tx, second.Tx))
-	c.Assert(err, IsNil)
-	c.Assert(mined.TxArray, HasLen, 1)
-	c.Assert(mined.TxArray[0].Tx, Equals, second.Tx)
-}
-
 // A successful callback arriving after the block claim cannot undo that claim.
 func (s *DashSuite) TestInstantSendDeliveryLateCallbackAfterBlock(c *C) {
 	client, f, cleanup := newDashMempoolFixture(c)
 	defer cleanup()
-	batch, err := client.instantSend.fetchBatch(instantSendAdmission{allowed: true})
+	batch, err := client.instantSend.fetchBatch()
 	c.Assert(err, IsNil)
 	c.Assert(batch.TxArray, HasLen, 2)
 	// One callback is missing, so the collector leaves both markers pending.
@@ -430,7 +240,7 @@ func (s *DashSuite) TestInstantSendDeliveryLateCallbackAfterBlock(c *C) {
 func (s *DashSuite) TestInstantSendDeliveryAcknowledgementWriteFailure(c *C) {
 	client, f, cleanup := newDashMempoolFixture(c)
 	defer cleanup()
-	batch, err := client.instantSend.fetchBatch(instantSendAdmission{allowed: true})
+	batch, err := client.instantSend.fetchBatch()
 	c.Assert(err, IsNil)
 	c.Assert(batch.TxArray, HasLen, 2)
 	cleanup() // shutdown closes the store captured by the callbacks
@@ -447,15 +257,15 @@ func (s *DashSuite) TestInstantSendDeliveryAcknowledgementWriteFailure(c *C) {
 	c.Assert(ids, HasLen, 2)
 }
 
-// Exempt vault transfers still need durable markers; ordinary outbound scanning remains available.
-func (s *DashSuite) TestInstantSendDeliveryRequiresDiskForVaultTransfersToo(c *C) {
+// Without disk storage, ordinary outbound scanning remains available.
+func (s *DashSuite) TestInstantSendWithoutDiskKeepsOrdinaryVaultObservations(c *C) {
 	client, f, cleanup := newDashMempoolFixture(c)
 	defer cleanup()
 	client.cfg.BlockScanner.DBPath = ""
 	item := instantSendTestItem(f, f.lockedOutbound)
 	item.Sender = f.asgard
-	items, err := client.instantSend.claimBatch([]*types.TxInItem{item}, instantSendAdmission{})
-	c.Assert(err, IsNil)
+	items, err := client.instantSend.claimBatch([]*types.TxInItem{item})
+	c.Assert(err, Equals, errInstantSendPaused)
 	c.Assert(items, HasLen, 0)
 	marked, err := client.temporalStorage.HasObservedTx(item.Tx)
 	c.Assert(err, IsNil)
@@ -466,25 +276,27 @@ func (s *DashSuite) TestInstantSendDeliveryRequiresDiskForVaultTransfersToo(c *C
 	c.Assert(batch.TxArray, HasLen, 2)
 }
 
-func (s *DashSuite) TestDashObservationGroupsClaimOnlyDeliveredTransactions(c *C) {
+func (s *DashSuite) TestDashQueuedObservationsClaimOnlyDeliveredTransactions(c *C) {
 	client, fixture, cleanup := newDashMempoolFixture(c)
 	defer cleanup()
+	client.cfg.UTXO.TransactionBatchSize = 1
 	first, second := fixture.inbound, fixture.lowFeeInbound
 	item := func(id string, height int64) *types.TxInItem {
 		return &types.TxInItem{
-			Tx: id, BlockHeight: height, Sender: fixture.user, To: fixture.asgard,
+			SpentOutputRefs: []*common.OutputRef{{TxHash: strings.Repeat("F", 64)}},
+			Tx:              id, BlockHeight: height, Sender: fixture.user, To: fixture.asgard,
+			InstantSend: &common.InstantSend{}, Memo: "=:THOR.RUNE",
 			Coins: common.NewCoins(common.NewCoin(common.DASHAsset, cosmos.NewUint(common.One/10))),
 		}
 	}
-	groups := instantSendObservationGroups(client.GetChain(), map[int64][]*types.TxInItem{
-		200: {item(second, 200)},
-		100: {item(strings.ToUpper(first), 100)},
+	groups := groupInstantSendTxs(map[int64][]*types.TxInItem{
+		96: {item(strings.ToUpper(first), 96), item(second, 96)},
 	})
 	client.instantSend.txQueue = groups
-	batch, err := client.instantSend.fetchBatch(instantSendAdmission{allowed: true})
+	batch, err := client.instantSend.fetchBatch()
 	c.Assert(err, IsNil)
 	c.Assert(batch.TxArray, HasLen, 1)
-	c.Assert(batch.TxArray[0].BlockHeight, Equals, int64(100))
+	c.Assert(batch.TxArray[0].BlockHeight, Equals, int64(96))
 	observed, err := client.temporalStorage.HasObservedTx(first)
 	c.Assert(err, IsNil)
 	c.Assert(observed, Equals, true)
@@ -497,11 +309,14 @@ func (s *DashSuite) TestDashObservationGroupsClaimOnlyDeliveredTransactions(c *C
 	accepted, err := client.trackObservedTxs([]*types.TxInItem{{Tx: second}})
 	c.Assert(err, IsNil)
 	c.Assert(accepted, HasLen, 1)
-	batch, err = client.instantSend.fetchBatch(instantSendAdmission{allowed: true})
+	batch, err = client.instantSend.fetchBatch()
 	c.Assert(err, IsNil)
 	c.Assert(batch.TxArray, HasLen, 0)
-	// Changing case cannot bypass the persistent marker.
+	// Early delivery permits one block observation; casing cannot create a second.
 	accepted, err = client.trackObservedTxs([]*types.TxInItem{{Tx: first}})
+	c.Assert(err, IsNil)
+	c.Assert(accepted, HasLen, 1)
+	accepted, err = client.trackObservedTxs([]*types.TxInItem{{Tx: strings.ToUpper(first)}})
 	c.Assert(err, IsNil)
 	c.Assert(accepted, HasLen, 0)
 }
@@ -510,23 +325,25 @@ func (s *DashSuite) TestDashObservationStorageFailureRetainsPendingGroup(c *C) {
 	client, fixture, cleanup := newDashMempoolFixture(c)
 	defer cleanup()
 	item := &types.TxInItem{
-		Tx: fixture.inbound, BlockHeight: 100, Sender: fixture.user, To: fixture.asgard,
+		SpentOutputRefs: []*common.OutputRef{{TxHash: strings.Repeat("F", 64)}},
+		Tx:              fixture.inbound, BlockHeight: 96, Sender: fixture.user, To: fixture.asgard,
+		InstantSend: &common.InstantSend{}, Memo: "=:THOR.RUNE",
 		Coins: common.NewCoins(common.NewCoin(common.DASHAsset, cosmos.NewUint(common.One/10))),
 	}
-	client.instantSend.txQueue = instantSendObservationGroups(client.GetChain(), map[int64][]*types.TxInItem{100: {item}})
+	client.instantSend.txQueue = groupInstantSendTxs(map[int64][]*types.TxInItem{100: {item}})
 	closed, closeStorage := newDashClientForRPCServer(c, "http://localhost:1")
 	healthyStorage := client.temporalStorage
 	client.temporalStorage = closed.temporalStorage
 	closeStorage()
-	batch, err := client.instantSend.fetchBatch(instantSendAdmission{allowed: true})
+	batch, err := client.instantSend.fetchBatch()
 	c.Assert(err, NotNil)
 	c.Assert(batch.TxArray, HasLen, 0)
 	c.Assert(client.instantSend.txQueue, HasLen, 1)
-	c.Assert(client.instantSend.txQueue[0].TxArray, DeepEquals, []*types.TxInItem{item})
+	c.Assert(client.instantSend.txQueue[0][0], Equals, item)
 
 	// Once storage is available, retry the queued group without another RPC scan.
 	client.temporalStorage = healthyStorage
-	batch, err = client.instantSend.fetchBatch(instantSendAdmission{allowed: true})
+	batch, err = client.instantSend.fetchBatch()
 	c.Assert(err, IsNil)
 	c.Assert(batch.TxArray, DeepEquals, []*types.TxInItem{item})
 	c.Assert(client.instantSend.txQueue, HasLen, 0)

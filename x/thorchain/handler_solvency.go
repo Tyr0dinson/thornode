@@ -92,6 +92,7 @@ func (h SolvencyHandler) handle(ctx cosmos.Context, msg MsgSolvency) (*cosmos.Re
 	}
 
 	k.SetSolvencyVoter(ctx, voter)
+
 	quota.commit(ctx, k)
 	return &cosmos.Result{}, nil
 }

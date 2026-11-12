@@ -312,6 +312,10 @@ func handleObservedTxInQuorum(
 	vault, err := k.GetVault(ctx, tx.ObservedPubKey)
 	if err != nil {
 		ctx.Logger().Error("fail to get vault", "error", err)
+		// Roll back DASH input ownership and vault credit together.
+		if tx.Tx.Chain.Equals(common.DASHChain) {
+			return err
+		}
 		return nil
 	}
 
@@ -329,7 +333,7 @@ func handleObservedTxInQuorum(
 		// vault accounting, memo resolution, refunds, swap queueing, and
 		// internal handler dispatch. Funds sent to a compromised vault should
 		// not affect THORChain state.
-		if err = k.SetLastChainHeight(ctx, tx.Tx.Chain, tx.BlockHeight); err != nil {
+		if err = updateInboundChainHeight(ctx, k, tx); err != nil {
 			ctx.Logger().Error("fail to set last chain height", "error", err)
 		}
 
@@ -374,6 +378,16 @@ func handleObservedTxInQuorum(
 	// after vault update, voter setup, etc and the coin will be refunded
 	memo, _ := ParseMemoWithTHORNames(ctx, k, tx.Tx.Memo)
 
+	if (hasFinalised || memo.IsType(TxMigrate)) && vault.IsAsgard() && !voter.UpdatedVault {
+		suppressed, inputErr := recordInstantSendInputs(ctx, k, tx)
+		if inputErr != nil {
+			return inputErr
+		}
+		if suppressed {
+			return nil
+		}
+	}
+
 	// Update vault balances from inbounds with Migrate memos immediately,
 	// to minimise any gap between outbound and inbound observations.
 	// TODO: In future somehow update both balances in a single action,
@@ -391,14 +405,19 @@ func handleObservedTxInQuorum(
 			}
 		}
 	}
-	if err = k.SetLastChainHeight(ctx, tx.Tx.Chain, tx.BlockHeight); err != nil {
+	if err = updateInboundChainHeight(ctx, k, tx); err != nil {
 		ctx.Logger().Error("fail to set last chain height", "error", err)
 	}
 
 	// save the changes in Tx Voter to key value store
 	k.SetObservedTxInVoter(ctx, voter)
-	if err = k.SetVault(ctx, vault); err != nil {
+	err = k.SetVault(ctx, vault)
+	if err != nil {
 		ctx.Logger().Error("fail to set vault", "error", err)
+		// Input ownership and vault credit must commit together for DASH.
+		if tx.Tx.Chain.Equals(common.DASHChain) {
+			return err
+		}
 		return nil
 	}
 
@@ -2155,4 +2174,13 @@ func ExtractReferenceFromAmount(ctx cosmos.Context, mgr Manager, asset common.As
 	}
 
 	return leadingZeros(txnRefLength, fmt.Sprintf("%d", refNum)), nil
+}
+
+// DASH network-fee quorum is the sole source of its agreed ChainLock height.
+// Mempool vault transfers can look final with zero required confirmations.
+func updateInboundChainHeight(ctx cosmos.Context, k keeper.Keeper, tx common.ObservedTx) error {
+	if tx.Tx.Chain.Equals(common.DASHChain) {
+		return nil
+	}
+	return k.SetLastChainHeight(ctx, tx.Tx.Chain, tx.BlockHeight)
 }

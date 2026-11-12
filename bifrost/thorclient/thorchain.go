@@ -21,6 +21,7 @@ import (
 	"github.com/cosmos/cosmos-sdk/std"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
+	"github.com/cosmos/gogoproto/jsonpb"
 	retryablehttp "github.com/hashicorp/go-retryablehttp"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/rs/zerolog"
@@ -112,6 +113,7 @@ type ThorchainBridge interface {
 	FetchActiveNodes() ([]common.PubKey, error)
 	GetAsgards() (stypes.Vaults, error)
 	GetVault(pubkey string) (stypes.Vault, error)
+	GetInstantSend(chain common.Chain) (*stypes.QueryInstantSendResponse, error)
 	GetXMRSpentOutputRefs(vaultPubKey common.PubKey) ([]*common.OutputRef, error)
 	GetXMRSpentOutputRefsUncached(ctx context.Context, vaultPubKey common.PubKey) ([]*common.OutputRef, error)
 	GetConfig() config.BifrostClientConfiguration
@@ -1591,4 +1593,23 @@ func (b *thorchainBridge) GetReferenceMemoByTxHash(hash string) (string, error) 
 		return "", fmt.Errorf("fail to unmarshal reference memo from json: %w", err)
 	}
 	return r.Memo, nil
+}
+
+// GetInstantSend returns the committed accounting sets without HTTP caching.
+func (b *thorchainBridge) GetInstantSend(chain common.Chain) (*stypes.QueryInstantSendResponse, error) {
+	if err := chain.Valid(); err != nil {
+		return nil, err
+	}
+	data, status, err := b.getUncachedContext(context.Background(), b.getThorChainURL("/thorchain/instantsend/"+chain.String()))
+	if err != nil {
+		return nil, err
+	}
+	if status != http.StatusOK {
+		return nil, fmt.Errorf("InstantSend accounting query returned status %d", status)
+	}
+	var response stypes.QueryInstantSendResponse
+	if err = jsonpb.Unmarshal(strings.NewReader(string(data)), &response); err != nil {
+		return nil, err
+	}
+	return &response, nil
 }

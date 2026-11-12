@@ -288,7 +288,6 @@ services:
       # enable dash
       BIFROST_CHAINS_DASH_DISABLED: "${BIFROST_CHAINS_DASH_DISABLED:-false}"
       BIFROST_CHAINS_DASH_RPC_HOST: ${BIFROST_CHAINS_DASH_RPC_HOST:-dash1:19898}
-      BIFROST_CHAINS_DASH_INSTANT_SEND_ENABLED: "true"
       # Regtest has no ChainLock during bootstrap. Let the scanner start and
       # retry until one exists, without triggering a restart of Bifrost.
       BIFROST_CHAINS_DASH_BLOCK_SCANNER_START_BLOCK_HEIGHT: "1"

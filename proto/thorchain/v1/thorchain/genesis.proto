@@ -141,4 +141,16 @@ message GenesisState {
       [ (gogoproto.nullable) = false ];
   repeated types.SolVaultNonce sol_vault_nonces = 50
       [ (gogoproto.nullable) = false ];
+  repeated common.InstantSendState instant_send = 51 [
+    (gogoproto.nullable) = false,
+    (gogoproto.jsontag) = "instant_send,omitempty"
+  ];
+  repeated common.InstantSendStatus instant_send_status = 52 [
+    (gogoproto.nullable) = false,
+    (gogoproto.jsontag) = "instant_send_status,omitempty"
+  ];
+  repeated common.InstantSendCredit instant_send_credits = 55 [
+    (gogoproto.nullable) = false,
+    (gogoproto.jsontag) = "instant_send_credits,omitempty"
+  ];
 }

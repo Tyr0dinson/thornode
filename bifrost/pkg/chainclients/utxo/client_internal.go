@@ -287,7 +287,8 @@ func (c *Client) sendNetworkFee(height int64) error {
 		c.log.Fatal().Msg("unsupported chain")
 	}
 
-	if feeRate == 0 {
+	// DASH also reports empty blocks, using the configured/relay fee floor.
+	if feeRate == 0 && !c.GetChain().Equals(common.DASHChain) {
 		return nil
 	}
 
@@ -321,13 +322,16 @@ func (c *Client) sendNetworkFee(height int64) error {
 
 	c.m.GetGauge(metrics.GasPrice(c.cfg.ChainID)).Set(float64(feeRate))
 
-	// skip update if fee has not changed
-	if c.lastFeeRate.Load() == feeRate {
+	// DASH fee quorum also advances the agreed ChainLock observation height.
+	changed := c.lastFeeRate.Load() != feeRate
+	if !changed && !c.GetChain().Equals(common.DASHChain) {
 		return nil
 	}
 
 	c.lastFeeRate.Store(feeRate)
-	c.m.GetCounter(metrics.GasPriceChange(c.cfg.ChainID)).Inc()
+	if changed {
+		c.m.GetCounter(metrics.GasPriceChange(c.cfg.ChainID)).Inc()
+	}
 
 	c.globalNetworkFeeQueue <- common.NetworkFee{
 		Chain:           c.cfg.ChainID,
@@ -434,7 +438,7 @@ func (c *Client) getBlock(height int64) (*btcjson.GetBlockVerboseTxResult, error
 	if err != nil {
 		return nil, err
 	}
-	if c.cfg.ChainID == common.DASHChain {
+	if c.cfg.ChainID.Equals(common.DASHChain) {
 		if !block.ChainLock || block.Height != height || !strings.EqualFold(block.Hash, hash) {
 			return nil, btypes.ErrUnavailableBlock
 		}
@@ -546,7 +550,7 @@ func (c *Client) getTxIn(tx *btcjson.TxRawResult, height int64, isMemPool bool, 
 		return types.TxInItem{}, nil
 	}
 	// RBF enabled transaction will not be observed until committed to block
-	if c.cfg.ChainID != common.DASHChain && c.isRBFEnabled(tx) && isMemPool {
+	if !c.cfg.ChainID.Equals(common.DASHChain) && c.isRBFEnabled(tx) && isMemPool {
 		return types.TxInItem{}, nil
 	}
 	sender, err := c.getSender(tx, vinZeroTxs)
@@ -594,15 +598,35 @@ func (c *Client) getTxIn(tx *btcjson.TxRawResult, height int64, isMemPool bool, 
 	}
 	amt := uint64(amount.ToUnit(btcutil.AmountSatoshi))
 
+	var refs []*common.OutputRef
+	if c.GetChain().Equals(common.DASHChain) {
+		if len(tx.Vin) > common.InstantSendMaxInputs {
+			c.log.Warn().Str("txid", tx.Txid).Int64("height", height).Int("inputs", len(tx.Vin)).Msg("skip DASH observation: input limit exceeded")
+			if c.m != nil {
+				counter := c.m.GetCounterVec(metrics.ObservationSkipped(c.GetChain()))
+				if counter != nil {
+					counter.WithLabelValues("input_limit").Inc()
+				}
+			}
+		}
+		inputs, inputErr := dashInputs(tx.Vin)
+		if inputErr != nil {
+			return types.TxInItem{}, inputErr
+		}
+		for i := range inputs {
+			refs = append(refs, &inputs[i])
+		}
+	}
 	gas, err := c.getGas(tx, isInbound)
 	if err != nil {
 		return types.TxInItem{}, fmt.Errorf("fail to get gas from tx: %w", err)
 	}
 	return types.TxInItem{
-		BlockHeight: height,
-		Tx:          tx.Txid,
-		Sender:      sender,
-		To:          toAddr,
+		SpentOutputRefs: refs,
+		BlockHeight:     height,
+		Tx:              tx.Txid,
+		Sender:          sender,
+		To:              toAddr,
 		Coins: common.Coins{
 			common.NewCoin(c.cfg.ChainID.GetGasAsset(), cosmos.NewUint(amt)),
 		},
@@ -720,15 +744,6 @@ func (c *Client) extractTxs(block *btcjson.GetBlockVerboseTxResult) (types.TxIn,
 		Chain:   c.GetChain(),
 		MemPool: false,
 	}
-	// FetchTxs only passes verified ChainLocked Dash blocks. Settle raw txids
-	// before parsing or observed-marker filtering can discard an already seen tx.
-	if c.cfg.ChainID.Equals(common.DASHChain) {
-		if err := c.instantSend.reconcileBlock(block); err != nil {
-			// Keep ChainLock observations available. Failed settlement retains the
-			// reservation and pauses customer admission until it can be retried.
-			c.log.Err(err).Msg("fail to settle InstantSend allowance")
-		}
-	}
 
 	var vinZeroTxs map[string]*btcjson.TxRawResult
 	var err error
@@ -769,7 +784,7 @@ func (c *Client) extractTxs(block *btcjson.GetBlockVerboseTxResult) (types.TxIn,
 	return txIn, err
 }
 
-// trackObservedTxs claims a block batch before delivery. DASH also accepts pending
+// trackObservedTxs claims a block batch before delivery. InstantSend chains also accept pending
 // InstantSend handoffs. Completed block markers remain even if Observer misses delivery.
 func (c *Client) trackObservedTxs(items []*types.TxInItem) ([]*types.TxInItem, error) {
 	if len(items) == 0 {
@@ -779,7 +794,7 @@ func (c *Client) trackObservedTxs(items []*types.TxInItem) ([]*types.TxInItem, e
 	byID := make(map[string]*types.TxInItem, len(items))
 	for _, item := range items {
 		id := item.Tx
-		if c.cfg.ChainID == common.DASHChain {
+		if c.cfg.ChainID.Equals(common.DASHChain) {
 			id = strings.ToLower(id)
 		}
 		if _, duplicate := byID[id]; duplicate {
@@ -790,7 +805,7 @@ func (c *Client) trackObservedTxs(items []*types.TxInItem) ([]*types.TxInItem, e
 	}
 	var added []string
 	var err error
-	if c.cfg.ChainID == common.DASHChain {
+	if c.cfg.ChainID.Equals(common.DASHChain) {
 		added, err = c.temporalStorage.TrackInstantSendBlockTxs(ids)
 	} else {
 		added, err = c.temporalStorage.TrackObservedTxs(ids)
@@ -816,9 +831,9 @@ func (c *Client) ignoreTx(tx *btcjson.TxRawResult, height int64) bool {
 	}
 	// LockTime <= current height doesn't affect spendability,
 	// and most wallets for users doing Memoless Savers deposits automatically set LockTime to the current height.
-	// Dash RPC transactions have already passed Core finality checks. An IS
-	// cycle anchor is not a transaction lock-time reference height.
-	if c.cfg.ChainID != common.DASHChain && tx.LockTime > uint32(height) {
+	// Dash Core checks nLockTime as a height below 500_000_000 or a Unix timestamp
+	// otherwise. The InstantSend observation anchor is not a lock-time reference.
+	if !c.cfg.ChainID.Equals(common.DASHChain) && tx.LockTime > uint32(height) {
 		return true
 	}
 	countWithOutput := 0

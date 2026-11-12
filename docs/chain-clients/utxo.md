@@ -45,163 +45,205 @@ For wallet developers, see [Sending UTXO Transactions](../concepts/sending-trans
 
 ### Dash InstantSend allowance
 
-Dash normally observes deposits from ChainLocked blocks. When InstantSend is enabled,
-each Bifrost can report eligible deposits sooner, subject to a persistent allowance
-shared across all of its vaults. This limits the amount that node reports before
-ChainLock settlement. It is a local soft limit, not a network-wide cap or a guarantee
-against an InstantSend failure.
+Keep `DashInstantSendEnabled=0` pending resolution of the Dash daemon lock-loss
+review. This development protocol requires a fresh test network and scanner
+storage when replacing the earlier checkpoint/journal implementation.
 
-When Dash mempool scanning is enabled, it supplies early observations of vault
-outbounds without requiring an InstantSend lock or ChainLock. These observations
-require no additional confirmations, so an observation quorum can finalise the
-outbound on THORChain and update vault accounting while the transaction is still
-in Dash's mempool. A later ChainLock scan can report the mined transaction again;
-THORChain does not wait for that report to finalise the earlier observation.
+When explicitly enabled, InstantSend lets a valid customer DASH swap enter the
+swap queue before mining. A supermajority of active validators must attest the
+same transaction. Core commits its pending entry, inbound voter, vault
+credit and swap queue entry together. Non-swap memos, invalid swaps, inactive or
+compromised vaults and incomplete certificates wait for ordinary ChainLock
+observation.
 
-Customer deposits still require an eligible InstantSend lock or inclusion in a
-ChainLocked block. The InstantSend path only observes transactions received by a
-vault, including customer deposits, vault migrations and consolidation.
-The signer skips its automatic observation after broadcast to avoid
-a third observation variant when InstantSend or ChainLock finality is reported.
-The first report waits for scanning and can be delayed by slow RPCs.
-Disabling mempool scanning retains the existing signer auto-observe rules.
+The vault receives its economic credit immediately, allowing DASH-to-other-asset
+swaps to execute. Core uses normal outbound selection, refunds, migration and
+rescheduling. Bifrost can spend customer UTXOs only after a ChainLock covers their
+block. A scheduled payment with insufficient eligible UTXOs retries normally;
+longer delays use existing outbound rescheduling and any configured retry limit.
+The pending ledger limits early exposure; it does not reserve spending funds.
 
-| Mimir                             | Units            | Default / unset                      | Effect                                                                                                                                                            |
-| --------------------------------- | ---------------- | ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `DashInstantSendEnabled`          | switch           | Bifrost config; see below            | Zero disables InstantSend observation, including vault senders. A positive value enables it.                                                                      |
-| `DashInstantSendMaxAmount`        | duffs            | `0`                                  | Maximum outstanding customer InstantSend amount per node. Set `100000000000` for 1,000 DASH. Zero or a deleted value stops new customer InstantSend observations. |
-| `DashInstantSendMinAmount`        | duffs            | `1000000` (0.01 DASH)                | Minimum customer deposit for InstantSend. Zero removes this extra minimum; the existing chain dust threshold still applies.                                       |
-| `ObservationDelayFlexibilityDASH` | THORChain blocks | Global `ObservationDelayFlexibility` | Sets the late-observation slash-refund window and tally deadline for all DASH observation types. Zero is a valid override.                                        |
+Settlement requires a separate full supermajority certificate for the transaction
+in a ChainLocked block. Core checks its identity, vault and amount, records the
+block observation and removes its pending entry. This does not credit the vault,
+execute the swap or reward observations twice. Early signatures and individual
+legacy observations cannot release exposure. Disabling admission does not disable
+settlement.
 
-Both amount Mimirs use duffs, matching internal accounting: `100000000` duffs is
-1 DASH (`common.One` in Go). This also supports amounts such as 0.01 DASH.
+Ordinary solvency compares wallet funds against recorded vault funds minus pending
+customer deposits that have not timed out. Once an entry is overdue, its funds
+are no longer excused in either Bifrost or core solvency. The separate timeout
+halt remains the reliable alarm: normal solvency also discounts pending outbounds,
+including unsigned ones, which can hide a missing deposit.
 
-An unset or negative `DashInstantSendEnabled` restores Bifrost's startup
-`instant_send.enabled` configuration, which defaults to `true` for DASH. Deleting
-an override takes effect on the next settings refresh without a restart. A failed
-read disables all InstantSend observations for that scan, including vault senders.
-Ordinary vault-outbound observations and ChainLock settlement continue; existing
-allowance reservations remain charged. The maximum mempool age policy still applies.
-A failed read of either amount Mimir pauses customer admission until both reads
-succeed. Lowering the limit below current usage leaves zero available; raising it
-exposes the difference. Deleting either amount Mimir restores the default above.
-Eligible vault-to-vault transfers, including migrations and consolidation,
-bypass the allowance and minimum. They neither consume nor refill customer
-allowance. Their InstantSend observations still require InstantSend to be enabled;
-setting only the amount limit to zero does not disable them. Ordinary outbounds
-to customers can finalise on THORChain through the early mempool observations
-described above, before Dash ChainLock finality.
-The allowance does not change signing or input selection.
+Instead, BeginBlock checks the THORChain age of every pending credit, including
+when admission is disabled. At age `DashInstantSendTimeout` (default 300 blocks),
+core sets `HaltDASHTrading` and `HaltSigningDASH`. Invalid or unreadable ledger data
+also sets those halts. The deadline uses the pending entry's immutable `height`, the THORChain block
+that committed the credit. Outbound scheduling cannot reset it. Neither local
+time nor Dash block progress controls it, so a stalled ChainLock cannot stop it.
+Timeout does not prove loss, release allowance, or reverse a swap. It does not set
+a scanner halt, so ChainLock settlement can still arrive.
 
-InstantSend scans check transaction outputs before looking up locks or parent
-transactions. Transactions with no vault output are cached in memory, up to
-`mempool_tx_id_cache_size` entries; nonpositive values disable this cache. Entries
-are removed when they leave the mempool, and the cache is cleared when the vault
-address set changes. Lookup failures or uncertain scripts are not cached as
-unrelated. This cache does not mark transactions as observed or reserve allowance.
+Timeout halts require manual clearance, even after every overdue deposit settles
+by ChainLock. Operators clear `HaltDASHTrading` and `HaltSigningDASH` through the
+existing Mimir controls after resolving the cause. Clearing either halt while an
+overdue entry remains causes the next check to halt again. Raising the timeout
+does not remove an already recorded overdue cause. Existing active halts retain
+their values; a timeout can bring a scheduled halt forward, and its earlier
+schedule is not restored automatically.
 
-For example, setting `DashInstantSendMaxAmount=1000000000` gives a 10 DASH allowance.
-An early 7 DASH observation leaves 3 DASH.
-A 4 DASH deposit waits for a ChainLock; a later 2 DASH deposit can still be reported
-early. A new ChainLock restores the 7 DASH only if its block actually contains that
-transaction. Merely advancing the height, losing the transaction from the mempool,
-or reaching THORChain consensus does not restore capacity.
+Loss recovery is manual, as for other chains. Bifrost does not build conflict
+proofs, archive deposits for rebroadcast, or trigger an InstantSend write-off.
+Missing transactions, missing locks, RPC errors and elapsed time are not proof
+of loss. Generic errata completes as a no-op for an InstantSend-credited inbound,
+settling errata observation accounting without reversing funds;
+there is no DASH-specific errata CLI or automatic financial correction.
 
-Reservations and pending observation markers are written together in one
-synchronous database batch before delivery. A deferred deposit gets no marker,
-so the ordinary ChainLock scanner can observe it later. Reservations
-survive restarts and settings changes. Block scans settle raw transaction IDs before
-parsing and duplicate filtering, including while InstantSend is disabled. On
-restart, pending reservations are also checked for inclusion in canonical
-ChainLocked blocks, covering blocks the scanner may have passed while the node
-was offline.
+A conflicting customer transaction cannot execute a second memo while input
+ownership is retained, regardless of whether the ordinary observation or early
+observation arrives first. A suppressed replacement is not automatically credited
+to a vault or pool. Any actual DASH received through it must be reconciled during
+manual recovery.
 
-Early InstantSend observation requires a persistent block-scanner database, including
-for vault transfers. Without it, ordinary outbound and ChainLock scanning continue.
-With no allowance journal (including an upgrade from the earlier client), the node
-starts with no available allowance. Once active and caught up, it saves a finite
-snapshot of transactions reported as InstantSend-locked (`instantlock: "true"`) in
-its local mempool and classifies it in bounded batches. Entries with
-`instantlock: "false"` are excluded.
-An unknown, missing or unexpected lock status postpones the entire snapshot;
-the next attempt reads a fresh mempool before saving anything.
-It counts relevant customer deposits regardless of old observation markers or the
-new age/minimum policy. Completion requires both full classification and the
-completed scanner height passing the initial ChainLock height. Classified snapshot
-deposits remain ChainLock-only and stay reserved until included in a ChainLocked
-block, even if their total exceeds the configured limit.
-Only the remaining allowance admits new deposits. An intact journal resumes instead
-of taking a fresh snapshot; invalid journal data does not silently reset usage.
+A confirmed loss requires a coordinated state repair, potentially through a
+software-upgrade migration. The team must reconcile the vault and pool balances,
+pending exposure and overdue status, input ownership, inbound voter, remaining
+swap input, and any queued or already delivered outbound obligations. Compensation alone does not
+clear the ledger or repair accounting. Until this is done, the pending deposit
+continues to use allowance and may prevent the retiring vault from completing
+migration. Ordinary swap expiry, refunds and outbound rescheduling still apply;
+there is no recovery-specific queue freeze.
 
-An unresolved snapshot entry can be dropped after a newer ChainLocked block has
-been fully scanned. Its transaction lookup must start after that scan and return
-the explicit transaction-not-found error (`-5`). Bifrost then verifies that the
-scanner is healthy and caught up to a fresh ChainLock height, and confirms the ID
-is absent from a freshly fetched mempool. Other RPC errors, including missing
-parent transactions, leave the entry pending. A failed or null mempool response
-also leaves it pending. Successful removals are logged after the database write.
-This rule also applies to existing unfinished snapshots. The wait uses the saved
-snapshot height, not a full elapsed block interval or a new wait after restart.
-Known reservations and observation markers are preserved; recovery makes only the
-unused allowance available.
+As part of that repair, set the permanent admission-disable flag and retain the
+trading/signing halts. Preserve input ownership for the lost deposit so a later
+replacement cannot execute another swap. The flag is checked before
+`DashInstantSendEnabled`; Mimir cannot clear it. Operators decide when ordinary
+ChainLocked DASH trading and signing can resume after all halt causes are
+resolved. A later software upgrade would be needed to re-enable InstantSend.
 
-This startup approach has an accepted gap: a previously credited transaction that
-is absent from the local snapshot, or dropped by this recovery rule, cannot be
-accounted for from that snapshot. A newer ChainLock and local mempool absence do
-not prove that the transaction was never credited elsewhere. A new or recovered
-node may therefore make fresh allowance available while that older exposure remains.
-Persisting the database avoids losing known reservations, but a local snapshot is
-not a complete network exposure history.
+The query `GET /thorchain/instantsend/DASH` returns the agreed DASH height as
+`observation_height`. Early observations round it down to a multiple of 12
+(height 1 is used before block 12). Core checks this format and the 24-block
+acceptance window. Nodes can still split at a step boundary and fall back to
+ChainLock settlement. Only network-fee quorum advances the agreed height. DASH reports network fees even when the fee is unchanged.
+InstantSend deposits and unconfirmed internal transfers do
+not advance this height. It is an observation anchor, not the deposit's mined
+height; neither mempool receipt time nor the lock's `cycleHash` supplies it.
 
-InstantSend admission atomically saves an allowance reservation and a pending
-observation marker. The pending marker prevents another InstantSend claim, but
-allows the later ChainLock block scan to observe the transaction. Observer's
-per-item callbacks complete accepted markers in one synchronous write after the
-batch's callbacks finish. Rejected items remain pending. A missing callback or
-failed acknowledgement write also leaves the block fallback available, including
-after restart. Only verified ChainLock releases the allowance; local rejection
-cannot prove that other nodes have not already observed the deposit.
+Core accepts an early observation only within 24 agreed DASH blocks of the current
+height. The minimum accepted anchor is stored and cannot decrease, and the query
+returns it as `status.min_height` for Bifrost's admission check. Ordinary deposits
+and settled early deposits retain input ownership until 24 agreed DASH blocks
+after credit or settlement, using at least the current agreed height even when
+the transaction was mined earlier. BeginBlock prunes expired credits in batches
+of at most 5,000 keys, never splitting a credit from its input mappings. Errors
+retain the records for retry. Pending deposits and input records explicitly
+retained by a manual repair do not expire. Retaining an input record without
+a pending entry requires the permanent admission-disable flag on genesis import. Genesis preserves these records and
+the minimum anchor; import rebuilds the derived expiry index. These schema changes
+require fresh development state; reset development databases created with the
+removed recovery schema.
 
-There is no separate delivery queue or retry worker. A lost InstantSend handoff
-waits for the normal ChainLock block scan, even when InstantSend or mempool
-scanning is disabled. Chain halts still control scanning normally. A completed
-marker suppresses the later block observation. Legacy markers remain completed;
-this change cannot recover observations already lost under those markers.
-Vault senders remain exempt from the amount limits.
+| Mimir                       | Units            | Default / unset       | Effect                                                                                                  |
+| --------------------------- | ---------------- | --------------------- | ------------------------------------------------------------------------------------------------------- |
+| `DashInstantSendEnabled`    | boolean          | disabled              | Positive enables early admission; zero, unset or a failed read disables it.                             |
+| `DashInstantSendMaxAmount`  | duffs            | disabled              | Network-wide outstanding exposure across all DASH vaults. Nonpositive disables new early credit.        |
+| `DashInstantSendMinAmount`  | duffs            | 1,000,000 (0.01 DASH) | Minimum early deposit; zero removes this extra minimum.                                                 |
+| `DashInstantSendMinFeeRate` | duffs/vB         | 8                     | Positive Bifrost override of `instant_send.min_fee_rate`; missing or invalid fee data defers admission. |
+| `DashInstantSendTimeout`    | THORChain blocks | 300                   | At this age, halt DASH trading and signing. Nonpositive uses the default.                               |
 
-Observer acceptance and block claims update markers under the same storage lock.
-If Observer stores a transaction before its acknowledgement completes, the block
-scan can still emit a second observation at the actual mined height. Existing
-consensus handling prevents another payment. This has an accepted bounded cost:
-a vault transfer may already have ordinary mempool and InstantSend observations,
-so the additional ChainLock variant can retain an extra `ObserveSlashPoints`
-charge per affected inbound/outbound voter. The ordinary block path still marks
-before delivery and retains its existing crash trade-off; this change restores
-the block fallback without making all block delivery restart-safe.
+Each vault can have at most 128 pending InstantSend deposits. This fixed limit bounds storage and processing work independently of the network amount allowance. ChainLock settlement frees a slot; changing the count limit requires a software upgrade.
 
-For rollout, keep `DashInstantSendEnabled=0` while upgrading nodes. Configure a
-positive pending-amount limit, the desired minimum and a DASH observation window,
-then enable InstantSend after the upgrade. Allow time for startup warm-up. The
-observation window is in **THORChain blocks**, not Dash blocks, and does not postpone
-the initial missing-observation penalty or guarantee that every delayed observation
-will arrive in time. Other chains keep the global window unless their own
-`ObservationDelayFlexibility<CHAIN>` override is configured. The override applies
-to inbound, outbound, network-fee, solvency and errata late-credit checks and tally
-scheduling, preserving existing slashing exemptions. It does not apply to TSS votes.
-For example, with a global window of 20 and a DASH window of 50, a matching DASH
-observation 25 blocks after consensus gets
-its slash points refunded and is credited when the tally is scored 50 blocks after consensus.
-Configure the window before enabling InstantSend: queued tally deadlines do not
-change when Mimir changes, while late-credit checks use the current setting.
-Changing a window while tallies are pending can temporarily mix old and new
-deadlines; the shared-outage guard assumes a consistent window for each chain.
+For example, a network allowance of 10 DASH with a pending 7 DASH deposit leaves
+3 DASH for new early deposits. A 4 DASH deposit waits for a ChainLock; a 2 DASH
+deposit can still qualify. A matching ChainLock certificate frees that deposit's
+exposure.
+Elapsed time, restart, mempool disappearance or a higher block alone never frees
+capacity.
 
-Monitor `dash_instantsend_reserved_duffs`, `dash_instantsend_available_duffs`,
-`dash_instantsend_pending_transactions`, `dash_instantsend_warming_up`, and
-`dash_instantsend_deferred_total{reason=...}`. Amounts/counts are refreshed on mempool
-scans; the deferral counter counts attempts, so repeated retries can count the same
-deposit more than once. Investigate persistent warm-up or storage errors before
-reenabling customer observations; do not delete the journal to clear reservations.
+Bifrost checks network policy, active-node status, scanner/ChainLock health, chain
+halts, an eligible active vault, a swap memo type, a fresh transaction lock and the configured minimum base fee (8 duffs/vB
+by default) before delivery.
+The `dash_instantsend_min_fee_rate` metric reports the effective Bifrost fee floor.
+The low-fee simulation temporarily sets this floor to 8 duffs/vB and restores the previous
+effective policy when the scenario finishes or fails.
+Every input must come from a canonical ChainLocked parent transaction; deposits
+spending unconfirmed ancestors wait for normal ChainLock observation. Local
+mempool receipt age is not an eligibility rule. There is no per-deposit fairness cap. Local checks are advisory;
+core enforces limits atomically across concurrent validators. The local database
+stores delivery markers; the consensus pending ledger owns financial exposure.
+Mimir is the only enable switch; the ineffective local `instant_send.enabled`
+setting has been removed. Early customer observations do not enter block metadata
+until their ChainLock observation supplies the actual mined height.
+Restart reads that ledger and rechecks current daemon lock status before admission.
+An RPC error or a missing lock pauses the local admission attempt. A missing-lock
+response never generates automatic errata.
+A recovered daemon flag permits another admission check but never frees exposure.
+
+Early delivery requires persistent scanner storage. Delivery markers are written
+synchronously in a batch before returning observations. The accepted crash gap
+between that write and Observer persistence can lose the early handoff; independent
+ChainLock delivery remains eligible. Observer persistence acknowledges early
+markers, and later block delivery closes them. A late acknowledgement cannot
+reopen a completed marker. Raw transactions are read for admission checks but
+are not archived or rebroadcast by this path.
+
+The scanner checks outputs before fetching parents and caches unrelated
+transactions only while the vault-address set remains unchanged. Work is bounded
+by the existing mempool batch settings. Vault outbounds, migrations and
+consolidations retain ordinary mempool observation and later block observation;
+they do not consume customer InstantSend exposure. Unconfirmed internal transfers
+do not move the agreed DASH observation anchor.
+
+Customer UTXOs can fund signatures only when their block is covered by a verified
+ChainLock, regardless of local InstantSend flags or a zero minimum-confirmations
+setting. Existing self-change and vault-transfer exceptions remain, including
+mempool chain limits. The signer verifies a stable chain snapshot around input
+collection. Signing health also checks fresh finality data and the completed
+scanner height, so a stalled ChainLock cannot leave signing or early admission
+healthy indefinitely.
+
+Monitor `dash_instantsend_exposure_duffs`, `dash_instantsend_available_duffs`,
+`dash_instantsend_pending_transactions`, `dash_instantsend_paused` and
+`dash_instantsend_deferred_total{reason="lost_lock"}`. Exposure gauges describe the
+last network query, not local financial state. Core publishes
+`thornode_dash_pending_count` and `thornode_dash_pending_amount` per vault, plus
+`thornode_instantsend_oldest_age_blocks` for settlement monitoring and
+`thornode_instantsend_prune_error` for failed input cleanup. DASH observations
+exceeding 2,500 inputs are skipped with a warning and counted in
+`dash_observation_skipped_total{reason="input_limit"}`; block scanning continues. Timeout halts use the existing trading/signing indicators.
+
+## Dash solvency
+
+DASH uses ordinary solvency reports. A dedicated worker polls every ten THORChain
+block intervals, independently of scanner progress and InstantSend admission.
+Local time schedules polling only; each report carries a verified positive
+ChainLock height. There are no accounting rounds or checkpoint payloads.
+
+Bifrost collects settled wallet balances and compares them with the same queried
+vault balances minus pending customer deposits that are not overdue. Customer outputs count only at or below
+the ChainLock; internal vault change retains its existing treatment. A changed tip
+or ChainLock during collection invalidates the pass. If any vault is insolvent,
+only insolvent vaults are reported. Solvent recovery reports require a complete
+successful collection and a halted chain. One vault's RPC error does not stop
+checks of the remaining vaults, but prevents an all-clear. Identical local reports
+are suppressed until their height or balance changes.
+
+Core applies the same allowance for pending deposits that are not overdue. DASH insolvency
+keeps the existing minority threshold; recovery requires a supermajority. A solvent
+vault can clear its own flag, but the chain remains halted while any other vault
+on DASH has an insolvency flag, including a retired vault. This cross-vault
+recovery guard applies only to DASH. Existing pending
+outbound and gas adjustments remain part of the ordinary solvency calculation.
+
+`GET /thorchain/instantsend/DASH` returns network limits, the positive observation
+height and vault entries containing `state` (chain, pubkey and
+pending IDs, amounts and immutable THORChain credit heights), gross `coins`,
+and `eligible` (an active Asgard vault for DASH without a compromised flag). Pending exposure is the sum of those
+amounts; it may exceed the remaining vault balance when spending precedes delivery
+of a settlement certificate. Genesis export/import preserves the ledger and its
+original inbound voters.
 
 ## Confirmation Counting
 
@@ -301,3 +343,35 @@ In-flight v5 checkpoints signed before the switch are still accepted and finishe
 - [How Bifrost Works](../bifrost/how-bifrost-works.md)
 - [Sending Transactions](../concepts/sending-transactions.md)
 - [Memos](../concepts/memos.md)
+
+### Reusing InstantSend for another chain
+
+InstantSend scanning and accounting use shared types and helpers. Explicit
+`Equals(DASHChain)` checks currently enable these paths only for DASH. A verified
+second integration can extend the relevant checks to `OneOf`. Reusing the
+code still requires an actual chain integration: its RPC format, addresses,
+transaction encoding, finality rules and configuration must be verified first.
+Creating an accounting record or setting a Mimir does not enable a new chain.
+
+Consensus exposure records use `(chain, vault)` keys. Each
+`InstantSendState` also carries its chain, and Bifrost rejects records for another
+chain. The query is `GET /thorchain/instantsend/{chain}`. Genesis uses
+`instant_send` records containing `chain`; the same vault can appear once per
+chain. Mimir keys keep the chain prefix (`DashInstantSend...` for DASH), and metrics
+have separate collectors per chain. Amounts are reported in duffs for DASH.
+Bifrost's delivery markers and caches belong to one client and one chain database;
+the client rejects a mismatched scanner ChainID before opening storage.
+
+These names and storage keys are being finalized before production rollout.
+The earlier development-only `dash_instant_send` genesis field and vault-only
+accounting keys are not migrated automatically. Do not reuse that prototype
+accounting state or mix the two protocol versions on a running test network.
+Reset prototype network state and local scanner databases when switching from the
+checkpoint schema. A supported export/import of the current schema preserves
+pending exposure and its original credits; it does not release exposure.
+
+The existing THORChain inbound voter store is still keyed by transaction ID
+without a chain prefix. This predates InstantSend. InstantSend verifies a voter's
+chain before using its credit, but this does not make the wider voter store
+independent when identical transaction IDs are replayed across compatible chains.
+A future integration must assess that existing limitation separately.

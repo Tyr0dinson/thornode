@@ -17,6 +17,20 @@ import (
 
 // ValidateGenesis validate genesis is valid or not
 func ValidateGenesis(data GenesisState) error {
+	err := validateInstantSendGenesis(data)
+	if err != nil {
+		return err
+	}
+	seenInstantSend := make(map[string]bool)
+	for _, state := range data.InstantSend {
+		if err := state.Validate(); err != nil {
+			return err
+		}
+		if seenInstantSend[state.Chain.String()+"/"+state.PubKey.String()] {
+			return errors.New("duplicate InstantSend genesis vault")
+		}
+		seenInstantSend[state.Chain.String()+"/"+state.PubKey.String()] = true
+	}
 	for i := range data.SolVaultNonces {
 		if err := data.SolVaultNonces[i].Valid(); err != nil {
 			return err
@@ -171,6 +185,25 @@ func DefaultGenesisState() GenesisState {
 
 // initGenesis read the data in GenesisState and apply it to data store
 func initGenesis(ctx cosmos.Context, keeper keeper.Keeper, data GenesisState) []abci.ValidatorUpdate {
+	for _, state := range data.InstantSend {
+		if err := keeper.SetInstantSend(ctx, state); err != nil {
+			panic(err)
+		}
+	}
+	for _, value := range data.InstantSendStatus {
+		err := keeper.SetInstantSendStatus(ctx, value)
+		if err != nil {
+			panic(err)
+		}
+	}
+
+	for _, value := range data.InstantSendCredits {
+		err := keeper.SetInstantSendCredit(ctx, value)
+		if err != nil {
+			panic(err)
+		}
+	}
+
 	for _, record := range data.Pools {
 		if err := keeper.SetPool(ctx, record); err != nil {
 			panic(err)
@@ -633,6 +666,42 @@ func ExportGenesis(ctx cosmos.Context, k keeper.Keeper) GenesisState {
 		}
 	}
 
+	instantSendStates, err := k.ListInstantSend(ctx, common.EmptyChain)
+	if err != nil {
+		panic(err)
+	}
+	instantSendStatus, err := k.ListInstantSendStatus(ctx)
+	if err != nil {
+		panic(err)
+	}
+
+	instantSendCredits, err := k.ListInstantSendCredit(ctx)
+	if err != nil {
+		panic(err)
+	}
+
+	// Keep the credit records needed to reconcile every outstanding early deposit.
+	exported := make(map[common.TxID]bool)
+	for _, voter := range observedTxInVoters {
+		exported[voter.TxID] = true
+	}
+	pendingVaults := make(map[common.PubKey]bool)
+	for _, state := range instantSendStates {
+		for _, entry := range state.Pending {
+			pendingVaults[state.PubKey] = true
+			if exported[entry.Id] {
+				continue
+			}
+			var voter ObservedTxVoter
+			voter, err = k.GetObservedTxInVoter(ctx, entry.Id)
+			if err != nil {
+				panic(err)
+			}
+			observedTxInVoters = append(observedTxInVoters, voter)
+			exported[entry.Id] = true
+		}
+	}
+
 	lastSignedHeight, err := k.GetLastSignedHeight(ctx)
 	if err != nil {
 		panic(err)
@@ -673,7 +742,7 @@ func ExportGenesis(ctx cosmos.Context, k keeper.Keeper) GenesisState {
 		if !vault.IsAsgard() {
 			continue // filter non-asgard vault types
 		}
-		if (vault.Status == types.VaultStatus_InitVault || vault.Status == types.VaultStatus_InactiveVault) && !vault.HasDeficit() {
+		if (vault.Status == types.VaultStatus_InitVault || vault.Status == types.VaultStatus_InactiveVault) && !vault.HasDeficit() && !pendingVaults[vault.PubKey] {
 			continue // filter abandoned vaults while preserving unsettled accounting state
 		}
 		vaults = append(vaults, vault)
@@ -971,5 +1040,8 @@ func ExportGenesis(ctx cosmos.Context, k keeper.Keeper) GenesisState {
 		LastObservedDynamicFeeEpochBlocks: lastObservedDynamicFeeEpochBlocks,
 		StableReserveCredits:              stableReserveCredits,
 		SolVaultNonces:                    solVaultNonces,
+		InstantSendStatus:                 instantSendStatus,
+		InstantSendCredits:                instantSendCredits,
+		InstantSend:                       instantSendStates,
 	}
 }

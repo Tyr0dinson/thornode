@@ -208,6 +208,7 @@ func (am AppModule) BeginBlock(goCtx context.Context) error {
 	am.mgr.Keeper().ClearObservingAddresses(ctx)
 
 	am.mgr.GasMgr().BeginBlock()
+	checkInstantSend(ctx, am.mgr)
 	if err := am.mgr.NetworkMgr().BeginBlock(ctx, am.mgr); err != nil {
 		ctx.Logger().Error("fail to begin network manager", "error", err)
 	}

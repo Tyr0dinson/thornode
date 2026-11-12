@@ -1,6 +1,7 @@
 package utxo
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"sort"
@@ -65,9 +66,26 @@ func (c *Client) getUtxoToSpend(pubKey common.PubKey, total, floor btcutil.Amoun
 	if err != nil {
 		return nil, fmt.Errorf("fail to get address from pubkey(%s): %w", pubKey, err)
 	}
+	var snapshot chainLockSnapshot
+	if c.GetChain().Equals(common.DASHChain) {
+		snapshot, err = c.getChainLockSnapshot()
+		if err != nil {
+			return nil, err
+		}
+	}
 	utxos, err := c.rpc.ListUnspent(addr.String())
 	if err != nil {
 		return nil, fmt.Errorf("fail to get UTXOs: %w", err)
+	}
+
+	if c.GetChain().Equals(common.DASHChain) {
+		current, snapshotErr := c.getChainLockSnapshot()
+		if snapshotErr != nil {
+			return nil, snapshotErr
+		}
+		if current != snapshot {
+			return nil, errors.New("chain changed during input selection")
+		}
 	}
 
 	// spend UTXO older to younger
@@ -93,6 +111,16 @@ func (c *Client) getUtxoToSpend(pubKey common.PubKey, total, floor btcutil.Amoun
 			continue
 		}
 
+		if c.GetChain().Equals(common.DASHChain) {
+			if item.Confirmations < 0 || item.Confirmations > snapshot.tipHeight+1 {
+				return nil, errors.New("invalid output confirmations")
+			}
+			settled := item.Confirmations > 0 && snapshot.tipHeight-item.Confirmations+1 <= snapshot.lockHeight
+			if !settled && !c.isSelfTransaction(item.TxID) && !c.isFromAsgard(item.TxID) {
+				excluded.unconfirmedOrDust++
+				continue
+			}
+		}
 		// analyze-ignore(float-comparison)
 		belowMinimum := item.Confirmations < c.cfg.UTXO.MinUTXOConfirmations || item.Amount < minUTXOAmt
 		if belowMinimum {
@@ -769,8 +797,9 @@ func (c *Client) buildTx(tx stypes.TxOutItem, sourceScript []byte, zecReference 
 	if balance == 0 {
 		changeScript = nil
 	}
-	finalSize := c.estimateTxSize(txes, nullDataScripts, buf, changeScript)
-	if err = c.validateRelayFee(gasAmtSats, finalSize); err != nil {
+	estimatedSize := c.estimateTxSize(txes, nullDataScripts, buf, changeScript)
+	err = c.validateRelayFee(gasAmtSats, estimatedSize)
+	if err != nil {
 		return nil, nil, err
 	}
 

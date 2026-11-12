@@ -3233,6 +3233,159 @@ func (x *_GenesisState_50_list) IsValid() bool {
 	return x.list != nil
 }
 
+var _ protoreflect.List = (*_GenesisState_51_list)(nil)
+
+type _GenesisState_51_list struct {
+	list *[]*common.InstantSendState
+}
+
+func (x *_GenesisState_51_list) Len() int {
+	if x.list == nil {
+		return 0
+	}
+	return len(*x.list)
+}
+
+func (x *_GenesisState_51_list) Get(i int) protoreflect.Value {
+	return protoreflect.ValueOfMessage((*x.list)[i].ProtoReflect())
+}
+
+func (x *_GenesisState_51_list) Set(i int, value protoreflect.Value) {
+	valueUnwrapped := value.Message()
+	concreteValue := valueUnwrapped.Interface().(*common.InstantSendState)
+	(*x.list)[i] = concreteValue
+}
+
+func (x *_GenesisState_51_list) Append(value protoreflect.Value) {
+	valueUnwrapped := value.Message()
+	concreteValue := valueUnwrapped.Interface().(*common.InstantSendState)
+	*x.list = append(*x.list, concreteValue)
+}
+
+func (x *_GenesisState_51_list) AppendMutable() protoreflect.Value {
+	v := new(common.InstantSendState)
+	*x.list = append(*x.list, v)
+	return protoreflect.ValueOfMessage(v.ProtoReflect())
+}
+
+func (x *_GenesisState_51_list) Truncate(n int) {
+	for i := n; i < len(*x.list); i++ {
+		(*x.list)[i] = nil
+	}
+	*x.list = (*x.list)[:n]
+}
+
+func (x *_GenesisState_51_list) NewElement() protoreflect.Value {
+	v := new(common.InstantSendState)
+	return protoreflect.ValueOfMessage(v.ProtoReflect())
+}
+
+func (x *_GenesisState_51_list) IsValid() bool {
+	return x.list != nil
+}
+
+var _ protoreflect.List = (*_GenesisState_52_list)(nil)
+
+type _GenesisState_52_list struct {
+	list *[]*common.InstantSendStatus
+}
+
+func (x *_GenesisState_52_list) Len() int {
+	if x.list == nil {
+		return 0
+	}
+	return len(*x.list)
+}
+
+func (x *_GenesisState_52_list) Get(i int) protoreflect.Value {
+	return protoreflect.ValueOfMessage((*x.list)[i].ProtoReflect())
+}
+
+func (x *_GenesisState_52_list) Set(i int, value protoreflect.Value) {
+	valueUnwrapped := value.Message()
+	concreteValue := valueUnwrapped.Interface().(*common.InstantSendStatus)
+	(*x.list)[i] = concreteValue
+}
+
+func (x *_GenesisState_52_list) Append(value protoreflect.Value) {
+	valueUnwrapped := value.Message()
+	concreteValue := valueUnwrapped.Interface().(*common.InstantSendStatus)
+	*x.list = append(*x.list, concreteValue)
+}
+
+func (x *_GenesisState_52_list) AppendMutable() protoreflect.Value {
+	v := new(common.InstantSendStatus)
+	*x.list = append(*x.list, v)
+	return protoreflect.ValueOfMessage(v.ProtoReflect())
+}
+
+func (x *_GenesisState_52_list) Truncate(n int) {
+	for i := n; i < len(*x.list); i++ {
+		(*x.list)[i] = nil
+	}
+	*x.list = (*x.list)[:n]
+}
+
+func (x *_GenesisState_52_list) NewElement() protoreflect.Value {
+	v := new(common.InstantSendStatus)
+	return protoreflect.ValueOfMessage(v.ProtoReflect())
+}
+
+func (x *_GenesisState_52_list) IsValid() bool {
+	return x.list != nil
+}
+
+var _ protoreflect.List = (*_GenesisState_55_list)(nil)
+
+type _GenesisState_55_list struct {
+	list *[]*common.InstantSendCredit
+}
+
+func (x *_GenesisState_55_list) Len() int {
+	if x.list == nil {
+		return 0
+	}
+	return len(*x.list)
+}
+
+func (x *_GenesisState_55_list) Get(i int) protoreflect.Value {
+	return protoreflect.ValueOfMessage((*x.list)[i].ProtoReflect())
+}
+
+func (x *_GenesisState_55_list) Set(i int, value protoreflect.Value) {
+	valueUnwrapped := value.Message()
+	concreteValue := valueUnwrapped.Interface().(*common.InstantSendCredit)
+	(*x.list)[i] = concreteValue
+}
+
+func (x *_GenesisState_55_list) Append(value protoreflect.Value) {
+	valueUnwrapped := value.Message()
+	concreteValue := valueUnwrapped.Interface().(*common.InstantSendCredit)
+	*x.list = append(*x.list, concreteValue)
+}
+
+func (x *_GenesisState_55_list) AppendMutable() protoreflect.Value {
+	v := new(common.InstantSendCredit)
+	*x.list = append(*x.list, v)
+	return protoreflect.ValueOfMessage(v.ProtoReflect())
+}
+
+func (x *_GenesisState_55_list) Truncate(n int) {
+	for i := n; i < len(*x.list); i++ {
+		(*x.list)[i] = nil
+	}
+	*x.list = (*x.list)[:n]
+}
+
+func (x *_GenesisState_55_list) NewElement() protoreflect.Value {
+	v := new(common.InstantSendCredit)
+	return protoreflect.ValueOfMessage(v.ProtoReflect())
+}
+
+func (x *_GenesisState_55_list) IsValid() bool {
+	return x.list != nil
+}
+
 var (
 	md_GenesisState                                        protoreflect.MessageDescriptor
 	fd_GenesisState_pools                                  protoreflect.FieldDescriptor
@@ -3276,6 +3429,9 @@ var (
 	fd_GenesisState_last_observed_dynamic_fee_epoch_blocks protoreflect.FieldDescriptor
 	fd_GenesisState_stable_reserve_credits                 protoreflect.FieldDescriptor
 	fd_GenesisState_sol_vault_nonces                       protoreflect.FieldDescriptor
+	fd_GenesisState_instant_send                           protoreflect.FieldDescriptor
+	fd_GenesisState_instant_send_status                    protoreflect.FieldDescriptor
+	fd_GenesisState_instant_send_credits                   protoreflect.FieldDescriptor
 )
 
 func init() {
@@ -3322,6 +3478,9 @@ func init() {
 	fd_GenesisState_last_observed_dynamic_fee_epoch_blocks = md_GenesisState.Fields().ByName("last_observed_dynamic_fee_epoch_blocks")
 	fd_GenesisState_stable_reserve_credits = md_GenesisState.Fields().ByName("stable_reserve_credits")
 	fd_GenesisState_sol_vault_nonces = md_GenesisState.Fields().ByName("sol_vault_nonces")
+	fd_GenesisState_instant_send = md_GenesisState.Fields().ByName("instant_send")
+	fd_GenesisState_instant_send_status = md_GenesisState.Fields().ByName("instant_send_status")
+	fd_GenesisState_instant_send_credits = md_GenesisState.Fields().ByName("instant_send_credits")
 }
 
 var _ protoreflect.Message = (*fastReflection_GenesisState)(nil)
@@ -3635,6 +3794,24 @@ func (x *fastReflection_GenesisState) Range(f func(protoreflect.FieldDescriptor,
 			return
 		}
 	}
+	if len(x.InstantSend) != 0 {
+		value := protoreflect.ValueOfList(&_GenesisState_51_list{list: &x.InstantSend})
+		if !f(fd_GenesisState_instant_send, value) {
+			return
+		}
+	}
+	if len(x.InstantSendStatus) != 0 {
+		value := protoreflect.ValueOfList(&_GenesisState_52_list{list: &x.InstantSendStatus})
+		if !f(fd_GenesisState_instant_send_status, value) {
+			return
+		}
+	}
+	if len(x.InstantSendCredits) != 0 {
+		value := protoreflect.ValueOfList(&_GenesisState_55_list{list: &x.InstantSendCredits})
+		if !f(fd_GenesisState_instant_send_credits, value) {
+			return
+		}
+	}
 }
 
 // Has reports whether a field is populated.
@@ -3732,6 +3909,12 @@ func (x *fastReflection_GenesisState) Has(fd protoreflect.FieldDescriptor) bool 
 		return len(x.StableReserveCredits) != 0
 	case "thorchain.GenesisState.sol_vault_nonces":
 		return len(x.SolVaultNonces) != 0
+	case "thorchain.GenesisState.instant_send":
+		return len(x.InstantSend) != 0
+	case "thorchain.GenesisState.instant_send_status":
+		return len(x.InstantSendStatus) != 0
+	case "thorchain.GenesisState.instant_send_credits":
+		return len(x.InstantSendCredits) != 0
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: thorchain.GenesisState"))
@@ -3830,6 +4013,12 @@ func (x *fastReflection_GenesisState) Clear(fd protoreflect.FieldDescriptor) {
 		x.StableReserveCredits = nil
 	case "thorchain.GenesisState.sol_vault_nonces":
 		x.SolVaultNonces = nil
+	case "thorchain.GenesisState.instant_send":
+		x.InstantSend = nil
+	case "thorchain.GenesisState.instant_send_status":
+		x.InstantSendStatus = nil
+	case "thorchain.GenesisState.instant_send_credits":
+		x.InstantSendCredits = nil
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: thorchain.GenesisState"))
@@ -4071,6 +4260,24 @@ func (x *fastReflection_GenesisState) Get(descriptor protoreflect.FieldDescripto
 		}
 		listValue := &_GenesisState_50_list{list: &x.SolVaultNonces}
 		return protoreflect.ValueOfList(listValue)
+	case "thorchain.GenesisState.instant_send":
+		if len(x.InstantSend) == 0 {
+			return protoreflect.ValueOfList(&_GenesisState_51_list{})
+		}
+		listValue := &_GenesisState_51_list{list: &x.InstantSend}
+		return protoreflect.ValueOfList(listValue)
+	case "thorchain.GenesisState.instant_send_status":
+		if len(x.InstantSendStatus) == 0 {
+			return protoreflect.ValueOfList(&_GenesisState_52_list{})
+		}
+		listValue := &_GenesisState_52_list{list: &x.InstantSendStatus}
+		return protoreflect.ValueOfList(listValue)
+	case "thorchain.GenesisState.instant_send_credits":
+		if len(x.InstantSendCredits) == 0 {
+			return protoreflect.ValueOfList(&_GenesisState_55_list{})
+		}
+		listValue := &_GenesisState_55_list{list: &x.InstantSendCredits}
+		return protoreflect.ValueOfList(listValue)
 	default:
 		if descriptor.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: thorchain.GenesisState"))
@@ -4241,6 +4448,18 @@ func (x *fastReflection_GenesisState) Set(fd protoreflect.FieldDescriptor, value
 		lv := value.List()
 		clv := lv.(*_GenesisState_50_list)
 		x.SolVaultNonces = *clv.list
+	case "thorchain.GenesisState.instant_send":
+		lv := value.List()
+		clv := lv.(*_GenesisState_51_list)
+		x.InstantSend = *clv.list
+	case "thorchain.GenesisState.instant_send_status":
+		lv := value.List()
+		clv := lv.(*_GenesisState_52_list)
+		x.InstantSendStatus = *clv.list
+	case "thorchain.GenesisState.instant_send_credits":
+		lv := value.List()
+		clv := lv.(*_GenesisState_55_list)
+		x.InstantSendCredits = *clv.list
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: thorchain.GenesisState"))
@@ -4480,6 +4699,24 @@ func (x *fastReflection_GenesisState) Mutable(fd protoreflect.FieldDescriptor) p
 		}
 		value := &_GenesisState_50_list{list: &x.SolVaultNonces}
 		return protoreflect.ValueOfList(value)
+	case "thorchain.GenesisState.instant_send":
+		if x.InstantSend == nil {
+			x.InstantSend = []*common.InstantSendState{}
+		}
+		value := &_GenesisState_51_list{list: &x.InstantSend}
+		return protoreflect.ValueOfList(value)
+	case "thorchain.GenesisState.instant_send_status":
+		if x.InstantSendStatus == nil {
+			x.InstantSendStatus = []*common.InstantSendStatus{}
+		}
+		value := &_GenesisState_52_list{list: &x.InstantSendStatus}
+		return protoreflect.ValueOfList(value)
+	case "thorchain.GenesisState.instant_send_credits":
+		if x.InstantSendCredits == nil {
+			x.InstantSendCredits = []*common.InstantSendCredit{}
+		}
+		value := &_GenesisState_55_list{list: &x.InstantSendCredits}
+		return protoreflect.ValueOfList(value)
 	case "thorchain.GenesisState.reserve":
 		panic(fmt.Errorf("field reserve of message thorchain.GenesisState is not mutable"))
 	case "thorchain.GenesisState.last_signed_height":
@@ -4620,6 +4857,15 @@ func (x *fastReflection_GenesisState) NewField(fd protoreflect.FieldDescriptor) 
 	case "thorchain.GenesisState.sol_vault_nonces":
 		list := []*types.SolVaultNonce{}
 		return protoreflect.ValueOfList(&_GenesisState_50_list{list: &list})
+	case "thorchain.GenesisState.instant_send":
+		list := []*common.InstantSendState{}
+		return protoreflect.ValueOfList(&_GenesisState_51_list{list: &list})
+	case "thorchain.GenesisState.instant_send_status":
+		list := []*common.InstantSendStatus{}
+		return protoreflect.ValueOfList(&_GenesisState_52_list{list: &list})
+	case "thorchain.GenesisState.instant_send_credits":
+		list := []*common.InstantSendCredit{}
+		return protoreflect.ValueOfList(&_GenesisState_55_list{list: &list})
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: thorchain.GenesisState"))
@@ -4917,6 +5163,24 @@ func (x *fastReflection_GenesisState) ProtoMethods() *protoiface.Methods {
 				n += 2 + l + runtime.Sov(uint64(l))
 			}
 		}
+		if len(x.InstantSend) > 0 {
+			for _, e := range x.InstantSend {
+				l = options.Size(e)
+				n += 2 + l + runtime.Sov(uint64(l))
+			}
+		}
+		if len(x.InstantSendStatus) > 0 {
+			for _, e := range x.InstantSendStatus {
+				l = options.Size(e)
+				n += 2 + l + runtime.Sov(uint64(l))
+			}
+		}
+		if len(x.InstantSendCredits) > 0 {
+			for _, e := range x.InstantSendCredits {
+				l = options.Size(e)
+				n += 2 + l + runtime.Sov(uint64(l))
+			}
+		}
 		if x.unknownFields != nil {
 			n += len(x.unknownFields)
 		}
@@ -4945,6 +5209,60 @@ func (x *fastReflection_GenesisState) ProtoMethods() *protoiface.Methods {
 		if x.unknownFields != nil {
 			i -= len(x.unknownFields)
 			copy(dAtA[i:], x.unknownFields)
+		}
+		if len(x.InstantSendCredits) > 0 {
+			for iNdEx := len(x.InstantSendCredits) - 1; iNdEx >= 0; iNdEx-- {
+				encoded, err := options.Marshal(x.InstantSendCredits[iNdEx])
+				if err != nil {
+					return protoiface.MarshalOutput{
+						NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+						Buf:               input.Buf,
+					}, err
+				}
+				i -= len(encoded)
+				copy(dAtA[i:], encoded)
+				i = runtime.EncodeVarint(dAtA, i, uint64(len(encoded)))
+				i--
+				dAtA[i] = 0x3
+				i--
+				dAtA[i] = 0xba
+			}
+		}
+		if len(x.InstantSendStatus) > 0 {
+			for iNdEx := len(x.InstantSendStatus) - 1; iNdEx >= 0; iNdEx-- {
+				encoded, err := options.Marshal(x.InstantSendStatus[iNdEx])
+				if err != nil {
+					return protoiface.MarshalOutput{
+						NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+						Buf:               input.Buf,
+					}, err
+				}
+				i -= len(encoded)
+				copy(dAtA[i:], encoded)
+				i = runtime.EncodeVarint(dAtA, i, uint64(len(encoded)))
+				i--
+				dAtA[i] = 0x3
+				i--
+				dAtA[i] = 0xa2
+			}
+		}
+		if len(x.InstantSend) > 0 {
+			for iNdEx := len(x.InstantSend) - 1; iNdEx >= 0; iNdEx-- {
+				encoded, err := options.Marshal(x.InstantSend[iNdEx])
+				if err != nil {
+					return protoiface.MarshalOutput{
+						NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+						Buf:               input.Buf,
+					}, err
+				}
+				i -= len(encoded)
+				copy(dAtA[i:], encoded)
+				i = runtime.EncodeVarint(dAtA, i, uint64(len(encoded)))
+				i--
+				dAtA[i] = 0x3
+				i--
+				dAtA[i] = 0x9a
+			}
 		}
 		if len(x.SolVaultNonces) > 0 {
 			for iNdEx := len(x.SolVaultNonces) - 1; iNdEx >= 0; iNdEx-- {
@@ -6999,6 +7317,108 @@ func (x *fastReflection_GenesisState) ProtoMethods() *protoiface.Methods {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, err
 				}
 				iNdEx = postIndex
+			case 51:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field InstantSend", wireType)
+				}
+				var msglen int
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					msglen |= int(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				if msglen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + msglen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.InstantSend = append(x.InstantSend, &common.InstantSendState{})
+				if err := options.Unmarshal(dAtA[iNdEx:postIndex], x.InstantSend[len(x.InstantSend)-1]); err != nil {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, err
+				}
+				iNdEx = postIndex
+			case 52:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field InstantSendStatus", wireType)
+				}
+				var msglen int
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					msglen |= int(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				if msglen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + msglen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.InstantSendStatus = append(x.InstantSendStatus, &common.InstantSendStatus{})
+				if err := options.Unmarshal(dAtA[iNdEx:postIndex], x.InstantSendStatus[len(x.InstantSendStatus)-1]); err != nil {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, err
+				}
+				iNdEx = postIndex
+			case 55:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field InstantSendCredits", wireType)
+				}
+				var msglen int
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					msglen |= int(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				if msglen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + msglen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.InstantSendCredits = append(x.InstantSendCredits, &common.InstantSendCredit{})
+				if err := options.Unmarshal(dAtA[iNdEx:postIndex], x.InstantSendCredits[len(x.InstantSendCredits)-1]); err != nil {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, err
+				}
+				iNdEx = postIndex
 			default:
 				iNdEx = preIndex
 				skippy, err := runtime.Skip(dAtA[iNdEx:])
@@ -7233,6 +7653,9 @@ type GenesisState struct {
 	LastObservedDynamicFeeEpochBlocks int64                          `protobuf:"varint,48,opt,name=last_observed_dynamic_fee_epoch_blocks,json=lastObservedDynamicFeeEpochBlocks,proto3" json:"last_observed_dynamic_fee_epoch_blocks,omitempty"`
 	StableReserveCredits              []*StableReserveCredit         `protobuf:"bytes,49,rep,name=stable_reserve_credits,json=stableReserveCredits,proto3" json:"stable_reserve_credits,omitempty"`
 	SolVaultNonces                    []*types.SolVaultNonce         `protobuf:"bytes,50,rep,name=sol_vault_nonces,json=solVaultNonces,proto3" json:"sol_vault_nonces,omitempty"`
+	InstantSend                       []*common.InstantSendState     `protobuf:"bytes,51,rep,name=instant_send,json=instantSend,proto3" json:"instant_send,omitempty"`
+	InstantSendStatus                 []*common.InstantSendStatus    `protobuf:"bytes,52,rep,name=instant_send_status,json=instantSendStatus,proto3" json:"instant_send_status,omitempty"`
+	InstantSendCredits                []*common.InstantSendCredit    `protobuf:"bytes,55,rep,name=instant_send_credits,json=instantSendCredits,proto3" json:"instant_send_credits,omitempty"`
 }
 
 func (x *GenesisState) Reset() {
@@ -7543,6 +7966,27 @@ func (x *GenesisState) GetSolVaultNonces() []*types.SolVaultNonce {
 	return nil
 }
 
+func (x *GenesisState) GetInstantSend() []*common.InstantSendState {
+	if x != nil {
+		return x.InstantSend
+	}
+	return nil
+}
+
+func (x *GenesisState) GetInstantSendStatus() []*common.InstantSendStatus {
+	if x != nil {
+		return x.InstantSendStatus
+	}
+	return nil
+}
+
+func (x *GenesisState) GetInstantSendCredits() []*common.InstantSendCredit {
+	if x != nil {
+		return x.InstantSendCredits
+	}
+	return nil
+}
+
 var File_thorchain_genesis_proto protoreflect.FileDescriptor
 
 var file_thorchain_genesis_proto_rawDesc = []byte{
@@ -7614,7 +8058,7 @@ var file_thorchain_genesis_proto_rawDesc = []byte{
 	0x18, 0x0a, 0x07, 0x61, 0x64, 0x64, 0x72, 0x65, 0x73, 0x73, 0x18, 0x02, 0x20, 0x01, 0x28, 0x09,
 	0x52, 0x07, 0x61, 0x64, 0x64, 0x72, 0x65, 0x73, 0x73, 0x12, 0x16, 0x0a, 0x06, 0x61, 0x6d, 0x6f,
 	0x75, 0x6e, 0x74, 0x18, 0x03, 0x20, 0x01, 0x28, 0x09, 0x52, 0x06, 0x61, 0x6d, 0x6f, 0x75, 0x6e,
-	0x74, 0x22, 0xb4, 0x19, 0x0a, 0x0c, 0x47, 0x65, 0x6e, 0x65, 0x73, 0x69, 0x73, 0x53, 0x74, 0x61,
+	0x74, 0x22, 0xf8, 0x1b, 0x0a, 0x0c, 0x47, 0x65, 0x6e, 0x65, 0x73, 0x69, 0x73, 0x53, 0x74, 0x61,
 	0x74, 0x65, 0x12, 0x27, 0x0a, 0x05, 0x70, 0x6f, 0x6f, 0x6c, 0x73, 0x18, 0x01, 0x20, 0x03, 0x28,
 	0x0b, 0x32, 0x0b, 0x2e, 0x74, 0x79, 0x70, 0x65, 0x73, 0x2e, 0x50, 0x6f, 0x6f, 0x6c, 0x42, 0x04,
 	0xc8, 0xde, 0x1f, 0x00, 0x52, 0x05, 0x70, 0x6f, 0x6f, 0x6c, 0x73, 0x12, 0x98, 0x01, 0x0a, 0x13,
@@ -7814,20 +8258,40 @@ var file_thorchain_genesis_proto_rawDesc = []byte{
 	0x76, 0x61, 0x75, 0x6c, 0x74, 0x5f, 0x6e, 0x6f, 0x6e, 0x63, 0x65, 0x73, 0x18, 0x32, 0x20, 0x03,
 	0x28, 0x0b, 0x32, 0x14, 0x2e, 0x74, 0x79, 0x70, 0x65, 0x73, 0x2e, 0x53, 0x6f, 0x6c, 0x56, 0x61,
 	0x75, 0x6c, 0x74, 0x4e, 0x6f, 0x6e, 0x63, 0x65, 0x42, 0x04, 0xc8, 0xde, 0x1f, 0x00, 0x52, 0x0e,
-	0x73, 0x6f, 0x6c, 0x56, 0x61, 0x75, 0x6c, 0x74, 0x4e, 0x6f, 0x6e, 0x63, 0x65, 0x73, 0x4a, 0x04,
-	0x08, 0x09, 0x10, 0x0a, 0x4a, 0x04, 0x08, 0x0e, 0x10, 0x0f, 0x4a, 0x04, 0x08, 0x0f, 0x10, 0x10,
-	0x4a, 0x04, 0x08, 0x10, 0x10, 0x11, 0x4a, 0x04, 0x08, 0x11, 0x10, 0x12, 0x4a, 0x04, 0x08, 0x12,
-	0x10, 0x13, 0x4a, 0x04, 0x08, 0x15, 0x10, 0x16, 0x42, 0x91, 0x01, 0x0a, 0x0d, 0x63, 0x6f, 0x6d,
-	0x2e, 0x74, 0x68, 0x6f, 0x72, 0x63, 0x68, 0x61, 0x69, 0x6e, 0x42, 0x0c, 0x47, 0x65, 0x6e, 0x65,
-	0x73, 0x69, 0x73, 0x50, 0x72, 0x6f, 0x74, 0x6f, 0x50, 0x01, 0x5a, 0x2e, 0x67, 0x69, 0x74, 0x6c,
-	0x61, 0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x74, 0x68, 0x6f, 0x72, 0x63, 0x68, 0x61, 0x69, 0x6e,
-	0x2f, 0x74, 0x68, 0x6f, 0x72, 0x6e, 0x6f, 0x64, 0x65, 0x2f, 0x76, 0x33, 0x2f, 0x61, 0x70, 0x69,
-	0x2f, 0x74, 0x68, 0x6f, 0x72, 0x63, 0x68, 0x61, 0x69, 0x6e, 0xa2, 0x02, 0x03, 0x54, 0x58, 0x58,
-	0xaa, 0x02, 0x09, 0x54, 0x68, 0x6f, 0x72, 0x63, 0x68, 0x61, 0x69, 0x6e, 0xca, 0x02, 0x09, 0x54,
-	0x68, 0x6f, 0x72, 0x63, 0x68, 0x61, 0x69, 0x6e, 0xe2, 0x02, 0x15, 0x54, 0x68, 0x6f, 0x72, 0x63,
-	0x68, 0x61, 0x69, 0x6e, 0x5c, 0x47, 0x50, 0x42, 0x4d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74, 0x61,
-	0xea, 0x02, 0x09, 0x54, 0x68, 0x6f, 0x72, 0x63, 0x68, 0x61, 0x69, 0x6e, 0x62, 0x06, 0x70, 0x72,
-	0x6f, 0x74, 0x6f, 0x33,
+	0x73, 0x6f, 0x6c, 0x56, 0x61, 0x75, 0x6c, 0x74, 0x4e, 0x6f, 0x6e, 0x63, 0x65, 0x73, 0x12, 0x5b,
+	0x0a, 0x0c, 0x69, 0x6e, 0x73, 0x74, 0x61, 0x6e, 0x74, 0x5f, 0x73, 0x65, 0x6e, 0x64, 0x18, 0x33,
+	0x20, 0x03, 0x28, 0x0b, 0x32, 0x18, 0x2e, 0x63, 0x6f, 0x6d, 0x6d, 0x6f, 0x6e, 0x2e, 0x49, 0x6e,
+	0x73, 0x74, 0x61, 0x6e, 0x74, 0x53, 0x65, 0x6e, 0x64, 0x53, 0x74, 0x61, 0x74, 0x65, 0x42, 0x1e,
+	0xc8, 0xde, 0x1f, 0x00, 0xea, 0xde, 0x1f, 0x16, 0x69, 0x6e, 0x73, 0x74, 0x61, 0x6e, 0x74, 0x5f,
+	0x73, 0x65, 0x6e, 0x64, 0x2c, 0x6f, 0x6d, 0x69, 0x74, 0x65, 0x6d, 0x70, 0x74, 0x79, 0x52, 0x0b,
+	0x69, 0x6e, 0x73, 0x74, 0x61, 0x6e, 0x74, 0x53, 0x65, 0x6e, 0x64, 0x12, 0x70, 0x0a, 0x13, 0x69,
+	0x6e, 0x73, 0x74, 0x61, 0x6e, 0x74, 0x5f, 0x73, 0x65, 0x6e, 0x64, 0x5f, 0x73, 0x74, 0x61, 0x74,
+	0x75, 0x73, 0x18, 0x34, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x19, 0x2e, 0x63, 0x6f, 0x6d, 0x6d, 0x6f,
+	0x6e, 0x2e, 0x49, 0x6e, 0x73, 0x74, 0x61, 0x6e, 0x74, 0x53, 0x65, 0x6e, 0x64, 0x53, 0x74, 0x61,
+	0x74, 0x75, 0x73, 0x42, 0x25, 0xc8, 0xde, 0x1f, 0x00, 0xea, 0xde, 0x1f, 0x1d, 0x69, 0x6e, 0x73,
+	0x74, 0x61, 0x6e, 0x74, 0x5f, 0x73, 0x65, 0x6e, 0x64, 0x5f, 0x73, 0x74, 0x61, 0x74, 0x75, 0x73,
+	0x2c, 0x6f, 0x6d, 0x69, 0x74, 0x65, 0x6d, 0x70, 0x74, 0x79, 0x52, 0x11, 0x69, 0x6e, 0x73, 0x74,
+	0x61, 0x6e, 0x74, 0x53, 0x65, 0x6e, 0x64, 0x53, 0x74, 0x61, 0x74, 0x75, 0x73, 0x12, 0x73, 0x0a,
+	0x14, 0x69, 0x6e, 0x73, 0x74, 0x61, 0x6e, 0x74, 0x5f, 0x73, 0x65, 0x6e, 0x64, 0x5f, 0x63, 0x72,
+	0x65, 0x64, 0x69, 0x74, 0x73, 0x18, 0x37, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x19, 0x2e, 0x63, 0x6f,
+	0x6d, 0x6d, 0x6f, 0x6e, 0x2e, 0x49, 0x6e, 0x73, 0x74, 0x61, 0x6e, 0x74, 0x53, 0x65, 0x6e, 0x64,
+	0x43, 0x72, 0x65, 0x64, 0x69, 0x74, 0x42, 0x26, 0xc8, 0xde, 0x1f, 0x00, 0xea, 0xde, 0x1f, 0x1e,
+	0x69, 0x6e, 0x73, 0x74, 0x61, 0x6e, 0x74, 0x5f, 0x73, 0x65, 0x6e, 0x64, 0x5f, 0x63, 0x72, 0x65,
+	0x64, 0x69, 0x74, 0x73, 0x2c, 0x6f, 0x6d, 0x69, 0x74, 0x65, 0x6d, 0x70, 0x74, 0x79, 0x52, 0x12,
+	0x69, 0x6e, 0x73, 0x74, 0x61, 0x6e, 0x74, 0x53, 0x65, 0x6e, 0x64, 0x43, 0x72, 0x65, 0x64, 0x69,
+	0x74, 0x73, 0x4a, 0x04, 0x08, 0x09, 0x10, 0x0a, 0x4a, 0x04, 0x08, 0x0e, 0x10, 0x0f, 0x4a, 0x04,
+	0x08, 0x0f, 0x10, 0x10, 0x4a, 0x04, 0x08, 0x10, 0x10, 0x11, 0x4a, 0x04, 0x08, 0x11, 0x10, 0x12,
+	0x4a, 0x04, 0x08, 0x12, 0x10, 0x13, 0x4a, 0x04, 0x08, 0x15, 0x10, 0x16, 0x42, 0x91, 0x01, 0x0a,
+	0x0d, 0x63, 0x6f, 0x6d, 0x2e, 0x74, 0x68, 0x6f, 0x72, 0x63, 0x68, 0x61, 0x69, 0x6e, 0x42, 0x0c,
+	0x47, 0x65, 0x6e, 0x65, 0x73, 0x69, 0x73, 0x50, 0x72, 0x6f, 0x74, 0x6f, 0x50, 0x01, 0x5a, 0x2e,
+	0x67, 0x69, 0x74, 0x6c, 0x61, 0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x74, 0x68, 0x6f, 0x72, 0x63,
+	0x68, 0x61, 0x69, 0x6e, 0x2f, 0x74, 0x68, 0x6f, 0x72, 0x6e, 0x6f, 0x64, 0x65, 0x2f, 0x76, 0x33,
+	0x2f, 0x61, 0x70, 0x69, 0x2f, 0x74, 0x68, 0x6f, 0x72, 0x63, 0x68, 0x61, 0x69, 0x6e, 0xa2, 0x02,
+	0x03, 0x54, 0x58, 0x58, 0xaa, 0x02, 0x09, 0x54, 0x68, 0x6f, 0x72, 0x63, 0x68, 0x61, 0x69, 0x6e,
+	0xca, 0x02, 0x09, 0x54, 0x68, 0x6f, 0x72, 0x63, 0x68, 0x61, 0x69, 0x6e, 0xe2, 0x02, 0x15, 0x54,
+	0x68, 0x6f, 0x72, 0x63, 0x68, 0x61, 0x69, 0x6e, 0x5c, 0x47, 0x50, 0x42, 0x4d, 0x65, 0x74, 0x61,
+	0x64, 0x61, 0x74, 0x61, 0xea, 0x02, 0x09, 0x54, 0x68, 0x6f, 0x72, 0x63, 0x68, 0x61, 0x69, 0x6e,
+	0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
 }
 
 var (
@@ -7879,6 +8343,9 @@ var file_thorchain_genesis_proto_goTypes = []interface{}{
 	(*types.DynamicFeeRecord)(nil),       // 32: types.DynamicFeeRecord
 	(*types.DynamicFeeAccumulator)(nil),  // 33: types.DynamicFeeAccumulator
 	(*types.SolVaultNonce)(nil),          // 34: types.SolVaultNonce
+	(*common.InstantSendState)(nil),      // 35: common.InstantSendState
+	(*common.InstantSendStatus)(nil),     // 36: common.InstantSendStatus
+	(*common.InstantSendCredit)(nil),     // 37: common.InstantSendCredit
 }
 var file_thorchain_genesis_proto_depIdxs = []int32{
 	4,  // 0: thorchain.GenesisState.pools:type_name -> types.Pool
@@ -7918,11 +8385,14 @@ var file_thorchain_genesis_proto_depIdxs = []int32{
 	33, // 34: thorchain.GenesisState.dynamic_fee_accumulators:type_name -> types.DynamicFeeAccumulator
 	2,  // 35: thorchain.GenesisState.stable_reserve_credits:type_name -> thorchain.StableReserveCredit
 	34, // 36: thorchain.GenesisState.sol_vault_nonces:type_name -> types.SolVaultNonce
-	37, // [37:37] is the sub-list for method output_type
-	37, // [37:37] is the sub-list for method input_type
-	37, // [37:37] is the sub-list for extension type_name
-	37, // [37:37] is the sub-list for extension extendee
-	0,  // [0:37] is the sub-list for field type_name
+	35, // 37: thorchain.GenesisState.instant_send:type_name -> common.InstantSendState
+	36, // 38: thorchain.GenesisState.instant_send_status:type_name -> common.InstantSendStatus
+	37, // 39: thorchain.GenesisState.instant_send_credits:type_name -> common.InstantSendCredit
+	40, // [40:40] is the sub-list for method output_type
+	40, // [40:40] is the sub-list for method input_type
+	40, // [40:40] is the sub-list for extension type_name
+	40, // [40:40] is the sub-list for extension extendee
+	0,  // [0:40] is the sub-list for field type_name
 }
 
 func init() { file_thorchain_genesis_proto_init() }

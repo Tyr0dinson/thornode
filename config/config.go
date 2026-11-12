@@ -863,11 +863,8 @@ type BifrostAttestationGossipConfig struct {
 }
 
 type InstantSendConfiguration struct {
-	// Enabled indicates if InstantSend mempool observation is enabled.
-	Enabled bool `mapstructure:"enabled"`
-	// MaxMempoolAge bounds how long a tx can sit in mempool before falling back to blocks.
-	// Nonpositive values disable the age limit.
-	MaxMempoolAge time.Duration `mapstructure:"max_mempool_age"`
+	// MinFeeRate is the minimum base fee in duffs per virtual byte.
+	MinFeeRate uint64 `mapstructure:"min_fee_rate"`
 }
 
 type BifrostChainConfiguration struct {

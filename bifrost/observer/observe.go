@@ -2121,6 +2121,7 @@ func (o *Observer) getThorchainTxIns(txIn *types.TxIn, finalized bool, finaliseH
 			tx.Gas[i].Amount = cosmos.NewUintFromBigInt(tx.Gas[i].Amount.BigInt())
 		}
 		obsTx := common.NewObservedTx(tx, height, item.ObservedVaultPubKey, finaliseHeight)
+		obsTx.InstantSend = item.InstantSend.Copy()
 		obsTx.KeysignMs = o.tssKeysignMetricMgr.GetTssKeysignMetric(item.Tx)
 		obsTx.Aggregator = item.Aggregator
 		obsTx.AggregatorTarget = item.AggregatorTarget

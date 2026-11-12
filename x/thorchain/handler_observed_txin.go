@@ -73,14 +73,23 @@ func (h ObservedTxInHandler) handle(ctx cosmos.Context, msg MsgObservedTxIn) (*c
 			continue
 		}
 
+		// Early deposits settle only through an independent full ChainLock certificate.
+		if voter.Tx.InstantSend != nil {
+			continue
+		}
+
 		voter, isQuorum := processTxInAttestation(ctx, h.mgr, voter, activeNodeAccounts, tx, msg.Signer, true)
-		if err := handleObservedTxInQuorum(ctx, h.mgr, msg.Signer, activeNodeAccounts, handler, tx, voter, voter.Tx.GetSigners(), isQuorum); err != nil {
+		err = handleObservedTxInQuorum(ctx, h.mgr, msg.Signer, activeNodeAccounts, handler, tx, voter, voter.Tx.GetSigners(), isQuorum)
+		if err != nil {
 			ctx.Logger().Error("fail to handle observed tx in quorum", "error", err, "tx", tx.Tx.ID)
 			telemetry.IncrCounterWithLabels(
 				[]string{"thornode", "observed_tx", "handling_failed"},
 				float32(1),
 				[]metrics.Label{telemetry.NewLabel("chain", telemChain(tx.Tx.Chain))},
 			)
+			if tx.Tx.Chain.Equals(common.DASHChain) {
+				return nil, err
+			}
 		}
 	}
 	return &cosmos.Result{}, nil

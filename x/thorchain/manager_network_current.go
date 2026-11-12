@@ -575,7 +575,7 @@ func (vm *NetworkMgr) migrateFunds(ctx cosmos.Context, mgr Manager) error {
 	vaultsPendingMigrateChains := map[common.PubKey]common.Chains{}
 	for _, vault := range retiring {
 		// Copy the RetiringVault Coins for deduction.
-		vaultsAvailableCoins[vault.PubKey] = common.NewCoins(vault.Coins...)
+		vaultsAvailableCoins[vault.PubKey] = vault.Coins.Copy()
 	}
 
 	migrationRounds := mgr.Keeper().GetConfigInt64(ctx, constants.ChurnMigrateRounds)

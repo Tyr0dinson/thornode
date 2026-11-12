@@ -634,7 +634,7 @@
         }
       },
       "last_commit_hash": "",
-      "data_hash": "75154FB73A885DAB4A1F19257D466FB53A0D097A193FEC75DA02ADF5BBA53495",
+      "data_hash": "64ED1F1C5C62A9C89FB1806507950AD30880C587C2D906C305E9A2005E27F41E",
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
@@ -870,7 +870,7 @@
     ],
     "txs": [
       {
-        "hash": "477A52D7FA9BC7987BFAE5C2163CE44100B040A21FBA54846BD72F05008F64C0",
+        "hash": "7EC9C710F7448C02FF1B7E6D0CE989BDAFF12F70860DC78CB12E7B204625C3BE",
         "tx": {
           "auth_info": {
             "fee": {
@@ -909,11 +909,20 @@
                     "aggregator_target_limit": null,
                     "block_height": "100",
                     "finalise_height": "100",
+                    "instant_send": null,
                     "keysign_ms": "0",
                     "observed_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
                     "out_hashes": [],
                     "signers": [],
                     "sol_nonce": null,
+                    "spent_output_refs": [
+                      {
+                        "key_image": "",
+                        "output_index": 0,
+                        "spend_tx_hash": "",
+                        "tx_hash": "0000000000000000000000000000000000000000000000000000000000000384"
+                      }
+                    ],
                     "status": "incomplete",
                     "tx": {
                       "chain": "DASH",
@@ -947,7 +956,7 @@
             "unordered": false
           },
           "signatures": [
-            "OiS+WO//TSR8HE0u1pMAuhXP3e86Vr6XufLo6vzvmNp9IYGfvC3A8qTrnixgTdP4JrH7WVzOF83hIfn9dFWf2w=="
+            "txo3v8JgMfa8BnOgLyZVpTdtNXfJaBKy7SyrvhHkFrkb+mOv66o0hlgEn7oGWOwx8W3eay5BRln3klq2Thbwxg=="
           ]
         },
         "result": {
@@ -960,7 +969,7 @@
               "type": "tx"
             },
             {
-              "signature": "OiS+WO//TSR8HE0u1pMAuhXP3e86Vr6XufLo6vzvmNp9IYGfvC3A8qTrnixgTdP4JrH7WVzOF83hIfn9dFWf2w==",
+              "signature": "txo3v8JgMfa8BnOgLyZVpTdtNXfJaBKy7SyrvhHkFrkb+mOv66o0hlgEn7oGWOwx8W3eay5BRln3klq2Thbwxg==",
               "type": "tx"
             },
             {

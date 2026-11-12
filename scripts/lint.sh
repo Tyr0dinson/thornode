@@ -14,11 +14,23 @@ fi
 
 # format golang
 which gofumpt &>/dev/null || go install mvdan.cc/gofumpt@v0.5.0
-FILTER=(-e '^docs/' -e '.pb.go$' -e '^openapi/gen' -e '_gen.go' -e '.pb.gw.go$' -e 'wire_gen.go$' -e '^api/')
+go_files=()
+while IFS= read -r -d '' file; do
+  case "$file" in
+  docs/* | api/* | openapi/gen/* | *.pb.go | *.pb.gw.go | *_gen.go) continue ;;
+  esac
+  # Deleted files remain in the index until their removal is staged.
+  if [ -f "$file" ]; then
+    go_files+=("$file")
+  fi
+done < <(git ls-files -z '*.go')
 
-if [ -n "$(git ls-files '*.go' | grep -v "${FILTER[@]}" | xargs gofumpt -l 2>/dev/null)" ]; then
-  git ls-files '*.go' | grep -v "${FILTER[@]}" | xargs gofumpt -w 2>/dev/null
-  die "Go formatting errors"
+if [ "${#go_files[@]}" -gt 0 ]; then
+  unformatted=$(printf '%s\0' "${go_files[@]}" | xargs -0 gofumpt -l)
+  if [ -n "$unformatted" ]; then
+    printf '%s\0' "${go_files[@]}" | xargs -0 gofumpt -w
+    die "Go formatting errors"
+  fi
 fi
 go mod verify
 

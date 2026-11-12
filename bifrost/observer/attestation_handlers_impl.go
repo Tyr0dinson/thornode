@@ -350,7 +350,16 @@ func (s *AttestationGossip) sendObservedTxAttestationsToThornode(
 	state *AttestationState[*attestableObservedTx],
 	inbound, allowFutureObservation, isQuorum bool,
 ) {
+	// Initial DASH admission requires the entire certificate, even if a
+	// previous partial share was sent. Other chains retain incremental delivery.
+	complete := tx.InstantSend != nil || (inbound && tx.Tx.Chain.Equals(common.DASHChain) && tx.IsFinal())
+	if complete && !isQuorum {
+		return
+	}
 	unsent := state.UnsentAttestations()
+	if complete && len(unsent) > 0 {
+		unsent = state.VerifiedAttestationsCopy()
+	}
 	if len(unsent) == 0 {
 		s.logger.Debug().Msg("no unsent observed tx attestations")
 		return
@@ -583,6 +592,9 @@ func (s *AttestationGossip) handleErrataAttestationWithRetry(
 	aet common.AttestErrataTx,
 	retryPending, stateSync bool,
 ) (result attestationImportOutcome) {
+	if aet.ErrataTx == nil || aet.Attestation == nil || !aet.ErrataTx.IsValid() {
+		return
+	}
 	lockCtx := attestationLockContext(ctx, stateSync)
 	// Use the errata tx as the map key
 	k := *aet.ErrataTx

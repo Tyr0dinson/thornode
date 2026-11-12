@@ -3,12 +3,10 @@ package utxo
 import (
 	"encoding/hex"
 	"errors"
-	"fmt"
 	"slices"
 	"sort"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/btcsuite/btcd/txscript"
 
@@ -16,9 +14,11 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/rpc"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
+	memo "gitlab.com/thorchain/thornode/v3/x/thorchain/memo"
+	ttypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
-// instantSendHandler owns InstantSend scanning, allowance and recovery state.
+// instantSendHandler owns InstantSend scanning and delivery state.
 // It shares the client's dependencies and must not be copied after first use.
 type instantSendHandler struct {
 	client *Client
@@ -29,38 +29,13 @@ type instantSendHandler struct {
 	ignored map[string]struct{}
 	vaults  []string
 	// Transaction batches awaiting final checks and delivery.
-	txQueue []types.TxIn
-	// Amount settings are owned by the mempool scanner.
-	// Both amounts and their Mimir values use duffs (common.One per DASH).
-	minAmount uint64
-	maxAmount uint64
-
-	// Serializes allowance writes, recovery progress, block height, revision and switch updates.
-	// Release during RPCs so ChainLock settlement can continue. After relocking,
-	// check the revision and keep the lock through the resulting state updates.
-	stateMu sync.Mutex
-	// Effective switch after applying Mimir; cfg retains the startup value.
-	enabled bool
-	// Incremented on settlement attempts to reject stale RPC results.
-	revision uint64
-	recovery instantSendRecovery
-	// Last processed block; zero before scanning. Protected by stateMu.
-	lastBlockHeight int64
+	txQueue [][]*types.TxInItem
+	// Owned by the mempool scanner. Financial limits live in THORChain.
+	enabled    bool
+	minFeeRate uint64
 }
 
 var errInstantSendPaused = errors.New("InstantSend observations paused")
-
-// allowAge applies our InstantSend policy for mempool observations.
-//
-// When this returns false, we intentionally do NOT emit the tx via the
-// InstantSend mempool path and instead wait for the normal block-based flow
-// (which checks the fetched block's ChainLock).
-func (h *instantSendHandler) allowAge(age time.Duration) (bool, string) {
-	if h.client.cfg.InstantSend.MaxMempoolAge > 0 && age > h.client.cfg.InstantSend.MaxMempoolAge {
-		return false, fmt.Sprintf("mempool age too high: %v > %v", age, h.client.cfg.InstantSend.MaxMempoolAge)
-	}
-	return true, ""
-}
 
 // refreshVaults invalidates unrelated transaction IDs when vaults change
 // and prunes IDs that left the mempool. Only the mempool scanner owns this cache.
@@ -117,7 +92,7 @@ func (h *instantSendHandler) mayPayVault(tx *rpc.TxResult) bool {
 
 // fetchBatch claims one bounded batch and attaches Observer acknowledgements.
 // Lost handoffs remain pending for the ChainLock scan instead of being retried here.
-func (h *instantSendHandler) fetchBatch(admission instantSendAdmission) (types.TxIn, error) {
+func (h *instantSendHandler) fetchBatch() (types.TxIn, error) {
 	if h.client.cfg.BlockScanner.DBPath == "" {
 		return types.TxIn{Chain: h.client.GetChain()}, nil
 	}
@@ -129,37 +104,40 @@ func (h *instantSendHandler) fetchBatch(admission instantSendAdmission) (types.T
 		h.txQueue = groups
 	}
 	if len(h.txQueue) == 0 {
-		return types.TxIn{Chain: h.client.GetChain()}, nil
+		_, err := h.claimBatch(nil)
+		return types.TxIn{Chain: h.client.GetChain()}, err
 	}
-	batch := h.txQueue[0]
-	// A cycle group can span several mempool batches. Bound the fresh finality
-	// RPC and allowance write batch, keeping the remainder queued.
-	count := min(len(batch.TxArray), h.workLimit())
-	batch.TxArray = batch.TxArray[:count]
-	var err error
-	batch.TxArray, err = h.claimBatch(batch.TxArray, admission)
+	candidates := h.txQueue[0]
+	// A height group can span several mempool batches. Bound the fresh finality
+	// RPC and delivery marker batch, keeping the remainder queued.
+	count := min(len(candidates), h.workLimit())
+	items, err := h.claimBatch(candidates[:count])
 	if err != nil {
 		return types.TxIn{}, err
 	}
-	if count == len(h.txQueue[0].TxArray) {
-		h.txQueue[0] = types.TxIn{}
+	if count == len(candidates) {
+		h.txQueue[0] = nil
 		h.txQueue = h.txQueue[1:]
 	} else {
-		h.txQueue[0].TxArray = h.txQueue[0].TxArray[count:]
+		clear(candidates[:count])
+		h.txQueue[0] = candidates[count:]
 	}
 	if h.client.m != nil {
-		if counter := h.client.m.GetCounter(metrics.DashInstantSendObserved); counter != nil {
-			counter.Add(float64(len(batch.TxArray)))
+		if counter := h.client.m.GetCounter(metrics.InstantSendObserved(h.client.GetChain())); counter != nil {
+			counter.Add(float64(len(items)))
 		}
 	}
-	h.watchDelivery(batch.TxArray)
-	return batch, nil
+	h.watchDelivery(items)
+	// The existing finalized-inbound path requires MemPool=false. Dash Core
+	// supplies finality; the network supplies the shared positive height.
+	return types.TxIn{Chain: h.client.GetChain(), TxArray: items}, nil
 }
 
-// buildTxInItem extracts a vault inbound at the lock cycle height.
-// It returns nil if extraction fails or the recipient, dust, or age checks reject it.
-func (h *instantSendHandler) buildTxInItem(tx *rpc.TxResult, anchor int64, entry rpc.GetRawMempoolVerboseResult) *types.TxInItem {
-	item, err := h.client.getTxIn(&tx.TxRawResult, anchor, true, nil)
+// buildTxInItem binds a customer deposit to its network's positive observation anchor.
+func (h *instantSendHandler) buildTxInItem(tx *rpc.TxResult, accounting *ttypes.QueryInstantSendResponse) *types.TxInItem {
+	// Resolve the recipient before assigning its height. Unanchored items never
+	// leave this function or enter the observation queue.
+	item, err := h.client.getTxIn(&tx.TxRawResult, 0, true, nil)
 	if err != nil {
 		h.client.log.Debug().Err(err).Str("txid", tx.Txid).Msg("retry InstantSend inbound extraction later")
 		return nil
@@ -167,43 +145,43 @@ func (h *instantSendHandler) buildTxInItem(tx *rpc.TxResult, anchor int64, entry
 	if item.IsEmpty() || item.Coins.IsEmpty() {
 		return nil
 	}
-	if !h.client.isAsgardAddress(item.To) {
+	if !h.client.isAsgardAddress(item.To) || h.client.isAsgardAddress(item.Sender) {
 		return nil
 	}
 	if item.Coins[0].Amount.LT(h.client.cfg.ChainID.DustThreshold()) {
 		return nil
 	}
-	var age time.Duration
-	if entry.Time > 0 {
-		age = time.Since(time.Unix(entry.Time, 0))
-	}
-	allow, reason := h.allowAge(age)
-	if !allow {
-		h.client.log.Debug().Str("txid", item.Tx).Str("reason", reason).Msg("InstantSend transaction waiting for block observation")
+	state := instantSendAdmissionState(h.client.GetChain(), accounting, item.To)
+	if state == nil {
 		return nil
 	}
+	if !instantSendSwapMemo(item.Memo) {
+		return nil
+	}
+	item.BlockHeight = common.InstantSendAnchor(accounting.ObservationHeight)
+	item.InstantSend = &common.InstantSend{}
 	return &item
 }
 
-// instantSendObservationGroups builds final batches ordered by lock cycle height.
-// Observer uses a single finalization height for each batch. Mixing cycle heights
+// Only inspect the memo type locally; core resolves THORNames and validates the swap.
+func instantSendSwapMemo(value string) bool {
+	name, _, _ := strings.Cut(value, ":")
+	txType, err := memo.StringToTxType(name)
+	return err == nil && txType == memo.TxSwap
+}
+
+// groupInstantSendTxs orders batches by their agreed observation height.
+// Observer uses a single finalization height for each batch. Mixing heights
 // would make the signed observation depend on which worker happened to finish first.
-func instantSendObservationGroups(chain common.Chain, byHeight map[int64][]*types.TxInItem) []types.TxIn {
+func groupInstantSendTxs(byHeight map[int64][]*types.TxInItem) [][]*types.TxInItem {
 	heights := make([]int64, 0, len(byHeight))
 	for height := range byHeight {
 		heights = append(heights, height)
 	}
 	sort.Slice(heights, func(i, j int) bool { return heights[i] < heights[j] })
-	groups := make([]types.TxIn, 0, len(heights))
+	groups := make([][]*types.TxInItem, 0, len(heights))
 	for _, height := range heights {
-		groups = append(groups, types.TxIn{
-			Chain: chain,
-			// Compatibility with Observer's finalized-inbound path. These items
-			// have Core-validated finality despite originating in the mempool.
-			MemPool:              false,
-			ConfirmationRequired: 0,
-			TxArray:              byHeight[height],
-		})
+		groups = append(groups, byHeight[height])
 	}
 	return groups
 }
@@ -212,7 +190,7 @@ func instantSendObservationGroups(chain common.Chain, byHeight map[int64][]*type
 // callbacks finish. Rejected or lost handoffs remain pending for the block scan.
 // Observer resolves the whole batch in one pass. A missing callback leaves even
 // stored siblings pending, so the ChainLock scan can deliver them again.
-// This collector belongs to the batch; callbacks do not take the handler state lock.
+// This collector belongs to the batch; callbacks do not mutate the scanner.
 func (h *instantSendHandler) watchDelivery(items []*types.TxInItem) {
 	store := h.client.temporalStorage
 	var mu sync.Mutex
@@ -231,7 +209,8 @@ func (h *instantSendHandler) watchDelivery(items []*types.TxInItem) {
 				finished := remaining == 0
 				mu.Unlock()
 				if finished {
-					if err := store.CompleteInstantSendObservations(stored); err != nil {
+					err := store.CompleteInstantSendObservations(stored)
+					if err != nil {
 						h.client.log.Err(err).Msg("fail to complete InstantSend markers; pending observations wait for ChainLock")
 					}
 				}

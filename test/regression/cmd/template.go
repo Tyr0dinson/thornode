@@ -101,9 +101,4 @@ func init() {
 			return vv
 		}
 	}
-
-	// parse all templates with custom functions
-	templates = template.Must(
-		template.New("").Funcs(funcMap).ParseGlob("templates/*.yaml"),
-	)
 }

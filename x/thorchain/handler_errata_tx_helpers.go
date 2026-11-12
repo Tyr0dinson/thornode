@@ -122,6 +122,11 @@ func processErrataTx(ctx cosmos.Context, mgr Manager, er *common.ErrataTx) (comm
 		return common.ErrataTxOutcome_ERRATA_TX_OUTCOME_NO_APPLICABLE_OBSERVATION, nil
 	}
 
+	if tx.Chain.Equals(common.DASHChain) && observedVoter.Tx.InstantSend != nil {
+		ctx.Logger().Info("skip InstantSend errata; manual recovery required", "tx_id", er.Id)
+		return common.ErrataTxOutcome_ERRATA_TX_OUTCOME_NO_APPLICABLE_OBSERVATION, nil
+	}
+
 	if er.Chain.RequiresTerminalErrataOutcome() {
 		if observedVoter.Reverted {
 			// The inbound backstop can win between errata retries without

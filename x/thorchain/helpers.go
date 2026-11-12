@@ -1996,7 +1996,8 @@ func settleSwapCached(ctx cosmos.Context, mgr Manager, msg MsgSwap, settleReason
 				CloutSpent:            &cosmos.Uint{},
 			}
 
-			if _, err := mgr.TxOutStore().TryAddTxOutItem(ctx, mgr, toi, cosmos.ZeroUint()); err != nil {
+			_, err = mgr.TxOutStore().TryAddTxOutItem(ctx, mgr, toi, cosmos.ZeroUint())
+			if err != nil {
 				ctx.Logger().Error("fail to schedule swap outbound", "error", err)
 				unrefundableCoinCleanup(ctx, mgr, toi, "failed_outbound")
 

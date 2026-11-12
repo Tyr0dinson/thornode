@@ -406,6 +406,45 @@ func TestHandleObservedTxAttestationFutureObservationUsesActiveValidatorQuorum(t
 	assert.Len(t, sent[0].Attestations, 3)
 }
 
+// DASH early admission must carry a full certificate, including any shares that
+// were sent earlier. A partial timeout cannot allocate a network slot.
+func TestDashInstantSendSendsCompleteCertificate(t *testing.T) {
+	ag, _, _, grpcClient, _, _ := setupTestGossip(t)
+	tx := common.ObservedTx{
+		Tx:          common.Tx{ID: "dash-certificate", Chain: common.DASHChain},
+		BlockHeight: 100, FinaliseHeight: 100, InstantSend: &common.InstantSend{},
+	}
+	state := ag.observedTxsPool.NewAttestationState(&attestableObservedTx{ObservedTx: &tx, inbound: true})
+	payload, err := tx.GetSignablePayloadWithInbound(true)
+	require.NoError(t, err)
+	for range 3 {
+		key := secp256k1.GenPrivKey()
+		var signature []byte
+		signature, err = key.Sign(payload)
+		require.NoError(t, err)
+		state.attestations = append(state.attestations, attestationSentState{
+			attestation: &common.Attestation{PubKey: key.PubKey().Bytes(), Signature: signature},
+		})
+	}
+	state.attestations[0].sent = true
+	var sent []*common.QuorumTx
+	grpcClient.sendQuorumTxFunc = func(_ context.Context, quorum *common.QuorumTx, _ ...grpc.CallOption) (*ebifrost.SendQuorumTxResult, error) {
+		sent = append(sent, quorum)
+		return &ebifrost.SendQuorumTxResult{}, nil
+	}
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	ag.sendObservedTxAttestationsToThornode(context.Background(), tx, state, true, false, false)
+	require.Empty(t, sent)
+	ag.sendObservedTxAttestationsToThornode(context.Background(), tx, state, true, false, true)
+	require.Len(t, sent, 1)
+	require.Len(t, sent[0].Attestations, 3)
+	for _, attestation := range sent[0].Attestations {
+		key := &secp256k1.PubKey{Key: attestation.PubKey}
+		require.True(t, key.VerifySignature(payload, attestation.Signature))
+	}
+}
+
 // TestAttestableItemImplementation tests the AttestableItem interface implementation for all types
 func TestAttestableItemImplementation(t *testing.T) {
 	t.Run("common.Tx implements AttestableItem", func(t *testing.T) {

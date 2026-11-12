@@ -18,6 +18,7 @@ import (
 ////////////////////////////////////////////////////////////////////////////////////////
 
 func main() {
+	templates = template.Must(template.New("").Funcs(funcMap).ParseGlob("templates/*.yaml"))
 	cleanExports()
 
 	// parse the regex in the RUN environment variable to determine which tests to run

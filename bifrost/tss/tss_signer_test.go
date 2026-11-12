@@ -109,6 +109,11 @@ func (m *mockBridgeForKeysign) GetVault(string) (stypes.Vault, error) {
 	return stypes.Vault{}, nil
 }
 
+// GetInstantSend satisfies the bridge interface for keysign tests.
+func (m *mockBridgeForKeysign) GetInstantSend(common.Chain) (*stypes.QueryInstantSendResponse, error) {
+	return nil, nil
+}
+
 func (m *mockBridgeForKeysign) GetConfig() config.BifrostClientConfiguration {
 	return config.BifrostClientConfiguration{}
 }

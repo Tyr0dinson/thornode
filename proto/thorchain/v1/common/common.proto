@@ -124,6 +124,8 @@ message ObservedTx {
   SolNonceUpdate sol_nonce = 14;
   // Original XMR mining location, independent of the finalization height.
   int64 xmr_mined_height = 15;
+  // Present on supported InstantSend observations; signed with the transaction.
+  InstantSend instant_send = 16;
 }
 
 message Attestation {
@@ -293,4 +295,50 @@ message AttestationBatch {
   repeated AttestSolvency attest_solvencies = 3;
   repeated AttestErrataTx attest_errata_txs = 4;
   repeated AttestPriceFeed attest_price_feeds = 5;
+}
+
+// A credited customer deposit awaiting settlement in the accounting ledger.
+// Amount is the credited value in base units (duffs for DASH).
+// ChainLock settlement releases the exposure. Loss requires manual state
+// repair.
+message PendingInbound {
+  option (gogoproto.stringer) = true;
+
+  string id = 1 [ (gogoproto.casttype) = "TxID" ];
+  uint64 amount = 2;
+  // THORChain height of early credit; outbound scheduling must not change it.
+  int64 height = 3;
+}
+
+// Present only on a customer swap observed before ChainLock settlement.
+message InstantSend { option (gogoproto.stringer) = true; }
+
+// Outstanding early credits, retained until settlement or manual state repair.
+message InstantSendState {
+  option (gogoproto.stringer) = true;
+  string pub_key = 1 [ (gogoproto.casttype) = "PubKey" ];
+  repeated PendingInbound pending = 2 [ (gogoproto.nullable) = false ];
+  string chain = 3 [ (gogoproto.casttype) = "Chain" ];
+}
+
+// Admission and timeout status. Manual loss recovery sets disabled; only a
+// software-upgrade store migration can clear it.
+message InstantSendStatus {
+  option (gogoproto.stringer) = true;
+  string chain = 1 [ (gogoproto.casttype) = "Chain" ];
+  bool disabled = 2;
+  repeated string overdue = 3 [ (gogoproto.casttype) = "TxID" ];
+  // Monotonic minimum DASH anchor height accepted for new early deposits.
+  int64 min_height = 4;
+}
+
+// Input ownership prevents a replacement from running a second swap.
+message InstantSendCredit {
+  option (gogoproto.stringer) = true;
+  string id = 1 [ (gogoproto.casttype) = "TxID" ];
+  repeated OutputRef inputs = 2 [ (gogoproto.nullable) = false ];
+  bool early = 3;
+  // DASH height at ordinary credit or ChainLock settlement. Zero retains a
+  // pending deposit or a manually retained input record regardless of age.
+  int64 height = 4;
 }

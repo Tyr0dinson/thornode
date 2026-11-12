@@ -133,9 +133,13 @@ func (b *BlockScanner) RollbackToLastObserved() error {
 
 	obsDelayFlexConst := constants.ObservationDelayFlexibility.String()
 	observerFlexWindowBlocksThor := c[obsDelayFlexConst]
-	observerFlexWindowBlocksThorMimir, err := b.thorchainBridge.GetMimir(obsDelayFlexConst)
-	if err == nil && observerFlexWindowBlocksThorMimir > 0 {
-		observerFlexWindowBlocksThor = observerFlexWindowBlocksThorMimir
+	// Match THORChain's per-chain override and global fallback, including explicit zero.
+	for _, key := range []string{obsDelayFlexConst + b.cfg.ChainID.String(), obsDelayFlexConst} {
+		value, lookupErr := b.thorchainBridge.GetMimir(key)
+		if lookupErr == nil && value >= 0 {
+			observerFlexWindowBlocksThor = value
+			break
+		}
 	}
 
 	thorBlockTimeMs := c[constants.ThorchainBlockTime.String()] / int64(time.Millisecond)
