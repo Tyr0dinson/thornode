@@ -1488,6 +1488,7 @@ func (s *BackfillSuite) TestCheckRecentBlocksAndUpdateNetworkFee(c *C) {
 	scanner, _ := s.newScannerWithServer(c, "http://"+server.Listener.Addr().String())
 	scanner.globalNetworkFeeQueue = make(chan common.NetworkFee, 1)
 	scanner.cfg.Solana.FeeSampleSlots = 100
+	scanner.cfg.Solana.FeeUpdateInterval = 200 // slot 200 is the first boundary: no history
 	scanner.cfg.GasCacheBlocks = 5
 	scanner.bridge = &backfillFeeBridge{rate: 5000}
 
@@ -1519,6 +1520,7 @@ func (s *BackfillSuite) TestCheckRecentBlocksEmptyTransactions(c *C) {
 	scanner, _ := s.newScannerWithServer(c, "http://"+server.Listener.Addr().String())
 	scanner.globalNetworkFeeQueue = make(chan common.NetworkFee, 1)
 	scanner.cfg.Solana.FeeSampleSlots = 100
+	scanner.cfg.Solana.FeeUpdateInterval = 200 // slot 200 is the first boundary: no history
 	scanner.cfg.GasCacheBlocks = 100
 	scanner.bridge = &backfillFeeBridge{rate: 7000}
 
@@ -1540,6 +1542,7 @@ func (s *BackfillSuite) TestCheckRecentBlocksNilBlock(c *C) {
 	scanner, _ := s.newScannerWithServer(c, "http://"+server.Listener.Addr().String())
 	scanner.globalNetworkFeeQueue = make(chan common.NetworkFee, 1)
 	scanner.cfg.Solana.FeeSampleSlots = 100
+	scanner.cfg.Solana.FeeUpdateInterval = 200 // slot 200 is the first boundary: no history
 	scanner.cfg.GasCacheBlocks = 100
 
 	err := scanner.checkRecentBlocksAndUpdateNetworkFee(200)
@@ -1560,6 +1563,7 @@ func (s *BackfillSuite) TestCheckRecentBlocksBlockStatusNotAvailable(c *C) {
 	scanner, _ := s.newScannerWithServer(c, "http://"+server.Listener.Addr().String())
 	scanner.globalNetworkFeeQueue = make(chan common.NetworkFee, 1)
 	scanner.cfg.Solana.FeeSampleSlots = 100
+	scanner.cfg.Solana.FeeUpdateInterval = 200 // slot 200 is the first boundary: no history
 	scanner.cfg.GasCacheBlocks = 100
 
 	err := scanner.checkRecentBlocksAndUpdateNetworkFee(200)
@@ -1576,6 +1580,7 @@ func (s *BackfillSuite) TestCheckRecentBlocksGetBlocksError(c *C) {
 	scanner, _ := s.newScannerWithServer(c, "http://"+server.Listener.Addr().String())
 	scanner.globalNetworkFeeQueue = make(chan common.NetworkFee, 1)
 	scanner.cfg.Solana.FeeSampleSlots = 100
+	scanner.cfg.Solana.FeeUpdateInterval = 200 // slot 200 is the first boundary: no history
 
 	err := scanner.checkRecentBlocksAndUpdateNetworkFee(200)
 	c.Assert(err, NotNil)

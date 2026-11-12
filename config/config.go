@@ -1139,7 +1139,8 @@ type BifrostBlockScannerConfiguration struct {
 	CosmosGRPCTLS bool `mapstructure:"cosmos_grpc_tls"`
 
 	// GasCacheBlocks is the number of blocks worth of gas price data cached to determine
-	// the gas price reported to Thorchain.
+	// the gas price reported to Thorchain. On SOL it is instead the number of eligible
+	// transactions sampled per fee boundary.
 	GasCacheBlocks int `mapstructure:"gas_cache_blocks"`
 
 	// Concurrency is the number of goroutines used for RPC requests on data within a

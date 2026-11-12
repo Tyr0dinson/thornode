@@ -66,6 +66,8 @@ type networkFeeRPC struct {
 	floor       uint64
 	floorError  bool
 	windows     [][2]uint64
+	// emptyWindows lists boundaries whose window holds no blocks.
+	emptyWindows map[uint64]bool
 	// root simulates a load-balanced getBlocks backend whose finalized root lags
 	// getSlot; zero means the listing backend is caught up.
 	root            uint64
@@ -113,6 +115,22 @@ func newNetworkFeeScanner(t *testing.T, fixture *networkFeeRPC) *SOLScanner {
 				fixture.minContextSlots = append(fixture.minContextSlots, *config.MinContextSlot)
 			}
 			fixture.windows = append(fixture.windows, [2]uint64{first, last})
+			// A configured listing describes the window it overlaps, and is
+			// returned as is so that out-of-range entries reach the scanner.
+			// Other windows hold one block, at their boundary.
+			listed := []uint64{last}
+			if fixture.blocks != nil {
+				overlaps := len(fixture.blocks) == 0
+				for _, b := range fixture.blocks {
+					overlaps = overlaps || (b >= first && b <= last)
+				}
+				if overlaps {
+					listed = fixture.blocks
+				}
+			}
+			if fixture.emptyWindows[last] {
+				listed = []uint64{}
+			}
 			switch {
 			case fixture.fail:
 				response["error"] = map[string]any{"code": -32000, "message": "temporary sampling failure"}
@@ -121,10 +139,6 @@ func newNetworkFeeScanner(t *testing.T, fixture *networkFeeRPC) *SOLScanner {
 			case fixture.root != 0:
 				// Agave clamps a finalized listing to the serving backend's root
 				// without reporting that the requested range was truncated.
-				listed := fixture.blocks
-				if listed == nil {
-					listed = []uint64{last}
-				}
 				clamped := make([]uint64, 0, len(listed))
 				for _, b := range listed {
 					if b <= min(last, fixture.root) {
@@ -132,10 +146,8 @@ func newNetworkFeeScanner(t *testing.T, fixture *networkFeeRPC) *SOLScanner {
 					}
 				}
 				response["result"] = clamped
-			case fixture.blocks != nil:
-				response["result"] = fixture.blocks
 			default:
-				response["result"] = []uint64{last}
+				response["result"] = listed
 			}
 		case "getBlock":
 			var slot uint64
@@ -184,18 +196,27 @@ func newNetworkFeeScanner(t *testing.T, fixture *networkFeeRPC) *SOLScanner {
 }
 
 func TestSOLNetworkFeeIndependentOfPreviousSamples(t *testing.T) {
-	for _, oldRate := range []uint64{5000, 9000} {
-		fixture := &networkFeeRPC{tip: 201, rate: oldRate}
-		scanner := newNetworkFeeScanner(t, fixture)
-		warmNetworkFeeSamples(t, scanner)
-		fixture.mu.Lock()
-		fixture.rate = 7000
-		fixture.mu.Unlock()
-		require.NoError(t, scanner.checkRecentBlocksAndUpdateNetworkFee(200))
-		require.Len(t, scanner.globalNetworkFeeQueue, 1)
-		fee := <-scanner.globalNetworkFeeQueue
-		require.Equal(t, int64(200), fee.Height)
-		require.Equal(t, uint64(7000), fee.TransactionRate, "same slot must not depend on earlier scans")
+	chain := map[uint64][]uint64{
+		50: {5000, 5000, 5000}, 100: {9000, 9000, 9000}, 150: {6000, 6000, 6000}, 200: {7000, 7000, 7000},
+	}
+	for name, scanned := range map[string][]uint64{
+		"cold_start": nil, "every_boundary": {50, 100, 150}, "missed_a_boundary": {50, 150},
+	} {
+		t.Run(name, func(t *testing.T) {
+			scanner := newNetworkFeeScanner(t, &networkFeeRPC{tip: 201, blockFees: chain})
+			for _, slot := range scanned {
+				require.NoError(t, scanner.checkRecentBlocksAndUpdateNetworkFee(slot))
+			}
+			for len(scanner.globalNetworkFeeQueue) > 0 {
+				<-scanner.globalNetworkFeeQueue
+			}
+			require.NoError(t, scanner.checkRecentBlocksAndUpdateNetworkFee(200))
+			require.Len(t, scanner.globalNetworkFeeQueue, 1)
+			fee := <-scanner.globalNetworkFeeQueue
+			require.Equal(t, int64(200), fee.Height)
+			// Median of 5000, 6000, 7000 and 9000.
+			require.Equal(t, uint64(6500), fee.TransactionRate, "same slot must not depend on earlier scans")
+		})
 	}
 }
 
@@ -255,7 +276,8 @@ func TestSOLNetworkFeeScanCatchesUpWithoutDuplicates(t *testing.T) {
 	}
 	fixture.mu.Lock()
 	defer fixture.mu.Unlock()
-	require.Equal(t, [][2]uint64{{140, 150}, {190, 200}}, fixture.windows)
+	// Boundary 150 reads its history once; boundary 200 only adds its own window.
+	require.Equal(t, [][2]uint64{{140, 150}, {90, 100}, {40, 50}, {190, 200}}, fixture.windows)
 	require.Len(t, scanner.globalNetworkFeeQueue, 2)
 	require.Equal(t, int64(150), (<-scanner.globalNetworkFeeQueue).Height)
 	require.Equal(t, int64(200), (<-scanner.globalNetworkFeeQueue).Height)
@@ -272,11 +294,10 @@ func TestSOLNetworkFeeWaitsUntilBoundaryIsCrossed(t *testing.T) {
 }
 
 func TestSOLNetworkFeeFailedBlockDoesNotPublishPartialSample(t *testing.T) {
-	fixture := &networkFeeRPC{tip: 201, rate: 9000}
+	fixture := &networkFeeRPC{tip: 201, rate: 7000}
 	scanner := newNetworkFeeScanner(t, fixture)
 	warmNetworkFeeSamples(t, scanner)
 	fixture.mu.Lock()
-	fixture.rate = 7000
 	fixture.blocks = []uint64{190, 195, 200}
 	fixture.blockFees = map[uint64][]uint64{200: {7000}}
 	fixture.blockErrors = map[uint64]bool{195: true}
@@ -346,8 +367,9 @@ func TestSOLNetworkFeeLongOutageBoundsAvailableHistoryReplay(t *testing.T) {
 	}
 	fixture.mu.Lock()
 	defer fixture.mu.Unlock()
-	require.Equal(t, [][2]uint64{{9940, 9950}, {9990, 10000}}, fixture.windows,
-		"an archival provider must not trigger replay of every ancient fee boundary")
+	require.Equal(t, [][2]uint64{
+		{9940, 9950}, {9890, 9900}, {9840, 9850}, {9790, 9800}, {9740, 9750}, {9990, 10000},
+	}, fixture.windows, "an archival provider must not trigger replay of every ancient fee boundary")
 }
 
 func TestSOLNetworkFeeLowVolumeRequiresHistoryCoverage(t *testing.T) {
@@ -451,7 +473,7 @@ func TestSOLNetworkFeeStartupRetriesAnchoredBoundary(t *testing.T) {
 	require.Equal(t, int64(200), (<-scanner.globalNetworkFeeQueue).Height)
 	fixture.mu.Lock()
 	defer fixture.mu.Unlock()
-	require.Equal(t, [][2]uint64{{190, 200}, {190, 200}}, fixture.windows)
+	require.Equal(t, [][2]uint64{{190, 200}, {190, 200}, {140, 150}, {90, 100}, {40, 50}}, fixture.windows)
 }
 
 func TestSOLNetworkFeeEmptyWindowAdvancesWithoutPublishing(t *testing.T) {
@@ -506,7 +528,7 @@ func TestSOLNetworkFeeLaggingListingBackendRetries(t *testing.T) {
 			require.Equal(t, uint64(3), scanner.netFeeSlotMultiple)
 			fixture.mu.Lock()
 			defer fixture.mu.Unlock()
-			require.Equal(t, []uint64{150, 150}, fixture.minContextSlots, "the boundary must be the listing's minimum context slot")
+			require.Equal(t, []uint64{150, 150, 100, 50}, fixture.minContextSlots, "each boundary must be its listing's minimum context slot")
 		})
 	}
 }
@@ -574,4 +596,95 @@ func TestSOLNetworkFeeDeadbandAroundAgreedFee(t *testing.T) {
 			require.Equal(t, tc.sample, scanner.lastFeeRate.Load(), "lastFeeRate records the local sample even when suppressed")
 		})
 	}
+}
+
+func TestSOLNetworkFeeSingleBlockOutlierDoesNotSetRate(t *testing.T) {
+	// Every boundary block holds at least GasCacheBlocks eligible transactions, so
+	// each boundary sample is one block's median. The leader of block 250 fills it
+	// with its own high-fee transactions.
+	fixture := &networkFeeRPC{tip: 251, rate: 5000, blockFees: map[uint64][]uint64{
+		250: {1_000_000_000, 1_000_000_000, 1_000_000_000, 1_000_000_000},
+	}}
+	scanner := newNetworkFeeScanner(t, fixture)
+	require.NoError(t, scanner.checkRecentBlocksAndUpdateNetworkFee(250))
+	require.Empty(t, scanner.globalNetworkFeeQueue, "one leader's block must not move the reported fee")
+	require.Equal(t, uint64(5000), scanner.lastFeeRate.Load())
+
+	// A second outlier boundary is still a minority of the history.
+	fixture.mu.Lock()
+	fixture.tip = 301
+	fixture.blockFees[300] = fixture.blockFees[250]
+	fixture.mu.Unlock()
+	require.NoError(t, scanner.checkRecentBlocksAndUpdateNetworkFee(300))
+	require.Empty(t, scanner.globalNetworkFeeQueue)
+	require.Equal(t, uint64(5000), scanner.lastFeeRate.Load())
+}
+
+func TestSOLNetworkFeeHistoryFetchesEachBoundaryOnce(t *testing.T) {
+	fixture := &networkFeeRPC{tip: 10001, rate: 7000}
+	scanner := newNetworkFeeScanner(t, fixture)
+	scanner.netFeeSlotMultiple = 199
+	scanner.scan() // boundary 10000 and its history
+	for _, tip := range []uint64{10051, 10101, 10151} {
+		fixture.mu.Lock()
+		fixture.tip = tip
+		fixture.mu.Unlock()
+		scanner.lastHeight = tip
+		scanner.scan()
+	}
+	fixture.mu.Lock()
+	defer fixture.mu.Unlock()
+	require.Equal(t, [][2]uint64{
+		{9990, 10000}, {9940, 9950}, {9890, 9900}, {9840, 9850}, {9790, 9800},
+		{10040, 10050}, {10090, 10100}, {10140, 10150},
+	}, fixture.windows, "a steady-state report must fetch only its own boundary")
+	require.Len(t, scanner.netFeeSamples, solFeeHistoryBoundaries, "samples older than the history must be dropped")
+}
+
+func TestSOLNetworkFeeHistoryFailureKeepsBoundaryPending(t *testing.T) {
+	fixture := &networkFeeRPC{tip: 201, rate: 7000, blockErrors: map[uint64]bool{100: true}}
+	scanner := newNetworkFeeScanner(t, fixture)
+	scanner.netFeeSlotMultiple = 3
+	scanner.scan()
+	require.Empty(t, scanner.globalNetworkFeeQueue, "a report must not be voted on a shorter history")
+	require.Equal(t, uint64(3), scanner.netFeeSlotMultiple)
+	fixture.mu.Lock()
+	fixture.blockErrors = nil
+	fixture.mu.Unlock()
+	scanner.scan()
+	require.Len(t, scanner.globalNetworkFeeQueue, 1)
+	require.Equal(t, int64(200), (<-scanner.globalNetworkFeeQueue).Height)
+	require.Equal(t, uint64(4), scanner.netFeeSlotMultiple)
+	fixture.mu.Lock()
+	defer fixture.mu.Unlock()
+	require.Equal(t, [][2]uint64{{190, 200}, {140, 150}, {90, 100}, {90, 100}, {40, 50}}, fixture.windows,
+		"the retry must fetch only the boundaries it is missing")
+}
+
+func TestSOLNetworkFeeEmptyHistoryBoundaryIsOmitted(t *testing.T) {
+	fixture := &networkFeeRPC{
+		tip: 201, emptyWindows: map[uint64]bool{150: true},
+		blockFees: map[uint64][]uint64{50: {5000, 5000, 5000}, 100: {9000, 9000, 9000}, 200: {7000, 7000, 7000}},
+	}
+	scanner := newNetworkFeeScanner(t, fixture)
+	require.NoError(t, scanner.checkRecentBlocksAndUpdateNetworkFee(200))
+	require.Len(t, scanner.globalNetworkFeeQueue, 1)
+	require.Equal(t, uint64(7000), (<-scanner.globalNetworkFeeQueue).TransactionRate, "median of 5000, 7000 and 9000")
+
+	// The empty window is remembered, not listed again.
+	require.NoError(t, scanner.checkRecentBlocksAndUpdateNetworkFee(200))
+	fixture.mu.Lock()
+	defer fixture.mu.Unlock()
+	require.Len(t, fixture.windows, 4)
+}
+
+func TestSOLNetworkFeeLateNodeAfterLaterObservationStaysSilent(t *testing.T) {
+	// Known limit of the late-signer check: THORChain's last observed SOL height
+	// also advances on observed transactions. Once one from a later slot lands,
+	// a late node can no longer tell that boundary 200 reached quorum, and it
+	// keeps the non-signer penalty.
+	scanner := newNetworkFeeScanner(t, &networkFeeRPC{tip: 251, rate: 7000})
+	scanner.bridge = &networkFeeBridge{agreed: 7000, lastObservedIn: 201}
+	require.NoError(t, scanner.checkRecentBlocksAndUpdateNetworkFee(200))
+	require.Empty(t, scanner.globalNetworkFeeQueue)
 }

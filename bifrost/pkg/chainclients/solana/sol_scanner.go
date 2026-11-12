@@ -45,6 +45,17 @@ const (
 	// medians move by about one step most boundaries; voting on each move would make
 	// nearly every boundary a quorum.
 	solFeeReportDeadbandSteps = 2
+
+	// solFeeHistoryBoundaries is the number of consecutive fee boundaries whose
+	// samples are combined into one report. On mainnet one block already holds
+	// more than GasCacheBlocks eligible transactions, so a boundary's own sample
+	// is a single block's median, which that block's leader controls. The median
+	// over several boundaries, FeeUpdateInterval slots apart and so produced by
+	// different leaders, cannot be moved by one of them. Samples are kept by
+	// boundary slot: each is a pure function of finalized chain data, so nodes
+	// with different scan histories still agree, and a steady-state report costs
+	// one block fetch.
+	solFeeHistoryBoundaries = 5
 )
 
 var (
@@ -87,6 +98,9 @@ type SOLScanner struct {
 	// anchors startup or pruned-history recovery until that boundary completes.
 	netFeeSlotMultiple uint64
 	netFeePendingSlot  *uint64
+	// netFeeSamples holds finalized fee samples by boundary slot; zero marks a
+	// complete window that listed no blocks. Scan goroutine only.
+	netFeeSamples map[uint64]uint64
 
 	lastLog time.Time
 	// counter for observed txs since last log
@@ -553,9 +567,15 @@ func (s *SOLScanner) updateNetworkFee(currentSlot uint64) error {
 			// A retention floor is evidence of lost history; an RPC error or an
 			// empty listing alone is not. Re-anchor in one step, but do not mark
 			// the new boundary complete until its own sample succeeds.
+			// The report also reads the preceding history boundaries, so the
+			// retention floor is compared with the oldest slot it needs.
+			oldest := slot
+			if prior := slot / interval; prior > 0 {
+				oldest -= min(prior-1, solFeeHistoryBoundaries-1) * interval
+			}
 			firstSlot := uint64(0)
-			if slot > s.cfg.Solana.FeeSampleSlots {
-				firstSlot = slot - s.cfg.Solana.FeeSampleSlots
+			if oldest > s.cfg.Solana.FeeSampleSlots {
+				firstSlot = oldest - s.cfg.Solana.FeeSampleSlots
 			}
 			floor, floorErr := s.solRpc.GetFirstAvailableBlock()
 			if floorErr == nil && floor > firstSlot {
@@ -576,19 +596,75 @@ func (s *SOLScanner) updateNetworkFee(currentSlot uint64) error {
 	return nil
 }
 
-// Sample only this boundary's finalized lookback. GasCacheBlocks remains the SOL
-// eligible-transaction target, not a rolling block-cache length. A fully fetched
-// low-volume window is usable even when it does not reach that target.
+// Report the median of this boundary's sample and those of the preceding
+// solFeeHistoryBoundaries-1 boundaries. Every sample comes from finalized history
+// and is fetched once; a history boundary that cannot be sampled keeps the report
+// pending instead of voting on a shorter history.
 func (s *SOLScanner) checkRecentBlocksAndUpdateNetworkFee(slot uint64) error {
-	if s.cfg.Solana.FeeSampleSlots == 0 || s.cfg.GasCacheBlocks <= 0 || s.cfg.GasPriceResolution <= 0 {
-		return errors.New("SOL fee sample slots, transaction target and price resolution must be positive")
+	interval := s.cfg.Solana.FeeUpdateInterval
+	if interval == 0 || s.cfg.Solana.FeeSampleSlots == 0 || s.cfg.GasCacheBlocks <= 0 || s.cfg.GasPriceResolution <= 0 {
+		return errors.New("SOL fee update interval, sample slots, transaction target and price resolution must be positive")
 	}
 	if slot > math.MaxInt64 {
 		return errors.New("SOL network fee slot exceeds int64")
 	}
+	for cached := range s.netFeeSamples {
+		// Division keeps the comparison free of overflow for any interval.
+		if cached < slot && (slot-cached)/interval >= solFeeHistoryBoundaries {
+			delete(s.netFeeSamples, cached)
+		}
+	}
+	samples := make([]uint64, 0, solFeeHistoryBoundaries)
+	for i := uint64(0); i < solFeeHistoryBoundaries; i++ {
+		if i > 0 && (interval > slot/i || i*interval == slot) {
+			// History reaches the start of the chain. The first test also
+			// keeps the product below from overflowing.
+			break
+		}
+		boundary := slot - i*interval
+		sample, err := s.networkFeeBoundarySample(boundary)
+		if err != nil {
+			if i > 0 && errors.Is(err, errNoSOLFeeSampleBlocks) {
+				// A complete empty window is the same for every node; omit it.
+				continue
+			}
+			if i > 0 {
+				return fmt.Errorf("SOL fee history boundary %d: %w", boundary, err)
+			}
+			return err
+		}
+		samples = append(samples, sample)
+	}
+	return s.sendNetworkFeeIfNecessary(slot, samples)
+}
+
+// networkFeeBoundarySample returns one boundary's sample, fetching it at most once.
+func (s *SOLScanner) networkFeeBoundarySample(slot uint64) (uint64, error) {
+	if sample, ok := s.netFeeSamples[slot]; ok {
+		if sample == 0 {
+			return 0, fmt.Errorf("%w at boundary %d", errNoSOLFeeSampleBlocks, slot)
+		}
+		return sample, nil
+	}
+	sample, err := s.sampleNetworkFeeBoundary(slot)
+	if err != nil && !errors.Is(err, errNoSOLFeeSampleBlocks) {
+		return 0, err
+	}
+	if s.netFeeSamples == nil {
+		s.netFeeSamples = make(map[uint64]uint64, solFeeHistoryBoundaries)
+	}
+	// Samples are floored at the base fee, so zero is free to mark an empty window.
+	s.netFeeSamples[slot] = sample
+	return sample, err
+}
+
+// Sample only this boundary's finalized lookback. GasCacheBlocks remains the SOL
+// eligible-transaction target, not a rolling block-cache length. A fully fetched
+// low-volume window is usable even when it does not reach that target.
+func (s *SOLScanner) sampleNetworkFeeBoundary(slot uint64) (uint64, error) {
 	select {
 	case <-s.stopChan:
-		return errors.New("SOL network fee sampling stopped")
+		return 0, errors.New("SOL network fee sampling stopped")
 	default:
 	}
 
@@ -601,21 +677,21 @@ func (s *SOLScanner) checkRecentBlocksAndUpdateNetworkFee(slot uint64) error {
 	// the minimum context slot rejects a listing clamped to a lagging root.
 	blocks, err := s.solRpc.GetBlockHeightsWithMinContextSlot(firstSlot, slot, slot)
 	if err != nil {
-		return fmt.Errorf("%w: failed to get finalized blocks for slots %d-%d: %w", errSOLFeeSampleUnavailable, firstSlot, slot, err)
+		return 0, fmt.Errorf("%w: failed to get finalized blocks for slots %d-%d: %w", errSOLFeeSampleUnavailable, firstSlot, slot, err)
 	}
 	if blocks == nil {
-		return fmt.Errorf("%w: missing finalized block listing for slots %d-%d", errSOLFeeSampleUnavailable, firstSlot, slot)
+		return 0, fmt.Errorf("%w: missing finalized block listing for slots %d-%d", errSOLFeeSampleUnavailable, firstSlot, slot)
 	}
 	if len(blocks) == 0 {
 		if err := s.checkNetworkFeeHistory(firstSlot); err != nil {
-			return err
+			return 0, err
 		}
-		return fmt.Errorf("%w at slots %d-%d", errNoSOLFeeSampleBlocks, firstSlot, slot)
+		return 0, fmt.Errorf("%w at slots %d-%d", errNoSOLFeeSampleBlocks, firstSlot, slot)
 	}
 	slices.Sort(blocks)
 	for i, b := range blocks {
 		if b < firstSlot || b > slot || (i > 0 && b == blocks[i-1]) {
-			return fmt.Errorf("invalid finalized block listing at slot %d for range %d-%d", b, firstSlot, slot)
+			return 0, fmt.Errorf("invalid finalized block listing at slot %d for range %d-%d", b, firstSlot, slot)
 		}
 	}
 	feeRates := make([]uint64, 0, len(blocks))
@@ -623,22 +699,22 @@ func (s *SOLScanner) checkRecentBlocksAndUpdateNetworkFee(slot uint64) error {
 	for i := len(blocks) - 1; i >= 0; i-- {
 		select {
 		case <-s.stopChan:
-			return errors.New("SOL network fee sampling stopped")
+			return 0, errors.New("SOL network fee sampling stopped")
 		default:
 		}
 		b := blocks[i]
 		block, err := s.solRpc.GetBlock(b)
 		if err != nil {
-			return fmt.Errorf("%w: failed to get finalized block %d: %w", errSOLFeeSampleUnavailable, b, err)
+			return 0, fmt.Errorf("%w: failed to get finalized block %d: %w", errSOLFeeSampleUnavailable, b, err)
 		}
 		// Real skipped slots are absent from getBlocks. A listed block that is
 		// missing cannot safely be dropped from this boundary's sample.
 		if block == nil || block.Transactions == nil {
-			return fmt.Errorf("%w: finalized block %d missing", errSOLFeeSampleUnavailable, b)
+			return 0, fmt.Errorf("%w: finalized block %d missing", errSOLFeeSampleUnavailable, b)
 		}
 		for _, txn := range block.Transactions {
 			if txn == nil {
-				return fmt.Errorf("null transaction in finalized block %d for SOL fee sample", b)
+				return 0, fmt.Errorf("null transaction in finalized block %d for SOL fee sample", b)
 			}
 		}
 		feeRate, numTxs := s.calculateFeeRatesFromTransactions(block.Transactions)
@@ -653,10 +729,10 @@ func (s *SOLScanner) checkRecentBlocksAndUpdateNetworkFee(slot uint64) error {
 		// getBlocks may silently omit pruned blocks. A low-count fallback is
 		// valid only when the complete requested window remains available.
 		if err := s.checkNetworkFeeHistory(firstSlot); err != nil {
-			return err
+			return 0, err
 		}
 	}
-	return s.sendNetworkFeeIfNecessary(slot, feeRates)
+	return calculateMedian(feeRates), nil
 }
 
 func (s *SOLScanner) checkNetworkFeeHistory(firstSlot uint64) error {
