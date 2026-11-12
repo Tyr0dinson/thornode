@@ -16,8 +16,8 @@ func (s *NetworkMgrAddrPubKeySuite) TestRotateVaultCreatesAddressMappings(c *C) 
 
 	// Create a vault with multiple chains
 	pubKey := GetRandomPubKey()
-	pubKeyEddsa := GetRandomPubKey() // Using secp256k1 pubkey for simplicity in testing
-	chains := []string{common.BTCChain.String(), common.ETHChain.String(), common.THORChain.String()}
+	pubKeyEddsa := GetRandomEd25519PubKey()
+	chains := []string{common.BTCChain.String(), common.ETHChain.String(), common.THORChain.String(), common.SOLChain.String()}
 
 	vault := NewVaultV2(ctx.BlockHeight(), InitVault, AsgardVault, pubKey, chains, nil, pubKeyEddsa)
 	vault.Membership = []string{pubKey.String()}
@@ -27,21 +27,16 @@ func (s *NetworkMgrAddrPubKeySuite) TestRotateVaultCreatesAddressMappings(c *C) 
 		chain, err := common.NewChain(chainStr)
 		c.Assert(err, IsNil)
 
-		// Check ECDSA pubkey
-		addr, err := pubKey.GetAddress(chain)
+		// Check the pubkey matching the chain's signing algorithm
+		pk := pubKey
+		if chain.GetSigningAlgo() == common.SigningAlgoEd25519 {
+			pk = pubKeyEddsa
+		}
+		addr, err := pk.GetAddress(chain)
 		c.Assert(err, IsNil)
 		result, err := mgr.Keeper().GetAddrPubKey(ctx, addr)
 		c.Assert(err, IsNil)
 		c.Assert(result, Equals, common.EmptyPubKey)
-
-		// Check EdDSA pubkey for chains that support it
-		if chain.GetSigningAlgo() == common.SigningAlgoEd25519 {
-			addrEddsa, err := pubKeyEddsa.GetAddress(chain)
-			c.Assert(err, IsNil)
-			result, err = mgr.Keeper().GetAddrPubKey(ctx, addrEddsa)
-			c.Assert(err, IsNil)
-			c.Assert(result, Equals, common.EmptyPubKey)
-		}
 	}
 
 	// Rotate the vault (this should create address mappings)
@@ -53,21 +48,16 @@ func (s *NetworkMgrAddrPubKeySuite) TestRotateVaultCreatesAddressMappings(c *C) 
 		chain, err := common.NewChain(chainStr)
 		c.Assert(err, IsNil)
 
-		// Check ECDSA pubkey mapping
-		addr, err := pubKey.GetAddress(chain)
+		// Check the mapping uses the pubkey matching the chain's signing algorithm
+		pk := pubKey
+		if chain.GetSigningAlgo() == common.SigningAlgoEd25519 {
+			pk = pubKeyEddsa
+		}
+		addr, err := pk.GetAddress(chain)
 		c.Assert(err, IsNil)
 		result, err := mgr.Keeper().GetAddrPubKey(ctx, addr)
 		c.Assert(err, IsNil)
-		c.Assert(result, Equals, pubKey)
-
-		// Check EdDSA pubkey mapping for chains that support it
-		if chain.GetSigningAlgo() == common.SigningAlgoEd25519 {
-			addrEddsa, err := pubKeyEddsa.GetAddress(chain)
-			c.Assert(err, IsNil)
-			result, err = mgr.Keeper().GetAddrPubKey(ctx, addrEddsa)
-			c.Assert(err, IsNil)
-			c.Assert(result, Equals, pubKeyEddsa)
-		}
+		c.Assert(result, Equals, pk)
 	}
 
 	// Verify the vault status was updated to Active
