@@ -635,8 +635,14 @@ func TestSOLNetworkFeeHistoryFetchesEachBoundaryOnce(t *testing.T) {
 	fixture.mu.Lock()
 	defer fixture.mu.Unlock()
 	require.Equal(t, [][2]uint64{
-		{9990, 10000}, {9940, 9950}, {9890, 9900}, {9840, 9850}, {9790, 9800},
-		{10040, 10050}, {10090, 10100}, {10140, 10150},
+		{9990, 10000},
+		{9940, 9950},
+		{9890, 9900},
+		{9840, 9850},
+		{9790, 9800},
+		{10040, 10050},
+		{10090, 10100},
+		{10140, 10150},
 	}, fixture.windows, "a steady-state report must fetch only its own boundary")
 	require.Len(t, scanner.netFeeSamples, solFeeHistoryBoundaries, "samples older than the history must be dropped")
 }
