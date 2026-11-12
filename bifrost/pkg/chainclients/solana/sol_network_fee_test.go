@@ -131,6 +131,16 @@ func newNetworkFeeScanner(t *testing.T, fixture *networkFeeRPC) *SOLScanner {
 			if fixture.emptyWindows[last] {
 				listed = []uint64{}
 			}
+			if fixture.floor > 0 {
+				// getBlocks silently omits blocks below the retention floor.
+				retained := make([]uint64, 0, len(listed))
+				for _, b := range listed {
+					if b >= fixture.floor {
+						retained = append(retained, b)
+					}
+				}
+				listed = retained
+			}
 			switch {
 			case fixture.fail:
 				response["error"] = map[string]any{"code": -32000, "message": "temporary sampling failure"}
@@ -157,6 +167,10 @@ func newNetworkFeeScanner(t *testing.T, fixture *networkFeeRPC) *SOLScanner {
 			}
 			if fixture.blockErrors[slot] {
 				response["error"] = map[string]any{"code": -32000, "message": "temporary block failure"}
+				break
+			}
+			if slot < fixture.floor {
+				response["error"] = map[string]any{"code": -32001, "message": "Block cleaned up, does not exist on node"}
 				break
 			}
 			fees := []uint64{fixture.rate, fixture.rate, fixture.rate, fixture.rate}
@@ -484,20 +498,43 @@ func TestSOLNetworkFeeEmptyWindowAdvancesWithoutPublishing(t *testing.T) {
 }
 
 func TestSOLNetworkFeePrunedWindowReanchorsWithoutCompleting(t *testing.T) {
-	fixture := &networkFeeRPC{tip: 201, rate: 7000, floor: 160, blocks: []uint64{}}
+	// The provider retains nothing below slot 160.
+	fixture := &networkFeeRPC{tip: 201, rate: 7000, floor: 160}
 	scanner := newNetworkFeeScanner(t, fixture)
 	scanner.scan()
 	require.Empty(t, scanner.globalNetworkFeeQueue)
 	require.Equal(t, uint64(2), scanner.netFeeSlotMultiple)
 	require.NotNil(t, scanner.netFeePendingSlot)
 	require.Equal(t, uint64(200), *scanner.netFeePendingSlot)
+
+	// Boundary 200's own window is retained, but its history is not. A report
+	// on a shorter history would differ from one made with a deeper provider,
+	// so nothing is voted until a boundary's whole history is above the floor.
+	// With a 50-slot interval, five boundaries and a 10-slot window, the first
+	// such boundary is 400 (oldest window 190-200).
+	for _, tip := range []uint64{201, 251, 301, 351} {
+		fixture.mu.Lock()
+		fixture.tip = tip
+		fixture.mu.Unlock()
+		scanner.lastHeight = tip
+		for range 3 {
+			scanner.scan()
+		}
+		require.Empty(t, scanner.globalNetworkFeeQueue, "tip %d: history below the retention floor must keep reporting pending", tip)
+		require.Equal(t, uint64(2), scanner.netFeeSlotMultiple)
+	}
+
 	fixture.mu.Lock()
-	fixture.blocks = nil
+	fixture.tip = 401
 	fixture.mu.Unlock()
-	scanner.scan()
+	scanner.lastHeight = 401
+	for range 3 {
+		scanner.scan()
+	}
+	require.Len(t, scanner.globalNetworkFeeQueue, 1)
+	require.Equal(t, int64(400), (<-scanner.globalNetworkFeeQueue).Height)
 	require.Nil(t, scanner.netFeePendingSlot)
-	require.Equal(t, uint64(4), scanner.netFeeSlotMultiple)
-	require.Equal(t, int64(200), (<-scanner.globalNetworkFeeQueue).Height)
+	require.Equal(t, uint64(8), scanner.netFeeSlotMultiple)
 }
 
 func TestSOLNetworkFeeLaggingListingBackendRetries(t *testing.T) {
