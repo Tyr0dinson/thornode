@@ -1,11 +1,13 @@
 package monero
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -22,12 +24,15 @@ import (
 // vault identifiers resolve only for registered vaults, unregistered restores
 // are rejected with a 400.
 type recoverySidecarState struct {
-	mu            sync.Mutex
-	registered    map[string]bool
-	groupKeys     map[string]string
-	restored      map[string]bool
-	calls         []string
-	failRegisters int
+	mu                sync.Mutex
+	registered        map[string]bool
+	groupKeys         map[string]string
+	restored          map[string]bool
+	migrateGroupKey   string
+	migrateFailure    bool
+	unverifiedRestore bool
+	calls             []string
+	failRegisters     int
 }
 
 func (s *recoverySidecarState) callOrder() []string {
@@ -61,9 +66,30 @@ func newRecoverySidecarServer(t *testing.T) (*httptest.Server, *recoverySidecarS
 			state.groupKeys[req.VaultPubKey] = req.GroupKey
 			state.mu.Unlock()
 			_ = json.NewEncoder(w).Encode(testRegisterVaultResponse(0))
+		case "/v1/monero/keys/recovery/migrate":
+			state.mu.Lock()
+			groupKey := state.migrateGroupKey
+			fail := state.migrateFailure
+			if groupKey != "" || fail {
+				state.calls = append(state.calls, "migrate")
+			}
+			state.mu.Unlock()
+			if groupKey == "" && !fail {
+				http.NotFound(w, r)
+				return
+			}
+			if fail {
+				http.Error(w, "invalid backup", http.StatusBadRequest)
+				return
+			}
+			_ = json.NewEncoder(w).Encode(map[string]string{
+				"key_blob_b64":           base64.StdEncoding.EncodeToString([]byte("sealed-backup")),
+				"recovery_vault_pub_key": groupKey,
+			})
 		case "/v1/monero/keys/restore":
 			var req struct {
 				VaultPubKey string `json:"vault_pub_key"`
+				KeyBlobB64  string `json:"key_blob_b64"`
 			}
 			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 				http.Error(w, err.Error(), http.StatusBadRequest)
@@ -71,7 +97,7 @@ func newRecoverySidecarServer(t *testing.T) (*httptest.Server, *recoverySidecarS
 			}
 			state.mu.Lock()
 			state.calls = append(state.calls, "restore")
-			registered := state.registered[req.VaultPubKey]
+			registered := state.registered[req.VaultPubKey] || (state.migrateGroupKey != "" && req.VaultPubKey == state.migrateGroupKey && req.KeyBlobB64 == base64.StdEncoding.EncodeToString([]byte("sealed-backup")))
 			state.mu.Unlock()
 			if !registered {
 				http.Error(w, "vault_pub_key does not match restored FROST keys", http.StatusBadRequest)
@@ -79,18 +105,30 @@ func newRecoverySidecarServer(t *testing.T) (*httptest.Server, *recoverySidecarS
 			}
 			state.mu.Lock()
 			state.restored[req.VaultPubKey] = true
+			if req.VaultPubKey == state.migrateGroupKey {
+				state.groupKeys[req.VaultPubKey] = req.VaultPubKey
+			}
 			state.mu.Unlock()
-			_ = json.NewEncoder(w).Encode(map[string]bool{"restored": true})
+			if req.VaultPubKey == state.migrateGroupKey {
+				_ = json.NewEncoder(w).Encode(map[string]any{
+					"restored": true, "signable": !state.unverifiedRestore,
+					"vault_pub_key": req.VaultPubKey, "group_key": req.VaultPubKey,
+				})
+			} else {
+				_ = json.NewEncoder(w).Encode(map[string]bool{"restored": true})
+			}
 		case "/v1/monero/keys":
 			state.mu.Lock()
 			state.calls = append(state.calls, "status")
 			vaults := make([]sidecar.VaultKey, 0, len(state.registered))
 			for vault := range state.registered {
+				group := state.groupKeys[vault]
+				signable := state.restored[vault] || state.restored[group]
 				vaults = append(vaults, sidecar.VaultKey{
 					VaultPubKey:  vault,
-					GroupKey:     state.groupKeys[vault],
-					HasFrostKeys: state.restored[vault],
-					Signable:     state.restored[vault],
+					GroupKey:     group,
+					HasFrostKeys: signable,
+					Signable:     signable,
 				})
 			}
 			state.mu.Unlock()
@@ -259,6 +297,116 @@ func TestRestoreKeysharesRegistersVaultBeforeRestore(t *testing.T) {
 	}
 	if got, ok := c.vaultAddressMap[vaultPubKey.String()]; !ok || !got.Equals(vaultAddress) {
 		t.Fatalf("expected vault address mapping %s, got %s (present=%t)", vaultAddress, got, ok)
+	}
+}
+
+func TestRestoreKeysharesMigratesLegacyBackupAndVerifiesVault(t *testing.T) {
+	t.Parallel()
+
+	server, state := newRecoverySidecarServer(t)
+	c := newRecoveryTestClient(t, server.URL)
+	vaultPubKey, _ := testVaultPubKeyAndAddress(t)
+	groupKey, err := groupKeyHexFromVaultPubKey(vaultPubKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state.migrateGroupKey = groupKey
+	dir := t.TempDir()
+	path := writeRecoveryFile(t, dir, vaultPubKey)
+
+	c.restoreKeysharesFromDir(dir)
+
+	calls := state.callOrder()
+	if got := strings.Join(calls, ","); got != "register,migrate,restore,status" {
+		t.Fatalf("expected migration, canonical restore and vault status, got %v", calls)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("expected recovery file consumed only after verified restore, stat err: %v", err)
+	}
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	if !state.restored[state.migrateGroupKey] || state.restored[vaultPubKey.String()] {
+		t.Fatalf("expected only canonical group key restored, got %v", state.restored)
+	}
+}
+
+func TestRestoreKeysharesRetainsFileWhenMigratedGroupDiffersFromVault(t *testing.T) {
+	t.Parallel()
+
+	server, state := newRecoverySidecarServer(t)
+	state.migrateGroupKey = strings.Repeat("ab", 32)
+	c := newRecoveryTestClient(t, server.URL)
+	vaultPubKey, _ := testVaultPubKeyAndAddress(t)
+	// A previously restored share can make the alias status look healthy even
+	// though the submitted backup belongs to another FROST group.
+	state.restored[vaultPubKey.String()] = true
+	dir := t.TempDir()
+	path := writeRecoveryFile(t, dir, vaultPubKey)
+
+	c.restoreKeysharesFromDir(dir)
+
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("restore under a different group must retain recovery file: %v", err)
+	}
+	for _, call := range state.callOrder() {
+		if call == "restore" {
+			t.Fatal("mismatched migrated group must not be restored")
+		}
+	}
+}
+
+func TestRestoreKeysharesRetainsFileWhenMigrationRejectsBackup(t *testing.T) {
+	t.Parallel()
+
+	server, state := newRecoverySidecarServer(t)
+	state.migrateFailure = true
+	c := newRecoveryTestClient(t, server.URL)
+	vaultPubKey, _ := testVaultPubKeyAndAddress(t)
+	dir := t.TempDir()
+	path := writeRecoveryFile(t, dir, vaultPubKey)
+
+	c.restoreKeysharesFromDir(dir)
+
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("migration failure must retain recovery file: %v", err)
+	}
+	for _, call := range state.callOrder() {
+		if call == "restore" {
+			t.Fatal("migration rejection must not fall back to legacy restore")
+		}
+	}
+}
+
+func TestRestoreKeysharesRetainsFileWhenMigratedRestoreIsNotSignable(t *testing.T) {
+	t.Parallel()
+
+	server, state := newRecoverySidecarServer(t)
+	c := newRecoveryTestClient(t, server.URL)
+	vaultPubKey, _ := testVaultPubKeyAndAddress(t)
+	// Use the vault's real group key so the migration passes the group check
+	// and the sealed restore actually runs. The mock stores the share (a later
+	// status call would report the vault signable) but answers signable=false,
+	// so only RestoreSealedKeysContext's Signable check keeps the file.
+	groupKey, err := groupKeyHexFromVaultPubKey(vaultPubKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state.migrateGroupKey = groupKey
+	state.unverifiedRestore = true
+	dir := t.TempDir()
+	path := writeRecoveryFile(t, dir, vaultPubKey)
+
+	c.restoreKeysharesFromDir(dir)
+
+	calls := state.callOrder()
+	if !slices.Contains(calls, "restore") {
+		t.Fatalf("expected sealed restore to be attempted, got calls %v", calls)
+	}
+	if slices.Contains(calls, "status") {
+		t.Fatalf("unsignable sealed restore must fail before vault status, got calls %v", calls)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("unverified restore must retain recovery file: %v", err)
 	}
 }
 

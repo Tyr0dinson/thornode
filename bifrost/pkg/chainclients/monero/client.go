@@ -619,7 +619,39 @@ func (c *Client) registerAndRestoreKeyshareContext(ctx context.Context, vaultPub
 	if err := c.ensureVaultRegisteredContext(ctx, vaultPubKey); err != nil {
 		return fmt.Errorf("register vault before restore: %w", err)
 	}
-	return c.restoreKeyshareContext(ctx, vaultPubKey, keyBlob)
+	// Recovery files produced from on-chain backups use the legacy TKE envelope
+	// and the THOR vault alias. A sealed backup instead binds the canonical FROST
+	// group key, which may differ from that alias. The migration endpoint checks
+	// the old envelope against the alias and returns the identity for restore.
+	groupKey, sealed, err := c.sidecar.MigrateRecoveryBackupContext(ctx, vaultPubKey.String(), keyBlob)
+	if sidecar.IsHTTPStatus(err, http.StatusNotFound) {
+		// Old signer images do not have migration and still accept TKE at restore.
+		return c.restoreKeyshareContext(ctx, vaultPubKey, keyBlob)
+	}
+	if err != nil {
+		return fmt.Errorf("migrate legacy frost recovery file: %w", err)
+	}
+	expectedGroup, err := groupKeyHexFromVaultPubKey(vaultPubKey)
+	if err != nil {
+		return fmt.Errorf("derive recovery vault group key: %w", err)
+	}
+	if !strings.EqualFold(groupKey, expectedGroup) {
+		return fmt.Errorf("migrated group key does not match recovery vault %s", vaultPubKey)
+	}
+	if restoreErr := c.sidecar.RestoreSealedKeysContext(ctx, groupKey, sealed); restoreErr != nil {
+		return fmt.Errorf("restore migrated frost recovery file: %w", restoreErr)
+	}
+	// A canonical restore can succeed while an older THOR alias still points at
+	// a different group. Keep the file unless the vault Bifrost will actually
+	// use for signing resolves to the restored share.
+	signable, err := c.sidecarHasVaultKeysContext(ctx, vaultPubKey)
+	if err != nil {
+		return fmt.Errorf("verify recovered vault signability: %w", err)
+	}
+	if !signable {
+		return fmt.Errorf("recovered vault %s is not signable after migration", vaultPubKey)
+	}
+	return nil
 }
 
 func readRecoveryFile(path string) ([]byte, error) {
