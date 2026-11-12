@@ -1,7 +1,6 @@
 package app
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -192,6 +191,10 @@ type THORChainApp struct {
 	// divergence is the node-local app-hash divergence recorder, nil unless
 	// EnableDivergenceDiagnostics ran. All its methods are nil-safe.
 	divergence *divergence.Diagnostics
+
+	// queryCache serves repeated external queries for one height from memory
+	// (nil = disabled); see query_cache.go and EnableQueryCache
+	queryCache *queryCache
 }
 
 // NewChainApp returns a reference to an initialized ChainApp.
@@ -487,7 +490,7 @@ func NewChainApp(
 
 	bApp.SetPrepareProposal(wrapPrepareProposal(eBifrostProposalHandler.PrepareProposal))
 	bApp.SetProcessProposal(eBifrostProposalHandler.ProcessProposal)
-	setPrepareCheckStater(bApp)
+	setPrepareCheckStater(bApp, app.prepareCheckState)
 
 	// NOTE: Any module instantiated in the module manager that is later modified
 	// must be passed by reference here.
@@ -752,13 +755,6 @@ func (app *THORChainApp) Commit() (*abci.ResponseCommit, error) {
 	return app.BaseApp.Commit()
 }
 
-// Query counts the ABCI query for the divergence overlap counters, then serves
-// it unchanged.
-func (app *THORChainApp) Query(ctx context.Context, req *abci.RequestQuery) (*abci.ResponseQuery, error) {
-	app.divergence.Tracker().QueryStart()
-	return app.BaseApp.Query(ctx, req)
-}
-
 // EnableDivergenceDiagnostics starts the node-local app-hash divergence
 // recorder (app/divergence) when app.toml [divergence] enabled is true (the
 // default). It registers a streaming listener on every KV store, which sits
@@ -807,6 +803,15 @@ func (app *THORChainApp) commitInfoSource() divergence.CommitInfoSource {
 		return rs
 	}
 	return nil
+}
+
+// prepareCheckState runs at the end of Commit, once the store version, its
+// commit info and the check state are all settled for the committed block
+// (ctx is the new check state, carrying that block's header).
+func (app *THORChainApp) prepareCheckState(ctx sdk.Context) {
+	if app.queryCache != nil {
+		app.queryCache.committed(ctx.BlockHeight(), ctx.BlockTime())
+	}
 }
 
 func (app *THORChainApp) setPostHandler() {

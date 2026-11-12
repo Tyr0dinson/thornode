@@ -527,6 +527,18 @@ type Thornode struct {
 			// validator; the endpoint is also unauthenticated. See default.yaml.
 			RetainBlocks int64 `mapstructure:"retain_blocks"`
 		} `mapstructure:"logs"`
+
+		// QueryCache configures the node-local response cache for external read
+		// queries (ABCI abci_query, gRPC, and REST through either). Responses are
+		// keyed by block height, so repeated identical queries within one block are
+		// served from memory. Queries from inside the state machine never use it.
+		QueryCache struct {
+			// Enabled turns the cache on.
+			Enabled bool `mapstructure:"enabled"`
+
+			// MaxBytes bounds the memory the cached responses may hold.
+			MaxBytes int64 `mapstructure:"max_bytes"`
+		} `mapstructure:"query_cache"`
 	} `mapstructure:"api"`
 
 	// Telemetry contains THORnode-specific telemetry configuration.

@@ -24,11 +24,13 @@ import (
 // errors into 500s.
 func (app *THORChainApp) RegisterGRPCServerWithSkipCheckHeader(server gogogrpc.Server, skipCheckHeader bool) {
 	// The divergence tracker counts queries; a nil tracker returns server as is.
-	app.BaseApp.RegisterGRPCServerWithSkipCheckHeader(abciParityServer{app.divergence.Tracker().WrapGRPCServer(server)}, skipCheckHeader)
+	app.BaseApp.RegisterGRPCServerWithSkipCheckHeader(abciParityServer{Server: app.divergence.Tracker().WrapGRPCServer(server), app: app}, skipCheckHeader)
 }
 
 type abciParityServer struct {
 	gogogrpc.Server
+	// app serves repeated queries from app.queryCache when it is enabled
+	app *THORChainApp
 }
 
 func (s abciParityServer) RegisterService(sd *grpc.ServiceDesc, handler interface{}) {
@@ -36,15 +38,30 @@ func (s abciParityServer) RegisterService(sd *grpc.ServiceDesc, handler interfac
 	wrapped.Methods = make([]grpc.MethodDesc, len(sd.Methods))
 	for i, method := range sd.Methods {
 		inner := method.Handler
+		fullMethod := "/" + sd.ServiceName + "/" + method.MethodName
+		policy := queryCachePolicyFor(fullMethod)
 		wrapped.Methods[i] = grpc.MethodDesc{
 			MethodName: method.MethodName,
 			Handler: func(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-				resp, err := inner(srv, ctx, dec, interceptor)
+				var resp interface{}
+				var err error
+				if c := s.queryCache(); c != nil && policy != queryCacheNever {
+					resp, err = c.serveGRPC(ctx, policy, fullMethod, inner, srv, dec, interceptor)
+				} else {
+					resp, err = inner(srv, ctx, dec, interceptor)
+				}
 				return resp, abciParityError(err)
 			},
 		}
 	}
 	s.Server.RegisterService(&wrapped, handler)
+}
+
+func (s abciParityServer) queryCache() *queryCache {
+	if s.app == nil {
+		return nil
+	}
+	return s.app.queryCache
 }
 
 // abciParityError mirrors the ABCI query path's error translation (baseapp's

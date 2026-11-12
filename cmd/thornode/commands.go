@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	runtimedebug "runtime/debug"
+	"time"
 
 	cmtcfg "github.com/cometbft/cometbft/config"
 	dbm "github.com/cosmos/cosmos-db"
@@ -366,6 +367,12 @@ func newApp(
 	// diagnostics, so it is logged rather than fatal.
 	if err := chainApp.EnableDivergenceDiagnostics(homePath, appOpts); err != nil {
 		logger.Error("divergence diagnostics disabled", "err", err)
+	}
+
+	// node-local response cache for external queries; wired here, like the
+	// block logs above, so appExport's app never gets one
+	if qc := config.GetThornode().API.QueryCache; qc.Enabled {
+		chainApp.EnableQueryCache(qc.MaxBytes, func() time.Duration { return config.GetThornode().API.Quote.MaxLag })
 	}
 	return chainApp
 }

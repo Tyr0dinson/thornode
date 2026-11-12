@@ -1103,6 +1103,21 @@ thor:
       # on the api port and reads off the state disk, so do not leave this on
       # with the api port publicly reachable.
       retain_blocks: 0
+    # Node-local cache of read-query responses (CometBFT abci_query, gRPC, and
+    # REST through either), keyed by block height: repeated identical queries
+    # for one height are computed once and served from memory, and a request
+    # without a height uses the latest committed height, so a new block is never
+    # answered with the previous block's data. Only successful responses of
+    # deterministic queries are kept (thorchain, wasm, bank, auth, denom,
+    # scheduler; not tx/simulate/broadcast, comet block or node endpoints,
+    # keysign/keygen, or proofs). Quotes are only reused while the latest block
+    # is within quote.max_lag. Queries from inside the state machine (CosmWasm
+    # contracts) never use it. max_bytes caps the cached responses by their
+    # encoded size (gRPC responses are held as wire bytes and decoded per
+    # caller), evicting least recently used entries.
+    query_cache:
+      enabled: true
+      max_bytes: 134_217_728 # 128 MiB
   telemetry:
     slash_points: false
     price_per_node: false
