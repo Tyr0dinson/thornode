@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -227,6 +228,59 @@ func TestGetTransactionInfoRejectsErrorResponses(t *testing.T) {
 	}
 }
 
+func TestGetSolidBlockHeight(t *testing.T) {
+	blockID := fmt.Sprintf("%016x%048x", 123, 0xabcdef)
+	validBlock := "Num:123,ID:" + blockID
+	for _, tc := range []struct {
+		name   string
+		body   string
+		status int
+		want   int64
+	}{
+		{name: "solidified", body: `{"solidityBlock":"` + validBlock + `"}`, want: 123},
+		{name: "uppercase block ID", body: `{"solidityBlock":"Num:123,ID:` + strings.ToUpper(blockID) + `"}`, want: 123},
+		{name: "head is not finality", body: `{"block":"` + validBlock + `"}`},
+		{name: "empty object", body: `{}`},
+		{name: "null", body: `null`},
+		{name: "malformed JSON", body: `{`},
+		{name: "wrong field type", body: `{"solidityBlock":123}`},
+		{name: "RPC error", body: `{"solidityBlock":"` + validBlock + `"}`, status: http.StatusServiceUnavailable},
+		{name: "application error", body: `{"solidityBlock":"` + validBlock + `","Error":"unavailable"}`},
+		{name: "empty application error", body: `{"solidityBlock":"` + validBlock + `","Error":""}`},
+		{name: "null application error", body: `{"solidityBlock":"` + validBlock + `","Error":null}`},
+		{name: "missing prefix", body: `{"solidityBlock":"123,ID:` + blockID + `"}`},
+		{name: "missing ID", body: `{"solidityBlock":"Num:123"}`},
+		{name: "zero", body: `{"solidityBlock":"Num:0,ID:` + strings.Repeat("0", 64) + `"}`},
+		{name: "negative", body: `{"solidityBlock":"Num:-1,ID:` + blockID + `"}`},
+		{name: "overflow", body: `{"solidityBlock":"Num:9223372036854775808,ID:` + blockID + `"}`},
+		{name: "nondecimal", body: `{"solidityBlock":"Num:0x7b,ID:` + blockID + `"}`},
+		{name: "leading zero", body: `{"solidityBlock":"Num:0123,ID:` + blockID + `"}`},
+		{name: "plus sign", body: `{"solidityBlock":"Num:+123,ID:` + blockID + `"}`},
+		{name: "height ID mismatch", body: `{"solidityBlock":"Num:124,ID:` + blockID + `"}`},
+		{name: "short ID", body: `{"solidityBlock":"Num:123,ID:00"}`},
+		{name: "nonhex ID", body: `{"solidityBlock":"Num:123,ID:` + strings.Repeat("z", 64) + `"}`},
+		{name: "trailing data", body: `{"solidityBlock":"` + validBlock + ` garbage"}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != http.MethodPost || r.URL.Path != "/wallet/getnodeinfo" {
+					t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+				}
+				if tc.status != 0 {
+					w.WriteHeader(tc.status)
+				}
+				_, _ = w.Write([]byte(tc.body))
+			}))
+			defer server.Close()
+			client := NewTronApi(server.URL, time.Second)
+			height, err := client.GetSolidBlockHeight()
+			if (err == nil) != (tc.want != 0) || height != tc.want {
+				t.Fatalf("height = %d, error = %v, want %d", height, err, tc.want)
+			}
+		})
+	}
+}
+
 func TestGetSolidTransactionInfo(t *testing.T) {
 	const txID = "deadbeef9034d95770d5704c9898e3414780c5fcbe282350080db8c4cef3e729"
 	for _, tc := range []struct {
@@ -259,7 +313,7 @@ func TestGetSolidTransactionInfo(t *testing.T) {
 				_, _ = w.Write([]byte(tc.body))
 			}))
 			defer server.Close()
-			info, err := NewTronApi(server.URL+"/", time.Second).GetSolidTransactionInfo(txID)
+			info, err := NewTronSolidityApi(server.URL+"/", time.Second).GetTransactionInfo(txID)
 			if (err != nil) != tc.wantErr {
 				t.Fatalf("receipt error = %v", err)
 			}

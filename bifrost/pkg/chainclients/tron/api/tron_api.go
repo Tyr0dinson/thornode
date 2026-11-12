@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -23,6 +25,7 @@ type TronApi struct {
 	http    *http.Client
 	url     string
 	timeout time.Duration
+	service string // HTTP API path prefix; empty means the full-node "wallet" API
 }
 
 func NewTronApi(url string, timeout time.Duration) *TronApi {
@@ -73,18 +76,54 @@ func (api *TronApi) GetBlock(height int64) (Block, error) {
 	return block, nil
 }
 
-func (api *TronApi) GetTransactionInfo(hash string) (TransactionInfo, error) {
-	return api.getTransactionInfo("wallet", hash)
+// GetSolidBlockHeight returns the node's latest solidified block height. Read
+// this before a receipt lookup, then require its block to be at or below this
+// height; a receipt read before finality could describe a reverted fork.
+func (api *TronApi) GetSolidBlockHeight() (int64, error) {
+	data, err := api.post("getnodeinfo", nil)
+	if err != nil {
+		return 0, err
+	}
+	var response *struct {
+		SolidityBlock string          `json:"solidityBlock"`
+		Error         json.RawMessage `json:"Error"`
+	}
+	if err = json.Unmarshal(data, &response); err != nil {
+		return 0, fmt.Errorf("failed to unmarshal node info: %w", err)
+	}
+	if response == nil || len(response.Error) != 0 {
+		return 0, fmt.Errorf("unavailable node info")
+	}
+
+	// Java-TRON's BlockId.getString emits Num:<height>,ID:<block hash>.
+	// Its block hash also embeds the height in its first eight bytes.
+	value, ok := strings.CutPrefix(response.SolidityBlock, "Num:")
+	if !ok {
+		return 0, fmt.Errorf("invalid solidity block")
+	}
+	number, hash, ok := strings.Cut(value, ",ID:")
+	if !ok {
+		return 0, fmt.Errorf("invalid solidity block")
+	}
+	height, err := strconv.ParseInt(number, 10, 64)
+	if err != nil || height <= 0 || strconv.FormatInt(height, 10) != number {
+		return 0, fmt.Errorf("invalid solidity block height")
+	}
+	blockID, err := hex.DecodeString(hash)
+	if err != nil || len(blockID) != 32 || binary.BigEndian.Uint64(blockID[:8]) != uint64(height) {
+		return 0, fmt.Errorf("invalid solidity block ID")
+	}
+	return height, nil
 }
 
-// GetSolidTransactionInfo reads the execution receipt from solidified state.
-// An empty receipt is inconclusive; it must never authorize a replacement.
-func (api *TronApi) GetSolidTransactionInfo(hash string) (TransactionInfo, error) {
-	return api.getTransactionInfo("walletsolidity", hash)
-}
+func (api *TronApi) GetTransactionInfo(
+	hash string,
+) (TransactionInfo, error) {
+	params := map[string]any{
+		"value": hash,
+	}
 
-func (api *TronApi) getTransactionInfo(namespace, hash string) (TransactionInfo, error) {
-	data, err := api.postInNamespace(namespace, "gettransactioninfobyid", map[string]any{"value": hash})
+	data, err := api.post("gettransactioninfobyid", params)
 	if err != nil {
 		return TransactionInfo{}, err
 	}
@@ -362,7 +401,7 @@ func (api *TronApi) getContext() (context.Context, context.CancelFunc) {
 func (api *TronApi) get(
 	method string,
 ) ([]byte, error) {
-	data, err := api.do("GET", "wallet", method, nil)
+	data, err := api.do("GET", method, nil)
 	if err != nil {
 		api.logger.Err(err).Str("method", method).Msg("failed to call tron api")
 		return nil, fmt.Errorf("failed to call %s: %w", method, err)
@@ -375,11 +414,7 @@ func (api *TronApi) post(
 	method string,
 	params map[string]any,
 ) ([]byte, error) {
-	return api.postInNamespace("wallet", method, params)
-}
-
-func (api *TronApi) postInNamespace(namespace, method string, params map[string]any) ([]byte, error) {
-	data, err := api.do("POST", namespace, method, params)
+	data, err := api.do("POST", method, params)
 	if err != nil {
 		api.logger.Err(err).Str("method", method).Msg("failed to call tron api")
 		return nil, fmt.Errorf("failed to call %s: %w", method, err)
@@ -390,7 +425,6 @@ func (api *TronApi) postInNamespace(namespace, method string, params map[string]
 
 func (api *TronApi) do(
 	httpMethod string,
-	namespace string,
 	apiMethod string,
 	params map[string]any,
 ) ([]byte, error) {
@@ -402,7 +436,11 @@ func (api *TronApi) do(
 		return nil, fmt.Errorf("failed to marshal params: %w", err)
 	}
 
-	url_, err := url.JoinPath(api.url, namespace, apiMethod)
+	service := api.service
+	if service == "" {
+		service = walletService
+	}
+	url_, err := url.JoinPath(api.url, service, apiMethod)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create url")
 	}
@@ -467,4 +505,18 @@ func ConvertAddress(address string) (string, error) {
 	}
 
 	return "", fmt.Errorf("address not valid")
+}
+
+const (
+	walletService   = "wallet"
+	solidityService = "walletsolidity"
+)
+
+// NewTronSolidityApi reads java-tron's solidity HTTP API (/walletsolidity/...).
+// It serves only solidified, irreversible state: GetTransactionInfo returns a
+// receipt only once its block is solidified, and {} before that.
+func NewTronSolidityApi(url string, timeout time.Duration) *TronApi {
+	solidity := NewTronApi(url, timeout)
+	solidity.service = solidityService
+	return solidity
 }

@@ -790,7 +790,7 @@ func (s *TronTestSuite) newFailedRetryFixture(c *C) *failedRetryFixture {
 		config:             s.client.config,
 		bridge:             bridge,
 		api:                tronAPI,
-		solidityAPI:        api.NewTronApi(solidityServer.URL, 2*time.Second),
+		solidityAPI:        api.NewTronSolidityApi(solidityServer.URL, 2*time.Second),
 		localKeyManager:    s.client.localKeyManager,
 		whitelist:          s.client.whitelist,
 		abi:                s.client.abi,
@@ -1167,7 +1167,7 @@ func (s *TronTestSuite) TestFailedPaymentRecoveryNewerCacheDuringLookup(c *C) {
 			}
 			f.rpc.ServeHTTP(w, req)
 		}))
-		f.client.solidityAPI = api.NewTronApi(server.URL, 10*time.Second)
+		f.client.solidityAPI = api.NewTronSolidityApi(server.URL, 10*time.Second)
 		type result struct {
 			signed []byte
 			err    error
@@ -1442,7 +1442,7 @@ func (s *TronTestSuite) TestFailedPaymentRecoverySeparateSolidityEndpoint(c *C) 
 			f.solidityServer.Close()
 		}
 		if name == "wrong base URL" {
-			f.client.solidityAPI = api.NewTronApi(f.solidityServer.URL+"/wrong", time.Second)
+			f.client.solidityAPI = api.NewTronSolidityApi(f.solidityServer.URL+"/wrong", time.Second)
 		}
 		signed, checkpoint, observation, err := f.client.SignTx(tx, tx.Height)
 		c.Assert(err, IsNil, Commentf("%s", name))

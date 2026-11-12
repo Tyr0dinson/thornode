@@ -240,7 +240,7 @@ func NewTronClient(
 	}
 
 	if config.SolidityAPIHost != "" {
-		client.solidityAPI = api.NewTronApi(config.SolidityAPIHost, config.BlockScanner.HTTPRequestTimeout)
+		client.solidityAPI = api.NewTronSolidityApi(config.SolidityAPIHost, config.BlockScanner.HTTPRequestTimeout)
 	}
 
 	client.tssKeyManager, err = tss.NewKeySign(server, bridge)
@@ -476,62 +476,6 @@ func (c *TronClient) ConfirmationCountReady(_ types.TxIn) bool {
 
 // OnObservedTxIn is called when a new observed tx is received.
 func (c *TronClient) OnObservedTxIn(_ types.TxInItem, _ int64) {}
-
-type tronOutboundLock struct {
-	mu    sync.Mutex
-	users int
-	// verifiedFailed is the cached attempt SignTx proved failed in solidified
-	// state. A solidified failure is final, so BroadcastTx can reuse it rather
-	// than repeat the lookup. It lives only as long as the lock entry.
-	verifiedFailed string
-}
-
-// LockTxOut serializes the full sign-and-broadcast lifecycle by payment identity,
-// including saved signed retries across different vaults. References include
-// waiters, so entries can be removed after the last caller releases its lock.
-func (c *TronClient) LockTxOut(tx types.TxOutItem) func() {
-	key := tx.CacheHash()
-	c.outboundLocksMu.Lock()
-	if c.outboundLocks == nil {
-		c.outboundLocks = make(map[string]*tronOutboundLock)
-	}
-	entry := c.outboundLocks[key]
-	if entry == nil {
-		entry = &tronOutboundLock{}
-		c.outboundLocks[key] = entry
-	}
-	entry.users++
-	c.outboundLocksMu.Unlock()
-
-	entry.mu.Lock()
-	return func() {
-		entry.mu.Unlock()
-		c.outboundLocksMu.Lock()
-		entry.users--
-		if entry.users == 0 {
-			delete(c.outboundLocks, key)
-		}
-		c.outboundLocksMu.Unlock()
-	}
-}
-
-// setVerifiedFailed records the attempt SignTx proved failed for a held
-// payment lock; an empty sig clears it. Callers without a lock record nothing.
-func (c *TronClient) setVerifiedFailed(key, sig string) {
-	c.outboundLocksMu.Lock()
-	defer c.outboundLocksMu.Unlock()
-	if entry := c.outboundLocks[key]; entry != nil {
-		entry.verifiedFailed = sig
-	}
-}
-
-// isVerifiedFailed reports whether sig is the attempt SignTx proved failed.
-func (c *TronClient) isVerifiedFailed(key, sig string) bool {
-	c.outboundLocksMu.Lock()
-	defer c.outboundLocksMu.Unlock()
-	entry := c.outboundLocks[key]
-	return entry != nil && entry.verifiedFailed != "" && strings.EqualFold(entry.verifiedFailed, sig)
-}
 
 // getSignerCacheExpiry returns the configured signer-cache expiry (config signer_cache_expiry).
 func (c *TronClient) getSignerCacheExpiry() time.Duration {
@@ -817,78 +761,17 @@ func (c *TronClient) BroadcastTx(
 	return response.TxId, nil
 }
 
-// recordAcceptedBroadcast runs under the signer's LockTxOut boundary. Every
-// production TRON signer-cache writer participates in that boundary. An older
-// saved payload must not replace a newer payment record.
-func (c *TronClient) recordAcceptedBroadcast(txOutItem types.TxOutItem, txID string) error {
-	cacheHash := txOutItem.CacheHash()
-	if c.signerCacheManager.HasSigned(cacheHash) {
-		previous, ok := c.signerCacheManager.GetSignedTxHash(cacheHash)
-		if !ok {
-			return fmt.Errorf("TRON broadcast conflicts with a protected signer-cache record; reconciliation required")
-		}
-		if strings.EqualFold(previous, txID) {
-			// Duplicate acceptance cannot extend a failed attempt's recovery gate.
-			return nil
-		}
-		// SignTx may already have proved previous failed in this lock section.
-		// Repeating the lookup adds nothing but a transient RPC error.
-		if !c.isVerifiedFailed(cacheHash, previous) && c.verifyCachedTransaction(previous) != signercache.LookupFailed {
-			// Neither acceptance nor an unavailable receipt orders these two
-			// exposed transactions. Keep the existing identity and make the
-			// cache non-expiring: otherwise its later failure could authorize a
-			// third attempt while the untracked accepted transaction has paid.
-			if err := c.signerCacheManager.ProtectSigned(cacheHash); err != nil {
-				return fmt.Errorf("failed to protect conflicting TRON broadcasts: %w", err)
-			}
-			return fmt.Errorf("TRON accepted broadcast %s conflicts with cached %s; reconciliation required", txID, previous)
-		}
-	}
-	return c.signerCacheManager.SetSignedWithExpiry(
-		cacheHash,
-		txOutItem.CacheVault(c.GetChain()),
-		txID,
-		time.Now().Add(c.getSignerCacheExpiry()).UnixMilli(),
-	)
-}
-
-// verifyCachedTransaction classifies final execution evidence. SignTx uses it
-// only after expiry and the operational gate; BroadcastTx also uses it to
-// distinguish a failed duplicate from an accepted payment attempt.
+// verifyCachedTransaction is only called after the cache expires and the
+// operational gate opens, and by BroadcastTx to tell a failed duplicate from an
+// accepted attempt. Only a solidified receipt for sig is evidence, from the
+// separately configured solidity API; there is no fallback to the full-node API.
 func (c *TronClient) verifyCachedTransaction(sig string) signercache.LookupResult {
-	hash, err := hex.DecodeString(sig)
-	if err != nil || len(hash) != sha256.Size {
+	if c.solidityAPI == nil || !isTronTxID(sig) {
 		return signercache.LookupAmbiguous
 	}
-	// Use a transaction-bound receipt from solidified state, rather than
-	// combining a node-info height with a separate latest-head response.
-	// Missing history, a pending transaction or an empty lookup cannot prove
-	// non-payment, even after the cache expires.
-	// The regular API host may not serve the solidity HTTP API. Require its
-	// explicit endpoint and never fall back to latest-head execution evidence.
-	if c.solidityAPI == nil {
-		return signercache.LookupAmbiguous
-	}
-	info, err := c.solidityAPI.GetSolidTransactionInfo(sig)
-	if err != nil || !strings.EqualFold(info.ID, sig) || info.BlockNumber <= 0 {
-		return signercache.LookupAmbiguous
-	}
-	if info.Receipt.Result == "SUCCESS" {
-		return signercache.LookupFound
-	}
-	if info.Result != "FAILED" {
-		return signercache.LookupAmbiguous
-	}
-	// Explicit failures only: absent receipts, DEFAULT, UNKNOWN and future
-	// execution results are not proof that no payment was made.
-	switch info.Receipt.Result {
-	case "REVERT", "BAD_JUMP_DESTINATION", "OUT_OF_MEMORY", "PRECOMPILED_CONTRACT",
-		"STACK_TOO_SMALL", "STACK_TOO_LARGE", "ILLEGAL_OPERATION", "STACK_OVERFLOW",
-		"OUT_OF_ENERGY", "OUT_OF_TIME", "JVM_STACK_OVER_FLOW", "TRANSFER_FAILED", "INVALID_CODE":
-		return signercache.LookupFailed
-	default:
-		return signercache.LookupAmbiguous
-	}
+	info, err := c.solidityAPI.GetTransactionInfo(sig)
+	res, _ := classifySolidReceipt(sig, info, err)
+	return res
 }
 
 func validateTronRecoveryAttempt(tx api.Transaction, check signercache.CacheCheck) error {
