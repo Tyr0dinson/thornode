@@ -331,6 +331,14 @@ func (s *BitcoinSignerSuite) TestSignTxHappyPathWithPrivateKey(c *C) {
 	buf, _, _, err := s.client.SignTx(txOutItem, 1)
 	c.Assert(err, IsNil)
 	c.Assert(buf, NotNil)
+
+	// The reported Solana-origin outbound must pass the actual signer memo
+	// parser and produce a signed transaction with its full 95-byte memo.
+	txOutItem.InHash = common.TxID("665AC1Eykegia919xTjKPY42J9dzVBadaEVZ2mMm3YTPjumRUVGPxZwmNae8r1QHF9QWF1N564Qsob8PdbnpaKfe")
+	txOutItem.Memo = "OUT:" + txOutItem.InHash.String() + "|d7"
+	buf, _, _, err = s.client.SignTx(txOutItem, 1)
+	c.Assert(err, IsNil)
+	c.Assert(buf, NotNil)
 }
 
 // keysignFailKeyManager fails every remote sign with the configured blame.

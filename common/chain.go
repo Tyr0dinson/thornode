@@ -564,6 +564,19 @@ func (c Chain) MaxMemoLength() int {
 	}
 }
 
+// MaxOutboundMemoLength is the memo budget when appending optional outbound data.
+// A mandatory protocol reference longer than this budget must remain intact.
+func (c Chain) MaxOutboundMemoLength() int {
+	switch c {
+	case BTCChain, LTCChain, BCHChain, DOGEChain:
+		return constants.MaxMemoSizeUtxoExtended
+	default:
+		// ZEC retains its single-carrier budget until its signer accounts for
+		// passthrough and continuation outputs in the ZIP-317 fee estimate.
+		return c.MaxMemoLength()
+	}
+}
+
 // DefaultCoinbase returns the default coinbase address for each chain, returns 0 if no
 // coinbase emission is used. This is used used at the time of writing as a fallback
 // value in Bifrost, and for inbound confirmation count estimates in the quote APIs.

@@ -1,6 +1,9 @@
 package thorchain
 
 import (
+	"strings"
+	"unicode/utf8"
+
 	"gopkg.in/check.v1"
 	. "gopkg.in/check.v1"
 
@@ -13,6 +16,109 @@ import (
 type TxOutStoreSuite struct{}
 
 var _ = Suite(&TxOutStoreSuite{})
+
+// An 88-character Solana signature: OUT:<id> alone exceeds one OP_RETURN.
+const longSolanaInHash common.TxID = "665AC1Eykegia919xTjKPY42J9dzVBadaEVZ2mMm3YTPjumRUVGPxZwmNae8r1QHF9QWF1N564Qsob8PdbnpaKfe"
+
+func (s TxOutStoreSuite) TestOutboundMemoPassthrough(c *C) {
+	txID := longSolanaInHash
+	base := NewOutboundMemo(txID).String()
+	for _, chain := range []common.Chain{common.BTCChain, common.BCHChain, common.LTCChain, common.DOGEChain, common.ETHChain} {
+		limit := constants.MaxMemoSize
+		if chain.IsUTXO() {
+			limit = constants.MaxMemoSizeUtxoExtended
+		}
+		for _, tc := range []struct {
+			inbound string
+			want    string
+		}{
+			{"=:BTC.BTC:dest", base},
+			{"=:BTC.BTC:dest|", base + "|"},
+			{"=:BTC.BTC:dest|d7", base + "|d7"},
+			{"=:BTC.BTC:dest|a|b", base + "|a|b"},
+			{"=:BTC.BTC:dest|" + strings.Repeat("x", limit-len(base)-1), base + "|" + strings.Repeat("x", limit-len(base)-1)},
+			{"=:BTC.BTC:dest|" + strings.Repeat("x", 250), base + "|" + strings.Repeat("x", limit-len(base)-1)},
+		} {
+			memo := appendOutboundMemoData(chain, base, tc.inbound)
+			c.Assert(memo, Equals, tc.want, Commentf("chain %s", chain))
+			parsed, err := ParseMemo(common.LatestVersion, memo)
+			c.Assert(err, IsNil)
+			c.Check(parsed.GetTxID(), Equals, txID)
+			c.Check(len(memo) <= limit, Equals, true)
+		}
+	}
+	data := strings.Repeat("x", 145) + "€"
+	memo := appendOutboundMemoData(common.BTCChain, base, "=:BTC.BTC:dest|"+data)
+	c.Assert(utf8.ValidString(memo), Equals, true)
+	c.Assert(memo, Equals, base+"|"+strings.Repeat("x", 145))
+	for _, data := range []string{"ok€tail", "ok\x00tail", "ok\ntail", "ok\x7ftail", "ok^tail"} {
+		c.Check(appendOutboundMemoData(common.BTCChain, base, "in|"+data), Equals, base+"|ok")
+	}
+	// A caret anywhere in UTXO passthrough data ends it, so no outbound memo can
+	// carry a literal '^' that Bifrost would take for the continuation marker.
+	shortBase := NewOutboundMemo(common.TxID(strings.Repeat("A", 64))).String()
+	for _, chain := range []common.Chain{common.BTCChain, common.BCHChain, common.LTCChain, common.DOGEChain, common.ZECChain} {
+		c.Check(appendOutboundMemoData(chain, shortBase, "in|ab^"+strings.Repeat("x", 30)), Equals, shortBase+"|ab")
+		c.Check(appendOutboundMemoData(chain, shortBase, "in|^"+strings.Repeat("x", 30)), Equals, shortBase+"|")
+	}
+	c.Check(appendOutboundMemoData(common.ETHChain, base, "in|€"), Equals, base+"|€")
+	c.Check(appendOutboundMemoData(common.ETHChain, base, "in|a^b"), Equals, base+"|a^b")
+	// Even an oversized caller-supplied protocol memo must never be sliced.
+	oversize := strings.Repeat("x", 250)
+	c.Assert(appendOutboundMemoData(common.BTCChain, oversize, "in|data"), Equals, oversize)
+}
+
+func (s TxOutStoreSuite) TestZECOutboundMemoPassthrough(c *C) {
+	for _, prefix := range []string{"OUT:", "REFUND:"} {
+		shortBase := prefix + strings.Repeat("A", 64)
+		capacity := 80 - len(shortBase) - 1
+		for _, size := range []int{capacity, capacity + 1, 250} {
+			memo := appendOutboundMemoData(common.ZECChain, shortBase, "in|"+strings.Repeat("x", size))
+			c.Assert(memo, Equals, shortBase+"|"+strings.Repeat("x", capacity))
+			c.Assert(len(memo), Equals, 80)
+			_, err := ParseMemo(common.LatestVersion, memo)
+			c.Assert(err, IsNil)
+		}
+		// The reference already exceeds the optional-data budget. Preserve it
+		// whole, including when the inbound carries the incident's |d7 suffix.
+		longBase := prefix + longSolanaInHash.String()
+		for _, inbound := range []string{"in", "in|", "in|d7", "in|" + strings.Repeat("x", 250)} {
+			memo := appendOutboundMemoData(common.ZECChain, longBase, inbound)
+			c.Assert(memo, Equals, longBase)
+			parsed, err := ParseMemo(common.LatestVersion, memo)
+			c.Assert(err, IsNil)
+			c.Check(parsed.GetTxID(), Equals, longSolanaInHash)
+		}
+	}
+}
+
+func (s TxOutStoreSuite) TestPrepareTxOutExtendedMemo(c *C) {
+	w := getHandlerTestWrapper(c, 1, true, true)
+	txOutStore := newTxOutStorage(w.keeper, w.mgr.GetConstants(), w.mgr.EventMgr(), w.mgr.GasMgr())
+	txID := longSolanaInHash
+	vault := GetRandomVault()
+	vault.Coins = common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(100*common.One)))
+	c.Assert(w.keeper.SetVault(w.ctx, vault), IsNil)
+	voter := NewObservedTxVoter(txID, nil)
+	voter.Tx.Tx.Memo = "=:BTC.BTC:dest|d7"
+	w.keeper.SetObservedTxInVoter(w.ctx, voter)
+	item := TxOutItem{
+		Chain: common.BTCChain, InHash: txID, ToAddress: GetRandomBTCAddress(),
+		Coin: common.NewCoin(common.BTCAsset, cosmos.NewUint(common.One)),
+	}
+	for _, enabled := range []int64{0, 1} {
+		w.keeper.SetMimir(w.ctx, constants.EnableMemolessOutbound.String(), enabled)
+		outputs, _, err := txOutStore.prepareTxOutItem(w.ctx, item)
+		c.Assert(err, IsNil)
+		c.Assert(outputs, HasLen, 1)
+		want := NewOutboundMemo(txID).String() + "|d7"
+		c.Check(outputs[0].Memo, Equals, want)
+		c.Check(outputs[0].OriginalMemo, Equals, want)
+		parsed, err := ParseMemo(common.LatestVersion, outputs[0].GetMemo())
+		c.Assert(err, IsNil)
+		c.Check(parsed.GetTxID(), Equals, txID)
+	}
+}
 
 type recordingEventMgr struct {
 	*DummyEventMgr

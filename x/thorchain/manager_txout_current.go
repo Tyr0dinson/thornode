@@ -6,6 +6,7 @@ import (
 	"math"
 	"sort"
 	"strings"
+	"unicode/utf8"
 
 	sdkmath "cosmossdk.io/math"
 	"github.com/blang/semver"
@@ -734,14 +735,7 @@ func (tos *TxOutStorage) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem) ([]
 		// fetch inbound txn memo, and append arbitrary data (if applicable)
 		inboundVoter, err := tos.keeper.GetObservedTxInVoter(ctx, toi.InHash)
 		if err == nil {
-			parts := strings.SplitN(inboundVoter.Tx.Tx.Memo, "|", 2)
-			if len(parts) == 2 {
-				toi.Memo = fmt.Sprintf("%s|%s", toi.Memo, parts[1])
-				maxMemoLength := toi.Chain.MaxMemoLength()
-				if len(toi.Memo) > maxMemoLength {
-					toi.Memo = toi.Memo[:maxMemoLength]
-				}
-			}
+			toi.Memo = appendOutboundMemoData(toi.Chain, toi.Memo, inboundVoter.Tx.Tx.Memo)
 		}
 	}
 
@@ -1133,6 +1127,43 @@ func (tos *TxOutStorage) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem) ([]
 	}
 
 	return finalOutput, finalRuneFee, nil
+}
+
+// appendOutboundMemoData budgets only optional passthrough data. In particular,
+// an OUT memo containing a Solana signature already exceeds one OP_RETURN.
+// Chains supporting extended outbound data use existing continuation outputs,
+// leaving room for the recipient and change within the scanner's output limit.
+func appendOutboundMemoData(chain common.Chain, memo, inboundMemo string) string {
+	_, data, found := strings.Cut(inboundMemo, "|")
+	if !found {
+		return memo
+	}
+	limit := chain.MaxOutboundMemoLength()
+	if chain.IsUTXO() {
+		// UTXO memo decoding accepts printable ASCII only. Trim optional data
+		// at the first unsupported byte instead of making the entire outbound
+		// unobservable (including NUL, which denotes continuation padding).
+		// '^' is the continuation marker: Bifrost removes the first caret of an
+		// extended memo, so a literal one would be observed as a different memo.
+		for i := 0; i < len(data); i++ {
+			if data[i] < 0x20 || data[i] > 0x7e || data[i] == '^' {
+				data = data[:i]
+				break
+			}
+		}
+	}
+	remaining := limit - len(memo) - 1 // the separating '|'
+	if remaining < 0 {
+		return memo
+	}
+	if len(data) > remaining {
+		// Do not split a UTF-8 rune in a protobuf string.
+		for remaining > 0 && !utf8.RuneStart(data[remaining]) {
+			remaining--
+		}
+		data = data[:remaining]
+	}
+	return memo + "|" + data
 }
 
 func (tos *TxOutStorage) addToBlockOut(ctx cosmos.Context, mgr Manager, item TxOutItem, outboundHeight int64) error {

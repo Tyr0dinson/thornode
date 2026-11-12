@@ -25,10 +25,13 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/utxo"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
+	btctxscript "gitlab.com/thorchain/thornode/v3/bifrost/txscript/txscript"
 	"gitlab.com/thorchain/thornode/v3/cmd"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/config"
+	"gitlab.com/thorchain/thornode/v3/constants"
+	mem "gitlab.com/thorchain/thornode/v3/x/thorchain/memo"
 	ttypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
@@ -42,6 +45,50 @@ type BitcoinSuite struct {
 }
 
 var _ = Suite(&BitcoinSuite{})
+
+// THORNode now keeps passthrough data in extended UTXO outbound memos (up to
+// MaxMemoSizeUtxoExtended) and drops it from the first '^'. The existing
+// encoder, scanner and decoder must carry such memos unchanged.
+func (s *BitcoinSuite) TestOutboundMemoContinuationRoundTrip(c *C) {
+	const txID = "665AC1Eykegia919xTjKPY42J9dzVBadaEVZ2mMm3YTPjumRUVGPxZwmNae8r1QHF9QWF1N564Qsob8PdbnpaKfe"
+	base := "OUT:" + txID
+	shortBase := "OUT:" + strings.Repeat("A", 64)
+	for _, text := range []string{
+		base, base + "|d7",
+		base + "|" + strings.Repeat("x", constants.MaxMemoSizeUtxoExtended-len(base)-1),
+		base + "|" + strings.Repeat("x", constants.MaxMemoSizeUtxoExtended-len(base)),
+		shortBase + "|" + strings.Repeat("x", 11), // exactly one full carrier
+		shortBase + "|" + strings.Repeat("x", 12), // first continuation
+	} {
+		scripts, err := MemoToScripts(text, btctxscript.MaxDataCarrierSize, btctxscript.NullDataScript, btctxscript.PayToWitnessScript)
+		c.Assert(err, IsNil)
+		// Both customer and change outputs carry value and precede the memo.
+		tx := btcjson.TxRawResult{
+			Vin:  []btcjson.Vin{{Txid: strings.Repeat("a", 64)}},
+			Vout: []btcjson.Vout{{Value: 0.1}, {Value: 0.2}},
+		}
+		for i, script := range scripts {
+			value := float64(0)
+			scriptType := "nulldata"
+			if i > 0 {
+				value = float64(common.BTCChain.P2WPKHOutputValue()) / common.One
+				scriptType = "witness_v0_keyhash"
+			}
+			tx.Vout = append(tx.Vout, btcjson.Vout{Value: value, ScriptPubKey: btcjson.ScriptPubKeyResult{Hex: hex.EncodeToString(script), Type: scriptType}})
+		}
+		// Nine continuation outputs would exceed the scanner's funded-output cap.
+		c.Check(s.client.ignoreTx(&tx, 100), Equals, len(text) > constants.MaxMemoSizeUtxoExtended, Commentf("memo bytes %d", len(text)))
+		if len(text) > constants.MaxMemoSizeUtxoExtended {
+			continue
+		}
+		recovered, err := s.client.getMemo(&tx)
+		c.Assert(err, IsNil)
+		c.Check(recovered, Equals, text, Commentf("memo bytes %d", len(text)))
+		parsed, err := mem.ParseMemo(common.LatestVersion, recovered)
+		c.Assert(err, IsNil)
+		c.Check("OUT:"+parsed.GetTxID().String(), Equals, strings.SplitN(text, "|", 2)[0])
+	}
+}
 
 func (s *BitcoinSuite) SetUpSuite(c *C) {
 	ttypes.SetupConfigForTest()

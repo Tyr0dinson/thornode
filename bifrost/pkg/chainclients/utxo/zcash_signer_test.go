@@ -446,6 +446,50 @@ func (s *ZcashSignerSuite) TestGetGasCoinZEC(c *C) {
 	}
 }
 
+// The outbound data budget must stay within the unchanged signer's ZIP-317 fee
+// estimate. Check actual output sizes and miner fees, not just memo round trips.
+func (s *ZcashSignerSuite) TestZECOutboundMemoBudgetFee(c *C) {
+	const solID = "665AC1Eykegia919xTjKPY42J9dzVBadaEVZ2mMm3YTPjumRUVGPxZwmNae8r1QHF9QWF1N564Qsob8PdbnpaKfe"
+	for _, id := range []string{strings.Repeat("A", 64), solID} {
+		for _, prefix := range []string{"OUT:", "REFUND:"} {
+			fixture := s.newZecExpiryFixture(c)
+			tx := fixture.tx
+			tx.InHash = common.TxID(id)
+			tx.Memo = prefix + id
+			// Fill the allowed data budget, preserving an oversized reference.
+			if remaining := common.ZECChain.MaxOutboundMemoLength() - len(tx.Memo) - 1; remaining >= 0 {
+				tx.Memo += "|" + strings.Repeat("x", remaining)
+			}
+			_, checkpoint, _, err := s.client.SignTx(tx, 1237)
+			fixture.rpcServer.Close()
+			// A deliberate signing failure exposes the real transaction plan.
+			c.Assert(err, ErrorMatches, "(?s).*injected signing failure.*")
+			var plan utxo.SignCheckpoint
+			c.Assert(json.Unmarshal(checkpoint, &plan), IsNil)
+			var unsigned wire.MsgTx
+			c.Assert(unsigned.Deserialize(bytes.NewReader(plan.UnsignedTx)), IsNil)
+			var inputs, outputs int64
+			for _, amount := range plan.IndividualAmounts {
+				inputs += amount
+			}
+			outputBytes := 0
+			for _, output := range unsigned.TxOut {
+				outputs += output.Value
+				outputBytes += output.SerializeSize()
+			}
+			c.Assert(len(unsigned.TxIn), Equals, 1)
+			c.Assert(inputs, Equals, int64(150000000))
+			// One standard P2PKH input; ZIP-317 counts all serialized outputs,
+			// including OP_RETURN and continuation outputs. Dust is an output,
+			// so inputs minus all outputs is the fee paid to miners.
+			actions := max(2, len(unsigned.TxIn), (outputBytes+33)/34)
+			conventionalFee := int64(5000 * actions)
+			c.Check(inputs-outputs >= conventionalFee, Equals, true,
+				Commentf("memo bytes %d, miner fee %d, conventional fee %d", len(tx.Memo), inputs-outputs, conventionalFee))
+		}
+	}
+}
+
 func (s *ZcashSignerSuite) TestZECNilMaxGasPolicyVetoDoesNotChangeSigningPlan(c *C) {
 	fixture := s.newZecExpiryFixture(c)
 	defer fixture.rpcServer.Close()
