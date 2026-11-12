@@ -1,0 +1,439 @@
+type: env
+key: CHURN_INTERVAL
+value: "2"
+---
+type: env
+key: CHURN_RETRY_INTERVAL
+value: "2"
+---
+{{ template "default-state.yaml" }}
+---
+########################################################################################
+# Asgard keygen policy for LTC FROST (Taproot) vaults. Three active nodes churn into a
+# new asgard; the keygen is scheduled at height 2 and its members report against it.
+# While EnableFrostLTC is unset no report may carry a FROST key. Once it is set, a
+# successful report that serves LTC must carry a secp256k1 FROST key distinct from the
+# ECDSA pool key, and the new vault publishes the P2TR form of that key for LTC.
+########################################################################################
+type: state
+genesis:
+  initial_height: "0"
+  app_state:
+    bank:
+      balances:
+        - address: {{ addr_module_bond }}
+          coins:
+            - amount: "10000000000000"
+              denom: rune
+    thorchain:
+      node_accounts:
+        - active_block_height: "0"
+          bond: "5000000000000"
+          ip_address: 1.1.1.1
+          node_address: {{ addr_thor_dog }}
+          bond_address: {{ addr_thor_dog }}
+          pub_key_set:
+            secp256k1: {{ pubkey_dog }}
+            ed25519: "tthorpub1zcjduepqfan43w2emjhfv45gspf98squqlnl2rcchc3e4dx7z2nxr27edflsy2e8ql"
+          signer_membership: []
+          status: Active
+          # matches the priv_validator_key.json mounted in the test container
+          validator_cons_pub_key: tthorcpub1zcjduepqq75h7uy6qhesh9d3a9tuk0mzrnc46u8rye44ze6peua3zmpfh23q8z37sz
+          version: {{ version }}
+        - bond: "2500000000000"
+          ip_address: 1.1.1.1
+          node_address: {{ addr_thor_cat }}
+          bond_address: {{ addr_thor_cat }}
+          pub_key_set:
+            secp256k1: {{ pubkey_cat }}
+            ed25519: "tthorpub1zcjduepqfan43w2emjhfv45gspf98squqlnl2rcchc3e4dx7z2nxr27edflsy2e8ql"
+          status: Active
+          validator_cons_pub_key: {{ cons_pubkey_cat }}
+          version: {{ version }}
+        - bond: "2500000000000"
+          ip_address: 1.1.1.1
+          node_address: {{ addr_thor_fox }}
+          bond_address: {{ addr_thor_fox }}
+          pub_key_set:
+            secp256k1: {{ pubkey_fox }}
+            ed25519: "tthorpub1zcjduepqfan43w2emjhfv45gspf98squqlnl2rcchc3e4dx7z2nxr27edflsy2e8ql"
+          status: Active
+          validator_cons_pub_key: {{ cons_pubkey_fox }}
+          version: {{ version }}
+      network_fees:
+        - chain: LTC
+          transaction_fee_rate: "10"
+          transaction_size: "250"
+      vaults:
+        - block_height: "0"
+          chains:
+            - THOR
+            - BTC
+            - LTC
+          membership:
+            - {{ pubkey_dog }}
+          pub_key: {{ pubkey_dog }}
+          status: ActiveVault
+          type: AsgardVault
+---
+# the churn at height 2 schedules a keygen with dog, cat and fox as members
+type: create-blocks
+count: 4
+---
+########################################################################################
+# EnableFrostLTC unset: a report carrying a FROST key is rejected
+########################################################################################
+type: tx-tss-pool
+signer: {{ addr_thor_dog }}
+keygen_type: AsgardKeygen
+height: 2
+pool_pub_key: ${POOL_PUBKEY=tthorpub1addwnpepqtrqglu5g8kh6mfsg4qxa9wq0nv9cauwfwxw70984wkqnw2uwz0w2vxmngk}
+pool_pub_key_frost: {{ pubkey_pig }}
+pub_keys:
+  - {{ pubkey_dog }}
+  - {{ pubkey_cat }}
+  - {{ pubkey_fox }}
+chains:
+  - THOR
+  - BTC
+  - LTC
+secp256k1_signature: ${SIGNATURE=t+9a8BHVrBy/FwPaH2Sk3Lq0hmcJLHWhrNNjEKinnpArmo3rAs7+2b2EC4LoDnLG0ktwZp3/j67aEQAOPCtmSQ==}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .txs[0].result.code == 6
+  - .txs[0].result.log|contains("must not set frost pool pubkey")
+---
+type: check
+endpoint: http://localhost:1317/thorchain/vaults/asgard
+asserts:
+  - .|length == 1
+---
+########################################################################################
+# opt in
+########################################################################################
+type: tx-mimir
+key: EnableFrostLTC
+value: 1
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/mimir
+asserts:
+  - .ENABLEFROSTLTC == 1
+---
+########################################################################################
+# active: a successful report that serves LTC without a FROST key is rejected
+########################################################################################
+type: tx-tss-pool
+signer: {{ addr_thor_dog }}
+keygen_type: AsgardKeygen
+height: 2
+pool_pub_key: ${POOL_PUBKEY}
+pub_keys:
+  - {{ pubkey_dog }}
+  - {{ pubkey_cat }}
+  - {{ pubkey_fox }}
+chains:
+  - THOR
+  - BTC
+  - LTC
+secp256k1_signature: ${SIGNATURE}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .txs[0].result.code == 6
+  - .txs[0].result.log|contains("must set the frost pool pubkey for LTC")
+---
+########################################################################################
+# active: dropping LTC from a successful report is not a way around the requirement
+# while the active vaults serve LTC
+########################################################################################
+type: tx-tss-pool
+signer: {{ addr_thor_dog }}
+keygen_type: AsgardKeygen
+height: 2
+pool_pub_key: ${POOL_PUBKEY}
+pub_keys:
+  - {{ pubkey_dog }}
+  - {{ pubkey_cat }}
+  - {{ pubkey_fox }}
+chains:
+  - THOR
+  - BTC
+secp256k1_signature: ${SIGNATURE}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .txs[0].result.code == 6
+  - .txs[0].result.log|contains("must include LTC and its frost pool pubkey")
+---
+########################################################################################
+# active: the FROST key must differ from the ECDSA pool key
+########################################################################################
+type: tx-tss-pool
+signer: {{ addr_thor_dog }}
+keygen_type: AsgardKeygen
+height: 2
+pool_pub_key: ${POOL_PUBKEY}
+pool_pub_key_frost: ${POOL_PUBKEY}
+pub_keys:
+  - {{ pubkey_dog }}
+  - {{ pubkey_cat }}
+  - {{ pubkey_fox }}
+chains:
+  - THOR
+  - BTC
+  - LTC
+secp256k1_signature: ${SIGNATURE}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .txs[0].result.code == 6
+  - .txs[0].result.log|contains("must differ from the ecdsa pool pubkey")
+---
+########################################################################################
+# active: the FROST key must be secp256k1 (an ed25519 key is the XMR monovault's shape)
+########################################################################################
+type: tx-tss-pool
+signer: {{ addr_thor_dog }}
+keygen_type: AsgardKeygen
+height: 2
+pool_pub_key: ${POOL_PUBKEY}
+pool_pub_key_frost: {{ pubkey_pig_eddsa }}
+pub_keys:
+  - {{ pubkey_dog }}
+  - {{ pubkey_cat }}
+  - {{ pubkey_fox }}
+chains:
+  - THOR
+  - BTC
+  - LTC
+secp256k1_signature: ${SIGNATURE}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .txs[0].result.code == 6
+  - .txs[0].result.log|contains("must be a secp256k1 key")
+---
+########################################################################################
+# active: a FROST key without LTC in the chain set is rejected
+########################################################################################
+type: tx-tss-pool
+signer: {{ addr_thor_dog }}
+keygen_type: AsgardKeygen
+height: 2
+pool_pub_key: ${POOL_PUBKEY}
+pool_pub_key_frost: {{ pubkey_pig }}
+pub_keys:
+  - {{ pubkey_dog }}
+  - {{ pubkey_cat }}
+  - {{ pubkey_fox }}
+chains:
+  - THOR
+  - BTC
+secp256k1_signature: ${SIGNATURE}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .txs[0].result.code == 6
+  - .txs[0].result.log|contains("requires LTC in the chain set")
+---
+########################################################################################
+# active: a failed keygen is reported with blame and never with a FROST key
+########################################################################################
+type: tx-tss-pool
+signer: {{ addr_thor_dog }}
+keygen_type: AsgardKeygen
+height: 2
+pool_pub_key_frost: {{ pubkey_pig }}
+pub_keys:
+  - {{ pubkey_dog }}
+  - {{ pubkey_cat }}
+  - {{ pubkey_fox }}
+chains:
+  - THOR
+  - BTC
+  - LTC
+blame:
+  - fail_reason: "fail to keygen"
+    blame_nodes:
+      - pubkey: {{ pubkey_cat }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .txs[0].result.code == 6
+  - .txs[0].result.log|contains("failed asgard keygen must not set frost pool pubkey")
+---
+########################################################################################
+# HaltFrostLTCKeygen suspends the policy: a FROST key is rejected again until it is lifted
+########################################################################################
+type: tx-mimir
+key: HaltFrostLTCKeygen
+value: 1
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: tx-tss-pool
+signer: {{ addr_thor_dog }}
+keygen_type: AsgardKeygen
+height: 2
+pool_pub_key: ${POOL_PUBKEY}
+pool_pub_key_frost: {{ pubkey_pig }}
+pub_keys:
+  - {{ pubkey_dog }}
+  - {{ pubkey_cat }}
+  - {{ pubkey_fox }}
+chains:
+  - THOR
+  - BTC
+  - LTC
+secp256k1_signature: ${SIGNATURE}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .txs[0].result.code == 6
+  - .txs[0].result.log|contains("must not set frost pool pubkey")
+---
+type: tx-mimir
+key: HaltFrostLTCKeygen
+value: 0
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/vaults/asgard
+asserts:
+  - .|length == 1
+---
+########################################################################################
+# the members agree on the ECDSA pool key (two check signatures) and the FROST key:
+# the new vault carries both, lists LTC, and publishes the P2TR address for it
+########################################################################################
+type: tx-tss-pool
+signer: {{ addr_thor_dog }}
+keygen_type: AsgardKeygen
+height: 2
+pool_pub_key: ${POOL_PUBKEY}
+pool_pub_key_frost: {{ pubkey_pig }}
+pub_keys:
+  - {{ pubkey_dog }}
+  - {{ pubkey_cat }}
+  - {{ pubkey_fox }}
+chains:
+  - THOR
+  - BTC
+  - LTC
+secp256k1_signature: ${SIGNATURE}
+---
+type: tx-tss-pool
+signer: {{ addr_thor_cat }}
+keygen_type: AsgardKeygen
+height: 2
+pool_pub_key: ${POOL_PUBKEY}
+pool_pub_key_frost: {{ pubkey_pig }}
+pub_keys:
+  - {{ pubkey_dog }}
+  - {{ pubkey_cat }}
+  - {{ pubkey_fox }}
+chains:
+  - THOR
+  - BTC
+  - LTC
+secp256k1_signature: ${SIGNATURE}
+---
+type: tx-tss-pool
+signer: {{ addr_thor_fox }}
+keygen_type: AsgardKeygen
+height: 2
+pool_pub_key: ${POOL_PUBKEY}
+pool_pub_key_frost: {{ pubkey_pig }}
+pub_keys:
+  - {{ pubkey_dog }}
+  - {{ pubkey_cat }}
+  - {{ pubkey_fox }}
+chains:
+  - THOR
+  - BTC
+  - LTC
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/vaults/asgard
+asserts:
+  - '[.[]|select(.pub_key=="${POOL_PUBKEY}")]|length == 1'
+  - .[]|select(.pub_key=="${POOL_PUBKEY}")|.pub_key_frost == "{{ pubkey_pig }}"
+  - .[]|select(.pub_key=="${POOL_PUBKEY}")|.membership|length == 3
+  - .[]|select(.pub_key=="${POOL_PUBKEY}")|(.chains|index("LTC")) != null
+  - .[]|select(.pub_key=="${POOL_PUBKEY}")|.addresses[]|select(.chain=="LTC")|.address == "{{ addr_ltc_pig_taproot }}"
+---
+# the vault resolves by its FROST key
+type: check
+endpoint: http://localhost:1317/thorchain/vault/{{ pubkey_pig }}
+asserts:
+  - .pub_key == "${POOL_PUBKEY}"
+  - .pub_key_frost == "{{ pubkey_pig }}"
+---
+# The churn also put cat and fox into the validator set. CometBFT applies that two
+# blocks after the keygen block, and only dog signs here, so this is the last block the
+# suite can create; everything below reads state that this block already holds.
+type: create-blocks
+count: 1
+---
+# the new vault is active and the old one (unfunded, so it retires at once) is not;
+# LTC inbounds go to the P2TR address
+type: check
+endpoint: http://localhost:1317/thorchain/vaults/asgard
+asserts:
+  - .[]|select(.pub_key=="${POOL_PUBKEY}")|.status == "ActiveVault"
+  - '[.[]|select(.pub_key=="{{ pubkey_dog }}" and .status=="ActiveVault")]|length == 0'
+---
+type: check
+endpoint: http://localhost:1317/thorchain/inbound_addresses
+asserts:
+  - .[]|select(.chain=="LTC")|.address == "{{ addr_ltc_pig_taproot }}"
+  - .[]|select(.chain=="LTC")|.pub_key == "{{ pubkey_pig }}"
+
+# Fund migration into the P2TR vault is covered by migration.yaml: it needs more
+# blocks than this suite has left.

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"reflect"
 	"sort"
 	"strconv"
 	"sync"
@@ -86,6 +87,26 @@ func (tKeySign *EDDSAKeySign) startBatchSigning(keySignPartyMap *sync.Map, msgNu
 	return ret.Load()
 }
 
+// Keep LocalPartySaveData's field names in garbled release builds (see GARBLE
+// in the Makefile). Keyshares are JSON without tags, and garble cannot follow
+// them into the curvelock.WithCurve closure in LoadLocalData.
+var _ = reflect.TypeOf(eddsakeygen.LocalPartySaveData{})
+
+// LoadLocalData decodes a keyshare's local data.
+func LoadLocalData(raw []byte) (eddsakeygen.LocalPartySaveData, error) {
+	// v3's ECPoint.UnmarshalJSON falls back to the global curve when the
+	// embedded "Curve" field is absent (older keyshares); set it explicitly
+	// under a shared mutex so concurrent ECDSA loads cannot race.
+	var localData eddsakeygen.LocalPartySaveData
+	err := curvelock.WithCurve(tss.Edwards(), func() error {
+		return json.Unmarshal(raw, &localData)
+	})
+	if err != nil {
+		return localData, fmt.Errorf("fail to unmarshal the local saved data %w", err)
+	}
+	return localData, nil
+}
+
 // signMessage
 func (tKeySign *EDDSAKeySign) SignMessage(msgsToSign [][]byte, localStateItem storage.KeygenLocalState, parties []string, version string) ([]*tsslibcommon.SignatureData, error) {
 	partiesID, localPartyID, err := conversion.GetParties(parties, localStateItem.LocalPartyKey)
@@ -110,15 +131,9 @@ func (tKeySign *EDDSAKeySign) SignMessage(msgsToSign [][]byte, localStateItem st
 	ctx := tss.NewPeerContext(partiesID)
 
 	// Unmarshal localData once - it's the same for all messages.
-	// v3's ECPoint.UnmarshalJSON falls back to the global curve when the
-	// embedded "Curve" field is absent (older keyshares); set it explicitly
-	// under a shared mutex so concurrent ECDSA loads cannot race.
-	var localData eddsakeygen.LocalPartySaveData
-	err = curvelock.WithCurve(tss.Edwards(), func() error {
-		return json.Unmarshal(localStateItem.LocalData, &localData)
-	})
+	localData, err := LoadLocalData(localStateItem.LocalData)
 	if err != nil {
-		return nil, fmt.Errorf("fail to unmarshal the local saved data %w", err)
+		return nil, err
 	}
 
 	keySignPartyMap := new(sync.Map)

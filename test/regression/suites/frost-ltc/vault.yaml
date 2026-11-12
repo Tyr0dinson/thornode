@@ -1,0 +1,283 @@
+{{ template "default-state.yaml" }}
+---
+########################################################################################
+# An LTC vault keyed by a FROST (Taproot) key. The asgard keeps its ECDSA identity in
+# pub_key and carries the FROST group key in pub_key_frost. On mocknet and stagenet
+# builds the vault's LTC address is the P2TR form of the FROST key; the P2WPKH form of
+# the ECDSA key is not one of the vault's addresses. BTC stays on the ECDSA key.
+########################################################################################
+type: state
+genesis:
+  app_state:
+    bank:
+      balances:
+        - address: {{ addr_module_asgard }}
+          coins:
+            - amount: "200000000000"
+              denom: rune
+    thorchain:
+      liquidity_providers:
+        - asset: BTC.BTC
+          asset_address: {{ addr_btc_cat }}
+          asset_deposit_value: "100000000"
+          last_add_height: "1"
+          pending_asset: "0"
+          pending_rune: "0"
+          rune_address: {{ addr_thor_cat }}
+          rune_deposit_value: "100000000000"
+          units: "100000000000"
+        - asset: LTC.LTC
+          asset_address: {{ addr_ltc_cat }}
+          asset_deposit_value: "100000000"
+          last_add_height: "1"
+          pending_asset: "0"
+          pending_rune: "0"
+          rune_address: {{ addr_thor_cat }}
+          rune_deposit_value: "100000000000"
+          units: "100000000000"
+      pools:
+        - LP_units: "100000000000"
+          asset: BTC.BTC
+          balance_asset: "100000000"
+          balance_rune: "100000000000"
+          decimals: "8"
+          pending_inbound_asset: "0"
+          pending_inbound_rune: "0"
+          status: Available
+          synth_units: "0"
+        - LP_units: "100000000000"
+          asset: LTC.LTC
+          balance_asset: "100000000"
+          balance_rune: "100000000000"
+          decimals: "8"
+          pending_inbound_asset: "0"
+          pending_inbound_rune: "0"
+          status: Available
+          synth_units: "0"
+      network_fees:
+        - chain: BTC
+          transaction_fee_rate: "7"
+          transaction_size: "1000"
+        - chain: LTC
+          transaction_fee_rate: "10"
+          transaction_size: "250"
+      vaults:
+        - block_height: "0"
+          chains:
+            - THOR
+            - BTC
+            - LTC
+          coins:
+            - amount: "100000000"
+              asset: BTC.BTC
+              decimals: "8"
+            - amount: "100000000"
+              asset: LTC.LTC
+              decimals: "8"
+          inbound_tx_count: "1"
+          membership:
+            - {{ pubkey_dog }}
+          pub_key: {{ pubkey_dog }}
+          pub_key_frost: {{ pubkey_pig }}
+          status: ActiveVault
+          type: AsgardVault
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# vault queries expose the FROST key and the P2TR address; the vault also resolves
+# by its FROST key
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/vaults/asgard
+asserts:
+  - .|length == 1
+  - .[0].pub_key == "{{ pubkey_dog }}"
+  - .[0].pub_key_frost == "{{ pubkey_pig }}"
+  - .[0].addresses[]|select(.chain=="LTC")|.address == "{{ addr_ltc_pig_taproot }}"
+  - .[0].addresses[]|select(.chain=="LTC")|.address|startswith("rltc1p")
+  - .[0].addresses[]|select(.chain=="BTC")|.address == "{{ addr_btc_dog }}"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/vault/{{ pubkey_pig }}
+asserts:
+  - .pub_key == "{{ pubkey_dog }}"
+  - .pub_key_frost == "{{ pubkey_pig }}"
+  - .addresses[]|select(.chain=="LTC")|.address == "{{ addr_ltc_pig_taproot }}"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/vaults/pubkeys
+asserts:
+  - .asgard|length == 1
+  - .asgard[0].pub_key == "{{ pubkey_dog }}"
+  - .asgard[0].pub_key_frost == "{{ pubkey_pig }}"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/inbound_addresses
+asserts:
+  - .[]|select(.chain=="LTC")|.address == "{{ addr_ltc_pig_taproot }}"
+  - .[]|select(.chain=="LTC")|.pub_key == "{{ pubkey_pig }}"
+  - .[]|select(.chain=="BTC")|.address == "{{ addr_btc_dog }}"
+  - .[]|select(.chain=="BTC")|.pub_key == "{{ pubkey_dog }}"
+---
+########################################################################################
+# an inbound to the P2TR address, observed under the FROST key, is credited
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 1 }}"
+      chain: LTC
+      from_address: {{ addr_ltc_cat }}
+      to_address: {{ addr_ltc_pig_taproot }}
+      coins:
+        - amount: "10000000"
+          asset: "LTC.LTC"
+          decimals: 8
+      gas:
+        - amount: "10000"
+          asset: "LTC.LTC"
+      memo: "=:THOR.RUNE:{{ addr_thor_cat }}"
+    block_height: 1
+    finalise_height: 1
+    observed_pub_key: {{ pubkey_pig }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/tx/{{ observe_txid 1 }}
+asserts:
+  - .observed_tx.status == "done"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pool/LTC.LTC
+asserts:
+  - .balance_asset == "110000000"
+---
+########################################################################################
+# an inbound to the P2WPKH form of the vault's ECDSA key is not one of the vault's
+# addresses and is dropped, even though the key resolves to the vault
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 2 }}"
+      chain: LTC
+      from_address: {{ addr_ltc_cat }}
+      to_address: {{ addr_ltc_dog }}
+      coins:
+        - amount: "10000000"
+          asset: "LTC.LTC"
+          decimals: 8
+      gas:
+        - amount: "10000"
+          asset: "LTC.LTC"
+      memo: "=:THOR.RUNE:{{ addr_thor_cat }}"
+    block_height: 2
+    finalise_height: 2
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/tx/{{ observe_txid 2 }}
+status: 400
+asserts:
+  - .message|test("doesn't exist")
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pool/LTC.LTC
+asserts:
+  - .balance_asset == "110000000"
+---
+########################################################################################
+# an LTC outbound from the vault carries both keys, so bifrost can pick the FROST signer
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - amount: "100000000"
+    asset: "rune"
+memo: "=:LTC.LTC:{{ addr_ltc_cat }}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 1
+  - .[0].chain == "LTC"
+  - .[0].vault_pub_key == "{{ pubkey_dog }}"
+  - .[0].vault_pub_key_frost == "{{ pubkey_pig }}"
+  - .[0].to_address == "{{ addr_ltc_cat }}"
+  - .[0].coin.asset == "LTC.LTC"
+---
+########################################################################################
+# keysign failure reports may name the vault by its FROST key. An interior FROST round
+# does not freeze the vault; the terminal share round freezes it for LTC.
+########################################################################################
+type: tx-tss-keysign
+signer: {{ addr_thor_dog }}
+id: "1464c790ba3f5e1f94e64e9e15438e93e95300296a439b953e9074168c1ef9f0"
+pub_key: {{ pubkey_pig }}
+height: 1
+coins:
+  - asset: "LTC.LTC"
+    amount: "1"
+memo: "doesn't matter"
+blame:
+  round: "frost_preprocess"
+  fail_reason: "fail to keysign"
+  blame_nodes:
+    - pubkey: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - '[.txs[]|.result.events[]|select(.type=="tss_keysign_failure")]|length == 1'
+  - .txs[]|.result.events[]|select(.type=="tss_keysign_failure")|.round == "frost_preprocess"
+  - .txs[]|.result.events[]|select(.type=="tss_keysign_failure")|.pubkey == "{{ pubkey_pig }}"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/vault/{{ pubkey_dog }}
+asserts:
+  - .frozen == null or (.frozen|length == 0)
+---
+type: tx-tss-keysign
+signer: {{ addr_thor_dog }}
+id: "b4ad3bfa07c0b0da4b816b4882555d77fcbd73ce65f0fb2b1136814e33524ee5"
+pub_key: {{ pubkey_pig }}
+height: 1
+coins:
+  - asset: "LTC.LTC"
+    amount: "1"
+memo: "doesn't matter"
+blame:
+  round: "frost_share"
+  fail_reason: "fail to keysign"
+  blame_nodes:
+    - pubkey: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - '[.txs[]|.result.events[]|select(.type=="tss_keysign_failure")]|length == 1'
+  - .txs[]|.result.events[]|select(.type=="tss_keysign_failure")|.round == "frost_share"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/vault/{{ pubkey_dog }}
+asserts:
+  - .frozen|length == 1
+  - .frozen[0] == "LTC"

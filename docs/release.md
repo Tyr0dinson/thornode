@@ -149,6 +149,21 @@ In the case of a private mainnet release with security patches, the process rema
    > Please note that this release is a private image containing a security patch. Any nodes that wish to review the patch can make relay an `age` public key and one of the devs or THORSec will reply with an encrypted patch and instructions to verify the reproducible build hash.
    ```
 
+### What a Release Image Reveals
+
+Anyone who can pull two images can diff them. Stripping symbols (`-ldflags="-s -w"`) does not hide which functions changed: the Go runtime needs `.gopclntab`, which lists every function name, and string literals sit in `.rodata`. Function names alone are enough to tie a changed function to the vulnerability it fixes, including fixes that exist only in the private repository.
+
+`build/docker/Dockerfile` therefore builds with `GARBLE=1` (see the `Makefile`), which runs [garble](https://github.com/burrowers/garble) to rename the package paths, types, functions, fields and unexported methods of the thornode and tss-lib-private packages, and to drop the source file names and the module build info that would date the dependency set. `make install GARBLE=1` runs `tools/check-garble`, which fails if a binary still exposes any thornode or tss-lib-private function name or source file name in `.gopclntab`, or carries module build info. That is the machine-checkable subset of the above: type, field and unexported-method names are not recorded in `.gopclntab`, and exported method names survive under the obfuscated package and type, so the tool cannot verify those — garble renames them, but the gate only enforces function names, file names and build info. Without `-seed`, garble output depends only on the source, the toolchain and the garble version, so builds stay reproducible: running `make docker-gitlab-build` on a branch named `mainnet`, as `scripts/reproducebuild.sh` does, reproduces the image binaries. A bare `make install GARBLE=1` does not, since it builds `TAG=mocknet` and depends on the host's module cache path and C toolchain. garble also needs a Go toolchain installed outside `GOMODCACHE`, not one fetched through `GOTOOLCHAIN`. The `test-regression-garble` CI job runs the regression suites against the garbled binaries the release images ship, so a garbled node that cannot start fails CI.
+
+garble does not hide everything, so security fixes should also:
+
+- Put new logic in unexported functions or methods. garble keeps exported method names, which interfaces may need, so `(*<hash>).GetLastKeygenChains` still reads as such.
+- Name functions, errors and commits after the new behavior, not the defect they fix (e.g. `ensureKeygenChainsComplete`, "harden signer scheduling"). String literals are not obfuscated: garble's `-literals` costs CPU time on hot paths and is not enabled.
+- Where possible, ship the guard behind a mimir switch in an earlier release, so that the diff of the release that turns it on does not date the vulnerability.
+- Be published to the public repository promptly once they are live on mainnet.
+
+garble cannot see reflection that passes through closures or values stored as `any`. Code that reads a thornode struct's field names by reflection (templates, viper, `encoding/json` without tags) may need a `var _ = reflect.TypeOf(T{})` next to the type, as in `config/config.go`. `garble test` does not catch these: test binaries lack the name mapping garble adds to real binaries, so reflection-dependent tests fail under it regardless.
+
 ## Bifrost-Only Patch Release
 
 Bifrost-only patches do not break consensus and can generally be released without an upgrade proposal or coordinated upgrade height. These are used for fixes isolated to the Bifrost component (observer/signer changes, chain client fixes, etc).

@@ -1,0 +1,182 @@
+type: env
+key: FUND_MIGRATION_INTERVAL
+value: "1"
+---
+type: env
+key: CHURN_MIGRATE_ROUNDS
+value: "1"
+---
+{{ template "default-state.yaml" }}
+---
+########################################################################################
+# A retiring ECDSA-keyed LTC vault migrates its funds to the active FROST-keyed vault.
+# The migrate outbound targets the P2TR address of the FROST key; the retiring vault
+# signs it with ECDSA (its own key), and the inbound lands on the FROST vault observed
+# under the FROST key. One-block migration interval and the minimum two rounds put the
+# first scheduled migration (block 2) in the final round, so one outbound moves everything.
+########################################################################################
+type: state
+genesis:
+  app_state:
+    bank:
+      balances:
+        - address: {{ addr_module_asgard }}
+          coins:
+            - amount: "100000000000"
+              denom: rune
+    thorchain:
+      liquidity_providers:
+        - asset: LTC.LTC
+          asset_address: {{ addr_ltc_cat }}
+          asset_deposit_value: "200000000"
+          last_add_height: "1"
+          pending_asset: "0"
+          pending_rune: "0"
+          rune_address: {{ addr_thor_cat }}
+          rune_deposit_value: "100000000000"
+          units: "100000000000"
+      pools:
+        - LP_units: "100000000000"
+          asset: LTC.LTC
+          balance_asset: "200000000"
+          balance_rune: "100000000000"
+          decimals: "8"
+          pending_inbound_asset: "0"
+          pending_inbound_rune: "0"
+          status: Available
+          synth_units: "0"
+      network_fees:
+        - chain: LTC
+          transaction_fee_rate: "10"
+          transaction_size: "250"
+      vaults:
+        - block_height: "0"
+          chains:
+            - THOR
+            - LTC
+          coins:
+            - amount: "100000000"
+              asset: LTC.LTC
+              decimals: "8"
+          inbound_tx_count: "1"
+          membership:
+            - {{ pubkey_dog }}
+          pub_key: {{ pubkey_dog }}
+          pub_key_frost: {{ pubkey_pig }}
+          status: ActiveVault
+          type: AsgardVault
+        - block_height: "0"
+          chains:
+            - THOR
+            - LTC
+          coins:
+            - amount: "100000000"
+              asset: LTC.LTC
+              decimals: "8"
+          inbound_tx_count: "1"
+          membership:
+            - {{ pubkey_dog }}
+          pub_key: {{ pubkey_fox }}
+          status: RetiringVault
+          type: AsgardVault
+---
+# the first block only runs genesis setup; fund migration starts with the second
+type: create-blocks
+count: 2
+---
+########################################################################################
+# the migrate outbound is scheduled from the retiring vault to the P2TR address
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 1
+  - .[0].chain == "LTC"
+  - .[0].memo == "MIGRATE:2"
+  - .[0].vault_pub_key == "{{ pubkey_fox }}"
+  - .[0].to_address == "{{ addr_ltc_pig_taproot }}"
+  - .[0].coin.asset == "LTC.LTC"
+  - .[0].coin.amount == "99996250"
+  - .[0].max_gas[0].amount == "3750"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/inbound_addresses
+asserts:
+  - .[]|select(.chain=="LTC")|.address == "{{ addr_ltc_pig_taproot }}"
+---
+########################################################################################
+# the retiring vault's outbound is observed
+########################################################################################
+type: tx-observed-out
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 1 }}"
+      chain: LTC
+      from_address: {{ addr_ltc_fox }}
+      to_address: {{ addr_ltc_pig_taproot }}
+      coins:
+        - amount: "99996250"
+          asset: "LTC.LTC"
+          decimals: 8
+      gas:
+        - amount: "3750"
+          asset: "LTC.LTC"
+      memo: "MIGRATE:2"
+    block_height: 2
+    finalise_height: 2
+    observed_pub_key: {{ pubkey_fox }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 0
+---
+########################################################################################
+# the same transaction lands on the FROST vault, observed under its FROST key
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 1 }}"
+      chain: LTC
+      from_address: {{ addr_ltc_fox }}
+      to_address: {{ addr_ltc_pig_taproot }}
+      coins:
+        - amount: "99996250"
+          asset: "LTC.LTC"
+          decimals: 8
+      gas:
+        - amount: "3750"
+          asset: "LTC.LTC"
+      memo: "MIGRATE:2"
+    block_height: 3
+    finalise_height: 3
+    observed_pub_key: {{ pubkey_pig }}
+---
+type: create-blocks
+count: 1
+---
+# the inbound reached consensus under the FROST key at the P2TR address and credited
+# the FROST vault; a migrate inbound has no further processing, so no done status
+type: check
+endpoint: http://localhost:1317/thorchain/tx/{{ observe_txid 1 }}
+asserts:
+  - .consensus_height != null
+  - .observed_tx.observed_pub_key == "{{ pubkey_pig }}"
+  - .observed_tx.tx.to_address == "{{ addr_ltc_pig_taproot }}"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/vault/{{ pubkey_pig }}
+asserts:
+  - .pub_key == "{{ pubkey_dog }}"
+  - .coins[]|select(.asset=="LTC.LTC")|.amount == "199996250"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/vault/{{ pubkey_fox }}
+asserts:
+  - '([.coins[]|select(.asset=="LTC.LTC")|.amount|tonumber]|add // 0) == 0'

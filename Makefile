@@ -51,8 +51,16 @@ endif
 # compiler flags
 VERSION:=$(shell cat version)
 TAG?=mocknet
+# WASMVM_VERSION is the github.com/CosmWasm/wasmvm go module version from go.mod.
+# Garbled release builds carry no module build info, so the startup check in
+# cmd/thornode reads constants.WasmvmVersion instead; embed it here or a garbled
+# node fails to start with "wasmvm module not exist" (wasm.CheckLibwasmVersion).
+# The {{with .Replace}} form takes the replacement version when a replace
+# directive is in effect, so a future wasmvm replace still embeds the real one.
+WASMVM_VERSION:=$(shell go list -m -f '{{with .Replace}}{{.Version}}{{else}}{{.Version}}{{end}}' github.com/CosmWasm/wasmvm/v2)
 ldflags = -X gitlab.com/thorchain/thornode/v3/constants.Version=$(VERSION) \
       -X gitlab.com/thorchain/thornode/v3/constants.GitCommit=$(COMMIT) \
+      -X gitlab.com/thorchain/thornode/v3/constants.WasmvmVersion=$(WASMVM_VERSION) \
       -X github.com/cosmos/cosmos-sdk/version.Name=THORChain \
       -X github.com/cosmos/cosmos-sdk/version.AppName=thornode \
       -X github.com/cosmos/cosmos-sdk/version.Version=$(VERSION) \
@@ -89,6 +97,34 @@ TEST_DIR?=${TEST_PATHS}
 # toolchain (golang bookworm image) ships gcc. Covers the shipped
 # thornode/bifrost/recover-keyshare-backup (BINARIES) via the build/install targets.
 BUILD_FLAGS := -ldflags '$(ldflags)' -tags ${TAG} -trimpath -buildmode=pie
+
+# GARBLE=1 builds with garble, which renames the identifiers of the thornode and
+# tss-lib-private packages (GARBLE_PKGS). .gopclntab survives strip and
+# -ldflags="-s -w" because the runtime needs it, so without garble diffing two
+# release images names every function a fix added. build/docker/Dockerfile sets
+# GARBLE=1, and install then fails if a binary still exposes those names.
+# garble cannot build github.com/bytedance/sonic, which links into runtime
+# internals that garble rewrites, so a copy of go.mod swaps in the encoding/json
+# shim in build/garble/sonic.
+GARBLE ?=
+GARBLE_VERSION := v0.17.0
+GARBLE_PKGS := gitlab.com/thorchain
+GARBLE_DIR := $(CURDIR)/tmp/garble
+GARBLE_BIN := $(GARBLE_DIR)/$(GARBLE_VERSION)/garble
+GARBLE_MODFILE := $(GARBLE_DIR)/go.mod
+ifeq ($(GARBLE),1)
+GOBIN_DIR := $(or $(shell go env GOBIN),$(firstword $(subst :, ,$(shell go env GOPATH)))/bin)
+GO_BUILD_DEPS := $(GARBLE_BIN) $(GARBLE_MODFILE)
+GO_BUILD = GOGARBLE=$(GARBLE_PKGS) $(GARBLE_BIN) build -modfile=$(GARBLE_MODFILE)
+# garble has no install command.
+GO_INSTALL = $(GO_BUILD) -o $(GOBIN_DIR)/
+# garble cannot build with -cover.
+COVER_FLAG :=
+else
+GO_BUILD := go build
+GO_INSTALL := go install
+COVER_FLAG := -cover
+endif
 PARALLELISM ?= 1
 TEST_BUILD_FLAGS := -parallel=$(PARALLELISM) -tags=mocknet
 ifdef RUN
@@ -240,14 +276,32 @@ docs-dev: docs-init
 
 # ------------------------------ Build ------------------------------
 
-build: $(FROST_LIB_DEP)
-	$(FROST_BUILD_CGO_ENV) go build ${BUILD_FLAGS} ${BINARIES}
+build: $(GO_BUILD_DEPS) $(FROST_LIB_DEP)
+	$(FROST_BUILD_CGO_ENV) $(GO_BUILD) ${BUILD_FLAGS} ${BINARIES}
 
 test-xmr-frost-e2e:
 	go test -count=1 -tags=mocknet ./bifrost/pkg/chainclients/monero/... -run '$${XMR_FROST_E2E_RUN}'
 
-install: $(FROST_LIB_DEP)
-	$(FROST_BUILD_CGO_ENV) go install ${BUILD_FLAGS} ${BINARIES}
+install: $(GO_BUILD_DEPS) $(FROST_LIB_DEP)
+	$(FROST_BUILD_CGO_ENV) $(GO_INSTALL) ${BUILD_FLAGS} ${BINARIES}
+ifeq ($(GARBLE),1)
+	go run ./tools/check-garble $(addprefix $(GOBIN_DIR)/,$(notdir $(BINARIES)))
+endif
+
+# With GARBLE=1, checks that a garbled bifrost still decodes keyshares written by
+# an ungarbled one (see tools/check-garble-keyshares).
+check-garble-keyshares: $(GO_BUILD_DEPS)
+	@mkdir -p $(GARBLE_DIR)
+	$(GO_BUILD) -tags ${TAG} -o $(GARBLE_DIR)/check-garble-keyshares ./tools/check-garble-keyshares
+	$(GARBLE_DIR)/check-garble-keyshares
+
+$(GARBLE_BIN):
+	GOBIN=$(@D) go install -trimpath mvdan.cc/garble@$(GARBLE_VERSION)
+
+$(GARBLE_MODFILE): go.mod go.sum
+	@mkdir -p $(@D)
+	@cp go.mod $@ && cp go.sum $(@D)/go.sum
+	@go mod edit -modfile=$@ -replace=github.com/bytedance/sonic=./build/garble/sonic
 
 tools:
 	go install -tags ${TAG} ./tools/pubkey2address
@@ -378,7 +432,7 @@ test-xmr-e2e:
 test-network-specific:
 	@python3 scripts/test-quality-run.py --tags stagenet --run '$(RUN)' --report-dir test-quality-reports/network-stagenet ./common
 	@python3 scripts/test-quality-run.py --tags chainnet --run '$(RUN)' --report-dir test-quality-reports/network-chainnet ./common
-	@python3 scripts/test-quality-run.py --tags mainnet --run '$(RUN)' --report-dir test-quality-reports/network-mainnet ./common ./bifrost/pkg/chainclients/utxo/...
+	@python3 scripts/test-quality-run.py --tags mainnet --run '$(RUN)' --report-dir test-quality-reports/network-mainnet ./common ./bifrost/pkg/chainclients/utxo/... ./bifrost/tss/frostlib
 	@python3 scripts/test-quality-run.py --tags mainnet --run TestPackage --test-arg=-check.f --test-arg='Migrate|Migration19to20Suite|EthThorRestoreSuite' --report-dir test-quality-reports/network-mainnet-migration ./x/thorchain # mainnet store-migration tests run under the gocheck TestPackage entrypoint (CI unit-tests is mocknet-only). The suites Migration19to20Suite/EthThorRestoreSuite lack the substring "Migrate", so -check.f names them explicitly; this filter must stay in sync with scripts/test-quality-inventory.py SELECTIONS (enforced by test_selection_filters_match_the_makefile).
 	@python3 scripts/test-quality-run.py --tags mocknet --run '$(RUN)' --report-dir test-quality-reports/network-mocknet ./common ./bifrost/pkg/chainclients/utxo/...
 
@@ -529,7 +583,7 @@ REGTEST_MNT_DIR ?= /mnt
 test-regression: build-test-regression
 	@docker run --rm ${DOCKER_TTY_ARGS} \
 		-e DEBUG -e RUN -e EXPORT -e TIME_FACTOR -e PARALLELISM -e FAIL_FAST \
-		-e AUTO_UPDATE -e IGNORE_FAILURES -e CI -e UNFILTER_EXPORT \
+		-e AUTO_UPDATE -e IGNORE_FAILURES -e CI -e UNFILTER_EXPORT -e GARBLE=$(GARBLE) \
 		-e UID=$(shell id -u) -e GID=$(shell id -g) \
 		-p 1317:1317 -p 26657:26657 \
 		-v $(shell pwd)/test/regression/mnt:/mnt \
@@ -542,17 +596,21 @@ build-test-regression:
 		-t thornode-regtest \
 		-f ci/Dockerfile.regtest \
 		--build-arg COMMIT=$(COMMIT) \
+		--build-arg GARBLE=$(GARBLE) \
 		--build-arg DOCKER_MIRROR \
 		$(DOCKER_BUILD_SECRETS)
 
 test-regression-coverage:
 	@go tool cover -html=test/regression/mnt/coverage/coverage.txt
 
-# internal target used in docker build - version pinned for consistent app hashes
-_build-test-regression:
-	@go install -ldflags '$(ldflags)' -tags=mocknet,regtest ./cmd/thornode
-	@go build -ldflags '$(ldflags) -X gitlab.com/thorchain/thornode/v3/constants.Version=9.999.0' \
-		-cover -tags=mocknet,regtest -o $(REGTEST_BIN_DIR)/cover-thornode ./cmd/thornode
+# internal target used in docker build - version pinned for consistent app hashes.
+# With GARBLE=1 it builds the garbled thornode that release images ship, to catch
+# reflection that garble's renaming breaks. garble cannot build with -cover, so
+# that run has no coverage report.
+_build-test-regression: $(GO_BUILD_DEPS)
+	@$(GO_INSTALL) -ldflags '$(ldflags)' -tags=mocknet,regtest ./cmd/thornode
+	@$(GO_BUILD) -ldflags '$(ldflags) -X gitlab.com/thorchain/thornode/v3/constants.Version=9.999.0' \
+		$(COVER_FLAG) -tags=mocknet,regtest -o $(REGTEST_BIN_DIR)/cover-thornode ./cmd/thornode
 	@go build -ldflags '$(ldflags) -X gitlab.com/thorchain/thornode/v3/constants.Version=9.999.0' \
 		-tags mocknet -o $(REGTEST_BIN_DIR)/regtest ./test/regression/cmd
 
@@ -560,10 +618,12 @@ _build-test-regression:
 _test-regression:
 	@rm -rf $(REGTEST_MNT_DIR)/coverage && mkdir -p $(REGTEST_MNT_DIR)/coverage
 	@cd test/regression && REGTEST_BIN_DIR=$(REGTEST_BIN_DIR) REGTEST_MNT_DIR=$(REGTEST_MNT_DIR) $(REGTEST_BIN_DIR)/regtest
+ifneq ($(GARBLE),1)
 	@go tool covdata textfmt -i $(REGTEST_MNT_DIR)/coverage -o $(REGTEST_MNT_DIR)/coverage/coverage.txt
 	@grep -v -E -e archive.go -e 'v[0-9]+.go' -e openapi/gen $(REGTEST_MNT_DIR)/coverage/coverage.txt > $(REGTEST_MNT_DIR)/coverage/coverage-filtered.txt
 	@go tool cover -func $(REGTEST_MNT_DIR)/coverage/coverage-filtered.txt > $(REGTEST_MNT_DIR)/coverage/func-coverage.txt
 	@awk '/^total:/ {print "Regression Coverage: " $$3}' $(REGTEST_MNT_DIR)/coverage/func-coverage.txt
+endif
 	@chown -R ${UID}:${GID} $(REGTEST_MNT_DIR)
 
 # ------------------------------ Simulation Tests ------------------------------
@@ -788,8 +848,8 @@ NATIVE_SIM_DIR ?= $(CURDIR)/tmp/native-sim
 # and takes COMMIT from its `ARG COMMIT=unknown`, so match it.
 _build-native-thornode: COMMIT=unknown
 _build-native-thornode: TAG=mocknet
-_build-native-thornode: frost-lib
-	@$(FROST_CGO_ENV) go build -ldflags '$(ldflags)' -tags mocknet -trimpath -buildmode=pie \
+_build-native-thornode: $(GO_BUILD_DEPS) frost-lib
+	@$(FROST_CGO_ENV) $(GO_BUILD) -ldflags '$(ldflags)' -tags mocknet -trimpath -buildmode=pie \
 		-o $(NATIVE_SIM_DIR)/ $(BINARIES)
 	@# Same as tools/events/Dockerfile: `go install -tags $$TAG ./tools/events`.
 	@go build -tags mocknet -o $(NATIVE_SIM_DIR)/events ./tools/events

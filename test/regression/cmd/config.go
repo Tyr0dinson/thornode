@@ -356,6 +356,17 @@ func init() {
 				addresses[token+"_tex"] = texAddr.String()
 			}
 
+			// An LTC vault keyed by a FROST (Taproot) key publishes the P2TR form
+			// of that key on mocknet and stagenet builds: addr_ltc_<name>_taproot.
+			if chain == common.LTCChain {
+				var taprootAddr common.Address
+				taprootAddr, err = common.PubKey(ecdsaPubKey).GetAddressForAlgo(chain, common.SigningAlgoSecp256k1Taproot)
+				if err != nil {
+					log.Fatal().Err(err).Msg("failed to get taproot address")
+				}
+				addresses[token+"_taproot"] = taprootAddr.String()
+			}
+
 			for k, v := range addresses {
 				// register key to address (eg. addr_btc_dog)
 				templateAddress[k] = v
