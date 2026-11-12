@@ -301,26 +301,25 @@ func (a *UTXOMempoolActor) checkMempoolUTXOs(config *OpConfig) OpResult {
 		return OpResult{Continue: false}
 	}
 
-	if raw.Confirmations > 0 {
-		method := "listunspent"
-		if a.chain.Equals(common.ZECChain) {
-			method = "getaddressutxos"
-		}
+	method := "listunspent"
+	if a.chain.Equals(common.ZECChain) {
+		method = "getaddressutxos"
+	}
+	inconclusive := func(confirmations uint64) OpResult {
 		utxoMempoolSummary.record(utxoMempoolResult{
 			Chain:  a.chain,
 			Status: "inconclusive",
 			Method: method,
-			Detail: fmt.Sprintf("tx mined with %d confirmations", raw.Confirmations),
+			Detail: fmt.Sprintf("tx mined with %d confirmations", confirmations),
 		})
 		a.Log().Warn().
-			Uint64("confirmations", raw.Confirmations).
+			Uint64("confirmations", confirmations).
 			Msg("tx already mined; mempool check inconclusive")
 		return OpResult{Continue: true}
 	}
 
-	method := "listunspent"
-	if a.chain.Equals(common.ZECChain) {
-		method = "getaddressutxos"
+	if raw.Confirmations > 0 {
+		return inconclusive(raw.Confirmations)
 	}
 
 	utxoKeys, err := a.client.GetAddressUTXOKeys(a.from.String())
@@ -340,6 +339,17 @@ func (a *UTXOMempoolActor) checkMempoolUTXOs(config *OpConfig) OpResult {
 			a.Log().Warn().Err(err).Msg("soft-fail: mempool utxo check failed")
 			return OpResult{Continue: true}
 		}
+	}
+
+	// Daemons mine independently: if the tx was mined after the first check,
+	// its inputs left the UTXO set for that reason, not via mempool filtering.
+	raw, err = a.client.GetRawTransactionVerbose(a.txID)
+	if err != nil {
+		a.Log().Warn().Err(err).Msg("raw tx unavailable during recheck")
+		return OpResult{Continue: false}
+	}
+	if raw.Confirmations > 0 {
+		return inconclusive(raw.Confirmations)
 	}
 
 	utxoMempoolSummary.record(utxoMempoolResult{
