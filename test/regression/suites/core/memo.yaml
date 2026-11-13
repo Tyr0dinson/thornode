@@ -67,6 +67,12 @@ endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
   - .|length == 0
 ---
+# the observed outbound is linked back onto its inbound voter
+type: check
+endpoint: http://localhost:1317/thorchain/tx/details/{{ observe_txid 1 }}
+asserts:
+  - .observed_outbound_tx_ids == ["{{ observe_txid 2 }}"]
+---
 ########################################################################################
 # refund also passes data through on outbound memo
 ########################################################################################

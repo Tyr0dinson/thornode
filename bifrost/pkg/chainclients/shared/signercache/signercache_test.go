@@ -2,6 +2,7 @@ package signercache
 
 import (
 	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -680,4 +681,66 @@ func (s *SignerCacheSuite) TestCacheStoreSetLatestRecordedTxOverwrite(c *C) {
 	result, err = store.GetLatestRecordedTx(vaultKey)
 	c.Assert(err, IsNil)
 	c.Assert(result, Equals, "tx-2")
+}
+
+func (s *SignerCacheSuite) TestObservedOutbounds(c *C) {
+	db := newTestDB(c)
+	defer db.Close()
+	cm, err := NewSignerCacheManager(db)
+	c.Assert(err, IsNil)
+
+	hashes, err := cm.ObservedOutbounds("inhash")
+	c.Assert(err, IsNil)
+	c.Check(hashes, HasLen, 0)
+
+	c.Assert(cm.RecordObservedOutbound("inhash", "tx1"), IsNil)
+	c.Assert(cm.RecordObservedOutbound("INHASH", "tx2"), IsNil)
+	c.Assert(cm.RecordObservedOutbound("inhash", "TX1"), IsNil)
+	c.Assert(cm.RecordObservedOutbound("other", "tx3"), IsNil)
+
+	hashes, err = cm.ObservedOutbounds("InHash")
+	c.Assert(err, IsNil)
+	c.Check(hashes, DeepEquals, []string{"tx1", "tx2"})
+
+	// The entry is bounded, keeping the most recent transactions.
+	for i := 0; i < maxObservedOutboundsPerInbound+5; i++ {
+		c.Assert(cm.RecordObservedOutbound("busy", fmt.Sprintf("tx%d", i)), IsNil)
+	}
+	hashes, err = cm.ObservedOutbounds("busy")
+	c.Assert(err, IsNil)
+	c.Assert(hashes, HasLen, maxObservedOutboundsPerInbound)
+	c.Check(hashes[0], Equals, "tx5")
+	c.Check(hashes[len(hashes)-1], Equals, fmt.Sprintf("tx%d", maxObservedOutboundsPerInbound+4))
+}
+
+func (s *SignerCacheSuite) TestConcurrentObservedOutbounds(c *C) {
+	db := newTestDB(c)
+	defer db.Close()
+	store := NewCacheStore(db)
+	const count = 16
+	var wg sync.WaitGroup
+	errs := make(chan error, count)
+	for i := 0; i < count; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			errs <- store.AddObservedOutbound("same-inbound", fmt.Sprintf("tx%d", i))
+		}(i)
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		c.Assert(err, IsNil)
+	}
+	hashes, err := store.GetObservedOutbounds("same-inbound")
+	c.Assert(err, IsNil)
+	c.Assert(hashes, HasLen, count)
+}
+
+func (s *SignerCacheSuite) TestObservedOutboundsWithoutIndex(c *C) {
+	cm := &CacheManager{storageAccessor: &mockStorageAccessor{}}
+	c.Assert(cm.RecordObservedOutbound("inhash", "tx1"), IsNil)
+	hashes, err := cm.ObservedOutbounds("inhash")
+	c.Assert(err, IsNil)
+	c.Check(hashes, HasLen, 0)
 }

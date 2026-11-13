@@ -599,33 +599,3 @@ func (c *Client) BatchCallContext(ctx context.Context, batch []rpc.BatchElem) er
 	err := c.retryContext(ctx, fn)
 	return extractBTCError(err)
 }
-
-// TransactionLocation uses a signed confirmation count. btcjson.TxRawResult uses
-// uint64, which cannot decode a daemon's negative orphan confirmation count.
-// Missing fields are kept distinct from a valid zero-confirmation response.
-type TransactionLocation struct {
-	TxID          string        `json:"txid"`
-	BlockHash     string        `json:"blockhash"`
-	Confirmations *int64        `json:"confirmations"`
-	Inputs        []btcjson.Vin `json:"vin"`
-}
-
-// GetTransactionLocationContext retains signed confirmations and field presence.
-// Callers still need canonical hash and membership checks; this RPC is not a proof.
-func (c *Client) GetTransactionLocationContext(ctx context.Context, txid string) (*TransactionLocation, error) {
-	var result *TransactionLocation
-	err := c.CallContextOnce(ctx, &result, "getrawtransaction", txid, true)
-	return result, extractBTCError(err)
-}
-
-// CallContextOnce is a single bounded canonical-evidence request. Validation holds
-// on errors rather than retrying while Observer/gossip state locks are held.
-func (c *Client) CallContextOnce(ctx context.Context, result any, method string, args ...any) error {
-	timeout := c.timeout
-	if timeout <= 0 || timeout > 10*time.Second {
-		timeout = 10 * time.Second
-	}
-	bounded, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-	return extractBTCError(c.client.CallContext(bounded, result, method, args...))
-}
