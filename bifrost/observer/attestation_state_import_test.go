@@ -343,7 +343,13 @@ func TestStartupStateSyncRejectedOnlySnapshotRetriesAsEmpty(t *testing.T) {
 
 func TestStateImportDeliveryTimeoutKeepsAcceptedEvidence(t *testing.T) {
 	g, _, _, client, _, _ := setupTestGossip(t)
-	g.config.PeerTimeout = 20 * time.Millisecond
+	// The XMR delivery deadline starts before the import takes s.mu, and an
+	// already-expired deadline there fails the whole import before submission
+	// ("attestation state import incomplete"). 20ms was shorter than scheduler
+	// stalls on a loaded CI runner. The submission below blocks until the
+	// deadline fires, so this budget only needs to outlast the pre-submission
+	// path, not the submission itself.
+	g.config.PeerTimeout = 500 * time.Millisecond
 	tx, _ := observerTestXMRPlan(t)
 	key := secp256k1.GenPrivKey()
 	batch := signedCancellationBatch(t, tx, key)

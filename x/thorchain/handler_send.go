@@ -32,7 +32,15 @@ func NewBankSendHandler(h BaseHandler[sdk.Msg]) BankSendHandler {
 // Send is the entrypoint for bank MsgSend, passing through to the thorchain handler.
 func (h BankSendHandler) Send(goCtx context.Context, msg *bank.MsgSend) (*bank.MsgSendResponse, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
-	if _, err := h.h.Run(ctx, msg); err != nil {
+	_, err := runTracedHandler(
+		ctx,
+		h.h.mgr.Tracer(),
+		handlerTrace{path: pathBank, msg: msg},
+		func() (*cosmos.Result, error) {
+			return h.h.Run(ctx, msg)
+		},
+	)
+	if err != nil {
 		return nil, err
 	}
 

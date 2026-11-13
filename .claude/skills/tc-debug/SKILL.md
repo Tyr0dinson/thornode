@@ -19,6 +19,7 @@ Shared conventions (endpoints and fallbacks, scripts, node/vault naming, units, 
 ## Conventions specific to this skill
 
 - **Network fallback**: default to mainnet. If a tx or address is not found, try stagenet (see shared conventions) or ask the user.
+- **No specific target**: if the input is a vague symptom with no tx, address, or vault, run the `tc-metrics` skill first to get a suspect series and a time window, then come back here.
 
 ## Procedure
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -96,6 +97,9 @@ func applyTxInAttestation(
 	// self-inflicted spam and keep their observe slash point, so a node cannot file
 	// unlimited gas/height variants at zero cost to erase the per-observation charge.
 	redundantReObservation := voter.ShouldRefundRedundantInboundObservation(tx, signer)
+	// Whether this is the signer's first observation in its finality tier, for
+	// the cross-tier credit after final consensus below.
+	firstInTier := !voter.HasObservedInTier(tx, signer)
 
 	obsChain := telemetry.NewLabel("chain", telemChain(tx.Tx.Chain))
 	obsDir := telemetry.NewLabel("direction", "in")
@@ -123,13 +127,25 @@ func applyTxInAttestation(
 		attResult = "redundant"
 		slasher.DecSlashPoints(slashCtx, observeSlashPoints, signer)
 	}
+	// A node charged the lack penalty at non-final consensus that observes the
+	// tx as final within that consensus's flex window, before final consensus
+	// or as the observation that forms it, observed the tx in time: refund the
+	// penalty and excuse it, as if its final observation had come first. Its
+	// observe point is still settled by final consensus.
+	if lateFinalObservationExcused(voter, tx, signer, ctx.BlockHeight(), observeFlex) &&
+		inboundConsensusMatches(&voter, nas, tx) {
+		voter.ExcusedObservers = append(voter.ExcusedObservers, signer.String())
+		slasher.DecSlashPoints(slashCtx, lackOfObservationPenalty, signer)
+	}
 	if voter.HasFinalised(nas) {
-		if voter.FinalisedHeight == 0 {
+		switch {
+		case voter.FinalisedHeight == 0:
 			telemetry.IncrCounterWithLabels(
 				[]string{"thornode", "observe", "consensus"}, 1,
 				[]metrics.Label{obsChain, obsDir, telemetry.NewLabel("finalised", "true")},
 			)
 			ok = true
+			nonFinalCredited := isNonFinalConsensus(voter.Tx)
 			voter.Height = ctx.BlockHeight() // Always record the consensus height of the finalised Tx
 			if voter.UnfinalizedHeight == 0 {
 				voter.UnfinalizedHeight = voter.Height // Preserve first consensus height
@@ -143,19 +159,35 @@ func applyTxInAttestation(
 			nonSigners := getNonSigners(nas, signers)
 			slasher.DecSlashPoints(slashCtx, observeSlashPoints, signers...)
 			slasher.IncSlashPoints(slashCtx, lackOfObservationPenalty, nonSigners...)
+			if !nonFinalCredited {
+				// Non-final consensus never formed, so nothing else will credit
+				// the non-final observations already recorded.
+				slasher.DecSlashPoints(slashCtx, observeSlashPoints, voter.GetInboundOtherTierObserveSigners()...)
+			}
 			// Persist the credited signer set, including legacy XMR observers,
 			// so later observations cannot collect the same consensus credit again.
 			voter.RecordObserveSigners(signers)
+			voter.ExcusedObservers = nil
 			queueObservationTally(ctx, k, observationTallyKindTxIn, tx.Tx.Chain, tx.Tx.ID.String())
-		} else if ctx.BlockHeight() <= (voter.FinalisedHeight+observeFlex) &&
+		case ctx.BlockHeight() <= (voter.FinalisedHeight+observeFlex) &&
 			voter.Tx.IsFinal() == tx.IsFinal() &&
-			voter.Tx.EqualsInboundObservationCredit(tx) &&
-			!voter.Tx.HasSigned(signer) {
+			inboundConsensusMatches(&voter, nas, tx) &&
+			!voter.Tx.HasSigned(signer):
 			// Track already-decremented slash points with the consensus Tx's Signers list.
 			voter.Tx.Signers = append(voter.Tx.Signers, signer.String())
 			// event the tx had been processed , given the signer just a bit late , so still take away their slash points
 			// but only when the tx signer are voting is the tx that already reached consensus
 			slasher.DecSlashPoints(slashCtx, observeSlashPoints+lackOfObservationPenalty, signer)
+			attResult = "late"
+		case ctx.BlockHeight() <= (voter.FinalisedHeight+observeFlex) &&
+			!tx.IsFinal() && firstInTier &&
+			voter.CreditsAcrossFinality(tx) &&
+			inboundConsensusMatches(&voter, nas, tx):
+			// The signer's first non-final observation landed after final
+			// consensus, e.g. a sub-quorum attestation batch flushed after the
+			// final quorum. Refund its observe point only: the lack penalty
+			// belongs to the final tier.
+			slasher.DecSlashPoints(slashCtx, observeSlashPoints, signer)
 			attResult = "late"
 		}
 	}
@@ -176,7 +208,8 @@ func applyTxInAttestation(
 			// This signer brings the voter to consensus;
 			// decrement all the signers' slash points and increment the non-signers' slash points.
 			signers := voter.GetInboundObserveSigners()
-			nonSigners := getNonSigners(nas, signers)
+			observers := excuseOtherTierObservers(&voter, signers, voter.GetInboundOtherTierObserveSigners())
+			nonSigners := getNonSigners(nas, observers)
 			slasher.DecSlashPoints(slashCtx, observeSlashPoints, signers...)
 			slasher.IncSlashPoints(slashCtx, lackOfObservationPenalty, nonSigners...)
 			// Persist the credited signer set, including legacy XMR observers,
@@ -184,13 +217,13 @@ func applyTxInAttestation(
 			voter.RecordObserveSigners(signers)
 		} else if ctx.BlockHeight() <= (voter.Height+observeFlex) &&
 			voter.Tx.IsFinal() == tx.IsFinal() &&
-			voter.Tx.EqualsInboundObservationCredit(tx) &&
+			inboundConsensusMatches(&voter, nas, tx) &&
 			!voter.Tx.HasSigned(signer) {
 			// Track already-decremented slash points with the consensus Tx's Signers list.
 			voter.Tx.Signers = append(voter.Tx.Signers, signer.String())
 			// event the tx had been processed , given the signer just a bit late , so still take away their slash points
 			// but only when the tx signer are voting is the tx that already reached consensus
-			slasher.DecSlashPoints(slashCtx, observeSlashPoints+lackOfObservationPenalty, signer)
+			slasher.DecSlashPoints(slashCtx, lateObserveRefund(voter, signer, observeSlashPoints, lackOfObservationPenalty), signer)
 			attResult = "late"
 		}
 	}
@@ -761,6 +794,9 @@ func applyTxOutAttestation(
 	// self-inflicted spam and keep their observe slash point, so a node cannot file
 	// unlimited gas/height variants at zero cost to erase the per-observation charge.
 	redundantReObservation := voter.ShouldRefundRedundantOutboundObservation(tx, signer)
+	// Whether this is the signer's first observation in its finality tier, for
+	// the cross-tier credit after final consensus below.
+	firstInTier := !voter.HasObservedInTier(tx, signer)
 
 	obsChain := telemetry.NewLabel("chain", telemChain(tx.Tx.Chain))
 	obsDir := telemetry.NewLabel("direction", "out")
@@ -798,12 +834,21 @@ func applyTxOutAttestation(
 		k.SetObservedLink(ctx, inhash, tx.Tx.ID)
 	}
 
+	// A late final observation of non-final consensus, as on the inbound path.
+	if lateFinalObservationExcused(voter, tx, signer, ctx.BlockHeight(), observeFlex) &&
+		outboundConsensusMatches(&voter, nas, tx) {
+		voter.ExcusedObservers = append(voter.ExcusedObservers, signer.String())
+		slasher.DecSlashPoints(slashCtx, lackOfObservationPenalty, signer)
+	}
+
 	if voter.HasFinalised(nas) {
-		if voter.FinalisedHeight == 0 {
+		switch {
+		case voter.FinalisedHeight == 0:
 			telemetry.IncrCounterWithLabels(
 				[]string{"thornode", "observe", "consensus"}, 1,
 				[]metrics.Label{obsChain, obsDir, telemetry.NewLabel("finalised", "true")},
 			)
+			nonFinalCredited := isNonFinalConsensus(voter.Tx)
 			if voter.Height == 0 {
 				ok = true
 				// Record the consensus height at which outbound consensus actions are taken.
@@ -834,20 +879,36 @@ func applyTxOutAttestation(
 			nonSigners := getNonSigners(nas, signers)
 			slasher.DecSlashPoints(slashCtx, observeSlashPoints, signers...)
 			slasher.IncSlashPoints(slashCtx, lackOfObservationPenalty, nonSigners...)
+			if !nonFinalCredited {
+				// Non-final consensus never formed, so nothing else will credit
+				// the non-final observations already recorded.
+				slasher.DecSlashPoints(slashCtx, observeSlashPoints, voter.GetOutboundOtherTierObserveSigners()...)
+			}
 			// Record the credited gas-agnostic observers on the consensus Tx so the
 			// ObservationDelayFlexibility branch below (keyed off Tx.HasSigned) does
 			// not refund the same node a second time when its own gas-used
 			// observation arrives after consensus has already formed.
 			voter.RecordObserveSigners(signers)
+			voter.ExcusedObservers = nil
 			queueObservationTally(ctx, k, observationTallyKindTxOut, tx.Tx.Chain, tx.Tx.ID.String())
-		} else if ctx.BlockHeight() <= (voter.FinalisedHeight+observeFlex) &&
+		case ctx.BlockHeight() <= (voter.FinalisedHeight+observeFlex) &&
 			voter.Tx.IsFinal() == tx.IsFinal() &&
-			voter.Tx.EqualsOutboundObservationCredit(tx) &&
-			!voter.Tx.HasSigned(signer) {
+			outboundConsensusMatches(&voter, nas, tx) &&
+			!voter.Tx.HasSigned(signer):
 			// Track already-decremented slash points with the consensus Tx's Signers list.
 			voter.Tx.Signers = append(voter.Tx.Signers, signer.String())
 			// event the tx had been processed , given the signer just a bit late , so we still take away their slash points
 			slasher.DecSlashPoints(slashCtx, observeSlashPoints+lackOfObservationPenalty, signer)
+			attResult = "late"
+		case ctx.BlockHeight() <= (voter.FinalisedHeight+observeFlex) &&
+			!tx.IsFinal() && firstInTier &&
+			voter.CreditsAcrossFinality(tx) &&
+			outboundConsensusMatches(&voter, nas, tx):
+			// The signer's first non-final observation landed after final
+			// consensus, e.g. a sub-quorum attestation batch flushed after the
+			// final quorum. Refund its observe point only: the lack penalty
+			// belongs to the final tier.
+			slasher.DecSlashPoints(slashCtx, observeSlashPoints, signer)
 			attResult = "late"
 		}
 
@@ -885,7 +946,8 @@ func applyTxOutAttestation(
 			// This signer brings the voter to consensus;
 			// decrement all the signers' slash points and increment the non-signers' slash points.
 			signers := voter.GetOutboundObserveSigners()
-			nonSigners := getNonSigners(nas, signers)
+			observers := excuseOtherTierObservers(&voter, signers, voter.GetOutboundOtherTierObserveSigners())
+			nonSigners := getNonSigners(nas, observers)
 			slasher.DecSlashPoints(slashCtx, observeSlashPoints, signers...)
 			slasher.IncSlashPoints(slashCtx, lackOfObservationPenalty, nonSigners...)
 			// Record the credited gas-agnostic observers on the consensus Tx so the
@@ -901,7 +963,7 @@ func applyTxOutAttestation(
 			voter.Tx.Signers = append(voter.Tx.Signers, signer.String())
 			// event the tx had been processed , given the signer just a bit late , so still take away their slash points
 			// but only when the tx signer are voting is the tx that already reached consensus
-			slasher.DecSlashPoints(slashCtx, observeSlashPoints+lackOfObservationPenalty, signer)
+			slasher.DecSlashPoints(slashCtx, lateObserveRefund(voter, signer, observeSlashPoints, lackOfObservationPenalty), signer)
 			attResult = "late"
 		}
 
@@ -923,6 +985,79 @@ func applyTxOutAttestation(
 	)
 
 	return voter, ok, true
+}
+
+// inboundConsensusMatches reports whether a late inbound observation matches
+// the consensus tx for late credit. After consensus, handleObservedTxInQuorum
+// rewrites a memoless inbound's voter.Tx memo (r:<ref>, then the resolved
+// memo), so a late observation of the same tx, still memoless, no longer
+// equals voter.Tx. It is also checked against the consensus entry as observed.
+func inboundConsensusMatches(voter *ObservedTxVoter, nas NodeAccounts, tx common.ObservedTx) bool {
+	if voter.Tx.EqualsInboundObservationCredit(tx) {
+		return true
+	}
+	observed := voter.ObservedConsensusTx(nas)
+	return !observed.IsEmpty() && observed.EqualsInboundObservationCredit(tx)
+}
+
+// outboundConsensusMatches is the outbound counterpart. At final consensus,
+// handleObservedTxOutQuorum gives a memoless outbound's voter.Tx the memo of
+// its scheduled TxOutItem, so a late observation of the same tx, still
+// memoless, no longer equals voter.Tx. Non-final consensus leaves voter.Tx
+// unchanged, so only the late arms after final consensus need this.
+func outboundConsensusMatches(voter *ObservedTxVoter, nas NodeAccounts, tx common.ObservedTx) bool {
+	if voter.Tx.EqualsOutboundObservationCredit(tx) {
+		return true
+	}
+	observed := voter.ObservedConsensusTx(nas)
+	return !observed.IsEmpty() && observed.EqualsOutboundObservationCredit(tx)
+}
+
+// isNonFinalConsensus reports whether consensusTx is a non-final consensus tx,
+// i.e. non-final consensus has already credited the non-final tier.
+func isNonFinalConsensus(consensusTx common.ObservedTx) bool {
+	return !consensusTx.IsEmpty() && !consensusTx.IsFinal()
+}
+
+// excuseOtherTierObservers records on the voter, at non-final consensus, the
+// nodes that observed the tx only in the final tier, and returns them together
+// with the credited signers: every node that observed the tx in either tier and
+// so must not be charged the lack-of-observation penalty. A final-tier
+// observation keeps its own observe point until final consensus credits it.
+func excuseOtherTierObservers(voter *ObservedTxVoter, signers, otherTier []cosmos.AccAddress) []cosmos.AccAddress {
+	observers := slices.Clone(signers)
+	voter.ExcusedObservers = nil
+	for _, observer := range otherTier {
+		if slices.ContainsFunc(signers, func(signer cosmos.AccAddress) bool { return signer.Equals(observer) }) {
+			continue
+		}
+		voter.ExcusedObservers = append(voter.ExcusedObservers, observer.String())
+		observers = append(observers, observer)
+	}
+	return observers
+}
+
+// lateObserveRefund is the refund owed to a signer whose observation matches
+// the non-final consensus tx within the flex window: its observe point plus the
+// lack penalty charged at consensus, or only the observe point if it was
+// excused from that penalty.
+func lateObserveRefund(voter ObservedTxVoter, signer cosmos.AccAddress, observeSlashPoints, lackOfObservationPenalty int64) int64 {
+	if voter.IsExcusedObserver(signer) {
+		return observeSlashPoints
+	}
+	return observeSlashPoints + lackOfObservationPenalty
+}
+
+// lateFinalObservationExcused reports whether a final observation lands within
+// the flex window of a non-final consensus that final consensus has not yet
+// followed, from a node charged the lack penalty there: one that neither signed
+// the consensus tx nor was already excused. The caller checks that tx matches
+// the consensus tx.
+func lateFinalObservationExcused(voter ObservedTxVoter, tx common.ObservedTx, signer cosmos.AccAddress, height, observeFlex int64) bool {
+	return tx.IsFinal() && isNonFinalConsensus(voter.Tx) &&
+		height <= voter.Height+observeFlex &&
+		voter.CreditsAcrossFinality(tx) &&
+		!voter.Tx.HasSigned(signer) && !voter.IsExcusedObserver(signer)
 }
 
 // countMatchingSigners counts the number of unique active node signers that have observed

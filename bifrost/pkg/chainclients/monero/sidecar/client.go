@@ -1693,9 +1693,13 @@ func (c *Client) RestoreKeys(vaultPubKey string, keyBlob []byte) (bool, error) {
 	return c.RestoreKeysContext(context.Background(), vaultPubKey, keyBlob)
 }
 
-func (c *Client) RestoreKeysContext(ctx context.Context, vaultPubKey string, keyBlob []byte) (bool, error) {
+// MigrateRecoveryBackupContext converts an authenticated legacy recovery file
+// into the signer's sealed envelope. The returned group key is the identity
+// that must be sent to RestoreKeysContext with the sealed blob.
+func (c *Client) MigrateRecoveryBackupContext(ctx context.Context, vaultPubKey string, keyBlob []byte) (string, []byte, error) {
 	var out struct {
-		Restored *bool `json:"restored"`
+		KeyBlobB64          string `json:"key_blob_b64"`
+		RecoveryVaultPubKey string `json:"recovery_vault_pub_key"`
 	}
 	req := struct {
 		VaultPubKey string `json:"vault_pub_key"`
@@ -1704,8 +1708,49 @@ func (c *Client) RestoreKeysContext(ctx context.Context, vaultPubKey string, key
 		VaultPubKey: vaultPubKey,
 		KeyBlobB64:  base64.StdEncoding.EncodeToString(keyBlob),
 	}
+	if err := c.callContext(ctx, http.MethodPost, "/v1/monero/keys/recovery/migrate", req, &out); err != nil {
+		return "", nil, fmt.Errorf("fail to migrate recovery backup: %w", err)
+	}
+	groupKey := strings.TrimSpace(out.RecoveryVaultPubKey)
+	if len(groupKey) != 64 {
+		return "", nil, fmt.Errorf("migrate response omitted a valid recovery group key")
+	}
+	if _, err := hex.DecodeString(groupKey); err != nil {
+		return "", nil, fmt.Errorf("migrate response contained an invalid recovery group key: %w", err)
+	}
+	sealed, err := base64.StdEncoding.Strict().DecodeString(out.KeyBlobB64)
+	if err != nil || len(sealed) == 0 {
+		return "", nil, fmt.Errorf("migrate response omitted a valid sealed blob")
+	}
+	return groupKey, sealed, nil
+}
+
+type restoreKeysResponse struct {
+	Restored    *bool  `json:"restored"`
+	Signable    *bool  `json:"signable"`
+	VaultPubKey string `json:"vault_pub_key"`
+	GroupKey    string `json:"group_key"`
+}
+
+func (c *Client) restoreKeysContext(ctx context.Context, vaultPubKey string, keyBlob []byte) (restoreKeysResponse, error) {
+	var out restoreKeysResponse
+	req := struct {
+		VaultPubKey string `json:"vault_pub_key"`
+		KeyBlobB64  string `json:"key_blob_b64"`
+	}{
+		VaultPubKey: vaultPubKey,
+		KeyBlobB64:  base64.StdEncoding.EncodeToString(keyBlob),
+	}
 	if err := c.callContext(ctx, http.MethodPost, "/v1/monero/keys/restore", req, &out); err != nil {
-		return false, fmt.Errorf("fail to restore keys: %w", err)
+		return out, fmt.Errorf("fail to restore keys: %w", err)
+	}
+	return out, nil
+}
+
+func (c *Client) RestoreKeysContext(ctx context.Context, vaultPubKey string, keyBlob []byte) (bool, error) {
+	out, err := c.restoreKeysContext(ctx, vaultPubKey, keyBlob)
+	if err != nil {
+		return false, err
 	}
 	if out.Restored == nil {
 		return false, fmt.Errorf("restore response omitted required restored state")
@@ -1714,6 +1759,20 @@ func (c *Client) RestoreKeysContext(ctx context.Context, vaultPubKey string, key
 		return false, fmt.Errorf("sidecar did not restore keys for vault %s", vaultPubKey)
 	}
 	return true, nil
+}
+
+// RestoreSealedKeysContext requires the new signer to confirm that it stored
+// the migrated share under the exact canonical group key and can sign with it.
+func (c *Client) RestoreSealedKeysContext(ctx context.Context, groupKey string, keyBlob []byte) error {
+	out, err := c.restoreKeysContext(ctx, groupKey, keyBlob)
+	if err != nil {
+		return err
+	}
+	if out.Restored == nil || !*out.Restored || out.Signable == nil || !*out.Signable ||
+		!strings.EqualFold(out.VaultPubKey, groupKey) || !strings.EqualFold(out.GroupKey, groupKey) {
+		return fmt.Errorf("sidecar did not verify sealed keyshare for group key %s", groupKey)
+	}
+	return nil
 }
 
 // --- HTTP helpers ---

@@ -51,7 +51,9 @@ func startupRetryFee(t *testing.T, g *AttestationGossip, height int64) (*common.
 func settleStartupRetry(t *testing.T, g *AttestationGossip, now time.Time) {
 	t.Helper()
 	require.NotNil(t, g.startupState.group)
-	waitStateBounds(t, g.startupState.group.done)
+	// A group can include a peer that only ends at StateSyncTimeout, so use
+	// the 10s hang guard rather than waitStateBounds' 2s.
+	waitStateSyncDeadlineHandler(t, g.startupState.group.done)
 	g.tickAttestationStateSync(context.Background(), true, false, now)
 }
 
@@ -150,7 +152,11 @@ func TestStartupStateSyncFreshPeersRequestCapAndRemainingFanout(t *testing.T) {
 func TestStartupStateSyncCountsEveryLaunchedFailure(t *testing.T) {
 	g, h := startupRetryGossip(t, "dial", "busy", "reset", "timeout", "empty")
 	g.config.AskPeers = 2
-	g.config.StateSyncTimeout = 30 * time.Millisecond
+	// The per-attempt budget starts before the dial and must also cover the
+	// "empty" peer's reply. 30ms expired on loaded runners: an attempt could
+	// end before NewStream (3 of 5 dials) or "empty" could time out (failed:5).
+	// Only the "timeout" peer needs the deadline to fire.
+	g.config.StateSyncTimeout = stateSyncTestFrameTimeout
 	calls := make(chan peer.ID, 10)
 	h.streamFunc = func(_ context.Context, id peer.ID, _ ...protocol.ID) (network.Stream, error) {
 		calls <- id

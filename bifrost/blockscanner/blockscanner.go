@@ -143,7 +143,7 @@ func (b *BlockScanner) RollbackToLastObserved() error {
 	}
 
 	thorBlockTimeMs := c[constants.ThorchainBlockTime.String()] / int64(time.Millisecond)
-	observerFlexWindowBlocksChain := observerFlexWindowBlocksThor * thorBlockTimeMs / b.cfg.ChainID.ApproximateBlockMilliseconds()
+	observerFlexWindowBlocksChain := observerFlexWindowBlocksThor * thorBlockTimeMs / b.cfg.ApproximateBlockMilliseconds()
 	if observerFlexWindowBlocksChain < 1 {
 		observerFlexWindowBlocksChain = 1
 	}
@@ -234,7 +234,7 @@ func (b *BlockScanner) maxResumeLagBlocks() int64 {
 	if b.cfg.MaxResumeBlockLag <= 0 {
 		return 0
 	}
-	ms := b.cfg.ChainID.ApproximateBlockMilliseconds()
+	ms := b.cfg.ApproximateBlockMilliseconds()
 	if ms <= 0 {
 		return 0
 	}
@@ -704,7 +704,7 @@ func (b *BlockScanner) scanBlocks() {
 				}
 			}
 
-			ms := b.cfg.ChainID.ApproximateBlockMilliseconds()
+			ms := b.cfg.ApproximateBlockMilliseconds()
 
 			// consider 3 blocks or the configured lag time behind tip as healthy
 			lagDuration := time.Duration((chainHeight-currentBlock)*ms) * time.Millisecond

@@ -42,6 +42,10 @@ func (m *mockStorageAccessor) HasSignedWithExpiry(hash string) (signed, expired 
 	return m.hasSignedResult, m.hasSignedExpiredResult
 }
 
+func (m *mockStorageAccessor) HasTransactionHash(transactionHash string) (bool, error) {
+	return false, nil
+}
+
 func (m *mockStorageAccessor) RemoveSigned(transactionHash string) error {
 	m.removeSignedCalls = append(m.removeSignedCalls, transactionHash)
 	return m.removeSignedErr
@@ -535,6 +539,22 @@ func (s *SignerCacheSuite) TestCacheManagerRemoveSignedError(c *C) {
 
 	// RemoveSigned logs the error but doesn't return it - should not panic
 	mgr.RemoveSigned("tx-hash")
+}
+
+func (s *SignerCacheSuite) TestMayHaveSignedTx(c *C) {
+	db := newTestDB(c)
+	mgr, err := NewSignerCacheManager(db)
+	c.Assert(err, IsNil)
+
+	c.Assert(mgr.MayHaveSignedTx("broadcast-hash"), Equals, false)
+	c.Assert(mgr.SetSigned("outbound-hash", "vault", "broadcast-hash"), IsNil)
+	c.Assert(mgr.MayHaveSignedTx("broadcast-hash"), Equals, true)
+	c.Assert(mgr.MayHaveSignedTx("outbound-hash"), Equals, false)
+	mgr.RemoveSigned("broadcast-hash")
+	c.Assert(mgr.MayHaveSignedTx("broadcast-hash"), Equals, false)
+
+	c.Assert(db.Close(), IsNil)
+	c.Assert(mgr.MayHaveSignedTx("broadcast-hash"), Equals, true)
 }
 
 func (s *SignerCacheSuite) TestCacheStoreRemoveSignedDBError(c *C) {

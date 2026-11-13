@@ -1,0 +1,197 @@
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-eth-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+type: tx-mimir
+key: MemolessTxnTTL
+value: 100
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/auth/accounts/{{ addr_thor_fox }}
+asserts:
+  - .result.value.sequence == "0"
+---
+########################################################################################
+# a send to the thorchain module executes its tx memo as a deposit memo, so a control
+# character anywhere in it is refused before the fee is taken: the tx is not included in
+# a block and the sender's sequence and balance do not move
+########################################################################################
+type: tx-send
+from_address: {{ addr_thor_fox }}
+to_address: {{ addr_module_thorchain }}
+amount:
+  - denom: rune
+    amount: "0"
+memo: "reference:ETH.ETH:=:BTC.BTC:{{ addr_btc_fox }}\nOUT:1"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .txs|length == 0
+---
+########################################################################################
+# a NUL in a field the parser does not read: without the check this registers a memo
+# holding the NUL, which every deposit using the reference would then carry
+########################################################################################
+type: tx-send
+from_address: {{ addr_thor_fox }}
+to_address: {{ addr_module_thorchain }}
+amount:
+  - denom: rune
+    amount: "0"
+memo: "reference:ETH.ETH:=:BTC.BTC:{{ addr_btc_fox }}:0:::::0:\0"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .txs|length == 0
+---
+type: check
+endpoint: http://localhost:1317/thorchain/memo/ETH.ETH/00001
+status: 400
+asserts:
+  - .message|contains("reference memo not found")
+---
+########################################################################################
+# the memo of a send between accounts is free text: only a NUL or invalid UTF-8 is
+# refused, a line break is not
+########################################################################################
+type: tx-send
+from_address: {{ addr_thor_fox }}
+to_address: {{ addr_thor_wolf }}
+amount:
+  - denom: rune
+    amount: "1"
+memo: "note\0"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .txs|length == 0
+---
+type: check
+endpoint: http://localhost:1317/auth/accounts/{{ addr_thor_fox }}
+asserts:
+  - .result.value.sequence == "0"
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+asserts:
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == 2500000000000
+---
+type: tx-send
+from_address: {{ addr_thor_fox }}
+to_address: {{ addr_thor_wolf }}
+amount:
+  - denom: rune
+    amount: "1"
+memo: "two\nlines"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .txs|length == 1
+  - .txs[0].result.code == 0
+---
+type: check
+endpoint: http://localhost:1317/auth/accounts/{{ addr_thor_fox }}
+asserts:
+  - .result.value.sequence == "1"
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+asserts:
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == 2499997999999
+---
+########################################################################################
+# the same registration without the control characters still works through a send
+########################################################################################
+type: tx-send
+from_address: {{ addr_thor_fox }}
+to_address: {{ addr_module_thorchain }}
+amount:
+  - denom: rune
+    amount: "0"
+memo: "reference:ETH.ETH:=:BTC.BTC:{{ addr_btc_fox }}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/memo/ETH.ETH/00001
+asserts:
+  - .asset == "ETH.ETH"
+  - .memo == "=:BTC.BTC:{{ addr_btc_fox }}"
+  - .reference == "00001"
+  - .registered_by == "{{ addr_thor_fox }}"
+---
+type: check
+endpoint: http://localhost:1317/auth/accounts/{{ addr_thor_fox }}
+asserts:
+  - .result.value.sequence == "2"
+---
+########################################################################################
+# a REFERENCE memo observed on another chain registers through the same message, so a
+# control character in the memo it would register is refused as well: the inbound is
+# refunded with the reason, and nothing is stored
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 1 }}"
+      chain: BTC
+      from_address: {{ addr_btc_fox }}
+      to_address: {{ addr_btc_dog }}
+      coins:
+        - amount: "5000000"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10500"
+          asset: "BTC.BTC"
+      memo: "REFERENCE:BTC.BTC:=:ETH.ETH:{{ addr_eth_fox }}:0:::::0:\0"
+    block_height: 1
+    finalise_height: 1
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .|[..|select(.type? == "refund")]|length == 1
+  - .|..|select(.type? == "refund")|.reason|startswith("memo contains control character U+0000 at byte")
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 1
+  - .[0]|.in_hash == "{{ observe_txid 1 }}"
+  - .[0]|.original_memo == "REFUND:{{ observe_txid 1 }}"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/memo/BTC.BTC/00001
+status: 400
+asserts:
+  - .message|contains("reference memo not found")

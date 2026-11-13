@@ -245,10 +245,8 @@ func (HandlerMimirSuite) TestRevShareAliasRoundTrip(c *C) {
 }
 
 func (HandlerMimirSuite) TestRevShareIsOperational(c *C) {
-	ctx, mgr := setupManagerForTest(c)
-	_ = ctx
-	c.Assert(mgr.Keeper().IsOperationalMimir("REVSHARE-foobar"), Equals, true)
-	c.Assert(mgr.Keeper().IsOperationalMimir("revshare-foobar"), Equals, true) // case-insensitive
+	c.Assert(constants.IsOperationalMimir("REVSHARE-foobar"), Equals, true)
+	c.Assert(constants.IsOperationalMimir("revshare-foobar"), Equals, true) // case-insensitive
 }
 
 func (s *HandlerMimirSuite) TestAllowNoVaultOperationalVoting(c *C) {

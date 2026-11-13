@@ -433,7 +433,11 @@ func (s *KeeperVaultSecuritySuite) TestGetSortedVaultSecurityMatchesDevelop(c *C
 	}
 	store.Set(k.GetKey(prefixTxOut, "90"), []byte{0x0a})
 
-	for _, cached := range []bool{false, true} {
+	// API quotes put a TxOutCache on ctx: with a live cache all vaults share
+	// one walk of the window. The result and the store access must match
+	// develop's without a cache and with the same cache, live or disabled by
+	// a txout write.
+	for _, cache := range []string{"none", "live", "disabled"} {
 		for _, period := range []int64{-1, 0, 5, 20, 300} {
 			// every store access charges gas: the same charges in the same order
 			// are the same store access
@@ -441,20 +445,50 @@ func (s *KeeperVaultSecuritySuite) TestGetSortedVaultSecurityMatchesDevelop(c *C
 			ctx1 := ctx.WithGasMeter(gas1)
 			gas2 := newGasLog()
 			ctx2 := ctx.WithGasMeter(gas2)
-			if cached {
+			if cache != "none" {
 				ctx1, ctx2 = keeper.WithTxOutCache(ctx1), keeper.WithTxOutCache(ctx2)
+				if cache == "disabled" {
+					keeper.TxOutCacheFromContext(ctx1).Disable()
+					keeper.TxOutCacheFromContext(ctx2).Disable()
+				}
 			}
-			want := getSortedVaultSecurityOracle(k, ctx1, vaults, period)
-			got := k.getSortedVaultSecurity(ctx2, vaults, period)
-			c.Check(gas2.charges, DeepEquals, gas1.charges, Commentf("cached %v period %d", cached, period))
-			c.Assert(got, HasLen, len(want))
-			for i := range want {
-				c.Check(got[i].Vault.PubKey, Equals, want[i].Vault.PubKey, Commentf("period %d #%d", period, i))
-				c.Check(got[i].TotalBond.String(), Equals, want[i].TotalBond.String(), Commentf("period %d #%d", period, i))
-				c.Check(got[i].TotalValue.String(), Equals, want[i].TotalValue.String(), Commentf("period %d #%d", period, i))
-				c.Check(got[i].Diff.String(), Equals, want[i].Diff.String(), Commentf("period %d #%d", period, i))
+			// the second sort reuses the first one's window on a live cache
+			for _, nth := range []string{"first", "second"} {
+				want := getSortedVaultSecurityOracle(k, ctx1, vaults, period)
+				got := k.getSortedVaultSecurity(ctx2, vaults, period)
+				c.Check(gas2.charges, DeepEquals, gas1.charges, Commentf("cache %s period %d, %s sort", cache, period, nth))
+				c.Assert(got, HasLen, len(want))
+				for i := range want {
+					comment := Commentf("cache %s period %d, %s sort #%d", cache, period, nth, i)
+					c.Check(got[i].Vault.PubKey, Equals, want[i].Vault.PubKey, comment)
+					c.Check(got[i].TotalBond.String(), Equals, want[i].TotalBond.String(), comment)
+					c.Check(got[i].TotalValue.String(), Equals, want[i].TotalValue.String(), comment)
+					c.Check(got[i].Diff.String(), Equals, want[i].Diff.String(), comment)
+				}
 			}
 		}
+	}
+
+	// a txout write after a sort retires the reused window: the next sort
+	// sees the new item
+	cached := keeper.WithTxOutCache(ctx)
+	_ = k.getSortedVaultSecurity(cached, vaults, 20)
+	branch, _ := cached.CacheContext()
+	c.Assert(k.AppendTxOut(branch, 99, TxOutItem{
+		Chain: common.ETHChain, VaultPubKey: vaults[0].PubKey, ToAddress: GetRandomETHAddress(),
+		Coin: common.NewCoin(common.ETHAsset, cosmos.NewUint(2*common.One)),
+	}), IsNil)
+	plainBranch, _ := ctx.CacheContext()
+	c.Assert(k.AppendTxOut(plainBranch, 99, TxOutItem{
+		Chain: common.ETHChain, VaultPubKey: vaults[0].PubKey, ToAddress: GetRandomETHAddress(),
+		Coin: common.NewCoin(common.ETHAsset, cosmos.NewUint(2*common.One)),
+	}), IsNil)
+	want := getSortedVaultSecurityOracle(k, plainBranch, vaults, 20)
+	got := k.getSortedVaultSecurity(branch, vaults, 20)
+	c.Assert(got, HasLen, len(want))
+	for i := range want {
+		c.Check(got[i].Vault.PubKey, Equals, want[i].Vault.PubKey, Commentf("after write #%d", i))
+		c.Check(got[i].TotalValue.String(), Equals, want[i].TotalValue.String(), Commentf("after write #%d", i))
 	}
 }
 

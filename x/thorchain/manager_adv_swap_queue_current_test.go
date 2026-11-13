@@ -5,10 +5,13 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/common/telemetry"
 	"gitlab.com/thorchain/thornode/v3/constants"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
@@ -707,6 +710,13 @@ func (s AdvSwapQueueSuite) TestTradePairsTodo(c *C) {
 
 func (s AdvSwapQueueSuite) TestEndBlock(c *C) {
 	ctx, mgr := setupManagerForTest(c)
+	tracer, tracerErr := NewTracer(
+		TraceConfig{TraceHandlers: true},
+		true,
+		prometheus.NewRegistry(),
+	)
+	c.Assert(tracerErr, IsNil)
+	mgr.tracer = tracer
 	seedActiveAdvSwapVault(c, ctx, mgr)
 	mgr.txOutStore = NewTxStoreDummy()
 	book := newSwapQueueAdv(mgr.Keeper())
@@ -794,6 +804,19 @@ func (s AdvSwapQueueSuite) TestEndBlock(c *C) {
 
 	err = book.EndBlock(ctx, mgr, false)
 	c.Assert(err, IsNil)
+	msgType := msgTypeURL(&MsgSwap{})
+	traced := testutil.ToFloat64(tracer.handlerRuns.WithLabelValues(
+		msgType,
+		pathAdvancedSwapQueue,
+		telemetry.ModeExecution,
+		telemetry.OutcomeSuccess,
+	)) + testutil.ToFloat64(tracer.handlerRuns.WithLabelValues(
+		msgType,
+		pathAdvancedSwapQueue,
+		telemetry.ModeExecution,
+		telemetry.OutcomeError,
+	))
+	c.Assert(traced > 0, Equals, true)
 
 	items, err := mgr.TxOutStore().GetOutboundItems(ctx)
 	c.Assert(err, IsNil)
@@ -1867,7 +1890,7 @@ func (s AdvSwapQueueSuite) TestRapidSwapMimirIntegration(c *C) {
 	c.Assert(value, Equals, int64(5)) // Should still be 5 (highest vote count)
 
 	// Test 5: Verify mimir is recognized as operational
-	isOperational := mgr.Keeper().IsOperationalMimir("AdvSwapQueueRapidSwapMax")
+	isOperational := constants.IsOperationalMimir("AdvSwapQueueRapidSwapMax")
 	c.Assert(isOperational, Equals, true)
 
 	// Test 6: Test with different OperationalVotesMin

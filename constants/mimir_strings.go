@@ -1,9 +1,12 @@
 package constants
 
+import "strings"
+
 // All strings used in Mimir keys should be recorded here and referred to from elsewhere,
 // except for strings referring to arbitrary Assets/Chains.
 // Each string should clearly indicate its usage for the final Mimir key (key, template, reference)
 // and no Mimir key should require the combination of more than two strings.
+
 const (
 	MimirKeySecuredAssetHaltGlobal    = "HaltSecuredGlobal"
 	MimirKeyWasmPermissionless        = "WasmPermissionless"
@@ -40,6 +43,29 @@ const (
 	// are clamped to [12, 30]. Lower leaves more of the ~150-block blockhash validity
 	// for keysign + broadcast; below the fleet's finalization lag every node abstains.
 	MimirKeySOLAnchorMarginSeconds = "SOLAnchorMarginSeconds"
+
+	// MimirKeySOLSlotMilliseconds is bifrost's live estimate of the Solana slot time
+	// in milliseconds. Read by bifrost only, at the keysign height (like
+	// MimirKeySOLAnchorMarginSeconds) so every member derives the same value — the
+	// name deliberately carries no operational substring, so it stays an economic
+	// (2/3-vote / admin) key and never touches consensus (keeper_mimir). Unset/<=0
+	// falls back to the common.SOLChain.ApproximateBlockMilliseconds() code constant;
+	// set values are clamped to a sane slot-time range.
+	//
+	// Scope: it currently feeds ONLY the keep-alive staleness threshold
+	// (solSlotsPerThorchainBlock), the one node-local use where a uniform, vote-tunable
+	// value matters for keysign-party convergence. It NEVER feeds the signed bytes or
+	// msgID: the consensus blockhash anchor is derived by counting finalized blocks
+	// (slot-rate-agnostic) with the seconds-denominated SOLAnchorMarginSeconds, not this
+	// value. The other slot-time readers still read the code constant directly (routing
+	// them through the mimir is a possible follow-up): the SOL scanner pacing
+	// (sol_scanner.go), the generic blockscanner windows for SOL (observer flex-rollback,
+	// MaxResumeBlockLag, health-lag tolerance in bifrost/blockscanner), the read-only
+	// quote/confirmation-ETA queriers (x/thorchain querier*.go), and tools/events. All are
+	// node-local or read-only display — none is a state transition. Solana slot time has fallen over
+	// time (400 -> 300 -> measured ~214ms on 2026-10-27), so this mimir lets the fleet
+	// track the drift for the keep-alive threshold with a vote instead of a release.
+	MimirKeySOLSlotMilliseconds = "SOLSlotMilliseconds"
 
 	// MimirTemplateSOLNonceClear is the per-vault durable-nonce BREAK-GLASS
 	// (SOLNonceClear-<vault pubkey>, value = a THORChain height H). A committed
@@ -118,3 +144,91 @@ const (
 	MimirPeerConcurrentSends    = "AttestationPeerConcurrentSends"
 	MimirPeerConcurrentReceives = "AttestationPeerConcurrentReceives"
 )
+
+// IsOperationalMimir determines if a given mimir key represents an operational mimir
+// (as opposed to an economic mimir). Operational mimirs have different voting requirements.
+func IsOperationalMimir(key string) bool {
+	exactMatches := []string{
+		"MintSynths",
+		"TradeAccountsEnabled",
+		"RUNEPoolEnabled",
+		"EVMDisableContractWhitelist",
+		"MaxOutboundAttempts",
+		"AdvSwapQueueRapidSwapMax",
+		"EnableADVSwapQueue",
+		"StreamingLimitSwapMaxAge",
+		OverSolvencyCheckInterval.String(),
+		OverSolvencyToTreasuryBps.String(),
+		MimirKeyScheduledMigration,
+		MimirKeyDisableTSSSignerFiltering,
+		MaxRetiredVaultRecoveryAttempts.String(),
+		P2PGateDisabled.String(),
+		EnableMemolessOutbound.String(),
+		POLReserveSystemIncomeBps.String(),
+		StableReserveOraclePricing.String(),
+		MimirKeyPreflightChainSetDisabled,
+	}
+	for i := range exactMatches {
+		if strings.EqualFold(key, exactMatches[i]) {
+			return true
+		}
+	}
+
+	exactUnmatches := []string{
+		"NodePauseChainBlocks",
+		"PauseOnSlashThreshold",
+	}
+	for i := range exactUnmatches {
+		if strings.EqualFold(key, exactUnmatches[i]) {
+			return false
+		}
+	}
+
+	// Past this point, compare only upper-case strings due to case sensitivity.
+	key = strings.ToUpper(key)
+	if strings.HasPrefix(key, "COMPROMISEDVAULT-") {
+		return true
+	}
+	// AllowNoVault-<CHAIN> opens the noop:novault debit for a brief, coordinated
+	// insolvency-correction window. That is a time-critical operator action (a
+	// gas top-up to a retiring vault must not be credited before the next
+	// migration round), so it is operational rather than economic.
+	if strings.HasPrefix(key, "ALLOWNOVAULT-") {
+		return true
+	}
+	// XMRConsolidation* tunes bifrost's Monero output consolidation. Each run
+	// locks vault liquidity for Monero's 10-block spend lock, so operators must
+	// be able to tune or disable it quickly rather than wait for a supermajority.
+	if strings.HasPrefix(key, "XMRCONSOLIDATION") {
+		return true
+	}
+	partialMatches := []string{
+		"HALT",
+		"PAUSE",
+		"STOPSOLVENCYCHECK",
+		"MIMIRUPGRADECONTRACT",
+		"EVMALLOWANCECHECK",
+		"POLRESERVEBLACKLIST",
+		"POLRESERVEWHITELIST",
+		"DYNAMICFEE-WHITELIST",
+		"REVSHARE",
+		"EVMDIRECTERC20INBOUND",
+		"SKIPSIGNERCACHE",
+	}
+	for i := range partialMatches {
+		// Contains rather than HasPrefix to include cases like StreamingSwapPause.
+		if strings.Contains(key, partialMatches[i]) {
+			return true
+		}
+	}
+
+	if strings.HasPrefix(key, "L1DYNAMICFEE") {
+		return true
+	}
+	if strings.HasPrefix(key, "OVERSOLVENCYTOTREASURYBPS-") {
+		return true
+	}
+
+	// all min slip mimirs are operational, but not SlipMinBpsMax
+	return strings.HasSuffix(key, "SLIPMINBPS")
+}

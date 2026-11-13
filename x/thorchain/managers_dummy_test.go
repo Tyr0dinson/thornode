@@ -26,7 +26,10 @@ type DummyMgr struct {
 	wasmMgr                   WasmManager
 	switchMgr                 SwitchManager
 	scheduledMigrationManager ScheduledMigrationManager
+	tracer                    *Tracer
 }
+
+var _ Manager = (*DummyMgr)(nil)
 
 func NewDummyMgrWithKeeper(k keeper.Keeper) *DummyMgr {
 	return &DummyMgr{
@@ -93,6 +96,7 @@ func (m DummyMgr) ScheduledMigrationManager() ScheduledMigrationManager {
 	return m.scheduledMigrationManager
 }
 func (m DummyMgr) DynamicFeeMgr() DynamicFeeManager { return newDynamicFeeMgr(m.K) }
+func (m DummyMgr) Tracer() *Tracer                  { return m.tracer }
 
 // DummyAdvSwapQueue is for test purpose
 type DummyAdvSwapQueue struct{}

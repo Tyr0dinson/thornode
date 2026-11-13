@@ -38,7 +38,7 @@ func replayNodeAddress() cosmos.AccAddress { return cosmos.AccAddress(bytes.Repe
 
 // These synthetic records contain no live network addresses or private keys. They
 // exercise THORChain's real genesis import, keeper writes, export, and app commit.
-func replayGenesis(t *testing.T, app *THORChainApp, seed int64, reverse bool) GenesisState {
+func replayGenesis(t testing.TB, app *THORChainApp, seed int64, reverse bool) GenesisState {
 	t.Helper()
 	state := app.DefaultGenesis()
 	var tc thorchain.GenesisState
@@ -108,13 +108,13 @@ func replayGenesis(t *testing.T, app *THORChainApp, seed int64, reverse bool) Ge
 	return state
 }
 
-func replayApp(t *testing.T, db dbm.DB) *THORChainApp {
+func replayApp(t testing.TB, db dbm.DB) *THORChainApp {
 	t.Helper()
 	return NewChainApp(log.NewNopLogger(), db, nil, true,
 		NewTestAppOptionsWithFlagHome(t.TempDir()), nil, baseapp.SetChainID(replayChainID))
 }
 
-func initReplayGenesis(t *testing.T, app *THORChainApp, genesis GenesisState) {
+func initReplayGenesis(t testing.TB, app *THORChainApp, genesis GenesisState) {
 	t.Helper()
 	raw, err := json.Marshal(genesis)
 	require.NoError(t, err)
@@ -122,7 +122,7 @@ func initReplayGenesis(t *testing.T, app *THORChainApp, genesis GenesisState) {
 	require.NoError(t, err)
 }
 
-func commitReplayGenesis(t *testing.T, app *THORChainApp, genesis GenesisState) []byte {
+func commitReplayGenesis(t testing.TB, app *THORChainApp, genesis GenesisState) []byte {
 	t.Helper()
 	initReplayGenesis(t, app, genesis)
 	_, err := app.FinalizeBlock(&abci.RequestFinalizeBlock{

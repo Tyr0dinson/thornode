@@ -51,11 +51,11 @@ func (s *XrpTestSuite) TestGasUnitContract(c *C) {
 		client, err := NewClient(s.thorKeys, cfg, nil, s.bridge, s.m)
 		c.Assert(err, IsNil)
 		mc := &testutil.JSONRPCMockClient{}
-		mc.DoFunc = testutil.MockResponse(`{"result":{"ledger_current_index":50}}`, 200, mc)
+		mc.DoFunc = testutil.MockResponse(`{"result":{"ledger_current_index":50,"account_data":{"Flags":0,"LedgerEntryType":"AccountRoot","Account":"rQwpQ54X5gJyLGg4QGp3HSkjdf3u37NqiZ","Balance":"5000000000","OwnerCount":0,"Sequence":5},"validated":false}}`, 200, mc)
 		rpcCfg, err := rpc.NewClientConfig("http://testnode/", rpc.WithHTTPClient(mc))
 		c.Assert(err, IsNil)
+		client.rpcClient = rpc.NewClient(rpcCfg)
 		client.xrpScanner.rpcClient = rpc.NewClient(rpcCfg)
-		client.accts.Set(vaultPubKey, XrpMetadata{SeqNumber: 5, BlockHeight: 100})
 
 		// 1. bifrost scanner: observe the fee for a full cache and post the network fee
 		feeQueue := make(chan common.NetworkFee, 1)

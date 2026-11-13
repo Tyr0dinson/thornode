@@ -729,6 +729,40 @@ func (s *SlashingSuite) TestHandleSuccessfulSignErrors(c *C) {
 	c.Assert(err.Error(), Matches, "could not find active node account with validator address: .*")
 }
 
+// Both handlers skip pairs whose validator address differs: the decoy comes
+// first and its node account is unknown to the keeper, so acting on it fails.
+func (s *SlashingSuite) TestSignHandlersSkipOtherValidators(c *C) {
+	ctx, _ := setupKeeperForTest(c)
+	constAccessor := constants.GetConstantValues(GetCurrentVersion())
+
+	na := GetRandomValidatorNode(NodeActive)
+	na.MissingBlocks = 5
+	keeper := &TestDoubleSlashKeeper{
+		na:          na,
+		network:     NewNetwork(),
+		slashPoints: make(map[string]int64),
+		constants:   make(map[string]int64),
+	}
+	keeper.constants["MissBlockSignSlashPoints"] = 1
+	keeper.constants["MaxTrackMissingBlock"] = 10
+	slasher := newSlasher(keeper, NewDummyEventMgr())
+
+	pk, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeConsPub, na.ValidatorConsPubKey)
+	c.Assert(err, IsNil)
+	other := GetRandomValidatorNode(NodeActive)
+	otherPK, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeConsPub, other.ValidatorConsPubKey)
+	c.Assert(err, IsNil)
+	pairs := []nodeAddressValidatorAddressPair{
+		{nodeAddress: other.NodeAddress, validatorAddress: otherPK.Address()},
+		{nodeAddress: na.NodeAddress, validatorAddress: pk.Address()},
+	}
+
+	c.Assert(slasher.HandleSuccessfulSign(ctx, pk.Address(), constAccessor, pairs), IsNil)
+	c.Assert(keeper.na.MissingBlocks, Equals, uint64(4))
+	c.Assert(slasher.HandleMissingSign(ctx, pk.Address(), constAccessor, pairs), IsNil)
+	c.Assert(keeper.na.MissingBlocks, Equals, uint64(5))
+}
+
 func (s *SlashingSuite) TestHandleMissingSign(c *C) {
 	ctx, _ := setupKeeperForTest(c)
 	constAccessor := constants.GetConstantValues(GetCurrentVersion())

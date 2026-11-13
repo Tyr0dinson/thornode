@@ -71,14 +71,12 @@ func IsActivePoolAddress(chain common.Chain, poolAddressProvider PoolAddressProv
 // ParseDirectERC20TransferLogs parses direct ERC20 transfers to active vaults.
 // Direct transfers are not router deposits, so they have no THORChain memo. The
 // caller must pass the transaction target as tokenAddress, and this parser only
-// accepts Transfer logs emitted by that exact token contract. This prevents
-// router or aggregator deposits from being reinterpreted through their internal
-// ERC20 Transfer logs.
+// accepts Transfer logs from that token paying the recipient named in calldata.
 func ParseDirectERC20TransferLogs(
 	logs []*etypes.Log,
 	txInItem *stypes.TxInItem,
 	tokenAddress ecommon.Address,
-	sender ecommon.Address,
+	sender, recipient ecommon.Address,
 	opts DirectERC20TransferLogOptions,
 ) (bool, error) {
 	if txInItem == nil {
@@ -95,6 +93,10 @@ func ParseDirectERC20TransferLogs(
 		return false, nil
 	}
 
+	if !IsActivePoolAddress(opts.Chain, opts.PoolAddressProvider, recipient.String()) {
+		return false, nil
+	}
+	recipientTopic := ecommon.BytesToHash(recipient.Bytes())
 	observed := false
 	for _, item := range logs {
 		// Direct ERC20 transfers are sent to the token contract itself. Ignore
@@ -117,10 +119,9 @@ func ParseDirectERC20TransferLogs(
 			continue
 		}
 
-		to := ecommon.BytesToAddress(item.Topics[2].Bytes())
-		// The recipient must be an active vault. This keeps unrelated token
-		// transfers from being interpreted as THORChain inbounds.
-		if !IsActivePoolAddress(opts.Chain, opts.PoolAddressProvider, to.String()) {
+		// A token may also pay other addresses. Only the transfer to the
+		// requested recipient is a direct inbound. Its log gives the amount.
+		if item.Topics[2] != recipientTopic {
 			continue
 		}
 
@@ -130,9 +131,6 @@ func ParseDirectERC20TransferLogs(
 			continue
 		}
 
-		if len(txInItem.To) > 0 && !strings.EqualFold(txInItem.To, to.String()) {
-			return false, fmt.Errorf("multiple direct ERC20 transfer events in the same transaction have different to addresses")
-		}
 		if observed {
 			opts.Logger.Info().Str("token", item.Address.String()).Msg("duplicate direct ERC20 transfer event, ignore")
 			continue
@@ -149,7 +147,7 @@ func ParseDirectERC20TransferLogs(
 			continue
 		}
 
-		txInItem.To = to.String()
+		txInItem.To = recipient.String()
 		decimals := opts.TokenResolver.GetTokenDecimalsForTHORChain(item.Address.String())
 		txInItem.Coins = append(txInItem.Coins,
 			common.NewCoin(asset, opts.TokenResolver.ConvertAmount(item.Address.String(), amount)).WithDecimals(decimals))
@@ -169,9 +167,15 @@ func GetTxInFromDirectERC20Transfer(
 	if tx == nil || tx.To() == nil || receipt == nil || receipt.Status != 1 {
 		return nil, nil
 	}
-	if !HasERC20TransferSelector(tx) {
+	data := tx.Data()
+	const recipientEnd = 4 + ecommon.HashLength
+	if !HasERC20TransferSelector(tx) || len(data) < recipientEnd+ecommon.HashLength {
 		return nil, nil
 	}
+	// Legacy ABI decoders may accept nonzero upper bytes in an address word.
+	// Match the receipt filter's low 20 bytes; the successful receipt must still
+	// contain a Transfer log with this exact recipient topic.
+	recipient := ecommon.BytesToAddress(data[4:recipientEnd])
 
 	// Start with an empty memo. If THORNode cannot process the memoless inbound,
 	// its normal refund path can handle the observed token transfer.
@@ -197,7 +201,7 @@ func GetTxInFromDirectERC20Transfer(
 	}
 	txInItem.Sender = strings.ToLower(sender.String())
 
-	observed, err := ParseDirectERC20TransferLogs(receipt.Logs, txInItem, *tx.To(), sender, DirectERC20TransferLogOptions{
+	observed, err := ParseDirectERC20TransferLogs(receipt.Logs, txInItem, *tx.To(), sender, recipient, DirectERC20TransferLogOptions{
 		Chain:               opts.Chain,
 		MaxLogs:             opts.MaxContractTxLogs,
 		PoolAddressProvider: opts.PoolAddressProvider,

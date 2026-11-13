@@ -3,7 +3,6 @@ package keeper
 import (
 	"errors"
 	"fmt"
-	"strings"
 
 	"cosmossdk.io/log"
 	"cosmossdk.io/math"
@@ -404,6 +403,38 @@ func (k KVStoreDummy) DeductNativeTxFeeFromBond(ctx cosmos.Context, nodeAddr cos
 	return kaboom
 }
 
+func (k KVStoreDummy) GetNodeBlameRecord(ctx cosmos.Context, addr cosmos.AccAddress) (types.NodeBlameRecord, error) {
+	return types.NodeBlameRecord{}, kaboom
+}
+
+func (k KVStoreDummy) SetNodeBlameRecord(ctx cosmos.Context, record types.NodeBlameRecord) error {
+	return kaboom
+}
+
+func (k KVStoreDummy) IncrementKeygenBlame(ctx cosmos.Context, addr cosmos.AccAddress) error {
+	return kaboom
+}
+
+func (k KVStoreDummy) IncrementKeysignBlame(ctx cosmos.Context, addr cosmos.AccAddress) error {
+	return kaboom
+}
+
+func (k KVStoreDummy) CalculateKeygenPenaltyMultiplier(ctx cosmos.Context, addr cosmos.AccAddress) (int64, error) {
+	return 1, kaboom
+}
+
+func (k KVStoreDummy) GetNodeBlameIterator(ctx cosmos.Context) cosmos.Iterator {
+	return nil
+}
+
+func (k KVStoreDummy) ResetSinceChurnCountersForMembers(ctx cosmos.Context, members []cosmos.AccAddress) error {
+	return kaboom
+}
+
+func (k KVStoreDummy) ResetAllSinceChurnCounters(ctx cosmos.Context) error {
+	return kaboom
+}
+
 func (k KVStoreDummy) GetObservingAddresses(_ cosmos.Context) ([]cosmos.AccAddress, error) {
 	return nil, kaboom
 }
@@ -688,6 +719,10 @@ func (k KVStoreDummy) GetAdvSwapQueueLimitIndexIterator(ctx cosmos.Context) cosm
 	return nil
 }
 
+func (k KVStoreDummy) ClearAdvSwapQueueIndexes(_ cosmos.Context) {}
+
+func (k KVStoreDummy) AdvSwapQueueIndexesEmpty(_ cosmos.Context) bool { return true }
+
 func (k KVStoreDummy) SetAdvSwapQueueIndex(_ cosmos.Context, _ MsgSwap) error {
 	return kaboom
 }
@@ -802,13 +837,6 @@ func (k KVStoreDummy) GetNodePauseChain(ctx cosmos.Context, acc cosmos.AccAddres
 	return int64(-1)
 }
 func (k KVStoreDummy) SetNodePauseChain(ctx cosmos.Context, acc cosmos.AccAddress) {}
-func (k KVStoreDummy) IsOperationalMimir(key string) bool {
-	key = strings.ToUpper(key)
-	// Simplified representation.
-	return strings.Contains(key, "HALT") ||
-		strings.Contains(key, "PAUSE") ||
-		strings.Contains(key, "EVMDIRECTERC20INBOUND")
-}
 
 func (k KVStoreDummy) GetNetworkFee(ctx cosmos.Context, chain common.Chain) (NetworkFee, error) {
 	return NetworkFee{}, kaboom

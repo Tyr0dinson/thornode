@@ -29,6 +29,9 @@ const (
 	// NOTE: Periodically re-evaluate and increase work factor as needed.
 	AgeWorkFactor = 18
 
+	// LzmaLevel is the lzma compression level for keyshare backups.
+	LzmaLevel = lzma.BestCompression
+
 	// Salts are used before hashing the passphrase for each layer of encryption.
 	SaltAge    = 1
 	SaltAES    = 2
@@ -40,6 +43,11 @@ const (
 // which lower it because every encryption also decrypts to verify the
 // round trip.
 var ageWorkFactor = AgeWorkFactor
+
+// lzmaLevel is the compression level EncryptKeyshares and EncryptRawKeyshares
+// use: LzmaLevel, except in this package's tests, which compress their small
+// fixtures with a smaller dictionary.
+var lzmaLevel = LzmaLevel
 
 // EncryptKeyshares encrypts the keyshares at the provided path using the passphrase.
 func EncryptKeyshares(path, passphrase string) ([]byte, error) {
@@ -109,7 +117,7 @@ func EncryptKeyshares(path, passphrase string) ([]byte, error) {
 	var teeCompress bytes.Buffer
 
 	// compress keyshares from raw instead of the decoded struct for determinism
-	cmpEnc := lzma.NewWriterLevel(io.MultiWriter(enc, &teeCompress), lzma.BestCompression)
+	cmpEnc := lzma.NewWriterLevel(io.MultiWriter(enc, &teeCompress), lzmaLevel)
 	n, err := cmpEnc.Write(teeRaw.Bytes())
 	if err != nil {
 		return nil, fmt.Errorf("failed keyshare encrypt - cannot encode keyshares: %w", err)
@@ -216,7 +224,7 @@ func EncryptRawKeyshares(raw []byte, passphrase string) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed keyshare encrypt - cannot create encrypt writer: %w", err)
 	}
-	cmpEnc := lzma.NewWriterLevel(enc, lzma.BestCompression)
+	cmpEnc := lzma.NewWriterLevel(enc, lzmaLevel)
 	n, err := cmpEnc.Write(raw)
 	if err != nil {
 		return nil, fmt.Errorf("failed keyshare encrypt - cannot compress raw bytes: %w", err)

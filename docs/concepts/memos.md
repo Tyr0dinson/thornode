@@ -14,6 +14,19 @@ All memos are listed in the [relevant THORChain source code](https://gitlab.com/
 
 THORChain has a [memo size limit of 250 bytes](https://gitlab.com/thorchain/thornode/-/blob/develop/constants/constants.go?ref_type=heads#L32). Any inbound tx sent with a larger memo will be ignored. Additionally, memos on UTXO chains are further constrained by the `OP_RETURN` size limit, which is [80 bytes](https://developer.bitcoin.org/devguide/transactions.html#null-data), which can be extended by using the approach described [here](sending-transactions.md#memo-longer-than-80-bytes).
 
+### Memo Characters
+
+A THORChain transaction fails `CheckTx`, so it pays no fee and is not admitted to the mempool, when:
+
+- the memo of a `MsgDeposit`, or the memo of a send to the THORChain module, contains a control character or is not valid UTF-8. The control characters are U+0000 to U+001F (tab, line feed and carriage return included), U+007F to U+009F, the line and paragraph separators U+2028 and U+2029, and the bidirectional controls U+061C, U+200E, U+200F, U+202A to U+202E and U+2066 to U+2069;
+- the memo of any other transaction, such as a send between two accounts, contains U+0000 or is not valid UTF-8.
+
+If a proposer includes such a transaction in a block anyway, it fails there with no fee, state change or events, but its bytes stay in the block. A `MsgDeposit` dispatched by a contract is checked when it executes, so it fails the contract call that sent it.
+
+A `REFERENCE:` memo observed on another chain registers its memo only if that memo passes the same check. Otherwise the inbound is refunded.
+
+An empty memo, spaces and other Unicode text are allowed. Apart from that check on registrations, memos observed on other chains are processed as they were sent, and their events carry them unchanged, so indexers should still expect any byte in those.
+
 ### Dust Thresholds
 
 THORChain has various dust thresholds (dust limits), defined on a per-chain basis. These are minimum amounts required for transactions to be processed by THORChain. Transactions below these thresholds will be ignored to prevent spam and ensure economic viability.

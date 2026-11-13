@@ -266,6 +266,9 @@ services:
       BIFROST_CHAINS_LTC_BLOCK_SCANNER_OBSERVATION_FLEXIBILITY_BLOCKS: "5"
       BIFROST_CHAINS_DASH_BLOCK_SCANNER_OBSERVATION_FLEXIBILITY_BLOCKS: "5"
       BIFROST_CHAINS_BASE_BLOCK_SCANNER_OBSERVATION_FLEXIBILITY_BLOCKS: "5"
+      # mocknet op-geth mines BASE every BLOCK_TIME (3s), not mainnet's ~200ms post-Denim:
+      # undo default.yaml's 200ms override so the health gate uses the chain constant.
+      BIFROST_CHAINS_BASE_BLOCK_SCANNER_APPROXIMATE_BLOCK_TIME: 0s
       BIFROST_CHAINS_XRP_BLOCK_SCANNER_OBSERVATION_FLEXIBILITY_BLOCKS: "5"
 
       # maintain historical gas behavior for hard-coded smoke test values
@@ -1317,7 +1320,7 @@ services:
     restart: unless-stopped
     entrypoint: ["/etc/entrypoint.sh"]
     environment:
-      BLOCK_TIME: ${BLOCK_TIME:-1}
+      BLOCK_TIME: ${BLOCK_TIME:-5}
     volumes:
       - "./mocknet/zcash/zebrad.toml:/etc/zebrad.toml"
       - "./mocknet/zcash/entrypoint.sh:/etc/entrypoint.sh"

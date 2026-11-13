@@ -151,3 +151,61 @@ func (KeeperTxOutSuite) TestKeeperTxOutCache(c *C) {
 		c.Check(gas > 0, Equals, true, comment)
 	}
 }
+
+// A cache miss at height >= keeper.TxOutCacheChunk fills the whole aligned
+// chunk with one range iteration; every height must read as the store does,
+// including heights of other key lengths that sort inside the chunk's bounds
+// and bytes that do not decode.
+func (KeeperTxOutSuite) TestKeeperTxOutCacheChunkFill(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	item := TxOutItem{
+		Chain:       common.ETHChain,
+		ToAddress:   GetRandomETHAddress(),
+		VaultPubKey: GetRandomPubKey(),
+		Coin:        common.NewCoin(common.ETHAsset, cosmos.NewUint(common.One)),
+		Memo:        "hello",
+	}
+	// 10500 and 150000 sort between "1000" and "1999"; 999 and 2000 border
+	// the chunk [1000, 1999]
+	heights := []int64{999, 1000, 1001, 1500, 1999, 2000, 10500, 150000, 28114071}
+	for _, h := range heights {
+		txOut := NewTxOut(h)
+		txOut.TxArray = append(txOut.TxArray, item)
+		c.Assert(k.SetTxOut(ctx, txOut), IsNil)
+	}
+	k.kvStore(ctx).Set(k.GetKey(prefixTxOut, "1700"), []byte{0x0a}) // does not decode
+
+	var probe []int64
+	for _, base := range []int64{1000, 10000, 150000, 28114000} {
+		for _, d := range []int64{-2, -1, 0, 1, 2, 71, 499, 500, 700, 998, 999, 1000} {
+			probe = append(probe, base+d)
+		}
+	}
+	probe = append(probe, 1700, 10500)
+	cached := keeper.WithTxOutCache(ctx)
+	for _, h := range probe {
+		_, wantBz, wantPresent := k.getTxOutBytes(ctx, h)
+		_, gotBz, gotPresent := k.getTxOutBytes(cached, h)
+		c.Check(gotPresent, Equals, wantPresent, Commentf("height %d", h))
+		c.Check(gotBz, DeepEquals, wantBz, Commentf("height %d", h))
+		want, wantErr := k.GetTxOut(ctx, h)
+		got, gotErr := k.GetTxOut(cached, h)
+		c.Check(got, DeepEquals, want, Commentf("height %d", h))
+		c.Check(gotErr == nil, Equals, wantErr == nil, Commentf("height %d", h))
+	}
+
+	// once filled, a chunk's heights touch no store
+	before := cached.GasMeter().GasConsumed()
+	for h := int64(1000); h <= 1999; h++ {
+		_, _, _ = k.getTxOutBytes(cached, h)
+	}
+	c.Check(cached.GasMeter().GasConsumed(), Equals, before)
+
+	// a disabled cache, or a fork after its txout write, reads point by point
+	disabled := keeper.WithTxOutCache(ctx)
+	keeper.TxOutCacheFromContext(disabled).Disable()
+	_, bz, present := k.getTxOutBytes(disabled, 1500)
+	c.Check(present, Equals, true)
+	c.Check(len(bz) > 0, Equals, true)
+	c.Check(keeper.TxOutCacheFromContext(disabled).ClaimChunk(1), Equals, false)
+}

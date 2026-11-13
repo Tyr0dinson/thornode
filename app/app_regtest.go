@@ -57,9 +57,13 @@ func wrapPrepareProposal(h sdk.PrepareProposalHandler) sdk.PrepareProposalHandle
 	}
 }
 
-// setPrepareCheckStater signals /newBlock after Commit has persisted the block.
-func setPrepareCheckStater(bApp *baseapp.BaseApp) {
-	bApp.SetPrepareCheckStater(func(sdk.Context) { end <- struct{}{} })
+// setPrepareCheckStater signals /newBlock after Commit has persisted the block
+// and the app's end-of-Commit hook has run.
+func setPrepareCheckStater(bApp *baseapp.BaseApp, hook sdk.PrepareCheckStater) {
+	bApp.SetPrepareCheckStater(func(ctx sdk.Context) {
+		hook(ctx)
+		end <- struct{}{}
+	})
 }
 
 func init() {

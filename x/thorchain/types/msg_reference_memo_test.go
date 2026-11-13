@@ -26,4 +26,11 @@ func (MsgReferenceMemoSuite) TestMsgReferenceMemo(c *C) {
 	// failure cases
 	c.Check(NewMsgReferenceMemo(common.EmptyAsset, "test memo", signerAddr).ValidateBasic(), NotNil)
 	c.Check(NewMsgReferenceMemo(common.BTCAsset, "", signerAddr).ValidateBasic(), NotNil)
+
+	// a registered memo is executed later, by the deposits that use it, so it
+	// must pass the same character rule as a deposit memo
+	c.Check(NewMsgReferenceMemo(common.BTCAsset, "+:BTC.BTC::::x", signerAddr).ValidateBasic(), IsNil)
+	c.Check(NewMsgReferenceMemo(common.BTCAsset, "+:BTC.BTC::::\x00", signerAddr).ValidateBasic(), ErrorMatches, "memo (contains control character|is not valid UTF-8) .*")
+	c.Check(NewMsgReferenceMemo(common.BTCAsset, "+:BTC.BTC\nOUT:1", signerAddr).ValidateBasic(), ErrorMatches, "memo (contains control character|is not valid UTF-8) .*")
+	c.Check(NewMsgReferenceMemo(common.BTCAsset, "+:BTC.BTC::::\xff", signerAddr).ValidateBasic(), ErrorMatches, "memo (contains control character|is not valid UTF-8) .*")
 }

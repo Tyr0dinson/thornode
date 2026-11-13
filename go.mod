@@ -2,7 +2,7 @@ module gitlab.com/thorchain/thornode/v3
 
 go 1.26.0
 
-toolchain go1.26.10
+toolchain go1.26.11
 
 // overrides
 replace (
@@ -318,7 +318,7 @@ require (
 	github.com/jbenet/goprocess v0.1.4 // indirect
 	github.com/jmhodges/levigo v1.0.0 // indirect
 	github.com/kkdai/bstream v1.0.0 // indirect
-	github.com/klauspost/compress v1.18.5 // indirect
+	github.com/klauspost/compress v1.20.2 // indirect
 	github.com/klauspost/cpuid/v2 v2.2.10 // indirect
 	github.com/koron/go-ssdp v0.0.0-20191105050749-2e1c40ed0b5d // indirect
 	github.com/kr/pretty v0.3.1 // indirect

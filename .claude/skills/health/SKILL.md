@@ -12,7 +12,7 @@ Shared conventions (endpoints, scripts, node/vault naming, units, Loki rules, ha
 - **Keysign blame**: resolve to `op:addr`, group by operator. Flag >15% share or multi-node operators.
 - **Tables**: pipe-delimited markdown. Solvency at full 1e8. Cause/fix columns reference GitLab (`#N`, `!N`).
 - **Omit**: loans, fee multiplier, LP deposit pauses, active node IP status.
-- **Scope**: current state only.
+- **Anomalies**: steps 1-11 read current state only. Step 1b adds "what changed" from the `tc-metrics` skill (Midgard `/v2/metrics` anomaly scores) and is up to ~2h behind; never report an anomaly as happening _now_, only as the hour it ended.
 
 ## Procedure
 
@@ -55,6 +55,30 @@ python3 .claude/skills/health/fetch_logs.py $((H-2000)) "$H" info > /tmp/tc_logs
 ### 1. Height + Version
 
 `/thorchain/lastblock` → `CURRENT_HEIGHT`. `/thorchain/version` (WebFetch) → `MAJOR.MINOR`.
+
+### 1b. Metric Anomalies (optional sweep)
+
+A discovery pass, before the checks below: it says which series moved in the last completed hour, so steps 2-10 know where to look and which Loki window to use.
+
+```bash
+python3 .claude/skills/tc-metrics/metrics.py \
+  --grep '^(?!.*proposer_address)(thornode_|(tendermint|cometbft)_consensus_(?!step_duration)|swap_|pool_|liquidity_)' --top 20
+```
+
+The grep drops the series that describe only the single node Midgard scrapes (`go_*`, `process_*`, `promhttp_*`, `*_p2p_*`, `*_mempool_*`, `*_blocksync_*` — set while that node itself syncs — and `*_consensus_step_duration*` — that node's own step timing) and the ~330 per-proposer `*_delay{proposer_address=…}` series, which would otherwise fill `--top 20` with STALE rows; reach a suspected validator with a targeted `--grep` instead. Both `tendermint_` and `cometbft_` are matched — which prefix appears depends on the CometBFT version of the scraped node. The remaining `*_consensus_*` series are still what one node observed: classify each row individually, and treat it as a network finding only when corroborated (see below).
+
+**`404 ... metric collection is disabled` is the expected result on most hosts.** Only a Midgard built after [midgard!733](https://gitlab.com/thorchain/midgard/-/merge_requests/733) serves these routes. Skip the section, put one line in Summary — `Metric anomalies: unavailable on this Midgard` — and carry on. This is not an error and not a network finding.
+
+Reading the output:
+
+1. **`## read by value, not by rank` block first.** `thornode_invariant_broken = 1` or `thornode_solvency_excess_e8 < 0` matter whatever they score — a permanently broken invariant scores as perfectly ordinary. Feed them into step 8 and the Summary directly.
+2. **STALE rows are listed first** (`samples=0`, value carried forward). That means _that series'_ source returned nothing this hour — e.g. one invariant query failed. Midgard collects and carries forward each series independently, so only the stale series are stale; the fresh rows beside them are still fresh. Report the stale series. Distrust the whole run only if every series from one source is stale together — e.g. all `tendermint_*`/`go_*`/`process_*` series (Midgard's Prometheus scrape of the node's CometBFT `:26660/metrics`), or all four `thornode_*` families (`thornode_mimir`, `thornode_vault_balance_e8`, `thornode_invariant_broken`, `thornode_solvency_excess_e8`, which Midgard fetches over THORNode REST, not Prometheus).
+3. **Discard the known false shapes** before believing a row — see `tc-metrics`' "Rows that need a second look". Chiefly: `n < 8` has no history and scores noise; `tendermint_consensus_height` and `thornode_mimir{key="MAXRUNESUPPLY"}` sit at the floor every hour because they only ever move one way.
+4. **`--series '<exact name>'`** on each survivor (labels included, copy from the table) to get the shape and the hour it started.
+5. **Use that start hour to narrow the Loki queries** in steps 0, 2, 3 and 10 — a 2h window around the change beats the default 72h sweep.
+6. **Confirm the level against the THORNode API before quoting a number.** `value` is the hour _average_, so a mid-hour step matches neither the old nor the new level. Use the metric for _when_ and _how unusual_; use the API for _what_.
+
+A network-wide series (`thornode_*`, `swap_*`, `pool_*`, `liquidity_*`) that survives all of the above and whose Cross-ref is still "unexplained" makes the report at least 🟡 even if steps 2-11 are clean. A `*_consensus_*` survivor counts only once corroborated independently of the scraped node — step 1's `/thorchain/lastblock` from another node, a matching `thornode_*` row, or several unrelated consensus series moving together while that node's `go_*`/`process_*`/`*_blocksync_*` rows are quiet. Uncorroborated, list it as a node-local observation, not a finding.
 
 ### 2. Halts
 
@@ -220,6 +244,12 @@ Only include sections with findings. Healthy = say so briefly.
 ## THORChain Network Health
 
 **Block:** {H} | **Status:** 🟢/🟡/🔴
+
+### Metric Anomalies (hour ending {HH:MM}Z)
+
+| Series | Since | z | Shape | Cross-ref |
+
+Shape: spike / step / drift / STALE. Cross-ref names the section below it fed, or "unexplained".
 
 ### Halted Chains
 

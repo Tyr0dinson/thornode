@@ -61,6 +61,7 @@ type Keeper interface {
 	KeeperLastHeight
 	KeeperLiquidityProvider
 	KeeperNodeAccount
+	KeeperNodeBlame
 	KeeperUpgrade
 	KeeperObserver
 	KeeperObservedTx
@@ -201,6 +202,17 @@ type KeeperNodeAccount interface {
 	GetBondProviders(ctx cosmos.Context, add cosmos.AccAddress) (BondProviders, error)
 	DeductNativeTxFeeFromBond(ctx cosmos.Context, nodeAddr cosmos.AccAddress) error
 	RemoveLowBondValidatorAccounts(ctx cosmos.Context) error
+}
+
+type KeeperNodeBlame interface {
+	GetNodeBlameRecord(ctx cosmos.Context, addr cosmos.AccAddress) (types.NodeBlameRecord, error)
+	SetNodeBlameRecord(ctx cosmos.Context, record types.NodeBlameRecord) error
+	IncrementKeygenBlame(ctx cosmos.Context, addr cosmos.AccAddress) error
+	IncrementKeysignBlame(ctx cosmos.Context, addr cosmos.AccAddress) error
+	CalculateKeygenPenaltyMultiplier(ctx cosmos.Context, addr cosmos.AccAddress) (int64, error)
+	GetNodeBlameIterator(ctx cosmos.Context) cosmos.Iterator
+	ResetSinceChurnCountersForMembers(ctx cosmos.Context, members []cosmos.AccAddress) error
+	ResetAllSinceChurnCounters(ctx cosmos.Context) error
 }
 
 type KeeperUpgrade interface {
@@ -466,6 +478,8 @@ type KeeperAdvSwapQueues interface {
 	RemoveAdvSwapQueueItemMsg(ctx cosmos.Context, msg MsgSwap) error
 	GetAdvSwapQueueIndexIterator(_ cosmos.Context, _ types.SwapType, _, _ common.Asset) cosmos.Iterator
 	GetAdvSwapQueueLimitIndexIterator(ctx cosmos.Context) cosmos.Iterator
+	ClearAdvSwapQueueIndexes(ctx cosmos.Context)
+	AdvSwapQueueIndexesEmpty(ctx cosmos.Context) bool
 	SetAdvSwapQueueIndex(_ cosmos.Context, _ MsgSwap) error
 	GetAdvSwapQueueIndex(_ cosmos.Context, _ MsgSwap) ([]types.AdvSwapQueueIndexItem, error)
 	HasAdvSwapQueueIndex(_ cosmos.Context, _ MsgSwap) (bool, error)
@@ -491,7 +505,6 @@ type KeeperMimir interface {
 	DeleteMimir(_ cosmos.Context, key string) error
 	GetNodePauseChain(ctx cosmos.Context, acc cosmos.AccAddress) int64
 	SetNodePauseChain(ctx cosmos.Context, acc cosmos.AccAddress)
-	IsOperationalMimir(key string) bool
 }
 
 type KeeperNetworkFee interface {

@@ -166,9 +166,13 @@ type errataDeckMutation struct {
 	txIn *types.TxIn // nil deletes the exact original deck key
 }
 
+// openObserverLevelDB opens the observer database. Tests replace it with an
+// opener that skips fsync, which no in-process test can observe.
+var openObserverLevelDB = db.NewLevelDB
+
 // NewObserverStorage create a new instance of LevelDBScannerStorage
 func NewObserverStorage(path string, opts config.LevelDBOptions) (*ObserverStorage, error) {
-	ldb, err := db.NewLevelDB(path, opts)
+	ldb, err := openObserverLevelDB(path, opts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create observer storage: %w", err)
 	}

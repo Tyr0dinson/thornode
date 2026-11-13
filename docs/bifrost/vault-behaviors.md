@@ -9,7 +9,7 @@ THORChain vaults are TSS-based and managed by the validator set. There are two i
 ### Logical vs. Physical Vaults
 
 - **Logical Vault**: A high-level vault concept representing a bonded set of nodes. There is one logical vault per vault status (e.g. one active, one retiring).
-- **Physical Vaults**: Each logical vault is _sharded_ into multiple physical vaults to support scalability. The number of shards is determined by the `asgardsize` [Mimir parameter](../mimir.md#churning) (default: 20), such that:
+- **Physical Vaults**: Each logical vault is _sharded_ into multiple physical vaults to support scalability. The number of shards is determined by the `asgardsize` [Mimir parameter](../mimir.md#node-management), such that:
 
   ```go
   num_physical_vaults = ceil(num_nodes / ASGARDSIZE)
@@ -200,7 +200,7 @@ These values are currently hardcoded within the code ([chain.go->DustThreshold()
 
 ## Slashing Mechanics
 
-THORChain uses two distinct slashing mechanisms to incentivize correct behavior and penalize faults: slash points (which reduce block rewards) and bond slashing (which burns a portion of a node’s bonded RUNE).
+THORChain uses two distinct slashing mechanisms to incentivize correct behavior and penalize faults: slash points (which reduce block rewards) and bond slashing (which slashes a portion of a node’s bonded RUNE).
 
 ### Slash Points (Reward Reduction)
 
@@ -215,7 +215,7 @@ These reduce a node's block rewards without impacting bonded capital. Each slash
 
 ### Bond Slashing (Capital Penalty)
 
-Bond slashing directly burns a portion of a validator’s bonded RUNE and is used to enforce security-critical behavior.
+Bond slashing directly slashes a portion of a validator’s bonded RUNE and is used to enforce security-critical behavior.
 
 - **Unauthorized outbound transaction**:  
    If a vault signs and broadcasts a transaction that does **not match an approved outbound instruction**, the participating vault members are slashed. Violations include:
@@ -227,14 +227,14 @@ Bond slashing directly burns a portion of a validator’s bonded RUNE and is use
   In such cases:
 
   - THORChain compares the outbound instruction to the observed transaction
-  - If a mismatch is detected, the vault is marked as compromised
+  - If a mismatch is detected, the vault's signing members are slashed. The vault is not marked as compromised automatically; node operators flag it with the [`CompromisedVault-<pubkey>`](../mimir.md#chain-management) Mimir, which removes it from inbound addresses and outbound selection
   - A penalty of up to **1.5× the misused amount (in RUNE)** is slashed from the signing nodes' bond
   - The slashed RUNE is distributed:
     - ⅔ to the affected liquidity pool
     - ⅓ to the protocol reserve
 
   **Pause Threshold**:  
-   If the cumulative RUNE slashed from unauthorized actions exceeds the `PauseOnSlashThreshold`, THORChain **automatically halts** outbound transactions for the affected chain via a [Chain Halt](../concepts/network-halts.md#halt-pause-management).
+   If the cumulative RUNE slashed from unauthorized actions exceeds the `PauseOnSlashThreshold`, THORChain **automatically halts** outbound transactions for the affected chain via a [Signing and Trading Halt](../concepts/network-halts.md#chain-halt-types).
 
 ### Enforcement
 

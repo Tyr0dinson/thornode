@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"sync"
@@ -37,6 +38,11 @@ const MaxRetries = 3
 // RetryBackoff is the wait between seed/genesis fetch attempts. A variable so
 // tests of the failure paths need not sleep for real.
 var RetryBackoff = time.Second * 5
+
+// Keep Config's field names in garbled release builds (see GARBLE in the
+// Makefile). viper and the config templates look fields up by name, and garble
+// cannot follow the config into the renderConfigFile closure.
+var _ = reflect.TypeOf(Config{})
 
 var (
 	//go:embed default.yaml
@@ -521,6 +527,18 @@ type Thornode struct {
 			// validator; the endpoint is also unauthenticated. See default.yaml.
 			RetainBlocks int64 `mapstructure:"retain_blocks"`
 		} `mapstructure:"logs"`
+
+		// QueryCache configures the node-local response cache for external read
+		// queries (ABCI abci_query, gRPC, and REST through either). Responses are
+		// keyed by block height, so repeated identical queries within one block are
+		// served from memory. Queries from inside the state machine never use it.
+		QueryCache struct {
+			// Enabled turns the cache on.
+			Enabled bool `mapstructure:"enabled"`
+
+			// MaxBytes bounds the memory the cached responses may hold.
+			MaxBytes int64 `mapstructure:"max_bytes"`
+		} `mapstructure:"query_cache"`
 	} `mapstructure:"api"`
 
 	// Telemetry contains THORnode-specific telemetry configuration.
@@ -532,6 +550,16 @@ type Thornode struct {
 		// PricePerNode enables oracle price telemetry. This tracks the reported
 		// price per asset and per node, updated every block.
 		PricePerNode bool `mapstructure:"price_per_node"`
+		// TraceManagers records manager runs and runtimes in Prometheus.
+		TraceManagers bool `mapstructure:"trace_managers"`
+		// TraceHandlers records handler runs and runtimes in Prometheus.
+		TraceHandlers bool `mapstructure:"trace_handlers"`
+		// TraceContracts records contract runs, payload sizes, and runtimes in
+		// Prometheus, labeled by contract address.
+		TraceContracts bool `mapstructure:"trace_contracts"`
+		// TracePayloads writes contract payloads and metadata to debug logs.
+		// It requires TraceContracts.
+		TracePayloads bool `mapstructure:"trace_payloads"`
 	} `mapstructure:"telemetry"`
 
 	// LogFilter will drop logs matching the modules and messages when not in debug level.
@@ -594,6 +622,16 @@ type Thornode struct {
 			SnapshotInterval   int64 `mapstructure:"snapshot_interval"`
 			SnapshotKeepRecent int64 `mapstructure:"snapshot_keep_recent"`
 		} `mapstructure:"state_sync"`
+
+		// Divergence configures the node-local app-hash divergence diagnostics
+		// (app/divergence): per-block store digests, a ring of recent write
+		// sets, and a crash bundle on a consensus failure or blocksync app hash
+		// mismatch.
+		Divergence struct {
+			Enabled      bool   `mapstructure:"enabled"`
+			RetainBlocks int64  `mapstructure:"retain_blocks"`
+			ReferenceAPI string `mapstructure:"reference_api"`
+		} `mapstructure:"divergence"`
 
 		Wasm struct {
 			QueryGasLimit   int64 `mapstructure:"query_gas_limit"`
@@ -1178,6 +1216,15 @@ type BifrostBlockScannerConfiguration struct {
 	// is considered unhealthy.
 	MaxHealthyLag time.Duration `mapstructure:"max_healthy_lag"`
 
+	// ApproximateBlockTime overrides the chain's block time for bifrost's own
+	// block-count <-> duration conversions (scanner health gate, resume lag, observer
+	// flex window, EVM solvency runner interval). 0 uses the
+	// common.Chain.ApproximateBlockMilliseconds() constant. It is node-local and never
+	// reaches consensus, so it can track an L1 block-time change (e.g. Base Denim,
+	// 2s -> 200ms) without waiting for a coordinated release to move the constant,
+	// which QuoteSwap exposes to CosmWasm contracts.
+	ApproximateBlockTime time.Duration `mapstructure:"approximate_block_time"`
+
 	// TransactionBatchSize is the number of transactions to batch in a single request.
 	// This is used as the limit for one iteration of mempool checks and fanout in
 	// fetching block transactions.
@@ -1210,6 +1257,29 @@ type BifrostBlockScannerConfiguration struct {
 	} `mapstructure:"solana"`
 }
 
+// ApproximateBlockMilliseconds returns the block time bifrost should assume for this
+// scanner's chain: ApproximateBlockTime when it is at least 1ms, otherwise the
+// ChainID.ApproximateBlockMilliseconds() constant. Bifrost reads block time through
+// this rather than the common constant so the two can differ (see
+// ApproximateBlockTime).
+func (c BifrostBlockScannerConfiguration) ApproximateBlockMilliseconds() int64 {
+	if ms := c.ApproximateBlockTime.Milliseconds(); ms > 0 {
+		return ms
+	}
+	return c.ChainID.ApproximateBlockMilliseconds()
+}
+
+// ApproximateBlockMilliseconds is the chain-client counterpart of
+// BifrostBlockScannerConfiguration.ApproximateBlockMilliseconds: the block
+// scanner's ApproximateBlockTime override when set, otherwise this chain's
+// ChainID constant.
+func (c BifrostChainConfiguration) ApproximateBlockMilliseconds() int64 {
+	if ms := c.BlockScanner.ApproximateBlockTime.Milliseconds(); ms > 0 {
+		return ms
+	}
+	return c.ChainID.ApproximateBlockMilliseconds()
+}
+
 type BifrostClientConfiguration struct {
 	ChainID         common.Chain `mapstructure:"chain_id" `
 	ChainHost       string       `mapstructure:"chain_host"`
@@ -1236,6 +1306,16 @@ type BifrostTSSConfiguration struct {
 	InfoAddress                  string   `mapstructure:"info_address"`
 	ExternalIP                   string   `mapstructure:"external_ip"`
 	MaxKeyshareRecoverScanBlocks int64    `mapstructure:"max_keyshare_recover_scan_blocks"`
+	// KeyshareArchiveRPC is an OPTIONAL operator-configured THORChain RPC endpoint
+	// with deeper (unpruned) block history. When a legacy keyshare backup is in the
+	// pruned part of this node's history — the whole scan window below the block-store
+	// floor, or just the clamped sub-window of a partly-available window — recovery
+	// makes ONE bounded attempt to fetch the TssPool backup from this endpoint before
+	// starting degraded. The
+	// endpoint is never trusted: a fetched backup is accepted only if it decrypts
+	// with this node's key AND the recovered share's pubkey equals the vault pubkey
+	// from THORChain. Default empty (no hardcoded third party) → the fetch is skipped.
+	KeyshareArchiveRPC string `mapstructure:"keyshare_archive_rpc"`
 }
 
 type BifrostOracleConfiguration struct {

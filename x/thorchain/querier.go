@@ -1378,6 +1378,116 @@ func (qs queryServer) queryNodes(ctx cosmos.Context, _ *types.QueryNodesRequest)
 	return &types.QueryNodesResponse{Nodes: result}, nil
 }
 
+// queryNodeBlame returns blame record for a specific node
+func (qs queryServer) queryNodeBlame(ctx cosmos.Context, req *types.QueryNodeBlameRequest) (*types.QueryNodeBlameResponse, error) {
+	if len(req.Address) == 0 {
+		return nil, errors.New("node address not provided")
+	}
+
+	addr, err := cosmos.AccAddressFromBech32(req.Address)
+	if err != nil {
+		return nil, fmt.Errorf("invalid address: %w", err)
+	}
+
+	record, err := qs.mgr.Keeper().GetNodeBlameRecord(ctx, addr)
+	if err != nil {
+		return nil, err
+	}
+
+	nodeAcc, err := qs.mgr.Keeper().GetNodeAccount(ctx, addr)
+	if err != nil {
+		return nil, fmt.Errorf("fail to get node account: %w", err)
+	}
+
+	return &types.QueryNodeBlameResponse{
+		NodeAddress:                 record.NodeAddress,
+		NodeOperatorAddress:         nodeAcc.BondAddress.String(),
+		KeygenBlameCountTotal:       record.KeygenBlameCountTotal,
+		KeysignBlameCountTotal:      record.KeysignBlameCountTotal,
+		KeygenBlameCountSinceChurn:  record.KeygenBlameCountSinceChurn,
+		KeysignBlameCountSinceChurn: record.KeysignBlameCountSinceChurn,
+	}, nil
+}
+
+// queryNodeBlames returns blame counters for every active node. Active nodes
+// with no stored blame record are reported with zero counters.
+//
+// Supported query args:
+//   - sort_by: keygen_since_churn (default), keysign_since_churn, keygen_total, keysign_total
+//   - sort_order: desc (default), asc
+func (qs queryServer) queryNodeBlames(ctx cosmos.Context, req *types.QueryNodeBlamesRequest) (*types.QueryNodeBlamesResponse, error) {
+	keyFn, err := nodeBlameSortKey(req.SortBy)
+	if err != nil {
+		return nil, err
+	}
+	descending, err := nodeBlameSortDescending(req.SortOrder)
+	if err != nil {
+		return nil, err
+	}
+
+	activeNodes, err := qs.mgr.Keeper().ListActiveValidators(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("fail to list active validators: %w", err)
+	}
+
+	result := make([]*types.QueryNodeBlameResponse, 0, len(activeNodes))
+	for _, na := range activeNodes {
+		record, err := qs.mgr.Keeper().GetNodeBlameRecord(ctx, na.NodeAddress)
+		if err != nil {
+			return nil, fmt.Errorf("fail to get node blame record: %w", err)
+		}
+		result = append(result, &types.QueryNodeBlameResponse{
+			NodeAddress:                 na.NodeAddress,
+			NodeOperatorAddress:         na.BondAddress.String(),
+			KeygenBlameCountTotal:       record.KeygenBlameCountTotal,
+			KeysignBlameCountTotal:      record.KeysignBlameCountTotal,
+			KeygenBlameCountSinceChurn:  record.KeygenBlameCountSinceChurn,
+			KeysignBlameCountSinceChurn: record.KeysignBlameCountSinceChurn,
+		})
+	}
+
+	// Records with equal sort keys are ordered by node address.
+	sort.Slice(result, func(i, j int) bool {
+		ki, kj := keyFn(result[i]), keyFn(result[j])
+		if ki != kj {
+			if descending {
+				return ki > kj
+			}
+			return ki < kj
+		}
+		return result[i].NodeAddress.String() < result[j].NodeAddress.String()
+	})
+
+	return &types.QueryNodeBlamesResponse{Blames: result}, nil
+}
+
+// nodeBlameSortKey returns the field accessor for the given sort_by value.
+func nodeBlameSortKey(sortBy string) (func(*types.QueryNodeBlameResponse) int64, error) {
+	switch sortBy {
+	case "", "keygen_since_churn":
+		return func(r *types.QueryNodeBlameResponse) int64 { return r.KeygenBlameCountSinceChurn }, nil
+	case "keysign_since_churn":
+		return func(r *types.QueryNodeBlameResponse) int64 { return r.KeysignBlameCountSinceChurn }, nil
+	case "keygen_total":
+		return func(r *types.QueryNodeBlameResponse) int64 { return r.KeygenBlameCountTotal }, nil
+	case "keysign_total":
+		return func(r *types.QueryNodeBlameResponse) int64 { return r.KeysignBlameCountTotal }, nil
+	default:
+		return nil, fmt.Errorf("invalid sort_by: %q (expected one of: keygen_since_churn, keysign_since_churn, keygen_total, keysign_total)", sortBy)
+	}
+}
+
+func nodeBlameSortDescending(sortOrder string) (bool, error) {
+	switch sortOrder {
+	case "", "desc":
+		return true, nil
+	case "asc":
+		return false, nil
+	default:
+		return false, fmt.Errorf("invalid sort_order: %q (expected: asc or desc)", sortOrder)
+	}
+}
+
 func newSaver(lp LiquidityProvider, pool Pool) *types.QuerySaverResponse {
 	assetRedeemableValue := lp.GetSaversAssetRedeemValue(pool)
 
@@ -4228,17 +4338,43 @@ func simulate(ctx cosmos.Context, mgr Manager, msg sdk.Msg) (sdk.Events, error) 
 	advSwapQueueEnabled := mgr.Keeper().AdvSwapQueueEnabled(ctx)
 
 	// reset the advanced swap queue if enabled
+	advIndexesCleared := false
 	if advSwapQueueEnabled {
 		advIter := mgr.Keeper().GetAdvSwapQueueItemIterator(ctx)
 		for ; advIter.Valid(); advIter.Next() {
 			mgr.Keeper().DeleteKey(ctx, advIter.Key())
 		}
 		advIter.Close()
+		// The market and limit indexes still list the deleted items. Left in
+		// place, every entry is an orphan to the end-block loop below, which
+		// removes orphans one at a time, decoding and rewriting the whole
+		// market index for each: quadratic in the mainnet queue size, on every
+		// quote.
+		//
+		// Queries only. A contract can call QuoteSwap while a block executes
+		// (app/wasm.go), and there those removals are gas-metered store reads
+		// and writes, and gas_used is consensus-visible. Transaction simulation
+		// keeps them too, so its gas estimate still matches execution. Messages,
+		// and so contracts, only run in these two modes.
+		if mode := ctx.ExecMode(); mode != sdk.ExecModeFinalize && mode != sdk.ExecModeSimulate {
+			mgr.Keeper().ClearAdvSwapQueueIndexes(ctx)
+			advIndexesCleared = true
+		}
 	}
 
 	// save pool state - the end-block loop restores these between iterations so
 	// each simulated sub-swap of a streaming swap sees the original pool depth
-	pools, err := mgr.Keeper().GetPools(ctx)
+	// A contract's simulation runs inside its tx, where store access is gas:
+	// it keeps the point reads below. API simulations keep the snapshot's
+	// stored bytes and diff them against one pool iteration instead.
+	isWasm, _ := ctx.Value(constants.CtxWASMQuery).(bool)
+	var pools Pools
+	var poolKeys, poolBytes [][]byte
+	if isWasm {
+		pools, err = mgr.Keeper().GetPools(ctx)
+	} else {
+		pools, poolKeys, poolBytes, err = snapshotPools(ctx, mgr.Keeper())
+	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to get pools: %w", err)
 	}
@@ -4281,6 +4417,10 @@ func simulate(ctx cosmos.Context, mgr Manager, msg sdk.Msg) (sdk.Events, error) 
 		// restore pool depths to the pre-swap snapshot. On the first iteration
 		// the touched set is unknown, so diff every pool against the snapshot;
 		// thereafter only the pools the swap actually moved need restoring.
+		if !touchedDetected && poolKeys != nil {
+			touchedPools = touchedPoolsByBytes(ctx, mgr.Keeper(), pools, poolKeys, poolBytes)
+			touchedDetected = true
+		}
 		if !touchedDetected {
 			for i := range pools {
 				var current Pool
@@ -4304,7 +4444,15 @@ func simulate(ctx cosmos.Context, mgr Manager, msg sdk.Msg) (sdk.Events, error) 
 		iter.Close()
 
 		advQueueEmpty := true
-		if advSwapQueueEnabled {
+		switch {
+		case advIndexesCleared:
+			// Every item deleted above is a tombstone in this cache store, and a
+			// new item iterator reads and skips all of them before it can report
+			// the queue empty: one full pass over the mainnet queue per
+			// iteration. The indexes were cleared with the items and track every
+			// item queued since, so they answer the same question cheaply.
+			advQueueEmpty = mgr.Keeper().AdvSwapQueueIndexesEmpty(ctx)
+		case advSwapQueueEnabled:
 			advIter := mgr.Keeper().GetAdvSwapQueueItemIterator(ctx)
 			advQueueEmpty = !advIter.Valid()
 			advIter.Close()
@@ -4314,6 +4462,49 @@ func simulate(ctx cosmos.Context, mgr Manager, msg sdk.Msg) (sdk.Events, error) 
 	}
 
 	return em.Events(), nil
+}
+
+// snapshotPools is GetPools, also returning each pool's store key and stored
+// bytes. Its iteration is GetPools', so is its result; on bytes that do not
+// decode it returns GetPools' own result for the identical error.
+func snapshotPools(ctx cosmos.Context, k keeper.Keeper) (Pools, [][]byte, [][]byte, error) {
+	var pools Pools
+	var keys, values [][]byte
+	iter := k.GetPoolIterator(ctx)
+	defer iter.Close()
+	for ; iter.Valid(); iter.Next() {
+		var pool Pool
+		if err := k.Cdc().Unmarshal(iter.Value(), &pool); err != nil {
+			pools, err = k.GetPools(ctx)
+			return pools, nil, nil, err
+		}
+		pools = append(pools, pool)
+		keys = append(keys, bytes.Clone(iter.Key()))
+		values = append(values, bytes.Clone(iter.Value()))
+	}
+	return pools, keys, values, nil
+}
+
+// touchedPoolsByBytes returns the snapshot pools whose stored bytes are no
+// longer the snapshot's (or that are gone), in snapshot order, from one
+// iteration of the pool store. Pools are written as their marshalled bytes,
+// so this is the set the marshal comparison in simulate finds; a pool whose
+// bytes changed without its decoding changing would only be restored to the
+// same pool.
+func touchedPoolsByBytes(ctx cosmos.Context, k keeper.Keeper, pools Pools, keys, values [][]byte) []Pool {
+	var touched []Pool
+	iter := k.GetPoolIterator(ctx)
+	defer iter.Close()
+	for i := range pools {
+		// both walks are in key order: skip pools created since the snapshot
+		for iter.Valid() && bytes.Compare(iter.Key(), keys[i]) < 0 {
+			iter.Next()
+		}
+		if !iter.Valid() || !bytes.Equal(iter.Key(), keys[i]) || !bytes.Equal(iter.Value(), values[i]) {
+			touched = append(touched, pools[i])
+		}
+	}
+	return touched
 }
 
 // runePerDollarIgnoreHalt mirrors keeper.RunePerDollar, ignoring halts by using
