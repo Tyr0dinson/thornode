@@ -46,7 +46,7 @@ func (s *DashAccountingSuite) TestSettlementTimeoutAndLateSettlement(c *C) {
 	block.InstantSend = nil
 	block.BlockHeight, block.FinaliseHeight = 101, 101
 	signers := []cosmos.AccAddress{GetRandomBech32Addr(), GetRandomBech32Addr(), GetRandomBech32Addr()}
-	c.Assert(settleInstantSend(deadline, mgr.Keeper(), block, voter, signers, 4), IsNil)
+	c.Assert(settleTestInstantSend(deadline, mgr, block, voter, signers, 4), IsNil)
 	checkInstantSend(deadline.WithBlockHeight(deadline.BlockHeight()+1), mgr)
 	assertInstantSendHalt(c, deadline, mgr, deadline.BlockHeight())
 	status, err := mgr.Keeper().GetInstantSendStatus(deadline, common.DASHChain)
@@ -72,7 +72,7 @@ func (s *DashAccountingSuite) TestManualClearanceRehaltsWhileOverdue(c *C) {
 	assertInstantSendHalt(c, deadline, mgr, deadline.BlockHeight())
 	tx.InstantSend = nil
 	tx.BlockHeight, tx.FinaliseHeight = 101, 101
-	c.Assert(settleInstantSend(deadline, mgr.Keeper(), tx, voter, []cosmos.AccAddress{GetRandomBech32Addr(), GetRandomBech32Addr(), GetRandomBech32Addr()}, 4), IsNil)
+	c.Assert(settleTestInstantSend(deadline, mgr, tx, voter, []cosmos.AccAddress{GetRandomBech32Addr(), GetRandomBech32Addr(), GetRandomBech32Addr()}, 4), IsNil)
 	// Raising the timeout does not erase the other deposit's overdue status.
 	mgr.Keeper().SetMimir(deadline, "DashInstantSendTimeout", 600)
 	for _, key := range []string{"HaltDASHTrading", "HaltSigningDASH"} {
@@ -98,7 +98,7 @@ func (s *DashAccountingSuite) TestTimeoutKeepsActiveHaltsAndBringsScheduledHalts
 		if settled {
 			tx.InstantSend = nil
 			tx.BlockHeight, tx.FinaliseHeight = 101, 101
-			c.Assert(settleInstantSend(deadline, mgr.Keeper(), tx, voter, []cosmos.AccAddress{GetRandomBech32Addr(), GetRandomBech32Addr(), GetRandomBech32Addr()}, 4), IsNil)
+			c.Assert(settleTestInstantSend(deadline, mgr, tx, voter, []cosmos.AccAddress{GetRandomBech32Addr(), GetRandomBech32Addr(), GetRandomBech32Addr()}, 4), IsNil)
 			checkInstantSend(deadline.WithBlockHeight(deadline.BlockHeight()+1), mgr)
 		}
 		trading, err := mgr.Keeper().GetMimir(deadline, "HaltDASHTrading")
@@ -223,7 +223,7 @@ func (s *DashAccountingSuite) TestTimeoutStateSurvivesGenesisAndSettlement(c *C)
 		c.Assert(credit.Height, Equals, int64(0))
 		tx.InstantSend = nil
 		tx.BlockHeight, tx.FinaliseHeight = 101, 101
-		c.Assert(settleInstantSend(next, nextMgr.Keeper(), tx, voter, []cosmos.AccAddress{GetRandomBech32Addr(), GetRandomBech32Addr(), GetRandomBech32Addr()}, 4), IsNil)
+		c.Assert(settleTestInstantSend(next, nextMgr, tx, voter, []cosmos.AccAddress{GetRandomBech32Addr(), GetRandomBech32Addr(), GetRandomBech32Addr()}, 4), IsNil)
 		checkInstantSend(next, nextMgr)
 		assertInstantSendHalt(c, next, nextMgr, ctx.BlockHeight())
 		// Manual clearance cannot override a permanent admission disable.

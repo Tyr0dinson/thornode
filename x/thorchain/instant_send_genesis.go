@@ -52,12 +52,17 @@ func validateInstantSendGenesis(data GenesisState) error {
 	for _, vault := range data.Vaults {
 		vaults[vault.PubKey] = vault
 	}
+	states := make(map[common.PubKey]bool)
 	found := make(map[common.TxID]bool)
 	for _, state := range data.InstantSend {
 		err := state.Validate()
 		if err != nil {
 			return err
 		}
+		if states[state.PubKey] {
+			return errors.New("duplicate InstantSend genesis vault")
+		}
+		states[state.PubKey] = true
 		vault, exists := vaults[state.PubKey]
 		if !exists || !vault.IsAsgard() || !vault.HasChain(state.Chain) {
 			return errors.New("invalid InstantSend genesis vault")

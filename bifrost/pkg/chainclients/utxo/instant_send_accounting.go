@@ -132,16 +132,8 @@ func (c *Client) reportDashSolvency() error {
 		}
 	}
 	for _, report := range reports {
-		previous, exists := c.solvencyReports[report.PubKey]
-		if exists && previous.Height == report.Height && previous.Coins.EqualsEx(report.Coins) {
-			continue
-		}
 		select {
 		case c.globalSolvencyQueue <- report:
-			if c.solvencyReports == nil {
-				c.solvencyReports = make(map[common.PubKey]types.Solvency)
-			}
-			c.solvencyReports[report.PubKey] = report
 		case <-c.stopchan:
 			return errors.New("solvency stopped")
 		case <-time.After(constants.ThorchainBlockTime):
@@ -233,17 +225,17 @@ func (c *Client) getChainLockSnapshot() (chainLockSnapshot, error) {
 	return snapshot, nil
 }
 
-// chainLockHeightHealth is immutable once published; the scanner and signer read it
-// concurrently through Client.chainLockHeightHealth.
-type chainLockHeightHealth struct {
-	tipHeight       int64
-	chainLockHeight int64
-	checkedAt       time.Time
+// chainLockHealth is immutable once published; the scanner and signer read it
+// concurrently through Client.chainLockHealth.
+type chainLockHealth struct {
+	tipHeight  int64
+	lockHeight int64
+	checkedAt  time.Time
 }
 
 // isHealthy reports whether height data is fresh and both ChainLock and scanner
 // lag are within one expected block interval.
-func (h *chainLockHeightHealth) isHealthy(chain common.Chain, now time.Time, scannedHeight int64) bool {
+func (h *chainLockHealth) isHealthy(chain common.Chain, now time.Time, scannedHeight int64) bool {
 	maxAge := time.Duration(maxHealthyChainLockLag*chain.ApproximateBlockMilliseconds()) * time.Millisecond
 	if h == nil || h.checkedAt.IsZero() || now.Sub(h.checkedAt) >= maxAge {
 		return false
@@ -251,7 +243,7 @@ func (h *chainLockHeightHealth) isHealthy(chain common.Chain, now time.Time, sca
 	// Check finality even when the scanner is caught up to a frozen ChainLock.
 	// Also bound the unscanned backlog so a new ChainLock cannot immediately
 	// restore signing using the scanner's old healthy flag before catch-up.
-	return h.tipHeight >= h.chainLockHeight &&
-		h.tipHeight-h.chainLockHeight <= maxHealthyChainLockLag &&
+	return h.tipHeight >= h.lockHeight &&
+		h.tipHeight-h.lockHeight <= maxHealthyChainLockLag &&
 		h.tipHeight-scannedHeight <= maxHealthyChainLockLag
 }

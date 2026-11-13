@@ -380,7 +380,7 @@ func newDashClientForRPCServer(c *C, serverURL string, rpcTimeout ...time.Durati
 
 	temporalStorage, err := sharedutxo.NewTemporalStorage(storage.GetInternalDb(), 1000)
 	c.Assert(err, IsNil)
-	// Existing InstantSend tests start with a fully warmed, durable allowance.
+	// InstantSend fixtures have durable marker storage and query their exposure from core.
 
 	client := &Client{
 		cfg: config.BifrostChainConfiguration{

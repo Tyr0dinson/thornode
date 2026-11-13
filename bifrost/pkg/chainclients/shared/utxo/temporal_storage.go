@@ -297,9 +297,9 @@ func (t *TemporalStorage) TrackObservedTxs(txids []string) ([]string, error) {
 	return added, nil
 }
 
-// HasObservedTx skips unnecessary RPC work. Callers must still use TrackObservedTx
-// or TrackObservedTxs before delivery to claim the transaction atomically.
-func (t *TemporalStorage) HasObservedTx(txid string) (bool, error) {
+// HasTxMarker reports whether any observation marker exists, including a pending
+// claim. It does not claim the transaction or confirm Observer persistence.
+func (t *TemporalStorage) HasTxMarker(txid string) (bool, error) {
 	return t.db.Has([]byte(t.getObservedTxKey(txid)), nil)
 }
 

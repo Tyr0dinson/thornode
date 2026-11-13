@@ -438,6 +438,12 @@ func TestObserverWriteOptions(t *testing.T) {
 	ordinary := createTestTxIn(common.BTCChain, 100)
 	assert.Nil(t, observerWriteOptions(ordinary))
 
+	durable := createTestTxIn(common.DASHChain, 100)
+	durable.Persisted = make(chan error, 1)
+	options := observerWriteOptions(durable)
+	require.NotNil(t, options)
+	assert.True(t, options.Sync)
+
 	replay := createTestTxIn(common.XMRChain, 100)
 	replay.TxArray[0].OnObservedTxStored = func() {}
 	writeOptions := observerWriteOptions(replay)

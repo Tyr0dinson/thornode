@@ -155,7 +155,7 @@ func (s *DashSuite) TestInstantSendFetchBatchFiltersUnlockedTxs(c *C) {
 	c.Assert(txIn.TxArray[0].To, Equals, asgardAddress)
 	c.Assert(txIn.TxArray[0].Memo, Equals, "=:THOR.RUNE")
 	c.Assert(txIn.TxArray[0].Coins.GetCoin(common.DASHAsset).Amount.Uint64(), Equals, uint64(10_000_000))
-	observed, err := client.temporalStorage.HasObservedTx(mempoolLocked)
+	observed, err := client.temporalStorage.HasTxMarker(mempoolLocked)
 	c.Assert(err, IsNil)
 	c.Assert(observed, Equals, true)
 	c.Assert(txIn.Persisted, IsNil)
@@ -175,6 +175,7 @@ func (s *DashSuite) TestInstantSendFetchBatchFiltersUnlockedTxs(c *C) {
 	c.Assert(mined.TxArray[0].Tx, Equals, mempoolLocked)
 	c.Assert(mined.TxArray[0].BlockHeight, Equals, int64(150))
 	c.Assert(mined.TxArray[0].InstantSend, IsNil)
+	completeDashBlock(c, client, mined)
 	mined, err = client.extractTxs(block)
 	c.Assert(err, IsNil)
 	c.Assert(mined.TxArray, HasLen, 0)
@@ -265,7 +266,7 @@ func (s *DashSuite) TestDashInstantSendDefersLowFeeOrMissingFeePayments(c *C) {
 		c.Assert(groups, HasLen, 0)
 	}
 
-	marked, err := client.temporalStorage.HasObservedTx(mempoolLocked)
+	marked, err := client.temporalStorage.HasTxMarker(mempoolLocked)
 	c.Assert(err, IsNil)
 	c.Assert(marked, Equals, false)
 }
@@ -344,7 +345,7 @@ func (s *DashSuite) TestDashInstantSendHexOnlyAddresses(c *C) {
 
 func assertInstantSendScanClaims(c *C, client *Client, ids, accepted []string) {
 	for _, id := range ids {
-		observed, err := client.temporalStorage.HasObservedTx(id)
+		observed, err := client.temporalStorage.HasTxMarker(id)
 		c.Assert(err, IsNil)
 		c.Assert(observed, Equals, slices.Contains(accepted, id))
 	}

@@ -36,7 +36,7 @@ func sufficientInstantSendFee(entry rpc.GetRawMempoolVerboseResult, rate uint64)
 	return fee.Num().Cmp(minimum) >= 0
 }
 
-func dashInputs(vins []btcjson.Vin) ([]common.OutputRef, error) {
+func dashVinInputs(vins []btcjson.Vin) ([]common.OutputRef, error) {
 	refs := make([]common.OutputRef, 0, len(vins))
 	for _, vin := range vins {
 		if vin.Coinbase != "" {
@@ -48,7 +48,7 @@ func dashInputs(vins []btcjson.Vin) ([]common.OutputRef, error) {
 	return refs, common.ValidateDashInputs(refs)
 }
 
-func rawDashInputs(raw, id string) ([]common.OutputRef, error) {
+func dashRawInputs(raw, id string) ([]common.OutputRef, error) {
 	data, err := hex.DecodeString(raw)
 	if err != nil {
 		return nil, err
@@ -62,6 +62,10 @@ func rawDashInputs(raw, id string) ([]common.OutputRef, error) {
 	if reader.Len() != 0 || !strings.EqualFold(tx.TxHash().String(), id) {
 		return nil, errors.New("raw deposit identity mismatch")
 	}
+	return dashTxInputs(&tx)
+}
+
+func dashTxInputs(tx *dashwire.MsgTx) ([]common.OutputRef, error) {
 	refs := make([]common.OutputRef, 0, len(tx.TxIn))
 	for _, input := range tx.TxIn {
 		refs = append(refs, common.OutputRef{TxHash: strings.ToUpper(input.PreviousOutPoint.Hash.String()), OutputIndex: input.PreviousOutPoint.Index})
@@ -71,12 +75,12 @@ func rawDashInputs(raw, id string) ([]common.OutputRef, error) {
 }
 
 // ChainLocked parents exclude unconfirmed ancestor trees from early exposure.
-func (c *Client) verifiedInstantSendInputs(tx *rpc.TxResult) ([]common.OutputRef, error) {
-	refs, err := rawDashInputs(tx.Hex, tx.Txid)
+func (c *Client) verifyInstantSendInputs(tx *rpc.TxResult) ([]common.OutputRef, error) {
+	refs, err := dashRawInputs(tx.Hex, tx.Txid)
 	if err != nil {
 		return nil, err
 	}
-	verbose, err := dashInputs(tx.Vin)
+	verbose, err := dashVinInputs(tx.Vin)
 	if err != nil || !slices.Equal(refs, verbose) {
 		return nil, errors.New("deposit input mismatch")
 	}

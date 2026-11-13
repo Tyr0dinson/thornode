@@ -169,16 +169,7 @@ Run tests
 make test
 ```
 
-Hide debug, info, and trace logs while keeping warnings, errors, and test failures:
-
-```bash
-make test TEST_QUIET=1
-# Also works for a single package:
-make test ./bifrost/pkg/chainclients/utxo TEST_QUIET=1
-```
-
 Network test reports keep the complete logs in `test-quality-reports/*/events.jsonl`.
-Quiet mode prints failure diagnostics without the usual 100-line limit.
 
 By default, computationally-expensive tests like those for `go-tss` are excluded from this target. To fully test the _entire_ codebase, leverage:
 

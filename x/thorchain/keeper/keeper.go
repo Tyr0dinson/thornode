@@ -519,7 +519,7 @@ type KeeperSolvencyVoter interface {
 	ListInstantSendStatus(cosmos.Context) ([]common.InstantSendStatus, error)
 	GetInstantSendCredit(cosmos.Context, common.TxID) (common.InstantSendCredit, error)
 	SetInstantSendCredit(cosmos.Context, common.InstantSendCredit) error
-	ListInstantSendCredit(cosmos.Context) ([]common.InstantSendCredit, error)
+	ListInstantSendCredits(cosmos.Context) ([]common.InstantSendCredit, error)
 	PruneInstantSendCredits(cosmos.Context, int64, int) error
 	GetInstantSendInput(cosmos.Context, common.OutputRef) (common.InstantSendCredit, error)
 

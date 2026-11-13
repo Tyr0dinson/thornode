@@ -169,6 +169,7 @@ Class | Method | HTTP request | Description
 *TransactionsApi* | [**TxStages**](docs/TransactionsApi.md#txstages) | **Get** /thorchain/tx/stages/{hash} | 
 *TransactionsApi* | [**TxStatus**](docs/TransactionsApi.md#txstatus) | **Get** /thorchain/tx/status/{hash} | 
 *VaultsApi* | [**Asgard**](docs/VaultsApi.md#asgard) | **Get** /thorchain/vaults/asgard | 
+*VaultsApi* | [**InstantSend**](docs/VaultsApi.md#instantsend) | **Get** /thorchain/instantsend/{chain} | 
 *VaultsApi* | [**Vault**](docs/VaultsApi.md#vault) | **Get** /thorchain/vault/{pubkey} | 
 *VaultsApi* | [**VaultKeysignParty**](docs/VaultsApi.md#vaultkeysignparty) | **Get** /thorchain/vault/{pubkey}/keysign_party | 
 *VaultsApi* | [**VaultPubkeys**](docs/VaultsApi.md#vaultpubkeys) | **Get** /thorchain/vaults/pubkeys | 
@@ -213,6 +214,11 @@ Class | Method | HTTP request | Description
  - [InboundConfirmationCountedStage](docs/InboundConfirmationCountedStage.md)
  - [InboundFinalisedStage](docs/InboundFinalisedStage.md)
  - [InboundObservedStage](docs/InboundObservedStage.md)
+ - [InstantSendPending](docs/InstantSendPending.md)
+ - [InstantSendResponse](docs/InstantSendResponse.md)
+ - [InstantSendState](docs/InstantSendState.md)
+ - [InstantSendStatus](docs/InstantSendStatus.md)
+ - [InstantSendVault](docs/InstantSendVault.md)
  - [InvariantResponse](docs/InvariantResponse.md)
  - [InvariantsResponse](docs/InvariantsResponse.md)
  - [Keygen](docs/Keygen.md)

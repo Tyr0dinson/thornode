@@ -39,7 +39,7 @@ func (s *DashSuite) TestInstantSendClaimsOnlySwapMemosAndEligibleVaults(c *C) {
 		c.Assert(err, IsNil)
 		want := mode == "swap" || mode == "alias" || mode == "name"
 		c.Assert(len(items) > 0, Equals, want, Commentf(mode))
-		marked, err := client.temporalStorage.HasObservedTx(item.Tx)
+		marked, err := client.temporalStorage.HasTxMarker(item.Tx)
 		c.Assert(err, IsNil)
 		c.Assert(marked, Equals, want)
 		cleanup()

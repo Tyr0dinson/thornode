@@ -1,4 +1,5 @@
 .gitignore
+.openapi-generator-ignore
 .travis.yml
 README.md
 api/openapi.yaml
@@ -86,6 +87,11 @@ docs/InboundAddress.md
 docs/InboundConfirmationCountedStage.md
 docs/InboundFinalisedStage.md
 docs/InboundObservedStage.md
+docs/InstantSendPending.md
+docs/InstantSendResponse.md
+docs/InstantSendState.md
+docs/InstantSendStatus.md
+docs/InstantSendVault.md
 docs/InvariantResponse.md
 docs/InvariantsApi.md
 docs/InvariantsResponse.md
@@ -255,6 +261,11 @@ model_inbound_address.go
 model_inbound_confirmation_counted_stage.go
 model_inbound_finalised_stage.go
 model_inbound_observed_stage.go
+model_instant_send_pending.go
+model_instant_send_response.go
+model_instant_send_state.go
+model_instant_send_status.go
+model_instant_send_vault.go
 model_invariant_response.go
 model_invariants_response.go
 model_keygen.go

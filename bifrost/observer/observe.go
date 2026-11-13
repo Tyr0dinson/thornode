@@ -66,7 +66,7 @@ type errataOutcomeBridge interface {
 const networkFeeQueueCapacity = 256
 
 var (
-	errObservedTxInactive = errors.New("observer is not active")
+	errObserverInactive   = errors.New("observer is not active")
 	errObservedTxEmpty    = errors.New("observed transaction has no items")
 	errObservedTxFiltered = errors.New("observed transaction was rejected by observer filters")
 	errObservedTxErrata   = types.ErrObservedTxOrphaned
@@ -881,8 +881,8 @@ func (o *Observer) processTxIns() {
 					}
 					operation = "attestHistoricalXMRSpentRefCertificates"
 				} else {
-					rejectObservedTx(txIn.TxArray, errObservedTxInactive)
-					ackTxInPersisted(txIn, nil)
+					rejectObservedTx(txIn.TxArray, errObserverInactive)
+					ackTxInPersisted(txIn, errObserverInactive)
 					continue
 				}
 			}

@@ -309,3 +309,97 @@ func (s *DashAccountingSuite) TestPruneFailurePreservesInputsAndHeightBarrier(c 
 	c.Assert(err, IsNil)
 	c.Assert(credit.Id.IsEmpty(), Equals, true)
 }
+
+func (s *DashAccountingSuite) TestChainLockVotesAccumulateAndCreditLateObservers(c *C) {
+	for _, mode := range []string{"quorum", "legacy", "churn", "late"} {
+		ctx, mgr, vault, early := dashAccountingFixture(c)
+		mgr.Keeper().SetMimir(ctx, "ObservationDelayFlexibilityDASH", 10)
+		nodes := make(NodeAccounts, 4)
+		keys := make([]secp256k1.PrivKey, 4)
+		for i := range nodes {
+			nodes[i], keys[i] = nodeWithPrivKey(c, mgr.Keeper(), ctx)
+		}
+		pool := NewPool()
+		pool.Asset, pool.Status = common.DASHAsset, PoolAvailable
+		pool.BalanceAsset, pool.BalanceRune = cosmos.NewUint(1000*common.One), cosmos.NewUint(1000*common.One)
+		c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+		send := func(tx common.ObservedTx, indices ...int) error {
+			q := &common.QuorumTx{ObsTx: tx, Inbound: true}
+			for _, i := range indices {
+				q.Attestations = append(q.Attestations, attestObservedTx(c, keys[i], tx, true))
+			}
+			_, err := NewObservedTxQuorumHandler(mgr).Run(ctx, types.NewMsgObservedTxQuorum(q, nodes[1].NodeAddress))
+			return err
+		}
+		pending := func(count int) {
+			state, err := mgr.Keeper().GetInstantSend(ctx, common.DASHChain, vault.PubKey)
+			c.Assert(err, IsNil)
+			c.Assert(state.Pending, HasLen, count, Commentf(mode))
+		}
+		c.Assert(send(early, 0, 1, 2), IsNil)
+		pending(1)
+		before, err := mgr.Keeper().GetObservedTxInVoter(ctx, early.Tx.ID)
+		c.Assert(err, IsNil)
+		block := early
+		block.InstantSend = nil
+		block.BlockHeight, block.FinaliseHeight = 101, 101
+		ctx = ctx.WithBlockHeight(ctx.BlockHeight() + 1)
+		c.Assert(send(block, 0, 1), IsNil)
+		pending(1)
+		c.Assert(send(block, 0, 1), IsNil) // Replaying shares cannot reach quorum.
+		pending(1)
+		voter, err := mgr.Keeper().GetObservedTxInVoter(ctx, early.Tx.ID)
+		c.Assert(err, IsNil)
+		c.Assert(voter.Txs, HasLen, 2)
+		c.Assert(voter.Txs[1].Signers, HasLen, 2)
+
+		mismatch := block
+		mismatch.Tx.Coins = common.NewCoins(common.NewCoin(common.DASHAsset, cosmos.NewUint(2*common.One)))
+		c.Assert(send(mismatch, 2), ErrorMatches, "ChainLock deposit mismatch")
+		pending(1)
+		switch mode {
+		case "legacy":
+			_, err = NewObservedTxInHandler(mgr).Run(ctx, NewMsgObservedTxIn(common.ObservedTxs{block}, nodes[2].NodeAddress))
+			c.Assert(err, IsNil)
+		case "churn":
+			nodes[0].Status = NodeStandby
+			c.Assert(mgr.Keeper().SetNodeAccount(ctx, nodes[0]), IsNil)
+			nodeWithPrivKey(c, mgr.Keeper(), ctx) // Keep four active validators.
+			c.Assert(send(block, 2), IsNil)
+			pending(1) // The departed validator's stored signature cannot settle it.
+			other := block
+			other.BlockHeight, other.FinaliseHeight = 102, 102
+			c.Assert(send(other, 3), IsNil)
+			pending(1) // A different block variant cannot complete this certificate.
+			c.Assert(send(block, 3), IsNil)
+		default:
+			c.Assert(send(block, 2), IsNil)
+		}
+		pending(0)
+		if mode == "late" {
+			ctx = ctx.WithBlockHeight(before.FinalisedHeight + 11)
+		}
+		c.Assert(send(block, 3), IsNil) // Credit still works after the ledger entry is gone.
+		points, err := mgr.Keeper().GetNodeAccountSlashPoints(ctx, nodes[3].NodeAddress)
+		c.Assert(err, IsNil)
+		if mode == "late" {
+			c.Assert(points > 0, Equals, true)
+		} else {
+			c.Assert(points, Equals, int64(0))
+		}
+		c.Assert(send(block, 3), IsNil)
+		repeated, err := mgr.Keeper().GetNodeAccountSlashPoints(ctx, nodes[3].NodeAddress)
+		c.Assert(err, IsNil)
+		c.Assert(repeated, Equals, points)
+		voter, err = mgr.Keeper().GetObservedTxInVoter(ctx, early.Tx.ID)
+		c.Assert(err, IsNil)
+		c.Assert(voter.Tx.InstantSend, NotNil)
+		c.Assert(voter.FinalisedHeight, Equals, before.FinalisedHeight)
+		c.Assert(voter.Tx.HasSigned(nodes[3].NodeAddress), Equals, mode != "late")
+		actual, err := mgr.Keeper().GetVault(ctx, vault.PubKey)
+		c.Assert(err, IsNil)
+		c.Assert(actual.GetCoin(common.DASHAsset).Amount.Uint64(), Equals, uint64(101*common.One))
+		c.Assert(actual.InboundTxCount, Equals, vault.InboundTxCount+1)
+		c.Assert(mgr.Keeper().HasSwapQueueItem(ctx, early.Tx.ID, 0) || mgr.Keeper().HasAdvSwapQueueItem(ctx, early.Tx.ID, 0), Equals, true)
+	}
+}

@@ -73,8 +73,12 @@ func (h ObservedTxInHandler) handle(ctx cosmos.Context, msg MsgObservedTxIn) (*c
 			continue
 		}
 
-		// Early deposits settle only through an independent full ChainLock certificate.
+		// Single-node ChainLock votes accumulate in the same voter as quorum messages.
 		if voter.Tx.InstantSend != nil {
+			err = settleInstantSend(ctx, h.mgr, tx, voter, []cosmos.AccAddress{msg.Signer}, activeNodeAccounts, true)
+			if err != nil {
+				return nil, err
+			}
 			continue
 		}
 

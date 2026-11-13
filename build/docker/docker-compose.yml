@@ -153,6 +153,7 @@ services:
       # mimir default overrides
       HALT_CHURNING: 1
       # 1,000 DASH in duffs for customer InstantSend observations on mocknet.
+      DASH_INSTANT_SEND_ENABLED: 1
       DASH_INSTANT_SEND_MAX_AMOUNT: "100000000000"
       # This opt-in requires S00; develop still skips XMR keygen unconditionally.
       # Production must leave it unset until the reviewed fleet is homogeneous.

@@ -53,6 +53,19 @@ func creditTestDeposit(c *C, ctx cosmos.Context, mgr *Mgrs, vault Vault, tx comm
 	return vault, voter
 }
 
+// Ledger-focused tests supply a certificate directly; handler tests below exercise
+// authentication, partial delivery, validator churn and observation credit.
+func settleTestInstantSend(ctx cosmos.Context, mgr *Mgrs, tx common.ObservedTx, voter ObservedTxVoter, signers []cosmos.AccAddress, active int) error {
+	nodes := make(NodeAccounts, active)
+	for i := range nodes {
+		nodes[i] = GetRandomValidatorNode(NodeActive)
+		if i < len(signers) {
+			nodes[i].NodeAddress = signers[i]
+		}
+	}
+	return settleInstantSend(ctx, mgr, tx, voter, signers, nodes, false)
+}
+
 func (s *DashAccountingSuite) TestAdmissionPolicy(c *C) {
 	for _, mode := range []string{"accept", "disabled", "halted", "zero amount", "minimum", "partial", "future", "non swap", "retiring", "vault sender"} {
 		ctx, mgr, vault, tx := dashAccountingFixture(c)
@@ -97,17 +110,17 @@ func (s *DashAccountingSuite) TestExposureAndIndependentSettlement(c *C) {
 	block.InstantSend = nil
 	block.BlockHeight = 101
 	block.FinaliseHeight = 101
-	c.Assert(settleInstantSend(ctx, mgr.Keeper(), tx, voter, signers, 4), IsNil) // early signatures do not settle
-	c.Assert(settleInstantSend(ctx, mgr.Keeper(), block, voter, signers[:2], 4), IsNil)
+	c.Assert(settleTestInstantSend(ctx, mgr, tx, voter, signers, 4), IsNil) // early signatures do not settle
+	c.Assert(settleTestInstantSend(ctx, mgr, block, voter, signers[:2], 4), IsNil)
 	state, err := mgr.Keeper().GetInstantSend(ctx, common.DASHChain, vault.PubKey)
 	c.Assert(err, IsNil)
 	c.Assert(state.Pending, HasLen, 1)
 	mismatch := block
 	mismatch.Tx.Coins = block.Tx.Coins.Copy()
 	mismatch.Tx.Coins[0].Amount = cosmos.NewUint(2 * common.One)
-	c.Assert(settleInstantSend(ctx, mgr.Keeper(), mismatch, voter, signers, 4), ErrorMatches, "ChainLock deposit mismatch")
-	c.Assert(settleInstantSend(ctx, mgr.Keeper(), block, voter, signers, 4), IsNil)
-	c.Assert(settleInstantSend(ctx, mgr.Keeper(), block, voter, signers, 4), IsNil)
+	c.Assert(settleTestInstantSend(ctx, mgr, mismatch, voter, signers, 4), ErrorMatches, "ChainLock deposit mismatch")
+	c.Assert(settleTestInstantSend(ctx, mgr, block, voter, signers, 4), IsNil)
+	c.Assert(settleTestInstantSend(ctx, mgr, block, voter, signers, 4), IsNil)
 	state, err = mgr.Keeper().GetInstantSend(ctx, common.DASHChain, vault.PubKey)
 	c.Assert(err, IsNil)
 	c.Assert(state.Pending, HasLen, 0)

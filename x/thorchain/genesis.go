@@ -21,16 +21,6 @@ func ValidateGenesis(data GenesisState) error {
 	if err != nil {
 		return err
 	}
-	seenInstantSend := make(map[string]bool)
-	for _, state := range data.InstantSend {
-		if err := state.Validate(); err != nil {
-			return err
-		}
-		if seenInstantSend[state.Chain.String()+"/"+state.PubKey.String()] {
-			return errors.New("duplicate InstantSend genesis vault")
-		}
-		seenInstantSend[state.Chain.String()+"/"+state.PubKey.String()] = true
-	}
 	for i := range data.SolVaultNonces {
 		if err := data.SolVaultNonces[i].Valid(); err != nil {
 			return err
@@ -675,7 +665,7 @@ func ExportGenesis(ctx cosmos.Context, k keeper.Keeper) GenesisState {
 		panic(err)
 	}
 
-	instantSendCredits, err := k.ListInstantSendCredit(ctx)
+	instantSendCredits, err := k.ListInstantSendCredits(ctx)
 	if err != nil {
 		panic(err)
 	}

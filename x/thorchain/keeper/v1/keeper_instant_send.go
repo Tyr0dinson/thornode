@@ -143,7 +143,7 @@ func (k KVStore) GetInstantSendCredit(ctx cosmos.Context, key common.TxID) (comm
 	return value, err
 }
 
-func (k KVStore) ListInstantSendCredit(ctx cosmos.Context) ([]common.InstantSendCredit, error) {
+func (k KVStore) ListInstantSendCredits(ctx cosmos.Context) ([]common.InstantSendCredit, error) {
 	iter := k.getIterator(ctx, prefixInstantSendCredit)
 	defer iter.Close()
 	var values []common.InstantSendCredit

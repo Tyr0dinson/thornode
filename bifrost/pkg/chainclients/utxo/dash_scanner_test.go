@@ -220,7 +220,7 @@ func (s *DashSuite) TestDashScannerHeightValidation(c *C) {
 		height, err := client.GetHeight()
 		c.Assert(err, IsNil)
 		c.Assert(height, Equals, int64(1000))
-		c.Assert(client.chainLockHeightHealth.Load().isHealthy(common.DASHChain, time.Now(), 980), Equals, false)
+		c.Assert(client.chainLockHealth.Load().isHealthy(common.DASHChain, time.Now(), 980), Equals, false)
 		c.Assert(f.maxRequested.Load(), Equals, int64(0)) // No lookup of the unavailable target.
 		c.Assert(client.ReportSolvency(height), NotNil)
 		c.Assert(f.bridge.balanceReads.Load(), Equals, int64(0))
@@ -235,11 +235,11 @@ func (s *DashSuite) TestDashScannerHeightValidation(c *C) {
 		{local: 1000, locked: 1000, failMethod: "getblockhash"},
 	} {
 		f.state.Store(&state)
-		stale := &chainLockHeightHealth{1000, 1000, time.Now().Add(-time.Hour)}
-		client.chainLockHeightHealth.Store(stale)
+		stale := &chainLockHealth{1000, 1000, time.Now().Add(-time.Hour)}
+		client.chainLockHealth.Store(stale)
 		_, err := client.GetHeight()
 		c.Assert(err, NotNil)
-		c.Assert(client.chainLockHeightHealth.Load(), Equals, stale)
+		c.Assert(client.chainLockHealth.Load(), Equals, stale)
 	}
 	for _, invalid := range []string{"unlocked", "height", "hash"} {
 		f.state.Store(&dashCatchUpState{local: 980, locked: 1000, badBlock: invalid})
@@ -345,24 +345,24 @@ func TestDashHeightHealthBoundaries(t *testing.T) {
 	now := time.Now()
 	for _, tc := range []struct {
 		name    string
-		health  *chainLockHeightHealth
+		health  *chainLockHealth
 		scanned int64
 		want    bool
 	}{
 		{"no successful read", nil, 100, false},
-		{"missing timestamp", &chainLockHeightHealth{tipHeight: 100, chainLockHeight: 100}, 100, false},
-		{"caught up", &chainLockHeightHealth{100, 100, now}, 100, true},
-		{"one block finality gap", &chainLockHeightHealth{101, 100, now}, 100, true},
-		{"two block finality gap", &chainLockHeightHealth{102, 100, now}, 100, false},
-		{"just before expiry", &chainLockHeightHealth{100, 100, now.Add(-150*time.Second + time.Nanosecond)}, 100, true},
-		{"at expiry", &chainLockHeightHealth{100, 100, now.Add(-150 * time.Second)}, 100, false},
-		{"after expiry", &chainLockHeightHealth{100, 100, now.Add(-time.Hour)}, 100, false},
-		{"locks recovered but scanner behind", &chainLockHeightHealth{110, 110, now}, 100, false},
-		{"one block scanner gap", &chainLockHeightHealth{110, 110, now}, 109, true},
-		{"two block scanner gap", &chainLockHeightHealth{110, 110, now}, 108, false},
-		{"combined gap exceeds limit", &chainLockHeightHealth{110, 109, now}, 108, false},
-		{"daemon behind ChainLock", &chainLockHeightHealth{980, 1000, now}, 980, false},
-		{"daemon one block behind ChainLock", &chainLockHeightHealth{999, 1000, now}, 999, false},
+		{"missing timestamp", &chainLockHealth{tipHeight: 100, lockHeight: 100}, 100, false},
+		{"caught up", &chainLockHealth{100, 100, now}, 100, true},
+		{"one block finality gap", &chainLockHealth{101, 100, now}, 100, true},
+		{"two block finality gap", &chainLockHealth{102, 100, now}, 100, false},
+		{"just before expiry", &chainLockHealth{100, 100, now.Add(-150*time.Second + time.Nanosecond)}, 100, true},
+		{"at expiry", &chainLockHealth{100, 100, now.Add(-150 * time.Second)}, 100, false},
+		{"after expiry", &chainLockHealth{100, 100, now.Add(-time.Hour)}, 100, false},
+		{"locks recovered but scanner behind", &chainLockHealth{110, 110, now}, 100, false},
+		{"one block scanner gap", &chainLockHealth{110, 110, now}, 109, true},
+		{"two block scanner gap", &chainLockHealth{110, 110, now}, 108, false},
+		{"combined gap exceeds limit", &chainLockHealth{110, 109, now}, 108, false},
+		{"daemon behind ChainLock", &chainLockHealth{980, 1000, now}, 980, false},
+		{"daemon one block behind ChainLock", &chainLockHealth{999, 1000, now}, 999, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := tc.health.isHealthy(common.DASHChain, now, tc.scanned); got != tc.want {
@@ -449,7 +449,7 @@ func (s *DashSuite) TestDashScannerHeightHealth(c *C) {
 	_, err = client.GetHeight()
 	c.Assert(err, IsNil)
 	c.Assert(client.IsBlockScannerHealthy(), Equals, false)
-	client.chainLockHeightHealth.Store(nil)
+	client.chainLockHealth.Store(nil)
 	scanner.Start(make(chan types.TxIn), make(chan common.NetworkFee))
 	defer scanner.Stop()
 	waitForScan := func(height int64) {
@@ -496,12 +496,12 @@ func (s *DashSuite) TestDashScannerHeightHealth(c *C) {
 		{block: 120, locked: 120, wrongHash: true},
 		{block: 120, locked: -1},
 	} {
-		stale := &chainLockHeightHealth{120, 120, time.Now().Add(-time.Hour)}
-		client.chainLockHeightHealth.Store(stale)
+		stale := &chainLockHealth{120, 120, time.Now().Add(-time.Hour)}
+		client.chainLockHealth.Store(stale)
 		state.Store(&failure)
 		_, err = client.GetHeight()
 		c.Assert(err, NotNil)
-		c.Assert(client.chainLockHeightHealth.Load(), Equals, stale)
+		c.Assert(client.chainLockHealth.Load(), Equals, stale)
 		c.Assert(scanner.IsHealthy(), Equals, true)
 		c.Assert(client.IsBlockScannerHealthy(), Equals, false)
 	}
@@ -519,18 +519,18 @@ func (s *DashSuite) TestDashScannerHeightHealth(c *C) {
 	c.Assert(client.IsBlockScannerHealthy(), Equals, false)
 
 	// With no completed reads (including a hung RPC), the snapshot expires.
-	client.chainLockHeightHealth.Store(&chainLockHeightHealth{120, 120, time.Now().Add(-time.Hour)})
+	client.chainLockHealth.Store(&chainLockHealth{120, 120, time.Now().Add(-time.Hour)})
 	c.Assert(client.IsBlockScannerHealthy(), Equals, false)
 
 	// Other UTXO chains still use the shared scanner flag and ordinary height.
-	client.chainLockHeightHealth.Store(nil)
+	client.chainLockHealth.Store(nil)
 	for _, chain := range []common.Chain{common.BTCChain, common.BCHChain, common.LTCChain, common.DOGEChain, common.ZECChain} {
 		client.cfg.ChainID = chain
 		state.Store(&rpcState{block: 125, locked: 120, failMethod: "getbestchainlock"})
 		height, err = client.GetHeight()
 		c.Assert(err, IsNil)
 		c.Assert(height, Equals, int64(125))
-		c.Assert(client.chainLockHeightHealth.Load(), IsNil)
+		c.Assert(client.chainLockHealth.Load(), IsNil)
 		c.Assert(client.IsBlockScannerHealthy(), Equals, true)
 	}
 }
@@ -589,6 +589,11 @@ func (s *DashSuite) TestDashObservationBatchPreservesOrderAndFirstItem(c *C) {
 	c.Assert(accepted, DeepEquals, []*types.TxInItem{first, second})
 	accepted, err = client.trackObservedTxs([]*types.TxInItem{duplicate, second})
 	c.Assert(err, IsNil)
+	c.Assert(accepted, DeepEquals, []*types.TxInItem{duplicate, second})
+	_, err = client.temporalStorage.CompleteBlockTxs([]string{firstID, secondID})
+	c.Assert(err, IsNil)
+	accepted, err = client.trackObservedTxs([]*types.TxInItem{duplicate, second})
+	c.Assert(err, IsNil)
 	c.Assert(accepted, HasLen, 0)
 }
 
@@ -610,7 +615,45 @@ func startDashTestScanner(c *C, client *Client) func() {
 		time.Sleep(time.Millisecond)
 	}
 	c.Assert(scanner.IsHealthy(), Equals, true)
-	client.chainLockHeightHealth.Store(&chainLockHeightHealth{tipHeight: 100, chainLockHeight: 100, checkedAt: time.Now()})
+	client.chainLockHealth.Store(&chainLockHealth{tipHeight: 100, lockHeight: 100, checkedAt: time.Now()})
 	var once sync.Once
 	return func() { once.Do(func() { scanner.Stop(); _ = storage.Close() }) }
+}
+
+func (s *DashSuite) TestDashBlockMarkersWaitForObserverPersistence(c *C) {
+	client, f, cleanup := newDashMempoolFixture(c)
+	defer cleanup()
+	client.consolidateInProgress.Store(true)
+	client.cfg.UTXO.BlockCacheCount = 2000
+	f.chainLocked = true
+	client.disableVinZeroBatch = true
+	batch, err := client.FetchTxs(150, 200)
+	c.Assert(err, IsNil)
+	c.Assert(batch.TxArray, HasLen, 2)
+	c.Assert(batch.Persisted, NotNil)
+	c.Assert(batch.FinalizePersistence, NotNil)
+	// A failed handoff, including a restart before acknowledgement, must rescan.
+	retry, err := client.FetchTxs(150, 200)
+	c.Assert(err, IsNil)
+	c.Assert(retry.TxArray, HasLen, 2)
+	c.Assert(retry.FinalizePersistence(), IsNil)
+	// Duplicate completion is harmless after Observer has persisted the batch.
+	c.Assert(batch.FinalizePersistence(), IsNil)
+	retry, err = client.FetchTxs(150, 200)
+	c.Assert(err, IsNil)
+	c.Assert(retry.TxArray, HasLen, 0)
+	c.Assert(retry.Persisted, IsNil)
+}
+
+func (s *DashSuite) TestDashRelayFloorIgnoresDaemonSettings(c *C) {
+	client, f, cleanup := newDashMempoolFixture(c)
+	defer cleanup()
+	for _, value := range []any{map[string]any{"relayfee": 0.1}, &btcjson.RPCError{Code: btcjson.ErrRPCInternal.Code, Message: "offline"}} {
+		f.overrideRPC = func(method string, _ []json.RawMessage) (any, bool) {
+			return value, method == "getnetworkinfo"
+		}
+		client.minRelayFeeSats.Store(0)
+		client.updateNetworkInfo()
+		c.Assert(client.minRelayFeeSats.Load(), Equals, fixedMinRelayFeeSats)
+	}
 }

@@ -1608,7 +1608,9 @@ func (b *thorchainBridge) GetInstantSend(chain common.Chain) (*stypes.QueryInsta
 		return nil, fmt.Errorf("InstantSend accounting query returned status %d", status)
 	}
 	var response stypes.QueryInstantSendResponse
-	if err = jsonpb.Unmarshal(strings.NewReader(string(data)), &response); err != nil {
+	decoder := jsonpb.Unmarshaler{AllowUnknownFields: true}
+	err = decoder.Unmarshal(strings.NewReader(string(data)), &response)
+	if err != nil {
 		return nil, err
 	}
 	return &response, nil

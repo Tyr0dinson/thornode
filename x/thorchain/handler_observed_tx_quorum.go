@@ -119,15 +119,13 @@ func (h ObservedTxQuorumHandler) handle(ctx cosmos.Context, msg types.MsgObserve
 		}
 	}
 
-	// A finalized early deposit has a separate settlement certificate. Do not
-	// feed it through the ordinary finality/slash-credit path a second time.
+	// ChainLock votes retain normal observation credit, but cannot repeat the
+	// economic processing of an already credited InstantSend deposit.
 	if inbound && voter.Tx.InstantSend != nil && obsTx.InstantSend == nil {
-		cacheCtx, commit := ctx.CacheContext()
-		err = settleInstantSend(cacheCtx, k, obsTx, voter, accAddrs, len(activeNodeAccounts))
+		err = settleInstantSend(ctx, h.mgr, obsTx, voter, accAddrs, activeNodeAccounts, false)
 		if err != nil {
 			return nil, err
 		}
-		commit()
 		return &cosmos.Result{}, nil
 	}
 	var commitAdmission func()
@@ -195,7 +193,7 @@ func (h ObservedTxQuorumHandler) handle(ctx cosmos.Context, msg types.MsgObserve
 		}
 		commitAdmission()
 		if instantSendState != nil {
-			publishInstantSendAccounting(*instantSendState)
+			updateInstantSendMetrics(*instantSendState)
 		}
 	}
 	return &cosmos.Result{}, nil

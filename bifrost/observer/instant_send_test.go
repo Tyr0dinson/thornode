@@ -17,8 +17,7 @@ import (
 	stypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
-// A nil batch acknowledgement does not mean that an inactive Observer accepted
-// a DASH item. The producer must use the per-item stored/rejected callbacks.
+// An inactive Observer must reject a durable batch so the scanner can retry.
 func TestDashDeliveryRejectsInactiveObserverBeforeAcceptingBlockFallback(t *testing.T) {
 	for _, status := range []stypes.NodeStatus{stypes.NodeStatus_Unknown, stypes.NodeStatus_Standby} {
 		t.Run(status.String(), func(t *testing.T) {
@@ -46,10 +45,10 @@ func TestDashDeliveryRejectsInactiveObserverBeforeAcceptingBlockFallback(t *test
 			}
 			first := observation()
 			observer.globalTxsQueue <- first
-			require.NoError(t, waitPersistenceAck(t, first.Persisted))
+			require.ErrorIs(t, waitPersistenceAck(t, first.Persisted), errObserverInactive)
 			select {
 			case err := <-rejected:
-				require.ErrorIs(t, err, errObservedTxInactive)
+				require.ErrorIs(t, err, errObserverInactive)
 			default:
 				t.Fatal("inactive Observer did not reject the DASH delivery")
 			}
@@ -92,7 +91,7 @@ func TestDashDeliveryCompletesMarkerAfterObserverPersistence(t *testing.T) {
 	item := &types.TxInItem{Tx: "dash-delivery", BlockHeight: 123, Memo: "NOOP"}
 	stored := 0
 	item.OnObservedTxStored = func() {
-		require.NoError(t, scanner.CompleteInstantSendObservations(ids))
+		require.NoError(t, scanner.MarkInstantSendStored(ids))
 		stored++
 	}
 	require.NoError(t, observer.processObservedTx(types.TxIn{Chain: common.DASHChain, Filtered: true, TxArray: []*types.TxInItem{item}}))
@@ -106,10 +105,33 @@ func TestDashDeliveryCompletesMarkerAfterObserverPersistence(t *testing.T) {
 	require.Len(t, deck, 1)
 	require.Len(t, deck[0].TxArray, 1)
 	require.EqualValues(t, 123, deck[0].TxArray[0].BlockHeight)
-	fallback, err := scanner.TrackInstantSendBlockTxs(ids)
+	fallback, err := scanner.FilterNewBlockTxs(ids)
 	require.NoError(t, err)
 	require.Equal(t, ids, fallback)
-	fallback, err = scanner.TrackInstantSendBlockTxs(ids)
+	// ChainLock delivery has no early callbacks. Replay after persistence but
+	// before marker completion must deduplicate against the restored deck.
+	observer.storage = storage
+	observer.onDeck = make(map[txInKey]*types.TxIn)
+	for _, entry := range deck {
+		observer.onDeck[TxInKey(entry)] = entry
+	}
+	block := types.TxIn{Chain: common.DASHChain, Filtered: true, Persisted: make(chan error, 1), TxArray: []*types.TxInItem{{Tx: "dash-delivery", BlockHeight: 150, Memo: "NOOP"}}}
+	require.NoError(t, observer.processObservedTx(block))
+	require.NoError(t, observer.processObservedTx(block))
+	storedDeck, err := storage.GetOnDeckTxs()
+	require.NoError(t, err)
+	count := 0
+	for _, entry := range storedDeck {
+		for _, tx := range entry.TxArray {
+			if tx.BlockHeight == 150 {
+				count++
+			}
+		}
+	}
+	require.Equal(t, 1, count)
+	_, err = scanner.CompleteBlockTxs(ids)
+	require.NoError(t, err)
+	fallback, err = scanner.FilterNewBlockTxs(ids)
 	require.NoError(t, err)
 	require.Empty(t, fallback)
 }

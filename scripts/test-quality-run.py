@@ -10,18 +10,8 @@ import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-from test_output import is_noise
-
 
 def failure_output(output):
-    if os.environ.get("TEST_QUIET") == "1":
-        # Keep every diagnostic: later output must not push failures out of a tail.
-        return "\n".join(
-            line
-            for chunk in output
-            for line in chunk.splitlines()
-            if not is_noise(line)
-        )
     return "\n".join(output[-100:])
 
 
@@ -291,8 +281,6 @@ def main():
         report / "junit.xml", tests, output, proc.returncode != 0, selection_errors
     )
     if stderr:
-        if os.environ.get("TEST_QUIET") == "1":
-            stderr = failure_output(stderr.splitlines())
         print(stderr, file=sys.stderr)
     if proc.returncode or selection_errors:
         print(failure_output(output), file=sys.stderr)

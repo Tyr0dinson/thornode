@@ -59,9 +59,10 @@ func (s *DashSuite) TestDashSolvencyReportsOnlyInsolventOrAllClear(c *C) {
 	c.Assert(client.reportDashSolvency(), IsNil)
 	c.Assert(queue, HasLen, 1)
 	c.Assert((<-queue).PubKey, Equals, key)
-	// Identical retries at a stalled ChainLock do not rebroadcast the same vote.
+	// Queue delivery is not an attestation acknowledgement: retry even at a stalled ChainLock.
 	c.Assert(client.reportDashSolvency(), IsNil)
-	c.Assert(queue, HasLen, 0)
+	c.Assert(queue, HasLen, 1)
+	c.Assert((<-queue).PubKey, Equals, key)
 	recoverFirst, failSecond = true, true
 	c.Assert(client.reportDashSolvency(), NotNil)
 	c.Assert(queue, HasLen, 0) // incomplete collection cannot clear the halt

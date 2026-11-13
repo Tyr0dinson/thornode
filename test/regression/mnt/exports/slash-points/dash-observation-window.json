@@ -321,6 +321,12 @@
       "chain_contracts": [],
       "dynamic_fee_accumulators": [],
       "dynamic_fee_records": [],
+      "instant_send_status": [
+        {
+          "chain": "DASH",
+          "min_height": "76"
+        }
+      ],
       "last_chain_heights": [
         {
           "chain": "BTC",

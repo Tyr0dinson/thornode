@@ -268,17 +268,36 @@ func (a *DashInstantSendActor) lowFee(config *OpConfig) (result OpResult) {
 	if err != nil {
 		return OpResult{Finish: true, Error: err}
 	}
+	// Leave time to observe the lock before mining, as in the early-credit scenario.
+	if a.dash != nil {
+		_, _, err = a.dash.WaitForBlockAdvance(30 * time.Second)
+		if err != nil {
+			return OpResult{Finish: true, Error: err}
+		}
+	}
 	id, err := a.broadcastTx("low-fee", dashInstantSendSmallPayment, dashInstantSendLowFee)
 	if err != nil {
 		return OpResult{Finish: true, Error: err}
 	}
+	checkedUnmined := false
 	deadline := time.Now().Add(3 * time.Minute)
 	for time.Now().Before(deadline) {
 		// Read core first, then daemon finality, to avoid claiming a violation when
 		// a ChainLock appeared between the two requests.
 		stages, stageErr := thornode.GetTxStages(id)
 		tx, txErr := a.dash.GetRawTransactionVerbose(id)
-		if stageErr == nil && txErr == nil && stages.InboundFinalised != nil && stages.InboundFinalised.Completed {
+		if stageErr != nil || txErr != nil {
+			time.Sleep(time.Second)
+			continue
+		}
+		finalised := stages.InboundFinalised != nil && stages.InboundFinalised.Completed
+		if !finalised && tx.Confirmations == 0 && !tx.ChainLock && tx.InstantSendLocked() {
+			checkedUnmined = true
+		}
+		if !checkedUnmined && (tx.Confirmations > 0 || tx.ChainLock) {
+			return OpResult{Finish: true, Error: fmt.Errorf("low-fee deposit mined before the unmined lock check: %s", id)}
+		}
+		if finalised {
 			if !tx.ChainLock {
 				return OpResult{Finish: true, Error: fmt.Errorf("low-fee deposit credited before ChainLock: %s", id)}
 			}

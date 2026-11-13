@@ -1,0 +1,270 @@
+{{ template "6-validators-btc-eth-pool-state.yaml" }}
+---
+# Replace the BTC pool fixtures while retaining the six validators and bonds.
+type: state
+genesis:
+  app_state:
+    thorchain:
+      liquidity_providers: null
+      pools: null
+      network_fees: null
+      vaults: null
+---
+{{ template "dash-eth-pool-state.yaml" }}
+---
+# The single-node pool template needs a vault with all six active members.
+# Otherwise the validator manager starts Ragnarok after the first block.
+type: state
+genesis:
+  app_state:
+    thorchain:
+      vaults: null
+---
+type: state
+genesis:
+  app_state:
+    thorchain:
+      vaults:
+        - block_height: "0"
+          chains: [THOR, DASH, ETH]
+          coins:
+            - asset: DASH.DASH
+              amount: "10000000000"
+              decimals: "8"
+            - asset: ETH.ETH
+              amount: "1000000000"
+              decimals: "8"
+          inbound_tx_count: "2"
+          membership:
+            - {{ pubkey_cat }}
+            - {{ pubkey_fox }}
+            - {{ pubkey_pig }}
+            - {{ pubkey_frog }}
+            - {{ pubkey_goat }}
+            - {{ pubkey_hawk }}
+          pub_key: {{ pubkey_dog }}
+          status: ActiveVault
+          type: AsgardVault
+      mimirs:
+        - key: DashInstantSendEnabled
+          value: "1"
+        - key: DashInstantSendMaxAmount
+          value: "1000000000"
+        - key: DashInstantSendTimeout
+          value: "300"
+        - key: ObservationDelayFlexibilityDASH
+          value: "50"
+      last_chain_heights:
+        - chain: DASH
+          height: "100"
+---
+type: create-blocks
+count: 1
+---
+# Credit the deposit once with five of the six active validators.
+type: tx-observed-in-quorum
+nodes: [fox, pig, frog, goat, hawk]
+observation:
+  tx:
+    id: "{{ observe_txid 1 }}"
+    chain: DASH
+    from_address: {{ addr_dash_fox }}
+    to_address: {{ addr_dash_dog }}
+    coins:
+      - asset: DASH.DASH
+        amount: "100000000"
+        decimals: 8
+    gas:
+      - asset: DASH.DASH
+        amount: "4000"
+    memo: "=:ETH.ETH:{{ addr_eth_fox }}"
+  observed_pub_key: {{ pubkey_dog }}
+  block_height: 96
+  finalise_height: 96
+  spent_output_refs:
+    - tx_hash: "{{ observe_txid 900 }}"
+      output_index: 0
+  instant_send: {}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/instantsend/DASH
+asserts:
+  - (.vaults[0].state.pending // []) | length == 1
+---
+# Partial ChainLock shares must survive successful message delivery.
+type: tx-observed-in-quorum
+nodes: [fox, pig]
+observation:
+  tx:
+    id: "{{ observe_txid 1 }}"
+    chain: DASH
+    from_address: {{ addr_dash_fox }}
+    to_address: {{ addr_dash_dog }}
+    coins:
+      - asset: DASH.DASH
+        amount: "100000000"
+        decimals: 8
+    gas:
+      - asset: DASH.DASH
+        amount: "4000"
+    memo: "=:ETH.ETH:{{ addr_eth_fox }}"
+  observed_pub_key: {{ pubkey_dog }}
+  block_height: 101
+  finalise_height: 101
+  spent_output_refs:
+    - tx_hash: "{{ observe_txid 900 }}"
+      output_index: 0
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/instantsend/DASH
+asserts:
+  - (.vaults[0].state.pending // []) | length == 1
+---
+type: tx-observed-in-quorum
+nodes: [frog]
+observation:
+  tx:
+    id: "{{ observe_txid 1 }}"
+    chain: DASH
+    from_address: {{ addr_dash_fox }}
+    to_address: {{ addr_dash_dog }}
+    coins:
+      - asset: DASH.DASH
+        amount: "100000000"
+        decimals: 8
+    gas:
+      - asset: DASH.DASH
+        amount: "4000"
+    memo: "=:ETH.ETH:{{ addr_eth_fox }}"
+  observed_pub_key: {{ pubkey_dog }}
+  block_height: 101
+  finalise_height: 101
+  spent_output_refs:
+    - tx_hash: "{{ observe_txid 900 }}"
+      output_index: 0
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/instantsend/DASH
+asserts:
+  - (.vaults[0].state.pending // []) | length == 1
+---
+# A single-node observation completes the same ChainLock certificate.
+type: tx-observed-in
+signer: {{ addr_thor_hawk }}
+txs:
+  - tx:
+      id: "{{ observe_txid 1 }}"
+      chain: DASH
+      from_address: {{ addr_dash_fox }}
+      to_address: {{ addr_dash_dog }}
+      coins:
+        - asset: DASH.DASH
+          amount: "100000000"
+          decimals: 8
+      gas:
+        - asset: DASH.DASH
+          amount: "4000"
+      memo: "=:ETH.ETH:{{ addr_eth_fox }}"
+    observed_pub_key: {{ pubkey_dog }}
+    block_height: 101
+    finalise_height: 101
+    spent_output_refs:
+      - tx_hash: "{{ observe_txid 900 }}"
+        output_index: 0
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/instantsend/DASH
+asserts:
+  - (.vaults[0].state.pending // []) | length == 0
+---
+# The remaining observer still receives credit after exposure was released.
+type: tx-observed-in-quorum
+nodes: [cat]
+observation:
+  tx:
+    id: "{{ observe_txid 1 }}"
+    chain: DASH
+    from_address: {{ addr_dash_fox }}
+    to_address: {{ addr_dash_dog }}
+    coins:
+      - asset: DASH.DASH
+        amount: "100000000"
+        decimals: 8
+    gas:
+      - asset: DASH.DASH
+        amount: "4000"
+    memo: "=:ETH.ETH:{{ addr_eth_fox }}"
+  observed_pub_key: {{ pubkey_dog }}
+  block_height: 101
+  finalise_height: 101
+  spent_output_refs:
+    - tx_hash: "{{ observe_txid 900 }}"
+      output_index: 0
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/instantsend/DASH
+asserts:
+  - (.vaults[0].state.pending // []) | length == 0
+---
+type: check
+endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_cat }}
+asserts:
+  - .slash_points == 0
+---
+# Replay cannot credit the vault or run a second swap.
+type: tx-observed-in-quorum
+nodes: [fox, pig, frog, goat, hawk, cat]
+observation:
+  tx:
+    id: "{{ observe_txid 1 }}"
+    chain: DASH
+    from_address: {{ addr_dash_fox }}
+    to_address: {{ addr_dash_dog }}
+    coins:
+      - asset: DASH.DASH
+        amount: "100000000"
+        decimals: 8
+    gas:
+      - asset: DASH.DASH
+        amount: "4000"
+    memo: "=:ETH.ETH:{{ addr_eth_fox }}"
+  observed_pub_key: {{ pubkey_dog }}
+  block_height: 101
+  finalise_height: 101
+  spent_output_refs:
+    - tx_hash: "{{ observe_txid 900 }}"
+      output_index: 0
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/instantsend/DASH
+asserts:
+  - (.vaults[0].state.pending // []) | length == 0
+---
+type: check
+endpoint: http://localhost:1317/thorchain/vaults/asgard
+asserts:
+  - '[.[].coins[] | select(.asset == "DASH.DASH") | .amount | tonumber] | add == 10100000000'
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - length == 1
+  - .[0].in_hash == "{{ observe_txid 1 }}" and .[0].chain == "ETH"

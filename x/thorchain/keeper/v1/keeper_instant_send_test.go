@@ -103,11 +103,11 @@ func (s *InstantSendKeeperSuite) TestInputPruningKeepsWholeCredits(c *C) {
 		c.Assert(k.SetInstantSendCredit(ctx, credits[i]), IsNil)
 	}
 	c.Assert(k.PruneInstantSendCredits(ctx, 100, 5000), IsNil)
-	all, err := k.ListInstantSendCredit(ctx)
+	all, err := k.ListInstantSendCredits(ctx)
 	c.Assert(err, IsNil)
 	c.Assert(all, HasLen, 2)
 	c.Assert(k.PruneInstantSendCredits(ctx, 102, 5000), IsNil)
-	all, err = k.ListInstantSendCredit(ctx)
+	all, err = k.ListInstantSendCredits(ctx)
 	c.Assert(err, IsNil)
 	c.Assert(all, HasLen, 1)
 	c.Assert(all[0].Id, Equals, credits[1].Id)
@@ -119,7 +119,7 @@ func (s *InstantSendKeeperSuite) TestInputPruningKeepsWholeCredits(c *C) {
 		}
 	}
 	c.Assert(k.PruneInstantSendCredits(ctx, 102, 5000), IsNil)
-	all, err = k.ListInstantSendCredit(ctx)
+	all, err = k.ListInstantSendCredits(ctx)
 	c.Assert(err, IsNil)
 	c.Assert(all, HasLen, 0)
 }

@@ -27,6 +27,9 @@ import (
 	mem "gitlab.com/thorchain/thornode/v3/x/thorchain/memo"
 )
 
+// BTC and DASH signing use a fixed relay floor in smallest units per kilobyte.
+const fixedMinRelayFeeSats uint64 = 1000
+
 ////////////////////////////////////////////////////////////////////////////////////////
 // Address Checks
 ////////////////////////////////////////////////////////////////////////////////////////
@@ -215,28 +218,11 @@ func (c *Client) canDeleteBlock(blockMeta *utxo.BlockMeta) bool {
 	return true
 }
 
-// btcFixedMinRelayFeeSats is the daemon-independent BTC min-relay-fee floor (sats).
-// It MUST be identical on every node: it is signing-consensus-relevant (see
-// updateNetworkInfo). 1000 sat == Bitcoin Core's historical 0.00001 BTC/kvB default
-// (<=29.0), which the network majority runs; pinning here keeps all nodes aligned
-// regardless of Core version. Do not make this per-node configurable.
-const btcFixedMinRelayFeeSats uint64 = 1000
-
+// updateNetworkInfo pins the signing fee floor for BTC and DASH so different
+// daemon versions or local relay settings cannot produce different outbounds.
 func (c *Client) updateNetworkInfo() {
-	// For BTC the min-relay-fee floor is signing-consensus-relevant: minRelayFeeSats
-	// feeds both the reported network fee (sendNetworkFee) and the outbound fee floor
-	// (applyFeeLimits), which shape the change output, its sighash and the TSS message
-	// id. Bitcoin Core <=29.0 reports relayfee 0.00001 BTC/kvB (1000 sat) while 29.1+
-	// and 30.x default to 0.000001 (100 sat), so a daemon-derived floor makes nodes on
-	// different Core lines build different change outputs for the same outbound — the
-	// minority then signs a different message, is absent from the majority's party, and
-	// is blamed/jailed with no error in its own log. Pin BTC to a fixed floor
-	// independent of the daemon — and independent of whether the GetNetworkInfo RPC
-	// succeeds, so an RPC failure can never leave the BTC floor at 0 — so every node
-	// computes the same fee regardless of Core version. Other UTXO chains keep their
-	// daemon-derived relay fee.
-	if c.cfg.ChainID.Equals(common.BTCChain) {
-		c.minRelayFeeSats.Store(btcFixedMinRelayFeeSats)
+	if c.cfg.ChainID.OneOf(common.BTCChain, common.DASHChain) {
+		c.minRelayFeeSats.Store(fixedMinRelayFeeSats)
 		return
 	}
 	networkInfo, err := c.rpc.GetNetworkInfo()
@@ -608,8 +594,9 @@ func (c *Client) getTxIn(tx *btcjson.TxRawResult, height int64, isMemPool bool, 
 					counter.WithLabelValues("input_limit").Inc()
 				}
 			}
+			return types.TxInItem{}, errors.New("DASH input limit exceeded")
 		}
-		inputs, inputErr := dashInputs(tx.Vin)
+		inputs, inputErr := dashVinInputs(tx.Vin)
 		if inputErr != nil {
 			return types.TxInItem{}, inputErr
 		}
@@ -784,8 +771,8 @@ func (c *Client) extractTxs(block *btcjson.GetBlockVerboseTxResult) (types.TxIn,
 	return txIn, err
 }
 
-// trackObservedTxs claims a block batch before delivery. InstantSend chains also accept pending
-// InstantSend handoffs. Completed block markers remain even if Observer misses delivery.
+// trackObservedTxs filters block observations. DASH completes its markers after
+// durable Observer delivery; other chains retain their existing claim behavior.
 func (c *Client) trackObservedTxs(items []*types.TxInItem) ([]*types.TxInItem, error) {
 	if len(items) == 0 {
 		return nil, nil
@@ -806,12 +793,12 @@ func (c *Client) trackObservedTxs(items []*types.TxInItem) ([]*types.TxInItem, e
 	var added []string
 	var err error
 	if c.cfg.ChainID.Equals(common.DASHChain) {
-		added, err = c.temporalStorage.TrackInstantSendBlockTxs(ids)
+		added, err = c.temporalStorage.FilterNewBlockTxs(ids)
 	} else {
 		added, err = c.temporalStorage.TrackObservedTxs(ids)
 	}
 	if err != nil {
-		return nil, fmt.Errorf("persist observed transaction markers: %w", err)
+		return nil, fmt.Errorf("fail to track observations: %w", err)
 	}
 	accepted := make([]*types.TxInItem, 0, len(added))
 	for _, id := range added {

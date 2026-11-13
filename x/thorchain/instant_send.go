@@ -176,8 +176,8 @@ func instantSendLimits(ctx cosmos.Context, k keeper.Keeper, chain common.Chain) 
 
 // settleInstantSend handles the second observation separately from economic finality.
 // Early signatures cannot release exposure, including after validator churn.
-func settleInstantSend(ctx cosmos.Context, k keeper.Keeper, tx common.ObservedTx, voter ObservedTxVoter, signers []cosmos.AccAddress, active int) error {
-	if tx.InstantSend != nil || !tx.IsFinal() || !types.HasSuperMajority(len(signers), active) {
+func settleInstantSend(ctx cosmos.Context, mgr Manager, tx common.ObservedTx, voter ObservedTxVoter, signers []cosmos.AccAddress, nodes NodeAccounts, slashDuplicates bool) error {
+	if tx.InstantSend != nil || !tx.IsFinal() {
 		return nil
 	}
 	if !tx.Tx.Chain.Equals(common.DASHChain) || !voter.Tx.Tx.Chain.Equals(tx.Tx.Chain) ||
@@ -185,6 +185,33 @@ func settleInstantSend(ctx cosmos.Context, k keeper.Keeper, tx common.ObservedTx
 		!voter.Tx.Tx.Coins.EqualsEx(tx.Tx.Coins) || !voter.Tx.Tx.FromAddress.Equals(tx.Tx.FromAddress) ||
 		!voter.Tx.Tx.ToAddress.Equals(tx.Tx.ToAddress) || !voter.Tx.HasEquivalentSpentOutputRefs(tx) {
 		return errors.New("ChainLock deposit mismatch")
+	}
+	k := mgr.Keeper()
+	changed := false
+	for _, signer := range signers {
+		var added bool
+		voter, _, added = applyTxInAttestation(ctx, mgr, voter, nodes, tx, signer, slashDuplicates)
+		changed = changed || added
+	}
+	if changed {
+		k.SetObservedTxInVoter(ctx, voter)
+	}
+	// Keep partial certificates in the ordinary voter. Only this exact final
+	// variant counts; the cached economic consensus includes early signatures.
+	count := 0
+	for _, observed := range voter.Txs {
+		if !observed.Equals(tx) {
+			continue
+		}
+		for _, node := range nodes {
+			if observed.HasSigned(node.NodeAddress) {
+				count++
+			}
+		}
+		break
+	}
+	if !types.HasSuperMajority(count, len(nodes)) {
+		return nil
 	}
 	state, err := k.GetInstantSend(ctx, tx.Tx.Chain, tx.ObservedPubKey)
 	if err != nil {
@@ -208,16 +235,12 @@ func settleInstantSend(ctx cosmos.Context, k keeper.Keeper, tx common.ObservedTx
 		return err
 	}
 	state.Pending = slices.Delete(state.Pending, index, index+1)
-	for _, signer := range signers {
-		voter.Add(tx, signer)
-	}
-	k.SetObservedTxInVoter(ctx, voter)
 	err = k.SetInstantSend(ctx, state)
 	if err == nil {
 		err = clearInstantSendTimeout(ctx, k, tx.Tx.ID)
 	}
 	if err == nil {
-		publishInstantSendAccounting(state)
+		updateInstantSendMetrics(state)
 	}
 	return err
 }
@@ -342,7 +365,7 @@ func (s *queryServer) InstantSend(c context.Context, req *types.QueryInstantSend
 	return result, nil
 }
 
-func publishInstantSendAccounting(state common.InstantSendState) {
+func updateInstantSendMetrics(state common.InstantSendState) {
 	labels := []metrics.Label{telemetry.NewLabel("pubkey", state.PubKey.String())}
 	telemetry.SetGaugeWithLabels([]string{"thornode", strings.ToLower(state.Chain.String()), "pending_count"}, float32(len(state.Pending)), labels)
 	telemetry.SetGaugeWithLabels([]string{"thornode", strings.ToLower(state.Chain.String()), "pending_amount"}, telem(state.PendingAmount()), labels)

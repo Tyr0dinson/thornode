@@ -545,7 +545,7 @@ func (s *CoverageBackfillSuite) TestUpdateNetworkInfo(c *C) {
 
 	// 1) NewClient seeds the BTC floor at construction, so it is the fixed value before
 	//    any updateNetworkInfo tick (never 0, even if the daemon RPC is unavailable).
-	c.Assert(s.client.minRelayFeeSats.Load(), Equals, btcFixedMinRelayFeeSats)
+	c.Assert(s.client.minRelayFeeSats.Load(), Equals, fixedMinRelayFeeSats)
 
 	// 2) updateNetworkInfo re-pins BTC to the fixed value independent of the daemon.
 	//    Point the mock at relayfee 1e-6 — the 100-sat floor a Core 29.1+/30.x node
@@ -559,7 +559,7 @@ func (s *CoverageBackfillSuite) TestUpdateNetworkInfo(c *C) {
 	defer func() { ni["relayfee"] = origRelay }()
 	s.client.minRelayFeeSats.Store(424242)
 	s.client.updateNetworkInfo()
-	c.Assert(s.client.minRelayFeeSats.Load(), Equals, btcFixedMinRelayFeeSats)
+	c.Assert(s.client.minRelayFeeSats.Load(), Equals, fixedMinRelayFeeSats)
 }
 
 func (s *CoverageBackfillSuite) TestSendNetworkFee(c *C) {

@@ -660,6 +660,23 @@ paths:
               schema:
                 $ref: "#/components/schemas/VaultSolvencyResponse"
 
+  /thorchain/instantsend/{chain}:
+    parameters:
+      - $ref: "#/components/parameters/queryHeight"
+      - $ref: "#/components/parameters/chain"
+    get:
+      description: Returns committed InstantSend exposure, admission limits and vault balances. Currently supported for DASH only.
+      operationId: instantSend
+      tags:
+        - Vaults
+      responses:
+        200:
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InstantSendResponse"
+
   # ------------------------------ network ------------------------------
 
   /thorchain/network:
@@ -4394,6 +4411,109 @@ components:
           type: string
           example: "1000000000"
           description: Solvency amount for the asset. Positive values indicate over-solvency, negative values indicate under-solvency.
+
+    InstantSendResponse:
+      type: object
+      required:
+        - vaults
+        - observation_height
+        - min_amount
+        - max_amount
+        - status
+      properties:
+        vaults:
+          type: array
+          items:
+            $ref: "#/components/schemas/InstantSendVault"
+        observation_height:
+          type: string
+          description: Agreed chain height. Initially zero; early admission waits for a positive anchor.
+          example: "2400000"
+        min_amount:
+          type: string
+          description: Minimum early deposit amount in base units.
+          example: "1000000"
+        max_amount:
+          type: string
+          description: Network-wide maximum pending exposure in base units.
+          example: "1000000000"
+        status:
+          $ref: "#/components/schemas/InstantSendStatus"
+
+    InstantSendVault:
+      type: object
+      required:
+        - state
+        - coins
+        - eligible
+      properties:
+        state:
+          $ref: "#/components/schemas/InstantSendState"
+        coins:
+          type: array
+          description: Gross vault balances, including credited deposits awaiting settlement.
+          items:
+            $ref: "#/components/schemas/Coin"
+        eligible:
+          type: boolean
+          description: Active Asgard vault supporting the chain without a compromised-vault flag. Deposit-specific checks still apply.
+
+    InstantSendState:
+      type: object
+      required:
+        - pub_key
+        - pending
+        - chain
+      properties:
+        pub_key:
+          type: string
+        pending:
+          type: array
+          items:
+            $ref: "#/components/schemas/InstantSendPending"
+        chain:
+          type: string
+          example: "DASH"
+
+    InstantSendPending:
+      type: object
+      required:
+        - id
+        - amount
+        - height
+      properties:
+        id:
+          type: string
+          description: Credited transaction ID.
+        amount:
+          type: string
+          description: Credited amount in base units (duffs for DASH).
+        height:
+          type: string
+          description: THORChain block height of the original early credit.
+
+    InstantSendStatus:
+      type: object
+      required:
+        - chain
+        - disabled
+        - overdue
+        - min_height
+      properties:
+        chain:
+          type: string
+          example: "DASH"
+        disabled:
+          type: boolean
+          description: Permanent admission-disable flag, cleared only by a software-upgrade store migration.
+        overdue:
+          type: array
+          description: Pending transaction IDs whose settlement deadline has passed.
+          items:
+            type: string
+        min_height:
+          type: string
+          description: Minimum chain anchor height accepted for new early deposits.
 
     NetworkResponse:
       type: object

@@ -56,23 +56,53 @@ func (t *TemporalStorage) ClaimInstantSendTxs(ids []string) ([]string, error) {
 	return accepted, nil
 }
 
-// CompleteInstantSendObservations promotes only pending markers after Observer
-// stores their observations. Financial exposure is tracked by THORChain.
-func (t *TemporalStorage) CompleteInstantSendObservations(ids []string) error {
-	_, err := t.trackInstantSendObservations(ids, false)
+// MarkInstantSendStored records Observer persistence for pending InstantSend claims.
+// Financial exposure is tracked by THORChain.
+func (t *TemporalStorage) MarkInstantSendStored(ids []string) error {
+	_, err := t.markInstantSendObservations(ids, false)
 	return err
 }
 
-// TrackInstantSendBlockTxs claims a verified ChainLock block's new or early
-// transactions, including early observations refused by the network count gate. Like ordinary block claims, its markers precede Observer delivery.
-// Only the DASH block scanner uses this fallback; other chains retain TrackObservedTxs.
-func (t *TemporalStorage) TrackInstantSendBlockTxs(ids []string) ([]string, error) {
-	return t.trackInstantSendObservations(ids, true)
+// FilterNewBlockTxs selects transactions without a completed block observation,
+// including those already observed through InstantSend. It leaves markers unchanged
+// so a failed Observer handoff remains eligible for a rescan.
+func (t *TemporalStorage) FilterNewBlockTxs(ids []string) ([]string, error) {
+	t.observedTxMu.Lock()
+	defer t.observedTxMu.Unlock()
+	found := make(map[string]bool)
+	var accepted []string
+	for _, id := range ids {
+		id = strings.ToLower(id)
+		if id == "" {
+			return nil, errors.New("empty InstantSend transaction ID")
+		}
+		if found[id] {
+			continue
+		}
+		found[id] = true
+		value, err := t.db.Get([]byte(t.getObservedTxKey(id)), nil)
+		if err != nil && !errors.Is(err, leveldb.ErrNotFound) {
+			return nil, err
+		}
+		pending := string(value) == instantSendPendingMarker
+		stored := string(value) == instantSendStoredMarker
+		if errors.Is(err, leveldb.ErrNotFound) || pending || stored {
+			accepted = append(accepted, id)
+		}
+	}
+	return accepted, nil
 }
 
-// trackInstantSendObservations serializes acknowledgements with block claims.
-// An acknowledgement cannot recreate a missing marker or undo a completed claim.
-func (t *TemporalStorage) trackInstantSendObservations(ids []string, claimNew bool) ([]string, error) {
+// CompleteBlockTxs completes delivery markers after Observer stores a block batch
+// durably. Only DASH uses this handoff; other chains retain TrackObservedTxs.
+func (t *TemporalStorage) CompleteBlockTxs(ids []string) ([]string, error) {
+	return t.markInstantSendObservations(ids, true)
+}
+
+// markInstantSendObservations records early Observer persistence or, when
+// chainLocked is true, completed delivery of ChainLocked block observations.
+// Early acknowledgements cannot recreate missing markers or undo block delivery.
+func (t *TemporalStorage) markInstantSendObservations(ids []string, chainLocked bool) ([]string, error) {
 	t.observedTxMu.Lock()
 	defer t.observedTxMu.Unlock()
 	batch := new(leveldb.Batch)
@@ -93,16 +123,16 @@ func (t *TemporalStorage) trackInstantSendObservations(ids []string, claimNew bo
 		stored := string(value) == instantSendStoredMarker
 		switch {
 		case errors.Is(err, leveldb.ErrNotFound):
-			if !claimNew {
+			if !chainLocked {
 				continue
 			}
 		case err != nil:
 			return nil, err
-		case !pending && !(claimNew && stored):
+		case !pending && !(chainLocked && stored):
 			continue
 		}
 		marker := id
-		if !claimNew {
+		if !chainLocked {
 			marker = instantSendStoredMarker
 		}
 		batch.Put(key, []byte(marker))

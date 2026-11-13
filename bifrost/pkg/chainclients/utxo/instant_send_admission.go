@@ -12,7 +12,7 @@ import (
 	ttypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
-func (h *instantSendHandler) workLimit() int { return max(1, h.client.cfg.UTXO.TransactionBatchSize) }
+func (h *instantSendHandler) batchSize() int { return max(1, h.client.cfg.UTXO.TransactionBatchSize) }
 
 // verifyPending reads current daemon state before new early admission. The core
 // ledger and its deadline survive restarts; a local RPC result never releases it.
@@ -24,6 +24,7 @@ func (h *instantSendHandler) verifyPending(state *ttypes.QueryInstantSendRespons
 			if err != nil {
 				if isUTXOTxNotFoundErr(err) {
 					h.recordDeferral("lost_lock")
+					return errInstantSendPaused
 				}
 				return err
 			}
@@ -41,7 +42,7 @@ func (h *instantSendHandler) verifyPending(state *ttypes.QueryInstantSendRespons
 
 func (h *instantSendHandler) claimBatch(candidates []*types.TxInItem) ([]*types.TxInItem, error) {
 	c := h.client
-	h.setPaused(true)
+	h.setPauseMetric(true)
 	if c.cfg.BlockScanner.DBPath == "" || !h.enabled || c.blockScanner == nil || !c.IsBlockScannerHealthy() || h.isPaused() {
 		h.recordDeferral("health")
 		return nil, errInstantSendPaused
@@ -70,7 +71,7 @@ func (h *instantSendHandler) claimBatch(candidates []*types.TxInItem) ([]*types.
 		total = total.Add(vault.State.PendingAmount())
 		count += len(vault.State.Pending)
 	}
-	h.publishExposure(total, state.MaxAmount, count)
+	h.updateMetrics(total, state.MaxAmount, count)
 	if state.MaxAmount == 0 || total.GTE(cosmos.NewUint(state.MaxAmount)) {
 		return nil, nil
 	}
@@ -94,7 +95,7 @@ func (h *instantSendHandler) claimBatch(candidates []*types.TxInItem) ([]*types.
 			item.BlockHeight < minHeight || item.BlockHeight > state.ObservationHeight {
 			continue
 		}
-		if item.InstantSend == nil || !instantSendSwapMemo(item.Memo) || instantSendAdmissionState(c.GetChain(), state, item.To) == nil {
+		if item.InstantSend == nil || !isSwapMemo(item.Memo) || instantSendAdmissionState(c.GetChain(), state, item.To) == nil {
 			continue
 		}
 		tx, txErr := c.rpc.GetRawTransactionVerbose(id)
@@ -107,7 +108,7 @@ func (h *instantSendHandler) claimBatch(candidates []*types.TxInItem) ([]*types.
 		if !sufficientInstantSendFee(mempool[id], h.minFeeRate) {
 			continue
 		}
-		inputs, inputErr := c.verifiedInstantSendInputs(tx)
+		inputs, inputErr := c.verifyInstantSendInputs(tx)
 		if inputErr != nil || !slices.Equal(inputs, common.OutputRefsFromPointers(item.SpentOutputRefs)) {
 			continue
 		}
@@ -118,11 +119,11 @@ func (h *instantSendHandler) claimBatch(candidates []*types.TxInItem) ([]*types.
 	if !c.IsBlockScannerHealthy() || h.isPaused() {
 		return nil, errInstantSendPaused
 	}
-	h.setPaused(false)
 	accepted, err := c.temporalStorage.ClaimInstantSendTxs(ids)
 	if err != nil {
 		return nil, err
 	}
+	h.setPauseMetric(false)
 	result := make([]*types.TxInItem, 0, len(accepted))
 	for _, id := range accepted {
 		result = append(result, items[id])
@@ -140,7 +141,7 @@ func (h *instantSendHandler) recordDeferral(reason string) {
 	}
 }
 
-func (h *instantSendHandler) publishExposure(total cosmos.Uint, limit uint64, count int) {
+func (h *instantSendHandler) updateMetrics(total cosmos.Uint, limit uint64, count int) {
 	if h.client.m == nil {
 		return
 	}
@@ -157,7 +158,7 @@ func (h *instantSendHandler) publishExposure(total cosmos.Uint, limit uint64, co
 	}
 }
 
-func (h *instantSendHandler) setPaused(paused bool) {
+func (h *instantSendHandler) setPauseMetric(paused bool) {
 	if h.client.m == nil {
 		return
 	}

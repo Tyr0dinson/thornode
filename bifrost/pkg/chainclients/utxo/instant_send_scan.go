@@ -53,17 +53,17 @@ func (h *instantSendHandler) isPaused() bool {
 func (h *instantSendHandler) refreshSettings() error {
 	h.enabled = false
 	if h.client.bridge == nil {
-		h.setPaused(true)
+		h.setPauseMetric(true)
 		return errors.New("InstantSend bridge unavailable")
 	}
 	enabled, err := h.client.bridge.GetMimir(fmt.Sprintf(constants.MimirTemplateInstantSendEnabled, h.client.GetChain()))
 	if err != nil {
-		h.setPaused(true)
+		h.setPauseMetric(true)
 		return err
 	}
 	rate, err := h.client.bridge.GetMimir(fmt.Sprintf(constants.MimirTemplateInstantSendMinFeeRate, h.client.GetChain()))
 	if err != nil {
-		h.setPaused(true)
+		h.setPauseMetric(true)
 		return err
 	}
 	h.minFeeRate = h.client.cfg.InstantSend.MinFeeRate
@@ -81,7 +81,7 @@ func (h *instantSendHandler) refreshSettings() error {
 	}
 	h.enabled = enabled > 0
 	if !h.enabled {
-		h.setPaused(true)
+		h.setPauseMetric(true)
 	}
 	return nil
 }
@@ -108,7 +108,7 @@ func (h *instantSendHandler) candidates(mempool map[string]rpc.GetRawMempoolVerb
 		if _, ignored := h.ignored[id]; ignored {
 			continue
 		}
-		marked, err := h.client.temporalStorage.HasObservedTx(strings.ToLower(id))
+		marked, err := h.client.temporalStorage.HasTxMarker(strings.ToLower(id))
 		if err != nil {
 			return nil, fmt.Errorf("fail to check observation marker for %s: %w", id, err)
 		}
@@ -194,5 +194,5 @@ func (h *instantSendHandler) scan() ([][]*types.TxInItem, error) {
 			byHeight[item.BlockHeight] = append(byHeight[item.BlockHeight], item)
 		}
 	}
-	return groupInstantSendTxs(byHeight), nil
+	return sortTxBatches(byHeight), nil
 }

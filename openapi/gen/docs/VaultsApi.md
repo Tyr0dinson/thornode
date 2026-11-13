@@ -5,6 +5,7 @@ All URIs are relative to *http://localhost*
 Method | HTTP request | Description
 ------------- | ------------- | -------------
 [**Asgard**](VaultsApi.md#Asgard) | **Get** /thorchain/vaults/asgard | 
+[**InstantSend**](VaultsApi.md#InstantSend) | **Get** /thorchain/instantsend/{chain} | 
 [**Vault**](VaultsApi.md#Vault) | **Get** /thorchain/vault/{pubkey} | 
 [**VaultKeysignParty**](VaultsApi.md#VaultKeysignParty) | **Get** /thorchain/vault/{pubkey}/keysign_party | 
 [**VaultPubkeys**](VaultsApi.md#VaultPubkeys) | **Get** /thorchain/vaults/pubkeys | 
@@ -64,6 +65,78 @@ Name | Type | Description  | Notes
 ### Return type
 
 [**[]Vault**](Vault.md)
+
+### Authorization
+
+No authorization required
+
+### HTTP request headers
+
+- **Content-Type**: Not defined
+- **Accept**: application/json
+
+[[Back to top]](#) [[Back to API list]](../README.md#documentation-for-api-endpoints)
+[[Back to Model list]](../README.md#documentation-for-models)
+[[Back to README]](../README.md)
+
+
+## InstantSend
+
+> InstantSendResponse InstantSend(ctx, chain).Height(height).Execute()
+
+
+
+
+
+### Example
+
+```go
+package main
+
+import (
+    "context"
+    "fmt"
+    "os"
+    openapiclient "./openapi"
+)
+
+func main() {
+    chain := "BTC" // string | 
+    height := int64(789) // int64 | optional block height, defaults to current tip (optional)
+
+    configuration := openapiclient.NewConfiguration()
+    apiClient := openapiclient.NewAPIClient(configuration)
+    resp, r, err := apiClient.VaultsApi.InstantSend(context.Background(), chain).Height(height).Execute()
+    if err != nil {
+        fmt.Fprintf(os.Stderr, "Error when calling `VaultsApi.InstantSend``: %v\n", err)
+        fmt.Fprintf(os.Stderr, "Full HTTP response: %v\n", r)
+    }
+    // response from `InstantSend`: InstantSendResponse
+    fmt.Fprintf(os.Stdout, "Response from `VaultsApi.InstantSend`: %v\n", resp)
+}
+```
+
+### Path Parameters
+
+
+Name | Type | Description  | Notes
+------------- | ------------- | ------------- | -------------
+**ctx** | **context.Context** | context for authentication, logging, cancellation, deadlines, tracing, etc.
+**chain** | **string** |  | 
+
+### Other Parameters
+
+Other parameters are passed through a pointer to a apiInstantSendRequest struct via the builder pattern
+
+
+Name | Type | Description  | Notes
+------------- | ------------- | ------------- | -------------
+
+ **height** | **int64** | optional block height, defaults to current tip | 
+
+### Return type
+
+[**InstantSendResponse**](InstantSendResponse.md)
 
 ### Authorization
 

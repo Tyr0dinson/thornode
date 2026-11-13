@@ -69,13 +69,12 @@ type Client struct {
 	vaultLocks            map[string]*sync.Mutex
 	networkFeeLock        sync.Mutex
 	solvencyLock          sync.Mutex
-	solvencyReports       map[common.PubKey]types.Solvency // guarded by solvencyLock
 	consolidateInProgress stdatomic.Bool
 
 	// ---------- scanner ----------
-	blockScanner          *blockscanner.BlockScanner
-	temporalStorage       *utxo.TemporalStorage
-	chainLockHeightHealth stdatomic.Pointer[chainLockHeightHealth]
+	blockScanner    *blockscanner.BlockScanner
+	temporalStorage *utxo.TemporalStorage
+	chainLockHealth stdatomic.Pointer[chainLockHealth]
 
 	// ---------- control ----------
 	globalErrataQueue     chan<- types.ErrataBlock
@@ -177,11 +176,11 @@ func NewClient(
 	}
 	c.instantSend = instantSendHandler{client: c}
 
-	// Seed the BTC min-relay-fee floor to its fixed, daemon-independent value so it is
+	// Seed the BTC and DASH min-relay-fee floor to its fixed, daemon-independent value so it is
 	// never 0 before the first updateNetworkInfo tick (the floor is signing-consensus-
 	// relevant — see updateNetworkInfo). updateNetworkInfo re-pins it on every tick.
-	if c.cfg.ChainID.Equals(common.BTCChain) {
-		c.minRelayFeeSats.Store(btcFixedMinRelayFeeSats)
+	if c.cfg.ChainID.OneOf(common.BTCChain, common.DASHChain) {
+		c.minRelayFeeSats.Store(fixedMinRelayFeeSats)
 	}
 
 	// import the node local address in the daemon wallet
@@ -237,7 +236,7 @@ func (c *Client) IsBlockScannerHealthy() bool {
 		return false
 	}
 	if c.cfg.ChainID.Equals(common.DASHChain) {
-		return c.chainLockHeightHealth.Load().isHealthy(c.GetChain(), time.Now(), c.blockScanner.PreviousHeight())
+		return c.chainLockHealth.Load().isHealthy(c.GetChain(), time.Now(), c.blockScanner.PreviousHeight())
 	}
 	return true
 }
@@ -277,10 +276,10 @@ func (c *Client) GetHeight() (int64, error) {
 			}
 		}
 		// Failed reads or validation leave the previous snapshot to expire.
-		c.chainLockHeightHealth.Store(&chainLockHeightHealth{
-			tipHeight:       tipHeight,
-			chainLockHeight: bestChainLock.Height,
-			checkedAt:       checkedAt,
+		c.chainLockHealth.Store(&chainLockHealth{
+			tipHeight:  tipHeight,
+			lockHeight: bestChainLock.Height,
+			checkedAt:  checkedAt,
 		})
 		// Keep the network's ChainLock as the target and lag reference, even when
 		// the daemon cannot serve it yet. Never scan the unfinalized ordinary tip.
@@ -586,6 +585,17 @@ func (c *Client) FetchTxs(height, chainHeight int64) (types.TxIn, error) {
 	if len(txInBlock.TxArray) > 0 {
 		txIn.TxArray = append(txIn.TxArray, txInBlock.TxArray...)
 	}
+	if c.cfg.ChainID.Equals(common.DASHChain) && len(txIn.TxArray) > 0 {
+		ids := make([]string, 0, len(txIn.TxArray))
+		for _, item := range txIn.TxArray {
+			ids = append(ids, item.Tx)
+		}
+		txIn.Persisted = make(chan error, 1)
+		txIn.FinalizePersistence = func() error {
+			_, writeErr := c.temporalStorage.CompleteBlockTxs(ids)
+			return writeErr
+		}
+	}
 
 	c.updateNetworkInfo()
 
@@ -642,7 +652,7 @@ const (
 // FetchMemPool retrieves txs from mempool
 func (c *Client) FetchMemPool(height int64) (types.TxIn, error) {
 	if !c.cfg.ChainID.Equals(common.DASHChain) {
-		return c.fetchMemPoolTransactions(height, false)
+		return c.fetchMemPoolTxs(height, false)
 	}
 
 	err := c.instantSend.refreshSettings()
@@ -652,26 +662,26 @@ func (c *Client) FetchMemPool(height int64) (types.TxIn, error) {
 	if err != nil || !c.instantSend.enabled || c.instantSend.isPaused() {
 		c.instantSend.txQueue = nil
 		c.nextMempoolScan = scanOutbounds
-		return c.fetchMemPoolTransactions(height, true)
+		return c.fetchMemPoolTxs(height, true)
 	}
 	if c.nextMempoolScan == scanInstantSend {
 		c.nextMempoolScan = scanOutbounds
 		batch, scanErr := c.instantSend.fetchBatch()
 		if errors.Is(scanErr, errInstantSendPaused) {
 			c.instantSend.txQueue = nil
-			return c.fetchMemPoolTransactions(height, true)
+			return c.fetchMemPoolTxs(height, true)
 		}
 		return batch, scanErr
 	}
 	c.nextMempoolScan = scanInstantSend
-	return c.fetchMemPoolTransactions(height, true)
+	return c.fetchMemPoolTxs(height, true)
 }
 
-// fetchMemPoolTransactions returns early mempool observations. Dash restricts this
+// fetchMemPoolTxs returns early mempool observations. Dash restricts this
 // path to vault senders; their observations can finalise on THORChain without a lock.
 // Customer deposits retain their InstantSend/ChainLock checks. Mempool work markers
 // must not suppress the later observation from a block scan.
-func (c *Client) fetchMemPoolTransactions(height int64, onlyAsgardSenders bool) (types.TxIn, error) {
+func (c *Client) fetchMemPoolTxs(height int64, onlyAsgardSenders bool) (types.TxIn, error) {
 	hashes, err := c.rpc.GetRawMempool()
 	if err != nil {
 		return types.TxIn{}, fmt.Errorf("fail to get tx hashes from mempool: %w", err)

@@ -1098,6 +1098,39 @@ paths:
           description: OK
       tags:
       - Vaults
+  /thorchain/instantsend/{chain}:
+    get:
+      description: "Returns committed InstantSend exposure, admission limits and vault\
+        \ balances. Currently supported for DASH only."
+      operationId: instantSend
+      parameters:
+      - description: "optional block height, defaults to current tip"
+        explode: true
+        in: query
+        name: height
+        required: false
+        schema:
+          format: int64
+          minimum: 0
+          type: integer
+        style: form
+      - explode: false
+        in: path
+        name: chain
+        required: true
+        schema:
+          example: BTC
+          type: string
+        style: simple
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InstantSendResponse'
+          description: OK
+      tags:
+      - Vaults
   /thorchain/network:
     get:
       description: Returns network overview statistics.
@@ -6666,6 +6699,196 @@ components:
       required:
       - amount
       - asset
+      type: object
+    InstantSendResponse:
+      example:
+        observation_height: "2400000"
+        min_amount: "1000000"
+        vaults:
+        - coins:
+          - amount: "100000"
+            decimals: 6
+            asset: BTC.BTC
+          - amount: "100000"
+            decimals: 6
+            asset: BTC.BTC
+          eligible: true
+          state:
+            chain: DASH
+            pending:
+            - amount: amount
+              id: id
+              height: height
+            - amount: amount
+              id: id
+              height: height
+            pub_key: pub_key
+        - coins:
+          - amount: "100000"
+            decimals: 6
+            asset: BTC.BTC
+          - amount: "100000"
+            decimals: 6
+            asset: BTC.BTC
+          eligible: true
+          state:
+            chain: DASH
+            pending:
+            - amount: amount
+              id: id
+              height: height
+            - amount: amount
+              id: id
+              height: height
+            pub_key: pub_key
+        max_amount: "1000000000"
+        status:
+          chain: DASH
+          overdue:
+          - overdue
+          - overdue
+          min_height: min_height
+          disabled: true
+      properties:
+        vaults:
+          items:
+            $ref: '#/components/schemas/InstantSendVault'
+          type: array
+        observation_height:
+          description: Agreed chain height. Initially zero; early admission waits
+            for a positive anchor.
+          example: "2400000"
+          type: string
+        min_amount:
+          description: Minimum early deposit amount in base units.
+          example: "1000000"
+          type: string
+        max_amount:
+          description: Network-wide maximum pending exposure in base units.
+          example: "1000000000"
+          type: string
+        status:
+          $ref: '#/components/schemas/InstantSendStatus'
+      required:
+      - max_amount
+      - min_amount
+      - observation_height
+      - status
+      - vaults
+      type: object
+    InstantSendVault:
+      example:
+        coins:
+        - amount: "100000"
+          decimals: 6
+          asset: BTC.BTC
+        - amount: "100000"
+          decimals: 6
+          asset: BTC.BTC
+        eligible: true
+        state:
+          chain: DASH
+          pending:
+          - amount: amount
+            id: id
+            height: height
+          - amount: amount
+            id: id
+            height: height
+          pub_key: pub_key
+      properties:
+        state:
+          $ref: '#/components/schemas/InstantSendState'
+        coins:
+          description: "Gross vault balances, including credited deposits awaiting\
+            \ settlement."
+          items:
+            $ref: '#/components/schemas/Coin'
+          type: array
+        eligible:
+          description: Active Asgard vault supporting the chain without a compromised-vault
+            flag. Deposit-specific checks still apply.
+          type: boolean
+      required:
+      - coins
+      - eligible
+      - state
+      type: object
+    InstantSendState:
+      example:
+        chain: DASH
+        pending:
+        - amount: amount
+          id: id
+          height: height
+        - amount: amount
+          id: id
+          height: height
+        pub_key: pub_key
+      properties:
+        pub_key:
+          type: string
+        pending:
+          items:
+            $ref: '#/components/schemas/InstantSendPending'
+          type: array
+        chain:
+          example: DASH
+          type: string
+      required:
+      - chain
+      - pending
+      - pub_key
+      type: object
+    InstantSendPending:
+      example:
+        amount: amount
+        id: id
+        height: height
+      properties:
+        id:
+          description: Credited transaction ID.
+          type: string
+        amount:
+          description: Credited amount in base units (duffs for DASH).
+          type: string
+        height:
+          description: THORChain block height of the original early credit.
+          type: string
+      required:
+      - amount
+      - height
+      - id
+      type: object
+    InstantSendStatus:
+      example:
+        chain: DASH
+        overdue:
+        - overdue
+        - overdue
+        min_height: min_height
+        disabled: true
+      properties:
+        chain:
+          example: DASH
+          type: string
+        disabled:
+          description: "Permanent admission-disable flag, cleared only by a software-upgrade\
+            \ store migration."
+          type: boolean
+        overdue:
+          description: Pending transaction IDs whose settlement deadline has passed.
+          items:
+            type: string
+          type: array
+        min_height:
+          description: Minimum chain anchor height accepted for new early deposits.
+          type: string
+      required:
+      - chain
+      - disabled
+      - min_height
+      - overdue
       type: object
     NetworkResponse:
       example:

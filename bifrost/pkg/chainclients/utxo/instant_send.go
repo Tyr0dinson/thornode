@@ -110,7 +110,7 @@ func (h *instantSendHandler) fetchBatch() (types.TxIn, error) {
 	candidates := h.txQueue[0]
 	// A height group can span several mempool batches. Bound the fresh finality
 	// RPC and delivery marker batch, keeping the remainder queued.
-	count := min(len(candidates), h.workLimit())
+	count := min(len(candidates), h.batchSize())
 	items, err := h.claimBatch(candidates[:count])
 	if err != nil {
 		return types.TxIn{}, err
@@ -155,7 +155,7 @@ func (h *instantSendHandler) buildTxInItem(tx *rpc.TxResult, accounting *ttypes.
 	if state == nil {
 		return nil
 	}
-	if !instantSendSwapMemo(item.Memo) {
+	if !isSwapMemo(item.Memo) {
 		return nil
 	}
 	item.BlockHeight = common.InstantSendAnchor(accounting.ObservationHeight)
@@ -163,17 +163,17 @@ func (h *instantSendHandler) buildTxInItem(tx *rpc.TxResult, accounting *ttypes.
 	return &item
 }
 
-// Only inspect the memo type locally; core resolves THORNames and validates the swap.
-func instantSendSwapMemo(value string) bool {
+// isSwapMemo checks only the memo type; core resolves THORNames and validates the swap.
+func isSwapMemo(value string) bool {
 	name, _, _ := strings.Cut(value, ":")
 	txType, err := memo.StringToTxType(name)
 	return err == nil && txType == memo.TxSwap
 }
 
-// groupInstantSendTxs orders batches by their agreed observation height.
+// sortTxBatches orders batches by their agreed observation height.
 // Observer uses a single finalization height for each batch. Mixing heights
 // would make the signed observation depend on which worker happened to finish first.
-func groupInstantSendTxs(byHeight map[int64][]*types.TxInItem) [][]*types.TxInItem {
+func sortTxBatches(byHeight map[int64][]*types.TxInItem) [][]*types.TxInItem {
 	heights := make([]int64, 0, len(byHeight))
 	for height := range byHeight {
 		heights = append(heights, height)
@@ -209,7 +209,7 @@ func (h *instantSendHandler) watchDelivery(items []*types.TxInItem) {
 				finished := remaining == 0
 				mu.Unlock()
 				if finished {
-					err := store.CompleteInstantSendObservations(stored)
+					err := store.MarkInstantSendStored(stored)
 					if err != nil {
 						h.client.log.Err(err).Msg("fail to complete InstantSend markers; pending observations wait for ChainLock")
 					}

@@ -1137,6 +1137,9 @@ func observerWriteOptions(txIn *types.TxIn) *opt.WriteOptions {
 	if txIn == nil {
 		return nil
 	}
+	if txIn.Persisted != nil {
+		return &opt.WriteOptions{Sync: true}
+	}
 	if options := chainWriteOptions(txIn.Chain); options != nil {
 		return options
 	}

@@ -230,6 +230,7 @@ func (s *DashSuite) TestInstantSendDeliveryLateCallbackAfterBlock(c *C) {
 	mined, err := client.extractTxs(block)
 	c.Assert(err, IsNil)
 	c.Assert(mined.TxArray, HasLen, 2)
+	completeDashBlock(c, client, mined)
 	batch.TxArray[1].OnObservedTxStored()
 	mined, err = client.extractTxs(block)
 	c.Assert(err, IsNil)
@@ -252,7 +253,7 @@ func (s *DashSuite) TestInstantSendDeliveryAcknowledgementWriteFailure(c *C) {
 	defer storage.Close()
 	client.temporalStorage, err = sharedutxo.NewTemporalStorage(storage.GetInternalDb(), 0)
 	c.Assert(err, IsNil)
-	ids, err := client.temporalStorage.TrackInstantSendBlockTxs([]string{f.inbound, f.lowFeeInbound})
+	ids, err := client.temporalStorage.CompleteBlockTxs([]string{f.inbound, f.lowFeeInbound})
 	c.Assert(err, IsNil)
 	c.Assert(ids, HasLen, 2)
 }
@@ -267,7 +268,7 @@ func (s *DashSuite) TestInstantSendWithoutDiskKeepsOrdinaryVaultObservations(c *
 	items, err := client.instantSend.claimBatch([]*types.TxInItem{item})
 	c.Assert(err, Equals, errInstantSendPaused)
 	c.Assert(items, HasLen, 0)
-	marked, err := client.temporalStorage.HasObservedTx(item.Tx)
+	marked, err := client.temporalStorage.HasTxMarker(item.Tx)
 	c.Assert(err, IsNil)
 	c.Assert(marked, Equals, false)
 	batch, err := client.FetchMemPool(123)
@@ -289,7 +290,7 @@ func (s *DashSuite) TestDashQueuedObservationsClaimOnlyDeliveredTransactions(c *
 			Coins: common.NewCoins(common.NewCoin(common.DASHAsset, cosmos.NewUint(common.One/10))),
 		}
 	}
-	groups := groupInstantSendTxs(map[int64][]*types.TxInItem{
+	groups := sortTxBatches(map[int64][]*types.TxInItem{
 		96: {item(strings.ToUpper(first), 96), item(second, 96)},
 	})
 	client.instantSend.txQueue = groups
@@ -297,18 +298,19 @@ func (s *DashSuite) TestDashQueuedObservationsClaimOnlyDeliveredTransactions(c *
 	c.Assert(err, IsNil)
 	c.Assert(batch.TxArray, HasLen, 1)
 	c.Assert(batch.TxArray[0].BlockHeight, Equals, int64(96))
-	observed, err := client.temporalStorage.HasObservedTx(first)
+	observed, err := client.temporalStorage.HasTxMarker(first)
 	c.Assert(err, IsNil)
 	c.Assert(observed, Equals, true)
-	observed, err = client.temporalStorage.HasObservedTx(second)
+	observed, err = client.temporalStorage.HasTxMarker(second)
 	c.Assert(err, IsNil)
 	c.Assert(observed, Equals, false)
 	batch.TxArray[0].OnObservedTxStored()
 
-	// The block scanner can claim a queued group before its mempool delivery.
+	// A block persisted by Observer can complete a queued group before mempool delivery.
 	accepted, err := client.trackObservedTxs([]*types.TxInItem{{Tx: second}})
 	c.Assert(err, IsNil)
 	c.Assert(accepted, HasLen, 1)
+	completeDashBlock(c, client, types.TxIn{TxArray: accepted})
 	batch, err = client.instantSend.fetchBatch()
 	c.Assert(err, IsNil)
 	c.Assert(batch.TxArray, HasLen, 0)
@@ -316,6 +318,7 @@ func (s *DashSuite) TestDashQueuedObservationsClaimOnlyDeliveredTransactions(c *
 	accepted, err = client.trackObservedTxs([]*types.TxInItem{{Tx: first}})
 	c.Assert(err, IsNil)
 	c.Assert(accepted, HasLen, 1)
+	completeDashBlock(c, client, types.TxIn{TxArray: accepted})
 	accepted, err = client.trackObservedTxs([]*types.TxInItem{{Tx: strings.ToUpper(first)}})
 	c.Assert(err, IsNil)
 	c.Assert(accepted, HasLen, 0)
@@ -330,7 +333,7 @@ func (s *DashSuite) TestDashObservationStorageFailureRetainsPendingGroup(c *C) {
 		InstantSend: &common.InstantSend{}, Memo: "=:THOR.RUNE",
 		Coins: common.NewCoins(common.NewCoin(common.DASHAsset, cosmos.NewUint(common.One/10))),
 	}
-	client.instantSend.txQueue = groupInstantSendTxs(map[int64][]*types.TxInItem{100: {item}})
+	client.instantSend.txQueue = sortTxBatches(map[int64][]*types.TxInItem{100: {item}})
 	closed, closeStorage := newDashClientForRPCServer(c, "http://localhost:1")
 	healthyStorage := client.temporalStorage
 	client.temporalStorage = closed.temporalStorage
@@ -347,4 +350,15 @@ func (s *DashSuite) TestDashObservationStorageFailureRetainsPendingGroup(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(batch.TxArray, DeepEquals, []*types.TxInItem{item})
 	c.Assert(client.instantSend.txQueue, HasLen, 0)
+}
+
+// Extraction tests model the completion after Observer persistence here. The
+// FetchTxs tests exercise the production batch callback separately.
+func completeDashBlock(c *C, client *Client, batch types.TxIn) {
+	ids := make([]string, 0, len(batch.TxArray))
+	for _, item := range batch.TxArray {
+		ids = append(ids, item.Tx)
+	}
+	_, err := client.temporalStorage.CompleteBlockTxs(ids)
+	c.Assert(err, IsNil)
 }

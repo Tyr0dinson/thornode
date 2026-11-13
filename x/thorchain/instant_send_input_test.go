@@ -92,7 +92,7 @@ func (s *DashAccountingSuite) TestInputExpiryAndAnchorBoundaries(c *C) {
 	c.Assert(credit.Id, Equals, tx.Tx.ID) // Pending credits never expire.
 	tx.InstantSend = nil
 	tx.BlockHeight, tx.FinaliseHeight = 101, 101
-	c.Assert(settleInstantSend(ctx, mgr.Keeper(), tx, voter, []cosmos.AccAddress{GetRandomBech32Addr(), GetRandomBech32Addr(), GetRandomBech32Addr()}, 4), IsNil)
+	c.Assert(settleTestInstantSend(ctx, mgr, tx, voter, []cosmos.AccAddress{GetRandomBech32Addr(), GetRandomBech32Addr(), GetRandomBech32Addr()}, 4), IsNil)
 	credit, err = mgr.Keeper().GetInstantSendInput(ctx, tx.SpentOutputRefs[0])
 	c.Assert(err, IsNil)
 	c.Assert(credit.Height, Equals, int64(125)) // Delayed settlement starts a fresh retention window.

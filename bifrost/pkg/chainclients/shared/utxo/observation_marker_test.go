@@ -43,7 +43,7 @@ func TestObservedMarkerSurvivesRestartWithoutObserverHandoff(t *testing.T) {
 	store, _ = openObservationMarkerStorage(t, path, nil)
 	for _, txid := range []string{"tx", "second-tx"} {
 		var observed bool
-		observed, err = store.HasObservedTx(txid)
+		observed, err = store.HasTxMarker(txid)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -121,7 +121,7 @@ func TestObservedMarkerWriteFailureDoesNotAcceptTransaction(t *testing.T) {
 	}
 	store, _ = openObservationMarkerStorage(t, path, &opt.Options{ReadOnly: true})
 	// Reads succeed, but writing the new marker must fail.
-	observed, err := store.HasObservedTx("tx")
+	observed, err := store.HasTxMarker("tx")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -143,7 +143,7 @@ func TestObservedMarkerWriteFailureDoesNotAcceptTransaction(t *testing.T) {
 		t.Fatalf("failed batch accepted transactions: %v", accepted)
 	}
 	for _, txid := range []string{"tx", "other-tx"} {
-		observed, err := store.HasObservedTx(txid)
+		observed, err := store.HasTxMarker(txid)
 		if err != nil {
 			t.Fatal(err)
 		}

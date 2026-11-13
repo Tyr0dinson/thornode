@@ -44,7 +44,7 @@ func (b *instantSendTestBridge) GetMimir(key string) (int64, error) {
 	return -1, nil
 }
 
-// newInstantSendTestActor provides a ready node with the mocknet allowance default.
+// newInstantSendTestActor matches the explicit mocknet enablement and amount settings.
 func newInstantSendTestActor() (*DashInstantSendActor, *instantSendTestBridge) {
 	bridge := &instantSendTestBridge{
 		values: map[string]int64{"DASHInstantSendMaxAmount": 1000 * common.One, "DASHInstantSendEnabled": 1},

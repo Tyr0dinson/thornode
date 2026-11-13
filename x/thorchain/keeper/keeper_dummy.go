@@ -1231,7 +1231,7 @@ func (k KVStoreDummy) SetInstantSendCredit(cosmos.Context, common.InstantSendCre
 	return kaboom
 }
 
-func (k KVStoreDummy) ListInstantSendCredit(cosmos.Context) ([]common.InstantSendCredit, error) {
+func (k KVStoreDummy) ListInstantSendCredits(cosmos.Context) ([]common.InstantSendCredit, error) {
 	return nil, kaboom
 }
 

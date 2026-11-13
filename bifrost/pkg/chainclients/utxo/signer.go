@@ -597,6 +597,16 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []b
 			"",
 			nil,
 		)
+		if c.cfg.ChainID.Equals(common.DASHChain) {
+			var inputs []common.OutputRef
+			inputs, err = dashTxInputs(dashTx)
+			if err != nil {
+				return nil, checkpointBytes, nil, fmt.Errorf("fail to extract signed inputs: %w", err)
+			}
+			for i := range inputs {
+				txIn.SpentOutputRefs = append(txIn.SpentOutputRefs, &inputs[i])
+			}
+		}
 	}
 
 	// keep track of used utxos for Zcash

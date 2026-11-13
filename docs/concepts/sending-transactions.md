@@ -9,6 +9,8 @@ Confirm you have:
 
 You are ready to make the transaction and swap via THORChain.
 
+DASH deposits with more than 2,500 inputs are not supported and will not be observed. Split such deposits into smaller transactions.
+
 ## UTXO Chains
 
 ```admonish warning

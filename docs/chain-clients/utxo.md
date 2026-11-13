@@ -158,7 +158,10 @@ Each vault can have at most 128 pending InstantSend deposits. This fixed limit b
 For example, a network allowance of 10 DASH with a pending 7 DASH deposit leaves
 3 DASH for new early deposits. A 4 DASH deposit waits for a ChainLock; a 2 DASH
 deposit can still qualify. A matching ChainLock certificate frees that deposit's
-exposure.
+exposure. ChainLock votes accumulate across messages in the existing inbound
+voter and retain normal observation credit. Only matching final observations
+signed by a supermajority of currently active validators can settle a deposit;
+early signatures do not count. Settlement never executes the swap again.
 Elapsed time, restart, mempool disappearance or a higher block alone never frees
 capacity.
 
@@ -185,7 +188,10 @@ Early delivery requires persistent scanner storage. Delivery markers are written
 synchronously in a batch before returning observations. The accepted crash gap
 between that write and Observer persistence can lose the early handoff; independent
 ChainLock delivery remains eligible. Observer persistence acknowledges early
-markers, and later block delivery closes them. A late acknowledgement cannot
+markers. For ChainLock observations, the scanner first waits for synchronous
+Observer persistence, then completes the markers in one synchronous batch, then
+advances its scan position. A crash before completion can replay the observation;
+Observer and core deduplication prevent duplicate credit. A late acknowledgement cannot
 reopen a completed marker. Raw transactions are read for admission checks but
 are not archived or rebroadcast by this path.
 
@@ -227,8 +233,9 @@ the ChainLock; internal vault change retains its existing treatment. A changed t
 or ChainLock during collection invalidates the pass. If any vault is insolvent,
 only insolvent vaults are reported. Solvent recovery reports require a complete
 successful collection and a halted chain. One vault's RPC error does not stop
-checks of the remaining vaults, but prevents an all-clear. Identical local reports
-are suppressed until their height or balance changes.
+checks of the remaining vaults, but prevents an all-clear. Reports are retried at
+the normal interval even when their height and balance have not changed; the
+attestation layer deduplicates signatures.
 
 Core applies the same allowance for pending deposits that are not overdue. DASH insolvency
 keeps the existing minority threshold; recovery requires a supermajority. A solvent
@@ -237,8 +244,8 @@ on DASH has an insolvency flag, including a retired vault. This cross-vault
 recovery guard applies only to DASH. Existing pending
 outbound and gas adjustments remain part of the ordinary solvency calculation.
 
-`GET /thorchain/instantsend/DASH` returns network limits, the positive observation
-height and vault entries containing `state` (chain, pubkey and
+`GET /thorchain/instantsend/DASH` returns network limits, the agreed observation
+height (initially zero; early admission waits for a positive anchor) and vault entries containing `state` (chain, pubkey and
 pending IDs, amounts and immutable THORChain credit heights), gross `coins`,
 and `eligible` (an active Asgard vault for DASH without a compromised flag). Pending exposure is the sum of those
 amounts; it may exceed the remaining vault balance when spending precedes delivery

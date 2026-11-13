@@ -207,7 +207,7 @@ func (s *DashSuite) TestDashBlockClearsMempoolMarkers(c *C) {
 			c.Assert(err, IsNil)
 			client.disableVinZeroBatch = true
 
-			batch, err := client.fetchMemPoolTransactions(123, true)
+			batch, err := client.fetchMemPoolTxs(123, true)
 			c.Assert(err, IsNil)
 			c.Assert(batch.TxArray, HasLen, 2)
 			added, err := client.temporalStorage.TrackObservedTx(f.lockedOutbound)
@@ -245,7 +245,7 @@ func (s *DashSuite) TestDashBlockClearsMempoolMarkers(c *C) {
 				c.Assert(err, IsNil)
 				c.Check(added, Equals, false) // Still pending in the mempool.
 			}
-			observed, err := client.temporalStorage.HasObservedTx(f.lockedOutbound)
+			observed, err := client.temporalStorage.HasTxMarker(f.lockedOutbound)
 			c.Assert(err, IsNil)
 			c.Check(observed, Equals, true)
 		}()
@@ -340,7 +340,7 @@ func (s *DashSuite) TestMempoolChainLockFilter(c *C) {
 			f.txs[f.lockedOutbound]["instantlock"] = tc.instantLock
 			f.txs[f.lockedOutbound]["confirmations"] = tc.confirmations
 
-			batch, err := client.fetchMemPoolTransactions(123, true)
+			batch, err := client.fetchMemPoolTxs(123, true)
 			c.Assert(err, IsNil)
 			c.Check(batch.TxArray, HasLen, tc.want, Commentf("%s", tc.name))
 			seen := make(map[string]bool)
@@ -375,7 +375,7 @@ func (s *DashSuite) TestDashMempoolSnapshotAcrossBlockCleanup(c *C) {
 				f.lockedOutbound:   dashTestMempoolEntry(),
 				f.unlockedOutbound: dashTestMempoolEntry(),
 			}
-			first, err := client.fetchMemPoolTransactions(123, true)
+			first, err := client.fetchMemPoolTxs(123, true)
 			c.Assert(err, IsNil)
 			c.Assert(first.TxArray, HasLen, 2)
 
@@ -399,7 +399,7 @@ func (s *DashSuite) TestDashMempoolSnapshotAcrossBlockCleanup(c *C) {
 			completed := make(chan struct{})
 			go func() {
 				defer close(completed)
-				replay.batch, replay.err = client.fetchMemPoolTransactions(149, true)
+				replay.batch, replay.err = client.fetchMemPoolTxs(149, true)
 			}()
 			defer func() {
 				unblock()
@@ -425,6 +425,7 @@ func (s *DashSuite) TestDashMempoolSnapshotAcrossBlockCleanup(c *C) {
 			mined, err := client.extractTxs(block)
 			c.Assert(err, IsNil)
 			c.Assert(mined.TxArray, HasLen, 2)
+			completeDashBlock(c, client, mined)
 			unblock()
 			select {
 			case <-completed:
@@ -438,7 +439,7 @@ func (s *DashSuite) TestDashMempoolSnapshotAcrossBlockCleanup(c *C) {
 				tracked, err = db.Has([]byte(sharedutxo.PrefixMempool+id), nil)
 				c.Assert(err, IsNil)
 				c.Check(tracked, Equals, false)
-				observed, err = client.temporalStorage.HasObservedTx(id)
+				observed, err = client.temporalStorage.HasTxMarker(id)
 				c.Assert(err, IsNil)
 				c.Check(observed, Equals, true)
 				// Also verify removal from the optional in-memory cache.
@@ -466,7 +467,7 @@ func (s *DashSuite) TestDashFetchMemPoolOutboundsAndFinalObservations(c *C) {
 		c.Assert(item.To, Equals, f.user)
 		c.Assert(item.BlockHeight, Equals, int64(123))
 		var observed bool
-		observed, err = client.temporalStorage.HasObservedTx(item.Tx)
+		observed, err = client.temporalStorage.HasTxMarker(item.Tx)
 		c.Assert(err, IsNil)
 		c.Assert(observed, Equals, false) // Keep the later block observation available.
 	}
@@ -480,7 +481,7 @@ func (s *DashSuite) TestDashFetchMemPoolOutboundsAndFinalObservations(c *C) {
 	c.Assert(final.TxArray[0].Tx, Equals, f.inbound)
 	c.Assert(final.TxArray[1].Tx, Equals, f.lowFeeInbound)
 	c.Assert(final.TxArray[0].BlockHeight, Equals, int64(96))
-	observed, err := client.temporalStorage.HasObservedTx(f.lowFeeInbound)
+	observed, err := client.temporalStorage.HasTxMarker(f.lowFeeInbound)
 	c.Assert(err, IsNil)
 	c.Assert(observed, Equals, true)
 
@@ -504,6 +505,7 @@ func (s *DashSuite) TestDashFetchMemPoolOutboundsAndFinalObservations(c *C) {
 		c.Assert(seen[item.Tx], Equals, true)
 		c.Assert(item.BlockHeight, Equals, int64(150))
 	}
+	completeDashBlock(c, client, mined)
 	mined, err = client.extractTxs(block)
 	c.Assert(err, IsNil)
 	c.Assert(mined.TxArray, HasLen, 0)
@@ -539,7 +541,7 @@ func (s *DashSuite) TestDashMempoolRestartKeepsLockObservation(c *C) {
 			c.Assert(err, IsNil)
 			client.signerCacheManager, err = signercache.NewSignerCacheManager(storage.GetInternalDb())
 			c.Assert(err, IsNil)
-			batch, err := client.fetchMemPoolTransactions(123, true)
+			batch, err := client.fetchMemPoolTxs(123, true)
 			c.Assert(err, IsNil)
 			c.Assert(batch.TxArray, HasLen, 2)
 			for _, item := range batch.TxArray {
@@ -553,7 +555,7 @@ func (s *DashSuite) TestDashMempoolRestartKeepsLockObservation(c *C) {
 			c.Assert(err, IsNil)
 			client.signerCacheManager, err = signercache.NewSignerCacheManager(storage.GetInternalDb())
 			c.Assert(err, IsNil)
-			batch, err = client.fetchMemPoolTransactions(124, true)
+			batch, err = client.fetchMemPoolTxs(124, true)
 			c.Assert(err, IsNil)
 			c.Assert(batch.TxArray, HasLen, 0) // persisted mempool markers survive restart
 			if migration {
@@ -568,6 +570,7 @@ func (s *DashSuite) TestDashMempoolRestartKeepsLockObservation(c *C) {
 			batch, err = client.extractTxs(block)
 			c.Assert(err, IsNil)
 			c.Assert(batch.TxArray, HasLen, 2)
+			completeDashBlock(c, client, batch)
 			batch, err = client.extractTxs(block)
 			c.Assert(err, IsNil)
 			c.Assert(batch.TxArray, HasLen, 0)
@@ -610,7 +613,7 @@ func (s *DashSuite) TestDashFetchMemPoolWithInstantSendDisabled(c *C) {
 	bridge := &dashMempoolPolicyBridge{enabled: 0}
 	client.bridge = bridge
 	// A disabled policy must discard any previously prepared final batches.
-	client.instantSend.txQueue = groupInstantSendTxs(
+	client.instantSend.txQueue = sortTxBatches(
 		map[int64][]*types.TxInItem{100: {{Tx: "stale-policy-batch"}}})
 	for i := 0; i < 2; i++ {
 		batch, err := client.FetchMemPool(123)

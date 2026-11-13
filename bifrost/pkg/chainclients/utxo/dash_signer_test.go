@@ -135,6 +135,7 @@ func (s *DashSuite) TestDashSignTxCheckpointAndBroadcast(c *C) {
 	client, err := NewClient(keys, cfg, nil, bridge, m)
 	c.Assert(err, IsNil)
 	defer client.Stop()
+	c.Assert(client.minRelayFeeSats.Load(), Equals, fixedMinRelayFeeSats)
 	to, err := ttypes.GetRandomPubKey().GetAddress(common.DASHChain)
 	c.Assert(err, IsNil)
 	memo := "OUT:" + strings.Repeat("a", 64) + "|" + strings.Repeat("b", 40)
@@ -177,6 +178,10 @@ func (s *DashSuite) TestDashSignTxCheckpointAndBroadcast(c *C) {
 	c.Assert(decoded.TxIn, HasLen, 2)
 	c.Assert(dashutil.VerifyTransaction(&decoded, previous), IsNil)
 	c.Assert(observation.Tx, Equals, decoded.TxHash().String())
+	inputs, err := dashRawInputs(hex.EncodeToString(signed), observation.Tx)
+	c.Assert(err, IsNil)
+	c.Assert(common.OutputRefsFromPointers(observation.SpentOutputRefs), DeepEquals, inputs)
+	c.Assert(inputs, HasLen, len(decoded.TxIn))
 	c.Assert(observation.To, Equals, to.String())
 	c.Assert(observation.Memo, Equals, memo)
 	c.Assert(observation.Coins[0].Amount.Uint64(), Equals, uint64(common.One))
@@ -314,8 +319,6 @@ func (s *DashSuite) TestDashInputSelectionKeepsMempoolLimits(c *C) {
 			c.Assert(client.temporalStorage.SaveBlockMeta(1, &sharedutxo.BlockMeta{SelfTransactions: []string{id}}), IsNil)
 		case "vault":
 			id = f.lockedOutbound
-		case "zero minimum":
-			client.cfg.UTXO.MinUTXOConfirmations = 0
 		}
 		f.utxos = []btcjson.ListUnspentResult{{TxID: id, ScriptPubKey: newDashP2PKHScriptHex(c, f.asgard), Amount: 0.1}}
 		client.cfg.UTXO.MaxMempoolAncestors = 2

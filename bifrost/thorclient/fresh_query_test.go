@@ -393,7 +393,7 @@ func (s *FreshQuerySuite) TestFreshDashAccounting(c *C) {
 	var requests atomic.Uint32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		c.Assert(r.URL.Path, Equals, "/thorchain/instantsend/DASH")
-		_, _ = fmt.Fprintf(w, `{"vaults":[{"state":{"chain":"DASH","pub_key":%q,"pending":[{"id":"%s","amount":"1"}]}}],"observation_height":"%d"}`, pubKey.String(), strings.Repeat("A", 64), requests.Add(1))
+		_, _ = fmt.Fprintf(w, `{"future_field":true,"vaults":[{"future_field":{},"state":{"future_field":"ignored","chain":"DASH","pub_key":%q,"pending":[{"id":"%s","amount":"1"}]}}],"observation_height":"%d"}`, pubKey.String(), strings.Repeat("A", 64), requests.Add(1))
 	}))
 	defer server.Close()
 	bridge := newFreshQueryBridge(c, server)

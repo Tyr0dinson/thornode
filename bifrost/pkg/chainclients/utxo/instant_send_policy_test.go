@@ -15,10 +15,19 @@ func TestInstantSendBaseFee(t *testing.T) {
 		rate    uint64
 		allowed bool
 	}{
-		{"0.000001", 100, 0, false}, {"0.00000799", 100, 0, false}, {"0.000001", 100, 1, true},
-		{"0.000008", 100, 8, true}, {"0.00000799", 100, 8, false}, {"0.000008001", 100, 8, false},
-		{"8e-6", 100, 8, true}, {"-1", 100, 8, false}, {"NaN", 100, 8, false}, {"", 100, 8, false},
-		{"1", 0, 8, false}, {"0.000008", 100, 0, true}, {"0.000008", 100, 9, false},
+		{"0.000001", 100, 0, false},
+		{"0.00000799", 100, 0, false},
+		{"0.000001", 100, 1, true},
+		{"0.000008", 100, 8, true},
+		{"0.00000799", 100, 8, false},
+		{"0.000008001", 100, 8, false},
+		{"8e-6", 100, 8, true},
+		{"-1", 100, 8, false},
+		{"NaN", 100, 8, false},
+		{"", 100, 8, false},
+		{"1", 0, 8, false},
+		{"0.000008", 100, 0, true},
+		{"0.000008", 100, 9, false},
 	} {
 		entry := rpc.GetRawMempoolVerboseResult{VSize: tc.size}
 		entry.Fees.Base = json.Number(tc.fee)

@@ -62,7 +62,7 @@ func (s *DashSuite) TestInstantSendAdmissionUsesNetworkExposure(c *C) {
 	items, err = client.instantSend.claimBatch([]*types.TxInItem{instantSendTestItem(f, f.lowFeeInbound)})
 	c.Assert(err, IsNil)
 	c.Assert(items, HasLen, 0)
-	marked, err := client.temporalStorage.HasObservedTx(f.lowFeeInbound)
+	marked, err := client.temporalStorage.HasTxMarker(f.lowFeeInbound)
 	c.Assert(err, IsNil)
 	c.Assert(marked, Equals, false)
 }
@@ -85,7 +85,7 @@ func (s *DashSuite) TestInstantSendFixedCapacityDefersWithoutMarker(c *C) {
 	items, err := client.instantSend.claimBatch([]*types.TxInItem{item})
 	c.Assert(err, IsNil)
 	c.Assert(items, HasLen, 0)
-	marked, err := client.temporalStorage.HasObservedTx(item.Tx)
+	marked, err := client.temporalStorage.HasTxMarker(item.Tx)
 	c.Assert(err, IsNil)
 	c.Assert(marked, Equals, false)
 	// A fresh core snapshot reflects settlement freeing one slot.
@@ -93,7 +93,7 @@ func (s *DashSuite) TestInstantSendFixedCapacityDefersWithoutMarker(c *C) {
 	items, err = client.instantSend.claimBatch([]*types.TxInItem{item})
 	c.Assert(err, IsNil)
 	c.Assert(items, HasLen, 1)
-	marked, err = client.temporalStorage.HasObservedTx(item.Tx)
+	marked, err = client.temporalStorage.HasTxMarker(item.Tx)
 	c.Assert(err, IsNil)
 	c.Assert(marked, Equals, true)
 }
@@ -162,10 +162,38 @@ func (s *DashSuite) TestInstantSendTransientFailureAndUnhealthyScanner(c *C) {
 	}
 	c.Assert(client.instantSend.verifyPending(state), NotNil)
 	f.overrideRPC = nil
-	client.chainLockHeightHealth.Store(nil)
+	client.chainLockHealth.Store(nil)
 	_, err = client.instantSend.claimBatch([]*types.TxInItem{instantSendTestItem(f, f.lowFeeInbound)})
 	c.Assert(err, Equals, errInstantSendPaused)
-	marked, err := client.temporalStorage.HasObservedTx(f.lowFeeInbound)
+	marked, err := client.temporalStorage.HasTxMarker(f.lowFeeInbound)
 	c.Assert(err, IsNil)
 	c.Assert(marked, Equals, false)
+}
+
+func (s *DashSuite) TestMissingPendingDepositKeepsOrdinaryMempoolScan(c *C) {
+	client, f, cleanup := newDashMempoolFixture(c)
+	defer cleanup()
+	bridge := &dashMempoolPolicyBridge{enabled: 1}
+	state, err := bridge.GetInstantSend(common.DASHChain)
+	c.Assert(err, IsNil)
+	state.Vaults[0].State.Pending = []common.PendingInbound{{Id: common.TxID(strings.ToUpper(f.inbound)), Amount: common.One / 10, Height: 1}}
+	bridge.accounting = state
+	client.bridge = bridge
+	f.overrideRPC = func(method string, params []json.RawMessage) (any, bool) {
+		if method == "getrawtransaction" {
+			var id string
+			c.Assert(json.Unmarshal(params[0], &id), IsNil)
+			if id == f.inbound {
+				return &btcjson.RPCError{Code: btcjson.ErrRPCNoTxInfo, Message: "No such mempool transaction"}, true
+			}
+		}
+		return nil, false
+	}
+	c.Assert(client.instantSend.verifyPending(state), Equals, errInstantSendPaused)
+	batch, err := client.FetchMemPool(151)
+	c.Assert(err, IsNil)
+	c.Assert(batch.TxArray, HasLen, 2)
+	for _, item := range batch.TxArray {
+		c.Assert(item.InstantSend, IsNil)
+	}
 }
