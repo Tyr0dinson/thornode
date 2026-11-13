@@ -20,31 +20,12 @@ genesis:
     thorchain:
       vaults: null
 ---
+{{ template "6-validators-dash-vault-state.yaml" }}
+---
 type: state
 genesis:
   app_state:
     thorchain:
-      vaults:
-        - block_height: "0"
-          chains: [THOR, DASH, ETH]
-          coins:
-            - asset: DASH.DASH
-              amount: "10000000000"
-              decimals: "8"
-            - asset: ETH.ETH
-              amount: "1000000000"
-              decimals: "8"
-          inbound_tx_count: "2"
-          membership:
-            - {{ pubkey_cat }}
-            - {{ pubkey_fox }}
-            - {{ pubkey_pig }}
-            - {{ pubkey_frog }}
-            - {{ pubkey_goat }}
-            - {{ pubkey_hawk }}
-          pub_key: {{ pubkey_dog }}
-          status: ActiveVault
-          type: AsgardVault
       mimirs:
         - key: DashInstantSendEnabled
           value: "1"
@@ -93,6 +74,22 @@ type: check
 endpoint: http://localhost:1317/thorchain/instantsend/DASH
 asserts:
   - (.vaults[0].state.pending // []) | length == 1
+  - .vaults[0].state.pending[0].id == "{{ observe_txid 1 }}"
+  - .vaults[0].state.pending[0].amount | tonumber == 100000000
+---
+type: check
+endpoint: http://localhost:1317/thorchain/vaults/asgard
+asserts:
+  - '[.[].coins[] | select(.asset == "DASH.DASH") | .amount | tonumber] | add == 10100000000'
+  - .[0].inbound_tx_count | tonumber == 3
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - length == 1
+  - .[0].in_hash == "{{ observe_txid 1 }}" and .[0].chain == "ETH"
+  - .[0].to_address == "{{ addr_eth_fox }}" and .[0].coin.asset == "ETH.ETH"
+  - .[0].coin.amount | tonumber > 0
 ---
 # Partial ChainLock shares must survive successful message delivery.
 type: tx-observed-in-quorum

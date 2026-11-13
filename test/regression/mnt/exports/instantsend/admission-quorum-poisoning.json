@@ -187,7 +187,7 @@
           "address": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
           "coins": [
             {
-              "amount": "200002150092",
+              "amount": "199940009076",
               "denom": "rune"
             }
           ]
@@ -205,7 +205,7 @@
           "address": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
           "coins": [
             {
-              "amount": "34999997820312",
+              "amount": "35000059658222",
               "denom": "rune"
             }
           ]
@@ -232,7 +232,7 @@
           "address": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
           "coins": [
             {
-              "amount": "15000000029596",
+              "amount": "15000000332702",
               "denom": "rune"
             }
           ]
@@ -271,63 +271,33 @@
       "bond_providers": [
         {
           "node_address": "tthor12e7ngn5h22su4hecdf0h8aw7hvnly5tchrfd43",
-          "node_operator_fee": "500",
-          "providers": [
-            {
-              "bond": "2500000000000",
-              "bond_address": "tthor12e7ngn5h22su4hecdf0h8aw7hvnly5tchrfd43"
-            }
-          ]
+          "node_operator_fee": "0",
+          "providers": []
         },
         {
           "node_address": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
-          "node_operator_fee": "500",
-          "providers": [
-            {
-              "bond": "2500000000000",
-              "bond_address": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr"
-            }
-          ]
+          "node_operator_fee": "0",
+          "providers": []
         },
         {
           "node_address": "tthor1pnmhtlt8umryv9h4uz60ylc07x5d6lkxzthqlt",
-          "node_operator_fee": "500",
-          "providers": [
-            {
-              "bond": "2500000000000",
-              "bond_address": "tthor1pnmhtlt8umryv9h4uz60ylc07x5d6lkxzthqlt"
-            }
-          ]
+          "node_operator_fee": "0",
+          "providers": []
         },
         {
           "node_address": "tthor1qk8c8sfrmfm0tkncs0zxeutc8v5mx3pjj07k4u",
-          "node_operator_fee": "500",
-          "providers": [
-            {
-              "bond": "2500000000000",
-              "bond_address": "tthor1qk8c8sfrmfm0tkncs0zxeutc8v5mx3pjj07k4u"
-            }
-          ]
+          "node_operator_fee": "0",
+          "providers": []
         },
         {
           "node_address": "tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej",
-          "node_operator_fee": "500",
-          "providers": [
-            {
-              "bond": "2500000000000",
-              "bond_address": "tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej"
-            }
-          ]
+          "node_operator_fee": "0",
+          "providers": []
         },
         {
           "node_address": "tthor1xkz88t875m7ms7wa6220estwwdlc86pqsccrvm",
-          "node_operator_fee": "500",
-          "providers": [
-            {
-              "bond": "2500000000000",
-              "bond_address": "tthor1xkz88t875m7ms7wa6220estwwdlc86pqsccrvm"
-            }
-          ]
+          "node_operator_fee": "0",
+          "providers": []
         }
       ],
       "chain_contracts": [],
@@ -397,8 +367,8 @@
       "network": {
         "LPIncomeSplit": "9867",
         "NodeIncomeSplit": "133",
-        "bond_reward_rune": "29596",
-        "total_bond_units": "12"
+        "bond_reward_rune": "332702",
+        "total_bond_units": "30"
       },
       "network_fees": [
         {
@@ -509,24 +479,23 @@
         {
           "actions": [
             {
-              "aggregator_target_limit": "0",
-              "chain": "DASH",
+              "chain": "ETH",
+              "clout_spent": "0",
               "coin": {
-                "amount": "99996000",
-                "asset": "DASH.DASH",
-                "decimals": "8"
+                "amount": "8973554",
+                "asset": "ETH.ETH"
               },
-              "gas_rate": "3",
+              "gas_rate": "120",
               "in_hash": "0000000000000000000000000000000000000000000000000000000000000001",
               "max_gas": [
                 {
-                  "amount": "6000",
-                  "asset": "DASH.DASH",
+                  "amount": "960000",
+                  "asset": "ETH.ETH",
                   "decimals": "8"
                 }
               ],
-              "original_memo": "REFUND:0000000000000000000000000000000000000000000000000000000000000001",
-              "to_address": "yZ3DNoeo8CMvcBULP7dU6JZWG1cWo1NVXE",
+              "original_memo": "OUT:0000000000000000000000000000000000000000000000000000000000000001",
+              "to_address": "0xe3c64974c78f5693bd2bc68b3221d58df5c6e877",
               "vault_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4"
             }
           ],
@@ -653,31 +622,31 @@
       "outbound_fee_spent_rune": [],
       "outbound_fee_withheld_rune": [
         {
-          "amount": "689655212414",
-          "asset": "DASH.DASH"
+          "amount": "689720379858",
+          "asset": "ETH.ETH"
         }
       ],
       "pools": [
         {
           "LP_units": "100000000000",
           "asset": "DASH.DASH",
-          "balance_asset": "10000004000",
-          "balance_rune": "100001055046",
+          "balance_asset": "10100000000",
+          "balance_rune": "99022295099",
           "decimals": "8",
           "pending_inbound_asset": "0",
           "pending_inbound_rune": "0",
-          "status": "Staged",
+          "status": "Available",
           "synth_units": "0"
         },
         {
           "LP_units": "100000000000",
           "asset": "ETH.ETH",
-          "balance_asset": "1000000000",
-          "balance_rune": "100001095046",
+          "balance_asset": "991026446",
+          "balance_rune": "100917713977",
           "decimals": "8",
           "pending_inbound_asset": "0",
           "pending_inbound_rune": "0",
-          "status": "Staged",
+          "status": "Available",
           "synth_units": "0"
         }
       ],
@@ -694,7 +663,20 @@
       "sol_vault_nonces": [],
       "streaming_swaps": [],
       "swap_queue_items": [],
-      "swapper_clout": [],
+      "swapper_clout": [
+        {
+          "address": "0xe3c64974c78f5693bd2bc68b3221d58df5c6e877",
+          "reclaimed": "0",
+          "score": "9706070",
+          "spent": "0"
+        },
+        {
+          "address": "yZ3DNoeo8CMvcBULP7dU6JZWG1cWo1NVXE",
+          "reclaimed": "0",
+          "score": "9706068",
+          "spent": "0"
+        }
+      ],
       "tcy_claimers": [],
       "tcy_stakers": [],
       "trade_accounts": [],
@@ -705,24 +687,23 @@
           "tx_array": [
             {
               "aggregator_target_limit": "0",
-              "chain": "DASH",
+              "chain": "ETH",
               "clout_spent": "0",
               "coin": {
-                "amount": "99996000",
-                "asset": "DASH.DASH",
-                "decimals": "8"
+                "amount": "8973554",
+                "asset": "ETH.ETH"
               },
-              "gas_rate": "3",
+              "gas_rate": "120",
               "in_hash": "0000000000000000000000000000000000000000000000000000000000000001",
               "max_gas": [
                 {
-                  "amount": "6000",
-                  "asset": "DASH.DASH",
+                  "amount": "960000",
+                  "asset": "ETH.ETH",
                   "decimals": "8"
                 }
               ],
-              "original_memo": "REFUND:0000000000000000000000000000000000000000000000000000000000000001",
-              "to_address": "yZ3DNoeo8CMvcBULP7dU6JZWG1cWo1NVXE",
+              "original_memo": "OUT:0000000000000000000000000000000000000000000000000000000000000001",
+              "to_address": "0xe3c64974c78f5693bd2bc68b3221d58df5c6e877",
               "vault_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4"
             }
           ]
@@ -734,12 +715,7 @@
           "chains": [
             "THOR",
             "DASH",
-            "LTC",
-            "BCH",
-            "ETH",
-            "DOGE",
-            "AVAX",
-            "GAIA"
+            "ETH"
           ],
           "coins": [
             {
@@ -755,7 +731,12 @@
           ],
           "inbound_tx_count": "3",
           "membership": [
-            "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4"
+            "tthorpub1addwnpepqwlkdxcyz8fnxk3xp0eqt89g6cxau2c4zp89yr2x2dy56s2zgu2jx3pmacu",
+            "tthorpub1addwnpepqv8lvvqmczr893yf7zyf7xtffccf032aprl8z09y3e3nfruedew85n306k5",
+            "tthorpub1addwnpepqg0rpnr9y7csa6rzy73w7ldfhlf5kthmn77xzeqx68mueh9pest9vlvs93k",
+            "tthorpub1addwnpepq0pj32xkm74ndx0wme5hjmk6hmg5w78zdnz02jlmr337vg8mhtjszk9mhev",
+            "tthorpub1addwnpepqvfnccxa3hw35m7mx6mavxdp93jjw2jhdw0tv45dlmlelcsctu335w2yw3u",
+            "tthorpub1addwnpepqw3ul84wcwfmlp6qe424yj5gyy7crrrfwftekje7qdwjpxty0umucg83u4q"
           ],
           "pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
           "routers": null,
@@ -812,5 +793,5 @@
       }
     }
   },
-  "initial_height": 5
+  "initial_height": 6
 }

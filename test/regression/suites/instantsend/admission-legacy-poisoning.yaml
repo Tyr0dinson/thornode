@@ -12,6 +12,15 @@ genesis:
 ---
 {{ template "dash-eth-pool-state.yaml" }}
 ---
+# Replace the single-member vault so all active validators remain members.
+type: state
+genesis:
+  app_state:
+    thorchain:
+      vaults: null
+---
+{{ template "6-validators-dash-vault-state.yaml" }}
+---
 type: state
 genesis:
   app_state:
@@ -29,6 +38,24 @@ genesis:
 ---
 type: create-blocks
 count: 1
+---
+# Admission must be tested with a healthy network, not a Ragnarok refund.
+type: check
+endpoint: http://localhost:1317/thorchain/ragnarok
+asserts:
+  - . == false
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pools
+asserts:
+  - '[.[] | select(.asset == "DASH.DASH" or .asset == "ETH.ETH")] | length == 2 and all(.status == "Available")'
+---
+type: check
+endpoint: http://localhost:1317/thorchain/vaults/asgard
+asserts:
+  - length == 1
+  - .[0].pub_key == "{{ pubkey_dog }}"
+  - .[0].membership | sort == (["{{ pubkey_cat }}", "{{ pubkey_fox }}", "{{ pubkey_pig }}", "{{ pubkey_frog }}", "{{ pubkey_goat }}", "{{ pubkey_hawk }}"] | sort)
 ---
 type: tx-observed-in
 signer: {{ addr_thor_cat }}
@@ -55,6 +82,17 @@ txs:
 ---
 type: create-blocks
 count: 1
+---
+# The attack must reach the voter before the honest early certificate.
+type: check
+endpoint: http://localhost:1317/thorchain/tx/details/{{ observe_txid 1 }}
+asserts:
+  - .txs | length == 1
+  - .txs[0].tx.id == "{{ observe_txid 1 }}"
+  - .txs[0].signers == ["{{ addr_thor_cat }}"]
+  - .txs[0].external_observed_height | tonumber == 96
+  - (.finalised_height // "0") | tonumber == 0
+  - (.updated_vault // false) == false
 ---
 type: tx-observed-in-quorum
 nodes: [fox, pig, frog, goat, hawk]
@@ -94,6 +132,11 @@ asserts:
   - '[.[].coins[] | select(.asset == "DASH.DASH") | .amount | tonumber] | add == 10000000000'
 ---
 type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - length == 0
+---
+type: check
 endpoint: http://localhost:1317/thorchain/mimir
 asserts:
   - (.HALTDASHTRADING // 0) == 0
@@ -129,8 +172,69 @@ type: check
 endpoint: http://localhost:1317/thorchain/vaults/asgard
 asserts:
   - '[.[].coins[] | select(.asset == "DASH.DASH") | .amount | tonumber] | add == 10100000000'
+  - .[0].inbound_tx_count | tonumber == 3
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/instantsend/DASH
 asserts:
   - (.vaults[0].state.pending // []) | length == 0
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - length == 1
+  - .[0].in_hash == "{{ observe_txid 1 }}" and .[0].chain == "ETH"
+  - .[0].to_address == "{{ addr_eth_fox }}" and .[0].coin.asset == "ETH.ETH"
+  - .[0].coin.amount | tonumber > 0
+---
+# Replaying the ChainLock certificate cannot credit or swap twice.
+type: tx-observed-in-quorum
+nodes: [fox, pig, frog, goat, hawk]
+observation:
+  tx:
+    id: "{{ observe_txid 1 }}"
+    chain: DASH
+    from_address: {{ addr_dash_fox }}
+    to_address: {{ addr_dash_dog }}
+    coins:
+      - asset: DASH.DASH
+        amount: "100000000"
+        decimals: 8
+    gas:
+      - asset: DASH.DASH
+        amount: "4000"
+    memo: "=:ETH.ETH:{{ addr_eth_fox }}"
+  observed_pub_key: {{ pubkey_dog }}
+  block_height: 101
+  finalise_height: 101
+  spent_output_refs:
+    - tx_hash: "{{ observe_txid 900 }}"
+      output_index: 0
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/vaults/asgard
+asserts:
+  - '[.[].coins[] | select(.asset == "DASH.DASH") | .amount | tonumber] | add == 10100000000'
+  - .[0].inbound_tx_count | tonumber == 3
+---
+type: check
+endpoint: http://localhost:1317/thorchain/instantsend/DASH
+asserts:
+  - (.vaults[0].state.pending // []) | length == 0
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - length == 1
+  - .[0].in_hash == "{{ observe_txid 1 }}" and .[0].chain == "ETH"
+  - .[0].to_address == "{{ addr_eth_fox }}" and .[0].coin.asset == "ETH.ETH"
+  - .[0].coin.amount | tonumber > 0
+---
+type: check
+endpoint: http://localhost:1317/thorchain/mimir
+asserts:
+  - (.HALTDASHTRADING // 0) == 0
+  - (.HALTSIGNINGDASH // 0) == 0
