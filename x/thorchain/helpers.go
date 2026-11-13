@@ -2096,27 +2096,11 @@ func settleSwapCached(ctx cosmos.Context, mgr Manager, msg MsgSwap, settleReason
 		ctx.Logger().Debug("fail to remove swap from adv queue", "error", err)
 	}
 
-	// Emit streaming swap event if this was a streaming swap
+	// Emit streaming swap event if this was a streaming swap. Shared with the
+	// errata reversal path so a new streaming-swap-event field cannot land in
+	// one path and not the other.
 	if msg.IsStreaming() {
-		// Create a StreamingSwap struct from the MsgSwap state for the event
-		swp := StreamingSwap{
-			TxID:              msg.Tx.ID,
-			Interval:          msg.State.Interval,
-			Quantity:          msg.State.Quantity,
-			Count:             msg.State.Count,
-			LastHeight:        msg.State.LastHeight,
-			TradeTarget:       msg.TradeTarget,
-			Deposit:           msg.State.Deposit,
-			In:                msg.State.In,
-			Out:               msg.State.Out,
-			FailedSwaps:       msg.State.FailedSwaps,
-			FailedSwapReasons: msg.State.FailedSwapReasons,
-		}
-
-		evt := NewEventStreamingSwap(msg.Tx.Coins[0].Asset, msg.TargetAsset, swp)
-		if err := mgr.EventMgr().EmitEvent(ctx, evt); err != nil {
-			ctx.Logger().Error("fail to emit streaming swap event", "error", err)
-		}
+		emitStreamingSwapEvent(ctx, mgr, msg)
 	}
 
 	// Emit limit swap close event if this was a limit swap being closed
