@@ -6840,9 +6840,9 @@ components:
     VaultAddressResponse:
       example:
         found: true
-        pubkey: thorpub1addwnpepq068dr0x7ue973drmq4eqmzhcq3650n7nx5fhgn9gl207luxp6vaklu52tc
+        pub_key: thorpub1addwnpepq068dr0x7ue973drmq4eqmzhcq3650n7nx5fhgn9gl207luxp6vaklu52tc
       properties:
-        pubkey:
+        pub_key:
           description: The vault pubkey associated with the address (empty if not
             found)
           example: thorpub1addwnpepq068dr0x7ue973drmq4eqmzhcq3650n7nx5fhgn9gl207luxp6vaklu52tc
@@ -6853,7 +6853,7 @@ components:
           type: boolean
       required:
       - found
-      - pubkey
+      - pub_key
       type: object
     NetworkResponse:
       example:

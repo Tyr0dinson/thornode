@@ -4506,10 +4506,10 @@ components:
     VaultAddressResponse:
       type: object
       required:
-        - pubkey
+        - pub_key
         - found
       properties:
-        pubkey:
+        pub_key:
           type: string
           description: The vault pubkey associated with the address (empty if not found)
           example: "thorpub1addwnpepq068dr0x7ue973drmq4eqmzhcq3650n7nx5fhgn9gl207luxp6vaklu52tc"

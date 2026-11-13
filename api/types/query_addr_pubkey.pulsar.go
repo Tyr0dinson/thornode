@@ -498,15 +498,15 @@ func (x *fastReflection_QueryAddrPubKeyRequest) ProtoMethods() *protoiface.Metho
 }
 
 var (
-	md_QueryAddrPubKeyResponse        protoreflect.MessageDescriptor
-	fd_QueryAddrPubKeyResponse_pubkey protoreflect.FieldDescriptor
-	fd_QueryAddrPubKeyResponse_found  protoreflect.FieldDescriptor
+	md_QueryAddrPubKeyResponse         protoreflect.MessageDescriptor
+	fd_QueryAddrPubKeyResponse_pub_key protoreflect.FieldDescriptor
+	fd_QueryAddrPubKeyResponse_found   protoreflect.FieldDescriptor
 )
 
 func init() {
 	file_types_query_addr_pubkey_proto_init()
 	md_QueryAddrPubKeyResponse = File_types_query_addr_pubkey_proto.Messages().ByName("QueryAddrPubKeyResponse")
-	fd_QueryAddrPubKeyResponse_pubkey = md_QueryAddrPubKeyResponse.Fields().ByName("pubkey")
+	fd_QueryAddrPubKeyResponse_pub_key = md_QueryAddrPubKeyResponse.Fields().ByName("pub_key")
 	fd_QueryAddrPubKeyResponse_found = md_QueryAddrPubKeyResponse.Fields().ByName("found")
 }
 
@@ -575,9 +575,9 @@ func (x *fastReflection_QueryAddrPubKeyResponse) Interface() protoreflect.ProtoM
 // While iterating, mutating operations may only be performed
 // on the current field descriptor.
 func (x *fastReflection_QueryAddrPubKeyResponse) Range(f func(protoreflect.FieldDescriptor, protoreflect.Value) bool) {
-	if x.Pubkey != "" {
-		value := protoreflect.ValueOfString(x.Pubkey)
-		if !f(fd_QueryAddrPubKeyResponse_pubkey, value) {
+	if x.PubKey != "" {
+		value := protoreflect.ValueOfString(x.PubKey)
+		if !f(fd_QueryAddrPubKeyResponse_pub_key, value) {
 			return
 		}
 	}
@@ -602,8 +602,8 @@ func (x *fastReflection_QueryAddrPubKeyResponse) Range(f func(protoreflect.Field
 // a repeated field is populated if it is non-empty.
 func (x *fastReflection_QueryAddrPubKeyResponse) Has(fd protoreflect.FieldDescriptor) bool {
 	switch fd.FullName() {
-	case "types.QueryAddrPubKeyResponse.pubkey":
-		return x.Pubkey != ""
+	case "types.QueryAddrPubKeyResponse.pub_key":
+		return x.PubKey != ""
 	case "types.QueryAddrPubKeyResponse.found":
 		return x.Found != false
 	default:
@@ -622,8 +622,8 @@ func (x *fastReflection_QueryAddrPubKeyResponse) Has(fd protoreflect.FieldDescri
 // Clear is a mutating operation and unsafe for concurrent use.
 func (x *fastReflection_QueryAddrPubKeyResponse) Clear(fd protoreflect.FieldDescriptor) {
 	switch fd.FullName() {
-	case "types.QueryAddrPubKeyResponse.pubkey":
-		x.Pubkey = ""
+	case "types.QueryAddrPubKeyResponse.pub_key":
+		x.PubKey = ""
 	case "types.QueryAddrPubKeyResponse.found":
 		x.Found = false
 	default:
@@ -642,8 +642,8 @@ func (x *fastReflection_QueryAddrPubKeyResponse) Clear(fd protoreflect.FieldDesc
 // of the value; to obtain a mutable reference, use Mutable.
 func (x *fastReflection_QueryAddrPubKeyResponse) Get(descriptor protoreflect.FieldDescriptor) protoreflect.Value {
 	switch descriptor.FullName() {
-	case "types.QueryAddrPubKeyResponse.pubkey":
-		value := x.Pubkey
+	case "types.QueryAddrPubKeyResponse.pub_key":
+		value := x.PubKey
 		return protoreflect.ValueOfString(value)
 	case "types.QueryAddrPubKeyResponse.found":
 		value := x.Found
@@ -668,8 +668,8 @@ func (x *fastReflection_QueryAddrPubKeyResponse) Get(descriptor protoreflect.Fie
 // Set is a mutating operation and unsafe for concurrent use.
 func (x *fastReflection_QueryAddrPubKeyResponse) Set(fd protoreflect.FieldDescriptor, value protoreflect.Value) {
 	switch fd.FullName() {
-	case "types.QueryAddrPubKeyResponse.pubkey":
-		x.Pubkey = value.Interface().(string)
+	case "types.QueryAddrPubKeyResponse.pub_key":
+		x.PubKey = value.Interface().(string)
 	case "types.QueryAddrPubKeyResponse.found":
 		x.Found = value.Bool()
 	default:
@@ -692,8 +692,8 @@ func (x *fastReflection_QueryAddrPubKeyResponse) Set(fd protoreflect.FieldDescri
 // Mutable is a mutating operation and unsafe for concurrent use.
 func (x *fastReflection_QueryAddrPubKeyResponse) Mutable(fd protoreflect.FieldDescriptor) protoreflect.Value {
 	switch fd.FullName() {
-	case "types.QueryAddrPubKeyResponse.pubkey":
-		panic(fmt.Errorf("field pubkey of message types.QueryAddrPubKeyResponse is not mutable"))
+	case "types.QueryAddrPubKeyResponse.pub_key":
+		panic(fmt.Errorf("field pub_key of message types.QueryAddrPubKeyResponse is not mutable"))
 	case "types.QueryAddrPubKeyResponse.found":
 		panic(fmt.Errorf("field found of message types.QueryAddrPubKeyResponse is not mutable"))
 	default:
@@ -709,7 +709,7 @@ func (x *fastReflection_QueryAddrPubKeyResponse) Mutable(fd protoreflect.FieldDe
 // For lists, maps, and messages, this returns a new, empty, mutable value.
 func (x *fastReflection_QueryAddrPubKeyResponse) NewField(fd protoreflect.FieldDescriptor) protoreflect.Value {
 	switch fd.FullName() {
-	case "types.QueryAddrPubKeyResponse.pubkey":
+	case "types.QueryAddrPubKeyResponse.pub_key":
 		return protoreflect.ValueOfString("")
 	case "types.QueryAddrPubKeyResponse.found":
 		return protoreflect.ValueOfBool(false)
@@ -782,7 +782,7 @@ func (x *fastReflection_QueryAddrPubKeyResponse) ProtoMethods() *protoiface.Meth
 		var n int
 		var l int
 		_ = l
-		l = len(x.Pubkey)
+		l = len(x.PubKey)
 		if l > 0 {
 			n += 1 + l + runtime.Sov(uint64(l))
 		}
@@ -828,10 +828,10 @@ func (x *fastReflection_QueryAddrPubKeyResponse) ProtoMethods() *protoiface.Meth
 			i--
 			dAtA[i] = 0x10
 		}
-		if len(x.Pubkey) > 0 {
-			i -= len(x.Pubkey)
-			copy(dAtA[i:], x.Pubkey)
-			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.Pubkey)))
+		if len(x.PubKey) > 0 {
+			i -= len(x.PubKey)
+			copy(dAtA[i:], x.PubKey)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.PubKey)))
 			i--
 			dAtA[i] = 0xa
 		}
@@ -886,7 +886,7 @@ func (x *fastReflection_QueryAddrPubKeyResponse) ProtoMethods() *protoiface.Meth
 			switch fieldNum {
 			case 1:
 				if wireType != 2 {
-					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field Pubkey", wireType)
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field PubKey", wireType)
 				}
 				var stringLen uint64
 				for shift := uint(0); ; shift += 7 {
@@ -914,7 +914,7 @@ func (x *fastReflection_QueryAddrPubKeyResponse) ProtoMethods() *protoiface.Meth
 				if postIndex > l {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
 				}
-				x.Pubkey = string(dAtA[iNdEx:postIndex])
+				x.PubKey = string(dAtA[iNdEx:postIndex])
 				iNdEx = postIndex
 			case 2:
 				if wireType != 0 {
@@ -1032,7 +1032,7 @@ type QueryAddrPubKeyResponse struct {
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	Pubkey string `protobuf:"bytes,1,opt,name=pubkey,proto3" json:"pubkey,omitempty"`
+	PubKey string `protobuf:"bytes,1,opt,name=pub_key,json=pubKey,proto3" json:"pub_key,omitempty"`
 	Found  bool   `protobuf:"varint,2,opt,name=found,proto3" json:"found,omitempty"`
 }
 
@@ -1056,9 +1056,9 @@ func (*QueryAddrPubKeyResponse) Descriptor() ([]byte, []int) {
 	return file_types_query_addr_pubkey_proto_rawDescGZIP(), []int{1}
 }
 
-func (x *QueryAddrPubKeyResponse) GetPubkey() string {
+func (x *QueryAddrPubKeyResponse) GetPubKey() string {
 	if x != nil {
-		return x.Pubkey
+		return x.PubKey
 	}
 	return ""
 }
@@ -1081,21 +1081,21 @@ var file_types_query_addr_pubkey_proto_rawDesc = []byte{
 	0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x12, 0x18, 0x0a, 0x07, 0x61, 0x64, 0x64, 0x72, 0x65, 0x73,
 	0x73, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x07, 0x61, 0x64, 0x64, 0x72, 0x65, 0x73, 0x73,
 	0x12, 0x16, 0x0a, 0x06, 0x68, 0x65, 0x69, 0x67, 0x68, 0x74, 0x18, 0x02, 0x20, 0x01, 0x28, 0x09,
-	0x52, 0x06, 0x68, 0x65, 0x69, 0x67, 0x68, 0x74, 0x22, 0x47, 0x0a, 0x17, 0x51, 0x75, 0x65, 0x72,
+	0x52, 0x06, 0x68, 0x65, 0x69, 0x67, 0x68, 0x74, 0x22, 0x48, 0x0a, 0x17, 0x51, 0x75, 0x65, 0x72,
 	0x79, 0x41, 0x64, 0x64, 0x72, 0x50, 0x75, 0x62, 0x4b, 0x65, 0x79, 0x52, 0x65, 0x73, 0x70, 0x6f,
-	0x6e, 0x73, 0x65, 0x12, 0x16, 0x0a, 0x06, 0x70, 0x75, 0x62, 0x6b, 0x65, 0x79, 0x18, 0x01, 0x20,
-	0x01, 0x28, 0x09, 0x52, 0x06, 0x70, 0x75, 0x62, 0x6b, 0x65, 0x79, 0x12, 0x14, 0x0a, 0x05, 0x66,
-	0x6f, 0x75, 0x6e, 0x64, 0x18, 0x02, 0x20, 0x01, 0x28, 0x08, 0x52, 0x05, 0x66, 0x6f, 0x75, 0x6e,
-	0x64, 0x42, 0x85, 0x01, 0x0a, 0x09, 0x63, 0x6f, 0x6d, 0x2e, 0x74, 0x79, 0x70, 0x65, 0x73, 0x42,
-	0x14, 0x51, 0x75, 0x65, 0x72, 0x79, 0x41, 0x64, 0x64, 0x72, 0x50, 0x75, 0x62, 0x6b, 0x65, 0x79,
-	0x50, 0x72, 0x6f, 0x74, 0x6f, 0x50, 0x01, 0x5a, 0x2a, 0x67, 0x69, 0x74, 0x6c, 0x61, 0x62, 0x2e,
-	0x63, 0x6f, 0x6d, 0x2f, 0x74, 0x68, 0x6f, 0x72, 0x63, 0x68, 0x61, 0x69, 0x6e, 0x2f, 0x74, 0x68,
-	0x6f, 0x72, 0x6e, 0x6f, 0x64, 0x65, 0x2f, 0x76, 0x33, 0x2f, 0x61, 0x70, 0x69, 0x2f, 0x74, 0x79,
-	0x70, 0x65, 0x73, 0xa2, 0x02, 0x03, 0x54, 0x58, 0x58, 0xaa, 0x02, 0x05, 0x54, 0x79, 0x70, 0x65,
-	0x73, 0xca, 0x02, 0x05, 0x54, 0x79, 0x70, 0x65, 0x73, 0xe2, 0x02, 0x11, 0x54, 0x79, 0x70, 0x65,
-	0x73, 0x5c, 0x47, 0x50, 0x42, 0x4d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0xea, 0x02, 0x05,
-	0x54, 0x79, 0x70, 0x65, 0x73, 0xc8, 0xe2, 0x1e, 0x01, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f,
-	0x33,
+	0x6e, 0x73, 0x65, 0x12, 0x17, 0x0a, 0x07, 0x70, 0x75, 0x62, 0x5f, 0x6b, 0x65, 0x79, 0x18, 0x01,
+	0x20, 0x01, 0x28, 0x09, 0x52, 0x06, 0x70, 0x75, 0x62, 0x4b, 0x65, 0x79, 0x12, 0x14, 0x0a, 0x05,
+	0x66, 0x6f, 0x75, 0x6e, 0x64, 0x18, 0x02, 0x20, 0x01, 0x28, 0x08, 0x52, 0x05, 0x66, 0x6f, 0x75,
+	0x6e, 0x64, 0x42, 0x85, 0x01, 0x0a, 0x09, 0x63, 0x6f, 0x6d, 0x2e, 0x74, 0x79, 0x70, 0x65, 0x73,
+	0x42, 0x14, 0x51, 0x75, 0x65, 0x72, 0x79, 0x41, 0x64, 0x64, 0x72, 0x50, 0x75, 0x62, 0x6b, 0x65,
+	0x79, 0x50, 0x72, 0x6f, 0x74, 0x6f, 0x50, 0x01, 0x5a, 0x2a, 0x67, 0x69, 0x74, 0x6c, 0x61, 0x62,
+	0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x74, 0x68, 0x6f, 0x72, 0x63, 0x68, 0x61, 0x69, 0x6e, 0x2f, 0x74,
+	0x68, 0x6f, 0x72, 0x6e, 0x6f, 0x64, 0x65, 0x2f, 0x76, 0x33, 0x2f, 0x61, 0x70, 0x69, 0x2f, 0x74,
+	0x79, 0x70, 0x65, 0x73, 0xa2, 0x02, 0x03, 0x54, 0x58, 0x58, 0xaa, 0x02, 0x05, 0x54, 0x79, 0x70,
+	0x65, 0x73, 0xca, 0x02, 0x05, 0x54, 0x79, 0x70, 0x65, 0x73, 0xe2, 0x02, 0x11, 0x54, 0x79, 0x70,
+	0x65, 0x73, 0x5c, 0x47, 0x50, 0x42, 0x4d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0xea, 0x02,
+	0x05, 0x54, 0x79, 0x70, 0x65, 0x73, 0xc8, 0xe2, 0x1e, 0x01, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74,
+	0x6f, 0x33,
 }
 
 var (

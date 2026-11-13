@@ -17,7 +17,7 @@ import (
 // VaultAddressResponse struct for VaultAddressResponse
 type VaultAddressResponse struct {
 	// The vault pubkey associated with the address (empty if not found)
-	Pubkey string `json:"pubkey"`
+	PubKey string `json:"pub_key"`
 	// Whether the address belongs to a vault
 	Found bool `json:"found"`
 }
@@ -26,9 +26,9 @@ type VaultAddressResponse struct {
 // This constructor will assign default values to properties that have it defined,
 // and makes sure properties required by API are set, but the set of arguments
 // will change when the set of required properties is changed
-func NewVaultAddressResponse(pubkey string, found bool) *VaultAddressResponse {
+func NewVaultAddressResponse(pubKey string, found bool) *VaultAddressResponse {
 	this := VaultAddressResponse{}
-	this.Pubkey = pubkey
+	this.PubKey = pubKey
 	this.Found = found
 	return &this
 }
@@ -41,28 +41,28 @@ func NewVaultAddressResponseWithDefaults() *VaultAddressResponse {
 	return &this
 }
 
-// GetPubkey returns the Pubkey field value
-func (o *VaultAddressResponse) GetPubkey() string {
+// GetPubKey returns the PubKey field value
+func (o *VaultAddressResponse) GetPubKey() string {
 	if o == nil {
 		var ret string
 		return ret
 	}
 
-	return o.Pubkey
+	return o.PubKey
 }
 
-// GetPubkeyOk returns a tuple with the Pubkey field value
+// GetPubKeyOk returns a tuple with the PubKey field value
 // and a boolean to check if the value has been set.
-func (o *VaultAddressResponse) GetPubkeyOk() (*string, bool) {
+func (o *VaultAddressResponse) GetPubKeyOk() (*string, bool) {
 	if o == nil {
 		return nil, false
 	}
-	return &o.Pubkey, true
+	return &o.PubKey, true
 }
 
-// SetPubkey sets field value
-func (o *VaultAddressResponse) SetPubkey(v string) {
-	o.Pubkey = v
+// SetPubKey sets field value
+func (o *VaultAddressResponse) SetPubKey(v string) {
+	o.PubKey = v
 }
 
 // GetFound returns the Found field value
@@ -92,7 +92,7 @@ func (o *VaultAddressResponse) SetFound(v bool) {
 func (o VaultAddressResponse) MarshalJSON_deprecated() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if true {
-		toSerialize["pubkey"] = o.Pubkey
+		toSerialize["pub_key"] = o.PubKey
 	}
 	if true {
 		toSerialize["found"] = o.Found

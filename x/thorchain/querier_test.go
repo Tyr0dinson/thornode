@@ -17,6 +17,7 @@ import (
 	"github.com/cosmos/cosmos-sdk/crypto/hd"
 	ckeys "github.com/cosmos/cosmos-sdk/crypto/keyring"
 	types2 "github.com/cosmos/cosmos-sdk/types"
+	gateway "github.com/cosmos/gogogateway"
 
 	"gitlab.com/thorchain/thornode/v3/app/params"
 	"gitlab.com/thorchain/thornode/v3/cmd"
@@ -2657,7 +2658,7 @@ func (s *QuerierSuite) TestQueryAddrPubKeyFallsBackToVaultStore(c *C) {
 		resp, queryErr := queryServer.AddrPubKey(ctx, &types.QueryAddrPubKeyRequest{Address: addr.String()})
 		c.Assert(queryErr, IsNil)
 		c.Check(resp.Found, Equals, true, Commentf("%s", tc.chain))
-		c.Check(resp.Pubkey, Equals, tc.pk.String(), Commentf("%s", tc.chain))
+		c.Check(resp.PubKey, Equals, tc.pk.String(), Commentf("%s", tc.chain))
 	}
 
 	// An indexed address is answered from the index.
@@ -2668,7 +2669,7 @@ func (s *QuerierSuite) TestQueryAddrPubKeyFallsBackToVaultStore(c *C) {
 	resp, err := queryServer.AddrPubKey(ctx, &types.QueryAddrPubKeyRequest{Address: indexedAddr.String()})
 	c.Assert(err, IsNil)
 	c.Check(resp.Found, Equals, true)
-	c.Check(resp.Pubkey, Equals, indexedPK.String())
+	c.Check(resp.PubKey, Equals, indexedPK.String())
 
 	// An address that belongs to no vault is not found.
 	unknown, err := GetRandomPubKey().GetAddress(common.ETHChain)
@@ -2676,5 +2677,50 @@ func (s *QuerierSuite) TestQueryAddrPubKeyFallsBackToVaultStore(c *C) {
 	resp, err = queryServer.AddrPubKey(ctx, &types.QueryAddrPubKeyRequest{Address: unknown.String()})
 	c.Assert(err, IsNil)
 	c.Check(resp.Found, Equals, false)
-	c.Check(resp.Pubkey, Equals, "")
+	c.Check(resp.PubKey, Equals, "")
+}
+
+// The vault key must go out as `pub_key`, the name every other vault query
+// response uses (QueryVaultResponse, VaultInfo, QueryInboundAddressResponse,
+// QueryKeysignPartyResponse), and must match the openapi schema.
+func (s *QuerierSuite) TestQueryAddrPubKeyResponseJSONFieldNames(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	txConfig, err := params.TxConfig(s.mgr.cdc, nil)
+	c.Assert(err, IsNil)
+	queryServer := NewQueryServerImpl(mgr, txConfig, s.kb)
+
+	// Same marshaler settings as the REST gateway (see CustomGRPCGatewayRouter).
+	marshaler := &gateway.JSONPb{EmitDefaults: true, OrigName: true}
+
+	pubKey := GetRandomPubKey()
+	addr, err := pubKey.GetAddress(common.BTCChain)
+	c.Assert(err, IsNil)
+	mgr.Keeper().SetAddrPubKey(ctx, addr, pubKey)
+	unknown, err := GetRandomPubKey().GetAddress(common.BTCChain)
+	c.Assert(err, IsNil)
+
+	for _, tc := range []struct {
+		addr   common.Address
+		pubKey string
+		found  bool
+	}{
+		{addr, pubKey.String(), true},
+		// EmitDefaults keeps both keys on a miss.
+		{unknown, "", false},
+	} {
+		resp, queryErr := queryServer.AddrPubKey(ctx, &types.QueryAddrPubKeyRequest{Address: tc.addr.String()})
+		c.Assert(queryErr, IsNil)
+		bz, marshalErr := marshaler.Marshal(resp)
+		c.Assert(marshalErr, IsNil)
+
+		var fields map[string]any
+		c.Assert(json.Unmarshal(bz, &fields), IsNil)
+		c.Check(fields, DeepEquals, map[string]any{"pub_key": tc.pubKey, "found": tc.found})
+
+		// The generated openapi model decodes the same bytes.
+		var model openapi.VaultAddressResponse
+		c.Assert(json.Unmarshal(bz, &model), IsNil)
+		c.Check(model.PubKey, Equals, tc.pubKey)
+		c.Check(model.Found, Equals, tc.found)
+	}
 }

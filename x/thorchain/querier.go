@@ -603,7 +603,7 @@ func (qs queryServer) queryAddrPubKey(ctx cosmos.Context, req *types.QueryAddrPu
 	}
 
 	return &types.QueryAddrPubKeyResponse{
-		Pubkey: pubKeyStr,
+		PubKey: pubKeyStr,
 		Found:  found,
 	}, nil
 }

@@ -4,14 +4,14 @@
 
 Name | Type | Description | Notes
 ------------ | ------------- | ------------- | -------------
-**Pubkey** | **string** | The vault pubkey associated with the address (empty if not found) | 
+**PubKey** | **string** | The vault pubkey associated with the address (empty if not found) | 
 **Found** | **bool** | Whether the address belongs to a vault | 
 
 ## Methods
 
 ### NewVaultAddressResponse
 
-`func NewVaultAddressResponse(pubkey string, found bool, ) *VaultAddressResponse`
+`func NewVaultAddressResponse(pubKey string, found bool, ) *VaultAddressResponse`
 
 NewVaultAddressResponse instantiates a new VaultAddressResponse object
 This constructor will assign default values to properties that have it defined,
@@ -26,24 +26,24 @@ NewVaultAddressResponseWithDefaults instantiates a new VaultAddressResponse obje
 This constructor will only assign default values to properties that have it defined,
 but it doesn't guarantee that properties required by API are set
 
-### GetPubkey
+### GetPubKey
 
-`func (o *VaultAddressResponse) GetPubkey() string`
+`func (o *VaultAddressResponse) GetPubKey() string`
 
-GetPubkey returns the Pubkey field if non-nil, zero value otherwise.
+GetPubKey returns the PubKey field if non-nil, zero value otherwise.
 
-### GetPubkeyOk
+### GetPubKeyOk
 
-`func (o *VaultAddressResponse) GetPubkeyOk() (*string, bool)`
+`func (o *VaultAddressResponse) GetPubKeyOk() (*string, bool)`
 
-GetPubkeyOk returns a tuple with the Pubkey field if it's non-nil, zero value otherwise
+GetPubKeyOk returns a tuple with the PubKey field if it's non-nil, zero value otherwise
 and a boolean to check if the value has been set.
 
-### SetPubkey
+### SetPubKey
 
-`func (o *VaultAddressResponse) SetPubkey(v string)`
+`func (o *VaultAddressResponse) SetPubKey(v string)`
 
-SetPubkey sets Pubkey field to given value.
+SetPubKey sets PubKey field to given value.
 
 
 ### GetFound
