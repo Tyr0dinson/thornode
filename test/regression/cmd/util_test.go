@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -88,4 +89,47 @@ func TestAutoUpdateRequiresSourceLine(t *testing.T) {
 	data, err := os.ReadFile(path)
 	require.NoError(t, err)
 	require.Equal(t, original, string(data))
+}
+
+func TestCheckRequiresJQ(t *testing.T) {
+	previous := templates
+	templates = template.New("")
+	t.Cleanup(func() { templates = previous })
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, `{"value":2}`)
+	}))
+	defer server.Close()
+
+	for _, tc := range []struct {
+		name, autoUpdate, ignoreFailures string
+		remove                           bool
+	}{
+		{"normal", "", "", false},
+		{"auto_update", "1", "", false},
+		{"ignore_failures", "", "1", false},
+		{"removed_during_update", "1", "", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			t.Setenv("PATH", dir)
+			t.Setenv("AUTO_UPDATE", tc.autoUpdate)
+			t.Setenv("IGNORE_FAILURES", tc.ignoreFailures)
+			if tc.remove {
+				// The first call reports a failed assertion, then jq is unavailable
+				// when auto-update tries to evaluate its replacement value.
+				err := os.WriteFile(filepath.Join(dir, "jq"), []byte("#!/bin/sh\n/bin/rm \"$0\"\nexit 1\n"), 0o700)
+				require.NoError(t, err)
+			}
+			op := &OpCheck{Endpoint: strings.Replace(server.URL, "127.0.0.1", "localhost", 1), Status: http.StatusOK, Asserts: []string{".value == 1"}}
+			if tc.autoUpdate == "" {
+				op.prefetch(0)
+			}
+			err := op.Execute(io.Discard, "", -1, 0, nil, nil)
+			if op.prefetchResp != nil {
+				op.prefetchResp.Body.Close()
+			}
+			require.ErrorContains(t, err, "failed to run jq")
+			require.ErrorIs(t, err, exec.ErrNotFound)
+		})
+	}
 }

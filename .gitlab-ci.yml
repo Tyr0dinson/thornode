@@ -423,7 +423,7 @@ generate:
 unit-tests:
   tags: !reference [.small-runner, tags]
   variables:
-    PKGS: python3
+    PKGS: python3 jq
   rules:
     - if: '$CI_MERGE_REQUEST_EVENT_TYPE == "merge_train" && $CI_MERGE_REQUEST_TARGET_BRANCH_SHA == $CI_MERGE_REQUEST_DIFF_BASE_SHA'
       when: never

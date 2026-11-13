@@ -419,6 +419,10 @@ func (op *OpCheck) Execute(out io.Writer, path string, line, routine int, _ *os.
 		var cmdOut []byte
 		cmdOut, err = cmd.CombinedOutput()
 		if err != nil {
+			var exitErr *exec.ExitError
+			if !errors.As(err, &exitErr) {
+				return fmt.Errorf("failed to run jq: %w", err)
+			}
 			failedAsserts = append(failedAsserts, a)
 
 			// attempt to auto update values if configured
@@ -438,6 +442,9 @@ func (op *OpCheck) Execute(out io.Writer, path string, line, routine int, _ *os.
 				var evalOut []byte
 				evalOut, err = evalCmd.CombinedOutput()
 				if err != nil {
+					if !errors.As(err, &exitErr) {
+						return fmt.Errorf("failed to run jq: %w", err)
+					}
 					localLog.Err(err).Msg("failed to evaluate expression")
 					continue
 				}
