@@ -426,6 +426,11 @@ func (e *ETHScanner) extractTxs(block *etypes.Block) (stypes.TxIn, error) {
 	sem := semaphore.NewWeighted(max(e.cfg.Concurrency, 1))
 	mu := sync.Mutex{}
 	wg := sync.WaitGroup{}
+	// A transport/RPC receipt error must not silently drop a possible
+	// observation. fromTxToTxInWithReceipts returns nil,nil on a clean NotFound,
+	// so any error it returns is a transport/RPC failure: flag the block so it is
+	// rescanned rather than marked done with a tx missing.
+	var receiptErr stdatomic.Bool
 
 	processTx := func(tx *etypes.Transaction) {
 		defer wg.Done()
@@ -449,6 +454,11 @@ func (e *ETHScanner) extractTxs(block *etypes.Block) (stypes.TxIn, error) {
 		txInItem, err := e.fromTxToTxInWithReceipts(tx, receipts)
 		if err != nil {
 			e.logger.Error().Err(err).Str("hash", tx.Hash().Hex()).Msg("fail to get one tx from server")
+			// Rescan only on a transport/RPC receipt failure, not on a parsing
+			// error, which would otherwise rescan a malformed tx forever.
+			if errors.Is(err, errReceiptFetch) {
+				receiptErr.Store(true)
+			}
 			return
 		}
 		if txInItem == nil {
@@ -480,6 +490,13 @@ func (e *ETHScanner) extractTxs(block *etypes.Block) (stypes.TxIn, error) {
 	}
 	wg.Wait()
 
+	// A receipt fetch failed on a transport/RPC error: rescan the whole block
+	// rather than advance past it with a possibly missed observation. The
+	// partial txInbound is discarded; the retry reprocesses the block.
+	if receiptErr.Load() {
+		return stypes.TxIn{}, fmt.Errorf("transport error fetching a receipt in block %d, rescanning", block.NumberU64())
+	}
+
 	count := len(txInbound.TxArray)
 	if count == 0 {
 		e.logger.Info().Int64("block", int64(block.NumberU64())).Msg("no tx need to be processed in this block")
@@ -488,6 +505,11 @@ func (e *ETHScanner) extractTxs(block *etypes.Block) (stypes.TxIn, error) {
 	e.logger.Debug().Int64("block", int64(block.NumberU64())).Msgf("there are %d tx in this block need to process", count)
 	return txInbound, nil
 }
+
+// errReceiptFetch tags a transport/RPC failure to fetch a transaction's receipt,
+// distinguishing it from a later parsing error so only the former triggers a
+// block rescan.
+var errReceiptFetch = errors.New("fail to get transaction receipt")
 
 // canceledContext is for ethclient calls that must not reach the server.
 var canceledContext = func() context.Context {
@@ -539,7 +561,56 @@ func (e *ETHScanner) receiptsMayProduceObservation(block *etypes.Block) bool {
 			return true
 		}
 	}
+	if e.ownsAnyVaultSentTx(block) {
+		return true
+	}
+
 	return evm.BlockMayHaveSignedTx(block, e.signerCacheManager)
+}
+
+// ourVaultEVMAddresses returns the lowercase 0x-hex EVM addresses this node
+// signs for, including recently retired vaults still in the keyshare set. A
+// vault that has left the active pool list is not an isPoolAddress, so its own
+// transactions would otherwise be invisible to the gate.
+func (e *ETHScanner) ourVaultEVMAddresses() map[string]struct{} {
+	pubkeys := e.pubkeyMgr.GetSignPubKeys()
+	addrs := make(map[string]struct{}, len(pubkeys))
+	for _, pk := range pubkeys {
+		addr, err := pk.GetAddress(common.ETHChain)
+		if err != nil || addr.IsEmpty() {
+			continue
+		}
+		addrs[evm.LowerHexAddress(ecommon.HexToAddress(addr.String()))] = struct{}{}
+	}
+	return addrs
+}
+
+// ownsAnyVaultSentTx reports whether the block carries a transaction sent by one
+// of this node's vaults, read from the RPC-reported (cached) sender only — the
+// cancelled context turns a cache miss into an error, so this never ecrecovers
+// or calls the server. A vault's own transaction (a failed outbound, approval
+// or cancel) may touch no logs and come from a vault that has left the active
+// pool list, so this widens the owned-block gate beyond the signer cache and
+// the current-pool sender check, forcing a full receipt fetch for the block.
+func (e *ETHScanner) ownsAnyVaultSentTx(block *etypes.Block) bool {
+	vaults := e.ourVaultEVMAddresses()
+	if len(vaults) == 0 {
+		return false
+	}
+	blockHash := block.Hash()
+	for i, tx := range block.Transactions() {
+		if tx == nil || tx.Type() == etypes.BlobTxType {
+			continue
+		}
+		sender, err := e.client.TransactionSender(canceledContext, tx, blockHash, uint(i))
+		if err != nil {
+			continue
+		}
+		if _, ok := vaults[evm.LowerHexAddress(sender)]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 // txMayBeObserved reports whether the transaction fields alone warrant fetching receipts.
@@ -1165,7 +1236,9 @@ func (e *ETHScanner) fromTxToTxInWithReceipts(tx *etypes.Transaction, receipts m
 			if errors.Is(err, ethereum.NotFound) {
 				return nil, nil
 			}
-			return nil, fmt.Errorf("fail to get transaction receipt: %w", err)
+			// A transport/RPC receipt failure (as opposed to a later parsing
+			// error): tag it so extractTxs rescans rather than dropping the tx.
+			return nil, fmt.Errorf("%w: %w", errReceiptFetch, err)
 		}
 	}
 	if receipt.Status != 1 {
