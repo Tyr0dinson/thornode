@@ -261,7 +261,13 @@ func (k KVStore) ListActiveValidatorsUpTo(ctx cosmos.Context, n int) (NodeAccoun
 
 func (k KVStore) RemoveLowBondValidatorAccounts(ctx cosmos.Context) error {
 	var events cosmos.Events
-	lowBondValidators := make([][]byte, 0)
+	// The node accounts to delete, with their addresses: each one's age start record
+	// is deleted with it, so no record outlives its node account.
+	type lowBondValidator struct {
+		key  []byte
+		addr string
+	}
+	lowBondValidators := make([]lowBondValidator, 0)
 	naIterator := k.GetNodeAccountIterator(ctx)
 	defer naIterator.Close()
 	for ; naIterator.Valid(); naIterator.Next() {
@@ -276,7 +282,7 @@ func (k KVStore) RemoveLowBondValidatorAccounts(ctx cosmos.Context) error {
 		}
 		if na.Type == NodeTypeValidator && na.Bond.LTE(cosmos.NewUint(common.One)) {
 			if na.Bond.IsZero() {
-				lowBondValidators = append(lowBondValidators, naIterator.Key())
+				lowBondValidators = append(lowBondValidators, lowBondValidator{naIterator.Key(), na.NodeAddress.String()})
 				continue
 			}
 			bps, err := k.GetBondProviders(ctx, na.NodeAddress)
@@ -301,7 +307,7 @@ func (k KVStore) RemoveLowBondValidatorAccounts(ctx cosmos.Context) error {
 				} else {
 					ctx.EventManager().EmitEvents(events)
 				}
-				lowBondValidators = append(lowBondValidators, naIterator.Key())
+				lowBondValidators = append(lowBondValidators, lowBondValidator{naIterator.Key(), na.NodeAddress.String()})
 				continue
 			}
 
@@ -343,11 +349,12 @@ func (k KVStore) RemoveLowBondValidatorAccounts(ctx cosmos.Context) error {
 
 			// remove bond providers
 			k.del(ctx, k.GetKey(prefixBondProviders, na.NodeAddress.String()))
-			lowBondValidators = append(lowBondValidators, naIterator.Key())
+			lowBondValidators = append(lowBondValidators, lowBondValidator{naIterator.Key(), na.NodeAddress.String()})
 		}
 	}
-	for _, naKey := range lowBondValidators {
-		k.del(ctx, naKey)
+	for _, v := range lowBondValidators {
+		k.del(ctx, v.key)
+		k.del(ctx, k.GetKey(prefixNodeAgeStart, v.addr))
 	}
 	return nil
 }

@@ -657,6 +657,40 @@ func (s *KeeperNodeAccountSuite) TestRemoveLowBondValidatorAccounts_NoBondProvid
 		Commentf("bond should remain unchanged, got %s", naStore.Bond))
 }
 
+func (s *KeeperNodeAccountSuite) TestRemoveLowBondValidatorAccountsDeletesAgeStart(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	ctx = ctx.WithBlockHeight(10)
+
+	// A Standby validator with no bond is removed; an Active one is kept.
+	removed := GetRandomValidatorNode(NodeStandby)
+	removed.Bond = cosmos.ZeroUint()
+	kept := GetRandomValidatorNode(NodeActive)
+	kept.Bond = cosmos.ZeroUint()
+	for _, na := range []NodeAccount{removed, kept} {
+		c.Assert(k.SetNodeAccount(ctx, na), IsNil)
+		k.SetNodeAgeStartRecord(ctx, na.NodeAddress, 5)
+	}
+
+	c.Assert(k.RemoveLowBondValidatorAccounts(ctx), IsNil)
+
+	// The removed node's age start record goes with its node account, so no record is
+	// left without a node account (the genesis export drops such records).
+	na, err := k.GetNodeAccount(ctx, removed.NodeAddress)
+	c.Assert(err, IsNil)
+	c.Check(na.IsEmpty(), Equals, true)
+	_, found, err := k.GetNodeAgeStartRecord(ctx, removed.NodeAddress)
+	c.Assert(err, IsNil)
+	c.Check(found, Equals, false)
+
+	na, err = k.GetNodeAccount(ctx, kept.NodeAddress)
+	c.Assert(err, IsNil)
+	c.Check(na.IsEmpty(), Equals, false)
+	start, found, err := k.GetNodeAgeStartRecord(ctx, kept.NodeAddress)
+	c.Assert(err, IsNil)
+	c.Check(found, Equals, true)
+	c.Check(start, Equals, int64(5))
+}
+
 func (s *KeeperNodeAccountSuite) TestListValidatorsByStatusFilters(c *C) {
 	ctx, k := setupKeeperForTest(c)
 	// ListValidatorsByStatus still returns exactly the matching validators
