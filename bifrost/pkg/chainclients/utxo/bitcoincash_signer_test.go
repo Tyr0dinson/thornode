@@ -52,6 +52,37 @@ type BitcoinCashSignerSuite struct {
 
 var _ = Suite(&BitcoinCashSignerSuite{})
 
+// A memo that round-trips can still violate relay policy. Check the full script
+// generated at the outbound budget, including OP_RETURN and pushdata overhead.
+func (s *BitcoinCashSignerSuite) TestBCHOutboundMemoBudgetStandardness(c *C) {
+	const solID = "665AC1Eykegia919xTjKPY42J9dzVBadaEVZ2mMm3YTPjumRUVGPxZwmNae8r1QHF9QWF1N564Qsob8PdbnpaKfe"
+	for _, txID := range []string{strings.Repeat("A", 64), solID} {
+		for _, prefix := range []string{"OUT:", "REFUND:"} {
+			base := prefix + txID + "|"
+			memo := base + strings.Repeat("x", common.BCHChain.MaxOutboundMemoLength()-len(base))
+			scripts, err := MemoToScripts(memo, bchtxscript.MaxDataCarrierSize, bchtxscript.NullDataScript, bchtxscript.PayToWitnessScript)
+			c.Assert(err, IsNil)
+			c.Assert(len(scripts) > 0, Equals, true)
+			// BCHN's default 223-byte allowance counts the complete script,
+			// rather than just the bytes passed into NullDataScript.
+			c.Check(len(scripts[0]) <= 223, Equals, true, Commentf("memo bytes %d, script bytes %d", len(memo), len(scripts[0])))
+			c.Check(bchtxscript.GetScriptClass(scripts[0]), Equals, bchtxscript.NullDataTy)
+			c.Check(scripts, HasLen, 1)
+			tx := btcjson.TxRawResult{Vin: []btcjson.Vin{{Txid: strings.Repeat("a", 64)}}}
+			for i, script := range scripts {
+				kind := "nulldata"
+				if i > 0 {
+					kind = "pubkeyhash"
+				}
+				tx.Vout = append(tx.Vout, btcjson.Vout{ScriptPubKey: btcjson.ScriptPubKeyResult{Hex: hex.EncodeToString(script), Type: kind}})
+			}
+			observed, err := s.client.getMemo(&tx)
+			c.Assert(err, IsNil)
+			c.Check(observed, Equals, memo)
+		}
+	}
+}
+
 func (s *BitcoinCashSignerSuite) SetUpSuite(c *C) {
 	registry := codectypes.NewInterfaceRegistry()
 	cryptocodec.RegisterInterfaces(registry)

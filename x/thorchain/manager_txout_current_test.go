@@ -23,11 +23,17 @@ const longSolanaInHash common.TxID = "665AC1Eykegia919xTjKPY42J9dzVBadaEVZ2mMm3Y
 func (s TxOutStoreSuite) TestOutboundMemoPassthrough(c *C) {
 	txID := longSolanaInHash
 	base := NewOutboundMemo(txID).String()
-	for _, chain := range []common.Chain{common.BTCChain, common.BCHChain, common.LTCChain, common.DOGEChain, common.ETHChain} {
-		limit := constants.MaxMemoSize
-		if chain.IsUTXO() {
-			limit = constants.MaxMemoSizeUtxoExtended
-		}
+	for _, policy := range []struct {
+		chain common.Chain
+		limit int
+	}{
+		{common.BTCChain, constants.MaxMemoSizeUtxoExtended},
+		{common.BCHChain, 220},
+		{common.LTCChain, constants.MaxMemoSizeUtxoExtended},
+		{common.DOGEChain, constants.MaxMemoSizeUtxoExtended},
+		{common.ETHChain, constants.MaxMemoSize},
+	} {
+		chain, limit := policy.chain, policy.limit
 		for _, tc := range []struct {
 			inbound string
 			want    string
@@ -66,6 +72,23 @@ func (s TxOutStoreSuite) TestOutboundMemoPassthrough(c *C) {
 	// Even an oversized caller-supplied protocol memo must never be sliced.
 	oversize := strings.Repeat("x", 250)
 	c.Assert(appendOutboundMemoData(common.BTCChain, oversize, "in|data"), Equals, oversize)
+}
+
+func (s TxOutStoreSuite) TestBCHOutboundMemoPassthrough(c *C) {
+	for _, txID := range []common.TxID{common.TxID(strings.Repeat("A", 64)), longSolanaInHash} {
+		for _, prefix := range []string{"OUT:", "REFUND:"} {
+			base := prefix + txID.String()
+			for _, size := range []int{219, 220, 221, 223, 224, 239} {
+				data := strings.Repeat("x", size-len(base)-1)
+				memo := appendOutboundMemoData(common.BCHChain, base, "in|"+data)
+				want := base + "|" + strings.Repeat("x", min(size, 220)-len(base)-1)
+				c.Assert(memo, Equals, want)
+				parsed, err := ParseMemo(common.LatestVersion, memo)
+				c.Assert(err, IsNil)
+				c.Check(parsed.GetTxID(), Equals, txID)
+			}
+		}
+	}
 }
 
 func (s TxOutStoreSuite) TestZECOutboundMemoPassthrough(c *C) {

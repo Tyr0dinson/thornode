@@ -568,8 +568,13 @@ func (c Chain) MaxMemoLength() int {
 // A mandatory protocol reference longer than this budget must remain intact.
 func (c Chain) MaxOutboundMemoLength() int {
 	switch c {
-	case BTCChain, LTCChain, BCHChain, DOGEChain:
+	case BTCChain, LTCChain, DOGEChain:
 		return constants.MaxMemoSizeUtxoExtended
+	case BCHChain:
+		// BCH's 223-byte relay limit includes OP_RETURN and the two-byte
+		// pushdata header. Keep the payload in one standard script until
+		// Bifrost's continuation chunking accounts for that overhead.
+		return 220
 	default:
 		// ZEC retains its single-carrier budget until its signer accounts for
 		// passthrough and continuation outputs in the ZIP-317 fee estimate.
