@@ -84,6 +84,10 @@ type EVMScanner struct {
 
 	vaultABI *abi.ABI
 	erc20ABI *abi.ABI
+
+	// receipts moves an ordinary scan off an active endpoint that cannot serve the
+	// receipts of the blocks it serves
+	receipts evm.ReceiptsFailover
 }
 
 // NewEVMScanner create a new instance of EVMScanner.
@@ -351,8 +355,12 @@ func (e *EVMScanner) processBlock(block *etypes.Block, chainHeight int64) (stype
 	}
 
 	// collect all relevant transactions from the block and their gas prices
+	source := evm.ReceiptsSource(e.endpointMgr)
 	txInBlock, gasPrices, err := e.getTxIn(block, "")
 	if err != nil {
+		if errors.Is(err, errReceiptsUnavailable) {
+			e.receipts.Failed(e.endpointMgr, source, block.Number().Int64())
+		}
 		if plan != nil {
 			// the planned reorg is dropped with this step: still unresolved
 			err = fmt.Errorf("%w: %w", btypes.ErrReorgUnresolved, err)
@@ -360,6 +368,7 @@ func (e *EVMScanner) processBlock(block *etypes.Block, chainHeight int64) (stype
 		return txIn, err
 	}
 
+	e.receipts.Served()
 	e.commitReorg(plan)
 	if plan != nil {
 		for _, item := range plan.txIns {
@@ -379,6 +388,12 @@ func (e *EVMScanner) processBlock(block *etypes.Block, chainHeight int64) (stype
 
 	return txIn, nil
 }
+
+// errReceiptsUnavailable marks a block whose receipts the answering endpoint did not
+// serve: the call failed, or it answered for another block or with receipts missing.
+// The block is retried; an ordinary scan moves off an active endpoint that keeps
+// answering so (evm.ReceiptsFailover).
+var errReceiptsUnavailable = errors.New("receipts unavailable")
 
 func (e *EVMScanner) getTxInOptimized(method string, block *etypes.Block, pin string) (stypes.TxIn, []*big.Int, error) {
 	// Use custom method name as it varies between implementation
@@ -420,7 +435,7 @@ func (e *EVMScanner) getTxInOptimized(method string, block *etypes.Block, pin st
 	)
 	if err != nil {
 		e.logger.Error().Err(err).Msg("failed to fetch block receipts")
-		return stypes.TxIn{}, nil, err
+		return stypes.TxIn{}, nil, fmt.Errorf("%w: %w", errReceiptsUnavailable, err)
 	}
 
 	// every transaction the block lists must have a receipt: a null or short answer
@@ -437,16 +452,16 @@ func (e *EVMScanner) getTxInOptimized(method string, block *etypes.Block, pin st
 		// at the same height: never observe those (BSC, BASE and POL compute the same
 		// block hash as their nodes; AVAX does not, and does not take this path)
 		if receipt.BlockHash != blockHash {
-			return stypes.TxIn{}, nil, fmt.Errorf("block %d: %s returned a receipt of block %s, not of the scanned block %s",
-				block.NumberU64(), method, receipt.BlockHash.Hex(), blockHash.Hex())
+			return stypes.TxIn{}, nil, fmt.Errorf("%w: block %d: %s returned a receipt of block %s, not of the scanned block %s",
+				errReceiptsUnavailable, block.NumberU64(), method, receipt.BlockHash.Hex(), blockHash.Hex())
 		}
 		if _, ok := txByHash[receipt.TxHash.String()]; ok {
 			have++
 		}
 	}
 	if have < len(txByHash) {
-		return stypes.TxIn{}, nil, fmt.Errorf("block %d: %s returned %d receipts for %d transactions; node has not imported the block yet",
-			block.NumberU64(), method, have, len(txByHash))
+		return stypes.TxIn{}, nil, fmt.Errorf("%w: block %d: %s returned %d receipts for %d transactions; node has not imported the block yet",
+			errReceiptsUnavailable, block.NumberU64(), method, have, len(txByHash))
 	}
 
 	// at least one worker: an unbuffered semaphore would block the first
@@ -704,7 +719,7 @@ func (e *EVMScanner) getTxIn(block *etypes.Block, pin string) (stypes.TxIn, []*b
 		err := e.ethClient.Client().BatchCallContext(endpoints.PinContext(context.Background(), pin), rpcBatch)
 		if err != nil {
 			e.logger.Error().Int("size", len(batch)).Err(err).Msg("failed to batch fetch transaction receipts")
-			return stypes.TxIn{}, nil, err
+			return stypes.TxIn{}, nil, fmt.Errorf("%w: %w", errReceiptsUnavailable, err)
 		}
 
 		// process the batch rpc response
@@ -714,14 +729,14 @@ func (e *EVMScanner) getTxIn(block *etypes.Block, pin string) (stypes.TxIn, []*b
 				// that has the block: a missing or unreadable receipt (a null element
 				// from a node that has not imported the block yet) fails the block so
 				// it is retried instead of scanned with the transaction missing
-				return stypes.TxIn{}, nil, fmt.Errorf("block %d: receipt for tx %s unavailable: %w",
-					block.NumberU64(), batch[i].Hash().Hex(), elem.Error)
+				return stypes.TxIn{}, nil, fmt.Errorf("%w: block %d: receipt for tx %s unavailable: %w",
+					errReceiptsUnavailable, block.NumberU64(), batch[i].Hash().Hex(), elem.Error)
 			}
 
 			// get the receipt
 			receipt, ok := elem.Result.(*etypes.Receipt)
 			if !ok || receipt == nil {
-				return stypes.TxIn{}, nil, fmt.Errorf("block %d: receipt for tx %s is not a receipt", block.NumberU64(), batch[i].Hash().Hex())
+				return stypes.TxIn{}, nil, fmt.Errorf("%w: block %d: receipt for tx %s is not a receipt", errReceiptsUnavailable, block.NumberU64(), batch[i].Hash().Hex())
 			}
 
 			// collect effective gas price from receipt for gas price tracking

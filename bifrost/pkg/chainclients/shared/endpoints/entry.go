@@ -222,6 +222,12 @@ func (e *Entry) RecordProbeStrike(cfg config.ChainFailoverConfig, kind ErrorKind
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.lastErrorKind = kind
+	if kind == ErrorKindIntegrity && (e.state == StateUnhealthy || e.state == StateRecovering) {
+		// the health loop saw the entry healthy when it found the minority hash, and
+		// inline errors evicted it before this strike: it is quarantined all the same,
+		// as one out of service when the vote ran is
+		e.integrityEvicted = true
+	}
 	switch e.state {
 	case StateRecovering:
 		e.markUnhealthyLocked()
@@ -293,6 +299,23 @@ func (e *Entry) coolDown(backoff time.Duration, kind ErrorKind) {
 func (e *Entry) RecordHealthCheck(ok bool, cfg config.ChainFailoverConfig) (from, to State) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	return e.recordHealthCheckLocked(ok, cfg)
+}
+
+// RecordInlineRecovery counts an inline success as one passing recovery check, unless
+// the entry is quarantined for a minority block hash. The quarantine is checked under
+// the same lock as the promotion, so a quarantine the health loop applies meanwhile is
+// never cleared by traffic; only RecordHealthCheck with a matched hash clears it.
+func (e *Entry) RecordInlineRecovery(cfg config.ChainFailoverConfig) (from, to State) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.integrityEvicted {
+		return e.state, e.state
+	}
+	return e.recordHealthCheckLocked(true, cfg)
+}
+
+func (e *Entry) recordHealthCheckLocked(ok bool, cfg config.ChainFailoverConfig) (from, to State) {
 	from = e.state
 	if ok && e.identityRequired && !e.identityVerified {
 		ok = false

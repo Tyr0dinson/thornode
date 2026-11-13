@@ -126,3 +126,49 @@ func (s *EntrySuite) TestMarkUnhealthyAndSnapshot(c *C) {
 	c.Assert(e.RecoveryDue(time.Hour), Equals, true)
 	c.Assert(e.RecoveryDue(time.Hour), Equals, false)
 }
+
+// The health loop read the entry as healthy and holds a minority hash for it, but
+// inline errors evicted it before the strike arrived: the strike still quarantines it.
+func (s *EntrySuite) TestIntegrityStrikeAfterAnInlineEvictionQuarantines(c *C) {
+	cfg := fc(2, 2)
+	e := endpoints.NewEntry("x", 1)
+	e.RecordError(cfg, endpoints.ErrorKindHTTP)
+	e.RecordError(cfg, endpoints.ErrorKindHTTP)
+	c.Assert(e.State(), Equals, endpoints.StateUnhealthy)
+	c.Assert(e.IntegrityEvicted(), Equals, false)
+
+	c.Assert(e.RecordProbeStrike(cfg, endpoints.ErrorKindIntegrity), Equals, false)
+	c.Assert(e.State(), Equals, endpoints.StateUnhealthy)
+	c.Assert(e.IntegrityEvicted(), Equals, true)
+}
+
+// The same when the evicted entry already passed a recovery check: it goes back to
+// unhealthy and is quarantined.
+func (s *EntrySuite) TestIntegrityStrikeOnARecoveringEntryQuarantines(c *C) {
+	cfg := fc(2, 2)
+	e := endpoints.NewEntry("x", 1)
+	e.RecordError(cfg, endpoints.ErrorKindHTTP)
+	e.RecordError(cfg, endpoints.ErrorKindHTTP)
+	e.RecordHealthCheck(true, cfg)
+	c.Assert(e.State(), Equals, endpoints.StateRecovering)
+
+	c.Assert(e.RecordProbeStrike(cfg, endpoints.ErrorKindIntegrity), Equals, true)
+	c.Assert(e.State(), Equals, endpoints.StateUnhealthy)
+	c.Assert(e.IntegrityEvicted(), Equals, true)
+}
+
+// Only a minority hash quarantines: a lag or probe strike that arrives after an inline
+// eviction does not.
+func (s *EntrySuite) TestOtherStrikesAfterAnInlineEvictionDoNotQuarantine(c *C) {
+	cfg := fc(2, 2)
+	for _, kind := range []endpoints.ErrorKind{endpoints.ErrorKindLag, endpoints.ErrorKindProbe} {
+		e := endpoints.NewEntry("x", 1)
+		e.RecordError(cfg, endpoints.ErrorKindHTTP)
+		e.RecordError(cfg, endpoints.ErrorKindHTTP)
+		e.RecordProbeStrike(cfg, kind)
+		c.Assert(e.IntegrityEvicted(), Equals, false, Commentf("%s", kind))
+		e.RecordHealthCheck(true, cfg)
+		e.RecordProbeStrike(cfg, kind)
+		c.Assert(e.IntegrityEvicted(), Equals, false, Commentf("recovering, %s", kind))
+	}
+}

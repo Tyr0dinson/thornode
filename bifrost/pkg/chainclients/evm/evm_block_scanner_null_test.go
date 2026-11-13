@@ -117,11 +117,13 @@ func (s *BlockScannerTestSuite) TestNullReceiptsFailTheBlock(c *C) {
 	defer stop()
 	_, err := bs.FetchTxs(1, 1)
 	c.Assert(err, ErrorMatches, "(?s).*receipt for tx 0x.*unavailable.*")
+	c.Assert(errors.Is(err, errReceiptsUnavailable), Equals, true)
 
 	bsc, stopBSC := s.newNullReceiptScanner(c, thorcommon.BSCChain)
 	defer stopBSC()
 	_, err = bsc.FetchTxs(1, 1)
 	c.Assert(err, ErrorMatches, "(?s).*eth_getBlockReceipts returned 0 receipts for 1 transactions.*")
+	c.Assert(errors.Is(err, errReceiptsUnavailable), Equals, true)
 }
 
 // A reorg whose plan succeeded is still left behind when the scanned block then fails

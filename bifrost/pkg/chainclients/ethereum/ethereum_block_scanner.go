@@ -59,6 +59,9 @@ type ETHScanner struct {
 	// endpointMgr is set by the client; with several endpoints, a reorg is read
 	// from one witness endpoint proven on the scanned block's fork (evm.ReorgWitness)
 	endpointMgr *endpoints.Manager
+	// receipts moves an ordinary scan off an active endpoint that cannot serve the
+	// receipts of the blocks it serves
+	receipts evm.ReceiptsFailover
 	// metaMu serializes the read-modify-write of stored block metas between the
 	// observer's onObservedTxIn and a reorg commit, so neither loses the other's write
 	metaMu          sync.Mutex
@@ -384,8 +387,12 @@ func (e *ETHScanner) processBlock(block *etypes.Block, chainHeight int64) (stype
 
 	var txInBlock stypes.TxIn
 	if block.Transactions().Len() > 0 {
+		source := evm.ReceiptsSource(e.endpointMgr)
 		txInBlock, err = e.extractTxs(block, "")
 		if err != nil {
+			if errors.Is(err, errReceiptUnavailable) {
+				e.receipts.Failed(e.endpointMgr, source, block.Number().Int64())
+			}
 			if plan != nil {
 				// the planned reorg is dropped with this step: still unresolved
 				err = fmt.Errorf("%w: %w", btypes.ErrReorgUnresolved, err)
@@ -394,6 +401,7 @@ func (e *ETHScanner) processBlock(block *etypes.Block, chainHeight int64) (stype
 		}
 	}
 
+	e.receipts.Served()
 	e.commitReorg(plan)
 	if plan != nil {
 		for _, item := range plan.txIns {

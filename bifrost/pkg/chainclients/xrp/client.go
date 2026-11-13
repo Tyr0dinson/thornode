@@ -485,7 +485,10 @@ func (c *Client) verifyBroadcast(sig string) signercache.LookupResult {
 // the open/current ledger whose tentatively-applied txs differ between nodes. This
 // removes the per-node divergence behind the telCAN_NOT_QUEUE backlog.
 //
-// A serial-drain gate then reads the CURRENT (open) ledger from the same rippled: if its
+// A serial-drain gate then reads the CURRENT (open) ledger from the same rippled (with
+// several endpoints, both reads go to the active endpoint; a failover between them, or
+// a read the active endpoint cannot serve right now and another answers, can split
+// them, which at worst gives the node-local loser described below): if its
 // sequence is ahead of the validated one, this vault already has an applied-but-unvalidated
 // outbound, so signing now would reuse that sequence — the gate returns ErrTxPending (no
 // signature, no checkpoint) and the item re-reads next round. The signed sequence still
@@ -518,7 +521,11 @@ func (c *Client) signingMetadata(tx stypes.TxOutItem, currentHeight int64) (XrpM
 	if err != nil {
 		return XrpMetadata{}, fmt.Errorf("fail to get validated account info: %w", err)
 	}
-	// Serial-drain gate: read the current (open) ledger from the same rippled. If either
+	// Serial-drain gate: read the current (open) ledger from the same rippled (the active
+	// endpoint, as the validated read; one served elsewhere, after a failover between the
+	// two reads or an answer the active endpoint could not give, is the same node-local
+	// loser as the race below, never a second payment, since an XRP sequence carries one
+	// transaction). If either
 	// read fails we return the error (never sign on a half-read). A current sequence ahead
 	// of the validated one means a prior outbound from this vault is applied but not yet
 	// validated; defer with ErrTxPending (no signature, no checkpoint) so the item re-reads

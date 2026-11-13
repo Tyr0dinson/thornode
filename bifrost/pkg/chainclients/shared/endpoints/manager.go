@@ -236,7 +236,7 @@ func (m *Manager) RecordSuccess(name string) {
 			return
 		}
 		if m.AllDown() {
-			from, to := e.RecordHealthCheck(true, m.cfg)
+			from, to := e.RecordInlineRecovery(m.cfg)
 			m.logTransition(e, from, to, "inline success while all endpoints down")
 			if to == StateHealthy {
 				m.reselect("recovered")

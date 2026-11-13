@@ -2019,3 +2019,58 @@ func (s *HealthSuite) TestReturningHalfDoesNotOutvoteAnHonestEndpointThatCannotA
 		c.Assert(m.Entry(name).State(), Equals, endpoints.StateHealthy, Commentf(name))
 	}
 }
+
+// An endpoint out of service with a minority hash when the vote reads it is quarantined
+// even when the healthy endpoints fail inline while the vote runs and fallback traffic
+// brings it back to healthy before the results are applied: both when its recovery
+// check runs this cycle and when it votes between checks.
+func (s *HealthSuite) TestMinorityHashQuarantinesAnEndpointTrafficRecoveredDuringTheVote(c *C) {
+	for _, betweenChecks := range []bool{false, true} {
+		cfg := healthCfg()
+		cfg.IntegrityCheckDepth = 5
+		cfg.ErrorThreshold = 5
+		cfg.MinRecoveryChecks = 3
+		if betweenChecks {
+			cfg.RecoveryCheckInterval = time.Hour
+		}
+		a := &fakeProbe{name: "a", height: 100, identity: "g", hashes: map[int64]string{95: "H"}}
+		b := &fakeProbe{name: "b", height: 100, identity: "g", hashes: map[int64]string{95: "H"}}
+		xh := "X"
+		if betweenChecks {
+			xh = "H" // recovering first, so its next check is not due
+		}
+		xp := &fakeProbe{name: "x", height: 100, identity: "g", hashes: map[int64]string{95: xh}}
+		var m *endpoints.Manager
+		armed := false
+		hook := voteEvictedProbe{fakeProbe: xp, onHash: func() {
+			if !armed {
+				return
+			}
+			armed = false
+			for i := 0; i < cfg.ErrorThreshold; i++ {
+				m.RecordError("a", endpoints.ErrorKindTransport)
+				m.RecordError("b", endpoints.ErrorKindTransport)
+			}
+			for i := 0; i < cfg.MinRecoveryChecks; i++ {
+				m.RecordSuccess("x")
+			}
+		}}
+		m, _ = newHealthMgr(c, cfg, nil, a, b, xp)
+		c.Assert(m.Bootstrap(ctxBg(), []endpoints.Probe{a, b, hook}), IsNil)
+		x := m.Entry("x")
+		x.MarkUnhealthy(endpoints.ErrorKindLag)
+		if betweenChecks {
+			m.Cycle(ctxBg())
+			c.Assert(x.State(), Equals, endpoints.StateRecovering)
+			xp.mu.Lock()
+			xp.hashes[95] = "X"
+			xp.mu.Unlock()
+		}
+		armed = true
+		m.Cycle(ctxBg())
+		c.Assert(x.IntegrityEvicted(), Equals, true, Commentf("betweenChecks=%v", betweenChecks))
+		c.Assert(x.State(), Equals, endpoints.StateUnhealthy, Commentf("betweenChecks=%v", betweenChecks))
+		c.Assert(m.Active().Name, Not(Equals), "x")
+		c.Assert(names(m.ReadCandidates()), DeepEquals, []string{"a", "b"})
+	}
+}

@@ -320,3 +320,36 @@ func (s *ManagerSuite) TestAllDownFallbackSkipsAnUnverifiedEndpoint(c *C) {
 	c.Assert(m.WriteTarget(), NotNil)
 	c.Assert(m.WriteTarget().Name, Equals, "c")
 }
+
+// The router passed RecordSuccess's quarantine guard and the health loop then
+// quarantined the entry: the inline promotion re-checks the quarantine under the
+// entry's lock and refuses it. A matched hash still clears the quarantine, and an
+// entry that is not quarantined still recovers from traffic.
+func (s *ManagerSuite) TestInlineRecoveryRefusesAQuarantineAppliedAfterTheGuard(c *C) {
+	cfg := healthCfg()
+	cfg.ErrorThreshold = 1
+	cfg.MinRecoveryChecks = 1
+	m := newMgr(c, cfg, "a", "b", "x")
+	x := m.Entry("x")
+	for _, n := range []string{"a", "b", "x"} {
+		m.RecordError(n, endpoints.ErrorKindTransport)
+	}
+	c.Assert(x.IntegrityEvicted(), Equals, false)
+	c.Assert(m.AllDown(), Equals, true)
+	x.MarkUnhealthy(endpoints.ErrorKindIntegrity)
+	x.RecordHealthCheck(false, cfg)
+	from, to := x.RecordInlineRecovery(cfg)
+	c.Assert(from, Equals, endpoints.StateUnhealthy)
+	c.Assert(to, Equals, endpoints.StateUnhealthy)
+	c.Assert(x.IntegrityEvicted(), Equals, true)
+	m.RecordSuccess("x")
+	c.Assert(x.State(), Equals, endpoints.StateUnhealthy)
+	c.Assert(x.IntegrityEvicted(), Equals, true)
+
+	_, to = x.RecordHealthCheck(true, cfg)
+	c.Assert(to, Equals, endpoints.StateHealthy)
+	c.Assert(x.IntegrityEvicted(), Equals, false)
+
+	_, to = m.Entry("a").RecordInlineRecovery(cfg)
+	c.Assert(to, Equals, endpoints.StateHealthy)
+}

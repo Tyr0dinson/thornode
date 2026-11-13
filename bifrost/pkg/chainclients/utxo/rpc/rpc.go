@@ -401,6 +401,10 @@ func (c *Client) GetBlockCountPrimary() (int64, error) {
 	return count, extractBTCError(c.redact(0, err))
 }
 
+// HasFallbacks reports whether reads can be served by an endpoint other than the
+// primary, so a height the scan reached may be ahead of the primary's own.
+func (c *Client) HasFallbacks() bool { return len(c.fallbacks) > 0 }
+
 // PrimaryInRotation reports whether the health checks currently keep the primary
 // daemon in rotation (always true without an endpoint manager). A decision that can
 // wait, such as pruning, skips a primary they have taken out instead of running its

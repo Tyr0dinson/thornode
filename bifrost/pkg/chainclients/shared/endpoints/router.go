@@ -218,6 +218,9 @@ func (r *HTTPRouter) RoundTrip(req *http.Request) (*http.Response, error) {
 		return nil, err
 	}
 	isWrite := r.isWrite(req, body)
+	// a read batch's answer is checked whole however large it is (classify)
+	trimmedBody := bytes.TrimLeft(body, " \t\r\n")
+	readBatch := !isWrite && len(trimmedBody) > 0 && trimmedBody[0] == '['
 
 	var candidates []*Entry
 	if name, ok := pinnedFrom(req.Context()); ok {
@@ -320,7 +323,7 @@ func (r *HTTPRouter) RoundTrip(req *http.Request) (*http.Response, error) {
 		name := e.Name
 		ab := &attemptBody{ReadCloser: resp.Body, cancel: acancel}
 		resp.Body = ab
-		verdict, kind, fromBody := r.classify(resp, isWrite)
+		verdict, kind, fromBody := r.classify(resp, isWrite, readBatch)
 		stopTimer()
 		if verdict == verdictEndpointError && kind == ErrorKindTransport && !fromBody &&
 			errors.Is(req.Context().Err(), context.Canceled) {
@@ -506,7 +509,9 @@ const (
 // classify decides what a response says about the endpoint. 200 JSON bodies are
 // sniffed (bounded) for JSON-RPC server-side error codes; fromBody reports that the
 // verdict came from an intact JSON body (so a write's answer can still be returned).
-func (r *HTTPRouter) classify(resp *http.Response, isWrite bool) (verdict, ErrorKind, bool) {
+// The answer to a read batch (readBatch) is read whole up to MaxBodyBytes, since its
+// elements mix results with errors; any other body is sniffed up to sniffLimit.
+func (r *HTTPRouter) classify(resp *http.Response, isWrite, readBatch bool) (verdict, ErrorKind, bool) {
 	switch {
 	case resp.StatusCode == http.StatusTooManyRequests:
 		return verdictRateLimited, ErrorKindRateLimit, false
@@ -523,7 +528,7 @@ func (r *HTTPRouter) classify(resp *http.Response, isWrite bool) (verdict, Error
 	if !strings.Contains(ct, "json") && ct != "" {
 		return verdictOK, "", false
 	}
-	if resp.ContentLength > sniffLimit {
+	if resp.ContentLength > sniffLimit && (!readBatch || resp.ContentLength > r.cfg.MaxBodyBytes) {
 		return verdictOK, "", false
 	}
 	// This is the hot path for every routed EVM, Solana, XRP and TRON call, so the
@@ -540,7 +545,25 @@ func (r *HTTPRouter) classify(resp *http.Response, isWrite bool) (verdict, Error
 		return verdictEndpointError, ErrorKindTransport, false
 	}
 	if len(peek) == size {
-		return verdictOK, "", false // large result; JSON-RPC error objects are tiny
+		if !readBatch {
+			return verdictOK, "", false // large result; JSON-RPC error objects are tiny
+		}
+		// a large read batch (an AVAX block's receipts) can carry an endpoint error or
+		// a rate limit in one element among many results: it is read whole, under the
+		// attempt timer, and checked as a small one is. The caller reads the same bytes.
+		peeked := resp.Body
+		full, rerr := io.ReadAll(io.LimitReader(br, r.cfg.MaxBodyBytes+1))
+		resp.Body = struct {
+			io.Reader
+			io.Closer
+		}{io.MultiReader(bytes.NewReader(full), peeked), peeked}
+		if rerr != nil {
+			return verdictEndpointError, ErrorKindTransport, false
+		}
+		if int64(len(full)) > r.cfg.MaxBodyBytes {
+			return verdictOK, "", false // beyond the bound it is passed on unchecked
+		}
+		peek = full
 	}
 	trimmed := bytes.TrimLeft(peek, " \t\r\n")
 	if len(trimmed) == 0 {

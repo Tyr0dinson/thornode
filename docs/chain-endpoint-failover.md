@@ -13,15 +13,22 @@ All requests go to the active endpoint. Reads that fail with a transport error, 
 3xx / 5xx, a 401 / 403, an HTML error page, a JSON-RPC "internal error", or an empty or
 invalid JSON body are retried on the next healthy endpoint immediately and charged to the
 endpoint that failed. On the HTTP-routed chains a 2xx body is checked only when it is JSON
-(or untyped) and under 64 KiB; larger bodies and other content types reach the caller
-unchecked. When no endpoint is left to try, the error returned to the caller carries the
+(or untyped) and under 64 KiB, or, for the answer to a batch of reads (AVAX receipts),
+under 8 MiB, every element of it; larger bodies and other content types reach the
+caller unchecked. When no endpoint is left to try, the error returned to the caller carries the
 last node's JSON-RPC code, message and error data (where CometBFT puts the reason) (a
 rate-limited answer is reported as "rate limited" instead). A rate-limited read is retried on the next endpoint too, but the rate-limited
 endpoint is only put in cooldown (see below), never charged. On the HTTP-routed chains
 (EVM, SOL, XRP, TRON, and the Cosmos CometBFT RPC) a JSON-RPC "method not found" is the
 caller's business and is never charged. ETH falls back to per-transaction receipts when a
 node lacks `eth_getBlockReceipts`; BSC, BASE and POL have no such fallback, so every
-endpoint of those chains must serve it. On XRP, a
+endpoint of those chains must serve it. On ETH and the EVM chains, a block whose
+receipts the active endpoint does not serve (the call fails, or answers null, short or
+for another block) fails and is retried; when the active endpoint fails the same block
+that way twice in a row and another endpoint is in service, it is sidelined (put in the
+`rate_limit_backoff` cooldown, active moves on), so the retry reads the block and its
+receipts from the next endpoint. A single failure (a load balancer behind by a block, a
+reorg between the reads) moves nothing. On XRP, a
 provider answering `lgrNotFound` or `txnNotFound`, or a server answering that it cannot
 serve right now (`tooBusy`, `noNetwork`, `notSynced`, `noCurrent`, `noClosed`,
 `amendmentBlocked`, `unlBlocked`, `notReady`), is asked last: the other endpoints are
@@ -80,7 +87,11 @@ reads only the primary can answer do not wait for it: the relay fee keeps its la
 value, the solvency report (read from the primary's wallet) is skipped, and a reorg
 with customer transactions fails at once and is retried, so that chain's scan waits for
 the primary until it returns or the stall skip-ahead moves past the reorg (see below);
-without a fallback the primary is asked as before.
+without a fallback the primary is asked as before. With a fallback configured, a
+solvency report also waits briefly (three reads of the primary's height, a second
+apart) for the primary in rotation to reach the scanned height, which a fallback may
+have reached first, and is skipped if it does not, so the primary's balances are never reported for a height it has not
+seen; the next due report is made.
 
 A UTXO reorg is walked back by block hash from the scanned block: each earlier block is
 fetched by the hash its child names, so an endpoint that is behind or still on the old

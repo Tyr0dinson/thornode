@@ -1034,3 +1034,124 @@ func (s *RouterSuite) TestEndpointErrorKeepsTheNodesErrorData(c *C) {
 	c.Assert(err, ErrorMatches, `.*endpoint only: json-rpc error -32603: Internal error: height 100 must be less than or equal to the current blockchain height 99 x+.*`)
 	c.Assert(strings.Contains(err.Error(), long), Equals, false)
 }
+
+// largeBatchServer answers a JSON-RPC batch with one result of pad bytes per element,
+// except the last element, which carries a JSON-RPC error with errCode (0: none). With
+// setCL the body has a Content-Length; otherwise it is flushed in pieces (chunked).
+func largeBatchServer(hits *int32, errCode, pad int, setCL bool) *httptest.Server {
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(hits, 1)
+		b, _ := io.ReadAll(r.Body)
+		var reqs []struct {
+			ID json.RawMessage `json:"id"`
+		}
+		_ = json.Unmarshal(b, &reqs)
+		out := make([]map[string]any, len(reqs))
+		for i, q := range reqs {
+			el := map[string]any{"jsonrpc": "2.0", "id": q.ID}
+			if errCode != 0 && i == len(reqs)-1 {
+				el["error"] = map[string]any{"code": errCode, "message": "element failure"}
+			} else {
+				el["result"] = "0x" + strings.Repeat("a", pad)
+			}
+			out[i] = el
+		}
+		body, _ := json.Marshal(out)
+		w.Header().Set("Content-Type", "application/json")
+		if setCL {
+			w.Header().Set("Content-Length", strconv.Itoa(len(body)))
+			_, _ = w.Write(body)
+			return
+		}
+		fl, ok := w.(http.Flusher)
+		if !ok {
+			http.Error(w, "no flusher", http.StatusInternalServerError)
+			return
+		}
+		for len(body) > 0 {
+			n := min(4096, len(body))
+			_, _ = w.Write(body[:n])
+			fl.Flush()
+			body = body[n:]
+		}
+	}))
+}
+
+func batchRequest(n int) []byte {
+	var sb strings.Builder
+	sb.WriteString("[")
+	for i := 0; i < n; i++ {
+		if i > 0 {
+			sb.WriteString(",")
+		}
+		sb.WriteString(`{"jsonrpc":"2.0","id":` + strconv.Itoa(i+1) + `,"method":"eth_getTransactionReceipt","params":["0x1"]}`)
+	}
+	sb.WriteString("]")
+	return []byte(sb.String())
+}
+
+// A read batch too large for the sniff window (an AVAX block's receipts, about 90 KB
+// here) is checked whole, as a small one is: an endpoint error or rate limit in any
+// element moves the read on and charges the endpoint, with or without Content-Length.
+func (s *RouterSuite) TestLargeBatchWithAnEndpointErrorMovesOn(c *C) {
+	for _, tc := range []struct {
+		code  int
+		setCL bool
+	}{{-32603, true}, {-32603, false}, {-32005, true}, {-32005, false}} {
+		comment := Commentf("code %d, content-length %v", tc.code, tc.setCL)
+		var ha, hb int32
+		a := largeBatchServer(&ha, tc.code, 3000, tc.setCL)
+		b := largeBatchServer(&hb, 0, 3000, tc.setCL)
+		m, targets := twoEndpointMgr(c, common.AVAXChain, []config.ChainEndpointConfig{{Name: "a", RPCHost: a.URL, Priority: 1}, {Name: "b", RPCHost: b.URL, Priority: 2}}, 5)
+		hc := routerFor(c, m, targets, nil)
+		req, _ := http.NewRequest(http.MethodPost, base(m), bytes.NewReader(batchRequest(30)))
+		resp, err := hc.Do(req)
+		c.Assert(err, IsNil, comment)
+		body, _ := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		c.Assert(len(body) > 64<<10, Equals, true, comment)
+		c.Assert(strings.Contains(string(body), "element failure"), Equals, false, comment) // b's batch
+		c.Assert(atomic.LoadInt32(&ha), Equals, int32(1), comment)
+		c.Assert(atomic.LoadInt32(&hb), Equals, int32(1), comment)
+		if tc.code == -32005 {
+			c.Assert(m.Entry("a").InCooldown(), Equals, true, comment)
+		} else {
+			c.Assert(m.Entry("a").Snapshot().InlineErrors, Equals, 1, comment)
+		}
+		a.Close()
+		b.Close()
+	}
+}
+
+// A large batch with only application errors, or none, is the endpoint's answer: it is
+// returned from the first endpoint whole and uncharged, and the next is not asked.
+func (s *RouterSuite) TestLargeBatchWithoutEndpointErrorsIsReturnedWhole(c *C) {
+	for _, tc := range []struct {
+		code  int
+		setCL bool
+	}{{-32000, false}, {-32000, true}, {0, false}, {0, true}} {
+		comment := Commentf("code %d, content-length %v", tc.code, tc.setCL)
+		var ha, hb, hd int32
+		a := largeBatchServer(&ha, tc.code, 3000, tc.setCL)
+		b := largeBatchServer(&hb, 0, 3000, tc.setCL)
+		direct := largeBatchServer(&hd, tc.code, 3000, tc.setCL)
+		m, targets := twoEndpointMgr(c, common.AVAXChain, []config.ChainEndpointConfig{{Name: "a", RPCHost: a.URL, Priority: 1}, {Name: "b", RPCHost: b.URL, Priority: 2}}, 5)
+		hc := routerFor(c, m, targets, nil)
+		req, _ := http.NewRequest(http.MethodPost, base(m), bytes.NewReader(batchRequest(30)))
+		resp, err := hc.Do(req)
+		c.Assert(err, IsNil, comment)
+		body, _ := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		dresp, err := http.Post(direct.URL, "application/json", bytes.NewReader(batchRequest(30)))
+		c.Assert(err, IsNil, comment)
+		want, _ := io.ReadAll(dresp.Body)
+		_ = dresp.Body.Close()
+		c.Assert(string(body), Equals, string(want), comment)
+		c.Assert(atomic.LoadInt32(&hb), Equals, int32(0), comment)
+		c.Assert(m.Entry("a").Snapshot().InlineErrors, Equals, 0, comment)
+		c.Assert(m.Entry("a").InCooldown(), Equals, false, comment)
+		a.Close()
+		b.Close()
+		direct.Close()
+	}
+}

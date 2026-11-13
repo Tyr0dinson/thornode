@@ -907,6 +907,39 @@ func (c *Client) shouldReportSolvency(height int64) bool {
 	}
 }
 
+// solvencyPrimaryWait is the pause between the reads of the primary's height while a
+// solvency report waits for the primary to reach the scanned height (a variable so
+// tests need not sleep).
+var solvencyPrimaryWait = time.Second
+
+// solvencyPrimaryReads bounds those reads: a primary that has not reached the height
+// after them is behind by more than block propagation, and the report is skipped.
+const solvencyPrimaryReads = 3
+
+// primaryReached reports whether the primary daemon has reached height, waiting
+// briefly for it. Without a fallback the scan and the wallet are the same daemon, so
+// it is true without a read. A report it refuses is not recorded as sent, so the next
+// due report is made.
+func (c *Client) primaryReached(height int64) bool {
+	if !c.rpc.HasFallbacks() {
+		return true
+	}
+	var count int64
+	var err error
+	for i := 0; i < solvencyPrimaryReads; i++ {
+		if i > 0 {
+			time.Sleep(solvencyPrimaryWait)
+		}
+		count, err = c.rpc.GetBlockCountPrimary()
+		if err == nil && count >= height {
+			return true
+		}
+	}
+	c.log.Info().Err(err).Int64("height", height).Int64("primary_height", count).
+		Msg("primary wallet behind the scanned height: solvency not reported")
+	return false
+}
+
 // ReportSolvency reports solvency for all asgard vaults.
 func (c *Client) ReportSolvency(height int64) error {
 	c.solvencyLock.Lock()
@@ -919,6 +952,12 @@ func (c *Client) ReportSolvency(height int64) error {
 	// (a fallback serves the scan), skip instead of running its retry loop per vault
 	if c.rpc.PrimaryOutWithFallback() {
 		c.log.Info().Int64("height", height).Msg("primary out of rotation: solvency not reported")
+		return nil
+	}
+	// with a fallback the height can be one a fallback reached before the primary,
+	// whose wallet the balances come from: they are reported for that height only
+	// once the primary has reached it
+	if !c.primaryReached(height) {
 		return nil
 	}
 
