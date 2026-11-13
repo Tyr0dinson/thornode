@@ -12,9 +12,11 @@ import (
 )
 
 var (
-	// ErrObservedTxSkippedInactive completes only this delivery attempt. It is
-	// not proof of storage, observation, or accounting completion; mandatory work
-	// (recovery-owned or migration) retains a durable owner for retry.
+	// ErrObservedTxSkippedInactive is groundwork for the inactive-skip path wired
+	// in a later commit of this stack. It is intended to complete only this
+	// delivery attempt: not proof of storage, observation, or accounting
+	// completion, with mandatory work (recovery-owned or migration) retaining a
+	// durable owner for retry. No producer returns it yet.
 	ErrObservedTxSkippedInactive = errors.New("observation skipped while inactive")
 
 	// ErrObservedTxOrphaned identifies the exact observation location removed by
@@ -57,10 +59,13 @@ type TxIn struct {
 	// AbortPersistence releases an in-process replay delivery reservation after
 	// Observer persistence fails; the synced replay journal remains for retry.
 	AbortPersistence func() `json:"-"`
-	// ObservationHeld reports per-transaction orphan rejections for the finalizer.
-	// It is process-local and never authorizes observation or signature reuse.
+	// ObservationHeld is groundwork: it is set by TrackObservationHolds to report
+	// per-transaction orphan rejections for the finalizer, whose reader lands in a
+	// later commit of this stack. It is process-local and never authorizes
+	// observation or signature reuse.
 	ObservationHeld func(string) bool `json:"-"`
-	// FinalizeSkipped performs the chain client's inactive-skip completion.
+	// FinalizeSkipped is groundwork for the chain client's inactive-skip
+	// completion; its blockscanner caller lands in a later commit of this stack.
 	// Unfinished mandatory work must retain a durable owner for retry.
 	FinalizeSkipped func() error `json:"-"`
 }
@@ -70,8 +75,10 @@ type TxInItem struct {
 	// only its delivery attempt; accounting and correction evidence remain
 	// client-owned. Local flag, persisted on deck, not part of a signed observation.
 	RecoveryOwned bool `json:"recovery_owned,omitempty"`
-	// RequiredMigration marks a vault-migration observation: it has a durable
-	// scanner retry owner and cannot be skipped while inactive.
+	// RequiredMigration marks a vault-migration observation. It is groundwork: the
+	// intent is a durable scanner retry owner that is not skipped while inactive,
+	// but the scanner and observer code that enforces that lands in a later commit
+	// of this stack; today processTxIns still skips inactive non-XMR items.
 	RequiredMigration     bool                `json:"required_migration,omitempty"`
 	BlockHeight           int64               `json:"block_height"`
 	Tx                    string              `json:"tx"`

@@ -8,8 +8,11 @@ import (
 
 // TrackObservationHolds distinguishes an acknowledged attempt from a durable
 // handoff. An orphan rejection can describe a canonical A-B-A return fenced by
-// Observer's signature history. It must retain recovery evidence, even though
-// the batch may advance. Permanent revert and not-applicable remain terminal.
+// Observer's signature history, whose recovery evidence is intended to be
+// retained even though the batch may advance; permanent revert and
+// not-applicable remain terminal. This installs the ObservationHeld hook, but
+// the scanner consumers that honor it (rather than treating an orphan rejection
+// as terminal) land in later commits of this stack.
 // Install before delivery; read only after Persisted has acknowledged the batch.
 func (t *TxIn) TrackObservationHolds() {
 	var held sync.Map
