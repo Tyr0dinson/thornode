@@ -308,33 +308,58 @@ func (vts *ValidatorMgrTestSuite) TestSyncNodeAgeStarts(c *C) {
 	c.Check(got, DeepEquals, []bool{true})
 }
 
-// churnFailKeeper fails the churn right after it starts.
+// churnFailKeeper fails the churn after its first writes: clearLeaveScores lists the
+// active nodes once markReadyActors has updated the node statuses in the churn's cache
+// context.
 type churnFailKeeper struct {
 	keeper.Keeper
 }
 
-func (k churnFailKeeper) ListValidatorsByStatus(_ cosmos.Context, _ NodeStatus) (NodeAccounts, error) {
+func (k churnFailKeeper) ListActiveValidators(_ cosmos.Context) (NodeAccounts, error) {
 	return nil, errKaboom
 }
 
-// TestChurnKeepsAgeStartsWhenItFails asserts the age starts a churn syncs survive that
-// churn failing.
+// TestChurnKeepsAgeStartsWhenItFails asserts that when a churn fails after its first
+// writes, those writes roll back while the age starts it synced before them remain.
 func (vts *ValidatorMgrTestSuite) TestChurnKeepsAgeStartsWhenItFails(c *C) {
 	t := newChurnInAgeTest(c, 0)
-	standby := GetRandomValidatorNode(NodeStandby)
-	c.Assert(t.mgr.Keeper().SetNodeAccount(t.ctx, standby), IsNil)
-	t.mgr.Keeper().SyncNodeAgeStart(t.ctx, standby)
-	_, ok, err := t.mgr.Keeper().GetNodeAgeStart(t.ctx, standby.NodeAddress)
-	c.Assert(err, IsNil)
-	c.Assert(ok, Equals, true)
-	t.mgr.Keeper().SetMimir(t.ctx, constants.MinimumBondInRune.String(), 150*common.One)
+	k := t.mgr.Keeper()
+	low := GetRandomValidatorNode(NodeStandby)
+	low.Bond = cosmos.NewUint(100 * common.One)
+	high := GetRandomValidatorNode(NodeStandby)
+	high.Bond = cosmos.NewUint(200 * common.One)
+	for _, na := range []NodeAccount{low, high} {
+		c.Assert(k.SetNodeAccount(t.ctx, na), IsNil)
+		k.SyncNodeAgeStart(t.ctx, na)
+		_, ok, err := k.GetNodeAgeStart(t.ctx, na.NodeAddress)
+		c.Assert(err, IsNil)
+		c.Assert(ok, Equals, true)
+	}
+	// raised above the low node's bond: the churn's sync clears its age
+	k.SetMimir(t.ctx, constants.MinimumBondInRune.String(), 150*common.One)
 
-	vm := newValidatorMgr(churnFailKeeper{t.mgr.Keeper()}, t.mgr.NetworkMgr(), t.mgr.TxOutStore(), t.mgr.EventMgr())
+	vm := newValidatorMgr(churnFailKeeper{k}, t.mgr.NetworkMgr(), t.mgr.TxOutStore(), t.mgr.EventMgr())
 	c.Assert(vm.churn(t.ctx), NotNil)
 
-	_, ok, err = t.mgr.Keeper().GetNodeAgeStart(t.ctx, standby.NodeAddress)
+	// markReadyActors moved the high node to Ready in the cache context; the failure
+	// dropped that.
+	na, err := k.GetNodeAccount(t.ctx, high.NodeAddress)
+	c.Assert(err, IsNil)
+	c.Check(na.Status, Equals, NodeStandby)
+	// The sync ran before the cache context, so its result stays.
+	_, ok, err := k.GetNodeAgeStart(t.ctx, low.NodeAddress)
 	c.Assert(err, IsNil)
 	c.Check(ok, Equals, false)
+	_, ok, err = k.GetNodeAgeStart(t.ctx, high.NodeAddress)
+	c.Assert(err, IsNil)
+	c.Check(ok, Equals, true)
+
+	// The same churn without the failure moves the high node to Ready, so the check above
+	// is not vacuous.
+	c.Assert(t.vm.markReadyActors(t.ctx), IsNil)
+	na, err = k.GetNodeAccount(t.ctx, high.NodeAddress)
+	c.Assert(err, IsNil)
+	c.Check(na.Status, Equals, NodeReady)
 }
 
 // ageStartFailKeeper fails to read the age start of one node.
