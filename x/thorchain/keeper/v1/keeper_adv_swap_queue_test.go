@@ -338,3 +338,82 @@ func (s *KeeperAdvSwapQueueSuite) TestSetAdvSwapQueueItemStateSkipsIndex(c *C) {
 	// the guard fires before the write, so no blob is persisted
 	c.Check(k.HasAdvSwapQueueItem(ctx, rw.Tx.ID, int(rw.Index)), Equals, false)
 }
+
+func (s *KeeperAdvSwapQueueSuite) TestClearAdvSwapQueueIndexes(c *C) {
+	ctx, k := setupKeeperForTest(c)
+
+	// empty queue: nothing to clear
+	k.ClearAdvSwapQueueIndexes(ctx)
+
+	var msgs []MsgSwap
+	for i := 0; i < 3; i++ {
+		market := MsgSwap{
+			Tx:          GetRandomTx(),
+			TargetAsset: common.BTCAsset,
+			SwapType:    types.SwapType_market,
+		}
+		limit := MsgSwap{
+			Tx:          GetRandomTx(),
+			TargetAsset: common.BTCAsset,
+			TradeTarget: cosmos.NewUint(uint64(i+1) * common.One),
+			SwapType:    types.SwapType_limit,
+		}
+		c.Assert(k.SetAdvSwapQueueItem(ctx, market), IsNil)
+		c.Assert(k.SetAdvSwapQueueItem(ctx, limit), IsNil)
+		msgs = append(msgs, market, limit)
+	}
+	items, err := k.GetAdvSwapQueueIndex(ctx, MsgSwap{SwapType: types.SwapType_market})
+	c.Assert(err, IsNil)
+	c.Assert(items, HasLen, 3)
+
+	k.ClearAdvSwapQueueIndexes(ctx)
+
+	items, err = k.GetAdvSwapQueueIndex(ctx, MsgSwap{SwapType: types.SwapType_market})
+	c.Assert(err, IsNil)
+	c.Check(items, HasLen, 0)
+	iter := k.GetAdvSwapQueueLimitIndexIterator(ctx)
+	c.Check(iter.Valid(), Equals, false)
+	iter.Close()
+	for _, msg := range msgs {
+		ok, err := k.HasAdvSwapQueueIndex(ctx, msg)
+		c.Assert(err, IsNil)
+		c.Check(ok, Equals, false)
+		// the queue items themselves are left alone
+		c.Check(k.HasAdvSwapQueueItem(ctx, msg.Tx.ID, int(msg.Index)), Equals, true)
+	}
+}
+
+func (s *KeeperAdvSwapQueueSuite) TestAdvSwapQueueIndexesEmpty(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	c.Check(k.AdvSwapQueueIndexesEmpty(ctx), Equals, true)
+
+	market := MsgSwap{
+		Tx:          GetRandomTx(),
+		TargetAsset: common.BTCAsset,
+		SwapType:    types.SwapType_market,
+	}
+	limit := MsgSwap{
+		Tx:          GetRandomTx(),
+		TargetAsset: common.BTCAsset,
+		TradeTarget: cosmos.NewUint(common.One),
+		SwapType:    types.SwapType_limit,
+	}
+
+	// a market swap alone, then a limit swap alone, each make it non-empty
+	c.Assert(k.SetAdvSwapQueueItem(ctx, market), IsNil)
+	c.Check(k.AdvSwapQueueIndexesEmpty(ctx), Equals, false)
+	c.Assert(k.RemoveAdvSwapQueueItemMsg(ctx, market), IsNil)
+	c.Check(k.AdvSwapQueueIndexesEmpty(ctx), Equals, true)
+
+	c.Assert(k.SetAdvSwapQueueItem(ctx, limit), IsNil)
+	c.Check(k.AdvSwapQueueIndexesEmpty(ctx), Equals, false)
+	c.Assert(k.RemoveAdvSwapQueueItem(ctx, limit.Tx.ID, int(limit.Index)), IsNil)
+	c.Check(k.AdvSwapQueueIndexesEmpty(ctx), Equals, true)
+
+	// clearing the indexes empties them while the items stay
+	c.Assert(k.SetAdvSwapQueueItem(ctx, market), IsNil)
+	c.Assert(k.SetAdvSwapQueueItem(ctx, limit), IsNil)
+	k.ClearAdvSwapQueueIndexes(ctx)
+	c.Check(k.AdvSwapQueueIndexesEmpty(ctx), Equals, true)
+	c.Check(k.HasAdvSwapQueueItem(ctx, market.Tx.ID, int(market.Index)), Equals, true)
+}

@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"sort"
 	"strconv"
@@ -39,6 +40,11 @@ const MaxRetries = 3
 // RetryBackoff is the wait between seed/genesis fetch attempts. A variable so
 // tests of the failure paths need not sleep for real.
 var RetryBackoff = time.Second * 5
+
+// Keep Config's field names in garbled release builds (see GARBLE in the
+// Makefile). viper and the config templates look fields up by name, and garble
+// cannot follow the config into the renderConfigFile closure.
+var _ = reflect.TypeOf(Config{})
 
 var (
 	//go:embed default.yaml
@@ -528,6 +534,18 @@ type Thornode struct {
 			// validator; the endpoint is also unauthenticated. See default.yaml.
 			RetainBlocks int64 `mapstructure:"retain_blocks"`
 		} `mapstructure:"logs"`
+
+		// QueryCache configures the node-local response cache for external read
+		// queries (ABCI abci_query, gRPC, and REST through either). Responses are
+		// keyed by block height, so repeated identical queries within one block are
+		// served from memory. Queries from inside the state machine never use it.
+		QueryCache struct {
+			// Enabled turns the cache on.
+			Enabled bool `mapstructure:"enabled"`
+
+			// MaxBytes bounds the memory the cached responses may hold.
+			MaxBytes int64 `mapstructure:"max_bytes"`
+		} `mapstructure:"query_cache"`
 	} `mapstructure:"api"`
 
 	// Telemetry contains THORnode-specific telemetry configuration.
@@ -611,6 +629,16 @@ type Thornode struct {
 			SnapshotInterval   int64 `mapstructure:"snapshot_interval"`
 			SnapshotKeepRecent int64 `mapstructure:"snapshot_keep_recent"`
 		} `mapstructure:"state_sync"`
+
+		// Divergence configures the node-local app-hash divergence diagnostics
+		// (app/divergence): per-block store digests, a ring of recent write
+		// sets, and a crash bundle on a consensus failure or blocksync app hash
+		// mismatch.
+		Divergence struct {
+			Enabled      bool   `mapstructure:"enabled"`
+			RetainBlocks int64  `mapstructure:"retain_blocks"`
+			ReferenceAPI string `mapstructure:"reference_api"`
+		} `mapstructure:"divergence"`
 
 		Wasm struct {
 			QueryGasLimit   int64 `mapstructure:"query_gas_limit"`

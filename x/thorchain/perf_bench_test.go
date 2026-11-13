@@ -439,6 +439,77 @@ func (f *perfFixture) seedPendingOutbounds(b testing.TB, height int64) {
 	})
 }
 
+// seedSwapQueue fills the advanced swap queue like mainnet's (2026-10: ~72
+// market and ~62 limit swaps queued): streaming market swaps across the large
+// pairs, and limit swaps priced far from the pools so they stay queued. A swap
+// simulation (quotes) clears and re-checks the queue on every call, so its
+// cost grows with the queue.
+func (f *perfFixture) seedSwapQueue(b testing.TB, height int64) {
+	b.Helper()
+	const marketSwaps, limitSwaps = 72, 62
+	type pair struct {
+		from, to common.Asset
+		amount   uint64
+	}
+	pairs := []pair{
+		{common.BTCAsset, common.ETHAsset, common.One / 10},
+		{common.ETHAsset, common.BTCAsset, common.One},
+		{common.RuneAsset(), common.BTCAsset, 1000 * common.One},
+		{common.ETHAsset, common.RuneAsset(), common.One},
+		{common.BTCAsset, common.RuneAsset(), common.One / 10},
+		{common.RuneAsset(), common.ETHAsset, 1000 * common.One},
+	}
+	signer := f.nodes[0].na.NodeAddress
+	add := func(ctx cosmos.Context, i int, limit bool) {
+		p := pairs[i%len(pairs)]
+		label := fmt.Sprintf("queued/market/%d", i)
+		stype, quantity, interval := types.SwapType_market, uint64(20), uint64(1)
+		tradeTarget := cosmos.ZeroUint()
+		if limit {
+			label = fmt.Sprintf("queued/limit/%d", i)
+			stype, quantity, interval = types.SwapType_limit, 0, 0
+			// far above any fill: 10x the pool-implied output
+			out, err := quoteConvertAsset(ctx, f.mgr, p.from, cosmos.NewUint(p.amount), p.to)
+			if err != nil {
+				b.Fatal(err)
+			}
+			tradeTarget = out.MulUint64(10)
+		}
+		fromChain := p.from.GetChain()
+		msg := NewMsgSwap(common.Tx{
+			ID:          perfTxID(b, label),
+			Chain:       fromChain,
+			FromAddress: perfAddr(b, fromChain, "user/"+label),
+			ToAddress:   f.vaultAddress(b, i%len(f.vaults), fromChain),
+			Coins:       common.NewCoins(common.NewCoin(p.from, cosmos.NewUint(p.amount))),
+			Gas:         common.Gas{common.NewCoin(common.RuneAsset(), cosmos.NewUint(1))},
+			Memo:        "=:" + p.to.String() + ":" + perfAddr(b, p.to.GetChain(), "dest/"+label).String(),
+		}, p.to, perfAddr(b, p.to.GetChain(), "dest/"+label), tradeTarget, common.NoAddress, cosmos.ZeroUint(),
+			"", "", nil, stype, quantity, interval, types.SwapVersion_v2, signer)
+		if err := f.mgr.AdvSwapQueueMgr().AddSwapQueueItem(ctx, f.mgr, msg); err != nil {
+			b.Fatal(err)
+		}
+	}
+	f.commitInto(func(ctx cosmos.Context) {
+		ctx = ctx.WithBlockHeight(height)
+		for i := 0; i < marketSwaps; i++ {
+			add(ctx, i, false)
+		}
+		for i := 0; i < limitSwaps; i++ {
+			add(ctx, i, true)
+		}
+	})
+	queued := 0
+	it := f.mgr.Keeper().GetAdvSwapQueueItemIterator(f.ctx)
+	for ; it.Valid(); it.Next() {
+		queued++
+	}
+	it.Close()
+	if queued != marketSwaps+limitSwaps {
+		b.Fatalf("expected %d queued swaps, got %d", marketSwaps+limitSwaps, queued)
+	}
+}
+
 // perfLoop runs fn b.N times under the perf=measured pprof label.
 func perfLoop(b *testing.B, fn func(i int)) {
 	b.Helper()
@@ -952,31 +1023,51 @@ func BenchmarkPerfQuoteSwap(b *testing.B) {
 			StreamingQuantity: "0", // let the quote pick the max quantity
 		}},
 	}
+	// queued/: the same quotes with a mainnet-sized advanced swap queue,
+	// which every swap simulation clears and re-checks
+	fq := newPerfFixture(b)
+	fq.seedPendingOutbounds(b, height)
+	fq.seedSwapQueue(b, height)
+	qsq := NewQueryServerImpl(fq.mgr, nil, cosmos.KeybaseStore{})
+	queued := map[string]bool{"l1-to-l1": true, "streaming": true}
+	type fixtureCase struct {
+		prefix string
+		f      *perfFixture
+		qs     types.QueryServer
+	}
+	fixtures := []fixtureCase{{"", f, qs}, {"queued/", fq, qsq}}
+
 	// wasm/: the same quotes run by a contract. Their store reads are gas
 	// inside the contract's tx, so verdict.py treats that gas/op as tx gas;
 	// the API quotes' gas is informational
 	for _, wasm := range []bool{false, true} {
-		for _, tc := range cases {
-			name := tc.name
-			if wasm {
-				name = "wasm/" + name
-			}
-			b.Run(name, func(b *testing.B) {
-				req := tc.req
-				req.Height = h
-				// queries are served from a branch of committed state; each op gets
-				// its own so the simulated swaps never leak into the next one
-				f.measure(b, height, func(ctx cosmos.Context) error {
-					if wasm {
-						ctx = ctx.WithValue(constants.CtxWASMQuery, true)
-					}
-					res, err := qs.QuoteSwap(ctx, &req)
-					if err == nil && res.ExpectedAmountOut == "" {
-						return fmt.Errorf("empty quote")
-					}
-					return err
+		for _, fc := range fixtures {
+			for _, tc := range cases {
+				if fc.prefix != "" && !queued[tc.name] {
+					continue
+				}
+				name := fc.prefix + tc.name
+				if wasm {
+					name = "wasm/" + name
+				}
+				f, qs := fc.f, fc.qs
+				b.Run(name, func(b *testing.B) {
+					req := tc.req
+					req.Height = h
+					// queries are served from a branch of committed state; each op gets
+					// its own so the simulated swaps never leak into the next one
+					f.measure(b, height, func(ctx cosmos.Context) error {
+						if wasm {
+							ctx = ctx.WithValue(constants.CtxWASMQuery, true)
+						}
+						res, err := qs.QuoteSwap(ctx, &req)
+						if err == nil && res.ExpectedAmountOut == "" {
+							return fmt.Errorf("empty quote")
+						}
+						return err
+					})
 				})
-			})
+			}
 		}
 	}
 }

@@ -224,6 +224,25 @@ snapshot-interval = {{ .StateSync.SnapshotInterval }}
 snapshot-keep-recent = {{ .StateSync.SnapshotKeepRecent }}
 
 ###############################################################################
+###                    Divergence Diagnostics Configuration                 ###
+###############################################################################
+
+[divergence]
+# Record per-block store digests and the last retain_blocks write sets under
+# <home>/data/divergence. On any consensus failure, and on a blocksync app hash
+# mismatch, write a crash bundle to <home>/divergence (outside data/, so a node
+# reset keeps it).
+# Node-local only: it never changes state or gas.
+enabled = {{ .Divergence.Enabled }}
+
+# Number of recent blocks whose full write set is kept on disk.
+retain_blocks = {{ .Divergence.RetainBlocks }}
+
+# Optional THORNode API base URL (e.g. "http://reference-node:1317") that the
+# crash hook diffs the diverging height against. Empty disables the diff.
+reference_api = "{{ .Divergence.ReferenceAPI }}"
+
+###############################################################################
 ###                           WASM Configuration                            ###
 ###############################################################################
 

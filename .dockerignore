@@ -62,6 +62,7 @@ thornode-linux-arm64
 
 # Tools (exclude all, then re-include needed)
 tools
+!tools/check-garble
 !tools/events
 !tools/generate
 !tools/recover-keyshare-backup

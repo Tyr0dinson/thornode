@@ -6,6 +6,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	runtimedebug "runtime/debug"
+	"time"
 
 	cmtcfg "github.com/cometbft/cometbft/config"
 	dbm "github.com/cosmos/cosmos-db"
@@ -16,6 +18,7 @@ import (
 	"github.com/spf13/viper"
 	"github.com/syndtr/goleveldb/leveldb/util"
 	"gitlab.com/thorchain/thornode/v3/app"
+	"gitlab.com/thorchain/thornode/v3/app/divergence"
 	"gitlab.com/thorchain/thornode/v3/common"
 
 	"cosmossdk.io/log"
@@ -49,6 +52,7 @@ import (
 
 	"gitlab.com/thorchain/thornode/v3/cmd/thornode/cmd"
 	"gitlab.com/thorchain/thornode/v3/config"
+	"gitlab.com/thorchain/thornode/v3/constants"
 	thorlog "gitlab.com/thorchain/thornode/v3/log"
 
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/client/cli"
@@ -79,8 +83,9 @@ func initAppConfig() (string, interface{}) {
 
 	type CustomAppConfig struct {
 		serverconfig.Config
-		Wasm     wasmtypes.NodeConfig    `mapstructure:"wasm"`
-		EBifrost ebifrost.EBifrostConfig `mapstructure:"ebifrost"`
+		Wasm       wasmtypes.NodeConfig    `mapstructure:"wasm"`
+		EBifrost   ebifrost.EBifrostConfig `mapstructure:"ebifrost"`
+		Divergence divergence.Config       `mapstructure:"divergence"`
 	}
 
 	// Optionally allow the chain developer to overwrite the SDK's default
@@ -102,13 +107,15 @@ func initAppConfig() (string, interface{}) {
 	// srvCfg.BaseConfig.IAVLDisableFastNode = true // disable fastnode by default
 
 	customAppConfig := CustomAppConfig{
-		Config: *srvCfg,
-		Wasm:   wasmtypes.DefaultNodeConfig(),
+		Config:     *srvCfg,
+		Wasm:       wasmtypes.DefaultNodeConfig(),
+		Divergence: divergence.DefaultConfig(),
 	}
 
 	customAppTemplate := serverconfig.DefaultConfigTemplate
 	customAppTemplate += wasmtypes.DefaultConfigTemplate()
 	customAppTemplate += ebifrost.DefaultConfigTemplate()
+	customAppTemplate += divergence.DefaultConfigTemplate()
 
 	return customAppTemplate, customAppConfig
 }
@@ -126,7 +133,7 @@ func initRootCmd(
 	rootCmd.AddCommand(
 		genutilcli.InitCmd(basicManager, app.DefaultNodeHome),
 		//		NewTestnetCmd(basicManager, banktypes.GenesisBalancesIterator{}),
-		debug.Cmd(),
+		debugCommand(),
 		confixcmd.ConfigCommand(),
 		pruning.Cmd(newApp, app.DefaultNodeHome),
 		snapshot.Cmd(newApp),
@@ -156,8 +163,18 @@ func initRootCmd(
 	)
 }
 
+// debugCommand is the SDK debug command plus divergence-diff.
+func debugCommand() *cobra.Command {
+	cmd := debug.Cmd()
+	cmd.AddCommand(divergence.DiffCmd())
+	return cmd
+}
+
 func addModuleInitFlags(startCmd *cobra.Command) {
 	startCmd.PreRunE = func(cmd *cobra.Command, _ []string) error {
+		if err := checkASLR(); err != nil {
+			return err
+		}
 		serverCtx := server.GetServerContextFromCmd(cmd)
 
 		// Bind flags to the Context's Viper so the app construction can set
@@ -183,7 +200,26 @@ func addModuleInitFlags(startCmd *cobra.Command) {
 		serverCtx.Logger = NewConsensusFailureLogger(serverCtx.Logger)
 		return server.SetCmdServerContext(startCmd, serverCtx)
 	}
+	preRunE := startCmd.PreRunE
 	wasm.AddModuleInitFlags(startCmd)
+	// wasmd's libwasmvm version check reads the wasmvm version from the module
+	// build info and panics without it. Garbled release builds (GARBLE in the
+	// Makefile) carry none, so replace it with a check against the version the
+	// Makefile embeds.
+	if _, ok := runtimedebug.ReadBuildInfo(); !ok {
+		startCmd.PreRunE = func(cmd *cobra.Command, args []string) error {
+			skip, err := cmd.Flags().GetBool("wasm.skip_wasmvm_version_check")
+			if err != nil {
+				return err
+			}
+			if !skip {
+				if err = wasm.CheckLibwasmVersion(constants.WasmvmVersion); err != nil {
+					return err
+				}
+			}
+			return preRunE(cmd, args)
+		}
+	}
 	ebifrost.AddModuleInitFlags(startCmd)
 }
 
@@ -318,12 +354,27 @@ func newApp(
 		wasmOpts = append(wasmOpts, wasmkeeper.WithVMCacheMetrics(prometheus.DefaultRegisterer))
 	}
 
-	return app.NewChainApp(
+	chainApp := app.NewChainApp(
 		logger, db, traceStore, true,
 		appOpts,
 		wasmOpts,
 		baseappOptions...,
 	)
+
+	// node-local app-hash divergence diagnostics (on unless disabled in
+	// app.toml [divergence]); like the block logs above, kept out of
+	// NewChainApp so export and tests never record. Failure only loses
+	// diagnostics, so it is logged rather than fatal.
+	if err := chainApp.EnableDivergenceDiagnostics(homePath, appOpts); err != nil {
+		logger.Error("divergence diagnostics disabled", "err", err)
+	}
+
+	// node-local response cache for external queries; wired here, like the
+	// block logs above, so appExport's app never gets one
+	if qc := config.GetThornode().API.QueryCache; qc.Enabled {
+		chainApp.EnableQueryCache(qc.MaxBytes, func() time.Duration { return config.GetThornode().API.Quote.MaxLag })
+	}
+	return chainApp
 }
 
 // appExport creates a new wasm app (optionally at a given height) and exports state.

@@ -164,7 +164,7 @@ func (h MimirHandler) handle(ctx cosmos.Context, msg MsgMimir) error {
 	}
 
 	var effectiveValue int64
-	if h.mgr.Keeper().IsOperationalMimir(msg.Key) {
+	if constants.IsOperationalMimir(msg.Key) {
 		// A value of -1 indicates either a tie or that no values satisfy the required minimum votes.
 		operationalVotesMin := h.mgr.Keeper().GetConfigInt64(ctx, constants.OperationalVotesMin)
 		effectiveValue = nodeMimirs.ValueOfOperational(msg.Key, operationalVotesMin, activeNodes.GetNodeAddresses())

@@ -15,8 +15,11 @@ import (
 // production here (see app_regtest.go).
 func wrapPrepareProposal(h sdk.PrepareProposalHandler) sdk.PrepareProposalHandler { return h }
 
-// setPrepareCheckStater is a no-op; regtest builds use it to report committed blocks.
-func setPrepareCheckStater(*baseapp.BaseApp) {}
+// setPrepareCheckStater installs the app's end-of-Commit hook; regtest builds
+// also use it to report committed blocks.
+func setPrepareCheckStater(bApp *baseapp.BaseApp, hook sdk.PrepareCheckStater) {
+	bApp.SetPrepareCheckStater(hook)
+}
 
 // BeginBlocker application updates every begin block
 func (app *THORChainApp) BeginBlocker(ctx sdk.Context) (sdk.BeginBlock, error) {
