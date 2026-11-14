@@ -1,0 +1,16 @@
+{
+  "listen": "127.0.0.1:8080",
+  "admin_socket": "/run/rpc-gateway/admin/control.sock",
+  "state_file": "/var/lib/rpc-gateway/routes.json",
+  "chains": {
+    "base": {
+      "default": "adapter", "active": 32, "waiting": 32,
+      "timeout_seconds": 30, "queue_seconds": 2, "max_request_bytes": 1048576,
+      "endpoints": {"rpc": {"path": "/base"}},
+      "backends": {
+        "native": {"rpc": "/etc/rpc-gateway/targets/base-native.json"},
+        "adapter": {"rpc": "/etc/rpc-gateway/targets/base-adapter.json"}
+      }
+    }
+  }
+}

@@ -1,0 +1,6 @@
+*
+!Dockerfile
+!build/
+build/*
+!build/bifrost-rpc-router
+!build/ca-certificates.crt

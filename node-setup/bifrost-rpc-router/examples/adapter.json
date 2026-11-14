@@ -1,0 +1,20 @@
+{
+  "listen": "127.0.0.1:8081",
+  "admin_socket": "/run/rpc-adapter/admin/control.sock",
+  "state_file": "/var/lib/rpc-adapter/routes.json",
+  "chains": {
+    "base": {
+      "default": "primary", "active": 32, "waiting": 32,
+      "timeout_seconds": 25, "queue_seconds": 2, "max_request_bytes": 1048576,
+      "head_cache_ms": 1000,
+      "read_ahead_blocks": 4,
+      "read_ahead_headers": true,
+      "call_ahead": true,
+      "endpoints": {"rpc": {"path": "/base"}},
+      "backends": {
+        "primary": {"rpc": "/etc/rpc-adapter/targets/base-primary.json"},
+        "alternate": {"rpc": "/etc/rpc-adapter/targets/base-alternate.json"}
+      }
+    }
+  }
+}
