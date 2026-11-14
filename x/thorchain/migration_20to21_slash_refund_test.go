@@ -32,6 +32,7 @@ func slash322Setup(c *C) (cosmos.Context, *Mgrs) {
 	ctx, mgr := setupManagerForTest(c)
 	k := mgr.Keeper()
 	penalty := cosmos.ZeroUint()
+	vaultCoins := common.Coins{}
 	for _, sr := range slashRefunds322 {
 		d := slash322Depths[sr.pool]
 		asset, err := common.NewAsset(sr.pool)
@@ -46,17 +47,25 @@ func slash322Setup(c *C) (cosmos.Context, *Mgrs) {
 		// Asgard holds the pool RUNE on mainnet; fund it so the Asgard->Reserve
 		// move has the freed RUNE to send.
 		FundModule(c, ctx, k, AsgardName, d.rune)
+		// Seed the Asgard vault solvent for the asset: it holds the pool depth plus
+		// a surplus above the pool credit, so the solvency gate passes (the slash
+		// double-debited the pool while the vault kept the coin once).
+		vaultCoins = append(vaultCoins, common.NewCoin(asset, cosmos.NewUint(d.asset+2*sr.poolAssetCredit)))
 		penalty = penalty.Add(cosmos.NewUint(sr.poolRuneDebit))
 	}
+	vault := GetRandomVault()
+	vault.Type = AsgardVault
+	vault.Status = ActiveVault
+	vault.Coins = vaultCoins
+	c.Assert(k.SetVault(ctx, vault), IsNil)
 	setReserveRune(c, ctx, k, penalty.Uint64())
 	return ctx, mgr
 }
 
-// The happy path: every event reverses its pool (asset credited back, RUNE
-// removed) and pays its bond providers their pinned shares from the Reserve.
-// (Vaults are left unseeded, so the soft vault-backing check reads short / errors on
-// every event — this run therefore also proves that check is log-only and NEVER
-// gates: all three refunds still apply with it firing.)
+// The happy path: with the vaults seeded solvent (slash322Setup holds the pool
+// depth plus a surplus above each pool credit), every event passes the solvency
+// gate, reverses its pool (asset credited back, RUNE removed) and pays its bond
+// providers their pinned shares from the Reserve.
 func (s *Migrate20to21SlashRefundSuite) TestSlashRefund322AppliesAll(c *C) {
 	ctx, mgr := slash322Setup(c)
 	k := mgr.Keeper()
@@ -81,6 +90,44 @@ func (s *Migrate20to21SlashRefundSuite) TestSlashRefund322AppliesAll(c *C) {
 	// Reserve fully spent: it held T/2 (penalties), the moves added T/2, both legs
 	// paid T.
 	c.Check(k.GetRuneBalanceOfModule(ctx, ReserveName).IsZero(), Equals, true, Commentf("reserve not fully drained"))
+}
+
+// The solvency gate: when the vaults do not back the reversal (here the active
+// Asgard vault is emptied, so the unaccounted vault asset is below every pool
+// credit), each event is skipped fail-soft — no pool is credited, no RUNE is
+// removed, and the upgrade is not halted.
+func (s *Migrate20to21SlashRefundSuite) TestSlashRefund322SolvencyGateSkips(c *C) {
+	ctx, mgr := slash322Setup(c)
+	k := mgr.Keeper()
+
+	// Strip the vault backing so the solvency gate reads short on every asset.
+	vaults, err := k.GetAsgardVaultsByStatus(ctx, ActiveVault)
+	c.Assert(err, IsNil)
+	for _, v := range vaults {
+		v.Coins = common.Coins{}
+		c.Assert(k.SetVault(ctx, v), IsNil)
+	}
+
+	before := map[string][2]uint64{}
+	for _, sr := range slashRefunds322 {
+		asset, err := common.NewAsset(sr.pool)
+		c.Assert(err, IsNil)
+		pool, err := k.GetPool(ctx, asset)
+		c.Assert(err, IsNil)
+		before[sr.pool] = [2]uint64{pool.BalanceAsset.Uint64(), pool.BalanceRune.Uint64()}
+	}
+
+	NewMigrator(mgr).runSlashRefunds322(ctx)
+
+	// Every pool is untouched: the gate skipped the credit on each event.
+	for _, sr := range slashRefunds322 {
+		asset, err := common.NewAsset(sr.pool)
+		c.Assert(err, IsNil)
+		pool, err := k.GetPool(ctx, asset)
+		c.Assert(err, IsNil)
+		c.Check(pool.BalanceAsset.Uint64(), Equals, before[sr.pool][0], Commentf("%s asset credited despite short vault backing", sr.key))
+		c.Check(pool.BalanceRune.Uint64(), Equals, before[sr.pool][1], Commentf("%s pool RUNE moved despite short vault backing", sr.key))
+	}
 }
 
 // The three reversals move LP value only within each pool's declared bound: the

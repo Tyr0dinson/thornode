@@ -212,24 +212,25 @@ func applySlashRefund322(ctx cosmos.Context, mgr *Mgrs, sr slashRefund322) (cosm
 		shortfall := runeDebit.Sub(pool.BalanceRune)
 		return shortfall, fmt.Errorf("%s pool BalanceRune %s below slash credit %d; pool drifted", sr.pool, pool.BalanceRune, sr.poolRuneDebit)
 	}
-	// Soft vault-backing check (log-only). Crediting the principal back asserts the
-	// vaults hold ~poolAssetCredit more of the asset than the pool depth (the slash
-	// double-debited the pool while the vault kept the coin once). If the unaccounted
-	// vault asset is short, the premise may be off (pool drift, or an OverSolvency
-	// sweep consumed the surplus between the slash and the cut) and the reversal would
-	// over-claim the pool. It also backstops a SECOND (double) payment of the slashed
-	// outbound — which would have consumed the vault's unaccounted coin — so a short
-	// reading flags that too. We log loudly rather than gate: the pinned figures are
-	// the source of truth and a hard gate here would skip a correct refund on a
-	// transient read; re-verify at the cut if this fires. (The slashed outbounds are
-	// ~100k blocks old and confirmed once on chain, far beyond any signing/reschedule
-	// window, so no live re-signable copy remains to cancel.)
-	if freeAsset, favErr := unaccountedVaultAsset19to20(ctx, mgr, asset); favErr != nil {
-		ctx.Logger().Error("3.22.0 slash refund: could not read unaccounted vault asset for the backing check",
-			"event", sr.key, "pool", sr.pool, "error", favErr)
-	} else if freeAsset.LT(cosmos.NewUint(sr.poolAssetCredit)) {
-		ctx.Logger().Error("3.22.0 slash refund: unaccounted vault asset below the pool credit — vaults may not back the reversal; verify at the cut",
-			"event", sr.key, "pool", sr.pool, "unaccounted_vault_asset", freeAsset.String(), "pool_credit", sr.poolAssetCredit)
+	// Vault-solvency gate on the pool credit, mirroring the 19to20 reversals.
+	// Crediting the principal back asserts the vaults hold ~poolAssetCredit more of
+	// the asset than the pool depth (the slash double-debited the pool while the vault
+	// kept the coin once). If the unaccounted vault asset is short, the premise is off
+	// (pool drift, an OverSolvency sweep consumed the surplus between the slash and the
+	// cut, or the slashed outbound was paid a SECOND time and consumed the vault's
+	// unaccounted coin) and the reversal would over-claim the pool. So GATE rather than
+	// log: skip this refund (fail-soft — its cache context is discarded, the upgrade is
+	// not halted, and the other refunds are unaffected) when the vaults do not back it,
+	// or when solvency cannot be read (fail closed: never credit without confirming the
+	// backing). (The slashed outbounds are ~100k blocks old and confirmed once on
+	// chain, far beyond any signing/reschedule window, so no live re-signable copy
+	// remains to cancel.)
+	freeAsset, favErr := unaccountedVaultAsset19to20(ctx, mgr, asset)
+	if favErr != nil {
+		return cosmos.ZeroUint(), fmt.Errorf("%s-slash refund: could not read unaccounted vault asset for the solvency gate, skipping: %w", sr.key, favErr)
+	}
+	if freeAsset.LT(cosmos.NewUint(sr.poolAssetCredit)) {
+		return cosmos.ZeroUint(), fmt.Errorf("%s-slash refund: unaccounted vault asset %s below pool credit %d — vaults do not back the reversal, skipping", sr.key, freeAsset, sr.poolAssetCredit)
 	}
 	// Credit the debited asset back, remove the RUNE the slash added.
 	pool.BalanceAsset = pool.BalanceAsset.Add(cosmos.NewUint(sr.poolAssetCredit))
