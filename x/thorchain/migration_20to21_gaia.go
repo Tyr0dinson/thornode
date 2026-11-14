@@ -88,6 +88,11 @@ func (m Migrator) migrate20to21Mainnet(ctx cosmos.Context) error {
 	// BTC dust re-pay: its own toggleable step in its own cache context, so it can
 	// soft-skip or be turned off without affecting the refunds above.
 	m.runBtcDustRepay322(ctx)
+	// SOL->BTC stuck-payout repair: records the already-paid BTC outbound on four SOL
+	// inbound voters whose truncated memo blocked AddOutTx. Its own independent group,
+	// per-item cache contexts, moves no funds, and soft-skips without affecting the
+	// steps above.
+	m.runSolBtcPayoutRepair322(ctx)
 	return nil
 }
 
